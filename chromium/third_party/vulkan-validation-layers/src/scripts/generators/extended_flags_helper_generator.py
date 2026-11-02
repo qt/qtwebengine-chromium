@@ -20,6 +20,7 @@
 import os
 
 from base_generator import BaseGenerator
+from dataclasses import dataclass
 
 class ExtendedFlagsHelperOutputGenerator(BaseGenerator):
     def __init__(self):
@@ -50,24 +51,6 @@ class ExtendedFlagsHelperOutputGenerator(BaseGenerator):
             ****************************************************************************/\n''')
         out.append('// NOLINTBEGIN\n\n') # Wrap for clang-tidy to ignore
 
-        # Todo: move to vulkan object
-        self.vk.structs['VkBufferCreateInfo'].members[4].flagsextend = True
-        self.vk.structs['VkImageCreateInfo'].members[2].flagsextend = True
-        self.vk.structs['VkImageCreateInfo'].members[10].flagsextend = True
-        self.vk.structs['VkComputePipelineCreateInfo'].members[2].flagsextend = True
-        self.vk.structs['VkGraphicsPipelineCreateInfo'].members[2].flagsextend = True
-        self.vk.structs['VkSwapchainCreateInfoKHR'].members[9].flagsextend = True
-        self.vk.structs['VkPhysicalDeviceImageFormatInfo2'].members[5].flagsextend = True
-        self.vk.structs['VkPhysicalDeviceImageFormatInfo2'].members[6].flagsextend = True
-        self.vk.structs['VkPhysicalDeviceSparseImageFormatInfo2'].members[5].flagsextend = True
-        self.vk.structs['VkPhysicalDeviceExternalBufferInfo'].members[3].flagsextend = True
-        self.vk.structs['VkRayTracingPipelineCreateInfoNV'].members[2].flagsextend = True
-        self.vk.structs['VkRayTracingPipelineCreateInfoKHR'].members[2].flagsextend = True
-        self.vk.structs['VkFramebufferAttachmentImageInfo'].members[2].flagsextend = True
-        self.vk.structs['VkFramebufferAttachmentImageInfo'].members[3].flagsextend = True
-        self.vk.structs['VkPhysicalDeviceVideoFormatInfoKHR'].members[2].flagsextend = True
-        self.vk.structs['VkDescriptorBufferBindingInfoEXT'].members[2].flagsextend = True
-
         if self.filename == 'extended_flags_helper_generator.h':
             out.append(self.generateHeader())
         elif self.filename == 'extended_flags_helper_generator.cpp':
@@ -84,11 +67,13 @@ class ExtendedFlagsHelperOutputGenerator(BaseGenerator):
         out.append('#include "error_message/error_location.h"\n\n')
 
         for struct in [x for x in self.vk.structs.values()]:
-            for member in [x for x in struct.members if hasattr(x, 'flagsextend')]:
-                struct_name = struct.name[2:]
+            for member in [x for x in struct.members if x.extendedFlag]:
+                extend_struct = self.vk.structs[member.extendedFlag.struct]
                 member_type_name = member.type[2:]
+                assert(len(extend_struct.members) == 3)
+                extend_member = extend_struct.members[2]
                 location_name = member.name[0].upper() + member.name[1:]
-                out.append(f'{member.type} Get{member_type_name}(const {struct.name}& create_info);\n')
+                out.append(f'{extend_member.type} Get{member_type_name}(const {struct.name}& create_info);\n')
                 out.append(f'Location Get{location_name}Location(const {struct.name}& create_info, const Location& loc);\n\n')
 
         return "".join(out)
@@ -101,14 +86,24 @@ class ExtendedFlagsHelperOutputGenerator(BaseGenerator):
         out.append('#include "error_message/error_location.h"\n\n')
 
         for struct in [x for x in self.vk.structs.values()]:
-            for member in [x for x in struct.members if hasattr(x, 'flagsextend')]:
-                struct_name = struct.name[2:]
+            for member in [x for x in struct.members if x.extendedFlag]:
+                extend_struct = self.vk.structs[member.extendedFlag.struct]
                 member_type_name = member.type[2:]
-                location_name = name = member.name[0].upper() + member.name[1:]
-                out.append(f'{member.type} Get{member_type_name}(const {struct.name}& create_info) {{')
-                out.append(f'    return static_cast<{member.type}>(create_info.{member.name});')
+                assert(len(extend_struct.members) == 3)
+                extend_member = extend_struct.members[2]
+                location_name  = member.name[0].upper() + member.name[1:]
+                out.append(f'{extend_member.type} Get{member_type_name}(const {struct.name}& create_info) {{')
+                out.append(f'const auto extended = vku::FindStructInPNextChain<{extend_struct.name}>(create_info.pNext);')
+                out.append(f'if (extended) {{')
+                out.append(f'    return extended->{extend_member.name};')
+                out.append(f'}}')
+                out.append(f'    return static_cast<{extend_member.type}>(create_info.{member.name});')
                 out.append(f'}}\n\n')
                 out.append(f'Location Get{location_name}Location(const {struct.name}& create_info, const Location& loc) {{')
+                out.append(f'const auto extended = vku::FindStructInPNextChain<{extend_struct.name}>(create_info.pNext);')
+                out.append(f'if (extended) {{')
+                out.append(f'    return loc.pNext(vvl::Struct::{extend_struct.name}).dot(vvl::Field::{extend_member.name});')
+                out.append(f'}}')
                 out.append(f'    return loc.dot(vvl::Field::{member.name});')
                 out.append(f'}}\n\n')
 

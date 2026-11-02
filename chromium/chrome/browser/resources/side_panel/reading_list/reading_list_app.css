@@ -4,16 +4,21 @@
 
 /* #css_wrapper_metadata_start
  * #type=style-lit
- * #import=chrome://read-later.top-chrome/shared/sp_shared_style_lit.css.js
+ * #import=chrome://read-later.top-chrome/shared/sp_shared_style.css.js
  * #import=chrome://resources/cr_elements/cr_hidden_style_lit.css.js
  * #scheme=relative
- * #include=cr-hidden-style-lit sp-shared-style-lit
+ * #include=cr-hidden-style-lit sp-shared-style
  * #css_wrapper_metadata_end */
 
 #content {
   display: flex;
   flex-direction: column;
   height: 100vh;
+}
+
+.sp-scroller {
+  flex: 1;
+  min-height: 0;
 }
 
 cr-icon-button {

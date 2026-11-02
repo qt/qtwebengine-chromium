@@ -17,6 +17,7 @@ include_rules = [
   "+components/sessions",
   "+components/signin/public",
   "+components/storage_monitor",
+  "+components/strings/grit",
   "+components/sync",
   "+components/supervised_user",
   "+components/sync_preferences",
@@ -67,7 +68,7 @@ include_rules = [
 ]
 
 specific_include_rules = {
-  ".*(test|test_util)\.(cc|h)$": [
+  ".*(test|test_util)\\.(cc|h)$": [
     "+ash/constants/ash_features.h",
     "+ash/constants/ash_switches.h",
 

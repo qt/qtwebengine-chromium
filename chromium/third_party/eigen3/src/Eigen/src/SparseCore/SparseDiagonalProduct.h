@@ -18,7 +18,7 @@ namespace Eigen {
 
 // The product of a diagonal matrix with a sparse matrix can be easily
 // implemented using expression template.
-// We have two consider very different cases:
+// We have to consider two very different cases:
 // 1 - diag * row-major sparse
 //     => each inner vector <=> scalar * sparse vector product
 //     => so we can reuse CwiseUnaryOp::InnerIterator
@@ -144,8 +144,9 @@ struct sparse_selfadjoint_diagonal_product_impl {
     const StorageIndex outer = outerIndex(row, col);
     const Index k = count[outer]++;
     dest.innerIndexPtr()[k] = innerIndex(row, col);
-    EIGEN_IF_CONSTEXPR(ProductOrder == OnTheLeft) { dest.valuePtr()[k] = diagonal.coeff(row) * coeff; }
-    else {
+    EIGEN_IF_CONSTEXPR (ProductOrder == OnTheLeft) {
+      dest.valuePtr()[k] = diagonal.coeff(row) * coeff;
+    } else {
       dest.valuePtr()[k] = coeff * diagonal.coeff(col);
     }
   }

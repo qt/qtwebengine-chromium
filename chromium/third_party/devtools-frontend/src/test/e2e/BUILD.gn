@@ -21,6 +21,7 @@ node_ts_library("tests") {
     "application",
     "assertion",
     "changes",
+    "conductor:implementation",
     "console",
     "coverage",
     "cross_tool_integration",
@@ -53,7 +54,7 @@ node_ts_library("tests") {
     "throttling",
     "webaudio",
   ]
-  sources = [ "mocharc.ts" ]
+  sources = [ "run-mocha.ts" ]
 }
 
 generated_file("test_inputs") {

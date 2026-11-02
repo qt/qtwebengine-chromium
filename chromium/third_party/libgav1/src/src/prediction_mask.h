@@ -18,6 +18,7 @@
 #define LIBGAV1_SRC_PREDICTION_MASK_H_
 
 #include "src/utils/bit_mask_set.h"
+#include "src/utils/constants.h"
 #include "src/utils/types.h"
 
 namespace libgav1 {

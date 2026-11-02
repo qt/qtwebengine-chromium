@@ -90,6 +90,7 @@ jpeg = ["dep:image", "dep:xml-rs", "dep:zune-jpeg"]
 gif = ["dep:gif", "dep:gif-dispose"]
 sharpyuv = ["dep:libsharpyuv-sys"]
 jpegxl = ["dep:libjxl-sys"]
+satofloat = []
 
 [package.metadata.capi.header]
 name = "avif"

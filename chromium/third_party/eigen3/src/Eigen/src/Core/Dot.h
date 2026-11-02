@@ -18,7 +18,189 @@ namespace Eigen {
 
 namespace internal {
 
-template <typename Derived, typename Scalar = typename traits<Derived>::Scalar>
+// Accumulate low-precision norms in float without changing the public result type.
+template <typename RealScalar>
+struct stable_norm_accumulator {
+  using type = RealScalar;
+};
+
+template <>
+struct stable_norm_accumulator<half> {
+  using type = float;
+};
+
+template <>
+struct stable_norm_accumulator<bfloat16> {
+  using type = float;
+};
+
+template <typename RealScalar, typename Accumulator>
+struct stable_normalization_normal_min {
+  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE Accumulator run() {
+    return static_cast<Accumulator>((numext::numeric_limits<RealScalar>::min)());
+  }
+};
+
+// The half and bfloat16 numeric_limits functions are not device functions.
+template <typename Accumulator>
+struct stable_normalization_normal_min<half, Accumulator> {
+  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE Accumulator run() { return Accumulator(1) / Accumulator(16384); }
+};
+
+template <typename Accumulator>
+struct stable_normalization_normal_min<bfloat16, Accumulator> {
+  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE Accumulator run() {
+    return static_cast<Accumulator>((numext::numeric_limits<float>::min)());
+  }
+};
+
+template <typename RealScalar, typename Accumulator, bool = std::is_floating_point<Accumulator>::value>
+struct stable_normalization_use_reciprocal {
+  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE bool run(const Accumulator&) { return false; }
+};
+
+template <typename RealScalar, typename Accumulator>
+struct stable_normalization_use_reciprocal<RealScalar, Accumulator, true> {
+  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE bool run(const Accumulator& scale) {
+    const Accumulator normal_min = stable_normalization_normal_min<RealScalar, Accumulator>::run();
+    const Accumulator normal_max = Accumulator(1) / normal_min;
+    return scale >= normal_min && scale <= normal_max;
+  }
+};
+
+template <typename VectorType, typename Accumulator,
+          bool = bool(traits<VectorType>::Flags & DirectAccessBit) &&
+                 (int(inner_stride_at_compile_time<VectorType>::value) != 1)>
+struct stable_normalization_dispatch {
+  using Scalar = typename traits<VectorType>::Scalar;
+  using RealScalar = typename NumTraits<Scalar>::Real;
+  // Only complex_array_access scalars have a writable component view.
+  using HasWritableRealView = bool_constant<!NumTraits<Scalar>::IsComplex || complex_array_access<Scalar>::value>;
+
+  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE Accumulator max_abs(const VectorType& vec) {
+    return vec.realView().template cast<Accumulator>().cwiseAbs().template maxCoeff<PropagateNaN>();
+  }
+
+  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE Accumulator scaled_squared_norm(const VectorType& vec,
+                                                                               const Accumulator& factor) {
+    return (vec.realView().template cast<Accumulator>() * factor).squaredNorm();
+  }
+
+  template <typename ResultType>
+  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE void assign_scaled(ResultType& result, const VectorType& vec,
+                                                                  const Accumulator& factor) {
+    assign_scaled_impl(result, vec, factor, HasWritableRealView());
+  }
+
+  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE void scale_in_place(VectorType& vec, const Accumulator& factor) {
+    scale_in_place_impl(vec, factor, HasWritableRealView());
+  }
+
+ private:
+  template <typename ResultType>
+  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE void assign_scaled_impl(ResultType& result, const VectorType& vec,
+                                                                       const Accumulator& factor, std::true_type) {
+    result.realView() = (vec.realView().template cast<Accumulator>() * factor).template cast<RealScalar>();
+  }
+
+  template <typename ResultType>
+  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE void assign_scaled_impl(ResultType& result, const VectorType& vec,
+                                                                       const Accumulator& factor, std::false_type) {
+    result = vec * static_cast<RealScalar>(factor);
+  }
+
+  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE void scale_in_place_impl(VectorType& vec, const Accumulator& factor,
+                                                                        std::true_type) {
+    vec.realView() = (vec.realView().template cast<Accumulator>() * factor).template cast<RealScalar>();
+  }
+
+  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE void scale_in_place_impl(VectorType& vec, const Accumulator& factor,
+                                                                        std::false_type) {
+    vec = vec * static_cast<RealScalar>(factor);
+  }
+};
+
+// Runtime-contiguous expressions can still use packet traversal.
+template <typename VectorType, typename Accumulator>
+struct stable_normalization_dispatch<VectorType, Accumulator, true> {
+  using Scalar = typename traits<VectorType>::Scalar;
+  using RealScalar = typename NumTraits<Scalar>::Real;
+  // A dynamic map avoids over-unrolling fixed-size normalization paths.
+  using PlainVector = Matrix<Scalar, Dynamic, 1>;
+  using ConstContiguousMap = Map<const PlainVector, evaluator<VectorType>::Alignment>;
+  using ContiguousMap = Map<PlainVector, evaluator<VectorType>::Alignment>;
+
+  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE bool is_contiguous(const VectorType& vec) {
+    return vec.innerStride() == 1 && (vec.outerSize() == 1 || vec.outerStride() == vec.innerSize());
+  }
+
+  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE Accumulator max_abs(const VectorType& vec) {
+    if (is_contiguous(vec)) {
+      const ConstContiguousMap contiguous(vec.data(), vec.size());
+      return stable_normalization_dispatch<ConstContiguousMap, Accumulator, false>::max_abs(contiguous);
+    }
+    return stable_normalization_dispatch<VectorType, Accumulator, false>::max_abs(vec);
+  }
+
+  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE Accumulator scaled_squared_norm(const VectorType& vec,
+                                                                               const Accumulator& factor) {
+    if (is_contiguous(vec)) {
+      const ConstContiguousMap contiguous(vec.data(), vec.size());
+      return stable_normalization_dispatch<ConstContiguousMap, Accumulator, false>::scaled_squared_norm(contiguous,
+                                                                                                        factor);
+    }
+    return stable_normalization_dispatch<VectorType, Accumulator, false>::scaled_squared_norm(vec, factor);
+  }
+
+  template <typename ResultType>
+  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE void assign_scaled(ResultType& result, const VectorType& vec,
+                                                                  const Accumulator& factor) {
+    if (is_contiguous(vec)) {
+      const ConstContiguousMap contiguous(vec.data(), vec.size());
+      Map<PlainVector> output(result.data(), result.size());
+      stable_normalization_dispatch<ConstContiguousMap, Accumulator, false>::assign_scaled(output, contiguous, factor);
+      return;
+    }
+    stable_normalization_dispatch<VectorType, Accumulator, false>::assign_scaled(result, vec, factor);
+  }
+
+  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE void scale_in_place(VectorType& vec, const Accumulator& factor) {
+    if (is_contiguous(vec)) {
+      ContiguousMap contiguous(vec.data(), vec.size());
+      stable_normalization_dispatch<ContiguousMap, Accumulator, false>::scale_in_place(contiguous, factor);
+      return;
+    }
+    stable_normalization_dispatch<VectorType, Accumulator, false>::scale_in_place(vec, factor);
+  }
+};
+
+// Prevent fast-math from merging normal scale factors into a subnormal factor.
+template <typename VectorType, typename Accumulator>
+EIGEN_DEVICE_FUNC EIGEN_DONT_INLINE void stable_normalization_scale_in_place(VectorType& vec,
+                                                                             const Accumulator& factor) {
+  stable_normalization_dispatch<VectorType, Accumulator>::scale_in_place(vec, factor);
+}
+
+template <typename VectorType, typename Divisor>
+EIGEN_DEVICE_FUNC EIGEN_DONT_INLINE void stable_normalization_divide_in_place(VectorType& vec, const Divisor& divisor) {
+  vec /= divisor;
+}
+
+// squaredNorm() reduces realView().cwiseAbs2(), a cwise expression with no direct access, so when
+// the underlying expression has an inner stride that is not statically 1 (a dynamic-inner-stride
+// Map/Ref, a row of a 1xN matrix, ...) the reduction falls back to a scalar traversal even though
+// the data is frequently contiguous at runtime. This trait flags the cases where a runtime
+// contiguity check is worthwhile; it mirrors the reduction fast path in Redux.h (redux_dispatch).
+// bool is excluded: its squared norm is any(), handled by a dedicated specialization below.
+template <typename Xpr>
+struct squared_norm_runtime_unit_stride {
+  using Scalar = typename traits<Xpr>::Scalar;
+  static constexpr bool value =
+      bool(traits<Xpr>::Flags & DirectAccessBit) && bool(packet_traits<Scalar>::Vectorizable) &&
+      !bool(internal::is_same<Scalar, bool>::value) && (int(inner_stride_at_compile_time<Xpr>::value) != 1);
+};
+
+template <typename Derived, typename Scalar = typename traits<Derived>::Scalar, typename Enable = void>
 struct squared_norm_impl {
   using Real = typename NumTraits<Scalar>::Real;
   static EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE Real run(const Derived& a) {
@@ -27,8 +209,24 @@ struct squared_norm_impl {
 };
 
 template <typename Derived>
-struct squared_norm_impl<Derived, bool> {
+struct squared_norm_impl<Derived, bool, void> {
   static EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE bool run(const Derived& a) { return a.any(); }
+};
+
+// Runtime contiguity fast path: when the data is contiguous at runtime (inner stride 1, and a
+// single inner panel or no gap between inner panels), reduce the underlying buffer as a contiguous
+// vector, recovering vectorization of the abs2 reduction.
+template <typename Derived, typename Scalar>
+struct squared_norm_impl<Derived, Scalar, std::enable_if_t<squared_norm_runtime_unit_stride<Derived>::value>> {
+  using Real = typename NumTraits<Scalar>::Real;
+  static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Real run(const Derived& a) {
+    if (a.innerStride() == 1 && (a.outerSize() == 1 || a.outerStride() == a.innerSize())) {
+      using PlainVector = Matrix<Scalar, Dynamic, 1>;
+      Map<const PlainVector, evaluator<Derived>::Alignment> contiguous(a.data(), a.size());
+      return contiguous.realView().cwiseAbs2().sum();
+    }
+    return a.realView().cwiseAbs2().sum();
+  }
 };
 
 }  // end namespace internal
@@ -131,14 +329,54 @@ EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void MatrixBase<Derived>::normalize() {
 template <typename Derived>
 EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE const typename MatrixBase<Derived>::PlainObject
 MatrixBase<Derived>::stableNormalized() const {
-  typedef typename internal::nested_eval<Derived, 3>::type Nested_;
-  Nested_ n(derived());
-  RealScalar w = n.cwiseAbs().maxCoeff();
-  RealScalar z = (n / w).squaredNorm();
-  if (z > RealScalar(0))
-    return n / (numext::sqrt(z) * w);
-  else
-    return n;
+  using Nested_ = typename internal::nested_eval<Derived, 3>::type;
+  using NestedClean = internal::remove_all_t<Nested_>;
+  using Accumulator = typename internal::stable_norm_accumulator<RealScalar>::type;
+  using Dispatch = internal::stable_normalization_dispatch<NestedClean, Accumulator>;
+  Nested_ vec(derived());
+  if (EIGEN_PREDICT_FALSE(vec.size() == 0)) return vec;
+
+  // Component-wise scaling stays finite when a finite complex value has an
+  // overflowing magnitude, and avoids a hypot per coefficient.
+  const Accumulator w = Dispatch::max_abs(vec);
+  const Accumulator highest = static_cast<Accumulator>(NumTraits<RealScalar>::highest());
+  if (EIGEN_PREDICT_FALSE(!(w > Accumulator(0)) || !(w <= highest))) return vec;
+
+  if (EIGEN_PREDICT_TRUE((internal::stable_normalization_use_reciprocal<RealScalar, Accumulator>::run(w)))) {
+    // Here w and its reciprocal are normal, so multiplication is safe.
+    const Accumulator inv_w = Accumulator(1) / w;
+    const Accumulator z = Dispatch::scaled_squared_norm(vec, inv_w);
+    if (z > Accumulator(0)) {
+      const Accumulator sqrt_z = numext::sqrt(z);
+      const Accumulator factor = inv_w / sqrt_z;
+      PlainObject normalized(rows(), cols());
+      const Accumulator accumulator_normal_min =
+          internal::stable_normalization_normal_min<Accumulator, Accumulator>::run();
+      if (EIGEN_PREDICT_TRUE(factor >= accumulator_normal_min)) {
+        Dispatch::assign_scaled(normalized, vec, factor);
+      } else {
+        // inv_w and sqrt_z are normal even though their quotient is not.
+        Dispatch::assign_scaled(normalized, vec, inv_w);
+        internal::stable_normalization_divide_in_place(normalized, static_cast<RealScalar>(sqrt_z));
+      }
+      return normalized;
+    }
+    return vec;
+  }
+
+  // Two normal divisors avoid an exceptional reciprocal and fast-math
+  // reassociation into multiplication by 1 / w.
+  const Accumulator sqrt_w = numext::sqrt(w);
+  const RealScalar scale1 = static_cast<RealScalar>(sqrt_w);
+  const RealScalar scale2 = static_cast<RealScalar>(w / sqrt_w);
+  PlainObject normalized = vec;
+  internal::stable_normalization_divide_in_place(normalized, scale1);
+  internal::stable_normalization_divide_in_place(normalized, scale2);
+  const Accumulator z = normalized.realView().template cast<Accumulator>().squaredNorm();
+  if (z > Accumulator(0)) {
+    internal::stable_normalization_scale_in_place(normalized, Accumulator(1) / numext::sqrt(z));
+  }
+  return normalized;
 }
 
 /** Normalizes the vector while avoid underflow and overflow
@@ -154,9 +392,41 @@ MatrixBase<Derived>::stableNormalized() const {
  */
 template <typename Derived>
 EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void MatrixBase<Derived>::stableNormalize() {
-  RealScalar w = cwiseAbs().maxCoeff();
-  RealScalar z = (derived() / w).squaredNorm();
-  if (z > RealScalar(0)) derived() /= numext::sqrt(z) * w;
+  using Accumulator = typename internal::stable_norm_accumulator<RealScalar>::type;
+  using Dispatch = internal::stable_normalization_dispatch<Derived, Accumulator>;
+  if (EIGEN_PREDICT_FALSE(size() == 0)) return;
+
+  const Accumulator w = Dispatch::max_abs(derived());
+  const Accumulator highest = static_cast<Accumulator>(NumTraits<RealScalar>::highest());
+  if (EIGEN_PREDICT_FALSE(!(w > Accumulator(0)) || !(w <= highest))) return;
+
+  if (EIGEN_PREDICT_TRUE((internal::stable_normalization_use_reciprocal<RealScalar, Accumulator>::run(w)))) {
+    const Accumulator inv_w = Accumulator(1) / w;
+    const Accumulator z = Dispatch::scaled_squared_norm(derived(), inv_w);
+    if (z > Accumulator(0)) {
+      const Accumulator sqrt_z = numext::sqrt(z);
+      const Accumulator factor = inv_w / sqrt_z;
+      const Accumulator accumulator_normal_min =
+          internal::stable_normalization_normal_min<Accumulator, Accumulator>::run();
+      if (EIGEN_PREDICT_TRUE(factor >= accumulator_normal_min)) {
+        Dispatch::scale_in_place(derived(), factor);
+      } else {
+        internal::stable_normalization_scale_in_place(derived(), inv_w);
+        internal::stable_normalization_divide_in_place(derived(), static_cast<RealScalar>(sqrt_z));
+      }
+    }
+    return;
+  }
+
+  const Accumulator sqrt_w = numext::sqrt(w);
+  const RealScalar scale1 = static_cast<RealScalar>(sqrt_w);
+  const RealScalar scale2 = static_cast<RealScalar>(w / sqrt_w);
+  internal::stable_normalization_divide_in_place(derived(), scale1);
+  internal::stable_normalization_divide_in_place(derived(), scale2);
+  const Accumulator z = derived().realView().template cast<Accumulator>().squaredNorm();
+  if (z > Accumulator(0)) {
+    internal::stable_normalization_scale_in_place(derived(), Accumulator(1) / numext::sqrt(z));
+  }
 }
 
 //---------- implementation of other norms ----------

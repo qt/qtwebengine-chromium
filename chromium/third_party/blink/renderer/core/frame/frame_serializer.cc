@@ -120,8 +120,8 @@ String ReplaceAllCaseInsensitive(
     String source,
     const String& from,
     base::FunctionRef<String(const String&)> transform) {
-  size_t offset = 0;
-  size_t pos;
+  wtf_size_t offset = 0;
+  wtf_size_t pos;
   StringBuilder builder;
   for (;;) {
     pos = source.FindIgnoringAsciiCase(from, offset);
@@ -425,9 +425,9 @@ class SerializerMarkupAccumulator : public MarkupAccumulator {
       MultiResourcePacker* resource_serializer,
       WebFrameSerializer::MHTMLPartsGenerationDelegate* web_delegate,
       Document& document)
-      : MarkupAccumulator(kResolveAllURLs,
-                          IsA<HTMLDocument>(document) ? SerializationType::kHTML
-                                                      : SerializationType::kXML,
+      : MarkupAccumulator(ResolveUrls::kAll,
+                          IsA<HTMLDocument>(document) ? SerializationType::kHtml
+                                                      : SerializationType::kXml,
                           ShadowRootInclusion()),
         resource_serializer_(resource_serializer),
         web_delegate_(web_delegate),
@@ -1010,8 +1010,8 @@ function main(metadata) {
   }
 
   void AppendAttributeValue(const String& attribute_value) {
-    MarkupFormatter::AppendAttributeValue(markup_, attribute_value,
-                                          IsA<HTMLDocument>(document_));
+    MarkupFormatter::AppendAttributeValue(
+        attribute_value, GetSerializationType(*document_), markup_);
   }
 
   void AppendRewrittenAttribute(const Element& element,

@@ -5,23 +5,25 @@
 import type {Chrome} from '../../../extension-api/ExtensionAPI.js';
 import type * as Platform from '../../core/platform/platform.js';
 import type * as SDK from '../../core/sdk/sdk.js';
-import * as Bindings from '../bindings/bindings.js';
+import type * as Bindings from '../bindings/bindings.js';
 
 import {PrivateAPI} from './ExtensionAPI.js';
 import {ExtensionEndpoint} from './ExtensionEndpoint.js';
 
 class LanguageExtensionEndpointImpl extends ExtensionEndpoint {
   private plugin: LanguageExtensionEndpoint;
-  constructor(plugin: LanguageExtensionEndpoint, port: MessagePort) {
+  #pluginManager: Bindings.DebuggerLanguagePlugins.DebuggerLanguagePluginManager;
+  constructor(plugin: LanguageExtensionEndpoint, port: MessagePort,
+              pluginManager: Bindings.DebuggerLanguagePlugins.DebuggerLanguagePluginManager) {
     super(port);
     this.plugin = plugin;
+    this.#pluginManager = pluginManager;
   }
   protected override handleEvent({event}: {event: string}): void {
     switch (event) {
       case PrivateAPI.LanguageExtensionPluginEvents.UnregisteredLanguageExtensionPlugin: {
         this.disconnect();
-        const {pluginManager} = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance();
-        pluginManager.removePlugin(this.plugin);
+        this.#pluginManager.removePlugin(this.plugin);
         break;
       }
     }
@@ -39,17 +41,16 @@ export class LanguageExtensionEndpoint implements Bindings.DebuggerLanguagePlugi
   readonly allowFileAccess: boolean;
   readonly name: string;
 
-  constructor(
-      allowFileAccess: boolean, extensionOrigin: string, name: string, supportedScriptTypes: {
-        language: string,
-        // eslint-disable-next-line @typescript-eslint/naming-convention
-        symbol_types: string[],
-      },
-      port: MessagePort) {
+  constructor(allowFileAccess: boolean, extensionOrigin: string, name: string, supportedScriptTypes: {
+    language: string,
+    // eslint-disable-next-line @typescript-eslint/naming-convention
+    symbol_types: string[],
+  },
+              port: MessagePort, pluginManager: Bindings.DebuggerLanguagePlugins.DebuggerLanguagePluginManager) {
     this.name = name;
     this.extensionOrigin = extensionOrigin;
     this.supportedScriptTypes = supportedScriptTypes;
-    this.endpoint = new LanguageExtensionEndpointImpl(this, port);
+    this.endpoint = new LanguageExtensionEndpointImpl(this, port, pluginManager);
     this.allowFileAccess = allowFileAccess;
   }
 

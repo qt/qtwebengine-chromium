@@ -17,31 +17,31 @@
 use alloc::{format, string::String, vec, vec::Vec};
 
 use anyhow::Context;
-use coset::{cbor::Value, cwt::ClaimsSet, CborSerializable, CoseKey, RegisteredLabelWithPrivate};
+use coset::{CborSerializable, CoseKey, RegisteredLabelWithPrivate, cbor::Value, cwt::ClaimsSet};
 use oak_dice::cert::{
-    cose_key_to_hpke_public_key, cose_key_to_verifying_key, get_public_key_from_claims_set,
     ACPI_MEASUREMENT_ID, APPLICATION_KEY_ID, CONTAINER_IMAGE_LAYER_ID,
     ENCLAVE_APPLICATION_LAYER_ID, EVENT_ID, FINAL_LAYER_CONFIG_MEASUREMENT_ID,
     INITRD_MEASUREMENT_ID, KERNEL_COMMANDLINE_ID, KERNEL_LAYER_ID, KERNEL_MEASUREMENT_ID,
     LAYER_2_CODE_MEASUREMENT_ID, LAYER_3_CODE_MEASUREMENT_ID, MEMORY_MAP_MEASUREMENT_ID,
-    SETUP_DATA_MEASUREMENT_ID, SHA2_256_ID, SYSTEM_IMAGE_LAYER_ID,
+    SETUP_DATA_MEASUREMENT_ID, SHA2_256_ID, SYSTEM_IMAGE_LAYER_ID, TRANSPARENT_EVENT_ID,
+    cose_key_to_hpke_public_key, cose_key_to_verifying_key, get_public_key_from_claims_set,
 };
+use oak_digest::Sha256;
 use oak_proto_rust::oak::{
-    attestation::v1::{
-        extracted_evidence::EvidenceValues, root_layer_data::Report, ApplicationKeys,
-        ApplicationLayerData, CbData, ContainerLayerData, Event, EventData, Evidence,
-        ExtractedEvidence, FakeAttestationReport, KernelLayerData, OakContainersData,
-        OakRestrictedKernelData, OrchestratorMeasurements, RootLayerData, RootLayerEvidence,
-        Stage0Measurements, Stage1Measurements, SystemLayerData, TeePlatform,
-    },
     RawDigest,
+    attestation::v1::{
+        ApplicationKeys, ApplicationLayerData, CbData, ContainerLayerData, Event, EventData,
+        Evidence, ExtractedEvidence, FakeAttestationReport, KernelLayerData, OakContainersData,
+        OakRestrictedKernelData, OrchestratorMeasurements, RootLayerData, RootLayerEvidence,
+        Stage0Measurements, Stage0TransparentMeasurements, Stage1Measurements, SystemLayerData,
+        TeePlatform, extracted_evidence::EvidenceValues, root_layer_data::Report,
+    },
 };
 use oak_sev_snp_attestation_report::AttestationReport;
 use prost::Message;
-use sha2::Digest;
 use zerocopy::FromBytes;
 
-use crate::platform::convert_amd_sev_snp_attestation_report;
+use crate::{platform::convert_amd_sev_snp_attestation_report, verifier::EventLogType};
 
 pub(crate) struct ApplicationKeyValues {
     pub(crate) encryption_public_key: Vec<u8>,
@@ -73,11 +73,14 @@ pub(crate) fn extract_evidence_values(evidence: &Evidence) -> anyhow::Result<Evi
     let root_layer =
         Some(extract_root_values(evidence.root_layer.as_ref().context("no root layer evidence")?)?);
 
-    if let Some(event_log) = &evidence.event_log
-        && !event_log.encoded_events.is_empty()
-    {
-        let decoded_events: Vec<Event> = event_log
-            .encoded_events
+    let encoded_events = evidence
+        .event_log
+        .as_ref()
+        .map(|event_log| event_log.encoded_events.clone())
+        .unwrap_or_default();
+
+    if !encoded_events.is_empty() {
+        let decoded_events: Vec<Event> = encoded_events
             .iter()
             .enumerate()
             .map(|(index, encoded_event)| {
@@ -222,14 +225,15 @@ pub(crate) fn extract_evidence_values(evidence: &Evidence) -> anyhow::Result<Evi
             }
             EvidenceType::CB => {
                 let mut layers = Vec::new();
-                for event in &event_log.encoded_events {
+                for event in encoded_events {
                     layers.push(EventData {
                         event: Some(RawDigest {
-                            sha2_256: sha2::Sha256::digest(event).to_vec(),
+                            sha2_256: Sha256::from_contents(event.as_slice()).into(),
                             ..Default::default()
                         }),
                     });
                 }
+                #[allow(deprecated)]
                 Ok(EvidenceValues::Cb(CbData { root_layer, layers }))
             }
         }
@@ -279,6 +283,7 @@ pub(crate) fn extract_evidence_values(evidence: &Evidence) -> anyhow::Result<Evi
             extract_application_layer_data(final_layer_claims)
         {
             match &evidence.layers[..] {
+                // TODO: b/527437181 - Update when RK produces 2 layers instead of 1.
                 [kernel_layer] => {
                     let kernel_layer = Some(
                         extract_kernel_values(
@@ -306,12 +311,14 @@ pub(crate) fn extract_evidence_values(evidence: &Evidence) -> anyhow::Result<Evi
                         let extracted_data = extract_event_data(
                             &claims_set_from_serialized_cert(&layer.eca_certificate)
                                 .context("parsing claims from CB layer cert")?,
+                            &EventIdType::EventDigest,
                         )
                         .context("extracting event data")?;
                         Ok(Some(extracted_data))
                     })
                     .collect();
                 let layer_values: Vec<EventData> = layer_results?.into_iter().flatten().collect();
+                #[allow(deprecated)]
                 Ok(EvidenceValues::Cb(CbData { root_layer, layers: layer_values }))
             }
         }
@@ -415,9 +422,32 @@ pub(crate) fn extract_application_key_values(
     Ok(ApplicationKeyValues { encryption_public_key, signing_public_key })
 }
 
+pub(crate) enum EventIdType {
+    // Events recorded under EVENT_ID in the claims map.
+    EventDigest,
+    // Transparent events recorded under TRANSPARENT_EVENT_ID in the claims map.
+    TransparentEventDigest,
+}
+
+impl From<EventLogType> for EventIdType {
+    fn from(event_log_type: EventLogType) -> Self {
+        match event_log_type {
+            EventLogType::OriginalEventLog => EventIdType::EventDigest,
+            EventLogType::TransparentEventLog => EventIdType::TransparentEventDigest,
+        }
+    }
+}
+
 /// Extracts the measurement values for the event data.
-pub(crate) fn extract_event_data(claims: &ClaimsSet) -> anyhow::Result<EventData> {
-    let values = extract_value_from_claims_set(claims, EVENT_ID)
+pub(crate) fn extract_event_data(
+    claims: &ClaimsSet,
+    event_id_type: &EventIdType,
+) -> anyhow::Result<EventData> {
+    let label_id = match event_id_type {
+        EventIdType::EventDigest => EVENT_ID,
+        EventIdType::TransparentEventDigest => TRANSPARENT_EVENT_ID,
+    };
+    let values = extract_value_from_claims_set(claims, label_id)
         .context("extracting event data from claims")?;
     let event = Some(value_to_raw_digest(values)?);
     Ok(EventData { event })
@@ -488,14 +518,9 @@ fn extract_layer_data(claims: &ClaimsSet, layer_id: i64) -> anyhow::Result<&Vec<
     claims
         .rest
         .iter()
-        .find_map(|(label, value)| {
-            if let Value::Map(map) = value
-                && label == &target
-            {
-                Some(map)
-            } else {
-                None
-            }
+        .find_map(|(label, value)| match value {
+            Value::Map(map) if label == &target => Some(map),
+            _ => None,
         })
         .context("couldn't find layer values")
 }
@@ -565,6 +590,36 @@ pub(crate) fn stage0_measurements_to_kernel_layer_data(
             ..Default::default()
         }),
         kernel_raw_cmd_line: Some(measurements.kernel_cmdline),
+        init_ram_fs: Some(RawDigest {
+            sha2_256: measurements.ram_disk_digest,
+            ..Default::default()
+        }),
+        memory_map: Some(RawDigest {
+            sha2_256: measurements.memory_map_digest,
+            ..Default::default()
+        }),
+        acpi: Some(RawDigest { sha2_256: measurements.acpi_digest, ..Default::default() }),
+    }
+}
+
+/// Translates [`Stage0TransparentMeasurements`] to [`KernelLayerData`].
+///
+/// Unlike [`stage0_measurements_to_kernel_layer_data`], the transparent version
+/// has `kernel_cmdline_digest` (a hash) instead of `kernel_cmdline` (the raw
+/// string), so `kernel_raw_cmd_line` is `None`.
+pub(crate) fn stage0_transparent_measurements_to_kernel_layer_data(
+    measurements: Stage0TransparentMeasurements,
+) -> KernelLayerData {
+    KernelLayerData {
+        kernel_image: Some(RawDigest {
+            sha2_256: measurements.kernel_measurement,
+            ..Default::default()
+        }),
+        kernel_setup_data: Some(RawDigest {
+            sha2_256: measurements.setup_data_digest,
+            ..Default::default()
+        }),
+        kernel_raw_cmd_line: None,
         init_ram_fs: Some(RawDigest {
             sha2_256: measurements.ram_disk_digest,
             ..Default::default()

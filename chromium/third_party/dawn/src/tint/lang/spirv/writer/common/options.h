@@ -54,6 +54,26 @@ enum class SpvVersion : uint32_t {
     kSpv15,  // SPIR-V 1.5, for testing purposes only
 };
 
+/// @param out the stream to write to
+/// @param version the SpvVersion
+/// @returns @p out so calls can be chained
+template <typename STREAM>
+    requires(traits::IsOStream<STREAM>)
+auto& operator<<(STREAM& out, SpvVersion version) {
+    switch (version) {
+        case SpvVersion::kSpv13:
+            out << "1.3";
+            break;
+        case SpvVersion::kSpv14:
+            out << "1.4";
+            break;
+        case SpvVersion::kSpv15:
+            out << "1.5";
+            break;
+    }
+    return out;
+}
+
 /// Configuration options used for generating SPIR-V.
 struct Options {
     struct RangeOffsets {
@@ -86,10 +106,6 @@ struct Options {
         /// Set to `true` to generate polyfill for `pack4x8snorm`, `pack4x8unorm`, `unpack4x8snorm`
         /// and `unpack4x8unorm` builtins
         bool polyfill_pack_unpack_4x8_norm = false;
-
-        /// Set to `true` to generate a polyfill clamp of `id` param of subgroupShuffle to within
-        /// the spec max subgroup size.
-        bool subgroup_shuffle_clamped = false;
 
         /// Set to 'true' to force workaround for 'textureSampleCompare(Level)' for texture arrays
         /// of cube depth.
@@ -132,7 +148,6 @@ struct Options {
                      scalarize_max_min_clamp,
                      dva_transform_handle,
                      polyfill_pack_unpack_4x8_norm,
-                     subgroup_shuffle_clamped,
                      texture_sample_compare_depth_cube_array,
                      texture_sample_compare_2d_polyfill,
                      polyfill_subgroup_broadcast_f16,
@@ -181,6 +196,14 @@ struct Options {
         /// ...>.
         bool use_uniform_buffers = false;
 
+        /// Set to `true` to add `MaximallyReconvergesKHR` to entry points.
+        /// Takes precedence over `use_subgroup_uniform_control_flow`.
+        bool use_maximal_reconvergence = false;
+
+        /// Set to `true` to add `SubgroupUniformControlFlowKHR` to compute and fragment entry
+        /// points.
+        bool use_subgroup_uniform_control_flow = false;
+
         TINT_REFLECT(Extensions,
                      use_demote_to_helper_invocation,
                      use_storage_input_output_16,
@@ -189,7 +212,9 @@ struct Options {
                      disable_image_robustness,
                      disable_runtime_sized_array_index_clamping,
                      dot_4x8_packed,
-                     use_uniform_buffers);
+                     use_uniform_buffers,
+                     use_maximal_reconvergence,
+                     use_subgroup_uniform_control_flow);
     };
 
     ///////////////////////////////////////////////////////////////////////////////////////////
@@ -259,6 +284,10 @@ struct Options {
     // Configuration for substitute overrides
     SubstituteOverridesConfig substitute_overrides_config{};
 
+    /// Minimum size in bytes of all immediate data in the pipeline, both internal and
+    /// user-defined. Used to size the decomposed immediate array.
+    uint32_t minimum_immediate_size = 0;
+
     /// Reflect the fields of this class so that it can be used by tint::ForeachField()
     TINT_REFLECT(Options,
                  entry_point_name,
@@ -279,7 +308,8 @@ struct Options {
                  depth_range_offsets,
                  spirv_version,
                  resource_table,
-                 substitute_overrides_config);
+                 substitute_overrides_config,
+                 minimum_immediate_size);
 };
 
 }  // namespace tint::spirv::writer

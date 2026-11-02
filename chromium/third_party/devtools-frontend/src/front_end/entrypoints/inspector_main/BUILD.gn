@@ -70,10 +70,8 @@ devtools_entrypoint("meta") {
   ]
 
   visibility = [
-    "../../panels/greendev/*",
     "../../testing/*",
     "../devtools_app/*",
-    "../greendev_floaty/*",
     "../trace_app/*",
   ]
 }

@@ -8,7 +8,6 @@
     rust-overlay.url = "github:oxalica/rust-overlay";
     rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
     crane.url = "github:ipetkov/crane";
-    crane.inputs.nixpkgs.follows = "nixpkgs";
   };
   outputs = { self, systems, nixpkgs, flake-utils, rust-overlay, crane }:
     (flake-utils.lib.eachDefaultSystem
@@ -24,6 +23,27 @@
               allowUnfree = true; # needed to get android stuff to compile
             };
           };
+          # Create a bazelisk wrapper that normalizes PATH before invoking
+          # bazelisk. This prevents Bazel analysis cache invalidation caused
+          # by different host shells (e.g. IDE terminals vs interactive
+          # terminals) having different base PATHs. Nix prepends its store
+          # paths to the host PATH, so different starting PATHs produce
+          # different final PATHs. Bazel tracks the full PATH as part of its
+          # client_env cache key, so differing PATHs cause full rebuilds.
+          # By normalizing inside the wrapper, the user's interactive shell
+          # keeps its full PATH (jj, direnv, etc. all work), but the bazel
+          # process always sees a deterministic PATH.
+          bazelisk-as-bazel =
+            let
+              wrapper = pkgs.writeShellScriptBin "bazel" ''
+                export PATH="$(echo "$PATH" | tr ':' '\n' | grep -E '^/nix/store/|\.nix-profile/bin|/nix/var/nix/profiles/' | tr '\n' ':' | sed 's/:$//'):/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+                exec ${pkgs.bazelisk}/bin/bazelisk "$@"
+              '';
+            in
+            pkgs.symlinkJoin {
+              name = "bazelisk-as-bazel";
+              paths = [ wrapper pkgs.bazelisk ];
+            };
           inherit (pkgs) lib stdenv;
           androidSdk =
             (pkgs.androidenv.composeAndroidPackages {
@@ -36,7 +56,7 @@
             }).androidsdk;
           rustToolchain =
             # This should be kept in sync with the value in bazel/rust/defs.bzl
-            pkgs.rust-bin.nightly."2025-03-01".default.override {
+            pkgs.rust-bin.nightly."2026-04-11".default.override {
               extensions = [
                 "clippy"
                 "llvm-tools-preview"
@@ -52,6 +72,31 @@
             };
           craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
           src = ./.;
+          pyink = pkgs.python3Packages.buildPythonPackage rec {
+            pname = "pyink";
+            version = "24.10.0";
+            src = pkgs.fetchPypi {
+              inherit pname version;
+              hash = "sha256-MhcCPlh1wmnCz9WyK87Jc7fOs1krh7RbM3PynpVkfFQ=";
+            };
+            pyproject = true;
+            nativeBuildInputs = with pkgs.python3Packages; [
+              hatchling
+              hatch-vcs
+            ];
+            propagatedBuildInputs = with pkgs.python3Packages; [
+              click
+              mypy-extensions
+              packaging
+              pathspec
+              platformdirs
+              black
+            ];
+            postPatch = ''
+              sed -i 's/black==24.8.0/black/' pyproject.toml
+            '';
+            doCheck = false;
+          };
         in
         {
           formatter = pkgs.nixpkgs-fmt;
@@ -65,9 +110,8 @@
             base = with pkgs; mkShell {
               packages = [
                 cachix
-                envsubst
                 fd
-                google-cloud-sdk
+                gettext
                 just
                 ps
                 which
@@ -95,14 +139,17 @@
                 cargo-audit
                 protobuf
                 buf # utility to convert binary protobuf to json; for breaking change detection.
+                pyink
                 qemu_kvm
-                python312
                 wasm-pack
+                wasmtime
                 iconv
+                util-linux
               ]
               ++
               # Linux-specific dependencies.
               lib.optionals stdenv.isLinux [
+                iproute2
                 systemd
               ];
             };
@@ -120,7 +167,10 @@
                 nixpkgs-fmt
                 nodePackages.prettier
                 nodePackages.markdownlint-cli
+                pyink
                 shellcheck
+                shfmt
+                pre-commit
               ];
             };
             # Minimal shell with only the dependencies needed to run the bazel steps.
@@ -133,13 +183,18 @@
                 # Prevent issues when trying to do nix builds inside of a nix shell.
                 # https://github.com/NixOS/nix/issues/262
                 unset TMPDIR
+
+                export BAZELISK_VERIFY_SHA256=${if stdenv.isDarwin then "cb6d2f19ad92157e7186f64151e665c1b0c3bacaa690784e66f446f1b7660140" else "61d89402f0368e64b6c827be5de79d8e65382e8124c3cbb97325611a1851392e"}
+
+                echo "You need libxml2.so.2 to build some Bazel targets. It isn't provided by nix flakes. See scripts/install-libxml2-legacy for details."
               '';
               packages = [
                 autoconf
                 autogen
                 automake
                 jdk17_headless
-                bazel_7
+                libxml2
+                bazelisk-as-bazel
                 androidSdk
                 bazel-buildtools
                 openssl
@@ -159,7 +214,7 @@
                 bison
                 cpio
                 cosign
-                curl
+                curlWithGnuTls
                 docker
                 fakeroot
                 flex
@@ -180,7 +235,11 @@
                 elfutils
                 glibc
                 glibc.static
+                libguestfs-with-appliance
               ];
+              env = { } // lib.optionalAttrs stdenv.isLinux {
+                LIBGUESTFS_PATH = "${if stdenv.isLinux then pkgs.libguestfs-with-appliance else "dummy"}/lib/guestfs";
+              };
             };
             # Shell for most CI steps (i.e. without containers support).
             ci = pkgs.mkShell {

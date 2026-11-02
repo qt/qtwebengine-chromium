@@ -21,6 +21,79 @@ namespace internal {
 template <typename LhsScalar_, typename RhsScalar_>
 class level3_blocking;
 
+// LHS-first loop order: mc -> kc -> nc. This is Eigen's usual sequential
+// schedule, with a fast path that can pack RHS once for tall skinny blocking.
+struct gemm_pack_lhs_first_loop_policy {
+  template <typename Index, typename LhsScalar, typename RhsScalar, typename ResScalar, typename LhsMapper,
+            typename RhsMapper, typename ResMapper, typename PackLhs, typename PackRhs, typename Gebp>
+  static EIGEN_STRONG_INLINE void run(Index rows, Index cols, Index depth, Index kc, Index mc, Index nc,
+                                      const LhsMapper& lhs, const RhsMapper& rhs, ResMapper& res, PackLhs& pack_lhs,
+                                      PackRhs& pack_rhs, Gebp& gebp, LhsScalar* blockA, RhsScalar* blockB,
+                                      ResScalar alpha) {
+    const bool pack_rhs_once = mc != rows && kc == depth && nc == cols;
+
+    // For each horizontal panel of the rhs, and corresponding panel of the lhs...
+    for (Index i2 = 0; i2 < rows; i2 += mc) {
+      const Index actual_mc = (std::min)(i2 + mc, rows) - i2;
+
+      for (Index k2 = 0; k2 < depth; k2 += kc) {
+        const Index actual_kc = (std::min)(k2 + kc, depth) - k2;
+
+        // OK, here we have selected one horizontal panel of rhs and one vertical panel of lhs.
+        // => Pack lhs's panel into a sequential chunk of memory (L2/L3 caching)
+        // Note that this panel will be read as many times as the number of blocks in the rhs's
+        // horizontal panel which is, in practice, a very low number.
+        pack_lhs(blockA, lhs.getSubMapper(i2, k2), actual_kc, actual_mc);
+
+        // For each kc x nc block of the rhs's horizontal panel...
+        for (Index j2 = 0; j2 < cols; j2 += nc) {
+          const Index actual_nc = (std::min)(j2 + nc, cols) - j2;
+
+          // We pack the rhs's block into a sequential chunk of memory (L2 caching)
+          // Note that this block will be read a very high number of times, which is equal to the number of
+          // micro horizontal panel of the large rhs's panel (e.g., rows/12 times).
+          if ((!pack_rhs_once) || i2 == 0) pack_rhs(blockB, rhs.getSubMapper(k2, j2), actual_kc, actual_nc);
+
+          // Everything is packed, we can now call the panel * block kernel:
+          gebp(res.getSubMapper(i2, j2), blockA, blockB, actual_mc, actual_kc, actual_nc, alpha);
+        }
+      }
+    }
+  }
+};
+
+// RHS-first loop order: nc -> kc -> mc. Used by SME to stream ColMajor result
+// stores through adjacent row panels.
+struct gemm_pack_rhs_first_loop_policy {
+  template <typename Index, typename LhsScalar, typename RhsScalar, typename ResScalar, typename LhsMapper,
+            typename RhsMapper, typename ResMapper, typename PackLhs, typename PackRhs, typename Gebp>
+  static EIGEN_STRONG_INLINE void run(Index rows, Index cols, Index depth, Index kc, Index mc, Index nc,
+                                      const LhsMapper& lhs, const RhsMapper& rhs, ResMapper& res, PackLhs& pack_lhs,
+                                      PackRhs& pack_rhs, Gebp& gebp, LhsScalar* blockA, RhsScalar* blockB,
+                                      ResScalar alpha) {
+    // Mirror of pack_rhs_once: reuse one full LHS panel across column blocks.
+    const bool pack_lhs_once = nc != cols && kc == depth && mc == rows;
+
+    for (Index j2 = 0; j2 < cols; j2 += nc) {
+      const Index actual_nc = (std::min)(j2 + nc, cols) - j2;
+
+      for (Index k2 = 0; k2 < depth; k2 += kc) {
+        const Index actual_kc = (std::min)(k2 + kc, depth) - k2;
+
+        // Pack one nc-strip of RHS and reuse it across all row panels.
+        pack_rhs(blockB, rhs.getSubMapper(k2, j2), actual_kc, actual_nc);
+
+        for (Index i2 = 0; i2 < rows; i2 += mc) {
+          const Index actual_mc = (std::min)(i2 + mc, rows) - i2;
+
+          if ((!pack_lhs_once) || j2 == 0) pack_lhs(blockA, lhs.getSubMapper(i2, k2), actual_kc, actual_mc);
+          gebp(res.getSubMapper(i2, j2), blockA, blockB, actual_mc, actual_kc, actual_nc, alpha);
+        }
+      }
+    }
+  }
+};
+
 /* Specialization for a row-major destination matrix => simple transposition of the product */
 template <typename Index, typename LhsScalar, int LhsStorageOrder, bool ConjugateLhs, typename RhsScalar,
           int RhsStorageOrder, bool ConjugateRhs, int ResInnerStride>
@@ -144,7 +217,7 @@ struct general_matrix_matrix_product<Index, LhsScalar, LhsStorageOrder, Conjugat
         for (Index i = 0; i < threads; ++i) info->task_info[i].users -= 1;
       }
     } else
-#endif  // defined(EIGEN_HAS_OPENMP) || defined(EIGEN_GEMM_THREADPOOL)
+#endif  // !defined(EIGEN_USE_BLAS) && (defined(EIGEN_HAS_OPENMP) || defined(EIGEN_GEMM_THREADPOOL))
     {
       EIGEN_UNUSED_VARIABLE(info);
 
@@ -155,35 +228,17 @@ struct general_matrix_matrix_product<Index, LhsScalar, LhsStorageOrder, Conjugat
       ei_declare_aligned_stack_constructed_variable(LhsScalar, blockA, sizeA, blocking.blockA());
       ei_declare_aligned_stack_constructed_variable(RhsScalar, blockB, sizeB, blocking.blockB());
 
-      const bool pack_rhs_once = mc != rows && kc == depth && nc == cols;
+      // SME uses RHS-first order so consecutive gebp calls stream through
+      // adjacent row panels of a ColMajor result. Other kernels keep Eigen's
+      // default LHS-first order.
+#ifdef EIGEN_VECTORIZE_SME
+      typedef gemm_pack_rhs_first_loop_policy SequentialGemmLoop;
+#else
+      typedef gemm_pack_lhs_first_loop_policy SequentialGemmLoop;
+#endif
 
-      // For each horizontal panel of the rhs, and corresponding panel of the lhs...
-      for (Index i2 = 0; i2 < rows; i2 += mc) {
-        const Index actual_mc = (std::min)(i2 + mc, rows) - i2;
-
-        for (Index k2 = 0; k2 < depth; k2 += kc) {
-          const Index actual_kc = (std::min)(k2 + kc, depth) - k2;
-
-          // OK, here we have selected one horizontal panel of rhs and one vertical panel of lhs.
-          // => Pack lhs's panel into a sequential chunk of memory (L2/L3 caching)
-          // Note that this panel will be read as many times as the number of blocks in the rhs's
-          // horizontal panel which is, in practice, a very low number.
-          pack_lhs(blockA, lhs.getSubMapper(i2, k2), actual_kc, actual_mc);
-
-          // For each kc x nc block of the rhs's horizontal panel...
-          for (Index j2 = 0; j2 < cols; j2 += nc) {
-            const Index actual_nc = (std::min)(j2 + nc, cols) - j2;
-
-            // We pack the rhs's block into a sequential chunk of memory (L2 caching)
-            // Note that this block will be read a very high number of times, which is equal to the number of
-            // micro horizontal panel of the large rhs's panel (e.g., rows/12 times).
-            if ((!pack_rhs_once) || i2 == 0) pack_rhs(blockB, rhs.getSubMapper(k2, j2), actual_kc, actual_nc);
-
-            // Everything is packed, we can now call the panel * block kernel:
-            gebp(res.getSubMapper(i2, j2), blockA, blockB, actual_mc, actual_kc, actual_nc, alpha);
-          }
-        }
-      }
+      SequentialGemmLoop::run(rows, cols, depth, kc, mc, nc, lhs, rhs, res, pack_lhs, pack_rhs, gebp, blockA, blockB,
+                              alpha);
     }
   }
 };
@@ -232,15 +287,15 @@ class level3_blocking {
   typedef RhsScalar_ RhsScalar;
 
  protected:
-  LhsScalar* m_blockA;
-  RhsScalar* m_blockB;
+  LhsScalar* m_blockA = nullptr;
+  RhsScalar* m_blockB = nullptr;
 
-  Index m_mc;
-  Index m_nc;
-  Index m_kc;
+  Index m_mc = 0;
+  Index m_nc = 0;
+  Index m_kc = 0;
 
  public:
-  level3_blocking() : m_blockA(0), m_blockB(0), m_mc(0), m_nc(0), m_kc(0) {}
+  level3_blocking() = default;
 
   inline Index mc() const { return m_mc; }
   inline Index nc() const { return m_nc; }
@@ -381,15 +436,17 @@ struct generic_product_impl<Lhs, Rhs, DenseShape, DenseShape, GemmProduct>
 
   typedef generic_product_impl<Lhs, Rhs, DenseShape, DenseShape, CoeffBasedProductMode> lazyproduct;
 
+  // The runtime-size heuristic comes from bug 404 and was tuned with a
+  // helper program on Haswell. The rhs.rows() > 0 guard preserves the
+  // historical empty-product path through scaleAndAddTo().
+  template <typename Dst>
+  static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool useRuntimeCoeffBasedProduct(const Dst& dst, const Rhs& rhs) {
+    return rhs.rows() > 0 && (rhs.rows() + dst.rows() + dst.cols()) < EIGEN_GEMM_TO_COEFFBASED_THRESHOLD;
+  }
+
   template <typename Dst>
   static void evalTo(Dst& dst, const Lhs& lhs, const Rhs& rhs) {
-    // See http://eigen.tuxfamily.org/bz/show_bug.cgi?id=404 for a discussion and helper program
-    // to determine the following heuristic.
-    // EIGEN_GEMM_TO_COEFFBASED_THRESHOLD is typically defined to 20 in GeneralProduct.h,
-    // unless it has been specialized by the user or for a given architecture.
-    // Note that the condition rhs.rows()>0 was required because lazy product did not handle empty inputs
-    // correctly. It is unclear whether this guard is still necessary.
-    if ((rhs.rows() + dst.rows() + dst.cols()) < EIGEN_GEMM_TO_COEFFBASED_THRESHOLD && rhs.rows() > 0)
+    if (useRuntimeCoeffBasedProduct(dst, rhs))
       lazyproduct::eval_dynamic(dst, lhs, rhs, internal::assign_op<typename Dst::Scalar, Scalar>());
     else {
       dst.setZero();
@@ -399,7 +456,7 @@ struct generic_product_impl<Lhs, Rhs, DenseShape, DenseShape, GemmProduct>
 
   template <typename Dst>
   static void addTo(Dst& dst, const Lhs& lhs, const Rhs& rhs) {
-    if ((rhs.rows() + dst.rows() + dst.cols()) < EIGEN_GEMM_TO_COEFFBASED_THRESHOLD && rhs.rows() > 0)
+    if (useRuntimeCoeffBasedProduct(dst, rhs))
       lazyproduct::eval_dynamic(dst, lhs, rhs, internal::add_assign_op<typename Dst::Scalar, Scalar>());
     else
       scaleAndAddTo(dst, lhs, rhs, Scalar(1));
@@ -407,7 +464,7 @@ struct generic_product_impl<Lhs, Rhs, DenseShape, DenseShape, GemmProduct>
 
   template <typename Dst>
   static void subTo(Dst& dst, const Lhs& lhs, const Rhs& rhs) {
-    if ((rhs.rows() + dst.rows() + dst.cols()) < EIGEN_GEMM_TO_COEFFBASED_THRESHOLD && rhs.rows() > 0)
+    if (useRuntimeCoeffBasedProduct(dst, rhs))
       lazyproduct::eval_dynamic(dst, lhs, rhs, internal::sub_assign_op<typename Dst::Scalar, Scalar>());
     else
       scaleAndAddTo(dst, lhs, rhs, Scalar(-1));

@@ -808,8 +808,9 @@ fn parse_pixi(stream: &mut IStream) -> AvifResult<ItemProperty> {
             pixi.planes[i].channel_idc = Some(ChannelIdc::from(stream.read_bits(3)?)); // unsigned int(3) channel_idc;
             stream.skip_bits(1)?; // unsigned int(1) reserved = 0;
             let component_format = stream.read_bits(2)?; // unsigned int(2) component_format;
-            if component_format != 0 {
-                // Only unsigned integer samples are supported. Float and complex types are not.
+            if component_format != 0 && (!cfg!(feature = "satofloat") || component_format != 3) {
+                // Only unsigned integer samples are supported (and floating point samples if the
+                // "satofloat" feature is enabled). Signed integer and complex samples are not.
                 return AvifError::not_implemented();
             }
 
@@ -1086,6 +1087,9 @@ fn parse_hvcC(stream: &mut IStream) -> AvifResult<ItemProperty> {
         for _j in 0..num_nalus {
             // unsigned int(16) nalUnitLength;
             let nal_unit_length = stream.read_u16()?;
+            if nal_unit_length == 0 {
+                continue;
+            }
             let nal_unit = stream.get_slice(nal_unit_length as usize)?;
             let nal_unit_type = (nal_unit[0] >> 1) & 0x3f;
             match nal_unit_type {

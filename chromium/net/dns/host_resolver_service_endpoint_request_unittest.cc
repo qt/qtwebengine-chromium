@@ -13,6 +13,7 @@
 #include "base/functional/callback.h"
 #include "base/run_loop.h"
 #include "base/test/bind.h"
+#include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/time/time.h"
 #include "net/base/address_family.h"
@@ -28,8 +29,10 @@
 #include "net/dns/host_resolver_manager_service_endpoint_request_impl.h"
 #include "net/dns/host_resolver_manager_unittest.h"
 #include "net/dns/host_resolver_results_test_util.h"
+#include "net/dns/mock_host_resolver.h"
 #include "net/dns/public/host_resolver_results.h"
 #include "net/dns/public/host_resolver_source.h"
+#include "net/dns/public/insecure_dns_mode.h"
 #include "net/dns/public/secure_dns_mode.h"
 #include "net/dns/public/secure_dns_policy.h"
 #include "net/dns/resolve_context.h"
@@ -68,7 +71,11 @@ IPEndPoint MakeIPEndPoint(std::string_view ip_literal, uint16_t port = 0) {
 class FakeAddressSorter : public AddressSorter {
  public:
   void Sort(const std::vector<IPEndPoint>& endpoints,
+            const NetworkAnonymizationKey& anonymization_key,
+            handles::NetworkHandle target_network,
             CallbackType callback) const override {
+    // This is used only for testing in scenarios that do not involve multiple
+    // networks. With that in mind, it's safe to ignore `target_network`.
     std::vector<IPEndPoint> sorted = endpoints;
     std::sort(sorted.begin(), sorted.end(),
               [](const IPEndPoint& a, const IPEndPoint& b) {
@@ -339,8 +346,8 @@ class HostResolverServiceEndpointRequestTest
       ResolveHostParameters parameters = ResolveHostParameters()) {
     return Requester(resolver_->CreateServiceEndpointRequest(
         HostResolver::Host(url::SchemeHostPort(GURL(host))),
-        NetworkAnonymizationKey(), net_log_with_source_, std::move(parameters),
-        resolve_context_.get()));
+        NetworkAnonymizationKey(), handles::kInvalidNetworkHandle,
+        net_log_with_source_, std::move(parameters), resolve_context_.get()));
   }
 
   Requester CreateSchemelessRequester(
@@ -348,31 +355,46 @@ class HostResolverServiceEndpointRequestTest
       ResolveHostParameters parameters = ResolveHostParameters()) {
     return Requester(resolver_->CreateServiceEndpointRequest(
         HostResolver::Host(std::move(host_port_pair)),
-        NetworkAnonymizationKey(), net_log_with_source_, std::move(parameters),
-        resolve_context_.get()));
+        NetworkAnonymizationKey(), handles::kInvalidNetworkHandle,
+        net_log_with_source_, std::move(parameters), resolve_context_.get()));
   }
 
   LegacyRequester CreateLegacyRequester(std::string_view host) {
     return LegacyRequester(resolver_->CreateRequest(
         url::SchemeHostPort(GURL(host)), NetworkAnonymizationKey(),
-        NetLogWithSource(), ResolveHostParameters(), resolve_context_.get()));
+        handles::kInvalidNetworkHandle, NetLogWithSource(),
+        ResolveHostParameters(), resolve_context_.get()));
   }
 
   void PopulateCacheForUrl(std::string_view host,
                            std::vector<IPEndPoint> endpoints,
                            bool secure = false) {
-    HostCache::Key key =
-        HostCache::Key(url::SchemeHostPort(GURL(host)),
-                       DnsQueryType::UNSPECIFIED, /*host_resolver_flags=*/0,
-                       HostResolverSource::ANY, NetworkAnonymizationKey());
+    HostCache::Key key = HostCache::Key(
+        url::SchemeHostPort(GURL(host)), DnsQueryType::UNSPECIFIED,
+        /*host_resolver_flags=*/0, HostResolverSource::ANY,
+        NetworkAnonymizationKey(), handles::kInvalidNetworkHandle);
     key.secure = secure;
     PopulateCache(key, std::move(endpoints));
+  }
+
+  void PopulateCacheWithNegativeEntryForUrl(std::string_view host) {
+    HostCache::Key key = HostCache::Key(
+        url::SchemeHostPort(GURL(host)), DnsQueryType::UNSPECIFIED,
+        /*host_resolver_flags=*/0, HostResolverSource::ANY,
+        NetworkAnonymizationKey(), handles::kInvalidNetworkHandle);
+    resolve_context_->host_cache()->Set(
+        key,
+        HostCache::Entry(ERR_NAME_NOT_RESOLVED, HostCache::Entry::SOURCE_DNS),
+        base::TimeTicks::Now(), kDefaultTtl);
   }
 
   void AdvanceTickClockToExpirePopulatedCacheEntries() {
     // PopulateCache() uses kDefaultTtl for TTL.
     FastForwardBy(kDefaultTtl);
   }
+
+ protected:
+  base::test::ScopedFeatureList& feature_list() { return feature_list_; }
 
  private:
   base::test::ScopedFeatureList feature_list_;
@@ -436,7 +458,7 @@ TEST_F(HostResolverServiceEndpointRequestTest, KillDnsTask) {
   // DNS client causing AbortInsecureDnsTasks. The request falls back to
   // SystemTask, which doesn't resolve the destination.
   resolver_->SetInsecureDnsClientEnabled(
-      HostResolverManager::InsecureDnsMode::kDisabled,
+      InsecureDnsMode::kDisabled,
       /*additional_dns_types_enabled=*/false);
   ASSERT_TRUE(requester.request()->GetEndpointResults().empty());
   ASSERT_TRUE(requester.request()->GetDnsAliasResults().empty());
@@ -483,7 +505,7 @@ TEST_F(HostResolverServiceEndpointRequestTest, KillDnsTaskFallbackSecure) {
   // DNS client causing AbortInsecureDnsTasks, triggering secure DNS task as
   // fallback.
   resolver_->SetInsecureDnsClientEnabled(
-      HostResolverManager::InsecureDnsMode::kDisabled,
+      InsecureDnsMode::kDisabled,
       /*additional_dns_types_enabled=*/false);
 
   EXPECT_THAT(requester.request()->GetEndpointResults(),
@@ -556,13 +578,14 @@ TEST_F(HostResolverServiceEndpointRequestTest, ResolveLocally) {
   UseNonDelayedDnsRules("ok");
 
   // The first local only request should complete synchronously with a cache
-  // miss.
+  // miss. The return value should be squashed while GetResolveErrorInfo()
+  // should provide the detailed error.
   {
     ResolveHostParameters parameters;
     parameters.source = HostResolverSource::LOCAL_ONLY;
     Requester requester = CreateRequester("https://ok", std::move(parameters));
     int rv = requester.Start();
-    EXPECT_THAT(rv, IsError(ERR_DNS_CACHE_MISS));
+    EXPECT_THAT(rv, IsError(ERR_NAME_NOT_RESOLVED));
     EXPECT_THAT(requester.request()->GetResolveErrorInfo(),
                 ResolveErrorInfo(ERR_DNS_CACHE_MISS));
   }
@@ -601,6 +624,31 @@ TEST_F(HostResolverServiceEndpointRequestTest, ResolveLocally) {
   }
 }
 
+// Test that a request fails with a squashed error code when its
+// ResolveContext is shut down before Start(). GetResolveErrorInfo() should
+// provide the detailed error.
+TEST_F(HostResolverServiceEndpointRequestTest, ContextShutDownBeforeStart) {
+  UseNonDelayedDnsRules("ok");
+
+  auto resolve_context2 = std::make_unique<ResolveContext>(
+      resolve_context_->url_request_context(), /*enable_caching=*/true);
+  resolver_->RegisterResolveContext(resolve_context2.get());
+
+  Requester requester(resolver_->CreateServiceEndpointRequest(
+      HostResolver::Host(url::SchemeHostPort(GURL("https://ok"))),
+      NetworkAnonymizationKey(), handles::kInvalidNetworkHandle,
+      NetLogWithSource(), ResolveHostParameters(), resolve_context2.get()));
+
+  // Simulate a context shutdown before Start().
+  resolver_->DeregisterResolveContext(resolve_context2.get());
+  resolve_context2.reset();
+
+  int rv = requester.Start();
+  EXPECT_THAT(rv, IsError(ERR_NAME_NOT_RESOLVED));
+  EXPECT_THAT(requester.request()->GetResolveErrorInfo(),
+              ResolveErrorInfo(ERR_CONTEXT_SHUT_DOWN));
+}
+
 // Test that a local only request fails due to a blocked reachability check.
 TEST_F(HostResolverServiceEndpointRequestTest,
        Ipv6GloballyReachableCheckAsyncLocalOnly) {
@@ -612,6 +660,81 @@ TEST_F(HostResolverServiceEndpointRequestTest,
   Requester requester = CreateRequester("https://ok", std::move(parameters));
   int rv = requester.Start();
   EXPECT_THAT(rv, IsError(ERR_NAME_NOT_RESOLVED));
+}
+
+// Test that a request that resolves locally (an IP literal) after an
+// asynchronous IPv6 reachability check notifies the delegate of the
+// completion.
+TEST_F(HostResolverServiceEndpointRequestTest,
+       Ipv6GloballyReachableCheckAsyncIpLiteral) {
+  set_globally_reachable_check_is_async(true);
+  UseNonDelayedDnsRules("ok");
+
+  Requester requester = CreateRequester("https://127.0.0.1");
+  int rv = requester.Start();
+  EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
+
+  requester.WaitForFinished();
+  EXPECT_THAT(requester.finished_result(), Optional(IsOk()));
+  EXPECT_THAT(requester.finished_endpoints(),
+              ElementsAre(ExpectServiceEndpoint(
+                  ElementsAre(MakeIPEndPoint("127.0.0.1", 443)))));
+}
+
+// Test that a request that resolves locally (a host cache hit) after an
+// asynchronous IPv6 reachability check notifies the delegate of the
+// completion.
+TEST_F(HostResolverServiceEndpointRequestTest,
+       Ipv6GloballyReachableCheckAsyncCacheHit) {
+  set_globally_reachable_check_is_async(true);
+  UseNonDelayedDnsRules("ok");
+
+  IPEndPoint cached_endpoint1 = MakeIPEndPoint("192.0.2.1", 443);
+  IPEndPoint cached_endpoint2 = MakeIPEndPoint("2001:db8::1", 443);
+  PopulateCacheForUrl("https://ok", {cached_endpoint1, cached_endpoint2});
+
+  Requester requester = CreateRequester("https://ok");
+  int rv = requester.Start();
+  EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
+
+  requester.WaitForFinished();
+  EXPECT_THAT(requester.finished_result(), Optional(IsOk()));
+  EXPECT_THAT(
+      requester.finished_endpoints(),
+      ElementsAre(ExpectServiceEndpoint(ElementsAre(cached_endpoint1),
+                                        ElementsAre(cached_endpoint2))));
+}
+
+// Test that a request fails gracefully when its ResolveContext is shut down
+// while waiting for an asynchronous IPv6 reachability check.
+TEST_F(HostResolverServiceEndpointRequestTest,
+       ContextShutDownDuringAsyncIpv6ReachabilityCheck) {
+  set_globally_reachable_check_is_async(true);
+  UseNonDelayedDnsRules("ok");
+
+  auto resolve_context2 = std::make_unique<ResolveContext>(
+      resolve_context_->url_request_context(), /*enable_caching=*/true);
+  resolver_->RegisterResolveContext(resolve_context2.get());
+
+  Requester requester(resolver_->CreateServiceEndpointRequest(
+      HostResolver::Host(url::SchemeHostPort(GURL("https://ok"))),
+      NetworkAnonymizationKey(), handles::kInvalidNetworkHandle,
+      NetLogWithSource(), ResolveHostParameters(), resolve_context2.get()));
+  int rv = requester.Start();
+  EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
+
+  // Simulate a context shutdown while the request is waiting for the IPv6
+  // reachability check.
+  resolver_->DeregisterResolveContext(resolve_context2.get());
+  resolve_context2.reset();
+
+  ASSERT_TRUE(base::test::RunUntil(
+      [&]() { return requester.finished_result().has_value(); }));
+  ASSERT_THAT(requester.finished_result(),
+              Optional(IsError(ERR_NAME_NOT_RESOLVED)));
+  EXPECT_THAT(requester.request()->GetResolveErrorInfo(),
+              ResolveErrorInfo(ERR_CONTEXT_SHUT_DOWN));
+  EXPECT_THAT(requester.request()->GetEndpointResults(), IsEmpty());
 }
 
 TEST_F(HostResolverServiceEndpointRequestTest, EndpointsAreSorted) {
@@ -1375,6 +1498,9 @@ TEST_F(HostResolverServiceEndpointRequestTest,
   int rv = requester.Start();
   EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
 
+  EXPECT_FALSE(requester.request()->IsStaleWhileRefreshing());
+  EXPECT_FALSE(requester.request()->GetStaleInfo());
+
   mock_dns_client_->CompleteDelayedTransactions();
   requester.WaitForFinished();
   EXPECT_THAT(requester.finished_result(), Optional(IsOk()));
@@ -1477,7 +1603,9 @@ TEST_F(HostResolverServiceEndpointRequestTest,
   parameters.source = HostResolverSource::LOCAL_ONLY;
   Requester requester = CreateRequester("https://ok", std::move(parameters));
   int rv = requester.Start();
-  EXPECT_THAT(rv, IsError(ERR_DNS_CACHE_MISS));
+  EXPECT_THAT(rv, IsError(ERR_NAME_NOT_RESOLVED));
+  EXPECT_THAT(requester.request()->GetResolveErrorInfo(),
+              ResolveErrorInfo(ERR_DNS_CACHE_MISS));
   EXPECT_FALSE(requester.request()->GetStaleInfo());
 }
 
@@ -1504,7 +1632,7 @@ TEST_F(HostResolverServiceEndpointRequestTest, AllowStaleWhileRefreshing) {
   EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
   requester.WaitForOnUpdated();
   EXPECT_TRUE(requester.request()->GetStaleInfo());
-  EXPECT_TRUE(requester.request()->IsStaleWhileRefresing());
+  EXPECT_TRUE(requester.request()->IsStaleWhileRefreshing());
   EXPECT_THAT(requester.request()->GetEndpointResults(),
               ElementsAre(ExpectServiceEndpoint(ElementsAre(stale_endpoint1),
                                                 ElementsAre(stale_endpoint2))));
@@ -1516,7 +1644,45 @@ TEST_F(HostResolverServiceEndpointRequestTest, AllowStaleWhileRefreshing) {
   EXPECT_THAT(requester.finished_endpoints(),
               ElementsAre(ExpectServiceEndpoint(ElementsAre(fresh_endpoint1),
                                                 ElementsAre(fresh_endpoint2))));
-  EXPECT_FALSE(requester.request()->IsStaleWhileRefresing());
+  EXPECT_FALSE(requester.request()->IsStaleWhileRefreshing());
+  EXPECT_FALSE(requester.request()->GetStaleInfo());
+}
+
+// Tests that a stale negative cache entry is not treated as the final result.
+// The request should refresh without providing the stale error as an
+// intermediate result.
+TEST_F(HostResolverServiceEndpointRequestTest,
+       AllowStaleWhileRefreshingStaleNegative) {
+  UseNonDelayedDnsRules("ok");
+
+  IPEndPoint fresh_endpoint1 = MakeIPEndPoint("127.0.0.1", 443);
+  IPEndPoint fresh_endpoint2 = MakeIPEndPoint("::1", 443);
+
+  PopulateCacheWithNegativeEntryForUrl("https://ok");
+  AdvanceTickClockToExpirePopulatedCacheEntries();
+
+  ResolveHostParameters parameters;
+  parameters.cache_usage = HostResolver::ResolveHostParameters::CacheUsage::
+      STALE_ALLOWED_WHILE_REFRESHING;
+  Requester requester = CreateRequester("https://ok", std::move(parameters));
+
+  // The stale negative result should not finish the request synchronously.
+  int rv = requester.Start();
+  ASSERT_THAT(rv, IsError(ERR_IO_PENDING));
+
+  // The stale negative result should not be provided as an intermediate
+  // result.
+  EXPECT_THAT(requester.request()->GetEndpointResults(), IsEmpty());
+  EXPECT_FALSE(requester.request()->IsStaleWhileRefreshing());
+  EXPECT_FALSE(requester.request()->GetStaleInfo());
+
+  // Wait for completion. The request should provide fresh results.
+  requester.WaitForFinished();
+  EXPECT_THAT(requester.finished_result(), Optional(IsOk()));
+  EXPECT_THAT(requester.finished_endpoints(),
+              ElementsAre(ExpectServiceEndpoint(ElementsAre(fresh_endpoint1),
+                                                ElementsAre(fresh_endpoint2))));
+  EXPECT_FALSE(requester.request()->IsStaleWhileRefreshing());
   EXPECT_FALSE(requester.request()->GetStaleInfo());
 }
 
@@ -1546,7 +1712,7 @@ TEST_F(HostResolverServiceEndpointRequestTest,
   EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
   requester.WaitForOnUpdated();
   EXPECT_TRUE(requester.request()->GetStaleInfo());
-  EXPECT_TRUE(requester.request()->IsStaleWhileRefresing());
+  EXPECT_TRUE(requester.request()->IsStaleWhileRefreshing());
   EXPECT_THAT(requester.request()->GetEndpointResults(),
               ElementsAre(ExpectServiceEndpoint(ElementsAre(stale_endpoint1),
                                                 ElementsAre(stale_endpoint2))));
@@ -1563,7 +1729,7 @@ TEST_F(HostResolverServiceEndpointRequestTest,
   EXPECT_THAT(requester.request()->GetEndpointResults(),
               ElementsAre(ExpectServiceEndpoint(IsEmpty(),
                                                 ElementsAre(fresh_endpoint2))));
-  EXPECT_FALSE(requester.request()->IsStaleWhileRefresing());
+  EXPECT_FALSE(requester.request()->IsStaleWhileRefreshing());
   EXPECT_FALSE(requester.request()->GetStaleInfo());
 
   // Complete A request, which finishes the request synchronously.
@@ -1572,7 +1738,7 @@ TEST_F(HostResolverServiceEndpointRequestTest,
   EXPECT_THAT(requester.finished_endpoints(),
               ElementsAre(ExpectServiceEndpoint(ElementsAre(fresh_endpoint1),
                                                 ElementsAre(fresh_endpoint2))));
-  EXPECT_FALSE(requester.request()->IsStaleWhileRefresing());
+  EXPECT_FALSE(requester.request()->IsStaleWhileRefreshing());
   EXPECT_FALSE(requester.request()->GetStaleInfo());
 }
 
@@ -1598,7 +1764,7 @@ TEST_F(HostResolverServiceEndpointRequestTest,
   int rv = requester.Start();
   EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
   EXPECT_TRUE(requester.request()->GetStaleInfo());
-  EXPECT_TRUE(requester.request()->IsStaleWhileRefresing());
+  EXPECT_TRUE(requester.request()->IsStaleWhileRefreshing());
   EXPECT_THAT(requester.request()->GetEndpointResults(),
               ElementsAre(ExpectServiceEndpoint(ElementsAre(stale_endpoint1),
                                                 ElementsAre(stale_endpoint2))));
@@ -1681,7 +1847,7 @@ TEST_F(HostResolverServiceEndpointRequestTest,
   EXPECT_THAT(requester.finished_endpoints(),
               ElementsAre(ExpectServiceEndpoint(ElementsAre(fresh_endpoint),
                                                 IsEmpty())));
-  ASSERT_FALSE(requester.request()->IsStaleWhileRefresing());
+  ASSERT_FALSE(requester.request()->IsStaleWhileRefreshing());
 }
 
 TEST_F(HostResolverServiceEndpointRequestTest, NoSchemeHttpsNotQueried) {
@@ -1738,6 +1904,115 @@ TEST_F(HostResolverServiceEndpointRequestTest, ReentrantCancelDuringAbortAll) {
   ASSERT_FALSE(requester_b.request());
 
   proc_->SignalMultiple(2u);
+}
+
+class HostResolverServiceEndpointRequestIntermediateResultsOnlyTest
+    : public HostResolverServiceEndpointRequestTest {
+ public:
+  HostResolverServiceEndpointRequestIntermediateResultsOnlyTest() {
+    feature_list().Reset();
+    feature_list().InitWithFeatures(
+        /*enabled_features=*/{features::kEnableIntermediateDnsResults},
+        /*disabled_features=*/{features::kHappyEyeballsV3});
+  }
+};
+
+TEST_F(HostResolverServiceEndpointRequestIntermediateResultsOnlyTest,
+       Ipv4Slow) {
+  UseIpv4DelayedDnsRules("4slow_ok");
+
+  Requester requester = CreateRequester("https://4slow_ok");
+  int rv = requester.Start();
+  EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
+  EXPECT_EQ(3u, resolver_->num_running_dispatcher_jobs_for_tests());
+
+  // AAAA and HTTPS should complete.
+  requester.WaitForOnUpdated();
+  EXPECT_EQ(1u, resolver_->num_running_dispatcher_jobs_for_tests());
+  ASSERT_FALSE(requester.finished_result().has_value());
+  ASSERT_TRUE(requester.request()->EndpointsCryptoReady());
+  EXPECT_THAT(requester.request()->GetEndpointResults(),
+              ElementsAre(ExpectServiceEndpoint(
+                  IsEmpty(), ElementsAre(MakeIPEndPoint("::1", 443)))));
+  EXPECT_THAT(requester.request()->GetDnsAliasResults(),
+              UnorderedElementsAre("4slow_ok"));
+
+  // Complete A request, which finishes the request synchronously.
+  mock_dns_client_->CompleteDelayedTransactions();
+  ASSERT_TRUE(requester.request()->EndpointsCryptoReady());
+  EXPECT_THAT(*requester.finished_result(), IsOk());
+  EXPECT_THAT(requester.finished_endpoints(),
+              ElementsAre(ExpectServiceEndpoint(
+                  ElementsAre(MakeIPEndPoint("127.0.0.1", 443)),
+                  ElementsAre(MakeIPEndPoint("::1", 443)))));
+  EXPECT_THAT(requester.request()->GetDnsAliasResults(),
+              UnorderedElementsAre("4slow_ok"));
+}
+
+TEST(HangingHostResolverTest, ServiceEndpointRequest) {
+  base::test::TaskEnvironment task_environment;
+  HangingHostResolver resolver;
+  auto request = resolver.CreateServiceEndpointRequest(
+      HostResolver::Host(HostPortPair("example.com", 80)),
+      NetworkAnonymizationKey(), handles::kInvalidNetworkHandle,
+      NetLogWithSource(), HostResolver::ResolveHostParameters());
+
+  class TestDelegate : public HostResolver::ServiceEndpointRequest::Delegate {
+   public:
+    void OnServiceEndpointsUpdated() override { FAIL(); }
+    void OnServiceEndpointRequestFinished(int rv) override { FAIL(); }
+  };
+
+  TestDelegate delegate;
+  int rv = request->Start(&delegate);
+  EXPECT_EQ(rv, ERR_IO_PENDING);
+  EXPECT_TRUE(request->GetEndpointResults().empty());
+  EXPECT_TRUE(request->GetDnsAliasResults().empty());
+  EXPECT_FALSE(request->EndpointsCryptoReady());
+}
+
+TEST(HangingHostResolverTest, ServiceEndpointRequestCancellation) {
+  base::test::TaskEnvironment task_environment;
+  HangingHostResolver resolver;
+  auto request = resolver.CreateServiceEndpointRequest(
+      HostResolver::Host(HostPortPair("example.com", 80)),
+      NetworkAnonymizationKey(), handles::kInvalidNetworkHandle,
+      NetLogWithSource(), HostResolver::ResolveHostParameters());
+
+  class TestDelegate : public HostResolver::ServiceEndpointRequest::Delegate {
+   public:
+    void OnServiceEndpointsUpdated() override {}
+    void OnServiceEndpointRequestFinished(int rv) override {}
+  };
+
+  TestDelegate delegate;
+  int rv = request->Start(&delegate);
+  EXPECT_EQ(rv, ERR_IO_PENDING);
+
+  EXPECT_EQ(resolver.num_cancellations(), 0);
+  request.reset();
+  EXPECT_EQ(resolver.num_cancellations(), 1);
+}
+
+TEST(HangingHostResolverTest, ServiceEndpointRequestLocalOnly) {
+  base::test::TaskEnvironment task_environment;
+  HangingHostResolver resolver;
+  HostResolver::ResolveHostParameters parameters;
+  parameters.source = HostResolverSource::LOCAL_ONLY;
+  auto request = resolver.CreateServiceEndpointRequest(
+      HostResolver::Host(HostPortPair("example.com", 80)),
+      NetworkAnonymizationKey(), handles::kInvalidNetworkHandle,
+      NetLogWithSource(), parameters);
+
+  class TestDelegate : public HostResolver::ServiceEndpointRequest::Delegate {
+   public:
+    void OnServiceEndpointsUpdated() override { FAIL(); }
+    void OnServiceEndpointRequestFinished(int rv) override { FAIL(); }
+  };
+
+  TestDelegate delegate;
+  int rv = request->Start(&delegate);
+  EXPECT_EQ(rv, ERR_DNS_CACHE_MISS);
 }
 
 }  // namespace net

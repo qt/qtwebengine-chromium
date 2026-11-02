@@ -186,6 +186,15 @@
   <message name="IDS_PROFILE_MENU_PROFILE_IDENTIFIER_WITH_SEPARATOR" desc="The user name and profile name are separated by a symbol, in this case bullet •, with a white space before it and a white space after it. If the bullet • resembles another symbol in the language, please translate the bullet • as a symbol (A) that is not easily mistaken for a number or letter in the language and (B) that is typically used to separate elements.">
     <ph name="USER_NAME">$1<ex>John</ex></ph> • <ph name="PROFILE_NAME">$2<ex>Work</ex></ph>
   </message>
+  <message name="IDS_PROFILE_MENU_PROFILE_IDENTIFIER_WITH_NAME_AND_TIER" is_accessibility_with_no_ui="true" desc="The user name, profile name, and the Google membership tier are separated by a symbol, in this case bullet •, with a white space before it and a white space after it. If the bullet • resembles another symbol in the language, please translate the bullet • as a symbol (A) that is not easily mistaken for a number or letter in the language and (B) that is typically used to separate elements.">
+    <ph name="USER_NAME">$1<ex>John</ex></ph> • <ph name="PROFILE_NAME">$2<ex>Work</ex></ph> • <ph name="TIER_NAME">$3<ex>Google Subscription</ex></ph>
+  </message>
+  <message name="IDS_PROFILE_AVATAR_NAME_WITH_AI_MEMBERSHIP" desc="Label indicating that the profile has a Google membership associated with the AI avatar ring, preceded by the profile name or details.">
+    <ph name="PROFILE_NAME">$1<ex>Alice</ex></ph>. Google membership
+  </message>
+  <message name="IDS_PROFILE_MENU_PROFILE_IDENTIFIER_WITH_TIER" is_accessibility_with_no_ui="true" desc="Label indicating that the profile has a Google membership tier associated with the AI avatar ring, preceded by the profile name. The profile name and the tier name are separated by a symbol, in this case bullet •, with a white space before it and a white space after it. If the bullet • resembles another symbol in the language, please translate the bullet • as a symbol (A) that is not easily mistaken for a number or letter in the language and (B) that is typically used to separate elements.">
+    <ph name="PROFILE_NAME">$1<ex>Alice</ex></ph> • <ph name="TIER_NAME">$2<ex>Google Subscription</ex></ph>
+  </message>
   <message name="IDS_PROFILE_MENU_PROFILE_MANAGED_HEADER" desc="Disclaimer indicating that the profile is managed">
     This profile is managed
   </message>
@@ -567,20 +576,11 @@
   <if expr="not is_android">
 
     <!-- Feature Showcase - Google Password Manager -->
-    <message name="IDS_FEATURE_SHOWCASE_PASSWORD_MANAGER_TITLE" desc="Headline for the password security onboarding screen. It introduces the product name 'Google Password Manager,' which should typically remain in English or follow established brand guidelines for the locale. The intent is to highlight safety and security. (CHAR LIMIT = 50)">
-      Stay safe with Google Password Manager
-    </message>
-    <message name="IDS_FEATURE_SHOWCASE_PASSWORD_MANAGER_SUBTITLE" desc="Description for the Google Password Manager page in the Feature Showcase.">
-      Built into Chrome to help you create, save, and autofill strong passwords. Add the shortcut for easy access
-    </message>
-    <message name="IDS_FEATURE_SHOWCASE_PASSWORD_MANAGER_NO_THANKS" desc="Label for the 'No thanks' button to not pin the Google Password Manager to toolbar.">
+    <message name="IDS_FEATURE_SHOWCASE_PASSWORD_MANAGER_NO_THANKS" desc="Label for the 'No thanks' button to not pin the Password Manager to toolbar.">
       No thanks
     </message>
-    <message name="IDS_FEATURE_SHOWCASE_PASSWORD_MANAGER_ADD_TO_TOOLBAR" desc="Label for the 'Add to toolbar' button to pin the Google Password Manager to toolbar.">
+    <message name="IDS_FEATURE_SHOWCASE_PASSWORD_MANAGER_ADD_TO_TOOLBAR" desc="Label for the 'Add to toolbar' button to pin the Password Manager to toolbar.">
       Add to toolbar
-    </message>
-    <message name="IDS_FEATURE_SHOWCASE_PASSWORD_MANAGER_ILLUSTRATION_A11Y_LABEL" desc="Accessibility label for the illustration on the Google Password Manager page in the Feature Showcase.">
-      A simplified image showing the Google Password Manager entry point in Chrome
     </message>
 
     <!-- Batch Upload Desktop -->
@@ -941,6 +941,18 @@
     <message name="IDS_ENTERPRISE_WELCOME_MERGE_BROWSING_DATA_CHOICE_DETAILS" desc="Additional information of a radio button option that lets the user add their existing data from a newly created work profile.">
       Your organization will be able to see and manage any existing browsing data, such as passwords and more
     </message>
+    <message name="IDS_ENTERPRISE_DEVICE_SIGNALS_DISCLAIMER_PROFILE_INFORMATION_DETAILS" desc="Body text in the enterprise device signals collection disclaimer modal dialog. The dialog is shown on Chrome startup to managed Chrome users who have not previously acknowledged device signals collection. This string describes the profile-related information that their organization can see and manage.">
+      Your organization may need to see and manage browsing data in your work profile, such as your browsing history and passwords
+    </message>
+    <message name="IDS_ENTERPRISE_DEVICE_SIGNALS_DISCLAIMER_DEVICE_INFORMATION_DETAILS" desc="Body text in the enterprise device signals collection disclaimer modal dialog. The dialog is shown on Chrome startup to managed Chrome users who have not previously acknowledged device signals collection. This string describes the device-related information that their organization can see.">
+      To make sure this device can be used safely, your organization may need to see information about its operating system, browser, settings, and what software is installed on the device
+    </message>
+    <message name="IDS_ENTERPRISE_DEVICE_SIGNALS_DISCLAIMER_CONTINUE_BUTTON_LABEL" desc="Label of the primary confirmation button in the enterprise device signals collection disclaimer modal dialog. The dialog is shown on Chrome startup to managed Chrome users who have not previously acknowledged device signals collection. Clicking this button acknowledges the disclaimer, closes the dialog, and allows the user to continue using Chrome.">
+      Got it
+    </message>
+    <message name="IDS_ENTERPRISE_DEVICE_SIGNALS_DISCLAIMER_CANCEL_BUTTON_LABEL" desc="Label of the secondary/cancel button in the enterprise device signals collection disclaimer modal dialog. The dialog is shown on Chrome startup to managed Chrome users who have not previously acknowledged device signals collection. Clicking this button cancels the startup flow and signs the user out of their managed Chrome profile.">
+      Sign out
+    </message>
     <message name="IDS_BROWSING_HISTORY_COUNT" desc="Text describing the number of browsing history entries">
       {BROWSING_HISTORY_COUNT, plural,
         =1 {your browsing history of # site}
@@ -1205,16 +1217,22 @@
     <message name="IDS_FRE_NATIVE_TOOLBAR_DONT_SIGN_IN_BUTTON_LABEL" desc="A label for a button on the native toolbar to decline a prompt to sign in. Once clicked, the sign-in flow will be cancelled.">
       Don't sign in
     </message>
+    <message name="IDS_FRE_NATIVE_TOOLBAR_START_BROWSING_BUTTON_LABEL" desc="A label for a button on the native toolbar of the first run feature showcase screen to start browsing directly. Once clicked, the first run flow will close and open the New Tab Page.">
+      Start browsing
+    </message>
     <message name="IDS_FRE_NEXT_BUTTON_TITLE" desc="A title for a button that advances a user to the next step (sign in screen) in the first run experience flow.">
       Next
     </message>
-    <message name="IDS_FRE_FINISH_OR_CONTINUE_TITLE" desc="A title for the final onboarding screen (Finish or Continue) in the first run experience flow.  It indicates that the setup process is complete.">
+    <message name="IDS_FRE_FINISH_OR_CONTINUE_TITLE" desc="A title for the final onboarding screen (Finish or Continue) in the first run experience flow.  It indicates that the setup process is complete. CHAR LIMIT = 25">
       You're all set!
     </message>
-    <message name="IDS_FRE_FINISH_OR_CONTINUE_SEE_MORE_TIPS_BUTTON_LABEL" desc="A label for a button that leads to educational content. It appears on the final onboarding screen (Finish or Continue) in the first run experience flow.">
+    <message name="IDS_FRE_FINISH_OR_CONTINUE_SEE_MORE_TIPS_BUTTON_LABEL" desc="A label for a button that leads to educational content. It appears on the final onboarding screen (Finish or Continue) in the first run experience flow. CHAR LIMIT = 20">
       See more tips
     </message>
-    <message name="IDS_FRE_FINISH_OR_CONTINUE_START_BROWSING_BUTTON_LABEL" desc="A label for a button that enters the web. It appears on the final onboarding screen (Finish or Continue) in the first run experience flow.">
+    <message name="IDS_FRE_FINISH_OR_CONTINUE_SEE_WHATS_NEW_BUTTON_LABEL" desc="A label for a button that leads to educational content. It appears for users who have finished the whole FRE flow and weren’t eligible to any of the Feature Showcase steps. It appears on the final onboarding screen (Finish or Continue) in the first run experience flow. CHAR LIMIT = 20">
+      See what's new
+    </message>
+    <message name="IDS_FRE_FINISH_OR_CONTINUE_START_BROWSING_BUTTON_LABEL" desc="A label for a button that enters the web. It appears on the final onboarding screen (Finish or Continue) in the first run experience flow. CHAR LIMIT = 20">
       Start browsing
     </message>
 
@@ -1234,6 +1252,65 @@
       Set as default
     </message>
     <message name="IDS_FRE_REFRESH_DEFAULT_BROWSER_NO_THANKS" desc="The label for a button to skip setting Chrome as their default browser.">
+      No thanks
+    </message>
+
+    <!-- Feature Showcase - Lens Overlay -->
+    <message name="IDS_FEATURE_SHOWCASE_LENS_OVERLAY_SUBTITLE" desc="This is the subtitle for the Lens Overlay, explaining the primary use cases (shopping, translation, search).">
+      Select anything on your screen as you browse to shop, translate, and search using AI
+    </message>
+    <message name="IDS_FEATURE_SHOWCASE_LENS_OVERLAY_NOT_NOW" desc="The label for the 'Not now' button to not enable the Lens Overlay feature.">
+      Not now
+    </message>
+    <message name="IDS_FEATURE_SHOWCASE_LENS_OVERLAY_YES_IM_IN" desc="Label for the 'Yes, I'm in' button to enable the Lens Overlay feature.">
+      Yes, I'm in
+    </message>
+
+    <!-- Feature Showcase - Gemini -->
+    <message name="IDS_FEATURE_SHOWCASE_GEMINI_SUBTITLE" desc="This is a subtitle explaining a specific feature of the AI assistant: using active page content to provide better context. (CHAR LIMIT = 60)">
+      Get more relevant answers by sharing your tabs
+    </message>
+    <message name="IDS_FEATURE_SHOWCASE_GEMINI_DISCLOSURE_1_ROW" desc="This is the body text of a consent dialog. It explains the technical data flow (content and URLs) to Google for AI processing. The tone should be transparent and cautionary.">
+      Google uses the content and URL of shared tabs. Your current tab is shared in new chats. You can change this setting anytime.
+    </message>
+    <message name="IDS_FEATURE_SHOWCASE_GEMINI_DISCLOSURE_2_ROW" desc="This is a disclosure regarding human review and data usage for model training. 'Learn more' links to privacy choices. It is a critical privacy notice. This string includes legal disclaimers and a quality warning about AI 'hallucinations.' The tone should be cautionary.">
+      Chats are reviewed and used to improve Google AI. Gemini is AI and can make mistakes. You can <ph name="BEGIN_LINK_MANAGE_ACTIVITY">&lt;a href="$1" target="_blank"&gt;</ph>manage your activity<ph name="END_LINK_MANAGE_ACTIVITY">&lt;/a&gt;</ph>, including info about your location. <ph name="BEGIN_LINK_LEARN_MORE">&lt;a href="$2" target="_blank"&gt;</ph>Learn more about your choices<ph name="END_LINK_LEARN_MORE">&lt;/a&gt;</ph>
+    </message>
+    <message name="IDS_FEATURE_SHOWCASE_GEMINI_DISCLOSURE_2_US" desc="This is a disclosure regarding human review and data usage for model training. 'Learn more' links to privacy choices. It is a critical privacy notice. This string includes legal disclaimers and a quality warning about AI 'hallucinations.' The tone should be cautionary.">
+      Chats are reviewed and used to improve Google AI. Gemini is AI and can make mistakes. Some content may not be suitable for everyone. You can <ph name="BEGIN_LINK_MANAGE_ACTIVITY">&lt;a href="$1" target="_blank"&gt;</ph>manage your activity<ph name="END_LINK_MANAGE_ACTIVITY">&lt;/a&gt;</ph>, including info about your location. <ph name="BEGIN_LINK_LEARN_MORE">&lt;a href="$2" target="_blank"&gt;</ph>Learn more about your choices<ph name="END_LINK_LEARN_MORE">&lt;/a&gt;</ph>
+    </message>
+    <message name="IDS_FEATURE_SHOWCASE_GEMINI_DISCLOSURE_2_ENTERPRISE_ROW" desc="This string includes legal disclaimers and a quality warning about AI 'hallucinations.' The tone should be cautionary.">
+      Neither your conversations with Gemini nor your Google Workspace data will be reviewed or used to improve generative AI models. Gemini is AI and can make mistakes.
+    </message>
+    <message name="IDS_FEATURE_SHOWCASE_GEMINI_DISCLOSURE_2_ENTERPRISE_US" desc="This string includes legal disclaimers and a quality warning about AI 'hallucinations.' The tone should be cautionary.">
+      Neither your conversations with Gemini nor your Google Workspace data will be reviewed or used to improve generative AI models. Gemini is AI and can make mistakes. Some content may not be suitable for everyone.
+    </message>
+    <message name="IDS_FEATURE_SHOWCASE_GEMINI_DISCLOSURE_3_ROW" desc="">
+      <ph name="BEGIN_LINK_TERMS">&lt;a href="$1" target="_blank"&gt;</ph>Google Terms<ph name="END_LINK_TERMS">&lt;/a&gt;</ph> and the <ph name="BEGIN_LINK_PRIVACY">&lt;a href="$2" target="_blank"&gt;</ph>Gemini Apps Privacy Notice<ph name="END_LINK_PRIVACY">&lt;/a&gt;</ph> apply
+    </message>
+    <message name="IDS_FEATURE_SHOWCASE_GEMINI_DISCLOSURE_3_KR" desc="">
+      Our <ph name="BEGIN_LINK_TERMS">&lt;a href="$1" target="_blank"&gt;</ph>Terms<ph name="END_LINK_TERMS">&lt;/a&gt;</ph>, <ph name="BEGIN_LINK_LOCATION_TERMS">&lt;a href="$2" target="_blank"&gt;</ph>Korean Location Terms<ph name="END_LINK_LOCATION_TERMS">&lt;/a&gt;</ph>, and <ph name="BEGIN_LINK_PRIVACY">&lt;a href="$3" target="_blank"&gt;</ph>Privacy Notice<ph name="END_LINK_PRIVACY">&lt;/a&gt;</ph> apply.
+    </message>
+    <message name="IDS_FEATURE_SHOWCASE_GEMINI_NOT_NOW" desc="This is the button to decline the AI feature consent. (CHAR LIMIT = 15)">
+      Not now
+    </message>
+    <message name="IDS_FEATURE_SHOWCASE_GEMINI_YES_IM_IN" desc="This is a button to accept the AI feature consent. 'Yes, I'm in' is a colloquial phrase meaning 'I agree/consent.' Translate this as a positive, informal affirmation. (CHAR LIMIT = 15)">
+      Yes, I'm in
+    </message>
+
+    <!-- Enterprise profile welcome -->
+    <message name="IDS_FEATURE_SHOWCASE_STEPPER_A11Y_LABEL" is_accessibility_with_no_ui="true" desc="The accessible text for the feature showcase progress stepper, conveying the current step and total steps.">
+      Step <ph name="STEP_NUMBER">$1<ex>1</ex></ph> of <ph name="TOTAL_STEPS">$2<ex>3</ex></ph>
+    </message>
+
+    <!-- Feature Showcase - Themes and Customization -->
+    <message name="IDS_FEATURE_SHOWCASE_THEMES_SUBTITLE" desc="This is the subtitle for the customization screen, listing examples like 'themes' and 'dark mode'. (CHAR LIMIT = 60)">
+      Customize your browser with options like themes and dark mode.
+    </message>
+    <message name="IDS_FEATURE_SHOWCASE_THEMES_APPLY_THEME" desc="Label for the button to apply a theme to the browser. It is a verb-based action that initiates the visual change. Ensure 'Apply' is translated as a functional command. (CHAR LIMIT = 20)">
+      Apply theme
+    </message>
+    <message name="IDS_FEATURE_SHOWCASE_THEMES_NO_THANKS" desc="Label for a button that dismisses the option to personalize the browser. (CHAR LIMIT = 20)">
       No thanks
     </message>
 
@@ -1344,5 +1421,29 @@
     </message>
     <message name="IDS_SIGN_IN_BENEFITS_WITHOUT_BOOKMARKS_AND_EXTENSIONS_IPH_TEXT" desc="Text of the IPH bubble announcing benefits for users who signed in before the sync-to-signin migration, not mentioning bookmarks and extensions because they require an explicit sign in.">
       While you're signed in, you can use the themes, settings, and more saved in your Google Account on all your devices
+    </message>
+    <!-- Sign in on your phone (QR code) strings  -->
+    <if expr="not use_titlecase">
+      <message name="IDS_AVATAR_BUTTON_SIGNIN_ON_PHONE" desc="Text on the avatar pill expanding while the QR code bubble is showing, which will let the user sign in on their phone.">
+        Sign in on phone?
+      </message>
+    </if>
+    <if expr="use_titlecase">
+      <message name="IDS_AVATAR_BUTTON_SIGNIN_ON_PHONE" desc="Text on the avatar pill expanding while the QR code bubble is showing, which will let the user sign in on their phone.">
+        Sign In on Phone?
+      </message>
+    </if>
+    <if expr="not use_titlecase">
+      <message name="IDS_PROFILE_MENU_SIGNIN_ON_PHONE_BUTTON_LABEL" desc="Text of the Profile Menu button that opens the QR code bubble, which will let the user sign in on their phone.">
+        Sign in on your phone
+      </message>
+    </if>
+    <if expr="use_titlecase">
+      <message name="IDS_PROFILE_MENU_SIGNIN_ON_PHONE_BUTTON_LABEL" desc="Text of the Profile Menu button that opens the QR code bubble, which will let the user sign in on their phone.">
+        Sign In on Your Phone
+      </message>
+    </if>
+    <message name="IDS_QR_CODE_BUBBLE_SIGNIN_ON_PHONE_SUBTITLE" desc="Subtitle of the QR Code bubble showing a code for the user to sign in on their phone.">
+      To pick up where you left off, sign in to the same account on both devices
     </message>
 </grit-part>

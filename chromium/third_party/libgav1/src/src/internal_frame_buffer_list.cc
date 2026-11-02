@@ -15,12 +15,17 @@
 #include "src/internal_frame_buffer_list.h"
 
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 #include <new>
 #include <utility>
 
-#include "src/utils/common.h"
+#include "src/gav1/decoder_buffer.h"
+#include "src/gav1/frame_buffer.h"
+#include "src/gav1/status_code.h"
+#include "src/utils/memory.h"
 
 namespace libgav1 {
 extern "C" {

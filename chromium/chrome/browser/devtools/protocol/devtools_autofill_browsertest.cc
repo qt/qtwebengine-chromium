@@ -6,11 +6,12 @@
 #include "base/containers/to_vector.h"
 #include "base/strings/strcat.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/gmock_callback_support.h"
 #include "base/test/scoped_feature_list.h"
+#include "build/build_config.h"
 #include "chrome/browser/autofill/autofill_uitest_util.h"
 #include "chrome/browser/devtools/protocol/devtools_protocol_test_support.h"
-#include "chrome/browser/ui/browser.h"
-#include "chrome/test/base/ui_test_utils.h"
+#include "chrome/browser/profiles/profile.h"
 #include "components/autofill/content/browser/content_autofill_driver.h"
 #include "components/autofill/content/browser/test_autofill_manager_injector.h"
 #include "components/autofill/content/common/mojom/autofill_driver.mojom.h"
@@ -25,6 +26,7 @@
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/form_data_test_api.h"
 #include "components/autofill/core/common/unique_ids.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "net/dns/mock_host_resolver.h"
@@ -51,28 +53,23 @@ auto FilledFieldHasAttributeWithValue(const std::string& attribute,
       Eq(expected_value));
 }
 
-// Returns the all the `autofill::FieldType`s used to build an UI representation
-// of an address. These values are the same as the ones used in the settings
-// page and edit dialog, furthermore, they depend on a profile's `country_code`.
-std::set<autofill::FieldType>
-GetExpectedFieldTypesToBuildAddressUiForCountryCode(
+// Returns the all `FieldType`s used to build a UI representation of an address.
+// These values are the same as the ones used in the settings page and edit
+// dialog, furthermore, they depend on a profile's `country_code`.
+std::set<FieldType> GetExpectedFieldTypesToBuildAddressUiForCountryCode(
     const std::string& country_code) {
-  std::set<autofill::FieldType> expected_address_ui_field_types;
+  std::set<FieldType> expected_address_ui_field_types;
 
   // These types are not part of `AutofillAddressUIComponent`.
-  expected_address_ui_field_types.insert(
-      autofill::FieldType::ADDRESS_HOME_COUNTRY);
-  expected_address_ui_field_types.insert(
-      autofill::FieldType::PHONE_HOME_WHOLE_NUMBER);
-  expected_address_ui_field_types.insert(autofill::FieldType::EMAIL_ADDRESS);
+  expected_address_ui_field_types.insert(FieldType::ADDRESS_HOME_COUNTRY);
+  expected_address_ui_field_types.insert(FieldType::PHONE_HOME_WHOLE_NUMBER);
+  expected_address_ui_field_types.insert(FieldType::EMAIL_ADDRESS);
 
-  std::vector<std::vector<autofill::AutofillAddressUIComponent>> components;
-  autofill::GetAddressComponents(country_code, "en-US",
-                                 /*include_literals=*/false, &components,
-                                 nullptr);
-  for (const std::vector<autofill::AutofillAddressUIComponent>& line :
-       components) {
-    for (const autofill::AutofillAddressUIComponent& component : line) {
+  std::vector<std::vector<AutofillAddressUIComponent>> components;
+  GetAddressComponents(country_code, "en-US",
+                       /*include_literals=*/false, &components, nullptr);
+  for (const std::vector<AutofillAddressUIComponent>& line : components) {
+    for (const AutofillAddressUIComponent& component : line) {
       expected_address_ui_field_types.insert(component.field);
     }
   }
@@ -95,15 +92,15 @@ std::string GetProfileInfoFromAddressField(const AutofillProfile profile,
 }
 
 // Adds waiting capabilities to BrowserAutofillManager.
-class TestAutofillManager : public autofill::BrowserAutofillManager {
+class TestAutofillManager : public BrowserAutofillManager {
  public:
-  explicit TestAutofillManager(autofill::ContentAutofillDriver* driver)
+  explicit TestAutofillManager(ContentAutofillDriver* driver)
       : BrowserAutofillManager(driver) {}
 
   static TestAutofillManager& GetForRenderFrameHost(
       content::RenderFrameHost* rfh) {
     return static_cast<TestAutofillManager&>(
-        autofill::ContentAutofillDriver::GetForRenderFrameHost(rfh)
+        ContentAutofillDriver::GetForRenderFrameHost(rfh)
             ->GetAutofillManager());
   }
 
@@ -122,14 +119,23 @@ class TestAutofillManager : public autofill::BrowserAutofillManager {
   }
 
  private:
-  autofill::TestAutofillManagerWaiter forms_seen_{
-      *this,
-      {autofill::AutofillManagerEvent::kFormsSeen}};
+  TestAutofillManagerWaiter forms_seen_{*this,
+                                        {AutofillManagerEvent::kFormsSeen}};
 };
 
 class DevToolsAutofillTest : public DevToolsProtocolTestBase {
  public:
   DevToolsAutofillTest() = default;
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    DevToolsProtocolTestBase::SetUpCommandLine(command_line);
+#if BUILDFLAG(IS_ANDROID)
+    // Explicitly enable site isolation so that out-of-process iframe (OOPIF)
+    // targets are created on Android (where site isolation is disabled by
+    // default), matching desktop behavior for OOPIF tests.
+    command_line->AppendSwitch(::switches::kSitePerProcess);
+#endif
+  }
+
   void SetUpOnMainThread() override {
     host_resolver()->AddRule("*", "127.0.0.1");
   }
@@ -224,7 +230,9 @@ class DevToolsAutofillTest : public DevToolsProtocolTestBase {
 
   AutofillProfile CreateTestProfile() {
     AutofillProfile profile = test::GetFullProfile();
-    AddTestProfile(browser()->profile(), profile);
+    AddTestProfile(
+        Profile::FromBrowserContext(web_contents()->GetBrowserContext()),
+        profile);
     return profile;
   }
 
@@ -264,8 +272,7 @@ class DevToolsAutofillTest : public DevToolsProtocolTestBase {
 
  private:
   test::AutofillBrowserTestEnvironment autofill_test_environment_;
-  autofill::TestAutofillManagerInjector<TestAutofillManager>
-      autofill_manager_injector_;
+  TestAutofillManagerInjector<TestAutofillManager> autofill_manager_injector_;
 };
 
 IN_PROC_BROWSER_TEST_F(DevToolsAutofillTest, SetAddresses) {
@@ -274,7 +281,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsAutofillTest, SetAddresses) {
   ASSERT_TRUE(embedded_test_server()->Start());
   const GURL url(
       embedded_test_server()->GetURL("/autofill_creditcard_form.html"));
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), url));
+  ASSERT_TRUE(content::NavigateToURL(web_contents(), url));
   ASSERT_TRUE(content::WaitForLoadStop(web_contents()));
   Attach();
 
@@ -305,15 +312,13 @@ IN_PROC_BROWSER_TEST_F(DevToolsAutofillTest, SetAddresses) {
 
   SendCommandSync("Autofill.setAddresses", std::move(params));
 
-  base::span<const autofill::AutofillProfile> res =
+  base::span<const AutofillProfile> res =
       main_autofill_manager().client().GetTestAddresses();
   ASSERT_EQ(res.size(), 2u);
-  ASSERT_EQ(
-      res[0].GetAddress().GetRawInfo(autofill::FieldType::ADDRESS_HOME_LINE1),
-      u"Erika-mann");
-  ASSERT_EQ(
-      res[1].GetAddress().GetRawInfo(autofill::FieldType::ADDRESS_HOME_LINE2),
-      u"Faria lima");
+  ASSERT_EQ(res[0].GetAddress().GetRawInfo(FieldType::ADDRESS_HOME_LINE1),
+            u"Erika-mann");
+  ASSERT_EQ(res[1].GetAddress().GetRawInfo(FieldType::ADDRESS_HOME_LINE2),
+            u"Faria lima");
 }
 
 IN_PROC_BROWSER_TEST_F(DevToolsAutofillTest, TriggerCreditCardInIframe) {
@@ -322,7 +327,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsAutofillTest, TriggerCreditCardInIframe) {
   ASSERT_TRUE(embedded_test_server()->Start());
   const GURL url(embedded_test_server()->GetURL(
       "/autofill_creditcard_form_in_iframe.html"));
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), url));
+  ASSERT_TRUE(content::NavigateToURL(web_contents(), url));
   ASSERT_TRUE(content::WaitForLoadStop(web_contents()));
   Attach();
 
@@ -385,7 +390,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsAutofillTest, TriggerCreditCardInOOPIFIframe) {
   GURL url = embedded_test_server()->GetURL(
       "a.com", "/autofill_creditcard_form_in_oopif.html");
 
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), url));
+  ASSERT_TRUE(content::NavigateToURL(web_contents(), url));
   ASSERT_TRUE(content::WaitForLoadStop(web_contents()));
   Attach();
 
@@ -415,7 +420,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsAutofillTest, TriggerCreditCardAcrossOOPIFs) {
   GURL url = embedded_test_server()->GetURL(
       "a.com", "/autofill_creditcard_form_in_oopif.html");
 
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), url));
+  ASSERT_TRUE(content::NavigateToURL(web_contents(), url));
   ASSERT_TRUE(content::WaitForLoadStop(web_contents()));
   Attach();
 
@@ -480,17 +485,17 @@ IN_PROC_BROWSER_TEST_F(DevToolsAutofillTest, AddressFormFilled) {
   // Enable events and emit event about form being filled.
   SendCommandSync("Autofill.enable");
   main_autofill_manager().NotifyObservers(
-      &autofill::AutofillManager::Observer::OnFillOrPreviewForm, form_id(),
-      filled_fields_by_autofill[0].global_id(),
-      autofill::mojom::ActionPersistence::kFill,
+      &AutofillManager::Observer::OnFillOrPreviewForm, form_id(),
+      filled_fields_by_autofill[0].global_id(), mojom::ActionPersistence::kFill,
       base::MakeFlatSet<FieldGlobalId>(filled_fields_by_autofill, {},
                                        &FormFieldData::global_id),
+      base::flat_map<FieldGlobalId, DenseSet<FieldFillingSkipReason>>{},
       &profile);
 
   base::DictValue notification = WaitForNotification(
       "Autofill.addressFormFilled", /*allow_existing=*/true);
 
-  std::set<autofill::FieldType> field_types_added_to_address_ui;
+  std::set<FieldType> field_types_added_to_address_ui;
   for (const base::Value& address_line :
        *notification.FindListByDottedPath("addressUi.addressFields")) {
     for (const base::Value& address_field :
@@ -504,12 +509,12 @@ IN_PROC_BROWSER_TEST_F(DevToolsAutofillTest, AddressFormFilled) {
     }
   }
 
-  // Assert the expected values used to build the address ui were sent to
+  // Assert the expected values used to build the address UI were sent to
   // devtools.
-  ASSERT_EQ(field_types_added_to_address_ui,
-            GetExpectedFieldTypesToBuildAddressUiForCountryCode(
-                base::UTF16ToUTF8(profile.GetInfo(
-                    autofill::FieldType::ADDRESS_HOME_COUNTRY, "en-US"))));
+  ASSERT_EQ(
+      field_types_added_to_address_ui,
+      GetExpectedFieldTypesToBuildAddressUiForCountryCode(base::UTF16ToUTF8(
+          profile.GetInfo(FieldType::ADDRESS_HOME_COUNTRY, "en-US"))));
   // Assert that the filled fields sent to devtools match exactly the ones
   // filled by autofill.
   const base::ListValue* filled_fields =
@@ -522,9 +527,8 @@ IN_PROC_BROWSER_TEST_F(DevToolsAutofillTest, AddressFormFilled) {
     const FormFieldData& ffd = filled_fields_by_autofill[i];
     const AutofillField* af = fs.GetFieldById(ffd.global_id());
 
-    std::vector<std::string_view> field_type_strings =
-        base::ToVector(af->Type().GetTypes(),
-                       &autofill::FieldTypeToDeveloperRepresentationString);
+    std::vector<std::string_view> field_type_strings = base::ToVector(
+        af->Type().GetTypes(), &FieldTypeToDeveloperRepresentationString);
     std::erase(field_type_strings, "");
 
     EXPECT_THAT(ff,
@@ -538,10 +542,10 @@ IN_PROC_BROWSER_TEST_F(DevToolsAutofillTest, AddressFormFilled) {
                         "frameId",
                         base::UTF8ToUTF16(
                             main_frame()->GetDevToolsFrameToken().ToString())));
-    EXPECT_THAT(ff,
-                FilledFieldHasAttributeWithValue(
-                    "htmlType", std::string(autofill::FormControlTypeToString(
-                                    af->form_control_type()))));
+    EXPECT_THAT(
+        ff, FilledFieldHasAttributeWithValue(
+                "htmlType",
+                std::string(FormControlTypeToString(af->form_control_type()))));
     EXPECT_THAT(
         ff, FilledFieldHasAttributeWithValue16("name", af->name_attribute()));
     EXPECT_EQ(*ff.GetDict().FindIntByDottedPath("fieldId"),
@@ -570,7 +574,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsAutofillTest, AutofillInOOPIFs) {
   GURL url = embedded_test_server()->GetURL(
       "a.com", "/autofill_address_multi_form_in_oopif.html");
 
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), url));
+  ASSERT_TRUE(content::NavigateToURL(web_contents(), url));
   ASSERT_TRUE(content::WaitForLoadStop(web_contents()));
 
   EXPECT_TRUE(main_autofill_manager().WaitForFormWithNFields(10));
@@ -579,30 +583,24 @@ IN_PROC_BROWSER_TEST_F(DevToolsAutofillTest, AutofillInOOPIFs) {
   FormData form =
       test_api(main_autofill_manager()).form_structures().front()->ToFormData();
 
-  autofill::MockAutofillManagerObserver observer;
+  MockAutofillManagerObserver observer;
   main_autofill_manager().AddObserver(&observer);
 
+  base::RunLoop run_loop;
+  const FormFieldData& observed_field = form.fields()[0];
   // Expect the `AskForValuesToFill()` call below to be routed to the main
   // frame `AutofillManager`.
   EXPECT_CALL(observer,
-              OnBeforeAskForValuesToFill(_, form.global_id(),
-                                         form.fields()[0].global_id(), _));
+              OnBeforeAskForValuesToFill(
+                  _, form.global_id(), observed_field.global_id(),
+                  testing::Property(&FormData::fields,
+                                    testing::SizeIs(form.fields().size()))))
+      .WillOnce(base::test::RunClosure(run_loop.QuitClosure()));
 
-  const std::vector<const FormFieldData*> filled_fields_by_autofill = {
-      {&form.fields()[0], &form.fields()[1]}};
-  web_contents()->ForEachRenderFrameHost([&](content::RenderFrameHost* rfh) {
-    // Call the driver of the field host iframe.
-    if (rfh->GetFrameToken().ToString() ==
-        form.fields()[0].host_frame()->ToString()) {
-      ASSERT_NE(rfh->GetFrameToken(), main_frame()->GetFrameToken());
-      auto* driver = static_cast<mojom::AutofillDriver*>(
-          autofill::ContentAutofillDriver::GetForRenderFrameHost(rfh));
-      driver->AskForValuesToFill(
-          form, form.fields()[0].renderer_id(), gfx::Rect(0, 10),
-          ::autofill::mojom::AutofillSuggestionTriggerSource::kUnspecified,
-          std::nullopt);
-    }
-  });
+  main_autofill_manager().driver().RendererShouldTriggerSuggestions(
+      observed_field.global_id(),
+      AutofillSuggestionTriggerSource::kFormControlElementClicked);
+  std::move(run_loop).Run();
 
   main_autofill_manager().RemoveObserver(&observer);
 }
@@ -619,7 +617,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsAutofillTest, AddressFormFilledInOOPIFs) {
   GURL url = embedded_test_server()->GetURL(
       "a.com", "/autofill_address_multi_form_in_oopif.html");
 
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), url));
+  ASSERT_TRUE(content::NavigateToURL(web_contents(), url));
   ASSERT_TRUE(content::WaitForLoadStop(web_contents()));
 
   Attach();
@@ -639,9 +637,10 @@ IN_PROC_BROWSER_TEST_F(DevToolsAutofillTest, AddressFormFilledInOOPIFs) {
   base::flat_set<FieldGlobalId> filled_fields_by_autofill{
       {form.fields()[0].global_id(), form.fields()[1].global_id()}};
   main_autofill_manager().NotifyObservers(
-      &autofill::AutofillManager::Observer::OnFillOrPreviewForm,
-      form.global_id(), *filled_fields_by_autofill.begin(),
-      autofill::mojom::ActionPersistence::kFill, filled_fields_by_autofill,
+      &AutofillManager::Observer::OnFillOrPreviewForm, form.global_id(),
+      *filled_fields_by_autofill.begin(), mojom::ActionPersistence::kFill,
+      filled_fields_by_autofill,
+      base::flat_map<FieldGlobalId, DenseSet<FieldFillingSkipReason>>{},
       &profile);
 
   base::DictValue notification = WaitForNotification(
@@ -657,8 +656,8 @@ IN_PROC_BROWSER_TEST_F(DevToolsAutofillTest,
       "chrome/test/data/autofill");
   ASSERT_TRUE(embedded_test_server()->Start());
 
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(
-      browser(),
+  ASSERT_TRUE(content::NavigateToURL(
+      web_contents(),
       embedded_test_server()->GetURL("a.com", "/autofill_test_form.html")));
   ASSERT_TRUE(content::WaitForLoadStop(web_contents()));
   EXPECT_TRUE(main_autofill_manager().WaitForFormWithNFields(9));
@@ -672,16 +671,17 @@ IN_PROC_BROWSER_TEST_F(DevToolsAutofillTest,
   const base::flat_set<FieldGlobalId> filled_fields_by_autofill_a = {
       {form_a.fields()[0].global_id(), form_a.fields()[1].global_id()}};
   main_autofill_manager().NotifyObservers(
-      &autofill::AutofillManager::Observer::OnFillOrPreviewForm,
-      form_a.global_id(), *filled_fields_by_autofill_a.begin(),
-      autofill::mojom::ActionPersistence::kFill, filled_fields_by_autofill_a,
+      &AutofillManager::Observer::OnFillOrPreviewForm, form_a.global_id(),
+      *filled_fields_by_autofill_a.begin(), mojom::ActionPersistence::kFill,
+      filled_fields_by_autofill_a,
+      base::flat_map<FieldGlobalId, DenseSet<FieldFillingSkipReason>>{},
       &profile_a);
 
   WaitForNotification("Autofill.addressFormFilled", /*allow_existing=*/true);
 
   // Navigating from "a.com" to "b.com".
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(
-      browser(),
+  ASSERT_TRUE(content::NavigateToURL(
+      web_contents(),
       embedded_test_server()->GetURL("b.com", "/autofill_test_form.html")));
   ASSERT_TRUE(content::WaitForLoadStop(web_contents()));
   EXPECT_TRUE(main_autofill_manager().WaitForFormWithNFields(9));
@@ -692,9 +692,10 @@ IN_PROC_BROWSER_TEST_F(DevToolsAutofillTest,
   const base::flat_set<FieldGlobalId> filled_fields_by_autofill_b = {
       {form_b.fields()[0].global_id(), form_b.fields()[1].global_id()}};
   main_autofill_manager().NotifyObservers(
-      &autofill::AutofillManager::Observer::OnFillOrPreviewForm,
-      form_b.global_id(), *filled_fields_by_autofill_b.begin(),
-      autofill::mojom::ActionPersistence::kFill, filled_fields_by_autofill_b,
+      &AutofillManager::Observer::OnFillOrPreviewForm, form_b.global_id(),
+      *filled_fields_by_autofill_b.begin(), mojom::ActionPersistence::kFill,
+      filled_fields_by_autofill_b,
+      base::flat_map<FieldGlobalId, DenseSet<FieldFillingSkipReason>>{},
       &profile_b);
   WaitForNotification("Autofill.addressFormFilled", /*allow_existing=*/true);
 }
@@ -844,7 +845,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsAutofillTest, TriggerAddressAutofillInIframe) {
   ASSERT_TRUE(embedded_test_server()->Start());
   const GURL url(embedded_test_server()->GetURL(
       "/autofill_address_multi_form_in_oopif.html"));
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), url));
+  ASSERT_TRUE(content::NavigateToURL(web_contents(), url));
   ASSERT_TRUE(content::WaitForLoadStop(web_contents()));
   Attach();
 
@@ -921,7 +922,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsAutofillTest, TriggerWithBothCardAndAddress) {
   ASSERT_TRUE(embedded_test_server()->Start());
   const GURL url(
       embedded_test_server()->GetURL("/autofill_creditcard_form.html"));
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), url));
+  ASSERT_TRUE(content::NavigateToURL(web_contents(), url));
   ASSERT_TRUE(content::WaitForLoadStop(web_contents()));
   Attach();
 
@@ -956,7 +957,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsAutofillTest, TriggerWithNeitherCardNorAddress) {
   ASSERT_TRUE(embedded_test_server()->Start());
   const GURL url(
       embedded_test_server()->GetURL("/autofill_creditcard_form.html"));
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), url));
+  ASSERT_TRUE(content::NavigateToURL(web_contents(), url));
   ASSERT_TRUE(content::WaitForLoadStop(web_contents()));
   Attach();
 

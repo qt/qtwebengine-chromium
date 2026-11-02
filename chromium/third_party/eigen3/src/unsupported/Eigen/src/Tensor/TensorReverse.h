@@ -67,7 +67,7 @@ class TensorReverseOp : public TensorBase<TensorReverseOp<ReverseDimensions, Xpr
 
   EIGEN_DEVICE_FUNC const internal::remove_all_t<typename XprType::Nested>& expression() const { return m_xpr; }
 
-  EIGEN_TENSOR_INHERIT_ASSIGNMENT_OPERATORS(TensorReverseOp)
+  EIGEN_INHERIT_ASSIGNMENT_OPERATORS(TensorReverseOp)
 
  protected:
   typename XprType::Nested m_xpr;
@@ -116,14 +116,13 @@ struct TensorEvaluator<const TensorReverseOp<ReverseDimensions, ArgType>, Device
 
     // Compute strides
     m_dimensions = m_impl.dimensions();
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       m_strides[0] = 1;
       for (int i = 1; i < NumDims; ++i) {
         m_strides[i] = m_strides[i - 1] * m_dimensions[i - 1];
         if (m_strides[i] > 0) m_fastStrides[i] = IndexDivisor(m_strides[i]);
       }
-    }
-    else {
+    } else {
       m_strides[NumDims - 1] = 1;
       for (int i = NumDims - 2; i >= 0; --i) {
         m_strides[i] = m_strides[i + 1] * m_dimensions[i + 1];
@@ -151,7 +150,7 @@ struct TensorEvaluator<const TensorReverseOp<ReverseDimensions, ArgType>, Device
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index reverseIndex(Index index) const {
     eigen_assert(index < dimensions().TotalSize());
     Index inputIndex = 0;
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       EIGEN_UNROLL_LOOP
       for (int i = NumDims - 1; i > 0; --i) {
         Index idx = index / m_fastStrides[i];
@@ -162,12 +161,11 @@ struct TensorEvaluator<const TensorReverseOp<ReverseDimensions, ArgType>, Device
         inputIndex += idx * m_strides[i];
       }
       if (m_reverse[0]) {
-        inputIndex += (m_dimensions[0] - index - 1);
+        inputIndex += m_dimensions[0] - index - 1;
       } else {
         inputIndex += index;
       }
-    }
-    else {
+    } else {
       EIGEN_UNROLL_LOOP
       for (int i = 0; i < NumDims - 1; ++i) {
         Index idx = index / m_fastStrides[i];
@@ -178,7 +176,7 @@ struct TensorEvaluator<const TensorReverseOp<ReverseDimensions, ArgType>, Device
         inputIndex += idx * m_strides[i];
       }
       if (m_reverse[NumDims - 1]) {
-        inputIndex += (m_dimensions[NumDims - 1] - index - 1);
+        inputIndex += m_dimensions[NumDims - 1] - index - 1;
       } else {
         inputIndex += index;
       }
@@ -241,7 +239,7 @@ struct TensorEvaluator<const TensorReverseOp<ReverseDimensions, ArgType>, Device
     // Offset in the input Tensor.
     Index input_offset = reverseIndex(desc.offset());
 
-    // Initialize output block iterator state. Dimension in this array are
+    // Initialize output block iterator state. Dimensions in this array are
     // always in inner_most -> outer_most order (col major layout).
     array<BlockIteratorState, NumDims> it;
     for (int i = 0; i < NumDims; ++i) {

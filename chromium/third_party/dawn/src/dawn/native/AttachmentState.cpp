@@ -30,24 +30,22 @@
 #include <bit>
 
 #include "src/dawn/common/Enumerator.h"
-#include "src/dawn/common/Log.h"
-#include "src/dawn/common/ityp_span.h"
 #include "src/dawn/native/ChainUtils.h"
 #include "src/dawn/native/Device.h"
 #include "src/dawn/native/ObjectContentHasher.h"
 #include "src/dawn/native/PipelineLayout.h"
 #include "src/dawn/native/Texture.h"
 #include "src/utils/compiler.h"
+#include "src/utils/log.h"
+#include "src/utils/span.h"
 
 namespace dawn::native {
 
 AttachmentState::AttachmentState(const RenderBundleEncoderDescriptor* descriptor)
     : mSampleCount(descriptor->sampleCount) {
-    DAWN_CHECK(descriptor->colorFormatCount <= kMaxColorAttachments);
-    auto colorFormats = ityp::SpanFromUntyped<ColorAttachmentIndex>(descriptor->colorFormats,
-                                                                    descriptor->colorFormatCount);
+    DAWN_CHECK(descriptor->colorFormats.size() <= kMaxColorAttachmentsTyped);
 
-    for (auto [i, format] : Enumerate(colorFormats)) {
+    for (auto [i, format] : Enumerate(descriptor->colorFormats)) {
         if (format != wgpu::TextureFormat::Undefined) {
             mColorAttachmentsSet.set(i);
             mColorFormats[i] = format;
@@ -66,11 +64,9 @@ AttachmentState::AttachmentState(const UnpackedPtr<RenderPipelineDescriptor>& de
                                  const PipelineLayoutBase* layout)
     : mSampleCount(descriptor->multisample.count) {
     if (descriptor->fragment != nullptr) {
-        DAWN_CHECK(descriptor->fragment->targetCount <= kMaxColorAttachments);
-        auto targets = ityp::SpanFromUntyped<ColorAttachmentIndex>(
-            descriptor->fragment->targets, descriptor->fragment->targetCount);
+        DAWN_CHECK(descriptor->fragment->targets.size() <= kMaxColorAttachmentsTyped);
 
-        for (auto [i, target] : Enumerate(targets)) {
+        for (auto [i, target] : Enumerate(descriptor->fragment->targets)) {
             wgpu::TextureFormat format = target.format;
             if (format != wgpu::TextureFormat::Undefined) {
                 mColorAttachmentsSet.set(i);
@@ -110,9 +106,6 @@ AttachmentState::AttachmentState(const UnpackedPtr<RenderPipelineDescriptor>& de
 }
 
 AttachmentState::AttachmentState(const UnpackedPtr<RenderPassDescriptor>& descriptor) {
-    auto colorAttachments = ityp::SpanFromUntyped<ColorAttachmentIndex>(
-        descriptor->colorAttachments, descriptor->colorAttachmentCount);
-
     // Override the sample count with an explicit sample count if provided. This is currently only
     // valid if the MSAARenderToSingleSampled feature is enabled.
     bool msrtssAllowed = false;
@@ -122,7 +115,7 @@ AttachmentState::AttachmentState(const UnpackedPtr<RenderPassDescriptor>& descri
         msrtssAllowed = true;
     }
 
-    for (auto [i, colorAttachment] : Enumerate(colorAttachments)) {
+    for (auto [i, colorAttachment] : Enumerate(descriptor->colorAttachments)) {
         TextureViewBase* attachment = colorAttachment.view;
         if (attachment == nullptr) {
             continue;
@@ -171,16 +164,15 @@ AttachmentState::AttachmentState(const UnpackedPtr<RenderPassDescriptor>& descri
         mHasPLS = true;
         mStorageAttachmentSlots = std::vector<wgpu::TextureFormat>(
             pls->totalPixelLocalStorageSize / kPLSSlotByteSize, wgpu::TextureFormat::Undefined);
-        for (size_t i = 0; i < pls->storageAttachmentCount; i++) {
-            size_t slot = DAWN_UNSAFE_TODO(pls->storageAttachments[i]).offset / kPLSSlotByteSize;
-            const TextureViewBase* attachment =
-                DAWN_UNSAFE_TODO(pls->storageAttachments[i]).storage;
-            mStorageAttachmentSlots[slot] = attachment->GetFormat().format;
+        for (const RenderPassStorageAttachment& attachment : pls->storageAttachments) {
+            size_t slot = attachment.offset / kPLSSlotByteSize;
+            const TextureViewBase* storage = attachment.storage;
 
+            mStorageAttachmentSlots[slot] = storage->GetFormat().format;
             if (mSampleCount == 0) {
-                mSampleCount = attachment->GetTexture()->GetSampleCount();
+                mSampleCount = storage->GetTexture()->GetSampleCount();
             } else {
-                DAWN_CHECK(mSampleCount == attachment->GetTexture()->GetSampleCount());
+                DAWN_CHECK(mSampleCount == storage->GetTexture()->GetSampleCount());
             }
         }
     }
@@ -325,7 +317,7 @@ AttachmentState::ComputeStorageAttachmentPackingInColorAttachments() const {
     // of the hashing and comparison operators? Fill with garbage data to more easily detect cases
     // where an incorrect slot is accessed.
     std::vector<ColorAttachmentIndex> result(mStorageAttachmentSlots.size(),
-                                             ityp::PlusOne(kMaxColorAttachmentsTyped));
+                                             kMaxColorAttachmentsTyped.PlusOne());
 
     // Iterate over the empty bits of mColorAttachmentsSet to pack storage attachment in them.
     auto availableSlots = ~mColorAttachmentsSet;

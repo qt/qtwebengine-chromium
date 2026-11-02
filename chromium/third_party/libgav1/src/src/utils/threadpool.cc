@@ -40,6 +40,9 @@
 #include <chrono>  // NOLINT (unapproved c++11 header)
 #endif
 
+#include "src/utils/compiler_attributes.h"
+#include "src/utils/memory.h"
+
 // Define the GetTid() function, a wrapper for the gettid() system call in
 // Linux.
 #if defined(__ANDROID__)

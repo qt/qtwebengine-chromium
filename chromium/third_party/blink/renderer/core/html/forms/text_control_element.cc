@@ -33,6 +33,7 @@
 #include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/dom/focus_params.h"
 #include "third_party/blink/renderer/core/dom/opaque_range.h"
+#include "third_party/blink/renderer/core/dom/range.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/dom/text.h"
 #include "third_party/blink/renderer/core/editing/editing_behavior.h"
@@ -205,6 +206,20 @@ void TextControlElement::DefaultEventHandler(Event& event) {
       ComputeSelection(kStart | kEnd | kDirection, computed_selection);
       CacheSelection(computed_selection.start, computed_selection.end,
                      computed_selection.direction);
+    } else if (RuntimeEnabledFeatures::ClampUnfocusedSelectionCacheEnabled()) {
+      // If the element is not focused, the selection cache is not updated
+      // during text mutations because the global Selection doesn't point to
+      // this element. This can cause the cache to exceed the new text length.
+      // We clamp the cache here to prevent out-of-bounds index crashes.
+      // Note: While this doesn't perfectly adjust selection offsets (e.g. if
+      // text is deleted from the beginning), it is sufficient to prevent
+      // crashes in rare non-focused edit cases.
+      unsigned len = InnerEditorValue().length();
+      if (cached_selection_start_ > len || cached_selection_end_ > len) {
+        CacheSelection(std::min(cached_selection_start_, len),
+                       std::min(cached_selection_end_, len),
+                       cached_selection_direction_);
+      }
     }
 
     SubtreeHasChanged();
@@ -533,7 +548,7 @@ unsigned TextControlElement::IndexForPosition(HTMLElement* inner_editor,
   for (Node* node = start_node; node;
        node = NodeTraversal::Previous(*node, inner_editor)) {
     if (auto* text_node = DynamicTo<Text>(node)) {
-      int length = text_node->length();
+      wtf_size_t length = text_node->length();
       if (node == passed_position.ComputeContainerNode())
         index += std::min(length, passed_position.OffsetInContainerNode());
       else
@@ -606,7 +621,7 @@ bool TextControlElement::SetSelectionRange(
   }
 #endif  // DCHECK_IS_ON()
   frame->Selection().SetSelection(
-      SelectionInDOMTree::Builder()
+      SelectionInDomTree::Builder()
           .Collapse(direction == kSelectionHasBackwardDirection
                         ? end_position
                         : start_position)
@@ -618,6 +633,7 @@ bool TextControlElement::SetSelectionRange(
           .SetShouldClearTypingStyle(true)
           .SetDoNotSetFocus(true)
           .SetIsDirectional(direction != kSelectionHasNoDirection)
+          .SetShouldNotifySelectionControllerOfUnchangedSelection(true)
           .Build());
   return did_change;
 }
@@ -678,8 +694,8 @@ void TextControlElement::ComputeSelection(
   // [1] http://browserbench.org/Speedometer/
   DocumentLifecycle::DisallowTransitionScope disallow_transition(
       GetDocument().Lifecycle());
-  const SelectionInDOMTree& selection =
-      frame->Selection().GetSelectionInDOMTree();
+  const SelectionInDomTree& selection =
+      frame->Selection().GetSelectionInDomTree();
   if (flags & kStart) {
     computed_selection.start = IndexForPosition(
         InnerEditorElement(), selection.ComputeStartPosition());
@@ -749,9 +765,9 @@ static inline void SetContainerAndOffsetForRange(Node* node,
   }
 }
 
-SelectionInDOMTree TextControlElement::Selection() const {
+SelectionInDomTree TextControlElement::Selection() const {
   if (!GetLayoutObject() || !IsTextControl())
-    return SelectionInDOMTree();
+    return SelectionInDomTree();
 
   int start = cached_selection_start_;
   int end = cached_selection_end_;
@@ -759,10 +775,10 @@ SelectionInDOMTree TextControlElement::Selection() const {
   DCHECK_LE(start, end);
   HTMLElement* inner_text = InnerEditorElement();
   if (!inner_text)
-    return SelectionInDOMTree();
+    return SelectionInDomTree();
 
   if (!inner_text->HasChildren()) {
-    return SelectionInDOMTree::Builder()
+    return SelectionInDomTree::Builder()
         .Collapse(Position(inner_text, 0))
         .Build();
   }
@@ -787,16 +803,16 @@ SelectionInDOMTree TextControlElement::Selection() const {
   }
 
   if (!start_node || !end_node)
-    return SelectionInDOMTree();
+    return SelectionInDomTree();
 
   TextAffinity affinity = TextAffinity::kDownstream;
   if (GetDocument().FocusedElement() == this && GetDocument().GetFrame()) {
-    const SelectionInDOMTree& selection =
-        GetDocument().GetFrame()->Selection().GetSelectionInDOMTree();
+    const SelectionInDomTree& selection =
+        GetDocument().GetFrame()->Selection().GetSelectionInDomTree();
     affinity = selection.Affinity();
   }
 
-  return SelectionInDOMTree::Builder()
+  return SelectionInDomTree::Builder()
       .SetBaseAndExtent(Position(start_node, start), Position(end_node, end))
       .SetAffinity(affinity)
       .Build();
@@ -872,8 +888,8 @@ void TextControlElement::SelectionChanged(bool user_triggered) {
   LocalFrame* frame = GetDocument().GetFrame();
   if (!frame || !user_triggered)
     return;
-  const SelectionInDOMTree& selection =
-      frame->Selection().GetSelectionInDOMTree();
+  const SelectionInDomTree& selection =
+      frame->Selection().GetSelectionInDomTree();
   if (!selection.IsRange())
     return;
   DispatchEvent(*Event::CreateBubble(event_type_names::kSelect));
@@ -938,10 +954,46 @@ bool TextControlElement::LastChangeWasUserEdit() const {
   return last_change_was_user_edit_;
 }
 
+std::pair<Text*, unsigned> TextControlElement::ResolveValueOffset(
+    unsigned target) const {
+  Element* inner = InnerEditorElement();
+  if (!inner) {
+    return {nullptr, 0};
+  }
+
+  unsigned offset = 0;
+  Text* last_text = nullptr;
+  for (Node* n = inner->firstChild(); n; n = n->nextSibling()) {
+    if (auto* text = DynamicTo<Text>(n)) {
+      unsigned node_end = offset + text->data().length();
+      if (target <= node_end) {
+        return {text, target - offset};
+      }
+      last_text = text;
+      offset = node_end;
+    } else if (IsA<HTMLBRElement>(n) &&
+               !TextControlElement::IsPlaceholderBreakElement(n)) {
+      if (last_text && target <= offset) {
+        return {last_text, last_text->data().length()};
+      }
+      // A hard line break serializes to a single "\n" code unit in the value
+      // string, so it advances the offset by one.
+      ++offset;
+    }
+  }
+  if (last_text) {
+    return {last_text, last_text->data().length()};
+  }
+  return {nullptr, 0};
+}
+
 Node* TextControlElement::CreatePlaceholderBreakElement() const {
   auto* element = MakeGarbageCollected<HTMLBRElement>(GetDocument());
   element->setAttribute(html_names::kIdAttr,
                         shadow_element_names::kIdPlaceholderBreak);
+  if (RuntimeEnabledFeatures::TextAreaEmptyPlaceholderBreakEnabled()) {
+    element->setAttribute(html_names::kAriaHiddenAttr, keywords::kTrue);
+  }
   return element;
 }
 
@@ -979,6 +1031,13 @@ void TextControlElement::AdjustPlaceholderBreakElement() {
       // exists.
       last_child->remove();
     }
+    return;
+  }
+  if (RuntimeEnabledFeatures::TextAreaEmptyPlaceholderBreakEnabled() &&
+      !last_child && IsA<HTMLTextAreaElement>(this)) {
+    // We need a placeholder break for an empty value in order to provide one
+    // line-height and a baseline even if this element is not editable.
+    inner_editor->AppendChild(CreatePlaceholderBreakElement());
     return;
   }
   auto* last_child_text_node = DynamicTo<Text>(last_child);

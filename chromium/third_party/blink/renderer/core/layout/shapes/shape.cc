@@ -159,9 +159,8 @@ std::unique_ptr<Shape> Shape::CreateShape(const BasicShape& basic_shape,
   switch (basic_shape.GetType()) {
     case BasicShape::kBasicShapeCircleType: {
       const auto& circle = To<BasicShapeCircle>(basic_shape);
-      gfx::PointF center =
-          PointForCenterCoordinate(circle.CenterX(), circle.CenterY(),
-                                   gfx::SizeF(box_width, box_height));
+      gfx::PointF center = PointForLengthPoint(
+          circle.Center(), gfx::SizeF(box_width, box_height));
       float radius = circle.FloatValueForRadiusInBox(
           center, gfx::SizeF(box_width, box_height));
       gfx::PointF logical_center = converter.ToLogical(center);
@@ -172,9 +171,8 @@ std::unique_ptr<Shape> Shape::CreateShape(const BasicShape& basic_shape,
 
     case BasicShape::kBasicShapeEllipseType: {
       const auto& ellipse = To<BasicShapeEllipse>(basic_shape);
-      gfx::PointF center =
-          PointForCenterCoordinate(ellipse.CenterX(), ellipse.CenterY(),
-                                   gfx::SizeF(box_width, box_height));
+      gfx::PointF center = PointForLengthPoint(
+          ellipse.Center(), gfx::SizeF(box_width, box_height));
       gfx::SizeF radii =
           ellipse.ResolveRadii(center, gfx::SizeF(box_width, box_height));
       gfx::PointF logical_center = converter.ToLogical(center);
@@ -472,11 +470,19 @@ std::unique_ptr<Shape> Shape::CreateRasterShapeFromPath(
   if (!ExtractPathData(physical_path, raster_size, contents)) {
     return CreateEmptyRasterShape(margin);
   }
+  // The pixel data is rasterized in physical coordinates (raster_size), but the
+  // intervals are scanned and stored in logical coordinates. For vertical
+  // writing modes the logical block/inline extents are the transpose of the
+  // physical raster size, so transpose to keep the scanner within bounds.
+  gfx::Size logical_size = raster_size;
+  if (!IsHorizontalWritingMode(writing_mode)) {
+    logical_size.Transpose();
+  }
+  const gfx::Rect logical_rect(logical_size);
   std::unique_ptr<RasterShapeIntervals> intervals =
       ExtractIntervalsFromImageData(contents.ByteSpan(), /*threshold=*/0,
-                                    raster_size.height(), raster_size,
-                                    gfx::Rect(raster_size),
-                                    gfx::Rect(raster_size), writing_mode);
+                                    logical_size.height(), raster_size,
+                                    logical_rect, logical_rect, writing_mode);
   // Retain the analytical path in logical coordinates so that DevTools
   // inspectors can render the actual shape boundary instead of the
   // pixel-snapped rasterization.
@@ -485,7 +491,7 @@ std::unique_ptr<Shape> Shape::CreateRasterShapeFromPath(
                                     writing_mode, box_width, box_height))
                                 .Finalize();
   std::unique_ptr<RasterShape> shape = std::make_unique<RasterShape>(
-      std::move(intervals), raster_size, std::move(logical_shape_path));
+      std::move(intervals), logical_size, std::move(logical_shape_path));
   shape->margin_ = margin;
   return shape;
 }

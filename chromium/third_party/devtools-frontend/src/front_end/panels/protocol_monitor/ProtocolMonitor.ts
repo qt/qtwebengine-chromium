@@ -9,8 +9,9 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as ProtocolClient from '../../core/protocol_client/protocol_client.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as Bindings from '../../models/bindings/bindings.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
+import * as Workspace from '../../models/workspace/workspace.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as UIHelpers from '../../ui/helpers/helpers.js';
 import * as SourceFrame from '../../ui/legacy/components/source_frame/source_frame.js';
@@ -25,101 +26,96 @@ const {styleMap} = Directives;
 const {widget, widgetRef} = UI.Widget;
 const UIStrings = {
   /**
-   * @description Text for one or a group of functions
+   * @description Table column header in the Protocol monitor data grid that displays the CDP method name (for example, Page.navigate or Network.enable).
    */
   method: 'Method',
   /**
-   * @description Text in Protocol Monitor. Title for a table column which shows in which direction
-   * the particular protocol message was travelling. Values in this column will either be 'sent' or
-   * 'received'.
+   * @description Table column header in the Protocol monitor data grid that indicates message direction ('sent' or 'received').
    */
   type: 'Type',
   /**
-   * @description Text in Protocol Monitor of the Protocol Monitor tab. Noun relating to a network request.
+   * @description Table column header in the Protocol monitor data grid and tab title in the info widget for sent CDP request parameters.
    */
   request: 'Request',
   /**
-   * @description Title of a cell content in protocol monitor. A Network response refers to the act of acknowledging a
-   * network request. Should not be confused with answer.
+   * @description Table column header in the Protocol monitor data grid and tab title in the info widget for received CDP response results or error payloads.
    */
   response: 'Response',
   /**
-   * @description Text for timestamps of items
+   * @description Table column header in the Protocol monitor data grid showing the time when the message was sent or received relative to when recording started.
    */
   timestamp: 'Timestamp',
   /**
-   * @description Title of a cell content in protocol monitor. It describes the time between sending a request and receiving a response.
+   * @description Table column header in the Protocol monitor data grid showing the duration between sending a request and receiving a response.
    */
   elapsedTime: 'Elapsed time',
   /**
-   * @description Text in Protocol Monitor of the Protocol Monitor tab
+   * @description Table column header in the Protocol monitor data grid displaying the name and URL of the target associated with the protocol message.
    */
   target: 'Target',
   /**
-   * @description Text to record a series of actions for analysis
+   * @description Tooltip text for the record button in the Protocol monitor toolbar to start or stop recording CDP messages.
    */
   record: 'Record',
   /**
-   * @description Text to clear everything
+   * @description Tooltip text for the clear button in the Protocol monitor toolbar that clears the table of recorded CDP messages.
    */
   clearAll: 'Clear all',
   /**
-   * @description Text to filter result items
+   * @description Context menu action when right-clicking a row in the Protocol monitor data grid to filter the table by that row's method name.
    */
   filter: 'Filter',
   /**
-   * @description Text for the documentation of something
+   * @description Context menu action when right-clicking a row in the Protocol monitor data grid to open the official Chrome DevTools Protocol web documentation for the selected method.
    */
   documentation: 'Documentation',
   /**
-   * @description Text to open the CDP editor with the selected command
+   * @description Context menu action when right-clicking a row in the Protocol monitor data grid to open the CDP command editor pre-populated with that row's method and parameters.
    */
   editAndResend: 'Edit and resend',
   /**
-   * @description Cell text content in Protocol Monitor of the Protocol Monitor tab
+   * @description Format string for time values in milliseconds shown in the Elapsed time and Timestamp table cells in the Protocol monitor data grid.
    * @example {30} PH1
    */
   sMs: '{PH1} ms',
   /**
-   * @description Text in Protocol Monitor of the Protocol Monitor tab
+   * @description Header text shown in the info widget sidebar tabs when no protocol message is selected in the table.
    */
   noMessageSelected: 'No message selected',
   /**
-   * @description Text in Protocol Monitor of the Protocol Monitor tab if no message is selected
+   * @description Description text shown in the info widget sidebar tabs instructing the user to select a protocol message from the table to inspect its details.
    */
   selectAMessageToView: 'Select a message to see its details',
   /**
-   * @description Text in Protocol Monitor for the save button
+   * @description Tooltip text for the save button in the Protocol monitor toolbar that exports the recorded CDP messages as a JSON file.
    */
   save: 'Save',
   /**
-   * @description Text in Protocol Monitor to describe the sessions column
+   * @description Table column header in the Protocol monitor data grid displaying the CDP session identifier associated with the message.
    */
   session: 'Session',
   /**
-   * @description A placeholder for an input in Protocol Monitor. The input accepts commands that are sent to the backend on Enter. CDP stands for Chrome DevTools Protocol.
+   * @description Placeholder text for the command input field in the bottom toolbar of the Protocol monitor panel where raw CDP commands or JSON payloads can be typed and sent.
    */
-  sendRawCDPCommand: 'Send a raw `CDP` command',
+  sendRawCDPCommand: 'Send a raw CDP command',
   /**
-   * @description A tooltip text for the input in the Protocol Monitor panel. The tooltip describes what format is expected.
+   * @description Tooltip text displayed when hovering over the command input field in the bottom toolbar, explaining the expected syntax for sending raw CDP commands.
    */
   sendRawCDPCommandExplanation:
-      'Format: `\'Domain.commandName\'` for a command without parameters, or `\'{"command":"Domain.commandName", "parameters": {...}}\'` as a JSON object for a command with parameters. `\'cmd\'`/`\'method\'` and `\'args\'`/`\'params\'`/`\'arguments\'` are also supported as alternative keys for the `JSON` object.',
+      'Format: \'Domain.commandName\' for a command without parameters, or \'{"command":"Domain.commandName", "parameters": {…}}\' as a JSON object for a command with parameters. \'cmd\'/\'method\' and \'args\'/\'params\'/\'arguments\' are also supported as alternative keys for the JSON object.',
 
   /**
-   * @description A label for a select input that allows selecting a CDP target to send the commands to.
+   * @description Tooltip text for the target selector dropdown in the Protocol monitor and CDP command editor allowing users to choose which CDP target receives commands.
    */
-  selectTarget: 'Select a target',
+  selectTarget: 'Select target',
   /**
-   * @description Tooltip for the the console sidebar toggle in the Console panel. Command to
-   * open/show the sidebar.
+   * @description Tooltip text for the bottom toolbar toggle button when the CDP command editor sidebar is hidden, prompting the user to open/show it.
    */
   showCDPCommandEditor: 'Show CDP command editor',
   /**
-   * @description Tooltip for the the console sidebar toggle in the Console panel. Command to
-   * open/show the sidebar.
+   * @description Tooltip text for the bottom toolbar toggle button when the CDP command editor sidebar is visible, prompting the user to hide/close it.
    */
-  hideCDPCommandEditor: 'Hide  CDP command editor',
+  hideCDPCommandEditor: 'Hide CDP command editor',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/protocol_monitor/ProtocolMonitor.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -355,7 +351,7 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
               ${widgetRef(JSONEditor, e => {output.editorWidget = e;})}>
           </devtools-widget>
         </devtools-split-view>`,
-        target
+        target,
     );
   // clang-format on
 };
@@ -480,7 +476,7 @@ export class ProtocolMonitorImpl extends UI.Panel.Panel implements SDK.TargetMan
     const viewOutput = {
       set editorWidget(value: JSONEditor) {
         that.#editorWidget = value;
-      }
+      },
     };
     this.#view(viewInput, viewOutput, this.contentElement);
   }
@@ -612,7 +608,7 @@ export class ProtocolMonitorImpl extends UI.Panel.Panel implements SDK.TargetMan
     const now = new Date();
     const fileName = 'ProtocolMonitor-' + Platform.DateUtilities.toISO8601Compact(now) + '.json' as
         Platform.DevToolsPath.RawPathString;
-    const stream = new Bindings.FileUtils.FileOutputStream();
+    const stream = new Bindings.FileUtils.FileOutputStream(Workspace.FileManager.FileManager.instance());
 
     const accepted = await stream.open(fileName);
     if (!accepted) {

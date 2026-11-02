@@ -51,7 +51,7 @@ struct traits<SPQR_QProduct<SPQRType, Derived> > {
  * \brief Sparse QR factorization based on SuiteSparseQR library
  *
  * This class is used to perform a multithreaded and multifrontal rank-revealing QR decomposition
- * of sparse matrices. The result is then used to solve linear leasts_square systems.
+ * of sparse matrices. The result is then used to solve linear least-squares systems.
  * Clearly, a QR factorization is returned such that A*P = Q*R where :
  *
  * P is the column permutation. Use colsPermutation() to get it.
@@ -199,9 +199,6 @@ class SPQR : public SparseSolverBase<SPQR<MatrixType_> > {
     for (Index i = 0; i < rk; ++i) dest.row(m_E[i]) = y.row(i);
     for (Index i = rk; i < cols(); ++i) dest.row(m_E[i]).setZero();
 
-    //       y.bottomRows(y.rows()-rk).setZero();
-    //       dest = colsPermutation() * y.topRows(cols());
-
     m_info = Success;
   }
 
@@ -232,7 +229,7 @@ class SPQR : public SparseSolverBase<SPQR<MatrixType_> > {
   }
   /// Set the fill-reducing ordering method to be used
   void setSPQROrdering(int ord) { m_ordering = ord; }
-  /// Set the tolerance tol to treat columns with 2-norm < =tol as zero
+  /// Set the tolerance tol to treat columns with 2-norm <= tol as zero
   void setPivotThreshold(const RealScalar& tol) {
     m_useDefaultThreshold = false;
     m_tolerance = tol;

@@ -49,6 +49,7 @@
 #include "codec_internal.h"
 #include "decode.h"
 #include "exif.h"
+#include "exif_internal.h"
 #include "hwaccel_internal.h"
 #include "hwconfig.h"
 #include "internal.h"
@@ -328,7 +329,9 @@ static int discard_samples(AVCodecContext *avctx, AVFrame *frame, int64_t *disca
 
     side = av_frame_get_side_data(frame, AV_FRAME_DATA_SKIP_SAMPLES);
     if (side && side->size >= 10) {
-        avci->skip_samples = AV_RL32(side->data);
+        int skip_samples = AV_RL32(side->data);
+        if (skip_samples)
+            avci->skip_samples = skip_samples;
         avci->skip_samples = FFMAX(0, avci->skip_samples);
         discard_padding = AV_RL32(side->data + 4);
         av_log(avctx, AV_LOG_DEBUG, "skip %d / discard %d samples due to side data\n",
@@ -371,12 +374,18 @@ static int discard_samples(AVCodecContext *avctx, AVFrame *frame, int64_t *disca
                 int64_t diff_ts = av_rescale_q(avci->skip_samples,
                                                (AVRational){1, avctx->sample_rate},
                                                avctx->pkt_timebase);
-                if (frame->pts != AV_NOPTS_VALUE)
-                    frame->pts += diff_ts;
-                if (frame->pkt_dts != AV_NOPTS_VALUE)
-                    frame->pkt_dts += diff_ts;
-                if (frame->duration >= diff_ts)
-                    frame->duration -= diff_ts;
+                if (diff_ts != AV_NOPTS_VALUE) {
+                    if (frame->pts != AV_NOPTS_VALUE)
+                        frame->pts = av_sat_add64(frame->pts, diff_ts);
+                    if (frame->pkt_dts != AV_NOPTS_VALUE)
+                        frame->pkt_dts = av_sat_add64(frame->pkt_dts, diff_ts);
+                    if (frame->duration >= diff_ts)
+                        frame->duration = av_sat_sub64(frame->duration, diff_ts);
+                } else {
+                    frame->pts = AV_NOPTS_VALUE;
+                    frame->pkt_dts = AV_NOPTS_VALUE;
+                    frame->duration = 0;
+                }
             } else
                 av_log(avctx, AV_LOG_WARNING, "Could not update timestamps for skipped samples.\n");
 
@@ -397,7 +406,7 @@ static int discard_samples(AVCodecContext *avctx, AVFrame *frame, int64_t *disca
                 int64_t diff_ts = av_rescale_q(frame->nb_samples - discard_padding,
                                                (AVRational){1, avctx->sample_rate},
                                                avctx->pkt_timebase);
-                frame->duration = diff_ts;
+                frame->duration = diff_ts == AV_NOPTS_VALUE ? 0 : diff_ts;
             } else
                 av_log(avctx, AV_LOG_WARNING, "Could not update timestamps for discarded samples.\n");
 
@@ -1638,7 +1647,7 @@ int ff_decode_frame_props(AVCodecContext *avctx, AVFrame *frame)
 
     if (dc->lcevc.frame) {
         ret = ff_lcevc_parse_frame(dc->lcevc.ctx, frame, &dc->lcevc.format,
-                                       &dc->lcevc.width, &dc->lcevc.height, avctx);
+                                   &dc->lcevc.width, &dc->lcevc.height);
         if (ret < 0 && (avctx->err_recognition & AV_EF_EXPLODE))
             return ret;
 
@@ -1715,7 +1724,7 @@ int ff_attach_decode_data(AVCodecContext *avctx, AVFrame *frame)
 
         if (dc->lcevc.frame) {
             int ret = ff_lcevc_parse_frame(dc->lcevc.ctx, frame, &dc->lcevc.format,
-                                           &dc->lcevc.width, &dc->lcevc.height, avctx);
+                                           &dc->lcevc.width, &dc->lcevc.height);
             if (ret < 0 && (avctx->err_recognition & AV_EF_EXPLODE))
                 return ret;
 
@@ -2139,7 +2148,7 @@ av_cold int ff_decode_preinit(AVCodecContext *avctx)
     if (!(avctx->export_side_data & AV_CODEC_EXPORT_DATA_ENHANCEMENTS)) {
         if (avctx->codec_type == AVMEDIA_TYPE_VIDEO) {
 #if CONFIG_LIBLCEVC_DEC
-            ret = ff_lcevc_alloc(&dc->lcevc.ctx, avctx);
+            ret = ff_lcevc_alloc(&dc->lcevc.ctx, av_log_get_level() + avctx->log_level_offset);
             if (ret < 0 && (avctx->err_recognition & AV_EF_EXPLODE))
                 return ret;
 #endif
@@ -2361,6 +2370,8 @@ av_cold void ff_decode_flush_buffers(AVCodecContext *avctx)
     av_packet_unref(avci->last_pkt_props);
     av_packet_unref(avci->in_pkt);
 
+    dc->pts_correction_num_faulty_pts =
+    dc->pts_correction_num_faulty_dts = 0;
     dc->pts_correction_last_pts =
     dc->pts_correction_last_dts = INT64_MIN;
 

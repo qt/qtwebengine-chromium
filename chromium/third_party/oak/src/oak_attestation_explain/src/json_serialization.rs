@@ -34,6 +34,7 @@
 //! more maintainable.
 
 use oak_proto_rust::oak::{
+    RawDigest,
     attestation::v1::{
         ApplicationLayerData, ApplicationLayerReferenceValues, ContainerLayerData,
         ContainerLayerReferenceValues, ExtractedEvidence, KernelLayerData,
@@ -41,10 +42,8 @@ use oak_proto_rust::oak::{
         OakRestrictedKernelData, OakRestrictedKernelReferenceValues, ReferenceValues,
         RootLayerData, RootLayerReferenceValues, SystemLayerData, SystemLayerReferenceValues, *,
     },
-    RawDigest,
 };
 use prost_types::{Duration, Timestamp};
-use serde_json::json;
 
 macro_rules! json {
     ($($json:tt)+) => {{
@@ -116,10 +115,13 @@ pub fn serialize_intel_tdx_attestation_report(
     // all fields. If a new field is added to the struct, this code won't
     // compile unless this destructuring operation is updated, thereby reminding us
     // to keep the serialization in sync manually.
-    let IntelTdxAttestationReport { report_data } = instance;
+    let IntelTdxAttestationReport { report_data, tee_tcb_svn, debug, mr_td } = instance;
 
     json!({
         "report_data": hex::encode(report_data),
+        "tee_tcb_svn": tee_tcb_svn.as_ref().map(serialize_tdx_tcb_svn),
+        "debug": debug,
+        "mr_td": hex::encode(mr_td),
     })
 }
 
@@ -282,6 +284,7 @@ pub fn serialize_extracted_evidence(instance: &ExtractedEvidence) -> serde_json:
         Some(extracted_evidence::EvidenceValues::OakContainers(instance)) => {
             json!({ "oak_containers": serialize_oak_containers_data(instance) })
         }
+        #[allow(deprecated)]
         Some(extracted_evidence::EvidenceValues::Cb(instance)) => {
             json!({ "cb": serialize_cb_data(instance) })
         }
@@ -308,6 +311,49 @@ pub fn serialize_tcb_version(instance: &TcbVersion) -> serde_json::Value {
         "snp": snp,
         "microcode": microcode,
         "fmc": fmc,
+    })
+}
+
+pub fn serialize_tdx_tcb_svn(instance: &TdxTcbSvn) -> serde_json::Value {
+    // Exhaustive destructuring (e.g., without ", ..") ensures this function handles
+    // all fields. If a new field is added to the struct, this code won't
+    // compile unless this destructuring operation is updated, thereby reminding us
+    // to keep the serialization in sync manually.
+    let TdxTcbSvn {
+        svn_0,
+        svn_1,
+        svn_2,
+        svn_3,
+        svn_4,
+        svn_5,
+        svn_6,
+        svn_7,
+        svn_8,
+        svn_9,
+        svn_10,
+        svn_11,
+        svn_12,
+        svn_13,
+        svn_14,
+        svn_15,
+    } = instance;
+    json!({
+        "svn_0": svn_0,
+        "svn_1": svn_1,
+        "svn_2": svn_2,
+        "svn_3": svn_3,
+        "svn_4": svn_4,
+        "svn_5": svn_5,
+        "svn_6": svn_6,
+        "svn_7": svn_7,
+        "svn_8": svn_8,
+        "svn_9": svn_9,
+        "svn_10": svn_10,
+        "svn_11": svn_11,
+        "svn_12": svn_12,
+        "svn_13": svn_13,
+        "svn_14": svn_14,
+        "svn_15": svn_15,
     })
 }
 
@@ -451,6 +497,50 @@ fn serialize_verifying_key_reference_value(
     }
 }
 
+fn serialize_c2sp_tlog_proof_reference_value(
+    _instance: &C2sptLogProofReferenceValue,
+) -> serde_json::Value {
+    json!({})
+}
+
+fn serialize_pes_reference_value(_instance: &PesReferenceValue) -> serde_json::Value {
+    json!({})
+}
+
+fn serialize_tlog_reference_values(instance: &TLogReferenceValues) -> serde_json::Value {
+    // Exhaustive destructuring (e.g., without ", ..") ensures this function handles
+    // all fields. If a new field is added to the struct, this code won't
+    // compile unless this destructuring operation is updated, thereby reminding us
+    // to keep the serialization in sync manually.
+    let TLogReferenceValues { strategy, rekor, c2sp, pes } = instance;
+    let mut result = json!({});
+
+    match strategy {
+        Some(t_log_reference_values::Strategy::Skip(instance)) => {
+            result["skip"] = serialize_skip_verification(instance);
+        }
+        Some(t_log_reference_values::Strategy::All(_)) => {
+            result["all"] = json!({});
+        }
+        Some(t_log_reference_values::Strategy::Any(_)) => {
+            result["any"] = json!({});
+        }
+        None => {}
+    }
+
+    if let Some(rekor) = rekor {
+        result["rekor"] = serialize_verifying_key_set(rekor);
+    }
+    if let Some(c2sp) = c2sp {
+        result["c2sp"] = serialize_c2sp_tlog_proof_reference_value(c2sp);
+    }
+    if let Some(pes) = pes {
+        result["pes"] = serialize_pes_reference_value(pes);
+    }
+
+    result
+}
+
 fn serialize_claim_reference_value(instance: &ClaimReferenceValue) -> serde_json::Value {
     // Exhaustive destructuring (e.g., without ", ..") ensures this function handles
     // all fields. If a new field is added to the struct, this code won't
@@ -469,19 +559,12 @@ pub fn serialize_endorsement_reference_value(
     // compile unless this destructuring operation is updated, thereby reminding us
     // to keep the serialization in sync manually.
     #[allow(deprecated)]
-    let EndorsementReferenceValue {
-        endorser_public_key,
-        rekor_public_key,
-        endorser,
-        required_claims,
-        rekor,
-    } = instance;
+    let EndorsementReferenceValue { endorser, required_claims, rekor, tlog } = instance;
     json!({
-        "endorser_public_key": hex::encode(endorser_public_key),
-        "rekor_public_key": hex::encode(rekor_public_key),
         "endorser": endorser.as_ref().map(serialize_verifying_key_set),
         "required_claims": required_claims.as_ref().map(serialize_claim_reference_value),
         "rekor": rekor.as_ref().map(serialize_verifying_key_reference_value),
+        "tlog": tlog.as_ref().map(serialize_tlog_reference_values),
     })
 }
 
@@ -500,6 +583,26 @@ pub fn serialize_binary_reference_value(instance: &BinaryReferenceValue) -> serd
         }
         Some(binary_reference_value::Type::Digests(instance)) => {
             json!({ "digests": serialize_digests(instance) })
+        }
+        None => json!(null),
+    }
+}
+
+pub fn serialize_mpm_reference_value(instance: &MpmReferenceValue) -> serde_json::Value {
+    // Exhaustive destructuring (e.g., without ", ..") ensures this function handles
+    // all fields. If a new field is added to the struct, this code won't
+    // compile unless this destructuring operation is updated, thereby reminding us
+    // to keep the serialization in sync manually.
+    let MpmReferenceValue { r#type } = instance;
+    match r#type {
+        Some(mpm_reference_value::Type::Skip(instance)) => {
+            json!({ "skip": serialize_skip_verification(instance) })
+        }
+        Some(mpm_reference_value::Type::Endorsement(instance)) => {
+            json!({ "endorsement": serialize_endorsement_reference_value(instance) })
+        }
+        Some(mpm_reference_value::Type::Versions(instance)) => {
+            json!({ "versions": serialize_mpm_version_ids(instance) })
         }
         None => json!(null),
     }
@@ -608,6 +711,25 @@ pub fn serialize_tcb_version_reference_value(
     }
 }
 
+pub fn serialize_tdx_tcb_svn_reference_value(
+    instance: &TdxTcbSvnReferenceValue,
+) -> serde_json::Value {
+    // Exhaustive destructuring (e.g., without ", ..") ensures this function handles
+    // all fields. If a new field is added to the struct, this code won't
+    // compile unless this destructuring operation is updated, thereby reminding us
+    // to keep the serialization in sync manually.
+    let TdxTcbSvnReferenceValue { r#type } = instance;
+    match r#type {
+        Some(tdx_tcb_svn_reference_value::Type::Skip(instance)) => {
+            json!({ "skip": serialize_skip_verification(instance) })
+        }
+        Some(tdx_tcb_svn_reference_value::Type::Minimum(instance)) => {
+            json!({ "minimum": serialize_tdx_tcb_svn(instance) })
+        }
+        None => json!(null),
+    }
+}
+
 pub fn serialize_root_layer_reference_values(
     instance: &RootLayerReferenceValues,
 ) -> serde_json::Value {
@@ -629,14 +751,22 @@ pub fn serialize_amd_sev_reference_values(instance: &AmdSevReferenceValues) -> s
     // compile unless this destructuring operation is updated, thereby reminding us
     // to keep the serialization in sync manually.
     #[allow(deprecated)]
-    let AmdSevReferenceValues { min_tcb_version, milan, genoa, turin, allow_debug, stage0 } =
-        instance;
+    let AmdSevReferenceValues {
+        min_tcb_version,
+        milan,
+        genoa,
+        turin,
+        allow_debug,
+        stage0,
+        check_vcek_cert_expiry,
+    } = instance;
     json!({
         "min_tcb_version": min_tcb_version.as_ref().map(serialize_tcb_version),
         "milan": milan.as_ref().map(serialize_tcb_version_reference_value),
         "genoa": genoa.as_ref().map(serialize_tcb_version_reference_value),
         "turin": turin.as_ref().map(serialize_tcb_version_reference_value),
         "allow_debug": allow_debug,
+        "check_vcek_cert_expiry": check_vcek_cert_expiry,
         "stage0": stage0.as_ref().map(serialize_binary_reference_value),
     })
 }
@@ -644,8 +774,12 @@ pub fn serialize_amd_sev_reference_values(instance: &AmdSevReferenceValues) -> s
 pub fn serialize_intel_tdx_reference_values(
     instance: &IntelTdxReferenceValues,
 ) -> serde_json::Value {
-    let IntelTdxReferenceValues {} = instance;
-    json!({})
+    let IntelTdxReferenceValues { tee_tcb_svn, allow_debug, stage0 } = instance;
+    json!({
+        "tee_tcb_svn": tee_tcb_svn.as_ref().map(serialize_tdx_tcb_svn_reference_value),
+        "allow_debug": allow_debug,
+        "stage0": stage0.as_ref().map(serialize_binary_reference_value),
+    })
 }
 
 pub fn serialize_insecure_reference_values(
@@ -662,6 +796,15 @@ pub fn serialize_digests(instance: &Digests) -> serde_json::Value {
     // to keep the serialization in sync manually.
     let Digests { digests } = instance;
     json!(digests.iter().map(serialize_raw_digest).collect::<Vec<serde_json::Value>>())
+}
+
+pub fn serialize_mpm_version_ids(instance: &MpmVersionIds) -> serde_json::Value {
+    // Exhaustive destructuring (e.g., without ", ..") ensures this function handles
+    // all fields. If a new field is added to the struct, this code won't
+    // compile unless this destructuring operation is updated, thereby reminding us
+    // to keep the serialization in sync manually.
+    let MpmVersionIds { versions } = instance;
+    json!(versions.iter().map(|v| json!(v)).collect::<Vec<serde_json::Value>>())
 }
 
 pub fn serialize_kernel_layer_reference_values(
@@ -771,6 +914,42 @@ pub fn serialize_cb_reference_values(instance: &CbReferenceValues) -> serde_json
     })
 }
 
+#[allow(deprecated)]
+pub fn serialize_cb_layer1_transparent_reference_values(
+    instance: &CbLayer1TransparentReferenceValues,
+) -> serde_json::Value {
+    let CbLayer1TransparentReferenceValues { runtime_agent, runtime_agent_binary, userspace } =
+        instance;
+    json!({
+        "runtime_agent": runtime_agent.as_ref().map(serialize_binary_reference_value),
+        "runtime_agent_binary": runtime_agent_binary.as_ref().map(serialize_binary_reference_value),
+        "userspace": userspace.as_ref().map(serialize_binary_reference_value),
+    })
+}
+
+pub fn serialize_cb_layer2_transparent_reference_values(
+    instance: &CbLayer2TransparentReferenceValues,
+) -> serde_json::Value {
+    #[allow(deprecated)]
+    let CbLayer2TransparentReferenceValues { binary_mpm, binary_mpms } = instance;
+    json!({
+        "binary_mpm": binary_mpm.as_ref().map(serialize_mpm_reference_value),
+        "binary_mpms": binary_mpms.iter().map(serialize_mpm_reference_value).collect::<Vec<_>>(),
+    })
+}
+
+pub fn serialize_cb_transparent_reference_values(
+    instance: &CbTransparentReferenceValues,
+) -> serde_json::Value {
+    let CbTransparentReferenceValues { root_layer, kernel_layer, layer1, layer2 } = instance;
+    json!({
+        "root_layer": root_layer.as_ref().map(serialize_root_layer_reference_values),
+        "kernel_layer": kernel_layer.as_ref().map(serialize_kernel_layer_reference_values),
+        "layer1": layer1.as_ref().map(serialize_cb_layer1_transparent_reference_values),
+        "layer2": layer2.as_ref().map(serialize_cb_layer2_transparent_reference_values),
+    })
+}
+
 pub fn serialize_certificate_based_reference_values(
     instance: &CertificateBasedReferenceValues,
 ) -> serde_json::Value {
@@ -789,16 +968,24 @@ pub fn serialize_confidential_space_reference_values(
     });
     if let Some(r#container_image) = r#container_image {
         match r#container_image {
+            #[allow(deprecated)]
             confidential_space_reference_values::ContainerImage::CosignReferenceValues(
                 cosign_reference_values,
             ) => {
                 result["cosign_reference_values"] =
                     serialize_cosign_reference_values(cosign_reference_values);
             }
-            confidential_space_reference_values::ContainerImage::ContainerImageReference(
-                container_image_reference,
+            confidential_space_reference_values::ContainerImage::ContainerImageReferencePrefix(
+                container_image_reference_prefix,
             ) => {
-                result["container_image_reference"] = json!(container_image_reference);
+                result["container_image_reference_prefix"] =
+                    json!(container_image_reference_prefix);
+            }
+            confidential_space_reference_values::ContainerImage::ImageReferenceValue(
+                image_reference_value,
+            ) => {
+                result["image_reference_value"] =
+                    serialize_binary_reference_value(image_reference_value);
             }
         }
     }
@@ -806,6 +993,7 @@ pub fn serialize_confidential_space_reference_values(
 }
 
 pub fn serialize_cosign_reference_values(instance: &CosignReferenceValues) -> serde_json::Value {
+    #[allow(deprecated)]
     let CosignReferenceValues { developer_public_key, rekor_public_key } = instance;
     let mut result = json!({});
     if let Some(developer_public_key) = developer_public_key {
@@ -832,6 +1020,7 @@ pub fn serialize_reference_values(instance: &ReferenceValues) -> serde_json::Val
         Some(reference_values::Type::OakContainers(instance)) => {
             json!({ "oak_containers": serialize_oak_containers_reference_values(instance) })
         }
+        #[allow(deprecated)]
         Some(reference_values::Type::Cb(instance)) => {
             json!({ "cb": serialize_cb_reference_values(instance) })
         }
@@ -841,6 +1030,61 @@ pub fn serialize_reference_values(instance: &ReferenceValues) -> serde_json::Val
         Some(reference_values::Type::ConfidentialSpace(instance)) => {
             json!({ "confidential_space": serialize_confidential_space_reference_values(instance) })
         }
+        Some(reference_values::Type::Cbt(instance)) => {
+            json!({ "cbt": serialize_cb_transparent_reference_values(instance) })
+        }
         None => json!(null),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use oak_proto_rust::oak::attestation::v1::{
+        EndorsementReferenceValue, MpmReferenceValue, MpmVersionIds, SkipVerification,
+        mpm_reference_value,
+    };
+
+    use super::*;
+
+    #[test]
+    fn serialize_mpm_reference_value_none() {
+        let instance = MpmReferenceValue { r#type: None };
+        let result = serialize_mpm_reference_value(&instance);
+        assert_eq!(result, serde_json::Value::Null);
+    }
+
+    #[test]
+    fn serialize_mpm_reference_value_skip() {
+        let instance = MpmReferenceValue {
+            r#type: Some(mpm_reference_value::Type::Skip(SkipVerification {})),
+        };
+        let result = serialize_mpm_reference_value(&instance);
+        assert!(result.get("skip").is_some(), "expected 'skip' key in {result}");
+    }
+
+    #[test]
+    fn serialize_mpm_reference_value_endorsement() {
+        let instance = MpmReferenceValue {
+            r#type: Some(mpm_reference_value::Type::Endorsement(
+                EndorsementReferenceValue::default(),
+            )),
+        };
+        let result = serialize_mpm_reference_value(&instance);
+        assert!(result.get("endorsement").is_some(), "expected 'endorsement' key in {result}");
+    }
+
+    #[test]
+    fn serialize_mpm_reference_value_versions() {
+        let instance = MpmReferenceValue {
+            r#type: Some(mpm_reference_value::Type::Versions(MpmVersionIds {
+                versions: vec!["v1.0".to_string(), "v2.0".to_string()],
+            })),
+        };
+        let result = serialize_mpm_reference_value(&instance);
+        let versions = result.get("versions").expect("expected 'versions' key");
+        let arr = versions.as_array().expect("expected array");
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0], serde_json::json!("v1.0"));
+        assert_eq!(arr[1], serde_json::json!("v2.0"));
     }
 }

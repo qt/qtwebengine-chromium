@@ -98,6 +98,10 @@ component("url") {
     output_name = "url_lib"
   }
 
+  if (is_ios) {
+    sources += [ "url_constants_ios.h" ]
+  }
+
   # ICU support.
   if (use_platform_icu_alternatives) {
     if (is_android) {
@@ -418,11 +422,11 @@ rust_static_library("url_rust") {
     "url.rs",
   ]
   allow_unsafe = true
-  deps = [
+  public_deps = [
     ":url",
     ":url_shim",
-    "//third_party/rust/cxx/v1:lib",
   ]
+  deps = [ "//third_party/rust/cxx/v1:lib" ]
   cxx_bindings = [
     "gurl.rs",
     "origin.rs",

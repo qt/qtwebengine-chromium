@@ -15,14 +15,14 @@
 use alloc::{boxed::Box, vec::Vec};
 
 pub use crate::noise_handshake::crypto_wrapper::{
-    aes_256_gcm_open_in_place, aes_256_gcm_seal_in_place, ecdsa_verify, hkdf_sha256,
-    p256_scalar_mult, rand_bytes, sha256, sha256_two_part, EcdsaKeyPair, P256Scalar, NONCE_LEN,
-    P256_SCALAR_LEN, P256_X962_LEN, SHA256_OUTPUT_LEN, SYMMETRIC_KEY_LEN,
+    EcdsaKeyPair, NONCE_LEN, P256_SCALAR_LEN, P256_X962_LEN, P256Scalar, SHA256_OUTPUT_LEN,
+    SYMMETRIC_KEY_LEN, aes_256_gcm_open_in_place, aes_256_gcm_seal_in_place, ecdsa_verify,
+    hkdf_sha256, p256_scalar_mult, rand_bytes, sha256, sha256_two_part,
 };
 use crate::noise_handshake::{
+    IdentityKeyHandle, NoiseMessage, OrderedCrypter,
     error::Error,
     noise::{HandshakeType, Noise},
-    IdentityKeyHandle, NoiseMessage, OrderedCrypter,
 };
 
 pub struct HandshakeInitiator {
@@ -78,25 +78,22 @@ impl HandshakeInitiator {
             self.noise.mix_key(&es_ecdh_bytes);
         }
         if let Some(self_priv_key) = self.self_identity_priv_key.as_ref() {
-            let self_static_pub_key =
-                self_priv_key.get_public_key().map_err(|_| Error::InvalidPublicKey)?;
             if let Some(peer_identity_pub_key) = self.peer_identity_pub_key {
-                let ss_ecdh_bytes = sha256_two_part(&self_static_pub_key, &peer_identity_pub_key);
+                // ss: DH(s_initiator, s_responder) — requires the initiator's private key.
+                // Previously this incorrectly used sha256(pub_a || pub_b) which is computable
+                // from public information alone and defeats the mutual-authentication guarantee
+                // of the KK pattern.
+                let ss_ecdh_bytes = self_priv_key
+                    .derive_dh_secret(peer_identity_pub_key.as_slice())
+                    .map_err(|_| Error::InvalidHandshake)?;
                 self.noise.mix_key(&ss_ecdh_bytes);
             } else {
                 return Err(Error::MissingPeerPublicKey);
             }
         }
-        if let Some(self_priv_key) = self.self_identity_priv_key.as_ref() {
-            if let Some(peer_identity_pub_key) = self.peer_identity_pub_key {
-                let se_ecdh_bytes = self_priv_key
-                    .derive_dh_secret(peer_identity_pub_key.as_slice())
-                    .map_err(|_| Error::InvalidHandshake)?;
-                self.noise.mix_key(&se_ecdh_bytes);
-            } else {
-                return Err(Error::MissingPeerPublicKey);
-            }
-        }
+        // NOTE: the `se` DH term is NOT part of the first message (-> e, es, ss).
+        // It belongs to the response (<- e, ee, se) and is computed in
+        // `process_response` once the responder's ephemeral key is known.
         let ciphertext = self.noise.encrypt_and_hash(&[]);
         Ok(NoiseMessage { ciphertext, ephemeral_public_key: ephemeral_pub_key.to_vec() })
     }
@@ -117,6 +114,18 @@ impl HandshakeInitiator {
         self.noise.mix_hash(&handshake_response.ephemeral_public_key);
         self.noise.mix_key(&handshake_response.ephemeral_public_key);
         self.noise.mix_key(&ee_ecdh_bytes);
+
+        // se: DH(s_initiator, e_responder) — present only in the KK pattern
+        // (<- e, ee, se).  Computed from the initiator side as
+        // DH(s_initiator_priv, e_responder_pub).  This must be mixed in the
+        // same position (after `ee`) as on the responder side so both parties
+        // derive identical keys.
+        if let Some(self_priv_key) = self.self_identity_priv_key.as_ref() {
+            let se_ecdh_bytes = self_priv_key
+                .derive_dh_secret(handshake_response.ephemeral_public_key.as_slice())
+                .map_err(|_| Error::InvalidHandshake)?;
+            self.noise.mix_key(&se_ecdh_bytes);
+        }
         let plaintext = self
             .noise
             .decrypt_and_hash(&handshake_response.ciphertext)

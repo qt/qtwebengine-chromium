@@ -3,20 +3,19 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Protocol from '../../generated/protocol.js';
-import {
-  createTarget,
-} from '../../testing/EnvironmentHelpers.js';
-import {
-  describeWithMockConnection,
-} from '../../testing/MockConnection.js';
+import {setupLocaleHooks} from '../../testing/LocaleHelpers.js';
 import {
   FRAME_URL,
   getInitializedResourceTreeModel,
   getMainFrame,
   navigate,
 } from '../../testing/ResourceTreeHelpers.js';
+import {setupRuntimeHooks} from '../../testing/RuntimeHelpers.js';
+import {setupSettingsHooks} from '../../testing/SettingsHelpers.js';
+import {TestUniverse} from '../../testing/TestUniverse.js';
 import * as Common from '../common/common.js';
 import * as Platform from '../platform/platform.js';
 
@@ -24,7 +23,18 @@ import * as SDK from './sdk.js';
 
 const {urlString} = Platform.DevToolsPath;
 
-describeWithMockConnection('ConsoleMessage', () => {
+describe('ConsoleMessage', () => {
+  setupLocaleHooks();
+  setupSettingsHooks();
+  setupRuntimeHooks();
+
+  let universe: TestUniverse;
+
+  beforeEach(() => {
+    universe = new TestUniverse({
+      overrideAutoStartModels: new Set([SDK.ConsoleModel.ConsoleModel]),
+    });
+  });
   const scriptId1 = '1' as Protocol.Runtime.ScriptId;
   const scriptId2 = '2' as Protocol.Runtime.ScriptId;
 
@@ -103,11 +113,11 @@ describeWithMockConnection('ConsoleMessage', () => {
   });
 
   it('logs a message on main frame navigation', async () => {
-    Common.Settings.Settings.instance().moduleSetting('preserve-console-log').set(true);
-    const consoleLog = sinon.spy(Common.Console.Console.instance(), 'log');
-    const tabTarget = createTarget({type: SDK.Target.Type.TAB});
-    const mainFrameTarget = createTarget({type: SDK.Target.Type.FRAME, parentTarget: tabTarget});
-    const subframeTarget = createTarget({type: SDK.Target.Type.FRAME, parentTarget: mainFrameTarget});
+    universe.settings.moduleSetting('preserve-console-log').set(true);
+    const consoleLog = sinon.spy(universe.console, 'log');
+    const tabTarget = universe.createTarget({type: SDK.Target.Type.TAB});
+    const mainFrameTarget = universe.createTarget({type: SDK.Target.Type.FRAME, parentTarget: tabTarget});
+    const subframeTarget = universe.createTarget({type: SDK.Target.Type.FRAME, parentTarget: mainFrameTarget});
     await getInitializedResourceTreeModel(subframeTarget);
     navigate(getMainFrame(subframeTarget));
     sinon.assert.notCalled(consoleLog);
@@ -119,11 +129,11 @@ describeWithMockConnection('ConsoleMessage', () => {
   });
 
   it('logs a message on main frame navigation via bfcache', async () => {
-    Common.Settings.Settings.instance().moduleSetting('preserve-console-log').set(true);
-    const consoleLog = sinon.spy(Common.Console.Console.instance(), 'log');
-    const tabTarget = createTarget({type: SDK.Target.Type.TAB});
-    const mainFrameTarget = createTarget({type: SDK.Target.Type.FRAME, parentTarget: tabTarget});
-    const subframeTarget = createTarget({type: SDK.Target.Type.FRAME, parentTarget: mainFrameTarget});
+    universe.settings.moduleSetting('preserve-console-log').set(true);
+    const consoleLog = sinon.spy(universe.console, 'log');
+    const tabTarget = universe.createTarget({type: SDK.Target.Type.TAB});
+    const mainFrameTarget = universe.createTarget({type: SDK.Target.Type.FRAME, parentTarget: tabTarget});
+    const subframeTarget = universe.createTarget({type: SDK.Target.Type.FRAME, parentTarget: mainFrameTarget});
     await getInitializedResourceTreeModel(subframeTarget);
     navigate(getMainFrame(subframeTarget), {}, Protocol.Page.NavigationType.BackForwardCacheRestore);
     sinon.assert.notCalled(consoleLog);
@@ -136,7 +146,7 @@ describeWithMockConnection('ConsoleMessage', () => {
   });
 
   it('discards duplicate console messages with identical timestamps', async () => {
-    const target = createTarget({type: SDK.Target.Type.FRAME});
+    const target = universe.createTarget({type: SDK.Target.Type.FRAME});
     const runtimeModel = target.model(SDK.RuntimeModel.RuntimeModel);
     assert.exists(runtimeModel);
     const resourceTreeModel = target.model(SDK.ResourceTreeModel.ResourceTreeModel);
@@ -167,10 +177,10 @@ describeWithMockConnection('ConsoleMessage', () => {
   });
 
   it('clears when main frame global object cleared', async () => {
-    Common.Settings.Settings.instance().moduleSetting('preserve-console-log').set(false);
-    const tabTarget = createTarget({type: SDK.Target.Type.TAB});
-    const mainFrameTarget = createTarget({type: SDK.Target.Type.FRAME, parentTarget: tabTarget});
-    const subframeTarget = createTarget({type: SDK.Target.Type.FRAME, parentTarget: mainFrameTarget});
+    universe.settings.moduleSetting('preserve-console-log').set(false);
+    const tabTarget = universe.createTarget({type: SDK.Target.Type.TAB});
+    const mainFrameTarget = universe.createTarget({type: SDK.Target.Type.FRAME, parentTarget: tabTarget});
+    const subframeTarget = universe.createTarget({type: SDK.Target.Type.FRAME, parentTarget: mainFrameTarget});
     const clearGlobalObjectOnTarget = (target: SDK.Target.Target) => {
       const resourceTreeModel = target.model(SDK.ResourceTreeModel.ResourceTreeModel);
       assert.exists(resourceTreeModel);
@@ -200,5 +210,80 @@ describeWithMockConnection('ConsoleMessage', () => {
     assert.strictEqual(consoleClearEventsTabTarget, 0);
     assert.strictEqual(consoleClearEventsMainFrameTarget, 1);
     assert.strictEqual(consoleClearEventsSubframeTarget, 0);
+  });
+
+  it('does not clear when main frame global object cleared if preserve-console-log is true', async () => {
+    universe.settings.moduleSetting('preserve-console-log').set(true);
+    const tabTarget = universe.createTarget({type: SDK.Target.Type.TAB});
+    const mainFrameTarget = universe.createTarget({type: SDK.Target.Type.FRAME, parentTarget: tabTarget});
+    const subframeTarget = universe.createTarget({type: SDK.Target.Type.FRAME, parentTarget: mainFrameTarget});
+    const clearGlobalObjectOnTarget = (target: SDK.Target.Target) => {
+      const resourceTreeModel = target.model(SDK.ResourceTreeModel.ResourceTreeModel);
+      assert.exists(resourceTreeModel);
+      resourceTreeModel.dispatchEventToListeners(SDK.ResourceTreeModel.Events.CachedResourcesLoaded, resourceTreeModel);
+
+      const debuggerModel = target.model(SDK.DebuggerModel.DebuggerModel);
+      assert.exists(debuggerModel);
+      debuggerModel.dispatchEventToListeners(SDK.DebuggerModel.Events.GlobalObjectCleared, debuggerModel);
+    };
+
+    let consoleClearEventsTabTarget = 0;
+    let consoleClearEventsMainFrameTarget = 0;
+    let consoleClearEventsSubframeTarget = 0;
+    tabTarget.model(SDK.ConsoleModel.ConsoleModel)
+        ?.addEventListener(SDK.ConsoleModel.Events.ConsoleCleared, () => ++consoleClearEventsTabTarget);
+    mainFrameTarget.model(SDK.ConsoleModel.ConsoleModel)
+        ?.addEventListener(SDK.ConsoleModel.Events.ConsoleCleared, () => ++consoleClearEventsMainFrameTarget);
+    subframeTarget.model(SDK.ConsoleModel.ConsoleModel)
+        ?.addEventListener(SDK.ConsoleModel.Events.ConsoleCleared, () => ++consoleClearEventsSubframeTarget);
+
+    clearGlobalObjectOnTarget(subframeTarget);
+    assert.strictEqual(consoleClearEventsTabTarget, 0);
+    assert.strictEqual(consoleClearEventsMainFrameTarget, 0);
+    assert.strictEqual(consoleClearEventsSubframeTarget, 0);
+
+    clearGlobalObjectOnTarget(mainFrameTarget);
+    assert.strictEqual(consoleClearEventsTabTarget, 0);
+    assert.strictEqual(consoleClearEventsMainFrameTarget, 0);
+    assert.strictEqual(consoleClearEventsSubframeTarget, 0);
+  });
+
+  it('revokes lazily handled promise rejections', async () => {
+    const target = universe.createTarget({type: SDK.Target.Type.FRAME});
+    const runtimeModel = target.model(SDK.RuntimeModel.RuntimeModel);
+    assert.exists(runtimeModel);
+    const resourceTreeModel = target.model(SDK.ResourceTreeModel.ResourceTreeModel);
+    assert.exists(resourceTreeModel);
+    const consoleModel = target.model(SDK.ConsoleModel.ConsoleModel);
+    assert.exists(consoleModel);
+
+    // Initializing ConsoleModel on a frame target normally waits for CachedResourcesLoaded.
+    resourceTreeModel.dispatchEventToListeners(SDK.ResourceTreeModel.Events.CachedResourcesLoaded, resourceTreeModel);
+
+    const exceptionDetails = {
+      exceptionId: 1,
+      text: 'Uncaught (in promise)',
+      lineNumber: 0,
+      columnNumber: 0,
+    };
+
+    runtimeModel.dispatchEventToListeners(
+        SDK.RuntimeModel.Events.ExceptionThrown,
+        {timestamp: 0, details: exceptionDetails} as unknown as SDK.RuntimeModel.ExceptionWithTimestamp);
+
+    assert.lengthOf(consoleModel.messages(), 1);
+    assert.strictEqual(consoleModel.messages()[0].level, Protocol.Log.LogEntryLevel.Error);
+    assert.strictEqual(consoleModel.errors(), 1);
+
+    let messageUpdatedCalled = false;
+    consoleModel.addEventListener(SDK.ConsoleModel.Events.MessageUpdated, () => {
+      messageUpdatedCalled = true;
+    });
+
+    runtimeModel.dispatchEventToListeners(SDK.RuntimeModel.Events.ExceptionRevoked, 1);
+
+    assert.isTrue(messageUpdatedCalled);
+    assert.strictEqual(consoleModel.messages()[0].level, Protocol.Log.LogEntryLevel.Verbose);
+    assert.strictEqual(consoleModel.errors(), 0);
   });
 });

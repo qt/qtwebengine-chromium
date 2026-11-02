@@ -182,7 +182,7 @@ TEST_F(IR_ValidatorTest, Builtin_ClipDistance_Duplicate) {
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Builtin_ClipDistance_Duplicate_WithCapability) {
+TEST_F(IR_ValidatorTest, Builtin_ClipDistance_Duplicate_WithProperty) {
     const auto attr = IOAttributes{.builtin = BuiltinValue::kClipDistances};
     auto* str_ty = ty.Struct(mod.symbols.New("OutputStruct"),
                              {{mod.symbols.New("cd1"), ty.array<f32, 2>(), attr},
@@ -200,11 +200,12 @@ TEST_F(IR_ValidatorTest, Builtin_ClipDistance_Duplicate_WithCapability) {
         b.Unreachable();
     });
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kAllowClipDistancesOnF32ScalarAndVector});
+    mod.properties.Add(Property::kAllowClipDistancesOnF32ScalarAndVector);
+    auto res = ir::Validate(mod);
     ASSERT_EQ(res, Success) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Builtin_ClipDistance_Triple_WithCapability) {
+TEST_F(IR_ValidatorTest, Builtin_ClipDistance_Triple_WithProperty) {
     const auto attr = IOAttributes{.builtin = BuiltinValue::kClipDistances};
     auto* str_ty = ty.Struct(mod.symbols.New("OutputStruct"),
                              {{mod.symbols.New("cd1"), ty.array<f32, 2>(), attr},
@@ -225,12 +226,13 @@ TEST_F(IR_ValidatorTest, Builtin_ClipDistance_Triple_WithCapability) {
         b.Unreachable();
     });
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kAllowClipDistancesOnF32ScalarAndVector});
+    mod.properties.Add(Property::kAllowClipDistancesOnF32ScalarAndVector);
+    auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:8:48 error: var: too many instances of builtin 'clip_distances' on entry point output, only two allowed with 'kAllowClipDistancesOnF32ScalarAndVector' capability enabled
+            R"(:8:48 error: var: too many instances of builtin 'clip_distances' on entry point output, only two allowed with 'kAllowClipDistancesOnF32ScalarAndVector' property enabled
   %outs:ptr<__out, OutputStruct, read_write> = var undef
                                                ^^^
 )")) << res.Failure();
@@ -489,7 +491,7 @@ TEST_F(IR_ValidatorTest, Builtin_FragDepth_WrongType) {
 
 TEST_F(IR_ValidatorTest, Builtin_NonFragDepth_NonUndefinedDepthMode) {
     auto* f = VertexEntryPoint();
-    f->SetReturnDepthMode(BuiltinDepthMode::kAny);
+    f->SetReturnDepthMode(BuiltinDepthMode::kGreater);
 
     b.Append(f->Block(), [&] { b.Unreachable(); });
 
@@ -498,7 +500,7 @@ TEST_F(IR_ValidatorTest, Builtin_NonFragDepth_NonUndefinedDepthMode) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:1:1 error: position cannot have a depth mode of any. It can only be undefined.
+            R"(:1:1 error: position cannot have a depth mode of greater. It can only be undefined.
 %f = @vertex func():vec4<f32> [@position] {
 ^^
 )")) << res.Failure();
@@ -507,7 +509,7 @@ TEST_F(IR_ValidatorTest, Builtin_NonFragDepth_NonUndefinedDepthMode) {
 TEST_F(IR_ValidatorTest, MissingBuiltin_WithFragDepth) {
     auto* f = ComputeEntryPoint();
     AddReturn(f, "pos", ty.vec4f());
-    f->SetReturnDepthMode(BuiltinDepthMode::kAny);
+    f->SetReturnDepthMode(BuiltinDepthMode::kGreater);
 
     b.Append(f->Block(), [&] { b.Unreachable(); });
 
@@ -529,17 +531,6 @@ TEST_F(IR_ValidatorTest, Builtin_FragDepth_UndefinedDepthMode) {
 
     auto res = ir::Validate(mod);
     ASSERT_EQ(res, Success);
-}
-
-TEST_F(IR_ValidatorTest, Builtin_FragDepth_AnyDepthMode) {
-    auto* f = FragmentEntryPoint();
-    AddBuiltinReturn(f, "depth", BuiltinValue::kFragDepth, ty.f32());
-    f->SetReturnDepthMode(BuiltinDepthMode::kAny);
-
-    b.Append(f->Block(), [&] { b.Unreachable(); });
-
-    auto res = ir::Validate(mod);
-    ASSERT_EQ(res, Success) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, Builtin_FragDepth_GreaterDepthMode) {
@@ -1409,7 +1400,7 @@ TEST_F(IR_ValidatorTest, Builtin_NumSubgroups_WrongType) {
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Builtin_PointSize_WithoutCapability) {
+TEST_F(IR_ValidatorTest, Builtin_PointSize_WithoutProperty) {
     const auto position_attr = IOAttributes{.builtin = core::BuiltinValue::kPosition};
     const auto point_size_attr = IOAttributes{.builtin = core::BuiltinValue::kPointSize};
     auto* str_ty = ty.Struct(mod.symbols.New("OutputStruct"),
@@ -1436,7 +1427,7 @@ TEST_F(IR_ValidatorTest, Builtin_PointSize_WithoutCapability) {
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Builtin_PointSize_WithCapability) {
+TEST_F(IR_ValidatorTest, Builtin_PointSize_WithProperty) {
     const auto position_attr = IOAttributes{.builtin = core::BuiltinValue::kPosition};
     const auto point_size_attr = IOAttributes{.builtin = core::BuiltinValue::kPointSize};
     auto* str_ty = ty.Struct(mod.symbols.New("OutputStruct"),
@@ -1453,7 +1444,8 @@ TEST_F(IR_ValidatorTest, Builtin_PointSize_WithCapability) {
         b.Return(f, b.Zero(str_ty));
     });
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kAllowPointSizeBuiltin});
+    mod.properties.Add(Property::kAllowPointSizeBuiltin);
+    auto res = ir::Validate(mod);
     ASSERT_EQ(res, Success) << res.Failure();
 }
 
@@ -1487,10 +1479,13 @@ TEST_F(IR_ValidatorTest, InputAttachmentIndex_NonEntryPoint_InvalidIOKind) {
         << res.Failure();
 }
 
-using BitcastTypeTest = IRTestParamHelper<std::tuple<
-    /* bitcast allowed */ bool,
-    /* src type_builder */ TypeBuilderFn,
-    /* dest type_builder */ TypeBuilderFn>>;
+struct BitcastTypeTest : public IRTestParamHelper<std::tuple<
+                             /* bitcast allowed */ bool,
+                             /* src type_builder */ TypeBuilderFn,
+                             /* dest type_builder */ TypeBuilderFn>> {
+  protected:
+    void SetUp() override { mod.properties.Add(Property::kAllow16BitFloats); }
+};
 
 TEST_P(BitcastTypeTest, Check) {
     bool bitcast_allowed = std::get<0>(GetParam());
@@ -1572,5 +1567,115 @@ INSTANTIATE_TEST_SUITE_P(
         std::make_tuple(false, TypeBuilder<f16>, TypeBuilder<i32>),
         std::make_tuple(false, TypeBuilder<f16>, TypeBuilder<f32>),
         std::make_tuple(false, TypeBuilder<f16>, TypeBuilder<vec2h>)));
+
+TEST_F(IR_ValidatorTest, Builtin_SubgroupMatrixStore_OOBOffset) {
+    auto* mat_ty = ty.subgroup_matrix_left(ty.u32(), 8u, 8u);
+    auto* arr_ptr_ty = ty.ptr<workgroup, array<u32, 8>>();
+
+    auto* f = b.Function("foo", ty.void_());
+    auto* arr_param = b.FunctionParam(arr_ptr_ty);
+    auto* mat_param = b.FunctionParam(mat_ty);
+    f->SetParams({arr_param, mat_param});
+
+    b.Append(f->Block(), [&] {
+        b.Call(ty.void_(), core::BuiltinFn::kSubgroupMatrixStore, arr_param, 12_u, mat_param, true,
+               8_u);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr("the offset argument of subgroupMatrixStore (12) is out of "
+                                   "bounds of the array type of size 8"));
+}
+
+TEST_F(IR_ValidatorTest, Builtin_SubgroupMatrixLoad_OOBOffset) {
+    auto* mat_ty = ty.subgroup_matrix_left(ty.u32(), 8u, 8u);
+    auto* arr_ptr_ty = ty.ptr<workgroup, array<u32, 8>>();
+
+    auto* f = b.Function("foo", ty.void_());
+    auto* arr_param = b.FunctionParam(arr_ptr_ty);
+    f->SetParams({arr_param});
+
+    b.Append(f->Block(), [&] {
+        b.CallExplicit(mat_ty, core::BuiltinFn::kSubgroupMatrixLoad,
+                       Vector<TemplateParameter, 1>{mat_ty}, arr_param, 8_u, true, 8_u);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr("the offset argument of subgroupMatrixLoad (8) is out of bounds "
+                                   "of the array type of size 8"));
+}
+
+TEST_F(IR_ValidatorTest, Builtin_SubgroupMatrixLoad_NegativeOffset) {
+    auto* mat_ty = ty.subgroup_matrix_left(ty.u32(), 8u, 8u);
+    auto* arr_ptr_ty = ty.ptr<workgroup, array<u32, 8>>();
+
+    auto* f = b.Function("foo", ty.void_());
+    auto* arr_param = b.FunctionParam(arr_ptr_ty);
+    f->SetParams({arr_param});
+
+    b.Append(f->Block(), [&] {
+        b.CallExplicit(mat_ty, core::BuiltinFn::kSubgroupMatrixLoad,
+                       Vector<TemplateParameter, 1>{mat_ty}, arr_param, -1_i, true, 8_u);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            "subgroupMatrixLoad: the offset argument of subgroupMatrixLoad must be non-negative"));
+}
+
+TEST_F(IR_ValidatorTest, Builtin_SubgroupMatrixStore_i8_i32_InBoundsOffset) {
+    mod.properties.Add(Property::kAllow8BitIntegers);
+
+    auto* mat_ty = ty.subgroup_matrix_left(ty.i8(), 8u, 8u);
+    auto* arr_ptr_ty = ty.ptr<workgroup, array<i32, 8>>();
+
+    auto* f = b.Function("foo", ty.void_());
+    auto* arr_param = b.FunctionParam(arr_ptr_ty);
+    auto* mat_param = b.FunctionParam(mat_ty);
+    f->SetParams({arr_param, mat_param});
+
+    b.Append(f->Block(), [&] {
+        b.Call(ty.void_(), core::BuiltinFn::kSubgroupMatrixStore, arr_param, 12_u, mat_param, true,
+               8_u);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Builtin_SubgroupMatrixStore_i8_i32_OOBOffset) {
+    mod.properties.Add(Property::kAllow8BitIntegers);
+
+    auto* mat_ty = ty.subgroup_matrix_left(ty.i8(), 8u, 8u);
+    auto* arr_ptr_ty = ty.ptr<workgroup, array<i32, 8>>();
+
+    auto* f = b.Function("foo", ty.void_());
+    auto* arr_param = b.FunctionParam(arr_ptr_ty);
+    auto* mat_param = b.FunctionParam(mat_ty);
+    f->SetParams({arr_param, mat_param});
+
+    b.Append(f->Block(), [&] {
+        b.Call(ty.void_(), core::BuiltinFn::kSubgroupMatrixStore, arr_param, 32_u, mat_param, true,
+               8_u);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr("the offset argument of subgroupMatrixStore (32) is out of "
+                                   "bounds of the array type of size 32"));
+}
 
 }  // namespace tint::core::ir

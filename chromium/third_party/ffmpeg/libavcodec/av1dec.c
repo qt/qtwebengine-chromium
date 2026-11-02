@@ -543,6 +543,7 @@ static int get_pixel_format(AVCodecContext *avctx)
                      CONFIG_AV1_D3D11VA_HWACCEL * 2 + \
                      CONFIG_AV1_D3D12VA_HWACCEL + \
                      CONFIG_AV1_NVDEC_HWACCEL + \
+                     CONFIG_AV1_NVDEC_CUARRAY_HWACCEL + \
                      CONFIG_AV1_VAAPI_HWACCEL + \
                      CONFIG_AV1_VDPAU_HWACCEL + \
                      CONFIG_AV1_VIDEOTOOLBOX_HWACCEL + \
@@ -566,6 +567,9 @@ static int get_pixel_format(AVCodecContext *avctx)
 #endif
 #if CONFIG_AV1_NVDEC_HWACCEL
         *fmtp++ = AV_PIX_FMT_CUDA;
+#endif
+#if CONFIG_AV1_NVDEC_CUARRAY_HWACCEL
+        *fmtp++ = AV_PIX_FMT_CUARRAY;
 #endif
 #if CONFIG_AV1_VAAPI_HWACCEL
         *fmtp++ = AV_PIX_FMT_VAAPI;
@@ -593,6 +597,9 @@ static int get_pixel_format(AVCodecContext *avctx)
 #endif
 #if CONFIG_AV1_NVDEC_HWACCEL
         *fmtp++ = AV_PIX_FMT_CUDA;
+#endif
+#if CONFIG_AV1_NVDEC_CUARRAY_HWACCEL
+        *fmtp++ = AV_PIX_FMT_CUARRAY;
 #endif
 #if CONFIG_AV1_VAAPI_HWACCEL
         *fmtp++ = AV_PIX_FMT_VAAPI;
@@ -646,10 +653,16 @@ static int get_pixel_format(AVCodecContext *avctx)
 #if CONFIG_AV1_NVDEC_HWACCEL
         *fmtp++ = AV_PIX_FMT_CUDA;
 #endif
+#if CONFIG_AV1_NVDEC_CUARRAY_HWACCEL
+        *fmtp++ = AV_PIX_FMT_CUARRAY;
+#endif
         break;
     case AV_PIX_FMT_GRAY10:
 #if CONFIG_AV1_NVDEC_HWACCEL
         *fmtp++ = AV_PIX_FMT_CUDA;
+#endif
+#if CONFIG_AV1_NVDEC_CUARRAY_HWACCEL
+        *fmtp++ = AV_PIX_FMT_CUARRAY;
 #endif
         break;
     }
@@ -791,15 +804,6 @@ static int set_context_with_sequence(AVCodecContext *avctx,
         avctx->chroma_sample_location = AVCHROMA_LOC_TOPLEFT;
         break;
     }
-
-#if FF_API_CODEC_PROPS
-FF_DISABLE_DEPRECATION_WARNINGS
-    if (seq->film_grain_params_present)
-        avctx->properties |= FF_CODEC_PROPERTY_FILM_GRAIN;
-    else
-        avctx->properties &= ~FF_CODEC_PROPERTY_FILM_GRAIN;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
 
     if (avctx->width != width || avctx->height != height) {
         int ret = ff_set_dimensions(avctx, width, height);
@@ -968,113 +972,19 @@ fail:
 static int export_itut_t35(AVCodecContext *avctx, AVFrame *frame,
                            const AV1RawMetadataITUTT35 *itut_t35)
 {
-    GetByteContext gb;
     AV1DecContext *s = avctx->priv_data;
-    int ret, provider_code, country_code;
+    FFITUTT35 itut35 = { .country_code = itut_t35->itu_t_t35_country_code };
+    FFITUTT35Aux aux = { .dovi = &s->dovi };
+    int ret;
 
-    bytestream2_init(&gb, itut_t35->payload, itut_t35->payload_size);
+    ret = ff_itut_t35_parse_buffer(&itut35, itut_t35->payload, itut_t35->payload_size,
+                                   FF_ITUT_T35_FLAG_COUNTRY_CODE);
+    if (ret <= 0)
+        return ret;
 
-    country_code = itut_t35->itu_t_t35_country_code ;
-    switch (country_code) {
-    case ITU_T_T35_COUNTRY_CODE_US:
-        provider_code = bytestream2_get_be16(&gb);
-
-        switch (provider_code) {
-        case ITU_T_T35_PROVIDER_CODE_ATSC: {
-            uint32_t user_identifier = bytestream2_get_be32(&gb);
-            switch (user_identifier) {
-            case MKBETAG('G', 'A', '9', '4'): { // closed captions
-                AVBufferRef *buf = NULL;
-
-                ret = ff_parse_a53_cc(&buf, gb.buffer, bytestream2_get_bytes_left(&gb));
-                if (ret < 0)
-                    return ret;
-                if (!ret)
-                    break;
-
-                ret = ff_frame_new_side_data_from_buf(avctx, frame, AV_FRAME_DATA_A53_CC, &buf);
-                if (ret < 0)
-                    return ret;
-
-#if FF_API_CODEC_PROPS
-FF_DISABLE_DEPRECATION_WARNINGS
-                avctx->properties |= FF_CODEC_PROPERTY_CLOSED_CAPTIONS;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
-                break;
-            }
-            default: // ignore unsupported identifiers
-                break;
-            }
-            break;
-        }
-        case ITU_T_T35_PROVIDER_CODE_SAMSUNG: {
-            AVDynamicHDRPlus *hdrplus;
-            int provider_oriented_code = bytestream2_get_be16(&gb);
-            int application_identifier = bytestream2_get_byte(&gb);
-
-            if (provider_oriented_code != 1 || application_identifier != 4)
-                return 0; // ignore
-
-            hdrplus = av_dynamic_hdr_plus_create_side_data(frame);
-            if (!hdrplus)
-                return AVERROR(ENOMEM);
-
-            ret = av_dynamic_hdr_plus_from_t35(hdrplus, gb.buffer,
-                                                bytestream2_get_bytes_left(&gb));
-            if (ret < 0)
-                return ret;
-            break;
-        }
-        case ITU_T_T35_PROVIDER_CODE_DOLBY: {
-            int provider_oriented_code = bytestream2_get_be32(&gb);
-            if (provider_oriented_code != 0x800)
-                return 0; // ignore
-
-            ret = ff_dovi_rpu_parse(&s->dovi, gb.buffer, bytestream2_get_bytes_left(&gb),
-                                    avctx->err_recognition);
-            if (ret < 0) {
-                av_log(avctx, AV_LOG_WARNING, "Error parsing DOVI OBU.\n");
-                return 0; // ignore
-            }
-
-            ret = ff_dovi_attach_side_data(&s->dovi, frame);
-            if (ret < 0)
-                return ret;
-            break;
-        }
-        default:
-            break;
-        }
-        break;
-    case ITU_T_T35_COUNTRY_CODE_UK:
-        bytestream2_skip(&gb, 1); // t35_uk_country_code_second_octet
-
-        provider_code = bytestream2_get_be16(&gb);
-        switch (provider_code) {
-        case ITU_T_T35_PROVIDER_CODE_VNOVA: {
-            AVFrameSideData *sd;
-            if (bytestream2_get_bytes_left(&gb) < 2)
-                return AVERROR_INVALIDDATA;
-
-            ret = ff_frame_new_side_data(avctx, frame, AV_FRAME_DATA_LCEVC,
-                                         bytestream2_get_bytes_left(&gb), &sd);
-            if (ret < 0)
-                return ret;
-            if (!sd)
-                break;
-
-            bytestream2_get_bufferu(&gb, sd->data, sd->size);
-            break;
-        }
-        default:
-            break;
-        }
-        break;
-    default:
-        // ignore unsupported provider codes
-        break;
-    }
+    ret = ff_itut_t35_parse_payload_to_frame(&itut35, &aux, avctx, frame);
+    if (ret < 0)
+        return ret;
 
     return 0;
 }
@@ -1657,6 +1567,9 @@ const FFCodec ff_av1_decoder = {
 #endif
 #if CONFIG_AV1_NVDEC_HWACCEL
         HWACCEL_NVDEC(av1),
+#endif
+#if CONFIG_AV1_NVDEC_CUARRAY_HWACCEL
+        HWACCEL_NVDEC_CUARRAY(av1),
 #endif
 #if CONFIG_AV1_VAAPI_HWACCEL
         HWACCEL_VAAPI(av1),

@@ -5,6 +5,12 @@
 import("//build_overrides/build.gni")
 import("./build_overrides/data_headers_template.gni")
 import("./gni/openscreen.gni")
+import("cast/streaming/external_libraries.gni")
+
+declare_args() {
+  build_python_bindings =
+      !build_with_chromium && have_ffmpeg && have_libopus && have_libvpx
+}
 
 # Used to ensure that relative includes still work while built with an embedder.
 config("include_dirs") {
@@ -13,6 +19,12 @@ config("include_dirs") {
     "//$root",
     "$root_gen_dir/$root",
   ]
+}
+
+config("public_features") {
+  if (build_with_chromium) {
+    defines = [ "BUILD_WITH_CHROMIUM" ]
+  }
 }
 
 # Put defines here that are only used in our internal files and NEVER in
@@ -69,6 +81,11 @@ group("gn_all") {
         "third_party/protobuf:protoc($host_toolchain)",
         "third_party/zlib",
       ]
+      if (build_python_bindings) {
+        deps += [
+          "cast/standalone_sender/bindings/python:cast_sender_python_bindings",
+        ]
+      }
     }
   }
 
@@ -101,9 +118,14 @@ openscreen_source_set("openscreen_unittests_all") {
       "discovery:unittests",
     ]
   }
-  public_deps += [ "osp/msgs:unittests" ]
-  if (!is_win) {
-    public_deps += [ "osp:unittests" ]
+  if (!build_with_chromium) {
+    public_deps += [ "osp/msgs:unittests" ]
+    if (!is_win) {
+      public_deps += [ "osp:unittests" ]
+    }
+  }
+  if (build_python_bindings) {
+    public_deps += [ "cast/standalone_sender/bindings/python:unittests" ]
   }
 }
 if (!build_with_chromium) {

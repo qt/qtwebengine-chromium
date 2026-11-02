@@ -299,6 +299,14 @@ character.
 FIXME: This converter is not UTF-8 aware yet.
 </para></listitem></varlistentry>
 
+<varlistentry><term>
+const
+</term><listitem><para>
+Replace text against a targeted element with the result of calling
+FcNameGetConstantNameFrom(). If text isn't none of any constant name,
+it simply fails.
+</para></listitem></varlistentry>
+
 </variablelist>
 
 For example, the format "%{family|downcase|delete( )}\n" will expand

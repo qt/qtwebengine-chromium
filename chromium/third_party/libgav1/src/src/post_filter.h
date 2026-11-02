@@ -17,15 +17,14 @@
 #ifndef LIBGAV1_SRC_POST_FILTER_H_
 #define LIBGAV1_SRC_POST_FILTER_H_
 
-#include <algorithm>
 #include <array>
 #include <atomic>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <type_traits>
 
-#include "src/dsp/common.h"
 #include "src/dsp/dsp.h"
 #include "src/frame_scratch_buffer.h"
 #include "src/loop_restoration_info.h"
@@ -34,8 +33,8 @@
 #include "src/utils/block_parameters_holder.h"
 #include "src/utils/common.h"
 #include "src/utils/constants.h"
-#include "src/utils/memory.h"
 #include "src/utils/threadpool.h"
+#include "src/utils/types.h"
 #include "src/yuv_buffer.h"
 
 namespace libgav1 {

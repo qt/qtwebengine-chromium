@@ -467,9 +467,9 @@ struct Reduce {
 // Represents an average or max pooling operation across all the elements with
 // moving window over the input tensor.
 // This struct also contains the attributes of pool2d operator, but the
-// `roundingType` and `outputSizes` array in MLPool2dOptions are not included
-// because they are used to calculate the output dimensions of pool2d in blink
-// side.
+// `outputShapeRounding` and `outputSizes` array in MLPool2dOptions are not
+// included because they are used to calculate the output dimensions of pool2d
+// in blink side.
 struct Pool2d {
   enum Kind {
     kAveragePool2d,
@@ -1441,15 +1441,5 @@ struct GraphInfo {
   // which identifies the respective pending constant operand.
   map<OperandId, blink.mojom.WebNNPendingConstantToken>
       constant_operand_ids_to_handles;
-  // A map of tensors used for graph constants. The key is the id of
-  // the constant operand, while the value is a handle to the tensor containing
-  // the weights.
-  map<OperandId, blink.mojom.WebNNTensorToken>
-      id_to_constant_tensor_operand_map;
 };
 
-// WebNNGraph runs in the GPU process and is called by the renderer process.
-// Graph execution is performed via WebNNContext::Dispatch().
-// This interface is lifecycle-only: pipe disconnect signals graph destruction.
-interface WebNNGraph {
-};

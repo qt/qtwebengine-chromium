@@ -27,7 +27,12 @@ include_rules = [
   "+chrome/browser/ui/webui/ash/login",
   "+chrome/browser/ui/webui/ash/system_web_dialog",
   "+chrome/browser/ui/webui/metrics_handler.h",
-  "+chrome/common",
   "+chrome/grit",
   "+chrome/installer/util",
 ]
+
+specific_include_rules = {
+  "lock_screen_start_reauth_ui\\.cc": [
+    "+chrome/browser/ui/webui/theme_source.h",
+  ],
+}

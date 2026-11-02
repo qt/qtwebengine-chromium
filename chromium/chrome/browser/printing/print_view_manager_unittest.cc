@@ -354,9 +354,14 @@ class TestPrintViewManagerWin : public PrintViewManagerBase {
       mojom::RequestPrintPreviewParamsPtr params) override {
     NOTREACHED();
   }
-  void CheckForCancel(int32_t preview_ui_id,
+  void CheckForCancel(const base::UnguessableToken& preview_ui_id,
                       int32_t request_id,
                       CheckForCancelCallback callback) override {
+    NOTREACHED();
+  }
+  void SetAccessibilityTree(
+      int32_t cookie,
+      const ui::AXTreeUpdate& accessibility_tree) override {
     NOTREACHED();
   }
 
@@ -370,7 +375,7 @@ class TestPrintViewManagerWin : public PrintViewManagerBase {
 #endif  // BUILDFLAG(IS_WIN)
 
 TEST_F(PrintViewManagerTest, PrintSubFrameAndDestroy) {
-  chrome::NewTab(browser());
+  chrome::NewTab(browser(), NewTabTypes::kNoUserAction);
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
   ASSERT_TRUE(web_contents);
@@ -392,7 +397,7 @@ TEST_F(PrintViewManagerTest, PrintSubFrameAndDestroy) {
 }
 
 TEST_F(PrintViewManagerTest, PrintForSystemDialog) {
-  chrome::NewTab(browser());
+  chrome::NewTab(browser(), NewTabTypes::kNoUserAction);
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
   ASSERT_TRUE(web_contents);
@@ -430,7 +435,7 @@ TEST_F(PrintViewManagerTest, PostScriptHasCorrectOffsets) {
   queue->SetupPrinterOffsets(offset_in_pixels, offset_in_pixels);
   g_browser_process->print_job_manager()->SetQueueForTest(queue);
 
-  chrome::NewTab(browser());
+  chrome::NewTab(browser(), NewTabTypes::kNoUserAction);
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
   ASSERT_TRUE(web_contents);

@@ -41,8 +41,8 @@ class CFWL_ComboBox final : public CFWL_Widget {
   FWL_Type GetClassID() const override;
   void ModifyStyleExts(uint32_t dwStyleExtsAdded,
                        uint32_t dwStyleExtsRemoved) override;
-  void SetStates(uint32_t dwStates) override;
-  void RemoveStates(uint32_t dwStates) override;
+  void SetStates(Mask<WidgetState> states) override;
+  void ClearStates(Mask<WidgetState> states) override;
   void Update() override;
   FWL_WidgetHit HitTest(const CFX_PointF& point) override;
   void DrawWidget(CFGAS_GEGraphics* pGraphics,

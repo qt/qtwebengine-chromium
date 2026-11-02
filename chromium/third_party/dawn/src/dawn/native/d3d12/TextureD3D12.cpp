@@ -57,6 +57,7 @@
 #include "src/dawn/native/d3d12/UtilsD3D12.h"
 #include "src/dawn/native/utils/RenderDoc.h"
 #include "src/utils/compiler.h"
+#include "src/utils/numeric.h"
 
 namespace dawn::native::d3d12 {
 
@@ -157,7 +158,7 @@ ResourceHeapKind GetResourceHeapKind(D3D12_RESOURCE_FLAGS flags, uint32_t resour
     return ResourceHeapKind::Default_OnlyNonRenderableOrDepthTextures;
 }
 
-D3D12_SHADER_COMPONENT_MAPPING D3D12ComponentSwizzle(wgpu::ComponentSwizzle swizzle) {
+UINT D3D12ComponentSwizzle(wgpu::ComponentSwizzle swizzle) {
     switch (swizzle) {
         case wgpu::ComponentSwizzle::Zero:
             return D3D12_SHADER_COMPONENT_MAPPING_FORCE_VALUE_0;
@@ -355,30 +356,7 @@ void Texture::DestroyImpl(DestroyReason reason) {
     mIsExternalSwapChainTexture = false;
 }
 
-MaybeError Texture::PinImpl(wgpu::TextureUsage usage) {
-    DAWN_ASSERT(!HasPinnedUsage());
-    SubresourceRange pinnedSubresources = GetAllSubresources();
 
-    CommandRecordingContext* commandContext =
-        ToBackend(GetDevice()->GetQueue())->GetPendingCommandContext(Queue::SubmitMode::Passive);
-    DAWN_TRY(EnsureSubresourceContentInitialized(commandContext, pinnedSubresources));
-
-    // TODO(crbug.com/482008255): Handle residency of pinned resources
-    TrackUsageAndTransitionNow(commandContext, usage, pinnedSubresources);
-
-    // TODO(https://issues.chromium.org/473444516): Investigate what to do for imported textures.
-    // Should we consider a pin/unpin pair similar to an access on a queue such that we need to
-    // wait on fences or export them?
-    return {};
-}
-
-void Texture::UnpinImpl() {
-    DAWN_ASSERT(HasPinnedUsage());
-
-    // TODO(https://issues.chromium.org/473444516): Investigate what to do for imported textures.
-    // Should we consider a pin/unpin pair similar to an access on a queue such that we need to
-    // wait on fences or export them?
-}
 
 DXGI_FORMAT Texture::GetD3D12Format() const {
     return d3d::DXGITextureFormat(GetDevice(), GetFormat().format);
@@ -470,7 +448,7 @@ void Texture::NotifySwapChainPresent() {
     // For PIX, call ID3D12SharingContract::Present
     ID3D12SharingContract* d3dSharingContract = ToBackend(device->GetQueue())->GetSharingContract();
     if (d3dSharingContract != nullptr) {
-        d3dSharingContract->Present(mResourceAllocation.GetD3D12Resource(), 0, 0);
+        d3dSharingContract->Present(mResourceAllocation.GetD3D12Resource(), 0, nullptr);
     }
 
 #if defined(DAWN_ENABLE_RENDERDOC)
@@ -480,8 +458,8 @@ void Texture::NotifySwapChainPresent() {
     if (auto renderDocApi = dawn::native::utils::GetRenderDocApi(device)) {
         // We signal the end of the current frame and the start of the next.
         // This means we miss capturing the very first frame.
-        renderDocApi->EndFrameCapture(device->GetD3D12Device(), NULL);
-        renderDocApi->StartFrameCapture(device->GetD3D12Device(), NULL);
+        renderDocApi->EndFrameCapture(device->GetD3D12Device(), nullptr);
+        renderDocApi->StartFrameCapture(device->GetD3D12Device(), nullptr);
     }
 #endif
 }
@@ -507,7 +485,7 @@ void Texture::TrackUsageAndTransitionNow(CommandRecordingContext* commandContext
 
     std::vector<D3D12_RESOURCE_BARRIER> barriers;
 
-    int32_t aspectCount = std::popcount(static_cast<uint8_t>(range.aspects));
+    uint32_t aspectCount = sign_dcast(std::popcount(static_cast<uint8_t>(range.aspects)));
     barriers.reserve(range.levelCount * range.layerCount * aspectCount);
 
     TransitionUsageAndGetResourceBarrier(commandContext, &barriers, newState, range);
@@ -909,6 +887,7 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* commandContext,
                 blocksPerRow * largestMipSize.height * largestMipSize.depthOrArrayLayers;
             uint64_t uploadSize = blockInfo.ToBytes(uploadBlocks);
 
+            // TODO(https://crbug.com/534203108): Spanify WithUploadReservation.
             DAWN_TRY(device->GetDynamicUploader()->WithUploadReservation(
                 uploadSize, blockInfo.byteSize, [&](UploadReservation reservation) -> MaybeError {
                     DAWN_UNSAFE_TODO(memset(reservation.mappedPointer, clearColor, uploadSize));
@@ -933,7 +912,8 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* commandContext,
 
                             TextureCopy textureCopy;
                             textureCopy.texture = this;
-                            textureCopy.origin = {TexelCount{0}, TexelCount{0}, TexelCount{layer}};
+                            textureCopy.origin = {TexelCount{0u}, TexelCount{0u},
+                                                  TexelCount{layer}};
                             textureCopy.mipLevel = level;
                             textureCopy.aspect = aspect;
                             RecordBufferTextureCopyWithBufferHandle(

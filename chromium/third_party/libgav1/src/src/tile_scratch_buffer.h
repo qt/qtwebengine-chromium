@@ -17,9 +17,9 @@
 #ifndef LIBGAV1_SRC_TILE_SCRATCH_BUFFER_H_
 #define LIBGAV1_SRC_TILE_SCRATCH_BUFFER_H_
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <memory>
 #include <mutex>  // NOLINT (unapproved c++11 header)
 #include <new>

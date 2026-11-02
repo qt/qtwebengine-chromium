@@ -152,8 +152,8 @@ uint64_t AppendDebugLayerMessagesToError(ID3D11InfoQueue* infoQueue,
             continue;
         }
 
-        std::unique_ptr<uint8_t[]> messageData(new uint8_t[messageLength]);
-        D3D11_MESSAGE* message = reinterpret_cast<D3D11_MESSAGE*>(messageData.get());
+        HeapArray<uint8_t> messageData(messageLength);
+        D3D11_MESSAGE* message = reinterpret_cast<D3D11_MESSAGE*>(messageData.data());
         hr = infoQueue->GetMessage(i, message, &messageLength);
         if (FAILED(hr)) {
             messageStream << " ID3D11InfoQueue::GetMessage failed with " << hr;
@@ -535,6 +535,7 @@ bool Device::ReduceMemoryUsageImpl() {
     mComputeShaderCache.Clear();
 
     UnmapDestroyedBuffers();
+    GetPlatform()->ReportProgress();
 
     // D3D11 defers the deletion of resources until we call Flush().
     // So trigger a Flush() here to force deleting any pending resources.
@@ -542,6 +543,7 @@ bool Device::ReduceMemoryUsageImpl() {
         ToBackend(GetQueue())
             ->GetScopedPendingCommandContext(ExecutionQueueBase::SubmitMode::Passive);
     commandContext.Flush();
+    GetPlatform()->ReportProgress();
 
     // Call Trim() to delete any internal resources created by the driver.
     ComPtr<IDXGIDevice3> dxgiDevice3;
@@ -629,7 +631,7 @@ ResultOrError<TextureViewBase*> Device::GetOrCreateCachedImplicitPixelLocalStora
 ResultOrError<Ref<BufferBase>> Device::GetStagingBuffer(
     const ScopedCommandRecordingContext* commandContext,
     uint64_t size) {
-    constexpr uint64_t kMinStagingBufferSize = 4 * 1024;
+    constexpr uint64_t kMinStagingBufferSize = 4ULL * 1024;
     uint64_t bufferSize = Align(size, kMinStagingBufferSize);
     BufferDescriptor descriptor;
     descriptor.usage = wgpu::BufferUsage::MapWrite | wgpu::BufferUsage::CopySrc;
@@ -665,7 +667,7 @@ ResultOrError<Ref<BufferBase>> Device::GetStagingBuffer(
     mTotalStagingBufferSize += bufferSize;
 
     // Purge the old staging buffers if the total size is too large.
-    constexpr uint64_t kMaxTotalSize = 16 * 1024 * 1024;
+    constexpr uint64_t kMaxTotalSize = 16ULL * 1024 * 1024;
     for (auto it = mStagingBuffers.begin(); it != mStagingBuffers.end() &&
                                             mTotalStagingBufferSize > kMaxTotalSize &&
                                             (*it)->GetLastUsageSerial() <= completedSerial;) {

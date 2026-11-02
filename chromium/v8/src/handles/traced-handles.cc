@@ -120,6 +120,12 @@ void TracedHandles::RefillUsableNodeBlocks() {
   DCHECK(!usable_blocks_.empty());
 }
 
+std::pair<TracedNodeBlock*, TracedNode*>
+TracedHandles::RefillAndAllocateNode() {
+  RefillUsableNodeBlocks();
+  return AllocateNodeUnchecked();
+}
+
 void TracedHandles::FreeNode(TracedNode* node, Address zap_value) {
   auto& block = TracedNodeBlock::From(*node);
   if (disable_block_handling_on_free_) {
@@ -349,7 +355,9 @@ void TracedHandles::ResetDeadNodes(
 
 void TracedHandles::ResetYoungDeadNodes(
     WeakSlotCallbackWithHeap should_reset_handle) {
-  for (auto* block : young_blocks_) {
+  // Manual iteration as the block may be deleted in `FreeNode()`.
+  for (auto it = young_blocks_.begin(); it != young_blocks_.end();) {
+    auto* block = *(it++);
     for (auto* node : *block) {
       if (!node->is_in_young_list()) continue;
       DCHECK(node->is_in_use());

@@ -86,7 +86,8 @@ void OtpManagerImpl::GetRecentOtpsAndRenewSubscription() {
       OneTimeTokenSource::kOnDeviceSms,
       base::Time::Now() + kSubscriptionDuration,
       base::BindRepeating(&OtpManagerImpl::OnOneTimeTokenReceived,
-                          weak_ptr_factory_.GetWeakPtr()));
+                          weak_ptr_factory_.GetWeakPtr()),
+      /*expiration_callback=*/base::DoNothing());
 }
 
 void OtpManagerImpl::OnFieldTypesDetermined(
@@ -99,7 +100,7 @@ void OtpManagerImpl::OnFieldTypesDetermined(
     return;
   }
 
-  const autofill::FormStructure* form = manager.FindCachedFormById(form_id);
+  const FormStructure* form = manager.FindCachedFormById(form_id);
   if (!form) {
     return;
   }

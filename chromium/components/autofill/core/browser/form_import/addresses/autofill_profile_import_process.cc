@@ -13,6 +13,7 @@
 #include "base/check.h"
 #include "base/check_deref.h"
 #include "base/check_op.h"
+#include "base/containers/map_util.h"
 #include "base/containers/span.h"
 #include "base/feature_list.h"
 #include "base/notreached.h"
@@ -23,7 +24,7 @@
 #include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_profile_comparator.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_structured_address_component.h"
-#include "components/autofill/core/browser/data_quality/addresses/profile_requirement_utils.h"
+#include "components/autofill/core/browser/data_quality/addresses/address_import_requirement_utils.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/foundations/autofill_client.h"
 #include "components/autofill/core/browser/metrics/profile_import_metrics.h"
@@ -155,12 +156,13 @@ void ProfileImportProcess::DetermineProfileImportType() {
   AutofillProfileComparator comparator(app_locale_);
   // If there is reason to believe that the `observed_profile_`'s country was
   // complemented incorrectly, remove the country.
-  if (import_metadata_.did_complement_country &&
+  if (import_metadata_.country_source !=
+          ProfileCountrySource::kExplicitlyObserved &&
       ShouldCountryApproximationBeRemoved(observed_profile_,
                                           address_data_manager_->GetProfiles(),
                                           comparator)) {
     observed_profile_.ClearFields({ADDRESS_HOME_COUNTRY});
-    import_metadata_.did_complement_country = false;
+    import_metadata_.country_source = ProfileCountrySource::kNoCountry;
   }
 
   // Existing profiles that are not mergeable with the `observed_profile_`
@@ -618,6 +620,7 @@ void ProfileImportProcess::CollectMetrics(
     autofill_metrics::LogSilentUpdatesProfileImportType(import_type_);
     if (import_type_ == AutofillProfileImportType::kSilentUpdate) {
       LogUkmMetrics(ukm_recorder, existing_profiles);
+      LogSilentUpdateMergeCategory(existing_profiles);
     }
     return;
   }
@@ -654,6 +657,7 @@ void ProfileImportProcess::CollectMetrics(
     LogUkmMetrics(ukm_recorder, existing_profiles, num_edited_fields);
   } else if (import_type_ == AutofillProfileImportType::kSilentUpdate) {
     LogUkmMetrics(ukm_recorder, existing_profiles);
+    LogSilentUpdateMergeCategory(existing_profiles);
   } else if (is_migration()) {
     autofill_metrics::LogProfileMigrationImportDecision(user_decision_);
     LogUkmMetrics(ukm_recorder, existing_profiles, num_edited_fields);
@@ -732,6 +736,22 @@ void ProfileImportProcess::LogHomeAndWorkSupersetMetrics() const {
        AutofillProfileComparator::GetSettingsVisibleProfileDifference(
            import_candidate_.value(), merge_candidate_.value(), app_locale_)) {
     autofill_metrics::LogHomeAndWorkSupersetAffectedType(difference.type);
+  }
+}
+
+void ProfileImportProcess::LogSilentUpdateMergeCategory(
+    const std::vector<const AutofillProfile*>& existing_profiles) const {
+  auto silently_updated_profiles_map =
+      base::MakeFlatMap<std::string, const AutofillProfile*>(
+          silently_updated_profiles_, {}, [](const AutofillProfile& profile) {
+            return std::pair(profile.guid(), &profile);
+          });
+  for (const AutofillProfile* existing_profile : existing_profiles) {
+    if (const AutofillProfile* updated_profile = base::FindPtrOrNull(
+            silently_updated_profiles_map, existing_profile->guid())) {
+      autofill_metrics::LogSilentUpdateMergeCategory(*existing_profile,
+                                                     *updated_profile);
+    }
   }
 }
 

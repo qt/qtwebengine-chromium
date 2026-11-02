@@ -27,7 +27,6 @@
 
 #include "src/tint/cmd/fuzz/common/ir_fuzzer.h"
 #include "src/tint/lang/core/ir/transform/block_decorated_structs.h"
-#include "src/tint/lang/core/ir/validator.h"
 
 namespace tint::core::ir::transform {
 namespace {
@@ -39,5 +38,8 @@ Result<SuccessType> BlockDecoratedStructsFuzzer(Module& ir, const fuzz::ir::Cont
 }  // namespace
 }  // namespace tint::core::ir::transform
 
+constexpr auto kUnsupportedProperties = tint::core::ir::Properties{
+    tint::core::ir::Property::kAllowBufferTypes,
+};
 TINT_IR_MODULE_FUZZER(tint::core::ir::transform::BlockDecoratedStructsFuzzer,
-                      tint::core::ir::transform::kBlockDecoratedStructsCapabilities);
+                      kUnsupportedProperties);

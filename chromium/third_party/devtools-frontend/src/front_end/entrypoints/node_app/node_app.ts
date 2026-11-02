@@ -21,31 +21,31 @@ const {NodeMainImpl} = App.NodeMain;
 
 const UIStrings = {
   /**
-   * @description Text that refers to the network connection
+   * @description Text that refers to the network connection.
    */
   connection: 'Connection',
   /**
-   * @description A tag of Node.js Connection Panel that can be searched in the command menu
+   * @description A tag of Node.js connection panel that can be searched in the command menu.
    */
   node: 'node',
   /**
-   * @description Command for showing the Connection tool
+   * @description Command for showing the Connection tool.
    */
   showConnection: 'Show Connection',
   /**
-   * @description Title of the 'Node' tool in the Network Navigator View, which is part of the Sources tool
+   * @description Title of the 'Node' tool in the Network navigator view, which is part of the Sources tool.
    */
   networkTitle: 'Node',
   /**
-   * @description Command for showing the 'Node' tool in the Network Navigator View, which is part of the Sources tool
+   * @description Command for showing the 'Node' tool in the Network navigator view, which is part of the Sources tool.
    */
   showNode: 'Show Node',
   /**
-   * @description Text in Application Panel Sidebar of the Application panel
+   * @description Text in Application panel sidebar of the Application panel.
    */
   application: 'Application',
   /**
-   * @description Command for showing the 'Application' tool
+   * @description Command for showing the Application tool.
    */
   showApplication: 'Show Application',
 } as const;
@@ -81,9 +81,10 @@ UI.ViewManager.registerViewExtension({
   commandPrompt: i18nLazyString(UIStrings.showNode),
   order: 2,
   persistence: UI.ViewManager.ViewPersistence.PERMANENT,
-  async loadView() {
+  async loadView(universe) {
     const Sources = await loadSourcesModule();
-    return Sources.SourcesNavigator.NetworkNavigatorView.instance();
+    return Sources.SourcesNavigator.NetworkNavigatorView.instance(
+        {forceNew: null, networkProjectManager: universe.networkProjectManager});
   },
 });
 

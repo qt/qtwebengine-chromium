@@ -36,7 +36,7 @@
 #include <cstring>
 #include <tuple>
 
-#include "src/dawn/common/Assert.h"
+#include "src/utils/assert.h"
 
 #if defined(__GNUC__) || defined(__clang__)
 // error: 'offsetof' within non-standard-layout type '{{namespace}}::XXX' is conditionally-supported
@@ -62,9 +62,12 @@ namespace {{native_namespace}} {
         return data == rhs.data && length == rhs.length;
     }
 
+    // NOLINTBEGIN(bugprone-invalid-enum-default-initialization)
+
     {% for type in by_category["structure"] if type.name.get() not in SpecialStructures %}
         {% set CppType = as_cppType(type.name) %}
         {% set CType = as_cType(type.name) %}
+        {% set spanify = not CppType in structure_spanification_blocklist %}
 
         static_assert(sizeof({{CppType}}) == sizeof({{CType}}), "sizeof mismatch for {{CppType}}");
         static_assert(alignof({{CppType}}) == alignof({{CType}}), "alignof mismatch for {{CppType}}");
@@ -80,9 +83,23 @@ namespace {{native_namespace}} {
                     "offsetof mismatch for {{CppType}}::sType");
         {% endif %}
         {% for member in type.members %}
-            {% set memberName = member.name.camelCase() %}
-            static_assert(offsetof({{CppType}}, {{memberName}}) == offsetof({{CType}}, {{memberName}}),
-                         "offsetof mismatch for {{CppType}}::{{memberName}}");
+            {% if spanify and member.is_length %}
+                //* Skip as the member is included in the span member.
+            {% elif spanify and member.length and member.length != "constant" %}
+                // TODO(https://crbug.com/524405497): Support fixed-length spans.
+                {% set memberName = member.name.camelCase() %}
+                {% set lengthName = member.length.name.camelCase() %}
+                using {{CppType}}{{memberName}}Span = decltype(std::declval<{{CppType}}>().{{memberName}});
+                {{ assert(member.length.type.name.canonical_case() == "size_t") }}
+                static_assert(offsetof({{CppType}}, {{memberName}}) + {{CppType}}{{memberName}}Span::GetOffsetOfSize() == offsetof({{CType}}, {{lengthName}}),
+                             "offsetof mismatch for {{CppType}}::{{memberName}}::mSize");
+                static_assert(offsetof({{CppType}}, {{memberName}}) + {{CppType}}{{memberName}}Span::GetOffsetOfData() == offsetof({{CType}}, {{memberName}}),
+                             "offsetof mismatch for {{CppType}}::{{memberName}}::mData");
+            {% else %}
+                {% set memberName = member.name.camelCase() %}
+                static_assert(offsetof({{CppType}}, {{memberName}}) == offsetof({{CType}}, {{memberName}}),
+                             "offsetof mismatch for {{CppType}}::{{memberName}}");
+            {% endif %}
         {% endfor %}
 
         {% if type.any_member_requires_struct_defaulting %}
@@ -97,7 +114,9 @@ namespace {{native_namespace}} {
                 {% endif %}
                 {% for member in type.members %}
                     {% set memberName = member.name.camelCase() %}
-                    {% if member.requires_struct_defaulting %}
+                    {% if spanify and member.is_length %}
+                        //* Skip as the member is included in the span member.
+                    {% elif member.requires_struct_defaulting %}
                         {% if member.type.category == "structure" %}
                             copy.{{memberName}} = {{memberName}}.WithTrivialFrontendDefaults();
                         {% elif member.type.category == "enum" %}
@@ -116,58 +135,67 @@ namespace {{native_namespace}} {
             }
         {% endif %}
         bool {{CppType}}::operator==(const {{CppType}}& rhs) const {
-            return {% if type.extensible or type.chained -%}
-                (nextInChain == rhs.nextInChain) &&
-            {%- endif %} std::tie(
-                {% for member in type.members if member.type.category != 'callback info' %}
-                    {{member.name.camelCase()-}}
-                    {{ "," if not loop.last else "" }}
-                {% endfor %}
-            ) == std::tie(
-                {% for member in type.members if member.type.category != 'callback info' %}
-                    rhs.{{member.name.camelCase()-}}
-                    {{ "," if not loop.last else "" }}
-                {% endfor %}
-            );
+            {% if type.extensible or type.chained -%}
+                if (nextInChain != rhs.nextInChain) { return false; }
+            {% endif %}
+            {% for member in type.members if member.type.category != 'callback info' %}
+                {% if spanify and member.is_length %}
+                    //* Skip as the member is included in the span member.
+                {% elif spanify and member.length and member.length != "constant" %}
+                    if ({{member.name.camelCase()}}.size() != rhs.{{member.name.camelCase()}}.size()) { return false; }
+                    if ({{member.name.camelCase()}}.data() != rhs.{{member.name.camelCase()}}.data()) { return false; }
+                {% else %}
+                    if ({{member.name.camelCase()}} != rhs.{{member.name.camelCase()}}) { return false; }
+                {% endif %}
+            {% endfor %}
+            return true;
         }
 
     {% endfor %}
+    // NOLINTEND(bugprone-invalid-enum-default-initialization)
 
     {% for type in by_category["structure"] if type.has_free_members_function %}
+        {% set CppType = as_cppType(type.name) %}
+        {% set spanify = not CppType in structure_spanification_blocklist %}
+
         // {{as_cppType(type.name)}}
-        {{as_cppType(type.name)}}::~{{as_cppType(type.name)}}() {
+        {{CppType}}::~{{CppType}}() {
             FreeMembers();
         }
 
-        {{as_cppType(type.name)}}::{{as_cppType(type.name)}}({{as_cppType(type.name)}}&& rhs)
-        : {% for member in type.members %}
+        {{CppType}}::{{CppType}}({{CppType}}&& rhs)
+        : {% for member in type.members if (not spanify or not member.is_length)%}
             {%- set memberName = member.name.camelCase() -%}
             {{memberName}}(rhs.{{memberName}}){% if not loop.last %},{{"\n      "}}{% endif %}
         {% endfor -%}
         {
-            {% for member in type.members %}
+            {% for member in type.members if (not spanify or not member.is_length)%}
                 rhs.{{member.name.camelCase()}} = {};
             {% endfor %}
         }
 
-        {{as_cppType(type.name)}}& {{as_cppType(type.name)}}::operator=({{as_cppType(type.name)}}&& rhs) {
+        {{CppType}}& {{CppType}}::operator=({{CppType}}&& rhs) {
             if (&rhs == this) {
                 return *this;
             }
             FreeMembers();
-            {% for member in type.members %}
+            {% for member in type.members if (not spanify or not member.is_length)%}
                 this->{{member.name.camelCase()}} = std::move(rhs.{{member.name.camelCase()}});
             {% endfor %}
-            {% for member in type.members %}
+            {% for member in type.members if (not spanify or not member.is_length)%}
                 rhs.{{member.name.camelCase()}} = {};
             {% endfor %}
             return *this;
         }
 
-        void {{as_cppType(type.name)}}::FreeMembers() {
+        void {{CppType}}::FreeMembers() {
             bool needsFreeing = false;
             {%- for member in type.members if member.annotation != 'value' %}
-                if (this->{{member.name.camelCase()}} != nullptr) { needsFreeing = true; }
+                {% if spanify and member.length != "constant" %}
+                    if (!this->{{member.name.camelCase()}}.empty()) { needsFreeing = true; }
+                {% else %}
+                    if (this->{{member.name.camelCase()}} != nullptr) { needsFreeing = true; }
+                {% endif %}
             {%- endfor -%}
             {%- for member in type.members if member.type.name.canonical_case() == 'string view' %}
                 if (this->{{member.name.camelCase()}}.data != nullptr) { needsFreeing = true; }

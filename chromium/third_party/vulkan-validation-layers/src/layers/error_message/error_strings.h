@@ -164,15 +164,16 @@ class DeviceState;
 std::string string_VkPhysicalDeviceImageFormatInfo2(VkPhysicalDeviceImageFormatInfo2 info);
 
 // Same thing as VkPhysicalDeviceImageFormatInfo2 but given the actual VkImageCreateInfo
-[[maybe_unused]] static std::string string_VkPhysicalDeviceImageFormatInfo2(VkImageCreateFlags flags, VkImageUsageFlags usage,
+[[maybe_unused]] static std::string string_VkPhysicalDeviceImageFormatInfo2(VkImageCreateFlags2KHR flags,
+                                                                            VkImageUsageFlags2KHR usage,
                                                                             VkFormat format, VkImageType imageType,
                                                                             VkImageTiling tiling) {
     std::ostringstream ss;
     ss << "format (" << string_VkFormat(format) << ")\n";
     ss << "type (" << string_VkImageType(imageType) << ")\n";
     ss << "tiling (" << string_VkImageTiling(tiling) << ")\n";
-    ss << "usage (" << string_VkImageUsageFlags(usage) << ")\n";
-    ss << "flags (" << string_VkImageCreateFlags(flags) << ")\n";
+    ss << "usage (" << string_VkImageUsageFlags2KHR(usage) << ")\n";
+    ss << "flags (" << string_VkImageCreateFlags2KHR(flags) << ")\n";
     return ss.str();
 }
 
@@ -198,14 +199,6 @@ std::string string_VkDependencyInfo(const Logger& logger, VkDependencyInfo set_d
     return ss.str();
 }
 
-[[maybe_unused]] static std::string string_VkBindHeapInfoEXT(VkBindHeapInfoEXT info) {
-    std::stringstream ss;
-    ss << "heapRange = { address = " << info.heapRange.address << ", size = " << info.heapRange.size << " }, ";
-    ss << "reservedRangeOffset = " << info.reservedRangeOffset << ", ";
-    ss << "reservedRangeSize = " << info.reservedRangeSize << "";
-    return ss.str();
-}
-
 [[maybe_unused]] static std::string string_VkPhysicalDeviceDataGraphProcessingEngineARM(
     const VkPhysicalDeviceDataGraphProcessingEngineARM& engine) {
     std::stringstream ss;
@@ -226,7 +219,7 @@ std::string string_VkDependencyInfo(const Logger& logger, VkDependencyInfo set_d
     const VkQueueFamilyDataGraphPropertiesARM& property) {
     std::stringstream ss;
     ss << "{\n  engine: " << string_VkPhysicalDeviceDataGraphProcessingEngineARM(property.engine)
-       << ",\n  operation: " << string_VkPhysicalDeviceDataGraphOperationSupportARM(property.operation) << "\n}\n";
+       << ",\n  operation: " << string_VkPhysicalDeviceDataGraphOperationSupportARM(property.operation) << "\n}";
     return ss.str();
 }
 

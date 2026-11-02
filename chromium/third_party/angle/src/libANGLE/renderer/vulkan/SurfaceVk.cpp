@@ -7,22 +7,17 @@
 //    Implements the class methods for SurfaceVk.
 //
 
-#ifdef UNSAFE_BUFFERS_BUILD
-#    pragma allow_unsafe_buffers
-#endif
-
 #include "libANGLE/renderer/vulkan/SurfaceVk.h"
+#include "common/unsafe_buffers.h"
 
 #include "common/debug.h"
 #include "libANGLE/Context.h"
 #include "libANGLE/Display.h"
-#include "libANGLE/Overlay.h"
 #include "libANGLE/Surface.h"
 #include "libANGLE/renderer/driver_utils.h"
 #include "libANGLE/renderer/vulkan/ContextVk.h"
 #include "libANGLE/renderer/vulkan/DisplayVk.h"
 #include "libANGLE/renderer/vulkan/FramebufferVk.h"
-#include "libANGLE/renderer/vulkan/OverlayVk.h"
 #include "libANGLE/renderer/vulkan/vk_format_utils.h"
 #include "libANGLE/renderer/vulkan/vk_renderer.h"
 #include "libANGLE/trace.h"
@@ -379,16 +374,16 @@ VkRectLayerKHR ToVkRectLayer(const EGLint *eglRect,
     {
         // EGL rectangles are already specified with a bottom-left origin, therefore the conversion
         // is trivial as we just get its Y coordinate as it is
-        rect.offset.y = gl::clamp(eglRect[1], 0, height);
+        rect.offset.y = gl::clamp(ANGLE_UNSAFE_TODO(eglRect[1]), 0, height);
     }
     else
     {
-        rect.offset.y =
-            gl::clamp(height - gl::clamp(eglRect[1], 0, height) - gl::clamp(eglRect[3], 0, height),
-                      0, height);
+        rect.offset.y = gl::clamp(height - gl::clamp(ANGLE_UNSAFE_TODO(eglRect[1]), 0, height) -
+                                      gl::clamp(ANGLE_UNSAFE_TODO(eglRect[3]), 0, height),
+                                  0, height);
     }
-    rect.extent.width  = gl::clamp(eglRect[2], 0, width - rect.offset.x);
-    rect.extent.height = gl::clamp(eglRect[3], 0, height - rect.offset.y);
+    rect.extent.width  = gl::clamp(ANGLE_UNSAFE_TODO(eglRect[2]), 0, width - rect.offset.x);
+    rect.extent.height = gl::clamp(ANGLE_UNSAFE_TODO(eglRect[3]), 0, height - rect.offset.y);
     rect.layer         = 0;
     return rect;
 }
@@ -522,7 +517,8 @@ bool IsCompatiblePresentMode(vk::PresentMode mode,
                              size_t compatibleModesCount)
 {
     VkPresentModeKHR vkMode              = vk::ConvertPresentModeToVkPresentMode(mode);
-    VkPresentModeKHR *compatibleModesEnd = compatibleModes + compatibleModesCount;
+    VkPresentModeKHR *compatibleModesEnd =
+        ANGLE_UNSAFE_TODO(compatibleModes + compatibleModesCount);
     return std::find(compatibleModes, compatibleModesEnd, vkMode) != compatibleModesEnd;
 }
 
@@ -613,7 +609,7 @@ void SurfaceVk::destroy(const egl::Display *display)
 
 angle::Result SurfaceVk::getAttachmentRenderTarget(const gl::Context *context,
                                                    GLenum binding,
-                                                   const gl::ImageIndex &imageIndex,
+                                                   const gl::OwnImageIndex &ownImageIndex,
                                                    GLsizei samples,
                                                    FramebufferAttachmentRenderTarget **rtOut)
 {
@@ -840,8 +836,10 @@ EGLint OffscreenSurfaceVk::getSwapBehavior() const
 
 angle::Result OffscreenSurfaceVk::initializeContents(const gl::Context *context,
                                                      GLenum binding,
-                                                     const gl::ImageIndex &imageIndex)
+                                                     const gl::OwnImageIndex &ownImageIndex)
 {
+    const gl::ImageIndex imageIndex = ownImageIndex.getUntranslated();
+
     ContextVk *contextVk = vk::GetImpl(context);
 
     switch (binding)
@@ -1490,7 +1488,7 @@ angle::Result WindowSurfaceVk::initializeImpl(DisplayVk *displayVk, bool *anyMat
 
 angle::Result WindowSurfaceVk::getAttachmentRenderTarget(const gl::Context *context,
                                                          GLenum binding,
-                                                         const gl::ImageIndex &imageIndex,
+                                                         const gl::OwnImageIndex &ownImageIndex,
                                                          GLsizei samples,
                                                          FramebufferAttachmentRenderTarget **rtOut)
 {
@@ -1501,7 +1499,7 @@ angle::Result WindowSurfaceVk::getAttachmentRenderTarget(const gl::Context *cont
         ANGLE_VK_TRACE_EVENT_AND_MARKER(contextVk, "First Swap Image Use");
         ANGLE_TRY(doDeferredAcquireNextImage(contextVk));
     }
-    return SurfaceVk::getAttachmentRenderTarget(context, binding, imageIndex, samples, rtOut);
+    return SurfaceVk::getAttachmentRenderTarget(context, binding, ownImageIndex, samples, rtOut);
 }
 
 angle::Result WindowSurfaceVk::collectOldSwapchain(vk::ErrorContext *context,
@@ -2583,8 +2581,8 @@ angle::Result WindowSurfaceVk::prePresentSubmit(ContextVk *contextVk,
     }
 
     // We can only do present related optimization if this is the last renderpass that touches the
-    // swapchain image. MSAA resolve and overlay will insert another renderpass which disqualifies
-    // the optimization.
+    // swapchain image. MSAA resolve will insert another renderpass which disqualifies the
+    // optimization.
     if (contextVk->hasStartedRenderPassWithDefaultFramebuffer())
     {
         // If image is resolved above, render pass is necessary closed.
@@ -2672,14 +2670,7 @@ angle::Result WindowSurfaceVk::prePresentSubmit(ContextVk *contextVk,
                           &commandBufferHelper->getCommandBuffer());
     }
 
-    // The overlay is drawn after this.  This ensures that drawing the overlay does not interfere
-    // with other functionality, especially counters used to validate said functionality.
-    const bool shouldDrawOverlay = overlayHasEnabledWidget(contextVk);
-
-    if (!shouldDrawOverlay)
-    {
-        ANGLE_TRY(recordPresentLayoutBarrierIfNecessary(contextVk));
-    }
+    ANGLE_TRY(recordPresentLayoutBarrierIfNecessary(contextVk));
 
     if (mDepthStencilImage.valid())
     {
@@ -2689,19 +2680,8 @@ angle::Result WindowSurfaceVk::prePresentSubmit(ContextVk *contextVk,
         mDepthStencilImage.invalidateEntireLevelStencilContent(contextVk, gl::LevelIndex(0));
     }
 
-    ANGLE_TRY(contextVk->flushAndSubmitCommands(shouldDrawOverlay ? nullptr : &presentSemaphore,
-                                                nullptr, QueueSubmitReason::EGLSwapBuffers));
-
-    if (shouldDrawOverlay)
-    {
-        updateOverlay(contextVk);
-        ANGLE_TRY(drawOverlay(contextVk, &image));
-
-        ANGLE_TRY(recordPresentLayoutBarrierIfNecessary(contextVk));
-
-        ANGLE_TRY(contextVk->flushAndSubmitCommands(&presentSemaphore, nullptr,
-                                                    QueueSubmitReason::DrawOverlay));
-    }
+    ANGLE_TRY(contextVk->flushAndSubmitCommands(&presentSemaphore, nullptr,
+                                                QueueSubmitReason::EGLSwapBuffers));
 
     ASSERT(image.image->getCurrentImageAccess() ==
            (isSharedPresentMode() ? vk::ImageAccess::SharedPresent : vk::ImageAccess::Present));
@@ -2813,7 +2793,7 @@ angle::Result WindowSurfaceVk::present(ContextVk *contextVk,
         for (EGLint i = 0; i < n_rects; i++)
         {
             vkRects[i] = ToVkRectLayer(
-                eglRects + i * 4, width, height,
+                ANGLE_UNSAFE_TODO(eglRects + i * 4), width, height,
                 contextVk->getFeatures().bottomLeftOriginPresentRegionRectangles.enabled);
         }
         presentRegion.pRectangles = vkRects.data();
@@ -3593,8 +3573,10 @@ angle::Result WindowSurfaceVk::getCurrentFramebuffer(ContextVk *contextVk,
 
 angle::Result WindowSurfaceVk::initializeContents(const gl::Context *context,
                                                   GLenum binding,
-                                                  const gl::ImageIndex &imageIndex)
+                                                  const gl::OwnImageIndex &ownImageIndex)
 {
+    const gl::ImageIndex imageIndex = ownImageIndex.getUntranslated();
+
     ContextVk *contextVk = vk::GetImpl(context);
 
     if (mAcquireOperation.state != ImageAcquireState::Ready)
@@ -3630,57 +3612,6 @@ angle::Result WindowSurfaceVk::initializeContents(const gl::Context *context,
         default:
             UNREACHABLE();
             break;
-    }
-
-    return angle::Result::Continue;
-}
-
-void WindowSurfaceVk::updateOverlay(ContextVk *contextVk) const
-{
-    const gl::OverlayType *overlay = contextVk->getOverlay();
-
-    // If overlay is disabled, nothing to do.
-    if (!overlay->isEnabled())
-    {
-        return;
-    }
-
-    vk::Renderer *renderer = contextVk->getRenderer();
-
-    uint32_t validationMessageCount = 0;
-    std::string lastValidationMessage =
-        renderer->getAndClearLastValidationMessage(&validationMessageCount);
-    if (validationMessageCount)
-    {
-        overlay->getTextWidget(gl::WidgetId::VulkanLastValidationMessage)
-            ->set(std::move(lastValidationMessage));
-        overlay->getCountWidget(gl::WidgetId::VulkanValidationMessageCount)
-            ->set(validationMessageCount);
-    }
-
-    contextVk->updateOverlayOnPresent();
-}
-
-ANGLE_INLINE bool WindowSurfaceVk::overlayHasEnabledWidget(ContextVk *contextVk) const
-{
-    const gl::OverlayType *overlay = contextVk->getOverlay();
-    OverlayVk *overlayVk           = vk::GetImpl(overlay);
-    return overlayVk && overlayVk->getEnabledWidgetCount() > 0;
-}
-
-angle::Result WindowSurfaceVk::drawOverlay(ContextVk *contextVk, SwapchainImage *image) const
-{
-    const gl::OverlayType *overlay = contextVk->getOverlay();
-    OverlayVk *overlayVk           = vk::GetImpl(overlay);
-
-    // Draw overlay
-    const vk::ImageView *imageView = nullptr;
-    ANGLE_TRY(image->imageViews.getLevelLayerDrawImageView(contextVk, *image->image,
-                                                           vk::LevelIndex(0), 0, &imageView));
-    if (overlayVk)
-    {
-        ANGLE_TRY(overlayVk->onPresent(contextVk, image->image.get(), imageView,
-                                       Is90DegreeRotation(getPreTransform())));
     }
 
     return angle::Result::Continue;
@@ -3902,19 +3833,13 @@ egl::Error WindowSurfaceVk::getCompressionRate(const egl::Display *display,
         }
     }
 
-    VkImageSubresource2EXT imageSubresource2      = {};
-    imageSubresource2.sType                       = VK_STRUCTURE_TYPE_IMAGE_SUBRESOURCE_2_EXT;
-    imageSubresource2.imageSubresource.aspectMask = mSwapchainImages[0].image->getAspectFlags();
     VkImageCompressionPropertiesEXT compressionProperties = {};
     compressionProperties.sType = VK_STRUCTURE_TYPE_IMAGE_COMPRESSION_PROPERTIES_EXT;
-
-    VkSubresourceLayout2EXT subresourceLayout = {};
+    VkSubresourceLayout2 subresourceLayout    = {};
     subresourceLayout.sType                   = VK_STRUCTURE_TYPE_SUBRESOURCE_LAYOUT_2_EXT;
     subresourceLayout.pNext                   = &compressionProperties;
 
-    vkGetImageSubresourceLayout2EXT(displayVk->getDevice(),
-                                    mSwapchainImages[0].image->getImage().getHandle(),
-                                    &imageSubresource2, &subresourceLayout);
+    mSwapchainImages[0].image->getImageSubresourceLayout(renderer, &subresourceLayout);
 
     std::vector<EGLint> eglFixedRates = vk_gl::ConvertCompressionFlagsToEGLFixedRate(
         compressionProperties.imageCompressionFixedRateFlags, 1);

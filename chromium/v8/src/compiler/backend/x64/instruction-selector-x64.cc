@@ -2269,10 +2269,10 @@ void InstructionSelector::VisitInt32Sub(OpIndex node) {
   if (g.CanBeImmediate(right)) {
     int32_t imm = g.GetImmediateIntegerValue(right);
     if (imm == 0) {
-      if (this->Get(left).outputs_rep()[0] ==
-          RegisterRepresentation::Word32()) {
+      if (ZeroExtendsWord32ToWord64(left)) {
         // {EmitIdentity} reuses the virtual register of the first input
-        // for the output. This is exactly what we want here.
+        // for the output. This is only safe if it is known to zero-extend
+        // (as the int32 subtraction advertises itself as zero-extending.)
         EmitIdentity(node);
       } else {
         // Emit "movl" for subtraction of 0.
@@ -2440,13 +2440,15 @@ void InstructionSelector::VisitWord64MulWide(OpIndex node, bool is_signed) {
   inputs[input_count++] = g.UseFixed(lhs, rax);
   int effect_level = this->GetEffectLevel(node);
   if (g.CanBeMemoryOperand(opcode, node, rhs, effect_level)) {
-    AddressingMode addressing_mode =
-        g.GetEffectiveAddressMemoryOperand(rhs, inputs, &input_count);
+    // TODO(524854780): Fix unsafe splits at instruction start position, then
+    // remove the kUseUniqueRegister constraint here.
+    AddressingMode addressing_mode = g.GetEffectiveAddressMemoryOperand(
+        rhs, inputs, &input_count,
+        OperandGenerator::RegisterUseKind::kUseUniqueRegister);
     opcode |= AddressingModeField::encode(addressing_mode);
   } else {
-    // TODO(thibaudm): Make sure that live ranges are never split at
-    // instructions (only at gaps), then switch to {g.Use(rhs)} here.
-    // inputs[input_count++] = g.Use(rhs);
+    // TODO(524854780): Fix unsafe splits at instruction start position, then
+    // switch to {g.Use(rhs)} here.
     inputs[input_count++] = g.UseUnique(rhs);
   }
   DCHECK_GE(arraysize(inputs), input_count);
@@ -2458,7 +2460,7 @@ void InstructionSelector::VisitWord64MulWide(OpIndex node, bool is_signed) {
   outputs[output_count++] =
       g.DefineAsFixed(out_low.valid() ? out_low.value() : node, rax);
   OptionalOpIndex out_high = FindProjection(node, 1);
-  if (out_high.valid()) {
+  if (out_high.valid() && IsUsed(out_high.value())) {
     outputs[output_count++] = g.DefineAsFixed(out_high.value(), rdx);
   } else {
     temps[temp_count++] = g.TempRegister(rdx);
@@ -5846,10 +5848,8 @@ void InstructionSelector::VisitI32x4ExtAddPairwiseI16x8S(OpIndex node) {
   X64OperandGenerator g(this);
   const Simd128UnaryOp& op = Cast<Simd128UnaryOp>(node);
   DCHECK_EQ(op.input_count, 1);
-  InstructionOperand dst = CpuFeatures::IsSupported(AVX)
-                               ? g.DefineAsRegister(node)
-                               : g.DefineSameAsFirst(node);
-  Emit(kX64I32x4ExtAddPairwiseI16x8S, dst, g.UseRegister(op.input()));
+  Emit(kX64I32x4ExtAddPairwiseI16x8S, g.DefineAsRegister(node),
+       g.UseRegister(op.input()));
 }
 
 void InstructionSelector::VisitI32x8ExtAddPairwiseI16x16S(OpIndex node) {
@@ -5868,10 +5868,8 @@ void InstructionSelector::VisitI32x4ExtAddPairwiseI16x8U(OpIndex node) {
   X64OperandGenerator g(this);
   const Simd128UnaryOp& op = Cast<Simd128UnaryOp>(node);
   DCHECK_EQ(op.input_count, 1);
-  InstructionOperand dst = CpuFeatures::IsSupported(AVX)
-                               ? g.DefineAsRegister(node)
-                               : g.DefineSameAsFirst(node);
-  Emit(kX64I32x4ExtAddPairwiseI16x8U, dst, g.UseRegister(op.input()));
+  Emit(kX64I32x4ExtAddPairwiseI16x8U, g.DefineAsRegister(node),
+       g.UseRegister(op.input()));
 }
 
 void InstructionSelector::VisitI32x8ExtAddPairwiseI16x16U(OpIndex node) {
@@ -5911,10 +5909,8 @@ void InstructionSelector::VisitI16x8ExtAddPairwiseI8x16U(OpIndex node) {
   X64OperandGenerator g(this);
   const Simd128UnaryOp& op = Cast<Simd128UnaryOp>(node);
   DCHECK_EQ(op.input_count, 1);
-  InstructionOperand dst = CpuFeatures::IsSupported(AVX)
-                               ? g.DefineAsRegister(node)
-                               : g.DefineSameAsFirst(node);
-  Emit(kX64I16x8ExtAddPairwiseI8x16U, dst, g.UseRegister(op.input()));
+  Emit(kX64I16x8ExtAddPairwiseI8x16U, g.DefineAsRegister(node),
+       g.UseRegister(op.input()));
 }
 
 void InstructionSelector::VisitI16x16ExtAddPairwiseI8x32U(OpIndex node) {

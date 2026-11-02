@@ -32,7 +32,6 @@
 
 #include "dawn/dawn_version.h"
 #include "dawn/native/VulkanBackend.h"
-#include "src/dawn/common/Log.h"
 #include "src/dawn/common/Math.h"
 #include "src/dawn/native/BackendConnection.h"
 #include "src/dawn/native/ChainUtils.h"
@@ -68,6 +67,7 @@
 #include "src/dawn/native/vulkan/TextureVk.h"
 #include "src/dawn/native/vulkan/UtilsVulkan.h"
 #include "src/dawn/native/vulkan/VulkanError.h"
+#include "src/utils/log.h"
 #include "src/utils/non_copyable.h"
 #include "src/utils/platform.h"
 
@@ -146,10 +146,14 @@ MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
     mFramebufferCache = std::make_unique<FramebufferCache>(this);
     mRenderPassCache = std::make_unique<RenderPassCache>(this);
 
+    Ref<Queue> queue;
+    DAWN_TRY_ASSIGN(queue, Queue::Create(this, &descriptor->defaultQueue, mMainQueueFamily));
+    queue->RegisterSerialProcessor(QueuePriority::BestEffort, mDeleter);
+
     VkDeviceSize heapBlockSize =
         ResourceMemoryAllocator::GetHeapBlockSize(descriptor.Get<DawnDeviceAllocatorControl>());
     mResourceMemoryAllocator =
-        std::make_unique<MutexProtected<ResourceMemoryAllocator>>(this, heapBlockSize);
+        std::make_unique<MutexProtected<ResourceMemoryAllocator>>(this, heapBlockSize, queue.Get());
 
     mExternalMemoryService = std::make_unique<external_memory::Service>(this);
 
@@ -187,10 +191,6 @@ MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
     SetLabelImpl();
 
     ToBackend(GetPhysicalDevice())->GetVulkanInstance()->StartListeningForDeviceMessages(this);
-
-    Ref<Queue> queue;
-    DAWN_TRY_ASSIGN(queue, Queue::Create(this, &descriptor->defaultQueue, mMainQueueFamily));
-    queue->RegisterSerialProcessor(QueuePriority::BestEffort, mDeleter);
 
     if (HasFeature(Feature::ChromiumExperimentalSamplingResourceTable)) {
         DAWN_TRY_ASSIGN(mResourceTableLayout, ResourceTable::MakeDescriptorSetLayout(this));
@@ -521,6 +521,19 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
         featuresChain.Add(&usedKnobs.subgroupSizeControlFeatures);
     }
 
+    if (mDeviceInfo.HasExt(DeviceExt::MaximalReconvergence)) {
+        DAWN_ASSERT(usedKnobs.HasExt(DeviceExt::MaximalReconvergence));
+        usedKnobs.shaderMaximalReconvergenceFeatures =
+            mDeviceInfo.shaderMaximalReconvergenceFeatures;
+        featuresChain.Add(&usedKnobs.shaderMaximalReconvergenceFeatures);
+    }
+    if (mDeviceInfo.HasExt(DeviceExt::SubgroupUniformControlFlow)) {
+        DAWN_ASSERT(usedKnobs.HasExt(DeviceExt::SubgroupUniformControlFlow));
+        usedKnobs.shaderSubgroupUniformControlFlowFeatures =
+            mDeviceInfo.shaderSubgroupUniformControlFlowFeatures;
+        featuresChain.Add(&usedKnobs.shaderSubgroupUniformControlFlowFeatures);
+    }
+
     if (mDeviceInfo.HasExt(DeviceExt::ZeroInitializeWorkgroupMemory)) {
         DAWN_ASSERT(usedKnobs.HasExt(DeviceExt::ZeroInitializeWorkgroupMemory));
 
@@ -586,6 +599,11 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
     if (HasFeature(Feature::PrimitiveIndex)) {
         DAWN_CHECK(mDeviceInfo.features.geometryShader == VK_TRUE);
         usedKnobs.features.geometryShader = VK_TRUE;
+    }
+
+    if (HasFeature(Feature::IndirectFirstInstance)) {
+        DAWN_CHECK(mDeviceInfo.features.drawIndirectFirstInstance == VK_TRUE);
+        usedKnobs.features.drawIndirectFirstInstance = VK_TRUE;
     }
 
     bool shaderFloat16Int8FeaturesAdded = false;
@@ -713,18 +731,20 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
     {
         // Note that GRAPHICS and COMPUTE imply TRANSFER so we don't need to check for it.
         constexpr uint32_t kUniversalFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT;
-        int universalQueueFamily = -1;
-        for (unsigned int i = 0; i < mDeviceInfo.queueFamilies.size(); ++i) {
+        bool foundQueueFamily = false;
+        uint32_t universalQueueFamily = 0;
+        for (uint32_t i = 0; i < mDeviceInfo.queueFamilies.size(); ++i) {
             if ((mDeviceInfo.queueFamilies[i].queueFlags & kUniversalFlags) == kUniversalFlags) {
                 universalQueueFamily = i;
+                foundQueueFamily = true;
                 break;
             }
         }
 
-        if (universalQueueFamily == -1) {
+        if (!foundQueueFamily) {
             return DAWN_INTERNAL_ERROR("No universal queue family");
         }
-        mMainQueueFamily = static_cast<uint32_t>(universalQueueFamily);
+        mMainQueueFamily = universalQueueFamily;
     }
 
     // Choose to create a single universal queue
@@ -1081,12 +1101,17 @@ void Device::DestroyImpl(DestroyReason reason) {
         pending->ClearUpTo(kMaxExecutionSerial);
     });
 
-    // Releasing the uploader enqueues buffers to be released.
-    // Call Tick() again to clear them before releasing the deleter.
-    GetResourceMemoryAllocator()->Tick(kMaxExecutionSerial);
+    // mResourceMemoryAllocator may not be created if the device creation fails before its creation.
+    // For example, as mResourceMemoryAllocator is created with a queue, it won't be created when
+    // an error happens when creating the queue.
+    if (mResourceMemoryAllocator) {
+        // Releasing the uploader enqueues buffers to be released.
+        // Call Tick() again to clear them before releasing the deleter.
+        GetResourceMemoryAllocator()->Tick(kMaxExecutionSerial);
 
-    // Allow recycled memory to be deleted.
-    GetResourceMemoryAllocator()->FreeRecycledMemory();
+        // Allow recycled memory to be deleted.
+        GetResourceMemoryAllocator()->FreeRecycledMemory();
+    }
 
     // The VkFramebuffers and VkRenderPasses in the cache can be destroyed immediately since all
     // commands referring to them are guaranteed to be finished executing.

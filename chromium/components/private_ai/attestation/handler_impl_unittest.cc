@@ -20,7 +20,8 @@ namespace {
 
 TEST(AttestationHandlerImplTest, GetAttestationRequest) {
   PrivateAiLogger logger;
-  AttestationHandlerImpl attestation_handler(&logger);
+  AttestationHandlerImpl attestation_handler(GURL("https://example.com"),
+                                             &logger);
   auto request = attestation_handler.GetAttestationRequest();
   ASSERT_TRUE(request.has_value());
   EXPECT_TRUE(request->assertions().empty());
@@ -40,6 +41,20 @@ const char kTestSignatureHex[] =
     "88758901DBC405022100FEB2047C7F154C1F408442B9D1CE63E2E1F6AEF08D8317DDF8"
     "A326E4EE9F6D88";
 
+const ProcessedKey kTestVerificationKey = {
+    /*id=*/2904100219,
+    /*output_prefix_type=*/OutputPrefixType::LEGACY,
+    /*x=*/
+    "\xcb\x20\xd0\xf4\x15\x93\xe3\x23\x39\x68\x67\x2d\xa0\xc8\xc5\xd1\x58\x6e"
+    "\xf1\x73\xbb\x3f\x06\xfb\xdb\xa8\xc7\x3d\x61\xcd\x33\x79",
+    /*y=*/
+    "\xdc\xf7\xce\x29\x3c\x10\xa1\x92\x1d\x45\x35\x58\x43\x70\x14\xf5\x08\x51"
+    "\xdf\x72\xfe\x52\x79\xa1\x6b\xe1\xa5\x76\x41\xd6\x75\x26"};
+
+base::span<const ProcessedKey> GetTestVerificationKeys() {
+  return base::span_from_ref(kTestVerificationKey);
+}
+
 class VerifyAttestationResponseTest : public ::testing::Test {
  protected:
   base::test::ScopedFeatureList feature_list_;
@@ -47,11 +62,8 @@ class VerifyAttestationResponseTest : public ::testing::Test {
 };
 
 TEST_F(VerifyAttestationResponseTest, Success) {
-  base::FieldTrialParams params;
-  params["url"] = "staging-private-ai.corp.google.com";
-  feature_list_.InitAndEnableFeatureWithParameters(kPrivateAi, params);
-
-  AttestationHandlerImpl attestation_handler(&logger_);
+  AttestationHandlerImpl attestation_handler(
+      &logger_, LoadVerificationKeys(GetTestVerificationKeys()));
 
   AttestationEvidence evidence;
   {
@@ -69,7 +81,7 @@ TEST_F(VerifyAttestationResponseTest, Success) {
 
 TEST_F(VerifyAttestationResponseTest, EmptyEvidence) {
   AttestationHandlerImpl attestation_handler(
-      &logger_, LoadVerificationKeys(GetStagingKeysForTesting()));
+      &logger_, LoadVerificationKeys(GetTestVerificationKeys()));
 
   AttestationEvidence evidence;
   EXPECT_FALSE(attestation_handler.VerifyAttestationResponse(evidence));
@@ -77,7 +89,7 @@ TEST_F(VerifyAttestationResponseTest, EmptyEvidence) {
 
 TEST_F(VerifyAttestationResponseTest, EmptyEndorsements) {
   AttestationHandlerImpl attestation_handler(
-      &logger_, LoadVerificationKeys(GetStagingKeysForTesting()));
+      &logger_, LoadVerificationKeys(GetTestVerificationKeys()));
 
   AttestationEvidence evidence;
   evidence.endorsed_evidence["123"] = EndorsedEvidence();
@@ -86,7 +98,7 @@ TEST_F(VerifyAttestationResponseTest, EmptyEndorsements) {
 
 TEST_F(VerifyAttestationResponseTest, MalformedSignature) {
   AttestationHandlerImpl attestation_handler(
-      &logger_, LoadVerificationKeys(GetStagingKeysForTesting()));
+      &logger_, LoadVerificationKeys(GetTestVerificationKeys()));
 
   AttestationEvidence evidence;
   {
@@ -125,7 +137,7 @@ TEST_F(VerifyAttestationResponseTest, VerificationKeysEmpty) {
 
 TEST_F(VerifyAttestationResponseTest, KeyNotFound) {
   AttestationHandlerImpl attestation_handler(
-      &logger_, LoadVerificationKeys(GetStagingKeysForTesting()));
+      &logger_, LoadVerificationKeys(GetTestVerificationKeys()));
 
   AttestationEvidence evidence;
   {
@@ -143,10 +155,8 @@ TEST_F(VerifyAttestationResponseTest, KeyNotFound) {
 }
 
 TEST_F(VerifyAttestationResponseTest, WrongSignature) {
-  base::FieldTrialParams params;
-  params["url"] = "staging-private-ai.corp.google.com";
-
-  AttestationHandlerImpl attestation_handler(&logger_);
+  AttestationHandlerImpl attestation_handler(
+      &logger_, LoadVerificationKeys(GetTestVerificationKeys()));
 
   AttestationEvidence evidence;
   {
@@ -164,48 +174,10 @@ TEST_F(VerifyAttestationResponseTest, WrongSignature) {
   EXPECT_FALSE(attestation_handler.VerifyAttestationResponse(evidence));
 }
 
-// Test to cover the VerifyInit failure.
-TEST_F(VerifyAttestationResponseTest, VerifyInitFails) {
-  std::map<uint32_t, VerificationKey> keys =
-      LoadVerificationKeys(GetStagingKeysForTesting());
-  ASSERT_FALSE(keys.empty());
-
-  uint32_t key_id = keys.begin()->first;
-
-  VerificationKey& corrupted_key = keys.at(key_id);
-
-  // Corrupt the key in place to cause VerifyInit to fail.
-  // Providing an empty public key span should cause EVP_parse_public_key to
-  // fail inside VerifyInit.
-  corrupted_key.public_key.clear();
-
-  AttestationHandlerImpl attestation_handler(&logger_, std::move(keys));
-
-  AttestationEvidence evidence;
-  {
-    EndorsedEvidence endorsed_evidence;
-    Endorsement endorsement;
-    endorsement.message = {1, 2, 3, 4};
-
-    // Craft a signature header for the corrupted key ID.
-    std::vector<uint8_t> signature = {0x01};  // Tink prefix
-    signature.push_back((key_id >> 24) & 0xFF);
-    signature.push_back((key_id >> 16) & 0xFF);
-    signature.push_back((key_id >> 8) & 0xFF);
-    signature.push_back(key_id & 0xFF);
-    signature.insert(signature.end(), 64, 0xAA);
-    endorsement.signature = std::move(signature);
-
-    endorsed_evidence.endorsements.push_back(std::move(endorsement));
-    evidence.endorsed_evidence[kTestEvidenceId] = std::move(endorsed_evidence);
-  }
-
-  EXPECT_FALSE(attestation_handler.VerifyAttestationResponse(evidence));
-}
 
 // Test to ensure the non-LEGACY key type path is taken in VerifyUpdate.
 TEST_F(VerifyAttestationResponseTest, ForcedNonLegacyKeyType) {
-  base::span<const ProcessedKey> original_keys = GetStagingKeysForTesting();
+  base::span<const ProcessedKey> original_keys = GetTestVerificationKeys();
   ASSERT_FALSE(original_keys.empty());
 
   ProcessedKey modified_processed_key = original_keys[0];

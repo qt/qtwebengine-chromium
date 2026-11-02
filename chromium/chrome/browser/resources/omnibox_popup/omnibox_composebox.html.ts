@@ -66,14 +66,15 @@ export function getHtml(this: OmniboxComposeboxElement) {
     : ''}
     <div id="composebox" part="composebox" ?inert="${!!this.errorMessage}"
         @keydown="${this.onKeydown}"
-        @dragenter="${this.dragAndDropHandler_.handleDragEnter}"
-        @dragover="${this.dragAndDropHandler_.handleDragOver}"
-        @dragleave="${this.dragAndDropHandler_.handleDragLeave}"
-        @drop="${this.dragAndDropHandler_.handleDrop}"
+        @dragenter="${this.dragAndDropHandler.handleDragEnter}"
+        @dragover="${this.dragAndDropHandler.handleDragOver}"
+        @dragleave="${this.dragAndDropHandler.handleDragLeave}"
+        @drop="${this.dragAndDropHandler.handleDrop}"
         @paste="${this.onPaste}">
       <div id="inputContainer" part="input-container">
         <cr-composebox-input id="composeboxInput"
             exportparts="text-container, icon-container, mirror, input, smart-compose, cancel, action-icon, cancel-icon"
+            .composeboxSkillsEnabled="${this.composeboxSkillsEnabled}"
             .disableCaretColorAnimation="${this.disableCaretColorAnimation}"
             .showDropdown="${this.showDropdown}"
             .inputPlaceholder="${this.inputPlaceholder}"
@@ -137,8 +138,15 @@ export function getHtml(this: OmniboxComposeboxElement) {
                     ?upload-button-disabled="${this.uploadButtonDisabled}"
                     .sharedTabs="${this.getSharedTabs()}"
                     .restoredTabs="${this.aimThreadRestoredTabs}"
-                    ?show-context-menu-description="${this.showContextMenuDescription}">
+                    ?show-context-menu-description="${this.showContextMenuDescription}"
+                    .smartTabSharingActive="${this.smartTabSharingActive}">
                 </cr-composebox-contextual-entrypoint-button>
+              ` : ''}
+              ${this.isLensSearchChipShown_ ? html`
+                <cr-composebox-lens-search id="lensSearchChip"
+                    class="upload-button contextual-chip"
+                    @lens-search-click="${this.onLensSearchClick_}">
+                </cr-composebox-lens-search>
               ` : ''}
               ${this.searchboxLayoutMode !== 'Compact' &&
                 this.inToolMode ? html`

@@ -19,8 +19,35 @@ export namespace Chrome {
        */
       readonly buildId?: string;
 
+      /**
+       * Returns the `content` and `encoding` of the resource. If a `callback`
+       * is provided, it is invoked with the `content` and `encoding` and the
+       * method returns `void`. If no `callback` is provided, the method returns
+       * a `Promise`.
+       *
+       * @param callback Optional callback to be invoked with the content and
+       * encoding.
+       * @returns A Promise that resolves to an object containing the content
+       * and encoding if no callback is provided, otherwise void. Rejects with
+       * an error object on failure.
+       */
+      getContent(): Promise<{content: string, encoding: string}>;
       getContent(callback: (content: string, encoding: string) => unknown): void;
-      setContent(content: string, commit: boolean, callback?: (error?: Object) => unknown): void;
+
+      /**
+       * Sets the content of the resource. If a `callback` is provided, it is
+       * invoked when the content is set and the method returns `void`. If no
+       * `callback` is provided, the method returns a `Promise`.
+       *
+       * @param content The new content of the resource.
+       * @param commit Whether to commit the changes.
+       * @param callback Optional callback to be invoked when the content is
+       * set.
+       * @returns A Promise that resolves when the content is set if no callback
+       * is provided, otherwise void. Rejects with an error object on failure.
+       */
+      setContent(content: string, commit: boolean): Promise<void>;
+      setContent(content: string, commit: boolean, callback: (error?: object) => unknown): void;
       /**
        * Augments this resource's scopes information based on the list of {@link NamedFunctionRange}s
        * for improved debuggability and function naming.
@@ -40,18 +67,62 @@ export namespace Chrome {
       onResourceAdded: EventSink<(resource: Resource) => unknown>;
       onResourceContentCommitted: EventSink<(resource: Resource, content: string) => unknown>;
 
-      eval(
-          expression: string,
-          options?: {scriptExecutionContext?: string, frameURL?: string, useContentScriptContext?: boolean},
-          callback?: (result: unknown, exceptioninfo: {
-            code: string,
-            description: string,
-            details: unknown[],
-            isError: boolean,
-            isException: boolean,
-            value: string,
-          }) => unknown): void;
+      /**
+       * Evaluates a JavaScript expression in the context of the inspected page.
+       *
+       * If a `callback` is provided, it is invoked with the result and
+       * exception information and the method returns `void`. If no `callback`
+       * is provided, the method returns a `Promise`.
+       *
+       * @template E The type of the value that the Promise resolves to.
+       * @param expression The JavaScript expression to evaluate.
+       * @param optionsOrCallback Optional options for evaluation, or a callback
+       * function.
+       * @param callback Optional callback to be invoked with the evaluation
+       * result and exception information.
+       * @returns A Promise that resolves to the result if no callback is
+       * provided, otherwise void. Rejects with an error object on failure.
+       */
+      eval<E = unknown>(expression: string, options?: {
+        scriptExecutionContext?: string,
+        frameURL?: string,
+        useContentScriptContext?: boolean,
+      }): Promise<E>;
+      eval(expression: string,
+           optionsOrCallback: {scriptExecutionContext?: string, frameURL?: string, useContentScriptContext?: boolean}|
+           undefined|((result: unknown, exceptioninfo: {
+                        code: string,
+                        description: string,
+                        details: unknown[],
+                        isError: boolean,
+                        isException: boolean,
+                        value: string,
+                      }) => unknown),
+           callback?: (result: unknown, exceptioninfo: {
+             code: string,
+             description: string,
+             details: unknown[],
+             isError: boolean,
+             isException: boolean,
+             value: string,
+           }) => unknown): void;
+
+      /**
+       * Retrieves all resources within the inspected window.
+       *
+       * If a `callback` is provided, it is invoked with the array of resources
+       * and the method returns `void`. If no `callback` is provided, the method
+       * returns a `Promise`.
+       *
+       * @param callback Optional callback to be invoked with the array of
+       * resources.
+       * @returns A Promise that resolves to an array of resources if no
+       * callback is provided, otherwise void. Rejects with an error object on
+       * failure.
+       */
+      getResources(): Promise<Resource[]>;
       getResources(callback: (resources: Resource[]) => unknown): void;
+
       reload(reloadOptions?: {ignoreCache?: boolean, injectedScript?: string, userAgent?: string}): void;
     }
 
@@ -77,12 +148,69 @@ export namespace Chrome {
 
     export interface ExtensionSidebarPane extends ExtensionView {
       setHeight(height: string): void;
+
+      /**
+       * Sets an object to be displayed in the sidebar pane.
+       *
+       * If a `callback` is provided, it is invoked when the object has been set
+       * and the method returns `void`. If no `callback` is provided, the method
+       * returns a `Promise`.
+       *
+       * @param jsonObject The JSON object to display in the pane (as a string).
+       * @param rootTitle Optional title of the root node.
+       * @param callback Optional callback to be invoked when the object has been set.
+       * @returns A Promise that resolves when the object has been set if no callback is
+       * provided, otherwise void. Rejects with an error object on failure.
+       */
+      setObject(jsonObject: string, rootTitle?: string): Promise<void>;
       setObject(jsonObject: string, rootTitle?: string, callback?: () => unknown): void;
+
+      /**
+       * Evaluates an expression in the context of the inspected page and displays the
+       * result in the sidebar pane.
+       *
+       * If a `callback` is provided, it is invoked when the expression has been evaluated
+       * and the method returns `void`. If no `callback` is provided, the method
+       * returns a `Promise`.
+       *
+       * @param expression The expression to evaluate.
+       * @param rootTitle Optional title of the root node.
+       * @param evaluateOptions Options for evaluating the expression.
+       * @param callback Optional callback to be invoked when the expression has been evaluated.
+       * @returns A Promise that resolves when the expression has been evaluated if no callback is
+       * provided, otherwise void. Rejects with an error object on failure.
+       */
+      setExpression(expression: string, rootTitle?: string, evaluateOptions?: {
+        frameURL?: string,
+        useContentScriptContext?: boolean,
+        scriptExecutionContext?: string,
+      }): Promise<void>;
+      setExpression(expression: string, rootTitle?: string, evaluateOptions?: {
+        frameURL?: string,
+        useContentScriptContext?: boolean,
+        scriptExecutionContext?: string,
+      },
+                    callback?: () => unknown): void;
+
       setPage(path: string): void;
     }
 
     export interface PanelWithSidebar {
+      /**
+       * Creates a sidebar pane in the Elements or Sources panel.
+       *
+       * If a `callback` is provided, it is invoked with the sidebar pane
+       * and the method returns `void`. If no `callback` is provided, the method
+       * returns a `Promise`.
+       *
+       * @param title The title of the sidebar pane.
+       * @param callback Optional callback to be invoked when the sidebar pane has been created.
+       * @returns A Promise that resolves to the created ExtensionSidebarPane if no callback is
+       * provided, otherwise void. Rejects with an error object on failure.
+       */
+      createSidebarPane(title: string): Promise<ExtensionSidebarPane>;
       createSidebarPane(title: string, callback?: (result: ExtensionSidebarPane) => unknown): void;
+
       onSelectionChanged: EventSink<() => unknown>;
     }
 
@@ -92,7 +220,38 @@ export namespace Chrome {
       network: NetworkPanel;
       themeName: string;
 
+      /**
+       * Creates an extension panel.
+       *
+       * If a `callback` is provided, it is invoked with the panel
+       * and the method returns `void`. If no `callback` is provided, the method
+       * returns a `Promise`.
+       *
+       * @param title The title of the panel.
+       * @param iconPath The path to the icon for the panel.
+       * @param pagePath The path to the page for the panel.
+       * @param callback Optional callback to be invoked when the panel has been created.
+       * @returns A Promise that resolves to the created ExtensionPanel if no callback is
+       * provided, otherwise void. Rejects with an error object on failure.
+       */
+      create(title: string, iconPath: string, pagePath: string): Promise<ExtensionPanel>;
       create(title: string, iconPath: string, pagePath: string, callback?: (panel: ExtensionPanel) => unknown): void;
+
+      /**
+       * Opens a resource in the Sources panel.
+       *
+       * If a `callback` is provided, it is invoked when the resource has been opened
+       * and the method returns `void`. If no `callback` is provided, the method
+       * returns a `Promise`.
+       *
+       * @param url The URL of the resource.
+       * @param lineNumber The line number to highlight.
+       * @param columnNumber Optional column number to highlight.
+       * @param callback Optional callback to be invoked when the resource has been opened.
+       * @returns A Promise that resolves when the resource has been opened if no callback is
+       * provided, otherwise void. Rejects with an error object on failure.
+       */
+      openResource(url: string, lineNumber: number, columnNumber?: number): Promise<void>;
       openResource(url: string, lineNumber: number, columnNumber?: number, callback?: () => unknown): void;
 
       setOpenResourceHandler(
@@ -107,6 +266,20 @@ export namespace Chrome {
     }
 
     export interface Request {
+      /**
+       * Retrieves the content of the request.
+       *
+       * If a `callback` is provided, it is invoked with the content and encoding
+       * and the method returns `void`. If no `callback` is provided, the method
+       * returns a `Promise`.
+       *
+       * @param callback Optional callback to be invoked with the content and
+       * encoding.
+       * @returns A Promise that resolves to an object containing the content and
+       * encoding if no callback is provided, otherwise void. Rejects with an
+       * error object on failure.
+       */
+      getContent(): Promise<{content: string, encoding: string}>;
       getContent(callback: (content: string, encoding: string) => unknown): void;
     }
 
@@ -114,6 +287,18 @@ export namespace Chrome {
       onNavigated: EventSink<(url: string) => unknown>;
       onRequestFinished: EventSink<(request: Request) => unknown>;
 
+      /**
+       * Retrieves the HAR log that contains all network requests.
+       *
+       * If a `callback` is provided, it is invoked with the HAR log object
+       * and the method returns `void`. If no `callback` is provided, the method
+       * returns a `Promise`.
+       *
+       * @param callback Optional callback to be invoked with the HAR log.
+       * @returns A Promise that resolves to the HAR log if no callback is
+       * provided, otherwise void. Rejects with an error object on failure.
+       */
+      getHAR(): Promise<object>;
       getHAR(callback: (harLog: object) => unknown): void;
     }
 

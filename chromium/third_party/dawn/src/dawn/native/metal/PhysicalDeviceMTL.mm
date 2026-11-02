@@ -31,7 +31,6 @@
 #include "dawn/platform/DawnPlatform.h"
 #include "src/dawn/common/CoreFoundationRef.h"
 #include "src/dawn/common/GPUInfo.h"
-#include "src/dawn/common/Log.h"
 #include "src/dawn/common/NSRef.h"
 #include "src/dawn/common/SystemUtils.h"
 #include "src/dawn/native/ChainUtils.h"
@@ -40,6 +39,7 @@
 #include "src/dawn/native/metal/DeviceMTL.h"
 #include "src/dawn/native/metal/UtilsMetal.h"
 #include "src/utils/compiler.h"
+#include "src/utils/log.h"
 #include "src/utils/platform.h"
 
 #if DAWN_PLATFORM_IS(MACOS)
@@ -74,9 +74,9 @@ const Vendor kVendors[] = {
 // Find vendor ID from MTLDevice name.
 MaybeError GetVendorIdFromVendors(id<MTLDevice> device, PCIIDs* ids) {
     uint32_t vendorId = 0;
-    const char* deviceName = [device.name UTF8String];
+    std::string_view deviceName = [device.name UTF8String];
     for (const auto& it : kVendors) {
-        if (DAWN_UNSAFE_TODO(strstr(deviceName, it.trademark)) != nullptr) {
+        if (deviceName.find(it.trademark) != std::string_view::npos) {
             vendorId = it.vendorId;
             break;
         }
@@ -416,7 +416,12 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         deviceToggles->Default(Toggle::MetalUseArgumentBuffers, false);
 
         bool haveBaseVertexBaseInstance = true;
-#if DAWN_PLATFORM_IS(IOS) && !DAWN_PLATFORM_IS(TVOS) && \
+        // The iOS Simulator only advertises the MTLFeatureSet_iOS_GPUFamily2 feature set, but
+        // base vertex/instance draws execute correctly there because Metal commands are serviced
+        // by the host GPU, which always supports them.
+        // NOTE: TARGET_OS_SIMULATOR can be defined but set to false for MacOS builds.
+#if DAWN_PLATFORM_IS(IOS) && !DAWN_PLATFORM_IS(TVOS) &&        \
+    (!defined(TARGET_OS_SIMULATOR) || !TARGET_OS_SIMULATOR) && \
     (!defined(__IPHONE_16_0) || __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_16_0)
         haveBaseVertexBaseInstance = [*mDevice supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily3_v1];
 #endif
@@ -720,6 +725,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::Float32Blendable);
     EnableFeature(Feature::FlexibleTextureViews);
     EnableFeature(Feature::TextureFormatsTier1);
+    EnableFeature(Feature::TextureCompressionUnaligned);
 
     // SIMD-scoped permute operations is supported by GPU family Metal3, Apple6, Apple7, Apple8,
     // and Mac2.
@@ -734,6 +740,11 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     if (([*mDevice supportsFamily:MTLGPUFamilyApple6] ||
          [*mDevice supportsFamily:MTLGPUFamilyMac2])) {
         EnableFeature(Feature::Subgroups);
+        // Apple doesn't support selecting a subgroup size, but if there is only one possible size
+        // we can trivially enable the feature.
+        if (mSubgroupMinSize == mSubgroupMaxSize) {
+            EnableFeature(Feature::SubgroupSizeControl);
+        }
     }
 
     if ([*mDevice supportsFamily:MTLGPUFamilyApple7]) {
@@ -998,9 +1009,7 @@ void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info,
                                                const TogglesState& toggles) const {
     if (auto* memoryHeapProperties = info.Get<AdapterPropertiesMemoryHeaps>()) {
         if ([*mDevice hasUnifiedMemory]) {
-            auto* heapInfo = new MemoryHeapInfo[1];
-            memoryHeapProperties->heapCount = 1;
-            memoryHeapProperties->heapInfo = heapInfo;
+            auto heapInfo = HeapArray<MemoryHeapInfo>(1);
 
             heapInfo[0].properties =
                 wgpu::HeapProperty::DeviceLocal | wgpu::HeapProperty::HostVisible |
@@ -1017,11 +1026,11 @@ void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info,
                 // excluding the conditional causes build errors.
                 DAWN_UNREACHABLE();
             }
+
+            memoryHeapProperties->heapInfo = std::move(heapInfo).MoveToSpan();
         } else {
 #if DAWN_PLATFORM_IS(MACOS)
-            auto* heapInfo = new MemoryHeapInfo[2];
-            memoryHeapProperties->heapCount = 2;
-            memoryHeapProperties->heapInfo = heapInfo;
+            auto heapInfo = HeapArray<MemoryHeapInfo>(2);
 
             heapInfo[0].properties = wgpu::HeapProperty::DeviceLocal;
             heapInfo[0].size = [*mDevice recommendedMaxWorkingSetSize];
@@ -1032,10 +1041,12 @@ void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info,
                                     reinterpret_cast<host_info_t>(&hostInfo), &hostBasicInfoMsg);
             DAWN_CHECK(status == KERN_SUCCESS);
 
-            DAWN_UNSAFE_TODO(heapInfo[1].properties) = wgpu::HeapProperty::HostVisible |
-                                                       wgpu::HeapProperty::HostCoherent |
-                                                       wgpu::HeapProperty::HostCached;
-            DAWN_UNSAFE_TODO(heapInfo[1].size) = hostInfo.max_mem;
+            heapInfo[1].properties = wgpu::HeapProperty::HostVisible |
+                                     wgpu::HeapProperty::HostCoherent |
+                                     wgpu::HeapProperty::HostCached;
+            heapInfo[1].size = hostInfo.max_mem;
+
+            memoryHeapProperties->heapInfo = std::move(heapInfo).MoveToSpan();
 #else
             DAWN_UNREACHABLE();
 #endif
@@ -1044,9 +1055,7 @@ void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info,
     if (auto* subgroupMatrixConfigs = info.Get<AdapterPropertiesSubgroupMatrixConfigs>()) {
         DAWN_ASSERT([*mDevice supportsFamily:MTLGPUFamilyApple7]);
 
-        auto* configs = new SubgroupMatrixConfig[2];
-        subgroupMatrixConfigs->configCount = 2;
-        subgroupMatrixConfigs->configs = configs;
+        auto configs = HeapArray<SubgroupMatrixConfig>(2);
 
         configs[0].componentType = wgpu::SubgroupMatrixComponentType::F32;
         configs[0].resultComponentType = wgpu::SubgroupMatrixComponentType::F32;
@@ -1054,11 +1063,13 @@ void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info,
         configs[0].N = 8;
         configs[0].K = 8;
 
-        DAWN_UNSAFE_TODO(configs[1].componentType) = wgpu::SubgroupMatrixComponentType::F16;
-        DAWN_UNSAFE_TODO(configs[1].resultComponentType) = wgpu::SubgroupMatrixComponentType::F16;
-        DAWN_UNSAFE_TODO(configs[1].M) = 8;
-        DAWN_UNSAFE_TODO(configs[1].N) = 8;
-        DAWN_UNSAFE_TODO(configs[1].K) = 8;
+        configs[1].componentType = wgpu::SubgroupMatrixComponentType::F16;
+        configs[1].resultComponentType = wgpu::SubgroupMatrixComponentType::F16;
+        configs[1].M = 8;
+        configs[1].N = 8;
+        configs[1].K = 8;
+
+        subgroupMatrixConfigs->configs = std::move(configs).MoveToSpan();
     }
 }
 }  // namespace dawn::native::metal

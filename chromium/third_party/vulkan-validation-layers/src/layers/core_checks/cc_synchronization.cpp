@@ -55,19 +55,11 @@
 constexpr VkQueueFlags kAllQueueTypes = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
 
 ReadLockGuard CoreChecks::ReadLock() const {
-    if (global_settings.fine_grained_locking) {
-        return ReadLockGuard(validation_object_mutex, std::defer_lock);
-    } else {
-        return ReadLockGuard(validation_object_mutex);
-    }
+    return ReadLockGuard(validation_object_mutex, std::defer_lock);
 }
 
 WriteLockGuard CoreChecks::WriteLock() {
-    if (global_settings.fine_grained_locking) {
-        return WriteLockGuard(validation_object_mutex, std::defer_lock);
-    } else {
-        return WriteLockGuard(validation_object_mutex);
-    }
+    return WriteLockGuard(validation_object_mutex, std::defer_lock);
 }
 
 bool SemaphoreSubmitState::CanWaitBinary(const vvl::Semaphore& semaphore_state) const {
@@ -401,13 +393,13 @@ bool SemaphoreSubmitState::ValidateSignalSemaphore(const Location& signal_semaph
 }
 
 static bool ValidateEventQueueMismatch(const CoreChecks& core, const vvl::Queue& queue_state, const vvl::CommandBuffer& cb_state,
-                                       const vvl::Event& event_state, const EventSignalingStateMap& submit_signaling_states,
+                                       const vvl::Event& event_state, const EventSignalStateMap& local_signal_states,
                                        const Location& loc) {
     bool skip = false;
 
     // Check if prior command buffers from this submit contain signaling operation.
     // If yes, then everything is on the same queue
-    if (vvl::Contains(submit_signaling_states, event_state.VkHandle())) {
+    if (vvl::Contains(local_signal_states, event_state.VkHandle())) {
         return skip;
     }
     // Check global event state
@@ -422,53 +414,75 @@ static bool ValidateEventQueueMismatch(const CoreChecks& core, const vvl::Queue&
 }
 
 bool WaitEventSubmitInfo::Validate(const CoreChecks& core, const vvl::Queue& queue_state, const vvl::CommandBuffer& cb_state,
-                                   EventSignalingStateMap& submit_signaling_states, const Location& loc) const {
+                                   EventSignalStateMap& local_signal_states, const Location& loc) const {
     bool skip = false;
 
     VkPipelineStageFlags signals_src_stage_mask = 0;
+    bool set_wait_version_mismatch = false;  // if version mismatch is detected some other validations make no sense
+    bool found_signals = false;
+
     for (VkEvent event : wait_events) {
         if (auto event_state = core.Get<vvl::Event>(event)) {
-            if (!vvl::Contains(signaling_states, event)) {
-                skip |= ValidateEventQueueMismatch(core, queue_state, cb_state, *event_state, submit_signaling_states, loc);
+            if (!vvl::Contains(signal_states, event)) {
+                skip |= ValidateEventQueueMismatch(core, queue_state, cb_state, *event_state, local_signal_states, loc);
             }
-            // NOTE: for unsignaled events the signal_src_stage_mask is NONE
-            VkPipelineStageFlags2 stage_mask = 0;
-            bool last_signal = false;
-            if (event_state->signaled) {
-                stage_mask = event_state->signal_src_stage_mask;
-                last_signal = event_state->signaled;
+            const EventSignalState* local_signal_state = vvl::Find(local_signal_states, event);
+            const EventSignalState* cb_signal_state = vvl::Find(signal_states, event);
+            const EventSignalState resolved_state = ResolveEventSignal(*event_state, local_signal_state, cb_signal_state);
+
+            // Validate set-wait mismatch
+            if (IsValueIn(resolved_state.last_signaling_command, {vvl::Func::vkCmdSetEvent2, vvl::Func::vkCmdSetEvent2KHR})) {
+                set_wait_version_mismatch = true;
+                const LogObjectList objlist(cb_state.Handle(), event_state->Handle());
+                skip |= core.LogError("VUID-vkCmdWaitEvents-pEvents-03847", objlist, loc, "%s: %s was set by %s.",
+                                      vvl::String(wait_command), core.FormatHandle(event).c_str(),
+                                      vvl::String(resolved_state.last_signaling_command));
             }
-            if (const auto* submit_signaling = vvl::Find(submit_signaling_states, event)) {
-                if (!last_signal || submit_signaling->HasKnownEffect()) {
-                    stage_mask = submit_signaling->signal_src_stage_mask;
-                }
-                last_signal = submit_signaling->signal_src_stage_mask;
+            // Collect source stages from all signals
+            if (resolved_state.signaled) {
+                signals_src_stage_mask |= static_cast<VkPipelineStageFlags>(resolved_state.signal_src_stage_mask);
+                found_signals = true;
             }
-            if (const auto* cb_signaling = vvl::Find(signaling_states, event)) {
-                if (!last_signal || cb_signaling->HasKnownEffect()) {
-                    stage_mask = cb_signaling->signal_src_stage_mask;
-                }
-            }
-            signals_src_stage_mask |= static_cast<VkPipelineStageFlags>(stage_mask);
         }
     }
-    // Validate src stage mask mismatch
-    if (wait_src_stage_mask != signals_src_stage_mask) {
-        std::ostringstream ss;
-        ss << "(" << core.FormatHandle(cb_state.Handle()) << ") contains a vkCmdWaitEvents call with srcStageMask "
-           << string_VkPipelineStageFlags(wait_src_stage_mask)
-           << ", but the bitwise OR of stageMask values from the most recent vkCmdSetEvent calls is "
-           << string_VkPipelineStageFlags(signals_src_stage_mask & ~VK_PIPELINE_STAGE_HOST_BIT);
 
-        if (wait_src_stage_mask & VK_PIPELINE_STAGE_HOST_BIT) {
-            if (!(signals_src_stage_mask & VK_PIPELINE_STAGE_HOST_BIT)) {
-                ss << " and none of the waited events were set by vkSetEvent";
+    // Validate src stage mask
+    if (!set_wait_version_mismatch && wait_src_stage_mask != signals_src_stage_mask) {
+        std::ostringstream ss;
+        ss << "(" << core.FormatHandle(cb_state.Handle()) << ") contains vkCmdWaitEvents with srcStageMask "
+           << string_VkPipelineStageFlags(wait_src_stage_mask);
+
+        const VkPipelineStageFlags device_signals_src_stage_mask = signals_src_stage_mask & ~VK_PIPELINE_STAGE_HOST_BIT;
+        const VkPipelineStageFlags device_wait_src_stage_mask = wait_src_stage_mask & ~VK_PIPELINE_STAGE_HOST_BIT;
+        const bool host_wait = wait_src_stage_mask & VK_PIPELINE_STAGE_HOST_BIT;
+        const bool host_signal = signals_src_stage_mask & VK_PIPELINE_STAGE_HOST_BIT;
+
+        if (found_signals) {
+            if (device_wait_src_stage_mask != device_signals_src_stage_mask) {
+                if (signals_src_stage_mask != VK_PIPELINE_STAGE_HOST_BIT) {
+                    ss << ", but the bitwise OR of stageMask values from the most recent vkCmdSetEvent calls is "
+                       << string_VkPipelineStageFlags(device_signals_src_stage_mask);
+                } else if (host_wait) {
+                    // The host part of srcStageMask matches the host signal, but the device part has no signal
+                    ss << ". srcStageMask includes " << string_VkPipelineStageFlags(device_wait_src_stage_mask)
+                       << " which has no corresponding vkCmdSetEvent signal";
+                }
+            }
+            if (host_wait && !host_signal) {
+                ss << ". srcStageMask specifies VK_PIPELINE_STAGE_HOST_BIT but none of the waited events were set by vkSetEvent";
             }
         } else {
-            if (signals_src_stage_mask & VK_PIPELINE_STAGE_HOST_BIT) {
-                ss << " and at least one waited event was set by vkSetEvent, so srcStageMask must also include "
-                      "VK_PIPELINE_STAGE_HOST_BIT";
+            ss << ", but the waited events are known to be unsignaled at this point";
+            if (device_wait_src_stage_mask) {
+                ss << ". The wait does not have a corresponding vkCmdSetEvent signal";
             }
+            if (host_wait) {
+                ss << ". srcStageMask specifies VK_PIPELINE_STAGE_HOST_BIT but none of the waited events were set by vkSetEvent";
+            }
+        }
+        if (host_signal && !host_wait) {
+            ss << ". At least one waited event was set by vkSetEvent, so srcStageMask must also include "
+                  "VK_PIPELINE_STAGE_HOST_BIT";
         }
         skip |= core.LogError("VUID-vkCmdWaitEvents-srcStageMask-01158", cb_state.Handle(), loc, "%s", ss.str().c_str());
     }
@@ -476,7 +490,7 @@ bool WaitEventSubmitInfo::Validate(const CoreChecks& core, const vvl::Queue& que
 }
 
 bool WaitEvent2SubmitInfo::Validate(const CoreChecks& core, const vvl::Queue& queue_state, const vvl::CommandBuffer& cb_state,
-                                    EventSignalingStateMap& submit_signaling_states, const Location& loc) const {
+                                    EventSignalStateMap& local_signal_states, const Location& loc) const {
     bool skip = false;
 
     auto event_state = core.Get<vvl::Event>(wait_event);
@@ -484,18 +498,50 @@ bool WaitEvent2SubmitInfo::Validate(const CoreChecks& core, const vvl::Queue& qu
         return skip;
     }
 
-    skip |= ValidateEventQueueMismatch(core, queue_state, cb_state, *event_state, submit_signaling_states, loc);
+    skip |= ValidateEventQueueMismatch(core, queue_state, cb_state, *event_state, local_signal_states, loc);
 
-    std::optional<vku::safe_VkDependencyInfo> signal_dependency_info;
-    if (signaling_state.has_value()) {
-        assert(signaling_state->signal_dependency_info.has_value());
-        signal_dependency_info = signaling_state->signal_dependency_info;
-    } else if (const auto* submit_signaling_state = vvl::Find(submit_signaling_states, wait_event)) {
-        signal_dependency_info = submit_signaling_state->signal_dependency_info;
-    } else if (event_state->signal_dependency_info.has_value()) {
-        signal_dependency_info = *event_state->signal_dependency_info;
+    const EventSignalState* local_signal_state = vvl::Find(local_signal_states, wait_event);
+    const EventSignalState* cb_signal_state = signal_state.has_value() ? &*signal_state : nullptr;
+    const EventSignalState resolved_state = ResolveEventSignal(*event_state, local_signal_state, cb_signal_state);
+
+    const VkPipelineStageFlags2 union_src_stage_mask = sync_utils::GetExecScopes(*wait_dependency_info.ptr()).src;
+
+    if (union_src_stage_mask == VK_PIPELINE_STAGE_2_HOST_BIT && !resolved_state.signaled) {
+        const LogObjectList objlist(cb_state.Handle(), event_state->Handle());
+        skip |= core.LogError("VUID-vkCmdWaitEvents2-pEvents-03840", objlist, loc,
+                              "contains %s and the first synchronization scope specified by pDependencyInfos is "
+                              "VK_PIPELINE_STAGE_2_HOST_BIT but %s is not signaled",
+                              vvl::String(wait_command), core.FormatHandle(event_state->Handle()).c_str());
+    } else if (resolved_state.last_signaling_command == vvl::Func::vkSetEvent) {
+        if ((union_src_stage_mask & VK_PIPELINE_STAGE_2_HOST_BIT) == 0) {
+            const LogObjectList objlist(cb_state.Handle(), event_state->Handle());
+            skip |= core.LogError("VUID-vkCmdWaitEvents2-pEvents-03839", objlist, loc,
+                                  "contains %s and %s was signaled by vkSetEvent, but the first synchronization scope specified "
+                                  "by pDependencyInfos does not include VK_PIPELINE_STAGE_2_HOST_BIT",
+                                  vvl::String(wait_command), core.FormatHandle(event_state->Handle()).c_str());
+        } else if (union_src_stage_mask != VK_PIPELINE_STAGE_2_HOST_BIT) {
+            const LogObjectList objlist(cb_state.Handle(), event_state->Handle());
+            skip |= core.LogError("VUID-vkCmdWaitEvents2-pEvents-03839", objlist, loc,
+                                  "contains %s and %s was signaled by vkSetEvent, but the first synchronization scope specified "
+                                  "by pDependencyInfos includes other stages than VK_PIPELINE_STAGE_2_HOST_BIT: %s",
+                                  vvl::String(wait_command), core.FormatHandle(event_state->Handle()).c_str(),
+                                  string_VkPipelineStageFlags2(union_src_stage_mask).c_str());
+        }
+    } else if (resolved_state.last_signaling_command == vvl::Func::vkCmdSetEvent) {
+        const LogObjectList objlist(cb_state.Handle(), event_state->Handle());
+        skip |=
+            core.LogError("VUID-vkCmdWaitEvents2-pEvents-03837", objlist, loc, "%s: %s was set by %s.", vvl::String(wait_command),
+                          core.FormatHandle(event_state->Handle()).c_str(), vvl::String(resolved_state.last_signaling_command));
+    } else if (!IsValueIn(resolved_state.last_signaling_command, {vvl::Func::vkCmdSetEvent2, vvl::Func::vkCmdSetEvent2KHR})) {
+        if ((union_src_stage_mask & VK_PIPELINE_STAGE_2_HOST_BIT) == 0) {
+            const LogObjectList objlist(cb_state.Handle(), event_state->Handle());
+            skip |= core.LogError("VUID-vkCmdWaitEvents2-pEvents-03841", objlist, loc,
+                                  "contains %s but %s was not set by vkCmdSetEvent2.", vvl::String(wait_command),
+                                  core.FormatHandle(wait_event).c_str());
+        }
     }
 
+    const std::optional<vku::safe_VkDependencyInfo>& signal_dependency_info = resolved_state.signal_dependency_info;
     if (signal_dependency_info.has_value()) {
         const bool signal_has_asymmetric = (signal_dependency_info->dependencyFlags & VK_DEPENDENCY_ASYMMETRIC_EVENT_BIT_KHR) != 0;
         const bool wait_has_asymmetric = (wait_dependency_info.dependencyFlags & VK_DEPENDENCY_ASYMMETRIC_EVENT_BIT_KHR) != 0;
@@ -521,7 +567,6 @@ bool WaitEvent2SubmitInfo::Validate(const CoreChecks& core, const vvl::Queue& qu
         }
 
         if (wait_has_asymmetric && signal_dependency_info->memoryBarrierCount && signal_dependency_info->pMemoryBarriers) {
-            const VkPipelineStageFlags2 union_src_stage_mask = sync_utils::GetExecScopes(*wait_dependency_info.ptr()).src;
             if (union_src_stage_mask != signal_dependency_info->pMemoryBarriers[0].srcStageMask) {
                 const LogObjectList objlist(cb_state.Handle(), wait_event);
                 skip |=
@@ -1031,6 +1076,7 @@ bool CoreChecks::PreCallValidateCmdResetEvent(VkCommandBuffer commandBuffer, VkE
     skip |= ValidateCmd(*cb_state, error_obj.location);
     skip |= ValidatePipelineStage(objlist, stage_mask_loc, cb_state->GetQueueFlags(), stageMask);
     skip |= ValidateStageMaskHost(objlist, stage_mask_loc, stageMask);
+    skip |= ValidateResetVsWaitRace(*cb_state, event, stageMask, error_obj.location);
     return skip;
 }
 
@@ -1048,12 +1094,36 @@ bool CoreChecks::PreCallValidateCmdResetEvent2(VkCommandBuffer commandBuffer, Vk
     skip |= ValidateCmd(*cb_state, error_obj.location);
     skip |= ValidatePipelineStage(objlist, stage_mask_loc, cb_state->GetQueueFlags(), stageMask);
     skip |= ValidateStageMaskHost(objlist, stage_mask_loc, stageMask);
+    skip |= ValidateResetVsWaitRace(*cb_state, event, stageMask, error_obj.location);
     return skip;
 }
 
 bool CoreChecks::PreCallValidateCmdResetEvent2KHR(VkCommandBuffer commandBuffer, VkEvent event, VkPipelineStageFlags2KHR stageMask,
                                                   const ErrorObject& error_obj) const {
     return PreCallValidateCmdResetEvent2(commandBuffer, event, stageMask, error_obj);
+}
+
+bool CoreChecks::ValidateResetVsWaitRace(const vvl::CommandBuffer& cb_state, VkEvent event, VkPipelineStageFlags2 reset_stage_mask,
+                                         const Location& loc) const {
+    bool skip = false;
+    const auto& cb_sub_state = core::SubState(cb_state);
+    if (const EventWaitBarrierState* state = vvl::Find(cb_sub_state.event_wait_barriers, event)) {
+        VkPipelineStageFlags2 reset_exec_scope = sync_utils::ExpandPipelineStages(reset_stage_mask, cb_state.GetQueueFlags());
+        reset_exec_scope = sync_utils::AddEarlierPipelineStages(reset_exec_scope);
+        const bool has_barrier = (reset_stage_mask & VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT) ||
+                                 (state->barriers & reset_exec_scope) || (state->barriers & VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
+        if (!has_barrier) {
+            const char* vuid = loc.function == vvl::Func::vkCmdResetEvent
+                                   ? (state->last_wait_command == vvl::Func::vkCmdWaitEvents ? "VUID-vkCmdResetEvent-event-03834"
+                                                                                             : "VUID-vkCmdResetEvent-event-03835")
+                                   : (state->last_wait_command == vvl::Func::vkCmdWaitEvents ? "VUID-vkCmdResetEvent2-event-03831"
+                                                                                             : "VUID-vkCmdResetEvent2-event-03832");
+            const LogObjectList objlist(cb_state.Handle(), event);
+            skip |= LogError(vuid, objlist, loc, "does not create an execution dependency with the previous %s for %s.",
+                             vvl::String(state->last_wait_command), FormatHandle(event).c_str());
+        }
+    }
+    return skip;
 }
 
 struct RenderPassDepState {
@@ -1294,7 +1364,7 @@ bool CoreChecks::ValidateRenderPassBarriers(const Location& outer_loc, const vvl
 
         skip |= state.ValidateStage(barrier_loc, img_barrier.srcStageMask, img_barrier.dstStageMask);
         skip |= state.ValidateAccess(barrier_loc, img_barrier.srcAccessMask, img_barrier.dstAccessMask);
-        skip |= ValidateRenderPassPipelineStage(state.rp_handle, outer_loc, img_barrier.srcAccessMask, img_barrier.dstAccessMask);
+        skip |= ValidateRenderPassPipelineStage(state.rp_handle, outer_loc, img_barrier.srcStageMask, img_barrier.dstStageMask);
         skip |= ValidateRenderPassInstanceNoLayoutChange(LogObjectList(cb_state.Handle(), rp_state->Handle(), img_barrier.image),
                                                          barrier_loc, img_barrier.oldLayout, img_barrier.newLayout);
 
@@ -1501,6 +1571,11 @@ bool CoreChecks::PreCallValidateCmdWaitEvents(VkCommandBuffer commandBuffer, uin
                              "has different srcQueueFamilyIndex (%" PRIu32 ") and dstQueueFamilyIndex (%" PRIu32 ").",
                              pImageMemoryBarriers[i].srcQueueFamilyIndex, pImageMemoryBarriers[i].dstQueueFamilyIndex);
         }
+        if (cb_state->active_render_pass) {
+            const ImageBarrier barrier(pImageMemoryBarriers[i], srcStageMask, dstStageMask);
+            const Location barrier_loc = error_obj.location.dot(Field::pImageMemoryBarriers, i);
+            skip |= ValidateRenderPassInstanceNoLayoutChange(objlist, barrier_loc, barrier.oldLayout, barrier.newLayout);
+        }
     }
 
     if (cb_state->active_render_pass && ((srcStageMask & VK_PIPELINE_STAGE_HOST_BIT) != 0)) {
@@ -1516,77 +1591,122 @@ bool CoreChecks::PreCallValidateCmdWaitEvents(VkCommandBuffer commandBuffer, uin
 
     if (pEvents) {
         auto& cb_sub_state = core::SubState(*cb_state);
-        bool can_validate = true;
+        bool can_validate_stage_mask = true;  // whether record-time validation is possible
+        bool set_wait_version_mismatch = false;
+        bool found_signals = false;
+
         VkPipelineStageFlags signals_src_stage_mask = VK_PIPELINE_STAGE_NONE;
         for (uint32_t i = 0; i < eventCount; i++) {
-            const EventSignalingState* signaling_state = vvl::Find(cb_sub_state.event_signaling_states, pEvents[i]);
-            // NOTE: the same logic is used by the record phase
-            if (!signaling_state || !signaling_state->HasKnownEffect()) {
-                can_validate = false;
-                break;
+            const EventSignalState* signal_state = vvl::Find(cb_sub_state.event_signal_states, pEvents[i]);
+            if (signal_state && signal_state->HasKnownEffect()) {
+                if (IsValueIn(signal_state->last_signaling_command, {vvl::Func::vkCmdSetEvent2, vvl::Func::vkCmdSetEvent2KHR})) {
+                    skip |= LogError("VUID-vkCmdWaitEvents-pEvents-03847", pEvents[i], error_obj.location, "%s was set by %s.",
+                                     FormatHandle(pEvents[i]).c_str(), vvl::String(signal_state->last_signaling_command));
+                    set_wait_version_mismatch = true;
+                }
+                if (signal_state->signaled) {
+                    signals_src_stage_mask |= static_cast<VkPipelineStageFlags>(signal_state->signal_src_stage_mask);
+                    found_signals = true;
+                }
+            } else {
+                can_validate_stage_mask = false;
             }
-            signals_src_stage_mask |= static_cast<VkPipelineStageFlags>(signaling_state->signal_src_stage_mask);
         }
-        if (can_validate) {
-            if (srcStageMask != signals_src_stage_mask) {
+        if (!set_wait_version_mismatch && can_validate_stage_mask && srcStageMask != signals_src_stage_mask) {
+            if (found_signals) {
                 skip |= LogError("VUID-vkCmdWaitEvents-srcStageMask-01158", objlist, error_obj.location.dot(Field::srcStageMask),
                                  "is %s, but the bitwise OR of stageMask values from the most recent vkCmdSetEvent call for each "
                                  "waited event is %s.",
                                  string_VkPipelineStageFlags(srcStageMask).c_str(),
                                  string_VkPipelineStageFlags(signals_src_stage_mask).c_str());
+            } else {
+                skip |= LogError("VUID-vkCmdWaitEvents-srcStageMask-01158", objlist, error_obj.location.dot(Field::srcStageMask),
+                                 "is %s, but the waited events are known to be unsignaled at this point. The wait does not have a "
+                                 "corresponding vkCmdSetEvent signal.",
+                                 string_VkPipelineStageFlags(srcStageMask).c_str());
             }
         }
     }
+    return skip;
+}
 
+bool CoreChecks::ValidateWaitEventDependencyFlags(VkDependencyFlags dependency_flags, const LogObjectList& objlist,
+                                                  const Location& dep_info_loc) const {
+    bool skip = false;
+
+    const VkDependencyFlags forbidden_flags = VK_DEPENDENCY_BY_REGION_BIT | VK_DEPENDENCY_DEVICE_GROUP_BIT |
+                                              VK_DEPENDENCY_VIEW_LOCAL_BIT | VK_DEPENDENCY_FEEDBACK_LOOP_BIT_EXT;
+
+    const VkDependencyFlags included_forbidden_flags = dependency_flags & forbidden_flags;
+    if (included_forbidden_flags) {
+        skip |= LogError("VUID-vkCmdWaitEvents2-dependencyFlags-10394", objlist, dep_info_loc.dot(Field::dependencyFlags),
+                         "(%s) includes %s.", string_VkDependencyFlags(dependency_flags).c_str(),
+                         string_VkDependencyFlags(included_forbidden_flags).c_str());
+    }
+    if (!enabled_features.maintenance8) {
+        if (dependency_flags & VK_DEPENDENCY_QUEUE_FAMILY_OWNERSHIP_TRANSFER_USE_ALL_STAGES_BIT_KHR) {
+            skip |= LogError("VUID-vkCmdWaitEvents2-maintenance8-10205", objlist, dep_info_loc.dot(Field::dependencyFlags),
+                             "(%s) includes VK_DEPENDENCY_QUEUE_FAMILY_OWNERSHIP_TRANSFER_USE_ALL_STAGES_BIT_KHR, but the "
+                             "maintenance8 feature is not enabled.",
+                             string_VkDependencyFlags(dependency_flags).c_str());
+        }
+    }
     return skip;
 }
 
 bool CoreChecks::PreCallValidateCmdWaitEvents2(VkCommandBuffer commandBuffer, uint32_t eventCount, const VkEvent* pEvents,
                                                const VkDependencyInfo* pDependencyInfos, const ErrorObject& error_obj) const {
-    auto cb_state = GetRead<vvl::CommandBuffer>(commandBuffer);
-
     bool skip = false;
+    auto cb_state = GetRead<vvl::CommandBuffer>(commandBuffer);
+    auto& cb_sub_state = core::SubState(*cb_state);
+
+    skip |= ValidateCmd(*cb_state, error_obj.location);
     if (!enabled_features.synchronization2) {
         skip |= LogError("VUID-vkCmdWaitEvents2-synchronization2-03836", commandBuffer, error_obj.location,
                          "the synchronization2 feature was not enabled.");
     }
-    for (uint32_t i = 0; (i < eventCount) && !skip; i++) {
-        const LogObjectList objlist(commandBuffer, pEvents[i]);
-        const Location dep_info_loc = error_obj.location.dot(Field::pDependencyInfos, i);
-
-        const VkDependencyFlags dependency_flags = pDependencyInfos[i].dependencyFlags;
-        const VkDependencyFlags allowed_flags = VK_DEPENDENCY_ASYMMETRIC_EVENT_BIT_KHR;
-        if ((dependency_flags & ~allowed_flags) != 0) {
-            const bool is_transfer_use_all_only =
-                dependency_flags == VK_DEPENDENCY_QUEUE_FAMILY_OWNERSHIP_TRANSFER_USE_ALL_STAGES_BIT_KHR;
-
-            if (!enabled_features.maintenance8) {
-                skip |= LogError("VUID-vkCmdWaitEvents2-dependencyFlags-10394", objlist, dep_info_loc.dot(Field::dependencyFlags),
-                                 "is (%s).%s", string_VkDependencyFlags(pDependencyInfos[i].dependencyFlags).c_str(),
-                                 is_transfer_use_all_only
-                                     ? " To use VK_DEPENDENCY_QUEUE_FAMILY_OWNERSHIP_TRANSFER_USE_ALL_STAGES_BIT_KHR, the "
-                                       "maintenance8 feature must be enabled."
-                                     : "");
-            } else if (!is_transfer_use_all_only) {
-                skip |= LogError("VUID-vkCmdWaitEvents2-maintenance8-10205", objlist, dep_info_loc.dot(Field::dependencyFlags),
-                                 "(%s) but only VK_DEPENDENCY_QUEUE_FAMILY_OWNERSHIP_TRANSFER_USE_ALL_STAGES_BIT_KHR and "
-                                 "VK_DEPENDENCY_ASYMMETRIC_EVENT_BIT_KHR are allowed.",
-                                 string_VkDependencyFlags(pDependencyInfos[i].dependencyFlags).c_str());
-            }
-        } else if ((pDependencyInfos[i].dependencyFlags & ~allowed_flags) != 0) {
-            skip |= LogError("VUID-vkCmdWaitEvents2-dependencyFlags-10394", objlist, dep_info_loc.dot(Field::dependencyFlags),
-                             "is (%s).", string_VkDependencyFlags(pDependencyInfos[i].dependencyFlags).c_str());
-        }
-        skip |= ValidateDependencyInfo(objlist, dep_info_loc, *cb_state, pDependencyInfos[i]);
-    }
-    skip |= ValidateCmd(*cb_state, error_obj.location);
-
     if (cb_state->per_tile_execution_model_enabled) {
         skip |= LogError("VUID-vkCmdWaitEvents2-None-10654", commandBuffer, error_obj.location,
                          "the per-tile execution model has been enabled in this command buffer. "
                          "(Don't call vkCmdBeginPerTileExecutionQCOM before vkCmdWaitEvents2)");
     }
+    for (uint32_t i = 0; i < eventCount && !skip; i++) {
+        const LogObjectList objlist(commandBuffer, pEvents[i]);
+        const Location dep_info_loc = error_obj.location.dot(Field::pDependencyInfos, i);
+        const VkDependencyInfo& dep_info = pDependencyInfos[i];
 
+        skip |= ValidateDependencyInfo(objlist, dep_info_loc, *cb_state, dep_info);
+        skip |= ValidateWaitEventDependencyFlags(dep_info.dependencyFlags, objlist, dep_info_loc);
+
+        if (cb_state->active_render_pass) {
+            for (uint32_t barrier_index = 0; barrier_index < dep_info.imageMemoryBarrierCount; barrier_index++) {
+                const ImageBarrier barrier(dep_info.pImageMemoryBarriers[barrier_index]);
+                const Location barrier_loc = dep_info_loc.dot(Field::pImageMemoryBarriers, barrier_index);
+                skip |= ValidateRenderPassInstanceNoLayoutChange(objlist, barrier_loc, barrier.oldLayout, barrier.newLayout);
+            }
+        }
+        const EventSignalState* signal_state = vvl::Find(cb_sub_state.event_signal_states, pEvents[i]);
+        if (signal_state && signal_state->HasKnownEffect()) {
+            const VkPipelineStageFlags2 union_src_stage_mask = sync_utils::GetExecScopes(dep_info).src;
+            if (signal_state->last_signaling_command == vvl::Func::vkCmdSetEvent) {
+                skip |= LogError("VUID-vkCmdWaitEvents2-pEvents-03837", objlist, error_obj.location, "%s was set by %s.",
+                                 FormatHandle(pEvents[i]).c_str(), vvl::String(signal_state->last_signaling_command));
+            } else if ((union_src_stage_mask & VK_PIPELINE_STAGE_2_HOST_BIT) == 0 &&
+                       !IsValueIn(signal_state->last_signaling_command,
+                                  {vvl::Func::vkCmdSetEvent2, vvl::Func::vkCmdSetEvent2KHR})) {
+                skip |= LogError("VUID-vkCmdWaitEvents2-pEvents-03841", objlist, error_obj.location,
+                                 "%s was not set by vkCmdSetEvent2.", FormatHandle(pEvents[i]).c_str());
+            }
+            if (union_src_stage_mask == VK_PIPELINE_STAGE_2_HOST_BIT && !signal_state->signaled) {
+                skip |=
+                    LogError("VUID-vkCmdWaitEvents2-pEvents-03840", objlist, error_obj.location,
+                             "pEvents[%" PRIu32
+                             "] (%s) is not signaled, but the first synchronization scope specified by pDependencyInfos[%" PRIu32
+                             "] includes only host operations",
+                             i, FormatHandle(pEvents[i]).c_str(), i);
+            }
+        }
+    }
     return skip;
 }
 
@@ -1673,11 +1793,7 @@ bool CoreChecks::PreCallValidateCmdPipelineBarrier2KHR(VkCommandBuffer commandBu
 bool CoreChecks::PreCallValidateSetEvent(VkDevice device, VkEvent event, const ErrorObject& error_obj) const {
     bool skip = false;
     if (auto event_state = Get<vvl::Event>(event)) {
-        if (event_state->InUse()) {
-            skip |= LogError("VUID-vkSetEvent-event-09543", event, error_obj.location.dot(Field::event),
-                             "(%s) that is already in use by a command buffer.%s", FormatHandle(event).c_str(),
-                             is_device_lost ? "\n(a VK_ERROR_DEVICE_LOST has occurred, the event must be destroyed)" : "");
-        }
+        skip |= ValidateObjectNotInUse(event_state.get(), error_obj.location, "VUID-vkSetEvent-event-09543");
         if (event_state->flags & VK_EVENT_CREATE_DEVICE_ONLY_BIT) {
             skip |= LogError("VUID-vkSetEvent-event-03941", event, error_obj.location.dot(Field::event),
                              "(%s) was created with VK_EVENT_CREATE_DEVICE_ONLY_BIT.", FormatHandle(event).c_str());
@@ -1692,6 +1808,19 @@ bool CoreChecks::PreCallValidateResetEvent(VkDevice device, VkEvent event, const
         if (event_state->flags & VK_EVENT_CREATE_DEVICE_ONLY_BIT) {
             skip |= LogError("VUID-vkResetEvent-event-03823", event, error_obj.location.dot(Field::event),
                              "(%s) was created with VK_EVENT_CREATE_DEVICE_ONLY_BIT.", FormatHandle(event).c_str());
+        }
+
+        vvl::Func pending_wait_command = vvl::Func::Empty;
+        AnyOf<vvl::Queue>([event, &pending_wait_command](const vvl::Queue& queue_state) {
+            pending_wait_command = queue_state.GetPendingEventWaitCommand(event);
+            return pending_wait_command != vvl::Func::Empty;
+        });
+        if (pending_wait_command != vvl::Func::Empty) {
+            const char* vuid = (pending_wait_command == vvl::Func::vkCmdWaitEvents) ? "VUID-vkResetEvent-event-03821"
+                                                                                    : "VUID-vkResetEvent-event-03822";
+            skip |= LogError(vuid, event, error_obj.location,
+                             "%s was reset on the host, but a previously submitted %s command is still pending.",
+                             FormatHandle(event).c_str(), vvl::String(pending_wait_command));
         }
     }
     return skip;
@@ -1824,8 +1953,8 @@ bool CoreChecks::ValidateSubpassDependency(const Location& loc, const VkSubpassD
 }
 
 // Verify an image barrier's old/new layouts are compatible with the image's usage flags.
-bool CoreChecks::ValidateImageLayoutAgainstImageUsage(const Location& layout_loc, VkImage image, VkImageLayout layout,
-                                                      VkImageUsageFlags usage_flags) const {
+bool CoreChecks::ValidateImageLayoutAgainstImageUsage(const Location &layout_loc, VkImage image, VkImageLayout layout,
+                                                      VkImageUsageFlags2KHR usage_flags) const {
     bool skip = false;
     bool is_error = false;
     switch (layout) {
@@ -1917,7 +2046,7 @@ bool CoreChecks::ValidateImageLayoutAgainstImageUsage(const Location& layout_loc
     if (is_error) {
         const auto& vuid = vvl::GetBadImageLayoutVUID(layout_loc, layout);
         skip |= LogError(vuid, image, layout_loc, "(%s) is not compatible with %s usage flags %s.", string_VkImageLayout(layout),
-                         FormatHandle(image).c_str(), string_VkImageUsageFlags(usage_flags).c_str());
+                         FormatHandle(image).c_str(), string_VkImageUsageFlags2KHR(usage_flags).c_str());
     }
     return skip;
 }
@@ -1941,7 +2070,7 @@ bool CoreChecks::ValidateImageBarrierAgainstImage(const vvl::CommandBuffer& cb_s
     const bool has_stencil_aspect = (barrier_aspect_mask & VK_IMAGE_ASPECT_STENCIL_BIT) != 0;
 
     skip |= ValidateBarrierQueueFamilies(cb_state.Handle(), barrier_loc, image_loc, barrier, image_state.Handle(),
-                                         image_state.GetSharingMode(), cb_state.command_pool->queueFamilyIndex);
+                                         image_state.GetSharingMode(), cb_state.command_pool.queueFamilyIndex);
     const auto& vuid_aspect = GetImageBarrierVUID(barrier_loc, vvl::ImageError::kAspectMask);
     skip |= ValidateImageAspectMask(image_state.VkHandle(), image_state.GetFormat(), barrier.subresourceRange.aspectMask,
                                     image_state.disjoint, image_loc, vuid_aspect.c_str());
@@ -2272,10 +2401,21 @@ void CoreChecks::RecordBarrierValidationInfo(const Location& barrier_loc, vvl::C
                                              const BufferBarrier& barrier,
                                              QFOTransferBarrierSets<QFOBufferTransferBarrier>& barrier_sets) {
     if (IsOwnershipTransfer(barrier)) {
+        BufferBarrier adjusted_barrier = barrier;
+        if (adjusted_barrier.size == VK_WHOLE_SIZE) {
+            if (auto buffer_state = Get<vvl::Buffer>(barrier.buffer)) {
+                if (buffer_state->GetSize() >= barrier.offset) {
+                    adjusted_barrier.size = buffer_state->GetSize() - barrier.offset;
+                } else {
+                    adjusted_barrier.size = 0;  // Invalid offset, should be reported elsewhere
+                }
+            }
+        }
+
         if (cb_state.IsReleaseOp(barrier) && !IsQueueFamilyExternal(barrier.dstQueueFamilyIndex)) {
-            barrier_sets.release.emplace(barrier);
+            barrier_sets.release.emplace(adjusted_barrier);
         } else if (cb_state.IsAcquireOp(barrier) && !IsQueueFamilyExternal(barrier.srcQueueFamilyIndex)) {
-            barrier_sets.acquire.emplace(barrier);
+            barrier_sets.acquire.emplace(adjusted_barrier);
         }
     }
 }
@@ -2297,7 +2437,6 @@ void CoreChecks::RecordBarrierValidationInfo(const Location& barrier_loc, vvl::C
 
 template <typename TransferBarrier>
 bool CoreChecks::ValidateQueuedQFOTransferBarriers(const core::CommandBufferSubState& cb_sub_state,
-                                                   QFOTransferCBScoreboards<TransferBarrier>* scoreboards,
                                                    const GlobalQFOTransferBarrierMap<TransferBarrier>& global_release_barriers,
                                                    const Location& loc) const {
     bool skip = false;
@@ -2324,16 +2463,11 @@ bool CoreChecks::ValidateQueuedQFOTransferBarriers(const core::CommandBufferSubS
     return skip;
 }
 
-bool CoreChecks::ValidateQueuedQFOTransfers(const vvl::CommandBuffer& cb_state,
-                                            QFOTransferCBScoreboards<QFOImageTransferBarrier>* qfo_image_scoreboards,
-                                            QFOTransferCBScoreboards<QFOBufferTransferBarrier>* qfo_buffer_scoreboards,
-                                            const Location& loc) const {
+bool CoreChecks::ValidateQueuedQFOTransfers(const vvl::CommandBuffer& cb_state, const Location& loc) const {
     bool skip = false;
     auto& cb_sub_state = core::SubState(cb_state);
-    skip |= ValidateQueuedQFOTransferBarriers<QFOImageTransferBarrier>(cb_sub_state, qfo_image_scoreboards,
-                                                                       qfo_release_image_barrier_map, loc);
-    skip |= ValidateQueuedQFOTransferBarriers<QFOBufferTransferBarrier>(cb_sub_state, qfo_buffer_scoreboards,
-                                                                        qfo_release_buffer_barrier_map, loc);
+    skip |= ValidateQueuedQFOTransferBarriers<QFOImageTransferBarrier>(cb_sub_state, qfo_release_image_barrier_map, loc);
+    skip |= ValidateQueuedQFOTransferBarriers<QFOBufferTransferBarrier>(cb_sub_state, qfo_release_buffer_barrier_map, loc);
     return skip;
 }
 
@@ -2479,7 +2613,7 @@ bool CoreChecks::ValidateBufferBarrier(const LogObjectList& objects, const Locat
         }
 
         skip |= ValidateBarrierQueueFamilies(objects, barrier_loc, buf_loc, mem_barrier, buffer_state->Handle(),
-                                             buffer_state->GetSharingMode(), cb_state.command_pool->queueFamilyIndex);
+                                             buffer_state->GetSharingMode(), cb_state.command_pool.queueFamilyIndex);
 
         auto buffer_size = buffer_state->GetSize();
         if (mem_barrier.offset >= buffer_size) {
@@ -2587,14 +2721,14 @@ bool CoreChecks::ValidateBarriers(const Location& outer_loc, const vvl::CommandB
     for (uint32_t i = 0; i < imageMemoryBarrierCount; ++i) {
         const Location barrier_loc = outer_loc.dot(Struct::VkImageMemoryBarrier, Field::pImageMemoryBarriers, i);
         const ImageBarrier barrier(pImageMemoryBarriers[i], src_stage_mask, dst_stage_mask);
-        const OwnershipTransferOp transfer_op = barrier.TransferOp(cb_state.command_pool->queueFamilyIndex);
+        const OwnershipTransferOp transfer_op = barrier.TransferOp(cb_state.command_pool.queueFamilyIndex);
         skip |= ValidateMemoryBarrier(objects, barrier_loc, cb_state, barrier, transfer_op);
         skip |= ValidateImageBarrier(objects, cb_state, barrier, barrier_loc, local_layout_registry);
     }
     for (uint32_t i = 0; i < bufferBarrierCount; ++i) {
         const Location barrier_loc = outer_loc.dot(Struct::VkBufferMemoryBarrier, Field::pBufferMemoryBarriers, i);
         const BufferBarrier barrier(pBufferMemoryBarriers[i], src_stage_mask, dst_stage_mask);
-        const OwnershipTransferOp transfer_op = barrier.TransferOp(cb_state.command_pool->queueFamilyIndex);
+        const OwnershipTransferOp transfer_op = barrier.TransferOp(cb_state.command_pool.queueFamilyIndex);
         skip |= ValidateMemoryBarrier(objects, barrier_loc, cb_state, barrier, transfer_op);
         skip |= ValidateBufferBarrier(objects, barrier_loc, cb_state, barrier);
     }
@@ -2617,14 +2751,14 @@ bool CoreChecks::ValidateDependencyInfo(const LogObjectList& objects, const Loca
     for (uint32_t i = 0; i < dep_info.imageMemoryBarrierCount; ++i) {
         const Location barrier_loc = dep_info_loc.dot(Struct::VkImageMemoryBarrier2, Field::pImageMemoryBarriers, i);
         const ImageBarrier barrier(dep_info.pImageMemoryBarriers[i]);
-        const OwnershipTransferOp transfer_op = barrier.TransferOp(cb_state.command_pool->queueFamilyIndex);
+        const OwnershipTransferOp transfer_op = barrier.TransferOp(cb_state.command_pool.queueFamilyIndex);
         skip |= ValidateMemoryBarrier(objects, barrier_loc, cb_state, barrier, transfer_op, dep_info.dependencyFlags);
         skip |= ValidateImageBarrier(objects, cb_state, barrier, barrier_loc, local_layout_registry);
     }
     for (uint32_t i = 0; i < dep_info.bufferMemoryBarrierCount; ++i) {
         const Location barrier_loc = dep_info_loc.dot(Struct::VkBufferMemoryBarrier2, Field::pBufferMemoryBarriers, i);
         const BufferBarrier barrier(dep_info.pBufferMemoryBarriers[i]);
-        const OwnershipTransferOp transfer_op = barrier.TransferOp(cb_state.command_pool->queueFamilyIndex);
+        const OwnershipTransferOp transfer_op = barrier.TransferOp(cb_state.command_pool.queueFamilyIndex);
         skip |= ValidateMemoryBarrier(objects, barrier_loc, cb_state, barrier, transfer_op, dep_info.dependencyFlags);
         skip |= ValidateBufferBarrier(objects, barrier_loc, cb_state, barrier);
     }
@@ -2652,7 +2786,7 @@ bool CoreChecks::ValidateDependencyInfo(const LogObjectList& objects, const Loca
             const auto buffer_states = GetBuffersByAddress(memory_range_barrier.addressRange.address);
             for (const auto buffer_state : buffer_states) {
                 const BufferBarrier barrier(memory_range_barrier, *buffer_state);
-                const OwnershipTransferOp transfer_op = barrier.TransferOp(cb_state.command_pool->queueFamilyIndex);
+                const OwnershipTransferOp transfer_op = barrier.TransferOp(cb_state.command_pool.queueFamilyIndex);
                 skip |= ValidateMemoryBarrier(objects, barrier_loc, cb_state, barrier, transfer_op, dep_info.dependencyFlags);
                 skip |= ValidateBufferBarrier(objects, barrier_loc, cb_state, barrier);
             }
@@ -2676,6 +2810,23 @@ bool CoreChecks::ValidateDynamicRenderingPipelineStage(const LogObjectList& objl
         (dependency_flags & VK_DEPENDENCY_BY_REGION_BIT) != VK_DEPENDENCY_BY_REGION_BIT) {
         const auto& vuid = GetDynamicRenderingBarrierVUID(loc, vvl::DynamicRenderingBarrierError::kDependencyFlags);
         skip |= LogError(vuid, objlist, loc.prev->dot(Field::dependencyFlags), "must contain VK_DEPENDENCY_BY_REGION_BIT.");
+    }
+    return skip;
+}
+
+bool CoreChecks::ValidateDynamicRenderingAccess(const LogObjectList& objlist, const Location& loc,
+                                                VkAccessFlags2 access_mask) const {
+    bool skip = false;
+    if (!enabled_features.dynamicRenderingLocalRead) {
+        const VkAccessFlags2 allowed_accesses = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT |
+                                                VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                                                VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        const VkAccessFlags2 forbiden_accesses = access_mask & ~allowed_accesses;
+        if (forbiden_accesses != 0) {
+            const auto& vuid = GetDynamicRenderingBarrierVUID(loc, vvl::DynamicRenderingBarrierError::kAccessFlags);
+            skip |= LogError(vuid, objlist, loc, "(%s) includes forbidden accesses %s", string_VkAccessFlags2(access_mask).c_str(),
+                             string_VkAccessFlags2(forbiden_accesses).c_str());
+        }
     }
     return skip;
 }
@@ -2732,7 +2883,7 @@ bool CoreChecks::ValidateDynamicRenderingImageBarrierLayoutMismatch(const vvl::C
     return skip;
 }
 
-bool CoreChecks::IsDynamicRenderingImageUsageValid(VkImageUsageFlags image_usage) const {
+bool CoreChecks::IsDynamicRenderingImageUsageValid(VkImageUsageFlags2KHR image_usage) const {
     bool valid = false;
 
     valid |= ((image_usage & VK_IMAGE_USAGE_STORAGE_BIT) != 0);
@@ -2755,6 +2906,8 @@ bool CoreChecks::ValidateDynamicRenderingBarriers(const LogObjectList& objlist, 
                                                       dep_info.dependencyFlags);
         skip |= ValidateDynamicRenderingPipelineStage(objlist, loc.dot(Field::dstStageMask), mem_barrier.dstStageMask,
                                                       dep_info.dependencyFlags);
+        skip |= ValidateDynamicRenderingAccess(objlist, loc.dot(Field::srcAccessMask), mem_barrier.srcAccessMask);
+        skip |= ValidateDynamicRenderingAccess(objlist, loc.dot(Field::dstAccessMask), mem_barrier.dstAccessMask);
     }
     for (const auto [i, image_barrier] : vvl::enumerate(dep_info.pImageMemoryBarriers, dep_info.imageMemoryBarrierCount)) {
         const Location barrier_loc = outer_loc.dot(Field::pImageMemoryBarriers, i);
@@ -2777,6 +2930,11 @@ bool CoreChecks::ValidateDynamicRenderingBarriers(const LogObjectList& objlist, 
     skip |= ValidateDynamicRenderingPipelineStage(objlist, outer_loc.dot(Field::srcStageMask), src_stage_mask, dependency_flags);
     skip |= ValidateDynamicRenderingPipelineStage(objlist, outer_loc.dot(Field::dstStageMask), dst_stage_mask, dependency_flags);
 
+    for (const auto [i, memory_barrier] : vvl::enumerate(memory_barriers, memory_barrier_count)) {
+        const Location barrier_loc = outer_loc.dot(Field::pMemoryBarriers, i);
+        skip |= ValidateDynamicRenderingAccess(objlist, barrier_loc.dot(Field::srcAccessMask), memory_barrier.srcAccessMask);
+        skip |= ValidateDynamicRenderingAccess(objlist, barrier_loc.dot(Field::dstAccessMask), memory_barrier.dstAccessMask);
+    }
     for (const auto [i, image_barrier] : vvl::enumerate(image_barriers, image_barrier_count)) {
         const Location barrier_loc = outer_loc.dot(Field::pImageMemoryBarriers, i);
         LogObjectList layout_check_objlist(objlist);

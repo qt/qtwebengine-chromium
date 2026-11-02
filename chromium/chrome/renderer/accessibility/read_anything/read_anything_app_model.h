@@ -204,6 +204,16 @@ class ReadAnythingAppModel {
   static constexpr char kEarlySelectionHistogramName[] =
       "Accessibility.ReadAnything.Readability.EarlySelection";
 
+  // Hardcoded list of words that are likely associated with "key points"
+  // sections on websites.
+  static constexpr char kKeyPointsRegex[] =
+      "\\b(key points|summary|tl;?dr|takeaways|what to know|in brief|"
+      "at a glance|the bottom line|fast facts|highlights|the gist|"
+      "need to know|overview|the short version|quick hits|key findings|"
+      "the big picture|in a nutshell|wrap up|quick read|"
+      "ai(-generated)? summary|bullet points|basic explainer|key facts|"
+      "why it matters)\\b";
+
   ReadAnythingAppModel();
   ReadAnythingAppModel(const ReadAnythingAppModel&) = delete;
   ReadAnythingAppModel& operator=(const ReadAnythingAppModel&) = delete;
@@ -440,6 +450,13 @@ class ReadAnythingAppModel {
         should_extract_anchors_from_tree_for_readability;
   }
 
+  bool distillation_in_progress() {
+    return distillation_state() ==
+               read_anything::mojom::ReadAnythingDistillationState::
+                   kDistillationInProgress ||
+           screen2x_distiller_running();
+  }
+
   // Processes the tree anchors.
   // Returns true indicating that the tree was successfully processed and we can
   // notify the frontend that anchors are ready.
@@ -664,10 +681,11 @@ class ReadAnythingAppModel {
   // TODO: crbug.com/416483312 - Longer term, reading mode should support
   // distilling from multiple trees, if they have important content.
   // Currently, reading mode only distills from a child tree if the root tree
-  // has no distillable content.
+  // has no distillable content or if the page is a PDF.
 
   // Signal if reading mode should allow use of child trees for the active tree
-  // if the web content's root AXTree has no distillable content.
+  // if the web content's root AXTree has no distillable content or if the page
+  // is a PDF.
   void AllowChildTreeForActiveTree(bool use_child_tree);
 
   bool SelectionNodesContainedInDistilledContent() const;
@@ -680,6 +698,14 @@ class ReadAnythingAppModel {
       read_anything::mojom::ReadAnythingPresentationState
           active_presentation_state) {
     active_presentation_state_ = active_presentation_state;
+  }
+  bool is_active_presentation_state_opened() const {
+    return active_presentation_state_ ==
+               read_anything::mojom::ReadAnythingPresentationState::
+                   kInSidePanel ||
+           active_presentation_state_ ==
+               read_anything::mojom::ReadAnythingPresentationState::
+                   kInImmersiveOverlay;
   }
 
   read_anything::mojom::ReadAnythingDistillationState distillation_state()
@@ -696,6 +722,12 @@ class ReadAnythingAppModel {
   }
 
   bool has_pending_selection() const { return has_pending_selection_; }
+
+  // If the original page has something that looks like a key points section.
+  // This is a rough heuristic intended for metrics only and is not guaranteed.
+  bool MaybeHasKeyPointsSection() const;
+  bool IsNodeLikelyKeyPoints(ui::AXNode* node) const;
+  std::string GetKeyPointsRegex() const { return kKeyPointsRegex; }
 
  private:
   // TODO(crbug.com/513618559): Move text selection mapping algorithm logic
@@ -781,7 +813,8 @@ class ReadAnythingAppModel {
 
   // The tree size arguments are used to determine if distillation of a PDF is
   // necessary.
-  void ProcessGeneratedEvents(const ui::AXEventGenerator& event_generator,
+  void ProcessGeneratedEvents(const ui::AXTreeID& tree_id,
+                              const ui::AXEventGenerator& event_generator,
                               size_t prev_tree_size,
                               size_t tree_size);
 

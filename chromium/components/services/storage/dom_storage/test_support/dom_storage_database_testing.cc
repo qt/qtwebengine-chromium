@@ -113,7 +113,6 @@ std::vector<DomStorageDatabase::MapMetadata> CloneMapMetadataVector(
 DomStorageDatabase::Metadata CloneMetadata(
     const DomStorageDatabase::Metadata& source) {
   DomStorageDatabase::Metadata copy;
-  copy.next_map_id = source.next_map_id;
   copy.map_metadata = CloneMapMetadataVector(source.map_metadata);
   return copy;
 }
@@ -228,14 +227,15 @@ void InsertMapEntries(
 void OpenAsyncDomStorageDatabaseInMemorySync(
     StorageType storage_type,
     std::unique_ptr<AsyncDomStorageDatabase>* result) {
-  base::test::TestFuture<DbStatus> status_future;
+  base::test::TestFuture<AsyncDomStorageDatabase::OpenOutcome> open_future;
 
   std::unique_ptr<AsyncDomStorageDatabase> database =
       AsyncDomStorageDatabase::Open(
           storage_type, /*database_path=*/base::FilePath(),
-          /*memory_dump_id=*/std::nullopt, status_future.GetCallback());
+          /*memory_dump_id=*/std::nullopt,
+          /*dir_to_destroy=*/base::FilePath(), open_future.GetCallback());
 
-  const DbStatus& status = status_future.Get();
+  const DbStatus& status = open_future.Get().open_status;
   ASSERT_TRUE(status.ok()) << status.ToString();
   *result = std::move(database);
 }

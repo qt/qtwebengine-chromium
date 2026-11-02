@@ -19,6 +19,8 @@
 #include "base/containers/flat_tree.h"
 #include "base/containers/span.h"
 #include "base/containers/to_vector.h"
+#include "base/i18n/icubridge/date_time_formatter.h"
+#include "base/i18n/icubridge/icu_bridge.h"
 #include "base/i18n/time_formatting.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -46,9 +48,15 @@ namespace autofill {
 
 namespace {
 
-bool EntitySatisfiesImportConstraints(const EntityInstance& entity) {
-  return AttributesMeetImportConstraints(
-      entity.type(), DenseSet(entity.attributes(), &AttributeInstance::type));
+bool IsEntityImportable(const AutofillClient& client,
+                        const EntityInstance& entity) {
+  return !entity.type().read_only() &&
+         !IsAutofillAiEntityTypeBlockedByPolicy(
+             client, client.GetLastCommittedPrimaryMainFrameURL(),
+             entity.type()) &&
+         AttributesMeetImportConstraints(
+             entity.type(),
+             DenseSet(entity.attributes(), &AttributeInstance::type));
 }
 
 }  // namespace
@@ -220,7 +228,7 @@ std::vector<EntityInstance> GetPossibleEntitiesFromSubmittedForm(
           /*use_date=*/base::Time::Now(), record_type,
           EntityInstance::AreAttributesReadOnly(false),
           /*frecency_override=*/"");
-      if (!EntitySatisfiesImportConstraints(entity)) {
+      if (!IsEntityImportable(client, entity)) {
         continue;
       }
       entities_found_in_form.push_back(std::move(entity));
@@ -255,7 +263,8 @@ std::optional<std::u16string> MaybeGetLocalizedDate(
   if (!success) {
     return std::nullopt;
   }
-  return base::LocalizedTimeFormatWithPattern(time, "yMMMd");
+  return base::i18n::IcuBridge::GetInstance().date_time_formatter().Format(
+      time, base::i18n::datetime_options::YMD::Medium());
 }
 
 }  // namespace autofill

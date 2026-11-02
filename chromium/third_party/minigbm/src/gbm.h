@@ -339,6 +339,16 @@ gbm_bo_create_with_modifiers(struct gbm_device *gbm,
                              uint32_t format,
                              const uint64_t *modifiers,
                              const unsigned int count);
+
+struct gbm_bo *
+gbm_bo_create_with_modifiers2(struct gbm_device *gbm,
+                              uint32_t width,
+                              uint32_t height,
+                              uint32_t format,
+                              const uint64_t *modifiers,
+                              const unsigned int count,
+                              uint32_t flags);
+
 #define GBM_BO_IMPORT_WL_BUFFER         0x5501
 #define GBM_BO_IMPORT_EGL_IMAGE         0x5502
 #define GBM_BO_IMPORT_FD                0x5503
@@ -403,6 +413,36 @@ gbm_bo_map(struct gbm_bo *bo,
            uint32_t x, uint32_t y, uint32_t width, uint32_t height,
            uint32_t flags, uint32_t *stride, void **map_data);
 
+/* Neither gbm_bo_map_cache_mode nor gbm_bo_get_map_info are defined in mesa's gbm.h, or older
+ * versions of minigbm. For backwards-compatibility, users should first test for availability and
+ * provide a fallback implementation with:
+ *
+ *   #if defined(MINIGBM) && defined(MINIGBM_HAS_GBM_BO_GET_MAP_INFO)
+ *   // use gbm_bo_get_map_info()
+ *   #else
+ *   // fallback
+ *   #endif
+ */
+#define MINIGBM_HAS_GBM_BO_GET_MAP_INFO
+
+/**
+ * Enum to indicate the cache attributes of CPU mapping returned by
+ * gbm_bo_map()
+ *
+ * Note that definition aligns with VIRTIO_GPU_MAP_CACHE_*, RUTABAGA_MAP_CACHE_*,
+ * and VIRGL_RENDERER_MAP_CACHE_* (but skipping the _NONE and _UNCACHED values as
+ * those don't actually make sense to use).
+ */
+enum gbm_bo_map_cache_mode {
+   /*GBM_BO_MAP_CACHE_NONE = 0,*/
+   GBM_BO_MAP_CACHE_CACHED = 1,
+   /*GBM_BO_MAP_CACHE_UNCACHED = 2,*/
+   GBM_BO_MAP_CACHE_WC = 3,
+};
+
+enum gbm_bo_map_cache_mode
+gbm_bo_get_map_info(struct gbm_bo *bo);
+
 void
 gbm_bo_unmap(struct gbm_bo *bo, void *map_data);
 
@@ -416,7 +456,7 @@ uint32_t
 gbm_bo_get_stride(struct gbm_bo *bo);
 
 uint32_t
-gbm_bo_get_stride_for_plane(struct gbm_bo *bo, size_t plane);
+gbm_bo_get_stride_for_plane(struct gbm_bo *bo, int plane);
 
 uint32_t
 gbm_bo_get_format(struct gbm_bo *bo);
@@ -425,7 +465,7 @@ uint32_t
 gbm_bo_get_bpp(struct gbm_bo *bo);
 
 uint32_t
-gbm_bo_get_offset(struct gbm_bo *bo, size_t plane);
+gbm_bo_get_offset(struct gbm_bo *bo, int plane);
 
 struct gbm_device *
 gbm_bo_get_device(struct gbm_bo *bo);
@@ -443,7 +483,7 @@ int
 gbm_bo_get_plane_count(struct gbm_bo *bo);
 
 union gbm_bo_handle
-gbm_bo_get_handle_for_plane(struct gbm_bo *bo, size_t plane);
+gbm_bo_get_handle_for_plane(struct gbm_bo *bo, int plane);
 
 int
 gbm_bo_get_fd_for_plane(struct gbm_bo *bo, int plane);
@@ -472,6 +512,15 @@ gbm_surface_create_with_modifiers(struct gbm_device *gbm,
                                   uint32_t format,
                                   const uint64_t *modifiers,
                                   const unsigned int count);
+
+struct gbm_surface *
+gbm_surface_create_with_modifiers2(struct gbm_device *gbm,
+                                   uint32_t width,
+                                   uint32_t height,
+                                   uint32_t format,
+                                   const uint64_t *modifiers,
+                                   const unsigned int count,
+                                   uint32_t flags);
 
 struct gbm_bo *
 gbm_surface_lock_front_buffer(struct gbm_surface *surface);

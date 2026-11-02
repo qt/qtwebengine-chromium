@@ -68,7 +68,7 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_SharedFenceDXGISharedHandle:
         case WGPUFeatureName_SharedFenceMTLSharedEvent:
         case WGPUFeatureName_SharedBufferMemoryD3D12Resource:
-        case WGPUFeatureName_SharedBufferMemoryD3D12SharedMemoryFileMappingHandle:
+        case WGPUFeatureName_SharedBufferMemoryFromWindowsHandle:
 
         case WGPUFeatureName_Depth32FloatStencil8:
         case WGPUFeatureName_TimestampQuery:
@@ -130,6 +130,8 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_Unorm16FormatsForExternalTexture:
         case WGPUFeatureName_OpaqueYCbCrAndroidForExternalTexture:
         case WGPUFeatureName_Unorm16Filterable:
+        case WGPUFeatureName_TextureCompressionUnaligned:
+        case WGPUFeatureName_DawnAllowUndefinedLoadStoreOp:
             return true;
     }
 

@@ -26,7 +26,7 @@ constexpr int kDateTimePickerHeight = 20;
 
 CFWL_DateTimePicker::CFWL_DateTimePicker(CFWL_App* app)
     : CFWL_Widget(app,
-                  Properties{0, FWL_STYLEEXT_DTP_ShortDateFormat, 0},
+                  Properties{{}, FWL_STYLEEXT_DTP_ShortDateFormat, {}},
                   nullptr),
       edit_(cppgc::MakeGarbageCollected<CFWL_DateTimeEdit>(
           app->GetHeap()->GetAllocationHandle(),
@@ -36,8 +36,9 @@ CFWL_DateTimePicker::CFWL_DateTimePicker(CFWL_App* app)
       month_cal_(cppgc::MakeGarbageCollected<CFWL_MonthCalendar>(
           app->GetHeap()->GetAllocationHandle(),
           app,
-          Properties{FWL_STYLE_WGT_Popup | FWL_STYLE_WGT_Border, 0,
-                     FWL_STATE_WGT_Invisible},
+          Properties{{WidgetStyle::kPopup, WidgetStyle::kBorder},
+                     0,
+                     WidgetState::kInvisible},
           this)) {
   month_cal_->SetWidgetRect(
       CFX_RectF(0, 0, month_cal_->GetAutosizedWidgetRect().Size()));
@@ -236,7 +237,7 @@ void CFWL_DateTimePicker::ShowMonthCalendar() {
     month_cal_->SetSelect(year_, month_, day_);
   }
   month_cal_->Update();
-  month_cal_->RemoveStates(FWL_STATE_WGT_Invisible);
+  month_cal_->ClearStates(WidgetState::kInvisible);
 
   CFWL_MessageSetFocus msg(month_cal_);
   edit_->GetDelegate()->OnProcessMessage(&msg);
@@ -248,7 +249,7 @@ void CFWL_DateTimePicker::HideMonthCalendar() {
     return;
   }
 
-  month_cal_->SetStates(FWL_STATE_WGT_Invisible);
+  month_cal_->SetStates(WidgetState::kInvisible);
   RepaintInflatedMonthCalRect();
 }
 
@@ -322,9 +323,9 @@ void CFWL_DateTimePicker::ProcessSelChanged(int32_t iYear,
 }
 
 bool CFWL_DateTimePicker::NeedsToShowButton() const {
-  return properties_.states_ & FWL_STATE_WGT_Focused ||
-         month_cal_->GetStates() & FWL_STATE_WGT_Focused ||
-         edit_->GetStates() & FWL_STATE_WGT_Focused;
+  return properties_.states_ & WidgetState::kFocused ||
+         month_cal_->GetStates() & WidgetState::kFocused ||
+         edit_->GetStates() & WidgetState::kFocused;
 }
 
 void CFWL_DateTimePicker::OnProcessMessage(CFWL_Message* pMessage) {
@@ -356,7 +357,7 @@ void CFWL_DateTimePicker::OnProcessMessage(CFWL_Message* pMessage) {
       break;
     }
     case CFWL_Message::Type::kKey: {
-      if (edit_->GetStates() & FWL_STATE_WGT_Focused) {
+      if (edit_->GetStates() & WidgetState::kFocused) {
         edit_->GetDelegate()->OnProcessMessage(pMessage);
         return;
       }
@@ -377,7 +378,7 @@ void CFWL_DateTimePicker::OnDrawWidget(CFGAS_GEGraphics* pGraphics,
 }
 
 void CFWL_DateTimePicker::OnFocusGained(CFWL_Message* pMsg) {
-  properties_.states_ |= FWL_STATE_WGT_Focused;
+  properties_.states_ |= WidgetState::kFocused;
   if (edit_ && !(edit_->GetStyleExts() & FWL_STYLEEXT_EDT_ReadOnly)) {
     btn_rect_ = CFX_RectF(widget_rect_.width, 0, btn_, widget_rect_.height - 1);
   }
@@ -390,10 +391,10 @@ void CFWL_DateTimePicker::OnFocusGained(CFWL_Message* pMsg) {
 
 void CFWL_DateTimePicker::OnFocusLost(CFWL_Message* pMsg) {
   CFX_RectF rtInvalidate(btn_rect_);
-  properties_.states_ &= ~FWL_STATE_WGT_Focused;
+  properties_.states_.Clear(WidgetState::kFocused);
   btn_rect_ = CFX_RectF();
   HideMonthCalendar();
-  if (edit_->GetStates() & FWL_STATE_WGT_Focused) {
+  if (edit_->GetStates() & WidgetState::kFocused) {
     edit_->GetDelegate()->OnProcessMessage(pMsg);
   }
   rtInvalidate.Inflate(2, 2);

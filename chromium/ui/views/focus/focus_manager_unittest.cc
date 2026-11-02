@@ -18,6 +18,7 @@
 #include "base/test/icu_test_util.h"
 #include "base/test/run_until.h"
 #include "build/build_config.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/accelerators/test_accelerator_target.h"
 #include "ui/base/metadata/metadata_header_macros.h"
@@ -739,6 +740,56 @@ TEST_F(FocusManagerTest, RadioButtonGroupOwnerUndefined) {
   EXPECT_EQ(radio2, focus_manager->GetFocusedView());
 
   // Focus should wrap within the group and not go to radio3.
+  focus_manager->OnKeyEvent(down_key);
+  EXPECT_EQ(radio1, focus_manager->GetFocusedView());
+}
+
+// Verifies that when arrow key traversal is enabled for the widget, pressing
+// arrow keys on a grouped view (like a radio button) still navigates within the
+// group, rather than traversing to other controls.
+TEST_F(FocusManagerTest,
+       RadioButtonGroupTraversalWithArrowKeyTraversalEnabled) {
+  FocusManager* focus_manager = GetFocusManager();
+  GetWidget()->widget_delegate()->SetEnableArrowKeyTraversal(true);
+
+  // Create a radio button group ID.
+  const int kRadioGroupID = 1;
+
+  // Create a parent view.
+  views::View* parent_view =
+      GetContentsView()->AddChildView(std::make_unique<views::View>());
+  parent_view->SetFocusBehavior(View::FocusBehavior::ALWAYS);
+
+  // Create 3 radio buttons in a radio button group.
+  auto* radio1 = parent_view->AddChildView(
+      std::make_unique<RadioButton>(u"Option 1", kRadioGroupID));
+  radio1->SetFocusBehavior(View::FocusBehavior::ALWAYS);
+
+  auto* radio2 = parent_view->AddChildView(
+      std::make_unique<RadioButton>(u"Option 2", kRadioGroupID));
+  radio2->SetFocusBehavior(View::FocusBehavior::ALWAYS);
+
+  auto* radio3 = parent_view->AddChildView(
+      std::make_unique<RadioButton>(u"Option 3", kRadioGroupID));
+  radio3->SetFocusBehavior(View::FocusBehavior::ALWAYS);
+
+  // This view is not in the radio button group.
+  auto* other_view = GetContentsView()->AddChildView(std::make_unique<View>());
+  other_view->SetFocusBehavior(View::FocusBehavior::ALWAYS);
+
+  // Focus the first radio button.
+  radio1->RequestFocus();
+  EXPECT_EQ(radio1, focus_manager->GetFocusedView());
+
+  const ui::KeyEvent down_key(ui::EventType::kKeyPressed, ui::VKEY_DOWN,
+                              ui::EF_NONE);
+  focus_manager->OnKeyEvent(down_key);
+  EXPECT_EQ(radio2, focus_manager->GetFocusedView());
+
+  focus_manager->OnKeyEvent(down_key);
+  EXPECT_EQ(radio3, focus_manager->GetFocusedView());
+
+  // Focus should wrap within the group and not go to other_view.
   focus_manager->OnKeyEvent(down_key);
   EXPECT_EQ(radio1, focus_manager->GetFocusedView());
 }
@@ -1527,5 +1578,73 @@ TEST_F(RedirectToParentFocusManagerTest, NotProcessedAccelerator) {
 }
 
 #endif
+
+// Regression tests for crashes during callbacks.
+
+namespace {
+
+class MockFocusChangeListener : public FocusChangeListener {
+ public:
+  MockFocusChangeListener() = default;
+  ~MockFocusChangeListener() override = default;
+
+  MOCK_METHOD(void, OnWillChangeFocus, (View*, View*), (override));
+  MOCK_METHOD(void, OnDidChangeFocus, (View*, View*), (override));
+};
+
+}  // namespace
+
+TEST_F(FocusManagerTest,
+       ShouldNotCrashIfViewDestroyedDuringAdvance_WillChangeFocus) {
+  MockFocusChangeListener listener;
+
+  auto event_list = base::MakeRefCounted<FocusTestEventList>();
+  const int kView1ID = 1;
+  const int kView2ID = 2;
+  ViewTracker view1(GetContentsView()->AddChildView(
+      std::make_unique<SimpleTestView>(event_list, kView1ID)));
+  ViewTracker view2(GetContentsView()->AddChildView(
+      std::make_unique<SimpleTestView>(event_list, kView2ID)));
+  view1.view()->SetFocusBehavior(View::FocusBehavior::ALWAYS);
+  view2.view()->SetFocusBehavior(View::FocusBehavior::ALWAYS);
+  view1.view()->RequestFocus();
+  GetFocusManager()->AddFocusChangeListener(&listener);
+  EXPECT_CALL(listener, OnWillChangeFocus)
+      .WillOnce([this](View* prev, View* next) {
+        GetContentsView()->RemoveChildViewT(next);
+      });
+  GetFocusManager()->AdvanceFocus(false);
+  EXPECT_FALSE(view2);
+
+  GetFocusManager()->ClearFocus();
+  GetFocusManager()->RemoveFocusChangeListener(&listener);
+}
+
+TEST_F(FocusManagerTest,
+       ShouldNotCrashIfViewDestroyedDuringAdvance_DidChangeFocus) {
+  MockFocusChangeListener listener;
+
+  auto event_list = base::MakeRefCounted<FocusTestEventList>();
+  const int kView1ID = 1;
+  const int kView2ID = 2;
+  ViewTracker view1(GetContentsView()->AddChildView(
+      std::make_unique<SimpleTestView>(event_list, kView1ID)));
+  ViewTracker view2(GetContentsView()->AddChildView(
+      std::make_unique<SimpleTestView>(event_list, kView2ID)));
+  view1.view()->SetFocusBehavior(View::FocusBehavior::ALWAYS);
+  view2.view()->SetFocusBehavior(View::FocusBehavior::ALWAYS);
+  view1.view()->RequestFocus();
+  GetFocusManager()->AddFocusChangeListener(&listener);
+  EXPECT_CALL(listener, OnDidChangeFocus)
+      .WillOnce([this](View* prev, View* next) {
+        GetContentsView()->RemoveChildViewT(next);
+      });
+  EXPECT_CALL(listener, OnDidChangeFocus(testing::_, nullptr));
+  GetFocusManager()->AdvanceFocus(false);
+  EXPECT_FALSE(view2);
+
+  GetFocusManager()->ClearFocus();
+  GetFocusManager()->RemoveFocusChangeListener(&listener);
+}
 
 }  // namespace views

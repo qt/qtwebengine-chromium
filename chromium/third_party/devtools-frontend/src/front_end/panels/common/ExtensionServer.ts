@@ -12,13 +12,14 @@ import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as _ProtocolClient from '../../core/protocol_client/protocol_client.js';  // eslint-disable-line @typescript-eslint/no-unused-vars
+import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as Extensions from '../../models/extensions/extensions.js';
 import * as HAR from '../../models/har/har.js';
 import * as Logs from '../../models/logs/logs.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -27,7 +28,13 @@ import * as ThemeSupport from '../../ui/legacy/theme_support/theme_support.js';
 import {ExtensionButton, ExtensionPanel, ExtensionSidebarPane} from './ExtensionPanel.js';
 
 const extensionOrigins = new WeakMap<MessagePort, Platform.DevToolsPath.UrlString>();
-const kPermittedSchemes = ['http:', 'https:', 'file:', 'data:', 'chrome-extension:', 'about:'];
+const kForbiddenSchemes = [
+  'chrome:',
+  'chrome-untrusted:',
+  'chrome-error:',
+  'chrome-search:',
+  'devtools:',
+];
 
 declare global {
   interface Window {
@@ -78,8 +85,8 @@ export class HostsPolicy {
 }
 
 class RegisteredExtension {
-  openResourceScheme: null|string = null;
-  constructor(readonly name: string, readonly hostsPolicy: HostsPolicy, readonly allowFileAccess: boolean) {
+  constructor(readonly origin: string, readonly name: string, readonly hostsPolicy: HostsPolicy,
+              readonly allowFileAccess: boolean) {
   }
 
   isAllowedOnTarget(inspectedURL?: Platform.DevToolsPath.UrlString): boolean {
@@ -91,8 +98,19 @@ class RegisteredExtension {
       return false;
     }
 
-    if (this.openResourceScheme && inspectedURL.startsWith(this.openResourceScheme)) {
-      return true;
+    let parsedURL;
+    try {
+      parsedURL = new URL(inspectedURL);
+    } catch {
+      return false;
+    }
+
+    if (parsedURL.protocol === 'chrome-extension:') {
+      if (parsedURL.origin !== this.origin) {
+        if (!Root.Runtime.hostConfig.extensionsOnChromeUrls?.enabled) {
+          return false;
+        }
+      }
     }
 
     if (!ExtensionServer.canInspectURL(inspectedURL)) {
@@ -104,12 +122,6 @@ class RegisteredExtension {
     }
 
     if (!this.allowFileAccess) {
-      let parsedURL;
-      try {
-        parsedURL = new URL(inspectedURL);
-      } catch {
-        return false;
-      }
       return parsedURL.protocol !== 'file:';
     }
 
@@ -325,7 +337,8 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
       throw new Error('Received a message from an unregistered extension');
     }
     const endpoint = new Extensions.LanguageExtensionEndpoint.LanguageExtensionEndpoint(
-        registration.allowFileAccess, extensionOrigin, pluginName, {language, symbol_types: symbol_types_array}, port);
+        registration.allowFileAccess, extensionOrigin, pluginName, {language, symbol_types: symbol_types_array}, port,
+        pluginManager);
     pluginManager.addPlugin(endpoint);
     return this.status.OK();
   }
@@ -433,9 +446,9 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     }
     const {pluginName, mediaType, port, capabilities} = message;
     const extensionOrigin = this.getExtensionOrigin(_shared_port);
-    Extensions.RecorderPluginManager.RecorderPluginManager.instance().addPlugin(
-        new Extensions.RecorderExtensionEndpoint.RecorderExtensionEndpoint(
-            pluginName, port, capabilities, extensionOrigin, mediaType));
+    const recorderPluginManager = Extensions.RecorderPluginManager.RecorderPluginManager.instance();
+    recorderPluginManager.addPlugin(new Extensions.RecorderExtensionEndpoint.RecorderExtensionEndpoint(
+        pluginName, port, capabilities, extensionOrigin, recorderPluginManager, mediaType));
     return this.status.OK();
   }
 
@@ -551,6 +564,7 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
       return;
     }
     this.requests = new Map();
+    this.clearExtensionHeaders(event.data.inspectedURL());
     this.enableExtensions();
     const url = event.data.inspectedURL();
     this.postNotification(Extensions.ExtensionAPI.PrivateAPI.Events.InspectedURLChanged, [url]);
@@ -652,16 +666,7 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     for (const name in message.headers) {
       extensionHeaders.set(name, message.headers[name]);
     }
-    const allHeaders = ({} as Protocol.Network.Headers);
-    for (const headers of this.extraHeaders.values()) {
-      for (const [name, value] of headers) {
-        if (name !== '__proto__' && typeof value === 'string') {
-          allHeaders[name] = value;
-        }
-      }
-    }
-
-    SDK.NetworkManager.MultitargetNetworkManager.instance().setExtraHTTPHeaders(allHeaders);
+    this.syncExtraHeaders();
     return undefined;
   }
 
@@ -863,18 +868,27 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     if (!extension) {
       throw new Error('Received a message from an unregistered extension');
     }
-    if (message.urlScheme) {
-      extension.openResourceScheme = message.urlScheme;
+    let validScheme = message.urlScheme;
+    if (validScheme) {
+      try {
+        const urlToParse = validScheme.replace(/:?(\/\/)?$/, '') + '://test';
+        validScheme = new URL(urlToParse).protocol;
+      } catch {
+        return this.status.E_BADARG('urlScheme', 'Invalid scheme');
+      }
+      if (kForbiddenSchemes.includes(validScheme) || validScheme === 'file:') {
+        return this.status.E_BADARG('urlScheme', 'Scheme is forbidden');
+      }
     }
     const extensionOrigin = this.getExtensionOrigin(port);
     const {name} = extension;
     const registration = {
       title: name,
       origin: extensionOrigin,
-      scheme: message.urlScheme,
+      scheme: validScheme,
       handler: this.handleOpenURL.bind(this, port),
       shouldHandleOpenResource: (url: Platform.DevToolsPath.UrlString, schemes: Set<string>) =>
-          Components.Linkifier.Linkifier.shouldHandleOpenResource(extension.openResourceScheme, url, schemes),
+          Components.Linkifier.Linkifier.shouldHandleOpenResource(validScheme || null, url, schemes),
     };
     if (message.handlerPresent) {
       Components.Linkifier.Linkifier.registerLinkHandler(registration);
@@ -941,27 +955,45 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
    */
   private extensionAllowedOnContentProvider(
       contentProvider: TextUtils.ContentProvider.ContentProvider, port: MessagePort): boolean {
-    if (!(contentProvider instanceof Workspace.UISourceCode.UISourceCode)) {
-      return this.extensionAllowedOnURL(contentProvider.contentURL(), port);
-    }
-
-    if (contentProvider.contentType() !== Common.ResourceType.resourceTypes.Script) {
-      // We only check sourceURL magic comments for scripts (excluding ones coming from source maps).
-      return this.extensionAllowedOnURL(contentProvider.contentURL(), port);
-    }
-
-    const scripts =
-        Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().scriptsForUISourceCode(contentProvider);
-    if (scripts.length === 0) {
-      return this.extensionAllowedOnURL(contentProvider.contentURL(), port);
-    }
-
-    return scripts.every(script => {
-      if (script.hasSourceURL) {
-        return this.extensionAllowedOnTarget(script.target(), port);
+    // 1. Exception for Scripts with sourceURL
+    if (contentProvider instanceof Workspace.UISourceCode.UISourceCode &&
+        contentProvider.contentType() === Common.ResourceType.resourceTypes.Script) {
+      const scripts =
+          Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().scriptsForUISourceCode(contentProvider);
+      if (scripts.length > 0) {
+        const uiSourceCodeTarget =
+            Bindings.NetworkProject.NetworkProject.targetForUISourceCode(contentProvider) ?? undefined;
+        if (uiSourceCodeTarget && !this.extensionAllowedOnTarget(uiSourceCodeTarget, port)) {
+          return false;
+        }
+        return scripts.every(script => {
+          if (script.hasSourceURL) {
+            return this.extensionAllowedOnTarget(script.target(), port);
+          }
+          return this.extensionAllowedOnURL(script.contentURL(), port) &&
+              this.extensionAllowedOnTarget(script.target(), port);
+        });
       }
-      return this.extensionAllowedOnURL(script.contentURL(), port);
-    });
+    }
+
+    // 2. Standard Policy: Both URL and Target must be allowed
+
+    // 2a. Check URL
+    if (!this.extensionAllowedOnURL(contentProvider.contentURL(), port)) {
+      return false;
+    }
+
+    // 2b. Check Target (if one can be identified)
+    let target: SDK.Target.Target|undefined;
+    if (contentProvider instanceof SDK.NetworkRequest.NetworkRequest) {
+      target = SDK.NetworkManager.NetworkManager.forRequest(contentProvider)?.target();
+    } else if (contentProvider instanceof SDK.Resource.Resource) {
+      target = contentProvider.frame()?.resourceTreeModel().target();
+    } else if (contentProvider instanceof Workspace.UISourceCode.UISourceCode) {
+      target = Bindings.NetworkProject.NetworkProject.targetForUISourceCode(contentProvider) ?? undefined;
+    }
+
+    return !target || this.extensionAllowedOnTarget(target, port);
   }
 
   /**
@@ -986,7 +1018,10 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     return {uiSourceCode};
   }
 
-  private extensionAllowedOnTarget(target: SDK.Target.Target, port: MessagePort): boolean {
+  private extensionAllowedOnTarget(target: SDK.Target.Target|undefined, port: MessagePort): boolean {
+    if (!target) {
+      return false;
+    }
     return this.extensionAllowedOnURL(target.inspectedURL(), port);
   }
 
@@ -1043,18 +1078,76 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     return this.evaluate(expression, true, true, evaluateOptions, this.getExtensionOrigin(port), callback.bind(this));
   }
 
+  private harEntryReferencesBlockedURL(entry: HAR.Log.EntryDTO, extension: RegisteredExtension): boolean {
+    const baseURL = entry.request.url;
+
+    // Helper to cleanly resolve and check permission
+    const isBlocked = (url: string|undefined): boolean => {
+      if (!url) {
+        return false;
+      }
+      try {
+        const absoluteURL = new URL(url, baseURL).toString() as Platform.DevToolsPath.UrlString;
+        return !extension.isAllowedOnTarget(absoluteURL);
+      } catch {
+        return true;  // Fallback safely: treat unparsable URLs as blocked
+      }
+    };
+
+    if (isBlocked(entry.response.redirectURL)) {
+      return true;
+    }
+    if (entry._initiator) {
+      if (isBlocked(entry._initiator.url)) {
+        return true;
+      }
+      let stack = entry._initiator.stack;
+      while (stack) {
+        if (stack.callFrames.some(f => isBlocked(f.url))) {
+          return true;
+        }
+        stack = stack.parent;
+      }
+    }
+    for (const header of entry.response.headers) {
+      const name = header.name.toLowerCase();
+      if (name === 'location' || name === 'content-location') {
+        if (isBlocked(header.value)) {
+          return true;
+        }
+      } else if (name === 'refresh') {
+        const match = header.value.match(/;\s*url\s*=\s*(.+)$/i);
+        if (isBlocked(match?.[1]?.trim())) {
+          return true;
+        }
+      } else if (name === 'link') {
+        const urls = [...header.value.matchAll(/<([^>]+)>/g)].map(m => m[1]);
+        if (urls.some(url => isBlocked(url))) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   private async onGetHAR(message: Extensions.ExtensionAPI.PrivateAPI.ExtensionServerRequestMessage, port: MessagePort):
       Promise<Record|HAR.Log.LogDTO> {
     if (message.command !== Extensions.ExtensionAPI.PrivateAPI.Commands.GetHAR) {
       return this.status.E_BADARG('command', `expected ${Extensions.ExtensionAPI.PrivateAPI.Commands.GetHAR}`);
     }
     const requests =
-        Logs.NetworkLog.NetworkLog.instance().requests().filter(r => this.extensionAllowedOnURL(r.url(), port));
+        Logs.NetworkLog.NetworkLog.instance().requests().filter(r => this.extensionAllowedOnContentProvider(r, port));
     const harLog = await HAR.Log.Log.build(requests, {sanitize: false});
+    const extension = this.registeredExtensions.get(this.getExtensionOrigin(port));
+    if (!extension) {
+      return this.status.E_FAILED('Extension disconnected');
+    }
+
     for (let i = 0; i < harLog.entries.length; ++i) {
       // @ts-expect-error
       harLog.entries[i]._requestId = this.requestId(requests[i]);
     }
+    harLog.entries = harLog.entries.filter(entry => !this.harEntryReferencesBlockedURL(entry, extension));
     return harLog;
   }
 
@@ -1194,7 +1287,8 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     }
     const {uiSourceCode} = resource;
     if (!uiSourceCode.contentType().isDocumentOrScriptOrStyleSheet()) {
-      const resource = SDK.ResourceTreeModel.ResourceTreeModel.resourceForURL(url as Platform.DevToolsPath.UrlString);
+      const resource = SDK.ResourceTreeModel.ResourceTreeModel.resourceForURL(
+          SDK.TargetManager.TargetManager.instance(), url as Platform.DevToolsPath.UrlString);
       if (!resource) {
         return this.status.E_NOTFOUND(url);
       }
@@ -1298,26 +1392,42 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
 
   private notifyResourceAdded(event: Common.EventTarget.EventTargetEvent<Workspace.UISourceCode.UISourceCode>): void {
     const uiSourceCode = event.data;
-    this.postNotification(
-        Extensions.ExtensionAPI.PrivateAPI.Events.ResourceAdded, [this.makeResource(uiSourceCode)],
-        extension => extension.isAllowedOnTarget(uiSourceCode.url()));
+    const target = Bindings.NetworkProject.NetworkProject.targetForUISourceCode(uiSourceCode);
+    const targetUrl = target?.inspectedURL();
+    this.postNotification(Extensions.ExtensionAPI.PrivateAPI.Events.ResourceAdded, [this.makeResource(uiSourceCode)],
+                          extension => extension.isAllowedOnTarget(uiSourceCode.url()) &&
+                              (!targetUrl || extension.isAllowedOnTarget(targetUrl)));
   }
 
   private notifyUISourceCodeContentCommitted(
       event: Common.EventTarget.EventTargetEvent<Workspace.Workspace.WorkingCopyCommittedEvent>): void {
     const {uiSourceCode, content} = event.data;
-    this.postNotification(
-        Extensions.ExtensionAPI.PrivateAPI.Events.ResourceContentCommitted, [this.makeResource(uiSourceCode), content],
-        extension => extension.isAllowedOnTarget(uiSourceCode.url()));
+    const target = Bindings.NetworkProject.NetworkProject.targetForUISourceCode(uiSourceCode);
+    const targetUrl = target?.inspectedURL();
+    this.postNotification(Extensions.ExtensionAPI.PrivateAPI.Events.ResourceContentCommitted,
+                          [this.makeResource(uiSourceCode), content],
+                          extension => extension.isAllowedOnTarget(uiSourceCode.url()) &&
+                              (!targetUrl || extension.isAllowedOnTarget(targetUrl)));
   }
 
   private async notifyRequestFinished(event: Common.EventTarget.EventTargetEvent<SDK.NetworkRequest.NetworkRequest>):
       Promise<void> {
+    if (!this.extensionsEnabled) {
+      return;
+    }
+    if (!this.subscribers.has(Extensions.ExtensionAPI.PrivateAPI.Events.NetworkRequestFinished)) {
+      return;
+    }
+
     const request = event.data;
     const entry = await HAR.Log.Entry.build(request, {sanitize: false});
+    const networkManager = SDK.NetworkManager.NetworkManager.forRequest(request);
+    const targetUrl = networkManager?.target()?.inspectedURL();
     this.postNotification(
         Extensions.ExtensionAPI.PrivateAPI.Events.NetworkRequestFinished, [this.requestId(request), entry],
-        extension => extension.isAllowedOnTarget(entry.request.url));
+        extension => extension.isAllowedOnTarget(entry.request.url as Platform.DevToolsPath.UrlString) &&
+            (!targetUrl || extension.isAllowedOnTarget(targetUrl)) &&
+            !this.harEntryReferencesBlockedURL(entry, extension));
   }
 
   private notifyElementsSelectionChanged(): void {
@@ -1376,7 +1486,8 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
       const startPageURL = new URL((startPage));
       const extensionOrigin = startPageURL.origin;
       const name = extensionInfo.name || `Extension ${extensionOrigin}`;
-      const extensionRegistration = new RegisteredExtension(name, hostsPolicy, Boolean(extensionInfo.allowFileAccess));
+      const extensionRegistration =
+          new RegisteredExtension(extensionOrigin, name, hostsPolicy, Boolean(extensionInfo.allowFileAccess));
       if (!extensionRegistration.isAllowedOnTarget(inspectedURL)) {
         this.#pendingExtensions.push(extensionInfo);
         return;
@@ -1482,11 +1593,11 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
   private registerAutosubscriptionTargetManagerHandler<Events, T extends keyof Events>(
       eventTopic: string, modelClass: new(arg1: SDK.Target.Target) => SDK.SDKModel.SDKModel<Events>,
       frontendEventType: T, handler: Common.EventTarget.EventListener<Events, T>): void {
-    this.registerSubscriptionHandler(
-        eventTopic,
-        () => SDK.TargetManager.TargetManager.instance().addModelListener(modelClass, frontendEventType, handler, this),
-        () => SDK.TargetManager.TargetManager.instance().removeModelListener(
-            modelClass, frontendEventType, handler, this));
+    this.registerSubscriptionHandler(eventTopic,
+                                     () => SDK.TargetManager.TargetManager.instance().addModelListener(
+                                         modelClass, frontendEventType, handler, this, {scoped: true}),
+                                     () => SDK.TargetManager.TargetManager.instance().removeModelListener(
+                                         modelClass, frontendEventType, handler, this));
   }
 
   private registerResourceContentCommittedHandler(
@@ -1533,7 +1644,7 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
         found = (frame.url === url) ? frame : null;
         return found;
       }
-      SDK.ResourceTreeModel.ResourceTreeModel.frames().some(hasMatchingURL);
+      SDK.ResourceTreeModel.ResourceTreeModel.frames(SDK.TargetManager.TargetManager.instance()).some(hasMatchingURL);
       return found;
     }
 
@@ -1597,21 +1708,6 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
       return this.status.E_FAILED('Permission denied');
     }
 
-    try {
-      const parsedUrl = new URL(frame.url);
-      let targetType = Host.UserMetrics.ExtensionEvalTarget.WEB_PAGE;
-      if (parsedUrl.protocol === 'chrome-extension:') {
-        if (parsedUrl.origin === securityOrigin) {
-          targetType = Host.UserMetrics.ExtensionEvalTarget.SAME_EXTENSION;
-        } else {
-          targetType = Host.UserMetrics.ExtensionEvalTarget.OTHER_EXTENSION;
-        }
-      }
-      Host.userMetrics.extensionEvalTarget(targetType);
-    } catch {
-      // Ignore invalid URLs.
-    }
-
     void context
         .evaluate(
             {
@@ -1645,7 +1741,7 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
       return false;
     }
 
-    if (!kPermittedSchemes.includes(parsedURL.protocol)) {
+    if (kForbiddenSchemes.includes(parsedURL.protocol)) {
       return false;
     }
 
@@ -1683,10 +1779,55 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
 
   private disableExtensions(): void {
     this.extensionsEnabled = false;
+    this.clearExtensionHeaders();
   }
 
   private enableExtensions(): void {
     this.extensionsEnabled = true;
+  }
+
+  /**
+   * Clear extension-injected HTTP headers that should not persist after
+   * navigation to a disallowed URL. Optionally pass the new inspected URL
+   * to selectively clear only headers from extensions not allowed on that URL;
+   * when omitted, all extension headers are cleared unconditionally.
+   */
+  private clearExtensionHeaders(inspectedURL?: Platform.DevToolsPath.UrlString): void {
+    if (this.extraHeaders.size === 0) {
+      return;
+    }
+    let cleared = false;
+    if (inspectedURL) {
+      for (const id of this.extraHeaders.keys()) {
+        const extension = this.registeredExtensions.get(id);
+        if (!extension || !extension.isAllowedOnTarget(inspectedURL)) {
+          this.extraHeaders.delete(id);
+          cleared = true;
+        }
+      }
+    } else {
+      this.extraHeaders.clear();
+      cleared = true;
+    }
+    if (cleared) {
+      this.syncExtraHeaders();
+    }
+  }
+
+  /**
+   * Collect all extension-injected headers into a single object and push
+   * them to the network layer.
+   */
+  private syncExtraHeaders(): void {
+    const allHeaders: Protocol.Network.Headers = Object.create(null);
+    for (const headers of this.extraHeaders.values()) {
+      for (const [name, value] of headers) {
+        if (typeof value === 'string') {
+          allHeaders[name] = value;
+        }
+      }
+    }
+    SDK.NetworkManager.MultitargetNetworkManager.instance().setExtraHTTPHeaders(allHeaders);
   }
 }
 

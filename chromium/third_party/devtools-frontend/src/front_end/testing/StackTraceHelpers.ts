@@ -102,3 +102,34 @@ export class StubStackTrace extends Common.ObjectWrapper.ObjectWrapper<StackTrac
     this.asyncFragments = asyncFragments;
   }
 }
+
+export class StubParsedErrorStackTrace extends Common.ObjectWrapper.ObjectWrapper<StackTrace.StackTrace.EventTypes>
+    implements StackTrace.StackTrace.ParsedErrorStackTrace {
+  readonly syncFragment: StackTrace.StackTrace.ParsedErrorStackFragment;
+  readonly asyncFragments: StackTrace.StackTrace.AsyncFragment[];
+
+  static create(syncFrames: Array<Partial<StackTrace.StackTrace.ParsedErrorStackFrame>>,
+                asyncFragments: Array<{
+                  description: string,
+                  frames: Array<Partial<StackTrace.StackTrace.ParsedErrorStackFrame>>,
+                }> = []): StubParsedErrorStackTrace {
+    const toFrame =
+        (frame: Partial<StackTrace.StackTrace.ParsedErrorStackFrame>): StackTrace.StackTrace.ParsedErrorStackFrame => {
+          return {
+            line: -1,
+            column: -1,
+            ...frame,
+          };
+        };
+    return new StubParsedErrorStackTrace(
+        {frames: syncFrames.map(toFrame)},
+        asyncFragments.map(fragment => ({description: fragment.description, frames: fragment.frames.map(toFrame)})));
+  }
+
+  constructor(syncFragment: StackTrace.StackTrace.ParsedErrorStackFragment,
+              asyncFragments: StackTrace.StackTrace.AsyncFragment[] = []) {
+    super();
+    this.syncFragment = syncFragment;
+    this.asyncFragments = asyncFragments;
+  }
+}

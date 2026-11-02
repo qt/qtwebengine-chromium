@@ -5,3 +5,7 @@ option('tests',
   type: 'boolean',
   value: true,
   description: 'build tests')
+option('build-tools',
+  type: 'boolean',
+  value: false,
+  description: 'Build tools')

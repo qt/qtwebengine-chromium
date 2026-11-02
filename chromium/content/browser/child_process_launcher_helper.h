@@ -129,6 +129,7 @@ class ChildProcessLauncherHelper
 #if BUILDFLAG(IS_ANDROID)
       bool can_use_warm_up_connection,
       bool is_spare_renderer,
+      bool is_for_outermost_main_frame,
 #endif
       mojo::OutgoingInvitation mojo_invitation,
       const mojo::ProcessErrorCallback& process_error_callback,
@@ -147,6 +148,8 @@ class ChildProcessLauncherHelper
 
   // Platform specific.
   void BeforeLaunchOnClientThread();
+
+  ChildProcessId child_process_id() const { return child_process_id_; }
 
 #if !BUILDFLAG(IS_FUCHSIA)
   // Called to give implementors a chance at creating a server pipe. Platform-
@@ -187,6 +190,7 @@ class ChildProcessLauncherHelper
 #if BUILDFLAG(IS_ANDROID)
       bool can_use_warm_up_connection,
       bool is_spare_renderer,
+      bool is_for_outermost_main_frame,
 #endif
       bool* is_synchronous_launch,
       int* launch_result);
@@ -291,7 +295,6 @@ class ChildProcessLauncherHelper
     DCHECK(CurrentlyOnProcessLauncherTaskRunner());
     return command_line_.get();
   }
-  ChildProcessId child_process_id() const { return child_process_id_; }
 
   static void ForceNormalProcessTerminationSync(
       ChildProcessLauncherHelper::Process process);
@@ -348,6 +351,7 @@ class ChildProcessLauncherHelper
   // Whether the process can use warmed up connection.
   bool can_use_warm_up_connection_;
   bool is_spare_renderer_;
+  bool is_for_outermost_main_frame_;
 #endif
 
 #if BUILDFLAG(IS_FUCHSIA)

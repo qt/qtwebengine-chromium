@@ -19,6 +19,77 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace fxcrt {
+namespace {
+
+// Test compile-time construction from literal.
+constexpr ByteStringView kConstexprView("hello");
+static_assert(kConstexprView.GetLength() == 5, "Length should be 5");
+static_assert(kConstexprView[0] == 'h', "Index 0 should be 'h'");
+static_assert(kConstexprView[4] == 'o', "Index 4 should be 'o'");
+static_assert(kConstexprView.Front() == 'h', "Front should be 'h'");
+static_assert(kConstexprView.Back() == 'o', "Back should be 'o'");
+
+// Test compile-time construction from char* variable.
+constexpr const char* kLiteral = "world";
+constexpr ByteStringView kConstexprViewFromVar(kLiteral);
+static_assert(kConstexprViewFromVar.GetLength() == 5, "Length should be 5");
+static_assert(kConstexprViewFromVar[0] == 'w', "Index 0 should be 'w'");
+
+// Test compile-time construction with explicit size (keeps NUL if specified).
+constexpr ByteStringView kConstexprViewWithNul("with\0nul", 8);
+static_assert(kConstexprViewWithNul.GetLength() == 8, "Length should be 8");
+static_assert(kConstexprViewWithNul[4] == '\0', "Index 4 should be NUL");
+static_assert(kConstexprViewWithNul[5] == 'n', "Index 5 should be 'n'");
+
+// Test compile-time Substr.
+constexpr ByteStringView kSubstrView = kConstexprView.Substr(1, 3);  // "ell"
+static_assert(kSubstrView.GetLength() == 3, "Length should be 3");
+static_assert(kSubstrView[0] == 'e', "Index 0 should be 'e'");
+static_assert(kSubstrView[2] == 'l', "Index 2 should be 'l'");
+
+// Test Front and Back on empty view.
+constexpr ByteStringView kEmptyView;
+static_assert(kEmptyView.Front() == '\0', "Empty view Front should be NUL");
+static_assert(kEmptyView.Back() == '\0', "Empty view Back should be NUL");
+
+// Test Substr, First, Last tolerating out of bounds.
+static_assert(kConstexprView.Substr(6).IsEmpty(),
+              "Substr offset OOB should be empty");
+static_assert(kConstexprView.Substr(1, 10).IsEmpty(),
+              "Substr count OOB should be empty");
+static_assert(kConstexprView.Substr(6, 1).IsEmpty(),
+              "Substr offset OOB with count should be empty");
+static_assert(kConstexprView.First(10).IsEmpty(), "First OOB should be empty");
+static_assert(kConstexprView.Last(10).IsEmpty(), "Last OOB should be empty");
+
+// Test compile-time comparisons.
+constexpr ByteStringView kViewA("abc");
+constexpr ByteStringView kViewB("def");
+static_assert(kViewA < kViewB, "abc should be < def");
+static_assert(!(kViewB < kViewA), "def should not be < abc");
+
+// Test compile-time IsASCII.
+static_assert(kConstexprView.IsASCII(), "hello should be ASCII");
+constexpr ByteStringView kNonASCII("hel\x80lo");
+static_assert(!kNonASCII.IsASCII(), "non-ASCII should not be ASCII");
+// NUL is ASCII.
+constexpr ByteStringView kASCIIWithNul("hel\0lo", 6);
+static_assert(kASCIIWithNul.IsASCII(), "ASCII with NUL should be ASCII");
+
+// Test compile-time EqualsASCII.
+static_assert(kConstexprView.EqualsASCII("hello"), "should equal hello");
+static_assert(!kConstexprView.EqualsASCII("world"), "should not equal world");
+static_assert(kASCIIWithNul.EqualsASCII(ByteStringView("hel\0lo", 6)),
+              "should equal hel-nul-lo");
+
+// Test compile-time EqualsASCIINoCase.
+static_assert(kConstexprView.EqualsASCIINoCase("HeLLo"), "should equal HeLLo");
+static_assert(!kConstexprView.EqualsASCIINoCase("WoRLd"),
+              "should not equal WoRLd");
+static_assert(kASCIIWithNul.EqualsASCIINoCase(ByteStringView("HeL\0Lo", 6)),
+              "should equal HeL-nul-Lo");
+
+}  // namespace
 
 TEST(ByteString, ElementAccess) {
   const ByteString empty;

@@ -269,7 +269,7 @@ void InliningTree::Inline() {
 
   // No feedback found. If the feature is enabled, populate
   // `function_calls_map_` based on compilation hints.
-  if (v8_flags.experimental_wasm_compilation_hints) {
+  if (v8_flags.wasm_compilation_hints) {
     auto instruction_frequencies_it =
         data_->module->instruction_frequencies.find(function_index_);
     if (instruction_frequencies_it ==
@@ -481,12 +481,6 @@ void InliningTree::FullyExpand() {
       }
       continue;
     }
-    if (is_asmjs_module(data_->module)) {
-      if (v8_flags.trace_wasm_inlining) {
-        PrintF("cannot inline asm.js function]\n");
-      }
-      continue;
-    }
 
     // Key idea: inlining hot calls is good, inlining big functions is bad,
     // so inline when a candidate is "hotter than it is big". Exception:
@@ -502,9 +496,8 @@ void InliningTree::FullyExpand() {
       }
     }
 
-    if (!top->SmallEnoughToInline(initial_wire_byte_size,
-                                  inlined_wire_byte_count)) {
-      DCHECK_NE(top, this);
+    if (top != this && !top->SmallEnoughToInline(initial_wire_byte_size,
+                                                 inlined_wire_byte_count)) {
       if (v8_flags.trace_wasm_inlining) {
         PrintF("not enough inlining budget]\n");
       }

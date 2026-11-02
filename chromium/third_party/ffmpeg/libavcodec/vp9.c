@@ -168,6 +168,7 @@ static int update_size(AVCodecContext *avctx, int w, int h)
                      CONFIG_VP9_D3D11VA_HWACCEL * 2 + \
                      CONFIG_VP9_D3D12VA_HWACCEL + \
                      CONFIG_VP9_NVDEC_HWACCEL + \
+                     CONFIG_VP9_NVDEC_CUARRAY_HWACCEL + \
                      CONFIG_VP9_VAAPI_HWACCEL + \
                      CONFIG_VP9_VDPAU_HWACCEL + \
                      CONFIG_VP9_VIDEOTOOLBOX_HWACCEL + \
@@ -202,6 +203,9 @@ static int update_size(AVCodecContext *avctx, int w, int h)
 #if CONFIG_VP9_NVDEC_HWACCEL
             *fmtp++ = AV_PIX_FMT_CUDA;
 #endif
+#if CONFIG_VP9_NVDEC_CUARRAY_HWACCEL
+            *fmtp++ = AV_PIX_FMT_CUARRAY;
+#endif
 #if CONFIG_VP9_VAAPI_HWACCEL
             *fmtp++ = AV_PIX_FMT_VAAPI;
 #endif
@@ -218,6 +222,9 @@ static int update_size(AVCodecContext *avctx, int w, int h)
         case AV_PIX_FMT_YUV420P12:
 #if CONFIG_VP9_NVDEC_HWACCEL
             *fmtp++ = AV_PIX_FMT_CUDA;
+#endif
+#if CONFIG_VP9_NVDEC_CUARRAY_HWACCEL
+            *fmtp++ = AV_PIX_FMT_CUARRAY;
 #endif
 #if CONFIG_VP9_VAAPI_HWACCEL
             *fmtp++ = AV_PIX_FMT_VAAPI;
@@ -706,12 +713,6 @@ static int decode_frame_header(AVCodecContext *avctx,
     s->s.h.uvac_qdelta = get_bits1(&s->gb) ? get_sbits_inv(&s->gb, 4) : 0;
     s->s.h.lossless    = s->s.h.yac_qi == 0 && s->s.h.ydc_qdelta == 0 &&
                        s->s.h.uvdc_qdelta == 0 && s->s.h.uvac_qdelta == 0;
-#if FF_API_CODEC_PROPS
-FF_DISABLE_DEPRECATION_WARNINGS
-    if (s->s.h.lossless)
-        avctx->properties |= FF_CODEC_PROPERTY_LOSSLESS;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
 
     /* segmentation header info */
     if ((s->s.h.segmentation.enabled = get_bits1(&s->gb))) {
@@ -1952,6 +1953,9 @@ const FFCodec ff_vp9_decoder = {
 #endif
 #if CONFIG_VP9_NVDEC_HWACCEL
                                HWACCEL_NVDEC(vp9),
+#endif
+#if CONFIG_VP9_NVDEC_CUARRAY_HWACCEL
+                               HWACCEL_NVDEC_CUARRAY(vp9),
 #endif
 #if CONFIG_VP9_VAAPI_HWACCEL
                                HWACCEL_VAAPI(vp9),

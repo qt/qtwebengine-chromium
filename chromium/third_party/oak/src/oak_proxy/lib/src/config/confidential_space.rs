@@ -18,19 +18,22 @@ use std::sync::Arc;
 
 use oak_attestation::public_key::{PublicKeyAttester, PublicKeyEndorser};
 use oak_attestation_gcp::{
-    attestation::request_attestation_token,
+    OAK_SESSION_NOISE_V1_AUDIENCE, attestation::request_attestation_token,
     policy_generator::confidential_space_policy_from_reference_values,
-    CONFIDENTIAL_SPACE_ATTESTATION_ID,
 };
 use oak_attestation_verification::EventLogVerifier;
-use oak_proto_rust::oak::attestation::v1::{
-    ConfidentialSpaceEndorsement, ConfidentialSpaceReferenceValues,
+use oak_proto_rust::{
+    attestation::CONFIDENTIAL_SPACE_ATTESTATION_ID,
+    oak::attestation::v1::{
+        ConfidentialSpaceEndorsement, ConfidentialSpaceReferenceValues,
+        confidential_space_reference_values,
+    },
 };
 use oak_session::{
     config::SessionConfigBuilder, key_extractor::DefaultBindingKeyExtractor,
     session_binding::SignatureBinder,
 };
-use p256::ecdsa::{signature::rand_core::OsRng, SigningKey, VerifyingKey};
+use p256::ecdsa::{SigningKey, VerifyingKey, signature::rand_core::OsRng};
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 
@@ -46,7 +49,7 @@ impl ConfidentialSpaceGeneratorParams {
 
         println!("Requesting attestation token for {public_key_hash}...");
         let jwt_token =
-            request_attestation_token("oak://session/attestation", public_key_hash.as_str())?;
+            request_attestation_token(OAK_SESSION_NOISE_V1_AUDIENCE, public_key_hash.as_str())?;
 
         let public_key_attester = PublicKeyAttester::new(VerifyingKey::from(&binding_key));
         let public_key_endorser = PublicKeyEndorser::new(ConfidentialSpaceEndorsement {
@@ -74,6 +77,7 @@ impl ConfidentialSpaceGeneratorParams {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ConfidentialSpaceVerifierParams {
     pub root_certificate_pem_path: String,
+    pub container_reference_prefix: Option<String>,
 }
 
 impl ConfidentialSpaceVerifierParams {
@@ -83,7 +87,9 @@ impl ConfidentialSpaceVerifierParams {
 
         let reference_values = ConfidentialSpaceReferenceValues {
             root_certificate_pem: root_pem,
-            r#container_image: None,
+            r#container_image: self.container_reference_prefix.clone().map(
+                confidential_space_reference_values::ContainerImage::ContainerImageReferencePrefix,
+            ),
         };
         let policy = confidential_space_policy_from_reference_values(&reference_values)?;
         let attestation_verifier = EventLogVerifier::new(

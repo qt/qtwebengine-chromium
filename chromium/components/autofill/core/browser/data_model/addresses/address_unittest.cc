@@ -194,8 +194,8 @@ TEST_F(AddressTest, IsCountry) {
     SCOPED_TRACE(valid_match);
     FieldTypeSet matching_types;
     address.GetMatchingTypes(ASCIIToUTF16(valid_match), "US", &matching_types);
-    ASSERT_EQ(1U, matching_types.size());
-    EXPECT_EQ(ADDRESS_HOME_COUNTRY, *matching_types.begin());
+    ASSERT_EQ(matching_types.size(), 1U);
+    EXPECT_EQ(*matching_types.begin(), ADDRESS_HOME_COUNTRY);
   }
 
   const char* const kInvalidMatches[] = {"United", "Garbage"};
@@ -203,7 +203,7 @@ TEST_F(AddressTest, IsCountry) {
     FieldTypeSet matching_types;
     address.GetMatchingTypes(ASCIIToUTF16(invalid_match), "US",
                              &matching_types);
-    EXPECT_EQ(0U, matching_types.size());
+    EXPECT_EQ(matching_types.size(), 0U);
   }
 
   // Make sure that garbage values don't match when the country code is empty.
@@ -211,7 +211,7 @@ TEST_F(AddressTest, IsCountry) {
   EXPECT_EQ(address.GetRawInfo(ADDRESS_HOME_COUNTRY), u"");
   FieldTypeSet matching_types;
   address.GetMatchingTypes(u"Garbage", "US", &matching_types);
-  EXPECT_EQ(0U, matching_types.size());
+  EXPECT_EQ(matching_types.size(), 0U);
 }
 
 // Verifies that Address::GetInfo() correctly combines address lines.
@@ -439,7 +439,7 @@ TEST_F(AddressTest, SetStreetAddressRejectsAddressesWithTrailingBlankLines) {
 // Verifies that the merging-related methods for structured addresses are
 // implemented correctly. This is not a test of the merging logic itself.
 TEST_F(AddressTest, TestMergeStructuredAddresses) {
-  autofill::AutofillProfileComparator profile_comparator("en-US");
+  AutofillProfileComparator profile_comparator("en-US");
 
   // The two zip codes have a is-substring relation and are mergeable.
   AutofillProfile profile1("1", AutofillProfile::RecordType::kAccount,

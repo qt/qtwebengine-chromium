@@ -177,8 +177,8 @@ PlainTextRange ExpandWithWordGranularity(
     EphemeralRange ephemeral_range,
     Element* const root_editable_element,
     InputMethodController& input_method_controller) {
-  SelectionInDOMTree expanded_selection = ExpandWithGranularity(
-      SelectionInDOMTree::Builder().SetBaseAndExtent(ephemeral_range).Build(),
+  SelectionInDomTree expanded_selection = ExpandWithGranularity(
+      SelectionInDomTree::Builder().SetBaseAndExtent(ephemeral_range).Build(),
       TextGranularity::kWord, WordInclusion::kMiddle);
   PlainTextRange expanded_range = PlainTextRange::Create(
       *root_editable_element, expanded_selection.ComputeRange());
@@ -415,7 +415,7 @@ std::optional<PlainTextRange> StylusWritingGestureDelete::AdjustRange(
     return PlainTextRange(range->Start() + 1, range->End());
   }
   // When there are spaces either side of the gesture, include one.
-  if (input_text.length() > range->End() && range->Start() - 1 >= 0 &&
+  if (input_text.length() > range->End() && range->Start() > 0 &&
       IsHTMLSpaceNotLineBreak(input_text[range->Start() - 1]) &&
       !IsHTMLSpaceNotLineBreak(input_text[range->End() - 1])) {
     return PlainTextRange(range->Start() - 1, range->End());
@@ -484,7 +484,7 @@ bool StylusWritingGestureSelect::MaybeApplyGesture(LocalFrame* frame) {
     Vector<ImeTextSpan> preview_spans;
     // Selection preview highlight color is the same as selection highlight
     // color.
-    Color preview_color = LayoutTheme::TapHighlightColor();
+    Color preview_color = LayoutTheme::GetTheme().TapHighlightColor();
     ImeTextSpan preview_span(
         ImeTextSpan::Type::kPreviewStylusGesture, 0, gesture_range->length(),
         Color::kTransparent, ui::mojom::ImeTextSpanThickness::kNone,

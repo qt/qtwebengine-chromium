@@ -41,6 +41,19 @@
 
 #include "libavformat/avformat.h"
 
+typedef struct DemuxStreamGroup {
+    InputStreamGroup         istg;
+
+    // name used for logging
+    char                     log_name[32];
+
+    // Temporary fields for LCEVC merging
+    AVBitStreamFilterGraph   *graph;
+    AVBitStreamFilterContext *lcevc[2];
+    AVBitStreamFilterContext *sink;
+    int graph_enabled;
+} DemuxStreamGroup;
+
 typedef struct DemuxStream {
     InputStream              ist;
 
@@ -95,24 +108,14 @@ typedef struct DemuxStream {
 
     AVBSFContext            *bsf;
 
+    DemuxStreamGroup       **dsg;
+    int                      nb_dsg;
+
     /* number of packets successfully read for this stream */
     uint64_t                 nb_packets;
     // combined size of all the packets read
     uint64_t                 data_size;
-    // latest wallclock time at which packet reading resumed after a stall - used for readrate
-    int64_t                  resume_wc;
-    // timestamp of first packet sent after the latest stall - used for readrate
-    int64_t                  resume_pts;
-    // measure of how far behind packet reading is against spceified readrate
-    int64_t                  lag;
 } DemuxStream;
-
-typedef struct DemuxStreamGroup {
-    InputStreamGroup         istg;
-
-    // name used for logging
-    char                     log_name[32];
-} DemuxStreamGroup;
 
 typedef struct Demuxer {
     InputFile             f;
@@ -147,6 +150,13 @@ typedef struct Demuxer {
     double                readrate_initial_burst;
     float                 readrate_catchup;
 
+    // latest wallclock time at which packet reading resumed after a stall - used for readrate
+    int64_t               resume_wc;
+    // relative timestamp of first packet sent after the latest stall - used for readrate
+    int64_t               resume_progress;
+    // measure of how far behind packet reading is against spceified readrate
+    int64_t               lag;
+
     Scheduler            *sch;
 
     AVPacket             *pkt_heartbeat;
@@ -162,6 +172,11 @@ typedef struct DemuxThreadContext {
     // packet for reading from BSFs
     AVPacket *pkt_bsf;
 } DemuxThreadContext;
+
+static DemuxStreamGroup *dsg_from_istg(InputStreamGroup *istg)
+{
+    return (DemuxStreamGroup*)istg;
+}
 
 static DemuxStream *ds_from_ist(InputStream *ist)
 {
@@ -517,43 +532,55 @@ static void readrate_sleep(Demuxer *d)
     int64_t initial_burst = AV_TIME_BASE * d->readrate_initial_burst;
     int resume_warn = 0;
 
+    DemuxStream *slowest = NULL;
+    int64_t progress = INT64_MAX;
+
     for (int i = 0; i < f->nb_streams; i++) {
         InputStream *ist = f->streams[i];
         DemuxStream  *ds = ds_from_ist(ist);
-        int64_t stream_ts_offset, pts, now, wc_elapsed, elapsed, lag, max_pts, limit_pts;
+        int64_t stream_ts_offset, pts, pts_diff;
+        if (ds->discard || ds->finished || ds->first_dts == AV_NOPTS_VALUE)
+            continue;
 
-        if (ds->discard) continue;
-
-        stream_ts_offset = FFMAX(ds->first_dts != AV_NOPTS_VALUE ? ds->first_dts : 0, file_start);
+        stream_ts_offset = FFMAX(ds->first_dts, file_start);
         pts = av_rescale(ds->dts, 1000000, AV_TIME_BASE);
-        now = av_gettime_relative();
-        wc_elapsed = now - d->wallclock_start;
-
-        if (pts <= stream_ts_offset + initial_burst) continue;
-
-        max_pts = stream_ts_offset + initial_burst + (int64_t)(wc_elapsed * d->readrate);
-        lag = FFMAX(max_pts - pts, 0);
-        if ( (!ds->lag && lag > 0.3 * AV_TIME_BASE) || ( lag > ds->lag + 0.3 * AV_TIME_BASE) ) {
-            ds->lag = lag;
-            ds->resume_wc = now;
-            ds->resume_pts = pts;
-            av_log_once(ds, AV_LOG_WARNING, AV_LOG_DEBUG, &resume_warn,
-                        "Resumed reading at pts %0.3f with rate %0.3f after a lag of %0.3fs\n",
-                        (float)pts/AV_TIME_BASE, d->readrate_catchup, (float)lag/AV_TIME_BASE);
+        pts_diff = pts - stream_ts_offset;
+        if (pts_diff < progress) {
+            progress = pts_diff;
+            slowest = ds;
         }
-        if (ds->lag && !lag)
-            ds->lag = ds->resume_wc = ds->resume_pts = 0;
-        if (ds->resume_wc) {
-            elapsed = now - ds->resume_wc;
-            limit_pts = ds->resume_pts + (int64_t)(elapsed * d->readrate_catchup);
-        } else {
-            elapsed = wc_elapsed;
-            limit_pts = max_pts;
-        }
-
-        if (pts > limit_pts)
-            av_usleep(pts - limit_pts);
     }
+
+    if (!slowest || progress <= initial_burst)
+        return;
+
+    int64_t now = av_gettime_relative();
+    int64_t wc_elapsed = now - d->wallclock_start;
+    int64_t max_prog = initial_burst + (int64_t)(wc_elapsed * d->readrate);
+    int64_t lag = FFMAX(max_prog - progress, 0);
+    int64_t limit;
+
+    if ( (!d->lag && lag > 0.3 * AV_TIME_BASE) || ( lag > d->lag + 0.3 * AV_TIME_BASE) ) {
+        d->lag = lag;
+        d->resume_wc = now;
+        d->resume_progress = progress;
+
+        int64_t pts = FFMAX(slowest->first_dts, file_start) + progress;
+        av_log_once(slowest, AV_LOG_WARNING, AV_LOG_DEBUG, &resume_warn,
+                    "Resumed reading at pts %0.3f with rate %0.3f after a lag of %0.3fs\n",
+                    (float)pts/AV_TIME_BASE, d->readrate_catchup, (float)lag/AV_TIME_BASE);
+    }
+    if (d->lag && !lag)
+        d->lag = d->resume_wc = d->resume_progress = 0;
+    if (d->resume_wc) {
+        int64_t elapsed = now - d->resume_wc;
+        limit = d->resume_progress + (int64_t)(elapsed * d->readrate_catchup);
+    } else {
+        limit = max_prog;
+    }
+
+    if (progress > limit)
+        av_usleep(progress - limit);
 }
 
 static int do_send(Demuxer *d, DemuxStream *ds, AVPacket *pkt, unsigned flags,
@@ -585,14 +612,82 @@ static int do_send(Demuxer *d, DemuxStream *ds, AVPacket *pkt, unsigned flags,
     return 0;
 }
 
+static int do_bsf_graph(Demuxer *d, DemuxThreadContext *dt, DemuxStreamGroup *dsg,
+                        DemuxStream *ds, AVPacket *pkt)
+{
+    const AVStreamGroup *stg = dsg->istg.stg;
+    const AVStreamGroupLayeredVideo *lcevc = stg->params.layered_video;
+    const int enhancement = ds->ist.index == stg->streams[lcevc->el_index]->index;
+    AVBitStreamFilterContext *source = dsg->lcevc[enhancement];
+    int ret, flags = AV_BSF_SOURCE_FLAG_PUSH;
+
+    if (enhancement)
+        flags |= AV_BSF_SOURCE_FLAG_KEEP_REF;
+
+    ret = av_bsf_source_add_packet(source, pkt, flags);
+    if (ret < 0) {
+        if (pkt)
+            av_packet_unref(pkt);
+        av_log(dsg, AV_LOG_ERROR, "Error submitting a packet for filtering: %s\n",
+               av_err2str(ret));
+        return ret;
+    }
+
+    if (pkt && enhancement) {
+        if (ds->discard)
+            av_packet_unref(pkt);
+        else {
+            ret = do_send(d, ds, pkt, 0, "filtered");
+            if (ret < 0) {
+                av_packet_unref(pkt);
+                return ret;
+            }
+        }
+        return 0;
+    }
+
+    while (1) {
+        ret = av_bsf_sink_get_packet(dsg->sink, dt->pkt_bsf, 0);
+        if (ret == AVERROR(EAGAIN))
+            return 0;
+        else if (ret < 0) {
+            if (ret != AVERROR_EOF)
+                av_log(dsg, AV_LOG_ERROR,
+                       "Error applying bitstream filters to a packet: %s\n",
+                       av_err2str(ret));
+            return ret;
+        }
+
+        dt->pkt_bsf->time_base = av_bsf_sink_get_time_base(dsg->sink);
+
+        ret = do_send(d, ds, dt->pkt_bsf, 0, "filtered");
+        if (ret < 0) {
+            av_packet_unref(dt->pkt_bsf);
+            return ret;
+        }
+    }
+
+    return 0;
+}
+
 static int demux_send(Demuxer *d, DemuxThreadContext *dt, DemuxStream *ds,
                       AVPacket *pkt, unsigned flags)
 {
     InputFile  *f = &d->f;
+    DemuxStreamGroup *dsg = NULL;
     int ret;
 
+    for (int i = 0; i < ds->nb_dsg; i++) {
+        const InputStreamGroup *istg = &ds->dsg[i]->istg;
+
+        if (istg->stg->type != AV_STREAM_GROUP_PARAMS_LCEVC)
+            continue;
+        dsg = ds->dsg[i];
+        break;
+    }
+
     // pkt can be NULL only when flushing BSFs
-    av_assert0(ds->bsf || pkt);
+    av_assert0(ds->bsf || (dsg && dsg->graph) || pkt);
 
     // send heartbeat for sub2video streams
     if (d->pkt_heartbeat && pkt && pkt->pts != AV_NOPTS_VALUE) {
@@ -612,6 +707,11 @@ static int demux_send(Demuxer *d, DemuxThreadContext *dt, DemuxStream *ds,
         }
     }
 
+    if (dsg && dsg->graph_enabled) {
+        ret = do_bsf_graph(d, dt, dsg, ds, pkt);
+        if (ret < 0)
+            return ret;
+    }
     if (ds->bsf) {
         if (pkt)
             av_packet_rescale_ts(pkt, pkt->time_base, ds->bsf->time_base_in);
@@ -645,7 +745,9 @@ static int demux_send(Demuxer *d, DemuxThreadContext *dt, DemuxStream *ds,
                 return ret;
             }
         }
-    } else {
+    } else if (ds->discard && pkt) {
+        av_packet_unref(pkt);
+    } else if (!dsg || !dsg->graph_enabled) {
         ret = do_send(d, ds, pkt, flags, "demuxed");
         if (ret < 0)
             return ret;
@@ -661,8 +763,18 @@ static int demux_bsf_flush(Demuxer *d, DemuxThreadContext *dt)
 
     for (unsigned i = 0; i < f->nb_streams; i++) {
         DemuxStream *ds = ds_from_ist(f->streams[i]);
+        DemuxStreamGroup *dsg = NULL;
 
-        if (!ds->bsf)
+        for (int j = 0; j < ds->nb_dsg; j++) {
+            const InputStreamGroup *istg = &ds->dsg[j]->istg;
+
+            if (istg->stg->type != AV_STREAM_GROUP_PARAMS_LCEVC)
+                continue;
+            dsg = ds->dsg[j];
+            break;
+        }
+
+        if (!ds->bsf && (!dsg || !dsg->graph_enabled))
             continue;
 
         ret = demux_send(d, dt, ds, NULL, 0);
@@ -673,7 +785,8 @@ static int demux_bsf_flush(Demuxer *d, DemuxThreadContext *dt)
             return ret;
         }
 
-        av_bsf_flush(ds->bsf);
+        if (ds->bsf)
+            av_bsf_flush(ds->bsf);
     }
 
     return 0;
@@ -796,7 +909,7 @@ static int input_thread(void *arg)
            dynamically in stream : we ignore them */
         ds = dt.pkt_demux->stream_index < f->nb_streams ?
              ds_from_ist(f->streams[dt.pkt_demux->stream_index]) : NULL;
-        if (!ds || ds->discard || ds->finished) {
+        if (!ds || ds->finished) {
             report_new_stream(d, dt.pkt_demux);
             av_packet_unref(dt.pkt_demux);
             continue;
@@ -894,6 +1007,7 @@ static void ist_free(InputStream **pist)
 
     av_frame_free(&ds->decoded_params);
 
+    av_freep(&ds->dsg);
     av_bsf_free(&ds->bsf);
 
     av_freep(pist);
@@ -902,9 +1016,14 @@ static void ist_free(InputStream **pist)
 static void istg_free(InputStreamGroup **pistg)
 {
     InputStreamGroup *istg = *pistg;
+    DemuxStreamGroup *dsg;
 
     if (!istg)
         return;
+
+    dsg = dsg_from_istg(istg);
+
+    av_bsf_graph_free(&dsg->graph);
 
     av_freep(pistg);
 }
@@ -971,6 +1090,53 @@ int ist_use(InputStream *ist, int decoding_needed,
     ds->decoding_needed   |= decoding_needed;
     ds->streamcopy_needed |= !decoding_needed;
 
+    for (int i = 0; i < ds->nb_dsg; i++) {
+        DemuxStreamGroup *dsg = ds->dsg[i];
+        const InputStreamGroup *istg = &dsg->istg;
+
+        if (!dsg->graph || istg->stg->type != AV_STREAM_GROUP_PARAMS_LCEVC)
+            continue;
+        const AVStreamGroupLayeredVideo *lcevc = istg->stg->params.layered_video;
+        if (ist->st->index == istg->stg->streams[lcevc->el_index]->index)
+            break;
+
+        AVBitStreamFilterContext *lcevc_merge = av_bsf_graph_get_filter(dsg->graph, "lcevc_merge");
+
+        for (int j = 0; j < 2; j++) {
+            ret = av_bsf_init_dict(dsg->lcevc[j], NULL);
+            if (ret < 0)
+                return ret;
+        }
+
+        ret = av_bsf_init_dict(lcevc_merge, NULL);
+        if (ret < 0)
+            return ret;
+        ret = av_bsf_init_dict(dsg->sink, NULL);
+        if (ret < 0)
+            return ret;
+
+        ret = av_bsf_link(dsg->lcevc[0], 0, lcevc_merge, 0);
+        if (ret < 0)
+            return ret;
+        ret = av_bsf_link(dsg->lcevc[1], 0, lcevc_merge, 1);
+        if (ret < 0)
+            return ret;
+        ret = av_bsf_link(lcevc_merge, 0, dsg->sink, 0);
+        if (ret < 0)
+            return ret;
+
+        ret = av_bsf_graph_config(dsg->graph, d);
+        if (ret < 0)
+            return ret;
+
+        InputStream *lcevc_ist = d->f.streams[istg->stg->streams[lcevc->el_index]->index];
+        lcevc_ist->st->discard = 0;
+
+        dsg->graph_enabled = 1;
+
+        break;
+    }
+
     if (decoding_needed && ds->sch_idx_dec < 0) {
         int is_audio = ist->st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO;
         int is_unreliable = !!(d->f.ctx->iformat->flags & AVFMT_NOTIMESTAMPS);
@@ -985,11 +1151,7 @@ int ist_use(InputStream *ist, int decoding_needed,
 
         ds->dec_opts.flags |= (!!ist->fix_sub_duration * DECODER_FLAG_FIX_SUB_DURATION) |
                               (!!is_unreliable * DECODER_FLAG_TS_UNRELIABLE) |
-                              (!!(d->loop && is_audio) * DECODER_FLAG_SEND_END_TS)
-#if FFMPEG_OPT_TOP
-                              | ((ist->top_field_first >= 0) * DECODER_FLAG_TOP_FIELD_FIRST)
-#endif
-                             ;
+                              (!!(d->loop && is_audio) * DECODER_FLAG_SEND_END_TS);
 
         if (ist->framerate.num) {
             ds->dec_opts.flags     |= DECODER_FLAG_FRAMERATE_FORCED;
@@ -1650,12 +1812,6 @@ static int ist_add(const OptionsContext *o, Demuxer *d, AVStream *st, AVDictiona
                 return ret;
             }
         }
-
-#if FFMPEG_OPT_TOP
-        ist->top_field_first = -1;
-        opt_match_per_stream_int(ist, &o->top_field_first, ic, st, &ist->top_field_first);
-#endif
-
         break;
     case AVMEDIA_TYPE_AUDIO: {
         const char *ch_layout_str = NULL;
@@ -1801,6 +1957,11 @@ static int istg_parse_tile_grid(const OptionsContext *o, Demuxer *d, InputStream
 
     if (tg->nb_tiles == 1)
         return 0;
+    if (!tg->nb_tiles) {
+        av_log(istg, AV_LOG_FATAL, "A demuxer exported an invalid tile group stream group. "
+                                   "This is a bug, please report it.\n");
+        return AVERROR_BUG;
+    }
 
     memset(&opts, 0, sizeof(opts));
 
@@ -1865,8 +2026,60 @@ fail:
     return ret;
 }
 
+static int istg_parse_lcevc(const OptionsContext *o, Demuxer *d, DemuxStreamGroup *dsg)
+{
+    InputFile *f = &d->f;
+    const AVStreamGroup *stg = dsg->istg.stg;
+    const AVStreamGroupLayeredVideo *lcevc = stg->params.layered_video;
+    const AVBitStreamFilter *filter, *lcevc_filter = av_bsf_get_by_name("lcevc_merge");
+    const InputStream *lcevc_ist = f->streams[stg->streams[lcevc->el_index]->index];
+    const InputStream *base_ist = f->streams[stg->streams[!lcevc->el_index]->index];
+    int ret;
+
+    if (!lcevc_filter || stg->nb_streams != 2)
+        return 0;
+
+    dsg->graph = av_bsf_graph_alloc();
+    if(!dsg->graph)
+        return AVERROR(ENOMEM);
+
+    filter = av_bsf_get_by_name("source");
+    if (!filter)
+        return AVERROR_BUG;
+
+    ret = av_bsf_graph_alloc_filter(&dsg->lcevc[0], filter, "lcevc_merge_base", dsg->graph);
+    if (ret < 0)
+        return ret;
+    av_opt_set_q(dsg->lcevc[0]->priv_data, "time_base", base_ist->st->time_base, 0);
+    ret = av_bsf_source_parameters_set(dsg->lcevc[0], base_ist->par);
+    if (ret < 0)
+        return ret;
+
+    ret = av_bsf_graph_alloc_filter(&dsg->lcevc[1], filter, "lcevc_merge_enhancement", dsg->graph);
+    if (ret < 0)
+        return ret;
+    av_opt_set_q(dsg->lcevc[1]->priv_data, "time_base", lcevc_ist->st->time_base, 0);
+    ret = av_bsf_source_parameters_set(dsg->lcevc[1], lcevc_ist->par);
+    if (ret < 0)
+        return ret;
+
+    ret = av_bsf_graph_alloc_filter(NULL, lcevc_filter, "lcevc_merge", dsg->graph);
+    if (ret < 0)
+        return ret;
+
+    filter = av_bsf_get_by_name("sink");
+    if (!filter)
+        return AVERROR_BUG;
+    ret = av_bsf_graph_alloc_filter(&dsg->sink, filter, "lcevc_merge_sink", dsg->graph);
+    if (ret < 0)
+        return ret;
+
+    return 0;
+}
+
 static int istg_add(const OptionsContext *o, Demuxer *d, AVStreamGroup *stg)
 {
+    InputFile *f = &d->f;
     DemuxStreamGroup *dsg;
     InputStreamGroup *istg;
     int ret;
@@ -1878,8 +2091,26 @@ static int istg_add(const OptionsContext *o, Demuxer *d, AVStreamGroup *stg)
     istg = &dsg->istg;
 
     switch (stg->type) {
+    case AV_STREAM_GROUP_PARAMS_LCEVC:
+        for (int i = 0; i < istg->stg->nb_streams; i++) {
+            DemuxStream *ds = ds_from_ist(f->streams[istg->stg->streams[i]->index]);
+            ret = av_dynarray_add_nofree(&ds->dsg, &ds->nb_dsg, dsg);
+            if (ret < 0)
+                return ret;
+        }
+        break;
+    default:
+        break;
+    }
+
+    switch (stg->type) {
     case AV_STREAM_GROUP_PARAMS_TILE_GRID:
         ret = istg_parse_tile_grid(o, d, istg);
+        if (ret < 0)
+            return ret;
+        break;
+    case AV_STREAM_GROUP_PARAMS_LCEVC:
+        ret = istg_parse_lcevc(o, d, dsg);
         if (ret < 0)
             return ret;
         break;

@@ -59,9 +59,6 @@ namespace internal {
 //   if lhs(i,j) is null and rhs(i,j) is present, dst(i,j) = func(0, rhs(i,j))
 
 // Generic "sparse OP sparse"
-template <typename XprType>
-struct binary_sparse_evaluator;
-
 template <typename BinaryOp, typename Lhs, typename Rhs>
 struct binary_evaluator<CwiseBinaryOp<BinaryOp, Lhs, Rhs>, IteratorBased, IteratorBased>
     : evaluator_base<CwiseBinaryOp<BinaryOp, Lhs, Rhs> > {
@@ -417,7 +414,7 @@ struct sparse_conjunction_evaluator<XprType, IteratorBased, IteratorBased> : eva
     EIGEN_STRONG_INLINE Index row() const { return m_lhsIter.row(); }
     EIGEN_STRONG_INLINE Index col() const { return m_lhsIter.col(); }
 
-    EIGEN_STRONG_INLINE operator bool() const { return (m_lhsIter && m_rhsIter); }
+    EIGEN_STRONG_INLINE operator bool() const { return m_lhsIter && m_rhsIter; }
 
    protected:
     LhsIterator m_lhsIter;
@@ -520,7 +517,6 @@ struct sparse_conjunction_evaluator<XprType, IteratorBased, IndexBased> : evalua
   typedef typename XprType::Lhs LhsArg;
   typedef typename XprType::Rhs RhsArg;
   typedef typename evaluator<LhsArg>::InnerIterator LhsIterator;
-  typedef evaluator<RhsArg> RhsEvaluator;
   typedef typename XprType::StorageIndex StorageIndex;
   typedef typename traits<XprType>::Scalar Scalar;
 
@@ -676,7 +672,6 @@ struct sparse_disjunction_evaluator<XprType, IndexBased, IteratorBased> : evalua
   typedef typename XprType::Functor BinaryOp;
   typedef typename XprType::Lhs LhsArg;
   typedef typename XprType::Rhs RhsArg;
-  typedef evaluator<LhsArg> LhsEvaluator;
   typedef typename evaluator<RhsArg>::InnerIterator RhsIterator;
   typedef typename XprType::StorageIndex StorageIndex;
   typedef typename traits<XprType>::Scalar Scalar;
@@ -760,7 +755,6 @@ struct sparse_disjunction_evaluator<XprType, IteratorBased, IndexBased> : evalua
   typedef typename XprType::Lhs LhsArg;
   typedef typename XprType::Rhs RhsArg;
   typedef typename evaluator<LhsArg>::InnerIterator LhsIterator;
-  typedef evaluator<RhsArg> RhsEvaluator;
   typedef typename XprType::StorageIndex StorageIndex;
   typedef typename traits<XprType>::Scalar Scalar;
 

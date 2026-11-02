@@ -374,6 +374,10 @@ export namespace PrivateAPI {
   }
 
   export type RecorderExtensionRequests = StringifyRequest|StringifyStepRequest|ReplayRequest;
+
+  export interface Network extends PublicAPI.Chrome.DevTools.Network {
+    addRequestHeaders(headers: Record<string, string>): void;
+  }
 }
 
 declare global {
@@ -438,10 +442,6 @@ namespace APIImpl {
     _dispatch(request: {arguments: unknown[]}): void;
   }
 
-  export interface Network extends PublicAPI.Chrome.DevTools.Network {
-    addRequestHeaders(headers: Record<string, string>): void;
-  }
-
   export interface Request extends PublicAPI.Chrome.DevTools.Request, HAR.Log.EntryDTO {
     _id: number;
   }
@@ -459,9 +459,9 @@ namespace APIImpl {
   }
 
   export interface ExtensionSidebarPane extends ExtensionView, PublicAPI.Chrome.DevTools.ExtensionSidebarPane {
-    setExpression(
-        expression: string, rootTitle?: string, evaluteOptions?: PrivateAPI.EvaluateOptions,
-        callback?: () => unknown): void;
+    setExpression(expression: string, rootTitle?: string, evaluateOptions?: PrivateAPI.EvaluateOptions): Promise<void>;
+    setExpression(expression: string, rootTitle?: string, evaluateOptions?: PrivateAPI.EvaluateOptions,
+                  callback?: () => unknown): void;
   }
 
   export interface PanelWithSidebar extends ExtensionView, PublicAPI.Chrome.DevTools.PanelWithSidebar {
@@ -589,7 +589,7 @@ self.injectedExtensionAPI = function(
     defineDeprecatedProperty(this, 'webInspector', 'resources', 'network');
   }
 
-  function Network(this: APIImpl.Network): void {
+  function Network(this: PrivateAPI.Network): void {
     function dispatchRequestEvent(
         this: APIImpl.EventSink<(request: PublicAPI.Chrome.DevTools.Request) => unknown>,
         message: {arguments: unknown[]}): void {
@@ -606,20 +606,30 @@ self.injectedExtensionAPI = function(
     this.onNavigated = new (Constructor(EventSink))(PrivateAPI.Events.InspectedURLChanged);
   }
 
-  (Network.prototype as Pick<APIImpl.Network, 'getHAR'|'addRequestHeaders'>) = {
-    getHAR: function(this: PublicAPI.Chrome.DevTools.Network, callback?: (harLog: Object) => unknown): void {
-      function callbackWrapper(response: unknown): void {
-        const result =
-            response as ({entries: Array<HAR.Log.EntryDTO&{__proto__?: APIImpl.Request, _requestId?: number}>});
-        const entries = (result?.entries) || [];
-        for (let i = 0; i < entries.length; ++i) {
-          entries[i].__proto__ = new (Constructor(Request))(entries[i]._requestId as number);
-          delete entries[i]._requestId;
-        }
-        callback?.(result);
-      }
-      extensionServer.sendRequest({command: PrivateAPI.Commands.GetHAR}, callback && callbackWrapper);
-    },
+  (Network.prototype as Pick<PrivateAPI.Network, 'getHAR'|'addRequestHeaders'>) = {
+    getHAR: function(this: PublicAPI.Chrome.DevTools.Network, _callback?: (harLog: object) => unknown): Promise<object>|
+        void {
+          const {callback: callbackArg, promise, resolve, reject} = callbackOrPromise<object>(arguments);
+
+          function callbackWrapper(response: unknown): void {
+            if (checkErrorAndReject(response, reject)) {
+              return;
+            }
+
+            const result =
+                response as ({entries: Array<HAR.Log.EntryDTO&{__proto__?: APIImpl.Request, _requestId?: number}>});
+            const entries = (result?.entries) || [];
+            for (let i = 0; i < entries.length; ++i) {
+              entries[i].__proto__ = new (Constructor(Request))(entries[i]._requestId as number);
+              delete entries[i]._requestId;
+            }
+            resolve?.(result);
+            callbackArg?.(result);
+          }
+          extensionServer.sendRequest({command: PrivateAPI.Commands.GetHAR}, callbackWrapper);
+
+          return promise;
+        } as PublicAPI.Chrome.DevTools.Network['getHAR'],
 
     addRequestHeaders: function(headers: Record<string, string>): void {
       extensionServer.sendRequest(
@@ -631,15 +641,31 @@ self.injectedExtensionAPI = function(
     this._id = id;
   }
 
+  interface GetContentPromiseSignature {
+    content: string;
+    encoding: string;
+  }
+  type GetContentCallbackSignature = [content: string, encoding: string];
   (RequestImpl.prototype as Pick<APIImpl.Request, 'getContent'>) = {
-    getContent: function(this: APIImpl.Request, callback?: (content: string, encoding: string) => unknown): void {
-      function callbackWrapper(response: unknown): void {
-        const {content, encoding} = response as {content: string, encoding: string};
-        callback?.(content, encoding);
-      }
-      extensionServer.sendRequest(
-          {command: PrivateAPI.Commands.GetRequestContent, id: this._id}, callback && callbackWrapper);
-    },
+    getContent: function(this: APIImpl.Request, _callback?: (...args: GetContentCallbackSignature) => unknown):
+                    Promise<GetContentPromiseSignature>|
+        void {
+          const {callback: callbackArg, promise, resolve, reject} =
+              callbackOrPromise<GetContentPromiseSignature, GetContentCallbackSignature>(arguments);
+
+          function callbackWrapper(response: unknown): void {
+            if (checkErrorAndReject(response, reject)) {
+              return;
+            }
+
+            const {content, encoding} = response as {content: string, encoding: string};
+            resolve?.({content, encoding});
+            callbackArg?.(content, encoding);
+          }
+          extensionServer.sendRequest({command: PrivateAPI.Commands.GetRequestContent, id: this._id}, callbackWrapper);
+
+          return promise;
+        } as PublicAPI.Chrome.DevTools.Request['getContent'],
   };
 
   function Panels(this: APIImpl.Panels): void {
@@ -659,14 +685,29 @@ self.injectedExtensionAPI = function(
 
   (Panels.prototype as
    Pick<APIImpl.Panels, 'create'|'setOpenResourceHandler'|'openResource'|'SearchAction'|'setThemeChangeHandler'>) = {
-    create: function(
-        title: string, _icon: string, page: string,
-        callback: (panel: PublicAPI.Chrome.DevTools.ExtensionPanel) => unknown): void {
-      const id = 'extension-panel-' + extensionServer.nextObjectId();
-      extensionServer.sendRequest(
-          {command: PrivateAPI.Commands.CreatePanel, id, title, page},
-          callback && (() => callback.call(this, new (Constructor(ExtensionPanel))(id))));
-    },
+    create: function(this: APIImpl.Panels, title: string, _iconPath: string, pagePath: string,
+                     _callback?: (panel: PublicAPI.Chrome.DevTools.ExtensionPanel) => unknown):
+                Promise<PublicAPI.Chrome.DevTools.ExtensionPanel>|
+        void {
+          const {callback: callbackArg, promise, resolve, reject} =
+              callbackOrPromise<PublicAPI.Chrome.DevTools.ExtensionPanel>(arguments);
+
+          const id = 'extension-panel-' + extensionServer.nextObjectId();
+
+          const callbackWrapper = (response: unknown): void => {
+            if (checkErrorAndReject(response, reject)) {
+              return;
+            }
+            const panel = new (Constructor(ExtensionPanel))(id);
+            resolve?.(panel);
+            callbackArg?.call(this, panel);
+          };
+
+          extensionServer.sendRequest({command: PrivateAPI.Commands.CreatePanel, id, title, page: pagePath},
+                                      callbackWrapper);
+
+          return promise;
+        } as PublicAPI.Chrome.DevTools.Panels['create'],
 
     setOpenResourceHandler: function(
         callback: (resource: PublicAPI.Chrome.DevTools.Resource, lineNumber: number, columnNumber: number) => unknown,
@@ -720,15 +761,29 @@ self.injectedExtensionAPI = function(
       }
     },
 
-    openResource: function(
-        url: Platform.DevToolsPath.UrlString, lineNumber: number, columnNumber?: number,
-        _callback?: (response: unknown) => unknown): void {
-      const callbackArg = extractCallbackArgument(arguments);
-      // Handle older API:
-      const columnNumberArg = typeof columnNumber === 'number' ? columnNumber : 0;
-      extensionServer.sendRequest(
-          {command: PrivateAPI.Commands.OpenResource, url, lineNumber, columnNumber: columnNumberArg}, callbackArg);
-    },
+    openResource: function(this: APIImpl.Panels, url: Platform.DevToolsPath.UrlString, lineNumber: number,
+                           columnNumber?: number|(() => unknown), _callback?: () => unknown): Promise<void>|
+        void {
+          const {callback: callbackArg, promise, resolve, reject} = callbackOrPromise<unknown>(arguments);
+          // Handle older API:
+          const columnNumberArg = typeof columnNumber === 'number' ? columnNumber : 0;
+
+          const callbackWrapper = (response: unknown): void => {
+            if (checkErrorAndReject(response, reject)) {
+              return;
+            }
+            // `openResource` isn't supposed to send the response from the backend, but some JavaScript callers
+            //  might be relying on it so we send it for now.
+            resolve?.(response);
+            callbackArg?.call(this, response);
+          };
+
+          extensionServer.sendRequest(
+              {command: PrivateAPI.Commands.OpenResource, url, lineNumber, columnNumber: columnNumberArg},
+              callbackWrapper);
+
+          return promise as Promise<void>| undefined;
+        } as PublicAPI.Chrome.DevTools.Panels['openResource'],
 
     get SearchAction(): Record<string, string> {
       return {
@@ -769,17 +824,28 @@ self.injectedExtensionAPI = function(
 
   (PanelWithSidebarImpl.prototype as Pick<APIImpl.PanelWithSidebar, 'createSidebarPane'>&
    {__proto__: APIImpl.ExtensionView}) = {
-    createSidebarPane: function(
-        this: APIImpl.PanelWithSidebar, title: string,
-        callback?: (pane: PublicAPI.Chrome.DevTools.ExtensionSidebarPane) => unknown): void {
-      const id = 'extension-sidebar-' + extensionServer.nextObjectId();
-      function callbackWrapper(): void {
-        callback?.(new (Constructor(ExtensionSidebarPane))(id));
-      }
-      extensionServer.sendRequest(
-          {command: PrivateAPI.Commands.CreateSidebarPane, panel: this._hostPanelName, id, title},
-          callback && callbackWrapper);
-    },
+    createSidebarPane: function(this: APIImpl.PanelWithSidebar, title: string,
+                                _callback?: (pane: PublicAPI.Chrome.DevTools.ExtensionSidebarPane) => unknown):
+                           Promise<PublicAPI.Chrome.DevTools.ExtensionSidebarPane>|
+        void {
+          const {callback: callbackArg, promise, resolve, reject} =
+              callbackOrPromise<PublicAPI.Chrome.DevTools.ExtensionSidebarPane>(arguments);
+          const id = 'extension-sidebar-' + extensionServer.nextObjectId();
+
+          const callbackWrapper = (response: unknown): void => {
+            if (checkErrorAndReject(response, reject)) {
+              return;
+            }
+            const pane = new (Constructor(ExtensionSidebarPane))(id);
+            resolve?.(pane);
+            callbackArg?.call(this, pane);
+          };
+
+          extensionServer.sendRequest(
+              {command: PrivateAPI.Commands.CreateSidebarPane, panel: this._hostPanelName, id, title}, callbackWrapper);
+
+          return promise;
+        } as PublicAPI.Chrome.DevTools.PanelWithSidebar['createSidebarPane'],
 
     __proto__: ExtensionViewImpl.prototype,
   };
@@ -1067,6 +1133,47 @@ self.injectedExtensionAPI = function(
     return typeof lastArgument === 'function' ? lastArgument as (...args: unknown[]) => unknown : undefined;
   }
 
+  /**
+   * Helper to support both callback and Promise-based APIs.
+   *
+   * @param args The arguments object of the calling function.
+   * @returns An object containing either the `callback` function, or the
+   *    `promise` and its `resolve`/`reject` functions.
+   */
+  function callbackOrPromise<ResolveT, CallbackArgsT extends unknown[] = [ResolveT]>(args: IArguments): {
+    callback?: (...args: CallbackArgsT) => void,
+    promise?: Promise<ResolveT>,
+    resolve?: (value: ResolveT) => void,
+    reject?: (error: unknown) => void,
+  } {
+    const callback = extractCallbackArgument(args);
+    if (callback) {
+      return {callback: callback as (...args: CallbackArgsT) => void};
+    }
+    const {promise, resolve, reject} = Promise.withResolvers<ResolveT>();
+    return {promise, resolve, reject};
+  }
+
+  /**
+   * Checks if the `response` from the ExtensionServer indicates an error. If an
+   * error occurred and a `Promise` `reject` function is provided, this function
+   * will reject the promise with a generic 'DevTools API encountered an error' Error.
+   *
+   * @param response The response object from the ExtensionServer.
+   * @param reject The promise reject function, if applicable.
+   * @returns `true` if an error occurred and the promise was rejected, `false`
+   *    otherwise.
+   */
+  function checkErrorAndReject(response: unknown, reject?: (error: Error) => void): boolean {
+    const res = response as {isError?: boolean, description?: string, details?: unknown[]} | undefined;
+    // Sometimes the success response from the backend is `undefined`.
+    if (res?.isError && reject) {
+      reject(new Error('DevTools API encountered an error'));
+      return true;
+    }
+    return false;
+  }
+
   const LanguageServicesAPI = declareInterfaceClass(LanguageServicesAPIImpl);
   const RecorderServicesAPI = declareInterfaceClass(RecorderServicesAPIImpl);
   const Performance = declareInterfaceClass(PerformanceImpl);
@@ -1154,11 +1261,20 @@ self.injectedExtensionAPI = function(
       extensionServer.sendRequest({command: PrivateAPI.Commands.SetSidebarHeight, id: this._id as string, height});
     },
 
-    setExpression: function(
-        this: APIImpl.ExtensionSidebarPane, expression: string, rootTitle: string,
-        evaluateOptions?: PrivateAPI.EvaluateOptions, _callback?: () => unknown): void {
-      extensionServer.sendRequest(
-          {
+    setExpression: function(this: APIImpl.ExtensionSidebarPane, expression: string, rootTitle?: string,
+                            evaluateOptions?: PrivateAPI.EvaluateOptions, _callback?: () => unknown): Promise<void>|
+        void {
+          const {callback: callbackArg, promise, resolve, reject} = callbackOrPromise<void>(arguments);
+
+          const callbackWrapper = (response: unknown): void => {
+            if (checkErrorAndReject(response, reject)) {
+              return;
+            }
+            resolve?.();
+            callbackArg?.call(this);
+          };
+
+          extensionServer.sendRequest({
             command: PrivateAPI.Commands.SetSidebarContent,
             id: this._id as string,
             expression,
@@ -1166,20 +1282,34 @@ self.injectedExtensionAPI = function(
             evaluateOnPage: true,
             evaluateOptions: (typeof evaluateOptions === 'object' ? evaluateOptions : {}),
           },
-          extractCallbackArgument(arguments));
-    },
+                                      callbackWrapper);
 
-    setObject: function(
-        this: APIImpl.ExtensionSidebarPane, jsonObject: string, rootTitle?: string, callback?: () => unknown): void {
-      extensionServer.sendRequest(
-          {
+          return promise;
+        } as PublicAPI.Chrome.DevTools.ExtensionSidebarPane['setExpression'],
+
+    setObject: function(this: APIImpl.ExtensionSidebarPane, jsonObject: string, rootTitle?: string,
+                        _callback?: () => unknown): Promise<void>|
+        void {
+          const {callback: callbackArg, promise, resolve, reject} = callbackOrPromise<void>(arguments);
+
+          const callbackWrapper = (response: unknown): void => {
+            if (checkErrorAndReject(response, reject)) {
+              return;
+            }
+            resolve?.();
+            callbackArg?.call(this);
+          };
+
+          extensionServer.sendRequest({
             command: PrivateAPI.Commands.SetSidebarContent,
             id: this._id as string,
             expression: jsonObject,
             rootTitle,
           },
-          callback);
-    },
+                                      callbackWrapper);
+
+          return promise;
+        } as PublicAPI.Chrome.DevTools.ExtensionSidebarPane['setObject'],
 
     setPage: function(this: APIImpl.ExtensionSidebarPane, page: string): void {
       extensionServer.sendRequest({command: PrivateAPI.Commands.SetSidebarPage, id: this._id as string, page});
@@ -1247,43 +1377,68 @@ self.injectedExtensionAPI = function(
       extensionServer.sendRequest({command: PrivateAPI.Commands.Reload, options});
     },
 
-    eval: function(
-              expression: string,
-              evaluateOptions: {scriptExecutionContext?: string, frameURL?: string, useContentScriptContext?: boolean}):
-              Object |
-        null {
-          const callback = extractCallbackArgument(arguments);
+    eval: function<E = unknown>(this: PublicAPI.Chrome.DevTools.InspectedWindow, expression: string,
+                                optionsOrCallback?: unknown,
+                                _callback?: (result: unknown, exceptionInfo: object) => void): Promise<E>|
+        void {
+          const options = (typeof optionsOrCallback === 'object' && optionsOrCallback !== null) ?
+              optionsOrCallback as PrivateAPI.EvaluateOptions :
+              undefined;
+
+          const {callback: callbackArg, promise, resolve, reject} = callbackOrPromise<E, [unknown, object?]>(arguments);
+
           function callbackWrapper(result: unknown): void {
-            const {isError, isException, value} = result as {
-              value: unknown,
+            if (checkErrorAndReject(result, reject)) {
+              return;
+            }
+
+            const res = result as {
+              value?: unknown,
               isError?: boolean,
               isException?: boolean,
             };
-            if (isError || isException) {
-              callback?.(undefined, result);
+
+            if (res.isException) {
+              reject?.(res);
             } else {
-              callback?.(value);
+              resolve?.(res.value as E);
+            }
+
+            if (res.isError || res.isException) {
+              callbackArg?.(undefined, res);
+            } else {
+              callbackArg?.(res.value);
             }
           }
           extensionServer.sendRequest(
-              {
-                command: PrivateAPI.Commands.EvaluateOnInspectedPage,
-                expression,
-                evaluateOptions: (typeof evaluateOptions === 'object' ? evaluateOptions : undefined),
-              },
-              callback && callbackWrapper);
-          return null;
-        },
+              {command: PrivateAPI.Commands.EvaluateOnInspectedPage, expression, evaluateOptions: options},
+              callbackWrapper);
 
-    getResources: function(callback?: (resources: PublicAPI.Chrome.DevTools.Resource[]) => unknown): void {
-      function wrapResource(resourceData: APIImpl.ResourceData): APIImpl.Resource {
-        return new (Constructor(Resource))(resourceData);
-      }
-      function callbackWrapper(resources: unknown): void {
-        callback?.((resources as APIImpl.ResourceData[]).map(wrapResource));
-      }
-      extensionServer.sendRequest({command: PrivateAPI.Commands.GetPageResources}, callback && callbackWrapper);
-    },
+          return promise;
+        } as PublicAPI.Chrome.DevTools.InspectedWindow['eval'],
+
+    getResources: function(this: PublicAPI.Chrome.DevTools.InspectedWindow,
+                           _callback?: (resources: PublicAPI.Chrome.DevTools.Resource[]) => void):
+                      Promise<PublicAPI.Chrome.DevTools.Resource[]>|
+        void {
+          const {callback: callbackArg, promise, resolve, reject} =
+              callbackOrPromise<PublicAPI.Chrome.DevTools.Resource[]>(arguments);
+
+          function callbackWrapper(response: unknown): void {
+            if (checkErrorAndReject(response, reject)) {
+              return;
+            }
+
+            const wrappedResources =
+                ((response || []) as APIImpl.ResourceData[]).map(r => new (Constructor(Resource))(r));
+            resolve?.(wrappedResources);
+            callbackArg?.(wrappedResources);
+          }
+
+          extensionServer.sendRequest({command: PrivateAPI.Commands.GetPageResources}, callbackWrapper);
+
+          return promise;
+        } as PublicAPI.Chrome.DevTools.InspectedWindow['getResources'],
   };
 
   function ResourceImpl(this: APIImpl.Resource, resourceData: APIImpl.ResourceData): void {
@@ -1292,9 +1447,9 @@ self.injectedExtensionAPI = function(
     this._buildId = resourceData.buildId;
   }
 
-  (ResourceImpl.prototype as Pick<
-       APIImpl.Resource,
-       'url'|'type'|'buildId'|'getContent'|'setContent'|'setFunctionRangesForScript'|'attachSourceMapURL'>) = {
+  (ResourceImpl.prototype as
+   Pick<APIImpl.Resource,
+        'url'|'type'|'buildId'|'getContent'|'setContent'|'setFunctionRangesForScript'|'attachSourceMapURL'>) = {
     get url(): string {
       return (this as APIImpl.Resource)._url;
     },
@@ -1307,25 +1462,51 @@ self.injectedExtensionAPI = function(
       return (this as APIImpl.Resource)._buildId;
     },
 
-    getContent: function(this: APIImpl.Resource, callback?: (content: string, encoding: string) => unknown): void {
-      function callbackWrapper(response: unknown): void {
-        const {content, encoding} = response as {content: string, encoding: string};
-        callback?.(content, encoding);
-      }
+    getContent: function(this: APIImpl.Resource, _callback?: (content: string, encoding: string) => void): Promise<{
+                  content: string, encoding: string,
+                }>|
+        void {
+          const {callback: callbackArg, promise, resolve, reject} =
+              callbackOrPromise<{content: string, encoding: string}, [string, string]>(arguments);
 
-      extensionServer.sendRequest(
-          {command: PrivateAPI.Commands.GetResourceContent, url: this._url}, callback && callbackWrapper);
-    },
+          function callbackWrapper(response: unknown): void {
+            if (checkErrorAndReject(response, reject)) {
+              return;
+            }
 
-    setContent: function(
-        this: APIImpl.Resource, content: string, commit: boolean, callback: (error?: Object) => unknown): void {
-      extensionServer.sendRequest(
-          {command: PrivateAPI.Commands.SetResourceContent, url: this._url, content, commit},
-          callback as (response: unknown) => unknown);
-    },
+            const {content, encoding} = response as {content: string, encoding: string};
+            resolve?.({content, encoding});
+            callbackArg?.(content, encoding);
+          }
 
-    setFunctionRangesForScript: function(
-        this: APIImpl.Resource, ranges: PublicAPI.Chrome.DevTools.NamedFunctionRange[]): Promise<void> {
+          extensionServer.sendRequest({command: PrivateAPI.Commands.GetResourceContent, url: this._url},
+                                      callbackWrapper);
+
+          return promise;
+        } as PublicAPI.Chrome.DevTools.Resource['getContent'],
+
+    setContent: function(this: APIImpl.Resource, content: string, commit: boolean,
+                         _callback?: (status?: object) => void): Promise<void>|
+        void {
+          const {callback: callbackArg, promise, resolve, reject} = callbackOrPromise<void, [object]>(arguments);
+
+          function callbackWrapper(response: unknown): void {
+            if (checkErrorAndReject(response, reject)) {
+              return;
+            }
+
+            resolve?.();
+            callbackArg?.(response as object);
+          }
+
+          extensionServer.sendRequest(
+              {command: PrivateAPI.Commands.SetResourceContent, url: this._url, content, commit}, callbackWrapper);
+
+          return promise;
+        } as PublicAPI.Chrome.DevTools.Resource['setContent'],
+
+    setFunctionRangesForScript: function(this: APIImpl.Resource,
+                                         ranges: PublicAPI.Chrome.DevTools.NamedFunctionRange[]): Promise<void> {
       return new Promise(
           (resolve, reject) => extensionServer.sendRequest(
               {
@@ -1373,7 +1554,7 @@ self.injectedExtensionAPI = function(
   }
 
   let keyboardEventRequestQueue: KeyboardEventInit&Array<{eventType: string}> = [];
-  let forwardTimer: number|null = null;
+  let forwardTimer: ReturnType<typeof setTimeout>|undefined;
   function forwardKeyboardEvent(event: KeyboardEvent): void {
     // Check if the event should be forwarded.
     // This is a workaround for crbug.com/923338.
@@ -1420,12 +1601,12 @@ self.injectedExtensionAPI = function(
     };
     keyboardEventRequestQueue.push(requestPayload);
     if (!forwardTimer) {
-      forwardTimer = window.setTimeout(forwardEventQueue, 0);
+      forwardTimer = globalThis.setTimeout(forwardEventQueue, 0);
     }
   }
 
   function forwardEventQueue(): void {
-    forwardTimer = null;
+    forwardTimer = undefined;
     extensionServer.sendRequest(
         {command: PrivateAPI.Commands.ForwardKeyboardEvent, entries: keyboardEventRequestQueue});
     keyboardEventRequestQueue = [];

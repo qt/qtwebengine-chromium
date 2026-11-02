@@ -37,7 +37,7 @@ group("tests") {
     ":mojo_perftests",
     ":mojo_unittests",
     "//mojo/public/tools:mojo_python_unittests",
-    "//third_party/ipcz/src:ipcz_tests",
+    "//third_party/ipcz/src:tests_sources",
   ]
 
   if (!is_ios) {
@@ -59,10 +59,6 @@ test("mojo_unittests") {
     "//mojo/public/js/ts/bindings/tests",
     "//mojo/public/rust:tests",
   ]
-
-  if (is_linux && mojo_support_legacy_core) {
-    deps += [ "//mojo/proxy:tests" ]
-  }
 }
 
 test("mojo_perftests") {

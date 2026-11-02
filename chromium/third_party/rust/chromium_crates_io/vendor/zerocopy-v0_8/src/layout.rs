@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-2-Clause OR Apache-2.0 OR MIT
+//
 // Copyright 2024 The Fuchsia Authors
 //
 // Licensed under the 2-Clause BSD License <LICENSE-BSD or
@@ -69,6 +71,8 @@ impl SizeInfo {
     /// Attempts to create a `SizeInfo` from `Self` in which `elem_size` is a
     /// `NonZeroUsize`. If `elem_size` is 0, returns `None`.
     #[allow(unused)]
+    #[cfg_attr(not(zerocopy_inline_always), inline)]
+    #[cfg_attr(zerocopy_inline_always, inline(always))]
     const fn try_to_nonzero_elem_size(&self) -> Option<SizeInfo<NonZeroUsize>> {
         Some(match *self {
             SizeInfo::Sized { size } => SizeInfo::Sized { size },
@@ -135,6 +139,18 @@ impl DstLayout {
         Some(max_align) => max_align,
         None => const_unreachable!(),
     };
+
+    /// The maximum size of an allocation \[1\].
+    ///
+    /// \[1\] Per <https://doc.rust-lang.org/1.91.1/std/ptr/index.html#allocation>:
+    ///
+    ///   For any allocation with base `address`, `size`, and a set of `addresses`,
+    ///   the following are guaranteed: [..]
+    ///
+    ///   - `size <= isize::MAX`
+    ///
+    #[allow(clippy::as_conversions)]
+    pub(crate) const MAX_SIZE: usize = isize::MAX as usize;
 
     /// Assumes that this layout lacks static shallow padding.
     ///
@@ -1975,7 +1991,7 @@ mod proofs {
                 true => {
                     let size: usize = kani::any();
 
-                    kani::assume(size <= isize::MAX as _);
+                    kani::assume(size <= DstLayout::MAX_SIZE);
 
                     SizeInfo::Sized { size }
                 }
@@ -1989,8 +2005,8 @@ mod proofs {
             let elem_size: usize = kani::any();
             let offset: usize = kani::any();
 
-            kani::assume(elem_size < isize::MAX as _);
-            kani::assume(offset < isize::MAX as _);
+            kani::assume(elem_size < DstLayout::MAX_SIZE);
+            kani::assume(offset < DstLayout::MAX_SIZE);
 
             TrailingSliceLayout { elem_size, offset }
         }
@@ -2019,7 +2035,7 @@ mod proofs {
             loop {}
         };
 
-        if unpadded_size >= isize::MAX as usize {
+        if unpadded_size >= DstLayout::MAX_SIZE {
             // The `unpadded_size` exceeds `isize::MAX`; `meta` is invalid.
             kani::assume(false);
             loop {}

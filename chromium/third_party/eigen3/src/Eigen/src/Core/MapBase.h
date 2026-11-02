@@ -29,7 +29,7 @@ namespace Eigen {
  * Map and Block objects with direct access.
  * Typical users do not have to directly deal with this class.
  *
- * This class can be extended by through the macro plugin \c EIGEN_MAPBASE_PLUGIN.
+ * This class can be extended through the macro plugin \c EIGEN_MAPBASE_PLUGIN.
  * See \link TopicCustomizing_Plugins customizing Eigen \endlink for details.
  *
  * The \c Derived class has to provide the following two methods describing the memory layout:

@@ -158,7 +158,7 @@ class NavigationURLLoaderImplTest : public testing::Test {
             std::string() /* searchable_form_encoding */,
             GURL() /* client_side_redirect_url */,
             std::nullopt /* devtools_initiator_info */,
-            nullptr /* trust_token_params */, std::nullopt /* impression */,
+            nullptr /* trust_token_params */,
             base::TimeTicks() /* renderer_before_unload_start */,
             base::TimeTicks() /* renderer_before_unload_end */,
             base::TimeTicks() /* before_unload_dialog_opened */,
@@ -201,10 +201,8 @@ class NavigationURLLoaderImplTest : public testing::Test {
             base::UnguessableToken::Create() /* devtools_frame_token */,
             nullptr /* client_security_state */,
             std::nullopt /* devtools_accepted_stream_types */,
-            false /* is_pdf */,
-            ChildProcessHost::kInvalidUniqueID /* initiator_process_id */,
+            false /* is_pdf */, ChildProcessId() /* initiator_process_id */,
             std::nullopt /* initiator_document_token */,
-            nullptr /* serving_page_metrics_container */,
             false /* allow_cookies_from_browser */, 0 /* navigation_id */,
             false /* shared_storage_writable */,
             is_ad_tagged /* is_ad_tagged */,
@@ -627,7 +625,6 @@ class TestAsyncInterceptor final : public NavigationLoaderInterceptor {
       const network::ResourceRequest& request,
       network::mojom::URLResponseHeadPtr* response_head,
       mojo::ScopedDataPipeConsumerHandle* response_body,
-      mojo::PendingRemote<network::mojom::URLLoader>* loader,
       mojo::PendingReceiver<network::mojom::URLLoaderClient>* client_receiver,
       blink::ThrottlingURLLoader* url_loader,
       bool* skip_other_interceptors) override {
@@ -667,7 +664,6 @@ class TestResponseInterceptor final : public NavigationLoaderInterceptor {
       const network::ResourceRequest& request,
       network::mojom::URLResponseHeadPtr* response_head,
       mojo::ScopedDataPipeConsumerHandle* response_body,
-      mojo::PendingRemote<network::mojom::URLLoader>* loader,
       mojo::PendingReceiver<network::mojom::URLLoaderClient>* client_receiver,
       blink::ThrottlingURLLoader* url_loader,
       bool* skip_other_interceptors) override {
@@ -700,6 +696,85 @@ class TestResponseInterceptor final : public NavigationLoaderInterceptor {
   bool should_redirect_ = true;
 };
 
+std::pair<net::RedirectInfo, network::mojom::URLResponseHeadPtr>
+Create302Redirect(const GURL& from_url,
+                  const GURL& to_url,
+                  const std::string& method = "GET") {
+  auto head = network::mojom::URLResponseHead::New();
+  head->headers = net::HttpResponseHeaders::TryToCreate(base::StringPrintf(
+      "HTTP/1.1 302 Found\r\nLocation: %s\r\n\r\n", to_url.spec().c_str()));
+  net::RedirectInfo redirect_info = net::RedirectInfo::ComputeRedirectInfo(
+      method, from_url, net::SiteForCookies(),
+      net::RedirectInfo::FirstPartyURLPolicy::NEVER_CHANGE_URL,
+      net::ReferrerPolicy::CLEAR_ON_TRANSITION_FROM_SECURE_TO_INSECURE,
+      std::string(), /*original_initiator=*/std::nullopt, net::HTTP_FOUND,
+      to_url,
+      /*referrer_policy_header=*/std::nullopt,
+      /*insecure_scheme_was_upgraded=*/false);
+  return {redirect_info, std::move(head)};
+}
+
+class TestDoubleRedirectInterceptor final : public NavigationLoaderInterceptor {
+ public:
+  TestDoubleRedirectInterceptor(const GURL& r1_url, const GURL& r2_url)
+      : r1_url_(r1_url), r2_url_(r2_url) {}
+  ~TestDoubleRedirectInterceptor() override = default;
+
+  int request_count() const { return request_count_; }
+  const std::vector<GURL>& requested_urls() const { return requested_urls_; }
+
+  void SendSecondRedirect() {
+    auto [redirect_info, head] = Create302Redirect(r1_url_, r2_url_);
+    client_->OnReceiveRedirect(redirect_info, std::move(head));
+  }
+
+  void SendResponse() {
+    auto head = network::mojom::URLResponseHead::New();
+    mojo::ScopedDataPipeConsumerHandle consumer_handle;
+    mojo::ScopedDataPipeProducerHandle producer_handle;
+    CHECK_EQ(MOJO_RESULT_OK,
+             mojo::CreateDataPipe(nullptr, producer_handle, consumer_handle));
+    client_->OnReceiveResponse(std::move(head), std::move(consumer_handle),
+                               /*cached_metadata=*/std::nullopt);
+  }
+
+ private:
+  void MaybeCreateLoader(
+      const network::ResourceRequest& tentative_resource_request,
+      BrowserContext* browser_context,
+      LoaderCallback callback,
+      FallbackCallback fallback_callback) override {
+    ++request_count_;
+    requested_urls_.push_back(tentative_resource_request.url);
+    auto factory = base::MakeRefCounted<network::SingleRequestURLLoaderFactory>(
+        base::BindOnce(&TestDoubleRedirectInterceptor::HandleRequest,
+                       base::Unretained(this)));
+    std::move(callback).Run(NavigationLoaderInterceptor::Result(
+        std::move(factory), SubresourceLoaderParams()));
+  }
+
+  void HandleRequest(
+      const network::ResourceRequest& request,
+      mojo::PendingReceiver<network::mojom::URLLoader> loader,
+      mojo::PendingRemote<network::mojom::URLLoaderClient> client) {
+    loader_receiver_ = std::move(loader);
+    client_.reset();
+    client_.Bind(std::move(client));
+
+    if (request_count_ == 1) {
+      auto [redirect_info, head] =
+          Create302Redirect(request.url, r1_url_, request.method);
+      client_->OnReceiveRedirect(redirect_info, std::move(head));
+    }
+  }
+
+  const GURL r1_url_;
+  const GURL r2_url_;
+  int request_count_ = 0;
+  std::vector<GURL> requested_urls_;
+  mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver_;
+  mojo::Remote<network::mojom::URLLoaderClient> client_;
+};
 // This sets the timeout timer but doesn't expect the timer is fired
 // automatically. If needed, the timer should be fired explicitly e.g. via
 // `TriggerTimeoutForTesting()`.
@@ -750,13 +825,7 @@ TEST_F(NavigationURLLoaderImplTest, TimeoutDuringURLLoader) {
 
 // Timeout + MaybeCreateLoaderForResponse() + redirect case (failure) while
 // waiting for the response from URLLoader.
-// TODO(crbug.com/502512105): Re-enable this test.
-#if BUILDFLAG(IS_ANDROID)
-#define MAYBE_RedirectDuringURLLoader DISABLED_RedirectDuringURLLoader
-#else
-#define MAYBE_RedirectDuringURLLoader RedirectDuringURLLoader
-#endif
-TEST_F(NavigationURLLoaderImplTest, MAYBE_RedirectDuringURLLoader) {
+TEST_F(NavigationURLLoaderImplTest, RedirectDuringURLLoader) {
   ASSERT_TRUE(http_test_server_.Start());
   const GURL final_url = http_test_server_.GetURL("/echo");
   const GURL interceptor_url = http_test_server_.GetURL("/foo");
@@ -1436,6 +1505,22 @@ TEST_F(NavigationURLLoaderImplTest, MAYBE_NavigationTimeoutRedirectTest) {
   EXPECT_EQ(net::ERR_TIMED_OUT, delegate.net_error());
 }
 
+TEST_F(NavigationURLLoaderImplTest, NavigationTimeoutAfterResponseStartedTest) {
+  ASSERT_TRUE(http_test_server_.Start());
+  const GURL url = http_test_server_.GetURL("/echo");
+  TestNavigationURLLoaderDelegate delegate;
+  auto loader = CreateTestLoader(url, std::string(), "GET", &delegate);
+  loader->Start();
+  loader->SetNavigationTimeout(base::Seconds(30));
+  delegate.WaitForResponseStarted();
+
+  // Once response has started, OnReceiveResponse() cancels the navigation
+  // timeout timer. Advancing time past the timeout should not trigger the
+  // timer or cause any request failure.
+  task_environment_->FastForwardBy(base::Seconds(35));
+  EXPECT_EQ(net::OK, delegate.net_error());
+}
+
 // Verify that UKMs are recorded when OnAcceptCHFrameReceived is called.
 TEST_F(NavigationURLLoaderImplTest, OnAcceptCHFrameReceivedUKM) {
   ASSERT_TRUE(http_test_server_.Start());
@@ -1581,6 +1666,7 @@ TEST_F(NavigationURLLoaderImplTest, StorageAccessApiStatus_AccessViaAPI) {
 
   TestRenderFrameHost* rfh =
       static_cast<TestRenderFrameHost*>(web_contents_->GetPrimaryMainFrame());
+  rfh->SetLastCommittedOriginForTesting(url::Origin::Create(url));
   rfh->document_associated_data().PutCookieSettingOverride(
       net::CookieSettingOverride::kStorageAccessGrantEligible);
 
@@ -1604,6 +1690,7 @@ TEST_F(NavigationURLLoaderImplTest,
 
   TestRenderFrameHost* rfh =
       static_cast<TestRenderFrameHost*>(web_contents_->GetPrimaryMainFrame());
+  rfh->SetLastCommittedOriginForTesting(url::Origin::Create(url));
   rfh->document_associated_data().PutCookieSettingOverride(
       net::CookieSettingOverride::kStorageAccessGrantEligible);
 
@@ -1626,6 +1713,8 @@ TEST_F(NavigationURLLoaderImplTest, StorageAccessApiStatus_None_CrossOrigin) {
 
   TestRenderFrameHost* rfh =
       static_cast<TestRenderFrameHost*>(web_contents_->GetPrimaryMainFrame());
+  rfh->SetLastCommittedOriginForTesting(
+      url::Origin::Create(GURL("http://a.com")));
   rfh->document_associated_data().PutCookieSettingOverride(
       net::CookieSettingOverride::kStorageAccessGrantEligible);
 
@@ -1643,4 +1732,128 @@ TEST_F(NavigationURLLoaderImplTest, StorageAccessApiStatus_None_CrossOrigin) {
             net::StorageAccessApiStatus::kNone);
 }
 
+// Regression test for b/553115724: Receiving a second OnReceiveRedirect
+// message from a compromised network service while ParseHeaders() for the first
+// redirect is still in flight.
+TEST_F(NavigationURLLoaderImplTest, DoubleRedirectWhileParseHeadersPending) {
+  const GURL start_url("http://example.com/start");
+  const GURL r1_url("http://example.com/r1");
+  const GURL r2_url("chrome-extension://abcd/manifest.json");
+
+  TestNavigationURLLoaderDelegate delegate;
+  auto interceptor =
+      std::make_unique<TestDoubleRedirectInterceptor>(r1_url, r2_url);
+  auto* interceptor_ptr = interceptor.get();
+  std::vector<std::unique_ptr<NavigationLoaderInterceptor>> interceptors;
+  interceptors.push_back(std::move(interceptor));
+
+  auto loader =
+      CreateTestLoader(start_url, std::string(), "GET", &delegate,
+                       blink::NavigationDownloadPolicy(),
+                       /*is_main_frame=*/true,
+                       /*upgrade_if_insecure=*/false,
+                       /*is_ad_tagged=*/false, std::move(interceptors));
+  loader->Start();
+
+  // Force the async ParseHeaders() path for redirects.
+  delegate.set_clear_parsed_headers_on_redirect(true);
+
+  // Wait for the first redirect (R1) to be received by NavigationURLLoaderImpl.
+  delegate.WaitForOnReceiveRedirect();
+  EXPECT_EQ(delegate.on_redirect_handled_counter(), 0);
+
+  // While ParseHeaders(R1) is still in flight, send a second redirect (R2).
+  interceptor_ptr->SendSecondRedirect();
+
+  // The second redirect arrives while the first redirect's ParseHeaders is
+  // in flight. This must immediately fail with ERR_UNEXPECTED instead of
+  // corrupting the loader's redirect state.
+  delegate.WaitForRequestFailed();
+  EXPECT_EQ(delegate.net_error(), net::ERR_UNEXPECTED);
+  EXPECT_EQ(delegate.on_redirect_handled_counter(), 0);
+
+  // No further request (such as R2) should be issued.
+  EXPECT_EQ(interceptor_ptr->request_count(), 1);
+  EXPECT_EQ(interceptor_ptr->requested_urls().size(), 1u);
+}
+
+// Test receiving a second redirect after ParseHeaders() has completed and
+// OnRequestRedirected() has been dispatched to the delegate, but before
+// FollowRedirect() is invoked (e.g. while NavigationThrottles are executing).
+TEST_F(NavigationURLLoaderImplTest, DoubleRedirectWhileThrottleChecksPending) {
+  const GURL start_url("http://example.com/start");
+  const GURL r1_url("http://example.com/r1");
+  const GURL r2_url("chrome-extension://abcd/manifest.json");
+
+  TestNavigationURLLoaderDelegate delegate;
+  auto interceptor =
+      std::make_unique<TestDoubleRedirectInterceptor>(r1_url, r2_url);
+  auto* interceptor_ptr = interceptor.get();
+  std::vector<std::unique_ptr<NavigationLoaderInterceptor>> interceptors;
+  interceptors.push_back(std::move(interceptor));
+
+  auto loader =
+      CreateTestLoader(start_url, std::string(), "GET", &delegate,
+                       blink::NavigationDownloadPolicy(),
+                       /*is_main_frame=*/true,
+                       /*upgrade_if_insecure=*/false,
+                       /*is_ad_tagged=*/false, std::move(interceptors));
+  loader->Start();
+
+  // Wait for R1's ParseHeaders to finish and OnRequestRedirected to be called.
+  delegate.WaitForRequestRedirected();
+  EXPECT_EQ(delegate.on_redirect_handled_counter(), 1);
+  EXPECT_EQ(delegate.redirect_info().new_url, r1_url);
+
+  // Send R2 while waiting for FollowRedirect(). HasExclusiveTask() is still
+  // true.
+  interceptor_ptr->SendSecondRedirect();
+
+  delegate.WaitForRequestFailed();
+  EXPECT_EQ(delegate.net_error(), net::ERR_UNEXPECTED);
+
+  // If a racing throttle callback invokes FollowRedirect() afterwards,
+  // ShouldCancelExclusiveTask must cleanly drop the call without restarting.
+  loader->FollowRedirect({});
+
+  EXPECT_EQ(interceptor_ptr->request_count(), 1);
+  EXPECT_EQ(interceptor_ptr->requested_urls().size(), 1u);
+}
+
+// Test receiving OnReceiveResponse while ParseHeaders() for a redirect is in
+// flight.
+TEST_F(NavigationURLLoaderImplTest, ResponseWhileRedirectParseHeadersPending) {
+  const GURL start_url("http://example.com/start");
+  const GURL r1_url("http://example.com/r1");
+
+  TestNavigationURLLoaderDelegate delegate;
+  auto interceptor =
+      std::make_unique<TestDoubleRedirectInterceptor>(r1_url, r1_url);
+  auto* interceptor_ptr = interceptor.get();
+  std::vector<std::unique_ptr<NavigationLoaderInterceptor>> interceptors;
+  interceptors.push_back(std::move(interceptor));
+
+  auto loader =
+      CreateTestLoader(start_url, std::string(), "GET", &delegate,
+                       blink::NavigationDownloadPolicy(),
+                       /*is_main_frame=*/true,
+                       /*upgrade_if_insecure=*/false,
+                       /*is_ad_tagged=*/false, std::move(interceptors));
+  loader->Start();
+
+  // Force the async ParseHeaders() path for redirects.
+  delegate.set_clear_parsed_headers_on_redirect(true);
+
+  // Wait for R1 to be received by NavigationURLLoaderImpl.
+  delegate.WaitForOnReceiveRedirect();
+  EXPECT_EQ(delegate.on_redirect_handled_counter(), 0);
+
+  // While ParseHeaders(R1) is still in flight, send OnReceiveResponse.
+  interceptor_ptr->SendResponse();
+
+  delegate.WaitForRequestFailed();
+  EXPECT_EQ(delegate.net_error(), net::ERR_UNEXPECTED);
+  EXPECT_EQ(delegate.on_redirect_handled_counter(), 0);
+  EXPECT_EQ(delegate.on_request_handled_counter(), 1);
+}
 }  // namespace content

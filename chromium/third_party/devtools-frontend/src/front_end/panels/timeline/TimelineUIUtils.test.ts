@@ -3,14 +3,17 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Platform from '../../core/platform/platform.js';
+import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as Trace from '../../models/trace/trace.js';
 import * as SourceMapsResolver from '../../models/trace_source_maps_resolver/trace_source_maps_resolver.js';
 import * as Workspace from '../../models/workspace/workspace.js';
+import * as Tracing from '../../services/tracing/tracing.js';
 import {
   dispatchClickEvent,
   doubleRaf,
@@ -19,15 +22,10 @@ import {
 } from '../../testing/DOMHelpers.js';
 import {
   createTarget,
-  deinitializeGlobalVars,
+  describeWithEnvironment,
   expectConsoleLogs,
-  initializeGlobalVars
 } from '../../testing/EnvironmentHelpers.js';
-import {
-  clearMockConnectionResponseHandler,
-  describeWithMockConnection,
-  setMockConnectionResponseHandler,
-} from '../../testing/MockConnection.js';
+import {MockCDPConnection} from '../../testing/MockCDPConnection.js';
 import {
   loadBasicSourceMapExample,
   setupPageResourceLoaderForSourceMap,
@@ -51,14 +49,56 @@ import * as Timeline from './timeline.js';
 
 const {urlString} = Platform.DevToolsPath;
 
-describeWithMockConnection('TimelineUIUtils', function() {
-  before(async () => {
-    await initializeGlobalVars();
+function getInnerTextAcrossShadowRoots(root: Node|null): string {
+  // Don't recurse into elements that are not displayed
+  if (!root || (root instanceof HTMLElement && !root.checkVisibility())) {
+    return '';
+  }
+  if (root.nodeType === Node.TEXT_NODE) {
+    return root.nodeValue || '';
+  }
+  if (root instanceof HTMLElement && root.shadowRoot) {
+    return getInnerTextAcrossShadowRoots(root.shadowRoot);
+  }
+  return Array.from(root.childNodes).map(getInnerTextAcrossShadowRoots).join('');
+}
+
+function getRowDataForDetailsElement(details: DocumentFragment) {
+  const container = document.createElement('div');
+  renderElementIntoDOM(container);
+  container.appendChild(details);
+  return Array.from(container.querySelectorAll<HTMLDivElement>('.timeline-details-view-row')).map(row => {
+    const title = row.querySelector<HTMLDivElement>('.timeline-details-view-row-title')?.innerText;
+    const valueEl = row.querySelector<HTMLDivElement>('.timeline-details-view-row-value') ??
+        row.querySelector<HTMLElement>('div,span');
+    let value = valueEl?.innerText || '';
+    if (!value && valueEl) {
+      // Stack traces and renderEventJson have the contents within a shadowRoot.
+      value = getInnerTextAcrossShadowRoots(valueEl).trim();
+    }
+    return {title, value};
   });
+}
 
-  after(async () => await deinitializeGlobalVars());
+function getStackTraceForDetailsElement(details: DocumentFragment): string[]|null {
+  const stackTraceContainer =
+      details
+          .querySelector<HTMLDivElement>(
+              '.timeline-details-view-row.timeline-details-stack-values .stack-preview-container')
+          ?.shadowRoot;
+  if (!stackTraceContainer) {
+    return null;
+  }
+  return Array.from(stackTraceContainer.querySelectorAll<HTMLTableRowElement>('tbody tr')).map(row => {
+    const functionName = row.querySelector<HTMLElement>('.function-name')?.innerText;
+    const url = row.querySelector<HTMLElement>('.link')?.innerText;
+    return `${functionName || ''} @ ${url || ''}`;
+  });
+}
 
+describeWithEnvironment('TimelineUIUtils', function() {
   let target: SDK.Target.Target;
+  let connection: MockCDPConnection;
   // Trace events contain script ids as strings. However, the linkifier
   // utilities assume it is a number because that's how it's defined at
   // the protocol level. For practicality, we declare these two
@@ -67,11 +107,12 @@ describeWithMockConnection('TimelineUIUtils', function() {
   const SCRIPT_ID_STRING = String(SCRIPT_ID_NUMBER) as Protocol.Runtime.ScriptId;
 
   beforeEach(() => {
-    setMockConnectionResponseHandler(
-        'Debugger.enable', () => ({debuggerId: 'DEBUGGER_ID' as Protocol.Runtime.UniqueDebuggerId}));
-    setMockConnectionResponseHandler(
-        'Debugger.setInstrumentationBreakpoint', () => ({} as Protocol.Debugger.SetInstrumentationBreakpointResponse));
-    target = createTarget();
+    connection = new MockCDPConnection();
+    connection.setSuccessHandler('Debugger.enable',
+                                 () => ({debuggerId: 'DEBUGGER_ID' as Protocol.Runtime.UniqueDebuggerId}));
+    connection.setSuccessHandler('Debugger.setInstrumentationBreakpoint',
+                                 () => ({} as Protocol.Debugger.SetInstrumentationBreakpointResponse));
+    target = createTarget({connection});
 
     const workspace = Workspace.Workspace.WorkspaceImpl.instance();
     const targetManager = SDK.TargetManager.TargetManager.instance();
@@ -84,10 +125,6 @@ describeWithMockConnection('TimelineUIUtils', function() {
       ignoreListManager,
       workspace,
     });
-  });
-
-  afterEach(() => {
-    clearMockConnectionResponseHandler('DOM.pushNodesByBackendIdsToFrontend');
   });
 
   describe('script location as an URL', function() {
@@ -159,6 +196,40 @@ describeWithMockConnection('TimelineUIUtils', function() {
        });
   });
 
+  describe('stripScriptIds', () => {
+    it('strips scriptIds from stack trace call frames and its parents recursively', () => {
+      const stackTrace: Protocol.Runtime.StackTrace = {
+        callFrames: [
+          {
+            functionName: 'foo',
+            scriptId: '1' as Protocol.Runtime.ScriptId,
+            url: 'http://example.com/foo.js',
+            lineNumber: 10,
+            columnNumber: 20,
+          },
+        ],
+        parent: {
+          callFrames: [
+            {
+              functionName: 'bar',
+              scriptId: '2' as Protocol.Runtime.ScriptId,
+              url: 'http://example.com/bar.js',
+              lineNumber: 30,
+              columnNumber: 40,
+            },
+          ],
+        },
+      };
+
+      const stripped = Timeline.TimelineUIUtils.stripScriptIds(stackTrace);
+      assert.strictEqual(stripped.callFrames[0].scriptId, '');
+      assert.strictEqual(stripped.parent?.callFrames[0].scriptId, '');
+      // Ensure original is not mutated
+      assert.strictEqual(stackTrace.callFrames[0].scriptId, '1');
+      assert.strictEqual(stackTrace.parent?.callFrames[0].scriptId, '2');
+    });
+  });
+
   describe('mapping to authored script when recording is fresh', function() {
     beforeEach(async () => {
       // Register mock script and source map.
@@ -183,9 +254,9 @@ describeWithMockConnection('TimelineUIUtils', function() {
         return;
       }
       const sourceMapManager = debuggerModel.sourceMapManager();
-      const script = debuggerModel.parsedScriptSource(
-          SCRIPT_ID_STRING, scriptUrl, 0, 0, 0, 0, 0, '', undefined, false, sourceMapUrl, true, false, length, false,
-          null, null, null, null, null, null);
+      const script = debuggerModel.parsedScriptSource(SCRIPT_ID_STRING, scriptUrl, 0, 0, 0, 0, 0, '', undefined, false,
+                                                      sourceMapUrl, true, false, length, false, null, null, null, null,
+                                                      null, null);
       await sourceMapManager.sourceMapForClientPromise(script);
     });
     it('maps to the authored script when a call frame is provided', async function() {
@@ -236,104 +307,6 @@ describeWithMockConnection('TimelineUIUtils', function() {
        });
   });
 
-  describe('mapping to authored function name when recording is fresh', function() {
-    expectConsoleLogs({
-      error: ['Error: No LanguageSelector instance exists yet.'],
-    });
-    it('maps to the authored name and script of a profile call', async function() {
-      const {script} = await loadBasicSourceMapExample(target);
-
-      // Ideally we would get a column number we can use from the source
-      // map however the current status of the source map helpers makes
-      // it difficult to do so.
-      const columnNumber = 51;
-      const profileCall =
-          makeProfileCall('function', 10, 100, Trace.Types.Events.ProcessID(1), Trace.Types.Events.ThreadID(1));
-
-      profileCall.callFrame = {
-        columnNumber,
-        functionName: 'minified',
-        lineNumber: 0,
-        scriptId: script.scriptId,
-        url: 'file://gen.js',
-      };
-      const workersData: Trace.Handlers.ModelHandlers.Workers.WorkersData = {
-        workerSessionIdEvents: [],
-        workerIdByThread: new Map(),
-        workerURLById: new Map(),
-      };
-      // This only includes data used in the SourceMapsResolver and
-      // TimelineUIUtils
-      const parsedTrace = getBaseTraceHandlerData({
-        Samples: makeMockSamplesHandlerData([profileCall]),
-        Workers: workersData,
-        Renderer: makeMockRendererHandlerData([profileCall]),
-      });
-
-      const resolver = new SourceMapsResolver.SourceMapsResolver(parsedTrace);
-      await resolver.install();
-
-      const details = await Timeline.TimelineUIUtils.TimelineUIUtils.buildTraceEventDetails(
-          parsedTrace, profileCall, new Components.Linkifier.Linkifier(), false, null);
-      const stackTraceData = getStackTraceForDetailsElement(details);
-      assert.exists(stackTraceData);
-      assert.strictEqual(stackTraceData[0], 'someFunction @ main.js:6:10');
-    });
-    it('maps to the authored name and script of a function call', async function() {
-      const {script} = await loadBasicSourceMapExample(target);
-      const [lineNumber, columnNumber, ts, dur, pid, tid] =
-          [0, 51, 10, 100, Trace.Types.Events.ProcessID(1), Trace.Types.Events.ThreadID(1)];
-      const profileCall = makeProfileCall('function', ts, dur, pid, tid);
-
-      profileCall.callFrame = {
-        columnNumber,
-        functionName: 'minified',
-        lineNumber: 0,
-        scriptId: script.scriptId,
-        url: 'file://gen.js',
-      };
-
-      const functionCall = makeCompleteEvent(Trace.Types.Events.Name.FUNCTION_CALL, ts, dur, '', pid, tid) as
-          Trace.Types.Events.FunctionCall;
-      functionCall.args = {
-        data: {
-          // line and column number of function calls have an offset
-          // from CPU profile values.
-          columnNumber: columnNumber + 1,
-          lineNumber: lineNumber + 1,
-          functionName: 'minified',
-          scriptId: script.scriptId,
-          url: 'file://gen.js',
-        },
-      };
-      const workersData: Trace.Handlers.ModelHandlers.Workers.WorkersData = {
-        workerSessionIdEvents: [],
-        workerIdByThread: new Map(),
-        workerURLById: new Map(),
-      };
-      // This only includes data used in the SourceMapsResolver and
-      // TimelineUIUtils
-      const parsedTrace = getBaseTraceHandlerData({
-        Samples: makeMockSamplesHandlerData([profileCall]),
-        Workers: workersData,
-        Renderer: makeMockRendererHandlerData([functionCall]),
-      });
-
-      const resolver = new SourceMapsResolver.SourceMapsResolver(parsedTrace);
-      await resolver.install();
-
-      const details = await Timeline.TimelineUIUtils.TimelineUIUtils.buildTraceEventDetails(
-          parsedTrace,
-          functionCall,
-          new Components.Linkifier.Linkifier(),
-          false,
-          null,
-      );
-      const detailsData = getRowDataForDetailsElement(details).find(row => row.title?.startsWith('Function'));
-      assert.exists(detailsData);
-      assert.deepEqual(detailsData, {title: 'Function', value: 'someFunction @ gen.js:1:52'});
-    });
-  });
   describe('adjusting timestamps for events and navigations', function() {
     expectConsoleLogs({
       error: ['Error: No LanguageSelector instance exists yet.'],
@@ -380,53 +353,6 @@ describeWithMockConnection('TimelineUIUtils', function() {
       assert.strictEqual(adjustedMarkTime.toFixed(2), String(79.88));
     });
   });
-
-  function getInnerTextAcrossShadowRoots(root: Node|null): string {
-    // Don't recurse into elements that are not displayed
-    if (!root || (root instanceof HTMLElement && !root.checkVisibility())) {
-      return '';
-    }
-    if (root.nodeType === Node.TEXT_NODE) {
-      return root.nodeValue || '';
-    }
-    if (root instanceof HTMLElement && root.shadowRoot) {
-      return getInnerTextAcrossShadowRoots(root.shadowRoot);
-    }
-    return Array.from(root.childNodes).map(getInnerTextAcrossShadowRoots).join('');
-  }
-
-  function getRowDataForDetailsElement(details: DocumentFragment) {
-    const container = document.createElement('div');
-    renderElementIntoDOM(container);
-    container.appendChild(details);
-    return Array.from(container.querySelectorAll<HTMLDivElement>('.timeline-details-view-row')).map(row => {
-      const title = row.querySelector<HTMLDivElement>('.timeline-details-view-row-title')?.innerText;
-      const valueEl = row.querySelector<HTMLDivElement>('.timeline-details-view-row-value') ??
-          row.querySelector<HTMLElement>('div,span');
-      let value = valueEl?.innerText || '';
-      if (!value && valueEl) {
-        // Stack traces and renderEventJson have the contents within a shadowRoot.
-        value = getInnerTextAcrossShadowRoots(valueEl).trim();
-      }
-      return {title, value};
-    });
-  }
-
-  function getStackTraceForDetailsElement(details: DocumentFragment): string[]|null {
-    const stackTraceContainer =
-        details
-            .querySelector<HTMLDivElement>(
-                '.timeline-details-view-row.timeline-details-stack-values .stack-preview-container')
-            ?.shadowRoot;
-    if (!stackTraceContainer) {
-      return null;
-    }
-    return Array.from(stackTraceContainer.querySelectorAll<HTMLTableRowElement>('tbody tr')).map(row => {
-      const functionName = row.querySelector<HTMLElement>('.function-name')?.innerText;
-      const url = row.querySelector<HTMLElement>('.link')?.innerText;
-      return `${functionName || ''} @ ${url || ''}`;
-    });
-  }
 
   function getPieChartDataForDetailsElement(details: DocumentFragment) {
     const pieChartComp = details.querySelector('devtools-perf-piechart');
@@ -540,8 +466,8 @@ describeWithMockConnection('TimelineUIUtils', function() {
       if (!performConcurrentWorkEvent) {
         throw new Error('Could not find expected event');
       }
-      assert.isTrue(Timeline.TimelineUIUtils.TimelineUIUtils.testContentMatching(
-          performConcurrentWorkEvent, /perfo/, parsedTrace.data));
+      assert.isTrue(Timeline.TimelineUIUtils.TimelineUIUtils.testContentMatching(performConcurrentWorkEvent, /perfo/,
+                                                                                 parsedTrace.data));
     });
   });
 
@@ -623,8 +549,8 @@ describeWithMockConnection('TimelineUIUtils', function() {
       // though we return none, we need to mock these calls else the frontend
       // will not work.)
       const documentNode = {nodeId: 1 as Protocol.DOM.BackendNodeId};
-      setMockConnectionResponseHandler('DOM.getDocument', () => ({root: documentNode as unknown as Protocol.DOM.Node}));
-      setMockConnectionResponseHandler('DOM.pushNodesByBackendIdsToFrontend', () => {
+      connection.setSuccessHandler('DOM.getDocument', () => ({root: documentNode as unknown as Protocol.DOM.Node}));
+      connection.setSuccessHandler('DOM.pushNodesByBackendIdsToFrontend', () => {
         return {
           nodeIds: [],
         };
@@ -715,8 +641,31 @@ describeWithMockConnection('TimelineUIUtils', function() {
           value: '1,058.3\xA0ms',
         },
         {title: 'Details', value: '{   "hello": "world"\n}'},
-        {title: undefined, value: '(anonymous) @ localhost:8787/perf-details/app.js:1:12'}
+        {title: undefined, value: '(anonymous) @ localhost:8787/perf-details/app.js:1:12'},
       ]);
+    });
+
+    it('renders details for SoftNavigationStart with an adjusted timestamp', async function() {
+      const parsedTrace = await TraceLoader.traceEngine(this, 'soft-navs.json.gz');
+      const softNavStart =
+          parsedTrace.data.PageLoadMetrics.allMarkerEvents.find(Trace.Types.Events.isSoftNavigationStart);
+      assert.exists(softNavStart);
+
+      const details = await Timeline.TimelineUIUtils.TimelineUIUtils.buildTraceEventDetails(
+          parsedTrace,
+          softNavStart,
+          new Components.Linkifier.Linkifier(),
+          false,
+          null,
+      );
+      const rowData = getRowDataForDetailsElement(details);
+
+      const timestampRow = rowData.find(row => row.title === 'Timestamp');
+      assert.exists(timestampRow);
+      assert.isNotEmpty(timestampRow.value);
+
+      const urlRow = rowData.find(row => row.title === 'URL');
+      assert.exists(urlRow);
     });
 
     it('renders details for performance.measure', async function() {
@@ -777,6 +726,120 @@ describeWithMockConnection('TimelineUIUtils', function() {
       ]);
     });
 
+    it('only linkifies http(s) URLs in extension properties', async function() {
+      const parsedTrace = await TraceLoader.traceEngine(this, 'extension-tracks-and-marks.json.gz');
+      const extensionEntry =
+          parsedTrace.data.ExtensionTraceData.extensionTrackData[1].entriesByTrack['An Extension Track'][0];
+
+      assert.isOk(extensionEntry);
+
+      const mutableEntry: Trace.Types.Extensions.SyntheticExtensionEntry = {
+        ...extensionEntry,
+        devtoolsObj: {
+          ...extensionEntry.devtoolsObj,
+          properties: [
+            ['HTTP URL', 'http://example.com'],
+            ['HTTPS URL', 'https://example.com/path'],
+            ['Chrome URL', 'chrome://version'],
+            ['Edge URL', 'edge://settings'],
+            ['File URL', 'file:///C:/Windows/win.ini'],
+            ['DevTools URL', 'devtools://devtools/bundled/devtools_app.html?ws=127.0.0.1:1234'],
+          ],
+        },
+      };
+
+      const details = await Timeline.TimelineUIUtils.TimelineUIUtils.buildTraceEventDetails(
+          parsedTrace,
+          mutableEntry,
+          new Components.Linkifier.Linkifier(),
+          false,
+          null,
+      );
+      const container = document.createElement('div');
+      renderElementIntoDOM(container);
+      container.appendChild(details);
+
+      const propertyRows = Array.from(container.querySelectorAll<HTMLDivElement>('.timeline-details-view-row'));
+      const rowByTitle = new Map(propertyRows.map(row => {
+        const title = row.querySelector<HTMLDivElement>('.timeline-details-view-row-title')?.innerText;
+        return [title || '', row] as const;
+      }));
+
+      const httpRow = rowByTitle.get('HTTP URL');
+      assert.exists(httpRow);
+      assert.exists(httpRow?.querySelector('button.devtools-link'));
+
+      const httpsRow = rowByTitle.get('HTTPS URL');
+      assert.exists(httpsRow);
+      assert.exists(httpsRow?.querySelector('button.devtools-link'));
+
+      const disallowedRows = ['Chrome URL', 'Edge URL', 'File URL', 'DevTools URL'];
+      for (const title of disallowedRows) {
+        const row = rowByTitle.get(title);
+        assert.exists(row);
+        assert.notExists(row?.querySelector('button.devtools-link'));
+      }
+    });
+
+    it('only linkifies http(s) URLs from userDetail.url', async function() {
+      const parsedTrace = await TraceLoader.traceEngine(this, 'extension-tracks-and-marks.json.gz');
+      const extensionEntry =
+          parsedTrace.data.ExtensionTraceData.extensionTrackData[1].entriesByTrack['An Extension Track'][0];
+
+      if (!extensionEntry) {
+        throw new Error('Could not find extension entry.');
+      }
+
+      const originalDevToolsDeepLinksConfig = Root.Runtime.hostConfig.devToolsDeepLinksViaExtensibilityApi;
+      Root.Runtime.hostConfig.devToolsDeepLinksViaExtensibilityApi = {enabled: true};
+      try {
+        const cases = [
+          {url: 'https://example.com/node/1', description: 'External docs', expectLink: true},
+          {url: 'foo-extension://node/1', description: 'Node', expectLink: false},
+          {url: 'chrome://version', description: 'Chrome URL', expectLink: false},
+        ];
+        for (const {url, description, expectLink} of cases) {
+          const entry: Trace.Types.Extensions.SyntheticExtensionEntry = {
+            ...extensionEntry,
+            userDetail: {
+              url,
+              description,
+            },
+          };
+
+          const details = await Timeline.TimelineUIUtils.TimelineUIUtils.buildTraceEventDetails(
+              parsedTrace,
+              entry,
+              new Components.Linkifier.Linkifier(),
+              false,
+              null,
+          );
+          const container = document.createElement('div');
+          renderElementIntoDOM(container);
+          try {
+            container.appendChild(details);
+            const row =
+                Array.from(container.querySelectorAll<HTMLDivElement>('.timeline-details-view-row'))
+                    .find(r => r.querySelector<HTMLDivElement>('.timeline-details-view-row-title')?.innerText ===
+                              description);
+
+            if (expectLink) {
+              assert.exists(row);
+              assert.exists(row?.querySelector('button.devtools-link'));
+              assert.exists(container.querySelector(`button[title="${url}"]`));
+            } else {
+              assert.notExists(row);
+              assert.notExists(container.querySelector(`button[title="${url}"]`));
+            }
+          } finally {
+            container.remove();
+          }
+        }
+      } finally {
+        Root.Runtime.hostConfig.devToolsDeepLinksViaExtensibilityApi = originalDevToolsDeepLinksConfig;
+      }
+    });
+
     it('renders the details for an extension entry properly', async function() {
       const parsedTrace = await TraceLoader.traceEngine(this, 'extension-tracks-and-marks.json.gz');
       const extensionEntry =
@@ -822,8 +885,8 @@ describeWithMockConnection('TimelineUIUtils', function() {
         devtoolsObj: {
           ...extensionEntry.devtoolsObj,
           // Note: we do not support this, but bad values can come in via mistakes in user code.
-          properties: [['key', null]]
-        }
+          properties: [['key', null]],
+        },
       };
 
       const details = await Timeline.TimelineUIUtils.TimelineUIUtils.buildTraceEventDetails(
@@ -870,7 +933,7 @@ describeWithMockConnection('TimelineUIUtils', function() {
             {
               title: 'Description',
               value: 'This marks the start of a task',
-            }
+            },
           ],
       );
     });
@@ -1197,7 +1260,7 @@ describeWithMockConnection('TimelineUIUtils', function() {
            {
              title: undefined,
              value:
-                 'connect @ socketsbay.com/test-websockets:314:25\n(anonymous) @ socketsbay.com/test-websockets:130:129'
+                 'connect @ socketsbay.com/test-websockets:314:25\n(anonymous) @ socketsbay.com/test-websockets:130:129',
            },
            // The 2 entries under "Initiator for" are displayed as separate links and in the UI it is obvious they are separate
            {title: 'Initiator for', value: 'Send WebSocket handshake Receive WebSocket handshake'},
@@ -1290,8 +1353,8 @@ describeWithMockConnection('TimelineUIUtils', function() {
       assert.strictEqual(link?.innerText, 'Fire postTask');
       dispatchClickEvent(link);
 
-      sinon.assert.calledOnceWithExactly(
-          timelinePanel.select, Timeline.TimelineSelection.selectionFromEvent(postTaskEvent));
+      sinon.assert.calledOnceWithExactly(timelinePanel.select,
+                                         Timeline.TimelineSelection.selectionFromEvent(postTaskEvent));
     });
 
     it('lets the user click the title of an event to zoom into it', async function() {
@@ -1430,9 +1493,8 @@ describeWithMockConnection('TimelineUIUtils', function() {
     const img = container.querySelector<HTMLImageElement>('.timeline-filmstrip-preview img');
     assert.isOk(img);
     const filmStripFrame = filmStrip.frames[0];
-    assert.isTrue(
-        Trace.Types.Events.isLegacySyntheticScreenshot(filmStripFrame.screenshotEvent) &&
-        img.currentSrc.includes(filmStripFrame.screenshotEvent.args.dataUri));
+    assert.isTrue(Trace.Types.Events.isLegacySyntheticScreenshot(filmStripFrame.screenshotEvent) &&
+                  img.currentSrc.includes(filmStripFrame.screenshotEvent.args.dataUri));
 
     const durationRow = container.querySelector<HTMLElement>('[data-row-title="Duration"]');
     const durationValue = durationRow?.querySelector<HTMLSpanElement>('.timeline-details-view-row-value span');
@@ -1462,10 +1524,9 @@ describeWithMockConnection('TimelineUIUtils', function() {
     const img = container.querySelector<HTMLImageElement>('.timeline-filmstrip-preview img');
     assert.isOk(img);
     const filmStripFrame = filmStrip.frames[0];
-    assert.isTrue(
-        Trace.Types.Events.isScreenshot(filmStripFrame.screenshotEvent) &&
-        img.currentSrc.includes(
-            Trace.Handlers.ModelHandlers.Screenshots.screenshotImageDataUri(filmStripFrame.screenshotEvent)));
+    assert.isTrue(Trace.Types.Events.isScreenshot(filmStripFrame.screenshotEvent) &&
+                  img.currentSrc.includes(
+                      Trace.Handlers.ModelHandlers.Screenshots.screenshotImageDataUri(filmStripFrame.screenshotEvent)));
 
     const durationRow = container.querySelector<HTMLElement>('[data-row-title="Duration"]');
     const durationValue = durationRow?.querySelector<HTMLSpanElement>('.timeline-details-view-row-value span');
@@ -1643,8 +1704,8 @@ describeWithMockConnection('TimelineUIUtils', function() {
   describe('buildDetailsNodeForMarkerEvents', () => {
     it('builds the right link for an LCP Event', async function() {
       const parsedTrace = await TraceLoader.traceEngine(this, 'web-dev.json.gz');
-      const markLCPEvent = getEventOfType(
-          parsedTrace.data.PageLoadMetrics.allMarkerEvents, Trace.Types.Events.isAnyLargestContentfulPaintCandidate);
+      const markLCPEvent = getEventOfType(parsedTrace.data.PageLoadMetrics.allMarkerEvents,
+                                          Trace.Types.Events.isAnyLargestContentfulPaintCandidate);
       const html = Timeline.TimelineUIUtils.TimelineUIUtils.buildDetailsNodeForMarkerEvents(
           markLCPEvent,
       );
@@ -1709,14 +1770,12 @@ describeWithMockConnection('TimelineUIUtils', function() {
               .replace(/\n/g, ' '));
     });
 
-    it('should parse a string with multiple links and create link elements for them', () => {
+    it('does not linkify custom scheme URLs', () => {
       const rawString = 'Node: ext://node/123   Root Cause: ext://node/13566';
       const fragment = Timeline.TimelineUIUtils.TimelineUIUtils.parseStringForLinks(rawString);
       const container = document.createElement('div');
       container.appendChild(fragment);
-      assert.strictEqual(
-          container.innerHTML,
-          'Node: <button role="link" class=" devtools-link text-button link-style " jslog="Link; context: url; track: click" tabindex="-1">ext://node/123</button>   Root Cause: <button role="link" class=" devtools-link text-button link-style " jslog="Link; context: url; track: click" tabindex="-1">ext://node/13566</button>');
+      assert.strictEqual(container.innerHTML, 'Node: ext://node/123   Root Cause: ext://node/13566');
     });
 
     it('does not linkify data URI or www. prefixed text handle a data URI', () => {
@@ -1728,6 +1787,50 @@ describeWithMockConnection('TimelineUIUtils', function() {
       assert.strictEqual(
           container.innerHTML,
           'so data:text/html,%3Cscript%3Ealert%28%27hi%27%29%3B%3C%2Fscript%3E and www.site.com remain plain');
+    });
+  });
+
+  describe('isLinkifiableScheme', () => {
+    const registrations: Components.Linkifier.LinkHandlerRegistration[] = [];
+
+    afterEach(() => {
+      for (const registration of registrations) {
+        Components.Linkifier.Linkifier.unregisterLinkHandler(registration);
+      }
+      registrations.length = 0;
+    });
+
+    function registerHandler(registration: Components.Linkifier.LinkHandlerRegistration): void {
+      Components.Linkifier.Linkifier.registerLinkHandler(registration);
+      registrations.push(registration);
+    }
+
+    it('allows http and https', () => {
+      assert.isTrue(Timeline.TimelineUIUtils.TimelineUIUtils.isLinkifiableScheme('http'));
+      assert.isTrue(Timeline.TimelineUIUtils.TimelineUIUtils.isLinkifiableScheme('https'));
+    });
+
+    it('rejects forbidden schemes', () => {
+      assert.isFalse(Timeline.TimelineUIUtils.TimelineUIUtils.isLinkifiableScheme('chrome'));
+      assert.isFalse(Timeline.TimelineUIUtils.TimelineUIUtils.isLinkifiableScheme('devtools'));
+      assert.isFalse(Timeline.TimelineUIUtils.TimelineUIUtils.isLinkifiableScheme('chrome-error'));
+    });
+
+    it('rejects unknown schemes by default', () => {
+      assert.isFalse(Timeline.TimelineUIUtils.TimelineUIUtils.isLinkifiableScheme('foo-extension'));
+    });
+
+    it('allows valid scheme registered by a DevTools extension', () => {
+      const goodRegistration: Components.Linkifier.LinkHandlerRegistration = {
+        title: 'Good Extension',
+        origin: urlString`good-extension:abcdefghijklmnop`,
+        scheme: 'good-extension:',
+        handler: () => {},
+        shouldHandleOpenResource: () => true,
+      };
+      registerHandler(goodRegistration);
+
+      assert.isTrue(Timeline.TimelineUIUtils.TimelineUIUtils.isLinkifiableScheme('good-extension'));
     });
   });
 
@@ -1780,5 +1883,157 @@ describeWithMockConnection('TimelineUIUtils', function() {
         assert.strictEqual(urlRegex.test(url), matches);
       });
     }
+  });
+});
+
+describeWithEnvironment('TimelineUIUtils - mapping to authored function name when recording is fresh', function() {
+  let target: SDK.Target.Target;
+  expectConsoleLogs({
+    error: ['Error: No LanguageSelector instance exists yet.'],
+  });
+  beforeEach(() => {
+    target = createTarget();
+    const workspace = Workspace.Workspace.WorkspaceImpl.instance();
+    const targetManager = SDK.TargetManager.TargetManager.instance();
+    const resourceMapping = new Bindings.ResourceMapping.ResourceMapping(targetManager, workspace);
+    const ignoreListManager = Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
+    Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
+      forceNew: true,
+      resourceMapping,
+      targetManager,
+      ignoreListManager,
+      workspace,
+    });
+  });
+
+  it('maps to the authored name and script of a profile call', async function() {
+    const {script} = await loadBasicSourceMapExample(target);
+
+    // Ideally we would get a column number we can use from the source
+    // map however the current status of the source map helpers makes
+    // it difficult to do so.
+    const columnNumber = 51;
+    const profileCall =
+        makeProfileCall('function', 10, 100, Trace.Types.Events.ProcessID(1), Trace.Types.Events.ThreadID(1));
+
+    profileCall.callFrame = {
+      columnNumber,
+      functionName: 'minified',
+      lineNumber: 0,
+      scriptId: script.scriptId,
+      url: 'file://gen.js',
+    };
+    const workersData: Trace.Handlers.ModelHandlers.Workers.WorkersData = {
+      workerSessionIdEvents: [],
+      workerIdByThread: new Map(),
+      workerURLById: new Map(),
+    };
+    // This only includes data used in the SourceMapsResolver and
+    // TimelineUIUtils
+    const parsedTrace = getBaseTraceHandlerData({
+      Samples: makeMockSamplesHandlerData([profileCall]),
+      Workers: workersData,
+      Renderer: makeMockRendererHandlerData([profileCall]),
+    });
+    Tracing.FreshRecording.Tracker.instance().registerFreshRecording(parsedTrace);
+
+    const resolver = new SourceMapsResolver.SourceMapsResolver(parsedTrace);
+    await resolver.install();
+
+    const details = await Timeline.TimelineUIUtils.TimelineUIUtils.buildTraceEventDetails(
+        parsedTrace, profileCall, new Components.Linkifier.Linkifier(), false, null);
+    const stackTraceData = getStackTraceForDetailsElement(details);
+    assert.exists(stackTraceData);
+    assert.strictEqual(stackTraceData[0], 'someFunction @ main.js:6:10');
+  });
+
+  it('maps to the authored name and script of a function call', async function() {
+    const {script} = await loadBasicSourceMapExample(target);
+    const [lineNumber, columnNumber, ts, dur, pid, tid] =
+        [0, 51, 10, 100, Trace.Types.Events.ProcessID(1), Trace.Types.Events.ThreadID(1)];
+    const profileCall = makeProfileCall('function', ts, dur, pid, tid);
+
+    profileCall.callFrame = {
+      columnNumber,
+      functionName: 'minified',
+      lineNumber: 0,
+      scriptId: script.scriptId,
+      url: 'file://gen.js',
+    };
+
+    const functionCall = makeCompleteEvent(Trace.Types.Events.Name.FUNCTION_CALL, ts, dur, '', pid, tid) as
+        Trace.Types.Events.FunctionCall;
+    functionCall.args = {
+      data: {
+        // line and column number of function calls have an offset
+        // from CPU profile values.
+        columnNumber: columnNumber + 1,
+        lineNumber: lineNumber + 1,
+        functionName: 'minified',
+        scriptId: script.scriptId,
+        url: 'file://gen.js',
+      },
+    };
+    const workersData: Trace.Handlers.ModelHandlers.Workers.WorkersData = {
+      workerSessionIdEvents: [],
+      workerIdByThread: new Map(),
+      workerURLById: new Map(),
+    };
+    // This only includes data used in the SourceMapsResolver and
+    // TimelineUIUtils
+    const parsedTrace = getBaseTraceHandlerData({
+      Samples: makeMockSamplesHandlerData([profileCall]),
+      Workers: workersData,
+      Renderer: makeMockRendererHandlerData([functionCall]),
+    });
+    Tracing.FreshRecording.Tracker.instance().registerFreshRecording(parsedTrace);
+
+    const resolver = new SourceMapsResolver.SourceMapsResolver(parsedTrace);
+    await resolver.install();
+
+    const details = await Timeline.TimelineUIUtils.TimelineUIUtils.buildTraceEventDetails(
+        parsedTrace,
+        functionCall,
+        new Components.Linkifier.Linkifier(),
+        false,
+        null,
+    );
+    const detailsData = getRowDataForDetailsElement(details).find(row => row.title?.startsWith('Function'));
+    assert.exists(detailsData);
+    assert.deepEqual(detailsData, {title: 'Function', value: 'someFunction @ main.js:6:10'});
+  });
+
+  it('does not map to the authored name and script of a profile call when recording is not fresh', async function() {
+    const {script} = await loadBasicSourceMapExample(target);
+    const columnNumber = 51;
+    const profileCall =
+        makeProfileCall('function', 10, 100, Trace.Types.Events.ProcessID(1), Trace.Types.Events.ThreadID(1));
+
+    profileCall.callFrame = {
+      columnNumber,
+      functionName: 'minified',
+      lineNumber: 0,
+      scriptId: script.scriptId,
+      url: 'file://gen.js',
+    };
+    const workersData: Trace.Handlers.ModelHandlers.Workers.WorkersData = {
+      workerSessionIdEvents: [],
+      workerIdByThread: new Map(),
+      workerURLById: new Map(),
+    };
+    const parsedTrace = getBaseTraceHandlerData({
+      Samples: makeMockSamplesHandlerData([profileCall]),
+      Workers: workersData,
+      Renderer: makeMockRendererHandlerData([profileCall]),
+    });
+    // Important: we do not register this trace as a fresh recording.
+    const resolver = new SourceMapsResolver.SourceMapsResolver(parsedTrace);
+    await resolver.install();
+
+    const details = await Timeline.TimelineUIUtils.TimelineUIUtils.buildTraceEventDetails(
+        parsedTrace, profileCall, new Components.Linkifier.Linkifier(), false, null);
+    const stackTraceData = getStackTraceForDetailsElement(details);
+    assert.exists(stackTraceData);
+    assert.strictEqual(stackTraceData[0], 'minified @ gen.js:1:52');
   });
 });

@@ -60,7 +60,7 @@
 #include "extensions/browser/file_highlighter.h"
 #include "extensions/browser/install_verifier.h"
 #include "extensions/browser/management_policy.h"
-#include "extensions/browser/manifest_v2_experiment_manager.h"
+#include "extensions/browser/manifest_v2_handler.h"
 #include "extensions/browser/path_util.h"
 #include "extensions/browser/permissions/permissions_updater.h"
 #include "extensions/browser/permissions/scripting_permissions_modifier.h"
@@ -102,7 +102,6 @@
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/safety_hub/safety_hub_constants.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/browser/web_applications/extension_status_utils.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/url_constants.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
@@ -115,7 +114,6 @@
 #include "extensions/browser/api/file_handlers/app_file_handler_util.h"
 #include "extensions/browser/error_map.h"
 #include "extensions/browser/extension_util.h"
-#include "extensions/browser/mv2_experiment_stage.h"
 #include "extensions/browser/process_manager_factory.h"
 #include "extensions/browser/ui_util.h"
 #include "extensions/browser/updater/extension_downloader_types.h"
@@ -589,17 +587,25 @@ DeveloperPrivateUpdateProfileConfigurationFunction::Run() {
 
   const developer::ProfileConfigurationUpdate& update = params->update;
 
+  Profile* profile = Profile::FromBrowserContext(browser_context());
+  CHECK(profile);
+
   if (update.in_developer_mode) {
-    Profile* profile = Profile::FromBrowserContext(browser_context());
-    CHECK(profile);
     if (supervised_user::AreExtensionsPermissionsEnabled(profile)) {
       return RespondNow(Error(kCannotUpdateChildAccountProfileSettingsError));
     }
     util::SetDeveloperModeForProfile(profile, *update.in_developer_mode);
   }
 
+  if (update.extensions_pinned_by_default) {
+    profile->GetPrefs()->SetBoolean(prefs::kExtensionsPinnedByDefault,
+                                    *update.extensions_pinned_by_default);
+    base::UmaHistogramBoolean("Extensions.Settings.DefaultPinningToggled",
+                              *update.extensions_pinned_by_default);
+  }
+
   if (update.is_mv2_deprecation_notice_dismissed.value_or(false)) {
-    ManifestV2ExperimentManager::Get(browser_context())
+    ManifestV2Handler::Get(browser_context())
         ->MarkNoticeAsAcknowledgedGlobally();
   }
 
@@ -1046,7 +1052,9 @@ DeveloperPrivateInstallDroppedFileFunction::Run() {
         ->InstallZipFileToUnpackedExtensionsDir(
             file.path, registrar->unpacked_install_directory());
   } else {
-    auto prompt = std::make_unique<ExtensionInstallPrompt>(web_contents);
+    auto prompt = std::make_unique<ExtensionInstallPrompt>(
+        web_contents, std::make_unique<extensions::InstallPromptData>(
+                          extensions::InstallPromptData::UNSET_PROMPT_TYPE));
     scoped_refptr<CrxInstaller> crx_installer =
         CrxInstaller::Create(browser_context(), std::move(prompt));
     crx_installer->set_error_on_unsupported_requirements(true);
@@ -1054,10 +1062,7 @@ DeveloperPrivateInstallDroppedFileFunction::Run() {
         CrxInstaller::OffStoreInstallAllowedFromSettingsPage);
     crx_installer->set_install_immediately(true);
 
-    if (MatchesExtension(file, FILE_PATH_LITERAL(".user.js"))) {
-      crx_installer->InstallUserScript(file.path,
-                                       net::FilePathToFileURL(file.path));
-    } else if (MatchesExtension(file, FILE_PATH_LITERAL(".crx"))) {
+    if (MatchesExtension(file, FILE_PATH_LITERAL(".crx"))) {
       crx_installer->InstallCrx(file.path);
     } else {
       EXTENSION_FUNCTION_VALIDATE(false);

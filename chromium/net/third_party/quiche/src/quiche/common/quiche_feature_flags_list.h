@@ -17,7 +17,6 @@ QUICHE_FLAG(bool, quiche_reloadable_flag_quic_bbr_always_exit_startup_on_loss, f
 QUICHE_FLAG(bool, quiche_reloadable_flag_quic_bbr_exit_startup_on_loss_network_param, false, true, "Enables adjustment of BBRv1's exit-startup-on-loss behavior on established connections via NetworkParams::enable_bbr_exit_startup_on_loss.")
 QUICHE_FLAG(bool, quiche_reloadable_flag_quic_block_until_settings_received_copt, true, true, "If enabled and a BSUS connection is received, blocks server connections until SETTINGS frame is received.")
 QUICHE_FLAG(bool, quiche_reloadable_flag_quic_check_alternate_reset_token, false, false, "When true, checks the stateless reset token on a path probe using the alternate path's token")
-QUICHE_FLAG(bool, quiche_reloadable_flag_quic_clear_body_manager_along_with_sequencer, true, true, "If true, QuicSpdyStream::StopReading always clears BodyManager along with the SequenceBuffer.")
 QUICHE_FLAG(bool, quiche_reloadable_flag_quic_clear_packet_on_serialization_failure, false, false, "If true, clear QuicPacketCreator state when serialization failure.")
 QUICHE_FLAG(bool, quiche_reloadable_flag_quic_client_check_blockage_before_on_can_write, false, false, "If true, quic clients will only call OnCanWrite() upon write events if the writer is unblocked.")
 QUICHE_FLAG(bool, quiche_reloadable_flag_quic_close_on_idle_timeout, false, false, "If true, closes the connection if it has exceeded the idle timeout when deciding whether to open a stream.")
@@ -42,6 +41,7 @@ QUICHE_FLAG(bool, quiche_reloadable_flag_quic_enable_version_rfcv2, false, false
 QUICHE_FLAG(bool, quiche_reloadable_flag_quic_enforce_immediate_goaway, false, true, "If true, QUIC will support sending immediate GOAWAYS and will refuse streams above the limit.")
 QUICHE_FLAG(bool, quiche_reloadable_flag_quic_enobufs_blocked, true, true, "If true, ENOBUFS socket errors are reported as socket blocked instead of socket failure.")
 QUICHE_FLAG(bool, quiche_reloadable_flag_quic_fin_before_completed_http_headers, false, true, "If true, close the connection with error if FIN is received before finish receiving the whole HTTP headers.")
+QUICHE_FLAG(bool, quiche_reloadable_flag_quic_fix_mtu_discovery, false, true, "If true, fix a externally reported bug in QUIC MTU discovery.")
 QUICHE_FLAG(bool, quiche_reloadable_flag_quic_fix_timeouts, true, true, "If true, postpone setting handshake timeout to infinite to handshake complete.")
 QUICHE_FLAG(bool, quiche_reloadable_flag_quic_include_datagrams_in_willing_to_write, false, false, "If true, checks for queued datagrams when determining if a connection is willing to write.")
 QUICHE_FLAG(bool, quiche_reloadable_flag_quic_maybe_copy_datagram_frames, false, true, "If true, maybe copy datagram frames in QuicUnackedPacketMap.")
@@ -53,7 +53,6 @@ QUICHE_FLAG(bool, quiche_reloadable_flag_quic_not_instantiate_unused_qpack_send_
 QUICHE_FLAG(bool, quiche_reloadable_flag_quic_notify_ack_listener_earlier, true, true, "If true, call QuicAckListenerInterface::OnPacketAcked() before moving the stream to closed stream list.")
 QUICHE_FLAG(bool, quiche_reloadable_flag_quic_notify_stream_soon_to_destroy, true, true, "If true, notify each QUIC stream before it gets destroyed and update ACK listener before that.")
 QUICHE_FLAG(bool, quiche_reloadable_flag_quic_on_packet_header_return_connected, false, true, "If true, QuicConnection::OnPacketHeader will return connected_ at the end of the function.")
-QUICHE_FLAG(bool, quiche_reloadable_flag_quic_one_dcid, true, true, "If true, stores only one copy of the destination connection ID in QuicConnection::ReceivedPacketInfo.")
 QUICHE_FLAG(bool, quiche_reloadable_flag_quic_optimize_qpack_blocking_manager, false, false, "If true, optimize qpack_blocking_manager for CPU efficiency.")
 QUICHE_FLAG(bool, quiche_reloadable_flag_quic_pacing_remove_non_initial_burst, false, false, "If true, remove the non-initial burst in QUIC PacingSender.")
 QUICHE_FLAG(bool, quiche_reloadable_flag_quic_parse_cert_compression_algos_from_chlo, true, true, "If true, parse offered cert compression algorithms from received CHLOs.")
@@ -67,11 +66,12 @@ QUICHE_FLAG(bool, quiche_reloadable_flag_quic_testonly_default_true, true, true,
 QUICHE_FLAG(bool, quiche_reloadable_flag_quic_use_received_client_addresses_cache, true, true, "If true, use a LRU cache to record client addresses of packets received on server's original address.")
 QUICHE_FLAG(bool, quiche_restart_flag_quic_client_cert_support, false, true, "If true, enables dynamic client certs in QUIC.")
 QUICHE_FLAG(bool, quiche_restart_flag_quic_dispatcher_close_connection_on_invalid_ack, false, false, "An invalid ack is an ack that the peer sent for a packet that was not sent by the dispatcher. If true, the dispatcher will close the connection if it receives an invalid ack.")
-QUICHE_FLAG(bool, quiche_restart_flag_quic_set_credential_ex_data, false, false, "If true, TlsServerConnection::AddCertChain will add CredentialExData as the ex_data of the SSL_CREDENTIAL.")
+QUICHE_FLAG(bool, quiche_restart_flag_quic_set_credential_ex_data, false, true, "If true, TlsServerConnection::AddCertChain will add CredentialExData as the ex_data of the SSL_CREDENTIAL.")
 QUICHE_FLAG(bool, quiche_restart_flag_quic_shed_tls_handshake_config, true, true, "If true, QUIC connections will call SSL_set_shed_handshake_config to drop BoringSSL handshake state after the handshake finishes in order to save memory.")
 QUICHE_FLAG(bool, quiche_restart_flag_quic_support_release_time_for_gso, false, false, "If true, QuicGsoBatchWriter will support release time if it is available and the process has the permission to do so.")
 QUICHE_FLAG(bool, quiche_restart_flag_quic_testonly_default_false, false, false, "A testonly restart flag that will always default to false.")
 QUICHE_FLAG(bool, quiche_restart_flag_quic_testonly_default_true, true, true, "A testonly restart flag that will always default to true.")
+QUICHE_FLAG(bool, quiche_restart_flag_tls_server_padding_support, false, false, "If enabled, GFE supports the server padding TLS extension for TLS connections in both HTTP and QUIC")
 
 #endif
 // clang-format on

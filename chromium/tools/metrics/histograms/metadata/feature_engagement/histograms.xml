@@ -55,6 +55,13 @@ chromium-metrics-reviews@google.com.
   <variant name="IPH_AddToHomescreenTextBubble"
       summary="(obsolete) educating users about adding website shortcuts to
                their home screen (using a text bubble)"/>
+  <variant name="IPH_AimActivationHint"
+      summary="A hint to activate AI Mode on Android Desktop via keystrokes."/>
+  <variant name="IPH_AndroidBottomBarAim"
+      summary="Describes the AI Mode button added in the bottom bar."/>
+  <variant name="IPH_AndroidBottomBarAimPromoDialog"
+      summary="For the promo dialog shown to introduce AI Mode with the
+               bottom bar."/>
   <variant name="IPH_AndroidBottomBarGlic"
       summary="Describes the GLIC button added in the bottom bar."/>
   <variant name="IPH_AndroidBottomBarNewTab"
@@ -63,6 +70,8 @@ chromium-metrics-reviews@google.com.
       summary="Describes the promo dialog shown to introduce the bottom bar."/>
   <variant name="IPH_AndroidTabDeclutter"
       summary="Shows how to access tabs which have been archived."/>
+  <variant name="IPH_AndroidVerticalTabsPromo"
+      summary="Vertical Tabs promo on Android horizontal tab strip."/>
   <variant name="IPH_AppRatingPrompt" summary="App Rating Prompt action"/>
   <variant name="IPH_AppSpecificHistory" summary="App Specific History action"/>
   <variant name="IPH_AutoDarkOptOut"
@@ -183,8 +192,6 @@ chromium-metrics-reviews@google.com.
                order to get better translations"/>
   <variant name="IPH_ContextualSearchWebSearch"
       summary="contextual search for users who use web search"/>
-  <variant name="IPH_CookieControls"
-      summary="promo for third-party cookie blocking and controls"/>
   <variant name="IPH_DataSaverDetail" summary="data saver detail"/>
   <variant name="IPH_DataSaverMilestonePromo"
       summary="data saver milestone promo"/>
@@ -237,6 +244,9 @@ chromium-metrics-reviews@google.com.
       summary="message shown informing users they can manage their extensions
                in the extensions menu found in the toolbar."/>
   <variant name="IPH_ExtensionsMenu" summary="extensions menu opened"/>
+  <variant name="IPH_ExtensionsPinnedByDefault"
+      summary="message shown informing users that extensions are pinned by
+               default"/>
   <variant name="IPH_ExtensionsRequestAccessButton"
       summary="extensions request access button shown"/>
   <variant name="IPH_ExtensionsZeroStatePromo"
@@ -491,6 +501,9 @@ chromium-metrics-reviews@google.com.
   <variant name="IPH_MicToolbar" summary="the mic button in the toolbar"/>
   <variant name="IPH_MostVisitedTilesCustomizationPin"
       summary="informing user of context menu to pin a shortcut on MVT"/>
+  <variant name="IPH_MultistepFilterPromo"
+      summary="informing user about Multistep Filter suggestions on first
+               usage"/>
   <variant name="IPH_NewTab" summary="new tab"/>
   <variant name="IPH_NewTabPageHomeButton"
       summary="(obsolete) new tab page button"/>
@@ -532,6 +545,8 @@ chromium-metrics-reviews@google.com.
       summary="educating users about the pdf download option in the app menu"/>
   <variant name="IPH_PdfSearchifyFeature"
       summary="educating users about PDF searchify feature"/>
+  <variant name="IPH_PdfTextAnnotations"
+      summary="educating users about PDF Text Annotations feature"/>
   <variant name="IPH_PerformanceInterventionDialog"
       summary="triggering the performance intervention dialog and toolbar
                button"/>
@@ -605,6 +620,9 @@ chromium-metrics-reviews@google.com.
       summary="read later bottom sheet entry point"/>
   <variant name="IPH_ReadLaterContextMenu"
       summary="read later context menu entry point"/>
+  <variant name="IPH_RecentTabs"
+      summary="prompting the user that they can find their recently closed
+               tabs and windows in the 'Recent tabs' surface"/>
   <variant name="IPH_ReopenTab" summary="reopening closed tabs"/>
   <variant name="IPH_RequestDesktopSiteAppMenu"
       summary="(obsolete) educating users about using the desktop site app
@@ -648,6 +666,8 @@ chromium-metrics-reviews@google.com.
       summary="side by side split view tabs pinnable IPH"/>
   <variant name="IPH_SideBySideTabSwitchFeature"
       summary="side by side split view tab switch IPH"/>
+  <variant name="IPH_SidePanelContextualTasksPinnableFeature"
+      summary="contextual tasks side panel pinnable"/>
   <variant name="IPH_SidePanelGenericPinnableFeature"
       summary="side panel pinnable"/>
   <variant name="IPH_SidePanelLensOverlayPinnableFeature"
@@ -673,6 +693,8 @@ chromium-metrics-reviews@google.com.
       summary="Smart Tab Sharing feature"/>
   <variant name="IPH_SmartTabSharingTryItFeature"
       summary="Smart Tab Sharing Try It custom UI feature"/>
+  <variant name="IPH_SplitViewHorizontalIndirectAccessFeature"
+      summary="Top/bottom splits indirect access IPH"/>
   <variant name="IPH_SupervisedUserProfileSignin"
       summary="informing supervised users about parental controls"/>
   <variant name="IPH_TabAudioMuting" summary="muting tab audio"/>
@@ -781,7 +803,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="InProductHelp.Db.TotalEvents" units="events"
-    expires_after="2026-10-04">
+    expires_after="2026-12-06">
   <owner>nyquist@chromium.org</owner>
   <summary>
     Records the total number of event records in the database for in-product
@@ -799,7 +821,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="InProductHelp.DismissalReason.iOS"
-    enum="InProductHelpDismissalReason" expires_after="2026-10-25">
+    enum="InProductHelpDismissalReason" expires_after="2026-12-27">
   <owner>lpromero@google.com</owner>
   <owner>gambard@chromium.org</owner>
   <summary>
@@ -830,7 +852,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="InProductHelp.InitializationTime.Total" units="ms"
-    expires_after="2026-10-03">
+    expires_after="2026-12-06">
   <owner>agazal@chromium.org</owner>
   <owner>mschillaci@chromium.org</owner>
   <owner>nyquist@chromium.org</owner>
@@ -843,7 +865,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="InProductHelp.NotifyEventReadyState.{IPHFeature}"
-    enum="BooleanSuccess" expires_after="2026-09-27">
+    enum="BooleanSuccess" expires_after="2026-11-29">
   <owner>nyquist@chromium.org</owner>
   <summary>
     Records if the model is ready when in-product help event happens for
@@ -853,7 +875,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="InProductHelp.ShouldTriggerHelpUI.{IPHFeature}"
-    enum="TriggerHelpUIResult" expires_after="2026-09-27">
+    enum="TriggerHelpUIResult" expires_after="2026-11-29">
   <owner>nyquist@chromium.org</owner>
   <summary>
     Records if in-product help for {IPHFeature} is shown to the user, and the
@@ -865,7 +887,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="InProductHelp.ShownTime.{IPHFeature}" units="ms"
-    expires_after="2026-08-30">
+    expires_after="2026-11-29">
   <owner>lpromero@google.com</owner>
   <owner>gambard@chromium.org</owner>
   <summary>
@@ -878,7 +900,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="InProductHelp.ShownTime2.{IPHFeature}" units="ms"
-    expires_after="2026-09-06">
+    expires_after="2026-11-29">
   <owner>gayane@google.com</owner>
   <owner>lpromero@google.com</owner>
   <owner>gambard@chromium.org</owner>
@@ -943,7 +965,7 @@ In the future, Desktop IPH may be completely moved to the user_education folder.
 </histogram>
 
 <histogram name="UserEducation.MessageNotShown.TimeInQueue.{IPHFeature}"
-    units="ms" expires_after="2026-10-25">
+    units="ms" expires_after="2027-01-03">
   <owner>dfried@chromium.org</owner>
   <owner>frizzle-team@google.com</owner>
   <summary>
@@ -973,7 +995,7 @@ In the future, Desktop IPH may be completely moved to the user_education folder.
 </histogram>
 
 <histogram name="UserEducation.MessageShown.TimeInQueue.{IPHFeature}"
-    units="ms" expires_after="2026-09-13">
+    units="ms" expires_after="2026-11-29">
   <owner>dfried@chromium.org</owner>
   <owner>frizzle-team@google.com</owner>
   <summary>

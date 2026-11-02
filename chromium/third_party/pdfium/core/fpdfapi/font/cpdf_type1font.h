@@ -12,18 +12,16 @@
 #include <array>
 
 #include "build/build_config.h"
-#include "core/fpdfapi/font/cpdf_simplefont.h"
+#include "core/fpdfapi/font/cpdf_facebasedsimplefont.h"
 #include "core/fxcrt/retain_ptr.h"
-#include "core/fxge/cfx_fontmapper.h"
+#include "core/fxge/cfx_standardfont.h"
 
-class CPDF_Type1Font final : public CPDF_SimpleFont {
+class CPDF_Type1Font final : public CPDF_FaceBasedSimpleFont {
  public:
   CONSTRUCT_VIA_MAKE_RETAIN;
   ~CPDF_Type1Font() override;
 
   // CPDF_Font:
-  bool IsType1Font() const override;
-  const CPDF_Type1Font* AsType1Font() const override;
   CPDF_Type1Font* AsType1Font() override;
 #if BUILDFLAG(IS_APPLE)
   int GlyphFromCharCodeExt(uint32_t charcode) override;
@@ -37,7 +35,7 @@ class CPDF_Type1Font final : public CPDF_SimpleFont {
   // CPDF_Font:
   bool Load() override;
 
-  // CPDF_SimpleFont:
+  // CPDF_FaceBasedSimpleFont:
   void LoadGlyphMap() override;
 
   bool IsSymbolicFont() const;
@@ -50,7 +48,7 @@ class CPDF_Type1Font final : public CPDF_SimpleFont {
   std::array<uint16_t, kInternalTableSize> ext_gid_;
 #endif
 
-  std::optional<CFX_FontMapper::StandardFont> base14_font_;
+  std::optional<CFX_StandardFont::Index> base14_font_;
 };
 
 #endif  // CORE_FPDFAPI_FONT_CPDF_TYPE1FONT_H_

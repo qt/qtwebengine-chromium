@@ -161,7 +161,6 @@
 <translation id="2546283357679194313">Cookies et données des sites</translation>
 <translation id="2553552004849639664">Profitez du plus haut niveau de protection de Chrome contre les menaces en ligne</translation>
 <translation id="2570922361219980984">L'accès à la position est également désactivé pour cet appareil. Activez-le dans les <ph name="BEGIN_LINK" />paramètres Android<ph name="END_LINK" />.</translation>
-<translation id="257931822824936280">Développé – Cliquer pour réduire</translation>
 <translation id="2586657967955657006">Presse-papiers</translation>
 <translation id="2588271083332682494">Rangez vos onglets en groupes</translation>
 <translation id="2592917252160773942">Les sites peuvent demander à utiliser votre caméra</translation>
@@ -193,8 +192,10 @@
 <translation id="2850913818900871965">Demander l'affichage sur mobile</translation>
 <translation id="2870560284913253234">Site</translation>
 <translation id="2874939134665556319">Piste précédente</translation>
+<translation id="2890412325133442491">Option par défaut Chrome</translation>
 <translation id="2891975107962658722">Empêcher un site d'enregistrer des données sur votre appareil</translation>
 <translation id="2903493209154104877">Adresses</translation>
+<translation id="2903764741244499151">Les sites peuvent passer en Picture-in-picture automatiquement. Cela vous permet de continuer à regarder une vidéo tout en libérant votre écran pour d'autres tâches.</translation>
 <translation id="2918484639460781603">Accéder aux paramètres</translation>
 <translation id="2932883381142163287">Signaler un abus</translation>
 <translation id="2939338015096024043">Lorsque cette option est activée, les sites peuvent demander à suivre la position de la caméra et à en savoir plus sur ce qui vous entoure. Lorsqu'elle est désactivée, les sites ne peuvent pas suivre la position de la caméra ni en savoir plus sur ce qui vous entoure.</translation>
@@ -223,7 +224,7 @@
 <translation id="3165022941318558018">Autorisez un site à utiliser des cookies tiers</translation>
 <translation id="3167868116600277716">Flux Discover</translation>
 <translation id="3198916472715691905"><ph name="STORAGE_AMOUNT" /> de données stockées</translation>
-<translation id="3199078925536734975">Autorisée cette fois-ci • Approximative</translation>
+<translation id="3199078925536734975">Accès autorisé cette fois-ci • Approximative</translation>
 <translation id="3208584281581115441">Vérifier maintenant</translation>
 <translation id="321187648315454507">Pour autoriser <ph name="APP_NAME" /> à vous envoyer des notifications, activez également celles-ci dans les <ph name="BEGIN_LINK" />paramètres Android<ph name="END_LINK" />.</translation>
 <translation id="3223425961342298674">Position non autorisée</translation>
@@ -280,7 +281,6 @@
 <translation id="3779154269823594982">Modifier les mots de passe</translation>
 <translation id="3797520601150691162">Ne pas appliquer le thème sombre à un site précis</translation>
 <translation id="3803367742635802571">Les sites que vous consultez ne fonctionneront peut-être plus comme prévu</translation>
-<translation id="3816118180265633665">Couleurs de Chrome</translation>
 <translation id="381841723434055211">Numéros de téléphone</translation>
 <translation id="3823453485268218808">Police Mono</translation>
 <translation id="3826050100957962900">Connexion tierce</translation>
@@ -407,7 +407,6 @@
 <translation id="509133520954049755">Demander l'affichage sur ordinateur</translation>
 <translation id="5091663350197390230">Lorsque cette option est activée, les sites peuvent utiliser JavaScript. Lorsqu'elle est désactivée, les sites ne peuvent pas utiliser JavaScript.</translation>
 <translation id="5099358668261120049">L'ensemble des données et cookies stockés par <ph name="ORIGIN" /> ou par l'appli associée sur votre écran d'accueil seront supprimés.</translation>
-<translation id="5100237604440890931">Réduit – Cliquer pour développer</translation>
 <translation id="5116239826668864748">Vous pouvez utiliser Chrome chaque fois que vous appuyez sur des liens dans des messages, des documents et d'autres applis</translation>
 <translation id="5123685120097942451">Onglet de navigation privée</translation>
 <translation id="512938610812707830">Bottom sheet des collections de thèmes de l'apparence de la page "Nouvel onglet" ouverte à pleine hauteur</translation>
@@ -498,7 +497,7 @@
 <translation id="5998071268779572583">Activer le flux Discover</translation>
 <translation id="6012967556075291653">Raccourci épinglé</translation>
 <translation id="6013003831291591200">Tâche terminée</translation>
-<translation id="6015775454662021376">Contrôler l'accès de ce site à votre appareil</translation>
+<translation id="6015775454662021376">Contrôlez l'accès de ce site à votre appareil</translation>
 <translation id="6022659036123304283">Personnalisez Chrome</translation>
 <translation id="6040143037577758943">Fermer</translation>
 <translation id="6042308850641462728">Plus</translation>
@@ -531,7 +530,6 @@
 <translation id="6398765197997659313">Quitter le mode plein écran</translation>
 <translation id="640163077447496506">Expire aujourd'hui</translation>
 <translation id="6405650995156823521"><ph name="FIRST_PART" /> • <ph name="SECOND_PART" /></translation>
-<translation id="6413980879783180524">Collections de thèmes</translation>
 <translation id="6439114592976064011">Empêcher les sites d'utiliser vos données et votre appareil de réalité virtuelle</translation>
 <translation id="6447842834002726250">Cookies</translation>
 <translation id="6452138246455930388">Baisse de prix dans votre onglet ouvert, de <ph name="OLD_PRICE" /> à <ph name="NEW_PRICE" />, <ph name="PRODUCT_NAME" />, <ph name="DOMAIN_NAME" /></translation>
@@ -594,7 +592,7 @@
 <translation id="7055552182600664515">Pour lire du contenu protégé par des droits d'auteur, les sites peuvent avoir besoin d'utiliser un service de protection du contenu. <ph name="BEGIN_LINK" />En savoir plus<ph name="END_LINK" /></translation>
 <translation id="7066151586745993502">{NUM_SELECTED,plural, =1{1 élément sélectionné}one{# élément sélectionné}other{# éléments sélectionnés}}</translation>
 <translation id="708014373017851679"><ph name="APP_NAME" /> est obsolète. Veuillez mettre à jour l'appli.</translation>
-<translation id="7084115944294706056">Positionner la barre d'adresse</translation>
+<translation id="7084115944294706056">Positionnez la barre d'adresse</translation>
 <translation id="7087918508125750058">Nombre d'éléments sélectionnés : <ph name="ITEM_COUNT" />. Options disponibles dans la partie supérieure de l'écran</translation>
 <translation id="7141896414559753902">Bloquer l'affichage de fenêtres pop-up et les redirections par les sites (recommandé)</translation>
 <translation id="7176368934862295254"><ph name="KILOBYTES" /> Ko</translation>
@@ -626,6 +624,7 @@ La Protection Avancée contrôle les paramètres Chrome suivants :</translatio
 <translation id="7423098979219808738">Demander d'abord</translation>
 <translation id="7423538860840206698">Accès en lecture au presse-papiers bloqué</translation>
 <translation id="7425915948813553151">Thème sombre pour les sites</translation>
+<translation id="7429767477925996803">Couleurs de Chrome</translation>
 <translation id="746412105358554870">Optimisation et sécurité JavaScript</translation>
 <translation id="7478658909253570368">Ne pas autoriser les sites à se connecter aux ports série</translation>
 <translation id="7488573225650545859">Masquer "Afficher les onglets dans votre liste d'applications"</translation>
@@ -677,7 +676,6 @@ La Protection Avancée contrôle les paramètres Chrome suivants :</translatio
 <translation id="802154636333426148">Échec du téléchargement</translation>
 <translation id="8033047164036749181">S'abonner aux notifications de ce site</translation>
 <translation id="8051193500142930381">Les fonctionnalités qui nécessitent une caméra ne seront pas disponibles</translation>
-<translation id="8056330801132235235">Option par défaut Chrome</translation>
 <translation id="8067883171444229417">Lire la vidéo</translation>
 <translation id="8068648041423924542">Impossible de sélectionner le certificat</translation>
 <translation id="8077120325605624147">Tous les sites que vous consultez peuvent vous montrer des annonces</translation>
@@ -692,11 +690,9 @@ La Protection Avancée contrôle les paramètres Chrome suivants :</translatio
 <translation id="8163152278172770963">Ne pas autoriser les sites à passer en Picture-in-picture automatiquement</translation>
 <translation id="8168435359814927499">Contenu</translation>
 <translation id="818487310457576362">Balayez l'écran vers le côté pour quitter le plein écran.</translation>
-<translation id="8186479265534291036">Impossible d'accéder au site ? Les cookies tiers sont bloqués.</translation>
-<translation id="8197286292360124385">Autorisation accordée : <ph name="PERMISSION_1" /></translation>
+<translation id="8197286292360124385"><ph name="PERMISSION_1" /> autorisée</translation>
 <translation id="8200772114523450471">Reprendre</translation>
 <translation id="8211406090763984747">La connexion est sécurisée</translation>
-<translation id="822964464349305906"><ph name="TYPE_1" />, <ph name="TYPE_2" /></translation>
 <translation id="823874716226307142">Lorsque cette option est activée, les sites peuvent demander à accéder à d'autres appareils sur votre réseau local. Lorsque cette option est désactivée, les sites ne peuvent pas accéder à d'autres appareils sur votre réseau local.</translation>
 <translation id="8249310407154411074">Déplacer vers le haut</translation>
 <translation id="8261506727792406068">Supprimer</translation>
@@ -736,7 +732,7 @@ La Protection Avancée contrôle les paramètres Chrome suivants :</translatio
 <translation id="8541410041357371550">Ce site obtient vos thèmes d'annonces par l'intermédiaire de Chrome pour vous montrer des annonces plus pertinentes</translation>
 <translation id="854876774113449365">Les sites que vous consultez peuvent intégrer des contenus d'autres sites, tels que des images, des annonces et du texte. Ces autres sites peuvent demander l'autorisation d'utiliser les informations qu'ils ont enregistrées vous concernant lorsque vous les parcourez. <ph name="BEGIN_LINK" />En savoir plus sur le contenu intégré<ph name="END_LINK" /></translation>
 <translation id="8549127125482561383">Comment afficher les demandes</translation>
-<translation id="8558480467877843976">Vous pouvez désormais utiliser Chrome chaque fois que vous parcourez ou appuyez sur des liens dans des messages, des documents et d'autres applis.</translation>
+<translation id="8558480467877843976">Vous pouvez désormais utiliser Chrome chaque fois que vous naviguez sur Internet ou appuyez sur des liens dans des messages, des documents et d'autres applis.</translation>
 <translation id="857943718398505171">Autorisé (recommandé)</translation>
 <translation id="8593422116412089302">Lorsque cette option est activée, les sites peuvent demander à utiliser les informations qu'ils ont enregistrées vous concernant, ce qu'ils ne peuvent pas faire si elle est désactivée.</translation>
 <translation id="8609465669617005112">Monter</translation>
@@ -764,7 +760,6 @@ La Protection Avancée contrôle les paramètres Chrome suivants :</translatio
 <translation id="8805385115381080995">La navigation est plus rapide, car les sites sont moins susceptibles de vous demander de confirmer que vous êtes une personne bien réelle</translation>
 <translation id="881644524232657178">Lorsque cette option est activée, les sites peuvent utiliser les capteurs de mouvement et de luminosité de votre appareil. Lorsqu'elle est désactivée, les sites ne peuvent pas utiliser les capteurs.</translation>
 <translation id="8847988622838149491">USB</translation>
-<translation id="8874790741333031443">Essayez d'autoriser temporairement les cookies tiers. Vous réduirez ainsi la protection de la navigation, mais les fonctionnalités du site auront plus de chances de fonctionner comme prévu.</translation>
 <translation id="8889294078294184559">Lorsque vous continuez à naviguer, les sites peuvent vérifier avec Chrome et avec un site que vous avez déjà visité si vous êtes une personne réelle</translation>
 <translation id="8899807382908246773">Annonces intrusives</translation>
 <translation id="8903921497873541725">Zoom avant</translation>
@@ -790,7 +785,6 @@ La Protection Avancée contrôle les paramètres Chrome suivants :</translatio
 <translation id="913657688200966289">Activez les autorisations pour <ph name="APP_NAME" /> dans les <ph name="BEGIN_LINK" />paramètres Android<ph name="END_LINK" />.</translation>
 <translation id="9138037198177304356">Notifications autorisées</translation>
 <translation id="9138217887606523162">Le zoom actuel est de <ph name="ZOOM_LEVEL" /> %%</translation>
-<translation id="915112772806845021">Les sites utilisent cette fonctionnalité pour passer en Picture-in-picture automatiquement. Cela vous permet de continuer à regarder une vidéo tout en libérant votre écran pour d'autres tâches.</translation>
 <translation id="9156722768168878035">Autorisez Chrome à afficher vos onglets récents dans la liste d'applis et les résultats de recherche de votre appareil. Vous pouvez désactiver cette option à tout moment dans les paramètres de Chrome.</translation>
 <translation id="9162462602695099906">Cette page est dangereuse</translation>
 <translation id="9182556968660520230">Ne pas autoriser les sites à lire du contenu protégé</translation>

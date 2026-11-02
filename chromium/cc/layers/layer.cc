@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -1039,6 +1040,9 @@ void Layer::SetTransformOrigin(const gfx::Point3F& transform_origin) {
 }
 
 void Layer::SetScrollOffset(const gfx::PointF& scroll_offset) {
+  if (!std::isfinite(scroll_offset.x()) || !std::isfinite(scroll_offset.y())) {
+    return;
+  }
   DCHECK(IsPropertyChangeAllowed());
 
   auto& inputs = EnsureLayerTreeInputs();
@@ -1055,6 +1059,9 @@ void Layer::SetScrollOffset(const gfx::PointF& scroll_offset) {
 }
 
 void Layer::SetScrollOffsetFromImplSide(const gfx::PointF& scroll_offset) {
+  if (!std::isfinite(scroll_offset.x()) || !std::isfinite(scroll_offset.y())) {
+    return;
+  }
   DCHECK(IsPropertyChangeAllowed());
   // This function only gets called during a BeginMainFrame, so there
   // is no need to call SetNeedsUpdate here.
@@ -1252,7 +1259,7 @@ void Layer::SetCanvasChildId(ElementId id) {
     return;
   }
   EnsureRareInputs().canvas_child_id = id;
-  SetNeedsCommit();
+  SetNeedsPushProperties();
 }
 
 RenderSurfaceReason Layer::GetRenderSurfaceReason() const {
@@ -1561,6 +1568,7 @@ void Layer::PushDirtyPropertiesTo(LayerImpl* layer,
       layer->SetCaptureBounds(inputs.rare_inputs->capture_bounds);
       layer->SetTrackedElementRects(inputs.rare_inputs->tracked_element_rects);
       layer->SetWheelEventHandlerRegion(inputs.rare_inputs->wheel_event_region);
+      layer->SetCanvasChildId(inputs.rare_inputs->canvas_child_id);
     } else {
       layer->ResetRareProperties();
     }

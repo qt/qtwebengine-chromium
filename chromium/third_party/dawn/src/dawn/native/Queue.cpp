@@ -44,7 +44,6 @@
 #include "src/dawn/common/Enumerator.h"
 #include "src/dawn/common/FutureUtils.h"
 #include "src/dawn/common/StringViewUtils.h"
-#include "src/dawn/common/ityp_span.h"
 #include "src/dawn/native/BindGroup.h"
 #include "src/dawn/native/BlitBufferToDepthStencil.h"
 #include "src/dawn/native/Buffer.h"
@@ -65,6 +64,7 @@
 #include "src/dawn/native/Texture.h"
 #include "src/dawn/platform/tracing/TraceEvent.h"
 #include "src/utils/compiler.h"
+#include "src/utils/span.h"
 
 namespace dawn::native {
 
@@ -111,9 +111,7 @@ class ErrorQueue : public QueueBase {
         : QueueBase(device, ObjectBase::kError, label) {}
 
   private:
-    MaybeError SubmitImpl(uint32_t commandCount, CommandBufferBase* const* commands) override {
-        DAWN_UNREACHABLE();
-    }
+    MaybeError SubmitImpl(Span<CommandBufferBase* const> commands) override { DAWN_UNREACHABLE(); }
     bool HasPendingCommands() const override { DAWN_UNREACHABLE(); }
     MaybeError SubmitPendingCommandsImpl() override { DAWN_UNREACHABLE(); }
     ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials() override { DAWN_UNREACHABLE(); }
@@ -168,17 +166,16 @@ void QueueBase::FormatLabel(absl::FormatSink* s) const {
     }
 }
 
-void QueueBase::APISubmit(uint32_t commandCount, CommandBufferBase* const* commands) {
-    MaybeError result = SubmitInternal(commandCount, commands);
+void QueueBase::APISubmit(Span<CommandBufferBase* const> commands) {
+    MaybeError result = SubmitInternal(commands);
 
     // Destroy the command buffers even if SubmitInternal failed. (crbug.com/dawn/1863)
-    for (uint32_t i = 0; i < commandCount; ++i) {
-        DAWN_UNSAFE_TODO(commands[i])->Destroy();
+    for (CommandBufferBase* commandBuffer : commands) {
+        commandBuffer->Destroy();
     }
 
-    [[maybe_unused]] bool hadError = GetDevice()->ConsumedError(
-        std::move(result), "calling %s.Submit(%s)", this,
-        ityp::span<uint32_t, CommandBufferBase* const>(commands, commandCount));
+    [[maybe_unused]] bool hadError =
+        GetDevice()->ConsumedError(std::move(result), "calling %s.Submit(%s)", this, commands);
 }
 
 Future QueueBase::APIOnSubmittedWorkDone(const WGPUQueueWorkDoneCallbackInfo& callbackInfo) {
@@ -315,58 +312,53 @@ void QueueBase::HandleDeviceLoss() {
 
 void QueueBase::APIWriteBuffer(BufferBase* buffer,
                                uint64_t bufferOffset,
-                               const void* data,
-                               size_t size) {
+                               Span<const std::byte> data) {
     auto writeBuffer = [&]() -> MaybeError {
-        DAWN_TRY(WriteBuffer(buffer, bufferOffset, data, size));
+        DAWN_TRY(WriteBuffer(buffer, bufferOffset, data));
         return GetDevice()->GetDynamicUploader()->MaybeSubmitPendingCommands();
     };
     [[maybe_unused]] bool hadError = GetDevice()->ConsumedError(
         writeBuffer(), "calling %s.WriteBuffer(%s, (%d bytes), data, (%d bytes))", this, buffer,
-        bufferOffset, size);
+        bufferOffset, data.size());
 }
 
 MaybeError QueueBase::WriteBuffer(BufferBase* buffer,
                                   uint64_t bufferOffset,
-                                  const void* data,
-                                  size_t size) {
+                                  Span<const std::byte> data) {
     DAWN_TRY(GetDevice()->ValidateIsAlive());
     DAWN_TRY(GetDevice()->ValidateObject(this));
-    DAWN_TRY(ValidateWriteBuffer(GetDevice(), buffer, bufferOffset, size));
+    DAWN_TRY(ValidateWriteBuffer(GetDevice(), buffer, bufferOffset, data.size()));
     BufferBase::ScopedUseBuffer scopedUseBuffer;
     DAWN_TRY_ASSIGN(scopedUseBuffer, buffer->ValidateCanUseOnQueueNow());
-    return WriteBufferImpl(buffer, bufferOffset, data, size);
+    return WriteBufferImpl(buffer, bufferOffset, data);
 }
 
 MaybeError QueueBase::WriteBufferImpl(BufferBase* buffer,
                                       uint64_t bufferOffset,
-                                      const void* data,
-                                      size_t size) {
-    return buffer->UploadData(bufferOffset, data, size);
+                                      Span<const std::byte> data) {
+    return buffer->UploadData(bufferOffset, data);
 }
 
 void QueueBase::APIWriteTexture(const TexelCopyTextureInfo* destination,
-                                const void* data,
-                                size_t dataSize,
+                                Span<const std::byte> data,
                                 const TexelCopyBufferLayout* dataLayout,
                                 const Extent3D* writeSize) {
     auto writeTexture = [&]() -> MaybeError {
-        DAWN_TRY(WriteTextureInternal(destination, data, dataSize, *dataLayout, writeSize));
+        DAWN_TRY(WriteTextureInternal(destination, data, *dataLayout, writeSize));
         return GetDevice()->GetDynamicUploader()->MaybeSubmitPendingCommands();
     };
     [[maybe_unused]] bool hadError = GetDevice()->ConsumedError(
         writeTexture(), "calling %s.WriteTexture(%s, (%u bytes), %s, %s)", this, destination,
-        dataSize, dataLayout, writeSize);
+        data.size(), dataLayout, writeSize);
 }
 
 MaybeError QueueBase::WriteTextureInternal(const TexelCopyTextureInfo* destinationOrig,
-                                           const void* data,
-                                           size_t dataSize,
+                                           Span<const std::byte> data,
                                            const TexelCopyBufferLayout& dataLayout,
                                            const Extent3D* writeSize) {
     TexelCopyTextureInfo destination = destinationOrig->WithTrivialFrontendDefaults();
 
-    DAWN_TRY(ValidateWriteTexture(&destination, dataSize, dataLayout, writeSize));
+    DAWN_TRY(ValidateWriteTexture(&destination, data.size(), dataLayout, writeSize));
 
     if (writeSize->width == 0 || writeSize->height == 0 || writeSize->depthOrArrayLayers == 0) {
         return {};
@@ -375,12 +367,11 @@ MaybeError QueueBase::WriteTextureInternal(const TexelCopyTextureInfo* destinati
     const TexelBlockInfo& blockInfo = GetBlockInfo(destination);
     TexelCopyBufferLayout layout = dataLayout;
     ApplyDefaultTexelCopyBufferLayoutOptions(&layout, blockInfo, *writeSize);
-    return WriteTextureImpl(destination, data, dataSize, layout, *writeSize);
+    return WriteTextureImpl(destination, data, layout, *writeSize);
 }
 
 MaybeError QueueBase::WriteTextureImpl(const TexelCopyTextureInfo& destination,
-                                       const void* data,
-                                       size_t dataSize,
+                                       Span<const std::byte> data,
                                        const TexelCopyBufferLayout& dataLayout,
                                        const Extent3D& writeSizePixel) {
     const TypedTexelBlockInfo& blockInfo = GetBlockInfo(destination);
@@ -414,16 +405,16 @@ MaybeError QueueBase::WriteTextureImpl(const TexelCopyTextureInfo& destination,
     return GetDevice()->GetDynamicUploader()->WithUploadReservation(
         packedDataSize, offsetAlignment, [&](UploadReservation reservation) -> MaybeError {
             const uint8_t* srcPointer =
-                DAWN_UNSAFE_TODO(reinterpret_cast<const uint8_t*>(data) + dataLayout.offset);
+                DAWN_UNSAFE_TODO(reinterpret_cast<const uint8_t*>(data.data()) + dataLayout.offset);
             uint8_t* dstPointer = reinterpret_cast<uint8_t*>(reservation.mappedPointer.get());
             CopyTextureData(dstPointer, srcPointer, writeSizePixel.depthOrArrayLayers,
-                            static_cast<uint32_t>(rowsPerImage), dataLayout.rowsPerImage,
+                            dchecked_cast<uint32_t>(rowsPerImage), dataLayout.rowsPerImage,
                             bytesPerRow, alignedBytesPerRow, dataLayout.bytesPerRow);
 
             TexelCopyBufferLayout passDataLayout = dataLayout;
             passDataLayout.offset = reservation.offsetInBuffer;
             passDataLayout.bytesPerRow = alignedBytesPerRow;
-            passDataLayout.rowsPerImage = static_cast<uint32_t>(rowsPerImage);
+            passDataLayout.rowsPerImage = dchecked_cast<uint32_t>(rowsPerImage);
 
             TextureCopy textureCopy;
             textureCopy.texture = destination.texture;
@@ -485,24 +476,21 @@ MaybeError QueueBase::CopyExternalTextureForBrowserInternal(
     return DoCopyExternalTextureForBrowser(GetDevice(), source, &destination, copySize, options);
 }
 
-MaybeError QueueBase::ValidateSubmit(uint32_t commandCount,
-                                     CommandBufferBase* const* commands,
+MaybeError QueueBase::ValidateSubmit(Span<CommandBufferBase* const> commands,
                                      BufferSet& buffersFromCommands) const {
     TRACE_EVENT0(GetDevice()->GetPlatform(), Validation, "Queue::ValidateSubmit");
     DAWN_TRY(GetDevice()->ValidateObject(this));
 
     std::set<CommandBufferBase*> uniqueCommandBuffers;
 
-    for (uint32_t i = 0; i < commandCount; ++i) {
-        DAWN_UNSAFE_TODO(DAWN_TRY(GetDevice()->ValidateObject(commands[i])));
-        DAWN_UNSAFE_TODO(DAWN_TRY(commands[i]->ValidateCanUseInSubmitNow()));
+    for (CommandBufferBase* commandBuffer : commands) {
+        DAWN_TRY(GetDevice()->ValidateObject(commandBuffer));
+        DAWN_TRY(commandBuffer->ValidateCanUseInSubmitNow());
 
-        auto insertResult = uniqueCommandBuffers.insert(DAWN_UNSAFE_TODO(commands[i]));
-        DAWN_UNSAFE_TODO(DAWN_INVALID_IF(!insertResult.second, "Submit contains duplicates of %s.",
-                                         commands[i]));
+        auto insertResult = uniqueCommandBuffers.insert(commandBuffer);
+        DAWN_INVALID_IF(!insertResult.second, "Submit contains duplicates of %s.", commandBuffer);
 
-        const CommandBufferResourceUsage& usages =
-            DAWN_UNSAFE_TODO(commands[i])->GetResourceUsages();
+        const CommandBufferResourceUsage& usages = commandBuffer->GetResourceUsages();
 
         auto ValidateBuffer = [&buffersFromCommands](BufferBase* buffer) -> MaybeError {
             if (auto [iter, inserted] = buffersFromCommands.insert(buffer); inserted) {
@@ -555,54 +543,6 @@ MaybeError QueueBase::ValidateSubmit(uint32_t commandCount,
         for (const QuerySetBase* querySet : usages.usedQuerySets) {
             DAWN_TRY(querySet->ValidateCanUseInSubmitNow());
         }
-
-        // Validate that pinned textures are only used with their pinned usage. This is done in a
-        // separate pass to avoid adding validation overhead to non-bindless while prototyping
-        // bindless.
-        // TODO(https://crbug.com/435317394): Merge this validation with the validation that
-        // textures are not destroyed by turning the sets of resources in the PassUsageTracker into
-        // maps of resources to usages, and doing a single bitmask check to know if there's an error
-        // before finding out the reason why there is an error.
-        if (GetDevice()->HasFeature(Feature::ChromiumExperimentalSamplingResourceTable)) {
-            for (const TextureBase* texture : usages.topLevelTextures) {
-                DAWN_INVALID_IF(texture->HasPinnedUsage(),
-                                "%s is pinned to %s while used in a CommandEncoder command.",
-                                texture, texture->GetPinnedUsage());
-            }
-            for (const SyncScopeResourceUsage& scope : usages.renderPasses) {
-                for (auto [j, texture] : Enumerate(scope.textures)) {
-                    if (!texture->HasPinnedUsage()) {
-                        continue;
-                    }
-
-                    DAWN_TRY(scope.textureSyncInfos[j].Iterate(
-                        [&](const SubresourceRange&, const TextureSyncInfo& info) -> MaybeError {
-                            DAWN_INVALID_IF(info.usage != texture->GetPinnedUsage(),
-                                            "%s is used as %s while pinned to %s.", texture,
-                                            info.usage, texture->GetPinnedUsage());
-                            return {};
-                        }));
-                }
-            }
-            for (const ComputePassResourceUsage& compute : usages.computePasses) {
-                for (const SyncScopeResourceUsage& scope : compute.dispatchUsages) {
-                    for (auto [j, texture] : Enumerate(scope.textures)) {
-                        if (!texture->HasPinnedUsage()) {
-                            continue;
-                        }
-
-                        DAWN_TRY(scope.textureSyncInfos[j].Iterate(
-                            [&](const SubresourceRange&,
-                                const TextureSyncInfo& info) -> MaybeError {
-                                DAWN_INVALID_IF(info.usage != texture->GetPinnedUsage(),
-                                                "%s is used as %s while pinned to %s.", texture,
-                                                info.usage, texture->GetPinnedUsage());
-                                return {};
-                            }));
-                    }
-                }
-            }
-        }
     }
 
     return {};
@@ -630,8 +570,6 @@ MaybeError QueueBase::ValidateWriteTexture(const TexelCopyTextureInfo* destinati
     DAWN_INVALID_IF(!(destination->texture->GetUsage() & wgpu::TextureUsage::CopyDst),
                     "Usage (%s) of %s does not include %s.", destination->texture->GetUsage(),
                     destination->texture, wgpu::TextureUsage::CopyDst);
-    DAWN_INVALID_IF(destination->texture->HasPinnedUsage(), "%s is pinned to %s.",
-                    destination->texture, destination->texture->GetPinnedUsage());
 
     DAWN_INVALID_IF(destination->texture->GetSampleCount() > 1, "Sample count (%u) of %s is not 1",
                     destination->texture->GetSampleCount(), destination->texture);
@@ -652,7 +590,7 @@ MaybeError QueueBase::ValidateWriteTexture(const TexelCopyTextureInfo* destinati
     return {};
 }
 
-MaybeError QueueBase::SubmitInternal(uint32_t commandCount, CommandBufferBase* const* commands) {
+MaybeError QueueBase::SubmitInternal(Span<CommandBufferBase* const> commands) {
     DeviceBase* device = GetDevice();
 
     // If device is lost, don't let any commands be submitted
@@ -669,11 +607,11 @@ MaybeError QueueBase::SubmitInternal(uint32_t commandCount, CommandBufferBase* c
     if (device->IsValidationEnabled()) {
         // TODO(crbug.com/425472913): Keep a rolling average of set size so this can reserve a
         // sufficiently large set for max of last N submits.
-        DAWN_TRY(ValidateSubmit(commandCount, commands, buffersUsedInSubmit));
+        DAWN_TRY(ValidateSubmit(commands, buffersUsedInSubmit));
     }
     DAWN_CHECK(!IsError());
 
-    DAWN_TRY(SubmitImpl(commandCount, commands));
+    DAWN_TRY(SubmitImpl(commands));
 
     // Switch the buffer state back to unmapped before Tick().
     std::move(finishUseBuffers).Invoke();

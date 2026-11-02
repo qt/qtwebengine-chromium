@@ -79,6 +79,8 @@
 #elif defined(__AVX512F__)
 // 64 bytes static alignment is preferred only if really required
 #define EIGEN_IDEAL_MAX_ALIGN_BYTES 64
+#elif defined(EIGEN_VECTORIZE_SME)
+#define EIGEN_IDEAL_MAX_ALIGN_BYTES 64
 #elif defined(__AVX__)
 // 32 bytes static alignment is preferred only if really required
 #define EIGEN_IDEAL_MAX_ALIGN_BYTES 32
@@ -208,8 +210,8 @@
 #endif
 #endif
 
-// The following (except #include <malloc.h> and _M_IX86_FP ??) can likely be
-// removed as gcc 4.1 and msvc 2008 are not supported anyways.
+// MSVC needs <malloc.h> for aligned allocation helpers, and 32-bit x86 uses
+// _M_IX86_FP to decide whether SSE2 is enabled.
 #if EIGEN_COMP_MSVC
 #include <malloc.h>  // for _aligned_malloc -- need it regardless of whether vectorization is enabled
 // a user reported that in 64-bit mode, MSVC doesn't care to define _M_IX86_FP.
@@ -305,7 +307,10 @@
 #define EIGEN_VECTORIZE_AVX512VL
 #endif
 #ifdef __AVX512FP16__
-#ifdef __AVX512VL__
+#if EIGEN_COMP_NVHPC
+// NVC++ exposes AVX512-FP16 inconsistently: older releases define the feature without _Float16/__m512h,
+// and 24.11-26.3 lower compare/blend intrinsics to unresolved __builtin_ia32_*ph* references.
+#elif defined(__AVX512VL__)
 #define EIGEN_VECTORIZE_AVX512FP16
 // Built-in _Float16.
 #define EIGEN_HAS_BUILTIN_FLOAT16 1
@@ -413,7 +418,12 @@ extern "C" {
 #undef vector
 #undef pixel
 
-#elif ((defined __ARM_NEON) || (defined __ARM_NEON__)) && !(defined EIGEN_ARM64_USE_SVE)
+#elif defined(EIGEN_ARM64_USE_SME) && !defined(__ARM_FEATURE_SME)
+
+#error "EIGEN_ARM64_USE_SME requires compiler support for SME."
+
+#elif ((defined __ARM_NEON) || (defined __ARM_NEON__)) && !(defined EIGEN_ARM64_USE_SVE) && \
+    !(defined EIGEN_ARM64_USE_SME)
 
 #define EIGEN_VECTORIZE
 #define EIGEN_VECTORIZE_NEON
@@ -432,7 +442,24 @@ extern "C" {
 #if defined __ARM_FEATURE_SVE_BITS
 #define EIGEN_ARM64_SVE_VL __ARM_FEATURE_SVE_BITS
 #else
-#error "Eigen requires a fixed SVE lector length but EIGEN_ARM64_SVE_VL is not set."
+#error "Eigen requires a fixed SVE vector length but EIGEN_ARM64_SVE_VL is not set."
+#endif
+
+// We currently require SME to be enabled explicitly via EIGEN_ARM64_USE_SME and
+// will not select the backend automatically
+#elif (defined __ARM_FEATURE_SME) && (defined EIGEN_ARM64_USE_SME)
+
+#define EIGEN_VECTORIZE
+#define EIGEN_VECTORIZE_SME
+#include <arm_neon.h>
+#include <arm_sme.h>
+
+// The SME GEMM kernel derives its ZA-tile geometry from the runtime streaming
+// vector length (svcntsw()).  It is therefore built in scalable (VLA) SVE mode,
+// without -msve-vector-bits=N, so svcntsw() reflects the actual hardware SVL.
+#if defined __ARM_FEATURE_SVE_BITS && (__ARM_FEATURE_SVE_BITS != 0)
+#error \
+    "EIGEN_ARM64_USE_SME must be built without -msve-vector-bits (scalable/VLA mode): a fixed SVE vector length pins the kernel to one runtime streaming SVL and silently miscomputes at any other."
 #endif
 
 #elif EIGEN_ARCH_RISCV
@@ -597,6 +624,8 @@ inline static const char* SimdInstructionSetsInUse(void) {
   return "VSX";
 #elif defined(EIGEN_VECTORIZE_NEON)
   return "ARM NEON";
+#elif defined(EIGEN_VECTORIZE_SME)
+  return "ARM SME";
 #elif defined(EIGEN_VECTORIZE_SVE)
   return "ARM SVE";
 #elif defined(EIGEN_VECTORIZE_ZVECTOR)

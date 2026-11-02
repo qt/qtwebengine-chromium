@@ -1,0 +1,48 @@
+// Copyright 2026 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+module blink.mojom;
+
+import "third_party/blink/public/mojom/ai/ai_common.mojom";
+
+// The task type for the AISemanticEmbedder.
+// These task types allow the underlying model to optimize the generated
+// embeddings for specific downstream use cases.
+enum AISemanticEmbedderTaskType {
+  // Evaluates how semantically similar two strings are.
+  kSemanticSimilarity,
+  // Groups strings into clusters.
+  kClustering,
+  // Classifies strings based on their semantic meaning.
+  kClassification,
+  // Finds relevant documents for a given short query.
+  kRetrievalQuery,
+  // Encoding document content for future retrieval.
+  kRetrievalDocument,
+};
+
+// Options for the Embed method.
+struct AISemanticEmbedderEmbedOptions {
+  AISemanticEmbedderTaskType? task_type;
+};
+
+struct ContentEmbedding {
+  array<float> values;
+};
+
+struct SemanticEmbedderResult {
+  array<ContentEmbedding> embeddings;
+};
+
+// A semantic embedder.
+interface AISemanticEmbedder {
+  // Embeds strings and returns an array of 1:1 mapped float arrays.
+  // `inputs` must not be empty. The renderer guarantees this, and sending an
+  // empty input will result in a BadMessage error.
+  // A null return result signifies a fatal error (like a model crash) or
+  // session destruction.
+  Embed(array<string> inputs, AISemanticEmbedderEmbedOptions? options)
+      => (SemanticEmbedderResult? result);
+};
+

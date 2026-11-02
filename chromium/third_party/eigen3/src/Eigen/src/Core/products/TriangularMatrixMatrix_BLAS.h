@@ -144,7 +144,7 @@ EIGEN_BLAS_TRMM_SPECIALIZE(scomplex, false)
       Map<const MatrixRhs, 0, OuterStride<> > rhs(_rhs, depth, cols, OuterStride<>(rhsStride));                        \
       MatrixX##EIGPREFIX b_tmp;                                                                                        \
                                                                                                                        \
-      if (ConjugateRhs)                                                                                                \
+      EIGEN_IF_CONSTEXPR (ConjugateRhs)                                                                                \
         b_tmp = rhs.conjugate();                                                                                       \
       else                                                                                                             \
         b_tmp = rhs;                                                                                                   \
@@ -153,19 +153,21 @@ EIGEN_BLAS_TRMM_SPECIALIZE(scomplex, false)
                                                                                                                        \
       /* Set uplo */                                                                                                   \
       uplo = IsLower ? 'L' : 'U';                                                                                      \
-      if (LhsStorageOrder == RowMajor) uplo = (uplo == 'L') ? 'U' : 'L';                                               \
+      EIGEN_IF_CONSTEXPR (LhsStorageOrder == RowMajor) {                                                               \
+        uplo = (uplo == 'L') ? 'U' : 'L';                                                                              \
+      }                                                                                                                \
       /* Set a, lda */                                                                                                 \
       Map<const MatrixLhs, 0, OuterStride<> > lhs(_lhs, rows, depth, OuterStride<>(lhsStride));                        \
       MatrixLhs a_tmp;                                                                                                 \
                                                                                                                        \
-      if ((conjA != 0) || (SetDiag == 0)) {                                                                            \
-        if (conjA)                                                                                                     \
+      EIGEN_IF_CONSTEXPR ((conjA != 0) || (SetDiag == 0)) {                                                            \
+        EIGEN_IF_CONSTEXPR (conjA)                                                                                     \
           a_tmp = lhs.conjugate();                                                                                     \
         else                                                                                                           \
           a_tmp = lhs;                                                                                                 \
-        if (IsZeroDiag)                                                                                                \
+        EIGEN_IF_CONSTEXPR (IsZeroDiag)                                                                                \
           a_tmp.diagonal().setZero();                                                                                  \
-        else if (IsUnitDiag)                                                                                           \
+        else EIGEN_IF_CONSTEXPR (IsUnitDiag)                                                                           \
           a_tmp.diagonal().setOnes();                                                                                  \
         a = a_tmp.data();                                                                                              \
         lda = convert_index<BlasIndex>(a_tmp.outerStride());                                                           \
@@ -268,7 +270,7 @@ EIGEN_BLAS_TRMM_L(scomplex, float, cf, ctrmm_)
       Map<const MatrixLhs, 0, OuterStride<> > lhs(_lhs, rows, depth, OuterStride<>(lhsStride));                        \
       MatrixX##EIGPREFIX b_tmp;                                                                                        \
                                                                                                                        \
-      if (ConjugateLhs)                                                                                                \
+      EIGEN_IF_CONSTEXPR (ConjugateLhs)                                                                                \
         b_tmp = lhs.conjugate();                                                                                       \
       else                                                                                                             \
         b_tmp = lhs;                                                                                                   \
@@ -277,19 +279,21 @@ EIGEN_BLAS_TRMM_L(scomplex, float, cf, ctrmm_)
                                                                                                                        \
       /* Set uplo */                                                                                                   \
       uplo = IsLower ? 'L' : 'U';                                                                                      \
-      if (RhsStorageOrder == RowMajor) uplo = (uplo == 'L') ? 'U' : 'L';                                               \
+      EIGEN_IF_CONSTEXPR (RhsStorageOrder == RowMajor) {                                                               \
+        uplo = (uplo == 'L') ? 'U' : 'L';                                                                              \
+      }                                                                                                                \
       /* Set a, lda */                                                                                                 \
       Map<const MatrixRhs, 0, OuterStride<> > rhs(_rhs, depth, cols, OuterStride<>(rhsStride));                        \
       MatrixRhs a_tmp;                                                                                                 \
                                                                                                                        \
-      if ((conjA != 0) || (SetDiag == 0)) {                                                                            \
-        if (conjA)                                                                                                     \
+      EIGEN_IF_CONSTEXPR ((conjA != 0) || (SetDiag == 0)) {                                                            \
+        EIGEN_IF_CONSTEXPR (conjA)                                                                                     \
           a_tmp = rhs.conjugate();                                                                                     \
         else                                                                                                           \
           a_tmp = rhs;                                                                                                 \
-        if (IsZeroDiag)                                                                                                \
+        EIGEN_IF_CONSTEXPR (IsZeroDiag)                                                                                \
           a_tmp.diagonal().setZero();                                                                                  \
-        else if (IsUnitDiag)                                                                                           \
+        else EIGEN_IF_CONSTEXPR (IsUnitDiag)                                                                           \
           a_tmp.diagonal().setOnes();                                                                                  \
         a = a_tmp.data();                                                                                              \
         lda = convert_index<BlasIndex>(a_tmp.outerStride());                                                           \

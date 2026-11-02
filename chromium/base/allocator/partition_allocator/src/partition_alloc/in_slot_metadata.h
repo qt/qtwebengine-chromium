@@ -6,6 +6,7 @@
 #define PARTITION_ALLOC_IN_SLOT_METADATA_H_
 
 #include <atomic>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -23,6 +24,10 @@
 #include "partition_alloc/partition_alloc_forward.h"
 #include "partition_alloc/slot_start.h"
 #include "partition_alloc/tagging.h"
+
+#if PA_BUILDFLAG(IS_APPLE)
+#include "partition_alloc/partition_alloc_base/bits.h"
+#endif
 
 namespace partition_alloc::internal {
 
@@ -157,9 +162,9 @@ class PA_COMPONENT_EXPORT(PARTITION_ALLOC) InSlotMetadata {
                 std::numeric_limits<CountType>::max());
 
   static constexpr auto kPtrInc =
-      SafeShift<CountType>(1, base::bits::CountrZero(kPtrCountMask));
+      SafeShift<CountType>(1, std::countr_zero(kPtrCountMask));
   static constexpr auto kUnprotectedPtrInc =
-      SafeShift<CountType>(1, base::bits::CountrZero(kUnprotectedPtrCountMask));
+      SafeShift<CountType>(1, std::countr_zero(kUnprotectedPtrCountMask));
 
   PA_ALWAYS_INLINE InSlotMetadata();
 
@@ -180,6 +185,10 @@ class PA_COMPONENT_EXPORT(PARTITION_ALLOC) InSlotMetadata {
     CountType old_count = count_.fetch_add(kPtrInc, std::memory_order_relaxed);
     // Check overflow.
     PA_CHECK((old_count & kPtrCountMask) != kMaxPtrCount);
+    // Should not allow refcount++ once refcount == 0 and
+    // !kMemoryHeldByAllocator.
+    PA_CHECK((old_count & (kMemoryHeldByAllocatorBit | kPtrCountMask |
+                           kUnprotectedPtrCountMask)) != 0);
   }
 
   // Similar to |Acquire()|, but for raw_ptr<T, DisableDanglingPtrDetection>
@@ -191,6 +200,10 @@ class PA_COMPONENT_EXPORT(PARTITION_ALLOC) InSlotMetadata {
         count_.fetch_add(kUnprotectedPtrInc, std::memory_order_relaxed);
     // Check overflow.
     PA_CHECK((old_count & kUnprotectedPtrCountMask) != kMaxUnprotectedPtrCount);
+    // Should not allow refcount++ once refcount == 0 and
+    // !kMemoryHeldByAllocator.
+    PA_CHECK((old_count & (kMemoryHeldByAllocatorBit | kPtrCountMask |
+                           kUnprotectedPtrCountMask)) != 0);
 #else
     Acquire();
 #endif
@@ -293,6 +306,11 @@ class PA_COMPONENT_EXPORT(PARTITION_ALLOC) InSlotMetadata {
       CheckCookieIfSupported();
     }
     return alive;
+  }
+
+  PA_ALWAYS_INLINE bool HasNonZeroRefs() {
+    static constexpr CountType mask = kPtrCountMask | kUnprotectedPtrCountMask;
+    return (count_.load(std::memory_order_acquire) & mask) != 0;
   }
 
   // Assertion to allocation which ought to be alive.

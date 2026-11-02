@@ -11,7 +11,6 @@
 #include "base/containers/span.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
-#include "base/memory/raw_ptr_exclusion.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/unsafe_shared_memory_pool.h"
@@ -91,8 +90,12 @@ struct ExportedSharedImage;
 
 class GPU_COMMAND_BUFFER_CLIENT_EXPORT SharedImageExportResult {
  public:
-  SharedImageExportResult() = default;
-  ~SharedImageExportResult() = default;
+  SharedImageExportResult();
+  ~SharedImageExportResult();
+  SharedImageExportResult(SharedImageExportResult&&);
+  SharedImageExportResult& operator=(SharedImageExportResult&&);
+  SharedImageExportResult(const SharedImageExportResult&) = delete;
+  SharedImageExportResult& operator=(const SharedImageExportResult&) = delete;
 
   // Used in FrameSinkResourceManager to facilitate creating a dummy
   // ReturnedResource for callback clearing.
@@ -107,16 +110,14 @@ class GPU_COMMAND_BUFFER_CLIENT_EXPORT SharedImageExportResult {
   // The two IsEqualForTesting methods allow easy SyncToken comparison without
   // unpacking SharedImageExportResult.
   bool IsEqualForTesting(const SyncToken& sync_token) const {
-    return sync_token_ == sync_token;
+    return sync_tokens_.size() == 1 && sync_tokens_[0] == sync_token;
   }
-
   bool IsEqualForTesting(const SharedImageExportResult& other_result) const {
-    return IsEqualForTesting(other_result.sync_token_);
+    return sync_tokens_ == other_result.sync_tokens_;
   }
 
-  bool HasData() const { return sync_token_.HasData(); }
-
-  std::string ToDebugString() const { return sync_token_.ToDebugString(); }
+  bool HasData() const;
+  std::string ToDebugString() const;
 
  private:
   friend class ClientSharedImage;
@@ -127,8 +128,9 @@ class GPU_COMMAND_BUFFER_CLIENT_EXPORT SharedImageExportResult {
                                    SharedImageExportResult>;
 
   explicit SharedImageExportResult(const SyncToken& sync_token);
+  explicit SharedImageExportResult(std::vector<SyncToken> sync_tokens);
 
-  SyncToken sync_token_;
+  std::vector<SyncToken> sync_tokens_;
 };
 
 // Wrapper around Mailbox and metadata for efficient sharing between threads
@@ -177,8 +179,9 @@ class GPU_COMMAND_BUFFER_CLIENT_EXPORT ClientSharedImage
 
     bool Init(MappableBuffer* mappable_buffer, bool is_already_mapped);
 
-    // RAW_PTR_EXCLUSION: Performance reasons (based on analysis of MotionMark).
-    RAW_PTR_EXCLUSION MappableBuffer* buffer_ = nullptr;
+    // Uses UnprotectedInRelease for performance reasons (based on analysis of
+    // MotionMark).
+    raw_ptr<MappableBuffer, UnprotectedInRelease> buffer_ = nullptr;
     gfx::Size size_;
     viz::SharedImageFormat format_;
   };
@@ -282,6 +285,13 @@ class GPU_COMMAND_BUFFER_CLIENT_EXPORT ClientSharedImage
       ContextSupport* context_support,
       base::OnceCallback<void(std::unique_ptr<gfx::GpuFence>)> callback);
 
+  static uint64_t SignalLatestSyncToken(
+      std::vector<scoped_refptr<ClientSharedImage>> shared_images,
+      std::vector<SyncToken> sync_tokens,
+      base::OnceClosure callback,
+      ContextSupport* context_support,
+      uint64_t pending_callback_id);
+
   void UpdateDestructionSyncToken(const gpu::SyncToken& sync_token) {
     destruction_sync_token_ = sync_token;
   }
@@ -292,6 +302,11 @@ class GPU_COMMAND_BUFFER_CLIENT_EXPORT ClientSharedImage
   // to ensure that any future service-side accesses to this SharedImage are
   // sequenced with respect to this call being processed.
   gpu::SyncToken BackingWasExternallyUpdated(const gpu::SyncToken& sync_token);
+
+  // Similar to the function above, except that this overloaded version accepts
+  // GpuFence. This version is used in ArImageTransport.
+  gpu::SyncToken BackingWasExternallyUpdated(
+      std::unique_ptr<gfx::GpuFence> fence);
 
   // Creates a ClientSharedImage that is not associated with any
   // SharedImageInterface for testing.
@@ -374,13 +389,27 @@ class GPU_COMMAND_BUFFER_CLIENT_EXPORT ClientSharedImage
       uint64_t usage,
       webgpu::MailboxFlags mailbox_flags);
 
-  // Pack/unpack the SharedImageExportResult.
+  // Pack the SharedImageExportResult.
   SharedImageExportResult EndImport(const SyncToken& sync_token) {
     return SharedImageExportResult{sync_token};
   }
 
+  SharedImageExportResult EndImport(const std::vector<SyncToken>& sync_tokens) {
+    return SharedImageExportResult{sync_tokens};
+  }
+
+  // Unpack the SharedImageExportResult.
+  // This version expects an empty or a single-SyncToken export result.
   SyncToken EndExport(SharedImageExportResult&& result) {
-    return result.sync_token_;
+    if (result.sync_tokens_.empty()) {
+      return SyncToken();
+    }
+    CHECK(result.sync_tokens_.size() == 1);
+    return result.sync_tokens_[0];
+  }
+
+  std::vector<SyncToken> EndExportAsVector(SharedImageExportResult&& result) {
+    return std::move(result.sync_tokens_);
   }
 
 #if BUILDFLAG(IS_WIN)
@@ -452,6 +481,9 @@ class GPU_COMMAND_BUFFER_CLIENT_EXPORT ClientSharedImage
       gfx::GpuMemoryBufferHandle buffer_handle,
       base::UnsafeSharedMemoryRegion memory_region,
       base::OnceCallback<void(bool)> callback);
+
+  SyncToken StoreSyncTokenInternal(const SyncToken& sync_token);
+  SyncToken GenSyncTokenInternal(InterfaceBase* ib);
 
   void RunOnTaskRunner(MappableBuffer::CopyNativeBufferToShMemCallback callback,
                        gfx::GpuMemoryBufferHandle buffer_handle,
@@ -541,6 +573,8 @@ struct GPU_COMMAND_BUFFER_CLIENT_EXPORT ExportedSharedImage {
       ExportedSharedImageMojoDeserialization_TextureTargetZero);
   FRIEND_TEST_ALL_PREFIXES(ClientSharedImageTest,
                            ExportedSharedImageMojoDeserialization_EmptyBuffer);
+  FRIEND_TEST_ALL_PREFIXES(ClientSharedImageTest,
+                           ExportedSharedImageMojoDeserialization_ZeroMailbox);
 
   ExportedSharedImage(const Mailbox& mailbox,
                       const SharedImageMetadata& metadata,

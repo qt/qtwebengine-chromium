@@ -7,17 +7,15 @@
 #ifndef CORE_FPDFAPI_FONT_CPDF_TRUETYPEFONT_H_
 #define CORE_FPDFAPI_FONT_CPDF_TRUETYPEFONT_H_
 
-#include "core/fpdfapi/font/cpdf_simplefont.h"
+#include "core/fpdfapi/font/cpdf_facebasedsimplefont.h"
 #include "core/fxcrt/retain_ptr.h"
 
-class CPDF_TrueTypeFont final : public CPDF_SimpleFont {
+class CPDF_TrueTypeFont final : public CPDF_FaceBasedSimpleFont {
  public:
   CONSTRUCT_VIA_MAKE_RETAIN;
   ~CPDF_TrueTypeFont() override;
 
   // CPDF_Font:
-  bool IsTrueTypeFont() const override;
-  const CPDF_TrueTypeFont* AsTrueTypeFont() const override;
   CPDF_TrueTypeFont* AsTrueTypeFont() override;
 
  private:
@@ -29,7 +27,7 @@ class CPDF_TrueTypeFont final : public CPDF_SimpleFont {
   // CPDF_Font:
   bool Load() override;
 
-  // CPDF_SimpleFont:
+  // CPDF_FaceBasedSimpleFont:
   void LoadGlyphMap() override;
 
   bool HasAnyGlyphIndex() const;

@@ -200,18 +200,18 @@ class TensorIntDivisor<int32_t, true> {
 
   EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE int divide(const int32_t n) const {
 #ifdef EIGEN_GPU_COMPILE_PHASE
-    return (__umulhi(magic, n) >> shift);
+    return __umulhi(magic, n) >> shift;
 #elif defined(SYCL_DEVICE_ONLY)
-    return (cl::sycl::mul_hi(magic, static_cast<uint32_t>(n)) >> shift);
+    return cl::sycl::mul_hi(magic, static_cast<uint32_t>(n)) >> shift;
 #else
     uint64_t v = static_cast<uint64_t>(magic) * static_cast<uint64_t>(n);
-    return (static_cast<uint32_t>(v >> 32) >> shift);
+    return static_cast<uint32_t>(v >> 32) >> shift;
 #endif
   }
 
  private:
-  // Compute the magic numbers. See Hacker's Delight section 10 for an in
-  // depth explanation.
+  // Compute the magic numbers. See Hacker's Delight section 10 for an in-depth
+  // explanation.
   EIGEN_DEVICE_FUNC void calcMagic(int32_t d) {
     const unsigned two31 = 0x80000000;  // 2**31.
     unsigned ad = d;

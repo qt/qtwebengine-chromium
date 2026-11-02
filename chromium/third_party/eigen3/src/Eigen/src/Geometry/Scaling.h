@@ -24,7 +24,7 @@ namespace Eigen {
  *
  * \tparam Scalar_ the scalar type, i.e., the type of the coefficients.
  *
- * This class represent a uniform scaling transformation. It is the return
+ * This class represents a uniform scaling transformation. It is the return
  * type of Scaling(Scalar), and most of the time this is the only way it
  * is used. In particular, this class is not aimed to be used to store a scaling transformation,
  * but rather to make easier the constructions and updates of Transform objects.

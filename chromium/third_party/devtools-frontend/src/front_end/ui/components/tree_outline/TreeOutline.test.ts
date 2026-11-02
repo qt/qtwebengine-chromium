@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import {
   dispatchClickEvent,
@@ -1200,12 +1201,12 @@ describe('TreeOutline', () => {
           tree: basicTreeData,
         });
         await RenderCoordinator.done();
-        const officeNode = getVisibleTreeNodeByText(shadowRoot, 'Offices');
+        const productsNode = getVisibleTreeNodeByText(shadowRoot, 'Products');
         const treeItemSelectedEvent =
             getEventPromise<TreeOutline.TreeOutline.ItemSelectedEvent<string>>(component, 'itemselected');
-        dispatchClickEvent(officeNode);
+        dispatchClickEvent(productsNode);
         const event = await treeItemSelectedEvent;
-        assert.deepEqual(event.data, {node: basicTreeData[0]});
+        assert.deepEqual(event.data, {node: basicTreeData[1]});
       });
 
       it('emits an event when the user navigates to the node with their keyboard', async () => {
@@ -1216,9 +1217,9 @@ describe('TreeOutline', () => {
         const officeNode = getVisibleTreeNodeByText(shadowRoot, 'Offices');
         dispatchClickEvent(officeNode);
         await RenderCoordinator.done();
-        dispatchKeyDownEvent(officeNode, {key: 'ArrowDown', bubbles: true});
         const treeItemSelectedEvent =
             getEventPromise<TreeOutline.TreeOutline.ItemSelectedEvent<string>>(component, 'itemselected');
+        dispatchKeyDownEvent(officeNode, {key: 'ArrowDown', bubbles: true});
         await RenderCoordinator.done();
         const event = await treeItemSelectedEvent;
         assert.deepEqual(event.data, {node: basicTreeData[1]});

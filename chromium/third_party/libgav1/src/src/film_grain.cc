@@ -22,8 +22,6 @@
 #include <cstring>
 #include <new>
 
-#include "src/dsp/common.h"
-#include "src/dsp/constants.h"
 #include "src/dsp/dsp.h"
 #include "src/dsp/film_grain_common.h"
 #include "src/utils/array_2d.h"
@@ -33,6 +31,7 @@
 #include "src/utils/constants.h"
 #include "src/utils/logging.h"
 #include "src/utils/threadpool.h"
+#include "src/utils/types.h"
 
 namespace libgav1 {
 

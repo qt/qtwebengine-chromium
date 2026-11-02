@@ -51,42 +51,7 @@ const char kHistogramAllTypes[] = ".AllTypes";
 const char kHistogramKeyboard[] = ".Keyboard";
 const char kHistogramTapOrClick[] = ".TapOrClick";
 
-constexpr char kSlowInteractionToNextPaintTraceEventCategory[] = "latency";
-constexpr char kSlowInteractionToNextPaintTraceEventName[] =
-    "SlowInteractionToNextPaint";
-
-void EmitInteractionToNextPaintTraceEvent(base::TimeTicks creation_time,
-                                          base::TimeTicks end_time,
-                                          bool is_pointer_event) {
-  const perfetto::Track track(base::trace_event::GetNextGlobalTraceId(),
-                              perfetto::ProcessTrack::Current());
-  TRACE_EVENT_BEGIN(
-      "interactions", "Web Interaction", track, creation_time,
-      [&](perfetto::EventContext& ctx) {
-        using Interaction = perfetto::protos::pbzero::WebContentInteraction;
-
-        auto* web_content_interaction =
-            ctx.event<perfetto::protos::pbzero::ChromeTrackEvent>()
-                ->set_web_content_interaction();
-        web_content_interaction->set_type(
-            is_pointer_event ? Interaction::INTERACTION_CLICK_TAP
-                             : Interaction::INTERACTION_KEYBOARD);
-      });
-
-  TRACE_EVENT_END("interactions", track, end_time);
-}
-
-void EmitSlowInteractionToNextPaintTraceEvent(base::TimeTicks creation_time,
-                                              base::TimeTicks end_time,
-                                              uint64_t event_id) {
-  auto track =
-      perfetto::Track::Global(base::trace_event::GetNextGlobalTraceId());
-  TRACE_EVENT_BEGIN(kSlowInteractionToNextPaintTraceEventCategory,
-                    kSlowInteractionToNextPaintTraceEventName, track,
-                    creation_time);
-  TRACE_EVENT_END(kSlowInteractionToNextPaintTraceEventCategory, track,
-                  end_time, perfetto::Flow::Global(event_id));
-}
+constexpr char kUserInteractionTraceEventCategory[] = "latency";
 
 std::unique_ptr<TracedValue> UserInteractionTraceData(base::TimeDelta duration,
                                                       bool is_pointer) {
@@ -585,13 +550,13 @@ void ResponsivenessMetrics::ReportToMetrics(PerformanceEventTiming* entry) {
 
   UserInteractionType interaction_type = entry->InteractionType();
   RecordUserInteractionUKM(window, interaction_type, *entry);
-  RecordUserInteractionTracing(window, interaction_type, *entry);
 
-  // For Histogram convenience, we only report "unique" interaction durations.
-  // I.e. when keydown and keypress, or pointerup and click, report in the
-  // same animation frame, we don't duplicate reports.  The first event for each
-  // interaction id should always be the longest.  If they have the same end
-  // time, they perfectly overlap in time and don't need to be repeated.
+  // For Histogram and Tracing convenience, we only report "unique" interaction
+  // durations. I.e. when keydown and keypress, or pointerup and click, report
+  // in the same animation frame, we don't duplicate reports. The first event
+  // for each interaction id should always be the longest. If they have the
+  // same end time, they perfectly overlap in time and don't need to be
+  // repeated.
   uint64_t frame_index = entry->GetEventTimingReportingInfo()->frame_index;
   if (!last_recorded_frame_index_.has_value() ||
       frame_index != *last_recorded_frame_index_) {
@@ -604,7 +569,9 @@ void ResponsivenessMetrics::ReportToMetrics(PerformanceEventTiming* entry) {
 
   if (!reported_interactions_in_frame_.Contains(key)) {
     reported_interactions_in_frame_.emplace_back(key);
-    RecordUserInteractionHistograms(interaction_type, *entry);
+    uint64_t event_id = base::trace_event::GetNextGlobalTraceId();
+    RecordUserInteractionTracing(window, interaction_type, *entry, event_id);
+    RecordUserInteractionHistograms(interaction_type, *entry, event_id);
   }
 }
 
@@ -622,7 +589,7 @@ void ResponsivenessMetrics::RecordUserInteractionUKM(
   base::TimeTicks event_commit_finish = reporting_info->commit_finish_time;
   base::TimeDelta duration = event_end - event_start;
 
-  uint32_t interaction_offset = entry.GetInteractionIdInfo()->offset;
+  uint64_t interaction_offset = entry.GetInteractionIdInfo()->offset;
 
   if (!event_start.is_null() && duration.InMilliseconds() >= 0) {
     if (window->GetFrame()) {
@@ -647,9 +614,9 @@ void ResponsivenessMetrics::RecordUserInteractionUKM(
 
 void ResponsivenessMetrics::RecordUserInteractionHistograms(
     UserInteractionType interaction_type,
-    const PerformanceEventTiming& entry) {
+    const PerformanceEventTiming& entry,
+    uint64_t event_id) {
   base::TimeDelta duration = entry.GetExactDuration();
-  uint64_t event_id = base::trace_event::GetNextGlobalTraceId();
   base::trace_event::HistogramScope scoped_event(event_id);
   LogResponsivenessHistogram(duration, kHistogramAllTypes);
   if (interaction_type == UserInteractionType::kTapOrClick) {
@@ -662,7 +629,8 @@ void ResponsivenessMetrics::RecordUserInteractionHistograms(
 void ResponsivenessMetrics::RecordUserInteractionTracing(
     LocalDOMWindow* window,
     UserInteractionType interaction_type,
-    const PerformanceEventTiming& entry) {
+    const PerformanceEventTiming& entry,
+    uint64_t event_id) {
   base::TimeDelta duration = entry.GetExactDuration();
 
   bool is_pointer_event = interaction_type == UserInteractionType::kTapOrClick;
@@ -671,18 +639,23 @@ void ResponsivenessMetrics::RecordUserInteractionTracing(
               "data", UserInteractionTraceData(duration, is_pointer_event),
               "frame", GetFrameIdForTracing(window->GetFrame()));
 
-  EmitInteractionToNextPaintTraceEvent(
-      entry.GetEventTimingReportingInfo()->creation_time, entry.GetEndTime(),
-      is_pointer_event);
+  const auto track = perfetto::NamedTrack::Global("Metrics: INP", event_id);
+  TRACE_EVENT_BEGIN(
+      kUserInteractionTraceEventCategory, kHistogramMaxEventDuration, track,
+      entry.GetEventTimingReportingInfo()->creation_time,
+      [&](perfetto::EventContext& ctx) {
+        using Interaction = perfetto::protos::pbzero::WebContentInteraction;
 
-  uint64_t event_id = base::trace_event::GetNextGlobalTraceId();
-  constexpr base::TimeDelta kSlowInteractionToNextPaintThreshold =
-      base::Milliseconds(100);
-  if (duration > kSlowInteractionToNextPaintThreshold) {
-    EmitSlowInteractionToNextPaintTraceEvent(
-        entry.GetEventTimingReportingInfo()->creation_time, entry.GetEndTime(),
-        event_id);
-  }
+        auto* web_content_interaction =
+            ctx.event<perfetto::protos::pbzero::ChromeTrackEvent>()
+                ->set_web_content_interaction();
+        web_content_interaction->set_type(
+            is_pointer_event ? Interaction::INTERACTION_CLICK_TAP
+                             : Interaction::INTERACTION_KEYBOARD);
+      });
+
+  TRACE_EVENT_END(kUserInteractionTraceEventCategory, track, entry.GetEndTime(),
+                  perfetto::Flow::Global(event_id));
 }
 
 void ResponsivenessMetrics::FlushAllEvents() {
@@ -695,7 +668,7 @@ void ResponsivenessMetrics::FlushAllEvents() {
   last_recorded_frame_index_ = std::nullopt;
 }
 
-uint32_t ResponsivenessMetrics::GetInteractionCount() const {
+uint64_t ResponsivenessMetrics::GetInteractionCount() const {
   auto interaction_count = interaction_id_generator_.GetValue().offset;
   if (!RuntimeEnabledFeatures::NavigationEventTimingEnabled()) {
     interaction_count -= navigation_interaction_count_;

@@ -40,6 +40,8 @@
 #include "src/dawn/native/Surface.h"
 #include "src/dawn/native/TintUtils.h"
 #include "src/utils/compiler.h"
+#include "src/utils/heap_array.h"
+#include "src/utils/numeric.h"
 #include "tint/tint.h"
 
 namespace dawn::native::null {
@@ -116,13 +118,13 @@ ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(
 void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info,
                                                const TogglesState&) const {
     if (auto* memoryHeapProperties = info.Get<AdapterPropertiesMemoryHeaps>()) {
-        auto* heapInfo = new MemoryHeapInfo[1];
-        memoryHeapProperties->heapCount = 1;
-        memoryHeapProperties->heapInfo = heapInfo;
+        auto heapInfo = HeapArray<MemoryHeapInfo>(1);
 
-        heapInfo[0].size = 1024 * 1024 * 1024;
+        heapInfo[0].size = 1024ULL * 1024 * 1024;
         heapInfo[0].properties = wgpu::HeapProperty::DeviceLocal | wgpu::HeapProperty::HostVisible |
                                  wgpu::HeapProperty::HostCached;
+
+        memoryHeapProperties->heapInfo = std::move(heapInfo).MoveToSpan();
     }
     if (auto* d3dProperties = info.Get<AdapterPropertiesD3D>()) {
         d3dProperties->shaderModel = 0;
@@ -344,20 +346,15 @@ MaybeError Device::SubmitPendingOperations() {
 
 // BindGroupDataHolder
 
-BindGroupDataHolder::BindGroupDataHolder(size_t size)
-    : mBindingDataAllocation(malloc(size))  // malloc is guaranteed to return a
-                                            // pointer aligned enough for the allocation
-{}
+BindGroupDataHolder::BindGroupDataHolder(size_t size) : mBindingDataAllocation{size} {}
 
-BindGroupDataHolder::~BindGroupDataHolder() {
-    free(mBindingDataAllocation.ExtractAsDangling());
-}
+BindGroupDataHolder::~BindGroupDataHolder() = default;
 
 // BindGroup
 
 BindGroup::BindGroup(DeviceBase* device, const UnpackedPtr<BindGroupDescriptor>& descriptor)
     : BindGroupDataHolder(descriptor->layout->GetInternalBindGroupLayout()->GetBindingDataSize()),
-      BindGroupBase(device, descriptor, mBindingDataAllocation) {}
+      BindGroupBase(device, descriptor, mBindingDataAllocation.data()) {}
 
 MaybeError BindGroup::InitializeImpl() {
     return {};
@@ -373,7 +370,8 @@ BindGroupLayout::BindGroupLayout(DeviceBase* device,
 
 Buffer::Buffer(Device* device, const UnpackedPtr<BufferDescriptor>& descriptor)
     : BufferBase(device, descriptor) {
-    mBackingData = std::unique_ptr<uint8_t[]>(new uint8_t[GetSize()]);
+    // SAFETY: Frontend is responsible for initializing mapped memory.
+    mBackingData = DAWN_UNSAFE_BUFFERS(HeapArray<std::byte>::Uninit(GetSize()));
     mAllocatedSize = GetSize();
 }
 
@@ -391,14 +389,16 @@ void Buffer::CopyFromStaging(BufferBase* staging,
                              uint64_t sourceOffset,
                              uint64_t destinationOffset,
                              uint64_t size) {
-    uint8_t* ptr = reinterpret_cast<uint8_t*>(staging->GetMappedPointer());
-    DAWN_UNSAFE_TODO(memcpy(mBackingData.get() + destinationOffset, ptr + sourceOffset, size));
+    // TODO(https://crbug.com/524406299): Use Span::CopyFrom.
+    std::ranges::copy(staging->GetCurrentMapping().GetMappedSubspan(sourceOffset, size),
+                      mBackingData.begin() + sign_cast(destinationOffset));
 }
 
-void Buffer::DoWriteBuffer(uint64_t bufferOffset, const void* data, size_t size) {
-    DAWN_ASSERT(bufferOffset + size <= GetSize());
+void Buffer::DoWriteBuffer(uint64_t bufferOffset, Span<const std::byte> data) {
+    DAWN_ASSERT(bufferOffset + data.size() <= GetSize());
     DAWN_ASSERT(mBackingData);
-    DAWN_UNSAFE_TODO(memcpy(mBackingData.get() + bufferOffset, data, size));
+    // TODO(https://crbug.com/524406299): Use Span::CopyFrom.
+    std::ranges::copy(data, mBackingData.subspan(bufferOffset).begin());
 }
 
 MaybeError Buffer::MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) {
@@ -411,7 +411,7 @@ MaybeError Buffer::FinalizeMapImpl(BufferState newState) {
 }
 
 void* Buffer::GetMappedPointerImpl() {
-    return mBackingData.get();
+    return mBackingData.data();
 }
 
 void Buffer::UnmapImpl(BufferState oldState, BufferState newState) {}
@@ -444,7 +444,7 @@ Queue::Queue(Device* device, const QueueDescriptor* descriptor) : QueueBase(devi
 
 Queue::~Queue() {}
 
-MaybeError Queue::SubmitImpl(uint32_t, CommandBufferBase* const*) {
+MaybeError Queue::SubmitImpl(Span<CommandBufferBase* const>) {
     Device* device = ToBackend(GetDevice());
 
     DAWN_TRY(device->SubmitPendingOperations());
@@ -455,9 +455,8 @@ MaybeError Queue::SubmitImpl(uint32_t, CommandBufferBase* const*) {
 
 MaybeError Queue::WriteBufferImpl(BufferBase* buffer,
                                   uint64_t bufferOffset,
-                                  const void* data,
-                                  size_t size) {
-    ToBackend(buffer)->DoWriteBuffer(bufferOffset, data, size);
+                                  Span<const std::byte> data) {
+    ToBackend(buffer)->DoWriteBuffer(bufferOffset, data);
     return {};
 }
 
@@ -608,10 +607,6 @@ bool Device::CanTextureLoadResolveTargetInTheSameRenderpass() const {
 Texture::Texture(DeviceBase* device, const UnpackedPtr<TextureDescriptor>& descriptor)
     : TextureBase(device, descriptor) {}
 
-MaybeError Texture::PinImpl(wgpu::TextureUsage usage) {
-    return {};
-}
 
-void Texture::UnpinImpl() {}
 
 }  // namespace dawn::native::null

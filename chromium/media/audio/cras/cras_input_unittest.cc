@@ -37,6 +37,8 @@ using testing::StrictMock;
 
 namespace media {
 
+using Error = AudioInputStream::AudioInputCallback::Error;
+
 class MockAudioInputCallback : public AudioInputStream::AudioInputCallback {
  public:
   MOCK_METHOD4(OnData,
@@ -44,7 +46,7 @@ class MockAudioInputCallback : public AudioInputStream::AudioInputCallback {
                     base::TimeTicks,
                     double,
                     const AudioGlitchInfo& glitch_info));
-  MOCK_METHOD0(OnError, void());
+  MOCK_METHOD1(OnError, void(Error));
 };
 
 class MockAudioManagerCrasInput : public AudioManagerCrasBase {
@@ -230,6 +232,34 @@ TEST_F(CrasInputStreamTest, CaptureLoopback) {
       CreateStream(ChannelLayoutConfig::Stereo(), kTestFramesPerPacket,
                    AudioDeviceDescription::kLoopbackInputDeviceId);
   EXPECT_EQ(test_stream->Open(), AudioInputStream::OpenOutcome::kSuccess);
+  test_stream->Close();
+}
+
+// Verifies that restarting the stream works correctly and continues to deliver
+// callbacks, which requires the persistent proxy to survive stop/start cycles.
+TEST_F(CrasInputStreamTest, RestartedStreamKeepsCapturing) {
+  CrasInputStream* test_stream = CreateStream(ChannelLayoutConfig::Mono());
+  MockAudioInputCallback mock_callback;
+
+  EXPECT_CALL(*mock_manager_.get(), RegisterSystemAecDumpSource(_)).Times(3);
+  EXPECT_CALL(*mock_manager_.get(), DeregisterSystemAecDumpSource(_)).Times(3);
+
+  ASSERT_EQ(test_stream->Open(), AudioInputStream::OpenOutcome::kSuccess);
+
+  base::WaitableEvent event(base::WaitableEvent::ResetPolicy::AUTOMATIC,
+                            base::WaitableEvent::InitialState::NOT_SIGNALED);
+
+  EXPECT_CALL(mock_callback, OnData(_, _, _, _))
+      .WillRepeatedly(InvokeWithoutArgs(&event, &base::WaitableEvent::Signal));
+
+  // Restart the same stream several times. Each cycle must keep producing
+  // callbacks.
+  for (int i = 0; i < 3; ++i) {
+    test_stream->Start(&mock_callback);
+    EXPECT_TRUE(event.TimedWait(TestTimeouts::action_timeout()));
+    test_stream->Stop();
+  }
+
   test_stream->Close();
 }
 

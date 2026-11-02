@@ -15,15 +15,13 @@
 
 namespace features {
 
-COMPONENT_EXPORT(MEDIA_WEBRTC)
-BASE_DECLARE_FEATURE(kWebRtcAllowWgcScreenCapturer);
-
-COMPONENT_EXPORT(MEDIA_WEBRTC)
-BASE_DECLARE_FEATURE(kWebRtcAllowWgcScreenZeroHz);
 
 #if BUILDFLAG(IS_WIN)
 COMPONENT_EXPORT(MEDIA_WEBRTC)
 BASE_DECLARE_FEATURE(kWebRtcWgcRequireBorder);
+
+COMPONENT_EXPORT(MEDIA_WEBRTC)
+BASE_DECLARE_FEATURE(kWebRtcAllowWgcUsingTexture);
 #endif
 
 COMPONENT_EXPORT(MEDIA_WEBRTC)
@@ -51,6 +49,9 @@ BASE_DECLARE_FEATURE(kWebRtcH265L1T3);
 
 COMPONENT_EXPORT(MEDIA_WEBRTC)
 BASE_DECLARE_FEATURE(kWebRtcAV1HWEncode);
+
+COMPONENT_EXPORT(MEDIA_WEBRTC)
+BASE_DECLARE_FEATURE(kWebRtcNeuralResidualEchoEstimationAsyncInit);
 
 // Returns whether the OpenH264 encoder is available in WebRTC based on
 // build flags and OpenH264SoftwareEncoder feature flag status.

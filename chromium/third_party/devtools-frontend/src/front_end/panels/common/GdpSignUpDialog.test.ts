@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -77,7 +78,7 @@ describeWithEnvironment('GdpSignUpDialog', () => {
       userBadgesRecordActionStub = sinon.stub(Badges.UserBadges.instance(), 'recordAction');
       snackbarShowStub = sinon.stub(Snackbars.Snackbar.Snackbar, 'show');
 
-      Common.Settings.settingForTest('receive-gdp-badges').set(false);
+      Common.Settings.Settings.instance().settingForTest('receive-gdp-badges').set(false);
     });
 
     it('handles successful sign up', async () => {
@@ -94,7 +95,7 @@ describeWithEnvironment('GdpSignUpDialog', () => {
       // Wait for `Badges.UserBadges.instance().initialize` to resolve.
       await new Promise(resolve => setTimeout(resolve, 0));
 
-      assert.isTrue(Common.Settings.settingForTest('receive-gdp-badges').get());
+      assert.isTrue(Common.Settings.Settings.instance().settingForTest('receive-gdp-badges').get());
       sinon.assert.calledOnceWithExactly(
           createProfileStub, {user: 'Test User', emailPreference: Host.GdpClient.EmailPreference.DISABLED});
       sinon.assert.calledOnce(userBadgesInitializeStub);
@@ -119,7 +120,7 @@ describeWithEnvironment('GdpSignUpDialog', () => {
       // Wait for `Badges.UserBadges.instance().initialize` to resolve.
       await new Promise(resolve => setTimeout(resolve, 0));
 
-      assert.isTrue(Common.Settings.settingForTest('receive-gdp-badges').get());
+      assert.isTrue(Common.Settings.Settings.instance().settingForTest('receive-gdp-badges').get());
       sinon.assert.calledOnceWithExactly(
           createProfileStub, {user: 'Test User', emailPreference: Host.GdpClient.EmailPreference.ENABLED});
       sinon.assert.calledOnce(userBadgesInitializeStub);
@@ -141,7 +142,7 @@ describeWithEnvironment('GdpSignUpDialog', () => {
       // Wait for `Badges.UserBadges.instance().initialize` to resolve.
       await new Promise(resolve => setTimeout(resolve, 0));
 
-      assert.isFalse(Common.Settings.settingForTest('receive-gdp-badges').get());
+      assert.isFalse(Common.Settings.Settings.instance().settingForTest('receive-gdp-badges').get());
       sinon.assert.calledOnce(createProfileStub);
       sinon.assert.calledOnce(snackbarShowStub);
       sinon.assert.notCalled(userBadgesInitializeStub);

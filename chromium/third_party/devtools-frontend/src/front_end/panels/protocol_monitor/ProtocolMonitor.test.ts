@@ -3,15 +3,16 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Host from '../../core/host/host.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as ProtocolClient from '../../core/protocol_client/protocol_client.js';
 import * as SDK from '../../core/sdk/sdk.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import {findMenuItemWithLabel} from '../../testing/ContextMenuHelpers.js';
 import {assertScreenshot, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
-import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
+import {deinitializeGlobalVars, initializeGlobalVars} from '../../testing/EnvironmentHelpers.js';
 import {expectCall} from '../../testing/ExpectStubCall.js';
 import {stubFileManager} from '../../testing/FileManagerHelpers.js';
 import {createViewFunctionStub, type ViewFunctionStub} from '../../testing/ViewFunctionHelpers.js';
@@ -30,7 +31,15 @@ let protocolMonitor!: ProtocolMonitorImpl;
 let jsonEditor!: JSONEditor;
 let sendRawMessageStub!: sinon.SinonStub;
 
-describeWithEnvironment('ProtocolMonitor', () => {
+describe('ProtocolMonitor', () => {
+  before(async () => {
+    await initializeGlobalVars();
+  });
+
+  after(async () => {
+    await deinitializeGlobalVars();
+  });
+
   let originalSendRawMessage: typeof InspectorBackend.test.sendRawMessage;
   beforeEach(() => {
     sendRawMessageStub = sinon.stub();
@@ -470,7 +479,7 @@ describeWithEnvironment('ProtocolMonitor', () => {
             result: {test: 'Test'},
             requestTime: 1,
             elapsedTime: 2,
-          }
+          },
         ],
         selectedMessage: undefined,
         sidebarVisible: false,
@@ -522,7 +531,7 @@ describeWithEnvironment('ProtocolMonitor', () => {
           result: {test: 'Test'},
           requestTime: 1,
           elapsedTime: 2,
-        }
+        },
       ];
 
       const viewInput = {
@@ -548,7 +557,7 @@ describeWithEnvironment('ProtocolMonitor', () => {
         onEditorSubmit: () => {},
         targets: [
           {id: () => 'main', name: () => 'Main', inspectedURL: () => 'www.example.com'},
-          {id: () => 'prerender', name: () => 'Prerender', inspectedURL: () => 'www.example.com/prerender'}
+          {id: () => 'prerender', name: () => 'Prerender', inspectedURL: () => 'www.example.com/prerender'},
         ] as SDK.Target.Target[],
         selectedTargetId: 'prerender',
       };

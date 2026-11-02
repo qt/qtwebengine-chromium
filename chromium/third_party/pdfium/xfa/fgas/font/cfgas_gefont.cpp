@@ -135,8 +135,8 @@ bool CFGAS_GEFont::InitFont() {
 
 WideString CFGAS_GEFont::GetFamilyName() const {
   CFX_SubstFont* subst_font = font_->GetSubstFont();
-  ByteString family_name = subst_font && !subst_font->family_.IsEmpty()
-                               ? subst_font->family_
+  ByteString family_name = subst_font && !subst_font->GetFamily().IsEmpty()
+                               ? subst_font->GetFamily()
                                : font_->GetFamilyName();
   return WideString::FromDefANSI(family_name.AsStringView());
 }
@@ -150,7 +150,7 @@ uint32_t CFGAS_GEFont::GetFontStyles() const {
   uint32_t dwStyles = 0;
   auto* pSubstFont = font_->GetSubstFont();
   if (pSubstFont) {
-    if (pSubstFont->weight_ == pdfium::kFontWeightBold) {
+    if (pSubstFont->IsBold()) {
       dwStyles |= pdfium::kFontStyleForceBold;
     }
   } else {

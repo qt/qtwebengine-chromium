@@ -6,6 +6,7 @@
 #define V8_OBJECTS_HEAP_OBJECT_H_
 
 #include "src/base/macros.h"
+#include "src/base/strong-alias.h"
 #include "src/common/globals.h"
 #include "src/objects/casting.h"
 #include "src/objects/instance-type.h"
@@ -55,7 +56,7 @@ struct ObjectTraits {
   using BodyDescriptor = typename T::BodyDescriptor;
 };
 
-enum InSharedSpace : bool { kInSharedSpace = true, kNotInSharedSpace = false };
+using InSharedSpace = base::StrongAlias<struct InSharedSpaceTag, bool>;
 
 // HeapObject is the superclass for all classes describing heap allocated
 // objects.
@@ -122,10 +123,6 @@ V8_OBJECT class HeapObject {
   inline void set_map_word(Tagged<Map> map, ReleaseStoreTag);
   inline void set_map_word_forwarded(Tagged<HeapObject> target_object,
                                      ReleaseStoreTag);
-
-  // This is slower than GetReadOnlyRoots, but safe to call during
-  // bootstrapping.
-  inline EarlyReadOnlyRoots EarlyGetReadOnlyRoots() const;
 
   // Converts an address to a HeapObject pointer.
   static inline Tagged<HeapObject> FromAddress(Address address) {
@@ -334,7 +331,7 @@ V8_OBJECT class HeapObject {
       InSharedSpace in_shared_space, Tagged<Map> map);
   static inline AllocationAlignment RequiredAlignment(
       AllocationSpace allocation_space, Tagged<Map> map);
-  bool inline CheckRequiredAlignment() const;
+  bool CheckRequiredAlignment() const;
 
   // Whether the object needs rehashing. That is the case if the object's
   // content depends on v8_flags.hash_seed. When the object is deserialized into
@@ -419,33 +416,26 @@ inline HeapObject* Tagged<HeapObject>::ToRawPtr() const {
 }
 
 // Overload Is* predicates for HeapObject.
-#define IS_TYPE_FUNCTION_DECL(Type)                \
-  V8_INLINE bool Is##Type(Tagged<HeapObject> obj); \
-  V8_INLINE bool Is##Type(const HeapObject* obj);
+#define IS_TYPE_FUNCTION_DECL(Type) \
+  V8_INLINE bool Is##Type(Tagged<HeapObject> obj);
 HEAP_OBJECT_TYPE_LIST(IS_TYPE_FUNCTION_DECL)
 IS_TYPE_FUNCTION_DECL(HashTableBase)
 IS_TYPE_FUNCTION_DECL(SloppyArgumentsElements)
 IS_TYPE_FUNCTION_DECL(SmallOrderedHashTable)
 IS_TYPE_FUNCTION_DECL(PropertyDictionary)
 IS_TYPE_FUNCTION_DECL(AnyHole)
-IS_TYPE_FUNCTION_DECL(StrongDescriptorArray)
 #undef IS_TYPE_FUNCTION_DECL
 
-// Most calls to Is<Oddball> should go via the Tagged<Object> overloads, with
-// an Isolate/LocalIsolate/ReadOnlyRoots parameter.
-#define IS_TYPE_FUNCTION_DECL(Type, ...)                            \
-  V8_INLINE bool Is##Type(Tagged<HeapObject> obj);                  \
-  V8_INLINE bool Is##Type(const HeapObject* obj, Isolate* isolate); \
-  V8_INLINE bool Is##Type(const HeapObject* obj);
+#define IS_TYPE_FUNCTION_DECL(Type, ...) \
+  V8_INLINE bool Is##Type(Tagged<HeapObject> obj);
 ODDBALL_LIST(IS_TYPE_FUNCTION_DECL)
 HOLE_LIST(IS_TYPE_FUNCTION_DECL)
 IS_TYPE_FUNCTION_DECL(UndefinedContextCell)
 IS_TYPE_FUNCTION_DECL(NullOrUndefined)
 #undef IS_TYPE_FUNCTION_DECL
 
-#define DECL_STRUCT_PREDICATE(NAME, Name, name)    \
-  V8_INLINE bool Is##Name(Tagged<HeapObject> obj); \
-  V8_INLINE bool Is##Name(const HeapObject* obj);
+#define DECL_STRUCT_PREDICATE(NAME, Name, name) \
+  V8_INLINE bool Is##Name(Tagged<HeapObject> obj);
 STRUCT_LIST(DECL_STRUCT_PREDICATE)
 #undef DECL_STRUCT_PREDICATE
 

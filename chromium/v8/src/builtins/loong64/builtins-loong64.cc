@@ -2442,6 +2442,10 @@ void Builtins::Generate_CallOrConstructVarargs(MacroAssembler* masm,
   Label stack_overflow;
   __ StackOverflowCheck(len, kScratchReg, a5, &stack_overflow);
 
+  // Skip argument setup if we don't need to push any varargs.
+  Label done;
+  __ Branch(&done, eq, len, Operand(zero_reg));
+
   // Move the arguments already in the stack,
   // including the receiver and the return address.
   // a4: Number of arguments to make room for.
@@ -2451,12 +2455,11 @@ void Builtins::Generate_CallOrConstructVarargs(MacroAssembler* masm,
 
   // Push arguments onto the stack (thisArgument is already on the stack).
   {
-    Label done, push, loop;
+    Label push, loop;
     Register src = a6;
     Register scratch = t0;
 
     __ addi_d(src, args, OFFSET_OF_DATA_START(FixedArray) - kHeapObjectTag);
-    __ Branch(&done, eq, len, Operand(zero_reg));
     __ slli_d(scratch, len, kSystemPointerSizeLog2);
     __ Sub_d(scratch, sp, Operand(scratch));
 #if !V8_STATIC_ROOTS_BOOL
@@ -2479,8 +2482,8 @@ void Builtins::Generate_CallOrConstructVarargs(MacroAssembler* masm,
     __ Add_d(a7, a7, Operand(kSystemPointerSize));
     __ Add_d(scratch, scratch, Operand(kSystemPointerSize));
     __ Branch(&loop, ne, scratch, Operand(sp));
-    __ bind(&done);
   }
+  __ bind(&done);
 
   // Tail-call to the actual Call or Construct builtin.
   __ TailCallBuiltin(target_builtin);
@@ -2995,35 +2998,7 @@ void Builtins::Generate_WasmLiftoffFrameSetup(MacroAssembler* masm) {
 
   // Save registers.
   __ MultiPush(kSavedGpRegs);
-  {
-    // Check if machine has simd enabled, if so push vector registers. If not
-    // then only push double registers.
-    Label no_simd, done;
-    UseScratchRegisterScope temps(masm);
-    Register scratch = temps.Acquire();
-
-    __ li(scratch, ExternalReference::supports_simd_128_address());
-    // If > 0 then simd is available.
-    __ Ld_bu(scratch, MemOperand(scratch, 0));
-    __ Branch(&no_simd, le, scratch, Operand(zero_reg));
-
-    // Save vector registers.
-    {
-      CpuFeatureScope lsx_scope(
-          masm, LSX, CpuFeatureScope::CheckPolicy::kDontCheckSupported);
-      __ MultiPushLSX(kSavedFpRegs);
-    }
-    __ Branch(&done);
-
-    __ bind(&no_simd);
-    __ MultiPushFPU(kSavedFpRegs);
-    // kFixedFrameSizeFromFp is hard coded to include space for Simd
-    // registers, so we still need to allocate extra (unused) space on the stack
-    // as if they were saved.
-    __ Sub_d(sp, sp, kSavedFpRegs.Count() * kDoubleSize);
-
-    __ bind(&done);
-  }
+  __ MultiPushFPUOrLSX(kSavedFpRegs, true);
   __ Push(ra);
 
   // Arguments to the runtime function: instance data, func_index, and an
@@ -3036,34 +3011,9 @@ void Builtins::Generate_WasmLiftoffFrameSetup(MacroAssembler* masm) {
 
   // Restore registers and frame type.
   __ Pop(ra);
-  {
-    // Check if machine has simd enabled, if so push vector registers. If not
-    // then only push double registers.
-    Label no_simd, done;
-    UseScratchRegisterScope temps(masm);
-    Register scratch = temps.Acquire();
-
-    __ li(scratch, ExternalReference::supports_simd_128_address());
-    // If > 0 then simd is available.
-    __ Ld_bu(scratch, MemOperand(scratch, 0));
-    __ Branch(&no_simd, le, scratch, Operand(zero_reg));
-
-    // Save vector registers.
-    {
-      CpuFeatureScope lsx_scope(
-          masm, LSX, CpuFeatureScope::CheckPolicy::kDontCheckSupported);
-      __ MultiPopLSX(kSavedFpRegs);
-    }
-    __ Branch(&done);
-
-    __ bind(&no_simd);
-    __ Add_d(sp, sp, kSavedFpRegs.Count() * kDoubleSize);
-    __ MultiPopFPU(kSavedFpRegs);
-
-    __ bind(&done);
-  }
-
+  __ MultiPopFPUOrLSX(kSavedFpRegs, true);
   __ MultiPop(kSavedGpRegs);
+
   __ Ld_d(kWasmImplicitArgRegister,
           MemOperand(fp, WasmFrameConstants::kWasmInstanceDataOffset));
   __ li(scratch, StackFrame::TypeToMarker(StackFrame::WASM));
@@ -3086,36 +3036,7 @@ void Builtins::Generate_WasmCompileLazy(MacroAssembler* masm) {
     // unwind before using the spilled values).
     __ Push(kWasmImplicitArgRegister);
     __ MultiPush(kSavedGpRegs);
-    {
-      // Check if machine has simd enabled, if so push vector registers. If not
-      // then only push double registers.
-      Label no_simd, done;
-      UseScratchRegisterScope temps(masm);
-      Register scratch = temps.Acquire();
-
-      __ li(scratch, ExternalReference::supports_simd_128_address());
-      // If > 0 then simd is available.
-      __ Ld_bu(scratch, MemOperand(scratch, 0));
-      __ Branch(&no_simd, le, scratch, Operand(zero_reg));
-
-      // Save vector registers.
-      {
-        CpuFeatureScope lsx_scope(
-            masm, LSX, CpuFeatureScope::CheckPolicy::kDontCheckSupported);
-        __ MultiPushLSX(kSavedFpRegs);
-      }
-      __ Branch(&done);
-
-      __ bind(&no_simd);
-      __ MultiPushFPU(kSavedFpRegs);
-      // kFixedFrameSizeFromFp is hard coded to include space for Simd
-      // registers, so we still need to allocate extra (unused) space on the
-      // stack as if they were saved.
-      __ Sub_d(sp, sp, kSavedFpRegs.Count() * kDoubleSize);
-
-      __ bind(&done);
-    }
-
+    __ MultiPushFPUOrLSX(kSavedFpRegs);
     __ Push(kWasmImplicitArgRegister, kWasmCompileLazyFuncIndexRegister);
 
     // Initialize the JavaScript context with 0. CEntry will use it to
@@ -3128,33 +3049,7 @@ void Builtins::Generate_WasmCompileLazy(MacroAssembler* masm) {
     __ SmiUntag(t0, a0);
 
     // Restore registers.
-    {
-      // Check if machine has simd enabled, if so push vector registers. If not
-      // then only push double registers.
-      Label no_simd, done;
-      UseScratchRegisterScope temps(masm);
-      Register scratch = temps.Acquire();
-
-      __ li(scratch, ExternalReference::supports_simd_128_address());
-      // If > 0 then simd is available.
-      __ Ld_bu(scratch, MemOperand(scratch, 0));
-      __ Branch(&no_simd, le, scratch, Operand(zero_reg));
-
-      // Save vector registers.
-      {
-        CpuFeatureScope lsx_scope(
-            masm, LSX, CpuFeatureScope::CheckPolicy::kDontCheckSupported);
-        __ MultiPopLSX(kSavedFpRegs);
-      }
-      __ Branch(&done);
-
-      __ bind(&no_simd);
-      __ Add_d(sp, sp, kSavedFpRegs.Count() * kDoubleSize);
-      __ MultiPopFPU(kSavedFpRegs);
-
-      __ bind(&done);
-    }
-
+    __ MultiPopFPUOrLSX(kSavedFpRegs);
     __ MultiPop(kSavedGpRegs);
     __ Pop(kWasmImplicitArgRegister);
   }
@@ -3170,26 +3065,104 @@ void Builtins::Generate_WasmCompileLazy(MacroAssembler* masm) {
   __ Jump(t0);
 }
 
-void Builtins::Generate_WasmDebugBreak(MacroAssembler* masm) {
+namespace {
+enum class DebugBreakKind { kBreak, kTrap };
+
+void Generate_WasmDebugBreakOrTrap(MacroAssembler* masm, DebugBreakKind kind) {
   HardAbortScope hard_abort(masm);  // Avoid calls to Abort.
   {
     FrameScope scope(masm, StackFrame::WASM_DEBUG_BREAK);
 
+    UseScratchRegisterScope temps(masm);
+    Register scratch = temps.Acquire();
     // Save all parameter registers. They might hold live values, we restore
     // them after the runtime call.
     __ MultiPush(WasmDebugBreakFrameConstants::kPushedGpRegs);
-    __ MultiPushFPU(WasmDebugBreakFrameConstants::kPushedFpRegs);
+    {
+      // Check if machine has simd enabled, if so push vector registers. If not
+      // then only push double registers.
+      Label no_simd, done;
 
-    // Initialize the JavaScript context with 0. CEntry will use it to
-    // set the current context on the isolate.
-    __ Move(cp, Smi::zero());
-    __ CallRuntime(Runtime::kWasmDebugBreak, 0);
+      __ li(scratch, ExternalReference::supports_simd_128_address());
+      // If == 0 then simd is unavailable.
+      __ Ld_bu(scratch, MemOperand(scratch, 0));
+      __ Branch(&no_simd, eq, scratch, Operand(zero_reg));
 
-    // Restore registers.
-    __ MultiPopFPU(WasmDebugBreakFrameConstants::kPushedFpRegs);
-    __ MultiPop(WasmDebugBreakFrameConstants::kPushedGpRegs);
+      // Save vector registers.
+      {
+        CpuFeatureScope lsx_scope(
+            masm, LSX, CpuFeatureScope::CheckPolicy::kDontCheckSupported);
+        __ MultiPushLSX(WasmDebugBreakFrameConstants::kPushedFpRegs);
+      }
+      __ Branch(&done);
+
+      __ bind(&no_simd);
+      // Each FPU register is allocated a 128-bit spill slot because the offsets
+      // in GetPushedFpRegisterOffset are calculated based on a 128-bit size.
+      __ MultiPushFPUWideStride(WasmDebugBreakFrameConstants::kPushedFpRegs);
+
+      __ bind(&done);
+    }
+
+    // Load instance data from the caller's frame.
+    {
+      __ Ld_d(scratch, MemOperand(fp, 0));
+      __ Ld_d(kWasmImplicitArgRegister,
+              MemOperand(scratch, WasmFrameConstants::kWasmInstanceDataOffset));
+      __ LoadTaggedField(
+          cp, FieldMemOperand(kWasmImplicitArgRegister,
+                              WasmTrustedInstanceData::kNativeContextOffset));
+    }
+
+    if (kind == DebugBreakKind::kTrap) {
+      // The reason was pushed before the frame.
+      // EnterFrame(WASM_DEBUG_BREAK) pushes ra, fp, type.
+      // So [fp+8]=saved ra, [fp+0]=saved fp, [fp-8]=type,
+      // [fp+16]=reason.
+      __ Ld_d(scratch, MemOperand(fp, 2 * kSystemPointerSize));
+      __ Push(scratch);
+      __ CallRuntime(Runtime::kThrowWasmError, 1);
+      __ break_(0xCC);
+    } else {
+      __ CallRuntime(Runtime::kWasmDebugBreak, 0);
+
+      // Restore registers.
+      {
+        // Check if machine has simd enabled, if so push vector registers. If
+        // not then only push double registers.
+        Label no_simd, done;
+
+        __ li(scratch, ExternalReference::supports_simd_128_address());
+        // If == 0 then simd is unavailable.
+        __ Ld_bu(scratch, MemOperand(scratch, 0));
+        __ Branch(&no_simd, eq, scratch, Operand(zero_reg));
+
+        {
+          CpuFeatureScope lsx_scope(
+              masm, LSX, CpuFeatureScope::CheckPolicy::kDontCheckSupported);
+          __ MultiPopLSX(WasmDebugBreakFrameConstants::kPushedFpRegs);
+        }
+        __ Branch(&done);
+
+        __ bind(&no_simd);
+        __ MultiPopFPUWideStride(WasmDebugBreakFrameConstants::kPushedFpRegs);
+
+        __ bind(&done);
+      }
+
+      __ MultiPop(WasmDebugBreakFrameConstants::kPushedGpRegs);
+    }
   }
-  __ Ret();
+  if (kind == DebugBreakKind::kBreak) __ Ret();
+}
+}  // namespace
+
+void Builtins::Generate_WasmDebugBreak(MacroAssembler* masm) {
+  Generate_WasmDebugBreakOrTrap(masm, DebugBreakKind::kBreak);
+}
+
+void Builtins::Generate_WasmDebugTrap(MacroAssembler* masm) {
+  Generate_WasmDebugBreakOrTrap(masm, DebugBreakKind::kTrap);
 }
 
 namespace {
@@ -3625,6 +3598,7 @@ void Generate_WasmResumeHelper(MacroAssembler* masm, wasm::OnResume on_resume) {
   }
   __ Trap();
   __ bind(&suspend);
+  __ LoadRoot(kReturnRegister0, RootIndex::kUndefinedValue);
   __ LeaveFrame(StackFrame::WASM_JSPI);
   // Pop receiver + parameter.
   __ Add_d(sp, sp, Operand(2 * kSystemPointerSize));
@@ -4932,7 +4906,7 @@ void Generate_DeoptimizationEntry(MacroAssembler* masm,
     __ li(scratch, ExternalReference::supports_simd_128_address());
     // If > 0 then simd is available.
     __ Ld_bu(scratch, MemOperand(scratch, 0));
-    __ Branch(&no_simd, le, scratch, Operand(zero_reg));
+    __ Branch(&no_simd, eq, scratch, Operand(zero_reg));
 
     CpuFeatureScope lsx_scope(
         masm, LSX, CpuFeatureScope::CheckPolicy::kDontCheckSupported);
@@ -5028,7 +5002,7 @@ void Generate_DeoptimizationEntry(MacroAssembler* masm,
     __ li(scratch, ExternalReference::supports_simd_128_address());
     // If > 0 then simd is available.
     __ Ld_bu(scratch, MemOperand(scratch, 0));
-    __ Branch(&no_simd, le, scratch, Operand(zero_reg));
+    __ Branch(&no_simd, eq, scratch, Operand(zero_reg));
 
     CpuFeatureScope lsx_scope(
         masm, LSX, CpuFeatureScope::CheckPolicy::kDontCheckSupported);
@@ -5130,7 +5104,7 @@ void Generate_DeoptimizationEntry(MacroAssembler* masm,
     __ li(scratch, ExternalReference::supports_simd_128_address());
     // If > 0 then simd is available.
     __ Ld_bu(scratch, MemOperand(scratch, 0u));
-    __ Branch(&no_simd, le, scratch, Operand(zero_reg));
+    __ Branch(&no_simd, eq, scratch, Operand(zero_reg));
 
     CpuFeatureScope lsx_scope(
         masm, LSX, CpuFeatureScope::CheckPolicy::kDontCheckSupported);
@@ -5358,12 +5332,29 @@ void Builtins::Generate_RestartFrameTrampoline(MacroAssembler* masm) {
 
   __ Ld_d(a1, MemOperand(fp, StandardFrameConstants::kFunctionOffset));
   __ Ld_d(a0, MemOperand(fp, StandardFrameConstants::kArgCOffset));
+
+  // If the actual argument count for the previous invocation is smaller than
+  // the formal parameter count then use the latter as the actual argument
+  // count for the next invocation instead of the former.
+  // This approach avoids dropping adapted parameters for simplicity while
+  // keeping the caller stack balanced after the call.
+  UseScratchRegisterScope temps(masm);
+  Register scratch = temps.Acquire();
+  __ Ld_d(scratch,
+          MemOperand(fp, InterpreterFrameConstants::kBytecodeArrayFromFp));
+  __ Ld_hu(scratch,
+           FieldMemOperand(scratch, offsetof(BytecodeArray, parameter_size_)));
+
+  Label skip;
+  __ Branch(&skip, ge, a0, Operand(scratch));
+  __ Move(a0, scratch);
+  __ bind(&skip);
+
   __ LeaveFrame(StackFrame::INTERPRETED);
 
-  // The arguments are already in the stack (including any necessary padding),
-  // we should not try to massage the arguments again.
-  __ InvokeFunction(a1, a0, InvokeType::kJump,
-                    ArgumentAdaptionMode::kDontAdapt);
+  // The arguments are already in the stack, but we might need to adapt them
+  // if the function signature changed (e.g. via LiveEdit).
+  __ InvokeFunction(a1, a0, InvokeType::kJump, ArgumentAdaptionMode::kAdapt);
 }
 
 #undef __

@@ -28,6 +28,7 @@
 #include "src/dawn/wire/WireDeserializeAllocator.h"
 
 #include <algorithm>
+#include <utility>
 
 #include "src/utils/compiler.h"
 
@@ -40,36 +41,29 @@ WireDeserializeAllocator::~WireDeserializeAllocator() {
     Reset();
 }
 
-void* WireDeserializeAllocator::GetSpace(size_t size) {
+std::optional<Span<std::byte>> WireDeserializeAllocator::TryGetSpace(size_t size) {
     // Return space in the current buffer if possible first.
-    if (mRemainingSize >= size) {
-        char* buffer = mCurrentBuffer;
-        DAWN_UNSAFE_TODO(mCurrentBuffer += size);
-        mRemainingSize -= size;
-        return buffer;
+    if (mCurrentBuffer.size() >= size) {
+        return mCurrentBuffer.TakeFirst(size);
     }
 
     // Otherwise allocate a new buffer and try again.
-    size_t allocationSize = std::max(size, size_t(2048));
-    char* allocation = static_cast<char*>(malloc(allocationSize));
-    if (allocation == nullptr) {
-        return nullptr;
+    size_t allocationSize = std::max(size, kDefaultBufferSize);
+    auto allocation =
+        // SAFETY: This is a pool allocation that will be initialized when it's suballocated.
+        DAWN_UNSAFE_BUFFERS(HeapArray<std::byte>::Uninit(allocationSize, std::nothrow));
+    if (!allocation) {
+        return std::nullopt;
     }
 
-    mAllocations.push_back(allocation);
     mCurrentBuffer = allocation;
-    mRemainingSize = allocationSize;
-    return GetSpace(size);
+    mAllocations.push_back(std::move(allocation));
+    return TryGetSpace(size);
 }
 
 void WireDeserializeAllocator::Reset() {
     // The initial buffer is the inline buffer so that some allocations can be skipped
     mCurrentBuffer = mStaticBuffer;
-    mRemainingSize = sizeof(mStaticBuffer);
-
-    for (auto& allocation : mAllocations) {
-        free(allocation.ExtractAsDangling());
-    }
     mAllocations.clear();
 }
 }  // namespace dawn::wire

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import type * as Protocol from '../../generated/protocol.js';
 import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
@@ -73,7 +74,7 @@ const mockScript1: RehydratingScript = {
     isDefault: true,
     type: 'type',
   },
-  buildId: ''
+  buildId: '',
 };
 
 const mockScript2: RehydratingScript = {
@@ -97,7 +98,7 @@ const mockScript2: RehydratingScript = {
     isDefault: true,
     type: 'type',
   },
-  buildId: ''
+  buildId: '',
 };
 
 const mockResource: RehydratingResource = {

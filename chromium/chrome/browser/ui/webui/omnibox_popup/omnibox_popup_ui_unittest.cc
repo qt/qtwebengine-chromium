@@ -10,10 +10,13 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
+#include "chrome/browser/ui/omnibox/omnibox_controller.h"
+#include "chrome/browser/ui/webui/omnibox_popup/omnibox_popup_web_contents_helper.h"
 #include "chrome/common/channel_info.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "components/contextual_search/contextual_search_service.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "components/omnibox/browser/test_omnibox_client.h"
 #include "components/variations/scoped_variations_ids_provider.h"
 #include "content/public/test/test_web_ui.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -39,22 +42,21 @@ TEST_F(OmniboxPopupUITest, SafeWithNullContextualSearchService) {
 
   EXPECT_EQ(ContextualSearchServiceFactory::GetForProfile(profile()), nullptr);
 
+  auto omnibox_controller = std::make_unique<OmniboxController>(
+      std::make_unique<TestOmniboxClient>());
+  OmniboxPopupWebContentsHelper::CreateForWebContents(web_contents());
+  OmniboxPopupWebContentsHelper::FromWebContents(web_contents())
+      ->set_omnibox_controller(omnibox_controller.get());
+
   content::TestWebUI web_ui;
   web_ui.set_web_contents(web_contents());
 
   auto omnibox_popup_ui = std::make_unique<OmniboxPopupUI>(&web_ui);
 
-  mojo::PendingRemote<composebox::mojom::Page> pending_page;
   mojo::PendingReceiver<composebox::mojom::PageHandler> pending_page_handler;
   mojo::PendingRemote<searchbox::mojom::Page> pending_searchbox_page;
   mojo::PendingReceiver<searchbox::mojom::PageHandler>
       pending_searchbox_handler;
-
-  {
-    auto pipe_page = mojo::MessagePipe();
-    pending_page = mojo::PendingRemote<composebox::mojom::Page>(
-        std::move(pipe_page.handle0), 0);
-  }
 
   {
     auto pipe_handler = mojo::MessagePipe();
@@ -76,9 +78,9 @@ TEST_F(OmniboxPopupUITest, SafeWithNullContextualSearchService) {
             std::move(pipe_sb_handler.handle0));
   }
 
-  omnibox_popup_ui->CreatePageHandler(
-      std::move(pending_page), std::move(pending_page_handler),
-      std::move(pending_searchbox_page), std::move(pending_searchbox_handler));
+  omnibox_popup_ui->CreatePageHandler(std::move(pending_page_handler),
+                                      std::move(pending_searchbox_page),
+                                      std::move(pending_searchbox_handler));
 
   mojo::PendingRemote<omnibox_popup::mojom::Page> pending_popup_page;
   mojo::PendingReceiver<omnibox_popup::mojom::PageHandler>
@@ -101,4 +103,7 @@ TEST_F(OmniboxPopupUITest, SafeWithNullContextualSearchService) {
                                       std::move(pending_popup_handler));
 
   EXPECT_NE(omnibox_popup_ui->popup_handler(), nullptr);
+
+  OmniboxPopupWebContentsHelper::FromWebContents(web_contents())
+      ->set_omnibox_controller(nullptr);
 }

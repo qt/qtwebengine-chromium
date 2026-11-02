@@ -38,7 +38,6 @@
 
 #include "absl/container/inlined_vector.h"
 #include "dawn/platform/DawnPlatform.h"
-#include "src/dawn/common/Log.h"
 #include "src/dawn/native/WaitAnySystemEvent.h"
 #include "src/dawn/native/d3d/D3DError.h"
 #include "src/dawn/native/d3d11/BufferD3D11.h"
@@ -50,6 +49,8 @@
 #include "src/dawn/native/d3d11/TextureD3D11.h"
 #include "src/dawn/platform/tracing/TraceEvent.h"
 #include "src/utils/compiler.h"
+#include "src/utils/log.h"
+#include "src/utils/numeric.h"
 
 namespace dawn::native::d3d11 {
 namespace {
@@ -314,7 +315,7 @@ MaybeError Queue::SubmitPendingCommandsImpl() {
     return {};
 }
 
-MaybeError Queue::SubmitImpl(uint32_t commandCount, CommandBufferBase* const* commands) {
+MaybeError Queue::SubmitImpl(Span<CommandBufferBase* const> commands) {
     // CommandBuffer::Execute() will modify the state of the global immediate device context, it may
     // affect following usage of it.
     // TODO(dawn:1770): figure how if we need to track and restore the state of the immediate device
@@ -323,8 +324,8 @@ MaybeError Queue::SubmitImpl(uint32_t commandCount, CommandBufferBase* const* co
     {
         auto commandContext =
             GetScopedSwapStatePendingCommandContext(QueueBase::SubmitMode::Normal);
-        for (uint32_t i = 0; i < commandCount; ++i) {
-            DAWN_TRY(ToBackend(DAWN_UNSAFE_TODO(commands[i]))->Execute(&commandContext));
+        for (CommandBufferBase* commandBuffer : commands) {
+            DAWN_TRY(ToBackend(commandBuffer)->Execute(&commandContext));
         }
     }
     DAWN_TRY(SubmitPendingCommandsImpl());
@@ -418,20 +419,18 @@ void Queue::CancelScheduledBufferMapping(Buffer* buffer) {
 
 MaybeError Queue::WriteBufferImpl(BufferBase* buffer,
                                   uint64_t bufferOffset,
-                                  const void* data,
-                                  size_t size) {
-    if (size == 0) {
+                                  Span<const std::byte> data) {
+    if (data.empty()) {
         // skip the empty write
         return {};
     }
 
     auto commandContext = GetScopedPendingCommandContext(QueueBase::SubmitMode::Normal);
-    return ToBackend(buffer)->Write(&commandContext, bufferOffset, data, size);
+    return ToBackend(buffer)->Write(&commandContext, bufferOffset, data.data(), data.size());
 }
 
 MaybeError Queue::WriteTextureImpl(const TexelCopyTextureInfo& destination,
-                                   const void* data,
-                                   size_t dataSize,
+                                   Span<const std::byte> data,
                                    const TexelCopyBufferLayout& dataLayout,
                                    const Extent3D& writeSizePixel) {
     if (writeSizePixel.width == 0 || writeSizePixel.height == 0 ||
@@ -450,9 +449,10 @@ MaybeError Queue::WriteTextureImpl(const TexelCopyTextureInfo& destination,
 
     Texture* texture = ToBackend(destination.texture);
     DAWN_TRY(texture->SynchronizeTextureBeforeUse(&commandContext));
-    return texture->Write(&commandContext, subresources, destination.origin, writeSizePixel,
-                          DAWN_UNSAFE_TODO(static_cast<const uint8_t*>(data) + dataLayout.offset),
-                          dataLayout.bytesPerRow, dataLayout.rowsPerImage);
+    return texture->Write(
+        &commandContext, subresources, destination.origin, writeSizePixel,
+        DAWN_UNSAFE_TODO(reinterpret_cast<const uint8_t*>(data.data()) + dataLayout.offset),
+        dataLayout.bytesPerRow, dataLayout.rowsPerImage);
 }
 
 bool Queue::HasPendingCommands() const {
@@ -594,7 +594,8 @@ ResultOrError<ExecutionSerial> SystemEventQueue::CheckCompletedSerialsImpl() {
             std::for_each_n(pendingEvents->begin(), completedEvents, [&returnedReceivers](auto& e) {
                 returnedReceivers.emplace_back(std::move(e.receiver));
             });
-            pendingEvents->erase(pendingEvents->begin(), pendingEvents->begin() + completedEvents);
+            pendingEvents->erase(pendingEvents->begin(),
+                                 pendingEvents->begin() + sign_cast(completedEvents));
 
             return completedSerial;
         }));
@@ -802,7 +803,7 @@ ResultOrError<ExecutionSerial> DelayFlushQueue::WaitForQueueSerialImpl(Execution
 
     bool done;
     DAWN_TRY_ASSIGN(done, IsQueryCompleted(&commandContext, /*requireFlush=*/false, &(*it)));
-    if (timeout == Nanoseconds(0)) {
+    if (timeout == Nanoseconds(0u)) {
         if (!done) {
             // Return timed-out immediately without using a timer.
             return kWaitSerialTimeout;
@@ -826,7 +827,7 @@ ResultOrError<ExecutionSerial> DelayFlushQueue::WaitForQueueSerialImpl(Execution
     }
 
     // Completed queries will be recycled in CheckCompletedSerialsImpl();
-    auto numCompletedQueries = std::distance(mPendingQueries.begin(), it) + 1;
+    auto numCompletedQueries = sign_cast(std::distance(mPendingQueries.begin(), it) + 1);
     MarkPendingQueriesAsComplete(numCompletedQueries);
     return done ? waitSerial : kWaitSerialTimeout;
 }
@@ -854,9 +855,10 @@ void DelayFlushQueue::SetEventOnCompletion(ExecutionSerial serial, HANDLE event)
 void DelayFlushQueue::MarkPendingQueriesAsComplete(size_t numCompletedQueries) {
     mCompletedQueries.insert(
         mCompletedQueries.end(), std::make_move_iterator(mPendingQueries.begin()),
-        std::make_move_iterator(mPendingQueries.begin() + numCompletedQueries));
+        std::make_move_iterator(mPendingQueries.begin() + sign_cast(numCompletedQueries)));
 
-    mPendingQueries.erase(mPendingQueries.begin(), mPendingQueries.begin() + numCompletedQueries);
+    mPendingQueries.erase(mPendingQueries.begin(),
+                          mPendingQueries.begin() + sign_cast(numCompletedQueries));
 }
 
 ResultOrError<bool> DelayFlushQueue::IsQueryCompleted(

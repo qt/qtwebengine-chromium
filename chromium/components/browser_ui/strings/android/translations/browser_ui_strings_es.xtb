@@ -161,7 +161,6 @@
 <translation id="2546283357679194313">Cookies y datos de sitios</translation>
 <translation id="2553552004849639664">Consigue la mejor protección de Chrome frente a amenazas online</translation>
 <translation id="2570922361219980984">El acceso a la ubicación también está desactivado en este dispositivo. Actívalo en los <ph name="BEGIN_LINK" />ajustes de Android<ph name="END_LINK" />.</translation>
-<translation id="257931822824936280">Ampliado (hacer clic para contraer)</translation>
 <translation id="2586657967955657006">Portapapeles</translation>
 <translation id="2588271083332682494">Ordena con grupos de pestañas</translation>
 <translation id="2592917252160773942">Los sitios pueden solicitar tu cámara</translation>
@@ -193,8 +192,10 @@
 <translation id="2850913818900871965">Solicitar vista para móvil</translation>
 <translation id="2870560284913253234">Sitio</translation>
 <translation id="2874939134665556319">Pista anterior</translation>
+<translation id="2890412325133442491">Predeterminado en Chrome</translation>
 <translation id="2891975107962658722">Impide que un sitio guarde datos en tu dispositivo</translation>
 <translation id="2903493209154104877">Direcciones</translation>
+<translation id="2903764741244499151">Los sitios pueden activar la función Imagen en imagen automáticamente. De esta forma, puedes seguir viendo un vídeo y liberar espacio en la pantalla para hacer otras tareas.</translation>
 <translation id="2918484639460781603">Ir a Configuración</translation>
 <translation id="2932883381142163287">Denunciar abuso</translation>
 <translation id="2939338015096024043">Cuando esta opción está activada, los sitios pueden solicitar permiso para monitorizar la posición de tu cámara y obtener información sobre tu entorno. Si está desactivada, los sitios no pueden monitorizar la posición de tu cámara ni obtener información sobre tu entorno.</translation>
@@ -280,7 +281,6 @@
 <translation id="3779154269823594982">Cambiar contraseñas</translation>
 <translation id="3797520601150691162">El tema oscuro no se aplica a un sitio específico</translation>
 <translation id="3803367742635802571">Es posible que los sitios que visites dejen de funcionar como deben</translation>
-<translation id="3816118180265633665">Colores de Chrome</translation>
 <translation id="381841723434055211">Números de teléfono</translation>
 <translation id="3823453485268218808">Fuente Mono</translation>
 <translation id="3826050100957962900">Inicio de sesión de terceros</translation>
@@ -329,7 +329,7 @@
 <translation id="4227965147357783918">Hoja inferior de promoción de Personalizar tu página principal abierta a media altura</translation>
 <translation id="4259722352634471385">Se ha bloqueado la navegación: <ph name="URL" /></translation>
 <translation id="4274673989874969668">Cuando sales de un sitio, puede continuar la sincronización para terminar tareas, como subir fotos o enviar un mensaje de chat</translation>
-<translation id="4278390842282768270">Permitida</translation>
+<translation id="4278390842282768270">Permitido</translation>
 <translation id="4290791284969893584">Después de que cierres una página, es posible que no se completen las tareas que hayas iniciado</translation>
 <translation id="429312253194641664">Un sitio web está reproduciendo elementos multimedia</translation>
 <translation id="42981349822642051">Mostrar</translation>
@@ -407,7 +407,6 @@
 <translation id="509133520954049755">Solicitar vista para ordenador</translation>
 <translation id="5091663350197390230">Cuando esta opción está activada, los sitios pueden usar JavaScript. Si está desactivada, los sitios no pueden usar JavaScript.</translation>
 <translation id="5099358668261120049">Esta acción eliminará todos los datos y las cookies almacenados por <ph name="ORIGIN" /> o por su aplicación en tu pantalla de inicio.</translation>
-<translation id="5100237604440890931">Contraído (hacer clic para ampliar)</translation>
 <translation id="5116239826668864748">Puedes usar Chrome cada vez que toques enlaces en mensajes, documentos y otras aplicaciones</translation>
 <translation id="5123685120097942451">Pestaña de Incógnito</translation>
 <translation id="512938610812707830">Hoja inferior de colecciones de temas del aspecto de la página Nueva pestaña abierta a altura completa</translation>
@@ -461,7 +460,7 @@
 <translation id="571222594670061844">Los sitios pueden mostrar notificaciones de inicio de sesión de servicios de identidad</translation>
 <translation id="5740126560802162366">Los sitios pueden guardar datos en tu dispositivo</translation>
 <translation id="5743425052258407233">Accede a tu historial en todos tus dispositivos para retomar fácilmente lo que estabas haciendo</translation>
-<translation id="5749158352074143502">Continuar con esta pestaña</translation>
+<translation id="5749158352074143502">Continuar en esta pestaña</translation>
 <translation id="5750869797196646528">Seguimiento de manos</translation>
 <translation id="5753570386948603678">Eliminar del historial</translation>
 <translation id="5771720122942595109"><ph name="PERMISSION_1" /> (bloqueado)</translation>
@@ -531,7 +530,6 @@
 <translation id="6398765197997659313">Salir del modo de pantalla completa</translation>
 <translation id="640163077447496506">Caduca hoy</translation>
 <translation id="6405650995156823521"><ph name="FIRST_PART" /> • <ph name="SECOND_PART" /></translation>
-<translation id="6413980879783180524">Colecciones de temas</translation>
 <translation id="6439114592976064011">No permitir que los sitios usen tu dispositivo y tus datos de realidad virtual</translation>
 <translation id="6447842834002726250">Cookies</translation>
 <translation id="6452138246455930388">Bajada de precio en tu pestaña abierta de <ph name="OLD_PRICE" /> a <ph name="NEW_PRICE" />, <ph name="PRODUCT_NAME" />, <ph name="DOMAIN_NAME" /></translation>
@@ -626,6 +624,7 @@ Protección Avanzada controla estos ajustes de Chrome:</translation>
 <translation id="7423098979219808738">Preguntar antes</translation>
 <translation id="7423538860840206698">Se ha bloqueado la lectura del portapapeles</translation>
 <translation id="7425915948813553151">Tema oscuro para sitios</translation>
+<translation id="7429767477925996803">Colores de Chrome</translation>
 <translation id="746412105358554870">Optimización y seguridad de JavaScript</translation>
 <translation id="7478658909253570368">No permitir que los sitios se conecten a puertos serie</translation>
 <translation id="7488573225650545859">Ocultar Ver pestañas en tu lista de aplicaciones</translation>
@@ -677,7 +676,6 @@ Protección Avanzada controla estos ajustes de Chrome:</translation>
 <translation id="802154636333426148">No se ha podido descargar el archivo</translation>
 <translation id="8033047164036749181">Suscribirse a las notificaciones de este sitio</translation>
 <translation id="8051193500142930381">Las funciones que necesiten una cámara no se podrán utilizar</translation>
-<translation id="8056330801132235235">Predeterminado en Chrome</translation>
 <translation id="8067883171444229417">Reproducir vídeo</translation>
 <translation id="8068648041423924542">No se puede seleccionar el certificado.</translation>
 <translation id="8077120325605624147">Cualquier sitio que visites puede mostrarte cualquier anuncio</translation>
@@ -692,11 +690,9 @@ Protección Avanzada controla estos ajustes de Chrome:</translation>
 <translation id="8163152278172770963">No permitir que los sitios activen la función Imagen en imagen automáticamente</translation>
 <translation id="8168435359814927499">Contenido</translation>
 <translation id="818487310457576362">Arrastra desde el lateral de la pantalla para salir de la pantalla completa.</translation>
-<translation id="8186479265534291036">¿El sitio no funciona? Cookies de terceros bloqueadas.</translation>
 <translation id="8197286292360124385"><ph name="PERMISSION_1" /> permitida</translation>
 <translation id="8200772114523450471">Reanudar</translation>
 <translation id="8211406090763984747">La conexión es segura</translation>
-<translation id="822964464349305906"><ph name="TYPE_1" /> o <ph name="TYPE_2" /></translation>
 <translation id="823874716226307142">Si se activa, los sitios pueden solicitar permiso para acceder a otros dispositivos de tu red local. Si se desactiva, los sitios no pueden acceder a otros dispositivos de tu red local.</translation>
 <translation id="8249310407154411074">Mover al principio</translation>
 <translation id="8261506727792406068">Eliminar</translation>
@@ -764,7 +760,6 @@ Protección Avanzada controla estos ajustes de Chrome:</translation>
 <translation id="8805385115381080995">La navegación es más rápida porque es menos probable que un sitio te pida que verifiques que eres una persona real</translation>
 <translation id="881644524232657178">Cuando esta opción está activada, los sitios pueden usar los sensores de luz y de movimiento de tu dispositivo. Si está desactivada, los sitios no pueden usar los sensores.</translation>
 <translation id="8847988622838149491">USB</translation>
-<translation id="8874790741333031443">Prueba a permitir temporalmente las cookies de terceros, lo que disminuirá la protección al navegar, pero aumentará la probabilidad de que las opciones de los sitios funcionen como se espera.</translation>
 <translation id="8889294078294184559">A medida que sigas navegando, los sitios podrán realizar comprobaciones con Chrome y verificar, con un sitio que hayas visitado anteriormente, que es probable que seas una persona real</translation>
 <translation id="8899807382908246773">Anuncios invasivos</translation>
 <translation id="8903921497873541725">Acercar</translation>
@@ -790,7 +785,6 @@ Protección Avanzada controla estos ajustes de Chrome:</translation>
 <translation id="913657688200966289">Activa los permisos para <ph name="APP_NAME" /> en los <ph name="BEGIN_LINK" />ajustes de Android<ph name="END_LINK" />.</translation>
 <translation id="9138037198177304356">Notificaciones permitidas</translation>
 <translation id="9138217887606523162">Zoom actual: <ph name="ZOOM_LEVEL" /> %%</translation>
-<translation id="915112772806845021">Los sitios usan esta función para activar Imagen en imagen automáticamente. De esta forma, puedes seguir viendo un vídeo y liberar espacio en la pantalla para hacer otras tareas.</translation>
 <translation id="9156722768168878035">Permite que Chrome muestre tus pestañas recientes en la lista de aplicaciones y en los resultados de búsqueda de tu dispositivo. Desactiva esta opción en cualquier momento en la configuración de Chrome.</translation>
 <translation id="9162462602695099906">Esta página es peligrosa</translation>
 <translation id="9182556968660520230">No permitir que los sitios reproduzcan contenido protegido</translation>

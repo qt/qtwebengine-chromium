@@ -8,8 +8,10 @@
 #include <memory>
 #include <optional>
 #include <utility>
+#include <variant>
 
 #include "absl/base/nullability.h"
+#include "absl/functional/overload.h"
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
 #include "quiche/quic/moqt/moqt_bidi_stream.h"
@@ -21,10 +23,8 @@
 #include "quiche/quic/moqt/moqt_names.h"
 #include "quiche/quic/moqt/moqt_parser.h"
 #include "quiche/quic/moqt/moqt_session_callbacks.h"
-#include "quiche/quic/moqt/session_namespace_tree.h"
 #include "quiche/common/platform/api/quiche_logging.h"
 #include "quiche/web_transport/stream_helpers.h"
-#include "quiche/web_transport/web_transport.h"
 
 namespace moqt {
 
@@ -33,11 +33,12 @@ MoqtNamespaceSubscriberStream::~MoqtNamespaceSubscriberStream() {
   if (task != nullptr) {
     task->DeclareEof();
   }
+  Detach();
 }
 absl::Status MoqtNamespaceSubscriberStream::OnRawControlMessage(
     const MoqtRawControlMessage& message) {
-  return DispatchControlMessage<MoqtNamespaceSubscriberStream>(
-      message, "namespace subscriber");
+  return ControlMessageDispatcher::DispatchControlMessage(
+      *this, message_parser(), message, "namespace subscriber");
 }
 
 void MoqtNamespaceSubscriberStream::OnStreamBound() {
@@ -51,7 +52,7 @@ absl::Status MoqtNamespaceSubscriberStream::OnControlMessage(
     if (response_callback_ == nullptr) {
       return absl::InvalidArgumentError("Two responses");
     }
-    std::move(response_callback_)(std::nullopt);
+    std::move(response_callback_)(message.parameters);
     response_callback_ = nullptr;
     return absl::OkStatus();
   }
@@ -65,7 +66,7 @@ absl::Status MoqtNamespaceSubscriberStream::OnControlMessage(
   if (callback == nullptr) {
     return absl::InvalidArgumentError("Unexpected request ID in response");
   }
-  std::move(callback)(std::nullopt);
+  std::move(callback)(message.parameters);
   return absl::OkStatus();
 }
 
@@ -246,44 +247,34 @@ MoqtNamespaceSubscriberStream::NamespaceTask::GetResponseCallback(
 
 MoqtNamespacePublisherStream::MoqtNamespacePublisherStream(
     MoqtFramer* framer, const MoqtControlMessageParser& message_parser,
+    AddPrefixCallback add_callback, RemovePrefixCallback remove_callback,
     SessionErrorCallback session_error_callback,
-    SessionNamespaceTree* absl_nonnull tree,
     MoqtIncomingSubscribeNamespaceCallback& application)
     // No stream_deleted_callback because there's no state yet.
-    : MoqtBidiStreamBase(
-          framer, message_parser, []() {}, std::move(session_error_callback)),
-      tree_(tree->GetWeakPtr()),
+    : MoqtBidiStreamBase(framer, message_parser,
+                         std::move(session_error_callback)),
+      add_callback_(std::move(add_callback)),
+      remove_callback_(std::move(remove_callback)),
       application_(application) {}
-
-MoqtNamespacePublisherStream::~MoqtNamespacePublisherStream() {
-  if (task_ == nullptr) {
-    return;
-  }
-  SessionNamespaceTree* tree = tree_.GetIfAvailable();
-  if (tree != nullptr) {
-    // Could be null if the stream died early.
-    tree->UnsubscribeNamespace(task_->prefix());
-  }
-}
 
 absl::Status MoqtNamespacePublisherStream::OnRawControlMessage(
     const MoqtRawControlMessage& message) {
-  return DispatchControlMessage<MoqtNamespacePublisherStream>(
-      message, "namespace publisher");
+  return ControlMessageDispatcher::DispatchControlMessage(
+      *this, message_parser(), message, "namespace publisher");
 }
 
 absl::Status MoqtNamespacePublisherStream::OnControlMessage(
     const MoqtSubscribeNamespace& message) {
   request_id_ = message.request_id;
-  SessionNamespaceTree* tree = tree_.GetIfAvailable();
-  if (tree == nullptr) {
-    return SendRequestError(request_id_, RequestErrorCode::kInternalError,
-                            std::nullopt, "Session is gone", /*fin=*/true);
+  if (add_callback_ == nullptr) {
+    return absl::InvalidArgumentError("Two SUBSCRIBE_NAMESPACE on one stream");
   }
-  if (!tree->SubscribeNamespace(message.track_namespace_prefix)) {
+  if (!std::move(add_callback_)(message.track_namespace_prefix)) {
+    add_callback_ = nullptr;
     return SendRequestError(request_id_, RequestErrorCode::kPrefixOverlap,
                             std::nullopt, "", /*fin=*/true);
   }
+  add_callback_ = nullptr;
   QUICHE_DCHECK(task_ == nullptr);
   task_ =
       application_(message.track_namespace_prefix, message.subscribe_options,
@@ -300,8 +291,15 @@ absl::Status MoqtNamespacePublisherStream::OnControlMessage(
     // This stream is dying.
     return absl::OkStatus();
   }
-  task_->Update(message.parameters, ResponseCallback(request_id_));
+  task_->Update(message.parameters, ResponseCallback(message.request_id));
   return absl::OkStatus();
+}
+
+void MoqtNamespacePublisherStream::Detach() {
+  if (remove_callback_ != nullptr) {
+    std::move(remove_callback_)(prefix_);
+    remove_callback_ = nullptr;
+  }
 }
 
 void MoqtNamespacePublisherStream::ProcessNamespaces() {
@@ -368,12 +366,20 @@ void MoqtNamespacePublisherStream::ProcessNamespaces() {
 
 MoqtResponseCallback MoqtNamespacePublisherStream::ResponseCallback(
     uint64_t request_id) {
-  return [this, request_id](std::optional<MoqtRequestErrorInfo> error) {
-    if (error.has_value()) {
-      CheckStatus(SendRequestError(request_id, *error, /*fin=*/true));
-    } else {
-      CheckStatus(SendRequestOk(request_id, MessageParameters()));
-    }
+  return [this, request_id](
+             std::variant<MessageParameters, MoqtRequestErrorInfo> response) {
+    std::visit(absl::Overload{
+                   [this, request_id](const MessageParameters& parameters) {
+                     // In draft-18, there are no useful parameters in
+                     // SUBSCRIBE_NAMESPACE_OK, but Issue #1639 would change
+                     // that.
+                     CheckStatus(SendRequestOk(request_id, parameters));
+                   },
+                   [this, request_id](const MoqtRequestErrorInfo& error_info) {
+                     CheckStatus(SendRequestError(request_id, error_info,
+                                                  /*fin=*/true));
+                   }},
+               response);
   };
 }
 

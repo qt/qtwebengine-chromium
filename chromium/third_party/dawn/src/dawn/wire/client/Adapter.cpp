@@ -34,10 +34,10 @@
 #include "absl/types/span.h"  // TODO(343500108): Use std::span when we have C++20.
 #include "dawn/wire/client/webgpu.h"
 #include "partition_alloc/pointers/raw_ptr.h"
-#include "src/dawn/common/Log.h"
 #include "src/dawn/common/StringViewUtils.h"
 #include "src/dawn/wire/client/Client.h"
 #include "src/utils/compiler.h"
+#include "src/utils/log.h"
 
 namespace dawn::wire::client {
 namespace {
@@ -289,7 +289,7 @@ WGPUStatus Adapter::APIGetInfo(WGPUAdapterInfo* info) const {
 WGPUFuture Adapter::APIRequestDevice(const WGPUDeviceDescriptor* descriptor,
                                      const WGPURequestDeviceCallbackInfo& callbackInfo) {
     Client* client = GetClient();
-    Ref<Device> device = client->Make<Device>(GetEventManagerHandle(), this, descriptor);
+    Ref<Device> device = client->Make<Device>(GetInstance(), this, descriptor);
     auto [futureIDInternal, tracked] =
         GetEventManager().TrackEvent(AcquireRef(new RequestDeviceEvent(callbackInfo, device)));
     if (!tracked) {
@@ -307,41 +307,40 @@ WGPUFuture Adapter::APIRequestDevice(const WGPUDeviceDescriptor* descriptor,
 
     AdapterRequestDeviceCmd cmd;
     cmd.adapterId = GetWireHandle(client).id;
-    cmd.eventManagerHandle = GetEventManagerHandle();
+    cmd.instanceId = GetInstance()->GetWireHandle(client).id;
     cmd.future = {futureIDInternal};
     cmd.deviceObjectHandle = device->GetWireHandle(client);
-    cmd.deviceLostFuture = device->APIGetLostFuture();
+    cmd.deviceLostFuture = ToAPI(device->APIGetLostFuture());
     cmd.descriptor = &wireDescriptor;
 
     client->SerializeCommand(cmd);
     return {futureIDInternal};
 }
 
-WireResult Client::DoAdapterRequestDeviceCallback(ObjectHandle eventManager,
+WireResult Client::DoAdapterRequestDeviceCallback(ObjectId instanceId,
                                                   WGPUFuture future,
                                                   WGPURequestDeviceStatus status,
                                                   WGPUStringView message,
                                                   const WGPULimits* limits,
                                                   uint32_t featuresCount,
                                                   const WGPUFeatureName* features) {
-    return SetFutureReady<RequestDeviceEvent>(eventManager, future.id, status, message, limits,
+    return SetFutureReady<RequestDeviceEvent>(instanceId, future.id, status, message, limits,
                                               featuresCount, features);
 }
 
 WGPUInstance Adapter::APIGetInstance() const {
-    dawn::ErrorLog() << "adapter.GetInstance not supported with dawn_wire.";
-    return nullptr;
+    return ReturnToAPI(GetInstance());
 }
 
-WGPUDevice Adapter::APICreateDevice(const WGPUDeviceDescriptor*) {
+Device* Adapter::APICreateDevice(const DeviceDescriptor*) {
     dawn::ErrorLog() << "adapter.CreateDevice not supported with dawn_wire.";
     return nullptr;
 }
 
-WGPUStatus Adapter::APIGetFormatCapabilities(WGPUTextureFormat format,
-                                             WGPUDawnFormatCapabilities* capabilities) {
+wgpu::Status Adapter::APIGetFormatCapabilities(wgpu::TextureFormat format,
+                                               DawnFormatCapabilities* capabilities) {
     dawn::ErrorLog() << "adapter.GetFormatCapabilities not supported with dawn_wire.";
-    return WGPUStatus_Error;
+    return wgpu::Status::Error;
 }
 
 void APIFreeMembers(WGPUAdapterInfo info) {

@@ -26,6 +26,7 @@ package(
 java_binary(
     name = "log_entry_verifier",
     main_class = "com.google.oak.verification.LogEntryVerifier",
+    target_compatible_with = ["@platforms//os:linux"],
     runtime_deps = [
         ":verification",
     ],
@@ -34,6 +35,7 @@ java_binary(
 java_binary(
     name = "signature_verifier",
     main_class = "com.google.oak.verification.SignatureVerifier",
+    target_compatible_with = ["@platforms//os:linux"],
     runtime_deps = [
         ":verification",
     ],
@@ -45,8 +47,9 @@ kt_jvm_library(
         "*.java",
         "*.kt",
     ]),
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
-        "@com_google_code_gson_gson",
+        "@maven//:com_google_code_gson_gson",
     ],
 )
 
@@ -57,6 +60,6 @@ kt_android_library(
         "*.kt",
     ]),
     deps = [
-        "@com_google_code_gson_gson",
+        "@maven//:com_google_code_gson_gson",
     ],
 )

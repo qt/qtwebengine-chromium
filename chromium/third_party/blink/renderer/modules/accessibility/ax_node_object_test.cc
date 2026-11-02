@@ -8,12 +8,26 @@
 #include "third_party/blink/renderer/modules/accessibility/ax_object-inl.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_object_cache_impl.h"
 #include "third_party/blink/renderer/modules/accessibility/testing/accessibility_test.h"
+#include "third_party/blink/renderer/platform/graphics/color.h"
 #include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 #include "ui/accessibility/ax_mode.h"
 #include "ui/accessibility/ax_node_data.h"
 
 namespace blink {
 namespace test {
+
+TEST_F(AccessibilityTest, ColorValueSupportsCSSColorSyntax) {
+  ScopedInputTypeColorEnhancementsForTest color_enhancements(true);
+  SetBodyInnerHTML(R"HTML(
+      <input id="color" type="color" alpha
+             value="color(srgb 0.2 0.4 0.6 / 0.5)">
+  )HTML");
+
+  const AXObject* ax_color = GetAXObjectByElementId("color");
+  ASSERT_NE(nullptr, ax_color);
+  ASSERT_EQ(ax::mojom::Role::kColorWell, ax_color->RoleValue());
+  EXPECT_EQ(Color::FromRGBA(51, 102, 153, 128).Rgb(), ax_color->ColorValue());
+}
 
 TEST_F(AccessibilityTest, TextOffsetInFormattingContextWithLayoutReplaced) {
   SetBodyInnerHTML(R"HTML(
@@ -632,6 +646,36 @@ TEST_F(AccessibilityTest,
   ASSERT_NE(nullptr, item2);
   EXPECT_EQ(ax::mojom::Role::kTreeItem, item2->RoleValue());
   EXPECT_EQ(kSelectedStateUndefined, item2->IsSelected());
+}
+
+class AccessibilityChildFrameTest : public AccessibilityTest {
+ public:
+  AccessibilityChildFrameTest()
+      : AccessibilityTest(MakeGarbageCollected<SingleChildLocalFrameClient>()) {
+  }
+};
+
+// Regression test for crbug.com/440841515: an <iframe role="heading"> must stay
+// an embedding element across role recomputation, so SerializeChildTreeID()
+// keeps treating it as a child-tree owner.
+TEST_F(AccessibilityChildFrameTest,
+       IframeWithAriaHeadingRoleStaysEmbeddingElement) {
+  GetDocument().SetBaseURLOverride(KURL("http://test.com"));
+  SetBodyInnerHTML(R"HTML(
+      <iframe id="frame" role="heading" src="http://test.com"></iframe>)HTML");
+  SetChildFrameHTML("<!DOCTYPE html><body></body>");
+  UpdateAllLifecyclePhasesForTest();
+  GetAXObjectCache().UpdateAXForAllDocuments();
+
+  AXObject* ax_frame = GetAXObjectByElementId("frame");
+  ASSERT_NE(nullptr, ax_frame);
+  EXPECT_EQ(ax::mojom::Role::kHeading, ax_frame->RoleValue());
+  EXPECT_TRUE(ax_frame->IsEmbeddingElement());
+
+  // A second role computation must preserve the native role.
+  ax_frame->UpdateRole();
+  EXPECT_EQ(ax::mojom::Role::kHeading, ax_frame->RoleValue());
+  EXPECT_TRUE(ax_frame->IsEmbeddingElement());
 }
 
 }  // namespace test

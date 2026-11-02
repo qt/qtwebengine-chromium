@@ -27,7 +27,7 @@
 
 #include "src/dawn/wire/client/Client.h"
 
-#include <algorithm>
+#include <vector>
 
 #include "src/dawn/common/Compiler.h"
 #include "src/dawn/common/StringViewUtils.h"
@@ -50,7 +50,9 @@ class NoopCommandSerializer final : public CommandSerializer {
         // Return SIZE_MAX so ChunkedCommandSerializer won't unnecessarily try to chunk commands.
         return SIZE_MAX;
     }
-    void* GetCmdSpace(size_t size) final { return nullptr; }
+    std::optional<std::span<volatile std::byte>> GetCommandSpace(size_t size) final {
+        return std::nullopt;
+    }
     bool Flush() final { return false; }
 };
 
@@ -66,9 +68,18 @@ Client::Client(CommandSerializer* serializer, MemoryTransferService* memoryTrans
 }
 
 Client::~Client() {
-    // Transition all event managers to ClientDropped state.
-    for (auto& [_, eventManager] : mEventManagers) {
-        eventManager->TransitionTo(EventManager::State::ClientDropped);
+    // Keep a strong reference to all Instance objects during event manager teardown and object
+    // unregistration. This prevents Instance (and its EventManager) from being destructed while
+    // event callbacks are executing or before UnregisterAllObjects has set mClient = nullptr on all
+    // client objects.
+    std::vector<Ref<Instance>> instances;
+    for (auto object : mObjects[ObjectType::Instance].GetAllObjects()) {
+        if (object != nullptr) {
+            instances.push_back(static_cast<Instance*>(object));
+        }
+    }
+    for (auto& instance : instances) {
+        instance->GetEventManager().Destroy();
     }
 
     UnregisterAllObjects();
@@ -85,8 +96,7 @@ void Client::UnregisterAllObjects() {
 }
 
 ReservedBuffer Client::ReserveBuffer(WGPUDevice device, const WGPUBufferDescriptor* descriptor) {
-    Ref<Buffer> buffer =
-        Make<Buffer>(FromAPI(device)->GetEventManagerHandle(), FromAPI(device), descriptor);
+    Ref<Buffer> buffer = Make<Buffer>(FromAPI(device)->GetInstance(), FromAPI(device), descriptor);
 
     ReservedBuffer result;
     result.handle = buffer->GetWireHandle(this);
@@ -123,27 +133,6 @@ ReservedInstance Client::ReserveInstance(const WGPUInstanceDescriptor* descripto
         return {nullptr, {0, 0}};
     }
 
-    // Check for future related features and limits that are relevant to the EventManager.
-    bool enabledTimedWaitAny = false;
-    size_t timedWaitAnyMaxCount = 0;
-    if (descriptor) {
-        auto instanceFeatures =
-            std::span(descriptor->requiredFeatures, descriptor->requiredFeatureCount);
-        enabledTimedWaitAny =
-            std::find(instanceFeatures.begin(), instanceFeatures.end(),
-                      WGPUInstanceFeatureName_TimedWaitAny) != instanceFeatures.end();
-        if (enabledTimedWaitAny) {
-            if (descriptor->requiredLimits) {
-                timedWaitAnyMaxCount = descriptor->requiredLimits->timedWaitAnyMaxCount;
-            }
-            timedWaitAnyMaxCount = std::max(timedWaitAnyMaxCount, kTimedWaitAnyMaxCountDefault);
-        }
-    }
-
-    // Reserve an EventManager for the given instance and make the association in the map.
-    mEventManagers.emplace(instance->GetWireHandle(this),
-                           std::make_unique<EventManager>(timedWaitAnyMaxCount));
-
     ReservedInstance result;
     result.handle = instance->GetWireHandle(this);
     result.instance = ReturnToAPI(std::move(instance));
@@ -166,19 +155,16 @@ void Client::ReclaimInstanceReservation(const ReservedInstance& reservation) {
     ReclaimReservation(FromAPI(reservation.instance));
 }
 
-EventManager& Client::GetEventManager(const ObjectHandle& instance) {
-    auto it = mEventManagers.find(instance);
-    DAWN_ASSERT(it != mEventManagers.end());
-    return *it->second;
-}
-
 void Client::Disconnect() {
     mDisconnected = true;
     mSerializer.SetCommandSerializerForDisconnect(NoopCommandSerializer::GetInstance());
 
-    // Transition all event managers to ClientDropped state.
-    for (auto& [_, eventManager] : mEventManagers) {
-        eventManager->TransitionTo(EventManager::State::ClientDropped);
+    // Destroy all event managers.
+    for (auto object : mObjects[ObjectType::Instance].GetAllObjects()) {
+        if (object != nullptr) {
+            Ref<Instance> instance = static_cast<Instance*>(object);
+            instance->GetEventManager().Destroy();
+        }
     }
 
     for (auto object : mObjects[ObjectType::Device].GetAllObjects()) {

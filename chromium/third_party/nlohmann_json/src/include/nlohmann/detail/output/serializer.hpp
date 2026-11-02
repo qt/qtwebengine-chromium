@@ -4,7 +4,7 @@
 // |_____|_____|_____|_|___|  https://github.com/nlohmann/json
 //
 // SPDX-FileCopyrightText: 2008, 2009 Björn Hoehrmann <bjoern@hoehrmann.de>
-// SPDX-FileCopyrightText: 2013-2025 Niels Lohmann <https://nlohmann.me>
+// SPDX-FileCopyrightText: 2013-2026 Niels Lohmann <https://nlohmann.me>
 // SPDX-License-Identifier: MIT
 
 #pragma once
@@ -465,18 +465,12 @@ class serializer
                             {
                                 if (codepoint <= 0xFFFF)
                                 {
-                                    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-                                    static_cast<void>((std::snprintf)(string_buffer.data() + bytes, 7, "\\u%04x",
-                                                                      static_cast<std::uint16_t>(codepoint)));
-                                    bytes += 6;
+                                    write_u_escape(bytes, static_cast<std::uint16_t>(codepoint));
                                 }
                                 else
                                 {
-                                    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-                                    static_cast<void>((std::snprintf)(string_buffer.data() + bytes, 13, "\\u%04x\\u%04x",
-                                                                      static_cast<std::uint16_t>(0xD7C0u + (codepoint >> 10u)),
-                                                                      static_cast<std::uint16_t>(0xDC00u + (codepoint & 0x3FFu))));
-                                    bytes += 12;
+                                    write_u_escape(bytes, static_cast<std::uint16_t>(0xD7C0u + (codepoint >> 10u)));
+                                    write_u_escape(bytes, static_cast<std::uint16_t>(0xDC00u + (codepoint & 0x3FFu)));
                                 }
                             }
                             else
@@ -683,6 +677,32 @@ class serializer
         return result;
     }
 
+    /*!
+     * @brief write a lowercase "\uXXXX" escape sequence into @a string_buffer
+     *
+     * Branch-free replacement for `snprintf(buf, 7, "\\u%04x", codeunit)` in the
+     * string escaping hot path. It writes exactly six characters ('\\', 'u' and
+     * four hex digits) at position @a pos of @a string_buffer via a nibble
+     * lookup table, avoiding the format-string parsing and locale machinery of
+     * `snprintf`. Advances @a pos by the number of bytes written (6).
+     *
+     * @param[in] pos       position in @a string_buffer to write at; there must
+     *                      be at least 6 bytes of headroom
+     * @param[in] codeunit  16-bit value to encode
+     */
+    void write_u_escape(std::size_t& pos, std::uint16_t codeunit) noexcept
+    {
+        JSON_ASSERT(string_buffer.size() - pos >= 6);
+        constexpr const char* nibble_to_hex = "0123456789abcdef";
+        string_buffer[pos + 0] = '\\';
+        string_buffer[pos + 1] = 'u';
+        string_buffer[pos + 2] = nibble_to_hex[(codeunit >> 12u) & 0x0Fu];
+        string_buffer[pos + 3] = nibble_to_hex[(codeunit >> 8u) & 0x0Fu];
+        string_buffer[pos + 4] = nibble_to_hex[(codeunit >> 4u) & 0x0Fu];
+        string_buffer[pos + 5] = nibble_to_hex[codeunit & 0x0Fu];
+        pos += 6;
+    }
+
     // templates to avoid warnings about useless casts
     template <typename NumberType, enable_if_t<std::is_signed<NumberType>::value, int> = 0>
     bool is_negative_number(NumberType x)
@@ -825,14 +845,27 @@ class serializer
         o->write_characters(begin, static_cast<size_t>(end - begin));
     }
 
+    JSON_HEDLEY_NON_NULL(1)
+    static int snprintf_float(char* buf, std::size_t size, int d, double x)
+    {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
+        return (std::snprintf)(buf, size, "%.*g", d, x);
+    }
+
+    JSON_HEDLEY_NON_NULL(1)
+    static int snprintf_float(char* buf, std::size_t size, int d, long double x)
+    {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
+        return (std::snprintf)(buf, size, "%.*Lg", d, x);
+    }
+
     void dump_float(number_float_t x, std::false_type /*is_ieee_single_or_double*/)
     {
         // get the number of digits for a float -> text -> float round-trip
         static constexpr auto d = std::numeric_limits<number_float_t>::max_digits10;
 
         // the actual conversion
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-        std::ptrdiff_t len = (std::snprintf)(number_buffer.data(), number_buffer.size(), "%.*g", d, x);
+        std::ptrdiff_t len = snprintf_float(number_buffer.data(), number_buffer.size(), d, x);
 
         // negative value indicates an error
         JSON_ASSERT(len > 0);
@@ -919,7 +952,7 @@ class serializer
             }
         };
 
-        JSON_ASSERT(byte < utf8d.size());
+        JSON_ASSERT(static_cast<std::size_t>(byte) < utf8d.size());
         const std::uint8_t type = utf8d[byte];
 
         codep = (state != UTF8_ACCEPT)

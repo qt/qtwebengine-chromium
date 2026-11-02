@@ -23,9 +23,7 @@
 #include <mutex>  // NOLINT (unapproved c++11 header)
 #include <new>
 
-#include "src/utils/common.h"
 #include "src/utils/compiler_attributes.h"
-#include "src/utils/constants.h"
 #include "src/utils/memory.h"
 #include "src/utils/queue.h"
 #include "src/utils/types.h"

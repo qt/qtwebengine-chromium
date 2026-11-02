@@ -23,10 +23,10 @@
 #include <climits>
 #include <condition_variable>  // NOLINT (unapproved c++11 header)
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <mutex>  // NOLINT (unapproved c++11 header)
 
-#include "src/dsp/common.h"
 #include "src/gav1/decoder_buffer.h"
 #include "src/gav1/frame_buffer.h"
 #include "src/internal_frame_buffer_list.h"
@@ -34,8 +34,8 @@
 #include "src/utils/compiler_attributes.h"
 #include "src/utils/constants.h"
 #include "src/utils/dynamic_buffer.h"
+#include "src/utils/memory.h"
 #include "src/utils/reference_info.h"
-#include "src/utils/segmentation.h"
 #include "src/utils/segmentation_map.h"
 #include "src/utils/types.h"
 #include "src/utils/vector.h"

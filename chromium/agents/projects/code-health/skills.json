@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "path": "agents/projects/code-health/accessibility-cleanup"
+    },
+    {
+      "path": "agents/projects/code-health/histogram-cleanup"
+    },
+    {
+      "path": "agents/projects/code-health/hub"
+    },
+    {
+      "path": "agents/projects/code-health/java-inline-fqn-cleanup"
+    }
+  ]
+}

@@ -222,7 +222,30 @@ class TokenPreloadScanner::StartTagScanner {
       String attribute_value = html_token_attribute.Value();
       ProcessAttribute(attribute_name, attribute_value);
     }
+    MaybeClearNonceForDanglingMarkup(attributes);
     PostProcessAfterAttributes();
+  }
+
+  // Mirror the dangling-markup-injection mitigation in
+  // ContentSecurityPolicy::IsNonceableElement so the preload scanner cannot
+  // be tricked into authorizing a speculative fetch with a hijacked nonce.
+  // This is done as a separate pass after ProcessAttributes so we can skip
+  // the work entirely when no nonce is present.
+  void MaybeClearNonceForDanglingMarkup(
+      const HTMLToken::AttributeList& attributes) {
+    if (nonce_.IsNull() || nonce_.empty())
+      return;
+    HashSet<AtomicString> seen_names;
+    for (const HTMLToken::Attribute& html_token_attribute : attributes) {
+      AtomicString attribute_name(html_token_attribute.GetName());
+      String attribute_value = html_token_attribute.Value();
+      if (!seen_names.insert(attribute_name).is_new_entry ||
+          ContentSecurityPolicy::ContainsDanglingMarkupSignal(
+              attribute_name, attribute_value)) {
+        SetNonce(String());
+        return;
+      }
+    }
   }
 
   void PostProcessAfterAttributes() {
@@ -371,11 +394,6 @@ class TokenPreloadScanner::StartTagScanner {
     if (scanner_type_ == ScannerType::kInsertion)
       request->SetFromInsertionScanner(true);
 
-    if (attributionsrc_attr_set_) {
-      DCHECK(is_script || is_img);
-      request->SetAttributionReportingEligibleImgOrScript(true);
-    }
-
     if (shared_storage_writable_opted_in_) {
       DCHECK(is_img);
       request->SetSharedStorageWritableOptedIn(true);
@@ -425,8 +443,6 @@ class TokenPreloadScanner::StartTagScanner {
       SetFetchPriorityHint(attribute_value);
     } else if (Match(attribute_name, html_names::kBlockingAttr)) {
       blocking_attribute_value_ = attribute_value;
-    } else if (Match(attribute_name, html_names::kAttributionsrcAttr)) {
-      attributionsrc_attr_set_ = true;
     }
   }
 
@@ -464,8 +480,6 @@ class TokenPreloadScanner::StartTagScanner {
     } else if (loading_attr_value_ == LoadingAttributeValue::kAuto &&
                Match(attribute_name, html_names::kLoadingAttr)) {
       loading_attr_value_ = GetLoadingAttributeValue(attribute_value);
-    } else if (Match(attribute_name, html_names::kAttributionsrcAttr)) {
-      attributionsrc_attr_set_ = true;
     } else if (Match(attribute_name, html_names::kSharedstoragewritableAttr)) {
       shared_storage_writable_opted_in_ = true;
     } else if (Match(attribute_name, html_names::kBrowsingtopicsAttr)) {
@@ -750,10 +764,6 @@ class TokenPreloadScanner::StartTagScanner {
           // TODO(crbug.com/922212): External import maps are not yet supported.
           return false;
 
-        case ScriptLoader::ScriptTypeAtPrepare::kRouteMap:
-          // TODO(crbug.com/436805487): Support external route maps?
-          return false;
-
         case ScriptLoader::ScriptTypeAtPrepare::kSpeculationRules:
           // TODO(crbug.com/1182803): External speculation rules are not yet
           // supported.
@@ -844,7 +854,6 @@ class TokenPreloadScanner::StartTagScanner {
   TokenPreloadScanner::ScannerType scanner_type_;
   // For explanation, see TokenPreloadScanner's declaration.
   const HashSet<String>* disabled_image_types_;
-  bool attributionsrc_attr_set_ = false;
   bool shared_storage_writable_opted_in_ = false;
   bool browsing_topics_attr_set_ = false;
   std::optional<float> resource_width_;

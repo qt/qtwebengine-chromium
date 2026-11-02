@@ -454,6 +454,12 @@ bool ShouldAddStudy(const ProcessedStudy& processed_study,
                << " due to Google groups membership checks.";
       return false;
     }
+
+    if (!CheckStudyEnterpriseGroup(study.filter(), client_state)) {
+      DVLOG(1) << "Filtered out study " << study.name()
+               << " due to enterprise groups membership checks.";
+      return false;
+    }
   }
 
   DVLOG(1) << "Kept study " << study.name() << ".";
@@ -465,10 +471,12 @@ bool ShouldAddStudy(const ProcessedStudy& processed_study,
 std::vector<ProcessedStudy> FilterAndValidateStudies(
     const VariationsSeed& seed,
     const ClientFilterableState& client_state,
-    const VariationsLayers& layers) {
+    const VariationsLayers& layers,
+    std::optional<base::FunctionRef<bool(const Study&)>> study_filter) {
   DCHECK(client_state.version.IsValid());
 
   std::vector<ProcessedStudy> filtered_studies;
+  filtered_studies.reserve(seed.study_size());
 
   // Don't create two studies with the same name.
   // These `string_view`s contain pointers which point to memory owned by
@@ -476,6 +484,10 @@ std::vector<ProcessedStudy> FilterAndValidateStudies(
   std::set<std::string_view, std::less<>> created_studies;
 
   for (const Study& study : seed.study()) {
+    if (study_filter && !(*study_filter)(study)) {
+      continue;
+    }
+
     ProcessedStudy processed_study;
     if (!processed_study.Init(&study)) {
       continue;

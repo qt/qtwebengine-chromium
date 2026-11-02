@@ -19,7 +19,6 @@
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ref.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/metrics/puma_histogram_functions.h"
 #include "base/metrics/user_metrics.h"
 #include "base/no_destructor.h"
 #include "base/not_fatal_until.h"
@@ -30,6 +29,7 @@
 #include "base/version.h"
 #include "base/version_info/version_info.h"
 #include "components/country_codes/country_codes.h"
+#include "components/metrics/private_metrics/puma_histogram_functions.h"
 #include "components/metrics/profile_metrics_service.h"
 #include "components/policy/core/common/management/management_service.h"
 #include "components/policy/core/common/policy_service.h"
@@ -305,8 +305,8 @@ void RecordLegacyStaticEligibilityInternal(
 
   profile_metrics_service.UmaHistogramEnumeration(
       kSearchEngineChoiceScreenProfileInitConditionsHistogram, condition);
-  base::PumaHistogramEnumeration(
-      base::PumaType::kRc,
+  metrics::private_metrics::PumaHistogramEnumeration(
+      metrics::private_metrics::PumaType::kRc,
       kPumaSearchChoiceScreenProfileInitConditionsHistogram, condition);
 }
 
@@ -384,7 +384,7 @@ bool AccountCanMakeChoiceScreenChoice(
   // Treat accounts with signin::Tribool::kUnknown (this covers signed-out
   // users, and signed-in users where the capability is not known yet) as able
   // to make a choice.
-  return account_info.capabilities
+  return account_info.GetAccountCapabilities()
              .can_make_chrome_search_engine_choice_screen_choice() !=
          signin::Tribool::kFalse;
 #else
@@ -688,6 +688,11 @@ SearchEngineChoiceService::GetDynamicChoiceScreenConditions(
       return SearchEngineChoiceScreenConditions::
           kHasRemovedPrepopulatedSearchEngine;
     case ChoiceStatus::kCurrentCannotBeHighlighted:
+#if BUILDFLAG(IS_IOS)
+      if (switches::IsSearchEngineChoiceScreenSnackbarEnabled()) {
+        return SearchEngineChoiceScreenConditions::kEligible;
+      }
+#endif
       return SearchEngineChoiceScreenConditions::
           kHasNonHighlightablePrepopulatedSearchEngine;
     case ChoiceStatus::kCurrentIsNotPrepopulated:
@@ -763,9 +768,9 @@ void SearchEngineChoiceService::RecordTriggeringEligibility(
 
   profile_metrics_service_->UmaHistogramEnumeration(
       kSearchEngineChoiceScreenNavigationConditionsHistogram, condition);
-  base::PumaHistogramEnumeration(
-      base::PumaType::kRc, kPumaSearchChoiceScreenNavigationConditionsHistogram,
-      condition);
+  metrics::private_metrics::PumaHistogramEnumeration(
+      metrics::private_metrics::PumaType::kRc,
+      kPumaSearchChoiceScreenNavigationConditionsHistogram, condition);
 
   regional_capabilities::RecordTriggeringFunnelStageDetails(
       condition, *profile_metrics_service_);
@@ -784,8 +789,9 @@ void SearchEngineChoiceService::RecordChoiceScreenEvent(
 
   profile_metrics_service_->UmaHistogramEnumeration(
       kSearchEngineChoiceScreenEventsHistogram, event);
-  base::PumaHistogramEnumeration(base::PumaType::kRc,
-                                 kPumaSearchChoiceScreenEventsHistogram, event);
+  metrics::private_metrics::PumaHistogramEnumeration(
+      metrics::private_metrics::PumaType::kRc,
+      kPumaSearchChoiceScreenEventsHistogram, event);
 
   if (event == SearchEngineChoiceScreenEvents::kChoiceScreenWasDisplayed ||
       event == SearchEngineChoiceScreenEvents::kFreChoiceScreenWasDisplayed ||
@@ -878,18 +884,10 @@ void SearchEngineChoiceService::RecordChoiceMade(
   ClearSearchEngineChoiceInvalidation(*profile_prefs_);
 
   if (should_keep_existing_choice_record) {
-#if BUILDFLAG(CHOICE_SCREEN_IN_CHROME)
     // There is an existing record AND we should keep it. In this case, being
     // called from a choice screen is not expected.
-    //
-    // This check is skipped on non-chrome choice platforms, as on Android we
-    // use the `kChoiceScreen` value for choices imported from the OS, where we
-    // don't have control on reprompts and other ways of a choice to be
-    // re-imported. As we observed hits there, we suppress the check for now to
-    // limit useless crash reports.
     CHECK_NE(choice_location, ChoiceMadeLocation::kChoiceScreen,
              base::NotFatalUntil::M153);
-#endif  // BUILDFLAG(CHOICE_SCREEN_IN_CHROME)
     return;
   }
 

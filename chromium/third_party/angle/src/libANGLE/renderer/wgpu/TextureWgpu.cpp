@@ -153,7 +153,7 @@ void TextureWgpu::onDestroy(const gl::Context *context)
 }
 
 angle::Result TextureWgpu::setImage(const gl::Context *context,
-                                    const gl::ImageIndex &index,
+                                    const gl::OwnImageIndex &ownIndex,
                                     GLenum internalFormat,
                                     const gl::Extents &size,
                                     GLenum format,
@@ -162,11 +162,13 @@ angle::Result TextureWgpu::setImage(const gl::Context *context,
                                     gl::Buffer *unpackBuffer,
                                     const uint8_t *pixels)
 {
+    const gl::ImageIndex index = ownIndex.getUntranslated();
+
     return setImageImpl(context, internalFormat, type, index, size, unpack, pixels);
 }
 
 angle::Result TextureWgpu::setSubImage(const gl::Context *context,
-                                       const gl::ImageIndex &index,
+                                       const gl::OwnImageIndex &ownIndex,
                                        const gl::Box &area,
                                        GLenum format,
                                        GLenum type,
@@ -174,6 +176,8 @@ angle::Result TextureWgpu::setSubImage(const gl::Context *context,
                                        gl::Buffer *unpackBuffer,
                                        const uint8_t *pixels)
 {
+    const gl::ImageIndex index = ownIndex.getUntranslated();
+
     ContextWgpu *contextWgpu             = GetImplAs<ContextWgpu>(context);
     const gl::InternalFormat &formatInfo = gl::GetInternalFormatInfo(format, type);
     return setSubImageImpl(context, contextWgpu->getFormat(formatInfo.sizedInternalFormat), type,
@@ -181,7 +185,7 @@ angle::Result TextureWgpu::setSubImage(const gl::Context *context,
 }
 
 angle::Result TextureWgpu::setCompressedImage(const gl::Context *context,
-                                              const gl::ImageIndex &index,
+                                              const gl::OwnImageIndex &ownIndex,
                                               GLenum internalFormat,
                                               const gl::Extents &size,
                                               const gl::PixelUnpackState &unpack,
@@ -192,7 +196,7 @@ angle::Result TextureWgpu::setCompressedImage(const gl::Context *context,
 }
 
 angle::Result TextureWgpu::setCompressedSubImage(const gl::Context *context,
-                                                 const gl::ImageIndex &index,
+                                                 const gl::OwnImageIndex &ownIndex,
                                                  const gl::Box &area,
                                                  GLenum format,
                                                  const gl::PixelUnpackState &unpack,
@@ -203,11 +207,13 @@ angle::Result TextureWgpu::setCompressedSubImage(const gl::Context *context,
 }
 
 angle::Result TextureWgpu::copyImage(const gl::Context *context,
-                                     const gl::ImageIndex &index,
+                                     const gl::OwnImageIndex &ownIndex,
                                      const gl::Rectangle &sourceArea,
                                      GLenum internalFormat,
                                      gl::Framebuffer *source)
 {
+    const gl::ImageIndex index = ownIndex.getUntranslated();
+
     ContextWgpu *contextWgpu = GetImplAs<ContextWgpu>(context);
 
     gl::Extents newImageSize(sourceArea.width, sourceArea.height, 1);
@@ -256,11 +262,13 @@ angle::Result TextureWgpu::copyImage(const gl::Context *context,
 }
 
 angle::Result TextureWgpu::copySubImage(const gl::Context *context,
-                                        const gl::ImageIndex &index,
+                                        const gl::OwnImageIndex &ownIndex,
                                         const gl::Offset &destOffset,
                                         const gl::Rectangle &sourceArea,
                                         gl::Framebuffer *source)
 {
+    const gl::ImageIndex index = ownIndex.getUntranslated();
+
     ContextWgpu *contextWgpu                 = GetImplAs<ContextWgpu>(context);
     const gl::InternalFormat &internalFormat = *mState.getImageDesc(index).format.info;
     const webgpu::Format &webgpuFormat = contextWgpu->getFormat(internalFormat.sizedInternalFormat);
@@ -356,15 +364,18 @@ angle::Result TextureWgpu::copySubImageImpl(const gl::Context *context,
 }
 
 angle::Result TextureWgpu::copyTexture(const gl::Context *context,
-                                       const gl::ImageIndex &index,
+                                       const gl::OwnImageIndex &ownIndex,
                                        GLenum internalFormat,
                                        GLenum type,
-                                       GLint sourceLevel,
+                                       gl::OwnLevel ownSourceLevel,
                                        bool unpackFlipY,
                                        bool unpackPremultiplyAlpha,
                                        bool unpackUnmultiplyAlpha,
                                        const gl::Texture *source)
 {
+    const gl::ImageIndex index = ownIndex.getUntranslated();
+    const uint32_t sourceLevel = ownSourceLevel.getUntranslated().get();
+
     ContextWgpu *contextWgpu       = webgpu::GetImpl(context);
     TextureWgpu *sourceTextureWgpu = webgpu::GetImpl(source);
 
@@ -391,15 +402,18 @@ angle::Result TextureWgpu::copyTexture(const gl::Context *context,
 }
 
 angle::Result TextureWgpu::copySubTexture(const gl::Context *context,
-                                          const gl::ImageIndex &index,
+                                          const gl::OwnImageIndex &ownIndex,
                                           const gl::Offset &destOffset,
-                                          GLint sourceLevel,
+                                          gl::OwnLevel ownSourceLevel,
                                           const gl::Box &sourceBox,
                                           bool unpackFlipY,
                                           bool unpackPremultiplyAlpha,
                                           bool unpackUnmultiplyAlpha,
                                           const gl::Texture *source)
 {
+    const gl::ImageIndex index = ownIndex.getUntranslated();
+    const uint32_t sourceLevel = ownSourceLevel.getUntranslated().get();
+
     ContextWgpu *contextWgpu       = webgpu::GetImpl(context);
     TextureWgpu *sourceTextureWgpu = webgpu::GetImpl(source);
     gl::TextureTarget target       = index.getTarget();
@@ -487,31 +501,28 @@ angle::Result TextureWgpu::copySubTextureImpl(const gl::Context *context,
 
 angle::Result TextureWgpu::copyRenderbufferSubData(const gl::Context *context,
                                                    const gl::Renderbuffer *srcBuffer,
-                                                   GLint srcLevel,
                                                    GLint srcX,
                                                    GLint srcY,
-                                                   GLint srcZ,
-                                                   GLint dstLevel,
+                                                   gl::OwnLevel ownDstLevel,
                                                    GLint dstX,
                                                    GLint dstY,
-                                                   GLint dstZ,
+                                                   gl::OwnLayer dstZ,
                                                    GLsizei srcWidth,
-                                                   GLsizei srcHeight,
-                                                   GLsizei srcDepth)
+                                                   GLsizei srcHeight)
 {
     return angle::Result::Continue;
 }
 
 angle::Result TextureWgpu::copyTextureSubData(const gl::Context *context,
                                               const gl::Texture *srcTexture,
-                                              GLint srcLevel,
+                                              gl::OwnLevel ownSrcLevel,
                                               GLint srcX,
                                               GLint srcY,
-                                              GLint srcZ,
-                                              GLint dstLevel,
+                                              gl::OwnLayer srcZ,
+                                              gl::OwnLevel ownDstLevel,
                                               GLint dstX,
                                               GLint dstY,
-                                              GLint dstZ,
+                                              gl::OwnLayer dstZ,
                                               GLsizei srcWidth,
                                               GLsizei srcHeight,
                                               GLsizei srcDepth)
@@ -569,6 +580,39 @@ angle::Result TextureWgpu::setImageExternal(const gl::Context *context,
 
 angle::Result TextureWgpu::generateMipmap(const gl::Context *context)
 {
+    ContextWgpu *contextWgpu = webgpu::GetImpl(context);
+
+    gl::LevelIndex baseLevel           = gl::LevelIndex(mState.getEffectiveBaseLevel());
+    const gl::ImageDesc &baseLevelDesc = mState.getBaseLevelDesc();
+    const webgpu::Format &format =
+        contextWgpu->getFormat(baseLevelDesc.format.info->sizedInternalFormat);
+
+    gl::LevelIndex maxLevel = gl::LevelIndex(mState.getMipmapMaxLevel());
+    ASSERT(maxLevel.get() != 0);
+
+    for (gl::LevelIndex sourceLevel = baseLevel; sourceLevel < maxLevel; ++sourceLevel)
+    {
+        webgpu::TextureViewHandle srcView;
+        ANGLE_TRY(mImage->createTextureViewSingleLevel(
+            sourceLevel, 0, srcView, WGPUTextureAspect_All, WGPUTextureFormat_Undefined));
+        gl::Extents sourceSize =
+            ComputeMipSize(baseLevelDesc.size, sourceLevel - baseLevel, mState.getType());
+        gl::Rectangle sourceRect(0, 0, sourceSize.width, sourceSize.height);
+
+        gl::LevelIndex destLevel = sourceLevel + 1;
+        webgpu::TextureViewHandle dstView;
+        ANGLE_TRY(mImage->createTextureViewSingleLevel(destLevel, 0, dstView, WGPUTextureAspect_All,
+                                                       WGPUTextureFormat_Undefined));
+        gl::Extents destSize =
+            ComputeMipSize(baseLevelDesc.size, destLevel - baseLevel, mState.getType());
+        gl::Rectangle destRect(0, 0, destSize.width, destSize.height);
+
+        ANGLE_TRY(contextWgpu->getUtils()->blit(
+            contextWgpu, srcView, dstView, sourceRect, destRect, gl_wgpu::GetExtent3D(sourceSize),
+            gl_wgpu::GetExtent3D(destSize), GL_LINEAR, false, false, 1, format.getIntendedFormat(),
+            format.getIntendedFormatID(), format.getActualImageFormatID(), nullptr));
+    }
+
     return angle::Result::Continue;
 }
 
@@ -614,17 +658,19 @@ angle::Result TextureWgpu::setStorageMultisample(const gl::Context *context,
 
 angle::Result TextureWgpu::initializeContents(const gl::Context *context,
                                               GLenum binding,
-                                              const gl::ImageIndex &imageIndex)
+                                              const gl::OwnImageIndex &ownImageIndex)
 {
     return angle::Result::Continue;
 }
 
 angle::Result TextureWgpu::getAttachmentRenderTarget(const gl::Context *context,
                                                      GLenum binding,
-                                                     const gl::ImageIndex &imageIndex,
+                                                     const gl::OwnImageIndex &ownImageIndex,
                                                      GLsizei samples,
                                                      FramebufferAttachmentRenderTarget **rtOut)
 {
+    const gl::ImageIndex imageIndex = ownImageIndex.getUntranslated();
+
     ContextWgpu *contextWgpu = GetImplAs<ContextWgpu>(context);
     ANGLE_TRY(respecifyImageStorageIfNecessary(contextWgpu, gl::Command::Draw));
     if (!mImage->isInitialized())
@@ -922,10 +968,10 @@ void TextureWgpu::prepareForGenerateMipmap(ContextWgpu *contextWgpu)
     // Remove staged updates to the range that's being respecified (which is all the mips except
     // baseLevel).
     gl::LevelIndex firstGeneratedLevel = baseLevel + 1;
-    for (GLuint levelToRemove = mState.getEffectiveBaseLevel();
-         levelToRemove < mState.getMipmapMaxLevel(); levelToRemove++)
+    for (gl::LevelIndex levelToRemove = firstGeneratedLevel;
+         levelToRemove < gl::LevelIndex(mState.getMipmapMaxLevel()); ++levelToRemove)
     {
-        mImage->removeStagedUpdates(gl::LevelIndex(levelToRemove));
+        mImage->removeStagedUpdates(levelToRemove);
     }
 
     TextureRedefineGenerateMipmapLevels(baseLevel, maxLevel, firstGeneratedLevel,

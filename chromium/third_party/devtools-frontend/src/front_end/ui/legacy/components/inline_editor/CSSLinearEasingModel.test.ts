@@ -63,4 +63,36 @@ describe('CSSLinearEasingModel', () => {
     const model = InlineEditor.CSSLinearEasingModel.CSSLinearEasingModel.parse('linear(0 0%, 1 100%)');
     assert.strictEqual(model!.asCSSText(), 'linear');
   });
+
+  it('should clamp point input when calling setPoint to prevent overshooting', () => {
+    const model = InlineEditor.CSSLinearEasingModel.CSSLinearEasingModel.parse('linear(0 0%, 0.5 50%, 1 100%)')!;
+    // Try to set Point 1 (index 1) to input = -10 (which is less than index 0's input, 0)
+    model.setPoint(1, {input: -10, output: 0.5});
+    assert.strictEqual(model.points()[1].input, 0);
+
+    // Try to set Point 1 to input = 120 (which is greater than index 2's input, 100)
+    model.setPoint(1, {input: 120, output: 0.5});
+    assert.strictEqual(model.points()[1].input, 100);
+
+    // Try to set index 0 (first point) to a negative input
+    model.setPoint(0, {input: -10, output: 0});
+    assert.strictEqual(model.points()[0].input, 0);
+
+    // Try to set index 2 (last point) to an input greater than 100
+    model.setPoint(2, {input: 110, output: 1});
+    assert.strictEqual(model.points()[2].input, 100);
+  });
+
+  it('should clamp point input to intermediate neighboring points', () => {
+    // Parse a model where the first point has input 20% and the last point has input 80%.
+    const model = InlineEditor.CSSLinearEasingModel.CSSLinearEasingModel.parse('linear(0 20%, 0.5 50%, 1 80%)')!;
+
+    // Try to set Point 1 (index 1) to input 10%. It should be clamped to its left neighbor's input (20%).
+    model.setPoint(1, {input: 10, output: 0.5});
+    assert.strictEqual(model.points()[1].input, 20);
+
+    // Try to set Point 1 to input 90%. It should be clamped to its right neighbor's input (80%).
+    model.setPoint(1, {input: 90, output: 0.5});
+    assert.strictEqual(model.points()[1].input, 80);
+  });
 });

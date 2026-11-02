@@ -404,16 +404,17 @@ inline void MaglevAssembler::SmiSubConstant(Register dst, Register src,
   AssertSmi(src);
   if (value != 0) {
     MaglevAssembler::TemporaryRegisterScope temps(this);
-    Register overflow = temps.AcquireScratch();
+    Register scratch = temps.AcquireScratch();
     Operand subtrahend = Operand(Smi::FromInt(value));
     if (SmiValuesAre31Bits()) {
-      Sub64(overflow, src, subtrahend);
+      sext_w(scratch, src);
+      src = scratch;
       Sub32(dst, src, subtrahend);
-      Sub64(overflow, dst, overflow);
-      MacroAssembler::Branch(fail, ne, overflow, Operand(zero_reg), distance);
+      MacroAssembler::Branch(fail, value > 0 ? gt : lt, dst, Operand(src),
+                             distance);
     } else {
-      SubOverflowWord(dst, src, subtrahend, overflow);
-      MacroAssembler::Branch(fail, lt, overflow, Operand(zero_reg), distance);
+      SubOverflowWord(dst, src, subtrahend, scratch);
+      MacroAssembler::Branch(fail, lt, scratch, Operand(zero_reg), distance);
     }
   } else {
     Move(dst, src);
@@ -1487,6 +1488,11 @@ void MaglevAssembler::Float64SilenceNan(DoubleRegister value) {
   FPUCanonicalizeNaN(value, value);
 }
 
+void MaglevAssembler::Float64ExtractHighWord32(Register dst,
+                                               DoubleRegister src) {
+  ExtractHighWordFromF64(dst, src);
+}
+
 #ifdef V8_ENABLE_UNDEFINED_DOUBLE
 void MaglevAssembler::JumpIfUndefinedNan(DoubleRegister value, Register scratch,
                                          Label* target,
@@ -1886,6 +1892,19 @@ inline void MaglevAssembler::CompareSmiAndJumpIf(Register r1, Tagged<Smi> value,
                                                  Label::Distance distance) {
   AssertSmi(r1);
   CompareTaggedAndBranch(target, cond, r1, Operand(value));
+}
+
+inline void MaglevAssembler::CompareSmiAndAssert(Register r1, Tagged<Smi> value,
+                                                 Condition cond,
+                                                 AbortReason reason) {
+  if (!v8_flags.debug_code) return;
+  AssertSmi(r1);
+
+  MaglevAssembler::TemporaryRegisterScope temps(this);
+  Register scratch = temps.AcquireScratch();
+  li(scratch, Operand(value.ptr()));
+  CmpTagged(r1, scratch);
+  Assert(cond, reason);
 }
 
 inline void MaglevAssembler::CompareByteAndJumpIf(MemOperand left, int8_t right,

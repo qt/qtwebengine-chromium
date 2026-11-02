@@ -29,6 +29,7 @@
 
 #include <unicode/usearch.h>
 
+#include "base/numerics/safe_conversions.h"
 #include "third_party/blink/renderer/platform/text/character.h"
 #include "third_party/blink/renderer/platform/text/text_boundaries.h"
 #include "third_party/blink/renderer/platform/text/text_break_iterator_internal_icu.h"
@@ -122,7 +123,7 @@ class SearcherFactory {
 }  // namespace
 
 static bool IsWholeWordMatch(base::span<const UChar> text,
-                             const MatchResultICU& result) {
+                             const MatchResultIcu& result) {
   const wtf_size_t result_end = result.start + result.length;
   DCHECK_LE(result_end, text.size());
   UChar32 first_character = CodePointAt(text, result.start);
@@ -141,47 +142,48 @@ static bool IsWholeWordMatch(base::span<const UChar> text,
   }
   if (word_break_search_start != result.start)
     return false;
-  return result_end == static_cast<wtf_size_t>(
-                           FindWordEndBoundary(text, word_break_search_start));
+  return result_end == FindWordEndBoundary(text, word_break_search_start);
 }
 
 // Grab the single global searcher.
-TextSearcherICU::TextSearcherICU()
+TextSearcherIcu::TextSearcherIcu()
     : searcher_(SearcherFactory::AcquireSearcher()) {}
 
-TextSearcherICU::TextSearcherICU(ConstructLocalTag)
+TextSearcherIcu::TextSearcherIcu(ConstructLocalTag)
     : searcher_(SearcherFactory::CreateLocal()) {}
 
-TextSearcherICU::~TextSearcherICU() {
+TextSearcherIcu::~TextSearcherIcu() {
   SearcherFactory::ReleaseSearcher(searcher_);
 }
 
-void TextSearcherICU::SetPattern(const StringView& pattern,
+void TextSearcherIcu::SetPattern(const StringView& pattern,
                                  FindOptions options) {
   DCHECK_GT(pattern.length(), 0u);
   options_ = options;
   SetCaseSensitivity(!options.IsCaseInsensitive());
   SetPattern(pattern.Span16());
+  SetAllowOverlapMatches(options.AllowOverlapMatches());
   if (ContainsKanaLetters(pattern.ToString())) {
     normalized_search_text_ = NormalizeCharactersIntoNfc(pattern.Span16());
   }
 }
 
-void TextSearcherICU::SetText(base::span<const UChar> text) {
+void TextSearcherIcu::SetText(base::span<const UChar> text) {
   UErrorCode status = U_ZERO_ERROR;
-  usearch_setText(searcher_, text.data(), text.size(), &status);
+  usearch_setText(searcher_, text.data(),
+                  base::checked_cast<int32_t>(text.size()), &status);
   DCHECK_EQ(status, U_ZERO_ERROR);
-  text_length_ = text.size();
+  text_length_ = base::checked_cast<wtf_size_t>(text.size());
 }
 
-void TextSearcherICU::SetOffset(wtf_size_t offset) {
+void TextSearcherIcu::SetOffset(wtf_size_t offset) {
   UErrorCode status = U_ZERO_ERROR;
   usearch_setOffset(searcher_, offset, &status);
   DCHECK_EQ(status, U_ZERO_ERROR);
 }
 
-std::optional<MatchResultICU> TextSearcherICU::NextMatchResult() {
-  while (std::optional<MatchResultICU> result = NextMatchResultInternal()) {
+std::optional<MatchResultIcu> TextSearcherIcu::NextMatchResult() {
+  while (std::optional<MatchResultIcu> result = NextMatchResultInternal()) {
     if (!ShouldSkipCurrentMatch(*result)) {
       return result;
     }
@@ -189,7 +191,7 @@ std::optional<MatchResultICU> TextSearcherICU::NextMatchResult() {
   return std::nullopt;
 }
 
-std::optional<MatchResultICU> TextSearcherICU::NextMatchResultInternal() {
+std::optional<MatchResultIcu> TextSearcherIcu::NextMatchResultInternal() {
   UErrorCode status = U_ZERO_ERROR;
   const int match_start = usearch_next(searcher_, &status);
   DCHECK(U_SUCCESS(status));
@@ -202,7 +204,7 @@ std::optional<MatchResultICU> TextSearcherICU::NextMatchResultInternal() {
     return std::nullopt;
   }
 
-  MatchResultICU result = {
+  MatchResultIcu result = {
       static_cast<wtf_size_t>(match_start),
       base::checked_cast<wtf_size_t>(usearch_getMatchedLength(searcher_))};
   // Might be possible to get zero-length result with some Unicode characters
@@ -213,39 +215,53 @@ std::optional<MatchResultICU> TextSearcherICU::NextMatchResultInternal() {
   return result;
 }
 
-bool TextSearcherICU::ShouldSkipCurrentMatch(
-    const MatchResultICU& result) const {
+bool TextSearcherIcu::ShouldSkipCurrentMatch(
+    const MatchResultIcu& result) const {
   int32_t text_length_i32;
   const UChar* text = usearch_getText(searcher_, &text_length_i32);
   unsigned text_length = text_length_i32;
   DCHECK_LE(result.start + result.length, text_length);
   DCHECK_GT(result.length, 0u);
   // SAFETY: Making a span same as the SetText() argument.
-  auto text_span = UNSAFE_BUFFERS(base::span<const UChar>(text, text_length));
+  auto text_span = UNSAFE_BUFFERS(
+      base::span<const UChar>(base::unchecked, text, text_length));
 
   if (!normalized_search_text_.empty() &&
       !IsCorrectKanaMatch(text_span, result)) {
     return true;
   }
 
+  if (options_.RequireWordBoundedStart() &&
+      FindWordStartBoundary(text_span, result.start) != result.start) {
+    return true;
+  }
+
+  if (options_.RequireWordBoundedEnd()) {
+    const wtf_size_t last_char_pos = result.start + result.length - 1;
+    if (FindWordEndBoundary(text_span, last_char_pos) != last_char_pos + 1) {
+      return true;
+    }
+  }
+
   return options_.IsWholeWord() && !IsWholeWordMatch(text_span, result);
 }
 
-bool TextSearcherICU::IsCorrectKanaMatch(base::span<const UChar> text,
-                                         const MatchResultICU& result) const {
+bool TextSearcherIcu::IsCorrectKanaMatch(base::span<const UChar> text,
+                                         const MatchResultIcu& result) const {
   Vector<UChar> normalized_match =
       NormalizeCharactersIntoNfc(text.subspan(result.start, result.length));
   return CheckOnlyKanaLettersInStrings(base::span(normalized_search_text_),
                                        base::span(normalized_match));
 }
 
-void TextSearcherICU::SetPattern(base::span<const UChar> pattern) {
+void TextSearcherIcu::SetPattern(base::span<const UChar> pattern) {
   UErrorCode status = U_ZERO_ERROR;
-  usearch_setPattern(searcher_, pattern.data(), pattern.size(), &status);
+  usearch_setPattern(searcher_, pattern.data(),
+                     base::checked_cast<int32_t>(pattern.size()), &status);
   DCHECK(U_SUCCESS(status));
 }
 
-void TextSearcherICU::SetCaseSensitivity(bool case_sensitive) {
+void TextSearcherIcu::SetCaseSensitivity(bool case_sensitive) {
   const UCollationStrength strength =
       case_sensitive ? UCOL_TERTIARY : UCOL_PRIMARY;
 
@@ -255,6 +271,13 @@ void TextSearcherICU::SetCaseSensitivity(bool case_sensitive) {
 
   ucol_setStrength(collator, strength);
   usearch_reset(searcher_);
+}
+
+void TextSearcherIcu::SetAllowOverlapMatches(bool overlap) {
+  UErrorCode status = U_ZERO_ERROR;
+  usearch_setAttribute(searcher_, USEARCH_OVERLAP,
+                       overlap ? USEARCH_ON : USEARCH_OFF, &status);
+  DCHECK_EQ(status, U_ZERO_ERROR);
 }
 
 }  // namespace blink

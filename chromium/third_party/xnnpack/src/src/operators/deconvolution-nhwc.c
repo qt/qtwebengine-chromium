@@ -269,7 +269,7 @@ static XNN_NO_SANITIZE_FUNCTION enum xnn_status create_deconvolution2d_nhwc(
     xnn_log_error("failed to allocate %zu bytes for %s operator descriptor",
                   sizeof(struct xnn_convolution_operator),
                   xnn_operator_type_to_string(operator_type));
-    return xnn_status_out_of_memory;
+    goto error;
   }
 
   deconvolution_op->weights_cache = weights_cache;
@@ -764,7 +764,7 @@ static enum xnn_status setup_linear_gemm_ukernels(
   return xnn_status_success;
 }
 
-static enum xnn_status setup_params_qs8_qc8w(
+static XNN_NO_SANITIZE_FUNCTION enum xnn_status setup_params_qs8_qc8w(
     const struct deconv2d_variant* variant, struct deconv2d_context* context) {
   if XNN_LIKELY (context->gemm_config->init.qs8_qc8w != NULL) {
     context->gemm_config->init.qs8_qc8w(
@@ -776,8 +776,8 @@ static enum xnn_status setup_params_qs8_qc8w(
   return xnn_status_success;
 }
 
-static enum xnn_status setup_params_qu8(const struct deconv2d_variant* variant,
-                                        struct deconv2d_context* context) {
+static XNN_NO_SANITIZE_FUNCTION enum xnn_status setup_params_qu8(
+    const struct deconv2d_variant* variant, struct deconv2d_context* context) {
   if XNN_LIKELY (context->gemm_config->init.qu8 != NULL) {
     context->gemm_config->init.qu8(
         &context->params_.qu8, context->kernel_zero_point,
@@ -789,8 +789,8 @@ static enum xnn_status setup_params_qu8(const struct deconv2d_variant* variant,
   return xnn_status_success;
 }
 
-static enum xnn_status setup_params_f16(const struct deconv2d_variant* variant,
-                                        struct deconv2d_context* context) {
+static XNN_NO_SANITIZE_FUNCTION enum xnn_status setup_params_f16(
+    const struct deconv2d_variant* variant, struct deconv2d_context* context) {
   if XNN_LIKELY (context->gemm_config->init.f16 != NULL) {
     const xnn_float16 output_min_as_half =
         xnn_float16_from_float(context->output_min);
@@ -804,8 +804,8 @@ static enum xnn_status setup_params_f16(const struct deconv2d_variant* variant,
   return xnn_status_success;
 }
 
-static enum xnn_status setup_params_f32(const struct deconv2d_variant* variant,
-                                        struct deconv2d_context* context) {
+static XNN_NO_SANITIZE_FUNCTION enum xnn_status setup_params_f32(
+    const struct deconv2d_variant* variant, struct deconv2d_context* context) {
   if XNN_LIKELY (context->gemm_config->init.f32 != NULL) {
     context->gemm_config->init.f32(&context->params_.f32, context->output_min,
                                    context->output_max);
@@ -1731,7 +1731,7 @@ enum xnn_status xnn_create_deconvolution2d_nhwc_f32_f16(
   return status;
 }
 
-static enum xnn_status reshape_igemm_path(
+static XNN_NO_SANITIZE_FUNCTION enum xnn_status reshape_igemm_path(
     xnn_operator_t deconvolution_op, size_t batch_size,
     uint32_t log2_input_element_size, uint32_t log2_filter_element_size,
     uint32_t extra_weights_element_size, uint32_t log2_output_element_size,
@@ -1762,8 +1762,17 @@ static enum xnn_status reshape_igemm_path(
   struct xnn_hmp_igemm_ukernel igemm_ukernel = igemm_cases[mr - 1];
 
   const size_t tiled_output_size = round_up(output_size, mr);
-  const size_t indirection_buffer_size =
-      sizeof(void*) * kernel_size * tiled_output_size;
+  size_t indirection_buffer_size = 0;
+  if (!xnn_safe_mul(kernel_size, tiled_output_size, &indirection_buffer_size) ||
+      !xnn_safe_mul(indirection_buffer_size, sizeof(void*),
+                    &indirection_buffer_size)) {
+    xnn_log_error(
+        "failed to reshape %s operator: indirection buffer size overflows for "
+        "kernel size %zu and tiled output size %zu",
+        xnn_operator_type_to_string_v2(deconvolution_op), kernel_size,
+        tiled_output_size);
+    return xnn_status_out_of_memory;
+  }
 
   if (input_height != deconvolution_op->convolution_op->last_input_height ||
       input_width != deconvolution_op->convolution_op->last_input_width) {
@@ -2072,9 +2081,18 @@ static enum xnn_status reshape_subconv2d_path(
   }
 
   if (any_size_change) {
-    const size_t indirection_buffer_size =
-        sizeof(void*) * kernel_size * output_height * stride_width *
-        round_up(divide_round_up(output_width, stride_width), mr);
+    const size_t rounded_output_width =
+      round_up(divide_round_up(output_width, stride_width), mr);
+  size_t indirection_buffer_size = 0;
+  if (!xnn_safe_mul(kernel_size, output_height, &indirection_buffer_size) ||
+      !xnn_safe_mul(indirection_buffer_size, stride_width, &indirection_buffer_size) ||
+      !xnn_safe_mul(indirection_buffer_size, rounded_output_width, &indirection_buffer_size) ||
+      !xnn_safe_mul(indirection_buffer_size, sizeof(void*), &indirection_buffer_size)) {
+    xnn_log_error(
+        "failed to reshape %s operator: indirection buffer size overflows",
+        xnn_operator_type_to_string_v2(deconvolution_op));
+    return xnn_status_out_of_memory;
+  }
 
     const void** indirection_buffer = (const void**)xnn_reallocate_memory(
         deconvolution_op->convolution_op->indirection_buffer,

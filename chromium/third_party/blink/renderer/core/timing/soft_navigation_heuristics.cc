@@ -13,6 +13,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/not_fatal_until.h"
 #include "base/numerics/safe_conversions.h"
+#include "build/build_config.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_navigation_type.h"
@@ -40,6 +41,7 @@
 #include "third_party/blink/renderer/platform/heap/persistent.h"
 #include "third_party/blink/renderer/platform/scheduler/public/task_attribution_info.h"
 #include "third_party/blink/renderer/platform/scheduler/public/task_attribution_tracker.h"
+#include "third_party/perfetto/include/perfetto/tracing/track.h"
 
 namespace blink {
 
@@ -95,7 +97,7 @@ void OnSoftNavigationContextWasExhausted(const SoftNavigationContext& context,
                                          uint64_t required_paint_area) {
   TRACE_EVENT_INSTANT(
       "loading", "SoftNavigationHeuristics::SoftNavigationContextWasExhausted",
-      perfetto::Track::FromPointer(&context), "context", context);
+      context.GetTracingTrack(), "context", context);
 
   // Don't bother to log if the URL was never set.  That means it was just a
   // normal interaction.
@@ -103,7 +105,7 @@ void OnSoftNavigationContextWasExhausted(const SoftNavigationContext& context,
     uint64_t total_paint_area = context.PaintedArea();
     base::UmaHistogramCounts1M(
         kPageLoadInternalSoftNavigationNotEmittedUrlEmptyTotalPaintArea,
-        total_paint_area);
+        base::saturated_cast<int>(total_paint_area));
 
     // viewport_area is guaranteed to be >= 1.
     uint64_t points_val = (total_paint_area * 10000ULL) / viewport_area;
@@ -122,7 +124,8 @@ void OnSoftNavigationContextWasExhausted(const SoftNavigationContext& context,
     // However, we can report the final paint area metrics here.
     uint64_t total_paint_area = context.PaintedArea();
     base::UmaHistogramCounts1M(
-        kPageLoadInternalSoftNavigationEmittedTotalPaintArea, total_paint_area);
+        kPageLoadInternalSoftNavigationEmittedTotalPaintArea,
+        base::saturated_cast<int>(total_paint_area));
 
     // viewport_area is guaranteed to be >= 1.
     uint64_t points_val = (total_paint_area * 10000ULL) / viewport_area;
@@ -138,7 +141,7 @@ void OnSoftNavigationContextWasExhausted(const SoftNavigationContext& context,
     uint64_t total_paint_area = context.PaintedArea();
     base::UmaHistogramCounts1M(
         kPageLoadInternalSoftNavigationNotEmittedInsufficientPaintTotalPaintArea,
-        total_paint_area);
+        base::saturated_cast<int>(total_paint_area));
 
     // viewport_area is guaranteed to be >= 1.
     uint64_t points_val = (total_paint_area * 10000ULL) / viewport_area;
@@ -172,13 +175,11 @@ void GroupLcpCandidatesByContext(const HeapVector<Member<T>>& records,
     if (!context || !context->IsRecordingLargestContentfulPaint()) {
       continue;
     }
-    LcpCandidates* candidates = nullptr;
-    if (auto iter = context_map.find(context); iter != context_map.end()) {
-      candidates = iter->value.Get();
-    } else {
-      candidates = MakeGarbageCollected<LcpCandidates>();
-      context_map.insert(context, candidates);
+    auto add_result = context_map.insert(context, nullptr);
+    if (add_result.is_new_entry) {
+      add_result.stored_value->value = MakeGarbageCollected<LcpCandidates>();
     }
+    LcpCandidates* candidates = add_result.stored_value->value.Get();
     candidates->MaybeUpdateCandidate(record);
   }
 }
@@ -189,10 +190,10 @@ SoftNavigationHeuristics::SoftNavigationHeuristics(LocalDOMWindow* window)
     : window_(window),
       task_attribution_tracker_(
           scheduler::TaskAttributionTracker::From(window->GetIsolate())) {
-  LocalFrame* frame = window->GetFrame();
-  CHECK(frame && frame->View());
+  CHECK(window->document());
   TextPaintTimingDetector* detector =
-      &frame->View()->GetPaintTimingDetector().GetTextPaintTimingDetector();
+      &PaintTimingDetector::From(*window->document())
+           .GetTextPaintTimingDetector();
   paint_attribution_tracker_ =
       MakeGarbageCollected<SoftNavigationPaintAttributionTracker>(detector);
 }
@@ -326,8 +327,9 @@ void SoftNavigationHeuristics::SameDocumentNavigationCommitted(
     TRACE_EVENT_INSTANT("loading",
                         "SoftNavigationHeuristics::"
                         "SameDocumentNavigationCommittedWithoutContext",
-                        perfetto::Track::FromPointer(this), "url",
-                        new_url_string);
+                        perfetto::NamedTrack::FromPointer(
+                            "blink::SoftNavigationHeuristics", this),
+                        "url", new_url_string);
     base::UmaHistogramEnumeration(
         kPageLoadInternalSoftNavigationOutcome,
         SoftNavigationOutcome::kNoSoftNavContextDuringUrlChange);
@@ -348,7 +350,7 @@ void SoftNavigationHeuristics::SameDocumentNavigationCommitted(
                         "SoftNavigationHeuristics::"
                         "SameDocumentNavigationCommittedWithoutContextButMerg"
                         "edIntoPreviousContext",
-                        perfetto::Track::FromPointer(context), "context",
+                        context_for_current_url_->GetTracingTrack(), "context",
                         *context_for_current_url_, "url", new_url_string);
     base::UmaHistogramEnumeration(
         kPageLoadInternalSoftNavigationOutcome,
@@ -363,7 +365,7 @@ void SoftNavigationHeuristics::SameDocumentNavigationCommitted(
 
   TRACE_EVENT_INSTANT(
       "loading", "SoftNavigationHeuristics::SameDocumentNavigationCommitted",
-      perfetto::Track::FromPointer(context), "context", *context);
+      context->GetTracingTrack(), "context", *context);
 
   MaybeCommitNavigationOrEmitSoftNavigation(context);
 }
@@ -467,14 +469,26 @@ void SoftNavigationHeuristics::EmitSoftNavigation(
   UpdateSoftLcpMetricsForContext(context);
 }
 
-SoftNavigationContext*
-SoftNavigationHeuristics::MaybeGetSoftNavigationContextForTiming(Node* node) {
+void SoftNavigationHeuristics::InitializePaintTracking(ImageRecord* record) {
+  // TODO(crbug.com/454082771): This should also update the underlying LCP
+  // calculator's "largest pending image" like we do for hard navs.
+  MaybeSetContextOnFirstPaint(record);
+}
+
+void SoftNavigationHeuristics::InitializePaintTracking(TextRecord* record) {
+  MaybeSetContextOnFirstPaint(record);
+}
+
+template <IsDerivedFromPaintTimingRecord T>
+void SoftNavigationHeuristics::MaybeSetContextOnFirstPaint(T* record) const {
+  Node* node = record->GetNode();
+  CHECK(node);
   SoftNavigationContext* context =
       paint_attribution_tracker_->GetSoftNavigationContextForNode(node);
-  if (!context || !context->IsRecordingLargestContentfulPaint()) {
-    return nullptr;
+  if (context && context->IsRecordingLargestContentfulPaint() &&
+      context->ShouldTrackForPaintTiming(*record)) {
+    record->SetSoftNavigationContext(context);
   }
-  return context;
 }
 
 void SoftNavigationHeuristics::OnPaintFinished() {
@@ -565,13 +579,32 @@ void SoftNavigationHeuristics::ReportSoftNavigationToMetrics(
   CHECK_EQ(context->GetSoftNavigationHeuristics(), this);
 
   if (LocalFrameClient* frame_client = frame->Client()) {
-    // TODO(crbug.com/490814752): Some tests simulate events with an impossibly
-    // small start_time value, which is less than the initial reference time,
-    // which makes the duration appear negative.  We cannot report such values
-    // without failing expectations (in tests).
+#if BUILDFLAG(IS_FUCHSIA)
     if (context->TimeOrigin() <= loader->GetTiming().ReferenceMonotonicTime()) {
+      LOG(ERROR) << "SoftNavigationHeuristics: TimeOrigin ("
+                 << context->TimeOrigin().since_origin().InMicroseconds()
+                 << " us) is less than or equal to ReferenceMonotonicTime ("
+                 << loader->GetTiming()
+                        .ReferenceMonotonicTime()
+                        .since_origin()
+                        .InMicroseconds()
+                 << " us). Early returning to avoid crash.";
       return;
     }
+#else
+    // If this CHECK_GT fails in a test, it's likely because the test simulates
+    // events with an impossibly small start_time, which is less than the
+    // initial reference time, which makes the duration appear negative.  In
+    // case you're using ui::test::EventGenerator directly, you may want to use
+    // the Kombucha API's SendKeyPress facility instead; if you must use the
+    // EventGeneratorDirectly, you may need to manually advance its internal
+    // clock to the real time (ui::Test::EventGenerator::AdvanceClock) before
+    // dispatching the event. See also crbug.com/490814752 and
+    // chrome/test/interaction/README.md for the Kombucha API.
+    CHECK_GT(context->TimeOrigin(),
+             loader->GetTiming().ReferenceMonotonicTime());
+#endif
+
     blink::SoftNavigationMetricsForReporting metrics = {
         .soft_navigation_offset = context->SoftNavigationOffset(),
         .start_time = loader->GetTiming().MonotonicTimeToPseudoWallTime(
@@ -701,11 +734,15 @@ void SoftNavigationHeuristics::InsertedNode(Node* inserted_node,
   if (!heuristics) {
     return;
   }
-  // When a child node, which is an HTML-element, is modified within a parent
-  // (added, moved, etc), mark that child as modified by soft navigation.
-  // Otherwise, if the child is not an HTML-element, mark the parent instead.
-  heuristics->ModifiedDOM(inserted_node->IsHTMLElement() ? inserted_node
-                                                         : container_node);
+  // When a child node, which is an HTML element or text node, is modified
+  // within a parent (added, moved, etc), mark that child as modified by soft
+  // navigation. Otherwise, mark the parent.
+  //
+  // TODO(crbug.com/416505975): Is this still needed?
+  heuristics->ModifiedDOM(inserted_node->IsHTMLElement() ||
+                                  inserted_node->IsTextNode()
+                              ? inserted_node
+                              : container_node);
 }
 
 // static

@@ -16,6 +16,7 @@
 #include "chrome/common/actor.mojom-forward.h"
 #include "chrome/renderer/actor/journal.h"
 #include "components/actor/core/task_id.h"
+#include "third_party/blink/public/web/web_element.h"
 #include "third_party/blink/public/web/web_node.h"
 #include "third_party/blink/public/web/web_page_popup.h"
 #include "third_party/blink/public/web/web_widget.h"
@@ -113,6 +114,16 @@ class ToolBase {
  protected:
   using ResolveResult = base::expected<ResolvedTarget, mojom::ActionResultPtr>;
 
+  enum class TargetOcclusionMode {
+    // The normal path: the live hit test at the interaction point must resolve
+    // to the same target tree that APC observed.
+    kRequireUnoccluded,
+
+    // The server-approved direct activation path: the live hit test may miss
+    // the target, but the DOM target still needs normal renderer-local checks.
+    kAllowOccludedForDirectActivation,
+  };
+
   // Resolves the given target into the ResolvedTarget struct which includes
   // both a point to inject input events to and a DOM node to validate against.
   ResolveResult ResolveTarget(const mojom::ToolTarget& target) const;
@@ -120,7 +131,25 @@ class ToolBase {
   // Validate that target_ passes tool-agnostic validation (e.g. within
   // viewport, no change between observation and time of use) and resolve the
   // mojom target to Node and Point, ready for tool use.
-  ResolveResult ValidateAndResolveTarget() const;
+  ResolveResult ValidateAndResolveTarget(
+      TargetOcclusionMode occlusion_mode =
+          TargetOcclusionMode::kRequireUnoccluded) const;
+
+  // Returns the Blink-reported reason actor should reject the target, if any.
+  // Disabled controls are always rejected; other reasons are caller-controlled.
+  std::optional<blink::WebElementInteractionDisallowedReason>
+  GetInteractionDisallowedReason(const ResolvedTarget& resolved_target,
+                                 bool check_aria,
+                                 bool reject_non_disabled_reasons) const;
+
+  // Returns the element whose interaction-disallowed state should be checked.
+  // Coordinate hit tests can resolve to text or an internal child, such as a
+  // select's UA-shadow button. Validate the nearest element ancestor or host,
+  // if present, so internal hit-test details do not block or bypass the action.
+  // If TOCTOU validation matched an observed APC target, validate that observed
+  // target for the same reason.
+  blink::WebElement GetTargetElementForValidation(
+      const ResolvedTarget& resolved_target) const;
 
   // Raw ref since this is owned by ToolExecutor whose lifetime is tied to
   // RenderFrame.
@@ -134,7 +163,20 @@ class ToolBase {
   // Validate that resolved target matches the observed target from last
   // observation.
   mojom::ActionResultPtr ValidateTimeOfUse(
-      const ResolvedTarget& resolved_target) const;
+      const ResolvedTarget& resolved_target,
+      TargetOcclusionMode occlusion_mode) const;
+
+  // Returns whether the validation element is a disabled native form control.
+  // This stays separate from Blink's general disallowed-state helper so actor
+  // does not depend on disabled being reported before other reasons.
+  bool IsDisabledFormControlTarget(
+      const blink::WebElement& validation_element) const;
+
+  // Returns Blink's interaction-disallowed reason for the validation element.
+  // Callers keep disabled rejection separate before consulting this helper.
+  std::optional<blink::WebElementInteractionDisallowedReason>
+  GetInteractionDisallowedReason(const blink::WebElement& validation_element,
+                                 bool check_aria) const;
 
   bool is_revalidation_ = false;
 };

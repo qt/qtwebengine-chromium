@@ -232,8 +232,11 @@ Note, the Reviews and Bugs lists are typically read-only.
 
 ## Bugs
 
-PDFium uses this [bug tracker](https://crbug.com/pdfium/new), but for security
-bugs, please use
+PDFium uses this [bug tracker](https://crbug.com/pdfium/new).
+
+Report security bugs via [Google Bughunters (Chrome VRP)](https://bughunters.google.com/report/vrp).
+
+Project members and embedders can directly report security bugs using
 [Chromium's security bug template](https://crbug.com/new?component=1586257&noWizard=True&template=1922342).
 
 ## Contributing code

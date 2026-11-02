@@ -11,6 +11,7 @@
 
 #include "base/bit_cast.h"
 #include "base/check.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
 #include "base/numerics/byte_conversions.h"
 #include "components/visitedlink/core/visited_link.h"
@@ -46,6 +47,9 @@ bool VisitedLinkCommon::IsVisited(std::string_view canonical_url) const {
   if (!hash_table_ || table_length_ == 0) {
     return false;
   }
+  if (is_pseudo_partitioned_) {
+    return IsVisited(ComputePseudoPartitionedFingerprint(canonical_url));
+  }
   return IsVisited(ComputeURLFingerprint(canonical_url));
 }
 
@@ -77,16 +81,24 @@ bool VisitedLinkCommon::IsVisited(Fingerprint fingerprint) const {
   // which should be enforced by AddFingerprint.
   Hash first_hash = HashFingerprint(fingerprint);
   Hash cur_hash = first_hash;
+  size_t collision_count = 0;
   while (true) {
     Fingerprint cur_fingerprint = FingerprintAt(cur_hash);
-    if (cur_fingerprint == kNullFingerprint) {
-      return false;  // End of probe sequence found.
+    // Search for fingerprint match.
+    if (cur_fingerprint == kNullFingerprint || cur_fingerprint == fingerprint) {
+      // Log the number of collisions encountered during the search for
+      // matches in the case of pseudo-partitioned usage.
+      if (is_pseudo_partitioned_) {
+        UMA_HISTOGRAM_COUNTS_100(
+            "History.VisitedLinks.WebView.LookupCollisionCount",
+            collision_count);
+      }
+      return cur_fingerprint == fingerprint;  // Match or end of sequence found.
     }
-    if (cur_fingerprint == fingerprint)
-      return true;  // Found a match.
 
     // This spot was taken, but not by the item we're looking for, search in
     // the next position.
+    collision_count++;
     cur_hash++;
     if (cur_hash == table_length_)
       cur_hash = 0;
@@ -149,6 +161,17 @@ VisitedLinkCommon::Fingerprint VisitedLinkCommon::ComputePartitionedFingerprint(
   // Add the serialized frame origin.
   md5.Update(frame_origin.Serialize());
   return ConvertDigestToFingerprint(md5.Finish());
+}
+
+// static
+VisitedLinkCommon::Fingerprint
+VisitedLinkCommon::ComputePseudoPartitionedFingerprint(
+    std::string_view canonical_url) {
+  VisitedLink link = CreatePseudoPartitionedLink(GURL(canonical_url));
+  if (!link.IsValid()) {
+    return kNullFingerprint;
+  }
+  return ComputePartitionedFingerprint(link, kPseudoPartitionedConstantSalt);
 }
 
 }  // namespace visitedlink

@@ -98,6 +98,7 @@ class NewTabPageHandler
                         segmentation_platform_service,
                     content::WebContents* web_contents,
                     const base::Time& ntp_navigation_start_time,
+                    base::TimeTicks ntp_navigation_start_time_ticks,
                     const std::vector<ntp::ModuleIdDetail>* module_id_details);
 
   NewTabPageHandler(const NewTabPageHandler&) = delete;
@@ -172,6 +173,7 @@ class NewTabPageHandler
   void CanShowRealboxContextMenuAnimation(
       CanShowRealboxContextMenuAnimationCallback callback) override;
   void RecordRealboxContextMenuAnimationImpression() override;
+  void OnContextualSearchIPHEngaged() override;
 
  private:
   // ui::NativeThemeObserver:

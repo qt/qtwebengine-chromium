@@ -56,6 +56,7 @@
 #include "third_party/blink/public/mojom/frame/frame_replication_state.mojom.h"
 #include "third_party/blink/public/mojom/frame/intrinsic_sizing_info.mojom-blink.h"
 #include "third_party/blink/public/mojom/frame/tree_scope_type.mojom-blink.h"
+#include "third_party/blink/public/mojom/input/pointer_lock_result.mojom-blink.h"
 #include "third_party/blink/public/mojom/input/touch_event.mojom-blink.h"
 #include "third_party/blink/public/mojom/page/prerender_page_param.mojom.h"
 #include "third_party/blink/public/mojom/page/widget.mojom-blink.h"
@@ -1008,7 +1009,6 @@ WebView* TestWebFrameClient::CreateNewWindow(
     network::mojom::blink::WebSandboxFlags,
     const SessionStorageNamespaceId&,
     bool& consumed_user_gesture,
-    const std::optional<Impression>&,
     const std::optional<WebPictureInPictureWindowOptions>&,
     const WebURL&) {
   auto webview_helper = std::make_unique<WebViewHelper>();
@@ -1237,7 +1237,10 @@ void TestWidgetInputHandlerHost::SetAutoscrollSelectionActiveInMainFrame(
 void TestWidgetInputHandlerHost::RequestMouseLock(
     bool from_user_gesture,
     bool unadjusted_movement,
-    RequestMouseLockCallback callback) {}
+    RequestMouseLockCallback callback) {
+  std::move(callback).Run(mojom::blink::PointerLockResult::kSuccess,
+                          /*context=*/mojo::NullRemote());
+}
 
 }  // namespace frame_test_helpers
 }  // namespace blink

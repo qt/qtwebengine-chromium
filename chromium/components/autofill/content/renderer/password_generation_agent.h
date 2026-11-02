@@ -103,9 +103,7 @@ class PasswordGenerationAgent : public content::RenderFrameObserver,
 #if defined(UNIT_TEST)
   // This method requests the mojom::PasswordManagerClient which binds
   // requests the binding if it wasn't bound yet.
-  void RequestPasswordManagerClientForTesting() {
-    GetPasswordGenerationDriver();
-  }
+  void RequestPasswordManagerClientForTesting() { unsafe_driver(); }
 #endif
 
   bool IsPrerendering() const;
@@ -123,21 +121,31 @@ class PasswordGenerationAgent : public content::RenderFrameObserver,
   // lifetime of the possible interaction.
   struct GenerationItemInfo;
 
-  // Temporarily sets GenerationItemInfo::updating_other_password_fields_ to
-  // true.
-  // This is like AutoReset but tolerates reentrant calls (see
-  // crbug.com/498815068 for more details).
-  class ScopedUpdatingOtherPasswordFields;
+  // The RenderFrame* is nullptr while the PasswordGenerationAgent is pending
+  // deletion, between AutofillAgent::OnDestruct() and
+  // ~PasswordGenerationAgent().
+  content::RenderFrame* unsafe_render_frame() const {
+    return content::RenderFrameObserver::render_frame();
+  }
+
+  // Use unsafe_render_frame() instead.
+  template <typename T = int>
+  content::RenderFrame* render_frame(T* = 0) const {
+    static_assert(
+        std::is_void_v<T>,
+        "Beware that the RenderFrame may become nullptr by OnDestruct() "
+        "because the owner of PasswordGenerationAgent destructs itself "
+        "asynchronously. Use unsafe_render_frame() instead and test that it is "
+        "non-nullptr.");
+  }
+
+  // Callers should not store the returned value longer than a function scope.
+  mojom::PasswordGenerationDriver* unsafe_driver();
 
   // RenderFrameObserver:
   void DidCommitProvisionalLoad(ui::PageTransition transition) override;
   void DidChangeScrollOffset() override;
   void OnDestruct() override;
-
-  mojom::PasswordManagerDriver& GetPasswordManagerDriver();
-
-  // Callers should not store the returned value longer than a function scope.
-  mojom::PasswordGenerationDriver& GetPasswordGenerationDriver();
 
   // Helper function which takes care of the form processing and collecting the
   // information which is required to show the generation popup. Returns true if

@@ -253,16 +253,18 @@ class CPDFSDK_FormFillEnvironment final
 
   // Support methods for Actions.
   void RunScript(const WideString& script, const RunScriptCallback& cb);
-  bool ExecuteDocumentOpenAction(const CPDF_Action& action,
-                                 std::set<const CPDF_Dictionary*>* visited);
-  bool ExecuteDocumentPageAction(const CPDF_Action& action,
-                                 CPDF_AAction::AActionType type,
-                                 std::set<const CPDF_Dictionary*>* visited);
+  bool ExecuteDocumentOpenAction(
+      const CPDF_Action& action,
+      std::set<RetainPtr<const CPDF_Dictionary>>* visited);
+  bool ExecuteDocumentPageAction(
+      const CPDF_Action& action,
+      CPDF_AAction::AActionType type,
+      std::set<RetainPtr<const CPDF_Dictionary>>* visited);
   bool ExecuteFieldAction(const CPDF_Action& action,
                           CPDF_AAction::AActionType type,
                           CPDF_FormField* pFormField,
                           CFFL_FieldAction* data,
-                          std::set<const CPDF_Dictionary*>* visited);
+                          std::set<RetainPtr<const CPDF_Dictionary>>* visited);
   void RunDocumentPageJavaScript(CPDF_AAction::AActionType type,
                                  const WideString& script);
   void RunDocumentOpenJavaScript(const WideString& sScriptName,

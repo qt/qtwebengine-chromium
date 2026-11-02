@@ -25,19 +25,19 @@ LoopingFileSender::LoopingFileSender(Environment& environment,
       settings_(std::move(settings)),
       session_(session),
       shutdown_callback_(std::move(shutdown_callback)),
-      audio_encoder_(senders.audio_sender->config().channels,
-                     StreamingOpusEncoder::kDefaultCastAudioFramesPerSecond,
-                     std::move(senders.audio_sender)),
       video_encoder_(CreateVideoEncoder(
           StreamingVideoEncoder::Parameters{.codec = settings.codec},
           env_.task_runner(),
           std::move(senders.video_sender))),
       next_task_(env_.now_function(), env_.task_runner()),
       console_update_task_(env_.now_function(), env_.task_runner()) {
-  // Opus and Vp8 are the default values for the config, and if these are set
-  // to a different value that means we offered a codec that we do not
-  // support, which is a developer error.
-  OSP_CHECK(senders.audio_config.codec == AudioCodec::kOpus);
+  if (settings_.should_include_audio) {
+    OSP_CHECK(senders.audio_config.codec == AudioCodec::kOpus);
+    audio_encoder_ = std::make_unique<StreamingOpusEncoder>(
+        senders.audio_config.channels,
+        StreamingOpusEncoder::kDefaultCastAudioFramesPerSecond,
+        std::move(senders.audio_sender));
+  }
   OSP_CHECK(senders.video_config.codec == VideoCodec::kVp8 ||
             senders.video_config.codec == VideoCodec::kVp9 ||
             senders.video_config.codec == VideoCodec::kAv1);
@@ -52,8 +52,12 @@ LoopingFileSender::LoopingFileSender(Environment& environment,
 LoopingFileSender::~LoopingFileSender() = default;
 
 void LoopingFileSender::SetPlaybackRate(double rate) {
-  video_capturer_->SetPlaybackRate(rate);
-  audio_capturer_->SetPlaybackRate(rate);
+  if (video_capturer_) {
+    video_capturer_->SetPlaybackRate(rate);
+  }
+  if (audio_capturer_) {
+    audio_capturer_->SetPlaybackRate(rate);
+  }
 }
 
 void LoopingFileSender::OnInputMessage(InputMessage message) {
@@ -69,13 +73,17 @@ void LoopingFileSender::OnInputMessage(InputMessage message) {
 }
 
 void LoopingFileSender::UpdateEncoderBitrates() {
-  if (bandwidth_being_utilized_ >= kHighBandwidthThreshold) {
-    audio_encoder_.UseHighQuality();
+  if (audio_encoder_) {
+    if (bandwidth_being_utilized_ >= kHighBandwidthThreshold) {
+      audio_encoder_->UseHighQuality();
+    } else {
+      audio_encoder_->UseStandardQuality();
+    }
+    video_encoder_->SetTargetBitrate(bandwidth_being_utilized_ -
+                                     audio_encoder_->GetBitrate());
   } else {
-    audio_encoder_.UseStandardQuality();
+    video_encoder_->SetTargetBitrate(bandwidth_being_utilized_);
   }
-  video_encoder_->SetTargetBitrate(bandwidth_being_utilized_ -
-                                   audio_encoder_.GetBitrate());
 }
 
 void LoopingFileSender::ControlForNetworkCongestion() {
@@ -116,13 +124,15 @@ void LoopingFileSender::SendFileAgain() {
   TRACE_DEFAULT_SCOPED(TraceCategory::kStandaloneSender);
 
   OSP_CHECK_EQ(num_capturers_running_, 0);
-  num_capturers_running_ = 2;
+  num_capturers_running_ = settings_.should_include_audio ? 2 : 1;
   capture_begin_time_ = latest_frame_time_ = env_.now() + seconds(1);
-  audio_capturer_.emplace(
-      env_, settings_.path_to_file.c_str(), audio_encoder_.num_channels(),
-      audio_encoder_.sample_rate(), capture_begin_time_, *this);
-  video_capturer_.emplace(env_, settings_.path_to_file.c_str(),
-                          capture_begin_time_, *this);
+  if (settings_.should_include_audio) {
+    audio_capturer_ = std::make_unique<SimulatedAudioCapturer>(
+        env_, settings_.path_to_file.c_str(), audio_encoder_->num_channels(),
+        audio_encoder_->sample_rate(), capture_begin_time_, *this);
+  }
+  video_capturer_ = std::make_unique<SimulatedVideoCapturer>(
+      env_, settings_.path_to_file.c_str(), capture_begin_time_, *this);
 
   next_task_.ScheduleFromNow([this] { ControlForNetworkCongestion(); },
                              kCongestionCheckInterval);
@@ -139,9 +149,11 @@ void LoopingFileSender::OnAudioData(const float* interleaved_samples,
                 std::to_string(num_samples), "reference_time",
                 ToString(reference_time));
   latest_frame_time_ = std::max(reference_time, latest_frame_time_);
-  audio_encoder_.EncodeAndSend(interleaved_samples, num_samples,
-                               capture_begin_time, capture_end_time,
-                               reference_time);
+  if (audio_encoder_) {
+    audio_encoder_->EncodeAndSend(interleaved_samples, num_samples,
+                                  capture_begin_time, capture_end_time,
+                                  reference_time);
+  }
 }
 
 void LoopingFileSender::OnVideoFrame(const AVFrame& av_frame,
@@ -285,9 +297,9 @@ void LoopingFileSender::OnError(SimulatedCapturer* capturer,
 }
 
 const char* LoopingFileSender::ToTrackName(SimulatedCapturer* capturer) const {
-  if (capturer == &*audio_capturer_) {
+  if (capturer == audio_capturer_.get()) {
     return "audio";
-  } else if (capturer == &*video_capturer_) {
+  } else if (capturer == video_capturer_.get()) {
     return "video";
   } else {
     OSP_NOTREACHED();

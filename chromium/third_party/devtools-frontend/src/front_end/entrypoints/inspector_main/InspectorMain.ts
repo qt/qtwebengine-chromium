@@ -39,7 +39,7 @@ const UIStrings = {
    */
   javascriptIsDisabled: 'JavaScript is disabled',
   /**
-   * @description A message that prompts the user to open devtools for a specific environment (Node.js)
+   * @description Tooltip for the Node.js indicator prompting the user to open dedicated DevTools for Node.js.
    */
   openDedicatedTools: 'Open dedicated DevTools for `Node.js`',
 } as const;
@@ -107,7 +107,7 @@ export class InspectorMainImpl implements Common.Runnable.Runnable {
 
     Host.InspectorFrontendHost.InspectorFrontendHostInstance.events.addEventListener(
         Host.InspectorFrontendHostAPI.Events.ReloadInspectedPage, ({data: hard}) => {
-          SDK.ResourceTreeModel.ResourceTreeModel.reloadAllPages(hard);
+          SDK.ResourceTreeModel.ResourceTreeModel.reloadAllPages(SDK.TargetManager.TargetManager.instance(), hard);
         });
   }
 }
@@ -118,10 +118,10 @@ export class ReloadActionDelegate implements UI.ActionRegistration.ActionDelegat
   handleAction(_context: UI.Context.Context, actionId: string): boolean {
     switch (actionId) {
       case 'inspector-main.reload':
-        SDK.ResourceTreeModel.ResourceTreeModel.reloadAllPages(false);
+        SDK.ResourceTreeModel.ResourceTreeModel.reloadAllPages(SDK.TargetManager.TargetManager.instance(), false);
         return true;
       case 'inspector-main.hard-reload':
-        SDK.ResourceTreeModel.ResourceTreeModel.reloadAllPages(true);
+        SDK.ResourceTreeModel.ResourceTreeModel.reloadAllPages(SDK.TargetManager.TargetManager.instance(), true);
         return true;
     }
     return false;
@@ -207,12 +207,11 @@ export class NodeIndicator extends UI.Widget.Widget {
   }
 }
 
-let nodeIndicatorProviderInstance: NodeIndicatorProvider;
 export class NodeIndicatorProvider implements UI.Toolbar.Provider {
   #toolbarItem: UI.Toolbar.ToolbarItem;
   #widgetElement: UI.Widget.WidgetElement<NodeIndicator>;
 
-  private constructor() {
+  constructor() {
     this.#widgetElement = document.createElement('devtools-widget') as UI.Widget.WidgetElement<NodeIndicator>;
     new NodeIndicator(this.#widgetElement);
 
@@ -222,15 +221,6 @@ export class NodeIndicatorProvider implements UI.Toolbar.Provider {
 
   item(): UI.Toolbar.ToolbarItem|null {
     return this.#toolbarItem;
-  }
-
-  static instance(opts: {forceNew: boolean|null} = {forceNew: null}): NodeIndicatorProvider {
-    const {forceNew} = opts;
-    if (!nodeIndicatorProviderInstance || forceNew) {
-      nodeIndicatorProviderInstance = new NodeIndicatorProvider();
-    }
-
-    return nodeIndicatorProviderInstance;
   }
 }
 

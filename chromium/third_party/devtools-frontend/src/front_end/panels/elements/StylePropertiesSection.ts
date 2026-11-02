@@ -40,10 +40,10 @@ import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as Badges from '../../models/badges/badges.js';
 import * as Bindings from '../../models/bindings/bindings.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as Tooltips from '../../ui/components/tooltips/tooltips.js';
 import {createIcon, type Icon} from '../../ui/kit/kit.js';
@@ -54,9 +54,15 @@ import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 import * as PanelsCommon from '../common/common.js';
 
 import * as ElementsComponents from './components/components.js';
+import {formatSpecificitySummary, getSpecificityBreakdownLines} from './CSSSpecificityBreakdown.js';
 import {ElementsPanel} from './ElementsPanel.js';
 import stylePropertiesTreeOutlineStyles from './stylePropertiesTreeOutline.css.js';
-import {type Context, GhostStylePropertyTreeElement, StylePropertyTreeElement} from './StylePropertyTreeElement.js';
+import {
+  type Context,
+  GhostStylePropertyTreeElement,
+  handleVarDefinitionActivate,
+  StylePropertyTreeElement,
+} from './StylePropertyTreeElement.js';
 import type {StylesContainer} from './StylesContainer.js';
 
 const UIStrings = {
@@ -111,11 +117,6 @@ const UIStrings = {
    */
   cssSelector: '`CSS` selector',
   /**
-   * @description Text displayed in tooltip that shows specificity information.
-   * @example {(0,0,1)} PH1
-   */
-  specificity: 'Specificity: {PH1}',
-  /**
    * @description Accessibility label for the button that expands a collapsed CSS rule in the Styles pane.
    */
   expandCollapsedRule: 'Expand collapsed rule',
@@ -153,7 +154,7 @@ export class StylePropertiesSection {
   private parentsComputedStyles: Map<string, string>|null;
   private computedStyleExtraFields: Protocol.CSS.ComputedStyleExtraFields|null;
   editable: boolean;
-  private hoverTimer: number|null = null;
+  private hoverTimer: ReturnType<typeof setTimeout>|null = null;
   private willCauseCancelEditing = false;
   private forceShowAll = false;
   private readonly originalPropertiesCount: number;
@@ -274,7 +275,11 @@ export class StylePropertiesSection {
     this.selectorElement.classList.add('selector');
     this.selectorElement.textContent = headerText;
     selectorContainer.appendChild(this.selectorElement);
-    this.selectorElement.addEventListener('mouseenter', this.onMouseEnterSelector.bind(this), false);
+    this.selectorElement.addEventListener('mouseenter', () => {
+      if (this.styleInternal.parentRule instanceof SDK.CSSRule.CSSStyleRule) {
+        this.onMouseEnterSelector(this.styleInternal.parentRule);
+      }
+    }, false);
     this.selectorElement.addEventListener('mouseleave', this.onMouseOutSelector.bind(this), false);
     this.#specificityTooltips = selectorContainer.createChild('span');
 
@@ -377,6 +382,14 @@ export class StylePropertiesSection {
 
   getSectionIdx(): number {
     return this.sectionIdx;
+  }
+
+  treeScopeDistance(): number {
+    const treeScope = this.styleInternal.parentRule?.treeScope;
+    if (!treeScope) {
+      return -1;
+    }
+    return SDK.CSSMatchedStyles.distanceToTreeScope(this.matchedStyles.node(), treeScope);
   }
 
   static createRuleOriginNode(
@@ -667,26 +680,34 @@ export class StylePropertiesSection {
     if (this.hoverTimer) {
       clearTimeout(this.hoverTimer);
     }
-    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight(SDK.TargetManager.TargetManager.instance());
   }
 
-  private onMouseEnterSelector(): void {
+  private onMouseEnterSelector(rule: SDK.CSSRule.CSSStyleRule, nestingIndex?: number): void {
     if (this.hoverTimer) {
       clearTimeout(this.hoverTimer);
     }
-    this.hoverTimer = window.setTimeout(this.highlight.bind(this), 300);
+    const selectorList = constructResolvedSelector(rule, nestingIndex);
+    if (!selectorList) {
+      return;
+    }
+    this.hoverTimer = setTimeout(this.highlight.bind(this, undefined, selectorList), 300);
   }
 
-  highlight(mode: string|undefined = 'all'): void {
-    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+  /**
+   * Highlights the DOM node associated with this style section in the page overlay.
+   * Use `selectorList` to highlight elements matching a specific parent/ancestor
+   * rule or selector.
+   *
+   * @param mode Highlight mode (defaults to `'all'`).
+   * @param selectorList Parent selector string to highlight.
+   */
+  highlight(mode: string|undefined = 'all', selectorList: string): void {
+    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight(SDK.TargetManager.TargetManager.instance());
     const node = this.stylesContainer.node();
     if (!node) {
       return;
     }
-    const selectorList =
-        this.styleInternal.parentRule && this.styleInternal.parentRule instanceof SDK.CSSRule.CSSStyleRule ?
-        this.styleInternal.parentRule.selectorText() :
-        undefined;
     node.domModel().overlayModel().highlightInOverlay({node, selectorList}, mode);
   }
 
@@ -890,7 +911,7 @@ export class StylePropertiesSection {
           ancestorRuleElement = this.createMediaElement(rule.media[mediaIndex++]);
           break;
         case Protocol.CSS.CSSRuleType.ContainerRule:
-          ancestorRuleElement = this.createContainerQueryElement(rule.containerQueries[containerIndex++]);
+          ancestorRuleElement = this.createContainerQueryElement(rule.containerQueries[containerIndex++], rule.style);
           break;
         case Protocol.CSS.CSSRuleType.ScopeRule:
           ancestorRuleElement = this.createScopeElement(rule.scopes[scopeIndex++]);
@@ -899,7 +920,7 @@ export class StylePropertiesSection {
           ancestorRuleElement = this.createSupportsElement(rule.supports[supportsIndex++]);
           break;
         case Protocol.CSS.CSSRuleType.StyleRule:
-          ancestorRuleElement = this.createNestingElement(rule.nestingSelectors?.[nestingIndex++]);
+          ancestorRuleElement = this.createNestingElement(rule, nestingIndex++);
           break;
         case Protocol.CSS.CSSRuleType.StartingStyleRule:
           ancestorRuleElement = this.createStartingStyleElement();
@@ -1011,7 +1032,8 @@ export class StylePropertiesSection {
     return mediaQueryElement;
   }
 
-  protected createContainerQueryElement(containerQuery: SDK.CSSContainerQuery.CSSContainerQuery):
+  protected createContainerQueryElement(containerQuery: SDK.CSSContainerQuery.CSSContainerQuery,
+                                        style?: SDK.CSSStyleDeclaration.CSSStyleDeclaration):
       ElementsComponents.CSSQuery.CSSQuery|undefined {
     let onQueryTextClick;
     if (containerQuery.styleSheetId) {
@@ -1024,10 +1046,22 @@ export class StylePropertiesSection {
       queryName: containerQuery.textIsConditionText ? undefined : containerQuery.name,
       queryText: containerQuery.text,
       onQueryTextClick,
+      onLinkActivate: async(resolvedVariable: string|SDK.CSSMatchedStyles.CSSValueSource): Promise<void> => {
+        handleVarDefinitionActivate(resolvedVariable, this.stylesContainer);
+      },
+      getPopoverContents: (variableName: string, variableValue: string|null):
+                              ElementsComponents.CSSVariableValueView.CSSVariableValueView => {
+        return this.stylesContainer.getVariablePopoverContents(this.matchedStyles, variableName, variableValue);
+      },
       jslogContext: 'container-query',
     };
-    if (!/^style\(.*\)/.test(containerQuery.text)) {
-      // We only add container element for non-style queries.
+    if (style) {
+      const tooltipPrefix = `container-${this.sectionTooltipIdPrefix}-${this.nestingLevel}`;
+      void containerQuery.getContainerForNode(this.matchedStyles.node().id).then(container => {
+        if (container) {
+          containerQueryElement.parseStyleQueries(this.matchedStyles, style, container.containerNode, tooltipPrefix);
+        }
+      });
       void this.addContainerForContainerQuery(containerQuery);
     }
     return containerQueryElement;
@@ -1102,11 +1136,36 @@ export class StylePropertiesSection {
     return navigationElement;
   }
 
-  protected createNestingElement(nestingSelector?: string): HTMLElement|undefined {
+  protected createNestingElement(rule: SDK.CSSRule.CSSStyleRule, nestingIndex: number): HTMLElement|undefined {
+    const nestingSelector = rule.nestingSelectors?.[nestingIndex];
     if (!nestingSelector) {
       return;
     }
+
+    const parentRule = this.matchedStyles.findParentRule(rule, nestingIndex);
+    if (parentRule) {
+      const container = document.createElement('div');
+      const matchingSelectorIndexes = this.matchedStyles.getMatchingSelectors(parentRule);
+      const matchingSelectors = new Array(parentRule.selectors.length).fill(false) as boolean[];
+      for (const matchingIndex of matchingSelectorIndexes) {
+        matchingSelectors[matchingIndex] = true;
+      }
+
+      const selectorElement = container.createChild('span', 'selector');
+      selectorElement.addEventListener('mouseenter', () => this.onMouseEnterSelector(parentRule), false);
+      selectorElement.addEventListener('mouseleave', this.onMouseOutSelector.bind(this), false);
+      const specificityContainer = container.createChild('span');
+      this.renderSelectorsToElement(parentRule.selectors, matchingSelectors, this.elementToSelectorIndex,
+                                    selectorElement, specificityContainer);
+
+      const openBrace = container.createChild('span', 'sidebar-pane-open-brace');
+      openBrace.textContent = ' {';
+      return container;
+    }
+
     const nestingElement = document.createElement('div');
+    nestingElement.addEventListener('mouseenter', () => this.onMouseEnterSelector(rule, nestingIndex), false);
+    nestingElement.addEventListener('mouseleave', this.onMouseOutSelector.bind(this), false);
     nestingElement.textContent = `${nestingSelector} {`;
     return nestingElement;
   }
@@ -1416,30 +1475,50 @@ export class StylePropertiesSection {
       elementToSelectorIndex: WeakMap<Element, number>): void {
     this.selectorElement.removeChildren();
     this.#specificityTooltips.removeChildren();
+    this.renderSelectorsToElement(selectors, matchingSelectors, elementToSelectorIndex, this.selectorElement,
+                                  this.#specificityTooltips);
+  }
+
+  private renderSelectorsToElement(selectors: Array<{text: string, specificity?: Protocol.CSS.Specificity}>,
+                                   matchingSelectors: boolean[], elementToSelectorIndex: WeakMap<Element, number>,
+                                   targetElement: Element, tooltipContainer: Element): void {
     for (const [i, selector] of selectors.entries()) {
       if (i > 0) {
-        this.selectorElement.append(', ');
+        targetElement.append(', ');
       }
       const specificityTooltipId = selector.specificity ? StylePropertiesSection.getNextSpecificityTooltipId() : null;
-      const span = this.selectorElement.createChild('span', 'simple-selector');
+      const span = targetElement.createChild('span', 'simple-selector');
       span.classList.toggle('selector-matches', matchingSelectors[i]);
       elementToSelectorIndex.set(span, i);
       span.textContent = selectors[i].text;
       if (specificityTooltipId && selector.specificity) {
-        span.setAttribute('aria-describedby', specificityTooltipId);
-        const PH1 = `(${selector.specificity.a},${selector.specificity.b},${selector.specificity.c})`;
-        const tooltip = this.#specificityTooltips.appendChild(new Tooltips.Tooltip.Tooltip({
+        span.setAttribute('aria-details', specificityTooltipId);
+        const tooltip = tooltipContainer.appendChild(new Tooltips.Tooltip.Tooltip({
           id: specificityTooltipId,
           anchor: span,
+          variant: 'rich',
           jslogContext: 'elements.css-selector-specificity',
         }));
-        tooltip.textContent = i18nString(UIStrings.specificity, {PH1});
+        tooltip.hoverDelay = 500;
+
+        const specificitySummary = formatSpecificitySummary(selector.specificity);
+        const breakdownLines = getSpecificityBreakdownLines(selector.specificity);
+        const tooltipContent = breakdownLines.length > 0 ? html`
+          <details class="selector-specificity-tooltip-disclosure">
+            <summary>${specificitySummary}</summary>
+            <ul class="selector-specificity-tooltip-list">
+              ${breakdownLines.map(line => html`<li>${line}</li>`)}
+            </ul>
+          </details>` :
+                                                           html`
+          <div class="selector-specificity-tooltip-summary">${specificitySummary}</div>`;
+        render(tooltipContent, tooltip, {host: this});
       }
     }
   }
 
   markSelectorHighlights(): void {
-    const selectors = this.selectorElement.getElementsByClassName('simple-selector');
+    const selectors = this.element.getElementsByClassName('simple-selector');
     const regex = this.stylesContainer.filterRegex();
     for (let i = 0; i < selectors.length; ++i) {
       const selectorMatchesFilter = regex?.test(selectors[i].textContent || '');
@@ -2193,4 +2272,37 @@ export class HighlightPseudoStylePropertiesSection extends StylePropertiesSectio
 
 interface TreeElementParent {
   appendChild(child: UI.TreeOutline.TreeElement): void;
+}
+
+export function constructResolvedSelector(rule: SDK.CSSRule.CSSRule|null, nestingIndex?: number): string|undefined {
+  if (!(rule instanceof SDK.CSSRule.CSSStyleRule)) {
+    return undefined;
+  }
+
+  const nestingSelectors = rule.nestingSelectors;
+  if (!nestingSelectors) {
+    return nestingIndex === undefined ? rule.selectorText() : undefined;
+  }
+
+  if (nestingIndex !== undefined && (nestingIndex < 0 || nestingIndex >= nestingSelectors.length)) {
+    return undefined;
+  }
+
+  const selectorText = nestingIndex !== undefined ? nestingSelectors[nestingIndex] : rule.selectorText();
+
+  const parentIndex = nestingIndex !== undefined ? nestingIndex + 1 : 0;
+  const parentSelector = constructResolvedSelector(rule, parentIndex);
+
+  if (!parentSelector) {
+    return selectorText;
+  }
+
+  // Strip pseudo-elements (e.g. ::before) because pseudo-elements are invalid inside CSS :is(...).
+  const sanitizedParent = parentSelector.replace(/::[a-zA-Z-]+/g, '').trim();
+
+  if (selectorText.includes('&')) {
+    return selectorText.replaceAll('&', `:is(${sanitizedParent})`);
+  }
+
+  return `:is(${sanitizedParent}) ${selectorText.trim()}`;
 }

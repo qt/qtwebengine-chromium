@@ -374,6 +374,10 @@ class MockBoundSessionOAuthMultiLoginDelegate
               (const OAuthMultiloginResult&),
               (override));
   MOCK_METHOD(void, OnCookiesSet, (), (override));
+  MOCK_METHOD((std::vector<std::pair<GURL, std::string>>),
+              GetAllSessions,
+              (),
+              (const, override));
 };
 
 std::string CreateMultiOAuthAuthorizationHeader(
@@ -414,7 +418,8 @@ class OAuthMultiloginHelperTest
   OAuthMultiloginHelper* CreateHelper(
       const std::vector<OAuthMultiloginHelper::AccountIdGaiaIdPair> accounts,
       bool set_external_cc_result = false,
-      bool wait_on_connectivity = true) {
+      bool wait_on_connectivity = true,
+      gaia::GaiaSource::Type source_type = gaia::GaiaSource::kChrome) {
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
     // `bound_session_delegate_` is owned by `OAuthMultiloginHelper`, ensures it
     // resets before creating a new helper to avoid dangling pointers.
@@ -424,8 +429,7 @@ class OAuthMultiloginHelperTest
         &test_signin_client_, this, token_service(),
         gaia::MultiloginMode::MULTILOGIN_UPDATE_COOKIE_ACCOUNTS_ORDER,
         wait_on_connectivity, accounts,
-        set_external_cc_result ? kExternalCcResult : std::string(),
-        gaia::GaiaSource::kChrome,
+        set_external_cc_result ? kExternalCcResult : std::string(), source_type,
         base::BindOnce(&OAuthMultiloginHelperTest::OnOAuthMultiloginFinished,
                        base::Unretained(this)));
     return helper_.get();
@@ -974,6 +978,16 @@ TEST_F(OAuthMultiloginHelperTest,
   histogram_tester.ExpectTotalCount("Signin.OAuthMultiloginResponseStatus", 0);
   histogram_tester.ExpectTotalCount("Signin.OAuthMultiloginResponseStatus.Test",
                                     0);
+
+  // NetworkError should be recorded in V2 histograms.
+  histogram_tester.ExpectUniqueSample(
+      "Signin.OAuthMultiloginResponseStatus2",
+      OAuthMultiloginResponseStatus::kNetworkError,
+      /*expected_bucket_count=*/1);
+  histogram_tester.ExpectUniqueSample(
+      "Signin.OAuthMultiloginResponseStatus2.Test",
+      OAuthMultiloginResponseStatus::kNetworkError,
+      /*expected_bucket_count=*/1);
 }
 
 TEST_F(OAuthMultiloginHelperTest,
@@ -998,6 +1012,14 @@ TEST_F(OAuthMultiloginHelperTest,
                                       /*expected_bucket_count=*/1);
   histogram_tester.ExpectUniqueSample(
       "Signin.OAuthMultiloginResponseStatus.Test",
+      OAuthMultiloginResponseStatus::kRetry,
+      /*expected_bucket_count=*/1);
+
+  histogram_tester.ExpectUniqueSample("Signin.OAuthMultiloginResponseStatus2",
+                                      OAuthMultiloginResponseStatus::kRetry,
+                                      /*expected_bucket_count=*/1);
+  histogram_tester.ExpectUniqueSample(
+      "Signin.OAuthMultiloginResponseStatus2.Test",
       OAuthMultiloginResponseStatus::kRetry,
       /*expected_bucket_count=*/1);
 }
@@ -1032,6 +1054,14 @@ TEST_F(OAuthMultiloginHelperTest, ResponseStatusHistogramWithSuffix) {
   // Suffix specific histogram should be recorded.
   histogram_tester.ExpectUniqueSample(
       "Signin.OAuthMultiloginResponseStatus.Glic",
+      OAuthMultiloginResponseStatus::kOk,
+      /*expected_bucket_count=*/1);
+
+  histogram_tester.ExpectUniqueSample("Signin.OAuthMultiloginResponseStatus2",
+                                      OAuthMultiloginResponseStatus::kOk,
+                                      /*expected_bucket_count=*/1);
+  histogram_tester.ExpectUniqueSample(
+      "Signin.OAuthMultiloginResponseStatus2.Glic",
       OAuthMultiloginResponseStatus::kOk,
       /*expected_bucket_count=*/1);
 }
@@ -1074,6 +1104,14 @@ TEST_F(OAuthMultiloginHelperTest, BoundTokenSuccessNoChallenge) {
                                       /*expected_bucket_count=*/1);
   histogram_tester.ExpectUniqueSample(
       "Signin.OAuthMultiloginResponseStatus.Test",
+      OAuthMultiloginResponseStatus::kOk,
+      /*expected_bucket_count=*/1);
+
+  histogram_tester.ExpectUniqueSample("Signin.OAuthMultiloginResponseStatus2",
+                                      OAuthMultiloginResponseStatus::kOk,
+                                      /*expected_bucket_count=*/1);
+  histogram_tester.ExpectUniqueSample(
+      "Signin.OAuthMultiloginResponseStatus2.Test",
       OAuthMultiloginResponseStatus::kOk,
       /*expected_bucket_count=*/1);
 }
@@ -1502,7 +1540,56 @@ INSTANTIATE_TEST_SUITE_P(
             /*should_return_bound_session_delegate=*/false,
             /*should_return_device_bound_session_manager=*/false,
             /*expected_url_param=*/"",
-            /*test_suffix=*/"StandardEnabledButDisabledForPartition"}),
+            /*test_suffix=*/"StandardEnabledButDisabledForPartition"},
+        MultiloginCookieBindingTestParam{
+            /*enabled_features=*/
+            {{switches::kEnableOAuthMultiloginStandardCookiesBinding, {}},
+             {switches::kEnableOAuthMultiloginYoutubeCookiesBinding,
+              {{"OAuthMultiloginYoutubeCookieBindingEnforced", "false"}}}},
+            /*disabled_features=*/
+            {switches::kEnableOAuthMultiloginCookiesBinding,
+             switches::kEnableOAuthMultiloginCookiesBindingServerExperiment},
+            /*should_return_bound_session_delegate=*/false,
+            /*should_return_device_bound_session_manager=*/true,
+            /*expected_url_param=*/"&cookie_binding=2&yt_cookie_binding=1",
+            /*test_suffix=*/"StandardEnabledYoutubeUnenforced"},
+        MultiloginCookieBindingTestParam{
+            /*enabled_features=*/
+            {{switches::kEnableOAuthMultiloginStandardCookiesBinding, {}},
+             {switches::kEnableOAuthMultiloginYoutubeCookiesBinding,
+              {{"OAuthMultiloginYoutubeCookieBindingEnforced", "true"}}}},
+            /*disabled_features=*/
+            {switches::kEnableOAuthMultiloginCookiesBinding,
+             switches::kEnableOAuthMultiloginCookiesBindingServerExperiment},
+            /*should_return_bound_session_delegate=*/false,
+            /*should_return_device_bound_session_manager=*/true,
+            /*expected_url_param=*/"&cookie_binding=2&yt_cookie_binding=2",
+            /*test_suffix=*/"StandardEnabledYoutubeEnforced"},
+        MultiloginCookieBindingTestParam{
+            /*enabled_features=*/
+            {{switches::kEnableOAuthMultiloginYoutubeCookiesBinding,
+              {{"OAuthMultiloginYoutubeCookieBindingEnforced", "true"}}}},
+            /*disabled_features=*/
+            {switches::kEnableOAuthMultiloginStandardCookiesBinding,
+             switches::kEnableOAuthMultiloginCookiesBinding,
+             switches::kEnableOAuthMultiloginCookiesBindingServerExperiment},
+            /*should_return_bound_session_delegate=*/false,
+            /*should_return_device_bound_session_manager=*/false,
+            /*expected_url_param=*/"",
+            /*test_suffix=*/"YoutubeEnabledStandardDisabled"},
+        MultiloginCookieBindingTestParam{
+            /*enabled_features=*/
+            {{switches::kEnableOAuthMultiloginCookiesBinding, {}},
+             {switches::kEnableOAuthMultiloginCookiesBindingServerExperiment,
+              {{"enforced", "true"}}},
+             {switches::kEnableOAuthMultiloginYoutubeCookiesBinding,
+              {{"OAuthMultiloginYoutubeCookieBindingEnforced", "true"}}}},
+            /*disabled_features=*/
+            {switches::kEnableOAuthMultiloginStandardCookiesBinding},
+            /*should_return_bound_session_delegate=*/true,
+            /*should_return_device_bound_session_manager=*/false,
+            /*expected_url_param=*/"&cookie_binding=2",
+            /*test_suffix=*/"PrototypeAndYoutubeEnabledStandardDisabled"}),
     [](const testing::TestParamInfo<MultiloginCookieBindingTestParam>& info) {
       return info.param.test_suffix;
     });
@@ -2236,6 +2323,98 @@ TEST_F(
   histogram_tester.ExpectTotalCount(
       "Signin.DeviceBoundSessions.OAuthMultilogin.SessionCreationError.Test",
       /*expected_count=*/0);
+}
+
+TEST_F(OAuthMultiloginHelperStandardBoundSessionsEnabledTest,
+       SetCookiesViaDeviceBoundSessionManagerWithCookieUpgrade) {
+  base::HistogramTester histogram_tester;
+
+  ReplaceTokenService(/*use_refresh_tokens_for_multilogin=*/true);
+  const std::vector<uint8_t> binding_key = {1, 2, 3};
+  token_service()->UpdateCredentials(
+      kAccountId, "refresh_token",
+      signin_metrics::SourceForRefreshTokenOperation::kUnknown,
+      signin::TokenBindingInfo(binding_key, /*mtls_token_binding=*/false));
+  CreateHelper(/*accounts=*/{{kAccountId, kGaiaId}},
+               /*set_external_cc_result=*/false,
+               /*wait_on_connectivity=*/true,
+               gaia::GaiaSource::kAccountReconcilorDiceCookieUpgrade);
+
+  // No cookies are set via `CookieManager` if standard DBSC is enabled.
+  MockCookieManager* mock_cookie_manager = cookie_manager();
+  ASSERT_NE(mock_cookie_manager, nullptr);
+  EXPECT_CALL(*mock_cookie_manager, SetCanonicalCookie).Times(0);
+
+  // No sessions are created via `BoundSessionOAuthMultiLoginDelegate` if
+  // standard DBSC is enabled.
+  MockBoundSessionOAuthMultiLoginDelegate* mock_bound_session_delegate =
+      bound_session_delegate();
+  ASSERT_NE(mock_bound_session_delegate, nullptr);
+  EXPECT_CALL(*mock_bound_session_delegate, BeforeSetCookies).Times(0);
+  EXPECT_CALL(*mock_bound_session_delegate, OnCookiesSet).Times(0);
+
+  EXPECT_CALL(
+      mock_device_bound_session_manager(),
+      CreateBoundSessions(
+          UnorderedElementsAre(AllOf(
+              Field(&SessionParams::session_id, "id"),
+              Field(&SessionParams::fetcher_url,
+                    GaiaUrls::GetInstance()->gaia_url().Resolve(
+                        "/RotateBoundCookies")),
+              Field(&SessionParams::refresh_url, "/RotateBoundCookies"),
+              Field(
+                  &SessionParams::scope,
+                  AllOf(
+                      Field(&SessionParams::Scope::origin,
+                            "https://google.com"),
+                      Field(&SessionParams::Scope::include_site, true),
+                      Field(
+                          &SessionParams::Scope::specifications,
+                          UnorderedElementsAre(AllOf(
+                              Field(&SessionParams::Scope::Specification::type,
+                                    SessionParams::Scope::Specification::Type::
+                                        kInclude),
+                              Field(
+                                  &SessionParams::Scope::Specification::domain,
+                                  ".google.com"),
+                              Field(&SessionParams::Scope::Specification::path,
+                                    "/")))))),
+              Field(&SessionParams::credentials,
+                    UnorderedElementsAre(
+                        AllOf(Field(&SessionParams::Credential::name,
+                                    "__Secure-1PSIDTS"),
+                              Field(&SessionParams::Credential::attributes,
+                                    "Domain=.google.com; Path=/; Secure")))),
+              Field(&SessionParams::allowed_refresh_initiators,
+                    UnorderedElementsAre("https://google.com")))),
+          binding_key,
+          UnorderedElementsAre(CookieMatcher(
+              "__Secure-1PSIDTS", "secure-1p-sidts-value", ".google.com")),
+          _, _))
+      .WillOnce(base::test::RunOnceCallback<4>(
+          std::vector<net::device_bound_sessions::SessionError::ErrorType>{
+              net::device_bound_sessions::SessionError::ErrorType::kSuccess},
+          std::vector<net::CookieInclusionStatus>()));
+
+  std::string expected_url =
+      GaiaUrls::GetInstance()->oauth_multilogin_url().spec() +
+      "?source=ChromiumAccountReconcilorDiceCookieUpgrade&reuseCookies=0&"
+      "cookie_binding=2";
+  ASSERT_TRUE(url_loader()->IsPending(expected_url));
+  url_loader()->AddResponse(
+      expected_url,
+      kMultiloginSuccessWithStandardDeviceBoundSessionCredentialsResponse);
+  ASSERT_FALSE(url_loader()->IsPending(expected_url));
+
+  EXPECT_EQ(SetAccountsInCookieResult::kSuccess, result_);
+  histogram_tester.ExpectUniqueSample(
+      "Signin.DeviceBoundSessions.OAuthMultilogin.CreateSessionsResult",
+      OAuthMultiloginHelper::DeviceBoundSessionCreateSessionsResult::kSuccess,
+      /*expected_bucket_count=*/1);
+  histogram_tester.ExpectUniqueSample(
+      "Signin.CookieBinding.UpgradeCreateBoundSessionsResult",
+      OAuthMultiloginHelper::DeviceBoundSessionCreateSessionsResult::kSuccess,
+      /*expected_bucket_count=*/1);
 }
 
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)

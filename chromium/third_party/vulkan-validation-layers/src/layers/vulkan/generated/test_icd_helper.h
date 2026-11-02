@@ -242,12 +242,14 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {VK_KHR_SHADER_FMA_EXTENSION_NAME, VK_KHR_SHADER_FMA_SPEC_VERSION},
     {VK_KHR_MAINTENANCE_9_EXTENSION_NAME, VK_KHR_MAINTENANCE_9_SPEC_VERSION},
     {VK_KHR_VIDEO_MAINTENANCE_2_EXTENSION_NAME, VK_KHR_VIDEO_MAINTENANCE_2_SPEC_VERSION},
+    {VK_KHR_VIDEO_ENCODE_FEEDBACK_2_EXTENSION_NAME, VK_KHR_VIDEO_ENCODE_FEEDBACK_2_SPEC_VERSION},
     {VK_KHR_DEPTH_CLAMP_ZERO_ONE_EXTENSION_NAME, VK_KHR_DEPTH_CLAMP_ZERO_ONE_SPEC_VERSION},
     {VK_KHR_ROBUSTNESS_2_EXTENSION_NAME, VK_KHR_ROBUSTNESS_2_SPEC_VERSION},
     {VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME, VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_SPEC_VERSION},
     {VK_KHR_OPACITY_MICROMAP_EXTENSION_NAME, VK_KHR_OPACITY_MICROMAP_SPEC_VERSION},
     {VK_KHR_MAINTENANCE_10_EXTENSION_NAME, VK_KHR_MAINTENANCE_10_SPEC_VERSION},
     {VK_KHR_MAINTENANCE_11_EXTENSION_NAME, VK_KHR_MAINTENANCE_11_SPEC_VERSION},
+    {VK_KHR_EXTENDED_FLAGS_EXTENSION_NAME, VK_KHR_EXTENDED_FLAGS_SPEC_VERSION},
     {VK_NV_GLSL_SHADER_EXTENSION_NAME, VK_NV_GLSL_SHADER_SPEC_VERSION},
     {VK_EXT_DEPTH_RANGE_UNRESTRICTED_EXTENSION_NAME, VK_EXT_DEPTH_RANGE_UNRESTRICTED_SPEC_VERSION},
     {VK_IMG_FILTER_CUBIC_EXTENSION_NAME, VK_IMG_FILTER_CUBIC_SPEC_VERSION},
@@ -533,6 +535,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {VK_NV_COMMAND_BUFFER_INHERITANCE_EXTENSION_NAME, VK_NV_COMMAND_BUFFER_INHERITANCE_SPEC_VERSION},
     {VK_NV_SHADER_ATOMIC_FLOAT16_VECTOR_EXTENSION_NAME, VK_NV_SHADER_ATOMIC_FLOAT16_VECTOR_SPEC_VERSION},
     {VK_EXT_SHADER_REPLICATED_COMPOSITES_EXTENSION_NAME, VK_EXT_SHADER_REPLICATED_COMPOSITES_SPEC_VERSION},
+    {VK_ARM_TENSOR_CONTROLS_EXTENSION_NAME, VK_ARM_TENSOR_CONTROLS_SPEC_VERSION},
     {VK_EXT_SHADER_FLOAT8_EXTENSION_NAME, VK_EXT_SHADER_FLOAT8_SPEC_VERSION},
     {VK_NV_RAY_TRACING_VALIDATION_EXTENSION_NAME, VK_NV_RAY_TRACING_VALIDATION_SPEC_VERSION},
     {VK_NV_CLUSTER_ACCELERATION_STRUCTURE_EXTENSION_NAME, VK_NV_CLUSTER_ACCELERATION_STRUCTURE_SPEC_VERSION},
@@ -545,6 +548,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {VK_HUAWEI_HDR_VIVID_EXTENSION_NAME, VK_HUAWEI_HDR_VIVID_SPEC_VERSION},
     {VK_NV_COOPERATIVE_MATRIX_2_EXTENSION_NAME, VK_NV_COOPERATIVE_MATRIX_2_SPEC_VERSION},
     {VK_ARM_PIPELINE_OPACITY_MICROMAP_EXTENSION_NAME, VK_ARM_PIPELINE_OPACITY_MICROMAP_SPEC_VERSION},
+    {VK_IMG_FILTER_LINEAR_2D_EXTENSION_NAME, VK_IMG_FILTER_LINEAR_2D_SPEC_VERSION},
 #ifdef VK_USE_PLATFORM_METAL_EXT
     {VK_EXT_EXTERNAL_MEMORY_METAL_EXTENSION_NAME, VK_EXT_EXTERNAL_MEMORY_METAL_SPEC_VERSION},
 #endif  // VK_USE_PLATFORM_METAL_EXT
@@ -554,6 +558,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {VK_ARM_FORMAT_PACK_EXTENSION_NAME, VK_ARM_FORMAT_PACK_SPEC_VERSION},
     {VK_VALVE_FRAGMENT_DENSITY_MAP_LAYERED_EXTENSION_NAME, VK_VALVE_FRAGMENT_DENSITY_MAP_LAYERED_SPEC_VERSION},
     {VK_NV_PRESENT_METERING_EXTENSION_NAME, VK_NV_PRESENT_METERING_SPEC_VERSION},
+    {VK_EXT_MULTISAMPLED_RENDER_TO_SWAPCHAIN_EXTENSION_NAME, VK_EXT_MULTISAMPLED_RENDER_TO_SWAPCHAIN_SPEC_VERSION},
     {VK_EXT_FRAGMENT_DENSITY_MAP_OFFSET_EXTENSION_NAME, VK_EXT_FRAGMENT_DENSITY_MAP_OFFSET_SPEC_VERSION},
     {VK_EXT_ZERO_INITIALIZE_DEVICE_MEMORY_EXTENSION_NAME, VK_EXT_ZERO_INITIALIZE_DEVICE_MEMORY_SPEC_VERSION},
     {VK_EXT_SHADER_64BIT_INDEXING_EXTENSION_NAME, VK_EXT_SHADER_64BIT_INDEXING_SPEC_VERSION},
@@ -565,6 +570,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {VK_EXT_SHADER_UNIFORM_BUFFER_UNSIZED_ARRAY_EXTENSION_NAME, VK_EXT_SHADER_UNIFORM_BUFFER_UNSIZED_ARRAY_SPEC_VERSION},
     {VK_NV_COMPUTE_OCCUPANCY_PRIORITY_EXTENSION_NAME, VK_NV_COMPUTE_OCCUPANCY_PRIORITY_SPEC_VERSION},
     {VK_EXT_SHADER_SUBGROUP_PARTITIONED_EXTENSION_NAME, VK_EXT_SHADER_SUBGROUP_PARTITIONED_SPEC_VERSION},
+    {VK_EXT_SHADER_OCP_MICROSCALING_TYPES_EXTENSION_NAME, VK_EXT_SHADER_OCP_MICROSCALING_TYPES_SPEC_VERSION},
     {VK_VALVE_SHADER_MIXED_FLOAT_DOT_PRODUCT_EXTENSION_NAME, VK_VALVE_SHADER_MIXED_FLOAT_DOT_PRODUCT_SPEC_VERSION},
     {VK_SEC_THROTTLE_HINT_EXTENSION_NAME, VK_SEC_THROTTLE_HINT_SPEC_VERSION},
     {VK_ARM_DATA_GRAPH_NEURAL_ACCELERATOR_STATISTICS_EXTENSION_NAME, VK_ARM_DATA_GRAPH_NEURAL_ACCELERATOR_STATISTICS_SPEC_VERSION},
@@ -1904,6 +1910,14 @@ static VKAPI_ATTR void VKAPI_CALL CmdBeginPerTileExecutionQCOM(VkCommandBuffer c
                                                                const VkPerTileBeginInfoQCOM* pPerTileBeginInfo);
 static VKAPI_ATTR void VKAPI_CALL CmdEndPerTileExecutionQCOM(VkCommandBuffer commandBuffer,
                                                              const VkPerTileEndInfoQCOM* pPerTileEndInfo);
+static VKAPI_ATTR void VKAPI_CALL SetLatencySleepModeLegacyNV(VkDevice device, VkBool32 lowLatencyMode, VkBool32 lowLatencyBoost,
+                                                              uint32_t minimumIntervalUs);
+static VKAPI_ATTR void VKAPI_CALL LatencySleepLegacyNV(VkDevice device, VkSemaphore signalSemaphore, uint64_t value);
+static VKAPI_ATTR void VKAPI_CALL SetLatencyMarkerLegacyNV(VkDevice device, uint64_t frameID, uint32_t marker);
+static VKAPI_ATTR void VKAPI_CALL GetLatencyTimingsLegacyNV(VkDevice device, void* pTimings);
+static VKAPI_ATTR void VKAPI_CALL QueueNotifyOutOfBandLegacyNV(VkQueue queue, uint32_t queueType);
+static VKAPI_ATTR void VKAPI_CALL GetSleepStatusLegacyNV(VkDevice device, VkBool32* pLowLatencyMode);
+static VKAPI_ATTR void VKAPI_CALL ShutdownLatencyDeviceLegacyNV(VkDevice device);
 #ifdef VK_USE_PLATFORM_METAL_EXT
 static VKAPI_ATTR void VKAPI_CALL ExportMetalObjectsEXT(VkDevice device, VkExportMetalObjectsInfoEXT* pMetalObjectsInfo);
 #endif  // VK_USE_PLATFORM_METAL_EXT
@@ -3083,6 +3097,13 @@ static const std::unordered_map<std::string, void*> name_to_func_ptr_map = {
     {"vkCmdDispatchTileQCOM", (void*)CmdDispatchTileQCOM},
     {"vkCmdBeginPerTileExecutionQCOM", (void*)CmdBeginPerTileExecutionQCOM},
     {"vkCmdEndPerTileExecutionQCOM", (void*)CmdEndPerTileExecutionQCOM},
+    {"vkSetLatencySleepModeLegacyNV", (void*)SetLatencySleepModeLegacyNV},
+    {"vkLatencySleepLegacyNV", (void*)LatencySleepLegacyNV},
+    {"vkSetLatencyMarkerLegacyNV", (void*)SetLatencyMarkerLegacyNV},
+    {"vkGetLatencyTimingsLegacyNV", (void*)GetLatencyTimingsLegacyNV},
+    {"vkQueueNotifyOutOfBandLegacyNV", (void*)QueueNotifyOutOfBandLegacyNV},
+    {"vkGetSleepStatusLegacyNV", (void*)GetSleepStatusLegacyNV},
+    {"vkShutdownLatencyDeviceLegacyNV", (void*)ShutdownLatencyDeviceLegacyNV},
 #ifdef VK_USE_PLATFORM_METAL_EXT
     {"vkExportMetalObjectsEXT", (void*)ExportMetalObjectsEXT},
 #endif  // VK_USE_PLATFORM_METAL_EXT
@@ -5679,6 +5700,21 @@ static VKAPI_ATTR void VKAPI_CALL CmdBeginPerTileExecutionQCOM(VkCommandBuffer c
 static VKAPI_ATTR void VKAPI_CALL CmdEndPerTileExecutionQCOM(VkCommandBuffer commandBuffer,
                                                              const VkPerTileEndInfoQCOM* pPerTileEndInfo) {}
 
+static VKAPI_ATTR void VKAPI_CALL SetLatencySleepModeLegacyNV(VkDevice device, VkBool32 lowLatencyMode, VkBool32 lowLatencyBoost,
+                                                              uint32_t minimumIntervalUs) {}
+
+static VKAPI_ATTR void VKAPI_CALL LatencySleepLegacyNV(VkDevice device, VkSemaphore signalSemaphore, uint64_t value) {}
+
+static VKAPI_ATTR void VKAPI_CALL SetLatencyMarkerLegacyNV(VkDevice device, uint64_t frameID, uint32_t marker) {}
+
+static VKAPI_ATTR void VKAPI_CALL GetLatencyTimingsLegacyNV(VkDevice device, void* pTimings) {}
+
+static VKAPI_ATTR void VKAPI_CALL QueueNotifyOutOfBandLegacyNV(VkQueue queue, uint32_t queueType) {}
+
+static VKAPI_ATTR void VKAPI_CALL GetSleepStatusLegacyNV(VkDevice device, VkBool32* pLowLatencyMode) {}
+
+static VKAPI_ATTR void VKAPI_CALL ShutdownLatencyDeviceLegacyNV(VkDevice device) {}
+
 #ifdef VK_USE_PLATFORM_METAL_EXT
 static VKAPI_ATTR void VKAPI_CALL ExportMetalObjectsEXT(VkDevice device, VkExportMetalObjectsInfoEXT* pMetalObjectsInfo) {}
 
@@ -6266,12 +6302,6 @@ static VKAPI_ATTR void VKAPI_CALL GetPhysicalDeviceQueueFamilyDataGraphProcessin
     const VkPhysicalDeviceQueueFamilyDataGraphProcessingEngineInfoARM* pQueueFamilyDataGraphProcessingEngineInfo,
     VkQueueFamilyDataGraphProcessingEnginePropertiesARM* pQueueFamilyDataGraphProcessingEngineProperties) {}
 
-static VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(
-    VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
-    const VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties, VkBaseOutStructure* pProperties) {
-    return VK_SUCCESS;
-}
-
 static VKAPI_ATTR void VKAPI_CALL CmdSetAttachmentFeedbackLoopEnableEXT(VkCommandBuffer commandBuffer,
                                                                         VkImageAspectFlags aspectMask) {}
 
@@ -6367,11 +6397,6 @@ static VKAPI_ATTR VkResult VKAPI_CALL CreateSurfaceOHOS(VkInstance instance, con
 }
 
 #endif  // VK_USE_PLATFORM_OHOS
-static VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV(
-    VkPhysicalDevice physicalDevice, uint32_t* pPropertyCount, VkCooperativeMatrixFlexibleDimensionsPropertiesNV* pProperties) {
-    return VK_SUCCESS;
-}
-
 #ifdef VK_USE_PLATFORM_METAL_EXT
 static VKAPI_ATTR VkResult VKAPI_CALL GetMemoryMetalHandleEXT(VkDevice device,
                                                               const VkMemoryGetMetalHandleInfoEXT* pGetMetalHandleInfo,
@@ -6430,14 +6455,6 @@ static VKAPI_ATTR void VKAPI_CALL CmdEndRendering2EXT(VkCommandBuffer commandBuf
 
 static VKAPI_ATTR void VKAPI_CALL CmdBeginCustomResolveEXT(VkCommandBuffer commandBuffer,
                                                            const VkBeginCustomResolveInfoEXT* pBeginCustomResolveInfo) {}
-
-static VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
-    VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
-    const VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties,
-    const VkDataGraphOpticalFlowImageFormatInfoARM* pOpticalFlowImageFormatInfo, uint32_t* pFormatCount,
-    VkDataGraphOpticalFlowImageFormatPropertiesARM* pImageFormatProperties) {
-    return VK_SUCCESS;
-}
 
 static VKAPI_ATTR void VKAPI_CALL CmdSetComputeOccupancyPriorityNV(VkCommandBuffer commandBuffer,
                                                                    const VkComputeOccupancyPriorityParametersNV* pParameters) {}

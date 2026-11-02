@@ -20,6 +20,7 @@
 #include "gpu/command_buffer/service/context_group.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/config/gpu_finch_features.h"
+#include "gpu/config/gpu_switches.h"
 #include "skia/buildflags.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_features.h"
@@ -302,13 +303,18 @@ GpuPreferences ParseGpuPreferences(const base::CommandLine* command_line) {
         command_line->GetSwitchValueASCII(switches::kDisableDawnFeatures), ",",
         base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
   }
-  gpu_preferences.gr_context_type = ParseGrContextType(command_line);
-  // ParseGrContextType checks Vulkan setting as well, so only parse Vulkan
-  // implementation name if gr_context_type is kVulkan.
-  gpu_preferences.use_vulkan =
-      gpu_preferences.gr_context_type == GrContextType::kVulkan
-          ? ParseVulkanImplementationName(command_line)
-          : VulkanImplementationName::kNone;
+  gpu_preferences.gr_context_type = ParseDefaultGrContextType(command_line);
+  if (gpu_preferences.gr_context_type == GrContextType::kGraphiteDawn ||
+      gpu_preferences.gr_context_type == GrContextType::kVulkan) {
+    // Set the default fallback type to GL so that the tests can fall back to GL
+    // without GpuDataManagerImplPrivate.
+    gpu_preferences.fallback_gr_context_types = {GrContextType::kGL};
+  } else {
+    gpu_preferences.fallback_gr_context_types.clear();
+  }
+  gpu_preferences.use_vulkan = features::IsUsingVulkan()
+                                   ? ParseVulkanImplementationName(command_line)
+                                   : VulkanImplementationName::kNone;
 
 #if BUILDFLAG(IS_FUCHSIA)
   // Vulkan Surface is not used on Fuchsia.
@@ -324,23 +330,32 @@ GpuPreferences ParseGpuPreferences(const base::CommandLine* command_line) {
   return gpu_preferences;
 }
 
-GrContextType ParseGrContextType(const base::CommandLine* command_line) {
-  if (features::IsSkiaGraphiteEnabled(command_line)) {
-    [[maybe_unused]] auto value =
-        command_line->GetSwitchValueASCII(switches::kSkiaGraphiteDawnBackend);
+GrContextType ParseDefaultGrContextType(const base::CommandLine* command_line) {
 #if BUILDFLAG(SKIA_USE_DAWN)
-    if (value.empty() || value == switches::kSkiaGraphiteDawnBackendD3D11 ||
-        value == switches::kSkiaGraphiteDawnBackendD3D12 ||
-        value == switches::kSkiaGraphiteDawnBackendMetal ||
-        value == switches::kSkiaGraphiteDawnBackendOpenGLES ||
-        value == switches::kSkiaGraphiteDawnBackendSwiftshader ||
-        value == switches::kSkiaGraphiteDawnBackendVulkan) {
+  if (base::FeatureList::IsEnabled(features::kLateGraphiteFeatureCheck)) {
+    // With late check, only the disable flag gates Graphite; the full
+    // feature/device check is deferred to the GPU process post-blocklist.
+    if (!command_line->HasSwitch(switches::kDisableSkiaGraphite)) {
       return GrContextType::kGraphiteDawn;
     }
-#endif  // BUILDFLAG(SKIA_USE_DAWN)
-    LOG(ERROR) << "Skia Graphite enabled but no valid Dawn backend found for \""
-               << value << "\" - falling back to Ganesh!";
+  } else {
+    if (features::IsSkiaGraphiteEnabled(command_line)) {
+      auto value =
+          command_line->GetSwitchValueASCII(switches::kSkiaGraphiteDawnBackend);
+      if (value.empty() || value == switches::kSkiaGraphiteDawnBackendD3D11 ||
+          value == switches::kSkiaGraphiteDawnBackendD3D12 ||
+          value == switches::kSkiaGraphiteDawnBackendMetal ||
+          value == switches::kSkiaGraphiteDawnBackendOpenGLES ||
+          value == switches::kSkiaGraphiteDawnBackendSwiftshader ||
+          value == switches::kSkiaGraphiteDawnBackendVulkan) {
+        return GrContextType::kGraphiteDawn;
+      }
+      LOG(ERROR)
+          << "Skia Graphite enabled but no valid Dawn backend found for \""
+          << value << "\" - falling back to Ganesh!";
+    }
   }
+#endif  // BUILDFLAG(SKIA_USE_DAWN)
   if (features::IsUsingVulkan()) {
     return GrContextType::kVulkan;
   }
@@ -361,23 +376,6 @@ bool MSAAIsSlow(const GpuDriverBugWorkarounds& workarounds) {
 }
 
 }  // namespace gles2
-
-#if BUILDFLAG(IS_MAC)
-uint32_t GetTextureTargetForIOSurfaces() {
-  // On MacOS, the default texture target for native GpuMemoryBuffers is
-  // GL_TEXTURE_RECTANGLE_ARB. This is due to CGL's requirements for creating
-  // a GL surface. However, when ANGLE is used on top of SwiftShader or Metal,
-  // it's necessary to use GL_TEXTURE_2D instead.
-  // TODO(crbug.com/40676774): The proper behavior is to check the config
-  // parameter set by the EGL_ANGLE_iosurface_client_buffer extension
-  if (gl::GetGLImplementation() == gl::kGLImplementationEGLANGLE &&
-      (gl::GetANGLEImplementation() == gl::ANGLEImplementation::kSwiftShader ||
-       gl::GetANGLEImplementation() == gl::ANGLEImplementation::kMetal)) {
-    return GL_TEXTURE_2D;
-  }
-  return GL_TEXTURE_RECTANGLE_ANGLE;
-}
-#endif  // BUILDFLAG(IS_MAC)
 
 namespace {
 

@@ -7,11 +7,8 @@
 //    Implements the class methods for TransformFeedbackVk.
 //
 
-#ifdef UNSAFE_BUFFERS_BUILD
-#    pragma allow_unsafe_buffers
-#endif
-
 #include "libANGLE/renderer/vulkan/TransformFeedbackVk.h"
+#include "common/unsafe_buffers.h"
 
 #include "libANGLE/Context.h"
 #include "libANGLE/Query.h"
@@ -54,6 +51,10 @@ void TransformFeedbackVk::onDestroy(const gl::Context *context)
 
 void TransformFeedbackVk::clearCachedBufferData()
 {
+    for (VkBuffer &buffer : mBufferHandles)
+    {
+        buffer = VK_NULL_HANDLE;
+    }
     for (VkDeviceSize &offset : mBufferOffsets)
     {
         offset = 0;
@@ -61,6 +62,10 @@ void TransformFeedbackVk::clearCachedBufferData()
     for (VkDeviceSize &size : mBufferSizes)
     {
         size = 0;
+    }
+    for (vk::BufferHelper *&bufferHelper : mBufferHelpers)
+    {
+        bufferHelper = nullptr;
     }
 }
 
@@ -246,10 +251,10 @@ void TransformFeedbackVk::getBufferOffsets(ContextVk *contextVk,
             (offsetFromDescriptor + drawCallVertexOffset * bufferStrides[bufferIndex]) /
             static_cast<int64_t>(sizeof(uint32_t));
 
-        offsetsOut[bufferIndex] = static_cast<int32_t>(writeOffset);
+        ANGLE_UNSAFE_TODO(offsetsOut[bufferIndex]) = static_cast<int32_t>(writeOffset);
 
         // Assert on overflow.  For now, support transform feedback up to 2GB.
-        ASSERT(offsetsOut[bufferIndex] == writeOffset);
+        ANGLE_UNSAFE_TODO(ASSERT(offsetsOut[bufferIndex] == writeOffset));
     }
 }
 

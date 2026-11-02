@@ -133,6 +133,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   bool IsShowing() override;
   void WasOccluded() override;
   gfx::Rect GetViewBounds() override;
+  gfx::Rect GetViewBoundsWithoutTransform() override;
   bool IsPointerLocked() override;
   gfx::Size GetVisibleViewportSize() override;
   gfx::Size GetVisibleViewportSizeDevicePx() override;
@@ -166,7 +167,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void UpdateTooltipFromKeyboard(const std::u16string& tooltip_text,
                                  const gfx::Rect& bounds) override;
   void ClearKeyboardTriggeredTooltip() override;
-  uint32_t GetCaptureSequenceNumber() const override;
   bool IsSurfaceAvailableForCopy() override;
   void CopyFromSurface(
       const gfx::Rect& src_rect,
@@ -175,9 +175,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
       base::OnceCallback<void(const content::CopyFromSurfaceResult&)> callback)
       override;
   ui::FilteredGestureProvider* GetFilteredGestureProviderForTesting() override;
-  void EnsureSurfaceSynchronizedForWebTest() override;
   void TransformPointToRootSurface(gfx::PointF* point) override;
-  gfx::Rect GetBoundsInRootWindow() override;
+  gfx::Rect GetBoundsInScreen() override;
+  gfx::Rect GetBoundsInScreenWithoutTransform() override;
   void WheelEventAck(const blink::WebMouseWheelEvent& event,
                      blink::mojom::InputEventResultState ack_result) override;
   void GestureEventAck(const blink::WebGestureEvent& event,
@@ -230,13 +230,23 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void OnStartStylusWriting() override;
   void OnEditElementFocusedForStylusWriting(
       blink::mojom::StylusWritingFocusResultPtr focus_result) override;
-  void SetStylusHandwritingFocusCallback(
+  void StartStylusWritingFromChildHostView(
+      RenderWidgetHostViewBase* view,
       OnFocusHandwritingTargetCallback callback) override;
 #endif  // BUILDFLAG(IS_WIN)
   void OnSynchronizedDisplayPropertiesChanged(bool rotation = false) override;
   viz::ScopedSurfaceIdAllocator DidUpdateVisualProperties(
       const cc::RenderFrameMetadata& metadata) override;
   void DidNavigate() override;
+
+  // Unbounded element API overrides:
+  void CreateUnboundedSurface(
+      mojo::PendingAssociatedReceiver<blink::mojom::UnboundedSurfaceHost> host,
+      mojo::PendingAssociatedRemote<blink::mojom::UnboundedSurfaceClient>
+          client,
+      const gfx::Rect& bounds_in_dips,
+      base::WeakPtr<RenderWidgetHostViewBase> subframe_view) override;
+
   void TakeFallbackContentFrom(RenderWidgetHostView* view) override;
   bool CanSynchronizeVisualProperties() override;
   // TODO(lanwei): Use TestApi interface to write functions that are used in
@@ -449,6 +459,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   void ScrollFocusedEditableNodeIntoView();
 
+  // Gets the pointer type of last user generated (non-synthesized) pointer
+  // input event.
   ui::EventPointerType GetLastPointerType() const { return last_pointer_type_; }
 
   MouseWheelPhaseHandler* GetMouseWheelPhaseHandler() override;
@@ -746,6 +758,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
       const gfx::Rect& focus_screen_rect_in_dips,
       const gfx::Size& tolerance_screen_distance_in_dips);
 
+  void StartStylusWritingImpl(RenderWidgetHostViewBase* initiating_view,
+                              OnFocusHandwritingTargetCallback callback);
+
   void ForwardArabicIndicCharEventWithLatencyInfo(const ui::KeyEvent& event,
                                                   char16_t ascii_char);
 #endif  // BUILDFLAG(IS_WIN)
@@ -847,10 +862,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   std::unique_ptr<input::CursorManager> cursor_manager_;
 
-  // Latest capture sequence number which is incremented when the caller
-  // requests surfaces be synchronized via
-  // EnsureSurfaceSynchronizedForWebTest().
-  uint32_t latest_capture_sequence_number_ = 0u;
 
   // The pointer type of the most recent gesture/mouse/touch event.
   ui::EventPointerType last_pointer_type_ = ui::EventPointerType::kUnknown;
@@ -889,11 +900,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // pointer id and a handwriting stroke id.
   std::optional<ui::StylusHandwritingPropertiesWin>
       last_stylus_handwriting_properties_;
-
-  // Set by a child frame view so the TSF focus response is routed to the
-  // child frame view instead of this view. Reset after use in
-  // OnStartStylusWriting.
-  OnFocusHandwritingTargetCallback stylus_handwriting_focus_callback_;
 #endif  // BUILDFLAG(IS_WIN)
 
   std::optional<display::ScopedDisplayObserver> display_observer_;

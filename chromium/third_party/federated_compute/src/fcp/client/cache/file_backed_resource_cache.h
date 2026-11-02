@@ -30,8 +30,8 @@
 #include "absl/strings/cord.h"
 #include "absl/strings/string_view.h"
 #include "absl/synchronization/mutex.h"
+#include "absl/time/clock_interface.h"
 #include "absl/time/time.h"
-#include "fcp/base/clock.h"
 #include "fcp/client/cache/cache_manifest.pb.h"
 #include "fcp/client/cache/resource_cache.h"
 #include "fcp/client/log_manager.h"
@@ -66,7 +66,8 @@ class FileBackedResourceCache : public ResourceCache {
   // Deletes any stored resources past expiry.
   static absl::StatusOr<std::unique_ptr<FileBackedResourceCache>> Create(
       absl::string_view base_dir, absl::string_view cache_dir,
-      LogManager* log_manager, fcp::Clock* clock, int64_t max_cache_size_bytes);
+      LogManager* log_manager, absl::Clock* clock, int64_t max_cache_size_bytes,
+      bool sanitize_client_cache_id = false);
 
   // Implementation of `ResourceCache::Put`.
   //
@@ -98,14 +99,16 @@ class FileBackedResourceCache : public ResourceCache {
       std::unique_ptr<protostore::ProtoDataStore<CacheManifest>> pds,
       std::unique_ptr<protostore::FileStorage> storage,
       std::filesystem::path cache_dir_path, std::filesystem::path manifest_path,
-      LogManager* log_manager, Clock* clock, const int64_t max_cache_size_bytes)
+      LogManager* log_manager, absl::Clock* clock,
+      const int64_t max_cache_size_bytes, bool sanitize_client_cache_id)
       : storage_(std::move(storage)),
         pds_(std::move(pds)),
         cache_dir_path_(cache_dir_path),
         manifest_path_(manifest_path),
         log_manager_(*log_manager),
         clock_(*clock),
-        max_cache_size_bytes_(max_cache_size_bytes) {}
+        max_cache_size_bytes_(max_cache_size_bytes),
+        sanitize_client_cache_id_(sanitize_client_cache_id) {}
 
   absl::StatusOr<CacheManifest> ReadInternal()
       ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
@@ -136,8 +139,9 @@ class FileBackedResourceCache : public ResourceCache {
   const std::filesystem::path cache_dir_path_;
   const std::filesystem::path manifest_path_;
   LogManager& log_manager_;
-  Clock& clock_;
+  absl::Clock& clock_;
   const int64_t max_cache_size_bytes_;
+  const bool sanitize_client_cache_id_;
   absl::Mutex mutex_;
 };
 

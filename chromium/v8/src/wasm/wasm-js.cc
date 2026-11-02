@@ -36,6 +36,7 @@
 #include "src/wasm/wasm-debug.h"
 #include "src/wasm/wasm-engine.h"
 #include "src/wasm/wasm-limits.h"
+#include "src/wasm/wasm-memory-map-descriptor.h"
 #include "src/wasm/wasm-objects-inl.h"
 #include "src/wasm/wasm-serialization.h"
 #include "src/wasm/wasm-value.h"
@@ -1105,8 +1106,7 @@ void WebAssemblyInstanceImpl(const v8::FunctionCallbackInfo<v8::Value>& info) {
 
     if (!i::wasm::GetWasmEngine()
              ->SyncInstantiate(i_isolate, &thrower, module_object,
-                               ImportsAsMaybeReceiver(ffi),
-                               i::MaybeDirectHandle<i::JSArrayBuffer>())
+                               ImportsAsMaybeReceiver(ffi))
              .ToHandle(&instance_obj)) {
       return js_api_scope.AssertException();
     }
@@ -1696,7 +1696,7 @@ void WebAssemblyMemoryImpl(const v8::FunctionCallbackInfo<v8::Value>& info) {
   i::SharedFlag shared = i::SharedFlag(value->BooleanValue(isolate));
 
   // Throw TypeError if shared is true, and the descriptor has no "maximum".
-  if (shared == i::SharedFlag::kYes && !maybe_maximum.has_value()) {
+  if (shared && !maybe_maximum.has_value()) {
     thrower.TypeError("If shared is true, maximum property should be defined.");
     return;
   }
@@ -1732,7 +1732,7 @@ void WebAssemblyMemoryImpl(const v8::FunctionCallbackInfo<v8::Value>& info) {
 // new WebAssembly.MemoryMapDescriptor(size) -> WebAssembly.MemoryMapDescriptor
 void WebAssemblyMemoryMapDescriptorImpl(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CHECK(i::v8_flags.experimental_wasm_memory_control);
+  CHECK(i::v8_flags.wasm_memory_control);
   WasmJSApiScope js_api_scope{info, "WebAssembly.MemoryMapDescriptor()"};
   auto [isolate, i_isolate, thrower] = js_api_scope.isolates_and_thrower();
   if (!info.IsConstructCall()) {
@@ -1748,27 +1748,15 @@ void WebAssemblyMemoryMapDescriptorImpl(
     return js_api_scope.AssertException();
   }
 
-  i::DirectHandle<i::JSObject> descriptor_obj;
-  if (!i::WasmMemoryMapDescriptor::NewFromAnonymous(i_isolate, size.value())
-           .ToHandle(&descriptor_obj)) {
+  v8::Local<v8::Object> descriptor_obj;
+  if (!i::wasm::WasmMemoryMapDescriptor::NewFromAnonymous(isolate, size.value(),
+                                                          info.This())
+           .ToLocal(&descriptor_obj)) {
     thrower.RuntimeError("Failed to create a MemoryMapDescriptor");
     return js_api_scope.AssertException();
   }
 
-  // The infrastructure for `new Foo` calls allocates an object, which is
-  // available here as {info.This()}. We're going to discard this object
-  // and use {memory_obj} instead, but it does have the correct prototype,
-  // which we must harvest from it. This makes a difference when the JS
-  // constructor function wasn't {WebAssembly.Memory} directly, but some
-  // subclass: {memory_obj} has {WebAssembly.Memory}'s prototype at this
-  // point, so we must overwrite that with the correct prototype for {Foo}.
-  if (!TransferPrototype(i_isolate, descriptor_obj,
-                         Utils::OpenDirectHandle(*info.This()))) {
-    DCHECK(i_isolate->has_exception());
-    return js_api_scope.AssertException();
-  }
-
-  info.GetReturnValue().Set(Utils::ToLocal(descriptor_obj));
+  info.GetReturnValue().Set(descriptor_obj);
 }
 
 // Determines the type encoded in a value type property (e.g. type reflection).
@@ -2297,20 +2285,19 @@ i::DirectHandle<i::JSFunction> NewPromisingWasmExportedFunction(
   if (func_index >= num_imported_functions) {
     implicit_arg = trusted_instance_data;
   } else {
-    implicit_arg = i_isolate->factory()->NewWasmImportData(
-        direct_handle(i::TrustedCast<i::WasmImportData>(
-                          trusted_instance_data->dispatch_table_for_imports()
-                              ->implicit_arg(func_index)),
-                      i_isolate),
-        i::SharedFlag::kNo);
+    implicit_arg = i_isolate->factory()->NewWasmImportData(direct_handle(
+        i::TrustedCast<i::WasmImportData>(
+            trusted_instance_data->dispatch_table_for_imports()->implicit_arg(
+                func_index)),
+        i_isolate));
   }
 
   i::DirectHandle<i::WasmInternalFunction> internal =
       i_isolate->factory()->NewWasmInternalFunction(
-          implicit_arg, func_index, i::SharedFlag::kNo,
+          implicit_arg, func_index,
           trusted_instance_data->GetCallTarget(func_index), sig);
   i::DirectHandle<i::WasmFuncRef> func_ref =
-      i_isolate->factory()->NewWasmFuncRef(internal, rtt, i::SharedFlag::kNo);
+      i_isolate->factory()->NewWasmFuncRef(internal, rtt);
   if (func_index < num_imported_functions) {
     i::TrustedCast<i::WasmImportData>(implicit_arg)->set_call_origin(*internal);
   }
@@ -2342,10 +2329,6 @@ void WebAssemblyPromising(const v8::FunctionCallbackInfo<v8::Value>& info) {
   i::DirectHandle<i::WasmExportedFunctionData> data(
       wasm_exported_function->shared()->wasm_exported_function_data(),
       i_isolate);
-  if (i::wasm::is_asmjs_module(data->instance_data()->module())) {
-    thrower.TypeError("Argument 0 must be a WebAssembly exported function");
-    return;
-  }
   i::DirectHandle<i::JSFunction> result =
       NewPromisingWasmExportedFunction(i_isolate, data, thrower);
   info.GetReturnValue().Set(Utils::ToLocal(i::Cast<i::JSObject>(result)));
@@ -2382,8 +2365,6 @@ void WebAssemblySuspendingImpl(
 
 constexpr const char* kName_WasmGlobalObject = "WebAssembly.Global";
 constexpr const char* kName_WasmMemoryObject = "WebAssembly.Memory";
-constexpr const char* kName_WasmMemoryMapDescriptor =
-    "WebAssembly.MemoryMapDescriptor";
 constexpr const char* kName_WasmInstanceObject = "WebAssembly.Instance";
 constexpr const char* kName_WasmTableObject = "WebAssembly.Table";
 constexpr const char* kName_WasmExceptionPackage = "WebAssembly.Exception";
@@ -2578,10 +2559,18 @@ void WebAssemblyTableSetImpl(const v8::FunctionCallbackInfo<v8::Value>& info) {
 // WebAssembly.MemoryMapDescriptor.map()
 void WebAssemblyMemoryMapDescriptorMapImpl(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CHECK(i::v8_flags.experimental_wasm_memory_control);
+  CHECK(i::v8_flags.wasm_memory_control);
   WasmJSApiScope js_api_scope{info, "WebAssembly.MemoryMapDescriptor.map()"};
   auto [isolate, i_isolate, thrower] = js_api_scope.isolates_and_thrower();
-  EXTRACT_THIS(receiver, WasmMemoryMapDescriptor);
+  auto* descriptor =
+      v8::Object::Unwrap<i::wasm::WasmMemoryMapDescriptor::kPointerTag,
+                         i::wasm::WasmMemoryMapDescriptor>(isolate,
+                                                           info.This());
+  if (!descriptor) {
+    thrower.TypeError(
+        "Incompatible receiver, expected WebAssembly.MemoryMapDescriptor");
+    return js_api_scope.AssertException();
+  }
 
   i::DirectHandle<i::WasmMemoryObject> memory;
   {
@@ -2599,27 +2588,32 @@ void WebAssemblyMemoryMapDescriptorMapImpl(
   if (!offset.has_value()) {
     return js_api_scope.AssertException();
   }
-  size_t mapped_size = receiver->MapDescriptor(memory, offset.value());
+  size_t mapped_size = descriptor->Map(isolate, memory, offset.value());
   if (!mapped_size) {
     thrower.RuntimeError(
         "Failed to map the MemoryMapDescriptor to WebAssembly memory.");
     return js_api_scope.AssertException();
   }
-  receiver->set_memory(MakeWeak(*memory));
-  receiver->set_offset(offset.value());
-  receiver->set_size(static_cast<uint32_t>(mapped_size));
   info.GetReturnValue().Set(static_cast<int64_t>(mapped_size));
 }
 
 // WebAssembly.MemoryMapDescriptor.unmap()
 void WebAssemblyMemoryMapDescriptorUnmapImpl(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CHECK(i::v8_flags.experimental_wasm_memory_control);
+  CHECK(i::v8_flags.wasm_memory_control);
   WasmJSApiScope js_api_scope{info, "WebAssembly.MemoryMapDescriptor.unmap()"};
   auto [isolate, i_isolate, thrower] = js_api_scope.isolates_and_thrower();
-  EXTRACT_THIS(receiver, WasmMemoryMapDescriptor);
+  auto* descriptor =
+      v8::Object::Unwrap<i::wasm::WasmMemoryMapDescriptor::kPointerTag,
+                         i::wasm::WasmMemoryMapDescriptor>(isolate,
+                                                           info.This());
+  if (!descriptor) {
+    thrower.TypeError(
+        "Incompatible receiver, expected WebAssembly.MemoryMapDescriptor");
+    return js_api_scope.AssertException();
+  }
 
-  if (!receiver->UnmapDescriptor()) {
+  if (!descriptor->Unmap(isolate)) {
     thrower.RangeError("Failed to unmap the MemoryMapDescriptor.");
     return;
   }
@@ -2691,7 +2685,7 @@ void WebAssemblyMemoryToFixedLengthBufferImpl(
 
   i::DirectHandle<i::JSArrayBuffer> buffer =
       i::WasmMemoryObject::ChangeArrayBufferResizability(
-          i_isolate, receiver, i::ResizableFlag::kNotResizable);
+          i_isolate, receiver, i::ResizableFlag{false});
   info.GetReturnValue().Set(Utils::ToLocal(buffer));
 }
 
@@ -2709,7 +2703,7 @@ void WebAssemblyMemoryToResizableBufferImpl(
 
   i::DirectHandle<i::JSArrayBuffer> buffer =
       i::WasmMemoryObject::ChangeArrayBufferResizability(
-          i_isolate, receiver, i::ResizableFlag::kResizable);
+          i_isolate, receiver, i::ResizableFlag{true});
   info.GetReturnValue().Set(Utils::ToLocal(buffer));
 }
 
@@ -3548,25 +3542,38 @@ bool WasmJs::InstallJSPromiseIntegration(Isolate* isolate,
 void WasmJs::InstallMemoryControl(Isolate* isolate,
                                   DirectHandle<NativeContext> context,
                                   DirectHandle<JSObject> webassembly) {
-  // Extensibility of the `WebAssembly` object should already have been checked
-  // by the caller.
   DCHECK(webassembly->map()->is_extensible());
 
-  DirectHandle<JSFunction> descriptor_constructor =
-      InstallConstructorFunc(isolate, webassembly, "MemoryMapDescriptor",
-                             wasm::WebAssemblyMemoryMapDescriptor);
-  SetupConstructor(
-      isolate, descriptor_constructor, WASM_MEMORY_MAP_DESCRIPTOR_TYPE,
-      WasmMemoryMapDescriptor::kHeaderSize, "WebAssembly.MemoryMapDescriptor");
-  context->set_wasm_memory_map_descriptor_constructor(*descriptor_constructor);
+  v8::Isolate* v8_isolate = reinterpret_cast<v8::Isolate*>(isolate);
+  v8::Local<v8::FunctionTemplate> constructor_template =
+      v8::FunctionTemplate::New(v8_isolate,
+                                wasm::WebAssemblyMemoryMapDescriptor);
+  v8::Local<v8::ObjectTemplate> templ =
+      constructor_template->InstanceTemplate();
 
-  DirectHandle<JSObject> descriptor_proto = direct_handle(
-      Cast<JSObject>(descriptor_constructor->instance_prototype()), isolate);
+  v8::Local<v8::Signature> signature =
+      v8::Signature::New(v8_isolate, constructor_template);
+  templ->Set(v8_isolate, "map",
+             v8::FunctionTemplate::New(v8_isolate,
+                                       wasm::WebAssemblyMemoryMapDescriptorMap,
+                                       v8::Local<v8::Value>(), signature));
+  templ->Set(v8_isolate, "unmap",
+             v8::FunctionTemplate::New(
+                 v8_isolate, wasm::WebAssemblyMemoryMapDescriptorUnmap,
+                 v8::Local<v8::Value>(), signature));
+  context->set_wasm_memory_map_descriptor_template(
+      *Utils::OpenDirectHandle(*templ));
 
-  InstallFunc(isolate, descriptor_proto, "map",
-              wasm::WebAssemblyMemoryMapDescriptorMap, 2);
-  InstallFunc(isolate, descriptor_proto, "unmap",
-              wasm::WebAssemblyMemoryMapDescriptorUnmap, 0);
+  DirectHandle<FunctionTemplateInfo> constructor_info =
+      Utils::OpenDirectHandle(*constructor_template);
+  DirectHandle<String> name = v8_str(isolate, "MemoryMapDescriptor");
+  DirectHandle<JSFunction> constructor_handle =
+      ApiNatives::InstantiateFunction(isolate, constructor_info, name)
+          .ToHandleChecked();
+
+  JSObject::AddProperty(isolate, webassembly, "MemoryMapDescriptor",
+                        constructor_handle, DONT_ENUM);
+  context->set_wasm_memory_map_descriptor_constructor(*constructor_handle);
 }
 
 // static
@@ -3623,7 +3630,7 @@ CompileTimeImports WasmJs::CompileTimeImportsFromArgument(
           }
         }
         if (enabled_features.has_custom_descriptors() &&
-            v8_flags.experimental_wasm_js_interop) {
+            v8_flags.wasm_js_interop) {
           if (builtin->IsEqualTo(base::CStrVector("js-prototypes"))) {
             result.Add(CompileTimeImport::kJsPrototypes);
             continue;

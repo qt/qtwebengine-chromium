@@ -15,6 +15,7 @@
 #include "base/time/time.h"
 #include "base/types/strong_alias.h"
 #include "base/unguessable_token.h"
+#include "components/page_load_metrics/browser/navigation_scenario.h"
 #include "components/page_load_metrics/browser/observers/core/largest_contentful_paint_handler.h"
 #include "components/page_load_metrics/browser/page_load_metrics_observer.h"
 #include "components/page_load_metrics/browser/page_load_metrics_observer_delegate.h"
@@ -61,8 +62,7 @@ enum class PageLoadTrackerPageType {
   kPrimaryPage = 0,
   kPrerenderPage = 1,
   kFencedFramesPage = 2,
-  kPreviewPrimaryPage = 3,  // Primary page in the preview mode
-  kMaxValue = kPreviewPrimaryPage,
+  kMaxValue = kFencedFramesPage,
 };
 
 extern const char kErrorEvents[];
@@ -299,6 +299,7 @@ class PageLoadTracker : public PageLoadMetricsUpdateDispatcher::Client,
   ukm::SourceId GetUkmSourceIdForSameDocumentNavigation(
       base::UnguessableToken same_document_metrics_token) const override;
   bool IsFirstNavigationInWebContents() const override;
+  NavigationScenario GetNavigationScenario() const override;
   bool IsOriginVisit() const override;
   bool IsTerminalVisit() const override;
   bool ShouldObserveScheme(std::string_view scheme) const override;
@@ -438,20 +439,12 @@ class PageLoadTracker : public PageLoadMetricsUpdateDispatcher::Client,
   // Called when the page tracked was just activated after being prerendered.
   void DidActivatePrerenderedPage(content::NavigationHandle* navigation_handle);
 
-  // Called when the previewed page was activated for the tab promotion.
-  void DidActivatePreviewedPage(base::TimeTicks activation_time);
-
   // Called when a `SharedStorageWorkletHost` is created.
   void OnSharedStorageWorkletHostCreated();
 
   // Called when `sharedStorage.selectURL()` is called for some frame on the
   // page tracked.
   void OnSharedStorageSelectURLCalled();
-
-  // Called when a Fledge auction completes.
-  void OnAdAuctionComplete(bool is_server_auction,
-                           bool is_on_device_auction,
-                           content::AuctionResult result);
 
   // Checks if this tracker is for outermost pages.
   bool IsOutermostTracker() const { return !parent_tracker_; }
@@ -603,6 +596,7 @@ class PageLoadTracker : public PageLoadMetricsUpdateDispatcher::Client,
   const IsFirstNavigationInWebContentsBool is_first_navigation_in_web_contents_;
   const IsReloadAfterDiscardBool is_reload_after_discard_;
   const bool is_origin_visit_;
+  const NavigationScenario navigation_scenario_;
   bool is_terminal_visit_ = true;
 
   page_load_metrics::LargestContentfulPaintHandler

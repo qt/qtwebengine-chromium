@@ -11,11 +11,8 @@
 #ifndef LIBANGLE_RENDERER_VULKAN_VK_CACHE_UTILS_H_
 #define LIBANGLE_RENDERER_VULKAN_VK_CACHE_UTILS_H_
 
-#ifdef UNSAFE_BUFFERS_BUILD
-#    pragma allow_unsafe_buffers
-#endif
-
 #include <deque>
+#include "common/unsafe_buffers.h"
 
 #include "common/Color.h"
 #include "common/FixedVector.h"
@@ -211,6 +208,7 @@ class alignas(4) RenderPassDesc final
     // Indicate that a color attachment should take its data from the resolve attachment initially.
     void packColorUnresolveAttachment(size_t colorIndexGL);
     void removeColorUnresolveAttachment(size_t colorIndexGL);
+    void resetColorUnresolveAttachments();
     // Indicate that a depth/stencil attachment should have a corresponding resolve attachment.
     void packDepthResolveAttachment();
     void packStencilResolveAttachment();
@@ -295,6 +293,12 @@ class alignas(4) RenderPassDesc final
     void updateRenderToTexture(bool isRenderToTexture) { mIsRenderToTexture = isRenderToTexture; }
     bool isRenderToTexture() const { return mIsRenderToTexture; }
 
+    void setDynamicMSRTTUnresolve(bool isDynamicMSRTTUnresolve)
+    {
+        mIsDynamicMSRTTUnresolve = isDynamicMSRTTUnresolve;
+    }
+    bool isDynamicMSRTTUnresolve() const { return mIsDynamicMSRTTUnresolve; }
+
     void setFragmentShadingAttachment(bool value) { mHasFragmentShadingAttachment = value; }
     bool hasFragmentShadingAttachment() const { return mHasFragmentShadingAttachment; }
 
@@ -358,6 +362,7 @@ class alignas(4) RenderPassDesc final
     uint8_t mIsRenderToTexture : 1;
     uint8_t mUnresolveDepth : 1;
     uint8_t mUnresolveStencil : 1;
+    uint8_t mIsDynamicMSRTTUnresolve : 1;
 
     // Dithering state when using VK_EXT_legacy_dithering
     uint8_t mLegacyDitherEnabled : 1;
@@ -369,7 +374,7 @@ class alignas(4) RenderPassDesc final
     uint8_t mHasFragmentShadingAttachment : 1;
 
     // Available space for expansion.
-    uint8_t mPadding2 : 5;
+    uint8_t mPadding2 : 4;
 
     // Whether each color attachment has a corresponding resolve attachment.  Color resolve
     // attachments can be used to optimize resolve through glBlitFramebuffer() as well as support
@@ -1488,8 +1493,10 @@ ANGLE_INLINE bool GraphicsPipelineTransitionMatch(GraphicsPipelineTransitionBits
 
     for (size_t dirtyBit : bitsA)
     {
-        if (rawPtrA[dirtyBit] != rawPtrB[dirtyBit])
+        if (ANGLE_UNSAFE_TODO(rawPtrA[dirtyBit] != rawPtrB[dirtyBit]))
+        {
             return false;
+        }
     }
 
     return true;
@@ -1692,38 +1699,6 @@ class PipelineHelper final : public Resource
     // through the share group, which manages and paces these tasks.  Once the task results are
     // ready, |mPipeline| is released and replaced by the result of this task.
     WaitableMonolithicPipelineCreationTask mMonolithicPipelineCreationTask;
-};
-
-class FramebufferHelper : public Resource
-{
-  public:
-    FramebufferHelper();
-    ~FramebufferHelper() override;
-
-    FramebufferHelper(FramebufferHelper &&other);
-    FramebufferHelper &operator=(FramebufferHelper &&other);
-
-    angle::Result init(ErrorContext *context, const VkFramebufferCreateInfo &createInfo);
-    void destroy(Renderer *renderer);
-    void release(ContextVk *contextVk);
-
-    bool valid() { return mFramebuffer.valid(); }
-
-    const Framebuffer &getFramebuffer() const
-    {
-        ASSERT(mFramebuffer.valid());
-        return mFramebuffer;
-    }
-
-    Framebuffer &getFramebuffer()
-    {
-        ASSERT(mFramebuffer.valid());
-        return mFramebuffer;
-    }
-
-  private:
-    // Vulkan object.
-    Framebuffer mFramebuffer;
 };
 
 ANGLE_INLINE PipelineHelper::PipelineHelper(Pipeline &&pipeline, CacheLookUpFeedback feedback)
@@ -1952,8 +1927,8 @@ class DescriptorSetDesc
     bool operator==(const DescriptorSetDesc &other) const
     {
         return mDescriptorInfos.size() == other.mDescriptorInfos.size() &&
-               memcmp(mDescriptorInfos.data(), other.mDescriptorInfos.data(),
-                      mDescriptorInfos.size() * sizeof(DescriptorInfoDesc)) == 0;
+               ANGLE_UNSAFE_TODO(memcmp(mDescriptorInfos.data(), other.mDescriptorInfos.data(),
+                                        mDescriptorInfos.size() * sizeof(DescriptorInfoDesc))) == 0;
     }
 
     DescriptorInfoDesc &getInfoDesc(uint32_t infoDescIndex)
@@ -2600,14 +2575,14 @@ class FramebufferCache final : angle::NonCopyable
     bool get(ContextVk *contextVk, const vk::FramebufferDesc &desc, vk::Framebuffer &framebuffer);
     void insert(ContextVk *contextVk,
                 const vk::FramebufferDesc &desc,
-                vk::FramebufferHelper &&framebufferHelper);
+                vk::Framebuffer &&framebuffer);
     void erase(ContextVk *contextVk, const vk::FramebufferDesc &desc);
 
     size_t getSize() const { return mPayload.size(); }
     bool empty() const { return mPayload.empty(); }
 
   private:
-    angle::HashMap<vk::FramebufferDesc, vk::FramebufferHelper> mPayload;
+    angle::HashMap<vk::FramebufferDesc, vk::Framebuffer> mPayload;
     CacheStats mCacheStats;
 };
 
@@ -2804,6 +2779,8 @@ class GraphicsPipelineCache final : public HasCacheStats<VulkanCacheType::Graphi
     void populate(const vk::GraphicsPipelineDesc &desc,
                   vk::Pipeline &&pipeline,
                   vk::PipelineHelper **pipelineHelperOut);
+
+    void remove(const vk::GraphicsPipelineDesc &desc) { mPayload.erase(desc); }
 
     // Get a pipeline from the cache, if it exists
     ANGLE_INLINE bool getPipeline(const vk::GraphicsPipelineDesc &desc,

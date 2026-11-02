@@ -13,11 +13,11 @@
 #include "include/core/SkStream.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypeface.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkTFitsIn.h"
-#include "include/private/base/SkTemplates.h"
-#include "include/private/base/SkTo.h"
-#include "src/base/SkAutoMalloc.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkTFitsIn.h"
+#include "include/private/SkTemplates.h"
+#include "include/private/SkTo.h"
+#include "src/core/SkAutoMalloc.h"
 #include "src/core/SkDebugUtils.h"
 #include "src/core/SkPicturePriv.h"
 #include "src/core/SkPictureRecord.h"
@@ -41,13 +41,6 @@ template <typename T> int SafeCount(const T* obj) {
 SkPictureData::SkPictureData(const SkPictInfo& info)
     : fInfo(info) {}
 
-void SkPictureData::initForPlayback() const {
-    // ensure that the paths bounds are pre-computed
-    for (int i = 0; i < fPaths.size(); i++) {
-        fPaths[i].updateBoundsCache();
-    }
-}
-
 SkPictureData::SkPictureData(const SkPictureRecord& record,
                              const SkPictInfo& info)
     : fPictures(record.getPictures())
@@ -68,8 +61,6 @@ SkPictureData::SkPictureData(const SkPictureRecord& record,
         // 0-based to keep the deserializing SkPictureData::getPath() working.
         fPaths[n-1] = path;
     });
-
-    this->initForPlayback();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

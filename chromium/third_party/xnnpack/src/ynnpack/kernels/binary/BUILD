@@ -33,6 +33,7 @@ ARCHS = [
     "arm_neon",
     "arm_neonbf16",
     "wasm_simd128",
+    "hexagon_hvx",
 ]
 
 [ynn_generate_src_hdr(

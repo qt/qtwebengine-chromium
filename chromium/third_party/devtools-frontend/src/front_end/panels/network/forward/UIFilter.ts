@@ -34,6 +34,7 @@ export const enum IsFilterType {
   FROM_CACHE = 'from-cache',
   SERVICE_WORKER_INTERCEPTED = 'service-worker-intercepted',
   SERVICE_WORKER_INITIATED = 'service-worker-initiated',
+  PRELOAD = 'preloaded',
 }
 
 export const enum MixedContentFilterValues {

@@ -207,13 +207,13 @@ struct Pair {
  public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-  U first;
-  V second;
+  U first{};
+  V second{};
 
   typedef U first_type;
   typedef V second_type;
 
-  constexpr EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Pair() : first(), second() {}
+  constexpr EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Pair() = default;
 
   constexpr EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Pair(const U& f, const V& s) : first(f), second(s) {}
 
@@ -226,7 +226,7 @@ struct Pair {
 
 template <typename U, typename V>
 constexpr EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool operator==(const Pair<U, V>& x, const Pair<U, V>& y) {
-  return (x.first == y.first && x.second == y.second);
+  return x.first == y.first && x.second == y.second;
 }
 
 template <typename U, typename V>
@@ -237,7 +237,7 @@ constexpr EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool operator!=(const Pair<U, V>
 // Can't use std::pairs on cuda devices
 template <typename Idx>
 struct IndexPair {
-  constexpr EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE IndexPair() : first(0), second(0) {}
+  constexpr EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE IndexPair() = default;
   constexpr EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE IndexPair(Idx f, Idx s) : first(f), second(s) {}
 
   EIGEN_DEVICE_FUNC void set(IndexPair<Idx> val) {
@@ -245,8 +245,8 @@ struct IndexPair {
     second = val.second;
   }
 
-  Idx first;
-  Idx second;
+  Idx first = Idx(0);
+  Idx second = Idx(0);
 };
 
 namespace internal {

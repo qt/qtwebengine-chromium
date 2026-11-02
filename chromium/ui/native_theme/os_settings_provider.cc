@@ -228,6 +228,10 @@ bool OsSettingsProvider::PrefersInvertedColors() const {
   return false;
 }
 
+bool OsSettingsProvider::PrefersOverlayScrollbars() const {
+  return true;
+}
+
 bool OsSettingsProvider::ForcedColorsActive() const {
   return false;
 }
@@ -248,6 +252,12 @@ OsSettingsProvider::SchemeVariant() const {
 base::TimeDelta OsSettingsProvider::CaretBlinkInterval() const {
   return kDefaultCaretBlinkInterval;
 }
+
+#if BUILDFLAG(IS_ANDROID)
+bool OsSettingsProvider::IsAndroidProvider() const {
+  return false;
+}
+#endif
 
 void OsSettingsProvider::NotifyOnSettingsChanged(bool force_notify) {
   // Don't notify if this provider isn't the active one.

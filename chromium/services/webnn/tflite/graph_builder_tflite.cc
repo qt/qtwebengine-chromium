@@ -86,6 +86,12 @@ constexpr size_t kFlatbufferSafetyThreshold = 1536 * 1024 * 1024; /* 1.5 GiB */
 // The largest kernel tile size used by ruy's packing kernels (AVX-512 uses 16).
 constexpr int32_t kMaxKernelBlockSize = 16;
 
+// The maximum input rank that TFLite's broadcasting binary operators natively
+// support. Inputs with a higher rank must first be reduced to a shape of this
+// rank or lower via `SerializeBinaryOperationWithRankReduction` before being
+// emitted.
+constexpr size_t kTfliteBroadcastRankLimit = 4;
+
 // Rounds `value` up to the nearest multiple of `block_size`, using checked
 // arithmetic to detect overflow.
 base::CheckedNumeric<int32_t> RoundUp(base::CheckedNumeric<int32_t> value,
@@ -698,12 +704,30 @@ auto GraphBuilderTflite::CreateAndBuild(
         operand_to_dependent_operations,
     const base::flat_map<OperandId, OperationId> operand_to_producing_operation,
     base::File weights_file,
+    mojo::SharedRemote<mojom::WeightsFileSession> session,
     bool use_external_buffer) -> base::expected<Result, std::string> {
-  GraphBuilderTflite builder(std::move(context_properties), graph_info,
-                             constant_operands,
-                             std::move(operand_to_dependent_operations),
-                             std::move(operand_to_producing_operation),
-                             std::move(weights_file), use_external_buffer);
+  GraphBuilderTflite builder(
+      std::move(context_properties), graph_info, constant_operands,
+      std::move(operand_to_dependent_operations),
+      std::move(operand_to_producing_operation), std::move(weights_file),
+      std::move(session), use_external_buffer);
+
+  if (builder.weights_file_.IsValid()) {
+    if (builder.session_.is_bound()) {
+      bool granted = false;
+      if (!builder.session_->RequestCapacityChange(kWeightsAlignment,
+                                                   &granted) ||
+          !granted) {
+        return base::unexpected(
+            "Weights file capacity request denied by browser.");
+      }
+    }
+    if (!builder.weights_file_.Seek(base::File::FROM_CURRENT,
+                                    kWeightsAlignment)) {
+      return base::unexpected("Failed to seek weights file.");
+    }
+    builder.weights_file_.SetLength(kWeightsAlignment);
+  }
 
   bool graph_requires_fp32_precision = false;
   for (size_t i = 0; i < graph_info.operations.size(); ++i) {
@@ -861,20 +885,27 @@ ContextProperties GraphBuilderTflite::GetContextProperties() {
        // https://source.chromium.org/chromium/chromium/src/+/main:third_party/tflite/src/tensorflow/lite/kernels/internal/reference/maximum_minimum.h
        /*max_input=*/{kFloat16To32AndInt8To64AndUint8, SupportedRanks::UpTo(5)},
        /*min_input=*/{kFloat16To32AndInt8To64AndUint8, SupportedRanks::UpTo(5)},
-       // Limited to 4D when broadcasting is required:
+       // TFLite's native POW kernel is limited to rank 4 when broadcasting is
+       // required. SerializeElementWiseBinary handles rank-5 cases by reducing
+       // the rank before invoking the native kernel.
        // https://source.chromium.org/chromium/chromium/src/+/main:third_party/tflite/src/tensorflow/lite/kernels/pow.cc
-       /*pow_input=*/{kFloat16To32AndInt32, SupportedRanks::UpTo(4)},
-       // Comparisons are limited to 4D when broadcasting is required:
+       /*pow_input=*/{kFloat16To32AndInt32, SupportedRanks::UpTo(5)},
+       // TFLite's comparison kernels are limited to 4D when broadcasting is
+       // required. SerializeElementWiseBinary handles rank-5 cases by reducing
+       // the rank before invoking the native kernel: it first tries to
+       // collapse adjacent axes whose broadcast pattern is consistent for both
+       // operands, and falls back to explicit BROADCAST_TO + RESHAPE when
+       // collapsing alone is insufficient.
        // https://source.chromium.org/chromium/chromium/src/+/main:third_party/tflite/src/tensorflow/lite/kernels/comparisons.cc
-       /*equal_input=*/{kFloat16To32AndInt32To64, SupportedRanks::UpTo(4)},
-       /*greater_input=*/{kFloat16To32AndInt32To64, SupportedRanks::UpTo(4)},
+       /*equal_input=*/{kFloat16To32AndInt32To64, SupportedRanks::UpTo(5)},
+       /*greater_input=*/{kFloat16To32AndInt32To64, SupportedRanks::UpTo(5)},
        /*greater_or_equal_input=*/
-       {kFloat16To32AndInt32To64, SupportedRanks::UpTo(4)},
-       /*lesser_input=*/{kFloat16To32AndInt32To64, SupportedRanks::UpTo(4)},
+       {kFloat16To32AndInt32To64, SupportedRanks::UpTo(5)},
+       /*lesser_input=*/{kFloat16To32AndInt32To64, SupportedRanks::UpTo(5)},
        /*lesser_or_equal_input=*/
-       {kFloat16To32AndInt32To64, SupportedRanks::UpTo(4)},
+       {kFloat16To32AndInt32To64, SupportedRanks::UpTo(5)},
        /*not_equal_input=*/
-       {kFloat16To32AndInt32To64, SupportedRanks::UpTo(4)},
+       {kFloat16To32AndInt32To64, SupportedRanks::UpTo(5)},
        // TFLite's native LOGICAL_AND/LOGICAL_OR kernels are limited to 4D
        // when broadcasting is required, and the NOT_EQUAL kernel used to
        // polyfill XOR is limited to 4D as well. SerializeElementWiseBinary
@@ -898,10 +929,10 @@ ContextProperties GraphBuilderTflite::GetContextProperties() {
        {DataTypeConstraint::kUint8, SupportedRanks::UpTo(5)},
        // IsNaN is emulated by not_equal.
        /*is_nan_input=*/
-       {DataTypeConstraint::kFloat16To32, SupportedRanks::UpTo(4)},
+       {DataTypeConstraint::kFloat16To32, SupportedRanks::UpTo(5)},
        // IsInfinite is emulated by abs and equal.
        /*is_infinite_input=*/
-       {DataTypeConstraint::kFloat16To32, SupportedRanks::UpTo(4)},
+       {DataTypeConstraint::kFloat16To32, SupportedRanks::UpTo(5)},
        /*logical_output=*/DataTypeConstraint::kUint8,
        /*abs_input=*/{kFloat16To32AndInt32, SupportedRanks::UpTo(8)},
        /*ceil_input=*/
@@ -1132,6 +1163,7 @@ GraphBuilderTflite::GraphBuilderTflite(
     const base::flat_map<OperandId, OperationId>&
         operand_to_producing_operation,
     base::File weights_file,
+    mojo::SharedRemote<mojom::WeightsFileSession> session,
     bool use_external_buffer)
     : context_properties_(std::move(context_properties)),
       graph_info_(graph_info),
@@ -1139,16 +1171,11 @@ GraphBuilderTflite::GraphBuilderTflite(
       operand_to_dependent_operations_(operand_to_dependent_operations),
       operand_to_producing_operation_(operand_to_producing_operation),
       weights_file_(std::move(weights_file)),
+      session_(std::move(session)),
       use_external_buffer_(use_external_buffer) {
   // TFLite requires the first entry in FlatBuffer to be an empty buffer.
   buffers_.push_back(
       ::tflite::CreateBuffer(builder_, builder_.CreateVector({})));
-  if (weights_file_.IsValid()) {
-    // TFLite requires that offsets into the weights file are greater than 1 and
-    // we need anything we add to be aligned.
-    CHECK(weights_file_.Seek(base::File::FROM_CURRENT, kWeightsAlignment));
-    weights_file_.SetLength(kWeightsAlignment);
-  }
 }
 
 GraphBuilderTflite::~GraphBuilderTflite() = default;
@@ -3254,6 +3281,24 @@ auto GraphBuilderTflite::FinishAndTakeResult(
   // sufficient readable memory after it.
 #if BUILDFLAG(BUILD_TFLITE_WITH_XNNPACK)
   if (weights_file_.IsValid()) {
+    if (session_.is_bound()) {
+      const int64_t current_length = weights_file_.GetLength();
+      if (current_length < 0) {
+        return base::unexpected("Failed to query weights file length.");
+      }
+      base::CheckedNumeric<uint64_t> padded =
+          base::checked_cast<uint64_t>(current_length);
+      padded += XNN_EXTRA_BYTES;
+      uint64_t new_size = 0;
+      if (!padded.AssignIfValid(&new_size)) {
+        return base::unexpected("Weights file size overflow.");
+      }
+      bool granted = false;
+      if (!session_->RequestCapacityChange(new_size, &granted) || !granted) {
+        return base::unexpected(
+            "Weights file capacity request denied by browser.");
+      }
+    }
     const uint8_t zeros[XNN_EXTRA_BYTES] = {};
     if (!weights_file_.WriteAtCurrentPosAndCheck(zeros)) {
       return base::unexpected("Failed to write weights file padding.");
@@ -3301,6 +3346,24 @@ auto GraphBuilderTflite::SerializeBuffer(base::span<const uint8_t> buffer)
         base::checked_cast<size_t>(weights_file_.GetLength());
     size_t offset = base::bits::AlignUp(buffer_size, kWeightsAlignment);
     CHECK_GT(offset, 1u);
+
+    // Request capacity for the final size BEFORE extending the file. The
+    // browser-side anti-tamper check rejects requests when the file is already
+    // longer than what was previously granted.
+    if (session_.is_bound()) {
+      base::CheckedNumeric<uint64_t> new_size_checked = offset;
+      new_size_checked += buffer.size();
+      uint64_t new_size = 0;
+      if (!new_size_checked.AssignIfValid(&new_size)) {
+        return base::unexpected("Weights file size overflow.");
+      }
+      bool granted = false;
+      if (!session_->RequestCapacityChange(new_size, &granted) || !granted) {
+        return base::unexpected(
+            "Weights file capacity request denied by browser.");
+      }
+    }
+
     size_t padding = offset - buffer_size;
     if (padding > 0) {
       if (!weights_file_.Seek(base::File::FROM_BEGIN, offset)) {
@@ -3318,9 +3381,18 @@ auto GraphBuilderTflite::SerializeBuffer(base::span<const uint8_t> buffer)
       buffer_info.index =
           base::checked_cast<uint32_t>(external_buffers_.size() + 1);
       buffer_info.is_external = true;
+      size_t external_length = buffer.size();
+#if BUILDFLAG(BUILD_TFLITE_WITH_XNNPACK)
+      // The runtime maps each external buffer using only the recorded
+      // `length`, so include XNN_EXTRA_BYTES to cover the XNNPACK delegate's
+      // over-reads past the tensor data. These padding bytes always exist:
+      // buffers are aligned to `kWeightsAlignment` (>= XNN_EXTRA_BYTES) and
+      // `FinishAndTakeResult` pads the final buffer.
+      external_length += XNN_EXTRA_BYTES;
+#endif
       external_buffers_.emplace_back(::tflite::CreateExternalBufferDirect(
           builder_, /*id=*/buffer_info.index, /*group=*/1, offset,
-          buffer.size()));
+          external_length));
     } else {
       buffers_.emplace_back(
           ::tflite::CreateBuffer(builder_, /*data=*/0, offset, buffer.size()));
@@ -3526,62 +3598,55 @@ auto GraphBuilderTflite::SerializeBinaryOperation(
       builder_.CreateVector<TensorIndex>(op_outputs));
 }
 
-base::expected<void, std::string>
-GraphBuilderTflite::InsertLogicalBinaryOperations(
+base::expected<GraphBuilderTflite::OperatorOffset, std::string>
+GraphBuilderTflite::SerializeBinaryOperationWithRankReduction(
     ::tflite::BuiltinOperator code,
-    TensorIndex lhs_bool_tensor_index,
+    TensorIndex lhs_tensor_index,
     base::span<const int32_t> lhs_dims,
-    TensorIndex rhs_bool_tensor_index,
+    ::tflite::TensorType lhs_tensor_type,
+    TensorIndex rhs_tensor_index,
     base::span<const int32_t> rhs_dims,
-    TensorIndex output_bool_tensor_index,
-    base::span<const int32_t> output_dims) {
-  // TFLite's LOGICAL_AND/LOGICAL_OR kernels and the NOT_EQUAL kernel used to
-  // polyfill LogicalXor are all limited to 4D when broadcasting is required.
-  // Use `> 4` rather than `== 5` to reflect the kernel's broadcast rank limit
-  // directly and remain correct if the op support limit is ever raised
-  // beyond rank 5.
-  constexpr size_t kMaxLogicalBroadcastRank = 4;
-  if (lhs_dims.size() <= kMaxLogicalBroadcastRank &&
-      rhs_dims.size() <= kMaxLogicalBroadcastRank) {
+    ::tflite::TensorType rhs_tensor_type,
+    TensorIndex output_tensor_index,
+    base::span<const int32_t> output_dims,
+    ::tflite::TensorType output_tensor_type,
+    size_t max_broadcast_rank) {
+  // The broadcast output rank equals max(lhs_rank, rhs_rank), so checking the
+  // output rank alone covers both inputs.
+  if (output_dims.size() <= max_broadcast_rank) {
     // Fast path: shapes already within the kernel's broadcast rank limit.
-    operators_.emplace_back(SerializeBinaryOperation(
-        code, lhs_bool_tensor_index, rhs_bool_tensor_index,
-        output_bool_tensor_index));
-    return base::ok();
+    return SerializeBinaryOperation(code, lhs_tensor_index, rhs_tensor_index,
+                                    output_tensor_index);
   }
 
   // For higher-rank inputs, reduce the rank before invoking the native
   // kernel: first try to collapse adjacent axes whose broadcast pattern is
-  // consistent for both operands; if the collapsed rank still exceeds 4,
-  // fall back to explicitly broadcasting both operands to the output shape
-  // (which removes any need for the kernel to broadcast) and then reshaping
-  // to rank 1.
-  TensorIndex binary_lhs_tensor_index = lhs_bool_tensor_index;
-  TensorIndex binary_rhs_tensor_index = rhs_bool_tensor_index;
+  // consistent for both operands; if the collapsed rank still exceeds the
+  // kernel rank limit, explicitly broadcast both operands to the output shape
+  // and flatten to rank 1.
+  TensorIndex binary_lhs_tensor_index = lhs_tensor_index;
+  TensorIndex binary_rhs_tensor_index = rhs_tensor_index;
   std::vector<int32_t> binary_lhs_dims;
   std::vector<int32_t> binary_rhs_dims;
   std::vector<int32_t> binary_output_dims;
   std::tie(binary_lhs_dims, binary_rhs_dims, binary_output_dims) =
       CollapseBroadcastShapes(lhs_dims, rhs_dims);
-  if (binary_output_dims.size() > kMaxLogicalBroadcastRank) {
-    // Fallback: explicitly broadcast both operands to the output shape so
-    // the binary kernel does not need to broadcast, then flatten to rank 1
-    // (safe because both operands now share the output shape).
+  if (binary_output_dims.size() > max_broadcast_rank) {
     ASSIGN_OR_RETURN(const TensorIndex broadcast_lhs_tensor_index,
                      SerializeTemporaryTensorWithByteSizeCheck(
-                         output_dims, ::tflite::TensorType_BOOL));
+                         output_dims, lhs_tensor_type));
     ASSIGN_OR_RETURN(
         const OperatorOffset broadcast_lhs_op,
-        SerializeBroadcastToOperation(lhs_bool_tensor_index, output_dims,
+        SerializeBroadcastToOperation(lhs_tensor_index, output_dims,
                                       broadcast_lhs_tensor_index));
     operators_.emplace_back(broadcast_lhs_op);
 
     ASSIGN_OR_RETURN(const TensorIndex broadcast_rhs_tensor_index,
                      SerializeTemporaryTensorWithByteSizeCheck(
-                         output_dims, ::tflite::TensorType_BOOL));
+                         output_dims, rhs_tensor_type));
     ASSIGN_OR_RETURN(
         const OperatorOffset broadcast_rhs_op,
-        SerializeBroadcastToOperation(rhs_bool_tensor_index, output_dims,
+        SerializeBroadcastToOperation(rhs_tensor_index, output_dims,
                                       broadcast_rhs_tensor_index));
     operators_.emplace_back(broadcast_rhs_op);
 
@@ -3596,27 +3661,49 @@ GraphBuilderTflite::InsertLogicalBinaryOperations(
   }
 
   ASSIGN_OR_RETURN(const TensorIndex reshaped_lhs_tensor_index,
-                   SerializeTemporaryTensorWithByteSizeCheck(
-                       binary_lhs_dims, ::tflite::TensorType_BOOL));
+                   SerializeTemporaryTensorWithByteSizeCheck(binary_lhs_dims,
+                                                             lhs_tensor_type));
   operators_.emplace_back(SerializeReshapeOperation(
       binary_lhs_tensor_index, reshaped_lhs_tensor_index, binary_lhs_dims));
 
   ASSIGN_OR_RETURN(const TensorIndex reshaped_rhs_tensor_index,
-                   SerializeTemporaryTensorWithByteSizeCheck(
-                       binary_rhs_dims, ::tflite::TensorType_BOOL));
+                   SerializeTemporaryTensorWithByteSizeCheck(binary_rhs_dims,
+                                                             rhs_tensor_type));
   operators_.emplace_back(SerializeReshapeOperation(
       binary_rhs_tensor_index, reshaped_rhs_tensor_index, binary_rhs_dims));
 
   ASSIGN_OR_RETURN(const TensorIndex binary_output_tensor_index,
                    SerializeTemporaryTensorWithByteSizeCheck(
-                       binary_output_dims, ::tflite::TensorType_BOOL));
+                       binary_output_dims, output_tensor_type));
   operators_.emplace_back(SerializeBinaryOperation(
       code, reshaped_lhs_tensor_index, reshaped_rhs_tensor_index,
       binary_output_tensor_index));
 
-  // Reshape the BOOL result back to the WebNN output shape.
-  operators_.emplace_back(SerializeReshapeOperation(
-      binary_output_tensor_index, output_bool_tensor_index, output_dims));
+  return SerializeReshapeOperation(binary_output_tensor_index,
+                                   output_tensor_index, output_dims);
+}
+
+base::expected<void, std::string>
+GraphBuilderTflite::InsertLogicalBinaryOperations(
+    ::tflite::BuiltinOperator code,
+    TensorIndex lhs_bool_tensor_index,
+    base::span<const int32_t> lhs_dims,
+    TensorIndex rhs_bool_tensor_index,
+    base::span<const int32_t> rhs_dims,
+    TensorIndex output_bool_tensor_index,
+    base::span<const int32_t> output_dims) {
+  // TFLite's LOGICAL_AND/LOGICAL_OR kernels and the NOT_EQUAL kernel used to
+  // polyfill LogicalXor are all limited to 4D when broadcasting is required.
+  ASSIGN_OR_RETURN(const OperatorOffset final_binary_op,
+                   SerializeBinaryOperationWithRankReduction(
+                       code, lhs_bool_tensor_index, lhs_dims,
+                       /*lhs_tensor_type=*/::tflite::TensorType_BOOL,
+                       rhs_bool_tensor_index, rhs_dims,
+                       /*rhs_tensor_type=*/::tflite::TensorType_BOOL,
+                       output_bool_tensor_index, output_dims,
+                       /*output_tensor_type=*/::tflite::TensorType_BOOL,
+                       kTfliteBroadcastRankLimit));
+  operators_.emplace_back(final_binary_op);
   return base::ok();
 }
 
@@ -3935,7 +4022,8 @@ auto GraphBuilderTflite::SerializeWhereOperation(
 }
 
 auto GraphBuilderTflite::InsertPadOperation(const TensorInfo& input_tensor_info,
-                                            base::span<const int16_t> paddings)
+                                            base::span<const int16_t> paddings,
+                                            std::optional<float> padding_value)
     -> base::expected<TensorIndex, std::string> {
   // WebNN explicit padding is in [beginning_height, ending_height,
   // beginning_width, ending_width] sequence.
@@ -3985,11 +4073,33 @@ auto GraphBuilderTflite::InsertPadOperation(const TensorInfo& input_tensor_info,
   // Create `tflite::Operator` with the tensor index of inputs and outputs
   // operand. The type of operation is determined by the index of the operator
   // code.
+  const std::array<TensorIndex, 1> op_outputs = {output_tensor_index};
+
+  if (padding_value.has_value()) {
+    // Use PADV2 with a scalar constant so the padded region is filled with the
+    // caller-supplied value (e.g. -inf for maxPool) instead of zero.
+    CHECK_EQ(input_tensor_info.data_type, ::tflite::TensorType_FLOAT32);
+    ASSIGN_OR_RETURN(const TensorIndex padding_value_index,
+                     SerializeTensorWithBuffer<float>(
+                         std::array<float, 1>{padding_value.value()},
+                         /*dimensions=*/std::array<int32_t, 1>{1}));
+    const OperatorCodeIndex padv2_operator_code_index =
+        GetOperatorCodeIndex(::tflite::BuiltinOperator_PADV2);
+    const std::array<TensorIndex, 3> padv2_inputs = {
+        input_tensor_info.index, padding_tensor_index, padding_value_index};
+    operators_.emplace_back(::tflite::CreateOperator(
+        builder_, padv2_operator_code_index,
+        builder_.CreateVector<TensorIndex>(padv2_inputs),
+        builder_.CreateVector<TensorIndex>(op_outputs),
+        ::tflite::BuiltinOptions_PadV2Options,
+        ::tflite::CreatePadV2Options(builder_).Union()));
+    return output_tensor_index;
+  }
+
   const OperatorCodeIndex operator_code_index =
       GetOperatorCodeIndex(::tflite::BuiltinOperator_PAD);
-  std::array<TensorIndex, 2> op_inputs = {input_tensor_info.index,
-                                          padding_tensor_index};
-  const std::array<TensorIndex, 1> op_outputs = {output_tensor_index};
+  const std::array<TensorIndex, 2> op_inputs = {input_tensor_info.index,
+                                                padding_tensor_index};
   operators_.emplace_back(
       ::tflite::CreateOperator(builder_, operator_code_index,
                                builder_.CreateVector<TensorIndex>(op_inputs),
@@ -5059,17 +5169,36 @@ auto GraphBuilderTflite::SerializeElementWiseBinary(
                        /*operation_supports_float16=*/false, fuse_dequantize));
 
   TensorIndex output_tensor_index;
+  ::tflite::TensorType output_tensor_type;
   if (quantized_output) {
     output_tensor_index = quantized_output->index;
+    output_tensor_type = quantized_output->data_type;
   } else {
     ASSIGN_OR_RETURN(const TensorInfo output_tensor_info,
                      SerializeOutputTensorInfo(op.output_operand_id));
     output_tensor_index = output_tensor_info.index;
+    output_tensor_type = output_tensor_info.data_type;
   }
 
-  //  Return early for non-logical element-wise binary operations, because they
-  //  don't need to insert cast operation.
+  // Return early for non-logical element-wise binary operations, because they
+  // don't need to insert cast operation. POW has a rank-5 fallback path
+  // because TFLite's native kernel only supports broadcasting up to rank 4.
   if (!IsLogicalElementWiseBinary(op.kind)) {
+    if (op.kind == mojom::ElementWiseBinary::Kind::kPow) {
+      ASSIGN_OR_RETURN(
+          const std::vector<int32_t> output_dims,
+          ToSignedDimensions(
+              GetOperand(op.output_operand_id).descriptor.shape()));
+      // Use the actual TFLite tensor types of the (possibly float16->float32
+      // cast) inputs and output rather than the WebNN-level data types, so
+      // any temporary tensors created during rank reduction match.
+      return SerializeBinaryOperationWithRankReduction(
+          code, lhs_tensor_info.index, lhs_tensor_info.dimensions,
+          lhs_tensor_info.data_type, rhs_tensor_info.index,
+          rhs_tensor_info.dimensions, rhs_tensor_info.data_type,
+          output_tensor_index, output_dims, output_tensor_type,
+          kTfliteBroadcastRankLimit);
+    }
     return SerializeBinaryOperation(code, lhs_tensor_info.index,
                                     rhs_tensor_info.index, output_tensor_index);
   }
@@ -5134,9 +5263,18 @@ auto GraphBuilderTflite::SerializeElementWiseBinary(
       SerializeTemporaryTensorWithByteSizeCheck(output_tensor_info.dimensions,
                                                 ::tflite::TensorType_BOOL));
 
-  operators_.emplace_back(SerializeBinaryOperation(
-      code, lhs_tensor_info.index, rhs_tensor_info.index,
-      output_tensor_bool_index));
+  // Use the rank-reduction helper because TFLite's comparison kernels
+  // (EQUAL/GREATER/GREATER_EQUAL/LESS/LESS_EQUAL/NOT_EQUAL) are
+  // limited to 4D when broadcasting is required.
+  ASSIGN_OR_RETURN(const OperatorOffset comparison_op,
+                   SerializeBinaryOperationWithRankReduction(
+                       code, lhs_tensor_info.index, lhs_tensor_info.dimensions,
+                       lhs_tensor_info.data_type, rhs_tensor_info.index,
+                       rhs_tensor_info.dimensions, rhs_tensor_info.data_type,
+                       output_tensor_bool_index, output_tensor_info.dimensions,
+                       /*output_tensor_type=*/::tflite::TensorType_BOOL,
+                       kTfliteBroadcastRankLimit));
+  operators_.emplace_back(comparison_op);
 
   // Cast the output from bool to uint8, since that's what WebNN expects back.
   return SerializeCastOperation(
@@ -7463,9 +7601,15 @@ auto GraphBuilderTflite::SerializeIsInfinite(
     default:
       NOTREACHED() << "Unsupported data type for isInfinite operation.";
   }
-  return SerializeBinaryOperation(::tflite::BuiltinOperator_EQUAL,
-                                  abs_output_tensor_index, inf_tensor_index,
-                                  output_tensor_info.index);
+
+  // Use the rank-reduction helper because TFLite's EQUAL kernel is
+  // limited to 4D when broadcasting is required.
+  return SerializeBinaryOperationWithRankReduction(
+      ::tflite::BuiltinOperator_EQUAL, abs_output_tensor_index,
+      input_tensor_info.dimensions, input_tensor_info.data_type,
+      inf_tensor_index, /*rhs_dims=*/{}, input_tensor_info.data_type,
+      output_tensor_info.index, output_tensor_info.dimensions,
+      output_tensor_info.data_type, kTfliteBroadcastRankLimit);
 }
 
 auto GraphBuilderTflite::SerializeLogicalNot(
@@ -8014,18 +8158,62 @@ auto GraphBuilderTflite::SerializePool2d(const mojom::Pool2d& pool2d)
         sum_pooled_index, input_tensor_info.data_type, output_tensor_index);
   }
 
-  // TODO(crbug.com/475285740): Support explicit padding for average and max
-  // pool. Currently, inserting a PAD operator before the TFLite Pool2d operator
-  // is used as a workaround.
+  // MaxPool pads with -inf (via PADV2) so real values always win the max;
+  // zero-fill would corrupt windows of all-negative real values.
+  const bool use_neg_inf_padding =
+      pool2d.kind == mojom::Pool2d::Kind::kMaxPool2d &&
+      !quantized_output.has_value();
   std::optional<TensorIndex> explicit_pad_index;
   if (padding_mode.paddings) {
     ASSIGN_OR_RETURN(
         explicit_pad_index,
-        InsertPadOperation(input_tensor_info, padding_mode.paddings.value()));
+        InsertPadOperation(
+            input_tensor_info, padding_mode.paddings.value(),
+            use_neg_inf_padding
+                ? std::optional<float>(-std::numeric_limits<float>::infinity())
+                : std::nullopt));
   }
   const std::array<TensorIndex, 1> op_inputs = {explicit_pad_index
                                                     ? explicit_pad_index.value()
                                                     : input_tensor_info.index};
+
+  // Windows overlapping only padding (e.g. from ceil rounding) pool to -inf;
+  // WebNN expects 0 for those, so remap after pooling.
+  if (use_neg_inf_padding && padding_mode.paddings) {
+    // Pool into a temporary tensor, then remap -inf outputs to 0.
+    ASSIGN_OR_RETURN(
+        const TensorIndex pooled_index,
+        SerializeTemporaryTensorWithByteSizeCheck(output_tensor_info.dimensions,
+                                                  input_tensor_info.data_type));
+    const std::array<TensorIndex, 1> pool_outputs = {pooled_index};
+    operators_.emplace_back(::tflite::CreateOperator(
+        builder_, operator_code_index,
+        builder_.CreateVector<TensorIndex>(op_inputs),
+        builder_.CreateVector<TensorIndex>(pool_outputs),
+        ::tflite::BuiltinOptions_Pool2DOptions, pool_2d_options.Union()));
+
+    // condition = (pooled == -inf)
+    ASSIGN_OR_RETURN(
+        const TensorIndex neg_inf_index,
+        SerializeTensorWithBuffer<float>(
+            std::vector<float>{-std::numeric_limits<float>::infinity()},
+            /*dimensions=*/{}));
+    ASSIGN_OR_RETURN(
+        const TensorIndex is_neg_inf_index,
+        SerializeTemporaryTensorWithByteSizeCheck(output_tensor_info.dimensions,
+                                                  ::tflite::TensorType_BOOL));
+    operators_.emplace_back(
+        SerializeBinaryOperation(::tflite::BuiltinOperator_EQUAL, pooled_index,
+                                 neg_inf_index, is_neg_inf_index));
+
+    // output = condition ? 0 : pooled
+    ASSIGN_OR_RETURN(const TensorIndex zero_index,
+                     SerializeTensorWithBuffer<float>(std::vector<float>{0.0f},
+                                                      /*dimensions=*/{}));
+    return SerializeWhereOperation(is_neg_inf_index, zero_index, pooled_index,
+                                   output_tensor_index);
+  }
+
   const std::array<TensorIndex, 1> op_outputs = {output_tensor_index};
   return ::tflite::CreateOperator(
       builder_, operator_code_index,

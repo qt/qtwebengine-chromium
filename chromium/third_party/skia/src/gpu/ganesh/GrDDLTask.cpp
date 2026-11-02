@@ -8,8 +8,8 @@
 #include "src/gpu/ganesh/GrDDLTask.h"
 
 #include "include/core/SkString.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkTArray.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkTArray.h"
 #include "include/private/chromium/GrDeferredDisplayList.h"
 #include "src/gpu/ganesh/GrDeferredDisplayListPriv.h"
 #include "src/gpu/ganesh/GrDrawingManager.h"
@@ -95,15 +95,13 @@ void GrDDLTask::onPrepare(GrOpFlushState* flushState) {
     }
 }
 
-bool GrDDLTask::onExecute(GrOpFlushState* flushState) {
-    bool anyCommandsIssued = false;
+GrRenderTask::ExecutionResult GrDDLTask::onExecute(GrOpFlushState* flushState) {
+    ExecutionResult result;
     for (auto& task : fDDL->priv().renderTasks()) {
-        if (task->execute(flushState)) {
-            anyCommandsIssued = true;
-        }
+        result.accum(task->execute(flushState));
     }
 
-    return anyCommandsIssued;
+    return result;
 }
 
 #if defined(GPU_TEST_UTILS)

@@ -27,10 +27,10 @@ std::enable_if_t<std::is_same_v<T, MainGap> || std::is_same_v<T, CrossGap>,
                  void>
 GapSegmentStateAggregator::FinalizeGapSegmentStateRangesFor(
     T& gap,
-    wtf_size_t gap_index) const {
+    wtf_size_t track_index) const {
   // If no cell states exist for a given track, all cells are empty.
-  auto current_it = track_to_cell_states_.find(gap_index);
-  auto next_it = track_to_cell_states_.find(gap_index + 1);
+  auto current_it = track_to_cell_states_.find(track_index);
+  auto next_it = track_to_cell_states_.find(track_index + 1);
   CellStates current_cells = current_it != track_to_cell_states_.end()
                                  ? current_it->value
                                  : CellStates(cell_count_, kEmpty);
@@ -83,18 +83,21 @@ GapSegmentStateAggregator::FinalizeGapSegmentStateRangesFor(
 }
 
 void GapSegmentStateAggregator::UpdateGapStateFor(
-    wtf_size_t gap_index,
+    wtf_size_t track_index,
     const GridSpan& secondary_span,
     CellState cell_state) {
-  // Initialize the cell states for this track if not already present.
-  if (track_to_cell_states_.find(gap_index) == track_to_cell_states_.end()) {
-    track_to_cell_states_.insert(gap_index, CellStates(cell_count_, kEmpty));
+  // Look up the track's cell states with a single hash lookup, initializing
+  // them to empty only when this is a newly inserted entry. Reusing the
+  // returned reference also avoids re-looking-up the key on every iteration.
+  auto add_result = track_to_cell_states_.insert(track_index, CellStates());
+  CellStates& cell_states = add_result.stored_value->value;
+  if (add_result.is_new_entry) {
+    cell_states = CellStates(cell_count_, kEmpty);
   }
 
   for (wtf_size_t i = secondary_span.StartLine(); i < secondary_span.EndLine();
        ++i) {
-    auto cell_it = track_to_cell_states_.find(gap_index);
-    cell_it->value[i] = cell_state;
+    cell_states[i] = cell_state;
   }
 }
 

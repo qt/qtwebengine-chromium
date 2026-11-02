@@ -81,16 +81,16 @@ class CORE_EXPORT CSSVariableData : public GarbageCollected<CSSVariableData> {
   StringView OriginalText() const {
     // SAFETY: See AdditionalBytes() in Create().
     if (is_8bit_) {
-      return StringView(UNSAFE_BUFFERS(
-          base::span(reinterpret_cast<const LChar*>(this + 1), length_)));
+      return StringView(UNSAFE_BUFFERS(base::span(
+          base::unchecked, reinterpret_cast<const LChar*>(this + 1), length_)));
     } else {
-      return StringView(UNSAFE_BUFFERS(
-          base::span(reinterpret_cast<const UChar*>(this + 1), length_)));
+      return StringView(UNSAFE_BUFFERS(base::span(
+          base::unchecked, reinterpret_cast<const UChar*>(this + 1), length_)));
     }
   }
 
-  uint64_t Hash() const {
-    return StringHasher::HashMemory(OriginalText().RawByteSpan());
+  uint32_t Hash() const {
+    return StringHasher::HashMemory32(OriginalText().RawByteSpan());
   }
 
   String Serialize() const;

@@ -11,7 +11,7 @@
 [![Fuzzing Status](https://oss-fuzz-build-logs.storage.googleapis.com/badges/json.svg)](https://bugs.chromium.org/p/oss-fuzz/issues/list?sort=-opened&can=1&q=proj:json)
 [![Try online](https://img.shields.io/badge/try-online-blue.svg)](https://wandbox.org/permlink/1mp10JbaANo6FUc7)
 [![Documentation](https://img.shields.io/badge/docs-mkdocs-blue.svg)](https://json.nlohmann.me)
-[![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/nlohmann/json/master/LICENSE.MIT)
+[![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/nlohmann/json/develop/LICENSE.MIT)
 [![GitHub Releases](https://img.shields.io/github/release/nlohmann/json.svg)](https://github.com/nlohmann/json/releases)
 [![Packaging status](https://repology.org/badge/tiny-repos/nlohmann-json.svg)](https://repology.org/project/nlohmann-json/versions)
 [![GitHub Downloads](https://img.shields.io/github/downloads/nlohmann/json/total)](https://github.com/nlohmann/json/releases)
@@ -70,7 +70,7 @@ Other aspects were not so important to us:
 
 - **Speed**. There are certainly [faster JSON libraries](https://github.com/miloyip/nativejson-benchmark#parsing-time) out there. However, if your goal is to speed up your development by adding JSON support with a single header, then this library is the way to go. If you know how to use a `std::vector` or `std::map`, you are already set.
 
-See the [contribution guidelines](https://github.com/nlohmann/json/blob/master/.github/CONTRIBUTING.md#please-dont) for more information.
+See the [contribution guidelines](https://github.com/nlohmann/json/blob/develop/.github/CONTRIBUTING.md#please-dont) for more information.
 
 ## Sponsors
 
@@ -80,6 +80,8 @@ You can sponsor this library at [GitHub Sponsors](https://github.com/sponsors/nl
 
 - [Martti Laine](https://github.com/codeclown)
 - [Paul Harrington](https://github.com/phrrngtn)
+- [Mercedes-Benz Group](https://github.com/mercedes-benz)
+- [Ryan McCaffery](https://github.com/mccaffers)
 
 ### :label: Named Sponsors
 
@@ -173,7 +175,7 @@ json data = json::parse(f);
 
 ### Creating `json` objects from JSON literals
 
-Assume you want to create hard-code this literal JSON value in a file, as a `json` object:
+Assume you want to hard-code this literal JSON value as a `json` object:
 
 ```json
 {
@@ -427,6 +429,8 @@ struct MyIterator {
     using reference = const char&;
     using iterator_category = std::input_iterator_tag;
 
+    explicit MyIterator(MyContainer* tgt = nullptr) : target(tgt) {}
+
     MyIterator& operator++() {
         target->advance();
         return *this;
@@ -448,12 +452,12 @@ MyIterator begin(MyContainer& tgt) {
 }
 
 MyIterator end(const MyContainer&) {
-    return {};
+    return MyIterator{};
 }
 
 void foo() {
     MyContainer c;
-    json j = json::parse(c);
+    json j = json::parse(begin(c), end(c));
 }
 ```
 
@@ -754,9 +758,9 @@ int i = 42;
 json jn = i;
 auto f = jn.get<double>();
 // NOT RECOMMENDED
-double f2 = jb;
+double f2 = jn;
 double f3;
-f3 = jb;
+f3 = jn;
 
 // etc.
 ```
@@ -853,9 +857,9 @@ Some important things:
 
 #### Simplify your life with macros
 
-If you just want to serialize/deserialize some structs, the `to_json`/`from_json` functions can be a lot of boilerplate. There are [**several macros**](https://json.nlohmann.me/features/arbitrary_types/#simplify-your-life-with-macros) to make your life easier as long as you (1) want to use a JSON object as serialization and (2) want to use the member variable names as object keys in that object.
+If you just want to serialize/deserialize some structs, the `to_json`/`from_json` functions can be a lot of boilerplate. There are [**several macros**](https://json.nlohmann.me/api/macros/#serializationdeserialization-macros) to make your life easier as long as you want to use a JSON object as serialization.
 
-Which macro to choose depends on whether private member variables need to be accessed, a deserialization is needed, missing values should yield an error or should be replaced by default values, and if derived classes are used. See [this overview to choose the right one for your use case](https://json.nlohmann.me/api/macros/#serializationdeserialization-macros).
+Which macro to choose depends on whether private member variables need to be accessed, a deserialization is needed, missing values should yield an error or should be replaced by default values, and if derived classes are used. See [this overview to choose the right one for your use case](https://json.nlohmann.me/features/arbitrary_types/#simplify-your-life-with-macros).
 
 ##### Example usage of macros
 
@@ -864,6 +868,18 @@ The `to_json`/`from_json` functions for the `person` struct above can be created
 ```cpp
 namespace ns {
     NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(person, name, address, age)
+}
+```
+
+If you want to inherit the `person` struct and add a field to it, it can be done with:
+
+```cpp
+namespace ns {
+    struct person_derived : person {
+        std::string email;
+    };
+    
+    NLOHMANN_DEFINE_DERIVED_TYPE_NON_INTRUSIVE(person_derived, person, email)
 }
 ```
 
@@ -879,6 +895,24 @@ namespace ns {
   
       public:
         NLOHMANN_DEFINE_TYPE_INTRUSIVE(address, street, housenumber, postcode)
+    };
+}
+```
+
+Or in case if you use some naming convention that you do not want to expose to JSON:
+
+```cpp
+namespace ns {
+    class address {
+      private:
+        std::string m_street;
+        int m_housenumber;
+        int m_postcode;
+
+      public:
+        NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_NAMES(address, "street", m_street,
+                                                           "housenumber", m_housenumber,
+                                                           "postcode", m_postcode)
     };
 }
 ```
@@ -1073,7 +1107,7 @@ Just as in [Arbitrary Type Conversions](#arbitrary-types-conversions) above,
 
 Other Important points:
 
-- When using `get<ENUM_TYPE>()`, undefined JSON values will default to the first pair specified in your map. Select this default pair carefully.
+- When using `get<ENUM_TYPE>()`, undefined JSON values will default to the first pair specified in your map. Select this default pair carefully. If you desire an exception in this circumstance use `NLOHMANN_JSON_SERIALIZE_ENUM_STRICT()` which behaves identically except for throwing an exception on unrecognized values.
 - If an enum or JSON value is specified more than once in your map, the first matching occurrence from the top of the map will be returned when converting to or from JSON.
 
 ### Binary formats (BSON, CBOR, MessagePack, UBJSON, and BJData)
@@ -1155,7 +1189,7 @@ The library is used in multiple projects, applications, operating systems, etc. 
 
 ## Supported compilers
 
-Though it's 2025 already, the support for C++11 is still a bit sparse. Currently, the following compilers are known to work:
+Though it's 2026 already, the support for C++11 is still a bit sparse. Currently, the following compilers are known to work:
 
 - GCC 4.8 - 14.2 (and possibly later)
 - Clang 3.4 - 21.0 (and possibly later)
@@ -1334,7 +1368,7 @@ pkg-config nlohmann_json --cflags
 
 The class is licensed under the [MIT License](https://opensource.org/licenses/MIT):
 
-Copyright &copy; 2013-2025 [Niels Lohmann](https://nlohmann.me)
+Copyright &copy; 2013-2026 [Niels Lohmann](https://nlohmann.me)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
@@ -1433,7 +1467,7 @@ I deeply appreciate the help of the following people.
 57. [Jared Grubb](https://github.com/jaredgrubb) supported the implementation of user-defined types.
 58. [EnricoBilla](https://github.com/EnricoBilla) noted a typo in an example.
 59. [Martin Hořeňovský](https://github.com/horenmar) found a way for a 2x speedup for the compilation time of the test suite.
-60. [ukhegg](https://github.com/ukhegg) found proposed an improvement for the examples section.
+60. [ukhegg](https://github.com/ukhegg) proposed an improvement for the examples section.
 61. [rswanson-ihi](https://github.com/rswanson-ihi) noted a typo in the README.
 62. [Mihai Stan](https://github.com/stanmihai4) fixed a bug in the comparison with `nullptr`s.
 63. [Tushar Maheshwari](https://github.com/tusharpm) added [cotire](https://github.com/sakra/cotire) support to speed up the compilation.
@@ -1807,7 +1841,7 @@ The library supports **Unicode input** as follows:
 This library does not support comments by default. It does so for three reasons:
 
 1. Comments are not part of the [JSON specification](https://tools.ietf.org/html/rfc8259). You may argue that `//` or `/* */` are allowed in JavaScript, but JSON is not JavaScript.
-2. This was not an oversight: Douglas Crockford [wrote on this](https://plus.google.com/118095276221607585885/posts/RK8qyGVaGSr) in May 2012:
+2. This was not an oversight: Douglas Crockford [wrote on this](https://news.ycombinator.com/item?id=3912149) in May 2012:
   
     > I removed comments from JSON because I saw people were using them to hold parsing directives, a practice which would have destroyed interoperability.  I know that the lack of comments makes some people sad, but it shouldn't.
     >
@@ -1815,7 +1849,7 @@ This library does not support comments by default. It does so for three reasons:
   
 3. It is dangerous for interoperability if some libraries would add comment support while others don't. Please check [The Harmful Consequences of the Robustness Principle](https://tools.ietf.org/html/draft-iab-protocol-maintenance-01) on this.
 
-However, you can set set parameter `ignore_comments` to true in the `parse` function to ignore `//` or `/* */` comments. Comments will then be treated as whitespace.
+However, you can set parameter `ignore_comments` to true in the `parse` function to ignore `//` or `/* */` comments. Comments will then be treated as whitespace.
 
 ### Trailing commas
 
@@ -1865,7 +1899,7 @@ ctest --output-on-failure
 
 Note that during the `ctest` stage, several JSON test files are downloaded from an [external repository](https://github.com/nlohmann/json_test_data). If policies forbid downloading artifacts during testing, you can download the files yourself and pass the directory with the test files via `-DJSON_TestDataDirectory=path` to CMake. Then, no Internet connectivity is required. See [issue #2189](https://github.com/nlohmann/json/issues/2189) for more information.
 
-If the test suite is not found, several test suites will fail like this:
+If the testdata is not found, several test suites will fail like this:
 
 ```
 ===============================================================================

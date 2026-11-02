@@ -1,11 +1,24 @@
 // Copyright 2025 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+import * as SDK from '../core/sdk/sdk.js';
+import type * as Foundation from '../foundation/foundation.js';
+import * as TextEditor from '../ui/components/text_editor/text_editor.js';
 import * as UI from '../ui/legacy/legacy.js';
 
 import {raf, removeChildren, setColorScheme, TEST_CONTAINER_ID} from './DOMHelpers.js';
+import {TestUniverse} from './TestUniverse.js';
 
 const documentBodyElements = new Set<Element>();
+let customTestUniverse: Foundation.Universe.Universe = new TestUniverse();
+
+export function setTestUniverseForWidgets(universe: Foundation.Universe.Universe): void {
+  customTestUniverse = universe;
+}
+
+function resetTestUniverseForWidgets(): void {
+  customTestUniverse = new TestUniverse();
+}
 
 function removeElementOrWidget(node: Node, parent = document.body) {
   const widget = UI.Widget.Widget.get(node);
@@ -20,6 +33,9 @@ function removeElementOrWidget(node: Node, parent = document.body) {
  * If a widget creates a glass pane, it can get orphaned and not cleaned up correctly.
  */
 function removeGlassPanes() {
+  while (UI.Dialog.Dialog.hasInstance()) {
+    UI.Dialog.Dialog.getInstance()?.hide();
+  }
   for (const pane of document.body.querySelectorAll('[data-devtools-glass-pane]')) {
     removeElementOrWidget(pane);
   }
@@ -30,10 +46,7 @@ function removeGlassPanes() {
  * So we need to manually remove it
  */
 function removeTextEditorTooltip() {
-  // Found in front_end/ui/components/text_editor/config.ts
-  for (const tooltip of document.body.querySelectorAll('.editor-tooltip-host')) {
-    removeElementOrWidget(tooltip);
-  }
+  TextEditor.Config.removeTooltipHost();
 }
 
 function removeAnnouncer() {
@@ -41,23 +54,11 @@ function removeAnnouncer() {
 }
 
 /**
- * If a test calls localEvalCSS, an element is created on demand for this
- * purpose. This element is not removed from the DOM and will leak between tests
- * if not removed.
- */
-function removeCSSEvaluationElement() {
-  // Found in front_end/core/sdk/CSSPropertyParserMatchers.ts
-  const element = document.getElementById('css-evaluation-element');
-  if (element) {
-    document.body.removeChild(element);
-  }
-}
-
-/**
  * Completely cleans out the test DOM to ensure it's empty for the next test run.
  * This is run automatically between tests - you should not be manually calling this yourself.
  **/
 export const cleanTestDOM = (testName = '') => {
+  resetTestUniverseForWidgets();
   const previousContainer = document.getElementById(TEST_CONTAINER_ID);
   if (previousContainer) {
     removeChildren(previousContainer);
@@ -66,7 +67,7 @@ export const cleanTestDOM = (testName = '') => {
   removeGlassPanes();
   removeTextEditorTooltip();
   removeAnnouncer();
-  removeCSSEvaluationElement();
+  SDK.CSSPropertyParserMatchers.removeCSSEvaluationElement();
   UI.UIUtils.resetElementsBeingEditedForTest();
   // Verify that nothing was left behind
   for (const child of document.body.children) {
@@ -98,6 +99,10 @@ export const setupTestDOM = async () => {
   setColorScheme('light');
   const newContainer = document.createElement('div');
   newContainer.id = TEST_CONTAINER_ID;
+  newContainer.addEventListener(UI.UniverseRequestEvent.UniverseRequestEvent.eventName, (event: Event) => {
+    (event as UI.UniverseRequestEvent.UniverseRequestEvent).universe = customTestUniverse;
+    event.stopPropagation();
+  });
 
   // eslint-disable-next-line @devtools/no-document-body-mutation
   document.body.appendChild(newContainer);

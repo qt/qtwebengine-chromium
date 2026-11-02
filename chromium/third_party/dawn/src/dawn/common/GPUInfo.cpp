@@ -33,7 +33,7 @@
 #include <sstream>
 
 #include "dawn/common/GPUInfo_autogen.h"
-#include "src/dawn/common/Assert.h"
+#include "src/utils/assert.h"
 #include "src/utils/compiler.h"
 
 namespace dawn::gpu_info {
@@ -152,6 +152,11 @@ QualcommACPIGen GetQualcommACPIGen(PCIVendorID venderId, PCIDeviceID deviceId) {
 // ARM GPUs
 bool IsMaliG68(PCIDeviceID deviceId) {
     return deviceId == kMaliG68;
+}
+
+bool IsTileBasedRenderer(PCIVendorID vendorId, PCIDeviceID /*deviceId*/) {
+    return IsARM(vendorId) || IsImgTec(vendorId) || IsQualcommPCI(vendorId) ||
+           IsQualcommACPI(vendorId) || IsApple(vendorId);
 }
 
 }  // namespace dawn::gpu_info

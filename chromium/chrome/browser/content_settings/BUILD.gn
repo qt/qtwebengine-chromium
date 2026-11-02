@@ -214,6 +214,7 @@ source_set("content_settings_util_impl") {
     deps += [
       "//chrome/browser/ui/location_bar",
       "//chrome/browser/ui/tabs:tab_strip",
+      "//chrome/browser/ui/views/picture_in_picture",
     ]
   }
 }
@@ -235,6 +236,7 @@ if (!is_android) {
       "//chrome/browser/browsing_data",
       "//chrome/browser/profiles:profile",
       "//chrome/browser/ui",
+      "//chrome/browser/ui:view_ids",
       "//chrome/browser/ui/browser_window",
       "//chrome/browser/ui/content_settings",
       "//chrome/test:test_support_ui",
@@ -276,6 +278,10 @@ if (!is_android) {
         deps += [ "//components/pdf/browser" ]
       }
     }
+
+    if (enable_pdf) {
+      deps += [ "//chrome/browser/pdf:pdf_extension_test_base" ]
+    }
   }
 }
 
@@ -313,6 +319,7 @@ source_set("unit_tests") {
     "//chrome/browser/prefs",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/ui",
+    "//chrome/browser/ui:recently_audible_helper",
     "//chrome/browser/ui/tabs:tab_enums",
     "//chrome/browser/ui/tabs:utils",
     "//chrome/common",

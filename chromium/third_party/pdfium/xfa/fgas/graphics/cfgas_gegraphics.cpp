@@ -18,7 +18,6 @@
 #include "core/fxcrt/span_util.h"
 #include "core/fxcrt/stl_util.h"
 #include "core/fxge/cfx_charmap_resolver.h"
-#include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "xfa/fgas/graphics/cfgas_gecolor.h"
@@ -268,13 +267,16 @@ void CFGAS_GEGraphics::FillPathWithPattern(
       matrix.TransformRect(path.GetPath().GetBoundingBox());
   const FX_RECT rect = rectf.ToRoundedFxRect();
 
-  CFX_DefaultRenderDevice device;
-  device.Attach(bmp);
-  device.FillRect(rect, info_.fillColor.GetPattern()->GetBackArgb());
+  std::unique_ptr<CFX_RenderDevice> device =
+      CFX_RenderDevice::CreateForBitmap(bmp);
+  if (!device) {
+    return;
+  }
+  device->FillRect(rect, info_.fillColor.GetPattern()->GetBackArgb());
   for (int32_t j = rect.bottom; j < rect.top; j += mask->GetHeight()) {
     for (int32_t i = rect.left; i < rect.right; i += mask->GetWidth()) {
-      device.SetBitMask(mask, i, j,
-                        info_.fillColor.GetPattern()->GetForeArgb());
+      device->SetBitMask(mask, i, j,
+                         info_.fillColor.GetPattern()->GetForeArgb());
     }
   }
   CFX_RenderDevice::StateRestorer restorer(render_device_);

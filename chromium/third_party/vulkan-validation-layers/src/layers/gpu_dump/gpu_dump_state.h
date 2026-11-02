@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 #pragma once
+#include <vulkan/vulkan_core.h>
 #include <cstdint>
 #include "chassis/layer_object_id.h"
 #include "state_tracker/state_tracker.h"
@@ -22,6 +23,8 @@
 namespace gpudump {
 class GpuDump;
 struct MappingInfo;
+struct DumpInfo;
+struct WarnInfo;
 
 class CommandBufferSubState : public vvl::CommandBufferSubState {
   public:
@@ -39,11 +42,34 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
     void RecordCopyMemoryIndirect(const VkCopyMemoryIndirectInfoKHR& info, const Location& loc) final;
     void RecordCopyMemoryToImageIndirect(const VkCopyMemoryToImageIndirectInfoKHR& info, const Location& loc) final;
 
+    std::vector<uint8_t> push_data_value;
+
   private:
     void DumpDescriptors(const LastBound& last_bound, const Location& loc) const;
     bool DumpDescriptorBuffer(std::ostringstream& ss, const LastBound& last_bound) const;
+
+    // Return true if warning found
     bool DumpDescriptorHeap(std::ostringstream& ss, const LastBound& last_bound) const;
+    VkDeviceSize GetPushData(std::ostringstream& ss, WarnInfo& warn, uint32_t offset, uint32_t size) const;
+    void DumpDescriptorHeapConstantOffset(std::ostringstream& ss, DumpInfo& dump, WarnInfo& warn,
+                                          const VkDescriptorMappingSourceConstantOffsetEXT& map_data) const;
+    void DumpDescriptorHeapPushIndex(std::ostringstream& ss, DumpInfo& dump, WarnInfo& warn,
+                                     const VkDescriptorMappingSourcePushIndexEXT& map_data) const;
+    void DumpDescriptorHeapIndirectIndex(std::ostringstream& ss, DumpInfo& dump, WarnInfo& warn,
+                                         const VkDescriptorMappingSourceIndirectIndexEXT& map_data) const;
+    void DumpDescriptorHeapIndirectIndexArray(std::ostringstream& ss, DumpInfo& dump, WarnInfo& warn,
+                                              const VkDescriptorMappingSourceIndirectIndexArrayEXT& map_data) const;
+    void DumpDescriptorHeapHeapData(std::ostringstream& ss, DumpInfo& dump, WarnInfo& warn,
+                                    const VkDescriptorMappingSourceHeapDataEXT& map_data) const;
+    void DumpDescriptorHeapPushAddress(std::ostringstream& ss, WarnInfo& warn, uint32_t pushAddressOffset) const;
+    void DumpDescriptorHeapIndirectAddress(std::ostringstream& ss, DumpInfo& dump, WarnInfo& warn,
+                                           const VkDescriptorMappingSourceIndirectAddressEXT& map_data) const;
+    void DumpDescriptorHeapShaderRecordIndex(std::ostringstream& ss, DumpInfo& dump, WarnInfo& warn,
+                                             const VkDescriptorMappingSourceShaderRecordIndexEXT& map_data) const;
+    void DumpDescriptorHeapShaderRecordAddress(std::ostringstream& ss, uint32_t shaderRecordAddressOffset) const;
     bool DumpDescriptorHeapMapping(std::ostringstream& ss, const MappingInfo& mapping_info) const;
+
+    bool DumpDescriptorHeapUntyped(std::ostringstream& ss, const ShaderStageState& stage) const;
 
     bool DumpCopyMemoryIndirectCommon(std::ostringstream& ss, uint32_t copy_count,
                                       VkStridedDeviceAddressRangeKHR copy_address_range) const;
@@ -52,8 +78,6 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
 
     void DumpDeviceGeneratedCommands(const VkGeneratedCommandsInfoEXT& info, VkPipelineBindPoint bind_point,
                                      const Location& loc) const;
-
-    std::vector<uint8_t> push_data_value;
 };
 
 static inline CommandBufferSubState& SubState(vvl::CommandBuffer& cb) {

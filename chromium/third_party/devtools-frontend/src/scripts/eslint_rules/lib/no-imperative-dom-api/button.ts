@@ -20,8 +20,20 @@ export const button: RuleCreator = {
       propertyAssignment(property: Identifier, propertyValue: Node, domFragment: DomFragment) {
         if (domFragment.tagName === 'devtools-button') {
           if (isIdentifier(property, [
-                'iconName', 'toggledIconName', 'toggleType', 'variant', 'size', 'reducedFocusRing', 'type',
-                'toggleOnClick', 'toggled', 'active', 'spinner', 'jslogContext', 'longClickable', 'data'
+                'iconName',
+                'toggledIconName',
+                'toggleType',
+                'variant',
+                'size',
+                'reducedFocusRing',
+                'type',
+                'toggleOnClick',
+                'toggled',
+                'active',
+                'spinner',
+                'jslogContext',
+                'longClickable',
+                'data',
               ])) {
             domFragment.bindings.push({
               key: property.name,
@@ -39,5 +51,5 @@ export const button: RuleCreator = {
         }
       },
     };
-  }
+  },
 };

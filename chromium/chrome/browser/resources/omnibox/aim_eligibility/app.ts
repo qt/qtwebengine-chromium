@@ -2,10 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import '//resources/cr_elements/cr_button/cr_button.js';
+import 'chrome://resources/cr_elements/cr_button/cr_button.js';
+import '/strings.m.js';
 
-import {OpenWindowProxyImpl} from '//resources/js/open_window_proxy.js';
-import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
+// <if expr="not is_android">
+import {ColorChangeUpdater} from 'chrome://resources/cr_components/color_change_listener/colors_css_updater.js';
+// </if>
+import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
+import {OpenWindowProxyImpl} from 'chrome://resources/js/open_window_proxy.js';
+import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 
 import {DisclaimerState} from './aim_eligibility.mojom-webui.js';
 import type {DriveStatus, EligibilityState} from './aim_eligibility.mojom-webui.js';
@@ -42,6 +47,7 @@ export class AimEligibilityAppElement extends CrLitElement {
     return {
       eligibilityState_: {type: Object},
       inputState_: {type: String},
+      showFooter_: {type: Boolean},
     };
   }
 
@@ -49,6 +55,7 @@ export class AimEligibilityAppElement extends CrLitElement {
     isEligible: false,
     isEligibleByDse: false,
     isEligibleByPolicy: false,
+    isThirdPartyEligibleByPolicy: false,
     isEligibleByServer: false,
     isServerEligibilityEnabled: false,
     lastUpdated: new Date(0),
@@ -59,6 +66,8 @@ export class AimEligibilityAppElement extends CrLitElement {
     driveStatus: null,
   };
   protected accessor inputState_: InputState = InputState.NONE;
+  protected accessor showFooter_: boolean =
+      loadTimeData.getBoolean('showAimEligibilityFooter');
 
   private callbackRouter_ = BrowserProxy.getInstance().getCallbackRouter();
   private listenerIds_: number[] = [];
@@ -67,6 +76,10 @@ export class AimEligibilityAppElement extends CrLitElement {
 
   override connectedCallback() {
     super.connectedCallback();
+
+    // <if expr="not is_android">
+    ColorChangeUpdater.forDocument().start();
+    // </if>
 
     this.listenerIds_.push(
         this.callbackRouter_.onEligibilityStateChanged.addListener(
@@ -133,6 +146,11 @@ export class AimEligibilityAppElement extends CrLitElement {
                                                        '✗ Blocked';
   }
 
+  protected getThirdPartyPolicyEligibilityText_(): string {
+    return this.eligibilityState_.isThirdPartyEligibleByPolicy ? '✓ Allowed' :
+                                                                 '✗ Blocked';
+  }
+
   protected getDseEligibilityText_(): string {
     return this.eligibilityState_.isEligibleByDse ? '✓ Google' : '✗ Not Google';
   }
@@ -178,6 +196,15 @@ export class AimEligibilityAppElement extends CrLitElement {
       return '';
     }
     return this.eligibilityState_.driveStatus.isFeatureFlagEnabled ?
+        '✓ Enabled' :
+        '✗ Disabled';
+  }
+
+  protected getDisclaimerFlagText_(): string {
+    if (!this.eligibilityState_.driveStatus) {
+      return '';
+    }
+    return this.eligibilityState_.driveStatus.isDisclaimerFlagEnabled ?
         '✓ Enabled' :
         '✗ Disabled';
   }
@@ -257,7 +284,7 @@ export class AimEligibilityAppElement extends CrLitElement {
   }
 
   private getProtoshopUrl_(base64Proto: string): string {
-    const protoType = 'gws.searchbox.chrome.AimEligibilityResponse';
+    const protoType = 'com.google.gws.plugins.aim.AimEligibilityResponse';
     if (!base64Proto) {
       return `http://protoshop/${protoType}`;
     }

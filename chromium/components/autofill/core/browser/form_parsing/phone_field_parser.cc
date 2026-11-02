@@ -229,24 +229,17 @@ PhoneFieldParser::GetPhoneGrammars() {
 }
 
 // static
-bool PhoneFieldParser::ParseGrammar(
-    ParsingContext& context,
-    const PhoneGrammar& grammar,
-    ParsedPhoneFields& parsed_fields,
-    AutofillScanner& scanner,
-    bool improve_phone_field_parser_experiment_enabled,
-    bool new_augmented_cc_regex_experiment_enabled) {
-  if (grammar.id == 15 && !improve_phone_field_parser_experiment_enabled) {
-    return false;
-  }
+bool PhoneFieldParser::ParseGrammar(ParsingContext& context,
+                                    const PhoneGrammar& grammar,
+                                    ParsedPhoneFields& parsed_fields,
+                                    AutofillScanner& scanner) {
   for (const auto& rule : grammar.rules) {
     const bool is_country_code_field = rule.phone_part == FIELD_COUNTRY_CODE;
 
     // The field length comparison with `Rule::max_length` is not required in
     // case of the selection boxes that are of phone country code type.
     if (is_country_code_field &&
-        LikelyAugmentedPhoneCountryCode(
-            scanner.Cursor(), new_augmented_cc_regex_experiment_enabled)) {
+        LikelyAugmentedPhoneCountryCode(scanner.Cursor())) {
       // Assign the `match` and advance the cursor.
       parsed_fields[FIELD_COUNTRY_CODE] = {
           &scanner.Cursor(),
@@ -262,8 +255,7 @@ bool PhoneFieldParser::ParseGrammar(
 
     const FormFieldData& field = *parsed_fields[rule.phone_part]->field;
 
-    if (is_country_code_field && LikelyNotPhoneCountryCode(field) &&
-        improve_phone_field_parser_experiment_enabled) {
+    if (is_country_code_field && LikelyNotPhoneCountryCode(field)) {
       // REGEX_COUNTRY matches patterns like "country_code", which are very
       // generic, it can be the case that this is referring to an
       // ADDRESS_HOME_COUNTRY instead of a PHONE_HOME_COUNTRY_CODE.
@@ -286,17 +278,10 @@ std::unique_ptr<FormFieldParser> PhoneFieldParser::Parse(
     return nullptr;
   }
   const AutofillScanner::Position start_cursor = scanner.GetPosition();
-  const bool improve_phone_field_parser_experiment_enabled =
-      base::FeatureList::IsEnabled(features::kAutofillImprovePhoneFieldParser);
-  const bool new_augmented_cc_regex_experiment_enabled =
-      base::FeatureList::IsEnabled(
-          features::kAutofillNewAugmentedPhoneCountryCodeRegex);
 
   for (const PhoneGrammar& grammar : GetPhoneGrammars()) {
     ParsedPhoneFields parsed_fields;
-    if (ParseGrammar(context, grammar, parsed_fields, scanner,
-                     improve_phone_field_parser_experiment_enabled,
-                     new_augmented_cc_regex_experiment_enabled)) {
+    if (ParseGrammar(context, grammar, parsed_fields, scanner)) {
       base::UmaHistogramExactLinear(
           "Autofill.FieldPrediction.PhoneNumberGrammarUsage2", grammar.id,
           /*exclusive_max=*/kMaxPhoneGrammarId + 1);
@@ -323,7 +308,7 @@ void PhoneFieldParser::AddClassifications(
       parsed_phone_fields_[FIELD_SUFFIX]) {
     if (has_country_code) {
       AddClassification(parsed_phone_fields_[FIELD_COUNTRY_CODE],
-                        PHONE_HOME_COUNTRY_CODE, kBasePhoneParserScore,
+                        PHONE_HOME_COUNTRY_CODE, HeuristicParser::kPhone,
                         field_candidates);
     }
 
@@ -332,7 +317,7 @@ void PhoneFieldParser::AddClassifications(
     // need to distinguish.
     if (parsed_phone_fields_[FIELD_AREA_CODE]) {
       AddClassification(parsed_phone_fields_[FIELD_AREA_CODE],
-                        PHONE_HOME_CITY_CODE, kBasePhoneParserScore,
+                        PHONE_HOME_CITY_CODE, HeuristicParser::kPhone,
                         field_candidates);
     } else if (has_country_code) {
       field_number_type = PHONE_HOME_CITY_AND_NUMBER;
@@ -347,29 +332,29 @@ void PhoneFieldParser::AddClassifications(
       // seemingly never happens in practice according to our metrics.
       field_number_type = PHONE_HOME_NUMBER_PREFIX;
       AddClassification(parsed_phone_fields_[FIELD_SUFFIX],
-                        PHONE_HOME_NUMBER_SUFFIX, kBasePhoneParserScore,
+                        PHONE_HOME_NUMBER_SUFFIX, HeuristicParser::kPhone,
                         field_candidates);
     }
     AddClassification(parsed_phone_fields_[FIELD_PHONE], field_number_type,
-                      kBasePhoneParserScore, field_candidates);
+                      HeuristicParser::kPhone, field_candidates);
   } else {
     const FormFieldData& field = *parsed_phone_fields_[FIELD_PHONE]->field;
     if (field.label().find(u"+") != std::u16string::npos ||
         field.placeholder().find(u"+") != std::u16string::npos ||
         field.aria_description().find(u"+") != std::u16string::npos) {
       AddClassification(parsed_phone_fields_[FIELD_PHONE],
-                        PHONE_HOME_WHOLE_NUMBER, kBasePhoneParserScore,
+                        PHONE_HOME_WHOLE_NUMBER, HeuristicParser::kPhone,
                         field_candidates);
     } else {
       AddClassification(parsed_phone_fields_[FIELD_PHONE],
-                        PHONE_HOME_CITY_AND_NUMBER, kBasePhoneParserScore,
+                        PHONE_HOME_CITY_AND_NUMBER, HeuristicParser::kPhone,
                         field_candidates);
     }
   }
 
   if (parsed_phone_fields_[FIELD_EXTENSION]) {
     AddClassification(parsed_phone_fields_[FIELD_EXTENSION],
-                      PHONE_HOME_EXTENSION, kBasePhoneParserScore,
+                      PHONE_HOME_EXTENSION, HeuristicParser::kPhone,
                       field_candidates);
   }
 }

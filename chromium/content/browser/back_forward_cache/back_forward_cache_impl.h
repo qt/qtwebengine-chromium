@@ -31,6 +31,7 @@
 #include "content/public/browser/render_process_host_observer.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition.h"
+#include "content/public/browser/visibility.h"
 #include "content/public/common/content_features.h"
 #include "net/cookies/canonical_cookie.h"
 #include "services/network/public/mojom/cookie_manager.mojom.h"
@@ -45,24 +46,22 @@ namespace content {
 class RenderFrameHostImpl;
 class SiteInstance;
 class NavigationControllerImpl;
+class WebContentsImpl;
 
 // This feature is used to limit the scope of back-forward cache experiment
 // without enabling it. To control the URLs list by using this feature by
 // generating the metrics only for "allowed_websites" param. Mainly, to ensure
 // that metrics from the control and experiment groups are consistent.
 BASE_FEATURE(kRecordBackForwardCacheMetricsWithoutEnabling,
-             "RecordBackForwardCacheMetricsWithoutEnabling",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Removes the time limit for cached content. This is used on bots to identify
 // accidentally passing tests.
 BASE_FEATURE(kBackForwardCacheNoTimeEviction,
-             "BackForwardCacheNoTimeEviction",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Feature to allow exposing cross-origin subframes' NotRestoredReasons.
 BASE_FEATURE(kAllowCrossOriginNotRestoredReasons,
-             "AllowCrossOriginNotRestoredReasons",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 CONTENT_EXPORT BASE_DECLARE_FEATURE(kBackForwardCacheSize);
@@ -75,14 +74,12 @@ CONTENT_EXPORT extern const base::FeatureParam<int>
 // in the cache instead. Only the latest prioritized entry outside the limit
 // will be handled in this way.
 BASE_FEATURE(kBackForwardCachePrioritizedEntry,
-             "BackForwardCachePrioritizedEntry",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Controls the interaction between back/forward cache and
 // unload. When enabled, pages with unload handlers may enter the
 // cache.
 BASE_FEATURE(kBackForwardCacheUnloadAllowed,
-             "BackForwardCacheUnloadAllowed",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT
 #else
@@ -210,8 +207,7 @@ class CONTENT_EXPORT BackForwardCacheImpl
     std::unique_ptr<StoredPage> stored_page_;
   };
 
-  explicit BackForwardCacheImpl(
-      NavigationControllerImpl& navigation_controller);
+  explicit BackForwardCacheImpl(WebContentsImpl& web_contents);
 
   BackForwardCacheImpl(const BackForwardCacheImpl&) = delete;
   BackForwardCacheImpl& operator=(const BackForwardCacheImpl&) = delete;
@@ -508,6 +504,12 @@ class CONTENT_EXPORT BackForwardCacheImpl
   void PruneForwardEntries(int target_entry_index);
 
  private:
+  // Returns the primary NavigationControllerImpl associated with this cache.
+  NavigationControllerImpl& GetNavigationController() const;
+
+  // Returns true if the associated WebContents is visible.
+  bool IsVisible();
+
   // Destroys all evicted frames in the BackForwardCache.
   void DestroyEvictedFrames();
 
@@ -590,9 +592,8 @@ class CONTENT_EXPORT BackForwardCacheImpl
       RequestedFeatures requested_features,
       CacheControlNoStoreContext ccns_context);
 
-  // The navigation controller owns this object and is guaranteed to
-  // outlive it.
-  const raw_ref<NavigationControllerImpl> controller_;
+  // The WebContents owns this object and is guaranteed to outlive it.
+  const raw_ref<WebContentsImpl> web_contents_;
 
   // Contains the set of stored Entries.
   // Invariant:
@@ -610,7 +611,7 @@ class CONTENT_EXPORT BackForwardCacheImpl
   // from each Entry's RenderViewHosts. Every RenderProcessHost in here is
   // observed by |this|. Every RenderProcessHost in this is referenced by a
   // RenderViewHost in the Entry and so will be valid.
-  std::multiset<RenderProcessHost*> observed_processes_;
+  std::multiset<raw_ptr<RenderProcessHost>> observed_processes_;
 
   // Whether the BackForwardCache has been enabled for pages loaded with
   // "Cache-Control: no-store" header.

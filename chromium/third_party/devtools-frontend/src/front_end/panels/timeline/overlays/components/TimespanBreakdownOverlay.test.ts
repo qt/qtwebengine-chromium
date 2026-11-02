@@ -9,7 +9,7 @@ import {
   assertScreenshot,
   getCleanTextContentFromElements,
   raf,
-  renderElementIntoDOM
+  renderElementIntoDOM,
 } from '../../../../testing/DOMHelpers.js';
 import {describeWithEnvironment} from '../../../../testing/EnvironmentHelpers.js';
 import {
@@ -43,6 +43,44 @@ describeWithEnvironment('TimespanBreakdownOverlay', () => {
       return getCleanTextContentFromElements(elem, '.timespan-breakdown-overlay-label');
     });
     assert.deepEqual(labels, ['1 ms section one', '19 ms section two']);
+  });
+
+  it('sets the title/tooltip attribute on the sections correctly', async () => {
+    const component = new Components.TimespanBreakdownOverlay.TimespanBreakdownOverlay();
+
+    const labelEl = document.createElement('span');
+    labelEl.textContent = 'element label';
+
+    const sections: Trace.Types.Overlays.TimespanBreakdownEntryBreakdown[] = [
+      {
+        bounds: microsecondsTraceWindow(0, 1_000),
+        label: 'section one',
+        showDuration: true,
+      },
+      {
+        bounds: microsecondsTraceWindow(1_000, 20_055),
+        label: 'section two',
+        showDuration: false,
+      },
+      {
+        bounds: microsecondsTraceWindow(20_055, 30_055),
+        label: labelEl,
+        showDuration: true,
+      },
+    ];
+
+    component.sections = sections;
+    await raf();
+
+    const sectionsElems =
+        Array.from(component.element.querySelectorAll<HTMLElement>('.timespan-breakdown-overlay-section'));
+    const titles = sectionsElems.map(elem => elem.getAttribute('title'));
+
+    assert.deepEqual(titles, [
+      '1 ms section one',
+      'section two',
+      '10 ms element label',
+    ]);
   });
 
   it('renders the overlay', async function() {

@@ -285,6 +285,10 @@ build_recipe(
 )
 
 build_recipe(
+    name = "recipe:chromium_toolchain/trusted_packaging",
+)
+
+build_recipe(
     name = "recipe:flakiness/reproducer",
 )
 
@@ -345,4 +349,13 @@ build_recipe(
 
 build_recipe(
     name = "recipe:webrtc/chromium_ios",
+)
+
+infra_recipe = _recipe_for_package(
+    "infra/recipe_bundles/chromium.googlesource.com/infra/infra",
+)
+
+infra_recipe(
+    name = "recipe:infra/crowbar",
+    recipe = "crowbar",
 )

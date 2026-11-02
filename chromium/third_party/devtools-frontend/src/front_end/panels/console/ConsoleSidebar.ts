@@ -5,8 +5,8 @@
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import type * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as Protocol from '../../generated/protocol.js';
-import type * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as Lit from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
@@ -17,34 +17,34 @@ import type {ConsoleViewMessage} from './ConsoleViewMessage.js';
 
 const UIStrings = {
   /**
-   * @description Filter name in Console Sidebar of the Console panel. This is shown when we fail to
+   * @description Filter name in Console sidebar of the Console panel. This is shown when we fail to
    * parse a URL when trying to display console messages from each URL separately. This might be
    * because the console message does not come from any particular URL. This should be translated as
    * a term that indicates 'not one of the other URLs listed here'.
    */
   other: '<other>',
   /**
-   * @description Text in Console Sidebar of the Console panel to show how many user messages exist.
+   * @description Text in Console sidebar of the Console panel to show how many user messages exist.
    */
   dUserMessages: '{n, plural, =0 {No user messages} =1 {# user message} other {# user messages}}',
   /**
-   * @description Text in Console Sidebar of the Console panel to show how many messages exist.
+   * @description Text in Console sidebar of the Console panel to show how many messages exist.
    */
   dMessages: '{n, plural, =0 {No messages} =1 {# message} other {# messages}}',
   /**
-   * @description Text in Console Sidebar of the Console panel to show how many errors exist.
+   * @description Text in Console sidebar of the Console panel to show how many errors exist.
    */
   dErrors: '{n, plural, =0 {No errors} =1 {# error} other {# errors}}',
   /**
-   * @description Text in Console Sidebar of the Console panel to show how many warnings exist.
+   * @description Text in Console sidebar of the Console panel to show how many warnings exist.
    */
   dWarnings: '{n, plural, =0 {No warnings} =1 {# warning} other {# warnings}}',
   /**
-   * @description Text in Console Sidebar of the Console panel to show how many info messages exist.
+   * @description Text in Console sidebar of the Console panel to show how many info messages exist.
    */
   dInfo: '{n, plural, =0 {No info} =1 {# info} other {# info}}',
   /**
-   * @description Text in Console Sidebar of the Console panel to show how many verbose messages exist.
+   * @description Text in Console sidebar of the Console panel to show how many verbose messages exist.
    */
   dVerbose: '{n, plural, =0 {No verbose} =1 {# verbose} other {# verbose}}',
 } as const;
@@ -78,16 +78,14 @@ interface ViewInput {
 
 export type View = (input: ViewInput, output: object, target: HTMLElement|DocumentFragment) => void;
 export const DEFAULT_VIEW: View = (input, output, target) => {
-  render(
-      html`<devtools-tree
+  render(html`<devtools-tree
         navigation-variant
         hide-overflow
         .template=${
-          html`
+             html`
           <ul role="tree">
             ${
-              input.groups.map(
-                  group => html`
+                 input.groups.map(group => html`
               <li
                 role="treeitem"
                 @select=${() => input.onSelectionChanged(group.filter)}
@@ -95,11 +93,11 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
                   <style>${consoleSidebarStyles}</style>
                   <devtools-icon name=${GROUP_ICONS[group.name].icon}></devtools-icon>
                   ${
-                      /* eslint-disable-next-line @devtools/l10n-i18nString-call-only-with-uistrings */
-                      i18nString(GROUP_ICONS[group.name].label, {
+                                      /* eslint-disable-next-line @devtools/l10n-i18nString-call-only-with-uistrings */
+                                      i18nString(GROUP_ICONS[group.name].label, {
 
-                        n: group.messageCount
-                      })}
+                                        n: group.messageCount,
+                                      })}
                   ${group.messageCount === 0 ? nothing : html`
                   <ul role="group">
                     ${group.urlGroups.values().map(urlGroup => html`
@@ -115,7 +113,7 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
               </li>`)}
         </ul>`}
         ></devtools-tree>`,
-      target, {container: {attributes: {jslog: `${VisualLogging.pane('sidebar').track({resize: true})}`}}});
+         target, {container: {attributes: {jslog: `${VisualLogging.pane('sidebar').track({resize: true})}`}}});
 };
 
 export class ConsoleFilterGroup {

@@ -175,7 +175,7 @@ export function getFieldMetricsForInsightSet(
       loadDelay: getMetricTimingResult(pageResult, 'largest_contentful_paint_image_resource_load_delay', scope),
       loadDuration: getMetricTimingResult(pageResult, 'largest_contentful_paint_image_resource_load_duration', scope),
       renderDelay: getMetricTimingResult(pageResult, 'largest_contentful_paint_image_element_render_delay', scope),
-    }
+    },
   };
 }
 
@@ -415,6 +415,15 @@ export function calculateDocFirstByteTs(docRequest: Types.Events.SyntheticNetwor
   if (docRequest.args.data.protocol === 'file') {
     // file: requests do not have timings
     return docRequest.ts;
+  }
+
+  // @ts-expect-error
+  const isLightrider = globalThis.isLightrider;
+  if (isLightrider) {
+    const lrServerResponseTime = docRequest.args.data.lrServerResponseTime;
+    if (lrServerResponseTime !== undefined) {
+      return Types.Timing.Micro(docRequest.ts + Helpers.Timing.milliToMicro(lrServerResponseTime));
+    }
   }
 
   const timing = docRequest.args.data.timing;

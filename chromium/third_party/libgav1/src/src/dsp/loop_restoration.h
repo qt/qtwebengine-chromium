@@ -17,6 +17,7 @@
 #ifndef LIBGAV1_SRC_DSP_LOOP_RESTORATION_H_
 #define LIBGAV1_SRC_DSP_LOOP_RESTORATION_H_
 
+#include <cstdint>
 #include <utility>
 
 // Pull in LIBGAV1_DspXXX defines representing the implementation status

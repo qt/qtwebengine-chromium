@@ -22,13 +22,15 @@ export class SourceMapManager<T extends FrameAssociated> extends Common.ObjectWr
   readonly #clientData = new Map<T, ClientData>();
   readonly #sourceMaps = new Map<SourceMap, T>();
   #attachingClient: T|null = null;
+  readonly #sourceMapCache = SourceMapCache.create();
 
   constructor(target: Target, factory?: SourceMapFactory<T>) {
     super();
 
     this.#target = target;
-    this.#factory =
-        factory ?? ((compiledURL, sourceMappingURL, payload) => new SourceMap(compiledURL, sourceMappingURL, payload));
+    this.#factory = factory ??
+        ((compiledURL, sourceMappingURL, payload) =>
+             new SourceMap(compiledURL, sourceMappingURL, payload, this.#target.targetManager().getConsole()));
   }
 
   setEnabled(isEnabled: boolean): void {
@@ -118,7 +120,7 @@ export class SourceMapManager<T extends FrameAssociated> extends Common.ObjectWr
           //     SourceMapManager in their respective constructors.
           const resourceLoader = this.#target.targetManager().context.get(PageResourceLoader);
           clientData.sourceMapPromise =
-              loadSourceMap(resourceLoader, sourceMapURL, client.debugId(), initiator)
+              loadSourceMap(resourceLoader, this.#sourceMapCache, sourceMapURL, client.debugId(), initiator)
                   .then(
                       payload => {
                         const sourceMap = this.#factory(sourceURL, sourceMapURL, payload, client);
@@ -185,14 +187,14 @@ export class SourceMapManager<T extends FrameAssociated> extends Common.ObjectWr
   }
 }
 
-async function loadSourceMap(
-    resourceLoader: ResourceLoader, url: Platform.DevToolsPath.UrlString, debugId: DebugId|null,
-    initiator: PageResourceLoadInitiator): Promise<SourceMapV3> {
+async function loadSourceMap(resourceLoader: ResourceLoader, sourceMapCache: SourceMapCache,
+                             url: Platform.DevToolsPath.UrlString, debugId: DebugId|null,
+                             initiator: PageResourceLoadInitiator): Promise<SourceMapV3> {
   try {
     if (debugId) {
       const securityOrigin = initiator.initiatorUrl ? Common.ParsedURL.ParsedURL.extractOrigin(initiator.initiatorUrl) :
                                                       Platform.DevToolsPath.EmptyUrlString;
-      const cachedSourceMap = await SourceMapCache.instance().get(debugId, securityOrigin);
+      const cachedSourceMap = await sourceMapCache.get(debugId, securityOrigin);
       if (cachedSourceMap) {
         return cachedSourceMap;
       }
@@ -204,7 +206,7 @@ async function loadSourceMap(
       // In case something goes wrong with updating the cache, we still want to use the source map.
       const securityOrigin = initiator.initiatorUrl ? Common.ParsedURL.ParsedURL.extractOrigin(initiator.initiatorUrl) :
                                                       Platform.DevToolsPath.EmptyUrlString;
-      await SourceMapCache.instance().set(sourceMap.debugId as DebugId, securityOrigin, sourceMap).catch();
+      await sourceMapCache.set(sourceMap.debugId as DebugId, securityOrigin, sourceMap).catch();
     }
     return sourceMap;
   } catch (cause) {
@@ -216,7 +218,7 @@ export async function tryLoadSourceMap(
     resourceLoader: ResourceLoader, url: Platform.DevToolsPath.UrlString,
     initiator: PageResourceLoadInitiator): Promise<SourceMapV3|null> {
   try {
-    return await loadSourceMap(resourceLoader, url, null, initiator);
+    return await loadSourceMap(resourceLoader, SourceMapCache.create(), url, null, initiator);
   } catch (cause) {
     console.error(cause);
     return null;

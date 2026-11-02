@@ -57,13 +57,13 @@ class Barrier {
   bool notified_;
 };
 
-// Notification is an object that allows a user to to wait for another
+// Notification is an object that allows a user to wait for another
 // thread to signal a notification that an event has occurred.
 //
 // Multiple threads can wait on the same Notification object,
 // but only one caller must call Notify() on the object.
 struct Notification : Barrier {
-  Notification() : Barrier(1){};
+  Notification() : Barrier(1) {}
 };
 
 }  // namespace Eigen

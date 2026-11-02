@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "constants/catalog.h"
 #include "constants/form_fields.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
@@ -28,7 +29,8 @@ std::vector<RetainPtr<const CPDF_Dictionary>> CollectSignatures(
     return signatures;
   }
 
-  RetainPtr<const CPDF_Dictionary> acro_form = root->GetDictFor("AcroForm");
+  RetainPtr<const CPDF_Dictionary> acro_form =
+      root->GetDictFor(pdfium::catalog::kAcroForm);
   if (!acro_form) {
     return signatures;
   }

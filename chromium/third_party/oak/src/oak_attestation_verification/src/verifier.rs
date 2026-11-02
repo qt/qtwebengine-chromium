@@ -19,22 +19,25 @@
 use alloc::{format, string::ToString, sync::Arc, vec};
 
 use anyhow::Context;
-use coset::{cwt::ClaimsSet, CborSerializable, CoseKey};
-use ecdsa::{signature::Verifier, Signature};
+use coset::{CborSerializable, CoseKey, cwt::ClaimsSet};
+use ecdsa::{Signature, signature::Verifier};
 use oak_attestation_verification_types::verifier::AttestationVerifier;
 use oak_dice::cert::{cose_key_to_verifying_key, get_public_key_from_claims_set};
+use oak_digest::Sha256;
 use oak_proto_rust::oak::attestation::v1::{
-    attestation_results::Status, endorsements, AttestationResults, Endorsements, EventLog,
-    Evidence, ExpectedValues, ExtractedEvidence, LayerEvidence, ReferenceValues,
+    ApplicationKeys, AttestationResults, Endorsements, EventAttestationResults, EventLog, Evidence,
+    ExpectedValues, ExtractedEvidence, LayerEvidence, ReferenceValues, attestation_results::Status,
+    endorsements, expected_values,
 };
-use oak_time::Clock;
+use oak_time::{Clock, Instant};
 use p256::ecdsa::VerifyingKey;
 
 use crate::{
     compare::compare_expected_values,
     expect::get_expected_values,
-    extract::{claims_set_from_serialized_cert, extract_event_data, extract_evidence},
+    extract::{EventIdType, claims_set_from_serialized_cert, extract_event_data, extract_evidence},
     platform::verify_root_attestation_signature,
+    results::set_user_data_payload,
 };
 
 // We don't use additional authenticated data.
@@ -60,6 +63,11 @@ pub fn to_attestation_results(
     }
 }
 
+/// DICE attestation verifier that is rooted in software only.
+///
+/// WARNING: This verifier is a test-only verifier and must not be considered
+/// secure. It is not rooted in any TEE hardware, so the DICE chain cannot be
+/// trusted.
 // TODO: b/437347371 - To be moved out of the Oak repo.
 // NB: All attestation verifiers belong in verifiers.rs, not here, but we
 // didn't bother to move it since it goes away anyway.
@@ -150,10 +158,15 @@ pub fn verify_software_rooted_dice_chain(evidence: &Evidence) -> anyhow::Result<
             &evidence.layers
         } else {
             &evidence.layers[1..] // Slice from the second element (index 1) to
-                                  // the end
+            // the end
         };
-        validate_that_event_log_is_captured_in_dice_layers(event_log, layers_to_check)
-            .context("validating that event log is captured in DICE layers")?
+        validate_events_and_layers(
+            event_log,
+            layers_to_check,
+            evidence.application_keys.as_ref(),
+            EventLogType::OriginalEventLog.into(),
+        )
+        .context("validating that event log is captured in DICE layers")?
     } else {
         anyhow::bail!("event log is not present in the evidence");
     }
@@ -212,9 +225,37 @@ pub fn verify_with_expected_values(
                     .tee_certificate
                     .as_ref(),
             };
+        let amd_expected_values =
+            match expected_values.r#type.as_ref().context("no expected values")? {
+                expected_values::Type::OakRestrictedKernel(expected_values) => expected_values
+                    .root_layer
+                    .as_ref()
+                    .context("no root layer expected values")?
+                    .amd_sev
+                    .as_ref(),
+                expected_values::Type::OakContainers(expected_values) => expected_values
+                    .root_layer
+                    .as_ref()
+                    .context("no root layer expected values")?
+                    .amd_sev
+                    .as_ref(),
+                expected_values::Type::Cb(expected_values) => expected_values
+                    .root_layer
+                    .as_ref()
+                    .context("no root layer expected values")?
+                    .amd_sev
+                    .as_ref(),
+            };
+        let check_vcek_cert_expiry =
+            amd_expected_values.map(|value| value.check_vcek_cert_expiry).unwrap_or(false);
         let root_layer = evidence.root_layer.as_ref().context("no root layer evidence")?;
-        verify_root_attestation_signature(now_utc_millis, root_layer, tee_certificate)
-            .context("verifying root signature")?;
+        verify_root_attestation_signature(
+            Instant::from_unix_millis(now_utc_millis),
+            check_vcek_cert_expiry,
+            root_layer,
+            tee_certificate,
+        )
+        .context("verifying root signature")?;
     };
 
     // Ensure the DICE chain signatures are valid and extract the measurements,
@@ -228,9 +269,21 @@ pub fn verify_with_expected_values(
     Ok(extracted_evidence)
 }
 
+// The type of event log in the attestation evidence to verify.
+pub enum EventLogType {
+    // The original `event_log` in the attestation evidence.
+    OriginalEventLog,
+    // The `transparent_event_log`, populated with event entries that do not contain sensitive
+    // data.
+    TransparentEventLog,
+}
+
 /// Verifies signatures of the certificates in the DICE chain and returns last
 /// layer's Certificate Authority key if the verification is successful.
-pub fn verify_dice_chain(evidence: &Evidence) -> anyhow::Result<VerifyingKey> {
+pub fn verify_dice_chain(
+    evidence: &Evidence,
+    event_log_type: EventLogType,
+) -> anyhow::Result<VerifyingKey> {
     let root_layer_verifying_key = {
         let cose_key = {
             let root_layer = evidence
@@ -269,13 +322,35 @@ pub fn verify_dice_chain(evidence: &Evidence) -> anyhow::Result<VerifyingKey> {
         })
         .context("verifying DICE chain")?;
 
-    // Verify the event log claim for this layer if it exists. This is done for all
-    // layers here, since the event log is tied uniquely closely to the DICE chain.
-    if let Some(event_log) = &evidence.event_log {
-        validate_that_event_log_is_captured_in_dice_layers(event_log, &evidence.layers)
-            .context("validating that event log is captured in DICE layers")?
-    } else {
-        anyhow::bail!("event log is not present in the evidence");
+    match event_log_type {
+        EventLogType::OriginalEventLog => {
+            // Verify the event log claim for this layer if it exists. This is done for all
+            // layers here, since the event log is tied uniquely closely to the DICE chain.
+            if let Some(event_log) = &evidence.event_log {
+                validate_events_and_layers(
+                    event_log,
+                    &evidence.layers,
+                    evidence.application_keys.as_ref(),
+                    event_log_type.into(),
+                )
+                .context("validating that event log is captured in DICE layers")?
+            } else {
+                anyhow::bail!("event log is not present in the evidence");
+            }
+        }
+        EventLogType::TransparentEventLog => {
+            if let Some(transparent_event_log) = &evidence.transparent_event_log {
+                validate_events_and_layers(
+                    transparent_event_log,
+                    &evidence.layers,
+                    evidence.application_keys.as_ref(),
+                    event_log_type.into(),
+                )
+                .context("validating that event log is captured in DICE layers")?
+            } else {
+                anyhow::bail!("transparent event log is not present in the evidence");
+            }
+        }
     }
 
     Ok(last_layer_verifying_key)
@@ -359,30 +434,136 @@ pub fn verify_dice_chain_and_extract_evidence(
     // Verify the event log claim for this layer if it exists. This is done for all
     // layers here, since the event log is tied uniquely closely to the DICE chain.
     if let Some(event_log) = &evidence.event_log {
-        validate_that_event_log_is_captured_in_dice_layers(event_log, &evidence.layers)
-            .context("validating that event log is captured in DICE layers")?
+        validate_events_and_layers(
+            event_log,
+            &evidence.layers,
+            evidence.application_keys.as_ref(),
+            EventLogType::OriginalEventLog.into(),
+        )
+        .context("validating that event log is captured in DICE layers")?
     }
     extract_evidence(evidence)
 }
 
+/// Verifies the signed user data certificate and returns an
+/// [`EventAttestationResults`] containing the payload bytes.
+///
+/// Parses the provided `signed_user_data_certificate` bytes as a COSE_Sign1
+/// structure, verifies its signature using the given `verifying_key`, and
+/// returns the payload as an `EventAttestationResults` with the
+/// `user-data-payload` artifact key.
+pub fn verify_user_data_certificate(
+    signed_user_data_certificate: &[u8],
+    verifying_key: &VerifyingKey,
+) -> anyhow::Result<EventAttestationResults> {
+    // Parse the signed user data certificate as a COSE_Sign1 structure.
+    let user_data_cert = coset::CoseSign1::from_slice(signed_user_data_certificate)
+        .map_err(|_cose_err| anyhow::anyhow!("could not parse signed user data certificate"))?;
+
+    // Verify the signature using the provided verification key.
+    user_data_cert
+        .verify_signature(ADDITIONAL_DATA, |signature, contents| {
+            let sig = Signature::from_slice(signature)?;
+            verifying_key.verify(contents, &sig)
+        })
+        .map_err(|error| anyhow::anyhow!(error))
+        .context("verifying signed user data certificate signature")?;
+
+    // Extract the payload bytes and wrap in an EventAttestationResults.
+    let payload = user_data_cert
+        .payload
+        .ok_or_else(|| anyhow::anyhow!("no payload in signed user data certificate"))?;
+    let mut results = EventAttestationResults::default();
+    set_user_data_payload(&mut results, &payload);
+    Ok(results)
+}
+
+/// Special-cases Restricted Kernel attestation evidence, where there is 1 DICE
+/// layer but 2 event log entries. The second event (ApplicationLayerData) is
+/// bound to the application key certificate rather than a DICE layer
+/// certificate.
+///
+/// For all other stacks (where event count == layer count), this delegates
+/// directly to [`validate_that_event_log_is_captured_in_dice_layers`].
+///
+/// TODO: b/527437181 - Remove this function once Restricted Kernel generates
+/// one DICE layer per event log entry.
+fn validate_events_and_layers(
+    event_log: &EventLog,
+    dice_layers: &[LayerEvidence],
+    application_keys: Option<&ApplicationKeys>,
+    event_id_type: EventIdType,
+) -> anyhow::Result<()> {
+    let num_layers = dice_layers.len();
+    let num_events = event_log.encoded_events.len();
+
+    // Restricted Kernel: 1 DICE layer, 2 events. The second event is bound to
+    // the application key certificate instead of a DICE layer.
+    if num_layers == 1 && num_events == 2 {
+        // Validate the last event against the application key certificate.
+        let appl_keys = application_keys.context("no application keys for RK event validation")?;
+        let claims = claims_set_from_serialized_cert(&appl_keys.encryption_public_key_certificate)
+            .map_err(|_cose_err| {
+                anyhow::anyhow!("could not parse application key certificate claims")
+            })?;
+        let event_digest = extract_event_data(&claims, &event_id_type)
+            .context("extracting event data from application key certificate")?
+            .event
+            .context("missing event digest in application key certificate")?;
+        let actual_event_hash = Sha256::from_contents(&event_log.encoded_events[1]);
+        let expected_event_hash = Sha256::try_from(event_digest.sha2_256)?;
+        if actual_event_hash != expected_event_hash {
+            return Err(anyhow::anyhow!(
+                "application event hash mismatch between event log and application key certificate"
+            ));
+        }
+
+        // Validate the first event against the single DICE layer.
+        let first_event_only =
+            EventLog { encoded_events: alloc::vec![event_log.encoded_events[0].clone()] };
+        validate_that_event_log_is_captured_in_dice_layers(
+            &first_event_only,
+            dice_layers,
+            event_id_type,
+        )
+    } else {
+        validate_that_event_log_is_captured_in_dice_layers(event_log, dice_layers, event_id_type)
+    }
+}
+
 /// Validates that the digest of the events captured in the event log are
 /// correctly described in the claims of the associated dice layers.
+// Claim entries are under different keys for standard events and transparent
+// events, so the caller must also pass the EventIdType to find the appropriate
+// claims for the events.
 fn validate_that_event_log_is_captured_in_dice_layers(
     event_log: &EventLog,
     dice_layers: &[LayerEvidence],
+    event_id_type: EventIdType,
 ) -> anyhow::Result<()> {
+    // `zip` below stops at the shorter of the two sequences, so without this check
+    // a log carrying more events than there are layers (or a chain with more
+    // layers than logged events) would pass with the surplus left unverified.
+    // Each layer commits to exactly one event, so the counts must match.
+    anyhow::ensure!(
+        dice_layers.len() == event_log.encoded_events.len(),
+        "event log has {} events but the DICE chain has {} layers",
+        event_log.encoded_events.len(),
+        dice_layers.len()
+    );
     dice_layers.iter().zip(event_log.encoded_events.iter()).try_for_each(
         |(current_layer, encoded_event)| {
             let event_digest = {
                 let claims = claims_set_from_serialized_cert(&current_layer.eca_certificate)
                     .map_err(|_cose_err| anyhow::anyhow!("could not parse claims set"))?;
-                extract_event_data(&claims)
+                extract_event_data(&claims, &event_id_type)
                     .context("extracting event data")?
                     .event
                     .context("missing event")?
             };
-            let actual_event_hash = &<sha2::Sha256 as sha2::Digest>::digest(encoded_event).to_vec();
-            if actual_event_hash != &event_digest.sha2_256 {
+            let actual_event_hash = Sha256::from_contents(encoded_event);
+            let expected_event_hash = Sha256::try_from(event_digest.sha2_256)?;
+            if actual_event_hash != expected_event_hash {
                 Err(anyhow::anyhow!("event log hash mismatch"))
             } else {
                 Ok(())

@@ -42,8 +42,12 @@ V8RTCEncodedVideoFrameType::Enum RTCEncodedVideoFrameDelegate::Type() const {
 
 uint32_t RTCEncodedVideoFrameDelegate::RtpTimestamp() const {
   base::AutoLock lock(lock_);
-  return webrtc_frame_ ? webrtc_frame_->GetTimestamp()
-                       : post_neuter_metadata_.rtp_timestamp;
+  if (!webrtc_frame_) {
+    return post_neuter_metadata_.rtp_timestamp;
+  }
+  webrtc::RtpTimestampInfo info = webrtc_frame_->GetRtpTimestampInfo();
+  CHECK(std::holds_alternative<webrtc::RtpTimestampWithOffset>(info));
+  return std::get<webrtc::RtpTimestampWithOffset>(info);
 }
 
 std::optional<webrtc::Timestamp>
@@ -90,8 +94,16 @@ void RTCEncodedVideoFrameDelegate::SetData(const DOMArrayBuffer* data) {
 
 std::optional<uint8_t> RTCEncodedVideoFrameDelegate::PayloadType() const {
   base::AutoLock lock(lock_);
-  return webrtc_frame_ ? std::make_optional(webrtc_frame_->GetPayloadType())
-                       : post_neuter_metadata_.payload_type;
+  // The slightly inelegant construction here is to allow for a future change
+  // of return value of GetPayloadType from uint8_t to webrtc::PayloadType
+  if (webrtc_frame_) {
+    return static_cast<uint8_t>(webrtc_frame_->GetPayloadType());
+  } else {
+    return post_neuter_metadata_.payload_type;
+  }
+  // Elegant version:
+  // return webrtc_frame_ ? std::make_optional(webrtc_frame_->GetPayloadType())
+  //                     : post_neuter_metadata_.payload_type;
 }
 
 std::optional<std::string> RTCEncodedVideoFrameDelegate::MimeType() const {
@@ -172,14 +184,18 @@ RTCEncodedVideoFrameDelegate::PassWebRtcFrame() {
       post_neuter_metadata_.frame_type = ComputeType();
     }
     if (base::FeatureList::IsEnabled(kWebRtcEncodedTransformRememberMetadata)) {
-      post_neuter_metadata_.payload_type = webrtc_frame_->GetPayloadType();
+      post_neuter_metadata_.payload_type =
+          static_cast<uint8_t>(webrtc_frame_->GetPayloadType());
       post_neuter_metadata_.mime_type = webrtc_frame_->GetMimeType();
       post_neuter_metadata_.video_frame_metadata = webrtc_frame_->Metadata();
       post_neuter_metadata_.receive_time = ComputeReceiveTime();
       post_neuter_metadata_.capture_time = ComputeCaptureTime();
       post_neuter_metadata_.sender_capture_time_offset =
           ComputeSenderCaptureTimeOffset();
-      post_neuter_metadata_.rtp_timestamp = webrtc_frame_->GetTimestamp();
+      webrtc::RtpTimestampInfo info = webrtc_frame_->GetRtpTimestampInfo();
+      CHECK(std::holds_alternative<webrtc::RtpTimestampWithOffset>(info));
+      post_neuter_metadata_.rtp_timestamp =
+          std::get<webrtc::RtpTimestampWithOffset>(info);
       post_neuter_metadata_.presentation_timestamp =
           webrtc_frame_->GetPresentationTimestamp();
     }

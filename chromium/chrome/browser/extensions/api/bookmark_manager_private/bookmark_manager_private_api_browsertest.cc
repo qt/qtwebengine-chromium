@@ -112,6 +112,45 @@ IN_PROC_BROWSER_TEST_F(BookmarkManagerPrivateApiBrowsertest,
             browser()->tab_strip_model()->GetWebContentsAt(2)->GetURL());
 }
 
+// Regression test: openInNewTabGroup must apply the scheme deny-list to every
+// URL it opens, so a compromised renderer can't open a denied scheme (e.g.
+// devtools://) via the tab-group path.
+IN_PROC_BROWSER_TEST_F(BookmarkManagerPrivateApiBrowsertest,
+                       RunOpenInNewTabGroupFunctionRejectsDeniedScheme) {
+  const BookmarkNode* node =
+      model()->AddURL(model()->other_node(), 0, u"devtools",
+                      GURL("devtools://devtools/bundled/devtools_app.html"));
+  std::string node_id = base::NumberToString(node->id());
+
+  auto function =
+      base::MakeRefCounted<BookmarkManagerPrivateOpenInNewTabGroupFunction>();
+  EXPECT_EQ(
+      "Cannot navigate to a devtools:// page.",
+      api_test_utils::RunFunctionAndReturnError(
+          function.get(), base::StringPrintf(R"([["%s"]])", node_id.c_str()),
+          GetProfile()));
+}
+
+// Same as above, but the denied URL is nested inside a folder, exercising the
+// one-level folder expansion in the validation loop.
+IN_PROC_BROWSER_TEST_F(
+    BookmarkManagerPrivateApiBrowsertest,
+    RunOpenInNewTabGroupFunctionRejectsDeniedSchemeInFolder) {
+  const BookmarkNode* folder =
+      model()->AddFolder(model()->other_node(), 0, u"folder");
+  model()->AddURL(folder, 0, u"devtools",
+                  GURL("devtools://devtools/bundled/devtools_app.html"));
+  std::string folder_id = base::NumberToString(folder->id());
+
+  auto function =
+      base::MakeRefCounted<BookmarkManagerPrivateOpenInNewTabGroupFunction>();
+  EXPECT_EQ(
+      "Cannot navigate to a devtools:// page.",
+      api_test_utils::RunFunctionAndReturnError(
+          function.get(), base::StringPrintf(R"([["%s"]])", folder_id.c_str()),
+          GetProfile()));
+}
+
 // Tests that running ExtensionFunction-s on deleted bookmark node gracefully
 // fails.
 // Regression test for https://crbug.com/41328754.
@@ -187,6 +226,36 @@ IN_PROC_BROWSER_TEST_F(BookmarkManagerPrivateApiBrowsertest,
 }
 
 IN_PROC_BROWSER_TEST_F(BookmarkManagerPrivateApiBrowsertest,
+                       StartDragWithoutSenderWebContentsFails) {
+  const BookmarkNode* node = model()->AddURL(
+      model()->bookmark_bar_node(), 0, u"Goog", GURL("https://www.google.com"));
+  std::string node_id = base::NumberToString(node->id());
+
+  auto start_drag_function =
+      base::MakeRefCounted<BookmarkManagerPrivateStartDragFunction>();
+  EXPECT_EQ(
+      "Drag failed: sender WebContents is gone.",
+      api_test_utils::RunFunctionAndReturnError(
+          start_drag_function.get(),
+          base::StringPrintf(R"([["%s"], 0, false, 0, 0])", node_id.c_str()),
+          GetProfile()));
+}
+
+IN_PROC_BROWSER_TEST_F(BookmarkManagerPrivateApiBrowsertest,
+                       DropWithoutSenderWebContentsFails) {
+  std::string parent_id =
+      base::NumberToString(model()->bookmark_bar_node()->id());
+
+  auto drop_function =
+      base::MakeRefCounted<BookmarkManagerPrivateDropFunction>();
+  EXPECT_EQ(
+      "Drop failed: sender WebContents is gone.",
+      api_test_utils::RunFunctionAndReturnError(
+          drop_function.get(),
+          base::StringPrintf(R"(["%s", 0])", parent_id.c_str()), GetProfile()));
+}
+
+IN_PROC_BROWSER_TEST_F(BookmarkManagerPrivateApiBrowsertest,
                        RunOpenInNewTabFunction) {
   // Browser starts with one tab.
   ASSERT_EQ(1, browser()->tab_strip_model()->count());
@@ -204,6 +273,30 @@ IN_PROC_BROWSER_TEST_F(BookmarkManagerPrivateApiBrowsertest,
 
   ASSERT_EQ(2, browser()->tab_strip_model()->count());
   ASSERT_EQ(url, browser()->tab_strip_model()->GetWebContentsAt(1)->GetURL());
+}
+
+IN_PROC_BROWSER_TEST_F(BookmarkManagerPrivateApiBrowsertest,
+                       OpenSplitActiveDoesNotCrash) {
+  GURL url("https://www.google.com");
+  const BookmarkNode* node =
+      model()->AddURL(model()->other_node(), 0, u"Goog", url);
+  std::string node_id = base::NumberToString(node->id());
+
+  // Browser starts with one tab.
+  ASSERT_EQ(1, browser()->tab_strip_model()->count());
+
+  auto new_tab_function =
+      base::MakeRefCounted<BookmarkManagerPrivateOpenInNewTabFunction>();
+  std::string args = base::StringPrintf(
+      R"(["%s", {"active": true, "split": true}])", node_id.c_str());
+
+  ASSERT_TRUE(
+      api_test_utils::RunFunction(new_tab_function.get(), args, GetProfile()));
+
+  // Verify the tab was opened.
+  EXPECT_EQ(2, browser()->tab_strip_model()->count());
+  // The new tab should be active.
+  EXPECT_EQ(1, browser()->tab_strip_model()->active_index());
 }
 
 IN_PROC_BROWSER_TEST_F(BookmarkManagerPrivateApiBrowsertest,
@@ -280,6 +373,37 @@ IN_PROC_BROWSER_TEST_F(BookmarkManagerPrivateApiBrowsertest,
   EXPECT_EQ("Cannot open URL \"chrome://history/\" in an incognito window.",
             api_test_utils::RunFunctionAndReturnError(new_window_function.get(),
                                                       args, GetProfile()));
+}
+
+// Regression test: openInNewWindow must apply the same scheme deny-list as
+// openInNewTab so a compromised bookmarks WebUI renderer can't open a denied
+// scheme (e.g. devtools://, javascript:) as a top-level window.
+IN_PROC_BROWSER_TEST_F(BookmarkManagerPrivateApiBrowsertest,
+                       RunOpenInNewWindowFunctionRejectsDeniedScheme) {
+  const BookmarkNode* devtools_node =
+      model()->AddURL(model()->other_node(), 0, u"devtools",
+                      GURL("devtools://devtools/bundled/devtools_app.html"));
+  std::string devtools_id = base::NumberToString(devtools_node->id());
+
+  auto devtools_function =
+      base::MakeRefCounted<BookmarkManagerPrivateOpenInNewWindowFunction>();
+  EXPECT_EQ("Cannot navigate to a devtools:// page.",
+            api_test_utils::RunFunctionAndReturnError(
+                devtools_function.get(),
+                base::StringPrintf(R"([["%s"], false])", devtools_id.c_str()),
+                GetProfile()));
+
+  // javascript: URLs are likewise denied (a different PrepareURLForNavigation
+  // branch than devtools://).
+  const BookmarkNode* js_node = model()->AddURL(model()->other_node(), 0, u"js",
+                                                GURL("javascript:alert(1)"));
+  std::string js_id = base::NumberToString(js_node->id());
+
+  auto js_function =
+      base::MakeRefCounted<BookmarkManagerPrivateOpenInNewWindowFunction>();
+  EXPECT_FALSE(api_test_utils::RunFunction(
+      js_function.get(),
+      base::StringPrintf(R"([["%s"], false])", js_id.c_str()), GetProfile()));
 }
 
 // Mock SelectFileDialog to track ListenerDestroyed calls.

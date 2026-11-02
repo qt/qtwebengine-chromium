@@ -24,12 +24,10 @@
 #include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/numerics/safe_math.h"
 #include "core/fxcrt/span_util.h"
-#include "core/fxcrt/string_pool_template.h"
 #include "core/fxcrt/utf16.h"
 
 // Instantiate.
 template class fxcrt::StringViewTemplate<wchar_t>;
-template class fxcrt::StringPoolTemplate<WideString>;
 template struct std::hash<WideString>;
 
 namespace {

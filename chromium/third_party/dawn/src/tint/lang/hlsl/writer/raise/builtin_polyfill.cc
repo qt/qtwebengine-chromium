@@ -571,7 +571,8 @@ struct State {
         } else if (dst_deepest->Is<core::type::F16>()) {
             fn = BuiltinFn::kAsfloat16;
         } else {
-            TINT_IR_ICE(ir) << "unexpected 16-bit bitcast destination type: " << dst_deepest;
+            TINT_IR_ICE(ir) << "unexpected 16-bit bitcast destination type: "
+                            << dst_deepest->FriendlyName();
         }
 
         b.InsertBefore(bitcast, [&] {
@@ -621,6 +622,7 @@ struct State {
             BitcastType{{src_type, dst_type}}, [&]() -> core::ir::Function* {
                 TINT_IR_ASSERT(ir, src_type->Is<core::type::Vector>());
 
+                ir.properties.Add(core::ir::Property::kAllow16BitIntegers);
                 auto* src_vec = src_type->As<core::type::Vector>();
                 bool src_is_u16 = src_vec->Type()->Is<core::type::U16>();
                 auto* u16_vec_ty = src_is_u16 ? src_type : ty.MatchWidth(ty.u16(), src_vec);
@@ -705,6 +707,7 @@ struct State {
             BitcastType{{src_type, dst_type}}, [&]() -> core::ir::Function* {
                 TINT_IR_ASSERT(ir, dst_type->Is<core::type::Vector>());
 
+                ir.properties.Add(core::ir::Property::kAllow16BitIntegers);
                 auto* dst_vec = dst_type->As<core::type::Vector>();
                 bool dst_is_u16 = dst_vec->Type()->Is<core::type::U16>();
                 auto* u16_vec_ty = dst_is_u16 ? dst_type : ty.MatchWidth(ty.u16(), dst_vec);
@@ -1736,8 +1739,9 @@ struct State {
         auto args = call->Args();
         b.InsertBefore(call, [&] {
             auto* type = ty.Get<hlsl::type::Int8T4Packed>();
-            auto* conv = b.CallExplicit<hlsl::ir::BuiltinCall>(type, hlsl::BuiltinFn::kConvert,
-                                                               Vector{type}, args[0]);
+            auto* conv = b.CallExplicit<hlsl::ir::BuiltinCall>(
+                type, hlsl::BuiltinFn::kConvert, Vector<core::ir::TemplateParameter, 1>{type},
+                args[0]);
 
             b.CallWithResult<hlsl::ir::BuiltinCall>(call->DetachResult(),
                                                     hlsl::BuiltinFn::kUnpackS8S32, conv);
@@ -1761,8 +1765,9 @@ struct State {
         auto args = call->Args();
         b.InsertBefore(call, [&] {
             auto* type = ty.Get<hlsl::type::Uint8T4Packed>();
-            auto* conv = b.CallExplicit<hlsl::ir::BuiltinCall>(type, hlsl::BuiltinFn::kConvert,
-                                                               Vector{type}, args[0]);
+            auto* conv = b.CallExplicit<hlsl::ir::BuiltinCall>(
+                type, hlsl::BuiltinFn::kConvert, Vector<core::ir::TemplateParameter, 1>{type},
+                args[0]);
 
             b.CallWithResult<hlsl::ir::BuiltinCall>(call->DetachResult(),
                                                     hlsl::BuiltinFn::kUnpackU8U32, conv);
@@ -1965,9 +1970,9 @@ struct State {
             auto* sm_ty = result_ty->As<core::type::SubgroupMatrix>();
             TINT_IR_ASSERT(ir, sm_ty);
 
-            b.CallExplicitWithResult<hlsl::ir::BuiltinCall>(call->DetachResult(),
-                                                            hlsl::BuiltinFn::kMultiply,
-                                                            Vector{sm_ty->Type()}, left, right);
+            b.CallExplicitWithResult<hlsl::ir::BuiltinCall>(
+                call->DetachResult(), hlsl::BuiltinFn::kMultiply,
+                Vector<core::ir::TemplateParameter, 1>{sm_ty->Type()}, left, right);
         });
         call->Destroy();
     }
@@ -2075,9 +2080,19 @@ struct State {
         }
 
         b.InsertBefore(call, [&] {
+            const bool majorness_template = call->ExplicitTemplateParams().Length() == 2;
             auto* offset = call->Args()[1];
-            auto* col_major = call->Args()[2];
-            auto* stride = call->Args()[3];
+            auto* stride = call->Args()[majorness_template ? 2 : 3];
+
+            // Workgroup function only take u32 args.
+            if (!offset->Type()->Is<core::type::U32>()) {
+                offset =
+                    b.Call<hlsl::ir::BuiltinCall>(ty.u32(), BuiltinFn::kAsuint, offset)->Result();
+            }
+            if (!stride->Type()->Is<core::type::U32>()) {
+                stride =
+                    b.Call<hlsl::ir::BuiltinCall>(ty.u32(), BuiltinFn::kAsuint, stride)->Result();
+            }
 
             auto* sm_ty = call->Result()->Type()->As<core::type::SubgroupMatrix>();
             TINT_IR_ASSERT(ir, sm_ty);
@@ -2088,11 +2103,21 @@ struct State {
                     << "8-bit subgroup matrix load from workgroup not supported";
             }
 
+            core::ir::Value* col_major = nullptr;
+            if (majorness_template) {
+                TINT_IR_ASSERT(
+                    ir, std::holds_alternative<core::Majorness>(call->ExplicitTemplateParams()[1]));
+                col_major =
+                    b.Constant(std::get<core::Majorness>(call->ExplicitTemplateParams()[1]) ==
+                               core::Majorness::kColMajor);
+            } else {
+                col_major = call->Args()[2];
+            }
             auto* layout = ColMajorToMatrixLayout(col_major);
 
-            b.CallExplicitWithResult<hlsl::ir::BuiltinCall>(call->DetachResult(),
-                                                            hlsl::BuiltinFn::kLoad, Vector{sm_ty},
-                                                            ptr, offset, stride, layout);
+            b.CallExplicitWithResult<hlsl::ir::BuiltinCall>(
+                call->DetachResult(), hlsl::BuiltinFn::kLoad,
+                Vector<core::ir::TemplateParameter, 1>{sm_ty}, ptr, offset, stride, layout);
         });
         call->Destroy();
     }
@@ -2107,10 +2132,20 @@ struct State {
         }
 
         b.InsertBefore(call, [&] {
+            const bool majorness_template = call->ExplicitTemplateParams().Length() == 1;
             auto* offset = call->Args()[1];
             auto* matrix = call->Args()[2];
-            auto* col_major = call->Args()[3];
-            auto* stride = call->Args()[4];
+            auto* stride = call->Args()[majorness_template ? 3 : 4];
+
+            // Workgroup function only take u32 args.
+            if (!offset->Type()->Is<core::type::U32>()) {
+                offset =
+                    b.Call<hlsl::ir::BuiltinCall>(ty.u32(), BuiltinFn::kAsuint, offset)->Result();
+            }
+            if (!stride->Type()->Is<core::type::U32>()) {
+                stride =
+                    b.Call<hlsl::ir::BuiltinCall>(ty.u32(), BuiltinFn::kAsuint, stride)->Result();
+            }
 
             auto* sm_ty = matrix->Type()->As<core::type::SubgroupMatrix>();
             TINT_IR_ASSERT(ir, sm_ty);
@@ -2121,6 +2156,16 @@ struct State {
                     << "8-bit subgroup matrix store to workgroup not supported";
             }
 
+            core::ir::Value* col_major = nullptr;
+            if (majorness_template) {
+                TINT_IR_ASSERT(
+                    ir, std::holds_alternative<core::Majorness>(call->ExplicitTemplateParams()[0]));
+                col_major =
+                    b.Constant(std::get<core::Majorness>(call->ExplicitTemplateParams()[0]) ==
+                               core::Majorness::kColMajor);
+            } else {
+                col_major = call->Args()[3];
+            }
             auto* layout = ColMajorToMatrixLayout(col_major);
 
             b.MemberCall<hlsl::ir::MemberBuiltinCall>(ty.void_(), hlsl::BuiltinFn::kStore, matrix,
@@ -2147,17 +2192,13 @@ struct State {
 }  // namespace
 
 Result<SuccessType> BuiltinPolyfill(core::ir::Module& ir, const BuiltinPolyfillConfig& config) {
-    AssertValid(ir,
-                core::ir::Capabilities{
-                    core::ir::Capability::kAllow8BitIntegers,
-                    core::ir::Capability::kAllow16BitIntegers,
-                    core::ir::Capability::kAllowClipDistancesOnF32ScalarAndVector,
-                    core::ir::Capability::kAllowDuplicateBindings,
-                    core::ir::Capability::kAllowNonCoreTypes,
-                },
-                "before hlsl.BuiltinPolyfill");
+    AssertValid(ir, "before hlsl.BuiltinPolyfill");
 
     State{ir, config}.Process();
+
+    ir.properties.Add(core::ir::Property::kAllowNonCoreTypes);
+    ir.properties.Add(core::ir::Property::kAllowVectorElementPointer);
+
     return Success;
 }
 

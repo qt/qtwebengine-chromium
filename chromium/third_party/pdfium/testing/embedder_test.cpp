@@ -13,6 +13,7 @@
 #include "core/fdrm/fx_crypt.h"
 #include "core/fxcrt/check.h"
 #include "core/fxcrt/check_op.h"
+#include "core/fxcrt/compiler_specific.h"
 #include "core/fxcrt/containers/contains.h"
 #include "core/fxcrt/fx_memcpy_wrappers.h"
 #include "core/fxcrt/fx_safe_types.h"
@@ -240,8 +241,8 @@ FPDF_FILEHANDLER* DownloadFromURLStub(FPDF_FORMFILLINFO* pThis,
       [](void*) -> void {},
       [](void*) -> FPDF_DWORD { return sizeof(kString) - 1; },
       [](void*, FPDF_DWORD off, void* buffer, FPDF_DWORD size) -> FPDF_RESULT {
-        FXSYS_memcpy(buffer, kString,
-                     std::min<size_t>(size, sizeof(kString) - 1));
+        UNSAFE_TODO(FXSYS_memcpy(buffer, kString,
+                                 std::min<size_t>(size, sizeof(kString) - 1)));
         return 0;
       },
       [](void*, FPDF_DWORD, const void*, FPDF_DWORD) -> FPDF_RESULT {
@@ -514,9 +515,9 @@ void CompareBitmapToPngFile(FPDF_BITMAP bitmap,
 
   FX_SAFE_SIZE_T size = stride;
   size *= height;
-  auto bitmap_span =
+  auto bitmap_span = UNSAFE_TODO(
       pdfium::span(static_cast<const uint8_t*>(FPDFBitmap_GetBuffer(bitmap)),
-                   size.ValueOrDie());
+                   size.ValueOrDie()));
 
   int pixels_different;
   switch (FPDFBitmap_GetFormat(bitmap)) {
@@ -965,7 +966,7 @@ std::string EmbedderTest::GetPostScriptFromEmf(
     const auto* comment = reinterpret_cast<const EMRGDICOMMENT*>(record);
     const char* data = reinterpret_cast<const char*>(comment->Data);
     uint16_t size = *reinterpret_cast<const uint16_t*>(data);
-    data += 2;
+    UNSAFE_TODO(data += 2);
     ps_data.append(data, size);
   }
   DeleteEnhMetaFile(emf);
@@ -1135,8 +1136,9 @@ std::string EmbedderTest::HashBitmap(FPDF_BITMAP bitmap) {
   int usable_bytes_per_row =
       GetBitmapBytesPerPixel(bitmap) * FPDFBitmap_GetWidth(bitmap);
   int height = FPDFBitmap_GetHeight(bitmap);
-  auto span = pdfium::span(static_cast<uint8_t*>(FPDFBitmap_GetBuffer(bitmap)),
-                           static_cast<size_t>(stride) * height);
+  auto span = UNSAFE_TODO(
+      pdfium::span(static_cast<uint8_t*>(FPDFBitmap_GetBuffer(bitmap)),
+                   static_cast<size_t>(stride) * height));
 
   CryptMd5Context context = CryptMd5Start();
   for (int i = 0; i < height; ++i) {
@@ -1225,7 +1227,7 @@ int EmbedderTest::GetBlockFromString(void* param,
   end += size;
   CHECK_LE(end.ValueOrDie(), new_file->size());
 
-  FXSYS_memcpy(buf, new_file->data() + pos, size);
+  UNSAFE_TODO(FXSYS_memcpy(buf, new_file->data() + pos, size));
   return 1;
 }
 

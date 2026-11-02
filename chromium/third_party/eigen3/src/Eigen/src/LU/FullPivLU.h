@@ -531,7 +531,6 @@ struct kernel_retval<FullPivLU<MatrixType_, PermutationIndex_> >
       if (i) m.row(i).head(i).setZero();
       m.row(i).tail(cols - i) = dec().matrixLU().row(pivots.coeff(i)).tail(cols - i);
     }
-    m.block(0, 0, rank(), rank());
     m.block(0, 0, rank(), rank()).template triangularView<StrictlyLower>().setZero();
     for (Index i = 0; i < rank(); ++i) m.col(i).swap(m.col(pivots.coeff(i)));
 

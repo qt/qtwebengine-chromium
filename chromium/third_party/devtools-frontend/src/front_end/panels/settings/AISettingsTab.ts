@@ -7,7 +7,7 @@ import '../../ui/kit/kit.js';
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
-import type * as Platform from '../../core/platform/platform.js';
+import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as AiAssistanceModel from '../../models/ai_assistance/ai_assistance.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
@@ -24,228 +24,254 @@ const {html, nothing, render, Directives: {ifDefined, classMap}} = Lit;
 
 const UIStrings = {
   /**
-   * @description Header text for for a list of things to consider in the context of generative AI features
+   * @description Header text for a list of things to consider in the context of generative AI features.
    */
   boostYourProductivity: 'Boost your productivity with AI',
   /**
-   * @description Text announcing a list of facts to consider (when using a GenAI feature)
+   * @description Text announcing a list of facts to consider when using a generative AI feature.
    */
   thingsToConsider: 'Things to consider',
   /**
-   * @description Text describing a fact to consider when using AI features
+   * @description Text describing a fact to consider when using AI features.
    */
   experimentalFeatures:
       'These features use generative AI and may provide inaccurate or offensive information that doesn’t represent Google’s views',
   /**
-   * @description Text describing a fact to consider when using AI features
+   * @description Text describing a fact to consider when using AI features.
    */
   sendsDataToGoogle:
       'These features send relevant data to Google. Google collects this data and feedback to improve its products and services with the help of human reviewers. Avoid sharing sensitive or personal information.',
   /**
-   * @description Text describing a fact to consider when using AI features
+   * @description Text describing a fact to consider when using AI features.
    */
   sendsDataToGoogleNoLogging:
       'Your content will not be used by human reviewers to improve AI. Your organization may change these settings at any time.',
   /**
-   * @description Text describing a fact to consider when using AI features
+   * @description Text describing a fact to consider when using AI features.
    */
   dataCollection: 'Depending on your region, Google may refrain from data collection',
   /**
-   * @description Text describing a fact to consider when using AI features
+   * @description Text describing a fact to consider when using AI features.
    */
   dataCollectionNoLogging:
       'Depending on your Google account management and/or region, Google may refrain from data collection',
   /**
-   * @description Text describing the 'Console Insights' feature
+   * @description Text describing the Console insights feature.
    */
   helpUnderstandConsole: 'Helps you understand and fix console warnings and errors',
   /**
-   * @description Text describing the 'Auto Annotations' feature
+   * @description Text describing the auto annotations feature.
    */
   aIAnnotationsFeatureDescription: 'Automatically generate titles for performance trace annotations',
   /**
-   * @description Text explaining AI feature helps annotate a performance trace with auto-generated labels
+   * @description Text explaining that the AI feature helps annotate a performance trace with auto-generated labels.
    */
   helpAnnotatePerformance: 'Helps you annotate your performance trace with auto-generated labels',
   /**
-   * @description Label for a button to expand an accordion
+   * @description Label for a button to expand an accordion.
    */
   showMore: 'Show more',
   /**
-   * @description Label for a button to collapse an accordion
+   * @description Label for a button to collapse an accordion.
    */
   showLess: 'Show less',
   /**
-   * @description Header for a list of feature attributes. 'When (the feature is turned) on, you'll be able to …'
+   * @description Accessible label for a button to expand an accordion for a specific setting.
+   * @example {Code suggestions} PH1
+   */
+  showMoreOfSetting: 'Show more of {PH1}',
+  /**
+   * @description Accessible label for a button to collapse an accordion for a specific setting.
+   * @example {Code suggestions} PH1
+   */
+  showLessOfSetting: 'Show less of {PH1}',
+  /**
+   * @description Header for a list of feature attributes. 'When on, you'll be able to …'.
    */
   whenOn: 'When on',
   /**
-   * @description Description of the console insights feature
+   * @description Description of the Console insights feature.
    */
   explainConsole: 'Get explanations for console warnings and errors',
   /**
-   * @description Description of the console insights feature ('these issues' refers to console warnings and errors)
+   * @description Description of the Console insights feature ('these issues' refers to Console warnings and errors).
    */
   receiveSuggestions: 'Receive suggestions and code samples to address these issues',
   /**
-   * @description Explainer for which data is being sent by the console insights feature
+   * @description Explainer for which data is being sent by the Console insights feature.
    */
   consoleInsightsSendsData:
       'To generate explanations, the console message, associated stack trace, related source code, and the associated network headers are sent to Google. This data may be seen by human reviewers to improve this feature.',
   /**
-   * @description Explainer for which data is being sent by the console insights feature
+   * @description Explainer for which data is being sent by the Console insights feature without logging.
    */
   consoleInsightsSendsDataNoLogging:
       'To generate explanations, the console message, associated stack trace, related source code, and the associated network headers are sent to Google. This data will not be used to improve Google’s AI models. Your organization may change these settings at any time.',
   /**
-   * @description Reference to the terms of service and privacy notice
+   * @description Reference to the terms of service and privacy notice.
    * @example {Google Terms of Service} PH1
    * @example {Privacy Notice} PH2
    */
   termsOfServicePrivacyNotice: 'Use of these features is subject to the {PH1} and {PH2}',
   /**
-   * @description Text describing the 'AI assistance' feature
+   * @description Text describing the AI assistance feature.
    */
   helpUnderstandStyling: 'Get help with understanding CSS styles',
   /**
-   * @description Text describing the 'AI assistance' feature
+   * @description Text describing the AI assistance feature.
    */
-  helpUnderstandStylingAndNetworkRequest: 'Get help with understanding CSS styles, and network requests',
+  helpUnderstandStylingAndNetworkRequest: 'Get help with understanding CSS styles and network requests',
   /**
-   * @description Text describing the 'AI assistance' feature
+   * @description Text describing the AI assistance feature.
    */
   helpUnderstandStylingNetworkAndFile: 'Get help with understanding CSS styles, network requests, and files',
   /**
-   * @description Text describing the 'AI assistance' feature
+   * @description Text describing the AI assistance feature.
    */
   helpUnderstandStylingNetworkPerformanceAndFile:
       'Get help with understanding CSS styles, network requests, performance, and files',
   /**
-   * @description Text describing the 'AI assistance' feature when V2 is enabled
+   * @description Text describing the AI assistance feature when V2 is enabled.
    */
   aiAssistanceDescriptionV2: 'Get context-aware help on the inspected page',
   /**
-   * @description First item in the description of the AI assistance feature when V2 is enabled
+   * @description First item in the description of the AI assistance feature when V2 is enabled.
    */
   aiAssistanceWhenOnItem1V2:
       'Debug styling, network, performance, source code, accessibility and storage issues with DevTools AI assistance',
   /**
-   * @description Second item in the description of the AI assistance feature when V2 is enabled
+   * @description Second item in the description of the AI assistance feature when V2 is enabled.
    */
-  aiAssistanceWhenOnItem2V2: 'Follow the agent\'s reasoning step-by-step and quickly jump to the relevant source data',
+  aiAssistanceWhenOnItem2V2: 'Follow the agent’s reasoning step-by-step and quickly jump to the relevant source data',
   /**
-   * @description Explainer for which data is being sent by the AI assistance feature when V2 is enabled
+   * @description Explainer for which data is being sent by the AI assistance feature when V2 is enabled.
    */
   aiAssistanceThingsToConsiderV2:
       'To generate explanations, chat messages, data accessible for this site via DevTools panels and Web APIs, and items you select such as network requests, files, and performance traces are sent to Google and may be seen by human reviewers to improve this feature. This is an experimental AI feature and won’t always get it right.',
   /**
-   * @description Explainer for which data is being sent by the AI assistance feature when V2 is enabled and logging is disabled
+   * @description Explainer for which data is being sent by the AI assistance feature when V2 is enabled and logging is disabled.
    */
   aiAssistanceThingsToConsiderNoLoggingV2:
       'To generate explanations, chat messages, data accessible for this site via DevTools panels and Web APIs, and items you select such as network requests, files, and performance traces are sent to Google. The content you submit and that is generated by this feature will not be used to improve Google’s AI models. This is an experimental AI feature and won’t always get it right.',
   /**
-   * @description Text describing the 'Code suggestions' feature
+   * @description Text describing the code suggestions feature.
    */
   helpUnderstandCodeSuggestions: 'Write code faster with AI-powered suggestions',
   /**
-   * @description Text which is a hyperlink to more documentation
+   * @description Text which is a hyperlink to more documentation.
    */
   learnMore: 'Learn more',
   /**
-   * @description Description of the AI assistance feature
+   * @description Description of the AI assistance feature.
    */
   explainStyling: 'Understand CSS styles with AI-powered insights',
   /**
-   * @description Description of the AI assistance feature
+   * @description Description of the AI assistance feature.
    */
-  explainStylingAndNetworkRequest: 'Understand CSS styles, and network activity with AI-powered insights',
+  explainStylingAndNetworkRequest: 'Understand CSS styles and network activity with AI-powered insights',
   /**
-   * @description Description of the AI assistance feature
+   * @description Description of the AI assistance feature.
    */
   explainStylingNetworkAndFile: 'Understand CSS styles, network activity, and file origins with AI-powered insights',
   /**
-   * @description Description of the AI assistance feature
+   * @description Description of the AI assistance feature.
    */
   explainStylingNetworkPerformanceAndFile:
       'Understand CSS styles, network activity, performance bottlenecks, and file origins with AI-powered insights',
   /**
-   * @description Description of the AI assistance feature
+   * @description Description of the AI assistance feature.
    */
   receiveStylingSuggestions: 'Improve your development workflow with contextual explanations and suggestions',
   /**
-   * @description Explainer for which data is being sent by the AI assistance feature
+   * @description Explainer for which data is being sent by the AI assistance feature.
    */
   freestylerSendsData:
       'To generate explanations, your chat messages, any data the inspected page can see using Web APIs, and the items you select such as files, network requests, and performance traces are sent to Google. This data may be seen by human reviewers to improve this feature. Don’t use on pages with personal or sensitive information.',
   /**
-   * @description Explainer for which data is being sent by the AI assistance feature
+   * @description Explainer for which data is being sent by the AI assistance feature without logging.
    */
   freestylerSendsDataNoLogging:
       'To generate explanations, your chat messages, any data the inspected page can see using Web APIs, and the items you select such as files, network requests, and performance traces are sent to Google. This data will not be used to improve Google’s AI models. Your organization may change these settings at any time.',
   /**
-   * @description Explainer for which data is being sent by the AI generated annotations feature
+   * @description Explainer for which data is being sent by the AI-generated annotations feature.
    */
   generatedAiAnnotationsSendData:
       'To generate annotation suggestions, your performance trace is sent to Google. This data may be seen by human reviewers to improve this feature.',
   /**
-   * @description Explainer for which data is being sent by the AI assistance feature
+   * @description Explainer for which data is being sent by the AI-generated annotations feature without logging.
    */
   generatedAiAnnotationsSendDataNoLogging:
       'To generate annotation suggestions, your performance trace is sent to Google. This data will not be used to improve Google’s AI models. Your organization may change these settings at any time.',
   /**
-   * @description Description of the 'Code suggestions' feature
+   * @description Description of the code suggestions feature.
    */
   asYouTypeCodeSuggestions:
       'As you type in the Console or Sources panel, you’ll get code suggestions. Press Tab to accept one.',
   /**
-   * @description First item in the description of the 'Code suggestions' feature [updated]
+   * @description First item in the description of the code suggestions feature.
    */
   asYouTypeRelevantDataIsBeingSentToGoogle:
       'As you type, relevant data is being sent to Google to generate code suggestions. Press Tab to accept.',
   /**
-   * @description Second item in the description of the 'Code suggestions' feature [new]
+   * @description Second item in the description of the code suggestions feature.
    */
   describeCodeInComment:
       'In Console or Sources, describe the code you need in a comment, then press Ctrl+I to generate it.',
   /**
-   * @description Second item in the description of the 'Code suggestions' feature [new]
+   * @description Second item in the description of the code suggestions feature for macOS.
    */
   describeCodeInCommentForMacOs:
       'In Console or Sources, describe the code you need in a comment, then press Cmd+I to generate it.',
   /**
-   * @description Explainer for which data is being sent for the 'Code suggestions' feature
+   * @description Explainer for which data is being sent for the code suggestions feature.
    */
   codeSuggestionsSendData:
       'To generate code suggestions, your console input, the history of your current console session, the currently inspected CSS, and the contents of the currently open file are shared with Google. This data may be seen by human reviewers to improve this feature.',
   /**
-   * @description Explainer for which data is being sent for the 'Code suggestions' feature when logging is not enabled
+   * @description Explainer for which data is being sent for the code suggestions feature without logging.
    */
   codeSuggestionsSendDataNoLogging:
       'To generate code suggestions, your console input, the history of your current console session, the currently inspected CSS, and the contents of the currently open file are shared with Google. This data will not be used to improve Google’s AI models. Your organization may change these settings at any time.',
   /**
-   * @description Label for a link to the terms of service
+   * @description Label for a link to the terms of service.
    */
   termsOfService: 'Google Terms of Service',
   /**
-   * @description Label for a link to the privacy notice
+   * @description Label for a link to the privacy notice.
    */
   privacyNotice: 'Google Privacy Policy',
   /**
-   * @description Label for a toggle to enable the Console Insights feature
+   * @description Label for a toggle to enable the Console insights feature.
    */
   enableConsoleInsights: 'Enable `Console insights`',
   /**
-   * @description Label for a toggle to enable the AI assistance feature
+   * @description Label for a toggle to enable the AI assistance feature.
    */
   enableAiAssistance: 'Enable AI assistance',
   /**
-   * @description Label for a toggle to enable the AI annotation feature
+   * @description Label for a toggle to enable the AI annotation feature.
    */
   enableAiSuggestedAnnotations: 'Enable AI suggestions for performance panel annotations',
   /**
-   * @description Label for a toggle to enable the AI code suggestions feature
+   * @description Label for a toggle to enable the AI code suggestions feature.
    */
   enableAiCodeSuggestions: 'Enable AI code suggestions',
+  /**
+   * @description Message shown to the user if the age check isn't successful.
+   */
+  ageRestricted: 'This feature is only available to users 18 years or older.',
+  /**
+   * @description The error message when the user isn't logged in to Chrome.
+   */
+  notLoggedIn: 'This feature is only available when you sign in to Chrome with your Google account.',
+  /**
+   * @description Message shown when the user is offline.
+   */
+  offline: 'This feature is only available with an active internet connection.',
+  /**
+   * @description Text informing the user that AI assistance isn't available in Incognito mode or Guest mode.
+   */
+  notAvailableInIncognitoMode: 'AI assistance isn’t available in Incognito mode or Guest mode.',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/settings/AISettingsTab.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -301,7 +327,7 @@ export const AI_SETTINGS_TAB_DEFAULT_VIEW: View = (input, _output, target): void
       <div class="disclaimer-list">
         ${input.sharedDisclaimerBulletPoints.map(item =>
           html`<div><devtools-icon .name=${item.icon} class="medium"></devtools-icon>
-              </div><div>${item.text}</div>`
+              </div><div>${item.text}</div>`,
         )}
       </div>
     </div>
@@ -342,6 +368,9 @@ export const AI_SETTINGS_TAB_DEFAULT_VIEW: View = (input, _output, target): void
           <devtools-button
             .data=${{
               title: settingData.settingExpandState.isSettingExpanded ? i18nString(UIStrings.showLess) : i18nString(UIStrings.showMore),
+              accessibleLabel: settingData.settingExpandState.isSettingExpanded ?
+                  i18nString(UIStrings.showLessOfSetting, {PH1: settingData.settingName}) :
+                  i18nString(UIStrings.showMoreOfSetting, {PH1: settingData.settingName}),
               size: Buttons.Button.Size.SMALL,
               iconName: settingData.settingExpandState.isSettingExpanded ? 'chevron-up' : 'chevron-down',
               variant: Buttons.Button.Variant.ICON,
@@ -409,7 +438,8 @@ export class AISettingsTab extends UI.Widget.VBox {
   #aiAssistanceSetting?: Common.Settings.Setting<boolean>;
   #aiCodeCompletionSetting?: Common.Settings.Setting<boolean>;
   #aidaAvailability = Host.AidaClient.AidaAccessPreconditions.NO_ACCOUNT_EMAIL;
-  #boundOnAidaAvailabilityChange: () => Promise<void>;
+  #boundOnAidaAvailabilityChange:
+      (ev: Common.EventTarget.EventTargetEvent<Host.AidaClient.AidaAccessPreconditions>) => void;
   // Setting to parameters needed to display it in the UI.
   // To display a a setting, it needs to be added to this map.
   #settingToParams = new Map<Common.Settings.Setting<boolean>, AiSettingParams>();
@@ -443,10 +473,36 @@ export class AISettingsTab extends UI.Widget.VBox {
     this.#view = view ?? AI_SETTINGS_TAB_DEFAULT_VIEW;
   }
 
+  #getDisabledReasons(): Platform.UIString.LocalizedString[] {
+    const preconditions = AiAssistanceModel.AiUtils.getDisabledReasons(this.#aidaAvailability);
+    const mappedReasons: Platform.UIString.LocalizedString[] = [];
+    for (const precondition of preconditions) {
+      switch (precondition) {
+        case AiAssistanceModel.AiUtils.FrontendAccessPrecondition.IS_OFF_THE_RECORD:
+          mappedReasons.push(i18nString(UIStrings.notAvailableInIncognitoMode));
+          break;
+        case Host.AidaClient.AidaAccessPreconditions.NO_ACCOUNT_EMAIL:
+        case Host.AidaClient.AidaAccessPreconditions.SYNC_IS_PAUSED:
+          mappedReasons.push(i18nString(UIStrings.notLoggedIn));
+          break;
+        case Host.AidaClient.AidaAccessPreconditions.NO_INTERNET:
+          mappedReasons.push(i18nString(UIStrings.offline));
+          break;
+        case AiAssistanceModel.AiUtils.FrontendAccessPrecondition.AGE_RESTRICTED:
+          mappedReasons.push(i18nString(UIStrings.ageRestricted));
+          break;
+        default:
+          Platform.assertNever(precondition, `Unknown precondition: ${precondition}`);
+      }
+    }
+    const settingDisabledReasons =
+        Common.Settings.Settings.instance().moduleSetting('ai-assistance-enabled').disabledReasons();
+    return [...mappedReasons, ...settingDisabledReasons];
+  }
+
   override performUpdate(): void {
-    const disabledReasons = AiAssistanceModel.AiUtils.getDisabledReasons(this.#aidaAvailability);
     const viewInput: ViewInput = {
-      disabledReasons,
+      disabledReasons: this.#getDisabledReasons(),
       sharedDisclaimerBulletPoints: this.#getSharedDisclaimerBulletPoints(),
       settingToParams: this.#settingToParams,
       expandSetting: this.#expandSetting.bind(this),
@@ -459,7 +515,10 @@ export class AISettingsTab extends UI.Widget.VBox {
     super.wasShown();
     Host.AidaClient.HostConfigTracker.instance().addEventListener(
         Host.AidaClient.Events.AIDA_AVAILABILITY_CHANGED, this.#boundOnAidaAvailabilityChange);
-    void this.#onAidaAvailabilityChange();
+    const initialAvailability = Host.AidaClient.HostConfigTracker.instance().aidaAvailability;
+    if (initialAvailability !== undefined) {
+      this.#updateAidaAvailability(initialAvailability);
+    }
     this.requestUpdate();
   }
 
@@ -482,12 +541,12 @@ export class AISettingsTab extends UI.Widget.VBox {
         enableSettingText: i18nString(UIStrings.enableConsoleInsights),
         settingItems: [
           {iconName: 'lightbulb', text: i18nString(UIStrings.explainConsole)},
-          {iconName: 'code', text: i18nString(UIStrings.receiveSuggestions)}
+          {iconName: 'code', text: i18nString(UIStrings.receiveSuggestions)},
         ],
         toConsiderSettingItems: [{
           iconName: 'google',
           text: noLogging ? i18nString(UIStrings.consoleInsightsSendsDataNoLogging) :
-                            i18nString(UIStrings.consoleInsightsSendsData)
+                            i18nString(UIStrings.consoleInsightsSendsData),
         }],
         learnMoreLink: {
           url: 'https://developer.chrome.com/docs/devtools/console/understand-messages',
@@ -550,11 +609,11 @@ export class AISettingsTab extends UI.Widget.VBox {
         toConsiderSettingItems: [{
           iconName: 'google',
           text: noLogging ? i18nString(UIStrings.generatedAiAnnotationsSendDataNoLogging) :
-                            i18nString(UIStrings.generatedAiAnnotationsSendData)
+                            i18nString(UIStrings.generatedAiAnnotationsSendData),
         }],
         learnMoreLink: {
           url: 'https://developer.chrome.com/docs/devtools/performance/annotations#auto-annotations',
-          linkJSLogContext: 'learn-more.auto-annotations'
+          linkJSLogContext: 'learn-more.auto-annotations',
         },
         settingExpandState: {
           isSettingExpanded: false,
@@ -568,11 +627,12 @@ export class AISettingsTab extends UI.Widget.VBox {
     if (this.#aiCodeCompletionSetting) {
       const settingItems = Root.Runtime.hostConfig.devToolsAiCodeGeneration?.enabled ?
           [
-            {iconName: 'code', text: i18nString(UIStrings.asYouTypeRelevantDataIsBeingSentToGoogle)}, {
+            {iconName: 'code', text: i18nString(UIStrings.asYouTypeRelevantDataIsBeingSentToGoogle)},
+            {
               iconName: 'text-analysis',
               text: Host.Platform.isMac() ? i18nString(UIStrings.describeCodeInCommentForMacOs) :
-                                            i18nString(UIStrings.describeCodeInComment)
-            }
+                                            i18nString(UIStrings.describeCodeInComment),
+            },
           ] :
           [{iconName: 'code', text: i18nString(UIStrings.asYouTypeCodeSuggestions)}];
 
@@ -585,11 +645,11 @@ export class AISettingsTab extends UI.Widget.VBox {
         toConsiderSettingItems: [{
           iconName: 'google',
           text: noLogging ? i18nString(UIStrings.codeSuggestionsSendDataNoLogging) :
-                            i18nString(UIStrings.codeSuggestionsSendData)
+                            i18nString(UIStrings.codeSuggestionsSendData),
         }],
         learnMoreLink: {
           url: ' https://developers.chrome.com/docs/devtools/ai-assistance/code-completion',
-          linkJSLogContext: 'learn-more.code-completion'
+          linkJSLogContext: 'learn-more.code-completion',
         },
         settingExpandState: {
           isSettingExpanded: false,
@@ -601,12 +661,15 @@ export class AISettingsTab extends UI.Widget.VBox {
     }
   }
 
-  async #onAidaAvailabilityChange(): Promise<void> {
-    const currentAidaAvailability = await Host.AidaClient.AidaClient.checkAccessPreconditions();
-    if (currentAidaAvailability !== this.#aidaAvailability) {
-      this.#aidaAvailability = currentAidaAvailability;
+  #updateAidaAvailability(aidaAvailability: Host.AidaClient.AidaAccessPreconditions): void {
+    if (aidaAvailability !== this.#aidaAvailability) {
+      this.#aidaAvailability = aidaAvailability;
       this.requestUpdate();
     }
+  }
+
+  #onAidaAvailabilityChange(ev: Common.EventTarget.EventTargetEvent<Host.AidaClient.AidaAccessPreconditions>): void {
+    this.#updateAidaAvailability(ev.data);
   }
 
   #getAiAssistanceSettingDescription(): Platform.UIString.LocalizedString {

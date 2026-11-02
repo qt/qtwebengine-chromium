@@ -19,6 +19,8 @@ namespace Eigen {
 
 namespace internal {
 
+EIGEN_GCC_FAST_MATH_COMPLEX_VECTORIZE_WORKAROUND_PUSH
+
 /********************************* float32 ************************************/
 
 #if 0
@@ -874,6 +876,8 @@ EIGEN_STRONG_INLINE Packet1Xcd predux_half(const Packet2Xcd& a) {
 }
 
 EIGEN_MAKE_CONJ_HELPER_CPLX_REAL(Packet2Xcd, Packet2Xd)
+
+EIGEN_GCC_FAST_MATH_COMPLEX_VECTORIZE_WORKAROUND_POP
 
 }  // end namespace internal
 

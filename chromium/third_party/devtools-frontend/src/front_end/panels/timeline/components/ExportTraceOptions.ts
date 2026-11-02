@@ -163,7 +163,7 @@ export class ExportTraceOptions extends HTMLElement {
       ...this.#state,
       displayAnnotationsCheckbox: options.annotationsExist,
       displayResourceContentCheckbox: true,
-      displaySourceMapsCheckbox: true
+      displaySourceMapsCheckbox: true,
     };
   }
 

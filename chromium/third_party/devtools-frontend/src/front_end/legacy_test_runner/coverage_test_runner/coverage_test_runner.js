@@ -76,7 +76,7 @@ CoverageTestRunner.exportReport = async function() {
     write: d => {
       data = d;
     },
-    close: _ => 0
+    close: _ => 0,
   });
   return data;
 };

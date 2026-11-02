@@ -21,6 +21,8 @@
 #include <intrin.h>
 #endif
 
+#include <cstdint>
+
 namespace libgav1 {
 
 #if defined(__i386__) || defined(__x86_64__) || defined(_M_IX86) || \

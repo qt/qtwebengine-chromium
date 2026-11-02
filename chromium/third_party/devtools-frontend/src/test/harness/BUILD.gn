@@ -1,0 +1,75 @@
+# Copyright 2026 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("../../scripts/build/ninja/devtools_module.gni")
+import("../../scripts/build/typescript/typescript.gni")
+
+node_ts_library("harness") {
+  sources = [ "run-mocha.ts" ]
+
+  deps = [
+    ":e2e_fixtures",
+    ":unit_fixtures",
+    "../../test/e2e/conductor:implementation",
+  ]
+  data_deps = [
+    ":e2e_test_inputs",
+    ":foundation_test_inputs",
+    ":unit_test_inputs",
+  ]
+}
+
+ts_e2e_library("e2e_fixtures") {
+  deps = [
+    "../../test/conductor:implementation",
+    "../../test/shared",
+  ]
+  sources = [
+    "e2e/duplicate.test.ts",
+    "e2e/e2e.test.ts",
+    "e2e/errors.test.ts",
+    "e2e/multiple.test.ts",
+  ]
+}
+
+devtools_ui_module("unit_fixtures") {
+  testonly = true
+  sources = [
+    "unit/after_each_hook_fail.test.ts",
+    "unit/before_each_hook_fail.test.ts",
+    "unit/duplicate.test.ts",
+    "unit/global_after_hook_fail.test.ts",
+    "unit/global_before_hook_fail.test.ts",
+    "unit/hooks.test.ts",
+    "unit/screenshot_retry.test.ts",
+    "unit/snapshot.test.ts",
+    "unit/unit.test.ts",
+    "unit/unit_2.test.ts",
+  ]
+  deps = [ "../../front_end/testing" ]
+}
+
+generated_file("foundation_test_inputs") {
+  outputs = [ "$target_gen_dir/unit/foundation_tests.txt" ]
+  data_keys = [ "tests" ]
+  rebase = "$target_gen_dir/unit"
+
+  deps = [ ":unit_fixtures" ]
+}
+
+generated_file("unit_test_inputs") {
+  outputs = [ "$target_gen_dir/unit/tests.txt" ]
+  data_keys = [ "tests" ]
+  rebase = "$target_gen_dir/unit"
+
+  deps = [ ":unit_fixtures" ]
+}
+
+generated_file("e2e_test_inputs") {
+  outputs = [ "$target_gen_dir/e2e/tests.txt" ]
+  data_keys = [ "tests" ]
+  rebase = target_gen_dir
+
+  deps = [ ":e2e_fixtures" ]
+}

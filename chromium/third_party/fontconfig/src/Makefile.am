@@ -1,8 +1,8 @@
-# 
+#
 #  fontconfig/Makefile.am
-# 
+#
 #  Copyright © 2003 Keith Packard
-# 
+#
 #  Permission to use, copy, modify, distribute, and sell this software and its
 #  documentation for any purpose is hereby granted without fee, provided that
 #  the above copyright notice appear in all copies and that both that
@@ -12,7 +12,7 @@
 #  specific, written prior permission.  The authors make no
 #  representations about the suitability of this software for any purpose.  It
 #  is provided "as is" without express or implied warranty.
-# 
+#
 #  THE AUTHOR(S) DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE,
 #  INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO
 #  EVENT SHALL THE AUTHOR(S) BE LIABLE FOR ANY SPECIAL, INDIRECT OR
@@ -21,7 +21,7 @@
 #  TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 #  PERFORMANCE OF THIS SOFTWARE.
 
-SUBDIRS=fontconfig fc-case fc-lang fc-const src \
+SUBDIRS=fontconfig fc-case fc-lang fc-const fc-genericfamily src \
 	fc-cache fc-cat fc-conflist fc-list fc-match \
 	fc-pattern fc-query fc-scan fc-validate conf.d \
 	its po po-conf test

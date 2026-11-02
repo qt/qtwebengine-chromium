@@ -62,4 +62,7 @@ void chkder(const Matrix<Scalar, Dynamic, 1> &x, const Matrix<Scalar, Dynamic, 1
 
 }  // end namespace Eigen
 
+#undef chkder_log10e
+#undef chkder_factor
+
 #endif  // EIGEN_NONLINEAROPTIMIZATION_CHKDER_H

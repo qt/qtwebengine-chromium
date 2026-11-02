@@ -7,12 +7,10 @@
 #ifndef XFA_FXFA_CXFA_FFPUSHBUTTON_H_
 #define XFA_FXFA_CXFA_FFPUSHBUTTON_H_
 
+#include <stdint.h>
+
 #include "v8/include/cppgc/member.h"
 #include "xfa/fxfa/cxfa_fffield.h"
-
-#define XFA_FWL_PSBSTYLEEXT_HiliteInverted (1L << 0)
-#define XFA_FWL_PSBSTYLEEXT_HilitePush (1L << 1)
-#define XFA_FWL_PSBSTYLEEXT_HiliteOutLine (1L << 2)
 
 class CXFA_Button;
 class CXFA_TextLayout;
@@ -20,6 +18,12 @@ class CXFA_TextProvider;
 
 class CXFA_FFPushButton final : public CXFA_FFField {
  public:
+  enum class HighlightStyle : uint32_t {
+    kInverted = 1L << 0,
+    kPush = 1L << 1,
+    kOutline = 1L << 2,
+  };
+
   CONSTRUCT_VIA_MAKE_GARBAGE_COLLECTED;
   ~CXFA_FFPushButton() override;
 

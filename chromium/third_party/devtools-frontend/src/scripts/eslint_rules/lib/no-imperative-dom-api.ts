@@ -226,7 +226,7 @@ export default createRule({
             ...getRangesToRemove(domFragment, true).map(range => fixer.removeRange(range)),
           ];
           return result;
-        }
+        },
       });
     }
 
@@ -279,7 +279,7 @@ export default createRule({
           maybeReportDomFragment(domFragment);
         }
         DomFragment.clear();
-      }
+      },
     };
-  }
+  },
 });

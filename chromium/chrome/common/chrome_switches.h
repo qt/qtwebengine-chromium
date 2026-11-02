@@ -68,6 +68,7 @@ extern const char kCredits[];
 extern const char kCustomDevtoolsFrontend[];
 extern const char kDebugPackedApps[];
 extern const char kDevToolsFlags[];
+extern const char kDevToolsNavigationGatingRules[];
 extern const char kDiagnostics[];
 extern const char kDiagnosticsFormat[];
 extern const char kDiagnosticsRecovery[];
@@ -99,7 +100,6 @@ extern const char kEnableAudioDebugRecordingsFromExtension[];
 extern const char kEnableAutoReload[];
 extern const char kEnableBookmarkUndo[];
 extern const char kEnableDomainReliability[];
-extern const char kEnableDevToolsGreenDevUi[];
 #if BUILDFLAG(IS_CHROMEOS)
 extern const char kEnableDevToolsPwaHandler[];
 #endif
@@ -152,6 +152,7 @@ extern const char kNoFirstRun[];
 extern const char kNoPings[];
 extern const char kNoProxyServer[];
 extern const char kNoStartupWindow[];
+extern const char kNotebookHomeURL[];
 extern const char kOnTheFlyMhtmlHashComputation[];
 extern const char kOpenInNewWindow[];
 extern const char kFocus[];
@@ -221,7 +222,6 @@ extern const char kWinJumplistAction[];
 extern const char kAndroidEntraSsoAllowDebugBrokers[];
 extern const char kAuthAndroidNegotiateAccountType[];
 extern const char kDisableDefaultBrowserPromo[];
-extern const char kForceDeviceOwnership[];
 extern const char kForceEnableNightMode[];
 extern const char kForceShowUpdateMenuBadge[];
 extern const char kForceShowUpdateMenuItemCustomSummary[];
@@ -230,7 +230,6 @@ extern const char kForceDisableSigninFRE[];
 extern const char kForceUpdateMenuType[];
 extern const char kMarketUrlForTesting[];
 extern const char kRequestDesktopSites[];
-extern const char kUseWebUiNtp[];
 #endif  // BUILDFLAG(IS_ANDROID)
 
 #if !BUILDFLAG(IS_ANDROID) || BUILDFLAG(ENABLE_DESKTOP_ANDROID_EXTENSIONS)
@@ -281,6 +280,7 @@ extern const char kStartupForegroundLaunch[];
 extern const char kUninstall[];
 extern const char kUninstallAppId[];
 extern const char kIsolated[];
+extern const char kWaitForParentHandle[];
 #endif  // BUILDFLAG(IS_WIN)
 
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW) && !defined(OFFICIAL_BUILD)
@@ -296,7 +296,6 @@ extern const char kGlicGuestURL[];
 extern const char kGlicGeminiEnterpriseSettingsOverride[];
 extern const char kGlicAlwaysOpenFre[];
 extern const char kGlicAlwaysSkipFre[];
-extern const char kGlicFreURL[];
 extern const char kGlicExperimentalFreURL[];
 extern const char kGlicShortcutsLearnMoreURL[];
 extern const char kGlicOpenOnStartup[];

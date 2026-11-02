@@ -15,6 +15,7 @@ import {Events as ResourceTreeModelEvents, ResourceTreeModel} from './ResourceTr
 import {type EvaluationOptions, type EvaluationResult, type ExecutionContext, RuntimeModel} from './RuntimeModel.js';
 import {Script} from './Script.js';
 import {SDKModel} from './SDKModel.js';
+import {jsSourceMapsEnabledSettingDescriptor} from './SDKSettings.js';
 import {SourceMap} from './SourceMap.js';
 import {SourceMapManager} from './SourceMapManager.js';
 import {Capability, type Target} from './Target.js';
@@ -25,7 +26,7 @@ const UIStrings = {
    */
   local: 'Local',
   /**
-   * @description Text that refers to closure as a programming term
+   * @description Text that refers to closure as a programming term.
    */
   closure: 'Closure',
   /**
@@ -33,19 +34,19 @@ const UIStrings = {
    */
   block: 'Block',
   /**
-   * @description Label for a group of JavaScript files
+   * @description Label for a group of JavaScript files.
    */
   script: 'Script',
   /**
-   * @description Title of a section in the debugger showing JavaScript variables from the a 'with'
-   *block. Block here means section of code, 'with' refers to a JavaScript programming concept and
-   *is a fixed term.
+   * @description Title of a section in the debugger showing JavaScript variables from a 'with'
+   * block. Block here means section of code, 'with' refers to a JavaScript programming concept and
+   * is a fixed term.
    */
   withBlock: '`With` block',
   /**
-   * @description Title of a section in the debugger showing JavaScript variables from the a 'catch'
-   *block. Block here means section of code, 'catch' refers to a JavaScript programming concept and
-   *is a fixed term.
+   * @description Title of a section in the debugger showing JavaScript variables from a 'catch'
+   * block. Block here means section of code, 'catch' refers to a JavaScript programming concept and
+   * is a fixed term.
    */
   catchBlock: '`Catch` block',
   /**
@@ -53,19 +54,19 @@ const UIStrings = {
    */
   global: 'Global',
   /**
-   * @description Text for a JavaScript module, the programming concept
+   * @description Text for a JavaScript module, the programming concept.
    */
   module: 'Module',
   /**
-   * @description Text describing the expression scope in WebAssembly
+   * @description Text describing the expression scope in WebAssembly.
    */
   expression: 'Expression',
   /**
-   * @description Text in Scope Chain Sidebar Pane of the Sources panel
+   * @description Text in Scope Chain section of the Sources panel.
    */
   exception: 'Exception',
   /**
-   * @description Text in Scope Chain Sidebar Pane of the Sources panel
+   * @description Text in Scope Chain section of the Sources panel.
    */
   returnValue: 'Return value',
 } as const;
@@ -144,7 +145,7 @@ export class DebuggerModel extends SDKModel<EventTypes> {
   #selectedCallFrame: CallFrame|null = null;
   #debuggerEnabled = false;
   #debuggerId: string|null = null;
-  #skipAllPausesTimeout = 0;
+  #skipAllPausesTimeout?: ReturnType<typeof setTimeout>;
   #beforePausedCallback: ((arg0: DebuggerPausedDetails, stepOver: Location|null) => Promise<boolean>)|null = null;
   #computeAutoStepRangesCallback: ((arg0: StepMode, arg1: CallFrame) => Promise<Array<{
                                      start: Location,
@@ -168,10 +169,10 @@ export class DebuggerModel extends SDKModel<EventTypes> {
     this.agent = target.debuggerAgent();
     this.#runtimeModel = (target.model(RuntimeModel) as RuntimeModel);
 
-    this.#sourceMapManager = new SourceMapManager(
-        target,
-        (compiledURL, sourceMappingURL, payload, script) =>
-            new SourceMap(compiledURL, sourceMappingURL, payload, script));
+    this.#sourceMapManager =
+        new SourceMapManager(target,
+                             (compiledURL, sourceMappingURL, payload, script) => new SourceMap(
+                                 compiledURL, sourceMappingURL, payload, target.targetManager().getConsole(), script));
 
     const settings = this.target().targetManager().settings;
     settings.moduleSetting('pause-on-exception-enabled').addChangeListener(this.pauseOnExceptionStateChanged, this);
@@ -184,8 +185,8 @@ export class DebuggerModel extends SDKModel<EventTypes> {
       void this.enableDebugger();
     }
 
-    this.#sourceMapManager.setEnabled(settings.moduleSetting('js-source-maps-enabled').get());
-    settings.moduleSetting('js-source-maps-enabled')
+    this.#sourceMapManager.setEnabled(settings.resolve(jsSourceMapsEnabledSettingDescriptor).get());
+    settings.resolve(jsSourceMapsEnabledSettingDescriptor)
         .addChangeListener(event => this.#sourceMapManager.setEnabled((event.data as boolean)));
 
     const resourceTreeModel = (target.model(ResourceTreeModel) as ResourceTreeModel);
@@ -194,7 +195,8 @@ export class DebuggerModel extends SDKModel<EventTypes> {
     }
   }
 
-  static selectSymbolSource(debugSymbols: Protocol.Debugger.DebugSymbols[]|null): Protocol.Debugger.DebugSymbols|null {
+  static selectSymbolSource(debugSymbols: Protocol.Debugger.DebugSymbols[]|null,
+                            devToolsConsole: Common.Console.Console): Protocol.Debugger.DebugSymbols|null {
     if (!debugSymbols || debugSymbols.length === 0) {
       return null;
     }
@@ -221,8 +223,7 @@ export class DebuggerModel extends SDKModel<EventTypes> {
         debugSymbolsSource !== null,
         'Unknown symbol types. Front-end and back-end should be kept in sync regarding Protocol.Debugger.DebugSymbolTypes');
     if (debugSymbolsSource && debugSymbols.length > 1) {
-      Common.Console.Console.instance().warn(
-          `Multiple debug symbols for script were found. Using ${debugSymbolsSource.type}`);
+      devToolsConsole.warn(`Multiple debug symbols for script were found. Using ${debugSymbolsSource.type}`);
     }
     return debugSymbolsSource;
   }
@@ -337,20 +338,20 @@ export class DebuggerModel extends SDKModel<EventTypes> {
   }
 
   private skipAllPauses(skip: boolean): void {
-    if (this.#skipAllPausesTimeout) {
-      clearTimeout(this.#skipAllPausesTimeout);
-      this.#skipAllPausesTimeout = 0;
-    }
+    clearTimeout(this.#skipAllPausesTimeout);
+
     void this.agent.invoke_setSkipAllPauses({skip});
   }
 
   skipAllPausesUntilReloadOrTimeout(timeout: number): void {
-    if (this.#skipAllPausesTimeout) {
-      clearTimeout(this.#skipAllPausesTimeout);
-    }
+    clearTimeout(this.#skipAllPausesTimeout);
+
     void this.agent.invoke_setSkipAllPauses({skip: true});
     // If reload happens before the timeout, the flag will be already unset and the timeout callback won't change anything.
-    this.#skipAllPausesTimeout = window.setTimeout(this.skipAllPauses.bind(this, false), timeout);
+    this.#skipAllPausesTimeout = globalThis.setTimeout(
+        this.skipAllPauses.bind(this, false),
+        timeout,
+    );
   }
 
   private pauseOnExceptionStateChanged(): void {
@@ -535,6 +536,11 @@ export class DebuggerModel extends SDKModel<EventTypes> {
     return this.#scripts.get(scriptId) || null;
   }
 
+  isWasm(scriptId: string): boolean {
+    const script = this.scriptForId(scriptId);
+    return script ? script.isWasm() : false;
+  }
+
   /**
    * Returns all `Script` objects with the same provided `sourceURL`. The
    * resulting array is sorted by time with the newest `Script` in the front.
@@ -656,7 +662,8 @@ export class DebuggerModel extends SDKModel<EventTypes> {
       isContentScript = !executionContextAuxData['isDefault'];
     }
 
-    const selectedDebugSymbol = DebuggerModel.selectSymbolSource(debugSymbols);
+    const selectedDebugSymbol =
+        DebuggerModel.selectSymbolSource(debugSymbols, this.target().targetManager().getConsole());
     const script = new Script(
         this, scriptId, sourceURL, startLine, startColumn, endLine, endColumn, executionContextId, hash,
         isContentScript, isLiveEdit, sourceMapURL, hasSourceURLComment, length, isModule, originStackTrace, codeOffset,
@@ -729,12 +736,11 @@ export class DebuggerModel extends SDKModel<EventTypes> {
     }
   }
 
-  createRawLocation(script: Script, lineNumber: number, columnNumber: number, inlineFrameIndex?: number): Location {
-    return this.createRawLocationByScriptId(script.scriptId, lineNumber, columnNumber, inlineFrameIndex);
+  createRawLocation(script: Script, lineNumber: number, columnNumber: number): Location {
+    return this.createRawLocationByScriptId(script.scriptId, lineNumber, columnNumber);
   }
 
-  createRawLocationByURL(sourceURL: string, lineNumber: number, columnNumber?: number, inlineFrameIndex?: number):
-      Location|null {
+  createRawLocationByURL(sourceURL: string, lineNumber: number, columnNumber?: number): Location|null {
     for (const script of this.#scriptsBySourceURL.get(sourceURL) || []) {
       if (script.lineOffset > lineNumber ||
           (script.lineOffset === lineNumber && columnNumber !== undefined && script.columnOffset > columnNumber)) {
@@ -744,15 +750,14 @@ export class DebuggerModel extends SDKModel<EventTypes> {
           (script.endLine === lineNumber && columnNumber !== undefined && script.endColumn <= columnNumber)) {
         continue;
       }
-      return new Location(this, script.scriptId, lineNumber, columnNumber, inlineFrameIndex);
+      return new Location(this, script.scriptId, lineNumber, columnNumber);
     }
     return null;
   }
 
-  createRawLocationByScriptId(
-      scriptId: Protocol.Runtime.ScriptId, lineNumber: number, columnNumber?: number,
-      inlineFrameIndex?: number): Location {
-    return new Location(this, scriptId, lineNumber, columnNumber, inlineFrameIndex);
+  createRawLocationByScriptId(scriptId: Protocol.Runtime.ScriptId, lineNumber: number,
+                              columnNumber?: number): Location {
+    return new Location(this, scriptId, lineNumber, columnNumber);
   }
 
   createRawLocationsByStackTrace(stackTrace: Protocol.Runtime.StackTrace): Location[] {
@@ -903,7 +908,7 @@ export class DebuggerModel extends SDKModel<EventTypes> {
         {
           callFrames: [],
           parent: stackTraceOrPausedDetails.asyncStackTrace,
-          parentId: stackTraceOrPausedDetails.asyncStackTraceId
+          parentId: stackTraceOrPausedDetails.asyncStackTraceId,
         } :
         stackTraceOrPausedDetails;
     let target = this.target();

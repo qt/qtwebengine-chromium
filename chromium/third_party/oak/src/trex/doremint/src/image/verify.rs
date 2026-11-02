@@ -12,22 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Mode which verifies an endorsement.
+/**
+Sample call:
+
+export IMAGE_REF=example.com/app@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+bazel run trex/doremint image verify -- \
+  --image="$IMAGE_REF" \
+  --claims-toml=$(pwd)/trex/doremint/testdata/claims.toml \
+  --access-token="$(gcloud auth print-access-token)" \
+  --endorser-public-key="$HOME/cosign.pub"
+*/
 use anyhow::Context;
 use clap::Parser;
-use endorsement::intoto::{EndorsementStatement, Subject};
-use oci_client::{client::ClientConfig, secrets::RegistryAuth, Client};
+use cosign_util::pull_package;
+use oak_digest::Digest;
+use oak_time_std::instant::now;
+use oci_client::{Client, client::ClientConfig, secrets::RegistryAuth};
 use oci_spec::distribution::Reference;
-use p256::{ecdsa::VerifyingKey, pkcs8::DecodePublicKey};
-use sigstore::rekor::{
-    from_cosign_bundle,
-    hashedrekord::{HashedRekord, Unverified},
-    RekorPayload,
-};
-use sigstore_client::cosign;
 
-use crate::flags;
-
-const REKOR_PUBLIC_KEY_PEM: &str = include_str!("../../data/rekor_public_key.pem");
+use crate::flags::{Claims, read_pem_file};
 
 #[derive(Parser, Debug)]
 #[command(about = "Verify an endorsement for a container image")]
@@ -36,49 +40,45 @@ pub struct VerifyCommand {
     pub image: Reference,
 
     #[arg(from_global)]
-    pub claims: flags::Claims,
+    pub claims: Claims,
 
     #[arg(long, help = "Identity token for Cloud authentication")]
     pub access_token: Option<String>,
 
-    #[arg(long, value_parser = flags::verifying_key_parser, help = "Path to a file containing the PEM-encoded public key of the endorser")]
-    pub endorser_public_key: VerifyingKey,
+    #[arg(long, value_parser = read_pem_file, help = "Path to a file containing the PEM-encoded public key of the endorser")]
+    pub endorser_public_key: String,
 }
 
 impl VerifyCommand {
     pub async fn run(&self) -> anyhow::Result<()> {
-        let rekor_public_key = VerifyingKey::from_public_key_pem(REKOR_PUBLIC_KEY_PEM)
-            .map_err(|e| anyhow::anyhow!("failed to parse rekor public key: {}", e))?;
-
         let auth = match &self.access_token {
             Some(token) => RegistryAuth::Bearer(token.clone()),
             None => RegistryAuth::Anonymous,
         };
         let client = Client::new(ClientConfig::default());
 
-        let (endorsement, bundle) = cosign::pull_payload(&client, &auth, &self.image).await?;
+        let package = pull_package(&client, &auth, &self.image, &self.endorser_public_key).await?;
 
-        let endorsement = endorsement
-            .verify(&self.endorser_public_key)
-            .context("Failed to verify endorsement signature")?;
+        let claims_vec = self
+            .claims
+            .claims_toml
+            .as_ref()
+            .map(|c| c.claims.clone())
+            .or(self.claims.claims.clone())
+            .unwrap();
+        if claims_vec.is_empty() {
+            anyhow::bail!("at least one claim must be provided");
+        }
+        let statement = package.verify(now().into_unix_millis(), claims_vec.clone())?;
 
-        let rekor = from_cosign_bundle(bundle)?;
-        let rekor = rekor.verify(&rekor_public_key).context("failed to verify rekor signature")?;
-        let rekor: RekorPayload = serde_json::from_slice(rekor.message())?;
-        let hashed_rekord: HashedRekord<Unverified> = rekor.payload_body()?;
-        hashed_rekord
-            .verify(&self.endorser_public_key, endorsement.message())
-            .context("Failed to verify Rekor log entry")?;
+        // Need to verify the endorsement subject and the claims as well.
+        let typed_hash = self.image.digest().context("missing digest in OCI reference")?;
+        let digest = Digest::from_typed_hash(typed_hash)?;
 
-        let statement: EndorsementStatement = serde_json::from_slice(endorsement.message())?;
-
-        let now = chrono::Utc::now();
-        let subject: Subject = (&self.image).try_into()?;
-
-        let claims: Vec<&str> = self.claims.claims.iter().map(|s| s.as_str()).collect();
+        let claims: Vec<&str> = claims_vec.iter().map(|s| s.as_str()).collect();
         statement
-            .validate(now.into(), &subject, &claims)
-            .context("failed to validate endorsement")?;
+            .validate(Some(digest.into()), now(), &claims)
+            .context("validating endorsement statement")?;
 
         println!("Endorsement verified successfully for image {}", self.image);
 

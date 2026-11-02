@@ -27,19 +27,22 @@
 
 #include "src/tint/cmd/fuzz/common/ir_fuzzer.h"
 #include "src/tint/lang/core/ir/transform/direct_variable_access.h"
-#include "src/tint/lang/core/ir/validator.h"
 
 namespace tint::core::ir::transform {
 namespace {
 
 Result<SuccessType> DirectVariableAccessFuzzer(Module& ir,
-                                               const fuzz::ir::Context&,
+                                               const fuzz::ir::Context& context,
                                                const DirectVariableAccessOptions& options) {
+    if (context.options.verbose) {
+        PrintReflected(std::cout, options);
+        std::cout << "\n";
+    }
+
     return DirectVariableAccess(ir, options);
 }
 
 }  // namespace
 }  // namespace tint::core::ir::transform
 
-TINT_IR_MODULE_FUZZER(tint::core::ir::transform::DirectVariableAccessFuzzer,
-                      tint::core::ir::transform::kDirectVariableAccessCapabilities);
+TINT_IR_MODULE_FUZZER(tint::core::ir::transform::DirectVariableAccessFuzzer);

@@ -17,7 +17,7 @@ import {
   type ModelChatMessage,
   renderStep,
   type Step,
-  titleForStep
+  titleForStep,
 } from './ChatMessage.js';
 import {getButtonLabel} from './WalkthroughUtils.js';
 import walkthroughViewStyles from './walkthroughView.css.js';
@@ -224,7 +224,7 @@ export const DEFAULT_VIEW = (
                 step,
                 isLoading: input.isLoading,
                 markdownRenderer: input.markdownRenderer,
-                isLast: index === renderableSteps.length - 1
+                isLast: index === renderableSteps.length - 1,
               })}
             </div>
           </div>

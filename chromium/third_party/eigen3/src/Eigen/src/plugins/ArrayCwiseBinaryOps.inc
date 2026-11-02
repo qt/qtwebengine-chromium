@@ -295,7 +295,7 @@ EIGEN_MAKE_SCALAR_BINARY_OP_ONTHELEFT(operator/, quotient)
 /**
  * \brief Component-wise division of the scalar \a s by array elements of \a a.
  *
- * \tparam Scalar is the scalar type of \a x. It must be compatible with the scalar type of the given array expression
+ * \tparam T is the scalar type of \a s. It must be compatible with the scalar type of the given array expression
  * (\c Derived::Scalar).
  */
 template <typename T>

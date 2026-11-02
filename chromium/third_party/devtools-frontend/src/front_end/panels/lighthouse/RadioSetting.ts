@@ -46,7 +46,7 @@ export class RadioSetting {
                 title=${ifDefined(description ? tooltip : undefined)}
                 ${Directives.ref(el => {
                     this.radioElements.push(el as HTMLInputElement);
-                  }
+                  },
                 )}
               />
               <span

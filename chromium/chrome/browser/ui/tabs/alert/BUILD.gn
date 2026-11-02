@@ -42,6 +42,7 @@ source_set("impl") {
     "//chrome/browser/glic/browser_ui",
     "//chrome/browser/media/webrtc",
     "//chrome/browser/ui:layout_constants",
+    "//chrome/browser/ui:recently_audible_helper",
     "//chrome/browser/ui/color:color_headers",
     "//chrome/common:chrome_features",
     "//components/tabs:public",
@@ -75,7 +76,10 @@ source_set("interactive_ui_tests") {
   testonly = true
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
 
-  sources = [ "tab_alert_controller_interactive_uitest.cc" ]
+  sources = [
+    "tab_alert_controller_interactive_uitest.cc",
+    "unload_controller_glic_interactive_uitest.cc",
+  ]
 
   deps = [
     ":impl",

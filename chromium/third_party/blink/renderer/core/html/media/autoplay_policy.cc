@@ -288,7 +288,7 @@ bool AutoplayPolicy::HasTransientUserActivation() const {
 }
 
 std::optional<DOMExceptionCode> AutoplayPolicy::RequestPlay() {
-  if (!CanPlayWhileHidden()) {
+  if (!element_->CanPlayWhileHidden()) {
     // The "media-playback-while-not-visible" permission policy default value
     // was overridden, which means that either this frame or an ancestor frame
     // changed the permission policy's default value. This should only happen if
@@ -297,7 +297,8 @@ std::optional<DOMExceptionCode> AutoplayPolicy::RequestPlay() {
     UseCounter::Count(
         element_->GetExecutionContext(),
         WebFeature::kMediaPlaybackWhileNotVisiblePermissionPolicy);
-    if (IsFrameHidden()) {
+    // Block autoplay only if the media element's visibility state is known.
+    if (element_->IsFrameHidden()) {
       return DOMExceptionCode::kNotAllowedError;
     }
   }
@@ -355,20 +356,6 @@ bool AutoplayPolicy::IsGestureNeededForPlayback() const {
   return !IsEligibleForAutoplayMuted();
 }
 
-bool AutoplayPolicy::CanPlayWhileHidden() const {
-  return element_->GetExecutionContext() &&
-         element_->GetExecutionContext()->IsFeatureEnabled(
-             network::mojom::PermissionsPolicyFeature::
-                 kMediaPlaybackWhileNotVisible);
-}
-
-bool AutoplayPolicy::IsFrameHidden() const {
-  Frame* frame = element_->GetDocument().GetFrame();
-  return frame && (frame->View()->GetFrameVisibility().value_or(
-                       mojom::blink::FrameVisibility::kRenderedInViewport) ==
-                   mojom::blink::FrameVisibility::kNotRendered);
-}
-
 String AutoplayPolicy::GetPlayErrorMessage() const {
   return IsUsingDocumentUserActivationRequiredPolicy()
              ? kErrorAutoplayFuncUnified
@@ -396,6 +383,12 @@ void AutoplayPolicy::OnIntersectionChangedForAutoplay(
     auto pause_and_preserve_autoplay = [](AutoplayPolicy* self) {
       if (!self)
         return;
+
+      // Keep playing if the frames are still being consumed (e.g. by canvas).
+      WebMediaPlayer* player = self->element_->GetWebMediaPlayer();
+      if (player && player->IsVideoBeingCaptured()) {
+        return;
+      }
 
       if (self->element_->can_autoplay_ && self->element_->Autoplay()) {
         self->element_->PauseInternal(

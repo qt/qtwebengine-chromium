@@ -5,6 +5,7 @@
 #include "components/payments/content/service_worker_payment_app.h"
 
 #include <limits>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -21,11 +22,13 @@
 #include "components/payments/core/features.h"
 #include "components/payments/core/method_strings.h"
 #include "components/payments/core/payments_experimental_features.h"
+#include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/payment_app_provider.h"
 #include "content/public/browser/payment_app_provider_util.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_features.h"
 #include "ui/gfx/image/image_skia.h"
+#include "url/gurl.h"
 #include "url/origin.h"
 
 namespace payments {
@@ -40,7 +43,8 @@ ServiceWorkerPaymentApp::ServiceWorkerPaymentApp(
     std::unique_ptr<content::StoredPaymentApp> stored_payment_app_info,
     bool is_incognito,
     bool prefs_can_make_payment_,
-    const base::RepeatingClosure& show_processing_spinner)
+    const base::RepeatingClosure& show_processing_spinner,
+    const base::RepeatingClosure& show_loading_view)
     : PaymentApp(0, PaymentApp::Type::SERVICE_WORKER_APP),
       top_origin_(top_origin),
       frame_origin_(frame_origin),
@@ -50,6 +54,7 @@ ServiceWorkerPaymentApp::ServiceWorkerPaymentApp(
       is_incognito_(is_incognito),
       prefs_can_make_payment_(prefs_can_make_payment_),
       show_processing_spinner_(show_processing_spinner),
+      show_loading_view_(show_loading_view),
       can_make_payment_result_(false),
       has_enrolled_instrument_result_(false),
       can_make_payment_event_skipped_(false),
@@ -67,6 +72,7 @@ ServiceWorkerPaymentApp::ServiceWorkerPaymentApp(
 // resource Id.
 ServiceWorkerPaymentApp::ServiceWorkerPaymentApp(
     content::WebContents* web_contents,
+    content::GlobalRenderFrameHostId requesting_frame_id,
     const GURL& top_origin,
     const GURL& frame_origin,
     base::WeakPtr<PaymentRequestSpec> spec,
@@ -74,7 +80,8 @@ ServiceWorkerPaymentApp::ServiceWorkerPaymentApp(
     const std::string& enabled_method,
     bool is_incognito,
     bool prefs_can_make_payment_,
-    const base::RepeatingClosure& show_processing_spinner)
+    const base::RepeatingClosure& show_processing_spinner,
+    const base::RepeatingClosure& show_loading_view)
     : PaymentApp(0, PaymentApp::Type::SERVICE_WORKER_APP),
       top_origin_(top_origin),
       frame_origin_(frame_origin),
@@ -83,13 +90,15 @@ ServiceWorkerPaymentApp::ServiceWorkerPaymentApp(
       is_incognito_(is_incognito),
       prefs_can_make_payment_(prefs_can_make_payment_),
       show_processing_spinner_(show_processing_spinner),
+      show_loading_view_(show_loading_view),
       can_make_payment_result_(false),
       has_enrolled_instrument_result_(false),
       can_make_payment_event_skipped_(false),
       needs_installation_(true),
       installable_web_app_info_(std::move(installable_payment_app_info)),
       installable_enabled_method_(enabled_method),
-      web_contents_(web_contents->GetWeakPtr()) {
+      web_contents_(web_contents->GetWeakPtr()),
+      requesting_frame_id_(requesting_frame_id) {
   DCHECK(web_contents);
   DCHECK(top_origin_.is_valid());
   DCHECK(frame_origin_.is_valid());
@@ -245,7 +254,8 @@ void ServiceWorkerPaymentApp::InvokePaymentApp(
 
   if (needs_installation_) {
     payment_app_provider->InstallAndInvokePaymentApp(
-        CreatePaymentRequestEventData(), installable_web_app_info_->name,
+        requesting_frame_id_, CreatePaymentRequestEventData(),
+        installable_web_app_info_->name,
         installable_web_app_info_->icon == nullptr
             ? SkBitmap()
             : *(installable_web_app_info_->icon),
@@ -270,7 +280,12 @@ void ServiceWorkerPaymentApp::InvokePaymentApp(
                        weak_ptr_factory_.GetWeakPtr()));
   }
 
-  show_processing_spinner_.Run();
+  if (base::FeatureList::IsEnabled(
+          features::kPaymentRequestMandatoryPaymentAppUi)) {
+    show_loading_view_.Run();
+  } else {
+    show_processing_spinner_.Run();
+  }
 }
 
 void ServiceWorkerPaymentApp::OnPaymentAppWindowClosed() {
@@ -427,6 +442,11 @@ bool ServiceWorkerPaymentApp::NeedsInstallation() const {
 std::string ServiceWorkerPaymentApp::GetId() const {
   return needs_installation_ ? installable_web_app_info_->sw_scope
                              : stored_payment_app_info_->scope.spec();
+}
+
+std::optional<url::Origin> ServiceWorkerPaymentApp::GetPaymentHandlerOrigin()
+    const {
+  return url::Origin::Create(GURL(GetId()));
 }
 
 std::u16string ServiceWorkerPaymentApp::GetLabel() const {

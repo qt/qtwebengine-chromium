@@ -36,7 +36,7 @@ For certain topics, there are dedicated points of contact (PoCs) within the DevT
 | Topic                                 | PoC             |
 | ------------------------------------- | --------------- |
 | Web Compass, Interop, and Baseline    | pfaffe@chromium.org         |
-| UI Capabilities                       | changhaohan@chromium.org    |
+| UI Capabilities                       | pfaffe@chromium.org    |
 | Performance                           | paulirish@chromium.org      |
 | JavaScript                            | szuend@chromium.org         |
 | WebAssembly                           | pfaffe@chromium.org         |

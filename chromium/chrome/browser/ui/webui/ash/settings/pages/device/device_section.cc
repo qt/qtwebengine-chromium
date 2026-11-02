@@ -586,9 +586,6 @@ void AddDeviceKeyboardStrings(content::WebUIDataSource* html_source) {
        IDS_OS_SETTINGS_KEYBOARD_SHOW_INPUT_SETTINGS},
       {"keyboardShowA11yKeyboardSettings",
        IDS_OS_SETTINGS_KEYBOARD_SHOW_A11Y_KEYBOARD_SETTINGS},
-      // TODO(crbug.com/1097328): Remove this string, as it is unused.
-      {"keyboardShowLanguageAndInput",
-       IDS_SETTINGS_KEYBOARD_SHOW_LANGUAGE_AND_INPUT},
       {"keyboardTitle", IDS_OS_SETTINGS_KEYBOARD_AND_INPUTS_TITLE},
       {"keyRepeatDelay", IDS_SETTINGS_KEYBOARD_AUTO_REPEAT_DELAY},
       {"keyRepeatDelayLong", IDS_SETTINGS_KEYBOARD_AUTO_REPEAT_DELAY_LONG},
@@ -768,6 +765,8 @@ void AddDeviceAudioStrings(content::WebUIDataSource* html_source) {
       {"audioDeviceUsbLabel", IDS_SETTINGS_AUDIO_DEVICE_USB_LABEL},
       {"audioInputDeviceTitle", IDS_SETTINGS_AUDIO_INPUT_DEVICE_TITLE},
       {"audioInputAllowAGCTitle", IDS_SETTINGS_AUDIO_INPUT_ALLOW_AGC_TITLE},
+      {"audioFocusEnforcementTitle",
+       IDS_SETTINGS_AUDIO_FOCUS_ENFORCEMENT_TITLE},
       {"audioHfpMicSrTitle", IDS_SETTINGS_AUDIO_HFP_MIC_SR_TITLE},
       {"audioHfpMicSrDescription", IDS_SETTINGS_AUDIO_HFP_MIC_SR_DESCRIPTION},
       {"audioInputGainTitle", IDS_SETTINGS_AUDIO_INPUT_GAIN_TITLE},
@@ -1651,6 +1650,10 @@ void DeviceSection::AddDeviceDisplayStrings(
 
   html_source->AddBoolean("enableSpatialAudioToggle",
                           IsShowSpatialAudioToggleEnabled());
+
+  html_source->AddBoolean(
+      "enableAudioFocusSetting",
+      base::FeatureList::IsEnabled(ash::features::kAudioFocusSetting));
 
   html_source->AddBoolean("enableTouchCalibrationSetting",
                           IsTouchCalibrationAvailable());

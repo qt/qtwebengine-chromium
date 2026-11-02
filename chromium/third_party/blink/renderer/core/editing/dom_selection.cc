@@ -74,7 +74,7 @@ bool DomSelection::IsAvailable() const {
 }
 
 void DomSelection::UpdateFrameSelection(
-    const SelectionInDOMTree& selection,
+    const SelectionInDomTree& selection,
     Range* new_cached_range,
     const SetSelectionOptions& passed_options) const {
   DCHECK(DomWindow());
@@ -100,11 +100,11 @@ VisibleSelection DomSelection::GetVisibleSelection() const {
   DomWindow()->document()->UpdateStyleAndLayout(
       DocumentUpdateReason::kSelection);
 
-  return Selection().ComputeVisibleSelectionInDOMTree();
+  return Selection().ComputeVisibleSelectionInDomTree();
 }
 
 bool DomSelection::IsAnchorFirstInSelection() const {
-  return Selection().GetSelectionInDOMTree().IsAnchorFirst();
+  return Selection().GetSelectionInDomTree().IsAnchorFirst();
 }
 
 Node* DomSelection::anchorNode() const {
@@ -192,8 +192,9 @@ String DomSelection::type() const {
     return "None";
   // Do not use isCollapsed() here. We'd like to return "Range" for
   // range-selection in text control elements.
-  if (Selection().GetSelectionInDOMTree().IsCaret())
+  if (Selection().GetSelectionInDomTree().IsCaret()) {
     return "Caret";
+  }
   return "Range";
 }
 
@@ -210,8 +211,8 @@ String DomSelection::direction() const {
       (RuntimeEnabledFeatures::SelectionCollapsedDirectionNoneEnabled() &&
        // Use IsCaret() instead of isCollapsed() so that directionality is still
        // reported for selections that cross shadow boundaries.
-       Selection().GetSelectionInDOMTree().IsCaret()) ||
-      Selection().ComputeVisibleSelectionInDOMTree().IsNone()) {
+       Selection().GetSelectionInDomTree().IsCaret()) ||
+      Selection().ComputeVisibleSelectionInDomTree().IsNone()) {
     return "none";
   }
   if (IsAnchorFirstInSelection()) {
@@ -231,7 +232,7 @@ unsigned DomSelection::rangeCount() const {
   DomWindow()->document()->UpdateStyleAndLayout(
       DocumentUpdateReason::kSelection);
 
-  if (Selection().ComputeVisibleSelectionInDOMTree().IsNone()) {
+  if (Selection().ComputeVisibleSelectionInDomTree().IsNone()) {
     return 0;
   }
   // Any selection can be adjusted to Range for Document.
@@ -286,7 +287,7 @@ void DomSelection::collapse(Node* node,
 
   // 6. Set the context object's range to newRange.
   UpdateFrameSelection(
-      SelectionInDOMTree::Builder().Collapse(Position(node, offset)).Build(),
+      SelectionInDomTree::Builder().Collapse(Position(node, offset)).Build(),
       new_range,
       SetSelectionOptions::Builder()
           .SetIsDirectional(Selection().IsDirectional())
@@ -313,14 +314,14 @@ void DomSelection::collapseToEnd(ExceptionState& exception_state) {
     new_range->collapse(false);
 
     // and then set the context object's range to the newly-created range.
-    SelectionInDOMTree::Builder builder;
+    SelectionInDomTree::Builder builder;
     builder.Collapse(new_range->EndPosition());
     UpdateFrameSelection(builder.Build(), new_range, SetSelectionOptions());
   } else {
     // TODO(tkent): The Selection API doesn't define this behavior. We should
     // discuss this on https://github.com/w3c/selection-api/issues/83.
-    SelectionInDOMTree::Builder builder;
-    builder.Collapse(Selection().GetSelectionInDOMTree().ComputeEndPosition());
+    SelectionInDomTree::Builder builder;
+    builder.Collapse(Selection().GetSelectionInDomTree().ComputeEndPosition());
     UpdateFrameSelection(builder.Build(), nullptr, SetSelectionOptions());
   }
 }
@@ -345,15 +346,15 @@ void DomSelection::collapseToStart(ExceptionState& exception_state) {
     new_range->collapse(true);
 
     // and then set the context object's range to the newly-created range.
-    SelectionInDOMTree::Builder builder;
+    SelectionInDomTree::Builder builder;
     builder.Collapse(new_range->StartPosition());
     UpdateFrameSelection(builder.Build(), new_range, SetSelectionOptions());
   } else {
     // TODO(tkent): The Selection API doesn't define this behavior. We should
     // discuss this on https://github.com/w3c/selection-api/issues/83.
-    SelectionInDOMTree::Builder builder;
+    SelectionInDomTree::Builder builder;
     builder.Collapse(
-        Selection().GetSelectionInDOMTree().ComputeStartPosition());
+        Selection().GetSelectionInDomTree().ComputeStartPosition());
     UpdateFrameSelection(builder.Build(), nullptr, SetSelectionOptions());
   }
 }
@@ -441,7 +442,7 @@ void DomSelection::setBaseAndExtent(Node* base_node,
   }
   // 6. Set this's range to newRange.
   UpdateFrameSelection(
-      SelectionInDOMTree::Builder()
+      SelectionInDomTree::Builder()
           .SetBaseAndExtentDeprecated(base_position, extent_position)
           .Build(),
       new_range, SetSelectionOptions::Builder().SetIsDirectional(true).Build());
@@ -543,7 +544,7 @@ void DomSelection::extend(Node* node,
   if (RuntimeEnabledFeatures::
           UseSelectionInDOMTreeAnchorInExtendSelectionEnabled()) {
     old_anchor =
-        Selection().GetSelectionInDOMTree().Anchor().ToOffsetInAnchor();
+        Selection().GetSelectionInDomTree().Anchor().ToOffsetInAnchor();
   }
 
   DCHECK(!old_anchor.IsNull());
@@ -577,7 +578,7 @@ void DomSelection::extend(Node* node,
   }
 
   // 8. Set the context object's range to newRange.
-  SelectionInDOMTree::Builder builder;
+  SelectionInDomTree::Builder builder;
   if (new_range->collapsed())
     builder.Collapse(new_focus);
   else
@@ -623,38 +624,41 @@ const StaticRangeVector DomSelection::getComposedRanges(
     return ranges;
   }
 
-  const SelectionInDOMTree& selection = Selection().GetSelectionInDOMTree();
+  const SelectionInDomTree& selection = Selection().GetSelectionInDomTree();
   // 2. Otherwise, let startNode be start node of the range associated with
   // this, and let startOffset be start offset of the range.
-  const Position& start = selection.ComputeStartPosition();
-  Node* startNode = start.ComputeContainerNode();
-  unsigned startOffset = start.ComputeOffsetInContainerNode();
   // 3. Rescope startNode and startOffset with listed shadow roots.
-  Rescope(startNode, startOffset, options->shadowRoots(), /*isEnd=*/false);
+  Position start =
+      Rescope(selection.ComputeStartPosition(), options->shadowRoots(),
+              /*is_end=*/false);
 
   // 4. Let endNode be end node of the range associated with this, and let
   // endOffset be end offset of the range.
-  const Position& end = selection.ComputeEndPosition();
-  Node* endNode = end.ComputeContainerNode();
-  unsigned endOffset = end.ComputeOffsetInContainerNode();
   // 5. Rescope endNode and endOffset with listed shadow roots.
-  Rescope(endNode, endOffset, options->shadowRoots(), /*isEnd=*/true);
+  Position end = Rescope(selection.ComputeEndPosition(), options->shadowRoots(),
+                         /*is_end=*/true);
 
   // 6. Return an array consisting of new StaticRange whose start node is
   // startNode, start offset is startOffset, end node is endNode, and end
   // offset is endOffset.
   ranges.push_back(MakeGarbageCollected<StaticRange>(
-      Selection().GetDocument(), startNode, startOffset, endNode, endOffset));
+      start.ComputeContainerNode(), start.ComputeOffsetInContainerNode(),
+      end.ComputeContainerNode(), end.ComputeOffsetInContainerNode()));
   return ranges;
 }
 
 // If isEnd is false, rescope following spec step 3.
 // Else, Rescope following sepc step 5.
 // https://www.w3.org/TR/selection-api/#dom-selection-getcomposedranges
-void DomSelection::Rescope(Node*& node,
-                           unsigned& offset,
-                           const HeapVector<Member<ShadowRoot>>& shadowRoots,
-                           bool isEnd) const {
+Position DomSelection::Rescope(
+    const Position& position,
+    const HeapVector<Member<ShadowRoot>>& shadow_roots,
+    bool is_end) const {
+  if (position.IsNull()) {
+    return Position();
+  }
+  Node* node = position.ComputeContainerNode();
+  unsigned offset = position.ComputeOffsetInContainerNode();
   // 3. & 5. While node is a node, node's root is a shadow root, and
   // node's root is not a shadow-including inclusive ancestor of any of
   // shadowRoots, repeat these steps:
@@ -662,21 +666,22 @@ void DomSelection::Rescope(Node*& node,
     ShadowRoot* root = node->ContainingShadowRoot();
     Element* host = node->OwnerShadowHost();
     if (!root || !host) {
-      return;
+      return Position(node, offset);
     }
-    for (auto& shadowRoot : shadowRoots) {
+    for (auto& shadowRoot : shadow_roots) {
       if (root->IsShadowIncludingInclusiveAncestorOf(*shadowRoot)) {
-        return;
+        return Position(node, offset);
       }
     }
     // 1. Set node to node's root's host's parent.
     node = host->parentNode();
     // 2. Set offset to index of node's root's host.
     offset = host->NodeIndex();
-    if (isEnd) {
+    if (is_end) {
       offset += 1;
     }
   }
+  return Position(node, offset);
 }
 
 Range* DomSelection::PrimaryRangeOrNull() const {
@@ -763,7 +768,7 @@ void DomSelection::addRange(Range* new_range) {
   }
 
   if (rangeCount() == 0) {
-    UpdateFrameSelection(SelectionInDOMTree::Builder()
+    UpdateFrameSelection(SelectionInDomTree::Builder()
                              .Collapse(new_range->StartPosition())
                              .Extend(new_range->EndPosition())
                              .Build(),
@@ -791,7 +796,7 @@ void DomSelection::deleteFromDocument() {
       DocumentUpdateReason::kSelection);
 
   Range* selected_range = CreateRange(Selection()
-                                          .ComputeVisibleSelectionInDOMTree()
+                                          .ComputeVisibleSelectionInDomTree()
                                           .ToNormalizedEphemeralRange());
   if (!selected_range)
     return;
@@ -821,7 +826,7 @@ bool DomSelection::containsNode(const Node* n, bool allow_partial) const {
       DocumentUpdateReason::kSelection);
 
   const EphemeralRange selected_range = Selection()
-                                            .ComputeVisibleSelectionInDOMTree()
+                                            .ComputeVisibleSelectionInDomTree()
                                             .ToNormalizedEphemeralRange();
   if (selected_range.IsNull())
     return false;
@@ -884,7 +889,7 @@ String DomSelection::toString() {
       DomWindow()->document()->Lifecycle());
 
   const EphemeralRange range = Selection()
-                                   .ComputeVisibleSelectionInDOMTree()
+                                   .ComputeVisibleSelectionInDomTree()
                                    .ToNormalizedEphemeralRange();
 
   TextIteratorBehavior::Builder behavior_builder;

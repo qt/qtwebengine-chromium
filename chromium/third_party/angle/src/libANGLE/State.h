@@ -19,7 +19,6 @@
 #include "libANGLE/Debug.h"
 #include "libANGLE/GLES1State.h"
 #include "libANGLE/HandleAllocator.h"
-#include "libANGLE/Overlay.h"
 #include "libANGLE/Program.h"
 #include "libANGLE/ProgramExecutable.h"
 #include "libANGLE/ProgramPipeline.h"
@@ -849,7 +848,6 @@ class State : angle::NonCopyable
           TextureManager *shareTextures,
           SemaphoreManager *shareSemaphores,
           egl::ContextMutex *contextMutex,
-          const OverlayType *overlay,
           const Version &clientVersion,
           bool debug,
           bool bindGeneratesResourceCHROMIUM,
@@ -1255,6 +1253,7 @@ class State : angle::NonCopyable
     void onUniformBufferStateChange(size_t uniformBufferIndex, angle::SubjectMessage message);
     void onAtomicCounterBufferStateChange(size_t atomicCounterBufferIndex);
     void onShaderStorageBufferStateChange(size_t shaderStorageBufferIndex);
+    void onCurrentExecutableRelink();
 
     bool isCurrentTransformFeedback(const TransformFeedback *tf) const
     {
@@ -1287,8 +1286,6 @@ class State : angle::NonCopyable
     {
         mDirtyBits.set(state::DIRTY_BIT_DRAW_FRAMEBUFFER_BINDING);
     }
-
-    const OverlayType *getOverlay() const { return mOverlay; }
 
     // Not for general use.
     const BufferManager &getBufferManagerForCapture() const { return *mBufferManager; }
@@ -1626,7 +1623,10 @@ class State : angle::NonCopyable
         return (this->*handlers[dirtyObject])(context, command);
     }
 
-    // Robust init must happen before Framebuffer init for the Vulkan back-end.
+    // Robust init must happen before Framebuffer init for the Vulkan back-end.  If deferred clears
+    // can be made to work in the Vulkan back-end such that textures could be sync'ed before the
+    // framebuffer, then TEXTURES_INIT and IMAGES_INIT can be removed since robust init happens
+    // during texture sync as well.
     static_assert(state::DIRTY_OBJECT_ACTIVE_TEXTURES < state::DIRTY_OBJECT_TEXTURES_INIT,
                   "init order");
     static_assert(state::DIRTY_OBJECT_TEXTURES_INIT < state::DIRTY_OBJECT_DRAW_FRAMEBUFFER,
@@ -1719,9 +1719,6 @@ class State : angle::NonCopyable
 
     // GL_KHR_parallel_shader_compile
     GLuint mMaxShaderCompilerThreads;
-
-    // The Overlay object, used by the backend to render the overlay.
-    const OverlayType *mOverlay;
 
     state::DirtyBits mDirtyBits;
     state::ExtendedDirtyBits mExtendedDirtyBits;

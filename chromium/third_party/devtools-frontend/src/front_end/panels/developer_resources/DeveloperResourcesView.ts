@@ -8,7 +8,7 @@ import type * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
-import type * as TextUtils from '../../models/text_utils/text_utils.js';
+import type * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import {html, render} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
@@ -21,31 +21,29 @@ const {bindToSetting} = UI.UIUtils;
 
 const UIStrings = {
   /**
-   * @description Placeholder for a search field in a toolbar
+   * @description Placeholder text for the text filter input field in the toolbar of the Developer resources panel.
    */
   filterByText: 'Filter by URL and error',
   /**
-   * @description Tooltip for a checkbox in the toolbar of the developer resources view. The
+   * @description Tooltip for a checkbox in the toolbar of the Developer resources panel. The
    * inspected target is the webpage that DevTools is debugging/inspecting/attached to.
    */
-  loadHttpsDeveloperResources:
-      'Load `HTTP(S)` developer resources through the website you inspect, not through DevTools',
+  loadHttpsDeveloperResources: 'Load HTTP(S) developer resources through the website you inspect, not through DevTools',
   /**
-   * @description Text for a checkbox in the toolbar of the developer resources view. The target is
+   * @description Text for a checkbox in the toolbar of the Developer resources panel. The target is
    * the webpage that DevTools is debugging/inspecting/attached to. This setting makes it so
    * developer resources are requested from the webpage itself, and not from the DevTools
    * application.
    */
   enableLoadingThroughTarget: 'Load through website',
   /**
-   * @description Text for resources load status
+   * @description Status bar message in the Developer resources panel showing the total number of resources and how many are currently loading.
    * @example {1} PH1
    * @example {1} PH2
    */
   resourcesCurrentlyLoading: '{PH1} resources, {PH2} currently loading',
   /**
-   * @description Status text that appears to tell the developer how many resources were loaded in
-   * total. Resources are files related to the webpage.
+   * @description Status bar message in the Developer resources panel showing the total number of loaded resources. Resources are files related to the webpage.
    */
   resources: '{n, plural, =1 {# resource} other {# resources}}',
 } as const;
@@ -102,7 +100,7 @@ export const DEFAULT_VIEW: View = (input, _output, target) => {
             items: input.items,
             selectedItem: input.selectedItem,
             onSelect: input.onSelect,
-            filters: input.filters
+            filters: input.filters,
         })}
       </div>
       <div class="developer-resource-view-toolbar-summary">

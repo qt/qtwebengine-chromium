@@ -15,7 +15,6 @@ import "services/network/public/mojom/url_request.mojom";
 import "services/network/public/mojom/web_sandbox_flags.mojom";
 import "services/viz/public/mojom/compositing/frame_sink_id.mojom";
 import "third_party/blink/public/mojom/blob/blob_url_store.mojom";
-import "third_party/blink/public/mojom/conversions/conversions.mojom";
 import "third_party/blink/public/mojom/frame/frame_owner_properties.mojom";
 import "third_party/blink/public/mojom/frame/frame_policy.mojom";
 import "third_party/blink/public/mojom/frame/frame_replication_state.mojom";
@@ -136,7 +135,6 @@ struct OpenURLParams {
   blink.mojom.TriggeringEventInfo triggering_event_info;
   pending_remote<blink.mojom.BlobURLToken>? blob_url_token;
   string href_translate;
-  Impression? impression;
   NavigationDownloadPolicy download_policy;
 
   // Information about the Javascript source for this navigation. Used for
@@ -329,6 +327,11 @@ interface RemoteFrame {
   // Update the replicated ad status. Used when the frame is tagged or untagged
   // as an ad frame by Ad Tagging.
   SetReplicatedIsAdFrame(bool is_ad_frame);
+
+  // Update the replicated is-secure-context-root bit. Sourced from
+  // `ContentBrowserClient::IsSecureContextRoot()` at navigation commit;
+  // descendants' ancestor-walks stop at frames with this bit set.
+  SetReplicatedIsSecureContextRoot(bool is_secure_context_root);
 
   // Sets the replicated name and unique name for the frame. Used when the
   // name of a frame changes.

@@ -1725,6 +1725,15 @@ bool Converter::Convert(wgpu::FeatureName& out, interop::GPUFeatureName in) {
         case interop::GPUFeatureName::kChromiumExperimentalSamplingResourceTable:
             out = wgpu::FeatureName::ChromiumExperimentalSamplingResourceTable;
             return true;
+        case interop::GPUFeatureName::kAtomicVec2UMinMax:
+            out = wgpu::FeatureName::AtomicVec2uMinMax;
+            return true;
+        case interop::GPUFeatureName::kSubgroupSizeControl:
+            out = wgpu::FeatureName::SubgroupSizeControl;
+            return true;
+        case interop::GPUFeatureName::kTextureCompressionUnaligned:
+            out = wgpu::FeatureName::TextureCompressionUnaligned;
+            return true;
     }
     return false;
 }
@@ -1756,11 +1765,14 @@ bool Converter::Convert(interop::GPUFeatureName& out, wgpu::FeatureName in) {
         CASE(DualSourceBlending, kDualSourceBlending);
         CASE(ClipDistances, kClipDistances);
         CASE(ChromiumExperimentalSubgroupMatrix, kChromiumExperimentalSubgroupMatrix);
+        CASE(SubgroupSizeControl, kSubgroupSizeControl);
         CASE(TextureFormatsTier1, kTextureFormatsTier1);
         CASE(TextureFormatsTier2, kTextureFormatsTier2);
         CASE(TextureComponentSwizzle, kTextureComponentSwizzle);
         CASE(PrimitiveIndex, kPrimitiveIndex);
         CASE(ChromiumExperimentalSamplingResourceTable, kChromiumExperimentalSamplingResourceTable);
+        CASE(AtomicVec2uMinMax, kAtomicVec2UMinMax);
+        CASE(TextureCompressionUnaligned, kTextureCompressionUnaligned);
 
 #undef CASE
 
@@ -1818,14 +1830,13 @@ bool Converter::Convert(interop::GPUFeatureName& out, wgpu::FeatureName in) {
         case wgpu::FeatureName::DawnTexelCopyBufferRowAlignment:
         case wgpu::FeatureName::FlexibleTextureViews:
         case wgpu::FeatureName::AdapterPropertiesWGPU:
-        case wgpu::FeatureName::SharedBufferMemoryD3D12SharedMemoryFileMappingHandle:
+        case wgpu::FeatureName::SharedBufferMemoryFromWindowsHandle:
         case wgpu::FeatureName::SharedTextureMemoryD3D12Resource:
-        case wgpu::FeatureName::SubgroupSizeControl:
-        case wgpu::FeatureName::AtomicVec2uMinMax:
         case wgpu::FeatureName::Unorm16FormatsForExternalTexture:
         case wgpu::FeatureName::OpaqueYCbCrAndroidForExternalTexture:
         case wgpu::FeatureName::Unorm16Filterable:
         case wgpu::FeatureName::RenderPassRenderArea:
+        case wgpu::FeatureName::DawnAllowUndefinedLoadStoreOp:
             return false;
     }
     return false;

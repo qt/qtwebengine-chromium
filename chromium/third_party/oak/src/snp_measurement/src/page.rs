@@ -22,8 +22,8 @@ use oak_sev_guest::vmsa::VmsaPage;
 use sha2::{Digest, Sha384};
 use strum::FromRepr;
 use x86_64::{
-    structures::paging::{PageSize, Size4KiB},
     PhysAddr,
+    structures::paging::{PageSize, Size4KiB},
 };
 use zerocopy::{Immutable, IntoBytes};
 
@@ -33,7 +33,7 @@ const PAGE_INFO_SIZE: usize = 112;
 /// Implementation of the Page Info structure used for extending the measurement
 /// in each step.
 ///
-/// See table 67 in <https://www.amd.com/system/files/TechDocs/56860.pdf>.
+/// See table 70 in <https://www.amd.com/system/files/TechDocs/56860.pdf>.
 #[repr(C)]
 #[derive(Debug, IntoBytes, Clone, Immutable)]
 pub struct PageInfo {
@@ -179,7 +179,7 @@ enum ImiPage {
 
 /// The type of page being measured.
 ///
-/// See table 65 in <https://www.amd.com/system/files/TechDocs/56860.pdf>.
+/// See table 68 in <https://www.amd.com/system/files/TechDocs/56860.pdf>.
 #[derive(Debug, FromRepr, IntoBytes, Clone, Copy, Immutable, PartialEq)]
 #[repr(u8)]
 #[allow(unused)]

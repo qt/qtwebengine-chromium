@@ -22,7 +22,6 @@ py_binary(
         "sigmoid.py",
         "sine_cosine.py",
         "tanh.py",
-        "util.py",
     ],
     tags = [
         "manual",
@@ -33,6 +32,7 @@ py_binary(
 
 ARCHS = [
     "x86_sse2",
+    "x86_sse2_fma",
     "x86_sse41",
     "x86_avx",
     "x86_avx2",
@@ -42,6 +42,7 @@ ARCHS = [
     "x86_avx512",
     "x86_avx512bf16",
     "arm64_neon",
+    "arm_neonfma",
     "arm_neon",
     "arm_neonbf16",
     "arm_neonfp16",
@@ -118,6 +119,21 @@ cc_test(
     deps = [
         ":unary",
         "//ynnpack/base",
+        "//ynnpack/base/test:random",
         "//ynnpack/base/test:tensor",
     ] + ynn_benchmark_deps(),
+)
+
+cc_test(
+    name = "consistent_arithmetic_test",
+    srcs = ["consistent_arithmetic_test.cc"],
+    deps = [
+        ":unary",
+        "//ynnpack:ynnpack_h",
+        "//ynnpack/base",
+        "//ynnpack/base/test:fuzz_test",
+        "//ynnpack/base/test:random",
+        "//ynnpack/base/test:tensor",
+        "//ynnpack/base/test:util",
+    ] + ynn_test_deps(),
 )

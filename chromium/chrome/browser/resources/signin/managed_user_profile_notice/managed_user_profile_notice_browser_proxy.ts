@@ -22,6 +22,7 @@ export enum State {
   ERROR = 4,
   VALUE_PROPOSITION = 5,
   USER_DATA_HANDLING = 6,
+  SIGNALS_DISCLAIMER = 7,
 }
 
 // LINT.IfChange(ScreenType)
@@ -33,6 +34,8 @@ export enum ScreenType {
   ENTERPRISE_OIDC = 4,
   PROFILE_PICKER = 5,
   FIRST_RUN = 6,
+  DEVICE_SIGNALS_DISCLAIMER = 7,
+  MAX_VALUE = DEVICE_SIGNALS_DISCLAIMER,
 }
 // LINT.ThenChange(//chrome/browser/ui/webui/signin/managed_user_profile_notice_ui.h:ScreenType)
 
@@ -70,6 +73,12 @@ export interface ManagedUserProfileNoticeBrowserProxy {
    */
   cancel(): void;
 
+  /**
+   * Called when the user clicks `Learn more` link on the signals disclaimer
+   * screen.
+   */
+  learnMoreClicked(): void;
+
   matchMedia(query: string): MediaQueryList;
 }
 
@@ -102,6 +111,10 @@ export class ManagedUserProfileNoticeBrowserProxyImpl implements
 
   matchMedia(query: string): MediaQueryList {
     return window.matchMedia(query);
+  }
+
+  learnMoreClicked() {
+    chrome.send('learnMoreClicked');
   }
 }
 

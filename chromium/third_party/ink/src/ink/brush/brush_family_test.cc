@@ -22,11 +22,13 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "fuzztest/fuzztest.h"
+#include "absl/hash/hash_testing.h"
 #include "absl/status/status.h"
 #include "absl/status/status_matchers.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "absl/time/time.h"
 #include "absl/types/span.h"
 #include "ink/brush/brush_behavior.h"
 #include "ink/brush/brush_coat.h"
@@ -98,6 +100,73 @@ BrushCoat CreateTestCoat() {
       .tip = CreatePressureTestTip(),
       .paint_preferences = {CreateTestPaint()},
   };
+}
+
+TEST(BrushFamilyTest, Equality) {
+  absl::StatusOr<BrushFamily> family1 = BrushFamily::Create({});
+  ASSERT_THAT(family1, IsOk());
+  absl::StatusOr<BrushFamily> family2 = BrushFamily::Create({});
+  ASSERT_THAT(family2, IsOk());
+  EXPECT_EQ(*family1, *family2);
+
+  family1 = BrushFamily::Create(
+      {BrushCoat{.tip = {.pinch = 0.5f}}},
+      BrushFamily::SlidingWindowModel{.window_size = Duration32::Millis(1)},
+      {.client_brush_family_id = "family1"});
+  ASSERT_THAT(family1, IsOk());
+  EXPECT_NE(*family1, *family2);
+  family2 = BrushFamily::Create(
+      {BrushCoat{.tip = {.pinch = 0.5f}}},
+      BrushFamily::SlidingWindowModel{.window_size = Duration32::Millis(1)},
+      {.client_brush_family_id = "family1"});
+  ASSERT_THAT(family2, IsOk());
+  EXPECT_EQ(*family1, *family2);
+
+  // Different coats should make families unequal.
+  family2 = BrushFamily::Create(
+      {BrushCoat{.tip = {.pinch = 0.6f}}},
+      BrushFamily::SlidingWindowModel{.window_size = Duration32::Millis(1)},
+      {.client_brush_family_id = "family1"});
+  ASSERT_THAT(family2, IsOk());
+  EXPECT_NE(*family1, *family2);
+
+  // Different input model should make families unequal.
+  family2 = BrushFamily::Create(
+      {BrushCoat{.tip = {.pinch = 0.5f}}},
+      BrushFamily::SlidingWindowModel{.window_size = Duration32::Millis(2)},
+      {.client_brush_family_id = "family1"});
+  ASSERT_THAT(family2, IsOk());
+  EXPECT_NE(*family1, *family2);
+
+  // Different metadata should make families unequal.
+  family2 = BrushFamily::Create(
+      {BrushCoat{.tip = {.pinch = 0.5f}}},
+      BrushFamily::SlidingWindowModel{.window_size = Duration32::Millis(1)},
+      {.client_brush_family_id = "family2"});
+  ASSERT_THAT(family2, IsOk());
+  EXPECT_NE(*family1, *family2);
+}
+
+TEST(BrushFamilyTest, AbslHash) {
+  absl::StatusOr<BrushFamily> family_default = BrushFamily::Create({});
+  ASSERT_THAT(family_default, IsOk());
+  absl::StatusOr<BrushFamily> family1 = BrushFamily::Create(
+      {BrushCoat{.tip = {.pinch = 0.1f}}},
+      BrushFamily::SlidingWindowModel{.window_size = Duration32::Millis(1)},
+      {.client_brush_family_id = "family1"});
+  ASSERT_THAT(family1, IsOk());
+  absl::StatusOr<BrushFamily> family2 = BrushFamily::Create(
+      {BrushCoat{.tip = {.pinch = 0.2f}}},
+      BrushFamily::SlidingWindowModel{.window_size = Duration32::Millis(2)},
+      {.client_brush_family_id = "family2"});
+  ASSERT_THAT(family2, IsOk());
+  absl::StatusOr<BrushFamily> family3 = BrushFamily::Create(
+      {BrushCoat{.tip = {.pinch = 0.1f}}, BrushCoat{.tip = {.pinch = 0.2f}}},
+      BrushFamily::PassthroughModel{}, {.developer_comment = "comment"});
+  ASSERT_THAT(family3, IsOk());
+
+  EXPECT_TRUE(absl::VerifyTypeImplementsAbslHashCorrectly(
+      {*family_default, *family1, *family2, *family3}));
 }
 
 TEST(BrushFamilyTest, StringifyInputModel) {
@@ -184,18 +253,16 @@ TEST(BrushFamilyTest, CreateWithMultipleCoats) {
 TEST(BrushFamilyTest, CreateWithTooManyCoats) {
   std::vector<BrushCoat> coats(BrushFamily::MaxBrushCoats() + 1,
                                CreateTestCoat());
-  EXPECT_THAT(
-      BrushFamily::Create(coats),
-      StatusIs(absl::StatusCode::kInvalidArgument, HasSubstr("coats.size()")));
+  EXPECT_THAT(BrushFamily::Create(coats),
+              StatusIs(kInvalidArgument, HasSubstr("at most")));
 }
 
 TEST(BrushFamilyTest, CreateWithInvalidInputModel) {
   std::vector<BrushCoat> coats = {CreateTestCoat()};
   BrushFamily::InputModel input_model = {
       BrushFamily::SlidingWindowModel{.window_size = Duration32::Zero()}};
-  EXPECT_THAT(
-      BrushFamily::Create(coats, input_model),
-      StatusIs(absl::StatusCode::kInvalidArgument, HasSubstr("window_size")));
+  EXPECT_THAT(BrushFamily::Create(coats, input_model),
+              StatusIs(kInvalidArgument, HasSubstr("window_size")));
 }
 
 TEST(BrushFamilyTest, CreateWithInvalidTipScale) {
@@ -671,11 +738,84 @@ TEST(BrushFamilyTest, DefaultConstruction) {
   EXPECT_THAT(family.GetInputModel(),
               BrushFamilyInputModelEq(BrushFamily::DefaultInputModel()));
   EXPECT_THAT(family.GetMetadata().client_brush_family_id, IsEmpty());
+  EXPECT_EQ(family.GetTextureAnimationLoopDuration(), absl::ZeroDuration());
+}
+
+TEST(BrushFamilyTest, AnimatedTextureLoopDuration) {
+  auto make_animated_coat = [](absl::Duration animation_duration) {
+    return BrushCoat{CreatePressureTestTip(),
+                     {BrushPaint{{BrushPaint::StampingTexture{
+                         .client_texture_id = std::string(kTestTextureId),
+                         .animation_frames = 2,
+                         .animation_rows = 2,
+                         .animation_duration = animation_duration,
+                     }}}}};
+  };
+
+  // These three prime numbers multiply to 428,868,313 (which is more than
+  // 2^24).
+  EXPECT_THAT(
+      BrushFamily::Create({make_animated_coat(absl::Milliseconds(751)),
+                           make_animated_coat(absl::Milliseconds(1531)),
+                           make_animated_coat(absl::Milliseconds(373))}),
+      StatusIs(kInvalidArgument,
+               HasSubstr("The LCM of all texture animation durations")));
+
+  // These three numbers also multiply to more than 2^24, but their LCM is only
+  // 3000.
+  absl::StatusOr<BrushFamily> family =
+      BrushFamily::Create({make_animated_coat(absl::Milliseconds(1000)),
+                           make_animated_coat(absl::Milliseconds(600)),
+                           make_animated_coat(absl::Milliseconds(1500))});
+  ASSERT_THAT(family, IsOk());
+  EXPECT_EQ(family->GetTextureAnimationLoopDuration(),
+            absl::Milliseconds(3000));
+}
+
+TEST(BrushFamilyTest, NonAnimatedTexturesDoNotCountTowardLoopDuration) {
+  absl::StatusOr<BrushFamily> family = BrushFamily::Create({
+      BrushCoat{CreatePressureTestTip(),
+                // Tiling textures aren't animated.
+                {BrushPaint{{BrushPaint::TilingTexture{
+                    .client_texture_id = std::string(kTestTextureId),
+                    .size = {1, 1},
+                }}}}},
+      BrushCoat{CreatePressureTestTip(),
+                {BrushPaint{{BrushPaint::StampingTexture{
+                    .client_texture_id = std::string(kTestTextureId),
+                    .animation_frames = 10,
+                    .animation_rows = 10,
+                    // A duration of zero means that although this texture can
+                    // be affected by animation progress offset behaviors, it
+                    // isn't animated when the stroke is dry.
+                    .animation_duration = absl::ZeroDuration(),
+                }}}}},
+      BrushCoat{CreatePressureTestTip(),
+                {BrushPaint{{BrushPaint::StampingTexture{
+                    .client_texture_id = std::string(kTestTextureId),
+                    // If the number of animation frames is 1, then by
+                    // definition the texture isn't animated, regardless of what
+                    // `animation_duration` says.
+                    .animation_frames = 1,
+                    .animation_rows = 10,
+                    .animation_duration = absl::Milliseconds(7),
+                }}}}},
+      BrushCoat{CreatePressureTestTip(),
+                {BrushPaint{{BrushPaint::StampingTexture{
+                    .client_texture_id = std::string(kTestTextureId),
+                    .animation_frames = 10,
+                    .animation_rows = 10,
+                    .animation_duration = absl::Milliseconds(13),
+                }}}}},
+  });
+  ASSERT_THAT(family, IsOk());
+  // The non-animated textures don't count, so the LCM is 13 milliseconds.
+  EXPECT_EQ(family->GetTextureAnimationLoopDuration(), absl::Milliseconds(13));
 }
 
 TEST(BrushFamilyTest, CopyAndMove) {
   {
-    auto family = BrushFamily::Create(
+    absl::StatusOr<BrushFamily> family = BrushFamily::Create(
         CreatePressureTestTip(), CreateTestPaint(),
         BrushFamily::DefaultInputModel(),
         {.client_brush_family_id = "/brush-family:test-family"});
@@ -688,7 +828,7 @@ TEST(BrushFamilyTest, CopyAndMove) {
               family->GetMetadata().client_brush_family_id);
   }
   {
-    auto family = BrushFamily::Create(
+    absl::StatusOr<BrushFamily> family = BrushFamily::Create(
         CreatePressureTestTip(), CreateTestPaint(),
         BrushFamily::DefaultInputModel(),
         {.client_brush_family_id = "/brush-family:test-family"});
@@ -702,7 +842,7 @@ TEST(BrushFamilyTest, CopyAndMove) {
               family->GetMetadata().client_brush_family_id);
   }
   {
-    auto family = BrushFamily::Create(
+    absl::StatusOr<BrushFamily> family = BrushFamily::Create(
         CreatePressureTestTip(), CreateTestPaint(),
         BrushFamily::DefaultInputModel(),
         {.client_brush_family_id = "/brush-family:test-family"});
@@ -716,7 +856,7 @@ TEST(BrushFamilyTest, CopyAndMove) {
               copied_family.GetMetadata().client_brush_family_id);
   }
   {
-    auto family = BrushFamily::Create(
+    absl::StatusOr<BrushFamily> family = BrushFamily::Create(
         CreatePressureTestTip(), CreateTestPaint(),
         BrushFamily::DefaultInputModel(),
         {.client_brush_family_id = "/brush-family:test-family"});

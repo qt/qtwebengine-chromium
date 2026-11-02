@@ -6,11 +6,11 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_HTML_HTML_MENU_ITEM_ELEMENT_H_
 
 #include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/core/html/forms/html_field_set_element.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
 
 namespace blink {
 
-class HTMLFieldSetElement;
 class HTMLMenuListElement;
 class HTMLMenuOwnerElement;
 
@@ -27,7 +27,10 @@ class CORE_EXPORT HTMLMenuItemElement final : public HTMLElement {
 
   int index() const;
 
-  bool IsCheckable() const;
+  using Checkable = HTMLFieldSetElement::Checkable;
+  Checkable CheckableState() const;
+  bool IsCheckable() const { return CheckableState() != Checkable::None; }
+
   bool checked() const;
   // This only sets `this` to checked if `IsCheckable()` is true. The return
   // value is true if this is a checkable menu item *and* a containing menu list
@@ -60,12 +63,13 @@ class CORE_EXPORT HTMLMenuItemElement final : public HTMLElement {
       UpdateBehavior update_behavior =
           UpdateBehavior::kStyleAndLayout) const override;
 
-  bool HandleCommandForActivation() override;
   void DefaultEventHandler(Event&) override;
 
   bool MatchesDefaultPseudoClass() const override;
   bool MatchesEnabledPseudoClass() const override;
   bool IsSubmenuOpen() const;
+
+  void OpenPseudoChanged();
 
   void ParseAttribute(const AttributeModificationParams&) override;
   bool ShouldHaveFocusAppearance() const override;
@@ -84,6 +88,7 @@ class CORE_EXPORT HTMLMenuItemElement final : public HTMLElement {
   // to find any nested containing menulist's. It then closes the outermost
   // such menulist, which (via popover close behavior) closes the tree.
   Element* CloseOutermostContainingMenuList();
+  HTMLMenuListElement* FindOutermostContainingMenuList();
   void ActivateMenuItem();
   void HandleMenuPointerEvents(Event&);
   void HandleMenuKeyboardEvents(Event&);
@@ -100,9 +105,6 @@ class CORE_EXPORT HTMLMenuItemElement final : public HTMLElement {
 
   // Represents 'checkedness'.
   bool is_checked_;
-  // This is used to avoid double-invoking target menus, due to custom logic
-  // that invokes sub-menus on mousedown.
-  bool ignore_next_command_ = false;
   // This is similar to the input element's `dirty_checkedness_` flag, but
   // better named. When only the default checkedness is set or unset, this will
   // remain true. When checkedness finally gets set in any other way after the

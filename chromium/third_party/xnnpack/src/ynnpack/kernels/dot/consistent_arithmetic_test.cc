@@ -15,6 +15,7 @@
 
 #include <gtest/gtest.h>
 #include "ynnpack/base/arch.h"  // IWYU pragma: keep
+#include "ynnpack/base/arithmetic.h"
 #include "ynnpack/base/test/buffer.h"
 #include "ynnpack/base/test/fuzz_test.h"
 #include "ynnpack/base/test/random.h"
@@ -139,8 +140,8 @@ void TestMatMul(AT, BT, CT, size_t k) {
       int finite = 0;
       for (size_t i = 0; i < m; ++i) {
         for (size_t j = 0; j < n; ++j) {
-          bool c_finite = std::isfinite(c(i, j));
-          bool kernel_c_finite = std::isfinite(kernel_c(i, j));
+          bool c_finite = isfinite(c(i, j));
+          bool kernel_c_finite = isfinite(kernel_c(i, j));
           if (c_finite && kernel_c_finite) {
             ASSERT_EQ(c(i, j), kernel_c(i, j));
             finite++;
@@ -155,7 +156,11 @@ void TestMatMul(AT, BT, CT, size_t k) {
       c = kernel_c;
     }
   }
-  ASSERT_GT(consistent_kernels, 0) << "No consistent_arithmetic kernels found.";
+  if (std::is_same_v<AT, float> && std::is_same_v<BT, float> &&
+      std::is_same_v<CT, float>) {
+    ASSERT_GT(consistent_kernels, 0)
+        << "No consistent_arithmetic kernels found.";
+  }
 }
 
 const char* to_string(const KernelInfo& param) { return ""; }

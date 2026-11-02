@@ -40,10 +40,10 @@
  * Supported Operations:
  * ---------------------
  * UNARY OPERATIONS (vector → vector):
- * - Transcendental: exp(), sin(), cos(), sqrt(), log(), log10(), log2()
+ * - exp(), exp2(), sin(), cos(), sqrt(), cbrt(), abs(), log(), log10(), log2()
  *
  * BINARY OPERATIONS (vector op vector → vector):
- * - Arithmetic: +, *, pow()
+ * - +, pow(), max(), min()
  *
  * Template Specialization Mechanism:
  * -----------------------------------
@@ -255,8 +255,8 @@ EIGEN_AOCL_VML_UNARY_CALL_DOUBLE(log2, amd_vrda_log2)
   };
 
 // Instantiate binary calls for float (scalar).
-// EIGEN_AOCL_VML_BINARY_CALL_FLOAT(sum, std::plus<float>)  // Using
-// scalar_sum_op for addition EIGEN_AOCL_VML_BINARY_CALL_FLOAT(pow, std::pow)
+// EIGEN_AOCL_VML_BINARY_CALL_FLOAT(sum, std::plus<float>)  // Using scalar_sum_op for addition
+// EIGEN_AOCL_VML_BINARY_CALL_FLOAT(pow, std::pow)
 
 // Instantiate binary calls for double (AOCL vectorized).
 EIGEN_AOCL_VML_BINARY_CALL_DOUBLE(sum, amd_vrda_add)  // Using scalar_sum_op for addition

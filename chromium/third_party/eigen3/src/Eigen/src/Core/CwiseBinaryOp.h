@@ -61,7 +61,7 @@ class CwiseBinaryOpImpl;
  * \tparam LhsType the type of the left-hand side
  * \tparam RhsType the type of the right-hand side
  *
- * This class represents an expression  where a coefficient-wise binary operator is applied to two expressions.
+ * This class represents an expression where a coefficient-wise binary operator is applied to two expressions.
  * It is the return type of binary operators, by which we mean only those binary operators where
  * both the left-hand side and the right-hand side are Eigen expressions.
  * For example, the return type of matrix1+matrix2 is a CwiseBinaryOp.
@@ -90,7 +90,7 @@ class CwiseBinaryOp : public CwiseBinaryOpImpl<BinaryOp, LhsType, RhsType,
       Base;
   EIGEN_GENERIC_PUBLIC_INTERFACE(CwiseBinaryOp)
 
-  EIGEN_CHECK_BINARY_COMPATIBILIY(BinaryOp, typename Lhs::Scalar, typename Rhs::Scalar)
+  EIGEN_CHECK_BINARY_COMPATIBILITY(BinaryOp, typename Lhs::Scalar, typename Rhs::Scalar)
   EIGEN_STATIC_ASSERT_SAME_MATRIX_SIZE(Lhs, Rhs)
 
   typedef typename internal::ref_selector<LhsType>::type LhsNested;

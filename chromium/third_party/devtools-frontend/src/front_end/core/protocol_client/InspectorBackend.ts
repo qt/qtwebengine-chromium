@@ -14,7 +14,7 @@ import {
   type CDPEvent,
   type Command,
   type CommandParams,
-  type Event
+  type Event,
 } from './CDPConnection.js';
 import {ConnectionTransport} from './ConnectionTransport.js';
 import {DevToolsCDPConnection} from './DevToolsCDPConnection.js';
@@ -337,6 +337,10 @@ export class TargetBase {
 
   autofillAgent(): ProtocolProxyApi.AutofillApi {
     return this.getAgent('Autofill');
+  }
+
+  adsAgent(): ProtocolProxyApi.AdsApi {
+    return this.getAgent('Ads');
   }
 
   browserAgent(): ProtocolProxyApi.BrowserApi {

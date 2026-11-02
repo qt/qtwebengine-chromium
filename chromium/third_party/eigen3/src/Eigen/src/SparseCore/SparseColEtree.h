@@ -129,7 +129,6 @@ void nr_etdfs(typename IndexVector::Scalar n, IndexVector& parent, IndexVector& 
   typedef typename IndexVector::Scalar StorageIndex;
   StorageIndex current = n, first, next;
   while (postnum != n) {
-    // No kid for the current node
     first = first_kid(current);
 
     // no kid for the current node

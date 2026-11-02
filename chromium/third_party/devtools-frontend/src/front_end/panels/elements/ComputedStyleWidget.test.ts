@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../core/common/common.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as ComputedStyle from '../../models/computed_style/computed_style.js';
 import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
-import {stubNoopSettings} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {deinitializeGlobalVars, initializeGlobalVars, stubNoopSettings} from '../../testing/EnvironmentHelpers.js';
 import {createStubbedDomNodeWithModels} from '../../testing/StyleHelpers.js';
 import type * as TreeOutline from '../../ui/components/tree_outline/tree_outline.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -83,7 +83,14 @@ async function getDisplayedProperties(computedStyleWidget: Elements.ComputedStyl
   return matchedPropertyNames;
 }
 
-describeWithMockConnection('ComputedStyleWidget', () => {
+describe('ComputedStyleWidget', () => {
+  before(async () => {
+    await initializeGlobalVars();
+  });
+
+  after(async () => {
+    await deinitializeGlobalVars();
+  });
   let computedStyleWidget: Elements.ComputedStyleWidget.ComputedStyleWidget;
 
   beforeEach(() => {
@@ -118,10 +125,9 @@ describeWithMockConnection('ComputedStyleWidget', () => {
         node,
         propertyState: SDK.CSSMatchedStyles.PropertyState.ACTIVE,
         nodeStyles: [
-          new SDK.CSSStyleDeclaration.CSSStyleDeclaration(
-              {} as SDK.CSSModel.CSSModel, parentRule ?? null, stubCSSStyle, cssStyleDeclarationType,
-              cssStyleDeclarationName),
-        ]
+          new SDK.CSSStyleDeclaration.CSSStyleDeclaration({} as SDK.CSSModel.CSSModel, parentRule ?? null, stubCSSStyle,
+                                                          cssStyleDeclarationType, cssStyleDeclarationName),
+        ],
       });
 
       const computedStyleModel = new ComputedStyle.ComputedStyleModel.ComputedStyleModel(node);

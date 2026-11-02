@@ -419,8 +419,8 @@ void LayerTreeImpl::OnCanDrawStateChangedForTree() {
 
 void LayerTreeImpl::InvalidateRegionForImages(
     const PaintImageIdFlatSet& images_to_invalidate) {
-  TRACE_EVENT_BEGIN1("cc", "LayerTreeImpl::InvalidateRegionForImages",
-                     "total_layer_count", picture_layers().size());
+  TRACE_EVENT_BEGIN("cc", "LayerTreeImpl::InvalidateRegionForImages",
+                    "total_layer_count", picture_layers().size());
   DCHECK(IsSyncTree());
 
   size_t no_images_count = 0;
@@ -445,8 +445,8 @@ void LayerTreeImpl::InvalidateRegionForImages(
       }
     }
   }
-  TRACE_EVENT_END1(
-      "cc", "LayerTreeImpl::InvalidateRegionForImages", "counts",
+  TRACE_EVENT_END(
+      "cc", "counts",
       base::StringPrintf("no_images[%zu] no_invalidaton[%zu] invalidated[%zu]",
                          no_images_count, no_invalidation_count,
                          invalidated_count));
@@ -555,11 +555,17 @@ void LayerTreeImpl::UpdateViewportContainerSizes() {
 
     // Expand all clips between the outer viewport and the inner viewport.
     auto* outer_ancestor =
-        property_trees->clip_tree_mutable().MutableParent(outer_clip_node);
+        property_trees->clip_tree_mutable().HasParent(*outer_clip_node)
+            ? &property_trees->clip_tree_mutable().MutableParent(
+                  *outer_clip_node)
+            : nullptr;
     while (outer_ancestor && outer_ancestor->id != kRootPropertyNodeId) {
       outer_ancestor->clip.Union(outer_clip_node->clip);
       outer_ancestor =
-          property_trees->clip_tree_mutable().MutableParent(outer_ancestor);
+          property_trees->clip_tree_mutable().HasParent(*outer_ancestor)
+              ? &property_trees->clip_tree_mutable().MutableParent(
+                    *outer_ancestor)
+              : nullptr;
     }
   }
 
@@ -1847,8 +1853,9 @@ bool LayerTreeImpl::UpdateDrawProperties(
   // possible to hit test even without a renderer.
   render_surface_list_.clear();
 
-  if (layer_list_.empty())
-    return false;
+  if (layer_list_.empty()) {
+    return true;
+  }
 
   {
     base::ElapsedTimer timer;
@@ -1931,7 +1938,7 @@ bool LayerTreeImpl::UpdateDrawProperties(
   if (update_image_animation_controller && image_animation_controller()) {
     CHECK(!settings().trees_in_viz_in_viz_process);
     image_animation_controller()->UpdateStateFromDrivers(
-        host_impl()->GatherImageAnimationState());
+        host_impl()->GatherAnimatedImageDriverState());
   }
 
   device_viewport_rect_changed_ = false;
@@ -1947,8 +1954,8 @@ bool LayerTreeImpl::UpdateTiles() {
   }
   needs_update_tiles_ = false;
 
-  TRACE_EVENT_BEGIN2("cc,benchmark", "LayerTreeImpl::UpdateTiles", "IsActive",
-                     IsActiveTree(), "SourceFrameNumber", source_frame_number_);
+  TRACE_EVENT_BEGIN("cc,benchmark", "LayerTreeImpl::UpdateTiles", "IsActive",
+                    IsActiveTree(), "SourceFrameNumber", source_frame_number_);
   size_t layers_updated_count = 0;
   bool tile_priorities_updated = false;
   const bool release_tile_resources_for_hidden_layers =
@@ -1964,9 +1971,7 @@ bool LayerTreeImpl::UpdateTiles() {
     tile_priorities_updated |= layer->UpdateTiles();
   }
 
-  TRACE_EVENT_END1("cc,benchmark",
-                   "LayerTreeImpl::UpdateDrawProperties::UpdateTiles",
-                   "layers_updated_count", layers_updated_count);
+  TRACE_EVENT_END("cc,benchmark", "layers_updated_count", layers_updated_count);
   return tile_priorities_updated;
 }
 
@@ -2403,9 +2408,9 @@ void LayerTreeImpl::NotifyLayerHasAnimatedImagesChanged(
 }
 
 void LayerTreeImpl::AnnotateAnimatedImages(
-    base::flat_map<PaintImage::Id, bool>& image_map) const {
+    AnimatedImageDriverMap& driver_map) const {
   for (auto* layer : layer_list_.PictureLayersWithAnimatedImages()) {
-    layer->AnnotateAnimatedImages(image_map);
+    layer->AnnotateAnimatedImages(driver_map);
   }
 }
 

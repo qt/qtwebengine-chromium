@@ -23,12 +23,18 @@ std::unique_ptr<unary_op_info> get_unary_op_info(ynn_unary_operator op,
       return std::make_unique<ceil>(params);
     case ynn_unary_convert:
       return std::make_unique<convert>(params);
+    case ynn_unary_requantize_to_uint8:
+      return std::make_unique<requantize_to_uint8>(params);
     case ynn_unary_exp:
       return std::make_unique<exp>(params);
     case ynn_unary_expm1:
       return std::make_unique<expm1>(params);
     case ynn_unary_erf:
       return std::make_unique<erf>(params);
+    case ynn_unary_approx_erf:
+      return std::make_unique<approx_erf>(params);
+    case ynn_unary_approx_tanh:
+      return std::make_unique<approx_tanh>(params);
     case ynn_unary_floor:
       return std::make_unique<floor>(params);
     case ynn_unary_log:
@@ -59,6 +65,8 @@ std::unique_ptr<unary_op_info> get_unary_op_info(ynn_unary_operator op,
       return std::make_unique<hardswish>(params);
     case ynn_unary_poly3:
       return std::make_unique<poly3>(params);
+    case ynn_unary_round_to_bf16:
+      return std::make_unique<round_to_bf16>(params);
     case ynn_unary_invalid:
       return nullptr;
   }

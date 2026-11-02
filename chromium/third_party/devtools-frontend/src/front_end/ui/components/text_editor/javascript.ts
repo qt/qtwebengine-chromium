@@ -411,8 +411,10 @@ async function completeExpressionInScope(): Promise<CompletionSet> {
     return result;
   }
 
+  const debuggerWorkspaceBinding = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance();
   const scopes = await Promise.all(selectedFrame.scopeChain().map(
-      scope => SourceMapScopes.NamesResolver.resolveScopeInObject(scope).getAllProperties(false, false)));
+      scope => SourceMapScopes.NamesResolver.resolveScopeInObject(scope, debuggerWorkspaceBinding)
+                   .getAllProperties(false, false)));
   for (const scope of scopes) {
     for (const property of scope.properties || []) {
       result.add({

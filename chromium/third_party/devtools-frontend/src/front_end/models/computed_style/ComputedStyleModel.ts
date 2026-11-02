@@ -15,7 +15,7 @@ export class ComputedStyleModel extends Common.ObjectWrapper.ObjectWrapper<Event
   #node: SDK.DOMModel.DOMNode|null = null;
   #cssModel: SDK.CSSModel.CSSModel|null = null;
   private eventListeners: Common.EventTarget.EventDescriptor[] = [];
-  private frameResizedTimer?: number;
+  private frameResizedTimer?: ReturnType<typeof setTimeout>;
   private computedStylePromise?: Promise<ComputedStyle|null>;
 
   constructor(node?: SDK.DOMModel.DOMNode|null) {
@@ -49,10 +49,9 @@ export class ComputedStyleModel extends Common.ObjectWrapper.ObjectWrapper<Event
     this.node = null;
     this.#cssModel = null;
     this.computedStylePromise = undefined;
-    if (this.frameResizedTimer) {
+
       clearTimeout(this.frameResizedTimer);
       this.frameResizedTimer = undefined;
-    }
   }
 
   private updateModel(cssModel: SDK.CSSModel.CSSModel|null): void {
@@ -111,14 +110,12 @@ export class ComputedStyleModel extends Common.ObjectWrapper.ObjectWrapper<Event
   private onFrameResized(): void {
     function refreshContents(this: ComputedStyleModel): void {
       this.onCSSModelChanged(null);
-      delete this.frameResizedTimer;
+      this.frameResizedTimer = undefined;
     }
 
-    if (this.frameResizedTimer) {
       clearTimeout(this.frameResizedTimer);
-    }
 
-    this.frameResizedTimer = window.setTimeout(refreshContents.bind(this), 100);
+      this.frameResizedTimer = globalThis.setTimeout(refreshContents.bind(this), 100);
   }
 
   private elementNode(): SDK.DOMModel.DOMNode|null {

@@ -1,5 +1,0 @@
-{
-  "get_status": ["wifiSnr", "wifiSpeed"],
-  "seqNum": 820263769,
-  "type": "GET_STATUS"
-}

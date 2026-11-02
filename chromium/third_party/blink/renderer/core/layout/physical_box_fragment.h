@@ -164,10 +164,11 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
     return use_last_baseline_for_inline_baseline_;
   }
 
-  // Some scroll-containers will force baseline synthesis for the inline-block
-  // baseline algorithm.
+  // Some block-axis scroll-containers will force baseline synthesis for the
+  // inline-block baseline algorithm.
   bool ForceInlineBaselineSynthesis() const {
     return use_last_baseline_for_inline_baseline_ && IsScrollContainer() &&
+           Style().IsOverflowValueScrollableBlock() &&
            !Style().ShouldIgnoreOverflowPropertyForInlineBlockBaseline();
   }
 
@@ -356,10 +357,8 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
   // update them to use LayoutNG based overflow information from the fragment
   // and change them to use NG geometry types once LayoutNG supports overflow.
   PhysicalRect OverflowClipRect(
-      const PhysicalOffset& location,
       OverlayScrollbarClipBehavior = kIgnoreOverlayScrollbarSize) const;
   PhysicalRect OverflowClipRect(
-      const PhysicalOffset& location,
       const BlockBreakToken* incoming_break_token,
       OverlayScrollbarClipBehavior = kIgnoreOverlayScrollbarSize) const;
   // Returns the total offset of all overscroll area parents. This is used to

@@ -18,8 +18,10 @@
 #include <cstdint>
 #include "chassis/layer_object_id.h"
 #include "generated/dispatch_functions.h"
+#include "generated/vk_extension_helper.h"
 #include "state_tracker/buffer_state.h"
 #include "state_tracker/device_memory_state.h"
+#include "state_tracker/ray_tracing_state.h"
 
 namespace gpudump {
 
@@ -54,12 +56,19 @@ std::vector<uint8_t> GpuDump::CopyDataFromMemory(VkDeviceAddress memory_addresss
             //  aligned to a value like 64, so if the buffer is only 64 bytes, you will now be accessing data over it
             DispatchMapMemory(device, memory_state.VkHandle(), offset, VK_WHOLE_SIZE, 0, (void**)&data_ptr);
 
-            // Skip checking if coherent memory or not
-            VkMappedMemoryRange memory_range = vku::InitStructHelper();
-            memory_range.memory = memory_state.VkHandle();
-            memory_range.offset = offset;
-            memory_range.size = copy_size;
-            DispatchInvalidateMappedMemoryRanges(device, 1, &memory_range);
+            if (memory_state.cache_non_coherent) {
+                const VkDeviceSize atom_size = phys_dev_props.limits.nonCoherentAtomSize;
+                uint64_t aligned_offset = offset & ~(atom_size - 1);
+                if (aligned_offset < offset) {
+                    aligned_offset = offset;
+                }
+
+                VkMappedMemoryRange memory_range = vku::InitStructHelper();
+                memory_range.memory = memory_state.VkHandle();
+                memory_range.offset = aligned_offset;
+                memory_range.size = VK_WHOLE_SIZE;
+                DispatchInvalidateMappedMemoryRanges(device, 1, &memory_range);
+            }
         }
 
         data_ptr += offset;
@@ -78,7 +87,6 @@ std::vector<uint8_t> GpuDump::CopyDataFromMemory(VkDeviceAddress memory_addresss
     return result;
 }
 
-// return for warning if no buffer found
 bool GpuDump::ListBuffers(std::ostringstream& ss, VkDeviceAddress address, uint32_t indents, bool new_line_start) {
     if (new_line_start) {
         ss << "\n";
@@ -109,6 +117,39 @@ bool GpuDump::ListBuffers(std::ostringstream& ss, VkDeviceAddress address, uint3
     }
 
     return buffer_states.empty();
+}
+
+bool GpuDump::ListAccelerationStructures(std::ostringstream& ss, VkDeviceAddress address, uint32_t indents, bool new_line_start) {
+    if (new_line_start) {
+        ss << "\n";
+    }
+
+    auto as_states = GetAccelerationStructuresByAddress(address);
+
+    for (uint32_t i = 0; i < indents; i++) {
+        ss << "    ";
+    }
+
+    for (uint32_t i = 0; i < as_states.size(); i++) {
+        if (i != 0) {
+            ss << '\n';
+            for (uint32_t j = 0; j < indents; j++) {
+                ss << "    ";
+            }
+        }
+        auto& as_state = as_states[i];
+        ss << "- " << as_state->Describe(*this);
+    }
+
+    if (as_states.empty()) {
+        ss << "- [WARNING] No VkAccelerationStructureKHR found at 0x" << std::hex << address;
+    }
+
+    if (!new_line_start) {
+        ss << "\n";
+    }
+
+    return as_states.empty();
 }
 
 }  // namespace gpudump

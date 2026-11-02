@@ -82,6 +82,10 @@ BASE_DECLARE_FEATURE(kLensOverlayOmniboxEntryPoint);
 COMPONENT_EXPORT(LENS_FEATURES)
 BASE_DECLARE_FEATURE(kLensOverlayUploadChunking);
 
+// Enables bypassing image compression for C2PA uploads in the Composebox.
+COMPONENT_EXPORT(LENS_FEATURES)
+BASE_DECLARE_FEATURE(kLensBypassCompressionForC2pa);
+
 // Enables a new feedback entrypoint in the Lens side panel.
 COMPONENT_EXPORT(LENS_FEATURES)
 BASE_DECLARE_FEATURE(kLensSearchSidePanelNewFeedback);
@@ -134,10 +138,6 @@ BASE_DECLARE_FEATURE(kLensSearchAimM3UseAimEligibility);
 COMPONENT_EXPORT(LENS_FEATURES)
 BASE_DECLARE_FEATURE(kLensSearchReinvocationAffordance);
 
-// Enables overriding the Lens overlay entrypoint label with an alternate
-// string.
-COMPONENT_EXPORT(LENS_FEATURES)
-BASE_DECLARE_FEATURE(kLensOverlayEntrypointLabelAlt);
 
 // Enables making the text selection context menu option a Lens overlay
 // entrypoint.
@@ -177,10 +177,6 @@ BASE_DECLARE_FEATURE(kLensUpdatedFeedbackEntrypoint);
 COMPONENT_EXPORT(LENS_FEATURES)
 BASE_DECLARE_FEATURE(kLensSidePanelUnification);
 
-// Enables using the optimization filter for triggering the action chip.
-COMPONENT_EXPORT(LENS_FEATURES)
-BASE_DECLARE_FEATURE(kLensOverlayOptimizationFilter);
-
 // Enables using the non-blocking privacy notice for the Lens overlay.
 COMPONENT_EXPORT(LENS_FEATURES)
 BASE_DECLARE_FEATURE(kLensOverlayNonBlockingPrivacyNotice);
@@ -189,6 +185,10 @@ BASE_DECLARE_FEATURE(kLensOverlayNonBlockingPrivacyNotice);
 // entrypoint.
 COMPONENT_EXPORT(LENS_FEATURES)
 BASE_DECLARE_FEATURE(kLensOverlayNonBlockingPrivacyNoticeForImageSearch);
+
+// Enables WebP encoding unconditionally.
+COMPONENT_EXPORT(LENS_FEATURES)
+BASE_DECLARE_FEATURE(kLensEnableWebpForImageUpload);
 
 // Enables using separate request ids for page contents vs page viewport
 // uploads.
@@ -231,6 +231,14 @@ BASE_DECLARE_FEATURE(
 // with a page that was navigated away from or tab that was closed.
 COMPONENT_EXPORT(LENS_FEATURES)
 BASE_DECLARE_FEATURE(kLensDeleteContextOnPageNavigation);
+
+// The implementation type for the Lens Overlay on Android.
+COMPONENT_EXPORT(LENS_FEATURES)
+extern const char kLensOverlayAndroidImplIntent[];
+COMPONENT_EXPORT(LENS_FEATURES)
+extern const char kLensOverlayAndroidImplWebUI[];
+COMPONENT_EXPORT(LENS_FEATURES)
+extern const base::FeatureParam<std::string> kLensOverlayAndroidImplType;
 
 // The base URL for Lens.
 COMPONENT_EXPORT(LENS_FEATURES)
@@ -282,10 +290,6 @@ extern const base::FeatureParam<bool> kLensOverlayEnableOpenInNewTab;
 COMPONENT_EXPORT(LENS_FEATURES)
 extern const base::FeatureParam<bool> kLensOverlayEduActionChipDisabledByGlic;
 
-// Value representing the string to use to override the Lens overlay entrypoint
-// label.
-COMPONENT_EXPORT(LENS_FEATURES)
-extern const base::FeatureParam<int> kLensOverlayEntrypointLabelAltId;
 
 // Whether the Lens overlay text selection context menu entrypoint should
 // issue contextual queries. If false, contextualization will be suppressed for
@@ -1005,30 +1009,6 @@ bool IsLensSearchProtectedPageEnabled();
 COMPONENT_EXPORT(LENS_FEATURES)
 bool IsLensOverlayEduActionChipEnabled();
 
-// URL allow filters for the EDU action chip.
-COMPONENT_EXPORT(LENS_FEATURES)
-extern std::string GetLensOverlayEduUrlAllowFilters();
-
-// URL block filters for the EDU action chip.
-COMPONENT_EXPORT(LENS_FEATURES)
-extern std::string GetLensOverlayEduUrlBlockFilters();
-
-// URL path match allow filters for the EDU action chip.
-COMPONENT_EXPORT(LENS_FEATURES)
-extern std::string GetLensOverlayEduUrlPathMatchAllowFilters();
-
-// URL path match block filters for the EDU action chip.
-COMPONENT_EXPORT(LENS_FEATURES)
-extern std::string GetLensOverlayEduUrlPathMatchBlockFilters();
-
-// URL force-allowed match patterns for the EDU action chip.
-COMPONENT_EXPORT(LENS_FEATURES)
-extern std::string GetLensOverlayEduUrlForceAllowedMatchPatterns();
-
-// Hashed domain block filters for the EDU action chip.
-COMPONENT_EXPORT(LENS_FEATURES)
-extern std::string GetLensOverlayEduHashedDomainBlockFilters();
-
 // Whether EDU action chip should be disabled by glic.
 COMPONENT_EXPORT(LENS_FEATURES)
 bool IsLensOverlayEduActionChipDisabledByGlic();
@@ -1093,12 +1073,6 @@ extern bool IsLensUpdatedFeedbackEnabled();
 // The timeout for showing the feedback toast in the Lens side panel.
 COMPONENT_EXPORT(LENS_FEATURES)
 extern int GetLensUpdatedFeedbackToastTimeoutMs();
-
-// Whether to enable using the optimization filter for triggering the action
-// chip.
-COMPONENT_EXPORT(LENS_FEATURES)
-extern bool IsLensOverlayOptimizationFilterEnabled();
-
 // Flag to control the type of suggestions for Lens Aim.
 // Access this value using: kLensAimSuggestionsType.Get()
 COMPONENT_EXPORT(LENS_FEATURES)
@@ -1153,6 +1127,39 @@ extern const base::FeatureParam<bool> kLensOnlySendAaiExcludeRawAndDriveFiles;
 
 COMPONENT_EXPORT(LENS_FEATURES)
 extern bool IsLensOnlySendAaiExcludeRawAndDriveFilesEnabled();
+
+// Enables Identity Delegation for Lens Composebox requests.
+COMPONENT_EXPORT(LENS_FEATURES)
+BASE_DECLARE_FEATURE(kLensComposeboxIdentityDelegation);
+
+COMPONENT_EXPORT(LENS_FEATURES)
+extern const base::FeatureParam<std::string>
+    kLensComposeboxIdentityDelegationClusterInfoEndpointUrl;
+
+COMPONENT_EXPORT(LENS_FEATURES)
+extern const base::FeatureParam<std::string>
+    kLensComposeboxIdentityDelegationEndpointUrl;
+
+COMPONENT_EXPORT(LENS_FEATURES)
+extern const base::FeatureParam<std::string>
+    kLensComposeboxIdentityDelegationUploadChunkEndpointUrl;
+
+COMPONENT_EXPORT(LENS_FEATURES)
+bool UseIdentityDelegationForLensComposeboxRequests();
+
+// Returns the finch configured endpoint URL for the cluster info request for
+// composebox.
+COMPONENT_EXPORT(LENS_FEATURES)
+extern std::string GetLensComposeboxClusterInfoEndpointUrl();
+
+// Returns the finch configured endpoint URL for the Lens composebox.
+COMPONENT_EXPORT(LENS_FEATURES)
+extern std::string GetLensComposeboxEndpointUrl();
+
+// Returns the finch configured upload chunk endpoint URL for the Lens
+// composebox.
+COMPONENT_EXPORT(LENS_FEATURES)
+extern std::string GetLensComposeboxUploadChunkEndpointUrl();
 
 }  // namespace lens::features
 #endif  // COMPONENTS_LENS_LENS_FEATURES_H_

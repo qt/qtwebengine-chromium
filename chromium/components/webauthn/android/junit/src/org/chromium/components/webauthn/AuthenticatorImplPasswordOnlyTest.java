@@ -25,15 +25,14 @@ import org.robolectric.annotation.Config;
 
 import org.chromium.base.test.BaseRobolectricTestRunner;
 import org.chromium.base.test.util.Batch;
-import org.chromium.base.test.util.Features.EnableFeatures;
 import org.chromium.blink.mojom.Authenticator;
 import org.chromium.blink.mojom.GetCredentialOptions;
 import org.chromium.blink.mojom.Mediation;
 import org.chromium.blink.mojom.PublicKeyCredentialRequestOptions;
+import org.chromium.content_public.browser.LifecycleState;
 import org.chromium.content_public.browser.RenderFrameHost;
 import org.chromium.content_public.browser.Visibility;
 import org.chromium.content_public.browser.WebContents;
-import org.chromium.device.DeviceFeatureList;
 import org.chromium.url.GURL;
 import org.chromium.url.Origin;
 
@@ -42,7 +41,6 @@ import org.chromium.url.Origin;
 @Config(manifest = Config.NONE)
 @Batch(Batch.UNIT_TESTS)
 @SmallTest
-@EnableFeatures({DeviceFeatureList.WEBAUTHN_IMMEDIATE_GET})
 public class AuthenticatorImplPasswordOnlyTest {
     private AuthenticatorImpl mAuthenticator;
     private Origin mOrigin;
@@ -63,6 +61,7 @@ public class AuthenticatorImplPasswordOnlyTest {
         mTopOrigin = Origin.create(new GURL("https://example.com"));
 
         when(mRenderFrameHost.getLastCommittedOrigin()).thenReturn(mOrigin);
+        when(mRenderFrameHost.getLifecycleState()).thenReturn(LifecycleState.ACTIVE);
 
         WebauthnModeProvider.setInstanceForTesting(mModeProviderMock);
         when(mModeProviderMock.getWebauthnMode(any())).thenReturn(WebauthnMode.CHROME);

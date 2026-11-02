@@ -86,6 +86,11 @@ VkAttachmentStoreOp ConvertRenderPassStoreOpToVkStoreOp(RenderPassStoreOp storeO
                                               : static_cast<VkAttachmentStoreOp>(storeOp);
 }
 
+constexpr gl::DrawBuffersArray<uint32_t> kUnusedInputIndices = {
+    VK_ATTACHMENT_UNUSED, VK_ATTACHMENT_UNUSED, VK_ATTACHMENT_UNUSED, VK_ATTACHMENT_UNUSED,
+    VK_ATTACHMENT_UNUSED, VK_ATTACHMENT_UNUSED, VK_ATTACHMENT_UNUSED, VK_ATTACHMENT_UNUSED};
+static_assert(gl::IMPLEMENTATION_MAX_DRAW_BUFFERS == 8);
+
 constexpr size_t TransitionBits(size_t size)
 {
     return size / kGraphicsPipelineDirtyBitBytes;
@@ -330,9 +335,6 @@ void DeriveRenderingInfo(Renderer *renderer,
                          bool *isReadOnlyDepthStencilOut)
 {
     ASSERT(renderer->getFeatures().preferDynamicRendering.enabled);
-    // MSRTT cannot be emulated over dynamic rendering.
-    ASSERT(!renderer->getFeatures().enableMultisampledRenderToTexture.enabled ||
-           renderer->getFeatures().supportsMultisampledRenderToSingleSampled.enabled);
 
 #if defined(ANGLE_ENABLE_ASSERTS)
     // Try to catch errors if the entire struct is not filled but uninitialized data is
@@ -343,6 +345,9 @@ void DeriveRenderingInfo(Renderer *renderer,
     const bool hasDitheringThroughExtension = desc.isLegacyDitherEnabled();
     ASSERT(!hasDitheringThroughExtension ||
            renderer->getFeatures().supportsLegacyDithering.enabled);
+    const bool isRenderToTextureThroughExtension =
+        desc.isRenderToTexture() &&
+        renderer->getFeatures().supportsMultisampledRenderToSingleSampled.enabled;
 
     // renderArea and layerCount are determined when beginning the render pass
     infoOut->renderingInfo       = {};
@@ -413,10 +418,17 @@ void DeriveRenderingInfo(Renderer *renderer,
             const VkImageLayout resolveImageLayout = renderer->getVkImageLayout(
                 static_cast<vk::ImageAccess>(ops[attachmentCount].finalResolveLayout));
             const bool hasColorResolveAttachment = desc.hasColorResolveAttachment(colorIndexGL);
+            // When MultisampledRenderToTexture is used, we can drop the resolve operation if the
+            // corresponding color attachment is invalidated.
+            const bool hasInvalidatedColorResolveAttachment = hasColorResolveAttachment &&
+                                                              desc.isRenderToTexture() &&
+                                                              ops[attachmentCount].isInvalidated;
+
             const bool isIntegerFormat           = angle::Format::Get(attachmentFormatID).isInt();
             const VkResolveModeFlagBits resolveMode =
                 isYUVExternalFormat ? VK_RESOLVE_MODE_EXTERNAL_FORMAT_DOWNSAMPLE_ANDROID
-                : hasColorResolveAttachment || desc.isRenderToTexture()
+                : (hasColorResolveAttachment || desc.isRenderToTexture()) &&
+                        !hasInvalidatedColorResolveAttachment
                     ? isIntegerFormat ? VK_RESOLVE_MODE_SAMPLE_ZERO_BIT
                                       : VK_RESOLVE_MODE_AVERAGE_BIT
                     : VK_RESOLVE_MODE_NONE;
@@ -446,7 +458,7 @@ void DeriveRenderingInfo(Renderer *renderer,
             }
             infoOut->colorAttachmentInfo[attachmentCount.get()].imageView =
                 attachmentViews[attachmentCount.get()];
-            if (resolveMode != VK_RESOLVE_MODE_NONE && !desc.isRenderToTexture())
+            if (resolveMode != VK_RESOLVE_MODE_NONE && !isRenderToTextureThroughExtension)
             {
                 infoOut->colorAttachmentInfo[attachmentCount.get()].resolveImageView =
                     attachmentViews[RenderPassFramebuffer::kColorResolveAttachmentBegin +
@@ -483,20 +495,40 @@ void DeriveRenderingInfo(Renderer *renderer,
 
         if (subset == DynamicRenderingInfoSubset::Full)
         {
+            // When MultisampledRenderToTexture is used, we can drop the resolve operation if the
+            // corresponding attachment is invalidated.
             const bool resolveDepth =
-                angleFormat.depthBits != 0 && desc.hasDepthResolveAttachment();
+                angleFormat.depthBits != 0 &&
+                (desc.hasDepthResolveAttachment() || desc.isRenderToTexture()) &&
+                !(desc.isRenderToTexture() && ops[attachmentCount].isInvalidated);
             const bool resolveStencil =
-                angleFormat.stencilBits != 0 && desc.hasStencilResolveAttachment();
+                angleFormat.stencilBits != 0 &&
+                (desc.hasStencilResolveAttachment() || desc.isRenderToTexture()) &&
+                !(desc.isRenderToTexture() && ops[attachmentCount].isStencilInvalidated);
 
             const ImageAccess imageAccess =
                 static_cast<ImageAccess>(ops[attachmentCount].initialLayout);
             const VkImageLayout layout = renderer->getVkImageLayout(imageAccess);
             const VkImageLayout resolveImageLayout =
                 renderer->getVkImageLayout(ImageAccess::DepthWriteStencilWrite);
+            // Per VUID-VkRenderingAttachmentInfo-None-12256, resolve mode must be set for both
+            // aspects if using VK_EXT_multisampled_render_to_single_sampled.
+            // Additionally, without
+            // VkPhysicalDeviceDepthStencilResolveProperties::independentResolveNone, both resolve
+            // modes must be equal.
+            const bool resolveModesMustMatch =
+                isRenderToTextureThroughExtension ||
+                !renderer->getFeatures().supportsDepthStencilIndependentResolveNone.enabled;
+            const bool hasDepthAndResolvesStencil =
+                angleFormat.depthBits != 0 && resolveStencil && resolveModesMustMatch;
+            const bool hasStencilAndResolvesDepth =
+                angleFormat.stencilBits != 0 && resolveDepth && resolveModesMustMatch;
             const VkResolveModeFlagBits depthResolveMode =
-                resolveDepth ? VK_RESOLVE_MODE_SAMPLE_ZERO_BIT : VK_RESOLVE_MODE_NONE;
+                resolveDepth || hasDepthAndResolvesStencil ? VK_RESOLVE_MODE_SAMPLE_ZERO_BIT
+                                                           : VK_RESOLVE_MODE_NONE;
             const VkResolveModeFlagBits stencilResolveMode =
-                resolveStencil ? VK_RESOLVE_MODE_SAMPLE_ZERO_BIT : VK_RESOLVE_MODE_NONE;
+                resolveStencil || hasStencilAndResolvesDepth ? VK_RESOLVE_MODE_SAMPLE_ZERO_BIT
+                                                             : VK_RESOLVE_MODE_NONE;
             const RenderPassLoadOp loadOp =
                 static_cast<RenderPassLoadOp>(ops[attachmentCount].loadOp);
             const RenderPassStoreOp storeOp =
@@ -512,7 +544,7 @@ void DeriveRenderingInfo(Renderer *renderer,
                                  stencilResolveMode, &infoOut->stencilAttachmentInfo);
 
             infoOut->depthAttachmentInfo.imageView = attachmentViews[attachmentCount.get()];
-            if (resolveDepth)
+            if (resolveDepth && desc.hasDepthResolveAttachment())
             {
                 infoOut->depthAttachmentInfo.resolveImageView =
                     attachmentViews[RenderPassFramebuffer::kDepthStencilResolveAttachment];
@@ -520,7 +552,7 @@ void DeriveRenderingInfo(Renderer *renderer,
             infoOut->depthAttachmentInfo.clearValue = clearValues[attachmentCount];
 
             infoOut->stencilAttachmentInfo.imageView = attachmentViews[attachmentCount.get()];
-            if (resolveStencil)
+            if (resolveStencil && desc.hasStencilResolveAttachment())
             {
                 infoOut->stencilAttachmentInfo.resolveImageView =
                     attachmentViews[RenderPassFramebuffer::kDepthStencilResolveAttachment];
@@ -549,7 +581,7 @@ void DeriveRenderingInfo(Renderer *renderer,
         infoOut->renderingInfo.renderArea.extent.height = static_cast<uint32_t>(renderArea.height);
         infoOut->renderingInfo.layerCount               = layerCount;
 
-        if (desc.isRenderToTexture())
+        if (isRenderToTextureThroughExtension)
         {
             ASSERT(renderer->getFeatures().supportsMultisampledRenderToSingleSampled.enabled);
 
@@ -621,8 +653,8 @@ void AttachPipelineRenderingInfo(ErrorContext *context,
     // Note: VkRenderingInputAttachmentIndexInfoKHR only affects the fragment stage subset, and is
     // needed only when the shaders stage is not coming from a pipeline library (where this mapping
     // is already specified).
-    if (desc.hasColorFramebufferFetch() && shadersSource == ShadersStateSource::ThisPipeline &&
-        GraphicsPipelineHasShaders(subset))
+    if ((desc.hasColorFramebufferFetch() || desc.isDynamicMSRTTUnresolve()) &&
+        shadersSource == ShadersStateSource::ThisPipeline && GraphicsPipelineHasShaders(subset))
     {
         *inputLocationsOut       = {};
         inputLocationsOut->sType = VK_STRUCTURE_TYPE_RENDERING_INPUT_ATTACHMENT_INDEX_INFO_KHR;
@@ -632,11 +664,19 @@ void AttachPipelineRenderingInfo(ErrorContext *context,
                 renderingInfo.renderingInfo.colorAttachmentCount;
             inputLocationsOut->pColorAttachmentInputIndices =
                 renderingInfo.colorAttachmentLocations.data();
+            // Note: for depth/stencil, there is no need to explicitly set
+            // |pDepthInputAttachmentIndex|, |pStencilInputAttachmentIndex|.  When NULL, they
+            // automatically map to input attachments without a |InputAttachmentIndex| decoration,
+            // which is exactly how ANGLE produces its SPIR-V.
         }
-        // Note: for depth/stencil, there is no need to explicitly set |pDepthInputAttachmentIndex|,
-        // |pStencilInputAttachmentIndex|.  When NULL, they automatically map to input attachments
-        // without a |InputAttachmentIndex| decoration, which is exactly how ANGLE produces its
-        // SPIR-V.
+        else if (desc.isDynamicMSRTTUnresolve())
+        {
+            inputLocationsOut->colorAttachmentCount =
+                renderingInfo.renderingInfo.colorAttachmentCount;
+            inputLocationsOut->pColorAttachmentInputIndices = kUnusedInputIndices.data();
+            inputLocationsOut->pDepthInputAttachmentIndex   = kUnusedInputIndices.data();
+            inputLocationsOut->pStencilInputAttachmentIndex = kUnusedInputIndices.data();
+        }
 
         AddToPNextChain(createInfoOut, inputLocationsOut);
     }
@@ -1680,11 +1720,11 @@ DestT Int4Array_Get(const uint8_t *arrayBytes, uint32_t arrayIndex)
 }
 
 // When converting a byte number to a transition bit index we can shift instead of divide.
-constexpr size_t kTransitionByteShift = Log2(kGraphicsPipelineDirtyBitBytes);
+constexpr size_t kTransitionByteShift = gl::log2(kGraphicsPipelineDirtyBitBytes);
 
 // When converting a number of bits offset to a transition bit index we can also shift.
 constexpr size_t kBitsPerByte        = 8;
-constexpr size_t kTransitionBitShift = kTransitionByteShift + Log2(kBitsPerByte);
+constexpr size_t kTransitionBitShift = kTransitionByteShift + gl::log2(kBitsPerByte);
 
 // Helper macro to map from a PipelineDesc struct and field to a dirty bit index.
 // Uses the 'offsetof' macro to compute the offset 'Member' within the PipelineDesc.
@@ -2830,6 +2870,11 @@ void RenderPassDesc::removeColorUnresolveAttachment(size_t colorIndexGL)
     mColorUnresolveAttachmentMask.reset(colorIndexGL);
 }
 
+void RenderPassDesc::resetColorUnresolveAttachments()
+{
+    mColorUnresolveAttachmentMask.reset();
+}
+
 void RenderPassDesc::packDepthResolveAttachment()
 {
     ASSERT(hasDepthStencilAttachment());
@@ -2996,6 +3041,17 @@ void RenderPassDesc::beginRendering(
         inputLocations.sType = VK_STRUCTURE_TYPE_RENDERING_INPUT_ATTACHMENT_INDEX_INFO_KHR;
         inputLocations.colorAttachmentCount         = info.renderingInfo.colorAttachmentCount;
         inputLocations.pColorAttachmentInputIndices = info.colorAttachmentLocations.data();
+
+        primary->setRenderingInputAttachmentIndicates(&inputLocations);
+    }
+    else if (isDynamicMSRTTUnresolve())
+    {
+        VkRenderingInputAttachmentIndexInfoKHR inputLocations = {};
+        inputLocations.sType = VK_STRUCTURE_TYPE_RENDERING_INPUT_ATTACHMENT_INDEX_INFO_KHR;
+        inputLocations.colorAttachmentCount         = info.renderingInfo.colorAttachmentCount;
+        inputLocations.pColorAttachmentInputIndices = kUnusedInputIndices.data();
+        inputLocations.pDepthInputAttachmentIndex   = kUnusedInputIndices.data();
+        inputLocations.pStencilInputAttachmentIndex = kUnusedInputIndices.data();
 
         primary->setRenderingInputAttachmentIndicates(&inputLocations);
     }
@@ -5245,40 +5301,6 @@ void PipelineHelper::retainInRenderPass(RenderPassCommandBufferHelper *renderPas
     }
 }
 
-// FramebufferHelper implementation.
-FramebufferHelper::FramebufferHelper() = default;
-
-FramebufferHelper::~FramebufferHelper() = default;
-
-FramebufferHelper::FramebufferHelper(FramebufferHelper &&other) : Resource(std::move(other))
-{
-    mFramebuffer = std::move(other.mFramebuffer);
-}
-
-FramebufferHelper &FramebufferHelper::operator=(FramebufferHelper &&other)
-{
-    Resource::operator=(std::move(other));
-    std::swap(mFramebuffer, other.mFramebuffer);
-    return *this;
-}
-
-angle::Result FramebufferHelper::init(ErrorContext *context,
-                                      const VkFramebufferCreateInfo &createInfo)
-{
-    ANGLE_VK_TRY(context, mFramebuffer.init(context->getDevice(), createInfo));
-    return angle::Result::Continue;
-}
-
-void FramebufferHelper::destroy(Renderer *renderer)
-{
-    mFramebuffer.destroy(renderer->getDevice());
-}
-
-void FramebufferHelper::release(ContextVk *contextVk)
-{
-    contextVk->addGarbage(&mFramebuffer);
-}
-
 // DescriptorSetDesc implementation.
 size_t DescriptorSetDesc::hash() const
 {
@@ -5428,7 +5450,7 @@ void FramebufferDesc::destroyCachedObject(Renderer *renderer)
 void FramebufferDesc::releaseCachedObject(ContextVk *contextVk)
 {
     ASSERT(valid());
-    contextVk->getShareGroup()->getFramebufferCache().erase(contextVk, *this);
+    contextVk->getFramebufferCache().erase(contextVk, *this);
     SetBitField(mIsValid, 0);
 }
 
@@ -5436,7 +5458,7 @@ bool FramebufferDesc::hasValidCachedObject(ContextVk *contextVk) const
 {
     ASSERT(valid());
     Framebuffer framebuffer;
-    return contextVk->getShareGroup()->getFramebufferCache().get(contextVk, *this, framebuffer);
+    return contextVk->getFramebufferCache().get(contextVk, *this, framebuffer);
 }
 
 // YcbcrConversionDesc implementation
@@ -6751,8 +6773,30 @@ angle::Result DescriptorSetDescBuilder::updateImages(
                 GLuint imageUnit             = imageBinding.boundImageUnits[arrayElement];
                 const gl::ImageUnit &binding = imageUnits[imageUnit];
                 TextureVk *textureVk         = activeImages[imageUnit];
+
+                uint32_t infoIndex = writeDescriptorDescs[info.binding].descriptorInfoIndex +
+                                     arrayElement + imageUniform.getOuterArrayOffset();
+
                 if (!textureVk)
                 {
+                    DescriptorInfoDesc &nullInfoDesc = mDesc.getInfoDesc(infoIndex);
+                    SetBitField(nullInfoDesc.imageLayoutOrRange, VK_IMAGE_LAYOUT_GENERAL);
+                    nullInfoDesc.imageSubresourceRange = 0;
+
+                    VkImageView nullView = VK_NULL_HANDLE;
+                    vk::ImageOrBufferViewSerial nullSerial;
+
+                    GLenum shaderFormat = imageUniform.getImageUnitFormat();
+                    if (shaderFormat == GL_NONE)
+                    {
+                        shaderFormat = GL_RGBA8;
+                    }
+                    ANGLE_TRY(contextVk->getOrCreateNullStorageImageView(shaderFormat, &nullView,
+                                                                         &nullSerial));
+                    nullInfoDesc.imageViewSerialOrOffset = nullSerial.getValue();
+                    nullInfoDesc.samplerOrBufferSerialOrStorageFormat =
+                        static_cast<uint64_t>(shaderFormat);
+                    mHandles[infoIndex].imageView = nullView;
                     continue;
                 }
 
@@ -6763,9 +6807,6 @@ angle::Result DescriptorSetDescBuilder::updateImages(
                     textureVk->getStorageImageViewSerial(binding);
 
                 ANGLE_TRY(textureVk->getStorageImageView(contextVk, binding, &imageView));
-
-                uint32_t infoIndex = writeDescriptorDescs[info.binding].descriptorInfoIndex +
-                                     arrayElement + imageUniform.getOuterArrayOffset();
 
                 // Note: binding.access is unused because it is implied by the shader.
 
@@ -7376,11 +7417,12 @@ void UpdateDescriptorSetsBuilder::updateWriteDescriptorSet(
 // FramebufferCache implementation.
 void FramebufferCache::destroy(vk::Renderer *renderer)
 {
+    VkDevice device = renderer->getDevice();
     renderer->accumulateCacheStats(VulkanCacheType::Framebuffer, mCacheStats);
     for (auto &entry : mPayload)
     {
-        vk::FramebufferHelper &tmpFB = entry.second;
-        tmpFB.destroy(renderer);
+        vk::Framebuffer &tmpFB = entry.second;
+        tmpFB.destroy(device);
     }
     mPayload.clear();
 }
@@ -7394,7 +7436,7 @@ bool FramebufferCache::get(ContextVk *contextVk,
     auto iter = mPayload.find(desc);
     if (iter != mPayload.end())
     {
-        framebuffer.setHandle(iter->second.getFramebuffer().getHandle());
+        framebuffer.setHandle(iter->second.getHandle());
         mCacheStats.hit();
         return true;
     }
@@ -7405,11 +7447,11 @@ bool FramebufferCache::get(ContextVk *contextVk,
 
 void FramebufferCache::insert(ContextVk *contextVk,
                               const vk::FramebufferDesc &desc,
-                              vk::FramebufferHelper &&framebufferHelper)
+                              vk::Framebuffer &&framebuffer)
 {
     ASSERT(!contextVk->getFeatures().supportsImagelessFramebuffer.enabled);
 
-    mPayload.emplace(desc, std::move(framebufferHelper));
+    mPayload.emplace(desc, std::move(framebuffer));
 }
 
 void FramebufferCache::erase(ContextVk *contextVk, const vk::FramebufferDesc &desc)
@@ -7419,8 +7461,8 @@ void FramebufferCache::erase(ContextVk *contextVk, const vk::FramebufferDesc &de
     auto iter = mPayload.find(desc);
     if (iter != mPayload.end())
     {
-        vk::FramebufferHelper &tmpFB = iter->second;
-        tmpFB.release(contextVk);
+        vk::Framebuffer &tmpFB = iter->second;
+        contextVk->addGarbage(&tmpFB);
         mPayload.erase(desc);
     }
 }

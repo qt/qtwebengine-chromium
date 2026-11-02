@@ -132,6 +132,7 @@ source_set("fuzzer_init_public") {
   deps = [
     ":fuzzer_utils",
     "../../:pdfium_public_headers",
+    "../../core/fxcrt",
     "../../fpdfsdk",
   ]
   if (pdf_enable_v8) {
@@ -551,7 +552,10 @@ pdfium_fuzzer("pdf_codec_rle_fuzzer") {
 
 pdfium_fuzzer("pdf_font_fuzzer") {
   sources = [ "pdf_font_fuzzer.cc" ]
-  deps = [ "../../:pdfium_public_headers" ]
+  deps = [
+    "../../:pdfium_public_headers",
+    "../../core/fxcrt",
+  ]
 }
 
 pdfium_fuzzer("pdf_hint_table_fuzzer") {

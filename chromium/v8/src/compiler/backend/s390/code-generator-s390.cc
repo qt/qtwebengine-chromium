@@ -1417,7 +1417,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
 #if V8_ENABLE_WEBASSEMBLY
       if (linkage()->GetIncomingDescriptor()->IsWasmCapiFunction()) {
         // Put the return address in a stack slot.
-        __ larl(r0, &return_location);
+        __ GetLabelAddress(r0, &return_location);
         __ StoreU64(r0,
                     MemOperand(fp, WasmExitFrameConstants::kCallingPCOffset));
         set_isolate_data_slots = SetIsolateDataSlots::kNo;
@@ -2418,7 +2418,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kS390_LoadSimd128: {
       AddressingMode mode = kMode_None;
       MemOperand operand = i.MemoryOperand(&mode);
-      __ vl(i.OutputSimd128Register(), operand, Condition(0));
+      __ LoadV128(i.OutputSimd128Register(), operand, kScratchReg);
       break;
     }
     case kS390_StoreWord8:
@@ -2471,7 +2471,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       size_t index = 0;
       AddressingMode mode = kMode_None;
       MemOperand operand = i.MemoryOperand(&mode, &index);
-      __ vst(i.InputSimd128Register(index), operand, Condition(0));
+      __ StoreV128(i.InputSimd128Register(index), operand, kScratchReg);
       break;
     }
     case kS390_Lay: {
@@ -3480,7 +3480,7 @@ void CodeGenerator::AssembleArchTableSwitch(Instruction* instr) {
   Label* const table = AddJumpTable(cases);
   __ CmpU64(input, Operand(case_count));
   __ bge(GetLabel(i.InputRpo(1)));
-  __ larl(kScratchReg, table);
+  __ GetLabelAddress(kScratchReg, table);
   __ ShiftLeftU64(r1, input, Operand(kSystemPointerSizeLog2));
   __ LoadU64(kScratchReg, MemOperand(kScratchReg, r1));
   __ Jump(kScratchReg);
@@ -3575,7 +3575,9 @@ void CodeGenerator::AssembleConstructFrame() {
 
   if (required_slots > 0) {
 #if V8_ENABLE_WEBASSEMBLY
-    if (info()->IsWasm() && required_slots * kSystemPointerSize > 4 * KB) {
+    int32_t stack_space =
+        required_slots * kSystemPointerSize + GetStackCheckOffset();
+    if (info()->IsWasm() && stack_space > 4 * KB) {
       // For WebAssembly functions with big frames we have to do the stack
       // overflow check before we construct the frame. Otherwise we may not
       // have enough space on the stack to call the runtime for the stack
@@ -3585,16 +3587,15 @@ void CodeGenerator::AssembleConstructFrame() {
       // If the frame is bigger than the stack, we throw the stack overflow
       // exception unconditionally. Thereby we can avoid the integer overflow
       // check in the condition code.
-      if (required_slots * kSystemPointerSize < v8_flags.stack_size * KB) {
+      if (stack_space < v8_flags.stack_size * KB) {
         Register stack_limit = r1;
         __ LoadStackLimit(stack_limit, StackLimitKind::kRealStackLimit);
-        __ AddS64(stack_limit, stack_limit,
-                  Operand(required_slots * kSystemPointerSize));
+        __ AddS64(stack_limit, stack_limit, Operand(stack_space));
         __ CmpU64(sp, stack_limit);
         __ bge(&done);
       }
 
-      if (v8_flags.experimental_wasm_growable_stacks) {
+      if (v8_flags.wasm_growable_stacks) {
         RegList regs_to_save;
         regs_to_save.set(WasmHandleStackOverflowDescriptor::GapRegister());
         regs_to_save.set(
@@ -3605,7 +3606,7 @@ void CodeGenerator::AssembleConstructFrame() {
         for (auto reg : wasm::kFpParamRegisters) fp_regs_to_save.set(reg);
         __ MultiPushF64OrV128(fp_regs_to_save, r1);
         __ mov(WasmHandleStackOverflowDescriptor::GapRegister(),
-               Operand(required_slots * kSystemPointerSize));
+               Operand(stack_space));
         __ AddS64(
             WasmHandleStackOverflowDescriptor::FrameBaseRegister(), fp,
             Operand(call_descriptor->ParameterSlotCount() * kSystemPointerSize +
@@ -3710,7 +3711,7 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
 
 #if V8_ENABLE_WEBASSEMBLY
   if (call_descriptor->IsAnyWasmFunctionCall() &&
-      v8_flags.experimental_wasm_growable_stacks) {
+      v8_flags.wasm_growable_stacks) {
     {
       UseScratchRegisterScope temps{masm()};
       Register scratch = temps.Acquire();
@@ -3807,10 +3808,7 @@ AllocatedOperand CodeGenerator::Push(InstructionOperand* source) {
   auto rep = LocationOperand::cast(source)->representation();
   int new_slots = ElementSizeInPointers(rep);
   S390OperandConverter g(this, nullptr);
-  int last_frame_slot_id =
-      frame_access_state_->frame()->GetTotalFrameSlotCount() - 1;
-  int sp_delta = frame_access_state_->sp_delta();
-  int slot_id = last_frame_slot_id + sp_delta + new_slots;
+  int slot_id = frame_access_state()->GetSPSlotCount() - 1 + new_slots;
   AllocatedOperand stack_slot(LocationOperand::STACK_SLOT, rep, slot_id);
   if (source->IsFloatStackSlot() || source->IsDoubleStackSlot()) {
     __ LoadU64(r1, g.ToMemOperand(source));
@@ -3834,10 +3832,7 @@ void CodeGenerator::Pop(InstructionOperand* dest, MachineRepresentation rep) {
     __ Pop(r1);
     __ StoreU64(r1, g.ToMemOperand(dest));
   } else {
-    int last_frame_slot_id =
-        frame_access_state_->frame()->GetTotalFrameSlotCount() - 1;
-    int sp_delta = frame_access_state_->sp_delta();
-    int slot_id = last_frame_slot_id + sp_delta;
+    int slot_id = frame_access_state()->GetSPSlotCount() - 1;
     AllocatedOperand stack_slot(LocationOperand::STACK_SLOT, rep, slot_id);
     AssembleMove(&stack_slot, dest);
     frame_access_state()->IncreaseSPDelta(-dropped_slots);

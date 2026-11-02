@@ -38,6 +38,7 @@
 #include "ui/native_theme/features/native_theme_features.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/native_theme/native_theme_base.h"
+#include "ui/native_theme/os_settings_provider.h"
 
 namespace ui {
 
@@ -65,7 +66,9 @@ void NativeThemeFluent::SetArrowIconsAvailableForTesting(bool available) {
 }
 
 NativeThemeFluent::NativeThemeFluent() {
-  set_use_overlay_scrollbar(IsFluentOverlayScrollbarEnabled());
+  set_use_overlay_scrollbar(
+      IsFluentOverlayScrollbarEnabled() &&
+      OsSettingsProvider::Get().PrefersOverlayScrollbars());
 }
 
 NativeThemeFluent::~NativeThemeFluent() = default;
@@ -133,6 +136,20 @@ std::optional<ColorId> NativeThemeFluent::GetScrollbarThumbColorId(
 float NativeThemeFluent::GetScrollbarPartContrastRatioForState(
     State state) const {
   return 1.8f;
+}
+
+SkColor NativeThemeFluent::GetScrollbarArrowBackgroundColor(
+    const ScrollbarArrowExtraParams& extra_params,
+    State state,
+    bool dark_mode,
+    PreferredContrast contrast,
+    const ColorProvider* color_provider) const {
+  static constexpr auto kScrollbarArrowBackgroundColors = std::to_array(
+      {kScrollbarArrowBackgroundDisabled, kScrollbarArrowBackgroundHovered,
+       kScrollbarArrowBackground, kScrollbarArrowBackgroundPressed});
+  return extra_params.track_color.value_or(
+      GetControlColorForState(kScrollbarArrowBackgroundColors, state, dark_mode,
+                              contrast, color_provider));
 }
 
 void NativeThemeFluent::PaintArrowButton(

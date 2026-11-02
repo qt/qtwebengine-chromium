@@ -7,7 +7,7 @@
 #ifndef CORE_FXCRT_FX_BIDI_H_
 #define CORE_FXCRT_FX_BIDI_H_
 
-#include <stdint.h>
+#include <stddef.h>
 
 #include <vector>
 
@@ -18,8 +18,8 @@ class CFX_BidiChar {
  public:
   enum class Direction { kNeutral, kLeft, kRight, kLeftWeak };
   struct Segment {
-    int32_t start;        // Start position.
-    int32_t count;        // Character count.
+    size_t start;         // Start position.
+    size_t count;         // Character count.
     Direction direction;  // Segment direction.
   };
 
@@ -50,7 +50,13 @@ class CFX_BidiString {
  public:
   using const_iterator = std::vector<CFX_BidiChar::Segment>::const_iterator;
 
-  explicit CFX_BidiString(const WideString& str);
+  // Constructs a BidiString with configurable automatic Bidi ordering.
+  // When `auto_order` is true, the overall reading direction of the line
+  // and its internal segment order are automatically flipped to Right-to-Left
+  // if the number of R2L segments strictly exceeds the number of L2R segments.
+  // When `auto_order` is false, this heuristic is skipped, and segments remain
+  // in their logical input order unless SetOverallDirectionRight() is called.
+  CFX_BidiString(const WideString& str, bool auto_order);
   ~CFX_BidiString();
 
   // Overall direction is always LEFT or RIGHT, never NEUTRAL.

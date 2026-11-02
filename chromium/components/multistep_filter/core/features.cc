@@ -24,20 +24,11 @@ BASE_FEATURE_PARAM(size_t,
                    "suggestion_max_candidates",
                    10u);
 
-// A comma-separated list of domains that are allowed to trigger the Multistep
-// Filter feature. If the value is "*", all domains are allowed.
-BASE_FEATURE_PARAM(std::string,
-                   kMultistepFilterAllowedDomains,
+BASE_FEATURE_PARAM(size_t,
+                   kMultistepFilterMaxFacetsShownUkmClampingLimit,
                    &kMultistepFilter,
-                   "allowed_domains",
-                   "*");
-
-// The base URL for the `SiteAutomationIndexServer` APIs.
-BASE_FEATURE_PARAM(std::string,
-                   kMultistepFilterIndexServerApiBaseUrl,
-                   &kMultistepFilter,
-                   "api_url",
-                   "");
+                   "max_facets_shown_ukm_clamping_limit",
+                   10u);
 
 // The duration for which filter annotations are considered valid.
 BASE_FEATURE_PARAM(base::TimeDelta,
@@ -46,7 +37,27 @@ BASE_FEATURE_PARAM(base::TimeDelta,
                    "filter_session_duration",
                    base::Minutes(30));
 
-// JSON map of task types to string templates for contextual cues.
-BASE_FEATURE_PARAM(std::string, kCueTemplatesMap, &kMultistepFilter, "{}");
+// The duration for which suggestions on the same domain are suppressed after
+// extraction.
+BASE_FEATURE_PARAM(base::TimeDelta,
+                   kSameDomainSuggestionSuppressionDuration,
+                   &kMultistepFilter,
+                   base::Minutes(2));
+
+// The duration after a suggestion is applied during which we track subsequent
+// user actions (like going back or closing the tab) for metrics.
+BASE_FEATURE_PARAM(base::TimeDelta,
+                   kMultistepFilterPostApplicationSessionDuration,
+                   &kMultistepFilter,
+                   base::Minutes(2));
+
+// Enables the Send Feedback button in the contextual cue three-dot menu.
+BASE_FEATURE(kMultistepFilterSendFeedback, base::FEATURE_DISABLED_BY_DEFAULT);
+
+// The URL to navigate to when the Send Feedback button is clicked.
+BASE_FEATURE_PARAM(std::string,
+                   kMultistepFilterSendFeedbackUrl,
+                   &kMultistepFilterSendFeedback,
+                   "");
 
 }  // namespace multistep_filter

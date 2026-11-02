@@ -155,9 +155,14 @@ void OpenXrGraphicsBindingD3D11::CreateSharedImages(
     D3D11_TEXTURE2D_DESC texture2d_desc;
     d3d11_texture->GetDesc(&texture2d_desc);
 
-    // Shared handle creation can fail on platforms where the texture, for
-    // whatever reason, cannot be shared. We need to fallback gracefully to
-    // texture copies.
+    // Shared handle creation can fail if the OpenXR runtime allocates textures
+    // without the necessary sharing flags (e.g., D3D11_RESOURCE_MISC_SHARED),
+    // which can happen depending on the runtime driver or hardware
+    // configuration. In such cases, we cannot wrap the runtime's texture
+    // directly in a GPU SharedImage. To fallback gracefully, we create our own
+    // shareable D3D11 texture with NT handle and keyed mutex flags, create a
+    // shared handle from it, and we will copy the runtime's texture content
+    // into this shareable texture before submission.
     HANDLE shared_handle;
     hr = dxgi_resource->CreateSharedHandle(
         nullptr, DXGI_SHARED_RESOURCE_READ | DXGI_SHARED_RESOURCE_WRITE,
@@ -211,7 +216,7 @@ void OpenXrGraphicsBindingD3D11::CreateSharedImages(
     gfx::GpuMemoryBufferHandle gpu_memory_buffer_handle{
         gfx::DXGIHandle(base::win::ScopedHandle(shared_handle))};
 
-    // TODO(crbug.com/40918787): This size is the size of the texture
+    // TODO(crbug.com/529457611): This size is the size of the texture
     // from the OpenXr runtime, which is fine but does not work properly if the
     // page requests any kind of framebuffer scaling, because then the image
     // size that the page uses would be different than this size, which can
@@ -226,6 +231,11 @@ void OpenXrGraphicsBindingD3D11::CreateSharedImages(
         gpu::SHARED_IMAGE_USAGE_SCANOUT | gpu::SHARED_IMAGE_USAGE_DISPLAY_READ |
         gpu::SHARED_IMAGE_USAGE_GLES2_READ |
         gpu::SHARED_IMAGE_USAGE_GLES2_WRITE;
+
+    if (layer.read_only_data().needs_raster_access) {
+      shared_image_usage |= gpu::SHARED_IMAGE_USAGE_RASTER_READ |
+                            gpu::SHARED_IMAGE_USAGE_RASTER_WRITE;
+    }
 
     if (IsWebGPUSession()) {
       shared_image_usage |= gpu::SHARED_IMAGE_USAGE_WEBGPU_READ |
@@ -297,7 +307,9 @@ bool OpenXrGraphicsBindingD3D11::RenderLayer(
     const scoped_refptr<viz::ContextProvider>& context_provider) {
   CHECK(texture_helper_);
   const OpenXrSwapchainInfo* swapchain_info = layer.GetActiveSwapchainImage();
-  CHECK(swapchain_info);
+  if (!swapchain_info) {
+    return false;
+  }
   if (swapchain_info->d3d11_shared_texture) {
     if (!texture_helper_->CopyToBackBuffer(
             context_provider, swapchain_info->d3d11_shared_texture)) {
@@ -326,7 +338,7 @@ void OpenXrGraphicsBindingD3D11::OnSwapchainImageSizeChanged(
   texture_helper_->SetDefaultSize(layer.GetSwapchainImageSize());
 }
 
-void OpenXrGraphicsBindingD3D11::OnSwapchainImageActivated(
+void OpenXrGraphicsBindingD3D11::OnSwapchainImageReady(
     OpenXrCompositionLayer& layer,
     gpu::SharedImageInterface* sii) {
   const OpenXrSwapchainInfo* swapchain_info = layer.GetActiveSwapchainImage();
@@ -377,7 +389,7 @@ void OpenXrGraphicsBindingD3D11::ResizeSharedBuffer(
     OpenXrCompositionLayer&,
     OpenXrSwapchainInfo& swap_chain_info,
     gpu::SharedImageInterface* sii) {
-  // TODO(crbug.com/40918787): Current texture size needs to be updated.
+  // TODO(crbug.com/529457611): Current texture size needs to be updated.
 }
 
 bool OpenXrGraphicsBindingD3D11::SupportsLayers() const {

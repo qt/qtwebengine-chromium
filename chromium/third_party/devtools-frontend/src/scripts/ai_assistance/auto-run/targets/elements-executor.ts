@@ -11,7 +11,7 @@ import {
   inspectDOMNodeByCommentIndex,
   openAiAssistancePanelFromMenu,
   setupElementsPanel,
-  stripCommentsFromPage
+  stripCommentsFromPage,
 } from '../shared/puppeteer-helpers.ts';
 
 import type {TargetExecutor, TargetPreparationResult} from './interface.ts';

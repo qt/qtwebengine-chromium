@@ -27,53 +27,51 @@ bool InRange(float comp) {
 
 CFX_Color ConvertCMYK2GRAY(float dC, float dM, float dY, float dK) {
   if (!InRange(dC) || !InRange(dM) || !InRange(dY) || !InRange(dK)) {
-    return CFX_Color(CFX_Color::Type::kGray);
+    return CFX_Color::MakeGray(0.0f);
   }
-  return CFX_Color(
-      CFX_Color::Type::kGray,
+  return CFX_Color::MakeGray(
       1.0f - std::min(1.0f, 0.3f * dC + 0.59f * dM + 0.11f * dY + dK));
 }
 
 CFX_Color ConvertGRAY2CMYK(float dGray) {
   if (!InRange(dGray)) {
-    return CFX_Color(CFX_Color::Type::kCMYK);
+    return CFX_Color::MakeCMYK(0.0f, 0.0f, 0.0f, 0.0f);
   }
-  return CFX_Color(CFX_Color::Type::kCMYK, 0.0f, 0.0f, 0.0f, 1.0f - dGray);
+  return CFX_Color::MakeCMYK(0.0f, 0.0f, 0.0f, 1.0f - dGray);
 }
 
 CFX_Color ConvertGRAY2RGB(float dGray) {
   if (!InRange(dGray)) {
-    return CFX_Color(CFX_Color::Type::kRGB);
+    return CFX_Color::MakeRGB(0.0f, 0.0f, 0.0f);
   }
-  return CFX_Color(CFX_Color::Type::kRGB, dGray, dGray, dGray);
+  return CFX_Color::MakeRGB(dGray, dGray, dGray);
 }
 
 CFX_Color ConvertRGB2GRAY(float dR, float dG, float dB) {
   if (!InRange(dR) || !InRange(dG) || !InRange(dB)) {
-    return CFX_Color(CFX_Color::Type::kGray);
+    return CFX_Color::MakeGray(0.0f);
   }
-  return CFX_Color(CFX_Color::Type::kGray, 0.3f * dR + 0.59f * dG + 0.11f * dB);
+  return CFX_Color::MakeGray(0.3f * dR + 0.59f * dG + 0.11f * dB);
 }
 
 CFX_Color ConvertCMYK2RGB(float dC, float dM, float dY, float dK) {
   if (!InRange(dC) || !InRange(dM) || !InRange(dY) || !InRange(dK)) {
-    return CFX_Color(CFX_Color::Type::kRGB);
+    return CFX_Color::MakeRGB(0.0f, 0.0f, 0.0f);
   }
-  return CFX_Color(CFX_Color::Type::kRGB, 1.0f - std::min(1.0f, dC + dK),
-                   1.0f - std::min(1.0f, dM + dK),
-                   1.0f - std::min(1.0f, dY + dK));
+  return CFX_Color::MakeRGB(1.0f - std::min(1.0f, dC + dK),
+                            1.0f - std::min(1.0f, dM + dK),
+                            1.0f - std::min(1.0f, dY + dK));
 }
 
 CFX_Color ConvertRGB2CMYK(float dR, float dG, float dB) {
   if (!InRange(dR) || !InRange(dG) || !InRange(dB)) {
-    return CFX_Color(CFX_Color::Type::kCMYK);
+    return CFX_Color::MakeCMYK(0.0f, 0.0f, 0.0f, 0.0f);
   }
 
   float c = 1.0f - dR;
   float m = 1.0f - dG;
   float y = 1.0f - dB;
-  return CFX_Color(CFX_Color::Type::kCMYK, c, m, y,
-                   std::min(c, std::min(m, y)));
+  return CFX_Color::MakeCMYK(c, m, y, std::min(c, std::min(m, y)));
 }
 
 }  // namespace
@@ -139,7 +137,7 @@ FX_COLORREF CFX_Color::ToFXColor(int32_t nTransparency) const {
   CFX_Color ret;
   switch (nColorType) {
     case CFX_Color::Type::kTransparent: {
-      ret = CFX_Color(CFX_Color::Type::kTransparent, 0, 0, 0, 0);
+      ret = CFX_Color::MakeTransparent();
       break;
     }
     case CFX_Color::Type::kGray: {
@@ -148,7 +146,7 @@ FX_COLORREF CFX_Color::ToFXColor(int32_t nTransparency) const {
       break;
     }
     case CFX_Color::Type::kRGB: {
-      ret = CFX_Color(CFX_Color::Type::kRGB, fColor1, fColor2, fColor3);
+      ret = CFX_Color::MakeRGB(fColor1, fColor2, fColor3);
       ret.fColor4 = nTransparency;
       break;
     }
@@ -164,7 +162,8 @@ FX_COLORREF CFX_Color::ToFXColor(int32_t nTransparency) const {
 }
 
 CFX_Color CFX_Color::operator-(float fColorSub) const {
-  CFX_Color sRet(nColorType);
+  CFX_Color sRet;
+  sRet.nColorType = nColorType;
   switch (nColorType) {
     case CFX_Color::Type::kTransparent:
       sRet.nColorType = CFX_Color::Type::kRGB;
@@ -172,8 +171,14 @@ CFX_Color CFX_Color::operator-(float fColorSub) const {
       sRet.fColor2 = std::max(1.0f - fColorSub, 0.0f);
       sRet.fColor3 = std::max(1.0f - fColorSub, 0.0f);
       break;
-    case CFX_Color::Type::kRGB:
     case CFX_Color::Type::kGray:
+      sRet.fColor1 = std::max(fColor1 - fColorSub, 0.0f);
+      break;
+    case CFX_Color::Type::kRGB:
+      sRet.fColor1 = std::max(fColor1 - fColorSub, 0.0f);
+      sRet.fColor2 = std::max(fColor2 - fColorSub, 0.0f);
+      sRet.fColor3 = std::max(fColor3 - fColorSub, 0.0f);
+      break;
     case CFX_Color::Type::kCMYK:
       sRet.fColor1 = std::max(fColor1 - fColorSub, 0.0f);
       sRet.fColor2 = std::max(fColor2 - fColorSub, 0.0f);
@@ -185,7 +190,8 @@ CFX_Color CFX_Color::operator-(float fColorSub) const {
 }
 
 CFX_Color CFX_Color::operator/(float fColorDivide) const {
-  CFX_Color sRet(nColorType);
+  CFX_Color sRet;
+  sRet.nColorType = nColorType;
   switch (nColorType) {
     case CFX_Color::Type::kTransparent:
       sRet.nColorType = CFX_Color::Type::kRGB;
@@ -193,14 +199,19 @@ CFX_Color CFX_Color::operator/(float fColorDivide) const {
       sRet.fColor2 = 1.0f / fColorDivide;
       sRet.fColor3 = 1.0f / fColorDivide;
       break;
-    case CFX_Color::Type::kRGB:
     case CFX_Color::Type::kGray:
+      sRet.fColor1 = fColor1 / fColorDivide;
+      break;
+    case CFX_Color::Type::kRGB:
+      sRet.fColor1 = fColor1 / fColorDivide;
+      sRet.fColor2 = fColor2 / fColorDivide;
+      sRet.fColor3 = fColor3 / fColorDivide;
+      break;
     case CFX_Color::Type::kCMYK:
-      sRet = *this;
-      sRet.fColor1 /= fColorDivide;
-      sRet.fColor2 /= fColorDivide;
-      sRet.fColor3 /= fColorDivide;
-      sRet.fColor4 /= fColorDivide;
+      sRet.fColor1 = fColor1 / fColorDivide;
+      sRet.fColor2 = fColor2 / fColorDivide;
+      sRet.fColor3 = fColor3 / fColorDivide;
+      sRet.fColor4 = fColor4 / fColorDivide;
       break;
   }
   return sRet;

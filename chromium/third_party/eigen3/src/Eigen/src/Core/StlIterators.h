@@ -37,7 +37,7 @@ class indexed_based_stl_iterator_base {
   typedef Index difference_type;
   typedef std::random_access_iterator_tag iterator_category;
 
-  indexed_based_stl_iterator_base() noexcept : mp_xpr(0), m_index(0) {}
+  indexed_based_stl_iterator_base() noexcept = default;
   indexed_based_stl_iterator_base(XprType& xpr, Index index) noexcept : mp_xpr(&xpr), m_index(index) {}
 
   indexed_based_stl_iterator_base(const non_const_iterator& other) noexcept
@@ -163,8 +163,8 @@ class indexed_based_stl_iterator_base {
   Derived& derived() { return static_cast<Derived&>(*this); }
   const Derived& derived() const { return static_cast<const Derived&>(*this); }
 
-  XprType* mp_xpr;
-  Index m_index;
+  XprType* mp_xpr = nullptr;
+  Index m_index = 0;
 };
 
 template <typename Derived>
@@ -183,7 +183,7 @@ class indexed_based_stl_reverse_iterator_base {
   typedef Index difference_type;
   typedef std::random_access_iterator_tag iterator_category;
 
-  indexed_based_stl_reverse_iterator_base() : mp_xpr(0), m_index(0) {}
+  indexed_based_stl_reverse_iterator_base() = default;
   indexed_based_stl_reverse_iterator_base(XprType& xpr, Index index) : mp_xpr(&xpr), m_index(index) {}
 
   indexed_based_stl_reverse_iterator_base(const non_const_iterator& other)
@@ -309,8 +309,8 @@ class indexed_based_stl_reverse_iterator_base {
   Derived& derived() { return static_cast<Derived&>(*this); }
   const Derived& derived() const { return static_cast<const Derived&>(*this); }
 
-  XprType* mp_xpr;
-  Index m_index;
+  XprType* mp_xpr = nullptr;
+  Index m_index = 0;
 };
 
 template <typename XprType>
@@ -336,7 +336,7 @@ class pointer_based_stl_iterator {
   typedef std::conditional_t<bool(is_lvalue), value_type*, const value_type*> pointer;
   typedef std::conditional_t<bool(is_lvalue), value_type&, const value_type&> reference;
 
-  pointer_based_stl_iterator() noexcept : m_ptr(0), m_incr(XprType::InnerStrideAtCompileTime) {}
+  pointer_based_stl_iterator() noexcept = default;
   pointer_based_stl_iterator(XprType& xpr, Index index) noexcept
       : m_ptr(xpr.data() + index * xpr.innerStride()), m_incr(xpr.innerStride()) {}
 
@@ -423,8 +423,8 @@ class pointer_based_stl_iterator {
   bool operator>=(const other_iterator& other) const { return m_ptr >= other.m_ptr; }
 
  protected:
-  pointer m_ptr;
-  internal::variable_if_dynamic<Index, XprType::InnerStrideAtCompileTime> m_incr;
+  pointer m_ptr = nullptr;
+  internal::variable_if_dynamic<Index, XprType::InnerStrideAtCompileTime> m_incr{XprType::InnerStrideAtCompileTime};
 };
 
 template <typename XprType_>
@@ -459,7 +459,7 @@ class generic_randaccess_stl_iterator
   typedef std::conditional_t<bool(is_lvalue), value_type*, const value_type*> pointer;
   typedef std::conditional_t<bool(is_lvalue), value_type&, read_only_ref_t> reference;
 
-  generic_randaccess_stl_iterator() : Base() {}
+  generic_randaccess_stl_iterator() = default;
   generic_randaccess_stl_iterator(XprType& xpr, Index index) : Base(xpr, index) {}
   generic_randaccess_stl_iterator(const typename Base::non_const_iterator& other) : Base(other) {}
   using Base::operator=;
@@ -506,7 +506,7 @@ class subvector_stl_iterator : public indexed_based_stl_iterator_base<subvector_
  public:
   typedef subvector_stl_iterator_ptr pointer;
 
-  subvector_stl_iterator() : Base() {}
+  subvector_stl_iterator() = default;
   subvector_stl_iterator(XprType& xpr, Index index) : Base(xpr, index) {}
 
   reference operator*() const { return (*mp_xpr).template subVector<Direction>(m_index); }
@@ -552,7 +552,7 @@ class subvector_stl_reverse_iterator
  public:
   typedef subvector_stl_reverse_iterator_ptr pointer;
 
-  subvector_stl_reverse_iterator() : Base() {}
+  subvector_stl_reverse_iterator() = default;
   subvector_stl_reverse_iterator(XprType& xpr, Index index) : Base(xpr, index) {}
 
   reference operator*() const { return (*mp_xpr).template subVector<Direction>(m_index); }
@@ -606,7 +606,7 @@ inline typename DenseBase<Derived>::const_iterator DenseBase<Derived>::end() con
 
 /** returns a read-only const_iterator to the element following the last element of the 1D vector or array
  * \only_for_vectors
- * \sa begin(), cend()
+ * \sa cbegin(), end()
  */
 template <typename Derived>
 inline typename DenseBase<Derived>::const_iterator DenseBase<Derived>::cend() const {

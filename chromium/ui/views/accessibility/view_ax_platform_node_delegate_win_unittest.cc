@@ -14,12 +14,10 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/test/metrics/histogram_tester.h"
-#include "base/test/scoped_feature_list.h"
 #include "base/win/scoped_bstr.h"
 #include "base/win/scoped_co_mem.h"
 #include "base/win/scoped_variant.h"
 #include "third_party/iaccessible2/ia2_api_all.h"
-#include "ui/accessibility/accessibility_features.h"
 #include "ui/accessibility/ax_action_data.h"
 #include "ui/accessibility/ax_constants.mojom.h"
 #include "ui/accessibility/platform/ax_platform.h"
@@ -161,6 +159,42 @@ TEST_F(ViewAXPlatformNodeDelegateWinTest, TextfieldAccessibility) {
   ASSERT_EQ(S_OK,
             textfield_accessible->put_accValue(childid_self, new_value.Get()));
   EXPECT_EQ(u"New value", textfield->GetText());
+}
+
+TEST_F(ViewAXPlatformNodeDelegateWinTest,
+       TextfieldCharacterNavigationIgnoresAnnotations) {
+  auto widget = std::make_unique<Widget>();
+  Widget::InitParams init_params = CreateParams(
+      Widget::InitParams::CLIENT_OWNS_WIDGET, Widget::InitParams::TYPE_POPUP);
+  widget->Init(std::move(init_params));
+
+  View* content = widget->SetContentsView(std::make_unique<View>());
+  Textfield* textfield = content->AddChildView(std::make_unique<Textfield>());
+  textfield->SetText(u"hello world");
+
+  ComPtr<IRawElementProviderSimple> textfield_provider =
+      GetIRawElementProviderSimple(textfield);
+  ComPtr<ITextProvider> text_provider;
+  ASSERT_HRESULT_SUCCEEDED(textfield_provider->GetPatternProvider(
+      UIA_TextPatternId, &text_provider));
+
+  ComPtr<ITextRangeProvider> text_range_provider;
+  ASSERT_HRESULT_SUCCEEDED(
+      text_provider->get_DocumentRange(&text_range_provider));
+
+  ScopedVariant annotation_types;
+  ASSERT_HRESULT_SUCCEEDED(text_range_provider->GetAttributeValue(
+      UIA_AnnotationTypesAttributeId, annotation_types.Receive()));
+  EXPECT_EQ(VT_EMPTY, annotation_types.type());
+
+  int units_moved = 0;
+  ASSERT_HRESULT_SUCCEEDED(text_range_provider->MoveEndpointByUnit(
+      TextPatternRangeEndpoint_End, TextUnit_Character, -10, &units_moved));
+  EXPECT_EQ(-10, units_moved);
+
+  ScopedBstr text;
+  ASSERT_HRESULT_SUCCEEDED(text_range_provider->GetText(-1, text.Receive()));
+  EXPECT_STREQ(L"h", text.Get());
 }
 
 TEST_F(ViewAXPlatformNodeDelegateWinTest, TextfieldAssociatedLabel) {
@@ -723,8 +757,6 @@ class ViewAXPlatformNodeDelegateWinInnerTextRangeTest
   void SetUp() override {
     ViewAXPlatformNodeDelegateWinTest::SetUp();
 
-    scoped_feature_list_.InitAndEnableFeature(features::kUiaProvider);
-
     widget_ = std::make_unique<Widget>();
 
     Widget::InitParams params =
@@ -782,7 +814,6 @@ class ViewAXPlatformNodeDelegateWinInnerTextRangeTest
   raw_ptr<Textfield> textfield_ = nullptr;  // Owned by views hierarchy.
   raw_ptr<Label> label_ = nullptr;          // Owned by views hierarchy.
   std::unique_ptr<Widget> widget_;
-  base::test::ScopedFeatureList scoped_feature_list_;
 };
 
 TEST_F(ViewAXPlatformNodeDelegateWinInnerTextRangeTest,

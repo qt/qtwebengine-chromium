@@ -4,6 +4,7 @@
 
 #include "ui/base/x/x11_desktop_window_move_client.h"
 
+#include "base/check.h"
 #include "base/functional/callback_helpers.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/events/event.h"
@@ -14,7 +15,9 @@ namespace ui {
 X11DesktopWindowMoveClient::Delegate::~Delegate() = default;
 
 X11DesktopWindowMoveClient::X11DesktopWindowMoveClient(Delegate* window)
-    : window_(window) {}
+    : window_(window) {
+  CHECK(window_);
+}
 
 X11DesktopWindowMoveClient::~X11DesktopWindowMoveClient() = default;
 

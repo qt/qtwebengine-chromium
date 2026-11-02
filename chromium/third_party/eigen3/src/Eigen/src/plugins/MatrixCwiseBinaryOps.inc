@@ -9,7 +9,7 @@
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 // SPDX-License-Identifier: MPL-2.0
 
-// This file is a base class plugin containing matrix specifics coefficient wise functions.
+// This file is a base class plugin containing matrix specific coefficient wise functions.
 
 /** \returns an expression of the Schur product (coefficient wise product) of *this and \a other
  *

@@ -26,6 +26,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
@@ -34,6 +35,8 @@
 #include "base/timer/elapsed_timer.h"
 #include "base/types/expected.h"
 #include "base/types/expected_macros.h"
+#include "build/build_config.h"
+#include "build/buildflag.h"
 #include "components/content_extraction/content/browser/inner_text.h"
 #include "components/optimization_guide/content/browser/page_content_proto_provider.h"
 #include "components/optimization_guide/content/browser/page_content_proto_util.h"
@@ -78,6 +81,11 @@
 namespace page_content_annotations {
 
 namespace {
+
+#if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kPageContextFetcherAndroidViewportCrop,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#endif
 
 gfx::Size GetScreenshotSize(
     const gfx::Size& original_size,
@@ -135,7 +143,7 @@ double GetScreenshotScaleFactor(const gfx::Size& original_size,
   // The aspect ratio was preserved by GetScreenshotSize, so the ratio of the
   // new width to old width should be the same as the ratio of new height to old
   // height. WLOG, we'll use the widths.
-  return new_size.width() / original_size.width();
+  return static_cast<double>(new_size.width()) / original_size.width();
 }
 
 int GetScreenshotJpegQuality(
@@ -386,7 +394,13 @@ PageContextFetcher::PageContextFetcher(
     : get_screenshot_service_callback_(
           std::move(get_screenshot_service_callback)),
       progress_listener_(std::move(progress_listener)) {}
-PageContextFetcher::~PageContextFetcher() = default;
+PageContextFetcher::~PageContextFetcher() {
+  if (callback_) {
+    std::move(callback_).Run(base::unexpected(FetchPageContextErrorDetails{
+        FetchPageContextError::kWebContentsWentAway,
+        "web contents went away (fetcher destroyed)"}));
+  }
+}
 
 void PageContextFetcher::FetchStart(content::WebContents& aweb_contents,
                                     const FetchPageContextOptions& options,
@@ -624,6 +638,8 @@ void PageContextFetcher::GetTabScreenshot(
       screenshot_options.screenshot_collection_options();
 
   gfx::Size view_size = view->GetViewBounds().size();
+  float dsf = view->GetDeviceScaleFactor();
+  original_view_size_pixels_ = gfx::ScaleToRoundedSize(view_size, dsf);
 
   if (screenshot_options.use_paint_preview()) {
     PageContentScreenshotService* service =
@@ -656,12 +672,14 @@ void PageContextFetcher::GetTabScreenshot(
       clip_coord_override = paint_preview::mojom::ClipCoordOverride::kNone;
       view_size = web_contents.GetPrimaryMainFrame()->GetFrameSize().value_or(
           gfx::Size());
+      original_view_size_pixels_ = gfx::ScaleToRoundedSize(view_size, dsf);
     }
     PageContentScreenshotService::RequestParams request_params = {
         .clip_rect = clip_rect,
         .scale_factor = GetScreenshotScaleFactor(
-            view_size,
-            GetScreenshotSize(view_size, screenshot_collection_options_)),
+            original_view_size_pixels_,
+            GetScreenshotSize(original_view_size_pixels_,
+                              screenshot_collection_options_)),
         .clip_x_coord_override = clip_coord_override,
         .clip_y_coord_override = clip_coord_override,
         .redaction_params = std::move(redaction_params),
@@ -676,9 +694,31 @@ void PageContextFetcher::GetTabScreenshot(
     SetCaptureCountLock(web_contents);
     ScheduleScreenshotTimeout();
 
+    gfx::Rect src_rect;
+
+#if BUILDFLAG(IS_ANDROID)
+    if (base::FeatureList::IsEnabled(kPageContextFetcherAndroidViewportCrop)) {
+      // On Android, the captured surface may be larger than the viewport (e.g.
+      // including the browser control). The view bounds represents the actual
+      // web content area, excluding top/bottom controls.
+      //
+      // Importantly, Blink's coordinate system always renders the actual web
+      // content starting at (0, 0) of the compositor surface, regardless of
+      // whether the browser control is configured at the top or at the bottom.
+      // This means the "extra" unrendered blank space corresponding to the
+      // height of the browser controls is always appended at the bottom of the
+      // compositor surface.
+      //
+      // Therefore, we can safely crop the screenshot to match the viewport size
+      // starting at (0, 0) without any vertical offsets.
+      src_rect = gfx::Rect(original_view_size_pixels_);
+    }
+#endif
+
     view->CopyFromSurface(
-        gfx::Rect(),  // Copy entire surface area.
-        GetScreenshotSize(view_size, screenshot_collection_options_),
+        src_rect,
+        GetScreenshotSize(original_view_size_pixels_,
+                          screenshot_collection_options_),
         kScreenshotTimeout.Get(),
         base::BindOnce(&PageContextFetcher::ReceivedViewportBitmap,
                        GetWeakPtr()));
@@ -735,7 +775,7 @@ void PageContextFetcher::ReceivedViewportBitmapOrError(
       progress_listener_->ScreenshotCaptured(*bitmap);
     }
     ProcessTrackedElementRects(tracked_element_rects);
-    MaybeAddIframeInfoToAPC();
+    MaybeAddIframeInfo();
     RedactAndEncodeScreenshotIfNeeded();
   } else {
     ReceivedEncodedScreenshot(base::unexpected(bitmap_result.error()));
@@ -805,13 +845,22 @@ void PageContextFetcher::RedactAndEncodeScreenshotIfNeeded() {
   CHECK(pending_result_);
   CHECK(pending_result_->annotated_page_content_result.has_value());
 
+  double scale_x = 1.0;
+  double scale_y = 1.0;
+  if (!original_view_size_pixels_.IsEmpty() && !screenshot_bitmap_->empty()) {
+    scale_x = static_cast<double>(screenshot_bitmap_->width()) /
+              original_view_size_pixels_.width();
+    scale_y = static_cast<double>(screenshot_bitmap_->height()) /
+              original_view_size_pixels_.height();
+  }
+
   const std::vector<gfx::Rect>& visible_bounding_boxes_for_redaction_from_apc =
       pending_result_->annotated_page_content_result
           ->visible_bounding_boxes_for_redaction;
-  visible_bounding_boxes_for_redaction.insert(
-      visible_bounding_boxes_for_redaction.end(),
-      visible_bounding_boxes_for_redaction_from_apc.begin(),
-      visible_bounding_boxes_for_redaction_from_apc.end());
+  for (const gfx::Rect& rect : visible_bounding_boxes_for_redaction_from_apc) {
+    visible_bounding_boxes_for_redaction.push_back(
+        gfx::ScaleToEnclosingRect(rect, scale_x, scale_y));
+  }
 
   RedactAndEncodeScreenshot(std::move(visible_bounding_boxes_for_redaction));
 }
@@ -932,7 +981,7 @@ void PageContextFetcher::ReceivedAnnotatedPageContent(
     }
   }
 
-  MaybeAddIframeInfoToAPC();
+  MaybeAddIframeInfo();
   RedactAndEncodeScreenshotIfNeeded();
 
   RunCallbackIfComplete();
@@ -1012,6 +1061,7 @@ void PageContextFetcher::CollectTrackedElementRectsForIframes(
     iframe_info.mutable_bounding_box()->set_y(bounds.origin().y());
     iframe_info.mutable_bounding_box()->set_width(bounds.width());
     iframe_info.mutable_bounding_box()->set_height(bounds.height());
+    iframe_info.mutable_bounding_box()->set_is_screenshot_relative(true);
 
     // Iframe tracked elements should always have a parent frame token and a
     // frame token.
@@ -1040,9 +1090,13 @@ void PageContextFetcher::CollectTrackedElementRectsForIframes(
   }
 }
 
-void PageContextFetcher::MaybeAddIframeInfoToAPC() {
-  // We need to wait for both the screenshot capture to be done and the APC to
-  // be done before adding the iframe info to the APC.
+void PageContextFetcher::MaybeAddIframeInfo() {
+  // We need to wait for:
+  // 1. Screenshot capture to complete, because iframe layout metadata is
+  //    extracted from the tracked element rects obtained during screenshot.
+  // 2. Annotated Page Content (APC) extraction to complete (if requested).
+  //    This is because we need to copy `screenshot_info` to the nested, legacy
+  //    APC field for backward compatibility.
   if (!screenshot_capture_done_ || !annotated_page_content_done_) {
     return;
   }
@@ -1052,25 +1106,38 @@ void PageContextFetcher::MaybeAddIframeInfoToAPC() {
     return;
   }
 
-  // If we don't have an APC result or iframe info, there's nothing to do.
-  // TODO(b/441532128): If we don't have an APC result, we should create one and
-  // populate the screenshot iframe info.
-  if (!pending_result_->annotated_page_content_result.has_value() ||
-      iframe_info_.empty()) {
+  if (iframe_info_.empty()) {
     base::UmaHistogramBoolean("Glic.PageContextFetcher.IframeInfoAddedToAPC",
                               false);
     return;
   }
 
-  // Add the iframe bounding boxes and url/origin data to the screenshot info.
-  optimization_guide::proto::ScreenshotInfo* screenshot_info =
-      pending_result_->annotated_page_content_result->proto
-          .mutable_gemini_in_chrome_page_metadata()
-          ->mutable_screenshot_info();
+  // Populate the standalone screenshot_info on FetchPageContextResult.
+  pending_result_->screenshot_info.emplace();
+  if (pending_result_->screenshot_result.has_value()) {
+    pending_result_->screenshot_info->mutable_screenshot_size()->set_width(
+        pending_result_->screenshot_result->dimensions.width());
+    pending_result_->screenshot_info->mutable_screenshot_size()->set_height(
+        pending_result_->screenshot_result->dimensions.height());
+  }
+  size_t iframe_proto_size = 0;
   for (const auto& iframe_info : iframe_info_) {
     base::UmaHistogramBoolean("Glic.PageContextFetcher.IframeInfoHasUrlOrigin",
                               iframe_info.has_security_origin());
-    *screenshot_info->add_iframe_info() = iframe_info;
+    *pending_result_->screenshot_info->add_iframe_info() = iframe_info;
+    iframe_proto_size += iframe_info.ByteSizeLong();
+  }
+
+  base::UmaHistogramCounts10000(
+      "Glic.PageContextFetcher.ScreenshotInfo.IframeInfo.ProtoSize",
+      base::saturated_cast<int>(iframe_proto_size));
+
+  // Also copy to the field inside AnnotatedPageContent to ensure backward
+  // compatibility.
+  if (pending_result_->annotated_page_content_result.has_value()) {
+    *pending_result_->annotated_page_content_result->proto
+         .mutable_gemini_in_chrome_page_metadata()
+         ->mutable_screenshot_info() = *pending_result_->screenshot_info;
   }
 
   base::UmaHistogramBoolean("Glic.PageContextFetcher.IframeInfoAddedToAPC",

@@ -16,11 +16,13 @@
 #include "base/i18n/rtl.h"
 #include "base/message_loop/message_pump.h"
 #include "base/message_loop/message_pump_type.h"
+#include "base/message_loop/message_pump_wakeup_counter.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/pending_task.h"
 #include "base/process/current_process.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/synchronization/lock_metrics_recorder.h"
 #include "base/system/sys_info.h"
 #include "base/task/sequence_manager/sequence_manager.h"
 #include "base/task/thread_pool.h"
@@ -197,6 +199,7 @@ int RendererMain(MainFunctionParams parameters) {
 
   base::PlatformThread::SetName("CrRendererMain");
   mojo::InterfaceEndpointClient::SetThreadNameSuffixForMetrics("RendererMain");
+  base::MessagePumpWakeupCounter::InitializeForCurrentThread("RendererMain");
 
   // Force main thread initialization. When the implementation is based on a
   // better means of determining which is the main thread, remove.
@@ -224,7 +227,8 @@ int RendererMain(MainFunctionParams parameters) {
 
   std::optional<LastResortGCPolicy> last_resort_gc_policy;
   if (base::FeatureList::IsEnabled(kMemoryCoordinatorLastResortGC)) {
-    last_resort_gc_policy.emplace(ChildMemoryCoordinator::Get());
+    last_resort_gc_policy.emplace(
+        ChildMemoryCoordinator::Get().policy_manager());
   }
 
   {
@@ -308,6 +312,8 @@ int RendererMain(MainFunctionParams parameters) {
           uncovered_hang_watcher_time);
       base::HangWatcher::GetInstance()->Start();
     }
+
+    base::LockMetricsRecorder::EnableRecordingOnCurrentThread("CrRendererMain");
 
 #if BUILDFLAG(IS_ANDROID)
     base::PlatformThreadPriorityMonitor::Get().RegisterCurrentThread(

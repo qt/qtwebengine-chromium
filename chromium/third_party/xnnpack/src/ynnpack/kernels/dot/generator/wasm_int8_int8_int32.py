@@ -19,7 +19,7 @@ class wasm_int8_int8_int32(wasm):
     self.b_type = "int8_t"
     self.flags += ["dot_flag::consistent_arithmetic"]
 
-  def b_alignment_required(self):
+  def b_alignment_bytes(self):
     return self.tile_shape[1] * self.tile_shape[2] // 4
 
   def load_a_tile(self, i, k):

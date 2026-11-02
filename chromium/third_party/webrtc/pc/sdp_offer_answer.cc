@@ -111,6 +111,9 @@
 #include "rtc_base/strings/string_builder.h"
 #include "rtc_base/system/plan_b_only.h"
 #include "rtc_base/thread.h"
+#if !RTC_DCHECK_IS_ON
+#include "rtc_base/system/unused.h"
+#endif
 #include "rtc_base/trace_event.h"
 #include "rtc_base/weak_ptr.h"
 #include "system_wrappers/include/metrics.h"
@@ -1174,6 +1177,102 @@ bool WildcardHostPrefixMatch(absl::string_view host,
   return host.size() == wildcard_host.size();
 }
 
+#if RTC_DCHECK_IS_ON
+bool SessionDescriptionStructureEquals(
+    const SessionDescriptionInterface& desc_a,
+    const SessionDescriptionInterface& desc_b) {
+  const SessionDescription* a = desc_a.description();
+  const SessionDescription* b = desc_b.description();
+  if (a == nullptr || b == nullptr) {
+    return a == b;
+  }
+  if (a->contents().size() != b->contents().size()) {
+    return false;
+  }
+  for (size_t i = 0; i < a->contents().size(); ++i) {
+    const auto& content_a = a->contents()[i];
+    const auto& content_b = b->contents()[i];
+    if (content_a.media_description()->type() !=
+        content_b.media_description()->type()) {
+      return false;
+    }
+    if (content_a.media_description()->protocol() !=
+        content_b.media_description()->protocol()) {
+      return false;
+    }
+    if (content_a.media_description()->direction() !=
+        content_b.media_description()->direction()) {
+      return false;
+    }
+    if (content_a.media_description()->has_codecs() !=
+        content_b.media_description()->has_codecs()) {
+      return false;
+    }
+    if (content_a.media_description()->has_codecs() &&
+        content_a.media_description()->codecs() !=
+            content_b.media_description()->codecs()) {
+      return false;
+    }
+    if (content_a.media_description()->rtp_header_extensions() !=
+        content_b.media_description()->rtp_header_extensions()) {
+      return false;
+    }
+  }
+  if (a->groups().size() != b->groups().size()) {
+    return false;
+  }
+  for (size_t i = 0; i < a->groups().size(); ++i) {
+    if (a->groups()[i].semantics() != b->groups()[i].semantics()) {
+      return false;
+    }
+    if (a->groups()[i].content_names().size() !=
+        b->groups()[i].content_names().size()) {
+      return false;
+    }
+  }
+  if (a->transport_infos().size() != b->transport_infos().size()) {
+    return false;
+  }
+  for (size_t i = 0; i < a->transport_infos().size(); ++i) {
+    const auto& transport_a = a->transport_infos()[i];
+    const auto& transport_b = b->transport_infos()[i];
+    if (transport_a.description.connection_role !=
+        transport_b.description.connection_role) {
+      return false;
+    }
+    const auto& fp_a = transport_a.description.identity_fingerprint;
+    const auto& fp_b = transport_b.description.identity_fingerprint;
+    if ((fp_a == nullptr) != (fp_b == nullptr)) {
+      return false;
+    }
+    if (fp_a != nullptr && *fp_a != *fp_b) {
+      return false;
+    }
+  }
+  return true;
+}
+
+class CreateSessionDescriptionObserverVerify
+    : public CreateSessionDescriptionObserver {
+ public:
+  CreateSessionDescriptionObserverVerify(
+      std::unique_ptr<SessionDescriptionInterface> expected,
+      absl::AnyInvocable<void() &&> on_verified)
+      : expected_(std::move(expected)), on_verified_(std::move(on_verified)) {}
+  void OnSuccess(SessionDescriptionInterface* desc) override {
+    std::unique_ptr<SessionDescriptionInterface> generated(desc);
+    RTC_DCHECK(SessionDescriptionStructureEquals(*expected_, *generated));
+    std::move(on_verified_)();
+  }
+  void OnFailure(RTCError error) override {
+    RTC_DCHECK_NOTREACHED() << "Cache verification failed: " << error.message();
+  }
+
+ private:
+  std::unique_ptr<SessionDescriptionInterface> expected_;
+  absl::AnyInvocable<void() &&> on_verified_;
+};
+#endif
 }  // namespace
 
 void UpdateRtpHeaderExtensionPreferencesFromSdpMunging(
@@ -1760,7 +1859,7 @@ void SdpOfferAnswerHandler::Initialize(
       std::make_unique<WebRtcSessionDescriptionFactory>(
           context, this, pc_->session_id(), pc_->dtls_enabled(),
           std::move(cert_generator), std::move(certificate),
-          [this](const scoped_refptr<RTCCertificate>& certificate) {
+          [this](scoped_refptr<RTCCertificate> certificate) {
             RTC_DCHECK_RUN_ON(signaling_thread());
             transport_controller_s()->SetLocalCertificate(certificate);
           },
@@ -2004,31 +2103,59 @@ void SdpOfferAnswerHandler::SetLocalDescription(
             std::move(operations_chain_callback));
         // Abort early if `this_weak_ptr` is no longer valid. This triggers the
         // same code path as if DoCreateOffer() or DoCreateAnswer() failed.
-        if (!this_weak_ptr) {
+        SdpOfferAnswerHandler* handler = this_weak_ptr.get();
+        if (handler == nullptr) {
           create_sdp_observer->OnFailure(RTCError(
               RTCErrorType::INTERNAL_ERROR,
               "SetLocalDescription failed because the session was shut down"));
           return;
         }
-        switch (this_weak_ptr->signaling_state()) {
+        RTC_DCHECK_RUN_ON(handler->signaling_thread());
+        switch (handler->signaling_state()) {
           case PeerConnectionInterface::kStable:
           case PeerConnectionInterface::kHaveLocalOffer:
           case PeerConnectionInterface::kHaveRemotePrAnswer:
-            // TODO(hbos): If [LastCreatedOffer] exists and still represents the
-            // current state of the system, use that instead of creating another
-            // offer.
-            this_weak_ptr->DoCreateOffer(
-                PeerConnectionInterface::RTCOfferAnswerOptions(),
-                create_sdp_observer);
+            if (handler->last_created_offer_ != nullptr &&
+                handler->last_created_offer_version_ ==
+                    handler->state_version_) {
+              std::unique_ptr<SessionDescriptionInterface> desc_copy =
+                  handler->last_created_offer_->Clone();
+#if RTC_DCHECK_IS_ON
+              handler->VerifyCachedOffer(
+                  [create_sdp_observer,
+                   desc_copy = std::move(desc_copy)]() mutable {
+                    create_sdp_observer->OnSuccess(desc_copy.release());
+                  });
+#else
+              create_sdp_observer->OnSuccess(desc_copy.release());
+#endif
+            } else {
+              handler->DoCreateOffer(
+                  PeerConnectionInterface::RTCOfferAnswerOptions(),
+                  create_sdp_observer);
+            }
             break;
           case PeerConnectionInterface::kHaveLocalPrAnswer:
           case PeerConnectionInterface::kHaveRemoteOffer:
-            // TODO(hbos): If [LastCreatedAnswer] exists and still represents
-            // the current state of the system, use that instead of creating
-            // another answer.
-            this_weak_ptr->DoCreateAnswer(
-                PeerConnectionInterface::RTCOfferAnswerOptions(),
-                create_sdp_observer);
+            if (handler->last_created_answer_ != nullptr &&
+                handler->last_created_answer_version_ ==
+                    handler->state_version_) {
+              std::unique_ptr<SessionDescriptionInterface> desc_copy =
+                  handler->last_created_answer_->Clone();
+#if RTC_DCHECK_IS_ON
+              handler->VerifyCachedAnswer(
+                  [create_sdp_observer,
+                   desc_copy = std::move(desc_copy)]() mutable {
+                    create_sdp_observer->OnSuccess(desc_copy.release());
+                  });
+#else
+              create_sdp_observer->OnSuccess(desc_copy.release());
+#endif
+            } else {
+              handler->DoCreateAnswer(
+                  PeerConnectionInterface::RTCOfferAnswerOptions(),
+                  create_sdp_observer);
+            }
             break;
           case PeerConnectionInterface::kClosed:
             create_sdp_observer->OnFailure(RTCError(
@@ -2607,7 +2734,8 @@ void SdpOfferAnswerHandler::ApplyRemoteDescriptionUpdateTransceiverState(
       // direction.
       transceiver->set_current_direction(local_direction);
       // 2.2.8.1.11.[3-6]: Set the transport internal slots.
-      if (transceiver->mid()) {
+      // A stopped transceiver has no channel and therefore no transport.
+      if (transceiver->mid() && !transceiver->stopped()) {
         auto it = dtls_transports_by_mid.find(*transceiver->mid());
         RTC_DCHECK(it != dtls_transports_by_mid.end());
         transceiver->SetTransport(it->second.transport,
@@ -3016,9 +3144,16 @@ void SdpOfferAnswerHandler::DoCreateOffer(
   GetOptionsForOffer(options, &session_options);
   auto observer_wrapper =
       make_ref_counted<CreateDescriptionObserverWrapperWithCreationCallback>(
-          [this](std::unique_ptr<SessionDescriptionInterface> desc) {
+          [this, state_version = state_version_,
+           options](std::unique_ptr<SessionDescriptionInterface> desc) {
             RTC_DCHECK_RUN_ON(signaling_thread());
             last_created_offer_ = std::move(desc);
+            last_created_offer_version_ = state_version;
+#if RTC_DCHECK_IS_ON
+            last_created_offer_options_ = options;
+#else
+            RTC_UNUSED(options);
+#endif
           },
           std::move(observer));
   webrtc_session_desc_factory_->CreateOffer(observer_wrapper.get(), options,
@@ -3111,9 +3246,16 @@ void SdpOfferAnswerHandler::DoCreateAnswer(
   GetOptionsForAnswer(options, &session_options);
   auto observer_wrapper =
       make_ref_counted<CreateDescriptionObserverWrapperWithCreationCallback>(
-          [this](std::unique_ptr<SessionDescriptionInterface> desc) {
+          [this, state_version = state_version_,
+           options](std::unique_ptr<SessionDescriptionInterface> desc) {
             RTC_DCHECK_RUN_ON(signaling_thread());
             last_created_answer_ = std::move(desc);
+            last_created_answer_version_ = state_version;
+#if RTC_DCHECK_IS_ON
+            last_created_answer_options_ = options;
+#else
+            RTC_UNUSED(options);
+#endif
           },
           std::move(observer));
   webrtc_session_desc_factory_->CreateAnswer(observer_wrapper.get(),
@@ -3836,8 +3978,37 @@ std::optional<SSLRole> SdpOfferAnswerHandler::GetDtlsRole(
   return transport_controller_s()->GetDtlsRole(mid);
 }
 
+#if RTC_DCHECK_IS_ON
+void SdpOfferAnswerHandler::VerifyCachedOffer(
+    absl::AnyInvocable<void() &&> on_verified) {
+  RTC_DCHECK_RUN_ON(signaling_thread());
+  RTC_DCHECK(last_created_offer_);
+  auto verify_observer =
+      make_ref_counted<CreateSessionDescriptionObserverVerify>(
+          last_created_offer_->Clone(), std::move(on_verified));
+  MediaSessionOptions session_options;
+  GetOptionsForOffer(last_created_offer_options_, &session_options);
+  webrtc_session_desc_factory_->CreateOffer(
+      verify_observer.get(), last_created_offer_options_, session_options);
+}
+
+void SdpOfferAnswerHandler::VerifyCachedAnswer(
+    absl::AnyInvocable<void() &&> on_verified) {
+  RTC_DCHECK_RUN_ON(signaling_thread());
+  RTC_DCHECK(last_created_answer_);
+  auto verify_observer =
+      make_ref_counted<CreateSessionDescriptionObserverVerify>(
+          last_created_answer_->Clone(), std::move(on_verified));
+  MediaSessionOptions session_options;
+  GetOptionsForAnswer(last_created_answer_options_, &session_options);
+  webrtc_session_desc_factory_->CreateAnswer(verify_observer.get(),
+                                             session_options);
+}
+#endif
+
 void SdpOfferAnswerHandler::UpdateNegotiationNeeded() {
   RTC_DCHECK_RUN_ON(signaling_thread());
+  ++state_version_;
   if (!IsUnifiedPlan()) {
     pc_->RunWithObserver(
         [&](auto observer) { observer->OnRenegotiationNeeded(); });
@@ -4454,7 +4625,10 @@ SdpOfferAnswerHandler::AssociateTransceiver(
     // mapping between transceivers and m= section indices established when
     // creating the offer.
     if (!transceiver) {
-      transceiver = transceivers()->FindByMLineIndex(mline_index);
+      // Only consider transceivers that are not yet associated. The channel of
+      // an associated transceiver stays bound to the MID it was created for
+      // (and to the transport of that MID), so the MID must not change.
+      transceiver = transceivers()->FindUnassociatedByMLineIndex(mline_index);
     }
     if (!transceiver) {
       // This may happen normally when media sections are rejected.
@@ -4567,7 +4741,8 @@ void SdpOfferAnswerHandler::UpdateTransceiverChannel(
   TRACE_EVENT0("webrtc", "SdpOfferAnswerHandler::UpdateTransceiverChannel");
   RTC_DCHECK(IsUnifiedPlan());
   RTC_DCHECK(transceiver);
-  if (content.rejected) {
+  // A stopped transceiver must not have a channel.
+  if (content.rejected || transceiver->internal()->stopped()) {
     if (transceiver->internal()->HasChannel()) {
       network_teardown_tasks.Add(
           transceiver->internal()->GetClearChannelNetworkTask());
@@ -4578,8 +4753,8 @@ void SdpOfferAnswerHandler::UpdateTransceiverChannel(
     if (!transceiver->internal()->HasChannel()) {
       transceiver->internal()->CreateChannel(
           content.mid(), pc_->call_ptr(), pc_->configuration()->media_config,
-          pc_->SrtpRequired(), pc_->GetCryptoOptions(), audio_options(),
-          video_options(), video_bitrate_allocator_factory_.get(),
+          pc_->SrtpRequired(), pc_->GetCryptoOptions(),
+          video_bitrate_allocator_factory_.get(),
           [mid = content.mid(), this]() {
             RTC_DCHECK_RUN_ON(network_thread());
             return transport_controller_n()->GetRtpTransport(mid);
@@ -5657,6 +5832,10 @@ void SdpOfferAnswerHandler::RemoveStoppedTransceivers() {
   }
   // Traverse a copy of the transceiver list.
   auto transceiver_list = transceivers()->List();
+  // Batched channel teardown for removed transceivers. The tasks run at the
+  // end of this function while `transceiver_list` still holds references.
+  ScopedOperationsBatcher network_teardown_tasks(context_->network_thread());
+  ScopedOperationsBatcher worker_tasks(context_->worker_thread());
   for (auto transceiver : transceiver_list) {
     // 3.2.10.1.1: If transceiver is stopped, associated with an m= section
     //             and the associated m= section is rejected in
@@ -5682,8 +5861,19 @@ void SdpOfferAnswerHandler::RemoveStoppedTransceivers() {
       RTC_LOG(LS_INFO)
           << "Dropping stopped transceiver that was never associated";
     }
+    // Make sure the channel is cleared before the transceiver is removed.
+    if (transceiver->internal()->HasChannel()) {
+      network_teardown_tasks.Add(
+          transceiver->internal()->GetClearChannelNetworkTask());
+      worker_tasks.Add(transceiver->internal()->GetDeleteChannelWorkerTask(
+          /*stop_senders=*/false));
+    }
     transceivers()->Remove(transceiver);
   }
+  RTCError error = network_teardown_tasks.Run();
+  RTC_DCHECK(error.ok());
+  error = worker_tasks.Run();
+  RTC_DCHECK(error.ok());
 }
 
 void SdpOfferAnswerHandler::RemoveUnusedChannels(
@@ -5844,24 +6034,10 @@ bool SdpOfferAnswerHandler::ReadyToUseRemoteCandidate(
         RTC_LOG(LS_ERROR) << "ReadyToUseRemoteCandidate: Candidate not valid "
                              "because of SDP munging.";
         *valid = false;
-        // There might be other types of SDP munging, but here we're only
-        // interested in IceUfrag and IcePwd.
-        SdpMungingType sdp_munging_type =
-            last_sdp_munging_type_ == SdpMungingType::kIcePwd
-                ? SdpMungingType::kIcePwd
-                : SdpMungingType::kIceUfrag;
-        RTC_HISTOGRAM_ENUMERATION_SPARSE(
-            "WebRTC.PeerConnection.RestrictedCandidates.SdpMungingType",
-            sdp_munging_type, SdpMungingType::kMaxValue);
-        RTC_HISTOGRAM_ENUMERATION_SPARSE(
-            "WebRTC.PeerConnection.RestrictedCandidates.Port",
-            candidate->candidate().address().port(), 65536);
         allowed = false;
         break;
       }
     }
-    RTC_HISTOGRAM_BOOLEAN(
-        "WebRTC.PeerConnection.RestrictedCandidates.MungeAllowed", allowed);
     return allowed;
   }
   return true;
@@ -5919,8 +6095,8 @@ RTCError SdpOfferAnswerHandler::CreateChannels(const SessionDescription& desc) {
       !rtp_manager()->GetAudioTransceiver()->internal()->HasChannel()) {
     rtp_manager()->GetAudioTransceiver()->internal()->CreateChannel(
         voice->mid(), pc_->call_ptr(), pc_->configuration()->media_config,
-        pc_->SrtpRequired(), pc_->GetCryptoOptions(), audio_options(),
-        video_options(), video_bitrate_allocator_factory_.get(),
+        pc_->SrtpRequired(), pc_->GetCryptoOptions(),
+        video_bitrate_allocator_factory_.get(),
         [mid = voice->mid(), this]() {
           RTC_DCHECK_RUN_ON(network_thread());
           return transport_controller_n()->GetRtpTransport(mid);
@@ -5933,8 +6109,8 @@ RTCError SdpOfferAnswerHandler::CreateChannels(const SessionDescription& desc) {
       !rtp_manager()->GetVideoTransceiver()->internal()->HasChannel()) {
     rtp_manager()->GetVideoTransceiver()->internal()->CreateChannel(
         video->mid(), pc_->call_ptr(), pc_->configuration()->media_config,
-        pc_->SrtpRequired(), pc_->GetCryptoOptions(), audio_options(),
-        video_options(), video_bitrate_allocator_factory_.get(),
+        pc_->SrtpRequired(), pc_->GetCryptoOptions(),
+        video_bitrate_allocator_factory_.get(),
         [mid = video->mid(), this]() {
           RTC_DCHECK_RUN_ON(network_thread());
           return transport_controller_n()->GetRtpTransport(mid);

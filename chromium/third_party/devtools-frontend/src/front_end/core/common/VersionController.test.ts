@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Root from '../root/root.js';
 
@@ -27,6 +28,7 @@ describe('VersionController', () => {
       localStorage,
       settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
       runSettingsMigration: false,
+      console: new Common.Console.Console(),
     });
   });
 
@@ -360,6 +362,7 @@ describe('updateVersionFrom37To38', () => {
       localStorage,
       settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
       runSettingsMigration: false,
+      console: new Common.Console.Console(),
     });
   });
 
@@ -428,6 +431,7 @@ describe('updateVersionFrom38To39', () => {
       localStorage,
       settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
       runSettingsMigration: false,
+      console: new Common.Console.Console(),
     });
     setting = settings.createSetting('preferred-network-condition', {title: 'Offline', i18nTitleKey: 'Offline'});
   });
@@ -496,6 +500,7 @@ describe('updateVersionFrom38To39', () => {
         localStorage,
         settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
         runSettingsMigration: false,
+        console: new Common.Console.Console(),
       });
       customNetworkCondSetting = settings.moduleSetting('custom-network-conditions');
       preferredNetworkCondSetting = settings.createSetting('preferred-network-condition', {i18nTitleKey: 'Offline'});
@@ -519,7 +524,7 @@ describe('updateVersionFrom38To39', () => {
         },
         {
           key: 'USER_CUSTOM_SETTING_2',
-        }
+        },
       ]);
     });
 
@@ -632,6 +637,7 @@ describe('updateVersionFrom40To41', () => {
       localStorage,
       settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
       runSettingsMigration: false,
+      console: new Common.Console.Console(),
     });
     hideNetworkMessagesSetting =
         settings.createSetting('hide-network-messages', false, Common.Settings.SettingStorageType.SYNCED);
@@ -694,6 +700,7 @@ describe('updateVersionFrom41To42', () => {
       localStorage,
       settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
       runSettingsMigration: false,
+      console: new Common.Console.Console(),
     });
     recordingsSetting = settings.createSetting('recorder-recordings-ng', []);
   });
@@ -706,7 +713,7 @@ describe('updateVersionFrom41To42', () => {
 
   it('trims title', () => {
     recordingsSetting.set([
-      {storageName: '1', flow: {title: 'a'.repeat(350), steps: []}}
+      {storageName: '1', flow: {title: 'a'.repeat(350), steps: []}},
     ]);  // User had "Hide chrome frame" changed from default value to ON
     const versionController = new Common.VersionController.VersionController(settings);
     versionController.updateVersionFrom41To42();
@@ -716,7 +723,7 @@ describe('updateVersionFrom41To42', () => {
 
   it('trims steps', async () => {
     recordingsSetting.set([
-      {storageName: '1', flow: {title: 'a', steps: Array(5000).fill({})}}
+      {storageName: '1', flow: {title: 'a', steps: Array(5000).fill({})}},
     ]);  // User had "Hide chrome frame" changed from default value to ON
     const versionController = new Common.VersionController.VersionController(settings);
     versionController.updateVersionFrom41To42();
@@ -759,6 +766,7 @@ function describeExperimentMigration(
         localStorage,
         settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
         runSettingsMigration: false,
+        console: new Common.Console.Console(),
       });
     });
 
@@ -849,6 +857,7 @@ describe('access logging', () => {
       localStorage,
       settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
       logSettingAccess,
+      console: new Common.Console.Console(),
     });
   });
 

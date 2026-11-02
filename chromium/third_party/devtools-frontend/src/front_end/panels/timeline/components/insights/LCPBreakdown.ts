@@ -121,7 +121,7 @@ export class LCPBreakdown extends BaseInsightComponent<LCPBreakdownInsightModel>
             headers: [i18nString(UIStrings.subpart), i18nString(UIStrings.duration)],
             rows,
           }})}
-      </div>`
+      </div>`,
     ];
     // clang-format on
 

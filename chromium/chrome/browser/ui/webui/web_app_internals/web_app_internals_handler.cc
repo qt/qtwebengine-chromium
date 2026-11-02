@@ -23,7 +23,6 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/web_applications/isolated_web_apps/key_distribution/iwa_key_distribution_info_provider.h"
 #include "chrome/browser/web_applications/isolated_web_apps/policy/isolated_web_app_policy_manager.h"
 #include "chrome/browser/web_applications/isolated_web_apps/update/isolated_web_app_update_manager.h"
 #include "chrome/browser/web_applications/navigation_capturing_log.h"
@@ -38,6 +37,7 @@
 #include "chrome/browser/web_applications/web_app_utils.h"
 #include "chrome/common/pref_names.h"
 #include "components/prefs/pref_service.h"
+#include "components/webapps/isolated_web_apps/key_distribution/iwa_key_distribution_info_provider.h"
 #include "content/public/browser/isolated_web_apps_policy.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -414,13 +414,6 @@ void WebAppInternalsHandler::UpdateDevProxyIsolatedWebApp(
     UpdateDevProxyIsolatedWebAppCallback callback) {
   if (iwa_handler_) {
     iwa_handler_->UpdateDevProxyIsolatedWebApp(app_id, std::move(callback));
-  }
-}
-
-void WebAppInternalsHandler::RotateKey(const std::string& web_bundle_id,
-                                       const std::vector<uint8_t>& public_key) {
-  if (iwa_handler_) {
-    iwa_handler_->RotateKey(web_bundle_id, public_key);
   }
 }
 

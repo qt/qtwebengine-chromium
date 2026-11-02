@@ -72,10 +72,10 @@ UniqueKeyGen::UniqueKeyGen(const CFX_Font* font,
 #if BUILDFLAG(IS_APPLE)
   if (bNative) {
     if (font->GetSubstFont()) {
-      Initialize({nMatrixA, nMatrixB, nMatrixC, nMatrixD, dest_width,
-                  fxcrt::to_underlying(anti_alias),
-                  font->GetSubstFont()->weight_,
-                  font->GetSubstFont()->italic_angle_, font->IsVertical(), 3});
+      Initialize(
+          {nMatrixA, nMatrixB, nMatrixC, nMatrixD, dest_width,
+           fxcrt::to_underlying(anti_alias), font->GetSubstFont()->GetWeight(),
+           font->GetSubstFont()->GetItalicAngle(), font->IsVertical(), 3});
     } else {
       Initialize({nMatrixA, nMatrixB, nMatrixC, nMatrixD, dest_width,
                   fxcrt::to_underlying(anti_alias), 3});
@@ -87,8 +87,9 @@ UniqueKeyGen::UniqueKeyGen(const CFX_Font* font,
   CHECK(!bNative);
   if (font->GetSubstFont()) {
     Initialize({nMatrixA, nMatrixB, nMatrixC, nMatrixD, dest_width,
-                fxcrt::to_underlying(anti_alias), font->GetSubstFont()->weight_,
-                font->GetSubstFont()->italic_angle_, font->IsVertical()});
+                fxcrt::to_underlying(anti_alias),
+                font->GetSubstFont()->GetWeight(),
+                font->GetSubstFont()->GetItalicAngle(), font->IsVertical()});
   } else {
     Initialize({nMatrixA, nMatrixB, nMatrixC, nMatrixD, dest_width,
                 fxcrt::to_underlying(anti_alias)});
@@ -104,7 +105,7 @@ CFX_GlyphCache::~CFX_GlyphCache() = default;
 
 std::unique_ptr<CFX_GlyphBitmap> CFX_GlyphCache::RenderGlyph(
     uint32_t glyph_index,
-    bool font_style,
+    bool is_cid_font,
     bool is_vertical,
     const CFX_Matrix& matrix,
     int dest_width,
@@ -113,7 +114,7 @@ std::unique_ptr<CFX_GlyphBitmap> CFX_GlyphCache::RenderGlyph(
   if (!face_) {
     return nullptr;
   }
-  return face_->RenderGlyph(glyph_index, font_style, is_vertical, matrix,
+  return face_->RenderGlyph(glyph_index, is_cid_font, is_vertical, matrix,
                             dest_width, anti_alias, subst_font);
 }
 
@@ -125,8 +126,8 @@ const CFX_Path* CFX_GlyphCache::LoadGlyphPath(const CFX_Font* font,
   }
 
   const auto* pSubstFont = font->GetSubstFont();
-  int weight = pSubstFont ? pSubstFont->weight_ : 0;
-  int angle = pSubstFont ? pSubstFont->italic_angle_ : 0;
+  int weight = pSubstFont ? pSubstFont->GetWeight() : 0;
+  int angle = pSubstFont ? pSubstFont->GetItalicAngle() : 0;
   bool vertical = pSubstFont && font->IsVertical();
   const PathMapKey key =
       std::make_tuple(glyph_index, dest_width, weight, angle, vertical);
@@ -142,7 +143,7 @@ const CFX_Path* CFX_GlyphCache::LoadGlyphPath(const CFX_Font* font,
 const CFX_GlyphBitmap* CFX_GlyphCache::LoadGlyphBitmap(
     const CFX_Font* font,
     uint32_t glyph_index,
-    bool bFontStyle,
+    bool is_cid_font,
     const CFX_Matrix& matrix,
     int dest_width,
     FontAntiAliasingMode anti_alias,
@@ -169,7 +170,7 @@ const CFX_GlyphBitmap* CFX_GlyphCache::LoadGlyphBitmap(
 #endif  // BUILDFLAG(IS_APPLE)
   if (bDoLookUp) {
     return LookUpGlyphBitmap(font, matrix, FaceGlyphsKey, glyph_index,
-                             bFontStyle, dest_width, anti_alias);
+                             is_cid_font, dest_width, anti_alias);
   }
 
 #if BUILDFLAG(IS_APPLE)
@@ -190,7 +191,7 @@ const CFX_GlyphBitmap* CFX_GlyphCache::LoadGlyphBitmap(
   auto FaceGlyphsKey2 = ByteString(ByteStringView(keygen2.span()));
   text_options->native_text = false;
   return LookUpGlyphBitmap(font, matrix, FaceGlyphsKey2, glyph_index,
-                           bFontStyle, dest_width, anti_alias);
+                           is_cid_font, dest_width, anti_alias);
 #endif  // BUILDFLAG(IS_APPLE)
 }
 
@@ -213,7 +214,7 @@ CFX_GlyphBitmap* CFX_GlyphCache::LookUpGlyphBitmap(
     const CFX_Matrix& matrix,
     const ByteString& FaceGlyphsKey,
     uint32_t glyph_index,
-    bool bFontStyle,
+    bool is_cid_font,
     int dest_width,
     FontAntiAliasingMode anti_alias) {
   SizeToGlyphMap* pSizeCache;
@@ -231,7 +232,7 @@ CFX_GlyphBitmap* CFX_GlyphCache::LookUpGlyphBitmap(
   }
 
   std::unique_ptr<CFX_GlyphBitmap> pGlyphBitmap =
-      RenderGlyph(glyph_index, bFontStyle, font->IsVertical(), matrix,
+      RenderGlyph(glyph_index, is_cid_font, font->IsVertical(), matrix,
                   dest_width, anti_alias, font->GetSubstFont());
   CFX_GlyphBitmap* pResult = pGlyphBitmap.get();
   (*pSizeCache)[glyph_index] = std::move(pGlyphBitmap);

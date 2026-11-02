@@ -16,9 +16,9 @@
 #include "include/core/SkStream.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkEncodedInfo.h"
-#include "include/private/base/SkTFitsIn.h"
-#include "include/private/base/SkTemplates.h"
-#include "include/private/base/SkTo.h"
+#include "include/private/SkTFitsIn.h"
+#include "include/private/SkTemplates.h"
+#include "include/private/SkTo.h"
 #include "modules/skcms/skcms.h"
 #include "src/codec/SkCodecPriv.h"
 #include "src/codec/SkFrameHolder.h"
@@ -164,8 +164,7 @@ std::unique_ptr<SkCodec> SkJpegxlCodec::MakeFromStream(std::unique_ptr<SkStream>
 
     size_t iccSize = 0;
     // TODO(eustas): format field is currently ignored by decoder.
-    status = JxlDecoderGetICCProfileSize(
-        dec, /* format = */ nullptr, JXL_COLOR_PROFILE_TARGET_DATA, &iccSize);
+    status = JxlDecoderGetICCProfileSize(dec, JXL_COLOR_PROFILE_TARGET_DATA, &iccSize);
     if (status != JXL_DEC_SUCCESS) {
         // Likely incompatible colorspace.
         iccSize = 0;
@@ -173,9 +172,7 @@ std::unique_ptr<SkCodec> SkJpegxlCodec::MakeFromStream(std::unique_ptr<SkStream>
     std::unique_ptr<SkCodecs::ColorProfile> profile;
     if (iccSize) {
         auto icc = SkData::MakeUninitialized(iccSize);
-        // TODO(eustas): format field is currently ignored by decoder.
         status = JxlDecoderGetColorAsICCProfile(dec,
-                                                /* format = */ nullptr,
                                                 JXL_COLOR_PROFILE_TARGET_DATA,
                                                 reinterpret_cast<uint8_t*>(icc->writable_data()),
                                                 iccSize);

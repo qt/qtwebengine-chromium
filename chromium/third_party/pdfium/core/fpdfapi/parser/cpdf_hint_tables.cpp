@@ -30,9 +30,9 @@ bool CanReadFromBitStream(const CFX_BitStream* hStream,
   return bits.IsValid() && hStream->BitsRemaining() >= bits.ValueOrDie();
 }
 
-// Sanity check values from the page table header. The note in the PDF 1.7
-// reference for Table F.3 says the valid range is only 0 through 32. Though 0
-// is not useful either.
+// Validates values from the page table header. The note in ISO 32000-1:2008
+// spec, table F.4 says the valid range is only 0 through 32. Though 0 is not
+// useful either.
 bool IsValidPageOffsetHintTableBitCount(uint32_t bits) {
   return bits > 0 && bits <= 32;
 }

@@ -27,7 +27,7 @@ EIGEN_STRONG_INLINE HVX_Vector HVX_vmem(const void* m) {
   HVX_Vector v;
 #if EIGEN_COMP_CLANG
   // Use inlined assembly for aligned vmem load on unaligned memory.
-  // Use type cast to HVX_Vector* may mess up with compiler data alignment.
+  // Using a type cast to HVX_Vector* may mess up the compiler data alignment.
   __asm__("%0 = vmem(%1+#%2)" : "=v"(v) : "r"(m), "i"(D) : "memory");
 #else
   void* aligned_mem =
@@ -59,11 +59,10 @@ EIGEN_STRONG_INLINE HVX_Vector HVX_load_partial(const T* mem) {
   HVX_Vector v0 = HVX_vmem<0>(mem);
   HVX_Vector v1 = v0;
   uintptr_t mem_addr = reinterpret_cast<uintptr_t>(mem);
-  EIGEN_IF_CONSTEXPR(Size * sizeof(T) <= Alignment) {
+  EIGEN_IF_CONSTEXPR (Size * sizeof(T) <= Alignment) {
     // Data size less than alignment will never cross multiple aligned vectors.
     v1 = v0;
-  }
-  else {
+  } else {
     uintptr_t left_off = mem_addr & (__HVX_LENGTH__ - 1);
     if (left_off + Size * sizeof(T) > __HVX_LENGTH__) {
       v1 = HVX_vmem<1>(mem);
@@ -99,7 +98,7 @@ EIGEN_STRONG_INLINE void HVX_store_partial(T* mem, HVX_Vector v) {
   HVX_VectorPred ql_not = Q6_Q_vsetq_R(mem_addr);
   HVX_VectorPred qr = Q6_Q_vsetq2_R(right_off);
 
-  EIGEN_IF_CONSTEXPR(Size * sizeof(T) > Alignment) {
+  EIGEN_IF_CONSTEXPR (Size * sizeof(T) > Alignment) {
     if (right_off > __HVX_LENGTH__) {
       Q6_vmem_QRIV(qr, mem + __HVX_LENGTH__ / sizeof(T), value);
       qr = Q6_Q_vcmp_eq_VbVb(value, value);
@@ -196,7 +195,7 @@ struct unpacket_traits<Packet16f> {
   typedef Packet8f half;
   enum {
     size = 16,
-    // Many code assume alignment on packet size instead of following trait
+    // Much code assumes alignment on packet size instead of following the trait
     // So we do not use Aligned128 to optimize aligned load/store,
     alignment = Aligned64,
     vectorizable = true,
@@ -211,7 +210,7 @@ struct unpacket_traits<Packet8f> {
   typedef Packet8f half;
   enum {
     size = 8,
-    // Many code assume alignment on packet size instead of following trait
+    // Much code assumes alignment on packet size instead of following the trait
     // So we do not use Aligned128 to optimize aligned load/store,
     alignment = Aligned32,
     vectorizable = true,

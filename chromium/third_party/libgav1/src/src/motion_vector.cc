@@ -17,16 +17,21 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <iterator>
 #include <memory>
 
+#include "src/buffer_pool.h"
 #include "src/dsp/dsp.h"
+#include "src/tile.h"
 #include "src/utils/bit_mask_set.h"
 #include "src/utils/common.h"
 #include "src/utils/constants.h"
-#include "src/utils/logging.h"
+#include "src/utils/memory.h"
+#include "src/utils/reference_info.h"
+#include "src/utils/types.h"
 
 namespace libgav1 {
 namespace {

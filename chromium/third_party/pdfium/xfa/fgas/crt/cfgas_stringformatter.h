@@ -9,6 +9,7 @@
 
 #include <vector>
 
+#include "core/fxcrt/mask.h"
 #include "core/fxcrt/raw_span.h"
 #include "core/fxcrt/span.h"
 #include "core/fxcrt/widestring.h"
@@ -74,10 +75,16 @@ class CFGAS_StringFormatter {
   bool FormatNull(WideString* wsOutput) const;
 
  private:
+  enum class NumStyle : uint32_t {
+    kPercent = 0x01,
+    kExponent = 0x02,
+    kDotVorv = 0x04,
+  };
+
   WideString GetTextFormat(WideStringView wsCategory) const;
   LocaleIface* GetNumericFormat(LocaleMgrIface* pLocaleMgr,
                                 size_t* iDotIndex,
-                                uint32_t* dwStyle,
+                                Mask<NumStyle>* dwStyle,
                                 WideString* wsPurgePattern) const;
   DateTimeType GetDateTimeFormat(LocaleMgrIface* pLocaleMgr,
                                  LocaleIface** pLocale,

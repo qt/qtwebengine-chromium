@@ -14,12 +14,23 @@
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/span.h"
 #include "v8/include/v8-forward.h"
+#include "v8/include/v8-object.h"
 
 // The fxv8 functions soften up the interface to the V8 API. In particular,
 // PDFium uses size_t for sizes and indices, but V8 mostly uses ints, so
 // these routines perform checked conversions.
 
 namespace fxv8 {
+
+// Embedder data type tags for aligned pointers stored in V8 objects.
+//
+// Note: All slot #0 sentinels (string tags and class descriptors) share
+// kPDFiumSentinelTag so that cross-engine script arguments (e.g. an FXJS object
+// passed to an FXJSE method) can be checked and safely rejected without
+// triggering a V8 sandbox check failure (crash).
+constexpr v8::EmbedderDataTypeTag kPDFiumSentinelTag = 0;
+constexpr v8::EmbedderDataTypeTag kFXJSPerObjectDataTag = 1;
+constexpr v8::EmbedderDataTypeTag kFXJSEHostObjectDataTag = 2;
 
 // These first check for empty locals.
 bool IsUndefined(v8::Local<v8::Value> value);

@@ -14,20 +14,21 @@
 // limitations under the License.
 //
 
-use alloc::{vec, vec::Vec};
+use alloc::{string::String, vec, vec::Vec};
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use ciborium::Value;
-use coset::{cwt::ClaimName, CborSerializable, CoseKey};
+use coset::{CborSerializable, CoseKey, cwt::ClaimName};
 use oak_attestation_types::{
     attester::Attester,
-    util::{encode_length_delimited_proto, try_decode_length_delimited_proto, Serializable},
+    transparent_attester::TransparentAttester,
+    util::{Serializable, encode_length_delimited_proto, try_decode_length_delimited_proto},
 };
 use oak_dice::{
     cert::{
-        cose_key_to_verifying_key, derive_verifying_key_id, generate_ecdsa_key_pair,
+        SHA2_256_ID, cose_key_to_verifying_key, derive_verifying_key_id, generate_ecdsa_key_pair,
         generate_kem_certificate, generate_signing_certificate,
-        get_claims_set_from_certificate_bytes, SHA2_256_ID,
+        get_claims_set_from_certificate_bytes,
     },
     evidence::Stage0DiceData,
 };
@@ -162,35 +163,7 @@ impl Attester for DiceAttester {
         // Since the builder contains an existing signing key there must be at least one
         // layer of evidence that contains the certificate, or a root layer that is
         // bound to the attestation report.
-        let issuer_id = match self
-            .evidence
-            .layers
-            .last()
-            .map(|last| {
-                get_claims_set_from_certificate_bytes(&last.eca_certificate)
-                    .map_err(anyhow::Error::msg)
-            })
-            .transpose()?
-            .map(|claims_set| {
-                claims_set.subject.ok_or_else(|| anyhow!("no subject in certificate"))
-            })
-            .transpose()?
-        {
-            Some(issuer_id) => issuer_id,
-            None => {
-                let root_layer = self
-                    .evidence
-                    .root_layer
-                    .as_ref()
-                    .ok_or_else(|| anyhow::anyhow!("no root layer evidence"))?;
-                let cose_key = CoseKey::from_slice(root_layer.eca_public_key.as_slice())
-                    .map_err(anyhow::Error::msg)?;
-                let verifying_key =
-                    cose_key_to_verifying_key(&cose_key).map_err(anyhow::Error::msg)?;
-                hex::encode(derive_verifying_key_id(&verifying_key))
-            }
-        };
-
+        let issuer_id = get_issuer_id(self)?;
         // Generate a signing key for the next layer.
         let (signing_key, verifying_key) = generate_ecdsa_key_pair();
 
@@ -232,6 +205,69 @@ impl Attester for DiceAttester {
 
     fn quote(&self) -> anyhow::Result<Evidence> {
         Ok(self.evidence.clone())
+    }
+}
+
+impl TransparentAttester for DiceAttester {
+    fn extend_transparent(
+        &mut self,
+        original_encoded_event: &[u8],
+        transparent_encoded_event: &[u8],
+    ) -> anyhow::Result<()> {
+        let issuer_id = get_issuer_id(self)?;
+        // Generate a signing key for the next layer.
+        let (signing_key, verifying_key) = generate_ecdsa_key_pair();
+
+        // Generate a claim for CWT which contains the original event digest.
+        let original_event_digest = MeasureDigest::measure_digest(original_encoded_event);
+        let original_event_claim = (
+            ClaimName::PrivateUse(oak_dice::cert::EVENT_ID),
+            Value::Map(vec![(
+                Value::Integer(SHA2_256_ID.into()),
+                Value::Bytes(original_event_digest.sha2_256),
+            )]),
+        );
+
+        // Generate a claim for CWT which contains the transparent event digest.
+        let transparent_event_digest = MeasureDigest::measure_digest(transparent_encoded_event);
+        let transparent_event_claim = (
+            ClaimName::PrivateUse(oak_dice::cert::TRANSPARENT_EVENT_ID),
+            Value::Map(vec![(
+                Value::Integer(SHA2_256_ID.into()),
+                Value::Bytes(transparent_event_digest.sha2_256),
+            )]),
+        );
+
+        // Generate new CWT.
+        let eca_certificate = generate_signing_certificate(
+            &self.signing_key,
+            issuer_id,
+            &verifying_key,
+            vec![original_event_claim, transparent_event_claim],
+        )
+        .map_err(anyhow::Error::msg)
+        .context("couldn't generate ECA certificate for the next layer")?;
+
+        // Add new layer to the evidence.
+        self.evidence.layers.push(LayerEvidence {
+            eca_certificate: eca_certificate.to_vec().map_err(anyhow::Error::msg)?,
+        });
+        // Update the event logs with the appropriate encoded event.
+        self.evidence
+            .event_log
+            .get_or_insert_with(EventLog::default)
+            .encoded_events
+            .push(original_encoded_event.to_vec());
+        self.evidence
+            .transparent_event_log
+            .get_or_insert_with(EventLog::default)
+            .encoded_events
+            .push(transparent_encoded_event.to_vec());
+
+        // Replacing the signing key will cause the previous signing key to be dropped,
+        // which will zero out its memory.
+        self.signing_key = signing_key;
+        Ok(())
     }
 }
 
@@ -292,10 +328,18 @@ pub fn stage0_dice_data_and_event_log_to_proto(
             .map_err(anyhow::Error::msg)?;
     layers.push(LayerEvidence { eca_certificate });
     let root_layer = Some(root_layer_evidence_to_proto(value.root_layer_evidence)?);
+    // TODO: b/527437181 - Build equal number of layers and event log entries.
+    // At the moment we build 1 layer and 2 events (this is the one layer).
     let layers = vec![layer_evidence_to_proto(value.layer_1_evidence)?];
     let application_keys = None;
-    let evidence =
-        Some(Evidence { root_layer, layers, application_keys, event_log: Some(event_log) });
+    let evidence = Some(Evidence {
+        root_layer,
+        layers,
+        application_keys,
+        event_log: Some(event_log),
+        transparent_event_log: None,
+        signed_user_data_certificate: vec![],
+    });
     let certificate_authority = Some(CertificateAuthority {
         eca_private_key: value.layer_1_certificate_authority.eca_private_key
             [..oak_dice::evidence::P256_PRIVATE_KEY_SIZE]
@@ -326,7 +370,16 @@ pub fn evidence_and_event_log_to_proto(
         .transpose()
         .map_err(anyhow::Error::msg)
         .context("couldn't decode event log")?;
-    Ok(Evidence { root_layer, layers, application_keys, event_log })
+    let transparent_event_log: Option<EventLog> = None;
+    let signed_user_data_certificate = vec![];
+    Ok(Evidence {
+        root_layer,
+        layers,
+        application_keys,
+        event_log,
+        transparent_event_log,
+        signed_user_data_certificate,
+    })
 }
 
 fn root_layer_evidence_to_proto(
@@ -363,4 +416,36 @@ fn application_keys_to_proto(
         group_encryption_public_key_certificate: vec![],
         group_signing_public_key_certificate: vec![],
     })
+}
+
+fn get_issuer_id(dice_attester: &DiceAttester) -> anyhow::Result<String> {
+    // The last evidence layer contains the certificate for the current signing key.
+    // Since the builder contains an existing signing key there must be at least one
+    // layer of evidence that contains the certificate, or a root layer that is
+    // bound to the attestation report.
+    let issuer_id = match dice_attester
+        .evidence
+        .layers
+        .last()
+        .map(|last| {
+            get_claims_set_from_certificate_bytes(&last.eca_certificate).map_err(anyhow::Error::msg)
+        })
+        .transpose()?
+        .map(|claims_set| claims_set.subject.ok_or_else(|| anyhow!("no subject in certificate")))
+        .transpose()?
+    {
+        Some(issuer_id) => issuer_id,
+        None => {
+            let root_layer = dice_attester
+                .evidence
+                .root_layer
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("no root layer evidence"))?;
+            let cose_key = CoseKey::from_slice(root_layer.eca_public_key.as_slice())
+                .map_err(anyhow::Error::msg)?;
+            let verifying_key = cose_key_to_verifying_key(&cose_key).map_err(anyhow::Error::msg)?;
+            hex::encode(derive_verifying_key_id(&verifying_key))
+        }
+    };
+    Ok(issuer_id)
 }

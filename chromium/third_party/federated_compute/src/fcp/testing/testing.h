@@ -24,10 +24,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/base/macros.h"
-#include "absl/status/status_matchers.h"
 #include "absl/strings/string_view.h"
-#include "fcp/base/monitoring.h"
 #include "google/protobuf/util/message_differencer.h"
 
 #include "fcp/testing/parse_text_proto.h"
@@ -62,18 +59,6 @@ std::string TemporaryTestFile(absl::string_view suffix);
  */
 absl::StatusOr<std::string> VerifyAgainstBaseline(
     absl::string_view baseline_file, absl::string_view content);
-
-[[deprecated(
-    "use absl_testing::StatusIs instead")]] ABSL_REFACTOR_INLINE inline auto
-IsCode(absl::StatusCode code) {
-  return absl_testing::StatusIs(code);
-}
-
-[[deprecated(
-    "Use absl_testing::IsOk instead")]] ABSL_REFACTOR_INLINE inline auto
-IsOk() {
-  return absl_testing::IsOk();
-}
 
 template <typename T>
 class ProtoMatcherImpl : public ::testing::MatcherInterface<T> {
@@ -137,8 +122,8 @@ class ProtoMatcher {
   template <typename U>
   operator testing::Matcher<U>() const {  // NOLINT
     using V = std::remove_cv_t<std::remove_reference_t<U>>;
-    static_assert(std::is_base_of<google::protobuf::Message, V>::value &&
-                  !std::is_same<google::protobuf::Message, V>::value);
+    static_assert(std::is_base_of_v<google::protobuf::Message, V> &&
+                  !std::is_same_v<google::protobuf::Message, V>);
     return ::testing::MakeMatcher(new ProtoMatcherImpl<U>(arg_));
   }
 
@@ -147,10 +132,9 @@ class ProtoMatcher {
 };
 
 // Proto matcher that takes another proto message reference as an argument.
-template <class T,
-          typename std::enable_if<std::is_base_of<google::protobuf::Message, T>::value &&
-                                      !std::is_same<google::protobuf::Message, T>::value,
-                                  int>::type = 0>
+template <class T, std::enable_if_t<std::is_base_of_v<google::protobuf::Message, T> &&
+                                        !std::is_same_v<google::protobuf::Message, T>,
+                                    int> = 0>
 inline ProtoMatcher<T> EqualsProto(const T& arg) {
   return ProtoMatcher<T>(arg);
 }

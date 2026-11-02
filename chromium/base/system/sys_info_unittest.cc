@@ -321,6 +321,14 @@ TEST_F(SysInfoTest, HardwareManufacturer) {
   EXPECT_TRUE(IsStringUTF8(manufacturer));
   EXPECT_FALSE(manufacturer.empty());
 }
+
+TEST_F(SysInfoTest, GetAndroidBuildFingerprint) {
+  std::string fingerprint = SysInfo::GetAndroidBuildFingerprint();
+  EXPECT_TRUE(IsStringUTF8(fingerprint));
+  EXPECT_FALSE(fingerprint.empty());
+  // Speculative regression test for https://crbug.com/532132431.
+  EXPECT_EQ(fingerprint.find("Must use"), std::string::npos);
+}
 #endif
 
 #if BUILDFLAG(IS_WIN)

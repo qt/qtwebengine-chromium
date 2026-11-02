@@ -39,16 +39,17 @@ use syn::{parse_macro_input, DeriveInput};
 pub fn derive_mojomparse(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
+    let in_bindings_crate = MojomAttributes::parse(&input.attrs).in_bindings_crate;
 
     let derived_tokens = match input.data {
         syn::Data::Struct(syn::DataStruct { fields, .. }) => match fields {
             syn::Fields::Named(syn::FieldsNamed { named, .. }) => {
-                derive_mojomparse_struct(name.clone(), named)
+                derive_mojomparse_struct(name.clone(), named, in_bindings_crate)
             }
             _ => panic!("Mojom structs do not support unnamed fields"),
         },
         syn::Data::Enum(syn::DataEnum { variants, .. }) => {
-            derive_mojomparse_union(name.clone(), variants)
+            derive_mojomparse_union(name.clone(), variants, in_bindings_crate)
         }
         syn::Data::Union(_) => {
             panic!("Mojom does not support untagged unions. Use a Rust enum instead.")
@@ -58,30 +59,43 @@ pub fn derive_mojomparse(input: proc_macro::TokenStream) -> proc_macro::TokenStr
     return proc_macro::TokenStream::from(derived_tokens);
 }
 
-fn get_parse_as(attrs: &[syn::Attribute]) -> Option<String> {
-    for attr in attrs {
-        if attr.path().is_ident("mojom") {
-            let mut parse_as = None;
-            let _ = attr.parse_nested_meta(|meta| {
-                if meta.path.is_ident("parse_as") {
-                    let value = meta.value()?;
-                    let lit: syn::LitStr = value.parse()?;
-                    parse_as = Some(lit.value());
-                    return Ok(());
-                }
-                Ok(())
-            });
-            if parse_as.is_some() {
-                return parse_as;
+#[derive(Default)]
+struct MojomAttributes {
+    parse_as: Option<String>,
+    in_bindings_crate: bool,
+}
+
+impl MojomAttributes {
+    fn parse(attrs: &[syn::Attribute]) -> Self {
+        let mut parse_as = None;
+        let mut in_bindings_crate = false;
+
+        for attr in attrs {
+            if attr.path().is_ident("mojom") {
+                let _ = attr.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("parse_as") {
+                        let value = meta.value()?;
+                        let lit: syn::LitStr = value.parse()?;
+                        parse_as = Some(lit.value());
+                        return Ok(());
+                    }
+                    if meta.path.is_ident("in_bindings_crate") {
+                        in_bindings_crate = true;
+                        return Ok(());
+                    }
+                    Ok(())
+                });
             }
         }
+
+        Self { parse_as, in_bindings_crate }
     }
-    None
 }
 
 fn derive_mojomparse_struct(
     name: syn::Ident,
     struct_fields: syn::punctuated::Punctuated<syn::Field, syn::Token![,]>,
+    in_bindings_crate: bool,
 ) -> proc_macro2::TokenStream {
     let num_fields = struct_fields.len();
 
@@ -101,7 +115,7 @@ fn derive_mojomparse_struct(
         .map(|field| {
             let ty = &field.ty;
             let name = field.ident.as_ref().unwrap().to_string();
-            if let Some(parse_as) = get_parse_as(&field.attrs) {
+            if let Some(parse_as) = MojomAttributes::parse(&field.attrs).parse_as {
                 let parse_as_ty = syn::Ident::new(&parse_as, proc_macro2::Span::call_site());
                 quote! { (#name.to_string(), <#parse_as_ty as MojomParse<Context>>::mojom_type()) }
             } else {
@@ -110,22 +124,34 @@ fn derive_mojomparse_struct(
         })
         .collect();
 
+    // The names of the `context` and `value` parameters in the `MojomParse`
+    // functions.
+    //
+    // If the mojom file has a struct with a field named "context" or "value", those
+    // functions will create local variables named `context` and `value`
+    // respectively. To distinguish that variable from the parameters (and thus
+    // prevent accidental variable shadowing), we give the parameters a
+    // `mixed_site` span and the variables a `call_site` span. This tells the
+    // compiler to treat them as separate values that don't shadow each other.
+    let context_ident = syn::Ident::new("context", proc_macro2::Span::mixed_site());
+    let value_ident = syn::Ident::new("value", proc_macro2::Span::mixed_site());
+
     // A bunch of entries for a MojomValue::Struct
     let to_mojom_value_fields: Vec<proc_macro2::TokenStream> = struct_fields
         .iter()
         .map(|field| {
             let name = &field.ident;
             let name_str = field.ident.as_ref().unwrap().to_string();
-            if let Some(parse_as) = get_parse_as(&field.attrs) {
+            if let Some(parse_as) = MojomAttributes::parse(&field.attrs).parse_as {
                 let parse_as_ty = syn::Ident::new(&parse_as, proc_macro2::Span::call_site());
                 quote! {
                     (#name_str.to_string(), {
-                        let original: #parse_as_ty = value.#name.into();
-                        original.into_mojom_value(context)
+                        let original: #parse_as_ty = #value_ident.#name.into();
+                        original.into_mojom_value(#context_ident)
                     })
                 }
             } else {
-                quote! { (#name_str.to_string(), value.#name.into_mojom_value(context)) }
+                quote! { (#name_str.to_string(), #value_ident.#name.into_mojom_value(#context_ident)) }
             }
         })
         .collect();
@@ -136,32 +162,46 @@ fn derive_mojomparse_struct(
         .iter()
         .map(|field| {
             let name = &field.ident;
-            if let Some(parse_as) = get_parse_as(&field.attrs) {
+            if let Some(parse_as) = MojomAttributes::parse(&field.attrs).parse_as {
                 let parse_as_ty = syn::Ident::new(&parse_as, proc_macro2::Span::call_site());
                 quote! {
                     #name: {
-                        let original = <#parse_as_ty>::try_from_mojom_value(#name, context)?;
+                        let original = <#parse_as_ty>::try_from_mojom_value(#name, #context_ident)?;
                         original.try_into()?
                     }
                 }
             } else {
                 let ty = &field.ty;
-                quote! { #name: <#ty>::try_from_mojom_value(#name, context)? }
+                quote! { #name: <#ty>::try_from_mojom_value(#name, #context_ident)? }
             }
         })
         .collect();
+
+    let imports = if in_bindings_crate {
+        quote! {
+            chromium::import! {
+                "//mojo/public/rust/mojom_value_parser:mojom_value_parser_core";
+            }
+            use crate::interface::Registrar;
+        }
+    } else {
+        quote! {
+            chromium::import! {
+                "//mojo/public/rust/mojom_value_parser:mojom_value_parser_core";
+                "//mojo/public/rust/bindings";
+            }
+            use bindings::interface::Registrar;
+        }
+    };
 
     // We wrap the `impl` blocks in an anonymous scope so that we can
     // import mojom_value_parser_core without polluting the caller's namespace.
     return quote! {
         const _: () = {
-            chromium::import! {
-                "//mojo/public/rust/mojom_value_parser:mojom_value_parser_core";
-            }
-
+            #imports
             use mojom_value_parser_core::*;
 
-            impl<Context> MojomParse<Context> for #name {
+            impl<Context: Registrar> MojomParse<Context> for #name {
                 fn mojom_type() -> MojomType {
                     let (field_names, fields) : (Vec<String>, Vec<MojomType>) = vec![
                         #(#mojom_type_fields),*
@@ -170,8 +210,8 @@ fn derive_mojomparse_struct(
                     MojomType::Struct { field_names, fields }
                 }
 
-                fn into_mojom_value(self, context: &Context) -> MojomValue {
-                    let value = self;
+                fn into_mojom_value(self, #context_ident: &Context) -> MojomValue {
+                    let #value_ident = self;
                     let (field_names, fields) : (Vec<String>, Vec<MojomValue>) = vec![
                         #(#to_mojom_value_fields),*
                     ]
@@ -179,12 +219,12 @@ fn derive_mojomparse_struct(
                     MojomValue::Struct ( field_names, fields )
                 }
 
-                fn try_from_mojom_value(value: MojomValue, context: &Context) -> ::anyhow::Result<Self> {
-                    let MojomValue::Struct(field_names, fields) = value else {
+                fn try_from_mojom_value(#value_ident: MojomValue, #context_ident: &Context) -> ::anyhow::Result<Self> {
+                    let MojomValue::Struct(field_names, fields) = #value_ident else {
                         ::anyhow::bail!(
                             "Cannot construct a value of type {} from non-struct MojomValue {:?}",
                             std::any::type_name::<#name>(),
-                            value
+                            #value_ident
                         );
                     };
 
@@ -211,6 +251,7 @@ fn derive_mojomparse_struct(
 fn derive_mojomparse_union(
     name: syn::Ident,
     variants: syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
+    in_bindings_crate: bool,
 ) -> proc_macro2::TokenStream {
     // Extract/compute just the bits of the variants that we care about:
     // The name, type, and discriminant value
@@ -238,24 +279,41 @@ fn derive_mojomparse_union(
     let mojom_type_fields = variant_info
         .iter()
         .map(|(_, ty, discriminant)| quote! { (#discriminant, <#ty as MojomParse<Context>>::mojom_type()) });
+    let context_ident = syn::Ident::new("context", proc_macro2::Span::mixed_site());
+    let value_ident = syn::Ident::new("value", proc_macro2::Span::mixed_site());
+
     let to_mojom_value_branches = variant_info
         .iter()
-        .map(|(variant_name, _, discriminant)| quote! { #name::#variant_name(v) => (#discriminant, v.into_mojom_value(context)) });
+        .map(|(variant_name, _, discriminant)| quote! { #name::#variant_name(v) => (#discriminant, v.into_mojom_value(#context_ident)) });
     let from_mojom_value_branches = variant_info.iter().map(|(name, ty, discriminant)| {
         // boxed_value is defined by the surrounding scope
-        quote! { #discriminant => Ok(Self::#name(<#ty>::try_from_mojom_value(*boxed_value, context)?)), }
+        quote! { #discriminant => Ok(Self::#name(<#ty>::try_from_mojom_value(*boxed_value, #context_ident)?)), }
     });
 
-    return quote! {
-        const _: () = {
+    let imports = if in_bindings_crate {
+        quote! {
             chromium::import! {
                 "//mojo/public/rust/mojom_value_parser:mojom_value_parser_core";
             }
+            use crate::interface::Registrar;
+        }
+    } else {
+        quote! {
+            chromium::import! {
+                "//mojo/public/rust/mojom_value_parser:mojom_value_parser_core";
+                "//mojo/public/rust/bindings";
+            }
+            use bindings::interface::Registrar;
+        }
+    };
 
+    return quote! {
+        const _: () = {
+            #imports
             use mojom_value_parser_core::*;
             use std::collections::BTreeMap;
 
-            impl<Context> MojomParse<Context> for #name {
+            impl<Context: Registrar> MojomParse<Context> for #name {
                 fn mojom_type() -> MojomType {
                     let variants : BTreeMap<i32, MojomType> = [
                         #(#mojom_type_fields),*
@@ -263,19 +321,19 @@ fn derive_mojomparse_union(
                     MojomType::Union { variants }
                 }
 
-                fn into_mojom_value(self, context: &Context) -> MojomValue {
+                fn into_mojom_value(self, #context_ident: &Context) -> MojomValue {
                     let (discriminant, mojom_value) = match self {
                         #(#to_mojom_value_branches),*
                     };
                     MojomValue::Union ( discriminant, Box::new(mojom_value) )
                 }
 
-                fn try_from_mojom_value(value: MojomValue, context: &Context) -> ::anyhow::Result<Self> {
-                    let MojomValue::Union(discriminant, boxed_value) = value else {
+                fn try_from_mojom_value(#value_ident: MojomValue, #context_ident: &Context) -> ::anyhow::Result<Self> {
+                    let MojomValue::Union(discriminant, boxed_value) = #value_ident else {
                         ::anyhow::bail!(
                             "Cannot construct a value of type {} from non-union MojomValue {:?}",
                             std::any::type_name::<#name>(),
-                            value
+                            #value_ident
                         );
                     };
 

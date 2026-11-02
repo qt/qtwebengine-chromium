@@ -1551,10 +1551,10 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kLoong64Bstrins_w:
       if (instr->InputAt(1)->IsImmediate() && i.InputInt8(1) == 0) {
         __ bstrins_w(i.OutputRegister(), zero_reg,
-                     i.InputInt8(1) + i.InputInt8(2) - 1, i.InputInt8(1));
+                     i.InputInt8(2) + i.InputInt8(3) - 1, i.InputInt8(2));
       } else {
-        __ bstrins_w(i.OutputRegister(), i.InputRegister(0),
-                     i.InputInt8(1) + i.InputInt8(2) - 1, i.InputInt8(1));
+        __ bstrins_w(i.OutputRegister(), i.InputRegister(1),
+                     i.InputInt8(2) + i.InputInt8(3) - 1, i.InputInt8(2));
       }
       break;
     case kLoong64Bstrpick_d: {
@@ -1565,10 +1565,10 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kLoong64Bstrins_d:
       if (instr->InputAt(1)->IsImmediate() && i.InputInt8(1) == 0) {
         __ bstrins_d(i.OutputRegister(), zero_reg,
-                     i.InputInt8(1) + i.InputInt8(2) - 1, i.InputInt8(1));
+                     i.InputInt8(2) + i.InputInt8(3) - 1, i.InputInt8(2));
       } else {
-        __ bstrins_d(i.OutputRegister(), i.InputRegister(0),
-                     i.InputInt8(1) + i.InputInt8(2) - 1, i.InputInt8(1));
+        __ bstrins_d(i.OutputRegister(), i.InputRegister(1),
+                     i.InputInt8(2) + i.InputInt8(3) - 1, i.InputInt8(2));
       }
       break;
     case kLoong64Sll_d:
@@ -1615,6 +1615,14 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kLoong64Cmp64:
       // Pseudo-instruction used for cmp/branch. No opcode emitted here.
       break;
+    case kLoong64CheckWord32ComparisonInputs: {
+      Register scratch = i.OutputRegister();
+      __ slli_w(scratch, i.InputRegister(0), 0);
+      __ Check(eq, AbortReason::kUnexpectedValue, scratch, i.InputRegister(0));
+      __ slli_w(scratch, i.InputRegister(1), 0);
+      __ Check(eq, AbortReason::kUnexpectedValue, scratch, i.InputRegister(1));
+      break;
+    }
     case kLoong64Mov:
       // TODO(LOONG_dev): Should we combine mov/li, or use separate instr?
       //    - Also see x64 ASSEMBLE_BINOP & RegisterOrOperandType
@@ -1957,10 +1965,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     case kLoong64Float64ExtractHighWord32:
       __ movfrh2gr_s(i.OutputRegister(), i.InputDoubleRegister(0));
-      break;
-    case kLoong64Float64FromWord32Pair:
-      __ movgr2fr_w(i.OutputDoubleRegister(), i.InputRegister(1));
-      __ movgr2frh_w(i.OutputDoubleRegister(), i.InputRegister(0));
       break;
     case kLoong64Float64InsertLowWord32:
       __ FmoveLow(i.OutputDoubleRegister(), i.InputRegister(1));
@@ -4461,31 +4465,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
                  << "\"";                                                      \
   UNIMPLEMENTED();
 
-void SignExtend(MacroAssembler* masm, Instruction* instr, Register* left,
-                Operand* right, Register* temp0, Register* temp1) {
-  bool need_signed = false;
-  MachineRepresentation rep_left =
-      LocationOperand::cast(instr->InputAt(0))->representation();
-  need_signed = IsAnyTagged(rep_left) || IsAnyCompressed(rep_left) ||
-                rep_left == MachineRepresentation::kWord64;
-  if (need_signed) {
-    masm->slli_w(*temp0, *left, 0);
-    *left = *temp0;
-  }
-
-  if (instr->InputAt(1)->IsAnyLocationOperand()) {
-    MachineRepresentation rep_right =
-        LocationOperand::cast(instr->InputAt(1))->representation();
-    need_signed = IsAnyTagged(rep_right) || IsAnyCompressed(rep_right) ||
-                  rep_right == MachineRepresentation::kWord64;
-    if (need_signed && right->is_reg()) {
-      DCHECK(*temp1 != no_reg);
-      masm->slli_w(*temp1, right->rm(), 0);
-      *right = Operand(*temp1);
-    }
-  }
-}
-
 void AssembleBranchToLabels(CodeGenerator* gen, MacroAssembler* masm,
                             Instruction* instr, FlagsCondition condition,
                             Label* tlabel, Label* flabel, bool fallthru) {
@@ -4549,12 +4528,6 @@ void AssembleBranchToLabels(CodeGenerator* gen, MacroAssembler* masm,
     Condition cc = FlagsConditionToConditionCmp(condition);
     Register left = i.InputRegister(0);
     Operand right = i.InputOperand(1);
-    // Word32Compare has two temp registers.
-    if (COMPRESS_POINTERS_BOOL && (instr->arch_opcode() == kLoong64Cmp32)) {
-      Register temp0 = i.TempRegister(0);
-      Register temp1 = right.is_reg() ? i.TempRegister(1) : no_reg;
-      SignExtend(masm, instr, &left, &right, &temp0, &temp1);
-    }
     __ Branch(tlabel, cc, left, right);
   } else if (instr->arch_opcode() == kArchStackPointerGreaterThan) {
     Condition cc = FlagsConditionToConditionCmp(condition);
@@ -4672,11 +4645,6 @@ void CodeGenerator::AssembleArchBoolean(Instruction* instr,
     Condition cc = FlagsConditionToConditionCmp(condition);
     Register left = i.InputRegister(0);
     Operand right = i.InputOperand(1);
-    if (COMPRESS_POINTERS_BOOL && (instr->arch_opcode() == kLoong64Cmp32)) {
-      Register temp0 = i.TempRegister(0);
-      Register temp1 = right.is_reg() ? i.TempRegister(1) : no_reg;
-      SignExtend(masm(), instr, &left, &right, &temp0, &temp1);
-    }
     __ CompareWord(cc, result, left, right);
     return;
   } else if (instr->arch_opcode() == kLoong64Float64Cmp ||
@@ -4840,6 +4808,7 @@ void CodeGenerator::AssembleArchSelect(Instruction* instr,
       Register temp = v_true;
       v_true = v_false;
       v_false = temp;
+      cc = ne;
     }
     UseScratchRegisterScope temps(masm());
     Register scratch1 = temps.Acquire();
@@ -4949,7 +4918,9 @@ void CodeGenerator::FinishFrame(Frame* frame) {
   const DoubleRegList saves_fpu = call_descriptor->CalleeSavedFPRegisters();
   if (!saves_fpu.is_empty()) {
     int count = saves_fpu.Count();
-    DCHECK_EQ(kNumCalleeSavedFPU, count);
+    DCHECK_EQ(saves_fpu.bits(), kCalleeSavedFPU.bits());
+    DCHECK(kCalleeSavedVR.is_empty());
+
     frame->AllocateSavedCalleeRegisterSlots(count *
                                             (kDoubleSize / kSystemPointerSize));
   }
@@ -5052,7 +5023,7 @@ void CodeGenerator::AssembleConstructFrame() {
         __ Branch(&done, uge, sp, Operand(stack_limit));
       }
 
-      if (v8_flags.experimental_wasm_growable_stacks) {
+      if (v8_flags.wasm_growable_stacks) {
         RegList regs_to_save;
         regs_to_save.set(WasmHandleStackOverflowDescriptor::GapRegister());
         regs_to_save.set(
@@ -5062,7 +5033,7 @@ void CodeGenerator::AssembleConstructFrame() {
         __ MultiPush(regs_to_save);
         DoubleRegList fp_regs_to_save;
         for (auto reg : wasm::kFpParamRegisters) fp_regs_to_save.set(reg);
-        __ MultiPushFPU(fp_regs_to_save);
+        __ MultiPushFPUOrLSX(fp_regs_to_save);
         __ li(WasmHandleStackOverflowDescriptor::GapRegister(),
               required_slots * kSystemPointerSize);
         __ Add_d(
@@ -5080,7 +5051,7 @@ void CodeGenerator::AssembleConstructFrame() {
         // safepoint here.
         ReferenceMap* reference_map = zone()->New<ReferenceMap>(zone());
         RecordSafepoint(reference_map);
-        __ MultiPopFPU(fp_regs_to_save);
+        __ MultiPopFPUOrLSX(fp_regs_to_save);
         __ MultiPop(regs_to_save);
       } else {
         __ Call(static_cast<intptr_t>(Builtin::kWasmStackOverflow),
@@ -5113,6 +5084,7 @@ void CodeGenerator::AssembleConstructFrame() {
     // Save callee-saved FPU registers.
     __ MultiPushFPU(saves_fpu);
     DCHECK_EQ(kNumCalleeSavedFPU, saves_fpu.Count());
+    DCHECK(kCalleeSavedVR.is_empty());
   }
 
   if (!saves.is_empty()) {
@@ -5171,7 +5143,7 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
 
 #if V8_ENABLE_WEBASSEMBLY
   if (call_descriptor->IsAnyWasmFunctionCall() &&
-      v8_flags.experimental_wasm_growable_stacks) {
+      v8_flags.wasm_growable_stacks) {
     Label done;
     {
       UseScratchRegisterScope temps{masm()};
@@ -5184,6 +5156,9 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
     RegList regs_to_save;
     for (auto reg : wasm::kGpReturnRegisters) regs_to_save.set(reg);
     __ MultiPush(regs_to_save);
+    DoubleRegList fp_regs_to_save;
+    for (auto reg : wasm::kFpReturnRegisters) fp_regs_to_save.set(reg);
+    __ MultiPushFPUOrLSX(fp_regs_to_save);
     __ li(kCArgRegs[0], ExternalReference::isolate_address());
     {
       UseScratchRegisterScope temps{masm()};
@@ -5192,6 +5167,7 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
     }
     __ CallCFunction(ExternalReference::wasm_shrink_stack(), 1);
     __ mov(fp, kReturnRegister0);
+    __ MultiPopFPUOrLSX(fp_regs_to_save);
     __ MultiPop(regs_to_save);
     __ bind(&done);
   }
@@ -5248,16 +5224,47 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
 void CodeGenerator::FinishCode() {}
 
 void CodeGenerator::PrepareForDeoptimizationExits(
-    ZoneDeque<DeoptimizationExit*>* exits) {}
+    ZoneDeque<DeoptimizationExit*>* exits) {
+  // Make sure to avoid getting the trampoline pool emitted in the middle
+  // of the deoptimization exits, because it destroys our ability to compute
+  // the deoptimization index based on the 'pc' and the offset of the start
+  // of the exits section.
+  int total_size = 0;
+  for (DeoptimizationExit* exit : deoptimization_exits_) {
+    if (exit->emitted()) continue;  // May have been emitted inline.
+    total_size += (exit->kind() == DeoptimizeKind::kLazy)
+                      ? Deoptimizer::kLazyDeoptExitSize
+                      : Deoptimizer::kEagerDeoptExitSize;
+  }
+
+  // Reserve space for deoptimization entries, each entry requires two
+  // instructions.
+  __ BlockTrampolinePoolFor(total_size + kDeoptimizeKindCount * 2);
+
+  // Check which deopt kinds exist in this InstructionStream object, to avoid
+  // emitting jumps to unused entries.
+  bool saw_deopt_kind[kDeoptimizeKindCount] = {false};
+  for (auto exit : *exits) {
+    saw_deopt_kind[static_cast<int>(exit->kind())] = true;
+  }
+  // Emit the jumps to deoptimization entries.
+  static_assert(static_cast<int>(kFirstDeoptimizeKind) == 0);
+  for (int i = 0; i < kDeoptimizeKindCount; i++) {
+    if (!saw_deopt_kind[i]) continue;
+    DeoptimizeKind kind = static_cast<DeoptimizeKind>(i);
+    UseScratchRegisterScope temps(masm());
+    Register scratch = temps.Acquire();
+    __ bind(&jump_deoptimization_entry_labels_[i]);
+    __ LoadEntryFromBuiltin(Deoptimizer::GetDeoptimizationEntry(kind), scratch);
+    __ Jump(scratch);
+  }
+}
 
 AllocatedOperand CodeGenerator::Push(InstructionOperand* source) {
   auto rep = LocationOperand::cast(source)->representation();
   int new_slots = ElementSizeInPointers(rep);
   Loong64OperandConverter g(this, nullptr);
-  int last_frame_slot_id =
-      frame_access_state_->frame()->GetTotalFrameSlotCount() - 1;
-  int sp_delta = frame_access_state_->sp_delta();
-  int slot_id = last_frame_slot_id + sp_delta + new_slots;
+  int slot_id = frame_access_state()->GetSPSlotCount() - 1 + new_slots;
   AllocatedOperand stack_slot(LocationOperand::STACK_SLOT, rep, slot_id);
   if (source->IsRegister()) {
     __ Push(g.ToRegister(source));
@@ -5292,10 +5299,7 @@ void CodeGenerator::Pop(InstructionOperand* dest, MachineRepresentation rep) {
     __ Pop(scratch);
     __ St_d(scratch, g.ToMemOperand(dest));
   } else {
-    int last_frame_slot_id =
-        frame_access_state_->frame()->GetTotalFrameSlotCount() - 1;
-    int sp_delta = frame_access_state_->sp_delta();
-    int slot_id = last_frame_slot_id + sp_delta;
+    int slot_id = frame_access_state()->GetSPSlotCount() - 1;
     AllocatedOperand stack_slot(LocationOperand::STACK_SLOT, rep, slot_id);
     AssembleMove(&stack_slot, dest);
     frame_access_state()->IncreaseSPDelta(-dropped_slots);

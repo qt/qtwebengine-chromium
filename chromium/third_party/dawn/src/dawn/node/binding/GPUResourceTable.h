@@ -42,6 +42,7 @@ class GPUResourceTable final : public interop::GPUResourceTable {
     GPUResourceTable(const wgpu::ResourceTableDescriptor& desc, wgpu::ResourceTable table);
 
     // Implicit cast operator to Dawn GPU object
+    // NOLINTNEXTLINE(google-explicit-constructor)
     inline operator const wgpu::ResourceTable&() const { return table_; }
 
     // interop::GPUResourceTable interface compliance
@@ -52,8 +53,8 @@ class GPUResourceTable final : public interop::GPUResourceTable {
     interop::GPUSize32Out getSize(Napi::Env) override;
 
     void update(Napi::Env, interop::GPUIndex32 slot, interop::GPUBindingResource resource) override;
-    interop::GPUIndex32 insertBinding(Napi::Env, interop::GPUBindingResource resource) override;
-    void removeBinding(Napi::Env, interop::GPUIndex32 slot) override;
+    interop::GPUIndex32 insert(Napi::Env, interop::GPUBindingResource resource) override;
+    void remove(Napi::Env, interop::GPUIndex32 slot) override;
 
   private:
     wgpu::ResourceTable table_;

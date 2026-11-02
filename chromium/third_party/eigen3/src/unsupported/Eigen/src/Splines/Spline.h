@@ -127,7 +127,7 @@ class Spline {
 
   /**
    * \copydoc Spline::derivatives
-   * Using the template version of this function is more efficieent since
+   * Using the template version of this function is more efficient since
    * temporary objects are allocated on the stack whenever this is possible.
    **/
   template <int DerivativeOrder>
@@ -163,13 +163,13 @@ class Spline {
    *
    * \param u Parameter \f$u \in [0;1]\f$ at which the non-zero basis function
    *          derivatives are computed.
-   * \param order The order up to which the basis function derivatives are computes.
+   * \param order The order up to which the basis function derivatives are computed.
    **/
   typename SplineTraits<Spline>::BasisDerivativeType basisFunctionDerivatives(Scalar u, DenseIndex order) const;
 
   /**
    * \copydoc Spline::basisFunctionDerivatives
-   * Using the template version of this function is more efficieent since
+   * Using the template version of this function is more efficient since
    * temporary objects are allocated on the stack whenever this is possible.
    **/
   template <int DerivativeOrder>
@@ -270,7 +270,7 @@ typename Spline<Scalar_, Dim_, Degree_>::BasisVectorType Spline<Scalar_, Dim_, D
 
 template <typename Scalar_, int Dim_, int Degree_>
 DenseIndex Spline<Scalar_, Dim_, Degree_>::degree() const {
-  if (Degree_ == Dynamic)
+  EIGEN_IF_CONSTEXPR (Degree_ == Dynamic)
     return m_knots.size() - m_ctrls.cols() - 1;
   else
     return Degree_;

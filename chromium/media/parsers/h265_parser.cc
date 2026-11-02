@@ -1156,6 +1156,11 @@ H265Parser::Result H265Parser::ParseSliceHeader(const H265NALU& nalu,
       std::min(shdr->temporal_id, sps->sps_max_sub_layers_minus1);
 
   if (!shdr->first_slice_segment_in_pic_flag) {
+    if (validate_extended_bitstream_ && !prior_shdr) {
+      DVLOG(1) << "First slice segment in picture must have "
+               << "first_slice_segment_in_pic_flag equal to 1";
+      return kInvalidStream;
+    }
     if (pps->dependent_slice_segments_enabled_flag)
       READ_BOOL_OR_RETURN(&shdr->dependent_slice_segment_flag);
     READ_BITS_OR_RETURN(base::bits::Log2Ceiling(sps->pic_size_in_ctbs_y),
@@ -1471,11 +1476,18 @@ H265Parser::Result H265Parser::ParseSliceHeader(const H265NALU& nalu,
   if (prior_shdr && !shdr->first_slice_segment_in_pic_flag) {
     // Validate the fields that must match between slice headers for the same
     // picture.
+    // 7.4.2.2: All coded slice segment NAL units of an access unit shall have
+    // the same value of nal_unit_type.
+    EQ_OR_RETURN(shdr, prior_shdr, nal_unit_type);
     EQ_OR_RETURN(shdr, prior_shdr, slice_pic_parameter_set_id);
     EQ_OR_RETURN(shdr, prior_shdr, pic_output_flag);
     EQ_OR_RETURN(shdr, prior_shdr, no_output_of_prior_pics_flag);
     EQ_OR_RETURN(shdr, prior_shdr, slice_pic_order_cnt_lsb);
     EQ_OR_RETURN(shdr, prior_shdr, short_term_ref_pic_set_sps_flag);
+    // 7.4.7.1: all syntax elements for short-term reference picture set
+    // derivation shall have the same values for all coded slice segment
+    // NAL units of a codec picture.
+    EQ_OR_RETURN(shdr, prior_shdr, st_ref_pic_set);
 
     // All the other fields we need to compare are contiguous, so compare them
     // as one memory range.
@@ -1535,30 +1547,7 @@ VideoCodecProfile H265Parser::ProfileIDCToVideoCodecProfile(int profile_idc) {
   }
 }
 
-skhdr::ContentLightLevelInformation H265SEIContentLightLevelInfo::ToSkHdr()
-    const {
-  return skhdr::ContentLightLevelInformation::MakeUint16(
-      /*maxCLL=*/max_content_light_level,
-      /*maxFALL=*/max_picture_average_light_level);
-}
 
-skhdr::MasteringDisplayColorVolume H265SEIMasteringDisplayInfo::ToSkHdr()
-    const {
-  constexpr auto kChromaDenominator = 50000.0f;
-  constexpr auto kLumaDenoninator = 10000.0f;
-  // display primaries are in G/B/R order in MDCV SEI.
-  return {
-      .fDisplayPrimaries = {display_primaries[2][0] / kChromaDenominator,
-                            display_primaries[2][1] / kChromaDenominator,
-                            display_primaries[0][0] / kChromaDenominator,
-                            display_primaries[0][1] / kChromaDenominator,
-                            display_primaries[1][0] / kChromaDenominator,
-                            display_primaries[1][1] / kChromaDenominator,
-                            white_points[0] / kChromaDenominator,
-                            white_points[1] / kChromaDenominator},
-      .fMaximumDisplayMasteringLuminance = max_luminance / kLumaDenoninator,
-      .fMinimumDisplayMasteringLuminance = min_luminance / kLumaDenoninator};
-}
 
 H265Parser::Result H265Parser::ParseProfileTierLevel(
     bool profile_present,
@@ -2215,6 +2204,7 @@ H265Parser::Result H265Parser::ParseSEI(H265SEI* sei) {
              << " payload size: " << payload_size;
 
     enum SEIType {
+      kSEIUserDataRegisteredItuTT35 = 4,
       kSEIMasteringDisplayInfo = 137,
       kSEIContentLightLevelInfo = 144,
       kSEIAlphaChannelInfo = 165,
@@ -2222,6 +2212,25 @@ H265Parser::Result H265Parser::ParseSEI(H265SEI* sei) {
 
     H265SEIMessage sei_msg;
     switch (type) {
+      case kSEIUserDataRegisteredItuTT35: {
+        auto& itu_t_t35 = sei_msg.emplace<H26xSEIUserDataRegisteredT35>();
+        READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(8, &byte, &num_bits_remain);
+        itu_t_t35.country_code = byte;
+        if (itu_t_t35.country_code == 0xff) {
+          READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(8, &byte, &num_bits_remain);
+          itu_t_t35.country_code_extension_byte = byte;
+        }
+        RETURN_IF_NUM_BITS_REMAIN_NEGATIVE(num_bits_remain);
+        size_t payload_bytes = num_bits_remain / 8;
+        if (payload_bytes > 0) {
+          itu_t_t35.payload = base::HeapArray<uint8_t>::Uninit(payload_bytes);
+          for (size_t i = 0; i < payload_bytes; ++i) {
+            READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(8, &byte, &num_bits_remain);
+            itu_t_t35.payload[i] = byte;
+          }
+        }
+        break;
+      }
       case kSEIAlphaChannelInfo: {
         auto& info = sei_msg.emplace<H265SEIAlphaChannelInfo>();
         READ_BOOL_AND_MINUS_BITS_READ_OR_RETURN(&info.alpha_channel_cancel_flag,
@@ -2252,7 +2261,7 @@ H265Parser::Result H265Parser::ParseSEI(H265SEI* sei) {
         break;
       }
       case kSEIContentLightLevelInfo: {
-        auto& info = sei_msg.emplace<H265SEIContentLightLevelInfo>();
+        auto& info = sei_msg.emplace<H26xSEIContentLightLevelInfo>();
         READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(
             16, &info.max_content_light_level, &num_bits_remain);
         READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(
@@ -2260,7 +2269,7 @@ H265Parser::Result H265Parser::ParseSEI(H265SEI* sei) {
         break;
       }
       case kSEIMasteringDisplayInfo: {
-        auto& info = sei_msg.emplace<H265SEIMasteringDisplayInfo>();
+        auto& info = sei_msg.emplace<H26xSEIMasteringDisplayInfo>();
         for (auto& primary : info.display_primaries) {
           for (auto& component : primary) {
             READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(16, &component,
@@ -2296,7 +2305,7 @@ H265Parser::Result H265Parser::ParseSEI(H265SEI* sei) {
       SKIP_BITS_OR_RETURN(num_bits_remain);
     // Only add parsed SEI messages.
     if (num_bits_remain < payload_size * 8) {
-      sei->msgs.push_back(sei_msg);
+      sei->msgs.push_back(std::move(sei_msg));
     }
     // In case the loop endless.
     if (++num_parsed_sei_msg > kMaxParsedSEIMessages)

@@ -182,8 +182,6 @@ class SparseVector : public SparseCompressedBase<SparseVector<Scalar_, Options_,
     return m_data.value(p + 1);
   }
 
-  /**
-   */
   inline void reserve(Index reserveSize) { m_data.reserve(reserveSize); }
 
   inline void finalize() {}
@@ -197,7 +195,7 @@ class SparseVector : public SparseCompressedBase<SparseVector<Scalar_, Options_,
    * \brief Prunes the entries of the vector based on a `predicate`
    * \tparam F Type of the predicate.
    * \param keep_predicate The predicate that is used to test whether a value should be kept. A callable that
-   * gets passed om a `Scalar` value and returns a boolean. If the predicate returns true, the value is kept.
+   * gets passed in a `Scalar` value and returns a boolean. If the predicate returns true, the value is kept.
    * \return The new number of structural non-zeros.
    */
   template <class F>
@@ -353,9 +351,6 @@ class SparseVector : public SparseCompressedBase<SparseVector<Scalar_, Options_,
   }
 #endif
 
-  /** Destructor */
-  inline ~SparseVector() {}
-
   /** Overloaded for performance */
   Scalar sum() const;
 
@@ -390,7 +385,7 @@ class SparseVector : public SparseCompressedBase<SparseVector<Scalar_, Options_,
   /** \internal \deprecated use finalize() */
   EIGEN_DEPRECATED_WITH_REASON("Use .finalize() instead.") void endFill() {}
 
-  // These two functions were here in the 3.1 release, so let's keep them in case some code rely on them.
+  // These two functions were here in the 3.1 release, so let's keep them in case some code relies on them.
   /** \internal \deprecated use data() */
   EIGEN_DEPRECATED_WITH_REASON("Use .data() instead.") Storage& _data() { return m_data; }
   /** \internal \deprecated use data() */

@@ -43,7 +43,7 @@ import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 import {
   DetachedElementsProfileHeader,
   DetachedElementsProfileType,
-  DetachedElementsProfileView
+  DetachedElementsProfileView,
 } from './HeapDetachedElementsView.js';
 import heapProfilerStyles from './heapProfiler.css.js';
 import {HeapProfileView, SamplingHeapProfileHeader, SamplingHeapProfileType} from './HeapProfileView.js';
@@ -51,7 +51,7 @@ import {
   HeapProfileHeader,
   HeapSnapshotProfileType,
   HeapSnapshotView,
-  TrackingHeapSnapshotProfileType
+  TrackingHeapSnapshotProfileType,
 } from './HeapSnapshotView.js';
 import {
   type DataDisplayDelegate,
@@ -64,7 +64,7 @@ import {ProfileSidebarTreeElement} from './ProfileSidebarTreeElement.js';
 import profilesPanelStyles from './profilesPanel.css.js';
 import profilesSidebarTreeStyles from './profilesSidebarTree.css.js';
 import type {ProfileTypeRegistry} from './ProfileTypeRegistry.js';
-import {WritableProfileHeader} from './ProfileView.js';
+import {WritableProfileHeader} from './WritableProfileHeader.js';
 
 const UIStrings = {
   /**
@@ -144,12 +144,18 @@ export class ProfilesPanel extends UI.Panel.PanelWithSidebar implements DataDisp
   typeIdToSidebarSection: Record<string, ProfileTypeSidebarSection>;
   fileSelectorElement!: HTMLInputElement;
   selectedProfileType?: ProfileType;
-  static registry: ProfileTypeRegistry = {
-    heapSnapshotProfileType: new HeapSnapshotProfileType(),
-    trackingHeapSnapshotProfileType: new TrackingHeapSnapshotProfileType(),
-    samplingHeapProfileType: new SamplingHeapProfileType(),
-    detachedElementProfileType: new DetachedElementsProfileType(),
-  };
+  static #registry: ProfileTypeRegistry|null = null;
+  static get registry(): ProfileTypeRegistry {
+    if (!ProfilesPanel.#registry) {
+      ProfilesPanel.#registry = {
+        heapSnapshotProfileType: new HeapSnapshotProfileType(),
+        trackingHeapSnapshotProfileType: new TrackingHeapSnapshotProfileType(),
+        samplingHeapProfileType: new SamplingHeapProfileType(),
+        detachedElementProfileType: new DetachedElementsProfileType(),
+      };
+    }
+    return ProfilesPanel.#registry;
+  }
 
   constructor(
       name: string,
@@ -357,7 +363,7 @@ export class ProfilesPanel extends UI.Panel.PanelWithSidebar implements DataDisp
   reset(): void {
     this.profileTypes.forEach(type => type.reset());
 
-    delete this.visibleView;
+    this.closeVisibleView();
 
     this.profileGroups = {};
     this.updateToggleRecordAction(false);
@@ -365,8 +371,6 @@ export class ProfilesPanel extends UI.Panel.PanelWithSidebar implements DataDisp
 
     this.sidebarTree.element.classList.remove('some-expandable');
 
-    this.launcherView.detach();
-    this.profileViews.removeChildren();
     this.profileViewToolbar.removeToolbarItems();
 
     this.profilesItemTreeElement.select();

@@ -6,6 +6,7 @@
 
 #include "core/fpdfdoc/cpdf_viewerpreferences.h"
 
+#include "constants/catalog.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
@@ -59,5 +60,5 @@ std::optional<ByteString> CPDF_ViewerPreferences::GenericName(
 RetainPtr<const CPDF_Dictionary> CPDF_ViewerPreferences::GetViewerPreferences()
     const {
   const CPDF_Dictionary* dict = doc_->GetRoot();
-  return dict ? dict->GetDictFor("ViewerPreferences") : nullptr;
+  return dict ? dict->GetDictFor(pdfium::catalog::kViewerPreferences) : nullptr;
 }

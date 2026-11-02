@@ -19,7 +19,7 @@
 
 namespace {
 
-// PDF 1.7 spec, Table 8.25
+// ISO 32000-1:2008 spec, table 174.
 enum Alignment {
   kLeft = 0,
   kCenter = 1,

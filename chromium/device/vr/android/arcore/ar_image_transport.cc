@@ -46,13 +46,10 @@ WebXrSharedBuffer* ArImageTransport::TransferCameraImageFrame(
   WebXrSharedBuffer* camera_image_shared_buffer =
       webxr->GetAnimatingFrame()->camera_image_shared_buffer.get();
   bool was_resized =
-      ResizeSharedBuffer(webxr, frame_size, camera_image_shared_buffer);
+      ResizeSharedBuffer(webxr, frame_size, camera_image_shared_buffer,
+                         kBottomLeft_GrSurfaceOrigin);
   if (was_resized) {
-    // Ensure that the following GPU command buffer actions are sequenced after
-    // the shared buffer operations. The shared image interface uses a separate
-    // command buffer stream.
     DCHECK(camera_image_shared_buffer->sync_token.HasData());
-    WaitSyncToken(camera_image_shared_buffer->sync_token);
     DVLOG(3) << __func__
              << ": "
                 "camera_image_shared_buffer->sync_"
@@ -89,9 +86,12 @@ WebXrSharedBuffer* ArImageTransport::TransferCameraImageFrame(
 
   std::unique_ptr<gl::GLFence> gl_fence = gl::GLFence::CreateForGpuFence();
   std::unique_ptr<gfx::GpuFence> gpu_fence = gl_fence->GetGpuFence();
-  mailbox_bridge_->WaitForClientGpuFence(*gpu_fence);
+  gpu::SyncToken sync_token =
+      camera_image_shared_buffer->shared_image->BackingWasExternallyUpdated(
+          std::move(gpu_fence));
+  mailbox_bridge_->VerifySyncToken(sync_token);
+  camera_image_shared_buffer->sync_token = sync_token;
 
-  mailbox_bridge_->GenSyncToken(&camera_image_shared_buffer->sync_token);
   DVLOG(3) << __func__ << ": camera_image_shared_buffer->sync_token="
            << camera_image_shared_buffer->sync_token.ToDebugString();
 

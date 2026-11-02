@@ -6,10 +6,11 @@ import {assert} from 'chai';
 
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
+import * as Protocol from '../../generated/protocol.js';
 import {MockDebuggerBackend} from '../../testing/MockScopeChain.js';
 import {setupRuntimeHooks} from '../../testing/RuntimeHelpers.js';
 import {setupSettingsHooks} from '../../testing/SettingsHelpers.js';
-import * as TextUtils from '../text_utils/text_utils.js';
 
 import * as Bindings from './bindings.js';
 
@@ -182,5 +183,19 @@ describe('DefaultScriptMapping', () => {
     assert.exists(uiSourceCode);
 
     assert.isTrue(uiSourceCode.isUnconditionallyIgnoreListed());
+  });
+
+  it('registers Wasm scripts with application/wasm MIME type', async () => {
+    const script = await backend.addScript(target, {
+      content: '00 61 73 6d',
+      url: urlString`wasm://wasm/test`,
+      hasSourceURL: false,
+      scriptLanguage: Protocol.Debugger.ScriptLanguage.WebAssembly,
+    },
+                                           null);
+    const uiSourceCode = defaultScriptMapping.uiSourceCodeForScript(script);
+    assert.exists(uiSourceCode);
+
+    assert.strictEqual(uiSourceCode.mimeType(), 'application/wasm');
   });
 });

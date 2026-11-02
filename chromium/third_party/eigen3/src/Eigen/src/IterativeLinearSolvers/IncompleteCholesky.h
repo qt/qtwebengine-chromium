@@ -239,10 +239,10 @@ void IncompleteCholesky<Scalar, UpLo_, OrderingType>::factorize(const MatrixType
   Index nnz = m_L.nonZeros();
   Map<VectorSx> vals(m_L.valuePtr(), nnz);           // values
   Map<VectorIx> rowIdx(m_L.innerIndexPtr(), nnz);    // Row indices
-  Map<VectorIx> colPtr(m_L.outerIndexPtr(), n + 1);  // Pointer to the beginning of each row
+  Map<VectorIx> colPtr(m_L.outerIndexPtr(), n + 1);  // Pointer to the beginning of each column
   VectorIx firstElt(n - 1);  // for each j, points to the next entry in vals that will be used in the factorization
   VectorList listCol(n);     // listCol(j) is a linked list of columns to update column j
-  VectorSx col_vals(n);      // Store a  nonzero values in each column
+  VectorSx col_vals(n);      // Store the nonzero values in each column
   VectorIx col_irow(n);      // Row indices of nonzero elements in each column
   VectorIx col_pattern(n);
   col_pattern.fill(-1);

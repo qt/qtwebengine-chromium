@@ -44,8 +44,9 @@ static const uint64_t gen12_modifier_order[] = { I915_FORMAT_MOD_Y_TILED_GEN12_R
 static const uint64_t gen11_modifier_order[] = { I915_FORMAT_MOD_Y_TILED, I915_FORMAT_MOD_X_TILED,
 						 DRM_FORMAT_MOD_LINEAR };
 
-static const uint64_t xe_lpdp_modifier_order[] = { I915_FORMAT_MOD_4_TILED, I915_FORMAT_MOD_X_TILED,
-						 DRM_FORMAT_MOD_LINEAR};
+static const uint64_t xe_lpdp_modifier_order[] = { I915_FORMAT_MOD_4_TILED_MTL_RC_CCS,
+						   I915_FORMAT_MOD_4_TILED, I915_FORMAT_MOD_X_TILED,
+						   DRM_FORMAT_MOD_LINEAR };
 
 struct modifier_support_t {
 	const uint64_t *order;
@@ -62,6 +63,7 @@ struct i915_device {
 	/*TODO : cleanup is_mtl to avoid adding variables for every new platforms */
 	bool is_mtl;
 	int32_t num_fences_avail;
+	bool has_mmap_offset;
 };
 
 static void i915_info_from_device_id(struct i915_device *i915)
@@ -109,11 +111,13 @@ static void i915_info_from_device_id(struct i915_device *i915)
 		0x46b3, 0x46c0, 0x46c1, 0x46c2, 0x46c3, 0x9A40, 0x9A49, 0x9A59, 0x9A60, 0x9A68,
 		0x9A70, 0x9A78, 0x9AC0, 0x9AC9, 0x9AD9, 0x9AF8, 0x4905, 0x4906, 0x4907, 0x4908
 	};
-	const uint16_t adlp_ids[] = { 0x46A0, 0x46A1, 0x46A2, 0x46A3, 0x46A6, 0x46A8, 0x46AA,
-				      0x462A, 0x4626, 0x4628, 0x46B0, 0x46B1, 0x46B2, 0x46B3,
-				      0x46C0, 0x46C1, 0x46C2, 0x46C3, 0x46D0, 0x46D1, 0x46D2 };
+	const uint16_t adlp_ids[] = { 0x46A0, 0x46A1, 0x46A2, 0x46A3, 0x46A6, 0x46A8,
+				      0x46AA, 0x462A, 0x4626, 0x4628, 0x46B0, 0x46B1,
+				      0x46B2, 0x46B3, 0x46C0, 0x46C1, 0x46C2, 0x46C3,
+				      0x46D0, 0x46D1, 0x46D2, 0x46D3, 0x46D4 };
 
-	const uint16_t rplp_ids[] = { 0xA720, 0xA721, 0xA7A0, 0xA7A1, 0xA7A8, 0xA7A9 };
+	const uint16_t rplp_ids[] = { 0xA720, 0xA721, 0xA7A0, 0xA7A1, 0xA7A8,
+				      0xA7A9, 0xA7AA, 0xA7AB, 0xA7AC, 0xA7AD };
 
 	const uint16_t mtl_ids[] = { 0x7D40, 0x7D60, 0x7D45, 0x7D55, 0x7DD5 };
 
@@ -245,6 +249,16 @@ static int i915_add_combinations(struct driver *drv)
 				   BO_USE_HW_VIDEO_DECODER | BO_USE_HW_VIDEO_ENCODER |
 				   hw_protected);
 
+	/* P010 linear can be used for scanout too. */
+	drv_modify_combination(drv, DRM_FORMAT_P010, &metadata_linear, BO_USE_SCANOUT);
+
+	/*
+	 * Android also frequently requests YV12 formats for some camera implementations
+	 * (including the external provider implmenetation).
+	 */
+	drv_modify_combination(drv, DRM_FORMAT_YVU420_ANDROID, &metadata_linear,
+			       BO_USE_CAMERA_WRITE);
+
 	/* Android CTS tests require this. */
 	drv_add_combination(drv, DRM_FORMAT_BGR888, &metadata_linear, BO_USE_SW_MASK);
 
@@ -269,49 +283,38 @@ static int i915_add_combinations(struct driver *drv)
 	drv_add_combinations(drv, scanout_render_formats, ARRAY_SIZE(scanout_render_formats),
 			     &metadata_x_tiled, scanout_and_render_not_linear);
 
+	const uint64_t nv12_usage =
+	    BO_USE_TEXTURE | BO_USE_HW_VIDEO_DECODER | BO_USE_SCANOUT | hw_protected;
+	const uint64_t p010_usage = BO_USE_TEXTURE | BO_USE_HW_VIDEO_DECODER | hw_protected |
+				    (i915->graphics_version >= 11 ? BO_USE_SCANOUT : 0);
+
 	if (i915->is_mtl) {
 		struct format_metadata metadata_4_tiled = { .tiling = I915_TILING_4,
-						    .priority = 3,
-						    .modifier = I915_FORMAT_MOD_4_TILED };
-/* Support tile4 NV12 and P010 for libva */
-#ifdef I915_SCANOUT_4_TILED
-		const uint64_t nv12_usage =
-			BO_USE_TEXTURE | BO_USE_HW_VIDEO_DECODER | BO_USE_SCANOUT | hw_protected;
-		const uint64_t p010_usage = BO_USE_TEXTURE | BO_USE_HW_VIDEO_DECODER | hw_protected |
-                        BO_USE_SCANOUT;
-#else
-		const uint64_t nv12_usage = BO_USE_TEXTURE | BO_USE_HW_VIDEO_DECODER;
-		const uint64_t p010_usage = nv12_usage;
-#endif
+							    .priority = 3,
+							    .modifier = I915_FORMAT_MOD_4_TILED };
+
 		drv_add_combination(drv, DRM_FORMAT_NV12, &metadata_4_tiled, nv12_usage);
 		drv_add_combination(drv, DRM_FORMAT_P010, &metadata_4_tiled, p010_usage);
-		drv_add_combinations(drv, render_formats, ARRAY_SIZE(render_formats), &metadata_4_tiled,
-			     render_not_linear);
-		drv_add_combinations(drv, scanout_render_formats, ARRAY_SIZE(scanout_render_formats),
-			     &metadata_4_tiled, render_not_linear);
+		drv_add_combinations(drv, render_formats, ARRAY_SIZE(render_formats),
+				     &metadata_4_tiled, render_not_linear);
+		drv_add_combinations(drv, scanout_render_formats,
+				     ARRAY_SIZE(scanout_render_formats), &metadata_4_tiled,
+				     scanout_and_render_not_linear);
 	} else {
 		struct format_metadata metadata_y_tiled = { .tiling = I915_TILING_Y,
-						    .priority = 3,
-						    .modifier = I915_FORMAT_MOD_Y_TILED };
-/* Support y-tiled NV12 and P010 for libva */
-#ifdef I915_SCANOUT_Y_TILED
-		const uint64_t nv12_usage =
-			BO_USE_TEXTURE | BO_USE_HW_VIDEO_DECODER | BO_USE_SCANOUT | hw_protected;
-		const uint64_t p010_usage = BO_USE_TEXTURE | BO_USE_HW_VIDEO_DECODER | hw_protected |
-			(i915->graphics_version >= 11 ? BO_USE_SCANOUT : 0);
-#else
-		const uint64_t nv12_usage = BO_USE_TEXTURE | BO_USE_HW_VIDEO_DECODER;
-		const uint64_t p010_usage = nv12_usage;
-#endif
-		drv_add_combination(drv, DRM_FORMAT_NV12, &metadata_y_tiled, nv12_usage);
-		drv_add_combination(drv, DRM_FORMAT_P010, &metadata_y_tiled, p010_usage);
-		drv_add_combinations(drv, render_formats, ARRAY_SIZE(render_formats), &metadata_y_tiled,
-			     render_not_linear);
+							    .priority = 3,
+							    .modifier = I915_FORMAT_MOD_Y_TILED };
+
+		drv_add_combinations(drv, render_formats, ARRAY_SIZE(render_formats),
+				     &metadata_y_tiled, render_not_linear);
 		/* Y-tiled scanout isn't available on old platforms so we add
 		 * |scanout_render_formats| without that USE flag.
 		 */
-		drv_add_combinations(drv, scanout_render_formats, ARRAY_SIZE(scanout_render_formats),
-			     &metadata_y_tiled, render_not_linear);
+		drv_add_combinations(drv, scanout_render_formats,
+				     ARRAY_SIZE(scanout_render_formats), &metadata_y_tiled,
+				     render_not_linear);
+		drv_add_combination(drv, DRM_FORMAT_NV12, &metadata_y_tiled, nv12_usage);
+		drv_add_combination(drv, DRM_FORMAT_P010, &metadata_y_tiled, p010_usage);
 	}
 	return 0;
 }
@@ -342,7 +345,12 @@ static int i915_align_dimensions(struct bo *bo, uint32_t format, uint32_t tiling
 #else
 		horizontal_alignment = 64;
 #endif
+
 		/*
+		 * For hardware video encoding buffers, we want to align to the size of a
+		 * macroblock, because otherwise we will end up encoding uninitialized data.
+		 * This can result in substantial quality degradations, especially on lower
+		 * resolution videos, because this uninitialized data may be high entropy.
 		 * For R8 and height=1, we assume the surface will be used as a linear buffer blob
 		 * (such as VkBuffer). The hardware allows vertical_alignment=1 only for non-tiled
 		 * 1D surfaces, which covers the VkBuffer case. However, if the app uses the surface
@@ -354,7 +362,9 @@ static int i915_align_dimensions(struct bo *bo, uint32_t format, uint32_t tiling
 		 * constraints with GPU_DATA_BUFFER usage when the guest has migrated to use
 		 * virtgpu_cross_domain backend which passes that flag through.
 		 */
-		if (format == DRM_FORMAT_R8 && *aligned_height == 1) {
+		if (bo->meta.use_flags & BO_USE_HW_VIDEO_ENCODER) {
+			vertical_alignment = 8;
+		} else if (format == DRM_FORMAT_R8 && *aligned_height == 1) {
 			vertical_alignment = 1;
 		} else {
 			vertical_alignment = 4;
@@ -402,14 +412,19 @@ static void i915_clflush(void *start, size_t size)
 
 	__builtin_ia32_mfence();
 	while (p < end) {
+#if defined(__CLFLUSHOPT__)
+		__builtin_ia32_clflushopt(p);
+#else
 		__builtin_ia32_clflush(p);
+#endif
 		p = (void *)((uintptr_t)p + I915_CACHELINE_SIZE);
 	}
+	__builtin_ia32_mfence();
 }
 
 static int i915_init(struct driver *drv)
 {
-	int ret;
+	int ret, val;
 	struct i915_device *i915;
 	drm_i915_getparam_t get_param = { 0 };
 
@@ -446,8 +461,21 @@ static int i915_init(struct driver *drv)
 	ret = drmIoctl(drv->fd, DRM_IOCTL_I915_GETPARAM, &get_param);
 	if (ret) {
 		drv_loge("Failed to get I915_PARAM_NUM_FENCES_AVAIL\n");
+		free(i915);
 		return -EINVAL;
 	}
+
+	memset(&get_param, 0, sizeof(get_param));
+	get_param.param = I915_PARAM_MMAP_GTT_VERSION;
+	get_param.value = &val;
+
+	ret = drmIoctl(drv->fd, DRM_IOCTL_I915_GETPARAM, &get_param);
+	if (ret) {
+		drv_loge("Failed to get I915_PARAM_MMAP_GTT_VERSION\n");
+		free(i915);
+		return -EINVAL;
+	}
+	i915->has_mmap_offset = (val >= 4);
 
 	if (i915->graphics_version >= 12)
 		i915->has_hw_protection = 1;
@@ -518,21 +546,27 @@ static size_t i915_num_planes_from_modifier(struct driver *drv, uint32_t format,
 {
 	size_t num_planes = drv_num_planes_from_format(format);
 	if (modifier == I915_FORMAT_MOD_Y_TILED_CCS ||
-	    modifier == I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS) {
+	    modifier == I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS ||
+	    modifier == I915_FORMAT_MOD_4_TILED_MTL_RC_CCS) {
 		assert(num_planes == 1);
 		return 2;
 	}
-
 	return num_planes;
 }
+
+#define gbm_fls(x)                                                                                 \
+	((x) ? __builtin_choose_expr(sizeof(x) == 8, 64 - __builtin_clzll(x),                      \
+				     32 - __builtin_clz(x))                                        \
+	     : 0)
+
+#define roundup_power_of_two(x) ((x) != 0 ? 1ULL << gbm_fls((x)-1) : 0)
 
 static int i915_bo_compute_metadata(struct bo *bo, uint32_t width, uint32_t height, uint32_t format,
 				    uint64_t use_flags, const uint64_t *modifiers, uint32_t count)
 {
-	uint64_t modifier;
 	struct i915_device *i915 = bo->drv->priv;
-	bool huge_bo = (i915->graphics_version < 11) && (width > 4096);
 
+	uint64_t modifier;
 	if (modifiers) {
 		modifier =
 		    drv_pick_modifier(modifiers, count, i915->modifier.order, i915->modifier.count);
@@ -544,9 +578,31 @@ static int i915_bo_compute_metadata(struct bo *bo, uint32_t width, uint32_t heig
 	}
 
 	/*
+	 * For cursor buffer, add padding as needed to reach a known cursor-plane-supported
+	 * buffer size, as reported by the cursor capability properties.
+	 *
+	 * If the requested dimensions exceed either of the reported capabilities, or if the
+	 * capabilities couldn't be read, silently fallback by continuing without additional
+	 * padding. The buffer can still be used normally, and be committed to non-cursor
+	 * planes.
+	 */
+	if (use_flags & BO_USE_CURSOR) {
+		uint64_t cursor_width = 0;
+		uint64_t cursor_height = 0;
+		bool err = drmGetCap(bo->drv->fd, DRM_CAP_CURSOR_WIDTH, &cursor_width) ||
+			   drmGetCap(bo->drv->fd, DRM_CAP_CURSOR_HEIGHT, &cursor_height);
+
+		if (!err && width <= cursor_width && height <= cursor_height) {
+			width = cursor_width;
+			height = cursor_height;
+		}
+	}
+
+	/*
 	 * i915 only supports linear/x-tiled above 4096 wide on Gen9/Gen10 GPU.
 	 * VAAPI decode in NV12 Y tiled format so skip modifier change for NV12/P010 huge bo.
 	 */
+	bool huge_bo = (i915->graphics_version < 11) && (width > 4096);
 	if (huge_bo && format != DRM_FORMAT_NV12 && format != DRM_FORMAT_P010 &&
 	    modifier != I915_FORMAT_MOD_X_TILED && modifier != DRM_FORMAT_MOD_LINEAR) {
 		uint32_t i;
@@ -597,6 +653,7 @@ static int i915_bo_compute_metadata(struct bo *bo, uint32_t width, uint32_t heig
 		bo->meta.tiling = I915_TILING_Y;
 		break;
 	case I915_FORMAT_MOD_4_TILED:
+	case I915_FORMAT_MOD_4_TILED_MTL_RC_CCS:
 		bo->meta.tiling = I915_TILING_4;
 		break;
 	}
@@ -613,7 +670,7 @@ static int i915_bo_compute_metadata(struct bo *bo, uint32_t width, uint32_t heig
 		 * aligning to 32 bytes here.
 		 */
 		uint32_t stride = ALIGN(width, 32);
-		return drv_bo_from_format(bo, stride, height, format);
+		return drv_bo_from_format(bo, stride, 1, height, format);
 	} else if (modifier == I915_FORMAT_MOD_Y_TILED_CCS) {
 		/*
 		 * For compressed surfaces, we need a color control surface
@@ -656,7 +713,10 @@ static int i915_bo_compute_metadata(struct bo *bo, uint32_t width, uint32_t heig
 		bo->meta.num_planes = i915_num_planes_from_modifier(bo->drv, format, modifier);
 		bo->meta.total_size = offset;
 	} else if (modifier == I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS) {
-
+		assert(drv_num_planes_from_format(format) > 0);
+		uint32_t offset = 0;
+		size_t plane = 0;
+		size_t a_plane = 0;
 		/*
 		 * considering only 128 byte compression and one cache line of
 		 * aux buffer(64B) contains compression status of 4-Y tiles.
@@ -664,32 +724,96 @@ static int i915_bo_compute_metadata(struct bo *bo, uint32_t width, uint32_t heig
 		 * line stride(bytes) is 4 * 128B
 		 * and tile stride(lines) is 32L
 		 */
-		uint32_t stride = ALIGN(drv_stride_from_format(format, width, 0), 512);
+		for (plane = 0; plane < drv_num_planes_from_format(format); plane++) {
+			uint32_t stride = ALIGN(drv_stride_from_format(format, width, plane), 512);
 
-		height = ALIGN(drv_height_from_format(format, height, 0), 32);
+			const uint32_t plane_height = drv_height_from_format(format, height, plane);
+			uint32_t aligned_height = ALIGN(plane_height, 32);
 
-		if (i915->is_xelpd && (stride > 1)) {
-			stride = 1 << (32 - __builtin_clz(stride - 1));
-			height = ALIGN(drv_height_from_format(format, height, 0), 128);
+			if (i915->is_xelpd && (stride > 1)) {
+				stride = 1 << (32 - __builtin_clz(stride - 1));
+				aligned_height = ALIGN(plane_height, 128);
+			}
+
+			bo->meta.strides[plane] = stride;
+			/* size calculation & alignment are 64KB aligned
+			 * size as per spec
+			 */
+			bo->meta.sizes[plane] = ALIGN(stride * aligned_height, 512 * 128);
+			bo->meta.offsets[plane] = offset;
+			/* next buffer offset */
+			offset += bo->meta.sizes[plane];
 		}
-
-		bo->meta.strides[0] = stride;
-		/* size calculation and alignment are 64KB aligned
-		 * size as per spec
-		 */
-		bo->meta.sizes[0] = ALIGN(stride * height, 65536);
-		bo->meta.offsets[0] = 0;
 
 		/* Aux buffer is linear and page aligned. It is placed after
 		 * other planes and aligned to main buffer stride.
 		 */
-		bo->meta.strides[1] = bo->meta.strides[0] / 8;
-		/* Aligned to page size */
-		bo->meta.sizes[1] = ALIGN(bo->meta.sizes[0] / 256, getpagesize());
-		bo->meta.offsets[1] = bo->meta.sizes[0];
+		for (a_plane = 0; a_plane < plane; a_plane++) {
+			/* Every 64 bytes in the aux plane contain compression information for a
+			 * sub-row of 4 Y tiles of the corresponding main plane, so the pitch in
+			 * bytes of the aux plane should be the pitch of the main plane in units of
+			 * 4 tiles multiplied by 64 (or equivalently, the pitch of the main plane in
+			 * bytes divided by 8).
+			 */
+			bo->meta.strides[plane + a_plane] = bo->meta.strides[a_plane] / 8;
+			/* Aligned to page size */
+			bo->meta.sizes[plane + a_plane] =
+			    ALIGN(bo->meta.sizes[a_plane] / 256, 4 * 1024);
+			bo->meta.offsets[plane + a_plane] = offset;
+
+			/* next buffer offset */
+			offset += bo->meta.sizes[plane + a_plane];
+		}
 		/* Total number of planes & sizes */
-		bo->meta.num_planes = i915_num_planes_from_modifier(bo->drv, format, modifier);
-		bo->meta.total_size = bo->meta.sizes[0] + bo->meta.sizes[1];
+		bo->meta.num_planes = plane + a_plane;
+		bo->meta.total_size = offset;
+	} else if (modifier == I915_FORMAT_MOD_4_TILED_MTL_RC_CCS) {
+		assert(drv_num_planes_from_format(format) > 0);
+		uint32_t offset = 0, stride = 0;
+		size_t plane = 0;
+		size_t a_plane = 0;
+		for (plane = 0; plane < drv_num_planes_from_format(format); plane++) {
+			uint32_t alignment = 0, val, tmpoffset = 0;
+			/*
+			 * tile_align = 4 (for width) for CCS
+			 */
+			stride = ALIGN(drv_stride_from_format(format, width, plane), 512);
+			height = ALIGN(drv_height_from_format(format, height, plane), 32);
+			bo->meta.strides[plane] = stride;
+
+			/* MTL needs 1MB Alignment */
+			bo->meta.sizes[plane] = ALIGN(stride * height, 0x100000);
+			if (plane == 1 &&
+			    (format == DRM_FORMAT_NV12 || format == DRM_FORMAT_P010)) {
+				alignment = 1 << 20;
+				offset += alignment - (offset % alignment);
+				tmpoffset = offset;
+				val = roundup_power_of_two(stride);
+				if ((stride * val) > tmpoffset)
+					offset = stride * val;
+			}
+
+			bo->meta.offsets[plane] = offset;
+			offset += bo->meta.sizes[plane];
+		}
+
+		/* Aux buffer is linear and page aligned. It is placed after
+		 * other planes and aligned to main buffer stride.
+		 */
+		for (a_plane = 0; a_plane < plane; a_plane++) {
+			stride = bo->meta.strides[a_plane] / 8;
+			bo->meta.strides[a_plane + plane] = stride;
+
+			/* Aligned to page size */
+			bo->meta.sizes[a_plane + plane] =
+			    ALIGN(bo->meta.sizes[a_plane] / 256, getpagesize());
+			bo->meta.offsets[a_plane + plane] = offset;
+			/* next buffer offset */
+			offset += bo->meta.sizes[plane + a_plane];
+		}
+
+		bo->meta.num_planes = plane + a_plane;
+		bo->meta.total_size = offset;
 	} else {
 		return i915_bo_from_format(bo, width, height, format);
 	}
@@ -699,7 +823,6 @@ static int i915_bo_compute_metadata(struct bo *bo, uint32_t width, uint32_t heig
 static int i915_bo_create_from_metadata(struct bo *bo)
 {
 	int ret;
-	size_t plane;
 	uint32_t gem_handle;
 	struct drm_i915_gem_set_tiling gem_set_tiling = { 0 };
 	struct i915_device *i915 = bo->drv->priv;
@@ -735,27 +858,29 @@ static int i915_bo_create_from_metadata(struct bo *bo)
 		gem_handle = gem_create.handle;
 	}
 
-	for (plane = 0; plane < bo->meta.num_planes; plane++)
-		bo->handles[plane].u32 = gem_handle;
+	bo->handle.u32 = gem_handle;
 
 	/* Set/Get tiling ioctl not supported  based on fence availability
 	   Refer : "https://patchwork.freedesktop.org/patch/325343/"
-         */
+	 */
 	if (i915->num_fences_avail) {
-		gem_set_tiling.handle = bo->handles[0].u32;
+		gem_set_tiling.handle = bo->handle.u32;
 		gem_set_tiling.tiling_mode = bo->meta.tiling;
 		gem_set_tiling.stride = bo->meta.strides[0];
 
 		ret = drmIoctl(bo->drv->fd, DRM_IOCTL_I915_GEM_SET_TILING, &gem_set_tiling);
 		if (ret) {
 			struct drm_gem_close gem_close = { 0 };
-			gem_close.handle = bo->handles[0].u32;
+			gem_close.handle = bo->handle.u32;
 			drmIoctl(bo->drv->fd, DRM_IOCTL_GEM_CLOSE, &gem_close);
 
 			drv_loge("DRM_IOCTL_I915_GEM_SET_TILING failed with %d\n", errno);
 			return -errno;
 		}
 	}
+
+	bo->meta.cached = (i915->has_llc || i915->is_mtl) && !(bo->meta.use_flags & BO_USE_SCANOUT);
+
 	return 0;
 }
 
@@ -780,10 +905,10 @@ static int i915_bo_import(struct bo *bo, struct drv_import_fd_data *data)
 
 	/* Set/Get tiling ioctl not supported  based on fence availability
 	   Refer : "https://patchwork.freedesktop.org/patch/325343/"
-         */
+	 */
 	if (i915->num_fences_avail) {
 		/* TODO(gsingh): export modifiers and get rid of backdoor tiling. */
-		gem_get_tiling.handle = bo->handles[0].u32;
+		gem_get_tiling.handle = bo->handle.u32;
 
 		ret = drmIoctl(bo->drv->fd, DRM_IOCTL_I915_GEM_GET_TILING, &gem_get_tiling);
 		if (ret) {
@@ -796,51 +921,73 @@ static int i915_bo_import(struct bo *bo, struct drv_import_fd_data *data)
 	return 0;
 }
 
-static void *i915_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint32_t map_flags)
+static bool use_write_combining(struct bo *bo)
+{
+	/* TODO(b/118799155): We don't seem to have a good way to
+	 * detect the use cases for which WC mapping is really needed.
+	 * The current heuristic seems overly coarse and may be slowing
+	 * down some other use cases unnecessarily.
+	 *
+	 * For now, care must be taken not to use WC mappings for
+	 * Renderscript and camera use cases, as they're
+	 * performance-sensitive. */
+	return (bo->meta.use_flags & BO_USE_SCANOUT) &&
+	       !(bo->meta.use_flags &
+		 (BO_USE_RENDERSCRIPT | BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE));
+}
+
+static void *i915_bo_map(struct bo *bo, struct vma *vma, uint32_t map_flags)
 {
 	int ret;
 	void *addr = MAP_FAILED;
+	struct i915_device *i915 = bo->drv->priv;
 
 	if ((bo->meta.format_modifier == I915_FORMAT_MOD_Y_TILED_CCS) ||
 	    (bo->meta.format_modifier == I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS) ||
-	    (bo->meta.format_modifier == I915_FORMAT_MOD_4_TILED))
+	    (bo->meta.format_modifier == I915_FORMAT_MOD_4_TILED) ||
+	    (bo->meta.format_modifier == I915_FORMAT_MOD_4_TILED_MTL_RC_CCS))
 		return MAP_FAILED;
 
 	if (bo->meta.tiling == I915_TILING_NONE) {
-		struct drm_i915_gem_mmap gem_map = { 0 };
-		/* TODO(b/118799155): We don't seem to have a good way to
-		 * detect the use cases for which WC mapping is really needed.
-		 * The current heuristic seems overly coarse and may be slowing
-		 * down some other use cases unnecessarily.
-		 *
-		 * For now, care must be taken not to use WC mappings for
-		 * Renderscript and camera use cases, as they're
-		 * performance-sensitive. */
-		if ((bo->meta.use_flags & BO_USE_SCANOUT) &&
-		    !(bo->meta.use_flags &
-		      (BO_USE_RENDERSCRIPT | BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE)))
-			gem_map.flags = I915_MMAP_WC;
+		if (i915->has_mmap_offset) {
+			struct drm_i915_gem_mmap_offset gem_map = { 0 };
+			gem_map.handle = bo->handle.u32;
+			gem_map.flags = I915_MMAP_OFFSET_WB;
 
-		gem_map.handle = bo->handles[0].u32;
-		gem_map.offset = 0;
-		gem_map.size = bo->meta.total_size;
+			if (use_write_combining(bo))
+				gem_map.flags = I915_MMAP_OFFSET_WC;
 
-		ret = drmIoctl(bo->drv->fd, DRM_IOCTL_I915_GEM_MMAP, &gem_map);
-		/* DRM_IOCTL_I915_GEM_MMAP mmaps the underlying shm
-		 * file and returns a user space address directly, ie,
-		 * doesn't go through mmap. If we try that on a
-		 * dma-buf that doesn't have a shm file, i915.ko
-		 * returns ENXIO.  Fall through to
-		 * DRM_IOCTL_I915_GEM_MMAP_GTT in that case, which
-		 * will mmap on the drm fd instead. */
-		if (ret == 0)
-			addr = (void *)(uintptr_t)gem_map.addr_ptr;
+			/* Get the fake offset back */
+			ret = drmIoctl(bo->drv->fd, DRM_IOCTL_I915_GEM_MMAP_OFFSET, &gem_map);
+			if (ret == 0)
+				addr = mmap(0, bo->meta.total_size, drv_get_prot(map_flags),
+					    MAP_SHARED, bo->drv->fd, gem_map.offset);
+		} else {
+			struct drm_i915_gem_mmap gem_map = { 0 };
+			if (use_write_combining(bo))
+				gem_map.flags = I915_MMAP_WC;
+
+			gem_map.handle = bo->handle.u32;
+			gem_map.offset = 0;
+			gem_map.size = bo->meta.total_size;
+
+			ret = drmIoctl(bo->drv->fd, DRM_IOCTL_I915_GEM_MMAP, &gem_map);
+			/* DRM_IOCTL_I915_GEM_MMAP mmaps the underlying shm
+			 * file and returns a user space address directly, ie,
+			 * doesn't go through mmap. If we try that on a
+			 * dma-buf that doesn't have a shm file, i915.ko
+			 * returns ENXIO.  Fall through to
+			 * DRM_IOCTL_I915_GEM_MMAP_GTT in that case, which
+			 * will mmap on the drm fd instead. */
+			if (ret == 0)
+				addr = (void *)(uintptr_t)gem_map.addr_ptr;
+		}
 	}
 
 	if (addr == MAP_FAILED) {
 		struct drm_i915_gem_mmap_gtt gem_map = { 0 };
 
-		gem_map.handle = bo->handles[0].u32;
+		gem_map.handle = bo->handle.u32;
 		ret = drmIoctl(bo->drv->fd, DRM_IOCTL_I915_GEM_MMAP_GTT, &gem_map);
 		if (ret) {
 			drv_loge("DRM_IOCTL_I915_GEM_MMAP_GTT failed\n");
@@ -865,7 +1012,7 @@ static int i915_bo_invalidate(struct bo *bo, struct mapping *mapping)
 	int ret;
 	struct drm_i915_gem_set_domain set_domain = { 0 };
 
-	set_domain.handle = bo->handles[0].u32;
+	set_domain.handle = bo->handle.u32;
 	if (bo->meta.tiling == I915_TILING_NONE) {
 		set_domain.read_domains = I915_GEM_DOMAIN_CPU;
 		if (mapping->vma->map_flags & BO_MAP_WRITE)
@@ -902,6 +1049,7 @@ const struct backend backend_i915 = {
 	.bo_create_from_metadata = i915_bo_create_from_metadata,
 	.bo_destroy = drv_gem_bo_destroy,
 	.bo_import = i915_bo_import,
+	.bo_export = drv_prime_bo_export,
 	.bo_map = i915_bo_map,
 	.bo_unmap = drv_bo_munmap,
 	.bo_invalidate = i915_bo_invalidate,

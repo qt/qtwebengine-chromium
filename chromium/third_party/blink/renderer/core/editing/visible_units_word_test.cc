@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/editing/visible_units.h"
 
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/editing/position_units.h"
 #include "third_party/blink/renderer/core/editing/selection_template.h"
 #include "third_party/blink/renderer/core/editing/testing/editing_test_base.h"
@@ -52,12 +53,12 @@ class VisibleUnitsWordTest : public EditingTestBase {
     const Position result =
         CreateVisiblePosition(PreviousWordPosition(position)).DeepEquivalent();
     if (result.IsNull())
-      return GetSelectionTextFromBody(SelectionInDOMTree());
+      return GetSelectionTextFromBody(SelectionInDomTree());
     return GetCaretTextFromBody(result);
   }
 
   std::string DoMiddleOfWord(const std::string& selection_text) {
-    SelectionInDOMTree selection = SetSelectionTextToBody(selection_text);
+    SelectionInDomTree selection = SetSelectionTextToBody(selection_text);
     return GetCaretTextFromBody(
         MiddleOfWordPosition(selection.Anchor(), selection.Focus()));
   }

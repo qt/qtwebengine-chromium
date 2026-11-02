@@ -206,17 +206,27 @@ void AccountTrackerService::SetMigrationDone() {
 }
 #endif
 
-void AccountTrackerService::NotifyAccountUpdated(
+void AccountTrackerService::MaybeNotifyAccountUpdated(
     const AccountInfo& account_info) {
   DCHECK(!account_info.gaia.empty());
+  if (account_info.GetEmail().empty() &&
+      base::FeatureList::IsEnabled(switches::kGaiaAccountIdEnforcement)) {
+    // Do not notify about incomplete accounts.
+    return;
+  }
   if (on_account_updated_callback_) {
     on_account_updated_callback_.Run(account_info);
   }
 }
 
-void AccountTrackerService::NotifyAccountRemoved(
+void AccountTrackerService::MaybeNotifyAccountRemoved(
     const AccountInfo& account_info) {
   DCHECK(!account_info.gaia.empty());
+  if (account_info.GetEmail().empty() &&
+      base::FeatureList::IsEnabled(switches::kGaiaAccountIdEnforcement)) {
+    // Do not notify about incomplete accounts.
+    return;
+  }
   if (on_account_removed_callback_) {
     on_account_removed_callback_.Run(account_info);
   }
@@ -261,7 +271,7 @@ void AccountTrackerService::StopTrackingAccount(
     accounts_.erase(account_id);
 
     if (!account_info.gaia.empty()) {
-      NotifyAccountRemoved(account_info);
+      MaybeNotifyAccountRemoved(account_info);
     }
   }
 }
@@ -305,7 +315,7 @@ void AccountTrackerService::SetAccountInfoFromUserInfo(
   }
 
   if (!account_info.gaia.empty()) {
-    NotifyAccountUpdated(account_info);
+    MaybeNotifyAccountUpdated(account_info);
   }
   SaveToPrefs(account_info);
 }
@@ -326,7 +336,7 @@ void AccountTrackerService::SetAccountImage(
                      .SetLastDownloadedAvatarUrlWithSize(image_url_with_size)
                      .Build();
   SaveAccountImageToDisk(account_id, image, image_url_with_size);
-  NotifyAccountUpdated(account_info);
+  MaybeNotifyAccountUpdated(account_info);
 }
 
 void AccountTrackerService::SetAccountCapabilities(
@@ -335,14 +345,21 @@ void AccountTrackerService::SetAccountCapabilities(
   DCHECK(accounts_.contains(account_id));
   AccountInfo& account_info = accounts_[account_id];
 
-  bool modified = account_info.capabilities.UpdateWith(account_capabilities);
+  AccountCapabilities updated_capabilities =
+      account_info.GetAccountCapabilities();
+  bool modified = updated_capabilities.UpdateWith(account_capabilities);
+  if (modified) {
+    account_info = AccountInfo::Builder(account_info)
+                       .UpdateAccountCapabilitiesWith(updated_capabilities)
+                       .Build();
+  }
 
 #if !(BUILDFLAG(IS_CHROMEOS))
   // Set the child account status based on the account capabilities.
   modified = UpdateAccountInfoChildStatus(
-                 account_info,
-                 account_info.capabilities.is_subject_to_parental_controls() ==
-                     signin::Tribool::kTrue) ||
+                 account_info, account_info.GetAccountCapabilities()
+                                       .is_subject_to_parental_controls() ==
+                                   signin::Tribool::kTrue) ||
              modified;
 #endif
 
@@ -351,7 +368,29 @@ void AccountTrackerService::SetAccountCapabilities(
   }
 
   if (!account_info.gaia.empty()) {
-    NotifyAccountUpdated(account_info);
+    MaybeNotifyAccountUpdated(account_info);
+  }
+  SaveToPrefs(account_info);
+}
+
+void AccountTrackerService::SetCapabilityOverride(
+    const CoreAccountId& account_id,
+    std::string_view capability_name,
+    std::optional<signin::Tribool> override_value) {
+  if (!accounts_.contains(account_id)) {
+    return;
+  }
+  AccountInfo& account_info = accounts_[account_id];
+
+  AccountCapabilities capabilities = account_info.GetAccountCapabilities();
+  capabilities.SetCapabilityOverride(capability_name, override_value);
+
+  account_info = AccountInfo::Builder(account_info)
+                     .SetAccountCapabilities(capabilities)
+                     .Build();
+
+  if (!account_info.gaia.empty()) {
+    MaybeNotifyAccountUpdated(account_info);
   }
   SaveToPrefs(account_info);
 }
@@ -365,7 +404,7 @@ void AccountTrackerService::SetIsChildAccount(const CoreAccountId& account_id,
     return;
   }
   if (!account_info.gaia.empty()) {
-    NotifyAccountUpdated(account_info);
+    MaybeNotifyAccountUpdated(account_info);
   }
   SaveToPrefs(account_info);
 }
@@ -381,7 +420,7 @@ void AccountTrackerService::SetIsAdvancedProtectionAccount(
   }
   account_info.is_under_advanced_protection = is_under_advanced_protection;
   if (!account_info.gaia.empty()) {
-    NotifyAccountUpdated(account_info);
+    MaybeNotifyAccountUpdated(account_info);
   }
   SaveToPrefs(account_info);
 }
@@ -540,7 +579,7 @@ void AccountTrackerService::OnAccountImageLoaded(
     OnAccountImageUpdated(account_id, /*image_url_with_size=*/std::string(),
                           /*success=*/true);
   }
-  NotifyAccountUpdated(account_info);
+  MaybeNotifyAccountUpdated(account_info);
 }
 
 void AccountTrackerService::LoadAccountImagesFromDisk() {
@@ -661,7 +700,7 @@ void AccountTrackerService::LoadFromPrefs() {
       CoreAccountId account_id = deserialized_account_info->GetAccountId();
       auto [it, inserted] =
           accounts_.insert({account_id, std::move(*deserialized_account_info)});
-      NotifyAccountUpdated(it->second);
+      MaybeNotifyAccountUpdated(it->second);
     } else {
       CoreAccountId account_id = CoreAccountId::FromString(*account_key);
       StartTrackingAccount(account_id);
@@ -673,7 +712,7 @@ void AccountTrackerService::LoadFromPrefs() {
       }
       account_info.account_id = account_id;
       if (!account_info.gaia.empty()) {
-        NotifyAccountUpdated(account_info);
+        MaybeNotifyAccountUpdated(account_info);
       }
     }
   }
@@ -697,7 +736,7 @@ void AccountTrackerService::LoadFromPrefs() {
           if (!accounts_.contains(account_info.GetAccountId())) {
             SaveToPrefs(account_info);
             accounts_.insert({account_info.GetAccountId(), account_info});
-            NotifyAccountUpdated(account_info);
+            MaybeNotifyAccountUpdated(account_info);
           }
 
           // Remove the information saved under the old account id.
@@ -760,6 +799,7 @@ void AccountTrackerService::SaveToPrefs(const AccountInfo& account_info) {
   ScopedListPrefUpdate update(pref_service_, prefs::kAccountInfo);
   base::DictValue* dict =
       FindOrCreateDictForAccount(update, account_info.account_id);
+  dict->Remove(signin::kAccountCapabilityOverridesKey);
   dict->Merge(signin::SerializeAccountInfo(account_info));
 }
 
@@ -843,7 +883,7 @@ CoreAccountId AccountTrackerService::SeedAccountInfo(AccountInfo info) {
   // Update the missing fields in |account_info| with |info|.
   if (account_info.UpdateWith(info)) {
     if (!account_info.gaia.empty()) {
-      NotifyAccountUpdated(account_info);
+      MaybeNotifyAccountUpdated(account_info);
     }
 
     SaveToPrefs(account_info);

@@ -61,6 +61,7 @@ component("jni_zero") {
 
   sources = [
     "common_apis.cc",
+    "compiler_specific.h",
     "default_conversions.cc",
     "java_refs.cc",
     "java_refs.h",
@@ -145,6 +146,12 @@ if (enable_java_templates && is_android) {
       "java/src/org/jni_zero/internal/NullUnmarked.java",
       "java/src/org/jni_zero/internal/Nullable.java",
     ]
+  }
+
+  java_annotation_processor("validator_processor") {
+    sources = [ "processor/java/src/org/jni_zero/processor/JniZeroValidatorProcessor.java" ]
+    main_class = "org.jni_zero.processor.JniZeroValidatorProcessor"
+    deps = [ ":jni_zero_java" ]
   }
 
   group("jni_zero_tests") {

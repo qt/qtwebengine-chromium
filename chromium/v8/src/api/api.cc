@@ -8,6 +8,7 @@
 #include <cmath>      // For isnan.
 #include <limits>
 #include <optional>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -25,6 +26,7 @@
 #include "include/v8-function.h"
 #include "include/v8-json.h"
 #include "include/v8-locker.h"
+#include "include/v8-platform.h"
 #include "include/v8-primitive-object.h"
 #include "include/v8-profiler.h"
 #include "include/v8-source-location.h"
@@ -42,6 +44,7 @@
 #include "src/base/platform/memory.h"
 #include "src/base/platform/platform.h"
 #include "src/base/platform/time.h"
+#include "src/base/strong-alias.h"
 #include "src/base/template-utils.h"
 #include "src/base/utils/random-number-generator.h"
 #include "src/base/vector.h"
@@ -68,6 +71,7 @@
 #include "src/execution/v8threads.h"
 #include "src/execution/vm-state-inl.h"
 #include "src/handles/global-handles.h"
+#include "src/handles/handle-scope-implementer-inl.h"
 #include "src/handles/persistent-handles.h"
 #include "src/handles/shared-object-conveyor-handles.h"
 #include "src/handles/traced-handles-inl.h"
@@ -94,6 +98,7 @@
 #include "src/objects/embedder-data-array-inl.h"
 #include "src/objects/embedder-data-slot-inl.h"
 #include "src/objects/hash-table-inl.h"
+#include "src/objects/heap-object-set-map-inl.h"
 #include "src/objects/heap-object.h"
 #include "src/objects/instance-type-inl.h"
 #include "src/objects/instance-type.h"
@@ -102,6 +107,7 @@
 #include "src/objects/js-collection-inl.h"
 #include "src/objects/js-objects.h"
 #include "src/objects/js-promise-inl.h"
+#include "src/objects/js-proxy-inl.h"
 #include "src/objects/js-regexp-inl.h"
 #include "src/objects/js-weak-refs-inl.h"
 #include "src/objects/managed-inl.h"
@@ -149,6 +155,7 @@
 #include "src/utils/version.h"
 
 #if V8_ENABLE_WEBASSEMBLY
+#include "src/base/fpu.h"
 #include "src/debug/debug-wasm-objects.h"
 #include "src/trap-handler/trap-handler.h"
 #include "src/wasm/streaming-decoder.h"
@@ -156,6 +163,7 @@
 #include "src/wasm/wasm-engine.h"
 #include "src/wasm/wasm-js.h"
 #include "src/wasm/wasm-limits.h"
+#include "src/wasm/wasm-memory-map-descriptor.h"
 #include "src/wasm/wasm-objects-inl.h"
 #include "src/wasm/wasm-result.h"
 #include "src/wasm/wasm-serialization.h"
@@ -335,7 +343,7 @@ class ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
  public:
   explicit ArrayBufferAllocator(i::IsolateGroup* group)
       : sandbox_(group->sandbox()),
-        allocator_(group->GetSandboxedArrayBufferAllocator()) {}
+        allocator_(group->GetInSandboxAllocator()) {}
 
   void* Allocate(size_t length) override {
     return allocator_->Allocate(length);
@@ -355,7 +363,7 @@ class ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
 
  private:
   i::Sandbox* sandbox_ = nullptr;
-  i::SandboxedArrayBufferAllocatorBase* allocator_ = nullptr;
+  v8::Allocator* allocator_ = nullptr;
 };
 
 #else
@@ -1167,7 +1175,7 @@ i::DirectHandle<i::FunctionTemplateInfo> FunctionTemplateNew(
     bool do_not_cache,
     v8::Local<Private> cached_property_name = v8::Local<Private>(),
     SideEffectType side_effect_type = SideEffectType::kHasSideEffect,
-    const MemorySpan<const CFunction>& c_function_overloads = {}) {
+    const std::span<const CFunction>& c_function_overloads = {}) {
   i::DirectHandle<i::FunctionTemplateInfo> obj =
       i_isolate->factory()->NewFunctionTemplateInfo(length, do_not_cache);
   {
@@ -1225,11 +1233,11 @@ Local<FunctionTemplate> FunctionTemplate::New(
   }
 
   EnterV8NoScriptNoExceptionScope api_scope(i_isolate);
-  i::DirectHandle<i::FunctionTemplateInfo> templ = FunctionTemplateNew(
-      i_isolate, callback, data, signature, length, behavior, false,
-      Local<Private>(), side_effect_type,
-      c_function ? MemorySpan<const CFunction>{c_function, 1}
-                 : MemorySpan<const CFunction>{});
+  i::DirectHandle<i::FunctionTemplateInfo> templ =
+      FunctionTemplateNew(i_isolate, callback, data, signature, length,
+                          behavior, false, Local<Private>(), side_effect_type,
+                          c_function ? std::span<const CFunction>{c_function, 1}
+                                     : std::span<const CFunction>{});
 
   if (instance_type) {
     if (!Utils::ApiCheck(
@@ -1267,7 +1275,7 @@ Local<FunctionTemplate> FunctionTemplate::NewWithCFunctionOverloads(
     Isolate* v8_isolate, FunctionCallback callback, v8::Local<Value> data,
     v8::Local<Signature> signature, int length, ConstructorBehavior behavior,
     SideEffectType side_effect_type,
-    const MemorySpan<const CFunction>& c_function_overloads) {
+    const std::span<const CFunction>& c_function_overloads) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
   ApiRuntimeCallStatsScope rcs_scope(i_isolate,
                                      RCCId::kAPI_FunctionTemplate_New);
@@ -1326,7 +1334,7 @@ Local<Signature> Signature::New(Isolate* v8_isolate,
 void FunctionTemplate::SetCallHandler(
     FunctionCallback callback, v8::Local<Data> data,
     SideEffectType side_effect_type,
-    const MemorySpan<const CFunction>& c_function_overloads) {
+    const std::span<const CFunction>& c_function_overloads) {
   auto info = Utils::OpenDirectHandle(this);
   EnsureNotPublished(info, "v8::FunctionTemplate::SetCallHandler");
   i::Isolate* i_isolate = i::Isolate::Current();
@@ -1618,6 +1626,8 @@ i::DirectHandle<i::InterceptorInfo> CreateInterceptorInfo(
       !(flags & PropertyHandlerFlags::kOnlyInterceptStrings));
   obj->set_non_masking(flags & PropertyHandlerFlags::kNonMasking);
   obj->set_has_no_side_effect(flags & PropertyHandlerFlags::kHasNoSideEffect);
+  obj->set_has_dont_delete_property(
+      flags & PropertyHandlerFlags::kHasDontDeleteProperty);
 
   if (data.IsEmpty()) {
     data = v8::Undefined(reinterpret_cast<v8::Isolate*>(i_isolate));
@@ -1742,6 +1752,15 @@ void ObjectTemplate::SetAccessCheckCallbackAndHandler(
       indexed_handler.query, indexed_handler.descriptor,
       indexed_handler.deleter, indexed_handler.enumerator,
       indexed_handler.definer, indexed_handler.data, indexed_handler.flags);
+  if (indexed_handler.index_of) {
+    indexed_interceptor->set_indexed_index_of(
+        i_isolate, reinterpret_cast<i::Address>(indexed_handler.index_of));
+  }
+  if (indexed_handler.iterable_to_list) {
+    indexed_interceptor->set_indexed_iterable_to_list(
+        i_isolate,
+        reinterpret_cast<i::Address>(indexed_handler.iterable_to_list));
+  }
   info->set_indexed_interceptor(*indexed_interceptor);
 
   if (data.IsEmpty()) {
@@ -1767,6 +1786,10 @@ void ObjectTemplate::SetHandler(
   if (config.index_of) {
     obj->set_indexed_index_of(i_isolate,
                               reinterpret_cast<i::Address>(config.index_of));
+  }
+  if (config.iterable_to_list) {
+    obj->set_indexed_iterable_to_list(
+        i_isolate, reinterpret_cast<i::Address>(config.iterable_to_list));
   }
   i::FunctionTemplateInfo::SetIndexedPropertyHandler(i_isolate, cons, obj);
 }
@@ -1835,7 +1858,7 @@ void ObjectTemplate::SetCodeLike() {
 }
 
 Local<DictionaryTemplate> DictionaryTemplate::New(
-    Isolate* isolate, MemorySpan<const std::string_view> names) {
+    Isolate* isolate, std::span<const std::string_view> names) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   ApiRuntimeCallStatsScope rcs_scope(i_isolate,
                                      RCCId::kAPI_DictionaryTemplate_New);
@@ -1844,7 +1867,7 @@ Local<DictionaryTemplate> DictionaryTemplate::New(
 }
 
 Local<Object> DictionaryTemplate::NewInstance(
-    Local<Context> context, MemorySpan<MaybeLocal<Value>> property_values) {
+    Local<Context> context, std::span<MaybeLocal<Value>> property_values) {
   i::Isolate* i_isolate = i::Isolate::Current();
   ApiRuntimeCallStatsScope rcs_scope(
       i_isolate, RCCId::kAPI_DictionaryTemplate_NewInstance);
@@ -1886,7 +1909,13 @@ ScriptCompiler::CachedData::CompatibilityCheck(Isolate* isolate) {
 
 ScriptCompiler::StreamedSource::StreamedSource(
     std::unique_ptr<ExternalSourceStream> stream, Encoding encoding)
-    : impl_(new i::ScriptStreamingData(std::move(stream), encoding)) {}
+    : impl_(new i::ScriptStreamingData(std::move(stream), encoding)) {
+  CHECK_NE(encoding, FLEXIBLE_UTF16);
+}
+
+ScriptCompiler::StreamedSource::StreamedSource(
+    std::unique_ptr<FlexibleExternalSourceStream> stream)
+    : impl_(new i::ScriptStreamingData(std::move(stream), FLEXIBLE_UTF16)) {}
 
 ScriptCompiler::StreamedSource::~StreamedSource() = default;
 
@@ -2480,8 +2509,9 @@ MaybeLocal<Value> Module::EvaluateForImportDefer(Local<Context> context) {
 
 Local<Module> Module::CreateSyntheticModule(
     Isolate* v8_isolate, Local<String> module_name,
-    const MemorySpan<const Local<String>>& export_names,
-    v8::Module::SyntheticModuleEvaluationSteps evaluation_steps) {
+    const std::span<const Local<String>>& export_names,
+    v8::Module::SyntheticModuleEvaluationSteps evaluation_steps,
+    Local<Data> host_defined_options) {
   auto i_isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
   EnterV8NoScriptNoExceptionScope api_scope(i_isolate);
   auto i_module_name = Utils::OpenDirectHandle(*module_name);
@@ -2494,9 +2524,32 @@ Local<Module> Module::CreateSyntheticModule(
         Utils::OpenDirectHandle(*export_names[i]));
     i_export_names->set(i, *str);
   }
+  i::DirectHandle<i::Object> i_host_defined_options;
+  if (host_defined_options.IsEmpty()) {
+    i_host_defined_options = i_isolate->factory()->undefined_value();
+  } else {
+    i_host_defined_options = Utils::OpenDirectHandle(*host_defined_options);
+  }
+
   return v8::Utils::ToLocal(
       i::DirectHandle<i::Module>(i_isolate->factory()->NewSyntheticModule(
-          i_module_name, i_export_names, evaluation_steps)));
+          i_module_name, i_export_names, evaluation_steps,
+          i_host_defined_options)));
+}
+
+Local<Data> Module::GetSyntheticModuleHostDefinedOptions() const {
+  auto self = Utils::OpenDirectHandle(this);
+  i::Isolate* i_isolate = i::Isolate::Current();
+  i::DisallowJavascriptExecutionDebugOnly no_execution(i_isolate);
+  i::DisallowExceptionsDebugOnly no_exceptions(i_isolate);
+
+  Utils::ApiCheck(
+      i::IsSyntheticModule(*self),
+      "v8::Module::GetSyntheticModuleHostDefinedOptions",
+      "v8::Module::GetSyntheticModuleHostDefinedOptions must only be called on "
+      "a SyntheticModule");
+  return ToApiHandle<Data>(i::direct_handle(
+      i::Cast<i::SyntheticModule>(self)->host_defined_options(), i_isolate));
 }
 
 Maybe<bool> Module::SetSyntheticModuleExport(Isolate* v8_isolate,
@@ -3331,10 +3384,9 @@ int StackTrace::CurrentScriptId(Isolate* v8_isolate) {
   return i_isolate->CurrentScriptId();
 }
 
-v8::MemorySpan<v8::StackTrace::ScriptIdAndContext>
+std::span<v8::StackTrace::ScriptIdAndContext>
 StackTrace::CurrentScriptIdsAndContexts(
-    Isolate* v8_isolate,
-    v8::MemorySpan<StackTrace::ScriptIdAndContext> frame_data) {
+    Isolate* v8_isolate, std::span<StackTrace::ScriptIdAndContext> frame_data) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
   EnterV8NoScriptNoExceptionScope api_scope(i_isolate);
 
@@ -3342,8 +3394,8 @@ StackTrace::CurrentScriptIdsAndContexts(
   return {frame_data.data(), written};
 }
 
-v8::MemorySpan<v8::StackTrace::ScriptData> StackTrace::CurrentScriptData(
-    Isolate* v8_isolate, v8::MemorySpan<ScriptData> frame_data) {
+std::span<v8::StackTrace::ScriptData> StackTrace::CurrentScriptData(
+    Isolate* v8_isolate, std::span<ScriptData> frame_data) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
   EnterV8NoScriptNoExceptionScope api_scope(i_isolate);
 
@@ -3830,7 +3882,7 @@ bool Value::IsDataView() const {
 bool Value::IsSharedArrayBuffer() const {
   auto obj = *Utils::OpenDirectHandle(this);
   if (!IsJSArrayBuffer(obj)) return false;
-  return i::Cast<i::JSArrayBuffer>(obj)->is_shared();
+  return i::Cast<i::JSArrayBuffer>(obj)->is_shared().value();
 }
 
 bool Value::IsObject() const {
@@ -3864,12 +3916,10 @@ VALUE_IS_SPECIFIC_TYPE(Date, JSDate)
 VALUE_IS_SPECIFIC_TYPE(Map, JSMap)
 VALUE_IS_SPECIFIC_TYPE(Set, JSSet)
 #if V8_ENABLE_WEBASSEMBLY
-VALUE_IS_SPECIFIC_TYPE(WasmMemoryMapDescriptor, WasmMemoryMapDescriptor)
 VALUE_IS_SPECIFIC_TYPE(WasmMemoryObject, WasmMemoryObject)
 VALUE_IS_SPECIFIC_TYPE(WasmModuleObject, WasmModuleObject)
 VALUE_IS_SPECIFIC_TYPE(WasmNull, WasmNull)
 #else
-bool Value::IsWasmMemoryMapDescriptor() const { return false; }
 bool Value::IsWasmMemoryObject() const { return false; }
 bool Value::IsWasmModuleObject() const { return false; }
 bool Value::IsWasmNull() const { return false; }
@@ -4212,12 +4262,6 @@ void v8::WasmMemoryObject::CheckCast(Value* that) {
                   "Value is not a WasmMemoryObject");
 }
 
-void v8::WasmMemoryMapDescriptor::CheckCast(Value* that) {
-  Utils::ApiCheck(that->IsWasmMemoryMapDescriptor(),
-                  "v8::WasmMemoryMapDescriptor::Cast",
-                  "Value is not a WasmMemoryMapDescriptor");
-}
-
 void v8::WasmModuleObject::CheckCast(Value* that) {
   Utils::ApiCheck(that->IsWasmModuleObject(), "v8::WasmModuleObject::Cast",
                   "Value is not a WasmModuleObject");
@@ -4246,15 +4290,17 @@ size_t v8::BackingStore::MaxByteLength() const {
 }
 
 bool v8::BackingStore::IsShared() const {
-  return reinterpret_cast<const i::BackingStore*>(this)->is_shared();
+  return reinterpret_cast<const i::BackingStore*>(this)->is_shared().value();
 }
 
 bool v8::BackingStore::IsImmutable() const {
-  return reinterpret_cast<const i::BackingStore*>(this)->is_immutable();
+  return reinterpret_cast<const i::BackingStore*>(this)->is_immutable().value();
 }
 
 bool v8::BackingStore::IsResizableByUserJavaScript() const {
-  return reinterpret_cast<const i::BackingStore*>(this)->is_resizable_by_js();
+  return reinterpret_cast<const i::BackingStore*>(this)
+      ->is_resizable_by_js()
+      .value();
 }
 
 // static
@@ -4267,7 +4313,7 @@ std::shared_ptr<v8::BackingStore> v8::ArrayBuffer::GetBackingStore() {
   auto self = Utils::OpenDirectHandle(this);
   std::shared_ptr<i::BackingStore> backing_store = self->GetBackingStore();
   if (!backing_store) {
-    backing_store = i::BackingStore::EmptyBackingStore(i::SharedFlag::kNo);
+    backing_store = i::BackingStore::EmptyBackingStore(i::SharedFlag{false});
   }
   std::shared_ptr<i::BackingStoreBase> bs_base = backing_store;
   return std::static_pointer_cast<v8::BackingStore>(bs_base);
@@ -4278,14 +4324,14 @@ void* v8::ArrayBuffer::Data() const {
 }
 
 bool v8::ArrayBuffer::IsResizableByUserJavaScript() const {
-  return Utils::OpenDirectHandle(this)->is_resizable_by_js();
+  return Utils::OpenDirectHandle(this)->is_resizable_by_js().value();
 }
 
 std::shared_ptr<v8::BackingStore> v8::SharedArrayBuffer::GetBackingStore() {
   auto self = Utils::OpenDirectHandle(this);
   std::shared_ptr<i::BackingStore> backing_store = self->GetBackingStore();
   if (!backing_store) {
-    backing_store = i::BackingStore::EmptyBackingStore(i::SharedFlag::kYes);
+    backing_store = i::BackingStore::EmptyBackingStore(i::SharedFlag{true});
   }
   std::shared_ptr<i::BackingStoreBase> bs_base = backing_store;
   return std::static_pointer_cast<v8::BackingStore>(bs_base);
@@ -4293,6 +4339,44 @@ std::shared_ptr<v8::BackingStore> v8::SharedArrayBuffer::GetBackingStore() {
 
 void* v8::SharedArrayBuffer::Data() const {
   return Utils::OpenDirectHandle(this)->backing_store();
+}
+
+template <bool is_shared>
+static size_t CopyArrayBufferBytesImpl(const void* source_buffer,
+                                       size_t source_start,
+                                       size_t source_length,
+                                       void* target_buffer, size_t target_start,
+                                       size_t target_length,
+                                       size_t bytes_to_copy) {
+  source_start = std::min(source_start, source_length);
+  target_start = std::min(target_start, target_length);
+  size_t source_size = source_length - source_start;
+  size_t target_size = target_length - target_start;
+  bytes_to_copy = std::min({bytes_to_copy, source_size, target_size});
+  if (bytes_to_copy == 0) return 0;
+  const char* src = static_cast<const char*>(source_buffer) + source_start;
+  char* dst = static_cast<char*>(target_buffer) + target_start;
+  if (is_shared) {
+    base::Relaxed_Memmove(reinterpret_cast<base::Atomic8*>(dst),
+                          reinterpret_cast<const base::Atomic8*>(src),
+                          bytes_to_copy);
+  } else {
+    std::memmove(dst, src, bytes_to_copy);
+  }
+  return bytes_to_copy;
+}
+
+size_t v8::SharedArrayBuffer::CopyArrayBufferBytes(
+    size_t source_start, size_t bytes_to_copy, Local<SharedArrayBuffer> target,
+    size_t target_start) const {
+  i::DisallowGarbageCollection no_gc;
+  auto self = Utils::OpenDirectHandle(this);
+  auto that = Utils::OpenDirectHandle(*target);
+  DCHECK(!that->is_immutable());
+  return CopyArrayBufferBytesImpl<true>(self->backing_store(), source_start,
+                                        self->GetByteLength(),
+                                        that->backing_store(), target_start,
+                                        that->GetByteLength(), bytes_to_copy);
 }
 
 void v8::ArrayBuffer::CheckCast(Value* that) {
@@ -6235,6 +6319,7 @@ void* v8::Object::Unwrap(v8::Isolate* isolate, i::Address wrapper_obj,
 // static
 void v8::Object::Wrap(v8::Isolate* isolate, i::Address wrapper_obj,
                       CppHeapPointerTag tag, void* wrappable) {
+  DCHECK(kObjectWrappableTagRange.Contains(tag));
   return i::CppHeapObjectWrapper(
              i::Cast<i::JSObject>(i::Tagged<i::Object>(wrapper_obj)))
       .SetCppHeapWrappable(reinterpret_cast<i::Isolate*>(isolate), wrappable,
@@ -6416,8 +6501,9 @@ size_t V8::GetWasmMemoryReservationSizeInBytes(WasmMemoryType type,
 #if V8_TRAP_HANDLER_SUPPORTED
   if (!is_memory64 || i::v8_flags.wasm_memory64_trap_handling) {
     return i::BackingStore::GetWasmReservationSize(
-        /* has_guard_regions */ true, byte_capacity,
-        /* is_wasm_memory64 */ is_memory64);
+        i::HasGuardRegions{true}, byte_capacity,
+        is_memory64 ? i::WasmMemoryFlag::kWasmMemory64
+                    : i::WasmMemoryFlag::kWasmMemory32);
   }
 #endif  // V8_TRAP_HANDLER_SUPPORTED
 #endif  // V8_ENABLE_WEBASSEMBLY
@@ -6542,6 +6628,10 @@ size_t v8::V8::GetSandboxReservationSizeInBytes() {
                   "v8::V8::GetSandboxReservationSizeInBytes",
                   "The sandbox must be initialized first");
   return i::Sandbox::current()->reservation_size();
+}
+
+void v8::V8::SetInSandboxAllocator(std::shared_ptr<Allocator> allocator) {
+  i::Sandbox::current()->set_in_sandbox_allocator(std::move(allocator));
 }
 
 v8::V8::SandboxMode v8::V8::GetSandboxMode() {
@@ -7151,7 +7241,7 @@ void Context::SetMicrotaskQueue(v8::MicrotaskQueue* queue) {
   Utils::ApiCheck(impl->EnteredContextCount() == 0,
                   "v8::Context::SetMicrotaskQueue()",
                   "Cannot set Microtask Queue with an entered context");
-  auto* mq = static_cast<const i::MicrotaskQueue*>(queue);
+  auto* mq = static_cast<i::MicrotaskQueue*>(queue);
   context->set_microtask_queue(i_isolate, mq);
   // Invalidate the EnqueueMicrotask cache if it references this context.
   if (i_isolate->current_microtask_native_context() == *context) {
@@ -8710,7 +8800,8 @@ MaybeLocal<Promise> Promise::Catch(Local<Context> context,
   PrepareForExecutionScope api_scope{context, RCCId::kAPI_Promise_Catch};
   i::Isolate* i_isolate = api_scope.i_isolate();
   auto self = Utils::OpenDirectHandle(this);
-  i::Handle<i::JSPromise> return_promise = i_isolate->factory()->NewJSPromise();
+  i::Handle<i::JSPromise> return_promise =
+      i_isolate->factory()->NewJSPromise(self);
   i::DirectHandle<i::Object> args[] = {i_isolate->factory()->undefined_value(),
                                        Utils::OpenDirectHandle(*handler),
                                        return_promise};
@@ -8729,7 +8820,8 @@ MaybeLocal<Promise> Promise::Then(Local<Context> context,
   PrepareForExecutionScope api_scope{context, RCCId::kAPI_Promise_Then};
   i::Isolate* i_isolate = api_scope.i_isolate();
   auto self = Utils::OpenDirectHandle(this);
-  i::Handle<i::JSPromise> return_promise = i_isolate->factory()->NewJSPromise();
+  i::Handle<i::JSPromise> return_promise =
+      i_isolate->factory()->NewJSPromise(self);
   i::DirectHandle<i::Object> args[] = {Utils::OpenDirectHandle(*handler),
                                        i_isolate->factory()->undefined_value(),
                                        return_promise};
@@ -8749,7 +8841,8 @@ MaybeLocal<Promise> Promise::Then(Local<Context> context,
   PrepareForExecutionScope api_scope{context, RCCId::kAPI_Promise_Then};
   i::Isolate* i_isolate = api_scope.i_isolate();
   auto self = Utils::OpenDirectHandle(this);
-  i::Handle<i::JSPromise> return_promise = i_isolate->factory()->NewJSPromise();
+  i::Handle<i::JSPromise> return_promise =
+      i_isolate->factory()->NewJSPromise(self);
   i::DirectHandle<i::Object> args[] = {Utils::OpenDirectHandle(*on_fulfilled),
                                        Utils::OpenDirectHandle(*on_rejected),
                                        return_promise};
@@ -8863,7 +8956,7 @@ OwnedBuffer CompiledWasmModule::Serialize() {
 #endif  // V8_ENABLE_WEBASSEMBLY
 }
 
-MemorySpan<const uint8_t> CompiledWasmModule::GetWireBytesRef() {
+std::span<const uint8_t> CompiledWasmModule::GetWireBytesRef() {
 #if V8_ENABLE_WEBASSEMBLY
   base::Vector<const uint8_t> bytes_vec = native_module_->wire_bytes();
   return {bytes_vec.begin(), bytes_vec.size()};
@@ -8911,9 +9004,16 @@ MaybeLocal<WasmModuleObject> WasmModuleObject::FromCompiledModule(
 #endif  // V8_ENABLE_WEBASSEMBLY
 }
 
-MaybeLocal<WasmModuleObject> WasmModuleObject::Compile(
-    Isolate* v8_isolate, MemorySpan<const uint8_t> wire_bytes) {
 #if V8_ENABLE_WEBASSEMBLY
+namespace {
+MaybeLocal<WasmModuleObject> CompileWasmModuleImpl(
+    Isolate* v8_isolate, std::span<const uint8_t> wire_bytes,
+    i::wasm::CompileTimeImports compile_imports) {
+  // Mirror the JS `WebAssembly.Module` constructor, which disables denormal
+  // floats at compile time when the host FPU flushes them.
+  if (base::FPU::GetFlushDenormals()) {
+    compile_imports.Add(i::wasm::CompileTimeImport::kDisableDenormalFloats);
+  }
   base::OwnedVector<const uint8_t> bytes = base::OwnedCopyOf(wire_bytes);
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
   // We don't check for `IsWasmCodegenAllowed` here, because this function is
@@ -8924,14 +9024,44 @@ MaybeLocal<WasmModuleObject> WasmModuleObject::Compile(
     i::wasm::ErrorThrower thrower(i_isolate, "WasmModuleObject::Compile()");
     auto enabled_features =
         i::wasm::WasmEnabledFeatures::FromIsolate(i_isolate);
-    // TODO(14179): Provide an API method that supports compile options.
     maybe_compiled = i::wasm::GetWasmEngine()->SyncCompile(
-        i_isolate, enabled_features, i::wasm::CompileTimeImports{}, &thrower,
+        i_isolate, enabled_features, std::move(compile_imports), &thrower,
         std::move(bytes));
   }
   CHECK_EQ(maybe_compiled.is_null(), i_isolate->has_exception());
   if (maybe_compiled.is_null()) return {};
   return Utils::ToLocal(maybe_compiled.ToHandleChecked());
+}
+}  // namespace
+#endif  // V8_ENABLE_WEBASSEMBLY
+
+MaybeLocal<WasmModuleObject> WasmModuleObject::Compile(
+    Isolate* v8_isolate, std::span<const uint8_t> wire_bytes) {
+#if V8_ENABLE_WEBASSEMBLY
+  return CompileWasmModuleImpl(v8_isolate, wire_bytes,
+                               i::wasm::CompileTimeImports{});
+#else
+  Utils::ApiCheck(false, "WasmModuleObject::Compile",
+                  "WebAssembly support is not enabled");
+  UNREACHABLE();
+#endif  // V8_ENABLE_WEBASSEMBLY
+}
+
+MaybeLocal<WasmModuleObject> WasmModuleObject::Compile(
+    Isolate* v8_isolate, std::span<const uint8_t> wire_bytes,
+    const CompileTimeImports& compile_imports) {
+#if V8_ENABLE_WEBASSEMBLY
+  i::wasm::CompileTimeImports imports;
+  using Builtins = CompileTimeImports::Builtins;
+  if (compile_imports.builtins & Builtins::kJsString) {
+    imports.Add(i::wasm::CompileTimeImport::kJsString);
+  }
+  if (compile_imports.imported_string_constants_module != nullptr) {
+    imports.constants_module() =
+        compile_imports.imported_string_constants_module;
+    imports.Add(i::wasm::CompileTimeImport::kStringConstants);
+  }
+  return CompileWasmModuleImpl(v8_isolate, wire_bytes, std::move(imports));
 #else
   Utils::ApiCheck(false, "WasmModuleObject::Compile",
                   "WebAssembly support is not enabled");
@@ -8943,11 +9073,10 @@ MaybeLocal<WasmModuleObject> WasmModuleObject::Compile(
 Local<WasmMemoryMapDescriptor> WasmMemoryMapDescriptor::New(
     v8::Isolate* v8_isolate, WasmMemoryMapDescriptor::WasmFileDescriptor fd) {
 #if V8_ENABLE_WEBASSEMBLY
-  CHECK(i::v8_flags.experimental_wasm_memory_control);
-  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
-  i::DirectHandle<i::WasmMemoryMapDescriptor> result =
-      i::WasmMemoryMapDescriptor::NewFromFileDescriptor(i_isolate, fd);
-  return Utils::ToLocal(result);
+  CHECK(i::v8_flags.wasm_memory_control);
+  v8::Local<v8::Object> wrapper =
+      i::wasm::WasmMemoryMapDescriptor::NewFromFileDescriptor(v8_isolate, fd);
+  return wrapper.As<WasmMemoryMapDescriptor>();
 #else
   Utils::ApiCheck(false, "WasmMemoryMapDescriptor::New",
                   "WebAssembly support is not enabled");
@@ -8955,12 +9084,20 @@ Local<WasmMemoryMapDescriptor> WasmMemoryMapDescriptor::New(
 #endif
 }
 
-size_t WasmMemoryMapDescriptor::Map(Local<WasmMemoryObject> memory,
-                                    uint32_t offset) {
+// static
+size_t WasmMemoryMapDescriptor::Map(v8::Isolate* v8_isolate,
+                                    Local<Object> wasm_memory_map_descriptor,
+                                    Local<WasmMemoryObject> memory,
+                                    size_t offset) {
 #if V8_ENABLE_WEBASSEMBLY
-  CHECK(i::v8_flags.experimental_wasm_memory_control);
-  return Utils::OpenDirectHandle(this)->MapDescriptor(
-      Utils::OpenDirectHandle(*memory), offset);
+  CHECK(i::v8_flags.wasm_memory_control);
+
+  auto* descriptor =
+      v8::Object::Unwrap<i::wasm::WasmMemoryMapDescriptor::kPointerTag,
+                         i::wasm::WasmMemoryMapDescriptor>(
+          v8_isolate, wasm_memory_map_descriptor);
+  if (!descriptor) return 0;
+  return descriptor->Map(v8_isolate, Utils::OpenDirectHandle(*memory), offset);
 #else
   Utils::ApiCheck(false, "WasmMemoryMapDescriptor::Map",
                   "WebAssembly support is not enabled");
@@ -8968,10 +9105,21 @@ size_t WasmMemoryMapDescriptor::Map(Local<WasmMemoryObject> memory,
 #endif
 }
 
-void WasmMemoryMapDescriptor::Unmap() {
+// static
+bool WasmMemoryMapDescriptor::Unmap(v8::Isolate* v8_isolate,
+                                    Local<Object> wasm_memory_map_descriptor) {
 #if V8_ENABLE_WEBASSEMBLY
-  CHECK(i::v8_flags.experimental_wasm_memory_control);
-  Utils::OpenDirectHandle(this)->UnmapDescriptor();
+  CHECK(i::v8_flags.wasm_memory_control);
+  auto* descriptor =
+      v8::Object::Unwrap<i::wasm::WasmMemoryMapDescriptor::kPointerTag,
+                         i::wasm::WasmMemoryMapDescriptor>(
+          v8_isolate, wasm_memory_map_descriptor);
+  if (descriptor) {
+    return descriptor->Unmap(v8_isolate);
+  }
+  v8_isolate->ThrowError(
+      "Incompatible receiver, expected WebAssembly.MemoryMapDescriptor");
+  return false;
 #else
   Utils::ApiCheck(false, "WasmMemoryMapDescriptor::Unmap",
                   "WebAssembly support is not enabled");
@@ -9011,6 +9159,21 @@ bool v8::ArrayBuffer::WasDetached() const {
 
 bool v8::ArrayBuffer::IsImmutable() const {
   return Utils::OpenDirectHandle(this)->is_immutable();
+}
+
+size_t v8::ArrayBuffer::CopyArrayBufferBytes(size_t source_start,
+                                             size_t bytes_to_copy,
+                                             Local<ArrayBuffer> target,
+                                             size_t target_start) const {
+  i::DisallowGarbageCollection no_gc;
+  auto self = Utils::OpenDirectHandle(this);
+  auto that = Utils::OpenDirectHandle(*target);
+  if (self->was_detached()) return 0;
+  if (that->was_detached() || that->is_immutable()) return 0;
+  return CopyArrayBufferBytesImpl<false>(self->backing_store(), source_start,
+                                         self->GetByteLength(),
+                                         that->backing_store(), target_start,
+                                         that->GetByteLength(), bytes_to_copy);
 }
 
 namespace {
@@ -9071,9 +9234,9 @@ i::InitializedFlag GetInitializedFlag(
     BackingStoreInitializationMode initialization_mode) {
   switch (initialization_mode) {
     case BackingStoreInitializationMode::kUninitialized:
-      return i::InitializedFlag::kUninitialized;
+      return i::InitializedFlag{false};
     case BackingStoreInitializationMode::kZeroInitialized:
-      return i::InitializedFlag::kZeroInitialized;
+      return i::InitializedFlag{true};
   }
   UNREACHABLE();
 }
@@ -9154,7 +9317,7 @@ std::unique_ptr<v8::BackingStore> v8::ArrayBuffer::NewBackingStore(
   }
   EnterV8NoScriptNoExceptionScope api_scope(i_isolate);
   std::unique_ptr<i::BackingStoreBase> backing_store =
-      i::BackingStore::Allocate(i_isolate, byte_length, i::SharedFlag::kNo,
+      i::BackingStore::Allocate(i_isolate, byte_length, i::SharedFlag{false},
                                 GetInitializedFlag(initialization_mode));
   if (!backing_store) {
     if (on_failure == BackingStoreOnFailureMode::kOutOfMemory) {
@@ -9197,7 +9360,7 @@ std::unique_ptr<v8::BackingStore> v8::ArrayBuffer::NewBackingStore(
 
   std::unique_ptr<i::BackingStoreBase> backing_store =
       i::BackingStore::WrapAllocation(data, byte_length, deleter, deleter_data,
-                                      i::SharedFlag::kNo);
+                                      i::SharedFlag{false});
   return std::unique_ptr<v8::BackingStore>(
       static_cast<v8::BackingStore*>(backing_store.release()));
 }
@@ -9225,7 +9388,7 @@ std::unique_ptr<BackingStore> v8::ArrayBuffer::NewResizableBackingStore(
   std::unique_ptr<i::BackingStoreBase> backing_store =
       i::BackingStore::TryAllocateAndPartiallyCommitMemory(
           nullptr, byte_length, max_byte_length, page_size, initial_pages,
-          max_pages, i::WasmMemoryFlag::kNotWasm, i::SharedFlag::kNo);
+          max_pages, i::WasmMemoryFlag::kNotWasm, i::SharedFlag{false});
   if (!backing_store) {
     i::V8::FatalProcessOutOfMemory(nullptr,
                                    "v8::ArrayBuffer::NewResizableBackingStore");
@@ -9264,13 +9427,13 @@ size_t v8::ArrayBufferView::CopyContents(void* dest, size_t byte_length) {
     bool is_shared;
     if (i::IsJSTypedArray(*self)) {
       i::Tagged<i::JSTypedArray> array = i::Cast<i::JSTypedArray>(*self);
-      is_shared = array->buffer()->is_shared();
+      is_shared = array->buffer()->is_shared().value();
       source = reinterpret_cast<char*>(array->DataPtr());
     } else {
       DCHECK(i::IsJSDataView(*self) || i::IsJSRabGsabDataView(*self));
       i::Tagged<i::JSDataViewOrRabGsabDataView> data_view =
           i::Cast<i::JSDataViewOrRabGsabDataView>(*self);
-      is_shared = data_view->buffer()->is_shared();
+      is_shared = data_view->buffer()->is_shared().value();
       source = reinterpret_cast<char*>(data_view->data_pointer());
     }
     if (is_shared) {
@@ -9283,8 +9446,8 @@ size_t v8::ArrayBufferView::CopyContents(void* dest, size_t byte_length) {
   return bytes_to_copy;
 }
 
-v8::MemorySpan<uint8_t> v8::ArrayBufferView::GetContents(
-    v8::MemorySpan<uint8_t> storage) {
+std::span<uint8_t> v8::ArrayBufferView::GetContents(
+    std::span<uint8_t> storage) {
   internal::DisallowGarbageCollection no_gc;
   auto self = Utils::OpenDirectHandle(this);
   if (self->IsDetachedOrOutOfBounds()) return {};
@@ -9477,7 +9640,7 @@ Local<SharedArrayBuffer> v8::SharedArrayBuffer::New(
   EnterV8NoScriptNoExceptionScope api_scope(i_isolate);
 
   std::unique_ptr<i::BackingStore> backing_store =
-      i::BackingStore::Allocate(i_isolate, byte_length, i::SharedFlag::kYes,
+      i::BackingStore::Allocate(i_isolate, byte_length, i::SharedFlag{true},
                                 GetInitializedFlag(initialization_mode));
 
   if (!backing_store) {
@@ -9498,7 +9661,7 @@ MaybeLocal<SharedArrayBuffer> v8::SharedArrayBuffer::MaybeNew(
   EnterV8NoScriptNoExceptionScope api_scope(i_isolate);
 
   std::unique_ptr<i::BackingStore> backing_store =
-      i::BackingStore::Allocate(i_isolate, byte_length, i::SharedFlag::kYes,
+      i::BackingStore::Allocate(i_isolate, byte_length, i::SharedFlag{true},
                                 GetInitializedFlag(initialization_mode));
 
   if (!backing_store) return {};
@@ -9518,7 +9681,7 @@ Local<SharedArrayBuffer> v8::SharedArrayBuffer::New(
   EnterV8NoScriptNoExceptionScope api_scope(i_isolate);
   std::shared_ptr<i::BackingStore> i_backing_store(ToInternal(backing_store));
   Utils::ApiCheck(
-      i_backing_store->is_shared(), "v8::SharedArrayBuffer::New",
+      i_backing_store->is_shared().value(), "v8::SharedArrayBuffer::New",
       "Cannot construct SharedArrayBuffer with BackingStore of ArrayBuffer");
   i::DirectHandle<i::JSArrayBuffer> obj =
       i_isolate->factory()->NewJSSharedArrayBuffer(std::move(i_backing_store));
@@ -9543,7 +9706,7 @@ std::unique_ptr<v8::BackingStore> v8::SharedArrayBuffer::NewBackingStore(
   }
   EnterV8NoScriptNoExceptionScope api_scope(i_isolate);
   std::unique_ptr<i::BackingStoreBase> backing_store =
-      i::BackingStore::Allocate(i_isolate, byte_length, i::SharedFlag::kYes,
+      i::BackingStore::Allocate(i_isolate, byte_length, i::SharedFlag{true},
                                 GetInitializedFlag(initialization_mode));
   if (!backing_store) {
     if (on_failure == BackingStoreOnFailureMode::kOutOfMemory) {
@@ -9564,7 +9727,7 @@ std::unique_ptr<v8::BackingStore> v8::SharedArrayBuffer::NewBackingStore(
   CHECK_LE(byte_length, i::JSArrayBuffer::kMaxByteLength);
   std::unique_ptr<i::BackingStoreBase> backing_store =
       i::BackingStore::WrapAllocation(data, byte_length, deleter, deleter_data,
-                                      i::SharedFlag::kYes);
+                                      i::SharedFlag{true});
   return std::unique_ptr<v8::BackingStore>(
       static_cast<v8::BackingStore*>(backing_store.release()));
 }
@@ -10133,12 +10296,12 @@ void Isolate::Initialize(Isolate* v8_isolate,
             .release();
   }
 
-  i_isolate->heap()->ConfigureHeap(params.constraints, cpp_heap);
+  i_isolate->heap()->ConfigureHeap(params.constraints, *cpp_heap);
   if (params.constraints.stack_limit() != nullptr) {
     uintptr_t limit =
         reinterpret_cast<uintptr_t>(params.constraints.stack_limit());
     i_isolate->stack_guard()->SetStackLimit(limit);
-    i_isolate->set_stack_size(base::Stack::GetStackStart() - limit);
+    i_isolate->SetStackSize(base::Stack::GetStackStart() - limit);
   }
 
   // TODO(v8:2487): Once we got rid of Isolate::Current(), we can remove this.
@@ -10649,11 +10812,6 @@ void Isolate::EnqueueMicrotask(MicrotaskCallback callback, void* data) {
   i_isolate->default_microtask_queue()->EnqueueMicrotask(this, callback, data);
 }
 
-void Isolate::EnqueueMicrotask(MicrotaskCallbackWithData callback,
-                               v8::Local<v8::Data> data) {
-  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(this);
-  i_isolate->default_microtask_queue()->EnqueueMicrotask(this, callback, data);
-}
 
 void Isolate::SetMicrotasksPolicy(MicrotasksPolicy policy) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(this);
@@ -10839,7 +10997,7 @@ void Isolate::SetStackLimit(uintptr_t stack_limit) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(this);
   CHECK(stack_limit);
   i_isolate->stack_guard()->SetStackLimit(stack_limit);
-  i_isolate->set_stack_size(base::Stack::GetStackStart() - stack_limit);
+  i_isolate->SetStackSize(base::Stack::GetStackStart() - stack_limit);
 }
 
 void Isolate::GetCodeRange(void** start, size_t* length_in_bytes) {
@@ -11147,6 +11305,15 @@ bool v8::Object::IsCodeLike(v8::Isolate* v8_isolate) const {
 }
 
 // static
+#ifdef V8_CPPGC_MICROTASK_QUEUE
+MicrotaskQueue* MicrotaskQueue::New(Isolate* v8_isolate,
+                                    MicrotasksPolicy policy) {
+  auto* microtask_queue =
+      i::MicrotaskQueue::New(reinterpret_cast<i::Isolate*>(v8_isolate));
+  microtask_queue->set_microtasks_policy(policy);
+  return microtask_queue;
+}
+#else
 std::unique_ptr<MicrotaskQueue> MicrotaskQueue::New(Isolate* v8_isolate,
                                                     MicrotasksPolicy policy) {
   auto microtask_queue =
@@ -11155,6 +11322,7 @@ std::unique_ptr<MicrotaskQueue> MicrotaskQueue::New(Isolate* v8_isolate,
   std::unique_ptr<MicrotaskQueue> ret(std::move(microtask_queue));
   return ret;
 }
+#endif  // V8_CPPGC_MICROTASK_QUEUE
 
 MicrotasksScope::MicrotasksScope(Local<Context> v8_context,
                                  MicrotasksScope::Type type)
@@ -12165,138 +12333,6 @@ std::shared_ptr<WasmStreaming> WasmStreaming::Unpack(Isolate* v8_isolate,
 
 namespace internal {
 
-const size_t HandleScopeImplementer::kEnteredContextsOffset =
-    offsetof(HandleScopeImplementer, entered_contexts_);
-
-void HandleScopeImplementer::FreeThreadResources() { Free(); }
-
-char* HandleScopeImplementer::ArchiveThread(char* storage) {
-  HandleScopeData* current = isolate_->handle_scope_data();
-  handle_scope_data_ = *current;
-  MemCopy(storage, this, sizeof(*this));
-
-  ResetAfterArchive();
-  current->Initialize();
-
-  return storage + ArchiveSpacePerThread();
-}
-
-int HandleScopeImplementer::ArchiveSpacePerThread() {
-  return sizeof(HandleScopeImplementer);
-}
-
-char* HandleScopeImplementer::RestoreThread(char* storage) {
-  MemCopy(this, storage, sizeof(*this));
-  *isolate_->handle_scope_data() = handle_scope_data_;
-  isolate_->set_last_entered_context(entered_contexts_.empty()
-                                         ? Tagged<NativeContext>()
-                                         : entered_contexts_.back());
-  return storage + ArchiveSpacePerThread();
-}
-
-void HandleScopeImplementer::IterateThis(RootVisitor* v) {
-#ifdef DEBUG
-  bool found_block_before_persistent = false;
-#endif
-  // Iterate over all handles in the blocks except for the last.
-  for (int i = static_cast<int>(blocks()->size()) - 2; i >= 0; --i) {
-    Address* block = blocks()->at(i);
-    // Cast possibly-unrelated pointers to plain Address before comparing them
-    // to avoid undefined behavior.
-    if (HasPersistentScope() &&
-        (reinterpret_cast<Address>(
-             last_handle_before_persistent_block_.value()) <=
-         reinterpret_cast<Address>(&block[kHandleBlockSize])) &&
-        (reinterpret_cast<Address>(
-             last_handle_before_persistent_block_.value()) >=
-         reinterpret_cast<Address>(block))) {
-      v->VisitRootPointers(
-          Root::kHandleScope, nullptr, FullObjectSlot(block),
-          FullObjectSlot(last_handle_before_persistent_block_.value()));
-      DCHECK(!found_block_before_persistent);
-#ifdef DEBUG
-      found_block_before_persistent = true;
-#endif
-    } else {
-      v->VisitRootPointers(Root::kHandleScope, nullptr, FullObjectSlot(block),
-                           FullObjectSlot(&block[kHandleBlockSize]));
-    }
-  }
-
-  DCHECK_EQ(HasPersistentScope() &&
-                last_handle_before_persistent_block_.value() != nullptr,
-            found_block_before_persistent);
-
-  // Iterate over live handles in the last block (if any).
-  if (!blocks()->empty()) {
-    v->VisitRootPointers(Root::kHandleScope, nullptr,
-                         FullObjectSlot(blocks()->back()),
-                         FullObjectSlot(handle_scope_data_.next));
-  }
-
-  v->VisitRootPointer(Root::kHandleScope, nullptr,
-                      FullObjectSlot(isolate_->last_entered_context_address()));
-
-  saved_contexts_.shrink_to_fit();
-  if (!saved_contexts_.empty()) {
-    FullObjectSlot start(&saved_contexts_.front());
-    v->VisitRootPointers(Root::kHandleScope, nullptr, start,
-                         start + static_cast<int>(saved_contexts_.size()));
-  }
-  entered_contexts_.shrink_to_fit();
-  if (!entered_contexts_.empty()) {
-    FullObjectSlot start(&entered_contexts_.front());
-    v->VisitRootPointers(Root::kHandleScope, nullptr, start,
-                         start + static_cast<int>(entered_contexts_.size()));
-  }
-}
-
-void HandleScopeImplementer::Iterate(RootVisitor* v) {
-  HandleScopeData* current = isolate_->handle_scope_data();
-  handle_scope_data_ = *current;
-  IterateThis(v);
-}
-
-char* HandleScopeImplementer::Iterate(RootVisitor* v, char* storage) {
-  HandleScopeImplementer* scope_implementer =
-      reinterpret_cast<HandleScopeImplementer*>(storage);
-  scope_implementer->IterateThis(v);
-  return storage + ArchiveSpacePerThread();
-}
-
-std::unique_ptr<PersistentHandles> HandleScopeImplementer::DetachPersistent(
-    Address* first_block) {
-  std::unique_ptr<PersistentHandles> ph(new PersistentHandles(isolate()));
-  DCHECK(HasPersistentScope());
-  DCHECK_NOT_NULL(first_block);
-
-  Address* block_start;
-  do {
-    block_start = blocks_.back();
-    ph->blocks_.push_back(blocks_.back());
-#if DEBUG
-    ph->ordered_blocks_.insert(blocks_.back());
-#endif
-    blocks_.pop_back();
-  } while (block_start != first_block);
-
-  // ph->blocks_ now contains the blocks installed on the HandleScope stack
-  // since BeginPersistentScope was called, but in reverse order.
-
-  // Switch first and last blocks, such that the last block is the one
-  // that is potentially half full.
-  DCHECK(!ph->blocks_.empty());
-  std::swap(ph->blocks_.front(), ph->blocks_.back());
-
-  ph->block_next_ = isolate()->handle_scope_data()->next;
-  block_start = ph->blocks_.back();
-  ph->block_limit_ = block_start + kHandleBlockSize;
-
-  DCHECK_EQ(blocks_.empty(),
-            last_handle_before_persistent_block_.value() == nullptr);
-  last_handle_before_persistent_block_.reset();
-  return ph;
-}
 
 void InvokeAccessorGetterCallback(
     v8::Local<v8::Name> property,

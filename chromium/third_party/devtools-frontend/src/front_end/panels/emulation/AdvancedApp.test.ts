@@ -3,20 +3,22 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import type * as Platform from '../../core/platform/platform.js';
 import {
   deinitializeGlobalVars,
+  describeWithEnvironment,
   initializeGlobalVars,
 } from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {TestUniverse} from '../../testing/TestUniverse.js';
 import * as ThemeSupport from '../../ui/legacy/theme_support/theme_support.js';
 
 import * as Emulation from './emulation.js';
 
-describeWithMockConnection('AdvancedApp', () => {
+describeWithEnvironment('AdvancedApp', () => {
   beforeEach(async () => {
     await deinitializeGlobalVars();
     Common.Settings.registerSettingsForTest([
@@ -65,11 +67,12 @@ describeWithMockConnection('AdvancedApp', () => {
   });
 
   afterEach(async () => {
+    Emulation.AdvancedApp.AdvancedApp.removeInstance();
     await deinitializeGlobalVars();
   });
 
   it('updates colors node link on ColorThemeChanged', async () => {
-    const advancedApp = Emulation.AdvancedApp.AdvancedApp.instance();
+    const advancedApp = Emulation.AdvancedApp.AdvancedApp.instance(new TestUniverse());
     assert.exists(advancedApp);
 
     const fetchColorsSpy = sinon.spy(ThemeSupport.ThemeSupport.instance(), 'fetchColorsAndApplyHostTheme');

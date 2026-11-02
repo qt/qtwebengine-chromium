@@ -28,7 +28,7 @@ const UIStrings = {
    */
   hideAllOthers: 'Hide all others',
   /**
-   * @description Context menu entry which downloads the json dump when clicked
+   * @description Context menu entry which downloads the JSON dump when clicked.
    */
   savePlayerInfo: 'Save player info',
   /**
@@ -97,7 +97,7 @@ const DEFAULT_VIEW: View = (input, _output, target) => {
       })}
       </div>
     `,
-    target
+    target,
   );
   // clang-format on
 };

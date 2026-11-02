@@ -17,7 +17,7 @@ import {
   type LitTemplate,
   nothing,
   render,
-  type TemplateResult
+  type TemplateResult,
 } from '../../../ui/lit/lit.js';
 import * as VisualLogging from '../../../ui/visual_logging/visual_logging.js';
 

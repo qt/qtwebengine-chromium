@@ -194,6 +194,7 @@ struct xnn_convolution_operator {
 
 union xnn_params {
   union xnn_binary_uparams binary;
+  struct xnn_bf16_default_params bf16_default;
   struct xnn_f16_default_params f16_default;
   struct xnn_f32_default_params f32_default;
   struct xnn_f16_minmax_params f16_minmax;
@@ -204,6 +205,7 @@ union xnn_params {
   struct xnn_f16_minmax_params f16_chw;
   struct xnn_f32_minmax_params f32_chw;
   struct xnn_f32_qb4w_minmax_params f32_qb4w_minmax;
+  struct xnn_bf16_qb4w_minmax_params bf16_qb4w_minmax;
   struct xnn_f32_qc4w_minmax_params f32_qc4w_minmax;
   struct xnn_reduce_params reduce;
   union xnn_qs8_conv_minmax_params qs8_conv_minmax;
@@ -361,6 +363,7 @@ struct xnn_operator {
     struct transpose_context transpose;
     struct floating_point_softmax_context floating_point_softmax;
     struct u8_softmax_context u8_softmax;
+    struct bf16_qd8_convert_context bf16_qd8_convert;
     struct f16_qd8_convert_context f16_qd8_convert;
     struct f32_qd8_convert_context f32_qd8_convert;
     struct f32_qp8_convert_context f32_qp8_convert;

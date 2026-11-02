@@ -117,17 +117,20 @@ void TextTrackContainer::ObserveSizeChanges(Element& element) {
 
 void TextTrackContainer::UpdateDefaultFontSize(
     LayoutObject* media_layout_object) {
-  if (!media_layout_object || !IsA<LayoutVideo>(media_layout_object))
+  const LayoutVideo* video = DynamicTo<LayoutVideo>(media_layout_object);
+  if (!video) {
     return;
+  }
   // FIXME: The video size is used to calculate the font size (a workaround
   // for lack of per-spec vh/vw support) but the whole media element is used
   // for cue rendering. This is inconsistent. See also the somewhat related
   // spec bug: https://www.w3.org/Bugs/Public/show_bug.cgi?id=28105
-  PhysicalSize video_size = To<LayoutBox>(media_layout_object)->ContentSize();
+  const PhysicalSize video_size = video->PhysicalContentBoxRect().size;
   LayoutUnit smallest_dimension = std::min(video_size.height, video_size.width);
   float font_size = smallest_dimension * 0.05f;
-  if (media_layout_object->GetFrame())
-    font_size /= media_layout_object->GetFrame()->LayoutZoomFactor();
+  if (const LocalFrame* frame = video->GetFrame()) {
+    font_size /= frame->LayoutZoomFactor();
+  }
 
   // Avoid excessive FP precision issue.
   // C11 5.2.4.2.2:9 requires assignment and cast to remove extra precision, but
@@ -187,7 +190,9 @@ void TextTrackContainer::UpdateDisplay(HTMLMediaElement& media_element,
   // 7. Let cues be an empty list of text track cues.
   // 8. For each track track in tracks, append to cues all the cues from
   // track's list of cues that have their text track cue active flag set.
-  const CueList& active_cues = video.GetCueTimeline().CurrentlyActiveCues();
+  // Note: Copy the list so that synchronous script (e.g. blur events on
+  // reparenting display boxes) cannot invalidate the iteration buffer.
+  const CueList active_cues = video.GetCueTimeline().CurrentlyActiveCues();
 
   // 9. If reset is false, then, for each text track cue cue in cues: if cue's
   // text track cue display state has a set of CSS boxes, then add those boxes
@@ -203,14 +208,21 @@ void TextTrackContainer::UpdateDisplay(HTMLMediaElement& media_element,
   // corresponding CSS boxes added to output, in text track cue order, run the
   // following substeps:
   double movie_time = video.currentTime();
-  for (const auto& active_cue : active_cues) {
-    TextTrackCue* cue = active_cue.Data();
-
-    DCHECK(cue->IsActive());
-    if (!cue->track() || !cue->track()->IsRendered() || !cue->IsActive())
+  for (const auto& cue : active_cues) {
+    // Cues may have been deactivated or removed if synchronous script ran
+    // during a previous iteration (e.g., via video.load() or
+    // track.removeCue()).
+    if (!cue->IsActive() || !cue->track() || !cue->track()->IsRendered()) {
       continue;
+    }
 
     cue->UpdateDisplay(*this);
+
+    // Recheck IsActive() in case UpdateDisplay() synchronously ran script
+    // that deactivated cues.
+    if (!cue->IsActive()) {
+      continue;
+    }
     cue->UpdatePastAndFutureNodes(movie_time);
   }
 

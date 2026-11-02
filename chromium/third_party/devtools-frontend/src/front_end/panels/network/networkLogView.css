@@ -262,25 +262,15 @@ td.time-column {
 }
 
 .data-grid-data-grid-node devtools-icon[name="arrow-up-down-circle"],
+.data-grid-data-grid-node devtools-icon.network-console-icon,
 .network-log-grid.data-grid.small .icon {
   width: 16px;
   height: 16px;
   vertical-align: sub;
 }
 
-.data-grid-data-grid-node .ai-button-container {
-  display: none;
-  float: right;
-
-  devtools-floating-button {
-    position: absolute;
-    z-index: 999;
-    margin-left: -17px;
-  }
-}
-
-.data-grid-data-grid-node:hover .ai-button-container {
-  display: inline-flex;
+.data-grid-data-grid-node devtools-icon.network-console-icon {
+  margin-right: 3px;
 }
 
 .image-network-icon-preview {

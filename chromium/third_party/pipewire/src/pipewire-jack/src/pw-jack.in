@@ -1,0 +1,60 @@
+#!/bin/sh
+
+# This file is part of PipeWire.
+# SPDX-FileCopyrightText: Copyright © 2020 Wim Taymans
+# SPDX-License-Identifier: MIT
+
+DEFAULT_SAMPLERATE=48000
+
+while getopts 'hr:vs:p:' param ; do
+	case $param in
+		r)
+			PIPEWIRE_REMOTE="$OPTARG"
+			export PIPEWIRE_REMOTE
+			;;
+		v)
+			if [ -z "$PIPEWIRE_DEBUG" ]; then
+				PIPEWIRE_DEBUG=3
+			else
+				PIPEWIRE_DEBUG=$(( PIPEWIRE_DEBUG + 1 ))
+			fi
+			export PIPEWIRE_DEBUG
+			;;
+		s)
+			SAMPLERATE="$OPTARG"
+			;;
+		p)
+			PERIOD="$OPTARG"
+			;;
+		*)
+			echo "$0 - run JACK applications on PipeWire"
+			echo " "
+			echo "$0 [options] application [arguments]"
+			echo " "
+			echo "options:"
+			echo "	-h                  show brief help"
+			echo "	-r <remote>         remote daemon name"
+			echo "	-v                  verbose debug info"
+			echo "	-s                  samplerate (default \"$DEFAULT_SAMPLERATE\")"
+			echo "	-p                  period in samples"
+			exit 0
+			;;
+	esac
+done
+
+shift $(( OPTIND - 1 ))
+
+if [ -n "$PERIOD" ]; then
+	if [ -n "$SAMPLERATE" ]; then
+		PIPEWIRE_QUANTUM="$PERIOD/$SAMPLERATE"
+	else
+		PIPEWIRE_QUANTUM="$PERIOD/$DEFAULT_SAMPLERATE"
+	fi
+	export PIPEWIRE_QUANTUM
+fi
+
+# shellcheck disable=SC2016 # ${LIB} is interpreted by ld.so, not the shell
+@LIBJACK_PATH_ENABLE@LD_LIBRARY_PATH='@LIBJACK_PATH@'"${LD_LIBRARY_PATH+":$LD_LIBRARY_PATH"}"
+@LIBJACK_PATH_ENABLE@export LD_LIBRARY_PATH
+
+exec "$@"

@@ -6,7 +6,7 @@
  */
 #include "src/core/SkCachedData.h"
 
-#include "include/private/base/SkMalloc.h"
+#include "include/private/SkMalloc.h"
 #include "include/private/chromium/SkDiscardableMemory.h"
 
 SkCachedData::SkCachedData(void* data, size_t size)
@@ -65,7 +65,12 @@ void SkCachedData::internalRef(bool fromCache) const {
 }
 
 void SkCachedData::internalUnref(bool fromCache) const {
-    if (AutoMutexWritable(this)->inMutexUnref(fromCache)) {
+    bool shouldDelete = false;
+    {
+        AutoMutexWritable amw(this);
+        shouldDelete = amw->inMutexUnref(fromCache);
+    }
+    if (shouldDelete) {
         // can't delete inside doInternalUnref, since it is locking a mutex (which we own)
         delete this;
     }

@@ -29,8 +29,11 @@ export class FormattedContentBuilder {
   addToken(token: string, offset: number): void {
     // Skip the regex check if `addSoftSpace` will be a no-op.
     if (this.#enforceSpaceBetweenWords && !this.#hardSpaces && !this.#softSpace) {
-      const lastCharOfLastToken = this.#formattedContent.at(-1)?.at(-1) ?? '';
-      if (this.#canBeIdentifierOrNumber.test(lastCharOfLastToken) && this.#canBeIdentifierOrNumber.test(token)) {
+      const lastToken = this.#formattedContent.at(-1) ?? '';
+      const lastCharOfLastToken = lastToken.at(-1) ?? '';
+      if ((this.#canBeIdentifierOrNumber.test(lastCharOfLastToken) ||
+           ['`', '}', ')', ']', '\'', '"', '/'].includes(lastCharOfLastToken)) &&
+          this.#canBeIdentifierOrNumber.test(token)) {
         this.addSoftSpace();
       }
     }

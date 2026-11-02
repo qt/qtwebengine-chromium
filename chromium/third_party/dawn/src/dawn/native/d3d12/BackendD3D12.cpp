@@ -31,12 +31,12 @@
 #include <utility>
 
 #include "dawn/native/D3D12Backend.h"
-#include "src/dawn/common/Log.h"
 #include "src/dawn/native/Instance.h"
 #include "src/dawn/native/d3d/D3DError.h"
 #include "src/dawn/native/d3d12/PhysicalDeviceD3D12.h"
 #include "src/dawn/native/d3d12/PlatformFunctionsD3D12.h"
 #include "src/dawn/native/d3d12/UtilsD3D12.h"
+#include "src/utils/log.h"
 
 namespace dawn::native::d3d12 {
 
@@ -80,8 +80,16 @@ const PlatformFunctions* Backend::GetFunctions() const {
     return static_cast<const PlatformFunctions*>(Base::GetFunctions());
 }
 
+ResultOrError<ComPtr<ID3D12Device>> Backend::CreateD3DDevice(IUnknown* adapter) {
+    ComPtr<ID3D12Device> device;
+    DAWN_TRY(CheckHRESULT(
+        GetFunctions()->CreateDevice(adapter, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device)),
+        "D3D12CreateDevice"));
+    return device;
+}
+
 MaybeError Backend::EnsureDXC() {
-#if DAWN_USE_BUILT_DXC
+#if defined(DAWN_USE_BUILT_DXC)
     // If components are already loaded, return early
     if (mDxcLibrary != nullptr) {
         // Since all components are assigned atomically, if one is loaded, all should be loaded

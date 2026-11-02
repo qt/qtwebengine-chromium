@@ -41,6 +41,13 @@ inline constexpr int kMaxVideoFrames = 4;
 inline constexpr int kMaxSampleRate = 768000;
 inline constexpr int kMinSampleRate = 3000;
 inline constexpr int kMaxChannels = 32;
+// The absolute upper bound for channel counts. While `kMaxChannels` is the
+// limit for audio processing, we may still encounter devices or streams with
+// higher channel counts (e.g., high-end audio interfaces). For these cases, we
+// pass the audio as is without any mixing. 1024 was chosen as the upper bound
+// for Audio-over-IP network cards. There should be 0 cases where we encounter
+// more channels than this.
+inline constexpr int kAbsoluteMaxChannels = 1024;
 inline constexpr int kMaxBytesPerSample = 4;
 inline constexpr int kMaxBitsPerSample = kMaxBytesPerSample * 8;
 inline constexpr int kMaxSamplesPerPacket = kMaxSampleRate;
@@ -66,6 +73,10 @@ inline constexpr int kMaxKeyIds = 128;
 inline constexpr int kMaxInitDataLength = 64 * 1024;         // 64 KB
 inline constexpr int kMaxSessionResponseLength = 64 * 1024;  // 64 KB
 inline constexpr int kMaxKeySystemLength = 256;
+
+// Maximum number of subsample entries allowed per DecryptConfig.
+// 65535 matches the ISO 23001-7 `senc` wire bound ceiling.
+inline constexpr int kMaxSubsamplesPerBuffer = 65535;
 
 // Minimum and maximum buffer sizes for certain audio platforms.
 #if BUILDFLAG(IS_MAC)

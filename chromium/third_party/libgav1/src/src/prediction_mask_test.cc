@@ -19,7 +19,6 @@
 #include <string>
 
 #include "gtest/gtest.h"
-#include "src/utils/array_2d.h"
 #include "src/utils/constants.h"
 #include "src/utils/types.h"
 #include "tests/utils.h"

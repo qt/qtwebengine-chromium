@@ -11,6 +11,7 @@
 #include "src/heap/heap.h"
 #include "src/objects/compressed-slots.h"
 #include "src/objects/fixed-array-inl.h"
+#include "src/objects/heap-object-field-inl.h"
 #include "src/objects/js-collection-iterator.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/slots.h"
@@ -20,8 +21,6 @@
 
 namespace v8 {
 namespace internal {
-
-#include "torque-generated/src/objects/ordered-hash-table-tq-inl.inc"
 
 template <class Derived, int entrysize>
 bool OrderedHashTable<Derived, entrysize>::IsKey(ReadOnlyRoots roots,

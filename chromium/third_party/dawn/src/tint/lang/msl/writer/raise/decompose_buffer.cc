@@ -174,7 +174,9 @@ struct State {
                             b.InsertBefore(call, [&] {
                                 auto* cast = b.CallExplicit<msl::ir::BuiltinCall>(
                                     param->Type(), msl::BuiltinFn::kPointerOffset,
-                                    Vector{param->Type()->UnwrapPtr()}, arg, 0_u);
+                                    Vector<core::ir::TemplateParameter, 1>{
+                                        param->Type()->UnwrapPtr()},
+                                    arg, 0_u);
                                 call->SetArg(i, cast->Result());
                             });
                         }
@@ -225,14 +227,12 @@ struct State {
 }  // namespace
 
 Result<SuccessType> DecomposeBuffer(core::ir::Module& ir) {
-    AssertValid(ir,
-                tint::core::ir::Capabilities{
-                    tint::core::ir::Capability::kAllowPointSizeBuiltin,
-                    tint::core::ir::Capability::kAllowDuplicateBindings,
-                },
-                "before msl.DecomposeBuffer");
+    AssertValid(ir, "before msl.DecomposeBuffer");
 
     State{ir}.Process();
+
+    ir.properties.Add(core::ir::Property::kAllow8BitIntegers);
+    ir.properties.Remove(core::ir::Property::kAllowBufferTypes);
 
     return Success;
 }

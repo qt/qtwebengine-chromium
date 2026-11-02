@@ -32,6 +32,7 @@
 #include "src/dawn/common/ityp_bitset.h"
 #include "src/dawn/native/EnumClassBitmasks.h"
 #include "src/dawn/native/IntegerTypes.h"
+#include "src/utils/numeric.h"
 
 namespace dawn::native {
 
@@ -76,7 +77,7 @@ template <typename Object, typename Member>
 uint32_t GetImmediateByteOffsetInPipeline(Member Object::* ptr,
                                           const ImmediateMask& pipelineImmediateMask) {
     Object obj = {};
-    ptrdiff_t offset = reinterpret_cast<char*>(&(obj.*ptr)) - reinterpret_cast<char*>(&obj);
+    size_t offset = sign_cast(reinterpret_cast<char*>(&(obj.*ptr)) - reinterpret_cast<char*>(&obj));
 
     const ImmediateMask prefixBits = (1u << (offset / kImmediateElementByteSize)) - 1u;
 
@@ -86,7 +87,7 @@ uint32_t GetImmediateByteOffsetInPipeline(Member Object::* ptr,
 template <typename Object, typename Member>
 bool HasImmediates(Member Object::* ptr, const ImmediateMask& pipelineImmediateMask) {
     Object obj = {};
-    ptrdiff_t offset = reinterpret_cast<char*>(&(obj.*ptr)) - reinterpret_cast<char*>(&obj);
+    size_t offset = sign_cast(reinterpret_cast<char*>(&(obj.*ptr)) - reinterpret_cast<char*>(&obj));
     size_t size = sizeof(Member);
 
     return pipelineImmediateMask.to_ulong() & GetImmediateBlockBits(offset, size).to_ulong();

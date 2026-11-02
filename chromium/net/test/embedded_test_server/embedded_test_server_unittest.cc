@@ -293,9 +293,9 @@ TEST_P(EmbeddedTestServerTest, RegisterRequestHandler) {
   ASSERT_TRUE(StartServerAndSetUpContext());
 
   TestDelegate delegate;
-  std::unique_ptr<URLRequest> request(
-      context_->CreateRequest(server_->GetURL("/test?q=foo"), DEFAULT_PRIORITY,
-                              &delegate, TRAFFIC_ANNOTATION_FOR_TESTS));
+  std::unique_ptr<URLRequest> request(context_->CreateRequest(
+      server_->GetURL("/test?q=foo"), DEFAULT_PRIORITY, &delegate,
+      TRAFFIC_ANNOTATION_FOR_TESTS, net::handles::kInvalidNetworkHandle));
 
   request->Start();
   delegate.RunUntilComplete();
@@ -320,9 +320,9 @@ TEST_P(EmbeddedTestServerTest, ServeFilesFromDirectory) {
   ASSERT_TRUE(StartServerAndSetUpContext());
 
   TestDelegate delegate;
-  std::unique_ptr<URLRequest> request(
-      context_->CreateRequest(server_->GetURL("/test.html"), DEFAULT_PRIORITY,
-                              &delegate, TRAFFIC_ANNOTATION_FOR_TESTS));
+  std::unique_ptr<URLRequest> request(context_->CreateRequest(
+      server_->GetURL("/test.html"), DEFAULT_PRIORITY, &delegate,
+      TRAFFIC_ANNOTATION_FOR_TESTS, net::handles::kInvalidNetworkHandle));
 
   request->Start();
   delegate.RunUntilComplete();
@@ -351,7 +351,8 @@ TEST_P(EmbeddedTestServerTest, MockHeadersWithoutCRLF) {
   TestDelegate delegate;
   std::unique_ptr<URLRequest> request(context_->CreateRequest(
       server_->GetURL("/mock-headers-without-crlf.html"), DEFAULT_PRIORITY,
-      &delegate, TRAFFIC_ANNOTATION_FOR_TESTS));
+      &delegate, TRAFFIC_ANNOTATION_FOR_TESTS,
+      net::handles::kInvalidNetworkHandle));
 
   request->Start();
   delegate.RunUntilComplete();
@@ -371,7 +372,7 @@ TEST_P(EmbeddedTestServerTest, DefaultNotFoundResponse) {
   TestDelegate delegate;
   std::unique_ptr<URLRequest> request(context_->CreateRequest(
       server_->GetURL("/non-existent"), DEFAULT_PRIORITY, &delegate,
-      TRAFFIC_ANNOTATION_FOR_TESTS));
+      TRAFFIC_ANNOTATION_FOR_TESTS, net::handles::kInvalidNetworkHandle));
 
   request->Start();
   delegate.RunUntilComplete();
@@ -390,7 +391,8 @@ TEST_P(EmbeddedTestServerTest, ConnectionListenerAccept) {
 
   std::unique_ptr<StreamSocket> socket =
       ClientSocketFactory::GetDefaultFactory()->CreateTransportClientSocket(
-          address_list, nullptr, nullptr, NetLog::Get(), NetLogSource());
+          address_list, handles::kInvalidNetworkHandle, nullptr, nullptr,
+          NetLog::Get(), NetLogSource());
   TestCompletionCallback callback;
   ASSERT_THAT(callback.GetResult(socket->Connect(callback.callback())), IsOk());
 
@@ -406,7 +408,7 @@ TEST_P(EmbeddedTestServerTest, ConnectionListenerRead) {
   TestDelegate delegate;
   std::unique_ptr<URLRequest> request(context_->CreateRequest(
       server_->GetURL("/non-existent"), DEFAULT_PRIORITY, &delegate,
-      TRAFFIC_ANNOTATION_FOR_TESTS));
+      TRAFFIC_ANNOTATION_FOR_TESTS, net::handles::kInvalidNetworkHandle));
 
   request->Start();
   delegate.RunUntilComplete();
@@ -453,9 +455,9 @@ TEST_P(EmbeddedTestServerTest,
 
   GURL a_different_url = server_->GetURL("/a_different_path");
   TestDelegate delegate;
-  std::unique_ptr<URLRequest> request(
-      context_->CreateRequest(a_different_url, DEFAULT_PRIORITY, &delegate,
-                              TRAFFIC_ANNOTATION_FOR_TESTS));
+  std::unique_ptr<URLRequest> request(context_->CreateRequest(
+      a_different_url, DEFAULT_PRIORITY, &delegate,
+      TRAFFIC_ANNOTATION_FOR_TESTS, net::handles::kInvalidNetworkHandle));
 
   request->Start();
   delegate.RunUntilComplete();
@@ -470,9 +472,9 @@ TEST_P(EmbeddedTestServerTest, ConnectionFailure) {
   ASSERT_TRUE(StartServerAndSetUpContext());
 
   TestDelegate delegate;
-  std::unique_ptr<URLRequest> request(
-      context_->CreateRequest(server_->GetURL("/"), DEFAULT_PRIORITY, &delegate,
-                              TRAFFIC_ANNOTATION_FOR_TESTS));
+  std::unique_ptr<URLRequest> request(context_->CreateRequest(
+      server_->GetURL("/"), DEFAULT_PRIORITY, &delegate,
+      TRAFFIC_ANNOTATION_FOR_TESTS, net::handles::kInvalidNetworkHandle));
 
   // A recently closed socket should be blocked from reuse for some time, so the
   // closed socket should not be reopened by some other app in the small windows
@@ -499,9 +501,9 @@ TEST_P(EmbeddedTestServerTest, ConnectProxyWrongPort) {
   ASSERT_TRUE(StartServerAndSetUpContext(/*proxied_destinations=*/{}));
 
   TestDelegate delegate;
-  std::unique_ptr<URLRequest> request(
-      context_->CreateRequest(server_->GetURL("/"), DEFAULT_PRIORITY, &delegate,
-                              TRAFFIC_ANNOTATION_FOR_TESTS));
+  std::unique_ptr<URLRequest> request(context_->CreateRequest(
+      server_->GetURL("/"), DEFAULT_PRIORITY, &delegate,
+      TRAFFIC_ANNOTATION_FOR_TESTS, net::handles::kInvalidNetworkHandle));
 
   // A recently closed socket should be blocked from reuse for some time, so the
   // closed socket should not be reopened by some other app in the small windows
@@ -564,9 +566,9 @@ TEST_P(EmbeddedTestServerTest, ConnectProxyMultipleHostPortPairs) {
     SCOPED_TRACE(i);
     const auto& test_case = kTestCases[i];
     TestDelegate delegate;
-    std::unique_ptr<URLRequest> request(
-        context_->CreateRequest(test_case.dest, DEFAULT_PRIORITY, &delegate,
-                                TRAFFIC_ANNOTATION_FOR_TESTS));
+    std::unique_ptr<URLRequest> request(context_->CreateRequest(
+        test_case.dest, DEFAULT_PRIORITY, &delegate,
+        TRAFFIC_ANNOTATION_FOR_TESTS, net::handles::kInvalidNetworkHandle));
     request->Start();
     delegate.RunUntilComplete();
     if (test_case.expect_success) {
@@ -608,9 +610,9 @@ TEST_P(EmbeddedTestServerTest, UpgradeRequestHandlerTransfersSocket) {
 
   GURL websocket_upgrade_url = server_->GetURL(websocket_upgrade_path);
   TestDelegate delegate;
-  std::unique_ptr<URLRequest> request(
-      context_->CreateRequest(websocket_upgrade_url, DEFAULT_PRIORITY,
-                              &delegate, TRAFFIC_ANNOTATION_FOR_TESTS));
+  std::unique_ptr<URLRequest> request(context_->CreateRequest(
+      websocket_upgrade_url, DEFAULT_PRIORITY, &delegate,
+      TRAFFIC_ANNOTATION_FOR_TESTS, net::handles::kInvalidNetworkHandle));
 
   request->Start();
   delegate.RunUntilComplete();
@@ -657,9 +659,9 @@ TEST_P(EmbeddedTestServerTest, UpgradeRequestHandlerEvalStopsOnErrorResponse) {
 
   GURL websocket_upgrade_url = server_->GetURL(websocket_upgrade_path);
   TestDelegate delegate;
-  std::unique_ptr<URLRequest> request(
-      context_->CreateRequest(websocket_upgrade_url, DEFAULT_PRIORITY,
-                              &delegate, TRAFFIC_ANNOTATION_FOR_TESTS));
+  std::unique_ptr<URLRequest> request(context_->CreateRequest(
+      websocket_upgrade_url, DEFAULT_PRIORITY, &delegate,
+      TRAFFIC_ANNOTATION_FOR_TESTS, net::handles::kInvalidNetworkHandle));
 
   request->Start();
   delegate.RunUntilComplete();
@@ -685,17 +687,17 @@ TEST_P(EmbeddedTestServerTest, ConcurrentFetches) {
   ASSERT_TRUE(StartServerAndSetUpContext());
 
   TestDelegate delegate1;
-  std::unique_ptr<URLRequest> request1(
-      context_->CreateRequest(server_->GetURL("/test1"), DEFAULT_PRIORITY,
-                              &delegate1, TRAFFIC_ANNOTATION_FOR_TESTS));
+  std::unique_ptr<URLRequest> request1(context_->CreateRequest(
+      server_->GetURL("/test1"), DEFAULT_PRIORITY, &delegate1,
+      TRAFFIC_ANNOTATION_FOR_TESTS, net::handles::kInvalidNetworkHandle));
   TestDelegate delegate2;
-  std::unique_ptr<URLRequest> request2(
-      context_->CreateRequest(server_->GetURL("/test2"), DEFAULT_PRIORITY,
-                              &delegate2, TRAFFIC_ANNOTATION_FOR_TESTS));
+  std::unique_ptr<URLRequest> request2(context_->CreateRequest(
+      server_->GetURL("/test2"), DEFAULT_PRIORITY, &delegate2,
+      TRAFFIC_ANNOTATION_FOR_TESTS, net::handles::kInvalidNetworkHandle));
   TestDelegate delegate3;
-  std::unique_ptr<URLRequest> request3(
-      context_->CreateRequest(server_->GetURL("/test3"), DEFAULT_PRIORITY,
-                              &delegate3, TRAFFIC_ANNOTATION_FOR_TESTS));
+  std::unique_ptr<URLRequest> request3(context_->CreateRequest(
+      server_->GetURL("/test3"), DEFAULT_PRIORITY, &delegate3,
+      TRAFFIC_ANNOTATION_FOR_TESTS, net::handles::kInvalidNetworkHandle));
 
   // Fetch the three URLs concurrently. Have to manually create RunLoops when
   // running multiple requests simultaneously, to avoid the deprecated
@@ -810,9 +812,9 @@ TEST_P(EmbeddedTestServerTest, CloseDuringWrite) {
                           base::BindRepeating(&HandleInfiniteRequest)));
   ASSERT_TRUE(StartServerAndSetUpContext());
 
-  std::unique_ptr<URLRequest> request =
-      context_->CreateRequest(server_->GetURL("/infinite"), DEFAULT_PRIORITY,
-                              &cancel_delegate, TRAFFIC_ANNOTATION_FOR_TESTS);
+  std::unique_ptr<URLRequest> request = context_->CreateRequest(
+      server_->GetURL("/infinite"), DEFAULT_PRIORITY, &cancel_delegate,
+      TRAFFIC_ANNOTATION_FOR_TESTS, net::handles::kInvalidNetworkHandle);
   request->Start();
   cancel_delegate.WaitUntilDone();
 }
@@ -863,7 +865,7 @@ TEST_P(EmbeddedTestServerTest, AcceptCHFrame) {
   TestDelegate delegate;
   std::unique_ptr<URLRequest> request_a(context_->CreateRequest(
       server_->GetURL("/non-existent"), DEFAULT_PRIORITY, &delegate,
-      TRAFFIC_ANNOTATION_FOR_TESTS));
+      TRAFFIC_ANNOTATION_FOR_TESTS, net::handles::kInvalidNetworkHandle));
   request_a->Start();
   delegate.RunUntilComplete();
 
@@ -897,7 +899,8 @@ TEST_P(EmbeddedTestServerTest, AcceptCHFrameDifferentOrigins) {
   {
     TestDelegate delegate;
     std::unique_ptr<URLRequest> request_a(context_->CreateRequest(
-        a_url, DEFAULT_PRIORITY, &delegate, TRAFFIC_ANNOTATION_FOR_TESTS));
+        a_url, DEFAULT_PRIORITY, &delegate, TRAFFIC_ANNOTATION_FOR_TESTS,
+        net::handles::kInvalidNetworkHandle));
     request_a->Start();
     delegate.RunUntilComplete();
 
@@ -908,7 +911,8 @@ TEST_P(EmbeddedTestServerTest, AcceptCHFrameDifferentOrigins) {
   {
     TestDelegate delegate;
     std::unique_ptr<URLRequest> request_a(context_->CreateRequest(
-        b_url, DEFAULT_PRIORITY, &delegate, TRAFFIC_ANNOTATION_FOR_TESTS));
+        b_url, DEFAULT_PRIORITY, &delegate, TRAFFIC_ANNOTATION_FOR_TESTS,
+        net::handles::kInvalidNetworkHandle));
     request_a->Start();
     delegate.RunUntilComplete();
 
@@ -919,7 +923,8 @@ TEST_P(EmbeddedTestServerTest, AcceptCHFrameDifferentOrigins) {
   {
     TestDelegate delegate;
     std::unique_ptr<URLRequest> request_a(context_->CreateRequest(
-        cb_url, DEFAULT_PRIORITY, &delegate, TRAFFIC_ANNOTATION_FOR_TESTS));
+        cb_url, DEFAULT_PRIORITY, &delegate, TRAFFIC_ANNOTATION_FOR_TESTS,
+        net::handles::kInvalidNetworkHandle));
     request_a->Start();
     delegate.RunUntilComplete();
 
@@ -947,9 +952,9 @@ TEST_P(EmbeddedTestServerTest, LargePost) {
   auto stream = ElementsUploadDataStream::CreateWithReader(std::move(reader));
 
   TestDelegate delegate;
-  std::unique_ptr<URLRequest> request(
-      context_->CreateRequest(server_->GetURL("/test"), DEFAULT_PRIORITY,
-                              &delegate, TRAFFIC_ANNOTATION_FOR_TESTS));
+  std::unique_ptr<URLRequest> request(context_->CreateRequest(
+      server_->GetURL("/test"), DEFAULT_PRIORITY, &delegate,
+      TRAFFIC_ANNOTATION_FOR_TESTS, net::handles::kInvalidNetworkHandle));
   request->set_method("POST");
   request->set_upload(std::move(stream));
   request->Start();
@@ -1015,9 +1020,9 @@ class EmbeddedTestServerThreadingTestDelegate
 
     auto context = CreateTestURLRequestContextBuilder()->Build();
     TestDelegate delegate;
-    std::unique_ptr<URLRequest> request(
-        context->CreateRequest(server.GetURL("/test?q=foo"), DEFAULT_PRIORITY,
-                               &delegate, TRAFFIC_ANNOTATION_FOR_TESTS));
+    std::unique_ptr<URLRequest> request(context->CreateRequest(
+        server.GetURL("/test?q=foo"), DEFAULT_PRIORITY, &delegate,
+        TRAFFIC_ANNOTATION_FOR_TESTS, net::handles::kInvalidNetworkHandle));
 
     request->Start();
     delegate.RunUntilComplete();

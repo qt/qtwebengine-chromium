@@ -14,9 +14,12 @@
 
 #include "src/gav1/frame_buffer.h"
 
+#include <cstddef>
 #include <cstdint>
 
 #include "src/frame_buffer_utils.h"
+#include "src/gav1/decoder_buffer.h"
+#include "src/gav1/status_code.h"
 #include "src/utils/common.h"
 
 extern "C" {

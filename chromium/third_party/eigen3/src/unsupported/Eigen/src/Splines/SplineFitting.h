@@ -1,7 +1,7 @@
 // This file is part of Eigen, a lightweight C++ template library
 // for linear algebra.
 //
-// Copyright (C) 20010-2011 Hauke Heibel <hauke.heibel@gmail.com>
+// Copyright (C) 2010-2011 Hauke Heibel <hauke.heibel@gmail.com>
 //
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
@@ -35,7 +35,7 @@ namespace Eigen {
  *  u_{m-p} & = \hdots = u_{m} = 1 \\
  *  u_{j+p} & = \frac{1}{p}\sum_{i=j}^{j+p-1}\bar{u}_i \quad\quad j=1,\hdots,n-p
  * \f}
- * where \f$p\f$ is the degree and \f$m+1\f$ the number knots
+ * where \f$p\f$ is the degree and \f$m+1\f$ the number of knots
  * of the desired interpolating spline.
  *
  * \param[in] parameters The input parameters. During interpolation one for each data point.

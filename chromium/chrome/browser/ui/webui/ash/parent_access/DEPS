@@ -18,7 +18,12 @@ include_rules = [
   "+chrome/browser/signin",
   "+chrome/browser/ui/browser.h",
   "+chrome/browser/ui/webui/ash/system_web_dialog",
-  "+chrome/common",
   "+chrome/grit",
   "+chrome/test/base",
 ]
+
+specific_include_rules = {
+  "parent_access_ui\\.cc": [
+    "+chrome/browser/ui/webui/theme_source.h",
+  ],
+}

@@ -17,6 +17,9 @@ template("devtools_pre_built") {
 
     public_deps = invoker.deps
 
+    # Expose ts files to dependent targets.
+    public_inputs = filter_include(sources, [ "*.ts" ])
+
     _copy_src = rebase_path(get_path_info(target_name, "dir"), root_build_dir)
     _copy_dest = rebase_path(target_gen_dir, root_build_dir)
 

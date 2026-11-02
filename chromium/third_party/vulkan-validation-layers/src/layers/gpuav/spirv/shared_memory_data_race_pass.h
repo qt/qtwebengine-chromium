@@ -27,6 +27,7 @@ class SharedMemoryDataRacePass : public Pass {
     SharedMemoryDataRacePass(Module& module);
     const char* Name() const final { return "SharedMemoryDataRacePass"; }
     bool Instrument() final;
+    void PostProcess() final;
     void PrintDebugInfo() const final;
 
   private:
@@ -52,8 +53,6 @@ class SharedMemoryDataRacePass : public Pass {
     uint32_t GetWorkgroupSize();
 
     uint32_t GetLinkFunctionId(const InstructionMeta& meta);
-
-    const Instruction* FindInstructionGlobal(const Function& function, uint32_t id) const;
 
     // Function IDs to link in
     enum FunctionNames {

@@ -14,7 +14,7 @@ devtools_ui_module("highlighting") {
     "HighlightManager.ts",
     "MarkupHighlight.ts",
   ]
-  deps = [ "../../../models/text_utils:bundle" ]
+  deps = [ "../../../core/text_utils:bundle" ]
 }
 
 devtools_entrypoint("bundle") {
@@ -36,7 +36,7 @@ devtools_ui_module("unittests") {
 
   deps = [
     ":bundle",
-    "../../../models/text_utils:bundle",
+    "../../../core/text_utils:bundle",
     "../../../testing",
   ]
 }

@@ -44,7 +44,7 @@ bool CFX_FileAccessStream::WriteBlock(pdfium::span<const uint8_t> buffer) {
   if (file_->SetPosition(GetSize()) == static_cast<FX_FILESIZE>(-1)) {
     return false;
   }
-  return !!file_->Write(buffer);
+  return file_->Write(buffer);
 }
 
 bool CFX_FileAccessStream::Flush() {

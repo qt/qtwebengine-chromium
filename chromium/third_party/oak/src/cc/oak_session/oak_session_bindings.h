@@ -126,8 +126,11 @@ struct ErrorOrIdentityKey {
 
 extern "C" {
 // Corresponds to functions in oak_session/ffi/config.rs
+extern const char* const certificate_based_attestation_id();
+extern const char* const confidential_space_attestation_id();
 extern ErrorOrSessionConfigBuilder new_session_config_builder(uint32_t,
                                                               uint32_t);
+void free_session_config_builder(SessionConfigBuilder*);
 extern SessionConfigBuilder* session_config_builder_add_self_attester(
     SessionConfigBuilder*, ffi::bindings::BytesView, FfiAttester);
 extern SessionConfigBuilder* session_config_builder_add_self_endorser(
@@ -157,6 +160,7 @@ extern ffi::bindings::ErrorOrRustBytes identity_key_get_public_key(
     IdentityKey*);
 
 extern SessionConfig* session_config_builder_build(SessionConfigBuilder*);
+extern void session_config_free(SessionConfig*);
 
 // Corresponds to functions in oak_session/ffi/client_session.rs
 extern ErrorOrClientSession new_client_session(SessionConfig*);

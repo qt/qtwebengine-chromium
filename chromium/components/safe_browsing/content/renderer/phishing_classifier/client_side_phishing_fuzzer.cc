@@ -7,18 +7,21 @@
 
 #include "base/command_line.h"
 #include "base/memory/read_only_shared_memory_region.h"
-#include "components/safe_browsing/content/browser/client_side_phishing_model.h"
 #include "components/safe_browsing/content/renderer/phishing_classifier/client_side_phishing_fuzzer.pb.h"
-#include "components/safe_browsing/content/renderer/phishing_classifier/features.h"
-#include "components/safe_browsing/content/renderer/phishing_classifier/scorer.h"
+#include "components/safe_browsing/core/common/phishing_classifier/features.h"
+#include "components/safe_browsing/core/common/phishing_classifier/flatbuffer_utils.h"
+#include "components/safe_browsing/core/common/phishing_classifier/scorer.h"
 #include "testing/libfuzzer/proto/lpm_interface.h"
 
 DEFINE_PROTO_FUZZER(
     const safe_browsing::ClientSidePhishingFuzzerCase& fuzzing_case) {
   base::CommandLine::Init(0, nullptr);
   const std::string model_str = fuzzing_case.memory_region();
-  base::MappedReadOnlyRegion mapped_region = base::MappedReadOnlyRegion();
-  mapped_region = base::ReadOnlySharedMemoryRegion::Create(model_str.size());
+  base::MappedReadOnlyRegion mapped_region =
+      base::ReadOnlySharedMemoryRegion::Create(model_str.size());
+  if (!mapped_region.IsValid()) {
+    return;
+  }
   mapped_region.mapping.GetMemoryAsSpan<char>().copy_prefix_from(model_str);
 
   std::unique_ptr<safe_browsing::Scorer> scorer(safe_browsing::Scorer::Create(
@@ -34,8 +37,7 @@ DEFINE_PROTO_FUZZER(
     return;
   }
 
-  if (!safe_browsing::ClientSidePhishingModel::
-          VerifyCSDFlatBufferIndicesAndFields(model)) {
+  if (!safe_browsing::VerifyCSDFlatBufferIndicesAndFields(model)) {
     return;
   }
 

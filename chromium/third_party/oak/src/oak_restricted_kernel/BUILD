@@ -25,6 +25,7 @@ package(
 exports_files(["layout.ld"])
 
 _OAK_RESTRICTED_KERNEL_COMMON_DEPS = [
+    "//oak_hal",
     "//oak_channel",
     "//oak_core",
     "//oak_crypto",
@@ -32,9 +33,7 @@ _OAK_RESTRICTED_KERNEL_COMMON_DEPS = [
     "//oak_linux_boot_params",
     "//oak_restricted_kernel_dice",
     "//oak_restricted_kernel_interface",
-    "//oak_sev_guest",
     "//sev_serial",
-    "//third_party/rust-hypervisor-firmware-virtio",
     "@oak_crates_index//:acpi",
     "@oak_crates_index//:aml",
     "@oak_crates_index//:anyhow",
@@ -63,6 +62,7 @@ cc_library(
     name = "bootstrap",
     srcs = ["boot.s"],
     linkstatic = True,
+    target_compatible_with = ["@platforms//cpu:x86_64"],
 )
 
 rust_library(
@@ -73,43 +73,14 @@ rust_library(
     ],
     crate_name = "oak_restricted_kernel",
     target_compatible_with = [
-        "//:x86_64-none-setting",
+        "@platforms//cpu:x86_64",
+        "@platforms//os:none",
+        "//bazel/rust:avx_ON",
     ],
     deps = _OAK_RESTRICTED_KERNEL_COMMON_DEPS + [
         ":bootstrap",
+        "@oak_crates_index//:embedded-io",
         "@oak_crates_index//:virtio-drivers",
-    ],
-)
-
-rust_library(
-    name = "oak_restricted_kernel_vsock_channel",
-    srcs = glob(["src/**/*.rs"]),
-    crate_features = [
-        "vsock_channel",
-    ],
-    crate_name = "oak_restricted_kernel",
-    target_compatible_with = [
-        "//:x86_64-none-setting",
-    ],
-    deps = _OAK_RESTRICTED_KERNEL_COMMON_DEPS + [
-        ":bootstrap",
-        "//oak_virtio",
-    ],
-)
-
-rust_library(
-    name = "oak_restricted_kernel_serial_channel",
-    srcs = glob(["src/**/*.rs"]),
-    crate_features = [
-        "serial_channel",
-    ],
-    crate_name = "oak_restricted_kernel",
-    target_compatible_with = [
-        "//:x86_64-none-setting",
-    ],
-    deps = _OAK_RESTRICTED_KERNEL_COMMON_DEPS + [
-        ":bootstrap",
-        "@oak_crates_index//:uart_16550",
     ],
 )
 
@@ -121,11 +92,31 @@ rust_library(
     ],
     crate_name = "oak_restricted_kernel",
     target_compatible_with = [
-        "//:x86_64-none-setting",
+        "@platforms//cpu:x86_64",
+        "@platforms//os:none",
+        "//bazel/rust:avx_ON",
     ],
     deps = _OAK_RESTRICTED_KERNEL_COMMON_DEPS + [
         ":bootstrap",
         "//oak_simple_io",
+    ],
+)
+
+rust_library(
+    name = "oak_restricted_kernel_serial_channel",
+    srcs = glob(["src/**/*.rs"]),
+    crate_features = [
+        "serial_channel",
+    ],
+    crate_name = "oak_restricted_kernel",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:none",
+        "//bazel/rust:avx_ON",
+    ],
+    deps = _OAK_RESTRICTED_KERNEL_COMMON_DEPS + [
+        ":bootstrap",
+        "@oak_crates_index//:uart_16550",
     ],
 )
 
@@ -138,14 +129,14 @@ rust_library(
         ],
         # So we can do `bazel build //oak_restricted_kernel:all --platforms=//:x86_64-unknown-none`:
         platform = "//:x86_64-linux",
+        target_compatible_with = ["@platforms//cpu:x86_64"],
         deps = [
             "@oak_crates_index//:assertables",
         ],
     )
     for feature in [
         "virtio_console_channel",
-        "vsock_channel",
-        "serial_channel",
         "simple_io_channel",
+        "serial_channel",
     ]
 ]

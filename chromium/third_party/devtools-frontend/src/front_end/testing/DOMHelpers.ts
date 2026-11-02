@@ -19,10 +19,29 @@ import * as UI from '../ui/legacy/legacy.js';
 import {checkForPendingActivity} from './TrackAsyncOperations.js';
 
 export const TEST_CONTAINER_ID = '__devtools-test-container-id';
+export {setTestUniverseForWidgets} from './DOMHooks.js';
 
 interface RenderOptions {
   allowMultipleChildren?: boolean;
+  /**
+   * Injects standard Inspector and text button stylesheets into the test DOM.
+   * This is typically needed for testing legacy components or widget wrappers that do
+   * not use Shadow DOM and instead rely on global stylesheets.
+   */
   includeCommonStyles?: boolean;
+  /**
+   * Additional stylesheets to inject into the test DOM container. Use this to supply
+   * component-specific stylesheet strings during DOM/screenshot testing.
+   */
+  extraStyles?: CSSInJS[];
+  /**
+   * Sets the width of the test DOM container.
+   */
+  width?: string|number;
+  /**
+   * Sets the height of the test DOM container.
+   */
+  height?: string|number;
 }
 
 /**
@@ -44,6 +63,20 @@ export function renderElementIntoDOM<E extends Node|UI.Widget.AnyWidget>(
   if (renderOptions.includeCommonStyles) {
     container.appendChild(document.createElement('style')).textContent = UI.inspectorCommonStyles;
     container.appendChild(document.createElement('style')).textContent = Buttons.textButtonStyles;
+  }
+  if (renderOptions.extraStyles) {
+    for (const style of renderOptions.extraStyles) {
+      container.appendChild(document.createElement('style')).textContent = style;
+    }
+  }
+  if (renderOptions.width !== undefined) {
+    container.style.width = typeof renderOptions.width === 'number' ? `${renderOptions.width}px` : renderOptions.width;
+  }
+  if (renderOptions.height !== undefined) {
+    container.style.height =
+        typeof renderOptions.height === 'number' ? `${renderOptions.height}px` : renderOptions.height;
+    container.style.display = 'flex';
+    container.style.flexDirection = 'column';
   }
   if (element instanceof Node) {
     container.appendChild(element);
@@ -312,7 +345,10 @@ declare global {
  */
 export async function assertScreenshot(filename: string) {
   // To avoid a lot of empty space in the screenshot.
-  document.getElementById(TEST_CONTAINER_ID)!.style.width = 'fit-content';
+  const container = document.getElementById(TEST_CONTAINER_ID)!;
+  if (!container.style.width) {
+    container.style.width = 'fit-content';
+  }
   let frame: Window|null = window;
   while (frame) {
     frame.scrollTo(0, 0);

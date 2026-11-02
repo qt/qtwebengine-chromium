@@ -27,6 +27,8 @@
 
 #include "src/tint/lang/msl/writer/raise/binary_polyfill.h"
 
+#include <vector>
+
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/msl/ir/builtin_call.h"
@@ -50,38 +52,31 @@ struct State {
 
     /// Process the module.
     void Process() {
-        // Find the binary operators that need replacing.
-        Vector<core::ir::CoreBinary*, 4> fmod_worklist;
-        Vector<core::ir::CoreBinary*, 4> umod_worklist;
-        Vector<core::ir::CoreBinary*, 4> logical_bool_worklist;
+        std::vector<std::function<void()>> worklist;
+        worklist.reserve(128);
 
         for (auto* inst : ir.Instructions()) {
-            if (auto* binary = inst->As<core::ir::CoreBinary>()) {
-                auto op = binary->Op();
-                auto* lhs_type = binary->LHS()->Type();
-                if (op == core::BinaryOp::kModulo && lhs_type->IsFloatScalarOrVector()) {
-                    fmod_worklist.Push(binary);
-                } else if ((op == core::BinaryOp::kModulo || op == core::BinaryOp::kDivide) &&
-                           lhs_type->Is<core::type::U32>()) {
-                    if (config.fix_u32_div_mod) {
-                        umod_worklist.Push(binary);
-                    }
-                } else if ((op == core::BinaryOp::kAnd || op == core::BinaryOp::kOr) &&
-                           lhs_type->IsBoolScalarOrVector()) {
-                    logical_bool_worklist.Push(binary);
+            core::ir::CoreBinary* binary = inst->As<core::ir::CoreBinary>();
+            if (binary == nullptr) {
+                continue;
+            }
+
+            auto op = binary->Op();
+            auto* lhs_type = binary->LHS()->Type();
+            if (op == core::BinaryOp::kModulo && lhs_type->IsFloatScalarOrVector()) {
+                worklist.push_back([this, binary] { FMod(binary); });
+            } else if ((op == core::BinaryOp::kModulo || op == core::BinaryOp::kDivide) &&
+                       lhs_type->DeepestElement()->Is<core::type::U32>()) {
+                if (config.fix_u32_div_mod) {
+                    worklist.push_back([this, binary] { UDivMod(binary); });
                 }
+            } else if ((op == core::BinaryOp::kAnd || op == core::BinaryOp::kOr) &&
+                       lhs_type->IsBoolScalarOrVector()) {
+                worklist.push_back([this, binary] { LogicalBool(binary); });
             }
         }
-
-        // Replace the instructions that we found.
-        for (auto* fmod : fmod_worklist) {
-            FMod(fmod);
-        }
-        for (auto* umod : umod_worklist) {
-            UMod(umod);
-        }
-        for (auto* logical_bool : logical_bool_worklist) {
-            LogicalBool(logical_bool);
+        for (auto& cb : worklist) {
+            cb();
         }
     }
 
@@ -94,9 +89,10 @@ struct State {
         binary->Destroy();
     }
 
-    /// Add a volatile zero to unsigned modulo binary instructions to work around a driver bug.
-    /// @param binary the unsigned integer modulo binary instruction
-    void UMod(core::ir::CoreBinary* binary) {
+    /// Add a volatile zero to unsigned divide and modulo binary instructions to work around a
+    /// driver bug.
+    /// @param binary the unsigned integer divide or modulo binary instruction
+    void UDivMod(core::ir::CoreBinary* binary) {
         b.InsertBefore(binary, [&] {
             auto* zero = b.Call<msl::ir::BuiltinCall>(ty.u32(), msl::BuiltinFn::kVolatileZero);
             binary->SetOperand(0u, b.Add(binary->LHS(), zero)->Result());
@@ -124,15 +120,7 @@ struct State {
 }  // namespace
 
 Result<SuccessType> BinaryPolyfill(core::ir::Module& ir, const BinaryPolyfillConfig& config) {
-    AssertValid(ir,
-                core::ir::Capabilities{
-                    core::ir::Capability::kAllow8BitIntegers,
-                    core::ir::Capability::kAllowPointSizeBuiltin,
-                    core::ir::Capability::kAllowAnyLetType,
-                    core::ir::Capability::kAllowNonCoreTypes,
-                    core::ir::Capability::kMslAllowEntryPointInterface,
-                },
-                "before msl.BinaryPolyfill");
+    AssertValid(ir, "before msl.BinaryPolyfill");
 
     State{ir, config}.Process();
 

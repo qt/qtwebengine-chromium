@@ -49,6 +49,19 @@ static void BM_BDCSVD(benchmark::State& state) {
   state.SetItemsProcessed(state.iterations());
 }
 
+template <typename Scalar, int Options>
+static void BM_BDCSVDBidiagonal(benchmark::State& state) {
+  const Index size = state.range(0);
+  Matrix<Scalar, Dynamic, 1> diagonal = Matrix<Scalar, Dynamic, 1>::Random(size);
+  Matrix<Scalar, Dynamic, 1> superdiagonal = Matrix<Scalar, Dynamic, 1>::Random(size - 1);
+  BDCSVD<Mat<Scalar>, Options> svd(size, size);
+  for (auto _ : state) {
+    svd.compute(diagonal, superdiagonal);
+    benchmark::DoNotOptimize(svd.singularValues().data());
+  }
+  state.SetItemsProcessed(state.iterations());
+}
+
 // ---------- Size configurations ----------
 
 // ---------- Register benchmarks ----------
@@ -67,6 +80,9 @@ static void BM_BDCSVD(benchmark::State& state) {
     ->Args({100, 4})->Args({1000, 4})->Args({1000, 10})->Args({1000, 100}) \
     ->Args({10000, 10})->Args({10000, 100})
 
+// Direct bidiagonal input isolates the divide-and-conquer phase.
+#define BDC_BIDIAG_SIZES ->Arg(16)->Arg(32)->Arg(64)->Arg(128)->Arg(256)->Arg(512)->Arg(1024)
+
 // JacobiSVD — float
 BENCHMARK(BM_JacobiSVD<float, ComputeThinU | ComputeThinV>) JACOBI_SIZES ->Name("JacobiSVD_float_ThinUV");
 BENCHMARK(BM_JacobiSVD<float, 0>) JACOBI_SIZES ->Name("JacobiSVD_float_ValuesOnly");
@@ -83,8 +99,13 @@ BENCHMARK(BM_BDCSVD<float, 0>) BDC_SIZES ->Name("BDCSVD_float_ValuesOnly");
 BENCHMARK(BM_BDCSVD<double, ComputeThinU | ComputeThinV>) BDC_SIZES ->Name("BDCSVD_double_ThinUV");
 BENCHMARK(BM_BDCSVD<double, 0>) BDC_SIZES ->Name("BDCSVD_double_ValuesOnly");
 
+BENCHMARK(BM_BDCSVDBidiagonal<double, ComputeThinU | ComputeThinV>)
+    BDC_BIDIAG_SIZES ->Name("BDCSVD_Bidiagonal_double_ThinUV");
+BENCHMARK(BM_BDCSVDBidiagonal<double, 0>) BDC_BIDIAG_SIZES ->Name("BDCSVD_Bidiagonal_double_ValuesOnly");
+
 #undef JACOBI_SIZES
 #undef BDC_SIZES
+#undef BDC_BIDIAG_SIZES
 // clang-format on
 
 // JacobiSVD — QR preconditioner comparison (double, 64x64, ThinUV)

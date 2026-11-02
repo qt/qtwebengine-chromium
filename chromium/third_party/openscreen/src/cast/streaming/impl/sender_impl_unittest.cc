@@ -58,6 +58,10 @@ constexpr Ssrc kSenderSsrc = 1;
 constexpr Ssrc kReceiverSsrc = 2;
 constexpr int kRtpTimebase = 48000;
 constexpr milliseconds kTargetPlayoutDelay(400);
+
+// The minimum in-flight media duration the Sender enforces regardless of the
+// measured round-trip time. Must match kMinSenderInFlight in sender_impl.cc.
+constexpr Clock::duration kMinSenderInFlight = milliseconds(66);
 constexpr auto kAesKey =
     std::array<uint8_t, 16>{{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
                              0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f}};
@@ -378,6 +382,53 @@ class SenderTest : public testing::Test {
     fake_clock_.Advance(how_long);
   }
 
+  // Simulates one Sender→Receiver→Sender RTCP round-trip using the given
+  // one-way network delays, causing the Sender to (re)measure the network
+  // round-trip time. A frame must already be in-flight so the Sender emits a
+  // Sender Report.
+  void SimulateNetworkRoundTrip(milliseconds outbound, milliseconds inbound) {
+    SetSenderToReceiverNetworkDelay(outbound);
+    SetReceiverToSenderNetworkDelay(inbound);
+
+    StatusReportId sender_report_id{};
+    EXPECT_CALL(*receiver(), OnSenderReport(_))
+        .WillOnce([&](const SenderReportParser::SenderReportWithId& report) {
+          sender_report_id = report.report_id;
+        });
+    // The Sender Report reaches the Receiver after the outbound delay.
+    SimulateExecution(outbound);
+    Mock::VerifyAndClearExpectations(receiver());
+    ASSERT_NE(StatusReportId{}, sender_report_id);
+    // The Receiver spends some time before replying. This delay is included in
+    // the Receiver Report so that the Sender can isolate the network delay.
+    constexpr milliseconds kReceiverProcessingDelay(2);
+    SimulateExecution(kReceiverProcessingDelay);
+    receiver()->SetReceiverReport(
+        sender_report_id, std::chrono::duration_cast<RtcpReportBlock::Delay>(
+                              kReceiverProcessingDelay));
+    receiver()->TransmitRtcpFeedbackPacket();
+    // The Receiver Report travels back to the Sender after the inbound delay.
+    SimulateExecution(inbound);
+  }
+
+  // Constructs a Sender with the given target playout delay (and no measured
+  // round-trip time) and returns its maximum in-flight media duration. Uses
+  // distinct SSRCs so it does not collide with the fixture's Sender.
+  Clock::duration MaxInFlightForPlayoutDelay(
+      milliseconds target_playout_delay) {
+    SenderImpl sender(sender_environment_, sender_packet_router_,
+                      {/* .sender_ssrc = */ kSenderSsrc + 100,
+                       /* .receiver_ssrc = */ kReceiverSsrc + 100,
+                       /* .rtp_timebase = */ kRtpTimebase,
+                       /* .channels = */ 2,
+                       /* .target_playout_delay = */ target_playout_delay,
+                       /* .aes_secret_key = */ kAesKey,
+                       /* .aes_iv_mask = */ kCastIvMask,
+                       /* .is_pli_enabled = */ true},
+                      kRtpPayloadType);
+    return sender.GetMaxInFlightMediaDuration();
+  }
+
   static void PopulateFramePayloadBuffer(int seed,
                                          int num_bytes,
                                          std::vector<uint8_t>* payload) {
@@ -596,18 +647,10 @@ TEST_F(SenderTest, RespondsToNetworkLatencyChanges) {
   // report block's delay type.
   constexpr auto kEpsilon = to_nanoseconds(RtcpReportBlock::Delay(1));
 
-  // Before the Sender has the necessary information to compute the network
-  // round-trip time, GetMaxInFlightMediaDuration() will return half the target
-  // playout delay.
-  EXPECT_NEARLY_EQUAL(kTargetPlayoutDelay / 2,
-                      sender()->GetMaxInFlightMediaDuration(), kEpsilon);
-
-  // No network is perfect. Simulate different one-way network delays.
-  constexpr milliseconds kOutboundDelay(2);
-  constexpr milliseconds kInboundDelay(4);
-  constexpr milliseconds kRoundTripDelay(kOutboundDelay + kInboundDelay);
-  SetSenderToReceiverNetworkDelay(kOutboundDelay);
-  SetReceiverToSenderNetworkDelay(kInboundDelay);
+  // Before the Sender has measured the network round-trip time, the in-flight
+  // limit is pinned to the minimum.
+  EXPECT_EQ(Clock::duration::zero(), sender()->GetCurrentRoundTripTime());
+  EXPECT_EQ(kMinSenderInFlight, sender()->GetMaxInFlightMediaDuration());
 
   // Enqueue a frame in the Sender to start emitting periodic RTCP reports.
   {
@@ -617,39 +660,25 @@ TEST_F(SenderTest, RespondsToNetworkLatencyChanges) {
     ASSERT_EQ(Sender::OK, sender()->EnqueueFrame(frame));
   }
 
-  // Run one network round-trip from Sender→Receiver→Sender.
-  StatusReportId sender_report_id{};
-  EXPECT_CALL(*receiver(), OnSenderReport(_))
-      .WillOnce(
-          [&](const SenderReportParser::SenderReportWithId& sender_report) {
-            sender_report_id = sender_report.report_id;
-          });
-  // Simulate the passage of time for the Sender Report to reach the Receiver.
-  SimulateExecution(kOutboundDelay);
-  // The Receiver should have received the Sender Report at this point.
-  Mock::VerifyAndClearExpectations(receiver());
-  ASSERT_NE(StatusReportId{}, sender_report_id);
-  // Simulate the passage of time in the Receiver doing "other tasks" before
-  // replying back to the Sender. This delay is included in the Receiver Report
-  // so that the Sender can isolate the delays caused by the network.
-  constexpr milliseconds kReceiverProcessingDelay(2);
-  SimulateExecution(kReceiverProcessingDelay);
-  // Create the Receiver Report "reply," and simulate it being sent across the
-  // network, back to the Sender.
-  receiver()->SetReceiverReport(
-      sender_report_id, std::chrono::duration_cast<RtcpReportBlock::Delay>(
-                            kReceiverProcessingDelay));
-  receiver()->TransmitRtcpFeedbackPacket();
-  SimulateExecution(kInboundDelay);
+  // Simulate one-way network delays large enough that twice the round-trip time
+  // exceeds the floor, so the in-flight limit tracks the measured RTT.
+  constexpr milliseconds kOutboundDelay(20);
+  constexpr milliseconds kInboundDelay(20);
+  constexpr milliseconds kRoundTripDelay(kOutboundDelay + kInboundDelay);
+  SimulateNetworkRoundTrip(kOutboundDelay, kInboundDelay);
 
-  // At this point, the Sender should have computed the network round-trip time,
-  // and so GetMaxInFlightMediaDuration() will return half the target playout
-  // delay PLUS half the network round-trip time.
-  EXPECT_NEARLY_EQUAL(kTargetPlayoutDelay / 2 + kRoundTripDelay / 2,
-                      sender()->GetMaxInFlightMediaDuration(), kEpsilon);
+  // At this point, the Sender should have measured the network round-trip time,
+  // and the in-flight limit should track exactly twice that value.
+  EXPECT_NEARLY_EQUAL(kRoundTripDelay, sender()->GetCurrentRoundTripTime(),
+                      kEpsilon);
+  EXPECT_EQ(2 * sender()->GetCurrentRoundTripTime(),
+            sender()->GetMaxInFlightMediaDuration());
 
-  // Increase the outbound delay, which will increase the total round-trip time.
-  constexpr milliseconds kIncreasedOutboundDelay(6);
+  // Increase the outbound delay by a small amount, which will increase the
+  // total round-trip time. The delta is kept small so the smoothing filter
+  // converges to within kEpsilon over kNumReportIntervals, and so that twice
+  // the round-trip time stays within the in-flight clamp bounds.
+  constexpr milliseconds kIncreasedOutboundDelay(24);
   constexpr milliseconds kIncreasedRoundTripDelay(kIncreasedOutboundDelay +
                                                   kInboundDelay);
   SetSenderToReceiverNetworkDelay(kIncreasedOutboundDelay);
@@ -658,7 +687,7 @@ TEST_F(SenderTest, RespondsToNetworkLatencyChanges) {
   // the Sender to gradually converge towards the new network round-trip time.
   constexpr int kNumReportIntervals = 50;
   EXPECT_CALL(*receiver(), OnSenderReport(_))
-      .Times(kNumReportIntervals)
+      .Times(AtLeast(kNumReportIntervals - 1))
       .WillRepeatedly(
           [&](const SenderReportParser::SenderReportWithId& sender_report) {
             receiver()->SetReceiverReport(sender_report.report_id,
@@ -673,16 +702,51 @@ TEST_F(SenderTest, RespondsToNetworkLatencyChanges) {
     EXPECT_LE(last_max, updated_value);
     last_max = updated_value;
   }
-  EXPECT_NEARLY_EQUAL(kTargetPlayoutDelay / 2 + kIncreasedRoundTripDelay / 2,
-                      sender()->GetMaxInFlightMediaDuration(), kEpsilon);
+  EXPECT_NEARLY_EQUAL(kIncreasedRoundTripDelay,
+                      sender()->GetCurrentRoundTripTime(), kEpsilon);
+  EXPECT_EQ(2 * sender()->GetCurrentRoundTripTime(),
+            sender()->GetMaxInFlightMediaDuration());
+}
+
+// Tests that the in-flight media duration is capped at a third of the playout
+// delay under high latency, so the Sender backs off rather than over-buffering
+// and reserves the majority of the playout window for the Receiver.
+TEST_F(SenderTest, CapsInFlightMediaDurationUnderHighLatency) {
+  // Enqueue a frame so the Sender begins emitting periodic RTCP reports.
+  {
+    EncodedFrameWithBuffer frame;
+    PopulateFrameWithDefaults(FrameId::first(), FakeClock::now(), 0,
+                              1 /* byte */, &frame);
+    ASSERT_EQ(Sender::OK, sender()->EnqueueFrame(frame));
+  }
+
+  // A large round-trip time, so that twice the RTT exceeds a third of the
+  // playout delay and the upper bound takes effect.
+  constexpr milliseconds kOutboundDelay(50);
+  constexpr milliseconds kInboundDelay(50);
+  SimulateNetworkRoundTrip(kOutboundDelay, kInboundDelay);
+
+  const Clock::duration cap = Clock::to_duration(kTargetPlayoutDelay) / 3;
+  ASSERT_GT(2 * sender()->GetCurrentRoundTripTime(), cap);
+  EXPECT_EQ(cap, sender()->GetMaxInFlightMediaDuration());
+}
+
+// Tests that when a third of the playout delay falls below the in-flight floor,
+// the floor wins and the std::clamp() bounds remain well-ordered (no
+// precondition violation).
+TEST_F(SenderTest, EnforcesMinimumInFlightForSmallPlayoutDelays) {
+  // A third of this playout delay (30ms) is below the 66ms floor, so the floor
+  // wins and the std::clamp() bounds remain well-ordered.
+  EXPECT_EQ(kMinSenderInFlight, MaxInFlightForPlayoutDelay(milliseconds(90)));
 }
 
 // Tests that the Sender rejects frames if too large a span of FrameIds would be
 // in-flight at once.
 TEST_F(SenderTest, RejectsEnqueuingBeforeProtocolDesignLimit) {
-  // For this test, use 1000 FPS. This makes the frames all one millisecond
-  // apart to avoid triggering the media-duration rejection logic.
-  constexpr int kFramesPerSecond = 1000;
+  // For this test, use a high frame rate so that all kMaxUnackedFrames frames
+  // fit within the in-flight media-duration limit, isolating the FrameId-span
+  // rejection logic (rather than triggering media-duration rejection first).
+  constexpr int kFramesPerSecond = 4000;
   constexpr milliseconds kSmallFrameDuration(1);
 
   // Send the absolute design-limit maximum number of frames.
@@ -733,7 +797,9 @@ TEST_F(SenderTest, CanCancelAllInFlightFrames) {
     EncodedFrameWithBuffer frame;
     PopulateFrameWithDefaults(sender()->GetNextFrameId(), FakeClock::now(), 0,
                               13 /* bytes */, &frame);
-    OverrideRtpTimestamp(i, &frame, 1000 /* fps */);
+    // High frame rate so all kMaxUnackedFrames frames fit within the in-flight
+    // media-duration limit.
+    OverrideRtpTimestamp(i, &frame, 4000 /* fps */);
     ASSERT_EQ(Sender::OK, sender()->EnqueueFrame(frame));
     SimulateExecution(kFrameDuration);
   }
@@ -1007,7 +1073,9 @@ TEST_F(SenderTest, ReferenceTimesCanBeNonMonotonic) {
     EncodedFrameWithBuffer frame;
     PopulateFrameWithDefaults(sender()->GetNextFrameId(), reference_time, 0,
                               13 /* bytes */, &frame);
-    // OverrideRtpTimestamp(i, &frame, 1000 /* fps */);
+    // High frame rate so all frames fit within the in-flight media-duration
+    // limit; this test exercises non-monotonic reference times, not RTP span.
+    OverrideRtpTimestamp(i, &frame, 1000 /* fps */);
     ASSERT_EQ(Sender::OK, sender()->EnqueueFrame(frame));
     SimulateExecution(kFrameDuration);
     reference_time -= microseconds(10);

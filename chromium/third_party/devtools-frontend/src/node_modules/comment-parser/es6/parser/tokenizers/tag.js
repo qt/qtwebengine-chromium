@@ -15,6 +15,9 @@ export default function tagTokenizer() {
             });
             return spec;
         }
+        if (match[1].includes('/')) {
+            return spec;
+        }
         tokens.tag = match[1];
         tokens.postTag = match[3];
         tokens.description = tokens.description.slice(match[0].length);

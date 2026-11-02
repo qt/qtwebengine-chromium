@@ -130,6 +130,22 @@ declare global {
     'devtools-markdown-view': MarkdownView;
   }
 }
+const BLOCK_TOKEN_TYPES = new Set<Marked.Marked.Token['type']>([
+  'list',
+  'code',
+  'table',
+  'heading',
+  'paragraph',
+  'blockquote',
+]);
+
+/**
+ * Identifies block-level tokens (such as nested lists, headings, or tables)
+ * that should be rendered outside of the inline typing animation spans.
+ */
+function isBlockToken(token: Marked.Marked.Token): boolean {
+  return BLOCK_TOKEN_TYPES.has(token.type);
+}
 
 /**
  * Default renderer is used for the IssuesPanel and allows only well-known images and links to be embedded.
@@ -231,8 +247,36 @@ export class MarkdownLitRenderer {
         return html`<ul class=${this.customClassMapForToken('list')}>${token.items.map(token => {
           return this.renderToken(token);
         })}</ul>`;
-      case 'list_item':
-        return html`<li class=${this.customClassMapForToken('list_item')}>${this.renderChildTokens(token)}</li>`;
+      case 'list_item': {
+        // Group consecutive inline tokens into a `.markdown-list-item-content` span
+        // so that the typing animation (requiring `overflow: hidden`) applies to the text
+        // instead of the parent `<li>` element. This keeps the list marker (bullet point)
+        // visible immediately. Block-level children (like nested lists) are kept outside
+        // of this span to prevent nesting layout issues.
+        const childTokens = (token as Marked.Marked.Tokens.ListItem).tokens || [];
+        const renderedParts: Lit.TemplateResult[] = [];
+        let currentInline: Marked.Marked.Token[] = [];
+
+        const flushInline = (): void => {
+          if (currentInline.length > 0) {
+            renderedParts.push(
+                html`<span class="markdown-list-item-content">${currentInline.map(t => this.renderToken(t))}</span>`);
+            currentInline = [];
+          }
+        };
+
+        for (const child of childTokens) {
+          if (isBlockToken(child)) {
+            flushInline();
+            renderedParts.push(html`${this.renderToken(child)}`);
+          } else {
+            currentInline.push(child);
+          }
+        }
+        flushInline();
+
+        return html`<li class=${this.customClassMapForToken('list_item')}>${renderedParts}</li>`;
+      }
       case 'text':
         return this.renderText(token);
       case 'codespan':
@@ -259,6 +303,33 @@ export class MarkdownLitRenderer {
         return html`<strong class=${this.customClassMapForToken('strong')}>${this.renderText(token)}</strong>`;
       case 'em':
         return html`<em class=${this.customClassMapForToken('em')}>${this.renderText(token)}</em>`;
+      case 'table': {
+        const tableToken = token as Marked.Marked.Tokens.Table;
+        return html`
+          <table class=${this.customClassMapForToken('table')}>
+            <thead>
+              <tr>
+                ${tableToken.header.map(cell => html`
+                  <th style=${cell.align ? `text-align: ${cell.align}` : ''}>
+                    ${cell.tokens.map(t => this.renderToken(t))}
+                  </th>
+                `)}
+              </tr>
+            </thead>
+            <tbody>
+              ${tableToken.rows.map(row => html`
+                <tr>
+                  ${row.map(cell => html`
+                    <td style=${cell.align ? `text-align: ${cell.align}` : ''}>
+                      ${cell.tokens.map(t => this.renderToken(t))}
+                    </td>
+                  `)}
+                </tr>
+              `)}
+            </tbody>
+          </table>
+        `;
+      }
       default:
         return null;
     }
@@ -286,11 +357,20 @@ export class MarkdownInsightRenderer extends MarkdownLitRenderer {
   }
 
   override renderToken(token: Marked.Marked.Token): Lit.LitTemplate {
-    const template = this.templateForToken(token as Marked.Marked.MarkedToken);
-    if (template === null) {
+    try {
+      const template = this.templateForToken(token as Marked.Marked.MarkedToken);
+      if (template === null) {
+        return html`${token.raw}`;
+      }
+      return template;
+    } catch (error) {
+      // We catch any rendering/lookup errors here so that one bad or malformed
+      // token (e.g. an invalid trace link or broken custom reference) does not
+      // crash the entire markdown renderer or cause it to fallback completely.
+      // Instead, we gracefully fallback to rendering the raw token text.
+      console.error('Failed to render markdown token:', error);
       return html`${token.raw}`;
     }
-    return template;
   }
 
   sanitizeUrl(maybeUrl: string): string|null {

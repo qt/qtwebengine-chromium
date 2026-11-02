@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
@@ -13,6 +14,10 @@ import * as DeveloperResources from './developer_resources.js';
 const {urlString} = Platform.DevToolsPath;
 
 describeWithEnvironment('DeveloperResourcesView', () => {
+  beforeEach(() => {
+    SDK.PageResourceLoader.PageResourceLoader.instance({forceNew: true, loadOverride: null, maxConcurrentLoads: 1});
+  });
+
   it('allows selecting resources', async () => {
     const extensionId = 'extensionId';
     const initiator = {target: null, frameId: null, extensionId, initiatorUrl: urlString`${extensionId}`};

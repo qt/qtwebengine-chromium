@@ -115,10 +115,11 @@ void ProgrammableEncoder::APIPushDebugGroup(StringView groupLabelIn) {
         [&](CommandAllocator* allocator) -> MaybeError {
             PushDebugGroupCmd* cmd =
                 allocator->Allocate<PushDebugGroupCmd>(Command::PushDebugGroup);
-            const char* label = AddNullTerminatedString(allocator, groupLabel, &cmd->length);
+            std::string_view copiedLabel =
+                AddNullTerminatedString(allocator, groupLabel, &cmd->length);
 
             mDebugGroupStackSize++;
-            mEncodingContext->PushDebugGroupLabel(std::string_view(label, cmd->length));
+            mEncodingContext->PushDebugGroupLabel(copiedLabel);
 
             return {};
         },
@@ -145,15 +146,12 @@ MaybeError ProgrammableEncoder::ValidateSetImmediates(uint32_t offset, size_t si
     return {};
 }
 
-MaybeError ProgrammableEncoder::ValidateSetBindGroup(BindGroupIndex index,
-                                                     BindGroupBase* group,
-                                                     uint32_t dynamicOffsetCountIn,
-                                                     const uint32_t* dynamicOffsetsIn) const {
+MaybeError ProgrammableEncoder::ValidateSetBindGroup(
+    BindGroupIndex index,
+    BindGroupBase* group,
+    ityp::span<BindingIndex, const uint32_t> dynamicOffsets) const {
     DAWN_INVALID_IF(index >= kMaxBindGroupsTyped, "Bind group index (%u) exceeds the maximum (%u).",
                     index, kMaxBindGroupsTyped);
-
-    ityp::span<BindingIndex, const uint32_t> dynamicOffsets(dynamicOffsetsIn,
-                                                            BindingIndex(dynamicOffsetCountIn));
 
     if (group == nullptr) {
         uint32_t size = static_cast<uint32_t>(dynamicOffsets.size());
@@ -171,7 +169,7 @@ MaybeError ProgrammableEncoder::ValidateSetBindGroup(BindGroupIndex index,
         "in %s.",
         dynamicOffsets.size(), layout->GetDynamicBufferCount(), layout);
 
-    for (BindingIndex i{0}; i < dynamicOffsets.size(); ++i) {
+    for (BindingIndex i{0u}; i < dynamicOffsets.size(); ++i) {
         const BindingInfo& bindingInfo = layout->GetBindingInfo(i);
 
         // BGL creation sorts bindings such that the dynamic buffer bindings are first.
@@ -228,19 +226,39 @@ MaybeError ProgrammableEncoder::ValidateSetBindGroup(BindGroupIndex index,
     return {};
 }
 
-void ProgrammableEncoder::RecordSetBindGroup(CommandAllocator* allocator,
-                                             BindGroupIndex index,
-                                             BindGroupBase* group,
-                                             uint32_t dynamicOffsetCount,
-                                             const uint32_t* dynamicOffsets) const {
+void ProgrammableEncoder::RecordSetBindGroup(
+    CommandAllocator* allocator,
+    BindGroupIndex index,
+    BindGroupBase* group,
+    ityp::span<BindingIndex, const uint32_t> dynamicOffsets) const {
     SetBindGroupCmd* cmd = allocator->Allocate<SetBindGroupCmd>(Command::SetBindGroup);
     cmd->index = index;
     cmd->group = group;
-    cmd->dynamicOffsetCount = dynamicOffsetCount;
-    if (dynamicOffsetCount > 0) {
-        uint32_t* offsets = allocator->AllocateData<uint32_t>(cmd->dynamicOffsetCount);
-        DAWN_UNSAFE_TODO(memcpy(offsets, dynamicOffsets, dynamicOffsetCount * sizeof(uint32_t)));
+    cmd->dynamicOffsetCount = dynamicOffsets.size();
+
+    if (!dynamicOffsets.empty()) {
+        ityp::span<BindingIndex, uint32_t> offsets =
+            allocator->AllocateData<uint32_t>(cmd->dynamicOffsetCount);
+        // TODO(https://crbug.com/524406299): Use Span::CopyFrom.
+        std::ranges::copy(dynamicOffsets, offsets.begin());
     }
+}
+
+void ProgrammableEncoder::RecordSetImmediates(CommandAllocator* allocator,
+                                              uint32_t offset,
+                                              Span<const std::byte> data) {
+    // Skip SetImmediates when no constants are updated.
+    if (data.empty()) {
+        return;
+    }
+    DAWN_ASSERT(data.size() <= kMaxImmediateDataBytes);
+
+    SetImmediatesCmd* cmd = allocator->Allocate<SetImmediatesCmd>(Command::SetImmediates);
+    cmd->offset = offset;
+    cmd->size = uint32_t(data.size());
+    Span<std::byte> immediateDatas = allocator->AllocateData<std::byte>(data.size());
+    // TODO(https://crbug.com/524406299): Use Span::CopyFrom.
+    std::ranges::copy(data, immediateDatas.begin());
 }
 
 MaybeError ProgrammableEncoder::SetResourceTable(ResourceTableBase* table,

@@ -12,9 +12,13 @@
 
 :host {
   border-radius: 12px;
-  color: var(--cr-primary-text-color);
+  color: var(--color-sys-on-surface-subtle);
   display: block;
   overflow: hidden;
+  --color-button-background-prominent: var(--color-sys-primary);
+  --color-button-foreground-prominent: var(--color-sys-on-primary);
+  --color-button-foreground: var(--color-sys-primary);
+  --color-button-border: var(--color-sys-tonal-outline);
 }
 
 #contentContainer {
@@ -33,14 +37,18 @@
 }
 
 #textContainer {
-  text-align: center;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  text-align: center;
 }
 
 :host([is-modal_]) #textContainer {
   text-align: start;
+}
+
+#title {
+  color: var(--color-sys-on-surface);
 }
 
 #avatar {

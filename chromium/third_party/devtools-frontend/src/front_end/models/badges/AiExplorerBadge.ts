@@ -4,7 +4,7 @@
 
 import * as Common from '../../core/common/common.js';
 
-import {Badge, BadgeAction} from './Badge.js';
+import {Badge, BadgeAction, type BadgeContext} from './Badge.js';
 
 const AI_EXPLORER_BADGE_URI = new URL('../../Images/ai-explorer-badge.svg', import.meta.url).toString();
 const AI_CONVERSATION_COUNT_SETTING_NAME = 'gdp.ai-conversation-count';
@@ -16,12 +16,17 @@ export class AiExplorerBadge extends Badge {
   override readonly title = 'AI Explorer';
   override readonly jslogContext = 'ai-explorer';
   override readonly imageUri = AI_EXPLORER_BADGE_URI;
-  #aiConversationCountSetting: Common.Settings.Setting<number> = Common.Settings.Settings.instance().createSetting(
-      AI_CONVERSATION_COUNT_SETTING_NAME, 0, Common.Settings.SettingStorageType.SYNCED);
+  readonly #aiConversationCountSetting: Common.Settings.Setting<number>;
 
   override readonly interestedActions = [
     BadgeAction.STARTED_AI_CONVERSATION,
   ] as const;
+
+  constructor(badgeContext: BadgeContext) {
+    super(badgeContext);
+    this.#aiConversationCountSetting = badgeContext.settings.createSetting(AI_CONVERSATION_COUNT_SETTING_NAME, 0,
+                                                                           Common.Settings.SettingStorageType.SYNCED);
+  }
 
   handleAction(_action: BadgeAction): void {
     const currentCount = this.#aiConversationCountSetting.get();

@@ -53,6 +53,7 @@ enum class LoadSeedResult {
 //
 // These values are persisted to logs. Entries should not be renumbered and
 // numeric values should never be reused.
+// LINT.IfChange(StoreSeedResult)
 enum class StoreSeedResult {
   kSuccess = 0,
   // kFailedEmpty = 1,  // Deprecated.
@@ -74,8 +75,11 @@ enum class StoreSeedResult {
   kNonGzipDeltaCount = 13,
   kGzipFullCount = 14,
   kNonGzipFullCount = 15,
-  kMaxValue = kNonGzipFullCount,
+  // The uncompressed size of the seed exceeded the limit.
+  kUncompressedSizeLimitExceeded = 16,
+  kMaxValue = kUncompressedSizeLimitExceeded,
 };
+// LINT.ThenChange(//tools/metrics/histograms/metadata/variations/enums.xml:VariationsSeedStoreResult)
 
 // The result of updating the date associated with an existing stored variations
 // seed.
@@ -93,11 +97,38 @@ enum class UpdateSeedDateResult {
 enum class VerifySignatureResult {
   kMissingSignature = 0,
   kDecodeFailed = 1,
-  kInvalidSignature = 2,
-  kInvalidSeed = 3,
+  // kInvalidPublicKey = 2, // no longer used
+  kInvalidSeedSignature = 3,
   kValidSignature = 4,
   kMaxValue = kValidSignature,
 };
+
+// The result of attempting to apply runtime mutable experiment from a new seed.
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+// LINT.IfChange(VariationsApplyRuntimeMutableChangesResult)
+enum class ApplyRuntimeMutableChangesResult {
+  // Reserve the default/uninitialized value. This should not be used.
+  kUnknown = 0,
+  kSuccess = 1,
+  kSimulatedGroupIsNull = 2,
+  kSimulatedGroupNotFound = 3,
+  kNotStrictKillswitch = 4,
+  kNotStartsActive = 5,
+  kNotPermanentConsistency = 6,
+  kAlreadyApplied = 7,
+  kNonRuntimeMutableFeature = 8,
+  kFeatureOverriddenFromCommandLine = 9,
+  kFeaturesNotControlledBySameTrial = 10,
+  kControllingTrialHasOtherFeatures = 11,
+  kTrialNameCollision = 12,
+  kControllingTrialNotFound = 13,
+  kUpdateFeatureStateFailed = 14,
+  kApplyRuntimeFieldTrialOverrideFailed = 15,
+  kValidationFailed = 16,
+  kMaxValue = kValidationFailed,
+};
+// LINT.ThenChange(//tools/metrics/histograms/metadata/variations/enums.xml:VariationsApplyRuntimeMutableChangesResult)
 
 // Describes instance manipulations applied to data.
 struct InstanceManipulations {

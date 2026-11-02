@@ -1,23 +1,6 @@
-# has-flag [![Build Status](https://travis-ci.org/sindresorhus/has-flag.svg?branch=master)](https://travis-ci.org/sindresorhus/has-flag)
+# has-flag
 
 > Check if [`argv`](https://nodejs.org/docs/latest/api/process.html#process_process_argv) has a specific flag
-
-Correctly stops looking after an `--` argument terminator.
-
----
-
-<div align="center">
-	<b>
-		<a href="https://tidelift.com/subscription/pkg/npm-has-flag?utm_source=npm-has-flag&utm_medium=referral&utm_campaign=readme">Get professional support for this package with a Tidelift subscription</a>
-	</b>
-	<br>
-	<sub>
-		Tidelift helps make open source sustainable for maintainers while giving companies<br>assurances about security, maintenance, and licensing for their dependencies.
-	</sub>
-</div>
-
----
-
 
 ## Install
 
@@ -25,12 +8,11 @@ Correctly stops looking after an `--` argument terminator.
 $ npm install has-flag
 ```
 
-
 ## Usage
 
 ```js
 // foo.js
-const hasFlag = require('has-flag');
+import hasFlag from 'has-flag';
 
 hasFlag('unicorn');
 //=> true
@@ -58,12 +40,13 @@ hasFlag('rainbow');
 $ node foo.js -f --unicorn --foo=bar -- --rainbow
 ```
 
-
 ## API
 
-### hasFlag(flag, [argv])
+### hasFlag(flag, argv?)
 
 Returns a boolean for whether the flag exists.
+
+It correctly stops looking after an `--` argument terminator.
 
 #### flag
 
@@ -73,17 +56,19 @@ CLI flag to look for. The `--` prefix is optional.
 
 #### argv
 
-Type: `string[]`<br>
+Type: `string[]`\
 Default: `process.argv`
 
 CLI arguments.
 
+---
 
-## Security
-
-To report a security vulnerability, please use the [Tidelift security contact](https://tidelift.com/security). Tidelift will coordinate the fix and disclosure.
-
-
-## License
-
-MIT © [Sindre Sorhus](https://sindresorhus.com)
+<div align="center">
+	<b>
+		<a href="https://tidelift.com/subscription/pkg/npm-has-flag?utm_source=npm-has-flag&utm_medium=referral&utm_campaign=readme">Get professional support for this package with a Tidelift subscription</a>
+	</b>
+	<br>
+	<sub>
+		Tidelift helps make open source sustainable for maintainers while giving companies<br>assurances about security, maintenance, and licensing for their dependencies.
+	</sub>
+</div>

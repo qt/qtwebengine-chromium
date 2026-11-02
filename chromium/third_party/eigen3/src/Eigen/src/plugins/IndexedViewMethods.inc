@@ -161,7 +161,7 @@ ConstVectorIndexedViewType<Indices> operator()(const IndexType (&indices)[Size])
  * ranges, etc.
  *
  * If the submatrix can be represented using a starting position \c (i,j) and positive sizes \c (rows,columns), then
- * this method will returns a Block object after extraction of the relevant information from the passed arguments. This
+ * this method will return a Block object after extraction of the relevant information from the passed arguments. This
  * is the case when all arguments are either:
  *  - An integer
  *  - Eigen::placeholders::all
@@ -171,8 +171,8 @@ ConstVectorIndexedViewType<Indices> operator()(const IndexType (&indices)[Size])
  * Otherwise a more general IndexedView<Derived,RowIndices',ColIndices'> object will be returned, after conversion of
  * the inputs to more suitable types \c RowIndices' and \c ColIndices'.
  *
- * For 1D vectors and arrays, you better use the operator()(const Indices&) overload, which behave the same way but
- * taking a single parameter.
+ * For 1D vectors and arrays, it is better to use the operator()(const Indices&) overload, which behaves the same way
+ * but takes a single parameter.
  *
  * See also this <a
  * href="https://stackoverflow.com/questions/46110917/eigen-replicate-items-along-one-dimension-without-useless-allocations">question</a>

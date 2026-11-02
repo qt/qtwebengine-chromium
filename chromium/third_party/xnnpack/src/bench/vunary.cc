@@ -300,9 +300,11 @@ void vlrelu(benchmark::State& state, uint64_t arch_flags,
       ->UseRealTime();
 #include "src/bf16-f32-vcvt/bf16-f32-vcvt.inc"
 #include "src/bf16-qs8-vcvt/bf16-qs8-vcvt.inc"
+#include "src/bf16-qu8-vcvt/bf16-qu8-vcvt.inc"
 #include "src/f32-bf16-vcvt/f32-bf16-vcvt.inc"
 #include "src/f16-f32-vcvt/f16-f32-vcvt.inc"
 #include "src/f16-qs8-vcvt/f16-qs8-vcvt.inc"
+#include "src/f16-qu8-vcvt/f16-qu8-vcvt.inc"
 #include "src/f32-f16-vcvt/f32-f16-vcvt.inc"
 #include "src/f32-qs8-vcvt/f32-qs8-vcvt.inc"
 #include "src/f32-qu8-vcvt/f32-qu8-vcvt.inc"

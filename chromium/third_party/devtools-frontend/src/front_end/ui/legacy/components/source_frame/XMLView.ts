@@ -5,7 +5,7 @@
 import '../../../components/highlighting/highlighting.js';
 
 import * as i18n from '../../../../core/i18n/i18n.js';
-import * as TextUtils from '../../../../models/text_utils/text_utils.js';
+import * as TextUtils from '../../../../core/text_utils/text_utils.js';
 import * as Lit from '../../../lit/lit.js';
 import * as VisualLogging from '../../../visual_logging/visual_logging.js';
 import * as UI from '../../legacy.js';
@@ -247,6 +247,10 @@ export class XMLTreeViewNode {
       this.#children = children(this.node).map(node => new XMLTreeViewNode(node)).toArray();
     }
     return this.#children;
+  }
+
+  treeNodeChildren(): Iterable<XMLTreeViewNode> {
+    return this.children();
   }
 
   match(regex: RegExp, closeTag: boolean): RegExpStringIterator<RegExpExecArray> {

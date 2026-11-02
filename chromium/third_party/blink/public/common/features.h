@@ -42,11 +42,6 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kAIPageContentIncludePopupWindows);
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
     kAIPageContentMissingSubframesFailSilently);
 
-// Controls the capturing of the Ad-Auction-Signals header, and the maximum
-// allowed Ad-Auction-Signals header value.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kAdAuctionSignals);
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(int,
-                                               kAdAuctionSignalsMaxSizeBytes);
 
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kAudioWorkletJSDenormalEnabler);
 
@@ -56,6 +51,9 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kAvoidTrustedParamsCopies);
 // Optimizes mixed content checks by moving InWhichFrameIsContentMixed below
 // fast-exits and caching flag state.
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kOptimizeMixedContentChecks);
+
+// When enabled, caches the stripped outgoing referrer URL on Document.
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kCacheDocumentOutgoingReferrer);
 
 // Whether async touch moves are sent unthrottled to javascript handlers.
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kUnthrottleAsyncTouchMoves);
@@ -69,11 +67,6 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
     kAsyncTouchMoveThrottlingPolicyParam);
 
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kLowerHighResolutionTimerThreshold);
-
-// Allows running DevTools main thread debugger even when a renderer process
-// hosts multiple main frames.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
-    kAllowDevToolsMainThreadDebuggerForMultipleMainFrames);
 
 // Enables rate obfuscation mitigation in compute pressure, to prevent
 // cross-channel attacks.
@@ -117,6 +110,9 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kAndroidDesktopUAPlatform);
 // If enabled, the user agent platform will be ChromeOS instead of Linux for
 // desktop Android devices, when kAndroidDesktopUAPlatform is disabled.
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kAndroidDesktopUASpoofAsChromeOS);
+
+// Gated prewarming of system fonts on Android to background threads.
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kAndroidSystemFontPrewarming);
 #endif
 
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
@@ -130,11 +126,7 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kAudioWorkletThreadRealtimePeriodMac);
 
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kAudioWorkletThreadPool);
 
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
-    kAutofillFixFieldsAssociatedWithNestedFormsByParser);
-
-BLINK_COMMON_EXPORT
-BASE_DECLARE_FEATURE(kAutofillSendUnidentifiedKeyAfterFill);
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kAutofillKeydownEditableElement);
 
 // https://crbug.com/1472970
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kAutoSpeculationRules);
@@ -301,10 +293,20 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kCreateImageBitmapOrientationNone);
 
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kDeclarativeCSSModulesUseDataURI);
 
+// Controls whether capture-early-failures is supported/used for Declarative
+// Performance Observers.
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
+    bool,
+    kDeclarativePerformanceObserverSupportCaptureEarlyFailures);
+
 // When enabled, dedicated workers and shared workers created from data: URLs
 // will have an opaque origin, as required by the HTML spec.
 // See https://crbug.com/40051700.
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kDataUrlWorkerOpaqueOrigin);
+
+// When enabled, streamed scripts are only decoded by blink, and the decoded
+// data shared with v8.
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kDecodeScriptsInBlink);
 
 // When enabled, HTMLTreeBuilder::Flush() will be throttled in kTextMode
 // to reduce O(n^2) string copies.
@@ -419,6 +421,9 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
 // Enables detecting JavaScript frameworks on worker load.
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kDetectJSFrameworksOnWorker);
 
+// Enables detecting Chinese language variants in LanguageDetector.
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kDetectZhVariants);
+
 // Improves the signal-to-noise ratio of network error related messages in the
 // DevTools Console.
 // See http://crbug.com/40788570.
@@ -455,15 +460,6 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
     kEnableDevtoolsDeepLinkViaExtensibilityApi);
 
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kEnforceNoopenerOnBlobURLNavigation);
-
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kEnableLazyLoadImageForInvisiblePage);
-enum class EnableLazyLoadImageForInvisiblePageType {
-  kAllInvisiblePage,
-  kPrerenderPage,
-};
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
-    EnableLazyLoadImageForInvisiblePageType,
-    kEnableLazyLoadImageForInvisiblePageTypeParam);
 
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
     kEventTimingIgnorePresentationTimeFromUnexpectedFrameSource);
@@ -528,176 +524,9 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
     std::string,
     kFilteringScrollPredictionFilterParam);
 
-// FLEDGE ad serving runtime flag/JS API.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kFledge);
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kFledgeBiddingAndAuctionServer);
-// Public key URL to use for the default bidding and auction Coordinator.
-// Overrides the JSON config for the default coordinator if both are specified.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(std::string,
-                                               kFledgeBiddingAndAuctionKeyURL);
-// JSON config specifying supported coordinator origins and their public key
-// URLs.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
-    std::string,
-    kFledgeBiddingAndAuctionKeyConfig);
-
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kFledgeOriginScopedKeys);
-// JSON config specifying supported coordinator origins and their public key
-// URLs.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(std::string,
-                                               kFledgeOriginScopedKeyConfig);
 
 // Block partial responses (206, 416) for requests without a Range header.
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kBlockPartialResponseWithoutRange);
-
-// Configures FLEDGE to consider k-anonymity. If both
-// kFledgeConsiderKAnonymity and kFledgeEnforceKAnonymity are on it will be
-// enforced; if only kFledgeConsiderKAnonymity is on it will be simulated.
-//
-// Turning on kFledgeEnforceKAnonymity alone does nothing.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kFledgeConsiderKAnonymity);
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kFledgeEnforceKAnonymity);
-
-// Configures a limit on the number of `selectableBuyerAndSellerReportingIds`
-// per ad. This is implemented with two parameters, a hard limit and a soft
-// limit, intended to ensure that interest groups joined or updated before a
-// reduction in the limit don't immediately become unusable. The hard limit is
-// enforced both when an interest group is joined or updated, and also anytime
-// the interest group is deserialized. The soft limit is only enforced when an
-// interest group is joined or updated. To execute a reduction in the limit, the
-// soft limit would first be changed to reflect the new value, and only after
-// the "maximum interest group TTL" amount of time has passed, the hard limit
-// would be lowered to match. Except during such a reduction, the hard limit and
-// soft limits should always match. Increases in the limit can be applied to
-// both the hard and soft limits simultaneously. The hard limit should always be
-// greater than or equal to the soft limit. For each parameter, a negative value
-// indicates that that no limit should be enforced.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
-    kFledgeLimitSelectableBuyerAndSellerReportingIds);
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
-    int,
-    kFledgeSelectableBuyerAndSellerReportingIdsSoftLimit);
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
-    int,
-    kFledgeSelectableBuyerAndSellerReportingIdsHardLimit);
-
-// Controls the max interest group lifetime in milliseconds. If
-// kFledgeMaxGroupLifetimeFeature is enabled, then the max interest group
-// lifetime will be kFledgeMaxGroupLifetimeFeature; otherwise, it will be 30
-// days.
-//
-// *WARNING*: Some UMA histograms assume a particular max lifetime for the
-// purposes of choosing appropriate bucketing, such as
-// Ads.InterestGroup.Auction.GroupFreshness*. As bucketing should not be changed
-// for an existing metric, consider adding a new metric with new bucketing if
-// increasing this value.
-//
-// NOTE: This value is only enforced when interest groups are joined -- the
-// lifetimes of groups already in the database will not be affected.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kFledgeMaxGroupLifetimeFeature);
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(base::TimeDelta,
-                                               kFledgeMaxGroupLifetime);
-// The join/bid/win metadata storage max history length is controlled by a
-// separate feature param. This is because metadata is included in B&A requests
-// sent to servers, so increasing the length of metadata history sent increases
-// the number of bytes sent over the network, necessitating special care.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
-    base::TimeDelta,
-    kFledgeMaxGroupLifetimeForMetadata);
-
-// Decide whether to enable forDebuggingOnly report sampling based on user's
-// third party cookie setting.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
-    kFledgeEnableSampleDebugReportOnCookieSetting);
-
-// Run sampling of forDebuggingOnly reports and let generateBid() and scoreAd()
-// know fDO's lockout/cooldown status through their browser signals, to allow
-// ad techs experimenting with and adapting to the algorithm.
-// But whether sending all or only sampled forDebuggingOnly reports depends on
-// flag kFledgeEnableFilteringDebugReportStartingFrom.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kFledgeSampleDebugReports);
-
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(base::TimeDelta,
-                                               kFledgeDebugReportLockout);
-// Prevent ad techs who accidentally call the API repeatedly for all users,
-// from locking themselves out of sending any more debug reports for years.
-// This is accomplished by most of the time putting that ad tech in a shorter
-// cooldown period, and only some time (e.g., 10% of the time) putting it in a
-// restricted cooldown period.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
-    base::TimeDelta,
-    kFledgeDebugReportRestrictedCooldown);
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(base::TimeDelta,
-                                               kFledgeDebugReportShortCooldown);
-// Gives a 1/(kFledgeDebugReportSamplingRandomMax+1) chance of allowing sending
-// forDebuggingOnly reports.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
-    int,
-    kFledgeDebugReportSamplingRandomMax);
-// Gives a 1/(kFledgeDebugReportSamplingRestrictedCooldownRandomMax+1) chance of
-// putting an ad tech in a restricted cooldown period.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
-    int,
-    kFledgeDebugReportSamplingRestrictedCooldownRandomMax);
-// Sets the time when to enable filtering debug reports. It's the time delta
-// since windows epoch. Lockout and cooldown collected before this time will be
-// ignored. This avoids locking out ad techs who used forDebuggingOnly API
-// before filtering was enabled. Set to zero to disable filtering debug reports.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
-    base::TimeDelta,
-    kFledgeEnableFilteringDebugReportStartingFrom);
-
-// If kFledgeCustomMaxAuctionAdComponents is enabled, the limit on number of
-// component ads will be taken from `kFledgeCustomMaxAuctionAdComponentsValue`
-// (up to kMaxAdAuctionAdComponentsConfigLimit) rather than default.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
-    int,
-    kFledgeCustomMaxAuctionAdComponentsValue);
-
-// Feature params for feature kFledgeRealTimeReporting.
-// Epsilon of FLEDGE real time reporting's Rappor noise algorithm.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(double,
-                                               kFledgeRealTimeReportingEpsilon);
-// Total number of buckets supported for FLEDGE real time reporting. Supported
-// buckets will be [0, kFledgeRealTimeReportingNumBuckets). Platform
-// contribution buckets will start from kFledgeRealTimeReportingNumBuckets.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
-    int,
-    kFledgeRealTimeReportingNumBuckets);
-// The priorityWeight of FLEDGE real time reporting's platform contributions.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
-    double,
-    kFledgeRealTimeReportingPlatformContributionPriority);
-// The number of FLEDGE real time reports (`kFledgeRealTimeReportingMaxReports`)
-// allowed to be sent per reporting origin per page per
-// `kFledgeRealTimeReportingWindow`.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(base::TimeDelta,
-                                               kFledgeRealTimeReportingWindow);
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
-    int,
-    kFledgeRealTimeReportingMaxReports);
-
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
-    kFledgeEnforcePermissionPolicyContributeOnEvent);
-
-// Feature flag to disable locally hosted ad auction.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kFledgeDisableLocalAdsAuctions);
-
-// Feature flag to limit on the number of
-// `selectableBuyerAndSellerReportingIds` for which the browser fetches k-anon
-// keys.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
-    kFledgeLimitSelectableBuyerAndSellerReportingIdsFetchedFromKAnon);
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
-    int,
-    kFledgeSelectableBuyerAndSellerReportingIdsFetchedFromKAnonLimit);
-
-// Feature flag to truncate the set of `selectableBuyerAndSellerReportingIds`
-// to only those for which k-anon status was fetched, as limited by the
-// kFledgeSelectableBuyerAndSellerReportingIdsFetchedFromKAnonLimit parameter
-// defined above.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
-    kFledgeTruncateSelectableBuyerAndSellerReportingIdsToKAnonLimit);
 
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kForceWebContentsDarkMode);
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
@@ -713,6 +542,9 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kForceHighPerformanceGPUForWebGL);
 
 // Gated visibility propagation from placeholder canvas to OffscreenCanvas.
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kOffscreenCanvasPropagateVisibility);
+
+// Discard WebGL back buffer when page visibility is hidden.
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kWebGLDiscardBackBuffer);
 
 // When enabled, forces ICC profile parsing to use skcms instead of the Rust
 // moxcms parser. Acts as a kill-switch for the Rust ICC parser.
@@ -734,11 +566,11 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
     kFrequencyCappingForOverlayPopupDetection);
 
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kGMSCoreEmoji);
+// If enabled, disables subsampling of GlobalPrivacyControl histogram entries.
+// Used in tests that verifies sampling in Renderer thread.
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kGlobalPrivacyControlAlwaysSample);
 
-// If enabled, then display audio track permission failures are ignored.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
-    kGetDisplayMediaIgnoreAudioPermissionFailures);
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kGMSCoreEmoji);
 
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
     std::string,
@@ -749,11 +581,6 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(size_t,
                                                kHTMLParserYieldTimeoutInMs);
 
-// When enabled all input arriving will be ignored, and the dispatcher will be
-// notified that the event was not consumed. With the exception of when there
-// is an attached Dev Tools session, during which input will be dispatched even
-// if we are hidden.
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kIgnoreInputWhileHidden);
 
 // If enabled, a fix for image loading prioritization based on visibility is
 // applied. See https://crbug.com/1369823.
@@ -794,6 +621,12 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kIndexedDBCompressValuesWithSnappy);
 BLINK_COMMON_EXPORT extern const base::FeatureParam<int>
     kIndexedDBCompressValuesWithSnappyCompressionThreshold;
 
+// Enables connection deduplication for IndexedDB
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kIndexedDBConnectionDeduplication);
+
+// Enables external memory accounting for IndexedDB databases.
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kIDBDatabaseExternalMemoryAccounting);
+
 // Always use `IsInlineScriptCacheEnabled()` rather than checking this feature
 // directly.
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kInlineScriptCache);
@@ -812,6 +645,10 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(base::TimeDelta,
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
     bool,
     kInlineScriptCacheEnabledForDefaultHint);
+
+// Gating the migration of Android IME cursor anchor updates from Mojo IPC to
+// RenderFrameMetadata.
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kInputCursorAnchorInfoMigration);
 
 // This flag is used to set field parameters to choose predictor we use when
 // kResamplingInputEvents is disabled. It's used for gathering accuracy metrics
@@ -1454,6 +1291,10 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kMHTML_Improvements);
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kMixedContentAutoupgrade);
 
+// Kill switch for the dedicated MoveWindowTo / ResizeWindowTo IPCs; falls back
+// to SetWindowRect when disabled. https://crbug.com/512533947.
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kMoveResizeWindowToIPCs);
+
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kNavigationPredictor);
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
     int,
@@ -1488,6 +1329,9 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kPath2DPaintCache);
 
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kPaintHolding);
 
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
+    kPopulateDOMNodeIdInFocusedNodeDetails);
+
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
     bool,
@@ -1497,8 +1341,6 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kDedicatedWorkerAblationStudyEnabled);
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(int,
                                                kDedicatedWorkerStartDelayInMs);
-
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kUpdatedDeviceMemoryLimitsFor2026);
 
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kUseAncestorRenderFrameForWorker);
 
@@ -1557,6 +1399,17 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kPreloadingEagerViewportHeuristics);
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
     base::TimeDelta,
     kPreloadingEagerViewportHeuristicsPresentTime);
+
+// When enabled, speculation-rules link-selection heuristics (pointerdown,
+// hover dwell, viewport) select and enact non-immediate candidates on the
+// renderer side and ask the browser to execute a specific candidate via
+// SpeculationHost.EnactCandidate, instead of forwarding raw interaction
+// signals to the browser's PreloadingDecider. This makes the renderer the
+// source of truth for which speculations were enacted (used by the
+// SpeculationMeasurement API). Prototype: currently only the pointerdown
+// path is renderer-driven.
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
+    kSpeculationRulesRendererSideHeuristics);
 
 // If enabled, the machine learning model will be employed to predict the next
 // click for speculation-rule based pre-loadings.
@@ -1617,19 +1470,6 @@ BLINK_COMMON_EXPORT extern const char
 // status a feature parameter.
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
     kPrerender2EarlyDocumentLifecycleUpdate);
-
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kPrivateAggregationApi);
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
-    bool,
-    kPrivateAggregationApiEnabledInSharedStorage);
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
-    bool,
-    kPrivateAggregationApiEnabledInProtectedAudience);
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
-    bool,
-    kPrivateAggregationApiDebugModeEnabledAtAll);
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
-    kPrivateAggregationApiProtectedAudienceAdditionalExtensions);
 
 // If set, HTMLDocumentParser processes data immediately rather than after a
 // delay. This is further controlled by the feature params starting with the
@@ -1796,6 +1636,8 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
     kSendCnameAliasesToSubresourceFilterFromRenderer);
 
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kSetIntervalWithoutClamp);
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
+    kSetSelectionForAccessibilityHandlingInputEvent);
 
 // If enabled, the shared storage worklet threads (on the same renderer process)
 // will share the same backing thread; otherwise, each will own a dedicated
@@ -1851,6 +1693,9 @@ BLINK_COMMON_EXPORT extern const base::FeatureParam<bool>
     kSpeculativeServiceWorkerWarmUpOnPointerover;
 BLINK_COMMON_EXPORT extern const base::FeatureParam<bool>
     kSpeculativeServiceWorkerWarmUpOnPointerdown;
+
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
+    kServiceWorkerRaceNetworkRequestFallbackOnDisconnect);
 
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kServiceWorkerSyntheticResponse);
 
@@ -1924,9 +1769,6 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kThreadedBodyLoader);
 // If enabled, the HTMLPreloadScanner will run on a worker thread.
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kThreadedPreloadScanner);
 
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
-    bool,
-    kThrottleFrameRateOnInitialization);
 
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kThrottleInstallingServiceWorker);
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
@@ -1957,7 +1799,6 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kURLPatternDummyURLCanonicalization);
 // feature directly.
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kUsePersistentCacheForCodeCache);
 
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kUseSnappyForParkableStrings);
 
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kUseZstdForParkableStrings);
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(int, kZstdCompressionLevel);
@@ -1973,6 +1814,10 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(
 
 // Feature flag for driving encoding with the Metronome by VSyncs.
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kVSyncEncoding);
+
+#if BUILDFLAG(IS_ANDROID)
+BLINK_COMMON_EXPORT bool IsVirtualKeyboardGeometryAndInsetFixesEnabled();
+#endif
 
 // Server-side kill switch for applying the local VisualViewport transform
 // (page scale + visual viewport location) when mapping visual rects into
@@ -2011,12 +1856,13 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kWebRtcPqcForDtls);
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kWebAppEnableScopeExtensionsBySite);
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
     kWebAppEnableScopeExtensionsForIsolatedWebApps);
-BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kWebAppManifestLocalization);
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kWebAppManifestLockScreen);
 
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kWebAppMigrationApi);
 
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kWebAudioDeferPullStatusUpdate);
+
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kWebAudioAudibilityHysteresis);
 
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kWebFontsCacheAwareTimeoutAdaption);
 
@@ -2024,7 +1870,13 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kWebRtcHideLocalIpsWithMdns);
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kWebRtcIgnoreUnspecifiedColorSpace);
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kWebRtcUseMinMaxVEADimensions);
 
+// If enabled, WebUI renderer processes will bypass non-critical Mojo interface
+// registrations (like TimeZoneMonitor, DevicePosture, MediaDecoder, and
+// PowerMonitor).
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kWebUIBypassMojoConnections);
+
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kWebUSBTransferSizeLimit);
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kWebUSBWorldIsolatedCache);
 
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kWebviewAccelerateSmallCanvases);
 
@@ -2078,7 +1930,6 @@ BLINK_COMMON_EXPORT bool IsSetIntervalWithoutClampEnabled();
 // back/forward cache.
 BLINK_COMMON_EXPORT bool IsUnloadBlocklisted();
 
-BLINK_COMMON_EXPORT bool ParkableStringsUseSnappy();
 
 // Returns true if the in-browser KeepAliveURLLoaderService should be enabled by
 // verifying either kKeepAliveInBrowserMigration or kFetchLaterAPI is true.

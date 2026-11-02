@@ -14,30 +14,31 @@ export function getHtml(this: ComposeboxVoiceSearchElement) {
         class="${this.shouldShowErrorScrim_() ? 'has-error' : ''}">
       <div id="error-container" ?hidden="${!this.shouldShowErrorScrim_()}">
         <span id="error-message">${this.errorMessage_}</span>
-        ${this.detailedError_ === VoiceSearchError.NO_MATCH ?
+        ${this.detailedError === VoiceSearchError.NO_MATCH ?
             html`<a id="tryAgainLink" href="#"
                 @click="${this.onTryAgainClick_}"
               >${this.i18n('tryAgain')}
             </a>`
-        : ''}
-        <a id="details" part="voice-details-link" target="_blank"
+        : html`<a id="details" part="voice-details-link" target="_blank"
             href="${this.detailsUrl_}"
             @click="${this.onLinkClick_}"
           >${this.i18n('voiceDetails')}
-        </a>
+        </a>`}
       </div>
-      ${this.isPermissionPromptOpen_ ? html`
-          <textarea id="input"
+      ${this.isPermissionPromptOpen ? html`
+          <div id="input"
               class="${this.shouldShowErrorScrim_() ? 'hidden' : ''}"
-              placeholder="${this.i18n('voiceWaiting')}" disabled
-          ></textarea>`
+          >
+            <span>${this.i18n('voiceWaiting')}</span>
+          </div>`
       : ''}
-      ${this.liveTranscriptEnabled && !this.isPermissionPromptOpen_ ?
-          html`<textarea id="input"
-              .value="${this.transcript_}"
-              placeholder="${this.listeningPlaceholder_}"
-              class="${this.shouldShowErrorScrim_() ? 'hidden' : ''}" disabled
-          ></textarea>`
+      ${this.liveTranscriptEnabled && !this.isPermissionPromptOpen ?
+          html`<div id="input"
+              class="${this.shouldShowErrorScrim_() ? 'hidden' : ''}"
+          >
+            <span id="transcript-text"
+            >${this.transcript_ || this.listeningPlaceholder_}</span>
+          </div>`
       : ''}
       ${!this.submitStopButtonsEnabled || this.shouldShowErrorScrim_() ?
           html`<cr-icon-button id="closeButton" class="icon-clear"

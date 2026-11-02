@@ -19,7 +19,6 @@
 
 #include <cstdint>
 
-#include "src/utils/constants.h"
 #include "src/utils/types.h"
 
 namespace libgav1 {

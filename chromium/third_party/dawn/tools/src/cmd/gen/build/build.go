@@ -42,6 +42,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 
 	"dawn.googlesource.com/dawn/tools/src/cmd/gen/common"
@@ -657,6 +658,124 @@ func checkForCycles(p *Project, fsReaderWriter oswrapper.FilesystemReaderWriter)
 	return nil
 }
 
+// platformOSMap maps Tint's build-flag variables to standard Bazel platform constraints.
+// This makes it easier for clients to build w/o needing to set too many flags.
+var platformOSMap = map[string]string{
+	"tint_build_is_win":   "@platforms//os:windows",
+	"tint_build_is_linux": "@platforms//os:linux",
+	"tint_build_is_mac":   "@platforms//os:macos",
+}
+
+// externalDependencyBazelTargets maps external dependencies to their corresponding Bazel target
+// labels. Supported dependencies map to non-empty strings, while unsupported dependencies map
+// to empty strings.
+var externalDependencyBazelTargets = map[string]string{
+	"abseil":                         `"@abseil_cpp//absl/strings",`,
+	"dxc-include":                    `"//third_party/directx-shader-compiler:dxc_headers",`,
+	"gmock":                          `"@gtest",`,
+	"google-benchmark":               `"@benchmark",`,
+	"gtest":                          `"@gtest",`,
+	"spirv-headers":                  `"@spirv_headers//:spirv_cpp11_headers", "@spirv_headers//:spirv_c_headers",`,
+	"spirv-opt-internal":             `"@spirv_tools//:spirv_tools_opt",`,
+	"spirv-tools":                    `"@spirv_tools",`,
+	"src_utils_crash_handler":        `"//src/utils:crash_handler",`,
+	"src_utils":                      `"//src/utils",`,
+	"src_utils_chromium_test_compat": `"//src/utils/chromium_test_compat",`,
+	// Explicitly mark unsupported dependencies as empty so they can be identified as unsupported
+	// and we can omit a block if it only contains unsupported deps.
+	"dl":                    "",
+	"dxcompiler-for-fuzzer": "",
+	"glslang-res-limits":    "",
+	"glslang":               "",
+	"jsoncpp":               "",
+	"langsvr":               "",
+	"mesa":                  "",
+	"metal":                 "",
+	"thread":                "",
+	"winsock":               "",
+}
+
+// HasCppSrcs returns true if the conditional has any supported C++ files.
+func HasCppSrcs(cond *TargetConditional) bool {
+	for _, file := range cond.SourceFiles {
+		// For now, it's easiest to just reject lists that contain only .mm files.
+		if !strings.HasSuffix(file.Name, ".mm") {
+			return true
+		}
+	}
+	return false
+}
+
+// HasSupportedDeps returns true if the conditional has one or more deps supported by Bazel.
+// If this returns false, then the block can be omitted from Bazel files.
+func HasSupportedDeps(cond *TargetConditional) bool {
+	if len(cond.InternalDependencies) > 0 {
+		return true
+	}
+	for _, dep := range cond.ExternalDependencies {
+		if externalDependencyBazelTargets[string(dep.Name)] != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// ExternalDependencyTarget returns the Bazel target label for the given external dependency.
+func ExternalDependencyTarget(dep ExternalDependency) (string, error) {
+	target, ok := externalDependencyBazelTargets[string(dep.Name)]
+	if !ok {
+		return "", fmt.Errorf("unhandled external dependency '%v'", dep.Name)
+	}
+	return target, nil
+}
+
+// ConditionTargetLabel returns a Bazel target label for a build variable and optional negation.
+// For platform constraints, it returns the standard @platforms//os target.
+// For custom flags, it returns the global //src/tint config settings.
+//
+// Examples:
+//
+//	ConditionTargetLabel("tint_build_is_win", false)     => "@platforms//os:windows"
+//	ConditionTargetLabel("tint_build_glsl_writer", true) => "//src/tint:tint_build_glsl_writer_false"
+func ConditionTargetLabel(variable string, isNegated bool) string {
+	if label, ok := platformOSMap[variable]; ok {
+		return label
+	}
+	suffix := "_true"
+	if isNegated {
+		suffix = "_false"
+	}
+	return "//src/tint:" + variable + suffix
+}
+
+// ShouldSkipOrs returns true if the OR expression consists entirely of negated platform variables.
+func ShouldSkipOrs(ors cnf.Ors) bool {
+	for _, unary := range ors {
+		if !unary.Negate {
+			return false
+		}
+		if _, ok := platformOSMap[unary.Var]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// ShouldSkipAnds returns true if the AND expression consists entirely of negated platform variables.
+func ShouldSkipAnds(ands cnf.Ands) bool {
+	for _, ors := range ands {
+		for _, unary := range ors {
+			if !unary.Negate {
+				return false
+			}
+			if _, ok := platformOSMap[unary.Var]; !ok {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // TODO(crbug.com/344014313): Add unittests once fileutils and template are
 // converted to support dependency injection
 // emitBuildFiles emits a 'BUILD.*' file in each source directory for each
@@ -712,7 +831,21 @@ func emitBuildFiles(p *Project, fsReaderWriter oswrapper.FilesystemReaderWriter)
 			w.WriteString(common.Header(string(existing), CanonicalizePath(relTmplPath), "#"))
 
 			// Write the template output
-			err = templates[tmplPath].Run(w, dir, map[string]any{})
+			err = templates[tmplPath].Run(w, dir, map[string]any{
+				"ShouldSkipUnary": func(unary cnf.Unary) bool {
+					_, ok := platformOSMap[unary.Var]
+					return ok
+				},
+				"ShouldSkipOrs":  ShouldSkipOrs,
+				"ShouldSkipAnds": ShouldSkipAnds,
+				"PlatformLabel": func(variable string) string {
+					return platformOSMap[variable]
+				},
+				"HasCppSrcs":               HasCppSrcs,
+				"HasSupportedDeps":         HasSupportedDeps,
+				"ExternalDependencyTarget": ExternalDependencyTarget,
+				"ConditionTargetLabel":     ConditionTargetLabel,
+			})
 			if err != nil {
 				return nil, err
 			}
@@ -785,13 +918,25 @@ func emitBuildFiles(p *Project, fsReaderWriter oswrapper.FilesystemReaderWriter)
 		generatedSources[i] = "src/tint/" + strings.TrimSuffix(v, ".tmpl")
 	}
 	depsForGeneratedSources, err := glob.Scan(p.Root, glob.MustParseConfig(`{
-		"paths": [{"include": ["**/*.def"]}]
+		"paths": [{"include": ["**/*.def", "utils/templates/*.inc"]}]
 	}`), fsReaderWriter)
 	if err != nil {
 		return err
 	}
+	for i, dep := range depsForGeneratedSources {
+		depsForGeneratedSources[i] = CanonicalizePath(dep)
+	}
 	depsForGeneratedSources = append(depsForGeneratedSources, p.AllTemplatePaths.List()...)
+
+	goSources, err := getGoDependencies(p, fsReaderWriter)
+	if err != nil {
+		return err
+	}
+
 	if err := emitGeneratedSourceListForBazel(p, fsReaderWriter, generatedSources, depsForGeneratedSources); err != nil {
+		return err
+	}
+	if err := emitGeneratedSourceListForGN(p, fsReaderWriter, generatedSources, depsForGeneratedSources, goSources); err != nil {
 		return err
 	}
 
@@ -858,6 +1003,20 @@ func emitGeneratedSourceListForBazel(p *Project, fsReaderWriter oswrapper.Filesy
 	return writeFileIfStale(p, fsReaderWriter, bzlPath, sb.String())
 }
 
+func emitGeneratedSourceListForGN(p *Project, fsReaderWriter oswrapper.FilesystemReaderWriter, generatedSources []string, depsForGeneratedSources []string, goSources []string) error {
+	gniPath := path.Join(p.Root, "generated_sources.gni")
+	sb := &strings.Builder{}
+	sb.WriteString(common.Header("", "", "#"))
+	sb.WriteString("\n")
+	sb.WriteString("import(\"tint.gni\")\n\n")
+
+	deps := append(depsForGeneratedSources, goSources...)
+	emitList(sb, generatedSources, "tint_generated_sources = [\n", "]\n\n", "  \"${root_gen_dir}/", "\",\n")
+	emitList(sb, deps, "tint_generation_dependencies = [\n", "]\n", "  \"", "\",\n")
+
+	return writeFileIfStale(p, fsReaderWriter, gniPath, sb.String())
+}
+
 func writeFileIfStale(p *Project, fsReaderWriter oswrapper.FilesystemReaderWriter, filepath string, content string) error {
 	existing, _ := fsReaderWriter.ReadFile(filepath)
 	if string(existing) != content {
@@ -897,3 +1056,37 @@ var (
 	reCondition     = regexp.MustCompile(`//\s*GEN_BUILD:CONDITION\((.*)\)\s*$`)
 	reDoNotGenerate = regexp.MustCompile(`#\s*GEN_BUILD:DO_NOT_GENERATE`)
 )
+
+func getGoDependencies(p *Project, fsReaderWriter oswrapper.FilesystemReaderWriter) ([]string, error) {
+	dawnRoot := path.Dir(path.Dir(p.Root))
+	files, err := glob.Scan(dawnRoot, glob.MustParseConfig(`{
+		"paths": [
+			{"include": ["tools/src/cmd/gen/**/*.go", "tools/src/tint/intrinsic/**/*.go"]},
+			{"exclude": ["tools/src/cmd/gen/build/**", "**/*_test.go"]}
+		]
+	}`), fsReaderWriter)
+	if err != nil {
+		return nil, err
+	}
+
+	var goFiles []string
+	for _, f := range files {
+		relToTint, err := filepath.Rel("src/tint", f)
+		if err != nil {
+			return nil, err
+		}
+		goFiles = append(goFiles, filepath.ToSlash(relToTint))
+	}
+	sort.Strings(goFiles)
+	return goFiles, nil
+}
+
+// HasObjcSrcs returns true if the target contains any Objective-C++ .mm files.
+func (t *Target) HasObjcSrcs() bool {
+	for name := range t.SourceFileSet {
+		if strings.HasSuffix(name, ".mm") {
+			return true
+		}
+	}
+	return false
+}

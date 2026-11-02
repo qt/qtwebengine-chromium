@@ -124,8 +124,6 @@ class AlignedBox {
   template <typename Derived>
   EIGEN_DEVICE_FUNC inline explicit AlignedBox(const MatrixBase<Derived>& p) : m_min(p), m_max(m_min) {}
 
-  EIGEN_DEVICE_FUNC ~AlignedBox() {}
-
   /** \returns the dimension in which the box holds */
   EIGEN_DEVICE_FUNC inline Index dim() const {
     return AmbientDimAtCompileTime == Dynamic ? m_min.size() : Index(AmbientDimAtCompileTime);
@@ -165,7 +163,7 @@ class AlignedBox {
 
   /** \returns the lengths of the sides of the bounding box.
    * Note that this function does not get the same
-   * result for integral or floating scalar types: see
+   * result for integral or floating scalar types.
    */
   EIGEN_DEVICE_FUNC inline const CwiseBinaryOp<internal::scalar_difference_op<Scalar, Scalar>, const VectorType,
                                                const VectorType>
@@ -216,7 +214,7 @@ class AlignedBox {
   EIGEN_DEVICE_FUNC inline VectorType sample() const {
     VectorType r(dim());
     for (Index d = 0; d < dim(); ++d) {
-      if (!ScalarTraits::IsInteger) {
+      EIGEN_IF_CONSTEXPR (!ScalarTraits::IsInteger) {
         r[d] = m_min[d] + (m_max[d] - m_min[d]) * internal::random<Scalar>(Scalar(0), Scalar(1));
       } else
         r[d] = internal::random(m_min[d], m_max[d]);

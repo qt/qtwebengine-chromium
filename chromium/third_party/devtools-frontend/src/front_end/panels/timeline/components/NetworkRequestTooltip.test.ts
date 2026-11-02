@@ -2,15 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import sinon from 'sinon';
+
 import * as SDK from '../../../core/sdk/sdk.js';
 import * as Protocol from '../../../generated/protocol.js';
 import * as Trace from '../../../models/trace/trace.js';
 import {assertScreenshot, renderElementIntoDOM} from '../../../testing/DOMHelpers.js';
-import {describeWithMockConnection} from '../../../testing/MockConnection.js';
+import {describeWithEnvironment} from '../../../testing/EnvironmentHelpers.js';
 
 import * as TimelineComponents from './components.js';
 
-describeWithMockConnection('NetworkRequestTooltip', () => {
+describeWithEnvironment('NetworkRequestTooltip', () => {
   it('shows a throttling indicator', async () => {
     const networkRequest = sinon.createStubInstance(SDK.NetworkRequest.NetworkRequest);
     sinon.stub(SDK.TraceObject.RevealableNetworkRequest, 'create')
@@ -28,9 +30,9 @@ describeWithMockConnection('NetworkRequestTooltip', () => {
           syntheticData: {sendStartTime: 100},
           url: 'https://example.com',
           mimeType: Protocol.Network.ResourceType.Document,
-          redirects: []
-        }
-      }
+          redirects: [],
+        },
+      },
     } as unknown as Trace.Types.Events.SyntheticNetworkRequest;
     tooltip.entityMapper = sinon.createStubInstance(Trace.EntityMapper.EntityMapper);
     await tooltip.updateComplete;

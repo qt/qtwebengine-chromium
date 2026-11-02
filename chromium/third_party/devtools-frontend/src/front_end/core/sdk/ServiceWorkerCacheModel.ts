@@ -15,7 +15,7 @@ import {Capability, type Target} from './Target.js';
 
 const UIStrings = {
   /**
-   * @description Text in Service Worker Cache Model
+   * @description Error message when failing to delete a cache entry in ServiceWorkerCacheAgent.
    * @example {https://cache} PH1
    * @example {error message} PH2
    */
@@ -28,6 +28,7 @@ export class ServiceWorkerCacheModel extends SDKModel<EventTypes> implements Pro
   readonly cacheAgent: ProtocolProxyApi.CacheStorageApi;
   readonly #storageAgent: ProtocolProxyApi.StorageApi;
   readonly #storageBucketModel: StorageBucketsModel;
+  readonly #console: Common.Console.Console;
 
   readonly #caches = new Map<string, Cache>();
   readonly #storageKeysTracked = new Set<string>();
@@ -48,6 +49,7 @@ export class ServiceWorkerCacheModel extends SDKModel<EventTypes> implements Pro
     this.cacheAgent = target.cacheStorageAgent();
     this.#storageAgent = target.storageAgent();
     this.#storageBucketModel = (target.model(StorageBucketsModel) as StorageBucketsModel);
+    this.#console = target.targetManager().getConsole();
   }
 
   enable(): void {
@@ -101,8 +103,8 @@ export class ServiceWorkerCacheModel extends SDKModel<EventTypes> implements Pro
   async deleteCacheEntry(cache: Cache, request: string): Promise<void> {
     const response = await this.cacheAgent.invoke_deleteEntry({cacheId: cache.cacheId, request});
     if (response.getError()) {
-      Common.Console.Console.instance().error(i18nString(
-          UIStrings.serviceworkercacheagentError, {PH1: cache.toString(), PH2: String(response.getError())}));
+      this.#console.error(i18nString(UIStrings.serviceworkercacheagentError,
+                                     {PH1: cache.toString(), PH2: String(response.getError())}));
       return;
     }
   }
@@ -269,16 +271,6 @@ export class ServiceWorkerCacheModel extends SDKModel<EventTypes> implements Pro
   }
 
   indexedDBContentUpdated(_event: Protocol.Storage.IndexedDBContentUpdatedEvent): void {
-  }
-
-  interestGroupAuctionEventOccurred(_event: Protocol.Storage.InterestGroupAuctionEventOccurredEvent): void {
-  }
-
-  interestGroupAccessed(_event: Protocol.Storage.InterestGroupAccessedEvent): void {
-  }
-
-  interestGroupAuctionNetworkRequestCreated(_event: Protocol.Storage.InterestGroupAuctionNetworkRequestCreatedEvent):
-      void {
   }
 
   sharedStorageAccessed(_event: Protocol.Storage.SharedStorageAccessedEvent): void {

@@ -17,7 +17,7 @@
 #include "components/services/storage/public/mojom/local_storage_control.mojom.h"
 #include "components/services/storage/public/mojom/session_storage_control.mojom.h"
 #include "components/services/storage/public/mojom/storage_usage_info.mojom.h"
-#include "content/browser/child_process_security_policy_impl.h"
+#include "content/browser/security/cpsp/child_process_security_policy_impl.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/dom_storage_context.h"
 #include "mojo/public/cpp/bindings/message.h"
@@ -92,6 +92,9 @@ class CONTENT_EXPORT DOMStorageContextWrapper
   scoped_refptr<SessionStorageNamespace> RecreateSessionStorage(
       const std::string& namespace_id) override;
   void StartScavengingUnusedSessionStorage() override;
+  bool scavenging_started_for_testing() const {
+    return scavenging_started_for_testing_;
+  }
 
   // Used by content settings to alter the behavior around
   // what data to keep and what data to discard at shutdown.
@@ -191,6 +194,7 @@ class CONTENT_EXPORT DOMStorageContextWrapper
   mojo::Remote<storage::mojom::LocalStorageControl> local_storage_control_;
 
   std::optional<storage::StoragePolicyObserver> storage_policy_observer_;
+  bool scavenging_started_for_testing_ = false;
 };
 
 }  // namespace content

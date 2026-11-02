@@ -17,6 +17,7 @@
 
 #if BUILDFLAG(IS_APPLE)
 #if __OBJC__
+@protocol MTLDevice;
 @protocol MTLSharedEvent;
 #endif  // __OBJC__
 #endif
@@ -52,7 +53,7 @@ enum DisplayType {
   DEFAULT = 0,
   SWIFT_SHADER = 1,
   ANGLE_WARP = 2,
-  ANGLE_D3D9 = 3,
+  ANGLE_D3D9 [[deprecated]] = 3,
   ANGLE_D3D11 = 4,
   ANGLE_OPENGL = 5,
   ANGLE_OPENGLES = 6,
@@ -146,7 +147,9 @@ class GL_EXPORT GLDisplayEGL : public GLDisplay {
                               uint64_t* signal_value_out);
   void WaitForMetalSharedEvent(id<MTLSharedEvent> shared_event,
                                uint64_t signal_value);
+  id<MTLDevice> GetMetalDevice() const;
 #endif  // __OBJC__
+  size_t GetMetalDeviceAllocatedMemory() const;
 
   // Call periodically to clean up resources.
   void CleanupTempEGLSyncObjects();

@@ -70,7 +70,7 @@ describeWithEnvironment('Export Trace Options ', () => {
   it('should show include annotations checkbox only when annotations are present', async () => {
     const component = await renderExportTraceOptionsDialog();
     (component as TimelineComponents.ExportTraceOptions.ExportTraceOptions).updateContentVisibility({
-      annotationsExist: false
+      annotationsExist: false,
     });
 
     assert.isNotNull(component.shadowRoot);

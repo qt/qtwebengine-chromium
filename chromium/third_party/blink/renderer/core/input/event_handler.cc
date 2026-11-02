@@ -553,7 +553,7 @@ bool EventHandler::IsSelectingLink(const HitTestResult& result) {
       mouse_event_manager_->MousePressed() &&
       GetSelectionController().MouseDownMayStartSelect() &&
       !mouse_event_manager_->MouseDownMayStartDrag() &&
-      !frame_->Selection().ComputeVisibleSelectionInDOMTree().IsNone();
+      !frame_->Selection().ComputeVisibleSelectionInDomTree().IsNone();
   return mouse_selection && result.IsOverLink();
 }
 
@@ -929,6 +929,10 @@ WebInputEventResult EventHandler::HandleMousePressEvent(
   if (!mouse_event.FromTouch())
     frame_->Selection().SetCaretBlinkingSuspended(true);
 
+  if (mouse_event.button == WebPointerProperties::Button::kLeft) {
+    frame_->GetChromeClient().WillDispatchPointerDown(*frame_);
+  }
+
   WebInputEventResult event_result = DispatchMousePointerEvent(
       WebInputEvent::Type::kPointerDown, mev.InnerPossiblyPseudoElement(),
       mev.Event(), Vector<WebMouseEvent>(), Vector<WebMouseEvent>());
@@ -995,7 +999,7 @@ WebInputEventResult EventHandler::HandleMousePressEvent(
     DCHECK_EQ(WebInputEvent::Type::kMouseDown, mouse_event.GetType());
     HitTestResult result = mev.GetHitTestResult();
     result.SetToShadowHostIfInUAShadowRoot();
-    frame_->GetChromeClient().OnMouseDown(*result.InnerNode());
+    frame_->GetChromeClient().DidDispatchMouseDown(*result.InnerNode());
   }
 
   return event_result;
@@ -2188,7 +2192,7 @@ static bool ShouldShowContextMenuAtSelection(const FrameSelection& selection) {
       DocumentUpdateReason::kContextMenu);
 
   const VisibleSelection& visible_selection =
-      selection.ComputeVisibleSelectionInDOMTree();
+      selection.ComputeVisibleSelectionInDomTree();
   if (!visible_selection.IsRange() && !visible_selection.RootEditableElement())
     return false;
   return selection.SelectionHasFocus();
@@ -2219,8 +2223,8 @@ WebInputEventResult EventHandler::ShowNonLocatedContextMenu(
 
     // Enclose the selection rect fully between the handles. If the handles are
     // on the same line, the selection rect is empty.
-    const SelectionInDOMTree& visible_selection =
-        selection.ComputeVisibleSelectionInDOMTree().AsSelection();
+    const SelectionInDomTree& visible_selection =
+        selection.ComputeVisibleSelectionInDomTree().AsSelection();
     const PositionWithAffinity start_position(
         visible_selection.ComputeStartPosition(), visible_selection.Affinity());
     const gfx::Point start_point =

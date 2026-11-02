@@ -8,6 +8,7 @@
 
 #include <utility>
 
+#include "constants/catalog.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
 
@@ -28,7 +29,8 @@ CPDF_Bookmark CPDF_BookmarkTree::GetFirstChild(
     return CPDF_Bookmark();
   }
 
-  RetainPtr<const CPDF_Dictionary> outlines = root->GetDictFor("Outlines");
+  RetainPtr<const CPDF_Dictionary> outlines =
+      root->GetDictFor(pdfium::catalog::kOutlines);
   return outlines ? CPDF_Bookmark(outlines->GetDictFor("First"))
                   : CPDF_Bookmark();
 }

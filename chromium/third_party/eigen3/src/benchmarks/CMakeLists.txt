@@ -6,6 +6,7 @@ project(EigenBenchmarks CXX)
 
 find_package(benchmark REQUIRED)
 find_package(BLAS QUIET)
+find_package(Threads REQUIRED)
 
 # Eigen is a header-only library; find it relative to this directory.
 set(EIGEN_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/..")

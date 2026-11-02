@@ -11,7 +11,7 @@
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/unowned_ptr.h"
 
-class CPDF_ReadValidator : public IFX_SeekableReadStream {
+class CPDF_ReadValidator final : public IFX_SeekableReadStream {
  public:
   class ScopedSession {
    public:

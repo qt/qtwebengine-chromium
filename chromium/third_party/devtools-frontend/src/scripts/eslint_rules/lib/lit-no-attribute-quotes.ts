@@ -65,7 +65,7 @@ export default createRule<[], MessageIds>({
       attributeQuotesNotRequired:
           'When interpolating a value as an attribute in Lit you do not need double quotes around it.',
     },
-    schema: []
+    schema: [],
   },
   defaultOptions: [],
   create: function(context) {
@@ -99,7 +99,7 @@ export default createRule<[], MessageIds>({
                       firstPart: templateElement,
                       secondPart: nextElement,
                     });
-                  }
+                  },
                 });
               }
             }
@@ -107,5 +107,5 @@ export default createRule<[], MessageIds>({
         });
       },
     };
-  }
+  },
 });

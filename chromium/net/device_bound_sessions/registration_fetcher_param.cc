@@ -63,7 +63,7 @@ RegistrationFetcherParam::RegistrationFetcherParam(
     std::optional<std::string> provider_key,
     std::optional<GURL> provider_url,
     std::optional<Session::Id> provider_session_id,
-    bool aik_required)
+    AttestationMode attestation_mode)
     : registration_endpoint_(std::move(registration_endpoint)),
       supported_algos_(std::move(supported_algos)),
       challenge_(std::move(challenge)),
@@ -71,7 +71,7 @@ RegistrationFetcherParam::RegistrationFetcherParam(
       provider_key_(std::move(provider_key)),
       provider_url_(std::move(provider_url)),
       provider_session_id_(std::move(provider_session_id)),
-      aik_required_(aik_required) {}
+      attestation_mode_(attestation_mode) {}
 
 std::optional<RegistrationFetcherParam> RegistrationFetcherParam::ParseItem(
     const GURL& request_url,
@@ -162,9 +162,26 @@ std::optional<RegistrationFetcherParam> RegistrationFetcherParam::ParseItem(
     return std::nullopt;
   }
 
-  if (provider_key.has_value() != provider_url.has_value() ||
-      provider_key.has_value() != provider_session_id.has_value()) {
+  // `provider_key` and `provider_url` must either both be present or
+  // both be absent.
+  if (provider_key.has_value() != provider_url.has_value()) {
     return std::nullopt;
+  }
+
+  if (base::FeatureList::IsEnabled(
+          features::kDeviceBoundSessionsForSingleSignOn)) {
+    // In SSO scenarios, `provider_session_id` can be absent.
+    // However, if `provider_session_id` is present, then `provider_key`
+    // (and by extension `provider_url`) must also be present.
+    if (provider_session_id.has_value() && !provider_key.has_value()) {
+      return std::nullopt;
+    }
+  } else {
+    // In non-SSO scenarios, `provider_session_id` must be present
+    // if and only if `provider_key` is present.
+    if (provider_session_id.has_value() != provider_key.has_value()) {
+      return std::nullopt;
+    }
   }
 
   if (provider_url.has_value() &&
@@ -175,7 +192,8 @@ std::optional<RegistrationFetcherParam> RegistrationFetcherParam::ParseItem(
   return RegistrationFetcherParam(
       std::move(registration_endpoint), std::move(supported_algos),
       std::move(challenge), std::move(authorization), std::move(provider_key),
-      std::move(provider_url), std::move(provider_session_id), aik_required);
+      std::move(provider_url), std::move(provider_session_id),
+      aik_required ? AttestationMode::kRequired : AttestationMode::kNone);
 }
 
 std::vector<RegistrationFetcherParam> RegistrationFetcherParam::CreateIfValid(
@@ -231,11 +249,12 @@ RegistrationFetcherParam RegistrationFetcherParam::CreateInstanceForTesting(
     std::optional<std::string> provider_key,
     std::optional<GURL> provider_url,
     std::optional<Session::Id> provider_session_id,
-    bool aik_required) {
+    AttestationMode attestation_mode) {
   return RegistrationFetcherParam(
       std::move(registration_endpoint), std::move(supported_algos),
       std::move(challenge), std::move(authorization), std::move(provider_key),
-      std::move(provider_url), std::move(provider_session_id), aik_required);
+      std::move(provider_url), std::move(provider_session_id),
+      attestation_mode);
 }
 
 }  // namespace net::device_bound_sessions

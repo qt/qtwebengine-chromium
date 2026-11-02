@@ -1,4 +1,4 @@
-# Copyright 2012 The Chromium OS Authors. All rights reserved.
+# Copyright 2012 The ChromiumOS Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 #
@@ -9,6 +9,10 @@
 #  The authoritative common.mk is located in:
 #    https://chromium.googlesource.com/chromiumos/platform2/+/HEAD/common-mk
 #  Please make all changes there, then copy into place in other repos.
+#
+#  The copybara service is used to automatically sync updates for projects
+#  hosted on Chromium GoB hosts.  Please see:
+#  //google3/third_party/copybara-gsubtreed/chromiumos_platform2/copy.bara.sky
 # NOTE NOTE NOTE
 #
 # This file provides a common architecture for building C/C++ source trees.
@@ -63,7 +67,7 @@
 #
 # Possible command line variables:
 #   - COLOR=[0|1] to set ANSI color output (default: 1)
-#   - VERBOSE=[0|1] to hide/show commands (default: 0)
+#   - VERBOSE=[0|1] V=[0|1] to hide/show commands (default: 0)
 #   - MODE=[opt|dbg|profiling] (default: opt)
 #          opt - Enable optimizations for release builds
 #          dbg - Turn down optimization for debugging
@@ -98,9 +102,11 @@ SPLITDEBUG ?= 0
 NOSTRIP ?= 1
 VALGRIND ?= 0
 COLOR ?= 1
-VERBOSE ?= 0
+V ?= 0
+VERBOSE ?= $(V)
 MODE ?= opt
 CXXEXCEPTIONS ?= 0
+RUN_TESTS ?= 1
 ARCH ?= $(shell uname -m)
 
 # Put objects in a separate tree based on makefile locations
@@ -258,13 +264,13 @@ $(eval $(call override_var,STRIP,strip))
 RMDIR ?= rmdir
 ECHO = /bin/echo -e
 
-ifeq ($(lastword $(subst /, ,$(CC))),clang)
+ifeq ($(filter clang,$(subst -, ,$(notdir $(CC)))),clang)
 CDRIVER = clang
 else
 CDRIVER = gcc
 endif
 
-ifeq ($(lastword $(subst /, ,$(CXX))),clang++)
+ifeq ($(filter clang++,$(subst -, ,$(notdir $(CXX)))),clang++)
 CXXDRIVER = clang
 else
 CXXDRIVER = gcc
@@ -310,11 +316,27 @@ endif
 #  CXXFLAGS := $(filter-out badflag,$(CXXFLAGS)) # Filter out a value
 # The same goes for CFLAGS.
 COMMON_CFLAGS-gcc := -fvisibility=internal -ggdb3 -Wa,--noexecstack
-COMMON_CFLAGS-clang := -fvisibility=hidden -ggdb
-COMMON_CFLAGS := -Wall -Werror -fno-strict-aliasing $(SSP_CFLAGS) -O1 -Wformat=2
-CXXFLAGS += $(COMMON_CFLAGS) $(COMMON_CFLAGS-$(CXXDRIVER))
-CFLAGS += $(COMMON_CFLAGS) $(COMMON_CFLAGS-$(CDRIVER))
-CPPFLAGS += -D_FORTIFY_SOURCE=2
+COMMON_CFLAGS-clang := -fvisibility=hidden -ggdb -Wimplicit-fallthrough \
+  -Wstring-plus-int
+# When a class is exported through __attribute__((visibility("default"))), we
+# still want to eliminate symbols from inline class member functions to reduce
+# symbol resolution overhead. Therefore, pass -fvisibility-inlines-hidden in
+# addition to -fvisibility=hidden. (go/cros-symbol-slimming)
+COMMON_CFLAGS := -Wall -Wunused -Wno-unused-parameter -Wunreachable-code \
+  -Wbool-operation -Wstring-compare $(call check_cc,-Wxor-used-as-pow) \
+  -Wint-in-bool-context -Wfree-nonheap-object \
+  -Werror -Wformat=2 -fno-strict-aliasing  \
+  $(SSP_CFLAGS) -O1
+CXXFLAGS += $(COMMON_CFLAGS) $(COMMON_CFLAGS-$(CXXDRIVER)) -std=gnu++23 \
+  -fvisibility-inlines-hidden
+CFLAGS += $(COMMON_CFLAGS) $(COMMON_CFLAGS-$(CDRIVER)) -std=gnu17
+# We undefine _FORTIFY_SOURCE because some distros enable it by default in
+# their toolchains.  This makes the compiler issue warnings about redefines
+# and our -Werror usage breaks it all.
+CPPFLAGS += -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3
+
+# Enable large file support.
+CPPFLAGS += -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE
 
 # Disable exceptions based on the CXXEXCEPTIONS setting.
 ifeq ($(CXXEXCEPTIONS),0)
@@ -340,7 +362,14 @@ ifeq ($(MODE),profiling)
   LDFLAGS := $(LDFLAGS) --coverage
 endif
 
-LDFLAGS := $(LDFLAGS) -Wl,-z,relro -Wl,-z,noexecstack -Wl,-z,now
+# Pass -Bsymbolic-non-weak which pre-binds symbols in the same DSO to improve
+# startup performance. We don't support interposing non-weak symbols.
+# (go/cros-symbol-slimming)
+LDFLAGS := $(LDFLAGS) \
+  -z relro \
+  -z noexecstack \
+  -z now \
+  $(call check_cc,-Xlinker -Bsymbolic-non-weak)
 
 # Fancy helpers for color if a prompt is defined
 ifeq ($(COLOR),1)
@@ -510,8 +539,11 @@ CC_STATIC_LIBARY(%):
 	$(error Typo alert! LIBARY != LIBRARY)
 
 
-TEST(%): % qemu_chroot_install
+TEST(%): %
 	$(call TEST_implementation)
+ifneq ($(RUN_TESTS),0)
+TEST(%): qemu_chroot_install
+endif
 .PHONY: TEST
 
 # multiple targets with a wildcard need to share an directory.
@@ -577,13 +609,12 @@ $(1): %.o: %.pic.o %.pie.o
 	$$(QUIET)touch "$$@"
 endef
 
+# Wrap all the deps in $$(wildcard) so a missing header won't cause weirdness.
+# First we remove newlines and \, then wrap it.
 define OBJECT_PATTERN_implementation
   @$(ECHO) "$(1)		$(subst $(SRC)/,,$<) -> $(2).o"
   $(call auto_mkdir,$@)
   $(QUIET)$($(1)) -c -MD -MF $(2).d $(3) -o $(2).o $<
-  $(QUIET)# Wrap all the deps in $$(wildcard) so a missing header
-  $(QUIET)# won't cause weirdness.  First we remove newlines and \,
-  $(QUIET)# then wrap it.
   $(QUIET)sed -i -e :j -e '$$!N;s|\\\s*\n| |;tj' \
     -e 's|^\(.*\s*:\s*\)\(.*\)$$|\1 $$\(wildcard \2\)|' $(2).d
 endef
@@ -722,7 +753,9 @@ ifeq ($(MODE),profiling)
 		fi
 	@$(ECHO) "COVERAGE [$(COLOR_YELLOW)FINISHED$(COLOR_RESET)]"
 endif
-.PHONY: tests
+# Standard name everyone else uses.
+check: tests
+.PHONY: check tests
 
 qemu_chroot_install:
 ifeq ($(USE_QEMU),1)
@@ -795,12 +828,17 @@ ifeq ($(VALGRIND),1)
   VALGRIND_CMD = /usr/bin/valgrind --tool=memcheck $(VALGRIND_ARGS) --
 endif
 
+ifneq ($(RUN_TESTS),0)
 define TEST_implementation
   $(QUIET)$(call TEST_setup)
   $(QUIET)$(call TEST_run)
   $(QUIET)$(call TEST_teardown)
   $(QUIET)exit $$(cat $(OUT)$(TARGET_OR_MEMBER).status.test)
 endef
+else
+define TEST_implementation
+endef
+endif
 
 define TEST_setup
   @$(ECHO) -n "TEST		$(TARGET_OR_MEMBER) "

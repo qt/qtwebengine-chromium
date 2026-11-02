@@ -215,6 +215,7 @@ class PasswordFormManager : public PasswordFormManagerForUI,
   bool IsMovableToAccountStore() const override;
 
   void Save() override;
+  bool IsPasswordUpdate() const override;
   bool IsUpdateAffectingPasswordsStoredInTheGoogleAccount() const override;
   void OnUpdateUsernameFromPrompt(const std::u16string& new_username) override;
   void OnUpdatePasswordFromPrompt(const std::u16string& new_password) override;
@@ -247,7 +248,6 @@ class PasswordFormManager : public PasswordFormManagerForUI,
       autofill::password_generation::PasswordGenerationType type);
   void SetGenerationElement(autofill::FieldRendererId generation_element);
   bool HasLikelyChangeOrResetFormSubmitted() const;
-  bool IsPasswordUpdate() const;
   base::WeakPtr<PasswordManagerDriver> GetDriver() const;
   const PasswordForm* GetSubmittedForm() const;
   const PasswordForm* GetParsedObservedForm() const;
@@ -540,6 +540,10 @@ class PasswordFormManager : public PasswordFormManagerForUI,
 
   // For generating timing metrics on retrieving server-side predictions.
   std::unique_ptr<base::ElapsedTimer> server_side_predictions_timer_;
+
+  // True if automatic filling attempts should happen. Set to false if the user
+  // filled the form manually.
+  bool allow_filling_upon_fetching_ = true;
 
   base::ObserverList<PasswordFormManagerObserver> form_parsed_observers_;
 };

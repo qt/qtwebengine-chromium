@@ -235,8 +235,6 @@ export class DOMTreeWidget extends UI.Widget.Widget {
            Common.EventTarget.EventTargetEvent<{node: SDK.DOMModel.DOMNode | null, focus: boolean}>) => void = () => {};
   onElementsTreeUpdated: (event: Common.EventTarget.EventTargetEvent<SDK.DOMModel.DOMNode[]>) => void = () => {};
   onDocumentUpdated: (domModel: SDK.DOMModel.DOMModel) => void = () => {};
-  onElementExpanded: () => void = () => {};
-  onElementCollapsed: () => void = () => {};
 
   #maxTreeDepth?: number;
   #enableContextMenu = true;
@@ -455,11 +453,9 @@ export class DOMTreeWidget extends UI.Widget.Widget {
           },
           onElementCollapsed: () => {
             this.#clearHighlightedNode();
-            this.onElementCollapsed();
           },
           onElementExpanded: () => {
             this.#clearHighlightedNode();
-            this.onElementExpanded();
           },
         },
         this.#viewOutput, this.contentElement);
@@ -1352,7 +1348,7 @@ export class ElementsTreeOutline extends
   }
 
   private onfocusout(_event: Event): void {
-    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight(SDK.TargetManager.TargetManager.instance());
   }
 
   private onmousedown(event: MouseEvent): void {
@@ -1391,8 +1387,9 @@ export class ElementsTreeOutline extends
 
   private highlightTreeElement(element: UI.TreeOutline.TreeElement, showInfo: boolean): void {
     if (element instanceof ElementsTreeElement) {
-      element.node().domModel().overlayModel().highlightInOverlay(
-          {node: element.node(), selectorList: undefined}, 'all', showInfo);
+      const selectorList = element.isDisplayContents() ? '*' : undefined;
+      element.node().domModel().overlayModel().highlightInOverlay({node: element.node(), selectorList}, 'all',
+                                                                  showInfo);
       return;
     }
 
@@ -1404,7 +1401,7 @@ export class ElementsTreeOutline extends
 
   private onmouseleave(_event: MouseEvent): void {
     this.setHoverEffect(null);
-    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight(SDK.TargetManager.TargetManager.instance());
   }
 
   private ondragstart(event: DragEvent): boolean|undefined {
@@ -1432,7 +1429,7 @@ export class ElementsTreeOutline extends
     event.dataTransfer.effectAllowed = 'copyMove';
     this.treeElementBeingDragged = treeElement;
 
-    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight(SDK.TargetManager.TargetManager.instance());
 
     return true;
   }
@@ -1793,7 +1790,7 @@ export class ElementsTreeOutline extends
     this.selectDOMNode(null, false);
     this.imagePreviewPopover.hide();
     delete this.clipboardNodeData;
-    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight(SDK.TargetManager.TargetManager.instance());
     this.updateRecords.clear();
   }
 
@@ -2134,6 +2131,11 @@ export class ElementsTreeOutline extends
     const pickerIconPseudoElement = node.pickerIconPseudoElement();
     if (pickerIconPseudoElement) {
       visibleChildren.push(pickerIconPseudoElement);
+    }
+
+    const interestButtonPseudoElement = node.interestButtonPseudoElement();
+    if (interestButtonPseudoElement) {
+      visibleChildren.push(interestButtonPseudoElement);
     }
 
     const backdropPseudoElement = node.backdropPseudoElement();

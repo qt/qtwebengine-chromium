@@ -713,6 +713,10 @@ generate_code_cache: Specifies whether code cache resources should be generated
 Other params:
 webui_context_type: See |webui_context_type| in webui_path_mappings(). Optional,
                     defaults to "relative".
+in_folder: Optional parameter. Specifies the input folder where TS, HTML, CSS,
+           and static files are located. If not specified, the current directory
+           (of the BUILD.gn file) is used. Its use is restricted to a small
+           allowlist of targets inside `build_webui.gni` to prevent misuse.
 generate_grdp: Whether to generate grdp file instead of a grd file. Defaults to
                false.
 grd_prefix: See |grd_prefix| in generate_grd(). Required parameter.
@@ -769,9 +773,9 @@ build_webui("build") {
   #  3) the HTML template is checked in as an .html.ts file and not
   #     auto-generated.
   ts_files = [
-    "app_proxy.ts",
-    "bar_proxy.ts",
-    "foo_proxy.ts",
+    "app_util.ts",
+    "bar_model.ts",
+    "foo_types.ts",
   ]
 
   # Files that are passed as input to css_to_wrapper().

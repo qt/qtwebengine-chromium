@@ -17,7 +17,6 @@
 #ifndef LIBGAV1_SRC_DSP_X86_LOOP_RESTORATION_SSE4_H_
 #define LIBGAV1_SRC_DSP_X86_LOOP_RESTORATION_SSE4_H_
 
-#include "src/dsp/dsp.h"
 #include "src/utils/cpu.h"
 
 namespace libgav1 {

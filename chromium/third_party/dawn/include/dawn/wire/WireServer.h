@@ -56,7 +56,7 @@ class DAWN_WIRE_EXPORT WireServer : public CommandHandler {
     explicit WireServer(const WireServerDescriptor& descriptor);
     ~WireServer() override;
 
-    const volatile char* HandleCommands(const volatile char* commands, size_t size) override;
+    bool HandleCommands(std::span<const volatile std::byte> commands) override;
 
     bool InjectBuffer(WGPUBuffer buffer, const Handle& handle, const Handle& deviceHandle);
     bool InjectTexture(WGPUTexture texture, const Handle& handle, const Handle& deviceHandle);
@@ -89,81 +89,59 @@ class DAWN_WIRE_EXPORT MemoryTransferService {
     MemoryTransferService();
     virtual ~MemoryTransferService();
 
-    class ReadHandle;
-    class WriteHandle;
+    // Returns a MemoryHandle from the parameters in creationData. May return nullptr on failure.
+    class MemoryHandle;
+    virtual std::unique_ptr<MemoryHandle> DeserializeMemoryHandle(
+        std::span<const std::byte> creationData) = 0;
 
-    // Deserialize data to create Read/Write handles. These handles are for the client
-    // to Read/Write data.
-    // TODO(https://issues.chromium.org/492456046): Pass as a `span<uint8_t> deseriazlizeData`.
-    virtual bool DeserializeReadHandle(const void* deserializePointer,
-                                       size_t deserializeSize,
-                                       ReadHandle** readHandle) = 0;
-    virtual bool DeserializeWriteHandle(const void* deserializePointer,
-                                        size_t deserializeSize,
-                                        WriteHandle** writeHandle) = 0;
-
-    class DAWN_WIRE_EXPORT ReadHandle {
+    class DAWN_WIRE_EXPORT MemoryHandle {
       public:
-        ReadHandle();
-        virtual ~ReadHandle();
+        MemoryHandle();
+        virtual ~MemoryHandle();
 
-        // Return the size of the command serialized if
-        // SerializeDataUpdate is called with the same offset/size args
-        virtual size_t SizeOfSerializeDataUpdate(size_t offset, size_t size) = 0;
+        // Return a direct view of the memory if this MemoryHandle supports it, nullptr when not
+        // supported.
+        virtual std::span<std::byte> GetSource() const { return {}; }
 
-        // Serializes the GPU buffer data in |data| to send to the client when a MapReadCallback
-        // resolves. There could be nothing to serialize if using shared memory.
+        // Get the required serialization size for SerializeDataUpdate for the range [offset, offset
+        // + size)
+        virtual size_t GetSerializeDataUpdateSize(size_t offset, size_t size) const = 0;
+
+        // Serializes into |serializeData| the modification of the contents in the range [offset,
+        // offset + size). The modified contents is passed in |data|.
         //
         // Parameters:
-        //  - `data`: The mapped GPU buffer contents for the range [offset, offset + data.size()).
-        //  - `offset`: The byte offset of data.data() within the GPU buffer.
         //  - `serializeData`: The output buffer to write the serialized payload into.
-        //    Its size equals SizeOfSerializeDataUpdate(offset, data.size()).
-        virtual void SerializeDataUpdate(std::span<const uint8_t> data,
+        //  - `offset`: The byte offset of data.data() within the whole allocation..
+        //  - `size`: The size of the range to update (must be <= data.size()).
+        //  - `data`: The new contents for the range [offset, offset + data.size()).
+        virtual void SerializeDataUpdate(std::span<volatile std::byte> serializeData,
                                          size_t offset,
-                                         std::span<char> serializeData) = 0;
+                                         size_t size,
+                                         std::span<const std::byte> data) const = 0;
 
-      private:
-        ReadHandle(const ReadHandle&) = delete;
-        ReadHandle& operator=(const ReadHandle&) = delete;
-    };
-
-    class DAWN_WIRE_EXPORT WriteHandle {
-      public:
-        WriteHandle();
-        virtual ~WriteHandle();
-
-        std::span<uint8_t> GetSource() const {
-            return std::span<uint8_t>(GetSourceData(), GetSourceSize());
-        }
-
-        // Deserialize a data update produced by
-        // `client::MemoryTransferService::WriteHandle::SerializeDataUpdate` and apply it to
-        // the mapped buffer memory.
+        // Applies a data update for the range [offset, offset + size) that was produced by
+        // `client::MemoryTransferService::MemoryHandle::SerializeDataUpdate`.
+        //
+        // For hardening, the implementation must return false if offset + size overflows the size
+        // of the memory (or if offset + size overflows a size_t), or if size > target.size().
         //
         // Parameters:
         //  - `deserializeData`: The serialized payload from the client specifying the updated
         //    buffer contents.
+        //  - `offset`: The byte offset for target.data() within the whole allocation.
+        //  - `size`: The size of the range to update.
         //  - `target`: The range of data that is written by the update.
-        //  - `offset`: The byte offset for target.data() in the GPU buffer, used by Chromium's
-        //    implementation to offset into the shmem.
         //
         // Returns true on success, or false if the deserialization is invalid (e.g. OOB access).
-        virtual bool DeserializeDataUpdate(std::span<const uint8_t> deserializeData,
-                                           std::span<uint8_t> target,
-                                           size_t offset) = 0;
+        virtual bool DeserializeDataUpdate(std::span<const std::byte> deserializeData,
+                                           size_t offset,
+                                           size_t size,
+                                           std::span<std::byte> target) = 0;
 
       private:
-        WriteHandle(const WriteHandle&) = delete;
-        WriteHandle& operator=(const WriteHandle&) = delete;
-
-        // Returns a direct pointer to the source data that will
-        // be copied into Target in DeserializeDataUpdate if accessible, nullptr
-        // otherwise.
-        // TODO(https://issues.chromium.org/492456046): Remove in favor of making GetSourceData
-        // virtual.
-        virtual uint8_t* GetSourceData() const { return nullptr; }
-        virtual size_t GetSourceSize() const { return 0; }
+        MemoryHandle(const MemoryHandle&) = delete;
+        MemoryHandle& operator=(const MemoryHandle&) = delete;
     };
 
   private:

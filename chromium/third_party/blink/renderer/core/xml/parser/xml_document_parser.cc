@@ -57,6 +57,7 @@
 #include "third_party/blink/renderer/core/html/custom/ce_reactions_scope.h"
 #include "third_party/blink/renderer/core/html/custom/custom_element_registry.h"
 #include "third_party/blink/renderer/core/html/html_html_element.h"
+#include "third_party/blink/renderer/core/html/html_iframe_element.h"
 #include "third_party/blink/renderer/core/html/html_template_element.h"
 #include "third_party/blink/renderer/core/html/parser/html_construction_site.h"
 #include "third_party/blink/renderer/core/html/parser/html_entity_parser.h"
@@ -121,14 +122,38 @@ static inline AtomicString ToAtomicString(const xmlChar* string) {
 
 static inline bool HasNoStyleInformation(Document* document) {
   if (document->SawElementsInKnownNamespaces() ||
-      DocumentXSLT::HasTransformSourceDocument(*document))
+      DocumentXSLT::HasTransformSourceDocument(*document)) {
     return false;
+  }
 
   if (!document->GetFrame() || !document->GetFrame()->GetPage())
     return false;
 
-  if (!document->IsInMainFrame() || document->GetFrame()->IsInFencedFrameTree())
+  if (document->GetFrame()->IsInFencedFrameTree()) {
     return false;  // This document has style information from a parent.
+  }
+
+  if (!document->IsInMainFrame()) {
+    if (!RuntimeEnabledFeatures::XMLViewerForIframesEnabled()) {
+      return false;
+    }
+    auto* owner = document->GetFrame()->DeprecatedLocalOwner();
+    if (!owner || !IsA<HTMLIFrameElement>(*owner)) {
+      return false;
+    }
+
+    // Script-created blob XML documents can be embedded in iframes as
+    // ordinary content. Do not replace them with the XML tree viewer.
+    if (document->Url().ProtocolIs("blob")) {
+      return false;
+    }
+
+    // SVG documents have their own rendering path and should not use the XML
+    // tree viewer.
+    if (document->contentType() == "image/svg+xml") {
+      return false;
+    }
+  }
 
   if (SVGImage::IsInSVGImage(document))
     return false;
@@ -165,7 +190,7 @@ struct xmlSAX2Attributes {
     // SAFETY: ValueLength() returns the distance between `end` and
     // `value`. libxml provides the attribute value as a sequence of xmlChars
     // that start at `value` and end at `end`.
-    return UNSAFE_BUFFERS(base::span(value, ValueLength()));
+    return UNSAFE_BUFFERS(base::span(base::unchecked, value, ValueLength()));
   }
 
   size_t ValueLength() const { return static_cast<size_t>(end - value); }
@@ -394,7 +419,7 @@ void XMLDocumentParser::Append(const String& input_source) {
   if (IsStopped() || saw_xsl_transform_)
     return;
 
-  if (parser_paused_) {
+  if (parser_paused_ || in_parse_chunk_) {
     pending_src_.Append(source);
     return;
   }
@@ -730,8 +755,8 @@ static int ReadFunc(void* context, char* buffer, int len) {
 
   SharedBufferReader* data = static_cast<SharedBufferReader*>(context);
   // SAFETY: libxml provides `buffer` that points to at least `len` bytes.
-  auto buffer_span =
-      UNSAFE_BUFFERS(base::span(buffer, base::checked_cast<size_t>(len)));
+  auto buffer_span = UNSAFE_BUFFERS(
+      base::span(base::unchecked, buffer, base::checked_cast<size_t>(len)));
   return base::checked_cast<int>(data->ReadData(buffer_span));
 }
 
@@ -945,6 +970,13 @@ void XMLDocumentParser::DoWrite(const String& parse_string) {
   // Protect the libxml context from deletion during a callback
   scoped_refptr<XMLParserContext> context = context_;
 
+  // libxml2's push parser is not re-entrant: xmlParseEndTag2 holds multiple
+  // raw pointers inside ctxt, and a nested xmlParseChunk can xmlRealloc()
+  // those buffers. Crash safely rather than corrupt the heap. (Append()
+  // routes re-entrant data to pending_src_ so this should be unreachable.)
+  CHECK(!in_parse_chunk_);
+  base::AutoReset<bool> reentrancy_guard(&in_parse_chunk_, true);
+
   // libXML throws an error if you try to switch the encoding for an empty
   // string.
   if (parse_string.length()) {
@@ -1066,6 +1098,11 @@ void XMLDocumentParser::StartElementNs(
 
   bool is_first_element = !saw_first_element_;
   saw_first_element_ = true;
+
+  if (!parsing_fragment_ && is_first_element && local_name == "alert" &&
+      IsCAPAlertNamespace(uri)) {
+    UseCounter::Count(document_, WebFeature::kXmlCAPAlert);
+  }
 
   Vector<Attribute, kAttributePrealloc> prefixed_attributes;
   bool encountered_namespace_reset = false;
@@ -1357,7 +1394,9 @@ void XMLDocumentParser::GetProcessingInstruction(const String& target,
   CheckIfBlockingStyleSheetAdded();
 
   saw_xsl_transform_ = !saw_first_element_ && pi->IsXSL();
-  CHECK(!saw_xsl_transform_ || RuntimeEnabledFeatures::XSLTEnabled());
+  CHECK(!saw_xsl_transform_ ||
+        XSLTProcessor::IsXSLTEnabled(
+            GetDocument() ? GetDocument()->GetExecutionContext() : nullptr));
   if (saw_xsl_transform_ &&
       !DocumentXSLT::HasTransformSourceDocument(*GetDocument())) {
     // This behavior is very tricky. We call stopParsing() here because we
@@ -1478,7 +1517,8 @@ static void StartElementNsHandler(void* closure,
   // xmlChar* for each 'nb_namespaces'. The xmlSAX2Namespace struct
   // encapsulates these two pointers.
   auto namespaces = UNSAFE_BUFFERS(
-      base::span(reinterpret_cast<const xmlSAX2Namespace*>(libxml_namespaces),
+      base::span(base::unchecked,
+                 reinterpret_cast<const xmlSAX2Namespace*>(libxml_namespaces),
                  base::checked_cast<size_t>(nb_namespaces)));
   // SAFETY: libxml provides `libxml_attributes` which points to 5 const
   // xmlChar* for each 'nb_attributes' . The xmlSAX2Attributes struct
@@ -1500,8 +1540,8 @@ static void EndElementNsHandler(void* closure,
 
 static void CharactersHandler(void* closure, const xmlChar* chars, int length) {
   // SAFETY: libxml provides `chars` that point at `length` xmlChars.
-  auto chars_span =
-      UNSAFE_BUFFERS(base::span(chars, base::checked_cast<size_t>(length)));
+  auto chars_span = UNSAFE_BUFFERS(
+      base::span(base::unchecked, chars, base::checked_cast<size_t>(length)));
   GetParser(closure)->Characters(chars_span);
 }
 
@@ -1514,8 +1554,8 @@ static void ProcessingInstructionHandler(void* closure,
 
 static void CdataBlockHandler(void* closure, const xmlChar* text, int length) {
   // SAFETY: libxml provides `text` that point at `length` xmlChars.
-  auto text_span =
-      UNSAFE_BUFFERS(base::span(text, base::checked_cast<size_t>(length)));
+  auto text_span = UNSAFE_BUFFERS(
+      base::span(base::unchecked, text, base::checked_cast<size_t>(length)));
   GetParser(closure)->CdataBlock(ToString(text_span));
 }
 
@@ -1745,7 +1785,9 @@ void XMLDocumentParser::DoEnd() {
                          HasNoStyleInformation(GetDocument());
   if (xml_viewer_mode) {
     GetDocument()->SetIsViewSource(true);
-    TransformDocumentToXMLTreeView(*GetDocument());
+    TransformDocumentToXMLTreeView(
+        *GetDocument(),
+        /*preserve_document_element=*/!GetDocument()->IsInMainFrame());
   } else if (saw_xsl_transform_) {
     xmlDocPtr doc = XmlDocPtrForString(
         GetDocument(), original_source_for_transform_.ToString(),

@@ -65,7 +65,7 @@ class TensorShufflingOp : public TensorBase<TensorShufflingOp<Shuffle, XprType> 
 
   EIGEN_DEVICE_FUNC const internal::remove_all_t<typename XprType::Nested>& expression() const { return m_xpr; }
 
-  EIGEN_TENSOR_INHERIT_ASSIGNMENT_OPERATORS(TensorShufflingOp)
+  EIGEN_INHERIT_ASSIGNMENT_OPERATORS(TensorShufflingOp)
 
  protected:
   typename XprType::Nested m_xpr;
@@ -120,7 +120,7 @@ struct TensorEvaluator<const TensorShufflingOp<Shuffle, ArgType>, Device> {
       }
     }
 
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       m_unshuffledInputStrides[0] = 1;
       m_outputStrides[0] = 1;
 
@@ -130,8 +130,7 @@ struct TensorEvaluator<const TensorShufflingOp<Shuffle, ArgType>, Device> {
         m_fastOutputStrides[i] =
             internal::TensorIntDivisor<Index>(m_outputStrides[i] > 0 ? m_outputStrides[i] : Index(1));
       }
-    }
-    else {
+    } else {
       m_unshuffledInputStrides[NumDims - 1] = 1;
       m_outputStrides[NumDims - 1] = 1;
       for (int i = NumDims - 2; i >= 0; --i) {
@@ -213,10 +212,10 @@ struct TensorEvaluator<const TensorShufflingOp<Shuffle, ArgType>, Device> {
     const size_t target_size = m_device.firstLevelCacheSize();
     const bool inner_dim_shuffled = m_shuffle[inner_dim] != inner_dim;
 
-    // Shuffled inner dimensions leads to a random memory access, which is not
+    // Shuffled inner dimensions lead to a random memory access, which is not
     // captured by default cost model bytes loaded/stored. We add this cost
-    // explicitly. The number of cycles picked based on the benchmarks.
-    // TODO(ezhulenev): This number was picked based on a very questionable
+    // explicitly. The number of cycles was picked based on the benchmarks.
+    // TODO(ezhulenev): This number was picked based on very questionable
     // benchmarks, add benchmarks that are representative of real workloads.
     using BlockRequirements = internal::TensorBlockResourceRequirements;
     if (inner_dim_shuffled) {
@@ -265,15 +264,14 @@ struct TensorEvaluator<const TensorShufflingOp<Shuffle, ArgType>, Device> {
                       const DSizes<Index, NumDims>& output_block_strides,
                       const DSizes<internal::TensorIntDivisor<Index>, NumDims>& fast_input_block_strides) const {
     Index output_index = 0;
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       for (int i = NumDims - 1; i > 0; --i) {
         const Index idx = input_index / fast_input_block_strides[i];
         output_index += idx * output_block_strides[m_inverseShuffle[i]];
         input_index -= idx * input_block_strides[i];
       }
       return output_index + input_index * output_block_strides[m_inverseShuffle[0]];
-    }
-    else {
+    } else {
       for (int i = 0; i < NumDims - 1; ++i) {
         const Index idx = input_index / fast_input_block_strides[i];
         output_index += idx * output_block_strides[m_inverseShuffle[i]];
@@ -285,15 +283,14 @@ struct TensorEvaluator<const TensorShufflingOp<Shuffle, ArgType>, Device> {
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index srcCoeff(Index index) const {
     Index inputIndex = 0;
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       for (int i = NumDims - 1; i > 0; --i) {
         const Index idx = index / m_fastOutputStrides[i];
         inputIndex += idx * m_inputStrides[i];
         index -= idx * m_outputStrides[i];
       }
       return inputIndex + index * m_inputStrides[0];
-    }
-    else {
+    } else {
       for (int i = 0; i < NumDims - 1; ++i) {
         const Index idx = index / m_fastOutputStrides[i];
         inputIndex += idx * m_inputStrides[i];

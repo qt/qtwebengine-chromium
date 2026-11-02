@@ -16,12 +16,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <string>
 #include <variant>
 
 #include "absl/container/flat_hash_set.h"
 #include "absl/functional/overload.h"
 #include "absl/status/status.h"
+#include "absl/status/status_macros.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
@@ -30,7 +32,19 @@
 #include "ink/brush/version.h"
 #include "ink/geometry/mesh_format.h"
 
-namespace ink::brush_internal {
+namespace ink {
+
+uint32_t BrushPaint::MaxTextureLayers() {
+  // This value was chosen somewhat arbitrarily. Some of our renderer
+  // implementions need to declare the number of textures they will be sampling
+  // from, so we need some limit. We can always raise this limit in the future,
+  // but lowering it will be harder once clients start relying on being able to
+  // have a certain number of texture layers. So for now, the limit is fairly
+  // conservative.
+  return 4;
+}
+
+namespace brush_internal {
 namespace {
 
 bool IsValidBrushPaintTextureOrigin(BrushPaint::TextureOrigin origin) {
@@ -256,12 +270,17 @@ absl::Status ValidateBrushPaintTopLevel(const BrushPaint& paint) {
   const BrushPaint::TextureLayer* previous = nullptr;
   for (const BrushPaint::TextureLayer& layer : paint.texture_layers) {
     if (previous) {
-      if (absl::Status status = ValidateAdjacentTextureLayers(*previous, layer);
-          !status.ok()) {
-        return status;
-      }
+      ABSL_RETURN_IF_ERROR(ValidateAdjacentTextureLayers(*previous, layer));
     }
     previous = &layer;
+  }
+
+  if (paint.texture_layers.size() > BrushPaint::MaxTextureLayers()) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("`BrushPaint` is currently limited to at most ",
+                     BrushPaint::MaxTextureLayers(),
+                     " `TextureLayer`s, but got ", paint.texture_layers.size(),
+                     ". (This limit may be increased in the future.)"));
   }
 
   if (!IsValidBrushPaintSelfOverlap(paint.self_overlap)) {
@@ -275,20 +294,12 @@ absl::Status ValidateBrushPaintTopLevel(const BrushPaint& paint) {
 
 absl::Status ValidateBrushPaint(const BrushPaint& paint) {
   for (const BrushPaint::TextureLayer& layer : paint.texture_layers) {
-    if (absl::Status status = ValidateBrushPaintTextureLayer(layer);
-        !status.ok()) {
-      return status;
-    }
+    ABSL_RETURN_IF_ERROR(ValidateBrushPaintTextureLayer(layer));
   }
   for (const ColorFunction& color_function : paint.color_functions) {
-    if (absl::Status status = ValidateColorFunction(color_function);
-        !status.ok()) {
-      return status;
-    }
+    ABSL_RETURN_IF_ERROR(ValidateColorFunction(color_function));
   }
-  if (absl::Status status = ValidateBrushPaintTopLevel(paint); !status.ok()) {
-    return status;
-  }
+  ABSL_RETURN_IF_ERROR(ValidateBrushPaintTopLevel(paint));
   return absl::OkStatus();
 }
 
@@ -533,4 +544,5 @@ std::string ToFormattedString(const BrushPaint& paint) {
   return formatted;
 }
 
-}  // namespace ink::brush_internal
+}  // namespace brush_internal
+}  // namespace ink

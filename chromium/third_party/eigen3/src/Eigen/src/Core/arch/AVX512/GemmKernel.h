@@ -29,7 +29,7 @@
 
 #define SECOND_FETCH (32)
 #if (EIGEN_COMP_GNUC_STRICT != 0) && !defined(EIGEN_ARCH_AVX512_GEMM_KERNEL_USE_LESS_A_REGS)
-// Use less registers to load A elements to workaround compiler spills. Loose a
+// Use less registers to load A elements to workaround compiler spills. Lose a
 // bit of performance (less than ~2%).
 #define EIGEN_ARCH_AVX512_GEMM_KERNEL_USE_LESS_A_REGS
 #endif
@@ -144,7 +144,7 @@ class gemm_class {
 
   template <int nelems>
   EIGEN_ALWAYS_INLINE void c_store(Scalar* mem, vec& src) {
-    if (is_unit_inc) {
+    EIGEN_IF_CONSTEXPR (is_unit_inc) {
       switch (nelems * sizeof(*mem) * 8) {
         default:
         case 512 * 3:
@@ -199,7 +199,7 @@ class gemm_class {
 
   template <int nelems>
   EIGEN_ALWAYS_INLINE void vaddm(vec& dst, const Scalar* mem, vec& src, vec& reg) {
-    if (is_unit_inc) {
+    EIGEN_IF_CONSTEXPR (is_unit_inc) {
       switch (nelems * sizeof(*mem) * 8) {
         default:
         case 512 * 3:
@@ -251,7 +251,7 @@ class gemm_class {
           dst = preinterpret<vec>(padd(preinterpret<vec_xmm>(src), preinterpret<vec_xmm>(reg)));
           break;
         case 64 * 1:
-          if (is_f32) {
+          EIGEN_IF_CONSTEXPR (is_f32) {
             reg = pgather(reg, mem, inc, mask);
             dst = preinterpret<vec>(padd(preinterpret<vec_xmm>(src), preinterpret<vec_xmm>(reg)));
           } else {
@@ -276,7 +276,7 @@ class gemm_class {
 
   template <int nelems>
   EIGEN_ALWAYS_INLINE void vfmaddm(vec& dst, const Scalar* mem, vec& src, vec& scale, vec& reg) {
-    if (is_unit_inc) {
+    EIGEN_IF_CONSTEXPR (is_unit_inc) {
       switch (nelems * sizeof(*mem) * 8) {
         default:
         case 512 * 3:
@@ -334,7 +334,7 @@ class gemm_class {
               pmadd(preinterpret<vec_xmm>(scale), preinterpret<vec_xmm>(src), preinterpret<vec_xmm>(reg)));
           break;
         case 64 * 1:
-          if (is_f32) {
+          EIGEN_IF_CONSTEXPR (is_f32) {
             reg = pgather(reg, mem, inc, mask);
             dst = preinterpret<vec>(
                 pmadd(preinterpret<vec_xmm>(scale), preinterpret<vec_xmm>(src), preinterpret<vec_xmm>(reg)));
@@ -391,8 +391,10 @@ class gemm_class {
     constexpr int un = index / um_vecs;
     constexpr int i = index % um_vecs;
 
-    if (b_unroll >= un + 1) {
-      if (un == 4 && i == 0) co2 = co1 + 4 * ldc;
+    EIGEN_IF_CONSTEXPR (b_unroll >= un + 1) {
+      EIGEN_IF_CONSTEXPR (un == 4 && i == 0) {
+        co2 = co1 + 4 * ldc;
+      }
 
       Scalar* co = (un + 1 <= 4) ? co1 : co2;
       auto co_off = (un % 4) * ldc + a_unroll - 1 + i * nelems_in_cache_line * sizeof *co;
@@ -418,7 +420,7 @@ class gemm_class {
     auto& c_reg = zmm[c_regs[i + idx * 3]];
     auto& c_load_reg = zmm[c_load_regs[i % 3]];
     auto c_mem = cox;
-    if (is_unit_inc)
+    EIGEN_IF_CONSTEXPR (is_unit_inc)
       c_mem += i * nelems_in_cache_line;
     else
       c_mem += i * nelems_in_cache_line * inc;
@@ -449,7 +451,7 @@ class gemm_class {
   EIGEN_ALWAYS_INLINE void write_c_one(Scalar* cox) {
     auto& c_reg = zmm[c_regs[i + idx * 3]];
     auto c_mem = cox;
-    if (is_unit_inc)
+    EIGEN_IF_CONSTEXPR (is_unit_inc)
       c_mem += i * nelems_in_cache_line;
     else
       c_mem += i * nelems_in_cache_line * inc;
@@ -502,7 +504,9 @@ class gemm_class {
 
   template <int pow, int a_unroll, int idx>
   EIGEN_ALWAYS_INLINE void c_update_1count(Scalar*& cox) {
-    if (pow >= 4) cox += ldc;
+    EIGEN_IF_CONSTEXPR (pow >= 4) {
+      cox += ldc;
+    }
 
     const int um_vecs = numext::div_ceil(a_unroll, nelems_in_cache_line);
     auto& alpha_reg = zmm[alpha_load_reg];
@@ -519,10 +523,18 @@ class gemm_class {
     constexpr int max_count = (pow + 1) / 2;
     static_assert(max_count <= 4, "Unsupported max_count.");
 
-    if (1 <= max_count) c_update_1count<pow, a_unroll, idx + 0>(cox);
-    if (2 <= max_count) c_update_1count<pow, a_unroll, idx + 1>(cox);
-    if (3 <= max_count) c_update_1count<pow, a_unroll, idx + 2>(cox);
-    if (4 <= max_count) c_update_1count<pow, a_unroll, idx + 3>(cox);
+    EIGEN_IF_CONSTEXPR (1 <= max_count) {
+      c_update_1count<pow, a_unroll, idx + 0>(cox);
+    }
+    EIGEN_IF_CONSTEXPR (2 <= max_count) {
+      c_update_1count<pow, a_unroll, idx + 1>(cox);
+    }
+    EIGEN_IF_CONSTEXPR (3 <= max_count) {
+      c_update_1count<pow, a_unroll, idx + 2>(cox);
+    }
+    EIGEN_IF_CONSTEXPR (4 <= max_count) {
+      c_update_1count<pow, a_unroll, idx + 3>(cox);
+    }
   }
 
   template <int max_b_unroll, int a_unroll, int b_unroll>
@@ -530,17 +542,29 @@ class gemm_class {
     auto& alpha_reg = zmm[alpha_load_reg];
 
     co2 = co1 + ldc;
-    if (!is_alpha1) alpha_reg = pload1<vec>(alpha);
-    if (!is_unit_inc && a_unroll < nelems_in_cache_line) mask = static_cast<umask_t>((1ull << a_unroll) - 1);
+    if (!is_alpha1) {
+      alpha_reg = pload1<vec>(alpha);
+    }
+    EIGEN_IF_CONSTEXPR (!is_unit_inc && a_unroll < nelems_in_cache_line) {
+      mask = static_cast<umask_t>((1ull << a_unroll) - 1);
+    }
 
     static_assert(max_b_unroll <= 8, "Unsupported max_b_unroll");
 
-    if (1 <= max_b_unroll && 1 <= b_unroll) c_update_1pow<1, a_unroll>(co1, co2);
-    if (2 <= max_b_unroll && 2 <= b_unroll) c_update_1pow<2, a_unroll>(co1, co2);
-    if (4 <= max_b_unroll && 4 <= b_unroll) c_update_1pow<4, a_unroll>(co1, co2);
-    if (8 <= max_b_unroll && 8 <= b_unroll) c_update_1pow<8, a_unroll>(co1, co2);
+    EIGEN_IF_CONSTEXPR (1 <= max_b_unroll && 1 <= b_unroll) {
+      c_update_1pow<1, a_unroll>(co1, co2);
+    }
+    EIGEN_IF_CONSTEXPR (2 <= max_b_unroll && 2 <= b_unroll) {
+      c_update_1pow<2, a_unroll>(co1, co2);
+    }
+    EIGEN_IF_CONSTEXPR (4 <= max_b_unroll && 4 <= b_unroll) {
+      c_update_1pow<4, a_unroll>(co1, co2);
+    }
+    EIGEN_IF_CONSTEXPR (8 <= max_b_unroll && 8 <= b_unroll) {
+      c_update_1pow<8, a_unroll>(co1, co2);
+    }
 
-    if (b_unroll == 1)
+    EIGEN_IF_CONSTEXPR (b_unroll == 1)
       co1 += ldc;
     else
       co1 = co2 + ldc;
@@ -555,14 +579,14 @@ class gemm_class {
 
     vfmadd(c_reg, a_reg, b_reg);
 
-    if (!fetch_x && um == 0 &&
-        (((idx == 0 || idx == 6) && (uk % 2 == 0 || is_f64 || ktail)) ||
-         (idx == 3 && (uk % 2 == 1 || is_f64 || ktail)))) {
+    EIGEN_IF_CONSTEXPR (!fetch_x && um == 0 &&
+                        (((idx == 0 || idx == 6) && (uk % 2 == 0 || is_f64 || ktail)) ||
+                         (idx == 3 && (uk % 2 == 1 || is_f64 || ktail)))) {
       prefetch_a(ao + nelems_in_cache_line * fetchA_idx);
       fetchA_idx++;
     }
 
-    if (um == 0 && idx == 1 && (uk % 2 == 0 || is_f64 || ktail)) {
+    EIGEN_IF_CONSTEXPR (um == 0 && idx == 1 && (uk % 2 == 0 || is_f64 || ktail)) {
       prefetch_b(bo + nelems_in_cache_line * fetchB_idx);
       fetchB_idx++;
     }
@@ -610,10 +634,14 @@ class gemm_class {
 
     auto& b_reg = zmm[b_regs[idx % 2]];
 
-    if (fetch_x && uk == 3 && idx == 0) prefetch_x(aa);
-    if (fetch_x && uk == 3 && idx == 4) aa += 8;
+    EIGEN_IF_CONSTEXPR (fetch_x && uk == 3 && idx == 0) {
+      prefetch_x(aa);
+    }
+    EIGEN_IF_CONSTEXPR (fetch_x && uk == 3 && idx == 4) {
+      aa += 8;
+    }
 
-    if (b_unroll >= pow) {
+    EIGEN_IF_CONSTEXPR (b_unroll >= pow) {
       compute<0, um_vecs, idx, uk, fetch_x, ktail>(ao, bo, fetchA_idx, fetchB_idx, b_reg);
 
       const Scalar* b_addr = bo + b_unroll * uk + idx + 1 + (b_unroll > 1) * !use_less_b_regs - b_shift;
@@ -640,8 +668,8 @@ class gemm_class {
         std::make_integer_sequence<int, max_count - count>{}, aa, ao, bo, fetchA_idx, fetchB_idx);
 
     // Maybe prefetch C data after count-loop.
-    if (pow == 2 && c_fetch) {
-      if (uk % 3 == 0 && uk > 0) {
+    EIGEN_IF_CONSTEXPR (pow == 2 && c_fetch) {
+      EIGEN_IF_CONSTEXPR (uk % 3 == 0 && uk > 0) {
         co2 += ldc;
       } else {
         prefetch_c(co2 + (uk % 3) * nelems_in_cache_line);
@@ -655,13 +683,13 @@ class gemm_class {
                                            Scalar*& co2, int& fetchA_idx, int& fetchB_idx) {
     const int um_vecs = numext::div_ceil(a_unroll, nelems_in_cache_line);
 
-    if (max_b_unroll >= 1)
+    EIGEN_IF_CONSTEXPR (max_b_unroll >= 1)
       innerkernel_1pow<uk, 1, 0, um_vecs, b_unroll, ktail, fetch_x, c_fetch>(aa, ao, bo, co2, fetchA_idx, fetchB_idx);
-    if (max_b_unroll >= 2)
+    EIGEN_IF_CONSTEXPR (max_b_unroll >= 2)
       innerkernel_1pow<uk, 2, 0, um_vecs, b_unroll, ktail, fetch_x, c_fetch>(aa, ao, bo, co2, fetchA_idx, fetchB_idx);
-    if (max_b_unroll >= 4)
+    EIGEN_IF_CONSTEXPR (max_b_unroll >= 4)
       innerkernel_1pow<uk, 4, 0, um_vecs, b_unroll, ktail, fetch_x, c_fetch>(aa, ao, bo, co2, fetchA_idx, fetchB_idx);
-    if (max_b_unroll >= 8)
+    EIGEN_IF_CONSTEXPR (max_b_unroll >= 8)
       innerkernel_1pow<uk, 8, 0, um_vecs, b_unroll, ktail, fetch_x, c_fetch>(aa, ao, bo, co2, fetchA_idx, fetchB_idx);
 
     // Load A after pow-loop. Skip this at the end to prevent running over the buffer
@@ -741,13 +769,19 @@ class gemm_class {
   template <int a_unroll, int b_unroll, int max_b_unroll>
   EIGEN_ALWAYS_INLINE void kloop(const Scalar*& aa, const Scalar*& ao, const Scalar*& bo, Scalar*& co1, Scalar*& co2) {
     const int um_vecs = numext::div_ceil(a_unroll, nelems_in_cache_line);
-    if (!use_less_a_regs && k > 1)
-      a_loads<0, 2, 0, um_vecs, a_unroll>(ao);
-    else
+    EIGEN_IF_CONSTEXPR (!use_less_a_regs) {
+      if (k > 1)
+        a_loads<0, 2, 0, um_vecs, a_unroll>(ao);
+      else
+        a_loads<0, 1, 0, um_vecs, a_unroll>(ao);
+    } else {
       a_loads<0, 1, 0, um_vecs, a_unroll>(ao);
+    }
 
     b_load(zmm[b_regs[0]], bo - b_shift + 0);
-    if (!use_less_b_regs) b_load(zmm[b_regs[1]], bo - b_shift + 1);
+    EIGEN_IF_CONSTEXPR (!use_less_b_regs) {
+      b_load(zmm[b_regs[1]], bo - b_shift + 1);
+    }
 
 #ifndef SECOND_FETCH
     prefetch_cs<0, max_b_unroll, 0, um_vecs, a_unroll, b_unroll>(co1, co2);
@@ -827,7 +861,7 @@ class gemm_class {
     // Set C matrix pointers.
     co1 = c;
     if (a_unroll >= max_a_unroll) co2 = c + 2 * ldc;
-    if (is_unit_inc)
+    EIGEN_IF_CONSTEXPR (is_unit_inc)
       c += a_unroll;
     else
       c += a_unroll * inc;
@@ -868,16 +902,29 @@ class gemm_class {
     for (; m >= max_a_unroll; m -= max_a_unroll) mloop<max_a_unroll, max_a_unroll, max_b_unroll>(ao, bo, co1, co2);
 
     // m-remainders.
-    if (m & 32 && max_a_unroll > 32) mloop<32, max_a_unroll, max_b_unroll>(ao, bo, co1, co2);
-    if (m & 16 && max_a_unroll > 16) mloop<16, max_a_unroll, max_b_unroll>(ao, bo, co1, co2);
-    if (m & 8 && max_a_unroll > 8) mloop<8, max_a_unroll, max_b_unroll>(ao, bo, co1, co2);
-    if (m & 4 && max_a_unroll > 4) mloop<4, max_a_unroll, max_b_unroll>(ao, bo, co1, co2);
-    if (m & 2 && max_a_unroll > 2 && is_f64) mloop<2, max_a_unroll, max_b_unroll>(ao, bo, co1, co2);
-    if (m & 1 && max_a_unroll > 1 && is_f64) mloop<1, max_a_unroll, max_b_unroll>(ao, bo, co1, co2);
+    EIGEN_IF_CONSTEXPR (max_a_unroll > 32 && is_f32) {
+      constexpr int a_unroll32 = is_f32 ? 32 : 24;
+      if (m & 32) mloop<a_unroll32, max_a_unroll, max_b_unroll>(ao, bo, co1, co2);
+    }
+    EIGEN_IF_CONSTEXPR (max_a_unroll > 16) {
+      if (m & 16) mloop<16, max_a_unroll, max_b_unroll>(ao, bo, co1, co2);
+    }
+    EIGEN_IF_CONSTEXPR (max_a_unroll > 8) {
+      if (m & 8) mloop<8, max_a_unroll, max_b_unroll>(ao, bo, co1, co2);
+    }
+    EIGEN_IF_CONSTEXPR (max_a_unroll > 4) {
+      if (m & 4) mloop<4, max_a_unroll, max_b_unroll>(ao, bo, co1, co2);
+    }
+    EIGEN_IF_CONSTEXPR (max_a_unroll > 2 && is_f64) {
+      if (m & 2) mloop<2, max_a_unroll, max_b_unroll>(ao, bo, co1, co2);
+    }
+    EIGEN_IF_CONSTEXPR (max_a_unroll > 1 && is_f64) {
+      if (m & 1) mloop<1, max_a_unroll, max_b_unroll>(ao, bo, co1, co2);
+    }
 
     // Copy kernels don't support tails of m = 2 for single precision.
     // Loop over ones.
-    if (is_f32) {
+    EIGEN_IF_CONSTEXPR (is_f32) {
       int m_rem = 2 * ((m & 2) != 0) + 1 * ((m & 1) != 0);
       while (m_rem > 0) {
         mloop<1, max_a_unroll, max_b_unroll>(ao, bo, co1, co2);
@@ -1001,10 +1048,10 @@ EIGEN_DONT_INLINE void gemm_pack_rhs<Scalar, Index, DataMapper, 8, ColMajor, Con
   Index packet_cols4 = nr >= 4 ? (cols / 4) * 4 : 0;
   Index count = 0;
   const Index peeled_k = (depth / PacketSize) * PacketSize;
-  EIGEN_IF_CONSTEXPR(nr >= 8) {
+  EIGEN_IF_CONSTEXPR (nr >= 8) {
     for (Index j2 = 0; j2 < packet_cols8; j2 += 8) {
       // skip what we have before
-      EIGEN_IF_CONSTEXPR(PanelMode) count += 8 * offset;
+      EIGEN_IF_CONSTEXPR (PanelMode) count += 8 * offset;
       const LinearMapper dm0 = rhs.getLinearMapper(0, j2 + 0);
       const LinearMapper dm1 = rhs.getLinearMapper(0, j2 + 1);
       const LinearMapper dm2 = rhs.getLinearMapper(0, j2 + 2);
@@ -1014,7 +1061,7 @@ EIGEN_DONT_INLINE void gemm_pack_rhs<Scalar, Index, DataMapper, 8, ColMajor, Con
       const LinearMapper dm6 = rhs.getLinearMapper(0, j2 + 6);
       const LinearMapper dm7 = rhs.getLinearMapper(0, j2 + 7);
       Index k = 0;
-      EIGEN_IF_CONSTEXPR((PacketSize % 8) == 0 || PacketSize == 4) {
+      EIGEN_IF_CONSTEXPR ((PacketSize % 8) == 0 || PacketSize == 4) {
         for (; k < peeled_k; k += PacketSize) {
           PacketBlock<Packet, 8> kernel;
 
@@ -1027,7 +1074,7 @@ EIGEN_DONT_INLINE void gemm_pack_rhs<Scalar, Index, DataMapper, 8, ColMajor, Con
           kernel.packet[6] = dm6.template loadPacket<Packet>(k);
           kernel.packet[7] = dm7.template loadPacket<Packet>(k);
 
-          EIGEN_IF_CONSTEXPR(PacketSize == 4) {
+          EIGEN_IF_CONSTEXPR (PacketSize == 4) {
             // For PacketSize==4 we cannot ptranspose 8 packets directly; compose two
             // 4-packet transposes (cols 0-3 and 4-7) and interleave the halves so
             // the 8 stores produce 4 rows of 8 packed elements.
@@ -1051,8 +1098,7 @@ EIGEN_DONT_INLINE void gemm_pack_rhs<Scalar, Index, DataMapper, 8, ColMajor, Con
             kernel.packet[5] = tmp_hi.packet[2];
             kernel.packet[6] = tmp_lo.packet[3];
             kernel.packet[7] = tmp_hi.packet[3];
-          }
-          else {
+          } else {
             ptranspose(kernel);
           }
 
@@ -1079,28 +1125,28 @@ EIGEN_DONT_INLINE void gemm_pack_rhs<Scalar, Index, DataMapper, 8, ColMajor, Con
         count += 8;
       }
       // skip what we have after
-      EIGEN_IF_CONSTEXPR(PanelMode) count += 8 * (stride - offset - depth);
+      EIGEN_IF_CONSTEXPR (PanelMode) count += 8 * (stride - offset - depth);
     }
   }
 
-  EIGEN_IF_CONSTEXPR(nr >= 4) {
+  EIGEN_IF_CONSTEXPR (nr >= 4) {
     for (Index j2 = packet_cols8; j2 < packet_cols4; j2 += 4) {
       // skip what we have before
-      EIGEN_IF_CONSTEXPR(PanelMode) count += 4 * offset;
+      EIGEN_IF_CONSTEXPR (PanelMode) count += 4 * offset;
       const LinearMapper dm0 = rhs.getLinearMapper(0, j2 + 0);
       const LinearMapper dm1 = rhs.getLinearMapper(0, j2 + 1);
       const LinearMapper dm2 = rhs.getLinearMapper(0, j2 + 2);
       const LinearMapper dm3 = rhs.getLinearMapper(0, j2 + 3);
 
       Index k = 0;
-      EIGEN_IF_CONSTEXPR((PacketSize % 4) == 0 || PacketSize == 2) {
+      EIGEN_IF_CONSTEXPR ((PacketSize % 4) == 0 || PacketSize == 2) {
         for (; k < peeled_k; k += PacketSize) {
           PacketBlock<Packet, 4> kernel;
           kernel.packet[0] = dm0.template loadPacket<Packet>(k);
           kernel.packet[1] = dm1.template loadPacket<Packet>(k);
           kernel.packet[2] = dm2.template loadPacket<Packet>(k);
           kernel.packet[3] = dm3.template loadPacket<Packet>(k);
-          EIGEN_IF_CONSTEXPR(PacketSize == 2) {
+          EIGEN_IF_CONSTEXPR (PacketSize == 2) {
             // See the matching note in GeneralBlockPanelKernel.h.
             PacketBlock<Packet, 2> tmp01;
             tmp01.packet[0] = kernel.packet[0];
@@ -1114,8 +1160,7 @@ EIGEN_DONT_INLINE void gemm_pack_rhs<Scalar, Index, DataMapper, 8, ColMajor, Con
             kernel.packet[1] = tmp23.packet[0];
             kernel.packet[2] = tmp01.packet[1];
             kernel.packet[3] = tmp23.packet[1];
-          }
-          else {
+          } else {
             ptranspose(kernel);
           }
           pstoreu(blockB + count + 0 * PacketSize, cj.pconj(kernel.packet[0]));
@@ -1133,19 +1178,19 @@ EIGEN_DONT_INLINE void gemm_pack_rhs<Scalar, Index, DataMapper, 8, ColMajor, Con
         count += 4;
       }
       // skip what we have after
-      EIGEN_IF_CONSTEXPR(PanelMode) count += 4 * (stride - offset - depth);
+      EIGEN_IF_CONSTEXPR (PanelMode) count += 4 * (stride - offset - depth);
     }
   }
 
   // copy the remaining columns one at a time (nr==1)
   for (Index j2 = packet_cols4; j2 < cols; ++j2) {
-    EIGEN_IF_CONSTEXPR(PanelMode) count += offset;
+    EIGEN_IF_CONSTEXPR (PanelMode) count += offset;
     const LinearMapper dm0 = rhs.getLinearMapper(0, j2);
     for (Index k = 0; k < depth; k++) {
       blockB[count] = cj(dm0(k));
       count += 1;
     }
-    EIGEN_IF_CONSTEXPR(PanelMode) count += (stride - offset - depth);
+    EIGEN_IF_CONSTEXPR (PanelMode) count += (stride - offset - depth);
   }
 }
 
@@ -1174,33 +1219,29 @@ struct gemm_pack_rhs<Scalar, Index, DataMapper, 8, RowMajor, Conjugate, PanelMod
     Index packet_cols4 = nr >= 4 ? (cols / 4) * 4 : 0;
     Index count = 0;
 
-    EIGEN_IF_CONSTEXPR(nr >= 8) {
+    EIGEN_IF_CONSTEXPR (nr >= 8) {
       for (Index j2 = 0; j2 < packet_cols8; j2 += 8) {
         // skip what we have before
-        EIGEN_IF_CONSTEXPR(PanelMode) count += 8 * offset;
+        EIGEN_IF_CONSTEXPR (PanelMode) count += 8 * offset;
         for (Index k = 0; k < depth; k++) {
-          EIGEN_IF_CONSTEXPR(PacketSize == 8) {
+          EIGEN_IF_CONSTEXPR (PacketSize == 8) {
             // Packet A = ploadu<Packet>(&rhs.data()[k*rhs.stride() + j2]);
             Packet A = rhs.template loadPacket<Packet>(k, j2);
             pstoreu(blockB + count, cj.pconj(A));
-          }
-          else EIGEN_IF_CONSTEXPR(HasHalf && HalfPacketSize == 8) {
+          } else EIGEN_IF_CONSTEXPR (HasHalf && HalfPacketSize == 8) {
             HalfPacket A = rhs.template loadPacket<HalfPacket>(k, j2);
             pstoreu(blockB + count, cj.pconj(A));
-          }
-          else EIGEN_IF_CONSTEXPR(HasQuarter && QuarterPacketSize == 8) {
+          } else EIGEN_IF_CONSTEXPR (HasQuarter && QuarterPacketSize == 8) {
             QuarterPacket A = rhs.template loadPacket<QuarterPacket>(k, j2);
             pstoreu(blockB + count, cj.pconj(A));
-          }
-          else EIGEN_IF_CONSTEXPR(PacketSize == 4) {
+          } else EIGEN_IF_CONSTEXPR (PacketSize == 4) {
             // Packet A = ploadu<Packet>(&rhs.data()[k*rhs.stride() + j2]);
             // Packet B = ploadu<Packet>(&rhs.data()[k*rhs.stride() + j2 + PacketSize]);
             Packet A = rhs.template loadPacket<Packet>(k, j2);
             Packet B = rhs.template loadPacket<Packet>(k, j2 + PacketSize);
             pstoreu(blockB + count, cj.pconj(A));
             pstoreu(blockB + count + PacketSize, cj.pconj(B));
-          }
-          else {
+          } else {
             // const Scalar* b0 = &rhs.data()[k*rhs.stride() + j2];
             const LinearMapper dm0 = rhs.getLinearMapper(k, j2);
             blockB[count + 0] = cj(dm0(0));
@@ -1215,31 +1256,28 @@ struct gemm_pack_rhs<Scalar, Index, DataMapper, 8, RowMajor, Conjugate, PanelMod
           count += 8;
         }
         // skip what we have after
-        EIGEN_IF_CONSTEXPR(PanelMode) count += 8 * (stride - offset - depth);
+        EIGEN_IF_CONSTEXPR (PanelMode) count += 8 * (stride - offset - depth);
       }
     }
 
-    EIGEN_IF_CONSTEXPR(nr >= 4) {
+    EIGEN_IF_CONSTEXPR (nr >= 4) {
       for (Index j2 = packet_cols8; j2 < packet_cols4; j2 += 4) {
         // skip what we have before
-        EIGEN_IF_CONSTEXPR(PanelMode) count += 4 * offset;
+        EIGEN_IF_CONSTEXPR (PanelMode) count += 4 * offset;
         for (Index k = 0; k < depth; k++) {
-          EIGEN_IF_CONSTEXPR(PacketSize == 4) {
+          EIGEN_IF_CONSTEXPR (PacketSize == 4) {
             Packet A = rhs.template loadPacket<Packet>(k, j2);
             pstoreu(blockB + count, cj.pconj(A));
             count += PacketSize;
-          }
-          else EIGEN_IF_CONSTEXPR(HasHalf && HalfPacketSize == 4) {
+          } else EIGEN_IF_CONSTEXPR (HasHalf && HalfPacketSize == 4) {
             HalfPacket A = rhs.template loadPacket<HalfPacket>(k, j2);
             pstoreu(blockB + count, cj.pconj(A));
             count += HalfPacketSize;
-          }
-          else EIGEN_IF_CONSTEXPR(HasQuarter && QuarterPacketSize == 4) {
+          } else EIGEN_IF_CONSTEXPR (HasQuarter && QuarterPacketSize == 4) {
             QuarterPacket A = rhs.template loadPacket<QuarterPacket>(k, j2);
             pstoreu(blockB + count, cj.pconj(A));
             count += QuarterPacketSize;
-          }
-          else {
+          } else {
             const LinearMapper dm0 = rhs.getLinearMapper(k, j2);
             blockB[count + 0] = cj(dm0(0));
             blockB[count + 1] = cj(dm0(1));
@@ -1249,17 +1287,17 @@ struct gemm_pack_rhs<Scalar, Index, DataMapper, 8, RowMajor, Conjugate, PanelMod
           }
         }
         // skip what we have after
-        EIGEN_IF_CONSTEXPR(PanelMode) count += 4 * (stride - offset - depth);
+        EIGEN_IF_CONSTEXPR (PanelMode) count += 4 * (stride - offset - depth);
       }
     }
     // copy the remaining columns one at a time (nr==1)
     for (Index j2 = packet_cols4; j2 < cols; ++j2) {
-      EIGEN_IF_CONSTEXPR(PanelMode) count += offset;
+      EIGEN_IF_CONSTEXPR (PanelMode) count += offset;
       for (Index k = 0; k < depth; k++) {
         blockB[count] = cj(rhs(k, j2));
         count += 1;
       }
-      EIGEN_IF_CONSTEXPR(PanelMode) count += stride - offset - depth;
+      EIGEN_IF_CONSTEXPR (PanelMode) count += stride - offset - depth;
     }
   }
 };

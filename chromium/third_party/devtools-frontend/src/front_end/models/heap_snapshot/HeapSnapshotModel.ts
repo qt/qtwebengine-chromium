@@ -136,10 +136,16 @@ export class Diff {
   removedCount = 0;
   addedSize = 0;
   removedSize = 0;
-  deletedIndexes: number[] = [];
-  addedIndexes: number[] = [];
   countDelta!: number;
   sizeDelta!: number;
+  // Data about added nodes
+  addedIndexes: number[] = [];
+  addedIds: number[] = [];
+  addedSelfSizes: number[] = [];
+  // Data about deleted nodes
+  deletedIndexes: number[] = [];
+  deletedIds: number[] = [];
+  deletedSelfSizes: number[] = [];
   constructor(name: string) {
     this.name = name;
   }
@@ -266,4 +272,84 @@ export class Location {
     this.lineNumber = lineNumber;
     this.columnNumber = columnNumber;
   }
+}
+
+export interface RetainingEdge {
+  edgeIndex: number;
+  edgeName: string;
+  edgeType: string;
+  nodeId: number;
+  nodeIndex: number;
+  nodeName: string;
+  distance: number;
+  children: RetainingEdge[];
+}
+
+export interface RetainingPaths {
+  paths: RetainingEdge[];
+  limitsReached: {
+    depth?: boolean,
+    nodes?: boolean,
+    siblings?: boolean,
+  };
+}
+
+export interface DominatorNode {
+  nodeId: number;
+  nodeIndex: number;
+  nodeName: string;
+  retainedSize: number;
+  selfSize: number;
+}
+
+export type DominatorChain = DominatorNode[];
+
+export interface DuplicateStringGroup {
+  value: string;
+  count: number;
+  totalSelfSize: number;
+  totalRetainedSize: number;
+  nodes: Array<{
+    id: number,
+    selfSize: number,
+    retainedSize: number,
+    distance: number,
+  }>;
+  truncated?: boolean;
+  length?: number;
+  hash?: number;
+}
+
+export interface NativeContextSize {
+  nodeId: number;
+  nodeIndex: number;
+  nodeName: string;
+  attributedSize: number;
+  retainedSize: number;
+  selfSize: number;
+}
+
+export interface NativeContextSizes {
+  nativeContexts: NativeContextSize[];
+  sharedSize: number;
+  noAttributionSize: number;
+}
+
+export const enum DOMLinkState {
+  UNKNOWN = 0,
+  ATTACHED = 1,
+  DETACHED = 2,
+}
+
+export interface ObjectInfo {
+  id: number;
+  name: string;
+  type: string;
+  nodeIndex: number;
+  detachedness: DOMLinkState;
+  selfSize: number;
+  retainedSize: number;
+  distance: number;
+  edgeCount: number;
+  retainerCount: number;
 }

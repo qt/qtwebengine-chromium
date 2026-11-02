@@ -30,6 +30,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "partition_alloc/buildflags.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/blink/renderer/platform/wtf/hash_functions.h"
@@ -171,7 +172,7 @@ struct GenericHashTraitsBase {
 
   // The starting table size. Can be overridden when we know beforehand that a
   // hash table will have at least N entries.
-#if defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
+#if PA_BUILDFLAG(MEMORY_TOOL_REPLACES_ALLOCATOR)
   // The allocation pool for nodes is one big chunk that ASAN has no insight
   // into, so it can cloak errors. Make it as small as possible to force nodes
   // to be allocated individually where ASAN can see them.
@@ -389,6 +390,15 @@ struct GenericHashTraits<std::unique_ptr<T>>
 // a specialized HashTraits<T> to inherit GenericHashTraits<T>.
 template <typename T>
 struct HashTraits : GenericHashTraits<T> {};
+
+// Helper to avoid HashTraits<unsigned> sentinel values (0 and 0xFFFFFFFF)
+// by turning them into 1.
+constexpr unsigned EnsureValidHash(unsigned hash) {
+  return (hash == HashTraits<unsigned>::EmptyValue() ||
+          hash == HashTraits<unsigned>::DeletedValue())
+             ? 1
+             : hash;
+}
 
 // This hash traits type requires the following methods in class T, unless
 // the corresponding hash traits method is overridden:

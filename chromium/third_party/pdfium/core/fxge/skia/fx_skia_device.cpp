@@ -39,7 +39,6 @@
 #include "core/fxcrt/ptr_util.h"
 #include "core/fxcrt/span.h"
 #include "core/fxcrt/stl_util.h"
-#include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_fillrenderoptions.h"
 #include "core/fxge/cfx_font.h"
 #include "core/fxge/cfx_gemodule.h"
@@ -245,43 +244,6 @@ SkMatrix ToFlippedSkMatrix(const CFX_Matrix& m, float flip) {
   skMatrix.setAll(m.a * flip, -m.c * flip, m.e, m.b * flip, -m.d * flip, m.f, 0,
                   0, 1);
   return skMatrix;
-}
-
-SkBlendMode GetSkiaBlendMode(BlendMode blend_type) {
-  switch (blend_type) {
-    case BlendMode::kMultiply:
-      return SkBlendMode::kMultiply;
-    case BlendMode::kScreen:
-      return SkBlendMode::kScreen;
-    case BlendMode::kOverlay:
-      return SkBlendMode::kOverlay;
-    case BlendMode::kDarken:
-      return SkBlendMode::kDarken;
-    case BlendMode::kLighten:
-      return SkBlendMode::kLighten;
-    case BlendMode::kColorDodge:
-      return SkBlendMode::kColorDodge;
-    case BlendMode::kColorBurn:
-      return SkBlendMode::kColorBurn;
-    case BlendMode::kHardLight:
-      return SkBlendMode::kHardLight;
-    case BlendMode::kSoftLight:
-      return SkBlendMode::kSoftLight;
-    case BlendMode::kDifference:
-      return SkBlendMode::kDifference;
-    case BlendMode::kExclusion:
-      return SkBlendMode::kExclusion;
-    case BlendMode::kHue:
-      return SkBlendMode::kHue;
-    case BlendMode::kSaturation:
-      return SkBlendMode::kSaturation;
-    case BlendMode::kColor:
-      return SkBlendMode::kColor;
-    case BlendMode::kLuminosity:
-      return SkBlendMode::kLuminosity;
-    case BlendMode::kNormal:
-      return SkBlendMode::kSrcOver;
-  }
 }
 
 SkColor4f MakeColor4f(float r, float g, float b) {
@@ -1682,11 +1644,10 @@ void CFX_SkiaDeviceDriver::DrawPathImpl(const SkPath& path,
 CFX_SkiaDeviceDriver::CharDetail::CharDetail() = default;
 CFX_SkiaDeviceDriver::CharDetail::~CharDetail() = default;
 
-bool CFX_DefaultRenderDevice::AttachSkiaImpl(
-    RetainPtr<CFX_DIBitmap> pBitmap,
-    bool bRgbByteOrder,
-    RetainPtr<CFX_DIBitmap> pBackdropBitmap,
-    bool bGroupKnockout) {
+bool CFX_RenderDevice::AttachSkiaImpl(RetainPtr<CFX_DIBitmap> pBitmap,
+                                      bool bRgbByteOrder,
+                                      RetainPtr<CFX_DIBitmap> pBackdropBitmap,
+                                      bool bGroupKnockout) {
   // FPDF_FFLDrawSkia() ends up calling this method with a deliberately null
   // `pBitmap`.
   if (!pBitmap) {
@@ -1704,7 +1665,7 @@ bool CFX_DefaultRenderDevice::AttachSkiaImpl(
   return true;
 }
 
-bool CFX_DefaultRenderDevice::AttachCanvas(SkCanvas& canvas) {
+bool CFX_RenderDevice::AttachCanvas(SkCanvas& canvas) {
   auto driver = CFX_SkiaDeviceDriver::Create(canvas);
   if (!driver) {
     return false;
@@ -1713,11 +1674,10 @@ bool CFX_DefaultRenderDevice::AttachCanvas(SkCanvas& canvas) {
   return true;
 }
 
-bool CFX_DefaultRenderDevice::CreateSkia(
-    int width,
-    int height,
-    FXDIB_Format format,
-    RetainPtr<CFX_DIBitmap> pBackdropBitmap) {
+bool CFX_RenderDevice::CreateSkia(int width,
+                                  int height,
+                                  FXDIB_Format format,
+                                  RetainPtr<CFX_DIBitmap> pBackdropBitmap) {
   auto pBitmap = pdfium::MakeRetain<CFX_DIBitmap>();
   if (!pBitmap->Create(width, height, format)) {
     return false;

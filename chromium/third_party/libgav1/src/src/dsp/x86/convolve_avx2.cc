@@ -18,12 +18,10 @@
 #if LIBGAV1_TARGETING_AVX2
 #include <immintrin.h>
 
-#include <algorithm>
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
-#include <cstring>
 
-#include "src/dsp/constants.h"
 #include "src/dsp/dsp.h"
 #include "src/dsp/x86/common_avx2.h"
 #include "src/utils/common.h"

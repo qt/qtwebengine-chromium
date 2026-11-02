@@ -5,7 +5,14 @@ export type ParseMode = 'closure' | 'jsdoc' | 'typescript';
  * @param expression
  * @param mode
  */
-export declare function parse(expression: string, mode: ParseMode, { module, strictMode, asyncFunctionBody, classContext, computedPropertyParser }?: {
+export declare function parse(expression: string, mode: ParseMode, { range, rangeStart, loc, locStart, module, strictMode, asyncFunctionBody, classContext, computedPropertyParser }?: {
+    range?: boolean;
+    rangeStart?: number;
+    loc?: boolean;
+    locStart?: {
+        column: number;
+        line: number;
+    };
     module?: boolean;
     strictMode?: boolean;
     asyncFunctionBody?: boolean;
@@ -19,11 +26,18 @@ export declare function parse(expression: string, mode: ParseMode, { module, str
  * @param expression
  * @param modes
  */
-export declare function tryParse(expression: string, modes?: ParseMode[], { module, strictMode, asyncFunctionBody, classContext, }?: {
+export declare function tryParse(expression: string, modes?: ParseMode[], { module, strictMode, asyncFunctionBody, classContext, range, rangeStart, loc, locStart }?: {
     module?: boolean;
     strictMode?: boolean;
     asyncFunctionBody?: boolean;
     classContext?: boolean;
+    range?: boolean;
+    rangeStart?: number;
+    loc?: boolean;
+    locStart?: {
+        column: number;
+        line: number;
+    };
 }): RootResult;
 /**
  * This function parses the given expression in the given mode and produces a name path.

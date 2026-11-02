@@ -11,9 +11,12 @@ android_library("java") {
     "java/src/org/chromium/components/browser_ui/bottomsheet/BottomSheetContent.java",
     "java/src/org/chromium/components/browser_ui/bottomsheet/BottomSheetController.java",
     "java/src/org/chromium/components/browser_ui/bottomsheet/BottomSheetControllerProvider.java",
+    "java/src/org/chromium/components/browser_ui/bottomsheet/BottomSheetListViewBase.java",
     "java/src/org/chromium/components/browser_ui/bottomsheet/BottomSheetObserver.java",
+    "java/src/org/chromium/components/browser_ui/bottomsheet/BottomSheetRecyclerScrollListener.java",
     "java/src/org/chromium/components/browser_ui/bottomsheet/EmptyBottomSheetObserver.java",
     "java/src/org/chromium/components/browser_ui/bottomsheet/ExpandedSheetHelper.java",
+    "java/src/org/chromium/components/browser_ui/bottomsheet/ItemDividerBase.java",
   ]
 
   deps = [
@@ -22,7 +25,11 @@ android_library("java") {
     "//components/browser_ui/styles/android:java",
     "//components/browser_ui/widget/android:java",
     "//third_party/androidx:androidx_annotation_annotation_java",
+    "//third_party/androidx:androidx_appcompat_appcompat_resources_java",
+    "//third_party/androidx:androidx_core_core_java",
+    "//third_party/androidx:androidx_recyclerview_recyclerview_java",
     "//third_party/jni_zero:jni_zero_java",
+    "//ui/accessibility:ax_base_java",
     "//ui/android:ui_java",
   ]
   resources_package = "org.chromium.components.browser_ui.bottomsheet"
@@ -30,8 +37,10 @@ android_library("java") {
 
 android_resources("java_resources") {
   sources = [
+    "java/res/drawable/bottom_sheet_desktop_background.xml",
     "java/res/layout/bottom_sheet.xml",
     "java/res/layout/bottom_sheet_handlebar.xml",
+    "java/res/values/colors.xml",
     "java/res/values/dimens.xml",
   ]
 

@@ -12,6 +12,7 @@ import("//third_party/ffmpeg/ffmpeg_options.gni")
 import("//third_party/icu/config.gni")
 import("//tools/v8_context_snapshot/v8_context_snapshot.gni")
 import("//ui/base/ui_features.gni")
+import("//ui/gl/features.gni")
 import("//v8/gni/v8.gni")
 
 declare_args() {
@@ -68,7 +69,10 @@ source_set("lib") {
     "write_to_disk.h",
   ]
 
-  deps = [ "//build:branding_buildflags" ]
+  deps = [
+    "//base:compiler_specific",
+    "//build:branding_buildflags",
+  ]
 
   # Initialization may insert unexpected memset calls.
   configs -= [ "//build/config/compiler:default_init_stack_vars" ]
@@ -207,6 +211,10 @@ action("mini_installer_archive") {
     args += [ "--component_ffmpeg_build=1" ]
   }
 
+  if (use_static_angle) {
+    args += [ "--use_static_angle=True" ]
+  }
+
   if (fast_archive_compression) {
     args += [ "--fast_archive_compression" ]
   }
@@ -251,6 +259,7 @@ source_set("mini_installer_sources") {
   deps = [
     ":lib",
     "//base:clang_profiling_buildflags",
+    "//base:compiler_specific",
   ]
   configs -= [ "//build/config/compiler:default_init_stack_vars" ]
   configs += [ ":mini_installer_compiler_flags" ]

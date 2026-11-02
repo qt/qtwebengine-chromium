@@ -21,6 +21,7 @@
 #include "content/public/renderer/render_frame_observer.h"
 #include "mojo/public/cpp/bindings/associated_receiver_set.h"
 #include "mojo/public/cpp/bindings/pending_associated_receiver.h"
+#include "pdf/buildflags.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
 
@@ -83,6 +84,8 @@ class ChromeRenderFrameObserver : public content::RenderFrameObserver,
 
  private:
   friend class ChromeRenderFrameObserverTest;
+  FRIEND_TEST_ALL_PREFIXES(ChromeRenderFrameObserverTest,
+                           DynamicTranslateAgentCreation);
 
   // RenderFrameObserver implementation.
   void OnInterfaceRequestForFrame(
@@ -99,6 +102,8 @@ class ChromeRenderFrameObserver : public content::RenderFrameObserver,
   void DidCreateNewDocument() override;
   void DidCommitProvisionalLoad(ui::PageTransition transition) override;
   void DidClearWindowObject() override;
+  void DidCreateScriptContext(v8::Local<v8::Context> context,
+                              int32_t world_id) override;
   void DidMeaningfulLayout(blink::WebMeaningfulLayout layout_type) override;
   void OnDestruct() override;
   void WillDetach(blink::DetachReason detach_reason) override;
@@ -155,6 +160,11 @@ class ChromeRenderFrameObserver : public content::RenderFrameObserver,
           page_content_annotations::mojom::PageStabilityMonitor> monitor,
       const actor::TaskId& task_id,
       bool supports_paint_stability) override;
+#if BUILDFLAG(ENABLE_PDF)
+  void PdfPageCaptured(const std::u16string& contents,
+                       const std::string& pdf_lang,
+                       const GURL& page_url) override;
+#endif
 
   // Initialize a |phishing_classifier_delegate_|.
   void SetClientSidePhishingDetection();

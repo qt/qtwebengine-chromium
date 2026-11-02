@@ -108,8 +108,7 @@ message. The WebSocket handling logic is located in the
 ### Prerequisites
 
 Ensure you have Bazel installed and the project dependencies are set up
-correctly by running `just bazel-repin-all` from the root of the `oak`
-repository.
+correctly by running `just crates repin` from the root of the `oak` repository.
 
 ### 1. Create Configuration Files
 
@@ -155,7 +154,7 @@ Now, run the server proxy in a separate terminal, pointing it to your
 configuration file:
 
 ```bash
-bazel run //oak_proxy/server -- --config server.toml
+bazel run //oak_proxy/server -- --config server.toml --listen-address "127.0.0.1:8081"
 ```
 
 You should see the output: `[Server] Listening on 127.0.0.1:8081`.
@@ -168,7 +167,7 @@ forwards it over the secure tunnel to the server proxy.
 Run the client proxy in a third terminal:
 
 ```bash
-bazel run //oak_proxy/client -- --config client.toml
+bazel run //oak_proxy/client -- --config client.toml --listen-address "127.0.0.1:9090" --server-proxy-url "ws://127.0.0.1:8081"
 ```
 
 You should see the output: `[Client] Listening on 127.0.0.1:9090`.
@@ -280,7 +279,6 @@ Let's say you want to add a new attestation mechanism called
 "MyCustomAttestation".
 
 1. **Create a New Module**:
-
    - Create a new file for your attestation logic, for example
      `//oak_proxy/lib/src/config/my_custom_attestation.rs`.
    - In this new file, define `MyCustomAttestationGeneratorParams` and
@@ -289,7 +287,6 @@ Let's say you want to add a new attestation mechanism called
      derive `serde::Deserialize`.
 
 2. **Integrate with the Config Module**:
-
    - In `//oak_proxy/lib/src/config/mod.rs`, declare your new module with
      `pub mod my_custom_attestation;`.
    - Import your new param structs.
@@ -318,7 +315,6 @@ Let's say you want to add a new attestation mechanism called
      ```
 
 3. **Implement the `apply` Method**:
-
    - In your new module (`my_custom_attestation.rs`), implement the `apply`
      method for your param structs. This method takes a `SessionConfigBuilder`
      and should add the appropriate `Attester`, `Endorser`, `Binder`, or
@@ -351,13 +347,11 @@ Let's say you want to add a new attestation mechanism called
      ```
 
 4. **Update the `match` Statements**:
-
    - In `//oak_proxy/lib/src/config/mod.rs`, add a branch to the `match`
      statement in the `apply` methods for `GeneratorConfig` and `VerifierConfig`
      to call your new implementation.
 
 5. **Use in Configuration**:
-
    - You can now use your new type in the TOML configuration files:
 
      ```toml

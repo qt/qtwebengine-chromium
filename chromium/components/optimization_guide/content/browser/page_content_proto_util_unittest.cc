@@ -412,9 +412,10 @@ TEST_F(PageContentProtoUtilTest, ConvertImageInfo) {
   image_node->content_attributes->image_info =
       blink::mojom::AIPageContentImageInfo::New();
   image_node->content_attributes->image_info->image_caption = "image caption";
-  const auto expected_origin =
-      url::Origin::Create(GURL("https://example.com/image.png"));
+  const auto expected_url = GURL("https://example.com/image.png");
+  const auto expected_origin = url::Origin::Create(expected_url);
   image_node->content_attributes->image_info->source_origin = expected_origin;
+  image_node->content_attributes->image_info->url = expected_url;
   root_content->root_node->children_nodes.emplace_back(std::move(image_node));
 
   AIPageContentResult page_content;
@@ -440,6 +441,7 @@ TEST_F(PageContentProtoUtilTest, ConvertImageInfo) {
                                .image_data();
   EXPECT_EQ(image_data.image_caption(), "image caption");
   AssertValidOrigin(image_data.security_origin(), expected_origin);
+  EXPECT_EQ(image_data.url(), expected_url.spec());
 }
 
 TEST_F(PageContentProtoUtilTest, AttributeTypeDoesNotMatchData_Image) {
@@ -1353,6 +1355,30 @@ TEST_F(PageContentProtoUtilTest, ConvertAnnotatedRoles) {
             optimization_guide::proto::ANNOTATED_ROLE_FOOTER);
 }
 
+TEST_F(PageContentProtoUtilTest, ConvertDialogAttributeTypes) {
+  auto root_content = CreatePageContent();
+  root_content->root_node->children_nodes.emplace_back(CreateContentNode(
+      blink::mojom::AIPageContentAttributeType::kDialogModal));
+  root_content->root_node->children_nodes.emplace_back(CreateContentNode(
+      blink::mojom::AIPageContentAttributeType::kDialogModeless));
+
+  AIPageContentResult page_content;
+  EXPECT_TRUE(
+      ConvertAIPageContentToProto(root_content, page_content).has_value());
+
+  ASSERT_EQ(page_content.proto.root_node().children_nodes_size(), 2);
+  EXPECT_EQ(page_content.proto.root_node()
+                .children_nodes(0)
+                .content_attributes()
+                .attribute_type(),
+            optimization_guide::proto::CONTENT_ATTRIBUTE_DIALOG_MODAL);
+  EXPECT_EQ(page_content.proto.root_node()
+                .children_nodes(1)
+                .content_attributes()
+                .attribute_type(),
+            optimization_guide::proto::CONTENT_ATTRIBUTE_DIALOG_MODELESS);
+}
+
 TEST_F(PageContentProtoUtilTest, ConvertFormData) {
   auto root_content = CreatePageContent();
   auto form_node =
@@ -1452,6 +1478,43 @@ TEST_F(PageContentProtoUtilTest, ConvertFormControlData) {
   EXPECT_EQ(
       form_control_data_proto.redaction_decision(),
       optimization_guide::proto::REDACTION_DECISION_NO_REDACTION_NECESSARY);
+}
+
+TEST_F(PageContentProtoUtilTest, ConvertInteractionDisabledReasons) {
+  auto root_content = CreatePageContent();
+  auto container_node =
+      CreateContentNode(blink::mojom::AIPageContentAttributeType::kContainer);
+  container_node->content_attributes->node_interaction_info =
+      blink::mojom::AIPageContentNodeInteractionInfo::New();
+  // These reasons are not legacy is_disabled signals, but consumers still need
+  // the exact APC reason in the proto.
+  auto& disabled_reasons =
+      container_node->content_attributes->node_interaction_info
+          ->interaction_disabled_reasons;
+  disabled_reasons.push_back(
+      blink::mojom::AIPageContentInteractionDisabledReason::kAriaHidden);
+  disabled_reasons.push_back(
+      blink::mojom::AIPageContentInteractionDisabledReason::
+          kAriaRolePresentational);
+  root_content->root_node->children_nodes.emplace_back(
+      std::move(container_node));
+
+  AIPageContentResult page_content;
+  EXPECT_TRUE(
+      ConvertAIPageContentToProto(root_content, page_content).has_value());
+
+  ASSERT_EQ(page_content.proto.root_node().children_nodes_size(), 1);
+  const auto& interaction_info = page_content.proto.root_node()
+                                     .children_nodes(0)
+                                     .content_attributes()
+                                     .interaction_info();
+  EXPECT_FALSE(interaction_info.is_disabled());
+  EXPECT_THAT(
+      interaction_info.interaction_disabled_reasons(),
+      testing::UnorderedElementsAre(
+          optimization_guide::proto::INTERACTION_DISABLED_REASON_ARIA_HIDDEN,
+          optimization_guide::proto::
+              INTERACTION_DISABLED_REASON_ARIA_ROLE_PRESENTATIONAL));
 }
 
 TEST_F(PageContentProtoUtilTest, ConvertFormControlDataRedactionDecision) {

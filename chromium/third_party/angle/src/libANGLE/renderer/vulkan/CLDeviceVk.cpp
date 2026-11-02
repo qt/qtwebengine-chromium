@@ -6,11 +6,8 @@
 // CLDeviceVk.cpp: Implements the class methods for CLDeviceVk.
 //
 
-#ifdef UNSAFE_BUFFERS_BUILD
-#    pragma allow_unsafe_buffers
-#endif
-
 #include "libANGLE/renderer/vulkan/CLDeviceVk.h"
+#include "common/unsafe_buffers.h"
 #include "libANGLE/renderer/driver_utils.h"
 #include "libANGLE/renderer/vulkan/clspv_utils.h"
 #include "libANGLE/renderer/vulkan/vk_renderer.h"
@@ -24,6 +21,172 @@
 
 namespace rx
 {
+
+uint32_t CLDeviceVk::getNumComputeUnits() const
+{
+    if (mRenderer->getFeatures().supportsAmdShaderCoreProperties.enabled)
+    {
+        auto shaderCoreProperties = getRenderer()->getPhysicalDeviceShaderCorePropertiesAMD();
+        // There are two modes of operations possible for RDNA - WGP and CU. WGP mode uses 2'CUs as
+        // a single unit. Samsung configures the GPU in WGP mode by default.
+        uint32_t workGroupFactor =
+            IsSamsung(getRenderer()->getPhysicalDeviceProperties().vendorID) ? 2 : 1;
+        return shaderCoreProperties.shaderEngineCount *
+               shaderCoreProperties.shaderArraysPerEngineCount *
+               shaderCoreProperties.computeUnitsPerShaderArray / workGroupFactor;
+    }
+    return cl::IMPLEMENTATION_NUM_COMPUTE_UNITS;
+}
+
+uint32_t CLDeviceVk::getWorkGroupSizeMultiple() const
+{
+    if (mRenderer->getFeatures().supportsAmdShaderCoreProperties.enabled)
+    {
+        return getRenderer()->getPhysicalDeviceShaderCorePropertiesAMD().wavefrontSize;
+    }
+    return cl::IMPLEMENTATION_PREFERRED_WORKGROUP_SIZE_MULTIPLE;
+}
+
+cl_ulong CLDeviceVk::getSingleFpConfig() const
+{
+    // The spec requires these as bare minimum
+    cl_ulong singleFpConfig = CL_FP_INF_NAN | CL_FP_ROUND_TO_NEAREST;
+    if (mRenderer->getFeatures().supportsRoundingModeRtzFp32.enabled)
+    {
+        singleFpConfig |= CL_FP_ROUND_TO_ZERO;
+    }
+
+    if (mRenderer->getFeatures().supportsAmdShaderCoreProperties.enabled)
+    {
+        // The below are known to be supported
+        // TODO(http://anglebug.com/472472687) need to find appropriate query
+        singleFpConfig |= CL_FP_ROUND_TO_INF | CL_FP_FMA;
+    }
+
+    return singleFpConfig;
+}
+
+cl_ulong CLDeviceVk::getHalfFpConfig() const
+{
+    cl_ulong halfFpConfig = 0;
+    if (mRenderer->getFeatures().supportsShaderFloat16.enabled)
+    {
+        halfFpConfig |= CL_FP_INF_NAN;
+        if (mRenderer->getFeatures().supportsRoundingModeRteFp16.enabled)
+        {
+            halfFpConfig |= CL_FP_ROUND_TO_NEAREST;
+        }
+        if (mRenderer->getFeatures().supportsRoundingModeRtzFp16.enabled)
+        {
+            halfFpConfig |= CL_FP_ROUND_TO_ZERO;
+        }
+
+        if (mRenderer->getFeatures().supportsAmdShaderCoreProperties.enabled)
+        {
+            // The below are known to be supported
+            // TODO(http://anglebug.com/472472687) need to find appropriate query
+            halfFpConfig |= CL_FP_ROUND_TO_INF | CL_FP_FMA;
+        }
+    }
+    return halfFpConfig;
+}
+
+cl_ulong CLDeviceVk::getDoubleFpConfig() const
+{
+    cl_ulong doubleFpConfig = 0;
+    if (mRenderer->getFeatures().supportsShaderFloat64.enabled)
+    {
+        doubleFpConfig |=
+            CL_FP_INF_NAN | CL_FP_ROUND_TO_NEAREST | CL_FP_ROUND_TO_ZERO | CL_FP_DENORM;
+
+        // The below are required
+        // TODO(http://anglebug.com/472472687) need to find appropriate query
+        doubleFpConfig |= CL_FP_ROUND_TO_INF | CL_FP_FMA;
+    }
+    return doubleFpConfig;
+}
+
+cl_ulong CLDeviceVk::getCacheSize() const
+{
+    // TODO(http://anglebug.com/472472687) need to find appropriate query
+    return 1024 * 1024ULL;
+}
+
+cl_ulong CLDeviceVk::getHeapSizeForResource(const VkMemoryPropertyFlags supportedProperties,
+                                            const VkMemoryPropertyFlags avoidedProperties) const
+{
+    const vk::MemoryProperties &memoryProperties = mRenderer->getMemoryProperties();
+    for (uint32_t memTypeIdx = 0; memTypeIdx < memoryProperties.getMemoryTypeCount(); memTypeIdx++)
+    {
+        bool support = (memoryProperties.getMemoryType(memTypeIdx).propertyFlags &
+                        supportedProperties) == supportedProperties;
+        bool avoid =
+            (memoryProperties.getMemoryType(memTypeIdx).propertyFlags & avoidedProperties) != 0;
+        if (support && !avoid)
+        {
+            return memoryProperties.getHeapSizeForMemoryType(memTypeIdx);
+        }
+    }
+    return 0;
+}
+
+cl_ulong CLDeviceVk::getGlobalMemSize() const
+{
+    // Memory-property sets that can back CL buffers (host-visible), with varying cache/coherency.
+    cl_ulong bufferSize                                            = 0;
+    static constexpr VkMemoryPropertyFlags kBufferSupportedFlags[] = {
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT |
+            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+    };
+    for (const VkMemoryPropertyFlags &supportedFlags : kBufferSupportedFlags)
+    {
+        bufferSize = std::max(bufferSize, getHeapSizeForResource(supportedFlags, 0));
+    }
+
+    // Memory-property sets that can back CL images (device-local, non-host-coherent).
+    cl_ulong imageSize                                            = 0;
+    static constexpr VkMemoryPropertyFlags kImageSupportedFlags[] = {
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
+    for (const VkMemoryPropertyFlags &supportedFlags : kImageSupportedFlags)
+    {
+        imageSize = std::max(imageSize, getHeapSizeForResource(
+                                            supportedFlags, VK_MEMORY_PROPERTY_HOST_COHERENT_BIT));
+    }
+
+    // Return the size of the smallest memory heap
+    if (bufferSize == 0)
+    {
+        return imageSize;
+    }
+    if (imageSize == 0)
+    {
+        return bufferSize;
+    }
+    return std::min(bufferSize, imageSize);
+}
+
+cl_ulong CLDeviceVk::getMaxMemAllocSize() const
+{
+    return std::min(getGlobalMemSize(), mRenderer->getMaxMemoryAllocationSize());
+}
+
+size_t CLDeviceVk::getImageMaxBufferSize() const
+{
+    const VkPhysicalDeviceProperties &properties = mRenderer->getPhysicalDeviceProperties();
+    const VkDeviceSize maxBufferSize             = std::min(
+        static_cast<cl_ulong>(properties.limits.maxTexelBufferElements), getMaxMemAllocSize());
+
+    // Reserve headroom for the vertex-attribute stride padding that
+    // padVertexAttribBufferSizeIfNeeded() would later append. padVertexAttribBufferSizeIfNeeded(0)
+    // yields that padding amount (0 when the padBuffersToMaxVertexAttribStride feature is
+    // disabled).
+    const VkDeviceSize maxVertexAttribStride = mRenderer->padVertexAttribBufferSizeIfNeeded(0);
+    ASSERT(maxBufferSize > maxVertexAttribStride);
+
+    return static_cast<size_t>(maxBufferSize - maxVertexAttribStride);
+}
 
 CLDeviceVk::CLDeviceVk(const cl::Device &device, vk::Renderer *renderer)
     : CLDeviceImpl(device), mRenderer(renderer), mSpirvVersion(ClspvGetSpirvVersion(renderer))
@@ -49,43 +212,28 @@ CLDeviceVk::CLDeviceVk(const cl::Device &device, vk::Renderer *renderer)
         // TODO(aannestrand) Update these hardcoded platform/device queries
         // http://anglebug.com/42266935
         {cl::DeviceInfo::MaxParameterSize, 1024},
-        {cl::DeviceInfo::ProfilingTimerResolution, 1},
+        {cl::DeviceInfo::ProfilingTimerResolution, props.limits.timestampPeriod},
         {cl::DeviceInfo::PrintfBufferSize, 1024 * 1024},
-        {cl::DeviceInfo::PreferredWorkGroupSizeMultiple, 16},
+        {cl::DeviceInfo::PreferredWorkGroupSizeMultiple, getWorkGroupSizeMultiple()},
     };
-
-    // Minimum float configs/support required
-    cl_ulong halfFPConfig   = 0;
-    cl_ulong singleFPConfig = CL_FP_ROUND_TO_NEAREST | CL_FP_INF_NAN | CL_FP_FMA;
-    cl_ulong doubleFPConfig = 0;
-
-    if (mRenderer->getFeatures().supportsShaderFloat16.enabled)
-    {
-        halfFPConfig |= CL_FP_ROUND_TO_NEAREST | CL_FP_INF_NAN;
-    }
-
-    if (mRenderer->getFeatures().supportsShaderFloat64.enabled)
-    {
-        doubleFPConfig |= CL_FP_FMA | CL_FP_ROUND_TO_NEAREST | CL_FP_ROUND_TO_ZERO |
-                          CL_FP_ROUND_TO_INF | CL_FP_INF_NAN | CL_FP_DENORM;
-    }
 
     mInfoULong = {
         {cl::DeviceInfo::LocalMemSize, props.limits.maxComputeSharedMemorySize},
-        {cl::DeviceInfo::SVM_Capabilities, 0},
-        {cl::DeviceInfo::QueueOnDeviceProperties, 0},
-        {cl::DeviceInfo::PartitionAffinityDomain, 0},
-        {cl::DeviceInfo::DeviceEnqueueCapabilities, 0},
+        {cl::DeviceInfo::SVM_Capabilities, 0ULL},
+        {cl::DeviceInfo::QueueOnDeviceProperties, 0ULL},
+        {cl::DeviceInfo::PartitionAffinityDomain, 0ULL},
+        {cl::DeviceInfo::DeviceEnqueueCapabilities, 0ULL},
         {cl::DeviceInfo::QueueOnHostProperties, CL_QUEUE_PROFILING_ENABLE},
 
         // TODO(aannestrand) Update these hardcoded platform/device queries
         // http://anglebug.com/42266935
-        {cl::DeviceInfo::HalfFpConfig, halfFPConfig},
-        {cl::DeviceInfo::DoubleFpConfig, doubleFPConfig},
-        {cl::DeviceInfo::GlobalMemCacheSize, 0},
-        {cl::DeviceInfo::GlobalMemSize, 1024 * 1024 * 1024},
-        {cl::DeviceInfo::MaxConstantBufferSize, 64 * 1024},
-        {cl::DeviceInfo::SingleFpConfig, singleFPConfig},
+        {cl::DeviceInfo::HalfFpConfig, getHalfFpConfig()},
+        {cl::DeviceInfo::DoubleFpConfig, getDoubleFpConfig()},
+        {cl::DeviceInfo::GlobalMemCacheSize, getCacheSize()},
+        {cl::DeviceInfo::GlobalMemSize, getGlobalMemSize()},
+        // Constant buffer size is same as global variable size in SGPU
+        {cl::DeviceInfo::MaxConstantBufferSize, 1024 * 1024 * 1024ULL},
+        {cl::DeviceInfo::SingleFpConfig, getSingleFpConfig()},
         {cl::DeviceInfo::AtomicMemoryCapabilities,
          CL_DEVICE_ATOMIC_ORDER_RELAXED | CL_DEVICE_ATOMIC_SCOPE_WORK_GROUP |
              CL_DEVICE_ATOMIC_ORDER_ACQ_REL | CL_DEVICE_ATOMIC_SCOPE_DEVICE |
@@ -109,9 +257,9 @@ CLDeviceVk::CLDeviceVk(const cl::Device &device, vk::Renderer *renderer)
 
     mInfoUInt = {
         {cl::DeviceInfo::VendorID, props.vendorID},
-        {cl::DeviceInfo::MaxReadImageArgs, cl::IMPLEMENATION_MAX_READ_IMAGES},
-        {cl::DeviceInfo::MaxWriteImageArgs, cl::IMPLEMENATION_MAX_WRITE_IMAGES},
-        {cl::DeviceInfo::MaxReadWriteImageArgs, cl::IMPLEMENATION_MAX_WRITE_IMAGES},
+        {cl::DeviceInfo::MaxReadImageArgs, cl::IMPLEMENTATION_MAX_READ_IMAGES},
+        {cl::DeviceInfo::MaxWriteImageArgs, cl::IMPLEMENTATION_MAX_WRITE_IMAGES},
+        {cl::DeviceInfo::MaxReadWriteImageArgs, cl::IMPLEMENTATION_MAX_WRITE_IMAGES},
         {cl::DeviceInfo::GlobalMemCachelineSize,
          static_cast<cl_uint>(props.limits.nonCoherentAtomSize)},
         {cl::DeviceInfo::Available, CL_TRUE},
@@ -140,11 +288,12 @@ CLDeviceVk::CLDeviceVk(const cl::Device &device, vk::Renderer *renderer)
         {cl::DeviceInfo::MaxSamplers, 16u},
         {cl::DeviceInfo::MaxConstantArgs, 8},
         {cl::DeviceInfo::MaxNumSubGroups, maxNumSubGroups},
-        {cl::DeviceInfo::MaxComputeUnits, 4},
+        {cl::DeviceInfo::MaxComputeUnits, getNumComputeUnits()},
+        // Frequency is reported in MHz
         {cl::DeviceInfo::MaxClockFrequency, 555},
         {cl::DeviceInfo::MaxWorkItemDimensions, 3},
         {cl::DeviceInfo::MinDataTypeAlignSize, 128},
-        {cl::DeviceInfo::GlobalMemCacheType, CL_NONE},
+        {cl::DeviceInfo::GlobalMemCacheType, CL_READ_WRITE_CACHE},
         {cl::DeviceInfo::HostUnifiedMemory, CL_TRUE},
         {cl::DeviceInfo::NativeVectorWidthChar, 4},
         {cl::DeviceInfo::NativeVectorWidthShort, 2},
@@ -153,7 +302,8 @@ CLDeviceVk::CLDeviceVk(const cl::Device &device, vk::Renderer *renderer)
         {cl::DeviceInfo::NativeVectorWidthFloat, 1},
         {cl::DeviceInfo::NativeVectorWidthDouble, mRenderer->getNativeVectorWidthDouble()},
         {cl::DeviceInfo::NativeVectorWidthHalf, mRenderer->getNativeVectorWidthHalf()},
-        {cl::DeviceInfo::PartitionMaxSubDevices, 0},
+        // Report the number of CU's as max sub devices for now
+        {cl::DeviceInfo::PartitionMaxSubDevices, getNumComputeUnits()},
         {cl::DeviceInfo::PreferredVectorWidthChar, 4},
         {cl::DeviceInfo::PreferredVectorWidthShort, 8},
         {cl::DeviceInfo::PreferredVectorWidthInt, 1},
@@ -186,7 +336,7 @@ CLDeviceImpl::Info CLDeviceVk::createInfo(cl::DeviceType type) const
 
     // TODO(aannestrand) Update these hardcoded platform/device queries
     // http://anglebug.com/42266935
-    info.maxMemAllocSize  = 1 << 30;
+    info.maxMemAllocSize  = getMaxMemAllocSize();
     info.memBaseAddrAlign = 1024;
 
     info.imageSupport = CL_TRUE;
@@ -197,7 +347,7 @@ CLDeviceImpl::Info CLDeviceVk::createInfo(cl::DeviceType type) const
     info.image3D_MaxHeight = properties.limits.maxImageDimension3D;
     info.image3D_MaxDepth  = properties.limits.maxImageDimension3D;
     // Max number of pixels for a 1D image created from a buffer object.
-    info.imageMaxBufferSize = properties.limits.maxTexelBufferElements;
+    info.imageMaxBufferSize = getImageMaxBufferSize();
     info.imageMaxArraySize  = properties.limits.maxImageArrayLayers;
     // The following are queried when image2d is created from buffer. We mimic its support for now
     // by doing a copy and as such dont have alignment requirements.
@@ -217,9 +367,10 @@ CLDeviceImpl::Info CLDeviceVk::createInfo(cl::DeviceType type) const
     info.OpenCL_C_Features         = {};
     info.ILsWithVersion            = {};
     info.builtInKernelsWithVersion = {};
-    info.partitionProperties       = {};
-    info.partitionType             = {};
-    info.IL_Version                = "";
+    // Device partition is not supported for now
+    info.partitionProperties = {CL_NONE};
+    info.partitionType       = {CL_NONE};
+    info.IL_Version          = "";
 
     // Below extensions are required as of OpenCL 1.1, add their versioned strings
     NameVersionVector versionedExtensionList = {
@@ -417,7 +568,7 @@ angle::Result CLDeviceVk::getInfoString(cl::DeviceInfo name, size_t size, char *
 {
     if (mInfoString.count(name))
     {
-        std::strcpy(value, mInfoString.at(name).c_str());
+        ANGLE_UNSAFE_TODO(std::strcpy(value, mInfoString.at(name).c_str()));
         return angle::Result::Continue;
     }
     ANGLE_CL_RETURN_ERROR(CL_INVALID_VALUE);

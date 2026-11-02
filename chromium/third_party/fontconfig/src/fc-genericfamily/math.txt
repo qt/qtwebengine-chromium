@@ -1,0 +1,9 @@
+# Font families for math generic family
+Asana Math
+Cambria Math
+Latin Modern Math
+Lucida Math
+Minion Math
+STIX Two Math
+XITS Math
+Noto Sans Math

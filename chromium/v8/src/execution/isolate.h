@@ -13,9 +13,11 @@
 #include <memory>
 #include <optional>
 #include <queue>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
+#include "include/cppgc/persistent.h"
 #include "include/v8-context.h"
 #include "include/v8-internal.h"
 #include "include/v8-isolate.h"
@@ -24,6 +26,7 @@
 #include "src/base/macros.h"
 #include "src/base/platform/mutex.h"
 #include "src/base/platform/platform-posix.h"
+#include "src/base/strong-alias.h"
 #include "src/builtins/builtins.h"
 #include "src/common/globals.h"
 #include "src/common/ptr-compr.h"
@@ -47,7 +50,6 @@
 #include "src/objects/js-objects.h"
 #include "src/objects/tagged.h"
 #include "src/runtime/runtime.h"
-#include "src/sandbox/code-pointer-table.h"
 #include "src/sandbox/external-pointer-table.h"
 #include "src/sandbox/trusted-pointer-table.h"
 #include "src/utils/allocation.h"
@@ -519,7 +521,6 @@ using DebugObjectCache = std::vector<Handle<HeapObject>>;
   V(const intptr_t*, api_external_references, nullptr)                      \
   V(AddressToIndexHashMap*, external_reference_map, nullptr)                \
   V(HeapObjectToIndexHashMap*, root_index_map, nullptr)                     \
-  V(MicrotaskQueue*, default_microtask_queue, nullptr)                      \
   V(CodeTracer*, code_tracer, nullptr)                                      \
   V(PromiseRejectCallback, promise_reject_callback, nullptr)                \
   V(ExceptionPropagationCallback, exception_propagation_callback, nullptr)  \
@@ -965,9 +966,9 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
                                   should_include_frame_callback = nullptr);
   void PrintStack(StringStream* accumulator,
                   PrintStackMode mode = kPrintStackVerbose,
-                  AllowAllocation allow_allocation = AllowAllocation::kYes);
+                  AllowAllocation allow_allocation = AllowAllocation{true});
   void PrintStack(FILE* out, PrintStackMode mode = kPrintStackVerbose,
-                  AllowAllocation allow_allocation = AllowAllocation::kYes);
+                  AllowAllocation allow_allocation = AllowAllocation{true});
 
   // Prints minimal stack trace without allocating on the V8 heap (native
   // allocations are allowed). Used for printing the JS stack on OOM errors.
@@ -1017,10 +1018,10 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   // Walks the JS stack to find the first `frame_data.size()` frames and writes
   // them into `frame_data` and returns the number of frames written.
   size_t CurrentScriptIdsAndContexts(
-      v8::MemorySpan<StackTrace::ScriptIdAndContext> frame_data);
+      std::span<StackTrace::ScriptIdAndContext> frame_data);
   // Walks the JS stack to find the first `frame_data.size()` frames and writes
   // them into `frame_data` and returns the number of frames written.
-  size_t CurrentScriptData(v8::MemorySpan<StackTrace::ScriptData> frame_data);
+  size_t CurrentScriptData(std::span<StackTrace::ScriptData> frame_data);
 
   MaybeDirectHandle<Script> CurrentReferrerScript();
   bool GetStackTraceLimit(Isolate* isolate, int* result);
@@ -1055,7 +1056,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   void set_console_delegate(debug::ConsoleDelegate* delegate) {
     console_delegate_ = delegate;
   }
-  debug::ConsoleDelegate* console_delegate() { return console_delegate_; }
+  debug::ConsoleDelegate* console_delegate() { return console_delegate_.Get(); }
 
   void set_async_event_delegate(debug::AsyncEventDelegate* delegate) {
     async_event_delegate_ = delegate;
@@ -1064,12 +1065,23 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   // Async function and promise instrumentation support.
   void OnAsyncFunctionSuspended(DirectHandle<JSPromise> promise,
-                                DirectHandle<JSPromise> parent);
+                                DirectHandle<JSPromise> parent,
+                                int skip_frame_count);
   void OnPromiseThen(DirectHandle<JSPromise> promise);
   void OnPromiseBefore(DirectHandle<JSPromise> promise);
   void OnPromiseAfter(DirectHandle<JSPromise> promise);
   void OnStackTraceCaptured(DirectHandle<StackTraceInfo> stack_trace);
   void OnTerminationDuringRunMicrotasks();
+#ifdef V8_CPPGC_MICROTASK_QUEUE
+  // Remove dead microtask queues from the list.
+  void CompactMicrotaskQueues();
+  void RegisterMicrotaskQueue(MicrotaskQueue* queue);
+
+  const std::vector<cppgc::WeakPersistent<MicrotaskQueue>>& microtask_queues()
+      const {
+    return microtask_queues_;
+  }
+#endif  // V8_CPPGC_MICROTASK_QUEUE
 
   // Re-throw an exception.  This involves no error reporting since error
   // reporting was handled when the exception was thrown originally.
@@ -1126,6 +1138,8 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   void RequestInterrupt(InterruptCallback callback, void* data);
   void InvokeApiInterruptCallbacks();
 
+  bool is_executing_api_interrupt() const { return api_interrupt_depth_ > 0; }
+
   void RequestInvalidateNoProfilingProtector();
 
   // Administration
@@ -1162,6 +1176,9 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   }
   ISOLATE_INIT_LIST(GLOBAL_ACCESSOR)
 #undef GLOBAL_ACCESSOR
+
+  inline MicrotaskQueue* default_microtask_queue() const;
+  inline void set_default_microtask_queue(MicrotaskQueue* value);
 
   void SetDetailedSourcePositionsForProfiling(bool value) {
     if (value) {
@@ -1217,7 +1234,17 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
                                       OFFSET_OF(Isolate, heap_));
   }
 
+  static Isolate* FromHandleScopeImplementer(
+      const HandleScopeImplementer* handle_scope_implementer) {
+    Address hsi_addr = reinterpret_cast<Address>(handle_scope_implementer);
+    Address isolate_addr = hsi_addr -
+                           IsolateData::kHandleScopeImplementerOffset -
+                           OFFSET_OF(Isolate, isolate_data_);
+    return reinterpret_cast<Isolate*>(isolate_addr);
+  }
+
   const IsolateData* isolate_data() const { return &isolate_data_; }
+
   IsolateData* isolate_data() { return &isolate_data_; }
 
   // When pointer compression is on, this is the base address of the pointer
@@ -1400,9 +1427,8 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
     return &isolate_data_.handle_scope_data_;
   }
 
-  HandleScopeImplementer* handle_scope_implementer() const {
-    DCHECK(handle_scope_implementer_);
-    return handle_scope_implementer_;
+  HandleScopeImplementer* handle_scope_implementer() {
+    return isolate_data_.handle_scope_implementer();
   }
 
   UnicodeCache* unicode_cache() const { return unicode_cache_; }
@@ -1788,7 +1814,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   bool jitless() const { return jitless_; }
 
-  void set_stack_size(size_t v) { stack_size_ = v; }
+  void SetStackSize(size_t v);
   size_t stack_size() { return stack_size_; }
 
   base::RandomNumberGenerator* random_number_generator();
@@ -1886,6 +1912,10 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
     return reinterpret_cast<Address>(&promise_hook_flags_);
   }
 
+  static constexpr int promise_hook_flags_offset() {
+    return offsetof(Isolate, promise_hook_flags_);
+  }
+
   Address promise_hook_address() {
     return reinterpret_cast<Address>(&promise_hook_);
   }
@@ -1900,10 +1930,6 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   void IncrementJavascriptExecutionCounter() {
     javascript_execution_counter_++;
-  }
-
-  Address handle_scope_implementer_address() {
-    return reinterpret_cast<Address>(&handle_scope_implementer_);
   }
 
   void SetReleaseCppHeapCallback(v8::Isolate::ReleaseCppHeapCallback callback);
@@ -2328,9 +2354,6 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
     isolate_data_.trusted_pointer_publishing_scope_ = scope;
   }
 
-  Address code_pointer_table_base_address() {
-    return isolate_data_.code_pointer_table_base_address_;
-  }
 #endif  // V8_ENABLE_SANDBOX
 
   JSDispatchTable& js_dispatch_table() {
@@ -2377,15 +2400,15 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   // Returns the isolate that owns the shared spaces.
   Isolate* shared_space_isolate() const {
     DCHECK(has_shared_space());
-    Isolate* isolate = shared_space_isolate_.value();
-    DCHECK(has_shared_space());
-    return isolate;
+    return shared_space_isolate_.value();
   }
 
   // Returns true when this isolate supports allocation in shared spaces.
   bool has_shared_space() const { return shared_space_isolate_.value(); }
 
-  GlobalSafepoint* global_safepoint() const { return global_safepoint_.get(); }
+  GlobalSafepoint* global_safepoint() const {
+    return isolate_group()->global_safepoint();
+  }
 
 #if V8_ENABLE_DRUMBRAKE
   void initialize_wasm_execution_timer();
@@ -2656,7 +2679,6 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   StackTrace::StackTraceOptions stack_trace_for_uncaught_exceptions_options_ =
       StackTrace::kOverview;
   DescriptorLookupCache* descriptor_lookup_cache_ = nullptr;
-  HandleScopeImplementer* handle_scope_implementer_ = nullptr;
   UnicodeCache* unicode_cache_ = nullptr;
   AccountingAllocator* allocator_ = nullptr;
   InnerPointerToCodeCache* inner_pointer_to_code_cache_ = nullptr;
@@ -2790,6 +2812,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   using InterruptEntry = std::pair<InterruptCallback, void*>;
   std::queue<InterruptEntry> api_interrupts_queue_;
+  int api_interrupt_depth_ = 0;
 
 #define GLOBAL_BACKING_STORE(type, name, initialvalue) type name##_;
   ISOLATE_INIT_LIST(GLOBAL_BACKING_STORE)
@@ -2809,6 +2832,15 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   ISOLATE_INIT_ARRAY_LIST(ISOLATE_FIELD_OFFSET)
 #undef ISOLATE_FIELD_OFFSET
 #endif
+
+#ifdef V8_CPPGC_MICROTASK_QUEUE
+  cppgc::Persistent<MicrotaskQueue> default_microtask_queue_;
+  // This list is used for visiting Microtask objects within live
+  // microtask queues during atomic pause.
+  std::vector<cppgc::WeakPersistent<MicrotaskQueue>> microtask_queues_;
+#else
+  MicrotaskQueue* default_microtask_queue_ = nullptr;
+#endif  // V8_CPPGC_MICROTASK_QUEUE
 
   bool detailed_source_positions_for_profiling_;
   bool preprocessing_exception_ = false;
@@ -2889,7 +2921,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   CancelableTaskManager* cancelable_task_manager_ = nullptr;
 
-  debug::ConsoleDelegate* console_delegate_ = nullptr;
+  cppgc::Persistent<debug::ConsoleDelegate> console_delegate_;
 
   debug::AsyncEventDelegate* async_event_delegate_ = nullptr;
   uint32_t promise_hook_flags_ = 0;
@@ -2960,9 +2992,6 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   TrustedPointerTable::Space* shared_trusted_pointer_space_ = nullptr;
 #endif  // V8_ENABLE_SANDBOX
 
-  // Used to track and safepoint all client isolates attached to this shared
-  // isolate.
-  std::unique_ptr<GlobalSafepoint> global_safepoint_;
   // Client isolates list managed by GlobalSafepoint.
   Isolate* global_safepoint_prev_client_isolate_ = nullptr;
   Isolate* global_safepoint_next_client_isolate_ = nullptr;
@@ -3020,6 +3049,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   bool is_frozen_ = false;
 
+  friend class HandleScopeImplementer;
   friend class GlobalSafepoint;
   friend class heap::HeapTester;
   friend class IsolateForPointerCompression;
@@ -3127,11 +3157,15 @@ class StackLimitCheck {
   // Use this to check for stack-overflow when entering runtime from JS code.
   bool JsHasOverflowed(uintptr_t gap = 0) const;
 
+#if V8_ENABLE_WEBASSEMBLY
   // Use this to check for stack-overflow when entering runtime from Wasm code.
   // If it is called from the central stack, while a switch was performed,
   // it checks logical stack limit of a secondary stack stored in the isolate,
   // instead checking actual one.
   bool WasmHasOverflowed(uintptr_t gap = 0) const;
+  // Initial stack check for growable stacks. Called from a fast C call.
+  bool WasmGrowableStackHasOverflowed(uintptr_t gap) const;
+#endif
 
   // Use this to check for interrupt request in C++ code.
   V8_INLINE bool InterruptRequested() {

@@ -41,7 +41,7 @@ YNN_INTRINSIC __m512i _mm512_hadd_epi32(__m512i a, __m512i b) {
 }  // namespace
 """
 
-  def b_alignment_required(self):
+  def b_alignment_bytes(self):
     # This kernel loads half-vectors at a time from b.
     return self.tile_shape[1] * self.tile_shape[2] // 2
 

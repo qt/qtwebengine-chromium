@@ -584,9 +584,9 @@ struct Decoder {
     ir::CoreBuiltinCall* CreateInstructionBuiltinCall(const pb::InstructionBuiltinCall& call_in) {
         auto* call_out = mod_out_.CreateInstruction<ir::CoreBuiltinCall>();
         call_out->SetFunc(BuiltinFn(call_in.builtin()));
-        Vector<const core::type::Type*, 1> params;
-        for (auto param : call_in.explicit_template_params()) {
-            params.Push(Type(param));
+        Vector<TemplateParameter, 1> params;
+        for (auto param : call_in.explicit_template_parameters()) {
+            params.Push(CreateTemplateParameter(param));
         }
         call_out->SetExplicitTemplateParams(params);
         return call_out;
@@ -845,6 +845,7 @@ struct Decoder {
             case pb::TypeBasic::f32:
                 return mod_out_.Types().f32();
             case pb::TypeBasic::f16:
+                mod_out_.properties.Add(core::ir::Property::kAllow16BitFloats);
                 return mod_out_.Types().f16();
             case pb::TypeBasic::i8:
                 return mod_out_.Types().i8();
@@ -1145,13 +1146,38 @@ struct Decoder {
             err_ << "invalid subtype for subgroup matrix\n";
             return mod_out_.Types().invalid();
         }
+        if (el_ty->IsAnyOf<core::type::I8, core::type::U8>()) {
+            mod_out_.properties.Add(core::ir::Property::kAllow8BitIntegers);
+        }
         return mod_out_.Types().subgroup_matrix(kind, el_ty, subgroup_matrix.columns(),
                                                 subgroup_matrix.rows());
     }
 
-    const core::type::Type* CreateTypeBuffer(const pb::TypeBuffer&) {
-        err_ << "buffer types are not supported\n";
-        return mod_out_.Types().invalid();
+    const core::type::Type* CreateTypeBuffer(const pb::TypeBuffer& buffer) {
+        mod_out_.properties.Add(core::ir::Property::kAllowBufferTypes);
+        auto size = buffer.size();
+        switch (buffer.size_kind()) {
+            case pb::Runtime:
+            case pb::Constant:
+                // Handled below to avoid duplicating the check for the size limit.
+                break;
+            case pb::Override: {
+                auto* value_size =
+                    mod_out_.Types().Get<core::ir::type::ValueArrayCount>(Value(size));
+                return mod_out_.Types().Get<core::type::Buffer>(value_size);
+            }
+            case pb::ArrayCountKind_INT_MIN_SENTINEL_DO_NOT_USE_:
+            case pb::ArrayCountKind_INT_MAX_SENTINEL_DO_NOT_USE_:
+                TINT_UNREACHABLE();
+        }
+
+        if (size >= internal_limits::kMaxArrayElementCount) {
+            err_ << "buffer size (" << size << ") must be less than "
+                 << internal_limits::kMaxArrayElementCount << "\n";
+            return mod_out_.Types().invalid();
+        }
+
+        return size > 0 ? mod_out_.Types().buffer(size) : mod_out_.Types().unsized_buffer();
     }
 
     const core::type::Type* CreateTypeBuiltinStruct(pb::TypeBuiltinStruct builtin_struct_in) {
@@ -1276,6 +1302,20 @@ struct Decoder {
         }
 
         return value_out;
+    }
+
+    ir::TemplateParameter CreateTemplateParameter(const pb::TemplateParameter& value_in) {
+        switch (value_in.kind_case()) {
+            case pb::TemplateParameter::KindCase::kType:
+                return Type(value_in.type());
+            case pb::TemplateParameter::KindCase::kMajorness:
+                return Majorness(value_in.majorness());
+            case pb::TemplateParameter::KindCase::KIND_NOT_SET:
+                break;
+        }
+
+        err_ << "invalid template parameter kind: " << std::to_string(value_in.kind_case()) << "\n";
+        return mod_out_.Types().invalid();
     }
 
     ir::InstructionResult* InstructionResult(const pb::InstructionResult& res_in) {
@@ -1562,6 +1602,18 @@ struct Decoder {
                 break;
         }
         TINT_ICE() << "invalid Access: " << in;
+    }
+
+    core::Majorness Majorness(pb::Majorness in) {
+        switch (in) {
+            case pb::Majorness::row_major:
+                return core::Majorness::kRowMajor;
+            case pb::Majorness::col_major:
+                return core::Majorness::kColMajor;
+            default:
+                break;
+        }
+        TINT_ICE() << "invalid majorness: " << in;
     }
 
     core::UnaryOp UnaryOp(pb::UnaryOp in) {

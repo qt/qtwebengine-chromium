@@ -68,7 +68,7 @@ class CPDF_ShadingPattern final : public CPDF_Pattern {
   CPDF_ShadingPattern(const CPDF_ShadingPattern&) = delete;
   CPDF_ShadingPattern& operator=(const CPDF_ShadingPattern&) = delete;
 
-  // Constraints in PDF 1.7 spec, 4.6.3 Shading Patterns, pages 308-331.
+  // Constraints in ISO 32000-1:2008 spec, section 8.7.4: Shading Patterns.
   bool Validate() const;
   bool ValidateFunctions(uint32_t nExpectedNumFunctions,
                          uint32_t nExpectedNumInputs,

@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/containers/map_util.h"
+#include "base/containers/span.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
@@ -502,8 +503,10 @@ void PaintPreviewClient::CapturePaintPreview(
   document_data_it = all_document_data_.insert(
       document_data_it,
       {params.inner.get_document_guid(), std::move(document_data)});
-  TRACE_EVENT_BEGIN("paint_preview", "PaintPreviewClient::CapturePaintPreview",
-                    perfetto::Track::FromPointer(&document_data_it->second));
+  TRACE_EVENT_BEGIN(
+      "paint_preview", "PaintPreviewClient::CapturePaintPreview",
+      perfetto::NamedTrack::FromPointer("paint_preview::PaintPreviewClient",
+                                        &document_data_it->second));
   CapturePaintPreviewInternal(std::move(params.inner), render_frame_host,
                               document_data_it->second);
 }
@@ -886,7 +889,9 @@ void PaintPreviewClient::OnFinished(
     document_data.had_success = false;
   }
 
-  TRACE_EVENT_END("paint_preview", perfetto::Track::FromPointer(&document_data),
+  TRACE_EVENT_END("paint_preview",
+                  perfetto::NamedTrack::FromPointer(
+                      "paint_preview::PaintPreviewClient", &document_data),
                   "success", document_data.had_success, "subframes",
                   document_data.finished_subframes.size());
 

@@ -35,7 +35,7 @@ struct max_coeff_functor {
 
 template <typename Scalar>
 struct max_coeff_functor<Scalar, PropagateNaN, false> {
-  EIGEN_DEVICE_FUNC inline Scalar compareCoeff(const Scalar& incumbent, const Scalar& candidate) const {
+  EIGEN_DEVICE_FUNC inline bool compareCoeff(const Scalar& incumbent, const Scalar& candidate) const {
     return (candidate > incumbent) || ((candidate != candidate) && (incumbent == incumbent));
   }
   template <typename Packet>
@@ -80,7 +80,7 @@ struct min_coeff_functor {
 
 template <typename Scalar>
 struct min_coeff_functor<Scalar, PropagateNaN, false> {
-  EIGEN_DEVICE_FUNC inline Scalar compareCoeff(const Scalar& incumbent, const Scalar& candidate) const {
+  EIGEN_DEVICE_FUNC inline bool compareCoeff(const Scalar& incumbent, const Scalar& candidate) const {
     return (candidate < incumbent) || ((candidate != candidate) && (incumbent == incumbent));
   }
   template <typename Packet>
@@ -134,8 +134,7 @@ struct find_coeff_loop<Evaluator, Func, /*Linear*/ false, /*Vectorize*/ false> {
     for (Index j = 0; j < outerSize; j++) {
       for (Index i = 0; i < innerSize; i++) {
         Scalar xprCoeff = eval.coeffByOuterInner(j, i);
-        bool newRes = func.compareCoeff(res, xprCoeff);
-        if (newRes) {
+        if (func.compareCoeff(res, xprCoeff)) {
           outer = j;
           inner = i;
           res = xprCoeff;
@@ -156,8 +155,7 @@ struct find_coeff_loop<Evaluator, Func, /*Linear*/ true, /*Vectorize*/ false> {
 
     for (Index k = 0; k < size; k++) {
       Scalar xprCoeff = eval.coeff(k);
-      bool newRes = func.compareCoeff(res, xprCoeff);
-      if (newRes) {
+      if (func.compareCoeff(res, xprCoeff)) {
         index = k;
         res = xprCoeff;
       }
@@ -312,7 +310,6 @@ template <typename Derived, typename Func>
 struct find_coeff_impl {
   using Evaluator = find_coeff_evaluator<Derived>;
   static constexpr int Flags = Evaluator::Flags;
-  static constexpr int Alignment = Evaluator::Alignment;
   static constexpr bool IsRowMajor = Derived::IsRowMajor;
   static constexpr int MaxInnerSizeAtCompileTime =
       IsRowMajor ? Derived::MaxColsAtCompileTime : Derived::MaxRowsAtCompileTime;
@@ -390,7 +387,7 @@ EIGEN_DEVICE_FUNC typename internal::traits<Derived>::Scalar findCoeff(const Den
  * In case \c *this contains NaN, NaNPropagation determines the behavior:
  *   NaNPropagation == PropagateFast : undefined
  *   NaNPropagation == PropagateNaN : result is NaN
- *   NaNPropagation == PropagateNumbers : result is maximum of elements that are not NaN
+ *   NaNPropagation == PropagateNumbers : result is minimum of elements that are not NaN
  * \warning the matrix must be not empty, otherwise an assertion is triggered.
  *
  * \sa DenseBase::minCoeff(Index*), DenseBase::maxCoeff(Index*,Index*), DenseBase::visit(), DenseBase::minCoeff()
@@ -411,7 +408,7 @@ EIGEN_DEVICE_FUNC typename internal::traits<Derived>::Scalar DenseBase<Derived>:
  * In case \c *this contains NaN, NaNPropagation determines the behavior:
  *   NaNPropagation == PropagateFast : undefined
  *   NaNPropagation == PropagateNaN : result is NaN
- *   NaNPropagation == PropagateNumbers : result is maximum of elements that are not NaN
+ *   NaNPropagation == PropagateNumbers : result is minimum of elements that are not NaN
  * \warning the matrix must be not empty, otherwise an assertion is triggered.
  *
  * \sa DenseBase::minCoeff(IndexType*,IndexType*), DenseBase::maxCoeff(IndexType*,IndexType*), DenseBase::visit(),

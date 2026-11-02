@@ -179,13 +179,12 @@ struct TensorEvaluator<const TensorFFTOp<FFT, ArgType, FFTResultType, FFTDir>, D
       m_dimensions[i] = input_dims[i];
     }
 
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       m_strides[0] = 1;
       for (int i = 1; i < NumDims; ++i) {
         m_strides[i] = m_strides[i - 1] * m_dimensions[i - 1];
       }
-    }
-    else {
+    } else {
       m_strides[NumDims - 1] = 1;
       for (int i = NumDims - 2; i >= 0; --i) {
         m_strides[i] = m_strides[i + 1] * m_dimensions[i + 1];
@@ -644,7 +643,7 @@ struct TensorEvaluator<const TensorFFTOp<FFT, ArgType, FFTResultType, FFTDir>, D
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index getBaseOffsetFromIndex(Index index, Index omitted_dim) const {
     Index result = 0;
 
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       for (int i = NumDims - 1; i > omitted_dim; --i) {
         const Index partial_m_stride = m_strides[i] / m_dimensions[omitted_dim];
         const Index idx = index / partial_m_stride;
@@ -652,8 +651,7 @@ struct TensorEvaluator<const TensorFFTOp<FFT, ArgType, FFTResultType, FFTDir>, D
         result += idx * m_strides[i];
       }
       result += index;
-    }
-    else {
+    } else {
       for (Index i = 0; i < omitted_dim; ++i) {
         const Index partial_m_stride = m_strides[i] / m_dimensions[omitted_dim];
         const Index idx = index / partial_m_stride;
@@ -663,11 +661,6 @@ struct TensorEvaluator<const TensorFFTOp<FFT, ArgType, FFTResultType, FFTDir>, D
       result += index;
     }
     // Value of index_coords[omitted_dim] is not determined to this step
-    return result;
-  }
-
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index getIndexFromOffset(Index base, Index omitted_dim, Index offset) const {
-    Index result = base + offset * m_strides[omitted_dim];
     return result;
   }
 

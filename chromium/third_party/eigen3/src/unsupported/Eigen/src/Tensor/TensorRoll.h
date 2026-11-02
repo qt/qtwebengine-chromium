@@ -65,7 +65,7 @@ class TensorRollOp : public TensorBase<TensorRollOp<RollDimensions, XprType>, Wr
 
   EIGEN_DEVICE_FUNC const internal::remove_all_t<typename XprType::Nested>& expression() const { return m_xpr; }
 
-  EIGEN_TENSOR_INHERIT_ASSIGNMENT_OPERATORS(TensorRollOp)
+  EIGEN_INHERIT_ASSIGNMENT_OPERATORS(TensorRollOp)
 
  protected:
   typename XprType::Nested m_xpr;
@@ -111,14 +111,13 @@ struct TensorEvaluator<const TensorRollOp<RollDimensions, ArgType>, Device> {
 
     // Compute strides
     m_dimensions = m_impl.dimensions();
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       m_strides[0] = 1;
       for (int i = 1; i < NumDims; ++i) {
         m_strides[i] = m_strides[i - 1] * m_dimensions[i - 1];
         if (m_strides[i] > 0) m_fast_strides[i] = IndexDivisor(m_strides[i]);
       }
-    }
-    else {
+    } else {
       m_strides[NumDims - 1] = 1;
       for (int i = NumDims - 2; i >= 0; --i) {
         m_strides[i] = m_strides[i + 1] * m_dimensions[i + 1];
@@ -164,7 +163,7 @@ struct TensorEvaluator<const TensorRollOp<RollDimensions, ArgType>, Device> {
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index rollIndex(Index index) const {
     eigen_assert(index < dimensions().TotalSize());
     Index rolledIndex = 0;
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       EIGEN_UNROLL_LOOP
       for (int i = NumDims - 1; i > 0; --i) {
         Index idx = index / m_fast_strides[i];
@@ -172,8 +171,7 @@ struct TensorEvaluator<const TensorRollOp<RollDimensions, ArgType>, Device> {
         rolledIndex += roll(idx, m_rolls[i], m_dimensions[i]) * m_strides[i];
       }
       rolledIndex += roll(index, m_rolls[0], m_dimensions[0]);
-    }
-    else {
+    } else {
       EIGEN_UNROLL_LOOP
       for (int i = 0; i < NumDims - 1; ++i) {
         Index idx = index / m_fast_strides[i];
@@ -238,7 +236,7 @@ struct TensorEvaluator<const TensorRollOp<RollDimensions, ArgType>, Device> {
     array<Index, NumDims> initial_coords = coords;
     Index offset = 0;  // Offset in the output block buffer.
 
-    // Initialize output block iterator state. Dimension in this array are
+    // Initialize output block iterator state. Dimensions in this array are
     // always in inner_most -> outer_most order (col major layout).
     array<BlockIteratorState, NumDims> it;
     for (int i = 0; i < NumDims; ++i) {
@@ -267,7 +265,7 @@ struct TensorEvaluator<const TensorRollOp<RollDimensions, ArgType>, Device> {
       }
       coords[inner_dim] = initial_coords[inner_dim];
 
-      if (NumDims == 1) break;  // For the 1d tensor we need to generate only one inner-most dimension.
+      EIGEN_IF_CONSTEXPR (NumDims == 1) break;  // For the 1d tensor we need to generate only one inner-most dimension.
 
       // Update offset.
       for (i = 1; i < NumDims; ++i) {
@@ -307,15 +305,14 @@ struct TensorEvaluator<const TensorRollOp<RollDimensions, ArgType>, Device> {
   const Device EIGEN_DEVICE_REF m_device;
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void extract_coordinates(Index index, array<Index, NumDims>& coords) const {
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       for (int i = NumDims - 1; i > 0; --i) {
         const Index idx = index / m_fast_strides[i];
         index -= idx * m_strides[i];
         coords[i] = idx;
       }
       coords[0] = index;
-    }
-    else {
+    } else {
       for (int i = 0; i < NumDims - 1; ++i) {
         const Index idx = index / m_fast_strides[i];
         index -= idx * m_strides[i];
@@ -324,8 +321,6 @@ struct TensorEvaluator<const TensorRollOp<RollDimensions, ArgType>, Device> {
       coords[NumDims - 1] = index;
     }
   }
-
- private:
 };
 
 // Eval as lvalue

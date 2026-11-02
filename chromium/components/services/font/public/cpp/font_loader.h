@@ -10,7 +10,7 @@
 #include <string>
 #include <unordered_map>
 
-#include "base/containers/lru_cache.h"
+#include "base/containers/hashing_lru_cache.h"
 #include "base/containers/weak_value_table.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
@@ -74,8 +74,8 @@ class FontLoader : public SkFontConfigInterface {
   bool FontRenderStyleForStrike(
       std::string family,
       uint32_t size,
-      bool is_italic,
       bool is_bold,
+      bool is_italic,
       float device_scale_factor,
       mojom::FontRenderStylePtr* out_font_render_style);
 

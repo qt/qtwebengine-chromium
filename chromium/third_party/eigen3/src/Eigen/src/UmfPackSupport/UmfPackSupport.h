@@ -288,7 +288,7 @@ inline SuiteSparse_long umfpack_get_determinant(std::complex<double> *Mx, double
  * \brief A sparse LU factorization and solver based on UmfPack
  *
  * This class allows to solve for A.X = B sparse linear problems via a LU factorization
- * using the UmfPack library. The sparse matrix A must be squared and full rank.
+ * using the UmfPack library. The sparse matrix A must be square and full rank.
  * The vectors or matrices X and B can be either dense or sparse.
  *
  * \warning The input matrix A should be in a \b compressed and \b column-major form.
@@ -342,7 +342,7 @@ class UmfPackLU : public SparseSolverBase<UmfPackLU<MatrixType_> > {
   /** \brief Reports whether previous computation was successful.
    *
    * \returns \c Success if computation was successful,
-   *          \c NumericalIssue if the matrix.appears to be negative.
+   *          \c NumericalIssue if the matrix appears to be negative.
    */
   ComputationInfo info() const {
     eigen_assert(m_isInitialized && "Decomposition is not initialized.");
@@ -369,7 +369,7 @@ class UmfPackLU : public SparseSolverBase<UmfPackLU<MatrixType_> > {
     return m_q;
   }
 
-  /** Computes the sparse Cholesky decomposition of \a matrix
+  /** Computes the sparse LU decomposition of \a matrix
    *  Note that the matrix should be column-major, and in compressed format for best performance.
    *  \sa SparseMatrix::makeCompressed().
    */

@@ -17,8 +17,8 @@
 use anyhow::Context;
 use oak_attestation_verification_types::policy::Policy;
 use oak_proto_rust::oak::{
-    attestation::v1::{BinaryReferenceValue, EventAttestationResults, FirmwareEndorsement},
     Variant,
+    attestation::v1::{BinaryReferenceValue, EventAttestationResults, FirmwareEndorsement},
 };
 use oak_time::Instant;
 
@@ -26,6 +26,7 @@ use crate::{
     compare::compare_firmware_layer_measurement_digests, expect::acquire_stage0_expected_values,
 };
 
+/// Policy which verifies the firmware.
 pub struct FirmwarePolicy {
     reference_values: BinaryReferenceValue,
 }
@@ -36,8 +37,14 @@ impl FirmwarePolicy {
     }
 }
 
-// Policy which verifies the firmware.
 impl Policy<[u8]> for FirmwarePolicy {
+    /// Verifies the firmware-specific evidence against the endorsements and
+    /// reference values.
+    ///
+    /// The `evidence` is the raw bytes of the measurement of the initial state
+    /// of the VM that was extracted from the hardware-rooted attestation
+    /// evidence. This implicitly includes the firmware that was written to the
+    /// VM memory before boot.
     fn verify(
         &self,
         verification_time: Instant,
@@ -63,7 +70,7 @@ impl Policy<[u8]> for FirmwarePolicy {
 
 #[cfg(test)]
 mod tests {
-    use test_util::{extract_attestation_report, get_oc_reference_values, AttestationData};
+    use test_util::{AttestationData, extract_attestation_report, get_oc_reference_values};
 
     use super::*;
 

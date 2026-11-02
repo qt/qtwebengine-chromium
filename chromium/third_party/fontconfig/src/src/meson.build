@@ -30,6 +30,7 @@ fc_sources = files([
   'fcformat.c',
   'fcfreetype.c',
   'fcfs.c',
+  'fcgenericalias.c',
   'fcptrlist.c',
   'fchash.c',
   'fcinit.c',
@@ -58,22 +59,36 @@ fcobjshash_gperf = custom_target(
   build_by_default: true,
 )
 
-fcobjshash_h = custom_target('fcobjshash.h',
+fcobjshash_h = custom_target(
+  'fcobjshash.h',
   input: fcobjshash_gperf,
   output: 'fcobjshash.h',
-  command: [gperf, '--pic', '-m', '100', '@INPUT@', '--output-file', '@OUTPUT@']
+  command: [gperf, '--pic', '-m', '100', '@INPUT@', '--output-file', '@OUTPUT@'],
 )
 
-lib_fontconfig_sources = [fc_sources, alias_headers, ft_alias_headers, fccase_h, fcconst_h, fclang_h, fcobjshash_h, fcstdint_h]
+lib_fontconfig_sources = [
+  fc_sources,
+  alias_headers,
+  ft_alias_headers,
+  fccase_h,
+  fcconst_h,
+  fcgenericfamily_h,
+  fclang_h,
+  fcobjshash_h,
+  fcstdint_h,
+]
 lib_fontconfig_kwargs = {
   'include_directories': incbase,
   'dependencies': [deps, math_dep],
   'link_with': [pattern_lib],
 }
 
-fcarch = executable('fcarch', ['fcarch.c', 'fcarch.h', fcstdint_h, fclang_h],
+fcarch = executable(
+  'fcarch',
+  ['fcarch.c', 'fcarch.h', fcstdint_h, fclang_h],
   include_directories: [incbase, incsrc],
   c_args: c_args,
   dependencies: [libintl_dep],
   install: false,
-  install_tag: 'runtime')
+  install_tag: 'runtime',
+)

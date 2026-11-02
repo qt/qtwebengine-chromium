@@ -32,7 +32,6 @@
 #include <utility>
 
 #include "dawn/platform/DawnPlatform.h"
-#include "src/dawn/common/Assert.h"
 #include "src/dawn/common/MatchVariant.h"
 #include "src/dawn/native/Pipeline.h"
 #include "src/dawn/native/TintUtils.h"
@@ -48,6 +47,7 @@
 #include "src/dawn/native/d3d11/UtilsD3D11.h"
 #include "src/dawn/platform/metrics/HistogramMacros.h"
 #include "src/dawn/platform/tracing/TraceEvent.h"
+#include "src/utils/assert.h"
 #include "tint/tint.h"
 
 namespace dawn::native::d3d11 {
@@ -73,9 +73,9 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     const PipelineLayout* layout,
     uint32_t compileFlags,
     const ImmediateMask& pipelineImmediateMask,
-    bool applySampleMaskPolyfill,
     const std::optional<dawn::native::d3d::InterStageShaderVariablesMask>& usedInterstageVariables,
-    const std::optional<tint::hlsl::writer::PixelLocalOptions>& pixelLocalOptions) {
+    const std::optional<tint::hlsl::writer::PixelLocalOptions>& pixelLocalOptions,
+    std::vector<uint32_t> snorm10_10_10_2_locations) {
     Device* device = ToBackend(GetDevice());
     TRACE_EVENT0(device->GetPlatform(), General, "ShaderModuleD3D11::Compile");
     DAWN_ASSERT(!IsError());
@@ -86,6 +86,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     req.hlsl.disableSymbolRenaming = device->IsToggleEnabled(Toggle::DisableSymbolRenaming);
     req.hlsl.dumpShaders = device->IsToggleEnabled(Toggle::DumpShaders);
     req.hlsl.dumpShadersOnFailure = device->IsToggleEnabled(Toggle::DumpShadersOnFailure);
+    req.hlsl.tintOptions.snorm10_10_10_2_locations = std::move(snorm10_10_10_2_locations);
     req.hlsl.tintOptions.entry_point_name = programmableStage.entryPoint;
     req.hlsl.tintOptions.remapped_entry_point_name = device->GetIsolatedEntryPointName();
 
@@ -137,7 +138,6 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     req.hlsl.tintOptions.disable_integer_range_analysis =
         !device->IsToggleEnabled(Toggle::EnableIntegerRangeAnalysisInRobustness);
 
-    req.hlsl.tintOptions.polyfill_sample_mask = applySampleMaskPolyfill;
     req.hlsl.tintOptions.immediate_binding_point =
         tint::BindingPoint{0, PipelineLayout::kReservedConstantBufferSlot};
     if (stage == SingleShaderStage::Compute) {

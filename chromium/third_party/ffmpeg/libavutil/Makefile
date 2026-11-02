@@ -76,6 +76,7 @@ HEADERS = adler32.h                                                     \
           pixelutils.h                                                  \
           pixfmt.h                                                      \
           random_seed.h                                                 \
+          raw_color_params.h                                            \
           rc4.h                                                         \
           rational.h                                                    \
           refstruct.h                                                   \
@@ -169,6 +170,7 @@ OBJS = adler32.o                                                        \
        pixdesc.o                                                        \
        pixelutils.o                                                     \
        random_seed.o                                                    \
+       raw_color_params.o                                               \
        rational.o                                                       \
        refstruct.o                                                      \
        reverse.o                                                        \
@@ -251,13 +253,12 @@ SKIPHEADERS-$(CONFIG_VDPAU)            += hwcontext_vdpau.h
 SKIPHEADERS-$(CONFIG_VULKAN)           += hwcontext_vulkan.h vulkan.h   \
                                           vulkan_functions.h            \
                                           vulkan_loader.h
-SKIPHEADERS-$(CONFIG_LIBSHADERC)       += vulkan_spirv.h
-SKIPHEADERS-$(CONFIG_LIBGLSLANG)       += vulkan_spirv.h
 SKIPHEADERS-$(CONFIG_SHADER_COMPRESSION) += zlib_utils.h
 
 TESTPROGS = adler32                                                     \
             aes                                                         \
             aes_ctr                                                     \
+            ambient_viewing_environment                                 \
             audio_fifo                                                  \
             avstring                                                    \
             base64                                                      \
@@ -270,10 +271,12 @@ TESTPROGS = adler32                                                     \
             color_utils                                                 \
             cpu                                                         \
             crc                                                         \
+            csp                                                         \
             des                                                         \
             detection_bbox                                              \
             dict                                                        \
             display                                                     \
+            dovi_meta                                                   \
             encryption_info                                             \
             error                                                       \
             eval                                                        \
@@ -289,6 +292,7 @@ TESTPROGS = adler32                                                     \
             lfg                                                         \
             lls                                                         \
             log                                                         \
+            mastering_display_metadata                                  \
             mathematics                                                 \
             md5                                                         \
             murmur3                                                     \
@@ -317,6 +321,7 @@ TESTPROGS = adler32                                                     \
             utf8                                                        \
             uuid                                                        \
             video_enc_params                                            \
+            video_hint                                                  \
             xtea                                                        \
             tea                                                         \
 

@@ -166,7 +166,7 @@ void AccessContext::RegisterGlobalBarrier(const SyncBarrier& barrier, QueueId qu
     // Register a new def if this barrier is encountered for the first time
     if (def_index == global_barrier_def_count_) {
         // Flush global barriers if all def slots are in use
-        if (global_barrier_def_count_ == kMaxGlobaBarrierDefCount) {
+        if (global_barrier_def_count_ == kMaxGlobalBarrierDefCount) {
             for (auto& [_, access] : access_state_map_) {
                 ApplyGlobalBarriers(access);
                 access.next_global_barrier_index = 0;  // to match state after reset
@@ -607,10 +607,8 @@ void AccessContext::ImportAsyncContexts(const AccessContext& from) {
     async_.insert(async_.end(), from.async_.begin(), from.async_.end());
 }
 
-void AccessContext::AddAsyncContext(const AccessContext* context, ResourceUsageTag tag, QueueId queue_id) {
-    if (context) {
-        async_.emplace_back(*context, tag, queue_id);
-    }
+void AccessContext::AddAsyncContext(const AccessContext& context, ResourceUsageTag tag, QueueId queue_id) {
+    async_.emplace_back(context, tag, queue_id);
 }
 
 void SortedFirstAccesses::Init(const AccessMap& finalized_access_map) {

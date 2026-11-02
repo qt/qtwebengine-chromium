@@ -45,13 +45,12 @@ To help make the process of security bug triage as efficient and smooth as
 possible, please consider the following best practices for Chromium security bug
 reports:
 
-* Use the [security bug reporting
-  form](https://issues.chromium.org/issues/new?noWizard=true&component=1363614&template=1922342)
+* Report issues using [Google Bughunters](https://bughunters.google.com/report/vrp)
+  and select -> Chrome VRP.
   * This will allow the bug report to be included in the security bug triage
     queue immediately.
-* Include the version number and OS used to reproduce the bug. For an [extra
-  bonus reward](https://g.co/chrome/vrp/#bisect-bonus), please consider
-  including a bisection.
+* Include the version number and OS used to reproduce the bug and please
+  consider including a bisection.
 
 ### Proof of Concept (PoC)
 
@@ -138,6 +137,8 @@ reports:
   * For a full reward,  please consider performing a full bisection, detailing
     the commit that introduced the issue and / or all the active release
     channels impacted by the bug.
+* Focus your report: the robots which perform our initial triage work best when
+  provided with a concise report that clearly describes a security bug.
 * Empty initial comments will lead to your report being closed and may lead to
   your account being suspended. Do not create placeholder issues.
 
@@ -219,6 +220,31 @@ This list is not exhaustive but should help reporters focus on issues in Chrome:
     debugging only.
 * *--single-process* mode is purely for test and debugging and can lead to
     races and ownership issues that do not manifest in multi-process mode.
+
+#### My report was closed by a robot?
+
+Incoming security reports are automatically checked against our threat model,
+FAQs and reporting standards. Reports may be closed as invalid for several
+reasons and the robot is designed to limit disclosure of its reasoning when
+closing issues.
+
+The following can lead our robots to reject reports:
+
+* Describing both a security problem and a non-problem (e.g. reporting both a
+  UAF and a safe CHECK crash):
+  * Remove discussion of the safe crash and focus on the UAF, then resubmit.
+* Long reports with theoretical impacts:
+  * Remove unproven discussion and resubmit a brief, concise report.
+* Reports of memory safety issues lacking a full symbolized ASAN stack:
+  * Attach a symbolized ASAN stack showing the issue affects Chrome and
+    resubmit.
+  * Prove the issue using the `--vrp-flags` mode and resubmit.
+* Reports that use unittests or browser_tests to demonstrate an issue:
+  * Prove that the issue affects Chrome by using a poc.html or poc.js.
+
+We generally do not respond to closed security issues but you are encouraged
+to resubmit your report after making it more concise, clearly describing the
+security problem, and adding necessary pocs and traces as attachments.
 
 #### How do I know if my bug report is possibly eligible for a VRP reward?
 

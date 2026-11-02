@@ -352,6 +352,8 @@ struct DeviceFeatures {
     bool extendedDynamicState3ViewportWScalingEnable;
     // VkPhysicalDeviceExtendedDynamicStateFeaturesEXT
     bool extendedDynamicState;
+    // VkPhysicalDeviceExtendedFlagsFeaturesKHR
+    bool extendedFlags;
     // VkPhysicalDeviceExtendedSparseAddressSpaceFeaturesNV
     bool extendedSparseAddressSpace;
     // VkPhysicalDeviceExternalFormatResolveFeaturesANDROID
@@ -634,6 +636,8 @@ struct DeviceFeatures {
     bool multiDraw;
     // VkPhysicalDeviceMultisampledRenderToSingleSampledFeaturesEXT
     bool multisampledRenderToSingleSampled;
+    // VkPhysicalDeviceMultisampledRenderToSwapchainFeaturesEXT
+    bool multisampledRenderToSwapchain;
     // VkPhysicalDeviceMultiviewFeatures, VkPhysicalDeviceVulkan11Features
     bool multiview;
     // VkPhysicalDeviceMultiviewFeatures, VkPhysicalDeviceVulkan11Features
@@ -655,10 +659,12 @@ struct DeviceFeatures {
     // VkPhysicalDeviceNonSeamlessCubeMapFeaturesEXT
     bool nonSeamlessCubeMap;
     // VkPhysicalDeviceOpacityMicromapFeaturesEXT
-    bool micromapCaptureReplay;
+    bool micromapCaptureReplayEXT;
     // VkPhysicalDeviceOpacityMicromapFeaturesEXT
-    bool micromapHostCommands;
-    // VkPhysicalDeviceOpacityMicromapFeaturesEXT, VkPhysicalDeviceOpacityMicromapFeaturesKHR
+    bool micromapEXT;
+    // VkPhysicalDeviceOpacityMicromapFeaturesEXT
+    bool micromapHostCommandsEXT;
+    // VkPhysicalDeviceOpacityMicromapFeaturesKHR
     bool micromap;
     // VkPhysicalDeviceOpticalFlowFeaturesNV
     bool opticalFlow;
@@ -956,6 +962,14 @@ struct DeviceFeatures {
     bool shaderModuleIdentifier;
     // VkPhysicalDeviceShaderMultipleWaitQueuesFeaturesQCOM
     bool shaderMultipleWaitQueues;
+    // VkPhysicalDeviceShaderOCPMicroscalingTypesFeaturesEXT
+    bool shaderFloat4;
+    // VkPhysicalDeviceShaderOCPMicroscalingTypesFeaturesEXT
+    bool shaderFloat6;
+    // VkPhysicalDeviceShaderOCPMicroscalingTypesFeaturesEXT
+    bool shaderFloat8UnsignedE8M0;
+    // VkPhysicalDeviceShaderOCPMicroscalingTypesFeaturesEXT
+    bool shaderMXInt8;
     // VkPhysicalDeviceShaderObjectFeaturesEXT
     bool shaderObject;
     // VkPhysicalDeviceShaderQuadControlFeaturesKHR
@@ -1086,6 +1100,8 @@ struct DeviceFeatures {
     bool videoDecodeVP9;
     // VkPhysicalDeviceVideoEncodeAV1FeaturesKHR
     bool videoEncodeAV1;
+    // VkPhysicalDeviceVideoEncodeFeedback2FeaturesKHR
+    bool videoEncodeFeedback2;
     // VkPhysicalDeviceVideoEncodeIntraRefreshFeaturesKHR
     bool videoEncodeIntraRefresh;
     // VkPhysicalDeviceVideoEncodeQuantizationMapFeaturesKHR

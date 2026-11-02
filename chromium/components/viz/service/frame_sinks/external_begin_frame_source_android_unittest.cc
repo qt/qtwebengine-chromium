@@ -4,10 +4,14 @@
 
 #include "components/viz/service/frame_sinks/external_begin_frame_source_android.h"
 
+#include "base/android/android_info.h"
 #include "base/android/java_handler_thread.h"
 #include "base/functional/bind.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/time/time.h"
+#include "components/viz/test/begin_frame_source_test.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/gfx/android/fake_achoreographer_compat.h"
 
 namespace viz {
 
@@ -97,6 +101,50 @@ TEST_F(ExternalBeginFrameSourceAndroidTest, DeliversFramesAfterIntervalChange) {
   begin_frame_source()->UpdateRefreshRate(30.f);
   // Ensure we can re-observe the same BeginFrameSource and get more frames.
   WaitForFrames(10);
+}
+
+class AChoreographerImplTest : public ::testing::Test {
+ public:
+  AChoreographerImplTest()
+      : fake_compat_(/*compat_supported=*/true, /*compat33_supported=*/true),
+        begin_frame_source_(BeginFrameSource::kNotRestartableId,
+                            /*refresh_rate=*/9999.f,
+                            /*requires_align_with_java=*/false) {
+    begin_frame_source_.AddObserver(&observer_);
+  }
+
+  ~AChoreographerImplTest() override {
+    begin_frame_source_.RemoveObserver(&observer_);
+  }
+
+ protected:
+  gfx::FakeAChoreographerCompat fake_compat_;
+  ExternalBeginFrameSourceAndroid begin_frame_source_;
+  MockBeginFrameObserver observer_;
+};
+
+TEST_F(AChoreographerImplTest, ForwardsVsyncInterval) {
+  if (base::android::android_info::sdk_int() <
+      base::android::android_info::SDK_VERSION_R) {
+    GTEST_SKIP() << "AChoreographerImpl requires at least Android R";
+  }
+
+  fake_compat_.TriggerRefreshRateCallback(8'333'333);
+
+  EXPECT_CALL(observer_,
+              OnBeginFrame(testing::Field(&BeginFrameArgs::interval,
+                                          base::Milliseconds(8.333))));
+
+  fake_compat_.TriggerVsync({
+      .frame_time_nanos = 10'000'000,
+      .timelines = {{.vsync_id = 123,
+                     .deadline_nanos = 9'000'000,
+                     .expected_presentation_time_nanos = 10'000'000},
+                    {.vsync_id = 124,
+                     .deadline_nanos = 25'666'666,
+                     .expected_presentation_time_nanos = 26'666'666}},
+      .preferred_index = 0,
+  });
 }
 
 }  // namespace viz

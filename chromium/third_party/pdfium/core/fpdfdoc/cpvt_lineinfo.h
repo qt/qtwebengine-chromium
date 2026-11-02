@@ -10,7 +10,6 @@
 #include <stdint.h>
 
 struct CPVT_LineInfo {
-  int32_t nTotalWord = 0;
   int32_t nBeginWordIndex = -1;
   int32_t nEndWordIndex = -1;
   float fLineX = 0.0f;

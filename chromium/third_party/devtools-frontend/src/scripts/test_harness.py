@@ -1,0 +1,611 @@
+#!/usr/bin/env python3
+
+# Copyright 2026 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import subprocess
+import re
+import contextlib
+import sys
+import json
+import unittest
+
+# The goal of this test is to verify e2e behavior of our test harness w.r.t how
+# it reports test results.
+
+
+class DevToolsTestHarness(unittest.TestCase):
+
+    @contextlib.contextmanager
+    def _expectations_file(self, content):
+        import tempfile
+        import os
+        with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+            f.write(content)
+            expectations_file = f.name
+        try:
+            yield expectations_file
+        finally:
+            os.remove(expectations_file)
+
+    def run_test_with_rdb(self, cmd_args):
+        cmd = [
+            "npm", "run", "rdb", "--", "vpython3", "third_party/node/node.py",
+            "--output"
+        ] + cmd_args
+        process = subprocess.Popen(cmd,
+                                   stderr=subprocess.PIPE,
+                                   stdout=subprocess.PIPE,
+                                   text=True)
+        stdout, stderr = process.communicate()
+        if getattr(self, 'debug_mode', False):
+            sys.stdout.write(stdout)
+            sys.stdout.write(stderr)
+
+        match = re.search(
+            r'rdb-stream: created invocation - .*?/ui/inv/([^\s"\']+)', stderr)
+        if not match:
+            match = re.search(r'invocations/([^\s"\']+)', stderr)
+
+        self.assertIsNotNone(
+            match,
+            f"Failed to find rdb invocation ID in the output.\nStdout: {stdout}\nStderr: {stderr}"
+        )
+
+        invocation_id = match.group(1)
+        if invocation_id.startswith('invocations/'):
+            invocation_id = invocation_id[len('invocations/'):]
+
+        query_cmd = ["rdb", "query", invocation_id, "-json"]
+        query_process = subprocess.run(query_cmd,
+                                       capture_output=True,
+                                       text=True)
+        self.assertEqual(query_process.returncode, 0,
+                         f"rdb query failed: {query_process.stderr}")
+
+        results = []
+        for line in query_process.stdout.strip().split('\n'):
+            line = line.strip()
+            if not line or not line.startswith('{'):
+                continue
+            try:
+                data = json.loads(line)
+                if 'testResult' in data:
+                    results.append(data['testResult'])
+            except json.JSONDecodeError:
+                pass
+
+        return results, process.returncode
+
+    def _resolve_test_file(self, test_file):
+        import os
+        import re
+        if test_file.startswith("@"):
+            rsp_path = test_file[1:]
+            if os.path.isabs(rsp_path):
+                return "@" + rsp_path
+            return "@" + os.path.abspath(rsp_path)
+
+        match = re.match(r'^(.*\.([tj]s))(.*)$', test_file)
+        if match:
+            path_part = match.group(1)
+            suffix = match.group(3)
+        else:
+            path_part = test_file
+            suffix = ""
+
+        if path_part.endswith(".ts"):
+            path_part = path_part[:-3] + ".js"
+
+        if path_part.startswith("out/Default/"):
+            pass
+        elif path_part.startswith("gen/"):
+            path_part = os.path.join("out/Default", path_part)
+        else:
+            path_part = os.path.join("out/Default/gen", path_part)
+        return os.path.abspath(path_part) + suffix
+
+    def run_unit_test(self, test_file):
+        if isinstance(test_file, str):
+            test_files = [test_file]
+        else:
+            test_files = test_file
+
+        abs_test_files = [self._resolve_test_file(f) for f in test_files]
+        cmd = [
+            "node_modules/karma/bin/karma", "start",
+            "out/Default/gen/test/unit/karma.conf.js", "--"
+        ] + abs_test_files
+        return self.run_test_with_rdb(cmd)
+
+    def run_e2e_test(self, test_file):
+        abs_test_file = self._resolve_test_file(test_file)
+        return self.run_test_with_rdb(
+            ["out/Default/gen/test/harness/run-mocha.js", abs_test_file])
+
+    def test_unit(self):
+        results, exit_code = self.run_unit_test(
+            "test/harness/unit/unit.test.ts")
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            len(results), 1,
+            f"Expected exactly one test result, got {len(results)}")
+        self.assertEqual(
+            results[0].get('testId'),
+            'test/harness/unit/unit.test.ts:unit:should_run_a_basic_unit_test_successfully'
+        )
+        self.assertEqual(results[0].get('status'), 'PASS')
+        self.assertTrue(results[0].get('expected'))
+
+    def test_unit_response_file(self):
+        import tempfile
+        import os
+        abs_test_file_1 = self._resolve_test_file(
+            "test/harness/unit/unit.test.ts")
+        abs_test_file_2 = self._resolve_test_file(
+            "test/harness/unit/unit_2.test.ts")
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.rsp',
+                                         delete=False) as f:
+            f.write(f"{abs_test_file_1}\n{abs_test_file_2}\n")
+            rsp_file = f.name
+        try:
+            results, exit_code = self.run_unit_test(f"@{rsp_file}")
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(
+                len(results), 2,
+                f"Expected exactly 2 test results, got {len(results)}")
+            test_ids = [r.get('testId') for r in results]
+            self.assertIn(
+                'test/harness/unit/unit.test.ts:unit:should_run_a_basic_unit_test_successfully',
+                test_ids)
+            self.assertIn(
+                'test/harness/unit/unit_2.test.ts:unit_2:should_run_a_second_basic_unit_test_successfully',
+                test_ids)
+            for r in results:
+                self.assertEqual(r.get('status'), 'PASS')
+        finally:
+            os.unlink(rsp_file)
+
+    def test_e2e(self):
+        results, exit_code = self.run_e2e_test("test/harness/e2e/e2e.test.ts")
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            len(results), 1,
+            f"Expected exactly one test result, got {len(results)}")
+        self.assertEqual(
+            results[0].get('testId'),
+            'test/harness/e2e/e2e.test.ts:test_harness_e2e_fixture:should_run_a_basic_e2e_test_successfully'
+        )
+        self.assertEqual(results[0].get('status'), 'PASS')
+        self.assertTrue(results[0].get('expected'))
+
+    def test_e2e_duplicate(self):
+        results, exit_code = self.run_e2e_test(
+            "test/harness/e2e/duplicate.test.ts")
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(
+            len(results), 0,
+            f"Expected exactly 0 test result, got {len(results)}")
+
+    def test_unit_duplicate(self):
+        results, exit_code = self.run_unit_test(
+            "test/harness/unit/duplicate.test.ts")
+        self.assertEqual(exit_code, 1)
+
+    def test_unit_hooks(self):
+        results, exit_code = self.run_unit_test(
+            "test/harness/unit/hooks.test.ts")
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(
+            len(results), 3,
+            f"Expected exactly 3 test results, got {len(results)}")
+        self.assertEqual(results[0].get('testId'),
+                         'test/harness/unit/hooks.test.ts:block_1:run_1')
+        for r in results:
+            if r.get('status') == 'FAIL':
+                self.assertFalse(r.get('expected'))
+            else:
+                self.assertTrue(r.get('expected'))
+        self.assertEqual(results[0].get('status'), 'FAIL')
+        self.assertEqual(results[1].get('testId'),
+                         'test/harness/unit/hooks.test.ts:block_2:run_3')
+        self.assertEqual(results[1].get('status'), 'PASS')
+        self.assertEqual(results[2].get('testId'),
+                         'test/harness/unit/hooks.test.ts:block_2:run_4')
+        self.assertEqual(results[2].get('status'), 'PASS')
+
+    def test_unit_global_before_hook(self):
+        results, exit_code = self.run_unit_test(
+            "test/harness/unit/global_before_hook_fail.test.ts")
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(
+            len(results), 0,
+            f"Expected exactly 0 test result, got {len(results)}")
+
+    def test_unit_multiple_files_hook_failure(self):
+        results, exit_code = self.run_unit_test([
+            "test/harness/unit/global_before_hook_fail.test.ts",
+            "test/harness/unit/unit.test.ts"
+        ])
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(
+            len(results), 0,
+            f"Expected exactly 0 test results, got {len(results)}")
+
+    def test_unit_global_after_hook(self):
+        results, exit_code = self.run_unit_test(
+            "test/harness/unit/global_after_hook_fail.test.ts")
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(
+            len(results), 1,
+            f"Expected exactly 1 test result, got {len(results)}")
+        self.assertEqual(
+            results[0].get('testId'),
+            'test/harness/unit/global_after_hook_fail.test.ts:block:run')
+        self.assertEqual(results[0].get('status'), 'PASS')
+
+    def test_unit_after_each_hook(self):
+        results, exit_code = self.run_unit_test(
+            "test/harness/unit/after_each_hook_fail.test.ts")
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(
+            len(results), 2,
+            f"Expected exactly 2 test results, got {len(results)}")
+        results.sort(key=lambda r: r.get('status'))
+        self.assertEqual(
+            results[0].get('testId'),
+            'test/harness/unit/after_each_hook_fail.test.ts:block:run')
+        self.assertEqual(results[0].get('status'), 'FAIL')
+        self.assertEqual(
+            results[1].get('testId'),
+            'test/harness/unit/after_each_hook_fail.test.ts:block:run')
+        self.assertEqual(results[1].get('status'), 'PASS')
+
+    def test_unit_before_each_hook(self):
+        results, exit_code = self.run_unit_test(
+            "test/harness/unit/before_each_hook_fail.test.ts")
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(
+            len(results), 1,
+            f"Expected exactly 1 test result, got {len(results)}")
+        self.assertEqual(
+            results[0].get('testId'),
+            'test/harness/unit/before_each_hook_fail.test.ts:block:run')
+        self.assertEqual(results[0].get('status'), 'FAIL')
+
+    def test_unit_ids(self):
+        results, exit_code = self.run_unit_test(
+            "test/harness/unit/hooks.test.ts:block_2:run_3")
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            len(results), 1,
+            f"Expected exactly one test result, got {len(results)}")
+        self.assertEqual(results[0].get('testId'),
+                         'test/harness/unit/hooks.test.ts:block_2:run_3')
+        self.assertEqual(results[0].get('status'), 'PASS')
+
+    def test_unit_expectations(self):
+        with self._expectations_file(
+                "crbug.com/123 [ mac linux win32 ] test/harness/unit/hooks.test.ts [ Failure Pass ]\n"
+        ) as expectations_file:
+            abs_test_file = self._resolve_test_file(
+                "test/harness/unit/hooks.test.ts")
+            results, exit_code = self.run_test_with_rdb([
+                "node_modules/karma/bin/karma", "start",
+                "out/Default/gen/test/unit/karma.conf.js", "--", abs_test_file,
+                f"--expectations-file={expectations_file}"
+            ])
+            self.assertEqual(exit_code, 1)
+            self.assertEqual(len(results), 3)
+            for r in results:
+                self.assertTrue(r.get('expected', False))
+
+    def test_unit_expectations_unexpected_pass(self):
+        with self._expectations_file(
+                "crbug.com/123 [ mac linux win32 ] test/harness/unit/unit.test.ts [ Failure ]\n"
+        ) as expectations_file:
+            abs_test_file = self._resolve_test_file(
+                "test/harness/unit/unit.test.ts")
+            results, exit_code = self.run_test_with_rdb([
+                "node_modules/karma/bin/karma", "start",
+                "out/Default/gen/test/unit/karma.conf.js", "--", abs_test_file,
+                f"--expectations-file={expectations_file}"
+            ])
+            self.assertEqual(exit_code, 1)  # Unexpected pass means exit code 1
+            self.assertEqual(len(results), 1)
+            for r in results:
+                self.assertEqual(r['status'], 'PASS')
+                self.assertFalse(r.get('expected', False))
+
+    def test_unit_expectations_exact_id(self):
+        with self._expectations_file(
+                "crbug.com/123 [ mac linux win32 ] test/harness/unit/hooks.test.ts:block_1:run_1 [ Failure ]\n"
+        ) as expectations_file:
+            abs_test_file = self._resolve_test_file(
+                "test/harness/unit/hooks.test.ts")
+            results, exit_code = self.run_test_with_rdb([
+                "node_modules/karma/bin/karma", "start",
+                "out/Default/gen/test/unit/karma.conf.js", "--", abs_test_file,
+                f"--expectations-file={expectations_file}"
+            ])
+            self.assertEqual(exit_code, 1)  # run_2 fails and is unexpected
+            self.assertEqual(len(results), 3)
+            for r in results:
+                if r.get('testId'
+                         ) == 'test/harness/unit/hooks.test.ts:block_1:run_1':
+                    self.assertTrue(r.get('expected', False))
+                    self.assertEqual(r.get('status'), 'FAIL')
+                else:
+                    self.assertTrue(r.get('expected', False))
+                    self.assertEqual(r.get('status'), 'PASS')
+
+    def test_unit_expectations_skip_file(self):
+        with self._expectations_file(
+                "crbug.com/123 [ mac linux win32 ] test/harness/unit/unit.test.ts [ Skip ]\n"
+        ) as expectations_file:
+            abs_test_file = self._resolve_test_file(
+                "test/harness/unit/unit.test.ts")
+            abs_test_file_2 = self._resolve_test_file(
+                "test/harness/unit/unit_2.test.ts")
+            results, exit_code = self.run_test_with_rdb([
+                "node_modules/karma/bin/karma", "start",
+                "out/Default/gen/test/unit/karma.conf.js", "--", abs_test_file,
+                abs_test_file_2, f"--expectations-file={expectations_file}"
+            ])
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(len(results), 2)
+            results.sort(key=lambda r: r.get('testId'))
+            self.assertEqual(results[0].get('status'), 'SKIP')
+            self.assertEqual(results[1].get('status'), 'PASS')
+
+    def test_unit_expectations_skip_exact_id(self):
+        with self._expectations_file(
+                "crbug.com/123 [ mac linux win32 ] test/harness/unit/unit.test.ts:unit:should_run_a_basic_unit_test_successfully [ Skip ]\n"
+        ) as expectations_file:
+            abs_test_file = self._resolve_test_file(
+                "test/harness/unit/unit.test.ts")
+            abs_test_file_2 = self._resolve_test_file(
+                "test/harness/unit/unit_2.test.ts")
+            results, exit_code = self.run_test_with_rdb([
+                "node_modules/karma/bin/karma", "start",
+                "out/Default/gen/test/unit/karma.conf.js", "--", abs_test_file,
+                abs_test_file_2, f"--expectations-file={expectations_file}"
+            ])
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(len(results), 2)
+            results.sort(key=lambda r: r.get('testId'))
+            self.assertEqual(results[0].get('status'), 'SKIP')
+            self.assertEqual(results[1].get('status'), 'PASS')
+
+    def test_e2e_ids(self):
+        results, exit_code = self.run_e2e_test(
+            "test/harness/e2e/multiple.test.ts:multiple:run2")
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            len(results), 1,
+            f"Expected exactly one test result, got {len(results)}")
+        self.assertEqual(results[0].get('testId'),
+                         'test/harness/e2e/multiple.test.ts:multiple:run2')
+        self.assertEqual(results[0].get('status'), 'PASS')
+
+    def test_e2e_errors(self):
+        results, exit_code = self.run_e2e_test(
+            "test/harness/e2e/errors.test.ts")
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(
+            len(results), 4,
+            f"Expected exactly 4 test results, got {len(results)}")
+        self.assertEqual(results[0].get('testId'),
+                         'test/harness/e2e/errors.test.ts:block_1:run_1')
+        self.assertEqual(results[0].get('status'), 'PASS')
+        self.assertEqual(results[1].get('testId'),
+                         'test/harness/e2e/errors.test.ts:block_1:run_2')
+        self.assertEqual(results[1].get('status'), 'PASS')
+        self.assertEqual(results[2].get('testId'),
+                         'test/harness/e2e/errors.test.ts:block_2:run_3')
+        self.assertEqual(results[2].get('status'), 'FAIL')
+        self.assertEqual(results[3].get('testId'),
+                         'test/harness/e2e/errors.test.ts:block_2:run_4')
+        self.assertEqual(results[3].get('status'), 'PASS')
+
+    def test_e2e_repeat(self):
+        abs_test_file = self._resolve_test_file("test/harness/e2e/e2e.test.ts")
+        results, exit_code = self.run_test_with_rdb([
+            "out/Default/gen/test/harness/run-mocha.js", abs_test_file, "--",
+            "--repeat=2"
+        ])
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            len(results), 2,
+            f"Expected exactly 2 test results, got {len(results)}")
+
+        # Initial test
+        self.assertEqual(
+            results[0].get('testId'),
+            'test/harness/e2e/e2e.test.ts:test_harness_e2e_fixture:should_run_a_basic_e2e_test_successfully'
+        )
+        self.assertEqual(results[0].get('status'), 'PASS')
+        # Repeated run
+        self.assertEqual(
+            results[1].get('testId'),
+            'test/harness/e2e/e2e.test.ts:test_harness_e2e_fixture:should_run_a_basic_e2e_test_successfully'
+        )
+        self.assertEqual(results[1].get('status'), 'PASS')
+
+    def test_e2e_expectations(self):
+        with self._expectations_file(
+                "crbug.com/123 [ mac linux win32 ] test/harness/e2e/errors.test.ts [ Failure Pass ]\n"
+        ) as expectations_file:
+            abs_test_file = self._resolve_test_file(
+                "test/harness/e2e/errors.test.ts")
+            results, exit_code = self.run_test_with_rdb([
+                "out/Default/gen/test/harness/run-mocha.js", abs_test_file,
+                "--", f"--expectations-file={expectations_file}"
+            ])
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(len(results), 4)
+            for r in results:
+                self.assertTrue(r.get('expected', False))
+
+    def test_e2e_expectations_unexpected_pass(self):
+        with self._expectations_file(
+                "crbug.com/123 [ mac linux win32 ] test/harness/e2e/errors.test.ts [ Failure ]\n"
+        ) as expectations_file:
+            abs_test_file = self._resolve_test_file(
+                "test/harness/e2e/errors.test.ts")
+            results, exit_code = self.run_test_with_rdb([
+                "out/Default/gen/test/harness/run-mocha.js", abs_test_file,
+                "--", f"--expectations-file={expectations_file}"
+            ])
+            self.assertEqual(exit_code, 1)
+            self.assertEqual(len(results), 4)
+            for r in results:
+                if r.get('status') == 'PASS':
+                    self.assertFalse(r.get('expected', False))
+                else:
+                    self.assertTrue(r.get('expected', False))
+
+    def test_e2e_expectations_exact_id(self):
+        with self._expectations_file(
+                "crbug.com/123 [ mac linux win32 ] test/harness/e2e/errors.test.ts:block_1:run_1 [ Failure ]\n"
+        ) as expectations_file:
+            abs_test_file = self._resolve_test_file(
+                "test/harness/e2e/errors.test.ts")
+            results, exit_code = self.run_test_with_rdb([
+                "out/Default/gen/test/harness/run-mocha.js", abs_test_file,
+                "--", f"--expectations-file={expectations_file}"
+            ])
+            self.assertEqual(exit_code, 1)
+            self.assertEqual(len(results), 4)
+            for r in results:
+                if r.get('testId'
+                         ) == 'test/harness/e2e/errors.test.ts:block_1:run_1':
+                    self.assertFalse(r.get('expected', False))
+                elif r.get(
+                        'testId'
+                ) == 'test/harness/e2e/errors.test.ts:block_2:run_3':
+                    self.assertFalse(r.get('expected', False))
+                else:
+                    self.assertTrue(r.get('expected', False))
+
+    def test_e2e_expectations_skip_file(self):
+        with self._expectations_file(
+                "crbug.com/123 [ mac linux win32 ] test/harness/e2e/errors.test.ts [ Skip ]\n"
+        ) as expectations_file:
+            abs_test_file = self._resolve_test_file(
+                "test/harness/e2e/errors.test.ts")
+            results, exit_code = self.run_test_with_rdb([
+                "out/Default/gen/test/harness/run-mocha.js", abs_test_file,
+                "--", f"--expectations-file={expectations_file}"
+            ])
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(len(results), 4)
+            for r in results:
+                self.assertEqual(r.get('status'), 'SKIP')
+
+    def test_e2e_expectations_skip_exact_id(self):
+        with self._expectations_file(
+                "crbug.com/123 [ mac linux win32 ] test/harness/e2e/errors.test.ts:block_1:run_1 [ Skip ]\n"
+        ) as expectations_file:
+            abs_test_file = self._resolve_test_file(
+                "test/harness/e2e/errors.test.ts")
+            results, exit_code = self.run_test_with_rdb([
+                "out/Default/gen/test/harness/run-mocha.js", abs_test_file,
+                "--", f"--expectations-file={expectations_file}"
+            ])
+            self.assertEqual(exit_code, 1)
+            self.assertEqual(len(results), 4)
+            for r in results:
+                if r.get('testId'
+                         ) == 'test/harness/e2e/errors.test.ts:block_1:run_1':
+                    self.assertEqual(r.get('status'), 'SKIP')
+                elif r.get(
+                        'testId'
+                ) == 'test/harness/e2e/errors.test.ts:block_2:run_3':
+                    self.assertEqual(r.get('status'), 'FAIL')
+                else:
+                    self.assertEqual(r.get('status'), 'PASS')
+
+    def test_unit_screenshot_retry(self):
+        import sys
+        if sys.platform != 'linux':
+            return
+        abs_test_file = self._resolve_test_file(
+            "test/harness/unit/screenshot_retry.test.ts")
+        results, exit_code = self.run_test_with_rdb([
+            "node_modules/karma/bin/karma", "start",
+            "out/Default/gen/test/unit/karma.conf.js", "--", abs_test_file,
+            "--retries=2"
+        ])
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(
+            len(results), 2,
+            f"Expected exactly 2 test results, got {len(results)}")
+
+        results.sort(key=lambda r: r.get('testId'))
+
+        self.assertEqual(
+            results[0].get('testId'),
+            'test/harness/unit/screenshot_retry.test.ts:screenshot_test_with_retries:should_fail_with_another_screenshot_error'
+        )
+        self.assertEqual(results[0].get('status'), 'FAIL')
+        self.assertEqual(
+            results[1].get('testId'),
+            'test/harness/unit/screenshot_retry.test.ts:screenshot_test_with_retries:should_fail_with_screenshot_error'
+        )
+        self.assertEqual(results[1].get('status'), 'FAIL')
+
+    def test_unit_repeat(self):
+        abs_test_file = self._resolve_test_file(
+            "test/harness/unit/unit.test.ts")
+        results, exit_code = self.run_test_with_rdb([
+            "node_modules/karma/bin/karma", "start",
+            "out/Default/gen/test/unit/karma.conf.js", "--", abs_test_file,
+            "--repeat=2"
+        ])
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            len(results), 2,
+            f"Expected exactly 2 test results, got {len(results)}")
+
+        self.assertEqual(
+            results[0].get('testId'),
+            'test/harness/unit/unit.test.ts:unit:should_run_a_basic_unit_test_successfully'
+        )
+        self.assertEqual(results[0].get('status'), 'PASS')
+        self.assertEqual(
+            results[1].get('testId'),
+            'test/harness/unit/unit.test.ts:unit:should_run_a_basic_unit_test_successfully'
+        )
+        self.assertEqual(results[1].get('status'), 'PASS')
+
+    def test_unit_snapshot_repeat(self):
+        abs_test_file = self._resolve_test_file(
+            "test/harness/unit/snapshot.test.ts")
+        results, exit_code = self.run_test_with_rdb([
+            "node_modules/karma/bin/karma", "start",
+            "out/Default/gen/test/unit/karma.conf.js", "--", abs_test_file,
+            "--repeat=2"
+        ])
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            len(results), 2,
+            f"Expected exactly 2 test results, got {len(results)}")
+
+        self.assertEqual(
+            results[0].get('testId'),
+            'test/harness/unit/snapshot.test.ts:snapshot_test_harness:supports_snapshot_assertion_in_test_harness'
+        )
+        self.assertEqual(results[0].get('status'), 'PASS')
+        self.assertEqual(
+            results[1].get('testId'),
+            'test/harness/unit/snapshot.test.ts:snapshot_test_harness:supports_snapshot_assertion_in_test_harness'
+        )
+        self.assertEqual(results[1].get('status'), 'PASS')
+
+if __name__ == '__main__':
+    if '--debug' in sys.argv:
+        DevToolsTestHarness.debug_mode = True
+        sys.argv.remove('--debug')
+    unittest.main()

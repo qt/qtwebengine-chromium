@@ -44,6 +44,8 @@ Availability ConvertModelAvailabilityCheckResult(
     case ModelAvailabilityCheckResult::kUnavailableValidationFailed:
     case ModelAvailabilityCheckResult::kUnavailableModelNotEligible:
     case ModelAvailabilityCheckResult::kUnavailableInsufficientDiskSpace:
+    case ModelAvailabilityCheckResult::
+        kUnavailableInsufficientDiskSpaceForCaches:
     case ModelAvailabilityCheckResult::kUnavailableTranslationNotEligible:
     case ModelAvailabilityCheckResult::kUnavailableEnterprisePolicyDisabled:
     case ModelAvailabilityCheckResult::
@@ -57,7 +59,7 @@ Availability HandleModelAvailabilityCheckResult(
     AIMetrics::AISessionType session_type,
     ModelAvailabilityCheckResult result) {
   Availability availability = ConvertModelAvailabilityCheckResult(result);
-  if (availability == Availability::kUnavailable) {
+  if (execution_context && availability == Availability::kUnavailable) {
     execution_context->AddConsoleMessage(
         mojom::blink::ConsoleMessageSource::kJavaScript,
         mojom::blink::ConsoleMessageLevel::kWarning,

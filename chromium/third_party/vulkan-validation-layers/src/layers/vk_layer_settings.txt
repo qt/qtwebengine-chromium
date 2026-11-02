@@ -5,26 +5,6 @@
 
 # VK_LAYER_KHRONOS_validation
 
-# Command Buffer State
-# =====================
-# Check that all Vulkan objects used by a command buffer have not been destroyed. These checks can be CPU intensive for some applications.
-khronos_validation.check_command_buffer = true
-
-# Image Layout
-# =====================
-# Check that the layout of each image subresource is correct whenever it is used by a command buffer. These checks are very CPU intensive for some applications.
-khronos_validation.check_image_layout = true
-
-# Object in Use
-# =====================
-# Check that Vulkan objects are not in use by a command buffer when they are destroyed.
-khronos_validation.check_object_in_use = true
-
-# Query
-# =====================
-# Checks for commands that use VkQueryPool objects.
-khronos_validation.check_query = true
-
 # Shader
 # =====================
 # This will validate the contents of the SPIR-V which can be CPU intensive during application start up. This does internal checks as well as calling spirv-val. (Same effect using VK_VALIDATION_FEATURE_DISABLE_SHADERS_EXT)
@@ -40,6 +20,16 @@ khronos_validation.check_shaders_caching = true
 # Specifies what action is to be taken when a layer reports information
 khronos_validation.debug_action = VK_DBG_LAYER_ACTION_LOG_MSG,VK_DBG_LAYER_ACTION_DEBUG_OUTPUT
 
+# Descriptor Hashing
+# =====================
+# When enabled and using VK_EXT_descriptor_heap/VK_EXT_descriptor_buffer, this will attempt to track all descriptors seen such that GPU-AV and GPU Dump can detect more errors. This will increase the memory footprint.
+khronos_validation.descriptor_hashing = false
+
+# Total expected descriptors used
+# =====================
+# We create a static allocation to hold all potential descriptor hashes we see. The larger it is the more memory and time it may take. The true capacity is always this value rounded up to the next power of two.
+khronos_validation.descriptor_hashing_total_descriptors = 65536
+
 # Max Duplicated Messages
 # =====================
 # Maximum number of times any single validation message should be reported.
@@ -50,25 +40,15 @@ khronos_validation.duplicate_message_limit = 10
 # Enable limiting of duplicate messages.
 khronos_validation.enable_message_limit = true
 
-# Fine Grained Locking
-# =====================
-# Enable fine grained locking for Core Validation, which should improve performance in multithreaded applications. This setting allows the optimization to be disabled for debugging.
-khronos_validation.fine_grained_locking = true
-
 # Dump VK_KHR_copy_memory_indirect
 # =====================
 # Dump information at each copy command when recording
 khronos_validation.gpu_dump_copy_memory_indirect = false
 
-# Dump Descriptors (VK_EXT_descriptor_buffer and VK_EXT_descriptor_heap)
+# Dump Descriptor Heap/Buffer
 # =====================
-# Dump all the information at every draw/dispatch when recording
+# Dump all the information at every draw/dispatch when recording VK_EXT_descriptor_heap or VK_EXT_descriptor_buffer
 khronos_validation.gpu_dump_descriptors = false
-
-# Force Device Copy
-# =====================
-# [Very experimental] For non-host visible memory, try and do a device copy during command recording to view the data inside a buffer.
-khronos_validation.gpu_dump_device_copy = false
 
 # Dump VK_EXT_device_generated_commands
 # =====================
@@ -100,6 +80,11 @@ khronos_validation.gpuav_buffer_copies = true
 # Validate buffers containing parameters used in indirect Vulkan commands, or used in copy commands
 khronos_validation.gpuav_buffers_validation = true
 
+# CDL dump file
+# =====================
+# Path to a Crash Diagnostic Layer (CDL) dump file. Pipeline names found in this file will be selected for instrumentation.
+khronos_validation.gpuav_cdl_dump_path =
+
 # VK_KHR_copy_memory_indirect
 # =====================
 # Validate VK_KHR_copy_memory_indirect.
@@ -110,7 +95,7 @@ khronos_validation.gpuav_copy_memory_indirect = true
 # Enable descriptors and buffer out of bounds validation when using descriptor indexing
 khronos_validation.gpuav_descriptor_checks = true
 
-# GPU Assisted Validation
+# GPU Assisted Validation (GPU-AV)
 # =====================
 # Enable validation that cannot be done the CPU and needs hooks into the GPU execution
 khronos_validation.gpuav_enable = false
@@ -165,9 +150,12 @@ khronos_validation.gpuav_ray_tracing_buffers_consistency = false
 # Will have GPU-AV try and prevent crashes, but will be much slower to validate. If using Safe Mode, consider using selective shader instrumentation, to only instrument the shaders/pipelines causing issues.
 khronos_validation.gpuav_safe_mode = false
 
-# Enable instrumenting shaders selectively
+# Selective Instrument Shaders
 # =====================
-# Select which shaders to instrument by passing a VkValidationFeaturesEXT struct with GPU-AV enabled in the VkShaderModuleCreateInfo pNext or using a regex matching a shader/pipeline debug name. Because this only validates the selected shaders, it will allow GPU-AV to run much faster.
+# When turned on, shaders are NOT instrumented unless selected. This can be done by:
+- passing a VkValidationFeaturesEXT struct in the pNext of VkShaderModuleCreateInfo/VkPipelineShaderStageCreateInfo/vkCreateShadersEXT pNext
+- using a regex matching a shader/pipeline debug name.
+- Providing a CDL dump file to parse the debug names from it.
 khronos_validation.gpuav_select_instrumented_shaders = false
 
 # Shader instrumentation
@@ -205,6 +193,11 @@ khronos_validation.gpuav_vertex_attribute_fetch_oob = true
 # Give warnings when using legacy parts of the API.
 khronos_validation.legacy_detection = false
 
+# When to give warning
+# =====================
+# Control when legacy detection warnings are emitted
+khronos_validation.legacy_detection_mode = ALWAYS
+
 # Log Filename
 # =====================
 # Specifies the output filename
@@ -222,7 +215,7 @@ khronos_validation.message_format_json = false
 
 # Mute Message VUIDs
 # =====================
-# List of VUIDs and VUID identifiers which are to be IGNORED by the validation layer
+# List of VUIDs which are to be IGNORED by the validation layer. The list is comma separated and can be either the entire VUID string, the hashed value, or the last 5 digit number of a VUID
 khronos_validation.message_id_filter =
 
 # Object Lifetime
@@ -242,7 +235,7 @@ khronos_validation.printf_enable = false
 
 # Debug Printf only preset
 # =====================
-# A single, quick setting to turn on only DebugPrintf and turn off everything else
+# A single, quick setting to turn on only DebugPrintf and turn off everything else. Main usage is for people not able to use VkConfig and still want a fast preset to use.
 khronos_validation.printf_only_preset = false
 
 # Redirect Printf messages to stdout
@@ -258,7 +251,7 @@ khronos_validation.printf_verbose = false
 # Message Severity
 # =====================
 # Comma-delineated list of options specifying the types of messages to be reported
-khronos_validation.report_flags = error
+khronos_validation.report_flags = error,warn
 
 # Stateless Parameter
 # =====================

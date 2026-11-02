@@ -10,6 +10,9 @@
 #include <array>
 #include <limits>
 
+#include "core/fxcrt/numerics/safe_math.h"
+#include "core/fxge/fx_font.h"
+
 namespace {
 
 constexpr auto kWeightPow = std::to_array<const uint8_t>({
@@ -131,4 +134,63 @@ int CFX_SubstFont::GetSkew() const {
 
 int CFX_SubstFont::GetSkewCJK() const {
   return GetSkewFromAngle(italic_cjk_ ? -15 : 0);
+}
+
+int CFX_SubstFont::GetEmboldenLevelForRender(bool is_cid_font,
+                                             int32_t ft_matrix_xx,
+                                             int32_t ft_matrix_xy) const {
+  if (flag_mm_) {
+    return 0;
+  }
+  const int weight = GetEffectiveWeight(is_cid_font);
+  if (weight <= 400) {
+    return 0;
+  }
+  const size_t index = static_cast<size_t>((weight - 400) / 10);
+  const int level = GetWeightLevel(index);
+  if (level < 0) {
+    return -1;
+  }
+  pdfium::CheckedNumeric<int64_t> checked_level = level;
+  checked_level = checked_level *
+                  (pdfium::CheckedNumeric<int64_t>(ft_matrix_xx).Abs() +
+                   pdfium::CheckedNumeric<int64_t>(ft_matrix_xy).Abs()) /
+                  36655;
+  return checked_level.ValueOrDefault<int>(0);
+}
+
+int CFX_SubstFont::GetEmboldenLevelForLoad() const {
+  if (flag_mm_) {
+    return 0;
+  }
+  const int weight = GetWeight();
+  if (weight <= 400) {
+    return 0;
+  }
+  const size_t index = static_cast<size_t>((weight - 400) / 10);
+  return GetWeightLevelForLoad(index);
+}
+
+void CFX_SubstFont::ConfigureExternalSubst(const ByteString& face_name,
+                                           FX_Charset charset,
+                                           int weight,
+                                           bool is_italic,
+                                           int italic_angle,
+                                           bool face_is_bold,
+                                           bool face_is_italic) {
+  family_ = face_name;
+  charset_ = charset;
+  int face_weight =
+      face_is_bold ? pdfium::kFontWeightBold : pdfium::kFontWeightNormal;
+  if (weight != face_weight) {
+    weight_ = weight;
+  }
+  if (is_italic && !face_is_italic) {
+    if (italic_angle == 0) {
+      italic_angle = -12;
+    } else if (abs(italic_angle) < 5) {
+      italic_angle = 0;
+    }
+    italic_angle_ = italic_angle;
+  }
 }

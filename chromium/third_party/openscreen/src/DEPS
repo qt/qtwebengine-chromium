@@ -157,6 +157,13 @@ deps = {
     'condition': 'not build_with_chromium',
   },
 
+  'third_party/pybind11/src': {
+    'url': Var('github') +
+      '/pybind/pybind11.git' +
+      '@' + 'd03662f0984f652b60e7ddce53d3868002275197', # 3.0.4
+    'condition': 'not build_with_chromium',
+  },
+
   # googletest now recommends "living at head," which is a bit of a crapshoot
   # because regressions land upstream frequently.  This is a known good revision.
   'third_party/googletest/src': {
@@ -179,7 +186,7 @@ deps = {
   # maintainers may be needed for some breaking changes.
   'third_party/quiche/src': {
     'url': Var('quiche_git') + '/quiche.git' +
-      '@' + 'a849d35c908d800de783c7434ffcdb44378af823',  # 2026-05-07
+      '@' + 'b8a4aa531a029737bcd741f85314e89775b923b2',  # 2026-05-07
     'condition': 'not build_with_chromium',
   },
 
@@ -395,12 +402,6 @@ deps = {
   'third_party/modp_b64': {
     'url': Var('chromium_git') + '/chromium/src/third_party/modp_b64'
     '@' + '7c1b3276e72757e854b5b642284aa367436a4723',  # 2024-11-18
-    'condition': 'not build_with_chromium',
-  },
-
-  'third_party/valijson/src': {
-    'url': Var('github') + '/tristanpenman/valijson.git' +
-      '@' + 'fc9ddf14db683c9443c48ae3a6bf83e0ce3ad37c', # Version 1.0.3
     'condition': 'not build_with_chromium',
   },
 

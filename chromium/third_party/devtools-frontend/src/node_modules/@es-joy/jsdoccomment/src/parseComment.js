@@ -18,7 +18,7 @@ const {
  * @returns {boolean}
  */
 export const hasSeeWithLink = (spec) => {
-  return spec.tag === 'see' && (/\{@link.+?\}/u).test(spec.source[0].source);
+  return spec.tag === 'see' && (/\{@link.+?\}/v).test(spec.source[0].source);
 };
 
 export const defaultNoTypes = [
@@ -40,7 +40,7 @@ export const defaultNoNames = [
   'version', 'variation'
 ];
 
-const optionalBrackets = /^\[(?<name>[^=]*)=[^\]]*\]/u;
+const optionalBrackets = /^\[(?<name>[^=]*)=[^\]]*\]/v;
 const preserveTypeTokenizer = typeTokenizer('preserve');
 const preserveDescriptionTokenizer = descriptionTokenizer('preserve');
 const plainNameTokenizer = nameTokenizer();
@@ -93,12 +93,12 @@ const getTokenizers = ({
         let pos;
         if (remainder.startsWith('[') && remainder.includes(']')) {
           const endingBracketPos = remainder.lastIndexOf(']');
-          pos = remainder.slice(endingBracketPos).search(/(?<![\s,])\s/u);
+          pos = remainder.slice(endingBracketPos).search(/(?<![\s,])\s/v);
           if (pos > -1) { // Add offset to starting point if space found
             pos += endingBracketPos;
           }
         } else {
-          pos = remainder.search(/(?<![\s,])\s/u);
+          pos = remainder.search(/(?<![\s,])\s/v);
         }
 
         const name = pos === -1 ? remainder : remainder.slice(0, pos);
@@ -106,7 +106,7 @@ const getTokenizers = ({
         let postName = '', description = '', lineEnd = '';
         if (pos > -1) {
           [, postName, description, lineEnd] = /** @type {RegExpMatchArray} */ (
-            extra.match(/(\s*)([^\r]*)(\r)?/u)
+            extra.match(/(\s*)([^\r]*)(\r)?/v)
           );
         }
 

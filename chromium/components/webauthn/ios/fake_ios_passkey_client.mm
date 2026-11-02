@@ -15,17 +15,19 @@ FakeIOSPasskeyClient::~FakeIOSPasskeyClient() = default;
 void FakeIOSPasskeyClient::SetIOSPasskeyClientCommandsHandler(
     id<IOSPasskeyClientCommands> handler) {}
 
-bool FakeIOSPasskeyClient::PerformUserVerification() {
-  return false;
-}
-
-void FakeIOSPasskeyClient::FetchKeys(ReauthenticatePurpose purpose,
-                                     KeysFetchedCallback callback) {
+void FakeIOSPasskeyClient::FetchKeys(
+    ReauthenticatePurpose purpose,
+    PasskeyUserVerificationStatus user_verification_status,
+    FetchKeysCallback callback) {
   static const size_t kKeyLength = 32u;
   fetch_keys_called_ = true;
+  last_user_verification_status_ = user_verification_status;
   if (!callback.is_null()) {
     // Return a single 32 bytes key (zeroed out).
-    std::move(callback).Run({std::vector<uint8_t>(kKeyLength, 0)}, nil);
+    bool did_complete_uv =
+        user_verification_status == PasskeyUserVerificationStatus::kCompleted;
+    std::move(callback).Run({std::vector<uint8_t>(kKeyLength, 0)},
+                            did_complete_uv);
   }
 }
 
@@ -72,6 +74,19 @@ bool FakeIOSPasskeyClient::IsGpmPasskeySavingEnabled() const {
 
 void FakeIOSPasskeyClient::SetGpmPasskeySavingEnabled(bool enabled) {
   gpm_passkey_saving_enabled_ = enabled;
+}
+
+bool FakeIOSPasskeyClient::IsBiometricsEnabled() const {
+  return biometrics_enabled_;
+}
+
+void FakeIOSPasskeyClient::SetBiometricsEnabled(bool enabled) {
+  biometrics_enabled_ = enabled;
+}
+
+PasskeyUserVerificationStatus
+FakeIOSPasskeyClient::last_user_verification_status() const {
+  return last_user_verification_status_;
 }
 
 }  // namespace webauthn

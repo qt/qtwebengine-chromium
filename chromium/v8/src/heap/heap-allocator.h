@@ -5,6 +5,7 @@
 #ifndef V8_HEAP_HEAP_ALLOCATOR_H_
 #define V8_HEAP_HEAP_ALLOCATOR_H_
 
+#include <atomic>
 #include <optional>
 #include <type_traits>
 
@@ -30,6 +31,7 @@ class PagedSpace;
 class ReadOnlySpace;
 class SharedTrustedLargeObjectSpace;
 class Space;
+class YoungPendingAllocations;
 
 // Allocator for the main thread. All exposed functions internally call the
 // right bottleneck.
@@ -78,6 +80,13 @@ class V8_EXPORT_PRIVATE HeapAllocator final {
                             size_t new_object_size);
 
   V8_INLINE bool CanAllocateInReadOnlySpace() const;
+
+  // Returns the maximum size a regular (non-large) object can have for the
+  // given allocation type. This takes into account allocating in the code
+  // space, for which the size of the allocatable space per V8 page may depend
+  // on the OS page size at runtime. You may use kMaxRegularHeapObjectSize as a
+  // constant instead if you know the allocation isn't in the code spaces.
+  V8_INLINE int MaxRegularHeapObjectSize(AllocationType allocation) const;
 
 #ifdef V8_ENABLE_ALLOCATION_TIMEOUT
   void UpdateAllocationTimeout();
@@ -157,6 +166,9 @@ class V8_EXPORT_PRIVATE HeapAllocator final {
 
   Address last_young_allocation() { return *last_young_allocation_pointer_; }
 
+  V8_INLINE Address pending_large_object() const;
+  void ResetPendingLargeObject();
+
  private:
   V8_INLINE PagedSpace* code_space() const;
   V8_INLINE CodeLargeObjectSpace* code_lo_space() const;
@@ -173,6 +185,9 @@ class V8_EXPORT_PRIVATE HeapAllocator final {
   V8_WARN_UNUSED_RESULT AllocationResult AllocateRawLargeInternal(
       int size_in_bytes, AllocationType allocation, AllocationOrigin origin,
       AllocationAlignment alignment, AllocationHint hint);
+
+  void UpdatePendingLargeObject(Tagged<HeapObject> object,
+                                AllocationType allocation);
 
   bool RetryCustomAllocateLight(CustomAllocationFunction allocate,
                                 AllocationType allocation,
@@ -202,8 +217,12 @@ class V8_EXPORT_PRIVATE HeapAllocator final {
   void IncrementObjectCounters();
 #endif  // DEBUG
 
+  std::atomic<Address> pending_large_object_{kNullAddress};
+
   LocalHeap* local_heap_;
   Heap* const heap_;
+  YoungPendingAllocations* young_pending_allocations_ = nullptr;
+  int max_regular_code_object_size_ = 0;
   Space* spaces_[LAST_SPACE + 1];
   ReadOnlySpace* read_only_space_;
 

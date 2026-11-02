@@ -16,11 +16,12 @@
 
 pub mod confidential_space;
 
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use oak_session::{
     attestation::AttestationType,
     config::{SessionConfig, SessionConfigBuilder},
+    session::AttestationPublisher,
 };
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -43,18 +44,32 @@ where
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ClientConfig {
-    pub listen_address: SocketAddr,
-    pub server_proxy_url: Url,
+    #[serde(default)]
+    pub listen_address: Option<SocketAddr>,
+    #[serde(default)]
+    pub server_proxy_url: Option<Url>,
     #[serde(with = "humantime_serde", default = "default_keep_alive_interval")]
     pub keep_alive_interval: Duration,
+    #[serde(default)]
     pub attestation_generators: Vec<GeneratorConfig>,
+    #[serde(default)]
     pub attestation_verifiers: Vec<VerifierConfig>,
+    /// Optional file path to write received attestation evidence to.
+    /// The attestation is written regardless of verification success/failure.
+    #[serde(default)]
+    pub attestation_output_file: Option<PathBuf>,
+    #[serde(default)]
+    pub experimental_tls_session: bool,
+    #[serde(default)]
+    pub tls_ca: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ServerConfig {
-    pub listen_address: SocketAddr,
-    pub backend_address: SocketAddr,
+    #[serde(default)]
+    pub listen_address: Option<SocketAddr>,
+    #[serde(default)]
+    pub backend_address: Option<SocketAddr>,
     #[serde(with = "humantime_serde", default = "default_keep_alive_interval")]
     pub keep_alive_interval: Duration,
     #[serde(default)]
@@ -63,6 +78,12 @@ pub struct ServerConfig {
     pub attestation_verifiers: Vec<VerifierConfig>,
     #[serde(default)]
     pub backend_command: Option<CommandConfig>,
+    #[serde(default)]
+    pub experimental_tls_session: bool,
+    #[serde(default)]
+    pub tls_cert: Option<String>,
+    #[serde(default)]
+    pub tls_key: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Copy, Default)]
@@ -118,6 +139,7 @@ impl VerifierConfig {
 pub fn build_session_config(
     attestation_generators: &Vec<GeneratorConfig>,
     attestation_verifiers: &Vec<VerifierConfig>,
+    attestation_publisher: Option<&Arc<dyn AttestationPublisher>>,
 ) -> anyhow::Result<SessionConfig> {
     let attestation_type =
         match (attestation_generators.is_empty(), attestation_verifiers.is_empty()) {
@@ -129,6 +151,10 @@ pub fn build_session_config(
 
     let mut builder =
         SessionConfig::builder(attestation_type, oak_session::handshake::HandshakeType::NoiseNN);
+
+    if let Some(publisher) = attestation_publisher {
+        builder = builder.add_attestation_publisher(publisher);
+    }
 
     for generator in attestation_generators {
         builder = generator.apply(builder)?;

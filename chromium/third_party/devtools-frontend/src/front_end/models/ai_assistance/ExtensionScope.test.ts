@@ -3,20 +3,14 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
-import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
-import * as Protocol from '../../generated/protocol.js';
-import {createTarget} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
-import {createResource, getMainFrame} from '../../testing/ResourceTreeHelpers.js';
+import type * as Protocol from '../../generated/protocol.js';
+import {MockCDPConnection} from '../../testing/MockCDPConnection.js';
 import {createCSSStyle, getMatchedStyles, ruleMatch} from '../../testing/StyleHelpers.js';
-import * as Bindings from '../bindings/bindings.js';
-import * as Workspace from '../workspace/workspace.js';
 
 import * as AiAssistance from './ai_assistance.js';
-
-const {urlString} = Platform.DevToolsPath;
 
 function createNode(options?: {getAttribute?: (attribute: string) => string | undefined}) {
   const node = sinon.createStubInstance(SDK.DOMModel.DOMNode);
@@ -39,8 +33,10 @@ async function getSelector(
     node = createNode();
   }
 
+  const connection = new MockCDPConnection();
   const matchedStyles = await getMatchedStyles({
     node,
+    connection,
     ...payload,
   });
 
@@ -70,7 +66,7 @@ describe('ExtensionScope', () => {
           }
 
           return undefined;
-        }
+        },
       });
       const selector = AiAssistance.ExtensionScope.ExtensionScope.getSelectorForNode(node);
       assert.strictEqual(selector, '.my-class-a.my-class-b');
@@ -84,7 +80,7 @@ describe('ExtensionScope', () => {
           }
 
           return undefined;
-        }
+        },
       });
       const selector = AiAssistance.ExtensionScope.ExtensionScope.getSelectorForNode(node);
       assert.strictEqual(selector, '.my-class-a.my-class-b');
@@ -98,7 +94,7 @@ describe('ExtensionScope', () => {
           }
 
           return undefined;
-        }
+        },
       });
       const selector = AiAssistance.ExtensionScope.ExtensionScope.getSelectorForNode(node);
       assert.strictEqual(selector, '.my\\.special-class.my-class-b');
@@ -112,7 +108,7 @@ describe('ExtensionScope', () => {
           }
 
           return undefined;
-        }
+        },
       });
       const selector = AiAssistance.ExtensionScope.ExtensionScope.getSelectorForNode(node);
       assert.strictEqual(selector, 'div');
@@ -175,7 +171,7 @@ describe('ExtensionScope', () => {
                   specificity: {a: 0, b: 0, c: 1},
                 },
               ],
-              text: '#my-id, .my-class, div'
+              text: '#my-id, .my-class, div',
             },
             MOCK_STYLE,
             ),
@@ -198,7 +194,7 @@ describe('ExtensionScope', () => {
                   specificity: {a: 0, b: 0, c: 1},
                 },
               ],
-              text: '.my-class, div'
+              text: '.my-class, div',
             },
             MOCK_STYLE,
             ),
@@ -243,12 +239,11 @@ describe('ExtensionScope', () => {
       // be returned correctly
       // front_end/core/sdk/CSSMatchedStyles.ts:373
       const matchedPayload = [
-        ruleMatch(
-            {
-              selectors: [{text: `.${AiAssistance.Injected.AI_ASSISTANCE_CSS_CLASS_NAME}-1`}, {text: '.test'}],
-              text: `.${AiAssistance.Injected.AI_ASSISTANCE_CSS_CLASS_NAME}-1, .test`
-            },
-            MOCK_STYLE),
+        ruleMatch({
+          selectors: [{text: `.${AiAssistance.Injected.AI_ASSISTANCE_CSS_CLASS_NAME}-1`}, {text: '.test'}],
+          text: `.${AiAssistance.Injected.AI_ASSISTANCE_CSS_CLASS_NAME}-1, .test`,
+        },
+                  MOCK_STYLE),
       ];
       const selector = await getSelector({matchedPayload});
       assert.strictEqual(selector, '.test');
@@ -291,7 +286,7 @@ describe('ExtensionScope', () => {
             {
               nestingSelectors: ['.my-parent-selector'],
             },
-            )
+            ),
       ];
       const selector = await getSelector({matchedPayload});
       assert.strictEqual(selector, 'div');
@@ -315,7 +310,7 @@ describe('ExtensionScope', () => {
                   a: 0,
                   b: 0,
                   c: 1,
-                }
+                },
               }],
               text: 'div > *',
 
@@ -337,7 +332,7 @@ describe('ExtensionScope', () => {
                   a: 0,
                   b: 2,
                   c: 0,
-                }
+                },
               }],
               text: '.main > * > .header',
 
@@ -357,7 +352,7 @@ describe('ExtensionScope', () => {
                 a: 1,
                 b: 1,
                 c: 0,
-              }
+              },
             }],
             text: '.main > * > #header',
 
@@ -369,80 +364,4 @@ describe('ExtensionScope', () => {
     });
   });
 
-  describeWithMockConnection('getSourceLocation', () => {
-    async function setupMockedStyleRules() {
-      const target = createTarget();
-
-      const targetManager = target.targetManager();
-      targetManager.setScopeTarget(target);
-      const workspace = Workspace.Workspace.WorkspaceImpl.instance();
-      const resourceMapping = new Bindings.ResourceMapping.ResourceMapping(targetManager, workspace);
-      Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding.instance({forceNew: true, resourceMapping, targetManager});
-      const sourceURL = urlString`http://localhost/something/style.css`;
-      createResource(getMainFrame(target), sourceURL, 'text/html', '');
-      const uiSourceCode = workspace.uiSourceCodeForURL(sourceURL) as Workspace.UISourceCode.UISourceCode;
-      assert.isNotNull(uiSourceCode);
-      const cssModel = target.model(SDK.CSSModel.CSSModel)!;
-      const cssStyleSheetHeader = new SDK.CSSStyleSheetHeader.CSSStyleSheetHeader(cssModel, {
-        styleSheetId: 'test' as Protocol.DOM.StyleSheetId,
-        frameId: 'test' as Protocol.Page.FrameId,
-        sourceURL,
-        origin: Protocol.CSS.StyleSheetOrigin.Regular,
-        title: 'style.css',
-        disabled: false,
-        isInline: false,
-        isMutable: false,
-        isConstructed: false,
-        startLine: 0,
-        startColumn: 0,
-        length: 10,
-        endLine: 1,
-        endColumn: 8,
-      });
-      sinon.stub(cssModel, 'styleSheetHeaderForId').returns(cssStyleSheetHeader);
-      const node = createNode();
-      const matchedPayload = [
-        ruleMatch(
-            {
-              text: '.test',
-              selectors: [{
-                text: '.test',
-                range: {
-                  startLine: 0,
-                  startColumn: 0,
-                  endLine: 0,
-                  endColumn: 10,
-                }
-              }]
-            },
-            MOCK_STYLE, {
-              styleSheetId: cssStyleSheetHeader.id,
-            }),
-        ruleMatch(
-
-            {
-              selectors: [{text: 'div&'}],
-              text: 'div&',
-            },
-            MOCK_STYLE,
-            {
-              nestingSelectors: [`.${AiAssistance.Injected.AI_ASSISTANCE_CSS_CLASS_NAME}-1`],
-            },
-            ),
-      ];
-
-      const matchedStyles = await getMatchedStyles({
-        node,
-        matchedPayload,
-        cssModel,
-      });
-
-      return AiAssistance.ExtensionScope.ExtensionScope.getStyleRuleFromMatchesStyles(matchedStyles)!;
-    }
-
-    it('should compute a source location', async () => {
-      const styleRule = await setupMockedStyleRules();
-      assert.strictEqual(AiAssistance.ExtensionScope.ExtensionScope.getSourceLocation(styleRule), 'style.css:1:1');
-    });
-  });
 });

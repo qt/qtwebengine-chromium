@@ -10,7 +10,7 @@
 // Copyright Ken Hillstrom - Argonne National Laboratory
 //
 // This Source Code Form is subject to the terms of the Minpack license
-// (a BSD-like license) described in the campaigned CopyrightMINPACK.txt file.
+// (a BSD-like license) described in the accompanying CopyrightMINPACK.txt file.
 // SPDX-License-Identifier: MPL-2.0 AND LicenseRef-MINPACK
 
 #ifndef EIGEN_LMQRSOLV_H
@@ -165,7 +165,6 @@ void lmqrsolv(SparseMatrix<Scalar, Options_, Index> &s, const PermutationMatrix<
   }
 
   wa.tail(n - nsing).setZero();
-  //     x = wa;
   wa.head(nsing) = R.topLeftCorner(nsing, nsing).template triangularView<Upper>().solve /*InPlace*/ (wa.head(nsing));
 
   sdiag = R.diagonal();

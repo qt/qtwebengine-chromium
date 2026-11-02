@@ -5,23 +5,36 @@
 #include "components/passage_embeddings/core/passage_embedder_model_observer.h"
 
 #include <memory>
+#include <optional>
 
 #include "base/memory/raw_ptr.h"
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
+#include "components/optimization_guide/core/delivery/model_info.h"
 #include "components/optimization_guide/core/delivery/test_optimization_guide_model_provider.h"
 #include "components/passage_embeddings/core/passage_embeddings_service_controller.h"
-#include "components/passage_embeddings/core/passage_embeddings_test_util.h"
+#include "components/passage_embeddings/core/passage_embeddings_service_launcher.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace passage_embeddings {
+
+class DummyPassageEmbeddingsServiceLauncher
+    : public PassageEmbeddingsServiceLauncher {
+ public:
+  void LaunchService(mojo::PendingReceiver<mojom::PassageEmbeddingsService>
+                         receiver) override {}
+  void OnServiceDisconnected(bool is_idle) override {}
+  bool AllowedToLaunch() const override { return true; }
+};
 
 class FakePassageEmbeddingsServiceController
     : public passage_embeddings::PassageEmbeddingsServiceController {
  public:
   explicit FakePassageEmbeddingsServiceController(
+      PassageEmbeddingsServiceLauncher& launcher,
       base::test::TestFuture<bool>* model_info_future)
-      : model_info_received_future_(model_info_future) {}
+      : PassageEmbeddingsServiceController(launcher),
+        model_info_received_future_(model_info_future) {}
   ~FakePassageEmbeddingsServiceController() override = default;
 
   // passage_embeddings::PassageEmbeddingsServiceController:
@@ -32,8 +45,6 @@ class FakePassageEmbeddingsServiceController
     model_info_received_future_->SetValue(received_model_info);
     return received_model_info;
   }
-  void MaybeLaunchService() override {}
-  void ResetServiceRemote() override {}
 
  protected:
   raw_ptr<base::test::TestFuture<bool>> model_info_received_future_;
@@ -65,31 +76,28 @@ class TestOptimizationGuideModelProvider
   }
 
   // Set the model info to be sent to the observer.
-  void SetModelInfo(std::unique_ptr<optimization_guide::ModelInfo> model_info) {
+  void SetModelInfo(optimization_guide::ModelInfo model_info) {
     model_info_ = std::move(model_info);
     NotifyObservers();
   }
 
  private:
   void NotifyObservers() {
-    if (model_info_) {
-      observer_list_.Notify(
-          &optimization_guide::OptimizationTargetModelObserver::OnModelUpdated,
-          optimization_guide::proto::OPTIMIZATION_TARGET_PASSAGE_EMBEDDER,
-          *model_info_);
-    } else {
-      observer_list_.Notify(
-          &optimization_guide::OptimizationTargetModelObserver::OnModelUpdated,
-          optimization_guide::proto::OPTIMIZATION_TARGET_PASSAGE_EMBEDDER,
-          std::nullopt);
-    }
+    observer_list_.Notify(
+        &optimization_guide::OptimizationTargetModelObserver::OnModelUpdated,
+        optimization_guide::proto::OPTIMIZATION_TARGET_PASSAGE_EMBEDDER,
+        model_info_);
   }
 
   base::test::TaskEnvironment task_environment_;
   raw_ptr<base::test::TestFuture<bool>> target_observed_future_;
   base::ObserverList<optimization_guide::OptimizationTargetModelObserver>
       observer_list_;
-  std::unique_ptr<optimization_guide::ModelInfo> model_info_;
+  // `model_info_` is optional because observers receive an initial notification
+  // upon registration (`NotifyObservers()` in `AddObserver...()`) before
+  // `SetModelInfo()` has been invoked, passing `std::nullopt` to indicate that
+  // no model info is yet available.
+  std::optional<optimization_guide::ModelInfo> model_info_;
 };
 
 class PassageEmbedderModelObserverTest : public testing::Test {
@@ -104,9 +112,10 @@ TEST_F(PassageEmbedderModelObserverTest, ObservesTargetAndNotifiesObserver) {
 
   EXPECT_FALSE(target_observed_future_.IsReady());
 
+  DummyPassageEmbeddingsServiceLauncher launcher;
   auto service_controller =
       std::make_unique<FakePassageEmbeddingsServiceController>(
-          &model_info_received_future_);
+          launcher, &model_info_received_future_);
 
   EXPECT_FALSE(model_info_received_future_.IsReady());
 
@@ -120,7 +129,7 @@ TEST_F(PassageEmbedderModelObserverTest, ObservesTargetAndNotifiesObserver) {
   EXPECT_TRUE(model_info_received_future_.IsReady());
   EXPECT_FALSE(model_info_received_future_.Take());
 
-  model_provider->SetModelInfo(GetBuilderWithValidModelInfo().Build());
+  model_provider->SetModelInfo(optimization_guide::ModelInfo{});
   EXPECT_TRUE(model_info_received_future_.IsReady());
   EXPECT_TRUE(model_info_received_future_.Take());
 }

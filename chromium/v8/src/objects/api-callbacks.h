@@ -5,9 +5,9 @@
 #ifndef V8_OBJECTS_API_CALLBACKS_H_
 #define V8_OBJECTS_API_CALLBACKS_H_
 
+#include "src/base/bit-field.h"
 #include "src/objects/struct.h"
 #include "src/sandbox/external-pointer.h"
-#include "torque-generated/bit-fields.h"
 
 // Has to be the last include (doesn't have include guards):
 #include "src/objects/object-macros.h"
@@ -17,8 +17,6 @@ namespace internal {
 
 class Undefined;
 class StructBodyDescriptor;
-
-#include "torque-generated/src/objects/api-callbacks-tq.inc"
 
 // An accessor must have a getter, but can have no setter.
 //
@@ -95,9 +93,16 @@ V8_OBJECT class AccessorInfo : public HeapObject {
 
  private:
   // Bit positions in |flags|.
-  DEFINE_TORQUE_GENERATED_ACCESSOR_INFO_FLAGS()
+  using IsSloppyBit = base::BitField<bool, 0, 1, uint32_t>;
+  using ReplaceOnAccessBit = IsSloppyBit::Next<bool, 1>;
+  using GetterSideEffectTypeBits = ReplaceOnAccessBit::Next<SideEffectType, 2>;
+  using SetterSideEffectTypeBits =
+      GetterSideEffectTypeBits::Next<SideEffectType, 2>;
+  using InitialAttributesBits =
+      SetterSideEffectTypeBits::Next<PropertyAttributes, 3>;
 
   friend class TorqueGeneratedAccessorInfoAsserts;
+  friend class TorqueGeneratedBitFieldAsserts;
 
  public:
   TaggedMember<Object> data_;
@@ -174,7 +179,8 @@ V8_OBJECT class AccessCheckInfo : public Struct {
 
 #define INDEXED_INTERCEPTOR_INFO_CALLBACK_LIST(V) \
   COMMON_INTERCEPTOR_INFO_CALLBACK_LIST(V)        \
-  V(IndexOf, index_of)
+  V(IndexOf, index_of)                            \
+  V(IterableToList, iterable_to_list)
 
 V8_OBJECT class InterceptorInfo : public HeapObject {
  public:
@@ -195,6 +201,7 @@ V8_OBJECT class InterceptorInfo : public HeapObject {
   inline bool has_definer() const;
 
   inline bool has_index_of() const;
+  inline bool has_iterable_to_list() const;
 
   // Accessor callbacks for named interceptors.
   DECL_LAZY_REDIRECTED_CALLBACK_ACCESSORS_MAYBE_READ_ONLY_HOST(named_getter,
@@ -231,6 +238,8 @@ V8_OBJECT class InterceptorInfo : public HeapObject {
   // Indexed interceptor-only callbacks.
   DECL_LAZY_EXTERNAL_POINTER_ACCESSORS_MAYBE_READ_ONLY_HOST(indexed_index_of,
                                                             Address)
+  DECL_LAZY_EXTERNAL_POINTER_ACCESSORS_MAYBE_READ_ONLY_HOST(
+      indexed_iterable_to_list, Address)
 
   DECL_BOOLEAN_ACCESSORS(can_intercept_symbols)
   DECL_BOOLEAN_ACCESSORS(non_masking)
@@ -239,8 +248,25 @@ V8_OBJECT class InterceptorInfo : public HeapObject {
   // TODO(ishell): remove support for old signatures once they go through
   // Api deprecation process.
   DECL_BOOLEAN_ACCESSORS(has_new_callbacks_signature)
+  DECL_BOOLEAN_ACCESSORS(has_dont_delete_property)
 
-  DEFINE_TORQUE_GENERATED_INTERCEPTOR_INFO_FLAGS()
+  using CanInterceptSymbolsBit = base::BitField<bool, 0, 1, uint32_t>;
+  using NonMaskingBit = CanInterceptSymbolsBit::Next<bool, 1>;
+  using NamedBit = NonMaskingBit::Next<bool, 1>;
+  using HasNoSideEffectBit = NamedBit::Next<bool, 1>;
+  using HasNewCallbacksSignatureBit = HasNoSideEffectBit::Next<bool, 1>;
+  using HasDontDeletePropertyBit = HasNewCallbacksSignatureBit::Next<bool, 1>;
+  enum Flag : uint32_t {
+    kNone = 0,
+    kCanInterceptSymbols = CanInterceptSymbolsBit::kMask,
+    kNonMasking = NonMaskingBit::kMask,
+    kNamed = NamedBit::kMask,
+    kHasNoSideEffect = HasNoSideEffectBit::kMask,
+    kHasNewCallbacksSignature = HasNewCallbacksSignatureBit::kMask,
+    kHasDontDeleteProperty = HasDontDeletePropertyBit::kMask,
+  };
+  using Flags = base::Flags<Flag>;
+  static constexpr int kFlagCount = 6;
 
   DECL_PRINTER(InterceptorInfo)
   DECL_VERIFIER(InterceptorInfo)
@@ -258,6 +284,7 @@ V8_OBJECT class InterceptorInfo : public HeapObject {
   static const int kOptionalPaddingOffsetEnd;
   static const int kEndOfStrongFieldsOffset;
   static const int kIndexOfOffsetEnd;
+  static const int kIterableToListOffsetEnd;
   static const int kSize;
 
  private:
@@ -280,6 +307,8 @@ V8_OBJECT class InterceptorInfo : public HeapObject {
   ExternalPointerMember<kApiNamedPropertyEnumeratorCallbackTag> enumerator_;
   ExternalPointerMember<kApiNamedPropertyDefinerCallbackTag> definer_;
   ExternalPointerMember<kApiIndexedPropertyIndexOfCallbackTag> index_of_;
+  ExternalPointerMember<kApiIndexedPropertyIterableToListCallbackTag>
+      iterable_to_list_;
 } V8_OBJECT_END;
 
 inline constexpr int InterceptorInfo::kOptionalPaddingOffset =
@@ -293,6 +322,11 @@ inline constexpr int InterceptorInfo::kEndOfStrongFieldsOffset =
 inline constexpr int InterceptorInfo::kIndexOfOffsetEnd =
     offsetof(InterceptorInfo, index_of_) +
     sizeof(ExternalPointerMember<kApiIndexedPropertyIndexOfCallbackTag>) - 1;
+inline constexpr int InterceptorInfo::kIterableToListOffsetEnd =
+    offsetof(InterceptorInfo, iterable_to_list_) +
+    sizeof(
+        ExternalPointerMember<kApiIndexedPropertyIterableToListCallbackTag>) -
+    1;
 inline constexpr int InterceptorInfo::kSize = sizeof(InterceptorInfo);
 
 }  // namespace internal

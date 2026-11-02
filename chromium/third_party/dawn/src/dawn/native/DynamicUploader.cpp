@@ -35,11 +35,12 @@
 #include "src/dawn/native/Device.h"
 #include "src/dawn/native/Queue.h"
 #include "src/utils/compiler.h"
+#include "src/utils/numeric.h"
 
 namespace dawn::native {
 
 namespace {
-constexpr uint64_t kRingBufferSize = 4 * 1024 * 1024;
+constexpr uint64_t kRingBufferSize = 4ULL * 1024 * 1024;
 }  // anonymous namespace
 
 DynamicUploader::DynamicUploader(DeviceBase* device) : mDevice(device) {}
@@ -61,7 +62,7 @@ ResultOrError<UploadReservation> DynamicUploader::Reserve(uint64_t allocationSiz
         DAWN_TRY_ASSIGN(stagingBuffer, mDevice->CreateBuffer(&bufferDesc));
 
         UploadReservation reservation;
-        reservation.mappedPointer = static_cast<uint8_t*>(stagingBuffer->GetMappedPointer());
+        reservation.mappedPointer = stagingBuffer->GetCurrentMapping().mappedSpan.data();
         reservation.offsetInBuffer = 0;
         reservation.buffer = std::move(stagingBuffer);
         return reservation;
@@ -122,8 +123,9 @@ ResultOrError<UploadReservation> DynamicUploader::Reserve(uint64_t allocationSiz
 
     UploadReservation reservation;
     reservation.buffer = targetRingBuffer->mStagingBuffer;
-    reservation.mappedPointer = DAWN_UNSAFE_TODO(
-        static_cast<uint8_t*>(reservation.buffer->GetMappedPointer()) + startOffset);
+    reservation.mappedPointer = reservation.buffer->GetCurrentMapping()
+                                    .GetMappedSubspan(startOffset, allocationSize)
+                                    .data();
     reservation.offsetInBuffer = startOffset;
 
     return reservation;
@@ -136,7 +138,7 @@ MaybeError DynamicUploader::OnStagingMemoryFreePendingOnSubmit(uint64_t size) {
 }
 
 MaybeError DynamicUploader::MaybeSubmitPendingCommands() {
-    constexpr uint64_t kPendingMemorySubmitThreshold = 16 * 1024 * 1024;
+    constexpr uint64_t kPendingMemorySubmitThreshold = 16ULL * 1024 * 1024;
     if (mMemoryPendingSubmit.load(std::memory_order_relaxed) < kPendingMemorySubmitThreshold) {
         return {};
     }
@@ -171,7 +173,7 @@ void DynamicUploader::Deallocate(ExecutionSerial lastCompletedSerial, bool freeA
         // again unless explicitly asked to do so. The last buffer is the largest.
         const bool shouldFree = (i < mRingBuffers.size() - 1) || freeAll;
         if (mRingBuffers[i]->mAllocator.Empty() && shouldFree) {
-            mRingBuffers.erase(mRingBuffers.begin() + i);
+            mRingBuffers.erase(mRingBuffers.begin() + sign_cast(i));
         } else {
             i++;
         }

@@ -65,3 +65,7 @@ export function fontFamily(): string {
   }
   return _fontFamily;
 }
+
+export function setFontFamilyForTests(family: string): void {
+  _fontFamily = family;
+}

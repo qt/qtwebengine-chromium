@@ -9,7 +9,7 @@
 
 #include "include/gpu/graphite/BackendSemaphore.h"
 #include "include/gpu/graphite/mtl/MtlGraphiteTypes.h"
-#include "include/private/base/SkLog.h"
+#include "include/private/SkLog.h"
 #include "src/gpu/graphite/ContextUtils.h"
 #include "src/gpu/graphite/PipelineData.h"
 #include "src/gpu/graphite/RenderPassDesc.h"
@@ -353,8 +353,8 @@ bool MtlCommandBuffer::addDrawPass(DrawPass* drawPass) {
     }
 
     // If there is gradient data to bind, it must be done prior to draws.
-    if (drawPass->floatStorageManager()->hasData()) {
-        this->bindUniformBuffer(drawPass->floatStorageManager()->getBufferInfo(),
+    if (drawPass->storageBufferManager()->hasData()) {
+        this->bindUniformBuffer(drawPass->storageBufferManager()->getBufferInfo(),
                                 UniformSlot::kGradient);
     }
 

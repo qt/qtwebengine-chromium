@@ -11,11 +11,15 @@
 #include <cutils/native_handle.h>
 #include <hardware/gralloc.h>
 #include <memory.h>
+#ifndef HAS_NO_AIDL_METADATA
+#include <aidl/android/hardware/graphics/common/ChromaSiting.h>
+#include <aidl/android/hardware/graphics/common/Dataspace.h>
+#endif // HAS_NO_AIDL_METADATA
 
 struct gralloc0_module {
 	gralloc_module_t base;
 	std::unique_ptr<alloc_device_t> alloc;
-	cros_gralloc_driver *driver;
+	std::shared_ptr<cros_gralloc_driver> driver;
 	bool initialized;
 	std::mutex initialization_mutex;
 };
@@ -27,6 +31,11 @@ struct cros_gralloc0_buffer_info {
 	uint64_t modifier;
 	uint32_t offset[4];
 	uint32_t stride[4];
+};
+
+struct cros_gralloc0_buffer_color_info {
+	int32_t dataspace;
+	int32_t chroma_siting;
 };
 
 /* This enumeration must match the one in <gralloc_drm.h>.
@@ -43,6 +52,7 @@ enum {
 	GRALLOC_DRM_GET_BACKING_STORE,
 	GRALLOC_DRM_GET_BUFFER_INFO,
 	GRALLOC_DRM_GET_USAGE,
+	GRALLOC_DRM_GET_BUFFER_COLOR_INFO,
 };
 
 /* This enumeration corresponds to the GRALLOC_DRM_GET_USAGE query op, which
@@ -81,7 +91,7 @@ static int gralloc0_alloc(alloc_device_t *dev, int w, int h, int format, int usa
 	descriptor.droid_usage = usage;
 	descriptor.drm_format = cros_gralloc_convert_format(format);
 	descriptor.use_flags = cros_gralloc_convert_usage(usage);
-	descriptor.reserved_region_size = 0;
+	descriptor.enable_metadata_fd = false;
 
 	if (!mod->driver->is_supported(&descriptor)) {
 		ALOGE("Unsupported combination -- HAL format: %u, HAL usage: %u, "
@@ -106,6 +116,11 @@ static int gralloc0_free(alloc_device_t *dev, buffer_handle_t handle)
 {
 	int32_t ret;
 	auto mod = (struct gralloc0_module const *)dev->common.module;
+
+	if (!handle) {
+		ALOGE("Invalid buffer handle.");
+		return -EINVAL;
+	}
 
 	ret = mod->driver->release(handle);
 	if (ret)
@@ -173,6 +188,11 @@ static int gralloc0_open(const struct hw_module_t *mod, const char *name, struct
 
 static int gralloc0_register_buffer(struct gralloc_module_t const *module, buffer_handle_t handle)
 {
+	if (!handle) {
+		ALOGE("Invalid buffer handle.");
+		return -EINVAL;
+	}
+
 	auto const_module = reinterpret_cast<const struct gralloc0_module *>(module);
 	auto mod = const_cast<struct gralloc0_module *>(const_module);
 
@@ -186,6 +206,11 @@ static int gralloc0_register_buffer(struct gralloc_module_t const *module, buffe
 
 static int gralloc0_unregister_buffer(struct gralloc_module_t const *module, buffer_handle_t handle)
 {
+	if (!handle) {
+		ALOGE("Invalid buffer handle.");
+		return -EINVAL;
+	}
+
 	auto mod = (struct gralloc0_module const *)module;
 	return mod->driver->release(handle);
 }
@@ -193,12 +218,23 @@ static int gralloc0_unregister_buffer(struct gralloc_module_t const *module, buf
 static int gralloc0_lock(struct gralloc_module_t const *module, buffer_handle_t handle, int usage,
 			 int l, int t, int w, int h, void **vaddr)
 {
+	if (!handle) {
+		ALOGE("Invalid buffer handle.");
+		return -EINVAL;
+	}
+
 	return module->lockAsync(module, handle, usage, l, t, w, h, vaddr, -1);
 }
 
 static int gralloc0_unlock(struct gralloc_module_t const *module, buffer_handle_t handle)
 {
 	int32_t fence_fd, ret;
+
+	if (!handle) {
+		ALOGE("Invalid buffer handle.");
+		return -EINVAL;
+	}
+
 	auto mod = (struct gralloc0_module const *)module;
 	ret = mod->driver->unlock(handle, &fence_fd);
 	if (ret)
@@ -223,6 +259,7 @@ static int gralloc0_perform(struct gralloc_module_t const *module, int op, ...)
 	uint32_t offsets[DRV_MAX_PLANES] = { 0, 0, 0, 0 };
 	uint64_t format_modifier = 0;
 	struct cros_gralloc0_buffer_info *info;
+	struct cros_gralloc0_buffer_color_info *color_info;
 	auto const_module = reinterpret_cast<const struct gralloc0_module *>(module);
 	auto mod = const_cast<struct gralloc0_module *>(const_module);
 	uint32_t req_usage;
@@ -242,8 +279,13 @@ static int gralloc0_perform(struct gralloc_module_t const *module, int op, ...)
 	case GRALLOC_DRM_GET_DIMENSIONS:
 	case GRALLOC_DRM_GET_BACKING_STORE:
 	case GRALLOC_DRM_GET_BUFFER_INFO:
+	case GRALLOC_DRM_GET_BUFFER_COLOR_INFO:
 		/* retrieve handles for ops with buffer_handle_t */
 		handle = va_arg(args, buffer_handle_t);
+		if (!handle) {
+			ALOGE("Invalid buffer handle.");
+			return -EINVAL;
+		}
 		hnd = cros_gralloc_convert_handle(handle);
 		if (!hnd) {
 			va_end(args);
@@ -313,8 +355,24 @@ static int gralloc0_perform(struct gralloc_module_t const *module, int op, ...)
 		req_usage = va_arg(args, uint32_t);
 		out_gralloc_usage = va_arg(args, uint32_t *);
 		if (req_usage & GRALLOC_DRM_GET_USAGE_FRONT_RENDERING_BIT)
-			gralloc_usage |= BUFFER_USAGE_FRONT_RENDERING;
+			gralloc_usage |= BUFFER_USAGE_FRONT_RENDERING_PRIVATE;
 		*out_gralloc_usage = gralloc_usage;
+		break;
+	case GRALLOC_DRM_GET_BUFFER_COLOR_INFO:
+#ifndef HAS_NO_AIDL_METADATA
+		color_info = va_arg(args, struct cros_gralloc0_buffer_color_info *);
+		mod->driver->with_buffer(hnd, [&](cros_gralloc_buffer *buffer) {
+			std::optional<aidl::android::hardware::graphics::common::Dataspace> dataspace;
+			ret = buffer->get_dataspace(&dataspace);
+			if (!ret)
+				color_info->dataspace = static_cast<int32_t>(dataspace.value());
+		});
+		color_info->chroma_siting =
+			static_cast<int32_t>(aidl::android::hardware::graphics::common::ChromaSiting::NONE);
+#else
+		(void)color_info;
+		ret = -EINVAL;
+#endif // HAS_NO_AIDL_METADATA
 		break;
 	default:
 		ret = -EINVAL;
@@ -349,6 +407,11 @@ static int gralloc0_lock_async(struct gralloc_module_t const *module, buffer_han
 			return -ENODEV;
 	}
 
+	if (!handle) {
+		ALOGE("Invalid buffer handle.");
+		return -EINVAL;
+	}
+
 	auto hnd = cros_gralloc_convert_handle(handle);
 	if (!hnd) {
 		ALOGE("Invalid handle.");
@@ -375,6 +438,12 @@ static int gralloc0_unlock_async(struct gralloc_module_t const *module, buffer_h
 				 int *fence_fd)
 {
 	auto mod = (struct gralloc0_module const *)module;
+
+	if (!handle) {
+		ALOGE("Invalid buffer handle.");
+		return -EINVAL;
+	}
+
 	return mod->driver->unlock(handle, fence_fd);
 }
 
@@ -398,6 +467,11 @@ static int gralloc0_lock_async_ycbcr(struct gralloc_module_t const *module, buff
 	if (!mod->initialized) {
 		if (gralloc0_init(mod, false))
 			return -ENODEV;
+	}
+
+	if (!handle) {
+		ALOGE("Invalid buffer handle.");
+		return -EINVAL;
 	}
 
 	auto hnd = cros_gralloc_convert_handle(handle);

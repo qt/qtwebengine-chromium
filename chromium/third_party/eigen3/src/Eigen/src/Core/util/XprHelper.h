@@ -66,9 +66,8 @@ EIGEN_DEVICE_FUNC inline IndexDest convert_index(const IndexSrc& idx) {
 
 // true if both types are not valid index types
 template <typename RowIndices, typename ColIndices>
-struct valid_indexed_view_overload : std::integral_constant<bool, !(internal::is_valid_index_type<RowIndices>::value &&
-                                                                    internal::is_valid_index_type<ColIndices>::value)> {
-};
+struct valid_indexed_view_overload : bool_constant<!(internal::is_valid_index_type<RowIndices>::value &&
+                                                     internal::is_valid_index_type<ColIndices>::value)> {};
 
 // promote_scalar_arg is an helper used in operation between an expression and a scalar, like:
 //    expression * scalar
@@ -144,9 +143,9 @@ struct promote_index_type {
 template <typename T, int Value>
 class variable_if_dynamic {
  public:
-  EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE explicit variable_if_dynamic(T v) {
+  EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE explicit variable_if_dynamic(T v) noexcept {
     EIGEN_ONLY_USED_FOR_DEBUG(v);
-    eigen_assert(v == T(Value));
+    eigen_plain_assert(v == T(Value));
   }
   EIGEN_DEVICE_FUNC static constexpr T value() { return T(Value); }
   EIGEN_DEVICE_FUNC constexpr operator T() const { return T(Value); }
@@ -278,6 +277,61 @@ struct find_best_packet_helper<Size, PacketType, false> {
 template <typename T, int Size>
 struct find_best_packet {
   using type = typename find_best_packet_helper<Size, typename packet_traits<T>::type>::type;
+};
+
+// Like find_best_packet, but picks the widest packet whose size is <= Size
+// rather than the widest that exactly divides Size. The caller handles any tail.
+template <int Size, typename PacketType,
+          bool Stop = Size == Dynamic || Size >= unpacket_traits<PacketType>::size ||
+                      std::is_same<PacketType, typename unpacket_traits<PacketType>::half>::value>
+struct find_largest_packet_helper;
+
+template <int Size, typename PacketType>
+struct find_largest_packet_helper<Size, PacketType, true> {
+  using type = PacketType;
+};
+
+template <int Size, typename PacketType>
+struct find_largest_packet_helper<Size, PacketType, false> {
+  using type = typename find_largest_packet_helper<Size, typename unpacket_traits<PacketType>::half>::type;
+};
+
+template <typename T, int Size>
+struct find_largest_packet {
+  using type = typename find_largest_packet_helper<Size, typename packet_traits<T>::type>::type;
+};
+
+// Pick the packet type for a linear-traversal assignment: the widest packet
+// whose <full-packet count + scalar-tail count> is minimal.
+//
+// find_best_packet picks the widest exact divisor (no scalar tail). That
+// overshoots when no exact divisor exists -- it falls through to the smallest
+// packet, e.g. Packet4f at N=9 float on AVX2 emits 2*SSE + 1 scalar where
+// 1*Packet8f + 1 scalar would do. We prefer find_largest_packet whenever it
+// strictly cuts the op count; otherwise we keep find_best_packet so kernels
+// like LLT/LDLT that rely on exact-fit narrow packets are not disturbed
+// (e.g. 3*Packet2d == 1*Packet4d + 2 scalars at N=6 double on AVX-512, both
+// 3 ops -- keep Packet2d).
+//
+// Only used in LinearVectorizedTraversal, whose tail handling already accepts
+// a partial-packet remainder. InnerVectorized / SliceVectorized still require
+// exact divisibility, so they continue to use find_best_packet.
+template <typename T, int Size>
+struct find_assign_linear_packet {
+ private:
+  using best_type = typename find_best_packet<T, Size>::type;
+  using largest_type = typename find_largest_packet<T, Size>::type;
+  // Op count = full packets + scalar-tail elements (one scalar emit per tail
+  // element under CompleteUnrolling). Both helpers return the max packet for
+  // Dynamic, so the op-count tie there harmlessly resolves to find_best.
+  template <typename P>
+  static constexpr int ops() {
+    constexpr int sz = unpacket_traits<P>::size;
+    return Size == Dynamic ? 0 : Size / sz + Size % sz;
+  }
+
+ public:
+  using type = std::conditional_t<(ops<largest_type>() < ops<best_type>()), largest_type, best_type>;
 };
 
 template <int Size, typename PacketType,
@@ -760,8 +814,8 @@ struct plain_constant_type {
 };
 
 template <typename ExpressionType>
-struct is_lvalue : std::integral_constant<bool, (!bool(std::is_const<ExpressionType>::value)) &&
-                                                    bool((traits<ExpressionType>::Flags & LvalueBit))> {};
+struct is_lvalue : bool_constant<(!bool(std::is_const<ExpressionType>::value)) &&
+                                 bool((traits<ExpressionType>::Flags & LvalueBit))> {};
 
 template <typename T>
 struct is_diagonal : std::false_type {};
@@ -789,9 +843,8 @@ struct glue_shapes<DenseShape, TriangularShape> {
 };
 
 template <typename T1, typename T2>
-struct possibly_same_dense
-    : std::integral_constant<bool, has_direct_access<T1>::value && has_direct_access<T2>::value &&
-                                       std::is_same<typename T1::Scalar, typename T2::Scalar>::value> {};
+struct possibly_same_dense : bool_constant<has_direct_access<T1>::value && has_direct_access<T2>::value &&
+                                           std::is_same<typename T1::Scalar, typename T2::Scalar>::value> {};
 
 template <typename T1, typename T2>
 EIGEN_DEVICE_FUNC bool is_same_dense(const T1& mat1, const T2& mat2,
@@ -1004,7 +1057,7 @@ struct ScalarBinaryOpTraits<void, void, BinaryOp> {
 // It is tempting to always allow mixing different types but remember that this is often impossible in the vectorized
 // paths. So allowing mixing different types gives very unexpected errors when enabling vectorization, when the user
 // tries to add together a float matrix and a double matrix.
-#define EIGEN_CHECK_BINARY_COMPATIBILIY(BINOP, LHS, RHS)                               \
+#define EIGEN_CHECK_BINARY_COMPATIBILITY(BINOP, LHS, RHS)                              \
   EIGEN_STATIC_ASSERT(                                                                 \
       (Eigen::internal::has_ReturnType<ScalarBinaryOpTraits<LHS, RHS, BINOP>>::value), \
       YOU_MIXED_DIFFERENT_NUMERIC_TYPES__YOU_NEED_TO_USE_THE_CAST_METHOD_OF_MATRIXBASE_TO_CAST_NUMERIC_TYPES_EXPLICITLY)

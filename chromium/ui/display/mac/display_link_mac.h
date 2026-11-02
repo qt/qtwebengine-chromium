@@ -18,6 +18,7 @@ class ImageTransportSurfaceOverlayMacTest;
 
 namespace viz {
 class ExternalBeginFrameSourceMacTest;
+class MockDisplayLinkMac;
 }
 
 namespace ui {
@@ -54,6 +55,7 @@ class DISPLAY_EXPORT VSyncCallbackMac {
   friend class ExternalDisplayLinkMac;
   friend struct MetalObjCState;
   friend struct ObjCState;
+  friend class viz::MockDisplayLinkMac;
 
   friend class gpu::ImageTransportSurfaceOverlayMacTest;
   friend class viz::ExternalBeginFrameSourceMacTest;
@@ -105,18 +107,6 @@ class DISPLAY_EXPORT DisplayLinkMac : public base::RefCounted<DisplayLinkMac> {
 
   static bool SupportsDisplayLinkMacInBrowser();
 
-  // CADisplayLink is not designed for multi-process use and can become
-  // non-functional in the GPU process following a power state change or a
-  // system refresh rate update.
-  //
-  // To handle this, CADisplayLinkMac is used in the GPU process by default,
-  // but if it becomes invalidated, the system falls back to creating a
-  // CADisplayLink in the Browser process, accessed via ExternalDisplayLinkMac.
-  //
-  // Returns true if the display link instance is still valid after a power
-  // event or refresh rate change.
-  virtual bool NotifyEventAndCheckValidity();
-
   // Register an observer callback.
   // * The specified callback will be called at every VSync tick, until the
   //   returned VSyncCallbackMac object is destroyed.
@@ -143,6 +133,8 @@ class DISPLAY_EXPORT DisplayLinkMac : public base::RefCounted<DisplayLinkMac> {
   // base::TimeTicks() if the current time is not available.
   virtual base::TimeTicks GetCurrentTime() const = 0;
 
+  virtual void OnSuspend() {}
+
  protected:
   friend class base::RefCounted<DisplayLinkMac>;
   friend class CVDisplayLinkMac;
@@ -157,6 +149,8 @@ class DISPLAY_EXPORT DisplayLinkMac : public base::RefCounted<DisplayLinkMac> {
   // might be triggered before Viz receives the display addition IPC.
   static void RecordDisplayLinkCreation(bool success);
 };
+
+DISPLAY_EXPORT bool SkipPostTaskForCallbacks();
 
 }  // namespace ui
 

@@ -231,7 +231,7 @@ enum class ViewLayer {
 //   base::CallbackListSubscription AddFrobbleChangedCallback(
 //       PropertyChangedCallback callback);
 //
-//   Each callback uses the the existing base::Bind mechanisms which allow for
+//   Each callback uses the existing base::Bind mechanisms which allow for
 //   various kinds of callbacks; object methods, normal functions and lambdas.
 //
 //   Example:
@@ -2739,6 +2739,9 @@ class VIEWS_EXPORT BaseActionViewInterface : public ActionViewInterface {
   explicit BaseActionViewInterface(View* action_view);
   ~BaseActionViewInterface() override = default;
   void ActionItemChangedImpl(actions::ActionItem* action_item) override;
+
+ protected:
+  View* action_view() const { return action_view_; }
 
  private:
   raw_ptr<View> action_view_;

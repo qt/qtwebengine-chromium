@@ -149,7 +149,6 @@ linux_memory_builder(
                 ],
             ),
             "linux-jammy",
-            "retry_only_failed_tests",
         ],
         per_test_modifications = {
             "accessibility_unittests": targets.mixin(
@@ -214,9 +213,6 @@ linux_memory_builder(
                 "linux_nvidia_gtx_1660_stable",
             ],
             "interactive_ui_tests": targets.mixin(
-                # Only retry the individual failed tests instead of rerunning entire
-                # shards.
-                retry_only_failed_tests = True,
                 # These are slow on the ASan trybot for some reason, crbug.com/1257927
                 swarming = targets.swarming(
                     shards = 12,
@@ -231,13 +227,10 @@ linux_memory_builder(
             ),
             "sync_integration_tests": targets.mixin(
                 swarming = targets.swarming(
-                    shards = 4,
+                    shards = 8,
                 ),
             ),
             "unit_tests": targets.mixin(
-                # Only retry the individual failed tests instead of rerunning entire
-                # shards.
-                retry_only_failed_tests = True,
                 # These are slow on the ASAN trybot for some reason.
                 # crbug.com/1257927
                 swarming = targets.swarming(
@@ -246,6 +239,7 @@ linux_memory_builder(
             ),
         },
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "linux|asan lsan",
         short_name = "tst",
@@ -283,6 +277,7 @@ linux_memory_builder(
             "x64",
         ],
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "linux|TSan v2",
         short_name = "bld",
@@ -349,6 +344,11 @@ linux_memory_builder(
                 # Slow on certain debug builders, see crbug.com/1513713.
                 swarming = targets.swarming(
                     shards = 15,
+                ),
+            ),
+            "sync_integration_tests": targets.mixin(
+                swarming = targets.swarming(
+                    shards = 6,
                 ),
             ),
         },
@@ -487,7 +487,7 @@ linux_memory_builder(
             ),
             "sync_integration_tests": targets.mixin(
                 swarming = targets.swarming(
-                    shards = 6,
+                    shards = 12,
                 ),
             ),
             "unit_tests": targets.mixin(
@@ -499,6 +499,7 @@ linux_memory_builder(
             ),
         },
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "cros|asan",
         short_name = "tst",
@@ -619,6 +620,11 @@ linux_memory_builder(
             "services_unittests": targets.remove(
                 reason = "https://crbug.com/831676",
             ),
+            "sync_integration_tests": targets.mixin(
+                swarming = targets.swarming(
+                    shards = 6,
+                ),
+            ),
             "unit_tests": targets.mixin(
                 # These are very slow on the Chrome OS MSAN trybot for some reason.
                 # crbug.com/865455
@@ -628,6 +634,7 @@ linux_memory_builder(
             ),
         },
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "cros|msan",
         short_name = "tst",
@@ -726,14 +733,20 @@ linux_memory_builder(
             ),
             "interactive_ui_tests": targets.mixin(
                 swarming = targets.swarming(
-                    shards = 20,
+                    shards = 25,
                 ),
             ),
             "services_unittests": targets.remove(
                 reason = "https://crbug.com/831676",
             ),
+            "sync_integration_tests": targets.mixin(
+                swarming = targets.swarming(
+                    shards = 6,
+                ),
+            ),
         },
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "linux|msan",
         short_name = "tst",
@@ -812,7 +825,6 @@ linux_memory_builder(
                 ],
             ),
             "linux-jammy",
-            "retry_only_failed_tests",
         ],
         per_test_modifications = {
             "blink_unittests": targets.mixin(
@@ -859,9 +871,6 @@ linux_memory_builder(
             "interactive_ui_tests": targets.mixin(
                 # https://crbug.com/1498240
                 ci_only = True,
-                # Only retry the individual failed tests instead of rerunning entire
-                # shards.
-                retry_only_failed_tests = True,
                 # These are slow on the TSan bots for some reason, crbug.com/1257927
                 swarming = targets.swarming(
                     # Adjusted for testing, see https://crbug.com/1179567
@@ -887,6 +896,7 @@ linux_memory_builder(
             ),
         },
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "linux|TSan v2",
         short_name = "tst",
@@ -989,6 +999,7 @@ linux_memory_builder(
             ),
         },
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "linux|ubsan",
         short_name = "tst",
@@ -1025,7 +1036,7 @@ ci.builder(
                     "--test-launcher-print-test-stdio=always",
                 ],
             ),
-            "mac_default_x64",
+            "mac_15_x64",
         ],
         per_test_modifications = {
             "browser_tests": targets.mixin(
@@ -1049,7 +1060,7 @@ ci.builder(
             ),
             "sync_integration_tests": targets.mixin(
                 swarming = targets.swarming(
-                    shards = 3,
+                    shards = 8,
                 ),
             ),
             "unit_tests": targets.mixin(
@@ -1144,6 +1155,7 @@ ci.builder(
             ),
         },
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "linux|blink",
         short_name = "asn",
@@ -1227,6 +1239,7 @@ ci.builder(
             ),
         },
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "linux|blink",
         short_name = "lk",
@@ -1311,6 +1324,7 @@ ci.builder(
             ),
         },
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "linux|blink",
         short_name = "msn",
@@ -1401,7 +1415,7 @@ ci.builder(
                     "--test-launcher-jobs=3",
                 ],
                 swarming = targets.swarming(
-                    shards = 18,
+                    shards = 24,
                 ),
             ),
             "net_unittests": targets.mixin(
@@ -1416,7 +1430,7 @@ ci.builder(
                     "--test-launcher-jobs=3",
                 ],
                 swarming = targets.swarming(
-                    shards = 3,
+                    shards = 6,
                 ),
             ),
             "unit_tests": targets.mixin(

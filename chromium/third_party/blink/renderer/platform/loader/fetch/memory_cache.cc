@@ -29,6 +29,7 @@
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/memory_coordinator/memory_consumer_registry.h"
+#include "base/memory_coordinator/memory_coordinator_features.h"
 #include "base/memory_coordinator/traits.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/task/single_thread_task_runner.h"
@@ -52,10 +53,15 @@ namespace {
 
 // The set of traits that describes the behavior of MemoryCache.
 constexpr base::MemoryConsumerTraits kMemoryCacheTraits(
+    // Strong reference budget is platform-specific; frees tens of MBs.
     base::MemoryConsumerTraits::EstimatedMemoryUsage::kMedium,
+    // Pruning requires sorting or traversing HeapLinkedHashSet of resources.
     base::MemoryConsumerTraits::ReleaseMemoryCost::kRequiresTraversal,
+    // Cached resources reload from network/disk cache.
     base::MemoryConsumerTraits::InformationRetention::kLossless,
-    base::MemoryConsumerTraits::ExecutionType::kAsynchronous,
+    // Synchronously prunes the references inline.
+    base::MemoryConsumerTraits::ExecutionType::kSynchronous,
+    // Holds references managed by Blink Oilpan GC.
     base::MemoryConsumerTraits::ReleaseGCReferences::kYes);
 
 // Use function-local statics to cache the feature parameters. This avoids
@@ -206,14 +212,14 @@ MemoryCache::MemoryCache(
           "MemoryCache",
           kMemoryCacheTraits,
           this,
-          MemoryConsumerRegistration::CheckUnregister::kDisabled,
-          MemoryConsumerRegistration::CheckRegistryExists::kDisabled),
+          MemoryConsumerRegistration::CheckUnregister::kDisabled),
       strong_references_max_size_(
           features::kMemoryCacheStrongReferenceTotalSizeThresholdParam.Get()),
       strong_references_prune_duration_(
           kMemoryCacheStrongReferencePruneDelay.Get()),
       task_runner_(std::move(task_runner)) {
   MemoryCacheDumpProvider::Instance()->SetMemoryCache(this);
+  OnUpdateMemoryLimit();
 }
 
 MemoryCache::~MemoryCache() = default;
@@ -330,7 +336,7 @@ void MemoryCache::RemoveInternal(ResourceMap* resource_map,
   if (base::FeatureList::IsEnabled(features::kMemoryCacheIntelligentPruning)) {
     // If intelligent pruning is on, the resource can only be in the new
     // tiered vector. We perform a "lazy" remove for performance.
-    size_t index = tiered_strong_references_.Find(resource);
+    wtf_size_t index = tiered_strong_references_.Find(resource);
     if (index != kNotFound) {
       tiered_strong_references_[index] = nullptr;
     }
@@ -568,19 +574,55 @@ void MemoryCache::OnMemoryPressure(base::MemoryPressureLevel level) {
   }
 }
 
+size_t MemoryCache::GetTargetStrongReferencesMaxSize() const {
+  const size_t baseline = static_cast<size_t>(
+      features::kMemoryCacheStrongReferenceTotalSizeThresholdParam.Get());
+  return base::ScaleByMemoryLimit(baseline, memory_limit());
+}
+
 void MemoryCache::OnReleaseMemory() {
-  if (base::FeatureList::IsEnabled(features::kMemoryCacheStrongReference)) {
-    PruneStrongReferences();
+  if (!base::FeatureList::IsEnabled(features::kMemoryCacheStrongReference)) {
+    return;
+  }
+
+  strong_references_max_size_ = GetTargetStrongReferencesMaxSize();
+  PruneStrongReferences();
+
+  if (!base::FeatureList::IsEnabled(base::kStatefulMemoryPressure)) {
+    const size_t baseline = static_cast<size_t>(
+        features::kMemoryCacheStrongReferenceTotalSizeThresholdParam.Get());
+    strong_references_max_size_ = baseline;
   }
 }
 
 void MemoryCache::OnUpdateMemoryLimit() {
-  // It is important to not do any memory management in this function. The max
-  // size is updated to the requested limit without calling
-  // PruneStrongReferences().
-  strong_references_max_size_ = base::ScaleByMemoryLimit(
-      features::kMemoryCacheStrongReferenceTotalSizeThresholdParam.Get(),
-      memory_limit());
+  if (!base::FeatureList::IsEnabled(features::kMemoryCacheStrongReference) ||
+      !base::FeatureList::IsEnabled(base::kStatefulMemoryPressure)) {
+    return;
+  }
+
+  // IMPORTANT: Ensure no memory is released during this call.
+  // By using std::max, we ensure the limit is not reduced below the current
+  // size of held strong references, preventing premature eviction before
+  // OnReleaseMemory().
+  strong_references_max_size_ = std::max(GetStrongReferencesTotalSize(),
+                                         GetTargetStrongReferencesMaxSize());
+}
+
+size_t MemoryCache::GetStrongReferencesTotalSize() const {
+  size_t total_size = 0;
+  if (base::FeatureList::IsEnabled(features::kMemoryCacheIntelligentPruning)) {
+    for (const Resource* resource : tiered_strong_references_) {
+      if (resource) {
+        total_size += resource->size();
+      }
+    }
+  } else {
+    for (const Resource* resource : strong_references_) {
+      total_size += resource->size();
+    }
+  }
+  return total_size;
 }
 
 bool MemoryCache::HasStrongReferenceForTesting(Resource* resource) const {

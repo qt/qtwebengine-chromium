@@ -9794,7 +9794,7 @@ SpirvEmitter::processIntrinsicCallExpr(const CallExpr *callExpr) {
     retVal = processWaveQuadAnyAll(callExpr, hlslOpcode);
     break;
   case hlsl::IntrinsicOp::IOP_abort:
-  case hlsl::IntrinsicOp::IOP_DxIsDebuggerPresent:
+  case hlsl::IntrinsicOp::IOP_DxIsDebuggingEnabled:
   case hlsl::IntrinsicOp::IOP_GetRenderTargetSampleCount:
   case hlsl::IntrinsicOp::IOP_GetRenderTargetSamplePosition: {
     emitError("no equivalent for %0 intrinsic function in Vulkan", srcLoc)
@@ -11796,7 +11796,6 @@ SpirvInstruction *SpirvEmitter::processIntrinsicExtractRecordStruct(
   QualType objType = obj->getType();
   unsigned n = callExpr->getNumArgs();
   assert(hlsl::IsHLSLNodeType(objType));
-  assert(n == 0 || n == 1 && hlsl::IsHLSLNodeRecordArrayType(objType));
 
   QualType recordType = hlsl::GetHLSLNodeIOResultType(astContext, objType);
   SpirvInstruction *res = doExpr(obj);

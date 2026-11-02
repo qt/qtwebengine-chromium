@@ -375,8 +375,17 @@ bool DawnPlatform::IsFeatureEnabled(dawn::platform::Features feature) {
           features::kWebGPUDecomposeUniformBuffers);
     case dawn::platform::Features::kWebGPUUseHLSL2021:
       return base::FeatureList::IsEnabled(features::kWebGPUUseHLSL2021);
+    case dawn::platform::Features::kWebGPUUseSpirvReconvergenceMode:
+      return base::FeatureList::IsEnabled(
+          features::kWebGPUUseSpirvReconvergenceMode);
     default:
       return false;
+  }
+}
+
+void DawnPlatform::ReportProgress() {
+  if (progress_reporter_) {
+    progress_reporter_->ReportProgress();
   }
 }
 

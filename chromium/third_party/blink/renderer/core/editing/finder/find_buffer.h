@@ -8,6 +8,7 @@
 #include <optional>
 
 #include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/core/editing/ephemeral_range.h"
 #include "third_party/blink/renderer/core/editing/finder/find_options.h"
 #include "third_party/blink/renderer/core/editing/iterators/text_searcher_icu.h"
 #include "third_party/blink/renderer/core/editing/position.h"
@@ -16,7 +17,6 @@ namespace blink {
 
 class CorpusChunk;
 class FindResults;
-class LayoutBlockFlow;
 class Node;
 class OffsetMapping;
 
@@ -86,7 +86,7 @@ class CORE_EXPORT FindBuffer {
     return PositionInFlatTree::FirstPositionInNode(*node_after_block_);
   }
 
-  bool IsInvalidMatch(MatchResultICU match) const;
+  bool IsInvalidMatch(MatchResultIcu match) const;
 
   // Mapping for position in buffer -> actual node where the text came from,
   // along with the offset in the OffsetMapping of this find_buffer.
@@ -163,7 +163,7 @@ class CORE_EXPORT FindBuffer {
   // with display:ruby-text exists.
   Vector<Vector<UChar>> buffer_list_;
   HeapVector<BufferNodeMapping> buffer_node_mappings_;
-  TextSearcherICU text_searcher_;
+  TextSearcherIcu text_searcher_;
 
   const OffsetMapping* offset_mapping_ = nullptr;
 };

@@ -80,6 +80,8 @@ gboolean                gvdb_table_has_value                            (GvdbTab
 G_GNUC_INTERNAL GVDB_GNUC_WEAK
 gboolean                gvdb_table_is_valid                             (GvdbTable    *table);
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (GvdbTable, gvdb_table_free)
+
 G_END_DECLS
 
 #endif /* __gvdb_reader_h__ */

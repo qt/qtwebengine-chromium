@@ -80,14 +80,6 @@ message FedSqlContainerCommitConfiguration {
   }
   // The range of blobs to commit.
   Range range = 1;
-
-  // The start and end time of the aggregation window for the blobs in the
-  // range. This is used for time-based budget tracking. Any blobs outside
-  // of this range will be dropped. The event times for each blob must be
-  // present in the encrypted blob payload which will be checked against this
-  // time window.
-  google.protobuf.Timestamp start_time = 2;
-  google.protobuf.Timestamp end_time = 3;
 }
 
 // TODO: b/505099049 - Streamline the naming of these finalization types.
@@ -186,4 +178,7 @@ message FedSqlContainerConfigConstraints {
   // unpartitioned aggregation will be used i.e. all aggregates are
   // merged together in a single worker before release.
   optional uint64 max_output_partitions = 8;
+
+  // The minimum size of the aggregation window in minutes.
+  uint64 min_agg_window_minutes = 9;
 }

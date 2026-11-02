@@ -5,12 +5,14 @@
 module toolbar_ui_api.mojom;
 
 import "components/browser_apis/ui_controllers/toolbar/toolbar_ui_api_data_model.mojom";
+import "components/browser_apis/ui_controllers/toolbar/icon_handle.mojom";
 import "components/content_settings/core/common/content_settings_types.mojom";
 import "ui/base/dragdrop/mojom/drag_drop_types.mojom";
 import "ui/base/mojom/menu_source_type.mojom";
 import "ui/gfx/geometry/mojom/geometry.mojom";
 import "mojo/public/mojom/base/empty.mojom";
 import "mojo/public/mojom/base/error.mojom";
+import "mojo/public/mojom/base/string16.mojom";
 import "url/mojom/url.mojom";
 
 // Used by Toolbar UI to observe navigation controls state changes.
@@ -21,12 +23,22 @@ interface ToolbarUIObserver {
   OnNavigationControlsStateChanged(
     array<IconUpdate> icons,
     NavigationControlsState state);
+
+  // Called to focus an element in the WebUI, with `target` specifying
+  // which one.
+  OnFocusRequested(FocusRequestTarget target);
 };
 
 struct InitialState {
     array<IconUpdate> icons;
     NavigationControlsState state;
     pending_receiver<ToolbarUIObserver> update_stream;
+};
+
+struct AdjustOmniboxTextForCopyResult {
+  mojo_base.mojom.String16 adjusted_text;
+  url.mojom.Url? adjusted_url;
+  mojo_base.mojom.String16? page_title;
 };
 
 // ToolbarUIService defines methods to be called from the WebUI to the
@@ -58,11 +70,41 @@ interface ToolbarUIService {
   ShowContentSettingsBubble(ContentSettingImageType type)
       => result<mojo_base.mojom.Empty, mojo_base.mojom.Error>;
 
+  // Called after an interaction with the icon, with `trigger` specifying
+  // the input modality.
+  OnPageActionClick(PageActionId action_id, PageActionTrigger trigger)
+      => result<mojo_base.mojom.Empty, mojo_base.mojom.Error>;
+
+  // Called after the chip show / hide transition completes (called after the
+  // animation, if there was one).
+  OnPageActionChipShowingChanged(PageActionId action_id)
+      => result<mojo_base.mojom.Empty, mojo_base.mojom.Error>;
+
   // Invoke the pinned toolbar action for `action_id`. It's expected that the
   // corresponding pinned toolbar action button is visible and enabled, i.e.
   // `action_id` is one of the `PinnedToolbarActionState.action`'s that's
   // passed to `OnNavigationControlsStateChanged()`.
   InvokePinnedToolbarAction(PinnedToolbarAction action_id);
+
+  // Called when whether the focus is inside or outside the location bar is
+  // changed. Note that focus on a subwidget (security icon, omnibox input,
+  // page actions, etc) count as focus being inside.
+  OnLocationBarFocusWithinChanged(bool focus_inside);
+
+  // Moves the pinned toolbar action identified by `action_id` to
+  // `target_index`.
+  MovePinnedToolbarAction(PinnedToolbarAction action_id, int32 target_index);
+
+  // Moves the pinned toolbar action by `delta` (-1 for left/previous, +1 for
+  // right/next).
+  MovePinnedToolbarActionBy(PinnedToolbarAction action_id, int32 delta);
+
+  // Moves the extension action identified by `extension_id` to `target_index`.
+  MoveExtensionAction(string extension_id, int32 target_index);
+
+  // Moves the extension action by `delta` (-1 for left/previous, +1 for
+  // right/next).
+  MoveExtensionActionBy(string extension_id, int32 delta);
 
   // Called when an LHS chip is pressed (e.g., pointerdown).
   OnLhsChipMousePressed(LhsChipIdentifier identifier);
@@ -104,4 +146,30 @@ interface ToolbarUIService {
 
   // Shows the avatar menu bubble.
   ShowAvatarMenu() => result<mojo_base.mojom.Empty, mojo_base.mojom.Error>;
+
+  // Notifies the browser of the hover state of the avatar button.
+  SetAvatarButtonHovered(bool hovered) =>
+    result<mojo_base.mojom.Empty, mojo_base.mojom.Error>;
+
+  // Notifies the browser of the focus state of the avatar button.
+  SetAvatarButtonFocused(bool focused) =>
+    result<mojo_base.mojom.Empty, mojo_base.mojom.Error>;
+
+  // Notifies the browser that the avatar button's IPH promo state has changed.
+  SetAvatarButtonIphPromoShowing(bool showing) =>
+    result<mojo_base.mojom.Empty, mojo_base.mojom.Error>;
+
+  // Called when the app menu button focus state changes.
+  OnAppMenuFocusChanged(bool focused);
+
+  // Executes the user action for the extension with the given ID.
+  ExecuteExtensionAction(string extension_id);
+
+  // Displays the context menu for the extension with the given ID.
+  ShowExtensionContextMenu(string extension_id, ui.mojom.MenuSourceType source);
+
+  // Adjusts the copied or dragged text and returns the adjusted text,
+  // the adjusted URL, and whether a URL should be written to the payload.
+  AdjustOmniboxTextForCopy(mojo_base.mojom.String16 text, int32 selection_start)
+      => result<AdjustOmniboxTextForCopyResult, mojo_base.mojom.Error>;
 };

@@ -23,6 +23,7 @@
 #include <vulkan/vulkan_core.h>
 #include <vulkan/utility/vk_format_utils.h>
 #include <memory>
+#include "containers/limits.h"
 #include "error_message/error_location.h"
 #include "generated/command_validation.h"
 #include "generated/vk_object_types.h"
@@ -127,7 +128,7 @@ CommandPool::CommandPool(DeviceState& dev, VkCommandPool handle, const VkCommand
 
 void CommandPool::Allocate(const VkCommandBufferAllocateInfo* allocate_info, const VkCommandBuffer* command_buffers) {
     for (uint32_t i = 0; i < allocate_info->commandBufferCount; i++) {
-        auto new_cb = dev_data.CreateCmdBufferState(command_buffers[i], allocate_info, this);
+        auto new_cb = dev_data.CreateCmdBufferState(command_buffers[i], allocate_info, *this);
         commandBuffers.emplace(command_buffers[i], new_cb.get());
         dev_data.Add(std::move(new_cb));
     }
@@ -176,12 +177,12 @@ const char* CommandBuffer::DescribeActiveColorAttachment() const {
 }
 
 CommandBuffer::CommandBuffer(DeviceState& dev, VkCommandBuffer handle, const VkCommandBufferAllocateInfo* allocate_info,
-                             const vvl::CommandPool* pool)
+                             const vvl::CommandPool& pool)
     : RefcountedStateObject(handle, kVulkanObjectTypeCommandBuffer),
       allocate_info(*allocate_info),
+      unprotected(pool.unprotected),
       command_pool(pool),
       dev_data(dev),
-      unprotected(pool->unprotected),
       lastBound({{{*this, VK_PIPELINE_BIND_POINT_GRAPHICS},
                   {*this, VK_PIPELINE_BIND_POINT_COMPUTE},
                   {*this, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR},
@@ -214,6 +215,39 @@ void CommandBuffer::RemoveChild(std::shared_ptr<StateObject>& child_node) {
     assert(child_node);
     child_node->RemoveParent(this);
     object_bindings.erase(child_node);
+}
+
+void CommandBuffer::DescriptorHeap::Update(const VkBindHeapInfoEXT& bind_info, bool is_sampler) {
+    vvl::range<VkDeviceAddress> range = {bind_info.heapRange.address, bind_info.heapRange.address + bind_info.heapRange.size};
+    vvl::range<VkDeviceAddress> reserved = {
+        bind_info.heapRange.address + bind_info.reservedRangeOffset,
+        bind_info.heapRange.address + bind_info.reservedRangeOffset + bind_info.reservedRangeSize};
+
+    if (is_sampler) {
+        sampler_bound = true;
+        sampler_reserved = reserved;
+        sampler_range = range;
+    } else {
+        resource_bound = true;
+        resource_reserved = reserved;
+        resource_range = range;
+    }
+}
+
+std::string CommandBuffer::DescriptorHeap::Describe(bool is_sampler) const {
+    std::stringstream ss;
+    if (is_sampler) {
+        ss << "heapRange = { address = 0x" << std::hex << sampler_range.begin << ", size = " << std::dec << sampler_range.size()
+           << " }, ";
+        ss << "reservedRangeOffset = " << (sampler_reserved.begin - sampler_range.begin) << ", ";
+        ss << "reservedRangeSize = " << sampler_reserved.size() << "";
+    } else {
+        ss << "heapRange = { address = 0x" << std::hex << resource_range.begin << ", size = " << std::dec << resource_range.size()
+           << " }, ";
+        ss << "reservedRangeOffset = " << (resource_reserved.begin - resource_range.begin) << ", ";
+        ss << "reservedRangeSize = " << resource_reserved.size() << "";
+    }
+    return ss.str();
 }
 
 // This tracking is awful, in practice people are using only a single descriptor mode per command buffer
@@ -280,7 +314,6 @@ void CommandBuffer::ResetCBState() {
     begin_info_flags = 0;
     has_inheritance = false;
     inheritance_info = {};
-    inheritance_descriptor_heap_info = {};
 
     state = CbState::New;
     command_count = 0;
@@ -351,6 +384,7 @@ void CommandBuffer::ResetCBState() {
     label_commands_.clear();
 
     push_constant_ranges_layout.reset();
+    push_data_dword_mask.clear();
 
     transform_feedback_active = false;
     transform_feedback_buffers_bound = 0;
@@ -1085,6 +1119,14 @@ void CommandBuffer::RecordBeginVideoCoding(const VkVideoBeginCodingInfoKHR& begi
                 int32_t slot_index = begin_info.pReferenceSlots[i].slotIndex;
                 vvl::VideoPictureResource res(dev_data, *begin_info.pReferenceSlots[i].pPictureResource);
                 bound_video_picture_resources.emplace(std::make_pair(res, slot_index));
+
+                if (!dev_data.disabled[command_buffer_state]) {
+                    if (auto reference_image_view =
+                            dev_data.Get<vvl::ImageView>(begin_info.pReferenceSlots[i].pPictureResource->imageViewBinding)) {
+                        // Connect the image view to cmdBuffer
+                        AddChild(reference_image_view);
+                    }
+                }
             }
 
             if (begin_info.pReferenceSlots[i].slotIndex >= 0 && begin_info.pReferenceSlots[i].pPictureResource == nullptr) {
@@ -1183,6 +1225,26 @@ void vvl::CommandBuffer::RecordVideoInlineQueries(const VkVideoInlineQueryInfoKH
 
     for (uint32_t i = 0; i < query_info.queryCount; i++) {
         updated_queries.insert(QueryObject(query_info.queryPool, query_info.firstQuery + i));
+
+        // Connect this query pool to cmdBuffer
+        if (!dev_data.disabled[command_buffer_state]) {
+            if (auto pool_state = dev_data.Get<vvl::QueryPool>(query_info.queryPool)) {
+                AddChild(pool_state);
+            }
+        }
+    }
+}
+
+void vvl::CommandBuffer::RecordVideoEncodeQuantizationMap(const VkVideoEncodeQuantizationMapInfoKHR &quant_map_info) {
+    for (auto& item : sub_states_) {
+        item.second->RecordVideoEncodeQuantizationMap(quant_map_info);
+    }
+
+    // Connect the quantization map image view to cmdBuffer
+    if (!dev_data.disabled[command_buffer_state]) {
+        if (auto quant_map_image_view_state = dev_data.Get<vvl::ImageView>(quant_map_info.quantizationMap)) {
+            AddChild(quant_map_image_view_state);
+        }
     }
 }
 
@@ -1195,6 +1257,18 @@ void CommandBuffer::RecordDecodeVideo(const VkVideoDecodeInfoKHR& decode_info, c
     // Need to record substate first
     for (auto& item : sub_states_) {
         item.second->RecordDecodeVideo(*bound_video_session, decode_info, loc);
+    }
+
+    if (!dev_data.disabled[command_buffer_state]) {
+        // Connect the bitstream buffer to cmdBuffer
+        if (auto bitstream_buffer_state = dev_data.Get<vvl::Buffer>(decode_info.srcBuffer)) {
+            AddChild(bitstream_buffer_state);
+        }
+
+        // Connect the decode output image view to cmdBuffer
+        if (auto output_image_view_state = dev_data.Get<vvl::ImageView>(decode_info.dstPictureResource.imageViewBinding)) {
+            AddChild(output_image_view_state);
+        }
     }
 
     if (decode_info.pSetupReferenceSlot && decode_info.pSetupReferenceSlot->pPictureResource) {
@@ -1243,6 +1317,18 @@ void vvl::CommandBuffer::RecordEncodeVideo(const VkVideoEncodeInfoKHR& encode_in
         item.second->RecordEncodeVideo(*bound_video_session, encode_info, loc);
     }
 
+    if (!dev_data.disabled[command_buffer_state]) {
+        // Connect the encode input image view to cmdBuffer
+        if (auto input_image_view_state = dev_data.Get<vvl::ImageView>(encode_info.srcPictureResource.imageViewBinding)) {
+            AddChild(input_image_view_state);
+        }
+
+        // Connect the bitstream buffer to cmdBuffer
+        if (auto bitstream_buffer_state = dev_data.Get<vvl::Buffer>(encode_info.dstBuffer)) {
+            AddChild(bitstream_buffer_state);
+        }
+    }
+
     if (encode_info.pSetupReferenceSlot && encode_info.pSetupReferenceSlot->pPictureResource) {
         vvl::VideoReferenceSlot setup_slot(dev_data, *bound_video_session->profile, *encode_info.pSetupReferenceSlot);
 
@@ -1261,6 +1347,14 @@ void vvl::CommandBuffer::RecordEncodeVideo(const VkVideoEncodeInfoKHR& encode_in
                 }
                 return false;
             });
+    }
+
+    // Handle quantization map info
+    if ((encode_info.flags & (VK_VIDEO_ENCODE_WITH_QUANTIZATION_DELTA_MAP_BIT_KHR | VK_VIDEO_ENCODE_WITH_EMPHASIS_MAP_BIT_KHR)) != 0) {
+        const auto quant_map_info = vku::FindStructInPNextChain<VkVideoEncodeQuantizationMapInfoKHR>(encode_info.pNext);
+        if (quant_map_info != nullptr) {
+            RecordVideoEncodeQuantizationMap(*quant_map_info);
+        }
     }
 
     // Update active query indices
@@ -1369,7 +1463,14 @@ void CommandBuffer::Begin(const VkCommandBufferBeginInfo* pBeginInfo) {
 
         if (auto descriptor_heap_info =
                 vku::FindStructInPNextChain<VkCommandBufferInheritanceDescriptorHeapInfoEXT>(pBeginInfo->pInheritanceInfo->pNext)) {
-            inheritance_descriptor_heap_info.initialize(descriptor_heap_info);
+            if (descriptor_heap_info->pResourceHeapBindInfo) {
+                descriptor_heap.Update(*descriptor_heap_info->pResourceHeapBindInfo, false);
+                descriptor_heap.is_resource_inherited = true;
+            }
+            if (descriptor_heap_info->pSamplerHeapBindInfo) {
+                descriptor_heap.Update(*descriptor_heap_info->pSamplerHeapBindInfo, true);
+                descriptor_heap.is_sampler_inherited = true;
+            }
         }
     }
 
@@ -1462,6 +1563,15 @@ void CommandBuffer::RecordExecuteCommands(vvl::span<const VkCommandBuffer> secon
         }
         if (secondary_cb_state->last_rendering_info.has_value()) {
             last_rendering_info = secondary_cb_state->last_rendering_info;
+        }
+
+        if (secondary_cb_state->descriptor_heap.sampler_bound && !secondary_cb_state->descriptor_heap.is_sampler_inherited) {
+            descriptor_heap.sampler_bound = false;
+            descriptor_heap.is_sampler_invalidated = true;
+        }
+        if (secondary_cb_state->descriptor_heap.resource_bound && !secondary_cb_state->descriptor_heap.is_resource_inherited) {
+            descriptor_heap.resource_bound = false;
+            descriptor_heap.is_resource_invalidated = true;
         }
 
         // Handle debug labels
@@ -1723,7 +1833,7 @@ void CommandBuffer::UpdateLastBoundDescriptorSets(VkPipelineBindPoint pipeline_b
     }
 }
 
-void CommandBuffer::UpdateLastBoundDescriptorBuffers(VkPipelineBindPoint pipeline_bind_point,
+void CommandBuffer::UpdateLastBoundDescriptorBuffers(LastBound& last_bound,
                                                      std::shared_ptr<const vvl::PipelineLayout> pipeline_layout, uint32_t first_set,
                                                      uint32_t set_count, const uint32_t* buffer_indicies,
                                                      const VkDeviceSize* buffer_offsets) {
@@ -1731,8 +1841,6 @@ void CommandBuffer::UpdateLastBoundDescriptorBuffers(VkPipelineBindPoint pipelin
     const uint32_t last_binding_index = required_size - 1;
     assert(last_binding_index < pipeline_layout->set_compat_ids.size());
 
-    const vvl::BindPoint vvl_bind_point = ConvertToVvlBindPoint(pipeline_bind_point);
-    auto& last_bound = lastBound[vvl_bind_point];
     last_bound.desc_set_pipeline_layout = pipeline_layout;
     auto& pipe_compat_ids = pipeline_layout->set_compat_ids;
     // Resize binding arrays
@@ -1773,9 +1881,27 @@ void CommandBuffer::UpdateLastBoundDescriptorBuffers(VkPipelineBindPoint pipelin
         ds_slot.Reset();
 
         // Record binding
-        ds_slot.descriptor_buffer_binding = {buffer_indicies[input_idx], buffer_offsets[input_idx]};
+        ds_slot.descriptor_buffer_binding = {vvl::kNoIndex32, buffer_indicies[input_idx], buffer_offsets[input_idx]};
         ds_slot.compat_id_for_set = pipe_compat_ids[set_idx];  // compat ids are canonical *per* set index
     }
+}
+
+// Make assumption that there is no reason to ONLY have embedded samplers set and that CmdSetDescriptorBufferOffsetsEXT will be
+// called
+void CommandBuffer::UpdateLastBoundDescriptorBuffersEmbedded(LastBound& last_bound,
+                                                             std::shared_ptr<const vvl::PipelineLayout> pipeline_layout,
+                                                             uint32_t set) {
+    auto& pipe_compat_ids = pipeline_layout->set_compat_ids;
+
+    if (set >= last_bound.ds_slots.size()) {
+        last_bound.ds_slots.resize(set + 1);
+    }
+
+    auto& ds_slot = last_bound.ds_slots[set];
+    ds_slot.Reset();
+
+    ds_slot.descriptor_buffer_binding = {set, 0, 0};
+    ds_slot.compat_id_for_set = pipe_compat_ids[set];
 }
 
 // Set image layout for given subresource range
@@ -2167,7 +2293,7 @@ void CommandBuffer::RecordSetEvent(VkEvent event, VkPipelineStageFlags stage_mas
 void CommandBuffer::RecordSetEvent2(VkEvent event, const VkDependencyInfo& dependency_info, const Location& loc) {
     RecordCommand(loc);
     for (auto& item : sub_states_) {
-        item.second->RecordSetEvent2(event, dependency_info);
+        item.second->RecordSetEvent2(event, dependency_info, loc);
     }
     if (!dev_data.disabled[command_buffer_state]) {
         if (auto event_state = dev_data.Get<vvl::Event>(event)) {
@@ -2180,9 +2306,8 @@ void CommandBuffer::RecordSetEvent2(VkEvent event, const VkDependencyInfo& depen
 void CommandBuffer::RecordResetEvent(VkEvent event, VkPipelineStageFlags2 stage_mask, const Location& loc) {
     RecordCommand(loc);
     for (auto& item : sub_states_) {
-        item.second->RecordResetEvent(event, stage_mask);
+        item.second->RecordResetEvent(event, stage_mask, loc);
     }
-
     if (!dev_data.disabled[command_buffer_state]) {
         if (auto event_state = dev_data.Get<vvl::Event>(event)) {
             AddChild(event_state);
@@ -2191,9 +2316,10 @@ void CommandBuffer::RecordResetEvent(VkEvent event, VkPipelineStageFlags2 stage_
     events.push_back(event);
 }
 
-void CommandBuffer::RecordWaitEvents(vvl::span<const VkEvent> events, VkPipelineStageFlags src_stage_mask, const Location& loc) {
+void CommandBuffer::RecordWaitEvents(vvl::span<const VkEvent> events, VkPipelineStageFlags src_stage_mask,
+                                     VkPipelineStageFlags dst_stage_mask, const Location& loc) {
     for (auto& item : sub_states_) {
-        item.second->RecordWaitEvents(events, src_stage_mask, loc);
+        item.second->RecordWaitEvents(events, src_stage_mask, dst_stage_mask, loc);
     }
     for (const VkEvent event : events) {
         if (!dev_data.disabled[command_buffer_state]) {
@@ -2283,16 +2409,108 @@ void CommandBuffer::RecordPushConstants(const vvl::PipelineLayout& pipeline_layo
 
     for (auto& item : sub_states_) {
         item.second->RecordPushConstants(pipeline_layout_state.VkHandle(), stage_flags, offset, size, values);
-        item.second->ClearPushData();  // vkspec.html#descriptorheaps-invalidate-sets
+
+        // vkspec.html#descriptorheaps-invalidate-sets
+        item.second->ClearPushData();
+        push_data_dword_mask.clear();
     }
 }
 
 void CommandBuffer::RecordPushData(const VkPushDataInfoEXT& push_data_info, const Location& loc) {
     RecordCommand(loc);
 
+    if (push_data_info.data.size > 0) {
+        const size_t begin_byte = push_data_info.offset;
+        const size_t end_byte = push_data_info.offset + push_data_info.data.size;
+        // offset/size required to be multiple of 4
+        const size_t begin_dword = begin_byte / 4;
+        const size_t end_dword = end_byte / 4;
+        if (push_data_dword_mask.size() < end_dword) {
+            push_data_dword_mask.resize(end_dword, false);
+        }
+        for (size_t i = begin_dword; i < end_dword; ++i) {
+            push_data_dword_mask[i] = true;
+        }
+    }
+
     for (auto& item : sub_states_) {
         item.second->RecordPushData(push_data_info);
         item.second->ClearPushConstants();  // vkspec.html#descriptorheaps-invalidate-sets
+    }
+}
+
+bool CommandBuffer::VerifyPushData(uint32_t offset_byte, uint32_t size_byte) const {
+    // no other reason we should need this function
+    assert(size_byte == 4 || size_byte == 8);
+    // offset required to be a multiple of 4
+    const uint32_t dwords_used = (offset_byte + size_byte) / 4;
+    if (dwords_used > push_data_dword_mask.size()) {
+        return false;
+    }
+    uint32_t dword_offset = offset_byte / 4;
+    if (!push_data_dword_mask[dword_offset]) {
+        return false;
+    }
+    if (size_byte == 8 && !push_data_dword_mask[dword_offset + 1]) {
+        return false;
+    }
+    return true;
+}
+
+void CommandBuffer::RecordBindDescriptorBuffer(vvl::DeviceState& device_state, uint32_t buffer_count,
+                                               const VkDescriptorBufferBindingInfoEXT* binding_infos, const Location& loc) {
+    descriptor_buffer.ever_bound = true;
+
+    descriptor_buffer.binding_info.resize(buffer_count);
+    for (uint32_t i = 0; i < buffer_count; i++) {
+        const VkDescriptorBufferBindingInfoEXT& binding_info = binding_infos[i];
+        VkBufferUsageFlags2 buffer_usage = binding_info.usage;
+        if (const auto usage_flags2 = vku::FindStructInPNextChain<VkBufferUsageFlags2CreateInfo>(binding_info.pNext)) {
+            buffer_usage = usage_flags2->usage;
+        }
+
+        descriptor_buffer.binding_info[i] = {binding_info.address, buffer_usage};
+    }
+}
+
+void CommandBuffer::RecordBindResourceHeap(vvl::DeviceState& device_state, const VkBindHeapInfoEXT& bind_info,
+                                           const Location& loc) {
+    RecordCommand(loc);
+
+    vvl::range<VkDeviceAddress> old_reserved = descriptor_heap.resource_reserved;
+
+    // need to do first as the substate expects this to be set
+    descriptor_heap.Update(bind_info, false);
+
+    if (descriptor_heap.resource_reserved != old_reserved) {
+        device_state.UpdateCommandBufferHeapReservedAddressMap(this, descriptor_heap.resource_reserved, false);
+    }
+
+    SetDescriptorMode(DescriptorModeHeap, loc.function);
+    device_state.TrackDeviceAddressRange(*this, descriptor_heap.resource_range, VK_BUFFER_USAGE_2_DESCRIPTOR_HEAP_BIT_EXT);
+
+    for (auto& item : sub_states_) {
+        item.second->RecordBindResourceHeap();
+    }
+}
+
+void CommandBuffer::RecordBindSamplerHeap(vvl::DeviceState& device_state, const VkBindHeapInfoEXT& bind_info, const Location& loc) {
+    RecordCommand(loc);
+
+    vvl::range<VkDeviceAddress> old_reserved = descriptor_heap.sampler_reserved;
+
+    // need to do first as the substate expects this to be set
+    descriptor_heap.Update(bind_info, true);
+
+    if (descriptor_heap.sampler_reserved != old_reserved) {
+        device_state.UpdateCommandBufferHeapReservedAddressMap(this, descriptor_heap.sampler_reserved, true);
+    }
+
+    SetDescriptorMode(DescriptorModeHeap, loc.function);
+    device_state.TrackDeviceAddressRange(*this, descriptor_heap.sampler_range, VK_BUFFER_USAGE_2_DESCRIPTOR_HEAP_BIT_EXT);
+
+    for (auto& item : sub_states_) {
+        item.second->RecordBindSamplerHeap();
     }
 }
 
@@ -2521,6 +2739,14 @@ std::string CommandBuffer::DescribeInvalidatedState(CBDynamicState dynamic_state
         ss << " (When multiview is enabled, vkCmdNextSubpass will invalidate all dynamic state)";
     }
     return ss.str();
+}
+
+void CommandBuffer::RemoveOwnedSubState(LayerObjectTypeId id) {
+    for (auto& last_bound : lastBound) {
+        if (last_bound.push_descriptor_set) {
+            last_bound.push_descriptor_set->RemoveSubState(id);
+        }
+    }
 }
 
 VulkanTypedHandle CommandBufferSubState::Handle() const { return base.Handle(); }

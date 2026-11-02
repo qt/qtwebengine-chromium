@@ -32,6 +32,7 @@ describeWithEnvironment('ActionRegistration', () => {
       globalStorage: dummyStorage,
       localStorage: dummyStorage,
       settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
+      console: Common.Console.Console.instance(),
     });
 
     UI.ActionRegistration.registerActionExtension({
@@ -43,17 +44,17 @@ describeWithEnvironment('ActionRegistration', () => {
     let list = UI.ActionRegistration.getRegisteredActionExtensions();
     assert.lengthOf(list, 0);
 
-    Common.Settings.moduleSetting('test-setting').set(true);
+    Common.Settings.Settings.instance().moduleSetting('test-setting').set(true);
     list = UI.ActionRegistration.getRegisteredActionExtensions();
     assert.lengthOf(list, 1);
 
-    Common.Settings.moduleSetting('test-setting').set(false);
+    Common.Settings.Settings.instance().moduleSetting('test-setting').set(false);
     list = UI.ActionRegistration.getRegisteredActionExtensions();
     assert.lengthOf(list, 0);
   });
 });
 
-describeWithEnvironment('ActionRegistration', () => {
+describe('ActionRegistration', () => {
   let actionExecuted = false;
   const actionTitle = 'Mock action';
   const actionId = 'mock.action';

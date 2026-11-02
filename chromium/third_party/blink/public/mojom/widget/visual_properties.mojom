@@ -6,6 +6,7 @@ module blink.mojom;
 
 import "cc/mojom/browser_controls_params.mojom";
 import "services/viz/public/mojom/compositing/local_surface_id.mojom";
+import "third_party/blink/public/mojom/manifest/application_context.mojom";
 import "third_party/blink/public/mojom/manifest/display_mode.mojom";
 import "ui/display/mojom/screen_infos.mojom";
 import "ui/gfx/geometry/mojom/geometry.mojom";
@@ -69,14 +70,15 @@ struct VisualProperties {
   // The display mode. This will be replicated amongst subframes.
   DisplayMode display_mode = DisplayMode.kUndefined;
 
+  // How the top-level browsing context is presented to the user (a standalone
+  // web application window vs ordinary browser UI). This will be replicated
+  // amongst subframes.
+  ApplicationContext application_context = ApplicationContext.kNone;
+
   // The window show state.
   ui.mojom.WindowShowState window_show_state
       = ui.mojom.WindowShowState.kDefault;
 
-  // This represents the latest capture sequence number requested. When this is
-  // incremented, that means the caller wants to synchronize surfaces which
-  // should cause a new LocalSurfaceId to be generated.
-  uint32 capture_sequence_number;
 
   // This is composed from browser zoom (i.e. the page zoom level for a
   // WebContents) and, for a non-main-frame widget, the effect of the CSS "zoom"

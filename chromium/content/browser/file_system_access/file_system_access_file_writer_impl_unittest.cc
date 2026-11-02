@@ -26,11 +26,11 @@
 #include "components/services/storage/public/cpp/buckets/bucket_info.h"
 #include "components/services/storage/public/cpp/buckets/bucket_locator.h"
 #include "content/browser/blob_storage/chrome_blob_storage_context.h"
-#include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/file_system_access/file_system_access_lock_manager.h"
 #include "content/browser/file_system_access/fixed_file_system_access_permission_grant.h"
 #include "content/browser/file_system_access/mock_file_system_access_permission_context.h"
 #include "content/browser/file_system_access/mock_file_system_access_permission_grant.h"
+#include "content/browser/security/cpsp/child_process_security_policy_impl.h"
 #include "content/public/test/browser_task_environment.h"
 #include "content/public/test/test_browser_context.h"
 #include "mojo/public/cpp/system/data_pipe_producer.h"
@@ -656,6 +656,8 @@ TEST_F(FileSystemAccessFileWriterAfterWriteChecksTest, Allow) {
               Field(&FileSystemAccessWriteItem::sha256_hash, Eq(expected_hash)),
               Field(&FileSystemAccessWriteItem::size, Eq(3)),
               Field(&FileSystemAccessWriteItem::frame_url, Eq(kTestURL)),
+              Field(&FileSystemAccessWriteItem::initiating_frame_id,
+                    Eq(kFrameId)),
               Field(&FileSystemAccessWriteItem::has_user_gesture, Eq(false))),
           kFrameId, _))
       .WillOnce(base::test::RunOnceCallback<2>(

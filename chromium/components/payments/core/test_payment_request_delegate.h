@@ -40,14 +40,12 @@ class TestPaymentRequestDelegate : public PaymentRequestDelegate {
   void CloseDialog() override {}
   void ShowErrorMessage() override {}
   void ShowProcessingSpinner() override {}
+  void ShowLoadingView() override {}
   autofill::PersonalDataManager* GetPersonalDataManager() override;
   const std::string& GetApplicationLocale() const override;
   bool IsOffTheRecord() const override;
   const GURL& GetLastCommittedURL() const override;
   autofill::AddressNormalizer* GetAddressNormalizer() override;
-  autofill::RegionDataLoader* GetRegionDataLoader() override;
-  ukm::UkmRecorder* GetUkmRecorder() override;
-  std::string GetAuthenticatedEmail() const override;
   PrefService* GetPrefService() override;
   bool IsBrowserWindowActive() const override;
 

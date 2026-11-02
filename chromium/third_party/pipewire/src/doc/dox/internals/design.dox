@@ -1,0 +1,72 @@
+/** \page page_design Design
+
+A short overview of PipeWire's design.
+
+PipeWire is a media server that can run graphs of multimedia nodes.
+Nodes can run inside the server process or in separate processes,
+communicating with the server.
+
+PipeWire was designed to:
+
+- Be efficient for raw video using fd passing and audio with
+  shared ringbuffers.
+- Be able to provide/consume/process media from any process.
+- Provide policy to restrict access to devices and streams.
+- Be easily extensible.
+
+Although an initial goal, the design is not limited to raw video
+only and should be able to handle compressed video and other
+media as well.
+
+PipeWire uses the \ref page_spa "SPA plugin API" for the nodes in the graph.
+SPA is designed for low-latency and efficient processing of any multimedia
+format. SPA also provides a number of helper utilities that are not available
+in the standard C library.
+
+Some of the application we intend to build:
+
+- v4l2 device provider: Provide controlled access to v4l2 devices
+  and share one device between multiple processes.
+- gnome-shell video provider: GNOME Shell provides a node that
+  gives the contents of the frame buffer for screen sharing or
+  screen recording.
+- Audio server: Mix and playback multiple audio streams. The design
+  is more like CRAS (Chromium audio server) than PulseAudio and with
+  the added benefit that processing can be arranged in a graph.
+- Professional audio graph processing like JACK.
+- Media playback backend.
+
+
+# Protocol
+
+The native protocol and object model is similar to
+[Wayland](https://wayland.freedesktop.org) but with custom
+serialization/deserialization of messages. This is because the data structures
+in the messages are more complicated and not easily expressible in XML.
+See \ref page_module_protocol_native for details.
+See also \ref page_native_protocol for the documentation of the protocol
+messages.
+
+
+# Extensibility
+
+The functionality of the server is implemented and extended with modules and
+extensions. Modules are server side bits of logic that hook into various
+places to provide extra features. This mostly means controlling the processing
+graph in some way. See \ref page_modules for a list of current
+modules.
+
+Extensions are the client side version of the modules. Most extensions provide
+both a client side and server side init function. New interfaces or new object
+implementation can easily be added with modules/extensions.
+
+Some of the extensions that can be written:
+
+- Protocol extensions: A client/server side API (.h) together with protocol
+  extensions and server/client side logic to implement a new object or
+  interface.
+- A module to check security of method calls.
+- A module to automatically create, link or relink nodes.
+- A module to suspend idle nodes.
+
+*/

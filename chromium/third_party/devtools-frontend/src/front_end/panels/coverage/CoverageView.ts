@@ -30,66 +30,66 @@ import coverageViewStyles from './coverageView.css.js';
 
 const UIStrings = {
   /**
-   * @description Tooltip in Coverage List View of the Coverage tab for selecting JavaScript coverage mode
+   * @description Tooltip in coverage list view of the Coverage tab for selecting JavaScript coverage mode.
    */
   chooseCoverageGranularityPer:
-      'Choose coverage granularity: Per function has low overhead, per block has significant overhead.',
+      'Choose coverage granularity: per function has low overhead, per block has significant overhead.',
   /**
-   * @description Text in Coverage List View of the Coverage tab
+   * @description Text in coverage list view of the Coverage tab.
    */
   perFunction: 'Per function',
   /**
-   * @description Text in Coverage List View of the Coverage tab
+   * @description Text in coverage list view of the Coverage tab.
    */
   perBlock: 'Per block',
   /**
-   * @description Text in Coverage View of the Coverage tab
+   * @description Text in Coverage View of the Coverage tab.
    */
   filterByUrl: 'Filter by URL',
   /**
-   * @description Label for the type filter in the Coverage Panel
+   * @description Label for the type filter in the Coverage panel.
    */
   filterCoverageByType: 'Filter coverage by type',
   /**
-   * @description Text for everything
+   * @description Option in the type filter dropdown of the Coverage panel to show all resource types (both CSS and JavaScript).
    */
   all: 'All',
   /**
-   * @description Text that appears on a button for the css resource type filter.
+   * @description Text that appears on a button for the CSS resource type filter.
    */
   css: 'CSS',
   /**
-   * @description Text in Timeline Tree View of the Performance panel
+   * @description Text in Timeline Tree View of the Performance panel.
    */
   javascript: 'JavaScript',
   /**
-   * @description Tooltip text that appears on the setting when hovering over it in Coverage View of the Coverage tab
+   * @description Tooltip text that appears on the setting when hovering over it in Coverage View of the Coverage tab.
    */
   includeExtensionContentScripts: 'Include extension content scripts',
   /**
-   * @description Title for a type of source files
+   * @description Title for a type of source files.
    */
   contentScripts: 'Content scripts',
   /**
-   * @description Message in Coverage View of the Coverage tab
+   * @description Message in Coverage View of the Coverage tab.
    */
   noCoverageData: 'No coverage data',
   /**
-   * @description Message in Coverage View of the Coverage tab
+   * @description Message in Coverage View of the Coverage tab.
    */
   reloadPage: 'Reload page',
   /**
-   * @description Message in Coverage View of the Coverage tab
+   * @description Message in Coverage View of the Coverage tab.
    */
   startRecording: 'Start recording',
 
   /**
-   * @description Message in Coverage View of the Coverage tab
+   * @description Message in Coverage View of the Coverage tab.
    * @example {Reload page} PH1
    */
   clickTheReloadButtonSToReloadAnd: 'Click the "{PH1}" button to reload and start capturing coverage.',
   /**
-   * @description Message in Coverage View of the Coverage tab
+   * @description Message in Coverage View of the Coverage tab.
    * @example {Start recording} PH1
    */
   clickTheRecordButtonSToStart: 'Click the "{PH1}" button to start capturing coverage.',
@@ -98,23 +98,23 @@ const UIStrings = {
    */
   bfcacheNoCapture: 'Could not capture coverage info because the page was served from the back/forward cache.',
   /**
-   * @description  Message in the Coverage View explaining that DevTools could not capture coverage.
+   * @description Message in the Coverage View explaining that DevTools could not capture coverage.
    */
   activationNoCapture: 'Could not capture coverage info because the page was prerendered in the background.',
   /**
-   * @description  Message in the Coverage View prompting the user to reload the page.
+   * @description Message in the Coverage View prompting the user to reload the page.
    * @example {reload button icon} PH1
    */
   reloadPrompt: 'Click the reload button {PH1} to reload and get coverage.',
 
   /**
-   * @description Footer message in Coverage View of the Coverage tab
+   * @description Footer message in Coverage View of the Coverage tab.
    * @example {300k used, 600k unused} PH1
    * @example {500k used, 800k unused} PH2
    */
   filteredSTotalS: 'Filtered: {PH1}  Total: {PH2}',
   /**
-   * @description Footer message in Coverage View of the Coverage tab
+   * @description Footer message in Coverage View of the Coverage tab.
    * @example {1.5 MB} PH1
    * @example {2.1 MB} PH2
    * @example {71%} PH3
@@ -636,7 +636,7 @@ export class CoverageView extends UI.Widget.VBox<ShadowRoot> {
   }
 
   async exportReport(): Promise<void> {
-    const fos = new Bindings.FileUtils.FileOutputStream();
+    const fos = new Bindings.FileUtils.FileOutputStream(Workspace.FileManager.FileManager.instance());
     const fileName =
         `Coverage-${Platform.DateUtilities.toISO8601Compact(new Date())}.json` as Platform.DevToolsPath.RawPathString;
     const accepted = await fos.open(fileName);

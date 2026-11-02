@@ -151,9 +151,9 @@ export const DEFAULT_VIEW: ViewFunction = (input, output, target) => {
           attributes: {
             disabled: input.disabled,
             'aria-label': input.title,
-            jslog: `${VisualLogging.dropDown(input.jslogContext).track({change: true})}`
-          }
-        }
+            jslog: `${VisualLogging.dropDown(input.jslogContext).track({change: true})}`,
+          },
+        },
       });
 };
 
@@ -167,6 +167,7 @@ export interface EventTypes {
 
 export class NetworkThrottlingSelect extends Common.ObjectWrapper.eventMixin<EventTypes, typeof UI.Widget.Widget>(
     UI.Widget.Widget) {
+  readonly #settings: Common.Settings.Settings;
   #recommendedConditions: SDK.NetworkManager.Conditions|null = null;
   #jslogContext?: string;
   #currentConditions: SDK.NetworkManager.ThrottlingConditions|undefined;
@@ -185,16 +186,16 @@ export class NetworkThrottlingSelect extends Common.ObjectWrapper.eventMixin<Eve
     return select;
   }
 
-  constructor(
-      element?: HTMLElement, options: {
-        title?: string,
-        jslogContext?: string,
-        currentConditions?: SDK.NetworkManager.Conditions,
-        includeBlocking?: true,
-      } = {},
-      view = DEFAULT_VIEW) {
+  constructor(element?: HTMLElement, options: {
+    title?: string,
+    jslogContext?: string,
+    currentConditions?: SDK.NetworkManager.Conditions,
+    includeBlocking?: true,
+  } = {},
+              settings = Common.Settings.Settings.instance(), view = DEFAULT_VIEW) {
     super(element);
-    SDK.NetworkManager.customUserNetworkConditionsSetting().addChangeListener(this.requestUpdate, this);
+    this.#settings = settings;
+    SDK.NetworkManager.customUserNetworkConditionsSetting(settings).addChangeListener(this.requestUpdate, this);
     this.#jslogContext = options.jslogContext;
     this.#currentConditions = options.currentConditions;
     this.#title = options.title;
@@ -258,7 +259,7 @@ export class NetworkThrottlingSelect extends Common.ObjectWrapper.eventMixin<Eve
     const multitargetNetworkManager = SDK.NetworkManager.MultitargetNetworkManager.instance();
 
     if (bind) {
-      this.#jslogContext = SDK.NetworkManager.activeNetworkThrottlingKeySetting().name;
+      this.#jslogContext = SDK.NetworkManager.activeNetworkThrottlingKeySetting(this.#settings).name;
       ThrottlingManager.instance();  // Instantiate the throttling manager to connect network manager with the setting
       this.#currentConditions = multitargetNetworkManager.networkConditions();
 
@@ -298,10 +299,10 @@ export class NetworkThrottlingSelect extends Common.ObjectWrapper.eventMixin<Eve
   }
 
   override performUpdate(): void {
-    const customNetworkConditionsSetting = SDK.NetworkManager.customUserNetworkConditionsSetting();
+    const customNetworkConditionsSetting = SDK.NetworkManager.customUserNetworkConditionsSetting(this.#settings);
     const customNetworkConditions = customNetworkConditionsSetting.get();
     const onAddCustomConditions = (): void => {
-      void Common.Revealer.reveal(SDK.NetworkManager.customUserNetworkConditionsSetting());
+      void Common.Revealer.reveal(customNetworkConditionsSetting);
     };
 
     const onSelect = (conditions: SDK.NetworkManager.ThrottlingConditions): void => {
@@ -320,7 +321,7 @@ export class NetworkThrottlingSelect extends Common.ObjectWrapper.eventMixin<Eve
                 SDK.NetworkManager.Slow4GConditions,
                 SDK.NetworkManager.Slow3GConditions,
                 SDK.NetworkManager.OfflineConditions,
-              ]
+              ],
             });
         break;
       case NetworkThrottlingSelect.Variant.INDIVIDUAL_REQUEST_CONDITIONS:
@@ -332,7 +333,7 @@ export class NetworkThrottlingSelect extends Common.ObjectWrapper.eventMixin<Eve
                 SDK.NetworkManager.Fast4GConditions,
                 SDK.NetworkManager.Slow4GConditions,
                 SDK.NetworkManager.Slow3GConditions,
-              ]
+              ],
             },
         );
         break;

@@ -28,19 +28,22 @@
 #include "src/tint/cmd/fuzz/common/ir_fuzzer.h"
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/transform/substitute_overrides.h"
-#include "src/tint/lang/core/ir/validator.h"
 
 namespace tint::core::ir::transform {
 namespace {
 
 Result<SuccessType> SubstituteOverridesFuzzer(Module& ir,
-                                              const fuzz::ir::Context&,
+                                              const fuzz::ir::Context& context,
                                               const SubstituteOverridesConfig& cfg) {
+    if (context.options.verbose) {
+        PrintReflected(std::cout, cfg);
+        std::cout << "\n";
+    }
+
     return SubstituteOverrides(ir, cfg);
 }
 
 }  // namespace
 }  // namespace tint::core::ir::transform
 
-TINT_IR_MODULE_FUZZER(tint::core::ir::transform::SubstituteOverridesFuzzer,
-                      tint::core::ir::transform::kSubstituteOverridesCapabilities);
+TINT_IR_MODULE_FUZZER(tint::core::ir::transform::SubstituteOverridesFuzzer);

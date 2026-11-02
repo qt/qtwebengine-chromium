@@ -100,7 +100,6 @@ using autofill::autofill_metrics::LogMandatoryReauthSettingsPageEditCardEvent;
 using autofill::autofill_metrics::MandatoryReauthAuthenticationFlowEvent;
 using autofill::autofill_metrics::MandatoryReauthOptInOrOutSource;
 
-static const char kSettingsOrigin[] = "Chrome settings";
 static const char kErrorPaymentMethodUnavailable[] =
     "Credit card data unavailable";
 static const char kErrorAutofillClientUnavailable[] =
@@ -483,11 +482,14 @@ ExtensionFunction::ResponseAction AutofillPrivateSaveCreditCardFunction::Run() {
           {"Save credit card - ", kErrorPaymentMethodUnavailable})));
     }
   }
-  autofill::CreditCard credit_card =
-      existing_card ? *existing_card
-                    : autofill::CreditCard(
-                          base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                          kSettingsOrigin);
+  autofill::CreditCard credit_card;
+  if (existing_card) {
+    credit_card = *existing_card;
+  } else {
+    credit_card = autofill::CreditCard(
+        base::Uuid::GenerateRandomV4().AsLowercaseString());
+    credit_card.set_is_user_confirmed(true);
+  }
 
   if (card->name) {
     credit_card.SetRawInfo(autofill::CREDIT_CARD_NAME_FULL,
@@ -1083,31 +1085,6 @@ AutofillPrivateBulkDeleteAllCvcsFunction::Run() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// AutofillPrivateSetAutofillSyncToggleEnabledFunction
-
-ExtensionFunction::ResponseAction
-AutofillPrivateSetAutofillSyncToggleEnabledFunction::Run() {
-  AddressDataManager* adm = address_data_manager();
-  if (!adm) {
-    return RespondNow(
-        Error(base::StrCat({"Set autofill sync toggle enabled - ",
-                            kErrorAddressDataManagerUnavailable})));
-  }
-  if (!adm->has_initial_load_finished()) {
-    return RespondNow(
-        Error(base::StrCat({"Set autofill sync toggle enabled - ",
-                            kErrorAddressDataManagerLoadingUnfinished})));
-  }
-  std::optional<api::autofill_private::SetAutofillSyncToggleEnabled::Params>
-      parameters =
-          api::autofill_private::SetAutofillSyncToggleEnabled::Params::Create(
-              args());
-  EXTENSION_FUNCTION_VALIDATE(parameters);
-  adm->SetAutofillSelectableTypeEnabled(parameters->enabled);
-  return RespondNow(NoArguments());
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // AutofillPrivateAddOrUpdateEntityInstanceFunction
 
 ExtensionFunction::ResponseAction
@@ -1316,8 +1293,9 @@ AutofillPrivateLoadEntityInstancesFunction::Run() {
           autofill_client()->GetPrefs());
   std::vector<autofill_private::EntityInstanceWithLabels> result =
       autofill_ai_util::EntityInstancesToPrivateApiEntityInstancesWithLabels(
-          entity_data_manager->GetEntityInstances(), obfuscate_sensitive_types,
-          g_browser_process->GetApplicationLocale());
+          autofill::GetEntityInstancesForSettings(
+              entity_data_manager->GetEntityInstances()),
+          obfuscate_sensitive_types, g_browser_process->GetApplicationLocale());
   return RespondNow(ArgumentList(
       autofill_private::LoadEntityInstances::Results::Create(result)));
 }

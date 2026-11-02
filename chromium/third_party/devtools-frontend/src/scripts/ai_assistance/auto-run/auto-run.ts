@@ -53,8 +53,13 @@ const userArgsBuilder = yargs(hideBin(process.argv))
                             .option('test-target', {
                               describe: 'Which panel do you want to run the examples against?',
                               choices: [
-                                'elements', 'performance-main-thread', 'performance', 'performance-insights',
-                                'elements-multimodal', 'patching', 'network'
+                                'elements',
+                                'performance-main-thread',
+                                'performance',
+                                'performance-insights',
+                                'elements-multimodal',
+                                'patching',
+                                'network',
                               ] as const,
                               demandOption: true,
                             })

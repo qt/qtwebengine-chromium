@@ -30,7 +30,7 @@ namespace Eigen {
  * \tparam AmbientDim_ the dimension of the ambient space, can be a compile time value or Dynamic.
  *             Notice that the dimension of the hyperplane is AmbientDim_-1.
  *
- * This class represents an hyperplane as the zero set of the implicit equation
+ * This class represents a hyperplane as the zero set of the implicit equation
  * \f$ n \cdot x + d = 0 \f$ where \f$ n \f$ is a unit normal vector of the plane (linear part)
  * and \f$ d \f$ is the distance (offset) to the origin.
  */
@@ -117,8 +117,6 @@ class Hyperplane {
     normal() = parametrized.direction().unitOrthogonal();
     offset() = -parametrized.origin().dot(normal());
   }
-
-  EIGEN_DEVICE_FUNC ~Hyperplane() {}
 
   /** \returns the dimension in which the plane holds */
   EIGEN_DEVICE_FUNC inline Index dim() const {

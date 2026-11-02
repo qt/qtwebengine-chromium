@@ -9,20 +9,34 @@ assert(enable_dice_support)
 
 mojom("mojo_bindings") {
   sources = [
+    "default_browser.mojom",
     "feature_showcase.mojom",
+    "gemini.mojom",
+    "google_lens.mojom",
     "password_manager.mojom",
+    "themes_and_customization.mojom",
   ]
   webui_module_path = "/"
 }
 
 source_set("feature_showcase") {
   sources = [
+    "default_browser_handler.cc",
+    "default_browser_handler.h",
     "feature_showcase_handler.cc",
     "feature_showcase_handler.h",
     "feature_showcase_ui.cc",
     "feature_showcase_ui.h",
+    "gemini_disclosure.cc",
+    "gemini_disclosure.h",
+    "gemini_handler.cc",
+    "gemini_handler.h",
+    "google_lens_handler.cc",
+    "google_lens_handler.h",
     "password_manager_handler.cc",
     "password_manager_handler.h",
+    "themes_and_customization_handler.cc",
+    "themes_and_customization_handler.h",
   ]
 
   public_deps = [
@@ -34,16 +48,37 @@ source_set("feature_showcase") {
   deps = [
     "//base",
     "//chrome/app/theme:chrome_unscaled_resources",
+    "//chrome/browser:browser_process",
+    "//chrome/browser:shell_integration",
+    "//chrome/browser/glic",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/regional_capabilities",
     "//chrome/browser/resources/feature_showcase:resources",
     "//chrome/browser/resources/intro:resources",
+    "//chrome/browser/ui:feature_showcase_metrics",
     "//chrome/browser/ui/actions:actions_headers",
+    "//chrome/browser/ui/lens",
     "//chrome/browser/ui/toolbar/pinned_toolbar",
+    "//chrome/browser/ui/webui:theme_source",
+    "//chrome/browser/ui/webui/cr_components/customize_color_scheme_mode",
+    "//chrome/browser/ui/webui/cr_components/theme_color_picker:impl",
+    "//chrome/browser/ui/webui/intro",
     "//chrome/common:constants",
+    "//components/glic:glic_pref_names",
+    "//components/lens",
+    "//components/lens:enterprise_policy",
+    "//components/prefs",
     "//components/regional_capabilities",
     "//components/signin/public/base:signin_switches",
+    "//components/variations/service",
     "//content/public/browser",
     "//ui/webui",
   ]
+
+  if (is_win) {
+    deps += [
+      "//chrome/browser/win",
+      "//chrome/installer/util:with_no_strings",
+    ]
+  }
 }

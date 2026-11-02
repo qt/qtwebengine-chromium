@@ -34,15 +34,14 @@ class IndexMapper {
 
     array<Index, NumDims> inputStrides;
     array<Index, NumDims> outputStrides;
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       inputStrides[0] = 1;
       outputStrides[0] = 1;
       for (int i = 1; i < NumDims; ++i) {
         inputStrides[i] = inputStrides[i - 1] * input_dims[i - 1];
         outputStrides[i] = outputStrides[i - 1] * dimensions[i - 1];
       }
-    }
-    else {
+    } else {
       inputStrides[NumDims - 1] = 1;
       outputStrides[NumDims - 1] = 1;
       for (int i = static_cast<int>(NumDims) - 2; i >= 0; --i) {
@@ -79,7 +78,7 @@ class IndexMapper {
       m_outputStrides[i] = outputStrides[ordering[i]];
     }
 
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       for (int i = 0; i < NumDims; ++i) {
         if (i > NumKernelDims) {
           m_gpuInputStrides[i] = m_gpuInputStrides[i - 1] * gpuInputDimensions[i - 1];
@@ -89,8 +88,7 @@ class IndexMapper {
           m_gpuOutputStrides[i] = 1;
         }
       }
-    }
-    else {
+    } else {
       for (int i = NumDims - 1; i >= 0; --i) {
         if (i + 1 < static_cast<int>(offset)) {
           m_gpuInputStrides[i] = m_gpuInputStrides[i + 1] * gpuInputDimensions[i + 1];
@@ -105,19 +103,18 @@ class IndexMapper {
 
   EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Index mapGpuInputPlaneToTensorInputOffset(Index p) const {
     Index inputIndex = 0;
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       for (int d = NumDims - 1; d > NumKernelDims; --d) {
         const Index idx = p / m_gpuInputStrides[d];
         inputIndex += idx * m_inputStrides[d];
         p -= idx * m_gpuInputStrides[d];
       }
-      if (NumKernelDims < NumDims) {
+      EIGEN_IF_CONSTEXPR (NumKernelDims < NumDims) {
         inputIndex += p * m_inputStrides[NumKernelDims];
       }
-    }
-    else {
+    } else {
       std::ptrdiff_t limit = 0;
-      if (NumKernelDims < NumDims) {
+      EIGEN_IF_CONSTEXPR (NumKernelDims < NumDims) {
         limit = NumDims - NumKernelDims - 1;
       }
       for (int d = 0; d < limit; ++d) {
@@ -132,19 +129,18 @@ class IndexMapper {
 
   EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Index mapGpuOutputPlaneToTensorOutputOffset(Index p) const {
     Index outputIndex = 0;
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       for (int d = NumDims - 1; d > NumKernelDims; --d) {
         const Index idx = p / m_gpuOutputStrides[d];
         outputIndex += idx * m_outputStrides[d];
         p -= idx * m_gpuOutputStrides[d];
       }
-      if (NumKernelDims < NumDims) {
+      EIGEN_IF_CONSTEXPR (NumKernelDims < NumDims) {
         outputIndex += p * m_outputStrides[NumKernelDims];
       }
-    }
-    else {
+    } else {
       std::ptrdiff_t limit = 0;
-      if (NumKernelDims < NumDims) {
+      EIGEN_IF_CONSTEXPR (NumKernelDims < NumDims) {
         limit = NumDims - NumKernelDims - 1;
       }
       for (int d = 0; d < limit; ++d) {
@@ -314,13 +310,12 @@ struct TensorEvaluator<const TensorConvolutionOp<Indices, InputArgType, KernelAr
     const typename TensorEvaluator<InputArgType, Device>::Dimensions& input_dims = m_inputImpl.dimensions();
     const typename TensorEvaluator<KernelArgType, Device>::Dimensions& kernel_dims = m_kernelImpl.dimensions();
 
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       m_inputStride[0] = 1;
       for (int i = 1; i < NumDims; ++i) {
         m_inputStride[i] = m_inputStride[i - 1] * input_dims[i - 1];
       }
-    }
-    else {
+    } else {
       m_inputStride[NumDims - 1] = 1;
       for (int i = NumDims - 2; i >= 0; --i) {
         m_inputStride[i] = m_inputStride[i + 1] * input_dims[i + 1];
@@ -328,7 +323,7 @@ struct TensorEvaluator<const TensorConvolutionOp<Indices, InputArgType, KernelAr
     }
 
     m_dimensions = m_inputImpl.dimensions();
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       for (int i = 0; i < NumKernelDims; ++i) {
         const Index index = op.indices()[i];
         const Index input_dim = input_dims[index];
@@ -347,8 +342,7 @@ struct TensorEvaluator<const TensorConvolutionOp<Indices, InputArgType, KernelAr
       for (int i = 1; i < NumDims; ++i) {
         m_outputStride[i] = m_outputStride[i - 1] * m_dimensions[i - 1];
       }
-    }
-    else {
+    } else {
       for (int i = NumKernelDims - 1; i >= 0; --i) {
         const Index index = op.indices()[i];
         const Index input_dim = input_dims[index];
@@ -404,7 +398,7 @@ struct TensorEvaluator<const TensorConvolutionOp<Indices, InputArgType, KernelAr
   EIGEN_DEVICE_FUNC PacketReturnType packet(const Index index) const {
     Index indices[2] = {index, index + PacketSize - 1};
     Index startInputs[2] = {0, 0};
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       for (int i = NumDims - 1; i > 0; --i) {
         const Index idx0 = indices[0] / m_outputStride[i];
         const Index idx1 = indices[1] / m_outputStride[i];
@@ -413,8 +407,7 @@ struct TensorEvaluator<const TensorConvolutionOp<Indices, InputArgType, KernelAr
         indices[0] -= idx0 * m_outputStride[i];
         indices[1] -= idx1 * m_outputStride[i];
       }
-    }
-    else {
+    } else {
       for (int i = 0; i < NumDims - 1; ++i) {
         const Index idx0 = indices[0] / m_outputStride[i];
         const Index idx1 = indices[1] / m_outputStride[i];
@@ -462,14 +455,13 @@ struct TensorEvaluator<const TensorConvolutionOp<Indices, InputArgType, KernelAr
  private:
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index firstInput(Index index) const {
     Index startInput = 0;
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       for (int i = NumDims - 1; i > 0; --i) {
         const Index idx = index / m_outputStride[i];
         startInput += idx * m_inputStride[i];
         index -= idx * m_outputStride[i];
       }
-    }
-    else {
+    } else {
       for (int i = 0; i < NumDims - 1; ++i) {
         const Index idx = index / m_outputStride[i];
         startInput += idx * m_inputStride[i];
@@ -600,7 +592,7 @@ __global__ EIGEN_HIP_LAUNCH_BOUNDS_1024 void EigenConvolutionKernel1D(
     }
     __syncthreads();
   }
-};
+}
 
 template <typename InputEvaluator, typename Index, typename InputDims, int StaticKernelSizeX, int StaticKernelSizeY>
 __global__ EIGEN_HIP_LAUNCH_BOUNDS_1024 void EigenConvolutionKernel2D(
@@ -669,7 +661,7 @@ __global__ EIGEN_HIP_LAUNCH_BOUNDS_1024 void EigenConvolutionKernel2D(
 
     __syncthreads();
   }
-};
+}
 
 template <typename InputEvaluator, typename Index, typename InputDims>
 __global__ EIGEN_HIP_LAUNCH_BOUNDS_1024 void EigenConvolutionKernel3D(
@@ -744,7 +736,7 @@ __global__ EIGEN_HIP_LAUNCH_BOUNDS_1024 void EigenConvolutionKernel3D(
     }
     __syncthreads();
   }
-};
+}
 
 template <typename Indices, typename InputArgType, typename KernelArgType>
 struct TensorEvaluator<const TensorConvolutionOp<Indices, InputArgType, KernelArgType>, GpuDevice> {
@@ -880,7 +872,7 @@ struct TensorEvaluator<const TensorConvolutionOp<Indices, InputArgType, KernelAr
         const int single_stride_dim =
             static_cast<int>(Layout) == static_cast<int>(ColMajor) ? 0 : m_inputImpl.dimensions().rank() - 1;
         if (m_indices[0] == single_stride_dim) {
-          // Maximum the reuse
+          // Maximize the reuse
           const int inner_dim = ((maxSharedMem / (sizeof(Scalar)) - kernel_size + 1 + 31) / 32) * 32;
           maxX = numext::mini<int>(inner_dim, numX);
           const int maxP = numext::mini<int>(maxSharedMem / ((kernel_size - 1 + maxX) * sizeof(Scalar)), numP);

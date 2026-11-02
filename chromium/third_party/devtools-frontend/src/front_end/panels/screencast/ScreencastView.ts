@@ -18,39 +18,39 @@ import screencastViewStyles from './screencastView.css.js';
 
 const UIStrings = {
   /**
-   * @description Accessible alt text for the screencast canvas rendering of the debug target webpage
+   * @description Accessible alt text for the Screencast canvas rendering of the debug target webpage.
    */
   screencastViewOfDebugTarget: 'Screencast view of debug target',
   /**
-   * @description Glass pane element text content in Screencast View of the Remote Devices tab when toggling screencast
+   * @description Glass pane element text content in the Screencast view of the Remote devices tab when toggling screencast.
    */
   theTabIsInactive: 'The tab is inactive',
   /**
-   * @description Glass pane element text content in Screencast View of the Remote Devices tab when toggling screencast
+   * @description Glass pane element text content in the Screencast view of the Remote devices tab when profiling is in progress.
    */
   profilingInProgress: 'Profiling in progress',
   /**
-   * @description Accessible text for the screencast back button
+   * @description Accessible label for the Screencast back button.
    */
-  back: 'back',
+  back: 'Back',
   /**
-   * @description Accessible text for the screencast forward button
+   * @description Accessible label for the Screencast forward button.
    */
-  forward: 'forward',
+  forward: 'Forward',
   /**
-   * @description Accessible text for the screencast reload button
+   * @description Accessible label for the Screencast reload button.
    */
-  reload: 'reload',
+  reload: 'Reload',
   /**
-   * @description Accessible text for the address bar in screencast view
+   * @description Accessible label for the address bar in the Screencast view.
    */
   addressBar: 'Address bar',
   /**
-   * @description Accessible text for the touch emulation button.
+   * @description Accessible label for the touch input button in the Screencast view.
    */
   touchInput: 'Use touch',
   /**
-   * @description Accessible text for the mouse emulation button.
+   * @description Accessible label for the mouse input button in the Screencast view.
    */
   mouseInput: 'Use mouse',
 } as const;
@@ -177,6 +177,18 @@ export class ScreencastView extends UI.Widget.VBox implements SDK.OverlayModel.H
   override willHide(): void {
     super.willHide();
     this.stopCasting();
+  }
+
+  override onDetach(): void {
+    this.navigationProgressBar?.dispose();
+    SDK.TargetManager.TargetManager.instance().removeEventListener(SDK.TargetManager.Events.SUSPEND_STATE_CHANGED,
+                                                                   this.onSuspendStateChange, this);
+    if (this.resourceTreeModel) {
+      this.resourceTreeModel.removeEventListener(SDK.ResourceTreeModel.Events.PrimaryPageChanged,
+                                                 this.requestNavigationHistoryEvent, this);
+      this.resourceTreeModel.removeEventListener(SDK.ResourceTreeModel.Events.CachedResourcesLoaded,
+                                                 this.requestNavigationHistoryEvent, this);
+    }
   }
 
   private async startCasting(): Promise<void> {
@@ -629,11 +641,9 @@ export class ScreencastView extends UI.Widget.VBox implements SDK.OverlayModel.H
   }
 
   private createCheckerboardPattern(context: CanvasRenderingContext2D): CanvasPattern|null {
-    const pattern = document.createElement('canvas');
     const size = 32;
-    pattern.width = size * 2;
-    pattern.height = size * 2;
-    const pctx = pattern.getContext('2d', {willReadFrequently: true}) as CanvasRenderingContext2D;
+    const pattern = new OffscreenCanvas(size * 2, size * 2);
+    const pctx = pattern.getContext('2d', {willReadFrequently: true}) as OffscreenCanvasRenderingContext2D;
 
     pctx.fillStyle = 'var(--sys-color-neutral-outline)';
     pctx.fillRect(0, 0, size * 2, size * 2);
@@ -787,6 +797,8 @@ export const HTTP_REGEX = /^http:\/\/(.+)/;
 export const SCHEME_REGEX = /^(https?|about|chrome):/;
 
 export class ProgressTracker {
+  private readonly resourceTreeModel: SDK.ResourceTreeModel.ResourceTreeModel|null;
+  private readonly networkManager: SDK.NetworkManager.NetworkManager|null;
   private element: HTMLElement;
   private requestIds: Map<string, SDK.NetworkRequest.NetworkRequest>|null;
   private startedRequests: number;
@@ -797,19 +809,33 @@ export class ProgressTracker {
       resourceTreeModel: SDK.ResourceTreeModel.ResourceTreeModel|null,
       networkManager: SDK.NetworkManager.NetworkManager|null, element: HTMLElement) {
     this.element = element;
-    if (resourceTreeModel) {
-      resourceTreeModel.addEventListener(
-          SDK.ResourceTreeModel.Events.PrimaryPageChanged, this.onPrimaryPageChanged, this);
-      resourceTreeModel.addEventListener(SDK.ResourceTreeModel.Events.Load, this.onLoad, this);
+    this.resourceTreeModel = resourceTreeModel;
+    this.networkManager = networkManager;
+    if (this.resourceTreeModel) {
+      this.resourceTreeModel.addEventListener(SDK.ResourceTreeModel.Events.PrimaryPageChanged,
+                                              this.onPrimaryPageChanged, this);
+      this.resourceTreeModel.addEventListener(SDK.ResourceTreeModel.Events.Load, this.onLoad, this);
     }
-    if (networkManager) {
-      networkManager.addEventListener(SDK.NetworkManager.Events.RequestStarted, this.onRequestStarted, this);
-      networkManager.addEventListener(SDK.NetworkManager.Events.RequestFinished, this.onRequestFinished, this);
+    if (this.networkManager) {
+      this.networkManager.addEventListener(SDK.NetworkManager.Events.RequestStarted, this.onRequestStarted, this);
+      this.networkManager.addEventListener(SDK.NetworkManager.Events.RequestFinished, this.onRequestFinished, this);
     }
     this.requestIds = null;
     this.startedRequests = 0;
     this.finishedRequests = 0;
     this.maxDisplayedProgress = 0;
+  }
+
+  dispose(): void {
+    if (this.resourceTreeModel) {
+      this.resourceTreeModel.removeEventListener(SDK.ResourceTreeModel.Events.PrimaryPageChanged,
+                                                 this.onPrimaryPageChanged, this);
+      this.resourceTreeModel.removeEventListener(SDK.ResourceTreeModel.Events.Load, this.onLoad, this);
+    }
+    if (this.networkManager) {
+      this.networkManager.removeEventListener(SDK.NetworkManager.Events.RequestStarted, this.onRequestStarted, this);
+      this.networkManager.removeEventListener(SDK.NetworkManager.Events.RequestFinished, this.onRequestFinished, this);
+    }
   }
 
   private onPrimaryPageChanged(): void {

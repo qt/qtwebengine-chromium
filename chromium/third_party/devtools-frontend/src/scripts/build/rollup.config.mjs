@@ -28,5 +28,5 @@ export default commandLineArgs => ({
       },
     },
     sourcemaps(),
-  ]
+  ],
 });

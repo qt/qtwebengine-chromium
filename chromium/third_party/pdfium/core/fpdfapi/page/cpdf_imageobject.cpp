@@ -34,15 +34,7 @@ void CPDF_ImageObject::Transform(const CFX_Matrix& matrix) {
   SetDirty(true);
 }
 
-bool CPDF_ImageObject::IsImage() const {
-  return true;
-}
-
 CPDF_ImageObject* CPDF_ImageObject::AsImage() {
-  return this;
-}
-
-const CPDF_ImageObject* CPDF_ImageObject::AsImage() const {
   return this;
 }
 

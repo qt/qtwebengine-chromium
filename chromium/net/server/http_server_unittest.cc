@@ -8,12 +8,14 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "base/auto_reset.h"
+#include "base/byte_size.h"
 #include "base/check_op.h"
 #include "base/compiler_specific.h"
 #include "base/containers/span.h"
@@ -69,7 +71,12 @@ class TestHttpClient {
     AddressList addresses(address);
     NetLogSource source;
     socket_ = std::make_unique<TCPClientSocket>(addresses, nullptr, nullptr,
-                                                nullptr, source);
+                                                nullptr, source,
+                                                // No need to use a target
+                                                // network here. This is used
+                                                // only for testing in
+                                                // non-multi-network scenarios.
+                                                handles::kInvalidNetworkHandle);
 
     TestCompletionCallback callback;
     int rv = socket_->Connect(callback.callback());
@@ -169,7 +176,7 @@ class TestHttpClient {
     auto headers =
         base::MakeRefCounted<HttpResponseHeaders>(HttpUtil::AssembleRawHeaders(
             std::string_view(response.data(), end_of_headers)));
-    std::optional<base::ByteCount> content_length = headers->GetContentLength();
+    std::optional<base::ByteSize> content_length = headers->GetContentLength();
     return !content_length || body_size >= content_length->InBytes();
   }
 

@@ -10,6 +10,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <variant>
 
 #include "base/containers/flat_map.h"
 #include "base/dcheck_is_on.h"
@@ -25,11 +26,12 @@
 #include "components/services/storage/privileged/mojom/indexed_db_client_state_checker.mojom.h"
 #include "components/services/storage/public/mojom/storage_service.mojom-forward.h"
 #include "content/browser/background_sync/background_sync_context_impl.h"
-#include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/content_index/content_index_context_impl.h"
+#include "content/browser/declarative_performance_observer/declarative_performance_observer_store.h"
 #include "content/browser/dom_storage/dom_storage_context_wrapper.h"
 #include "content/browser/locks/lock_manager.h"
 #include "content/browser/notifications/platform_notification_context_impl.h"
+#include "content/browser/security/cpsp/child_process_security_policy_impl.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/worker_host/dedicated_worker_service_impl.h"
 #include "content/common/content_export.h"
@@ -77,7 +79,6 @@ class DeviceBoundSessionAccessObserver;
 namespace storage {
 class BlobUrlRegistry;
 struct BucketClientInfo;
-class SharedStorageManager;
 }
 
 namespace content {
@@ -86,8 +87,6 @@ namespace indexed_db {
 class IndexedDBControlWrapper;
 }
 
-class AggregationService;
-class AttributionManager;
 class BackgroundFetchContext;
 class BlobRegistryWrapper;
 class BluetoothAllowedDevicesMap;
@@ -107,17 +106,10 @@ class FileSystemAccessManagerImpl;
 class FontAccessManager;
 class GeneratedCodeCacheContext;
 class HostZoomLevelContext;
-class InterestGroupManagerImpl;
-class NavigationStateKeepAlive;
 class PaymentAppContextImpl;
-class PrivateAggregationDataModel;
-class PrivateAggregationManager;
-class PrivateAggregationManagerImpl;
 class PushMessagingContext;
 class QuotaContext;
 class ReconnectableURLLoaderFactoryForIOThreadWrapper;
-class SharedStorageHeaderObserver;
-class SharedStorageRuntimeManager;
 class SharedWorkerServiceImpl;
 class SubresourceProxyingURLLoaderService;
 class NavigationOrDocumentHandle;
@@ -157,19 +149,6 @@ class CONTENT_EXPORT StoragePartitionImpl
       BackgroundSyncContextImpl* background_sync_context);
   void OverrideSharedWorkerServiceForTesting(
       std::unique_ptr<SharedWorkerServiceImpl> shared_worker_service);
-  void OverrideSharedStorageRuntimeManagerForTesting(
-      std::unique_ptr<SharedStorageRuntimeManager>
-          shared_storage_runtime_manager);
-  void OverrideSharedStorageHeaderObserverForTesting(
-      std::unique_ptr<SharedStorageHeaderObserver>
-          shared_storage_header_observer);
-  void OverrideAggregationServiceForTesting(
-      std::unique_ptr<AggregationService> aggregation_service);
-  void OverrideAttributionManagerForTesting(
-      std::unique_ptr<AttributionManager> attribution_manager);
-  void OverridePrivateAggregationManagerForTesting(
-      std::unique_ptr<PrivateAggregationManagerImpl>
-          private_aggregation_manager);
   void OverrideDeviceBoundSessionManagerForTesting(
       std::unique_ptr<network::mojom::DeviceBoundSessionManager>
           device_bound_session_manager);
@@ -202,10 +181,7 @@ class CONTENT_EXPORT StoragePartitionImpl
   storage::mojom::LocalStorageControl* GetLocalStorageControl() override;
   LockManager<storage::BucketId>*
   GetLockManager();  // override; TODO: Add to interface
-  // TODO(crbug.com/40185706): Add this method to the StoragePartition
-  // interface, which would also require making SharedStorageRuntimeManager
-  // an interface accessible in //content/public/.
-  SharedStorageRuntimeManager* GetSharedStorageRuntimeManager();  // override;
+
   storage::mojom::IndexedDBControl& GetIndexedDBControl() override;
   FileSystemAccessEntryFactory* GetFileSystemAccessEntryFactory() override;
   storage::mojom::CacheStorageControl* GetCacheStorageControl() override;
@@ -220,12 +196,8 @@ class CONTENT_EXPORT StoragePartitionImpl
   HostZoomLevelContext* GetHostZoomLevelContext() override;
   ZoomLevelDelegate* GetZoomLevelDelegate() override;
   PlatformNotificationContextImpl* GetPlatformNotificationContext() override;
-  InterestGroupManager* GetInterestGroupManager() override;
   BrowsingTopicsSiteDataManager* GetBrowsingTopicsSiteDataManager() override;
   leveldb_proto::ProtoDatabaseProvider* GetProtoDatabaseProvider() override;
-  // Use outside content.
-  AttributionDataModel* GetAttributionDataModel() override;
-  PrivateAggregationDataModel* GetPrivateAggregationDataModel() override;
 #if BUILDFLAG(ENABLE_LIBRARY_CDMS)
   CdmStorageDataModel* GetCdmStorageDataModel() override;
 #endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS)
@@ -274,7 +246,7 @@ class CONTENT_EXPORT StoragePartitionImpl
   void SetNetworkContextForTesting(
       mojo::PendingRemote<network::mojom::NetworkContext>
           network_context_remote) override;
-  void OverrideDeleteStaleSessionOnlyCookiesDelayForTesting(
+  void OverrideDeleteStaleSessionCleanupDelayForTesting(
       const base::TimeDelta& delay) override;
 
   // TODO(crbug.com/352651664): Consider merging to
@@ -295,15 +267,10 @@ class CONTENT_EXPORT StoragePartitionImpl
   BucketManager* GetBucketManager();
   QuotaContext* GetQuotaContext();
   // Use inside content.
-  AttributionManager* GetAttributionManager();
   void SetFontAccessManagerForTesting(
       std::unique_ptr<FontAccessManager> font_access_manager);
   const std::string& GetPartitionDomain() const;
-  AggregationService* GetAggregationService();
   FontAccessManager* GetFontAccessManager();
-
-  storage::SharedStorageManager* GetSharedStorageManager() override;
-  PrivateAggregationManager* GetPrivateAggregationManager();
 
   // blink::mojom::DomStorage interface.
   void OpenLocalStorage(
@@ -401,17 +368,11 @@ class CONTENT_EXPORT StoragePartitionImpl
           methods_with_options,
       const std::optional<std::string>& with_lock,
       OnSharedStorageHeaderReceivedCallback callback) override;
-  void OnAdAuctionEventRecordHeaderReceived(
-      network::AdAuctionEventRecord event_record,
-      const std::optional<url::Origin>& top_frame_origin) override;
 
   // performance_scenarios::MatchingScenarioObserver overrides:
   void OnScenarioMatchChanged(performance_scenarios::ScenarioScope scope,
                               bool matches_pattern) override;
 
-  SharedStorageHeaderObserver* shared_storage_header_observer() {
-    return shared_storage_header_observer_.get();
-  }
 
   // Can return nullptr while `this` is being destroyed.
   BrowserContext* browser_context() const;
@@ -490,7 +451,11 @@ class CONTENT_EXPORT StoragePartitionImpl
   mojo::PendingRemote<network::mojom::URLLoaderNetworkServiceObserver>
   CreateURLLoaderNetworkObserverForServiceOrSharedWorker(
       const network::OriginatingProcessId& process_id,
-      const url::Origin& worker_origin);
+      const url::Origin& worker_origin,
+      const std::optional<blink::StorageKey>& storage_key = std::nullopt);
+
+  mojo::PendingRemote<network::mojom::URLLoaderNetworkServiceObserver>
+  CreateURLLoaderNetworkObserverForDeviceBoundSessions();
 
   mojo::PendingRemote<network::mojom::DeviceBoundSessionAccessObserver>
   CreateDeviceBoundSessionObserverForServiceWorker();
@@ -518,15 +483,6 @@ class CONTENT_EXPORT StoragePartitionImpl
   // Called by BrowserContextImpl prior to destruction.
   void OnBrowserContextWillBeDestroyed();
 
-  // Store `receiver` and its corresponding `handle`. These will be kept alive
-  // as long as the remote endpoint of `receiver` is still alive on the renderer
-  // side. The receiver will be automatically deleted when the endpoint is
-  // disconnected.
-  void RegisterKeepAliveHandle(
-      mojo::PendingReceiver<blink::mojom::NavigationStateKeepAliveHandle>
-          receiver,
-      std::unique_ptr<NavigationStateKeepAlive> handle);
-
   // Forward the call to `NetworkContext::RestrictNetworkForIds` and save the
   // IDs in `StoragePartitionImpl`. Clients should restrict network access for
   // IDs using this function instead of calling
@@ -550,16 +506,6 @@ class CONTENT_EXPORT StoragePartitionImpl
   void ClearNetworkRestrictionsAfterDelay(
       const std::vector<base::UnguessableToken>& network_restrictions_ids);
 
-  // Get the NavigationStateKeepAlive associated with `frame_token`. See
-  // `navigation_state_keep_alive_map_`.
-  NavigationStateKeepAlive* GetNavigationStateKeepAlive(
-      blink::LocalFrameToken frame_token);
-
-  // Removes the NavigationStateKeepAlive associated with `frame_token`. This
-  // should be called when the keep alive is destructed.
-  void RemoveKeepAliveHandleFromMap(blink::LocalFrameToken frame_token,
-                                    NavigationStateKeepAlive* keep_alive);
-
   void SetClearNetworkRestrictionsParamsForTesting(
       const base::TimeDelta& delay,
       base::RepeatingClosure callback);
@@ -573,10 +519,112 @@ class CONTENT_EXPORT StoragePartitionImpl
   void DecrementActiveDocumentCount(const net::NetworkIsolationKey& nik);
   int GetActiveDocumentCount(const net::NetworkIsolationKey& nik);
 
+  DeclarativePerformanceObserverStore*
+  GetDeclarativePerformanceObserverStore() {
+    return declarative_performance_observer_store_.get();
+  }
+
   enum class ContextType {
     kRenderFrameHostContext,
     kNavigationRequestContext,
     kSharedOrServiceWorkerContext,
+    kDeviceBoundSessionContext,
+  };
+
+  // Public so that free helper functions in the anonymous namespace of
+  // storage_partition_impl.cc (e.g. ResolveLocalNetworkAccess) can reference
+  // it.
+  class URLLoaderNetworkContext {
+   public:
+    struct NavigationRequestContext {
+      scoped_refptr<NavigationOrDocumentHandle> navigation_or_document;
+    };
+    struct RenderFrameHostContext {
+      scoped_refptr<NavigationOrDocumentHandle> navigation_or_document;
+    };
+    struct SharedOrServiceWorkerContext {
+      network::OriginatingProcessId process_id;
+      std::optional<url::Origin> worker_origin;
+      // Holds the storage key of the worker that owns this network context.
+      // When present, `CalculateStorageKey()` uses this key to scope
+      // Clear-Site-Data filter deletions to the worker's top-level site
+      // partition. Is `std::nullopt` for contexts that lack a worker storage
+      // key.
+      std::optional<blink::StorageKey> storage_key;
+    };
+
+    struct DeviceBoundSessionContext {};
+
+    using Context = std::variant<NavigationRequestContext,
+                                 RenderFrameHostContext,
+                                 SharedOrServiceWorkerContext,
+                                 DeviceBoundSessionContext>;
+
+    ~URLLoaderNetworkContext();
+
+    // Allow copy and assign.
+    URLLoaderNetworkContext(const URLLoaderNetworkContext& other);
+    URLLoaderNetworkContext& operator=(const URLLoaderNetworkContext& other);
+
+    // Creates a URLLoaderNetworkContext for the RenderFrameHost.
+    static StoragePartitionImpl::URLLoaderNetworkContext
+    CreateForRenderFrameHost(
+        GlobalRenderFrameHostId global_render_frame_host_id);
+
+    // Creates a URLLoaderNetworkContext for the navigation request.
+    static StoragePartitionImpl::URLLoaderNetworkContext CreateForNavigation(
+        NavigationRequest& navigation_request);
+
+    // Creates a URLLoaderNetworkContext for the service or shared worker.
+    static StoragePartitionImpl::URLLoaderNetworkContext
+    CreateForServiceOrSharedWorker(
+        const network::OriginatingProcessId& process_id,
+        const url::Origin& worker_origin,
+        const std::optional<blink::StorageKey>& storage_key = std::nullopt);
+
+    // Creates a URLLoaderNetworkContext for background Device Bound Sessions
+    // requests.
+    static StoragePartitionImpl::URLLoaderNetworkContext
+    CreateForDeviceBoundSessions();
+
+    // Returns true if `context_` holds `NavigationRequestContext`.
+    bool IsNavigationRequestContext() const;
+
+    ContextType type() const;
+
+    const Context& context() const { return context_; }
+    Context& context() { return context_; }
+
+    // Helper to retrieve `NavigationOrDocumentHandle*` if the underlying
+    // variant is either `RenderFrameHostContext` or `NavigationRequestContext`.
+    // Returns `nullptr` otherwise.
+    NavigationOrDocumentHandle* navigation_or_document() const;
+
+    // Returns nullptr if `context_` holds `SharedOrServiceWorkerContext` or
+    // `DeviceBoundSessionContext`. Otherwise returns the WebContents.
+    WebContents* GetWebContents();
+
+    // Returns true if the request is the primary main frame navigation.
+    bool IsPrimaryMainFrameRequest();
+
+   private:
+    // Used when `context_` holds `RenderFrameHostContext`.
+    explicit URLLoaderNetworkContext(
+        GlobalRenderFrameHostId global_render_frame_host_id);
+
+    // Used when `context_` holds `SharedOrServiceWorkerContext`.
+    URLLoaderNetworkContext(
+        const network::OriginatingProcessId& process_id,
+        const url::Origin& worker_origin,
+        const std::optional<blink::StorageKey>& storage_key = std::nullopt);
+
+    // Used when `context_` holds `NavigationRequestContext`.
+    explicit URLLoaderNetworkContext(NavigationRequest& navigation_request);
+
+    // Used when `context_` holds `DeviceBoundSessionContext`.
+    URLLoaderNetworkContext();
+
+    Context context_;
   };
 
  private:
@@ -627,66 +675,6 @@ class CONTENT_EXPORT StoragePartitionImpl
                            RemoveProtectedLocalStorageForever);
   FRIEND_TEST_ALL_PREFIXES(StoragePartitionImplTest,
                            RemoveLocalStorageForLastWeek);
-
-  class URLLoaderNetworkContext {
-   public:
-    ~URLLoaderNetworkContext();
-
-    // Allow copy and assign.
-    URLLoaderNetworkContext(const URLLoaderNetworkContext& other);
-    URLLoaderNetworkContext& operator=(const URLLoaderNetworkContext& other);
-
-    // Creates a URLLoaderNetworkContext for the RenderFrameHost.
-    static StoragePartitionImpl::URLLoaderNetworkContext
-    CreateForRenderFrameHost(
-        GlobalRenderFrameHostId global_render_frame_host_id);
-
-    // Creates a URLLoaderNetworkContext for the navigation request.
-    static StoragePartitionImpl::URLLoaderNetworkContext CreateForNavigation(
-        NavigationRequest& navigation_request);
-
-    // Used when `type` is `kRenderFrameHostContext`.
-    explicit URLLoaderNetworkContext(
-        GlobalRenderFrameHostId global_render_frame_host_id);
-
-    // Used when `type` is `kSharedOrServiceWorkerContext`.
-    URLLoaderNetworkContext(const network::OriginatingProcessId& process_id,
-                            const url::Origin& worker_origin);
-
-    // Used when `type` is `kNavigationRequestContext`.
-    explicit URLLoaderNetworkContext(NavigationRequest& navigation_request);
-
-    // Returns true if `type` is `kNavigationRequestContext`.
-    bool IsNavigationRequestContext() const;
-
-    ContextType type() const { return type_; }
-
-    NavigationOrDocumentHandle* navigation_or_document() const {
-      return navigation_or_document_.get();
-    }
-
-    network::OriginatingProcessId process_id() const { return process_id_; }
-    const std::optional<url::Origin>& worker_origin() const {
-      return worker_origin_;
-    }
-
-    // If `type_` is kSharedOrServiceWorkerContext, returns nullptr. Otherwise
-    // returns the WebContents.
-    WebContents* GetWebContents();
-
-    // Returns true if the request is the primary main frame navigation.
-    bool IsPrimaryMainFrameRequest();
-
-   private:
-    ContextType type_;
-    scoped_refptr<NavigationOrDocumentHandle> navigation_or_document_;
-
-    // Only valid when `type_` is kSharedOrServiceWorkerContext.
-    network::OriginatingProcessId process_id_;
-
-    // Only valid and non-nullopt when `type_` is kSharedOrServiceWorkerContext.
-    std::optional<url::Origin> worker_origin_;
-  };
 
   // `relative_partition_path` is the relative path under `profile_path` to the
   // StoragePartition's on-disk-storage.
@@ -761,6 +749,7 @@ class CONTENT_EXPORT StoragePartitionImpl
   GlobalRenderFrameHostId GetRenderFrameHostIdFromNetworkContext();
 
   void DeleteStaleSessionOnlyCookiesAfterDelay();
+  void DeleteStaleSessionDataAfterDelay();
 
   void ClearNetworkRestrictionsAfterDelayCallback(
       const std::vector<base::UnguessableToken>& network_restrictions_ids);
@@ -822,31 +811,15 @@ class CONTENT_EXPORT StoragePartitionImpl
   std::unique_ptr<leveldb_proto::ProtoDatabaseProvider>
       proto_database_provider_;
   scoped_refptr<ContentIndexContextImpl> content_index_context_;
-  std::unique_ptr<AttributionManager> attribution_manager_;
   std::unique_ptr<FontAccessManager> font_access_manager_;
-  std::unique_ptr<InterestGroupManagerImpl> interest_group_manager_;
   std::unique_ptr<BrowsingTopicsSiteDataManager>
       browsing_topics_site_data_manager_;
-  std::unique_ptr<AggregationService> aggregation_service_;
 #if BUILDFLAG(ENABLE_LIBRARY_CDMS)
   std::unique_ptr<CdmStorageManager> cdm_storage_manager_;
 #endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS)
   mojo::Remote<network::mojom::DeviceBoundSessionManager>
       device_bound_session_manager_;
 
-  // Owning pointer to the SharedStorageManager for this partition.
-  std::unique_ptr<storage::SharedStorageManager> shared_storage_manager_;
-
-  // This needs to be declared after `shared_storage_manager_` because
-  // `shared_storage_worklet_host` (managed by
-  // `shared_storage_runtime_manager_`) ultimately stores a raw pointer on
-  // it.
-  std::unique_ptr<SharedStorageRuntimeManager> shared_storage_runtime_manager_;
-
-  // Owning pointer to the `SharedStorageHeaderObserver` for this partition.
-  std::unique_ptr<SharedStorageHeaderObserver> shared_storage_header_observer_;
-
-  std::unique_ptr<PrivateAggregationManagerImpl> private_aggregation_manager_;
 
   // ReceiverSet for DomStorage, using the
   // ChildProcessSecurityPolicyImpl::Handle as the binding context type. The
@@ -925,36 +898,6 @@ class CONTENT_EXPORT StoragePartitionImpl
 
   int next_pending_trust_token_issuance_callback_key_ = 0;
 
-  // Maps frame tokens to NavigationStateKeepAlives. There is one
-  // NavigationStateKeepAlive per LocalFrameToken. It's possible to have
-  // multiple keep alives per LocalFrameToken (e.g., multiple in-flight
-  // navigations per RenderFrameHost), but this map will store the most recent
-  // NavigationStateKeepAlive.
-  // In the case of multiple navigations for a RenderFrameHost,
-  // it is assumed that they are handled in order, with the latest navigation's
-  // keep alive storing the state for that RenderFrameHost.
-  // Note: This member must be above `keep_alive_handles_receiver_set_`. During
-  // destruction, when NavigationStateKeepAlives get removed from the receiver
-  // set, they will them remove themselves from
-  // `navigation_state_keep_alive_map_`, so this map must still be alive when
-  // that happens.
-  using TokenNavigationStateKeepAliveMap =
-      absl::flat_hash_map<blink::LocalFrameToken, NavigationStateKeepAlive*>;
-  TokenNavigationStateKeepAliveMap navigation_state_keep_alive_map_;
-
-  // Active keepalive handles for in-flight navigations. They are retained
-  // on `StoragePartition` because, by design, they may need to outlive the
-  // `RenderFrameHostImpl` that initiated the navigation, but shouldn't be used
-  // in a different StoragePartition.
-  // Note that this set may contain in-flight navigations for different
-  // RenderFrameHosts, and furthermore, there may even be multiple in-flight
-  // navigations for a single RenderFrameHost.
-  // Lookups should not be done from this set. Accessing PolicyContainerHosts
-  // kept alive by NavigationStateKeepAlive should be done through
-  // PolicyContainerHost::FromFrameToken.
-  mojo::UniqueReceiverSet<blink::mojom::NavigationStateKeepAliveHandle>
-      keep_alive_handles_receiver_set_;
-
 #if DCHECK_IS_ON()
   bool on_browser_context_will_be_destroyed_called_ = false;
 #endif
@@ -966,10 +909,9 @@ class CONTENT_EXPORT StoragePartitionImpl
   std::map<base::UnguessableToken, network::ConnectionAllowlists>
       network_restrictions_ids_;
 
-  // We need to delay deleting stale session cookies until after the cookie db
-  // has initialized, otherwise we will bypass lazy loading and block.
-  // See crbug.com/40285083 for more info.
-  base::TimeDelta delete_stale_session_only_cookies_delay_{base::Minutes(1)};
+  // Delay used for deferring stale session cookies deletion and stale session
+  // storage scavenging on browser startup to avoid blocking critical paths.
+  base::TimeDelta stale_session_cleanup_delay_{base::Minutes(1)};
 
   // We need a delay when removing fenced frame nonces from here and from the
   // network service, to avoid races where a fenced frame could regain network
@@ -997,6 +939,9 @@ class CONTENT_EXPORT StoragePartitionImpl
       performance_scenarios::PerformanceScenarioObserverList,
       performance_scenarios::MatchingScenarioObserver>
       performance_scenario_observation_{this};
+
+  std::unique_ptr<DeclarativePerformanceObserverStore>
+      declarative_performance_observer_store_;
 
   base::WeakPtrFactory<StoragePartitionImpl> weak_factory_{this};
 };

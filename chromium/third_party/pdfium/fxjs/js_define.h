@@ -72,7 +72,7 @@ void JSPropGetter(const char* prop_name_string,
                   const char* class_name_string,
                   v8::Local<v8::Name> property,
                   const v8::PropertyCallbackInfo<v8::Value>& info) {
-  auto pObj = JSGetObject<C>(info.HolderV2());
+  auto pObj = JSGetObject<C>(info.Holder());
   if (!pObj) {
     return;
   }
@@ -97,7 +97,7 @@ void JSPropSetter(const char* prop_name_string,
                   v8::Local<v8::Name> property,
                   v8::Local<v8::Value> value,
                   const v8::PropertyCallbackInfo<v8::Boolean>& info) {
-  auto pObj = JSGetObject<C>(info.HolderV2());
+  auto pObj = JSGetObject<C>(info.Holder());
   if (!pObj) {
     return;
   }

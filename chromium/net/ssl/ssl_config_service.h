@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/observer_list.h"
+#include "net/base/ech_mode.h"
 #include "net/base/net_export.h"
 #include "net/cert/x509_certificate.h"
 #include "net/ssl/ssl_config.h"
@@ -61,23 +62,9 @@ struct NET_EXPORT SSLContextConfig {
 
   // Helper function to select TLS Trust Anchor IDs to advertise in the TLS
   // handshake, so that the server can serve a certificate that the client
-  // trusts. `server_advertised_trust_anchor_ids` is a list of Trust Anchor IDs,
-  // in binary representation, that the server has provided out-of-band (e.g. in
-  // a DNS record). The intersection with `trust_anchor_ids` is returned in wire
-  // format (a series of 8-bit length prefixed non-empty strings) such that it
-  // can be passed into BoringSSL.
-  std::vector<uint8_t> SelectTrustAnchorIDs(
-      const std::vector<std::vector<uint8_t>>&
-          server_advertised_trust_anchor_ids) const;
-
-  // Helper function to select TLS Trust Anchor IDs to advertise in a retry
-  // attempt if the initial certificate the server sent could not be verified.
-  // If the result is nullopt, the connection should not be retried.
-  std::optional<std::vector<uint8_t>> SelectTrustAnchorIDsForRetry(
-      X509Certificate* server_cert,
-      const std::vector<std::vector<uint8_t>>&
-          server_advertised_trust_anchor_ids,
-      bool* used_mtc_fallback) const;
+  // trusts. The list is returned in wire format (a series of 8-bit length
+  // prefixed non-empty strings) such that it can be passed into BoringSSL.
+  std::vector<uint8_t> SelectAllTrustAnchorIDs() const;
 
   // The minimum and maximum protocol versions that are enabled.
   // (Use the SSL_PROTOCOL_VERSION_xxx enumerators defined in ssl_config.h.)
@@ -143,6 +130,12 @@ class NET_EXPORT SSLConfigService {
 
   // May not be thread-safe, should only be called on the IO thread.
   virtual SSLContextConfig GetSSLContextConfig() = 0;
+
+  // Returns the host-specific EchMode for `hostname`.
+  //
+  // NOTE: This method should only be called when `ech_enabled` is true in
+  // `SSLContextConfig`.
+  virtual EchMode GetEchMode(std::string_view hostname) const = 0;
 
   // Returns true if connections to |hostname| can reuse, or are permitted to
   // reuse, connections on which a client cert has been negotiated. Note that

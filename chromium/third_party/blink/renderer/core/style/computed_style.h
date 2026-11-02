@@ -54,6 +54,7 @@
 #include "third_party/blink/renderer/core/style/computed_style_constants.h"
 #include "third_party/blink/renderer/core/style/computed_style_initial_values.h"
 #include "third_party/blink/renderer/core/style/cursor_list.h"
+#include "third_party/blink/renderer/core/style/default_anchor_data.h"
 #include "third_party/blink/renderer/core/style/display_style.h"
 #include "third_party/blink/renderer/core/style/filter_operations.h"
 #include "third_party/blink/renderer/core/style/font_size_style.h"
@@ -523,7 +524,9 @@ class ComputedStyle final : public ComputedStyleBase {
   }
 
   bool MayUseImplicitAnchor() const {
-    return PositionAnchor().IsAuto() && HasOutOfFlowPosition() &&
+    return GetDefaultAnchorData().GetType() ==
+               StylePositionAnchor::Type::kAuto &&
+           HasOutOfFlowPosition() &&
            (HasAnchorFunctions() ||
             AlignSelf().GetPosition() == ItemPosition::kAnchorCenter ||
             JustifySelf().GetPosition() == ItemPosition::kAnchorCenter);
@@ -853,8 +856,7 @@ class ComputedStyle final : public ComputedStyleBase {
     return GetFont()->GetFontDescription();
   }
   bool HasFontRelativeUnits() const {
-    return HasEmUnits() || HasRootFontRelativeUnits() ||
-           HasGlyphRelativeUnits();
+    return HasEmUnits() || HasRootRelativeUnits() || HasGlyphRelativeUnits();
   }
   bool HasAnyRelativeUnits() const {
     return HasFontRelativeUnits() || HasContainerRelativeValue() ||
@@ -1090,9 +1092,9 @@ class ComputedStyle final : public ComputedStyleBase {
 
   bool IsGapDecorationsContainer() const {
     // `SpecifiesColumns()` signifies we are in a multicol context. Return false
-    // if we are not in a multicol, grid, or flex context.
+    // if we are not in a multicol, grid, grid lanes, or flex context.
     return SpecifiesColumns() || IsDisplayFlex() || IsDisplayWebkitBox() ||
-           IsDisplayGrid();
+           IsDisplayGrid() || IsDisplayGridLanes();
   }
 
   // Flex utility functions.
@@ -1348,6 +1350,32 @@ class ComputedStyle final : public ComputedStyleBase {
     return IsHorizontalWritingMode() ? ContainIntrinsicHeight()
                                      : ContainIntrinsicWidth();
   }
+
+  StyleIntrinsicLength EffectiveContainIntrinsicWidth() const {
+    StyleIntrinsicLength length = ContainIntrinsicWidth();
+    if (HasSizeContainmentForViewTransitionScope() &&
+        RuntimeEnabledFeatures::ScopedViewTransitionSizeContainmentEnabled()) {
+      length.SetHasAuto();
+    }
+    return length;
+  }
+  StyleIntrinsicLength EffectiveContainIntrinsicHeight() const {
+    StyleIntrinsicLength length = ContainIntrinsicHeight();
+    if (HasSizeContainmentForViewTransitionScope() &&
+        RuntimeEnabledFeatures::ScopedViewTransitionSizeContainmentEnabled()) {
+      length.SetHasAuto();
+    }
+    return length;
+  }
+
+  StyleIntrinsicLength EffectiveContainIntrinsicInlineSize() const {
+    return IsHorizontalWritingMode() ? EffectiveContainIntrinsicWidth()
+                                     : EffectiveContainIntrinsicHeight();
+  }
+  StyleIntrinsicLength EffectiveContainIntrinsicBlockSize() const {
+    return IsHorizontalWritingMode() ? EffectiveContainIntrinsicHeight()
+                                     : EffectiveContainIntrinsicWidth();
+  }
   bool IsResponsivelySized() const {
     return FrameSizing() != EFrameSizing::kAuto;
   }
@@ -1569,10 +1597,6 @@ class ComputedStyle final : public ComputedStyleBase {
   bool HasOutOfFlowPosition() const {
     return HasOutOfFlowPosition(GetPosition());
   }
-  bool HasInFlowPosition() const {
-    return GetPosition() == EPosition::kRelative ||
-           GetPosition() == EPosition::kSticky;
-  }
   bool HasStickyConstrainedPosition() const {
     return GetPosition() == EPosition::kSticky &&
            (!Top().IsAuto() || !Left().IsAuto() || !Right().IsAuto() ||
@@ -1589,6 +1613,10 @@ class ComputedStyle final : public ComputedStyleBase {
   }
   EPosition GetPosition() const {
     return GetPosition(Display(), PositionInternal());
+  }
+
+  DefaultAnchorData GetDefaultAnchorData() const {
+    return DefaultAnchorData(PositionAnchor(), GetPositionArea());
   }
 
   // Clear utility functions.
@@ -1667,7 +1695,8 @@ class ComputedStyle final : public ComputedStyleBase {
   static unsigned EffectiveContainment(unsigned contain,
                                        unsigned container_type,
                                        EContentVisibility content_visibility,
-                                       bool skips_contents) {
+                                       bool skips_contents,
+                                       bool has_size_containment_for_vt_scope) {
     unsigned effective = contain;
 
     if (container_type & kContainerTypeInlineSize) {
@@ -1686,7 +1715,9 @@ class ComputedStyle final : public ComputedStyleBase {
       effective |= kContainsLayout;
       effective |= kContainsPaint;
     }
-    if (skips_contents) {
+    if (skips_contents || (has_size_containment_for_vt_scope &&
+                           RuntimeEnabledFeatures::
+                               ScopedViewTransitionSizeContainmentEnabled())) {
       effective |= kContainsSize;
     }
 
@@ -1695,7 +1726,10 @@ class ComputedStyle final : public ComputedStyleBase {
 
   unsigned EffectiveContainment() const {
     return ComputedStyle::EffectiveContainment(
-        Contain(), ContainerType(), ContentVisibility(), SkipsContents());
+        Contain(), ContainerType(), ContentVisibility(), SkipsContents(),
+        HasSizeContainmentForViewTransitionScope() &&
+            RuntimeEnabledFeatures::
+                ScopedViewTransitionSizeContainmentEnabled());
   }
 
   bool ContainsStyle() const { return EffectiveContainment() & kContainsStyle; }
@@ -2074,12 +2108,6 @@ class ComputedStyle final : public ComputedStyleBase {
            IsRunningRotateAnimationOnCompositor() ||
            IsRunningTranslateAnimationOnCompositor();
   }
-  bool RequiresPropertyNodeForAnimation() const {
-    return IsRunningOpacityAnimationOnCompositor() ||
-           IsRunningTransformRelatedAnimationOnCompositor() ||
-           IsRunningFilterAnimationOnCompositor() ||
-           IsRunningBackdropFilterAnimationOnCompositor();
-  }
 
   // Opacity utility functions.
   bool HasOpacity() const { return Opacity() < 1.0f; }
@@ -2291,11 +2319,6 @@ class ComputedStyle final : public ComputedStyleBase {
   bool HasVisualOverflowingEffect() const {
     return BoxShadow() || HasBorderImageOutsets() || HasOutline() ||
            HasMaskBoxImageOutsets() || HasGapRule() || HasBorderShape();
-  }
-
-  bool IsStackedWithoutContainment() const {
-    return IsStackingContextWithoutContainment() ||
-           GetPosition() != EPosition::kStatic;
   }
 
   // Pseudo-element styles.
@@ -2517,9 +2540,13 @@ class ComputedStyle final : public ComputedStyleBase {
       return IsDisplayListItem();
     }
     // ::backdrop is generated for top layer elements (where Overlay is not
-    // none) or for overscroll targets (which have
+    // none).
+    if (pseudo == kPseudoIdBackdrop && Overlay() == EOverlay::kNone) {
+      return false;
+    }
+    // ::overscroll-backdrop is generated for overscroll targets (which have
     // -internal-overscroll-position: auto).
-    if (pseudo == kPseudoIdBackdrop && Overlay() == EOverlay::kNone &&
+    if (pseudo == kPseudoIdOverscrollBackdrop &&
         !IsInternalOverscrollPositionAuto()) {
       return false;
     }
@@ -2807,7 +2834,8 @@ class ComputedStyle final : public ComputedStyleBase {
       const LayoutBox* box,
       const gfx::PointF& starting_point,
       const gfx::SizeF& reference_box_size) const;
-  PointAndTangent CalculatePointAndTangentOnPath(const Path& path) const;
+  PointAndTangent CalculatePointAndTangentOnPath(const Path& path,
+                                                 float zoom) const;
 
   bool DiffNeedsReshape(const ComputedStyle& other, uint64_t field_diff) const;
   bool DiffNeedsFullLayoutAndPaintInvalidation(const ComputedStyle& other,
@@ -3196,7 +3224,10 @@ class ComputedStyleBuilder final : public ComputedStyleBuilderBase {
   // contain
   bool ShouldApplyAnyContainment(const Element& element) const {
     unsigned effective_containment = ComputedStyle::EffectiveContainment(
-        Contain(), ContainerType(), ContentVisibility(), SkipsContents());
+        Contain(), ContainerType(), ContentVisibility(), SkipsContents(),
+        HasSizeContainmentForViewTransitionScope() &&
+            RuntimeEnabledFeatures::
+                ScopedViewTransitionSizeContainmentEnabled());
     return ComputedStyle::ShouldApplyAnyContainment(element, GetDisplayStyle(),
                                                     effective_containment);
   }
@@ -3466,6 +3497,10 @@ class ComputedStyleBuilder final : public ComputedStyleBuilderBase {
   }
   bool HasOutOfFlowPosition() const {
     return ComputedStyle::HasOutOfFlowPosition(GetPosition());
+  }
+
+  DefaultAnchorData GetDefaultAnchorData() const {
+    return DefaultAnchorData(PositionAnchor(), GetPositionArea());
   }
 
   // shape-image-threshold

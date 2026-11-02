@@ -6,11 +6,13 @@
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
+import * as i18n from '../../core/i18n/i18n.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as FormatterActions from '../../entrypoints/formatter_worker/FormatterActions.js';  // eslint-disable-line @devtools/es-modules-import
 import * as AiCodeCompletion from '../../models/ai_code_completion/ai_code_completion.js';
+import * as Formatter from '../../models/formatter/formatter.js';
 import * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 import * as Persistence from '../../models/persistence/persistence.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as CodeMirror from '../../third_party/codemirror.next/codemirror.next.js';
 import * as IssueCounter from '../../ui/components/issue_counter/issue_counter.js';
@@ -29,6 +31,15 @@ import {PerformanceProfilePlugin} from './ProfilePlugin.js';
 import {ResourceOriginPlugin} from './ResourceOriginPlugin.js';
 import {SnippetsPlugin} from './SnippetsPlugin.js';
 import {SourcesPanel} from './SourcesPanel.js';
+
+const UIStrings = {
+  /**
+   * @description Title of the format button
+   */
+  format: 'Format',
+} as const;
+const str_ = i18n.i18n.registerUIStrings('panels/sources/UISourceCodeFrame.ts', UIStrings);
+const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 export class UISourceCodeFrame extends Common.ObjectWrapper
                                            .eventMixin<EventTypes, typeof SourceFrame.SourceFrame.SourceFrameImpl>(
@@ -290,6 +301,24 @@ export class UISourceCodeFrame extends Common.ObjectWrapper
     this.maybeSetContent(this.#uiSourceCode.workingCopyContentData());
   }
 
+  async #formatSourceInPlace(): Promise<void> {
+    const contentDataOrError = await this.workingCopy();
+    if (TextUtils.ContentData.ContentData.isError(contentDataOrError)) {
+      return;
+    }
+    const content = TextUtils.ContentData.ContentData.textOr(contentDataOrError, '');
+    const {formattedContent, formattedMapping} = await Formatter.ScriptFormatter.format(
+        Common.Settings.Settings.instance(), this.#uiSourceCode.contentType(), this.contentType, content);
+    if (this.#uiSourceCode.workingCopy() === formattedContent) {
+      return;
+    }
+    const selection = this.textEditor.toLineColumn(this.textEditor.state.selection.main.head);
+    const [lineNumber, columnNumber] =
+        formattedMapping.originalToFormatted(selection.lineNumber, selection.columnNumber);
+    this.#uiSourceCode.setWorkingCopy(formattedContent);
+    this.revealPosition({lineNumber, columnNumber});
+  }
+
   private onWorkingCopyCommitted(): void {
     if (!this.#muteSourceCodeEvents) {
       this.maybeSetContent(this.uiSourceCode().workingCopyContentData());
@@ -433,6 +462,19 @@ export class UISourceCodeFrame extends Common.ObjectWrapper
 
   override async toolbarItems(): Promise<UI.Toolbar.ToolbarItem[]> {
     const leftToolbarItems = await super.toolbarItems();
+
+    const isEditable = Persistence.Persistence.PersistenceImpl.instance().hasEditableContent(this.#uiSourceCode);
+    const isJavaScript = Common.ResourceType.ResourceType.isJavaScriptMimeType(this.contentType);
+    const isInplaceFormattable = isEditable && isJavaScript;
+
+    if (isInplaceFormattable) {
+      const formatButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.format), 'brackets');
+      formatButton.addEventListener(UI.Toolbar.ToolbarButton.Events.CLICK, () => {
+        void this.#formatSourceInPlace();
+      });
+      leftToolbarItems.unshift(formatButton);
+    }
+
     const rightToolbarItems = [];
     for (const plugin of this.plugins) {
       leftToolbarItems.push(...plugin.leftToolbarItems());

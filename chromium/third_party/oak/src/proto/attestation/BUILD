@@ -18,11 +18,32 @@ load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
 load("@com_google_protobuf//bazel:java_lite_proto_library.bzl", "java_lite_proto_library")
 load("@com_google_protobuf//bazel:java_proto_library.bzl", "java_proto_library")
-load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@com_google_protobuf//bazel:py_proto_library.bzl", "py_proto_library")
 
 package(
     default_visibility = ["//:default_visibility"],
     licenses = ["notice"],
+)
+
+proto_library(
+    name = "assertion_proto",
+    srcs = ["assertion.proto"],
+    deps = [
+        ":endorsement_proto",
+        ":evidence_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "assertion_cc_proto",
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [":assertion_proto"],
+)
+
+java_proto_library(
+    name = "assertion_java_proto",
+    deps = [":assertion_proto"],
 )
 
 proto_library(
@@ -33,12 +54,25 @@ proto_library(
 
 cc_proto_library(
     name = "attachment_cc_proto",
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [":attachment_proto"],
 )
 
 java_proto_library(
     name = "attachment_java_proto",
     deps = [":attachment_proto"],
+)
+
+proto_library(
+    name = "cb_eventlog_proto",
+    srcs = ["cb_eventlog.proto"],
+    deps = [":eventlog_proto"],
+)
+
+cc_proto_library(
+    name = "cb_eventlog_cc_proto",
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [":cb_eventlog_proto"],
 )
 
 proto_library(
@@ -49,6 +83,7 @@ proto_library(
 
 cc_proto_library(
     name = "dice_cc_proto",
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [":dice_proto"],
 )
 
@@ -68,6 +103,7 @@ proto_library(
 
 cc_proto_library(
     name = "endorsement_cc_proto",
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [":endorsement_proto"],
 )
 
@@ -82,6 +118,31 @@ java_lite_proto_library(
 )
 
 proto_library(
+    name = "eventlog_proto",
+    srcs = ["eventlog.proto"],
+    deps = [
+        "//proto:digest_proto",
+        "@com_google_protobuf//:any_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "eventlog_cc_proto",
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [":eventlog_proto"],
+)
+
+java_proto_library(
+    name = "eventlog_java_proto",
+    deps = [":eventlog_proto"],
+)
+
+java_lite_proto_library(
+    name = "eventlog_java_proto_lite",
+    deps = [":eventlog_proto"],
+)
+
+proto_library(
     name = "evidence_proto",
     srcs = ["evidence.proto"],
     deps = [":eventlog_proto"],
@@ -89,6 +150,7 @@ proto_library(
 
 cc_proto_library(
     name = "evidence_cc_proto",
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [":evidence_proto"],
 )
 
@@ -120,12 +182,20 @@ proto_library(
         ":tcb_version_proto",
         "//proto:digest_proto",
         "@com_google_protobuf//:duration_proto",
+        "@com_google_protobuf//:empty_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
 )
 
+py_proto_library(
+    name = "reference_value_py_pb2",
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [":reference_value_proto"],
+)
+
 cc_proto_library(
     name = "reference_value_cc_proto",
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [":reference_value_proto"],
 )
 
@@ -140,12 +210,29 @@ java_lite_proto_library(
 )
 
 proto_library(
+    name = "service_proto",
+    srcs = ["service.proto"],
+    deps = [
+        ":endorsement_proto",
+        ":evidence_proto",
+        "@com_google_protobuf//:empty_proto",
+    ],
+)
+
+proto_library(
     name = "tcb_version_proto",
     srcs = ["tcb_version.proto"],
 )
 
+py_proto_library(
+    name = "tcb_version_py_pb2",
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [":tcb_version_proto"],
+)
+
 cc_proto_library(
     name = "tcb_version_cc_proto",
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [":tcb_version_proto"],
 )
 
@@ -169,6 +256,7 @@ proto_library(
 
 cc_proto_library(
     name = "verification_cc_proto",
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [":verification_proto"],
 )
 
@@ -182,51 +270,23 @@ java_lite_proto_library(
     deps = [":verification_proto"],
 )
 
-proto_library(
-    name = "eventlog_proto",
-    srcs = ["eventlog.proto"],
-    deps = [
-        "//proto:digest_proto",
-        "@com_google_protobuf//:any_proto",
-    ],
-)
-
-cc_proto_library(
-    name = "eventlog_cc_proto",
-    deps = [":eventlog_proto"],
-)
-
-java_proto_library(
-    name = "eventlog_java_proto",
-    deps = [":eventlog_proto"],
-)
-
-java_lite_proto_library(
-    name = "eventlog_java_proto_lite",
-    deps = [":eventlog_proto"],
-)
-
-proto_library(
-    name = "service_proto",
-    srcs = ["service.proto"],
-    deps = [
-        ":endorsement_proto",
-        ":evidence_proto",
-        "@com_google_protobuf//:empty_proto",
-    ],
-)
-
 build_test(
     name = "build_test",
     targets = [
         ":attachment_proto",
         ":attachment_cc_proto",
         ":attachment_java_proto",
+        ":assertion_proto",
+        ":assertion_cc_proto",
+        ":assertion_java_proto",
+        ":cb_eventlog_proto",
+        ":cb_eventlog_cc_proto",
         ":dice_proto",
         ":dice_cc_proto",
         ":dice_java_proto",
         ":eventlog_proto",
         ":eventlog_cc_proto",
+        ":eventlog_java_proto",
         ":endorsement_proto",
         ":endorsement_cc_proto",
         ":endorsement_java_proto",
@@ -236,9 +296,12 @@ build_test(
         ":reference_value_proto",
         ":reference_value_cc_proto",
         ":reference_value_java_proto",
+        ":reference_value_py_pb2",
+        ":service_proto",
         ":tcb_version_proto",
         ":tcb_version_cc_proto",
         ":tcb_version_java_proto",
+        ":tcb_version_py_pb2",
         ":verification_proto",
         ":verification_cc_proto",
         ":verification_java_proto",

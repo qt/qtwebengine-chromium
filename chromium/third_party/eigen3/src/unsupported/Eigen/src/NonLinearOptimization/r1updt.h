@@ -25,7 +25,7 @@ void r1updt(Matrix<Scalar, Dynamic, Dynamic> &s, const Matrix<Scalar, Dynamic, 1
   Scalar temp;
   JacobiRotation<Scalar> givens;
 
-  // r1updt had a broader usecase, but we don't use it here. And, more
+  // r1updt had a broader use case, but we don't use it here. And, more
   // importantly, we can not test it.
   eigen_assert(m == n);
   eigen_assert(u.size() == m);

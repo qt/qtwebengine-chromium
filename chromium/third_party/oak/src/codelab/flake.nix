@@ -7,6 +7,7 @@
     flake-utils.inputs.systems.follows = "systems";
     rust-overlay.url = "github:oxalica/rust-overlay";
     rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
+    crane.url = "github:ipetkov/crane";
   };
   outputs = { self, systems, nixpkgs, flake-utils, rust-overlay, crane }:
     (flake-utils.lib.eachDefaultSystem
@@ -20,7 +21,7 @@
           };
           rustToolchain =
             # This should be kept in sync with the value in bazel/rust/defs.bzl
-            pkgs.rust-bin.nightly."2025-03-01".default.override {
+            pkgs.rust-bin.nightly."2026-04-11".default.override {
               extensions = [
                 "clippy"
                 "llvm-tools-preview"
@@ -38,7 +39,7 @@
           src = ./.;
         in
         {
-          packages = {  };
+          packages = { };
           formatter = pkgs.nixpkgs-fmt;
           # We define a recursive set of shells, so that we can easily create a shell with a subset
           # of the dependencies for specific CI steps, without having to pull everything all the time.
@@ -86,7 +87,7 @@
             };
             # By default create a shell with all the inputs.
             default = pkgs.mkShell {
-              packages = [];
+              packages = [ ];
               inputsFrom = [
                 rust
                 bazelShell

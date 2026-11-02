@@ -5,6 +5,7 @@
 import type * as Protocol from '../../../generated/protocol.js';
 import * as Trace from '../../../models/trace/trace.js';
 import * as SourceMapsResolver from '../../../models/trace_source_maps_resolver/trace_source_maps_resolver.js';
+import * as Workspace from '../../../models/workspace/workspace.js';
 
 /** Iterates from a node down through its descendents. If the callback returns true, the loop stops. */
 function depthFirstWalk(
@@ -32,6 +33,7 @@ export class AICallTree {
       public selectedNode: Trace.Extras.TraceTree.Node|null,
       public rootNode: Trace.Extras.TraceTree.TopDownRootNode,
       public parsedTrace: Trace.TraceModel.ParsedTrace,
+      public workspace: Workspace.Workspace.WorkspaceImpl = Workspace.Workspace.WorkspaceImpl.instance(),
   ) {
   }
 
@@ -335,7 +337,7 @@ export class AICallTree {
     const selfTimeStr = roundToTenths(node.selfTime);
 
     // 6. URL Index
-    const location = SourceMapsResolver.SourceMapsResolver.codeLocationForEntry(parsedTrace, event);
+    const location = SourceMapsResolver.SourceMapsResolver.codeLocationForEntry(parsedTrace, event, this.workspace);
     const url = location?.url;
     let urlIndexStr = '';
     if (url) {

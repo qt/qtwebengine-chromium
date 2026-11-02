@@ -67,7 +67,7 @@ class TensorStorage<T, DSizes<IndexType, NumIndices_>, Options_> {
   typedef TensorStorage<T, DSizes<IndexType, NumIndices_>, Options_> Self;
 
   EIGEN_DEVICE_FUNC TensorStorage() : m_data(0), m_dimensions() {
-    if (NumIndices_ == 0) {
+    EIGEN_IF_CONSTEXPR (NumIndices_ == 0) {
       m_data = internal::conditional_aligned_new_auto<T, (Options_ & DontAlign) == 0>(1);
     }
   }
@@ -120,7 +120,7 @@ class TensorStorage<T, DSizes<IndexType, NumIndices_>, Options_> {
       internal::conditional_aligned_delete_auto<T, (Options_ & DontAlign) == 0>(m_data, currentSz);
       if (size)
         m_data = internal::conditional_aligned_new_auto<T, (Options_ & DontAlign) == 0>(size);
-      else if (NumIndices_ == 0) {
+      else EIGEN_IF_CONSTEXPR (NumIndices_ == 0) {
         m_data = internal::conditional_aligned_new_auto<T, (Options_ & DontAlign) == 0>(1);
       } else
         m_data = 0;

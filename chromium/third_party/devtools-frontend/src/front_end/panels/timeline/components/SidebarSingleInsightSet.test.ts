@@ -22,7 +22,7 @@ function getInsightComponents(insightSetComponent: Components.SidebarSingleInsig
     BaseInsightComponent[] {
   assert.isOk(insightSetComponent.element.shadowRoot);
   return [
-    ...insightSetComponent.element.shadowRoot.querySelectorAll<BaseInsightWidget>('.insight-component-widget')
+    ...insightSetComponent.element.shadowRoot.querySelectorAll<BaseInsightWidget>('.insight-component-widget'),
   ].map(widgetElement => {
     const widget = widgetElement.getWidget();
     assert.isOk(widget);

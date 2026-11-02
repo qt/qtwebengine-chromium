@@ -46,7 +46,7 @@ namespace Eigen {
 // https://en.wikipedia.org/wiki/Dekker%27s_algorithm
 // Waiting thread sets state_ then checks predicate, Notifying thread sets
 // predicate then checks state_. Due to seq_cst fences in between these
-// operations it is guaranteed than either waiter will see predicate change
+// operations it is guaranteed that either waiter will see predicate change
 // and won't block, or notifying thread will see state_ change and will unblock
 // the waiter, or both. But it can't happen that both threads don't see each
 // other changes, which would lead to deadlock.

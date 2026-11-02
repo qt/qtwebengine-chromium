@@ -1700,6 +1700,18 @@ struct FeaturesVk : FeatureSetBase
         &members,
     };
 
+    FeatureInfo supportsAmdShaderCoreProperties = {
+        "supportsAmdShaderCoreProperties",
+        FeatureCategory::VulkanFeatures,
+        &members,
+    };
+
+    FeatureInfo initializeColorAttachmentWithWhite = {
+        "initializeColorAttachmentWithWhite",
+        FeatureCategory::VulkanWorkarounds,
+        &members,
+    };
+
 };
 
 inline FeaturesVk::FeaturesVk()  = default;

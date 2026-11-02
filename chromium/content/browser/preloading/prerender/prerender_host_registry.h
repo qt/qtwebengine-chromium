@@ -5,16 +5,19 @@
 #ifndef CONTENT_BROWSER_PRELOADING_PRERENDER_PRERENDER_HOST_REGISTRY_H_
 #define CONTENT_BROWSER_PRELOADING_PRERENDER_PRERENDER_HOST_REGISTRY_H_
 
+#include <array>
 #include <memory>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/containers/circular_deque.h"
 #include "base/containers/flat_map.h"
-#include "base/memory/memory_pressure_listener.h"
+#include "base/functional/callback_helpers.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/memory_coordinator/memory_consumer.h"
 #include "base/observer_list.h"
 #include "base/observer_list_types.h"
 #include "base/timer/timer.h"
@@ -71,9 +74,8 @@ struct PrerenderAttributes;
 //   activation start by ReserveHostToActivate(), activate it by
 //   ActivateReservedHost(), and notify the registry of completion of the
 //   activation by OnActivationFinished().
-class CONTENT_EXPORT PrerenderHostRegistry
-    : public WebContentsObserver,
-      public base::MemoryPressureListener {
+class CONTENT_EXPORT PrerenderHostRegistry : public WebContentsObserver,
+                                             public base::MemoryConsumer {
  public:
   // The time to allow prerendering kept alive in the background. All the hosts
   // that this PrerenderHostRegistry holds will be terminated when the timer
@@ -121,9 +123,10 @@ class CONTENT_EXPORT PrerenderHostRegistry
     // registry at the time this is called.
     virtual void OnTrigger(const GURL& url) {}
 
-    // Called when CancelHosts() actually cancels each host.
-    virtual void OnCancel(PrerenderHostId host_id,
-                          const PrerenderCancellationReason& reason) {}
+    // Called when CancelHosts() actually cancels each host and allows them to
+    // be retriggered.
+    virtual void OnRetriggerable(PrerenderHostId host_id,
+                                 const PrerenderCancellationReason& reason) {}
 
     // Called from the registry's destructor. The observer
     // should drop any reference to the registry.
@@ -212,6 +215,13 @@ class CONTENT_EXPORT PrerenderHostRegistry
   // `frame_tree_node_id` should be the id returned by ReserveHostToActivate().
   void OnActivationFinished(PrerenderHostId prerender_host_id);
 
+  // Returns how many times the initiator's process has been reused for
+  // prerendering.
+  int GetProcessReuseCount() const;
+
+  // Increments the reuse count for the initiator's process.
+  [[nodiscard]] base::ScopedClosureRunner IncrementProcessReuseCount();
+
   // Returns the non-reserved host with the given id. Returns nullptr if the id
   // does not match any non-reserved host.
   PrerenderHost* FindNonReservedHostById(PrerenderHostId prerender_host_id);
@@ -277,6 +287,23 @@ class CONTENT_EXPORT PrerenderHostRegistry
   bool HasOngoingHttpCacheQueryForTesting() const {
     return !!http_cache_query_loader_;
   }
+  int GetHostCountByLimitGroupForTesting(PrerenderLimitGroup limit_group) {
+    return GetHostCountByLimitGroup(limit_group);
+  }
+  PrerenderHostId StartPrerenderingForTesting(
+      PrerenderHostId prerender_host_id) {
+    return StartPrerendering(prerender_host_id);
+  }
+  size_t GetPendingPrerendersCountForTesting() const {
+    return pending_prerenders_.size();
+  }
+  PrerenderHostId GetPendingPrerenderFrontForTesting() const {
+    return pending_prerenders_.empty() ? PrerenderHostId()
+                                       : pending_prerenders_.front();
+  }
+  int GetScaledLimitForTesting(PrerenderLimitGroup limit_group) const {
+    return GetScaledLimit(limit_group);
+  }
 
   bool PrerenderCanBeStartedWhenInitiatorIsInBackground();
 
@@ -321,8 +348,9 @@ class CONTENT_EXPORT PrerenderHostRegistry
   void DeleteAbandonedHosts();
 
   void NotifyTrigger(const GURL& url);
-  void NotifyCancel(PrerenderHostId host_id,
-                    const PrerenderCancellationReason& reason);
+  void NotifyRetriggerable(PrerenderHostId host_id,
+                           const PrerenderCancellationReason& reason);
+  void RemoveFromArrivalOrderQueues(PrerenderHostId host_id);
 
   // Pops one PrerenderHost from the queue and starts the prerendering if
   // there's no running prerender and an invalid PrerenderHostId is passed as
@@ -362,8 +390,14 @@ class CONTENT_EXPORT PrerenderHostRegistry
       GURL back_url,
       scoped_refptr<net::HttpResponseHeaders> headers);
 
-  void OnMemoryPressure(
-      base::MemoryPressureLevel memory_pressure_level) override;
+  // base::MemoryConsumer:
+  void OnUpdateMemoryLimit() override;
+  void OnReleaseMemory() override;
+
+  // Evicts excess running prerender hosts in `limit_group` if current host
+  // count exceeds the scaled capacity limit using the limit group's eviction
+  // policy (LIFO vs. FIFO).
+  void EvictExcessHostsForLimitGroup(PrerenderLimitGroup limit_group);
 
   void RecordPotentialPrerenderProcessReuse(bool has_matchable_hosts,
                                             const GURL& navigation_url);
@@ -375,7 +409,17 @@ class CONTENT_EXPORT PrerenderHostRegistry
 
   scoped_refptr<base::SingleThreadTaskRunner> GetTimerTaskRunner();
 
-  int GetCurrentMemoryLimit();
+  // Returns the current memory pressure limit percentage (0 to 100). Returns
+  // base::MemoryConsumer::kDefaultMemoryLimit (100) if stateful memory
+  // pressure or Prerender2 memory controls are disabled.
+  int GetCurrentMemoryLimit() const;
+
+  // Returns the baseline unscaled maximum capacity limit for `limit_group`.
+  int GetMaxLimit(PrerenderLimitGroup limit_group) const;
+
+  // Scales the baseline capacity limit of `limit_group` by the current memory
+  // limit percentage.
+  int GetScaledLimit(PrerenderLimitGroup limit_group) const;
 
   // Holds the PrerenderHostId of running PrerenderHost. Reset to an invalid
   // value when there's no running PrerenderHost. Tracks only the host id of
@@ -396,10 +440,9 @@ class CONTENT_EXPORT PrerenderHostRegistry
   base::flat_map<PrerenderHostId, std::unique_ptr<PrerenderHost>>
       prerender_host_by_id_;
 
-  // Holds the host id of non-immediate prerenders by their arrival order. It is
-  // used to calculate the oldest prerender on GetOldestHostPerLimitGroup.
-  base::circular_deque<PrerenderHostId>
-      non_immediate_prerender_host_id_by_arrival_order_;
+  // Holds the host IDs by arrival order for each PrerenderLimitGroup.
+  std::array<base::circular_deque<PrerenderHostId>, 3>
+      arrival_order_queue_by_limit_group_;
 
   // The host that is reserved for activation.
   std::unique_ptr<PrerenderHost> reserved_prerender_host_;
@@ -439,10 +482,18 @@ class CONTENT_EXPORT PrerenderHostRegistry
   // entry for it in the HTTP cache.
   std::unique_ptr<network::SimpleURLLoader> http_cache_query_loader_;
 
-  base::MemoryPressureListenerRegistration
-      memory_pressure_listener_registration_;
+  std::optional<base::MemoryConsumerRegistration> memory_consumer_registration_;
+
+  bool is_starting_prerendering_ = false;
 
   base::ObserverList<Observer> observers_;
+
+  // Decrements the reuse count for the initiator's process.
+  void DecrementProcessReuseCount();
+
+  // The number of prerender hosts which attempted to reuse the initiator's
+  // process.
+  int32_t process_reuse_count_ = 0;
 
   base::WeakPtrFactory<PrerenderHostRegistry> weak_factory_{this};
 };

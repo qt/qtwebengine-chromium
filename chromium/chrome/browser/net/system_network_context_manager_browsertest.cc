@@ -14,7 +14,9 @@
 #include "base/run_loop.h"
 #include "base/strings/strcat.h"
 #include "base/test/bind.h"
+#include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/test/test_future.h"
 #include "base/test/values_test_util.h"
 #include "base/values.h"
 #include "build/build_config.h"
@@ -33,11 +35,11 @@
 #include "components/prefs/pref_service.h"
 #include "components/version_info/version_info.h"
 #include "content/public/browser/cookie_access_details.h"
+#include "content/public/browser/first_party_sets_handler.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/network_service_instance.h"
 #include "content/public/browser/network_service_util.h"
 #include "content/public/browser/render_frame_host.h"
-#include "content/public/browser/service_process_host.h"
 #include "content/public/browser/service_process_info.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/content_features.h"
@@ -47,6 +49,7 @@
 #include "content/public/test/test_utils.h"
 #include "mojo/public/cpp/bindings/sync_call_restrictions.h"
 #include "net/base/features.h"
+#include "net/base/schemeful_site.h"
 #include "net/cookies/canonical_cookie_test_helpers.h"
 #include "net/cookies/cookie_access_result.h"
 #include "net/cookies/cookie_constants.h"
@@ -250,7 +253,7 @@ IN_PROC_BROWSER_TEST_F(SystemNetworkContextManagerBrowsertest, AuthParams) {
 // service must be restarted so the sandbox can be removed.
 class SystemNetworkContextManagerNetworkServiceSandboxBrowsertest
     : public SystemNetworkContextManagerBrowsertest,
-      public content::ServiceProcessHost::Observer,
+      public content::NetworkServiceProcessObserver,
       public testing::WithParamInterface<bool> {
  public:
   // On both ChromeOS and Linux, a pref determines whether GSSAPI is desired in
@@ -279,15 +282,12 @@ class SystemNetworkContextManagerNetworkServiceSandboxBrowsertest
 
     SystemNetworkContextManagerBrowsertest::SetUpOnMainThread();
 
-    content::ServiceProcessHost::AddObserver(this);
-    auto running_processes =
-        content::ServiceProcessHost::GetRunningProcessInfo();
-    for (const auto& info : running_processes) {
-      if (info.IsService<network::mojom::NetworkService>()) {
-        network_process_ = info.GetProcess().Duplicate();
-        break;
-      }
-    }
+    content::AddNetworkServiceProcessObserver(this);
+  }
+
+  void TearDownOnMainThread() override {
+    content::RemoveNetworkServiceProcessObserver(this);
+    SystemNetworkContextManagerBrowsertest::TearDownOnMainThread();
   }
 
   void WaitForNextLaunch() {
@@ -327,22 +327,17 @@ class SystemNetworkContextManagerNetworkServiceSandboxBrowsertest
   bool sandbox_desired_;
 
  private:
-  void OnServiceProcessLaunched(
-      const content::ServiceProcessInfo& info) override {
-    if (!info.IsService<network::mojom::NetworkService>()) {
-      return;
-    }
+  void OnServiceLaunched(const content::ServiceProcessInfo& info) override {
     network_process_ = info.GetProcess().Duplicate();
     if (launch_run_loop_) {
       launch_run_loop_->Quit();
     }
   }
 
-  void OnServiceProcessTerminatedNormally(
+  void OnServiceTerminatedNormally(
       const content::ServiceProcessInfo& info) override {}
 
-  void OnServiceProcessCrashed(
-      const content::ServiceProcessInfo& info) override {}
+  void OnServiceCrashed(const content::ServiceProcessInfo& info) override {}
 
   base::test::ScopedFeatureList scoped_feature_list_;
   base::Process network_process_;
@@ -417,7 +412,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 class SystemNetworkContextManagerNetworkServiceSandboxBrowsertest
     : public SystemNetworkContextManagerBrowsertest,
-      public content::ServiceProcessHost::Observer {
+      public content::NetworkServiceProcessObserver {
  public:
   SystemNetworkContextManagerNetworkServiceSandboxBrowsertest() {
     scoped_feature_list_.InitWithFeatures(
@@ -429,19 +424,11 @@ class SystemNetworkContextManagerNetworkServiceSandboxBrowsertest
   void SetUpOnMainThread() override {
     SystemNetworkContextManagerBrowsertest::SetUpOnMainThread();
     launch_run_loop_.emplace();
-    content::ServiceProcessHost::AddObserver(this);
-    auto running_processes =
-        content::ServiceProcessHost::GetRunningProcessInfo();
-    for (const auto& info : running_processes) {
-      if (info.IsService<network::mojom::NetworkService>()) {
-        RecordProcessSandboxState(info.GetProcess());
-        break;
-      }
-    }
+    content::AddNetworkServiceProcessObserver(this);
   }
 
   void TearDownOnMainThread() override {
-    content::ServiceProcessHost::RemoveObserver(this);
+    content::RemoveNetworkServiceProcessObserver(this);
   }
 
  protected:
@@ -456,11 +443,7 @@ class SystemNetworkContextManagerNetworkServiceSandboxBrowsertest
     network_service_sandboxed_ = integrity_level < base::MEDIUM_INTEGRITY;
   }
 
-  void OnServiceProcessLaunched(
-      const content::ServiceProcessInfo& info) override {
-    if (!info.IsService<network::mojom::NetworkService>()) {
-      return;
-    }
+  void OnServiceLaunched(const content::ServiceProcessInfo& info) override {
     RecordProcessSandboxState(info.GetProcess());
     // Expect two launches, first for the restart due to intentional crash, then
     // for the restart after the intentional crash at startup.
@@ -491,9 +474,17 @@ class SystemNetworkContextManagerNetworkServiceSandboxBrowsertest
 // to current, and then the service then crashed again to cause a restart. This
 // time the service will start sandboxed again because the early crash was in a
 // previous milestone.
+#if BUILDFLAG(IS_WIN)
+// TODO(crbug.com/532718529): Re-enable this test on Windows.
+#define MAYBE_NetworkServiceRestartsFailingLaunches \
+  DISABLED_NetworkServiceRestartsFailingLaunches
+#else
+#define MAYBE_NetworkServiceRestartsFailingLaunches \
+  NetworkServiceRestartsFailingLaunches
+#endif
 IN_PROC_BROWSER_TEST_F(
     SystemNetworkContextManagerNetworkServiceSandboxBrowsertest,
-    NetworkServiceRestartsFailingLaunches) {
+    MAYBE_NetworkServiceRestartsFailingLaunches) {
   if (!sandbox::policy::features::IsNetworkSandboxSupported()) {
     GTEST_SKIP() << "This test requires platform sandbox support.";
   }
@@ -515,7 +506,7 @@ IN_PROC_BROWSER_TEST_F(
     // Make sure the network service is fully up and running after having to
     // restart twice.
     browser()
-        ->profile()
+        ->GetProfile()
         ->GetDefaultStoragePartition()
         ->FlushNetworkInterfaceForTesting();
 
@@ -561,7 +552,7 @@ IN_PROC_BROWSER_TEST_F(
     // Make sure the network service is fully up and running after having to
     // restart.
     browser()
-        ->profile()
+        ->GetProfile()
         ->GetDefaultStoragePartition()
         ->FlushNetworkInterfaceForTesting();
 
@@ -595,7 +586,7 @@ IN_PROC_BROWSER_TEST_F(
     // Make sure the network service is fully up and running after having to
     // restart.
     browser()
-        ->profile()
+        ->GetProfile()
         ->GetDefaultStoragePartition()
         ->FlushNetworkInterfaceForTesting();
 
@@ -769,6 +760,14 @@ class SystemNetworkContextManagerWithFirstPartySetComponentBrowserTest
   SystemNetworkContextManagerWithFirstPartySetComponentBrowserTest()
       : https_server_(net::EmbeddedTestServer::TYPE_HTTPS) {}
 
+  void WaitForFirstPartySetsInit() {
+    base::test::TestFuture<net::FirstPartySetMetadata> future;
+    net::SchemefulSite site(GURL("https://a.test"));
+    content::FirstPartySetsHandler::GetInstance()->ComputeFirstPartySetMetadata(
+        site, site, net::FirstPartySetsContextConfig(), future.GetCallback());
+    ASSERT_TRUE(future.Wait());
+  }
+
   void SetUpOnMainThread() override {
     SystemNetworkContextManagerBrowsertest::SetUpOnMainThread();
     host_resolver()->AddRule("*", "127.0.0.1");
@@ -783,9 +782,7 @@ class SystemNetworkContextManagerWithFirstPartySetComponentBrowserTest
     // Since we set kWaitForFirstPartySetsInit, all cookie-carrying network
     // requests are blocked until FPS is initialized.
     feature_list_.InitWithFeatures(
-        {net::features::kWaitForFirstPartySetsInit,
-         net::features::kForceThirdPartyCookieBlocking},
-        {});
+        {net::features::kForceThirdPartyCookieBlocking}, {});
     CHECK(component_dir_.CreateUniqueTempDir());
     base::ScopedAllowBlockingForTesting allow_blocking;
 
@@ -838,10 +835,10 @@ IN_PROC_BROWSER_TEST_F(
   // reconfiguration includes setting up First-Party Sets.
   const GURL host_root = https_server()->GetURL(kHostA, "/");
   ASSERT_TRUE(content::SetCookie(
-      browser()->profile(), host_root,
+      browser()->GetProfile(), host_root,
       base::StrCat(
           {kCookieName, "=1; SameSite=None; secure; max-age=2147483647"})));
-  ASSERT_THAT(content::GetCookies(browser()->profile(), host_root),
+  ASSERT_THAT(content::GetCookies(browser()->GetProfile(), host_root),
               net::CookieStringIs(
                   testing::UnorderedElementsAre(testing::Key(kCookieName))));
 }
@@ -854,69 +851,77 @@ IN_PROC_BROWSER_TEST_F(
     return;
   }
 
-  CookieTracker cookie_tracker(web_contents());
+  WaitForFirstPartySetsInit();
 
-  const GURL url_a = https_server()->GetURL(kHostA, "/title1.html");
-  ASSERT_TRUE(content::NavigateToURL(web_contents(), url_a));
-  cookie_tracker.WaitForCookies(2);
-  const CookieAccess expected_first_party_access{
-      content::CookieAccessDetails::Type::kRead, "Cookie", "1",
-      net::CookieAccessResult(
-          net::CookieEffectiveSameSite::NO_RESTRICTION,
-          net::CookieInclusionStatus::MakeFromReasonsForTesting(
-              /*exclusions=*/{},
-              /*warnings=*/{net::CookieInclusionStatus::WarningReason::
-                                WARN_PORT_MISMATCH}),
-          net::CookieAccessSemantics::NONLEGACY,
-          net::CookieScopeSemantics::NONLEGACY, true)};
-  EXPECT_THAT(cookie_tracker.cookie_accesses(),
-              testing::ElementsAre(
-                  // a.test/title1.html
-                  expected_first_party_access,
-                  // a.test/favicon.ico
-                  expected_first_party_access));
-  cookie_tracker.cookie_accesses().clear();
+  {
+    CookieTracker cookie_tracker(web_contents());
+
+    const GURL url_a = https_server()->GetURL(kHostA, "/title1.html");
+    ASSERT_TRUE(content::NavigateToURL(web_contents(), url_a));
+    cookie_tracker.WaitForCookies(2);
+    const CookieAccess expected_first_party_access{
+        content::CookieAccessDetails::Type::kRead, "Cookie", "1",
+        net::CookieAccessResult(
+            net::CookieEffectiveSameSite::NO_RESTRICTION,
+            net::CookieInclusionStatus::MakeFromReasonsForTesting(
+                /*exclusions=*/{},
+                /*warnings=*/{net::CookieInclusionStatus::WarningReason::
+                                  WARN_PORT_MISMATCH}),
+            net::CookieAccessSemantics::NONLEGACY,
+            net::CookieScopeSemantics::NONLEGACY, true)};
+    EXPECT_THAT(cookie_tracker.cookie_accesses(),
+                testing::ElementsAre(
+                    // a.test/title1.html
+                    expected_first_party_access,
+                    // a.test/favicon.ico
+                    expected_first_party_access));
+  }
 
   const GURL url_b_cross_site(https_server()->GetURL(
       kHostB, "/cross_site_iframe_factory.html?b.test(a.test)"));
-  EXPECT_TRUE(NavigateToURL(web_contents(), url_b_cross_site));
-  cookie_tracker.WaitForCookies(2);
-  net::CookieInclusionStatus expected_third_party_inclusion_status;
-  // If the sites are in the same Related Website Sets, we're expecting the
+  // Since the sites are in the same Related Website Sets, we're expecting the
   // EXCLUDE_THIRD_PARTY_BLOCKED_WITHIN_FIRST_PARTY_SET exclusion reason.
-  expected_third_party_inclusion_status.AddExclusionReason(
-      net::CookieInclusionStatus::ExclusionReason::
-          EXCLUDE_THIRD_PARTY_BLOCKED_WITHIN_FIRST_PARTY_SET);
-  expected_third_party_inclusion_status.AddExclusionReason(
-      net::CookieInclusionStatus::ExclusionReason::
-          EXCLUDE_THIRD_PARTY_PHASEOUT);
-  expected_third_party_inclusion_status.AddWarningReason(
-      net::CookieInclusionStatus::WarningReason::WARN_PORT_MISMATCH);
+  const net::CookieInclusionStatus expected_third_party_inclusion_status =
+      net::CookieInclusionStatus::MakeFromReasonsForTesting(
+          {net::CookieInclusionStatus::ExclusionReason::
+               EXCLUDE_THIRD_PARTY_BLOCKED_WITHIN_FIRST_PARTY_SET,
+           net::CookieInclusionStatus::ExclusionReason::
+               EXCLUDE_THIRD_PARTY_PHASEOUT},
+          {net::CookieInclusionStatus::WarningReason::WARN_PORT_MISMATCH});
   const CookieAccess expected_third_party_access{
       content::CookieAccessDetails::Type::kRead, "Cookie", "1",
       net::CookieAccessResult(net::CookieEffectiveSameSite::NO_RESTRICTION,
                               expected_third_party_inclusion_status,
                               net::CookieAccessSemantics::NONLEGACY,
                               net::CookieScopeSemantics::NONLEGACY, true)};
-  EXPECT_THAT(cookie_tracker.cookie_accesses(),
-              testing::ElementsAre(
-                  // a.test iframe under b.test
-                  expected_third_party_access,
-                  // a.test/tree_parser_util.js in an iframe under b.test
-                  expected_third_party_access));
-  cookie_tracker.cookie_accesses().clear();
+
+  ASSERT_TRUE(base::test::RunUntil([&] {
+    CookieTracker cookie_tracker(web_contents());
+    EXPECT_TRUE(NavigateToURL(web_contents(), url_b_cross_site));
+    cookie_tracker.WaitForCookies(2);
+    return testing::Value(
+        cookie_tracker.cookie_accesses(),
+        testing::ElementsAre(
+            // a.test iframe under b.test
+            expected_third_party_access,
+            // a.test/tree_parser_util.js in an iframe under b.test
+            expected_third_party_access));
+  }));
 
   SimulateNetworkServiceCrash();
 
-  EXPECT_TRUE(NavigateToURL(web_contents(), url_b_cross_site));
-  cookie_tracker.WaitForCookies(2);
-  EXPECT_THAT(cookie_tracker.cookie_accesses(),
-              testing::ElementsAre(
-                  // a.test iframe under b.test
-                  expected_third_party_access,
-                  // a.test/tree_parser_util.js in an iframe under b.test
-                  expected_third_party_access));
-  cookie_tracker.cookie_accesses().clear();
+  ASSERT_TRUE(base::test::RunUntil([&] {
+    CookieTracker cookie_tracker(web_contents());
+    EXPECT_TRUE(NavigateToURL(web_contents(), url_b_cross_site));
+    cookie_tracker.WaitForCookies(2);
+    return testing::Value(
+        cookie_tracker.cookie_accesses(),
+        testing::ElementsAre(
+            // a.test iframe under b.test
+            expected_third_party_access,
+            // a.test/tree_parser_util.js in an iframe under b.test
+            expected_third_party_access));
+  }));
 }
 
 class SystemNetworkContextManagerReferrersFeatureBrowsertest

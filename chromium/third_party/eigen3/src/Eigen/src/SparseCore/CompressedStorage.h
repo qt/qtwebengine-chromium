@@ -28,11 +28,7 @@ class CompressedStorage {
   typedef Scalar_ Scalar;
   typedef StorageIndex_ StorageIndex;
 
- protected:
-  typedef typename NumTraits<Scalar>::Real RealScalar;
-
- public:
-  CompressedStorage() : m_values(0), m_indices(0), m_size(0), m_allocatedSize(0) {}
+  CompressedStorage() = default;
 
   explicit CompressedStorage(Index size) : m_values(0), m_indices(0), m_size(0), m_allocatedSize(0) { resize(size); }
 
@@ -193,10 +189,10 @@ class CompressedStorage {
   }
 
  protected:
-  Scalar* m_values;
-  StorageIndex* m_indices;
-  Index m_size;
-  Index m_allocatedSize;
+  Scalar* m_values = nullptr;
+  StorageIndex* m_indices = nullptr;
+  Index m_size = 0;
+  Index m_allocatedSize = 0;
 };
 
 }  // end namespace internal

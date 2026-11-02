@@ -21,14 +21,19 @@ BASE_DECLARE_FEATURE(kGeminiInChromeUsageReporting);
 // such as the exact command line switches used at startup.
 BASE_DECLARE_FEATURE(kBrowserLaunchMetadataReporting);
 
+#if BUILDFLAG(IS_ANDROID)
 // Controls whether the browser on Android should use its package name as the
 // executable path identifier in CBCM reports.
 BASE_DECLARE_FEATURE(kCbcmAndroidPackageNameIdentifier);
+#endif  // BUILDFLAG(IS_ANDROID)
 
 #if BUILDFLAG(IS_IOS)
 // Controls whether enterprise signal sharing is enabled on iOS.
 BASE_DECLARE_FEATURE(kIOSSignalSharingEnabled);
 #endif  // BUILDFLAG(IS_IOS)
+
+// Controls whether a report is uploaded when a profile is opened.
+BASE_DECLARE_FEATURE(kUploadReportOnProfileOpen);
 
 }  // namespace enterprise_reporting
 

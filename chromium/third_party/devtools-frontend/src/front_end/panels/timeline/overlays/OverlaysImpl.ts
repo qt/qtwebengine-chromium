@@ -914,6 +914,10 @@ export class Overlays extends EventTarget {
       return;
     }
 
+    const isPositionedByEvent =
+        overlay.entry && (overlay.renderLocation === 'BELOW_EVENT' || overlay.renderLocation === 'ABOVE_EVENT');
+    element.classList.toggle('positioned-by-event', Boolean(isPositionedByEvent));
+
     const component = element.querySelector('.devtools-timespan-breakdown-overlay');
 
     if (!component) {
@@ -981,6 +985,7 @@ export class Overlays extends EventTarget {
 
         const top = bottom - height;
         widget.top = top;
+        widget.maxHeight = height;
       }
     }
   }
@@ -1627,6 +1632,8 @@ export class Overlays extends EventTarget {
       markers: HTMLElement, marker: HTMLElement): void {
     if (Trace.Types.Events.isSoftNavigationStart(event)) {
       name = 'Soft Nav';
+    } else if (Trace.Types.Events.isSoftFirstContentfulPaint(event)) {
+      name = 'Soft FCP';
     } else if (Trace.Types.Events.isSoftLargestContentfulPaintCandidate(event)) {
       name = 'Soft LCP';
     }

@@ -152,9 +152,11 @@ static inline bool VectorEqualsString(
 #define HTML_SWITCH_TO(stateName) SWITCH_TO(HTMLTokenizer, stateName)
 
 HTMLTokenizer::HTMLTokenizer(const HTMLParserOptions& options)
-    : track_attributes_ranges_(options.track_attributes_ranges),
-      input_stream_preprocessor_(this),
-      options_(options) {
+    : truncated_markup_declaration_enabled_(
+          RuntimeEnabledFeatures::
+              HTMLParserTruncatedMarkupDeclarationEnabled()),
+      options_(options),
+      input_stream_preprocessor_(this) {
   Reset();
 }
 
@@ -844,7 +846,7 @@ bool HTMLTokenizer::NextTokenImpl(SegmentedString& source) {
         ParseError();
       }
       token_.AddNewAttribute(ToLowerCaseIfAlpha(cc));
-      if (track_attributes_ranges_) {
+      if (options_.track_attributes_ranges) {
         attributes_ranges_.AddAttribute(source.NumberOfCharactersConsumed());
       }
       HTML_ADVANCE_PAST_NON_NEWLINE_TO(kAttributeNameState);
@@ -858,32 +860,32 @@ bool HTMLTokenizer::NextTokenImpl(SegmentedString& source) {
           return HaveBufferedCharacterToken();
       }
       if (IsTokenizerWhitespace(cc)) {
-        if (track_attributes_ranges_) {
+        if (options_.track_attributes_ranges) {
           attributes_ranges_.EndAttributeName(
               source.NumberOfCharactersConsumed());
         }
         HTML_ADVANCE_TO(kAfterAttributeNameState);
       } else if (cc == '/') {
-        if (track_attributes_ranges_) {
+        if (options_.track_attributes_ranges) {
           attributes_ranges_.EndAttributeName(
               source.NumberOfCharactersConsumed());
         }
         HTML_ADVANCE_PAST_NON_NEWLINE_TO(kSelfClosingStartTagState);
       } else if (cc == '=') {
-        if (track_attributes_ranges_) {
+        if (options_.track_attributes_ranges) {
           attributes_ranges_.EndAttributeName(
               source.NumberOfCharactersConsumed());
         }
         HTML_ADVANCE_PAST_NON_NEWLINE_TO(kBeforeAttributeValueState);
       } else if (cc == '>') {
-        if (track_attributes_ranges_) {
+        if (options_.track_attributes_ranges) {
           attributes_ranges_.EndAttributeName(
               source.NumberOfCharactersConsumed());
         }
         return EmitAndResumeInDataState(source);
       } else if (cc == kEndOfFileMarker) {
         ParseError();
-        if (track_attributes_ranges_) {
+        if (options_.track_attributes_ranges) {
           attributes_ranges_.EndAttributeName(
               source.NumberOfCharactersConsumed());
         }
@@ -913,7 +915,7 @@ bool HTMLTokenizer::NextTokenImpl(SegmentedString& source) {
         ParseError();
       }
       token_.AddNewAttribute(ToLowerCaseIfAlpha(cc));
-      if (track_attributes_ranges_) {
+      if (options_.track_attributes_ranges) {
         attributes_ranges_.AddAttribute(source.NumberOfCharactersConsumed());
       }
       HTML_ADVANCE_PAST_NON_NEWLINE_TO(kAttributeNameState);
@@ -924,19 +926,19 @@ bool HTMLTokenizer::NextTokenImpl(SegmentedString& source) {
       if (IsTokenizerWhitespace(cc))
         HTML_CONSUME(kBeforeAttributeValueState);
       else if (cc == '"') {
-        if (track_attributes_ranges_) {
+        if (options_.track_attributes_ranges) {
           attributes_ranges_.BeginAttributeValue(
               source.NumberOfCharactersConsumed() + 1);
         }
         HTML_ADVANCE_PAST_NON_NEWLINE_TO(kAttributeValueDoubleQuotedState);
       } else if (cc == '&') {
-        if (track_attributes_ranges_) {
+        if (options_.track_attributes_ranges) {
           attributes_ranges_.BeginAttributeValue(
               source.NumberOfCharactersConsumed());
         }
         HTML_RECONSUME_IN(kAttributeValueUnquotedState);
       } else if (cc == '\'') {
-        if (track_attributes_ranges_) {
+        if (options_.track_attributes_ranges) {
           attributes_ranges_.BeginAttributeValue(
               source.NumberOfCharactersConsumed() + 1);
         }
@@ -951,7 +953,7 @@ bool HTMLTokenizer::NextTokenImpl(SegmentedString& source) {
       } else {
         if (cc == '<' || cc == '=' || cc == '`')
           ParseError();
-        if (track_attributes_ranges_) {
+        if (options_.track_attributes_ranges) {
           attributes_ranges_.BeginAttributeValue(
               source.NumberOfCharactersConsumed());
         }
@@ -963,7 +965,7 @@ bool HTMLTokenizer::NextTokenImpl(SegmentedString& source) {
 
     HTML_BEGIN_STATE(kAttributeValueDoubleQuotedState) {
       if (cc == '"') {
-        if (track_attributes_ranges_) {
+        if (options_.track_attributes_ranges) {
           attributes_ranges_.EndAttributeValue(
               source.NumberOfCharactersConsumed());
         }
@@ -974,7 +976,7 @@ bool HTMLTokenizer::NextTokenImpl(SegmentedString& source) {
             kCharacterReferenceInAttributeValueState);
       } else if (cc == kEndOfFileMarker) {
         ParseError();
-        if (track_attributes_ranges_) {
+        if (options_.track_attributes_ranges) {
           attributes_ranges_.EndAttributeValue(
               source.NumberOfCharactersConsumed());
         }
@@ -988,7 +990,7 @@ bool HTMLTokenizer::NextTokenImpl(SegmentedString& source) {
 
     HTML_BEGIN_STATE(kAttributeValueSingleQuotedState) {
       if (cc == '\'') {
-        if (track_attributes_ranges_) {
+        if (options_.track_attributes_ranges) {
           attributes_ranges_.EndAttributeValue(
               source.NumberOfCharactersConsumed());
         }
@@ -999,7 +1001,7 @@ bool HTMLTokenizer::NextTokenImpl(SegmentedString& source) {
             kCharacterReferenceInAttributeValueState);
       } else if (cc == kEndOfFileMarker) {
         ParseError();
-        if (track_attributes_ranges_) {
+        if (options_.track_attributes_ranges) {
           attributes_ranges_.EndAttributeValue(
               source.NumberOfCharactersConsumed());
         }
@@ -1013,7 +1015,7 @@ bool HTMLTokenizer::NextTokenImpl(SegmentedString& source) {
 
     HTML_BEGIN_STATE(kAttributeValueUnquotedState) {
       if (IsTokenizerWhitespace(cc)) {
-        if (track_attributes_ranges_) {
+        if (options_.track_attributes_ranges) {
           attributes_ranges_.EndAttributeValue(
               source.NumberOfCharactersConsumed());
         }
@@ -1023,14 +1025,14 @@ bool HTMLTokenizer::NextTokenImpl(SegmentedString& source) {
         HTML_ADVANCE_PAST_NON_NEWLINE_TO(
             kCharacterReferenceInAttributeValueState);
       } else if (cc == '>') {
-        if (track_attributes_ranges_) {
+        if (options_.track_attributes_ranges) {
           attributes_ranges_.EndAttributeValue(
               source.NumberOfCharactersConsumed());
         }
         return EmitAndResumeInDataState(source);
       } else if (cc == kEndOfFileMarker) {
         ParseError();
-        if (track_attributes_ranges_) {
+        if (options_.track_attributes_ranges) {
           attributes_ranges_.EndAttributeValue(
               source.NumberOfCharactersConsumed());
         }
@@ -1110,7 +1112,7 @@ bool HTMLTokenizer::NextTokenImpl(SegmentedString& source) {
 
     HTML_BEGIN_STATE(kProcessingInstructionOpenState) {
       CHECK(RuntimeEnabledFeatures::HTMLProcessingInstructionEnabled());
-      if (IsAsciiAlpha(cc)) {
+      if (cc == '_' || IsAsciiAlpha(cc)) {
         token_.BeginProcessingInstruction();
         HTML_RECONSUME_IN(kProcessingInstructionTargetState);
       } else if (cc == kEndOfFileMarker) {
@@ -1137,21 +1139,21 @@ bool HTMLTokenizer::NextTokenImpl(SegmentedString& source) {
       if (cc == kEndOfFileMarker) {
         ParseError();
         return EmitEndOfFile(source);
-      } else if (cc == '-' || IsAsciiAlphanumeric(cc)) {
-        token_.AppendToProcessingInstructionTarget(ToLowerCaseIfAlpha(cc));
-        temporary_buffer_.AddChar(cc);
+      } else if (cc == '-' || cc == '_' || IsAsciiAlphanumeric(cc)) {
+        token_.AppendToProcessingInstructionTarget(cc);
         HTML_CONSUME(kProcessingInstructionTargetState);
       } else {
         if (!(IsTokenizerWhitespace(cc) || cc == '>' || cc == '?') ||
             is_reserved()) {
           ParseError();
+          const HTMLToken::DataVector target_data =
+              token_.GetProcessingInstructionTarget();
           Reset();
           token_.BeginComment();
           token_.AppendToComment('?');
-          for (const UChar c : temporary_buffer_) {
+          for (const UChar c : target_data) {
             token_.AppendToComment(c);
           }
-          temporary_buffer_.clear();
           HTML_RECONSUME_IN(kContinueBogusCommentState);
         } else {
           HTML_RECONSUME_IN(kAfterProcessingInstructionTargetState);
@@ -1236,24 +1238,30 @@ bool HTMLTokenizer::NextTokenImpl(SegmentedString& source) {
           source.AdvanceExpecting('-');
           token_.BeginComment();
           HTML_SWITCH_TO(kCommentStartState);
-        } else if (result == SegmentedString::kNotEnoughCharacters)
+        } else if (result == SegmentedString::kNotEnoughCharacters &&
+                   ShouldWaitForMoreInput(source)) {
           return HaveBufferedCharacterToken();
+        }
       } else if (cc == 'D' || cc == 'd') {
         SegmentedString::LookAheadResult result =
             source.LookAheadIgnoringCase(html_tokenizer_names::kDoctype);
         if (result == SegmentedString::kDidMatch) {
           source.AdvanceExpectingIgnoringAsciiCase("doctype");
           HTML_SWITCH_TO(kDOCTYPEState);
-        } else if (result == SegmentedString::kNotEnoughCharacters)
+        } else if (result == SegmentedString::kNotEnoughCharacters &&
+                   ShouldWaitForMoreInput(source)) {
           return HaveBufferedCharacterToken();
+        }
       } else if (cc == '[' && ShouldAllowCDATA()) {
         SegmentedString::LookAheadResult result =
             source.LookAhead(html_tokenizer_names::kCdata);
         if (result == SegmentedString::kDidMatch) {
           source.AdvanceExpecting("[CDATA[");
           HTML_SWITCH_TO(kCDATASectionState);
-        } else if (result == SegmentedString::kNotEnoughCharacters)
+        } else if (result == SegmentedString::kNotEnoughCharacters &&
+                   ShouldWaitForMoreInput(source)) {
           return HaveBufferedCharacterToken();
+        }
       }
       ParseError();
       HTML_RECONSUME_IN(kBogusCommentState);
@@ -1431,16 +1439,20 @@ bool HTMLTokenizer::NextTokenImpl(SegmentedString& source) {
           if (result == SegmentedString::kDidMatch) {
             source.AdvanceExpectingIgnoringAsciiCase("public");
             HTML_SWITCH_TO(kAfterDOCTYPEPublicKeywordState);
-          } else if (result == SegmentedString::kNotEnoughCharacters)
+          } else if (result == SegmentedString::kNotEnoughCharacters &&
+                     ShouldWaitForMoreInput(source)) {
             return HaveBufferedCharacterToken();
+          }
         } else if (cc == 'S' || cc == 's') {
           SegmentedString::LookAheadResult result =
               source.LookAheadIgnoringCase(html_tokenizer_names::kSystem);
           if (result == SegmentedString::kDidMatch) {
             source.AdvanceExpectingIgnoringAsciiCase("system");
             HTML_SWITCH_TO(kAfterDOCTYPESystemKeywordState);
-          } else if (result == SegmentedString::kNotEnoughCharacters)
+          } else if (result == SegmentedString::kNotEnoughCharacters &&
+                     ShouldWaitForMoreInput(source)) {
             return HaveBufferedCharacterToken();
+          }
         }
         ParseError();
         token_.SetForceQuirks();

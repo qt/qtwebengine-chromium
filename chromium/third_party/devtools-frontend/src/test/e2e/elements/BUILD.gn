@@ -18,6 +18,7 @@ ts_e2e_library("elements") {
     "computed-pane-properties.test.ts",
     "css-hints.test.ts",
     "dom-breakpoints.test.ts",
+    "edit-as-html-select-all.test.ts",
     "element-breadcrumbs.test.ts",
     "elements-tree.test.ts",
     "filter-matched-styles.test.ts",

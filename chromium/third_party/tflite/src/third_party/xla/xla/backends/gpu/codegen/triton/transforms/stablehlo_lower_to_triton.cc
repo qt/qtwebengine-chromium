@@ -14,9 +14,7 @@ limitations under the License.
 ==============================================================================*/
 
 #include <cstdint>
-#include <iterator>
 #include <limits>
-#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -27,6 +25,7 @@ limitations under the License.
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "xla/tsl/platform/status_macros.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Casting.h"
@@ -46,6 +45,7 @@ limitations under the License.
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/TypeUtilities.h"
 #include "mlir/IR/Value.h"
+#include "mlir/IR/ValueRange.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
@@ -144,7 +144,12 @@ class LowerBroadcastInDim
 
       auto extracted = mlir::tensor::ExtractOp::create(rewriter, op.getLoc(),
                                                        broadcast_dim_input);
-
+      if (output_shape.empty()) {
+        rewriter.replaceOpWithNewOp<tensor::FromElementsOp>(
+            op, RankedTensorType::get({}, extracted.getType()),
+            ValueRange{extracted});
+        return mlir::success();
+      }
       rewriter.replaceOpWithNewOp<ttir::SplatOp>(op, op.getResult().getType(),
                                                  extracted);
       return mlir::success();
@@ -461,9 +466,9 @@ absl::StatusOr<Value> EmitBF16x9Matmul(
   constexpr int kLow = 2;
 
   Type f32 = b.getF32Type();
-  TF_RETURN_IF_ERROR(ExpectType(dot_operands.lhs, f32));
-  TF_RETURN_IF_ERROR(ExpectType(dot_operands.rhs, f32));
-  TF_RETURN_IF_ERROR(ExpectType(dot_operands.accumulator, f32));
+  RETURN_IF_ERROR(ExpectType(dot_operands.lhs, f32));
+  RETURN_IF_ERROR(ExpectType(dot_operands.rhs, f32));
+  RETURN_IF_ERROR(ExpectType(dot_operands.accumulator, f32));
 
   std::vector<Value> lhs_parts = SplitF32(b, dot_operands.lhs, kNumParts);
   std::vector<Value> rhs_parts = SplitF32(b, dot_operands.rhs, kNumParts);
@@ -500,9 +505,9 @@ absl::StatusOr<Value> EmitBF16x6Matmul(
   constexpr int kLow = 2;
 
   Type f32 = b.getF32Type();
-  TF_RETURN_IF_ERROR(ExpectType(dot_operands.lhs, f32));
-  TF_RETURN_IF_ERROR(ExpectType(dot_operands.rhs, f32));
-  TF_RETURN_IF_ERROR(ExpectType(dot_operands.accumulator, f32));
+  RETURN_IF_ERROR(ExpectType(dot_operands.lhs, f32));
+  RETURN_IF_ERROR(ExpectType(dot_operands.rhs, f32));
+  RETURN_IF_ERROR(ExpectType(dot_operands.accumulator, f32));
 
   std::vector<Value> lhs_parts = SplitF32(b, dot_operands.lhs, kNumParts);
   std::vector<Value> rhs_parts = SplitF32(b, dot_operands.rhs, kNumParts);
@@ -534,9 +539,9 @@ absl::StatusOr<Value> EmitBF16x3Matmul(
   constexpr int kLow = 1;
 
   Type f32 = b.getF32Type();
-  TF_RETURN_IF_ERROR(ExpectType(dot_operands.lhs, f32));
-  TF_RETURN_IF_ERROR(ExpectType(dot_operands.rhs, f32));
-  TF_RETURN_IF_ERROR(ExpectType(dot_operands.accumulator, f32));
+  RETURN_IF_ERROR(ExpectType(dot_operands.lhs, f32));
+  RETURN_IF_ERROR(ExpectType(dot_operands.rhs, f32));
+  RETURN_IF_ERROR(ExpectType(dot_operands.accumulator, f32));
 
   std::vector<Value> lhs_bf16 = SplitF32(b, dot_operands.lhs, kNumParts);
   std::vector<Value> rhs_bf16 = SplitF32(b, dot_operands.rhs, kNumParts);
@@ -590,13 +595,15 @@ absl::StatusOr<AlgorithmEmitter> GetAlgorithmEmitter(
 
 bool IsTf32Allowed(const ::xla::xtile::PrecisionSpec& precision_spec) {
   if (precision_spec.algorithm == ::xla::PrecisionConfig::ALG_UNSET) {
-    return tsl::tensor_float_32_execution_enabled() &&
-           StableHloPrecisionToXlaPrecision(
-               precision_spec.lhs_operand_precision) ==
-               ::xla::PrecisionConfig::DEFAULT &&
-           StableHloPrecisionToXlaPrecision(
-               precision_spec.rhs_operand_precision) ==
-               ::xla::PrecisionConfig::DEFAULT;
+    if (!tsl::tensor_float_32_execution_enabled()) {
+      return false;
+    }
+    ::xla::PrecisionConfig::Precision lhs_precision =
+        StableHloPrecisionToXlaPrecision(precision_spec.lhs_operand_precision);
+    ::xla::PrecisionConfig::Precision rhs_precision =
+        StableHloPrecisionToXlaPrecision(precision_spec.rhs_operand_precision);
+    return lhs_precision <= ::xla::PrecisionConfig::HIGH &&
+           rhs_precision <= ::xla::PrecisionConfig::HIGH;
   }
   return ::xla::algorithm_util::HasTf32InputType(precision_spec.algorithm);
 }
@@ -820,12 +827,5 @@ class StableHLOLowerToTritonPass
 };
 
 }  // namespace
-
-std::unique_ptr<Pass> CreateStableHLOLowerToTritonPass(
-    bool warp_specialization_allowed) {
-  StableHLOLowerToTritonPassOptions options;
-  options.warp_specialization_allowed_ = warp_specialization_allowed;
-  return std::make_unique<StableHLOLowerToTritonPass>(options);
-}
 
 }  // namespace mlir::triton::xla

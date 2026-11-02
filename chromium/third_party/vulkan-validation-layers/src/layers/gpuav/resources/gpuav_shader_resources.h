@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include "state_tracker/descriptor_sets.h"
 #include "gpuav/shaders/gpuav_shaders_constants.h"
 
@@ -96,6 +97,46 @@ struct DescriptorEncoding {
         }
         return 0;
     }
+};
+
+struct DescriptorBufferBindingEncoding {
+    uint32_t binding;
+    // vkGetDescriptorSetLayoutBindingOffsetEXT
+    uint32_t offset;
+};
+
+struct DescriptorBufferSetEncoding {
+    // bound buffer + offset
+    uint64_t buffer_address;
+    uint64_t bindings;  // ptr to DescriptorBufferBindingEncoding
+    uint32_t binding_count;
+    uint32_t skip;
+};
+
+// VK_EXT_descriptor_buffer
+// 3 level of indirection... because descriptor buffers
+struct DescriptorBufferSets {
+    uint64_t sets;  // ptr to DescriptorBufferSetEncoding
+};
+
+struct BoundHeapInfo {
+    // We should not need to deal with 4GB heaps (have an assert checking)
+    uint32_t heap_size;
+    // These are offset from the heap start where the being/end are
+    uint32_t reserved_begin_offset;
+    uint32_t reserved_end_offset;
+
+    uint32_t padding;
+    uint64_t heap_begin_addr;
+};
+
+// VK_EXT_descriptor_heap
+struct DescriptorHeapEncoding {
+    BoundHeapInfo* bound_resource_heap;
+    BoundHeapInfo* bound_sampler_heap;
+    // TODO - We are holding a copy of the push data here, we really should be able to get this from the shader, but will involve
+    // some SPIR-V trickery
+    void* push_data;
 };
 
 // To make things easy we make everything in GLSL a 32-bit stream to read later.

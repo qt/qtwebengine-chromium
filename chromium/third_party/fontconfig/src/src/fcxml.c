@@ -107,7 +107,7 @@ FcExprCreateNil (FcConfig *config)
 {
     FcExpr *e = FcConfigAllocExpr (config);
     if (e) {
-        e->op = FcOpNil;
+	e->op = FcOpNil;
     }
     return e;
 }
@@ -878,7 +878,7 @@ FcVStackPushNil (FcConfigParse *parse)
     FcVStack *vstack = FcVStackCreateAndPush (parse);
 
     if (!vstack)
-        return FcFalse;
+	return FcFalse;
     vstack->tag = FcVStackNil;
 
     return FcTrue;
@@ -1194,7 +1194,9 @@ FcPStackPush (FcConfigParse *parse, FcElement element, const XML_Char **attr)
 static FcBool
 FcPStackPop (FcConfigParse *parse)
 {
-    FcPStack *old;
+    FcPStack     *old;
+    static FcBool retrieved = FcFalse;
+    const char   *env = NULL;
 
     if (!parse->pstack) {
 	FcConfigMessage (parse, FcSevereError, "mismatching element");
@@ -1204,13 +1206,25 @@ FcPStackPop (FcConfigParse *parse)
     /* Don't check the attributes for FcElementNone */
     if (parse->pstack->element != FcElementNone &&
         parse->pstack->attr) {
-	/* Warn about unused attrs. */
-	FcChar8 **attrs = parse->pstack->attr;
-	while (*attrs) {
-	    if (attrs[0][0]) {
-		FcConfigMessage (parse, FcSevereWarning, "invalid attribute '%s'", attrs[0]);
+	if (!retrieved) {
+	    FcBool flag = FcFalse;
+
+	    env = getenv ("FONTCONFIG_WARN_INVALID_ATTRS");
+	    if (env && FcNameBool ((const FcChar8 *)env, &flag)) {
+		retrieved = FcTrue;
+		FcConfigSetWarningFlags (parse->config, FC_WARN_INVALID_ATTR, flag);
 	    }
-	    attrs += 2;
+	}
+	/* Warn only when a flag is turned on */
+	if (FcConfigGetWarningFlags (parse->config) & FC_WARN_INVALID_ATTR) {
+	    /* Warn about unused attrs. */
+	    FcChar8 **attrs = parse->pstack->attr;
+	    while (*attrs) {
+		if (attrs[0][0]) {
+		    FcConfigMessage (parse, FcSevereWarning, "invalid attribute '%s'", attrs[0]);
+		}
+		attrs += 2;
+	    }
 	}
     }
 
@@ -1465,79 +1479,15 @@ FcParseInt (FcConfigParse *parse)
 	return;
     }
     if (FcParseNil (parse))
-        goto bail;
+	goto bail;
     end = 0;
     l = (int)strtol ((char *)s, (char **)&end, 0);
     if (end != s + strlen ((char *)s))
 	FcConfigMessage (parse, FcSevereError, "\"%s\": not a valid integer", s);
     else
 	FcVStackPushInteger (parse, l);
- bail:
+bail:
     FcStrBufDestroy (&parse->pstack->str);
-}
-
-/*
- * idea copied from glib g_ascii_strtod with
- * permission of the author (Alexander Larsson)
- */
-
-#include <locale.h>
-
-static double
-FcStrtod (char *s, char **end)
-{
-#ifndef __BIONIC__
-    struct lconv *locale_data;
-#endif
-    const char *decimal_point;
-    int         dlen;
-    char       *dot;
-    double      v;
-
-    /*
-     * Have to swap the decimal point to match the current locale
-     * if that locale doesn't use 0x2e
-     */
-#ifndef __BIONIC__
-    locale_data = localeconv();
-    decimal_point = locale_data->decimal_point;
-    dlen = strlen (decimal_point);
-#else
-    decimal_point = ".";
-    dlen = 1;
-#endif
-
-    if ((dot = strchr (s, 0x2e)) &&
-        (decimal_point[0] != 0x2e ||
-         decimal_point[1] != 0)) {
-	char buf[128];
-	int  slen = strlen (s);
-
-	if (slen + dlen > (int)sizeof (buf)) {
-	    if (end)
-		*end = s;
-	    v = 0;
-	} else {
-	    char *buf_end;
-	    /* mantissa */
-	    strncpy (buf, s, dot - s);
-	    /* decimal point */
-	    strcpy (buf + (dot - s), decimal_point);
-	    /* rest of number */
-	    strcpy (buf + (dot - s) + dlen, dot + 1);
-	    buf_end = 0;
-	    v = strtod (buf, &buf_end);
-	    if (buf_end) {
-		buf_end = s + (buf_end - buf);
-		if (buf_end > dot)
-		    buf_end -= dlen - 1;
-	    }
-	    if (end)
-		*end = buf_end;
-	}
-    } else
-	v = strtod (s, end);
-    return v;
 }
 
 static void
@@ -1554,14 +1504,14 @@ FcParseDouble (FcConfigParse *parse)
 	return;
     }
     if (FcParseNil (parse))
-        goto bail;
+	goto bail;
     end = 0;
     d = FcStrtod ((char *)s, (char **)&end);
     if (end != s + strlen ((char *)s))
 	FcConfigMessage (parse, FcSevereError, "\"%s\": not a valid double", s);
     else
 	FcVStackPushDouble (parse, d);
- bail:
+bail:
     FcStrBufDestroy (&parse->pstack->str);
 }
 
@@ -1578,8 +1528,8 @@ FcParseString (FcConfigParse *parse, FcVStackTag tag)
 	return;
     }
     if (FcParseNil (parse)) {
-        FcStrFree (s);
-        return;
+	FcStrFree (s);
+	return;
     }
     if (!FcVStackPushString (parse, tag, s))
 	FcStrFree (s);
@@ -1721,14 +1671,14 @@ FcParseBool (FcConfigParse *parse)
     if (!parse->pstack)
 	return;
     if (FcParseNil (parse))
-        goto bail;
+	goto bail;
     s = FcStrBufDoneStatic (&parse->pstack->str);
     if (!s) {
 	FcConfigMessage (parse, FcSevereError, "out of memory");
 	return;
     }
     FcVStackPushBool (parse, FcConfigLexBool (parse, s));
- bail:
+bail:
     FcStrBufDestroy (&parse->pstack->str);
 }
 
@@ -1741,7 +1691,7 @@ FcParseCharSet (FcConfigParse *parse)
     int        n = 0;
 
     if (FcParseNil (parse))
-        goto bail;
+	goto bail;
     while ((vstack = FcVStackPeek (parse))) {
 	switch ((int)vstack->tag) {
 	case FcVStackInteger:
@@ -1769,7 +1719,7 @@ FcParseCharSet (FcConfigParse *parse)
 	}
 	FcVStackPopAndDestroy (parse);
     }
- bail:
+bail:
     if (n > 0)
 	FcVStackPushCharSet (parse, charset);
     else
@@ -1784,7 +1734,7 @@ FcParseLangSet (FcConfigParse *parse)
     int        n = 0;
 
     if (FcParseNil (parse))
-        goto bail;
+	goto bail;
     while ((vstack = FcVStackPeek (parse))) {
 	switch ((int)vstack->tag) {
 	case FcVStackString:
@@ -1799,7 +1749,7 @@ FcParseLangSet (FcConfigParse *parse)
 	}
 	FcVStackPopAndDestroy (parse);
     }
- bail:
+bail:
     if (n > 0)
 	FcVStackPushLangSet (parse, langset);
     else
@@ -2152,8 +2102,8 @@ FcPopExpr (FcConfigParse *parse)
     case FcVStackEdit:
 	break;
     case FcVStackNil:
-        expr = FcExprCreateNil (parse->config);
-        break;
+	expr = FcExprCreateNil (parse->config);
+	break;
     default:
 	break;
     }
@@ -2405,8 +2355,8 @@ FcParseInclude (FcConfigParse *parse)
 	    goto bail;
     }
     if (prefix) {
-	size_t   plen = strlen ((const char *)prefix);
-	size_t   dlen = strlen ((const char *)s);
+	size_t plen = strlen ((const char *)prefix);
+	size_t dlen = strlen ((const char *)s);
 
 	p = realloc (prefix, plen + 1 + dlen + 1);
 	if (!p) {
@@ -2545,9 +2495,9 @@ FcParseTest (FcConfigParse *parse)
     }
     iblanks_string = FcConfigGetAttribute (parse, "ignore-blanks");
     if (iblanks_string) {
-        if (FcConfigLexBool (parse, iblanks_string)) {
+	if (FcConfigLexBool (parse, iblanks_string)) {
 	    flags |= FcOpFlagIgnoreBlanks;
-        }
+	}
     }
     expr = FcPopBinary (parse, FcOpComma);
     if (!expr) {
@@ -3333,8 +3283,8 @@ _FcConfigParse (FcConfig      *config,
 	} else {
 	    FcChar8 *e = (FcChar8 *)getenv ("FONTCONFIG_FILE");
 	    if (e) {
-	        FcStrBufString (&reason, (FcChar8 *)": ");
-	        FcStrBufString (&reason, e);
+		FcStrBufString (&reason, (FcChar8 *)": ");
+		FcStrBufString (&reason, e);
 	    }
 	}
 	goto bail0;

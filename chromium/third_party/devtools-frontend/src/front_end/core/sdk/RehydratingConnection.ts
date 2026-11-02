@@ -38,15 +38,15 @@ import {TraceObject} from './TraceObject.js';
 
 const UIStrings = {
   /**
-   * @description Text that appears when no source text is available for the given script
+   * @description Text that appears when no source text is available for the given script.
    */
   noSourceText: 'No source text available',
   /**
-   * @description Text to indicate rehydrating connection cannot find host window
+   * @description Text to indicate rehydrating connection cannot find host window.
    */
-  noHostWindow: 'Can not find host window',
+  noHostWindow: 'Can’t find host window',
   /**
-   * @description Text to indicate that there is an error loading the log
+   * @description Text to indicate that there is an error loading the log.
    */
   errorLoadingLog: 'Error loading log',
 } as const;
@@ -328,7 +328,7 @@ export class RehydratingSession extends RehydratingSessionBase {
           error: {
             message: `Command ${data.method} not implemented in RehydratingSession.`,
             code: ProtocolClient.CDPConnection.CDPErrorStatus.DEVTOOLS_STUB_ERROR,
-          }
+          },
         });
         break;
     }

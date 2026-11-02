@@ -21,7 +21,7 @@ import {isMetatracingEnabled} from '../../core/metatracing';
 import {raf} from '../../core/raf_scheduler';
 import type {SidebarMenuItemInternal} from '../../core/sidebar_manager';
 import type {TraceImpl} from '../../core/trace_impl';
-import {SCM_REVISION, VERSION} from '../../gen/perfetto_version';
+import {SCM_REVISION, VERSION} from '../../virtual/version';
 import type {App} from '../../public/app';
 import {SIDEBAR_SECTIONS, type SidebarSections} from '../../public/sidebar';
 import {Icon} from '../../widgets/icon';
@@ -213,7 +213,7 @@ function getCurrentTraceItems(trace: TraceImpl): SidebarMenuItemInternal[] {
     section: 'current_trace',
     sortOrder: 51,
     text: 'Download',
-    action: () => downloadTrace(trace),
+    action: async () => await downloadTrace(trace),
     icon: 'file_download',
     disabled: downloadDisabled,
   });

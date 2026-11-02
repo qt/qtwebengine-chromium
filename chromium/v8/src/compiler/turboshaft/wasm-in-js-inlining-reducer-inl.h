@@ -85,8 +85,8 @@ class WasmInJSInliningReducer : public Next {
     pending_caller_frame_state_ = {};
 
     if (descriptor->js_wasm_call_parameters) {
-      // TODO(353475584): Wrapper and body inlining in Turboshaft is only
-      // implemented for the Turbolev frontend right now.
+      // The only way we attach this metadata is in the Turbolev frontend when
+      // JS-to-Wasm wrapper inlining is enabled.
       CHECK(v8_flags.turbolev);
       CHECK(v8_flags.wasm_in_js_inlining_wrapper);
 
@@ -114,15 +114,14 @@ class WasmInJSInliningReducer : public Next {
         CHECK(origin.valid());
         SourcePosition call_pos = __ input_graph().source_positions()[origin];
         CHECK(call_pos.IsKnown());
-        int inlining_id = __ data() -> info()->AddInlinedFunction(
-            descriptor->js_wasm_call_parameters->shared_fct_info().object(),
-            Handle<BytecodeArray>(), call_pos);
         V<EagerFrameState> wasm_inlined_frame_state =
             CreateWasmInlinedIntoJSFrameState(
                 js_context, frame_state.value(),
                 descriptor->js_wasm_call_parameters->shared_fct_info());
-        inlined_function_data = {native_module, func_idx,
-                                 wasm_inlined_frame_state, inlining_id};
+        inlined_function_data = {
+            native_module, func_idx, wasm_inlined_frame_state,
+            descriptor->js_wasm_call_parameters->shared_fct_info().object(),
+            call_pos};
       }
 
       // The JS-to-Wasm wrapper is always inlined at this point, because the
@@ -265,8 +264,25 @@ class WasmInJsInliningInterface {
     locals_.resize(decoder->num_locals());
 
     // Initialize the function parameters, which are part of the local space.
+    // For reference-typed parameters, we wrap the converted JS arguments in a
+    // `WasmTypeAnnotationOp` to propagate the static Wasm type information to
+    // `WasmGCTypedOptimizationReducer`.
+    // We only do this for reference types (is_ref()) because:
+    // 1. AnnotateWasmType requires a subtype of Object (Tagged pointer).
+    // 2. Primitive types (like i32, f64) are represented as raw machine types
+    //    (Word32, Float64) and do not benefit from Wasm GC optimizations.
+    // The `WasmTypeAnnotationOp` gets used and eliminated either in the
+    // `WasmGCTypedOptimizationReducer` (if optimizations are enabled) or just
+    // stripped in the `WasmLoweringReducer`.
     CHECK_LE(arguments_.size(), locals_.size());
-    std::copy(arguments_.begin(), arguments_.end(), locals_.begin());
+    for (size_t i = 0; i < arguments_.size(); ++i) {
+      ValueType type = decoder->sig_->GetParam(i);
+      V<Any> arg = arguments_[i];
+      if (type.is_ref()) {
+        arg = __ AnnotateWasmType(V<Object>::Cast(arg), type);
+      }
+      locals_[i] = arg;
+    }
 
     // Initialize the non-parameter locals.
     uint32_t index = static_cast<uint32_t>(decoder->sig_->parameter_count());
@@ -363,8 +379,7 @@ class WasmInJsInliningInterface {
       // - call a builtin,
       // - need the instance,
       // - require later Int64Lowering (which is currently only compatible with
-      //   the Wasm pipeline),
-      // - are actually asm.js opcodes and not spec'ed in Wasm.
+      //   the Wasm pipeline).
       case wasm::kExprI32ConvertI64:
       case wasm::kExprI64SConvertI32:
       case wasm::kExprI64UConvertI32:
@@ -409,30 +424,6 @@ class WasmInJsInliningInterface {
       case wasm::kExprF64UConvertI64:
         // Not supported, but we are aware of it. Bailout below.
         break;
-
-      // asm.js:
-      case wasm::kExprF64Acos:
-      case wasm::kExprF64Asin:
-      case wasm::kExprF64Atan:
-      case wasm::kExprF64Cos:
-      case wasm::kExprF64Sin:
-      case wasm::kExprF64Tan:
-      case wasm::kExprF64Exp:
-      case wasm::kExprF64Log:
-      case wasm::kExprI32AsmjsLoadMem8S:
-      case wasm::kExprI32AsmjsLoadMem8U:
-      case wasm::kExprI32AsmjsLoadMem16S:
-      case wasm::kExprI32AsmjsLoadMem16U:
-      case wasm::kExprI32AsmjsLoadMem:
-      case wasm::kExprF32AsmjsLoadMem:
-      case wasm::kExprF64AsmjsLoadMem:
-      case wasm::kExprI32AsmjsSConvertF32:
-      case wasm::kExprI32AsmjsUConvertF32:
-      case wasm::kExprI32AsmjsSConvertF64:
-      case wasm::kExprI32AsmjsUConvertF64:
-        // We already bailout for asm.js modules earlier, so we should never
-        // see these operations.
-        UNREACHABLE();
 
       default:
         // Fuzzers should alert us when we forget ops, but it's not security
@@ -561,8 +552,7 @@ class WasmInJsInliningInterface {
       // - call a builtin,
       // - need the instance,
       // - require later Int64Lowering (which is currently only compatible with
-      //   the Wasm pipeline),
-      // - are actually asm.js opcodes and not spec'ed in Wasm.
+      //   the Wasm pipeline).
       case wasm::kExprI64Add:
       case wasm::kExprI64Sub:
       case wasm::kExprI64Mul:
@@ -597,23 +587,6 @@ class WasmInJsInliningInterface {
       case wasm::kExprI64RemU:
         // Not supported, but we are aware of it. Bailout below.
         break;
-
-      // asm.js:
-      case wasm::kExprF64Atan2:
-      case wasm::kExprF64Pow:
-      case wasm::kExprF64Mod:
-      case wasm::kExprI32AsmjsDivS:
-      case wasm::kExprI32AsmjsDivU:
-      case wasm::kExprI32AsmjsRemS:
-      case wasm::kExprI32AsmjsRemU:
-      case wasm::kExprI32AsmjsStoreMem8:
-      case wasm::kExprI32AsmjsStoreMem16:
-      case wasm::kExprI32AsmjsStoreMem:
-      case wasm::kExprF32AsmjsStoreMem:
-      case wasm::kExprF64AsmjsStoreMem:
-        // We already bailout for asm.js modules earlier, so we should never
-        // see these operations.
-        UNREACHABLE();
 
       default:
         // Fuzzers should alert us when we forget ops, but it's not security
@@ -674,7 +647,7 @@ class WasmInJsInliningInterface {
   void GlobalGet(FullDecoder* decoder, Value* result,
                  const wasm::GlobalIndexImmediate& imm) {
     SharedFlag shared = decoder->module_->globals[imm.index].shared;
-    if (shared == SharedFlag::kYes) {
+    if (shared) {
       return Bailout(decoder);
     }
     result->op = __ GlobalGet(trusted_instance_data_, imm.global);
@@ -683,7 +656,7 @@ class WasmInJsInliningInterface {
   void GlobalSet(FullDecoder* decoder, const Value& value,
                  const wasm::GlobalIndexImmediate& imm) {
     SharedFlag shared = decoder->module_->globals[imm.index].shared;
-    if (shared == SharedFlag::kYes) {
+    if (shared) {
       return Bailout(decoder);
     }
     __ GlobalSet(trusted_instance_data_, value.op, imm.global);
@@ -755,7 +728,8 @@ class WasmInJsInliningInterface {
         field.struct_imm.struct_type, field.struct_imm.index,
         field.field_imm.index,
         struct_object.type.is_nullable() ? kWithNullCheck : kWithoutNullCheck,
-        {}, wasm::FieldImmediateToWriteBarrier(field));
+        {}, wasm::FieldImmediateToWriteBarrier(field),
+        StructSetOp::Kind::kAssign);
   }
 
   void ArrayGet(FullDecoder* decoder, const Value& array_obj,
@@ -776,7 +750,8 @@ class WasmInJsInliningInterface {
                             frame_state_);
     __ ArraySet(array_value, index.get<Word32>(), value.op,
                 imm.array_type->element_type(), {},
-                wasm::ArrayIndexImmediateToWriteBarrier(imm));
+                wasm::ArrayIndexImmediateToWriteBarrier(imm),
+                ArraySetOp::Kind::kAssign);
   }
 
   void ArrayLen(FullDecoder* decoder, const Value& array_obj, Value* result) {
@@ -800,10 +775,10 @@ class WasmInJsInliningInterface {
   // new, common reducer.
   void RefCast(FullDecoder* decoder, const Value& object, Value* result) {
     ValueType target = result->type;
-    if (target.is_shared() == SharedFlag::kYes) {
+    if (target.is_shared()) {
       return Bailout(decoder);
     }
-    if (v8_flags.experimental_wasm_assume_ref_cast_succeeds) {
+    if (v8_flags.wasm_assume_ref_cast_succeeds) {
       // TODO(14108): Implement type guards.
       Forward(decoder, object, result);
       return;
@@ -813,12 +788,12 @@ class WasmInJsInliningInterface {
         object.type, target,
         compiler::GetExactness(decoder->module_, target.heap_type())};
     result->op =
-        __ WasmTypeCast(object.get<Object>(), rtt, config, frame_state_);
+        __ WasmTypeCast(object.get<Object>(), rtt, frame_state_, config);
   }
 
   void RefCastAbstract(FullDecoder* decoder, const Value& object,
                        wasm::HeapType type, Value* result, bool null_succeeds) {
-    if (v8_flags.experimental_wasm_assume_ref_cast_succeeds) {
+    if (v8_flags.wasm_assume_ref_cast_succeeds) {
       // TODO(14108): Implement type guards.
       Forward(decoder, object, result);
       return;
@@ -832,7 +807,7 @@ class WasmInJsInliningInterface {
             type, null_succeeds ? wasm::kNullable : wasm::kNonNullable)};
     V<Map> rtt = OpIndex::Invalid();
     result->op =
-        __ WasmTypeCast(object.get<Object>(), rtt, config, frame_state_);
+        __ WasmTypeCast(object.get<Object>(), rtt, frame_state_, config);
   }
 
   // TODO(dlehmann,353475584): Support linear memory in the inlinee.
@@ -1037,7 +1012,6 @@ WasmBodyInliningResult WasmInJSInliningReducer<Next>::TryInlineWasmBody(
   wasm::NativeModule* native_module = inlined_data.native_module;
   uint32_t func_idx = inlined_data.function_index;
   V<EagerFrameState> frame_state = inlined_data.js_caller_frame_state;
-  int inlining_id = inlined_data.inlining_id;
   const wasm::WasmModule* module = native_module->module();
   const wasm::WasmFunction& func = module->functions[func_idx];
 
@@ -1053,11 +1027,6 @@ WasmBodyInliningResult WasmInJSInliningReducer<Next>::TryInlineWasmBody(
     return WasmBodyInliningResult::Failed();
   }
 
-  if (wasm::is_asmjs_module(module)) {
-    TRACE("- not inlining: asm.js-in-JS inlining is not supported");
-    return WasmBodyInliningResult::Failed();
-  }
-
   if (func_idx < module->num_imported_functions) {
     TRACE("- not inlining: call to an imported function");
     return WasmBodyInliningResult::Failed();
@@ -1065,22 +1034,14 @@ WasmBodyInliningResult WasmInJSInliningReducer<Next>::TryInlineWasmBody(
   DCHECK_LT(func_idx - module->num_imported_functions,
             module->num_declared_functions);
 
-  // TODO(42204563): Support shared-everything proposal (at some point, or
-  // possibly never).
-  SharedFlag is_shared = module->type(func.sig_index).is_shared;
-  if (is_shared == SharedFlag::kYes) {
-    TRACE("- not inlining: shared everything is not supported");
-    return WasmBodyInliningResult::Failed();
-  }
-
   const bool has_current_catch_block = __ current_catch_block();
-  if (lazy_deopt_on_throw == LazyDeoptOnThrow::kYes) {
+  if (lazy_deopt_on_throw) {
     // Maglev either emits a catch block or uses lazy deopt on throw, but never
     // both.
     DCHECK(!has_current_catch_block);
     // TODO(mliedtke,dlehmann): Support lazy deopts in Wasm in order to allow
-    // inlining calls that have LazyDeoptOnThrow::kYes.
-    TRACE("- not inlining: call marked with LazyDeoptOnThrow::kYes");
+    // inlining calls that have LazyDeoptOnThrow{true}.
+    TRACE("- not inlining: call marked with LazyDeoptOnThrow{true}");
     return WasmBodyInliningResult::Failed();
   }
 
@@ -1097,8 +1058,7 @@ WasmBodyInliningResult WasmInJSInliningReducer<Next>::TryInlineWasmBody(
   const uint8_t* start = module_bytes.begin() + func.code.offset();
   const uint8_t* end = module_bytes.begin() + func.code.end_offset();
 
-  wasm::FunctionBody func_body{func.sig, func.code.offset(), start, end,
-                               is_shared};
+  wasm::FunctionBody func_body{func.sig, func.code.offset(), start, end};
 
   auto env = wasm::CompilationEnv::ForModule(native_module);
   wasm::WasmDetectedFeatures detected{};
@@ -1124,10 +1084,10 @@ WasmBodyInliningResult WasmInJSInliningReducer<Next>::TryInlineWasmBody(
   using Decoder =
       wasm::WasmFullDecoder<typename Interface::ValidationTag, Interface>;
   {
-    Decoder can_inline_decoder(Asm().phase_zone(), env.module,
-                               env.enabled_features, &detected, func_body,
-                               Asm(), arguments_without_instance,
-                               trusted_instance_data, frame_state, inlining_id);
+    Decoder can_inline_decoder(
+        Asm().phase_zone(), env.module, env.enabled_features, &detected,
+        func_body, Asm(), arguments_without_instance, trusted_instance_data,
+        frame_state, SourcePosition::kNotInlined);
     can_inline_decoder.Decode();
 
     // The function was already validated, so decoding can only fail if we
@@ -1140,6 +1100,12 @@ WasmBodyInliningResult WasmInJSInliningReducer<Next>::TryInlineWasmBody(
     DCHECK(can_inline_decoder.interface().result().success);
   }
 
+  // The inlining succeeded, register the inlined Wasm function in the
+  // compilation info.
+  int inlining_id = __ data() -> info()->AddInlinedFunction(
+      inlined_data.shared_fct_info, Handle<BytecodeArray>(),
+      inlined_data.call_pos);
+
   // Second pass: Actually emit the inlinee instructions now.
   __ Bind(inlinee_body_and_rest);
   Decoder emitting_decoder(Asm().phase_zone(), env.module, env.enabled_features,
@@ -1149,6 +1115,7 @@ WasmBodyInliningResult WasmInJSInliningReducer<Next>::TryInlineWasmBody(
   emitting_decoder.Decode();
   DCHECK(emitting_decoder.ok());
   DCHECK(emitting_decoder.interface().result().success);
+  __ data() -> set_wasm_in_js_inlined_any_body();
   TRACE("- inlining Wasm function");
   return emitting_decoder.interface().result();
 }

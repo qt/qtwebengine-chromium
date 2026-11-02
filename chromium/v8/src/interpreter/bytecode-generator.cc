@@ -2823,9 +2823,8 @@ void BytecodeGenerator::VisitSwitchStatement(SwitchStatement* stmt) {
     switch_builder.JumpToFallThroughIfFalse();
     builder()->LoadAccumulatorWithRegister(r1);
 
-    builder()->BinaryOperationSmiLiteral(
-        Token::kBitOr, Smi::FromInt(0),
-        feedback_index(feedback_spec()->AddBinaryOpICSlot()));
+    builder()->BinaryOperationSmiLiteral(Token::kBitOr, Smi::FromInt(0),
+                                         kFeedbackIsEmbedded);
 
     builder()->StoreAccumulatorInRegister(r2);
     builder()->CompareOperation(Token::kEqStrict, r1, kFeedbackIsEmbedded);
@@ -5493,6 +5492,51 @@ Expression* BytecodeGenerator::GetDestructuringDefaultValue(
 void BytecodeGenerator::BuildDestructuringArrayAssignment(
     ArrayLiteral* pattern, Token::Value op,
     LookupHoistingMode lookup_hoisting_mode) {
+  // A pattern can use the fast destructuring bytecode if the feature flag is
+  // enabled and all targets are simple variable assignments without defaults,
+  // holes, spreads, or property assignments that could trigger observable side
+  // effects.
+  bool can_use_destructure_bytecode = v8_flags.array_destructure_bytecode;
+  if (can_use_destructure_bytecode) {
+    for (Expression* target : *pattern->values()) {
+      if (!target->IsVariableProxy()) {
+        can_use_destructure_bytecode = false;
+        break;
+      }
+    }
+  }
+
+  if (can_use_destructure_bytecode) {
+    RegisterAllocationScope allocation_scope(this);
+    Register rhs;
+    if (!execution_result()->IsEffect()) {
+      rhs = register_allocator()->NewRegister();
+      builder()->StoreAccumulatorInRegister(rhs);
+    }
+    int count = pattern->values()->length();
+    // TODO(leszeks): If all the targets are registers that all happen to be
+    // sequential (likely with sequential local variables like in `let [x,y] =
+    // a`), write into those directly instead of allocating a temporary
+    // RegisterList.
+    RegisterList outputs = register_allocator()->NewRegisterList(count);
+    if (count > 0) {
+      Expression* first_target = pattern->values()->at(0);
+      builder()->SetExpressionPosition(first_target);
+    }
+    builder()->ArrayDestructure(outputs, count);
+    for (int i = 0; i < count; ++i) {
+      Expression* target = pattern->values()->at(i);
+      builder()->SetExpressionPosition(target);
+      AssignmentLhsData lhs_data = PrepareAssignmentLhs(target);
+      builder()->LoadAccumulatorWithRegister(outputs[i]);
+      BuildAssignment(lhs_data, op, lookup_hoisting_mode);
+    }
+    if (!execution_result()->IsEffect()) {
+      builder()->LoadAccumulatorWithRegister(rhs);
+    }
+    return;
+  }
+
   RegisterAllocationScope scope(this);
 
   Register value = register_allocator()->NewRegister();
@@ -5997,7 +6041,6 @@ void BytecodeGenerator::VisitCompoundAssignment(CompoundAssignment* expr) {
   }
 
   BinaryOperation* binop = expr->binary_operation();
-  FeedbackSlot slot = feedback_spec()->AddBinaryOpICSlot();
   BytecodeLabel short_circuit;
   if (binop->op() == Token::kNullish) {
     BytecodeLabel nullish;
@@ -6015,12 +6058,12 @@ void BytecodeGenerator::VisitCompoundAssignment(CompoundAssignment* expr) {
   } else if (expr->value()->IsSmiLiteral()) {
     builder()->BinaryOperationSmiLiteral(
         binop->op(), expr->value()->AsLiteral()->AsSmiLiteral(),
-        feedback_index(slot));
+        kFeedbackIsEmbedded);
   } else {
     Register old_value = register_allocator()->NewRegister();
     builder()->StoreAccumulatorInRegister(old_value);
     VisitForAccumulatorValue(expr->value());
-    builder()->BinaryOperation(binop->op(), old_value, feedback_index(slot));
+    builder()->BinaryOperation(binop->op(), old_value, kFeedbackIsEmbedded);
   }
   builder()->SetExpressionPosition(expr);
 
@@ -6081,10 +6124,9 @@ void BytecodeGenerator::VisitYield(Yield* expr) {
       RegisterAllocationScope register_scope(this);
       RegisterList args = register_allocator()->NewRegisterList(2);
       builder()
-          ->StoreAccumulatorInRegister(args[0])  // value
-          .LoadFalse()
-          .StoreAccumulatorInRegister(args[1])  // done
-          .CallRuntime(Runtime::kInlineCreateIterResultObject, args);
+          ->StoreAccumulatorInRegister(args[0])       // value
+          .MoveRegister(generator_object(), args[1])  // generator
+          .CallRuntime(Runtime::kInlineGeneratorYieldResult, args);
     }
   }
 
@@ -7644,7 +7686,6 @@ void BytecodeGenerator::VisitCountOperation(CountOperation* expr) {
         }
         builder()->SetPrivateField(context_reg, var->index(), depth, object,
                                    feedback_index(slot));
-        break;
       } else {
         builder()->SetKeyedProperty(object, key, feedback_index(slot),
                                     language_mode());
@@ -7956,19 +7997,13 @@ void BytecodeGenerator::VisitArithmeticExpression(BinaryOperation* expr) {
     }
   }
 
-  if (emit_add_string_constant_internalize) {
-    slot = feedback_spec()->AddStringAddAndInternalizeICSlot();
-  } else {
-    slot = feedback_spec()->AddBinaryOpICSlot();
-  }
-
   Expression* subexpr;
   Tagged<Smi> literal;
   if (expr->IsSmiLiteralOperation(&subexpr, &literal)) {
     TypeHint type_hint = VisitForAccumulatorValue(subexpr);
     builder()->SetExpressionPosition(expr);
     builder()->BinaryOperationSmiLiteral(expr->op(), literal,
-                                         feedback_index(slot));
+                                         kFeedbackIsEmbedded);
     if (expr->op() == Token::kAdd && IsStringTypeHint(type_hint)) {
       execution_result()->SetResultIsString();
     }
@@ -7983,6 +8018,7 @@ void BytecodeGenerator::VisitArithmeticExpression(BinaryOperation* expr) {
     }
 
     if (emit_add_string_constant_internalize) {
+      slot = feedback_spec()->AddStringAddAndInternalizeICSlot();
       // Subtle: Stack overflows can cause the AST to be visited only
       // partially. Visitation is eventually aborted and the resulting
       // bytecode discarded.
@@ -7996,7 +8032,7 @@ void BytecodeGenerator::VisitArithmeticExpression(BinaryOperation* expr) {
           expr->op(), lhs, feedback_index(slot), as_variant);
     } else {
       builder()->SetExpressionPosition(expr);
-      builder()->BinaryOperation(expr->op(), lhs, feedback_index(slot));
+      builder()->BinaryOperation(expr->op(), lhs, kFeedbackIsEmbedded);
     }
   }
 }
@@ -8011,16 +8047,14 @@ void BytecodeGenerator::VisitNaryArithmeticExpression(NaryOperation* expr) {
       builder()->SetExpressionPosition(expr->subsequent_op_position(i));
       builder()->BinaryOperationSmiLiteral(
           expr->op(), expr->subsequent(i)->AsLiteral()->AsSmiLiteral(),
-          feedback_index(feedback_spec()->AddBinaryOpICSlot()));
+          kFeedbackIsEmbedded);
     } else {
       Register lhs = register_allocator()->NewRegister();
       builder()->StoreAccumulatorInRegister(lhs);
       TypeHint rhs_hint = VisitForAccumulatorValue(expr->subsequent(i));
       if (IsStringTypeHint(rhs_hint)) type_hint = TypeHint::kString;
       builder()->SetExpressionPosition(expr->subsequent_op_position(i));
-      builder()->BinaryOperation(
-          expr->op(), lhs,
-          feedback_index(feedback_spec()->AddBinaryOpICSlot()));
+      builder()->BinaryOperation(expr->op(), lhs, kFeedbackIsEmbedded);
     }
   }
 
@@ -8221,10 +8255,7 @@ void BytecodeGenerator::VisitTemplateLiteral(TemplateLiteral* expr) {
   DCHECK_GT(substitutions.length(), 0);
   DCHECK_EQ(parts.length(), substitutions.length() + 1);
 
-  // Generate string concatenation
-  // TODO(caitp): Don't generate feedback slot if it's not used --- introduce
-  // a simple, concise, reusable mechanism to lazily create reusable slots.
-  FeedbackSlot slot = feedback_spec()->AddBinaryOpICSlot();
+  // Generate string concatenation.
   Register last_part = register_allocator()->NewRegister();
   bool last_part_valid = false;
 
@@ -8238,8 +8269,7 @@ void BytecodeGenerator::VisitTemplateLiteral(TemplateLiteral* expr) {
     if (!parts[i]->IsEmpty()) {
       builder()->LoadLiteral(parts[i]);
       if (last_part_valid) {
-        builder()->BinaryOperation(Token::kAdd, last_part,
-                                   feedback_index(slot));
+        builder()->BinaryOperation(Token::kAdd, last_part, kFeedbackIsEmbedded);
       }
       builder()->StoreAccumulatorInRegister(last_part);
       last_part_valid = true;
@@ -8250,7 +8280,7 @@ void BytecodeGenerator::VisitTemplateLiteral(TemplateLiteral* expr) {
       builder()->ToString();
     }
     if (last_part_valid) {
-      builder()->BinaryOperation(Token::kAdd, last_part, feedback_index(slot));
+      builder()->BinaryOperation(Token::kAdd, last_part, kFeedbackIsEmbedded);
     }
     last_part_valid = false;
   }
@@ -8258,7 +8288,7 @@ void BytecodeGenerator::VisitTemplateLiteral(TemplateLiteral* expr) {
   if (!parts.last()->IsEmpty()) {
     builder()->StoreAccumulatorInRegister(last_part);
     builder()->LoadLiteral(parts.last());
-    builder()->BinaryOperation(Token::kAdd, last_part, feedback_index(slot));
+    builder()->BinaryOperation(Token::kAdd, last_part, kFeedbackIsEmbedded);
   }
 }
 

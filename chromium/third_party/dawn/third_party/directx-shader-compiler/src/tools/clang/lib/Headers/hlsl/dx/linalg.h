@@ -1,4 +1,16 @@
-// Header for HLSL Linear Algebra Matrix APIs.
+//===----------------------------------------------------------------------===//
+//
+// Part of the DirectXShaderCompiler, under the Apache License v2.0 with LLVM
+// Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+// DirectX Shader Model 6.10 Linear Algebra objects and APIs.
+//===----------------------------------------------------------------------===//
+
+#include <enable_if>
+#include <type_traits>
 
 #if ((__SHADER_TARGET_MAJOR > 6) ||                                            \
      (__SHADER_TARGET_MAJOR == 6 && __SHADER_TARGET_MINOR >= 10)) &&           \
@@ -7,55 +19,7 @@
 #pragma dxc diagnostic push
 #pragma dxc diagnostic ignored "-Whlsl-groupshared-202x"
 
-namespace hlsl {
-
 #define SIZE_TYPE int
-
-template <typename T> struct is_arithmetic {
-  static const bool value = false;
-};
-
-#define __ARITHMETIC_TYPE(type)                                                \
-  template <> struct is_arithmetic<type> {                                     \
-    static const bool value = true;                                            \
-  };
-
-#if __HLSL_ENABLE_16_BIT
-__ARITHMETIC_TYPE(uint16_t)
-__ARITHMETIC_TYPE(int16_t)
-#endif
-__ARITHMETIC_TYPE(uint)
-__ARITHMETIC_TYPE(int)
-__ARITHMETIC_TYPE(uint64_t)
-__ARITHMETIC_TYPE(int64_t)
-__ARITHMETIC_TYPE(half)
-__ARITHMETIC_TYPE(float)
-__ARITHMETIC_TYPE(double)
-
-template <typename T> struct is_signed {
-  static const bool value = true;
-};
-
-#define __UNSIGNED_TYPE(type)                                                  \
-  template <> struct is_signed<type> {                                         \
-    static const bool value = false;                                           \
-  };
-
-#if __HLSL_ENABLE_16_BIT
-__UNSIGNED_TYPE(uint16_t)
-#endif
-__UNSIGNED_TYPE(uint)
-__UNSIGNED_TYPE(uint64_t)
-
-#undef __UNSIGNED_TYPE
-
-template <bool B, typename T> struct enable_if {};
-
-template <typename T> struct enable_if<true, T> {
-  using type = T;
-};
-
-} // namespace hlsl
 
 namespace dxil {
 
@@ -513,6 +477,20 @@ Multiply(Matrix<MatrixDT, M, K, MatrixUse::A, MatrixScope::Thread> MatrixA,
   return Result;
 }
 
+template <typename OutputElTy, typename InputElTy, ComponentEnum InputInterp,
+          SIZE_TYPE M, SIZE_TYPE K, SIZE_TYPE VecK, ComponentEnum MatrixDT>
+typename hlsl::enable_if<
+    InterpretedVector<InputElTy, VecK, InputInterp>::Size == K,
+    vector<OutputElTy, M> >::type
+Multiply(Matrix<MatrixDT, M, K, MatrixUse::A, MatrixScope::Thread> MatrixA,
+         InterpretedVector<InputElTy, VecK, InputInterp> InterpVec) {
+  vector<OutputElTy, M> Result;
+  __builtin_LinAlg_MatrixVectorMultiply(
+      Result, MatrixA.__handle, hlsl::is_signed<OutputElTy>::value,
+      InterpVec.Data, InterpVec.Interpretation);
+  return Result;
+}
+
 template <typename OutputElTy, typename InputElTy, typename BiasElTy,
           SIZE_TYPE M, SIZE_TYPE K, ComponentEnum MatrixDT>
 typename hlsl::enable_if<hlsl::is_arithmetic<InputElTy>::value,
@@ -651,11 +629,11 @@ OuterProduct(vector<InputElTy, M> VecA, vector<InputElTy, N> VecB) {
   return Result;
 }
 
-template <typename InputElTy, SIZE_TYPE M>
+template <uint Align = 64, typename InputElTy, SIZE_TYPE M>
 typename hlsl::enable_if<hlsl::is_arithmetic<InputElTy>::value, void>::type
-InterlockedAccumulate(vector<InputElTy, M> Vec, RWByteAddressBuffer Res,
-                      uint StartOffset, uint Align = 64) {
-  __builtin_LinAlg_VectorAccumulateToDescriptor(Vec, Res, StartOffset, Align);
+InterlockedAccumulate(RWByteAddressBuffer Res, uint StartOffset,
+                      vector<InputElTy, M> Vec) {
+  __builtin_LinAlg_VectorAccumulateToDescriptor(Res, StartOffset, Align, Vec);
 }
 
 } // namespace linalg

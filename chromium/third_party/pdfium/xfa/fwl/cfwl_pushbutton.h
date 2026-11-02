@@ -11,10 +11,6 @@
 
 namespace pdfium {
 
-#define FWL_STATE_PSB_Hovered (1 << FWL_STATE_WGT_MAX)
-#define FWL_STATE_PSB_Pressed (1 << (FWL_STATE_WGT_MAX + 1))
-#define FWL_STATE_PSB_Default (1 << (FWL_STATE_WGT_MAX + 2))
-
 class CFWL_MessageKey;
 class CFWL_MessageMouse;
 
@@ -25,7 +21,7 @@ class CFWL_PushButton final : public CFWL_Widget {
 
   // CFWL_Widget
   FWL_Type GetClassID() const override;
-  void SetStates(uint32_t dwStates) override;
+  void SetStates(Mask<WidgetState> states) override;
   void Update() override;
   void DrawWidget(CFGAS_GEGraphics* pGraphics,
                   const CFX_Matrix& matrix) override;

@@ -5,8 +5,11 @@
 #ifndef TESTING_TEST_FONTS_H_
 #define TESTING_TEST_FONTS_H_
 
+#include <optional>
 #include <string>
 #include <vector>
+
+#include "core/fxcrt/span.h"
 
 class TestFonts {
  public:
@@ -14,6 +17,7 @@ class TestFonts {
   ~TestFonts();
 
   const char** font_paths() { return font_paths_.data(); }
+  std::optional<pdfium::span<const char* const>> FontPathsSpan() const;
   void InstallFontMapper();
 
   static std::string RenameFont(const char* face);

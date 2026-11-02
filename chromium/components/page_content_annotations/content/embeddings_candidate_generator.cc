@@ -17,7 +17,6 @@
 #include "base/metrics/field_trial_params.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_tokenizer.h"
-#include "base/strings/string_util.h"
 #include "components/optimization_guide/proto/features/common_quality_data.pb.h"
 #include "components/page_content_annotations/content/page_content_extraction_service.h"
 #include "components/passage_embeddings/core/passage_embeddings_features.h"
@@ -116,35 +115,45 @@ std::vector<std::string> CreatePassagesFromAnnotatedPageContent(
 
   const size_t max_words_per_aggregate_passage =
       passage_embeddings::kMaxWordsPerAggregatePassage.Get();
+  if (max_words_per_aggregate_passage == 0) {
+    return {};
+  }
+
   const size_t min_words_per_passage =
       passage_embeddings::kMinWordsPerPassage.Get();
 
-  std::vector<std::string> passages;
-  passages.push_back("");
+  std::vector<std::string> passages{""};
   size_t current_passage_words = 0;
 
   for (const std::string& item : text) {
-    const size_t item_words = CountWords(item);
-
-    if (current_passage_words >= max_words_per_aggregate_passage) {
-      if (passages.size() >= max_passages_per_page) {
-        break;
+    base::StringTokenizer tokenizer(item, base::kWhitespaceASCII);
+    while (tokenizer.GetNext()) {
+      if (current_passage_words >= max_words_per_aggregate_passage) {
+        if (passages.size() >= max_passages_per_page) {
+          if (!passages.empty() && passages.back().empty()) {
+            passages.pop_back();
+          }
+          if (!passages.empty() &&
+              CountWords(passages.back()) < min_words_per_passage) {
+            passages.pop_back();
+          }
+          return passages;
+        }
+        passages.push_back("");
+        current_passage_words = 0;
       }
-      passages.push_back("");
-      current_passage_words = 0;
-    }
 
-    const bool should_append =
-        current_passage_words < min_words_per_passage ||
-        current_passage_words + item_words <= max_words_per_aggregate_passage;
-
-    if (should_append) {
-      AppendWithWhitespaceSeparator(passages.back(), item);
-      current_passage_words += item_words;
+      AppendWithWhitespaceSeparator(passages.back(), tokenizer.token_piece());
+      ++current_passage_words;
     }
   }
 
-  if (passages.back() == "") {
+  if (!passages.empty() && passages.back().empty()) {
+    passages.pop_back();
+  }
+
+  if (!passages.empty() &&
+      CountWords(passages.back()) < min_words_per_passage) {
     passages.pop_back();
   }
 

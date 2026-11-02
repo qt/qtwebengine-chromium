@@ -14,21 +14,17 @@
 
 #include "src/dsp/intrapred.h"
 
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <memory>
 #include <ostream>
 
 #include "absl/strings/match.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "gtest/gtest.h"
-#include "src/dsp/constants.h"
 #include "src/dsp/dsp.h"
 #include "src/dsp/intrapred_smooth.h"
-#include "src/utils/common.h"
 #include "src/utils/constants.h"
 #include "src/utils/cpu.h"
 #include "src/utils/memory.h"

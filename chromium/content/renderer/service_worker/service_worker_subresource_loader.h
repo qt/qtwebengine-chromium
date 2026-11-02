@@ -33,6 +33,7 @@
 #include "third_party/blink/public/mojom/service_worker/service_worker_event_status.mojom-forward.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_fetch_response_callback.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_stream_handle.mojom-forward.h"
+#include "third_party/perfetto/include/perfetto/tracing/track.h"
 
 namespace network {
 class SharedURLLoaderFactory;
@@ -109,14 +110,17 @@ class CONTENT_EXPORT ServiceWorkerSubresourceLoader
   // blink::mojom::ServiceWorkerFetchResponseCallback overrides:
   void OnResponse(
       blink::mojom::FetchAPIResponsePtr response,
-      blink::mojom::ServiceWorkerFetchEventTimingPtr timing) override;
+      blink::mojom::ServiceWorkerFetchEventTimingPtr timing,
+      blink::mojom::ServiceWorkerFetchHandlerErrorsPtr errors) override;
   void OnResponseStream(
       blink::mojom::FetchAPIResponsePtr response,
       blink::mojom::ServiceWorkerStreamHandlePtr body_as_stream,
-      blink::mojom::ServiceWorkerFetchEventTimingPtr timing) override;
+      blink::mojom::ServiceWorkerFetchEventTimingPtr timing,
+      blink::mojom::ServiceWorkerFetchHandlerErrorsPtr errors) override;
   void OnFallback(
       std::optional<network::DataElementChunkedDataPipe> request_body,
-      blink::mojom::ServiceWorkerFetchEventTimingPtr timing) override;
+      blink::mojom::ServiceWorkerFetchEventTimingPtr timing,
+      blink::mojom::ServiceWorkerFetchHandlerErrorsPtr errors) override;
 
   void UpdateResponseTiming(
       blink::mojom::ServiceWorkerFetchEventTimingPtr timing);
@@ -289,6 +293,7 @@ class CONTENT_EXPORT ServiceWorkerSubresourceLoader
   // debug crbug.com/463388771.
   bool response_sent_to_client_ = false;
 
+  const perfetto::NamedTrack trace_track_;
   base::WeakPtrFactory<ServiceWorkerSubresourceLoader> weak_factory_{this};
 };
 

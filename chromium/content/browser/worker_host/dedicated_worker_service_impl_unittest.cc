@@ -7,29 +7,39 @@
 #include <memory>
 #include <utility>
 
+#include "base/command_line.h"
 #include "base/functional/callback_helpers.h"
 #include "base/run_loop.h"
 #include "base/scoped_observation.h"
+#include "base/test/scoped_command_line.h"
 #include "base/test/scoped_feature_list.h"
+#include "components/services/storage/privileged/cpp/bucket_client_info.h"
+#include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/browser/worker_host/dedicated_worker_host.h"
 #include "content/browser/worker_host/dedicated_worker_host_factory_impl.h"
+#include "content/common/content_navigation_policy.h"
+#include "content/public/browser/back_forward_cache.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_features.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/test/navigation_simulator.h"
 #include "content/public/test/test_browser_context.h"
+#include "content/public/test/test_utils.h"
+#include "content/test/render_document_feature.h"
 #include "content/test/test_render_view_host.h"
 #include "content/test/test_web_contents.h"
 #include "mojo/public/cpp/bindings/remote.h"
-#include "mojo/public/cpp/bindings/self_owned_receiver.h"
 #include "mojo/public/cpp/test_support/test_utils.h"
 #include "net/base/isolation_info.h"
 #include "net/storage_access_api/status.h"
+#include "services/network/public/cpp/constants.h"
 #include "services/network/public/mojom/client_security_state.mojom.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "third_party/blink/public/common/tokens/tokens_mojom_traits.h"
+#include "third_party/blink/public/common/web_preferences/web_preferences.h"
 #include "third_party/blink/public/mojom/loader/fetch_client_settings_object.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/controller_service_worker.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_container.mojom.h"
@@ -46,25 +56,32 @@ class MockDedicatedWorker
  public:
   MockDedicatedWorker(ChildProcessId worker_process_id,
                       GlobalRenderFrameHostId render_frame_host_id,
+                      const url::Origin& origin)
+      : MockDedicatedWorker(worker_process_id,
+                            render_frame_host_id,
+                            DedicatedWorkerCreator(render_frame_host_id),
+                            origin) {}
+
+  MockDedicatedWorker(ChildProcessId worker_process_id,
+                      GlobalRenderFrameHostId ancestor_render_frame_host_id,
+                      DedicatedWorkerCreator creator,
                       const url::Origin& origin) {
     // The COEP reporter is replaced by a placeholder connection. Reports are
     // ignored.
+    auto* ancestor_rfh =
+        RenderFrameHostImpl::FromID(ancestor_render_frame_host_id);
     auto coep_reporter = std::make_unique<CrossOriginEmbedderPolicyReporter>(
-        RenderFrameHostImpl::FromID(render_frame_host_id)
-            ->GetStoragePartition()
-            ->GetWeakPtr(),
-        GURL(), std::nullopt, std::nullopt, base::UnguessableToken::Create(),
+        ancestor_rfh->GetStoragePartition()->GetWeakPtr(), GURL(), std::nullopt,
+        std::nullopt, base::UnguessableToken::Create(),
         net::NetworkAnonymizationKey());
 
-    mojo::MakeSelfOwnedReceiver(
-        std::make_unique<DedicatedWorkerHostFactoryImpl>(
-            worker_process_id, /*creator=*/render_frame_host_id,
-            render_frame_host_id, blink::StorageKey::CreateFirstParty(origin),
-            net::IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
-            network::mojom::ClientSecurityState::New(),
-            PolicyContainerPolicies(), coep_reporter->GetWeakPtr(),
-            /*network_restrictions_id=*/std::nullopt),
-        factory_.BindNewPipeAndPassReceiver());
+    DedicatedWorkerHostFactoryImpl::Create(
+        *ancestor_rfh, factory_.BindNewPipeAndPassReceiver(), worker_process_id,
+        creator, ancestor_rfh->GetWeakDocumentPtr(),
+        blink::StorageKey::CreateFirstParty(origin),
+        net::IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
+        network::mojom::ClientSecurityState::New(), PolicyContainerPolicies(),
+        coep_reporter->GetWeakPtr(), network::GetTestNetworkRestrictionsId());
 
     auto fetch_client_settings_object =
         blink::mojom::FetchClientSettingsObject::New();
@@ -106,6 +123,7 @@ class MockDedicatedWorker
       blink::mojom::ControllerServiceWorkerInfoPtr controller_info,
       mojo::PendingRemote<blink::mojom::BackForwardCacheControllerHost>
           back_forward_cache_controller_host,
+      blink::mojom::PolicyContainerPtr policy_container,
       mojo::PendingReceiver<blink::mojom::ReportingObserver>
           coep_reporting_observer,
       mojo::PendingReceiver<blink::mojom::ReportingObserver>
@@ -156,6 +174,12 @@ class DedicatedWorkerServiceImplTest
   DedicatedWorkerService* GetDedicatedWorkerService() const {
     return browser_context_->GetDefaultStoragePartition()
         ->GetDedicatedWorkerService();
+  }
+
+  DedicatedWorkerServiceImpl* GetDedicatedWorkerServiceImpl() const {
+    return static_cast<DedicatedWorkerServiceImpl*>(
+        browser_context_->GetDefaultStoragePartition()
+            ->GetDedicatedWorkerService());
   }
 
  private:
@@ -288,11 +312,211 @@ TEST_F(DedicatedWorkerServiceImplTest, DedicatedWorkerServiceObserver) {
   EXPECT_TRUE(observer.dedicated_worker_infos().empty());
 }
 
+TEST_F(DedicatedWorkerServiceImplTest, FileUrlSupportInheritance) {
+  TestDedicatedWorkerServiceObserver observer;
+  base::ScopedObservation<DedicatedWorkerService,
+                          DedicatedWorkerService::Observer>
+      scoped_observation(&observer);
+  scoped_observation.Observe(GetDedicatedWorkerService());
+
+  const GURL kFileUrl("file:///path/to/page.html");
+  const auto origin = url::Origin::Create(kFileUrl);
+  std::unique_ptr<TestWebContents> web_contents = CreateWebContents(kFileUrl);
+  TestRenderFrameHost* rfh = web_contents->GetPrimaryMainFrame();
+
+  // 1. Without switch or web preferences, file_url_support should be false.
+  {
+    auto mock_worker = std::make_unique<MockDedicatedWorker>(
+        rfh->GetProcess()->GetID(), rfh->GetGlobalId(), origin);
+    observer.RunUntilWorkerEvent();
+
+    ASSERT_EQ(observer.dedicated_worker_infos().size(), 1u);
+    blink::DedicatedWorkerToken token =
+        observer.dedicated_worker_infos().begin()->first;
+    DedicatedWorkerHost* host =
+        GetDedicatedWorkerServiceImpl()->GetDedicatedWorkerHostFromToken(token);
+    ASSERT_TRUE(host);
+    EXPECT_FALSE(host->file_url_support());
+
+    mock_worker = nullptr;
+    observer.RunUntilWorkerEvent();
+    EXPECT_TRUE(observer.dedicated_worker_infos().empty());
+  }
+
+  // 2. With WebPreferences::allow_file_access_from_file_urls, file_url_support
+  // should be true.
+  {
+    blink::web_pref::WebPreferences prefs =
+        web_contents->GetOrCreateWebPreferences();
+    prefs.allow_file_access_from_file_urls = true;
+    web_contents->SetWebPreferences(prefs);
+
+    auto mock_worker = std::make_unique<MockDedicatedWorker>(
+        rfh->GetProcess()->GetID(), rfh->GetGlobalId(), origin);
+    observer.RunUntilWorkerEvent();
+
+    ASSERT_EQ(observer.dedicated_worker_infos().size(), 1u);
+    blink::DedicatedWorkerToken token =
+        observer.dedicated_worker_infos().begin()->first;
+    DedicatedWorkerHost* host =
+        GetDedicatedWorkerServiceImpl()->GetDedicatedWorkerHostFromToken(token);
+    ASSERT_TRUE(host);
+    EXPECT_TRUE(host->file_url_support());
+
+    mock_worker = nullptr;
+    observer.RunUntilWorkerEvent();
+    EXPECT_TRUE(observer.dedicated_worker_infos().empty());
+
+    prefs.allow_file_access_from_file_urls = false;
+    web_contents->SetWebPreferences(prefs);
+  }
+
+  // 3. With WebPreferences::allow_universal_access_from_file_urls,
+  // file_url_support should be true.
+  {
+    blink::web_pref::WebPreferences prefs =
+        web_contents->GetOrCreateWebPreferences();
+    prefs.allow_universal_access_from_file_urls = true;
+    web_contents->SetWebPreferences(prefs);
+
+    auto mock_worker = std::make_unique<MockDedicatedWorker>(
+        rfh->GetProcess()->GetID(), rfh->GetGlobalId(), origin);
+    observer.RunUntilWorkerEvent();
+
+    ASSERT_EQ(observer.dedicated_worker_infos().size(), 1u);
+    blink::DedicatedWorkerToken token =
+        observer.dedicated_worker_infos().begin()->first;
+    DedicatedWorkerHost* host =
+        GetDedicatedWorkerServiceImpl()->GetDedicatedWorkerHostFromToken(token);
+    ASSERT_TRUE(host);
+    EXPECT_TRUE(host->file_url_support());
+
+    mock_worker = nullptr;
+    observer.RunUntilWorkerEvent();
+    EXPECT_TRUE(observer.dedicated_worker_infos().empty());
+
+    prefs.allow_universal_access_from_file_urls = false;
+    web_contents->SetWebPreferences(prefs);
+  }
+
+  // 4. With switches::kAllowFileAccessFromFiles, file_url_support should be
+  // true.
+  {
+    base::test::ScopedCommandLine scoped_command_line;
+    scoped_command_line.GetProcessCommandLine()->AppendSwitch(
+        switches::kAllowFileAccessFromFiles);
+
+    auto mock_worker = std::make_unique<MockDedicatedWorker>(
+        rfh->GetProcess()->GetID(), rfh->GetGlobalId(), origin);
+    observer.RunUntilWorkerEvent();
+
+    ASSERT_EQ(observer.dedicated_worker_infos().size(), 1u);
+    blink::DedicatedWorkerToken token =
+        observer.dedicated_worker_infos().begin()->first;
+    DedicatedWorkerHost* host =
+        GetDedicatedWorkerServiceImpl()->GetDedicatedWorkerHostFromToken(token);
+    ASSERT_TRUE(host);
+    EXPECT_TRUE(host->file_url_support());
+
+    mock_worker = nullptr;
+    observer.RunUntilWorkerEvent();
+    EXPECT_TRUE(observer.dedicated_worker_infos().empty());
+  }
+}
+
+class DedicatedWorkerHostNavigationTest
+    : public DedicatedWorkerServiceImplTest {
+ public:
+  DedicatedWorkerHostNavigationTest() {
+    // Allow same-site navigations to reuse the RenderFrameHost so that the
+    // ancestor frame id can resolve to a different document.
+    InitAndEnableRenderDocumentFeature(
+        &feature_list_,
+        GetRenderDocumentLevelName(RenderDocumentLevel::kCrashedFrame));
+  }
+
+ private:
+  base::test::ScopedFeatureList feature_list_;
+};
+
+TEST_F(DedicatedWorkerHostNavigationTest,
+       AncestorLookupAfterSameSiteNavigation) {
+  TestDedicatedWorkerServiceObserver observer;
+  base::ScopedObservation<DedicatedWorkerService,
+                          DedicatedWorkerService::Observer>
+      scoped_observation(&observer);
+  scoped_observation.Observe(GetDedicatedWorkerService());
+
+  const GURL kUrlA("http://example.com/a.html");
+  std::unique_ptr<TestWebContents> web_contents = CreateWebContents(kUrlA);
+  RenderFrameHostImpl* render_frame_host = web_contents->GetPrimaryMainFrame();
+  const blink::DocumentToken creator_document_token =
+      render_frame_host->GetDocumentToken();
+
+  // Create a dedicated worker for the current document.
+  auto mock_dedicated_worker = std::make_unique<MockDedicatedWorker>(
+      render_frame_host->GetProcess()->GetID(),
+      render_frame_host->GetGlobalId(), url::Origin::Create(kUrlA));
+  observer.RunUntilWorkerEvent();
+  ASSERT_EQ(observer.dedicated_worker_infos().size(), 1u);
+  const blink::DedicatedWorkerToken worker_token =
+      observer.dedicated_worker_infos().begin()->first;
+  DedicatedWorkerHost* host =
+      static_cast<DedicatedWorkerServiceImpl*>(GetDedicatedWorkerService())
+          ->GetDedicatedWorkerHostFromToken(worker_token);
+  ASSERT_TRUE(host);
+  EXPECT_EQ(host->GetAncestorRenderFrameHost(), render_frame_host);
+  EXPECT_EQ(host->GetBucketClientInfo().document_token, creator_document_token);
+
+  // Commit a same-site navigation that reuses the RenderFrameHost so that it
+  // hosts a different document.
+  DisableProactiveBrowsingInstanceSwapFor(render_frame_host);
+  const GURL kUrlB("http://example.com/b.html");
+  NavigationSimulator::NavigateAndCommitFromDocument(kUrlB, render_frame_host);
+  ASSERT_EQ(web_contents->GetPrimaryMainFrame(), render_frame_host);
+  ASSERT_NE(render_frame_host->GetDocumentToken(), creator_document_token);
+  ASSERT_TRUE(
+      static_cast<DedicatedWorkerServiceImpl*>(GetDedicatedWorkerService())
+          ->GetDedicatedWorkerHostFromToken(worker_token));
+
+  // The worker host must not resolve its ancestor to the document that
+  // replaced its creator.
+  EXPECT_FALSE(host->GetAncestorRenderFrameHost());
+  EXPECT_NE(host->GetBucketClientInfo().document_token,
+            render_frame_host->GetDocumentToken());
+
+  mock_dedicated_worker = nullptr;
+  observer.RunUntilWorkerEvent();
+}
+
 class DedicatedWorkerHostFactoryImplTest
     : public RenderViewHostImplTestHarness {
  public:
   void SetUp() override { RenderViewHostImplTestHarness::SetUp(); }
 };
+
+TEST_F(DedicatedWorkerHostFactoryImplTest,
+       FactoryResetOnCrossDocumentNavigation) {
+  // Disable back/forward cache so the previous document is destroyed on
+  // navigation rather than being preserved.
+  web_contents()->GetController().GetBackForwardCache().DisableForTesting(
+      BackForwardCache::TEST_REQUIRES_NO_CACHING);
+
+  const GURL kUrlA("http://a.example.com/");
+  const GURL kUrlB("http://b.example.com/");
+
+  NavigationSimulator::NavigateAndCommitFromBrowser(web_contents(), kUrlA);
+
+  mojo::Remote<blink::mojom::DedicatedWorkerHostFactory> factory;
+  static_cast<RenderFrameHostImpl*>(web_contents()->GetPrimaryMainFrame())
+      ->CreateDedicatedWorkerHostFactory(factory.BindNewPipeAndPassReceiver());
+  factory.FlushForTesting();
+  ASSERT_TRUE(factory.is_connected());
+
+  NavigationSimulator::NavigateAndCommitFromBrowser(web_contents(), kUrlB);
+  factory.FlushForTesting();
+  EXPECT_FALSE(factory.is_connected());
+}
 
 TEST_F(DedicatedWorkerHostFactoryImplTest, CrossOriginScriptOriginCheck) {
   url::ScopedSchemeRegistryForTests scoped_registry;
@@ -327,15 +551,17 @@ TEST_F(DedicatedWorkerHostFactoryImplTest, CrossOriginScriptOriginCheck) {
                 base::UnguessableToken::Create(),
                 net::NetworkAnonymizationKey());
 
-        return std::make_unique<DedicatedWorkerHostFactoryImpl>(
+        DedicatedWorkerHostFactoryImpl::Create(
+            *creator_rfh, factory.BindNewPipeAndPassReceiver(),
             creator_rfh->GetProcess()->GetID(),
             static_cast<RenderFrameHostImpl*>(creator_rfh)->GetGlobalId(),
-            static_cast<RenderFrameHostImpl*>(creator_rfh)->GetGlobalId(),
+            static_cast<RenderFrameHostImpl*>(creator_rfh)
+                ->GetWeakDocumentPtr(),
             blink::StorageKey::CreateFirstParty(creator_origin),
             net::IsolationInfo::CreateTransient(std::nullopt),
             network::mojom::ClientSecurityState::New(),
             PolicyContainerPolicies(), coep_reporter->GetWeakPtr(),
-            /*network_restrictions_id=*/std::nullopt);
+            network::GetTestNetworkRestrictionsId());
       };
 
   auto start_script_load =
@@ -365,9 +591,7 @@ TEST_F(DedicatedWorkerHostFactoryImplTest, CrossOriginScriptOriginCheck) {
         features::kEnforceDedicatedWorkerSameOriginCheck);
 
     mojo::Remote<blink::mojom::DedicatedWorkerHostFactory> factory;
-    auto factory_impl = create_factory(factory, kIwaOriginA);
-    mojo::Receiver<blink::mojom::DedicatedWorkerHostFactory> receiver(
-        factory_impl.get(), factory.BindNewPipeAndPassReceiver());
+    create_factory(factory, kIwaOriginA);
 
     mojo::test::BadMessageObserver bad_message_observer;
     start_script_load(factory, kIwaAppB);
@@ -383,9 +607,7 @@ TEST_F(DedicatedWorkerHostFactoryImplTest, CrossOriginScriptOriginCheck) {
         features::kEnforceDedicatedWorkerSameOriginCheck);
 
     mojo::Remote<blink::mojom::DedicatedWorkerHostFactory> factory;
-    auto factory_impl = create_factory(factory, kIwaOriginA);
-    mojo::Receiver<blink::mojom::DedicatedWorkerHostFactory> receiver(
-        factory_impl.get(), factory.BindNewPipeAndPassReceiver());
+    create_factory(factory, kIwaOriginA);
 
     mojo::test::BadMessageObserver bad_message_observer;
     start_script_load(factory, kIwaAppB);
@@ -402,9 +624,7 @@ TEST_F(DedicatedWorkerHostFactoryImplTest, CrossOriginScriptOriginCheck) {
         features::kEnforceDedicatedWorkerSameOriginCheck);
 
     mojo::Remote<blink::mojom::DedicatedWorkerHostFactory> factory;
-    auto factory_impl = create_factory(factory, kExtOriginA);
-    mojo::Receiver<blink::mojom::DedicatedWorkerHostFactory> receiver(
-        factory_impl.get(), factory.BindNewPipeAndPassReceiver());
+    create_factory(factory, kExtOriginA);
 
     mojo::test::BadMessageObserver bad_message_observer;
     // Cross-origin load (even to https) should be blocked for extensions now.
@@ -422,9 +642,7 @@ TEST_F(DedicatedWorkerHostFactoryImplTest, CrossOriginScriptOriginCheck) {
         features::kEnforceDedicatedWorkerSameOriginCheck);
 
     mojo::Remote<blink::mojom::DedicatedWorkerHostFactory> factory;
-    auto factory_impl = create_factory(factory, kIwaOriginA);
-    mojo::Receiver<blink::mojom::DedicatedWorkerHostFactory> receiver(
-        factory_impl.get(), factory.BindNewPipeAndPassReceiver());
+    create_factory(factory, kIwaOriginA);
 
     mojo::test::BadMessageObserver bad_message_observer;
     start_script_load(factory, kIwaAppA);
@@ -441,9 +659,7 @@ TEST_F(DedicatedWorkerHostFactoryImplTest, CrossOriginScriptOriginCheck) {
         features::kEnforceDedicatedWorkerSameOriginCheck);
 
     mojo::Remote<blink::mojom::DedicatedWorkerHostFactory> factory;
-    auto factory_impl = create_factory(factory, kIwaOriginA);
-    mojo::Receiver<blink::mojom::DedicatedWorkerHostFactory> receiver(
-        factory_impl.get(), factory.BindNewPipeAndPassReceiver());
+    create_factory(factory, kIwaOriginA);
 
     mojo::test::BadMessageObserver bad_message_observer;
     start_script_load(factory, GURL("data:text/javascript,console.log('hi')"));
@@ -478,21 +694,22 @@ TEST_F(DedicatedWorkerHostFactoryImplTest, CrossOriginScriptOriginCheck) {
                   base::UnguessableToken::Create(),
                   net::NetworkAnonymizationKey());
 
-          return std::make_unique<DedicatedWorkerHostFactoryImpl>(
+          DedicatedWorkerHostFactoryImpl::Create(
+              *opaque_rfh, factory.BindNewPipeAndPassReceiver(),
               opaque_rfh->GetProcess()->GetID(),
               static_cast<RenderFrameHostImpl*>(opaque_rfh)->GetGlobalId(),
-              static_cast<RenderFrameHostImpl*>(opaque_rfh)->GetGlobalId(),
+              static_cast<RenderFrameHostImpl*>(opaque_rfh)
+                  ->GetWeakDocumentPtr(),
               blink::StorageKey::CreateFirstParty(kOpaqueOrigin),
               net::IsolationInfo::CreateTransient(std::nullopt),
               network::mojom::ClientSecurityState::New(),
               PolicyContainerPolicies(), coep_reporter->GetWeakPtr(),
-              /*network_restrictions_id=*/std::nullopt);
+              /*network_restrictions_id=*/
+              network::GetTestNetworkRestrictionsId());
         };
 
     mojo::Remote<blink::mojom::DedicatedWorkerHostFactory> factory;
-    auto factory_impl = create_opaque_factory(factory);
-    mojo::Receiver<blink::mojom::DedicatedWorkerHostFactory> receiver(
-        factory_impl.get(), factory.BindNewPipeAndPassReceiver());
+    create_opaque_factory(factory);
 
     mojo::test::BadMessageObserver bad_message_observer;
     // Attempt to load a script that would normally be same-origin to the

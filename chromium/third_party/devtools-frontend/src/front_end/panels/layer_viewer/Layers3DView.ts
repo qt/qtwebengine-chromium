@@ -45,7 +45,7 @@ const UIStrings = {
   /**
    * @description Text in DView of the Layers panel
    */
-  cantDisplayLayers: 'Can\'t display layers',
+  cantDisplayLayers: 'Can’t display layers',
   /**
    * @description Text in DView of the Layers panel
    */
@@ -55,16 +55,6 @@ const UIStrings = {
    * @example {about:gpu} PH1
    */
   checkSForPossibleReasons: 'Check {PH1} for possible reasons.',
-  /**
-   * @description Text for a checkbox in the toolbar of the Layers panel to show the area of slow scroll rect
-   */
-  slowScrollRects: 'Slow scroll rects',
-  /**
-   * @description Text for a checkbox in the toolbar of the Layers panel. This is a noun, for a
-   * setting meaning 'display paints in the layers viewer'. 'Paints' here means 'paint events' i.e.
-   * when the browser draws pixels to the screen.
-   */
-  paints: 'Paints',
   /**
    * @description A context menu item in the DView of the Layers panel
    */
@@ -111,7 +101,7 @@ export const DEFAULT_VIEW = (input: ViewInput, output: ViewOutput, target: HTMLE
     ${input.panelToolbar}
     ${input.error === 'missing-root' ? html`<div>${widget(UI.EmptyWidget.EmptyWidget, {
       header: i18nString(UIStrings.noLayerInformation),
-      text: i18nString(UIStrings.layerExplanation)
+      text: i18nString(UIStrings.layerExplanation),
     })}</div>` : Lit.nothing}
     ${input.error === 'webgl-disabled' ? html`<div>${widget(UI.EmptyWidget.EmptyWidget, {
       header: i18nString(UIStrings.cantDisplayLayers),
@@ -120,16 +110,16 @@ export const DEFAULT_VIEW = (input: ViewInput, output: ViewOutput, target: HTMLE
         uiI18n.getFormatLocalizedString(
           str_, UIStrings.checkSForPossibleReasons,
           {
-            PH1: Link.create('about:gpu', undefined, undefined, 'about-gpu')
-          }
-        )
+            PH1: Link.create('chrome://gpu', undefined, undefined, 'about-gpu', 0, true),
+          },
+        ),
       ],
     })}</div>` : Lit.nothing}
     <canvas
       tabindex="0"
       jslog=${VisualLogging.canvas('layers').track({
         click: true,
-        drag: true
+        drag: true,
       })}
       aria-label=${i18nString(UIStrings.dLayersView)}
       @dblclick=${input.onDoubleClick}
@@ -194,10 +184,9 @@ export class Layers3DView extends Common.ObjectWrapper.eventMixin<EventTypes, ty
 
     this.transformController.addEventListener(TransformControllerEvents.TRANSFORM_CHANGED, this.updateData, this);
     this.panelToolbar = this.transformController.toolbar();
-    this.showPaintsSetting = this.createVisibilitySetting(
-        i18nString(UIStrings.paints), 'frame-viewer-show-paints', false, this.panelToolbar);
-    this.showSlowScrollRectsSetting = this.createVisibilitySetting(
-        i18nString(UIStrings.slowScrollRects), 'frame-viewer-show-slow-scroll-rects', true, this.panelToolbar);
+    this.showPaintsSetting = this.createVisibilitySetting('frame-viewer-show-paints', this.panelToolbar);
+    this.showSlowScrollRectsSetting =
+        this.createVisibilitySetting('frame-viewer-show-slow-scroll-rects', this.panelToolbar);
     this.showPaintsSetting.addChangeListener(this.updatePaints, this);
     Common.Settings.Settings.instance()
       .moduleSetting('frame-viewer-chrome-window')
@@ -875,10 +864,8 @@ export class Layers3DView extends Common.ObjectWrapper.eventMixin<EventTypes, ty
   }
 
   private createVisibilitySetting(
-      caption: Common.UIString.LocalizedString, name: string, value: boolean,
-      toolbar: UI.Toolbar.Toolbar): Common.Settings.Setting<boolean> {
-    const setting = Common.Settings.Settings.instance().createSetting(name, value);
-    setting.setTitle(caption);
+      name: string, toolbar: UI.Toolbar.Toolbar): Common.Settings.Setting<boolean> {
+    const setting = Common.Settings.Settings.instance().moduleSetting<boolean>(name);
     setting.addChangeListener(this.updateData, this);
     toolbar.appendToolbarItem(new UI.Toolbar.ToolbarSettingCheckbox(setting));
     return setting;

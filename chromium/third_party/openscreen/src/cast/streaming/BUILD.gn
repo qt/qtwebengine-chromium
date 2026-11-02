@@ -125,10 +125,6 @@ openscreen_source_set("common") {
     "../../util",
   ]
 
-  if (!build_with_chromium) {
-    deps += [ "../protocol:castv2" ]
-  }
-
   friend = [
     ":unittests",
     ":sender",

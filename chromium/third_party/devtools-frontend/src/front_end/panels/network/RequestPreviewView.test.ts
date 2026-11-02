@@ -2,14 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {assert, expect} from 'chai';
+import {assert} from 'chai';
 
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import type * as Protocol from '../../generated/protocol.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {setupLocaleHooks} from '../../testing/LocaleHelpers.js';
+import {setupSettingsHooks} from '../../testing/SettingsHelpers.js';
 import * as SourceFrame from '../../ui/legacy/components/source_frame/source_frame.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
@@ -33,6 +34,7 @@ function renderPreviewView(request: SDK.NetworkRequest.NetworkRequest): Network.
 
 describe('RequestPreviewView', () => {
   setupLocaleHooks();
+  setupSettingsHooks();
   it('prevents previewed html from making same-site requests', async () => {
     const request = SDK.NetworkRequest.NetworkRequest.create(
         'requestId' as Protocol.Network.RequestId, urlString`http://devtools-frontend.test/content`, urlString``, null,
@@ -42,8 +44,8 @@ describe('RequestPreviewView', () => {
     const component = renderPreviewView(request);
     const widget = await component.showPreview();
     const frame = widget.contentElement.querySelector('iframe');
-    expect(frame).to.be.not.null;
-    expect(frame?.getAttribute('csp')).to.eql('default-src \'none\';img-src data:;style-src \'unsafe-inline\'');
+    assert.isNotNull(frame);
+    assert.strictEqual(frame?.getAttribute('csp'), 'default-src \'none\';img-src data:;style-src \'unsafe-inline\'');
     component.detach();
   });
 

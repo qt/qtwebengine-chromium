@@ -26,6 +26,8 @@
 #include "src/webp/mux_types.h"
 #include "src/webp/types.h"
 
+WEBP_ASSUME_UNSAFE_INDEXABLE_ABI
+
 #define DMUX_MAJ_VERSION 1
 #define DMUX_MIN_VERSION 6
 #define DMUX_REV_VERSION 0
@@ -116,7 +118,7 @@ static int RemapMemBuffer(MemBuffer* const mem, const uint8_t* data,
 
 static int InitMemBuffer(MemBuffer* const mem, const uint8_t* data,
                          size_t size) {
-  memset(mem, 0, sizeof(*mem));
+  WEBP_UNSAFE_MEMSET(mem, 0, sizeof(*mem));
   return RemapMemBuffer(mem, data, size);
 }
 
@@ -309,7 +311,6 @@ static ParseStatus NewFrame(const MemBuffer* const mem, uint32_t min_size,
 static ParseStatus ParseAnimationFrame(WebPDemuxer* const dmux,
                                        uint32_t frame_chunk_size) {
   const int is_animation = !!(dmux->feature_flags & ANIMATION_FLAG);
-  const uint32_t anmf_payload_size = frame_chunk_size - ANMF_CHUNK_SIZE;
   int added_frame = 0;
   int bits;
   MemBuffer* const mem = &dmux->mem;
@@ -335,9 +336,13 @@ static ParseStatus ParseAnimationFrame(WebPDemuxer* const dmux,
   // Store a frame only if the animation flag is set there is some data for
   // this frame is available.
   start_offset = mem->start;
-  status = StoreFrame(dmux->num_frames + 1, anmf_payload_size, mem, frame);
-  if (status != PARSE_ERROR && mem->start - start_offset > anmf_payload_size) {
-    status = PARSE_ERROR;
+  {
+    const uint32_t anmf_payload_size = frame_chunk_size - ANMF_CHUNK_SIZE;
+    status = StoreFrame(dmux->num_frames + 1, anmf_payload_size, mem, frame);
+    if (status != PARSE_ERROR &&
+        mem->start - start_offset > anmf_payload_size) {
+      status = PARSE_ERROR;
+    }
   }
   if (status != PARSE_ERROR && is_animation && frame->frame_num > 0) {
     added_frame = AddFrame(dmux, frame);
@@ -874,7 +879,7 @@ static int SetFrame(int frame_num, WebPIterator* const iter) {
 int WebPDemuxGetFrame(const WebPDemuxer* dmux, int frame, WebPIterator* iter) {
   if (iter == NULL) return 0;
 
-  memset(iter, 0, sizeof(*iter));
+  WEBP_UNSAFE_MEMSET(iter, 0, sizeof(*iter));
   iter->private_ = (void*)dmux;
   return SetFrame(frame, iter);
 }
@@ -945,7 +950,7 @@ int WebPDemuxGetChunk(const WebPDemuxer* dmux, const char fourcc[4],
                       int chunk_num, WebPChunkIterator* iter) {
   if (iter == NULL) return 0;
 
-  memset(iter, 0, sizeof(*iter));
+  WEBP_UNSAFE_MEMSET(iter, 0, sizeof(*iter));
   iter->private_ = (void*)dmux;
   return SetChunk(fourcc, chunk_num, iter);
 }

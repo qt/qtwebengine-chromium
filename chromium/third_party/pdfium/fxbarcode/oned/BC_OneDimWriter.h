@@ -24,7 +24,7 @@ class CFX_Font;
 class CFX_Matrix;
 class CFX_Path;
 class CFX_RenderDevice;
-class TextCharPos;
+struct TextCharPos;
 
 class CBC_OneDimWriter : public CBC_Writer {
  public:

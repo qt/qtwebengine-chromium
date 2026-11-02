@@ -101,8 +101,11 @@ TEST(GeometryCacheTest, BoundsChangedCallback) {
   EXPECT_FALSE(last_bounds.has_value());
   EXPECT_EQ(geometry_cache.GetBoundsPx(), bounds);
 
-  // `last_bounds` should have gotten set after the call to GetBoundsPx().
-  // Reset it for the next part of the test.
+  // Calling GetBoundsPx() should not trigger the callback synchronously.
+  EXPECT_FALSE(last_bounds.has_value());
+
+  // Dispatching responses/events will invoke the callback.
+  connection->DispatchAll();
   EXPECT_TRUE(last_bounds.has_value());
   last_bounds = std::nullopt;
 
@@ -176,9 +179,43 @@ TEST(GeometryCacheTest, DestroyInCallback) {
       connection, window.id(),
       base::BindRepeating(bounds_changed_callback, &geometry_cache));
 
-  // This will trigger the callback via DispatchNow() and then return.
-  // If there's a UAF, this should crash or trigger ASAN.
   geometry_cache->GetBoundsPx();
+  connection->DispatchAll();
+}
+
+TEST(GeometryCacheTest, DestroyInParentGeometryChangedCallback) {
+  Connection* connection = Connection::Get();
+  gfx::Rect parent_bounds(12, 34, 56, 78);
+  ScopedWindow parent_window(connection, connection->default_root(),
+                             parent_bounds);
+
+  gfx::Rect child_bounds(5, 5, 30, 30);
+  ScopedWindow child_window(connection, parent_window.id(), child_bounds);
+
+  std::unique_ptr<GeometryCache> child_geometry_cache;
+  auto bounds_changed_callback =
+      [](std::unique_ptr<GeometryCache>* child_cache_ptr,
+         const std::optional<gfx::Rect>& old_bounds,
+         const gfx::Rect& new_bounds) { child_cache_ptr->reset(); };
+
+  child_geometry_cache = std::make_unique<GeometryCache>(
+      connection, child_window.id(),
+      base::BindRepeating(bounds_changed_callback, &child_geometry_cache));
+
+  // Initialize bounds.
+  child_geometry_cache->GetBoundsPx();
+
+  // Simulate parent moving.
+  gfx::Rect new_parent_bounds(20, 20, 56, 78);
+  connection->ConfigureWindow({
+      .window = parent_window.id(),
+      .x = new_parent_bounds.x(),
+      .y = new_parent_bounds.y(),
+      .width = new_parent_bounds.width(),
+      .height = new_parent_bounds.height(),
+  });
+  connection->Sync();
+  connection->DispatchAll();
 }
 
 }  // namespace x11

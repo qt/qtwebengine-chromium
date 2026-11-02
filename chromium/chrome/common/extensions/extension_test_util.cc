@@ -102,7 +102,7 @@ void SetGalleryUpdateURL(const GURL& new_url) {
 
 // Note: This list should be kept in sync with the set of all features which
 // have delegated availability checks. This includes controlled_frame,
-// webstore_override, and user_scripts_availability.
+// webstore_override, user_scripts_availability, and mimeHandler.
 std::vector<const char*> GetExpectedDelegatedFeaturesForTest() {
   return {
       // Controlled frame:
@@ -114,15 +114,15 @@ std::vector<const char*> GetExpectedDelegatedFeaturesForTest() {
       "webViewInternal",
       // LINT.ThenChange(chrome/common/controlled_frame/controlled_frame.cc)
 
+      // mimeHandler availability:
+      "mimeHandler",
+
       // Webstore override:
       "management",
       "webstorePrivate",
 
       // userScripts availability:
       "userScripts",
-      "userScripts.execute",
-      "userScripts.getWorldConfigurations",
-      "userScripts.resetWorldConfiguration",
   };
 }
 

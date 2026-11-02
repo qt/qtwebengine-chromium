@@ -18,7 +18,9 @@
 #include "base/run_loop.h"
 #include "base/test/bind.h"
 #include "base/test/metrics/histogram_tester.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/test/simple_test_tick_clock.h"
+#include "base/test/test_future.h"
 #include "base/time/time.h"
 #include "base/uuid.h"
 #include "content/browser/renderer_host/frame_tree_node.h"
@@ -27,16 +29,24 @@
 #include "content/browser/service_worker/fake_service_worker.h"
 #include "content/browser/service_worker/service_worker_client.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
+#include "content/browser/service_worker/service_worker_context_wrapper_test_api.h"
 #include "content/browser/service_worker/service_worker_info.h"
+#include "content/browser/service_worker/service_worker_metrics.h"
 #include "content/browser/service_worker/service_worker_ping_controller.h"
 #include "content/browser/service_worker/service_worker_registration.h"
+#include "content/browser/service_worker/service_worker_security_utils.h"
 #include "content/browser/service_worker/service_worker_test_utils.h"
+#include "content/browser/storage_partition_impl.h"
+#include "content/common/features.h"
 #include "content/public/test/browser_task_environment.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
+#include "content/public/test/test_content_browser_client.h"
 #include "content/public/test/test_service.mojom.h"
 #include "content/public/test/test_utils.h"
+#include "mojo/public/cpp/test_support/test_utils.h"
 #include "net/base/test_completion_callback.h"
+#include "net/cookies/site_for_cookies.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/service_worker/embedded_worker_status.h"
@@ -50,6 +60,8 @@
 
 namespace content {
 namespace service_worker_version_unittest {
+
+using ::blink::mojom::ServiceWorkerClientInfoPtr;
 
 constexpr base::TimeDelta kTestTimeoutBeyondRequestTimeout =
     // Value of kRequestTimeout in service_worker_version.cc
@@ -85,6 +97,48 @@ enum class StorageKeyTestCase {
   kThirdParty,
 };
 
+class DisallowServiceWorkerWithLogsContentBrowserClient
+    : public TestContentBrowserClient {
+ public:
+  struct AllowServiceWorkerCallLog {
+    AllowServiceWorkerCallLog(
+        const GURL& scope,
+        const net::SiteForCookies& site_for_cookies,
+        const std::optional<url::Origin>& top_frame_origin,
+        const blink::StorageKey& storage_key,
+        const GURL& script_url)
+        : scope(scope),
+          site_for_cookies(site_for_cookies),
+          top_frame_origin(top_frame_origin),
+          storage_key(storage_key),
+          script_url(script_url) {}
+    const GURL scope;
+    const net::SiteForCookies site_for_cookies;
+    const std::optional<url::Origin> top_frame_origin;
+    const blink::StorageKey storage_key;
+    const GURL script_url;
+  };
+
+  DisallowServiceWorkerWithLogsContentBrowserClient() = default;
+
+  AllowServiceWorkerResult AllowServiceWorker(
+      const GURL& scope,
+      const net::SiteForCookies& site_for_cookies,
+      const std::optional<url::Origin>& top_frame_origin,
+      const blink::StorageKey& storage_key,
+      const GURL& script_url,
+      content::BrowserContext* context) override {
+    logs_.emplace_back(scope, site_for_cookies, top_frame_origin, storage_key,
+                       script_url);
+    return AllowServiceWorkerResult::No();
+  }
+
+  const std::vector<AllowServiceWorkerCallLog>& logs() const { return logs_; }
+
+ private:
+  std::vector<AllowServiceWorkerCallLog> logs_;
+};
+
 class ServiceWorkerVersionTest
     : public testing::Test,
       public testing::WithParamInterface<StorageKeyTestCase> {
@@ -111,8 +165,13 @@ class ServiceWorkerVersionTest
 
   void SetUp() override {
     helper_ = GetHelper();
-
     scope_ = GURL("https://www.example.com/test/");
+
+    auto* storage_partition = static_cast<StoragePartitionImpl*>(
+        helper_->browser_context()->GetStoragePartitionForUrl(scope_));
+    ServiceWorkerContextWrapperTestApi(helper_->context_wrapper())
+        .set_storage_partition(storage_partition);
+
     blink::mojom::ServiceWorkerRegistrationOptions options;
     options.scope = scope_;
     registration_ = CreateNewServiceWorkerRegistration(
@@ -1459,6 +1518,66 @@ TEST_P(ServiceWorkerVersionTest, BadOrigin) {
 }
 
 TEST_P(ServiceWorkerVersionTest,
+       StartWorker_ContentSettingsDisallowsServiceWorker_FeatureEnabled) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(
+      features::kServiceWorkerStrictContextValidation);
+
+  base::HistogramTester histogram_tester;
+  DisallowServiceWorkerWithLogsContentBrowserClient test_browser_client;
+  ContentBrowserClient* old_browser_client =
+      SetBrowserClientForTesting(&test_browser_client);
+
+  ASSERT_EQ(blink::ServiceWorkerStatusCode::kErrorDisallowed,
+            StartServiceWorker(version_.get()));
+
+  ASSERT_EQ(2ul, test_browser_client.logs().size());
+  EXPECT_EQ(version_->scope(), test_browser_client.logs()[1].scope);
+  EXPECT_TRUE(test_browser_client.logs()[1].site_for_cookies.IsEquivalent(
+      service_worker_security_utils::site_for_cookies(version_->key())));
+  EXPECT_EQ(url::Origin::Create(version_->key().top_level_site().GetURL()),
+            test_browser_client.logs()[1].top_frame_origin);
+  EXPECT_EQ(version_->key(), test_browser_client.logs()[1].storage_key);
+  EXPECT_EQ(version_->script_url(), test_browser_client.logs()[1].script_url);
+
+  histogram_tester.ExpectUniqueSample(
+      "ServiceWorker.StartWorker.ContextValidationDifference",
+      ServiceWorkerStartWorkerContextValidationDifference::kBothDisallowed, 1);
+
+  SetBrowserClientForTesting(old_browser_client);
+}
+
+TEST_P(ServiceWorkerVersionTest,
+       StartWorker_ContentSettingsDisallowsServiceWorker_FeatureDisabled) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndDisableFeature(
+      features::kServiceWorkerStrictContextValidation);
+
+  base::HistogramTester histogram_tester;
+  DisallowServiceWorkerWithLogsContentBrowserClient test_browser_client;
+  ContentBrowserClient* old_browser_client =
+      SetBrowserClientForTesting(&test_browser_client);
+
+  ASSERT_EQ(blink::ServiceWorkerStatusCode::kErrorDisallowed,
+            StartServiceWorker(version_.get()));
+
+  ASSERT_EQ(2ul, test_browser_client.logs().size());
+  EXPECT_EQ(version_->scope(), test_browser_client.logs()[0].scope);
+  EXPECT_TRUE(test_browser_client.logs()[0].site_for_cookies.IsEquivalent(
+      net::SiteForCookies::FromUrl(version_->scope())));
+  EXPECT_EQ(url::Origin::Create(version_->scope()),
+            test_browser_client.logs()[0].top_frame_origin);
+  EXPECT_EQ(version_->key(), test_browser_client.logs()[0].storage_key);
+  EXPECT_EQ(version_->script_url(), test_browser_client.logs()[0].script_url);
+
+  histogram_tester.ExpectUniqueSample(
+      "ServiceWorker.StartWorker.ContextValidationDifference",
+      ServiceWorkerStartWorkerContextValidationDifference::kBothDisallowed, 1);
+
+  SetBrowserClientForTesting(old_browser_client);
+}
+
+TEST_P(ServiceWorkerVersionTest,
        ForegroundServiceWorkerCountUpdatedByControllee) {
   // Start the worker before we have a controllee.
   ASSERT_EQ(blink::ServiceWorkerStatusCode::kOk,
@@ -2536,6 +2655,88 @@ TEST_P(ServiceWorkerVersionTest, RemoveLiveVersion_NoResurrection) {
   // Unregister the observer before it goes out of scope to prevent dangling
   // pointer crashes during fixture teardown.
   helper_->context_wrapper()->RemoveSyncObserver(&sync_observer);
+}
+
+// Verifies that OpenPaymentHandlerWindow() accepts calls for a service worker
+// that has a pending PAYMENT_REQUEST event and opens a window.
+TEST_P(ServiceWorkerVersionTest, OpenPaymentHandlerWindow_WithPendingEvent) {
+  auto* service_worker =
+      helper_->AddNewPendingServiceWorker<FakeServiceWorker>(helper_.get());
+  ASSERT_EQ(blink::ServiceWorkerStatusCode::kOk,
+            StartServiceWorker(version_.get()));
+  service_worker->RunUntilInitializeGlobalScope();
+  version_->SetStatus(ServiceWorkerVersion::ACTIVATED);
+
+  mojo::test::BadMessageObserver bad_message_observer;
+
+  // Simulate a pending PAYMENT_REQUEST event.
+  int request_id = version_->StartRequest(
+      ServiceWorkerMetrics::EventType::PAYMENT_REQUEST, base::DoNothing());
+
+  GURL url = scope_.Resolve("payment_handler.html");
+  base::test::TestFuture<bool, ServiceWorkerClientInfoPtr,
+                         const std::optional<std::string>&>
+      future;
+
+  service_worker->host()->OpenPaymentHandlerWindow(url, future.GetCallback());
+  EXPECT_TRUE(future.Wait());
+
+  EXPECT_FALSE(bad_message_observer.got_bad_message());
+
+  // Clean up the pending request.
+  version_->FinishRequest(request_id, /*was_handled=*/true);
+}
+
+// Verifies that OpenPaymentHandlerWindow() rejects cross-origin URLs and kills
+// the renderer.
+TEST_P(ServiceWorkerVersionTest, OpenPaymentHandlerWindow_CrossOrigin) {
+  auto* service_worker =
+      helper_->AddNewPendingServiceWorker<FakeServiceWorker>(helper_.get());
+  ASSERT_EQ(blink::ServiceWorkerStatusCode::kOk,
+            StartServiceWorker(version_.get()));
+  service_worker->RunUntilInitializeGlobalScope();
+  version_->SetStatus(ServiceWorkerVersion::ACTIVATED);
+
+  mojo::test::BadMessageObserver bad_message_observer;
+
+  // Cross-origin URL.
+  GURL url("https://www.google.com/test/payment_handler.html");
+  base::test::TestFuture<bool, ServiceWorkerClientInfoPtr,
+                         const std::optional<std::string>&>
+      future;
+
+  service_worker->host()->OpenPaymentHandlerWindow(url, future.GetCallback());
+
+  EXPECT_EQ(
+      "Received PaymentRequestEvent#openWindow() request for a cross-origin "
+      "URL.",
+      bad_message_observer.WaitForBadMessage());
+}
+
+// Verifies that OpenPaymentHandlerWindow() rejects calls for a service worker
+// that doesn't have a pending PAYMENT_REQUEST event, and kills the renderer.
+TEST_P(ServiceWorkerVersionTest, OpenPaymentHandlerWindow_NoPendingEvent) {
+  auto* service_worker =
+      helper_->AddNewPendingServiceWorker<FakeServiceWorker>(helper_.get());
+  ASSERT_EQ(blink::ServiceWorkerStatusCode::kOk,
+            StartServiceWorker(version_.get()));
+  service_worker->RunUntilInitializeGlobalScope();
+  version_->SetStatus(ServiceWorkerVersion::ACTIVATED);
+
+  mojo::test::BadMessageObserver bad_message_observer;
+
+  // Same-origin URL but no pending PAYMENT_REQUEST event.
+  GURL url = scope_.Resolve("payment_handler.html");
+  base::test::TestFuture<bool, ServiceWorkerClientInfoPtr,
+                         const std::optional<std::string>&>
+      future;
+
+  service_worker->host()->OpenPaymentHandlerWindow(url, future.GetCallback());
+
+  EXPECT_EQ(
+      "Received PaymentRequestEvent#openWindow() request without a pending "
+      "PaymentRequestEvent.",
+      bad_message_observer.WaitForBadMessage());
 }
 
 }  // namespace service_worker_version_unittest

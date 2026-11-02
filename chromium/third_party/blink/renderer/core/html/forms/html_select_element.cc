@@ -301,9 +301,9 @@ void HTMLSelectElement::setValueForBinding(const String& value) {
                       was_autofilled && !value_changed
                           ? WebAutofillState::kAutofilled
                           : WebAutofillState::kNotFilled);
-  if (Page* page = GetDocument().GetPage(); page && value_changed) {
-    page->GetChromeClient().JavaScriptChangedValue(*this, old_value,
-                                                   was_autofilled);
+  if (Page* page = GetDocument().GetPage(); page) {
+    page->GetChromeClient().JavaScriptSetValue(*this, old_value, was_autofilled,
+                                               value_changed);
   }
 }
 
@@ -372,8 +372,7 @@ void HTMLSelectElement::SetSuggestedValue(const String& value) {
 }
 
 void HTMLSelectElement::SetSuggestedOption(HTMLOptionElement* option) {
-  if (RuntimeEnabledFeatures::CanvasDrawElementEnabled(GetExecutionContext()) &&
-      IsInCanvasSubtree()) {
+  if (IsCanvasOrInCanvasSubtree()) {
     // Hide suggested values when under canvas, to prevent leaking this
     // information to javascript.
     option = nullptr;
@@ -462,6 +461,19 @@ void HTMLSelectElement::ParseAttribute(
     }
   } else {
     HTMLFormControlElementWithState::ParseAttribute(params);
+  }
+}
+
+void HTMLSelectElement::DisabledAttributeChanged(DisabledChangedReason reason) {
+  HTMLFormControlElementWithState::DisabledAttributeChanged(reason);
+  if (RuntimeEnabledFeatures::OptionDisablednessCheckAncestorsEnabled()) {
+    for (auto& item : GetListItems()) {
+      // This will unnecessarily call PseudoStateChanged on <hr> elements, but
+      // that is preferable to checking whether the item is an option or
+      // optgroup.
+      item->PseudoStateChanged(CSSSelector::kPseudoDisabled);
+      item->PseudoStateChanged(CSSSelector::kPseudoEnabled);
+    }
   }
 }
 
@@ -806,7 +818,19 @@ HTMLOptionElement* HTMLSelectElement::SelectedOption() const {
 }
 
 bool HTMLSelectElement::IsInDialogMode() const {
-  return IsAppearanceBase() && content_model_violations_count_ > 0U;
+  if (!IsAppearanceBase()) {
+    return false;
+  }
+
+  if (RuntimeEnabledFeatures::FilterableSelectEnabled() &&
+      num_descendant_inputs_) {
+    // When there is an <input> inside of this select, the picker should be
+    // mapped as a dialog and there will be a separate element in the
+    // ShadowRoot which is mapped as a listbox which holds the options.
+    return true;
+  }
+
+  return content_model_violations_count_;
 }
 
 void HTMLSelectElement::IncreaseContentModelViolationCount() {
@@ -862,10 +886,9 @@ int HTMLSelectElement::SelectedListIndex() const {
   return -1;
 }
 
-void HTMLSelectElement::DidChangeIsCanvasOrInCanvasSubtree() {
-  HTMLFormControlElementWithState::DidChangeIsCanvasOrInCanvasSubtree();
-  if (RuntimeEnabledFeatures::CanvasDrawElementEnabled(GetExecutionContext()) &&
-      IsInCanvasSubtree()) {
+void HTMLSelectElement::DidChangeIsInCanvasSubtree() {
+  HTMLFormControlElementWithState::DidChangeIsInCanvasSubtree();
+  if (IsInCanvasSubtree()) {
     // Hide suggested values when under canvas, to prevent leaking this
     // information to javascript.
     SetSuggestedOption(nullptr);
@@ -1344,9 +1367,14 @@ void HTMLSelectElement::DefaultEventHandler(Event& event) {
   if (!GetLayoutObject())
     return;
 
+  auto* keyboard_event = DynamicTo<KeyboardEvent>(event);
+  const bool is_repeat_keyboard_event =
+      keyboard_event && keyboard_event->repeat();
+
   if (event.type() == event_type_names::kClick ||
       event.type() == event_type_names::kChange ||
-      event.type() == event_type_names::kKeydown) {
+      (event.type() == event_type_names::kKeydown &&
+       !is_repeat_keyboard_event)) {
     SetUserHasEditedTheField();
   }
 
@@ -1355,18 +1383,21 @@ void HTMLSelectElement::DefaultEventHandler(Event& event) {
     return;
   }
 
-  if (select_type_->DefaultEventHandler(event)) {
-    event.SetDefaultHandled();
-    return;
-  }
-
-  if (auto* keyboard_event = DynamicTo<KeyboardEvent>(event)) {
-    if (TypeAhead::ShouldHandleKeyboardEvent(*keyboard_event)) {
-      TypeAheadFind(*keyboard_event);
+  if (!is_repeat_keyboard_event) {
+    if (select_type_->DefaultEventHandler(event)) {
       event.SetDefaultHandled();
       return;
     }
+
+    if (keyboard_event) {
+      if (TypeAhead::ShouldHandleKeyboardEvent(*keyboard_event)) {
+        TypeAheadFind(*keyboard_event);
+        event.SetDefaultHandled();
+        return;
+      }
+    }
   }
+
   HTMLFormControlElementWithState::DefaultEventHandler(event);
 }
 
@@ -2111,7 +2142,12 @@ void HTMLSelectElement::UpdateIndividualSelectedcontent(
 HTMLSelectElement::SelectOptgroupDatalist
 HTMLSelectElement::WalkAncestorsForRelatedParts(const Element& element) {
   HTMLOptGroupElement* ancestor_optgroup = nullptr;
-  ContainerNode* last_ancestor = const_cast<Element*>(&element);
+  ContainerNode* last_ancestor = nullptr;
+  const bool track_select_child =
+      RuntimeEnabledFeatures::FilterableSelectEnabled();
+  if (track_select_child) {
+    last_ancestor = const_cast<Element*>(&element);
+  }
   for (ContainerNode* ancestor = element.parentNode(); ancestor;
        ancestor = ancestor->parentNode()) {
     if (IsA<HTMLOptionElement>(ancestor)) {
@@ -2137,7 +2173,9 @@ HTMLSelectElement::WalkAncestorsForRelatedParts(const Element& element) {
               .optgroup = ancestor_optgroup,
               .select_child = last_ancestor};
     }
-    last_ancestor = ancestor;
+    if (track_select_child) {
+      last_ancestor = ancestor;
+    }
   }
   return {.optgroup = ancestor_optgroup};
 }
@@ -2145,15 +2183,21 @@ HTMLSelectElement::WalkAncestorsForRelatedParts(const Element& element) {
 void HTMLSelectElement::InputInserted(HTMLInputElement* input,
                                       Node* nearest_ancestor_select_child) {
   CountedElementInserted(input, nearest_ancestor_select_child);
-  // TODO(crbug.com/402429384): Update the UA ShadowRoot to account for the
-  // added input.
+  // We only need to change the shadow root when going from no input elements to
+  // some input elements, hence the == 1 check here.
+  if (num_descendant_inputs_ == 1) {
+    UpdateUserAgentShadowTree(*UserAgentShadowRoot());
+    PseudoStateChanged(CSSSelector::kPseudoSelectContainsInput);
+  }
 }
 
 void HTMLSelectElement::InputRemoved(HTMLInputElement* input,
                                      Node* nearest_ancestor_select_child) {
   CountedElementRemoved(input, nearest_ancestor_select_child);
-  // TODO(crbug.com/402429384): Update the UA ShadowRoot to account for the
-  // removed input.
+  if (!num_descendant_inputs_) {
+    UpdateUserAgentShadowTree(*UserAgentShadowRoot());
+    PseudoStateChanged(CSSSelector::kPseudoSelectContainsInput);
+  }
 }
 
 void HTMLSelectElement::CountedElementInserted(
@@ -2162,18 +2206,31 @@ void HTMLSelectElement::CountedElementInserted(
   CHECK(RuntimeEnabledFeatures::FilterableSelectEnabled());
   CHECK_EQ(nearest_ancestor_select_child->parentNode(), this);
 
-  auto insert_result = children_descendant_counts_map_.insert(
-      nearest_ancestor_select_child, DescendantCounts{0, 0});
-  if (IsA<HTMLInputElement>(element)) {
-    insert_result.stored_value->value.num_inputs++;
-    num_descendant_inputs_++;
+  if (nearest_ancestor_select_child == element) {
+    if (IsA<HTMLInputElement>(element)) {
+      num_descendant_inputs_++;
+    }
   } else {
-    CHECK(IsA<HTMLOptionElement>(element));
-    insert_result.stored_value->value.num_options++;
+    auto insert_result = children_descendant_counts_map_.insert(
+        nearest_ancestor_select_child, DescendantCounts{0, 0});
+    if (IsA<HTMLInputElement>(element)) {
+      insert_result.stored_value->value.num_inputs++;
+      num_descendant_inputs_++;
+    } else {
+      CHECK(IsA<HTMLOptionElement>(element));
+      insert_result.stored_value->value.num_options++;
+    }
+    if (insert_result.stored_value->value.num_options &&
+        insert_result.stored_value->value.num_inputs) {
+      LogOptionAndInputWarning(*element);
+    }
   }
-  if (insert_result.stored_value->value.num_options &&
-      insert_result.stored_value->value.num_inputs) {
-    LogOptionAndInputWarning(*element);
+
+  // Since slotting may change based on whether each child node contains a
+  // descendant input elements and option elements, we need to recalc slot
+  // assignment when such descendants are changed.
+  if (num_descendant_inputs_) {
+    UserAgentShadowRoot()->SetNeedsAssignmentRecalc();
   }
 }
 
@@ -2184,32 +2241,40 @@ void HTMLSelectElement::CountedElementRemoved(
   CHECK(!nearest_ancestor_select_child->parentNode() ||
         nearest_ancestor_select_child->parentNode() == this);
 
-  auto it = children_descendant_counts_map_.find(nearest_ancestor_select_child);
-  CHECK_NE(it, children_descendant_counts_map_.end());
-  if (IsA<HTMLInputElement>(element)) {
-    CHECK_GT(it->value.num_inputs, 0u);
-    it->value.num_inputs--;
-    CHECK_GT(num_descendant_inputs_, 0u);
-    num_descendant_inputs_--;
+  if (nearest_ancestor_select_child == element) {
+    if (IsA<HTMLInputElement>(element)) {
+      CHECK_GT(num_descendant_inputs_, 0u);
+      num_descendant_inputs_--;
+    }
   } else {
-    CHECK_GT(it->value.num_options, 0u);
-    it->value.num_options--;
+    auto it =
+        children_descendant_counts_map_.find(nearest_ancestor_select_child);
+    CHECK_NE(it, children_descendant_counts_map_.end());
+    if (IsA<HTMLInputElement>(element)) {
+      CHECK_GT(it->value.num_inputs, 0u);
+      it->value.num_inputs--;
+      CHECK_GT(num_descendant_inputs_, 0u);
+      num_descendant_inputs_--;
+    } else {
+      CHECK_GT(it->value.num_options, 0u);
+      it->value.num_options--;
+    }
+    if (it->value.num_inputs == 0 && it->value.num_options == 0) {
+      children_descendant_counts_map_.erase(it);
+    }
   }
-  if (it->value.num_inputs == 0 && it->value.num_options == 0) {
-    children_descendant_counts_map_.erase(it);
+
+  // See comment on SetNeedsAssignmentRecalc in CountedElementInserted.
+  if (num_descendant_inputs_) {
+    UserAgentShadowRoot()->SetNeedsAssignmentRecalc();
   }
 }
 
 unsigned HTMLSelectElement::NumDescendantInputs() const {
-#if DCHECK_IS_ON()
-  {
-    unsigned num_inputs_in_map = 0;
-    for (auto& pair : children_descendant_counts_map_) {
-      num_inputs_in_map += pair.value.num_inputs;
-    }
-    DCHECK_EQ(num_inputs_in_map, num_descendant_inputs_);
-  }
-#endif
+  // Ideally we would add some DCHECK-only code here which makes sure that the
+  // sum of num_inputs of each value in children_descendant_counts_map_ matches
+  // num_descendant_inputs_, but unfortunately it runs so slowly that it causes
+  // some tests to time out on DCHECK builds.
   return num_descendant_inputs_;
 }
 
@@ -2284,7 +2349,6 @@ bool HTMLSelectElement::ShouldIgnoreDescendantsForElementTraversals(
 
 void HTMLSelectElement::StartFiltering() {
   CHECK(RuntimeEnabledFeatures::FilterableSelectEnabled());
-  CHECK(!UsesMenuList());
   CHECK(!active_option_);
   for (HTMLOptionElement& option : GetOptionList()) {
     if (option.SupportsActiveOptionPseudo()) {
@@ -2297,7 +2361,6 @@ void HTMLSelectElement::StartFiltering() {
 
 void HTMLSelectElement::StopFiltering() {
   CHECK(RuntimeEnabledFeatures::FilterableSelectEnabled());
-  CHECK(!UsesMenuList());
   if (active_option_) {
     HTMLOptionElement* old_active_option = active_option_;
     active_option_ = nullptr;
@@ -2315,7 +2378,6 @@ bool SupportsActive(HTMLOptionElement& option) {
 
 void HTMLSelectElement::MoveActiveOptionForwards() {
   CHECK(RuntimeEnabledFeatures::FilterableSelectEnabled());
-  CHECK(!UsesMenuList());
   CHECK(active_option_);
   if (HTMLOptionElement* new_option =
           GetOptionList().FindNextElement(*active_option_, &SupportsActive)) {
@@ -2329,7 +2391,6 @@ void HTMLSelectElement::MoveActiveOptionForwards() {
 
 void HTMLSelectElement::MoveActiveOptionBackwards() {
   CHECK(RuntimeEnabledFeatures::FilterableSelectEnabled());
-  CHECK(!UsesMenuList());
   CHECK(active_option_);
   if (HTMLOptionElement* new_option = GetOptionList().FindPreviousElement(
           *active_option_, &SupportsActive)) {

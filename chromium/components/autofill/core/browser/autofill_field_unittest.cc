@@ -306,8 +306,6 @@ TEST_F(AutofillFieldTest, UnionTypesFromHtmlAndServerTypes) {
 // of `AutofillField` coming from `FormFieldData` and leaves other information
 // unchanged.
 TEST_F(AutofillFieldTest, UpdateFieldData) {
-  base::test::ScopedFeatureList scoped_feature_list{
-      features::kAutofillFixFormEquality};
   FormFieldData field = test::GetFormFieldData(
       {.role = NAME_FULL, .autocomplete_attribute = "name"});
 
@@ -360,14 +358,14 @@ class AutofillFieldTest_MLPredictions : public AutofillFieldTest {
 TEST_F(AutofillFieldTest_MLPredictions, PredictionsUsed) {
   field().set_heuristic_type(kMlSource, ADDRESS_HOME_STREET_ADDRESS);
   field().set_heuristic_type(kRegexSource, ADDRESS_HOME_LINE1);
-  EXPECT_EQ(ADDRESS_HOME_STREET_ADDRESS, field().heuristic_type());
+  EXPECT_EQ(field().heuristic_type(), ADDRESS_HOME_STREET_ADDRESS);
 }
 
 // Test that the regex prediction is used if the model returned NO_SERVER_DATA.
 TEST_F(AutofillFieldTest_MLPredictions, FallbackToRegex_OnNoServerData) {
   field().set_heuristic_type(kMlSource, NO_SERVER_DATA);
   field().set_heuristic_type(kRegexSource, ADDRESS_HOME_LINE1);
-  EXPECT_EQ(ADDRESS_HOME_LINE1, field().heuristic_type());
+  EXPECT_EQ(field().heuristic_type(), ADDRESS_HOME_LINE1);
 }
 
 // Test that the regex prediction is used if the regex prediction is a type
@@ -375,11 +373,11 @@ TEST_F(AutofillFieldTest_MLPredictions, FallbackToRegex_OnNoServerData) {
 TEST_F(AutofillFieldTest_MLPredictions, FallbackToRegex_OnUnsupportedType) {
   field().set_heuristic_type(kMlSource, NAME_FIRST);
   field().set_heuristic_type(kRegexSource, IBAN_VALUE);
-  EXPECT_EQ(IBAN_VALUE, field().heuristic_type());
+  EXPECT_EQ(field().heuristic_type(), IBAN_VALUE);
 
   field().set_heuristic_type(kMlSource, NAME_FIRST);
   field().set_heuristic_type(kRegexSource, PASSPORT_NUMBER);
-  EXPECT_EQ(PASSPORT_NUMBER, field().heuristic_type());
+  EXPECT_EQ(field().heuristic_type(), PASSPORT_NUMBER);
 }
 
 class AutofillFieldWithAutofillAiTest : public base::test::WithFeatureOverride,
@@ -601,8 +599,6 @@ class AutofillPredictionPreferenceTest
 // overall field type.
 TEST_P(AutofillPredictionPreferenceTest,
        AutofillPredictionPreferenceTestParams) {
-  base::test::ScopedFeatureList scoped_feature_list{
-      features::kAutofillPreferPhoneCountryCodeTypeOverCountryHtmlType};
   AutofillPredictionPreferenceTestParams test_case = GetParam();
   AutofillField field;
   field.set_form_control_type(test_case.form_control_type);
@@ -985,8 +981,6 @@ INSTANTIATE_TEST_SUITE_P(
 // Tests the behavior of `AutofillField::last_modifier()` when the purpose is to
 // figure out whether a field was last modified by autofill.
 TEST_F(AutofillFieldTest, IsLastModifierAutofill) {
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitAndEnableFeature(features::kAutofillFixIsAutofilled);
   AutofillField field;
   EXPECT_NE(field.last_modifier(), FieldModifier::kAutofill);
 
@@ -1003,8 +997,6 @@ TEST_F(AutofillFieldTest, IsLastModifierAutofill) {
 // Tests the behavior of `AutofillField::[last|all]_modifier()` when the purpose
 // is to figure out whether a field was previously autofilled (but now is not).
 TEST_F(AutofillFieldTest, PreviouslyAutofilled) {
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitAndEnableFeature(features::kAutofillFixIsAutofilled);
   AutofillField field;
   auto previously_autofilled = [](const AutofillField& field) {
     return field.all_modifiers().contains(FieldModifier::kAutofill) &&
@@ -1028,8 +1020,6 @@ TEST_F(AutofillFieldTest, PreviouslyAutofilled) {
 // Tests the behavior of `AutofillField::[last|all]_modifier()` when the purpose
 // is to figure out whether a field was ever edited by the user.
 TEST_F(AutofillFieldTest, IsUserEdited) {
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitAndEnableFeature(features::kAutofillFixIsAutofilled);
   AutofillField field;
   EXPECT_FALSE(field.all_modifiers().contains(FieldModifier::kUser));
 

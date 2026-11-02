@@ -6,7 +6,7 @@ import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
-import * as TextUtils from '../text_utils/text_utils.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 
 import {Events, type IsolatedFileSystemManager} from './IsolatedFileSystemManager.js';
 import {Events as PlatformFileSystemEvents, PlatformFileSystem, PlatformFileSystemType} from './PlatformFileSystem.js';
@@ -26,7 +26,7 @@ const UIStrings = {
    * @example {c:\dir\file.js} PH1
    * @example {Underlying error} PH2
    */
-  cantReadFileSS: 'Can\'t read file: {PH1}: {PH2}',
+  cantReadFileSS: 'Can’t read file: {PH1}: {PH2}',
   /**
    * @description Text to show something is linked to another
    * @example {example.url} PH1
@@ -42,7 +42,7 @@ const UIStrings = {
    * @description Error message shown when devtools failed to create a file system directory.
    * @example {path/} PH1
    */
-  createDirFailed: 'Overrides: Failed to create directory {PH1}. Are the workspace or overrides configured correctly?'
+  createDirFailed: 'Overrides: Failed to create directory {PH1}. Are the workspace or overrides configured correctly?',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('models/persistence/IsolatedFileSystem.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -58,29 +58,27 @@ export class IsolatedFileSystem extends PlatformFileSystem {
   readonly #initialGitFolders = new Set<Platform.DevToolsPath.EncodedPathString>();
   private readonly fileLocks = new Map<Platform.DevToolsPath.EncodedPathString, Promise<unknown>>();
 
-  constructor(
-      manager: IsolatedFileSystemManager, path: Platform.DevToolsPath.UrlString,
-      embedderPath: Platform.DevToolsPath.RawPathString, domFileSystem: FileSystem, type: PlatformFileSystemType,
-      automatic: boolean) {
+  constructor(manager: IsolatedFileSystemManager, path: Platform.DevToolsPath.UrlString,
+              embedderPath: Platform.DevToolsPath.RawPathString, domFileSystem: FileSystem,
+              type: PlatformFileSystemType, automatic: boolean, settings: Common.Settings.Settings) {
     super(path, type, automatic);
     this.manager = manager;
     this.#embedderPath = embedderPath;
     this.domFileSystem = domFileSystem;
-    this.excludedFoldersSetting =
-        Common.Settings.Settings.instance().createLocalSetting('workspace-excluded-folders', {});
+    this.excludedFoldersSetting = settings.createLocalSetting('workspace-excluded-folders', {});
     this.#excludedFolders = new Set(this.excludedFoldersSetting.get()[path] || []);
   }
 
-  static async create(
-      manager: IsolatedFileSystemManager, path: Platform.DevToolsPath.UrlString,
-      embedderPath: Platform.DevToolsPath.RawPathString, type: PlatformFileSystemType, name: string, rootURL: string,
-      automatic: boolean): Promise<IsolatedFileSystem|null> {
+  static async create(manager: IsolatedFileSystemManager, path: Platform.DevToolsPath.UrlString,
+                      embedderPath: Platform.DevToolsPath.RawPathString, type: PlatformFileSystemType, name: string,
+                      rootURL: string, automatic: boolean,
+                      settings: Common.Settings.Settings): Promise<IsolatedFileSystem|null> {
     const domFileSystem = Host.InspectorFrontendHost.InspectorFrontendHostInstance.isolatedFileSystem(name, rootURL);
     if (!domFileSystem) {
       return null;
     }
 
-    const fileSystem = new IsolatedFileSystem(manager, path, embedderPath, domFileSystem, type, automatic);
+    const fileSystem = new IsolatedFileSystem(manager, path, embedderPath, domFileSystem, type, automatic, settings);
     return await fileSystem.initializeFilePaths().then(() => fileSystem).catch(error => {
       console.error(error);
       return null;

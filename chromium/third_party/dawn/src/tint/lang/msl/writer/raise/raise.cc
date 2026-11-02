@@ -72,6 +72,7 @@
 #include "src/tint/lang/msl/writer/raise/module_scope_vars.h"
 #include "src/tint/lang/msl/writer/raise/shader_io.h"
 #include "src/tint/lang/msl/writer/raise/simd_ballot.h"
+#include "src/tint/lang/msl/writer/raise/switch_return.h"
 #include "src/tint/lang/msl/writer/raise/validate_subgroup_matrix.h"
 
 namespace tint::msl::writer {
@@ -164,8 +165,6 @@ Result<RaiseResult> Raise(core::ir::Module& module, const Options& options) {
             .abs_signed_int = true,
             .degrees = true,
             .extract_bits = core::ir::transform::BuiltinPolyfillLevel::kClampOrRangeCheck,
-            .first_leading_bit = true,
-            .first_trailing_bit = true,
             .fwidth_fine = true,
             .insert_bits = core::ir::transform::BuiltinPolyfillLevel::kClampOrRangeCheck,
             .radians = true,
@@ -229,8 +228,7 @@ Result<RaiseResult> Raise(core::ir::Module& module, const Options& options) {
 
     TINT_CHECK_RESULT(raise::ShaderIO(
         module, raise::ShaderIOConfig{immediate_data_layout, options.emit_vertex_point_size,
-                                      options.polyfill_sample_mask, options.fixed_sample_mask,
-                                      options.depth_range_offsets}));
+                                      options.fixed_sample_mask, options.depth_range_offsets}));
 
     raise::FixTypeLayoutOptions fix_type_layout_options{
         .replace_bool_with_u32 = options.workarounds.replace_workgroup_bool_with_u32,
@@ -304,6 +302,8 @@ Result<RaiseResult> Raise(core::ir::Module& module, const Options& options) {
     raise::ModuleConstantConfig module_const_config{
         options.workarounds.disable_module_constant_f16};
     TINT_CHECK_RESULT(raise::ModuleConstant(module, module_const_config));
+
+    TINT_CHECK_RESULT(raise::SwitchReturn(module));
 
     // These transforms need to be run last as various transforms introduce terminator arguments,
     // naming conflicts, and expressions that need to be explicitly not inlined.

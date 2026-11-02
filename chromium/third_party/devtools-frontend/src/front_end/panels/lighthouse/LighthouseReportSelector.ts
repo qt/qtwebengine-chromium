@@ -10,11 +10,11 @@ import * as UI from '../../ui/legacy/legacy.js';
 
 const UIStrings = {
   /**
-   * @description Title of combo box in audits report selector
+   * @description Title of combo box in the Lighthouse report selector.
    */
   reports: 'Reports',
   /**
-   * @description New report item label in Lighthouse Report Selector
+   * @description Label for new report item in the Lighthouse report selector.
    */
   newReport: '(new report)',
 } as const;

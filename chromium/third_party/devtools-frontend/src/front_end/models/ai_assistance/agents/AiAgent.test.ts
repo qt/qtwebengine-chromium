@@ -3,9 +3,10 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Host from '../../../core/host/host.js';
-import {mockAidaClient} from '../../../testing/AiAssistanceHelpers.js';
+import {mockAidaClient, MockAidaPayloadLimitError, MockAidaQuotaError} from '../../../testing/AiAssistanceHelpers.js';
 import {
   describeWithEnvironment,
 } from '../../../testing/EnvironmentHelpers.js';
@@ -13,8 +14,8 @@ import * as AiAssistance from '../ai_assistance.js';
 
 function mockConversationContext(): AiAssistance.AiAgent.ConversationContext<unknown> {
   return new (class extends AiAssistance.AiAgent.ConversationContext<unknown>{
-    override getOrigin(): string {
-      return 'origin';
+    override getURL(): string {
+      return 'https://origin.test';
     }
 
     override getItem(): unknown {
@@ -138,27 +139,6 @@ describeWithEnvironment('AiAgent', () => {
       });
       const request = agent.buildRequest({text: 'test input'}, Host.AidaClient.Role.USER);
       assert.strictEqual(request.metadata?.string_session_id, 'sessionId');
-    });
-
-    it('builds a request with preamble features in version', async () => {
-      const features = ['test'];
-      class MockWithFeatures extends AiAgentMock {
-        override preambleFeatures(): string[] {
-          return features;
-        }
-      }
-      const agent = new MockWithFeatures({
-        aidaClient: mockAidaClient(),
-      });
-      {
-        const request = agent.buildRequest({text: 'test input'}, Host.AidaClient.Role.USER);
-        assert.include(request.metadata.client_version, '+test');
-      }
-      features.push('2test');
-      {
-        const request = agent.buildRequest({text: 'test input'}, Host.AidaClient.Role.USER);
-        assert.include(request.metadata.client_version, '+test+2test');
-      }
     });
 
     it('builds a request with preamble if user tier is TESTERS', async () => {
@@ -299,7 +279,7 @@ describeWithEnvironment('AiAgent', () => {
             },
             {
               explanation: 'Partial answer is now completed',
-            }
+            },
           ]]),
         });
 
@@ -332,7 +312,7 @@ describeWithEnvironment('AiAgent', () => {
             },
             {
               explanation: 'Partial answer is now completed',
-            }
+            },
           ]]),
         });
 
@@ -368,16 +348,52 @@ describeWithEnvironment('AiAgent', () => {
         },
       ]);
     });
+
+    it('should yield quota error when aida throws AidaQuotaError', async () => {
+      const agent = new AiAgentMock({
+        aidaClient: mockAidaClient([[MockAidaQuotaError]]),
+      });
+
+      const responses = await Array.fromAsync(agent.run('query', {selected: mockConversationContext()}));
+
+      assert.deepEqual(responses, [
+        {
+          type: AiAssistance.AiAgent.ResponseType.QUERYING,
+        },
+        {
+          type: AiAssistance.AiAgent.ResponseType.ERROR,
+          error: AiAssistance.AiAgent.ErrorType.QUOTA,
+        },
+      ]);
+    });
+
+    it('should yield payload too large error when aida throws payload size limit error', async () => {
+      const agent = new AiAgentMock({
+        aidaClient: mockAidaClient([[MockAidaPayloadLimitError]]),
+      });
+
+      const responses = await Array.fromAsync(agent.run('query', {selected: mockConversationContext()}));
+
+      assert.deepEqual(responses, [
+        {
+          type: AiAssistance.AiAgent.ResponseType.QUERYING,
+        },
+        {
+          type: AiAssistance.AiAgent.ResponseType.ERROR,
+          error: AiAssistance.AiAgent.ErrorType.PAYLOAD_TOO_LARGE,
+        },
+      ]);
+    });
   });
 
   describe('ConversationContext', () => {
-    function getTestContext(origin: string) {
+    function getTestContext(url: string) {
       class TestContext extends AiAssistance.AiAgent.ConversationContext<undefined> {
         override getTitle(): string {
           throw new Error('Method not implemented.');
         }
-        override getOrigin(): string {
-          return origin;
+        override getURL(): string {
+          return url;
         }
         override getItem(): undefined {
           return undefined;
@@ -447,22 +463,22 @@ describeWithEnvironment('AiAgent', () => {
           establishedOrigin: 'detached',
           isAllowed: false,
         },
+        {
+          dataOrigin: 'trace-1-10',
+          establishedOrigin: 'trace-1-10',
+          isAllowed: true,
+        },
+        {
+          dataOrigin: 'trace-1-10',
+          establishedOrigin: 'trace-1-20',
+          isAllowed: false,
+        },
       ];
       for (const test of tests) {
         assert.strictEqual(
             getTestContext(test.dataOrigin).isOriginAllowed(test.establishedOrigin), test.isAllowed,
             `Checking origin ${test.dataOrigin} against ${test.establishedOrigin}`);
       }
-    });
-
-    it('identifies opaque origins', () => {
-      assert.isTrue(AiAssistance.AiAgent.isOpaqueOrigin('null'));
-      assert.isTrue(AiAssistance.AiAgent.isOpaqueOrigin('data:'));
-      assert.isTrue(AiAssistance.AiAgent.isOpaqueOrigin('about://'));
-      assert.isTrue(AiAssistance.AiAgent.isOpaqueOrigin('about:srcdoc'));
-      assert.isTrue(AiAssistance.AiAgent.isOpaqueOrigin('detached'));
-      assert.isTrue(AiAssistance.AiAgent.isOpaqueOrigin('detached:123'));
-      assert.isFalse(AiAssistance.AiAgent.isOpaqueOrigin('https://google.com'));
     });
   });
 
@@ -479,7 +495,7 @@ describeWithEnvironment('AiAgent', () => {
             type: Host.AidaClient.ParametersTypes.OBJECT,
             properties: {},
             description: 'arg description',
-            required: []
+            required: [],
           },
           handler: this.#test.bind(this),
         });
@@ -539,7 +555,7 @@ describeWithEnvironment('AiAgent', () => {
           ],
           [{
             explanation: 'Final answer',
-          }]
+          }],
         ]),
       });
 
@@ -581,7 +597,7 @@ describeWithEnvironment('AiAgent', () => {
           ],
           [{
             explanation: 'Final answer',
-          }]
+          }],
         ]),
         // Mock allowedOrigin to return blocked if our flag is set.
         allowedOrigin: () => originBlocked ? {blocked: true} : {origin: 'https://google.com'},
@@ -603,7 +619,7 @@ describeWithEnvironment('AiAgent', () => {
           type: Host.AidaClient.ParametersTypes.OBJECT,
           description: 'test parameters',
           properties: {},
-          required: []
+          required: [],
         },
         handler: async (args, options) => {
           called++;
@@ -636,7 +652,7 @@ describeWithEnvironment('AiAgent', () => {
           ],
           [{
             explanation: 'Final answer',
-          }]
+          }],
         ]),
         allowedOrigin: () => originBlocked ? {blocked: true} : {origin: 'https://google.com'},
       });
@@ -647,7 +663,7 @@ describeWithEnvironment('AiAgent', () => {
           type: Host.AidaClient.ParametersTypes.OBJECT,
           description: 'test parameters',
           properties: {},
-          required: []
+          required: [],
         },
         handler: async (_args, _options) => {
           called++;

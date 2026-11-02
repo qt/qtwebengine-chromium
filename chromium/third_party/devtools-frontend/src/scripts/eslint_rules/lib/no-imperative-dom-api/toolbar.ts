@@ -13,7 +13,7 @@ import {
   isIdentifierChain,
   isLiteral,
   isMemberExpression,
-  type RuleCreator
+  type RuleCreator,
 } from './ast.ts';
 import {ClassMember} from './class-member.ts';
 import {DomFragment} from './dom-fragment.ts';
@@ -322,7 +322,7 @@ export const toolbar: RuleCreator = {
             });
           }
         }
-      }
+      },
     };
-  }
+  },
 };

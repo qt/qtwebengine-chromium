@@ -98,7 +98,7 @@ RegExpMacroAssemblerARM::RegExpMacroAssemblerARM(Isolate* isolate, Zone* zone,
                                                  int registers_to_save)
     : NativeRegExpMacroAssembler(isolate, zone, mode),
       masm_(std::make_unique<MacroAssembler>(
-          isolate, CodeObjectRequired::kYes,
+          isolate, CodeObjectRequired{true},
           NewAssemblerBuffer(kRegExpCodeSize))),
       no_root_array_scope_(masm_.get()),
       num_registers_(registers_to_save),
@@ -515,11 +515,12 @@ void RegExpMacroAssemblerARM::CheckBitInTable(Handle<ByteArray> table,
 
 void RegExpMacroAssemblerARM::SkipUntilBitInTable(
     int cp_offset, Handle<ByteArray> table, Handle<ByteArray> nibble_table,
-    int advance_by, Label* on_match, Label* on_no_match) {
+    int advance_by, int bounds_check_offset, Label* on_match,
+    Label* on_no_match) {
   // TODO(pthier): Optimize. Table can be loaded outside of the loop.
   Label again;
   Bind(&again);
-  LoadCurrentCharacter(cp_offset, on_no_match, true);
+  LoadCurrentCharacter(cp_offset, on_no_match, true, 1, bounds_check_offset);
   CheckBitInTable(table, on_match);
   AdvanceCurrentPosition(advance_by);
   GoTo(&again);

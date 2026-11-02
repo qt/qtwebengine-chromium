@@ -36,7 +36,6 @@
 #include "third_party/blink/renderer/core/html/forms/date_time_edit_element.h"
 #include "third_party/blink/renderer/core/html/forms/input_type_view.h"
 #include "third_party/blink/renderer/core/html/forms/picker_indicator_element.h"
-#include "third_party/blink/renderer/core/html/forms/spin_button_element.h"
 
 namespace blink {
 
@@ -48,7 +47,6 @@ class MultipleFieldsTemporalInputTypeView final
       public InputTypeView,
       protected DateTimeEditElement::EditControlOwner,
       protected PickerIndicatorElement::PickerIndicatorOwner,
-      protected SpinButtonElement::SpinButtonOwner,
       protected ClearButtonElement::ClearButtonOwner {
  public:
   MultipleFieldsTemporalInputTypeView(HTMLInputElement&,
@@ -70,15 +68,6 @@ class MultipleFieldsTemporalInputTypeView final
   bool IsEditControlOwnerReadOnly() const final;
   AtomicString LocaleIdentifier() const final;
   void EditControlDidChangeValueByKeyboard() final;
-
-  // SpinButtonElement::SpinButtonOwner functions.
-  void FocusAndSelectSpinButtonOwner() override;
-  bool ShouldSpinButtonRespondToMouseEvents() override;
-  bool ShouldSpinButtonRespondToWheelEvents() override;
-  void SpinButtonStepDown() override;
-  void SpinButtonStepUp() override;
-  void SpinButtonDidReleaseMouseCapture(
-      SpinButtonElement::EventDispatch) override;
 
   // PickerIndicatorElement::PickerIndicatorOwner functions
   bool IsPickerIndicatorOwnerDisabledOrReadOnly() const final;
@@ -130,7 +119,6 @@ class MultipleFieldsTemporalInputTypeView final
   DateTimeEditElement* GetDateTimeEditElement() const;
   // Similar to GetDateTimeEditElement(), but does not force creation.
   DateTimeEditElement* GetDateTimeEditElementIfCreated() const;
-  SpinButtonElement* GetSpinButtonElement() const;
   ClearButtonElement* GetClearButtonElement() const;
   PickerIndicatorElement* GetPickerIndicatorElement() const;
   bool ContainsFocusedShadowElement() const;

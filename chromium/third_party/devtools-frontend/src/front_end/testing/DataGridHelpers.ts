@@ -42,7 +42,7 @@ export const getHeaderCells = (node: ParentNode, options: {onlyVisible: boolean,
 };
 
 export const getAllRows = (node: ParentNode, options: {withJslog?: boolean} = {
-  withJslog: true
+  withJslog: true,
 }) => {
   const querySelector = options.withJslog ? 'tbody tr[jslog]' : 'tbody tr';
   const rows = node.querySelectorAll(querySelector);

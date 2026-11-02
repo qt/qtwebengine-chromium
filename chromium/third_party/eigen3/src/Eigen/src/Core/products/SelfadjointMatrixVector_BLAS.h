@@ -26,7 +26,7 @@
 
  ********************************************************************************
  *   Content : Eigen bindings to BLAS F77
- *   Selfadjoint matrix-vector product functionality based on ?SYMV/HEMV.
+ *   Selfadjoint matrix-vector product functionality based on ?SYMV/?HEMV.
  ********************************************************************************
 */
 // SPDX-License-Identifier: BSD-3-Clause
@@ -57,11 +57,10 @@ struct selfadjoint_matrix_vector_product_symv
                                            Specialized> {                                                            \
     static void run(Index size, const Scalar* lhs, Index lhsStride, const Scalar* _rhs, Scalar* res, Scalar alpha) { \
       enum { IsColMajor = StorageOrder == ColMajor };                                                                \
-      EIGEN_IF_CONSTEXPR(IsColMajor == ConjugateLhs) {                                                               \
+      EIGEN_IF_CONSTEXPR (IsColMajor == ConjugateLhs) {                                                              \
         selfadjoint_matrix_vector_product<Scalar, Index, StorageOrder, UpLo, ConjugateLhs, ConjugateRhs,             \
                                           BuiltIn>::run(size, lhs, lhsStride, _rhs, res, alpha);                     \
-      }                                                                                                              \
-      else {                                                                                                         \
+      } else {                                                                                                       \
         selfadjoint_matrix_vector_product_symv<Scalar, Index, StorageOrder, UpLo, ConjugateLhs, ConjugateRhs>::run(  \
             size, lhs, lhsStride, _rhs, res, alpha);                                                                 \
       }                                                                                                              \
@@ -87,7 +86,7 @@ EIGEN_BLAS_SYMV_SPECIALIZE(scomplex)
       const EIGTYPE* x_ptr;                                                                                        \
       char uplo = (IsRowMajor) ? (IsLower ? 'U' : 'L') : (IsLower ? 'L' : 'U');                                    \
       SYMVVector x_tmp;                                                                                            \
-      if (ConjugateRhs) {                                                                                          \
+      EIGEN_IF_CONSTEXPR (ConjugateRhs) {                                                                          \
         Map<const SYMVVector, 0> map_x(_rhs, size, 1);                                                             \
         x_tmp = map_x.conjugate();                                                                                 \
         x_ptr = x_tmp.data();                                                                                      \

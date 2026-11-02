@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "constants/catalog.h"
 #include "core/fpdfapi/edit/cpdf_npagetooneexporter.h"
 #include "core/fpdfapi/edit/cpdf_pageexporter.h"
 #include "core/fpdfapi/page/cpdf_form.h"
@@ -256,7 +257,7 @@ FPDF_CopyViewerPreferences(FPDF_DOCUMENT dest_doc, FPDF_DOCUMENT src_doc) {
   }
 
   RetainPtr<const CPDF_Dictionary> pref_dict =
-      csrc_doc->GetRoot()->GetDictFor("ViewerPreferences");
+      csrc_doc->GetRoot()->GetDictFor(pdfium::catalog::kViewerPreferences);
   if (!pref_dict) {
     return false;
   }
@@ -266,7 +267,7 @@ FPDF_CopyViewerPreferences(FPDF_DOCUMENT dest_doc, FPDF_DOCUMENT src_doc) {
     return false;
   }
 
-  auto cloned_dict = pdfium::MakeRetain<CPDF_Dictionary>();
+  auto cloned_dict = cdest_doc->New<CPDF_Dictionary>();
   CPDF_DictionaryLocker locker(pref_dict);
   for (const auto& it : locker) {
     if (IsValidViewerPreferencesObject(it.second)) {
@@ -274,6 +275,7 @@ FPDF_CopyViewerPreferences(FPDF_DOCUMENT dest_doc, FPDF_DOCUMENT src_doc) {
     }
   }
 
-  dest_dict->SetFor("ViewerPreferences", std::move(cloned_dict));
+  dest_dict->SetFor(pdfium::catalog::kViewerPreferences,
+                    std::move(cloned_dict));
   return true;
 }

@@ -41,7 +41,7 @@ std::vector<std::string> StringSplit(const std::string& str, char delimiter) {
 }
 
 std::string GetPlatformString(FPDF_WIDESTRING wstr) {
-  WideString wide_string = WideStringFromFPDFWideString(wstr);
+  WideString wide_string = UNSAFE_TODO(WideStringFromFPDFWideString(wstr));
   return std::string(wide_string.ToUTF8().c_str());
 }
 
@@ -51,15 +51,16 @@ std::wstring GetPlatformWString(FPDF_WIDESTRING wstr) {
   }
 
   size_t characters = 0;
-  while (wstr[characters]) {
+  while (UNSAFE_TODO(wstr[characters])) {
     ++characters;
   }
 
   std::wstring platform_string;
   platform_string.reserve(characters);
   for (size_t i = 0; i < characters; ++i) {
-    const unsigned char* ptr = reinterpret_cast<const unsigned char*>(&wstr[i]);
-    platform_string.push_back(ptr[0] + 256 * ptr[1]);
+    const unsigned char* ptr =
+        reinterpret_cast<const unsigned char*>(&UNSAFE_TODO(wstr[i]));
+    platform_string.push_back(ptr[0] + 256 * UNSAFE_TODO(ptr[1]));
   }
   return platform_string;
 }

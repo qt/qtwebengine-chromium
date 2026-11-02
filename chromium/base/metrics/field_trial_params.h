@@ -11,6 +11,7 @@
 
 #include "base/base_export.h"
 #include "base/compiler_specific.h"
+#include "base/containers/span.h"
 #include "base/feature.h"
 #include "base/memory/raw_ptr_exclusion.h"
 #include "base/memory/raw_span.h"
@@ -115,7 +116,8 @@ struct FeatureParam {
   // Calling Get() or GetWithoutCache() will activate the field trial associated
   // with |feature|. See GetFieldTrialParamValueByFeature() for more details.
   BASE_EXPORT T Get() const {
-    if (internal::IsFeatureParamWithCacheEnabled() && cache_getter) {
+    if (internal::IsFeatureParamWithCacheEnabled() && cache_getter &&
+        !feature->IsRuntimeMutable()) {
       return cache_getter(this);
     }
     return GetWithoutCache();

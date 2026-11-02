@@ -105,6 +105,32 @@
 #endif
 #endif
 
+// DAWN_MSAN_ENABLED()
+//
+// Checks whether MSan is enabled.
+#if DAWN_COMPILER_IS(CLANG)
+#define DAWN_MSAN_ENABLED() __has_feature(memory_sanitizer)
+#elif DAWN_COMPILER_IS(GCC) || DAWN_COMPILER_IS(MSVC)
+#if defined(__SANITIZE_ADDRESS__)
+#define DAWN_MSAN_ENABLED() 1
+#else
+#define DAWN_MSAN_ENABLED() 0
+#endif
+#endif
+
+// DAWN_UBSAN_ENABLED()
+//
+// Checks whether the undefined behavior sanitizer is enabled.
+#if DAWN_COMPILER_IS(CLANG)
+#define DAWN_UBSAN_ENABLED() __has_feature(undefined_behavior_sanitizer)
+#elif DAWN_COMPILER_IS(GCC) || DAWN_COMPILER_IS(MSVC)
+#if defined(__SANITIZE_UNDEFINED__)
+#define DAWN_UBSAN_ENABLED() 1
+#else
+#define DAWN_UBSAN_ENABLED() 0
+#endif
+#endif
+
 // DAWN_NO_SANITIZE(instrumentation)
 //
 // Annotate a function or a global variable declaration to specify that a particular instrumentation
@@ -113,6 +139,34 @@
 #define DAWN_NO_SANITIZE(instrumentation) __attribute__((no_sanitize(instrumentation)))
 #else
 #define DAWN_NO_SANITIZE(instrumentation)
+#endif
+
+// DAWN_TRIVIAL_ABI
+//
+// Marks a type as being eligible for the "trivial" ABI despite having a non-trivial destructor or
+// copy/move constructor. Such types can be relocated after construction by simply copying their
+// memory, which makes them eligible to be passed in registers. The canonical example is
+// std::unique_ptr.
+//
+// Use with caution; this has some subtle effects on constructor/destructor ordering and will be
+// very incorrect if the type relies on its address remaining constant. When used as a function
+// argument (by value), the value may be constructed in the caller's stack frame, passed in a
+// register, and then used and destructed in the callee's stack frame. A similar thing can occur
+// when values are returned.
+//
+// TRIVIAL_ABI is not needed for types which have a trivial destructor and copy/move constructors,
+// such as dawn::TypedInteger and other POD.
+//
+// It is also not likely to be effective on types too large to be passed in one or two registers on
+// typical target ABIs.
+//
+// See also:
+//   https://clang.llvm.org/docs/AttributeReference.html#trivial-abi
+//   https://libcxx.llvm.org/docs/DesignDocs/UniquePtrTrivialAbi.html
+#if DAWN_COMPILER_IS(CLANG) && DAWN_HAS_ATTRIBUTE(trivial_abi)
+#define DAWN_TRIVIAL_ABI [[clang::trivial_abi]]
+#else
+#define DAWN_TRIVIAL_ABI
 #endif
 
 // Annotates a function or class data member indicating it can lead to out-of-bounds accesses (OOB)
@@ -200,12 +254,14 @@
 // Disabling `clang-format` allows each `_Pragma` to be on its own line, as recommended by
 // https://gcc.gnu.org/onlinedocs/cpp/Pragmas.html.
 // clang-format off
+// SAFETY: This is the definition of the macro and not an unsafe usage.
 #define DAWN_UNSAFE_BUFFERS(...)             \
   _Pragma("clang unsafe_buffer_usage begin") \
   __VA_ARGS__                                \
   _Pragma("clang unsafe_buffer_usage end")
 // clang-format on
 #else
+// SAFETY: This is the definition of the macro and not an unsafe usage.
 #define DAWN_UNSAFE_BUFFERS(...) __VA_ARGS__
 #endif
 
@@ -219,6 +275,9 @@
 //   // is annotated `DAWN_UNSAFE_BUFFER_USAGE`.
 //   return DAWN_UNSAFE_TODO(Func(input, end));
 // ```
+// SAFETY: The macro is used to tag code that should be modified to use DAWN_UNSAFE_BUFFERS or
+// ideally use safer ways to manipulate the buffer. It's an explicit opt-out of DAWN_UNSAFE_BUFFERS
+// and doesn't require a SAFETY argument when used.
 #define DAWN_UNSAFE_TODO(...) DAWN_UNSAFE_BUFFERS(__VA_ARGS__)
 
 #endif  // SRC_UTILS_COMPILER_H_

@@ -116,6 +116,21 @@ struct MutexRefProtectedTraits {
 };
 
 template <typename T>
+struct MutexRecursiveProtectedTraits {
+    using MutexType = Ref<RecursiveMutex>;
+    template <typename Unused>
+    using LockType = RecursiveMutex::AutoLock;
+    using ObjectType = T;
+
+    static constexpr bool kSupportsTryLock = false;
+
+    static MutexType CreateMutex() { return AcquireRef(new RecursiveMutex()); }
+    static RecursiveMutex* GetMutex(MutexType& m) { return m.Get(); }
+    static ObjectType* GetObj(T* const obj) { return obj; }
+    static const ObjectType* GetObj(const T* const obj) { return obj; }
+};
+
+template <typename T>
 struct MutexRWProtectedTraits {
     using MutexType = std::shared_mutex;
     template <typename U>
@@ -303,8 +318,7 @@ class MutexProtected {
     template <typename... Args>
         requires(sizeof...(Args) != 1 ||
                  !(std::is_same_v<std::decay_t<Args>, MutexProtected> && ...))
-    // NOLINTNEXTLINE(runtime/explicit) allow implicit construction
-    MutexProtected(Args&&... args)
+    explicit(false) MutexProtected(Args&&... args)
         : mMutex(Traits::CreateMutex()), mObj(std::forward<Args>(args)...) {}
     virtual ~MutexProtected() = default;
 
@@ -365,6 +379,11 @@ class MutexProtected {
 template <typename T>
 using MutexRefProtected = MutexProtected<T, detail::Guard, detail::MutexRefProtectedTraits<T>>;
 
+// A recursive version of MutexProtected.
+template <typename T>
+using MutexRecursiveProtected =
+    MutexProtected<T, detail::Guard, detail::MutexRecursiveProtectedTraits<T>>;
+
 // A read-write version of MutexProtected.
 template <typename T>
 using MutexRWProtected = MutexProtected<T, detail::Guard, detail::MutexRWProtectedTraits<T>>;
@@ -400,8 +419,7 @@ class MutexCondVarProtected {
     template <typename... Args>
         requires(sizeof...(Args) != 1 ||
                  !(std::is_same_v<std::decay_t<Args>, MutexCondVarProtected> && ...))
-    // NOLINTNEXTLINE(runtime/explicit) allow implicit construction
-    MutexCondVarProtected(Args&&... args)
+    explicit(false) MutexCondVarProtected(Args&&... args)
         : mMutex(Traits::CreateMutex()), mObj(std::forward<Args>(args)...) {}
     virtual ~MutexCondVarProtected() = default;
 

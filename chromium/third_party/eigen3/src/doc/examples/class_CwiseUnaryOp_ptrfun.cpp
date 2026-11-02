@@ -14,6 +14,8 @@ double ramp(double x) {
 
 int main(int, char**) {
   Eigen::Matrix4d m1 = Eigen::Matrix4d::Random();
-  std::cout << m1 << std::endl << "becomes: " << std::endl << m1.unaryExpr(std::ptr_fun(ramp)) << std::endl;
+  std::cout << m1 << std::endl
+            << "becomes: " << std::endl
+            << m1.unaryExpr([](double x) { return ramp(x); }) << std::endl;
   return 0;
 }

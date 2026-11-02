@@ -3,21 +3,24 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Host from '../../../core/host/host.js';
 import * as SDK from '../../../core/sdk/sdk.js';
 import {createUISourceCode, mockAidaClient} from '../../../testing/AiAssistanceHelpers.js';
 import {
+  deinitializeGlobalVars,
   restoreUserAgentForTesting,
   setUserAgentForTesting,
   updateHostConfig,
 } from '../../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../../testing/MockConnection.js';
-import * as Bindings from '../../bindings/bindings.js';
-import * as Workspace from '../../workspace/workspace.js';
-import {AiAgent, FileAgent} from '../ai_assistance.js';
+import {TestUniverse} from '../../../testing/TestUniverse.js';
+import * as Logs from '../../logs/logs.js';
+import {AiAgent, FileAgent, FileContext} from '../ai_assistance.js';
 
-describeWithMockConnection('FileAgent', () => {
+describe('FileAgent', () => {
+  let universe: TestUniverse;
+
   function mockHostConfig(modelId?: string, temperature?: number) {
     updateHostConfig({
       devToolsAiAssistanceFileAgent: {
@@ -28,17 +31,15 @@ describeWithMockConnection('FileAgent', () => {
   }
 
   beforeEach(() => {
-    const workspace = Workspace.Workspace.WorkspaceImpl.instance();
-    const targetManager = SDK.TargetManager.TargetManager.instance();
-    const resourceMapping = new Bindings.ResourceMapping.ResourceMapping(targetManager, workspace);
-    const ignoreListManager = Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
-    Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
-      forceNew: true,
-      resourceMapping,
-      targetManager,
-      ignoreListManager,
-      workspace,
-    });
+    universe = new TestUniverse();
+    const {targetManager} = universe;
+
+    sinon.stub(SDK.TargetManager.TargetManager, 'instance').returns(targetManager);
+    sinon.stub(Logs.NetworkLog.NetworkLog, 'instance').returns(universe.networkLog);
+  });
+
+  afterEach(async () => {
+    await deinitializeGlobalVars();
   });
 
   describe('buildRequest', () => {
@@ -136,8 +137,9 @@ describeWithMockConnection('FileAgent', () => {
           requestContentData: args.requestContentData,
           content: 'content',
         });
-        const responses = await Array.fromAsync(
-            agent.run('test', {selected: uiSourceCode ? new FileAgent.FileContext(uiSourceCode) : null}));
+        const responses = await Array.fromAsync(agent.run('test', {
+          selected: uiSourceCode ? new FileContext.FileContext(uiSourceCode, universe.debuggerWorkspaceBinding) : null,
+        }));
 
         assert.deepEqual(responses, [
           {

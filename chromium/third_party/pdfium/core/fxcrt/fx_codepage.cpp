@@ -333,3 +333,44 @@ size_t FX_MultiByteToWideChar(FX_CodePage codepage,
   return wlen;
 #endif
 }
+
+FX_CharsetFlag FX_CharsetFlagForCharset(FX_Charset charset) {
+  switch (charset) {
+    case FX_Charset::kANSI:
+      return FX_CharsetFlag::kANSI;
+    case FX_Charset::kSymbol:
+      return FX_CharsetFlag::kSymbol;
+    case FX_Charset::kShiftJIS:
+      return FX_CharsetFlag::kShiftJIS;
+    case FX_Charset::kHangul:
+      return FX_CharsetFlag::kHangul;
+    case FX_Charset::kJohab:
+      return FX_CharsetFlag::kJohab;
+    case FX_Charset::kChineseSimplified:
+      return FX_CharsetFlag::kChineseSimplified;
+    case FX_Charset::kChineseTraditional:
+      return FX_CharsetFlag::kChineseTraditional;
+    case FX_Charset::kMSWin_Greek:
+      return FX_CharsetFlag::kMSWin_Greek;
+    case FX_Charset::kMSWin_Turkish:
+      return FX_CharsetFlag::kMSWin_Turkish;
+    case FX_Charset::kMSWin_Vietnamese:
+      return FX_CharsetFlag::kMSWin_Vietnamese;
+    case FX_Charset::kMSWin_Hebrew:
+      return FX_CharsetFlag::kMSWin_Hebrew;
+    case FX_Charset::kMSWin_Arabic:
+      return FX_CharsetFlag::kMSWin_Arabic;
+    case FX_Charset::kMSWin_Baltic:
+      return FX_CharsetFlag::kMSWin_Baltic;
+    case FX_Charset::kMSWin_Cyrillic:
+      return FX_CharsetFlag::kMSWin_Cyrillic;
+    case FX_Charset::kThai:
+      return FX_CharsetFlag::kThai;
+    case FX_Charset::kMSWin_EasternEuropean:
+      return FX_CharsetFlag::kMSWin_EasternEuropean;
+    case FX_Charset::kOEM:
+      return FX_CharsetFlag::kOEM;
+    default:
+      return FX_CharsetFlag::kNone;
+  }
+}

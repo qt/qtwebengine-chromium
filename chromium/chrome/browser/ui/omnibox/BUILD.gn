@@ -10,7 +10,6 @@ assert(is_win || is_mac || is_linux || is_chromeos || is_android)
 # The public interface has no circular dependencies.
 source_set("omnibox") {
   public = [
-    "ai_mode_button_config.h",
     "omnibox_controller.h",
     "omnibox_edit_model.h",
     "omnibox_next_features.h",
@@ -36,6 +35,8 @@ source_set("omnibox") {
       "chrome_omnibox_navigation_observer.h",
       "clipboard_utils.h",
       "omnibox_context_menu_controller.h",
+      "omnibox_everywhere_service.h",
+      "omnibox_everywhere_service_factory.h",
       "omnibox_popup_view.h",
       "omnibox_tab_helper.h",
       "omnibox_theme.h",
@@ -45,6 +46,8 @@ source_set("omnibox") {
       "//chrome/browser/bitmap_fetcher",
       "//chrome/browser/page_content_annotations:extraction_service",
       "//chrome/browser/ui/color:color_headers",
+      "//chrome/browser/ui/page_action",
+      "//chrome/browser/ui/webui/top_chrome",
       "//chrome/common",
       "//components/infobars/core",
       "//components/omnibox/browser",
@@ -57,10 +60,12 @@ source_set("omnibox") {
       "//services/network/public/mojom:url_loader_base",
       "//skia",
       "//ui/base",
+      "//ui/base/accelerators/global_accelerator_listener",
       "//ui/base/unowned_user_data",
       "//ui/gfx",
       "//ui/gfx/geometry",
       "//ui/menus",
+      "//ui/views",
       "//url",
     ]
   }
@@ -71,7 +76,6 @@ source_set("omnibox") {
 # //chrome/browser/ui.
 source_set("impl") {
   sources = [
-    "ai_mode_button_config.cc",
     "omnibox_controller.cc",
     "omnibox_edit_model.cc",
     "omnibox_next_features.cc",
@@ -84,8 +88,8 @@ source_set("impl") {
     ":omnibox",
     "//base",
     "//build:branding_buildflags",
-    "//chrome/app:branded_strings",
     "//chrome/app/vector_icons",
+    "//chrome/browser:file_select_helper",
     "//chrome/browser:shell_integration",
     "//chrome/browser/autocomplete",
     "//chrome/browser/autocomplete:aim_eligibility_service",
@@ -131,6 +135,8 @@ source_set("impl") {
       "chrome_omnibox_navigation_observer.cc",
       "clipboard_utils.cc",
       "omnibox_context_menu_controller.cc",
+      "omnibox_everywhere_service.cc",
+      "omnibox_everywhere_service_factory.cc",
       "omnibox_popup_view.cc",
       "omnibox_tab_helper.cc",
     ]
@@ -138,6 +144,7 @@ source_set("impl") {
       "//chrome/app:command_ids",
       "//chrome/app/vector_icons",
       "//chrome/browser:browser_process",
+      "//chrome/browser:global_features",
       "//chrome/browser:intranet_redirect_detector",
       "//chrome/browser:primitives",
       "//chrome/browser/extensions/api/omnibox",
@@ -152,18 +159,24 @@ source_set("impl") {
       "//chrome/browser/ui:layout_constants",
       "//chrome/browser/ui:ui_features",
       "//chrome/browser/ui/bookmarks",
+      "//chrome/browser/ui/browser_window",
       "//chrome/browser/ui/contextual_search",
       "//chrome/browser/ui/extensions/",
       "//chrome/browser/ui/hats",
       "//chrome/browser/ui/lens",
       "//chrome/browser/ui/location_bar",
+      "//chrome/browser/ui/navigator",
       "//chrome/browser/ui/omnibox",
+      "//chrome/browser/ui/omnibox/omnibox_everywhere:impl",
       "//chrome/browser/ui/search",
       "//chrome/browser/ui/search_engines",
       "//chrome/browser/ui/tabs:tab_strip",
       "//chrome/browser/ui/views/location_bar",
       "//chrome/browser/ui/webui:webui_util",
       "//chrome/browser/ui/webui/cr_components/composebox",
+      "//chrome/browser/ui/webui/omnibox_everywhere",
+      "//chrome/browser/ui/webui/omnibox_popup",
+      "//chrome/browser/ui/webui/top_chrome",
       "//chrome/common",
       "//components/contextual_search:public",
       "//components/dom_distiller/core",
@@ -186,8 +199,11 @@ source_set("impl") {
       "//ui/base:types",
       "//ui/base/clipboard",
       "//ui/base/data_transfer_policy",
+      "//ui/display",
       "//ui/gfx",
       "//ui/menus",
+      "//ui/views",
+      "//ui/views/controls/webview",
       "//url",
     ]
   }
@@ -238,6 +254,7 @@ if (!is_android) {
       "omnibox_context_menu_controller_unittest.cc",
       "omnibox_controller_unittest.cc",
       "omnibox_edit_model_unittest.cc",
+      "omnibox_everywhere_service_unittest.cc",
       "omnibox_next_features_unittest.cc",
       "omnibox_pedal_implementations_unittest.cc",
       "omnibox_pedals_unittest.cc",
@@ -249,8 +266,12 @@ if (!is_android) {
       "//base/test:test_support",
       "//chrome/browser/autocomplete:aim_eligibility_service",
       "//chrome/browser/contextual_search",
+      "//chrome/browser/optimization_guide:test_support",
       "//chrome/browser/search_engines",
       "//chrome/browser/ui:ui_features",
+      "//chrome/browser/ui/contextual_search",
+      "//chrome/browser/ui/views:layout_provider",
+      "//chrome/browser/ui/webui:webui_util",
       "//chrome/browser/ui/webui/cr_components/searchbox",
       "//chrome/test:test_support",
       "//components/bookmarks/test",
@@ -301,6 +322,7 @@ if (!is_android) {
       "//base/test:test_support",
       "//chrome/browser/autocomplete",
       "//chrome/browser/contextual_search",
+      "//chrome/browser/contextual_tasks",
       "//chrome/browser/profiles:profile",
       "//chrome/browser/search_engines",
       "//chrome/browser/ui:ui_features",
@@ -379,7 +401,7 @@ if (!is_android) {
         sources += [
           # TODO(crbug.com/40659953): Re-enable this test when history backend
           # failures are addressed.
-          "omnibox_view_browsertest.cc",
+          "omnibox_view_interactive_uitest.cc",
         ]
         deps += [
           ":omnibox",

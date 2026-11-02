@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
@@ -16,9 +17,12 @@ import {
   createStackTrace,
 } from '../../testing/ConsoleHelpers.js';
 import {raf} from '../../testing/DOMHelpers.js';
-import {createTarget} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
-import {MockProtocolBackend} from '../../testing/MockScopeChain.js';
+import {deinitializeGlobalVars} from '../../testing/EnvironmentHelpers.js';
+import {setupLocaleHooks} from '../../testing/LocaleHelpers.js';
+import {MockDebuggerBackend} from '../../testing/MockScopeChain.js';
+import {mockResourceTree} from '../../testing/ResourceTreeHelpers.js';
+import {setupRuntimeHooks} from '../../testing/RuntimeHelpers.js';
+import {setupSettingsHooks} from '../../testing/SettingsHelpers.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import * as Console from './console.js';
@@ -210,24 +214,27 @@ export const y = "";
     assert.strictEqual(Console.PromptBuilder.lineWhitespace('\t\ta'), '\t\t');
   });
 
-  describeWithMockConnection('buildPrompt', () => {
+  describe('buildPrompt', () => {
     let target: SDK.Target.Target;
-    let backend: MockProtocolBackend;
+    let backend: MockDebuggerBackend;
+
+    setupRuntimeHooks();
+    setupSettingsHooks();
+    setupLocaleHooks();
 
     beforeEach(() => {
-      target = createTarget();
-      const targetManager = target.targetManager();
-      const workspace = Workspace.Workspace.WorkspaceImpl.instance();
-      const resourceMapping = new Bindings.ResourceMapping.ResourceMapping(targetManager, workspace);
-      const ignoreListManager = Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
-      Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
-        forceNew: true,
-        resourceMapping,
-        targetManager,
-        ignoreListManager,
-        workspace,
-      });
-      backend = new MockProtocolBackend();
+      backend = new MockDebuggerBackend();
+      mockResourceTree(backend.cdpConnection);
+      target = backend.createTarget();
+      sinon.stub(Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding, 'instance')
+          .returns(backend.universe.debuggerWorkspaceBinding);
+      sinon.stub(Workspace.IgnoreListManager.IgnoreListManager, 'instance').returns(backend.universe.ignoreListManager);
+      sinon.stub(SDK.TargetManager.TargetManager, 'instance').returns(backend.universe.targetManager);
+    });
+
+    afterEach(async () => {
+      sinon.restore();
+      await deinitializeGlobalVars();
     });
 
     const PROMPT_PREFIX = 'Please explain the following console error or warning:';
@@ -555,14 +562,18 @@ export const y = "";
       assert.isTrue(isPageReloadRecommended, 'PromptBuilder did not recommend reloading the page');
       assert.isNotTrue(sources.some(source => source.type === Console.PromptBuilder.SourceType.NETWORK_REQUEST));
     });
-
   });
 
-  describeWithMockConnection('getSearchQuery', () => {
+  describe('getSearchQuery', () => {
     let target: SDK.Target.Target;
+    let backend: MockDebuggerBackend;
+
+    setupLocaleHooks();
+    setupSettingsHooks();
 
     beforeEach(() => {
-      target = createTarget();
+      backend = new MockDebuggerBackend();
+      target = backend.createTarget();
     });
 
     it('builds a simple search query', async () => {

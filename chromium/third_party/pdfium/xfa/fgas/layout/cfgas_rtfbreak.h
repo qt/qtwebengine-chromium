@@ -18,7 +18,7 @@
 
 class CFGAS_TextPiece;
 class CFGAS_TextUserData;
-class TextCharPos;
+struct TextCharPos;
 
 class CFGAS_RTFBreak final : public CFGAS_Break {
  public:

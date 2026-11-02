@@ -18,8 +18,8 @@ load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@com_github_grpc_grpc//bazel:cc_grpc_library.bzl", "cc_grpc_library")
 load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
 load("@com_google_protobuf//bazel:java_proto_library.bzl", "java_proto_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@io_grpc_grpc_java//:java_grpc_library.bzl", "java_grpc_library")
-load("@rules_proto//proto:defs.bzl", "proto_library")
 
 package(
     default_visibility = ["//:default_visibility"],
@@ -34,6 +34,7 @@ proto_library(
 
 cc_proto_library(
     name = "session_v1_service_cc_proto",
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [":session_v1_service_proto"],
 )
 
@@ -41,6 +42,7 @@ cc_grpc_library(
     name = "session_v1_service_cc_grpc",
     srcs = [":session_v1_service_proto"],
     grpc_only = True,
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [":session_v1_service_cc_proto"],
 )
 

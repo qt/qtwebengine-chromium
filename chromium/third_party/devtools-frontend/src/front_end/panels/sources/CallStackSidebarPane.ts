@@ -562,12 +562,12 @@ export function convertMissingDebugInfo(
     case StackTrace.StackTrace.MissingDebugInfoType.PARTIAL_INFO:
       return {
         details: i18nString(UIStrings.debugSymbolsIncomplete, {PH1: functionName ?? ''}),
-        resources: missingDebugInfo.missingDebugFiles
+        resources: missingDebugInfo.missingDebugFiles,
       };
     case StackTrace.StackTrace.MissingDebugInfoType.NO_INFO:
       return {
         details: i18nString(UIStrings.failedToLoadDebugSymbolsForFunction, {PH1: functionName ?? ''}),
-        resources: []
+        resources: [],
       };
   }
 }

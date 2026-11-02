@@ -24,12 +24,15 @@ use anyhow::Context;
 use clap::Parser;
 use log::trace;
 use page::PageInfo;
-use x86_64::structures::paging::{PageSize, Size4KiB};
+use x86_64::{
+    PhysAddr,
+    structures::paging::{PageSize, Size4KiB},
+};
 
 use crate::{
     page::PageType,
-    stage0::{load_stage0, SnpRomParsing},
-    vmsa::{get_ap_vmsa, get_boot_vmsa, VMSA_ADDRESS},
+    stage0::{SnpRomParsing, load_stage0},
+    vmsa::{VMSA_ADDRESS, get_ap_vmsa, get_boot_vmsa},
 };
 
 #[derive(Parser, Clone)]
@@ -90,12 +93,22 @@ fn main() -> anyhow::Result<()> {
     }
 
     for snp_page in stage0.get_snp_pages() {
-        let page_type = if cli.qemu && snp_page.page_type == PageType::Unmeasured {
-            // QEMU uses page type Zero for unmeasured pages as well.
-            PageType::Zero
-        } else {
-            snp_page.page_type
-        };
+        // Ignore kernel hashes page for now when calculating the measurement for non
+        // qemu vmms
+        if !cli.qemu && snp_page.page_type == PageType::Normal {
+            continue;
+        }
+        let page_type =
+            if cli.qemu && matches!(snp_page.page_type, PageType::Unmeasured | PageType::Normal) {
+                // QEMU calls KVM_SEV_SNP_LAUNCH_UPDATE with page_type = ZERO for
+                // both Unmeasured pages and the kernel-hashes page when
+                // `kernel-hashes=on` is not set on the sev-snp-guest object. The
+                // PSP folds those into the digest as Zero pages (contents = 48
+                // zero bytes, not SHA-384 of a zero 4 KiB page).
+                PageType::Zero
+            } else {
+                snp_page.page_type
+            };
         for page_number in 0..snp_page.page_count {
             base_page_info.update_from_snp_page(
                 page_type,
@@ -107,7 +120,7 @@ fn main() -> anyhow::Result<()> {
     // The boot vCPU has the default VMSA configured.
     base_page_info.update_from_vmsa(
         &get_boot_vmsa(cli.cpu_family, cli.cpu_model, cli.cpu_stepping, cli.qemu),
-        VMSA_ADDRESS,
+        PhysAddr::new(VMSA_ADDRESS),
     );
 
     // Subsequent vCPUs use the IP and CS segment specified in the SEV-ES reset
@@ -120,7 +133,7 @@ fn main() -> anyhow::Result<()> {
         let mut page_info = base_page_info.clone();
         // Iterate through all vCPUs up to the specified count.
         for _ in 1..vcpu_count {
-            page_info.update_from_vmsa(&ap_vmsa, VMSA_ADDRESS);
+            page_info.update_from_vmsa(&ap_vmsa, PhysAddr::new(VMSA_ADDRESS));
         }
 
         trace!("raw measurement for {} vCPU: {:?}", vcpu_count, page_info.digest_cur);

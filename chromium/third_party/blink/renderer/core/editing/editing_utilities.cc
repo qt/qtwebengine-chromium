@@ -338,7 +338,7 @@ ContainerNode* HighestEditableRoot(const Position& position) {
 }
 
 ContainerNode* HighestEditableRoot(const PositionInFlatTree& position) {
-  return HighestEditableRoot(ToPositionInDOMTree(position));
+  return HighestEditableRoot(ToPositionInDomTree(position));
 }
 
 bool IsEditablePosition(const Position& position) {
@@ -364,7 +364,7 @@ bool IsEditablePosition(const Position& position) {
 }
 
 bool IsEditablePosition(const PositionInFlatTree& p) {
-  return IsEditablePosition(ToPositionInDOMTree(p));
+  return IsEditablePosition(ToPositionInDomTree(p));
 }
 
 bool IsRichlyEditablePosition(const Position& p) {
@@ -390,7 +390,7 @@ Element* RootEditableElementOf(const Position& p) {
 }
 
 Element* RootEditableElementOf(const PositionInFlatTree& p) {
-  return RootEditableElementOf(ToPositionInDOMTree(p));
+  return RootEditableElementOf(ToPositionInDomTree(p));
 }
 
 template <typename Strategy>
@@ -716,12 +716,12 @@ PositionInFlatTree LastEditablePositionBeforePositionInRoot(
 }
 
 template <typename StateMachine>
-int FindNextBoundaryOffset(const String& str, int current) {
+wtf_size_t FindNextBoundaryOffset(const String& str, wtf_size_t current) {
   StateMachine machine;
   TextSegmentationMachineState state = TextSegmentationMachineState::kInvalid;
 
-  for (int i = current - 1; i >= 0; --i) {
-    state = machine.FeedPrecedingCodeUnit(str[i]);
+  for (wtf_size_t i = current; i > 0; --i) {
+    state = machine.FeedPrecedingCodeUnit(str[i - 1]);
     if (state != TextSegmentationMachineState::kNeedMoreCodeUnit)
       break;
   }
@@ -729,9 +729,9 @@ int FindNextBoundaryOffset(const String& str, int current) {
     state = machine.TellEndOfPrecedingText();
   if (state == TextSegmentationMachineState::kFinished)
     return current + machine.FinalizeAndGetBoundaryOffset();
-  const int length = str.length();
+  const wtf_size_t length = str.length();
   DCHECK_EQ(TextSegmentationMachineState::kNeedFollowingCodeUnit, state);
-  for (int i = current; i < length; ++i) {
+  for (wtf_size_t i = current; i < length; ++i) {
     state = machine.FeedFollowingCodeUnit(str[i]);
     if (state != TextSegmentationMachineState::kNeedMoreCodeUnit)
       break;
@@ -740,29 +740,29 @@ int FindNextBoundaryOffset(const String& str, int current) {
 }
 
 // Explicit instantiation to avoid link error for the usage in EditContext.
-template int FindNextBoundaryOffset<BackwardGraphemeBoundaryStateMachine>(
+template wtf_size_t FindNextBoundaryOffset<
+    BackwardGraphemeBoundaryStateMachine>(const String& str,
+                                          wtf_size_t current);
+template wtf_size_t FindNextBoundaryOffset<ForwardGraphemeBoundaryStateMachine>(
     const String& str,
-    int current);
-template int FindNextBoundaryOffset<ForwardGraphemeBoundaryStateMachine>(
-    const String& str,
-    int current);
+    wtf_size_t current);
 
-int PreviousGraphemeBoundaryOf(const Node& node, int current) {
+wtf_size_t PreviousGraphemeBoundaryOf(const Node& node, wtf_size_t current) {
   // TODO(yosin): Need to support grapheme crossing |Node| boundary.
-  DCHECK_GE(current, 0);
   auto* text_node = DynamicTo<Text>(node);
   if (current <= 1 || !text_node)
     return current - 1;
   const String& text = text_node->data();
   // TODO(yosin): Replace with DCHECK for out-of-range request.
-  if (static_cast<unsigned>(current) > text.length())
+  if (current > text.length()) {
     return current - 1;
+  }
   return FindNextBoundaryOffset<BackwardGraphemeBoundaryStateMachine>(text,
                                                                       current);
 }
 
-static int PreviousBackwardDeletionOffsetOf(const Node& node, int current) {
-  DCHECK_GE(current, 0);
+static wtf_size_t PreviousBackwardDeletionOffsetOf(const Node& node,
+                                                   wtf_size_t current) {
   if (current <= 1)
     return 0;
   auto* text_node = DynamicTo<Text>(node);
@@ -770,17 +770,17 @@ static int PreviousBackwardDeletionOffsetOf(const Node& node, int current) {
     return current - 1;
 
   const String& text = text_node->data();
-  DCHECK_LT(static_cast<unsigned>(current - 1), text.length());
+  DCHECK_LT(current - 1, text.length());
   return FindNextBoundaryOffset<BackspaceStateMachine>(text, current);
 }
 
-int NextGraphemeBoundaryOf(const Node& node, int current) {
+wtf_size_t NextGraphemeBoundaryOf(const Node& node, wtf_size_t current) {
   // TODO(yosin): Need to support grapheme crossing |Node| boundary.
   auto* text_node = DynamicTo<Text>(node);
   if (!text_node)
     return current + 1;
   const String& text = text_node->data();
-  const int length = text.length();
+  const wtf_size_t length = text.length();
   DCHECK_LE(current, length);
   if (current >= length - 1)
     return current + 1;
@@ -857,7 +857,7 @@ PositionTemplate<Strategy> NextPositionOfAlgorithm(
   if (!node)
     return position;
 
-  const int offset = position.ComputeEditingOffset();
+  const wtf_size_t offset = position.ComputeEditingOffset();
 
   if (Node* child = Strategy::ChildAt(*node, offset)) {
     return PositionTemplate<Strategy>::FirstPositionInOrBeforeNode(*child);
@@ -1027,9 +1027,9 @@ String RepeatString(const String& string, unsigned count) {
 
 template <typename Strategy>
 static Element* TableElementJustBeforeAlgorithm(
-    const VisiblePositionTemplate<Strategy>& visible_position) {
+    const PositionTemplate<Strategy>& position) {
   const PositionTemplate<Strategy> upstream(
-      MostBackwardCaretPosition(visible_position.DeepEquivalent()));
+      MostBackwardCaretPosition(position));
   if (IsDisplayInsideTable(upstream.AnchorNode()) &&
       upstream.AtLastEditingPositionForNode())
     return To<Element>(upstream.AnchorNode());
@@ -1037,14 +1037,21 @@ static Element* TableElementJustBeforeAlgorithm(
   return nullptr;
 }
 
+Element* TableElementJustBefore(const Position& position) {
+  return TableElementJustBeforeAlgorithm<EditingStrategy>(position);
+}
+
+Element* TableElementJustBefore(const PositionInFlatTree& position) {
+  return TableElementJustBeforeAlgorithm<EditingInFlatTreeStrategy>(position);
+}
+
 Element* TableElementJustBefore(const VisiblePosition& visible_position) {
-  return TableElementJustBeforeAlgorithm<EditingStrategy>(visible_position);
+  return TableElementJustBefore(visible_position.DeepEquivalent());
 }
 
 Element* TableElementJustBefore(
     const VisiblePositionInFlatTree& visible_position) {
-  return TableElementJustBeforeAlgorithm<EditingInFlatTreeStrategy>(
-      visible_position);
+  return TableElementJustBefore(visible_position.DeepEquivalent());
 }
 
 Element* EnclosingTableCell(const Position& p) {
@@ -1054,14 +1061,17 @@ Element* EnclosingTableCell(const PositionInFlatTree& p) {
   return To<Element>(EnclosingNodeOfType(p, IsTableCell));
 }
 
-Element* TableElementJustAfter(const VisiblePosition& visible_position) {
-  Position downstream(
-      MostForwardCaretPosition(visible_position.DeepEquivalent()));
+Element* TableElementJustAfter(const Position& position) {
+  Position downstream(MostForwardCaretPosition(position));
   if (IsDisplayInsideTable(downstream.AnchorNode()) &&
       downstream.AtFirstEditingPositionForNode())
     return To<Element>(downstream.AnchorNode());
 
   return nullptr;
+}
+
+Element* TableElementJustAfter(const VisiblePosition& visible_position) {
+  return TableElementJustAfter(visible_position.DeepEquivalent());
 }
 
 // Returns the position at the beginning of a node
@@ -1084,7 +1094,7 @@ Position PositionAfterNode(const Node& node) {
   return Position::InParentAfterNode(node);
 }
 
-bool IsHTMLListElement(const Node* n) {
+bool IsHtmlListElement(const Node* n) {
   return (n && (IsA<HTMLUListElement>(*n) || IsA<HTMLOListElement>(*n) ||
                 IsA<HTMLDListElement>(*n)));
 }
@@ -1105,7 +1115,7 @@ bool IsListElementTag(const Node* n) {
                n->HasTagName(html_names::kDlTag));
 }
 
-bool IsPresentationalHTMLElement(const Node* node) {
+bool IsPresentationalHtmlElement(const Node* node) {
   const auto* element = DynamicTo<HTMLElement>(node);
   if (!element)
     return false;
@@ -1255,7 +1265,7 @@ HTMLElement* CreateDefaultParagraphElement(Document& document) {
   NOTREACHED();
 }
 
-bool IsTabHTMLSpanElement(const Node* node) {
+bool IsTabSpanElement(const Node* node) {
   const auto* span = DynamicTo<HTMLSpanElement>(node);
   if (!span) {
     return false;
@@ -1275,13 +1285,13 @@ bool IsTabHTMLSpanElement(const Node* node) {
   return style && style->WhiteSpace() == EWhiteSpace::kPre;
 }
 
-bool IsTabHTMLSpanElementTextNode(const Node* node) {
+bool IsTabSpanElementTextNode(const Node* node) {
   return node && node->IsTextNode() && node->parentNode() &&
-         IsTabHTMLSpanElement(node->parentNode());
+         IsTabSpanElement(node->parentNode());
 }
 
 HTMLSpanElement* TabSpanElement(const Node* node) {
-  return IsTabHTMLSpanElementTextNode(node)
+  return IsTabSpanElementTextNode(node)
              ? To<HTMLSpanElement>(node->parentNode())
              : nullptr;
 }
@@ -1498,7 +1508,7 @@ Position ComputePositionForNodeRemoval(const Position& position,
   NOTREACHED() << "We should handle all PositionAnchorType";
 }
 
-bool IsMailHTMLBlockquoteElement(const Node* node) {
+bool IsMailHtmlBlockquoteElement(const Node* node) {
   const auto* element = DynamicTo<HTMLElement>(*node);
   if (!element)
     return false;
@@ -1620,10 +1630,10 @@ bool AreSameRangesAlgorithm(Node* node,
   DCHECK(node);
   const EphemeralRange range =
       CreateVisibleSelection(
-          SelectionInDOMTree::Builder().SelectAllChildren(*node).Build())
+          SelectionInDomTree::Builder().SelectAllChildren(*node).Build())
           .ToNormalizedEphemeralRange();
-  return ToPositionInDOMTree(start_position) == range.StartPosition() &&
-         ToPositionInDOMTree(end_position) == range.EndPosition();
+  return ToPositionInDomTree(start_position) == range.StartPosition() &&
+         ToPositionInDomTree(end_position) == range.EndPosition();
 }
 
 bool AreSameRanges(Node* node,
@@ -1651,7 +1661,7 @@ bool IsRenderedAsNonInlineTableImageOrHR(const Node* node) {
          layout_object->IsHR();
 }
 
-bool IsNonTableCellHTMLBlockElement(const Node* node) {
+bool IsNonTableCellHtmlBlockElement(const Node* node) {
   const auto* element = DynamicTo<HTMLElement>(node);
   if (!element)
     return false;
@@ -1724,7 +1734,7 @@ const GCedStaticRangeVector* TargetRangesForInputEvent(const Node& node) {
       FirstEphemeralRangeOf(node.GetDocument()
                                 .GetFrame()
                                 ->Selection()
-                                .ComputeVisibleSelectionInDOMTree());
+                                .ComputeVisibleSelectionInDomTree());
   if (range.IsNull())
     return nullptr;
   return MakeGarbageCollected<GCedStaticRangeVector>(
@@ -1800,7 +1810,7 @@ void InsertTextAndSendInputEventsOfTypeInsertReplacementText(
 
   // Dispatch 'beforeinput'.
   Element* const target = FindEventTargetFrom(
-      frame, frame.Selection().ComputeVisibleSelectionInDOMTree());
+      frame, frame.Selection().ComputeVisibleSelectionInDomTree());
 
   // Copy the original target text into a string, in case the 'beforeinput'
   // event handler modifies the text.

@@ -4,13 +4,15 @@
 
 import * as Host from '../../../core/host/host.js';
 import type {UrlString} from '../../../core/platform/DevToolsPath.js';
+import type * as Platform from '../../../core/platform/platform.js';
 import * as Root from '../../../core/root/root.js';
-import type * as SDK from '../../../core/sdk/sdk.js';
+import * as SDK from '../../../core/sdk/sdk.js';
+import type * as TextUtils from '../../../core/text_utils/text_utils.js';
 import type * as Protocol from '../../../generated/protocol.js';
 import type * as LHModel from '../../lighthouse/lighthouse.js';
-import type * as TextUtils from '../../text_utils/text_utils.js';
 import type * as Trace from '../../trace/trace.js';
 import type * as Workspace from '../../workspace/workspace.js';
+import {areOriginsEquivalent, extractContextOrigin, isOpaqueOrigin} from '../AiOrigins.js';
 import {debugLog, isStructuredLogEnabled} from '../debug.js';
 
 const MAX_SUGGESTION_LENGTH = 200;
@@ -26,7 +28,7 @@ export const enum ResponseType {
   ERROR = 'error',
   QUERYING = 'querying',
   USER_QUERY = 'user-query',
-  CONTEXT_CHANGE = 'context-change'
+  CONTEXT_CHANGE = 'context-change',
 }
 
 export const enum ErrorType {
@@ -34,22 +36,9 @@ export const enum ErrorType {
   ABORT = 'abort',
   MAX_STEPS = 'max-steps',
   BLOCK = 'block',
-  CROSS_ORIGIN = 'cross-origin'
-}
-
-/**
- * Returns true if the origin is considered opaque and should be blocked from
- * AI assistance to prevent potential data leakage.
- *
- * @see https://crbug.com/513732588
- */
-export function isOpaqueOrigin(origin: string): boolean {
-  /**
-   * Origins starting with 'about' (like about:blank or about:srcdoc) are
-   * considered opaque. 'about://' is the sentinel used by DevTools
-   * ParsedURL.securityOrigin() for these.
-   */
-  return origin === 'null' || origin === 'data:' || origin.startsWith('about') || origin.startsWith('detached');
+  CROSS_ORIGIN = 'cross-origin',
+  QUOTA = 'quota',
+  PAYLOAD_TOO_LARGE = 'payload-too-large',
 }
 
 export const enum MultimodalInputType {
@@ -178,6 +167,7 @@ export interface AgentOptions {
   history?: Host.AidaClient.Content[];
   allowedOrigin?: () => AllowedOriginResult;
   lighthouseRecording?: (overrides?: LHModel.RunTypes.RunOverrides) => Promise<LHModel.ReporterTypes.ReportJSON|null>;
+  targetManager?: SDK.TargetManager.TargetManager;
 }
 
 export interface ParsedAnswer {
@@ -198,9 +188,13 @@ export interface ConversationSuggestion {
 export type ConversationSuggestions = [ConversationSuggestion, ...ConversationSuggestion[]];
 
 export abstract class ConversationContext<T> {
-  abstract getOrigin(): string;
+  abstract getURL(): string;
   abstract getItem(): T;
   abstract getTitle(): string;
+
+  getOrigin(): string {
+    return extractContextOrigin(this.getURL());
+  }
 
   /**
    * Returns true if this data context (e.g., a DOM node or Network Request) is
@@ -215,17 +209,14 @@ export abstract class ConversationContext<T> {
    * If undefined, the conversation has not yet been locked to an origin.
    */
   isOriginAllowed(establishedOrigin: string|undefined): boolean {
-    const dataOrigin = this.getOrigin();
-    // Opaque origins are never allowed to be used as context.
-    if (isOpaqueOrigin(dataOrigin)) {
-      return false;
-    }
+    const origin = this.getOrigin();
     // If no origin is established yet, this context will be the one to lock the conversation.
+    // Opaque origins are never allowed to be used as context.
     if (!establishedOrigin) {
-      return true;
+      return !isOpaqueOrigin(origin);
     }
     // Only allow data that matches the origin the conversation is already locked to.
-    return dataOrigin === establishedOrigin;
+    return areOriginsEquivalent(origin, establishedOrigin);
   }
 
   /**
@@ -238,6 +229,22 @@ export abstract class ConversationContext<T> {
 
   async getSuggestions(): Promise<ConversationSuggestions|undefined> {
     return;
+  }
+
+  /**
+   * Returns a detailed description of the context item for inclusion in the AI model prompt.
+   * Currently only used by AiAgent2.
+   */
+  async getPromptDetails(): Promise<string|null> {
+    return null;
+  }
+
+  /**
+   * Returns a list of context details to display to the user in the UI.
+   * Currently only used by AiAgent2.
+   */
+  async getUserFacingDetails(): Promise<[ContextDetail, ...ContextDetail[]]|null> {
+    return null;
   }
 }
 
@@ -271,6 +278,8 @@ export interface DomTreeAiWidget {
   name: 'DOM_TREE';
   data: {
     root: SDK.DOMModel.DOMNodeSnapshot,
+    title: Platform.UIString.LocalizedString,
+    accessibleRevealLabel: Platform.UIString.LocalizedString,
     networkRequest?: {
       url: string,
       size: number,
@@ -322,6 +331,27 @@ export interface SourceFileAiWidget {
   };
 }
 
+export interface SourceFilesListAiWidget {
+  name: 'SOURCE_FILES_LIST';
+  data: {
+    uiSourceCodes: Workspace.UISourceCode.UISourceCode[],
+  };
+}
+
+export interface NetworkRequestsListAiWidget {
+  name: 'NETWORK_REQUESTS_LIST';
+  data: {
+    requests: SDK.NetworkRequest.NetworkRequest[],
+  };
+}
+export interface NetworkTrackAiWidget {
+  name: 'NETWORK_TRACK';
+  data: {
+    parsedTrace: Trace.TraceModel.ParsedTrace,
+    bounds: Trace.Types.Timing.TraceWindowMicro,
+  };
+}
+
 export interface LighthouseReportAiWidget {
   name: 'LIGHTHOUSE_REPORT';
   data: {
@@ -358,7 +388,8 @@ export interface SourceCodeAiWidget {
 
 export type AiWidget = ComputedStyleAiWidget|CoreVitalsAiWidget|StylePropertiesAiWidget|DomTreeAiWidget|
     PerformanceTraceAiWidget|PerfInsightAiWidget|TimelineRangeSummaryAiWidget|BottomUpTreeAiWidget|SourceFileAiWidget|
-    LighthouseReportAiWidget|TimelineEventSummaryAiWidget|NetworkRequestGeneralHeadersAiWidget|SourceCodeAiWidget;
+    LighthouseReportAiWidget|TimelineEventSummaryAiWidget|NetworkRequestGeneralHeadersAiWidget|SourceCodeAiWidget|
+    SourceFilesListAiWidget|NetworkRequestsListAiWidget|NetworkTrackAiWidget;
 
 export type FunctionCallHandlerResult<Result> = {
   requiresApproval: true,
@@ -392,7 +423,7 @@ export interface FunctionDeclaration<Args extends Record<string, unknown>, Retur
    * Description of function, this is send to the LLM
    * to explain what will the function do.
    */
-  description: string;
+  description: string|(() => string);
   /**
    * JSON schema like representation of the parameters
    * the function needs to be called with.
@@ -452,10 +483,11 @@ export abstract class AiAgent<T> {
 
   readonly #sessionId: string;
   readonly #aidaClient: Host.AidaClient.AidaClient;
-  readonly #serverSideLoggingEnabled: boolean;
+  #serverSideLoggingEnabled: boolean;
   readonly confirmSideEffect: typeof Promise.withResolvers;
   readonly #functionDeclarations = new Map<string, FunctionDeclaration<Record<string, unknown>, unknown>>();
   readonly #allowedOrigin?: () => AllowedOriginResult;
+  readonly #targetManager: SDK.TargetManager.TargetManager;
 
   /**
    * Used in the debug mode and evals.
@@ -489,10 +521,11 @@ export abstract class AiAgent<T> {
     this.confirmSideEffect = opts.confirmSideEffectForTest ?? (() => Promise.withResolvers());
     this.#history = opts.history ?? [];
     this.#allowedOrigin = opts.allowedOrigin;
+    this.#targetManager = opts.targetManager ?? SDK.TargetManager.TargetManager.instance();
   }
 
-  async enhanceQuery(query: string, selected: ConversationContext<T>|null, multimodalInputType?: MultimodalInputType):
-      Promise<string>;
+  async enhanceQuery(query: string, selected: ConversationContext<T>|null,
+                     multimodalInputType?: MultimodalInputType): Promise<string>;
   async enhanceQuery(query: string): Promise<string> {
     return query;
   }
@@ -503,6 +536,10 @@ export abstract class AiAgent<T> {
 
   get history(): Host.AidaClient.Content[] {
     return [...this.#history];
+  }
+
+  get targetManager(): SDK.TargetManager.TargetManager {
+    return this.#targetManager;
   }
 
   /**
@@ -523,17 +560,37 @@ export abstract class AiAgent<T> {
     this.#facts.clear();
   }
 
+  /**
+   * Clears any subclass-specific caches. This is called when a run encounters
+   * an error (e.g., cross-origin navigation, abort, or execution error) to
+   * prevent unvalidated cached data from being replayed in subsequent runs.
+   */
+  clearCache(): void {
+  }
+
+  protected disableServerSideLogging(): void {
+    this.#serverSideLoggingEnabled = false;
+  }
+
   popPendingMultimodalInput(): MultimodalInput|undefined {
     return undefined;
   }
 
+  /**
+   * Preamble features appended to the `client_version` in metadata.
+   * This is required ONLY for the Styling Agent for legacy reasons to serve
+   * different server-side preambles based on the Chrome version.
+   * Other agents should NOT set or override this.
+   * If you are curious about this, look for `do_conversation_handler.cc` in
+   * Google3 or chat to @jacktfranklin.
+   */
   preambleFeatures(): string[] {
     return [];
   }
 
-  buildRequest(
-      part: Host.AidaClient.Part|Host.AidaClient.Part[],
-      role: Host.AidaClient.Role.USER|Host.AidaClient.Role.ROLE_UNSPECIFIED): Host.AidaClient.DoConversationRequest {
+  buildRequest(part: Host.AidaClient.Part|Host.AidaClient.Part[],
+               role: Host.AidaClient.Role.USER|
+               Host.AidaClient.Role.ROLE_UNSPECIFIED): Host.AidaClient.DoConversationRequest {
     const parts = Array.isArray(part) ? part : [part];
     const currentMessage: Host.AidaClient.Content = {
       parts,
@@ -544,7 +601,7 @@ export abstract class AiAgent<T> {
     for (const [name, definition] of this.#functionDeclarations.entries()) {
       declarations.push({
         name,
-        description: definition.description,
+        description: typeof definition.description === 'function' ? definition.description() : definition.description,
         parameters: definition.parameters,
       });
     }
@@ -679,6 +736,10 @@ export abstract class AiAgent<T> {
     this.#functionDeclarations.clear();
   }
 
+  /**
+   * Executed immediately after the current context is populated with the selected
+   * context and before the request is built.
+   */
   protected async preRun(): Promise<void> {
   }
 
@@ -691,11 +752,11 @@ export abstract class AiAgent<T> {
           },
           multimodalInput?: MultimodalInput,
           ): AsyncGenerator<ResponseData, void, void> {
-    await this.preRun();
     await options.selected?.refresh();
     if (options.selected) {
       this.context = options.selected;
     }
+    await this.preRun();
 
     const enhancedQuery = await this.enhanceQuery(initialQuery, options.selected, multimodalInput?.type);
     Host.userMetrics.freestylerQueryLength(enhancedQuery.length);
@@ -737,13 +798,7 @@ export abstract class AiAgent<T> {
         }
       } catch (err) {
         debugLog('Error calling the AIDA API', err);
-
-        let error = ErrorType.UNKNOWN;
-        if (err instanceof Host.AidaClient.AidaAbortError) {
-          error = ErrorType.ABORT;
-        } else if (err instanceof Host.AidaClient.AidaBlockError) {
-          error = ErrorType.BLOCK;
-        }
+        const error = aidaErrorToErrorType(err);
         yield this.#createErrorResponse(error);
 
         break;
@@ -1033,7 +1088,11 @@ export abstract class AiAgent<T> {
         request: structuredClone(request),
         aidaResponse,
       });
-      localStorage.setItem('aiAssistanceStructuredLog', JSON.stringify(this.#structuredLog));
+      try {
+        localStorage.setItem('aiAssistanceStructuredLog', JSON.stringify(this.#structuredLog));
+      } catch (err) {
+        console.warn('Failed to write to local storage "aiAssistanceStructuredLog":', err);
+      }
     }
   }
 
@@ -1045,6 +1104,7 @@ export abstract class AiAgent<T> {
 
   #createErrorResponse(error: ErrorType): ResponseData {
     this.#removeLastRunParts();
+    this.clearCache();
     if (error !== ErrorType.ABORT) {
       Host.userMetrics.actionTaken(Host.UserMetrics.Action.AiAssistanceError);
     }
@@ -1077,4 +1137,25 @@ function sanitizeSuggestions(suggestions: string): [string, ...string[]]|undefin
     return undefined;
   }
   return sanitized as [string, ...string[]];
+}
+
+/**
+ * Maps AIDA-specific client error instances to user-facing ErrorType enums.
+ * This handles AIDA API failure modes such as quota exhaustion or blockages.
+ * Other application-level errors (like CROSS_ORIGIN or MAX_STEPS) are handled separately.
+ */
+export function aidaErrorToErrorType(err: unknown): ErrorType {
+  if (err instanceof Host.AidaClient.AidaAbortError) {
+    return ErrorType.ABORT;
+  }
+  if (err instanceof Host.AidaClient.AidaBlockError) {
+    return ErrorType.BLOCK;
+  }
+  if (err instanceof Host.AidaClient.AidaQuotaError) {
+    return ErrorType.QUOTA;
+  }
+  if (err instanceof Host.AidaClient.AidaPayloadTooLargeError) {
+    return ErrorType.PAYLOAD_TOO_LARGE;
+  }
+  return ErrorType.UNKNOWN;
 }

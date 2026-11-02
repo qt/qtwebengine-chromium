@@ -308,12 +308,11 @@ tr.exportTo('tr.e.importer', function() {
    */
   TraceEventImporter.scopedIdForEvent_ = function(event) {
     const scope = event.scope || tr.model.OBJECT_DEFAULT_SCOPE;
-    let pid = undefined;
     if (event.id !== undefined) {
       if (event.id2 !== undefined) {
         throw new Error('Event has both id and id2');
       }
-      pid = tr.model.LOCAL_ID_PHASES.has(event.ph) ? event.pid : undefined;
+      const pid = tr.model.LOCAL_ID_PHASES.has(event.ph) ? event.pid : undefined;
       return new tr.model.ScopedId(scope, event.id, pid);
     } else if (event.id2 !== undefined) {
       if (event.id2.global !== undefined) {
@@ -323,6 +322,8 @@ tr.exportTo('tr.e.importer', function() {
       }
       throw new Error(
           'Event that uses id2 must have either a global or local ID');
+    } else if (event.bind_id !== undefined) {
+      return new tr.model.ScopedId(scope, event.bind_id);
     }
     return undefined;
   };
@@ -1271,7 +1272,11 @@ tr.exportTo('tr.e.importer', function() {
         case 'R':
           modelStats.willProcessBasicTraceEvent(
               'instant', event.cat, event.name, event.ts, eventSizeInBytes);
-          this.processInstantEvent(event);
+          if (this.isObjectInstantEvent_(event)) {
+            this.processObjectEvent(event);
+          } else {
+            this.processInstantEvent(event);
+          }
           break;
 
         case 'P':
@@ -2350,9 +2355,15 @@ tr.exportTo('tr.e.importer', function() {
       }
     },
 
+    isObjectInstantEvent_(event) {
+      if (!event || !event.name) return false;
+      if (event.args && event.args.snapshot !== undefined) return true;
+      return event.name.endsWith(':created') || event.name.endsWith(':deleted');
+    },
+
     /**
      * This function creates objects described via the N, D, and O phase
-     * events.
+     * events or instant events representing object snapshots/lifecycle.
      */
     createExplicitObjects_() {
       if (this.allObjectEvents_.length === 0) return;
@@ -2378,11 +2389,29 @@ tr.exportTo('tr.e.importer', function() {
         }
         const process = thread.parent;
         const ts = this.toModelTimeFromUs_(event.ts);
+        let objectName = event.name;
+        let effectivePh = event.ph;
+        if (event.name) {
+          if (event.name.endsWith(':created')) {
+            objectName = event.name.slice(0, -':created'.length);
+            effectivePh = 'N';
+          } else if (event.name.endsWith(':deleted')) {
+            objectName = event.name.slice(0, -':deleted'.length);
+            effectivePh = 'D';
+          } else if (event.args && event.args.snapshot !== undefined) {
+            const match = event.name.match(/(?<!:):(\w+)$/);
+            if (match) {
+              objectName = event.name.substring(0, match.index);
+            }
+            effectivePh = 'O';
+          }
+        }
+
         let instance;
-        if (event.ph === 'N') {
+        if (effectivePh === 'N') {
           try {
             instance = process.objects.idWasCreated(
-                scopedId, event.cat, event.name, ts);
+                scopedId, event.cat, objectName, ts);
           } catch (e) {
             this.model_.importWarning({
               type: 'object_parse_error',
@@ -2391,7 +2420,7 @@ tr.exportTo('tr.e.importer', function() {
             });
             return;
           }
-        } else if (event.ph === 'O') {
+        } else if (effectivePh === 'O') {
           if (event.args.snapshot === undefined) {
             this.model_.importWarning({
               type: 'object_parse_error',
@@ -2419,7 +2448,7 @@ tr.exportTo('tr.e.importer', function() {
               baseTypename = undefined;
             }
             snapshot = process.objects.addSnapshot(
-                scopedId, cat, event.name, ts, args, baseTypename);
+                scopedId, cat, objectName, ts, args, baseTypename);
             snapshot.snapshottedOnThread = thread;
           } catch (e) {
             this.model_.importWarning({
@@ -2430,9 +2459,9 @@ tr.exportTo('tr.e.importer', function() {
             return;
           }
           instance = snapshot.objectInstance;
-        } else if (event.ph === 'D') {
+        } else if (effectivePh === 'D') {
           try {
-            process.objects.idWasDeleted(scopedId, event.cat, event.name, ts);
+            process.objects.idWasDeleted(scopedId, event.cat, objectName, ts);
             const instanceMap = process.objects.getOrCreateInstanceMap_(
                 scopedId);
             instance = instanceMap.lastInstance;

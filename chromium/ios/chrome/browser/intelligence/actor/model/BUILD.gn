@@ -4,6 +4,8 @@
 
 source_set("model") {
   sources = [
+    "actor_browser_agent.h",
+    "actor_browser_agent.mm",
     "actor_engine.h",
     "actor_engine.mm",
     "actor_service.h",
@@ -15,25 +17,33 @@ source_set("model") {
     "snackbar_actor_task_updates_observer.h",
     "snackbar_actor_task_updates_observer.mm",
   ]
+  public_deps = [ "//components/sessions:session_id" ]
   deps = [
+    ":tab_helper",
     "//base",
     "//components/actor/core:journal",
     "//components/keyed_service/core",
     "//components/optimization_guide/proto:optimization_guide_proto",
+    "//components/password_manager/core/browser/actor_login:actor_login_service_impl",
     "//ios/chrome/browser/intelligence/actor/public:actor_task_ui_protocols",
     "//ios/chrome/browser/intelligence/actor/public:actor_types",
     "//ios/chrome/browser/intelligence/actor/tools/model:actor_tool_factory",
     "//ios/chrome/browser/intelligence/actor/tools/model:actor_tool_interface",
     "//ios/chrome/browser/intelligence/actor/tools/model:page_stability",
+    "//ios/chrome/browser/intelligence/actor/tools/model:tool_controller",
     "//ios/chrome/browser/intelligence/actor/tools/public",
+    "//ios/chrome/browser/intelligence/actor/tools/utils:actor_browser_utils",
     "//ios/chrome/browser/intelligence/actor/tools/utils:actor_tool_utils",
+    "//ios/chrome/browser/intelligence/actor/tools/utils:logging_util",
     "//ios/chrome/browser/intelligence/features",
     "//ios/chrome/browser/intelligence/proto_wrappers",
     "//ios/chrome/browser/shared/model/browser",
     "//ios/chrome/browser/shared/model/profile",
     "//ios/chrome/browser/shared/model/profile:profile_keyed_service_factory",
+    "//ios/chrome/browser/shared/model/web_state_list",
     "//ios/chrome/browser/shared/model/web_state_list:utils",
     "//ios/web/public",
+    "//third_party/perfetto:libperfetto",
 
     # TODO(crbug.com/512521102): Remove these deps once the snackbar prototype
     # is removed.
@@ -44,16 +54,31 @@ source_set("model") {
   ]
 }
 
+source_set("tab_helper") {
+  sources = [
+    "actor_tab_helper.h",
+    "actor_tab_helper.mm",
+    "actor_tab_helper_observer.h",
+  ]
+  deps = [
+    "//base",
+    "//ios/web/public",
+  ]
+}
+
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "actor_browser_agent_unittest.mm",
     "actor_engine_unittest.mm",
     "actor_service_unittest.mm",
+    "actor_tab_helper_unittest.mm",
     "actor_task_unittest.mm",
     "snackbar_actor_task_updates_observer_unittest.mm",
   ]
   deps = [
     ":model",
+    ":tab_helper",
     "//base/test:test_support",
     "//components/actor/core:journal",
     "//components/optimization_guide/proto:optimization_guide_proto",
@@ -61,7 +86,9 @@ source_set("unit_tests") {
     "//ios/chrome/browser/intelligence/actor/public:actor_types",
     "//ios/chrome/browser/intelligence/actor/tools/model:actor_tool_factory",
     "//ios/chrome/browser/intelligence/actor/tools/model:actor_tool_interface",
+    "//ios/chrome/browser/intelligence/actor/tools/model:tool_controller",
     "//ios/chrome/browser/intelligence/actor/tools/public",
+    "//ios/chrome/browser/intelligence/actor/util:test_support",
     "//ios/chrome/browser/intelligence/features",
     "//ios/chrome/browser/intelligence/proto_wrappers",
     "//ios/chrome/browser/intelligence/proto_wrappers:page_context_extractor_feature",
@@ -69,6 +96,7 @@ source_set("unit_tests") {
     "//ios/chrome/browser/shared/model/browser/test:test_support",
     "//ios/chrome/browser/shared/model/profile/test",
     "//ios/chrome/browser/shared/model/web_state_list",
+    "//ios/chrome/browser/shared/model/web_state_list/test:test_support",
     "//ios/chrome/browser/shared/public/commands",
     "//ios/chrome/browser/shared/public/snackbar",
     "//ios/chrome/browser/snapshots/model",

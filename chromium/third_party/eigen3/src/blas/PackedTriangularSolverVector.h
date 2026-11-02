@@ -34,7 +34,7 @@ struct packed_triangular_solve_vector<LhsScalar, RhsScalar, Index, OnTheLeft, Mo
         rhs[i] -= (ConjLhsType(LhsMap(lhs + s, pi))
                        .cwiseProduct(Map<const Matrix<RhsScalar, Dynamic, 1> >(rhs + (IsLower ? 0 : i + 1), pi)))
                       .sum();
-      EIGEN_IF_CONSTEXPR(!(Mode & UnitDiag)) rhs[i] /= cj(lhs[IsLower ? i : 0]);
+      EIGEN_IF_CONSTEXPR (!(Mode & UnitDiag)) rhs[i] /= cj(lhs[IsLower ? i : 0]);
       IsLower ? lhs += pi + 1 : lhs -= pi + 2;
     }
   }
@@ -53,7 +53,7 @@ struct packed_triangular_solve_vector<LhsScalar, RhsScalar, Index, OnTheLeft, Mo
     for (Index pi = 0; pi < size; ++pi) {
       Index i = IsLower ? pi : size - pi - 1;
       Index r = size - pi - 1;
-      EIGEN_IF_CONSTEXPR(!(Mode & UnitDiag)) rhs[i] /= cj(lhs[IsLower ? 0 : i]);
+      EIGEN_IF_CONSTEXPR (!(Mode & UnitDiag)) rhs[i] /= cj(lhs[IsLower ? 0 : i]);
       if (r > 0)
         Map<Matrix<RhsScalar, Dynamic, 1> >(rhs + (IsLower ? i + 1 : 0), r) -=
             rhs[i] * ConjLhsType(LhsMap(lhs + (IsLower ? 1 : 0), r));

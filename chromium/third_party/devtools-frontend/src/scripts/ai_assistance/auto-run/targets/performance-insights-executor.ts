@@ -9,7 +9,7 @@ import {
   executePromptCycle,
   extractCommentMetadata,
   loadPerformanceTrace,
-  stripCommentsFromPage
+  stripCommentsFromPage,
 } from '../shared/puppeteer-helpers.ts';
 import type {TraceDownloader} from '../trace-downloader.ts';
 

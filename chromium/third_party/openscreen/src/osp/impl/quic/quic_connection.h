@@ -50,7 +50,7 @@ class QuicConnection {
     // This is used to propagate client certificate to QuicServer.
     virtual void OnClientCertificates(
         std::string_view instance_name,
-        const std::vector<std::string>& certs) = 0;
+        const std::vector<std::string_view>& certs) = 0;
   };
 
   QuicConnection(std::string_view instance_name, Delegate& delegate)

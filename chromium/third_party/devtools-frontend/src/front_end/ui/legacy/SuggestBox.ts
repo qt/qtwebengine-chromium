@@ -6,8 +6,8 @@
 
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
+import type * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as Geometry from '../../models/geometry/geometry.js';
-import type * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as VisualLogging from '../visual_logging/visual_logging.js';
 
 import * as ARIAUtils from './ARIAUtils.js';

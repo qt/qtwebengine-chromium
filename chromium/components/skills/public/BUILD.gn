@@ -58,10 +58,13 @@ source_set("types") {
 
 source_set("public") {
   sources = [
+    "skill_data_type_controller.cc",
+    "skill_data_type_controller.h",
     "skills_features.cc",
     "skills_features.h",
     "skills_prefs.cc",
     "skills_prefs.h",
+    "skills_provider.h",
     "skills_service.cc",
     "skills_service.h",
   ]
@@ -74,7 +77,7 @@ source_set("public") {
     "//components/keyed_service/core",
     "//components/skills/internal:downloader",
     "//components/skills/proto",
-    "//components/sync/protocol",
+    "//components/sync",
   ]
 
   deps = [
@@ -96,6 +99,8 @@ source_set("metrics") {
     "//components/skills/public:mojo_bindings",
     "//components/skills/public:mojo_bindings__generator",
   ]
+
+  deps = [ "//components/skills:features" ]
 }
 
 if (is_ios) {

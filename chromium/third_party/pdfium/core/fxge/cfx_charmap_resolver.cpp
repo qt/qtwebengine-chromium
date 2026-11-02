@@ -30,8 +30,7 @@ class UnicodeCharmapResolver : public CFX_CharmapResolver {
     if (face->SelectCharMap(fxge::FontEncoding::kUnicode)) {
       return face->GetCharIndex(charcode);
     }
-    if (font_->GetSubstFont() &&
-        font_->GetSubstFont()->charset_ == FX_Charset::kSymbol) {
+    if (font_->GetSubstFont() && font_->GetSubstFont()->IsSymbolic()) {
       uint32_t index = 0;
       if (face->SelectCharMap(fxge::FontEncoding::kSymbol)) {
         index = face->GetCharIndex(charcode);

@@ -7,6 +7,7 @@
 #include <ostream>
 
 #include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/editing/ephemeral_range.h"
 #include "third_party/blink/renderer/core/editing/position_with_affinity.h"
 
@@ -204,7 +205,7 @@ void SelectionTemplate<Strategy>::PrintTo(std::ostream* ostream,
 }
 
 std::ostream& operator<<(std::ostream& ostream,
-                         const SelectionInDOMTree& selection) {
+                         const SelectionInDomTree& selection) {
   selection.PrintTo(&ostream, "Selection");
   return ostream;
 }
@@ -400,17 +401,17 @@ SelectionTemplate<
   selection_.ResetDirectionCache();
 }
 
-SelectionInDOMTree ConvertToSelectionInDOMTree(
+SelectionInDomTree ConvertToSelectionInDomTree(
     const SelectionInFlatTree& selection_in_flat_tree) {
-  return SelectionInDOMTree::Builder()
+  return SelectionInDomTree::Builder()
       .SetAffinity(selection_in_flat_tree.Affinity())
-      .SetBaseAndExtent(ToPositionInDOMTree(selection_in_flat_tree.Anchor()),
-                        ToPositionInDOMTree(selection_in_flat_tree.Focus()))
+      .SetBaseAndExtent(ToPositionInDomTree(selection_in_flat_tree.Anchor()),
+                        ToPositionInDomTree(selection_in_flat_tree.Focus()))
       .Build();
 }
 
 SelectionInFlatTree ConvertToSelectionInFlatTree(
-    const SelectionInDOMTree& selection) {
+    const SelectionInDomTree& selection) {
   SelectionInFlatTree::Builder builder;
   const PositionInFlatTree& anchor = ToPositionInFlatTree(selection.Anchor());
   const PositionInFlatTree& focus = ToPositionInFlatTree(selection.Focus());

@@ -17,13 +17,13 @@
 
 #include <vulkan/vulkan_core.h>
 #include "chassis/chassis_modification_state.h"
-#include "generated/dispatch_functions.h"
 #include "gpuav/core/gpuav.h"
 #include "gpuav/core/gpuav_constants.h"
-#include "gpuav/debug_descriptor/debug_descriptor.h"
 #include "gpuav/debug_printf/debug_printf.h"
 #include "gpuav/descriptor_validation/gpuav_descriptor_validation.h"
-#include "gpuav/instrumentation/descriptor_checks.h"
+#include "gpuav/instrumentation/descriptor_checks_classic.h"
+#include "gpuav/instrumentation/descriptor_checks_heap.h"
+#include "gpuav/instrumentation/descriptor_checks_buffer.h"
 #include "gpuav/instrumentation/gpuav_instrumentation.h"
 #include "gpuav/instrumentation/register_validation.h"
 #include "gpuav/resources/gpuav_state_trackers.h"
@@ -33,12 +33,9 @@
 #include "gpuav/validation_cmd/gpuav_dispatch.h"
 #include "gpuav/validation_cmd/gpuav_draw.h"
 #include "gpuav/validation_cmd/gpuav_ray_tracing.h"
-#include "state_tracker/device_memory_state.h"
-#include "utils/assert_utils.h"
 #include "utils/math_utils.h"
 
 #include <cstdint>
-#include <algorithm>
 #include <vulkan/utility/vk_safe_struct.hpp>
 
 namespace gpuav {
@@ -87,18 +84,6 @@ void Validator::PreCallRecordCreateBuffer(VkDevice device, const VkBufferCreateI
         chassis_state.modified_create_info.size = Align<VkDeviceSize>(chassis_state.modified_create_info.size, 4);
     }
 
-    // Might need to call vkCmdFillBuffer to set the memory
-    if (set_null_descriptors_) {
-        if ((in_usage & (VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
-                         VK_BUFFER_USAGE_2_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_2_DESCRIPTOR_HEAP_BIT_EXT)) != 0) {
-            if (flags2) {
-                const_cast<VkBufferUsageFlags2CreateInfo*>(flags2)->usage |= VK_BUFFER_USAGE_2_TRANSFER_DST_BIT;
-            } else {
-                chassis_state.modified_create_info.usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-            }
-        }
-    }
-
     chassis_state.create_info_copy = chassis_state.modified_create_info.ptr();
 }
 
@@ -110,6 +95,7 @@ void Validator::PostCallRecordCreateBuffer(VkDevice device, const VkBufferCreate
 
     if (in_usage & VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT) {
         descriptor_buffer.resource_handles_.emplace(*pBuffer);
+        hint_descriptor_buffer_ = true;
     }
 }
 
@@ -125,86 +111,9 @@ void Validator::PreCallRecordFreeMemory(VkDevice device, VkDeviceMemory memory, 
     }
 }
 
-void Validator::SetMemoryWithNullDescriptor(const vvl::Buffer& buffer_state, VkDeviceMemory memory, VkDeviceSize offset,
-                                            const Location& loc) {
-    auto device_memory_state = Get<vvl::DeviceMemory>(memory);
-    ASSERT_AND_RETURN(device_memory_state);
-
-    // Printing out the nullDescriptor (and confirm with driver dev) both NVIDIA and AMD use zero as a null descriptor
-    uint32_t null_dword = 0;
-    if (phys_dev_props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU && phys_dev_props.vendorID == 0x8086) {
-        // For Intel Integrated GPUs (from Metorlake+ which support heaps) they have a special null descriptor
-        null_dword = 0xe0000000;
-
-        // Note: For Lavapipe, it has a special 64-byte sequence that will be different from each descriptor type
-        // For now not going to support it unless desired, but this debugging feature was never ment for Lavapipe
-    }
-
-    const VkDeviceSize bound_size = buffer_state.GetSize();
-    if (device_memory_state->mappable) {
-        uint32_t* data_ptr = (uint32_t*)device_memory_state->p_driver_data;
-
-        if (!device_memory_state->p_driver_data) {
-            DispatchMapMemory(device, memory, offset, bound_size, 0, (void**)&data_ptr);
-        }
-
-        const VkDeviceSize dword_count = bound_size / sizeof(uint32_t);
-        std::fill(data_ptr, data_ptr + dword_count, null_dword);
-
-        if (!device_memory_state->p_driver_data) {
-            // Flush regardless to not need to check if coherent (safe to flush regardless)
-            VkMappedMemoryRange memory_range = vku::InitStructHelper();
-            memory_range.memory = memory;
-            memory_range.offset = offset;
-            memory_range.size = bound_size;
-            DispatchFlushMappedMemoryRanges(device, 1, &memory_range);
-
-            DispatchUnmapMemory(device, memory);
-        }
-    } else if (internal_transfer_queue_handle_ != VK_NULL_HANDLE) {
-        vko::CommandPool& cb_pool =
-            shared_resources_cache.GetOrCreate<vko::CommandPool>(*this, internal_transfer_queue_family_index_, loc);
-        auto [cb_handle, fence_handle] = cb_pool.GetCommandBuffer();
-        assert(cb_handle != VK_NULL_HANDLE);
-
-        DispatchResetCommandBuffer(cb_handle, 0);
-        VkCommandBufferBeginInfo cb_bi = vku::InitStructHelper();
-        cb_bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        DispatchBeginCommandBuffer(cb_handle, &cb_bi);
-        DispatchCmdFillBuffer(cb_handle, buffer_state.VkHandle(), 0, VK_WHOLE_SIZE, null_dword);
-        DispatchEndCommandBuffer(cb_handle);
-
-        // Need to wait until all work is done
-        // This **should** be ok since we are only doing this when allocating descriptor memory, which should not be something done
-        // once at the start of the app (or at least not a common operation)
-        DispatchQueueWaitIdle(internal_transfer_queue_handle_);
-
-        VkSubmitInfo submit_info = vku::InitStructHelper();
-        submit_info.commandBufferCount = 1;
-        submit_info.pCommandBuffers = &cb_handle;
-        DispatchQueueSubmit(internal_transfer_queue_handle_, 1, &submit_info, fence_handle);
-        DispatchWaitForFences(device, 1, &fence_handle, VK_TRUE, UINT64_MAX);
-        DispatchResetFences(device, 1, &fence_handle);
-    } else {
-        InternalWarning(buffer_state.VkHandle(), loc, "Unable to set memory with null descriptor");
-    }
-}
-
-void Validator::BindBufferMemory(VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize offset, const Location& loc) {
+void Validator::BindBufferMemory(VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize offset, const Location&) {
     if (descriptor_buffer.resource_handles_.find(buffer) != descriptor_buffer.resource_handles_.end()) {
         descriptor_buffer.resource_memory_handles_.emplace(memory);
-    }
-
-    // This is where we will try and "memset" the Descriptor Heap/Buffer to be a "safe" value by default
-    // Only want to do the buffer state lookup when actually needed
-    if (set_null_descriptors_) {
-        if (auto buffer_state = Get<vvl::Buffer>(buffer)) {
-            if ((buffer_state->usage &
-                 (VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_2_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT |
-                  VK_BUFFER_USAGE_2_DESCRIPTOR_HEAP_BIT_EXT)) != 0) {
-                SetMemoryWithNullDescriptor(*buffer_state, memory, offset, loc);
-            }
-        }
     }
 }
 
@@ -235,17 +144,22 @@ void Validator::PreCallRecordCmdBindDescriptorBuffersEXT(VkCommandBuffer command
         vku::safe_VkDescriptorBufferBindingInfoEXT& new_bind_info = chassis_state.modified_binding_infos[i];
         new_bind_info.initialize(&pBindingInfos[i]);
     }
+    auto cb_state = GetWrite<vvl::CommandBuffer>(commandBuffer);
+    CommandBufferSubState& gpuav_cb_state = SubState(*cb_state);
 
     vku::safe_VkDescriptorBufferBindingInfoEXT& modified_binding_info = chassis_state.modified_binding_infos[bufferCount];
     modified_binding_info.usage = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT;
-    modified_binding_info.address = GetGlobalDescriptorBuffer().Address();
+    modified_binding_info.address = gpuav_cb_state.GetInternalDescriptorBuffer().Address();
 
-    auto cb_state = GetWrite<vvl::CommandBuffer>(commandBuffer);
-    CommandBufferSubState& gpuav_cb_state = SubState(*cb_state);
     gpuav_cb_state.resource_descriptor_buffer_index_ = bufferCount;
 
     // Set the pointer the chassis will use
     chassis_state.pBindInfos = reinterpret_cast<VkDescriptorBufferBindingInfoEXT*>(chassis_state.modified_binding_infos.data());
+}
+
+void Validator::PostCallRecordGetDescriptorEXT(VkDevice device, const VkDescriptorGetInfoEXT* pDescriptorInfo, size_t dataSize,
+                                               void* pDescriptor, const RecordObject& record_obj) {
+    hint_descriptor_buffer_ = true;
 }
 
 void Validator::PreCallRecordBeginCommandBuffer(VkCommandBuffer commandBuffer, const VkCommandBufferBeginInfo* pBeginInfo,
@@ -253,7 +167,9 @@ void Validator::PreCallRecordBeginCommandBuffer(VkCommandBuffer commandBuffer, c
     auto cb_state = GetWrite<vvl::CommandBuffer>(commandBuffer);
 
     CommandBufferSubState& gpuav_cb_state = SubState(*cb_state);
-    RegisterDescriptorChecksValidation(*this, gpuav_cb_state);
+    RegisterDescriptorChecksClassicValidation(*this, gpuav_cb_state);
+    RegisterDescriptorChecksBufferValidation(*this, gpuav_cb_state);
+    RegisterDescriptorChecksHeapValidation(*this, gpuav_cb_state);
     RegisterPostProcessingValidation(*this, gpuav_cb_state);
     RegisterBufferDeviceAddressValidation(*this, gpuav_cb_state);
     RegisterVertexAttributeFetchOobValidation(*this, gpuav_cb_state);
@@ -262,7 +178,6 @@ void Validator::PreCallRecordBeginCommandBuffer(VkCommandBuffer commandBuffer, c
     RegisterSanitizer(*this, gpuav_cb_state);
     RegisterTraceRayValidation(*this, gpuav_cb_state);
     debug_printf::RegisterDebugPrintf(*this, gpuav_cb_state);
-    debug_descriptor::RegisterDebugDescriptor(*this, gpuav_cb_state);
 }
 
 // Dedicated warning VUID that likely can be ignored.
@@ -351,7 +266,8 @@ void Instance::PostCallRecordGetPhysicalDeviceProperties2(VkPhysicalDevice physi
             // allocate every possible byte on the GPU and our estimate is too small.
             //
             // storageBufferDescriptorSize is almost always 64 bytes
-            const VkDeviceSize bytes_to_reserve = desc_buffer_props->storageBufferDescriptorSize * cst::total_internal_descriptors;
+            VkDeviceSize buffer_indirect_buffer_stride = desc_buffer_props->storageBufferDescriptorSize * glsl::kTotalBindings;
+            const VkDeviceSize bytes_to_reserve = buffer_indirect_buffer_stride * gpuav_settings.indices_buffer_count;
             desc_buffer_props->resourceDescriptorBufferAddressSpaceSize -= bytes_to_reserve;
             desc_buffer_props->descriptorBufferAddressSpaceSize -= bytes_to_reserve;
 
@@ -363,23 +279,9 @@ void Instance::PostCallRecordGetPhysicalDeviceProperties2(VkPhysicalDevice physi
             adjustment_warnings += '\n';
         }
     }
-    if (!adjustment_warnings.empty()) {
+    if (!adjustment_warnings.empty() && !reported_gpdp2_warning_) {
+        reported_gpdp2_warning_ = true;
         AdjustmentWarning(physicalDevice, record_obj.location, adjustment_warnings.c_str());
-    }
-
-    if (auto* desc_heap_props = vku::FindStructInPNextChain<VkPhysicalDeviceDescriptorHeapPropertiesEXT>(device_props2->pNext)) {
-        VkDeviceSize bytes_to_reserve =
-            Align(desc_heap_props->bufferDescriptorSize * glsl::kTotalBindings, desc_heap_props->bufferDescriptorAlignment);
-        bytes_to_reserve = Align(bytes_to_reserve, desc_heap_props->resourceHeapAlignment);
-
-        VkDeviceSize new_limit = desc_heap_props->minResourceHeapReservedRange + bytes_to_reserve;
-
-        std::stringstream ss;
-        ss << "Setting VkPhysicalDeviceDescriptorHeapPropertiesEXT::minResourceHeapReservedRange to " << new_limit << " (reserving "
-           << bytes_to_reserve << " bytes)";
-        InternalWarning(physicalDevice, record_obj.location, ss.str().c_str());
-
-        desc_heap_props->minResourceHeapReservedRange = new_limit;
     }
 
     ReserveBindingSlot(physicalDevice, device_props2->properties.limits, record_obj.location);
@@ -395,8 +297,6 @@ void Validator::PreCallRecordDestroyDevice(VkDevice device, const VkAllocationCa
     gpu_resources_manager_.DestroyResources();
 
     global_indices_buffer_.Destroy();
-    global_resource_descriptor_buffer_.Destroy();
-    global_resource_descriptor_heap_.Destroy();
 
     GpuShaderInstrumentor::PreCallRecordDestroyDevice(device, pAllocator, record_obj);
 
@@ -467,7 +367,7 @@ void Validator::PreCallRecordCmdDrawIndirect(VkCommandBuffer commandBuffer, VkBu
     auto& sub_state = SubState(*cb_state);
 
     const LastBound& last_bound = cb_state->GetLastBoundGraphics();
-    valcmd::FirstInstance<VkDrawIndirectCommand>(*this, sub_state, record_obj.location, last_bound, buffer, offset, count,
+    valcmd::FirstInstance<VkDrawIndirectCommand>(*this, sub_state, record_obj.location, last_bound, buffer, offset, count, stride,
                                                  VK_NULL_HANDLE, 0);
     PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
@@ -483,7 +383,7 @@ void Validator::PreCallRecordCmdDrawIndexedIndirect(VkCommandBuffer commandBuffe
                                            VK_NULL_HANDLE, 0, "VUID-VkDrawIndexedIndirectCommand-robustBufferAccess2-08798");
 
     valcmd::FirstInstance<VkDrawIndexedIndirectCommand>(*this, sub_state, record_obj.location, last_bound, buffer, offset, count,
-                                                        VK_NULL_HANDLE, 0);
+                                                        stride, VK_NULL_HANDLE, 0);
     PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
 
@@ -515,7 +415,7 @@ void Validator::PreCallRecordCmdDrawIndirectCount(VkCommandBuffer commandBuffer,
     valcmd::CountBuffer(*this, sub_state, record_obj.location, last_bound, buffer, offset, sizeof(VkDrawIndirectCommand),
                         vvl::Struct::VkDrawIndirectCommand, stride, countBuffer, countBufferOffset, vuid);
     valcmd::FirstInstance<VkDrawIndirectCommand>(*this, sub_state, record_obj.location, last_bound, buffer, offset, maxDrawCount,
-                                                 countBuffer, countBufferOffset);
+                                                 stride, countBuffer, countBufferOffset);
     PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
 
@@ -532,11 +432,12 @@ void Validator::PreCallRecordCmdDrawIndirect2KHR(VkCommandBuffer commandBuffer, 
     const VkBuffer buffer = buffer_states[0]->VkHandle();
     const VkDeviceSize offset = pInfo->addressRange.address - buffer_states[0]->deviceAddress;
     const uint32_t draw_count = pInfo->drawCount;
+    const uint32_t stride = static_cast<uint32_t>(pInfo->addressRange.stride);
     auto& sub_state = SubState(*cb_state);
 
     const LastBound& last_bound = cb_state->GetLastBoundGraphics();
     valcmd::FirstInstance<VkDrawIndirectCommand>(*this, sub_state, record_obj.location, last_bound, buffer, offset, draw_count,
-                                                 VK_NULL_HANDLE, 0);
+                                                 stride, VK_NULL_HANDLE, 0);
     PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
     return;
 }
@@ -563,7 +464,7 @@ void Validator::PreCallRecordCmdDrawIndexedIndirect2KHR(VkCommandBuffer commandB
                                            VK_NULL_HANDLE, 0, "VUID-VkDrawIndexedIndirectCommand-robustBufferAccess2-08798");
 
     valcmd::FirstInstance<VkDrawIndexedIndirectCommand>(*this, sub_state, record_obj.location, last_bound, buffer, offset,
-                                                        draw_count, VK_NULL_HANDLE, 0);
+                                                        draw_count, stride, VK_NULL_HANDLE, 0);
     PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
     return;
 }
@@ -646,7 +547,7 @@ void Validator::PreCallRecordCmdDrawIndexedIndirectCount(VkCommandBuffer command
                         vvl::Struct::VkDrawIndexedIndirectCommand, stride, countBuffer, countBufferOffset,
                         "VUID-vkCmdDrawIndexedIndirectCount-countBuffer-02717");
     valcmd::FirstInstance<VkDrawIndexedIndirectCommand>(*this, sub_state, record_obj.location, last_bound, buffer, offset,
-                                                        maxDrawCount, countBuffer, countBufferOffset);
+                                                        maxDrawCount, stride, countBuffer, countBufferOffset);
 
     valcmd::DrawIndexedIndirectIndexBuffer(*this, sub_state, record_obj.location, last_bound, buffer, offset, stride, maxDrawCount,
                                            countBuffer, countBufferOffset,
@@ -962,13 +863,16 @@ void Validator::PreCallRecordCmdCopyMemoryToImageKHR(VkCommandBuffer commandBuff
 bool Validator::PreCallValidateCmdPushDataEXT(VkCommandBuffer commandBuffer, const VkPushDataInfoEXT* pPushDataInfo,
                                               const ErrorObject& error_obj) const {
     bool skip = false;
-    if (pPushDataInfo->offset + pPushDataInfo->data.size > push_data_offset_) {
-        skip |=
-            LogError("UNASSIGNED-GPU-Assisted-Validation", commandBuffer, error_obj.location,
-                     "VkPhysicalDeviceDescriptorHeapPropertiesEXT::maxPushDataSize is %" PRIu32
-                     ", however GPU-AV reserved 8 bytes at the end of the push data range for internal use. Therefore only %" PRIu32
-                     " bytes are available to the application.",
-                     static_cast<uint32_t>(push_data_offset_ + sizeof(VkDeviceAddress)), push_data_offset_);
+    if (!gpuav_settings.IsShaderInstrumentationEnabled()) {
+        return skip;
+    }
+    const uint32_t final_byte = (uint32_t)(pPushDataInfo->offset + pPushDataInfo->data.size);
+    if (final_byte > push_data_offset_) {
+        skip |= LogError("UNASSIGNED-GPU-Assisted-Validation", commandBuffer, error_obj.location,
+                         "is trying to set push data at [%" PRIu32 ":%" PRIu32
+                         ") however GPU-AV needs to reserve 8 bytes at [%" PRIu32 ":%" PRIu32
+                         ") for internal use. Therefore only push data at byte [0:%" PRIu32 "] are available to the application.",
+                         pPushDataInfo->offset, final_byte - 1, push_data_offset_, push_data_offset_ + 7, push_data_offset_ - 1);
     }
     return skip;
 }

@@ -7,7 +7,6 @@ import {assert} from 'chai';
 import * as Common from '../../../core/common/common.js';
 import * as Platform from '../../../core/platform/platform.js';
 import * as SDK from '../../../core/sdk/sdk.js';
-import * as Bindings from '../../../models/bindings/bindings.js';
 import * as Trace from '../../../models/trace/trace.js';
 import * as Workspace from '../../../models/workspace/workspace.js';
 import {describeWithEnvironment} from '../../../testing/EnvironmentHelpers.js';
@@ -129,6 +128,9 @@ describeWithEnvironment('ThreadAppender', function() {
       'Thread pool worker 1',
     ];
     assert.deepEqual(flameChartData.groups.map(g => g.name), expectedTrackNames);
+    const mainGroup = flameChartData.groups[0];
+    assert.strictEqual(mainGroup.fullTrackName, 'Main — https://output.jsbin.com/zajamil/quiet');
+    assert.strictEqual(mainGroup.url, 'https://output.jsbin.com/zajamil/quiet');
   });
 
   it('builds flamechart groups for nested tracks correctly', async function() {
@@ -372,22 +374,13 @@ describeWithEnvironment('ThreadAppender', function() {
   describe('ignore listing', () => {
     let ignoreListManager: Workspace.IgnoreListManager.IgnoreListManager;
     beforeEach(() => {
-      const targetManager = SDK.TargetManager.TargetManager.instance({forceNew: true});
-      const workspace = Workspace.Workspace.WorkspaceImpl.instance({forceNew: true});
-      const resourceMapping = new Bindings.ResourceMapping.ResourceMapping(targetManager, workspace);
+      SDK.TargetManager.TargetManager.instance({forceNew: true});
+      Workspace.Workspace.WorkspaceImpl.instance({forceNew: true});
       ignoreListManager = Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
-      Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
-        forceNew: true,
-        resourceMapping,
-        targetManager,
-        ignoreListManager,
-        workspace,
-      });
     });
     afterEach(() => {
       SDK.TargetManager.TargetManager.removeInstance();
       Workspace.Workspace.WorkspaceImpl.removeInstance();
-      Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.removeInstance();
       Workspace.IgnoreListManager.IgnoreListManager.removeInstance();
     });
     it('removes entries from the data that match the ignored URL', async function() {
@@ -455,7 +448,6 @@ describeWithEnvironment('ThreadAppender', function() {
           Renderer: rendererData,
           Workers: workersData,
           Warnings: warningsData,
-          AuctionWorklets: {worklets: new Map()},
           Meta: {
             traceIsGeneric: false,
             navigationsByNavigationId: new Map(),
@@ -486,22 +478,13 @@ describeWithEnvironment('ThreadAppender', function() {
   });
   describe('showAllEvents', () => {
     beforeEach(() => {
-      const targetManager = SDK.TargetManager.TargetManager.instance({forceNew: true});
-      const workspace = Workspace.Workspace.WorkspaceImpl.instance({forceNew: true});
-      const resourceMapping = new Bindings.ResourceMapping.ResourceMapping(targetManager, workspace);
-      const ignoreListManager = Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
-      Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
-        forceNew: true,
-        resourceMapping,
-        targetManager,
-        ignoreListManager,
-        workspace,
-      });
+      SDK.TargetManager.TargetManager.instance({forceNew: true});
+      Workspace.Workspace.WorkspaceImpl.instance({forceNew: true});
+      Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
     });
     afterEach(() => {
       SDK.TargetManager.TargetManager.removeInstance();
       Workspace.Workspace.WorkspaceImpl.removeInstance();
-      Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.removeInstance();
       Workspace.IgnoreListManager.IgnoreListManager.removeInstance();
     });
     it('appends unknown events to the flame chart data only when the experiment is enabled', async function() {
@@ -526,77 +509,6 @@ describeWithEnvironment('ThreadAppender', function() {
       assert.exists(finalFlamechartData.entryStartTimes);
       assert.exists(finalFlamechartData.entryTotalTimes);
       Common.Settings.Settings.instance().moduleSetting('timeline-show-all-events').set(false);
-    });
-  });
-  describe('AuctionWorklet threads', () => {
-    // We have to set these up because the ThreadAppender includes logic for
-    // ignoring events that relies on the IgnoreListManager.
-    beforeEach(() => {
-      const targetManager = SDK.TargetManager.TargetManager.instance({forceNew: true});
-      const workspace = Workspace.Workspace.WorkspaceImpl.instance({forceNew: true});
-      const resourceMapping = new Bindings.ResourceMapping.ResourceMapping(targetManager, workspace);
-      const ignoreListManager = Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
-      Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
-        forceNew: true,
-        resourceMapping,
-        targetManager,
-        ignoreListManager,
-        workspace,
-      });
-    });
-
-    afterEach(() => {
-      SDK.TargetManager.TargetManager.removeInstance();
-      Workspace.Workspace.WorkspaceImpl.removeInstance();
-      Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.removeInstance();
-      Workspace.IgnoreListManager.IgnoreListManager.removeInstance();
-    });
-
-    it('finds all the worklet threads', async function() {
-      const {threadAppenders} = await renderThreadAppendersFromTrace(this, 'fenced-frame-fledge.json.gz');
-      const workletAppenders = threadAppenders.filter(threadAppender => {
-        return threadAppender.trackName().includes('Worklet');
-      });
-      assert.lengthOf(workletAppenders, 6);
-    });
-
-    it('sets the title correctly for an Auction Worklet service', async function() {
-      const UTILITY_THREAD_PID = 776435 as Trace.Types.Events.ProcessID;
-      const UTILITY_THREAD_TID = 1 as Trace.Types.Events.ThreadID;
-      const {threadAppenders} = await renderThreadAppendersFromTrace(this, 'fenced-frame-fledge.json.gz');
-      const appender = threadAppenders.find(threadAppender => {
-        return threadAppender.processId() === UTILITY_THREAD_PID && threadAppender.threadId() === UTILITY_THREAD_TID;
-      });
-      if (!appender) {
-        throw new Error('Could not find expected thread appender');
-      }
-      assert.strictEqual(appender.trackName(), 'Auction Worklet service — https://ssp-fledge-demo.glitch.me');
-    });
-
-    it('sets the title correctly for an Auction Worklet seller service', async function() {
-      const SELLER_THREAD_PID = 776435 as Trace.Types.Events.ProcessID;
-      const SELLER_THREAD_TID = 6 as Trace.Types.Events.ThreadID;
-      const {threadAppenders} = await renderThreadAppendersFromTrace(this, 'fenced-frame-fledge.json.gz');
-      const appender = threadAppenders.find(threadAppender => {
-        return threadAppender.processId() === SELLER_THREAD_PID && threadAppender.threadId() === SELLER_THREAD_TID;
-      });
-      if (!appender) {
-        throw new Error('Could not find expected thread appender');
-      }
-      assert.strictEqual(appender.trackName(), 'Seller Worklet — https://ssp-fledge-demo.glitch.me');
-    });
-
-    it('sets the title correctly for an Auction Worklet bidder service', async function() {
-      const BIDDER_THREAD_PID = 776436 as Trace.Types.Events.ProcessID;
-      const BIDDER_THREAD_TID = 6 as Trace.Types.Events.ThreadID;
-      const {threadAppenders} = await renderThreadAppendersFromTrace(this, 'fenced-frame-fledge.json.gz');
-      const appender = threadAppenders.find(threadAppender => {
-        return threadAppender.processId() === BIDDER_THREAD_PID && threadAppender.threadId() === BIDDER_THREAD_TID;
-      });
-      if (!appender) {
-        throw new Error('Could not find expected thread appender');
-      }
-      assert.strictEqual(appender.trackName(), 'Bidder Worklet — https://dsp-fledge-demo.glitch.me');
     });
   });
 });

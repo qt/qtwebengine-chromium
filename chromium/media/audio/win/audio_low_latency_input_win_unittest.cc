@@ -31,6 +31,7 @@
 #include "base/win/scoped_com_initializer.h"
 #include "media/audio/audio_device_description.h"
 #include "media/audio/audio_device_info_accessor_for_tests.h"
+#include "media/audio/audio_features.h"
 #include "media/audio/audio_input_stream_data_interceptor.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_manager.h"
@@ -56,6 +57,8 @@ using ::testing::IsTrue;
 using ::testing::NotNull;
 
 namespace media {
+
+using Error = AudioInputStream::AudioInputCallback::Error;
 
 namespace {
 
@@ -93,7 +96,7 @@ class MockAudioInputCallback : public AudioInputStream::AudioInputCallback {
                double volume,
                const AudioGlitchInfo& glitch_info),
               (override));
-  MOCK_METHOD(void, OnError, (), (override));
+  MOCK_METHOD(void, OnError, (Error), (override));
 };
 
 class FakeAudioInputCallback : public AudioInputStream::AudioInputCallback {
@@ -110,6 +113,7 @@ class FakeAudioInputCallback : public AudioInputStream::AudioInputCallback {
   FakeAudioInputCallback& operator=(const FakeAudioInputCallback&) = delete;
 
   bool error() const { return error_; }
+  std::optional<Error> last_error_code() const { return last_error_code_; }
   int num_callbacks() const { return num_callbacks_; }
   int num_received_audio_frames() const { return num_received_audio_frames_; }
 
@@ -135,8 +139,9 @@ class FakeAudioInputCallback : public AudioInputStream::AudioInputCallback {
     data_event_.Signal();
   }
 
-  void OnError() override {
+  void OnError(Error error_code) override {
     error_ = true;
+    last_error_code_ = error_code;
     if (!error_event_.IsSignaled()) {
       error_event_.Signal();
     }
@@ -148,6 +153,7 @@ class FakeAudioInputCallback : public AudioInputStream::AudioInputCallback {
   base::WaitableEvent data_event_;
   base::WaitableEvent error_event_;
   bool error_;
+  std::optional<Error> last_error_code_;
 };
 
 class FakeAudioOutputCallback : public AudioOutputStream::AudioSourceCallback {
@@ -244,7 +250,7 @@ class WriteToFileAudioSink : public AudioInputStream::AudioInputCallback {
     }
   }
 
-  void OnError() override {}
+  void OnError(Error error_code) override {}
 
  private:
   media::SeekableBuffer buffer_;
@@ -758,6 +764,7 @@ TEST_F(WinAudioInputStreamErrorTest, WASAPIAudioInputStreamOnError) {
   // Wait for the OnError call.
   sink.WaitForError();
   EXPECT_TRUE(sink.error());
+  EXPECT_EQ(sink.last_error_code(), Error::kRuntimeError);
 
   // In this state, the inner audio-thread loop should be cancelled due to the
   // previous error. Verify it by waiting for data callbacks and ensure that
@@ -798,6 +805,7 @@ TEST_F(WinAudioInputStreamErrorTest,
   // Wait for the OnError call.
   sink.WaitForError();
   EXPECT_TRUE(sink.error());
+  EXPECT_EQ(sink.last_error_code(), Error::kStartupFailed);
 
   // Ensure the capture thread was created even though Start() failed.
   EXPECT_TRUE(wasapi_stream->HasCaptureThreadForTesting());
@@ -1029,6 +1037,8 @@ TEST_P(WinAudioProcessLoopbackTest, OpenStreamSuccess) {
       "Media.Audio.Capture.Win.TimeToGetAudioClient", 1);
   histogram_tester_.ExpectBucketCount(
       "Media.Audio.Capture.Win.GetAudioClientTimedOut", false, 1);
+  histogram_tester_.ExpectUniqueSample(
+      "Media.Audio.Capture.Win.InitializeSucceeded", true, 1);
 }
 
 TEST_P(WinAudioProcessLoopbackTest,
@@ -1078,6 +1088,85 @@ TEST_P(WinAudioProcessLoopbackTest, OpenStreamAudioClientActivationFailed) {
       "Media.Audio.Capture.Win.TimeToGetAudioClient", 1);
   histogram_tester_.ExpectBucketCount(
       "Media.Audio.Capture.Win.GetAudioClientTimedOut", false, 1);
+}
+
+// Test that one transient failure is successfully mitigated by a retry.
+TEST_P(WinAudioProcessLoopbackTest,
+       OpenStreamInitializeDeviceInUseTransientOnce) {
+  base::test::ScopedFeatureList features;
+  features.InitAndEnableFeature(features::kWasapiInputDeviceInUseRetry);
+
+  fake_wasapi_environment_.SimulateError(
+      WASAPITestErrorCode::kAudioClientInitializeDeviceInUseOnce);
+  EXPECT_EQ(stream_->Open(), AudioInputStream::OpenOutcome::kSuccess);
+
+  histogram_tester_.ExpectUniqueSample(
+      "Media.Audio.Capture.Win.InitDeviceInUseRetryOutcome",
+      WASAPIAudioInputStream::WASAPIInputDeviceInUseRetryOutcome::
+          kSucceededOnFirstRetry,
+      1);
+  histogram_tester_.ExpectUniqueSample(
+      "Media.Audio.Capture.Win.InitializeSucceeded", true, 1);
+}
+
+// Test that two transient failures are successfully mitigated by retries (max
+// retries = 2).
+TEST_P(WinAudioProcessLoopbackTest,
+       OpenStreamInitializeDeviceInUseTransientTwice) {
+  base::test::ScopedFeatureList features;
+  features.InitAndEnableFeature(features::kWasapiInputDeviceInUseRetry);
+
+  fake_wasapi_environment_.SimulateError(
+      WASAPITestErrorCode::kAudioClientInitializeDeviceInUseTwice);
+  EXPECT_EQ(stream_->Open(), AudioInputStream::OpenOutcome::kSuccess);
+
+  histogram_tester_.ExpectUniqueSample(
+      "Media.Audio.Capture.Win.InitDeviceInUseRetryOutcome",
+      WASAPIAudioInputStream::WASAPIInputDeviceInUseRetryOutcome::
+          kSucceededOnSecondRetry,
+      1);
+  histogram_tester_.ExpectUniqueSample(
+      "Media.Audio.Capture.Win.InitializeSucceeded", true, 1);
+}
+
+// Test that persistent failures eventually fail the Open operation after
+// retries are exhausted.
+TEST_P(WinAudioProcessLoopbackTest, OpenStreamInitializeDeviceInUsePersistent) {
+  base::test::ScopedFeatureList features;
+  features.InitAndEnableFeature(features::kWasapiInputDeviceInUseRetry);
+
+  fake_wasapi_environment_.SimulateError(
+      WASAPITestErrorCode::kAudioClientInitializeDeviceInUse);
+  EXPECT_EQ(stream_->Open(), AudioInputStream::OpenOutcome::kFailedInUse);
+
+  histogram_tester_.ExpectUniqueSample(
+      "Media.Audio.Capture.Win.InitDeviceInUseRetryOutcome",
+      WASAPIAudioInputStream::WASAPIInputDeviceInUseRetryOutcome::
+          kFailedAfterRetries,
+      1);
+  histogram_tester_.ExpectUniqueSample(
+      "Media.Audio.Capture.Win.InitializeSucceeded", false, 1);
+}
+
+// Test that no retries occur when features::kWasapiInputDeviceInUseRetry is
+// disabled.
+TEST_P(WinAudioProcessLoopbackTest,
+       OpenStreamInitializeDeviceInUseDisabledNoRetry) {
+  base::test::ScopedFeatureList features;
+  features.InitAndDisableFeature(features::kWasapiInputDeviceInUseRetry);
+
+  // Even a single transient failure causes immediate failure when disabled.
+  fake_wasapi_environment_.SimulateError(
+      WASAPITestErrorCode::kAudioClientInitializeDeviceInUseOnce);
+  EXPECT_EQ(stream_->Open(), AudioInputStream::OpenOutcome::kFailedInUse);
+
+  histogram_tester_.ExpectUniqueSample(
+      "Media.Audio.Capture.Win.InitDeviceInUseRetryOutcome",
+      WASAPIAudioInputStream::WASAPIInputDeviceInUseRetryOutcome::
+          kFailedNoRetry,
+      1);
+  histogram_tester_.ExpectUniqueSample(
+      "Media.Audio.Capture.Win.InitializeSucceeded", false, 1);
 }
 
 TEST_P(WinAudioProcessLoopbackTest, SuccessfulCapture) {

@@ -10,7 +10,7 @@
 // Copyright Ken Hillstrom - Argonne National Laboratory
 //
 // This Source Code Form is subject to the terms of the Minpack license
-// (a BSD-like license) described in the campaigned CopyrightMINPACK.txt file.
+// (a BSD-like license) described in the accompanying CopyrightMINPACK.txt file.
 //
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
@@ -49,9 +49,10 @@ struct DenseFunctor {
   typedef Matrix<Scalar, ValuesAtCompileTime, 1> ValueType;
   typedef Matrix<Scalar, ValuesAtCompileTime, InputsAtCompileTime> JacobianType;
   typedef ColPivHouseholderQR<JacobianType> QRSolver;
-  const int m_inputs, m_values;
+  const int m_inputs = InputsAtCompileTime;
+  const int m_values = ValuesAtCompileTime;
 
-  DenseFunctor() : m_inputs(InputsAtCompileTime), m_values(ValuesAtCompileTime) {}
+  DenseFunctor() = default;
   DenseFunctor(int inputs, int values) : m_inputs(inputs), m_values(values) {}
 
   int inputs() const { return m_inputs; }

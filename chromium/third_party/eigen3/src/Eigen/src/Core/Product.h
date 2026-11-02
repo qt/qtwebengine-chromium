@@ -30,8 +30,7 @@ struct traits<Product<Lhs, Rhs, Option>> {
 
   typedef MatrixXpr XprKind;
 
-  typedef typename ScalarBinaryOpTraits<typename traits<LhsCleaned>::Scalar,
-                                        typename traits<RhsCleaned>::Scalar>::ReturnType Scalar;
+  typedef typename ScalarBinaryOpTraits<typename LhsTraits::Scalar, typename RhsTraits::Scalar>::ReturnType Scalar;
   typedef typename product_promote_storage_type<typename LhsTraits::StorageKind, typename RhsTraits::StorageKind,
                                                 internal::product_type<Lhs, Rhs>::value>::ret StorageKind;
   typedef typename promote_index_type<typename LhsTraits::StorageIndex, typename RhsTraits::StorageIndex>::type

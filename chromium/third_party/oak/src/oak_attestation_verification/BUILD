@@ -21,14 +21,36 @@ package(
     licenses = ["notice"],
 )
 
+RESULT_SRC = ["src/results.rs"]
+
+# The target only for parsing attestation verification results, to provide a
+# minimal set of dependencies for oak_session.
+rust_library(
+    name = "oak_attestation_verification_results",
+    srcs = RESULT_SRC,
+    deps = [
+        "//oak_proto_rust",
+    ],
+)
+
+rust_test(
+    name = "results_unit_tests",
+    crate = ":oak_attestation_verification_results",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
 rust_library(
     name = "oak_attestation_verification",
-    srcs = glob(["src/**"]),
+    srcs = glob(
+        ["src/**"],
+        exclude = RESULT_SRC,
+    ),
     compile_data = [
         "//oak_attestation_verification/data:amd_ask_certs",
         "//oak_attestation_verification/data:intel_pck_root",
     ],
     deps = [
+        ":oak_attestation_verification_results",
         "//oak_attestation_verification_types",
         "//oak_crypto",
         "//oak_dice",
@@ -37,8 +59,11 @@ rust_library(
         "//oak_tdx_quote",
         "//oak_time",
         "//tr/intoto",
+        "//tr/key_util",
+        "//tr/rekor",
+        "//tr/verify_endorsement",
+        "//util/digest:oak_digest",
         "@oak_crates_index//:anyhow",
-        "@oak_crates_index//:base64",
         "@oak_crates_index//:const-oid",
         "@oak_crates_index//:coset",
         "@oak_crates_index//:ecdsa",
@@ -50,9 +75,6 @@ rust_library(
         "@oak_crates_index//:prost",
         "@oak_crates_index//:prost-types",
         "@oak_crates_index//:rsa",
-        "@oak_crates_index//:serde",
-        "@oak_crates_index//:serde_json",
-        "@oak_crates_index//:sha2",
         "@oak_crates_index//:thiserror",
         "@oak_crates_index//:x509-cert",
         "@oak_crates_index//:zerocopy",
@@ -71,6 +93,7 @@ rust_test(
         "//oak_attestation_verification/data:amd_ark_certs",
         "//oak_attestation_verification/data:amd_ask_certs",
     ],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":test_util",
         "//oak_file_utils",
@@ -90,6 +113,7 @@ rust_test_suite(
         "//oak_attestation_verification/data:amd_ask_certs",
         "//oak_attestation_verification/testdata:fake_attestation",
     ],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":oak_attestation_verification",
         ":test_util",
@@ -98,6 +122,7 @@ rust_test_suite(
         "//oak_proto_rust",
         "//oak_sev_snp_attestation_report",
         "//oak_time",
+        "//util/digest:oak_digest",
         "@oak_crates_index//:anyhow",
         "@oak_crates_index//:hex",
         "@oak_crates_index//:prost",
@@ -115,7 +140,9 @@ rust_library(
         "//oak_attestation_verification/data:intel_pck_root",
     ],
     crate_features = ["regex"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
+        ":oak_attestation_verification_results",
         "//oak_attestation_verification_types",
         "//oak_crypto",
         "//oak_dice",
@@ -124,8 +151,11 @@ rust_library(
         "//oak_tdx_quote",
         "//oak_time",
         "//tr/intoto",
+        "//tr/key_util",
+        "//tr/rekor",
+        "//tr/verify_endorsement",
+        "//util/digest:oak_digest",
         "@oak_crates_index//:anyhow",
-        "@oak_crates_index//:base64",
         "@oak_crates_index//:const-oid",
         "@oak_crates_index//:coset",
         "@oak_crates_index//:ecdsa",
@@ -138,9 +168,6 @@ rust_library(
         "@oak_crates_index//:prost-types",
         "@oak_crates_index//:regex-lite",
         "@oak_crates_index//:rsa",
-        "@oak_crates_index//:serde",
-        "@oak_crates_index//:serde_json",
-        "@oak_crates_index//:sha2",
         "@oak_crates_index//:thiserror",
         "@oak_crates_index//:x509-cert",
         "@oak_crates_index//:zerocopy",
@@ -159,6 +186,7 @@ rust_test(
         "//oak_attestation_verification/data:amd_ark_certs",
         "//oak_attestation_verification/data:amd_ask_certs",
     ],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":test_util",
         "//oak_crypto",
@@ -181,6 +209,7 @@ rust_test_suite(
         "//oak_attestation_verification/data:amd_ask_certs",
         "//oak_attestation_verification/testdata:fake_attestation",
     ],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":oak_attestation_verification_with_regex",
         ":test_util",
@@ -189,6 +218,7 @@ rust_test_suite(
         "//oak_proto_rust",
         "//oak_sev_snp_attestation_report",
         "//oak_time",
+        "//util/digest:oak_digest",
         "@oak_crates_index//:anyhow",
         "@oak_crates_index//:hex",
         "@oak_crates_index//:prost",
@@ -218,9 +248,14 @@ rust_library(
         "//oak_proto_rust",
         "//oak_sev_snp_attestation_report",
         "//oak_time",
+        "//tr/key_util",
         "@oak_crates_index//:anyhow",
+        "@oak_crates_index//:base64",
+        "@oak_crates_index//:hex",
         "@oak_crates_index//:p256",
         "@oak_crates_index//:prost",
+        "@oak_crates_index//:serde_json",
+        "@oak_crates_index//:x509-cert",
         "@oak_crates_index//:zerocopy",
     ],
 )
@@ -230,6 +265,7 @@ rust_library(
 rust_test(
     name = "benches",
     srcs = ["tests/benchmarks.rs"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":oak_attestation_verification",
         ":test_util",

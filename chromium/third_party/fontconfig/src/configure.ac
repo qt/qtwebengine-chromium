@@ -33,7 +33,7 @@ dnl This is the package version number, not the shared library
 dnl version.  This same version number must appear in fontconfig/fontconfig.h
 dnl Yes, it is a pain to synchronize version numbers.  Unfortunately, it's
 dnl not possible to extract the version number here from fontconfig.h
-AC_INIT([fontconfig],[2.17.1],[https://gitlab.freedesktop.org/fontconfig/fontconfig/issues/new])
+AC_INIT([fontconfig],[2.18.1],[https://gitlab.freedesktop.org/fontconfig/fontconfig/issues/new])
 AM_INIT_AUTOMAKE([1.11 parallel-tests dist-xz foreign])
 m4_ifdef([AM_SILENT_RULES],[AM_SILENT_RULES([yes])])
 
@@ -577,7 +577,7 @@ yes)
 	if test "$os_win32" = "yes"; then
 		default_fonts="WINDOWSFONTDIR,WINDOWSUSERFONTDIR"
 	elif test "$os_darwin" = "yes"; then
-		default_fonts="/System/Library/Fonts,/Library/Fonts,~/Library/Fonts,/System/Library/Assets/com_apple_MobileAsset_Font3,/System/Library/Assets/com_apple_MobileAsset_Font4"
+		default_fonts="/System/Library/Fonts,/Library/Fonts,~/Library/Fonts,/System/Library/Assets,/System/Library/AssetsV2"
 	elif test "$os_android" = "yes"; then
 		default_fonts="/system/fonts,/product/fonts"
 	else
@@ -905,6 +905,7 @@ fc-cat/Makefile
 fc-conflist/Makefile
 fc-const/Makefile
 fc-genconf/Makefile
+fc-genericfamily/Makefile
 fc-list/Makefile
 fc-match/Makefile
 fc-pattern/Makefile

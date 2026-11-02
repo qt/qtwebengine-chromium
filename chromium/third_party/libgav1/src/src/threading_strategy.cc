@@ -22,6 +22,8 @@
 #include "src/frame_scratch_buffer.h"
 #include "src/utils/constants.h"
 #include "src/utils/logging.h"
+#include "src/utils/threadpool.h"
+#include "src/utils/types.h"
 #include "src/utils/vector.h"
 
 namespace libgav1 {

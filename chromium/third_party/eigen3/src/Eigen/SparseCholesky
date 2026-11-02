@@ -20,9 +20,10 @@
  * \defgroup SparseCholesky_Module SparseCholesky module
  *
  * This module currently provides two variants of the direct sparse Cholesky decomposition for selfadjoint (hermitian)
- * matrices. Those decompositions are accessible via the following classes:
- *  - SimplicialLLt,
- *  - SimplicialLDLt
+ * positive definite matrices. They are not intended for general selfadjoint or positive semidefinite matrices.
+ * Those decompositions are accessible via the following classes:
+ *  - SimplicialLLT,
+ *  - SimplicialLDLT
  *
  * Such problems can also be solved using the ConjugateGradient solver from the IterativeLinearSolvers module.
  *

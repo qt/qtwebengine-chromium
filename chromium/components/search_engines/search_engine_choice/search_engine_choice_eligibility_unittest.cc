@@ -500,6 +500,9 @@ TEST_F(SearchEngineChoiceEligibilityTest,
 }
 
 #if BUILDFLAG(IS_IOS)
+// Verifies that when `kSearchEngineChoiceScreenSnackbar` is disabled, having a
+// non-highlightable custom search engine prevents eligibility
+// (`kHasNonHighlightablePrepopulatedSearchEngine`).
 TEST_F(SearchEngineChoiceEligibilityTest,
        ChoiceScreenConditions_PromptForCustom_Taiyaki) {
   if (!kPhoneFormFactors.Has(ui::GetDeviceFormFactor())) {
@@ -526,6 +529,38 @@ TEST_F(SearchEngineChoiceEligibilityTest,
   EXPECT_EQ(GetDynamicConditions(),
             IfSupported(SearchEngineChoiceScreenConditions::
                             kHasNonHighlightablePrepopulatedSearchEngine));
+}
+
+// Verifies that when `kSearchEngineChoiceScreenSnackbar` is enabled, having a
+// non-highlightable custom search engine allows eligibility (`kEligible`).
+TEST_F(SearchEngineChoiceEligibilityTest,
+       ChoiceScreenConditions_PromptForCustom_SnackbarEnabled_Taiyaki) {
+  if (!kPhoneFormFactors.Has(ui::GetDeviceFormFactor())) {
+    GTEST_SKIP();
+  }
+
+  base::test::ScopedFeatureList scoped_feature_list{
+      switches::kSearchEngineChoiceScreenSnackbar};
+
+  base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+      switches::kSearchEngineChoiceCountry, "JP");
+  static_cast<regional_capabilities::FakeRegionalCapabilitiesServiceClient&>(
+      regional_capabilities_service().GetClientForTesting())
+      .SetVariationsLatestCountryId(CountryId("JP"));
+
+  // A custom search engine will have a `prepopulate_id` of 0.
+  const int kCustomSearchEnginePrepopulateId = 0;
+  TemplateURLData template_url_data;
+  template_url_data.prepopulate_id = kCustomSearchEnginePrepopulateId;
+  template_url_data.SetURL("https://www.example.com/?q={searchTerms}");
+  template_url_service().SetUserSelectedDefaultSearchProvider(
+      template_url_service().Add(
+          std::make_unique<TemplateURL>(template_url_data)));
+
+  EXPECT_EQ(GetStaticConditions(),
+            IfSupported(SearchEngineChoiceScreenConditions::kEligible));
+  EXPECT_EQ(GetDynamicConditions(),
+            IfSupported(SearchEngineChoiceScreenConditions::kEligible));
 }
 
 TEST_F(SearchEngineChoiceEligibilityTest,
@@ -796,7 +831,7 @@ class SearchEngineChoiceEligibilityOverriddenProgramSettingsTest
             .MakePrimaryAccountAvailable("test@example.com",
                                          signin::ConsentLevel::kSignin);
 
-    AccountCapabilitiesTestMutator mutator(&account_info.capabilities);
+    AccountCapabilitiesTestMutator mutator(&account_info);
     switch (can_make_choice_capability) {
       case signin::Tribool::kTrue:
         mutator.set_can_make_chrome_search_engine_choice_screen_choice(true);

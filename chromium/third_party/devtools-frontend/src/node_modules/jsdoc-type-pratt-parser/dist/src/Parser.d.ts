@@ -13,11 +13,22 @@ export declare class Parser {
     readonly strictMode?: boolean;
     readonly asyncFunctionBody?: boolean;
     readonly classContext?: boolean;
-    constructor(grammar: Grammar, lexer: Lexer, baseParser?: Parser, { module, strictMode, asyncFunctionBody, classContext, externalParsers }?: {
+    private rangeStart;
+    private readonly range;
+    private readonly locStart;
+    private readonly loc;
+    constructor(grammar: Grammar, lexer: Lexer, baseParser?: Parser, { module, strictMode, asyncFunctionBody, classContext, range, rangeStart, loc, locStart, externalParsers }?: {
         module?: boolean;
         strictMode?: boolean;
         asyncFunctionBody?: boolean;
         classContext?: boolean;
+        range?: boolean;
+        rangeStart?: number;
+        loc?: boolean;
+        locStart?: {
+            column: number;
+            line: number;
+        };
         externalParsers?: Record<string, ((text: string, options?: any) => unknown) | undefined>;
     });
     get lexer(): Lexer;

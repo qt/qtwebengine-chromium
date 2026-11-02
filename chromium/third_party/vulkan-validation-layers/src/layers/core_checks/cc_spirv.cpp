@@ -44,8 +44,10 @@
 #include "state_tracker/shader_module.h"
 #include "state_tracker/shader_stage_state.h"
 #include "state_tracker/pipeline_state.h"
+#include "utils/assert_utils.h"
 #include "utils/shader_utils.h"
 #include "utils/hash_util.h"
+#include "utils/descriptor_utils.h"
 #include "chassis/chassis_modification_state.h"
 #include "state_tracker/descriptor_sets.h"
 #include "state_tracker/descriptor_set_layouts.h"
@@ -140,19 +142,37 @@ bool CoreChecks::ValidatePushConstantUsage(const spirv::Module& module_state, co
                                            const vvl::Pipeline* pipeline, const ShaderStageState& stage_state,
                                            const Location& loc) const {
     bool skip = false;
-
-    if (stage_state.descriptor_heap_mode) {
+    const auto push_constant_variable = entrypoint.push_constant_variable;
+    if (!push_constant_variable) {
         return skip;
+    }
+
+    if (stage_state.heap.descriptor_heap_mode) {
+        // In DescriptorModeClassic, this is normally caught binding pipeline layouts (with ranges in them)
+        const VkDeviceSize max_size = phys_dev_ext_props.descriptor_heap_props.maxPushDataSize;
+        if (push_constant_variable->size > max_size) {
+            skip |= LogError("VUID-RuntimeSpirv-maxPushDataSize-12455", module_state.handle(), loc,
+                             "shader %s defines a push constant statically (\"%s\") that block size %" PRIu32
+                             " is larger than maxPushDataSize (%" PRIu64 ").\nEven if only bytes [0:%" PRIu64
+                             "] are accessed, compilers may need to allocate the amount of memory declared statically.",
+                             stage_state.entrypoint->Describe().c_str(), push_constant_variable->debug_name.c_str(),
+                             push_constant_variable->size, max_size, max_size - 1);
+        } else if ((push_constant_variable->offset + push_constant_variable->size) > max_size) {
+            skip |= LogError("VUID-RuntimeSpirv-maxPushDataSize-12455", module_state.handle(), loc,
+                             "shader %s defines a push constant statically (\"%s\") that block offset (%" PRIu32
+                             ") + size (%" PRIu32 ") is larger than maxPushDataSize (%" PRIu64 ").\nEven if only bytes [%" PRIu32
+                             ":%" PRIu64 "] are accessed, compilers may need to allocate the amount of memory declared statically.",
+                             stage_state.entrypoint->Describe().c_str(), push_constant_variable->debug_name.c_str(),
+                             push_constant_variable->offset, push_constant_variable->size, max_size, push_constant_variable->offset,
+                             max_size - 1);
+        }
+        return skip;  // rest is testing against the pipeline layout
     } else if (module_state.static_data_.has_specialization_constants) {
         // TODO - Workaround for https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/5911
         return skip;
     }
 
     const VkShaderStageFlagBits stage = entrypoint.stage;
-    const auto push_constant_variable = entrypoint.push_constant_variable;
-    if (!push_constant_variable) {
-        return skip;
-    }
 
     PushConstantRangesId shader_object_push_constant_ranges_id;
     std::vector<VkPushConstantRange> const* push_constant_ranges;
@@ -431,7 +451,13 @@ bool CoreChecks::ValidateCooperativeMatrix(const spirv::Module& module_state, co
         return ss.str();
     };
 
+    // Only want to report single error, otherwise easy to spam users with 10 messages that are all the same
+    bool found_error = false;
+
     for (const spirv::Instruction* cooperative_matrix_inst : module_state.static_data_.cooperative_matrix_inst) {
+        if (found_error) {
+            break;
+        }
         const spirv::Instruction& insn = *cooperative_matrix_inst;
         switch (insn.Opcode()) {
             case spv::OpTypeCooperativeMatrixKHR: {
@@ -446,6 +472,7 @@ bool CoreChecks::ValidateCooperativeMatrix(const spirv::Module& module_state, co
                                          "shader %s has a local workgroup size in the X dimension (%" PRIu32
                                          ") is not a multiple of subgroupSize (%" PRIu32 ").",
                                          entrypoint.Describe().c_str(), local_size.x, effective_subgroup_size);
+                        found_error = true;
                     }
                     if (m.scope == VK_SCOPE_WORKGROUP_KHR) {
                         if (workgroup_size >
@@ -456,6 +483,7 @@ bool CoreChecks::ValidateCooperativeMatrix(const spirv::Module& module_state, co
                                 ") is larger than cooperativeMatrixWorkgroupScopeMaxWorkgroupSize (%" PRIu32 ").",
                                 entrypoint.Describe().c_str(), workgroup_size,
                                 phys_dev_ext_props.cooperative_matrix_props2_nv.cooperativeMatrixWorkgroupScopeMaxWorkgroupSize);
+                            found_error = true;
                         }
                     }
                 }
@@ -469,6 +497,7 @@ bool CoreChecks::ValidateCooperativeMatrix(const spirv::Module& module_state, co
                                      entrypoint.Describe().c_str(),
                                      "shader %s has a cooperative matrix that uses workgroup scope but "
                                      "cooperativeMatrixWorkgroupScope is not enabled.");
+                    found_error = true;
                 }
 
                 // Validate that the type parameters are all supported for one of the
@@ -533,6 +562,7 @@ bool CoreChecks::ValidateCooperativeMatrix(const spirv::Module& module_state, co
                 }
                 if (!valid) {
                     if (!enabled_features.cooperativeMatrixFlexibleDimensions) {
+                        found_error = true;
                         skip |= LogError("VUID-RuntimeSpirv-OpTypeCooperativeMatrixKHR-10163", module_state.handle(), loc,
                                          "shader %s has\n%s (%s)\nbut doesn't match any VkCooperativeMatrixPropertiesKHR\n%s.",
                                          entrypoint.Describe().c_str(), insn.Describe().c_str(), m.Describe().c_str(),
@@ -554,6 +584,7 @@ bool CoreChecks::ValidateCooperativeMatrix(const spirv::Module& module_state, co
                             "cooperativeMatrixFlexibleDimensionsMaxDimension (%" PRIu32 ").",
                             entrypoint.Describe().c_str(), insn.Describe().c_str(), m.Describe().c_str(),
                             phys_dev_ext_props.cooperative_matrix_props2_nv.cooperativeMatrixFlexibleDimensionsMaxDimension);
+                        found_error = true;
                     }
                 }
 
@@ -644,6 +675,7 @@ bool CoreChecks::ValidateCooperativeMatrix(const spirv::Module& module_state, co
                         }
                     }
                     if (!found_matching_prop && !found_matching_flexible_prop) {
+                        found_error = true;
                         if (!enabled_features.cooperativeMatrixFlexibleDimensions) {
                             skip |= LogError("VUID-RuntimeSpirv-OpCooperativeMatrixMulAddKHR-10060", module_state.handle(), loc,
                                              "shader %s instruction\n%s\ndoesn't match a supported matrix "
@@ -698,6 +730,7 @@ bool CoreChecks::ValidateCooperativeMatrix(const spirv::Module& module_state, co
                     }
                 }
                 if (!valid) {
+                    found_error = true;
                     skip |= LogError("VUID-RuntimeSpirv-OpTypeCooperativeMatrixNV-06316", module_state.handle(), loc,
                                      "shader %s has an OpTypeCooperativeMatrixNV (result id = %" PRIu32
                                      ") operand that don't match a supported matrix type (%s).",
@@ -738,24 +771,28 @@ bool CoreChecks::ValidateCooperativeMatrix(const spirv::Module& module_state, co
                                          ") operands don't match a supported matrix "
                                          "VkCooperativeMatrixPropertiesNV for A type (%s).",
                                          entrypoint.Describe().c_str(), insn.Word(2), a.Describe().c_str());
+                        found_error = true;
                     } else if (!valid_b) {
                         skip |= LogError("VUID-RuntimeSpirv-OpTypeCooperativeMatrixMulAddNV-10059", module_state.handle(), loc,
                                          "shader %s OpCooperativeMatrixMulAddNV (result id = %" PRIu32
                                          ") operands don't match a supported matrix "
                                          "VkCooperativeMatrixPropertiesNV for B type (%s).",
                                          entrypoint.Describe().c_str(), insn.Word(2), b.Describe().c_str());
+                        found_error = true;
                     } else if (!valid_c) {
                         skip |= LogError("VUID-RuntimeSpirv-OpTypeCooperativeMatrixMulAddNV-10059", module_state.handle(), loc,
                                          "shader %s OpCooperativeMatrixMulAddNV (result id = %" PRIu32
                                          ") operands don't match a supported matrix "
                                          "VkCooperativeMatrixPropertiesNV for C type (%s).",
                                          entrypoint.Describe().c_str(), insn.Word(2), c.Describe().c_str());
+                        found_error = true;
                     } else if (!valid_d) {
                         skip |= LogError("VUID-RuntimeSpirv-OpTypeCooperativeMatrixMulAddNV-10059", module_state.handle(), loc,
                                          "shader %s OpCooperativeMatrixMulAddNV (result id = %" PRIu32
                                          ") operands don't match a supported matrix "
                                          "VkCooperativeMatrixPropertiesNV for D type (%s).",
                                          entrypoint.Describe().c_str(), insn.Word(2), d.Describe().c_str());
+                        found_error = true;
                     }
                 }
                 break;
@@ -1553,6 +1590,13 @@ struct ShaderResourceType {
             if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_TENSOR_ARM)) {
                 ss << "\n - VK_DESCRIPTOR_TYPE_TENSOR_ARM is an OpTypeTensorARM in UniformConstant";
             }
+            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM)) {
+                ss << "\n - VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM is an OpTypeImage, with Sampled = 1, in UniformConstant";
+            }
+            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM)) {
+                ss << "\n - VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM is an OpTypeImage, with Sampled = 1 and Arrayed = 1, in "
+                      "UniformConstant";
+            }
             ss << "\nFull list of mappings can be found at "
                   "https://docs.vulkan.org/spec/latest/chapters/interfaces.html#interfaces-resources-storage-class-correspondence";
         }
@@ -1566,7 +1610,7 @@ bool CoreChecks::ValidateShaderInterfaceVariableDSL(const spirv::Module& module_
     bool skip = false;
     if (!stage_state.descriptor_set_layouts) {
         return skip;
-    } else if (stage_state.descriptor_heap_mode) {
+    } else if (stage_state.heap.descriptor_heap_mode) {
         return skip;
     }
 
@@ -2998,7 +3042,7 @@ bool CoreChecks::ValidateDataGraphConstants(const spirv::Module& module_spirv, c
 
     // loop over spirv constant definitions
     std::vector<bool> pConstant_matched(dg_shader_ci.constantCount, false);
-    for (auto constant_instr : entry_point.datagraph_constants) {
+    for (auto constant_instr : entry_point.accessible.graph_constant) {
         const spirv::Instruction& tensor_type_instr = *module_spirv.FindDef(constant_instr->TypeId());
 
         // the following checks are only for tensors. Any type other than tensor will throw an error executing spirv-val, which
@@ -3144,8 +3188,9 @@ bool CoreChecks::ValidateDataGraphOperations(const vvl::Pipeline& pipeline, uint
     bool queue_uses_tosa_1_0 = false;
     // no properties for the specified family index means NO support for TOSA 1.0, i.e. VUID 9941
     // this also covers completely empty properties, meaning VK_ARM_data_graph extension not supported
-    if (queueFamilyIndex <= device_state->queue_family_data_graph_properties.size()) {
-        for (const auto& p : device_state->queue_family_data_graph_properties.at(queueFamilyIndex)) {
+    const auto properties_it = physical_device_state->data_graph.queue_family_properties.find(queueFamilyIndex);
+    if (properties_it != physical_device_state->data_graph.queue_family_properties.end()) {
+        for (const auto& p : properties_it->second) {
             if (CompareVkQueueFamilyDataGraphPropertiesARM(tosa_1_0_property, p)) {
                 queue_uses_tosa_1_0 = true;
                 break;
@@ -3160,15 +3205,298 @@ bool CoreChecks::ValidateDataGraphOperations(const vvl::Pipeline& pipeline, uint
               "required property:\n"
            << string_VkQueueFamilyDataGraphPropertiesARM(tosa_1_0_property)
            << "vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM for queueFamilyIndex " << queueFamilyIndex << "returned:\n";
-        auto properties = device_state->queue_family_data_graph_properties.at(queueFamilyIndex);
-        for (const auto& p : properties) {
-            ss << string_VkQueueFamilyDataGraphPropertiesARM(p) << '\n';
-        }
-        if (properties.empty()) {
-            // with just a blank it's unclear if the function is wrong or there really are no properties.
+        if (properties_it != physical_device_state->data_graph.queue_family_properties.end() && !properties_it->second.empty()) {
+            for (const auto& p : properties_it->second) {
+                ss << string_VkQueueFamilyDataGraphPropertiesARM(p) << '\n';
+            }
+        } else {
             ss << "EMPTY\n";
         }
         skip |= LogError("VUID-vkCmdDispatchDataGraphARM-commandBuffer-09941", device, loc, "%s", ss.str().c_str());
+    }
+
+    return skip;
+}
+
+// VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_*
+bool CoreChecks::ValidateDescriptorMappingSourceHeap(const spirv::Module& module_state, const spirv::EntryPoint& entrypoint,
+                                                     const spirv::ResourceInterfaceVariable& resource_variable,
+                                                     const VkDescriptorSetAndBindingMappingEXT& mapping,
+                                                     const Location& mapping_loc) const {
+    bool skip = false;
+    const uint32_t base_opcode = resource_variable.base_type.Opcode();
+
+    const bool has_embedded_sampler = GetEmbeddedSampler(mapping) != nullptr;
+
+    struct MappingSourceInfo {
+        uint32_t offset = 0;
+        uint32_t array_stride = 0;
+        const char* vuid = nullptr;
+        VkDeviceSize align = 0;
+        Field align_field = Field::Empty;
+    } r_info;  // resource info
+
+    if (base_opcode == spv::OpTypeSampledImage) {
+        r_info.vuid = "VUID-VkDescriptorSetAndBindingMappingEXT-source-12406";
+        r_info.align = phys_dev_ext_props.descriptor_heap_props.imageDescriptorAlignment;
+        r_info.align_field = Field::imageDescriptorAlignment;
+    } else if (base_opcode == spv::OpTypeImage) {
+        r_info.vuid = "VUID-VkDescriptorSetAndBindingMappingEXT-source-11251";
+        r_info.align = phys_dev_ext_props.descriptor_heap_props.imageDescriptorAlignment;
+        r_info.align_field = Field::imageDescriptorAlignment;
+    } else if (base_opcode == spv::OpTypeStruct) {
+        r_info.vuid = "VUID-VkDescriptorSetAndBindingMappingEXT-source-11252";
+        r_info.align = phys_dev_ext_props.descriptor_heap_props.bufferDescriptorAlignment;
+        r_info.align_field = Field::bufferDescriptorAlignment;
+    } else if (base_opcode == spv::OpTypeSampler) {
+        if (has_embedded_sampler) {
+            return skip;
+        }
+        r_info.vuid = "VUID-VkDescriptorSetAndBindingMappingEXT-source-11253";
+        r_info.align = phys_dev_ext_props.descriptor_heap_props.samplerDescriptorAlignment;
+        r_info.align_field = Field::samplerDescriptorAlignment;
+    } else if (base_opcode == spv::OpTypeTensorARM) {
+        r_info.vuid = "VUID-VkDescriptorSetAndBindingMappingEXT-source-11390";
+        r_info.align = phys_dev_ext_props.descriptor_heap_tensor_props.tensorDescriptorAlignment;
+        r_info.align_field = Field::tensorDescriptorAlignment;
+    } else {
+        return skip;
+    }
+
+    if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT) {
+        const auto& source_data = mapping.sourceData.constantOffset;
+        r_info.offset = source_data.heapOffset;
+        r_info.array_stride = source_data.heapArrayStride;
+    } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT) {
+        const auto& source_data = mapping.sourceData.pushIndex;
+        r_info.offset = source_data.heapOffset;
+        r_info.array_stride = source_data.heapArrayStride;
+    } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_EXT) {
+        const auto& source_data = mapping.sourceData.indirectIndex;
+        r_info.offset = source_data.heapOffset;
+        r_info.array_stride = source_data.heapArrayStride;
+    } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT) {
+        const auto& source_data = mapping.sourceData.indirectIndexArray;
+        r_info.offset = source_data.heapOffset;
+    } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_SHADER_RECORD_INDEX_EXT) {
+        const auto& source_data = mapping.sourceData.shaderRecordIndex;
+        r_info.offset = source_data.heapOffset;
+        r_info.array_stride = source_data.heapArrayStride;
+    }
+
+    if (mapping.source != VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT && resource_variable.IsArray() &&
+        r_info.array_stride == 0) {
+        // Tried to ban in https://gitlab.khronos.org/vulkan/vulkan/-/issues/4815
+        // but we wrote tests, so this is allowed and will work, just high chance not what people intend to do.
+        skip |= LogWarning("WARNING-VkDescriptorSetAndBindingMappingEXT-heapArrayStride-zero", module_state.handle(),
+                           mapping_loc.dot(Field::source),
+                           "(%s) is used to map descriptor %s in %s which is a descriptor array, but heapArrayStride is zero. This "
+                           "mean every index of the descriptor array will be the same descriptor, which is likely not desired.",
+                           string_VkDescriptorMappingSourceEXT(mapping.source), resource_variable.DescribeDescriptor().c_str(),
+                           entrypoint.Describe().c_str());
+    }
+
+    if (!IsIntegerMultipleOf(r_info.offset, r_info.align) || !IsIntegerMultipleOf(r_info.array_stride, r_info.align)) {
+        const Field source_field = vvl::Field_VkDescriptorMappingSourceDataEXT(mapping.source);
+
+        std::stringstream ss;
+        ss << "(" << string_VkDescriptorMappingSourceEXT(mapping.source) << ") is used to map descriptor "
+           << resource_variable.DescribeDescriptor() << " in " << entrypoint.Describe() << " but it is unaligned.\n"
+           << String(source_field) << ".heapOffset (" << r_info.offset << ") ";
+        if (mapping.source != VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT) {
+            ss << "and " << String(source_field) << ".heapArrayStride (" << r_info.array_stride << ") both ";
+        }
+        ss << "must be zero or aligned with " << String(r_info.align_field) << " (" << r_info.align << ")";
+
+        skip |= LogError(r_info.vuid, module_state.handle(), mapping_loc.dot(Field::source), "%s", ss.str().c_str());
+    }
+
+    // Combined Image Sampler is only spot we need to check twice
+    if (base_opcode == spv::OpTypeSampledImage) {
+        struct SamplerMappingSourceInfo {
+            uint32_t offset = 0;
+            uint32_t array_stride = 0;
+            uint32_t push_offset = 0;
+            uint32_t address_offset = 0;
+        } s_info;
+
+        if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT) {
+            const auto& source_data = mapping.sourceData.constantOffset;
+            s_info.offset = source_data.samplerHeapOffset;
+            s_info.array_stride = source_data.samplerHeapArrayStride;
+        } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT) {
+            const auto& source_data = mapping.sourceData.pushIndex;
+            s_info.offset = source_data.samplerHeapOffset;
+            s_info.array_stride = source_data.samplerHeapArrayStride;
+            // We don't use the pushOffset here as that is already validated in 11258 (and related VUs)
+            // and we don't want to spam the user with a duplicate error message
+            s_info.push_offset = source_data.useCombinedImageSamplerIndex ? 0 : source_data.samplerPushOffset;
+        } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_EXT) {
+            const auto& source_data = mapping.sourceData.indirectIndex;
+            s_info.offset = source_data.samplerHeapOffset;
+            s_info.array_stride = source_data.samplerHeapArrayStride;
+            if (!source_data.useCombinedImageSamplerIndex) {
+                s_info.push_offset = source_data.samplerPushOffset;
+                s_info.address_offset = source_data.samplerAddressOffset;
+            }
+        } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT) {
+            const auto& source_data = mapping.sourceData.indirectIndexArray;
+            s_info.offset = source_data.samplerHeapOffset;
+            if (!source_data.useCombinedImageSamplerIndex) {
+                s_info.push_offset = source_data.samplerPushOffset;
+                s_info.address_offset = source_data.samplerAddressOffset;
+            }
+        } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_SHADER_RECORD_INDEX_EXT) {
+            const auto& source_data = mapping.sourceData.shaderRecordIndex;
+            s_info.offset = source_data.samplerHeapOffset;
+            s_info.array_stride = source_data.samplerHeapArrayStride;
+        }
+
+        if (!has_embedded_sampler) {
+            const VkDeviceSize sampler_align = phys_dev_ext_props.descriptor_heap_props.samplerDescriptorAlignment;
+            if (!IsIntegerMultipleOf(s_info.offset, sampler_align) || !IsIntegerMultipleOf(s_info.array_stride, sampler_align)) {
+                const Field source_field = vvl::Field_VkDescriptorMappingSourceDataEXT(mapping.source);
+
+                std::stringstream ss;
+                ss << "(" << string_VkDescriptorMappingSourceEXT(mapping.source) << ") is used to map descriptor "
+                   << resource_variable.DescribeDescriptor() << " in " << entrypoint.Describe() << " but it is unaligned.\n"
+                   << String(source_field) << ".samplerHeapOffset (" << s_info.offset << ") ";
+                if (mapping.source != VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT) {
+                    ss << "and " << String(source_field) << ".samplerHeapArrayStride (" << s_info.array_stride << ") both ";
+                }
+                ss << "must be zero or aligned with samplerDescriptorAlignment (" << sampler_align << ")";
+
+                skip |= LogError("VUID-VkDescriptorSetAndBindingMappingEXT-source-11254", module_state.handle(),
+                                 mapping_loc.dot(Field::source), "%s", ss.str().c_str());
+            }
+
+            if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT) {
+                if (!IsIntegerMultipleOf(s_info.push_offset, 4)) {
+                    skip |= LogError("VUID-VkDescriptorSetAndBindingMappingEXT-source-12456", device,
+                                     mapping_loc.dot(Field::sourceData).dot(Field::pushIndex).dot(Field::samplerPushOffset),
+                                     "(%" PRIu32
+                                     ") is not a multiple of 4\nVkDescriptorSetAndBindingMappingEXT::source = "
+                                     "VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT",
+                                     s_info.push_offset);
+                }
+                if (s_info.push_offset > phys_dev_ext_props.descriptor_heap_props.maxPushDataSize - 4) {
+                    skip |= LogError("VUID-VkDescriptorSetAndBindingMappingEXT-source-12457", device,
+                                     mapping_loc.dot(Field::sourceData).dot(Field::pushIndex).dot(Field::samplerPushOffset),
+                                     "(%" PRIu32 ") is greater than maxPushDataSize (%" PRIu64
+                                     ") - 4\nVkDescriptorSetAndBindingMappingEXT::source = "
+                                     "VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT\nHint - samplerPushOffset points to an "
+                                     "uint32_t (4 bytes) "
+                                     "inside the push data, this is currently going to access OOB.",
+                                     s_info.push_offset, phys_dev_ext_props.descriptor_heap_props.maxPushDataSize);
+                }
+            } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_EXT ||
+                       mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT) {
+                if (!IsIntegerMultipleOf(s_info.push_offset, 8)) {
+                    skip |= LogError("VUID-VkDescriptorSetAndBindingMappingEXT-source-12458", device,
+                                     mapping_loc.dot(Field::sourceData)
+                                         .dot(vvl::Field_VkDescriptorMappingSourceDataEXT(mapping.source))
+                                         .dot(Field::samplerPushOffset),
+                                     "(%" PRIu32 ") is not a multiple of 8\nVkDescriptorSetAndBindingMappingEXT::source = %s",
+                                     s_info.push_offset, string_VkDescriptorMappingSourceEXT(mapping.source));
+                }
+                if (s_info.push_offset > phys_dev_ext_props.descriptor_heap_props.maxPushDataSize - 8) {
+                    skip |= LogError("VUID-VkDescriptorSetAndBindingMappingEXT-source-12459", device,
+                                     mapping_loc.dot(Field::sourceData)
+                                         .dot(vvl::Field_VkDescriptorMappingSourceDataEXT(mapping.source))
+                                         .dot(Field::samplerPushOffset),
+                                     "(%" PRIu32 ") is greater than maxPushDataSize (%" PRIu64
+                                     ") - 8\nVkDescriptorSetAndBindingMappingEXT::source = %s\nHint - samplerPushOffset points to "
+                                     "an address (8 bytes) "
+                                     "inside the push data, this is currently going to access OOB.",
+                                     s_info.push_offset, phys_dev_ext_props.descriptor_heap_props.maxPushDataSize,
+                                     string_VkDescriptorMappingSourceEXT(mapping.source));
+                }
+                if (!IsIntegerMultipleOf(s_info.address_offset, 4)) {
+                    skip |= LogError("VUID-VkDescriptorSetAndBindingMappingEXT-source-12460", device,
+                                     mapping_loc.dot(Field::sourceData)
+                                         .dot(vvl::Field_VkDescriptorMappingSourceDataEXT(mapping.source))
+                                         .dot(Field::samplerAddressOffset),
+                                     "(%" PRIu32 ") is not a multiple of 4\nVkDescriptorSetAndBindingMappingEXT::source = %s",
+                                     s_info.address_offset, string_VkDescriptorMappingSourceEXT(mapping.source));
+                }
+            }
+        }
+    } else if (base_opcode == spv::OpTypeSampler) {
+        // It is VERY easy to think samplerHeapOffset is for mapping to the sampler heap, but that is wrong, it is only
+        // for combined image samplers... so try and guide people as likely a mistake.
+        if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT) {
+            const auto& source_data = mapping.sourceData.constantOffset;
+            if (source_data.heapOffset == 0 && source_data.heapArrayStride == 0 &&
+                (source_data.samplerHeapOffset != 0 || source_data.samplerHeapArrayStride != 0)) {
+                skip |= LogError("WARNING-VkDescriptorSetAndBindingMappingEXT-constantOffset-sampler", module_state.handle(),
+                                 mapping_loc.dot(Field::source),
+                                 "(%s) is used to map descriptor %s in %s which is a sampler, but seems like you are "
+                                 "setting samplerHeapOffset/samplerHeapArrayStride instead of "
+                                 "heapOffset/heapArrayStride.\nThe samplerHeapOffset field is there to map the sampler "
+                                 "portion of a VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, but for "
+                                 "VK_DESCRIPTOR_TYPE_SAMPLER, you just use heapOffset to offset into the sampler heap.",
+                                 string_VkDescriptorMappingSourceEXT(mapping.source),
+                                 resource_variable.DescribeDescriptor().c_str(), entrypoint.Describe().c_str());
+            }
+        } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT) {
+            const auto& source_data = mapping.sourceData.pushIndex;
+            const bool zero_heap = source_data.heapOffset == 0 && source_data.pushOffset == 0 && source_data.heapArrayStride == 0 &&
+                                   source_data.heapIndexStride == 0;
+            const bool non_zero_sampler = !source_data.pEmbeddedSampler &&
+                                          (source_data.samplerHeapOffset != 0 || source_data.samplerPushOffset != 0 ||
+                                           source_data.samplerHeapArrayStride != 0 || source_data.samplerHeapIndexStride != 0);
+            if (zero_heap && non_zero_sampler) {
+                skip |= LogError("WARNING-VkDescriptorSetAndBindingMappingEXT-pushIndex-sampler", module_state.handle(),
+                                 mapping_loc.dot(Field::source),
+                                 "(%s) is used to map descriptor %s in %s which is a sampler, but seems like you are setting "
+                                 "samplerHeapOffset/samplerPushOffset/samplerHeapArrayStride/samplerHeapIndexStride instead of "
+                                 "heapOffset/pushOffset/heapArrayStride/heapIndexStride.\nThe samplerHeapOffset field is there to "
+                                 "map the sampler portion of a VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, but for "
+                                 "VK_DESCRIPTOR_TYPE_SAMPLER, you just use heapOffset to offset into the sampler heap.",
+                                 string_VkDescriptorMappingSourceEXT(mapping.source),
+                                 resource_variable.DescribeDescriptor().c_str(), entrypoint.Describe().c_str());
+            }
+        } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_EXT) {
+            const auto& source_data = mapping.sourceData.indirectIndex;
+            const bool zero_heap = source_data.heapOffset == 0 && source_data.pushOffset == 0 && source_data.addressOffset == 0 &&
+                                   source_data.heapArrayStride == 0 && source_data.heapIndexStride == 0;
+            const bool non_zero_heap =
+                !source_data.pEmbeddedSampler & (source_data.samplerHeapOffset != 0 || source_data.samplerPushOffset != 0 ||
+                                                 source_data.samplerAddressOffset != 0 || source_data.samplerHeapArrayStride != 0 ||
+                                                 source_data.samplerHeapIndexStride != 0);
+            if (zero_heap && non_zero_heap) {
+                skip |=
+                    LogError("WARNING-VkDescriptorSetAndBindingMappingEXT-indirectIndex-sampler", module_state.handle(),
+                             mapping_loc.dot(Field::source),
+                             "(%s) is used to map descriptor %s in %s which is a sampler, but seems like you are setting "
+                             "samplerHeapOffset/samplerPushOffset/samplerAddressOffset/samplerHeapArrayStride/"
+                             "samplerHeapIndexStride instead of "
+                             "heapOffset/pushOffset/addressOffset/heapArrayStride/heapIndexStride.\nThe samplerHeapOffset field "
+                             "is there to map the sampler portion of a VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, but for "
+                             "VK_DESCRIPTOR_TYPE_SAMPLER, you just use heapOffset to offset into the sampler heap.",
+                             string_VkDescriptorMappingSourceEXT(mapping.source), resource_variable.DescribeDescriptor().c_str(),
+                             entrypoint.Describe().c_str());
+            }
+        } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT) {
+            const auto& source_data = mapping.sourceData.indirectIndexArray;
+            const bool zero_heap = source_data.heapOffset == 0 && source_data.pushOffset == 0 && source_data.addressOffset == 0 &&
+                                   source_data.heapIndexStride == 0;
+            const bool non_zero_heap =
+                !source_data.pEmbeddedSampler && (source_data.samplerHeapOffset != 0 || source_data.samplerPushOffset != 0 ||
+                                                  source_data.samplerAddressOffset != 0 || source_data.samplerHeapIndexStride != 0);
+            if (zero_heap && non_zero_heap) {
+                skip |=
+                    LogError("WARNING-VkDescriptorSetAndBindingMappingEXT-indirectIndexArray-sampler", module_state.handle(),
+                             mapping_loc.dot(Field::source),
+                             "(%s) is used to map descriptor %s in %s which is a sampler, but seems like you are setting "
+                             "samplerHeapOffset/samplerPushOffset/samplerAddressOffset/samplerHeapIndexStride instead of "
+                             "heapOffset/pushOffset/addressOffset/heapIndexStride.\nThe samplerHeapOffset field is there to map "
+                             "the sampler portion of a VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, but for "
+                             "VK_DESCRIPTOR_TYPE_SAMPLER, you just use heapOffset to offset into the sampler heap.",
+                             string_VkDescriptorMappingSourceEXT(mapping.source), resource_variable.DescribeDescriptor().c_str(),
+                             entrypoint.Describe().c_str());
+            }
+        }
     }
 
     return skip;
@@ -3185,15 +3513,18 @@ bool CoreChecks::ValidateShaderDescriptorSetAndBindingMappingInfo(const spirv::M
     // resource variables are untyped (not using set/binding)
     if (!mapping_info) {
         // If not flag, this is just a "normal" vulkan 1.0 situtation
-        if (stage_state.descriptor_heap_mode) {
+        if (stage_state.heap.descriptor_heap_mode) {
             for (const spirv::ResourceInterfaceVariable& resource_variable : entrypoint.resource_interface_variables) {
                 if (!resource_variable.IsHeap()) {
                     skip |= LogError(
                         vvl::GetSpirvInterfaceVariableVUID(loc, vvl::SpirvInterfaceVariableError::DescriptorHeapMapping_11312),
                         module_state.handle(), loc,
                         "does not have a pNext to VkShaderDescriptorSetAndBindingMappingInfoEXT, but %s is set and %s needs a "
-                        "mapping for shader %s.\n%s\n(Either pass in a valid VkShaderDescriptorSetAndBindingMappingInfoEXT or use "
-                        "VK_KHR_shader_untyped_pointers to not require a Set/Binding mapping in the SPIR-V)",
+                        "mapping for shader %s.\n%s\nHint: Either pass in a valid VkShaderDescriptorSetAndBindingMappingInfoEXT or "
+                        "use "
+                        "SPV_EXT_descriptor_heap to replace the traditional Set/Binding SPIR-V mapping. (SPV_EXT_descriptor_heap "
+                        "requires re-writing your shader and each shading language, if it is supported, will have a dedicated way "
+                        "to set it)",
                         pipeline ? "VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT" : "VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT",
                         resource_variable.DescribeDescriptor().c_str(), entrypoint.Describe().c_str(),
                         PrintPNextChain(Struct::Empty, stage_state.GetPNext()).c_str());
@@ -3202,7 +3533,7 @@ bool CoreChecks::ValidateShaderDescriptorSetAndBindingMappingInfo(const spirv::M
             }
         }
         return skip;  // rest of checks require actual mapping
-    } else if (!stage_state.descriptor_heap_mode && mapping_info->mappingCount > 0) {
+    } else if (!stage_state.heap.descriptor_heap_mode && mapping_info->mappingCount > 0) {
         // If they are here, the pipeline layout would also have to be non-null
         // Provide a warning here incase people are trying to go from normal descriptor to heap and don't realize their mappings are
         // ignored
@@ -3224,12 +3555,14 @@ bool CoreChecks::ValidateShaderDescriptorSetAndBindingMappingInfo(const spirv::M
 
         bool found_mapping = false;
         for (uint32_t i = 0; i < mapping_info->mappingCount; i++) {
-            const auto& mapping = mapping_info->pMappings[i];
+            const VkDescriptorSetAndBindingMappingEXT& mapping = mapping_info->pMappings[i];
             if (!IsResourceVaribleInMapping(mapping, resource_variable)) {
                 continue;
             }
             used_mapping_set[i] = true;
             found_mapping = true;
+
+            const Location mapping_loc = loc.pNext(Struct::VkShaderDescriptorSetAndBindingMappingInfoEXT, Field::pMappings, i);
 
             const std::shared_ptr<const spirv::TypeStructInfo>& type_struct_info = resource_variable.type_struct_info;
             if (IsValueIn(mapping.source, {VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT,
@@ -3237,134 +3570,7 @@ bool CoreChecks::ValidateShaderDescriptorSetAndBindingMappingInfo(const spirv::M
                                            VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_EXT,
                                            VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT,
                                            VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_SHADER_RECORD_INDEX_EXT})) {
-                const uint32_t base_opcode = resource_variable.base_type.Opcode();
-
-                struct MappingSourceInfo {
-                    uint32_t offset = 0;
-                    uint32_t array_stride = 0;
-                    const char* vuid = nullptr;
-                    VkDeviceSize align = 0;
-                    Field align_field = Field::Empty;
-                } info;
-
-                if (base_opcode == spv::OpTypeSampledImage) {
-                    info.vuid = "VUID-VkDescriptorSetAndBindingMappingEXT-source-12406";
-                    info.align = phys_dev_ext_props.descriptor_heap_props.imageDescriptorAlignment;
-                    info.align_field = Field::imageDescriptorAlignment;
-                } else if (base_opcode == spv::OpTypeImage) {
-                    info.vuid = "VUID-VkDescriptorSetAndBindingMappingEXT-source-11251";
-                    info.align = phys_dev_ext_props.descriptor_heap_props.imageDescriptorAlignment;
-                    info.align_field = Field::imageDescriptorAlignment;
-                } else if (base_opcode == spv::OpTypeStruct) {
-                    info.vuid = "VUID-VkDescriptorSetAndBindingMappingEXT-source-11252";
-                    info.align = phys_dev_ext_props.descriptor_heap_props.bufferDescriptorAlignment;
-                    info.align_field = Field::bufferDescriptorAlignment;
-                } else if (base_opcode == spv::OpTypeSampler) {
-                    info.vuid = "VUID-VkDescriptorSetAndBindingMappingEXT-source-11253";
-                    info.align = phys_dev_ext_props.descriptor_heap_props.samplerDescriptorAlignment;
-                    info.align_field = Field::samplerDescriptorAlignment;
-                } else if (base_opcode == spv::OpTypeTensorARM) {
-                    info.vuid = "VUID-VkDescriptorSetAndBindingMappingEXT-source-11390";
-                    info.align = phys_dev_ext_props.descriptor_heap_tensor_props.tensorDescriptorAlignment;
-                    info.align_field = Field::tensorDescriptorAlignment;
-                } else {
-                    continue;
-                }
-
-                if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT) {
-                    const auto& source_data = mapping.sourceData.constantOffset;
-                    info.offset = source_data.heapOffset;
-                    info.array_stride = source_data.heapArrayStride;
-                } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT) {
-                    const auto& source_data = mapping.sourceData.pushIndex;
-                    info.offset = source_data.heapOffset;
-                    info.array_stride = source_data.heapArrayStride;
-                } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_EXT) {
-                    const auto& source_data = mapping.sourceData.indirectIndex;
-                    info.offset = source_data.heapOffset;
-                    info.array_stride = source_data.heapArrayStride;
-                } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT) {
-                    const auto& source_data = mapping.sourceData.indirectIndexArray;
-                    info.offset = source_data.heapOffset;
-                } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_SHADER_RECORD_INDEX_EXT) {
-                    const auto& source_data = mapping.sourceData.shaderRecordIndex;
-                    info.offset = source_data.heapOffset;
-                    info.array_stride = source_data.heapArrayStride;
-                }
-
-                if (mapping.source != VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT &&
-                    resource_variable.IsArray() && info.array_stride == 0) {
-                    // Trying to make a proper VU here https://gitlab.khronos.org/vulkan/vulkan/-/issues/4815
-                    skip |= LogWarning(
-                        "WARNING-VkDescriptorSetAndBindingMappingEXT-heapArrayStride-zero", module_state.handle(),
-                        loc.pNext(Struct::VkShaderDescriptorSetAndBindingMappingInfoEXT, Field::pMappings, i).dot(Field::source),
-                        "(%s) is used to map descriptor %s in %s which is a descriptor array, but heapArrayStride is zero. This "
-                        "mean every index of the descriptor array will be the same descriptor, which is likely not desired.",
-                        string_VkDescriptorMappingSourceEXT(mapping.source), resource_variable.DescribeDescriptor().c_str(),
-                        entrypoint.Describe().c_str());
-                }
-
-                if (!IsIntegerMultipleOf(info.offset, info.align) || !IsIntegerMultipleOf(info.array_stride, info.align)) {
-                    const Field source_field = vvl::Field_VkDescriptorMappingSourceDataEXT(mapping.source);
-
-                    std::stringstream ss;
-                    ss << "(" << string_VkDescriptorMappingSourceEXT(mapping.source) << ") is used to map descriptor "
-                       << resource_variable.DescribeDescriptor() << " in " << entrypoint.Describe() << " but it is unaligned.\n"
-                       << String(source_field) << ".heapOffset (" << info.offset << ") ";
-                    if (mapping.source != VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT) {
-                        ss << "and " << String(source_field) << ".heapArrayStride (" << info.array_stride << ") both ";
-                    }
-                    ss << "must be zero or aligned with " << String(info.align_field) << " (" << info.align << ")";
-
-                    skip |= LogError(
-                        info.vuid, module_state.handle(),
-                        loc.pNext(Struct::VkShaderDescriptorSetAndBindingMappingInfoEXT, Field::pMappings, i).dot(Field::source),
-                        "%s", ss.str().c_str());
-                }
-
-                // Combined Image Sampler is only spot we need to check twice
-                if (base_opcode == spv::OpTypeSampledImage) {
-                    if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT) {
-                        const auto& source_data = mapping.sourceData.constantOffset;
-                        info.offset = source_data.samplerHeapOffset;
-                        info.array_stride = source_data.samplerHeapArrayStride;
-                    } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT) {
-                        const auto& source_data = mapping.sourceData.pushIndex;
-                        info.offset = source_data.samplerHeapOffset;
-                        info.array_stride = source_data.samplerHeapArrayStride;
-                    } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_EXT) {
-                        const auto& source_data = mapping.sourceData.indirectIndex;
-                        info.offset = source_data.samplerHeapOffset;
-                        info.array_stride = source_data.samplerHeapArrayStride;
-                    } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT) {
-                        const auto& source_data = mapping.sourceData.indirectIndexArray;
-                        info.offset = source_data.samplerHeapOffset;
-                    } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_SHADER_RECORD_INDEX_EXT) {
-                        const auto& source_data = mapping.sourceData.shaderRecordIndex;
-                        info.offset = source_data.samplerHeapOffset;
-                        info.array_stride = source_data.samplerHeapArrayStride;
-                    }
-
-                    info.align = phys_dev_ext_props.descriptor_heap_props.samplerDescriptorAlignment;
-
-                    if (!IsIntegerMultipleOf(info.offset, info.align) || !IsIntegerMultipleOf(info.array_stride, info.align)) {
-                        const Field source_field = vvl::Field_VkDescriptorMappingSourceDataEXT(mapping.source);
-
-                        std::stringstream ss;
-                        ss << "(" << string_VkDescriptorMappingSourceEXT(mapping.source) << ") is used to map descriptor "
-                           << resource_variable.DescribeDescriptor() << " in " << entrypoint.Describe() << " but it is unaligned.\n"
-                           << String(source_field) << ".samplerHeapOffset (" << info.offset << ") ";
-                        if (mapping.source != VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT) {
-                            ss << "and " << String(source_field) << ".samplerHeapArrayStride (" << info.array_stride << ") both ";
-                        }
-                        ss << "must be zero or aligned with samplerDescriptorAlignment (" << info.align << ")";
-
-                        skip |= LogError("VUID-VkDescriptorSetAndBindingMappingEXT-source-11254", module_state.handle(),
-                                         loc.pNext(Struct::VkShaderDescriptorSetAndBindingMappingInfoEXT, Field::pMappings, i)
-                                             .dot(Field::source),
-                                         "%s", ss.str().c_str());
-                    }
-                }
+                skip |= ValidateDescriptorMappingSourceHeap(module_state, entrypoint, resource_variable, mapping, mapping_loc);
             } else if (IsValueIn(mapping.source,
                                  {VK_DESCRIPTOR_MAPPING_SOURCE_PUSH_DATA_EXT, VK_DESCRIPTOR_MAPPING_SOURCE_SHADER_RECORD_DATA_EXT,
                                   VK_DESCRIPTOR_MAPPING_SOURCE_RESOURCE_HEAP_DATA_EXT})) {
@@ -3388,17 +3594,13 @@ bool CoreChecks::ValidateShaderDescriptorSetAndBindingMappingInfo(const spirv::M
                               "descriptor is read only.\nHint: Did "
                               "you mean to use VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT instead?";
                     }
-                    skip |= LogError(
-                        vuid, module_state.handle(),
-                        loc.pNext(Struct::VkShaderDescriptorSetAndBindingMappingInfoEXT, Field::pMappings, i).dot(Field::source),
-                        "%s", ss.str().c_str());
+                    skip |= LogError(vuid, module_state.handle(), mapping_loc.dot(Field::source), "%s", ss.str().c_str());
                 } else if (resource_variable.IsArray()) {
                     // Additional message for descriptor array case
                     const char* vuid =
                         pipeline ? "VUID-VkPipelineShaderStageCreateInfo-pNext-11315" : "VUID-VkShaderCreateInfoEXT-pNext-11315";
                     skip |= LogError(
-                        vuid, module_state.handle(),
-                        loc.pNext(Struct::VkShaderDescriptorSetAndBindingMappingInfoEXT, Field::pMappings, i).dot(Field::source),
+                        vuid, module_state.handle(), mapping_loc.dot(Field::source),
                         "(%s) is used to map descriptor %s in %s with storage class Uniform, but it is an array.\n"
                         "Descriptor arrays are not allowed for this mapping as it is not defined where each index would get the "
                         "descriptor from.%s",
@@ -3416,9 +3618,7 @@ bool CoreChecks::ValidateShaderDescriptorSetAndBindingMappingInfo(const spirv::M
                         const char* vuid = pipeline ? "VUID-VkPipelineShaderStageCreateInfo-pNext-11316"
                                                     : "VUID-VkShaderCreateInfoEXT-pNext-11316";
                         skip |=
-                            LogError(vuid, module_state.handle(),
-                                     loc.pNext(Struct::VkShaderDescriptorSetAndBindingMappingInfoEXT, Field::pMappings, i)
-                                         .dot(Field::source),
+                            LogError(vuid, module_state.handle(), mapping_loc.dot(Field::source),
                                      "(VK_DESCRIPTOR_MAPPING_SOURCE_PUSH_DATA_EXT) is used to map descriptor %s in %s which has a "
                                      "structure size of %" PRIu64 ", which when the pushDataOffset (%" PRIu32
                                      ") is applied, will be larger than the maxPushDataSize (%" PRIu64 ").",
@@ -3434,8 +3634,7 @@ bool CoreChecks::ValidateShaderDescriptorSetAndBindingMappingInfo(const spirv::M
                     const char* vuid =
                         pipeline ? "VUID-VkPipelineShaderStageCreateInfo-pNext-11317" : "VUID-VkShaderCreateInfoEXT-pNext-11317";
                     skip |= LogError(
-                        vuid, module_state.handle(),
-                        loc.pNext(Struct::VkShaderDescriptorSetAndBindingMappingInfoEXT, Field::pMappings, i).dot(Field::source),
+                        vuid, module_state.handle(), mapping_loc.dot(Field::source),
                         "(VK_DESCRIPTOR_MAPPING_SOURCE_SHADER_RECORD_DATA_EXT) is used to map descriptor %s in %s which has a "
                         "structure "
                         "size of %" PRIu32 ", which summed with shaderRecordDataOffset (%" PRIu32
@@ -3460,10 +3659,7 @@ bool CoreChecks::ValidateShaderDescriptorSetAndBindingMappingInfo(const spirv::M
                        << string_VkDescriptorType(resource_variable.GetPotentialDescriptorType())
                        << ") but it must be a Uniform Buffer, Storage Buffer, or Acceleration Structure when using this mapping "
                           "source.\nHint: Did you mean to use VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT instead?";
-                    skip |= LogError(
-                        vuid, module_state.handle(),
-                        loc.pNext(Struct::VkShaderDescriptorSetAndBindingMappingInfoEXT, Field::pMappings, i).dot(Field::source),
-                        "%s", ss.str().c_str());
+                    skip |= LogError(vuid, module_state.handle(), mapping_loc.dot(Field::source), "%s", ss.str().c_str());
                 } else if (resource_variable.IsArray()) {
                     // Additional message for descriptor array case
                     const char* vuid =
@@ -3480,10 +3676,7 @@ bool CoreChecks::ValidateShaderDescriptorSetAndBindingMappingInfo(const spirv::M
                         ss << " (array of length 1 is also not allowed)";
                     }
                     ss << "\nHint: Did you mean to use VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT instead?";
-                    skip |= LogError(
-                        vuid, module_state.handle(),
-                        loc.pNext(Struct::VkShaderDescriptorSetAndBindingMappingInfoEXT, Field::pMappings, i).dot(Field::source),
-                        "%s", ss.str().c_str());
+                    skip |= LogError(vuid, module_state.handle(), mapping_loc.dot(Field::source), "%s", ss.str().c_str());
                 }
             }
 
@@ -3496,8 +3689,7 @@ bool CoreChecks::ValidateShaderDescriptorSetAndBindingMappingInfo(const spirv::M
                 if (resource_variable.IsArray() && embedded_sampler != nullptr) {
                     skip |= LogError(
                         pipeline ? "VUID-VkPipelineShaderStageCreateInfo-pNext-11399" : "VUID-VkShaderCreateInfoEXT-pNext-11399",
-                        module_state.handle(),
-                        loc.pNext(Struct::VkShaderDescriptorSetAndBindingMappingInfoEXT, Field::pMappings, i).dot(Field::source),
+                        module_state.handle(), mapping_loc.dot(Field::source),
                         "(%s) is used to map to an array of descriptors %s in %s, but %s.pEmbeddedSampler is %p (not null)",
                         string_VkDescriptorMappingSourceEXT(mapping.source), resource_variable.DescribeDescriptor().c_str(),
                         entrypoint.Describe().c_str(), String(vvl::Field_VkDescriptorMappingSourceDataEXT(mapping.source)),
@@ -3520,12 +3712,11 @@ bool CoreChecks::ValidateShaderDescriptorSetAndBindingMappingInfo(const spirv::M
                 if (found_inst) {
                     const char* vuid =
                         pipeline ? "VUID-VkPipelineShaderStageCreateInfo-pNext-11378" : "VUID-VkShaderCreateInfoEXT-pNext-11378";
-                    skip |= LogError(
-                        vuid, module_state.handle(),
-                        loc.pNext(Struct::VkShaderDescriptorSetAndBindingMappingInfoEXT, Field::pMappings, i).dot(Field::source),
-                        "(%s) is used to map to descriptor %s in %s but the %s was used to access the length\n%s",
-                        string_VkDescriptorMappingSourceEXT(mapping.source), resource_variable.DescribeDescriptor().c_str(),
-                        entrypoint.Describe().c_str(), string_SpvOpcode(found_inst->Opcode()), found_inst->Describe().c_str());
+                    skip |= LogError(vuid, module_state.handle(), mapping_loc.dot(Field::source),
+                                     "(%s) is used to map to descriptor %s in %s but the %s was used to access the length\n%s",
+                                     string_VkDescriptorMappingSourceEXT(mapping.source),
+                                     resource_variable.DescribeDescriptor().c_str(), entrypoint.Describe().c_str(),
+                                     string_SpvOpcode(found_inst->Opcode()), found_inst->Describe().c_str());
                 }
             }
 
@@ -3554,13 +3745,26 @@ bool CoreChecks::ValidateShaderDescriptorSetAndBindingMappingInfo(const spirv::M
                         }
                     }
                     skip |= LogError(
-                        "VUID-RuntimeSpirv-DescriptorSet-11385", module_state.handle(),
-                        loc.pNext(Struct::VkShaderDescriptorSetAndBindingMappingInfoEXT, Field::pMappings, i).dot(Field::source),
+                        "VUID-RuntimeSpirv-DescriptorSet-11385", module_state.handle(), mapping_loc.dot(Field::source),
                         "(%s) is used to map to descriptor %s in %s which is accessed with a non-constant expression (it isn't "
                         "allowed "
                         "to dynamically index)%s",
                         string_VkDescriptorMappingSourceEXT(mapping.source), resource_variable.DescribeDescriptor().c_str(),
                         entrypoint.Describe().c_str(), msg.str().c_str());
+                }
+            }
+
+            if (IsValueIn(mapping.source, {VK_DESCRIPTOR_MAPPING_SOURCE_SHADER_RECORD_DATA_EXT,
+                                           VK_DESCRIPTOR_MAPPING_SOURCE_SHADER_RECORD_ADDRESS_EXT,
+                                           VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_SHADER_RECORD_INDEX_EXT})) {
+                if ((stage_state.GetStage() & kShaderStageAllRayTracing) == 0) {
+                    const char* vuid =
+                        pipeline ? "VUID-VkPipelineShaderStageCreateInfo-pNext-12454" : "VUID-VkShaderCreateInfoEXT-pNext-12454";
+                    skip |= LogError(vuid, module_state.handle(), mapping_loc.dot(Field::source),
+                                     "(%s) is used to map to descriptor %s in %s, but the stage is not a ray tracing stage. "
+                                     "(Shader record are only for ray tracing workflows)",
+                                     string_VkDescriptorMappingSourceEXT(mapping.source),
+                                     resource_variable.DescribeDescriptor().c_str(), entrypoint.Describe().c_str());
                 }
             }
         }
@@ -3641,6 +3845,8 @@ bool CoreChecks::ValidateDescriptorHeapStructs(const spirv::Module& module_state
         return skip;
     }
 
+    const VkPhysicalDeviceDescriptorHeapPropertiesEXT& props = phys_dev_ext_props.descriptor_heap_props;
+
     // There are to ways to set the offset with decorations
     //  - classic Offset
     //  - using new OffsetIdEXT, which is designed to be used with a spec constant
@@ -3651,57 +3857,59 @@ bool CoreChecks::ValidateDescriptorHeapStructs(const spirv::Module& module_state
         // Even if there is a struct inside member, we don't need to go into it, it will be it's own iteration inside
         // |static_data_.type_structs|
         for (uint32_t i = 0; i < type_struct->members.size(); i++) {
-            const auto& member = type_struct->members[i];
+            const spirv::TypeStructInfo::Member& member = type_struct->members[i];
+            if (!member.insn->IsDescriptorType()) {
+                continue;
+            }
 
-            const uint32_t opcode = member.insn->Opcode();
+            // If using the old, hardcoded Offset
+            uint32_t offset_value = member.decorations->GetOffset(module_state, props);
+            ASSERT_AND_CONTINUE(offset_value != spirv::kInvalidValue);
+
+            const spv::Op opcode = (spv::Op)member.insn->Opcode();
             if (opcode == spv::OpTypeSampler) {
-                const uint32_t offset = member.decorations->GetOffset(module_state);
-                if (!IsIntegerMultipleOf(offset, phys_dev_ext_props.descriptor_heap_props.samplerDescriptorAlignment)) {
+                if (!IsIntegerMultipleOf(offset_value, phys_dev_ext_props.descriptor_heap_props.samplerDescriptorAlignment)) {
                     skip |= LogError("VUID-RuntimeSpirv-samplerDescriptorAlignment-11476", module_state.handle(), loc,
                                      "shader %s has a struct (ID %" PRIu32 ") where member %" PRIu32
                                      " is an OpTypeSampler with an offset of %" PRIu32
                                      " which is not aligned with samplerDescriptorAlignment (%" PRIu64 ")",
-                                     entrypoint.Describe().c_str(), type_struct->id, i, offset,
+                                     entrypoint.Describe().c_str(), type_struct->id, i, offset_value,
                                      phys_dev_ext_props.descriptor_heap_props.samplerDescriptorAlignment);
                 }
             } else if (opcode == spv::OpTypeImage) {
-                const uint32_t offset = member.decorations->GetOffset(module_state);
-                if (!IsIntegerMultipleOf(offset, phys_dev_ext_props.descriptor_heap_props.imageDescriptorAlignment)) {
+                if (!IsIntegerMultipleOf(offset_value, phys_dev_ext_props.descriptor_heap_props.imageDescriptorAlignment)) {
                     skip |= LogError("VUID-RuntimeSpirv-imageDescriptorAlignment-11477", module_state.handle(), loc,
                                      "shader %s has a struct (ID %" PRIu32 ") where member %" PRIu32
                                      " is an OpTypeImage with an offset of %" PRIu32
                                      " which is not aligned with imageDescriptorAlignment (%" PRIu64 ")",
-                                     entrypoint.Describe().c_str(), type_struct->id, i, offset,
+                                     entrypoint.Describe().c_str(), type_struct->id, i, offset_value,
                                      phys_dev_ext_props.descriptor_heap_props.imageDescriptorAlignment);
                 }
             } else if (opcode == spv::OpTypeBufferEXT) {
-                const uint32_t offset = member.decorations->GetOffset(module_state);
-                if (!IsIntegerMultipleOf(offset, phys_dev_ext_props.descriptor_heap_props.bufferDescriptorAlignment)) {
+                if (!IsIntegerMultipleOf(offset_value, phys_dev_ext_props.descriptor_heap_props.bufferDescriptorAlignment)) {
                     skip |= LogError("VUID-RuntimeSpirv-bufferDescriptorAlignment-11478", module_state.handle(), loc,
                                      "shader %s has a struct (ID %" PRIu32 ") where member %" PRIu32
                                      " is an OpTypeBufferEXT with an offset of %" PRIu32
                                      " which is not aligned with bufferDescriptorAlignment (%" PRIu64 ")",
-                                     entrypoint.Describe().c_str(), type_struct->id, i, offset,
+                                     entrypoint.Describe().c_str(), type_struct->id, i, offset_value,
                                      phys_dev_ext_props.descriptor_heap_props.bufferDescriptorAlignment);
                 }
             } else if (opcode == spv::OpTypeAccelerationStructureKHR) {
-                const uint32_t offset = member.decorations->GetOffset(module_state);
-                if (!IsIntegerMultipleOf(offset, phys_dev_ext_props.descriptor_heap_props.bufferDescriptorAlignment)) {
+                if (!IsIntegerMultipleOf(offset_value, phys_dev_ext_props.descriptor_heap_props.bufferDescriptorAlignment)) {
                     skip |= LogError("VUID-RuntimeSpirv-bufferDescriptorAlignment-11479", module_state.handle(), loc,
                                      "shader %s has a struct (ID %" PRIu32 ") where member %" PRIu32
                                      " is an OpTypeAccelerationStructureKHR with an offset of %" PRIu32
                                      " which is not aligned with bufferDescriptorAlignment (%" PRIu64 ")",
-                                     entrypoint.Describe().c_str(), type_struct->id, i, offset,
+                                     entrypoint.Describe().c_str(), type_struct->id, i, offset_value,
                                      phys_dev_ext_props.descriptor_heap_props.bufferDescriptorAlignment);
                 }
             } else if (opcode == spv::OpTypeTensorARM) {
-                const uint32_t offset = member.decorations->GetOffset(module_state);
-                if (!IsIntegerMultipleOf(offset, phys_dev_ext_props.descriptor_heap_tensor_props.tensorDescriptorAlignment)) {
+                if (!IsIntegerMultipleOf(offset_value, phys_dev_ext_props.descriptor_heap_tensor_props.tensorDescriptorAlignment)) {
                     skip |= LogError("VUID-RuntimeSpirv-tensorDescriptorAlignment-11480", module_state.handle(), loc,
                                      "shader %s has a struct (ID %" PRIu32 ") where member %" PRIu32
                                      " is an OpTypeTensorARM with an offset of %" PRIu32
                                      " which is not aligned with tensorDescriptorAlignment (%" PRIu64 ")",
-                                     entrypoint.Describe().c_str(), type_struct->id, i, offset,
+                                     entrypoint.Describe().c_str(), type_struct->id, i, offset_value,
                                      phys_dev_ext_props.descriptor_heap_tensor_props.tensorDescriptorAlignment);
                 }
             }

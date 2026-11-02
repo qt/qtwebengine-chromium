@@ -155,7 +155,7 @@ export class DeviceBoundSessionsModel extends Common.ObjectWrapper.ObjectWrapper
       sessionAndEvent = {
         isSessionTerminated: false,
         hasErrors: false,
-        eventsById: new Map<string, EventWithTimestamp>()
+        eventsById: new Map<string, EventWithTimestamp>(),
       };
       sessionIdToSessionMap.set(sessionId, sessionAndEvent);
     }

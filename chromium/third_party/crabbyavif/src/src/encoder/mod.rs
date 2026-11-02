@@ -164,6 +164,13 @@ pub enum Recipe {
     // image item), leading to a valid image but with loss due to precision
     // truncation and/or compression.
     BitDepthExtension12b8bOverlap4b,
+    #[cfg(feature = "satofloat")]
+    // Given 32-bit float input values, encode the sign, the exponent, and the
+    // mantissa as three integer coded image items.
+    // The IEEE 754 representation is kept as is.
+    // Negative values and special values (NaN, inf) are replaced with 0.0.
+    // Can only be used with Encoder::add_image_float().
+    Float32b,
 }
 
 impl CodecChoice {
@@ -439,15 +446,15 @@ impl Encoder {
         let first_image = images[0];
         let last_image = images.last().unwrap();
         for (index, image) in images.iter().enumerate() {
-            if !matches!(
-                (image.depth, recipe),
+            match (image.depth, recipe) {
                 (8 | 10 | 12, Recipe::None)
-                    | (16, Recipe::BitDepthExtension8b8b)
-                    | (16, Recipe::BitDepthExtension12b4b)
-                    | (16, Recipe::BitDepthExtension12b8bOverlap4b)
-            ) {
-                return AvifError::invalid_argument();
-            }
+                | (16, Recipe::BitDepthExtension8b8b)
+                | (16, Recipe::BitDepthExtension12b4b)
+                | (16, Recipe::BitDepthExtension12b8bOverlap4b) => {}
+                #[cfg(feature = "satofloat")]
+                (_, Recipe::Float32b) => {}
+                _ => return AvifError::invalid_argument(),
+            };
             let expected_width = if grid.is_last_column(index as u32) {
                 last_image.width
             } else {
@@ -519,23 +526,38 @@ impl Encoder {
         &mut self,
         grid_columns: u32,
         grid_rows: u32,
-        cell_images: &[&Image],
+        images: &[&Image],
         mut duration: u64,
         is_single_image: bool,
         gainmaps: Option<&[&GainMap]>,
     ) -> AvifResult<()> {
         let cell_count: usize = usize_from_u32(grid_rows * grid_columns)?;
+        let first_image = images[0];
+        let final_recipe = self
+            .settings
+            .recipe
+            .self_or_auto_choose_depending_on(first_image);
+
+        let cell_images = match final_recipe {
+            #[cfg(feature = "satofloat")]
+            Recipe::Float32b => {
+                // Expect three images per cell (sign+exponent_msb,
+                // exponent_lsb+mantissa_msb, mantissa_lsb).
+                if images.len() != cell_count.checked_mul(3).unwrap() {
+                    return AvifError::invalid_argument();
+                }
+                // Keep the sign+exponent_msb cells as the primary item (cell_images).
+                &images[..cell_count]
+            }
+            _ => images,
+        };
+
         if cell_count == 0 || cell_images.len() != cell_count {
             return AvifError::invalid_argument();
         }
         if duration == 0 {
             duration = 1;
         }
-        let first_image = cell_images[0];
-        let final_recipe = self
-            .settings
-            .recipe
-            .self_or_auto_choose_depending_on(first_image);
         if self.items.is_empty() {
             assert!(self.final_recipe.is_none());
             self.final_recipe = Some(final_recipe);
@@ -620,6 +642,16 @@ impl Encoder {
                         return AvifError::not_implemented();
                     }
                     self.create_bit_depth_extension_items(&grid)?;
+                }
+                #[cfg(feature = "satofloat")]
+                Recipe::Float32b => {
+                    if first_image.depth != 8 {
+                        return AvifError::invalid_argument();
+                    }
+                    if gainmaps.is_some() {
+                        return AvifError::not_implemented();
+                    }
+                    self.create_float_32b_items(&grid)?;
                 }
             }
 
@@ -714,6 +746,28 @@ impl Encoder {
                         self.create_bit_depth_extension_12b8b_overlap4b_image(image, item)?;
                     image = &bit_depth_extension_image;
                 }
+                #[cfg(feature = "satofloat")]
+                Recipe::Float32b => {
+                    // The Sample Transform derived image item input images were already created
+                    // in add_image_float() and passed to this function as arg 'images'.
+                    match (item.hidden_image, item.is_sato_least_significant_input) {
+                        (false, false) => {
+                            // image already points to the sign bit and exponent most significant
+                            // bits.
+                            assert!(std::ptr::eq(image, images[item.cell_index]));
+                        }
+                        (true, false) => {
+                            // Least significant bit of the exponent and most significant bits of
+                            // the mantissa.
+                            image = images[cell_images.len() + item.cell_index];
+                        }
+                        (true, true) => {
+                            // Least significant bits of the mantissa.
+                            image = images[cell_images.len() * 2 + item.cell_index];
+                        }
+                        _ => unreachable!(),
+                    }
+                }
             }
 
             let encoder_config = EncoderConfig {
@@ -799,6 +853,31 @@ impl Encoder {
             return AvifError::not_implemented();
         }
         self.add_image_impl(grid_columns, grid_rows, images, 0, true, Some(gainmaps))
+    }
+
+    #[cfg(feature = "satofloat")]
+    pub fn add_image_float(
+        &mut self,
+        image_metadata: &Image,
+        planes: [Option<&[f32]>; MAX_PLANE_COUNT],
+    ) -> AvifResult<()> {
+        if !self.items.is_empty() || self.settings.recipe != Recipe::Float32b {
+            return AvifError::invalid_argument();
+        }
+        let (sign_exponent_msb, exponent_lsb_mantissa_msb, mantissa_lsb) =
+            Self::create_float_32b_images(image_metadata, planes)?;
+        self.add_image_impl(
+            1,
+            1,
+            &[
+                &sign_exponent_msb,
+                &exponent_lsb_mantissa_msb,
+                &mantissa_lsb,
+            ],
+            0,
+            self.settings.extra_layer_count == 0,
+            None,
+        )
     }
 
     pub fn finish(&mut self) -> AvifResult<Vec<u8>> {

@@ -98,7 +98,7 @@ export default createRule<[], MessageIds>({
         data: {
           componentName: className,
           methodName,
-        }
+        },
       });
     }
 
@@ -155,7 +155,7 @@ export default createRule<[], MessageIds>({
         for (const classNode of classesToCheck) {
           checkClassForBoundMethods(classNode);
         }
-      }
+      },
     };
-  }
+  },
 });

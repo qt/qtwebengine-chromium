@@ -12,10 +12,14 @@ import("../ninja/vars.gni")
 
 declare_args() {
   devtools_skip_typecheck = build_with_chromium && !is_official_build
+  devtools_use_typescript_go = false
 }
 
 assert(!devtools_skip_typecheck || !is_official_build,
        "Official build should not skip typecheck")
+
+assert(!devtools_use_typescript_go || build_with_chromium,
+       "TSGo is only available in full Chromium checkouts")
 
 # Defines a target that compiles .ts files using TypeScript.
 # A temporary tsconfig.json is generated which uses the
@@ -56,9 +60,13 @@ template("ts_library") {
                              "inputs",
                              "data_deps",
                              "metadata",
+                             "additional_type_definitions",
                            ])
     if (!defined(inputs)) {
       inputs = []
+    }
+    if (defined(additional_type_definitions)) {
+      inputs += additional_type_definitions
     }
 
     inputs += [
@@ -126,6 +134,17 @@ template("ts_library") {
       public_deps += deps
     }
 
+    # tsc/esbuild resolve the module type from package.json in the build root,
+    # which //tools/typescript:copy_package_json produces. Depend on it so the
+    # copy runs first; otherwise a concurrent copy can fail the read on Windows
+    # with a sharing violation. The target only exists in a Chromium checkout.
+    if (build_with_chromium) {
+      if (!defined(deps)) {
+        deps = []
+      }
+      deps += [ "//tools/typescript:copy_package_json" ]
+    }
+
     # Here we assume that all sources are in this folder listed,
     # as there is no way of retrieving the folder the template
     # is in with Ninja.
@@ -139,11 +158,16 @@ template("ts_library") {
       inputs += [
         devtools_location_prepend + "node_modules/@types/mocha/index.d.ts",
         devtools_location_prepend + "node_modules/@types/sinon/index.d.ts",
+        devtools_location_prepend + "node_modules/@types/chai/index.d.ts",
       ]
     }
 
     if (_tsconfig_only) {
       args += [ "--tsconfig-only" ]
+    }
+
+    if (devtools_use_typescript_go) {
+      args += [ "--use-typescript-go" ]
     }
 
     if (defined(invoker.additional_type_definitions)) {
@@ -188,6 +212,19 @@ template("ts_library") {
     output_files = [ "$target_gen_dir/$target_name-tsconfig.json" ]
 
     if (defined(sources)) {
+      # Expose ts files to dependent targets.
+      public_inputs =
+          filter_include(sources,
+                         [
+                           "*.ts",
+
+                           # TODO: Migrate the files below to TypeScript
+                           # and remove them from this list.
+                           "*ahem.js",
+                           "*ARIAProperties.js",
+                           "*SupportedCSSProperties.js",
+                         ])
+
       args += [ "--sources" ] + rebase_path(sources, root_build_dir)
 
       foreach(src, sources) {
@@ -252,6 +289,7 @@ template("ts_library") {
                                     [
                                       "*.test.js",
                                       "*_test.js",
+                                      "*.test.api.js",
                                     ])
 
     if (!devtools_bundle) {

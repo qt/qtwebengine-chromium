@@ -21,7 +21,9 @@
 #include <cstdint>
 #include <memory>
 
+#include "src/gav1/decoder_buffer.h"
 #include "src/gav1/frame_buffer.h"
+#include "src/gav1/status_code.h"
 #include "src/utils/memory.h"
 #include "src/utils/vector.h"
 

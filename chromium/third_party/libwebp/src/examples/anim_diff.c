@@ -34,9 +34,15 @@ static int AdditionWillOverflow(int a, int b) {
 }
 
 static int FramesAreEqual(const uint8_t* const rgba1,
-                          const uint8_t* const rgba2, int width, int height) {
-  const int stride = width * 4;  // Always true for 'DecodedFrame.rgba'.
-  return !memcmp(rgba1, rgba2, stride * height);
+                          const uint8_t* const rgba2, uint32_t width,
+                          uint32_t height) {
+  // Always * 4 for 'DecodedFrame.rgba'.
+  const uint32_t stride = width * 4;
+  size_t size;
+  if (!CheckMultiplicationOverflow(stride, height, &size)) {
+    return 0;
+  }
+  return !memcmp(rgba1, rgba2, size);
 }
 
 static WEBP_INLINE int PixelsAreSimilar(uint32_t src, uint32_t dst,
@@ -64,8 +70,10 @@ static int FramesAreSimilar(const uint8_t* const rgba1,
   for (j = 0; j < height; ++j) {
     for (i = 0; i < width; ++i) {
       const int stride = width * 4;
-      const size_t offset = j * stride + i;
-      if (!PixelsAreSimilar(rgba1[offset], rgba2[offset], max_allowed_diff)) {
+      size_t offset_row, offset;
+      if (!CheckMultiplicationOverflow(j, stride, &offset_row) ||
+          !CheckAdditionOverflow(offset_row, i, &offset) ||
+          !PixelsAreSimilar(rgba1[offset], rgba2[offset], max_allowed_diff)) {
         return 0;
       }
     }

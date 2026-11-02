@@ -27,7 +27,6 @@
 
 #include "src/tint/cmd/fuzz/common/ir_fuzzer.h"
 #include "src/tint/lang/core/ir/transform/binding_remapper.h"
-#include "src/tint/lang/core/ir/validator.h"
 
 namespace tint::core::ir::transform {
 namespace {
@@ -42,7 +41,7 @@ Result<SuccessType> BindingRemapperFuzzer(
 }  // namespace
 }  // namespace tint::core::ir::transform
 
-TINT_IR_MODULE_FUZZER(tint::core::ir::transform::BindingRemapperFuzzer,
-                      tint::core::ir::transform::kBindingRemapperCapabilities,
-                      tint::core::ir::transform::kBindingRemapperCapabilities +
-                          tint::core::ir::Capability::kAllowDuplicateBindings);
+constexpr auto kUnsupportedProperties = tint::core::ir::Properties{
+    tint::core::ir::Property::kAllowDuplicateBindings,
+};
+TINT_IR_MODULE_FUZZER(tint::core::ir::transform::BindingRemapperFuzzer, kUnsupportedProperties);

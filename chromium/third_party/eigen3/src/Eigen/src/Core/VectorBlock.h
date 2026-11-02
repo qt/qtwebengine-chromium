@@ -52,7 +52,7 @@ struct traits<VectorBlock<VectorType, Size> >
  * \include class_FixedVectorBlock.cpp
  * Output: \verbinclude class_FixedVectorBlock.out
  *
- * \sa class Block, DenseBase::segment(Index,Index,Index,Index), DenseBase::segment(Index,Index)
+ * \sa class Block, DenseBase::segment(Index,Index)
  */
 template <typename VectorType, int Size>
 class VectorBlock : public Block<VectorType, internal::traits<VectorType>::Flags & RowMajorBit ? 1 : Size,

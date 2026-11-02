@@ -106,7 +106,7 @@ ffbuild/.config: $(CONFIGURABLE_COMPONENTS)
 	@-printf '\nWARNING: $(?) newer than config_components.h, rerun configure\n\n'
 	@-tput sgr0 2>/dev/null
 
-SUBDIR_VARS := CLEANFILES FFLIBS HOSTPROGS TESTPROGS TOOLS               \
+SUBDIR_VARS := CLEANFILES FFLIBS DEVPROGS HOSTPROGS TESTPROGS TOOLS      \
                HEADERS ARCH_HEADERS BUILT_HEADERS SKIPHEADERS            \
                ARMV5TE-OBJS ARMV6-OBJS ARMV8-OBJS VFP-OBJS NEON-OBJS     \
                ALTIVEC-OBJS VSX-OBJS X86ASM-OBJS                         \
@@ -143,7 +143,9 @@ ifeq ($(STRIPTYPE),direct)
 else
 	$(RM) $@
 	$(CP) $< $@
+ifneq ($(STRIPTYPE),nostrip)
 	$(STRIP) $@
+endif
 endif
 
 %$(PROGSSUF)_g$(EXESUF): $(FF_DEP_LIBS)
@@ -187,7 +189,8 @@ clean::
 	$(RM) -rf coverage.info coverage.info.in lcov
 
 distclean:: clean
-	$(RM) .version config.asm config.h config_components.* mapfile  \
+	$(RM) .version config.asm config.h config_components.* mapfile \
+		checkasm_config_generated.* checkasm_header_config_generated.h \
 		ffbuild/.config ffbuild/config.* libavutil/avconfig.h \
 		version.h libavutil/ffversion.h libavcodec/codec_names.h \
 		libavcodec/bsf_list.c libavformat/protocol_list.c \
@@ -202,8 +205,8 @@ endif
 config:
 	$(SRC_PATH)/configure $(value FFMPEG_CONFIGURATION)
 
-build: all alltools examples testprogs
-check: all alltools examples testprogs fate
+build: all alltools devprogs examples testprogs
+check: all alltools devprogs examples testprogs fate
 
 include $(SRC_PATH)/tests/Makefile
 

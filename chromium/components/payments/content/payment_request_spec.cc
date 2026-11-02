@@ -87,6 +87,10 @@ PaymentRequestSpec::~PaymentRequestSpec() = default;
 void PaymentRequestSpec::UpdateWith(mojom::PaymentDetailsPtr details) {
   DCHECK(details_);
   DCHECK(details_->total || details->total);
+  // `selected_shipping_option_` points into `details_->shipping_options`, which
+  // may be replaced (and freed) below. Clear it first so it never dangles;
+  // RecomputeSpecForDetails() recomputes it from the new options.
+  selected_shipping_option_ = nullptr;
   if (details->total)
     details_->total = std::move(details->total);
   if (details->display_items)
@@ -210,8 +214,14 @@ void PaymentRequestSpec::RecomputeSpecForDetails() {
 
   NotifyOnSpecUpdated();
 
+  // NotifyInitialized() can synchronously trigger observers that destroy the
+  // payment window's WebContents and delete `this`.
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
   if (is_initialization)
     NotifyInitialized();
+  if (!weak_this) {
+    return;
+  }
 
   current_update_reason_ = UpdateReason::NONE;
 }

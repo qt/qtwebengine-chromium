@@ -42,7 +42,10 @@ using namespace tint::core::number_suffixes;  // NOLINT
 namespace tint::core::ir::analysis {
 namespace {
 
-using IR_SubgroupMatrixAnalysis = IRTestHelper;
+struct IR_SubgroupMatrixAnalysis : public IRTestHelper {
+  protected:
+    void SetUp() override { mod.properties.Add(Property::kAllow16BitFloats); }
+};
 
 struct TypeInfo {
     std::string_view type_name;
@@ -72,7 +75,13 @@ bool SortConfig(const SubgroupMatrixConfig& a, const SubgroupMatrixConfig& b) {
     return a.K < b.K;
 }
 
-using IR_SubgroupMatrixAnalysisTypeTest = IRTestParamHelper<TypeInfo>;
+class IR_SubgroupMatrixAnalysisTypeTest : public IRTestParamHelper<TypeInfo> {
+  protected:
+    void SetUp() override {
+        IRTestParamHelper<TypeInfo>::SetUp();
+        mod.properties.Add(Property::kAllow16BitFloats, Property::kAllow8BitIntegers);
+    }
+};
 TEST_P(IR_SubgroupMatrixAnalysisTypeTest, Config_Type_Left) {
     auto p = GetParam();
 
@@ -110,8 +119,7 @@ TEST_P(IR_SubgroupMatrixAnalysisTypeTest, Config_Type_Left) {
 }
 )";
     EXPECT_EQ(src, str());
-    EXPECT_EQ(Validate(mod, core::ir::Capabilities{core::ir::Capability::kAllow8BitIntegers}),
-              Success);
+    EXPECT_EQ(Validate(mod), Success);
 
     auto res = GatherSubgroupMatrixInfo(mod);
     EXPECT_TRUE(res.multiplies.empty());
@@ -162,8 +170,7 @@ TEST_P(IR_SubgroupMatrixAnalysisTypeTest, Config_Type_Right) {
 }
 )";
     EXPECT_EQ(src, str());
-    EXPECT_EQ(Validate(mod, core::ir::Capabilities{core::ir::Capability::kAllow8BitIntegers}),
-              Success);
+    EXPECT_EQ(Validate(mod), Success);
 
     auto res = GatherSubgroupMatrixInfo(mod);
     EXPECT_TRUE(res.multiplies.empty());
@@ -215,8 +222,7 @@ TEST_P(IR_SubgroupMatrixAnalysisTypeTest, Config_Type_Result) {
 }
 )";
     EXPECT_EQ(src, str());
-    EXPECT_EQ(Validate(mod, core::ir::Capabilities{core::ir::Capability::kAllow8BitIntegers}),
-              Success);
+    EXPECT_EQ(Validate(mod), Success);
 
     auto res = GatherSubgroupMatrixInfo(mod);
     EXPECT_TRUE(res.multiplies.empty());
@@ -277,6 +283,8 @@ INSTANTIATE_TEST_SUITE_P(,
                              }));
 
 TEST_F(IR_SubgroupMatrixAnalysis, Config_Multiple) {
+    mod.properties.Add(Property::kAllow8BitIntegers);
+
     auto* func = b.ComputeFunction("main");
     b.Append(func->Block(), [&] {  //
         b.Var("v1", ty.ptr(function, ty.subgroup_matrix_left(ty.f16(), 8u, 8u)));
@@ -301,8 +309,7 @@ TEST_F(IR_SubgroupMatrixAnalysis, Config_Multiple) {
 }
 )";
     EXPECT_EQ(src, str());
-    EXPECT_EQ(Validate(mod, core::ir::Capabilities{core::ir::Capability::kAllow8BitIntegers}),
-              Success);
+    EXPECT_EQ(Validate(mod), Success);
 
     auto res = GatherSubgroupMatrixInfo(mod);
     EXPECT_TRUE(res.multiplies.empty());
@@ -544,8 +551,8 @@ TEST_F(IR_SubgroupMatrixAnalysis, Multiply) {
             b.Load(b.Var("right", ty.ptr(function, ty.subgroup_matrix_right(ty.f32(), 8u, 2u))));
 
         b.Let("result", b.CallExplicit(ty.subgroup_matrix_result(ty.f32(), 8u, 8u),
-                                       core::BuiltinFn::kSubgroupMatrixMultiply, Vector{ty.f32()},
-                                       left, right));
+                                       core::BuiltinFn::kSubgroupMatrixMultiply,
+                                       Vector<TemplateParameter, 1>{ty.f32()}, left, right));
 
         b.Return(func);
     });
@@ -668,6 +675,8 @@ TEST_F(IR_SubgroupMatrixAnalysis, MultiplyAccumulate) {
 }
 
 TEST_F(IR_SubgroupMatrixAnalysis, Multiply_DifferentResultType) {
+    mod.properties.Add(Property::kAllow8BitIntegers);
+
     auto* func = b.ComputeFunction("main");
     b.Append(func->Block(), [&] {  //
         auto* left =
@@ -676,8 +685,8 @@ TEST_F(IR_SubgroupMatrixAnalysis, Multiply_DifferentResultType) {
             b.Load(b.Var("right", ty.ptr(function, ty.subgroup_matrix_right(ty.i8(), 8u, 2u))));
 
         b.Let("result", b.CallExplicit(ty.subgroup_matrix_result(ty.i32(), 8u, 8u),
-                                       core::BuiltinFn::kSubgroupMatrixMultiply, Vector{ty.i32()},
-                                       left, right));
+                                       core::BuiltinFn::kSubgroupMatrixMultiply,
+                                       Vector<TemplateParameter, 1>{ty.i32()}, left, right));
 
         b.Return(func);
     });
@@ -697,8 +706,7 @@ TEST_F(IR_SubgroupMatrixAnalysis, Multiply_DifferentResultType) {
 )";
     EXPECT_EQ(src, str());
 
-    EXPECT_EQ(Validate(mod, core::ir::Capabilities{core::ir::Capability::kAllow8BitIntegers}),
-              Success);
+    EXPECT_EQ(Validate(mod), Success);
 
     auto res = GatherSubgroupMatrixInfo(mod);
     ASSERT_EQ(3u, res.configs.size());
@@ -741,8 +749,8 @@ TEST_F(IR_SubgroupMatrixAnalysis, Multiply_Multiple) {
             b.Load(b.Var("right", ty.ptr(function, ty.subgroup_matrix_right(ty.f32(), 8u, 2u))));
 
         b.Let("result", b.CallExplicit(ty.subgroup_matrix_result(ty.f32(), 8u, 8u),
-                                       core::BuiltinFn::kSubgroupMatrixMultiply, Vector{ty.f32()},
-                                       left, right));
+                                       core::BuiltinFn::kSubgroupMatrixMultiply,
+                                       Vector<TemplateParameter, 1>{ty.f32()}, left, right));
 
         auto* if_ = b.If(true);
         b.Append(if_->True(), [&] {
@@ -753,7 +761,7 @@ TEST_F(IR_SubgroupMatrixAnalysis, Multiply_Multiple) {
 
             b.Let("result2", b.CallExplicit(ty.subgroup_matrix_result(ty.u32(), 8u, 8u),
                                             core::BuiltinFn::kSubgroupMatrixMultiply,
-                                            Vector{ty.u32()}, left2, right2));
+                                            Vector<TemplateParameter, 1>{ty.u32()}, left2, right2));
 
             b.Exit(if_);
         });

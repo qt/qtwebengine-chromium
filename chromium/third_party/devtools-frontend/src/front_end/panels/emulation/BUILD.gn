@@ -91,6 +91,7 @@ devtools_ui_module("unittests") {
   sources = [
     "AdvancedApp.test.ts",
     "DeviceModeToolbar.test.ts",
+    "DeviceModeView.test.ts",
     "MediaQueryInspector.test.ts",
   ]
 
@@ -107,6 +108,7 @@ devtools_ui_module("unittests") {
     "../../ui/components/buttons:bundle",
     "../../ui/legacy:bundle",
     "../../ui/legacy/theme_support:bundle",
+    "../../ui/visual_logging:bundle",
     "../mobile_throttling:bundle",
   ]
 }

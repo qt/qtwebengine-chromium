@@ -3,12 +3,17 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../core/common/common.js';
 import {
   renderElementIntoDOM,
 } from '../../testing/DOMHelpers.js';
-import {describeWithEnvironment, updateHostConfig} from '../../testing/EnvironmentHelpers.js';
+import {
+  deinitializeGlobalVars,
+  initializeGlobalVars,
+  updateHostConfig,
+} from '../../testing/EnvironmentHelpers.js';
 import {createViewFunctionStub} from '../../testing/ViewFunctionHelpers.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
@@ -19,7 +24,15 @@ const DELAY_BEFORE_PROMOTION_COLLAPSE_IN_MS = 5000;
 
 const {GlobalAiButton} = Main.GlobalAiButton;
 
-describeWithEnvironment('GlobalAiButton', () => {
+describe('GlobalAiButton', () => {
+  before(async () => {
+    await initializeGlobalVars();
+  });
+
+  after(async () => {
+    await deinitializeGlobalVars();
+  });
+
   let clock: sinon.SinonFakeTimers;
   beforeEach(() => {
     Common.Settings.Settings.instance().settingForTest('global-ai-button-click-count').set(0);
@@ -170,7 +183,7 @@ describeWithEnvironment('GlobalAiButton', () => {
       });
       clock = sinon.useFakeTimers({
         now: new Date('2026-10-01'),  // After 2026-09-30
-        toFake: ['setTimeout', 'Date']
+        toFake: ['setTimeout', 'Date'],
       });
       Common.Settings.Settings.instance().settingForTest('global-ai-button-click-count').set(CLICK_COUNT_LIMIT - 1);
 

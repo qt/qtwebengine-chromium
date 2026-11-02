@@ -161,6 +161,8 @@ class CONTENT_EXPORT ServiceWorkerSingleScriptUpdateChecker
       int64_t write_resource_id,
       ScriptChecksumUpdateOption script_checksum_update_option,
       const blink::StorageKey& storage_key,
+      const std::optional<base::UnguessableToken>& network_restrictions_id,
+      PolicyContainerPolicies creator_policies,
       ResultCallback callback);
 
   ServiceWorkerSingleScriptUpdateChecker(
@@ -189,6 +191,7 @@ class CONTENT_EXPORT ServiceWorkerSingleScriptUpdateChecker
   const scoped_refptr<PolicyContainerHost> policy_container_host() const {
     return policy_container_host_;
   }
+  void FlushRemotesForTesting();
 
   static const char* ResultToString(Result result);
 
@@ -247,6 +250,10 @@ class CONTENT_EXPORT ServiceWorkerSingleScriptUpdateChecker
   std::unique_ptr<blink::ThrottlingURLLoader> network_loader_;
 
   std::unique_ptr<ServiceWorkerCacheWriter> cache_writer_;
+
+  const std::optional<base::UnguessableToken> network_restrictions_id_;
+  const PolicyContainerPolicies creator_policies_;
+
   ResultCallback callback_;
 
   // Represents the state of |network_loader_|.

@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/dotfile_settings.gni")
+
 buildconfig = "//build/config/BUILDCONFIG.gn"
 
 # The python interpreter to use by default. On Windows, this will look
@@ -59,3 +61,5 @@ no_check_targets = [
   "//v8/test/cctest:cctest_sources",
   "//v8/test/unittests:inspector_unittests_sources",
 ]
+
+expand_directory_allowlist = build_dotfile_settings.expand_directory_allowlist

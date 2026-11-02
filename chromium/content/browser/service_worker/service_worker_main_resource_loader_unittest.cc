@@ -263,7 +263,16 @@ class FetchEventServiceWorker : public FakeServiceWorker {
     response_callback_->OnResponse(
         OkResponse(nullptr /* blob_body */, response_source_, response_time_,
                    cache_storage_cache_name_),
-        blink::mojom::ServiceWorkerFetchEventTiming::New());
+        blink::mojom::ServiceWorkerFetchEventTiming::New(), /*errors=*/nullptr);
+    response_callback_.FlushForTesting();
+    std::move(finish_callback_)
+        .Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED);
+  }
+  void FinishRespondWithCustomResponse(
+      blink::mojom::FetchAPIResponsePtr response) {
+    response_callback_->OnResponse(
+        std::move(response), blink::mojom::ServiceWorkerFetchEventTiming::New(),
+        /*errors=*/nullptr);
     response_callback_.FlushForTesting();
     std::move(finish_callback_)
         .Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED);
@@ -340,7 +349,7 @@ class FetchEventServiceWorker : public FakeServiceWorker {
         response_callback->OnResponse(
             OkResponse(std::move(blob_body_), response_source_, response_time_,
                        cache_storage_cache_name_),
-            std::move(timing));
+            std::move(timing), /*errors=*/nullptr);
         std::move(finish_callback)
             .Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED);
         break;
@@ -348,19 +357,20 @@ class FetchEventServiceWorker : public FakeServiceWorker {
         response_callback->OnResponseStream(
             OkResponse(nullptr /* blob_body */, response_source_,
                        response_time_, cache_storage_cache_name_),
-            std::move(stream_handle_), std::move(timing));
+            std::move(stream_handle_), std::move(timing), /*errors=*/nullptr);
 
         std::move(finish_callback)
             .Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED);
         break;
       case ResponseMode::kFallbackResponse:
         response_callback->OnFallback(/*request_body=*/std::nullopt,
-                                      std::move(timing));
+                                      std::move(timing), /*errors=*/nullptr);
         std::move(finish_callback)
             .Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED);
         break;
       case ResponseMode::kErrorResponse:
-        response_callback->OnResponse(ErrorResponse(), std::move(timing));
+        response_callback->OnResponse(ErrorResponse(), std::move(timing),
+                                      /*errors=*/nullptr);
         std::move(finish_callback)
             .Run(blink::mojom::ServiceWorkerEventStatus::REJECTED);
         break;
@@ -390,18 +400,18 @@ class FetchEventServiceWorker : public FakeServiceWorker {
         response_callback->OnResponse(
             OkResponse(nullptr /* blob_body */, response_source_,
                        response_time_, cache_storage_cache_name_),
-            std::move(timing));
+            std::move(timing), /*errors=*/nullptr);
         // Now the caller must call FinishWaitUntil() to finish the event.
         break;
       case ResponseMode::kRedirect:
         response_callback->OnResponse(RedirectResponse(redirected_url_.spec()),
-                                      std::move(timing));
+                                      std::move(timing), /*errors=*/nullptr);
         std::move(finish_callback)
             .Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED);
         break;
       case ResponseMode::kHeaders:
         response_callback->OnResponse(HeadersResponse(headers_),
-                                      std::move(timing));
+                                      std::move(timing), /*errors=*/nullptr);
         std::move(finish_callback)
             .Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED);
         break;
@@ -1414,13 +1424,6 @@ TEST_F(ServiceWorkerMainResourceLoaderTest, Lifetime) {
 }
 
 TEST_F(ServiceWorkerMainResourceLoaderTest, Lifetime_RaceNetworkRequest) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitWithFeatures(
-      {features::
-           kServiceWorkerStaticRouterRaceNetworkRequestPerformanceImprovement,
-       features::kServiceWorkerStaticRouterRaceRequestFix2},
-      {});
-
   SetupStaticRoutingRules(
       network::mojom::ServiceWorkerRouterSourceType::kRaceNetworkAndFetchEvent);
   service_worker_->DeferResponse();
@@ -1442,6 +1445,43 @@ TEST_F(ServiceWorkerMainResourceLoaderTest, Lifetime_RaceNetworkRequest) {
   // Finish the fetch event. This should trigger the deletion of |loader_|.
   service_worker_->FinishRespondWith();
   base::RunLoop().RunUntilIdle();
+  EXPECT_FALSE(loader);
+}
+
+// Tests that the loader handles being detached while running the fallback
+// callback. This can happen if the navigation is cancelled while the fallback
+// callback is on the stack.
+TEST_F(ServiceWorkerMainResourceLoaderTest, DetachedDuringFallbackCallback) {
+  service_worker_->RespondWithFallback();
+  SetupNetworkResponse();
+
+  std::unique_ptr<network::ResourceRequest> request = CreateRequest();
+  service_worker_client_ = std::make_unique<ScopedServiceWorkerClient>(
+      CreateServiceWorkerClient(helper_->context(), request->url));
+  service_worker_client()->AddMatchingRegistration(registration_.get());
+  service_worker_client()->SetControllerRegistration(
+      registration_, /*notify_controllerchange=*/false);
+
+  base::RunLoop run_loop;
+  loader_ = std::make_unique<ServiceWorkerMainResourceLoader>(
+      base::BindLambdaForTesting(
+          [&](ResponseHeadUpdateParams) -> network::mojom::URLLoaderFactory* {
+            // Simulate the owning interceptor being torn down while the
+            // fallback callback is running.
+            loader_.release()->DetachedFromRequest();
+            run_loop.Quit();
+            return fake_url_loader_factory_.get();
+          }),
+      /*fetch_event_client_id=*/"", service_worker_client()->AsWeakPtr(),
+      /*find_registration_start_time=*/base::TimeTicks::Now());
+  base::WeakPtr<ServiceWorkerMainResourceLoader> loader = loader_->AsWeakPtr();
+  loader_->StartRequest(loader_remote_.BindNewPipeAndPassReceiver(),
+                        /*request_id=*/0, /*options=*/0, *request,
+                        client_.CreateRemote(),
+                        net::MutableNetworkTrafficAnnotationTag());
+  run_loop.Run();
+
+  // The loader should have been deleted.
   EXPECT_FALSE(loader);
 }
 
@@ -2162,6 +2202,148 @@ TEST_F(ServiceWorkerMainResourceLoaderTest, SearchPrefetchHitInSyntheticResponse
                 kSyntheticResponse);
 
   SetBrowserClientForTesting(old_browser_client);
+}
+
+// Tests that when the Service Worker fetch handler responds faster than the
+// network request with a 204 No Content, and the network request subsequently
+// receives a 302 redirect, the loader is leaked (default behavior on current
+// branch).
+TEST_F(ServiceWorkerMainResourceLoaderTest,
+       Lifetime_RaceNetworkRequest_Redirect_SW_Wins_204_Leak) {
+  SetupStaticRoutingRules(
+      network::mojom::ServiceWorkerRouterSourceType::kRaceNetworkAndFetchEvent);
+  service_worker_->DeferResponse();
+
+  // Variables to keep the receiver and client alive to simulate the race
+  // request.
+  mojo::PendingReceiver<network::mojom::URLLoader> keep_alive_loader_receiver;
+  mojo::Remote<network::mojom::URLLoaderClient> race_client_remote;
+
+  // Setup SingleRequestURLLoaderFactory to simulate a 302 redirect.
+  auto handler = base::BindLambdaForTesting(
+      [&](const network::ResourceRequest& resource_request,
+          mojo::PendingReceiver<network::mojom::URLLoader> receiver,
+          mojo::PendingRemote<network::mojom::URLLoaderClient> client) {
+        // Keep the receiver alive to prevent premature connection error on the
+        // loader side.
+        keep_alive_loader_receiver = std::move(receiver);
+
+        // Bind the client to a Remote to monitor its connection status.
+        race_client_remote.Bind(std::move(client));
+
+        net::RedirectInfo redirect_info;
+        redirect_info.status_code = 302;
+        redirect_info.new_url = GURL("https://example.com/redirected");
+
+        auto response = network::mojom::URLResponseHead::New();
+        response->headers = base::MakeRefCounted<net::HttpResponseHeaders>(
+            "HTTP/1.1 302 Found\nLocation: https://example.com/redirected\n\n");
+
+        // Send the redirect.
+        race_client_remote->OnReceiveRedirect(redirect_info,
+                                              std::move(response));
+      });
+
+  network_loader_factory_ =
+      base::MakeRefCounted<network::SingleRequestURLLoaderFactory>(
+          std::move(handler));
+
+  StartRequest(CreateRequest());
+  base::WeakPtr<ServiceWorkerMainResourceLoader> loader = loader_->AsWeakPtr();
+  ASSERT_TRUE(loader);
+
+  // Wait for the fetch event to be dispatched to the Service Worker.
+  service_worker_->RunUntilFetchEvent();
+
+  // SW responds with 204 No Content.
+  auto response = blink::mojom::FetchAPIResponse::New();
+  response->status_code = 204;
+  response->status_text = "No Content";
+  response->response_type = network::mojom::FetchResponseType::kDefault;
+
+  service_worker_->FinishRespondWithCustomResponse(std::move(response));
+  client_.RunUntilComplete();
+  EXPECT_TRUE(loader);
+
+  // The navigation is completed and the loader is detached.
+  loader_.release()->DetachedFromRequest();
+
+  // Reset the remote to disconnect the Mojo pipe, which triggers
+  // DeleteIfNeeded() on connection error.
+  loader_remote_.reset();
+
+  // Let the network request (302 redirect) run.
+  base::RunLoop().RunUntilIdle();
+
+  // With the fix, ShouldDelayDeletion() correctly returns false on redirect,
+  // allowing the loader to be cleanly destroyed and the Mojo pipe to be
+  // disconnected.
+  EXPECT_FALSE(loader);
+  EXPECT_FALSE(race_client_remote.is_connected());
+}
+
+TEST_F(ServiceWorkerMainResourceLoaderTest,
+       Lifetime_RaceNetworkRequest_Redirect_SW_Wins_204_Leak_ReverseOrder) {
+  SetupStaticRoutingRules(
+      network::mojom::ServiceWorkerRouterSourceType::kRaceNetworkAndFetchEvent);
+  service_worker_->DeferResponse();
+
+  mojo::PendingReceiver<network::mojom::URLLoader> keep_alive_loader_receiver;
+  mojo::Remote<network::mojom::URLLoaderClient> race_client_remote;
+
+  net::RedirectInfo redirect_info;
+  redirect_info.status_code = 302;
+  redirect_info.new_url = GURL("https://example.com/redirected");
+  auto response_head = network::mojom::URLResponseHead::New();
+  response_head->headers = base::MakeRefCounted<net::HttpResponseHeaders>(
+      "HTTP/1.1 302 Found\nLocation: https://example.com/redirected\n\n");
+
+  auto handler = base::BindLambdaForTesting(
+      [&](const network::ResourceRequest& resource_request,
+          mojo::PendingReceiver<network::mojom::URLLoader> receiver,
+          mojo::PendingRemote<network::mojom::URLLoaderClient> client) {
+        keep_alive_loader_receiver = std::move(receiver);
+        race_client_remote.Bind(std::move(client));
+      });
+
+  network_loader_factory_ =
+      base::MakeRefCounted<network::SingleRequestURLLoaderFactory>(
+          std::move(handler));
+
+  StartRequest(CreateRequest());
+  base::WeakPtr<ServiceWorkerMainResourceLoader> loader = loader_->AsWeakPtr();
+  ASSERT_TRUE(loader);
+
+  service_worker_->RunUntilFetchEvent();
+
+  // 1. SW responds with 204 first.
+  auto response = blink::mojom::FetchAPIResponse::New();
+  response->status_code = 204;
+  response->status_text = "No Content";
+  response->response_type = network::mojom::FetchResponseType::kDefault;
+
+  service_worker_->FinishRespondWithCustomResponse(std::move(response));
+  client_.RunUntilComplete();
+  EXPECT_TRUE(loader);
+
+  // 2. The navigation is completed and the loader is detached.
+  loader_.release()->DetachedFromRequest();
+  loader_remote_.reset();
+
+  // The loader should still be alive because the redirect has not arrived yet.
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(loader);
+
+  // 3. Now, late-arrive the 302 redirect on the race network request.
+  race_client_remote->OnReceiveRedirect(redirect_info,
+                                        std::move(response_head));
+
+  // This should trigger the completion callback -> DeleteIfNeeded() and cleanly
+  // destroy the loader.
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_FALSE(loader);
+  EXPECT_FALSE(race_client_remote.is_connected());
 }
 
 }  // namespace service_worker_main_resource_loader_unittest

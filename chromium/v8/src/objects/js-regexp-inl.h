@@ -9,6 +9,7 @@
 // Include the non-inl header before the rest of the headers.
 
 #include "src/base/logging.h"
+#include "src/objects/heap-object-field-inl.h"
 #include "src/objects/js-array-inl.h"
 #include "src/objects/smi-inl.h"
 #include "src/objects/string-inl.h"
@@ -21,8 +22,6 @@
 
 namespace v8 {
 namespace internal {
-
-#include "torque-generated/src/objects/js-regexp-tq-inl.inc"
 
 Tagged<Object> JSRegExp::last_index() const {
   return TaggedField<Object, kLastIndexOffset>::load(this);

@@ -14,13 +14,10 @@
 
 #include "src/dsp/intrapred_smooth.h"
 
-#include <algorithm>
 #include <cassert>
 #include <cstddef>
-#include <cstdlib>
-#include <cstring>
+#include <cstdint>
 
-#include "src/dsp/constants.h"
 #include "src/dsp/dsp.h"
 #include "src/utils/common.h"
 #include "src/utils/constants.h"

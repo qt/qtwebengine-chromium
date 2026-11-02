@@ -60,8 +60,8 @@ g.test('alignment')
     const { encoder, validateFinish } = t.createEncoder(encoderType);
     const data = new arrayBufferType(elementCount);
 
-    t.shouldThrow(isContentSizeAligned ? false : 'RangeError', () => {
-      encoder.setImmediates!(rangeOffset, data, 0, elementCount);
+    t.shouldThrow(isContentSizeAligned ? false : 'OperationError', () => {
+      encoder.setImmediates(rangeOffset, data, 0, elementCount);
     });
 
     validateFinish(isRangeOffsetAligned);
@@ -101,13 +101,13 @@ g.test('overflow')
           rangeOffset: 0,
           dataOffset: 2 ** 31 - 1,
           elementCount: 4,
-          _expectedError: 'RangeError',
+          _expectedError: 'OperationError',
         },
         {
           rangeOffset: 0,
           dataOffset: 2 ** 32 - 1,
           elementCount: 4,
-          _expectedError: 'RangeError',
+          _expectedError: 'OperationError',
         },
       ])
   )
@@ -120,11 +120,11 @@ g.test('overflow')
     const data = new arrayBufferType(elementCount);
 
     const doSetImmediates = () => {
-      encoder.setImmediates!(rangeOffset, data, dataOffset, elementCount);
+      encoder.setImmediates(rangeOffset, data, dataOffset, elementCount);
     };
 
-    if (_expectedError === 'RangeError') {
-      t.shouldThrow('RangeError', doSetImmediates);
+    if (_expectedError === 'OperationError') {
+      t.shouldThrow('OperationError', doSetImmediates);
     } else {
       doSetImmediates();
       validateFinish(_expectedError === null);
@@ -135,7 +135,7 @@ g.test('out_of_bounds')
   .desc(
     `
     Tests that rangeOffset + contentSize is greater than maxImmediateSize (Validation Error)
-    and contentSize is larger than data size (RangeError).
+    and contentSize is larger than data size (OperationError).
     `
   )
   .params(u =>
@@ -157,7 +157,7 @@ g.test('out_of_bounds')
     const arrayBufferType = kTypedArrayBufferViews[arrayType];
     const elementSize = arrayBufferType.BYTES_PER_ELEMENT;
 
-    const maxImmediateSize = t.device.limits.maxImmediateSize!;
+    const maxImmediateSize = t.device.limits.maxImmediateSize;
     if (maxImmediateSize === undefined) {
       t.skip('maxImmediateSize not found');
     }
@@ -177,8 +177,8 @@ g.test('out_of_bounds')
     const rangeOverLimit = rangeOffset + contentByteSize > maxImmediateSize;
     const dataOverLimit = elementCount > dataLength;
 
-    t.shouldThrow(dataOverLimit ? 'RangeError' : false, () => {
-      encoder.setImmediates!(rangeOffset, data, 0, elementCount);
+    t.shouldThrow(dataOverLimit ? 'OperationError' : false, () => {
+      encoder.setImmediates(rangeOffset, data, 0, elementCount);
     });
 
     if (!dataOverLimit) {

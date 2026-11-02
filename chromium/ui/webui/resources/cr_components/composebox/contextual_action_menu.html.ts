@@ -15,15 +15,16 @@ export function getHtml(this: ContextualActionMenuElement) {
       ?auto-reposition="${!this.disableAutoReposition}">
       ${(this.tabSuggestions?.length > 0 || this.smartTabSharingActive) &&
         this.isInputTypeAllowed_(InputType.kBrowserTab) ? html`
-        ${this.contextManagementInComposeboxEnabled_ ? html`
+        ${this.contextManagementInComposeboxEnabled ? html`
           <div class="share-tabs-container">
             ${this.smartTabSharingVisible && this.smartTabSharingActive ? html`
               <button class="dropdown-item"
                   id="smartTabSharingItem"
                   role="menuitemcheckbox"
                   aria-checked="true"
+                  ?disabled="${this.isShareTabsTriggerDisabled_()}"
                   @click="${this.onSmartTabSharingItemClick_}">
-                <cr-icon icon="composebox:shareTabs"></cr-icon>
+                <cr-icon icon="composebox:screensaverAuto"></cr-icon>
                 <span class="tab-title">
                   ${this.i18n('stsMegaplusShareRelevantOpenTabs')}</span>
                 <cr-icon class="share-tabs-check" icon="cr:check"></cr-icon>
@@ -33,6 +34,7 @@ export function getHtml(this: ContextualActionMenuElement) {
                   role="menuitem"
                   aria-haspopup="menu"
                   aria-expanded="${this.shareTabsFlyoutOpen}"
+                  ?disabled="${this.isShareTabsTriggerDisabled_()}"
                   @pointerenter="${this.onShareTabsRowPointerenter_}"
                   @pointerleave="${this.onShareTabsRowPointerleave_}"
                   @keydown="${this.onShareTabsRowKeydown_}">
@@ -41,6 +43,7 @@ export function getHtml(this: ContextualActionMenuElement) {
                   ${this.sharingTabsText_}
                 </span>
                 <composebox-favicon-group .tabs="${this.getSelectedTabs_()}"
+                  .submittedTabIds="${this.getSubmittedTabIds_()}"
                   title="${this.i18n('sharingTabsWithGoogle')}">
                 </composebox-favicon-group>
                 <cr-icon class="share-tabs-arrow" icon="cr:chevron-right">
@@ -60,7 +63,9 @@ export function getHtml(this: ContextualActionMenuElement) {
                       role="menuitemcheckbox"
                       aria-checked="false"
                       ?hidden="${!this.shareTabsFlyoutOpen}"
+                      ?disabled="${this.isShareTabsTriggerDisabled_()}"
                       @click="${this.onSmartTabSharingItemClick_}">
+                    <cr-icon icon="composebox:screensaverAuto"></cr-icon>
                     <span class="tab-title">
                       ${this.i18n('stsMegaplusShareRelevantOpenTabs')}</span>
                   </button>
@@ -73,7 +78,7 @@ export function getHtml(this: ContextualActionMenuElement) {
                         role="${this.enableMultiTabSelection_ ?
                             'menuitemcheckbox' : 'menuitem'}"
                         aria-checked="${this.enableMultiTabSelection_ &&
-                            this.isTabSelected_(tab.tabId)}"
+                            this.isTabSelected_(tab)}"
                         title="${tab.title}" data-index="${index}"
                         aria-label="
                           ${this.getInputTypeLabel_(InputType.kBrowserTab)}
@@ -82,13 +87,15 @@ export function getHtml(this: ContextualActionMenuElement) {
                         ?hidden="${!this.shareTabsFlyoutOpen}"
                         @click="${this.onTabClick_}">
                     <cr-composebox-tab-favicon .url="${tab.url}"
-                        .tabId="${tab.tabId}">
+                        .tabId="${tab.tabId}"
+                        .isSubmitted="${this.isTabSelected_(tab)}">
                     </cr-composebox-tab-favicon>
                     <span class="tab-title-group">
                       <span class="tab-title">${tab.title}</span>
                       ${this.isRecentTab_(tab.tabId) ? html`
                         <span class="recent-tabs-suffix"
-                            ?disabled="${this.isTabDisabled_(tab)}">${
+                            ?disabled="${this.isTabDisabled_(tab)}">
+                            · ${
                             this.isSidePanel ?
                             this.i18n('currentTabSuffix') :
                             this.i18n('recentTabsSuffix')}</span>
@@ -124,7 +131,8 @@ export function getHtml(this: ContextualActionMenuElement) {
                   @pointerenter="${this.onTabPointerenter_}"
                   @click="${this.onTabClick_}">
                 <cr-composebox-tab-favicon .url="${tab.url}"
-                    .tabId="${tab.tabId}">
+                    .tabId="${tab.tabId}"
+                    .isSubmitted="${this.isTabSelected_(tab)}">
                 </cr-composebox-tab-favicon>
                 <span class="tab-title">${tab.title}</span>
                 ${this.enableMultiTabSelection_ ? html`

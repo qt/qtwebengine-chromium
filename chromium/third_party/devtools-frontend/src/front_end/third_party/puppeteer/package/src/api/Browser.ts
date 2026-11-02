@@ -23,11 +23,11 @@ import type {
 import type {DownloadBehavior} from '../common/DownloadBehavior.js';
 import {EventEmitter, type EventType} from '../common/EventEmitter.js';
 import {
-  debugError,
   fromEmitterEvent,
   filterAsync,
   timeout,
   fromAbortSignal,
+  debugCatchError,
 } from '../common/util.js';
 import {asyncDisposeSymbol, disposeSymbol} from '../util/disposable.js';
 
@@ -323,6 +323,15 @@ export interface AddScreenParams {
   colorDepth?: number;
   label?: string;
   isInternal?: boolean;
+}
+/**
+ * @public
+ */
+export interface ExtensionInstallOptions {
+  /**
+   * Whether to enable the extension in Incognito or OTR profiles in Chrome.
+   */
+  enabledInIncognito: boolean;
 }
 
 /**
@@ -641,16 +650,15 @@ export abstract class Browser extends EventEmitter<BrowserEvents> {
   }
 
   /**
-   * Installs an extension and returns the ID. In Chrome, this is only
-   * available if the browser was created using `pipe: true` and the
-   * `--enable-unsafe-extension-debugging` flag is set.
+   * Installs an extension and returns the ID.
    */
-  abstract installExtension(path: string): Promise<string>;
+  abstract installExtension(
+    path: string,
+    options?: ExtensionInstallOptions,
+  ): Promise<string>;
 
   /**
-   * Uninstalls an extension. In Chrome, this is only available if the browser
-   * was created using `pipe: true` and the
-   * `--enable-unsafe-extension-debugging` flag is set.
+   * Uninstalls an extension.
    */
   abstract uninstallExtension(id: string): Promise<void>;
 
@@ -684,7 +692,7 @@ export abstract class Browser extends EventEmitter<BrowserEvents> {
 
   /** @internal */
   override [disposeSymbol](): void {
-    return void this[asyncDisposeSymbol]().catch(debugError);
+    return void this[asyncDisposeSymbol]().catch(debugCatchError);
   }
 
   /** @internal */

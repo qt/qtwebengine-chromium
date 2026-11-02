@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 
+#include "constants/catalog.h"
 #include "core/fpdfapi/page/test_with_page_module.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_boolean.h"
@@ -90,7 +91,7 @@ class CPDF_TestDocumentForPages final : public CPDF_TestDocument {
         CreatePageTreeNode(std::move(allPages), this, kNumTestPages);
 
     SetRootForTesting(NewIndirect<CPDF_Dictionary>());
-    GetMutableRoot()->SetNewFor<CPDF_Reference>("Pages", this,
+    GetMutableRoot()->SetNewFor<CPDF_Reference>(pdfium::catalog::kPages, this,
                                                 pagesDict->GetObjNum());
     ResizePageListForTesting(kNumTestPages);
   }
@@ -116,7 +117,7 @@ class CPDF_TestDocumentWithPageWithoutPageNum final : public CPDF_TestDocument {
     RetainPtr<CPDF_Dictionary> pagesDict =
         CreatePageTreeNode(std::move(allPages), this, 3);
     SetRootForTesting(NewIndirect<CPDF_Dictionary>());
-    GetMutableRoot()->SetNewFor<CPDF_Reference>("Pages", this,
+    GetMutableRoot()->SetNewFor<CPDF_Reference>(pdfium::catalog::kPages, this,
                                                 pagesDict->GetObjNum());
     ResizePageListForTesting(3);
   }
@@ -141,7 +142,7 @@ class CPDF_TestDocPagesWithoutKids final : public CPDF_TestDocument {
     pagesDict->SetNewFor<CPDF_Number>("Count", 3);
     ResizePageListForTesting(10);
     SetRootForTesting(NewIndirect<CPDF_Dictionary>());
-    GetMutableRoot()->SetNewFor<CPDF_Reference>("Pages", this,
+    GetMutableRoot()->SetNewFor<CPDF_Reference>(pdfium::catalog::kPages, this,
                                                 pagesDict->GetObjNum());
   }
 };

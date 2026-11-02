@@ -219,6 +219,7 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
   CompareOperationHint GetFeedbackForCompareOperation(
       FeedbackSource const& source);
   ForInHint GetFeedbackForForIn(FeedbackSource const& source);
+  SpeculationMode GetFeedbackForJumpLoop(FeedbackSource const& source);
 
   ProcessedFeedback const& GetFeedbackForCall(FeedbackSource const& source);
   ProcessedFeedback const& GetFeedbackForGlobalAccess(
@@ -241,6 +242,8 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
   ProcessedFeedback const& ProcessFeedbackForCompareOperation(
       FeedbackSource const& source);
   ProcessedFeedback const& ProcessFeedbackForForIn(
+      FeedbackSource const& source);
+  ProcessedFeedback const& ProcessFeedbackForJumpLoop(
       FeedbackSource const& source);
   ProcessedFeedback const& ProcessFeedbackForTypeOf(
       FeedbackSource const& source);
@@ -305,8 +308,7 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
       *find_result.entry =
           local_isolate()->heap()->NewPersistentHandle(object).location();
     } else {
-      DCHECK(PersistentHandlesScope::IsActive(isolate()));
-      *find_result.entry = IndirectHandle<T>(object, isolate()).location();
+      *find_result.entry = AllocatePersistentHandle(object);
     }
     return Handle<T>(*find_result.entry);
   }
@@ -419,6 +421,8 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
       JSHeapBroker* broker, FeedbackSource const& source);
   ProcessedFeedback const& ReadFeedbackForInstanceOf(
       FeedbackSource const& source);
+  ProcessedFeedback const& ReadFeedbackForJumpLoop(
+      FeedbackSource const& source);
   ProcessedFeedback const& ReadFeedbackForPropertyAccess(
       FeedbackSource const& source, AccessMode mode,
       OptionalNameRef static_name, bool allow_homomorphic);
@@ -437,6 +441,8 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
     DCHECK_NOT_NULL(ph_);
     return std::move(ph_);
   }
+
+  Address* AllocatePersistentHandle(Tagged<Object> object);
 
   void set_canonical_handles(CanonicalHandlesMap* canonical_handles) {
     canonical_handles_ = canonical_handles;
@@ -548,6 +554,14 @@ class V8_NODISCARD UnparkedScopeIfNeeded {
       if (local_isolate != nullptr && local_isolate->heap()->IsParked()) {
         unparked_scope.emplace(local_isolate->heap());
       }
+    }
+  }
+
+  explicit UnparkedScopeIfNeeded(LocalIsolate* local_isolate,
+                                 bool extra_condition = true) {
+    if (extra_condition && local_isolate != nullptr &&
+        local_isolate->heap()->IsParked()) {
+      unparked_scope.emplace(local_isolate->heap());
     }
   }
 

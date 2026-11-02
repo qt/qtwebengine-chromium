@@ -15,11 +15,8 @@
 //
 
 use log::trace;
-use oak_sev_guest::vmsa::{calculate_rdx_from_fms, Vmsa, VmsaPage};
-use x86_64::{
-    structures::paging::{PageSize, Size4KiB},
-    PhysAddr,
-};
+use oak_sev_guest::vmsa::{Vmsa, VmsaPage, calculate_rdx_from_fms};
+use x86_64::structures::paging::{PageSize, Size4KiB};
 
 use crate::stage0::SevEsResetBlock;
 
@@ -32,7 +29,7 @@ use crate::stage0::SevEsResetBlock;
 /// For AMD "Milan" CPUs the maximum supported physical memory bit-width is 48
 /// when SEV-SNP is enabled.
 #[allow(unused)]
-pub const VMSA_ADDRESS: PhysAddr = PhysAddr::new((1 << 48) - Size4KiB::SIZE);
+pub const VMSA_ADDRESS: u64 = (1 << 48) - Size4KiB::SIZE;
 
 /// Gets the initial VMSA for the vCPU that is used to boot the VM.
 pub fn get_boot_vmsa(cpu_family: u8, cpu_model: u8, cpu_stepping: u8, qemu: bool) -> VmsaPage {

@@ -16,6 +16,8 @@
 
 #include <cstdint>
 
+#include "src/utils/constants.h"
+
 namespace libgav1 {
 
 // Each set of 7 taps is padded with a 0 to easily align and pack into the high

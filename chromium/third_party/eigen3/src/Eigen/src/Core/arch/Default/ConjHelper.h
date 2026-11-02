@@ -102,7 +102,7 @@ struct conj_helper<LhsScalar, RhsScalar, true, true> {
     return this->pmul(x, y) + c;
   }
 
-  // We save a conjuation by using the identity conj(a)*conj(b) = conj(a*b).
+  // We save a conjugation by using the identity conj(a)*conj(b) = conj(a*b).
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE ResultType pmul(const LhsScalar& x, const RhsScalar& y) const {
     return numext::conj(x * y);
   }
@@ -135,7 +135,7 @@ struct conj_helper<Packet, Packet, true, true> {
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Packet pmsub(const Packet& x, const Packet& y, const Packet& c) const {
     return Eigen::internal::pmsub(pconj(x), pconj(y), c);
   }
-  // We save a conjuation by using the identity conj(a)*conj(b) = conj(a*b).
+  // We save a conjugation by using the identity conj(a)*conj(b) = conj(a*b).
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Packet pmul(const Packet& x, const Packet& y) const {
     return pconj(Eigen::internal::pmul(x, y));
   }

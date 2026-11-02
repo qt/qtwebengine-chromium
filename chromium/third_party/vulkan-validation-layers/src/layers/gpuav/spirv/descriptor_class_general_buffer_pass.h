@@ -30,6 +30,7 @@ class DescriptorClassGeneralBufferPass : public Pass {
     const char* Name() const final { return "DescriptorClassGeneralBufferPass"; }
 
     bool Instrument() final;
+    void PostProcess() final;
     void PrintDebugInfo() const final;
 
   private:
@@ -37,22 +38,14 @@ class DescriptorClassGeneralBufferPass : public Pass {
     struct InstructionMeta {
         const Instruction* target_instruction = nullptr;
 
-        uint32_t descriptor_set = 0;
-        uint32_t descriptor_binding = 0;
-        uint32_t descriptor_index_id = 0;  // index input the descriptor array
-
-        // The Type of the OpVariable that is being accessed
-        const Type* descriptor_type = nullptr;
-        // Id to the descriptor, will have array stripped if descriptor indexing
-        uint32_t descriptor_id = 0;
+        // The ID to the OpTypeStruct inside the SSBO/UBO
+        uint32_t descriptor_block_type_id = 0;
 
         AccessPath access_path;
 
         // Capture the upper bound offset into the struct the instruction accesses
         // Will be zero if we can't determine it (or in Safe Mode)
         uint32_t access_offset = 0;
-
-        CooperativeMatrixAccess coop_mat_access{};
     };
 
     bool RequiresInstrumentation(const Function& function, const Instruction& inst, InstructionMeta& meta);

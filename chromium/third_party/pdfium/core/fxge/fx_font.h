@@ -10,6 +10,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <optional>
 #include <vector>
 
 #include "core/fxcrt/bytestring.h"
@@ -50,6 +51,10 @@ enum FontWeight {
 
 }  // namespace pdfium
 
+// Indicates that font properties (style, weight, ...) come from an external
+// source rather than the font file itself.
+constexpr uint32_t kFontUseExternAttr = 0x80000;
+
 struct CharCodeAndIndex {
   uint32_t char_code;
   uint32_t glyph_index;
@@ -57,14 +62,16 @@ struct CharCodeAndIndex {
   bool operator==(const CharCodeAndIndex&) const = default;
 };
 
+struct FontTableLocation {
+  uint32_t offset;
+  uint32_t size;
+};
+
 enum class FontAntiAliasingMode : int {
   kNormal,
   kMono,
   kLcd,
 };
-
-/* Other font flags */
-#define FXFONT_USEEXTERNATTR 0x80000
 
 // These numbers come from the OpenType name table specification.
 constexpr uint16_t kNamePlatformAppleUnicode = 0;
@@ -82,6 +89,12 @@ FX_RECT GetGlyphsBBox(const std::vector<TextGlyphPos>& glyphs,
 
 ByteString GetNameFromTT(pdfium::span<const uint8_t> name_table, uint32_t name);
 uint32_t GetTTCIndex(pdfium::span<const uint8_t> font_data, size_t font_offset);
+uint32_t GetCodePageRangeFromOS2(pdfium::span<const uint8_t> os2_table);
+uint16_t GetGlyphCountFromMaxp(pdfium::span<const uint8_t> maxp_table);
+
+std::optional<FontTableLocation> FindFontTableLocation(
+    pdfium::span<const uint8_t> table_dir,
+    uint32_t tag);
 
 inline bool FontStyleIsForceBold(uint32_t style) {
   return !!(style & pdfium::kFontStyleForceBold);

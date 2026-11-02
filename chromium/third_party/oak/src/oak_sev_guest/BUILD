@@ -34,14 +34,15 @@ rust_library(
         "//:x86_64-linux-setting",  # Needed for unit testing.
     ]),
     deps = [
+        "//oak_hal",
         "//oak_sev_snp_attestation_report",
         "@oak_crates_index//:aes-gcm",
         "@oak_crates_index//:bitflags",
         "@oak_crates_index//:lock_api",
-        "@oak_crates_index//:snafu",
         "@oak_crates_index//:spinning_top",
         "@oak_crates_index//:static_assertions",
         "@oak_crates_index//:strum",
+        "@oak_crates_index//:thiserror",
         "@oak_crates_index//:x86_64",
         "@oak_crates_index//:zerocopy",
     ],
@@ -57,13 +58,14 @@ rust_library(
         "//:x86_64-linux-setting",  # Needed for unit testing.
     ]),
     deps = [
+        "//oak_hal",
         "//oak_sev_snp_attestation_report",
         "@oak_crates_index//:bitflags",
         "@oak_crates_index//:lock_api",
-        "@oak_crates_index//:snafu",
         "@oak_crates_index//:spinning_top",
         "@oak_crates_index//:static_assertions",
         "@oak_crates_index//:strum",
+        "@oak_crates_index//:thiserror",
         "@oak_crates_index//:x86_64",
         "@oak_crates_index//:zerocopy",
     ],
@@ -73,4 +75,5 @@ rust_test(
     name = "oak_sev_guest_test",
     size = "small",
     crate = ":oak_sev_guest",
+    target_compatible_with = ["@platforms//os:linux"],
 )

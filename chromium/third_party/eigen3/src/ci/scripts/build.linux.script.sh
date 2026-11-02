@@ -47,7 +47,13 @@ default_batch=$((njobs * 2))
 default_batch=$((default_batch > 48 ? default_batch : 48))
 batch_size=${EIGEN_CI_BUILD_BATCH_SIZE:-${default_batch}}
 shuffled=false
-if [[ -n "${EIGEN_CI_BUILD_TARGET}" ]] && command -v ninja >/dev/null 2>&1; then
+# The batch path resolves a target's dependency graph via `ninja -t query`,
+# which takes a single target name.  A multi-target EIGEN_CI_BUILD_TARGET (a
+# space-separated list, e.g. the SME cross-build's product_* targets) would be
+# passed as one bogus name and make the query fail, aborting the job before any
+# build runs.  Skip batching for a list and let the plain `cmake --build
+# --target t1 t2 ...` below build it directly (it handles multiple targets).
+if [[ -n "${EIGEN_CI_BUILD_TARGET}" && "${EIGEN_CI_BUILD_TARGET}" != *[[:space:]]* ]] && command -v ninja >/dev/null 2>&1; then
   # Suppress xtrace while extracting and shuffling the target list
   # to avoid dumping ~1200 lines to the CI log.
   { set +x; } 2>/dev/null

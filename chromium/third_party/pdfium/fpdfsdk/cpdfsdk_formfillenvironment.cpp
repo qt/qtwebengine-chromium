@@ -431,14 +431,18 @@ void CPDFSDK_FormFillEnvironment::OnCalculate(
 
 void CPDFSDK_FormFillEnvironment::OnFormat(ObservedPtr<CPDFSDK_Annot>& pAnnot) {
   ObservedPtr<CPDFSDK_Widget> pWidget(ToCPDFSDKWidget(pAnnot.Get()));
-  std::optional<WideString> sValue =
-      interactive_form_->OnFormat(pWidget->GetFormField());
   if (!pWidget) {
     return;
   }
-  if (sValue.has_value()) {
-    interactive_form_->ResetFieldAppearance(pWidget->GetFormField(), sValue);
-    interactive_form_->UpdateField(pWidget->GetFormField());
+  RetainPtr<CPDF_FormField> form_field(pWidget->GetFormField());
+  std::optional<WideString> formatted_value =
+      interactive_form_->OnFormat(form_field.Get());
+  if (!pWidget) {
+    return;
+  }
+  if (formatted_value.has_value()) {
+    interactive_form_->ResetFieldAppearance(form_field.Get(), formatted_value);
+    interactive_form_->UpdateField(form_field.Get());
   }
 }
 
@@ -901,7 +905,7 @@ void CPDFSDK_FormFillEnvironment::SendOnFocusChange(
 }
 
 bool CPDFSDK_FormFillEnvironment::DoActionDocOpen(const CPDF_Action& action) {
-  std::set<const CPDF_Dictionary*> visited;
+  std::set<RetainPtr<const CPDF_Dictionary>> visited;
   return ExecuteDocumentOpenAction(action, &visited);
 }
 
@@ -964,14 +968,14 @@ bool CPDFSDK_FormFillEnvironment::DoActionDestination(const CPDF_Dest& dest) {
 bool CPDFSDK_FormFillEnvironment::DoActionPage(
     const CPDF_Action& action,
     CPDF_AAction::AActionType eType) {
-  std::set<const CPDF_Dictionary*> visited;
+  std::set<RetainPtr<const CPDF_Dictionary>> visited;
   return ExecuteDocumentPageAction(action, eType, &visited);
 }
 
 bool CPDFSDK_FormFillEnvironment::DoActionDocument(
     const CPDF_Action& action,
     CPDF_AAction::AActionType eType) {
-  std::set<const CPDF_Dictionary*> visited;
+  std::set<RetainPtr<const CPDF_Dictionary>> visited;
   return ExecuteDocumentPageAction(action, eType, &visited);
 }
 
@@ -979,14 +983,14 @@ bool CPDFSDK_FormFillEnvironment::DoActionField(const CPDF_Action& action,
                                                 CPDF_AAction::AActionType type,
                                                 CPDF_FormField* pFormField,
                                                 CFFL_FieldAction* data) {
-  std::set<const CPDF_Dictionary*> visited;
+  std::set<RetainPtr<const CPDF_Dictionary>> visited;
   return ExecuteFieldAction(action, type, pFormField, data, &visited);
 }
 
 bool CPDFSDK_FormFillEnvironment::ExecuteDocumentOpenAction(
     const CPDF_Action& action,
-    std::set<const CPDF_Dictionary*>* visited) {
-  const CPDF_Dictionary* dict = action.GetDict();
+    std::set<RetainPtr<const CPDF_Dictionary>>* visited) {
+  RetainPtr<const CPDF_Dictionary> dict(action.GetDict());
   if (pdfium::Contains(*visited, dict)) {
     return false;
   }
@@ -1017,8 +1021,8 @@ bool CPDFSDK_FormFillEnvironment::ExecuteDocumentOpenAction(
 bool CPDFSDK_FormFillEnvironment::ExecuteDocumentPageAction(
     const CPDF_Action& action,
     CPDF_AAction::AActionType type,
-    std::set<const CPDF_Dictionary*>* visited) {
-  const CPDF_Dictionary* dict = action.GetDict();
+    std::set<RetainPtr<const CPDF_Dictionary>>* visited) {
+  RetainPtr<const CPDF_Dictionary> dict(action.GetDict());
   if (pdfium::Contains(*visited, dict)) {
     return false;
   }
@@ -1060,8 +1064,9 @@ bool CPDFSDK_FormFillEnvironment::ExecuteFieldAction(
     CPDF_AAction::AActionType type,
     CPDF_FormField* pFormField,
     CFFL_FieldAction* data,
-    std::set<const CPDF_Dictionary*>* visited) {
-  const CPDF_Dictionary* dict = action.GetDict();
+    std::set<RetainPtr<const CPDF_Dictionary>>* visited) {
+  RetainPtr<CPDF_FormField> protector(pFormField);
+  RetainPtr<const CPDF_Dictionary> dict(action.GetDict());
   if (pdfium::Contains(*visited, dict)) {
     return false;
   }
@@ -1166,6 +1171,7 @@ void CPDFSDK_FormFillEnvironment::RunFieldJavaScript(
   DCHECK(type != CPDF_AAction::kCalculate);
   DCHECK(type != CPDF_AAction::kFormat);
 
+  RetainPtr<CPDF_FormField> protector(pFormField);
   RunScript(script, [type, data, pFormField](IJS_EventContext* context) {
     switch (type) {
       case CPDF_AAction::kCursorEnter:

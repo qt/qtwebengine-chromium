@@ -16,6 +16,7 @@
 #include "content/browser/service_worker/service_worker_script_cache_map.h"
 #include "content/common/features.h"
 #include "net/base/hash_value.h"
+#include "third_party/perfetto/include/perfetto/tracing/track.h"
 
 namespace content {
 
@@ -60,15 +61,35 @@ ServiceWorkerInstalledScriptsSender::CreateInfoAndBind() {
   info->manager_receiver = manager_.BindNewPipeAndPassReceiver();
   info->installed_urls = std::move(installed_urls);
   receiver_.Bind(info->manager_host_remote.InitWithNewPipeAndPassReceiver());
+
+  for (auto& script_info : queued_script_infos_) {
+    manager_->TransferInstalledScript(std::move(script_info));
+  }
+  queued_script_infos_.clear();
+
+  // If Start() was called before CreateInfoAndBind(), the sender might
+  // have already finished sending the main script and become idle.
+  // If there are newly found pending scripts (e.g., imported scripts
+  // populated in CreateInfoAndBind()), we must start sending them now.
+  // Otherwise, they will never be sent and the renderer will hang
+  // waiting for them.
+  if (state_ == State::kIdle && !pending_scripts_.empty()) {
+    int64_t next_id = pending_scripts_.front().first;
+    GURL next_url = pending_scripts_.front().second;
+    pending_scripts_.pop();
+    StartSendingScript(next_id, next_url);
+  }
+
   return info;
 }
 
 void ServiceWorkerInstalledScriptsSender::Start() {
   DCHECK_EQ(State::kNotStarted, state_);
   DCHECK_NE(blink::mojom::kInvalidServiceWorkerResourceId, main_script_id_);
-  TRACE_EVENT_BEGIN("ServiceWorker", "ServiceWorkerInstalledScriptsSender",
-                    perfetto::Track::FromPointer(this), "main_script_url",
-                    main_script_url_.spec());
+  TRACE_EVENT_INSTANT(
+      "ServiceWorker", "ServiceWorkerInstalledScriptsSender::Start",
+      perfetto::Flow::FromPointer(this, "ServiceWorkerInstalledScriptsSender"),
+      "main_script_url", main_script_url_.spec());
   StartSendingScript(main_script_id_, main_script_url_);
 }
 
@@ -107,9 +128,11 @@ void ServiceWorkerInstalledScriptsSender::StartSendingScript(
   owner_->context()->registry().GetRemoteStorageControl()->CreateResourceReader(
       resource_id, sha256_hash_value,
       resource_reader.BindNewPipeAndPassReceiver());
-  TRACE_EVENT_BEGIN("ServiceWorker", "SendingScript",
-                    perfetto::Track::FromPointer(this), "script_url",
-                    current_sending_url_.spec());
+  TRACE_EVENT_INSTANT(
+      "ServiceWorker",
+      "ServiceWorkerInstalledScriptsSender::StartSendingScript",
+      perfetto::Flow::FromPointer(this, "ServiceWorkerInstalledScriptsSender"),
+      "script_url", current_sending_url_.spec());
   reader_ = std::make_unique<ServiceWorkerInstalledScriptReader>(
       std::move(resource_reader), this);
   reader_->Start();
@@ -124,10 +147,11 @@ void ServiceWorkerInstalledScriptsSender::OnStarted(
   DCHECK(reader_);
   DCHECK_EQ(State::kSendingScripts, state_);
   uint64_t meta_data_size = metadata ? metadata->size() : 0;
-  TRACE_EVENT_INSTANT("ServiceWorker", "OnStarted",
-                      perfetto::Track::FromPointer(this), "body_size",
-                      response_head->content_length, "meta_data_size",
-                      meta_data_size);
+  TRACE_EVENT_INSTANT(
+      "ServiceWorker", "ServiceWorkerInstalledScriptsSender::OnStarted",
+      perfetto::Flow::FromPointer(this, "ServiceWorkerInstalledScriptsSender"),
+      "body_size", response_head->content_length, "meta_data_size",
+      meta_data_size);
 
   // Create a map of response headers.
   scoped_refptr<net::HttpResponseHeaders> headers = response_head->headers;
@@ -145,18 +169,23 @@ void ServiceWorkerInstalledScriptsSender::OnStarted(
     }
   }
 
-  // If `CreateInfoAndBind()` is not called, manager_ won't be set up.
+  auto script_info = blink::mojom::ServiceWorkerScriptInfo::New();
+  script_info->script_url = current_sending_url_;
+  script_info->headers = std::move(header_strings);
+  headers->GetCharset(&script_info->encoding);
+  script_info->body = std::move(body_handle);
+  script_info->body_size = response_head->content_length;
+  script_info->meta_data = std::move(meta_data_handle);
+  script_info->meta_data_size = meta_data_size;
+  // If `CreateInfoAndBind()` is not yet called, `manager_` is not bound.
+  // In that case, queue the script info to transfer it later when the
+  // connection is established.
   if (manager_.is_bound()) {
-    auto script_info = blink::mojom::ServiceWorkerScriptInfo::New();
-    script_info->script_url = current_sending_url_;
-    script_info->headers = std::move(header_strings);
-    headers->GetCharset(&script_info->encoding);
-    script_info->body = std::move(body_handle);
-    script_info->body_size = response_head->content_length;
-    script_info->meta_data = std::move(meta_data_handle);
-    script_info->meta_data_size = meta_data_size;
     manager_->TransferInstalledScript(std::move(script_info));
+  } else {
+    queued_script_infos_.push_back(std::move(script_info));
   }
+
   if (IsSendingMainScript()) {
     owner_->SetMainScriptResponse(
         std::make_unique<ServiceWorkerVersion::MainScriptResponse>(
@@ -168,8 +197,7 @@ void ServiceWorkerInstalledScriptsSender::OnFinished(
     ServiceWorkerInstalledScriptReader::FinishedReason reason) {
   DCHECK(reader_);
   DCHECK_EQ(State::kSendingScripts, state_);
-  // SendingScript
-  TRACE_EVENT_END("ServiceWorker", perfetto::Track::FromPointer(this));
+
   reader_.reset();
   current_sending_url_ = GURL();
 
@@ -184,10 +212,18 @@ void ServiceWorkerInstalledScriptsSender::OnFinished(
   if (pending_scripts_.empty()) {
     UpdateFinishedReasonAndBecomeIdle(
         ServiceWorkerInstalledScriptReader::FinishedReason::kSuccess);
-    // ServiceWorkerInstalledScriptsSender
-    TRACE_EVENT_END("ServiceWorker", perfetto::Track::FromPointer(this));
+    TRACE_EVENT_INSTANT("ServiceWorker",
+                        "ServiceWorkerInstalledScriptsSender::OnFinished",
+                        perfetto::TerminatingFlow::FromPointer(
+                            this, "ServiceWorkerInstalledScriptsSender"),
+                        "Status", "Success");
     return;
   }
+
+  TRACE_EVENT_INSTANT(
+      "ServiceWorker", "ServiceWorkerInstalledScriptsSender::OnFinished",
+      perfetto::Flow::FromPointer(this, "ServiceWorkerInstalledScriptsSender"),
+      "Status", "ScriptFinished");
 
   // Start sending the next script.
   int64_t next_id = pending_scripts_.front().first;
@@ -201,15 +237,20 @@ void ServiceWorkerInstalledScriptsSender::Abort(
   DCHECK_EQ(State::kSendingScripts, state_);
   DCHECK_NE(ServiceWorkerInstalledScriptReader::FinishedReason::kSuccess,
             reason);
-  // ServiceWorkerInstalledScriptsSender
-  TRACE_EVENT_END("ServiceWorker", perfetto::Track::FromPointer(this),
-                  "FinishedReason", static_cast<int>(reason));
+  TRACE_EVENT_INSTANT("ServiceWorker",
+                      "ServiceWorkerInstalledScriptsSender::Abort",
+                      perfetto::TerminatingFlow::FromPointer(
+                          this, "ServiceWorkerInstalledScriptsSender"),
+                      "FinishedReason", static_cast<int>(reason));
 
   // Remove all pending scripts.
   // Note that base::queue doesn't have clear(), and also base::STLClearObject
   // is not applicable for base::queue since it doesn't have reserve().
   base::queue<std::pair<int64_t, GURL>> empty;
   pending_scripts_.swap(empty);
+
+  // Discard the queued script infos as the installation failed.
+  queued_script_infos_.clear();
 
   UpdateFinishedReasonAndBecomeIdle(reason);
 
@@ -306,9 +347,11 @@ void ServiceWorkerInstalledScriptsSender::RequestInstalledScript(
   }
 
   DCHECK_EQ(State::kIdle, state_);
-  TRACE_EVENT_BEGIN("ServiceWorker", "ServiceWorkerInstalledScriptsSender",
-                    perfetto::Track::FromPointer(this), "main_script_url",
-                    main_script_url_.spec());
+  TRACE_EVENT_INSTANT(
+      "ServiceWorker",
+      "ServiceWorkerInstalledScriptsSender::RequestInstalledScript",
+      perfetto::Flow::FromPointer(this, "ServiceWorkerInstalledScriptsSender"),
+      "main_script_url", main_script_url_.spec());
   StartSendingScript(resource_id, script_url);
 }
 

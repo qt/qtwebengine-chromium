@@ -5,9 +5,12 @@
 #include <optional>
 
 #include "base/allocator/partition_alloc_support.h"
+#include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/debug/alias.h"
+#include "base/debug/debugger.h"
 #include "base/debug/leak_annotations.h"
+#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/immediate_crash.h"
 #include "base/message_loop/message_pump_type.h"
@@ -21,9 +24,11 @@
 #include "base/timer/hi_res_timer_manager.h"
 #include "build/build_config.h"
 #include "components/on_device_translation/buildflags/buildflags.h"
+#include "components/webrtc/features.h"
 #include "content/child/child_process.h"
 #include "content/common/content_switches_internal.h"
 #include "content/common/features.h"
+#include "content/common/skia_utils.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
@@ -37,6 +42,7 @@
 #include "sandbox/policy/sandbox_type.h"
 #include "services/on_device_model/public/mojom/on_device_model_service.mojom.h"
 #include "services/tracing/public/cpp/trace_startup.h"
+#include "services/video_capture/public/mojom/video_capture_service.mojom.h"
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 #include "base/file_descriptor_store.h"
@@ -103,8 +109,10 @@
 #include "base/win/windows_handle_util.h"
 #include "base/win/windows_version.h"
 #include "content/utility/sandbox_delegate_data.mojom.h"
+#include "content/utility/webnn/webnn_sandbox_init.h"
 #include "sandbox/policy/win/sandbox_warmup.h"
 #include "sandbox/win/src/sandbox.h"
+#include "services/webnn/public/mojom/webnn_compiler_service.mojom.h"
 #endif  // BUILDFLAG(IS_WIN)
 
 #if BUILDFLAG(IS_WIN)
@@ -263,6 +271,15 @@ int UtilityMain(MainFunctionParams parameters) {
   const std::string utility_sub_type =
       parameters.command_line->GetSwitchValueASCII(switches::kUtilitySubType);
   SetUtilityThreadName(utility_sub_type);
+
+  // Some utility services (e.g. data_decoder, print_compositor,
+  // paint_preview_compositor) decode images via Skia and need the same codec
+  // configuration as the browser/renderer/GPU processes.
+  InitializeSkiaLite();
+
+  if (parameters.command_line->HasSwitch(switches::kWaitForDebugger)) {
+    base::debug::WaitForDebugger(/*wait_seconds=*/60, /*silent=*/true);
+  }
 
   if (parameters.command_line->HasSwitch(switches::kUtilityStartupDialog)) {
     auto dialog_match = parameters.command_line->GetSwitchValueASCII(
@@ -444,6 +461,19 @@ int UtilityMain(MainFunctionParams parameters) {
     base::win::EnableHighDPISupport();
   }
 
+  // WebNN model compilation needs to load the third-party
+  // execution-provider preload helper before LowerToken() below drops
+  // the token to USER_LOCKDOWN. See content/utility/webnn/
+  // webnn_sandbox_init.h for the preload helper and
+  // content/browser/service_host/utility_sandbox_delegate_win.cc for
+  // the broker-side sandbox policy.
+  //
+  // Regardless of the sandbox status, the ORT environment needs to be
+  // initialized for WebNN Compiler Utility processes.
+  if (utility_sub_type == webnn::mojom::WebNNCompilerService::Name_) {
+    CHECK(webnn::PreSandboxInit());
+  }
+
   if (!sandbox::policy::IsUnsandboxedSandboxType(sandbox_type) &&
       sandbox_type != sandbox::mojom::Sandbox::kCdm &&
       sandbox_type != sandbox::mojom::Sandbox::kMediaFoundationCdm) {
@@ -456,7 +486,15 @@ int UtilityMain(MainFunctionParams parameters) {
   }
 #endif
 
-  ChildProcess utility_process(base::ThreadType::kDefault);
+  base::ThreadType io_thread_type = base::ThreadType::kDefault;
+  // The video capture service's IO thread carries time-sensitive video frame
+  // deliveries over mojo channels.
+  if (utility_sub_type == video_capture::mojom::VideoCaptureService::Name_ &&
+      base::FeatureList::IsEnabled(
+          webrtc::features::kWebRTCBoostMediaIOThreads)) {
+    io_thread_type = base::ThreadType::kPresentation;
+  }
+  ChildProcess utility_process(io_thread_type);
   GetContentClient()->utility()->PostIOThreadCreated(
       utility_process.io_task_runner());
   base::RunLoop run_loop;

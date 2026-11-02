@@ -205,7 +205,7 @@ json.tar.xz:
 # We use `-X` to make the resulting ZIP file reproducible, see
 # <https://content.pivotal.io/blog/barriers-to-deterministic-reproducible-zip-files>.
 include.zip: BUILD.bazel
-	zip -9 --recurse-paths -X include.zip $(SRCS) $(AMALGAMATED_FILE) $(AMALGAMATED_FWD_FILE) BUILD.bazel WORKSPACE.bazel meson.build LICENSE.MIT
+	zip -9 --recurse-paths -X include.zip $(SRCS) $(AMALGAMATED_FILE) $(AMALGAMATED_FWD_FILE) BUILD.bazel MODULE.bazel meson.build LICENSE.MIT
 
 # Create the files for a release and add signatures and hashes.
 release: include.zip json.tar.xz
@@ -258,8 +258,8 @@ serve_header:
 ##########################################################################
 
 reuse:
-	pipx run reuse annotate --recursive single_include include -tjson --license MIT --copyright "Niels Lohmann <https://nlohmann.me>" --year "2013-2025" --merge-copyrights
-	pipx run reuse annotate $(TESTS_SRCS) -tjson_support --license MIT --copyright "Niels Lohmann <https://nlohmann.me>" --year "2013-2025" --merge-copyrights
+	pipx run reuse annotate --recursive single_include include -tjson --license MIT --copyright "Niels Lohmann <https://nlohmann.me>" --year "2013-2026" --merge-copyrights
+	pipx run reuse annotate $(TESTS_SRCS) -tjson_support --license MIT --copyright "Niels Lohmann <https://nlohmann.me>" --year "2013-2026" --merge-copyrights
 	pipx run reuse lint
 
 spdx:

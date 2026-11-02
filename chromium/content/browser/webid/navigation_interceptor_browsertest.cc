@@ -28,7 +28,9 @@
 #include "net/test/embedded_test_server/http_response.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/public/mojom/webid/federated_auth_request.mojom.h"
+#include "third_party/blink/public/mojom/webid/federated_request.mojom.h"
+
+namespace content {
 
 using net::test_server::BasicHttpResponse;
 using net::test_server::HttpRequest;
@@ -37,8 +39,6 @@ using ::testing::_;
 using ::testing::NiceMock;
 using ::testing::Return;
 using ::testing::WithoutArgs;
-
-namespace content {
 
 namespace {
 
@@ -164,7 +164,8 @@ class NavigationInterceptorBrowserTest : public ContentBrowserTest {
                             base::Unretained(this)));
     ASSERT_TRUE(embedded_test_server()->Start());
 
-    test_browser_client_ = std::make_unique<WebIdTestContentBrowserClient>();
+    test_browser_client_ =
+        std::make_unique<webid::WebIdTestContentBrowserClient>();
   }
 
   void TearDownOnMainThread() override {
@@ -192,7 +193,7 @@ class NavigationInterceptorBrowserTest : public ContentBrowserTest {
  protected:
   base::test::ScopedFeatureList feature_list_;
   TestIdP idp_server_;
-  std::unique_ptr<WebIdTestContentBrowserClient> test_browser_client_;
+  std::unique_ptr<webid::WebIdTestContentBrowserClient> test_browser_client_;
   std::string rp_page_content_;
 };
 

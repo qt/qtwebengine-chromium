@@ -51,6 +51,7 @@
 #include "third_party/blink/renderer/platform/geometry/path.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_hibernation_handler.h"
 #include "third_party/blink/renderer/platform/graphics/color.h"
+#include "third_party/blink/renderer/platform/graphics/flush_for_image_listener.h"
 #include "third_party/blink/renderer/platform/graphics/image_orientation.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_filter.h"
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
@@ -85,6 +86,8 @@ class MemoryManagedPaintCanvas;
 class MemoryManagedPaintRecorder;
 class Path2D;
 class SVGResource;
+class Canvas2DResourceProvider;
+class Canvas2DBitmapProvider;
 enum class FlushReason;
 enum class PredefinedColorSpace;
 
@@ -92,7 +95,8 @@ class MODULES_EXPORT CanvasRenderingContext2D final
     : public ScriptWrappable,
       public BaseRenderingContext2D,
       public SVGResourceClient,
-      public CanvasHibernationHandler::Delegate {
+      public CanvasHibernationHandler::Delegate,
+      public FlushForImageObserver {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
@@ -148,6 +152,9 @@ class MODULES_EXPORT CanvasRenderingContext2D final
   // SVGResourceClient implementation
   void ResourceContentChanged(SVGResource*) override;
 
+  // FlushForImageObserver implementation
+  void OnFlushForImage(cc::PaintImage::ContentId content_id) override;
+
   void UpdateFilterReferences(const FilterOperations&);
   void ClearFilterReferences();
 
@@ -158,11 +165,16 @@ class MODULES_EXPORT CanvasRenderingContext2D final
   bool ShouldDisableAccelerationBecauseOfReadback() const override;
 
   // CanvasHibernationHandler::Delegate implementation
+  Canvas2DResourceProvider* GetSharedImageProvider() const override;
+  Canvas2DBitmapProvider* GetBitmapProviderForTesting() const {
+    return bitmap_provider_.get();
+  }
+  bool HasResourceProvider() const override;
   bool IsContextLost() const override { return isContextLost(); }
   bool IsPageVisible() const override {
     return canvas() && canvas()->IsPageVisible();
   }
-  void ResetResourceProvider() override { ReplaceResourceProvider(nullptr); }
+  void ResetResourceProvider() override;
   void SetNeedsCompositingUpdate() override {
     if (canvas()) {
       canvas()->SetNeedsCompositingUpdate();
@@ -176,9 +188,12 @@ class MODULES_EXPORT CanvasRenderingContext2D final
 
   // CanvasRenderingContext implementation
   bool IsComposited() const override;
+  bool Is2DCanvasAccelerated() const override;
   scoped_refptr<CanvasResource> PaintRenderingResultsToResource(
       SourceDrawingBuffer source_buffer,
       FlushReason reason) override;
+  scoped_refptr<StaticBitmapImage> PaintRenderingResultsToSnapshot(
+      SourceDrawingBuffer source_buffer) override;
   const std::optional<cc::PaintRecord>& GetLastRecording() override;
 
   int Width() const final;
@@ -227,20 +242,24 @@ class MODULES_EXPORT CanvasRenderingContext2D final
 
   void SendContextLostEventIfNeeded() override;
 
-  CanvasResourceProvider* GetOrCreateResourceProvider() override;
+  bool InitializeResourceProvider() override;
   void SetCanvas2DResourceProviderForTesting(
-      std::unique_ptr<CanvasResourceProvider> provider,
+      std::unique_ptr<Canvas2DResourceProvider> provider,
       const gfx::Size& size);
+  void SetBitmapProviderForTesting(
+      std::unique_ptr<Canvas2DBitmapProvider> provider,
+      const gfx::Size& size);
+  void SetCanvas2DResourceProviderForTesting(std::nullptr_t,
+                                             const gfx::Size& size);
 
   // TODO(crbug.com/352263194): Migrate canvas_rendering_context_2d_test.cc
   // callsites and make this method private.
   CanvasHibernationHandler* GetHibernationHandler() const;
 
-  CanvasResourceProvider* GetResourceProviderForTesting() const {
-    return GetResourceProvider();
-  }
-
   void EnableAccelerationIfPossible() override;
+  base::ByteSize AllocatedBufferSize() const override;
+
+  bool IsResourceProviderValid() const;
 
  protected:
   HTMLCanvasElement* HostAsHTMLCanvasElement() const final;
@@ -265,11 +284,9 @@ class MODULES_EXPORT CanvasRenderingContext2D final
 
   void ResetInternal() override;
 
-  CanvasResourceProvider* GetResourceProvider() const override;
   void Dispose() override;
 
-  std::unique_ptr<CanvasResourceProvider> CreateCanvasResourceProvider();
-
+  void CreateProvider();
 
   void PruneLocalFontCache(size_t target_size);
 
@@ -291,15 +308,14 @@ class MODULES_EXPORT CanvasRenderingContext2D final
 
   void ColorSchemeMayHaveChanged() override;
 
-  std::unique_ptr<CanvasResourceProvider> ReplaceResourceProvider(
-      std::unique_ptr<CanvasResourceProvider>) override;
-
   // If the ResourceProvider currently exists, replaces it with a newly-created
-  // CanvasResourceProvider.
+  // resource provider.
   void DropAndRecreateExistingResourceProvider();
 
-  // This method should be called only when `resource_provider_` is null.
+  // This method should be called only when both providers are null.
   void RecreateResourceProvider();
+
+  void FlushIfRecordingLimitExceeded();
 
   void WakeUpFromHibernation();
 
@@ -309,7 +325,8 @@ class MODULES_EXPORT CanvasRenderingContext2D final
   LinkedHashSet<String> font_lru_list_;
 
   std::unique_ptr<CanvasHibernationHandler> hibernation_handler_;
-  std::unique_ptr<CanvasResourceProvider> resource_provider_;
+  std::unique_ptr<Canvas2DResourceProvider> shared_image_provider_;
+  std::unique_ptr<Canvas2DBitmapProvider> bitmap_provider_;
 
   // `did_fail_to_create_resource_provider_` prevents repeated attempts in
   // allocating resources after the first attempt failed.

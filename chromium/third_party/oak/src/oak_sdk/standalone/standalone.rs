@@ -24,15 +24,15 @@
 
 use anyhow::{Context, Result};
 #[allow(deprecated)]
-use oak_attestation::{dice::DiceAttester, ApplicationKeysAttester};
+use oak_attestation::{ApplicationKeysAttester, dice::DiceAttester};
 use oak_attestation_types::attester::Attester;
 use oak_containers_attestation::{InstanceKeys, InstancePublicKeys};
-use oak_crypto::encryption_key::{generate_encryption_key_pair, EncryptionKey};
+use oak_crypto::encryption_key::{EncryptionKey, generate_encryption_key_pair};
 use oak_dice::cert::generate_ecdsa_key_pair;
 use oak_proto_rust::oak::{
-    attestation::v1::{endorsements, AmdSevSnpEndorsement, Endorsements, Stage0Measurements},
-    session::v1::EndorsedEvidence,
     Variant,
+    attestation::v1::{AmdSevSnpEndorsement, Endorsements, Stage0Measurements, endorsements},
+    session::v1::EndorsedEvidence,
 };
 use oak_sdk_common::StaticEncryptionKeyHandle;
 use p256::ecdsa::{SigningKey, VerifyingKey};
@@ -70,6 +70,11 @@ impl Standalone {
     }
 }
 
+/// A builder for constructing a `Standalone` instance.
+///
+/// This builder is useful for generating mock endorsed evidence and key pairs
+/// during unit and integration testing without requiring a real TEE
+/// environment.
 pub struct StandaloneBuilder<'a> {
     stage0_measurements: Stage0Measurements,
     stage1_system_image: &'a [u8],
@@ -238,15 +243,15 @@ mod tests {
     use std::sync::Arc;
 
     use oak_attestation_verification::{
-        results::get_signing_public_key, ContainerPolicy, InsecureAttestationVerifier,
-        KernelPolicy, SystemPolicy,
+        ContainerPolicy, InsecureAttestationVerifier, KernelPolicy, SystemPolicy,
     };
+    use oak_attestation_verification_results::unique_signing_public_key;
     use oak_attestation_verification_types::verifier::AttestationVerifier;
     use oak_proto_rust::oak::attestation::v1::{
-        attestation_results, binary_reference_value, kernel_binary_reference_value,
-        text_reference_value, BinaryReferenceValue, ContainerLayerReferenceValues,
-        KernelBinaryReferenceValue, KernelLayerReferenceValues, SkipVerification,
-        SystemLayerReferenceValues, TextReferenceValue,
+        BinaryReferenceValue, ContainerLayerReferenceValues, KernelBinaryReferenceValue,
+        KernelLayerReferenceValues, SkipVerification, SystemLayerReferenceValues,
+        TextReferenceValue, attestation_results, binary_reference_value,
+        kernel_binary_reference_value, text_reference_value,
     };
     use oak_time_std::clock::SystemTimeClock;
 
@@ -311,6 +316,6 @@ mod tests {
             )
             .expect("attestation verification failed");
         assert_eq!(results.status, attestation_results::Status::Success as i32);
-        get_signing_public_key(&results).expect("missing signing public key");
+        unique_signing_public_key(&results).expect("missing signing public key");
     }
 }

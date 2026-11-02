@@ -87,17 +87,19 @@ class TestMoqtBidiStream : public MoqtBidiStreamBase {
  public:
   TestMoqtBidiStream(MoqtFramer* absl_nonnull framer,
                      const MoqtControlMessageParser& message_parser,
-                     BidiStreamDeletedCallback stream_deleted_callback,
                      SessionErrorCallback session_error_callback)
       : MoqtBidiStreamBase(framer, message_parser,
-                           std::move(stream_deleted_callback),
-                           std::move(session_error_callback)) {}
+                           std::move(session_error_callback)) {
+    set_control_stream();  // TODO(martinduke): Delete
+  }
   ~TestMoqtBidiStream() override = default;
   void OnStreamBound() override {};
   absl::Status OnRawControlMessage(
       const MoqtRawControlMessage& message) override {
     return absl::OkStatus();
   }
+  void Detach() override { detached_ = true; }
+  bool detached_ = false;
 };
 
 std::optional<PublishedObject> DefaultPublishedObject(
@@ -109,6 +111,9 @@ std::optional<PublishedObject> DefaultPublishedObject(
   object.metadata.status = MoqtObjectStatus::kNormal;
   object.metadata.publisher_priority = publisher_priority;
   object.metadata.extensions = "extensions";
+  object.metadata.first_object_in_subgroup =
+      subgroup.has_value() ? std::optional<bool>(location.object == 0)
+                           : std::nullopt;
   object.metadata.payload_length = 8;
   object.payload.push_back(quiche::QuicheMemSlice::Copy("deadbeef"));
   return object;
@@ -119,9 +124,8 @@ class SubscriptionPublisherTest : public quic::test::QuicTest {
   SubscriptionPublisherTest()
       : track_publisher_(
             std::make_shared<MockTrackPublisher>(FullTrackName("foo", "bar"))),
-        bidi_stream_(
-            &framer_, message_parser_, [] {},
-            [](MoqtError, absl::string_view) {}),
+        bidi_stream_(&framer_, message_parser_,
+                     [](MoqtError, absl::string_view) {}),
         trace_recorder_(nullptr) {
     bidi_stream_.BindStream(&mock_bidi_stream_);
     parameters_.set_forward(true);
@@ -133,7 +137,7 @@ class SubscriptionPublisherTest : public quic::test::QuicTest {
     publisher_ = std::make_unique<SubscriptionPublisher>(
         framer_, track_publisher_, &bidi_stream_, kRequestId, kTrackAlias,
         parameters_, &visitor_, &monitoring_interface_, &mock_clock_,
-        trace_recorder_);
+        trace_recorder_, /*is_publish=*/false);
     ON_CALL(visitor_, alternate_delivery_timeout).WillByDefault(Return(false));
     ON_CALL(webtrans_, GetStreamById(kStreamId))
         .WillByDefault(Return(&mock_uni_stream_));
@@ -221,8 +225,9 @@ class SubscriptionPublisherTest : public quic::test::QuicTest {
   static constexpr uint64_t kTrackAlias = 10;
   static constexpr uint64_t kRequestId = 1;
 
-  MoqtFramer framer_{true};
-  MoqtControlMessageParser message_parser_{kDefaultMoqtVersion, true};
+  MoqtFramer framer_{true, quic::Perspective::IS_CLIENT};
+  MoqtControlMessageParser message_parser_{kDefaultMoqtVersion, true,
+                                           quic::Perspective::IS_CLIENT};
   webtransport::test::MockSession webtrans_;
   StrictMock<webtransport::test::MockStream> mock_bidi_stream_;
   webtransport::test::MockStream mock_uni_stream_;
@@ -343,7 +348,7 @@ TEST_F(SubscriptionPublisherTest, UpdatePriorityWithPendingStreams) {
 TEST_F(SubscriptionPublisherTest, UpdatePriorityWithActiveStreams) {
   CreateStream(
       Location(1, 0), 0, 127,
-      {0x11, static_cast<uint8_t>(kTrackAlias), 0x01, 0x7f, 0x00, 0x0a});
+      {0x51, static_cast<uint8_t>(kTrackAlias), 0x01, 0x7f, 0x00, 0x0a});
   MessageParameters new_params;
   new_params.subscriber_priority = 20;
   EXPECT_CALL(mock_uni_stream_, SetPriority);

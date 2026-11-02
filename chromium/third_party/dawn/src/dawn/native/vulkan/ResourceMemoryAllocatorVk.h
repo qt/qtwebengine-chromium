@@ -29,6 +29,7 @@
 #define SRC_DAWN_NATIVE_VULKAN_RESOURCEMEMORYALLOCATORVK_H_
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "partition_alloc/pointers/raw_ptr.h"
@@ -52,7 +53,7 @@ class ResourceMemoryAllocator {
     static VkDeviceSize GetHeapBlockSize(const DawnDeviceAllocatorControl* control);
 
     // `heapBlockSize` must be a power of two.
-    ResourceMemoryAllocator(Device* device, VkDeviceSize heapBlockSize);
+    ResourceMemoryAllocator(Device* device, VkDeviceSize heapBlockSize, QueueBase* queue);
     ~ResourceMemoryAllocator();
 
     ResultOrError<ResourceMemoryAllocation> Allocate(const VkMemoryRequirements& requirements,
@@ -68,7 +69,7 @@ class ResourceMemoryAllocator {
 
     void Tick(ExecutionSerial completedSerial);
 
-    int FindBestTypeIndex(VkMemoryRequirements requirements, MemoryKind kind);
+    std::optional<uint32_t> FindBestTypeIndex(VkMemoryRequirements requirements, MemoryKind kind);
 
     // Reports the total vulkan allocated and vulkan used memories.
     uint64_t GetTotalUsedMemory() const;
@@ -90,10 +91,10 @@ class ResourceMemoryAllocator {
     std::vector<std::unique_ptr<SingleTypeAllocator>> mAllocatorsPerType;
 
     SerialQueue<ExecutionSerial, ResourceMemoryAllocation> mSubAllocationsToDelete;
-    AllocationSizeTracker mAllocatedMemory;
-    AllocationSizeTracker mUsedMemory;
-    AllocationSizeTracker mLazyAllocatedMemory;
-    AllocationSizeTracker mLazyUsedMemory;
+    Ref<AllocationSizeTracker> mAllocatedMemoryTracker;
+    Ref<AllocationSizeTracker> mUsedMemoryTracker;
+    Ref<AllocationSizeTracker> mLazyAllocatedMemoryTracker;
+    Ref<AllocationSizeTracker> mLazyUsedMemoryTracker;
 };
 
 }  // namespace dawn::native::vulkan

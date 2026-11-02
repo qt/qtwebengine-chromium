@@ -12,6 +12,7 @@
 #include "include/core/SkData.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkMatrix.h"
+#include "include/core/SkPoint.h"
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/GpuTypes.h"
@@ -19,16 +20,15 @@
 #include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/ganesh/GrRecordingContext.h"
 #include "include/gpu/ganesh/GrTypes.h"
-#include "include/private/base/SingleOwner.h"
-#include "include/private/base/SkAlign.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkPoint_impl.h"
-#include "include/private/base/SkTemplates.h"
-#include "include/private/base/SkTo.h"
+#include "include/private/SingleOwner.h"
+#include "include/private/SkAlign.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkTemplates.h"
+#include "include/private/SkTo.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/base/SkSafeMath.h"
 #include "src/core/SkColorSpaceXformSteps.h"
 #include "src/core/SkMipmap.h"
+#include "src/core/SkSafeMath.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/core/SkYUVMath.h"
 #include "src/gpu/AsyncReadTypes.h"
@@ -292,10 +292,8 @@ bool SurfaceContext::readPixels(GrDirectContext* dContext, GrPixmap dst, SkIPoin
         pt.fY = flip ? srcSurface->height() - pt.fY - dst.height() : pt.fY;
     }
 
-    bool hasPendingTasks =
-            dContext->priv().drawingManager()->getLastRenderTask(srcProxy.get()) != nullptr;
-    GrSemaphoresSubmitted flushResult = dContext->priv().flushSurface(srcProxy.get());
-    if (flushResult == GrSemaphoresSubmitted::kNo && hasPendingTasks) {
+    GrDirectContext::FlushResult result = dContext->priv().flushSurface(srcProxy.get());
+    if (!result.fSuccess) {
         return false;
     }
     dContext->submit();
@@ -585,6 +583,19 @@ bool SurfaceContext::internalWritePixels(GrDirectContext* dContext,
     }
     pt.fY = flip ? dstSurface->height() - pt.fY - src[0].height() : pt.fY;
 
+    auto flushSurfaceAndCheckSuccess = [dContext](GrSurfaceProxy* dstProxy) {
+        GrDirectContext::FlushResult result = dContext->priv().flushSurface(dstProxy);
+        return result.fSuccess;
+    };
+
+    // On platforms that prefer flushes over VRAM use (i.e., ANGLE) we're better off forcing a
+    // complete flush here.
+    if (!caps->preferVRAMUseOverFlushes()) {
+        if (!flushSurfaceAndCheckSuccess(dstProxy)) {
+            return false;
+        }
+    }
+
     if (!dContext->priv().drawingManager()->newWritePixelsTask(
                 sk_ref_sp(dstProxy),
                 SkIRect::MakePtSize(pt, src[0].dimensions()),
@@ -600,7 +611,9 @@ bool SurfaceContext::internalWritePixels(GrDirectContext* dContext,
     if (!ownAllStorage) {
         // If any pixmap doesn't own its pixels then we must flush so that the pixels are pushed to
         // the GPU before we return.
-        dContext->priv().flushSurface(dstProxy);
+        if (!flushSurfaceAndCheckSuccess(dstProxy)) {
+            return false;
+        }
     }
     return true;
 }
@@ -669,11 +682,11 @@ void SurfaceContext::asyncRescaleAndReadPixels(GrDirectContext* dContext,
         x = y = 0;
     }
     auto srcCtx = tempFC ? tempFC.get() : this;
-    return srcCtx->asyncReadPixels(dContext,
-                                   SkIRect::MakePtSize({x, y}, info.dimensions()),
-                                   info.colorType(),
-                                   callback,
-                                   callbackContext);
+    srcCtx->asyncReadPixels(dContext,
+                            SkIRect::MakePtSize({x, y}, info.dimensions()),
+                            info.colorType(),
+                            callback,
+                            callbackContext);
 }
 
 // Shared between RGBA and YUVA readbacks.
@@ -734,7 +747,7 @@ struct SurfaceContext::AsyncReadPixelContext {
                 if (!transfer->fTransferBuffer) {
                     break; // Reached end of the planes being copied
                 }
-                if (!transfer->fTransferTask || !transfer->fTransferTask->wasExecuted()) {
+                if (!transfer->fTransferTask || !transfer->fTransferTask->executionSuccessful()) {
                     success = false;
                     break;
                 }
@@ -853,7 +866,9 @@ void SurfaceContext::asyncReadPixels(GrDirectContext* dContext,
         reinterpret_cast<AsyncReadPixelContext*>(c)->setFinished();
     };
 
-    dContext->priv().flushSurface(
+    // Here we ignore flushSurface's return and count on the callbacks to inform the
+    // user re failures.
+    (void) dContext->priv().flushSurface(
             this->asSurfaceProxy(), SkSurfaces::BackendSurfaceAccess::kNoAccess, flushInfo);
 }
 
@@ -1112,7 +1127,9 @@ void SurfaceContext::asyncRescaleAndReadPixelsYUV420(GrDirectContext* dContext,
         reinterpret_cast<AsyncReadPixelContext*>(c)->setFinished();
     };
 
-    dContext->priv().flushSurface(
+    // Here we ignore flushSurface's return and count on the callbacks to inform the
+    // user re failures.
+    (void) dContext->priv().flushSurface(
             this->asSurfaceProxy(), SkSurfaces::BackendSurfaceAccess::kNoAccess, flushInfo);
 }
 
@@ -1438,9 +1455,11 @@ SurfaceContext::PixelTransferResult SurfaceContext::transferPixels(GrColorType d
 
     SkSafeMath safe;
     size_t bytesPerPixel = GrColorTypeBytesPerPixel(supportedRead.fColorType);
+    SkASSERT(bytesPerPixel > 0);
     size_t rowBytes = safe.mul(bytesPerPixel, rect.width());
     size_t maxTransAlignment = this->caps()->transferBufferRowBytesAlignment();
-    rowBytes = safe.alignUp(rowBytes, maxTransAlignment);
+    size_t alignment = safe.lcm(bytesPerPixel, maxTransAlignment);
+    rowBytes = safe.alignUpNonPow2(rowBytes, alignment);
     size_t size = safe.mul(rowBytes, rect.height());
     if (!safe.ok()) {
         return {};

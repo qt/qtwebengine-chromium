@@ -16,11 +16,11 @@
 
 use core::slice;
 
-use elf::{abi::PT_LOAD, endian::AnyEndian, segment::ProgramHeader, ElfBytes};
+use elf::{ElfBytes, abi::PT_LOAD, endian::AnyEndian, segment::ProgramHeader};
 use oak_linux_boot_params::{BootE820Entry, E820EntryType, Ramdisk};
 use x86_64::{
-    structures::paging::{PageSize, Size1GiB, Size2MiB},
     PhysAddr, VirtAddr,
+    structures::paging::{PageSize, Size1GiB, Size2MiB},
 };
 
 // We assume Stage 0 created an identity map for the first 1GiB of memory.
@@ -77,7 +77,11 @@ fn load_segment(
     let target = unsafe { slice::from_raw_parts_mut::<u8>(start_address.as_mut_ptr(), size) };
 
     // Zero out the target in case the file content is shorter than the target.
-    target.fill(0);
+    // Using manual `for` loop rather than fill to avoid the compiler's intrinsic
+    // function which uses an indirect call via the PLT.
+    for item in &mut *target {
+        *item = 0;
+    }
 
     // Manually copy between slices to avoid the compiler's intrinsic memcpy which
     // uses an indirect call via the PLT.

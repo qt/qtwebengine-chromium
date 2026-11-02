@@ -3,17 +3,18 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Formatter from '../../entrypoints/formatter_worker/formatter_worker.js';
 import * as Protocol from '../../generated/protocol.js';
 import type * as FormatterModels from '../../models/formatter/formatter.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import {createTarget, describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
 import {encodeSourceMap} from '../../testing/SourceMapEncoder.js';
 import {stringifyFrame} from '../../testing/StackTraceHelpers.js';
 import * as ScopesCodec from '../../third_party/source-map-scopes-codec/source-map-scopes-codec.js';
+import * as Common from '../common/common.js';
 import * as Platform from '../platform/platform.js';
+import * as TextUtils from '../text_utils/text_utils.js';
 
 import * as SDK from './sdk.js';
 
@@ -104,7 +105,8 @@ describe('SourceMapScopesInfo', () => {
                                                       '0:18 => index.ts:1:7',
                                                       '1:23 => index.ts:6:9',
                                                       '2:1 => index.ts:10:5',
-                                                    ]));
+                                                    ]),
+                                                    new Common.Console.Console());
 
       const builder = new ScopeInfoBuilder();
       builder.startScope(0, 0, {kind: 'global', key: 'global'})
@@ -171,7 +173,8 @@ describe('SourceMapScopesInfo', () => {
                                                       '0:14 => index.ts:5:5',
                                                       '0:26 => index.ts:1:7',
                                                       '1:1 => index.ts:10:5',
-                                                    ]));
+                                                    ]),
+                                                    new Common.Console.Console());
 
       const builder = new ScopeInfoBuilder();
       builder.startScope(0, 0, {kind: 'global', key: 'global'})
@@ -236,7 +239,8 @@ describe('SourceMapScopesInfo', () => {
 
       const sourceMap = new SDK.SourceMap.SourceMap(urlString`index.js`, urlString`index.js.map`, encodeSourceMap([
                                                       '0:5 => index.ts:1:7',
-                                                    ]));
+                                                    ]),
+                                                    new Common.Console.Console());
 
       const builder = new ScopeInfoBuilder();
       builder.startScope(0, 0, {kind: 'global', key: 'global'})
@@ -324,7 +328,7 @@ describe('SourceMapScopesInfo', () => {
     });
   });
 
-  describeWithMockConnection('resolveMappedScopeChain', () => {
+  describeWithEnvironment('resolveMappedScopeChain', () => {
     function setUpCallFrameAndSourceMap(options: {
       generatedPausedPosition: {line: number, column: number},
       mappedPausedPosition?: {sourceIndex: number, line: number, column: number},
@@ -738,7 +742,7 @@ describe('SourceMapScopesInfo', () => {
     });
   });
 
-  describeWithMockConnection('createFromAst', () => {
+  describeWithEnvironment('createFromAst', () => {
     it('creates scope info from a JavaScript AST with named mappings', () => {
       const generatedCode = `function f(n) { console.log(n); } function b() { f(42); }`;
 
@@ -751,7 +755,8 @@ describe('SourceMapScopesInfo', () => {
         '0:44 => original2.js:5:9@bar',  // function b() => function bar()
         '0:57 => original2.js:7:0',      // end of b
       ]);
-      const sourceMap = new SDK.SourceMap.SourceMap(urlString`compiled.js`, urlString`compiled.js.map`, sourceMapJSON);
+      const sourceMap = new SDK.SourceMap.SourceMap(urlString`compiled.js`, urlString`compiled.js.map`, sourceMapJSON,
+                                                    new Common.Console.Console());
 
       const info = SourceMapScopesInfo.createFromAst(sourceMap, ast, new TextUtils.Text.Text(generatedCode));
 
@@ -809,7 +814,8 @@ describe('SourceMapScopesInfo', () => {
         '0:79 => utils.js:0:18',       // util end
       ]);
 
-      const sourceMap = new SDK.SourceMap.SourceMap(urlString`compiled.js`, urlString`compiled.js.map`, sourceMapJSON);
+      const sourceMap = new SDK.SourceMap.SourceMap(urlString`compiled.js`, urlString`compiled.js.map`, sourceMapJSON,
+                                                    new Common.Console.Console());
       const info = SourceMapScopesInfo.createFromAst(sourceMap, ast!, new TextUtils.Text.Text(generatedCode));
 
       // Test inner scope.
@@ -842,7 +848,8 @@ describe('SourceMapScopesInfo', () => {
         '0:18 => fileB.js:0:0',
       ]);
 
-      const sourceMap = new SDK.SourceMap.SourceMap(urlString`compiled.js`, urlString`compiled.js.map`, sourceMapJSON);
+      const sourceMap = new SDK.SourceMap.SourceMap(urlString`compiled.js`, urlString`compiled.js.map`, sourceMapJSON,
+                                                    new Common.Console.Console());
       const info = SourceMapScopesInfo.createFromAst(sourceMap, ast!, new TextUtils.Text.Text(generatedCode));
 
       // Although the AST found a function, the source map is invalid.
@@ -876,7 +883,8 @@ describe('SourceMapScopesInfo', () => {
         '0:41 => original.js:11:0',  // wrapper ends
       ]);
 
-      const sourceMap = new SDK.SourceMap.SourceMap(urlString`compiled.js`, urlString`compiled.js.map`, sourceMapJSON);
+      const sourceMap = new SDK.SourceMap.SourceMap(urlString`compiled.js`, urlString`compiled.js.map`, sourceMapJSON,
+                                                    new Common.Console.Console());
       const info = SourceMapScopesInfo.createFromAst(sourceMap, ast!, new TextUtils.Text.Text(generatedCode));
 
       // Check 'big'.
@@ -911,7 +919,8 @@ describe('SourceMapScopesInfo', () => {
       }
 
       const sourceMapJSON = encodeSourceMap(mappings);
-      const sourceMap = new SDK.SourceMap.SourceMap(urlString`compiled.js`, urlString`compiled.js.map`, sourceMapJSON);
+      const sourceMap = new SDK.SourceMap.SourceMap(urlString`compiled.js`, urlString`compiled.js.map`, sourceMapJSON,
+                                                    new Common.Console.Console());
 
       const info = SourceMapScopesInfo.createFromAst(
           sourceMap, root as unknown as FormatterModels.FormatterWorkerPool.ScopeTreeNode,

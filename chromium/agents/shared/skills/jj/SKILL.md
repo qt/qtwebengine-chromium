@@ -220,7 +220,7 @@ the full description. They will drop existing footers unless you explicitly
 include them in the new message.
 
 Follow Chromium specific instructions for writing CL descriptions using the
-[cl-description](agents/skills/cl-description) skill.
+[cl-description](agents/shared/skills/cl-description) skill.
 
 ### Reverting Files
 

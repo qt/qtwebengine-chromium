@@ -25,11 +25,11 @@ const {html, Directives: {classMap}} = Lit;
 
 const UIStrings = {
   /**
-   * @description The title of the button after it was pressed and the text was copied to clipboard.
+   * @description Text shown after copying code changes to the clipboard.
    */
   copied: 'Copied to clipboard',
   /**
-   * @description The title of the copy file to clipboard button
+   * @description Title of the button to copy file content to the clipboard.
    * @example {index.css} PH1
    */
   copyFile: 'Copy file {PH1} to clipboard',
@@ -242,7 +242,7 @@ export class CombinedDiffView extends UI.Widget.Widget {
       if (fileSystemUiSourceCode) {
         displayText = [
           fileSystemUiSourceCode.project().displayName(),
-          ...Persistence.FileSystemWorkspaceBinding.FileSystemWorkspaceBinding.relativePath(fileSystemUiSourceCode)
+          ...Persistence.FileSystemWorkspaceBinding.FileSystemWorkspaceBinding.relativePath(fileSystemUiSourceCode),
         ].join('/');
       }
       return {

@@ -15,6 +15,7 @@
 #include "third_party/blink/renderer/bindings/modules/v8/v8_union_constrainlongrange_long.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/html/html_user_media_element.h"
+#include "third_party/blink/renderer/core/html/html_body_element.h"
 #include "third_party/blink/renderer/modules/mediastream/user_media_element_constraints.h"
 #include "third_party/blink/renderer/platform/testing/task_environment.h"
 
@@ -164,6 +165,115 @@ TEST_F(UserMediaElementTest, SanitizeTrackConstraintsMutatesCopy) {
   // Test that sanitized constraints are modified
   EXPECT_FALSE(sanitized_constraints->video()->hasWidth());
   EXPECT_FALSE(sanitized_constraints->audio()->hasEchoCancellation());
+}
+
+
+
+TEST_F(UserMediaElementTest, DefaultConstraintsNoSetConstraints) {
+  V8TestingScope scope;
+  auto* element =
+      MakeGarbageCollected<HTMLUserMediaElement>(scope.GetDocument());
+
+  scope.GetDocument().body()->AppendChild(element);
+  task_environment_.RunUntilIdle();
+
+  const auto& descriptors = element->GetPermissionDescriptors();
+  ASSERT_EQ(descriptors.size(), 2U);
+  EXPECT_EQ(descriptors[0]->name, mojom::blink::PermissionName::VIDEO_CAPTURE);
+  EXPECT_EQ(descriptors[1]->name, mojom::blink::PermissionName::AUDIO_CAPTURE);
+}
+
+TEST_F(UserMediaElementTest, EmptyConstraintsDefaultsToBoth) {
+  V8TestingScope scope;
+  auto* element =
+      MakeGarbageCollected<HTMLUserMediaElement>(scope.GetDocument());
+  scope.GetDocument().body()->AppendChild(element);
+
+  HTMLMediaStreamConstraints* constraints = HTMLMediaStreamConstraints::Create();
+  constraints->setVideo(MediaTrackConstraintSet::Create());
+  constraints->setAudio(MediaTrackConstraintSet::Create());
+
+  UserMediaElementConstraints::setConstraints(*element, constraints);
+  task_environment_.RunUntilIdle();
+
+  const auto& descriptors = element->GetPermissionDescriptors();
+  ASSERT_EQ(descriptors.size(), 2U);
+  EXPECT_EQ(descriptors[0]->name, mojom::blink::PermissionName::VIDEO_CAPTURE);
+  EXPECT_EQ(descriptors[1]->name, mojom::blink::PermissionName::AUDIO_CAPTURE);
+}
+
+TEST_F(UserMediaElementTest, EmptyConstraintsObjectDefaultsToBoth) {
+  V8TestingScope scope;
+  auto* element =
+      MakeGarbageCollected<HTMLUserMediaElement>(scope.GetDocument());
+  scope.GetDocument().body()->AppendChild(element);
+
+  // setConstraints({})
+  HTMLMediaStreamConstraints* constraints = HTMLMediaStreamConstraints::Create();
+  UserMediaElementConstraints::setConstraints(*element, constraints);
+  task_environment_.RunUntilIdle();
+
+  const auto& descriptors = element->GetPermissionDescriptors();
+  ASSERT_EQ(descriptors.size(), 2U);
+  EXPECT_EQ(descriptors[0]->name, mojom::blink::PermissionName::VIDEO_CAPTURE);
+  EXPECT_EQ(descriptors[1]->name, mojom::blink::PermissionName::AUDIO_CAPTURE);
+
+  // Stored constraints should be populated with defaults
+  const HTMLMediaStreamConstraints* stored =
+      UserMediaElementConstraints::From(*element).Constraints();
+  ASSERT_TRUE(stored);
+  EXPECT_TRUE(stored->hasVideo());
+  EXPECT_TRUE(stored->hasAudio());
+}
+
+TEST_F(UserMediaElementTest, AudioMissingDefaultsToEnabled) {
+  V8TestingScope scope;
+  auto* element =
+      MakeGarbageCollected<HTMLUserMediaElement>(scope.GetDocument());
+  scope.GetDocument().body()->AppendChild(element);
+
+  // setConstraints({video: {}}) -> audio missing
+  HTMLMediaStreamConstraints* constraints = HTMLMediaStreamConstraints::Create();
+  constraints->setVideo(MediaTrackConstraintSet::Create());
+
+  UserMediaElementConstraints::setConstraints(*element, constraints);
+  task_environment_.RunUntilIdle();
+
+  const auto& descriptors = element->GetPermissionDescriptors();
+  ASSERT_EQ(descriptors.size(), 2U);
+  EXPECT_EQ(descriptors[0]->name, mojom::blink::PermissionName::VIDEO_CAPTURE);
+  EXPECT_EQ(descriptors[1]->name, mojom::blink::PermissionName::AUDIO_CAPTURE);
+
+  const HTMLMediaStreamConstraints* stored =
+      UserMediaElementConstraints::From(*element).Constraints();
+  ASSERT_TRUE(stored);
+  EXPECT_TRUE(stored->hasVideo());
+  EXPECT_TRUE(stored->hasAudio()); // defaulted to enabled
+}
+
+TEST_F(UserMediaElementTest, VideoMissingDefaultsToEnabled) {
+  V8TestingScope scope;
+  auto* element =
+      MakeGarbageCollected<HTMLUserMediaElement>(scope.GetDocument());
+  scope.GetDocument().body()->AppendChild(element);
+
+  // setConstraints({audio: {}}) -> video missing
+  HTMLMediaStreamConstraints* constraints = HTMLMediaStreamConstraints::Create();
+  constraints->setAudio(MediaTrackConstraintSet::Create());
+
+  UserMediaElementConstraints::setConstraints(*element, constraints);
+  task_environment_.RunUntilIdle();
+
+  const auto& descriptors = element->GetPermissionDescriptors();
+  ASSERT_EQ(descriptors.size(), 2U);
+  EXPECT_EQ(descriptors[0]->name, mojom::blink::PermissionName::VIDEO_CAPTURE);
+  EXPECT_EQ(descriptors[1]->name, mojom::blink::PermissionName::AUDIO_CAPTURE);
+
+  const HTMLMediaStreamConstraints* stored =
+      UserMediaElementConstraints::From(*element).Constraints();
+  ASSERT_TRUE(stored);
+  EXPECT_TRUE(stored->hasVideo()); // defaulted to enabled
+  EXPECT_TRUE(stored->hasAudio());
 }
 
 }  // namespace blink

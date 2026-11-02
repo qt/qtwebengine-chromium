@@ -114,6 +114,12 @@ run time. However, these assertions do cost time and can thus be turned off.
  - \b \c EIGEN_DEFAULT_L1_CACHE_SIZE - Sets the default L1 cache size that is used in Eigen's GEBP kernel when the correct cache size cannot be determined at runtime.
  - \b \c EIGEN_DEFAULT_L2_CACHE_SIZE - Sets the default L2 cache size that is used in Eigen's GEBP kernel when the correct cache size cannot be determined at runtime.
  - \b \c EIGEN_DEFAULT_L3_CACHE_SIZE - Sets the default L3 cache size that is used in Eigen's GEBP kernel when the correct cache size cannot be determined at runtime.
+ - \b \c EIGEN_SME_MAX_KC - Maximum depth (k) blocking size used by the ARM SME GEMM kernel. The default (2048) is
+   empirically tuned for Apple M4; override to retune for other SME implementations.
+ - \b \c EIGEN_SME_PACKED_RHS_BUDGET_BYTES - Byte budget for the packed RHS panel in the ARM SME GEMM kernel.
+   The default (32 MB) is empirically tuned for Apple M4.
+ - \b \c EIGEN_SME_LHS_WORKING_SET_BUDGET_BYTES - Byte budget for the LHS working set in the ARM SME GEMM kernel.
+   The default (7 MB) is empirically tuned for Apple M4.
 
  - \b \c EIGEN_DONT_ALIGN - Deprecated, it is a synonym for \c EIGEN_MAX_ALIGN_BYTES=0. It disables alignment completely. %Eigen will not try to align its objects and does not expect that any objects passed to it are aligned. This will turn off vectorization if \b \c EIGEN_UNALIGNED_VECTORIZE=1. Not defined by default.
  - \b \c EIGEN_DONT_ALIGN_STATICALLY - Deprecated, it is a synonym for \c EIGEN_MAX_STATIC_ALIGN_BYTES=0. It disables alignment of arrays on the stack. Not defined by default, unless \c EIGEN_DONT_ALIGN is defined.

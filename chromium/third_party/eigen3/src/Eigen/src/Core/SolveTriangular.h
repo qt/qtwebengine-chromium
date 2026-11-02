@@ -135,7 +135,7 @@ struct triangular_solver_unroller<Lhs, Rhs, Mode, LoopIndex, Size, false> {
                                      .cwiseProduct(rhs.template segment<LoopIndex>(StartIndex))
                                      .sum();
 
-    if (!(Mode & UnitDiag)) rhs.coeffRef(DiagIndex) /= lhs.coeff(DiagIndex, DiagIndex);
+    EIGEN_IF_CONSTEXPR (!(Mode & UnitDiag)) rhs.coeffRef(DiagIndex) /= lhs.coeff(DiagIndex, DiagIndex);
 
     triangular_solver_unroller<Lhs, Rhs, Mode, LoopIndex + 1, Size>::run(lhs, rhs);
   }
@@ -218,7 +218,6 @@ struct traits<triangular_solve_retval<Side, TriangularType, Rhs> > {
 
 template <int Side, typename TriangularType, typename Rhs>
 struct triangular_solve_retval : public ReturnByValue<triangular_solve_retval<Side, TriangularType, Rhs> > {
-  typedef remove_all_t<typename Rhs::Nested> RhsNestedCleaned;
   typedef ReturnByValue<triangular_solve_retval> Base;
 
   triangular_solve_retval(const TriangularType& tri, const Rhs& rhs) : m_triangularMatrix(tri), m_rhs(rhs) {}

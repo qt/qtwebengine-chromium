@@ -18,8 +18,6 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
-#include <cstring>
 
 #include "src/dsp/constants.h"
 #include "src/dsp/dsp.h"

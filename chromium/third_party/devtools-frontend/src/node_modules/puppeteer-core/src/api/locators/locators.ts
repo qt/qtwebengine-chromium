@@ -33,7 +33,7 @@ import {
 import type {EventType} from '../../common/EventEmitter.js';
 import {EventEmitter} from '../../common/EventEmitter.js';
 import type {Awaitable, HandleFor, NodeFor} from '../../common/types.js';
-import {debugError, fromAbortSignal, timeout} from '../../common/util.js';
+import {fromAbortSignal, timeout, debugCatchError} from '../../common/util.js';
 import type {
   BoundingBox,
   ClickOptions,
@@ -400,7 +400,7 @@ export abstract class Locator<T> extends EventEmitter<LocatorEvents> {
       mergeMap(handle => {
         return from(handle.click(options)).pipe(
           catchError(err => {
-            void handle.dispose().catch(debugError);
+            void handle.dispose().catch(debugCatchError);
             throw err;
           }),
         );
@@ -595,7 +595,7 @@ export abstract class Locator<T> extends EventEmitter<LocatorEvents> {
           )
           .pipe(
             catchError(err => {
-              void handle.dispose().catch(debugError);
+              void handle.dispose().catch(debugCatchError);
               throw err;
             }),
           );
@@ -624,7 +624,7 @@ export abstract class Locator<T> extends EventEmitter<LocatorEvents> {
       mergeMap(handle => {
         return from(handle.hover()).pipe(
           catchError(err => {
-            void handle.dispose().catch(debugError);
+            void handle.dispose().catch(debugCatchError);
             throw err;
           }),
         );
@@ -666,7 +666,7 @@ export abstract class Locator<T> extends EventEmitter<LocatorEvents> {
           ),
         ).pipe(
           catchError(err => {
-            void handle.dispose().catch(debugError);
+            void handle.dispose().catch(debugCatchError);
             throw err;
           }),
         );
@@ -862,8 +862,7 @@ export class FunctionLocator<T> extends Locator<T> {
  * @public
  */
 export type Predicate<From, To extends From = From> =
-  | ((value: From) => value is To)
-  | ((value: From) => Awaitable<boolean>);
+  ((value: From) => value is To) | ((value: From) => Awaitable<boolean>);
 /**
  * @internal
  */

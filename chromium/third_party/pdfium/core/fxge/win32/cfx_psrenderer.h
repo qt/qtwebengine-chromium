@@ -30,23 +30,14 @@ class CFX_Font;
 class CFX_GlyphCache;
 class CFX_PSFontTracker;
 class CFX_Path;
-class TextCharPos;
 struct CFX_FillRenderOptions;
+struct TextCharPos;
 
 namespace fxge {
 struct FXDIB_ResampleOptions;
 }
 
-struct EncoderIface {
-  DataVector<uint8_t> (*pA85EncodeFunc)(pdfium::span<const uint8_t> src_span);
-  DataVector<uint8_t> (*pFaxEncodeFunc)(RetainPtr<const CFX_DIBBase> src);
-  DataVector<uint8_t> (*pFlateEncodeFunc)(pdfium::span<const uint8_t> src_span);
-  bool (*pJpegEncodeFunc)(const RetainPtr<const CFX_DIBBase>& pSource,
-                          uint8_t** dest_buf,
-                          size_t* dest_size);
-  DataVector<uint8_t> (*pRunLengthEncodeFunc)(
-      pdfium::span<const uint8_t> src_span);
-};
+struct EncoderIface;
 
 class CFX_PSRenderer {
  public:

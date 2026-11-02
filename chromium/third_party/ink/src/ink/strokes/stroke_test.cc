@@ -28,6 +28,7 @@
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "ink/brush/brush.h"
+#include "ink/brush/brush_behavior.h"
 #include "ink/brush/brush_coat.h"
 #include "ink/brush/brush_family.h"
 #include "ink/brush/brush_paint.h"
@@ -606,32 +607,65 @@ void CanConstructStrokeFromAnyInputBatch(const Brush& brush,
 FUZZ_TEST(DISABLED_StrokeTest, CanConstructStrokeFromAnyInputBatch)
     .WithDomains(ValidBrush(), ArbitraryStrokeInputBatch());
 
-TEST(StrokeTest, PartialEraseWithEmptyEraserShapeReturnsStroke) {
+TEST(StrokeTest, SubtractWithEmptyMaskShapeReturnsStroke) {
   Stroke stroke(CreateBrush(), CreateFilledInputs());
-  PartitionedMesh empty_eraser_shape;
+  PartitionedMesh empty_mask_shape;
   AffineTransform identity = AffineTransform::Identity();
 
-  std::vector<Stroke> result =
-      stroke.PartialErase(empty_eraser_shape, identity, identity);
+  Stroke result = stroke.Subtract(empty_mask_shape, identity, identity);
 
-  ASSERT_THAT(result, SizeIs(1));
-  EXPECT_THAT(result[0].GetBrush(), BrushEq(stroke.GetBrush()));
-  EXPECT_THAT(result[0].GetInputs(), StrokeInputBatchEq(stroke.GetInputs()));
+  EXPECT_THAT(result.GetBrush(), BrushEq(stroke.GetBrush()));
+  EXPECT_THAT(result.GetInputs(), StrokeInputBatchEq(stroke.GetInputs()));
 }
 
-TEST(StrokeTest, PartialEraseWithDegenerateTransformReturnsStroke) {
+TEST(StrokeTest, SubtractWithDegenerateTransformReturnsStroke) {
   Stroke stroke(CreateBrush(), CreateFilledInputs());
-  PartitionedMesh eraser_shape = CreateFilledShape();
+  PartitionedMesh mask_shape = CreateFilledShape();
   AffineTransform identity = AffineTransform::Identity();
   AffineTransform degenerate = AffineTransform::Scale(1, 0);
 
-  std::vector<Stroke> result =
-      stroke.PartialErase(eraser_shape, identity, degenerate);
+  Stroke result = stroke.Subtract(mask_shape, identity, degenerate);
 
-  ASSERT_THAT(result, SizeIs(1));
-  EXPECT_THAT(result[0].GetBrush(), BrushEq(stroke.GetBrush()));
-  EXPECT_THAT(result[0].GetInputs(), StrokeInputBatchEq(stroke.GetInputs()));
-  EXPECT_THAT(result[0].GetShape(), PartitionedMeshDeepEq(stroke.GetShape()));
+  EXPECT_THAT(result.GetBrush(), BrushEq(stroke.GetBrush()));
+  EXPECT_THAT(result.GetInputs(), StrokeInputBatchEq(stroke.GetInputs()));
+  EXPECT_THAT(result.GetShape(), PartitionedMeshDeepEq(stroke.GetShape()));
+}
+
+TEST(StrokeTest, ParticleBrushWithOneDimensionZero) {
+  // Brush which will create a tip geometry with a width that is 0 and is a
+  // particle brush, so it will hit the case in
+  // ComputeParticleSurfaceUVTransform where we must guard against division by
+  // zero.
+  absl::StatusOr<BrushFamily> family = BrushFamily::Create(
+      BrushTip{.particle_gap_distance_scale = 0.2f,
+               .behaviors = {BrushBehavior{
+                   {BrushBehavior::SourceNode(
+                        BrushBehavior::Source::
+                            kDistanceTraveledInMultiplesOfBrushSize,
+                        BrushBehavior::OutOfRange::kMirror, {0, 1}),
+                    BrushBehavior::TargetNode(
+                        BrushBehavior::Target::kWidthMultiplier, {0, 2})}}}},
+      {});
+  ASSERT_THAT(family, IsOk());
+  absl::StatusOr<Brush> brush = Brush::Create(*family, Color::Black(), 1, 0.1);
+  ASSERT_THAT(brush, IsOk());
+  Stroke stroke(*brush, CreateFilledInputs());
+  // If we did divide by zero, RegenerateShape would produce a PartitionedMesh
+  // with no meshes.
+  EXPECT_THAT(stroke.GetShape().Meshes(), SizeIs(1));
+}
+
+TEST(StrokeTest, Split) {
+  Stroke stroke(CreateBrush(), CreateFilledInputs());
+  ASSERT_FALSE(stroke.GetShape().Meshes().empty());
+
+  std::vector<Stroke> segments =
+      stroke.Split(AffineTransform::Identity(), /*tolerance=*/1.0f);
+  EXPECT_THAT(segments, Not(IsEmpty()));
+  for (const auto& segment : segments) {
+    EXPECT_THAT(segment.GetBrush(), BrushEq(stroke.GetBrush()));
+    EXPECT_THAT(segment.GetInputs(), StrokeInputBatchEq(stroke.GetInputs()));
+  }
 }
 
 }  // namespace

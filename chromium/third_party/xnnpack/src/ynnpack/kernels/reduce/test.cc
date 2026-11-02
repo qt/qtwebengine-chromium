@@ -55,7 +55,7 @@ template <typename T>
 float Tolerance(ReduceOp op, size_t k, float max_abs_value) {
   switch (op) {
     case ReduceOp::kSum:
-      return type_info<T>::epsilon() * k * max_abs_value;
+      return type_info<T>::epsilon() * k * max_abs_value * 2.0f;
     case ReduceOp::kSumSquared:
       return type_info<T>::epsilon() * k * max_abs_value * max_abs_value * 2.0f;
     case ReduceOp::kMin:
@@ -73,6 +73,25 @@ span<T> row(Tensor<T> t, size_t i) {
   return span<T>(&t(i, 0), t.extent(1));
 }
 
+template <typename T>
+void kahan_sum(T a, T& acc, T& error) {
+  T y = a - error;
+  T t = acc + y;
+  error = (t - acc) - y;
+  if (!isfinite(error)) {
+    // If the error is infinity or NaN, we don't want to know about it. The
+    // accumulator will be infinity anyways, and we might corrupt the result
+    // to be NaN.
+    error = static_cast<T>(0);
+  }
+  acc = t;
+}
+
+inline void kahan_sum(int a, int& acc, int&) {
+  // Provide a silly integer overload for template code to use.
+  acc += a;
+}
+
 template <typename AT, typename CT>
 YNN_ALWAYS_INLINE void ReduceRow(ReduceOp op, size_t n, const AT* a,
                                  size_t c_row_stride, CT* c_0, CT* c_1) {
@@ -82,7 +101,7 @@ YNN_ALWAYS_INLINE void ReduceRow(ReduceOp op, size_t n, const AT* a,
 
   // Compute the current row.
   for (size_t i = 0; i < n; ++i) {
-    CT a_i = static_cast<CT>(a[i]);
+    CT a_i = type_info<AT>::get(a, i);
 
     switch (op) {
       case ReduceOp::kSum:
@@ -167,7 +186,8 @@ void TestUnaryReduce(AT, CT, std::vector<size_t> ns, std::vector<size_t> ks,
     // For 2-row outputs, we pass the second row. Otherwise we pass `error`,
     // which we use for Kahan summation.
     CT* c1 = c_m == 2 ? &expected(1, i, 0) : error.data();
-    ReduceRow(op, a.extent(1), &a(i - 1, 0), expected.stride(1), c0, c1);
+    ReduceRow(op, a.extent(1), address_of(a(i - 1, 0)), expected.stride(1), c0,
+              c1);
   }
 
   if (k_dim == reduce_dim::k1) {
@@ -239,7 +259,7 @@ TEST_P(UnaryReduce, n) {
 
 #define YNN_REDUCE_KERNEL(arch_flags, name, k_dim, a_type, c_type) \
   INSTANTIATE_TEST_SUITE_P(                                        \
-      name, UnaryReduce,                                           \
+      name##_##a_type##_##c_type, UnaryReduce,                     \
       testing::Values(KernelParam{arch_flags, name, current_op,    \
                                   multi_type_of(a_type(), c_type()), k_dim}));
 

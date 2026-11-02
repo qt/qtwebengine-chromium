@@ -101,7 +101,7 @@ struct TensorEvaluator<const TensorPatchOp<PatchDim, ArgType>, Device> {
     Index num_patches = 1;
     const typename TensorEvaluator<ArgType, Device>::Dimensions& input_dims = m_impl.dimensions();
     const PatchDim& patch_dims = op.patch_dims();
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       for (int i = 0; i < NumDims - 1; ++i) {
         m_dimensions[i] = patch_dims[i];
         num_patches *= (input_dims[i] - patch_dims[i] + 1);
@@ -118,8 +118,7 @@ struct TensorEvaluator<const TensorPatchOp<PatchDim, ArgType>, Device> {
       for (int i = 1; i < NumDims; ++i) {
         m_outputStrides[i] = m_outputStrides[i - 1] * m_dimensions[i - 1];
       }
-    }
-    else {
+    } else {
       for (int i = 0; i < NumDims - 1; ++i) {
         m_dimensions[i + 1] = patch_dims[i];
         num_patches *= (input_dims[i] - patch_dims[i] + 1);
@@ -155,7 +154,7 @@ struct TensorEvaluator<const TensorPatchOp<PatchDim, ArgType>, Device> {
     // Find the offset of the element wrt the location of the first element.
     Index patchOffset = index - patchIndex * m_outputStrides[output_stride_index];
     Index inputIndex = 0;
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       EIGEN_UNROLL_LOOP
       for (int i = NumDims - 2; i > 0; --i) {
         const Index patchIdx = patchIndex / m_patchStrides[i];
@@ -164,8 +163,7 @@ struct TensorEvaluator<const TensorPatchOp<PatchDim, ArgType>, Device> {
         patchOffset -= offsetIdx * m_outputStrides[i];
         inputIndex += (patchIdx + offsetIdx) * m_inputStrides[i];
       }
-    }
-    else {
+    } else {
       EIGEN_UNROLL_LOOP
       for (int i = 0; i < NumDims - 2; ++i) {
         const Index patchIdx = patchIndex / m_patchStrides[i];
@@ -191,7 +189,7 @@ struct TensorEvaluator<const TensorPatchOp<PatchDim, ArgType>, Device> {
                              indices[1] - patchIndices[1] * m_outputStrides[output_stride_index]};
 
     Index inputIndices[2] = {0, 0};
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       EIGEN_UNROLL_LOOP
       for (int i = NumDims - 2; i > 0; --i) {
         const Index patchIdx[2] = {patchIndices[0] / m_patchStrides[i], patchIndices[1] / m_patchStrides[i]};
@@ -205,8 +203,7 @@ struct TensorEvaluator<const TensorPatchOp<PatchDim, ArgType>, Device> {
         inputIndices[0] += (patchIdx[0] + offsetIdx[0]) * m_inputStrides[i];
         inputIndices[1] += (patchIdx[1] + offsetIdx[1]) * m_inputStrides[i];
       }
-    }
-    else {
+    } else {
       EIGEN_UNROLL_LOOP
       for (int i = 0; i < NumDims - 2; ++i) {
         const Index patchIdx[2] = {patchIndices[0] / m_patchStrides[i], patchIndices[1] / m_patchStrides[i]};

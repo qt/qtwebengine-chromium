@@ -5,7 +5,7 @@
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import type * as Platform from '../../core/platform/platform.js';
-import type * as ProtocolClient from '../../core/protocol_client/protocol_client.js';
+import * as ProtocolClient from '../../core/protocol_client/protocol_client.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import type * as LighthouseModel from '../../models/lighthouse/lighthouse.js';
@@ -79,6 +79,14 @@ export class ProtocolService implements ProtocolClient.CDPConnection.CDPConnecti
   private connection?: ProtocolClient.CDPConnection.CDPConnection;
 
   /**
+   * Session ids that belong to this Lighthouse run. The proxy only relays
+   * worker commands and connection events that target one of these sessions
+   * so that traffic stays scoped to the parallel session created in
+   * `attach()` and its descendants.
+   */
+  readonly #knownSessionIds = new Set<string>();
+
+  /**
    * Tracks pending requests to the Lighthouse worker.
    * Key: The message ID sent to the worker.
    * Value: The rejection function for the corresponding promise.
@@ -86,7 +94,9 @@ export class ProtocolService implements ProtocolClient.CDPConnection.CDPConnecti
    */
   readonly #pendingRequests = new Map<number, (reason: Error) => void>();
 
-  async attach(): Promise<void> {
+  async attach(inspectedURL: Platform.DevToolsPath.UrlString): Promise<void> {
+    const parsedInitialOrigin = Common.ParsedURL.ParsedURL.extractOrigin(inspectedURL);
+
     await SDK.TargetManager.TargetManager.instance().suspendAllTargets();
     const mainTarget = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
     if (!mainTarget) {
@@ -117,6 +127,8 @@ export class ProtocolService implements ProtocolClient.CDPConnection.CDPConnecti
 
     const rootTargetId = await rootChildTargetManager.getParentTargetId();
     const {sessionId} = await rootTarget.targetAgent().invoke_attachToTarget({targetId: rootTargetId, flatten: true});
+    this.#knownSessionIds.clear();
+    this.#knownSessionIds.add(sessionId);
     this.connection = connection;
     this.connection.observe(this);
 
@@ -130,8 +142,6 @@ export class ProtocolService implements ProtocolClient.CDPConnection.CDPConnecti
     // To ensure the teardown operations can proceed, we need a dialog handler which lasts until
     // the LighthouseProtocolService detaches.
 
-    const initialInspectedUrl = mainTarget.inspectedURL();
-    const parsedInitialOrigin = Common.ParsedURL.ParsedURL.extractOrigin(initialInspectedUrl);
     const dialogHandler =
         (event: Common.EventTarget.EventTargetEvent<Protocol.Page.JavascriptDialogOpeningEvent>): void => {
           const parsedEventOrigin =
@@ -139,7 +149,7 @@ export class ProtocolService implements ProtocolClient.CDPConnection.CDPConnecti
           if (!parsedInitialOrigin || parsedEventOrigin !== parsedInitialOrigin) {
             // See http://crbug.com/513728809.
             console.warn(`Lighthouse auto-accept for dialog on ${
-                event.data.url} blocked as it was not from the original audit origin ${initialInspectedUrl}.`);
+                event.data.url} blocked as it was not from the original audit origin ${inspectedURL}.`);
             return;
           }
 
@@ -217,6 +227,7 @@ export class ProtocolService implements ProtocolClient.CDPConnection.CDPConnecti
     this.rootTarget = undefined;
     this.connection?.unobserve(this);
     this.connection = undefined;
+    this.#knownSessionIds.clear();
 
     if (oldLighthouseWorker) {
       (await oldLighthouseWorker).terminate();
@@ -237,18 +248,29 @@ export class ProtocolService implements ProtocolClient.CDPConnection.CDPConnecti
   }
 
   private dispatchProtocolMessage(message: ProtocolClient.CDPConnection.CDPReceivableMessage): void {
-    // A message without a sessionId is the main session of the main target (call it "Main session").
-    // A parallel connection and session was made that connects to the same main target (call it "Lighthouse session").
-    // Messages from the "Lighthouse session" have a sessionId.
-    // Without some care, there is a risk of sending the same events for the same main frame to Lighthouse–the backend
-    // will create events for the "Main session" and the "Lighthouse session".
-    // The workaround–only send message to Lighthouse if:
-    //   * the message has a sessionId (is not for the "Main session")
-    //   * the message does not have a sessionId (is for the "Main session"), but only for the Target domain
-    //     (to kickstart autoAttach in LH).
-    if (message.sessionId || ('method' in message && message.method?.startsWith('Target'))) {
-      void this.send('dispatchProtocolMessage', {message});
+    // The shared CDPConnection carries traffic for every DevTools session. A
+    // parallel session is created for the Lighthouse run in `attach()`, and the
+    // worker only ever needs traffic that belongs to that session or one of the
+    // child sessions it subsequently attaches. Filtering on `#knownSessionIds`
+    // keeps the proxy scoped to the run instead of broadcasting unrelated
+    // session traffic into the worker.
+    if (!message.sessionId || !this.#knownSessionIds.has(message.sessionId)) {
+      return;
     }
+    if ('method' in message) {
+      if (message.method === 'Target.attachedToTarget') {
+        const childSessionId = (message.params as Protocol.Target.AttachedToTargetEvent | undefined)?.sessionId;
+        if (childSessionId) {
+          this.#knownSessionIds.add(childSessionId);
+        }
+      } else if (message.method === 'Target.detachedFromTarget') {
+        const childSessionId = (message.params as Protocol.Target.DetachedFromTargetEvent | undefined)?.sessionId;
+        if (childSessionId) {
+          this.#knownSessionIds.delete(childSessionId);
+        }
+      }
+    }
+    void this.send('dispatchProtocolMessage', {message});
   }
 
   onDisconnect(): void {
@@ -303,11 +325,30 @@ export class ProtocolService implements ProtocolClient.CDPConnection.CDPConnecti
 
   private sendProtocolMessage(message: string): void {
     const {id, method, params, sessionId} = JSON.parse(message);
+    // The worker is expected to only address the parallel session created in
+    // `attach()` or sessions discovered beneath it. Anything else, including
+    // the root session, is outside the scope of the run.
+    if (!sessionId || !this.#knownSessionIds.has(sessionId)) {
+      void this.send('dispatchProtocolMessage', {
+        message: {
+          id,
+          sessionId,
+          error: {
+            code: ProtocolClient.CDPConnection.CDPErrorStatus.SESSION_NOT_FOUND,
+            message: `Unknown session id: ${sessionId}`,
+          },
+        },
+      });
+      return;
+    }
     // CDPConnection manages it's own message IDs and it's important, otherwise we'd clash
     // with the rest of the DevTools traffic.
     // Instead, we ignore the ID coming from the worker when sending the command, but
     // patch it back in when sending the response back to the worker.
     void this.connection?.send(method, params, sessionId).then(response => {
+      if ('result' in response && method === 'Target.attachToTarget' && response.result?.sessionId) {
+        this.#knownSessionIds.add(response.result.sessionId);
+      }
       const message =
           'result' in response ? {id, sessionId, result: response.result} : {id, sessionId, error: response.error};
       this.dispatchProtocolMessage(message);

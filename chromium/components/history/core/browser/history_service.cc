@@ -349,7 +349,7 @@ base::CancelableTaskTracker::TaskId HistoryService::ReplaceClusters(
 
 base::CancelableTaskTracker::TaskId
 HistoryService::ReserveNextClusterIdWithVisit(
-    const ClusterVisit& cluster_visit,
+    ClusterVisit cluster_visit,
     ClusterIdCallback callback,
     base::CancelableTaskTracker* tracker) {
   DCHECK(backend_task_runner_) << "History service being called after cleanup";
@@ -357,13 +357,13 @@ HistoryService::ReserveNextClusterIdWithVisit(
   return tracker->PostTaskAndReplyWithResult(
       backend_task_runner_.get(), FROM_HERE,
       base::BindOnce(&HistoryBackend::ReserveNextClusterIdWithVisit,
-                     history_backend_, cluster_visit),
+                     history_backend_, std::move(cluster_visit)),
       std::move(callback));
 }
 
 base::CancelableTaskTracker::TaskId HistoryService::AddVisitsToCluster(
     ClusterId cluster_id,
-    const std::vector<ClusterVisit>& visits,
+    std::vector<ClusterVisit> visits,
     base::OnceClosure callback,
     base::CancelableTaskTracker* tracker) {
   DCHECK(backend_task_runner_) << "History service being called after cleanup";
@@ -371,7 +371,7 @@ base::CancelableTaskTracker::TaskId HistoryService::AddVisitsToCluster(
   return tracker->PostTaskAndReply(
       backend_task_runner_.get(), FROM_HERE,
       base::BindOnce(&HistoryBackend::AddVisitsToCluster, history_backend_,
-                     cluster_id, visits),
+                     cluster_id, std::move(visits)),
       std::move(callback));
 }
 
@@ -401,7 +401,7 @@ base::CancelableTaskTracker::TaskId HistoryService::HideVisits(
 }
 
 base::CancelableTaskTracker::TaskId HistoryService::UpdateClusterVisit(
-    const history::ClusterVisit& cluster_visit,
+    history::ClusterVisit cluster_visit,
     base::OnceClosure callback,
     base::CancelableTaskTracker* tracker) {
   DCHECK(backend_task_runner_) << "History service being called after cleanup";
@@ -409,7 +409,7 @@ base::CancelableTaskTracker::TaskId HistoryService::UpdateClusterVisit(
   return tracker->PostTaskAndReply(
       backend_task_runner_.get(), FROM_HERE,
       base::BindOnce(&HistoryBackend::UpdateClusterVisit, history_backend_,
-                     cluster_visit),
+                     std::move(cluster_visit)),
       std::move(callback));
 }
 
@@ -1144,6 +1144,18 @@ base::CancelableTaskTracker::TaskId HistoryService::QueryURL(
       std::move(callback));
 }
 
+base::CancelableTaskTracker::TaskId HistoryService::QueryUrlIds(
+    const std::vector<GURL>& urls,
+    QueryUrlIdsCallback callback,
+    base::CancelableTaskTracker* tracker) {
+  DCHECK(backend_task_runner_) << "History service being called after cleanup";
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  return tracker->PostTaskAndReplyWithResult(
+      backend_task_runner_.get(), FROM_HERE,
+      base::BindOnce(&HistoryBackend::QueryUrlIds, history_backend_, urls),
+      std::move(callback));
+}
+
 base::CancelableTaskTracker::TaskId HistoryService::QueryURLAndVisits(
     const GURL& url,
     const VisitQuery404sPolicy policy_for_404s,
@@ -1471,10 +1483,13 @@ bool HistoryService::Init(
 
   // Unit tests can inject `backend_task_runner_` before this is called.
   if (!backend_task_runner_) {
+    base::TaskPriority priority = base::TaskPriority::USER_BLOCKING;
+    if (base::FeatureList::IsEnabled(kHistoryInitPrioritySettings)) {
+      priority = kHistoryInitPriority.Get();
+    }
     backend_task_runner_ =
         base::ThreadPool::CreateSequencedTaskRunnerForResource(
-            {base::MayBlock(), base::WithBaseSyncPrimitives(),
-             base::TaskPriority::USER_BLOCKING,
+            {base::MayBlock(), base::WithBaseSyncPrimitives(), priority,
              base::TaskShutdownBehavior::BLOCK_SHUTDOWN},
             history_dir_.Append(kHistoryFilename));
   }

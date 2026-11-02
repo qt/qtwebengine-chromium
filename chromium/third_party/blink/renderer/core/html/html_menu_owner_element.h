@@ -12,33 +12,34 @@
 
 namespace blink {
 
+class HTMLMenuItemElement;
+
 class CORE_EXPORT HTMLMenuOwnerElement : public HTMLElement,
                                          public TypeAheadDataSource {
  public:
-  bool IsValidBuiltinCommand(HTMLElement& invoker,
-                             CommandEventType command) override;
   // This returns an iterable list of menuitems whose owner is this.
   MenuItemList ItemList() const;
 
   bool ShouldIgnoreDescendantsForElementTraversals(Element* element) const;
+  bool IsTopLevelOwner() const;
 
   void DefaultEventHandler(Event&) override;
+
+  void Trace(Visitor*) const override;
 
   // TypeAheadDataSource implementation
   int IndexOfSelectedOption() const override;
   int OptionCount() const override;
   String OptionAtIndex(int index) const override;
 
-  // MenuTreeContainsNode returns true if the provided node is within the
-  // light-dom "tree" of menu elements including and descendant from this menu
-  // owner element. "Tree" in this case includes submenus which are currently
-  // open and invoked by menuitems in this menu owner or submenus.
-  bool MenuTreeContainsNode(Node&);
-
  protected:
   HTMLMenuOwnerElement(HTMLQualifiedName, Document&);
 
   TypeAhead type_ahead_;
+
+ private:
+  Member<HTMLMenuItemElement> last_mouseup_menu_item_;
+  bool processing_click_ = false;
 };
 
 template <>

@@ -48,7 +48,6 @@ build_ime = !is_ios
 component("ui_data_pack") {
   visibility = [
     ":base",
-    "//chromeos/crosapi/mojom",  # This target requires minimal dependencies.
     "//ios/chrome/tools/strings:generate_localizable_strings",
     "//third_party/blink/renderer/core",
     "//third_party/blink/renderer/platform",
@@ -139,6 +138,8 @@ component("base") {
     "dragdrop/os_exchange_data_provider_factory.h",
     "ime/utf_offset.cc",
     "ime/utf_offset.h",
+    "l10n/chromium_language_matcher.cc",
+    "l10n/chromium_language_matcher.h",
     "l10n/formatter.cc",
     "l10n/formatter.h",
     "l10n/l10n_font_util.cc",
@@ -605,11 +606,8 @@ component("base") {
       "Foundation.framework",
       "IOKit.framework",
       "QuartzCore.framework",
+      "ScreenCaptureKit.framework",
       "UniformTypeIdentifiers.framework",
-    ]
-
-    weak_frameworks = [
-      "ScreenCaptureKit.framework",  # Available in macOS 12.3, stable in 13.2.
     ]
   }
 
@@ -1117,6 +1115,7 @@ test("ui_base_unittests") {
       "cocoa/command_dispatcher_unittest.mm",
       "cocoa/constrained_window/constrained_window_animation_unittest.mm",
       "cocoa/defaults_utils_unittest.mm",
+      "cocoa/menu_utils_unittest.mm",
       "cocoa/nsmenu_additions_unittest.mm",
       "cocoa/nsmenuitem_additions_unittest.mm",
       "cocoa/touch_bar_util_unittest.mm",

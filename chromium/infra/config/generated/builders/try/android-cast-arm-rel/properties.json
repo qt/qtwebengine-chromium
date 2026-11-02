@@ -10,7 +10,7 @@
             "builder_id": {
               "bucket": "ci",
               "builder": "android-cast-arm-rel",
-              "project": "chromium-m150"
+              "project": "chromium-m152"
             },
             "builder_spec": {
               "builder_group": "chromium.android",
@@ -42,7 +42,7 @@
         {
           "bucket": "ci",
           "builder": "android-cast-arm-rel",
-          "project": "chromium-m150"
+          "project": "chromium-m152"
         }
       ],
       "targets_spec_directory": "infra/config/generated/builders/try/android-cast-arm-rel/targets"
@@ -54,7 +54,8 @@
   },
   "$build/siso": {
     "configs": [
-      "builder"
+      "builder",
+      "remote-link"
     ],
     "enable_cloud_monitoring": true,
     "enable_cloud_trace": true,

@@ -323,8 +323,8 @@ bool CoreChecks::PreCallValidateCreateBufferView(VkDevice device, const VkBuffer
         }
     } else if (!IsIntegerMultipleOf(pCreateInfo->offset, phys_dev_props.limits.minTexelBufferOffsetAlignment)) {
         const char* vuid = (buffer_state.usage & VK_BUFFER_USAGE_2_STORAGE_TEXEL_BUFFER_BIT)
-                               ? " VUID-VkBufferViewCreateInfo-buffer-02750"
-                               : " VUID-VkBufferViewCreateInfo-buffer-02751";
+                               ? "VUID-VkBufferViewCreateInfo-buffer-02750"
+                               : "VUID-VkBufferViewCreateInfo-buffer-02751";
         skip |= LogError(vuid, pCreateInfo->buffer, create_info_loc.dot(Field::offset),
                          "(%" PRIuLEAST64
                          ") must be a multiple of VkPhysicalDeviceLimits::minTexelBufferOffsetAlignment (%" PRIuLEAST64 ").",
@@ -432,7 +432,7 @@ bool CoreChecks::PreCallValidateCmdFillBuffer(VkCommandBuffer commandBuffer, VkB
     if (!IsExtEnabled(extensions.vk_khr_maintenance1)) {
         const VkQueueFlags required_flags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT;
         if (!HasRequiredQueueFlags(cb_state, *physical_device_state, required_flags)) {
-            const LogObjectList objlist_pool(cb_state.Handle(), cb_state.command_pool->Handle());
+            const LogObjectList objlist_pool(cb_state.Handle(), cb_state.command_pool.Handle());
             skip |= LogError("VUID-vkCmdFillBuffer-apiVersion-07894", objlist_pool, error_obj.location, "%s",
                              DescribeRequiredQueueFlag(cb_state, *physical_device_state, required_flags).c_str());
         }

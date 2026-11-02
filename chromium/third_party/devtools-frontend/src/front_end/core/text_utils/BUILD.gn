@@ -1,0 +1,76 @@
+# Copyright 2020 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("../../../scripts/build/ninja/devtools_entrypoint.gni")
+import("../../../scripts/build/ninja/devtools_module.gni")
+import("../../../scripts/build/typescript/typescript.gni")
+import("../../visibility.gni")
+
+devtools_foundation_module("text_utils") {
+  sources = [
+    "CodeMirrorUtils.ts",
+    "ContentData.ts",
+    "ContentProvider.ts",
+    "StaticContentProvider.ts",
+    "StreamingContentData.ts",
+    "Text.ts",
+    "TextCursor.ts",
+    "TextRange.ts",
+    "TextUtils.ts",
+    "WasmDisassembly.ts",
+  ]
+
+  deps = [
+    "../../core/common:bundle",
+    "../../core/platform:bundle",
+    "../../third_party/codemirror.next:bundle",
+  ]
+}
+
+devtools_entrypoint("bundle") {
+  entrypoint = "text_utils.ts"
+
+  deps = [ ":text_utils" ]
+
+  visibility = [
+    ":*",
+    "../*",
+    "../../core/sdk/*",
+    "../../entrypoints/*",
+    "../../legacy_test_runner/test_runner/*",
+    "../../models/*",
+    "../../panels/*",
+    "../../testing/*",
+    "../../ui/components/data_grid/*",
+    "../../ui/components/docs/data_grid_controller/*",
+    "../../ui/components/highlighting/*",
+    "../../ui/components/markdown_view/*",
+    "../../ui/components/text_editor/*",
+    "../../ui/legacy/*",
+  ]
+
+  visibility += devtools_visibility
+}
+
+devtools_foundation_module("unittests") {
+  testonly = true
+
+  sources = [
+    "ContentData.test.ts",
+    "StaticContentProvider.test.ts",
+    "StreamingContentData.test.ts",
+    "Text.test.ts",
+    "TextCursor.test.ts",
+    "TextRange.test.ts",
+    "TextUtils.test.ts",
+    "WasmDisassembly.test.ts",
+  ]
+
+  deps = [
+    ":bundle",
+    "../../core/common:bundle",
+    "../../core/platform:bundle",
+    "../../testing",
+  ]
+}

@@ -4578,7 +4578,7 @@ bool Device::PreCallValidateCmdCopyMemoryToImageKHR(VkCommandBuffer commandBuffe
         [[maybe_unused]] const Location pCopyMemoryInfo_loc = error_obj.location.dot(Field::pCopyMemoryInfo);
         skip |= ValidateObject(pCopyMemoryInfo->image, kVulkanObjectTypeImage, false,
                                "VUID-VkCopyDeviceMemoryImageInfoKHR-image-parameter",
-                               "VUID-VkCopyDeviceMemoryImageInfoKHR-image-parent", pCopyMemoryInfo_loc.dot(Field::image));
+                               "UNASSIGNED-VkCopyDeviceMemoryImageInfoKHR-image-parent", pCopyMemoryInfo_loc.dot(Field::image));
     }
 
     return skip;
@@ -4593,7 +4593,7 @@ bool Device::PreCallValidateCmdCopyImageToMemoryKHR(VkCommandBuffer commandBuffe
         [[maybe_unused]] const Location pCopyMemoryInfo_loc = error_obj.location.dot(Field::pCopyMemoryInfo);
         skip |= ValidateObject(pCopyMemoryInfo->image, kVulkanObjectTypeImage, false,
                                "VUID-VkCopyDeviceMemoryImageInfoKHR-image-parameter",
-                               "VUID-VkCopyDeviceMemoryImageInfoKHR-image-parent", pCopyMemoryInfo_loc.dot(Field::image));
+                               "UNASSIGNED-VkCopyDeviceMemoryImageInfoKHR-image-parent", pCopyMemoryInfo_loc.dot(Field::image));
     }
 
     return skip;
@@ -5579,7 +5579,7 @@ bool Device::PreCallValidateCreateGpaSessionAMD(VkDevice device, const VkGpaSess
         [[maybe_unused]] const Location pCreateInfo_loc = error_obj.location.dot(Field::pCreateInfo);
         skip |= ValidateObject(pCreateInfo->secondaryCopySource, kVulkanObjectTypeGpaSessionAMD, true,
                                "VUID-VkGpaSessionCreateInfoAMD-secondaryCopySource-parameter",
-                               "VUID-VkGpaSessionCreateInfoAMD-secondaryCopySource-parent",
+                               "UNASSIGNED-VkGpaSessionCreateInfoAMD-secondaryCopySource-parent",
                                pCreateInfo_loc.dot(Field::secondaryCopySource));
     }
 
@@ -7025,6 +7025,35 @@ bool Device::PreCallValidateCmdCudaLaunchKernelNV(VkCommandBuffer commandBuffer,
 
 // vkCmdEndPerTileExecutionQCOM:
 // Checked by chassis: commandBuffer: "VUID-vkCmdEndPerTileExecutionQCOM-commandBuffer-parameter"
+
+// vkSetLatencySleepModeLegacyNV:
+// Checked by chassis: device: "VUID-vkSetLatencySleepModeLegacyNV-device-parameter"
+
+bool Device::PreCallValidateLatencySleepLegacyNV(VkDevice device, VkSemaphore signalSemaphore, uint64_t value,
+                                                 const ErrorObject& error_obj) const {
+    bool skip = false;
+    // Checked by chassis: device: "VUID-vkLatencySleepLegacyNV-device-parameter"
+    skip |=
+        ValidateObject(signalSemaphore, kVulkanObjectTypeSemaphore, false, "VUID-vkLatencySleepLegacyNV-signalSemaphore-parameter",
+                       "VUID-vkLatencySleepLegacyNV-signalSemaphore-parent", error_obj.location.dot(Field::signalSemaphore));
+
+    return skip;
+}
+
+// vkSetLatencyMarkerLegacyNV:
+// Checked by chassis: device: "VUID-vkSetLatencyMarkerLegacyNV-device-parameter"
+
+// vkGetLatencyTimingsLegacyNV:
+// Checked by chassis: device: "VUID-vkGetLatencyTimingsLegacyNV-device-parameter"
+
+// vkQueueNotifyOutOfBandLegacyNV:
+// Checked by chassis: queue: "VUID-vkQueueNotifyOutOfBandLegacyNV-queue-parameter"
+
+// vkGetSleepStatusLegacyNV:
+// Checked by chassis: device: "VUID-vkGetSleepStatusLegacyNV-device-parameter"
+
+// vkShutdownLatencyDeviceLegacyNV:
+// Checked by chassis: device: "VUID-vkShutdownLatencyDeviceLegacyNV-device-parameter"
 
 #ifdef VK_USE_PLATFORM_METAL_EXT
 #endif  // VK_USE_PLATFORM_METAL_EXT

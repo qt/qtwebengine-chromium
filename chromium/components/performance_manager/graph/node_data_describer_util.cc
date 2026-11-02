@@ -7,6 +7,7 @@
 #include <string_view>
 
 #include "base/i18n/time_formatting.h"
+#include "base/strings/stringprintf.h"
 #include "base/task/task_traits.h"
 #include "components/performance_manager/graph/frame_node_impl.h"
 #include "components/performance_manager/graph/frame_node_impl_describer.h"
@@ -37,10 +38,15 @@ base::Value TimeDeltaFromNowToValue(base::TimeTicks time_ticks) {
 }
 
 base::Value TimeSinceEpochToValue(base::TimeTicks time_ticks) {
-  const base::TimeDelta delta_since_epoch =
-      time_ticks - base::TimeTicks::UnixEpoch();
-  return base::Value(base::UnlocalizedTimeFormatWithPattern(
-      base::Time::UnixEpoch() + delta_since_epoch, "yyyy-MM-dd HH:mm:ss"));
+  // Map the TimeTicks onto wall-clock time by anchoring both clocks to the
+  // current instant.
+  const base::Time time =
+      base::Time::Now() - (base::TimeTicks::Now() - time_ticks);
+  base::Time::Exploded exploded;
+  time.LocalExplode(&exploded);
+  return base::Value(base::StringPrintf(
+      "%04d-%02d-%02d %02d:%02d:%02d", exploded.year, exploded.month,
+      exploded.day_of_month, exploded.hour, exploded.minute, exploded.second));
 }
 
 base::Value MaybeNullStringToValue(std::string_view str) {

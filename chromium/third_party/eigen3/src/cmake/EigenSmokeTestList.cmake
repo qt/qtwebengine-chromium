@@ -16,10 +16,14 @@ set(ei_smoke_test_list
   autodiff_scalar_1
   bandmatrix
   bdcsvd_9
+  bdcsvd_fastmath
   bessel_functions_1
   bfloat16_float
   blasutil_1
   block_5
+  block_sparse_matrix_2
+  block_sparse_matrix_9
+  bunchkaufman_5
   BVH
   cholesky_1
   cholmod_support_23
@@ -62,6 +66,8 @@ set(ei_smoke_test_list
   jacobisvd_1
   kronecker_product
   linearstructure_1
+  lru_cache
+  lsmr_1
   mapped_matrix_1
   mapstaticmethods_1
   mapstride_1
@@ -81,6 +87,8 @@ set(ei_smoke_test_list
   NumericalDiff
   numext
   packetmath
+  packetmath_fastmath
+  packetmath_fastmath_generic_16
   permutationmatrices_1
   polynomialsolver_1
   prec_inverse_4x4_1
@@ -95,6 +103,7 @@ set(ei_smoke_test_list
   qr_1
   qr_colpivoting_7
   qr_fullpivoting_4
+  qr_rand_colpivoting_2
   rand_1
   real_qz_1
   redux_1
@@ -115,12 +124,14 @@ set(ei_smoke_test_list
   sparse_product_4
   sparse_ref_1
   sparse_solvers_1
+  sparse_threaded_product_2
   sparse_vector_1
   special_functions_1
   special_numbers_1
   special_packetmath_1
   spqr_support_2
   stable_norm_1
+  stable_norm_fastmath
   stddeque_1
   stddeque_overload_1
   stdlist_1
@@ -128,9 +139,13 @@ set(ei_smoke_test_list
   stdvector_1
   stdvector_overload_1
   stl_iterators_1
+  structured_matrices_1
+  structured_matrices_5
   swap_1
   symbolic_index_1
   triangular_1
+  tridiagonal_eigensolver_1
+  tridiagonal_eigensolver_3
   type_alias
   lu_9
   umeyama_3

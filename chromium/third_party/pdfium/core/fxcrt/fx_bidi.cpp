@@ -18,20 +18,20 @@ CFX_BidiChar::CFX_BidiChar()
 bool CFX_BidiChar::AppendChar(wchar_t wch) {
   Direction direction;
   switch (pdfium::unicode::GetBidiClass(wch)) {
-    case FX_BIDICLASS::kL:
+    case BidiClass::kL:
       direction = Direction::kLeft;
       break;
-    case FX_BIDICLASS::kAN:
-    case FX_BIDICLASS::kEN:
-    case FX_BIDICLASS::kNSM:
-    case FX_BIDICLASS::kCS:
-    case FX_BIDICLASS::kES:
-    case FX_BIDICLASS::kET:
-    case FX_BIDICLASS::kBN:
+    case BidiClass::kAN:
+    case BidiClass::kEN:
+    case BidiClass::kNSM:
+    case BidiClass::kCS:
+    case BidiClass::kES:
+    case BidiClass::kET:
+    case BidiClass::kBN:
       direction = Direction::kLeftWeak;
       break;
-    case FX_BIDICLASS::kR:
-    case FX_BIDICLASS::kAL:
+    case BidiClass::kR:
+    case BidiClass::kAL:
       direction = Direction::kRight;
       break;
     default:
@@ -60,7 +60,8 @@ void CFX_BidiChar::StartNewSegment(CFX_BidiChar::Direction direction) {
   current_segment_.direction = direction;
 }
 
-CFX_BidiString::CFX_BidiString(const WideString& str) : str_(str) {
+CFX_BidiString::CFX_BidiString(const WideString& str, bool auto_order)
+    : str_(str) {
   CFX_BidiChar bidi;
   for (wchar_t c : str_) {
     if (bidi.AppendChar(c)) {
@@ -69,6 +70,10 @@ CFX_BidiString::CFX_BidiString(const WideString& str) : str_(str) {
   }
   if (bidi.EndChar()) {
     order_.push_back(bidi.GetSegmentInfo());
+  }
+
+  if (!auto_order) {
+    return;
   }
 
   size_t nR2L = std::count_if(
@@ -81,7 +86,7 @@ CFX_BidiString::CFX_BidiString(const WideString& str) : str_(str) {
         return seg.direction == CFX_BidiChar::Direction::kLeft;
       });
 
-  if (nR2L > 0 && nR2L >= nL2R) {
+  if (nR2L > nL2R) {
     SetOverallDirectionRight();
   }
 }

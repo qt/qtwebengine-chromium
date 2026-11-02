@@ -28,11 +28,12 @@ use skrifa::{string::StringId, MetadataProvider};
 use fcint_bindings::{
     FC_FAMILYLANG_OBJECT, FC_FAMILY_OBJECT, FC_FULLNAMELANG_OBJECT, FC_FULLNAME_OBJECT,
     FC_GENERIC_FAMILY_OBJECT, FC_INVALID_OBJECT, FC_POSTSCRIPT_NAME_OBJECT, FC_STYLELANG_OBJECT,
-    FC_STYLE_OBJECT,
+    FC_STYLE_OBJECT, FcGenericAliasGetClassification,
 };
 use fontconfig_bindings::{
-    FC_FAMILY_EMOJI, FC_FAMILY_MATH, FC_FAMILY_MONO, FC_FAMILY_SANS, FC_FAMILY_SERIF,
-    FC_FAMILY_UNKNOWN,
+    FC_FAMILY_CURSIVE, FC_FAMILY_EMOJI, FC_FAMILY_FANGSONG, FC_FAMILY_FANTASY, FC_FAMILY_MATH,
+    FC_FAMILY_MONO, FC_FAMILY_SANS, FC_FAMILY_SERIF, FC_FAMILY_SYSTEM_UI, FC_FAMILY_UI_MONO,
+    FC_FAMILY_UI_ROUNDED, FC_FAMILY_UI_SANS, FC_FAMILY_UI_SERIF, FC_FAMILY_UNKNOWN,
 };
 
 use crate::{name_records::FcSortedNameRecords, FcPatternBuilder, InstanceMode, PatternElement};
@@ -166,24 +167,32 @@ fn mangle_full_name_for_named_instance(font: &FontRef, named_instance_id: i32) -
     CString::new(full_name + &subfam).ok()
 }
 
-fn get_generic_family(family_name: &CStr) -> i32 {
-    [
-        ("mono", FC_FAMILY_MONO),
-        ("sans", FC_FAMILY_SANS),
-        ("serif", FC_FAMILY_SERIF),
-        ("emoji", FC_FAMILY_EMOJI),
-        ("math", FC_FAMILY_MATH),
-    ]
-    .into_iter()
-    .find_map(|(font_sub_name, generic_family_id)| {
-        family_name
-            .to_string_lossy()
-            .into_owned()
-            .to_lowercase()
-            .contains(font_sub_name)
-            .then_some(generic_family_id)
-    })
-    .unwrap_or(FC_FAMILY_UNKNOWN) as i32
+fn get_generic_family(family_name: &CStr) -> u32 {
+    // Try FcGenericAliasGetClassification first
+    let classification = unsafe { FcGenericAliasGetClassification(family_name.as_ptr()) };
+
+    // If it returns UNKNOWN, fall back to substring matching
+    if classification == FC_FAMILY_UNKNOWN {
+        [
+            ("mono", FC_FAMILY_MONO),
+            ("sans", FC_FAMILY_SANS),
+            ("serif", FC_FAMILY_SERIF),
+            ("emoji", FC_FAMILY_EMOJI),
+            ("math", FC_FAMILY_MATH),
+        ]
+        .into_iter()
+        .find_map(|(font_sub_name, generic_family_id)| {
+            family_name
+                .to_string_lossy()
+                .into_owned()
+                .to_lowercase()
+                .contains(font_sub_name)
+                .then_some(1 << (generic_family_id - 1))
+        })
+        .unwrap_or(FC_FAMILY_UNKNOWN)
+    } else {
+        classification
+    }
 }
 
 pub fn add_names(
@@ -280,21 +289,50 @@ pub fn add_names(
     }
 
     // Determine generic family and append.
-    let generic_family = pattern
-        .family_names()
-        .find_map(|family_name| {
-            let id = get_generic_family(family_name);
-            if id != FC_FAMILY_UNKNOWN as i32 {
-                Some(id)
-            } else {
-                None
+    // Try each family name until we find one with a classification
+    let mut generic_families: Vec<u32> = Vec::new();
+    for family_name in pattern.family_names() {
+        let classification = get_generic_family(family_name);
+        if classification != FC_FAMILY_UNKNOWN {
+            // Extract each bit from the bitfield
+            for family_type in [
+                FC_FAMILY_SERIF,
+                FC_FAMILY_SANS,
+                FC_FAMILY_MONO,
+                FC_FAMILY_CURSIVE,
+                FC_FAMILY_FANTASY,
+                FC_FAMILY_SYSTEM_UI,
+                FC_FAMILY_UI_SERIF,
+                FC_FAMILY_UI_SANS,
+                FC_FAMILY_UI_MONO,
+                FC_FAMILY_UI_ROUNDED,
+                FC_FAMILY_EMOJI,
+                FC_FAMILY_MATH,
+                FC_FAMILY_FANGSONG,
+            ] {
+                if classification & (1 << (family_type - 1)) != 0 {
+                    generic_families.push(family_type);
+                }
             }
-        })
-        .unwrap_or(FC_FAMILY_UNKNOWN as i32);
-    pattern.append_element(PatternElement::new(
-        FC_GENERIC_FAMILY_OBJECT as i32,
-        generic_family.into(),
-    ));
+            break;
+        }
+    }
+
+    // If no classification found, add UNKNOWN
+    if generic_families.is_empty() {
+        pattern.append_element(PatternElement::new(
+            FC_GENERIC_FAMILY_OBJECT as i32,
+            (FC_FAMILY_UNKNOWN as i32).into(),
+        ));
+    } else {
+        // Append each generic family classification
+        for family_type in generic_families {
+            pattern.append_element(PatternElement::new(
+                FC_GENERIC_FAMILY_OBJECT as i32,
+                (family_type as i32).into(),
+            ));
+        }
+    }
 
     Ok(())
 }

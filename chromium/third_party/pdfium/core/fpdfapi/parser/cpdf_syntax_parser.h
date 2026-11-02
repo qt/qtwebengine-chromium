@@ -14,11 +14,11 @@
 #include <vector>
 
 #include "core/fpdfapi/parser/cpdf_stream.h"
+#include "core/fxcrt/bytestring_pool.h"
 #include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/fx_types.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/span.h"
-#include "core/fxcrt/string_pool_template.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "core/fxcrt/weak_ptr.h"
 

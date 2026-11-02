@@ -256,14 +256,14 @@ struct Options {
     /// Offsets of num_workgroups push constant.
     std::optional<uint32_t> num_workgroups_start_offset;
 
-    /// Set to `true` to generate polyfill for `sampleMask` builtin
-    bool polyfill_sample_mask = false;
-
     /// The bindings
     Bindings bindings;
 
     /// The binding points that will be ignored by the rebustness transform.
     std::vector<BindingPoint> ignored_by_robustness_transform;
+
+    /// Vertex shader locations that use the snorm10-10-10-2 format (which is emulated on D3D).
+    std::vector<uint32_t> snorm10_10_10_2_locations = {};
 
     /// Pixel local configuration
     PixelLocalOptions pixel_local;
@@ -295,14 +295,34 @@ struct Options {
                  first_index_offset,
                  first_instance_offset,
                  num_workgroups_start_offset,
-                 polyfill_sample_mask,
                  bindings,
                  ignored_by_robustness_transform,
+                 snorm10_10_10_2_locations,
                  pixel_local,
                  resource_table,
                  substitute_overrides_config);
     bool operator==(const Options&) const = default;
 };
+
+/// @param out the stream to write to
+/// @param compiler the compiler
+/// @returns @p out so calls can be chained
+template <typename STREAM>
+    requires(traits::IsOStream<STREAM>)
+auto& operator<<(STREAM& out, Options::Compiler compiler) {
+    switch (compiler) {
+        case Options::Compiler::kFXC:
+            out << "FXC";
+            break;
+        case Options::Compiler::kDXC_2018:
+            out << "DXC 2018";
+            break;
+        case Options::Compiler::kDXC_2021:
+            out << "DXC 2021";
+            break;
+    }
+    return out;
+}
 
 }  // namespace tint::hlsl::writer
 

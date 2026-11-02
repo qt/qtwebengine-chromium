@@ -33,6 +33,11 @@ extern const uint32_t instrumentation_buffer_device_address_comp[];
 extern const uint32_t instrumentation_buffer_device_address_comp_function_0_offset;
 extern const uint32_t instrumentation_buffer_device_address_comp_function_1_offset;
 
+extern const uint32_t instrumentation_descriptor_buffer_comp_size;
+extern const uint32_t instrumentation_descriptor_buffer_comp[];
+// These offset match the function in the order they are declared in the GLSL source
+extern const uint32_t instrumentation_descriptor_buffer_comp_function_0_offset;
+
 extern const uint32_t instrumentation_descriptor_class_general_buffer_comp_size;
 extern const uint32_t instrumentation_descriptor_class_general_buffer_comp[];
 // These offset match the function in the order they are declared in the GLSL source
@@ -43,6 +48,20 @@ extern const uint32_t instrumentation_descriptor_class_texel_buffer_comp_size;
 extern const uint32_t instrumentation_descriptor_class_texel_buffer_comp[];
 // These offset match the function in the order they are declared in the GLSL source
 extern const uint32_t instrumentation_descriptor_class_texel_buffer_comp_function_0_offset;
+
+extern const uint32_t instrumentation_descriptor_heap_comp_size;
+extern const uint32_t instrumentation_descriptor_heap_comp[];
+// These offset match the function in the order they are declared in the GLSL source
+extern const uint32_t instrumentation_descriptor_heap_comp_function_0_offset;
+extern const uint32_t instrumentation_descriptor_heap_comp_function_1_offset;
+extern const uint32_t instrumentation_descriptor_heap_comp_function_2_offset;
+extern const uint32_t instrumentation_descriptor_heap_comp_function_3_offset;
+extern const uint32_t instrumentation_descriptor_heap_comp_function_4_offset;
+extern const uint32_t instrumentation_descriptor_heap_comp_function_5_offset;
+extern const uint32_t instrumentation_descriptor_heap_comp_function_6_offset;
+extern const uint32_t instrumentation_descriptor_heap_comp_function_7_offset;
+extern const uint32_t instrumentation_descriptor_heap_comp_function_8_offset;
+extern const uint32_t instrumentation_descriptor_heap_comp_function_9_offset;
 
 extern const uint32_t instrumentation_descriptor_indexing_oob_comp_size;
 extern const uint32_t instrumentation_descriptor_indexing_oob_comp[];

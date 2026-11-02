@@ -120,20 +120,20 @@ std::optional<CFX_Color> CPDF_DefaultAppearance::GetColor() const {
   CPDF_SimpleParser syntax(da_.AsStringView().unsigned_span());
   if (FindTagParamFromStart(&syntax, "g", 1)) {
     float gray = StringToFloat(syntax.GetWord());
-    return CFX_Color(CFX_Color::Type::kGray, gray);
+    return CFX_Color::MakeGray(gray);
   }
   if (FindTagParamFromStart(&syntax, "rg", 3)) {
     float r = StringToFloat(syntax.GetWord());
     float g = StringToFloat(syntax.GetWord());
     float b = StringToFloat(syntax.GetWord());
-    return CFX_Color(CFX_Color::Type::kRGB, r, g, b);
+    return CFX_Color::MakeRGB(r, g, b);
   }
   if (FindTagParamFromStart(&syntax, "k", 4)) {
     float c = StringToFloat(syntax.GetWord());
     float m = StringToFloat(syntax.GetWord());
     float y = StringToFloat(syntax.GetWord());
     float k = StringToFloat(syntax.GetWord());
-    return CFX_Color(CFX_Color::Type::kCMYK, c, m, y, k);
+    return CFX_Color::MakeCMYK(c, m, y, k);
   }
   return std::nullopt;
 }

@@ -75,7 +75,7 @@ export default createRule({
             fixer.replaceText(calleeNode, calleeText),
             fixer.replaceText(argumentNode, argumentText),
           ];
-        }
+        },
       });
     }
 
@@ -101,7 +101,7 @@ export default createRule({
             reportError(node, 'assert.notStrictEqual', 'useAssertNotStrictEqual');
           }
         }
-      }
+      },
     };
   },
 });

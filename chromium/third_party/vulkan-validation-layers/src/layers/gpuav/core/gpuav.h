@@ -61,6 +61,7 @@ class Instance : public vvl::InstanceProxy {
     void AdjustmentWarning(LogObjectList objlist, const Location& loc, const char* const specific_message) const;
     void AddFeatures(VkPhysicalDevice physical_device, vku::safe_VkDeviceCreateInfo* modified_create_info, const Location& loc);
     bool timeline_khr_{false};
+    mutable bool reported_gpdp2_warning_{false};
 };
 
 class Validator : public GpuShaderInstrumentor {
@@ -72,9 +73,8 @@ class Validator : public GpuShaderInstrumentor {
     Validator(vvl::DispatchDevice* dev, Instance* instance_vo)
         : GpuShaderInstrumentor(dev, instance_vo, LayerObjectTypeGpuAssisted),
           global_indices_buffer_(*this),
-          global_resource_descriptor_buffer_(*this),
-          global_resource_descriptor_heap_(*this),
           gpu_resources_manager_(*this, true) {}
+    ~Validator();
 
     // gpuav_setup.cpp
     // -------------
@@ -88,8 +88,6 @@ class Validator : public GpuShaderInstrumentor {
     void InitSettings(const Location& loc);
     void DestroySubstate();
     void BindBufferMemory(VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize offset, const Location& loc);
-    void SetMemoryWithNullDescriptor(const vvl::Buffer& buffer_state, VkDeviceMemory memory, VkDeviceSize offset,
-                                     const Location& loc);
 
     // gpuav_record.cpp
     // --------------
@@ -116,6 +114,8 @@ class Validator : public GpuShaderInstrumentor {
                                                   const VkDescriptorBufferBindingInfoEXT* pBindingInfos,
                                                   const RecordObject& record_obj,
                                                   chassis::CmdBindDescriptorBuffers& chassis_state) final;
+    void PostCallRecordGetDescriptorEXT(VkDevice device, const VkDescriptorGetInfoEXT* pDescriptorInfo, size_t dataSize,
+                                        void* pDescriptor, const RecordObject& record_obj) final;
 
     void PreCallActionCommand(Validator& gpuav, CommandBufferSubState& cb_state, const LastBound& last_bound, const Location& loc);
 
@@ -305,21 +305,13 @@ class Validator : public GpuShaderInstrumentor {
         VkDeviceSize reserved_offset_ = 0;
     } resource_heap;
 
-    vko::Buffer& GetGlobalDescriptorBuffer();
-    vko::Buffer& GetGlobalDescriptorHeap();
-
   private:
-    // For Descriptor Buffer/Heap we have our own global buffer, but lazily allocate it when first used
-    vko::Buffer global_resource_descriptor_buffer_;
-    vko::Buffer global_resource_descriptor_heap_;
-
     std::string instrumented_shader_cache_path_{};
 
     // Make sure we call the right versions of any timeline semaphore functions.
     bool timeline_khr_ = false;
 
-    VkQueue internal_transfer_queue_handle_ = VK_NULL_HANDLE;
-    uint32_t internal_transfer_queue_family_index_ = 0;
+    bool substates_destroyed_ = false;
 
   public:
     vko::GpuResourcesManager gpu_resources_manager_;

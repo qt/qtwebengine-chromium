@@ -218,11 +218,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   static constexpr base::TimeDelta kKeepAliveHandleFactoryTimeout =
       base::Seconds(30);
 
-  // Create a new RenderProcessHost. The storage partition for the process
-  // is retrieved from |browser_context| based on information in
-  // |site_instance|. The default storage partition is selected if
-  // |site_instance| is null.
-  static RenderProcessHost* CreateRenderProcessHost(
+  static RenderProcessHost* CreateRenderProcessHostForTesting(
       BrowserContext* browser_context,
       SiteInstanceImpl* site_instance);
 
@@ -287,11 +283,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
       RenderProcessHostPriorityClient* priority_client) override;
   void RemovePriorityClient(
       RenderProcessHostPriorityClient* priority_client) override;
-#if !BUILDFLAG(IS_ANDROID)
   void SetPriorityOverride(base::Process::Priority priority) override;
   bool HasPriorityOverride() override;
   void ClearPriorityOverride() override;
-#endif
 #if BUILDFLAG(IS_ANDROID)
   void GraduateSpareToNormalRendererPriority() override;
   bool ShouldThrottleNavigationForSpareRendererGraduation() override;
@@ -399,6 +393,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   bool CanUseWarmUpConnection() override;
   bool HasSpareRendererPriority() override;
   void OnSpareRendererPriorityGraduated(bool is_alive) override;
+  bool IsForOutermostMainFrame() override;
 #endif
 
   const std::string& GetUnresponsiveDocumentJavascriptCallStack() const;
@@ -418,6 +413,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
       mojo::PendingReceiver<metrics::mojom::ChildHistogramFetcherFactory>
           factory) override;
   bool IsWebiumRenderer() const override;
+  uint64_t GetProcessIdForHistogram() const override;
 
   // Call this function when it is evident that the child process is actively
   // performing some operation, for example if we just received an IPC message.
@@ -705,6 +701,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   void OnImmersiveXrSessionStarted() override;
   void OnImmersiveXrSessionStopped() override;
+  bool HasImmersiveXrSessionForTesting() const override;
 
   // Sets the global factory used to create new RenderProcessHosts in unit
   // tests.  It may be nullptr, in which case the default RenderProcessHost will
@@ -1027,9 +1024,11 @@ class CONTENT_EXPORT RenderProcessHostImpl
     // mojom::ChildProcessHost implementation:
     void Ping(PingCallback callback) override;
 
-    // To enforce security review for IPC, these 2 methods are defined in
+    // To enforce security review for IPC, these methods are defined in
     // render_process_host_impl_receiver_bindings.cc.
     void BindHostReceiver(mojo::GenericPendingReceiver receiver) override;
+    void BindHostReceivers(
+        std::vector<mojo::GenericPendingReceiver> receivers) override;
     static void BindHostReceiverOnUIThread(
         base::WeakPtr<RenderProcessHostImpl> weak_host,
         mojo::GenericPendingReceiver receiver);
@@ -1048,17 +1047,25 @@ class CONTENT_EXPORT RenderProcessHostImpl
 #endif
   };
 
+  // Create a new RenderProcessHost. The storage partition for the process
+  // is retrieved from |browser_context| based on information in
+  // |site_instance|. The default storage partition is selected if
+  // |site_instance| is null.
+  // Note that |is_for_outermost_main_frame| affects the priority of the
+  // first launched render process only.
   static RenderProcessHost* CreateRenderProcessHost(
       BrowserContext* browser_context,
       SiteInstanceImpl* site_instance,
-      bool is_spare_renderer);
+      bool is_spare_renderer,
+      bool is_for_outermost_main_frame);
 
   // Use CreateRenderProcessHost() or CreateSpareRenderProcessHost() instead of
   // calling this constructor directly.
   RenderProcessHostImpl(BrowserContext* browser_context,
                         StoragePartitionImpl* storage_partition_impl,
                         int flags,
-                        bool is_spare_renderer);
+                        bool is_spare_renderer,
+                        bool is_for_outermost_main_frame);
 
   void MaybeNotifyVizOfRendererBlockStateChanged(bool blocked);
 
@@ -1396,13 +1403,12 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   RenderProcessPriority priority_;
 
-#if !BUILDFLAG(IS_ANDROID)
-  // If this is set then the built-in process priority calculation system is
-  // ignored, and an externally computed process priority is used.
+  // On Desktop platforms, if this is set then the built-in process priority
+  // calculation system is ignored, and an externally computed process priority
+  // is used. On Android, this boosts the effective importance of the process.
   // TODO(pmonette): After experimentation, either remove this or rip out the
   // existing logic entirely.
   std::optional<base::Process::Priority> priority_override_;
-#endif
 
   // Used to allow a RenderWidgetHost to intercept various messages on the
   // IO thread.
@@ -1676,6 +1682,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // updated to kNormal when we receive the OnSpareRendererPriorityGraduated
   // callback.
   SpareRendererPriorityStatus spare_renderer_priority_status_;
+  bool next_launch_for_initial_outermost_main_frame_ = false;
 #endif  // BUILDFLAG(IS_ANDROID)
 
   // Tracing track used to emit async event related to lifecycle.

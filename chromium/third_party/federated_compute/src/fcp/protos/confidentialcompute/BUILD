@@ -145,6 +145,7 @@ proto_library(
     deps = [
         "@com_google_googleapis//google/rpc:status_proto",
         "@com_google_protobuf//:any_proto",
+        "@com_google_protobuf//:timestamp_proto",
         "@oak//proto/crypto:crypto_proto",
     ],
 )
@@ -284,6 +285,21 @@ proto_library(
 cc_proto_library(
     name = "nn_histogram_config_cc_proto",
     deps = [":nn_histogram_config_proto"],
+)
+
+proto_library(
+    name = "mauve_score_config_proto",
+    srcs = ["mauve_score_config.proto"],
+)
+
+cc_proto_library(
+    name = "mauve_score_config_cc_proto",
+    deps = [":mauve_score_config_proto"],
+)
+
+py_proto_library(
+    name = "mauve_score_config_py_pb2",
+    deps = [":mauve_score_config_proto"],
 )
 
 proto_library(
@@ -613,4 +629,32 @@ proto_library(
 cc_proto_library(
     name = "private_logger_uploads_config_cc_proto",
     deps = [":private_logger_uploads_config_proto"],
+)
+
+proto_library(
+    name = "construct_user_session_proto",
+    srcs = ["construct_user_session.proto"],
+    deps = [
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "construct_user_session_cc_proto",
+    deps = [":construct_user_session_proto"],
+)
+
+proto_library(
+    name = "program_worker_tee_config_proto",
+    srcs = ["program_worker_tee_config.proto"],
+)
+
+cc_proto_library(
+    name = "program_worker_tee_config_cc_proto",
+    deps = [":program_worker_tee_config_proto"],
+)
+
+py_proto_library(
+    name = "program_worker_tee_config_py_pb2",
+    deps = [":program_worker_tee_config_proto"],
 )

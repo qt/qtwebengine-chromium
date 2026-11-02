@@ -55,7 +55,7 @@ CFWL_Edit::~CFWL_Edit() = default;
 
 void CFWL_Edit::PreFinalize() {
   edit_engine_->SetDelegate(nullptr);
-  if (properties_.states_ & FWL_STATE_WGT_Focused) {
+  if (properties_.states_ & WidgetState::kFocused) {
     HideCaret(nullptr);
   }
   CFWL_Widget::PreFinalize();
@@ -95,12 +95,12 @@ CFX_RectF CFWL_Edit::GetAutosizedWidgetRect() {
   return rect;
 }
 
-void CFWL_Edit::SetStates(uint32_t dwStates) {
-  if ((properties_.states_ & FWL_STATE_WGT_Invisible) ||
-      (properties_.states_ & FWL_STATE_WGT_Disabled)) {
+void CFWL_Edit::SetStates(Mask<WidgetState> states) {
+  if ((properties_.states_ & WidgetState::kInvisible) ||
+      (properties_.states_ & WidgetState::kDisabled)) {
     HideCaret(nullptr);
   }
-  CFWL_Widget::SetStates(dwStates);
+  CFWL_Widget::SetStates(states);
 }
 
 void CFWL_Edit::Update() {
@@ -261,7 +261,7 @@ void CFWL_Edit::OnCaretChanged() {
   if (engine_rect_.IsEmpty()) {
     return;
   }
-  if ((properties_.states_ & FWL_STATE_WGT_Focused) == 0) {
+  if (!(properties_.states_ & WidgetState::kFocused)) {
     return;
   }
 
@@ -351,7 +351,7 @@ void CFWL_Edit::DrawContentNonComb(CFGAS_GEGraphics* pGraphics,
   rtClip = mtMatrix.TransformRect(rtClip);
   mt.Concat(mtMatrix);
 
-  bool bShowSel = !!(properties_.states_ & FWL_STATE_WGT_Focused);
+  bool bShowSel = !!(properties_.states_ & WidgetState::kFocused);
   if (bShowSel && edit_engine_->HasSelection()) {
     auto [sel_start, count] = edit_engine_->GetSelection();
     std::vector<CFX_RectF> rects = edit_engine_->GetCharacterRectsInRange(
@@ -461,7 +461,7 @@ void CFWL_Edit::UpdateEditParams() {
     edit_engine_->EnableMultiLine(true);
     edit_engine_->EnableLineWrap(!auto_hscroll);
     edit_engine_->LimitVerticalScroll(
-        (properties_.styles_ & FWL_STYLE_WGT_VScroll) == 0 &&
+        !(properties_.styles_ & WidgetStyle::kVScroll) &&
         (properties_.style_exts_ & FWL_STYLEEXT_EDT_AutoVScroll) == 0);
   } else {
     edit_engine_->EnableMultiLine(false);
@@ -581,7 +581,7 @@ void CFWL_Edit::UpdateCaret() {
     rtCaret.width = right - rtCaret.left;
   }
 
-  if (properties_.states_ & FWL_STATE_WGT_Focused && !rtCaret.IsEmpty()) {
+  if ((properties_.states_ & WidgetState::kFocused) && !rtCaret.IsEmpty()) {
     ShowCaret(&rtCaret);
   } else {
     HideCaret(&rtCaret);
@@ -606,13 +606,13 @@ CFWL_ScrollBar* CFWL_Edit::UpdateScroll() {
     vert_scroll_bar_->SetTrackPos(fPos);
     vert_scroll_bar_->SetPageSize(rtScroll.height);
     vert_scroll_bar_->SetStepSize(fStep);
-    vert_scroll_bar_->RemoveStates(FWL_STATE_WGT_Disabled);
+    vert_scroll_bar_->ClearStates(WidgetState::kDisabled);
     vert_scroll_bar_->Update();
     return vert_scroll_bar_;
   }
-  if ((vert_scroll_bar_->GetStates() & FWL_STATE_WGT_Disabled) == 0) {
+  if (!(vert_scroll_bar_->GetStates() & WidgetState::kDisabled)) {
     vert_scroll_bar_->SetRange(0, -1);
-    vert_scroll_bar_->SetStates(FWL_STATE_WGT_Disabled);
+    vert_scroll_bar_->SetStates(WidgetState::kDisabled);
     vert_scroll_bar_->Update();
     return vert_scroll_bar_;
   }
@@ -622,8 +622,8 @@ CFWL_ScrollBar* CFWL_Edit::UpdateScroll() {
 bool CFWL_Edit::IsShowVertScrollBar() const {
   const bool bShow =
       !(properties_.style_exts_ & FWL_STYLEEXT_EDT_ShowScrollbarFocus) ||
-      (properties_.states_ & FWL_STATE_WGT_Focused);
-  return bShow && (properties_.styles_ & FWL_STYLE_WGT_VScroll) &&
+      (properties_.states_ & WidgetState::kFocused);
+  return bShow && (properties_.styles_ & WidgetStyle::kVScroll) &&
          (properties_.style_exts_ & FWL_STYLEEXT_EDT_MultiLine) &&
          IsContentHeightOverflow();
 }
@@ -666,10 +666,10 @@ void CFWL_Edit::Layout() {
     }
 
     vert_scroll_bar_->SetWidgetRect(rtVertScr);
-    vert_scroll_bar_->RemoveStates(FWL_STATE_WGT_Invisible);
+    vert_scroll_bar_->ClearStates(WidgetState::kInvisible);
     vert_scroll_bar_->Update();
   } else if (vert_scroll_bar_) {
-    vert_scroll_bar_->SetStates(FWL_STATE_WGT_Invisible);
+    vert_scroll_bar_->SetStates(WidgetState::kInvisible);
   }
 }
 
@@ -695,9 +695,9 @@ void CFWL_Edit::LayoutScrollBar() {
       vert_scroll_bar_->SetWidgetRect(rtVertScr);
       vert_scroll_bar_->Update();
     }
-    vert_scroll_bar_->RemoveStates(FWL_STATE_WGT_Invisible);
+    vert_scroll_bar_->ClearStates(WidgetState::kInvisible);
   } else if (vert_scroll_bar_) {
-    vert_scroll_bar_->SetStates(FWL_STATE_WGT_Invisible);
+    vert_scroll_bar_->SetStates(WidgetState::kInvisible);
   }
   if (bShowVertScrollbar) {
     UpdateScroll();
@@ -716,8 +716,9 @@ void CFWL_Edit::InitVerticalScrollBar() {
 
   vert_scroll_bar_ = cppgc::MakeGarbageCollected<CFWL_ScrollBar>(
       GetFWLApp()->GetHeap()->GetAllocationHandle(), GetFWLApp(),
-      Properties{0, FWL_STYLEEXT_SCB_Vert,
-                 FWL_STATE_WGT_Disabled | FWL_STATE_WGT_Invisible},
+      Properties{{},
+                 FWL_STYLEEXT_SCB_Vert,
+                 {WidgetState::kDisabled, WidgetState::kInvisible}},
       this);
 }
 
@@ -883,7 +884,7 @@ void CFWL_Edit::DoRButtonDown(CFWL_MessageMouse* pMsg) {
 }
 
 void CFWL_Edit::OnFocusGained() {
-  properties_.states_ |= FWL_STATE_WGT_Focused;
+  properties_.states_ |= WidgetState::kFocused;
   UpdateVAlignment();
   UpdateOffset();
   UpdateCaret();
@@ -892,8 +893,8 @@ void CFWL_Edit::OnFocusGained() {
 
 void CFWL_Edit::OnFocusLost() {
   bool bRepaint = false;
-  if (properties_.states_ & FWL_STATE_WGT_Focused) {
-    properties_.states_ &= ~FWL_STATE_WGT_Focused;
+  if (properties_.states_ & WidgetState::kFocused) {
+    properties_.states_.Clear(WidgetState::kFocused);
     HideCaret(nullptr);
     if (HasSelection()) {
       ClearSelection();
@@ -910,7 +911,7 @@ void CFWL_Edit::OnFocusLost() {
 }
 
 void CFWL_Edit::OnLButtonDown(CFWL_MessageMouse* pMsg) {
-  if (properties_.states_ & FWL_STATE_WGT_Disabled) {
+  if (properties_.states_ & WidgetState::kDisabled) {
     return;
   }
 
@@ -1020,7 +1021,7 @@ void CFWL_Edit::OnKeyDown(CFWL_MessageKey* pMsg) {
       break;
     case XFA_FWL_VKEY_Delete: {
       if ((properties_.style_exts_ & FWL_STYLEEXT_EDT_ReadOnly) ||
-          (properties_.states_ & FWL_STATE_WGT_Disabled)) {
+          (properties_.states_ & WidgetState::kDisabled)) {
         break;
       }
 
@@ -1045,7 +1046,7 @@ void CFWL_Edit::OnKeyDown(CFWL_MessageKey* pMsg) {
 
 void CFWL_Edit::OnChar(CFWL_MessageKey* pMsg) {
   if ((properties_.style_exts_ & FWL_STYLEEXT_EDT_ReadOnly) ||
-      (properties_.states_ & FWL_STATE_WGT_Disabled)) {
+      (properties_.states_ & WidgetState::kDisabled)) {
     return;
   }
 

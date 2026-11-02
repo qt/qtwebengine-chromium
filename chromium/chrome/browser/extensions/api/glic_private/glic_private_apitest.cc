@@ -397,6 +397,35 @@ IN_PROC_BROWSER_TEST_F(GlicPrivateApiUniversalCartOnlyTest, Invoke) {
       << message_;
 }
 
+IN_PROC_BROWSER_TEST_F(GlicPrivateApiUniversalCartOnlyTest,
+                       InvokeWithMetadata) {
+  SimpleFeature::ScopedThreadUnsafeAllowlistForTest allowlist(
+      kGlicPrivateTestExtensionId);
+
+  auto interceptor = CreateMockPromptResponseWithMetadataInterceptor();
+
+  EXPECT_TRUE(RunExtensionTest(
+      "glic_private",
+      {.extension_url = "test.html", .custom_arg = "universal_cart_only"},
+      {.load_as_component = true}))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(GlicPrivateApiUniversalCartOnlyTest,
+                       InvokeWithMetadataBase64Error) {
+  SimpleFeature::ScopedThreadUnsafeAllowlistForTest allowlist(
+      kGlicPrivateTestExtensionId);
+
+  auto interceptor = CreateMockPromptResponseWithMetadataInterceptor(
+      "Mock prompt", "invalid_base64_!!!");
+
+  EXPECT_TRUE(RunExtensionTest(
+      "glic_private",
+      {.extension_url = "test.html", .custom_arg = "universal_cart_only"},
+      {.load_as_component = true}))
+      << message_;
+}
+
 class GlicPrivateApiPromotionPageOnlyTest
     : public glic::GlicBrowserTestMixin<GlicPrivateApiTest> {
  public:

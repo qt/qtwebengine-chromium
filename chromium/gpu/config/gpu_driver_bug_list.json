@@ -2920,22 +2920,6 @@
       ]
     },
     {
-      "id": 418,
-      "description": "Uploading data or rendering to R8 EGL images generates driver errors.",
-      "cr_bugs": [1455752],
-      "os": {
-        "type": "android",
-        "version": {
-          "op": "<=",
-          "value": "9.0"
-        }
-      },
-      "gl_vendor": "ARM.*",
-      "features": [
-        "r8_egl_images_broken"
-      ]
-    },
-    {
       "id": 420,
       "cr_bugs": [1475546],
       "description": "GPU process crash when decoding HEVC on Intel with specific drivers.",
@@ -3769,6 +3753,21 @@
       ]
     },
     {
+      "id": 479,
+      "description": "D3D12 AV1 encoding high and professional profiles query causes unexpected driver behavior on some older drivers.",
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x8086",
+      "driver_version": {
+        "op": "<",
+        "value": "32.0.101.6559"
+      },
+      "features": [
+        "limit_d3d12_av1_profile_to_main"
+      ]
+    },
+    {
       "id": 480,
       "cr_bugs": [520656244],
       "description": "Reattach FBO depth/stencil attachments when they are reallocated on Qualcomm GPUs",
@@ -3779,6 +3778,111 @@
       },
       "features": [
         "reattach_fbo_depth_stencil_on_reallocation"
+      ]
+    },
+    {
+      "id": 481,
+      "cr_bugs": [443107135],
+      "description": "Disable Media Foundation D3D video processing on Qualcomm GPUs.",
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x4d4f4351",
+      "features": [
+        "disable_media_foundation_d3d_video_processing"
+      ]
+    },
+    {
+      "id": 482,
+      "cr_bugs": [496807874],
+      "description": "Split full-image level 0 PBO uploads via TexSubImage2D into two calls to work around driver bugs.",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Imagination.*",
+      "features": [
+        "split_level_0_pbo_full_sub_image_2d"
+      ]
+    },
+    {
+      "id": 483,
+      "cr_bugs": [528131939],
+      "description": "Reset texture base level before calling glCompressedTexSubImage2D for ASTC textures to work around PowerVR driver bug.",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Imagination.*",
+      "features": [
+        "reset_base_level_for_astc_sub_image"
+      ]
+    },
+    {
+      "id": 484,
+      "cr_bugs": [529867799],
+      "description": "Pack large row length separately when packing into a pixel pack buffer to work around Mali driver bug.",
+      "gl_vendor": "ARM.*",
+      "features": [
+        "pack_large_row_length_separately_pack_buffer"
+      ]
+    },
+    {
+      "id": 485,
+      "cr_bugs": [529991907],
+      "description": "Limit the number of declared varying output components at compile time to work around a PowerVR driver bug.",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Imagination.*",
+      "features": [
+        "limit_output_varyings_at_compile_time"
+      ]
+    },
+    {
+      "id": 486,
+      "cr_bugs": [534903095],
+      "description": "Changing BASE_LEVEL of NPOT immutable texture triggers driver bug on PowerVR GPUs.",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Imagination.*",
+      "features": [
+        "dont_change_base_level_for_npot_immutable_textures"
+      ]
+    },
+    {
+      "id": 487,
+      "cr_bugs": [
+        499602793
+      ],
+      "description": "Reattach texture to FBO after layer count increase on PowerVR GPUs.",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Imagination.*",
+      "features": [
+        "reattach_texture_to_fbo_after_layer_increase"
+      ]
+    },
+    {
+      "id": 488,
+      "cr_bugs": [534468209],
+      "description": "Flush pending GPU jobs/queries before unbinding or deleting a user framebuffer object on ARM Mali Valhall/Avalon GPUs to avoid driver crash.",
+      "gl_vendor": "ARM.*",
+      "features": [
+        "flush_queries_before_deleting_or_unbinding_fbo"
+      ]
+    },
+    {
+      "id": 496,
+      "cr_bugs": [556870863],
+      "description": "Program binary cache entries can collide in Imagination's GLES driver",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Imagination.*",
+      "gl_type": "angle_gles",
+      "features": [
+        "disable_program_cache"
       ]
     }
   ]

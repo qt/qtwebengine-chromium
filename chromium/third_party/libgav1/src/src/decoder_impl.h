@@ -17,7 +17,6 @@
 #ifndef LIBGAV1_SRC_DECODER_IMPL_H_
 #define LIBGAV1_SRC_DECODER_IMPL_H_
 
-#include <array>
 #include <condition_variable>  // NOLINT (unapproved c++11 header)
 #include <cstddef>
 #include <cstdint>
@@ -27,24 +26,19 @@
 
 #include "src/buffer_pool.h"
 #include "src/decoder_state.h"
-#include "src/dsp/constants.h"
 #include "src/frame_scratch_buffer.h"
 #include "src/gav1/decoder_buffer.h"
 #include "src/gav1/decoder_settings.h"
 #include "src/gav1/status_code.h"
 #include "src/obu_parser.h"
 #include "src/quantizer.h"
-#include "src/residual_buffer_pool.h"
-#include "src/symbol_decoder_context.h"
-#include "src/tile.h"
-#include "src/utils/array_2d.h"
-#include "src/utils/block_parameters_holder.h"
 #include "src/utils/compiler_attributes.h"
 #include "src/utils/constants.h"
 #include "src/utils/memory.h"
 #include "src/utils/queue.h"
-#include "src/utils/segmentation_map.h"
+#include "src/utils/threadpool.h"
 #include "src/utils/types.h"
+#include "src/utils/vector.h"
 
 namespace libgav1 {
 

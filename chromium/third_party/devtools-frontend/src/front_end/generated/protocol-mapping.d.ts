@@ -782,23 +782,6 @@ export namespace ProtocolMapping {
      */
     'Storage.indexedDBListUpdated': [Protocol.Storage.IndexedDBListUpdatedEvent];
     /**
-     * One of the interest groups was accessed. Note that these events are global
-     * to all targets sharing an interest group store.
-     */
-    'Storage.interestGroupAccessed': [Protocol.Storage.InterestGroupAccessedEvent];
-    /**
-     * An auction involving interest groups is taking place. These events are
-     * target-specific.
-     */
-    'Storage.interestGroupAuctionEventOccurred': [Protocol.Storage.InterestGroupAuctionEventOccurredEvent];
-    /**
-     * Specifies which auctions a particular network fetch may be related to, and
-     * in what role. Note that it is not ordered with respect to
-     * Network.requestWillBeSent (but will happen before loadingFinished
-     * loadingFailed).
-     */
-    'Storage.interestGroupAuctionNetworkRequestCreated': [Protocol.Storage.InterestGroupAuctionNetworkRequestCreatedEvent];
-    /**
      * Shared storage was accessed by the associated page.
      * The following parameters are included in all events.
      */
@@ -1088,6 +1071,13 @@ export namespace ProtocolMapping {
     'Accessibility.queryAXTree': {
       paramsType: [Protocol.Accessibility.QueryAXTreeRequest?];
       returnType: Protocol.Accessibility.QueryAXTreeResponse;
+    };
+    /**
+     * Retrieves ad metrics for the current page.
+     */
+    'Ads.getAdMetrics': {
+      paramsType: [];
+      returnType: Protocol.Ads.GetAdMetricsResponse;
     };
     /**
      * Disables animation domain notifications.
@@ -1501,16 +1491,6 @@ export namespace ProtocolMapping {
      */
     'Browser.addPrivacySandboxEnrollmentOverride': {
       paramsType: [Protocol.Browser.AddPrivacySandboxEnrollmentOverrideRequest];
-      returnType: void;
-    };
-    /**
-     * Configures encryption keys used with a given privacy sandbox API to talk
-     * to a trusted coordinator.  Since this is intended for test automation only,
-     * coordinatorOrigin must be a .test domain. No existing coordinator
-     * configuration for the origin may exist.
-     */
-    'Browser.addPrivacySandboxCoordinatorKeyConfig': {
-      paramsType: [Protocol.Browser.AddPrivacySandboxCoordinatorKeyConfigRequest];
       returnType: void;
     };
     /**
@@ -2473,6 +2453,14 @@ export namespace ProtocolMapping {
      */
     'DeviceOrientation.setDeviceOrientationOverride': {
       paramsType: [Protocol.DeviceOrientation.SetDeviceOrientationOverrideRequest];
+      returnType: void;
+    };
+    /**
+     * Sets the behavior of the virtual wallet for digital credential requests
+     * issued from this frame.
+     */
+    'DigitalCredentials.setVirtualWalletBehavior': {
+      paramsType: [Protocol.DigitalCredentials.SetVirtualWalletBehaviorRequest];
       returnType: void;
     };
     /**
@@ -3926,6 +3914,13 @@ export namespace ProtocolMapping {
       returnType: void;
     };
     /**
+     * Add a display cutout overlay.
+     */
+    'Overlay.setShowDisplayCutout': {
+      paramsType: [Protocol.Overlay.SetShowDisplayCutoutRequest?];
+      returnType: void;
+    };
+    /**
      * Show elements in isolation mode with overlays.
      */
     'Overlay.setShowIsolatedElements': {
@@ -4899,28 +4894,6 @@ export namespace ProtocolMapping {
       returnType: Protocol.Storage.ClearTrustTokensResponse;
     };
     /**
-     * Gets details for a named interest group.
-     */
-    'Storage.getInterestGroupDetails': {
-      paramsType: [Protocol.Storage.GetInterestGroupDetailsRequest];
-      returnType: Protocol.Storage.GetInterestGroupDetailsResponse;
-    };
-    /**
-     * Enables/Disables issuing of interestGroupAccessed events.
-     */
-    'Storage.setInterestGroupTracking': {
-      paramsType: [Protocol.Storage.SetInterestGroupTrackingRequest];
-      returnType: void;
-    };
-    /**
-     * Enables/Disables issuing of interestGroupAuctionEventOccurred and
-     * interestGroupAuctionNetworkRequestCreated.
-     */
-    'Storage.setInterestGroupAuctionTracking': {
-      paramsType: [Protocol.Storage.SetInterestGroupAuctionTrackingRequest];
-      returnType: void;
-    };
-    /**
      * Gets metadata for an origin's shared storage.
      */
     'Storage.getSharedStorageMetadata': {
@@ -4997,10 +4970,6 @@ export namespace ProtocolMapping {
     'Storage.getRelatedWebsiteSets': {
       paramsType: [];
       returnType: Protocol.Storage.GetRelatedWebsiteSetsResponse;
-    };
-    'Storage.setProtectedAudienceKAnonymity': {
-      paramsType: [Protocol.Storage.SetProtectedAudienceKAnonymityRequest];
-      returnType: void;
     };
     /**
      * Returns information about the system.

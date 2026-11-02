@@ -112,6 +112,7 @@ export function isUnderTest(prefs?: Record<string, string>): boolean {
     return prefs['isUnderTest'] === 'true';
   }
   return Common.Settings.Settings.hasInstance() &&
+      // eslint-disable-next-line @devtools/no-instance-of-migrated-singletons
       Common.Settings.Settings.instance().createSetting('isUnderTest', false).get();
 }
 

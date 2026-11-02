@@ -160,6 +160,7 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/synchronization",
@@ -178,7 +179,6 @@ cc_test(
     deps = [
         ":opstats_db",
         ":pds_backed_opstats_db",
-        "//fcp/base",
         "//fcp/client:diag_codes_cc_proto",
         "//fcp/client:histogram_counters_cc_proto",
         "//fcp/client:test_helpers",

@@ -6,10 +6,14 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <pthread.h>
 #include <stdatomic.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <unistd.h>
 #include <xf86drm.h>
 
 #include "drv_helpers.h"
@@ -17,15 +21,11 @@
 #include "external/virgl_hw.h"
 #include "external/virgl_protocol.h"
 #include "external/virtgpu_drm.h"
+#include "external/virtgpu_gfxstream_protocol.h"
 #include "util.h"
 #include "virtgpu.h"
 
 #define PIPE_TEXTURE_2D 2
-
-#define MESA_LLVMPIPE_MAX_TEXTURE_2D_LEVELS 15
-#define MESA_LLVMPIPE_MAX_TEXTURE_2D_SIZE (1 << (MESA_LLVMPIPE_MAX_TEXTURE_2D_LEVELS - 1))
-#define MESA_LLVMPIPE_TILE_ORDER 6
-#define MESA_LLVMPIPE_TILE_SIZE (1 << MESA_LLVMPIPE_TILE_ORDER)
 
 // This comes from a combination of SwiftShader's VkPhysicalDeviceLimits::maxFramebufferWidth and
 // VkPhysicalDeviceLimits::maxImageDimension2D (see https://crrev.com/c/1917130).
@@ -52,13 +52,31 @@ static const uint32_t texture_source_formats[] = {
 	DRM_FORMAT_YVU420_ANDROID, DRM_FORMAT_ABGR2101010, DRM_FORMAT_ABGR16161616F
 };
 
+static const uint32_t depth_stencil_formats[] = { DRM_FORMAT_DEPTH16, DRM_FORMAT_DEPTH24,
+						  DRM_FORMAT_DEPTH24_STENCIL8, DRM_FORMAT_DEPTH32,
+						  DRM_FORMAT_DEPTH32_STENCIL8 };
+
 extern struct virtgpu_param params[];
+
+struct virgl_blob_metadata_cache {
+	struct lru_entry entry;
+	struct bo_metadata meta;
+};
+
+#define lru_entry_to_metadata(entry) ((struct virgl_blob_metadata_cache *)(void *)(entry))
+
+#define MAX_CACHED_FORMATS 128
 
 struct virgl_priv {
 	int caps_is_v2;
 	union virgl_caps caps;
+	int caps_is_gfxstream;
+	struct vulkanCapset gfxstream_vulkan_caps;
 	int host_gbm_enabled;
 	atomic_int next_blob_id;
+
+	pthread_mutex_t host_blob_format_lock;
+	struct lru virgl_blob_metadata_cache;
 };
 
 static uint32_t translate_format(uint32_t drm_fourcc)
@@ -96,6 +114,16 @@ static uint32_t translate_format(uint32_t drm_fourcc)
 	case DRM_FORMAT_YVU420:
 	case DRM_FORMAT_YVU420_ANDROID:
 		return VIRGL_FORMAT_YV12;
+	case DRM_FORMAT_DEPTH16:
+		return VIRGL_FORMAT_Z16_UNORM;
+	case DRM_FORMAT_DEPTH24:
+		return VIRGL_FORMAT_Z24X8_UNORM;
+	case DRM_FORMAT_DEPTH24_STENCIL8:
+		return VIRGL_FORMAT_Z24_UNORM_S8_UINT;
+	case DRM_FORMAT_DEPTH32:
+		return VIRGL_FORMAT_Z32_FLOAT;
+	case DRM_FORMAT_DEPTH32_STENCIL8:
+		return VIRGL_FORMAT_Z32_FLOAT_S8X24_UINT;
 	default:
 		drv_loge("Unhandled format:%d\n", drm_fourcc);
 		return 0;
@@ -231,7 +259,7 @@ static void virgl_get_emulated_transfers_params(const struct bo *bo,
 {
 	uint32_t y_plane_height;
 	uint32_t c_plane_height;
-	struct bo_metadata emulated_metadata;
+	struct bo_metadata emulated_metadata = { 0 };
 
 	if (transfer_box->x == 0 && transfer_box->y == 0 && transfer_box->width == bo->meta.width &&
 	    transfer_box->height == bo->meta.height) {
@@ -303,6 +331,17 @@ static bool virgl_supports_combination_natively(struct driver *drv, uint32_t drm
 {
 	struct virgl_priv *priv = (struct virgl_priv *)drv->priv;
 
+	if (priv->caps_is_gfxstream) {
+		// If the data is invalid or an older version just accept all formats as previously
+		if (priv->gfxstream_vulkan_caps.protocolVersion == 0 ||
+		    priv->gfxstream_vulkan_caps.virglSupportedFormats[0] == 0)
+			return true;
+		bool supported_format = virgl_bitmask_supports_format(
+		    (struct virgl_supported_format_mask *)&priv->gfxstream_vulkan_caps
+			.virglSupportedFormats[0],
+		    drm_format);
+		return supported_format;
+	}
 	if (priv->caps.max_version == 0)
 		return true;
 
@@ -380,6 +419,28 @@ static void virgl_add_combinations(struct driver *drv, const uint32_t *drm_forma
 static int virgl_2d_dumb_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint32_t format,
 				   uint64_t use_flags)
 {
+	/*
+	 * For cursor buffer, add padding as needed to reach a known cursor-plane-supported
+	 * buffer size, as reported by the cursor capability properties.
+	 *
+	 * If the requested dimensions exceed either of the reported capabilities, or if the
+	 * capabilities couldn't be read, silently fallback by continuing without additional
+	 * padding. The buffer can still be used normally, and be committed to non-cursor
+	 * planes.
+	 */
+	if (bo->meta.use_flags & BO_USE_CURSOR) {
+		uint64_t cursor_width = 0;
+		uint64_t cursor_height = 0;
+		// These values are not properly set in virtio, and will return the default dimensions of 64x64.
+		bool err = drmGetCap(bo->drv->fd, DRM_CAP_CURSOR_WIDTH, &cursor_width) ||
+			   drmGetCap(bo->drv->fd, DRM_CAP_CURSOR_HEIGHT, &cursor_height);
+
+		if (!err && width <= cursor_width && height <= cursor_height) {
+			width = cursor_width;
+			height = cursor_height;
+		}
+	}
+
 	if (bo->meta.format != DRM_FORMAT_R8) {
 		width = ALIGN(width, MESA_LLVMPIPE_TILE_SIZE);
 		height = ALIGN(height, MESA_LLVMPIPE_TILE_SIZE);
@@ -452,11 +513,11 @@ static int virgl_3d_bo_create(struct bo *bo, uint32_t width, uint32_t height, ui
 	size_t i;
 	uint32_t stride;
 	struct drm_virtgpu_resource_create res_create = { 0 };
-	struct bo_metadata emulated_metadata;
+	struct bo_metadata emulated_metadata = { 0 };
 
 	if (virgl_supports_combination_natively(bo->drv, format, use_flags)) {
 		stride = drv_stride_from_format(format, width, 0);
-		drv_bo_from_format(bo, stride, height, format);
+		drv_bo_from_format(bo, stride, 1, height, format);
 	} else {
 		assert(virgl_supports_combination_through_emulation(bo->drv, format, use_flags));
 
@@ -500,18 +561,17 @@ static int virgl_3d_bo_create(struct bo *bo, uint32_t width, uint32_t height, ui
 		return ret;
 	}
 
-	for (uint32_t plane = 0; plane < bo->meta.num_planes; plane++)
-		bo->handles[plane].u32 = res_create.bo_handle;
+	bo->handle.u32 = res_create.bo_handle;
 
 	return 0;
 }
 
-static void *virgl_3d_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint32_t map_flags)
+static void *virgl_3d_bo_map(struct bo *bo, struct vma *vma, uint32_t map_flags)
 {
 	int ret;
 	struct drm_virtgpu_map gem_map = { 0 };
 
-	gem_map.handle = bo->handles[0].u32;
+	gem_map.handle = bo->handle.u32;
 	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_VIRTGPU_MAP, &gem_map);
 	if (ret) {
 		drv_loge("DRM_IOCTL_VIRTGPU_MAP failed with %s\n", strerror(errno));
@@ -533,29 +593,56 @@ static uint32_t virgl_3d_get_max_texture_2d_size(struct driver *drv)
 	return UINT32_MAX;
 }
 
-static int virgl_get_caps(struct driver *drv, union virgl_caps *caps, int *caps_is_v2)
+static int virgl_get_caps(struct driver *drv, struct virgl_priv *priv)
 {
 	int ret;
 	struct drm_virtgpu_get_caps cap_args = { 0 };
 
-	*caps_is_v2 = 0;
-	cap_args.addr = (unsigned long long)caps;
-	if (params[param_capset_fix].value) {
-		*caps_is_v2 = 1;
-		cap_args.cap_set_id = 2;
+	memset(&priv->caps, 0, sizeof(union virgl_caps));
+	priv->caps_is_v2 = 0;
+	memset(&priv->gfxstream_vulkan_caps, 0, sizeof(struct vulkanCapset));
+
+	if (params[param_supported_capset_ids].value) {
+		drv_logi("Supported CAPSET IDs: %u.", params[param_supported_capset_ids].value);
+		if (params[param_supported_capset_ids].value & (1 << VIRTIO_GPU_CAPSET_VIRGL2)) {
+			priv->caps_is_v2 = 1;
+		} else if (params[param_supported_capset_ids].value &
+			   (1 << VIRTIO_GPU_CAPSET_VIRGL)) {
+			priv->caps_is_v2 = 0;
+		} else if (params[param_supported_capset_ids].value &
+			   (1 << VIRTIO_GPU_CAPSET_GFXSTREAM_VULKAN)) {
+			priv->caps_is_gfxstream = 1;
+		} else {
+			drv_logi("Unrecognized CAPSET IDs: %u. Assuming all zero caps.",
+				 params[param_supported_capset_ids].value);
+			return 0;
+		}
+	} else if (params[param_capset_fix].value) {
+		priv->caps_is_v2 = 1;
+	}
+
+	cap_args.addr = (unsigned long long)&priv->caps;
+	if (priv->caps_is_v2) {
+		cap_args.cap_set_id = VIRTIO_GPU_CAPSET_VIRGL2;
 		cap_args.size = sizeof(union virgl_caps);
+	} else if (priv->caps_is_gfxstream) {
+		cap_args.addr = (unsigned long long)&priv->gfxstream_vulkan_caps;
+		cap_args.cap_set_id = VIRTIO_GPU_CAPSET_GFXSTREAM_VULKAN;
+		cap_args.size = sizeof(struct vulkanCapset);
 	} else {
-		cap_args.cap_set_id = 1;
+		cap_args.cap_set_id = VIRTIO_GPU_CAPSET_VIRGL;
 		cap_args.size = sizeof(struct virgl_caps_v1);
 	}
 
 	ret = drmIoctl(drv->fd, DRM_IOCTL_VIRTGPU_GET_CAPS, &cap_args);
 	if (ret) {
 		drv_loge("DRM_IOCTL_VIRTGPU_GET_CAPS failed with %s\n", strerror(errno));
-		*caps_is_v2 = 0;
+		priv->caps_is_v2 = 0;
+		priv->caps_is_gfxstream = 0;
+		cap_args.addr = (unsigned long long)&priv->caps;
 
 		// Fallback to v1
-		cap_args.cap_set_id = 1;
+		cap_args.cap_set_id = VIRTIO_GPU_CAPSET_VIRGL;
 		cap_args.size = sizeof(struct virgl_caps_v1);
 
 		ret = drmIoctl(drv->fd, DRM_IOCTL_VIRTGPU_GET_CAPS, &cap_args);
@@ -570,7 +657,7 @@ static void virgl_init_params_and_caps(struct driver *drv)
 {
 	struct virgl_priv *priv = (struct virgl_priv *)drv->priv;
 	if (params[param_3d].value) {
-		virgl_get_caps(drv, &priv->caps, &priv->caps_is_v2);
+		virgl_get_caps(drv, priv);
 
 		// We use two criteria to determine whether host minigbm is used on the host for
 		// swapchain allocations.
@@ -593,7 +680,12 @@ static int virgl_init(struct driver *drv)
 	if (!priv)
 		return -ENOMEM;
 
+	int ret = pthread_mutex_init(&priv->host_blob_format_lock, NULL);
+	if (ret)
+		return ret;
+
 	drv->priv = priv;
+	lru_init(&priv->virgl_blob_metadata_cache, MAX_CACHED_FORMATS);
 
 	virgl_init_params_and_caps(drv);
 
@@ -606,6 +698,9 @@ static int virgl_init(struct driver *drv)
 		virgl_add_combinations(drv, texture_source_formats,
 				       ARRAY_SIZE(texture_source_formats), &LINEAR_METADATA,
 				       BO_USE_TEXTURE_MASK);
+		virgl_add_combinations(drv, depth_stencil_formats,
+				       ARRAY_SIZE(depth_stencil_formats), &LINEAR_METADATA,
+				       BO_USE_GPU_HW);
 		/* NV12 with scanout must flow through virgl_add_combination, so that the native
 		 * support is checked and scanout use_flag can be conditionally stripped. */
 		virgl_add_combination(drv, DRM_FORMAT_NV12, &LINEAR_METADATA,
@@ -678,41 +773,56 @@ static void virgl_close(struct driver *drv)
 	drv->priv = NULL;
 }
 
-static int virgl_bo_create_blob(struct driver *drv, struct bo *bo)
+static uint32_t blob_flags_from_use_flags(uint32_t use_flags)
 {
-	int ret;
-	uint32_t stride;
-	uint32_t cur_blob_id;
-	uint32_t cmd[VIRGL_PIPE_RES_CREATE_SIZE + 1] = { 0 };
-	struct drm_virtgpu_resource_create_blob drm_rc_blob = { 0 };
-	struct virgl_priv *priv = (struct virgl_priv *)drv->priv;
-
 	uint32_t blob_flags = VIRTGPU_BLOB_FLAG_USE_SHAREABLE;
-	if (bo->meta.use_flags & (BO_USE_SW_MASK | BO_USE_GPU_DATA_BUFFER))
+	if (use_flags & (BO_USE_SW_MASK | BO_USE_GPU_DATA_BUFFER))
 		blob_flags |= VIRTGPU_BLOB_FLAG_USE_MAPPABLE;
 
 	// For now, all blob use cases are cross device. When we add wider
 	// support for blobs, we can revisit making this unconditional.
 	blob_flags |= VIRTGPU_BLOB_FLAG_USE_CROSS_DEVICE;
 
+	return blob_flags;
+}
+
+static bool virgl_blob_metadata_eq(struct lru_entry *entry, void *data)
+{
+	struct virgl_blob_metadata_cache *e = lru_entry_to_metadata(entry);
+	struct bo_metadata *meta = data;
+	uint32_t virgl_format1 = translate_format(e->meta.format);
+	uint32_t virgl_format2 = translate_format(meta->format);
+
+	return e->meta.height == meta->height && e->meta.width == meta->width &&
+	       e->meta.use_flags == meta->use_flags && virgl_format1 == virgl_format2;
+}
+
+static int virgl_blob_do_create(struct driver *drv, uint32_t width, uint32_t height,
+				uint32_t use_flags, uint32_t virgl_format, uint32_t total_size,
+				uint32_t *bo_handle)
+{
+	int ret;
+	uint32_t cur_blob_id;
+	uint32_t cmd[VIRGL_PIPE_RES_CREATE_SIZE + 1] = { 0 };
+	struct drm_virtgpu_resource_create_blob drm_rc_blob = { 0 };
+	struct virgl_priv *priv = (struct virgl_priv *)drv->priv;
+	uint32_t virgl_bind_flags = compute_virgl_bind_flags(use_flags);
+	uint32_t blob_flags = blob_flags_from_use_flags(use_flags);
+
 	cur_blob_id = atomic_fetch_add(&priv->next_blob_id, 1);
-	stride = drv_stride_from_format(bo->meta.format, bo->meta.width, 0);
-	drv_bo_from_format(bo, stride, bo->meta.height, bo->meta.format);
-	bo->meta.total_size = ALIGN(bo->meta.total_size, PAGE_SIZE);
-	bo->meta.tiling = blob_flags;
 
 	cmd[0] = VIRGL_CMD0(VIRGL_CCMD_PIPE_RESOURCE_CREATE, 0, VIRGL_PIPE_RES_CREATE_SIZE);
 	cmd[VIRGL_PIPE_RES_CREATE_TARGET] = PIPE_TEXTURE_2D;
-	cmd[VIRGL_PIPE_RES_CREATE_WIDTH] = bo->meta.width;
-	cmd[VIRGL_PIPE_RES_CREATE_HEIGHT] = bo->meta.height;
-	cmd[VIRGL_PIPE_RES_CREATE_FORMAT] = translate_format(bo->meta.format);
-	cmd[VIRGL_PIPE_RES_CREATE_BIND] = compute_virgl_bind_flags(bo->meta.use_flags);
+	cmd[VIRGL_PIPE_RES_CREATE_WIDTH] = width;
+	cmd[VIRGL_PIPE_RES_CREATE_HEIGHT] = height;
+	cmd[VIRGL_PIPE_RES_CREATE_FORMAT] = virgl_format;
+	cmd[VIRGL_PIPE_RES_CREATE_BIND] = virgl_bind_flags;
 	cmd[VIRGL_PIPE_RES_CREATE_DEPTH] = 1;
 	cmd[VIRGL_PIPE_RES_CREATE_BLOB_ID] = cur_blob_id;
 
 	drm_rc_blob.cmd = (uint64_t)&cmd;
 	drm_rc_blob.cmd_size = 4 * (VIRGL_PIPE_RES_CREATE_SIZE + 1);
-	drm_rc_blob.size = bo->meta.total_size;
+	drm_rc_blob.size = total_size;
 	drm_rc_blob.blob_mem = VIRTGPU_BLOB_MEM_HOST3D;
 	drm_rc_blob.blob_flags = blob_flags;
 	drm_rc_blob.blob_id = cur_blob_id;
@@ -723,8 +833,119 @@ static int virgl_bo_create_blob(struct driver *drv, struct bo *bo)
 		return -errno;
 	}
 
-	for (uint32_t plane = 0; plane < bo->meta.num_planes; plane++)
-		bo->handles[plane].u32 = drm_rc_blob.bo_handle;
+	*bo_handle = drm_rc_blob.bo_handle;
+	return 0;
+}
+
+// Queries the host layout for the requested buffer metadata.
+//
+// Of particular interest is total_size. This value is passed to the kernel when creating
+// a buffer via drm_virtgpu_resource_create_blob.size, to specify how much "vram" to
+// allocate for use when exposing the host buffer to the guest. As such, we need to know
+// this value before allocating a buffer to ensure that the full host buffer is actually
+// visible to the guest.
+//
+// Note that we can't reuse these test buffers as actual allocations because our guess for
+// total_size is insufficient if width!=stride or padding!=0.
+static int virgl_blob_get_host_format(struct driver *drv, struct bo_metadata *meta)
+{
+	struct virgl_priv *priv = (struct virgl_priv *)drv->priv;
+	int num_planes = drv_num_planes_from_format(meta->format);
+
+	pthread_mutex_lock(&priv->host_blob_format_lock);
+	if (meta->format == DRM_FORMAT_R8) {
+		meta->offsets[0] = 0;
+		meta->sizes[0] = meta->width;
+		meta->strides[0] = meta->width;
+		meta->total_size = meta->width;
+	} else {
+		uint32_t virgl_format = translate_format(meta->format);
+		struct virgl_blob_metadata_cache *entry;
+
+		entry = lru_entry_to_metadata(
+		    lru_find(&priv->virgl_blob_metadata_cache, virgl_blob_metadata_eq, meta));
+
+		if (!entry) {
+			uint32_t total_size = 0;
+			for (int i = 0; i < num_planes; i++) {
+				uint32_t stride =
+				    drv_stride_from_format(meta->format, meta->width, i);
+				total_size +=
+				    drv_size_from_format(meta->format, stride, meta->height, i);
+			}
+
+			uint32_t handle;
+			int ret =
+			    virgl_blob_do_create(drv, meta->width, meta->height, meta->use_flags,
+						 virgl_format, total_size, &handle);
+			if (ret) {
+				pthread_mutex_unlock(&priv->host_blob_format_lock);
+				return ret;
+			}
+
+			struct drm_virtgpu_resource_info_cros info = { 0 };
+			info.bo_handle = handle;
+			info.type = VIRTGPU_RESOURCE_INFO_TYPE_EXTENDED;
+			int info_ret =
+			    drmIoctl(drv->fd, DRM_IOCTL_VIRTGPU_RESOURCE_INFO_CROS, &info);
+
+			struct drm_gem_close gem_close = { 0 };
+			gem_close.handle = handle;
+			int close_ret = drmIoctl(drv->fd, DRM_IOCTL_GEM_CLOSE, &gem_close);
+			if (close_ret)
+				drv_loge("DRM_IOCTL_GEM_CLOSE failed (handle=%x) error %d\n",
+					 handle, close_ret);
+
+			if (info_ret) {
+				pthread_mutex_unlock(&priv->host_blob_format_lock);
+				drv_loge("Getting resource info failed with %s\n", strerror(errno));
+				return info_ret;
+			}
+
+			entry = calloc(1, sizeof(*entry));
+			entry->meta = *meta;
+
+			for (int i = 0; i < num_planes; i++) {
+				entry->meta.strides[i] = info.strides[i];
+				entry->meta.sizes[i] =
+				    info.strides[i] *
+				    drv_height_from_format(meta->format, meta->height, i);
+				entry->meta.offsets[i] = info.offsets[i];
+			}
+			entry->meta.total_size =
+			    entry->meta.offsets[num_planes - 1] + entry->meta.sizes[num_planes - 1];
+			entry->meta.format_modifier = info.format_modifier;
+
+			lru_insert(&priv->virgl_blob_metadata_cache, &entry->entry);
+		}
+
+		memcpy(meta->offsets, entry->meta.offsets, sizeof(meta->offsets));
+		memcpy(meta->sizes, entry->meta.sizes, sizeof(meta->sizes));
+		memcpy(meta->strides, entry->meta.strides, sizeof(meta->strides));
+		meta->total_size = entry->meta.total_size;
+		meta->format_modifier = entry->meta.format_modifier;
+	}
+	pthread_mutex_unlock(&priv->host_blob_format_lock);
+
+	meta->total_size = ALIGN(meta->total_size, PAGE_SIZE);
+	meta->tiling = blob_flags_from_use_flags(meta->use_flags);
+
+	return 0;
+}
+
+static int virgl_bo_create_blob(struct driver *drv, struct bo *bo)
+{
+	int ret;
+	uint32_t virgl_format = translate_format(bo->meta.format);
+	uint32_t bo_handle;
+
+	virgl_blob_get_host_format(drv, &bo->meta);
+	ret = virgl_blob_do_create(drv, bo->meta.width, bo->meta.height, bo->meta.use_flags,
+				   virgl_format, bo->meta.total_size, &bo_handle);
+	if (ret)
+		return ret;
+
+	bo->handle.u32 = bo_handle;
 
 	return 0;
 }
@@ -732,11 +953,6 @@ static int virgl_bo_create_blob(struct driver *drv, struct bo *bo)
 static bool should_use_blob(struct driver *drv, uint32_t format, uint64_t use_flags)
 {
 	struct virgl_priv *priv = (struct virgl_priv *)drv->priv;
-
-	// TODO(gurchetansingh): remove once all minigbm users are blob-safe
-#ifndef VIRTIO_GPU_NEXT
-	return false;
-#endif
 
 	// Only use blob when host gbm is available
 	if (!priv->host_gbm_enabled)
@@ -752,10 +968,17 @@ static bool should_use_blob(struct driver *drv, uint32_t format, uint64_t use_fl
 	case DRM_FORMAT_R8:
 		// Formats with strictly defined strides are supported
 		return true;
+	case DRM_FORMAT_ABGR8888:
+		// Formats used with frequent software reads are supported as long as they
+		// will not be used by non-GPU hardware.
+		return (use_flags & BO_USE_SW_READ_OFTEN) && !(use_flags & BO_USE_NON_GPU_HW);
 	case DRM_FORMAT_YVU420_ANDROID:
 	case DRM_FORMAT_NV12:
-		// Knowing buffer metadata at buffer creation isn't yet supported, so buffers
-		// can't be properly mapped into the guest.
+		// Zero copy buffers are exposed for guest software access via a persistent
+		// mapping, with no flush/invalidate messages. However, the virtio-video
+		// device relies transfers to/from the host waiting on implicit fences in
+		// the host kernel to synchronize with hardware output. As such, we can only
+		// use zero copy if the guest doesn't need software access.
 		return (use_flags & BO_USE_SW_MASK) == 0;
 	default:
 		return false;
@@ -798,12 +1021,42 @@ static int virgl_bo_destroy(struct bo *bo)
 		return drv_dumb_bo_destroy(bo);
 }
 
-static void *virgl_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint32_t map_flags)
+static void *virgl_bo_map(struct bo *bo, struct vma *vma, uint32_t map_flags)
 {
 	if (params[param_3d].value)
-		return virgl_3d_bo_map(bo, vma, plane, map_flags);
+		return virgl_3d_bo_map(bo, vma, map_flags);
 	else
-		return drv_dumb_bo_map(bo, vma, plane, map_flags);
+		return drv_dumb_bo_map(bo, vma, map_flags);
+}
+
+static bool is_arc_screen_capture_bo(struct bo *bo)
+{
+	struct drm_prime_handle prime_handle = {};
+	int ret, fd;
+	char tmp[256];
+
+	if (bo->meta.num_planes != 1 ||
+	    (bo->meta.format != DRM_FORMAT_ABGR8888 && bo->meta.format != DRM_FORMAT_ARGB8888 &&
+	     bo->meta.format != DRM_FORMAT_XRGB8888 && bo->meta.format != DRM_FORMAT_XBGR8888))
+		return false;
+	prime_handle.handle = bo->handle.u32;
+	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_PRIME_HANDLE_TO_FD, &prime_handle);
+	if (ret < 0)
+		return false;
+	snprintf(tmp, sizeof(tmp), "/proc/self/fdinfo/%d", prime_handle.fd);
+	fd = open(tmp, O_RDONLY);
+	if (fd < 0) {
+		close(prime_handle.fd);
+		return false;
+	}
+	ret = read(fd, tmp, sizeof(tmp) - 1);
+	close(prime_handle.fd);
+	close(fd);
+	if (ret < 0)
+		return false;
+	tmp[ret] = 0;
+
+	return strstr(tmp, "ARC-SCREEN-CAP");
 }
 
 static int virgl_bo_invalidate(struct bo *bo, struct mapping *mapping)
@@ -827,6 +1080,15 @@ static int virgl_bo_invalidate(struct bo *bo, struct mapping *mapping)
 		host_write_flags |= BO_USE_HW_VIDEO_ENCODER;
 	else
 		host_write_flags |= BO_USE_HW_VIDEO_DECODER;
+
+	// TODO(b/267892346): Revert this workaround after migrating to virtgpu_cross_domain
+	// backend since it's a special arc only behavior.
+	if (!(bo->meta.use_flags & (BO_USE_ARC_SCREEN_CAP_PROBED | BO_USE_RENDERING))) {
+		bo->meta.use_flags |= BO_USE_ARC_SCREEN_CAP_PROBED;
+		if (is_arc_screen_capture_bo(bo)) {
+			bo->meta.use_flags |= BO_USE_RENDERING;
+		}
+	}
 
 	if ((bo->meta.use_flags & host_write_flags) == 0)
 		return 0;
@@ -984,22 +1246,31 @@ static void virgl_3d_resolve_format_and_use_flags(struct driver *drv, uint32_t f
 {
 	*out_format = format;
 	*out_use_flags = use_flags;
+
+	/* resolve flexible format into explicit format */
 	switch (format) {
 	case DRM_FORMAT_FLEX_IMPLEMENTATION_DEFINED:
 		/* Camera subsystem requires NV12. */
 		if (use_flags & (BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE)) {
 			*out_format = DRM_FORMAT_NV12;
 		} else {
-			/* HACK: See b/28671744 */
+			/* HACK: See b/28671744 and b/264408280 */
 			*out_format = DRM_FORMAT_XBGR8888;
 			*out_use_flags &= ~BO_USE_HW_VIDEO_ENCODER;
+			*out_use_flags |= BO_USE_LINEAR;
 		}
 		break;
 	case DRM_FORMAT_FLEX_YCbCr_420_888:
 		/* All of our host drivers prefer NV12 as their flexible media format.
 		 * If that changes, this will need to be modified. */
 		*out_format = DRM_FORMAT_NV12;
-		/* fallthrough */
+		break;
+	default:
+		break;
+	}
+
+	/* resolve explicit format */
+	switch (*out_format) {
 	case DRM_FORMAT_NV12:
 	case DRM_FORMAT_ABGR8888:
 	case DRM_FORMAT_ARGB8888:
@@ -1008,8 +1279,8 @@ static void virgl_3d_resolve_format_and_use_flags(struct driver *drv, uint32_t f
 	case DRM_FORMAT_XRGB8888:
 		/* These are the scanout capable formats to the guest. Strip scanout use_flag if the
 		 * host does not natively support scanout on the requested format. */
-		if ((use_flags & BO_USE_SCANOUT) &&
-		    !virgl_supports_combination_natively(drv, format, BO_USE_SCANOUT))
+		if ((*out_use_flags & BO_USE_SCANOUT) &&
+		    !virgl_supports_combination_natively(drv, *out_format, BO_USE_SCANOUT))
 			*out_use_flags &= ~BO_USE_SCANOUT;
 		break;
 	case DRM_FORMAT_YVU420_ANDROID:
@@ -1078,7 +1349,7 @@ static int virgl_resource_info(struct bo *bo, uint32_t strides[DRV_MAX_PLANES],
 	if (!params[param_3d].value)
 		return 0;
 
-	res_info.bo_handle = bo->handles[0].u32;
+	res_info.bo_handle = bo->handle.u32;
 	res_info.type = VIRTGPU_RESOURCE_INFO_TYPE_EXTENDED;
 	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_VIRTGPU_RESOURCE_INFO_CROS, &res_info);
 	if (ret) {
@@ -1117,6 +1388,7 @@ const struct backend virtgpu_virgl = { .name = "virtgpu_virgl",
 				       .bo_create_with_modifiers = virgl_bo_create_with_modifiers,
 				       .bo_destroy = virgl_bo_destroy,
 				       .bo_import = drv_prime_bo_import,
+				       .bo_export = drv_prime_bo_export,
 				       .bo_map = virgl_bo_map,
 				       .bo_unmap = drv_bo_munmap,
 				       .bo_invalidate = virgl_bo_invalidate,

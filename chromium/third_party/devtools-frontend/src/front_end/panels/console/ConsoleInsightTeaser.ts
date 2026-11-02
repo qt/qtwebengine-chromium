@@ -409,7 +409,8 @@ export class ConsoleInsightTeaser extends UI.Widget.Widget {
   #isSlow = false;
   #timeoutId: ReturnType<typeof setTimeout>|null = null;
   #aidaAvailability?: Host.AidaClient.AidaAccessPreconditions;
-  #boundOnAidaAvailabilityChange: () => Promise<void>;
+  #boundOnAidaAvailabilityChange:
+      (ev: Common.EventTarget.EventTargetEvent<Host.AidaClient.AidaAccessPreconditions>) => void;
   #boundOnDownloadProgressChange: (event: Common.EventTarget.EventTargetEvent<number>) => void;
   #boundOnSessionCreation: () => void;
   #downloadProgress: number|null = null;
@@ -419,7 +420,8 @@ export class ConsoleInsightTeaser extends UI.Widget.Widget {
   #callShowTooltip = false;
   #startTime = 0;
 
-  constructor(uuid: string, consoleViewMessage: ConsoleViewMessage, element?: HTMLElement, view?: View) {
+  constructor(uuid: string, consoleViewMessage: ConsoleViewMessage, element?: HTMLElement, view?: View,
+              builtInAi: AiAssistanceModel.BuiltInAi.BuiltInAi = AiAssistanceModel.BuiltInAi.BuiltInAi.instance()) {
     super(element);
     this.#view = view ?? DEFAULT_VIEW;
     this.#uuid = uuid;
@@ -429,7 +431,7 @@ export class ConsoleInsightTeaser extends UI.Widget.Widget {
     this.#boundOnAidaAvailabilityChange = this.#onAidaAvailabilityChange.bind(this);
     this.#boundOnDownloadProgressChange = this.#onDownloadProgressChange.bind(this);
     this.#boundOnSessionCreation = this.#onSessionCreation.bind(this);
-    this.#builtInAi = AiAssistanceModel.BuiltInAi.BuiltInAi.instance();
+    this.#builtInAi = builtInAi;
     this.#state = this.#builtInAi.hasSession() ? State.READY : State.NO_MODEL;
     this.#callShowTooltip = true;
     this.requestUpdate();
@@ -437,7 +439,8 @@ export class ConsoleInsightTeaser extends UI.Widget.Widget {
 
   #getConsoleInsightsEnabledSetting(): Common.Settings.Setting<boolean>|undefined {
     try {
-      return Common.Settings.moduleSetting('console-insights-enabled') as Common.Settings.Setting<boolean>;
+      return Common.Settings.Settings.instance().moduleSetting('console-insights-enabled') as
+          Common.Settings.Setting<boolean>;
     } catch {
       return;
     }
@@ -447,12 +450,15 @@ export class ConsoleInsightTeaser extends UI.Widget.Widget {
     return Common.Settings.Settings.instance().createLocalSetting('console-insights-onboarding-finished', true);
   }
 
-  async #onAidaAvailabilityChange(): Promise<void> {
-    const currentAidaAvailability = await Host.AidaClient.AidaClient.checkAccessPreconditions();
-    if (currentAidaAvailability !== this.#aidaAvailability) {
-      this.#aidaAvailability = currentAidaAvailability;
+  #updateAidaAvailability(aidaAvailability: Host.AidaClient.AidaAccessPreconditions): void {
+    if (aidaAvailability !== this.#aidaAvailability) {
+      this.#aidaAvailability = aidaAvailability;
       this.requestUpdate();
     }
+  }
+
+  #onAidaAvailabilityChange(ev: Common.EventTarget.EventTargetEvent<Host.AidaClient.AidaAccessPreconditions>): void {
+    this.#updateAidaAvailability(ev.data);
   }
 
   #executeConsoleInsightAction(): void {
@@ -517,7 +523,7 @@ export class ConsoleInsightTeaser extends UI.Widget.Widget {
             jslogcontext="explain.teaser.code-snippets-explainer"
           >${lockedString(UIStringsNotTranslate.freDisclaimerTextUseWithCaution)}</devtools-link>`,
           // clang-format on
-        }
+        },
       ],
       onLearnMoreClick: () => {
         void UI.ViewManager.ViewManager.instance().showView('chrome-ai');
@@ -730,7 +736,10 @@ export class ConsoleInsightTeaser extends UI.Widget.Widget {
     super.wasShown();
     Host.AidaClient.HostConfigTracker.instance().addEventListener(
         Host.AidaClient.Events.AIDA_AVAILABILITY_CHANGED, this.#boundOnAidaAvailabilityChange);
-    void this.#onAidaAvailabilityChange();
+    const initialAvailability = Host.AidaClient.HostConfigTracker.instance().aidaAvailability;
+    if (initialAvailability !== undefined) {
+      this.#updateAidaAvailability(initialAvailability);
+    }
   }
 
   override willHide(): void {

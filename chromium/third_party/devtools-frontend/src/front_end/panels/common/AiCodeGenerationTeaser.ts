@@ -35,11 +35,11 @@ const UIStringsNotTranslate = {
   /**
    * @description Aria label for teaser to generate code.
    */
-  pressCtrlPeriodToLearnHowYourDataIsBeingUsed: 'Press ctrl . (“period”) to learn how your data is being used.',
+  pressCtrlPeriodToLearnHowYourDataIsBeingUsed: 'Press ctrl . (period) to learn how your data is being used.',
   /**
    * @description Aria label for teaser to generate code in Mac.
    */
-  pressCmdPeriodToLearnHowYourDataIsBeingUsed: 'Press cmd . (“period”) to learn how your data is being used.',
+  pressCmdPeriodToLearnHowYourDataIsBeingUsed: 'Press cmd . (period) to learn how your data is being used.',
   /**
    * @description Text for teaser when generating suggestion.
    */
@@ -314,7 +314,7 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
           <div class="ai-code-generation-teaser">
             &nbsp;${teaserLabel}
           </div>
-        `, target
+        `, target,
       );
   // clang-format on
 };

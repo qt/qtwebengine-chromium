@@ -191,7 +191,7 @@ void SparseLUImpl<Scalar, StorageIndex>::panel_bmod(const Index m, const Index w
 
         Index lda = glu.xlusup(fsupc + 1) - glu.xlusup(fsupc);  // nsupr
 
-        // Perform a trianglar solve and block update,
+        // Perform a triangular solve and block update,
         // then scatter the result of sup-col update to dense[]
         no_zeros = kfnz - fsupc;
         if (segsize == 1)

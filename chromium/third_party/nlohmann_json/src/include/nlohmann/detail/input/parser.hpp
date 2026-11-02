@@ -3,7 +3,7 @@
 // |  |  |__   |  |  | | | |  version 3.12.0
 // |_____|_____|_____|_|___|  https://github.com/nlohmann/json
 //
-// SPDX-FileCopyrightText: 2013-2025 Niels Lohmann <https://nlohmann.me>
+// SPDX-FileCopyrightText: 2013-2026 Niels Lohmann <https://nlohmann.me>
 // SPDX-License-Identifier: MIT
 
 #pragma once
@@ -88,9 +88,9 @@ class parser
     @param[in] strict      whether to expect the last token to be EOF
     @param[in,out] result  parsed JSON value
 
-    @throw parse_error.101 in case of an unexpected token
-    @throw parse_error.102 if to_unicode fails or surrogate error
-    @throw parse_error.103 if to_unicode fails
+    @throw parse_error.101 in case of an unexpected token (including invalid
+           unicode escapes and surrogate errors, which are reported with a
+           detailed message)
     */
     void parse(const bool strict, BasicJsonType& result)
     {

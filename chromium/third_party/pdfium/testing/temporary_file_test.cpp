@@ -7,6 +7,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include "core/fxcrt/span_io.h"
+
 TemporaryFileTest::TemporaryFileTest() = default;
 
 TemporaryFileTest::~TemporaryFileTest() = default;
@@ -27,7 +29,7 @@ void TemporaryFileTest::TearDown() {
 
 void TemporaryFileTest::WriteAndClose(pdfium::span<const uint8_t> data) {
   if (!data.empty()) {
-    (void)write(fd_, data.data(), data.size());
+    EXPECT_EQ(fxcrt::spanwrite(data, fd_), data.size());
   }
   close(fd_);
   fd_ = -1;

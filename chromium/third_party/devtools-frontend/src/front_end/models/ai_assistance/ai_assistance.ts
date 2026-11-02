@@ -1,28 +1,27 @@
 // Copyright 2023 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
-import * as AgentProject from './AgentProject.js';
 import * as AccessibilityAgent from './agents/AccessibilityAgent.js';
 import * as AiAgent from './agents/AiAgent.js';
 import * as ContextSelectionAgent from './agents/ContextSelectionAgent.js';
-import * as ConversationSummaryAgent from './agents/ConversationSummaryAgent.js';
 import * as FileAgent from './agents/FileAgent.js';
-import * as GreenDevAgent from './agents/GreenDevAgent.js';
-import * as GreenDevAgentAntigravityCliSocketClient from './agents/GreenDevAgentAntigravityCliSocketClient.js';
-import * as GreenDevAgentGeminiCliSocketClient from './agents/GreenDevAgentGeminiCliSocketClient.js';
 import * as NetworkAgent from './agents/NetworkAgent.js';
-import * as PatchAgent from './agents/PatchAgent.js';
 import * as PerformanceAgent from './agents/PerformanceAgent.js';
-import * as PerformanceAnnotationsAgent from './agents/PerformanceAnnotationsAgent.js';
 import * as StorageAgent from './agents/StorageAgent.js';
 import * as StylingAgent from './agents/StylingAgent.js';
 import * as AiAgent2 from './AiAgent2.js';
 import * as AiConversation from './AiConversation.js';
 import * as AiHistoryStorage from './AiHistoryStorage.js';
+import * as AiOrigins from './AiOrigins.js';
 import * as AiUtils from './AiUtils.js';
 import * as BuiltInAi from './BuiltInAi.js';
 import * as ChangeManager from './ChangeManager.js';
+import * as AccessibilityContext from './contexts/AccessibilityContext.js';
+import * as DOMNodeContext from './contexts/DOMNodeContext.js';
+import * as FileContext from './contexts/FileContext.js';
+import * as PerformanceTraceContext from './contexts/PerformanceTraceContext.js';
+import * as RequestContext from './contexts/RequestContext.js';
+import * as ConversationSummary from './ConversationSummary.js';
 import * as FileFormatter from './data_formatters/FileFormatter.js';
 import * as LighthouseFormatter from './data_formatters/LighthouseFormatter.js';
 import * as NetworkRequestFormatter from './data_formatters/NetworkRequestFormatter.js';
@@ -36,42 +35,62 @@ import * as Injected from './injected.js';
 import * as AICallTree from './performance/AICallTree.js';
 import * as AIContext from './performance/AIContext.js';
 import * as AIQueries from './performance/AIQueries.js';
+import * as PerformanceAnnotations from './PerformanceAnnotations.js';
 import * as StorageItem from './StorageItem.js';
+import * as ExecuteJavaScript from './tools/ExecuteJavaScript.js';
+import * as GetElementAccessibilityDetails from './tools/GetElementAccessibilityDetails.js';
+import * as GetLighthouseAudits from './tools/GetLighthouseAudits.js';
+import * as GetNetworkRequestDetails from './tools/GetNetworkRequestDetails.js';
+import * as GetStyles from './tools/GetStyles.js';
+import * as ListNetworkRequests from './tools/ListNetworkRequests.js';
+import * as ResolveDevtoolsNodePath from './tools/ResolveDevtoolsNodePath.js';
+import * as Tool from './tools/Tool.js';
+import * as ToolRegistry from './tools/ToolRegistry.js';
 
 export {
   AccessibilityAgent,
-  AgentProject,
+  AccessibilityContext,
   AiAgent,
   AiAgent2,
   AICallTree,
   AIContext,
   AiConversation,
   AiHistoryStorage,
+  AiOrigins,
   AIQueries,
   AiUtils,
   BuiltInAi,
   ChangeManager,
   ContextSelectionAgent,
-  ConversationSummaryAgent,
+  ConversationSummary,
   Debug,
+  DOMNodeContext,
   EvaluateAction,
+  ExecuteJavaScript,
   ExtensionScope,
   FileAgent,
+  FileContext,
   FileFormatter,
-  GreenDevAgent,
-  GreenDevAgentAntigravityCliSocketClient,
-  GreenDevAgentGeminiCliSocketClient,
+  GetElementAccessibilityDetails,
+  GetLighthouseAudits,
+  GetNetworkRequestDetails,
+  GetStyles,
   Injected,
   LighthouseFormatter,
+  ListNetworkRequests,
   NetworkAgent,
   NetworkRequestFormatter,
-  PatchAgent,
   PerformanceAgent,
-  PerformanceAnnotationsAgent,
+  PerformanceAnnotations,
   PerformanceInsightFormatter,
+  PerformanceTraceContext,
   PerformanceTraceFormatter,
+  RequestContext,
+  ResolveDevtoolsNodePath,
   StorageAgent,
   StorageItem,
   StylingAgent,
+  Tool,
+  ToolRegistry,
   UnitFormatters,
 };

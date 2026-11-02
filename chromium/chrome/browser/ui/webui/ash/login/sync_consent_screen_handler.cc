@@ -10,12 +10,12 @@
 #include <vector>
 
 #include "ash/constants/ash_features.h"
+#include "ash/login/resources/grit/ash_login_strings.h"
 #include "base/feature_list.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/ash/login/screens/sync_consent_screen.h"
-#include "chrome/grit/generated_resources.h"
 #include "components/login/localized_values_builder.h"
 #include "components/signin/public/base/signin_switches.h"
 #include "components/sync/base/features.h"

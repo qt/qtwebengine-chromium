@@ -32,7 +32,7 @@ struct cross_impl {
     EIGEN_STATIC_ASSERT_VECTOR_SPECIFIC_SIZE(OtherDerived, 3)
 
     // Note that there is no need for an expression here since the compiler
-    // optimize such a small temporary very well (even within a complex expression)
+    // optimizes such a small temporary very well (even within a complex expression)
     typename internal::nested_eval<Derived, 2>::type lhs(first.derived());
     typename internal::nested_eval<OtherDerived, 2>::type rhs(second.derived());
     return return_type(numext::conj(lhs.coeff(1) * rhs.coeff(2) - lhs.coeff(2) * rhs.coeff(1)),
@@ -50,8 +50,8 @@ struct cross_impl<Derived, OtherDerived, 2> {
 
   static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE return_type run(const MatrixBase<Derived>& first,
                                                                const MatrixBase<OtherDerived>& second) {
-    EIGEN_STATIC_ASSERT_VECTOR_SPECIFIC_SIZE(Derived, 2);
-    EIGEN_STATIC_ASSERT_VECTOR_SPECIFIC_SIZE(OtherDerived, 2);
+    EIGEN_STATIC_ASSERT_VECTOR_SPECIFIC_SIZE(Derived, 2)
+    EIGEN_STATIC_ASSERT_VECTOR_SPECIFIC_SIZE(OtherDerived, 2)
     typename internal::nested_eval<Derived, 2>::type lhs(first.derived());
     typename internal::nested_eval<OtherDerived, 2>::type rhs(second.derived());
     return numext::conj(lhs.coeff(0) * rhs.coeff(1) - lhs.coeff(1) * rhs.coeff(0));
@@ -141,7 +141,7 @@ EIGEN_DEVICE_FUNC inline typename MatrixBase<Derived>::PlainObject MatrixBase<De
  * of the referenced expression with the \a other vector.
  *
  * The referenced matrix must have one dimension equal to 3.
- * The result matrix has the same dimensions than the referenced one.
+ * The result matrix has the same dimensions as the referenced one.
  *
  * \sa MatrixBase::cross() */
 template <typename ExpressionType, int Direction>
@@ -157,13 +157,12 @@ VectorwiseOp<ExpressionType, Direction>::cross(const MatrixBase<OtherDerived>& o
   typename internal::nested_eval<OtherDerived, 2>::type vec(other.derived());
 
   CrossReturnType res(_expression().rows(), _expression().cols());
-  EIGEN_IF_CONSTEXPR(Direction == Vertical) {
+  EIGEN_IF_CONSTEXPR (Direction == Vertical) {
     eigen_assert(CrossReturnType::RowsAtCompileTime == 3 && "the matrix must have exactly 3 rows");
     res.row(0) = (mat.row(1) * vec.coeff(2) - mat.row(2) * vec.coeff(1)).conjugate();
     res.row(1) = (mat.row(2) * vec.coeff(0) - mat.row(0) * vec.coeff(2)).conjugate();
     res.row(2) = (mat.row(0) * vec.coeff(1) - mat.row(1) * vec.coeff(0)).conjugate();
-  }
-  else {
+  } else {
     eigen_assert(CrossReturnType::ColsAtCompileTime == 3 && "the matrix must have exactly 3 columns");
     res.col(0) = (mat.col(1) * vec.coeff(2) - mat.col(2) * vec.coeff(1)).conjugate();
     res.col(1) = (mat.col(2) * vec.coeff(0) - mat.col(0) * vec.coeff(2)).conjugate();

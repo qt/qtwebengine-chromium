@@ -48,7 +48,7 @@ class CFX_GifContext : public ProgressiveDecoderContext {
   uint8_t global_palette_exp_ = 0;
   uint32_t img_row_offset_ = 0;
   uint32_t img_row_avail_size_ = 0;
-  int32_t decode_status_ = GIF_D_STATUS_SIG;
+  GifDecoderStatus decode_status_ = GifDecoderStatus::kSig;
   std::unique_ptr<CFX_GifGraphicControlExtension> graphic_control_extension_;
   std::vector<std::unique_ptr<CFX_GifImage>> images_;
   std::unique_ptr<LZWDecompressor> lzw_decompressor_;
@@ -67,7 +67,7 @@ class CFX_GifContext : public ProgressiveDecoderContext {
   RetainPtr<CFX_CodecMemory> input_buffer_;
 
  private:
-  void SaveDecodingStatus(int32_t status);
+  void SaveDecodingStatus(GifDecoderStatus status);
   GifDecoder::Status DecodeExtension();
   GifDecoder::Status DecodeImageInfo();
   void DecodingFailureAtTailCleanup(CFX_GifImage* gif_image);

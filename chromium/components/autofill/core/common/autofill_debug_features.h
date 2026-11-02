@@ -17,9 +17,15 @@ namespace autofill::features::debug {
 // All features in alphabetical order.
 
 COMPONENT_EXPORT(AUTOFILL)
+BASE_DECLARE_FEATURE(kAtMemoryNoDeviceReauthCheck);
+COMPONENT_EXPORT(AUTOFILL)
+BASE_DECLARE_FEATURE(kAtMemorySkipEnablementChecks);
+COMPONENT_EXPORT(AUTOFILL)
 BASE_DECLARE_FEATURE(kAutofillAiDisableReauthRequirement);
 COMPONENT_EXPORT(AUTOFILL)
 BASE_DECLARE_FEATURE(kAutofillAiForceOptIn);
+COMPONENT_EXPORT(AUTOFILL)
+BASE_DECLARE_FEATURE(kAutofillAmbientAutofillSkipEligibilityChecks);
 COMPONENT_EXPORT(AUTOFILL)
 BASE_DECLARE_FEATURE(kAutofillCapturedSiteTestsMetricsScraper);
 COMPONENT_EXPORT(AUTOFILL)
@@ -46,6 +52,8 @@ BASE_DECLARE_FEATURE_PARAM(std::string,
 COMPONENT_EXPORT(AUTOFILL)
 BASE_DECLARE_FEATURE_PARAM(std::string, kAutofillOverridePredictionsJson);
 COMPONENT_EXPORT(AUTOFILL) BASE_DECLARE_FEATURE(kAutofillServerCommunication);
+COMPONENT_EXPORT(AUTOFILL)
+BASE_DECLARE_FEATURE_PARAM(int, kAutofillServerCommunicationExperimentId);
 COMPONENT_EXPORT(AUTOFILL) BASE_DECLARE_FEATURE(kAutofillShowTypePredictions);
 COMPONENT_EXPORT(AUTOFILL)
 BASE_DECLARE_FEATURE_PARAM(bool, kAutofillShowTypePredictionsVerboseParam);

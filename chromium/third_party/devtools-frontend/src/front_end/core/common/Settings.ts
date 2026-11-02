@@ -5,7 +5,7 @@
 import * as Platform from '../platform/platform.js';
 import * as Root from '../root/root.js';
 
-import {Console} from './Console.js';
+import type {Console} from './Console.js';
 import type {EventDescriptor, EventTargetEvent, GenericEvents} from './EventTarget.js';
 import {ObjectWrapper} from './Object.js';
 import {
@@ -23,6 +23,75 @@ import {
 } from './SettingRegistration.js';
 import {VersionController} from './VersionController.js';
 
+/**
+ * Describes and configures a Setting.
+ *
+ * Use `Settings#resolve` to get the concrete `Setting` instance for a descriptor.
+ */
+export interface SettingDescriptor<ValueT> {
+  /** The unique identifier of a setting */
+  readonly name: string;
+
+  /**
+   * Determines how the possible values of the setting are expressed.
+   *
+   * - If the setting can only be enabled and disabled use BOOLEAN
+   * - If the setting has a list of possible values use ENUM
+   * - If each setting value is a set of objects use ARRAY
+   * - If the setting value is a regular expression use REGEX
+   */
+  readonly type: SettingType;
+
+  /**
+   * The default value for this setting.
+   *
+   * Can be computed based on the `hostConfig` (but NOTHING ELSE).
+   */
+  readonly defaultValue: ValueT|((hostConfig: Root.Runtime.HostConfig) => ValueT);
+
+  /**
+   * Determines if the setting value is stored in the global, local or session storage.
+   */
+  readonly storageType?: SettingStorageType;
+}
+
+/**
+ * Describes and configures a Setting that might be unavailable or disabled depending on the HostConfig.
+ *
+ * See {@link SettingAvailability} for details.
+ *
+ * Use `Settings#maybeResolve` to get the concrete `Setting` instance (or a reason why it's not available).
+ */
+export interface ConditionalSettingDescriptor<ValueT, ReasonT> extends SettingDescriptor<ValueT> {
+  /** The function used as `isAvailable` must only read the host config, NOTHING ELSE. */
+  isAvailable: (hostConfig: Root.Runtime.HostConfig) => SettingAvailabilityStatus<ReasonT>;
+}
+
+export type SettingAvailabilityStatus<ReasonT> = {
+  status: SettingAvailability.AVAILABLE,
+}|{
+  status: SettingAvailability.UNAVAILABLE | SettingAvailability.DISABLED,
+  reason: ReasonT,
+};
+
+export const enum SettingAvailability {
+  /**
+   * Setting is available and can be changed by the user or programmatically.
+   */
+  AVAILABLE = 1,
+
+  /**
+   * Setting is not available at all. Any `maybeResolve` or `resolve` call will fail.
+   * The setting should be hidden from the user.
+   */
+  UNAVAILABLE = 2,
+
+  /**
+   * Setting is available, but its value can't be read or written.
+   */
+  DISABLED = 3,
+}
+
 export interface SettingsCreationOptions {
   syncedStorage: SettingsStorage;
   globalStorage: SettingsStorage;
@@ -30,7 +99,10 @@ export interface SettingsCreationOptions {
   settingRegistrations: SettingRegistration[];
   logSettingAccess?: (name: string, value: number|string|boolean) => Promise<void>;
   runSettingsMigration?: boolean;
+  console: Console;
 }
+
+type NoFunction<T> = T extends(...args: never[]) => unknown ? never : T;
 
 export class Settings {
   readonly syncedStorage: SettingsStorage;
@@ -45,10 +117,18 @@ export class Settings {
   #registry = new Map<string, Setting<unknown>>();
   readonly moduleSettings = new Map<string, Setting<unknown>>();
   #logSettingAccess?: (name: string, value: number|string|boolean) => Promise<void>;
+  readonly #console: Console;
 
-  constructor(
-      {syncedStorage, globalStorage, localStorage, settingRegistrations, logSettingAccess, runSettingsMigration}:
-          SettingsCreationOptions) {
+  constructor({
+    syncedStorage,
+    globalStorage,
+    localStorage,
+    settingRegistrations,
+    logSettingAccess,
+    runSettingsMigration,
+    console,
+  }: SettingsCreationOptions) {
+    this.#console = console;
     this.syncedStorage = syncedStorage;
     this.globalStorage = globalStorage;
     this.localStorage = localStorage;
@@ -65,10 +145,6 @@ export class Settings {
           this.createRegExpSetting(settingName, evaluatedDefaultValue, undefined, storageType) :
           this.createSetting(settingName, evaluatedDefaultValue, storageType);
 
-      setting.setTitleFunction(registration.title);
-      if (registration.userActionCondition) {
-        setting.setRequiresUserAction(Boolean(Root.Runtime.Runtime.queryParam(registration.userActionCondition)));
-      }
       setting.setRegistration(registration);
 
       this.registerModuleSetting(setting);
@@ -93,10 +169,17 @@ export class Settings {
     globalStorage: SettingsStorage|null,
     localStorage: SettingsStorage|null,
     settingRegistrations: SettingRegistration[]|null,
+    console: Console|null,
     logSettingAccess?: (name: string, value: number|string|boolean) => Promise<void>,
     runSettingsMigration?: boolean,
-  } = {forceNew: null, syncedStorage: null, globalStorage: null, localStorage: null, settingRegistrations: null}):
-      Settings {
+  } = {
+    forceNew: null,
+    syncedStorage: null,
+    globalStorage: null,
+    localStorage: null,
+    settingRegistrations: null,
+    console: null,
+  }): Settings {
     const {
       forceNew,
       syncedStorage,
@@ -104,10 +187,11 @@ export class Settings {
       localStorage,
       settingRegistrations,
       logSettingAccess,
-      runSettingsMigration
+      runSettingsMigration,
+      console,
     } = opts;
     if (!Root.DevToolsContext.globalInstance().has(Settings) || forceNew) {
-      if (!syncedStorage || !globalStorage || !localStorage || !settingRegistrations) {
+      if (!syncedStorage || !globalStorage || !localStorage || !settingRegistrations || !console) {
         throw new Error(`Unable to create settings: global and local storage must be provided: ${new Error().stack}`);
       }
 
@@ -117,7 +201,8 @@ export class Settings {
                                                   localStorage,
                                                   settingRegistrations,
                                                   logSettingAccess,
-                                                  runSettingsMigration
+                                                  runSettingsMigration,
+                                                  console,
                                                 }));
     }
 
@@ -195,7 +280,7 @@ export class Settings {
     const storage = this.storageFromType(storageType);
     let setting = this.#registry.get(key) as Setting<T>;
     if (!setting) {
-      setting = new Setting(key, defaultValue, this.#eventSupport, storage, this.#logSettingAccess);
+      setting = new Setting(key, defaultValue, this.#eventSupport, storage, this.#console, this.#logSettingAccess);
       this.#registry.set(key, setting);
     }
     return setting;
@@ -208,11 +293,9 @@ export class Settings {
   createRegExpSetting(key: string, defaultValue: string, regexFlags?: string, storageType?: SettingStorageType):
       RegExpSetting {
     if (!this.#registry.get(key)) {
-      this.#registry.set(
-          key,
-          new RegExpSetting(
-              key, defaultValue, this.#eventSupport, this.storageFromType(storageType), regexFlags,
-              this.#logSettingAccess));
+      this.#registry.set(key,
+                         new RegExpSetting(key, defaultValue, this.#eventSupport, this.storageFromType(storageType),
+                                           this.#console, regexFlags, this.#logSettingAccess));
     }
     return this.#registry.get(key) as RegExpSetting;
   }
@@ -240,6 +323,72 @@ export class Settings {
 
   getRegistry(): Map<string, Setting<unknown>> {
     return this.#registry;
+  }
+
+  /**
+   * Resolves a setting descriptor to a concrete {@link Setting} instance.
+   *
+   * If a setting with the same name already exists (either pre-registered or
+   * previously resolved), that instance is returned. Otherwise, a new setting
+   * is created and registered.
+   *
+   * @param descriptor The descriptor defining the setting. Must not be conditional.
+   * @throws If the descriptor is conditional (contains `isAvailable`). Use `maybeResolve` instead.
+   */
+  resolve<T>(descriptor: SettingDescriptor<NoFunction<T>>&{isAvailable?: never}): Setting<T> {
+    if ('isAvailable' in descriptor) {
+      // TS can only do so much if developers downcast explicitly.
+      throw new Error('Use Settings#maybeResolve for conditional descriptors.');
+    }
+
+    return this.#resolve(descriptor);
+  }
+
+  #resolve<T>(descriptor: SettingDescriptor<T>): Setting<T> {
+    let setting = this.moduleSettings.get(descriptor.name);
+    if (setting) {
+      return setting as Setting<T>;
+    }
+
+    const {name, type, defaultValue, storageType} = descriptor;
+    const isRegex = type === SettingType.REGEX;
+
+    const isGetter =
+        (value: T|((config: Root.Runtime.HostConfig) => T)): value is((config: Root.Runtime.HostConfig) => T) =>
+            typeof value === 'function';
+
+    const evaluatedDefaultValue = isGetter(defaultValue) ? defaultValue(Root.Runtime.hostConfig) : defaultValue;
+    setting = isRegex && typeof evaluatedDefaultValue === 'string' ?
+        this.createRegExpSetting(name, evaluatedDefaultValue, undefined, storageType) :
+        this.createSetting(name, evaluatedDefaultValue, storageType);
+
+    setting.setSettingType(type);
+
+    this.registerModuleSetting(setting);
+    return setting as Setting<T>;
+  }
+
+  /**
+   * Resolves a conditional setting descriptor to a concrete {@link Setting} instance if it is available.
+   *
+   * This method checks the availability of the setting using the descriptor's `isAvailable` function
+   * and the current `hostConfig`. If available, it resolves and returns the setting (caching it if
+   * necessary). If not available (either unavailable or disabled), it returns the availability status
+   * and the reason.
+   *
+   * @param descriptor The conditional descriptor defining the setting.
+   * @returns An object with either the resolved `setting` or the availability `status` and `reason`.
+   */
+  maybeResolve<T, R>(descriptor: ConditionalSettingDescriptor<NoFunction<T>, R>): {setting: Setting<T>}|{
+    status: SettingAvailability.UNAVAILABLE|SettingAvailability.DISABLED, reason: R,
+  }
+  {
+    const available = descriptor.isAvailable(Root.Runtime.hostConfig);
+    if (available.status === SettingAvailability.AVAILABLE) {
+      return {setting: this.#resolve(descriptor)};
+    }
+
+    return available;
   }
 }
 
@@ -324,8 +473,8 @@ export class SettingsStorage {
     return Object.keys(this.object);
   }
 
-  dumpSizes(): void {
-    Console.instance().log('Ten largest settings: ');
+  dumpSizes(commonConsole: Console): void {
+    commonConsole.log('Ten largest settings: ');
     // @ts-expect-error __proto__ optimization
     const sizes: Record<string, number> = {__proto__: null};
     for (const key in this.object) {
@@ -340,7 +489,7 @@ export class SettingsStorage {
     keys.sort(comparator);
 
     for (let i = 0; i < 10 && i < keys.length; ++i) {
-      Console.instance().log('Setting: \'' + keys[i] + '\', size: ' + sizes[keys[i]]);
+      commonConsole.log('Setting: \'' + keys[i] + '\', size: ' + sizes[keys[i]]);
     }
   }
 }
@@ -363,9 +512,8 @@ export class Deprecation {
 }
 
 export class Setting<V> {
-  #titleFunction?: () => Platform.UIString.LocalizedString;
-  #title!: Platform.UIString.LocalizedString;
   #registration: SettingRegistration|null = null;
+  #type: SettingType|null = null;
   #requiresUserAction?: boolean;
   #value?: V;
   // TODO(crbug.com/1172300) Type cannot be inferred without changes to consumers. See above.
@@ -375,17 +523,27 @@ export class Setting<V> {
   #deprecation: Deprecation|null = null;
   #loggedInitialAccess = false;
   #logSettingAccess?: (name: string, value: number|string|boolean) => Promise<void>;
+  readonly #console: Console;
 
-  constructor(
-      readonly name: string, readonly defaultValue: V, private readonly eventSupport: ObjectWrapper<GenericEvents>,
-      readonly storage: SettingsStorage,
-      logSettingAccess?: (name: string, value: number|string|boolean) => Promise<void>) {
+  constructor(readonly name: string, readonly defaultValue: V,
+              private readonly eventSupport: ObjectWrapper<GenericEvents>, readonly storage: SettingsStorage,
+              console: Console, logSettingAccess?: (name: string, value: number|string|boolean) => Promise<void>) {
     storage.register(this.name);
+    this.#console = console;
     this.#logSettingAccess = logSettingAccess;
   }
 
   setSerializer(serializer: Serializer<unknown, V>): void {
     this.#serializer = serializer;
+  }
+
+  descriptor(): SettingDescriptor<V> {
+    return {
+      name: this.name,
+      type: this.type() ?? SettingType.BOOLEAN,
+      defaultValue: this.defaultValue,
+      storageType: this.#registration?.storageType,
+    };
   }
 
   addChangeListener(listener: (arg0: EventTargetEvent<V>) => void, thisObject?: Object): EventDescriptor {
@@ -397,23 +555,10 @@ export class Setting<V> {
   }
 
   title(): Platform.UIString.LocalizedString {
-    if (this.#title) {
-      return this.#title;
-    }
-    if (this.#titleFunction) {
-      return this.#titleFunction();
+    if (this.#registration?.title) {
+      return this.#registration.title();
     }
     return '' as Platform.UIString.LocalizedString;
-  }
-
-  setTitleFunction(titleFunction?: (() => Platform.UIString.LocalizedString)): void {
-    if (titleFunction) {
-      this.#titleFunction = titleFunction;
-    }
-  }
-
-  setTitle(title: Platform.UIString.LocalizedString): void {
-    this.#title = title;
   }
 
   setRequiresUserAction(requiresUserAction: boolean): void {
@@ -532,13 +677,20 @@ export class Setting<V> {
         this.printSettingsSavingError(e.message, settingString);
       }
     } catch (e) {
-      Console.instance().error('Cannot stringify setting with name: ' + this.name + ', error: ' + e.message);
+      this.#console.error('Cannot stringify setting with name: ' + this.name + ', error: ' + e.message);
     }
     this.eventSupport.dispatchEventToListeners(this.name, value);
   }
 
+  setSettingType(type: SettingType): void {
+    this.#type = type;
+  }
+
   setRegistration(registration: SettingRegistration): void {
     this.#registration = registration;
+    if (registration.settingType) {
+      this.#type = registration.settingType;
+    }
     const {deprecationNotice} = registration;
     if (deprecationNotice?.disabled) {
       const experiment = deprecationNotice.experiment ?
@@ -552,10 +704,7 @@ export class Setting<V> {
   }
 
   type(): SettingType|null {
-    if (this.#registration) {
-      return this.#registration.settingType;
-    }
-    return null;
+    return this.#type ?? this.#registration?.settingType ?? null;
   }
 
   options(): SimpleSettingOption[] {
@@ -623,8 +772,8 @@ export class Setting<V> {
     const errorMessage =
         'Error saving setting with name: ' + this.name + ', value length: ' + value.length + '. Error: ' + message;
     console.error(errorMessage);
-    Console.instance().error(errorMessage);
-    this.storage.dumpSizes();
+    this.#console.error(errorMessage);
+    this.storage.dumpSizes(this.#console);
   }
 }
 
@@ -633,10 +782,10 @@ export class RegExpSetting extends Setting<any> {
   #regexFlags?: string;
   #regex?: RegExp|null;
 
-  constructor(
-      name: string, defaultValue: string, eventSupport: ObjectWrapper<GenericEvents>, storage: SettingsStorage,
-      regexFlags?: string, logSettingAccess?: (name: string, value: number|string|boolean) => Promise<void>) {
-    super(name, defaultValue ? [{pattern: defaultValue}] : [], eventSupport, storage, logSettingAccess);
+  constructor(name: string, defaultValue: string, eventSupport: ObjectWrapper<GenericEvents>, storage: SettingsStorage,
+              console: Console, regexFlags?: string,
+              logSettingAccess?: (name: string, value: number|string|boolean) => Promise<void>) {
+    super(name, defaultValue ? [{pattern: defaultValue}] : [], eventSupport, storage, console, logSettingAccess);
     this.#regexFlags = regexFlags;
   }
 
@@ -696,14 +845,6 @@ export const enum SettingStorageType {
    * user is done with their task. (eg Emulation modes, Debug overlays). These are also not carried into/out of incognito
    */
   SESSION = 'Session',
-}
-
-export function moduleSetting(settingName: string): Setting<unknown> {
-  return Settings.instance().moduleSetting(settingName);
-}
-
-export function settingForTest(settingName: string): Setting<unknown> {
-  return Settings.instance().settingForTest(settingName);
 }
 
 export {

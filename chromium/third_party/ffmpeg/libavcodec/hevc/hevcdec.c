@@ -38,25 +38,26 @@
 #include "libavutil/stereo3d.h"
 #include "libavutil/tdrdi.h"
 #include "libavutil/timecode.h"
+#include "libavutil/refstruct.h"
 
-#include "aom_film_grain.h"
-#include "bswapdsp.h"
-#include "cabac_functions.h"
-#include "codec_internal.h"
-#include "decode.h"
-#include "golomb.h"
-#include "h274.h"
+#include "libavcodec/aom_film_grain.h"
+#include "libavcodec/bswapdsp.h"
+#include "libavcodec/cabac_functions.h"
+#include "libavcodec/codec_internal.h"
+#include "libavcodec/decode.h"
+#include "libavcodec/golomb.h"
+#include "libavcodec/h274.h"
+#include "libavcodec/hwaccel_internal.h"
+#include "libavcodec/hwconfig.h"
+#include "libavcodec/internal.h"
+#include "libavcodec/profiles.h"
+#include "libavcodec/progressframe.h"
+#include "libavcodec/thread.h"
+#include "libavcodec/threadprogress.h"
+
 #include "hevc.h"
 #include "parse.h"
 #include "hevcdec.h"
-#include "hwaccel_internal.h"
-#include "hwconfig.h"
-#include "internal.h"
-#include "profiles.h"
-#include "progressframe.h"
-#include "libavutil/refstruct.h"
-#include "thread.h"
-#include "threadprogress.h"
 
 static const uint8_t hevc_pel_weight[65] = { [2] = 0, [4] = 1, [6] = 2, [8] = 3, [12] = 4, [16] = 5, [24] = 6, [32] = 7, [48] = 8, [64] = 9 };
 
@@ -184,7 +185,7 @@ static int pred_weight_table(SliceHeader *sh, void *logctx,
         av_log(logctx, AV_LOG_ERROR, "luma_log2_weight_denom %d is invalid\n", luma_log2_weight_denom);
         return AVERROR_INVALIDDATA;
     }
-    sh->luma_log2_weight_denom = av_clip_uintp2(luma_log2_weight_denom, 3);
+    sh->luma_log2_weight_denom = luma_log2_weight_denom;
     if (sps->chroma_format_idc != 0) {
         int64_t chroma_log2_weight_denom = luma_log2_weight_denom + (int64_t)get_se_golomb(gb);
         if (chroma_log2_weight_denom < 0 || chroma_log2_weight_denom > 7) {
@@ -388,26 +389,11 @@ static int export_stream_params_from_sei(HEVCContext *s)
 {
     AVCodecContext *avctx = s->avctx;
 
-#if FF_API_CODEC_PROPS
-FF_DISABLE_DEPRECATION_WARNINGS
-    if (s->sei.common.a53_caption.buf_ref)
-        s->avctx->properties |= FF_CODEC_PROPERTY_CLOSED_CAPTIONS;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
-
     if (s->sei.common.alternative_transfer.present &&
         av_color_transfer_name(s->sei.common.alternative_transfer.preferred_transfer_characteristics) &&
         s->sei.common.alternative_transfer.preferred_transfer_characteristics != AVCOL_TRC_UNSPECIFIED) {
         avctx->color_trc = s->sei.common.alternative_transfer.preferred_transfer_characteristics;
     }
-
-#if FF_API_CODEC_PROPS
-FF_DISABLE_DEPRECATION_WARNINGS
-    if ((s->sei.common.film_grain_characteristics && s->sei.common.film_grain_characteristics->present) ||
-        s->sei.common.aom_film_grain.enable)
-        avctx->properties |= FF_CODEC_PROPERTY_FILM_GRAIN;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
 
     return 0;
 }
@@ -580,6 +566,7 @@ static enum AVPixelFormat get_format(HEVCContext *s, const HEVCSPS *sps)
                      CONFIG_HEVC_D3D11VA_HWACCEL * 2 + \
                      CONFIG_HEVC_D3D12VA_HWACCEL + \
                      CONFIG_HEVC_NVDEC_HWACCEL + \
+                     CONFIG_HEVC_NVDEC_CUARRAY_HWACCEL + \
                      CONFIG_HEVC_VAAPI_HWACCEL + \
                      CONFIG_HEVC_VIDEOTOOLBOX_HWACCEL + \
                      CONFIG_HEVC_VDPAU_HWACCEL + \
@@ -612,6 +599,9 @@ static enum AVPixelFormat get_format(HEVCContext *s, const HEVCSPS *sps)
 #endif
 #if CONFIG_HEVC_NVDEC_HWACCEL
         *fmt++ = AV_PIX_FMT_CUDA;
+#endif
+#if CONFIG_HEVC_NVDEC_CUARRAY_HWACCEL
+        *fmt++ = AV_PIX_FMT_CUARRAY;
 #endif
 #if CONFIG_HEVC_VIDEOTOOLBOX_HWACCEL
         *fmt++ = AV_PIX_FMT_VIDEOTOOLBOX;
@@ -646,6 +636,9 @@ static enum AVPixelFormat get_format(HEVCContext *s, const HEVCSPS *sps)
 #if CONFIG_HEVC_NVDEC_HWACCEL
         *fmt++ = AV_PIX_FMT_CUDA;
 #endif
+#if CONFIG_HEVC_NVDEC_CUARRAY_HWACCEL
+        *fmt++ = AV_PIX_FMT_CUARRAY;
+#endif
         break;
     case AV_PIX_FMT_YUV444P:
 #if CONFIG_HEVC_VAAPI_HWACCEL
@@ -656,6 +649,9 @@ static enum AVPixelFormat get_format(HEVCContext *s, const HEVCSPS *sps)
 #endif
 #if CONFIG_HEVC_NVDEC_HWACCEL
         *fmt++ = AV_PIX_FMT_CUDA;
+#endif
+#if CONFIG_HEVC_NVDEC_CUARRAY_HWACCEL
+        *fmt++ = AV_PIX_FMT_CUARRAY;
 #endif
 #if CONFIG_HEVC_VIDEOTOOLBOX_HWACCEL
         *fmt++ = AV_PIX_FMT_VIDEOTOOLBOX;
@@ -678,6 +674,9 @@ static enum AVPixelFormat get_format(HEVCContext *s, const HEVCSPS *sps)
 #if CONFIG_HEVC_NVDEC_HWACCEL
         *fmt++ = AV_PIX_FMT_CUDA;
 #endif
+#if CONFIG_HEVC_NVDEC_CUARRAY_HWACCEL
+        *fmt++ = AV_PIX_FMT_CUARRAY;
+#endif
         break;
     case AV_PIX_FMT_YUV444P10:
 #if CONFIG_HEVC_VIDEOTOOLBOX_HWACCEL
@@ -698,6 +697,9 @@ static enum AVPixelFormat get_format(HEVCContext *s, const HEVCSPS *sps)
 #if CONFIG_HEVC_NVDEC_HWACCEL
         *fmt++ = AV_PIX_FMT_CUDA;
 #endif
+#if CONFIG_HEVC_NVDEC_CUARRAY_HWACCEL
+        *fmt++ = AV_PIX_FMT_CUARRAY;
+#endif
         break;
     case AV_PIX_FMT_YUV422P12:
 #if CONFIG_HEVC_VAAPI_HWACCEL
@@ -708,6 +710,9 @@ static enum AVPixelFormat get_format(HEVCContext *s, const HEVCSPS *sps)
 #endif
 #if CONFIG_HEVC_NVDEC_HWACCEL
         *fmt++ = AV_PIX_FMT_CUDA;
+#endif
+#if CONFIG_HEVC_NVDEC_CUARRAY_HWACCEL
+        *fmt++ = AV_PIX_FMT_CUARRAY;
 #endif
         break;
     }
@@ -1849,7 +1854,7 @@ static void luma_mc_bi(HEVCLocalContext *lc,
                                                          block_h, s->sh.luma_log2_weight_denom,
                                                          s->sh.luma_weight_l0[current_mv->ref_idx[0]],
                                                          s->sh.luma_weight_l1[current_mv->ref_idx[1]],
-                                                         s->sh.luma_offset_l0[current_mv->ref_idx[0]],
+                                                         s->sh.luma_offset_l0[current_mv->ref_idx[0]] +
                                                          s->sh.luma_offset_l1[current_mv->ref_idx[1]],
                                                          mx1, my1, block_w);
 
@@ -2030,7 +2035,7 @@ static void chroma_mc_bi(HEVCLocalContext *lc,
                                                          s->sh.chroma_log2_weight_denom,
                                                          s->sh.chroma_weight_l0[current_mv->ref_idx[0]][cidx],
                                                          s->sh.chroma_weight_l1[current_mv->ref_idx[1]][cidx],
-                                                         s->sh.chroma_offset_l0[current_mv->ref_idx[0]][cidx],
+                                                         s->sh.chroma_offset_l0[current_mv->ref_idx[0]][cidx] +
                                                          s->sh.chroma_offset_l1[current_mv->ref_idx[1]][cidx],
                                                          _mx1, _my1, block_w);
 }
@@ -2934,7 +2939,7 @@ static int hls_slice_data_wpp(HEVCContext *s, const H2645NAL *nal)
     int64_t startheader, cmpt = 0;
     int j, res = 0;
 
-    if (s->sh.slice_ctb_addr_rs + s->sh.num_entry_point_offsets * sps->ctb_width >= sps->ctb_width * sps->ctb_height) {
+    if (s->sh.slice_ctb_addr_rs + s->sh.num_entry_point_offsets * (int64_t)sps->ctb_width >= sps->ctb_width * (int64_t)sps->ctb_height) {
         av_log(s->avctx, AV_LOG_ERROR, "WPP ctb addresses are wrong (%d %d %d %d)\n",
             s->sh.slice_ctb_addr_rs, s->sh.num_entry_point_offsets,
             sps->ctb_width, sps->ctb_height
@@ -3132,8 +3137,8 @@ static int set_side_data(HEVCContext *s)
         s->sei.timecode.num_clock_ts = 0;
     }
 
-    if (s->sei.common.dynamic_hdr_plus.info) {
-        AVBufferRef *info_ref = av_buffer_ref(s->sei.common.dynamic_hdr_plus.info);
+    if (s->sei.common.itut_t35.hdr_plus) {
+        AVBufferRef *info_ref = av_buffer_ref(s->sei.common.itut_t35.hdr_plus);
         if (!info_ref)
             return AVERROR(ENOMEM);
 
@@ -3153,10 +3158,10 @@ static int set_side_data(HEVCContext *s)
     if ((ret = ff_dovi_attach_side_data(&s->dovi_ctx, out)) < 0)
         return ret;
 
-    if (s->sei.common.dynamic_hdr_vivid.info) {
+    if (s->sei.common.itut_t35.hdr_vivid) {
         if (!av_frame_side_data_add(&out->side_data, &out->nb_side_data,
                                     AV_FRAME_DATA_DYNAMIC_HDR_VIVID,
-                                    &s->sei.common.dynamic_hdr_vivid.info,
+                                    &s->sei.common.itut_t35.hdr_vivid,
                                     AV_FRAME_SIDE_DATA_FLAG_NEW_REF))
             return AVERROR(ENOMEM);
     }
@@ -3348,10 +3353,9 @@ static int hevc_frame_start(HEVCContext *s, HEVCLayerContext *l,
     else
         s->cur_frame->f->flags &= ~AV_FRAME_FLAG_KEY;
 
-    s->cur_frame->needs_fg =
-        ((s->sei.common.film_grain_characteristics &&
-          s->sei.common.film_grain_characteristics->present) ||
-          s->sei.common.aom_film_grain.enable) &&
+    s->cur_frame->needs_fg = ((s->sei.common.film_grain_characteristics &&
+                               s->sei.common.film_grain_characteristics->present) ||
+                              s->sei.common.itut_t35.aom_film_grain.enable) &&
         !(s->avctx->export_side_data & AV_CODEC_EXPORT_DATA_FILM_GRAIN) &&
         !s->avctx->hwaccel;
 
@@ -3742,25 +3746,31 @@ static int decode_nal_units(HEVCContext *s, const uint8_t *buf, int length)
      * Dolby Vision RPUs masquerade as unregistered NALs of type 62.
      *
      * We have to do this check here an create the rpu buffer, since RPUs are appended
-     * to the end of an AU; they are the last non-EOB/EOS NAL in the AU.
+     * to the end of an AU; they are normally the last non-EOB/EOS NAL in the AU.
      */
-    if (s->pkt.nb_nals > 1 && s->pkt.nals[s->pkt.nb_nals - 1].type == HEVC_NAL_UNSPEC62 &&
-        s->pkt.nals[s->pkt.nb_nals - 1].size > 2 && !s->pkt.nals[s->pkt.nb_nals - 1].nuh_layer_id
-        && !s->pkt.nals[s->pkt.nb_nals - 1].temporal_id) {
-        H2645NAL *nal = &s->pkt.nals[s->pkt.nb_nals - 1];
+    H2645NAL *rpu_nal = NULL;
+    for (int i = s->pkt.nb_nals - 1; i > 0 ; i--) {
+        if (s->pkt.nals[i].type == HEVC_NAL_UNSPEC62 && s->pkt.nals[i].size > 2
+            && !s->pkt.nals[i].nuh_layer_id && !s->pkt.nals[i].temporal_id) {
+                rpu_nal = &s->pkt.nals[i];
+                break;
+        }
+    }
+
+    if (rpu_nal) {
         if (s->rpu_buf) {
             av_buffer_unref(&s->rpu_buf);
             av_log(s->avctx, AV_LOG_WARNING, "Multiple Dolby Vision RPUs found in one AU. Skipping previous.\n");
         }
 
-        s->rpu_buf = av_buffer_alloc(nal->raw_size - 2);
+        s->rpu_buf = av_buffer_alloc(rpu_nal->raw_size - 2);
         if (!s->rpu_buf) {
             ret = AVERROR(ENOMEM);
             goto fail;
         }
-        memcpy(s->rpu_buf->data, nal->raw_data + 2, nal->raw_size - 2);
+        memcpy(s->rpu_buf->data, rpu_nal->raw_data + 2, rpu_nal->raw_size - 2);
 
-        ret = ff_dovi_rpu_parse(&s->dovi_ctx, nal->data + 2, nal->size - 2,
+        ret = ff_dovi_rpu_parse(&s->dovi_ctx, rpu_nal->data + 2, rpu_nal->size - 2,
                                 s->avctx->err_recognition);
         if (ret < 0) {
             av_buffer_unref(&s->rpu_buf);
@@ -4082,8 +4092,8 @@ static int hevc_update_thread_context(AVCodecContext *dst,
     if (ret < 0)
         return ret;
 
-    ret = av_buffer_replace(&s->sei.common.dynamic_hdr_plus.info,
-                            s0->sei.common.dynamic_hdr_plus.info);
+    ret = av_buffer_replace(&s->sei.common.itut_t35.hdr_plus,
+                            s0->sei.common.itut_t35.hdr_plus);
     if (ret < 0)
         return ret;
 
@@ -4093,8 +4103,8 @@ static int hevc_update_thread_context(AVCodecContext *dst,
 
     ff_dovi_ctx_replace(&s->dovi_ctx, &s0->dovi_ctx);
 
-    ret = av_buffer_replace(&s->sei.common.dynamic_hdr_vivid.info,
-                            s0->sei.common.dynamic_hdr_vivid.info);
+    ret = av_buffer_replace(&s->sei.common.itut_t35.hdr_vivid,
+                            s0->sei.common.itut_t35.hdr_vivid);
     if (ret < 0)
         return ret;
 
@@ -4271,6 +4281,9 @@ const FFCodec ff_hevc_decoder = {
 #endif
 #if CONFIG_HEVC_NVDEC_HWACCEL
                                HWACCEL_NVDEC(hevc),
+#endif
+#if CONFIG_HEVC_NVDEC_CUARRAY_HWACCEL
+                               HWACCEL_NVDEC_CUARRAY(hevc),
 #endif
 #if CONFIG_HEVC_VAAPI_HWACCEL
                                HWACCEL_VAAPI(hevc),

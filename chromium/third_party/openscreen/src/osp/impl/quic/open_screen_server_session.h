@@ -30,7 +30,7 @@ class TlsServerHandshakerImpl final : public quic::TlsServerHandshaker {
   // This will propagate client certificate to QuicServer and the certificate is
   // used in authentication.
   quic::QuicAsyncStatus VerifyCertChain(
-      const std::vector<std::string>& certs,
+      const std::vector<std::string_view>& certs,
       std::string* error_details,
       std::unique_ptr<quic::ProofVerifyDetails>* details,
       uint8_t* out_alert,

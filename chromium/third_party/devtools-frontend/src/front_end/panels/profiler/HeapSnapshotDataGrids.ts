@@ -389,6 +389,7 @@ export enum HeapSnapshotSortableDataGridEvents {
   ContentShown = 'ContentShown',
   SortingComplete = 'SortingComplete',
   ExpandRetainersComplete = 'ExpandRetainersComplete',
+  AggregatesReceived = 'AggregatesReceived',
   /* eslint-enable @typescript-eslint/naming-convention */
 }
 
@@ -396,6 +397,7 @@ export interface EventTypes {
   [HeapSnapshotSortableDataGridEvents.ContentShown]: HeapSnapshotSortableDataGrid;
   [HeapSnapshotSortableDataGridEvents.SortingComplete]: void;
   [HeapSnapshotSortableDataGridEvents.ExpandRetainersComplete]: void;
+  [HeapSnapshotSortableDataGridEvents.AggregatesReceived]: {count: number, size: number};
 }
 
 export class HeapSnapshotViewportDataGrid extends HeapSnapshotSortableDataGrid {
@@ -753,6 +755,8 @@ export class HeapSnapshotConstructorsDataGrid extends HeapSnapshotViewportDataGr
   nextRequestedFilter: HeapSnapshotModel.HeapSnapshotModel.NodeFilter|null = null;
   lastFilter?: HeapSnapshotModel.HeapSnapshotModel.NodeFilter|null;
   filterInProgress?: HeapSnapshotModel.HeapSnapshotModel.NodeFilter|null;
+  filterTotalCount?: number;
+  filterTotalSize?: number;
 
   constructor(
       heapProfilerModel: SDK.HeapProfilerModel.HeapProfilerModel|null,
@@ -868,13 +872,19 @@ export class HeapSnapshotConstructorsDataGrid extends HeapSnapshotViewportDataGr
     }
     this.removeTopLevelNodes();
     this.resetSortingCache();
+    this.filterTotalCount = 0;
+    this.filterTotalSize = 0;
     for (const classKey in aggregates) {
-      this.appendNode(
-          (this.rootNode() as HeapSnapshotGridNode),
-          new HeapSnapshotConstructorNode(this, classKey, aggregates[classKey], nodeFilter));
+      const aggregate = aggregates[classKey];
+      this.filterTotalCount += aggregate.count;
+      this.filterTotalSize += aggregate.self;
+      this.appendNode((this.rootNode() as HeapSnapshotGridNode),
+                      new HeapSnapshotConstructorNode(this, classKey, aggregate, nodeFilter));
     }
     this.sortingChanged();
     this.lastFilter = nodeFilter;
+    this.dispatchEventToListeners(HeapSnapshotSortableDataGridEvents.AggregatesReceived,
+                                  {count: this.filterTotalCount, size: this.filterTotalSize});
   }
 
   async populateChildren(maybeNodeFilter?: HeapSnapshotModel.HeapSnapshotModel.NodeFilter): Promise<void> {

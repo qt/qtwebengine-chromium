@@ -4,6 +4,11 @@
 
 #include "quiche/quic/qbone/bonnet/tun_device_packet_exchanger.h"
 
+#include <arpa/inet.h>
+#include <netinet/icmp6.h>
+#include <netinet/ip6.h>
+#include <sys/uio.h>
+
 #include <string>
 
 #include "absl/status/status.h"
@@ -12,6 +17,8 @@
 #include "quiche/quic/qbone/bonnet/mock_packet_exchanger_stats_interface.h"
 #include "quiche/quic/qbone/mock_qbone_client.h"
 #include "quiche/quic/qbone/platform/mock_kernel.h"
+#include "quiche/quic/qbone/platform/mock_netlink.h"
+#include "quiche/quic/qbone/qbone_constants.h"
 
 namespace quic::test {
 namespace {
@@ -51,8 +58,13 @@ class TunDevicePacketExchangerTest : public QuicTest {
 
 TEST_F(TunDevicePacketExchangerTest, WritePacketReturnsFalseOnError) {
   std::string packet = "fake packet";
-  EXPECT_CALL(mock_kernel_, write(kWriteFd, _, packet.size()))
-      .WillOnce([](int fd, const void* buf, size_t count) {
+  EXPECT_CALL(mock_kernel_, writev(kWriteFd, _, 2))
+      .WillOnce([](int fd, const struct iovec* iov, int iovcnt) -> ssize_t {
+        EXPECT_EQ(iov[0].iov_base, nullptr);
+        EXPECT_EQ(iov[0].iov_len, 0);
+        EXPECT_THAT(reinterpret_cast<const char*>(iov[1].iov_base),
+                    testing::StrEq("fake packet"));
+        EXPECT_EQ(iov[1].iov_len, 11);
         errno = ECOMM;
         return -1;
       });
@@ -65,8 +77,13 @@ TEST_F(TunDevicePacketExchangerTest, WritePacketReturnsFalseOnError) {
 TEST_F(TunDevicePacketExchangerTest,
        WritePacketReturnFalseAndBlockedOnBlockedTunnel) {
   std::string packet = "fake packet";
-  EXPECT_CALL(mock_kernel_, write(kWriteFd, _, packet.size()))
-      .WillOnce([](int fd, const void* buf, size_t count) {
+  EXPECT_CALL(mock_kernel_, writev(kWriteFd, _, 2))
+      .WillOnce([](int fd, const struct iovec* iov, int iovcnt) -> ssize_t {
+        EXPECT_EQ(iov[0].iov_base, nullptr);
+        EXPECT_EQ(iov[0].iov_len, 0);
+        EXPECT_THAT(reinterpret_cast<const char*>(iov[1].iov_base),
+                    testing::StrEq("fake packet"));
+        EXPECT_EQ(iov[1].iov_len, 11);
         errno = EAGAIN;
         return -1;
       });
@@ -79,20 +96,77 @@ TEST_F(TunDevicePacketExchangerTest,
 
 TEST_F(TunDevicePacketExchangerTest, WritePacketReturnsTrueOnSuccessfulWrite) {
   std::string packet = "fake packet";
-  EXPECT_CALL(mock_kernel_, write(kWriteFd, _, packet.size()))
-      .WillOnce([packet](int fd, const void* buf, size_t count) {
-        EXPECT_THAT(reinterpret_cast<const char*>(buf), StrEq(packet));
-        return count;
-      });
+  EXPECT_CALL(mock_kernel_, writev(kWriteFd, _, 2))
+      .WillOnce(
+          [&packet](int fd, const struct iovec* iov, int iovcnt) -> ssize_t {
+            EXPECT_EQ(iov[0].iov_base, nullptr);
+            EXPECT_EQ(iov[0].iov_len, 0);
+            EXPECT_THAT(reinterpret_cast<const char*>(iov[1].iov_base),
+                        StrEq(packet));
+            EXPECT_EQ(iov[1].iov_len, packet.size());
+            return packet.size();
+          });
 
-  EXPECT_CALL(mock_stats_, OnPacketWritten(_, _)).Times(1);
+  EXPECT_CALL(mock_stats_, OnPacketWritten(packet.size(), _)).Times(1);
   EXPECT_CALL(mock_visitor_, OnWrite(StrEq(packet))).Times(1);
   exchanger_.WritePacketToNetwork(packet.data(), packet.size());
 }
 
+TEST_F(TunDevicePacketExchangerTest, TapWritePacketSuccessful) {
+  StrictMock<MockKernel> mock_kernel;
+  StrictMock<MockNetlink> mock_netlink;
+  StrictMock<MockVisitor> mock_visitor;
+  StrictMock<MockPacketExchangerStatsInterface> mock_stats;
+  TunDevicePacketExchanger tap_exchanger(kMtu, &mock_kernel, &mock_netlink,
+                                         &mock_visitor, /*is_tap=*/true,
+                                         &mock_stats, "tap0");
+  tap_exchanger.set_write_file_descriptor(kWriteFd);
+
+  std::string packet = "fake packet";
+
+  // Expectations on Netlink to get the hardware address when writing the
+  // first packet
+  EXPECT_CALL(mock_netlink, GetLinkInfo("tap0", _))
+      .WillOnce([](const std::string& ifname,
+                   NetlinkInterface::LinkInfo* link_info) -> bool {
+        uint8_t mac[ETH_ALEN] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55};
+        memcpy(link_info->hardware_address, mac, ETH_ALEN);
+        return true;
+      });
+
+  // iov[0] should contain the Ethernet header populated by InitializeEthHdr
+  EXPECT_CALL(mock_kernel, writev(kWriteFd, _, 2))
+      .WillOnce([&packet](int fd, const struct iovec* iov,
+                          int iovcnt) -> ssize_t {
+        EXPECT_NE(iov[0].iov_base, nullptr);
+        EXPECT_EQ(iov[0].iov_len, ETH_HLEN);
+
+        const char* first_buffer = static_cast<const char*>(iov[0].iov_base);
+        EXPECT_EQ(absl::string_view(first_buffer, ETH_ALEN),
+                  absl::string_view("\x00\x11\x22\x33\x44\x55", ETH_ALEN));
+        EXPECT_EQ(absl::string_view(first_buffer + ETH_ALEN, ETH_ALEN),
+                  absl::string_view("\x00\x11\x22\x33\x44\x55", ETH_ALEN));
+
+        uint16_t proto;
+        memcpy(&proto, first_buffer + 2 * ETH_ALEN, 2);
+        EXPECT_EQ(proto, absl::ghtons(ETH_P_IPV6));
+
+        EXPECT_EQ(absl::string_view(static_cast<const char*>(iov[1].iov_base),
+                                    iov[1].iov_len),
+                  "fake packet");
+        return ETH_HLEN + packet.length();
+      });
+
+  EXPECT_CALL(mock_stats, OnPacketWritten(ETH_HLEN + packet.size(), _))
+      .Times(1);
+  EXPECT_CALL(mock_visitor, OnWrite(StrEq(packet))).Times(1);
+
+  tap_exchanger.WritePacketToNetwork(packet.data(), packet.size());
+}
+
 TEST_F(TunDevicePacketExchangerTest, ReadPacketReturnsNullOnError) {
-  EXPECT_CALL(mock_kernel_, read(kReadFd, _, kMtu))
-      .WillOnce([](int fd, void* buf, size_t count) {
+  EXPECT_CALL(mock_kernel_, readv(kReadFd, _, 2))
+      .WillOnce([](int fd, const struct iovec* iov, int iovcnt) {
         errno = ECOMM;
         return -1;
       });
@@ -101,8 +175,8 @@ TEST_F(TunDevicePacketExchangerTest, ReadPacketReturnsNullOnError) {
 }
 
 TEST_F(TunDevicePacketExchangerTest, ReadPacketReturnsNullOnBlockedRead) {
-  EXPECT_CALL(mock_kernel_, read(kReadFd, _, kMtu))
-      .WillOnce([](int fd, void* buf, size_t count) {
+  EXPECT_CALL(mock_kernel_, readv(kReadFd, _, 2))
+      .WillOnce([](int fd, const struct iovec* iov, int iovcnt) {
         errno = EAGAIN;
         return -1;
       });
@@ -114,14 +188,127 @@ TEST_F(TunDevicePacketExchangerTest, ReadPacketReturnsNullOnBlockedRead) {
 TEST_F(TunDevicePacketExchangerTest,
        ReadPacketReturnsThePacketOnSuccessfulRead) {
   std::string packet = "fake_packet";
-  EXPECT_CALL(mock_kernel_, read(kReadFd, _, kMtu))
-      .WillOnce([packet](int fd, void* buf, size_t count) {
-        memcpy(buf, packet.data(), packet.size());
+  EXPECT_CALL(mock_kernel_, readv(kReadFd, _, 2))
+      .WillOnce([packet](int fd, const struct iovec* iov, int iovcnt) {
+        EXPECT_EQ(iov[0].iov_len, 0);
+        EXPECT_EQ(iov[1].iov_len, kMtu);
+        memcpy(iov[1].iov_base, packet.data(), packet.size());
         return packet.size();
       });
   EXPECT_CALL(mock_client_, ProcessPacketFromNetwork(StrEq(packet)));
   EXPECT_CALL(mock_stats_, OnPacketRead(_, _)).Times(1);
   EXPECT_TRUE(exchanger_.ReadAndDeliverPacket(&mock_client_));
+}
+
+class TunDevicePacketExchangerTapTest : public QuicTest {
+ protected:
+  TunDevicePacketExchangerTapTest()
+      : exchanger_(kMtu, &mock_kernel_, &mock_netlink_, &mock_visitor_, true,
+                   &mock_stats_, "tap0") {
+    exchanger_.set_read_file_descriptor(kReadFd);
+    exchanger_.set_write_file_descriptor(kWriteFd);
+  }
+
+  ~TunDevicePacketExchangerTapTest() override = default;
+
+  MockKernel mock_kernel_;
+  StrictMock<MockNetlink> mock_netlink_;
+  StrictMock<MockVisitor> mock_visitor_;
+  StrictMock<MockQboneClient> mock_client_;
+  StrictMock<MockPacketExchangerStatsInterface> mock_stats_;
+  TunDevicePacketExchanger exchanger_;
+};
+
+TEST_F(TunDevicePacketExchangerTapTest, ReadPacketTapSuccess) {
+  ip6_hdr ip_hdr{};
+  ip_hdr.ip6_vfc = 0x60;  // Version 6
+  ip_hdr.ip6_nxt = 59;    // No next header
+
+  std::string l3_payload = "hello";
+  std::string l3_packet =
+      std::string(reinterpret_cast<char*>(&ip_hdr), sizeof(ip_hdr)) +
+      l3_payload;
+
+  ethhdr eth_hdr{};
+  eth_hdr.h_proto = absl::ghtons(ETH_P_IPV6);
+
+  EXPECT_CALL(mock_kernel_, readv(kReadFd, _, 2))
+      .WillOnce(
+          [eth_hdr, l3_packet](int fd, const struct iovec* iov, int iovcnt) {
+            EXPECT_EQ(iov[0].iov_len, ETH_HLEN);
+            EXPECT_EQ(iov[1].iov_len, kMtu);
+            memcpy(iov[0].iov_base, &eth_hdr, ETH_HLEN);
+            memcpy(iov[1].iov_base, l3_packet.data(), l3_packet.size());
+            return ETH_HLEN + l3_packet.size();
+          });
+
+  EXPECT_CALL(mock_client_, ProcessPacketFromNetwork(StrEq(l3_packet)));
+  EXPECT_CALL(mock_stats_, OnPacketRead(l3_packet.size(), _)).Times(1);
+  EXPECT_TRUE(exchanger_.ReadAndDeliverPacket(&mock_client_));
+}
+
+TEST_F(TunDevicePacketExchangerTapTest, ReadPacketTapInvalidL2) {
+  ethhdr eth_hdr{};
+  eth_hdr.h_proto = absl::ghtons(ETH_P_ARP);  // Non-IPv6
+
+  EXPECT_CALL(mock_kernel_, readv(kReadFd, _, 2))
+      .WillOnce([eth_hdr](int fd, const struct iovec* iov, int iovcnt) {
+        memcpy(iov[0].iov_base, &eth_hdr, ETH_HLEN);
+        return ETH_HLEN + 10;  // Read some bytes
+      });
+
+  EXPECT_CALL(mock_visitor_, OnReadError(""));
+  EXPECT_FALSE(exchanger_.ReadAndDeliverPacket(&mock_client_));
+}
+
+TEST_F(TunDevicePacketExchangerTapTest, ReadPacketTapNeighborSolicitation) {
+  ip6_hdr ip_hdr{};
+  ip_hdr.ip6_vfc = 0x60;  // Version 6
+  ip_hdr.ip6_nxt = IPPROTO_ICMPV6;
+  inet_pton(AF_INET6, "fe80::2", &ip_hdr.ip6_src);
+  inet_pton(AF_INET6, "fe80::1", &ip_hdr.ip6_dst);
+
+  icmp6_hdr icmp_hdr{};
+  icmp_hdr.icmp6_type = ND_NEIGHBOR_SOLICIT;
+
+  in6_addr target_address = QboneConstants::GatewayAddress()->GetIPv6();
+
+  std::string l3_packet =
+      std::string(reinterpret_cast<char*>(&ip_hdr), sizeof(ip_hdr)) +
+      std::string(reinterpret_cast<char*>(&icmp_hdr), sizeof(icmp_hdr)) +
+      std::string(reinterpret_cast<char*>(&target_address),
+                  sizeof(target_address));
+
+  ethhdr eth_hdr{};
+  eth_hdr.h_proto = absl::ghtons(ETH_P_IPV6);
+
+  EXPECT_CALL(mock_kernel_, readv(kReadFd, _, 2))
+      .WillOnce(
+          [eth_hdr, l3_packet](int fd, const struct iovec* iov, int iovcnt) {
+            memcpy(iov[0].iov_base, &eth_hdr, ETH_HLEN);
+            memcpy(iov[1].iov_base, l3_packet.data(), l3_packet.size());
+            return ETH_HLEN + l3_packet.size();
+          });
+
+  // Expect GetLinkInfo to populate ethhdr on writing neighbor solicit response.
+  EXPECT_CALL(mock_netlink_, GetLinkInfo("tap0", _))
+      .WillOnce(
+          [](const std::string& ifname, NetlinkInterface::LinkInfo* link_info) {
+            memset(link_info->hardware_address, 0x12, ETH_ALEN);
+            return true;
+          });
+
+  // Expect neighbor solicitation response to be written out.
+  EXPECT_CALL(mock_kernel_, writev(kWriteFd, _, 2))
+      .WillOnce([](int fd, const struct iovec* iov, int iovcnt) -> ssize_t {
+        return iov[0].iov_len + iov[1].iov_len;
+      });
+  EXPECT_CALL(mock_stats_, OnPacketWritten(_, _)).Times(1);
+
+  // ReadAndDeliverPacket should return false because packet was handled
+  // internally (Neighbor Discovery).
+  EXPECT_CALL(mock_visitor_, OnReadError(""));
+  EXPECT_FALSE(exchanger_.ReadAndDeliverPacket(&mock_client_));
 }
 
 }  // namespace

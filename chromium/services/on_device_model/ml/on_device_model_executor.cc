@@ -29,6 +29,7 @@
 #include "base/threading/hang_watcher.h"
 #include "base/timer/elapsed_timer.h"
 #include "base/trace_event/trace_event.h"
+#include "build/build_config.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
 #include "services/on_device_model/ml/chrome_ml.h"
 #include "services/on_device_model/ml/chrome_ml_api.h"
@@ -113,17 +114,18 @@ int CalculateTokensPerSecond(int num_tokens, base::TimeDelta duration) {
 // If `pieces` ends with ml::Token::kModel and then a text piece, returns the
 // final text piece.
 std::optional<std::string> GetModelResponsePrefix(
-    const std::vector<InputPiece>& pieces) {
+    const std::vector<odmm::InputPiecePtr>& pieces) {
   if (pieces.size() < 2) {
     return std::nullopt;
   }
-  if (const ml::Token* token =
-          std::get_if<ml::Token>(&pieces[pieces.size() - 2]);
-      !token || *token != ml::Token::kModel) {
+  const auto& token_piece = pieces[pieces.size() - 2];
+  if (!token_piece->is_token() ||
+      token_piece->get_token() != ml::Token::kModel) {
     return std::nullopt;
   }
-  if (const std::string* text = std::get_if<std::string>(&pieces.back())) {
-    return *text;
+  const auto& text_piece = pieces.back();
+  if (text_piece->is_text()) {
+    return text_piece->get_text();
   }
   return std::nullopt;
 }
@@ -453,7 +455,7 @@ class ContextHolder final {
 };
 
 BackendImpl::BackendImpl(const ml::ChromeML* chrome_ml)
-    : chrome_ml_(chrome_ml), ts_holder_(ml::TsHolder::Create(*chrome_ml_)) {}
+    : chrome_ml_(chrome_ml) {}
 
 base::expected<void, on_device_model::ServiceDisconnectReason>
 BackendImpl::CanCreate() {
@@ -505,14 +507,6 @@ BackendImpl::CreateWithResult(on_device_model::mojom::LoadModelParamsPtr params,
                                                  std::move(on_complete));
 }
 
-void BackendImpl::LoadTextSafetyModel(
-    on_device_model::mojom::TextSafetyModelParamsPtr params,
-    mojo::PendingReceiver<on_device_model::mojom::TextSafetyModel> model) {
-  TRACE_EVENT("optimization_guide", "BackendImpl::LoadTextSafetyModel");
-  ts_holder_.AsyncCall(&ml::TsHolder::Reset)
-      .WithArgs(std::move(params), std::move(model));
-}
-
 std::pair<on_device_model::mojom::DevicePerformanceInfoPtr,
           on_device_model::mojom::DeviceInfoPtr>
 BackendImpl::GetDeviceAndPerformanceInfo() {
@@ -534,6 +528,7 @@ SessionImpl::~SessionImpl() = default;
 void SessionImpl::Append(
     on_device_model::mojom::AppendOptionsPtr options,
     mojo::PendingRemote<on_device_model::mojom::ContextClient> client,
+    mojo::ReportBadMessageCallback bad_message_callback,
     base::OnceClosure on_complete) {
   TRACE_EVENT("optimization_guide", "SessionImpl::Append");
   model_response_prefix_ = GetModelResponsePrefix(options->input->pieces);
@@ -542,10 +537,10 @@ void SessionImpl::Append(
     if (has_tool_declarations_ && !awaiting_tool_responses_) {
       break;
     }
-    if (std::holds_alternative<ml::ToolDeclaration>(piece)) {
+    if (piece->is_tool_declaration()) {
       has_tool_declarations_ = true;
     }
-    if (std::holds_alternative<ml::ToolResponse>(piece)) {
+    if (piece->is_tool_response()) {
       // TODO(crbug.com/422803232): Tally expected tool responses and validate
       // call_ids instead of clearing on any tool response.
       awaiting_tool_responses_ = false;
@@ -564,8 +559,9 @@ void SessionImpl::Append(
 
   TRACE_EVENT_BEGIN("optimization_guide", "Prefill",
                     context_holder->perfetto_id());
-  *context_holder->GetCancelFn() = session_->Append(
-      context_holder->perfetto_id(), std::move(options), context_saved_fn);
+  *context_holder->GetCancelFn() =
+      session_->Append(context_holder->perfetto_id(), std::move(options),
+                       std::move(bad_message_callback), context_saved_fn);
 
   context_holders_.insert(std::move(context_holder));
 }
@@ -606,10 +602,12 @@ void SessionImpl::Generate(
       executor_->GetConstraintFactory(), model_response_prefix_, output_fn);
 }
 
-void SessionImpl::SizeInTokens(on_device_model::mojom::InputPtr input,
-                               base::OnceCallback<void(uint32_t)> callback) {
+void SessionImpl::SizeInTokens(
+    on_device_model::mojom::InputPtr input,
+    mojo::ReportBadMessageCallback bad_message_callback,
+    base::OnceCallback<void(uint32_t)> callback) {
   TRACE_EVENT("optimization_guide", "SessionImpl::SizeInTokens");
-  session_->SizeInTokens(std::move(input),
+  session_->SizeInTokens(std::move(input), std::move(bad_message_callback),
                          ConvertCallbackToFn(std::move(callback)));
 }
 
@@ -778,9 +776,12 @@ LoadModelResult OnDeviceModelExecutor::Init(
     data.sentencepiece_model_path = sp_model_path_str.data();
   }
   // TODO(crbug.com/461547475): Determine whether weight caches should be used
-  // for GPU or just CPU only.
-  data.cache_file = params->backend_type == ml::ModelBackendType::kCpuBackend &&
-                            assets.cache.IsValid()
+  // for GPU or just CPU only (right now GPU weight cache is behind a flag).
+  bool enable_cache_file =
+      params->backend_type == ml::ModelBackendType::kCpuBackend ||
+      base::FeatureList::IsEnabled(
+          on_device_model::features::kOnDeviceModelGpuWeightCache);
+  data.cache_file = enable_cache_file && assets.cache.IsValid()
                         ? assets.cache.TakePlatformFile()
                         : base::kInvalidPlatformFile;
   if (assets.encoder_cache.IsValid()) {
@@ -792,7 +793,7 @@ LoadModelResult OnDeviceModelExecutor::Init(
   // TODO(crbug.com/461547475): GPU cache is experimental for now, remove
   // once feature flag is no longer needed.
   if (base::FeatureList::IsEnabled(
-          on_device_model::features::kOnDeviceModelGpuCache) &&
+          on_device_model::features::kOnDeviceModelGpuProgramCache) &&
       params->backend_type == ml::ModelBackendType::kGpuBackend &&
       assets.program_cache.IsValid()) {
     data.program_cache_file = assets.program_cache.TakePlatformFile();
@@ -809,7 +810,10 @@ LoadModelResult OnDeviceModelExecutor::Init(
       .enable_host_mapped_pointer = kEnableHostMappedPointer.Get(),
       .use_low_power = kUseLowPower.Get(),
       .allow_fp16 = kAllowFp16.Get(),
+      .enable_speculative_decoding = base::FeatureList::IsEnabled(
+          on_device_model::features::kOnDeviceModelSpeculativeDecoding),
       .performance_hint = params->performance_hint,
+      .vram_mb = params->vram_mb,
   };
 
   // `SessionCreateModel` may take a long time to load the model. Deactivate

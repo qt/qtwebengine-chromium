@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../core/common/common.js';
 import type * as Platform from '../../core/platform/platform.js';
@@ -22,6 +23,14 @@ import * as Sources from './sources.js';
 
 describeWithEnvironment('SourcesPanel', () => {
   function setUpEnvironment() {
+    registerNoopActions([
+      'debugger.toggle-pause',
+      'debugger.step-over',
+      'debugger.step-into',
+      'debugger.step-out',
+      'debugger.step',
+      'debugger.toggle-breakpoints-active',
+    ]);
     const workspace = Workspace.Workspace.WorkspaceImpl.instance({forceNew: true});
     const debuggerWorkspaceBinding = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
       forceNew: true,
@@ -57,10 +66,6 @@ describeWithEnvironment('SourcesPanel', () => {
   }
 
   it('Shows Debug with Ai menu and submenu items', () => {
-    registerNoopActions([
-      'debugger.toggle-pause', 'debugger.step-over', 'debugger.step-into', 'debugger.step-out', 'debugger.step',
-      'debugger.toggle-breakpoints-active'
-    ]);
     registerActions([{
       actionId: 'drjones.sources-panel-context',
       title: () => 'Debug with AI' as Platform.UIString.LocalizedString,
@@ -83,5 +88,24 @@ describeWithEnvironment('SourcesPanel', () => {
     assert.deepEqual(
         debugWithAiItem.subItems?.map(item => item.label),
         ['Start a chat', 'Assess performance', 'Explain this script', 'Explain input handling']);
+  });
+
+  it('notifies ViewManager when debugger sidebar is toggled', () => {
+    setUpEnvironment();
+    const sources = new Sources.SourcesPanel.SourcesPanel();
+    const viewManager = UI.ViewManager.ViewManager.instance();
+    const visibilitySpy = sinon.spy();
+    viewManager.addEventListener(UI.ViewManager.Events.VIEW_VISIBILITY_CHANGED, visibilitySpy);
+
+    sources.toggleDebuggerSidebar();
+
+    sinon.assert.calledWith(
+        visibilitySpy,
+        sinon.match({data: sinon.match({location: sinon.match.string, revealedViewId: sinon.match.any})}));
+
+    sources.toggleDebuggerSidebar();
+
+    sinon.assert.calledWith(
+        visibilitySpy, sinon.match({data: sinon.match({location: sinon.match.string, hiddenViewId: sinon.match.any})}));
   });
 });

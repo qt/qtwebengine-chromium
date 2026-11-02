@@ -44,7 +44,8 @@ class ContextualSearchServiceTest : public testing::Test {
     service_ = std::make_unique<ContextualSearchService>(
         identity_test_env_->identity_manager(), test_shared_loader_factory_,
         search_engines_test_environment_.template_url_service(),
-        &fake_variations_client_, version_info::Channel::UNKNOWN, "en-US");
+        &fake_variations_client_, version_info::Channel::UNKNOWN, "en-US",
+        /*tab_validator=*/nullptr);
     ContextualSearchService::RegisterProfilePrefs(pref_service_.registry());
   }
 
@@ -272,6 +273,7 @@ TEST_F(ContextualSearchServiceTest, FileInfoTest) {
   tab_info1.tab_url = GURL("http://example.com/tab1");
   tab_info1.tab_title = "Tab 1 Title";
   tab_info1.tab_session_id = SessionID::FromSerializedValue(123);
+  tab_info1.request_id = lens::LensOverlayRequestId();
 
   base::UnguessableToken tab_token2 = base::UnguessableToken::Create();
   FileInfo tab_info2;
@@ -279,6 +281,7 @@ TEST_F(ContextualSearchServiceTest, FileInfoTest) {
   tab_info2.tab_url = GURL("http://example.com/tab2");
   tab_info2.tab_title = "Tab 2 Title";
   tab_info2.tab_session_id = SessionID::FromSerializedValue(456);
+  tab_info2.request_id = lens::LensOverlayRequestId();
 
   // Mock GetFileInfo.
   EXPECT_CALL(*mock_controller_ptr, GetFileInfo(token1))

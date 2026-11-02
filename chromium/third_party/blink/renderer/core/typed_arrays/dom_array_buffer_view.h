@@ -39,13 +39,13 @@ class CORE_EXPORT DOMArrayBufferView : public ScriptWrappable {
   ~DOMArrayBufferView() override = default;
 
   DOMArrayBuffer* buffer() const {
-    DCHECK(!IsShared());
+    CHECK(!IsShared());
     DCHECK(dom_array_buffer_);
     return static_cast<DOMArrayBuffer*>(dom_array_buffer_.Get());
   }
 
   DOMSharedArrayBuffer* BufferShared() const {
-    DCHECK(IsShared());
+    CHECK(IsShared());
     DCHECK(dom_array_buffer_);
     return static_cast<DOMSharedArrayBuffer*>(dom_array_buffer_.Get());
   }
@@ -102,8 +102,8 @@ class CORE_EXPORT DOMArrayBufferView : public ScriptWrappable {
 
   base::span<uint8_t> ByteSpan() const {
     // SAFETY: `byteLength()` returns the number of bytes at `BaseAddress()`.
-    return UNSAFE_BUFFERS(
-        base::span(static_cast<uint8_t*>(BaseAddress()), byteLength()));
+    return UNSAFE_BUFFERS(base::span(
+        base::unchecked, static_cast<uint8_t*>(BaseAddress()), byteLength()));
   }
 
   virtual unsigned TypeSize() const = 0;
@@ -116,7 +116,8 @@ class CORE_EXPORT DOMArrayBufferView : public ScriptWrappable {
   base::span<uint8_t> ByteSpanMaybeShared() const {
     // SAFETY: `byteLength()` returns the number of bytes at `BaseAddress()`.
     return UNSAFE_BUFFERS(base::span(
-        static_cast<uint8_t*>(BaseAddressMaybeShared()), byteLength()));
+        base::unchecked, static_cast<uint8_t*>(BaseAddressMaybeShared()),
+        byteLength()));
   }
 
   // ScriptWrappable overrides:

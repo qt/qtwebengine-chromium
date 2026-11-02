@@ -54,7 +54,7 @@ const UIStrings = {
   /**
    * @description Reason element in Accessibility Node View of the Accessibility panel
    */
-  ancestorChildrenAreAll: 'Ancestor\'s children are all presentational:\xA0',
+  ancestorChildrenAreAll: 'Ancestor’s children are all presentational:\xA0',
   /**
    * @description Reason element in Accessibility Node View of the Accessibility panel
    * @example {aria-hidden} PH1

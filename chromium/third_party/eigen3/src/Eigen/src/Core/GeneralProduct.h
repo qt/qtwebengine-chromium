@@ -19,14 +19,22 @@ namespace Eigen {
 
 enum { Large = 2, Small = 3 };
 
-// Define the threshold value to fallback from the generic matrix-matrix product
-// implementation (heavy) to the lightweight coeff-based product one.
-// See generic_product_impl<Lhs,Rhs,DenseShape,DenseShape,GemmProduct>
-// in products/GeneralMatrixMatrix.h for more details.
-// TODO This threshold should also be used in the compile-time selector below.
+// Runtime-size threshold for falling back from the generic matrix-matrix product
+// implementation (heavy) to the lightweight coeff-based product one. See
+// generic_product_impl<Lhs,Rhs,DenseShape,DenseShape,GemmProduct> in
+// products/GeneralMatrixMatrix.h for more details.
 #ifndef EIGEN_GEMM_TO_COEFFBASED_THRESHOLD
 // This default value has been obtained on a Haswell architecture.
 #define EIGEN_GEMM_TO_COEFFBASED_THRESHOLD 20
+#endif
+
+// Fixed-size products can reach the GEMM product path even when the
+// coeff-based evaluator is still faster. Keep this threshold separate so
+// runtime-size dispatch preserves the historical heuristic above. This default
+// was tuned on the same Haswell system as the runtime threshold, and deliberately
+// tracks EIGEN_GEMM_TO_COEFFBASED_THRESHOLD unless specialized independently.
+#ifndef EIGEN_FIXED_SIZE_GEMM_TO_COEFFBASED_THRESHOLD
+#define EIGEN_FIXED_SIZE_GEMM_TO_COEFFBASED_THRESHOLD (2 * EIGEN_GEMM_TO_COEFFBASED_THRESHOLD)
 #endif
 
 namespace internal {
@@ -62,26 +70,27 @@ struct product_type {
     Depth = min_size_prefer_fixed(traits<Lhs_>::ColsAtCompileTime, traits<Rhs_>::RowsAtCompileTime)
   };
 
-  // the splitting into different lines of code here, introducing the _select enums and the typedef below,
-  // is to work around an internal compiler error with gcc 4.1 and 4.2.
- private:
-  enum {
-    rows_select = product_size_category<Rows, MaxRows>::value,
-    cols_select = product_size_category<Cols, MaxCols>::value,
-    depth_select = product_size_category<Depth, MaxDepth>::value
-  };
-  typedef product_type_selector<rows_select, cols_select, depth_select> selector;
+  static constexpr int ProductType =
+      product_type_selector<product_size_category<Rows, MaxRows>::value, product_size_category<Cols, MaxCols>::value,
+                            product_size_category<Depth, MaxDepth>::value>::value;
+  static constexpr bool FixedSizeCoeffBasedProduct =
+      ProductType == GemmProduct && Rows != Dynamic && Cols != Dynamic && Depth != Dynamic &&
+      (int(Rows) + int(Cols) + int(Depth) < EIGEN_FIXED_SIZE_GEMM_TO_COEFFBASED_THRESHOLD);
 
- public:
-  static constexpr int value = selector::value;
+  static constexpr int value = FixedSizeCoeffBasedProduct ? CoeffBasedProductMode : ProductType;
 #ifdef EIGEN_DEBUG_PRODUCT
   static void debug() {
+    const int rows_select = product_size_category<Rows, MaxRows>::value;
+    const int cols_select = product_size_category<Cols, MaxCols>::value;
+    const int depth_select = product_size_category<Depth, MaxDepth>::value;
     EIGEN_DEBUG_VAR(Rows);
     EIGEN_DEBUG_VAR(Cols);
     EIGEN_DEBUG_VAR(Depth);
     EIGEN_DEBUG_VAR(rows_select);
     EIGEN_DEBUG_VAR(cols_select);
     EIGEN_DEBUG_VAR(depth_select);
+    EIGEN_DEBUG_VAR(ProductType);
+    EIGEN_DEBUG_VAR(FixedSizeCoeffBasedProduct);
     EIGEN_DEBUG_VAR(value);
   }
 #endif
@@ -246,7 +255,7 @@ struct gemv_dense_selector<OnTheRight, ColMajor, true> {
 
     enum {
       // FIXME: find a way to allow an inner stride on the result if packet_traits<Scalar>::size==1
-      // on, the other hand it is good for the cache to pack the vector anyways...
+      // on the other hand it is good for the cache to pack the vector anyways...
       EvalToDestAtCompileTime = (ActualDest::InnerStrideAtCompileTime == 1),
       ComplexByReal = (NumTraits<LhsScalar>::IsComplex) && (!NumTraits<RhsScalar>::IsComplex),
       MightCannotUseDest = ((!EvalToDestAtCompileTime) || ComplexByReal) && (ActualDest::MaxSizeAtCompileTime != 0)
@@ -256,9 +265,9 @@ struct gemv_dense_selector<OnTheRight, ColMajor, true> {
     typedef const_blas_data_mapper<RhsScalar, Index, RowMajor> RhsMapper;
     RhsScalar compatibleAlpha = get_factor<ResScalar, RhsScalar>::run(actualAlpha);
 
-    if (!MightCannotUseDest) {
+    EIGEN_IF_CONSTEXPR (!MightCannotUseDest) {
       // shortcut if we are sure to be able to use dest directly,
-      // this ease the compiler to generate cleaner and more optimzized code for most common cases
+      // this eases the compiler to generate cleaner and more optimized code for most common cases
       general_matrix_vector_product<Index, LhsScalar, LhsMapper, ColMajor, LhsBlasTraits::NeedToConjugate, RhsScalar,
                                     RhsMapper, RhsBlasTraits::NeedToConjugate>::run(actualLhs.rows(), actualLhs.cols(),
                                                                                     LhsMapper(actualLhs.data(),
@@ -329,7 +338,7 @@ struct gemv_dense_selector<OnTheRight, RowMajor, true> {
 
     enum {
       // FIXME: find a way to allow an inner stride on the result if packet_traits<Scalar>::size==1
-      // on, the other hand it is good for the cache to pack the vector anyways...
+      // on the other hand it is good for the cache to pack the vector anyways...
       DirectlyUseRhs =
           ActualRhsTypeCleaned::InnerStrideAtCompileTime == 1 || ActualRhsTypeCleaned::MaxSizeAtCompileTime == 0
     };
@@ -342,7 +351,7 @@ struct gemv_dense_selector<OnTheRight, RowMajor, true> {
         RhsScalar, actualRhsPtr, actualRhs.size(),
         DirectlyUseRhs ? const_cast<RhsScalar*>(actualRhs.data()) : static_rhs.data());
 
-    if (!DirectlyUseRhs) {
+    EIGEN_IF_CONSTEXPR (!DirectlyUseRhs) {
 #ifdef EIGEN_DENSE_STORAGE_CTOR_PLUGIN
       constexpr int Size = ActualRhsTypeCleaned::SizeAtCompileTime;
       Index size = actualRhs.size();

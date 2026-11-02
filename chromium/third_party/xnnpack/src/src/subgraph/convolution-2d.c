@@ -353,9 +353,10 @@ static enum xnn_status create_convolution_operator(
         if (filter_datatype == xnn_datatype_fp32) {
           flags |= XNN_FLAG_FP32_STATIC_WEIGHTS;
         }
-        if (bias_datatype == xnn_datatype_fp32) {
+        if (bias_datatype == xnn_datatype_fp32 && filter_datatype == xnn_datatype_fp16) {
           flags |= XNN_FLAG_FP32_STATIC_BIASES;
         }
+
         switch (filter_datatype) {
           case xnn_datatype_fp16:
           case xnn_datatype_fp32:
@@ -681,6 +682,24 @@ enum xnn_status reshape_convolution_operator(struct xnn_operator_data* opdata,
   const size_t input_height = input_value->shape.dim[1];
   const size_t input_width = input_value->shape.dim[2];
 
+  // The indirection buffer strides across input pixels by the operator's
+  // create-time input_pixel_stride, so an NHWC input carrying fewer channels
+  // than that makes the microkernel read past the end of the input buffer.
+  const xnn_operator_t convolution_op = opdata->operator_objects[0];
+  if (convolution_op->type != xnn_operator_type_convolution_nchw_f16 &&
+      convolution_op->type != xnn_operator_type_convolution_nchw_f32) {
+    const size_t input_channels =
+        input_value->shape.dim[input_value->shape.num_dims - 1];
+    if (input_channels != convolution_op->input_pixel_stride) {
+      xnn_log_error("failed to reshape %s operator with input ID #%" PRIu32
+                    ": mismatch at channel dimension (%zu != %zu)",
+                    xnn_node_type_to_string(xnn_node_type_convolution_2d),
+                    input_id, input_channels,
+                    convolution_op->input_pixel_stride);
+      return xnn_status_invalid_parameter;
+    }
+  }
+
   size_t output_height, output_width;
   enum xnn_status status = xnn_status_invalid_state;
   const size_t old_workspace_size = opdata->workspace_size;
@@ -926,6 +945,10 @@ static inline bool validate_datatypes_with_bias(
                  output_datatype == xnn_datatype_fp32) {
         // Flag: XNN_FLAG_FP32_STATIC_BIASES
         return true;
+      } else if (input_datatype == xnn_datatype_fp16 &&
+                 (bias_datatype == xnn_datatype_fp16 || bias_datatype == xnn_datatype_fp32) &&
+                 output_datatype == xnn_datatype_fp16) {
+        return true;
       }
       break;
     case xnn_datatype_qint8:
@@ -980,6 +1003,9 @@ static inline bool validate_datatypes_without_bias(
     case xnn_datatype_fp16:
       if (input_datatype == xnn_datatype_fp32 &&
           output_datatype == xnn_datatype_fp32) {
+        return true;
+      } else if (input_datatype == xnn_datatype_fp16 &&
+                 output_datatype == xnn_datatype_fp16) {
         return true;
       }
       break;

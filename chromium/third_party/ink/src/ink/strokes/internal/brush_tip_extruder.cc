@@ -405,8 +405,9 @@ AffineTransform ComputeParticleSurfaceUvTransform(
   // This transform takes tip size, position, and rotation into account, but
   // deliberately ignores tip slant, pinch, and corner rounding.
   return AffineTransform::Translate({0.5, 0.5}) *
-         AffineTransform::Scale(1.0f / tip_state.width,
-                                1.0f / tip_state.height) *
+         AffineTransform::Scale(
+             tip_state.width > 0 ? 1.0f / tip_state.width : 0.f,
+             tip_state.height > 0 ? 1.0f / tip_state.height : 0.f) *
          AffineTransform::Rotate(-tip_state.rotation) *
          AffineTransform::Translate(-tip_state.position.Offset());
 }
@@ -548,7 +549,11 @@ void BrushTipExtruder::ExtrudeBreakPoint() {
   } else if (new_vertex_count < 3) {
     // We added fewer than three vertices, so there's not enough since the
     // last extrusion break to actually draw anything. Discard it.
-    geometry_.ClearSinceLastExtrusionBreak();
+    auto it = std::find_if(extrusions_.rbegin(), extrusions_.rend(),
+                           [](const BrushTipExtrusion& extrusion) {
+                             return extrusion.IsBreakPoint();
+                           });
+    ClearSinceLastExtrusionBreak(it.base(), false);
     return;
   }
 

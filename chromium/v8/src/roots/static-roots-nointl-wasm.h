@@ -102,14 +102,15 @@ struct StaticReadOnlyRoot {
   static constexpr Tagged_t kEmptyWeakArrayList = kEmptyWeakFixedArray + 8;
   static constexpr Tagged_t kEmptyEnumCache = kEmptyWeakArrayList + 12;
   static constexpr Tagged_t kEmptyDescriptorArray = kEmptyEnumCache + 12;
-  static constexpr Tagged_t kScopeInfoMap = kEmptyDescriptorArray + 20;
+  static constexpr Tagged_t kScopeInfoMap = kEmptyDescriptorArray + 16;
   static constexpr Tagged_t kModuleInfoMap = kScopeInfoMap + 40;
   static constexpr Tagged_t kClosureFeedbackCellArrayMap = kModuleInfoMap + 40;
   static constexpr Tagged_t kFeedbackVectorMap =
       kClosureFeedbackCellArrayMap + 40;
   static constexpr Tagged_t kForeignMap = kFeedbackVectorMap + 40;
   static constexpr Tagged_t kTrustedForeignMap = kForeignMap + 40;
-  static constexpr Tagged_t kMegaDomHandlerMap = kTrustedForeignMap + 40;
+  static constexpr Tagged_t kHashSeedWrapperMap = kTrustedForeignMap + 40;
+  static constexpr Tagged_t kMegaDomHandlerMap = kHashSeedWrapperMap + 40;
   static constexpr Tagged_t kFixedDoubleArrayMap = kMegaDomHandlerMap + 40;
   static constexpr Tagged_t kFeedbackMetadataArrayMap =
       kFixedDoubleArrayMap + 40;
@@ -147,7 +148,7 @@ struct StaticReadOnlyRoot {
   static constexpr Tagged_t kSharedFunctionInfoMap = kPreparseDataMap + 40;
   static constexpr Tagged_t kCodeMap = kSharedFunctionInfoMap + 40;
   static constexpr Tagged_t kHashSeed = kCodeMap + 40;
-  static constexpr Tagged_t kprototype_string = kHashSeed + 40;
+  static constexpr Tagged_t kprototype_string = kHashSeed + 36;
   static constexpr Tagged_t kname_string = kprototype_string + 24;
   static constexpr Tagged_t klength_string = kname_string + 16;
   static constexpr Tagged_t kenumerable_string = klength_string + 20;
@@ -179,9 +180,9 @@ struct StaticReadOnlyRoot {
   static constexpr Tagged_t kSmiMaxValuePlusOne = kSmiMinValue + 12;
   static constexpr Tagged_t kPromiseFulfillReactionJobTaskMap =
       kSmiMaxValuePlusOne + 12;
+  // -- End of values that fit in arm64 add/sub immediates --
   static constexpr Tagged_t kPromiseRejectReactionJobTaskMap =
       kPromiseFulfillReactionJobTaskMap + 40;
-  // -- End of values that fit in arm64 add/sub immediates --
   static constexpr Tagged_t kAsyncResumeTaskMap =
       kPromiseRejectReactionJobTaskMap + 40;
   static constexpr Tagged_t kCallableTaskMap = kAsyncResumeTaskMap + 40;
@@ -204,8 +205,7 @@ struct StaticReadOnlyRoot {
   static constexpr Tagged_t kClassBoilerplateMap = kBytecodeWrapperMap + 40;
   static constexpr Tagged_t kClassPositionsMap = kClassBoilerplateMap + 40;
   static constexpr Tagged_t kCodeWrapperMap = kClassPositionsMap + 40;
-  static constexpr Tagged_t kDebugInfoMap = kCodeWrapperMap + 40;
-  static constexpr Tagged_t kErrorStackDataMap = kDebugInfoMap + 40;
+  static constexpr Tagged_t kErrorStackDataMap = kCodeWrapperMap + 40;
   static constexpr Tagged_t kFunctionTemplateRareDataMap =
       kErrorStackDataMap + 40;
   static constexpr Tagged_t kModuleRequestMap =
@@ -247,9 +247,8 @@ struct StaticReadOnlyRoot {
   static constexpr Tagged_t kStoreHandler1Map = kStoreHandler0Map + 40;
   static constexpr Tagged_t kStoreHandler2Map = kStoreHandler1Map + 40;
   static constexpr Tagged_t kStoreHandler3Map = kStoreHandler2Map + 40;
-  static constexpr Tagged_t kStrongDescriptorArrayMap = kStoreHandler3Map + 40;
   static constexpr Tagged_t kTurboshaftWord32SetTypeMap =
-      kStrongDescriptorArrayMap + 40;
+      kStoreHandler3Map + 40;
   static constexpr Tagged_t kTurboshaftWord64SetTypeMap =
       kTurboshaftWord32SetTypeMap + 40;
   static constexpr Tagged_t kTurboshaftFloat64SetTypeMap =
@@ -302,8 +301,7 @@ struct StaticReadOnlyRoot {
   static constexpr Tagged_t kSyntheticModuleMap = kSourceTextModuleMap + 40;
   static constexpr Tagged_t kContextCellMap = kSyntheticModuleMap + 40;
   static constexpr Tagged_t kWasmImportDataMap = kContextCellMap + 40;
-  static constexpr Tagged_t kAsmWasmDataMap = kWasmImportDataMap + 40;
-  static constexpr Tagged_t kWasmCapiFunctionDataMap = kAsmWasmDataMap + 40;
+  static constexpr Tagged_t kWasmCapiFunctionDataMap = kWasmImportDataMap + 40;
   static constexpr Tagged_t kWasmExportedFunctionDataMap =
       kWasmCapiFunctionDataMap + 40;
   static constexpr Tagged_t kWasmInternalFunctionMap =
@@ -329,8 +327,9 @@ struct StaticReadOnlyRoot {
   static constexpr Tagged_t kObjectTemplateInfoMap =
       kFunctionTemplateInfoMap + 40;
   static constexpr Tagged_t kInterpreterDataMap = kObjectTemplateInfoMap + 40;
+  static constexpr Tagged_t kDebugInfoMap = kInterpreterDataMap + 40;
   static constexpr Tagged_t kUncompiledDataWithoutPreparseDataMap =
-      kInterpreterDataMap + 40;
+      kDebugInfoMap + 40;
   static constexpr Tagged_t kUncompiledDataWithPreparseDataMap =
       kUncompiledDataWithoutPreparseDataMap + 40;
   static constexpr Tagged_t kUncompiledDataWithoutPreparseDataWithJobMap =
@@ -1010,10 +1009,8 @@ struct StaticReadOnlyRoot {
       kstrict_function_transition_symbol + 16;
   static constexpr Tagged_t ktemplate_literal_slot_id_symbol =
       ktemplate_literal_function_literal_id_symbol + 16;
-  static constexpr Tagged_t kwasm_asm_single_function_symbol =
-      ktemplate_literal_slot_id_symbol + 16;
   static constexpr Tagged_t kwasm_cross_instance_call_symbol =
-      kwasm_asm_single_function_symbol + 16;
+      ktemplate_literal_slot_id_symbol + 16;
   static constexpr Tagged_t kwasm_exception_tag_symbol =
       kwasm_cross_instance_call_symbol + 16;
   static constexpr Tagged_t kwasm_exception_values_symbol =
@@ -1087,16 +1084,16 @@ struct StaticReadOnlyRoot {
   static constexpr Tagged_t kExternalMap = 0x1a0029;
   static constexpr Tagged_t kCppHeapExternalMap = 0x1a0051;
   static constexpr Tagged_t kJSSharedArrayMap = 0x1a0079;
-  static constexpr Tagged_t kJSAtomicsMutexMap = 0x1a00c1;
-  static constexpr Tagged_t kJSAtomicsConditionMap = 0x1a00e9;
-  static constexpr Tagged_t kNoOpNamedInterceptorInfo = 0x1a0111;
-  static constexpr Tagged_t kNoOpIndexedInterceptorInfo = 0x1a015d;
+  static constexpr Tagged_t kJSAtomicsMutexMap = 0x1a00bd;
+  static constexpr Tagged_t kJSAtomicsConditionMap = 0x1a00e5;
+  static constexpr Tagged_t kNoOpNamedInterceptorInfo = 0x1a010d;
+  static constexpr Tagged_t kNoOpIndexedInterceptorInfo = 0x1a0161;
 
   static constexpr Tagged_t kFirstAllocatedRoot = 0x11;
-  static constexpr Tagged_t kLastAllocatedRoot = 0x1a015d;
+  static constexpr Tagged_t kLastAllocatedRoot = 0x1a0161;
 };
 
-static constexpr std::array<Tagged_t, 899> StaticReadOnlyRootsPointerTable = {
+static constexpr std::array<Tagged_t, 897> StaticReadOnlyRootsPointerTable = {
     StaticReadOnlyRoot::kUndefinedValue,
     StaticReadOnlyRoot::kTheHoleValue,
     StaticReadOnlyRoot::kNullValue,
@@ -1157,6 +1154,7 @@ static constexpr std::array<Tagged_t, 899> StaticReadOnlyRootsPointerTable = {
     StaticReadOnlyRoot::kFeedbackMetadataArrayMap,
     StaticReadOnlyRoot::kFeedbackVectorMap,
     StaticReadOnlyRoot::kForeignMap,
+    StaticReadOnlyRoot::kHashSeedWrapperMap,
     StaticReadOnlyRoot::kFunctionTemplateInfoMap,
     StaticReadOnlyRoot::kGlobalDictionaryMap,
     StaticReadOnlyRoot::kInstructionStreamMap,
@@ -1191,7 +1189,6 @@ static constexpr std::array<Tagged_t, 899> StaticReadOnlyRootsPointerTable = {
     StaticReadOnlyRoot::kSwissNameDictionaryMap,
     StaticReadOnlyRoot::kSyntheticModuleMap,
     StaticReadOnlyRoot::kWasmImportDataMap,
-    StaticReadOnlyRoot::kAsmWasmDataMap,
     StaticReadOnlyRoot::kWasmCapiFunctionDataMap,
     StaticReadOnlyRoot::kWasmDispatchTableMap,
     StaticReadOnlyRoot::kWasmDispatchTableForImportsMap,
@@ -1215,6 +1212,7 @@ static constexpr std::array<Tagged_t, 899> StaticReadOnlyRootsPointerTable = {
     StaticReadOnlyRoot::kProtectedFixedArrayMap,
     StaticReadOnlyRoot::kProtectedWeakFixedArrayMap,
     StaticReadOnlyRoot::kInterpreterDataMap,
+    StaticReadOnlyRoot::kDebugInfoMap,
     StaticReadOnlyRoot::kSharedFunctionInfoWrapperMap,
     StaticReadOnlyRoot::kTrustedForeignMap,
     StaticReadOnlyRoot::kUncompiledDataWithoutPreparseDataMap,
@@ -1251,7 +1249,6 @@ static constexpr std::array<Tagged_t, 899> StaticReadOnlyRootsPointerTable = {
     StaticReadOnlyRoot::kJSAtomicsMutexMap,
     StaticReadOnlyRoot::kJSAtomicsConditionMap,
     StaticReadOnlyRoot::kDescriptorArrayMap,
-    StaticReadOnlyRoot::kStrongDescriptorArrayMap,
     StaticReadOnlyRoot::kOnHeapBasicBlockProfilerDataMap,
     StaticReadOnlyRoot::kTurbofanBitsetTypeMap,
     StaticReadOnlyRoot::kTurbofanUnionTypeMap,
@@ -1915,7 +1912,6 @@ static constexpr std::array<Tagged_t, 899> StaticReadOnlyRootsPointerTable = {
     StaticReadOnlyRoot::kstrict_function_transition_symbol,
     StaticReadOnlyRoot::ktemplate_literal_function_literal_id_symbol,
     StaticReadOnlyRoot::ktemplate_literal_slot_id_symbol,
-    StaticReadOnlyRoot::kwasm_asm_single_function_symbol,
     StaticReadOnlyRoot::kwasm_cross_instance_call_symbol,
     StaticReadOnlyRoot::kwasm_exception_tag_symbol,
     StaticReadOnlyRoot::kwasm_exception_values_symbol,
@@ -1950,7 +1946,6 @@ static constexpr std::array<Tagged_t, 899> StaticReadOnlyRootsPointerTable = {
     StaticReadOnlyRoot::kClassBoilerplateMap,
     StaticReadOnlyRoot::kClassPositionsMap,
     StaticReadOnlyRoot::kCodeWrapperMap,
-    StaticReadOnlyRoot::kDebugInfoMap,
     StaticReadOnlyRoot::kEnumCacheMap,
     StaticReadOnlyRoot::kErrorStackDataMap,
     StaticReadOnlyRoot::kFunctionTemplateRareDataMap,

@@ -63,7 +63,6 @@ def _check_licenses(input_api, output_api):
         os.path.join('third_party', 'perfetto', 'src', 'protos',
                      'third_party'),
         os.path.join('third_party', 'protobuf', 'third_party'),
-        os.path.join('third_party', 'valijson', 'src', 'thirdparty'),
     ])
 
     if any(s.LocalPath().startswith('third_party')

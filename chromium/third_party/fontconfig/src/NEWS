@@ -1,11 +1,165 @@
                               Fontconfig
              Font configuration and customization library
-                            Version 2.17.1
-                              2025-07-02
+                            Version 2.18.1
+                              2026-06-02
 
 
 Check INSTALL for compilation and installation instructions.
 Report bugs to https://gitlab.freedesktop.org/fontconfig/fontconfig/issues/new.
+
+2.18.1
+
+Akira TAGOH (11):
+      ci: Fix wrong short options for glab
+      Fix not matching with a font family name
+      test-conf: Add a feature to load a certain config for testing
+      test: Add comprehensive documentation for test-conf JSON format
+      Fix another font matching issue
+      Do not set 'sans-serif' for default genericfamily
+      test: use const instead of number for genericfamily
+      meson: force enabling HAVE_C99_VSNPRINTF
+      Disable invalid attribute warning by default
+      ci: Add .abidiff for suppression
+      Workaround :-prefixed filename used in Qt
+
+Jan Alexander Steffens (heftig) (1):
+      meson: Only install 05-macos.conf on darwin
+
+Marcus Spencer (1):
+      Fix a null pointer dereference when computing a pattern from an FT_Face that has no family
+
+2.18
+
+Akira TAGOH (79):
+      ci: Add Fedora 42 and drop 40
+      ci: Add FreeBSD 14.2 and drop 14.1
+      ci: Update ci-tamplates
+      ci: Add Alpine Linux
+      ci: Fix a typo
+      ci: make sure build.sh is running on bash
+      ci: Use venv to avoid externally-managed-environment error on Alpine
+      ci: Add extra setup hook
+      ci: install test fonts for Alpine
+      test: Fix a build issue with musl libc
+      fc-lang: Add suz.orth for Sunuwar
+      test: add common helper class
+      test: port basic functionality check to Python
+      test: update to pass test cases on Win32
+      do not mix up a slash and a backslash in file object on Win32
+      meson: Add a missing fontconfig architecture test case
+      Add fontconfig version in FcCache
+      Improve a warning message
+      Better error message when missing default config
+      ci: install before test to avoid fontconfig error
+      Fix regex to pick up libtool version
+      Improve performance in FcConfigAdd
+      Improve log header in FcConfigSubstituteWithPat
+      meson: Update WrapDB files for v2 format migration
+      ci: add an option for the address sanitizer
+      Fix "UBSAN null pointer passed" to qsort
+      ci: Enable ASAN and UBSAN
+      Add genericfamily object in FcPattern
+      Add xsi:nil attribute support to limited elements
+      Get out from FcConfigAdd immediately if no valid pointer given
+      Bump the cache version again
+      fc-case: Update CaseFolding.txt to Unicode 17
+      ci: Update git repo for subproject build
+      ci: Add a test case for static build on Win32
+      Add obvious namespace to macros for FC_SPACING
+      Improve handling of constant name
+      test: fix pytest error when running on the top project directory
+      meson: Update wrapdb for expat to the latest
+      Use FcStrCopy instead of strdup
+      Fix -Wpointer-sign warnings
+      Do not store duplicate object name into FcObjectSet
+      Fix unused variable warning when iconv support disabled
+      doc: Fix a typo in FcPatternAdd description
+      Add fc-genconf the configuration generator tool
+      test-conf: Correct test results to display at the proper place
+      Fix unexpected priority change when looking up by specific family name
+      Return error code if FcPatternFormat failed
+      Add const converter for pattern format
+      fc-genconf: Add scan pattern to update genericfamily with commandline option
+      Fix dereferencing a null pointer of FcConfig in FcFontSetSort
+      conf.d: Fix a typo in 65-khmer.conf
+      Update doc for xsi:nil attribute support
+      test: add more conditional for bwrap sandbox test cases
+      meson: add tests-bwrap option
+      Avoid locale-dependent float-to-string
+      ci: enable json-c for MinGW
+      test-conf: add wrapper setenv for Win32
+      ci: Use 14.3 CI image for FreeBSD
+      Fix invalid memory access on Win32
+      More fixes for locale-dependent float-to-string conversion
+      Replace strtod() with FcStrtod()
+      ci: Fix warnings from shellcheck
+      ci: workaround for the ownership change issue on extracting tar
+      ci: Fix a typo
+      ci: simplify scriptlet
+      ci: Hold the version of meson at 1.10.1 temporarily
+      ci: Enable the debugging build by default
+      ci: Do not store the build log at the source dir
+      Explicitly declare FcPatternObjectCount as a public function
+      ci: Add API/ABI checker in CI
+      ci: Fix 'refusing to fetch into branch' error
+      Update meson dependency to 1.11.0
+      ci: Update Fedora Image to 44 and 43
+      ci: Disable pipelines for macOS and VS on Windows
+      Revert "ci: Disable pipelines for macOS and VS on Windows"
+      ci: Replace shell scripts with portable Python build system
+      ci: Add MSYS2 build pipeline
+      ci: Use CI_PROJECT_DIR instead of hardcode path
+      ci: fix argument error in abicheck.sh
+
+Albert Lee (1):
+      Define __EXTENSIONS__ on illumos/Solaris to access strdup()
+
+Changwoo Ryu (1):
+      Update default Korean fonts
+
+Daniel Tang (1):
+      Remove unused global variable default_langs
+
+Dominik Röttsches (15):
+      Fix rustc warning for mismatching referred lifetimes
+      [Fontations] Fix use-after-free in handling exclusive lang
+      Fix memory leak after path canonicalization in e42188283f0ee
+      [Fontations] Remaining fix for UaF
+      Architecture-dependent hex formatting of int64_t in fccache.c
+      [Fontations] Don't leak PatternElement values
+      Roll Fontations Crates
+      [Fontations] Match FreeType for two types of broken fonts
+      [Fontations] Fix compilation under -D unsafe-op-in-unsafe-fn
+      Move FreeType-related API to fcfreetype.h header
+      Minimal preparations for FreeType-less build
+      Follow-up for preparation for FreeType-less build
+      Roll Fontations and libc crates
+      Update Mac OS image to upstream gStreamer image
+      Roll Fontations crates
+
+Florian "sp1rit"​ (1):
+      build: Added missing target rule-dependencies
+
+Florian Mayer (1):
+      Use uintptr_t to represent pointers
+
+Gabriele Barbero (1):
+      macOS: use selectfont globs for font asset directories
+
+Kleis Auke Wolthuizen (1):
+      meson: Don't dllexport when built as static library on Win32
+
+Rudi Heitbaum (1):
+      Do not cast as const as the variable is being modified
+
+Steve Lhomme (1):
+      detect mkostemp with stdlib.h
+
+Werner Lemberg (1):
+      doc: Fix two typos
+
+correctmost (1):
+      Fix -Wnewline-eof warning with fcconst.h
 
 2.17.1
 

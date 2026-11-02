@@ -16,12 +16,16 @@ devtools_module("live-metrics") {
     "../../core/platform:bundle",
     "../../core/sdk:bundle",
     "../../generated",
+    "../../generated:protocol",
+    "../crux-manager:bundle",
     "../emulation:bundle",
-    "./web-vitals-injected",
     "./web-vitals-injected/spec:bundle",
   ]
 
-  public_deps = [ "./web-vitals-injected:bundled_library" ]
+  public_deps = [
+    "./web-vitals-injected",
+    "./web-vitals-injected:bundled_library",
+  ]
 }
 
 devtools_entrypoint("bundle") {
@@ -32,6 +36,7 @@ devtools_entrypoint("bundle") {
   visibility = [
     ":*",
     "../../entrypoints/main/*",
+    "../../foundation/*",
     "../../panels/timeline/*",
   ]
 }

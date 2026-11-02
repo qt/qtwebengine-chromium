@@ -138,9 +138,6 @@ class Diagonal : public internal::dense_xpr_base<Diagonal<MatrixType, DiagIndex_
 
  private:
   // some compilers may fail to optimize std::max etc in case of compile-time constants...
-  EIGEN_DEVICE_FUNC constexpr Index absDiagIndex() const noexcept {
-    return m_index.value() > 0 ? m_index.value() : -m_index.value();
-  }
   EIGEN_DEVICE_FUNC constexpr Index rowOffset() const noexcept { return m_index.value() > 0 ? 0 : -m_index.value(); }
   EIGEN_DEVICE_FUNC constexpr Index colOffset() const noexcept { return m_index.value() > 0 ? m_index.value() : 0; }
   // trigger a compile-time error if someone try to call packet

@@ -10,6 +10,7 @@
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_supported_type.h"
 #include "third_party/blink/renderer/core/clipboard/system_clipboard.h"
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/document_fragment.h"
 #include "third_party/blink/renderer/core/editing/serializers/serialization.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
@@ -23,7 +24,6 @@
 #include "third_party/blink/renderer/modules/clipboard/clipboard.h"
 #include "third_party/blink/renderer/platform/heap/cross_thread_handle.h"
 #include "third_party/blink/renderer/platform/image-decoders/image_decoder.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/scheduler/public/worker_pool.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_copier_base.h"
@@ -164,7 +164,7 @@ class ClipboardHtmlWriter final : public ClipboardStringWriter {
     DCHECK(doc);
 
     system_clipboard()->WriteHTML(
-        CreateMarkup(doc, kIncludeNode, kResolveAllURLs), url);
+        CreateMarkup(doc, kIncludeNode, ResolveUrls::kAll), url);
     promise_->CompleteWriteRepresentation();
   }
 };
@@ -186,7 +186,7 @@ class ClipboardSvgWriter final : public ClipboardStringWriter {
         V8SupportedType(V8SupportedType::Enum::kImageSvgXml));
     promise_->GetExecutionContext()->CountUse(WebFeature::kClipboardSvgWrite);
     system_clipboard()->WriteSvg(
-        CreateMarkup(doc, kIncludeNode, kResolveAllURLs));
+        CreateMarkup(doc, kIncludeNode, ResolveUrls::kAll));
     promise_->CompleteWriteRepresentation();
   }
 };
@@ -303,7 +303,6 @@ void ClipboardWriter::WriteToSystem(V8UnionBlobOrString* clipboard_item_data) {
         this, std::move(file_reading_task_runner_));
     file_reader_->Start(clipboard_item_data->GetAsBlob()->GetBlobDataHandle());
   } else if (clipboard_item_data->IsString()) {
-    DCHECK(RuntimeEnabledFeatures::ClipboardItemWithDOMStringSupportEnabled());
     WriteString(clipboard_item_data->GetAsString());
   } else {
     NOTREACHED();

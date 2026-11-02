@@ -18,7 +18,7 @@
 #include "xfa/fgas/layout/cfgas_char.h"
 
 class CFGAS_GEFont;
-class TextCharPos;
+struct TextCharPos;
 
 #define FX_TXTCHARSTYLE_ArabicShadda 0x0020
 #define FX_TXTCHARSTYLE_OddBidiLevel 0x0040

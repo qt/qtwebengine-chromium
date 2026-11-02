@@ -21,6 +21,7 @@
 #include "content/browser/devtools/network_service_devtools_observer.h"
 #include "content/browser/devtools/service_worker_devtools_agent_host.h"
 #include "content/browser/devtools/service_worker_devtools_manager.h"
+#include "content/browser/hid/hid_service.h"
 #include "content/browser/loader/url_loader_factory_utils.h"
 #include "content/browser/network/cross_origin_embedder_policy_reporter.h"
 #include "content/browser/process_lock.h"
@@ -59,10 +60,6 @@
 #include "third_party/blink/public/mojom/renderer_preference_watcher.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom.h"
 #include "url/gurl.h"
-
-#if !BUILDFLAG(IS_ANDROID)
-#include "content/browser/hid/hid_service.h"
-#endif
 
 // TODO(crbug.com/40568315): Much of this file, which dealt with thread hops
 // between UI and IO, can likely be simplified when the service worker core
@@ -373,12 +370,18 @@ void EmbeddedWorkerInstance::Start(
     // needed for non-installed workers. It's OK to not support reconnection to
     // the network service because it can only used until the service worker
     // reaches the 'installed' state.
+    //
+    // While the initial fetch of the main script (before the worker starts)
+    // might use the creator_network_restrictions_id, once the
+    // EmbeddedWorkerInstance is involved in starting the worker, it
+    // transitions to using the worker's own identity and restrictions.
     if (!params->is_installed) {
       factory_bundle_for_new_scripts = CreateFactoryBundle(
           rph, routing_id, owner_version_->key(), client_security_state.Clone(),
           std::move(coep_reporter_for_scripts), std::move(dip_reporter),
           ContentBrowserClient::URLLoaderFactoryType::kServiceWorkerScript,
-          params->devtools_worker_token.ToString());
+          params->devtools_worker_token.ToString(),
+          owner_version_->network_restrictions_id());
     }
 
     // The bundle for the renderer is passed to the service worker, and
@@ -391,7 +394,8 @@ void EmbeddedWorkerInstance::Start(
         std::move(client_security_state),
         std::move(coep_reporter_for_subresources), std::move(dip_reporter),
         ContentBrowserClient::URLLoaderFactoryType::kServiceWorkerSubResource,
-        params->devtools_worker_token.ToString());
+        params->devtools_worker_token.ToString(),
+        owner_version_->network_restrictions_id());
   }
 
   // TODO(crbug.com/40584626): Support changes to blink::RendererPreferences
@@ -717,6 +721,14 @@ void EmbeddedWorkerInstance::OnStarted(
   pause_initializing_global_scope_ = false;
   thread_id_ = thread_id;
   inflight_start_info_.reset();
+
+  // The worker finished starting; re-evaluate whether its process still needs
+  // foreground priority. In particular this drops the startup foreground boost
+  // given to extension service workers in
+  // ServiceWorkerVersion::ShouldRequireForegroundPriority(), unless the worker
+  // still requires foreground priority for another reason.
+  UpdateForegroundPriority();
+
   for (auto& observer : listener_list_) {
     observer.OnStarted(start_status, fetch_handler_type, has_hid_event_handlers,
                        has_usb_event_handlers);
@@ -797,7 +809,6 @@ void EmbeddedWorkerInstance::BindCacheStorage(
   BindCacheStorageInternal();
 }
 
-#if !BUILDFLAG(IS_ANDROID)
 void EmbeddedWorkerInstance::BindHidService(
     const url::Origin& origin,
     mojo::PendingReceiver<blink::mojom::HidService> receiver) {
@@ -811,7 +822,6 @@ void EmbeddedWorkerInstance::BindHidService(
                        std::move(receiver));
   }
 }
-#endif  // !BUILDFLAG(IS_ANDROID)
 
 void EmbeddedWorkerInstance::BindUsbService(
     const url::Origin& origin,
@@ -847,7 +857,8 @@ EmbeddedWorkerInstance::CreateFactoryBundle(
     mojo::PendingRemote<network::mojom::DocumentIsolationPolicyReporter>
         dip_reporter,
     ContentBrowserClient::URLLoaderFactoryType factory_type,
-    const std::string& devtools_worker_token) {
+    const std::string& devtools_worker_token,
+    const base::UnguessableToken& network_restrictions_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   auto factory_bundle =
       std::make_unique<blink::PendingURLLoaderFactoryBundle>();
@@ -870,18 +881,15 @@ EmbeddedWorkerInstance::CreateFactoryBundle(
          factory_type == ContentBrowserClient::URLLoaderFactoryType::
                              kServiceWorkerSubResource);
 
-  // TODO(crbug.com/447954811): Pass network_restrictions_id so script fetch
-  // can be restricted based on connection allowlist.
   network::mojom::URLLoaderFactoryParamsPtr factory_params =
       URLLoaderFactoryParamsHelper::CreateForWorker(
           rph, origin, isolation_info, std::move(coep_reporter),
           std::move(dip_reporter),
           static_cast<StoragePartitionImpl*>(rph->GetStoragePartition())
               ->CreateURLLoaderNetworkObserverForServiceOrSharedWorker(
-                  ToOriginatingProcessId(rph->GetID()), origin),
+                  ToOriginatingProcessId(rph->GetID()), origin, storage_key),
           NetworkServiceDevToolsObserver::MakeSelfOwned(devtools_worker_token),
-          std::move(client_security_state),
-          /*network_restrictions_id=*/std::nullopt,
+          std::move(client_security_state), network_restrictions_id,
           "EmbeddedWorkerInstance::CreateFactoryBundle",
           /*require_cross_site_request_for_cookies=*/false,
           /*is_for_service_worker=*/true);

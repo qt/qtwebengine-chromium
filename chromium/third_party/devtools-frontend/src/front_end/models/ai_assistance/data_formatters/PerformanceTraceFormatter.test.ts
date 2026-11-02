@@ -3,27 +3,38 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import type * as Platform from '../../../core/platform/platform.js';
+import * as TextUtils from '../../../core/text_utils/text_utils.js';
 import * as CrUXManager from '../../../models/crux-manager/crux-manager.js';
 import * as Trace from '../../../models/trace/trace.js';
+import {deinitializeGlobalVars} from '../../../testing/EnvironmentHelpers.js';
 import {setupLocaleHooks} from '../../../testing/LocaleHelpers.js';
-import {setupRuntimeHooks} from '../../../testing/RuntimeHelpers.js';
-import {setupSettingsHooks} from '../../../testing/SettingsHelpers.js';
 import {SnapshotTester} from '../../../testing/SnapshotTester.js';
+import {TestUniverse} from '../../../testing/TestUniverse.js';
+import {
+  createTraceExtensionDataFromPerformanceAPITestInput,
+  getBaseTraceHandlerData,
+  type PerformanceAPIExtensionTestData,
+} from '../../../testing/TraceHelpersCore.js';
 import {TraceLoader} from '../../../testing/TraceLoader.js';
-import * as TextUtils from '../../text_utils/text_utils.js';
 import type * as Workspace from '../../workspace/workspace.js';
 import {AICallTree, AIContext, PerformanceTraceFormatter} from '../ai_assistance.js';
 
-async function createFormatter(context: Mocha.Context|Mocha.Suite|null, name: string): Promise<
-    {formatter: PerformanceTraceFormatter.PerformanceTraceFormatter, parsedTrace: Trace.TraceModel.ParsedTrace}> {
+async function createFormatter(
+    context: Mocha.Context|Mocha.Suite|null,
+    name: string,
+    cruxManager: CrUXManager.CrUXManager,
+    ):
+    Promise<
+        {formatter: PerformanceTraceFormatter.PerformanceTraceFormatter, parsedTrace: Trace.TraceModel.ParsedTrace}> {
   const parsedTrace = await TraceLoader.traceEngine(context, name, undefined, {
     withTimelinePanel: false,
   });
   assert.isOk(parsedTrace.insights);
   const focus = AIContext.AgentFocus.fromParsedTrace(parsedTrace);
-  const formatter = new PerformanceTraceFormatter.PerformanceTraceFormatter(focus);
+  const formatter = new PerformanceTraceFormatter.PerformanceTraceFormatter(focus, null, cruxManager);
   // Don't need an implementation, gonna mock it anyway.
   formatter.resolveFunctionCode = async () => {
     return null;
@@ -47,7 +58,7 @@ function stubResolveFunctionCode(formatter: PerformanceTraceFormatter.Performanc
             uiSourceCode: {
               url() {
                 return url;
-              }
+              },
             } as Workspace.UISourceCode.UISourceCode,
             range,
             name: '',
@@ -63,48 +74,56 @@ function stubResolveFunctionCode(formatter: PerformanceTraceFormatter.Performanc
 
 describe('PerformanceTraceFormatter', function() {
   setupLocaleHooks();
-  setupRuntimeHooks();
-  setupSettingsHooks();
 
   const snapshotTester = new SnapshotTester(this, import.meta);
 
+  let cruxManager: CrUXManager.CrUXManager;
+
+  beforeEach(() => {
+    const universe = new TestUniverse();
+    cruxManager = universe.cruxManager;
+    sinon.stub(CrUXManager.CrUXManager, 'instance').returns(cruxManager);
+  });
+
+  afterEach(async () => {
+    await deinitializeGlobalVars();
+  });
+
   describe('formatTraceSummary', () => {
     it('web-dev.json.gz', async function() {
-      const {formatter} = await createFormatter(this, 'web-dev.json.gz');
+      const {formatter} = await createFormatter(this, 'web-dev.json.gz', cruxManager);
       const output = formatter.formatTraceSummary();
       snapshotTester.assert(this, output);
     });
 
     it('yahoo-news.json.gz', async function() {
-      const {formatter} = await createFormatter(this, 'yahoo-news.json.gz');
+      const {formatter} = await createFormatter(this, 'yahoo-news.json.gz', cruxManager);
       const output = formatter.formatTraceSummary();
       snapshotTester.assert(this, output);
     });
 
     it('multiple-navigations-render-blocking.json.gz', async function() {
-      const {formatter} = await createFormatter(this, 'multiple-navigations-render-blocking.json.gz');
+      const {formatter} = await createFormatter(this, 'multiple-navigations-render-blocking.json.gz', cruxManager);
       const output = formatter.formatTraceSummary();
       snapshotTester.assert(this, output);
     });
 
     it('deals with CrUX manager errors', async function() {
-      const {formatter} = await createFormatter(this, 'image-delivery.json.gz');
-      sinon.stub(CrUXManager.CrUXManager, 'instance').callsFake(() => {
-        throw new Error('something went wrong with CrUX Manager');
-      });
+      sinon.stub(cruxManager, 'getSelectedScope').throws(new Error('something went wrong with CrUX Manager'));
+      const {formatter} = await createFormatter(this, 'image-delivery.json.gz', cruxManager);
       const output = formatter.formatTraceSummary();
       snapshotTester.assert(this, output);
     });
 
     // This one has field data.
     it('image-delivery.json.gz', async function() {
-      const {formatter} = await createFormatter(this, 'image-delivery.json.gz');
+      const {formatter} = await createFormatter(this, 'image-delivery.json.gz', cruxManager);
       const output = formatter.formatTraceSummary();
       snapshotTester.assert(this, output);
     });
 
     it('includes INP insight when there is no navigation', async function() {
-      const {formatter} = await createFormatter(this, 'slow-interaction-button-click.json.gz');
+      const {formatter} = await createFormatter(this, 'slow-interaction-button-click.json.gz', cruxManager);
       const output = formatter.formatTraceSummary();
       assert.include(output, 'INP: 139 ms');
       assert.include(output, 'insight name: INPBreakdown');
@@ -112,16 +131,16 @@ describe('PerformanceTraceFormatter', function() {
     });
 
     it('includes LCP insight of the provided deviceScope', async function() {
-      const {parsedTrace} = await createFormatter(this, 'crux.json.gz');
+      const {parsedTrace} = await createFormatter(this, 'crux.json.gz', cruxManager);
       const focus = AIContext.AgentFocus.fromParsedTrace(parsedTrace);
 
       // Test PHONE scope (LCP is 1082 in crux.json.gz)
-      const phoneFormatter = new PerformanceTraceFormatter.PerformanceTraceFormatter(focus, 'PHONE');
+      const phoneFormatter = new PerformanceTraceFormatter.PerformanceTraceFormatter(focus, 'PHONE', cruxManager);
       const phoneOutput = phoneFormatter.formatTraceSummary();
       assert.include(phoneOutput, 'LCP: 1082 ms');
 
       // Test DESKTOP scope (LCP is 883 in crux.json.gz)
-      const desktopFormatter = new PerformanceTraceFormatter.PerformanceTraceFormatter(focus, 'DESKTOP');
+      const desktopFormatter = new PerformanceTraceFormatter.PerformanceTraceFormatter(focus, 'DESKTOP', cruxManager);
       const desktopOutput = desktopFormatter.formatTraceSummary();
       assert.include(desktopOutput, 'LCP: 883 ms');
     });
@@ -129,13 +148,13 @@ describe('PerformanceTraceFormatter', function() {
 
   describe('formatCriticalRequests', () => {
     it('render-blocking-requests.json.gz', async function() {
-      const {formatter} = await createFormatter(this, 'render-blocking-requests.json.gz');
+      const {formatter} = await createFormatter(this, 'render-blocking-requests.json.gz', cruxManager);
       const output = await formatter.formatCriticalRequests();
       snapshotTester.assert(this, output);
     });
 
     it('multiple-navigations-render-blocking.json.gz', async function() {
-      const {formatter} = await createFormatter(this, 'multiple-navigations-render-blocking.json.gz');
+      const {formatter} = await createFormatter(this, 'multiple-navigations-render-blocking.json.gz', cruxManager);
       const output = await formatter.formatCriticalRequests();
       snapshotTester.assert(this, output);
     });
@@ -143,13 +162,13 @@ describe('PerformanceTraceFormatter', function() {
 
   describe('formatLongestTasks', () => {
     it('long-task-from-worker-thread.json.gz', async function() {
-      const {formatter} = await createFormatter(this, 'long-task-from-worker-thread.json.gz');
+      const {formatter} = await createFormatter(this, 'long-task-from-worker-thread.json.gz', cruxManager);
       const output = await formatter.formatLongestTasks();
       snapshotTester.assert(this, output);
     });
 
     it('multiple-navigations-render-blocking.json.gz', async function() {
-      const {formatter} = await createFormatter(this, 'multiple-navigations-render-blocking.json.gz');
+      const {formatter} = await createFormatter(this, 'multiple-navigations-render-blocking.json.gz', cruxManager);
       const output = await formatter.formatLongestTasks();
       snapshotTester.assert(this, output);
     });
@@ -157,13 +176,13 @@ describe('PerformanceTraceFormatter', function() {
 
   describe('formatMainThreadBottomUpSummary', () => {
     it('yahoo-news.json.gz', async function() {
-      const {formatter} = await createFormatter(this, 'yahoo-news.json.gz');
+      const {formatter} = await createFormatter(this, 'yahoo-news.json.gz', cruxManager);
       const output = await formatter.formatMainThreadBottomUpSummary();
       snapshotTester.assert(this, output);
     });
 
     it('multiple-navigations-render-blocking.json.gz', async function() {
-      const {formatter} = await createFormatter(this, 'multiple-navigations-render-blocking.json.gz');
+      const {formatter} = await createFormatter(this, 'multiple-navigations-render-blocking.json.gz', cruxManager);
       const output = await formatter.formatMainThreadBottomUpSummary();
       snapshotTester.assert(this, output);
     });
@@ -171,20 +190,20 @@ describe('PerformanceTraceFormatter', function() {
 
   describe('formatThirdPartySummary', () => {
     it('yahoo-news.json.gz', async function() {
-      const {formatter} = await createFormatter(this, 'yahoo-news.json.gz');
+      const {formatter} = await createFormatter(this, 'yahoo-news.json.gz', cruxManager);
       const output = await formatter.formatThirdPartySummary();
       snapshotTester.assert(this, output);
     });
 
     it('multiple-navigations-render-blocking.json.gz', async function() {
-      const {formatter} = await createFormatter(this, 'multiple-navigations-render-blocking.json.gz');
+      const {formatter} = await createFormatter(this, 'multiple-navigations-render-blocking.json.gz', cruxManager);
       const output = await formatter.formatThirdPartySummary();
       snapshotTester.assert(this, output);
     });
   });
 
   it('formatMainThreadTrackSummary', async function() {
-    const {formatter, parsedTrace} = await createFormatter(this, 'yahoo-news.json.gz');
+    const {formatter, parsedTrace} = await createFormatter(this, 'yahoo-news.json.gz', cruxManager);
     const min = parsedTrace.data.Meta.traceBounds.min;
     const max =
         parsedTrace.data.Meta.traceBounds.min + parsedTrace.data.Meta.traceBounds.range / 2 as Trace.Types.Timing.Micro;
@@ -194,7 +213,7 @@ describe('PerformanceTraceFormatter', function() {
   });
 
   it('formatNetworkTrackSummary', async function() {
-    const {formatter, parsedTrace} = await createFormatter(this, 'yahoo-news.json.gz');
+    const {formatter, parsedTrace} = await createFormatter(this, 'yahoo-news.json.gz', cruxManager);
     // Just check the first 300 ms.
     const min = parsedTrace.data.Meta.traceBounds.min;
     const max = (parsedTrace.data.Meta.traceBounds.min +
@@ -206,7 +225,7 @@ describe('PerformanceTraceFormatter', function() {
 
   describe('formatCallTree', () => {
     it('long-task-from-worker-thread.json.gz', async function() {
-      const {formatter, parsedTrace} = await createFormatter(this, 'long-task-from-worker-thread.json.gz');
+      const {formatter, parsedTrace} = await createFormatter(this, 'long-task-from-worker-thread.json.gz', cruxManager);
       const event = new Trace.EventsSerializer.EventsSerializer().eventForKey('r-62', parsedTrace);
       const tree = AICallTree.AICallTree.fromEvent(event, parsedTrace);
       assert.exists(tree);
@@ -215,7 +234,7 @@ describe('PerformanceTraceFormatter', function() {
     });
 
     it('web-dev.json.gz', async function() {
-      const {formatter, parsedTrace} = await createFormatter(this, 'web-dev.json.gz');
+      const {formatter, parsedTrace} = await createFormatter(this, 'web-dev.json.gz', cruxManager);
       const event = new Trace.EventsSerializer.EventsSerializer().eventForKey(
           'p-73704-775-2074-418' as Trace.Types.File.SerializableKey, parsedTrace);
       const tree = AICallTree.AICallTree.fromEvent(event, parsedTrace);
@@ -227,7 +246,7 @@ describe('PerformanceTraceFormatter', function() {
 
   describe('formatNetworkRequests', () => {
     it('formats network requests that have redirects', async function() {
-      const {formatter, parsedTrace} = await createFormatter(this, 'bad-document-request-latency.json.gz');
+      const {formatter, parsedTrace} = await createFormatter(this, 'bad-document-request-latency.json.gz', cruxManager);
       const requestUrl = 'http://localhost:3000/redirect3';
       const request = parsedTrace.data.NetworkRequests.byTime.find(r => r.args.data.url === requestUrl);
       assert.isOk(request);
@@ -236,7 +255,7 @@ describe('PerformanceTraceFormatter', function() {
     });
 
     it('formats network requests in verbose mode', async function() {
-      const {formatter, parsedTrace} = await createFormatter(this, 'lcp-images.json.gz');
+      const {formatter, parsedTrace} = await createFormatter(this, 'lcp-images.json.gz', cruxManager);
       const requestUrl = 'https://fonts.googleapis.com/css2?family=Poppins:ital,wght@1,800';
       const request = parsedTrace.data.NetworkRequests.byTime.find(r => r.args.data.url === requestUrl);
       assert.isOk(request);
@@ -245,7 +264,7 @@ describe('PerformanceTraceFormatter', function() {
     });
 
     it('defaults to verbose mode when 1 request and verbose option is not defined', async function() {
-      const {formatter, parsedTrace} = await createFormatter(this, 'lcp-images.json.gz');
+      const {formatter, parsedTrace} = await createFormatter(this, 'lcp-images.json.gz', cruxManager);
       const requestUrl = 'https://fonts.googleapis.com/css2?family=Poppins:ital,wght@1,800';
       const request = parsedTrace.data.NetworkRequests.byTime.find(r => r.args.data.url === requestUrl);
       assert.isOk(request);
@@ -254,7 +273,7 @@ describe('PerformanceTraceFormatter', function() {
     });
 
     it('formats in compressed mode if a request is duplicated in the array', async function() {
-      const {formatter, parsedTrace} = await createFormatter(this, 'bad-document-request-latency.json.gz');
+      const {formatter, parsedTrace} = await createFormatter(this, 'bad-document-request-latency.json.gz', cruxManager);
       const requests = parsedTrace.data.NetworkRequests.byTime;
       // Duplicate request so that the compressed format is used
       const output = formatter.formatNetworkRequests([requests[0], requests[0]]);
@@ -262,11 +281,107 @@ describe('PerformanceTraceFormatter', function() {
     });
 
     it('correctly formats an initiator chain for network-requests-initiators trace', async function() {
-      const {formatter, parsedTrace} = await createFormatter(this, 'network-requests-initiators.json.gz');
+      const {formatter, parsedTrace} = await createFormatter(this, 'network-requests-initiators.json.gz', cruxManager);
       const request = parsedTrace.data.NetworkRequests.byTime;
       assert.isOk(request);
       const output = formatter.formatNetworkRequests(request);
       snapshotTester.assert(this, output);
+    });
+  });
+
+  describe('custom tracks', () => {
+    async function createFormatterWithExtensionData(extensionData: PerformanceAPIExtensionTestData[]):
+        Promise<PerformanceTraceFormatter.PerformanceTraceFormatter> {
+      const extensionTraceData = await createTraceExtensionDataFromPerformanceAPITestInput(extensionData);
+      const parsedTrace = getBaseTraceHandlerData();
+      parsedTrace.insights = new Map();
+      (parsedTrace.data as {
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        ExtensionTraceData: Trace.Handlers.ModelHandlers.ExtensionTraceData.ExtensionTraceData,
+      }).ExtensionTraceData = extensionTraceData;
+
+      const focus = AIContext.AgentFocus.fromParsedTrace(parsedTrace);
+      const formatter = new PerformanceTraceFormatter.PerformanceTraceFormatter(focus);
+      formatter.resolveFunctionCode = async () => null;
+      stubResolveFunctionCode(formatter);
+      return formatter;
+    }
+
+    it('formats trace summary with custom tracks', async () => {
+      const extensionData: PerformanceAPIExtensionTestData[] = [
+        {
+          detail: {
+            devtools: {
+              dataType: 'track-entry',
+              track: 'An extension track',
+              properties: [['Description', 'Something']],
+            },
+          },
+          name: 'An extension measurement',
+          ts: 100,
+          dur: 100,
+        },
+        {
+          detail: {
+            devtools: {
+              dataType: 'track-entry',
+              trackGroup: 'Group 1',
+              track: 'Track 1',
+            },
+          },
+          name: 'Grouped measurement',
+          ts: 200,
+          dur: 50,
+        },
+      ];
+      const formatter = await createFormatterWithExtensionData(extensionData);
+      const output = formatter.formatTraceSummary();
+      assert.include(output, '# Custom tracks');
+      assert.include(output, 'Track: An extension track');
+      assert.include(output, 'Group: Group 1');
+      assert.include(output, 'Track: Track 1');
+    });
+
+    it('formats custom track summary', async () => {
+      const extensionData: PerformanceAPIExtensionTestData[] = [
+        {
+          detail: {
+            devtools: {
+              dataType: 'track-entry',
+              track: 'An extension track',
+              properties: [['Description', 'Something']],
+            },
+          },
+          name: 'An extension measurement',
+          ts: 100,
+          dur: 100,
+        },
+        {
+          detail: {
+            devtools: {
+              dataType: 'track-entry',
+              trackGroup: 'Group 1',
+              track: 'Track 1',
+            },
+          },
+          name: 'Grouped measurement',
+          ts: 200,
+          dur: 50,
+        },
+      ];
+      const formatter = await createFormatterWithExtensionData(extensionData);
+      const bounds = Trace.Helpers.Timing.traceWindowFromMicroSeconds(
+          Trace.Types.Timing.Micro(0),
+          Trace.Types.Timing.Micro(500),
+      );
+      const output = formatter.formatExtensionTrackSummary(bounds);
+      assert.include(output, '# Track: An extension track');
+      assert.include(output, 'Name: An extension measurement');
+      assert.include(output, 'duration: 0.1\u00a0ms');
+      assert.include(output, 'properties: {Description: "Something"}');
+      assert.include(output, '# Track Group: Group 1');
+      assert.include(output, '## Track: Track 1');
+      assert.include(output, 'Name: Grouped measurement');
     });
   });
 });

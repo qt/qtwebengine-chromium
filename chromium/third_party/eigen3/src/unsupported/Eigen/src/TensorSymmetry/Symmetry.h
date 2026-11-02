@@ -139,8 +139,8 @@ class SGroup : public internal::tensor_symmetry_pre_analysis<internal::tensor_sy
   typedef typename internal::tensor_symmetry_pre_analysis<NumIndices, Gen...>::root_type Base;
 
   // make standard constructors + assignment operators public
-  inline SGroup() : Base() {}
-  inline SGroup(const SGroup<Gen...>& other) : Base(other) {}
+  inline SGroup() = default;
+  inline SGroup(const SGroup<Gen...>& other) = default;
   inline SGroup(SGroup<Gen...>&& other) : Base(other) {}
   inline SGroup<Gen...>& operator=(const SGroup<Gen...>& other) {
     Base::operator=(other);
@@ -213,7 +213,7 @@ struct tensor_symmetry_num_indices<AntiHermiticity<One_, Two_>, Sym...>
  *     still compiles with reasonable resources.</dd>
  * </dl>
  *
- * Note: Example compile time performance with g++-4.6 on an Intenl Core i5-3470
+ * Note: Example compile time performance with g++-4.6 on an Intel Core i5-3470
  *       with 16 GiB RAM (all generators non-redundant and the subgroups don't
  *       factorize):
  *

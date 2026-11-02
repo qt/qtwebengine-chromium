@@ -27,6 +27,7 @@
 #include "core/fxcrt/autorestorer.h"
 #include "core/fxcrt/check.h"
 #include "core/fxcrt/fx_string_wrappers.h"
+#include "core/fxcrt/retain_ptr.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_path.h"
 #include "fpdfsdk/cpdfsdk_annot.h"
@@ -269,6 +270,7 @@ void CPDFSDK_InteractiveForm::OnCalculate(CPDF_FormField* pFormField) {
     return;
   }
 
+  RetainPtr<CPDF_FormField> triggering_protector(pFormField);
   IJS_Runtime* pRuntime = form_fill_env_->GetIJSRuntime();
   int nSize = interactive_form_->CountFieldsInCalculationOrder();
   for (int i = 0; i < nSize; i++) {
@@ -277,6 +279,7 @@ void CPDFSDK_InteractiveForm::OnCalculate(CPDF_FormField* pFormField) {
       continue;
     }
 
+    RetainPtr<CPDF_FormField> field_protector(pField);
     FormFieldType fieldType = pField->GetFieldType();
     if (!IsFormFieldTypeComboOrText(fieldType)) {
       continue;
@@ -316,6 +319,7 @@ std::optional<WideString> CPDFSDK_InteractiveForm::OnFormat(
     return std::nullopt;
   }
 
+  RetainPtr<CPDF_FormField> protector(pFormField);
   WideString sValue = pFormField->GetValue();
   IJS_Runtime* pRuntime = form_fill_env_->GetIJSRuntime();
   if (pFormField->GetFieldType() == FormFieldType::kComboBox &&
@@ -561,6 +565,7 @@ std::vector<CPDF_FormField*> CPDFSDK_InteractiveForm::GetFieldFromObjects(
 
 bool CPDFSDK_InteractiveForm::BeforeValueChange(CPDF_FormField* pField,
                                                 const WideString& csValue) {
+  RetainPtr<CPDF_FormField> protector(pField);
   FormFieldType fieldType = pField->GetFieldType();
   if (!IsFormFieldTypeComboOrText(fieldType)) {
     return true;
@@ -572,6 +577,7 @@ bool CPDFSDK_InteractiveForm::BeforeValueChange(CPDF_FormField* pField,
 }
 
 void CPDFSDK_InteractiveForm::AfterValueChange(CPDF_FormField* pField) {
+  RetainPtr<CPDF_FormField> protector(pField);
 #ifdef PDF_ENABLE_XFA
   SynchronizeField(pField);
 #endif  // PDF_ENABLE_XFA
@@ -588,6 +594,7 @@ void CPDFSDK_InteractiveForm::AfterValueChange(CPDF_FormField* pField) {
 
 bool CPDFSDK_InteractiveForm::BeforeSelectionChange(CPDF_FormField* pField,
                                                     const WideString& csValue) {
+  RetainPtr<CPDF_FormField> protector(pField);
   if (pField->GetFieldType() != FormFieldType::kListBox) {
     return true;
   }
@@ -598,6 +605,7 @@ bool CPDFSDK_InteractiveForm::BeforeSelectionChange(CPDF_FormField* pField,
 }
 
 void CPDFSDK_InteractiveForm::AfterSelectionChange(CPDF_FormField* pField) {
+  RetainPtr<CPDF_FormField> protector(pField);
   if (pField->GetFieldType() != FormFieldType::kListBox) {
     return;
   }
@@ -608,6 +616,7 @@ void CPDFSDK_InteractiveForm::AfterSelectionChange(CPDF_FormField* pField) {
 }
 
 void CPDFSDK_InteractiveForm::AfterCheckedStatusChange(CPDF_FormField* pField) {
+  RetainPtr<CPDF_FormField> protector(pField);
   FormFieldType fieldType = pField->GetFieldType();
   if (fieldType != FormFieldType::kCheckBox &&
       fieldType != FormFieldType::kRadioButton) {

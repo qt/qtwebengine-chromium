@@ -209,6 +209,21 @@ EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE T RandomToTypeNormal(uint64_t* state, uint
   return v / u;
 }
 
+// For 16-bit types, compute the deviate in float and round once. Running the
+// rejection algorithm above directly in 16-bit arithmetic truncates the tails
+// (|v/u| is limited by the coarse uniform grid) and emits NaN/Inf: the 16-bit
+// uniform draw is exactly 0 with probability 2^-10 (half) / 2^-7 (bfloat16),
+// so log(u) = -inf poisons the acceptance test and v/u returns +/-inf.
+template <>
+EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Eigen::half RandomToTypeNormal<Eigen::half>(uint64_t* state, uint64_t stream) {
+  return Eigen::half(RandomToTypeNormal<float>(state, stream));
+}
+template <>
+EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Eigen::bfloat16 RandomToTypeNormal<Eigen::bfloat16>(uint64_t* state,
+                                                                                          uint64_t stream) {
+  return Eigen::bfloat16(RandomToTypeNormal<float>(state, stream));
+}
+
 template <>
 EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE std::complex<float> RandomToTypeNormal<std::complex<float> >(uint64_t* state,
                                                                                                    uint64_t stream) {

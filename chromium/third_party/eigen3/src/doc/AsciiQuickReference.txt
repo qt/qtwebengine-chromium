@@ -154,7 +154,7 @@ R.cwiseAbs2()                  // abs(P.^2)
 R.array().abs2()               // abs(P.^2)
 (R.array() < s).select(P,Q );  // (R < s ? P : Q)
 R = (Q.array()==0).select(P,R) // R(Q==0) = P(Q==0)
-R = P.unaryExpr(ptr_fun(func)) // R = arrayfun(func, P)   // with: scalar func(const scalar &x);
+R = P.unaryExpr([&](const scalar& x) { return func(x); }) // R = arrayfun(func, P)
 
 
 // Reductions.

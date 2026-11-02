@@ -10,7 +10,7 @@
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/render/cpdf_devicebuffer.h"
 #include "core/fpdfapi/render/cpdf_rendercontext.h"
-#include "core/fxge/cfx_defaultrenderdevice.h"
+#include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 
 namespace {
@@ -22,7 +22,6 @@ constexpr size_t kImageSizeLimitBytes = 30 * 1024 * 1024;
 CPDF_ScaledRenderBuffer::CPDF_ScaledRenderBuffer(CFX_RenderDevice* device,
                                                  const FX_RECT& rect)
     : device_(device),
-      bitmap_device_(std::make_unique<CFX_DefaultRenderDevice>()),
       rect_(rect) {}
 
 CPDF_ScaledRenderBuffer::~CPDF_ScaledRenderBuffer() = default;
@@ -47,17 +46,20 @@ bool CPDF_ScaledRenderBuffer::Initialize(CPDF_RenderContext* context,
       return false;
     }
 
-    if (pitch_size.value().size <= kImageSizeLimitBytes &&
-        bitmap_device_->Create(width, height, dibFormat)) {
-      break;
+    if (pitch_size.value().size <= kImageSizeLimitBytes) {
+      bitmap_device_ =
+          CFX_RenderDevice::CreateForNewBitmap(width, height, dibFormat);
+      if (bitmap_device_) {
+        context->GetBackgroundToDevice(bitmap_device_.get(), pObj, &options,
+                                       matrix_);
+        return true;
+      }
     }
     matrix_.Scale(0.5f, 0.5f);
   }
-  context->GetBackgroundToDevice(bitmap_device_.get(), pObj, &options, matrix_);
-  return true;
 }
 
-CFX_DefaultRenderDevice* CPDF_ScaledRenderBuffer::GetDevice() {
+CFX_RenderDevice* CPDF_ScaledRenderBuffer::GetDevice() {
   return bitmap_device_.get();
 }
 

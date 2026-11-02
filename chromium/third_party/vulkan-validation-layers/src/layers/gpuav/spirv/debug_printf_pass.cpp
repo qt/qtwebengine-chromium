@@ -156,7 +156,7 @@ void DebugPrintfPass::CreateFunctionParams(uint32_t argument_id, const Type& arg
                     p_meta.double_bitmask |= 1 << p_meta.expanded_parameter_count;
                 }
 
-                if (!module_.enabled_features_.shaderInt64) {
+                if (!module_.settings_.enabled_features->shaderInt64) {
                     module_.InternalError(
                         "DEBUG-PRINTF-INT64-SUPPORT",
                         "shaderInt64 feature is not supported, but is required to cast a 64-bit float to a 64-bit int "
@@ -575,10 +575,10 @@ bool DebugPrintfPass::Instrument() {
             }
         }
     }
-    if (instrumentations_count_ == 0) {
-        return false;
-    }
+    return instrumentations_count_ != 0;
+}
 
+void DebugPrintfPass::PostProcess() {
     const uint32_t output_buffer_variable_id = CreateDescriptorSet();
 
     // Here we "link" the functions, but since it is all generated, no need to go through the LinkInfo flow
@@ -608,8 +608,6 @@ bool DebugPrintfPass::Instrument() {
             }
         }
     }
-
-    return true;
 }
 
 void DebugPrintfPass::PrintDebugInfo() const {
@@ -823,17 +821,7 @@ bool DebugPrintfPass::Validate(const Function& current_function, const Instructi
         const ParamInfo& param = param_infos[i];
         const uint32_t argument_id = meta.target_instruction->Word(first_argument_offset + i);
 
-        const Type* argument_type = nullptr;
-        if (const Constant* constant = type_manager_.FindConstantById(argument_id)) {
-            argument_type = &constant->type_;
-        } else {
-            const Instruction* inst = current_function.FindInstruction(argument_id);
-            if (!inst) {
-                module_.InternalWarning(tag, "Unable to find OpExtInst ID inside function block");
-                return true;  // possibily our error, so leave a warning
-            }
-            argument_type = type_manager_.FindTypeById(inst->TypeId());
-        }
+        const Type* argument_type = type_manager_.FindTypeGlobal(current_function, argument_id);
         if (!argument_type) {
             module_.InternalWarning(tag, "Unable find OpExtInst ID type");
             return true;  // possibily our error, so leave a warning

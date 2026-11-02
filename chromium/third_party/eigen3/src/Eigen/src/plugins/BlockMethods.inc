@@ -11,20 +11,20 @@
 
 #ifndef EIGEN_PARSED_BY_DOXYGEN
 
-/// \internal expression type of a column */
+/// \internal expression type of a column
 typedef Block<Derived, internal::traits<Derived>::RowsAtCompileTime, 1, !IsRowMajor> ColXpr;
 typedef const Block<const Derived, internal::traits<Derived>::RowsAtCompileTime, 1, !IsRowMajor> ConstColXpr;
-/// \internal expression type of a row */
+/// \internal expression type of a row
 typedef Block<Derived, 1, internal::traits<Derived>::ColsAtCompileTime, IsRowMajor> RowXpr;
 typedef const Block<const Derived, 1, internal::traits<Derived>::ColsAtCompileTime, IsRowMajor> ConstRowXpr;
-/// \internal expression type of a block of whole columns */
+/// \internal expression type of a block of whole columns
 typedef Block<Derived, internal::traits<Derived>::RowsAtCompileTime, Dynamic, !IsRowMajor> ColsBlockXpr;
 typedef const Block<const Derived, internal::traits<Derived>::RowsAtCompileTime, Dynamic, !IsRowMajor>
     ConstColsBlockXpr;
-/// \internal expression type of a block of whole rows */
+/// \internal expression type of a block of whole rows
 typedef Block<Derived, Dynamic, internal::traits<Derived>::ColsAtCompileTime, IsRowMajor> RowsBlockXpr;
 typedef const Block<const Derived, Dynamic, internal::traits<Derived>::ColsAtCompileTime, IsRowMajor> ConstRowsBlockXpr;
-/// \internal expression type of a block of whole columns */
+/// \internal expression type of a block of whole columns
 template <int N>
 struct NColsBlockXpr {
   typedef Block<Derived, internal::traits<Derived>::RowsAtCompileTime, N, !IsRowMajor> Type;
@@ -33,7 +33,7 @@ template <int N>
 struct ConstNColsBlockXpr {
   typedef const Block<const Derived, internal::traits<Derived>::RowsAtCompileTime, N, !IsRowMajor> Type;
 };
-/// \internal expression type of a block of whole rows */
+/// \internal expression type of a block of whole rows
 template <int N>
 struct NRowsBlockXpr {
   typedef Block<Derived, N, internal::traits<Derived>::ColsAtCompileTime, IsRowMajor> Type;
@@ -42,10 +42,10 @@ template <int N>
 struct ConstNRowsBlockXpr {
   typedef const Block<const Derived, N, internal::traits<Derived>::ColsAtCompileTime, IsRowMajor> Type;
 };
-/// \internal expression of a block */
+/// \internal expression of a block
 typedef Block<Derived> BlockXpr;
 typedef const Block<const Derived> ConstBlockXpr;
-/// \internal expression of a block of fixed sizes */
+/// \internal expression of a block of fixed sizes
 template <int Rows, int Cols>
 struct FixedBlockXpr {
   typedef Block<Derived, Rows, Cols> Type;
@@ -145,7 +145,7 @@ EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE
                                                                                             blockCols));
 }
 
-/// \returns a expression of a top-right corner of \c *this with either dynamic or fixed sizes.
+/// \returns an expression of a top-right corner of \c *this with either dynamic or fixed sizes.
 ///
 /// \param cRows the number of rows in the corner
 /// \param cCols the number of columns in the corner
@@ -1016,7 +1016,7 @@ EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE typename FixedBlockXpr<NRows, NC
   return typename FixedBlockXpr<NRows, NCols>::Type(derived(), startRow, startCol);
 }
 
-/// This is the const version of block<>(Index, Index). */
+/// This is the const version of block<>(Index, Index).
 template <int NRows, int NCols>
 EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE const typename ConstFixedBlockXpr<NRows, NCols>::Type block(
     Index startRow, Index startCol) const {
@@ -1092,7 +1092,7 @@ EIGEN_DOC_BLOCK_ADDONS_INNER_PANEL_IF(row - major)
  * \sa col(), class Block */
 EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE RowXpr row(Index i) { return RowXpr(derived(), i); }
 
-/// This is the const version of row(). */
+/// This is the const version of row().
 EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE ConstRowXpr row(Index i) const { return ConstRowXpr(derived(), i); }
 
 /// \returns an expression of a segment (i.e. a vector block) in \c *this with either dynamic or fixed sizes.
@@ -1190,7 +1190,7 @@ EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE
       derived(), 0, internal::get_runtime_value(n));
 }
 
-/// \returns an expression of a last coefficients of \c *this with either dynamic or fixed sizes.
+/// \returns an expression of the last coefficients of \c *this with either dynamic or fixed sizes.
 ///
 /// \only_for_vectors
 ///
@@ -1223,7 +1223,7 @@ EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE
       derived(), this->size() - internal::get_runtime_value(n), internal::get_runtime_value(n));
 }
 
-/// This is the const version of tail(Index).
+/// This is the const version of tail(NType).
 template <typename NType>
 EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE
 #ifndef EIGEN_PARSED_BY_DOXYGEN
@@ -1317,7 +1317,7 @@ EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE typename FixedSegmentReturnType<
   return typename FixedSegmentReturnType<N>::Type(derived(), size() - n, n);
 }
 
-/// This is the const version of tail<int>.
+/// This is the const version of tail<int>().
 template <int N>
 EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE typename ConstFixedSegmentReturnType<N>::Type tail(Index n = N) const {
   EIGEN_STATIC_ASSERT_VECTOR_ONLY(Derived)

@@ -11,7 +11,7 @@ import type {MarkdownIssueDescription} from './MarkdownIssueDescription.js';
 
 const UIStrings = {
   /**
-   * @description Label for the link for Mixed Content Issues
+   * @description Label for the link for mixed content issues.
    */
   preventingMixedContent: 'Preventing mixed content',
 } as const;

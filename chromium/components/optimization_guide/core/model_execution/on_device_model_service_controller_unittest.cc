@@ -25,7 +25,6 @@
 #include "base/uuid.h"
 #include "build/build_config.h"
 #include "components/optimization_guide/core/delivery/model_info.h"
-#include "components/optimization_guide/core/delivery/test_model_info_builder.h"
 #include "components/optimization_guide/core/model_execution/model_broker_client.h"
 #include "components/optimization_guide/core/model_execution/model_broker_state.h"
 #include "components/optimization_guide/core/model_execution/model_execution_prefs.h"
@@ -459,7 +458,7 @@ TEST_F(OnDeviceModelServiceControllerTest,
   feature_list.InitWithFeaturesAndParameters(
       {{features::kOptimizationGuideOnDeviceModel,
         {{"on_device_model_topk", "1"}, {"on_device_model_temperature", "0"}}},
-       {on_device_model::features::kOnDeviceModelGpuCache, {}}},
+       {on_device_model::features::kOnDeviceModelGpuProgramCache, {}}},
       {});
 
   broker_.InstallBaseModel(std::make_unique<FakeBaseModelAsset>(
@@ -936,9 +935,7 @@ TEST_F(OnDeviceModelServiceControllerTest, SessionRequiresSafetyModel) {
     base::HistogramTester histogram_tester;
 
     broker_.model_provider().RemoveModel(
-        features::ShouldUseGeneralizedSafetyModel()
-            ? proto::OPTIMIZATION_TARGET_GENERALIZED_SAFETY
-            : proto::OPTIMIZATION_TARGET_TEXT_SAFETY);
+        proto::OPTIMIZATION_TARGET_GENERALIZED_SAFETY);
     EXPECT_TRUE(CreateSession(SessionConfigParams{}));
 
     histogram_tester.ExpectUniqueSample(
@@ -3519,8 +3516,8 @@ TEST_F(OnDeviceModelServiceControllerTest,
 TEST_F(OnDeviceModelServiceControllerTest,
        BrokerCreateSessionFailedOnNotEnoughDiskSpace) {
   // 20gb is the default in `IsFreeDiskSpaceSufficientForOnDeviceModelInstall`.
-  broker_.component_state().SetFreeDiskSpace(base::GiB(20) -
-                                             base::ByteCount(1));
+  broker_.component_state().SetFreeDiskSpace(base::GiBU(20) -
+                                             base::ByteSizeDelta(1));
 
   mojo::PendingReceiver<mojom::ModelBroker> pending_broker;
   OptimizationGuideLogger logger;

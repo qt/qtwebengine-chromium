@@ -38,11 +38,11 @@ INSTANTIATE_TEST_SUITE_P(,
 // Tests the co-domain of AttributeType::field_type().
 TEST_P(AutofillAttributeTypeTest_FieldTypeRelations, FieldType) {
   AttributeType at = GetParam();
-  EXPECT_THAT(
-      at.field_type(),
-      AnyOf(Optional(
-                ResultOf(&GroupTypeOfFieldType, FieldTypeGroup::kAutofillAi)),
-            Optional(NAME_FULL), Optional(ADDRESS_HOME_ZIP), std::nullopt));
+  EXPECT_THAT(at.field_type(),
+              AnyOf(Optional(ResultOf(&GroupTypeOfFieldType,
+                                      FieldTypeGroup::kAutofillAi)),
+                    Optional(NAME_FULL), Optional(ADDRESS_HOME_ZIP),
+                    Optional(EMAIL_ADDRESS), std::nullopt));
 }
 
 // Tests the co-domain of AttributeType::field_subtypes().
@@ -52,7 +52,7 @@ TEST_P(AutofillAttributeTypeTest_FieldTypeRelations, FieldSubtypes) {
       at.field_subtypes(),
       AnyOf(Each(ResultOf(&GroupTypeOfFieldType, FieldTypeGroup::kAutofillAi)),
             Each(ResultOf(&GroupTypeOfFieldType, FieldTypeGroup::kName)),
-            Each(ADDRESS_HOME_ZIP)));
+            Each(ADDRESS_HOME_ZIP), Each(EMAIL_ADDRESS)));
   if (at.field_type()) {
     EXPECT_THAT(at.field_subtypes(), Contains(at.field_type()));
   } else {
@@ -190,11 +190,19 @@ TEST(AutofillEntityTypeTest, AttributeGetNameForI18n) {
   AttributeType k = AttributeType(kShipmentCarrierName);
   AttributeType l = AttributeType(kShipmentCarrierDomain);
   AttributeType m = AttributeType(kShipmentDeliveryZipCode);
-  AttributeType n = AttributeType(kShipmentEstimatedDeliveryDate);
+  AttributeType n = AttributeType(kShipmentShippedDate);
   AttributeType o = AttributeType(kShipmentOrderIds);
   AttributeType p = AttributeType(kShipmentOrderDates);
   AttributeType q = AttributeType(kShipmentMerchantName);
   AttributeType r = AttributeType(kShipmentProductNames);
+
+  AttributeType s = AttributeType(kFlightReservationFlightNumber);
+  AttributeType t = AttributeType(kFlightReservationTicketNumber);
+  AttributeType u = AttributeType(kFlightReservationConfirmationCode);
+  AttributeType v = AttributeType(kFlightReservationPassengerName);
+  AttributeType w = AttributeType(kFlightReservationDepartureAirport);
+  AttributeType x = AttributeType(kFlightReservationArrivalAirport);
+  AttributeType y = AttributeType(kFlightReservationDepartureDate);
 
   EXPECT_EQ(a.GetNameForI18n(), u"Country");
   EXPECT_EQ(b.GetNameForI18n(), u"License plate");
@@ -211,11 +219,19 @@ TEST(AutofillEntityTypeTest, AttributeGetNameForI18n) {
   EXPECT_EQ(k.GetNameForI18n(), u"Carrier name");
   EXPECT_EQ(l.GetNameForI18n(), u"Carrier domain");
   EXPECT_EQ(m.GetNameForI18n(), u"Delivery zip code");
-  EXPECT_EQ(n.GetNameForI18n(), u"Estimated delivery date");
+  EXPECT_EQ(n.GetNameForI18n(), u"Shipped date");
   EXPECT_EQ(o.GetNameForI18n(), u"Order ids");
   EXPECT_EQ(p.GetNameForI18n(), u"Order dates");
   EXPECT_EQ(q.GetNameForI18n(), u"Merchant name");
   EXPECT_EQ(r.GetNameForI18n(), u"Product names");
+
+  EXPECT_EQ(s.GetNameForI18n(), u"Flight number");
+  EXPECT_EQ(t.GetNameForI18n(), u"Flight ticket");
+  EXPECT_EQ(u.GetNameForI18n(), u"Booking code");
+  EXPECT_EQ(v.GetNameForI18n(), u"Passenger");
+  EXPECT_EQ(w.GetNameForI18n(), u"Departure airport");
+  EXPECT_EQ(x.GetNameForI18n(), u"Arrival airport");
+  EXPECT_EQ(y.GetNameForI18n(), u"Departure date");
 }
 
 TEST(AutofillEntityTypeTest, DataType) {

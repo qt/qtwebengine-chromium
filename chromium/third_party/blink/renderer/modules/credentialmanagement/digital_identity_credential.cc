@@ -27,6 +27,7 @@
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/dom/scoped_abort_state.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+#include "third_party/blink/renderer/core/frame/deprecation/deprecation.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/web_feature.h"
@@ -166,9 +167,154 @@ bool IsSerializable(ScriptState* script_state, ScriptObject data) {
          !try_catch.HasCaught();
 }
 
-void RecordProtocolUseCounters(ExecutionContext* execution_context,
-                               const String& protocol) {
-  static const auto* protocol_map = new HashMap<String, WebFeature>({
+// Filters the input `requests` to only include those that have a supported
+// protocol for the given `exchange_type` (presentation or issuance).
+template <typename RequestType>
+HeapVector<Member<RequestType>> FilterSupportedRequests(
+    ExecutionContext* execution_context,
+    const HeapVector<Member<RequestType>>& requests,
+    DigitalCredentialExchangeType exchange_type) {
+  HeapVector<Member<RequestType>> valid_requests;
+  for (const auto& request : requests) {
+    if (CheckDigitalCredentialSupportedProtocol(
+            execution_context, request->protocol(), exchange_type)) {
+      valid_requests.push_back(request);
+    }
+  }
+  return valid_requests;
+}
+
+// Serializes the Blink request objects into Mojo request objects.
+// This is an "expensive" operation as it converts V8 values to C++ values,
+// which may trigger arbitrary JavaScript execution (e.g., via getters).
+// If serialization fails, it rejects the `resolver` with a `TypeError` and
+// returns `std::nullopt`.
+// Returns `std::nullopt` (without rejecting) if the context becomes invalid
+// during execution.
+template <typename MojoRequest, typename BlinkRequestType>
+std::optional<Vector<mojo::StructPtr<MojoRequest>>> SerializeRequestsOrReject(
+    ScriptState* script_state,
+    ScriptPromiseResolver<IDLNullable<Credential>>* resolver,
+    const HeapVector<Member<BlinkRequestType>>& blink_requests) {
+  std::unique_ptr<WebV8ValueConverter> converter =
+      Platform::Current()->CreateWebV8ValueConverter();
+  Vector<mojo::StructPtr<MojoRequest>> mojo_requests;
+
+  for (const auto& request : blink_requests) {
+    if (!IsSerializable(script_state, request->data())) {
+      resolver->RejectWithTypeError(
+          "Digital identity API requires valid JSON in the request.");
+      return std::nullopt;
+    }
+    auto mojo_request = MojoRequest::New();
+    mojo_request->protocol = request->protocol();
+    std::unique_ptr<base::Value> request_data = converter->FromV8Value(
+        request->data().V8Object(), script_state->GetContext());
+    // The `ExecutionContext` might have been destroyed by malicious getters
+    // during the V8-to-C++ object conversion above. Bail out if it was.
+    if (!script_state->ContextIsValid()) {
+      return std::nullopt;
+    }
+    if (!request_data) {
+      resolver->RejectWithTypeError(
+          "Digital identity API requires valid JSON in the request.");
+      return std::nullopt;
+    }
+    mojo_request->data = std::move(*request_data);
+    mojo_requests.push_back(std::move(mojo_request));
+  }
+  return mojo_requests;
+}
+
+// Checks if the request is allowed based on transient user activation or
+// delegated capability.
+// If not allowed, it rejects the `resolver` with a `NotAllowedError` and
+// returns false.
+bool CheckUserActivationOrReject(
+    ScriptPromiseResolver<IDLNullable<Credential>>* resolver,
+    DigitalCredentialExchangeType exchange_type) {
+  LocalDOMWindow* window = To<LocalDOMWindow>(resolver->GetExecutionContext());
+  LocalFrame* local_frame = window->GetFrame();
+
+  bool has_transient_user_activation =
+      LocalFrame::ConsumeTransientUserActivation(
+          local_frame, UserActivationUpdateSource::kRenderer);
+  bool is_delegated = false;
+  bool allowed = has_transient_user_activation;
+
+  if (!allowed &&
+      RuntimeEnabledFeatures::CapabilityDelegationDigitalCredentialsEnabled(
+          window)) {
+    switch (exchange_type) {
+      case DigitalCredentialExchangeType::kPresentation:
+        is_delegated = window->ConsumeDigitalCredentialsGetToken();
+        break;
+      case DigitalCredentialExchangeType::kIssuance:
+        is_delegated = window->ConsumeDigitalCredentialsCreateToken();
+        break;
+      default:
+        NOTREACHED();
+    }
+    allowed = is_delegated;
+  }
+
+  switch (exchange_type) {
+    case DigitalCredentialExchangeType::kPresentation:
+      base::UmaHistogramBoolean(
+          "Blink.DigitalCredentials.Get.HasTransientUserActivation",
+          has_transient_user_activation);
+      base::UmaHistogramBoolean("Blink.DigitalCredentials.Get.IsDelegated",
+                                is_delegated);
+      break;
+    case DigitalCredentialExchangeType::kIssuance:
+      base::UmaHistogramBoolean(
+          "Blink.DigitalCredentials.Create.HasTransientUserActivation",
+          has_transient_user_activation);
+      base::UmaHistogramBoolean("Blink.DigitalCredentials.Create.IsDelegated",
+                                is_delegated);
+      break;
+    default:
+      NOTREACHED();
+  }
+
+  if (!allowed) {
+    const bool delegation_enabled =
+        RuntimeEnabledFeatures::CapabilityDelegationDigitalCredentialsEnabled(
+            window);
+    const char* message = nullptr;
+    if (exchange_type == DigitalCredentialExchangeType::kPresentation) {
+      message = delegation_enabled
+                    ? "The 'digital-credentials-get' feature requires "
+                      "transient activation or delegated capability."
+                    : "The 'digital-credentials-get' feature requires "
+                      "transient activation.";
+    } else {
+      message = delegation_enabled
+                    ? "The 'digital-credentials-create' feature requires "
+                      "transient activation or delegated capability."
+                    : "The 'digital-credentials-create' feature requires "
+                      "transient activation.";
+    }
+    resolver->Reject(MakeGarbageCollected<DOMException>(
+        DOMExceptionCode::kNotAllowedError, message));
+    return false;
+  }
+
+  return true;
+}
+
+}  // anonymous namespace
+
+bool CheckDigitalCredentialSupportedProtocol(
+    ExecutionContext* execution_context,
+    const String& protocol,
+    DigitalCredentialExchangeType type) {
+  struct ProtocolEntry {
+    const char* protocol;
+    WebFeature feature;
+  };
+
+  static constexpr ProtocolEntry kPresentationProtocols[] = {
       {"openid4vp-v1-unsigned",
        WebFeature::kDigitalCredentialsProtocolOpenId4VpUnsigned},
       {"openid4vp-v1-signed",
@@ -176,19 +322,55 @@ void RecordProtocolUseCounters(ExecutionContext* execution_context,
       {"openid4vp-v1-multisigned",
        WebFeature::kDigitalCredentialsProtocolOpenId4VpMultisigned},
       {"org-iso-mdoc", WebFeature::kDigitalCredentialsProtocolOrgIsoMdoc},
+  };
+
+  static constexpr ProtocolEntry kIssuanceProtocols[] = {
+      // TODO(crbug.com/521181022): Ensure this aligns to the specification
       {"openid4vci", WebFeature::kDigitalCredentialsProtocolOpenId4Vci},
-  });
+      {"openid4vci-v1", WebFeature::kDigitalCredentialsProtocolOpenId4VciV1},
+  };
 
-  auto it = protocol_map->find(protocol);
-  if (it != protocol_map->end()) {
-    UseCounter::Count(execution_context, it->value);
-  } else {
-    UseCounter::Count(execution_context,
-                      WebFeature::kDigitalCredentialsProtocolUnknown);
+  bool is_supported = false;
+  WebFeature feature = WebFeature::kDigitalCredentialsProtocolUnknown;
+
+  if (type == DigitalCredentialExchangeType::kPresentation ||
+      type == DigitalCredentialExchangeType::kQuery) {
+    for (const auto& entry : kPresentationProtocols) {
+      if (protocol == entry.protocol) {
+        is_supported = true;
+        feature = entry.feature;
+        break;
+      }
+    }
   }
-}
 
-}  // anonymous namespace
+  if (!is_supported && (type == DigitalCredentialExchangeType::kIssuance ||
+                        type == DigitalCredentialExchangeType::kQuery)) {
+    for (const auto& entry : kIssuanceProtocols) {
+      if (protocol == entry.protocol) {
+        is_supported = true;
+        feature = entry.feature;
+        break;
+      }
+    }
+  }
+
+  // Record protocol metrics for get/create calls only.
+  if (type != DigitalCredentialExchangeType::kQuery) {
+    if (!is_supported) {
+      execution_context->CountDeprecation(
+          WebFeature::kDigitalCredentialsProtocolUnknown);
+    } else {
+      UseCounter::Count(execution_context, feature);
+    }
+  }
+
+  if (!RuntimeEnabledFeatures::DigitalCredentialsProtocolFilterEnabled(
+          execution_context)) {
+    return true;
+  }
+  return is_supported;
+}
 
 bool IsDigitalIdentityCredentialType(const CredentialRequestOptions& options) {
   return options.hasDigital();
@@ -212,6 +394,13 @@ void DiscoverDigitalIdentityCredentialFromExternalSource(
     return;
   }
 
+  if (resolver->GetExecutionContext()->GetSecurityOrigin()->IsOpaque()) {
+    resolver->Reject(MakeGarbageCollected<DOMException>(
+        DOMExceptionCode::kNotAllowedError,
+        "The credential operation is not allowed in an opaque origin."));
+    return;
+  }
+
   if (!resolver->GetExecutionContext()->IsFeatureEnabled(
           network::mojom::PermissionsPolicyFeature::kDigitalCredentialsGet)) {
     resolver->Reject(MakeGarbageCollected<DOMException>(
@@ -221,44 +410,36 @@ void DiscoverDigitalIdentityCredentialFromExternalSource(
         "credential API capabilities to cross-origin child frames."));
     return;
   }
-  std::unique_ptr<WebV8ValueConverter> converter =
-      Platform::Current()->CreateWebV8ValueConverter();
 
-  Vector<blink::mojom::blink::DigitalCredentialGetRequestPtr> requests;
-  ScriptState* script_state = resolver->GetScriptState();
-  for (const auto& request : options.digital()->requests()) {
-    if (!IsSerializable(script_state, request->data())) {
-      resolver->RejectWithTypeError(
-          "Digital identity API requires valid JSON in the request.");
-      return;
-    }
-    blink::mojom::blink::DigitalCredentialGetRequestPtr
-        digital_credential_request =
-            blink::mojom::blink::DigitalCredentialGetRequest::New();
-    digital_credential_request->protocol = request->protocol();
-    RecordProtocolUseCounters(resolver->GetExecutionContext(),
-                              request->protocol());
-    std::unique_ptr<base::Value> digital_credential_request_data =
-        converter->FromV8Value(request->data().V8Object(),
-                               resolver->GetScriptState()->GetContext());
-    // The `ExecutionContext` might have been destroyed by malicious getters
-    // during the V8-to-C++ object conversion above. Bail out if it was.
-    if (!resolver->GetScriptState()->ContextIsValid()) {
-      return;
-    }
-    if (!digital_credential_request_data) {
-      return;
-    }
-    digital_credential_request->data =
-        std::move(*digital_credential_request_data);
-    requests.push_back(std::move(digital_credential_request));
-  }
+  // 1. Filter by protocol support (cheap, no JS execution).
+  auto valid_protocol_requests = FilterSupportedRequests(
+      resolver->GetExecutionContext(), options.digital()->requests(),
+      DigitalCredentialExchangeType::kPresentation);
 
-  if (requests.empty()) {
+  if (valid_protocol_requests.empty()) {
     resolver->RejectWithTypeError(
-        "Digital identity API needs at least one well-formed request.");
+        "Digital Credentials API call with no well-formed allowed protocol "
+        "requests.");
     return;
   }
+
+  // 2. Check user activation.
+  if (!CheckUserActivationOrReject(
+          resolver, DigitalCredentialExchangeType::kPresentation)) {
+    return;
+  }
+
+  // 3. Serialize and convert (expensive, may run JS getters).
+  ScriptState* script_state = resolver->GetScriptState();
+  auto requests_opt = SerializeRequestsOrReject<
+      blink::mojom::blink::DigitalCredentialGetRequest>(
+      script_state, resolver, valid_protocol_requests);
+  if (!requests_opt) {
+    return;
+  }
+  auto requests = std::move(*requests_opt);
+
+  CHECK(!requests.empty());
 
   UseCounter::Count(resolver->GetExecutionContext(),
                     WebFeature::kIdentityDigitalCredentials);
@@ -268,43 +449,6 @@ void DiscoverDigitalIdentityCredentialFromExternalSource(
     auto callback = BindOnce(&AbortRequest, WrapPersistent(script_state));
     auto* handle = signal->AddAlgorithm(std::move(callback));
     scoped_abort_state = std::make_unique<ScopedAbortState>(signal, handle);
-  }
-
-  LocalDOMWindow* window = To<LocalDOMWindow>(resolver->GetExecutionContext());
-  LocalFrame* local_frame = window->GetFrame();
-
-  bool has_transient_user_activation =
-      LocalFrame::ConsumeTransientUserActivation(
-          local_frame, UserActivationUpdateSource::kRenderer);
-  bool is_delegated = false;
-  // True if the digital-credentials-get operation is allowed based on either
-  // transient user activation or delegated capability.
-  bool digital_credentials_get_allowed = has_transient_user_activation;
-
-  if (!digital_credentials_get_allowed &&
-      RuntimeEnabledFeatures::CapabilityDelegationDigitalCredentialsEnabled(
-          window)) {
-    is_delegated = window->ConsumeDigitalCredentialsGetToken();
-    digital_credentials_get_allowed = is_delegated;
-  }
-
-  base::UmaHistogramBoolean(
-      "Blink.DigitalCredentials.Get.HasTransientUserActivation",
-      has_transient_user_activation);
-
-  base::UmaHistogramBoolean("Blink.DigitalCredentials.Get.IsDelegated",
-                            is_delegated);
-
-  if (!digital_credentials_get_allowed) {
-    resolver->Reject(MakeGarbageCollected<DOMException>(
-        DOMExceptionCode::kNotAllowedError,
-        RuntimeEnabledFeatures::CapabilityDelegationDigitalCredentialsEnabled(
-            window)
-            ? "The 'digital-credentials-get' feature requires transient "
-              "activation or delegated capability."
-            : "The 'digital-credentials-get' feature requires transient "
-              "activation."));
-    return;
   }
 
   auto* request =
@@ -329,6 +473,13 @@ void CreateDigitalIdentityCredentialInExternalSource(
     return;
   }
 
+  if (resolver->GetExecutionContext()->GetSecurityOrigin()->IsOpaque()) {
+    resolver->Reject(MakeGarbageCollected<DOMException>(
+        DOMExceptionCode::kNotAllowedError,
+        "The credential operation is not allowed in an opaque origin."));
+    return;
+  }
+
   if (!resolver->GetExecutionContext()->IsFeatureEnabled(
           network::mojom::PermissionsPolicyFeature::
               kDigitalCredentialsCreate)) {
@@ -340,45 +491,35 @@ void CreateDigitalIdentityCredentialInExternalSource(
     return;
   }
 
-  std::unique_ptr<WebV8ValueConverter> converter =
-      Platform::Current()->CreateWebV8ValueConverter();
+  // 1. Filter by protocol support (cheap, no JS execution).
+  auto valid_protocol_requests = FilterSupportedRequests(
+      resolver->GetExecutionContext(), options.digital()->requests(),
+      DigitalCredentialExchangeType::kIssuance);
 
-  Vector<blink::mojom::blink::DigitalCredentialCreateRequestPtr> requests;
-  ScriptState* script_state = resolver->GetScriptState();
-  for (const auto& request : options.digital()->requests()) {
-    if (!IsSerializable(script_state, request->data())) {
-      resolver->RejectWithTypeError(
-          "Digital identity API requires valid JSON in the request.");
-      return;
-    }
-    blink::mojom::blink::DigitalCredentialCreateRequestPtr
-        digital_credential_request =
-            blink::mojom::blink::DigitalCredentialCreateRequest::New();
-    digital_credential_request->protocol = request->protocol();
-    RecordProtocolUseCounters(resolver->GetExecutionContext(),
-                              request->protocol());
-    std::unique_ptr<base::Value> digital_credential_request_data =
-        converter->FromV8Value(request->data().V8Object(),
-                               resolver->GetScriptState()->GetContext());
-    // The `ExecutionContext` might have been destroyed by malicious getters
-    // during the V8-to-C++ object conversion above. Bail out if it was.
-    if (!resolver->GetScriptState()->ContextIsValid()) {
-      return;
-    }
-    if (!digital_credential_request_data) {
-      continue;
-    }
-    digital_credential_request->data =
-        std::move(*digital_credential_request_data);
-
-    requests.push_back(std::move(digital_credential_request));
-  }
-
-  if (requests.empty()) {
+  if (valid_protocol_requests.empty()) {
     resolver->RejectWithTypeError(
-        "Digital identity API needs at least one well-formed request.");
+        "Digital Credentials API call with no well-formed allowed protocol "
+        "requests.");
     return;
   }
+
+  // 2. Check user activation.
+  if (!CheckUserActivationOrReject(resolver,
+                                   DigitalCredentialExchangeType::kIssuance)) {
+    return;
+  }
+
+  // 3. Serialize and convert (expensive, may run JS getters).
+  ScriptState* script_state = resolver->GetScriptState();
+  auto requests_opt = SerializeRequestsOrReject<
+      blink::mojom::blink::DigitalCredentialCreateRequest>(
+      script_state, resolver, valid_protocol_requests);
+  if (!requests_opt) {
+    return;
+  }
+  auto requests = std::move(*requests_opt);
+
+  CHECK(!requests.empty());
 
   UseCounter::Count(resolver->GetExecutionContext(),
                     WebFeature::kIdentityDigitalCredentialsCreation);
@@ -388,43 +529,6 @@ void CreateDigitalIdentityCredentialInExternalSource(
     auto callback = BindOnce(&AbortRequest, WrapPersistent(script_state));
     auto* handle = signal->AddAlgorithm(std::move(callback));
     scoped_abort_state = std::make_unique<ScopedAbortState>(signal, handle);
-  }
-
-  LocalDOMWindow* window = To<LocalDOMWindow>(resolver->GetExecutionContext());
-  LocalFrame* local_frame = window->GetFrame();
-
-  bool has_transient_user_activation =
-      LocalFrame::ConsumeTransientUserActivation(
-          local_frame, UserActivationUpdateSource::kRenderer);
-  bool is_delegated = false;
-  // True if the digital-credentials-create operation is allowed based on either
-  // transient user activation or delegated capability.
-  bool digital_credentials_create_allowed = has_transient_user_activation;
-
-  if (!digital_credentials_create_allowed &&
-      RuntimeEnabledFeatures::CapabilityDelegationDigitalCredentialsEnabled(
-          window)) {
-    is_delegated = window->ConsumeDigitalCredentialsCreateToken();
-    digital_credentials_create_allowed = is_delegated;
-  }
-
-  base::UmaHistogramBoolean(
-      "Blink.DigitalCredentials.Create.HasTransientUserActivation",
-      has_transient_user_activation);
-
-  base::UmaHistogramBoolean("Blink.DigitalCredentials.Create.IsDelegated",
-                            is_delegated);
-
-  if (!digital_credentials_create_allowed) {
-    resolver->Reject(MakeGarbageCollected<DOMException>(
-        DOMExceptionCode::kNotAllowedError,
-        RuntimeEnabledFeatures::CapabilityDelegationDigitalCredentialsEnabled(
-            window)
-            ? "The 'digital-credentials-create' feature requires transient "
-              "activation or delegated capability."
-            : "The 'digital-credentials-create' feature requires transient "
-              "activation."));
-    return;
   }
 
   CredentialManagerProxy::From(script_state)

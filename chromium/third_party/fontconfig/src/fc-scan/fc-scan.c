@@ -157,6 +157,7 @@ main (int argc, char **argv)
 	FcConfigSetSysRoot (NULL, sysroot);
 	FcStrFree (sysroot);
     }
+    FcConfigSetWarningFlags (NULL, -1, FcTrue);
     fs = FcFontSetCreate();
 
     for (; i < argc; i++) {
@@ -190,6 +191,9 @@ main (int argc, char **argv)
 	    if (s) {
 		printf ("%s", s);
 		FcStrFree (s);
+	    } else {
+		i = 0;
+		break;
 	    }
 	} else {
 	    FcPatternPrint (pat);

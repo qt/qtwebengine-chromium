@@ -20,7 +20,6 @@
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"
-#include "absl/functional/overload.h"
 #include "absl/status/status.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
@@ -28,6 +27,7 @@
 #include "ink/brush/color_function.h"
 #include "ink/brush/internal/jni/brush_native_helper.h"
 #include "ink/color/color.h"
+#include "ink/color/color_space.h"
 #include "ink/color/internal/jni/color_native_helper.h"
 #include "ink/geometry/angle.h"
 #include "ink/geometry/internal/jni/mesh_format_native_helper.h"
@@ -40,6 +40,7 @@ using ::ink::Angle;
 using ::ink::BrushPaint;
 using ::ink::Color;
 using ::ink::ColorFunction;
+using ::ink::ColorSpace;
 using ::ink::MeshFormat;
 using ::ink::Vec;
 using ::ink::brush_internal::AddAttributeIdsRequiredByPaint;
@@ -53,48 +54,25 @@ using ::ink::native::ComputeColorLong;
 using ::ink::native::DeleteNativeBrushPaint;
 using ::ink::native::DeleteNativeColorFunction;
 using ::ink::native::DeleteNativeTextureLayer;
-using ::ink::native::IntToColorSpace;
 using ::ink::native::NewNativeBrushPaint;
 using ::ink::native::NewNativeColorFunction;
 using ::ink::native::NewNativeTextureLayer;
 
-BrushPaint::TextureSizeUnit IntToSizeUnit(int val) {
-  return static_cast<BrushPaint::TextureSizeUnit>(val);
-}
-
-BrushPaint::TextureOrigin IntToOrigin(int val) {
-  return static_cast<BrushPaint::TextureOrigin>(val);
-}
-
-BrushPaint::TextureWrap IntToWrap(int val) {
-  return static_cast<BrushPaint::TextureWrap>(val);
-}
-
-BrushPaint::BlendMode IntToBlendMode(int val) {
-  return static_cast<BrushPaint::BlendMode>(val);
-}
-
-BrushPaint::SelfOverlap IntToSelfOverlap(int val) {
-  return static_cast<BrushPaint::SelfOverlap>(val);
-}
-
 int64_t ValidateAndHoistColorFunctionOrThrow(
     ColorFunction::Parameters parameters, void* jni_env_pass_through,
-    void (*throw_from_status_callback)(void*, int, const char*)) {
+    void (*throw_from_status_callback)(void* jni_env, int status_code,
+                                       const char* status_str)) {
   ColorFunction color_function{.parameters = std::move(parameters)};
   if (absl::Status status =
           ink::brush_internal::ValidateColorFunction(color_function);
       !status.ok()) {
     throw_from_status_callback(jni_env_pass_through,
                                static_cast<int>(status.code()),
-                               status.message().data());
+                               status.ToString().c_str());
     return 0;
   }
   return NewNativeColorFunction(std::move(color_function));
 }
-
-static constexpr int kOpacityMultiplier = 0;
-static constexpr int kReplaceColor = 1;
 
 }  // namespace
 
@@ -104,7 +82,8 @@ int64_t BrushPaintNative_create(
     void* jni_env_pass_through, const int64_t* texture_layer_native_pointers,
     int num_texture_layers, const int64_t* color_function_native_pointers,
     int num_color_functions, int self_overlap_int,
-    void (*throw_from_status_callback)(void*, int, const char*)) {
+    void (*throw_from_status_callback)(void* jni_env, int status_code,
+                                       const char* status_str)) {
   std::vector<BrushPaint::TextureLayer> texture_layers;
   texture_layers.reserve(num_texture_layers);
   for (int i = 0; i < num_texture_layers; ++i) {
@@ -119,13 +98,14 @@ int64_t BrushPaintNative_create(
         CastToColorFunction(color_function_native_pointers[i]));
   }
 
-  BrushPaint brush_paint{.texture_layers = std::move(texture_layers),
-                         .color_functions = std::move(color_functions),
-                         .self_overlap = IntToSelfOverlap(self_overlap_int)};
+  BrushPaint brush_paint{
+      .texture_layers = std::move(texture_layers),
+      .color_functions = std::move(color_functions),
+      .self_overlap = static_cast<BrushPaint::SelfOverlap>(self_overlap_int)};
   if (absl::Status status = ValidateBrushPaint(brush_paint); !status.ok()) {
     throw_from_status_callback(jni_env_pass_through,
                                static_cast<int>(status.code()),
-                               status.message().data());
+                               status.ToString().c_str());
     return 0;
   }
   return NewNativeBrushPaint(std::move(brush_paint));
@@ -154,15 +134,7 @@ int BrushPaintNative_getColorFunctionCount(int64_t native_ptr) {
 
 int BrushPaintNative_getColorFunctionParametersTypeInt(int64_t native_ptr,
                                                        int index) {
-  const ColorFunction::Parameters& parameters =
-      CastToBrushPaint(native_ptr).color_functions[index].parameters;
-  constexpr auto visitor = absl::Overload{
-      [](const ColorFunction::OpacityMultiplier&) {
-        return kOpacityMultiplier;
-      },
-      [](const ColorFunction::ReplaceColor&) { return kReplaceColor; },
-  };
-  return std::visit(visitor, parameters);
+  return CastToBrushPaint(native_ptr).color_functions[index].parameters.index();
 }
 
 int64_t BrushPaintNative_newCopyOfColorFunction(int64_t native_ptr, int index) {
@@ -194,23 +166,24 @@ int64_t TilingTextureNative_create(
     void* jni_env_pass_through, const char* client_texture_id, float size_x,
     float size_y, float offset_x, float offset_y, float rotation_degrees,
     int size_unit, int origin, int wrap_x, int wrap_y, int blend_mode,
-    void (*throw_from_status_callback)(void*, int, const char*)) {
+    void (*throw_from_status_callback)(void* jni_env, int status_code,
+                                       const char* status_str)) {
   BrushPaint::TextureLayer texture_layer = {BrushPaint::TilingTexture{
       .client_texture_id = client_texture_id,
-      .origin = IntToOrigin(origin),
-      .size_unit = IntToSizeUnit(size_unit),
-      .wrap_x = IntToWrap(wrap_x),
-      .wrap_y = IntToWrap(wrap_y),
+      .origin = static_cast<BrushPaint::TextureOrigin>(origin),
+      .size_unit = static_cast<BrushPaint::TextureSizeUnit>(size_unit),
+      .wrap_x = static_cast<BrushPaint::TextureWrap>(wrap_x),
+      .wrap_y = static_cast<BrushPaint::TextureWrap>(wrap_y),
       .size = Vec{size_x, size_y},
       .offset = Vec{offset_x, offset_y},
       .rotation = Angle::Degrees(rotation_degrees),
-      .blend_mode = IntToBlendMode(blend_mode),
+      .blend_mode = static_cast<BrushPaint::BlendMode>(blend_mode),
   }};
   if (absl::Status status = ValidateBrushPaintTextureLayer(texture_layer);
       !status.ok()) {
     throw_from_status_callback(jni_env_pass_through,
                                static_cast<int>(status.code()),
-                               status.message().data());
+                               status.ToString().c_str());
     return 0;
   }
   return NewNativeTextureLayer(std::move(texture_layer));
@@ -220,20 +193,21 @@ int64_t StampingTextureNative_create(
     void* jni_env_pass_through, const char* client_texture_id,
     int animation_frames, int animation_rows, int animation_columns,
     int64_t animation_duration_millis, int blend_mode,
-    void (*throw_from_status_callback)(void*, int, const char*)) {
+    void (*throw_from_status_callback)(void* jni_env, int status_code,
+                                       const char* status_str)) {
   BrushPaint::TextureLayer texture_layer = {BrushPaint::StampingTexture{
       .client_texture_id = client_texture_id,
       .animation_frames = animation_frames,
       .animation_rows = animation_rows,
       .animation_columns = animation_columns,
       .animation_duration = absl::Milliseconds(animation_duration_millis),
-      .blend_mode = IntToBlendMode(blend_mode),
+      .blend_mode = static_cast<BrushPaint::BlendMode>(blend_mode),
   }};
   if (absl::Status status = ValidateBrushPaintTextureLayer(texture_layer);
       !status.ok()) {
     throw_from_status_callback(jni_env_pass_through,
                                static_cast<int>(status.code()),
-                               status.message().data());
+                               status.ToString().c_str());
     return 0;
   }
   return NewNativeTextureLayer(std::move(texture_layer));
@@ -337,21 +311,50 @@ int TextureLayerNative_getBlendModeInt(int64_t native_ptr) {
 
 int64_t ColorFunctionNative_createOpacityMultiplier(
     void* jni_env_pass_through, float multiplier,
-    void (*throw_from_status_callback)(void*, int, const char*)) {
+    void (*throw_from_status_callback)(void* jni_env, int status_code,
+                                       const char* status_str)) {
   return ValidateAndHoistColorFunctionOrThrow(
       ColorFunction::OpacityMultiplier{.multiplier = multiplier},
       jni_env_pass_through, throw_from_status_callback);
 }
 
+int64_t ColorFunctionNative_createHueOffset(
+    void* jni_env_pass_through, float offsetDegrees,
+    void (*throw_from_status_callback)(void* jni_env, int status_code,
+                                       const char* status_str)) {
+  return ValidateAndHoistColorFunctionOrThrow(
+      ColorFunction::HueOffset{.offset = Angle::Degrees(offsetDegrees)},
+      jni_env_pass_through, throw_from_status_callback);
+}
+
+int64_t ColorFunctionNative_createSaturationMultiplier(
+    void* jni_env_pass_through, float multiplier,
+    void (*throw_from_status_callback)(void* jni_env, int status_code,
+                                       const char* status_str)) {
+  return ValidateAndHoistColorFunctionOrThrow(
+      ColorFunction::SaturationMultiplier{.multiplier = multiplier},
+      jni_env_pass_through, throw_from_status_callback);
+}
+
+int64_t ColorFunctionNative_createLuminosityOffset(
+    void* jni_env_pass_through, float offset,
+    void (*throw_from_status_callback)(void* jni_env, int status_code,
+                                       const char* status_str)) {
+  return ValidateAndHoistColorFunctionOrThrow(
+      ColorFunction::LuminosityOffset{.offset = offset}, jni_env_pass_through,
+      throw_from_status_callback);
+}
+
 int64_t ColorFunctionNative_createReplaceColor(
     void* jni_env_pass_through, float color_red, float color_green,
     float color_blue, float color_alpha, int color_space_id,
-    void (*throw_from_status_callback)(void*, int, const char*)) {
+    void (*throw_from_status_callback)(void* jni_env, int status_code,
+                                       const char* status_str)) {
   return ValidateAndHoistColorFunctionOrThrow(
       ColorFunction::ReplaceColor{
           .color = Color::FromFloat(color_red, color_green, color_blue,
                                     color_alpha, Color::Format::kGammaEncoded,
-                                    IntToColorSpace(color_space_id))},
+                                    static_cast<ColorSpace>(color_space_id))},
       jni_env_pass_through, throw_from_status_callback);
 }
 
@@ -365,6 +368,24 @@ float ColorFunctionNative_getOpacityMultiplier(int64_t native_ptr) {
       .multiplier;
 }
 
+float ColorFunctionNative_getHueOffsetDegrees(int64_t native_ptr) {
+  return std::get<ColorFunction::HueOffset>(
+             CastToColorFunction(native_ptr).parameters)
+      .offset.ValueInDegrees();
+}
+
+float ColorFunctionNative_getSaturationMultiplier(int64_t native_ptr) {
+  return std::get<ColorFunction::SaturationMultiplier>(
+             CastToColorFunction(native_ptr).parameters)
+      .multiplier;
+}
+
+float ColorFunctionNative_getLuminosityOffset(int64_t native_ptr) {
+  return std::get<ColorFunction::LuminosityOffset>(
+             CastToColorFunction(native_ptr).parameters)
+      .offset;
+}
+
 int64_t ColorFunctionNative_computeReplaceColorLong(
     void* jni_env_pass_through, int64_t native_ptr,
     int64_t (*compose_color_long_from_components_callback)(void*, int, float,
@@ -374,6 +395,20 @@ int64_t ColorFunctionNative_computeReplaceColorLong(
                           std::get<ColorFunction::ReplaceColor>(
                               CastToColorFunction(native_ptr).parameters)
                               .color,
+                          compose_color_long_from_components_callback);
+}
+
+int64_t ColorFunctionNative_computeTransformedColorLong(
+    void* jni_env_pass_through, int64_t native_ptr, float color_red,
+    float color_green, float color_blue, float color_alpha, int color_space_id,
+    int64_t (*compose_color_long_from_components_callback)(void*, int, float,
+                                                           float, float,
+                                                           float)) {
+  const Color input_color = Color::FromFloat(
+      color_red, color_green, color_blue, color_alpha,
+      Color::Format::kGammaEncoded, static_cast<ColorSpace>(color_space_id));
+  const Color output_color = CastToColorFunction(native_ptr)(input_color);
+  return ComputeColorLong(jni_env_pass_through, output_color,
                           compose_color_long_from_components_callback);
 }
 

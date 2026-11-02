@@ -398,7 +398,7 @@ describe('IssueAggregator', () => {
       getTestCookieIssue(Protocol.Audits.CookieWarningReason.WarnDeprecationTrialMetadata),
       getTestCookieIssue(Protocol.Audits.CookieWarningReason.WarnThirdPartyCookieHeuristic),
       getTestCookieIssue(Protocol.Audits.CookieWarningReason.WarnThirdPartyPhaseout),
-      getTestCookieIssue(undefined, Protocol.Audits.CookieExclusionReason.ExcludeThirdPartyPhaseout)
+      getTestCookieIssue(undefined, Protocol.Audits.CookieExclusionReason.ExcludeThirdPartyPhaseout),
     ];
     for (const issue of issues) {
       issuesManager.addIssue(issue as StubIssue);

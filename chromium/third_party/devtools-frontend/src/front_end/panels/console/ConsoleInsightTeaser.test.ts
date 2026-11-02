@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -103,13 +104,13 @@ describeWithEnvironment('ConsoleInsightTeaser', () => {
       yield ' explanation';
     });
 
-    const builtInAi = AiAssistanceModel.BuiltInAi.BuiltInAi.instance();
+    const builtInAi = new AiAssistanceModel.BuiltInAi.BuiltInAi();
     assert.isDefined(builtInAi);
     await builtInAi.initDoneForTesting;
 
     const view = createViewFunctionStub(Console.ConsoleInsightTeaser.ConsoleInsightTeaser);
-    const teaser =
-        new Console.ConsoleInsightTeaser.ConsoleInsightTeaser('test-uuid', consoleViewMessage, undefined, view);
+    const teaser = new Console.ConsoleInsightTeaser.ConsoleInsightTeaser('test-uuid', consoleViewMessage, undefined,
+                                                                         view, builtInAi);
     teaser.maybeGenerateTeaser();
     const input = await view.nextInput;
     assert.isFalse(input.isInactive);
@@ -135,10 +136,10 @@ describeWithEnvironment('ConsoleInsightTeaser', () => {
         });
       },
     };
-    const builtInAi = AiAssistanceModel.BuiltInAi.BuiltInAi.instance();
+    const builtInAi = new AiAssistanceModel.BuiltInAi.BuiltInAi();
     const view = createViewFunctionStub(Console.ConsoleInsightTeaser.ConsoleInsightTeaser);
-    const teaser =
-        new Console.ConsoleInsightTeaser.ConsoleInsightTeaser('test-uuid', consoleViewMessage, undefined, view);
+    const teaser = new Console.ConsoleInsightTeaser.ConsoleInsightTeaser('test-uuid', consoleViewMessage, undefined,
+                                                                         view, builtInAi);
     teaser.maybeGenerateTeaser();
     let input = await view.nextInput;
     assert.strictEqual(input.state, 'no-model');
@@ -170,14 +171,14 @@ describeWithEnvironment('ConsoleInsightTeaser', () => {
   });
 
   it('shows FRE dialog on "Tell me more" click', async () => {
-    Common.Settings.settingForTest('console-insights-enabled').set(false);
+    Common.Settings.Settings.instance().settingForTest('console-insights-enabled').set(false);
     const show = sinon.stub(PanelCommon.FreDialog, 'show');
     const view = createViewFunctionStub(Console.ConsoleInsightTeaser.ConsoleInsightTeaser);
     new Console.ConsoleInsightTeaser.ConsoleInsightTeaser('test-uuid', consoleViewMessage, undefined, view);
     const input = await view.nextInput;
     await input.onTellMeMoreClick(new Event('click'));
     sinon.assert.calledOnce(show);
-    Common.Settings.settingForTest('console-insights-enabled').set(true);
+    Common.Settings.Settings.instance().settingForTest('console-insights-enabled').set(true);
     show.restore();
   });
 
@@ -190,10 +191,10 @@ describeWithEnvironment('ConsoleInsightTeaser', () => {
         checked: true,
       } as unknown as EventTarget,
     } as Event;
-    assert.isTrue(Common.Settings.moduleSetting('console-insight-teasers-enabled').get());
+    assert.isTrue(Common.Settings.Settings.instance().moduleSetting('console-insight-teasers-enabled').get());
     input.dontShowChanged(event);
-    assert.isFalse(Common.Settings.moduleSetting('console-insight-teasers-enabled').get());
-    Common.Settings.settingForTest('console-insight-teasers-enabled').set(true);
+    assert.isFalse(Common.Settings.Settings.instance().moduleSetting('console-insight-teasers-enabled').get());
+    Common.Settings.Settings.instance().settingForTest('console-insight-teasers-enabled').set(true);
   });
 
   it('updates its view if teaser generation is slow', async () => {
@@ -269,9 +270,8 @@ describeWithEnvironment('ConsoleInsightTeaser', () => {
     let input = await view.nextInput;
     assert.isTrue(input.hasTellMeMoreButton);
 
-    checkAccessPreconditionsStub.resolves(Host.AidaClient.AidaAccessPreconditions.NO_INTERNET);
     Host.AidaClient.HostConfigTracker.instance().dispatchEventToListeners(
-        Host.AidaClient.Events.AIDA_AVAILABILITY_CHANGED);
+        Host.AidaClient.Events.AIDA_AVAILABILITY_CHANGED, Host.AidaClient.AidaAccessPreconditions.NO_INTERNET);
     input = await view.nextInput;
     assert.isFalse(input.hasTellMeMoreButton);
     teaser.detach();

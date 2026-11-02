@@ -553,7 +553,7 @@ bool vvl::ImmutableSamplersAreEqual(const DescriptorSetLayoutDef& dsl_def1, cons
     const std::vector<vku::safe_VkSamplerCreateInfo>& create_infos1 =
         dsl_def1.GetImmutableSamplerCreateInfosFromIndex(binding_index);
     const std::vector<vku::safe_VkSamplerCreateInfo>& create_infos2 =
-        dsl_def1.GetImmutableSamplerCreateInfosFromIndex(binding_index);
+        dsl_def2.GetImmutableSamplerCreateInfosFromIndex(binding_index);
     if (create_infos1.size() != create_infos2.size()) {
         return false;
     }
@@ -894,7 +894,8 @@ void vvl::DescriptorSet::UpdateImageLayoutDrawStates(vvl::DeviceState* device_da
         ASSERT_AND_CONTINUE(binding);
 
         // core validation doesn't handle descriptor indexing, that is only done by GPU-AV
-        if (ValidateBindingOnGPU(*binding, *binding_req_pair.second.variable)) {
+        const spirv::ResourceInterfaceVariable& variable = *binding_req_pair.second.variable;
+        if (ValidateBindingOnGPU(*binding, variable)) {
             continue;
         }
 
@@ -902,21 +903,27 @@ void vvl::DescriptorSet::UpdateImageLayoutDrawStates(vvl::DeviceState* device_da
             case DescriptorClass::Image: {
                 auto* image_binding = static_cast<ImageBinding*>(binding);
                 for (uint32_t i = 0; i < image_binding->count; ++i) {
-                    image_binding->descriptors[i].UpdateImageLayoutDrawState(cb_state);
+                    if (variable.IsImageAtIndexStaticallyAccessed(i)) {
+                        image_binding->descriptors[i].UpdateImageLayoutDrawState(cb_state);
+                    }
                 }
                 break;
             }
             case DescriptorClass::ImageSampler: {
                 auto* image_binding = static_cast<ImageSamplerBinding*>(binding);
                 for (uint32_t i = 0; i < image_binding->count; ++i) {
-                    image_binding->descriptors[i].UpdateImageLayoutDrawState(cb_state);
+                    if (variable.IsImageAtIndexStaticallyAccessed(i)) {
+                        image_binding->descriptors[i].UpdateImageLayoutDrawState(cb_state);
+                    }
                 }
                 break;
             }
             case DescriptorClass::Mutable: {
                 auto* mutable_binding = static_cast<MutableBinding*>(binding);
                 for (uint32_t i = 0; i < mutable_binding->count; ++i) {
-                    mutable_binding->descriptors[i].UpdateImageLayoutDrawState(cb_state);
+                    if (variable.IsImageAtIndexStaticallyAccessed(i)) {
+                        mutable_binding->descriptors[i].UpdateImageLayoutDrawState(cb_state);
+                    }
                 }
                 break;
             }
@@ -1503,10 +1510,10 @@ void vvl::MutableDescriptor::CopyUpdate(DescriptorSet& set_state, const vvl::Dev
             break;
         }
         case vvl::DescriptorClass::Tensor: {
-            const auto tensor_desc = static_cast<const MutableDescriptor*>(&src);
-            tensor_view_count_ = tensor_desc->GetTensorViewCount();
-            tensor_views_ = tensor_desc->GetTensorViews();
-            ReplaceStatePtr(set_state, tensor_view_state_, std::shared_ptr<vvl::TensorView>(), is_bindless);
+            const auto tensor_desc = static_cast<const MutableDescriptor&>(src);
+            tensor_view_count_ = tensor_desc.GetTensorViewCount();
+            tensor_views_ = tensor_desc.GetTensorViews();
+            ReplaceStatePtr(set_state, tensor_view_state_, tensor_desc.tensor_view_state_, is_bindless);
         } break;
         case vvl::DescriptorClass::InlineUniform:
         case vvl::DescriptorClass::Invalid:
@@ -1676,16 +1683,16 @@ void vvl::TensorDescriptor::WriteUpdate(DescriptorSet& set_state, const DeviceSt
 void vvl::TensorDescriptor::CopyUpdate(DescriptorSet& set_state, const DeviceState& dev_data, const Descriptor& src,
                                        bool is_bindless, VkDescriptorType type) {
     if (src.GetClass() == vvl::DescriptorClass::Mutable) {
-        const auto tensor_desc = static_cast<const MutableDescriptor*>(&src);
-        tensor_view_count_ = tensor_desc->GetTensorViewCount();
-        tensor_views_ = tensor_desc->GetTensorViews();
-        ReplaceStatePtr(set_state, tensor_view_state_, std::shared_ptr<vvl::TensorView>(), is_bindless);
+        const auto tensor_desc = static_cast<const MutableDescriptor&>(src);
+        tensor_view_count_ = tensor_desc.GetTensorViewCount();
+        tensor_views_ = tensor_desc.GetTensorViews();
+        ReplaceStatePtr(set_state, tensor_view_state_, tensor_desc.GetSharedTensorView(), is_bindless);
         return;
     }
-    const auto tensor_desc = static_cast<const TensorDescriptor*>(&src);
-    tensor_view_count_ = tensor_desc->tensor_view_count_;
-    tensor_views_ = tensor_desc->tensor_views_;
-    ReplaceStatePtr(set_state, tensor_view_state_, std::shared_ptr<vvl::TensorView>(), is_bindless);
+    const auto tensor_desc = static_cast<const TensorDescriptor&>(src);
+    tensor_view_count_ = tensor_desc.tensor_view_count_;
+    tensor_views_ = tensor_desc.tensor_views_;
+    ReplaceStatePtr(set_state, tensor_view_state_, tensor_desc.tensor_view_state_, is_bindless);
 }
 
 const vvl::Tensor* vvl::TensorDescriptor::GetTensorState() const { return tensor_view_state_->tensor_state.get(); }

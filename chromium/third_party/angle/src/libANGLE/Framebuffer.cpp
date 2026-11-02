@@ -7,11 +7,8 @@
 // Framebuffer.cpp: Implements the gl::Framebuffer class. Implements GL framebuffer
 // objects and related functionality. [OpenGL ES 2.0.24] section 4.4 page 105.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-#    pragma allow_unsafe_buffers
-#endif
-
 #include "libANGLE/Framebuffer.h"
+#include "common/unsafe_buffers.h"
 
 #include "common/Optional.h"
 #include "common/bitset_utils.h"
@@ -1151,7 +1148,7 @@ void Framebuffer::setDrawBuffers(size_t count, const GLenum *buffers)
     auto &drawStates = mState.mDrawBufferStates;
 
     ASSERT(count <= drawStates.size());
-    std::copy(buffers, buffers + count, drawStates.begin());
+    std::copy(buffers, ANGLE_UNSAFE_TODO(buffers + count), drawStates.begin());
     std::fill(drawStates.begin() + count, drawStates.end(), GL_NONE);
     mDirtyBits.set(DIRTY_BIT_DRAW_BUFFERS);
 
@@ -1674,6 +1671,27 @@ angle::Result Framebuffer::partialClearNeedsInit(const Context *context,
         return angle::Result::Continue;
     }
 
+    // Clearing only one aspect of a packed depth-stencil attachment is a partial
+    // clear of the underlying resource. While the framebuffer tracks depth and
+    // stencil initialization needs separately in mState.mResourceNeedsInit, the
+    // underlying resource (texture level or renderbuffer) has a single shared
+    // InitState. Marking one aspect as Initialized updates the shared resource state,
+    // which would incorrectly suppress robust-init of the other aspect.
+    if (depth && !stencil && mState.mDepthAttachment.isAttached() &&
+        mState.mDepthAttachment.getStencilSize() > 0 &&
+        mState.mResourceNeedsInit[DIRTY_BIT_DEPTH_ATTACHMENT])
+    {
+        *needsInitOut = true;
+        return angle::Result::Continue;
+    }
+    if (stencil && !depth && mState.mStencilAttachment.isAttached() &&
+        mState.mStencilAttachment.getDepthSize() > 0 &&
+        mState.mResourceNeedsInit[DIRTY_BIT_STENCIL_ATTACHMENT])
+    {
+        *needsInitOut = true;
+        return angle::Result::Continue;
+    }
+
     // Scissors can affect clearing.
     if (glState.isScissorTestEnabled())
     {
@@ -1691,6 +1709,12 @@ angle::Result Framebuffer::partialClearNeedsInit(const Context *context,
     // If colors masked, we must clear before we clear. Do a simple check.
     // TODO(jmadill): Filter out unused color channels from the test.
     if (color.any() && glState.anyActiveDrawBufferChannelMasked())
+    {
+        *needsInitOut = true;
+        return angle::Result::Continue;
+    }
+
+    if (depth && glState.getDepthStencilState().isDepthMaskedOut())
     {
         *needsInitOut = true;
         return angle::Result::Continue;
@@ -1756,7 +1780,7 @@ angle::Result Framebuffer::invalidateSub(const Context *context,
 
         for (size_t i = 0; i < count; ++i)
         {
-            GLenum attachment = attachments[i];
+            GLenum attachment = ANGLE_UNSAFE_TODO(attachments[i]);
             if (attachment >= GL_COLOR_ATTACHMENT0 &&
                 attachment < GL_COLOR_ATTACHMENT0 + IMPLEMENTATION_MAX_DRAW_BUFFERS)
             {
@@ -2333,6 +2357,18 @@ void Framebuffer::onSubjectStateChange(angle::SubjectIndex index, angle::Subject
             return;
         }
 
+        if (message == angle::SubjectMessage::TextureLayerCountIncreased)
+        {
+            FramebufferAttachment *attachment = getAttachmentFromSubjectIndex(index);
+            if (attachment)
+            {
+                (void)mImpl->onAttachmentLayerCountChange(attachment);
+            }
+            mDirtyBits.set(index);
+            onStateChange(angle::SubjectMessage::DirtyBitsFlagged);
+            return;
+        }
+
         // This can be triggered by the GL back-end TextureGL class.
         ASSERT(message == angle::SubjectMessage::DirtyBitsFlagged ||
                message == angle::SubjectMessage::TextureIDDeleted);
@@ -2809,7 +2845,8 @@ void Framebuffer::markAttachmentsUninitialized(const Context *context,
 {
     for (size_t i = 0; i < count; ++i)
     {
-        const FramebufferAttachment *attachment = mState.getAttachment(context, attachments[i]);
+        const FramebufferAttachment *attachment =
+            mState.getAttachment(context, ANGLE_UNSAFE_TODO(attachments[i]));
         if (attachment)
         {
             attachment->setInitState(InitState::MayNeedInit);
@@ -2828,7 +2865,7 @@ Framebuffer::overrideInvalidateAttachments(size_t count, const GLenum *attachmen
 
     for (size_t i = 0; i < count; ++i)
     {
-        GLenum attachment = attachments[i];
+        GLenum attachment = ANGLE_UNSAFE_TODO(attachments[i]);
         if (attachment == GL_DEPTH_ATTACHMENT)
         {
             invalidateDepth = true;

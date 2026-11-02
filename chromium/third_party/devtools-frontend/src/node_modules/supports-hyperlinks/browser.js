@@ -1,8 +1,10 @@
-'use strict';
-module.exports = {
-	stdin: false,
-	stderr: false,
-	supportsHyperlink: function () { // eslint-disable-line object-shorthand
-		return false;
-	}
+export function createSupportsHyperlinks() {
+	return false;
+}
+
+const supportsHyperlinks = {
+	stdout: createSupportsHyperlinks(),
+	stderr: createSupportsHyperlinks(),
 };
+
+export default supportsHyperlinks;

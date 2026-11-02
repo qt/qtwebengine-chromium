@@ -29,8 +29,8 @@
 
 #include <utility>
 
-#include "src/dawn/common/Assert.h"
-#include "src/dawn/common/Log.h"
+#include "src/utils/assert.h"
+#include "src/utils/log.h"
 
 #if DAWN_PLATFORM_IS(WINDOWS)
 #include "src/utils/windows_with_undefs.h"
@@ -114,7 +114,7 @@ SystemHandle::SystemHandle(Handle handle) : mHandle(handle) {}
 
 SystemHandle::SystemHandle(ErrorTag tag) : SystemHandle() {
     dawn::ErrorLog() << "SystemHandle constructed from incorrect handle type.";
-    DAWN_ASSERT(false);
+    DAWN_UNREACHABLE();
 }
 
 bool SystemHandle::IsValid() const {

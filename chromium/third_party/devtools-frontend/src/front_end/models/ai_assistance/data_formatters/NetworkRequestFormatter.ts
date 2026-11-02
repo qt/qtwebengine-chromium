@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import * as Common from '../../../core/common/common.js';
+import type * as Platform from '../../../core/platform/platform.js';
 import type * as SDK from '../../../core/sdk/sdk.js';
+import * as TextUtils from '../../../core/text_utils/text_utils.js';
 import * as Protocol from '../../../generated/protocol.js';
-import * as Annotations from '../../annotations/annotations.js';
 import * as Logs from '../../logs/logs.js';
 import * as NetworkTimeCalculator from '../../network_time_calculator/network_time_calculator.js';
-import * as TextUtils from '../../text_utils/text_utils.js';
 
 import {seconds} from './UnitFormatters.js';
 
@@ -68,17 +69,16 @@ export class NetworkRequestFormatter {
     return `${title}\n<binary data>`;
   }
 
-  static formatInitiatorUrl(initiatorUrl: string, allowedOrigin: string): string {
-    try {
-      // Some scheme or URLs might cause errors depending on the runtime environment.
-      const initiatorOrigin = new URL(initiatorUrl).origin;
-      if (initiatorOrigin === allowedOrigin) {
-        return initiatorUrl;
-      }
-      return '<redacted cross-origin initiator URL>';
-    } catch {
-      return '<redacted cross-origin initiator URL>';
+  static formatInitiatorUrl(
+      initiatorUrl: Platform.DevToolsPath.UrlString,
+      allowedOrigin: Platform.DevToolsPath.UrlString,
+      ): string {
+    // We extract the origin, and if it is invalid/empty we default to redacting.
+    const initiatorOrigin = Common.ParsedURL.ParsedURL.extractOrigin(initiatorUrl);
+    if (initiatorOrigin && initiatorOrigin === allowedOrigin) {
+      return initiatorUrl;
     }
+    return '<redacted cross-origin initiator URL>';
   }
 
   static formatStatus(status: {
@@ -91,7 +91,8 @@ export class NetworkRequestFormatter {
   }): string {
     let responseStatus = '';
     if (status.statusCode) {
-      responseStatus = `Response status: ${status.statusCode} ${status.statusText}\n`;
+      const statusText = status.statusText ? ` ${status.statusText}` : '';
+      responseStatus = `Response status: ${status.statusCode}${statusText}\n`;
     }
     const flags = [];
     flags.push(status.finished ? 'finished' : 'pending');
@@ -130,10 +131,16 @@ export class NetworkRequestFormatter {
     return lines.length > 0 ? `${lines.join('\n')}\n` : '';
   }
 
+  readonly #networkLog: Logs.NetworkLog.NetworkLog;
+
   constructor(
-      request: SDK.NetworkRequest.NetworkRequest, calculator: NetworkTimeCalculator.NetworkTransferTimeCalculator) {
+      request: SDK.NetworkRequest.NetworkRequest,
+      calculator: NetworkTimeCalculator.NetworkTransferTimeCalculator,
+      networkLog: Logs.NetworkLog.NetworkLog = Logs.NetworkLog.NetworkLog.instance(),
+  ) {
     this.#request = request;
     this.#calculator = calculator;
+    this.#networkLog = networkLog;
   }
 
   formatRequestHeaders(): string {
@@ -161,7 +168,6 @@ export class NetworkRequestFormatter {
     }
 
     return `Request: ${this.#request.url()}
-${Annotations.AnnotationRepository.annotationsEnabled() ? `\nRequest ID: ${this.#request.requestId()}\n` : ''}
 ${this.formatRequestHeaders()}
 
 ${this.formatResponseHeaders()}${responseBody}
@@ -196,10 +202,10 @@ Request initiator chain:\n${this.formatRequestInitiatorChain()}`;
    * the request's origin.
    */
   formatRequestInitiatorChain(): string {
-    const allowedOrigin = new URL(this.#request.url()).origin;
+    const allowedOrigin = Common.ParsedURL.ParsedURL.extractOrigin(this.#request.url());
     let initiatorChain = '';
     let lineStart = '- URL: ';
-    const graph = Logs.NetworkLog.NetworkLog.instance().initiatorGraphForRequest(this.#request);
+    const graph = this.#networkLog.initiatorGraphForRequest(this.#request);
 
     for (const initiator of Array.from(graph.initiators).reverse()) {
       initiatorChain = initiatorChain + lineStart +
@@ -268,7 +274,7 @@ Request initiator chain:\n${this.formatRequestInitiatorChain()}`;
       parentRequest: SDK.NetworkRequest.NetworkRequest,
       initiatorChain: string,
       lineStart: string,
-      allowedOrigin: string,
+      allowedOrigin: Platform.DevToolsPath.UrlString,
       ): string {
     const visited = new Set<SDK.NetworkRequest.NetworkRequest>();
 

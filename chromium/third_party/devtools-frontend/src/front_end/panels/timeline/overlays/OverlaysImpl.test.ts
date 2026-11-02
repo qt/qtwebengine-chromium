@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../../core/common/common.js';
 import * as AiAssistanceModels from '../../../models/ai_assistance/ai_assistance.js';
@@ -498,7 +499,7 @@ describeWithEnvironment('Overlays', () => {
              enabled: true,
            },
          });
-         Common.Settings.moduleSetting('ai-annotations-enabled').set(false);
+         Common.Settings.Settings.instance().moduleSetting('ai-annotations-enabled').set(false);
          const {elementsWrapper, inputField} = await createAnnotationsLabelElement(this, 'web-dev.json.gz', 50);
 
          // Double click on the label box to make it editable and focus on it
@@ -535,7 +536,7 @@ describeWithEnvironment('Overlays', () => {
              enabled: true,
            },
          });
-         Common.Settings.moduleSetting('ai-annotations-enabled').set(true);
+         Common.Settings.Settings.instance().moduleSetting('ai-annotations-enabled').set(true);
          const {elementsWrapper, inputField} = await createAnnotationsLabelElement(this, 'web-dev.json.gz', 50);
 
          // Double click on the label box to make it editable and focus on it
@@ -604,20 +605,20 @@ describeWithEnvironment('Overlays', () => {
       });
 
       const {elementsWrapper, inputField, component} = await createAnnotationsLabelElement(this, 'web-dev.json.gz', 50);
-      Common.Settings.moduleSetting('ai-annotations-enabled').set(true);
+      Common.Settings.Settings.instance().moduleSetting('ai-annotations-enabled').set(true);
 
       const generateButton = elementsWrapper.querySelector<HTMLElement>('.ai-label-button');
       assert.isOk(generateButton, 'could not find "Generate label" button');
       assert.isTrue(generateButton.classList.contains('enabled'));
-      const agent = new AiAssistanceModels.PerformanceAnnotationsAgent.PerformanceAnnotationsAgent({
+      const performanceAnnotations = new AiAssistanceModels.PerformanceAnnotations.PerformanceAnnotations({
         aidaClient: mockAidaClient([[{
           explanation: 'This is an interesting entry',
           metadata: {
             rpcGlobalId: 123,
-          }
-        }]])
+          },
+        }]]),
       });
-      component.overrideAIAgentForTest(agent);
+      component.overridePerformanceAnnotationsForTest(performanceAnnotations);
 
       // The Agent call is async, so wait for the change event on the label to ensure the UI is updated.
       const changeEvent = new Promise<void>(resolve => {
@@ -658,7 +659,7 @@ describeWithEnvironment('Overlays', () => {
       assert.isOk(tooltip);
       assert.strictEqual(
           cleanTextContent(tooltip.innerText),
-          'The selected call stack is sent to Google. This data may be seen by human reviewers to improve this feature. This is an experimental AI feature and won\'t always get it right. Learn more in settings',
+          'The selected call stack is sent to Google. This data may be seen by human reviewers to improve this feature. This is an experimental AI feature and won’t always get it right. Learn more in settings',
       );
     });
 
@@ -693,7 +694,7 @@ describeWithEnvironment('Overlays', () => {
       assert.isOk(tooltip);
       assert.strictEqual(
           cleanTextContent(tooltip.innerText),
-          'The selected call stack is sent to Google. This data will not be used to improve Google\'s AI models. Your organization may change these settings at any time. This is an experimental AI feature and won\'t always get it right. Learn more in settings',
+          'The selected call stack is sent to Google. This data will not be used to improve Google’s AI models. Your organization may change these settings at any time. This is an experimental AI feature and won’t always get it right. Learn more in settings',
       );
     });
 
@@ -742,7 +743,7 @@ describeWithEnvironment('Overlays', () => {
       assert.isOk(aiLabelButtonWrapper);
     });
 
-    it('Shows disabled `generate ai label` button if the user is not logged into their google account or is under 18',
+    it('Shows disabled `generate ai label` button if the user is not logged in to their Google account or is under 18',
        async function() {
          updateHostConfig({
            devToolsAiGeneratedTimelineLabels: {

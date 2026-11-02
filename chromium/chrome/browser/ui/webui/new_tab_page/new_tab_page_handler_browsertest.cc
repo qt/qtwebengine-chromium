@@ -94,7 +94,7 @@ class NewTabPageHandlerBaseBrowserTest : public InProcessBrowserTest {
     InProcessBrowserTest::TearDownOnMainThread();
   }
 
-  Profile* profile() { return browser()->profile(); }
+  Profile* profile() { return browser()->GetProfile(); }
   content::WebContents* web_contents() {
     return chrome_test_utils::GetActiveWebContents(this);
   }
@@ -119,6 +119,7 @@ class NewTabPageHandlerBaseBrowserTest : public InProcessBrowserTest {
         /*sync_service=*/nullptr,
         /*segmentation_platform_service=*/nullptr, web_contents(),
         /*ntp_navigation_start_time=*/base::Time::Now(),
+        /*ntp_navigation_start_time_ticks=*/base::TimeTicks::Now(),
         /*module_id_details=*/nullptr);
     testing::Mock::VerifyAndClearExpectations(mock_page());
   }
@@ -232,8 +233,8 @@ IN_PROC_BROWSER_TEST_F(
 IN_PROC_BROWSER_TEST_F(
     NewTabPageHandlerWithCustomizeChromePromoMaxTimesBrowserTest,
     DISABLED_DontOpenPanelWhenPanelWasShowedMaxTimesBefore) {
-  for (size_t i = 0;
-       i < ntp_features::kNtpCustomizeChromeAutoShownMaxCount.Get(); ++i) {
+  for (int i = 0; i < ntp_features::kNtpCustomizeChromeAutoShownMaxCount.Get();
+       ++i) {
     OpenNewTabPageInForegroundAndWaitForLoad();
     EXPECT_TRUE(IsCustomizeChromeEntryShowing());
   }

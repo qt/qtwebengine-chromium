@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import type { ChildProcess } from 'node:child_process';
-import type { CreatePageOptions, DebugInfo } from '../api/Browser.js';
+import type { CreatePageOptions, DebugInfo, ExtensionInstallOptions } from '../api/Browser.js';
 import { Browser as BrowserBase, type BrowserCloseCallback, type BrowserContextOptions, type IsPageTargetCallback, type TargetFilterCallback, type ScreenInfo, type AddScreenParams, type WindowBounds, type WindowId } from '../api/Browser.js';
 import type { Extension } from '../api/Extension.js';
 import type { Page } from '../api/Page.js';
@@ -37,7 +37,7 @@ export declare class CdpBrowser extends BrowserBase {
     _createDevToolsPage(pageTargetId: string): Promise<Page>;
     _getDevToolsTargetPage(devtoolsTargetId: string): Promise<Page>;
     _hasDevToolsTarget(pageTargetId: string): Promise<string | undefined>;
-    installExtension(path: string): Promise<string>;
+    installExtension(path: string, options?: ExtensionInstallOptions): Promise<string>;
     uninstallExtension(id: string): Promise<void>;
     screens(): Promise<ScreenInfo[]>;
     addScreen(params: AddScreenParams): Promise<ScreenInfo>;

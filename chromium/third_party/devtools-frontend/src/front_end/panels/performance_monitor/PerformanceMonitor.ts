@@ -16,43 +16,43 @@ import performanceMonitorStyles from './performanceMonitor.css.js';
 
 const UIStrings = {
   /**
-   * @description Aria accessible name in Performance Monitor of the Performance monitor tab
+   * @description Aria accessible name in Performance monitor of the Performance monitor tab.
    */
   graphsDisplayingARealtimeViewOf: 'Graphs displaying a real-time view of performance metrics',
   /**
-   * @description Text in Performance Monitor of the Performance monitor tab
+   * @description Text in Performance monitor of the Performance monitor tab.
    */
   paused: 'Paused',
   /**
-   * @description Text in Performance Monitor of the Performance monitor tab
+   * @description Text in Performance monitor of the Performance monitor tab.
    */
   cpuUsage: 'CPU usage',
   /**
-   * @description Text in Performance Monitor of the Performance monitor tab
+   * @description Text in Performance monitor of the Performance monitor tab.
    */
   jsHeapSize: 'JS heap size',
   /**
-   * @description Text in Performance Monitor of the Performance monitor tab
+   * @description Text in Performance monitor of the Performance monitor tab.
    */
-  domNodes: 'DOM Nodes',
+  domNodes: 'DOM nodes',
   /**
-   * @description Text in Performance Monitor of the Performance monitor tab
+   * @description Text in Performance monitor of the Performance monitor tab.
    */
   jsEventListeners: 'JS event listeners',
   /**
-   * @description Text for documents, a type of resources
+   * @description Text for documents, a type of resource.
    */
   documents: 'Documents',
   /**
-   * @description Text in Performance Monitor of the Performance monitor tab
+   * @description Text in Performance monitor of the Performance monitor tab.
    */
-  documentFrames: 'Document Frames',
+  documentFrames: 'Document frames',
   /**
-   * @description Text in Performance Monitor of the Performance monitor tab
+   * @description Text in Performance monitor of the Performance monitor tab.
    */
   layoutsSec: 'Layouts / sec',
   /**
-   * @description Text in Performance Monitor of the Performance monitor tab
+   * @description Text in Performance monitor of the Performance monitor tab.
    */
   styleRecalcsSec: 'Style recalcs / sec',
 } as const;
@@ -84,7 +84,7 @@ const DEFAULT_VIEW: PerformanceMonitorView = (input, output, target) => {
     <devtools-widget ${widget(ControlPane, {
       onMetricChanged: input.onMetricChanged,
       chartsInfo: input.chartsInfo,
-      metrics: input.metrics
+      metrics: input.metrics,
     })} class=${classMap({suspended: input.suspended})}></devtools-widget>
     <div class="perfmon-chart-container ${classMap({suspended: input.suspended})}">
       <canvas tabindex="-1" aria-label=${i18nString(UIStrings.graphsDisplayingARealtimeViewOf)}

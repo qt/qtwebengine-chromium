@@ -82,6 +82,13 @@ source_set("fxcodec") {
     "//third_party:jpeg",
   ]
   defines = []
+  if (pdf_enable_brotli) {
+    sources += [
+      "brotli/brotli_decoder.cpp",
+      "brotli/brotli_decoder.h",
+    ]
+    deps += [ "//third_party/brotli:dec" ]
+  }
   if (pdf_enable_xfa) {
     sources += [
       "cfx_codec_memory.cpp",
@@ -96,6 +103,7 @@ source_set("fxcodec") {
       sources += [
         "bmp/bmp_decoder.cpp",
         "bmp/bmp_decoder.h",
+        "bmp/bmp_decoder_delegate.h",
         "bmp/cfx_bmpcontext.cpp",
         "bmp/cfx_bmpcontext.h",
         "bmp/cfx_bmpdecompressor.cpp",
@@ -143,8 +151,13 @@ source_set("fxcodec") {
       ]
       deps += [ "../../third_party:tiff" ]
     }
+    if (pdf_use_skia) {
+      sources += [
+        "codec_memory_sk_stream.cpp",
+        "codec_memory_sk_stream.h",
+      ]
+    }
   }
-
   visibility = [ "../../*" ]
 }
 
@@ -173,10 +186,18 @@ pdfium_unittest_source_set("unittests") {
         "gif/lzw_decompressor_unittest.cpp",
       ]
     }
+    if (pdf_use_skia) {
+      sources += [ "codec_memory_sk_stream_unittest.cpp" ]
+      deps += [ "//skia" ]
+    }
   }
 }
 
 pdfium_embeddertest_source_set("embeddertests") {
   sources = [ "jbig2/jbig2_embeddertest.cpp" ]
   pdfium_root_dir = "../../"
+  if (pdf_enable_brotli) {
+    sources += [ "brotli/brotli_embeddertest.cpp" ]
+    deps = [ "//third_party/brotli:dec" ]
+  }
 }

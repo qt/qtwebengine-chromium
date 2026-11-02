@@ -5,6 +5,7 @@
 #ifndef CONTENT_PUBLIC_BROWSER_SECURITY_PRINCIPAL_H_
 #define CONTENT_PUBLIC_BROWSER_SECURITY_PRINCIPAL_H_
 
+#include <memory>
 #include <string_view>
 
 #include "content/common/content_export.h"
@@ -12,6 +13,7 @@
 
 namespace content {
 
+class BrowserContext;
 class StoragePartitionConfig;
 
 // SecurityPrincipal is an abstraction used by Chromium's process model to
@@ -73,7 +75,7 @@ class CONTENT_EXPORT SecurityPrincipal {
   // Note that when a principal uses an effective URL, the host will correspond
   // to that effective URL rather than the original (see SchemeIs() for an
   // example with hosted apps).
-  virtual std::string GetHost() const = 0;
+  virtual std::string_view GetHost() const = 0;
 
   // Returns the site URL associated with all of the documents and workers in
   // this principal, as described above.
@@ -114,6 +116,11 @@ class CONTENT_EXPORT SecurityPrincipal {
   // SecurityPrincipal and that's needed for a new feature, reach out to
   // //content/OWNERS to discuss how to add it.
   virtual const GURL& GetDeprecatedSiteURL() const = 0;
+
+  // Creates a SecurityPrincipal for testing, backed by a real SiteInfo.
+  static std::unique_ptr<SecurityPrincipal> CreateForTesting(  // IN-TEST
+      BrowserContext* context,
+      const GURL& url);
 };
 
 }  // namespace content

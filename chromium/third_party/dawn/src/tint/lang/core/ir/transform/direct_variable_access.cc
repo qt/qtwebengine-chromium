@@ -694,8 +694,9 @@ struct State {
                                                   (v->fn == BuiltinFn::kBufferView ? 1_u : 2_u))
                                              ->Result();
                             }
-                            auto* call = b.CallExplicit(v->type, v->fn,
-                                                        Vector{v->type->UnwrapPtr()}, replacement);
+                            auto* call = b.CallExplicit(
+                                v->type, v->fn, Vector<TemplateParameter, 1>{v->type->UnwrapPtr()},
+                                replacement);
                             call->AppendArg(offset);
                             if (size) {
                                 call->AppendArg(size);
@@ -833,8 +834,7 @@ struct State {
 }  // namespace
 
 Result<SuccessType> DirectVariableAccess(Module& ir, const DirectVariableAccessOptions& options) {
-    core::ir::AssertValid(ir, kDirectVariableAccessCapabilities,
-                          "before core.DirectVariableAccess");
+    core::ir::AssertValid(ir, "before core.DirectVariableAccess");
 
     State{ir, options}.Process();
 

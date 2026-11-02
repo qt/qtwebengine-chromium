@@ -302,6 +302,7 @@ void ResetReorderingPictureBuffers (PPictReoderingStatus pPictReoderingStatus, P
     pPictReoderingStatus->iLargestBufferedPicIndex = 0;
     for (int32_t i = 0; i < pictInfoListCount; ++i) {
       pPictInfo[i].iPOC = IMinInt32;
+      pPictInfo[i].iPicBuffIdx = -1; //ensure a deterministic invalid sentinel so error-path decoding cannot leave heap garbage
     }
     pPictInfo->sBufferInfo.iBufferStatus = 0;
 		pPictReoderingStatus->bHasBSlice = false;
@@ -1080,7 +1081,7 @@ void InitPredFunc (PWelsDecoderContext pCtx, uint32_t uiCpuFlag) {
   }
 #endif//HAVE_NEON
 
-#if defined(HAVE_NEON_AARCH64)
+#if defined(HAVE_NEON_AARCH64) && defined(__aarch64__)
   if (uiCpuFlag & WELS_CPU_NEON) {
     pCtx->pIdctResAddPredFunc   = IdctResAddPred_AArch64_neon;
     pCtx->pIdctFourResAddPredFunc = IdctFourResAddPred_<IdctResAddPred_AArch64_neon>;

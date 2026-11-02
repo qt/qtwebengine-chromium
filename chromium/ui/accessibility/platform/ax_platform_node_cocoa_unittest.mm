@@ -4,8 +4,11 @@
 
 #include "ui/accessibility/platform/ax_platform_node_cocoa.h"
 
+#include <ApplicationServices/ApplicationServices.h>
 #import <Cocoa/Cocoa.h>
 
+#include "base/apple/bridging.h"
+#include "base/apple/foundation_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/test/scoped_feature_list.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -20,7 +23,11 @@
 #include "ui/accessibility/platform/ax_platform_node_base.h"
 #include "ui/accessibility/platform/ax_platform_node_delegate.h"
 #include "ui/accessibility/platform/ax_platform_node_unittest.h"
+#include "ui/accessibility/platform/ax_private_attributes_mac.h"
 #include "ui/accessibility/platform/test_ax_node_wrapper.h"
+
+using AXRange = ui::AXPlatformNodeDelegate::AXRange;
+using base::apple::CFToNSPtrCast;
 
 namespace {
 
@@ -29,8 +36,6 @@ struct FeatureState {
 };
 
 }  // namespace
-
-using AXRange = ui::AXPlatformNodeDelegate::AXRange;
 
 @interface AXPlatformNodeCocoa (Private)
 
@@ -355,10 +360,13 @@ class AXPlatformNodeCocoaTest
                             NSDictionary<NSAttributedStringKey, id>* attributes,
                             NSRange range, BOOL* stop) {
                           if (NSEqualRanges(range, bold_and_italic_range)) {
-                            if (attributes[@"AXFont"][@"AXFontBold"]) {
+                            if (attributes[NSAccessibilityFontTextAttribute]
+                                          [NSAccessibilityFontBoldAttribute]) {
                               bold_count++;
                             }
-                            if (attributes[@"AXFont"][@"AXFontItalic"]) {
+                            if (attributes
+                                    [NSAccessibilityFontTextAttribute]
+                                    [NSAccessibilityFontItalicAttribute]) {
                               italic_count++;
                             }
                           } else if (NSEqualRanges(range,
@@ -384,26 +392,29 @@ class AXPlatformNodeCocoaTest
                                     [NSAccessibilityStrikethroughTextAttribute]) {
                               strikethrough_count++;
                             }
-                            font_size = [(
-                                NSNumber*)attributes[@"AXFont"]
-                                                    [NSAccessibilityFontSizeKey]
+                            font_size = [(NSNumber*)
+                                    attributes[NSAccessibilityFontTextAttribute]
+                                              [NSAccessibilityFontSizeKey]
                                 floatValue];
                           } else if (NSEqualRanges(range, mispelled_range1) ||
                                      NSEqualRanges(range, mispelled_range2) ||
                                      NSEqualRanges(range, mispelled_range3) ||
                                      NSEqualRanges(range, mispelled_range4)) {
-                            if (attributes[@"AXMarkedMisspelled"]) {
+                            if (attributes
+                                    [NSAccessibilityMarkedMisspelledTextAttribute]) {
                               misspelled_attribute_count++;
                             }
                           } else if (NSEqualRanges(range,
                                                    custom_highlight_range)) {
-                            if (attributes[@"AXHighlight"]) {
+                            if (attributes[CFToNSPtrCast(
+                                    kAXHighlightStringAttribute)]) {
                               custom_highlight_attribute_count++;
                             }
                           } else {
                             // Ensure other parts don't have attributes.
                             if (attributes.count > 1 ||
-                                [attributes[@"AXFont"] count]) {
+                                [attributes[NSAccessibilityFontTextAttribute]
+                                    count]) {
                               unexpected_attributes++;
                             }
                           }
@@ -480,7 +491,7 @@ TEST_P(AXPlatformNodeCocoaTest, TestCocoaActionListLayout) {
 
 // Tests that the correct methods are enabled based on migration mode.
 TEST_P(AXPlatformNodeCocoaTest, TestRespondsToSelector) {
-  // New API that was implementated since the creation of the flag goes here.
+  // New API that was implemented since the creation of the flag goes here.
   NSArray<NSString*>* selectors_enabled_when_migrated = @[
     @"accessibilityColumnCount", @"accessibilityDisclosedByRow",
     @"accessibilityDisclosedRows", @"accessibilityDisclosureLevel",
@@ -495,9 +506,12 @@ TEST_P(AXPlatformNodeCocoaTest, TestRespondsToSelector) {
   // Old API for which the new API was implemented prior to the creation of the
   // flag goes here.
   NSArray<NSString*>* selectors_disabled_when_migrated = @[
-    @"AXInsertionPointLineNumber", @"AXNumberOfCharacters",
-    @"AXPlaceholderValue", @"AXSelectedText", @"AXSelectedTextRange",
-    @"AXVisibleCharacterRange"
+    CFToNSPtrCast(kAXInsertionPointLineNumberAttribute),
+    CFToNSPtrCast(kAXNumberOfCharactersAttribute),
+    CFToNSPtrCast(kAXPlaceholderValueAttribute),
+    CFToNSPtrCast(kAXSelectedTextAttribute),
+    CFToNSPtrCast(kAXSelectedTextRangeAttribute),
+    CFToNSPtrCast(kAXVisibleCharacterRangeAttribute)
   ];
 
   AXPlatformNodeCocoa* node = [[AXPlatformNodeCocoa alloc] initWithNode:nil];
@@ -629,7 +643,8 @@ TEST_P(AXPlatformNodeCocoaTest,
                           NSRange range, BOOL*) {
                         if (NSEqualRanges(range,
                                           NSMakeRange(0, attributed.length)) &&
-                            attrs[@"AXMarkedMisspelled"]) {
+                            attrs
+                                [NSAccessibilityMarkedMisspelledTextAttribute]) {
                           misspelled_spans++;
                         }
                       }];
@@ -708,7 +723,8 @@ TEST_P(AXPlatformNodeCocoaTest,
                       usingBlock:^(
                           NSDictionary<NSAttributedStringKey, id>* attrs,
                           NSRange range, BOOL*) {
-                        if (attrs[@"AXMarkedMisspelled"]) {
+                        if (attrs
+                                [NSAccessibilityMarkedMisspelledTextAttribute]) {
                           if (NSEqualRanges(range, misspelled_ns)) {
                             misspelled_spans++;
                           } else {
@@ -719,6 +735,53 @@ TEST_P(AXPlatformNodeCocoaTest,
 
   EXPECT_EQ(misspelled_spans, 1);
   EXPECT_EQ(other_marked, 0);
+}
+
+TEST_P(AXPlatformNodeCocoaTest,
+       AddTextAnnotations_InlineTextBox_LineBreakParent) {
+  AXNodeData root;
+  root.id = 1;
+  root.role = ax::mojom::Role::kRootWebArea;
+  root.child_ids = {2};
+
+  const std::u16string kText = u"\n";
+
+  AXNodeData lb;
+  lb.id = 2;
+  lb.role = ax::mojom::Role::kLineBreak;
+  lb.SetName(kText);
+  lb.child_ids = {3};
+
+  AXNodeData itb;
+  itb.id = 3;
+  itb.role = ax::mojom::Role::kInlineTextBox;
+  itb.SetName(kText);
+
+  ui::AXTreeUpdate update;
+  update.root_id = root.id;
+  update.nodes = {root, lb, itb};
+  Init(update);
+
+  AXNode* itb_node = GetTree()->GetFromId(itb.id);
+  auto start = ui::AXNodePosition::CreateTextPosition(
+      *itb_node, /*offset=*/0, ax::mojom::TextAffinity::kDownstream);
+  auto end = ui::AXNodePosition::CreateTextPosition(
+      *itb_node, /*offset=*/static_cast<int>(kText.size()),
+      ax::mojom::TextAffinity::kDownstream);
+  AXRange ax_range(start->Clone(), end->Clone());
+
+  std::u16string text_utf16;
+  for (const ui::AXPlatformNodeDelegate::AXRange& leaf_text_range : ax_range) {
+    text_utf16 += leaf_text_range.GetText();
+  }
+
+  NSMutableAttributedString* attributed = [[NSMutableAttributedString alloc]
+      initWithString:base::SysUTF16ToNSString(text_utf16)];
+
+  AXPlatformNodeCocoa* platform_node =
+      [[AXPlatformNodeCocoa alloc] initWithNode:nil];
+  // This should not crash on the DCHECK in addTextAnnotationsIn:to:
+  [platform_node addTextAnnotationsIn:&ax_range to:attributed];
 }
 
 // Tests the actions contained in the old API action list.
@@ -1465,7 +1528,8 @@ TEST_P(AXPlatformNodeCocoaTest, SupportsNewAccessibilityAPIMethod) {
       TestAXNodeWrapper::GetOrCreate(GetTree(), GetRoot());
   AXPlatformNodeCocoa* node = [[AXPlatformNodeCocoa alloc]
       initWithNode:(ui::AXPlatformNodeBase*)wrapper->ax_platform_node()];
-  EXPECT_TRUE([[node accessibilityRole] isEqualToString:@"AXHeading"]);
+  EXPECT_TRUE(
+      [[node accessibilityRole] isEqualToString:CFToNSPtrCast(kAXHeadingRole)]);
   EXPECT_EQ([node internalRole], ax::mojom::Role::kHeading);
   EXPECT_TRUE(
       [node supportsNewAccessibilityAPIMethod:@"isAccessibilityFocused"]);
@@ -1643,13 +1707,13 @@ TEST_P(AXPlatformNodeCocoaTest, ExpandedChangedNotificationForGroup) {
   EXPECT_NSEQ(
       [AXPlatformNodeCocoa
           nativeNotificationForExpandedChangedWithRole:ax::mojom::Role::kGroup
-                                           isExpanded:YES],
-      @"AXExpandedChanged");
+                                            isExpanded:YES],
+      CFToNSPtrCast(kAXExpandedChangedNotification));
   EXPECT_NSEQ(
       [AXPlatformNodeCocoa
           nativeNotificationForExpandedChangedWithRole:ax::mojom::Role::kGroup
-                                           isExpanded:NO],
-      @"AXExpandedChanged");
+                                            isExpanded:NO],
+      CFToNSPtrCast(kAXExpandedChangedNotification));
 }
 
 TEST_P(AXPlatformNodeCocoaTest, AXValueOnSliderReturnsNSNumber) {
@@ -1660,9 +1724,8 @@ TEST_P(AXPlatformNodeCocoaTest, AXValueOnSliderReturnsNSNumber) {
   root.AddFloatAttribute(ax::mojom::FloatAttribute::kValueForRange, 0.5f);
   Init(root);
   AXPlatformNodeCocoa* node = GetCocoaNode(GetRoot());
-  id value = [node AXValue];
-  ASSERT_TRUE([value isKindOfClass:[NSNumber class]]);
-  EXPECT_FLOAT_EQ([value floatValue], 0.5f);
+  NSNumber* value = base::apple::ObjCCastStrict<NSNumber>([node AXValue]);
+  EXPECT_FLOAT_EQ(value.floatValue, 0.5f);
 }
 
 TEST_P(AXPlatformNodeCocoaTest,
@@ -1673,8 +1736,7 @@ TEST_P(AXPlatformNodeCocoaTest,
   root.AddStringAttribute(ax::mojom::StringAttribute::kValue, "50%");
   Init(root);
   AXPlatformNodeCocoa* node = GetCocoaNode(GetRoot());
-  id value = [node AXValue];
-  ASSERT_TRUE([value isKindOfClass:[NSString class]]);
+  NSString* value = base::apple::ObjCCastStrict<NSString>([node AXValue]);
   EXPECT_NSEQ(value, @"50%");
 }
 
@@ -1685,9 +1747,8 @@ TEST_P(AXPlatformNodeCocoaTest, AXValueOnProgressIndicatorReturnsNSNumber) {
   root.AddFloatAttribute(ax::mojom::FloatAttribute::kValueForRange, 0.75f);
   Init(root);
   AXPlatformNodeCocoa* node = GetCocoaNode(GetRoot());
-  id value = [node AXValue];
-  ASSERT_TRUE([value isKindOfClass:[NSNumber class]]);
-  EXPECT_FLOAT_EQ([value floatValue], 0.75f);
+  NSNumber* value = base::apple::ObjCCastStrict<NSNumber>([node AXValue]);
+  EXPECT_FLOAT_EQ(value.floatValue, 0.75f);
 }
 
 TEST_P(AXPlatformNodeCocoaTest, AXValueOnTextFieldReturnsString) {
@@ -1697,8 +1758,7 @@ TEST_P(AXPlatformNodeCocoaTest, AXValueOnTextFieldReturnsString) {
   root.AddStringAttribute(ax::mojom::StringAttribute::kValue, "hello");
   Init(root);
   AXPlatformNodeCocoa* node = GetCocoaNode(GetRoot());
-  id value = [node AXValue];
-  ASSERT_TRUE([value isKindOfClass:[NSString class]]);
+  NSString* value = base::apple::ObjCCastStrict<NSString>([node AXValue]);
   EXPECT_NSEQ(value, @"hello");
 }
 

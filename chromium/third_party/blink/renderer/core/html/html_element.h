@@ -34,6 +34,7 @@
 #include "third_party/blink/renderer/platform/text/text_direction.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace blink {
 
@@ -51,6 +52,7 @@ class TextControlElement;
 class V8UnionStringLegacyNullToEmptyStringOrTrustedScript;
 class V8UnionBooleanOrTogglePopoverOptions;
 class ShowPopoverOptions;
+class UnboundedEventData;
 
 enum TranslateAttributeMode {
   kTranslateAttributeYes,
@@ -109,6 +111,11 @@ enum class PopoverHideResult {
   kForcedOpenByInspector,
 };
 
+enum class UnboundedEvents {
+  kFire,
+  kSuppress,
+};
+
 class CORE_EXPORT HTMLElement : public Element {
   DEFINE_WRAPPERTYPEINFO();
 
@@ -148,6 +155,9 @@ class CORE_EXPORT HTMLElement : public Element {
 
   virtual const AtomicString& autocapitalize() const;
   void setAutocapitalize(const AtomicString&);
+
+  virtual bool autocorrect() const;
+  void setAutocorrect(bool);
 
   virtual bool draggable() const;
   void setDraggable(bool);
@@ -208,7 +218,10 @@ class CORE_EXPORT HTMLElement : public Element {
   // TODO(crbug.com/443013457): Remove these 2 methods when the
   // permission/usermedia trials are over.
   virtual bool IsHTMLCapabilityElementBase() const { return false; }
+  virtual bool IsHTMLMediaCaptureElementBase() const { return false; }
   virtual bool IsHTMLUserMediaElement() const { return false; }
+  virtual bool IsHTMLCameraElement() const { return false; }
+  virtual bool IsHTMLMicrophoneElement() const { return false; }
   virtual bool IsHTMLUnknownElement() const { return false; }
   virtual bool IsPluginElement() const { return false; }
 
@@ -293,7 +306,7 @@ class CORE_EXPORT HTMLElement : public Element {
   bool IsPopoverReady(PopoverTriggerAction action,
                       ExceptionState* exception_state,
                       bool include_event_handler_text,
-                      Document* expected_document) const;
+                      Document* expected_document);
   bool togglePopover(ExceptionState& exception_state);
   bool togglePopover(V8UnionBooleanOrTogglePopoverOptions* options_or_force,
                      ExceptionState& exception_state);
@@ -404,8 +417,12 @@ class CORE_EXPORT HTMLElement : public Element {
 
   // The Unbounded Element API. See crbug.com/508672616.
   ScriptPromise<IDLUndefined> showUnboundedElement(ScriptState*);
+  ScriptPromise<IDLUndefined> hideUnboundedElement(ScriptState*);
   bool IsUnboundedElementActive() const;
-  void SetUnboundedElementActive(bool active);
+  void SetUnboundedElementActive(bool active,
+                                 UnboundedEvents = UnboundedEvents::kFire);
+  gfx::Rect LastSentUnboundedBounds() const;
+  void SetLastSentUnboundedBounds(const gfx::Rect& bounds);
 
  protected:
   FocusableState SupportsFocus(UpdateBehavior update_behavior) const override;
@@ -462,6 +479,10 @@ class CORE_EXPORT HTMLElement : public Element {
   void FinishParsingChildren() override;
 
  private:
+  bool IsAutocapitalizeOrAutocorrectInheriting() const;
+  UnboundedEventData* GetUnboundedEventData() const;
+  UnboundedEventData& EnsureUnboundedEventData();
+
   String nodeName() const final;
 
   bool IsHTMLElement() const =
@@ -477,6 +498,7 @@ class CORE_EXPORT HTMLElement : public Element {
 
   TranslateAttributeMode GetTranslateAttributeMode() const;
 
+  void HandleKeydownEvent(KeyboardEvent&);
   void HandleKeypressEvent(KeyboardEvent&);
 
   void SetPopoverInvoker(Element* invoker);

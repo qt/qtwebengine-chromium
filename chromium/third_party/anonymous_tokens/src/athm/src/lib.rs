@@ -29,21 +29,20 @@
 //!
 //! // Setup with 4 metadata buckets (e.g., risk levels 0-3)
 //! let params = Params::new(4, b"deployment_id".to_vec()).unwrap();
-//! let mut rng = rand::thread_rng();
-//! let (private_key, public_key, proof) = key_gen(&params, &mut rng);
+//! let (private_key, public_key, proof) = key_gen(&params);
 //!
 //! // Client creates blinded request
-//! let (context, request) = token_request(&public_key, &proof, &params, &mut rng).unwrap();
+//! let (context, request) = token_request(&public_key, &proof, &params).unwrap();
 //!
 //! // Server responds with hidden metadata
 //! let hidden_metadata = 2;
 //! let response = token_response(
-//!     &private_key, &public_key, &request, hidden_metadata, &params, &mut rng
+//!     &private_key, &public_key, &request, hidden_metadata, &params
 //! ).unwrap();
 //!
 //! // Client unblinds token
 //! let token = finalize_token(
-//!     &context, &public_key, &request, &response, &params, &mut rng
+//!     &context, &public_key, &request, &response, &params
 //! ).unwrap();
 //!
 //! // Server verifies and recovers metadata
@@ -62,7 +61,6 @@
 pub(crate) mod backend;
 
 use backend::{AthmBackend, DefaultBackend, Point as ProjectivePoint, Scalar};
-use rand_core::CryptoRngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 use zeroize::Zeroize;
 
@@ -803,14 +801,13 @@ fn generator_h_generic<B: AthmBackend>(context_string: &[u8]) -> B::Point {
     B::hash_to_point(msg_array, dst_array).unwrap()
 }
 
-fn create_public_key_proof_generic<B: AthmBackend, R: CryptoRngCore>(
+fn create_public_key_proof_generic<B: AthmBackend>(
     z: &B::Scalar,
     big_z: &B::Point,
     params: &GenericParams<B>,
-    rng: &mut R,
 ) -> GenericPublicKeyProof<B> {
     // Generate random scalar rho_z
-    let rho_z = B::random_scalar(rng);
+    let rho_z = B::random_scalar();
 
     // Compute gamma_z = rho_z * G
     let gamma_z = params.big_g * rho_z;
@@ -861,29 +858,25 @@ pub fn verify_public_key_proof_generic<B: AthmBackend>(
 }
 
 /// Generate server keys
-pub fn key_gen<R: CryptoRngCore>(
-    params: &Params,
-    rng: &mut R,
-) -> (PrivateKey, PublicKey, PublicKeyProof) {
-    key_gen_generic::<DefaultBackend, R>(params, rng)
+pub fn key_gen(params: &Params) -> (PrivateKey, PublicKey, PublicKeyProof) {
+    key_gen_generic::<DefaultBackend>(params)
 }
 
 /// Generate server keys (generic over backend).
-pub fn key_gen_generic<B: AthmBackend, R: CryptoRngCore>(
+pub fn key_gen_generic<B: AthmBackend>(
     params: &GenericParams<B>,
-    rng: &mut R,
 ) -> (GenericPrivateKey<B>, GenericPublicKey<B>, GenericPublicKeyProof<B>) {
-    let x = B::random_scalar(rng);
-    let y = B::random_non_zero_scalar(rng);
-    let z = B::random_non_zero_scalar(rng);
-    let r_x = B::random_scalar(rng);
-    let r_y = B::random_scalar(rng);
+    let x = B::random_scalar();
+    let y = B::random_non_zero_scalar();
+    let z = B::random_non_zero_scalar();
+    let r_x = B::random_scalar();
+    let r_y = B::random_scalar();
 
     let big_z = params.big_g * z;
     let big_c_x = (params.big_g * x) + (params.big_h * r_x);
     let big_c_y = (params.big_g * y) + (params.big_h * r_y);
 
-    let pi = create_public_key_proof_generic::<B, R>(&z, &big_z, params, rng);
+    let pi = create_public_key_proof_generic::<B>(&z, &big_z, params);
 
     let private_key = GenericPrivateKey { x, y, z, r_x, r_y };
     let public_key = GenericPublicKey { big_z, big_c_x, big_c_y };
@@ -892,34 +885,32 @@ pub fn key_gen_generic<B: AthmBackend, R: CryptoRngCore>(
 }
 
 /// Create a token request (client side)
-pub fn token_request<R: CryptoRngCore>(
+pub fn token_request(
     public_key: &PublicKey,
     public_key_proof: &PublicKeyProof,
     params: &Params,
-    rng: &mut R,
 ) -> Result<(TokenContext, TokenRequest), &'static str> {
-    token_request_generic::<DefaultBackend, R>(public_key, public_key_proof, params, rng)
+    token_request_generic::<DefaultBackend>(public_key, public_key_proof, params)
 }
 
 /// Create a token request (generic over backend).
-pub fn token_request_generic<B: AthmBackend, R: CryptoRngCore>(
+pub fn token_request_generic<B: AthmBackend>(
     public_key: &GenericPublicKey<B>,
     public_key_proof: &GenericPublicKeyProof<B>,
     params: &GenericParams<B>,
-    rng: &mut R,
 ) -> Result<(GenericTokenContext<B>, GenericTokenRequest<B>), &'static str> {
     if !verify_public_key_proof_generic::<B>(public_key, public_key_proof, params) {
         return Err("Invalid public key proof");
     }
-    let r = B::random_scalar(rng);
-    let tc = B::random_scalar(rng);
+    let r = B::random_scalar();
+    let tc = B::random_scalar();
     let big_t = params.big_g * r + public_key.big_z * tc;
     Ok((GenericTokenContext { r, tc }, GenericTokenRequest { big_t }))
 }
 
 /// Create an issuance proof for the token response
 #[allow(clippy::too_many_arguments)]
-fn create_issuance_proof_generic<B: AthmBackend, R: CryptoRngCore>(
+fn create_issuance_proof_generic<B: AthmBackend>(
     private_key: &GenericPrivateKey<B>,
     public_key: &GenericPublicKey<B>,
     hidden_metadata: u8,
@@ -929,12 +920,11 @@ fn create_issuance_proof_generic<B: AthmBackend, R: CryptoRngCore>(
     big_v: &B::Point,
     ts: &B::Scalar,
     big_t: &B::Point,
-    rng: &mut R,
 ) -> GenericIssuanceProof<B> {
     let mut e_vec: Vec<B::Scalar> = (0..params.n_buckets)
         .map(|i| {
             B::Scalar::conditional_select(
-                &B::random_scalar(rng),
+                &B::random_scalar(),
                 &B::scalar_zero(),
                 i.ct_eq(&hidden_metadata),
             )
@@ -943,18 +933,18 @@ fn create_issuance_proof_generic<B: AthmBackend, R: CryptoRngCore>(
     let mut a_vec: Vec<B::Scalar> = (0..params.n_buckets)
         .map(|i| {
             B::Scalar::conditional_select(
-                &B::random_scalar(rng),
+                &B::random_scalar(),
                 &B::scalar_zero(),
                 i.ct_eq(&hidden_metadata),
             )
         })
         .collect();
 
-    let r_mu = B::random_scalar(rng);
-    let r_d = B::random_scalar(rng);
-    let r_rho = B::random_scalar(rng);
-    let r_w = B::random_scalar(rng);
-    let mu = B::random_scalar(rng);
+    let r_mu = B::random_scalar();
+    let r_d = B::random_scalar();
+    let r_rho = B::random_scalar();
+    let r_w = B::random_scalar();
+    let mu = B::random_scalar();
 
     let big_c = public_key.big_c_y * B::Scalar::from(hidden_metadata as u64) + params.big_h * mu;
 
@@ -1021,46 +1011,43 @@ fn create_issuance_proof_generic<B: AthmBackend, R: CryptoRngCore>(
 }
 
 /// Create a token response (server side)
-pub fn token_response<R: CryptoRngCore>(
+pub fn token_response(
     private_key: &PrivateKey,
     public_key: &PublicKey,
     token_request: &TokenRequest,
     hidden_metadata: u8,
     params: &Params,
-    rng: &mut R,
 ) -> Result<TokenResponse, &'static str> {
-    token_response_generic::<DefaultBackend, R>(
+    token_response_generic::<DefaultBackend>(
         private_key,
         public_key,
         token_request,
         hidden_metadata,
         params,
-        rng,
     )
 }
 
 /// Create a token response (generic over backend).
-pub fn token_response_generic<B: AthmBackend, R: CryptoRngCore>(
+pub fn token_response_generic<B: AthmBackend>(
     private_key: &GenericPrivateKey<B>,
     public_key: &GenericPublicKey<B>,
     token_request: &GenericTokenRequest<B>,
     hidden_metadata: u8,
     params: &GenericParams<B>,
-    rng: &mut R,
 ) -> Result<GenericTokenResponse<B>, &'static str> {
     if hidden_metadata >= params.n_buckets {
         return Err("Hidden metadata index out of range");
     }
     let big_t = &token_request.big_t;
-    let ts = B::random_scalar(rng);
-    let d = B::random_non_zero_scalar(rng);
+    let ts = B::random_scalar();
+    let d = B::random_non_zero_scalar();
     let big_u = params.big_g * d;
     let big_x = params.big_g * private_key.x;
     let big_y = params.big_g * private_key.y;
     let big_v =
         (big_x + big_y * B::Scalar::from(hidden_metadata as u64) + public_key.big_z * ts + *big_t)
             * d;
-    let issuance_proof = create_issuance_proof_generic::<B, R>(
+    let issuance_proof = create_issuance_proof_generic::<B>(
         private_key,
         public_key,
         hidden_metadata,
@@ -1070,7 +1057,6 @@ pub fn token_response_generic<B: AthmBackend, R: CryptoRngCore>(
         &big_v,
         &ts,
         big_t,
-        rng,
     );
     Ok(GenericTokenResponse { big_u, big_v, ts, issuance_proof })
 }
@@ -1135,30 +1121,28 @@ pub fn verify_issuance_proof_generic<B: AthmBackend>(
 }
 
 /// Finalize a token (client side)
-pub fn finalize_token<R: CryptoRngCore>(
+pub fn finalize_token(
     context: &TokenContext,
     public_key: &PublicKey,
     request: &TokenRequest,
     response: &TokenResponse,
     params: &Params,
-    rng: &mut R,
 ) -> Result<Token, &'static str> {
-    finalize_token_generic::<DefaultBackend, R>(context, public_key, request, response, params, rng)
+    finalize_token_generic::<DefaultBackend>(context, public_key, request, response, params)
 }
 
 /// Finalize a token (generic over backend).
-pub fn finalize_token_generic<B: AthmBackend, R: CryptoRngCore>(
+pub fn finalize_token_generic<B: AthmBackend>(
     context: &GenericTokenContext<B>,
     public_key: &GenericPublicKey<B>,
     request: &GenericTokenRequest<B>,
     response: &GenericTokenResponse<B>,
     params: &GenericParams<B>,
-    rng: &mut R,
 ) -> Result<GenericToken<B>, &'static str> {
     if !verify_issuance_proof_generic::<B>(public_key, &request.big_t, response, params) {
         return Err("Invalid issuance proof");
     }
-    let c = B::random_non_zero_scalar(rng);
+    let c = B::random_non_zero_scalar();
     let big_p = response.big_u * c;
     let big_q = (response.big_v - response.big_u * context.r) * c;
     let t = context.tc + response.ts;
@@ -1203,11 +1187,11 @@ mod tests {
     fn test_generator_h(ctx: &[u8]) -> ProjectivePoint {
         generator_h_generic::<DefaultBackend>(ctx)
     }
-    fn test_random_scalar(rng: &mut impl CryptoRngCore) -> Scalar {
-        DefaultBackend::random_scalar(rng)
+    fn test_random_scalar() -> Scalar {
+        DefaultBackend::random_scalar()
     }
-    fn test_random_point(rng: &mut impl CryptoRngCore) -> ProjectivePoint {
-        test_generator_g() * test_random_scalar(rng)
+    fn test_random_point() -> ProjectivePoint {
+        test_generator_g() * test_random_scalar()
     }
     fn test_scalar_zero() -> Scalar {
         DefaultBackend::scalar_zero()
@@ -1290,8 +1274,7 @@ mod tests {
     #[test]
     fn test_key_gen() {
         let params = gen_test_params();
-        let mut rng = rand::thread_rng();
-        let (private_key, public_key, _proof) = key_gen(&params, &mut rng);
+        let (private_key, public_key, _proof) = key_gen(&params);
 
         // Verify that the keys were generated
         assert!(!test_scalar_is_zero(&private_key.x));
@@ -1317,8 +1300,7 @@ mod tests {
     #[test]
     fn test_verify_public_key_proof() {
         let params = gen_test_params();
-        let mut rng = rand::thread_rng();
-        let (_, public_key, proof) = key_gen(&params, &mut rng);
+        let (_, public_key, proof) = key_gen(&params);
 
         // Verify that the proof is valid
         assert!(verify_public_key_proof(&public_key, &proof, &params));
@@ -1336,12 +1318,11 @@ mod tests {
 
     #[test]
     fn test_token_request() {
-        let mut rng = rand::thread_rng();
         let params = gen_test_params();
-        let (_, public_key, proof) = key_gen(&params, &mut rng);
+        let (_, public_key, proof) = key_gen(&params);
 
         // Create a token request
-        let result = token_request(&public_key, &proof, &params, &mut rng);
+        let result = token_request(&public_key, &proof, &params);
         assert!(result.is_ok());
 
         let (context, request) = result.unwrap();
@@ -1356,18 +1337,17 @@ mod tests {
         // Test with invalid proof
         let mut invalid_proof = proof.clone();
         invalid_proof.e = invalid_proof.e + test_scalar_one();
-        let result = token_request(&public_key, &invalid_proof, &params, &mut rng);
+        let result = token_request(&public_key, &invalid_proof, &params);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_token_response() {
-        let mut rng = rand::thread_rng();
         let params = gen_test_params();
-        let (server_private_key, server_public_key, proof) = key_gen(&params, &mut rng);
+        let (server_private_key, server_public_key, proof) = key_gen(&params);
 
         // Create a token request from client
-        let (_, token_req) = token_request(&server_public_key, &proof, &params, &mut rng).unwrap();
+        let (_, token_req) = token_request(&server_public_key, &proof, &params).unwrap();
 
         // Create token response with metadata bucket index
         let hidden_metadata: u8 = 2;
@@ -1377,7 +1357,6 @@ mod tests {
             &token_req,
             hidden_metadata,
             &params,
-            &mut rng,
         );
         assert!(response.is_ok());
         let response = response.unwrap();
@@ -1394,7 +1373,6 @@ mod tests {
             &token_req,
             hidden_metadata_alt,
             &params,
-            &mut rng,
         )
         .unwrap();
 
@@ -1409,19 +1387,17 @@ mod tests {
             &token_req,
             invalid_metadata,
             &params,
-            &mut rng,
         );
         assert!(response_err.is_err());
     }
 
     #[test]
     fn test_verify_issuance_proof() {
-        let mut rng = rand::thread_rng();
         let params = gen_test_params();
-        let (server_private_key, server_public_key, proof) = key_gen(&params, &mut rng);
+        let (server_private_key, server_public_key, proof) = key_gen(&params);
 
         // Create a token request from client
-        let (_, token_req) = token_request(&server_public_key, &proof, &params, &mut rng).unwrap();
+        let (_, token_req) = token_request(&server_public_key, &proof, &params).unwrap();
 
         // Create token response with metadata bucket
         let hidden_metadata: u8 = 3;
@@ -1431,7 +1407,6 @@ mod tests {
             &token_req,
             hidden_metadata,
             &params,
-            &mut rng,
         )
         .unwrap();
 
@@ -1464,15 +1439,13 @@ mod tests {
 
     #[test]
     fn test_end_to_end_protocol() {
-        let mut rng = rand::thread_rng();
         let params = gen_test_params();
 
         // Server generates keys
-        let (server_private_key, server_public_key, proof) = key_gen(&params, &mut rng);
+        let (server_private_key, server_public_key, proof) = key_gen(&params);
 
         // Client creates token request
-        let (context, token_req) =
-            token_request(&server_public_key, &proof, &params, &mut rng).unwrap();
+        let (context, token_req) = token_request(&server_public_key, &proof, &params).unwrap();
 
         // Server chooses hidden metadata and creates response
         let hidden_metadata: u8 = 2;
@@ -1482,14 +1455,12 @@ mod tests {
             &token_req,
             hidden_metadata,
             &params,
-            &mut rng,
         )
         .unwrap();
 
         // Client finalizes the token
         let token =
-            finalize_token(&context, &server_public_key, &token_req, &response, &params, &mut rng)
-                .unwrap();
+            finalize_token(&context, &server_public_key, &token_req, &response, &params).unwrap();
 
         // Server verifies the token and recovers the metadata
         let recovered_metadata = verify_token(&server_private_key, &token, &params).unwrap();
@@ -1497,26 +1468,18 @@ mod tests {
 
         // Test with different metadata values
         (0u8..3).for_each(|metadata| {
-            let (context, token_req) =
-                token_request(&server_public_key, &proof, &params, &mut rng).unwrap();
+            let (context, token_req) = token_request(&server_public_key, &proof, &params).unwrap();
             let response = token_response(
                 &server_private_key,
                 &server_public_key,
                 &token_req,
                 metadata,
                 &params,
-                &mut rng,
             )
             .unwrap();
-            let token = finalize_token(
-                &context,
-                &server_public_key,
-                &token_req,
-                &response,
-                &params,
-                &mut rng,
-            )
-            .unwrap();
+            let token =
+                finalize_token(&context, &server_public_key, &token_req, &response, &params)
+                    .unwrap();
             let recovered = verify_token(&server_private_key, &token, &params).unwrap();
             assert_eq!(recovered, metadata);
         });
@@ -1524,13 +1487,11 @@ mod tests {
 
     #[test]
     fn test_verify_token_edge_cases() {
-        let mut rng = rand::thread_rng();
         let params = gen_test_params();
-        let (server_private_key, server_public_key, proof) = key_gen(&params, &mut rng);
+        let (server_private_key, server_public_key, proof) = key_gen(&params);
 
         // Create a valid token
-        let (context, token_req) =
-            token_request(&server_public_key, &proof, &params, &mut rng).unwrap();
+        let (context, token_req) = token_request(&server_public_key, &proof, &params).unwrap();
         let hidden_metadata: u8 = 3;
         let response = token_response(
             &server_private_key,
@@ -1538,12 +1499,10 @@ mod tests {
             &token_req,
             hidden_metadata,
             &params,
-            &mut rng,
         )
         .unwrap();
         let token =
-            finalize_token(&context, &server_public_key, &token_req, &response, &params, &mut rng)
-                .unwrap();
+            finalize_token(&context, &server_public_key, &token_req, &response, &params).unwrap();
 
         // Test with identity P (should fail)
         let mut invalid_token = token.clone();
@@ -1563,13 +1522,11 @@ mod tests {
 
     #[test]
     fn test_tampered_tokens() {
-        let mut rng = rand::thread_rng();
         let params = gen_test_params();
-        let (server_private_key, server_public_key, proof) = key_gen(&params, &mut rng);
+        let (server_private_key, server_public_key, proof) = key_gen(&params);
 
         // Create a valid token
-        let (context, token_req) =
-            token_request(&server_public_key, &proof, &params, &mut rng).unwrap();
+        let (context, token_req) = token_request(&server_public_key, &proof, &params).unwrap();
         let hidden_metadata: u8 = 3;
         let response = token_response(
             &server_private_key,
@@ -1577,12 +1534,10 @@ mod tests {
             &token_req,
             hidden_metadata,
             &params,
-            &mut rng,
         )
         .unwrap();
         let token =
-            finalize_token(&context, &server_public_key, &token_req, &response, &params, &mut rng)
-                .unwrap();
+            finalize_token(&context, &server_public_key, &token_req, &response, &params).unwrap();
 
         // Test 1: Tampered scalar t values
         // Small modification
@@ -1602,18 +1557,18 @@ mod tests {
 
         // Random t
         let mut tampered = token.clone();
-        tampered.t = test_random_scalar(&mut rng);
+        tampered.t = test_random_scalar();
         assert!(bool::from(verify_token(&server_private_key, &tampered, &params).is_none()));
 
         // Test 2: Tampered points P and Q
         // Modified P with random point
         let mut tampered = token.clone();
-        tampered.big_p = test_random_point(&mut rng);
+        tampered.big_p = test_random_point();
         assert!(bool::from(verify_token(&server_private_key, &tampered, &params).is_none()));
 
         // Modified Q with random point
         let mut tampered = token.clone();
-        tampered.big_q = test_random_point(&mut rng);
+        tampered.big_q = test_random_point();
         assert!(bool::from(verify_token(&server_private_key, &tampered, &params).is_none()));
 
         // Negated P
@@ -1644,62 +1599,35 @@ mod tests {
 
         // Test 5: All components tampered
         let tampered = Token {
-            t: test_random_scalar(&mut rng),
-            big_p: test_random_point(&mut rng),
-            big_q: test_random_point(&mut rng),
+            t: test_random_scalar(),
+            big_p: test_random_point(),
+            big_q: test_random_point(),
         };
         assert!(bool::from(verify_token(&server_private_key, &tampered, &params).is_none()));
     }
 
     #[test]
     fn test_tokens_from_different_sessions() {
-        let mut rng = rand::thread_rng();
         let params = gen_test_params();
-        let (server_private_key, server_public_key, proof) = key_gen(&params, &mut rng);
+        let (server_private_key, server_public_key, proof) = key_gen(&params);
 
         // Session 1: Create first token
-        let (context1, token_req1) =
-            token_request(&server_public_key, &proof, &params, &mut rng).unwrap();
-        let response1 = token_response(
-            &server_private_key,
-            &server_public_key,
-            &token_req1,
-            2,
-            &params,
-            &mut rng,
-        )
-        .unwrap();
-        let token1 = finalize_token(
-            &context1,
-            &server_public_key,
-            &token_req1,
-            &response1,
-            &params,
-            &mut rng,
-        )
-        .unwrap();
+        let (context1, token_req1) = token_request(&server_public_key, &proof, &params).unwrap();
+        let response1 =
+            token_response(&server_private_key, &server_public_key, &token_req1, 2, &params)
+                .unwrap();
+        let token1 =
+            finalize_token(&context1, &server_public_key, &token_req1, &response1, &params)
+                .unwrap();
 
         // Session 2: Create second token with different metadata
-        let (context2, token_req2) =
-            token_request(&server_public_key, &proof, &params, &mut rng).unwrap();
-        let response2 = token_response(
-            &server_private_key,
-            &server_public_key,
-            &token_req2,
-            3,
-            &params,
-            &mut rng,
-        )
-        .unwrap();
-        let token2 = finalize_token(
-            &context2,
-            &server_public_key,
-            &token_req2,
-            &response2,
-            &params,
-            &mut rng,
-        )
-        .unwrap();
+        let (context2, token_req2) = token_request(&server_public_key, &proof, &params).unwrap();
+        let response2 =
+            token_response(&server_private_key, &server_public_key, &token_req2, 3, &params)
+                .unwrap();
+        let token2 =
+            finalize_token(&context2, &server_public_key, &token_req2, &response2, &params)
+                .unwrap();
 
         // Mix components from different sessions
         let mut mixed = token1.clone();
@@ -1727,20 +1655,19 @@ mod tests {
 
     #[test]
     fn test_forged_tokens() {
-        let mut rng = rand::thread_rng();
         let params = gen_test_params();
-        let (server_private_key, server_public_key, _proof) = key_gen(&params, &mut rng);
+        let (server_private_key, server_public_key, _proof) = key_gen(&params);
 
         // Attempt 1: Completely random token
         let forged = Token {
-            t: test_random_scalar(&mut rng),
-            big_p: test_random_point(&mut rng),
-            big_q: test_random_point(&mut rng),
+            t: test_random_scalar(),
+            big_p: test_random_point(),
+            big_q: test_random_point(),
         };
         assert!(bool::from(verify_token(&server_private_key, &forged, &params).is_none()));
 
         // Attempt 2: Try to forge with known generator relationships
-        let rs = test_random_scalar(&mut rng);
+        let rs = test_random_scalar();
         let forged = Token {
             t: rs,
             big_p: test_generator_g() * rs,
@@ -1758,9 +1685,9 @@ mod tests {
 
         // Attempt 4: Try to construct token that might pass for metadata 0
         // Q should equal x * P for metadata 0, but without proper blinding
-        let fake_c = test_random_scalar(&mut rng);
+        let fake_c = test_random_scalar();
         let fake_p = test_generator_g() * fake_c;
-        let fake_t = test_random_scalar(&mut rng);
+        let fake_t = test_random_scalar();
         let fake_q = fake_p * server_private_key.x; // This won't work without proper protocol
         let forged = Token { t: fake_t, big_p: fake_p, big_q: fake_q };
         assert!(bool::from(verify_token(&server_private_key, &forged, &params).is_none()));
@@ -1768,8 +1695,6 @@ mod tests {
 
     #[test]
     fn test_dynamic_buckets() {
-        let mut rng = rand::thread_rng();
-
         let test_cases = [
             (1, vec![0]),
             (2, vec![0, 1]),
@@ -1782,11 +1707,10 @@ mod tests {
         // Test with different numbers of buckets
         for (n_buckets, metadata_values) in test_cases {
             let params = Params::new(n_buckets, TEST_DEPLOYMENT_ID.into()).unwrap();
-            let (server_private_key, server_public_key, proof) = key_gen(&params, &mut rng);
+            let (server_private_key, server_public_key, proof) = key_gen(&params);
 
             // Create token request
-            let (context, token_req) =
-                token_request(&server_public_key, &proof, &params, &mut rng).unwrap();
+            let (context, token_req) = token_request(&server_public_key, &proof, &params).unwrap();
 
             // Test with all valid metadata values for this bucket size
             for metadata in metadata_values {
@@ -1796,34 +1720,25 @@ mod tests {
                     &token_req,
                     metadata,
                     &params,
-                    &mut rng,
                 )
                 .unwrap();
 
-                let token = finalize_token(
-                    &context,
-                    &server_public_key,
-                    &token_req,
-                    &response,
-                    &params,
-                    &mut rng,
-                )
-                .unwrap();
+                let token =
+                    finalize_token(&context, &server_public_key, &token_req, &response, &params)
+                        .unwrap();
 
                 let recovered = verify_token(&server_private_key, &token, &params).unwrap();
                 assert_eq!(recovered, metadata);
             }
 
             // Test that metadata index >= n_buckets fails
-            let (_, token_req2) =
-                token_request(&server_public_key, &proof, &params, &mut rng).unwrap();
+            let (_, token_req2) = token_request(&server_public_key, &proof, &params).unwrap();
             let invalid_response = token_response(
                 &server_private_key,
                 &server_public_key,
                 &token_req2,
                 n_buckets, // This should be out of range
                 &params,
-                &mut rng,
             );
             assert!(invalid_response.is_err());
         }
@@ -1837,8 +1752,7 @@ mod tests {
         let y = decode_scalar(&bytes).0.unwrap();
         assert_eq!(x, y);
 
-        let mut rng = rand::thread_rng();
-        let x = test_random_scalar(&mut rng);
+        let x = test_random_scalar();
         bytes.clear();
         encode_scalar(&x, &mut bytes);
         let y = decode_scalar(&bytes).0.unwrap();
@@ -1853,8 +1767,7 @@ mod tests {
         let y = decode_point(&bytes).0.unwrap();
         assert_eq!(x, y);
 
-        let mut rng = rand::thread_rng();
-        let x = test_random_point(&mut rng);
+        let x = test_random_point();
         bytes.clear();
         encode_point(&x, &mut bytes);
         let y = decode_point(&bytes).0.unwrap();
@@ -1863,14 +1776,13 @@ mod tests {
 
     #[test]
     fn test_end_to_end_protocol_serialized() {
-        let mut rng = rand::thread_rng();
         let params = gen_test_params();
         let mut params_bytes = vec![];
         params.encode(&mut params_bytes);
 
         // Server generates keys
         let params = Params::decode(&params_bytes).unwrap();
-        let (server_private_key, server_public_key, proof) = key_gen(&params, &mut rng);
+        let (server_private_key, server_public_key, proof) = key_gen(&params);
         let mut server_private_key_bytes = vec![];
         server_private_key.encode(&mut server_private_key_bytes);
         let mut server_public_key_bytes = vec![];
@@ -1882,8 +1794,7 @@ mod tests {
         let server_public_key = PublicKey::decode(&server_public_key_bytes).unwrap();
         let proof = PublicKeyProof::decode(&proof_bytes).unwrap();
         let params = Params::decode(&params_bytes).unwrap();
-        let (context, token_req) =
-            token_request(&server_public_key, &proof, &params, &mut rng).unwrap();
+        let (context, token_req) = token_request(&server_public_key, &proof, &params).unwrap();
         let mut context_bytes = vec![];
         context.encode(&mut context_bytes);
         let mut token_req_bytes = vec![];
@@ -1901,7 +1812,6 @@ mod tests {
             &token_req,
             hidden_metadata,
             &params,
-            &mut rng,
         )
         .unwrap();
         let mut response_bytes = vec![];
@@ -1914,8 +1824,7 @@ mod tests {
         let params = Params::decode(&params_bytes).unwrap();
         let response = TokenResponse::decode(&response_bytes, &params).unwrap();
         let token =
-            finalize_token(&context, &server_public_key, &token_req, &response, &params, &mut rng)
-                .unwrap();
+            finalize_token(&context, &server_public_key, &token_req, &response, &params).unwrap();
         let mut token_bytes = vec![];
         token.encode(&mut token_bytes);
 

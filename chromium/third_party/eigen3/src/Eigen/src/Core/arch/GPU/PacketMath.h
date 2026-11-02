@@ -1503,4 +1503,6 @@ EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE half2 pmax<half2>(const half2& a, const ha
 
 }  // end namespace Eigen
 
+#undef EIGEN_HAS_GPU_DEVICE_FUNCTIONS
+
 #endif  // EIGEN_PACKET_MATH_GPU_H

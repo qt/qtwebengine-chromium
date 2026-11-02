@@ -37,7 +37,7 @@ import {streamWrite as resourceLoaderStreamWrite} from './ResourceLoader.js';
 
 const UIStrings = {
   /**
-   * @description Document title in Inspector Frontend Host of the DevTools window
+   * @description Document title in Inspector Frontend Host of the DevTools window.
    * @example {example.com} PH1
    */
   devtoolsS: 'DevTools - {PH1}',
@@ -118,15 +118,15 @@ export class InspectorFrontendHostStub implements InspectorFrontendHostAPI {
   }
 
   setIsDocked(_isDocked: boolean, callback: () => void): void {
-    window.setTimeout(callback, 0);
+    globalThis.setTimeout(callback, 0);
   }
 
   showSurvey(_trigger: string, callback: (arg0: ShowSurveyResult) => void): void {
-    window.setTimeout(() => callback({surveyShown: false}), 0);
+    globalThis.setTimeout(() => callback({surveyShown: false}), 0);
   }
 
   canShowSurvey(_trigger: string, callback: (arg0: CanShowSurveyResult) => void): void {
-    window.setTimeout(() => callback({canShowSurvey: false}), 0);
+    globalThis.setTimeout(() => callback({canShowSurvey: false}), 0);
   }
 
   /**
@@ -168,11 +168,13 @@ export class InspectorFrontendHostStub implements InspectorFrontendHostAPI {
   }
 
   openSearchResultsInNewTab(_query: string): void {
+    // eslint-disable-next-line @devtools/no-instance-of-migrated-singletons
     Common.Console.Console.instance().error(
         'Search is not enabled in hosted mode. Please inspect using chrome://inspect');
   }
 
   showItemInFolder(_fileSystemPath: Platform.DevToolsPath.RawPathString): void {
+    // eslint-disable-next-line @devtools/no-instance-of-migrated-singletons
     Common.Console.Console.instance().error(
         'Show item in folder is not enabled in hosted mode. Please inspect using chrome://inspect');
   }

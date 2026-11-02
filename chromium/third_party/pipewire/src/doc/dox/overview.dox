@@ -1,0 +1,149 @@
+/** \page page_overview Overview
+
+# Concepts
+
+## The PipeWire Server
+
+PipeWire is a graph-based processing framework, that focuses on handling multimedia data (audio, video and MIDI mainly).
+
+A PipeWire graph is composed of nodes.
+Each node takes an arbitrary number of inputs called ports, does some processing over this multimedia data, and sends data out of its output ports.
+The edges in the graph are here called links.
+They are capable of connecting an output port to an input port.
+
+Nodes can have an arbitrary number of ports.
+A node with only output ports is often called a source, and a sink is a node that only possesses input ports.
+
+The PipeWire server provides the implementation of some of these nodes itself.
+Most importantly, it uses alsa-lib like any other ALSA client to expose statically configured ALSA devices as nodes.
+For example
+
+- a stereo ALSA PCM playback device can appear as a sink with two input ports: front-left and front-right or
+- a virtual ALSA device, to which clients which attempt to use ALSA directly connect, can appear as a source with two output ports: front-left and front right.
+
+Similar mechanisms exist to interface with and accommodate applications which use JACK or Pulseaudio.
+
+NOTE: `pw-jack` modifies the `LD_LIBRARY_PATH` environment variable so that applications will load PipeWire’s reimplementation of the JACK client libraries instead of JACK’s own libraries. This results in JACK clients being redirected to PipeWire.
+
+Other nodes are implemented by PipeWire clients.
+
+## The PipeWire clients
+
+PipeWire clients can be any process.
+They can speak to the PipeWire server through a UNIX domain socket using the PipeWire native protocol.
+Besides implementing nodes, they may control the graph.
+
+### Graph control
+
+The PipeWire server itself does not perform any management of the graph;
+context-dependent behaviour such as monitoring for new ALSA devices, and configuring them so that they appear as nodes, or linking nodes is not done automatically.
+It rather provides an API that allows spawning, linking and controlling these nodes.
+This API is then relied upon by clients to control the graph structure, without having to worry about the graph execution process.
+
+A recommended pattern that is often used is a single client be a daemon that deals with the session and policy management. Two implementations are known as of today:
+
+- pipewire-media-session, which was the first implementation of a session manager.c
+  Today, it is used mainly in debugging scenarios.
+- WirePlumber, which takes a modular approach:
+  It provides another, higher-level API compared to the PipeWire one, and runs Lua scripts that implement the management logic using the said API.
+  It ships with default scripts and configuration that handle linking policies as well as monitoring and automatic spawning of ALSA, bluez, libcamera and v4l2 devices.
+  The API is available for any process, not only from WirePlumber’s Lua scripts.
+ 
+### Node implementation 
+ 
+With the nodes which they implement, clients can send multimedia data into the graph or obtain multimedia data from the graph.
+A client can create multiple PipeWire nodes.
+That allows one to create more complex applications;
+a browser would for example be able to create a node per tab that requests the ability to play audio, letting the session manager handle the routing:
+This allows the user to route different tab sources to different sinks.
+Another example would be an application that requires many inputs.
+
+## API Semantics
+
+The current state of the PipeWire server and its capabilities, and the PipeWire graph are exposed towards clients -- including introspection tools like `pw-dump` -- as a collection of objects, each of which has a specific type.
+These objects have associated parameters, and properties, methods, events, and permissions.
+
+Parameters of an object are data with a specific, well defined meaning, which can be modified and read-out in a controlled fashion through the PipeWire API.
+They are used to configure the object at run-time.
+Parameters are the key that allow WirePlumber to negotiate data formats and port configuration with nodes by providing information such as:
+
+- Multiple, supported sample rates
+- Channel count
+- Positions sample format
+- Available monitor ports
+
+Properties of an object are additional data which have been attached on the behalf of modules and of which the PipeWire server has no native understanding.
+Certain properties are, by convention, expected for specific object types.
+
+Each object type has a list of methods that it needs to implement.
+
+The session manager is responsible for defining the list of permissions each client has. Each permission entry is an object ID and four flags. The four flags are:
+
+- Read: the object can be seen and events can be received;
+- Write: the object can be modified, usually through methods (which requires the execute flag)
+- eXecute: methods can be called;
+- Metadata: metadata can be set on the object.
+- Link: any link can be made even to a port that is not visible by the owner of the port.
+
+### Object types
+
+The following are the known types and their most important, specialized parameters and methods:
+
+#### Core
+
+The core is the heart of the PipeWire server.
+There can only be one core per server and it has the identifier zero.
+It represents global properties of the server.
+
+#### Clients
+
+A client object is the representation of an open connection with a client process with the server.
+
+#### Modules
+
+Modules are dynamic libraries that are loaded at run time in the clients and in the server and do arbitrary things, such as creating devices or provide methods to create links, nodes, etc.
+
+Modules in PipeWire can only be loaded in their own process. A client, for example, can not load a module in the server.
+
+#### Nodes
+
+Nodes are the core data processing entities in PipeWire.
+They may produce data (capture devices, signal generators, ...), consume data (playback devices, network endpoints, ...) or both (filters).
+Notes have a method `process`, which eats up data from input ports and provides data for each output port.
+
+#### Ports
+
+Ports are the entry and exit point of data for a Node.
+A port can either be used for input or output (but not both).
+For nodes that work with audio, one type of configuration is whether they have `dsp` ports or a `passthrough` port.
+In `dsp` mode, there is one port for channel of multichannel audio (so two ports for stereo audio, for example), and data is always in 32-bit floating point format.
+In `passthrough` mode, there is one port for multichannel data in a format that is negotiated between ports.
+
+#### Links
+
+Data flows between nodes when there is a Link between their ports.
+Links may be `"passive"` in which case the existence of the link does not automatically cause data to flow between those nodes (some link in the graph must be `"active"` for the graph to have data flow).
+
+#### Devices
+
+A device is a handle representing an underlying API, which is then used to create nodes or other devices.
+Examples of devices are ALSA PCM cards or V4L2 devices.
+A device has a profile, which allows one to configure them.
+
+#### Factories
+
+A factory is an object whose sole capability is to create other objects.
+Once a factory is created, it can only emit the type of object it declared.
+Those are most often delivered as a module: the module creates the factory and stays alive to keep it accessible for clients.
+
+### Common parameters and methods
+
+Every object implement at least the add_listener method, that allows any client to register event listeners.
+Events are used through the PipeWire API to expose information about an object that might change over time (the state of a node for example).
+
+## Context
+
+The PipeWire server and PipeWire clients use the PipeWire API through their respective `pw_context`, the so called PipeWire context.
+When a PipeWire context is created, it finds and parses a configuration file from the filesystem according to the rules of loading configuration files.
+
+*/

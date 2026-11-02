@@ -58,7 +58,7 @@ class AutoDiffJacobian : public Functor {
     ActiveInput ax = x.template cast<ActiveScalar>();
     ActiveValue av(jac.rows());
 
-    if (InputsAtCompileTime == Dynamic)
+    EIGEN_IF_CONSTEXPR (InputsAtCompileTime == Dynamic)
       for (Index j = 0; j < jac.rows(); j++) av[j].derivatives().resize(x.rows());
 
     for (Index i = 0; i < jac.cols(); i++) ax[i].derivatives() = DerivativeType::Unit(x.rows(), i);

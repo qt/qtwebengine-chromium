@@ -3,9 +3,9 @@
   "description": "Package list used when building/upgrading lit",
   "private": true,
   "dependencies": {
-    "lit": "3.0.2"
+    "lit": "3.3.3"
   },
   "devDependencies": {
-    "rollup-plugin-dts": "6.1.1"
+    "rollup-plugin-dts": "6.4.1"
   }
 }

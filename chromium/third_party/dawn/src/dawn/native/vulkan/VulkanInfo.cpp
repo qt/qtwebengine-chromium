@@ -175,10 +175,13 @@ ResultOrError<VulkanDeviceInfo> GatherDeviceInfo(const PhysicalDevice& device) {
         VkPhysicalDeviceMemoryProperties memory;
         vkFunctions.GetPhysicalDeviceMemoryProperties(vkPhysicalDevice, &memory);
 
-        info.memoryTypes.assign(memory.memoryTypes,
-                                DAWN_UNSAFE_TODO(memory.memoryTypes + memory.memoryTypeCount));
-        info.memoryHeaps.assign(memory.memoryHeaps,
-                                DAWN_UNSAFE_TODO(memory.memoryHeaps + memory.memoryHeapCount));
+        auto driverMemoryTypes =
+            Span<const VkMemoryType>(memory.memoryTypes).first(memory.memoryTypeCount);
+        auto driverMemoryHeaps =
+            Span<const VkMemoryHeap>(memory.memoryHeaps).first(memory.memoryHeapCount);
+
+        info.memoryTypes.assign(driverMemoryTypes.begin(), driverMemoryTypes.end());
+        info.memoryHeaps.assign(driverMemoryHeaps.begin(), driverMemoryHeaps.end());
     }
 
     // Gather info about device queue families
@@ -329,6 +332,18 @@ ResultOrError<VulkanDeviceInfo> GatherDeviceInfo(const PhysicalDevice& device) {
         featuresChain.Add(
             &info.shaderSubgroupExtendedTypes,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_EXTENDED_TYPES_FEATURES);
+    }
+
+    if (info.extensions[DeviceExt::MaximalReconvergence]) {
+        featuresChain.Add(
+            &info.shaderMaximalReconvergenceFeatures,
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_MAXIMAL_RECONVERGENCE_FEATURES_KHR);
+    }
+
+    if (info.extensions[DeviceExt::SubgroupUniformControlFlow]) {
+        featuresChain.Add(
+            &info.shaderSubgroupUniformControlFlowFeatures,
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_UNIFORM_CONTROL_FLOW_FEATURES_KHR);
     }
 
     if (info.extensions[DeviceExt::ExternalMemoryHost]) {

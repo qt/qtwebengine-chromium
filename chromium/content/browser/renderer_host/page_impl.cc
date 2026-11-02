@@ -20,7 +20,6 @@
 #include "content/browser/renderer_host/render_frame_proxy_host.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
-#include "content/browser/shared_storage/shared_storage_features.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/peak_gpu_memory_tracker_factory.h"
 #include "content/public/browser/render_view_host.h"
@@ -37,12 +36,6 @@ namespace content {
 
 PageImpl::PageImpl(RenderFrameHostImpl& rfh, PageDelegate& delegate)
     : main_document_(rfh), delegate_(delegate) {
-  if (base::FeatureList::IsEnabled(features::kSharedStorageSelectURLLimit)) {
-    select_url_overall_budget_ =
-        features::kSharedStorageSelectURLBitBudgetPerPageLoad.Get();
-    select_url_max_bits_per_site_ =
-        features::kSharedStorageSelectURLBitBudgetPerSitePerPageLoad.Get();
-  }
 
 #if BUILDFLAG(IS_ANDROID)
   page_proxy_ = std::make_unique<PageProxy>(this);
@@ -191,18 +184,17 @@ void PageImpl::NotifyCrossOriginSubframePrerenderIsAllowed() {
 }
 
 void PageImpl::Activate(
-    ActivationType type,
     StoredPage::RenderViewHostImplSafeRefSet& render_view_hosts,
     std::optional<blink::ViewTransitionState> view_transition_state,
     base::OnceCallback<void(base::TimeTicks)> completion_callback) {
-  TRACE_EVENT1("navigation", "PageImpl::Activate", "activation_type", type);
+  TRACE_EVENT0("navigation", "PageImpl::Activate");
 
   // SetActivationStartTime() should be called first as the value is used in
   // the callback below.
   CHECK(activation_start_time_.has_value());
 
   base::OnceClosure did_activate_render_views = base::BindOnce(
-      &PageImpl::DidActivateAllRenderViewsForPrerenderingOrPreview,
+      &PageImpl::DidActivateAllRenderViewsForPrerendering,
       weak_factory_.GetWeakPtr(), std::move(completion_callback));
 
   base::RepeatingClosure barrier = base::BarrierClosure(
@@ -223,44 +215,26 @@ void PageImpl::Activate(
       view_transition_state_consumed = true;
     }
 
-    const bool should_send_activation_start = [&]() {
-      // For prerendering activation, send activation_start only to the
-      // RenderViewHost for the main frame to avoid sending the info
-      // cross-origin. Only this RenderViewHost needs the info, as we expect
-      // the other RenderViewHosts are made for cross-origin iframes which
-      // have not yet loaded their document. To the renderer, it just looks
-      // like an ongoing navigation is happening in the frame and has not yet
-      // committed.
-      if (is_main_document) {
-        return true;
-      }
-
-      // Even cross-origin, we allow if the main document has the special
-      // header. See PrerenderHost::AllowCrossOriginSubframeNavigation() for
-      // detail.
-      if (type == ActivationType::kPrerendering &&
-          is_cross_origin_subframe_prerender_allowed_) {
-        return true;
-      }
-
-      // For preview activation, send activation_start to all RenderViewHosts
-      // as preview loads cross-origin subframes under the capability control,
-      // and activation_start time is meaningful there.
-      if (type == ActivationType::kPreview) {
-        return true;
-      }
-      return false;
-    }();
+    // For prerendering activation, send activation_start only to the
+    // RenderViewHost for the main frame to avoid sending the info
+    // cross-origin. Only this RenderViewHost needs the info, as we expect
+    // the other RenderViewHosts are made for cross-origin iframes which
+    // have not yet loaded their document. To the renderer, it just looks
+    // like an ongoing navigation is happening in the frame and has not yet
+    // committed.
+    //
+    // Even cross-origin, we allow if the main document has the special
+    // header. See PrerenderHost::AllowCrossOriginSubframeNavigation() for
+    // detail.
+    const bool should_send_activation_start =
+        is_main_document || is_cross_origin_subframe_prerender_allowed_;
     if (should_send_activation_start) {
       params->activation_start = *activation_start_time_;
     }
 
-    // For preview activation, there is no way to activate the previewed page
-    // other than with a user action, or testing only methods.
     params->was_user_activated =
-        (main_document_->frame_tree_node()
-             ->has_received_user_gesture_before_nav() ||
-         type == ActivationType::kPreview)
+        main_document_->frame_tree_node()
+                ->has_received_user_gesture_before_nav()
             ? blink::mojom::WasActivatedOption::kYes
             : blink::mojom::WasActivatedOption::kNo;
     rvh->ActivatePrerenderedPage(std::move(params), barrier);
@@ -269,12 +243,12 @@ void PageImpl::Activate(
   // Prepare each RenderFrameHostImpl in this Page for activation.
   main_document_->ForEachRenderFrameHostImplIncludingSpeculative(
       [](RenderFrameHostImpl* rfh) {
-        rfh->RendererWillActivateForPrerenderingOrPreview();
+        rfh->RendererWillActivateForPrerendering();
       });
 }
 
 void PageImpl::MaybeDispatchLoadEventsOnPrerenderActivation() {
-  DCHECK(IsPrimary());
+  CHECK(IsPrimary(), base::NotFatalUntil::M154);
 
   // Dispatch LoadProgressChanged notification on activation with the
   // prerender last load progress value if the value is not equal to
@@ -297,15 +271,16 @@ void PageImpl::MaybeDispatchLoadEventsOnPrerenderActivation() {
     main_document_->DocumentOnLoadCompleted();
   }
 
-  if (first_contentful_paint_in_main_document_duration_) {
-    main_document_->NotifyFirstContentfulPaint();
+  if (first_contentful_paint_in_main_document_time_) {
+    main_document_->NotifyFirstContentfulPaint(
+        *first_contentful_paint_in_main_document_time_);
   }
 
   main_document_->ForEachRenderFrameHostImpl(
       &RenderFrameHostImpl::MaybeDispatchDidFinishLoadOnPrerenderActivation);
 }
 
-void PageImpl::DidActivateAllRenderViewsForPrerenderingOrPreview(
+void PageImpl::DidActivateAllRenderViewsForPrerendering(
     base::OnceCallback<void(base::TimeTicks)> completion_callback) {
   TRACE_EVENT0("navigation",
                "PageImpl::DidActivateAllRenderViewsForPrerendering");
@@ -364,8 +339,9 @@ void PageImpl::NotifyVirtualKeyboardOverlayRect(
     const gfx::Rect& keyboard_rect) {
   // TODO(crbug.com/40222405): send notification to outer frames if
   // needed.
-  DCHECK_EQ(virtual_keyboard_mode(),
-            ui::mojom::VirtualKeyboardMode::kOverlaysContent);
+  CHECK_EQ(virtual_keyboard_mode(),
+           ui::mojom::VirtualKeyboardMode::kOverlaysContent,
+           base::NotFatalUntil::M154);
   GetMainDocument().GetAssociatedLocalFrame()->NotifyVirtualKeyboardOverlayRect(
       keyboard_rect);
 }
@@ -386,98 +362,6 @@ void PageImpl::SetVirtualKeyboardMode(ui::mojom::VirtualKeyboardMode mode) {
 
 base::flat_map<std::string, std::string> PageImpl::GetKeyboardLayoutMap() {
   return GetMainDocument().GetRenderWidgetHost()->GetKeyboardLayoutMap();
-}
-
-int32_t PageImpl::GetSavedQueryResultIndexOrStoreCallback(
-    const url::Origin& context_origin,
-    const url::Origin& data_origin,
-    const GURL& script_url,
-    const std::string& operation_name,
-    const std::u16string& query_name,
-    base::OnceCallback<void(uint32_t)> callback) {
-  auto key = std::make_tuple(context_origin, data_origin, script_url,
-                             operation_name, query_name);
-  auto it = select_url_saved_query_index_results_.find(key);
-  if (it == select_url_saved_query_index_results_.end()) {
-    select_url_saved_query_index_results_[key] = SharedStorageSavedQueryData();
-    // The result index will be determined by running the registered worklet
-    // operation upon return to the SHaredStorageWorkletHost.
-    return -2;
-  }
-  if (it->second.index == -1) {
-    // The result index will be determined when a previously initiated worklet
-    // operation finishes running. We save a callback that will notify us of the
-    // result.
-    it->second.callbacks.push(std::move(callback));
-    return -1;
-  }
-  // The result index has been stored from a previously resolved worklet
-  // operation.
-  return it->second.index;
-}
-
-void PageImpl::SetSavedQueryResultIndexAndRunCallbacks(
-    const url::Origin& context_origin,
-    const url::Origin& data_origin,
-    const GURL& script_url,
-    const std::string& operation_name,
-    const std::u16string& query_name,
-    uint32_t index) {
-  auto key = std::make_tuple(context_origin, data_origin, script_url,
-                             operation_name, query_name);
-  auto it = select_url_saved_query_index_results_.find(key);
-  CHECK(it != select_url_saved_query_index_results_.end());
-  CHECK_EQ(it->second.index, -1L);
-  it->second.index = index;
-  while (!it->second.callbacks.empty()) {
-    std::move(it->second.callbacks.front()).Run(index);
-    it->second.callbacks.pop();
-  }
-}
-
-blink::SharedStorageSelectUrlBudgetStatus
-PageImpl::CheckAndMaybeDebitSelectURLBudgets(const net::SchemefulSite& site,
-                                             double bits_to_charge) {
-  if (!select_url_overall_budget_) {
-    // The limits are not enabled.
-    return blink::SharedStorageSelectUrlBudgetStatus::kSufficientBudget;
-  }
-
-  // Return insufficient if there is insufficient overall budget.
-  if (bits_to_charge > select_url_overall_budget_.value()) {
-    GetContentClient()->browser()->LogWebFeatureForCurrentPage(
-        &GetMainDocument(),
-        blink::mojom::WebFeature::
-            kSharedStorageAPI_SelectURLOverallPageloadBudgetInsufficient);
-    return blink::SharedStorageSelectUrlBudgetStatus::
-        kInsufficientOverallPageloadBudget;
-  }
-
-  DCHECK(select_url_max_bits_per_site_);
-
-  // Return false if the max bits per site is set to a value smaller than the
-  // current bits to charge.
-  if (bits_to_charge > select_url_max_bits_per_site_.value()) {
-    return blink::SharedStorageSelectUrlBudgetStatus::
-        kInsufficientSitePageloadBudget;
-  }
-
-  // Charge the per-site budget or return insufficient if there is not enough.
-  auto it = select_url_per_site_budget_.find(site);
-  if (it == select_url_per_site_budget_.end()) {
-    select_url_per_site_budget_[site] =
-        select_url_max_bits_per_site_.value() - bits_to_charge;
-  } else if (bits_to_charge > it->second) {
-    // There is insufficient per-site budget remaining.
-    return blink::SharedStorageSelectUrlBudgetStatus::
-        kInsufficientSitePageloadBudget;
-  } else {
-    it->second -= bits_to_charge;
-  }
-
-  // Charge the overall budget.
-  select_url_overall_budget_.value() -= bits_to_charge;
-  return blink::SharedStorageSelectUrlBudgetStatus::kSufficientBudget;
 }
 
 void PageImpl::TakeLoadingMemoryTracker(NavigationRequest* request) {

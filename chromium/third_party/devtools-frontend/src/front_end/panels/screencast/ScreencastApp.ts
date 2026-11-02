@@ -6,13 +6,14 @@
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import type * as Foundation from '../../foundation/foundation.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import {ScreencastView} from './ScreencastView.js';
 
 const UIStrings = {
   /**
-   * @description Tooltip text that appears when hovering over largeicon phone button in Screencast App of the Remote Devices tab when toggling screencast
+   * @description Tooltip text that appears when hovering over the toggle screencast button in the Screencast app of the Remote devices tab when toggling screencast.
    */
   toggleScreencast: 'Toggle screencast',
 } as const;
@@ -28,7 +29,9 @@ export class ScreencastApp implements UI.App.App,
   private screenCaptureModel?: SDK.ScreenCaptureModel.ScreenCaptureModel;
   private screencastView?: ScreencastView;
   rootView?: UI.RootView.RootView;
-  constructor() {
+  readonly #universe: Foundation.Universe.Universe;
+  constructor(universe: Foundation.Universe.Universe) {
+    this.#universe = universe;
     this.enabledSetting = Common.Settings.Settings.instance().createSetting('screencast-enabled', true);
     this.toggleButton = new UI.Toolbar.ToolbarToggle(i18nString(UIStrings.toggleScreencast), 'devices');
     this.toggleButton.setToggled(this.enabledSetting.get());
@@ -37,15 +40,18 @@ export class ScreencastApp implements UI.App.App,
     SDK.TargetManager.TargetManager.instance().observeModels(SDK.ScreenCaptureModel.ScreenCaptureModel, this);
   }
 
-  static instance(): ScreencastApp {
+  static instance(universe?: Foundation.Universe.Universe): ScreencastApp {
     if (!appInstance) {
-      appInstance = new ScreencastApp();
+      if (!universe) {
+        throw new Error('ScreencastApp.instance() requires a Universe on initial instantiation');
+      }
+      appInstance = new ScreencastApp(universe);
     }
     return appInstance;
   }
 
   presentUI(document: Document): void {
-    this.rootView = new UI.RootView.RootView();
+    this.rootView = new UI.RootView.RootView(this.#universe);
     this.rootView.registerRequiredCSS(UI.inspectorCommonStyles);
 
     this.rootSplitWidget =
@@ -137,7 +143,7 @@ export class ScreencastAppProvider implements UI.AppProvider.AppProvider {
     return screencastAppProviderInstance;
   }
 
-  createApp(): UI.App.App {
-    return ScreencastApp.instance();
+  createApp(universe: Foundation.Universe.Universe): UI.App.App {
+    return ScreencastApp.instance(universe);
   }
 }

@@ -40,6 +40,7 @@ namespace internal {
  *                  Must provide:
  *                  - `static constexpr cudssMatrixType_t cudss_matrix_type()`
  *                  - `static constexpr cudssMatrixViewType_t cudss_matrix_view()`
+ *                  - `static constexpr bool needs_csr_conversion()`
  */
 template <typename Scalar_, typename Derived>
 class SparseSolverBase {

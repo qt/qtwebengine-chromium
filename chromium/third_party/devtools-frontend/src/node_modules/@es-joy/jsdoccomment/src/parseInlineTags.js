@@ -35,10 +35,10 @@ function parseDescription (description) {
   // This could have been expressed in a single pattern,
   // but having two avoids a potentially exponential time regex.
 
-  const prefixedTextPattern = new RegExp(/(?:\[(?<text>[^\]]+)\])\{@(?<tag>[^}\s]+)\s?(?<namepathOrURL>[^}\s|]*)\}/gu, 'gud');
+  const prefixedTextPattern = /(?:\[(?<text>[^\]]+)\])\{@(?<tag>[^\}\s]+)\s?(?<namepathOrURL>[^\}\s\|]*)\}/gvd;
   // The pattern used to match for text after tag uses a negative lookbehind
   // on the ']' char to avoid matching the prefixed case too.
-  const suffixedAfterPattern = new RegExp(/(?<!\])\{@(?<tag>[^}\s]+)\s?(?<namepathOrURL>[^}\s|]*)\s*(?<separator>[\s|])?\s*(?<text>[^}]*)\}/gu, 'gud');
+  const suffixedAfterPattern = /(?<!\])\{@(?<tag>[^\}\s]+)\s?(?<namepathOrURL>[^\}\s\|]*)\s*(?<separator>[\s\|])?\s*(?<text>[^\}]*)\}/gvd;
 
   const matches = [
     ...description.matchAll(prefixedTextPattern),

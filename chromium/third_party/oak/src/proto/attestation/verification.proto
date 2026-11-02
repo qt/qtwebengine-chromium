@@ -173,9 +173,21 @@ message AmdAttestationReport {
 }
 
 // Values extracted from an Intel TDX attestation report.
+// NEXT_ID: 5
 message IntelTdxAttestationReport {
   // The custom bytes that were passed to the report when it was requested.
   bytes report_data = 1;
+
+  // The Security Version Numbers of the TCB components.
+  TdxTcbSvn tee_tcb_svn = 2;
+
+  // Whether the VM was booted in debug mode.
+  bool debug = 3;
+
+  // The measurement of the initial memory and CPU state of the VM before
+  // startup. This implicitly includes the measurement of the Stage 0 firmware
+  // binary.
+  bytes mr_td = 4;
 }
 
 // Values extracted from a fake attestation report when not running in a TEE.
@@ -213,6 +225,9 @@ message KernelLayerData {
 
 // Values extracted from the evidence that represents an application running
 // under the Oak Restricted Kernel.
+//
+// Measurements of the application taken by the RK orchestrator.
+// Encoded as event_log[1] in Restricted Kernel evidence.
 message ApplicationLayerData {
   // Measurement RawDigest of the application binary.
   RawDigest binary = 1;
@@ -223,6 +238,9 @@ message ApplicationLayerData {
 
 // Values extracted from the evidence that represents the Oak Containers system
 // image.
+//
+// Measurements of the system image taken by Stage 1.
+// Encoded as event_log[1] in Oak Containers evidence.
 message SystemLayerData {
   // Measurement RawDigest of the system image.
   RawDigest system_image = 1;
@@ -230,6 +248,9 @@ message SystemLayerData {
 
 // Values extracted from the evidence that represents the Container Runtime
 // Bundle used in Oak Containers.
+//
+// Measurements of the container bundle taken by the Oak Containers
+// Orchestrator. Encoded as event_log[2] in Oak Containers evidence.
 message ContainerLayerData {
   // Measurement RawDigest of the container bundle.
   RawDigest bundle = 1;

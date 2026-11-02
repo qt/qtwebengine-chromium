@@ -38,6 +38,8 @@ base::span<const char* const> GetWebNNSwitchesCopiedFromGpuProcessHost() {
       kWebNNOrtEpDevice,
       kWebNNOrtIgnoreEpBlocklist,
       kWebNNOrtIgnoreIhvEps,
+      kWebNNOrtDisableVirtualDevices,
+      kWebNNOrtAllowAllCompilerDevices,
       kWebNNOrtGraphOptimizationLevel,
       kWebNNOrtEnableProfiling,
       kWebNNOrtDisableCpuFallback,
@@ -51,5 +53,14 @@ base::span<const char* const> GetWebNNSwitchesCopiedFromGpuProcessHost() {
   return {};
 }
 #endif
+
+base::span<const char* const> GetWebNNSwitchesForRendererProcess() {
+#if BUILDFLAG(WEBNN_USE_TFLITE) || BUILDFLAG(WEBNN_USE_LITERT)
+  static constexpr auto flags = std::to_array({kWebNNTfliteDumpModel});
+  return flags;
+#else
+  return {};
+#endif
+}
 
 }  // namespace switches

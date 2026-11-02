@@ -1,6 +1,6 @@
-From 0655370c830a309d8808ef365dff611725ea73b1 Mon Sep 17 00:00:00 2001
+From e75293ce1c04be22600fa0eda58ce28cfb2fe7ab Mon Sep 17 00:00:00 2001
 From: Barry Pollard <barrypollard@google.com>
-Date: Tue, 21 Apr 2026 12:43:38 +0100
+Date: Tue, 21 Apr 2026 14:20:47 +0100
 Subject: [PATCH] Add onEachInteraction to onINP options
 
 This adds an "onEachInteraction" option to onINP, which exposes to us
@@ -8,18 +8,18 @@ each interaction. It also calls attributeINP on each value given to the
 callback.
 
 ---
- src/attribution/onINP.ts | 35 ++++++++++++++++++++++++++++++++++-
+ src/attribution/onINP.ts | 36 +++++++++++++++++++++++++++++++++++-
  src/types/inp.ts         |  1 +
- 2 files changed, 35 insertions(+), 1 deletion(-)
+ 2 files changed, 36 insertions(+), 1 deletion(-)
 
 diff --git a/src/attribution/onINP.ts b/src/attribution/onINP.ts
-index 0d6d098..3fe5050 100644
+index 051bc74..82e3e6e 100644
 --- a/src/attribution/onINP.ts
 +++ b/src/attribution/onINP.ts
-@@ -260,7 +260,40 @@ export const onINP = (
+@@ -261,7 +261,41 @@ export const onINP = (
      cleanupPending = false;
    };
- 
+
 -  interactionManager._onBeforeProcessingEntry = groupEntriesByRenderTime;
 +  async function handleOnEachInteractionCallback(
 +    entry: PerformanceEventTiming,
@@ -43,6 +43,7 @@ index 0d6d098..3fe5050 100644
 +      rating: 'good',
 +      value: entry.duration,
 +      delta: entry.duration,
++      navigationId: (entry as any).navigationId,
 +      navigationType: 'navigate',
 +      id: 'N/A',
 +    });
@@ -56,7 +57,7 @@ index 0d6d098..3fe5050 100644
 +    groupEntriesByRenderTime(entry);
 +  };
    interactionManager._onAfterProcessingINPCandidate = saveInteractionTarget;
- 
+
    const getIntersectingLoAFs = (
 diff --git a/src/types/inp.ts b/src/types/inp.ts
 index 6041b2d..9b6bd2e 100644
@@ -68,8 +69,7 @@ index 6041b2d..9b6bd2e 100644
    includeProcessedEventEntries?: boolean;
 +  onEachInteraction?: (interaction: INPMetricWithAttribution) => void;
  }
- 
- /**
--- 
-2.50.1 (Apple Git-155)
 
+ /**
+--
+2.50.1 (Apple Git-155)

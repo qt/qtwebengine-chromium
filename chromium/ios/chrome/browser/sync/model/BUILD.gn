@@ -18,6 +18,8 @@ source_set("model") {
     "sync_observer_bridge.mm",
     "sync_service_factory.h",
     "sync_service_factory.mm",
+    "tab_context_sync_service_factory.h",
+    "tab_context_sync_service_factory.mm",
   ]
   deps = [
     ":data_type_store_service_factory",
@@ -32,6 +34,7 @@ source_set("model") {
     "//components/history/core/browser",
     "//components/network_time",
     "//components/password_manager/core/browser",
+    "//components/password_manager/core/browser/features:password_features",
     "//components/password_manager/core/browser/sharing",
     "//components/pref_registry",
     "//components/prefs",
@@ -49,6 +52,7 @@ source_set("model") {
     "//components/sync_device_info",
     "//components/sync_preferences",
     "//components/sync_sessions",
+    "//components/sync_tab_context",
     "//components/sync_user_events",
     "//components/trusted_vault",
     "//components/variations/service",
@@ -200,6 +204,8 @@ source_set("test_support") {
   sources = [
     "mock_sync_service_utils.cc",
     "mock_sync_service_utils.h",
+    "test_sync_service_utils.cc",
+    "test_sync_service_utils.h",
   ]
   deps = [
     ":model",
@@ -227,6 +233,7 @@ source_set("unit_tests") {
   deps = [
     ":model",
     ":sync_error_browser_agent",
+    ":test_support",
     "//base",
     "//base/test:test_support",
     "//components/autofill/core/common/",

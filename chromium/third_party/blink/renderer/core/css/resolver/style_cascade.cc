@@ -353,7 +353,7 @@ const CSSValue* StyleCascade::Resolve(
     const MixinParameterBindings* mixin_parameter_bindings,
     CascadeOrigin origin,
     CascadeResolver& resolver) {
-  CSSPropertyRef ref(name, state_.GetDocument());
+  CSSPropertyRef ref(&name, state_.GetDocument());
 
   const CSSValue* resolved = Resolve(ResolveSurrogate(ref.GetProperty()), value,
                                      tree_scope, mixin_parameter_bindings,
@@ -509,7 +509,7 @@ void StyleCascade::CollectFromInterpolations() {
                                /* layer_order */ 0,
                                static_cast<uint16_t>(name.Id()), i);
 
-      CSSPropertyRef ref(name, GetDocument());
+      CSSPropertyRef ref(&name, GetDocument());
       DCHECK(ref.IsValid());
 
       if (name.IsCustomProperty()) {
@@ -785,6 +785,19 @@ void StyleCascade::ApplyWideOverlapping(CascadeResolver& resolver) {
       maybe_skip(GetCSSPropertyBoxDecorationBreak(), *priority);
     }
   }
+
+  if (RuntimeEnabledFeatures::CSSLineClampEnabled() &&
+      !RuntimeEnabledFeatures::CSSLineClampAsShorthandEnabled()) {
+    const CSSProperty& line_clamp = GetCSSPropertyLineClamp();
+    if (resolver.filter_.Accepts(line_clamp)) {
+      if (const CascadePriority* priority =
+              map_.Find(line_clamp.GetCSSPropertyName())) {
+        LookupAndApply(line_clamp, resolver);
+        maybe_skip(GetCSSPropertyAlternativeWebkitLineClampLonghand(),
+                   *priority);
+      }
+    }
+  }
 }
 
 // Go through all properties that were found during the "collect" phase
@@ -827,7 +840,7 @@ void StyleCascade::ApplyMatchResult(CascadeResolver& resolver) {
       continue;
     }
 
-    CustomProperty property(name, GetDocument());
+    CustomProperty property(&name, GetDocument());
     if (resolver.Rejects(property)) {
       continue;
     }
@@ -861,7 +874,7 @@ void StyleCascade::ApplyInterpolationMap(const ActiveInterpolationsMap& map,
                              static_cast<uint16_t>(name.Id()), index);
     priority = CascadePriority(priority, /*already_applied=*/true);
 
-    CSSPropertyRef ref(name, GetDocument());
+    CSSPropertyRef ref(&name, GetDocument());
     if (resolver.Rejects(ref.GetProperty())) {
       continue;
     }
@@ -919,7 +932,7 @@ void StyleCascade::ApplyInterpolation(
 
 void StyleCascade::LookupAndApply(const CSSPropertyName& name,
                                   CascadeResolver& resolver) {
-  CSSPropertyRef ref(name, state_.GetDocument());
+  CSSPropertyRef ref(&name, state_.GetDocument());
   DCHECK(ref.IsValid());
   LookupAndApply(ref.GetProperty(), resolver);
 }
@@ -1206,7 +1219,7 @@ StyleCascade::MakeFunctionContextFromMixinAndResolveSubstitutions(
     // We have all the mixin context that we need, so we can now do the actual
     // resolution.
     if (const auto* v = DynamicTo<CSSUnparsedDeclarationValue>(value)) {
-      if (property.GetCSSPropertyName().IsCustomProperty()) {
+      if (IsA<CustomProperty>(property)) {
         return ResolveCustomProperty(property, *v, tree_scope, function_context,
                                      resolver);
       } else {
@@ -1770,7 +1783,7 @@ bool StyleCascade::ResolveVarInto(CSSParserTokenStream& stream,
     }
   }
 
-  CustomProperty property(var_name, state_.GetDocument());
+  CustomProperty property(&var_name, state_.GetDocument());
 
   // Any custom property referenced (by anything, even just once) in the
   // document can currently not be animated on the compositor. Hence we mark
@@ -1828,7 +1841,7 @@ bool StyleCascade::ResolveInheritInto(CSSParserTokenStream& stream,
   if (!stream.AtEnd()) {
     DCHECK_EQ(stream.Peek().GetType(), kCommaToken);
   }
-  CustomProperty property(var_name, state_.GetDocument());
+  CustomProperty property(&var_name, state_.GetDocument());
   if (!property.IsInherited()) {
     state_.StyleBuilder().SetHasExplicitInheritance();
     state_.ParentStyle()->SetChildHasExplicitInheritance();
@@ -2308,6 +2321,7 @@ void StyleCascade::FlattenFunctionBody(
       }
     } else if (auto* navigation_rule =
                    DynamicTo<StyleRuleNavigation>(child.Get())) {
+      state_.StyleBuilder().SetAffectedByFunctionalNavigation();
       // TODO(crbug.com/493044687): Implement
       (void)navigation_rule;
     }
@@ -2566,7 +2580,7 @@ CSSVariableData* StyleCascade::GetKeywordVariableData(
     }
     // "All other CSS-wide keywords resolve to the guaranteed-invalid value."
   } else {
-    CustomProperty property(name, GetDocument());
+    CustomProperty property(&name, GetDocument());
     if (keyword_value.IsInitialValue()) {
       return GetInitialVariableData(property);
     }
@@ -2832,8 +2846,11 @@ bool StyleCascade::EvalIfCondition(CSSParserTokenStream& stream,
     KleeneValue EvaluateNavigationExpNode(
         const NavigationExpNode& node) override {
       // Evaluate navigation() function
+      resolver_state_.StyleBuilder().SetAffectedByFunctionalNavigation();
+      StyleEngine& style_engine =
+          resolver_state_.GetDocument().GetStyleEngine();
       bool result =
-          node.NavigationTest().Matches(resolver_state_.GetDocument());
+          style_engine.EvaluateFunctionalNavigationQuery(node.NavigationTest());
       return result ? KleeneValue::kTrue : KleeneValue::kFalse;
     }
 

@@ -7,6 +7,9 @@
 // just import relevant meta files (as long as they don't contain any UI related code)
 import '../front_end/core/sdk/sdk-meta.js';
 import '../front_end/models/workspace/workspace-meta.js';
+import '../front_end/models/persistence/persistence-meta.js';
+import '../front_end/models/logs/logs-meta.js';
+import '../front_end/models/badges/badges-meta.js';
 
 /**
  * IMPORTANT! Make sure that any class that is exported here has related unit
@@ -19,6 +22,7 @@ export * as I18n from '../front_end/core/i18n/i18n.js';
 export type * as CDPConnection from '../front_end/core/protocol_client/CDPConnection.js';
 export {ConnectionTransport} from '../front_end/core/protocol_client/ConnectionTransport.js';
 export * as ProtocolClient from '../front_end/core/protocol_client/protocol_client.js';
+export {PuppeteerDevToolsConnection} from '../front_end/core/protocol_client/PuppeteerDevToolsConnection.js';
 export {DebuggerModel} from '../front_end/core/sdk/DebuggerModel.js';
 export * as NetworkManager from '../front_end/core/sdk/NetworkManager.js';
 export {RuntimeModel} from '../front_end/core/sdk/RuntimeModel.js';
@@ -28,10 +32,10 @@ export * as Foundation from '../front_end/foundation/foundation.js';
 export * as Protocol from '../front_end/generated/protocol.js';
 export * as NetworkRequestFormatter from '../front_end/models/ai_assistance/data_formatters/NetworkRequestFormatter.js';
 export {
-  PerformanceInsightFormatter
+  PerformanceInsightFormatter,
 } from '../front_end/models/ai_assistance/data_formatters/PerformanceInsightFormatter.js';
 export {
-  PerformanceTraceFormatter
+  PerformanceTraceFormatter,
 } from '../front_end/models/ai_assistance/data_formatters/PerformanceTraceFormatter.js';
 export {AgentFocus} from '../front_end/models/ai_assistance/performance/AIContext.js';
 export {DebuggerWorkspaceBinding} from '../front_end/models/bindings/DebuggerWorkspaceBinding.js';
@@ -42,13 +46,14 @@ export {Issue} from '../front_end/models/issues_manager/Issue.js';
 export {
   AggregatedIssue,
   Events as IssueAggregatorEvents,
-  IssueAggregator
+  IssueAggregator,
 } from '../front_end/models/issues_manager/IssueAggregator.js';
 export {
   createIssuesFromProtocolIssue,
   Events as IssuesManagerEvents,
   type EventTypes as IssuesManagerEventTypes,
-  IssuesManager
+  isIssueCodeSupported,
+  IssuesManager,
 } from '../front_end/models/issues_manager/IssuesManager.js';
 export * as MarkdownIssueDescription from '../front_end/models/issues_manager/MarkdownIssueDescription.js';
 export * as StackTrace from '../front_end/models/stack_trace/stack_trace.js';

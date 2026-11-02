@@ -36,14 +36,14 @@ class CFGAS_Char {
   CFGAS_Char(const CFGAS_Char& other);
   ~CFGAS_Char();
 
-  FX_CHARTYPE GetCharType() const;
+  CharType GetCharType() const;
   uint16_t char_code() const { return char_code_; }
   int16_t horizonal_scale() const { return horizontal_scale_; }
   int16_t vertical_scale() const { return vertical_scale_; }
 
   BreakType status_ = BreakType::kNone;
-  FX_BIDICLASS bidi_class_ = FX_BIDICLASS::kON;
-  FX_LINEBREAKTYPE line_break_type_ = FX_LINEBREAKTYPE::kUNKNOWN;
+  BidiClass bidi_class_ = BidiClass::kON;
+  pdfium::LineBreakType line_break_type_ = pdfium::LineBreakType::kUnknown;
   uint32_t char_styles_ = 0;
   int32_t char_width_ = 0;
   uint16_t bidi_level_ = 0;

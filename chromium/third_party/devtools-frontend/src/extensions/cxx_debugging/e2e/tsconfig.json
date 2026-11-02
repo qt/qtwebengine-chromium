@@ -11,10 +11,10 @@
       "test/*": ["../../../test/*"],
       "puppeteer": ["../../../node_modules/puppeteer/lib/types.d.ts"],
       "*": ["../../../node_modules/@types/*/index.d.ts"]
-    }
+    },
+    "types": ["mocha"]
   },
   "files": [
-    "MochaRootHooks.ts",
     "TestDriver.ts",
     "StandaloneTestDriver.ts",
     "OptionsPageTests.ts",

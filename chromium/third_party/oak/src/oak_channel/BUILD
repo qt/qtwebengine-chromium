@@ -27,6 +27,7 @@ _OAK_CHANNEL_DEPS = [
     "@oak_crates_index//:anyhow",
     "@oak_crates_index//:bitflags",
     "@oak_crates_index//:bytes",
+    "@oak_crates_index//:log",
     "@oak_crates_index//:static_assertions",
 ]
 
@@ -44,6 +45,7 @@ rust_library(
 rust_test(
     name = "oak_channel_test",
     crate = ":oak_channel",
+    target_compatible_with = ["@platforms//os:linux"],
 )
 
 rust_library(
@@ -54,5 +56,6 @@ rust_library(
         "std",
     ],
     crate_name = "oak_channel",
+    target_compatible_with = ["@platforms//os:linux"],
     deps = _OAK_CHANNEL_DEPS,
 )

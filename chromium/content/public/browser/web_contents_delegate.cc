@@ -222,6 +222,11 @@ blink::mojom::DisplayMode WebContentsDelegate::GetDisplayMode(
   return blink::mojom::DisplayMode::kBrowser;
 }
 
+blink::mojom::ApplicationContext WebContentsDelegate::GetApplicationContext(
+    const WebContents* web_contents) {
+  return blink::mojom::ApplicationContext::kNone;
+}
+
 blink::ProtocolHandlerSecurityLevel
 WebContentsDelegate::GetProtocolHandlerSecurityLevel(RenderFrameHost*) {
   return blink::ProtocolHandlerSecurityLevel::kStrict;
@@ -521,10 +526,10 @@ bool WebContentsDelegate::IsImmersivePlaybackEnabled() const {
 }
 
 void WebContentsDelegate::RequestImmersivePlaybackConfirmation(
-    base::OnceCallback<
-        void(blink::mojom::ImmersivePlaybackConfirmationResultPtr)> callback) {
-  auto result = blink::mojom::ImmersivePlaybackConfirmationResult::New();
-  result->status = blink::mojom::ImmersivePlaybackConfirmationStatus::kFailed;
+    const ImmersiveOptions& default_options,
+    base::OnceCallback<void(ImmersivePlaybackConfirmationResult)> callback) {
+  ImmersivePlaybackConfirmationResult result;
+  result.status = ImmersivePlaybackConfirmationStatus::kFailed;
   std::move(callback).Run(std::move(result));
 }
 

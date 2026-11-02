@@ -74,6 +74,7 @@ enum PseudoId : uint8_t {
   kPseudoIdInterestButton,
   kPseudoIdMarker,
   kPseudoIdBackdrop,
+  kPseudoIdOverscrollBackdrop,
   kPseudoIdSelection,
   kPseudoIdScrollbar,
   kPseudoIdScrollMarker,
@@ -118,7 +119,9 @@ enum PseudoId : uint8_t {
   kPseudoIdFileSelectorButton,
   kPseudoIdDetailsContent,
   kPseudoIdPickerSelect,
+  kPseudoIdSelectListbox,
   kPseudoIdPermissionIcon,
+  kPseudoIdSkeleton,
 
   // Special values follow:
   kAfterLastInternalPseudoId,
@@ -562,7 +565,6 @@ enum class TimelineScroller { kNearest, kRoot, kSelf };
 // <visual-box> = border-box | padding-box | content-box
 // https://drafts.csswg.org/css-shapes-1/#typedef-shape-box
 enum class ShapeBox : unsigned {
-  kMissing,
   kMarginBox,
   kBorderBox,
   kPaddingBox,

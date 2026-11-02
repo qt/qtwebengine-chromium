@@ -61,6 +61,18 @@ static void GetVariableInfo(const spirv::Module& module_state, const spirv::Inst
     }
 }
 
+static bool IsTileAttachmentImagePointer(const spirv::Module& module_state, uint32_t image_id) {
+    const auto* insn = module_state.FindDef(image_id);
+    if (!insn) {
+        return false;
+    }
+
+    // Note: Every pointer-producing instruction carries a result type of OpTypePointer
+    //       or OpTypeUntypedPointerKHR, both of which encode the storage class.
+    const auto* type_insn = module_state.FindDef(insn->TypeId());
+    return type_insn && type_insn->StorageClass() == spv::StorageClassTileAttachmentQCOM;
+}
+
 SpirvValidator::SpirvValidator(DebugReport* debug_report, const vvl::StatelessDeviceData& stateless_device_data, bool disabled)
     : Logger(debug_report),
       disabled(disabled),
@@ -119,6 +131,11 @@ bool SpirvValidator::Validate(const spirv::Module& module_state, const spirv::St
         skip |= ValidateConservativeRasterization(module_state, entry_point, stateless_data, loc);
         skip |= ValidateTransformFeedbackEmitStreams(module_state, entry_point, stateless_data, loc);
         skip |= ValidateShaderTensor(module_state, entry_point, stateless_data, loc);
+        skip |= ValidateTileShadingCapability(module_state, entry_point, stateless_data, loc);
+    }
+
+    if (enabled_features.tileShading) {
+        skip |= ValidateTileShadingAtomicAccess(module_state, stateless_data, loc);
     }
 
     return skip;
@@ -1625,6 +1642,71 @@ bool SpirvValidator::ValidateShaderTensor(const spirv::Module& module_state, con
                                  "'%s' accesses %" PRIu32 " bytes, more than maxTensorShaderAccessSize (%" PRIu32 ").",
                                  instruction->Describe().c_str(), copy_object_type_bytes,
                                  phys_dev_ext_props.tensor_properties.maxTensorShaderAccessSize);
+            }
+        }
+    }
+
+    return skip;
+}
+
+bool SpirvValidator::ValidateTileShadingCapability(const spirv::Module& module_state, const spirv::EntryPoint& entrypoint,
+                                                   const spirv::StatelessData& stateless_data, const Location& loc) const {
+    bool skip = false;
+    const bool has_tile_shading_capability = module_state.HasCapability(spv::CapabilityTileShadingQCOM);
+
+    if (!enabled_features.tileShading && entrypoint.stage == VK_SHADER_STAGE_COMPUTE_BIT && has_tile_shading_capability) {
+        skip |= LogError("VUID-RuntimeSpirv-TileShadingQCOM-10698", module_state.handle(), loc,
+                         "shader %s declares OpCapability TileShadingQCOM, but "
+                         "VkPhysicalDeviceTileShadingFeaturesQCOM::tileShading isn't enabled.",
+                         entrypoint.Describe().c_str());
+    }
+
+    if (!enabled_features.tileShadingFragmentStage && entrypoint.stage == VK_SHADER_STAGE_FRAGMENT_BIT && has_tile_shading_capability) {
+        skip |= LogError("VUID-RuntimeSpirv-TileShadingQCOM-10699", module_state.handle(), loc,
+                         "shader %s declares OpCapability TileShadingQCOM, but "
+                         "VkPhysicalDeviceTileShadingFeaturesQCOM::tileShadingFragmentStage isn't enabled.",
+                         entrypoint.Describe().c_str());
+    }
+
+    if (entrypoint.stage == VK_SHADER_STAGE_COMPUTE_BIT && has_tile_shading_capability &&
+        entrypoint.execution_mode.Has(spirv::ExecutionModeSet::tile_shading_rate_bit)) {
+        if (entrypoint.execution_mode.local_size.x > phys_dev_ext_props.tile_shading_props.maxTileShadingRate.width) {
+            skip |= LogError("VUID-RuntimeSpirv-x-10702", module_state.handle(), loc,
+                             "shader %s has OpExecutionMode TileShadingRateQCOM with x = %" PRIu32
+                             ", but exceeds VkPhysicalDeviceTileShadingPropertiesQCOM::maxTileShadingRate.width (%" PRIu32 ").",
+                             entrypoint.Describe().c_str(),
+                             entrypoint.execution_mode.local_size.x,
+                             phys_dev_ext_props.tile_shading_props.maxTileShadingRate.width);
+        }
+        if (entrypoint.execution_mode.local_size.y > phys_dev_ext_props.tile_shading_props.maxTileShadingRate.height) {
+            skip |= LogError("VUID-RuntimeSpirv-y-10703", module_state.handle(), loc,
+                             "shader %s has OpExecutionMode TileShadingRateQCOM with y = %" PRIu32
+                             ", but exceeds VkPhysicalDeviceTileShadingPropertiesQCOM::maxTileShadingRate.height (%" PRIu32 ").",
+                             entrypoint.Describe().c_str(),
+                             entrypoint.execution_mode.local_size.y,
+                             phys_dev_ext_props.tile_shading_props.maxTileShadingRate.height);
+        }
+    }
+
+    return skip;
+}
+
+
+bool SpirvValidator::ValidateTileShadingAtomicAccess(const spirv::Module& module_state, const spirv::StatelessData& stateless_data,
+                                                     const Location &loc) const {
+    bool skip = false;
+    const bool has_tile_shading_capability = module_state.HasCapability(spv::CapabilityTileShadingQCOM);
+
+    if (has_tile_shading_capability && !enabled_features.tileShadingAtomicOps) {
+        for (auto &instruction : stateless_data.image_texel_pointer_inst) {
+            const uint32_t opcode = instruction->Opcode();
+            const uint32_t image_id = (opcode == spv::OpImageTexelPointer) ? instruction->Word(3) : instruction->Word(4);
+            if (IsTileAttachmentImagePointer(module_state, image_id)) {
+                skip |= LogError("VUID-RuntimeSpirv-OpImage-10706", module_state.handle(), loc,
+                                 "SPIR-V is using an image pointer with TileAttachmentQCOM storage class consumed by %s, "
+                                 "but tileShadingAtomicOps was not enabled.\n%s\n",
+                                 opcode == spv::OpImageTexelPointer ? "OpImageTexelPointer" : "OpUntypedImageTexelPointerEXT",
+                                 module_state.DescribeInstruction(*instruction).c_str());
             }
         }
     }

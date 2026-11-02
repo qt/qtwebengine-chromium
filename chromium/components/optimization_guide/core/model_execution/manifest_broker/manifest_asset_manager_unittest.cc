@@ -621,7 +621,7 @@ TEST_F(ManifestAssetManagerTest, UninstallsWhenRunningOutOfDiskSpace) {
   SimulateShutdown();
   base::HistogramTester histogram_tester;
   // 5gb is the default in `IsFreeDiskSpaceTooLowForOnDeviceModelInstall`.
-  component_state_.SetFreeDiskSpace(base::GiB(5) - base::ByteCount(1));
+  component_state_.SetFreeDiskSpace(base::GiBU(5) - base::ByteSizeDelta(1));
   task_environment_.FastForwardBy(base::Seconds(11));
   UpdateManifest(DummyManifest().Add(asset));
   Startup();
@@ -753,7 +753,7 @@ TEST_F(ManifestAssetManagerTest, DoesNotInstallWhenNotEnoughDiskSpace) {
   DummyAsset asset = DummyAsset::For("compose");
   usage_tracker_.OnDeviceEligibleUseCaseUsed(asset.use_case);
   // 20gb is the default in `IsFreeDiskSpaceSufficientForOnDeviceModelInstall`.
-  component_state_.SetFreeDiskSpace(base::GiB(20) - base::ByteCount(1));
+  component_state_.SetFreeDiskSpace(base::GiBU(20) - base::ByteSizeDelta(1));
 
   UpdateManifest(DummyManifest().Add(asset));
   Startup();
@@ -797,7 +797,7 @@ TEST_F(ManifestAssetManagerTest, BackgroundDownloadForManifestEnabledUseCase) {
        features::kOnDeviceModelBackgroundDownload},
       {});
 
-  component_state_.SetFreeDiskSpace(base::GiB(100));
+  component_state_.SetFreeDiskSpace(base::GiBU(100));
 
   DummyAsset compose_asset =
       DummyAsset::For("compose").WithBackgroundDownload(true);
@@ -809,6 +809,19 @@ TEST_F(ManifestAssetManagerTest, BackgroundDownloadForManifestEnabledUseCase) {
   EXPECT_TRUE(
       component_state_.WaitForRegistration(compose_asset.ToInstallTarget()));
   EXPECT_FALSE(component_state_.IsRegistered(test_asset.public_key));
+}
+
+TEST_F(ManifestAssetManagerTest, UninstallModels) {
+  DummyAsset asset = DummyAsset::For("compose");
+  usage_tracker_.OnDeviceEligibleUseCaseUsed(asset.use_case);
+  MakeAssetsInstallable(DummyManifest().Add(asset));
+  Startup();
+
+  EXPECT_TRUE(component_state_.WaitForRegistration(asset.ToInstallTarget()));
+
+  manifest_broker_state_->UninstallModels();
+
+  EXPECT_TRUE(component_state_.WaitForUninstall(asset.public_key));
 }
 
 // TODO(crbug.com/504749700): Verify these scenarios from these

@@ -33,6 +33,8 @@ _EXCLUDED_PATHS = [
     r'^front_end[\\/]core[\\/]platform[\\/]UIString\.ts$',  # Apple copyright
     r'^front_end[\\/]core[\\/]sdk[\\/]Resource\.ts$',  # Apple copyright
     r'^front_end[\\/]core[\\/]sdk[\\/]Script\.ts$',  # Apple copyright
+    # Apple copyright
+    r'^front_end[\\/]panels[\\/]network[\\/]networkPanel\.css$',
     r'^front_end[\\/]third_party[\\/].*',  # 3rd party code
     # Apple copyright
     r'^front_end[\\/]ui[\\/]legacy[\\/]components[\\/]data_grid[\\/]DataGrid\.ts$',
@@ -362,10 +364,24 @@ def CheckObsoleteScreenshotGoldens(input_api, output_api):
                                 message='Obsolete screenshot images')
 
 
+def CheckTestExpectations(input_api, output_api):
+    script_path = input_api.os_path.join(input_api.PresubmitLocalPath(),
+                                         'scripts', 'test',
+                                         'check_test_expectations.js')
+    expectations_path = input_api.os_path.join(input_api.PresubmitLocalPath(),
+                                               'test', 'TestExpectations')
+    return _CheckWithNodeScript(
+        input_api,
+        output_api,
+        script_path,
+        script_arguments=['--expectations-file', expectations_path],
+        message='Test expectations')
+
+
 _UPDATE_NODE_DEPENDENCIES_FOOTER = 'Update-Node-Dependencies'
 
 def CheckNodeModules(input_api, output_api):
-    files = ['.clang-format', 'OWNERS', 'README.chromium']
+    files = ['.clang-format', 'OWNERS', 'README.md']
     results = []
     for file in files:
         file_path = input_api.os_path.join(input_api.PresubmitLocalPath(),
@@ -452,7 +468,7 @@ def CheckKnownContextValues(input_api, output_api):
     """
     # This regexp matches the one we use in `StringUtilities.isExtendedKebabCase()`.
     kebab_case_re = re.compile(
-        r"^([a-z0-9]+(?:-[a-z0-9]+)*\.)*[a-z0-9]+(?:-[a-z0-9]+)*$")
+        r"^-?([a-z0-9]+(?:-[a-z0-9]+)*\.)*[a-z0-9]+(?:-[a-z0-9]+)*$")
     local_path = input_api.os_path.join('front_end', 'ui', 'visual_logging',
                                         'KnownContextValues.ts')
     invalid_contexts = []

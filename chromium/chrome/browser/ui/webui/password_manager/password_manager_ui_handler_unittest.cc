@@ -8,14 +8,22 @@
 #include <vector>
 
 #include "base/functional/callback_forward.h"
+#include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/test/gmock_callback_support.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/test/test_future.h"
+#include "chrome/browser/extensions/api/passwords_private/mock_passwords_private_delegate.h"
 #include "chrome/browser/extensions/api/passwords_private/passwords_private_delegate.h"
 #include "chrome/browser/extensions/api/passwords_private/test_passwords_private_delegate.h"
+#include "chrome/browser/password_manager/chrome_password_change_service.h"
+#include "chrome/browser/password_manager/password_change_service_factory.h"
 #include "chrome/browser/password_manager/password_manager_test_util.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/affiliations/core/browser/fake_affiliation_service.h"
+#include "components/password_manager/core/browser/features/password_features.h"
+#include "components/password_manager/core/browser/password_feature_manager.h"
 #include "components/password_manager/core/browser/password_form.h"
 #include "components/password_manager/core/browser/password_store/password_form_converters.h"
 #include "components/password_manager/core/browser/password_store/password_store_interface.h"
@@ -34,14 +42,29 @@
 
 namespace password_manager {
 
-namespace {
+using ::testing::_;
+using ::testing::Eq;
+using ::testing::NiceMock;
+using ::testing::Return;
 
-using testing::Return;
+namespace {
 
 class MockPage : public mojom::Page {
  public:
   MockPage() = default;
   ~MockPage() override = default;
+
+  MOCK_METHOD(void,
+              OnPasswordAutomaticChangeStateUpdated,
+              (int32_t credential_id,
+               mojom::PasswordAutomaticChangeState state),
+              (override));
+
+  MOCK_METHOD(void,
+              OnPasswordsExportProgress,
+              (password_manager::mojom::ExportProgressStatus,
+               const std::optional<std::string>&),
+              (override));
 
   mojo::PendingRemote<mojom::Page> BindAndGetRemote() {
     DCHECK(!receiver_.is_bound());
@@ -79,6 +102,24 @@ class SavedPasswordsChangedWaiter : public SavedPasswordsPresenter::Observer {
   base::test::TestFuture<void> future_;
 };
 
+class MockPasswordChangeService : public ChromePasswordChangeService {
+ public:
+  MockPasswordChangeService()
+      : ChromePasswordChangeService(/*pref_service*/ nullptr,
+                                    /*affiliation_service=*/nullptr,
+                                    /*optimization_keyed_service=*/nullptr,
+                                    /*settings_service=*/nullptr,
+                                    /*feature_manager=*/nullptr,
+                                    /*log_router*/ nullptr) {}
+
+  MOCK_METHOD(void,
+              StartPasswordChangeFromCheckup,
+              (const password_manager::CredentialUIEntry&,
+               content::WebContents*,
+               PasswordChangeFromCheckupDelegate::StateChangeCallback),
+              (override));
+};
+
 }  // namespace
 
 class PasswordManagerUIHandlerUnitTest : public testing::Test {
@@ -93,23 +134,10 @@ class PasswordManagerUIHandlerUnitTest : public testing::Test {
   ~PasswordManagerUIHandlerUnitTest() override = default;
 
   void SetUp() override {
-    // Set up the delegate and presenter dependencies.
+    // Set up the delegate dependency.
     auto delegate =
-        base::MakeRefCounted<extensions::TestPasswordsPrivateDelegate>();
-    test_delegate_ = delegate.get();
-
-    auto presenter = std::make_unique<SavedPasswordsPresenter>(
-        affiliation_service_.get(), password_store_,
-        /*account_store=*/nullptr);
-    presenter_ = presenter.get();
-
-    // Initialize the presenter and wait for it to complete.
-    base::test::TestFuture<void> init_future;
-    presenter_->Init(init_future.GetCallback());
-    ASSERT_TRUE(init_future.Wait());
-
-    // Transfer presenter ownership to the delegate.
-    delegate->SetSavedPasswordsPresenter(std::move(presenter));
+        base::MakeRefCounted<NiceMock<MockPasswordsPrivateDelegate>>();
+    mock_delegate_ = delegate.get();
 
     // Create the handler under test.
     handler_ = std::make_unique<PasswordManagerUIHandler>(
@@ -121,9 +149,28 @@ class PasswordManagerUIHandlerUnitTest : public testing::Test {
     testing::Mock::VerifyAndClearExpectations(&mock_page_);
   }
 
+  void InitPresenter() {
+    auto presenter = std::make_unique<SavedPasswordsPresenter>(
+        affiliation_service_.get(), password_store_,
+        /*account_store=*/nullptr);
+    presenter_ = presenter.get();
+    owned_presenter_ = std::move(presenter);
+
+    // Initialize the presenter and wait for it to complete.
+    base::test::TestFuture<void> init_future;
+    presenter_->Init(init_future.GetCallback());
+    ASSERT_TRUE(init_future.Wait());
+
+    // Transfer presenter ownership to the delegate.
+    ON_CALL(*mock_delegate_, GetSavedPasswordsPresenter())
+        .WillByDefault(Return(presenter_));
+  }
+
   void TearDown() override {
-    test_delegate_ = nullptr;
+    mock_delegate_ = nullptr;
     presenter_ = nullptr;
+    handler_.reset();
+    owned_presenter_.reset();
     testing::Test::TearDown();
   }
 
@@ -144,8 +191,8 @@ class PasswordManagerUIHandlerUnitTest : public testing::Test {
   }
 
   PasswordManagerUIHandler& handler() { return *handler_; }
-  extensions::TestPasswordsPrivateDelegate& test_delegate() {
-    return *test_delegate_;
+  NiceMock<MockPasswordsPrivateDelegate>& mock_delegate() {
+    return *mock_delegate_;
   }
 
  protected:
@@ -156,58 +203,56 @@ class PasswordManagerUIHandlerUnitTest : public testing::Test {
   content::TestWebContentsFactory factory_;
   // Weak ptr owned by factory_.
   raw_ptr<content::WebContents> web_contents_;
-  testing::NiceMock<MockPage> mock_page_;
+  NiceMock<MockPage> mock_page_;
   scoped_refptr<TestPasswordStore> password_store_;
   std::unique_ptr<affiliations::FakeAffiliationService> affiliation_service_;
 
-  // These are raw pointers to objects owned by the handler_'s delegate.
-  // They are valid between SetUp() and TearDown().
-  raw_ptr<extensions::TestPasswordsPrivateDelegate> test_delegate_;
-  raw_ptr<SavedPasswordsPresenter> presenter_;
-
+  std::unique_ptr<SavedPasswordsPresenter> owned_presenter_;
   std::unique_ptr<PasswordManagerUIHandler> handler_;
+
+  // These are raw pointers to objects owned by the handler_'s delegate and
+  // owned_presenter_. They are valid between SetUp() and TearDown().
+  raw_ptr<NiceMock<MockPasswordsPrivateDelegate>> mock_delegate_;
+  raw_ptr<SavedPasswordsPresenter> presenter_;
 };
 
 TEST_F(PasswordManagerUIHandlerUnitTest,
        DeleteAllPasswordManagerData_CallsDelegate) {
   base::test::TestFuture<bool> future;
-  EXPECT_FALSE(test_delegate().get_delete_all_password_manager_data_called());
+  EXPECT_CALL(mock_delegate(), DeleteAllPasswordManagerData(_))
+      .WillOnce(base::test::RunOnceCallback<0>(true));
 
   handler().DeleteAllPasswordManagerData(future.GetCallback());
 
   EXPECT_TRUE(future.Get());
-  EXPECT_TRUE(test_delegate().get_delete_all_password_manager_data_called());
 }
 
 TEST_F(PasswordManagerUIHandlerUnitTest, ExtendAuthValidity_CallsDelegate) {
-  EXPECT_FALSE(test_delegate().get_authenticator_interaction_status());
+  EXPECT_CALL(mock_delegate(), RestartAuthTimer());
 
   handler().ExtendAuthValidity();
-
-  EXPECT_TRUE(test_delegate().get_authenticator_interaction_status());
 }
 
 TEST_F(PasswordManagerUIHandlerUnitTest,
        CopyPlaintextBackupPassword_CallsDelegate) {
   base::test::TestFuture<bool> future;
-  EXPECT_FALSE(test_delegate().copy_plaintext_backup_password());
+  EXPECT_CALL(mock_delegate(), CopyPlaintextBackupPassword(0, _))
+      .WillOnce(base::test::RunOnceCallback<1>(true));
 
   handler().CopyPlaintextBackupPassword(0, future.GetCallback());
 
   EXPECT_TRUE(future.Get());
-  EXPECT_TRUE(test_delegate().copy_plaintext_backup_password());
 }
 
 TEST_F(PasswordManagerUIHandlerUnitTest, RemoveBackupPassword_CallsDelegate) {
-  EXPECT_FALSE(test_delegate().remove_backup_password());
+  EXPECT_CALL(mock_delegate(), RemoveBackupPassword(0));
 
   handler().RemoveBackupPassword(0);
-
-  EXPECT_TRUE(test_delegate().remove_backup_password());
 }
 
 TEST_F(PasswordManagerUIHandlerUnitTest,
        GetActorLoginPermissionSites_CallsPresenter) {
+  InitPresenter();
   const GURL kTestUrl("https://test.com");
   const std::u16string kTestUsername = u"testuser";
   CreateAndSeedPasswordForm(kTestUrl, kTestUsername,
@@ -223,6 +268,7 @@ TEST_F(PasswordManagerUIHandlerUnitTest,
 
 TEST_F(PasswordManagerUIHandlerUnitTest,
        RevokeActorLoginPermission_CallsPresenter) {
+  InitPresenter();
   const GURL kTestUrl("https://test.com");
   const std::u16string kTestUsername = u"testuser";
   CreateAndSeedPasswordForm(kTestUrl, kTestUsername,
@@ -247,100 +293,429 @@ TEST_F(PasswordManagerUIHandlerUnitTest,
 }
 
 TEST_F(PasswordManagerUIHandlerUnitTest, ShowAddShortcutDialog_CallsDelegate) {
-  EXPECT_FALSE(test_delegate().get_add_shortcut_dialog_shown());
+  EXPECT_CALL(mock_delegate(), ShowAddShortcutDialog(_));
 
   handler().ShowAddShortcutDialog();
-
-  EXPECT_TRUE(test_delegate().get_add_shortcut_dialog_shown());
 }
 
 TEST_F(PasswordManagerUIHandlerUnitTest,
        ChangePasswordManagerPin_CallsDelegate) {
   base::test::TestFuture<bool> future;
-  EXPECT_FALSE(test_delegate().get_change_password_manager_pin_called());
+  EXPECT_CALL(mock_delegate(), ChangePasswordManagerPin(_, _))
+      .WillOnce(base::test::RunOnceCallback<1>(false));
 
   handler().ChangePasswordManagerPin(future.GetCallback());
 
-  // The TestPasswordsPrivateDelegate implementation hardcodes false for success
   EXPECT_FALSE(future.Get());
-  EXPECT_TRUE(test_delegate().get_change_password_manager_pin_called());
 }
 
 TEST_F(PasswordManagerUIHandlerUnitTest,
        IsPasswordManagerPinAvailable_CallsDelegate) {
   base::test::TestFuture<bool> future;
+  EXPECT_CALL(mock_delegate(), IsPasswordManagerPinAvailable(_, _))
+      .WillOnce(base::test::RunOnceCallback<1>(false));
+
   handler().IsPasswordManagerPinAvailable(future.GetCallback());
-  // The TestPasswordsPrivateDelegate hardcodes the response to false.
+
   EXPECT_FALSE(future.Get());
 }
 
 TEST_F(PasswordManagerUIHandlerUnitTest,
        SwitchBiometricAuthBeforeFillingState_CallsDelegate) {
   base::test::TestFuture<bool> future;
-  EXPECT_FALSE(test_delegate().get_authenticator_interaction_status());
+  EXPECT_CALL(mock_delegate(), SwitchBiometricAuthBeforeFillingState(_))
+      .WillOnce(base::test::RunOnceCallback<0>(true));
 
   handler().SwitchBiometricAuthBeforeFillingState(future.GetCallback());
 
   EXPECT_TRUE(future.Get());
-  EXPECT_TRUE(test_delegate().get_authenticator_interaction_status());
 }
 
 TEST_F(PasswordManagerUIHandlerUnitTest,
        IsAccountStorageActive_ReturnsCorrectValue) {
-  // Set the delegate to return true.
-  test_delegate().SetAccountStorageEnabled(true);
+  for (bool is_active : {true, false}) {
+    EXPECT_CALL(mock_delegate(), IsAccountStorageActive())
+        .WillOnce(Return(is_active));
 
-  base::test::TestFuture<bool> future_true;
-  handler().IsAccountStorageActive(future_true.GetCallback());
-  EXPECT_TRUE(future_true.Get());
-
-  // Set the delegate to return false.
-  test_delegate().SetAccountStorageEnabled(false);
-
-  base::test::TestFuture<bool> future_false;
-  handler().IsAccountStorageActive(future_false.GetCallback());
-  EXPECT_FALSE(future_false.Get());
+    base::test::TestFuture<bool> future;
+    handler().IsAccountStorageActive(future.GetCallback());
+    EXPECT_EQ(is_active, future.Get());
+  }
 }
 
 TEST_F(PasswordManagerUIHandlerUnitTest,
        SetAccountStorageEnabled_CallsDelegate) {
-  // Ensure default state is false
-  EXPECT_FALSE(test_delegate().IsAccountStorageActive());
+  EXPECT_CALL(mock_delegate(), SetAccountStorageEnabled(true));
 
-  // Call the handler
   handler().SetAccountStorageEnabled(true);
-
-  // Verify the state changed in the delegate
-  EXPECT_TRUE(test_delegate().IsAccountStorageActive());
 }
 
 TEST_F(PasswordManagerUIHandlerUnitTest,
        ShouldShowAccountStorageSettingToggle_CallsDelegate) {
-  // Set the delegate to return true.
-  test_delegate().SetShouldShowAccountStorageSettingToggle(true);
+  for (bool should_show : {true, false}) {
+    EXPECT_CALL(mock_delegate(), ShouldShowAccountStorageSettingToggle())
+        .WillOnce(Return(should_show));
 
-  base::test::TestFuture<bool> future_true;
-  handler().ShouldShowAccountStorageSettingToggle(future_true.GetCallback());
-  EXPECT_TRUE(future_true.Get());
-
-  // Set the delegate to return false.
-  test_delegate().SetShouldShowAccountStorageSettingToggle(false);
-
-  base::test::TestFuture<bool> future_false;
-  handler().ShouldShowAccountStorageSettingToggle(future_false.GetCallback());
-  EXPECT_FALSE(future_false.Get());
+    base::test::TestFuture<bool> future;
+    handler().ShouldShowAccountStorageSettingToggle(future.GetCallback());
+    EXPECT_EQ(should_show, future.Get());
+  }
 }
 
 TEST_F(PasswordManagerUIHandlerUnitTest,
        GetPasswordManagerActionableError_ReturnsCorrectValue) {
-  test_delegate().SetActionableError(
-      password_manager::ActionableError::kTrustedVaultKeyNeeded);
+  EXPECT_CALL(mock_delegate(), GetActionableError())
+      .WillOnce(
+          Return(password_manager::ActionableError::kTrustedVaultKeyNeeded));
 
   base::test::TestFuture<mojom::PasswordManagerActionableError> future;
   handler().GetPasswordManagerActionableError(future.GetCallback());
 
   EXPECT_EQ(future.Get(),
             mojom::PasswordManagerActionableError::kTrustedVaultKeyNeeded);
+}
+
+TEST_F(PasswordManagerUIHandlerUnitTest,
+       ShowLastExportedFileInShell_CallsDelegate) {
+  EXPECT_CALL(mock_delegate(), ShowLastExportedFileInShell(_));
+
+  handler().ShowLastExportedFileInShell();
+}
+
+TEST_F(PasswordManagerUIHandlerUnitTest,
+       DisconnectCloudAuthenticator_CallsDelegate) {
+  base::test::TestFuture<bool> future;
+  EXPECT_CALL(mock_delegate(), DisconnectCloudAuthenticator(_))
+      .WillOnce(base::test::RunOnceCallback<0>(false));
+
+  handler().DisconnectCloudAuthenticator(future.GetCallback());
+
+  EXPECT_FALSE(future.Get());
+}
+
+TEST_F(PasswordManagerUIHandlerUnitTest,
+       IsConnectedToCloudAuthenticator_CallsDelegate) {
+  base::test::TestFuture<bool> future;
+  EXPECT_CALL(mock_delegate(), IsConnectedToCloudAuthenticator())
+      .WillOnce(Return(false));
+
+  handler().IsConnectedToCloudAuthenticator(future.GetCallback());
+
+  EXPECT_FALSE(future.Get());
+}
+
+TEST_F(PasswordManagerUIHandlerUnitTest,
+       UndoRemoveSavedPasswordOrException_CallsDelegate) {
+  EXPECT_CALL(mock_delegate(), UndoRemoveSavedPasswordOrException());
+
+  handler().UndoRemoveSavedPasswordOrException();
+}
+
+TEST_F(PasswordManagerUIHandlerUnitTest, RequestPasswordsExport_CallsDelegate) {
+  base::test::TestFuture<mojom::ExportPasswordsResult> future;
+  EXPECT_CALL(mock_delegate(), ExportPasswords(_, _))
+      .WillOnce(
+          base::test::RunOnceCallback<0>(extensions::PasswordsPrivateDelegate::
+                                             ExportPasswordsResult::kSuccess));
+
+  handler().RequestPasswordsExport(future.GetCallback());
+
+  EXPECT_EQ(mojom::ExportPasswordsResult::kSuccess, future.Get());
+}
+
+TEST_F(PasswordManagerUIHandlerUnitTest,
+       GetPasswordsExportProgress_CallsDelegate) {
+  base::test::TestFuture<mojom::ExportProgressStatus> future;
+  EXPECT_CALL(mock_delegate(), GetExportProgressStatus())
+      .WillOnce(Return(extensions::api::passwords_private::
+                           ExportProgressStatus::kInProgress));
+
+  handler().GetPasswordsExportProgress(future.GetCallback());
+
+  EXPECT_EQ(mojom::ExportProgressStatus::kInProgress, future.Get());
+}
+
+TEST_F(PasswordManagerUIHandlerUnitTest,
+       OnPasswordsExportProgress_CallsMojoObserver) {
+  EXPECT_CALL(mock_page_, OnPasswordsExportProgress(
+                              mojom::ExportProgressStatus::kSucceeded,
+                              Eq(std::optional<std::string>("folder"))));
+
+  handler().OnPasswordsExportProgress(
+      password_manager::ExportProgressStatus::kSucceeded, "folder");
+  mock_page_.FlushForTesting();
+}
+
+TEST_F(PasswordManagerUIHandlerUnitTest,
+       RemovePasswordException_CallsDelegate) {
+  EXPECT_CALL(mock_delegate(), RemovePasswordException(42));
+
+  handler().RemovePasswordException(42);
+}
+
+TEST_F(PasswordManagerUIHandlerUnitTest, StartBulkPasswordCheck_CallsDelegate) {
+  EXPECT_CALL(mock_delegate(), StartPasswordCheck(_));
+
+  handler().StartBulkPasswordCheck();
+}
+
+TEST_F(PasswordManagerUIHandlerUnitTest, MovePasswordsToAccount_CallsDelegate) {
+  const std::vector<int32_t> kIds = {1, 2, 3};
+  EXPECT_CALL(mock_delegate(), MovePasswordsToAccount(kIds));
+
+  handler().MovePasswordsToAccount(kIds);
+}
+
+TEST_F(PasswordManagerUIHandlerUnitTest, ResetImporter_CallsDelegate) {
+  base::test::TestFuture<void> future;
+  EXPECT_CALL(mock_delegate(), ResetImporter(true));
+
+  handler().ResetImporter(/*delete_file=*/true, future.GetCallback());
+
+  EXPECT_TRUE(future.Wait());
+}
+
+TEST_F(PasswordManagerUIHandlerUnitTest, ImportPasswords_CallsDelegate) {
+  base::test::TestFuture<mojom::ImportResultsPtr> future;
+
+  extensions::api::passwords_private::ImportResults results;
+  results.status =
+      extensions::api::passwords_private::ImportResultsStatus::kSuccess;
+  results.number_imported = 1;
+  results.file_name = "passwords.csv";
+
+  extensions::api::passwords_private::ImportEntry entry;
+  entry.status = extensions::api::passwords_private::ImportEntryStatus::kValid;
+  entry.id = 0;
+  entry.url = "http://google.com";
+  entry.username = "user";
+  entry.password = "pass";
+  results.displayed_entries.push_back(std::move(entry));
+
+  EXPECT_CALL(mock_delegate(), ImportPasswords)
+      .WillOnce(
+          [&](extensions::api::passwords_private::PasswordStoreSet store,
+              base::OnceCallback<void(
+                  const extensions::api::passwords_private::ImportResults&)>
+                  callback,
+              content::WebContents* web_contents) {
+            std::move(callback).Run(results);
+          });
+
+  handler().ImportPasswords(mojom::PasswordStoreSet::kDevice,
+                            future.GetCallback());
+
+  auto mojo_results = future.Take();
+  EXPECT_EQ(mojom::ImportResultsStatus::kSuccess, mojo_results->status);
+  EXPECT_EQ(1, mojo_results->number_imported);
+  EXPECT_EQ("passwords.csv", mojo_results->file_name);
+  ASSERT_EQ(1u, mojo_results->displayed_entries.size());
+  EXPECT_EQ(mojom::ImportEntryStatus::kValid,
+            mojo_results->displayed_entries[0]->status);
+  EXPECT_EQ("http://google.com", mojo_results->displayed_entries[0]->url);
+  EXPECT_EQ("user", mojo_results->displayed_entries[0]->username);
+  EXPECT_EQ("pass", mojo_results->displayed_entries[0]->password);
+}
+
+TEST_F(PasswordManagerUIHandlerUnitTest, ContinueImport_CallsDelegate) {
+  base::test::TestFuture<mojom::ImportResultsPtr> future;
+
+  extensions::api::passwords_private::ImportResults results;
+  results.status =
+      extensions::api::passwords_private::ImportResultsStatus::kConflicts;
+  results.number_imported = 0;
+  results.file_name = "conflicts.csv";
+
+  extensions::api::passwords_private::ImportEntry entry;
+  entry.status =
+      extensions::api::passwords_private::ImportEntryStatus::kConflictProfile;
+  entry.id = 1;
+  entry.url = "http://google.com";
+  entry.username = "user";
+  entry.password = "pass";
+  results.displayed_entries.push_back(std::move(entry));
+
+  EXPECT_CALL(mock_delegate(), ContinueImport)
+      .WillOnce(
+          [&](const std::vector<int32_t>& selected_ids,
+              base::OnceCallback<void(
+                  const extensions::api::passwords_private::ImportResults&)>
+                  callback) { std::move(callback).Run(results); });
+
+  handler().ContinueImport({0, 1}, future.GetCallback());
+
+  auto mojo_results = future.Take();
+  EXPECT_EQ(mojom::ImportResultsStatus::kConflicts, mojo_results->status);
+  EXPECT_EQ(0, mojo_results->number_imported);
+  EXPECT_EQ("conflicts.csv", mojo_results->file_name);
+  ASSERT_EQ(1u, mojo_results->displayed_entries.size());
+  EXPECT_EQ(mojom::ImportEntryStatus::kConflictProfile,
+            mojo_results->displayed_entries[0]->status);
+  EXPECT_EQ("http://google.com", mojo_results->displayed_entries[0]->url);
+  EXPECT_EQ("user", mojo_results->displayed_entries[0]->username);
+  EXPECT_EQ("pass", mojo_results->displayed_entries[0]->password);
+}
+
+TEST_F(PasswordManagerUIHandlerUnitTest,
+       StartPasswordChange_CallsServiceAndUpdatesState) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(
+      password_manager::features::kPasswordCheckupPrototype);
+
+  PasswordChangeServiceFactory::GetInstance()->SetTestingFactory(
+      profile_.get(), base::BindRepeating([](content::BrowserContext* context)
+                                              -> std::unique_ptr<KeyedService> {
+        return std::make_unique<testing::NiceMock<MockPasswordChangeService>>();
+      }));
+
+  auto* mock_service = static_cast<MockPasswordChangeService*>(
+      PasswordChangeServiceFactory::GetForProfile(profile_.get()));
+  ASSERT_TRUE(mock_service);
+
+  CredentialUIEntry credential;
+  credential.username = u"testuser";
+  const int kCredentialId = 123;
+  EXPECT_CALL(mock_delegate(), GetCredentialFromId(kCredentialId))
+      .WillRepeatedly(Return(credential));
+
+  PasswordChangeFromCheckupDelegate::StateChangeCallback captured_callback;
+  EXPECT_CALL(*mock_service, StartPasswordChangeFromCheckup(
+                                 testing::_, web_contents_.get(), testing::_))
+      .WillOnce(testing::SaveArg<2>(&captured_callback));
+
+  handler().StartPasswordChange(kCredentialId);
+
+  ASSERT_TRUE(captured_callback);
+
+  EXPECT_CALL(mock_page_,
+              OnPasswordAutomaticChangeStateUpdated(
+                  kCredentialId,
+                  mojom::PasswordAutomaticChangeState::kChangingPassword));
+
+  captured_callback.Run(PasswordChangeFromCheckupDelegate::
+                            PasswordAutomaticChangeState::kChangingPassword);
+  mock_page_.FlushForTesting();
+}
+
+TEST_F(PasswordManagerUIHandlerUnitTest,
+       StartPasswordChange_InvalidCredentialId_DoesNotCallService) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(
+      password_manager::features::kPasswordCheckupPrototype);
+
+  PasswordChangeServiceFactory::GetInstance()->SetTestingFactory(
+      profile_.get(), base::BindRepeating([](content::BrowserContext* context)
+                                              -> std::unique_ptr<KeyedService> {
+        return std::make_unique<testing::NiceMock<MockPasswordChangeService>>();
+      }));
+
+  auto* mock_service = static_cast<MockPasswordChangeService*>(
+      PasswordChangeServiceFactory::GetForProfile(profile_.get()));
+  ASSERT_TRUE(mock_service);
+
+  EXPECT_CALL(*mock_service, StartPasswordChangeFromCheckup).Times(0);
+  EXPECT_CALL(mock_page_, OnPasswordAutomaticChangeStateUpdated).Times(0);
+
+  const int kInvalidCredentialId = 999;
+  handler().StartPasswordChange(kInvalidCredentialId);
+  mock_page_.FlushForTesting();
+}
+
+TEST_F(PasswordManagerUIHandlerUnitTest,
+       StartPasswordChange_NullService_DoesNotCrash) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(
+      password_manager::features::kPasswordCheckupPrototype);
+
+  PasswordChangeServiceFactory::GetInstance()->SetTestingFactory(
+      profile_.get(), base::BindRepeating([](content::BrowserContext* context)
+                                              -> std::unique_ptr<KeyedService> {
+        return nullptr;
+      }));
+
+  CredentialUIEntry credential;
+  credential.username = u"testuser";
+  const int kCredentialId = 123;
+  EXPECT_CALL(mock_delegate(), GetCredentialFromId(kCredentialId))
+      .WillRepeatedly(Return(credential));
+
+  EXPECT_CALL(mock_page_, OnPasswordAutomaticChangeStateUpdated).Times(0);
+
+  handler().StartPasswordChange(kCredentialId);
+  mock_page_.FlushForTesting();
+}
+
+TEST_F(PasswordManagerUIHandlerUnitTest,
+       StartPasswordChange_MultipleStateTransitions) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(
+      password_manager::features::kPasswordCheckupPrototype);
+
+  PasswordChangeServiceFactory::GetInstance()->SetTestingFactory(
+      profile_.get(), base::BindRepeating([](content::BrowserContext* context)
+                                              -> std::unique_ptr<KeyedService> {
+        return std::make_unique<testing::NiceMock<MockPasswordChangeService>>();
+      }));
+
+  auto* mock_service = static_cast<MockPasswordChangeService*>(
+      PasswordChangeServiceFactory::GetForProfile(profile_.get()));
+  ASSERT_TRUE(mock_service);
+
+  CredentialUIEntry credential;
+  credential.username = u"testuser";
+  const int kCredentialId = 123;
+  EXPECT_CALL(mock_delegate(), GetCredentialFromId(kCredentialId))
+      .WillRepeatedly(Return(credential));
+
+  PasswordChangeFromCheckupDelegate::StateChangeCallback captured_callback;
+  EXPECT_CALL(*mock_service, StartPasswordChangeFromCheckup(
+                                 testing::_, web_contents_.get(), testing::_))
+      .WillOnce(testing::SaveArg<2>(&captured_callback));
+
+  handler().StartPasswordChange(kCredentialId);
+  ASSERT_TRUE(captured_callback);
+
+  testing::InSequence s;
+  EXPECT_CALL(mock_page_,
+              OnPasswordAutomaticChangeStateUpdated(
+                  kCredentialId, mojom::PasswordAutomaticChangeState::kInactive));
+  EXPECT_CALL(mock_page_,
+              OnPasswordAutomaticChangeStateUpdated(
+                  kCredentialId,
+                  mojom::PasswordAutomaticChangeState::kAttemptingSignIn));
+  EXPECT_CALL(mock_page_,
+              OnPasswordAutomaticChangeStateUpdated(
+                  kCredentialId,
+                  mojom::PasswordAutomaticChangeState::kChangingPassword));
+  EXPECT_CALL(
+      mock_page_,
+      OnPasswordAutomaticChangeStateUpdated(
+          kCredentialId,
+          mojom::PasswordAutomaticChangeState::kConfirmingChangedPassword));
+  EXPECT_CALL(
+      mock_page_,
+      OnPasswordAutomaticChangeStateUpdated(
+          kCredentialId,
+          mojom::PasswordAutomaticChangeState::kPasswordChangedSuccessfully));
+  EXPECT_CALL(mock_page_,
+              OnPasswordAutomaticChangeStateUpdated(
+                  kCredentialId, mojom::PasswordAutomaticChangeState::kError));
+
+  captured_callback.Run(
+      PasswordChangeFromCheckupDelegate::PasswordAutomaticChangeState::kInactive);
+  captured_callback.Run(PasswordChangeFromCheckupDelegate::
+                            PasswordAutomaticChangeState::kAttemptingSignIn);
+  captured_callback.Run(PasswordChangeFromCheckupDelegate::
+                            PasswordAutomaticChangeState::kChangingPassword);
+  captured_callback.Run(
+      PasswordChangeFromCheckupDelegate::PasswordAutomaticChangeState::
+          kConfirmingChangedPassword);
+  captured_callback.Run(
+      PasswordChangeFromCheckupDelegate::PasswordAutomaticChangeState::
+          kPasswordChangedSuccessfully);
+  captured_callback.Run(
+      PasswordChangeFromCheckupDelegate::PasswordAutomaticChangeState::kError);
+  mock_page_.FlushForTesting();
 }
 
 }  // namespace password_manager

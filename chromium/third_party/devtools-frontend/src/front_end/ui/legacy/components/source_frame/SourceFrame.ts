@@ -9,8 +9,8 @@ import * as i18n from '../../../../core/i18n/i18n.js';
 import * as Platform from '../../../../core/platform/platform.js';
 import * as Root from '../../../../core/root/root.js';
 import * as SDK from '../../../../core/sdk/sdk.js';
+import * as TextUtils from '../../../../core/text_utils/text_utils.js';
 import * as Formatter from '../../../../models/formatter/formatter.js';
-import * as TextUtils from '../../../../models/text_utils/text_utils.js';
 import * as PanelCommon from '../../../../panels/common/common.js';
 import * as CodeMirror from '../../../../third_party/codemirror.next/codemirror.next.js';
 import * as CodeHighlighter from '../../../components/code_highlighter/code_highlighter.js';
@@ -31,6 +31,10 @@ const UIStrings = {
    * @description Text when something is loading
    */
   loading: 'Loading…',
+  /**
+   * @description Text when a file is currently being pretty printed/formatted in the editor
+   */
+  formatting: 'Formatting…',
   /**
    * @description Shown at the bottom of the Sources panel when the user has made multiple
    * simultaneous text selections in the text editor.
@@ -69,7 +73,7 @@ const UIStrings = {
    * @example {allow pasting} PH1
    */
   doNotPaste:
-      'Don\'t paste code you do not understand or have not reviewed yourself into DevTools. This could allow attackers to steal your identity or take control of your computer. Please type “{PH1}” below to allow pasting.',
+      'Don’t paste code you do not understand or have not reviewed yourself into DevTools. This could allow attackers to steal your identity or take control of your computer. Please type "{PH1}" below to allow pasting.',
   /**
    * @description Text a user needs to type in order to confirm that they are aware of the danger of pasting code into the DevTools console.
    */
@@ -78,13 +82,13 @@ const UIStrings = {
    * @description Input box placeholder which instructs the user to type 'allow pasting' into the input box. IMPORTANT: keep double quotes around PH1 and do not use single quotes.
    * @example {allow pasting} PH1
    */
-  typeAllowPasting: 'Type “{PH1}”',
+  typeAllowPasting: 'Type "{PH1}"',
   /**
    * @description Error message shown when the user tries to open a file that contains non-readable data. "Editor" refers to
    * a text editor.
    */
   binaryContentError:
-      'Editor can\'t show binary data. Use the "Response" tab in the "Network" panel to inspect this resource.',
+      'Editor can’t show binary data. Use the Response tab in the Network panel to inspect this resource.',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('ui/legacy/components/source_frame/SourceFrame.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -257,6 +261,7 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
         focus: () => this.onFocus(),
         blur: () => this.onBlur(),
         paste: () => this.onPaste(),
+        drop: event => event.preventDefault(),
         scroll: () => this.dispatchEventToListeners(Events.EDITOR_SCROLL),
         contextmenu: event => this.onContextMenu(event),
       }),
@@ -264,16 +269,15 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
         domEventHandlers:
             {contextmenu: (_view, block, event) => this.onLineGutterContextMenu(block.from, event as MouseEvent)},
       }),
-      CodeMirror.EditorView.updateListener.of(
-          (update):
-              void => {
-                if (update.selectionSet || update.docChanged) {
-                  this.updateSourcePosition();
-                }
-                if (update.docChanged) {
-                  this.onTextChanged();
-                }
-              }),
+      CodeMirror.EditorView.updateListener.of((update):
+                                                  void => {
+                                                    if (update.selectionSet || update.docChanged) {
+                                                      this.updateSourcePosition();
+                                                    }
+                                                    if (update.docChanged) {
+                                                      this.onTextChanged();
+                                                    }
+                                                  }),
       activeSearchState,
       CodeMirror.Prec.lowest(searchHighlighter),
       config.language.of([]),
@@ -316,7 +320,7 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
       header: i18nString(UIStrings.doYouTrustThisCode),
       message: i18nString(UIStrings.doNotPaste, {PH1: i18nString(UIStrings.allowPasting)}),
       typePhrase: i18nString(UIStrings.allowPasting),
-      inputPlaceholder: i18nString(UIStrings.typeAllowPasting, {PH1: i18nString(UIStrings.allowPasting)})
+      inputPlaceholder: i18nString(UIStrings.typeAllowPasting, {PH1: i18nString(UIStrings.allowPasting)}),
     });
     if (allowPasting) {
       this.selfXssWarningDisabledSetting.set(true);
@@ -387,7 +391,9 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
     if (this.prettyInternal) {
       const content =
           this.rawContent instanceof CodeMirror.Text ? this.rawContent.sliceString(0) : this.rawContent || '';
-      const formatInfo = await Formatter.ScriptFormatter.formatScriptContent(this.contentType, content);
+      this.textEditor.state = this.placeholderEditorState(i18nString(UIStrings.formatting));
+      const formatInfo = await Formatter.ScriptFormatter.formatScriptContent(Common.Settings.Settings.instance(),
+                                                                             this.contentType, content);
       this.formattedMap = formatInfo.formattedMapping;
       await this.setContent(formatInfo.formattedContent);
       this.prettyBaseDoc = textEditor.state.doc;

@@ -9,17 +9,21 @@
 
 #include "base/barrier_closure.h"
 #include "base/containers/extend.h"
+#include "base/files/file_util.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/strcat.h"
 #include "base/strings/to_string.h"
+#include "base/task/thread_pool.h"
 #include "base/trace_event/trace_event.h"
 #include "components/optimization_guide/core/model_execution/manifest_broker/manifest_solution_factory.h"
 #include "components/optimization_guide/core/model_execution/manifest_broker/manifest_validation.h"
+#include "components/optimization_guide/core/model_execution/model_execution_prefs.h"
 #include "components/optimization_guide/core/model_execution/on_device_features.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
 #include "components/optimization_guide/public/mojom/model_broker.mojom.h"
+#include "components/prefs/pref_service.h"
 
 namespace optimization_guide {
 
@@ -200,9 +204,12 @@ void ManifestBrokerState::OnManifestUpdated() {
   // for a manifest.
   auto factory = std::make_unique<ManifestSolutionFactory>(
       *manifest_monitor_.manifest(), model_broker_impl_, usage_tracker_,
-      service_client_, access_controller_,
+      service_client_, access_controller_, performance_classifier_,
       base::BindOnce(&ManifestBrokerState::OnInitComplete,
-                     weak_ptr_factory_.GetWeakPtr()));
+                     weak_ptr_factory_.GetWeakPtr()),
+      base::BindRepeating(
+          &ManifestBrokerState::NotifyObserversOfBrokerStateChange,
+          weak_ptr_factory_.GetWeakPtr()));
   if (!asset_manager_) {
     asset_manager_ = std::make_unique<ManifestAssetManager>(
         *local_state_, usage_tracker_, *delegate_, component_update_service_,
@@ -210,6 +217,7 @@ void ManifestBrokerState::OnManifestUpdated() {
   } else {
     asset_manager_->UpdateSolutionFactory(std::move(factory));
   }
+  NotifyObserversOfBrokerStateChange();
 }
 
 void ManifestBrokerState::OnInitComplete() {
@@ -228,6 +236,7 @@ void ManifestBrokerState::OnInitComplete() {
           category_config.validations());
     }
   }
+  NotifyObserversOfBrokerStateChange();
 }
 
 on_device_model::Capabilities
@@ -278,17 +287,43 @@ void ManifestBrokerState::OnServiceDisconnected(
 void ManifestBrokerState::GetStateInfo(
     mojom::ModelBrokerDebug::GetStateInfoCallback callback) {
   auto result = mojom::BrokerStateInfo::New();
+  result->is_asset_manager_initialized = asset_manager_ != nullptr;
   result->properties.push_back(
       mojom::BrokerPropertyInfo::New("Broker Type", "ManifestBrokerState"));
   base::Extend(result->properties,
                performance_classifier_.GetBrokerProperties());
   base::Extend(result->properties, manifest_monitor_.GetBrokerProperties());
   result->use_cases = model_broker_impl_.GetBrokerUseCaseInfo();
+
+  result->model_crash_count = local_state_->GetInteger(
+      model_execution::prefs::localstate::kOnDeviceModelCrashCount);
+  result->max_model_crash_count =
+      optimization_guide::features::GetOnDeviceModelCrashCountBeforeDisable();
+
+  std::vector<std::pair<mojom::BrokerModelInfoPtr, base::FilePath>>
+      models_with_paths;
   if (asset_manager_) {
     result->assets = asset_manager_->GetBrokerAssets();
-    result->models = asset_manager_->GetBrokerModels();
+    models_with_paths = asset_manager_->GetBrokerModels();
   }
-  std::move(callback).Run(std::move(result));
+
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
+      base::BindOnce(
+          [](mojom::BrokerStateInfoPtr result,
+             std::vector<std::pair<mojom::BrokerModelInfoPtr, base::FilePath>>
+                 models_with_paths) {
+            for (auto& [model_info, path] : models_with_paths) {
+              if (!path.empty()) {
+                model_info->folder_size = static_cast<uint64_t>(
+                    base::ComputeDirectorySize(path));
+              }
+              result->models.push_back(std::move(model_info));
+            }
+            return result;
+          },
+          std::move(result), std::move(models_with_paths)),
+      std::move(callback));
 }
 
 void ManifestBrokerState::SetUseCaseRequested(const std::string& use_case,
@@ -297,8 +332,26 @@ void ManifestBrokerState::SetUseCaseRequested(const std::string& use_case,
 }
 
 void ManifestBrokerState::UninstallModels() {
-  // TODO: crbug.com/489511500 - Implement this.
-  // component_state_manager_.ForceUninstall();
+  if (asset_manager_) {
+    asset_manager_->UninstallModels();
+    OnManifestUpdated();
+  }
+}
+
+void ManifestBrokerState::ResetModelCrashCount() {
+  local_state_->SetInteger(
+      model_execution::prefs::localstate::kOnDeviceModelCrashCount, 0);
+}
+
+void ManifestBrokerState::AddObserver(
+    mojo::PendingRemote<mojom::ModelBrokerDebugObserver> observer) {
+  debug_observers_.Add(std::move(observer));
+}
+
+void ManifestBrokerState::NotifyObserversOfBrokerStateChange() {
+  for (auto& observer : debug_observers_) {
+    observer->OnBrokerStateChanged();
+  }
 }
 
 }  // namespace optimization_guide

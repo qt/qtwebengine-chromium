@@ -238,7 +238,7 @@ export class OriginTrialTokenRows extends UI.Widget.Widget {
         name: i18nString(UIStrings.expiryTime),
         value: {
           text: this.#dateFormatter.format(this.#tokenWithStatus.parsedToken.expiryTime * 1000),
-          hasError: this.#tokenWithStatus.status === Protocol.Page.OriginTrialTokenStatus.Expired
+          hasError: this.#tokenWithStatus.status === Protocol.Page.OriginTrialTokenStatus.Expired,
         },
       },
       {

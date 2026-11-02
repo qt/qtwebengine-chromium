@@ -95,7 +95,8 @@ class TCPClientSocketTest
     ASSERT_THAT(server_socket->GetLocalAddress(&server_address), IsOk());
 
     *client_socket = std::make_unique<TCPClientSocket>(
-        AddressList(server_address), nullptr, nullptr, nullptr, NetLogSource());
+        AddressList(server_address), nullptr, nullptr, nullptr, NetLogSource(),
+        handles::kInvalidNetworkHandle);
 
     EXPECT_THAT((*client_socket)->Bind(IPEndPoint(local_address, 0)), IsOk());
 
@@ -140,7 +141,7 @@ TEST_P(TCPClientSocketTest, BindLoopbackToLoopback) {
   ASSERT_THAT(server.GetLocalAddress(&server_address), IsOk());
 
   TCPClientSocket socket(AddressList(server_address), nullptr, nullptr, nullptr,
-                         NetLogSource());
+                         NetLogSource(), handles::kInvalidNetworkHandle);
 
   EXPECT_THAT(socket.Bind(IPEndPoint(lo_address, 0)), IsOk());
 
@@ -171,7 +172,8 @@ TEST_P(TCPClientSocketTest, BindLoopbackToLoopback) {
 TEST_P(TCPClientSocketTest, BindLoopbackToExternal) {
   IPAddress external_ip(72, 14, 213, 105);
   TCPClientSocket socket(AddressList::CreateFromIPAddress(external_ip, 80),
-                         nullptr, nullptr, nullptr, NetLogSource());
+                         nullptr, nullptr, nullptr, NetLogSource(),
+                         handles::kInvalidNetworkHandle);
 
   EXPECT_THAT(socket.Bind(IPEndPoint(IPAddress::IPv4Localhost(), 0)), IsOk());
 
@@ -199,7 +201,7 @@ TEST_P(TCPClientSocketTest, BindLoopbackToIPv6) {
   IPEndPoint server_address;
   ASSERT_THAT(server.GetLocalAddress(&server_address), IsOk());
   TCPClientSocket socket(AddressList(server_address), nullptr, nullptr, nullptr,
-                         NetLogSource());
+                         NetLogSource(), handles::kInvalidNetworkHandle);
 
   EXPECT_THAT(socket.Bind(IPEndPoint(IPAddress::IPv4Localhost(), 0)), IsOk());
 
@@ -219,7 +221,7 @@ TEST_P(TCPClientSocketTest, WasEverUsed) {
   ASSERT_THAT(server.GetLocalAddress(&server_address), IsOk());
 
   TCPClientSocket socket(AddressList(server_address), nullptr, nullptr, nullptr,
-                         NetLogSource());
+                         NetLogSource(), handles::kInvalidNetworkHandle);
 
   EXPECT_FALSE(socket.WasEverUsed());
 
@@ -272,7 +274,7 @@ TEST_P(TCPClientSocketTest, DnsAliasesPersistForReuse) {
 
   // Create a socket.
   TCPClientSocket socket(AddressList(server_address), nullptr, nullptr, nullptr,
-                         NetLogSource());
+                         NetLogSource(), handles::kInvalidNetworkHandle);
   EXPECT_FALSE(socket.WasEverUsed());
   EXPECT_THAT(socket.Bind(IPEndPoint(lo_address, 0)), IsOk());
 
@@ -337,16 +339,33 @@ TEST_P(TCPClientSocketTest, BlockRestrictedAddress) {
       {{"localhost_restrict_ports",
         base::NumberToString(server_address.port())}});
   ReloadLocalhostRestrictedPortsForTesting();
-  TCPClientSocket socket(AddressList(server_address), nullptr, nullptr, nullptr,
-                         NetLogSource());
+  const IPAddress addresses_to_test[] = {
+      IPAddress::IPv4Localhost(),
+      IPAddress(127, 0, 0, 2),
+      IPAddress::IPv4AllZeros(),
+      IPAddress::IPv6Localhost(),
+      IPAddress::IPv6AllZeros(),
+      ConvertIPv4ToIPv4MappedIPv6(IPAddress::IPv4Localhost()),
+      ConvertIPv4ToIPv4MappedIPv6(IPAddress::IPv4AllZeros()),
+  };
 
-  TestCompletionCallback connect_callback;
-  int connect_result = socket.Connect(connect_callback.callback());
-  EXPECT_THAT(connect_callback.GetResult(connect_result),
-              IsError(ERR_UNSAFE_PORT));
-  histogram_tester.ExpectTotalCount("Net.RestrictedLocalhostPorts", 1);
+  int expected_count = 0;
+  for (const auto& address : addresses_to_test) {
+    TCPClientSocket socket(
+        AddressList(IPEndPoint(address, server_address.port())), nullptr,
+        nullptr, nullptr, NetLogSource(), handles::kInvalidNetworkHandle);
+
+    TestCompletionCallback connect_callback;
+    int connect_result = socket.Connect(connect_callback.callback());
+    EXPECT_THAT(connect_callback.GetResult(connect_result),
+                IsError(ERR_UNSAFE_PORT));
+    expected_count++;
+  }
+
+  histogram_tester.ExpectTotalCount("Net.RestrictedLocalhostPorts",
+                                    expected_count);
   histogram_tester.ExpectBucketCount("Net.RestrictedLocalhostPorts",
-                                     server_address.port(), 1);
+                                     server_address.port(), expected_count);
 }
 
 class TestSocketPerformanceWatcher : public SocketPerformanceWatcher {
@@ -393,7 +412,8 @@ TEST_P(TCPClientSocketTest, MAYBE_TestSocketPerformanceWatcher) {
 
   TCPClientSocket socket(
       AddressList::CreateFromIPAddressList(ip_list, std::move(aliases)),
-      std::move(watcher), nullptr, nullptr, NetLogSource());
+      std::move(watcher), nullptr, nullptr, NetLogSource(),
+      handles::kInvalidNetworkHandle);
 
   EXPECT_THAT(socket.Bind(IPEndPoint(IPAddress::IPv4Localhost(), 0)), IsOk());
 
@@ -421,7 +441,8 @@ TEST_P(TCPClientSocketTest, Tag) {
 
   AddressList addr_list;
   ASSERT_TRUE(test_server.GetAddressList(&addr_list));
-  TCPClientSocket s(addr_list, nullptr, nullptr, nullptr, NetLogSource());
+  TCPClientSocket s(addr_list, nullptr, nullptr, nullptr, NetLogSource(),
+                    handles::kInvalidNetworkHandle);
 
   // Verify TCP connect packets are tagged and counted properly.
   int32_t tag_val1 = 0x12345678;
@@ -475,7 +496,8 @@ TEST_P(TCPClientSocketTest, TagAfterConnect) {
 
   AddressList addr_list;
   ASSERT_TRUE(test_server.GetAddressList(&addr_list));
-  TCPClientSocket s(addr_list, nullptr, nullptr, nullptr, NetLogSource());
+  TCPClientSocket s(addr_list, nullptr, nullptr, nullptr, NetLogSource(),
+                    handles::kInvalidNetworkHandle);
 
   // Connect socket.
   TestCompletionCallback connect_callback;
@@ -527,7 +549,8 @@ class NeverConnectingTCPClientSocket : public TCPClientSocket {
                         std::move(socket_performance_watcher),
                         network_quality_estimator,
                         net_log,
-                        source) {}
+                        source,
+                        handles::kInvalidNetworkHandle) {}
 
   // Returns the number of times that ConnectInternal() was called.
   int connect_internal_counter() const { return connect_internal_counter_; }
@@ -557,7 +580,7 @@ TEST_P(TCPClientSocketTest, SuspendBeforeConnect) {
   ASSERT_THAT(server.GetLocalAddress(&server_address), IsOk());
 
   TCPClientSocket socket(AddressList(server_address), nullptr, nullptr, nullptr,
-                         NetLogSource());
+                         NetLogSource(), handles::kInvalidNetworkHandle);
 
   EXPECT_THAT(socket.Bind(IPEndPoint(lo_address, 0)), IsOk());
 

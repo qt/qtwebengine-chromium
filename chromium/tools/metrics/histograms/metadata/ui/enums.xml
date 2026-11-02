@@ -78,6 +78,7 @@ chromium-metrics-reviews@google.com.
   <int value="29" label="Search web for... in new tab"/>
   <int value="31" label="Open link in split view"/>
   <int value="32" label="Create image with Gemini in Chrome"/>
+  <int value="33" label="Remove from dictionary"/>
 </enum>
 
 <!-- LINT.ThenChange(//chrome/browser/renderer_context_menu/render_view_context_menu.cc:ContextMenuOptionDesktop) -->
@@ -238,7 +239,8 @@ chromium-metrics-reviews@google.com.
   <int value="57" label="IDC_CONTENT_CONTEXT_SEARCHWEBFORIMAGE"/>
   <int value="58" label="IDC_SPELLCHECK_SUGGESTION"/>
   <int value="59" label="IDC_SPELLCHECK_ADD_TO_DICTIONARY"/>
-  <int value="60" label="IDC_SPELLPANEL_TOGGLE"/>
+  <int value="60"
+      label="(Obsolete) IDC_SPELLPANEL_TOGGLE. Removed in 2026/06."/>
   <int value="61" label="IDC_CONTENT_CONTEXT_OPENORIGINALIMAGENEWTAB"/>
   <int value="62" label="IDC_WRITING_DIRECTION_MENU"/>
   <int value="63" label="IDC_WRITING_DIRECTION_DEFAULT"/>
@@ -294,9 +296,13 @@ chromium-metrics-reviews@google.com.
   <int value="107"
       label="IDC_CONTENT_CONTEXT_SHARING_CLICK_TO_CALL_MULTIPLE_DEVICES"/>
   <int value="108"
-      label="IDC_CONTENT_CONTEXT_SHARING_SHARED_CLIPBOARD_SINGLE_DEVICE"/>
+      label="(Obsolete)
+             IDC_CONTENT_CONTEXT_SHARING_SHARED_CLIPBOARD_SINGLE_DEVICE.
+             Removed in 2026/07."/>
   <int value="109"
-      label="IDC_CONTENT_CONTEXT_SHARING_SHARED_CLIPBOARD_MULTIPLE_DEVICES"/>
+      label="(Obsolete)
+             IDC_CONTENT_CONTEXT_SHARING_SHARED_CLIPBOARD_MULTIPLE_DEVICES.
+             Removed in 2026/07."/>
   <int value="110" label="IDC_CONTENT_CONTEXT_GENERATE_QR_CODE"/>
   <int value="111"
       label="(Obsolete) IDC_CONTENT_CLIPBOARD_HISTORY_MENU. Removed in
@@ -359,7 +365,8 @@ chromium-metrics-reviews@google.com.
   <int value="156" label="IDC_CONTENT_CONTEXT_OPENLINKSPLITVIEW"/>
   <int value="157" label="IDC_CONTENT_CONTEXT_GLICSHAREIMAGE"/>
   <int value="158" label="IDC_CONTENT_CONTEXT_ARCHIVE_GLIC"/>
-  <int value="159" label="IDC_CONTENT_CONTEXT_INSPECTELEMENT_WITH_GEMINI"/>
+  <int value="159"
+      label="(Obsolete) IDC_CONTENT_CONTEXT_INSPECTELEMENT_WITH_GEMINI"/>
   <int value="160" label="IDC_CONTENT_CONTEXT_INSPECTELEMENT_WITH_DEVTOOLS"/>
   <int value="161" label="IDC_CONTENT_CONTEXT_AUTOFILL_FALLBACK_AT_MEMORY"/>
   <int value="162" label="IDC_CONTENT_CONTEXT_GLIC"/>
@@ -367,6 +374,8 @@ chromium-metrics-reviews@google.com.
   <int value="164" label="IDC_CONTENT_CONTEXT_LISTEN_TO_THIS_PAGE"/>
   <int value="165" label="IDC_CONTENT_CONTEXT_DICTATION"/>
   <int value="166" label="IDC_CONTENT_CONTEXT_ADD_LINK_TO_READING_LIST"/>
+  <int value="167" label="IDC_SPELLCHECK_REMOVE_FROM_DICTIONARY"/>
+  <int value="168" label="IDC_CONTENT_CONTEXT_SAVE_TO_MEMORY_BANKS"/>
 </enum>
 
 <!-- LINT.ThenChange(//chrome/browser/renderer_context_menu/render_view_context_menu.cc:RenderViewContextMenuItem) -->
@@ -392,6 +401,10 @@ chromium-metrics-reviews@google.com.
   <int value="6" label="Others">
     The snackbar was cleared by other events, such as activity being stopped or
     manually cleared by the manager.
+  </int>
+  <int value="7" label="Replaced by high priority">
+    The snackbar was instantly preempted and dismissed by a high priority
+    security warning.
   </int>
 </enum>
 
@@ -438,10 +451,10 @@ chromium-metrics-reviews@google.com.
   <int value="35" label="UMA_CONDITIONAL_TAB_STRIP_DISMISS_UNDO"/>
   <int value="37" label="UMA_READING_LIST_BOOKMARK_ADDED"/>
   <int value="38" label="UMA_PRIVACY_SANDBOX_PAGE_OPEN"/>
-  <int value="39" label="UMA_WEB_FEED_FOLLOW_SUCCESS"/>
-  <int value="40" label="UMA_WEB_FEED_FOLLOW_FAILURE"/>
-  <int value="41" label="UMA_WEB_FEED_UNFOLLOW_SUCCESS"/>
-  <int value="42" label="UMA_WEB_FEED_UNFOLLOW_FAILURE"/>
+  <int value="39" label="(Obsolete) UMA_WEB_FEED_FOLLOW_SUCCESS"/>
+  <int value="40" label="(Obsolete) UMA_WEB_FEED_FOLLOW_FAILURE"/>
+  <int value="41" label="(Obsolete) UMA_WEB_FEED_UNFOLLOW_SUCCESS"/>
+  <int value="42" label="(Obsolete) UMA_WEB_FEED_UNFOLLOW_FAILURE"/>
   <int value="43" label="UMA_LANGUAGE_SPLIT_RESTART"/>
   <int value="44" label="UMA_AUTOFILL_VIRTUAL_CARD_FILLED"/>
   <int value="45" label="UMA_WINDOW_ERROR"/>
@@ -490,6 +503,7 @@ chromium-metrics-reviews@google.com.
   <int value="90" label="UMA_GLIC"/>
   <int value="91" label="UMA_TIPS_OPT_IN"/>
   <int value="92" label="UMA_NTP_THEME_TIP"/>
+  <int value="93" label="UMA_SEND_TAB_TO_SELF"/>
 </enum>
 
 <!-- LINT.ThenChange(//chrome/browser/ui/messages/android/java/src/org/chromium/chrome/browser/ui/messages/snackbar/Snackbar.java:SnackbarIdentifier) -->
@@ -686,6 +700,7 @@ chromium-metrics-reviews@google.com.
   <int value="-2069349961" label="chrome://history-clusters-internals/"/>
   <int value="-2061366287" label="chrome://dev-ui-loader/"/>
   <int value="-2052079834" label="chrome://context-hub/"/>
+  <int value="-2049053969" label="chrome://iwa-dev/"/>
   <int value="-2038391710" label="chrome://tab-strip-internals/"/>
   <int value="-2034706497" label="chrome://net-internals/"/>
   <int value="-2031269077" label="chrome://signin-error/"/>
@@ -702,6 +717,7 @@ chromium-metrics-reviews@google.com.
   <int value="-1941995226" label="chrome://attribution-internals/"/>
   <int value="-1911971715" label="chrome://history/"/>
   <int value="-1899361569" label="chrome-untrusted://eche-app/"/>
+  <int value="-1891730544" label="chrome://cross-device-signin-qr-bubble/"/>
   <int value="-1887206190" label="chrome://nfc-debug/"/>
   <int value="-1877210733" label="chrome-untrusted://privacy-sandbox-dialog/"/>
   <int value="-1837941403" label="chrome://launcher-internals/"/>
@@ -726,6 +742,7 @@ chromium-metrics-reviews@google.com.
   <int value="-1649429396" label="chrome://chrome-signin/edu-coexistence/"/>
   <int value="-1647734092" label="chrome://net-export/"/>
   <int value="-1638649228" label="chrome://webapks/"/>
+  <int value="-1637801196" label="chrome://omnibox-everywhere.top-chrome/"/>
   <int value="-1636191836"
       label="chrome://history-clusters-side-panel.top-chrome/"/>
   <int value="-1634933990" label="chrome://web-footer-experiment/"/>
@@ -744,6 +761,7 @@ chromium-metrics-reviews@google.com.
   <int value="-1475777739" label="chrome://physical-web-diagnostics/"/>
   <int value="-1471376798" label="chrome-untrusted://print/"/>
   <int value="-1440785181" label="chrome://profile-signin-confirmation/"/>
+  <int value="-1437371895" label="chrome://contextual-cueing-internals/"/>
   <int value="-1423026122" label="chrome://md-user-manager/"/>
   <int value="-1401057585" label="chrome://account-manager-error/"/>
   <int value="-1398642514" label="chrome://gesture/"/>
@@ -906,6 +924,7 @@ chromium-metrics-reviews@google.com.
   <int value="275260142" label="chrome://eoc-internals/"/>
   <int value="296428820" label="chrome-untrusted://lens-overlay/"/>
   <int value="325375649" label="chrome://settings-frame/"/>
+  <int value="354948668" label="chrome://signin-qrcode-bar/"/>
   <int value="361250371" label="chrome://nearby/"/>
   <int value="361621847" label="chrome://make-metro/"/>
   <int value="372516928" label="chrome://histograms/"/>
@@ -919,6 +938,7 @@ chromium-metrics-reviews@google.com.
   <int value="459058510" label="chrome://status-area-internals/"/>
   <int value="460232055" label="chrome://lens-search-bubble/"/>
   <int value="461287992" label="chrome://help/"/>
+  <int value="483244151" label="chrome://notebooks-internals/"/>
   <int value="502364118" label="chrome://default-browser/"/>
   <int value="507734656" label="chrome://profile-customization/"/>
   <int value="519565566" label="chrome://personal-context-internals/"/>
@@ -1061,7 +1081,6 @@ chromium-metrics-reviews@google.com.
   <int value="1846714330" label="chrome://sanitize/"/>
   <int value="1878438412" label="chrome://tabs-from-other-devices.top-chrome/"/>
   <int value="1887784693" label="chrome://policy/"/>
-  <int value="1906728906" label="chrome://privacy-sandbox-internals/"/>
   <int value="1914132589" label="chrome-untrusted://boca-app/"/>
   <int value="1918190389" label="chrome-untrusted://projector-annotator/"/>
   <int value="1926101309" label="chrome://cryptohome/"/>

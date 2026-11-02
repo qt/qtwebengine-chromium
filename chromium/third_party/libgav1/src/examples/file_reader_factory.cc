@@ -14,11 +14,13 @@
 
 #include "examples/file_reader_factory.h"
 
+#include <cstddef>
 #include <memory>
 #include <new>
 #include <string>
 #include <vector>
 
+#include "examples/file_reader_interface.h"
 #include "examples/logging.h"
 
 namespace libgav1 {

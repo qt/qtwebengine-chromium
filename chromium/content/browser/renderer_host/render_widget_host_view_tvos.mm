@@ -20,8 +20,15 @@ RenderWidgetHostViewTVOS::~RenderWidgetHostViewTVOS() = default;
 
 void RenderWidgetHostViewTVOS::UpdateCALayerTree(
     gfx::CALayerParams ca_layer_params) {
-  DCHECK(display_tree_);
+  CHECK(display_tree_, base::NotFatalUntil::M152);
   display_tree_->UpdateCALayerTree(std::move(ca_layer_params));
+}
+
+void RenderWidgetHostViewTVOS::OnGestureEvent(
+    const ui::GestureEventData& gesture) {}
+
+bool RenderWidgetHostViewTVOS::RequiresDoubleTapGestureEvents() const {
+  return false;
 }
 
 }  // namespace content

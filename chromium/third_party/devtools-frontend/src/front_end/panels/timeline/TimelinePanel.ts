@@ -42,11 +42,11 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as AiAssistanceModel from '../../models/ai_assistance/ai_assistance.js';
 import * as Badges from '../../models/badges/badges.js';
 import * as CrUXManager from '../../models/crux-manager/crux-manager.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Trace from '../../models/trace/trace.js';
 import * as SourceMapsResolver from '../../models/trace_source_maps_resolver/trace_source_maps_resolver.js';
 import * as Workspace from '../../models/workspace/workspace.js';
@@ -100,25 +100,25 @@ const UIStrings = {
    */
   dropTimelineFileOrUrlHere: 'Drop trace file or URL here',
   /**
-   * @description Title of disable capture jsprofile setting in timeline panel of the performance panel
+   * @description Dropdown option in the performance panel for the default screenshot capture preset (500 x 500 pixels,
+   * up to 450 frames).
    */
-  disableJavascriptSamples: 'Disable JavaScript samples',
+  screenshotPresetDefault: '500 x 500 px, up to 450 frames',
   /**
-   *@description Title of capture layers and pictures setting in timeline panel of the performance panel
+   * @description Dropdown option in the performance panel for a screenshot capture preset that uses smaller frames so
+   * more of them fit in the per-session memory budget (250 x 250 pixels, up to 1800 frames).
    */
-  enableAdvancedPaint: 'Enable advanced paint instrumentation (slow)',
+  screenshotPresetMedium: '250 x 250 px, up to 1800 frames',
   /**
-   * @description Title of CSS selector stats setting in timeline panel of the performance panel
+   * @description Dropdown option in the performance panel for a screenshot capture preset that uses higher-resolution
+   * frames at the cost of capturing fewer of them (1000 x 1000 pixels, up to 100 frames).
    */
-  enableSelectorStats: 'Enable CSS selector stats (slow)',
+  screenshotPresetLarge: '1000 x 1000 px, up to 100 frames',
   /**
-   * @description Title of show screenshots setting in timeline panel of the performance panel
+   * @description Dropdown option in the performance panel for a screenshot capture preset that uses very small frames
+   * so many of them fit in the per-session memory budget (100 x 100 pixels, up to 11250 frames).
    */
-  screenshots: 'Screenshots',
-  /**
-   * @description Text for the memory of the page
-   */
-  memory: 'Memory',
+  screenshotPresetTiny: '100 x 100 px, up to 11250 frames',
   /**
    * @description Text to clear content
    */
@@ -249,11 +249,6 @@ const UIStrings = {
    */
   showDataAddedByExtensions: 'Show data added by extensions of the Performance panel',
   /**
-   * Label for a checkbox that toggles the visibility of data added by extensions of this panel (Performance).
-   */
-  showCustomtracks: 'Show custom tracks',
-
-  /**
    * @description Tooltip for the the sidebar toggle in the Performance panel. Command to open/show the sidebar.
    */
   showSidebar: 'Show sidebar',
@@ -299,10 +294,6 @@ const UIStrings = {
    */
   timelineScrollPan: 'Scroll & Pan',
   /**
-   * @description Title for the Dim 3rd Parties checkbox.
-   */
-  dimThirdParties: 'Dim 3rd parties',
-  /**
    * @description Description for the Dim 3rd Parties checkbox tooltip describing how 3rd parties are classified.
    */
   thirdPartiesByThirdPartyWeb: '3rd parties classified by third-party-web',
@@ -314,7 +305,49 @@ const UIStrings = {
 const str_ = i18n.i18n.registerUIStrings('panels/timeline/TimelinePanel.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
+/**
+ * Screenshot capture presets exposed in the performance panel settings pane.
+ * Each entry pairs a maximum per-frame edge length (square frames) with a
+ * maximum frame count. All presets are sized to stay within the backend's
+ * per-session memory budget (~450 MB at 4 bytes per pixel).
+ */
+const SCREENSHOT_CAPTURE_PRESETS: ReadonlyArray<{
+  readonly key: string,
+  readonly maxSize: number,
+  readonly maxCount: number,
+  readonly label: () => Common.UIString.LocalizedString,
+}> =
+    [
+      {
+        key: '500-450',
+        maxSize: 500,
+        maxCount: 450,
+        label: () => i18nString(UIStrings.screenshotPresetDefault),
+      },
+      {
+        key: '250-1800',
+        maxSize: 250,
+        maxCount: 1800,
+        label: () => i18nString(UIStrings.screenshotPresetMedium),
+      },
+      {
+        key: '1000-100',
+        maxSize: 1000,
+        maxCount: 100,
+        label: () => i18nString(UIStrings.screenshotPresetLarge),
+      },
+      {
+        key: '100-11250',
+        maxSize: 100,
+        maxCount: 11250,
+        label: () => i18nString(UIStrings.screenshotPresetTiny),
+      },
+    ];
+
 let timelinePanelInstance: TimelinePanel|undefined;
+
+// Total time to wait for source maps to load before giving up so trace processing can proceed.
+const SOURCE_MAP_LOAD_TIMEOUT_MS = 5000;
 
 /**
  * Represents the states that the timeline panel can be in.
@@ -346,6 +379,7 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
   private disableCaptureJSProfileSetting: Common.Settings.Setting<boolean>;
   private readonly captureLayersAndPicturesSetting: Common.Settings.Setting<boolean>;
   private readonly captureSelectorStatsSetting: Common.Settings.Setting<boolean>;
+  private readonly screenshotCaptureModeSetting: Common.Settings.Setting<string>;
   readonly #thirdPartyTracksSetting: Common.Settings.Setting<boolean>;
   private showScreenshotsSetting: Common.Settings.Setting<boolean>;
   private showMemorySetting: Common.Settings.Setting<boolean>;
@@ -450,10 +484,15 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
   #hiddenTracksInfoBarByParsedTrace = new WeakMap<Trace.TraceModel.ParsedTrace, UI.Infobar.Infobar|'DISMISSED'>();
 
   readonly #resourceLoader: SDK.PageResourceLoader.ResourceLoader;
+  readonly #targetManager: SDK.TargetManager.TargetManager;
+  readonly #isolateManager: SDK.IsolateManager.IsolateManager;
 
-  constructor(resourceLoader: SDK.PageResourceLoader.ResourceLoader, traceModel?: Trace.TraceModel.Model) {
+  constructor(resourceLoader: SDK.PageResourceLoader.ResourceLoader, targetManager: SDK.TargetManager.TargetManager,
+              isolateManager: SDK.IsolateManager.IsolateManager, traceModel?: Trace.TraceModel.Model) {
     super('timeline');
     this.#resourceLoader = resourceLoader;
+    this.#targetManager = targetManager;
+    this.#isolateManager = isolateManager;
     this.registerRequiredCSS(timelinePanelStyles);
     const adornerContent = document.createElement('span');
     adornerContent.innerHTML = `<div style="
@@ -484,34 +523,26 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
 
     this.traceLoadStart = null;
 
-    this.disableCaptureJSProfileSetting = Common.Settings.Settings.instance().createSetting(
-        'timeline-disable-js-sampling', false, Common.Settings.SettingStorageType.SESSION);
-    this.disableCaptureJSProfileSetting.setTitle(i18nString(UIStrings.disableJavascriptSamples));
-    this.captureLayersAndPicturesSetting = Common.Settings.Settings.instance().createSetting(
-        'timeline-capture-layers-and-pictures', false, Common.Settings.SettingStorageType.SESSION);
-    this.captureLayersAndPicturesSetting.setTitle(i18nString(UIStrings.enableAdvancedPaint));
-    this.captureSelectorStatsSetting = Common.Settings.Settings.instance().createSetting(
-        'timeline-capture-selector-stats', false, Common.Settings.SettingStorageType.SESSION);
-    this.captureSelectorStatsSetting.setTitle(i18nString(UIStrings.enableSelectorStats));
+    this.disableCaptureJSProfileSetting =
+        Common.Settings.Settings.instance().moduleSetting('timeline-disable-js-sampling');
+    this.captureLayersAndPicturesSetting =
+        Common.Settings.Settings.instance().moduleSetting('timeline-capture-layers-and-pictures');
+    this.captureSelectorStatsSetting =
+        Common.Settings.Settings.instance().moduleSetting('timeline-capture-selector-stats');
+    this.screenshotCaptureModeSetting =
+        Common.Settings.Settings.instance().moduleSetting('timeline-screenshot-capture-mode');
 
-    this.showScreenshotsSetting =
-        Common.Settings.Settings.instance().createSetting('timeline-show-screenshots', !this.#isNode);
-    this.showScreenshotsSetting.setTitle(i18nString(UIStrings.screenshots));
+    this.showScreenshotsSetting = Common.Settings.Settings.instance().moduleSetting('timeline-show-screenshots');
     this.showScreenshotsSetting.addChangeListener(this.updateMiniMap, this);
 
-    this.showMemorySetting = Common.Settings.Settings.instance().createSetting(
-        'timeline-show-memory', false, Common.Settings.SettingStorageType.SESSION);
-    this.showMemorySetting.setTitle(i18nString(UIStrings.memory));
+    this.showMemorySetting = Common.Settings.Settings.instance().moduleSetting('timeline-show-memory');
     this.showMemorySetting.addChangeListener(this.onMemoryModeChanged, this);
 
-    this.#dimThirdPartiesSetting = Common.Settings.Settings.instance().createSetting(
-        'timeline-dim-third-parties', false, Common.Settings.SettingStorageType.SESSION);
-    this.#dimThirdPartiesSetting.setTitle(i18nString(UIStrings.dimThirdParties));
+    this.#dimThirdPartiesSetting = Common.Settings.Settings.instance().moduleSetting('timeline-dim-third-parties');
     this.#dimThirdPartiesSetting.addChangeListener(this.onDimThirdPartiesChanged, this);
 
     this.#thirdPartyTracksSetting = TimelinePanel.extensionDataVisibilitySetting();
     this.#thirdPartyTracksSetting.addChangeListener(this.#extensionDataVisibilityChanged, this);
-    this.#thirdPartyTracksSetting.setTitle(i18nString(UIStrings.showCustomtracks));
 
     const timelineToolbarContainer = this.element.createChild('div', 'timeline-toolbar-container');
     timelineToolbarContainer.setAttribute('jslog', `${VisualLogging.toolbar()}`);
@@ -655,24 +686,6 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
 
     SDK.TargetManager.TargetManager.instance().addEventListener(
         SDK.TargetManager.Events.SUSPEND_STATE_CHANGED, this.onSuspendStateChanged, this);
-    const profilerModels = SDK.TargetManager.TargetManager.instance().models(SDK.CPUProfilerModel.CPUProfilerModel);
-    for (const model of profilerModels) {
-      for (const message of model.registeredConsoleProfileMessages) {
-        this.consoleProfileFinished(message);
-      }
-    }
-    SDK.TargetManager.TargetManager.instance().observeModels(
-        SDK.CPUProfilerModel.CPUProfilerModel,
-        {
-          modelAdded: (model: SDK.CPUProfilerModel.CPUProfilerModel) => {
-            model.addEventListener(
-                SDK.CPUProfilerModel.Events.CONSOLE_PROFILE_FINISHED, event => this.consoleProfileFinished(event.data));
-          },
-          modelRemoved: (_model: SDK.CPUProfilerModel.CPUProfilerModel) => {
-
-          },
-        },
-    );
   }
 
   zoomEvent(event: Trace.Types.Events.Event): void {
@@ -714,10 +727,13 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
   static instance(opts: {
     forceNew: true,
     resourceLoader: SDK.PageResourceLoader.ResourceLoader,
+    targetManager: SDK.TargetManager.TargetManager,
+    isolateManager: SDK.IsolateManager.IsolateManager,
     traceModel?: Trace.TraceModel.Model,
   }|undefined = undefined): TimelinePanel {
     if (opts) {
-      timelinePanelInstance = new TimelinePanel(opts.resourceLoader, opts.traceModel);
+      timelinePanelInstance =
+          new TimelinePanel(opts.resourceLoader, opts.targetManager, opts.isolateManager, opts.traceModel);
     }
 
     if (!timelinePanelInstance) {
@@ -766,7 +782,7 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
   static extensionDataVisibilitySetting(): Common.Settings.Setting<boolean> {
     // Calling this multiple times doesn't recreate the setting.
     // Instead, after the second call, the cached setting is returned.
-    return Common.Settings.Settings.instance().createSetting('timeline-show-extension-data', true);
+    return Common.Settings.Settings.instance().moduleSetting('timeline-show-extension-data');
   }
   override searchableView(): UI.SearchableView.SearchableView|null {
     return this.#searchableView;
@@ -1020,7 +1036,7 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
     this.#minimapComponent.highlightBounds(bounds, /* withBracket */ false);
   }
 
-  private loadFromCpuProfile(profile: Protocol.Profiler.Profile|null): void {
+  loadFromCpuProfile(profile: Protocol.Profiler.Profile|null): void {
     if (this.state !== State.IDLE || profile === null) {
       return;
     }
@@ -1146,7 +1162,7 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
 
     // Isolate selector
     if (this.#isNode) {
-      const isolateSelector = new IsolateSelector();
+      const isolateSelector = new IsolateSelector(this.#targetManager, this.#isolateManager);
       this.panelToolbar.appendSeparator();
       this.panelToolbar.appendToolbarItem(isolateSelector);
     }
@@ -1159,7 +1175,7 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
   }
 
   #setupNavigationSetting(): HTMLElement {
-    const currentNavSetting = Common.Settings.moduleSetting('flamechart-selected-navigation').get();
+    const currentNavSetting = Common.Settings.Settings.instance().moduleSetting('flamechart-selected-navigation').get();
     const hideTheDialogForTests: string|null = localStorage.getItem('hide-shortcuts-dialog-for-test');
     const userHadShortcutsDialogOpenedOnce = this.#userHadShortcutsDialogOpenedOnce.get();
 
@@ -1186,11 +1202,11 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
     // Change EventListener is only triggered when the radio button is selected
     this.#modernNavRadioButton.radio.addEventListener('change', () => {
       this.#shortcutsDialog.data = {shortcuts: this.#getShortcutsInfo(/* isNavClassic */ false)};
-      Common.Settings.moduleSetting('flamechart-selected-navigation').set('modern');
+      Common.Settings.Settings.instance().moduleSetting('flamechart-selected-navigation').set('modern');
     });
     this.#classicNavRadioButton.radio.addEventListener('change', () => {
       this.#shortcutsDialog.data = {shortcuts: this.#getShortcutsInfo(/* isNavClassic */ true)};
-      Common.Settings.moduleSetting('flamechart-selected-navigation').set('classic');
+      Common.Settings.Settings.instance().moduleSetting('flamechart-selected-navigation').set('classic');
     });
 
     this.#navigationRadioButtons.appendChild(this.#modernNavRadioButton.label);
@@ -1201,7 +1217,7 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
   }
 
   #updateNavigationSettingSelection(): void {
-    const currentNavSetting = Common.Settings.moduleSetting('flamechart-selected-navigation').get();
+    const currentNavSetting = Common.Settings.Settings.instance().moduleSetting('flamechart-selected-navigation').get();
     if (currentNavSetting === 'classic') {
       this.#classicNavRadioButton.radio.checked = true;
       Host.userMetrics.navigationSettingAtFirstTimelineLoad(
@@ -1221,9 +1237,10 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
         {
           title: i18nString(UIStrings.timelineZoom),
           rows: [
-            [{key: 'Scroll ↕'}], [{key: 'W'}, {key: 'S'}, {joinText: 'or'}, {key: '+'}, {key: '-'}],
-            {footnote: 'hold shift for fast zoom'}
-          ]
+            [{key: 'Scroll ↕'}],
+            [{key: 'W'}, {key: 'S'}, {joinText: 'or'}, {key: '+'}, {key: '-'}],
+            {footnote: 'hold shift for fast zoom'},
+          ],
         },
         {
           title: i18nString(UIStrings.timelineScrollPan),
@@ -1231,11 +1248,17 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
             [{key: 'Shift'}, {joinText: '+'}, {key: 'Scroll ↕'}],
             [{key: 'Scroll ↔'}, {joinText: 'or'}, {key: 'A'}, {key: 'D'}],
             [
-              {key: 'Drag'}, {joinText: 'or'}, {key: 'Shift'}, {joinText: '+'}, {key: '↑'}, {key: '↓'}, {key: '←'},
-              {key: '→'}
+              {key: 'Drag'},
+              {joinText: 'or'},
+              {key: 'Shift'},
+              {joinText: '+'},
+              {key: '↑'},
+              {key: '↓'},
+              {key: '←'},
+              {key: '→'},
             ],
-          ]
-        }
+          ],
+        },
       ];
     }
 
@@ -1245,23 +1268,36 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
         title: i18nString(UIStrings.timelineZoom),
         rows: [
           [{key: metaKey}, {joinText: '+'}, {key: 'Scroll ↕'}],
-          [{key: 'W'}, {key: 'S'}, {joinText: 'or'}, {key: '+'}, {key: '-'}], {footnote: ''}
-        ]
+          [{key: 'W'}, {key: 'S'}, {joinText: 'or'}, {key: '+'}, {key: '-'}],
+          {footnote: ''},
+        ],
       },
       {
         title: i18nString(UIStrings.timelineScrollPan),
         rows: [
           [{key: 'Scroll ↕'}],
           [
-            {key: 'Shift'}, {joinText: '+'}, {key: 'Scroll ↕'}, {joinText: 'or'}, {key: 'Scroll ↔'}, {joinText: 'or'},
-            {key: 'A'}, {key: 'D'}
+            {key: 'Shift'},
+            {joinText: '+'},
+            {key: 'Scroll ↕'},
+            {joinText: 'or'},
+            {key: 'Scroll ↔'},
+            {joinText: 'or'},
+            {key: 'A'},
+            {key: 'D'},
           ],
           [
-            {key: 'Drag'}, {joinText: 'or'}, {key: 'Shift'}, {joinText: '+'}, {key: '↑'}, {key: '↓'}, {key: '←'},
-            {key: '→'}
+            {key: 'Drag'},
+            {joinText: 'or'},
+            {key: 'Shift'},
+            {joinText: '+'},
+            {key: '↑'},
+            {key: '↓'},
+            {key: '←'},
+            {key: '→'},
           ],
-        ]
-      }
+        ],
+      },
     ];
   }
 
@@ -1303,6 +1339,31 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
     this.settingsPane.append(SettingsUI.SettingsUI.createSettingCheckbox(
         this.disableCaptureJSProfileSetting.title(), this.disableCaptureJSProfileSetting,
         i18nString(UIStrings.disablesJavascriptSampling)));
+
+    const screenshotPresetSelect = new UI.Toolbar.ToolbarComboBox(
+        () =>
+            this.screenshotCaptureModeSetting.set((screenshotPresetSelect.selectedOption() as HTMLOptionElement).value),
+        this.screenshotCaptureModeSetting.title(), '', 'screenshot-capture-mode');
+    let selectedScreenshotPresetIndex = 0;
+    for (let i = 0; i < SCREENSHOT_CAPTURE_PRESETS.length; ++i) {
+      const preset = SCREENSHOT_CAPTURE_PRESETS[i];
+      screenshotPresetSelect.addOption(
+          screenshotPresetSelect.createOption(preset.label(), preset.key, `tracing.screenshot-size.${preset.key}`));
+      if (preset.key === this.screenshotCaptureModeSetting.get()) {
+        selectedScreenshotPresetIndex = i;
+      }
+    }
+    screenshotPresetSelect.setSelectedIndex(selectedScreenshotPresetIndex);
+    const screenshotPresetPane = this.settingsPane.createChild('div');
+    screenshotPresetPane.append(this.screenshotCaptureModeSetting.title());
+    screenshotPresetPane.append(screenshotPresetSelect.element);
+    // Surface the dropdown only when the "Screenshots" checkbox is on, since the
+    // preset only affects the screenshots captured during the recording.
+    const updateScreenshotPresetVisibility = (): void => {
+      screenshotPresetPane.hidden = !this.showScreenshotsSetting.get();
+    };
+    this.showScreenshotsSetting.addChangeListener(updateScreenshotPresetVisibility);
+    updateScreenshotPresetVisibility();
 
     const thirdPartyCheckbox =
         this.createSettingCheckbox(this.#thirdPartyTracksSetting, i18nString(UIStrings.showDataAddedByExtensions));
@@ -1905,6 +1966,14 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
 
       const urlToTrace = await this.#evaluateInspectedURL();
 
+      // Resolve the user's screenshot capture preset (resolution x frame count).
+      // All presets are sized to fit within the backend's per-session memory
+      // budget, which the backend additionally enforces. Forward the values
+      // only when screenshots are actually being captured.
+      const screenshotPreset =
+          SCREENSHOT_CAPTURE_PRESETS.find(p => p.key === this.screenshotCaptureModeSetting.get()) ??
+          SCREENSHOT_CAPTURE_PRESETS[0];
+
       // Order is important here: we tell the controller to start recording, which enables tracing.
       await this.controller.startRecording({
         enableJSSampling: !this.disableCaptureJSProfileSetting.get(),
@@ -1912,6 +1981,9 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
         captureFilmStrip: this.showScreenshotsSetting.get(),
         captureSelectorStats: this.captureSelectorStatsSetting.get(),
         navigateToUrl: this.recordingPageReload ? urlToTrace : undefined,
+        ...(this.showScreenshotsSetting.get() ?
+                {screenshotMaxSize: screenshotPreset.maxSize, screenshotMaxCount: screenshotPreset.maxCount} :
+                {}),
       });
 
       // Once we get here, we know tracing is active.
@@ -1997,11 +2069,6 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
 
   private onSuspendStateChanged(): void {
     this.updateTimelineControls();
-  }
-
-  private consoleProfileFinished(data: SDK.CPUProfilerModel.ProfileFinishedData): void {
-    this.loadFromCpuProfile(data.cpuProfile);
-    void UI.InspectorView.InspectorView.instance().showPanel('timeline');
   }
 
   private updateTimelineControls(): void {
@@ -2142,21 +2209,28 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
     const exclusiveFilter = this.#exclusiveFilterPerTrace.get(traceIndex) ?? null;
     this.#applyActiveFilters(parsedTrace.data.Meta.traceIsGeneric, exclusiveFilter);
     (this.saveButton.element as TimelineComponents.ExportTraceOptions.ExportTraceOptions).updateContentVisibility({
-      annotationsExist: currentManager ? currentManager.getAnnotations()?.length > 0 : false
+      annotationsExist: currentManager ? currentManager.getAnnotations()?.length > 0 : false,
     });
 
     // Add ModificationsManager listeners for annotations change to update the
     // Annotation Overlays.
     currentManager?.addEventListener(AnnotationModifiedEvent.eventName, this.#onAnnotationModifiedEventBound);
 
-    // To calculate the activity we might want to zoom in, we use the top-most main-thread track
-    const topMostMainThreadAppender =
-        this.flameChart.getMainDataProvider().compatibilityTracksAppenderInstance().threadAppenders().at(0);
-    if (topMostMainThreadAppender) {
-      const zoomedInBounds = Trace.Extras.MainThreadActivity.calculateWindow(
-          parsedTrace.data.Meta.traceBounds, topMostMainThreadAppender.getEntries());
-
-      TraceBounds.TraceBounds.BoundsManager.instance().setTimelineVisibleWindow(zoomedInBounds);
+    // To calculate the activity we might want to zoom in, we use the top-most main-thread track.
+    // If the trace has an active breadcrumb that is not the initial full trace breadcrumb, we do
+    // not zoom in, but keep the window at the active breadcrumb bounds.
+    const breadcrumbs = currentManager?.getTimelineBreadcrumbs();
+    const hasActiveBreadcrumb = breadcrumbs ? breadcrumbs.activeBreadcrumb !== breadcrumbs.initialBreadcrumb : false;
+    if (!hasActiveBreadcrumb) {
+      const topMostMainThreadAppender =
+          this.flameChart.getMainDataProvider().compatibilityTracksAppenderInstance().threadAppenders().at(0);
+      const zoomWindow = calculateAutoZoomWindow(
+          parsedTrace.data.Meta.traceBounds,
+          topMostMainThreadAppender?.getEntries(),
+      );
+      if (zoomWindow) {
+        TraceBounds.TraceBounds.BoundsManager.instance().setTimelineVisibleWindow(zoomWindow);
+      }
     }
 
     // Add overlays for annotations loaded from the trace file
@@ -2227,7 +2301,7 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
     // Logging the setting on the first timeline load will allow us to get an estimate number of people using each option.
     if (this.#traceEngineModel.size() === 1) {
       this.#setupNavigationSetting();
-      if (Common.Settings.moduleSetting('flamechart-selected-navigation').get() === 'classic') {
+      if (Common.Settings.Settings.instance().moduleSetting('flamechart-selected-navigation').get() === 'classic') {
         Host.userMetrics.navigationSettingAtFirstTimelineLoad(
             Host.UserMetrics.TimelineNavigationSetting.CLASSIC_AT_SESSION_FIRST_TRACE);
       } else {
@@ -2273,7 +2347,7 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
     const annotationEntryToColorMap = this.buildColorsAnnotationsMap(annotations);
     this.#sideBar.setAnnotations(annotations, annotationEntryToColorMap);
     (this.saveButton.element as TimelineComponents.ExportTraceOptions.ExportTraceOptions).updateContentVisibility({
-      annotationsExist: currentManager ? currentManager.getAnnotations()?.length > 0 : false
+      annotationsExist: currentManager ? currentManager.getAnnotations()?.length > 0 : false,
     });
   }
 
@@ -2346,7 +2420,7 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
       },
       onShowTrackConfigurationMode: () => {
         this.flameChart.enterMainChartTrackConfigurationMode();
-      }
+      },
     });
     if (maybeOverlay) {
       this.flameChart.addOverlay(maybeOverlay);
@@ -2434,6 +2508,13 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
 
   async loadingStarted(): Promise<void> {
     this.#changeView({mode: 'STATUS_PANE_OVERLAY'});
+
+    // If recording was stopped automatically (e.g. page reload or AI-triggered trace),
+    // we must transition to STOP_PENDING so that loadingComplete() knows the resulting
+    // trace is a fresh recording.
+    if (this.state === State.RECORDING) {
+      this.setState(State.STOP_PENDING);
+    }
 
     if (this.statusDialog) {
       this.statusDialog.remove();
@@ -2623,7 +2704,7 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
         const initiator = {
           target: null,
           frameId: script.frame as Protocol.Page.FrameId,
-          initiatorUrl: script.url as Platform.DevToolsPath.UrlString
+          initiatorUrl: script.url as Platform.DevToolsPath.UrlString,
         };
         rawSourceMap = await SDK.SourceMapManager.tryLoadSourceMap(
             this.#resourceLoader, script.sourceMapUrl as Platform.DevToolsPath.UrlString, initiator);
@@ -2635,12 +2716,19 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
     };
 
     metadata.sourceMaps = [];
+    await this.#handleSourceMapPromise(parsedTrace, handleScript);
+  }
 
+  async #handleSourceMapPromise(parsedTrace: Trace.TraceModel.ParsedTrace,
+                                handleScript: (script: Trace.Handlers.ModelHandlers.Scripts.Script) => Promise<void>):
+      Promise<void> {
     const promises = [];
     for (const script of parsedTrace?.data.Scripts.scripts.values() ?? []) {
       promises.push(handleScript(script));
     }
-    await Promise.all(promises);
+
+    const timeout = new Promise<void>(resolve => setTimeout(resolve, SOURCE_MAP_LOAD_TIMEOUT_MS));
+    await Promise.race([Promise.allSettled(promises), timeout]);
   }
 
   #createSourceMapResolver(isFreshRecording: boolean, metadata: Trace.Types.File.MetaData|null):
@@ -2674,12 +2762,13 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
       return await debuggerModel.sourceMapManager().sourceMapForClientPromise(script);
     }
 
-    return async function resolveSourceMap(params: Trace.Types.Configuration.ResolveSourceMapParams) {
+    async function resolveSourceMap(params: Trace.Types.Configuration.ResolveSourceMapParams):
+        Promise<SDK.SourceMap.SourceMap|null> {
       const {scriptId, scriptUrl, sourceUrl, sourceMapUrl, frame, cachedRawSourceMap} = params;
 
       if (cachedRawSourceMap) {
-        return new SDK.SourceMap.SourceMap(
-            sourceUrl, sourceMapUrl ?? '' as Platform.DevToolsPath.UrlString, cachedRawSourceMap);
+        return new SDK.SourceMap.SourceMap(sourceUrl, sourceMapUrl ?? '' as Platform.DevToolsPath.UrlString,
+                                           cachedRawSourceMap, Common.Console.Console.instance());
       }
 
       // For still-active frames, the source map is likely already fetched or at least in-flight.
@@ -2700,7 +2789,8 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
       if (!isFreshRecording && metadata?.sourceMaps && !isDataUrl) {
         const cachedSourceMap = metadata.sourceMaps.find(m => m.sourceMapUrl === sourceMapUrl);
         if (cachedSourceMap) {
-          return new SDK.SourceMap.SourceMap(sourceUrl, sourceMapUrl, cachedSourceMap.sourceMap);
+          return new SDK.SourceMap.SourceMap(sourceUrl, sourceMapUrl, cachedSourceMap.sourceMap,
+                                             Common.Console.Console.instance());
         }
       }
 
@@ -2726,12 +2816,20 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
       const initiator = {
         target: debuggerModelForFrameId.get(frame)?.target() ?? null,
         frameId: frame,
-        initiatorUrl: sourceUrl
+        initiatorUrl: sourceUrl,
       };
       const payload = await SDK.SourceMapManager.tryLoadSourceMap(
           TimelinePanel.instance().#resourceLoader, sourceMapUrl, initiator);
-      return payload ? new SDK.SourceMap.SourceMap(sourceUrl, sourceMapUrl, payload) : null;
-    };
+      return payload ?
+          new SDK.SourceMap.SourceMap(sourceUrl, sourceMapUrl, payload, Common.Console.Console.instance()) :
+          null;
+    }
+
+    const timeout = new Promise<null>(resolve => setTimeout(() => resolve(null), SOURCE_MAP_LOAD_TIMEOUT_MS));
+    return function resolveSourceMapWithTimeout(params: Trace.Types.Configuration.ResolveSourceMapParams):
+        Promise<SDK.SourceMap.SourceMap|null> {
+          return Promise.race([resolveSourceMap(params), timeout]);
+        };
   }
 
   async #retainResourceContentsForEnhancedTrace(
@@ -2746,7 +2844,8 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
       }
 
       const url = request.args.data.url as Platform.DevToolsPath.UrlString;
-      const resource = SDK.ResourceTreeModel.ResourceTreeModel.resourceForURL(url);
+      const resource =
+          SDK.ResourceTreeModel.ResourceTreeModel.resourceForURL(SDK.TargetManager.TargetManager.instance(), url);
       if (!resource) {
         continue;
       }
@@ -3143,6 +3242,13 @@ export class BottomUpProfileRevealer implements Common.Revealer.Revealer<Utils.H
   }
 }
 
+export class ProfileFinishedRevealer implements Common.Revealer.Revealer<SDK.CPUProfilerModel.ProfileFinishedData> {
+  async reveal(data: SDK.CPUProfilerModel.ProfileFinishedData): Promise<void> {
+    await UI.ViewManager.ViewManager.instance().showView('timeline');
+    TimelinePanel.instance().loadFromCpuProfile(data.cpuProfile);
+  }
+}
+
 export class ActionDelegate implements UI.ActionRegistration.ActionDelegate {
   handleAction(context: UI.Context.Context, actionId: string): boolean {
     const panel = context.flavor(TimelinePanel);
@@ -3198,4 +3304,21 @@ export const enum Events {
 export interface EventTypes {
   [Events.IS_VIEWING_TRACE]: boolean;
   [Events.RECORDING_COMPLETED]: {traceIndex: number}|{errorText: string};
+}
+
+/**
+ * Calculates the window to auto-zoom into when a trace is loaded.
+ * We only auto-zoom to the main thread activity if there is no active breadcrumb,
+ * as we want to preserve the active breadcrumb's window if one exists.
+ *
+ * @returns the window to zoom into, or null if no auto-zoom should be applied.
+ */
+export function calculateAutoZoomWindow(
+    traceBounds: Trace.Types.Timing.TraceWindowMicro,
+    topMostMainThreadAppenderEntries: readonly Trace.Types.Events.Event[]|undefined,
+    ): Trace.Types.Timing.TraceWindowMicro|null {
+  if (!topMostMainThreadAppenderEntries || topMostMainThreadAppenderEntries.length === 0) {
+    return null;
+  }
+  return Trace.Extras.MainThreadActivity.calculateWindow(traceBounds, topMostMainThreadAppenderEntries);
 }

@@ -4,41 +4,66 @@
 
 #include "components/autofill/core/browser/integrators/personal_context/personal_context_autofill_util.h"
 
-#include "components/personal_context/core/personal_context_enablement_service.h"
-#include "components/personal_context/core/personal_context_prefs.h"
+#include "components/autofill/core/browser/at_memory/at_memory_enablement_utils.h"
+#include "components/autofill/core/browser/foundations/autofill_client.h"
+#include "components/autofill/core/browser/permissions/autofill_ai/autofill_ai_permission_utils.h"
+#include "components/personal_context/core/personal_context_eligibility_service.h"
 #include "components/personal_context/core/personal_context_types.h"
-#include "components/prefs/pref_service.h"
 
 namespace autofill {
 
 bool ShouldShowPersonalContextAutofillSetting(
-    personal_context::PersonalContextEnablementService* enablement_service) {
-  if (!enablement_service) {
+    const AutofillClient& client,
+    personal_context::PersonalContextEligibilityService* eligibility_service) {
+  return ShouldShowPersonalContextAutofillSetting(
+#if !BUILDFLAG(IS_FUCHSIA)
+      client.GetGoogleGroupsManager(),
+#endif
+      client.GetPrefs(), client.GetEntityDataManager(),
+      client.GetIdentityManager(), client.GetSyncService(),
+      client.IsWalletPublicPassStorageEnabled(), client.IsOffTheRecord(),
+      client.GetVariationConfigCountryCode(), eligibility_service,
+      client.GetSubscriptionEligibilityService());
+}
+
+bool ShouldShowPersonalContextAutofillSetting(
+#if !BUILDFLAG(IS_FUCHSIA)
+    const GoogleGroupsManager* google_groups_manager,
+#endif
+    const PrefService* prefs,
+    const EntityDataManager* edm,
+    const signin::IdentityManager* identity_manager,
+    const syncer::SyncService* sync_service,
+    bool is_wallet_public_pass_storage_enabled,
+    bool is_off_the_record,
+    const GeoIpCountryCode& country_code,
+    personal_context::PersonalContextEligibilityService* eligibility_service,
+    const subscription_eligibility::SubscriptionEligibilityService*
+        subscription_service) {
+  if (!eligibility_service) {
     return false;
   }
 
-  using enum personal_context::PersonalContextEnablementState;
-  switch (enablement_service->GetEnablementState()) {
-    case kDisabledNotEligible:
-    case kDisabledNeedsOptIn:
-      return false;
-    case kDisabledShouldShowNotice:
-    case kEnabledShouldShowNotice:
-    case kDisabledViaPersonalIntelligenceInAutofillToggle:
-    case kEnabled:
-      return true;
-  }
-}
+  const bool ambient_autofill_enabled = MayPerformAutofillAiAction(
+#if !BUILDFLAG(IS_FUCHSIA)
+      google_groups_manager,
+#endif
+      prefs, edm, identity_manager, sync_service,
+      is_wallet_public_pass_storage_enabled, is_off_the_record, country_code,
+      subscription_service, eligibility_service->GetEligibilityState(),
+      AutofillAiAction::kShowAmbientAutofillInSettings);
 
-void PersonalContextInAutofillSettingFlippedOn(PrefService* pref_service) {
-  if (pref_service) {
-    pref_service->SetBoolean(
-        personal_context::prefs::kPersonalContextInAutofillNoticeShouldBeShown,
-        false);
-    pref_service->SetBoolean(
-        personal_context::prefs::kPersonalContextInAutofillNoticeHasBeenShown,
-        true);
-  }
+  const bool at_memory_enabled = MayPerformAtMemoryActionBase(
+      AtMemoryAction::kShowAtMemoryInSettings, eligibility_service,
+      subscription_service, prefs,
+#if !BUILDFLAG(IS_FUCHSIA)
+      google_groups_manager,
+#else
+      /*google_groups_manager=*/nullptr,
+#endif
+      /*decider=*/nullptr);
+
+  return ambient_autofill_enabled || at_memory_enabled;
 }
 
 }  // namespace autofill

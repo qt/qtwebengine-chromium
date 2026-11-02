@@ -17,6 +17,7 @@
 #include "third_party/blink/renderer/core/css/clip_path_paint_image_generator.h"
 #include "third_party/blink/renderer/core/css/properties/css_bitset.h"
 #include "third_party/blink/renderer/core/dom/dom_node_ids.h"
+#include "third_party/blink/renderer/core/dom/flat_tree_traversal.h"
 #include "third_party/blink/renderer/core/dom/pseudo_element.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
@@ -90,6 +91,7 @@
 #include "third_party/blink/renderer/platform/graphics/blend_mode.h"
 #include "third_party/blink/renderer/platform/graphics/compositing/paint_artifact_compositor.h"
 #include "third_party/blink/renderer/platform/graphics/paint/effect_paint_property_node.h"
+#include "third_party/blink/renderer/platform/graphics/paint/geometry_mapper.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/transforms/affine_transform.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
@@ -101,24 +103,6 @@
 #include "ui/gfx/geometry/vector2d_conversions.h"
 
 namespace blink {
-
-namespace features {
-
-BASE_FEATURE(kPreventSvgFilterPaint, base::FEATURE_DISABLED_BY_DEFAULT);
-BASE_FEATURE_PARAM(bool,
-                   kPreventSvgFilterPaintOnLocalFrameRestricted,
-                   &kPreventSvgFilterPaint,
-                   false);
-BASE_FEATURE_PARAM(bool,
-                   kPreventSvgFilterPaintOnRemoteFrame,
-                   &kPreventSvgFilterPaint,
-                   false);
-BASE_FEATURE_PARAM(bool,
-                   kPreventSvgFilterPaintOnWebPlugin,
-                   &kPreventSvgFilterPaint,
-                   false);
-
-}  // namespace features
 
 namespace {
 
@@ -211,10 +195,8 @@ void PaintPropertyTreeBuilder::SetupContextForFrame(
   PaintPropertyTreeBuilderFragmentContext& context =
       full_context.fragment_context;
 
-  // Potentially disable svg filter applied to restricted local frame.
-  if (base::FeatureList::IsEnabled(features::kPreventSvgFilterPaint) &&
-      features::kPreventSvgFilterPaintOnLocalFrameRestricted.Get() &&
-      frame_view.GetFrame().IsCrossOriginToParentOrOuterDocument()) {
+  // Disable svg filters applied to restricted local frames.
+  if (frame_view.GetFrame().IsCrossOriginToParentOrOuterDocument()) {
     const blink::EffectPaintPropertyNode* candidate_effect =
         GetFirstParentEffectWithoutReferenceFilter(context.current_effect);
     if (candidate_effect) {
@@ -313,6 +295,7 @@ class FragmentPaintPropertyTreeBuilder {
           TransformPaintPropertyNode::State&&,
           const TransformPaintPropertyNode::AnimationState&),
       bool (ObjectPaintProperties::*clearer)());
+  ALWAYS_INLINE void UpdateUnboundedWrapperNodes(bool is_active);
   ALWAYS_INLINE void UpdateTranslate();
   ALWAYS_INLINE void UpdateRotate();
   ALWAYS_INLINE void UpdateScale();
@@ -476,6 +459,7 @@ class FragmentPaintPropertyTreeBuilder {
 
   CompositorElementId GetCompositorElementId(
       CompositorElementIdNamespace namespace_id) const {
+    fragment_data_.EnsureId();
     return CompositorElementIdFromUniqueObjectId(fragment_data_.UniqueId(),
                                                  namespace_id);
   }
@@ -601,6 +585,16 @@ static bool NeedsAnchorPositionScrollTranslation(const LayoutObject& object) {
   return false;
 }
 
+static HTMLCanvasElement* FindCanvasParent(const LayoutObject& object) {
+  const Element* element = DynamicTo<Element>(object.GetNode());
+  if (!element) {
+    return nullptr;
+  }
+  const Element* parent =
+      FlatTreeTraversal::ParentElementSkippingSlots(*element);
+  return DynamicTo<HTMLCanvasElement>(const_cast<Element*>(parent));
+}
+
 static bool NeedsPaintOffsetTranslation(
     const LayoutObject& object,
     CompositingReasons direct_compositing_reasons,
@@ -628,7 +622,7 @@ static bool NeedsPaintOffsetTranslation(
 
   // TODO(crbug.com/349835587): Should Element or LayoutObject have a public
   // IsCanvasDrawElementImage() function?
-  if (object.Parent() && object.Parent()->IsCanvas()) {
+  if (FindCanvasParent(object)) {
     // The object may be drawn with drawElementImage and should ignore the paint
     // offset.
     return true;
@@ -676,32 +670,19 @@ static bool NeedsPaintOffsetTranslation(
       return true;
   }
 
-  // Though we don't treat hidden backface as a direct compositing reason, it's
-  // very likely that the object will be composited, so a paint offset
-  // translation will be beneficial.
-  bool has_paint_offset_compositing_reason =
-      direct_compositing_reasons != CompositingReason::kNone ||
-      box_model.StyleRef().BackfaceVisibility() == EBackfaceVisibility::kHidden;
-  if (has_paint_offset_compositing_reason) {
-    // Don't let paint offset cross composited layer boundaries when possible,
-    // to avoid unnecessary full layer paint/raster invalidation when paint
-    // offset in ancestor transform node changes which should not affect the
-    // descendants of the composited layer.
-    if (RuntimeEnabledFeatures::PaintOffsetTranslationForCompositedEnabled()) {
-      // For now a LayoutInline applies paint properties only if it has a
-      // self-painting layer. See https://crbug.com/495746269.
-      return !box_model.IsLayoutInline() || box_model.HasSelfPaintingLayer();
-    }
-    if (box_model.IsLayoutBlock() || object.IsLayoutReplaced() ||
-        // Inline elements with backdrop-filter are also included to fix paint
-        // offset issue (see crbug.com/40716515).
-        (!object.StyleRef().BackdropFilter().IsEmpty() &&
-         object.IsLayoutInline()) ||
-        (direct_compositing_reasons &
-         CompositingReason::kViewTransitionElement) ||
-        (direct_compositing_reasons & CompositingReason::kElementCapture)) {
-      return true;
-    }
+  // Don't let paint offset cross composited layer boundaries when possible,
+  // to avoid unnecessary full layer paint/raster invalidation when paint
+  // offset in ancestor transform node changes which should not affect the
+  // descendants of the composited layer.
+  if (direct_compositing_reasons != CompositingReason::kNone ||
+      // Though we don't treat hidden backface as a direct compositing reason,
+      // it's very likely that the object will be composited, so a paint offset
+      // translation will be beneficial.
+      box_model.StyleRef().BackfaceVisibility() ==
+          EBackfaceVisibility::kHidden) {
+    // For now a LayoutInline applies paint properties only if it has a
+    // self-painting layer. See https://crbug.com/495746269.
+    return !box_model.IsLayoutInline() || box_model.HasSelfPaintingLayer();
   }
 
   return false;
@@ -824,10 +805,24 @@ void FragmentPaintPropertyTreeBuilder::UpdatePaintOffsetTranslation(
     if (auto* box = DynamicTo<LayoutBox>(object_)) {
       if (box->IsFixedToView(full_context_.container_for_fixed_position) &&
           object_.View()->FirstFragment().PaintProperties()->Scroll()) {
-        state.scroll_translation_for_fixed = object_.View()
-                                                 ->FirstFragment()
-                                                 .PaintProperties()
-                                                 ->ScrollTranslation();
+        state.scroll_parent_scroll_translation = object_.View()
+                                                     ->FirstFragment()
+                                                     .PaintProperties()
+                                                     ->ScrollTranslation();
+      } else if (box->IsBackdropForOverscrollAreaParent()) {
+        Element& overscroll_target =
+            To<PseudoElement>(box->GetNode())->UltimateOriginatingElement();
+        PseudoElement* overscroll_area_parent =
+            overscroll_target.GetPseudoElement(kPseudoIdOverscrollAreaParent);
+        const LayoutObject* parent_layout =
+            overscroll_area_parent->GetLayoutObject();
+        const auto* parent_properties =
+            parent_layout->FirstFragment().PaintProperties();
+        CHECK(parent_properties);
+        if (parent_properties->ScrollTranslation()) {
+          state.scroll_parent_scroll_translation =
+              parent_properties->ScrollTranslation();
+        }
       }
     }
 
@@ -1048,13 +1043,10 @@ void FragmentPaintPropertyTreeBuilder::UpdateAnchorPositionScrollTranslation() {
       // TODO(crbug.com/1309178): We should disable composited scrolling if the
       // snapshot's scrollers do not match the current scrollers.
 
-      DCHECK(object_.GetDocument().Printing() ||
-             (RuntimeEnabledFeatures::CanvasDrawElementEnabled(
-                  object_.GetDocument().GetExecutionContext()) &&
-              IsA<Element>(object_.GetNode()) &&
-              To<Element>(object_.GetNode())->IsInCanvasSubtree()) ||
+      DCHECK(object_.GetDocument().Printing() || object_.IsInCanvasSubtree() ||
              (full_context_.direct_compositing_reasons &
               CompositingReason::kAnchorPosition));
+
       state.direct_compositing_reasons =
           full_context_.direct_compositing_reasons &
           CompositingReason::kAnchorPosition;
@@ -1933,27 +1925,28 @@ FragmentPaintPropertyTreeBuilder::ParentForViewTransitionPseudoEffect() const {
 
 static void PopulateCanvasChildPaintState(HTMLCanvasElement* canvas,
                                           CanvasChildPaintState& paint_state) {
-  gfx::Size canvas_device_pixel_content_box =
+  const LayoutReplaced* replaced = To<LayoutReplaced>(canvas->GetLayoutBox());
+  const ComputedStyle& style = replaced->StyleRef();
+
+  paint_state.canvas_content_size =
+      gfx::SizeF(replaced->ReplacedContentRect().size);
+  paint_state.canvas_device_pixel_content_box =
       ResizeObserverUtilities::ComputeSnappedDevicePixelContentBox(
-          LogicalSize(canvas->GetLayoutBox()->ContentLogicalWidth(),
-                      canvas->GetLayoutBox()->ContentLogicalHeight()),
-          *canvas->GetLayoutBox(), canvas->GetLayoutBox()->StyleRef());
-
-  PhysicalRect canvas_content_size;
-  if (auto* replaced = DynamicTo<LayoutReplaced>(canvas->GetLayoutBox())) {
-    canvas_content_size = replaced->ReplacedContentRect();
-  } else {
-    canvas_content_size = canvas->GetLayoutBox()->PhysicalContentBoxRect();
-  }
-
-  paint_state.canvas_content_size = gfx::SizeF(canvas_content_size.size);
-  paint_state.canvas_device_pixel_content_box = canvas_device_pixel_content_box;
+          ToLogicalSize(replaced->PhysicalContentBoxRect().size,
+                        style.GetWritingMode()),
+          *replaced, style);
   paint_state.canvas_node_id = canvas->GetDomNodeId();
+  paint_state.animated_image_frame_index_map =
+      canvas->GetDocument().View()->GetAnimatedImageFrameIndexes();
 }
+
 static void PopulateCanvasChildState(const LayoutObject& object,
                                      EffectPaintPropertyNode::State& state) {
   CHECK(IsA<LayoutBox>(object));
-  auto& canvas_fragment = object.Parent()->FirstFragment();
+  HTMLCanvasElement* canvas = FindCanvasParent(object);
+  CHECK(canvas && canvas->GetLayoutObject());
+  auto& canvas_fragment = canvas->GetLayoutObject()->FirstFragment();
+
   gfx::RectF reference_box(To<LayoutBox>(object).PhysicalBorderBoxRect());
   gfx::Point3F transform_origin(
       FloatValueForLength(object.StyleRef().GetTransformOrigin().X(),
@@ -1970,11 +1963,88 @@ static void PopulateCanvasChildState(const LayoutObject& object,
       transform_origin, 1.0f / object.StyleRef().EffectiveZoom());
   state.canvas_child_state->paint_state.box_size =
       gfx::SizeF(To<LayoutBox>(object).StitchedSize());
-  PopulateCanvasChildPaintState(
-      To<HTMLCanvasElement>(object.Parent()->GetNode()),
-      state.canvas_child_state->paint_state);
+  PopulateCanvasChildPaintState(canvas, state.canvas_child_state->paint_state);
   state.canvas_child_state->content_effect = canvas_fragment.ContentsEffect();
   state.canvas_child_state->content_clip = canvas_fragment.ContentsClip();
+}
+
+static bool NeedsUnboundedWrapperNodes(const LayoutObject& object) {
+  if (!RuntimeEnabledFeatures::UnboundedElementEnabled()) {
+    return false;
+  }
+  const auto* html_element = DynamicTo<HTMLElement>(object.GetNode());
+  return html_element && html_element->IsUnboundedElementActive();
+}
+
+void FragmentPaintPropertyTreeBuilder::UpdateUnboundedWrapperNodes(
+    bool is_active) {
+  if (!RuntimeEnabledFeatures::UnboundedElementEnabled()) {
+    return;
+  }
+  if (!properties_) {
+    return;
+  }
+  if (!is_active) {
+    OnClearTransform(properties_->ClearUnboundedWrapperTransform());
+    OnClearTransform(properties_->ClearUnboundedInnerTransform());
+    OnClearEffect(properties_->ClearUnboundedWrapperEffect());
+    return;
+  }
+
+  // Isolate the unbounded element by creating a wrapper transform and effect.
+  // The wrapper transform represents the native window's absolute position,
+  // while the inner transform applies the ancestor transforms (like rotation)
+  // relative to that window. The wrapper effect escapes all ancestor clips and
+  // forces a separate compositor render surface for the window's content.
+  gfx::Rect absolute_bounds =
+      object_.AbsoluteBoundingBoxRectForUnboundedElement();
+  if (auto* frame = object_.GetFrame()) {
+    if (auto* view = frame->View()) {
+      absolute_bounds = view->FrameToViewport(absolute_bounds);
+    }
+  }
+
+  gfx::Transform parent_to_root = GeometryMapper::SourceToDestinationProjection(
+      *context_.current.transform, TransformPaintPropertyNode::Root());
+
+  TransformPaintPropertyNode::State wrapper_transform_state;
+  wrapper_transform_state.transform_and_origin.matrix.Translate(
+      absolute_bounds.x(), absolute_bounds.y());
+  OnUpdateTransform(properties_->UpdateUnboundedWrapperTransform(
+      TransformPaintPropertyNode::Root(), std::move(wrapper_transform_state)));
+
+  TransformPaintPropertyNode::State inner_transform_state;
+  gfx::Transform inner_matrix;
+  inner_matrix.Translate(-absolute_bounds.x(), -absolute_bounds.y());
+  inner_matrix.PreConcat(parent_to_root);
+  inner_transform_state.transform_and_origin.matrix = inner_matrix;
+  OnUpdateTransform(properties_->UpdateUnboundedInnerTransform(
+      *properties_->UnboundedWrapperTransform(),
+      std::move(inner_transform_state)));
+
+  context_.current.transform = properties_->UnboundedInnerTransform();
+
+  EffectPaintPropertyNode::State wrapper_effect_state;
+  wrapper_effect_state.local_transform_space =
+      properties_->UnboundedWrapperTransform();
+  wrapper_effect_state.output_clip = &ClipPaintPropertyNode::Root();
+  wrapper_effect_state.direct_compositing_reasons =
+      CompositingReason::kUnboundedElement;
+  wrapper_effect_state.compositor_element_id = GetCompositorElementId(
+      CompositorElementIdNamespace::kUnboundedWrapperEffect);
+  OnUpdateEffect(properties_->UpdateUnboundedWrapperEffect(
+      EffectPaintPropertyNode::Root(), std::move(wrapper_effect_state)));
+  context_.current_effect = properties_->UnboundedWrapperEffect();
+
+  // Clear the kUnboundedElement bit from the direct compositing reasons for the
+  // inner nodes, so that the element's own effect node doesn't duplicate it.
+  full_context_.direct_compositing_reasons &=
+      ~CompositingReason::kUnboundedElement;
+
+  ResetPaintOffset();
+  context_.current.directly_composited_container_paint_offset_subpixel_delta =
+      PhysicalOffset();
+  fragment_data_.SetPaintOffset(context_.current.paint_offset);
 }
 
 void FragmentPaintPropertyTreeBuilder::UpdateEffect() {
@@ -2015,22 +2085,33 @@ void FragmentPaintPropertyTreeBuilder::UpdateEffect() {
       }
 
       EffectPaintPropertyNode::State state;
+      state.is_in_canvas_subtree = context_.is_in_canvas_subtree;
       state.local_transform_space = context_.current.transform;
       if (EffectCanUseCurrentClipAsOutputClip())
         state.output_clip = context_.current.clip;
       state.opacity = style.Opacity();
+      // Wait for all mask-image layers to load before rendering so we don't
+      // reveal partially-masked content while some layers are still loading.
+      // This only hides the element while requests are actually in flight:
+      // a failed load (e.g. server error) is a terminal state, and the
+      // resulting ImageChanged() notification triggers a paint property
+      // update that restores the opacity, with the errored layer treated as
+      // transparent black.
+      if (style.HasMask() &&
+          RuntimeEnabledFeatures::MaskWaitForAllImagesEnabled() &&
+          style.MaskLayers().AnyImageIsLoading()) {
+        state.opacity = 0.f;
+      }
       // If the mask image is not valid, it must be treated as a transparent
       // black image layer. See
       // https://drafts.fxtf.org/css-masking-1/#the-mask-image.
-      // MaskBoundingBox() returns nullopt for all invalid mask image layers.
+      // MaskBoundingBox() may return nullopt for invalid mask image layers.
+      // Note that AllImagesAreInvalid() also treats not-yet-loaded images as
+      // invalid, so this also hides the element while its only mask image is
+      // still loading.
       if (style.HasMask() && !style.BackdropFilter().IsEmpty() &&
-          RuntimeEnabledFeatures::
-              HandleInvalidMaskImageWithBackdropFilterEnabled()) {
-        // TODO(crbug.com/473987435): Consider waiting for all mask-image layers
-        // to load before rendering, instead of rendering after the first one.
-        if (style.MaskLayers().AllImagesAreInvalid()) {
-          state.opacity = 0.f;
-        }
+          style.MaskLayers().AllImagesAreInvalid()) {
+        state.opacity = 0.f;
       }
       if (object_.IsBlendingAllowed()) {
         state.blend_mode = ToSkBlendMode(style.GetBlendMode());
@@ -2115,6 +2196,7 @@ void FragmentPaintPropertyTreeBuilder::UpdateEffect() {
 
       if (mask_clip) {
         EffectPaintPropertyNode::State mask_state;
+        mask_state.is_in_canvas_subtree = context_.is_in_canvas_subtree;
         mask_state.local_transform_space = context_.current.transform;
         mask_state.output_clip = context_.current.clip;
         mask_state.blend_mode = SkBlendMode::kDstIn;
@@ -2138,6 +2220,7 @@ void FragmentPaintPropertyTreeBuilder::UpdateEffect() {
 
       if (needs_mask_based_clip_path_) {
         EffectPaintPropertyNode::State clip_path_state;
+        clip_path_state.is_in_canvas_subtree = context_.is_in_canvas_subtree;
         clip_path_state.local_transform_space = context_.current.transform;
         clip_path_state.output_clip = context_.current.clip;
         clip_path_state.blend_mode = SkBlendMode::kDstIn;
@@ -2198,6 +2281,7 @@ void FragmentPaintPropertyTreeBuilder::UpdateElementCaptureEffect() {
   CHECK(context_.current.clip);
   CHECK(context_.current.transform);
   EffectPaintPropertyNode::State state;
+  state.is_in_canvas_subtree = context_.is_in_canvas_subtree;
   state.direct_compositing_reasons = CompositingReason::kElementCapture;
   state.local_transform_space = context_.current.transform;
   state.output_clip = context_.current.clip;
@@ -2217,6 +2301,7 @@ void FragmentPaintPropertyTreeBuilder::UpdateViewTransitionScopeRootEffect() {
 
     if (transition) {
       EffectPaintPropertyNode::State state;
+      state.is_in_canvas_subtree = context_.is_in_canvas_subtree;
       state.local_transform_space = context_.current.transform;
       state.output_clip = context_.current.clip;
       state.compositor_element_id = CompositorElementIdFromUniqueObjectId(
@@ -2275,6 +2360,7 @@ void FragmentPaintPropertyTreeBuilder::UpdateViewTransitionEffect() {
       DCHECK(transition);
 
       EffectPaintPropertyNode::State state;
+      state.is_in_canvas_subtree = context_.is_in_canvas_subtree;
       state.direct_compositing_reasons =
           CompositingReason::kViewTransitionElement;
       state.local_transform_space = context_.current.transform;
@@ -2440,15 +2526,12 @@ void FragmentPaintPropertyTreeBuilder::UpdateFilter() {
   if (NeedsPaintPropertyUpdate()) {
     if (NeedsFilter(object_, full_context_)) {
       EffectPaintPropertyNode::State state;
+      state.is_in_canvas_subtree = context_.is_in_canvas_subtree;
       state.local_transform_space = context_.current.transform;
       EffectPaintPropertyNode::FilterInfo filter_info;
       UpdateFilterEffect(object_, properties_->Filter(), filter_info);
       bool is_filter_disallowed =
-          RuntimeEnabledFeatures::CanvasDrawElementEnabled(
-              object_.GetDocument().GetExecutionContext()) &&
-          IsA<Element>(object_.GetNode()) &&
-          To<Element>(object_.GetNode())->IsInCanvasSubtree() &&
-          filter_info.operations.OriginTainted();
+          state.is_in_canvas_subtree && filter_info.operations.OriginTainted();
       if (!(filter_info.operations.IsEmpty() || is_filter_disallowed)) {
         state.filter_info =
             std::make_unique<EffectPaintPropertyNode::FilterInfo>(
@@ -2528,7 +2611,7 @@ static FloatRoundedRect ToSnappedClipRect(const PhysicalRect& rect) {
 }
 
 static bool NeedsCssClip(const LayoutObject& object) {
-  if (object.HasClip()) {
+  if (object.HasCSSClip()) {
     DCHECK(!object.IsText());
     return true;
   }
@@ -2545,8 +2628,8 @@ void FragmentPaintPropertyTreeBuilder::UpdateCssClip() {
       // object must be a container for absolute position descendants, and will
       // copy from in-flow context later at updateOutOfFlowContext() step.
       DCHECK(object_.CanContainAbsolutePositionObjects());
-      const auto& clip_rect =
-          To<LayoutBox>(object_).ClipRect(context_.current.paint_offset);
+      PhysicalRect clip_rect = To<LayoutBox>(object_).CSSClipRect();
+      clip_rect.Move(context_.current.paint_offset);
       OnUpdateClip(properties_->UpdateCssClip(
           *context_.current.clip,
           ClipPaintPropertyNode::State(*context_.current.transform,
@@ -3075,8 +3158,8 @@ void FragmentPaintPropertyTreeBuilder::UpdateOverflowClip() {
       } else if (object_.IsBox()) {
         const PhysicalBoxFragment& box_fragment = BoxFragment();
         PhysicalRect clip_rect =
-            box_fragment.OverflowClipRect(context_.current.paint_offset,
-                                          FindPreviousBreakToken(box_fragment));
+            box_fragment.OverflowClipRect(FindPreviousBreakToken(box_fragment));
+        clip_rect.Move(context_.current.paint_offset);
 
         if (object_.IsLayoutReplaced()) {
           // TODO(crbug.com/1248598): Should we use non-snapped clip rect for
@@ -3088,10 +3171,13 @@ void FragmentPaintPropertyTreeBuilder::UpdateOverflowClip() {
                             ToSnappedClipRect(clip_rect));
         }
 
+        PhysicalRect clip_rect_excluding_overlay_scrollbars =
+            To<LayoutBox>(object_).OverflowClipRect(
+                kExcludeOverlayScrollbarSizeForHitTesting);
+        clip_rect_excluding_overlay_scrollbars.Move(
+            context_.current.paint_offset);
         state.layout_clip_rect_excluding_overlay_scrollbars =
-            FloatClipRect(gfx::RectF(To<LayoutBox>(object_).OverflowClipRect(
-                context_.current.paint_offset,
-                kExcludeOverlayScrollbarSizeForHitTesting)));
+            FloatClipRect(gfx::RectF(clip_rect_excluding_overlay_scrollbars));
       } else {
         DCHECK(object_.IsSVGViewportContainer());
         const auto& viewport_container =
@@ -3279,11 +3365,16 @@ void FragmentPaintPropertyTreeBuilder::UpdateContentTranslation() {
       return;
     }
 
-    gfx::Point scroll_origin =
-        overscroll_area_tracker->DOMSortedElements()[index - 1]
-            ->GetPseudoElement(kPseudoIdOverscrollAreaParent)
-            ->GetLayoutBox()
-            ->ScrollOrigin();
+    gfx::Point scroll_origin;
+    for (wtf_size_t i = index; i > 0; --i) {
+      PseudoElement* pseudo =
+          overscroll_area_tracker->DOMSortedElements()[i - 1]->GetPseudoElement(
+              kPseudoIdOverscrollAreaParent);
+      if (LayoutBox* layout_box = pseudo->GetLayoutBox()) {
+        scroll_origin = layout_box->ScrollOrigin();
+        break;
+      }
+    }
 
     TransformPaintPropertyNode::State state{
         {gfx::Transform::MakeTranslation(scroll_origin.OffsetFromOrigin())}};
@@ -3361,8 +3452,8 @@ void FragmentPaintPropertyTreeBuilder::UpdateScrollNode() {
   ScrollPaintPropertyNode::State state;
 
   // clip_rect covers inline-start gutter via https://crrev.com/c/2680371.
-  PhysicalRect clip_rect =
-      box.OverflowClipRectForScrollNode(context_.current.paint_offset);
+  PhysicalRect clip_rect = box.OverflowClipRectForScrollNode();
+  clip_rect.Move(context_.current.paint_offset);
   state.container_rect = ToPixelSnappedRect(clip_rect);
 
   if (RuntimeEnabledFeatures::ScrollbarGutterBugFixEnabled()) {
@@ -3403,8 +3494,29 @@ void FragmentPaintPropertyTreeBuilder::UpdateScrollNode() {
                              static_cast<cc::OverscrollBehavior::Type>(
                                  box.StyleRef().OverscrollBehaviorY()));
 
+  // Reset overscroll-behavior to 'auto' on non-scrollable axes so they do not
+  // block scroll chaining or trigger local overscroll effects.
+  PhysicalAxes scrollable_axes = scrollable_area->ScrollableAxes();
+  if (!(scrollable_axes & kPhysicalAxesHorizontal)) {
+    state.overscroll_behavior.x = cc::OverscrollBehavior::Type::kAuto;
+  }
+  if (!(scrollable_axes & kPhysicalAxesVertical)) {
+    state.overscroll_behavior.y = cc::OverscrollBehavior::Type::kAuto;
+  }
+
+  state.prevent_scroll_axis_locking =
+      (box.StyleRef().ScrollAxisLock() == EScrollAxisLock::kNone);
+
   if (auto* data = scrollable_area->GetSnapContainerData()) {
     state.snap_container_data = *data;
+  }
+
+  if (RuntimeEnabledFeatures::ScrollingContentsCullRectOnScrollNodeEnabled() &&
+      properties_->Scroll()) {
+    // Keep the original scrolling contents cull rect. Will update in
+    // CullRectUpdater.
+    state.scrolling_contents_cull_rect =
+        properties_->Scroll()->ScrollingContentsCullRect();
   }
 
   OnUpdateScroll(
@@ -3467,12 +3579,13 @@ void FragmentPaintPropertyTreeBuilder::UpdateOverflowControlEffects() {
 
     if (needs_effect_node) {
       EffectPaintPropertyNode::State effect_state;
+      effect_state.is_in_canvas_subtree = context_.is_in_canvas_subtree;
       effect_state.local_transform_space = context_.current.transform;
       effect_state.output_clip = output_clip;
       effect_state.compositor_element_id =
           scrollable_area->GetScrollbarElementId(orientation);
 
-      if (scrollbar_is_overlay) {
+      if (scrollbar_is_overlay && !effect_state.is_in_canvas_subtree) {
         effect_state.direct_compositing_reasons =
             CompositingReason::kActiveOpacityAnimation;
       }
@@ -3512,6 +3625,7 @@ void FragmentPaintPropertyTreeBuilder::UpdateOverflowControlEffects() {
     // transition, for the same reason as explained above. Scroll corners
     // are only painted for non-overlay scrollbars.
     EffectPaintPropertyNode::State effect_state;
+    effect_state.is_in_canvas_subtree = context_.is_in_canvas_subtree;
     effect_state.local_transform_space = context_.current.transform;
     effect_state.output_clip = output_clip;
     effect_state.compositor_element_id =
@@ -3708,13 +3822,6 @@ void FragmentPaintPropertyTreeBuilder::FixAbsoluteContextToContainerBox() {
         &parent_object->FirstFragment().LocalBorderBoxProperties().Transform();
   }
 
-  // If we have a scroll parent, use that. Otherwise use the root scroll node.
-  if (parent_properties->Scroll() && parent_properties->Scroll()->Parent()) {
-    context_.current.scroll = parent_properties->Scroll()->Parent();
-  } else {
-    context_.current.scroll = &ScrollPaintPropertyNode::Root();
-  }
-
   context_.current.paint_offset = parent_object->FirstFragment().PaintOffset();
 }
 
@@ -3729,13 +3836,8 @@ void FragmentPaintPropertyTreeBuilder::UpdatePaintOffset() {
         DCHECK_EQ(full_context_.container_for_absolute_position,
                   box_model_object.Container());
         SwitchToOOFContext(context_.absolute_position);
-        if (object_.StyleRef().StyleType() == kPseudoIdBackdrop) {
-          Element& overscroll_target = To<PseudoElement>(object_.GetNode())
-                                           ->UltimateOriginatingElement();
-          if (overscroll_target.GetPseudoElement(
-                  kPseudoIdOverscrollAreaParent)) {
-            FixAbsoluteContextToContainerBox();
-          }
+        if (object_.IsBackdropForOverscrollAreaParent()) {
+          FixAbsoluteContextToContainerBox();
         }
         break;
       }
@@ -4011,11 +4113,15 @@ void FragmentPaintPropertyTreeBuilder::UpdateForSelf() {
   }
 
   // For unbounded elements, we re-parent the clip tree to the root node, so
-  // these elements escape ancestor clips.
+  // these elements escape ancestor clips. Also build the wrapper transform
+  // and effect nodes to isolate the unbounded element in its own coordinate
+  // space and render surface.
+  bool is_unbounded_active = false;
   if (auto* html_element = DynamicTo<HTMLElement>(object_.GetNode());
       html_element && html_element->IsUnboundedElementActive()) {
     DCHECK(RuntimeEnabledFeatures::UnboundedElementEnabled());
     context_.current.clip = &ClipPaintPropertyNode::Root();
+    is_unbounded_active = true;
   }
 
   if (&fragment_data_ == &object_.FirstFragment())
@@ -4025,6 +4131,7 @@ void FragmentPaintPropertyTreeBuilder::UpdateForSelf() {
     // Update of PaintOffsetTranslation is checked by
     // FindPaintOffsetNeedingUpdateScope.
     UpdatePaintOffsetTranslation(paint_offset_translation);
+    UpdateUnboundedWrapperNodes(is_unbounded_active);
   }
 
 #if DCHECK_IS_ON()
@@ -4037,6 +4144,10 @@ void FragmentPaintPropertyTreeBuilder::UpdateForSelf() {
 #endif
 
   if (properties_) {
+    if (full_context_.direct_compositing_reasons &
+        CompositingReason::kCanvasChild) {
+      context_.is_in_canvas_subtree = true;
+    }
     UpdateStickyTranslation(sticky_offset);
     UpdateAnchorPositionScrollTranslation();
     if (object_.IsSVGChild()) {
@@ -4178,11 +4289,7 @@ void FragmentPaintPropertyTreeBuilder::PopulateBackdropFilterIfNeeded(
   }
   if (!operations.IsEmpty()) {
     bool is_filter_disallowed =
-        RuntimeEnabledFeatures::CanvasDrawElementEnabled(
-            object_.GetDocument().GetExecutionContext()) &&
-        IsA<Element>(object_.GetNode()) &&
-        To<Element>(object_.GetNode())->IsInCanvasSubtree() &&
-        operations.OriginTainted();
+        state.is_in_canvas_subtree && operations.OriginTainted();
     if (!is_filter_disallowed) {
       state.backdrop_filter_info =
           base::WrapUnique(new EffectPaintPropertyNode::BackdropFilterInfo{
@@ -4206,6 +4313,7 @@ void PaintPropertyTreeBuilder::InitPaintProperties() {
        NeedsScale(object_, context_.direct_compositing_reasons) ||
        NeedsOffset(object_, context_.direct_compositing_reasons) ||
        NeedsTransform(object_, context_.direct_compositing_reasons) ||
+       NeedsUnboundedWrapperNodes(object_) ||
        NeedsEffectIgnoringClipPathAnd2DScale(
            object_, context_.direct_compositing_reasons) ||
        NeedsClipPathClipOrMask(object_) ||
@@ -4413,16 +4521,17 @@ void PaintPropertyTreeBuilder::UpdateForSelf() {
     }
   }
 
-  // Resolve the current composited clip path animation status. This is needed
-  // to determine whether we need to initialize paint properties for this
-  // object.
-  const bool is_in_fragment_container =
-      !RuntimeEnabledFeatures::FragmentedOofInCbEnabled() && pre_paint_info_ &&
-      pre_paint_info_->fragmentainer_is_oof_containing_block &&
-      IsA<LayoutBox>(object_) &&
-      (To<LayoutBox>(object_).PhysicalFragmentCount() > 1);
+  // Our own FragmentData will not have been populated at this point, but
+  // clip-path animations need to know whether there are >1 fragments to
+  // determine composited eligibility. So, we use the information collected
+  // earlier in the walk.
+  const bool object_is_fragmented =
+      (object_.IsBox() && To<LayoutBox>(object_).PhysicalFragmentCount() > 1) ||
+      (pre_paint_info_ && object_.IsInline() &&
+       pre_paint_info_->is_inside_fragment_child &&
+       !pre_paint_info_->is_last_for_node);
   ClipPathClipper::FallbackClipPathAnimationIfNecessary(
-      object_, /* should_force_fallback = */ is_in_fragment_container);
+      object_, /* should_force_fallback = */ object_is_fragmented);
 
   UpdatePaintingLayer();
   UpdateFragmentData();
@@ -4694,10 +4803,7 @@ void PaintPropertyTreeBuilder::IssueInvalidationsAfterUpdate() {
     // Elements under canvas can only be rendered with `drawElementImage` and
     // need to use regular paint invalidation to ensure js is notified of
     // invalidations.
-    if (RuntimeEnabledFeatures::CanvasDrawElementEnabled(
-            object_.GetDocument().GetExecutionContext()) &&
-        IsA<Element>(object_.GetNode()) &&
-        To<Element>(object_.GetNode())->IsInCanvasSubtree()) {
+    if (object_.IsInCanvasSubtree()) {
       context_.painting_layer->SetNeedsRepaint();
     }
     object_.GetFrameView()->SetPaintArtifactCompositorNeedsUpdate();
@@ -4749,10 +4855,7 @@ bool PaintPropertyTreeBuilder::CanDoDeferredTransformNodeUpdate(
   // Elements under canvas can only be rendered with `drawElementImage` and need
   // to use regular paint invalidation to ensure js is notified of
   // invalidations.
-  if (RuntimeEnabledFeatures::CanvasDrawElementEnabled(
-          object.GetDocument().GetExecutionContext()) &&
-      IsA<Element>(object.GetNode()) &&
-      To<Element>(object.GetNode())->IsInCanvasSubtree()) {
+  if (object.IsInCanvasSubtree()) {
     return false;
   }
   return true;
@@ -4802,10 +4905,7 @@ bool PaintPropertyTreeBuilder::CanDoDeferredOpacityNodeUpdate(
   // Elements under canvas can only be rendered with `drawElementImage` and need
   // to use regular paint invalidation to ensure js is notified of
   // invalidations.
-  if (RuntimeEnabledFeatures::CanvasDrawElementEnabled(
-          object.GetDocument().GetExecutionContext()) &&
-      IsA<Element>(object.GetNode()) &&
-      To<Element>(object.GetNode())->IsInCanvasSubtree()) {
+  if (object.IsInCanvasSubtree()) {
     return false;
   }
 

@@ -51,7 +51,7 @@ class JacobiRotation {
   EIGEN_DEVICE_FUNC Scalar& s() { return m_s; }
   EIGEN_DEVICE_FUNC Scalar s() const { return m_s; }
 
-  /** Concatenates two planar rotation */
+  /** Concatenates two planar rotations */
   EIGEN_DEVICE_FUNC JacobiRotation operator*(const JacobiRotation& other) {
     using numext::conj;
     return JacobiRotation(m_c * other.m_c - conj(m_s) * other.m_s,
@@ -151,7 +151,7 @@ EIGEN_DEVICE_FUNC inline bool JacobiRotation<Scalar>::makeJacobi(const MatrixBas
  */
 template <typename Scalar>
 EIGEN_DEVICE_FUNC void JacobiRotation<Scalar>::makeGivens(const Scalar& p, const Scalar& q, Scalar* r) {
-  makeGivens(p, q, r, std::conditional_t<NumTraits<Scalar>::IsComplex, std::true_type, std::false_type>());
+  makeGivens(p, q, r, internal::bool_constant<NumTraits<Scalar>::IsComplex>());
 }
 
 // specialization for complexes
@@ -352,70 +352,73 @@ struct apply_rotation_in_the_plane_selector<Scalar, OtherScalar, SizeAtCompileTi
         (std::max<int>)(unpacket_traits<Packet>::alignment, unpacket_traits<OtherPacket>::alignment);
     constexpr Index PacketSize = packet_traits<Scalar>::size;
 
-    /*** dynamic-size vectorized paths ***/
-    if (size >= 2 * PacketSize && SizeAtCompileTime == Dynamic && ((incrx == 1 && incry == 1) || PacketSize == 1)) {
-      // both vectors are sequentially stored in memory => vectorization
-      constexpr Index Peeling = 2;
+    EIGEN_IF_CONSTEXPR (SizeAtCompileTime == Dynamic) {
+      /*** dynamic-size vectorized paths ***/
+      if (size >= 2 * PacketSize && ((incrx == 1 && incry == 1) || PacketSize == 1)) {
+        // both vectors are sequentially stored in memory => vectorization
+        constexpr Index Peeling = 2;
 
-      Index alignedStart = internal::first_default_aligned(y, size);
-      Index alignedEnd = alignedStart + ((size - alignedStart) / PacketSize) * PacketSize;
+        Index alignedStart = internal::first_default_aligned(y, size);
+        Index alignedEnd = alignedStart + ((size - alignedStart) / PacketSize) * PacketSize;
 
-      const OtherPacket pc = pset1<OtherPacket>(c);
-      const OtherPacket ps = pset1<OtherPacket>(s);
-      conj_helper<OtherPacket, Packet, NumTraits<OtherScalar>::IsComplex, false> pcj;
-      conj_helper<OtherPacket, Packet, false, false> pm;
+        const OtherPacket pc = pset1<OtherPacket>(c);
+        const OtherPacket ps = pset1<OtherPacket>(s);
+        conj_helper<OtherPacket, Packet, NumTraits<OtherScalar>::IsComplex, false> pcj;
+        conj_helper<OtherPacket, Packet, false, false> pm;
 
-      for (Index i = 0; i < alignedStart; ++i) {
-        Scalar xi = x[i];
-        Scalar yi = y[i];
-        x[i] = c * xi + numext::conj(s) * yi;
-        y[i] = -s * xi + numext::conj(c) * yi;
-      }
-
-      Scalar* EIGEN_RESTRICT px = x + alignedStart;
-      Scalar* EIGEN_RESTRICT py = y + alignedStart;
-
-      if (internal::first_default_aligned(x, size) == alignedStart) {
-        for (Index i = alignedStart; i < alignedEnd; i += PacketSize) {
-          Packet xi = pload<Packet>(px);
-          Packet yi = pload<Packet>(py);
-          pstore(px, pm.pmadd(pc, xi, pcj.pmul(ps, yi)));
-          pstore(py, pcj.pmsub(pc, yi, pm.pmul(ps, xi)));
-          px += PacketSize;
-          py += PacketSize;
+        for (Index i = 0; i < alignedStart; ++i) {
+          Scalar xi = x[i];
+          Scalar yi = y[i];
+          x[i] = c * xi + numext::conj(s) * yi;
+          y[i] = -s * xi + numext::conj(c) * yi;
         }
-      } else {
-        Index peelingEnd = alignedStart + ((size - alignedStart) / (Peeling * PacketSize)) * (Peeling * PacketSize);
-        for (Index i = alignedStart; i < peelingEnd; i += Peeling * PacketSize) {
-          Packet xi = ploadu<Packet>(px);
-          Packet xi1 = ploadu<Packet>(px + PacketSize);
-          Packet yi = pload<Packet>(py);
-          Packet yi1 = pload<Packet>(py + PacketSize);
-          pstoreu(px, pm.pmadd(pc, xi, pcj.pmul(ps, yi)));
-          pstoreu(px + PacketSize, pm.pmadd(pc, xi1, pcj.pmul(ps, yi1)));
-          pstore(py, pcj.pmsub(pc, yi, pm.pmul(ps, xi)));
-          pstore(py + PacketSize, pcj.pmsub(pc, yi1, pm.pmul(ps, xi1)));
-          px += Peeling * PacketSize;
-          py += Peeling * PacketSize;
-        }
-        if (alignedEnd != peelingEnd) {
-          Packet xi = ploadu<Packet>(x + peelingEnd);
-          Packet yi = pload<Packet>(y + peelingEnd);
-          pstoreu(x + peelingEnd, pm.pmadd(pc, xi, pcj.pmul(ps, yi)));
-          pstore(y + peelingEnd, pcj.pmsub(pc, yi, pm.pmul(ps, xi)));
-        }
-      }
 
-      for (Index i = alignedEnd; i < size; ++i) {
-        Scalar xi = x[i];
-        Scalar yi = y[i];
-        x[i] = c * xi + numext::conj(s) * yi;
-        y[i] = -s * xi + numext::conj(c) * yi;
+        Scalar* EIGEN_RESTRICT px = x + alignedStart;
+        Scalar* EIGEN_RESTRICT py = y + alignedStart;
+
+        if (internal::first_default_aligned(x, size) == alignedStart) {
+          for (Index i = alignedStart; i < alignedEnd; i += PacketSize) {
+            Packet xi = pload<Packet>(px);
+            Packet yi = pload<Packet>(py);
+            pstore(px, pm.pmadd(pc, xi, pcj.pmul(ps, yi)));
+            pstore(py, pcj.pmsub(pc, yi, pm.pmul(ps, xi)));
+            px += PacketSize;
+            py += PacketSize;
+          }
+        } else {
+          Index peelingEnd = alignedStart + ((size - alignedStart) / (Peeling * PacketSize)) * (Peeling * PacketSize);
+          for (Index i = alignedStart; i < peelingEnd; i += Peeling * PacketSize) {
+            Packet xi = ploadu<Packet>(px);
+            Packet xi1 = ploadu<Packet>(px + PacketSize);
+            Packet yi = pload<Packet>(py);
+            Packet yi1 = pload<Packet>(py + PacketSize);
+            pstoreu(px, pm.pmadd(pc, xi, pcj.pmul(ps, yi)));
+            pstoreu(px + PacketSize, pm.pmadd(pc, xi1, pcj.pmul(ps, yi1)));
+            pstore(py, pcj.pmsub(pc, yi, pm.pmul(ps, xi)));
+            pstore(py + PacketSize, pcj.pmsub(pc, yi1, pm.pmul(ps, xi1)));
+            px += Peeling * PacketSize;
+            py += Peeling * PacketSize;
+          }
+          if (alignedEnd != peelingEnd) {
+            Packet xi = ploadu<Packet>(x + peelingEnd);
+            Packet yi = pload<Packet>(y + peelingEnd);
+            pstoreu(x + peelingEnd, pm.pmadd(pc, xi, pcj.pmul(ps, yi)));
+            pstore(y + peelingEnd, pcj.pmsub(pc, yi, pm.pmul(ps, xi)));
+          }
+        }
+
+        for (Index i = alignedEnd; i < size; ++i) {
+          Scalar xi = x[i];
+          Scalar yi = y[i];
+          x[i] = c * xi + numext::conj(s) * yi;
+          y[i] = -s * xi + numext::conj(c) * yi;
+        }
+        return;
       }
     }
 
-    /*** fixed-size vectorized path ***/
-    else if (SizeAtCompileTime != Dynamic && MinAlignment >= RequiredAlignment) {
+    EIGEN_IF_CONSTEXPR (SizeAtCompileTime != Dynamic && MinAlignment >= RequiredAlignment) {
+      /*** fixed-size vectorized path ***/
       const OtherPacket pc = pset1<OtherPacket>(c);
       const OtherPacket ps = pset1<OtherPacket>(s);
       conj_helper<OtherPacket, Packet, NumTraits<OtherScalar>::IsComplex, false> pcj;
@@ -430,13 +433,12 @@ struct apply_rotation_in_the_plane_selector<Scalar, OtherScalar, SizeAtCompileTi
         px += PacketSize;
         py += PacketSize;
       }
+      return;
     }
 
     /*** non-vectorized path ***/
-    else {
-      apply_rotation_in_the_plane_selector<Scalar, OtherScalar, SizeAtCompileTime, MinAlignment, false>::run(
-          x, incrx, y, incry, size, c, s);
-    }
+    apply_rotation_in_the_plane_selector<Scalar, OtherScalar, SizeAtCompileTime, MinAlignment, false>::run(
+        x, incrx, y, incry, size, c, s);
   }
 };
 

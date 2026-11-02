@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import '/strings.m.js';
 import '//resources/cr_elements/cr_action_menu/cr_action_menu.js';
 import '//resources/cr_elements/cr_icon/cr_icon.js';
 import '//resources/cr_elements/cr_lazy_render/cr_lazy_render_lit.js';
@@ -10,14 +11,15 @@ import type {CrActionMenuElement} from '//resources/cr_elements/cr_action_menu/c
 import type {CrLazyRenderLitElement} from '//resources/cr_elements/cr_lazy_render/cr_lazy_render_lit.js';
 import {WebUiListenerMixinLit} from '//resources/cr_elements/web_ui_listener_mixin_lit.js';
 import {assert} from '//resources/js/assert.js';
+import {loadTimeData} from '//resources/js/load_time_data.js';
 import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
 
 import type {ShowAtConfigPrefs} from '../content/read_anything_types.js';
 import {ToolbarEvent} from '../content/read_anything_types.js';
 import {openMenu} from '../shared/common.js';
 
+import {getCss} from './action_menu.css.js';
 import type {MenuStateItem} from './menu_util.js';
-import {getCss} from './simple_action_menu.css.js';
 import {getHtml} from './simple_action_menu.html.js';
 
 export interface SimpleActionMenuElement {
@@ -53,6 +55,7 @@ export class SimpleActionMenuElement extends SimpleActionMenuElementBase {
       label: {type: String},
       nonModal: {type: Boolean},
       closeOnClick: {type: Boolean},
+      webuiRoundedIconsEnabled_: {type: Boolean},
     };
   }
 
@@ -64,6 +67,8 @@ export class SimpleActionMenuElement extends SimpleActionMenuElementBase {
   // Initializing to random value, but this is set by the parent.
   accessor eventName: ToolbarEvent = ToolbarEvent.THEME;
   accessor label: string = '';
+  protected accessor webuiRoundedIconsEnabled_: boolean =
+      loadTimeData.getBoolean('webuiRoundedIconsEnabled');
 
   open(anchor: HTMLElement, showAtConfig?: ShowAtConfigPrefs) {
     openMenu(
@@ -81,17 +86,14 @@ export class SimpleActionMenuElement extends SimpleActionMenuElementBase {
         Number.parseInt(currentTarget.dataset['index']!);
     const menuItem = this.menuItems[this.currentSelectedIndex];
     assert(menuItem);
-    const eventName = menuItem.eventName || this.eventName;
-    this.fire(eventName, {data: menuItem.data});
+    this.fire(this.eventName, {data: menuItem.data});
     if (this.closeOnClick) {
       this.$.lazyMenu.get().close();
     }
   }
 
-  protected isItemSelected_(index: number, item: MenuStateItem<unknown>):
-      boolean {
-    // Only use currentSelectedIndex if item.selected is undefined.
-    return item.selected ?? (index === this.currentSelectedIndex);
+  protected isItemSelected_(index: number): boolean {
+    return index === this.currentSelectedIndex;
   }
 
   protected doesItemHaveIcon_(item: MenuStateItem<unknown>): boolean {
@@ -100,15 +102,6 @@ export class SimpleActionMenuElement extends SimpleActionMenuElementBase {
 
   protected itemIcon_(item: MenuStateItem<unknown>): string {
     return item.icon === undefined ? '' : item.icon;
-  }
-
-  protected doesItemHaveHeader_(item: MenuStateItem<unknown>): boolean {
-    return chrome.readingMode.isLineFocusEnabled && !!item.header;
-  }
-
-  protected doesItemHaveHeaderSeparator_(item: MenuStateItem<unknown>):
-      boolean {
-    return chrome.readingMode.isLineFocusEnabled && !!item.header?.separator;
   }
 }
 

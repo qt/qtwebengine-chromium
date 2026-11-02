@@ -31,7 +31,7 @@
 #include <iterator>
 #include <utility>
 
-#include "src/dawn/common/Assert.h"
+#include "src/utils/assert.h"
 
 namespace dawn::platform {
 
@@ -150,6 +150,7 @@ std::unique_ptr<WaitableEvent> AsyncWorkerThreadPool::PostWorkerTask(
                     return static_cast<AsyncWorkerThreadPool*>(self)->TaskHandlingJobLoop();
                 },
                 this));
+            taskTracking->numJobs++;
         }
     });
 
@@ -169,7 +170,7 @@ std::unique_ptr<JobHandle> AsyncWorkerThreadPool::PostWorkerJob(PostWorkerJobCal
 
 JobStatus AsyncWorkerThreadPool::TaskHandlingJobLoop() {
     // By default, wait for 100ms between yielding.
-    static constexpr Nanoseconds kWaitDuration = Nanoseconds(100000000);
+    static constexpr Nanoseconds kWaitDuration = Nanoseconds(100000000u);
 
     Ref<AsyncTaskHandleImpl> task = nullptr;
     mTaskTracking.Use<NotifyType::None>([&](auto taskTracking) {

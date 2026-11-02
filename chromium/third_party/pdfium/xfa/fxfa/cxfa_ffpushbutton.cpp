@@ -7,6 +7,7 @@
 #include "xfa/fxfa/cxfa_ffpushbutton.h"
 
 #include "core/fxcrt/check.h"
+#include "core/fxcrt/mask.h"
 #include "v8/include/cppgc/visitor.h"
 #include "xfa/fgas/graphics/cfgas_gecolor.h"
 #include "xfa/fgas/graphics/cfgas_gepath.h"
@@ -82,21 +83,21 @@ bool CXFA_FFPushButton::LoadWidget() {
 }
 
 void CXFA_FFPushButton::UpdateWidgetProperty() {
-  uint32_t dwStyleEx = 0;
+  Mask<HighlightStyle> highlight;
   switch (button_->GetHighlight()) {
     case XFA_AttributeValue::Inverted:
-      dwStyleEx = XFA_FWL_PSBSTYLEEXT_HiliteInverted;
+      highlight |= HighlightStyle::kInverted;
       break;
     case XFA_AttributeValue::Outline:
-      dwStyleEx = XFA_FWL_PSBSTYLEEXT_HiliteOutLine;
+      highlight |= HighlightStyle::kOutline;
       break;
     case XFA_AttributeValue::Push:
-      dwStyleEx = XFA_FWL_PSBSTYLEEXT_HilitePush;
+      highlight |= HighlightStyle::kPush;
       break;
     default:
       break;
   }
-  GetNormalWidget()->ModifyStyleExts(dwStyleEx, 0xFFFFFFFF);
+  GetNormalWidget()->ModifyStyleExts(highlight.UncheckedValue(), 0xFFFFFFFF);
 }
 
 void CXFA_FFPushButton::PerformLayout() {
@@ -191,13 +192,13 @@ void CXFA_FFPushButton::RenderHighlightCaption(CFGAS_GEGraphics* pGS,
     mt.Concat(*pMatrix);
   }
 
-  uint32_t dwState = GetNormalWidget()->GetStates();
-  if (down_text_layout_ && (dwState & FWL_STATE_PSB_Pressed) &&
-      (dwState & FWL_STATE_PSB_Hovered)) {
+  Mask<pdfium::WidgetState> state = GetNormalWidget()->GetStates();
+  if (down_text_layout_ && (state & pdfium::WidgetState::kPressed) &&
+      (state & pdfium::WidgetState::kHovered)) {
     if (down_text_layout_->DrawString(pRenderDevice, mt, rtClip, 0)) {
       return;
     }
-  } else if (rollover_text_layout_ && (dwState & FWL_STATE_PSB_Hovered)) {
+  } else if (rollover_text_layout_ && (state & pdfium::WidgetState::kHovered)) {
     if (rollover_text_layout_->DrawString(pRenderDevice, mt, rtClip, 0)) {
       return;
     }
@@ -220,9 +221,11 @@ void CXFA_FFPushButton::OnProcessEvent(pdfium::CFWL_Event* pEvent) {
 void CXFA_FFPushButton::OnDrawWidget(CFGAS_GEGraphics* pGraphics,
                                      const CFX_Matrix& matrix) {
   auto* pWidget = GetNormalWidget();
-  if (pWidget->GetStyleExts() & XFA_FWL_PSBSTYLEEXT_HiliteInverted) {
-    if ((pWidget->GetStates() & FWL_STATE_PSB_Pressed) &&
-        (pWidget->GetStates() & FWL_STATE_PSB_Hovered)) {
+  auto exts_mask =
+      Mask<HighlightStyle>::FromUnderlyingUnchecked(pWidget->GetStyleExts());
+  if (exts_mask & HighlightStyle::kInverted) {
+    if ((pWidget->GetStates() & pdfium::WidgetState::kPressed) &&
+        (pWidget->GetStates() & pdfium::WidgetState::kHovered)) {
       CFX_RectF rtFill(0, 0, pWidget->GetWidgetRect().Size());
       float fLineWith = GetLineWidth();
       rtFill.Deflate(fLineWith, fLineWith);
@@ -235,9 +238,9 @@ void CXFA_FFPushButton::OnDrawWidget(CFGAS_GEGraphics* pGraphics,
     return;
   }
 
-  if (pWidget->GetStyleExts() & XFA_FWL_PSBSTYLEEXT_HiliteOutLine) {
-    if ((pWidget->GetStates() & FWL_STATE_PSB_Pressed) &&
-        (pWidget->GetStates() & FWL_STATE_PSB_Hovered)) {
+  if (exts_mask & HighlightStyle::kOutline) {
+    if ((pWidget->GetStates() & pdfium::WidgetState::kPressed) &&
+        (pWidget->GetStates() & pdfium::WidgetState::kHovered)) {
       float fLineWidth = GetLineWidth();
       pGraphics->SetStrokeColor(CFGAS_GEColor(ArgbEncode(255, 128, 255, 255)));
       pGraphics->SetLineWidth(fLineWidth);

@@ -237,7 +237,8 @@ LanguageCode AutofillManager::GetCurrentPageLanguage() {
   return LanguageCode(language_state->current_language());
 }
 
-void AutofillManager::OnDidAutofillForm(const FormData& form) {
+void AutofillManager::OnDidAutofillForm(const FormData& form,
+                                        RendererEventPassKey pass_key) {
   if (!IsValidFormData(form)) {
     return;
   }
@@ -248,16 +249,19 @@ void AutofillManager::OnDidAutofillForm(const FormData& form) {
                                               form.global_id())));
 }
 
-void AutofillManager::SuppressAutomaticRefills(const FillId& fill_id) {
+void AutofillManager::SuppressAutomaticRefills(const FillId& fill_id,
+                                               RendererEventPassKey pass_key) {
   SuppressAutomaticRefillsImpl(fill_id);
 }
 
-void AutofillManager::RequestRefill(const FillId& fill_id) {
+void AutofillManager::RequestRefill(const FillId& fill_id,
+                                    RendererEventPassKey pass_key) {
   RequestRefillImpl(fill_id);
 }
 
 void AutofillManager::OnFormSubmitted(const FormData& form,
-                                      const mojom::SubmissionSource source) {
+                                      const mojom::SubmissionSource source,
+                                      RendererEventPassKey pass_key) {
   if (!IsValidFormData(form)) {
     return;
   }
@@ -266,8 +270,23 @@ void AutofillManager::OnFormSubmitted(const FormData& form,
   NotifyObservers(&Observer::OnAfterFormSubmitted, form);
 }
 
+void AutofillManager::OnFormWithEmailVerificationTokenSubmitted(
+    const FormData& form,
+    const FieldGlobalId& field_id,
+    RendererEventPassKey pass_key) {
+  if (!IsValidFormData(form)) {
+    return;
+  }
+  NotifyObservers(&Observer::OnBeforeFormWithEmailVerificationTokenSubmitted,
+                  form, field_id);
+  OnFormWithEmailVerificationTokenSubmittedImpl(form, field_id);
+  NotifyObservers(&Observer::OnAfterFormWithEmailVerificationTokenSubmitted,
+                  form, field_id);
+}
+
 void AutofillManager::OnFormsSeen(std::vector<FormData> updated_forms,
-                                  std::vector<FormGlobalId> removed_form_ids) {
+                                  std::vector<FormGlobalId> removed_form_ids,
+                                  RendererEventPassKey pass_key) {
   auto erase_removed_forms = [&] {
     // Erase forms that have been removed from the DOM. This prevents
     // |form_structures_| from growing up its upper bound
@@ -303,10 +322,6 @@ void AutofillManager::OnFormsSeen(std::vector<FormData> updated_forms,
          const std::vector<FormData>& parsed_forms) {
         if (!parsed_forms.empty()) {
           self.OnFormsParsed(parsed_forms, forms_seen_timestamp);
-        }
-        if (!base::FeatureList::IsEnabled(
-                features::kAutofillManagerFiresOnAfterFooIfCacheIsFull)) {
-          updated_form_ids = base::ToVector(parsed_forms, &FormData::global_id);
         }
         self.NotifyObservers(&Observer::OnAfterFormsSeen, updated_form_ids,
                              removed_form_ids);
@@ -367,7 +382,7 @@ void AutofillManager::OnFormsParsed(const std::vector<FormData>& forms,
       queryable_forms.push_back(form);
     }
 
-    OnFormProcessed(form, *form_structure);
+    OnFormProcessed(*form_structure);
   }
 
   if (base::FeatureList::IsEnabled(features::debug::kShowDomNodeIDs)) {
@@ -395,7 +410,8 @@ void AutofillManager::OnFormsParsed(const std::vector<FormData>& forms,
 
 void AutofillManager::OnCaretMovedInFormField(const FormData& form,
                                               const FieldGlobalId& field_id,
-                                              const gfx::Rect& caret_bounds) {
+                                              const gfx::Rect& caret_bounds,
+                                              RendererEventPassKey pass_key) {
   if (!IsValidFormData(form)) {
     return;
   }
@@ -412,7 +428,8 @@ void AutofillManager::OnCaretMovedInFormField(const FormData& form,
 
 void AutofillManager::OnTextFieldValueChanged(const FormData& form,
                                               const FieldGlobalId& field_id,
-                                              const base::TimeTicks timestamp) {
+                                              const base::TimeTicks timestamp,
+                                              RendererEventPassKey pass_key) {
   if (!IsValidFormData(form)) {
     return;
   }
@@ -428,7 +445,8 @@ void AutofillManager::OnTextFieldValueChanged(const FormData& form,
 }
 
 void AutofillManager::OnTextFieldDidScroll(const FormData& form,
-                                           const FieldGlobalId& field_id) {
+                                           const FieldGlobalId& field_id,
+                                           RendererEventPassKey pass_key) {
   if (!IsValidFormData(form)) {
     return;
   }
@@ -443,7 +461,8 @@ void AutofillManager::OnTextFieldDidScroll(const FormData& form,
 
 void AutofillManager::OnSelectControlSelectionChanged(
     const FormData& form,
-    const FieldGlobalId& field_id) {
+    const FieldGlobalId& field_id,
+    RendererEventPassKey pass_key) {
   if (!IsValidFormData(form)) {
     return;
   }
@@ -462,7 +481,8 @@ void AutofillManager::OnAskForValuesToFill(
     const FieldGlobalId& field_id,
     const gfx::Rect& caret_bounds,
     AutofillSuggestionTriggerSource trigger_source,
-    std::optional<PasswordSuggestionRequest> password_request) {
+    std::optional<PasswordSuggestionRequest> password_request,
+    RendererEventPassKey pass_key) {
   if (!IsValidFormData(form)) {
     return;
   }
@@ -477,7 +497,8 @@ void AutofillManager::OnAskForValuesToFill(
 }
 
 void AutofillManager::OnFocusOnFormField(const FormData& form,
-                                         const FieldGlobalId& field_id) {
+                                         const FieldGlobalId& field_id,
+                                         RendererEventPassKey pass_key) {
   if (!IsValidFormData(form)) {
     return;
   }
@@ -490,17 +511,17 @@ void AutofillManager::OnFocusOnFormField(const FormData& form,
                                         form.global_id(), field_id)));
 }
 
-void AutofillManager::OnFocusOnNonFormField() {
+void AutofillManager::OnFocusOnNonFormField(RendererEventPassKey pass_key) {
   NotifyObservers(&Observer::OnBeforeFocusOnNonFormField);
   OnFocusOnNonFormFieldImpl();
   NotifyObservers(&Observer::OnAfterFocusOnNonFormField);
 }
 
-void AutofillManager::OnDidEndTextFieldEditing() {
+void AutofillManager::OnDidEndTextFieldEditing(RendererEventPassKey pass_key) {
   OnDidEndTextFieldEditingImpl();
 }
 
-void AutofillManager::OnHidePopup() {
+void AutofillManager::OnHidePopup(RendererEventPassKey pass_key) {
   OnHidePopupImpl();
 }
 
@@ -513,13 +534,10 @@ void AutofillManager::OnSuggestionsHidden(SuggestionHidingReason reason) {
   NotifyObservers(&Observer::OnSuggestionsHidden, reason);
 }
 
-void AutofillManager::OnEmailVerificationTokenShared(FieldGlobalId field_id) {
-  NotifyObservers(&Observer::OnEmailVerificationTokenShared, field_id);
-}
-
 void AutofillManager::OnSelectFieldOptionsDidChange(
     const FormData& form,
-    const FieldGlobalId& field_id) {
+    const FieldGlobalId& field_id,
+    RendererEventPassKey pass_key) {
   if (!IsValidFormData(form)) {
     return;
   }
@@ -536,7 +554,8 @@ void AutofillManager::OnSelectFieldOptionsDidChange(
 void AutofillManager::OnJavaScriptChangedAutofilledValue(
     const FormData& form,
     const FieldGlobalId& field_id,
-    const std::u16string& old_value) {
+    const std::u16string& old_value,
+    RendererEventPassKey pass_key) {
   if (!IsValidFormData(form)) {
     return;
   }
@@ -549,6 +568,20 @@ void AutofillManager::OnJavaScriptChangedAutofilledValue(
           .Then(NotifyObserversCallback(
               &Observer::OnAfterJavaScriptChangedAutofilledValue,
               form.global_id(), field_id)));
+}
+
+void AutofillManager::OnDidDetectJavaScriptAutofill(
+    const FormData& form,
+    const FieldGlobalId& trigger_field_id,
+    const std::vector<JavaScriptFieldModification>& field_modifications,
+    RendererEventPassKey pass_key) {
+  if (!IsValidFormData(form)) {
+    return;
+  }
+  ParseFormAsync(
+      form, ParsingCallback(&AutofillManager::OnDidDetectJavaScriptAutofillImpl,
+                            trigger_field_id, field_modifications)
+                .Then(base::BindOnce([](AutofillManager&) {})));
 }
 
 const FormStructure* AutofillManager::FindCachedFormById(
@@ -574,6 +607,16 @@ FormStructure* AutofillManager::FindCachedFormById(
     const FormMutationPassKey& pass_key) {
   return const_cast<FormStructure*>(
       std::as_const(*this).FindCachedFormById(form_id));
+}
+
+AutofillManager::FormAndField AutofillManager::FindFormAndField(
+    const FormGlobalId& form_id,
+    const FieldGlobalId& field_id) const {
+  const FormStructure* cached_form = FindCachedFormById(form_id);
+  if (!cached_form) {
+    return {};
+  }
+  return {cached_form, cached_form->GetFieldById(field_id)};
 }
 
 void AutofillManager::ForEachCachedForm(
@@ -673,10 +716,7 @@ void AutofillManager::ParseFormAsync(
       kAutofillManagerMaxFormCacheSize) {
     LOG_AF(log_manager()) << LoggingScope::kAbortParsing
                           << LogMessage::kAbortParsingTooManyForms << form;
-    if (base::FeatureList::IsEnabled(
-            features::kAutofillManagerFiresOnAfterFooIfCacheIsFull)) {
       std::move(callback).Run(*this, form);
-    }
     return;
   }
 
@@ -980,7 +1020,7 @@ void AutofillManager::OnLoadedServerPredictions(
                       /*small_forms_were_parsed=*/client().IsTabInActorMode());
       if (base::FeatureList::IsEnabled(
               features::kAutofillServerQueryPredictionsEarly)) {
-        OnFormProcessed(form, *form_structure);
+        OnFormProcessed(*form_structure);
       }
     }
     LogServerQueryResponseMetrics(queried_forms);

@@ -164,25 +164,15 @@ struct State {
     }
 
     core::ir::Call* Splat(const core::type::SubgroupMatrix* sm, core::ir::Value* value) {
-        return b.CallExplicit<hlsl::ir::BuiltinCall>(sm, hlsl::BuiltinFn::kSplat, Vector{sm},
-                                                     value);
+        return b.CallExplicit<hlsl::ir::BuiltinCall>(
+            sm, hlsl::BuiltinFn::kSplat, Vector<core::ir::TemplateParameter, 1>{sm}, value);
     }
 };
 
 }  // namespace
 
 Result<SuccessType> ReplaceSubgroupMatrixInit(core::ir::Module& ir) {
-    AssertValid(ir,
-                core::ir::Capabilities{
-                    core::ir::Capability::kAllow8BitIntegers,
-                    core::ir::Capability::kAllow16BitIntegers,
-                    core::ir::Capability::kAllowVectorElementPointer,
-                    core::ir::Capability::kAllowHandleVarsWithoutBindings,
-                    core::ir::Capability::kAllowClipDistancesOnF32ScalarAndVector,
-                    core::ir::Capability::kAllowDuplicateBindings,
-                    core::ir::Capability::kAllowNonCoreTypes,
-                },
-                "before hlsl.ReplaceSubgroupMatrixInit");
+    AssertValid(ir, "before hlsl.ReplaceSubgroupMatrixInit");
 
     State{ir}.Process();
 

@@ -271,7 +271,7 @@ class EigenSolver {
    * (where \f$ n \f$ is the size of the matrix) if \p computeEigenvectors
    * is true, and \f$ 10n^3 \f$ if \p computeEigenvectors is false.
    *
-   * This method reuses of the allocated data in the EigenSolver object.
+   * This method reuses the allocated data in the EigenSolver object.
    *
    * Example: \include EigenSolver_compute.cpp
    * Output: \verbinclude EigenSolver_compute.out

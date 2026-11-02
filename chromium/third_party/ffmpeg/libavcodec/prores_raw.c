@@ -21,9 +21,12 @@
  */
 
 #include "libavutil/avassert.h"
+#include "libavutil/intfloat.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/mem_internal.h"
 #include "libavutil/mem.h"
+#include "libavutil/raw_color_params.h"
+#include "libavutil/rational.h"
 
 #define CACHED_BITSTREAM_READER !ARCH_X86_32
 
@@ -408,7 +411,12 @@ static int decode_frame(AVCodecContext *avctx,
         avctx->pix_fmt = ret;
     }
 
-    bytestream2_skip(&gb_hdr, 1 * 4); /* 4 reserved bytes */
+    /* RecommendedCrop: pixel margins to discard after debayer. Order is
+     * left/right/top/bottom */
+    uint8_t crop_l = bytestream2_get_byte(&gb_hdr);
+    uint8_t crop_r = bytestream2_get_byte(&gb_hdr);
+    uint8_t crop_t = bytestream2_get_byte(&gb_hdr);
+    uint8_t crop_b = bytestream2_get_byte(&gb_hdr);
 
     /* BayerPattern: 0=RGGB, 1/2/3 = alternates */
     int bayer_pattern = bytestream2_get_be16(&gb_hdr) & 0x3;
@@ -417,16 +425,31 @@ static int decode_frame(AVCodecContext *avctx,
         return AVERROR_PATCHWELCOME;
     }
 
-    bytestream2_skip(&gb_hdr, 2); /* senselValueRange (white_level = value + 0x100, black_level = 0x100) */
-    bytestream2_skip(&gb_hdr, 4); /* WhiteBalanceRedFactor (float, pre-debayer R gain) */
-    bytestream2_skip(&gb_hdr, 4); /* WhiteBalanceBlueFactor (float, pre-debayer B gain) */
-    bytestream2_skip(&gb_hdr, 4 * 3 * 3); /* ColorMatrix (3x3 float, camera RGB -> Rec.2020 linear, row-major) */
-    bytestream2_skip(&gb_hdr, 4); /* GainFactor (float, post-matrix scene-linear scale) */
-    bytestream2_skip(&gb_hdr, 2); /* WhiteBalanceCCT (Kelvin, informational) */
+    /* senselValueRange: black_level is hardcoded to 0x100,
+     * white_level = senselValueRange + 0x100 */
+    uint16_t black_level = 0x100;
+    uint16_t white_level = bytestream2_get_be16(&gb_hdr) + 0x100;
+
+    float wb_red  = av_int2float(bytestream2_get_be32(&gb_hdr)); /* WhiteBalanceRedFactor */
+    float wb_blue = av_int2float(bytestream2_get_be32(&gb_hdr)); /* WhiteBalanceBlueFactor */
+
+    /* ColorMatrix (3x3 float, camera RGB -> CIE 1931 XYZ D65, row-major) */
+    float color_matrix[3][3];
+    for (int r = 0; r < 3; r++)
+        for (int c = 0; c < 3; c++)
+            color_matrix[r][c] = av_int2float(bytestream2_get_be32(&gb_hdr));
+
+    float gain = av_int2float(bytestream2_get_be32(&gb_hdr)); /* GainFactor (post-matrix mult) */
+    uint16_t wb_cct = bytestream2_get_be16(&gb_hdr); /* WhiteBalanceCCT (Kelvin, informational) */
 
     /* Flags */
     int flags = bytestream2_get_be16(&gb_hdr);
     int align = (flags >> 1) & 0x7;
+    if (align > 4) {
+        av_log(avctx, AV_LOG_ERROR,
+               "Invalid tile alignment %d (max 4)\n", align);
+        return AVERROR_INVALIDDATA;
+    }
 
     /* Quantization matrix */
     if (flags & 1)
@@ -494,6 +517,20 @@ static int decode_frame(AVCodecContext *avctx,
     }
     av_assert1(n == s->nb_tiles);
 
+    /**
+     * Any data between last tile and frame end is vendor-specific metadata:
+     * [psim record]  4 be32 size + "psim" + pascal string + payload
+     * <more records, if any>, or:
+     * [eomd]         4 be32 size=8 + "eomd" fourcc (end of metadata)
+     * [padding]      zero-fill to next-frame alignment
+     *
+     * Known records (feel free to extend):
+     * com.panasonic.Semi-Pro.optical_correction (IEEE doubles):
+     *     R - radial polynomial? + padding: [ k0, k1, k2, k3, pad0, pad1 ]
+     *     G, B: same
+     *     Trailer: optical center in normalized frame coords: [ x, y ]
+     */
+
     ret = ff_thread_get_buffer(avctx, frame, 0);
     if (ret < 0)
         return ret;
@@ -529,8 +566,28 @@ static int decode_frame(AVCodecContext *avctx,
         avctx->execute2(avctx, decode_tiles, frame, NULL, s->nb_tiles);
     }
 
-    frame->pict_type = AV_PICTURE_TYPE_I;
-    frame->flags    |= AV_FRAME_FLAG_KEY;
+    frame->pict_type   = AV_PICTURE_TYPE_I;
+    frame->flags      |= AV_FRAME_FLAG_KEY;
+    frame->crop_left   = crop_l;
+    frame->crop_right  = crop_r;
+    frame->crop_top    = crop_t;
+    frame->crop_bottom = crop_b;
+
+    AVRawColorParams *rcp = av_raw_color_params_create_side_data(frame);
+    if (!rcp)
+        return AVERROR(ENOMEM);
+    rcp->type        = AV_RAW_COLOR_PARAMS_PRORES_RAW;
+    rcp->black_level = av_make_q(black_level, 65535);
+    rcp->white_level = av_make_q(white_level, 65535);
+    rcp->wb_cct      = wb_cct;
+
+    AVProResRawColorParams *pr = &rcp->codec.prores_raw;
+    pr->wb_red  = av_d2q(wb_red, INT_MAX);
+    pr->wb_blue = av_d2q(wb_blue, INT_MAX);
+    pr->gain    = av_d2q(gain, INT_MAX);
+    for (int r = 0; r < 3; r++)
+        for (int c = 0; c < 3; c++)
+            pr->color_matrix[r][c] = av_d2q(color_matrix[r][c], INT_MAX);
 
     *got_frame_ptr = 1;
 

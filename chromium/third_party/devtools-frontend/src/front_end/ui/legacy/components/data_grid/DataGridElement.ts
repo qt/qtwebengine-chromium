@@ -4,7 +4,7 @@
 /* eslint-disable @devtools/no-imperative-dom-api */
 
 import type * as Platform from '../../../../core/platform/platform.js';
-import type * as TextUtils from '../../../../models/text_utils/text_utils.js';
+import type * as TextUtils from '../../../../core/text_utils/text_utils.js';
 import * as Lit from '../../../lit/lit.js';
 import * as UI from '../../legacy.js';
 
@@ -12,10 +12,12 @@ import dataGridStyles from './dataGrid.css.js';
 import {
   Align,
   type ColumnDescriptor,
+  DataGridImpl,
+  DataGridNode,
   DataType,
   Events as DataGridEvents,
   Order,
-  type ResizeMethod
+  type ResizeMethod,
 } from './DataGrid.js';
 import {SortableDataGrid, SortableDataGridNode} from './SortableDataGrid.js';
 
@@ -50,25 +52,50 @@ const DUMMY_COLUMN_ID = 'dummy';  // SortableDataGrid.create requires at least o
  * @attribute striped If true, the data grid will have striped rows.
  * @attribute displayName
  */
-export class DataGridElement extends UI.UIUtils.HTMLElementWithLightDOMTemplate {
-  static readonly observedAttributes = ['striped', 'name', 'inline', 'resize'];
+type DataGridElementNode = SortableNode|DynamicHeightNode;
 
-  #dataGrid = SortableDataGrid.create([DUMMY_COLUMN_ID], [], '') as SortableDataGrid<DataGridElementNode>;
+const elementToNode = new WeakMap<Element, DataGridElementNode>();
+
+export class DataGridElement extends UI.UIUtils.HTMLElementWithLightDOMTemplate {
+  static readonly observedAttributes = ['striped', 'name', 'inline', 'resize', 'highlight'];
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  #dataGrid!: DataGridImpl<any>;
   #resizeObserver = new ResizeObserver(() => {
     if (!this.inline) {
       this.#dataGrid.onResize();
     }
   });
+  #scrollResizeObserver = new ResizeObserver(() => {
+    if (this.hasAttribute('autoscroll') && this.#stickToBottom) {
+      const scroll = this.#dataGrid.scrollContainer;
+      scroll.scrollTop = scroll.scrollHeight;
+    }
+  });
+  #stickToBottom = true;
   #shadowRoot: ShadowRoot;
   #columns: ColumnDescriptor[] = [];
   #hideableColumns = new Set<string>();
   #hiddenColumns = new Set<string>();
   #usedCreationNode: DataGridElementNode|null = null;
+  #sortingChangedScheduled = false;
 
   constructor() {
     super();
     // TODO(dsv): Move this to the data_grid.css once all the data grid usage is migrated to this web component.
     this.style.display = 'flex';
+
+    const autoRowHeight = this.getAttribute('row-height') === 'auto';
+    if (autoRowHeight) {
+      this.#dataGrid = new DataGridImpl<DynamicHeightNode>({
+        displayName: this.getAttribute('name') ?? '',
+        columns: [],
+      });
+      this.#dataGrid.element.classList.add('auto-row-height');
+    } else {
+      this.#dataGrid = SortableDataGrid.create([DUMMY_COLUMN_ID], [], '') as SortableDataGrid<SortableNode>;
+    }
+
     this.#dataGrid.element.style.flex = 'auto';
 
     this.#shadowRoot = UI.UIUtils.createShadowRootWithCoreStyles(this, {delegatesFocus: true, cssFile: dataGridStyles});
@@ -77,8 +104,8 @@ export class DataGridElement extends UI.UIUtils.HTMLElementWithLightDOMTemplate 
     this.#dataGrid.addEventListener(
         DataGridEvents.SELECTED_NODE,
         e => (e.data as DataGridElementNode).configElement.dispatchEvent(new CustomEvent('select')));
-    this.#dataGrid.addEventListener(
-        DataGridEvents.DESELECTED_NODE, () => this.dispatchEvent(new CustomEvent('deselect')));
+    this.#dataGrid.addEventListener(DataGridEvents.DESELECTED_NODE,
+                                    () => this.dispatchEvent(new CustomEvent('deselect')));
     this.#dataGrid.addEventListener(
         DataGridEvents.OPENED_NODE,
         e => (e.data as DataGridElementNode).configElement.dispatchEvent(new CustomEvent('open')));
@@ -89,7 +116,7 @@ export class DataGridElement extends UI.UIUtils.HTMLElementWithLightDOMTemplate 
         DataGridEvents.COLLAPSED_NODE,
         e => (e.data as DataGridElementNode).configElement.dispatchEvent(new CustomEvent('collapse')));
     this.#dataGrid.addEventListener(DataGridEvents.SORTING_CHANGED, () => this.dispatchEvent(new CustomEvent('sort', {
-      detail: {columnId: this.#dataGrid.sortColumnId(), ascending: this.#dataGrid.isSortOrderAscending()}
+      detail: {columnId: this.#dataGrid.sortColumnId(), ascending: this.#dataGrid.isSortOrderAscending()},
     })));
     this.#dataGrid.setRowContextMenuCallback((menu, node) => {
       (node as DataGridElementNode).configElement.dispatchEvent(new CustomEvent('contextmenu', {detail: menu}));
@@ -116,6 +143,22 @@ export class DataGridElement extends UI.UIUtils.HTMLElementWithLightDOMTemplate 
     this.addNodes(this.templateRoot.querySelectorAll('tr'));
   }
 
+  connectedCallback(): void {
+    const scroll = this.#dataGrid.scrollContainer;
+    scroll.addEventListener('scroll', this.#onScroll);
+    this.#scrollResizeObserver.observe(scroll.firstElementChild || scroll);
+  }
+
+  disconnectedCallback(): void {
+    const scroll = this.#dataGrid.scrollContainer;
+    scroll.removeEventListener('scroll', this.#onScroll);
+    this.#scrollResizeObserver.disconnect();
+  }
+
+  #onScroll = (): void => {
+    this.#stickToBottom = UI.UIUtils.isScrolledToBottom(this.#dataGrid.scrollContainer);
+  };
+
   attributeChangedCallback(name: string, oldValue: string|null, newValue: string|null): void {
     if (oldValue === newValue) {
       return;
@@ -132,6 +175,11 @@ export class DataGridElement extends UI.UIUtils.HTMLElementWithLightDOMTemplate 
         break;
       case 'resize':
         this.#dataGrid.setResizeMethod(newValue as ResizeMethod);
+        break;
+      case 'highlight':
+        queueMicrotask(() => {
+          this.#revealHighlightedNode(Number(newValue));
+        });
         break;
     }
   }
@@ -169,8 +217,12 @@ export class DataGridElement extends UI.UIUtils.HTMLElementWithLightDOMTemplate 
   }
 
   set filters(filters: TextUtils.TextUtils.ParsedFilter[]) {
-    this.#dataGrid.setFilters(filters);
-    this.#dataGrid.element.setAttribute('aria-rowcount', String(this.#dataGrid.getNumberOfRows()));
+    if (this.#dataGrid instanceof SortableDataGrid) {
+      this.#dataGrid.setFilters(filters);
+      this.#dataGrid.element.setAttribute('aria-rowcount', String(this.#dataGrid.getNumberOfRows()));
+    } else {
+      this.#dataGrid.element.setAttribute('aria-rowcount', String(this.#dataGrid.rootNode().children.length));
+    }
   }
 
   get columns(): ColumnDescriptor[] {
@@ -183,6 +235,24 @@ export class DataGridElement extends UI.UIUtils.HTMLElementWithLightDOMTemplate 
       hasChildren = Boolean(dataRow.querySelector('td table'));
     }
     dataGridNode.setHasChildren(hasChildren);
+  }
+
+  #revealHighlightedNode(index: number): void {
+    if (isNaN(index) || index < 1) {
+      return;
+    }
+    let count = 0;
+    let node = this.#dataGrid.rootNode().traverseNextNode(true) as DataGridElementNode | null;
+    while (node) {
+      if (node.configElement.hasAttribute('highlighted')) {
+        count++;
+        if (count === index) {
+          node.revealAndSelect();
+          return;
+        }
+      }
+      node = node.traverseNextNode(true) as DataGridElementNode | null;
+    }
   }
 
   #updateColumns(): void {
@@ -198,10 +268,15 @@ export class DataGridElement extends UI.UIUtils.HTMLElementWithLightDOMTemplate 
       const titleDOMFragment = column.firstElementChild ? document.createDocumentFragment() : undefined;
       if (titleDOMFragment) {
         title = '';
-        for (const child of column.children) {
+        for (const child of column.childNodes) {
           titleDOMFragment.appendChild(child.cloneNode(true));
-          title += child.shadowRoot ? child.shadowRoot.textContent : child.textContent;
+          if (child instanceof Element && child.shadowRoot) {
+            title += child.shadowRoot.textContent;
+          } else if (child.nodeType !== Node.COMMENT_NODE) {
+            title += child.textContent ?? '';
+          }
         }
+        title = title.trim();
       }
       const sortable = hasBooleanAttribute(column, 'sortable');
       const width = column.getAttribute('width') ?? undefined;
@@ -219,6 +294,7 @@ export class DataGridElement extends UI.UIUtils.HTMLElementWithLightDOMTemplate 
       const sort = column.getAttribute('sort') === 'descending' ? Order.Descending :
           column.getAttribute('sort') === 'ascending'           ? Order.Ascending :
                                                                   undefined;
+      const disclosure = hasBooleanAttribute(column, 'disclosure');
       const columnDescriptor = {
         id,
         title: title as Platform.UIString.LocalizedString,
@@ -231,6 +307,7 @@ export class DataGridElement extends UI.UIUtils.HTMLElementWithLightDOMTemplate 
         weight,
         editable,
         dataType,
+        disclosure,
       };
       this.#dataGrid.addColumn(columnDescriptor);
       this.#columns.push(columnDescriptor);
@@ -239,11 +316,9 @@ export class DataGridElement extends UI.UIUtils.HTMLElementWithLightDOMTemplate 
       }
     }
     const visibleColumns = new Set(this.#columns.map(({id}) => id).filter(id => !this.#hiddenColumns.has(id)));
-    if (visibleColumns.size) {
-      this.#dataGrid.setColumnsVisibility(visibleColumns);
-    }
+    this.#dataGrid.setColumnsVisibility(visibleColumns);
     this.#dataGrid.setEditCallback(hasEditableColumn ? this.#editCallback.bind(this) : undefined, INTERNAL_TOKEN);
-    this.#dataGrid.deleteCallback = hasEditableColumn ? this.#deleteCallback.bind(this) : undefined;
+    this.#dataGrid.deleteCallback = this.#deleteCallback.bind(this);
   }
 
   #needUpdateColumns(mutationList: MutationRecord[]): boolean {
@@ -263,7 +338,7 @@ export class DataGridElement extends UI.UIUtils.HTMLElementWithLightDOMTemplate 
     return false;
   }
 
-  #getDataRows(nodes: NodeList): HTMLElement[] {
+  #getDataRows(nodes: NodeList|Node[]): HTMLElement[] {
     return [...nodes]
         .flatMap(node => {
           if (node instanceof HTMLTableRowElement) {
@@ -277,7 +352,7 @@ export class DataGridElement extends UI.UIUtils.HTMLElementWithLightDOMTemplate 
         .filter(node => node.querySelector('td') && !hasBooleanAttribute(node, 'placeholder'));
   }
 
-  #getStyleElements(nodes: NodeList): HTMLElement[] {
+  #getStyleElements(nodes: NodeList|Node[]): HTMLElement[] {
     return [...nodes].flatMap(node => {
       if (node instanceof HTMLStyleElement) {
         return [node];
@@ -291,7 +366,7 @@ export class DataGridElement extends UI.UIUtils.HTMLElementWithLightDOMTemplate 
 
   #findNextExistingNode(element: Element): DataGridElementNode|null {
     for (let e = element.nextElementSibling; e; e = e.nextElementSibling) {
-      const nextNode = DataGridElementNode.get(e);
+      const nextNode = getNode(e);
       if (nextNode) {
         return nextNode;
       }
@@ -299,14 +374,22 @@ export class DataGridElement extends UI.UIUtils.HTMLElementWithLightDOMTemplate 
     return null;
   }
 
-  override addNodes(nodes: NodeList): void {
+  override addNodes(nodes: NodeList|Node[]): void {
     for (const element of this.#getDataRows(nodes)) {
+      if (getNode(element)) {
+        continue;
+      }
       const parentRow = element.parentElement?.closest('td')?.closest('tr');
-      const parentDataGridNode = parentRow ? DataGridElementNode.get(parentRow) : undefined;
+      const parentDataGridNode = parentRow ? getNode(parentRow) : undefined;
+      if (parentRow && !parentDataGridNode) {
+        continue;
+      }
       const parentNode = parentDataGridNode || this.#dataGrid.rootNode();
       const nextNode = this.#findNextExistingNode(element);
       const index = nextNode ? parentNode.children.indexOf(nextNode) : parentNode.children.length;
-      const node = new DataGridElementNode(element, this);
+
+      const node = this.#dataGrid instanceof SortableDataGrid ? new SortableNode(element, this) :
+                                                                new DynamicHeightNode(element, this);
       this.#updateHasChildren(node, element);
       if ((parentRow || node.hasChildren()) && !this.#dataGrid.disclosureColumnId) {
         this.#dataGrid.disclosureColumnId = this.#columns[0].id;
@@ -324,18 +407,21 @@ export class DataGridElement extends UI.UIUtils.HTMLElementWithLightDOMTemplate 
       if (hasBooleanAttribute(element, 'highlighted')) {
         node.setHighlighted(true);
       }
+      if (hasBooleanAttribute(element, 'expanded')) {
+        node.expand();
+      }
     }
-    for (const element of this.#getStyleElements(nodes)) {
+    for (const element of new Set(this.#getStyleElements(nodes))) {
       this.#shadowRoot.appendChild(element.cloneNode(true));
     }
-    this.#dataGrid.dispatchEventToListeners(DataGridEvents.SORTING_CHANGED);
+    this.#scheduleSortingChanged();
   }
 
-  override removeNodes(nodes: NodeList): void {
+  override removeNodes(nodes: NodeList|Node[]): void {
     for (const element of this.#getDataRows(nodes)) {
-      const node = DataGridElementNode.get(element);
+      const node = getNode(element);
       if (node) {
-        DataGridElementNode.remove(node);
+        removeNode(node);
       }
     }
   }
@@ -345,7 +431,7 @@ export class DataGridElement extends UI.UIUtils.HTMLElementWithLightDOMTemplate 
       node = node.parentNode;
     }
     const dataRow = node instanceof HTMLElement ? node.closest('tr') : null;
-    const dataGridNode = dataRow ? DataGridElementNode.get(dataRow) : null;
+    const dataGridNode = dataRow ? getNode(dataRow) : null;
     if (dataGridNode && dataRow) {
       if (attributeName === 'selected') {
         if (hasBooleanAttribute(dataRow, 'selected')) {
@@ -359,11 +445,28 @@ export class DataGridElement extends UI.UIUtils.HTMLElementWithLightDOMTemplate 
         dataGridNode.setInactive(hasBooleanAttribute(dataRow, 'inactive'));
       } else if (attributeName === 'highlighted') {
         dataGridNode.setHighlighted(hasBooleanAttribute(dataRow, 'highlighted'));
+      } else if (attributeName === 'expanded') {
+        if (hasBooleanAttribute(dataRow, 'expanded')) {
+          dataGridNode.expand();
+        } else {
+          dataGridNode.collapse();
+        }
       } else {
         this.#updateHasChildren(dataGridNode, dataRow);
         dataGridNode.refresh();
       }
     }
+  }
+
+  #scheduleSortingChanged(): void {
+    if (this.#sortingChangedScheduled) {
+      return;
+    }
+    this.#sortingChangedScheduled = true;
+    queueMicrotask(() => {
+      this.#sortingChangedScheduled = false;
+      this.#dataGrid.dispatchEventToListeners(DataGridEvents.SORTING_CHANGED);
+    });
   }
 
   deselectRow(): void {
@@ -372,7 +475,7 @@ export class DataGridElement extends UI.UIUtils.HTMLElementWithLightDOMTemplate 
 
   #updateCreationNode(): void {
     if (this.#usedCreationNode) {
-      DataGridElementNode.remove(this.#usedCreationNode);
+      removeNode(this.#usedCreationNode);
       this.#usedCreationNode = null;
       this.#dataGrid.creationNode = undefined;
     }
@@ -380,9 +483,11 @@ export class DataGridElement extends UI.UIUtils.HTMLElementWithLightDOMTemplate 
     if (!placeholder) {
       this.#dataGrid.creationNode?.remove();
       this.#dataGrid.creationNode = undefined;
-    } else if (!DataGridElementNode.get(placeholder)) {
+    } else if (!getNode(placeholder)) {
       this.#dataGrid.creationNode?.remove();
-      const node = new DataGridElementNode(placeholder, this);
+
+      const node = this.#dataGrid instanceof SortableDataGrid ? new SortableNode(placeholder, this) :
+                                                                new DynamicHeightNode(placeholder, this);
       this.#dataGrid.creationNode = node;
       this.#dataGrid.rootNode().appendChild(node);
     }
@@ -400,13 +505,12 @@ export class DataGridElement extends UI.UIUtils.HTMLElementWithLightDOMTemplate 
     // However, if we have nodes added, that will trigger a sort anyway so we
     // don't need to re-sort again.
     if (this.#dataGrid.sortColumnId() !== null && !hadAddedNodes) {
-      this.#dataGrid.dispatchEventToListeners(DataGridEvents.SORTING_CHANGED);
+      this.#scheduleSortingChanged();
     }
   }
 
-  #editCallback(
-      node: DataGridElementNode, columnId: string, valueBeforeEditing: string, newText: string,
-      moveDirection?: string): void {
+  #editCallback(node: DataGridElementNode, columnId: string, valueBeforeEditing: string, newText: string,
+                moveDirection?: string): void {
     if (node.isCreationNode) {
       this.#usedCreationNode = node;
       let hasNextEditableColumn = false;
@@ -432,9 +536,8 @@ export class DataGridElement extends UI.UIUtils.HTMLElementWithLightDOMTemplate 
   override addEventListener<K extends keyof HTMLElementEventMap>(
       type: K, listener: (this: HTMLElement, ev: HTMLElementEventMap[K]) => void,
       options?: boolean|AddEventListenerOptions|undefined): void;
-  override addEventListener(
-      type: string, listener: EventListenerOrEventListenerObject,
-      options?: boolean|AddEventListenerOptions|undefined): void;
+  override addEventListener(type: string, listener: EventListenerOrEventListenerObject,
+                            options?: boolean|AddEventListenerOptions|undefined): void;
   override addEventListener(...args: Parameters<HTMLElement['addEventListener']>): void {
     super.addEventListener(...args);
     if (args[0] === 'refresh') {
@@ -447,145 +550,163 @@ export class DataGridElement extends UI.UIUtils.HTMLElementWithLightDOMTemplate 
   }
 }
 
-class DataGridElementNode extends SortableDataGridNode<DataGridElementNode> {
-  static #elementToNode = new WeakMap<Element, DataGridElementNode>();
-  #configElement: Element;
-  #dataGridElement: DataGridElement;
-  #addedClasses = new Set<string>();
+type Constructor<T = object> = new (...args: any[]) => T;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/explicit-function-return-type
+function nodeMixin<TBase extends Constructor<DataGridNode<any>>>(base: TBase) {
+  return class extends base {
+    #configElement!: Element;
+    #dataGridElement!: DataGridElement;
+    #addedClasses = new Set<string>();
+
+    initElementNode(configElement: Element, dataGridElement: DataGridElement): void {
+      this.#configElement = configElement;
+      this.#dataGridElement = dataGridElement;
+      this.#updateData();
+      this.isCreationNode = hasBooleanAttribute(this.#configElement, 'placeholder');
+    }
+
+    get configElement(): Element {
+      return this.#configElement;
+    }
+
+    get dataGridElement(): DataGridElement {
+      return this.#dataGridElement;
+    }
+
+    #updateData(): void {
+      const cells = [...this.#configElement.children].filter(c => c.tagName === 'TD');
+      for (let i = 0; i < this.#dataGridElement.columns.length; ++i) {
+        const cell = cells[i] as HTMLElement;
+        if (!cell) {
+          continue;
+        }
+        const column = this.#dataGridElement.columns[i];
+        if (column.dataType === DataType.BOOLEAN) {
+          this.data[column.id] = hasBooleanAttribute(cell, 'data-value') || cell.textContent === 'true';
+        } else {
+          this.data[column.id] = cell.dataset.value ?? cell.textContent ?? '';
+        }
+      }
+    }
+
+    override createElement(): HTMLElement {
+      const element = super.createElement();
+      element.addEventListener('click', this.#onRowMouseEvent.bind(this));
+      element.addEventListener('mouseenter', this.#onRowMouseEvent.bind(this));
+      element.addEventListener('mouseleave', this.#onRowMouseEvent.bind(this));
+      if (this.#configElement.hasAttribute('style')) {
+        element.setAttribute('style', this.#configElement.getAttribute('style') || '');
+      }
+      for (const classToAdd of this.#configElement.classList) {
+        element.classList.add(classToAdd);
+      }
+      return element;
+    }
+
+    override refresh(): void {
+      this.#updateData();
+      super.refresh();
+      const existingElement = this.existingElement();
+      if (!existingElement) {
+        return;
+      }
+      if (this.#configElement.hasAttribute('style')) {
+        existingElement.setAttribute('style', this.#configElement.getAttribute('style') || '');
+      }
+      for (const addedClass of this.#addedClasses) {
+        existingElement.classList.remove(addedClass);
+      }
+      for (const classToAdd of this.#configElement.classList) {
+        existingElement.classList.add(classToAdd);
+      }
+    }
+
+    #onRowMouseEvent(event: MouseEvent): void {
+      const targetInConfigRow = UI.UIUtils.HTMLElementWithLightDOMTemplate.findCorrespondingElement(
+          event.target as HTMLElement, event.currentTarget as HTMLElement, this.#configElement);
+      if (!targetInConfigRow) {
+        throw new Error('Cell click event target not found in the data grid');
+      }
+
+      if (targetInConfigRow instanceof HTMLElement) {
+        targetInConfigRow?.dispatchEvent(new MouseEvent(event.type, {bubbles: true, composed: true}));
+      }
+    }
+
+    override createCells(element: Element): void {
+      const configCells = [...this.#configElement.querySelectorAll('td')];
+      const hasCollspan = configCells.some(cell => cell.hasAttribute('colspan'));
+      if (!hasCollspan) {
+        super.createCells(element);
+      } else {
+        for (const cell of configCells) {
+          element.appendChild(cell.cloneNode(true));
+        }
+      }
+    }
+
+    override createCell(columnId: string): HTMLElement {
+      const index = this.#dataGridElement.columns.findIndex(({id}) => id === columnId);
+      if (this.#dataGridElement.columns[index].dataType === DataType.BOOLEAN) {
+        const cell = super.createCell(columnId);
+        cell.setAttribute('part', `${columnId}-column`);
+        return cell;
+      }
+      const cell = this.createTD(columnId);
+      cell.setAttribute('part', `${columnId}-column`);
+      const configCells = [...this.#configElement.children].filter(c => c.tagName === 'TD') as HTMLTableCellElement[];
+      const configCell = configCells[index];
+      if (this.isCreationNode && !configCell) {
+        return cell;
+      }
+      if (!configCell) {
+        throw new Error(`Column ${columnId} not found in the data grid`);
+      }
+      for (const child of configCell.childNodes) {
+        cell.appendChild(child.cloneNode(true));
+      }
+      for (const cssClass of configCell.classList) {
+        cell.classList.add(cssClass);
+      }
+      cell.title = configCell.title;
+      if (configCell.hasAttribute('aria-label')) {
+        this.setCellAccessibleName(configCell.getAttribute('aria-label') || '', cell, columnId);
+      }
+      const style = configCell.getAttribute('style');
+      if (style !== null) {
+        cell.setAttribute('style', style);
+      }
+
+      return cell;
+    }
+
+    override deselect(): void {
+      super.deselect();
+      if (this.isCreationNode) {
+        this.#dataGridElement.dispatchEvent(new CustomEvent('create', {detail: this.data}));
+      }
+    }
+  };
+}
+
+// clang-format off
+class SortableNode extends nodeMixin(SortableDataGridNode<SortableNode>) {
+  // clang-format on
   constructor(configElement: Element, dataGridElement: DataGridElement) {
     super();
-    this.#configElement = configElement;
-    DataGridElementNode.#elementToNode.set(configElement, this);
-    this.#dataGridElement = dataGridElement;
-    this.#updateData();
-    this.isCreationNode = hasBooleanAttribute(this.#configElement, 'placeholder');
+    this.initElementNode(configElement, dataGridElement);
+    elementToNode.set(configElement, this);
   }
+}
 
-  static get(configElement: Element|undefined): DataGridElementNode|undefined {
-    return configElement && DataGridElementNode.#elementToNode.get(configElement);
-  }
-
-  get configElement(): Element {
-    return this.#configElement;
-  }
-
-  #updateData(): void {
-    const cells = [...this.#configElement.children].filter(c => c.tagName === 'TD');
-    for (let i = 0; i < this.#dataGridElement.columns.length; ++i) {
-      const cell = cells[i] as HTMLElement;
-      if (!cell) {
-        continue;
-      }
-      const column = this.#dataGridElement.columns[i];
-      if (column.dataType === DataType.BOOLEAN) {
-        this.data[column.id] = hasBooleanAttribute(cell, 'data-value') || cell.textContent === 'true';
-      } else {
-        this.data[column.id] = cell.dataset.value ?? cell.textContent ?? '';
-      }
-    }
-  }
-
-  override createElement(): HTMLElement {
-    const element = super.createElement();
-    element.addEventListener('click', this.#onRowMouseEvent.bind(this));
-    element.addEventListener('mouseenter', this.#onRowMouseEvent.bind(this));
-    element.addEventListener('mouseleave', this.#onRowMouseEvent.bind(this));
-    if (this.#configElement.hasAttribute('style')) {
-      element.setAttribute('style', this.#configElement.getAttribute('style') || '');
-    }
-    for (const classToAdd of this.#configElement.classList) {
-      element.classList.add(classToAdd);
-    }
-    return element;
-  }
-
-  override refresh(): void {
-    this.#updateData();
-    super.refresh();
-    const existingElement = this.existingElement();
-    if (!existingElement) {
-      return;
-    }
-    if (this.#configElement.hasAttribute('style')) {
-      existingElement.setAttribute('style', this.#configElement.getAttribute('style') || '');
-    }
-    for (const addedClass of this.#addedClasses) {
-      existingElement.classList.remove(addedClass);
-    }
-    for (const classToAdd of this.#configElement.classList) {
-      existingElement.classList.add(classToAdd);
-    }
-  }
-
-  #onRowMouseEvent(event: MouseEvent): void {
-    const targetInConfigRow = UI.UIUtils.HTMLElementWithLightDOMTemplate.findCorrespondingElement(
-        event.target as HTMLElement, event.currentTarget as HTMLElement, this.#configElement);
-    if (!targetInConfigRow) {
-      throw new Error('Cell click event target not found in the data grid');
-    }
-
-    if (targetInConfigRow instanceof HTMLElement) {
-      targetInConfigRow?.dispatchEvent(new MouseEvent(event.type, {bubbles: true, composed: true}));
-    }
-  }
-
-  override createCells(element: Element): void {
-    const configCells = [...this.#configElement.querySelectorAll('td')];
-    const hasCollspan = configCells.some(cell => cell.hasAttribute('colspan'));
-    if (!hasCollspan) {
-      super.createCells(element);
-    } else {
-      for (const cell of configCells) {
-        element.appendChild(cell.cloneNode(true));
-      }
-    }
-  }
-
-  override createCell(columnId: string): HTMLElement {
-    const index = this.#dataGridElement.columns.findIndex(({id}) => id === columnId);
-    if (this.#dataGridElement.columns[index].dataType === DataType.BOOLEAN) {
-      const cell = super.createCell(columnId);
-      cell.setAttribute('part', `${columnId}-column`);
-      return cell;
-    }
-    const cell = this.createTD(columnId);
-    cell.setAttribute('part', `${columnId}-column`);
-    const configCells = [...this.#configElement.children].filter(c => c.tagName === 'TD') as HTMLTableCellElement[];
-    const configCell = configCells[index];
-    if (this.isCreationNode && !configCell) {
-      return cell;
-    }
-    if (!configCell) {
-      throw new Error(`Column ${columnId} not found in the data grid`);
-    }
-    for (const child of configCell.childNodes) {
-      cell.appendChild(child.cloneNode(true));
-    }
-    for (const cssClass of configCell.classList) {
-      cell.classList.add(cssClass);
-    }
-    cell.title = configCell.title;
-    if (configCell.hasAttribute('aria-label')) {
-      this.setCellAccessibleName(configCell.getAttribute('aria-label') || '', cell, columnId);
-    }
-    const style = configCell.getAttribute('style');
-    if (style !== null) {
-      cell.setAttribute('style', style);
-    }
-
-    return cell;
-  }
-
-  static remove(node: DataGridElementNode): void {
-    DataGridElementNode.#elementToNode.delete(node.#configElement);
-    node.remove();
-  }
-
-  override deselect(): void {
-    super.deselect();
-    if (this.isCreationNode) {
-      this.#dataGridElement.dispatchEvent(new CustomEvent('create', {detail: this.data}));
-    }
+// clang-format off
+class DynamicHeightNode extends nodeMixin(DataGridNode<DynamicHeightNode>) {
+  // clang-format on
+  constructor(configElement: Element, dataGridElement: DataGridElement) {
+    super();
+    this.initElementNode(configElement, dataGridElement);
+    elementToNode.set(configElement, this);
   }
 }
 
@@ -606,7 +727,7 @@ export interface DataGridInternalToken {
 }
 
 const INTERNAL_TOKEN: DataGridInternalToken = {
-  token: 'DataGridInternalToken'
+  token: 'DataGridInternalToken',
 };
 
 class IfExpandedDirective extends Lit.Directive.Directive {
@@ -633,7 +754,7 @@ class IfExpandedDirective extends Lit.Directive.Directive {
     if (!(element instanceof HTMLElement)) {
       return false;
     }
-    const node = DataGridElementNode.get(element.closest('tr') ?? undefined);
+    const node = getNode(element.closest('tr') ?? undefined);
     if (!node) {
       return false;
     }
@@ -641,3 +762,15 @@ class IfExpandedDirective extends Lit.Directive.Directive {
   }
 }
 export const ifExpanded = Lit.Directive.directive(IfExpandedDirective);
+
+function getNode(element: Element|undefined): DataGridElementNode|undefined {
+  return element ? elementToNode.get(element) : undefined;
+}
+
+function removeNode(node: DataGridElementNode): void {
+  const configElement = node.configElement;
+  if (configElement) {
+    elementToNode.delete(configElement);
+  }
+  node.remove();
+}

@@ -16,6 +16,8 @@
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/span.h"
 
+// Corresponds to Windows Code Page Identifiers.
+// https://docs.microsoft.com/en-us/windows/win32/intl/code-page-identifiers
 enum class FX_CodePage : uint16_t {
   kDefANSI = 0,
   kSymbol = 42,
@@ -68,6 +70,8 @@ enum class FX_CodePage : uint16_t {
   kFailure = 65535,
 };
 
+// Corresponds to Windows GDI Character Set Identifiers.
+// https://docs.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-logfonta
 enum class FX_Charset : uint8_t {
   kANSI = 0,
   kDefault = 1,
@@ -102,6 +106,28 @@ enum class FX_Charset : uint8_t {
   kOEM = 255,
 };
 
+// Compact representation for a set of FX_Charset values.
+enum class FX_CharsetFlag : uint32_t {
+  kNone = 0,
+  kANSI = 1 << 0,
+  kSymbol = 1 << 1,
+  kShiftJIS = 1 << 2,
+  kHangul = 1 << 3,
+  kJohab = 1 << 4,
+  kChineseSimplified = 1 << 5,
+  kChineseTraditional = 1 << 6,
+  kMSWin_Greek = 1 << 7,
+  kMSWin_Turkish = 1 << 8,
+  kMSWin_Vietnamese = 1 << 9,
+  kMSWin_Hebrew = 1 << 10,
+  kMSWin_Arabic = 1 << 11,
+  kMSWin_Baltic = 1 << 12,
+  kMSWin_Cyrillic = 1 << 13,
+  kThai = 1 << 14,
+  kMSWin_EasternEuropean = 1 << 15,
+  kOEM = 1 << 16,
+};
+
 // Hi-bytes to unicode codepoint mapping for various code pages.
 struct FX_CharsetUnicodes {
   FX_Charset charset_;
@@ -114,6 +140,7 @@ FX_CodePage FX_GetACP();
 FX_CodePage FX_GetCodePageFromCharset(FX_Charset charset);
 FX_Charset FX_GetCharsetFromCodePage(FX_CodePage codepage);
 FX_Charset FX_GetCharsetFromInt(int value);
+FX_CharsetFlag FX_CharsetFlagForCharset(FX_Charset charset);
 bool FX_CharSetIsCJK(FX_Charset uCharset);
 size_t FX_WideCharToMultiByte(FX_CodePage codepage,
                               WideStringView wstr,

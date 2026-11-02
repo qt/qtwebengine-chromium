@@ -49,17 +49,18 @@ void OneTimeTokenServiceImpl::GetRecentOneTimeTokens(Callback callback) {
 ExpiringSubscription OneTimeTokenServiceImpl::Subscribe(
     OneTimeTokenSource source,
     base::Time expiration,
-    Callback callback) {
+    Callback callback,
+    base::OnceClosure expiration_callback) {
   switch (source) {
     case OneTimeTokenSource::kOnDeviceSms: {
-      ExpiringSubscription subscription =
-          sms_subscription_manager_.Subscribe(expiration, std::move(callback));
+      ExpiringSubscription subscription = sms_subscription_manager_.Subscribe(
+          expiration, std::move(callback), std::move(expiration_callback));
       RetrieveSmsOtpIfNeeded();
       return subscription;
     }
     case OneTimeTokenSource::kGmail: {
       ExpiringSubscription subscription = gmail_subscription_manager_.Subscribe(
-          expiration, std::move(callback));
+          expiration, std::move(callback), std::move(expiration_callback));
       RetrieveGmailOtpIfNeeded();
       return subscription;
     }
@@ -143,10 +144,16 @@ void OneTimeTokenServiceImpl::OnResponseFromSmsOtpBackend(
 }
 
 void OneTimeTokenServiceImpl::RetrieveGmailOtpIfNeeded() {
-  if (!gmail_.backend || !gmail_subscription_manager_.GetNumberSubscribers() ||
-      gmail_subscription_.IsAlive()) {
+  if (!gmail_.backend || !gmail_subscription_manager_.GetNumberSubscribers()) {
     return;
   }
+
+  if (gmail_subscription_.IsAlive()) {
+    gmail_subscription_.SetExpirationTime(base::Time::Now() +
+                                          kCacheDurationForOldTokens);
+    return;
+  }
+
   gmail_subscription_ = gmail_.backend->Subscribe(
       base::Time::Now() + kCacheDurationForOldTokens,
       base::BindRepeating(

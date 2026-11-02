@@ -70,7 +70,7 @@ struct SignalInfo {
     // Batch from the signal's first scope. It is null for a host signal (vkSignalSemaphore)
     std::shared_ptr<QueueBatchContext> batch;
 
-    // Use the first_scope.valid_accesses for the first access scope of non-host signals.
+    // Use the first_scope.exec_scope_accesses for the first access scope of non-host signals.
     // first_scope.queue is kQueueIdInvalid for a host signal (vkSignalSemaphore)
     SemaphoreScope first_scope;
 
@@ -347,10 +347,12 @@ class QueueBatchContext : public CommandExecutionContext, public std::enable_sha
 
     QueueId GetQueueId() const override;
     ResourceUsageInfo GetResourceUsageInfo(ResourceUsageTagEx tag_ex) const override;
-    AccessContext *GetCurrentAccessContext() override { return current_access_context_; }
-    const AccessContext *GetCurrentAccessContext() const override { return current_access_context_; }
-    SyncEventsContext *GetCurrentEventsContext() override { return &events_context_; }
-    const SyncEventsContext *GetCurrentEventsContext() const override { return &events_context_; }
+
+    AccessContext& GetCurrentAccessContext() override { return *current_access_context_; }
+    const AccessContext& GetCurrentAccessContext() const override { return *current_access_context_; }
+
+    SyncEventsContext& GetEventsContext() override { return events_context_; }
+    const SyncEventsContext& GetEventsContext() const override { return events_context_; }
 
     VkQueueFlags GetQueueFlags() const { return queue_state_->GetQueue()->GetQueueFlags(); }
 

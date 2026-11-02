@@ -25,7 +25,6 @@
 #include "build/build_config.h"
 #include "ui/accessibility/accessibility_features.h"
 #include "ui/accessibility/ax_common.h"
-#include "ui/accessibility/ax_language_detection.h"
 #include "ui/accessibility/ax_tree_data.h"
 #include "ui/accessibility/ax_tree_id.h"
 #include "ui/accessibility/ax_tree_serializer.h"
@@ -738,17 +737,6 @@ bool BrowserAccessibilityManager::OnAccessibilityEvents(
     // the platform independent events have already fired.
     // Some screen readers need a focus event in order to work properly.
     FireFocusEventsIfNeeded();
-
-    // Perform the initial run of language detection.
-    ax_tree()->language_detection_manager->DetectLanguages();
-    ax_tree()->language_detection_manager->LabelLanguages();
-
-    // After initial language detection, enable language detection for future
-    // content updates in order to support dynamic content changes.
-    //
-    // If the LanguageDetectionDynamic feature flag is not enabled then this
-    // is a no-op.
-    ax_tree()->language_detection_manager->RegisterLanguageDetectionObserver();
   }
 
   // Allow derived classes to do event post-processing. This must run after
@@ -1172,6 +1160,32 @@ void BrowserAccessibilityManager::ShowContextMenu(
 
   AXActionData action_data;
   action_data.action = ax::mojom::Action::kShowContextMenu;
+  action_data.target_node_id = node.GetId();
+  delegate_->AccessibilityPerformAction(action_data);
+  AXPlatform::GetInstance().OnActionFromAssistiveTech();
+}
+
+void BrowserAccessibilityManager::ShowTooltip(
+    const BrowserAccessibility& node) {
+  if (!delegate_) {
+    return;
+  }
+
+  AXActionData action_data;
+  action_data.action = ax::mojom::Action::kShowTooltip;
+  action_data.target_node_id = node.GetId();
+  delegate_->AccessibilityPerformAction(action_data);
+  AXPlatform::GetInstance().OnActionFromAssistiveTech();
+}
+
+void BrowserAccessibilityManager::HideTooltip(
+    const BrowserAccessibility& node) {
+  if (!delegate_) {
+    return;
+  }
+
+  AXActionData action_data;
+  action_data.action = ax::mojom::Action::kHideTooltip;
   action_data.target_node_id = node.GetId();
   delegate_->AccessibilityPerformAction(action_data);
   AXPlatform::GetInstance().OnActionFromAssistiveTech();
@@ -1950,6 +1964,14 @@ BrowserAccessibilityManager::GetDelegateFromRootManager() const {
   if (root_manager)
     return root_manager->delegate();
   return nullptr;
+}
+
+AXPlatformTreeManagerDelegate*
+BrowserAccessibilityManager::GetDelegateForNativeView() const {
+  if (delegate_ && !delegate_->AccessibilityIsWebContentSource()) {
+    return delegate_.get();
+  }
+  return GetDelegateFromRootManager();
 }
 
 bool BrowserAccessibilityManager::IsRootFrameManager() const {

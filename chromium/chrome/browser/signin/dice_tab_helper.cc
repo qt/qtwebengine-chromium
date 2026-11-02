@@ -16,7 +16,6 @@
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/signin/signin_util.h"
 #include "chrome/browser/sync/sync_service_factory.h"
-#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
@@ -87,8 +86,7 @@ DiceTabHelper::GetEnableSyncCallbackForBrowser() {
 
     // TurnSyncOnHelper is suicidal (it will kill itself once it
     // finishes enabling sync).
-    new TurnSyncOnHelper(profile, browser->GetBrowserForMigrationOnly(),
-                         access_point, promo_action,
+    new TurnSyncOnHelper(profile, browser, access_point, promo_action,
                          account_info.account_id, abort_mode, is_sync_promo);
   });
 }
@@ -166,7 +164,11 @@ DiceTabHelper::DiceTabHelper(content::WebContents* web_contents)
       content::WebContentsObserver(web_contents),
       state_{std::make_unique<ResetableState>()} {}
 
-DiceTabHelper::~DiceTabHelper() = default;
+DiceTabHelper::~DiceTabHelper() {
+  for (auto& observer : observer_list_) {
+    observer.OnDiceTabHelperWillDestroy();
+  }
+}
 
 void DiceTabHelper::InitializeSigninFlow(
     const GURL& signin_url,
@@ -194,7 +196,7 @@ void DiceTabHelper::InitializeSigninFlow(
       std::move(on_signin_header_received_callback);
   state_->show_signin_error_callback = std::move(show_signin_error_callback);
 
-  is_chrome_signin_page_ = true;
+  SetIsChromeSigninPage(true);
   signin_page_load_recorded_ = false;
 
   if (reason == signin_metrics::Reason::kSigninPrimaryAccount) {
@@ -271,6 +273,14 @@ void DiceTabHelper::UpdateSigninErrorCallback(
 
 void DiceTabHelper::UpdateRedirectUrl(const GURL& redirect_url) {
   state_->redirect_url = redirect_url;
+}
+
+void DiceTabHelper::AddObserver(Observer* observer) {
+  observer_list_.AddObserver(observer);
+}
+
+void DiceTabHelper::RemoveObserver(Observer* observer) {
+  observer_list_.RemoveObserver(observer);
 }
 
 // static
@@ -360,7 +370,7 @@ void DiceTabHelper::DidStartNavigation(
     // Note that currently any indication of a navigation is enough to consider
     // this tab unsuitable for re-use, even if the navigation does not end up
     // committing.
-    is_chrome_signin_page_ = false;
+    SetIsChromeSigninPage(false);
   }
 }
 
@@ -381,7 +391,7 @@ void DiceTabHelper::DidFinishNavigation(
     // Note that currently any indication of a navigation is enough to consider
     // this tab unsuitable for re-use, even if the navigation does not end up
     // committing.
-    is_chrome_signin_page_ = false;
+    SetIsChromeSigninPage(false);
     return;
   }
 
@@ -401,6 +411,16 @@ bool DiceTabHelper::IsSigninPageNavigation(
 
 void DiceTabHelper::Reset() {
   state_ = std::make_unique<ResetableState>();
+}
+
+void DiceTabHelper::SetIsChromeSigninPage(bool is_signin_page) {
+  if (is_chrome_signin_page_ == is_signin_page) {
+    return;
+  }
+  is_chrome_signin_page_ = is_signin_page;
+  for (auto& observer : observer_list_) {
+    observer.OnIsChromeSigninPageChanged(is_chrome_signin_page_);
+  }
 }
 
 WEB_CONTENTS_USER_DATA_KEY_IMPL(DiceTabHelper);

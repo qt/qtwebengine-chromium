@@ -234,24 +234,24 @@ public final class QuantizerWu implements Quantizer {
     two.b1 = one.b1;
 
     switch (cutDirection) {
-      case RED:
+      case RED -> {
         one.r1 = maxRResult.cutLocation;
         two.r0 = one.r1;
         two.g0 = one.g0;
         two.b0 = one.b0;
-        break;
-      case GREEN:
+      }
+      case GREEN -> {
         one.g1 = maxGResult.cutLocation;
         two.r0 = one.r0;
         two.g0 = one.g1;
         two.b0 = one.b0;
-        break;
-      case BLUE:
+      }
+      case BLUE -> {
         one.b1 = maxBResult.cutLocation;
         two.r0 = one.r0;
         two.g0 = one.g0;
         two.b0 = one.b1;
-        break;
+      }
     }
 
     one.vol = (one.r1 - one.r0) * (one.g1 - one.g0) * (one.b1 - one.b0);
@@ -326,45 +326,43 @@ public final class QuantizerWu implements Quantizer {
   }
 
   static int bottom(Box cube, Direction direction, int[] moment) {
-    switch (direction) {
-      case RED:
-        return -moment[getIndex(cube.r0, cube.g1, cube.b1)]
-            + moment[getIndex(cube.r0, cube.g1, cube.b0)]
-            + moment[getIndex(cube.r0, cube.g0, cube.b1)]
-            - moment[getIndex(cube.r0, cube.g0, cube.b0)];
-      case GREEN:
-        return -moment[getIndex(cube.r1, cube.g0, cube.b1)]
-            + moment[getIndex(cube.r1, cube.g0, cube.b0)]
-            + moment[getIndex(cube.r0, cube.g0, cube.b1)]
-            - moment[getIndex(cube.r0, cube.g0, cube.b0)];
-      case BLUE:
-        return -moment[getIndex(cube.r1, cube.g1, cube.b0)]
-            + moment[getIndex(cube.r1, cube.g0, cube.b0)]
-            + moment[getIndex(cube.r0, cube.g1, cube.b0)]
-            - moment[getIndex(cube.r0, cube.g0, cube.b0)];
-    }
-    throw new IllegalArgumentException("unexpected direction " + direction);
+    return switch (direction) {
+      case RED ->
+          -moment[getIndex(cube.r0, cube.g1, cube.b1)]
+              + moment[getIndex(cube.r0, cube.g1, cube.b0)]
+              + moment[getIndex(cube.r0, cube.g0, cube.b1)]
+              - moment[getIndex(cube.r0, cube.g0, cube.b0)];
+      case GREEN ->
+          -moment[getIndex(cube.r1, cube.g0, cube.b1)]
+              + moment[getIndex(cube.r1, cube.g0, cube.b0)]
+              + moment[getIndex(cube.r0, cube.g0, cube.b1)]
+              - moment[getIndex(cube.r0, cube.g0, cube.b0)];
+      case BLUE ->
+          -moment[getIndex(cube.r1, cube.g1, cube.b0)]
+              + moment[getIndex(cube.r1, cube.g0, cube.b0)]
+              + moment[getIndex(cube.r0, cube.g1, cube.b0)]
+              - moment[getIndex(cube.r0, cube.g0, cube.b0)];
+    };
   }
 
   static int top(Box cube, Direction direction, int position, int[] moment) {
-    switch (direction) {
-      case RED:
-        return (moment[getIndex(position, cube.g1, cube.b1)]
-            - moment[getIndex(position, cube.g1, cube.b0)]
-            - moment[getIndex(position, cube.g0, cube.b1)]
-            + moment[getIndex(position, cube.g0, cube.b0)]);
-      case GREEN:
-        return (moment[getIndex(cube.r1, position, cube.b1)]
-            - moment[getIndex(cube.r1, position, cube.b0)]
-            - moment[getIndex(cube.r0, position, cube.b1)]
-            + moment[getIndex(cube.r0, position, cube.b0)]);
-      case BLUE:
-        return (moment[getIndex(cube.r1, cube.g1, position)]
-            - moment[getIndex(cube.r1, cube.g0, position)]
-            - moment[getIndex(cube.r0, cube.g1, position)]
-            + moment[getIndex(cube.r0, cube.g0, position)]);
-    }
-    throw new IllegalArgumentException("unexpected direction " + direction);
+    return switch (direction) {
+      case RED ->
+          (moment[getIndex(position, cube.g1, cube.b1)]
+              - moment[getIndex(position, cube.g1, cube.b0)]
+              - moment[getIndex(position, cube.g0, cube.b1)]
+              + moment[getIndex(position, cube.g0, cube.b0)]);
+      case GREEN ->
+          (moment[getIndex(cube.r1, position, cube.b1)]
+              - moment[getIndex(cube.r1, position, cube.b0)]
+              - moment[getIndex(cube.r0, position, cube.b1)]
+              + moment[getIndex(cube.r0, position, cube.b0)]);
+      case BLUE ->
+          (moment[getIndex(cube.r1, cube.g1, position)]
+              - moment[getIndex(cube.r1, cube.g0, position)]
+              - moment[getIndex(cube.r0, cube.g1, position)]
+              + moment[getIndex(cube.r0, cube.g0, position)]);
+    };
   }
 
   private static enum Direction {

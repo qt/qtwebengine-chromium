@@ -61,7 +61,6 @@
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/browser/bad_message.h"
 #include "content/browser/browser_main_loop.h"
-#include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/compositor/surface_utils.h"
 #include "content/browser/devtools/devtools_instrumentation.h"
 #include "content/browser/file_system/browser_file_system_helper.h"
@@ -81,9 +80,11 @@
 #include "content/browser/renderer_host/render_widget_host_owner_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/renderer_host/render_widget_host_view_child_frame.h"
+#include "content/browser/renderer_host/unbounded_surface_window.h"
 #include "content/browser/renderer_host/visible_time_request_trigger.h"
 #include "content/browser/scheduler/browser_task_executor.h"
 #include "content/browser/scheduler/browser_ui_thread_scheduler.h"
+#include "content/browser/security/cpsp/child_process_security_policy_impl.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/common/content_constants_internal.h"
 #include "content/common/frame.mojom.h"
@@ -94,6 +95,9 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/device_service.h"
+#include "content/public/browser/disallow_activation_reason.h"
+#include "content/public/browser/global_dom_node_id.h"
+#include "content/public/browser/gpu_data_manager.h"
 #include "content/public/browser/keyboard_event_processing_result.h"
 #include "content/public/browser/peak_gpu_memory_tracker_factory.h"
 #include "content/public/browser/render_frame_metadata_provider.h"
@@ -658,13 +662,13 @@ void RenderWidgetHostImpl::SendScreenRects() {
     return;
   }
 
-  if (last_view_screen_rect_ == view_->GetViewBounds() &&
-      last_window_screen_rect_ == view_->GetBoundsInRootWindow()) {
+  if (last_view_screen_rect_ == view_->GetViewBoundsWithoutTransform() &&
+      last_window_screen_rect_ == view_->GetBoundsInScreenWithoutTransform()) {
     return;
   }
 
-  last_view_screen_rect_ = view_->GetViewBounds();
-  last_window_screen_rect_ = view_->GetBoundsInRootWindow();
+  last_view_screen_rect_ = view_->GetViewBoundsWithoutTransform();
+  last_window_screen_rect_ = view_->GetBoundsInScreenWithoutTransform();
   blink_widget_->UpdateScreenRects(
       last_view_screen_rect_, last_window_screen_rect_,
       base::BindOnce(&RenderWidgetHostImpl::OnUpdateScreenRectsAck,
@@ -1054,6 +1058,15 @@ blink::VisualProperties RenderWidgetHostImpl::GetVisualProperties() {
   visual_properties.screen_infos = GetScreenInfos();
   auto& current_screen_info = visual_properties.screen_infos.mutable_current();
 
+  // If hardware acceleration is disabled then do not report the display as
+  // HDR or high bit depth because it is too resource intensive to run on the
+  // CPU.
+  if (!GpuDataManager::GetInstance()->HardwareAccelerationEnabled()) {
+    for (auto& screen_info : visual_properties.screen_infos.screen_infos) {
+      display::DisplayUtil::DisableHdrAndHighBitDepth(&screen_info);
+    }
+  }
+
   // For testing, override the raster color profile.
   // Note: this needs to be done here and not earlier in the pipeline because
   // Mac uses the display color space to update an NSSurface and this setting
@@ -1069,6 +1082,7 @@ blink::VisualProperties RenderWidgetHostImpl::GetVisualProperties() {
 
   if (is_frame_widget) {
     visual_properties.display_mode = delegate_->GetDisplayMode();
+    visual_properties.application_context = delegate_->GetApplicationContext();
   } else {
     visual_properties.display_mode = blink::mojom::DisplayMode::kBrowser;
   }
@@ -1214,8 +1228,6 @@ blink::VisualProperties RenderWidgetHostImpl::GetVisualProperties() {
     visual_properties.root_widget_viewport_segments =
         properties_from_parent_local_root_.root_widget_viewport_segments;
   }
-
-  visual_properties.capture_sequence_number = view_->GetCaptureSequenceNumber();
 
   // TODO(ccameron): GetLocalSurfaceId is not synchronized with the device
   // scale factor of the surface. Fix this.
@@ -1405,6 +1417,22 @@ void RenderWidgetHostImpl::Blur() {
   if (!focused_widget) {
     focused_widget = this;
   }
+  // `GetRenderWidgetHostWithPageFocus()` always returns a main frame's widget.
+  // If this widget is itself a main frame widget (it has an `owner_delegate_`)
+  // but page focus is held by a *different* main frame in the *same* FrameTree,
+  // then this is an outgoing page being swapped out for another page in the
+  // same tab, e.g. while restoring a page from the back-forward cache. Hiding
+  // the outgoing view can route a page-level blur to the page that just gained
+  // focus; forwarding it would spuriously toggle that page's focus and fire
+  // blur/focus events on its focused element, even though a BFCached page's
+  // focused area must be preserved. Skip the blur in that case. Note this is
+  // restricted to the same FrameTree so that legitimate cross-WebContents focus
+  // changes (e.g. focusing the omnibox while an inner page is focused) still
+  // propagate the blur.
+  if (owner_delegate_ && focused_widget != this &&
+      focused_widget->frame_tree() == frame_tree_) {
+    return;
+  }
   focused_widget->SetPageFocus(false);
 }
 
@@ -1463,6 +1491,13 @@ void RenderWidgetHostImpl::SetPageFocus(bool focused) {
   // where this RenderWidgetHost lives.
   if (owner_delegate_ && frame_tree_) {
     frame_tree_->ReplicatePageFocus(focused);
+  }
+
+  if (!focused && view_) {
+    auto* root_view = view_->GetRootView();
+    if (root_view && root_view->HasActiveUnboundedSurface()) {
+      root_view->DismissUnboundedSurface();
+    }
   }
 }
 
@@ -1601,6 +1636,23 @@ void RenderWidgetHostImpl::ForwardMouseEventWithLatencyInfo(
     return;
   }
 
+  // Dismiss any active unbounded surface if a mouse click occurs outside of
+  // its window bounds.
+  if (mouse_event.GetType() == WebInputEvent::Type::kMouseDown && GetView()) {
+    if (auto* root_view = GetView()->GetRootView()) {
+      if (root_view->HasActiveUnboundedSurface()) {
+        if (UnboundedSurfaceWindow* unbounded_window =
+                root_view->GetUnboundedSurfaceWindow()) {
+          gfx::PointF screen_point = mouse_event.PositionInScreen();
+          if (!unbounded_window->GetBounds().Contains(
+                  gfx::ToFlooredPoint(screen_point))) {
+            root_view->DismissUnboundedSurface();
+          }
+        }
+      }
+    }
+  }
+
   auto* touch_emulator = GetTouchEmulator(/*create_if_necessary=*/false);
   if (touch_emulator &&
       touch_emulator->HandleMouseEvent(mouse_event, GetView())) {
@@ -1718,6 +1770,19 @@ void RenderWidgetHostImpl::ForwardKeyboardEventWithCommands(
 
   if (!GetProcess()->IsInitializedAndNotDead()) {
     return;
+  }
+
+  // Dismiss any active unbounded surface when the Escape key is pressed.
+  if (GetView() &&
+      (key_event.GetType() == WebInputEvent::Type::kRawKeyDown ||
+       key_event.GetType() == WebInputEvent::Type::kKeyDown) &&
+      key_event.windows_key_code == ui::VKEY_ESCAPE) {
+    if (auto* root_view = GetView()->GetRootView()) {
+      if (root_view->HasActiveUnboundedSurface()) {
+        root_view->DismissUnboundedSurface();
+        return;
+      }
+    }
   }
 
   // First, let keypress listeners take a shot at handling the event.  If a
@@ -2363,7 +2428,8 @@ void RenderWidgetHostImpl::ImeSetComposition(
   // Passing null callback since it is only needed for Devtools
   GetWidgetInputHandler()->ImeSetComposition(
       text, ime_text_spans, replacement_range, selection_start, selection_end,
-      ime_state, base::OnceClosure());
+      ime_state, /*target_dom_node_id=*/blink::DOMNodeIdType(),
+      base::OnceClosure());
 #if BUILDFLAG(IS_ANDROID)
   for (auto& observer : ime_input_event_observers_) {
     observer.OnImeSetComposingTextEvent(text);
@@ -2377,9 +2443,9 @@ void RenderWidgetHostImpl::ImeCommitText(
     const gfx::Range& replacement_range,
     int relative_cursor_pos) {
   // Passing null callback since it is only needed for Devtools
-  GetWidgetInputHandler()->ImeCommitText(text, ime_text_spans,
-                                         replacement_range, relative_cursor_pos,
-                                         base::OnceClosure());
+  GetWidgetInputHandler()->ImeCommitText(
+      text, ime_text_spans, replacement_range, relative_cursor_pos,
+      /*target_dom_node_id=*/blink::DOMNodeIdType(), base::OnceClosure());
 #if BUILDFLAG(IS_ANDROID)
   for (auto& observer : ime_input_event_observers_) {
     observer.OnImeTextCommittedEvent(text);
@@ -2401,7 +2467,35 @@ void RenderWidgetHostImpl::ImeCancelComposition() {
   GetWidgetInputHandler()->ImeSetComposition(
       std::u16string(), std::vector<ui::ImeTextSpan>(),
       gfx::Range::InvalidRange(), 0, 0, blink::mojom::ImeState::kNone,
-      base::OnceClosure());
+      /*target_dom_node_id=*/blink::DOMNodeIdType(), base::OnceClosure());
+}
+
+void RenderWidgetHostImpl::SetExternallySourcedComposition(
+    const std::u16string& text,
+    const std::vector<ui::ImeTextSpan>& ime_text_spans,
+    const GlobalDOMNodeId& target_dom_node_id,
+    base::OnceClosure on_complete) {
+  int length = text.length();
+  GetWidgetInputHandler()->ImeSetComposition(
+      text, ime_text_spans, gfx::Range::InvalidRange(), length, length,
+      blink::mojom::ImeState::kNone, target_dom_node_id.target_element_dom_id,
+      std::move(on_complete));
+}
+
+void RenderWidgetHostImpl::CommitExternallySourcedComposition(
+    const std::u16string& text,
+    const GlobalDOMNodeId& target_dom_node_id,
+    base::OnceClosure on_complete) {
+  GetWidgetInputHandler()->ImeCommitText(
+      text, std::vector<ui::ImeTextSpan>(), gfx::Range::InvalidRange(), 0,
+      target_dom_node_id.target_element_dom_id, std::move(on_complete));
+}
+
+void RenderWidgetHostImpl::PasteIntoNode(
+    const std::u16string& text,
+    const GlobalDOMNodeId& target_dom_node_id) {
+  GetWidgetInputHandler()->PasteIntoNode(
+      text, target_dom_node_id.target_element_dom_id);
 }
 
 void RenderWidgetHostImpl::RejectPointerLockOrUnlockIfNecessary(
@@ -2811,9 +2905,8 @@ void RenderWidgetHostImpl::ShowPopup(const gfx::Rect& initial_screen_rect,
   // `delegate_` may be null since this message may be received from when
   // the delegate shutdown but this widget is not yet destroyed.
   if (delegate_) {
-    delegate_->ShowCreatedWidget(GetProcess()->GetDeprecatedID(),
-                                 GetRoutingID(), initial_screen_rect,
-                                 anchor_screen_rect);
+    delegate_->ShowCreatedWidget(GetProcess()->GetID(), GetRoutingID(),
+                                 initial_screen_rect, anchor_screen_rect);
   }
   std::move(callback).Run();
 }
@@ -2857,8 +2950,8 @@ void RenderWidgetHostImpl::OnUpdateScreenRectsAck() {
 
   view_->SendInitialPropertiesIfNeeded();
 
-  if (view_->GetViewBounds() == last_view_screen_rect_ &&
-      view_->GetBoundsInRootWindow() == last_window_screen_rect_) {
+  if (view_->GetViewBoundsWithoutTransform() == last_view_screen_rect_ &&
+      view_->GetBoundsInScreenWithoutTransform() == last_window_screen_rect_) {
     return;
   }
 
@@ -3072,6 +3165,12 @@ void RenderWidgetHostImpl::AsyncStartDragging(
     // nothing will happen.
     return;
   }
+  if (source_rfh->IsInactiveAndDisallowActivation(
+          DisallowActivationReasonId::kStartDragging)) {
+    // Don't process dragging from inactive documents.
+    // TODO(crbug.com/523886022): Add more checks for e.g. visibility.
+    return;
+  }
 
   StartDragging(*source_rfh, std::move(drag_data), drag_operations_mask,
                 unsafe_bitmap, cursor_offset_in_dip, drag_obj_rect_in_dip,
@@ -3159,6 +3258,8 @@ bool RenderWidgetHostImpl::StoredVisualPropertiesNeedsUpdate(
              new_visual_properties.is_fullscreen_granted ||
          old_visual_properties->display_mode !=
              new_visual_properties.display_mode ||
+         old_visual_properties->application_context !=
+             new_visual_properties.application_context ||
          old_visual_properties->window_show_state !=
              new_visual_properties.window_show_state ||
          old_visual_properties->resizable != new_visual_properties.resizable ||
@@ -3166,8 +3267,6 @@ bool RenderWidgetHostImpl::StoredVisualPropertiesNeedsUpdate(
              new_visual_properties.browser_controls_params ||
          old_visual_properties->visible_viewport_size_device_px !=
              new_visual_properties.visible_viewport_size_device_px ||
-         old_visual_properties->capture_sequence_number !=
-             new_visual_properties.capture_sequence_number ||
          old_visual_properties->page_scale_factor !=
              new_visual_properties.page_scale_factor ||
          old_visual_properties->compositing_scale_factor !=
@@ -3430,6 +3529,14 @@ void RenderWidgetHostImpl::SetAutoscrollSelectionActiveInMainFrame(
     return;
   }
 
+  // Only the outermost main frame should request this. Main frames of inner
+  // frame trees (e.g. fenced frames, guest views) share the outer WebContents'
+  // input event router, but should not be allowed to trigger mouse-up routing
+  // to the outermost root view.
+  if (!frame_tree_ || !frame_tree_->is_primary()) {
+    return;
+  }
+
   if (!delegate_ || !delegate_->GetInputEventRouter()) {
     return;
   }
@@ -3586,10 +3693,6 @@ bool RenderWidgetHostImpl::KeyPressListenersHandleEvent(
   }
 
   return false;
-}
-
-void RenderWidgetHostImpl::OnInputIgnored(const blink::WebInputEvent& event) {
-  delegate_->OnInputIgnored(event);
 }
 
 input::StylusInterface* RenderWidgetHostImpl::GetStylusInterface() {
@@ -4171,15 +4274,18 @@ void RenderWidgetHostImpl::AnimateDoubleTapZoomInMainFrame(
   }
 
   gfx::Rect view_local_bounds(view_->GetViewBounds().size());
-  if (!view_local_bounds.IsEmpty() &&
-      (!view_local_bounds.Contains(point) ||
-       !view_local_bounds.Intersects(rect_to_zoom))) {
+  if (!view_local_bounds.Contains(point)) {
+    return;
+  }
+  gfx::Rect clipped_rect_to_zoom(rect_to_zoom);
+  clipped_rect_to_zoom.Intersect(view_local_bounds);
+  if (clipped_rect_to_zoom.IsEmpty()) {
     return;
   }
 
   auto* root_view = view_->GetRootView();
   gfx::Point transformed_point(point);
-  gfx::Rect transformed_rect_to_zoom(rect_to_zoom);
+  gfx::Rect transformed_rect_to_zoom(clipped_rect_to_zoom);
   if (!RenderWidgetHostViewBase::TransformPointAndRectToRootView(
           view_.get(), root_view, &transformed_point,
           &transformed_rect_to_zoom)) {
@@ -4201,13 +4307,14 @@ void RenderWidgetHostImpl::ZoomToFindInPageRectInMainFrame(
   }
 
   gfx::Rect view_local_bounds(view_->GetViewBounds().size());
-  if (!view_local_bounds.IsEmpty() &&
-      !view_local_bounds.Intersects(rect_to_zoom)) {
+  gfx::Rect clipped_rect_to_zoom(rect_to_zoom);
+  clipped_rect_to_zoom.Intersect(view_local_bounds);
+  if (clipped_rect_to_zoom.IsEmpty()) {
     return;
   }
 
   auto* root_view = view_->GetRootView();
-  gfx::Rect transformed_rect_to_zoom(rect_to_zoom);
+  gfx::Rect transformed_rect_to_zoom(clipped_rect_to_zoom);
   if (!RenderWidgetHostViewBase::TransformPointAndRectToRootView(
           view_.get(), root_view, nullptr, &transformed_rect_to_zoom)) {
     return;

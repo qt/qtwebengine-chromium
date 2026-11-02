@@ -60,6 +60,7 @@ class PdfInkModuleClient {
 
   // Tells the client about a new font. The data is a serialized SkTypeface.
   virtual void AddFont(FontId font_id,
+                       const std::string& font_name,
                        base::span<const uint8_t> serialized_typeface) {}
 
   // Notifies the client to clear the current text selection.
@@ -70,6 +71,7 @@ class PdfInkModuleClient {
   virtual void DrawText(int page_index,
                         InkTextId id,
                         base::span<const InkTextInfo> text_info,
+                        float ascent,
                         double pdf_zoom,
                         const InkTextBoxAttributes& attributes) {}
 
@@ -137,10 +139,7 @@ class PdfInkModuleClient {
   virtual bool IsSelectableTextOrLinkArea(const gfx::PointF& point) = 0;
 
   // Returns the saved text annotations across the document.
-  // `generate_text_id_callback` is called to generate a unique ID for each text
-  // annotation loaded.
-  virtual DocumentInkTextBoxesMap LoadTextAnnotationsFromPdf(
-      GenerateTextIdCallback generate_text_id_callback) = 0;
+  virtual DocumentInkTextBoxesMap LoadTextAnnotationsFromPdf() = 0;
 
   // Asks the client to load Ink data from the PDF.
   virtual DocumentV2InkPathShapesMap LoadV2InkPathsFromPdf() = 0;
@@ -200,7 +199,7 @@ class PdfInkModuleClient {
   // Notifies that an existing text annotation identified by `id` should update
   // its active state and then invalidate the rect that corresponds to the union
   // of all text in the text annotation.
-  virtual void UpdateTextActiveAndInvalidate(InkTextId id, bool active) {}
+  virtual void UpdateTextActiveAndInvalidate(TextId id, bool active) {}
 
   // Same as `PageIndexFromPoint()`, but `point` must be on a visible page,
   // otherwise returns -1.

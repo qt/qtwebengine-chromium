@@ -18,6 +18,7 @@
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/strings/strcat.h"
 #include "base/strings/stringprintf.h"
 #include "base/system/sys_info.h"
 #include "base/task/thread_pool.h"
@@ -27,6 +28,7 @@
 #include "components/services/storage/dom_storage/db_status.h"
 #include "components/services/storage/dom_storage/dom_storage_constants.h"
 #include "components/services/storage/dom_storage/dom_storage_database.h"
+#include "components/services/storage/dom_storage/dom_storage_histogram_helper.h"
 #include "components/services/storage/dom_storage/features.h"
 #include "components/services/storage/dom_storage/leveldb_status_helper.h"
 #include "components/services/storage/dom_storage/storage_area_impl.h"
@@ -280,37 +282,25 @@ void LocalStorageImpl::Flush() {
     it.second->storage_area()->ScheduleImmediateCommit();
 }
 
-void LocalStorageImpl::FlushStorageKeyForTesting(
+StorageAreaImpl* LocalStorageImpl::GetStorageAreaForTesting(
     const blink::StorageKey& storage_key) {
-  if (connection_state_ != CONNECTION_FINISHED)
-    return;
-  const auto& it = areas_.find(storage_key);
-  if (it == areas_.end())
-    return;
-  it->second->storage_area()->ScheduleImmediateCommit();
-}
-
-void LocalStorageImpl::PutValueForTesting(
-    const blink::StorageKey& storage_key,
-    const std::vector<uint8_t>& key,
-    const std::vector<uint8_t>& value,
-    base::OnceCallback<void(bool)> callback) {
   if (connection_state_ != CONNECTION_FINISHED) {
-    return;
+    return nullptr;
   }
-
   const auto& it = areas_.find(storage_key);
   if (it == areas_.end()) {
-    return;
+    return nullptr;
   }
-
-  it->second->storage_area()->Put(key, value, /*client_old_value=*/std::nullopt,
-                                  /*source=*/nullptr, std::move(callback));
+  return it->second->storage_area();
 }
 
-base::FilePath LocalStorageImpl::GetDatabasePath() const {
-  return DomStorageDatabase::GetPath(StorageType::kLocalStorage,
-                                     storage_partition_directory_);
+void LocalStorageImpl::FlushStorageKeyForTesting(
+    const blink::StorageKey& storage_key) {
+  StorageAreaImpl* storage_area = GetStorageAreaForTesting(storage_key);
+  if (!storage_area) {
+    return;
+  }
+  storage_area->ScheduleImmediateCommit();
 }
 
 void LocalStorageImpl::ShutDown() {
@@ -321,12 +311,7 @@ void LocalStorageImpl::ShutDown() {
     // Flush any uncommitted data.
     for (const auto& it : areas_) {
       auto* area = it.second->storage_area();
-      base::UmaHistogramBoolean("Storage.LocalStorage.ShutdownDroppedChanges",
-                                area->has_pending_load_read_write_tasks());
       area->ScheduleImmediateCommit();
-      // TODO(crbug.com/503422295): Monitor the above histogram, and if dropping
-      // changes is common then handle that here.
-      area->CancelAllPendingRequests();
     }
 
     if (database_ && !force_keep_session_state_ &&
@@ -396,16 +381,18 @@ bool LocalStorageImpl::OnMemoryDump(
       base::StringPrintf("site_storage/localstorage/0x%" PRIXPTR,
                          reinterpret_cast<uintptr_t>(this));
 
-  // Account for database memory usage, which actually lives in the file
-  // service.
-  auto* global_dump = pmd->CreateSharedGlobalAllocatorDump(memory_dump_id_);
-  // The size of the database dump will be added by the database service.
-  auto* db_mad = pmd->CreateAllocatorDump(
-      context_name +
-      (ShouldUseSqliteBackend(in_memory_) ? "/sqlite" : "/leveldb"));
-  // Specifies that the current context is responsible for keeping memory alive.
-  int kImportance = 2;
-  pmd->AddOwnershipEdge(db_mad->guid(), global_dump->guid(), kImportance);
+  if (database_) {
+    // Account for database memory usage, which actually lives in the file
+    // service.
+    auto* global_dump = pmd->CreateSharedGlobalAllocatorDump(memory_dump_id_);
+    // The size of the database dump will be added by the database service.
+    auto* db_mad = pmd->CreateAllocatorDump(
+        context_name + (database_->is_sqlite() ? "/sqlite" : "/leveldb"));
+    // Specifies that the current context is responsible for keeping memory
+    // alive.
+    int kImportance = 2;
+    pmd->AddOwnershipEdge(db_mad->guid(), global_dump->guid(), kImportance);
+  }
 
   if (args.level_of_detail ==
       base::trace_event::MemoryDumpLevelOfDetail::kBackground) {
@@ -472,37 +459,42 @@ void LocalStorageImpl::RunWhenConnected(base::OnceClosure callback) {
   std::move(callback).Run();
 }
 
-void LocalStorageImpl::PurgeAllStorageAreas() {
-  for (const auto& it : areas_)
-    it.second->storage_area()->CancelAllPendingRequests();
-  areas_.clear();
-}
-
-void LocalStorageImpl::InitiateConnection(bool in_memory_only) {
+void LocalStorageImpl::InitiateConnection(
+    bool in_memory_only,
+    bool destroy_existing_db_for_recovery) {
   CHECK_EQ(connection_state_, CONNECTION_IN_PROGRESS);
 
-  if (!storage_partition_directory_.empty() &&
-      storage_partition_directory_.IsAbsolute() && !in_memory_only) {
-    // We were given a subdirectory to write to, so use a disk-backed database.
-    in_memory_ = false;
-    database_ = AsyncDomStorageDatabase::Open(
-        StorageType::kLocalStorage, GetDatabasePath(), memory_dump_id_,
-        base::BindOnce(&LocalStorageImpl::OnDatabaseOpened,
-                       weak_ptr_factory_.GetWeakPtr()));
-    return;
-  }
-
-  // We were not given a subdirectory. Use a memory backed database.
-  in_memory_ = true;
+  // Use an in-memory database unless we were given a usable (absolute)
+  // subdirectory and weren't asked to stay in memory.
+  in_memory_ = in_memory_only || storage_partition_directory_.empty() ||
+               !storage_partition_directory_.IsAbsolute();
+  const base::FilePath dir_to_open =
+      in_memory_ ? base::FilePath() : storage_partition_directory_;
+  // Recovery destroys the pre-existing on-disk database before reopening (which
+  // may itself be in-memory). An empty `dir_to_destroy` means no destroy.
+  const base::FilePath dir_to_destroy = destroy_existing_db_for_recovery
+                                            ? storage_partition_directory_
+                                            : base::FilePath();
   database_ = AsyncDomStorageDatabase::Open(
-      StorageType::kLocalStorage,
-      /*database_path=*/base::FilePath(), memory_dump_id_,
+      StorageType::kLocalStorage, dir_to_open, memory_dump_id_, dir_to_destroy,
       base::BindOnce(&LocalStorageImpl::OnDatabaseOpened,
                      weak_ptr_factory_.GetWeakPtr()));
 }
 
-void LocalStorageImpl::OnDatabaseOpened(DbStatus status) {
-  if (!status.ok()) {
+void LocalStorageImpl::OnDatabaseOpened(
+    AsyncDomStorageDatabase::OpenOutcome outcome) {
+  // If this open destroyed a pre-existing database, log the destroy status and
+  // feed its outcome into the recovery histogram. In LocalStorage destroys only
+  // happen during recovery, so `recovery_state_` is always set here.
+  if (outcome.destroy_outcome) {
+    CHECK(recovery_state_);
+    outcome.destroy_outcome->status.Log(
+        "Storage.LocalStorage.DestroyDatabase",
+        outcome.destroy_outcome->destroyed_db_metrics_type);
+    recovery_state_->AddDestroyResult(outcome.destroy_outcome->status.ok());
+  }
+
+  if (!outcome.open_status.ok()) {
     // If we failed to open the database, try to delete and recreate the
     // database, or ultimately fallback to an in-memory database.
     DeleteAndRecreateDatabase(DomStorageRecoveryReason::kOpenFailure);
@@ -547,23 +539,27 @@ void LocalStorageImpl::OnConnectionFinished() {
 
 void LocalStorageImpl::DeleteAndRecreateDatabase(
     DomStorageRecoveryReason reason) {
+  CHECK(database_);
+  const DatabaseMetricsType metrics_type = database_->metrics_type();
+
   // Record the reason that initiated this recovery cycle. The first reason
   // wins: subsequent calls during the same recovery cycle (e.g. an open
   // failure after a destroy triggered by kCommitErrorThresholdExceeded) do not
   // overwrite it. So, the histogram correctly attributes the outcome to the
   // original reason.
   if (!recovery_state_) {
-    recovery_state_.emplace(reason, in_memory_);
+    recovery_state_.emplace(reason, metrics_type);
   }
 
   // We're about to set database_ to null, so delete the StorageAreaImpls
   // that might still be using the old database.
-  PurgeAllStorageAreas();
+  areas_.clear();
 
   // Reset state to be in process of connecting. This will cause requests for
   // StorageAreas to be queued until the connection is complete.
   connection_state_ = CONNECTION_IN_PROGRESS;
-  RecordCommitErrorCountAtReset("LocalStorage", commit_error_count_);
+  RecordCommitErrorCountAtReset("LocalStorage", commit_error_count_,
+                                metrics_type);
   commit_error_count_ = 0;
   database_.reset();
 
@@ -582,25 +578,10 @@ void LocalStorageImpl::DeleteAndRecreateDatabase(
 
   tried_to_recreate_during_open_ = true;
 
-  // Destroy database, and try again.
-  if (!in_memory_) {
-    DomStorageDatabaseFactory::Destroy(
-        GetDatabasePath(),
-        base::BindOnce(&LocalStorageImpl::OnDBDestroyed,
-                       weak_ptr_factory_.GetWeakPtr(), recreate_in_memory));
-  } else {
-    // No directory, so nothing to destroy. Retrying to recreate will probably
-    // fail, but try anyway.
-    InitiateConnection(recreate_in_memory);
-  }
-}
-
-void LocalStorageImpl::OnDBDestroyed(bool recreate_in_memory, DbStatus status) {
-  // Destroy is only called when the database is on disk (see !in_memory_ guard
-  // in DeleteAndRecreateDatabase), so in_memory is always false here.
-  status.Log("Storage.LocalStorage.DestroyDatabase", /*in_memory=*/false);
-  recovery_state_.value().AddDestroyResult(status.ok());
-  InitiateConnection(recreate_in_memory);
+  // `!in_memory_` means the old database was on-disk and must be destroyed
+  // before reopening.
+  InitiateConnection(recreate_in_memory,
+                     /*destroy_existing_db_for_recovery=*/!in_memory_);
 }
 
 LocalStorageImpl::StorageAreaHolder* LocalStorageImpl::GetOrCreateStorageArea(
@@ -689,22 +670,21 @@ void LocalStorageImpl::GetStatistics(size_t* total_cache_size,
 }
 
 void LocalStorageImpl::OnCommitResult(DbStatus status) {
+  CHECK_EQ(connection_state_, CONNECTION_FINISHED);
+  CHECK(database_);
   if (status.ok()) {
+    const DatabaseMetricsType metrics_type = database_->metrics_type();
     if (commit_error_count_ > 0 && tried_to_recover_from_commit_errors_) {
       base::UmaHistogramEnumeration(
-          "Storage.LocalStorage.Recovery.CommitErrorThresholdExceeded",
+          base::StrCat(
+              {"Storage.LocalStorage.Recovery.CommitErrorThresholdExceeded",
+               MaybeGetOnDiskExperimentalSuffix(metrics_type)}),
           DomStorageDatabaseRecoveryOutcome::
               kTransientErrorsAfterAttemptedRecovery);
     }
-    RecordCommitErrorCountAtReset("LocalStorage", commit_error_count_);
+    RecordCommitErrorCountAtReset("LocalStorage", commit_error_count_,
+                                  metrics_type);
     commit_error_count_ = 0;
-    return;
-  }
-
-  if (connection_state_ != CONNECTION_FINISHED) {
-    // Previous commit errors deleted and recreated the database below.  Ignore
-    // additional errors from the old database while waiting for the new
-    // database to open.
     return;
   }
 
@@ -715,7 +695,9 @@ void LocalStorageImpl::OnCommitResult(DbStatus status) {
       // are still having problems: there isn't really anything left to try, so
       // just ignore errors.
       base::UmaHistogramEnumeration(
-          "Storage.LocalStorage.Recovery.CommitErrorThresholdExceeded",
+          base::StrCat(
+              {"Storage.LocalStorage.Recovery.CommitErrorThresholdExceeded",
+               MaybeGetOnDiskExperimentalSuffix(database_->metrics_type())}),
           DomStorageDatabaseRecoveryOutcome::
               kOngoingErrorsAfterAttemptedRecovery);
       return;

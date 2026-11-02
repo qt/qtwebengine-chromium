@@ -26,6 +26,7 @@ package(
 cc_library(
     name = "oak_session_bindings",
     hdrs = ["oak_session_bindings.h"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//cc/ffi:bytes_bindings",
         "//cc/ffi:bytes_view",
@@ -44,6 +45,7 @@ cc_test(
     name = "oak_session_bindings_test",
     srcs = ["oak_session_bindings_test.cc"],
     tags = ["asan"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":oak_session_bindings",
         "//cc/ffi:bytes_bindings",
@@ -61,6 +63,7 @@ cc_library(
     name = "client_session",
     srcs = ["client_session.cc"],
     hdrs = ["client_session.h"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":config",
         ":oak_session_bindings",
@@ -80,6 +83,7 @@ cc_library(
     name = "server_session",
     srcs = ["server_session.cc"],
     hdrs = ["server_session.h"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":config",
         ":oak_session_bindings",
@@ -99,6 +103,7 @@ cc_test(
     name = "client_server_session_test",
     srcs = ["client_server_session_test.cc"],
     tags = ["asan"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":client_session",
         ":server_session",
@@ -120,6 +125,7 @@ cc_binary(
     testonly = True,
     srcs = ["client_server_session_benchmark.cc"],
     tags = ["asan"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":client_session",
         ":server_session",
@@ -136,10 +142,27 @@ cc_library(
     name = "config",
     srcs = ["config.cc"],
     hdrs = ["config.h"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":oak_session_bindings",
         "//cc/ffi:bytes_view",
+        "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "config_test",
+    srcs = ["config_test.cc"],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":config",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/status",
+        "@com_google_googletest//:gtest_main",
     ],
 )

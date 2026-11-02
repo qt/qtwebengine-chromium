@@ -9,12 +9,10 @@
 
 :host {
   /* To help make things line up nicely between the rich-text readonly view and
-   * the interactive <input>, we give everything here the same height. This is
-   * a bit less than the height of the location bar so it can draw the focus
-   * ring without us painting over it. */
-  --omnibox-height: calc(var(--location-bar-height) - 6px);
+   * the interactive <input>, we give everything here the same height,
+   * the height of the location bar. */
+  --omnibox-height: calc(var(--location-bar-height));
   align-self: center;
-  background-color: inherit;
   border: none;
   color: var(--color-omnibox-text);
   display: flex;
@@ -31,7 +29,6 @@
  */
 #textContainerWrap {
   display: flex;
-  background-color: inherit;
   flex: 1;
   height: var(--omnibox-height);
   /* We want to position textInput off of us */
@@ -43,18 +40,20 @@
 }
 
 #textContainer {
-  /* We paint both possible widgets with opaque backgrounds and use z-index to
-     select which one shows
+  /* Both #textContainer and #textInput are included in the layout, with opacity
+   * used to determine which one is actually visible. Since the <input> element
+   * is always actually present, any interaction goes to it directly, making
+   * the switchover painless. #textContainer always being present lets
+   * #inlineAutocomplete use it to position itself in the right spot.
    */
-  background-color: inherit;
   flex: 0 1 min-content;
   height: var(--omnibox-height);
+  opacity: 1;
   outline: none;
   overflow: hidden;
   pointer-events: none;
   text-overflow: ellipsis;
-  text-wrap: nowrap;
-  z-index: 1;
+  white-space: pre;
 }
 
 #textContainer span {
@@ -80,11 +79,16 @@
   text-decoration: none;
 }
 
+#textInput::placeholder {
+  color: var(--color-omnibox-text);
+}
+
 #textContainer .color-dim {
   color: var(--color-omnibox-text-dimmed);
 }
 
-#textContainer .color-foreground-disabled {
+#textContainer .color-foreground-disabled,
+#textInput.color-foreground-disabled::placeholder  {
   color: var(--color-omnibox-foreground-disabled);
 }
 
@@ -98,16 +102,94 @@
 
 #textInput {
   appearance: none;
-  background-color: inherit;
+  background-color: transparent;
   border: none;
   color: inherit;
   font-family: inherit;
   font-size: inherit;
   font-weight: inherit;
   height: var(--omnibox-height);
+  opacity: 0;
   outline: none;
   padding: 0;
   position: absolute;
   top: 0;
   width: 100%;
+}
+
+:host(.dragging-over) #textContainer span {
+  background-color: var(--color-omnibox-selection-background);
+  color: var(--color-omnibox-selection-foreground);
+}
+
+#inlineAutocomplete {
+  color: var(--color-omnibox-text);
+  background-color: var(--color-location-bar-background);
+  height: var(--omnibox-height);
+  line-height: var(--omnibox-height);
+  /* If [composing] isn't set, this is used only for positioning the additional
+   * text. */
+  visibility: hidden;
+  white-space: pre;
+}
+
+#inlineAutocomplete[composing] {
+  visibility: visible;
+}
+
+#additionalText {
+  color: var(--color-omnibox-results-url);
+  /* fonts are the same as for the omnibox proper */
+  height: var(--omnibox-height);
+  line-height: var(--omnibox-height);
+  pointer-events: none;
+  position: relative;
+  white-space: pre;
+
+  /* Since the <input> is full-width, we want to be on top */
+  z-index: 2;
+}
+
+#dragTemplate {
+  align-items: center;
+  color: var(--color-textfield-foreground);
+  display: flex;
+  font-family: var(--drag-template-font-family);
+  font-size: var(--drag-template-font-size);
+  font-weight: var(--drag-template-font-weight);
+  /* Matches native drag image preferred height calculation from
+   * button_drag_utils.cc (button->GetPreferredSize({}): 16px gfx::kFaviconSize
+   * icon + 8px LabelButton padding).
+   */
+  height: 24px;
+  /* Position off-screen so the template is not visible in the transparent
+   * WebUI, while keeping its full layout intact for
+   * dataTransfer.setDragImage().
+   */
+  left: -10000px;
+  max-width: 150px;
+  pointer-events: none;
+  position: absolute;
+  top: -10000px;
+  white-space: nowrap;
+}
+
+#dragFavicon {
+  flex-shrink: 0;
+  /* Standard favicon display size (gfx::kFaviconSize). */
+  height: 16px;
+  margin-inline-end: 12px;
+  width: 16px;
+}
+
+#dragTitle {
+  overflow: hidden;
+  padding-inline: 2px;
+  text-overflow: ellipsis;
+  text-shadow:
+      0 0 1px var(--color-textfield-background),
+      0 0 1px var(--color-textfield-background),
+      0 0 2px var(--color-textfield-background),
+      0 0 2px var(--color-textfield-background);
+  white-space: nowrap;
 }

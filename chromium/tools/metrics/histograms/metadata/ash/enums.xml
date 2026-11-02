@@ -1878,7 +1878,7 @@ chromeos/ash/components/peripheral_notification/peripheral_notification_manager.
   <int value="3" label="Alt-mode fallback due to Pciguard"/>
   <int value="4" label="Alt-mode fallback in guest session"/>
   <int value="5" label="Peripheral blocked"/>
-  <int value="6" label="Billboard device"/>
+  <int value="6" label="(deprecated) Billboard device"/>
   <int value="7" label="Invalid DP alternate mode cable"/>
   <int value="8" label="USB4 device uses Thunderbolt due to the cable"/>
   <int value="9" label="USB4 device with incompatible cable"/>
@@ -2796,7 +2796,7 @@ chromeos/ash/components/peripheral_notification/peripheral_notification_manager.
   <int value="18" label="Status Area Overflow Button"/>
   <int value="19" label="Virtual Keyboard Tray, Status Area"/>
   <int value="20" label="Virtual Keyboard Tray, Accesibility Window"/>
-  <int value="21" label="WM Mode Button"/>
+  <int value="21" label="WM Mode Button (Deprecated)"/>
   <int value="22" label="Video Conferencing Tray"/>
   <int value="23" label="Focus Mode Tray"/>
   <int value="24" label="Pods Overflow"/>

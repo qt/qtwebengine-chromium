@@ -135,7 +135,12 @@ ClipboardPromise::ClipboardPromise(ExecutionContext* context,
                                    ExceptionState& exception_state)
     : ExecutionContextLifecycleObserver(context),
       script_promise_resolver_(resolver),
-      permission_service_(context) {}
+      permission_service_(context) {
+  if (context && ClipboardCommands::IsExecutingPaste(*context)) {
+    sequence_number_at_paste_start_ =
+        ClipboardCommands::GetSequenceNumberForExecutingPaste(*context);
+  }
+}
 
 ClipboardPromise::~ClipboardPromise() = default;
 
@@ -187,9 +192,7 @@ void ClipboardPromise::RejectFromReadOrDecodeFailure() {
   }
   ScriptState::Scope scope(GetScriptState());
   String exception_text =
-      RuntimeEnabledFeatures::ClipboardItemWithDOMStringSupportEnabled()
-          ? "Failed to read or decode ClipboardItemData for type "
-          : "Failed to read or decode Blob for clipboard item type ";
+      "Failed to read or decode ClipboardItemData for type ";
   script_promise_resolver_->RejectWithDOMException(
       DOMExceptionCode::kDataError,
       StrCat({exception_text,
@@ -542,14 +545,6 @@ void ClipboardPromise::WriteClipboardItemData(
   wtf_size_t clipboard_item_index = 0;
   CHECK_EQ(write_clipboard_item_types_.size(), clipboard_item_list->size());
   for (const auto& clipboard_item_data : *clipboard_item_list) {
-    if (!RuntimeEnabledFeatures::ClipboardItemWithDOMStringSupportEnabled() &&
-        !clipboard_item_data->IsBlob()) {
-      script_promise_resolver_->RejectWithDOMException(
-          DOMExceptionCode::kNotAllowedError,
-          "DOMString is not supported in ClipboardItem");
-      return;
-    }
-
     const String& type = write_clipboard_item_types_[clipboard_item_index];
     if (clipboard_item_data->IsBlob()) {
       const String& type_with_args = clipboard_item_data->GetAsBlob()->type();
@@ -711,6 +706,20 @@ void ClipboardPromise::ValidatePreconditions(
        ClipboardCommands::IsExecutingCutOrCopy(*context)) ||
       (permission == mojom::blink::PermissionName::CLIPBOARD_READ &&
        ClipboardCommands::IsExecutingPaste(*context))) {
+    // Validate the contents of the user's clipboard have not changed since the
+    // start of the paste event and fail if it has. This prevents an attacker
+    // from initiating a synchronous javascript command (e.g. alert) during the
+    // paste event and the user unknowingly copies something new before the
+    // paste event resolves.
+    if (permission == mojom::blink::PermissionName::CLIPBOARD_READ &&
+        sequence_number_at_paste_start_.has_value() &&
+        GetSystemClipboard()->SequenceNumber() !=
+            *sequence_number_at_paste_start_) {
+      script_promise_resolver_->RejectWithDOMException(
+          DOMExceptionCode::kDataError,
+          "Clipboard contents changed since paste event started.");
+      return;
+    }
     GetClipboardTaskRunner()->PostTask(
         FROM_HERE,
         blink::BindOnce(std::move(callback),

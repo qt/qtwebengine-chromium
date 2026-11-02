@@ -947,8 +947,18 @@ export class ContextMenu extends SubMenu {
   private static pendingMenu: ContextMenu|null = null;
   private static useSoftMenu = false;
   static readonly groupWeights = [
-    'header', 'new', 'reveal', 'edit', 'clipboard', 'debug', 'view', 'default', 'override', 'save', 'annotation',
-    'footer'
+    'header',
+    'new',
+    'reveal',
+    'edit',
+    'clipboard',
+    'debug',
+    'view',
+    'default',
+    'override',
+    'save',
+    'annotation',
+    'footer',
   ];
 }
 

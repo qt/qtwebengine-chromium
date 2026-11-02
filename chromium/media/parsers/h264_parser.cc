@@ -226,30 +226,7 @@ H264SliceHeader& H264SliceHeader::operator=(const H264SliceHeader&) = default;
 H264SliceHeader::H264SliceHeader(H264SliceHeader&&) = default;
 H264SliceHeader& H264SliceHeader::operator=(H264SliceHeader&&) = default;
 
-skhdr::ContentLightLevelInformation H264SEIContentLightLevelInfo::ToSkHdr()
-    const {
-  return skhdr::ContentLightLevelInformation::MakeUint16(
-      /*maxCLL=*/max_content_light_level,
-      /*maxFALL=*/max_picture_average_light_level);
-}
 
-skhdr::MasteringDisplayColorVolume H264SEIMasteringDisplayInfo::ToSkHdr()
-    const {
-  constexpr auto kChromaDenominator = 50000.0f;
-  constexpr auto kLumaDenoninator = 10000.0f;
-  // display primaries are in G/B/R order in MDCV SEI.
-  return {
-      .fDisplayPrimaries = {display_primaries[2][0] / kChromaDenominator,
-                            display_primaries[2][1] / kChromaDenominator,
-                            display_primaries[0][0] / kChromaDenominator,
-                            display_primaries[0][1] / kChromaDenominator,
-                            display_primaries[1][0] / kChromaDenominator,
-                            display_primaries[1][1] / kChromaDenominator,
-                            white_points[0] / kChromaDenominator,
-                            white_points[1] / kChromaDenominator},
-      .fMaximumDisplayMasteringLuminance = max_luminance / kLumaDenoninator,
-      .fMinimumDisplayMasteringLuminance = min_luminance / kLumaDenoninator};
-}
 
 H264SEI::H264SEI() = default;
 
@@ -516,12 +493,11 @@ VideoCodecProfile H264Parser::ProfileIDCToVideoCodecProfile(int profile_idc) {
 }
 
 // static
-bool H264Parser::ParseNALUs(const uint8_t* stream,
-                            size_t stream_size,
+bool H264Parser::ParseNALUs(base::span<const uint8_t> stream,
                             std::vector<H264NALU>* nalus) {
   DCHECK(nalus);
   H264Parser parser;
-  parser.SetStream(UNSAFE_TODO(base::span(stream, stream_size)));
+  parser.SetStream(stream);
 
   while (true) {
     H264NALU nalu;
@@ -1224,10 +1200,18 @@ H264Parser::Result H264Parser::ParseRefPicListModification(
       case 0:
       case 1:
         READ_UE_OR_RETURN(&pic_num_mod->abs_diff_pic_num_minus1);
+        // H.264 Section 7.4.3.1: abs_diff_pic_num_minus1 shall be in
+        // [0, MaxPicNum - 1], MaxPicNum <= 65536.
+        IN_RANGE_IF_OR_RETURN(pic_num_mod->abs_diff_pic_num_minus1, 0, 65535,
+                              validate_extended_bitstream_);
         break;
 
       case 2:
         READ_UE_OR_RETURN(&pic_num_mod->long_term_pic_num);
+        // H.264 Section 7.4.3.1: long_term_pic_num in [0, MaxLongTermFrameIdx],
+        // MaxLongTermFrameIdx <= max_num_ref_frames - 1 <= 15.
+        IN_RANGE_IF_OR_RETURN(pic_num_mod->long_term_pic_num, 0, 15,
+                              validate_extended_bitstream_);
         break;
 
       case 3:
@@ -1351,6 +1335,7 @@ H264Parser::Result H264Parser::ParsePredWeightTable(const H264SPS& sps,
 
 H264Parser::Result H264Parser::ParseDecRefPicMarking(H264SliceHeader* shdr) {
   size_t bits_left_at_start = br_.NumBitsLeft();
+  size_t epb_at_start = br_.NumEmulationPreventionBytesRead();
 
   if (shdr->idr_pic_flag) {
     READ_BOOL_OR_RETURN(&shdr->no_output_of_prior_pics_flag);
@@ -1369,18 +1354,40 @@ H264Parser::Result H264Parser::ParseDecRefPicMarking(H264SliceHeader* shdr) {
           break;
 
         if (marking->memory_mgmnt_control_operation == 1 ||
-            marking->memory_mgmnt_control_operation == 3)
+            marking->memory_mgmnt_control_operation == 3) {
           READ_UE_OR_RETURN(&marking->difference_of_pic_nums_minus1);
+          // H.264 Section 7.4.3.3: difference_of_pic_nums_minus1 shall be in
+          // [0, MaxPicNum - 1], MaxPicNum <= 65536.
+          IN_RANGE_IF_OR_RETURN(marking->difference_of_pic_nums_minus1, 0,
+                                65535, validate_extended_bitstream_);
+        }
 
-        if (marking->memory_mgmnt_control_operation == 2)
+        if (marking->memory_mgmnt_control_operation == 2) {
           READ_UE_OR_RETURN(&marking->long_term_pic_num);
+          // H.264 Section 7.4.3.3: long_term_pic_num in [0,
+          // MaxLongTermFrameIdx], MaxLongTermFrameIdx <= max_num_ref_frames - 1
+          // <= 15.
+          IN_RANGE_IF_OR_RETURN(marking->long_term_pic_num, 0, 15,
+                                validate_extended_bitstream_);
+        }
 
         if (marking->memory_mgmnt_control_operation == 3 ||
-            marking->memory_mgmnt_control_operation == 6)
+            marking->memory_mgmnt_control_operation == 6) {
           READ_UE_OR_RETURN(&marking->long_term_frame_idx);
+          // H.264 Section 7.4.3.3: long_term_frame_idx in [0,
+          // MaxLongTermFrameIdx], MaxLongTermFrameIdx <= max_num_ref_frames - 1
+          // <= 15.
+          IN_RANGE_IF_OR_RETURN(marking->long_term_frame_idx, 0, 15,
+                                validate_extended_bitstream_);
+        }
 
-        if (marking->memory_mgmnt_control_operation == 4)
+        if (marking->memory_mgmnt_control_operation == 4) {
           READ_UE_OR_RETURN(&marking->max_long_term_frame_idx_plus1);
+          // H.264 Section 7.4.3.3: max_long_term_frame_idx_plus1 in [0,
+          // max_num_ref_frames], max_num_ref_frames <= 16.
+          IN_RANGE_IF_OR_RETURN(marking->max_long_term_frame_idx_plus1, 0, 16,
+                                validate_extended_bitstream_);
+        }
 
         if (marking->memory_mgmnt_control_operation > 6)
           return kInvalidStream;
@@ -1393,7 +1400,9 @@ H264Parser::Result H264Parser::ParseDecRefPicMarking(H264SliceHeader* shdr) {
     }
   }
 
-  shdr->dec_ref_pic_marking_bit_size = bits_left_at_start - br_.NumBitsLeft();
+  shdr->dec_ref_pic_marking_bit_size =
+      (bits_left_at_start - br_.NumBitsLeft()) -
+      8 * (br_.NumEmulationPreventionBytesRead() - epb_at_start);
   return kOk;
 }
 
@@ -1463,6 +1472,7 @@ H264Parser::Result H264Parser::ParseSliceHeader(const H264NALU& nalu,
   }
 
   size_t bits_left_at_pic_order_cnt_start = br_.NumBitsLeft();
+  size_t epb_at_pic_order_cnt_start = br_.NumEmulationPreventionBytesRead();
   if (sps->pic_order_cnt_type == 0) {
     READ_BITS_OR_RETURN(sps->log2_max_pic_order_cnt_lsb_minus4 + 4,
                         &shdr->pic_order_cnt_lsb);
@@ -1479,7 +1489,8 @@ H264Parser::Result H264Parser::ParseSliceHeader(const H264NALU& nalu,
   }
 
   shdr->pic_order_cnt_bit_size =
-      bits_left_at_pic_order_cnt_start - br_.NumBitsLeft();
+      (bits_left_at_pic_order_cnt_start - br_.NumBitsLeft()) -
+      8 * (br_.NumEmulationPreventionBytesRead() - epb_at_pic_order_cnt_start);
 
   if (pps->redundant_pic_cnt_present_flag) {
     READ_UE_OR_RETURN(&shdr->redundant_pic_cnt);
@@ -1637,6 +1648,7 @@ H264Parser::Result H264Parser::ParseSEI(H264SEI* sei) {
              << " payload size: " << payload_size;
 
     enum Type {
+      kSEIUserDataRegisteredItuTT35 = 4,
       kSEIRecoveryPoint = 6,
       kSEIMasteringDisplayInfo = 137,
       kSEIContentLightLevelInfo = 144,
@@ -1644,6 +1656,25 @@ H264Parser::Result H264Parser::ParseSEI(H264SEI* sei) {
 
     H264SEIMessage sei_msg;
     switch (type) {
+      case kSEIUserDataRegisteredItuTT35: {
+        auto& itu_t_t35 = sei_msg.emplace<H26xSEIUserDataRegisteredT35>();
+        READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(8, &byte, &num_bits_remain);
+        itu_t_t35.country_code = byte;
+        if (itu_t_t35.country_code == 0xff) {
+          READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(8, &byte, &num_bits_remain);
+          itu_t_t35.country_code_extension_byte = byte;
+        }
+        RETURN_IF_NUM_BITS_REMAIN_NEGATIVE(num_bits_remain);
+        size_t payload_bytes = num_bits_remain / 8;
+        if (payload_bytes > 0) {
+          itu_t_t35.payload = base::HeapArray<uint8_t>::Uninit(payload_bytes);
+          for (size_t i = 0; i < payload_bytes; ++i) {
+            READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(8, &byte, &num_bits_remain);
+            itu_t_t35.payload[i] = byte;
+          }
+        }
+        break;
+      }
       case kSEIRecoveryPoint: {
         auto& recovery_point = sei_msg.emplace<H264SEIRecoveryPoint>();
         READ_UE_AND_MINUS_BITS_READ_OR_RETURN(
@@ -1660,7 +1691,7 @@ H264Parser::Result H264Parser::ParseSEI(H264SEI* sei) {
         break;
       }
       case kSEIContentLightLevelInfo: {
-        auto& info = sei_msg.emplace<H264SEIContentLightLevelInfo>();
+        auto& info = sei_msg.emplace<H26xSEIContentLightLevelInfo>();
         READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(
             16, &info.max_content_light_level, &num_bits_remain);
         READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(
@@ -1668,7 +1699,7 @@ H264Parser::Result H264Parser::ParseSEI(H264SEI* sei) {
         break;
       }
       case kSEIMasteringDisplayInfo: {
-        auto& info = sei_msg.emplace<H264SEIMasteringDisplayInfo>();
+        auto& info = sei_msg.emplace<H26xSEIMasteringDisplayInfo>();
         for (auto& primary : info.display_primaries) {
           for (auto& component : primary) {
             READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(16, &component,
@@ -1704,7 +1735,7 @@ H264Parser::Result H264Parser::ParseSEI(H264SEI* sei) {
       SKIP_BITS_OR_RETURN(num_bits_remain);
     // Only add parsed SEI messages.
     if (num_bits_remain < payload_size * 8) {
-      sei->msgs.push_back(sei_msg);
+      sei->msgs.push_back(std::move(sei_msg));
     }
     // In case the loop endless.
     if (++num_parsed_sei_msg > kMaxParsedSEIMessages)

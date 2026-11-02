@@ -40,15 +40,12 @@ import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
-import * as Annotations from '../../models/annotations/annotations.js';
 import * as ComputedStyle from '../../models/computed_style/computed_style.js';
 import * as PanelCommon from '../../panels/common/common.js';
 import type * as Adorners from '../../ui/components/adorners/adorners.js';
-import * as TreeOutline from '../../ui/components/tree_outline/tree_outline.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
-import type {AXTreeNodeData} from './AccessibilityTreeUtils.js';
 import {AccessibilityTreeView} from './AccessibilityTreeView.js';
 import {ColorSwatchPopoverIcon} from './ColorSwatchPopoverIcon.js';
 import * as ElementsComponents from './components/components.js';
@@ -215,13 +212,25 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
   private cssStyleTrackerByCSSModel: Map<SDK.CSSModel.CSSModel, SDK.CSSModel.CSSPropertyTracker>;
   #domTreeWidget: DOMTreeWidget;
   #computedStyleModel: ComputedStyle.ComputedStyleModel.ComputedStyleModel;
+  readonly #targetManager: SDK.TargetManager.TargetManager;
+  readonly #settings: Common.Settings.Settings;
+
+  get settings(): Common.Settings.Settings {
+    return this.#settings;
+  }
+
+  get targetManager(): SDK.TargetManager.TargetManager {
+    return this.#targetManager;
+  }
 
   getTreeOutlineForTesting(): ElementsTreeOutline|undefined {
     return this.#domTreeWidget.getTreeOutlineForTesting();
   }
 
-  constructor() {
+  constructor(targetManager?: SDK.TargetManager.TargetManager, settings?: Common.Settings.Settings) {
     super('elements');
+    this.#targetManager = targetManager ?? SDK.TargetManager.TargetManager.instance();
+    this.#settings = settings ?? Common.Settings.Settings.instance();
     this.registerRequiredCSS(elementsPanelStyles);
 
     this.splitWidget = new UI.SplitWidget.SplitWidget(true, true, 'elements-panel-split-view-state', 325, 325);
@@ -252,15 +261,13 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     this.domTreeContainer.id = 'elements-content';
     this.domTreeContainer.tabIndex = -1;
     // FIXME: crbug.com/425984
-    if (Common.Settings.Settings.instance().moduleSetting('dom-word-wrap').get()) {
+    if (this.#settings.moduleSetting('dom-word-wrap').get()) {
       this.domTreeContainer.classList.add('elements-wrap');
     }
-    Common.Settings.Settings.instance()
-        .moduleSetting('dom-word-wrap')
-        .addChangeListener(this.domWordWrapSettingChanged.bind(this));
+    this.#settings.moduleSetting('dom-word-wrap').addChangeListener(this.domWordWrapSettingChanged.bind(this));
 
     crumbsContainer.id = 'elements-crumbs';
-    this.accessibilityTreeView = new AccessibilityTreeView(new TreeOutline.TreeOutline.TreeOutline<AXTreeNodeData>());
+    this.accessibilityTreeView = new AccessibilityTreeView();
     this.breadcrumbs = new ElementsComponents.ElementsBreadcrumbs.ElementsBreadcrumbs();
     this.breadcrumbs.addEventListener('breadcrumbsnodeselected', event => {
       this.crumbNodeSelected(event);
@@ -287,9 +294,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
 
     this.metricsWidget = new MetricsSidebarPane(this.#computedStyleModel);
 
-    Common.Settings.Settings.instance()
-        .moduleSetting('sidebar-position')
-        .addChangeListener(this.updateSidebarPosition.bind(this));
+    this.#settings.moduleSetting('sidebar-position').addChangeListener(this.updateSidebarPosition.bind(this));
     this.updateSidebarPosition();
 
     this.cssStyleTrackerByCSSModel = new Map();
@@ -297,8 +302,8 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
 
     this.pendingNodeReveal = false;
 
-    this.adornerManager = new ElementsComponents.AdornerManager.AdornerManager(
-        Common.Settings.Settings.instance().moduleSetting('adorner-settings'));
+    this.adornerManager =
+        new ElementsComponents.AdornerManager.AdornerManager(this.#settings.moduleSetting('adorner-settings'));
     this.adornersByName = new Map();
 
     this.#domTreeWidget = new DOMTreeWidget();
@@ -307,23 +312,15 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     this.#domTreeWidget.onSelectedNodeChanged = this.selectedNodeChanged.bind(this);
     this.#domTreeWidget.onElementsTreeUpdated = this.updateBreadcrumbIfNeeded.bind(this);
     this.#domTreeWidget.onDocumentUpdated = this.documentUpdated.bind(this);
-    this.#domTreeWidget.onElementExpanded = this.handleElementExpanded.bind(this);
-    this.#domTreeWidget.onElementCollapsed = this.handleElementCollapsed.bind(this);
-    this.#domTreeWidget.setWordWrap(Common.Settings.Settings.instance().moduleSetting('dom-word-wrap').get());
+    this.#domTreeWidget.setWordWrap(this.#settings.moduleSetting('dom-word-wrap').get());
 
-    SDK.TargetManager.TargetManager.instance().observeModels(SDK.DOMModel.DOMModel, this, {scoped: true});
-    SDK.TargetManager.TargetManager.instance().addEventListener(
-        SDK.TargetManager.Events.NAME_CHANGED, event => this.targetNameChanged(event.data));
-    Common.Settings.Settings.instance()
-        .moduleSetting('show-ua-shadow-dom')
-        .addChangeListener(this.showUAShadowDOMChanged.bind(this));
+    this.#targetManager.observeModels(SDK.DOMModel.DOMModel, this, {scoped: true});
+    this.#targetManager.addModelListener(SDK.ResourceTreeModel.ResourceTreeModel,
+                                         SDK.ResourceTreeModel.Events.PrimaryPageChanged, this.onPrimaryPageChanged,
+                                         this, {scoped: true});
+    this.#settings.moduleSetting('show-ua-shadow-dom').addChangeListener(this.showUAShadowDOMChanged.bind(this));
     PanelCommon.ExtensionServer.ExtensionServer.instance().addEventListener(
         PanelCommon.ExtensionServer.Events.SidebarPaneAdded, this.extensionSidebarPaneAdded, this);
-
-    if (Annotations.AnnotationRepository.annotationsEnabled()) {
-      PanelCommon.AnnotationManager.instance().initializePlacementForAnnotationType(
-          Annotations.AnnotationType.ELEMENT_NODE, this.resolveInitialState.bind(this), this.#domTreeWidget.element);
-    }
   }
 
   // This is a debounced method because the user might be navigated from Styles tab to Computed Style tab and vice versa.
@@ -350,18 +347,6 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     this.#computedStyleWidget.matchedStyles = matchedCascade;
     if (matchedCascade) {
       this.#computedStyleWidget.propertyTraces = this.#computedStyleModel.computePropertyTraces(matchedCascade);
-    }
-  }
-
-  private handleElementExpanded(): void {
-    if (Annotations.AnnotationRepository.annotationsEnabled()) {
-      void PanelCommon.AnnotationManager.instance().resolveAnnotationsOfType(Annotations.AnnotationType.ELEMENT_NODE);
-    }
-  }
-
-  private handleElementCollapsed(): void {
-    if (Annotations.AnnotationRepository.annotationsEnabled()) {
-      void PanelCommon.AnnotationManager.instance().resolveAnnotationsOfType(Annotations.AnnotationType.ELEMENT_NODE);
     }
   }
 
@@ -398,10 +383,12 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
 
   static instance(opts: {
     forceNew: boolean|null,
+    targetManager?: SDK.TargetManager.TargetManager,
+    settings?: Common.Settings.Settings,
   }|undefined = {forceNew: null}): ElementsPanel {
-    const {forceNew} = opts;
+    const {forceNew, targetManager, settings} = opts || {};
     if (!elementsPanelInstance || forceNew) {
-      elementsPanelInstance = new ElementsPanel();
+      elementsPanelInstance = new ElementsPanel(targetManager, settings);
     }
 
     return elementsPanelInstance;
@@ -479,10 +466,15 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     });
   }
 
-  private targetNameChanged(target: SDK.Target.Target): void {
-    const domModel = target.model(SDK.DOMModel.DOMModel);
-    if (!domModel) {
-      return;
+  private onPrimaryPageChanged(
+      event: Common.EventTarget.EventTargetEvent<
+          {frame: SDK.ResourceTreeModel.ResourceTreeFrame, type: SDK.ResourceTreeModel.PrimaryPageChangeType}>): void {
+    const {frame, type} = event.data;
+    if (type === SDK.ResourceTreeModel.PrimaryPageChangeType.ACTIVATION) {
+      const domModel = frame.resourceTreeModel().target().model(SDK.DOMModel.DOMModel);
+      if (domModel && !domModel.parentModel()) {
+        this.#domTreeWidget.show(this.domTreeContainer);
+      }
     }
   }
 
@@ -511,14 +503,10 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     UI.Context.Context.instance().setFlavor(ElementsPanel, this);
     this.#domTreeWidget.show(this.domTreeContainer);
     this.evaluateTrackingComputedStyleUpdatesForNode();
-
-    if (Annotations.AnnotationRepository.annotationsEnabled()) {
-      void PanelCommon.AnnotationManager.instance().resolveAnnotationsOfType(Annotations.AnnotationType.ELEMENT_NODE);
-    }
   }
 
   override willHide(): void {
-    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight(SDK.TargetManager.TargetManager.instance());
     this.evaluateTrackingComputedStyleUpdatesForNode();
     this.#domTreeWidget.detach();
     super.willHide();
@@ -567,7 +555,9 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     if (!selectedNode) {
       return;
     }
-    void selectedNode.setAsInspectedNode();
+    if (selectedNode.canInspectNode()) {
+      void selectedNode.setAsInspectedNode();
+    }
     if (focus) {
       this.selectedNodeOnReset = selectedNode;
       this.hasNonDefaultSelectedNode = true;
@@ -758,7 +748,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     this.currentSearchResultIndex = -1;
     delete this.searchResults;
 
-    SDK.DOMModel.DOMModel.cancelSearch();
+    SDK.DOMModel.DOMModel.cancelSearch(this.#targetManager);
   }
 
   performSearch(searchConfig: UI.SearchableView.SearchConfig, shouldJump: boolean, jumpBackwards?: boolean): void {
@@ -777,8 +767,8 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
 
     this.searchConfig = searchConfig;
 
-    const showUAShadowDOM = Common.Settings.Settings.instance().moduleSetting('show-ua-shadow-dom').get();
-    const domModels = SDK.TargetManager.TargetManager.instance().models(SDK.DOMModel.DOMModel, {scoped: true});
+    const showUAShadowDOM = this.#settings.moduleSetting('show-ua-shadow-dom').get();
+    const domModels = this.#targetManager.models(SDK.DOMModel.DOMModel, {scoped: true});
     const promises = domModels.map(domModel => domModel.performSearch(whitespaceTrimmedQuery, showUAShadowDOM));
     void Promise.all(promises).then(resultCounts => {
       this.searchResults = [];
@@ -976,9 +966,8 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     const {showPanel = true, focusNode = false, highlightInOverlay = true} = opts ?? {};
     this.omitDefaultSelection = true;
 
-    const node = Common.Settings.Settings.instance().moduleSetting('show-ua-shadow-dom').get() ?
-        nodeToReveal :
-        this.leaveUserAgentShadowDOM(nodeToReveal);
+    const node = this.#settings.moduleSetting('show-ua-shadow-dom').get() ? nodeToReveal :
+                                                                            this.leaveUserAgentShadowDOM(nodeToReveal);
     if (highlightInOverlay) {
       node.highlightForTwoSeconds();
     }
@@ -1191,7 +1180,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
       return;
     }  // We can't reparent extension iframes.
 
-    const position = Common.Settings.Settings.instance().moduleSetting('sidebar-position').get();
+    const position = this.#settings.moduleSetting('sidebar-position').get();
     let splitMode = SplitMode.HORIZONTAL;
     if (position === 'right' || (position === 'auto' && this.splitWidget.element.offsetWidth > 680)) {
       splitMode = SplitMode.VERTICAL;
@@ -1319,56 +1308,6 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
 
   copyStyles(node: SDK.DOMModel.DOMNode): void {
     this.#domTreeWidget.copyStyles(node);
-  }
-
-  async resolveInitialState(
-      parentElement: Element, reveal: boolean, lookupId: string,
-      anchor?: SDK.DOMModel.DOMNode|SDK.NetworkRequest.NetworkRequest): Promise<{x: number, y: number}|null> {
-    if (!this.isShowing()) {
-      return null;
-    }
-
-    if (!anchor) {
-      const backendNodeId = Number(lookupId) as Protocol.DOM.BackendNodeId;
-      if (isNaN(backendNodeId)) {
-        return null;
-      }
-      const rootDOMNode = this.#domTreeWidget.rootDOMNode;
-      if (!rootDOMNode) {
-        return null;
-      }
-      const domModel = rootDOMNode.domModel();
-      const nodes = await domModel.pushNodesByBackendIdsToFrontend(new Set([backendNodeId]));
-      if (!nodes) {
-        return null;
-      }
-      const foundNode = nodes.get(backendNodeId);
-      if (!foundNode) {
-        return null;
-      }
-      anchor = foundNode;
-    }
-
-    const element = this.#domTreeWidget.treeElementForNode(anchor as SDK.DOMModel.DOMNode);
-    if (!element) {
-      return null;
-    }
-
-    if (reveal) {
-      // The node must have been revealed in order to calculate its position.
-      await Common.Revealer.reveal(anchor);
-    }
-
-    // The tree element element starts at the top-left of the expand/collapse arrow). We
-    // want to aim for the tagname instead.
-    const offsetToTagName = 22;
-    const yPadding = 5;
-
-    const targetRect = element.listItemElement.getBoundingClientRect();
-    const parentRect = parentElement.getBoundingClientRect();
-    const relativeX = targetRect.x - parentRect.x + offsetToTagName;
-    const relativeY = targetRect.y - parentRect.y + yPadding;
-    return {x: relativeX, y: relativeY};
   }
 
   protected static firstInspectElementCompletedForTest = function(): void {};
@@ -1582,7 +1521,7 @@ export class ElementsActionDelegate implements UI.ActionRegistration.ActionDeleg
         ElementsPanel.instance().toggleAccessibilityTree();
         return true;
       case 'elements.toggle-word-wrap': {
-        const setting = Common.Settings.Settings.instance().moduleSetting<boolean>('dom-word-wrap');
+        const setting = ElementsPanel.instance().settings.moduleSetting<boolean>('dom-word-wrap');
         setting.set(!setting.get());
         return true;
       }
@@ -1627,7 +1566,7 @@ export class PseudoStateMarkerDecorator implements MarkerDecorator {
       return null;
     }
     return {
-      color: '--sys-color-orange-bright',
+      color: 'var(--sys-color-orange-bright)',
       title: i18nString(UIStrings.elementStateS, {PH1: ':' + pseudoState.join(', :')}),
     };
   }

@@ -24,6 +24,8 @@
 #include "third_party/blink/renderer/core/css/properties/longhands.h"
 #include "third_party/blink/renderer/core/css/resolver/style_resolver.h"
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
+#include "third_party/blink/renderer/core/css/style_color.h"
+#include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/dom/dom_node_ids.h"
 #include "third_party/blink/renderer/core/dom/dom_token_list.h"
 #include "third_party/blink/renderer/core/dom/element.h"
@@ -67,6 +69,7 @@
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 #include "third_party/blink/renderer/platform/wtf/text/strcat.h"
+#include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_utf8_adaptor.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/geometry/rect_conversions.h"
@@ -357,6 +360,10 @@ void HTMLCapabilityElementBase::DetachLayoutTree(bool performing_reattach) {
   if (auto* view = GetDocument().View()) {
     view->UnregisterFromLifecycleNotifications(this);
   }
+  if (!performing_reattach && intersection_observer_) {
+    intersection_observer_->disconnect();
+    intersection_observer_ = nullptr;
+  }
 }
 
 void HTMLCapabilityElementBase::RemovedFrom(ContainerNode& insertion_point) {
@@ -498,15 +505,6 @@ void HTMLCapabilityElementBase::UpdatePermissionStatus() {
   }
 }
 
-void HTMLCapabilityElementBase::HandleInstallDataError() {
-  // TODO(crbug.com/481519343): ValidationChange is not what we normally expect
-  // after an interaction error. Revisit how to best surface this for <install>
-  // as a long-term solution (a separate error attribute linked to the install
-  // result, etc.).
-  DisableClickingIndefinitely(DisableReason::kInstallDataError);
-  return;
-}
-
 // static
 String HTMLCapabilityElementBase::DisableReasonToString(DisableReason reason) {
   switch (reason) {
@@ -522,8 +520,6 @@ String HTMLCapabilityElementBase::DisableReasonToString(DisableReason reason) {
       return "invalid style";
     case DisableReason::kAttributeChanged:
       return "an attribute changed";
-    case DisableReason::kInstallDataError:
-      return "web app installation data error";
     case DisableReason::kUnknown:
       NOTREACHED();
   }
@@ -548,8 +544,6 @@ HTMLCapabilityElementBase::DisableReasonToUserInteractionDeniedReason(
       return UserInteractionDeniedReason::kInvalidStyle;
     case DisableReason::kAttributeChanged:
       return UserInteractionDeniedReason::kAttributeChanged;
-    case DisableReason::kInstallDataError:
-      return UserInteractionDeniedReason::kInstallDataError;
     case DisableReason::kUnknown:
       NOTREACHED();
   }
@@ -571,8 +565,6 @@ AtomicString HTMLCapabilityElementBase::DisableReasonToInvalidReasonString(
       return AtomicString("style_invalid");
     case DisableReason::kAttributeChanged:
       return AtomicString("attribute_changed");
-    case DisableReason::kInstallDataError:
-      return AtomicString("install_data_invalid");
     case DisableReason::kUnknown:
       NOTREACHED();
   }
@@ -933,6 +925,13 @@ void HTMLCapabilityElementBase::AdjustStyle(ComputedStyleBuilder& builder) {
   builder.ResetTextStrokeWidth();
   builder.ResetTextFillColor();
   builder.ResetTextStrokeColor();
+
+  // To prevent CSS :visited history leaks and ensure the button remains
+  // fully legible and active in all states, we force the element to pretend
+  // it is not inside a visited link. This automatically makes all
+  // VisitedDependentColor() lookups fall back to the unvisited colors,
+  // future-proofing against new CSS visited colors being added.
+  builder.SetInsideLink(EInsideLink::kNotInsideLink);
 }
 
 void HTMLCapabilityElementBase::DidRecalcStyle(const StyleRecalcChange change) {
@@ -976,6 +975,7 @@ void HTMLCapabilityElementBase::HandleActivation(Event& event,
           protocol::Audits::PermissionElementIssueTypeEnum::RequestInProgress,
           GetType(), /*is_warning=*/false);
       RecordPermissionElementUserInteractionAccepted(TagQName(), false);
+      OnActivationFailed("A permission request is already in progress.");
       return;
     }
 
@@ -984,6 +984,8 @@ void HTMLCapabilityElementBase::HandleActivation(Event& event,
                                                    is_user_interaction_enabled);
     if (is_user_interaction_enabled) {
       std::move(on_success).Run();
+    } else {
+      OnActivationFailed(GetActivationErrorMessage());
     }
   } else {
     // For automated testing purposes this behavior can be overridden by
@@ -997,7 +999,38 @@ void HTMLCapabilityElementBase::HandleActivation(Event& event,
 
     RecordPermissionElementUserInteractionDeniedReason(
         TagQName(), UserInteractionDeniedReason::kUntrustedEvent);
+    OnActivationFailed(
+        "The permission element activation must be triggered by a user "
+        "gesture.");
   }
+}
+
+String HTMLCapabilityElementBase::GetActivationErrorMessage() const {
+  String error_message = "The permission element is disabled.";
+
+  if (permission_descriptors_.empty()) {
+    error_message = "The permission element is not fully initialized.";
+  } else if (!is_registered_in_browser_process_) {
+    error_message =
+        "The permission element is not registered in the browser process.";
+  } else if (!clicking_disabled_reasons_.empty()) {
+    Vector<String> reasons;
+    for (const auto& it : clicking_disabled_reasons_) {
+      reasons.push_back(DisableReasonToString(it.key));
+    }
+    StringBuilder builder;
+    builder.Append("The permission element is disabled due to: ");
+    for (wtf_size_t i = 0; i < reasons.size(); ++i) {
+      if (i > 0) {
+        builder.Append(", ");
+      }
+      builder.Append(reasons[i]);
+    }
+    builder.Append(".");
+    error_message = builder.ToString();
+  }
+
+  return error_message;
 }
 
 void HTMLCapabilityElementBase::DefaultEventHandler(Event& event) {
@@ -1207,8 +1240,8 @@ void HTMLCapabilityElementBase::DisableClickingTemporarily(
   base::TimeTicks timeout_time = base::TimeTicks::Now() + duration;
 
   // If there is already an entry that expires later, keep the existing one.
-  if (clicking_disabled_reasons_.Contains(reason) &&
-      clicking_disabled_reasons_.at(reason) > timeout_time) {
+  if (auto it = clicking_disabled_reasons_.find(reason);
+      it != clicking_disabled_reasons_.end() && it->value > timeout_time) {
     return;
   }
 

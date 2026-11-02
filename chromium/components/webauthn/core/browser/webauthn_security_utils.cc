@@ -4,9 +4,17 @@
 
 #include "components/webauthn/core/browser/webauthn_security_utils.h"
 
+#include <optional>
+#include <string>
+
+#include "base/feature_list.h"
 #include "components/webapps/isolated_web_apps/scheme.h"
+#include "components/webauthn/features.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
+#include "net/base/url_util.h"
 #include "services/network/public/cpp/is_potentially_trustworthy.h"
+#include "url/gurl.h"
+#include "url/url_canon.h"
 #include "url/url_util.h"
 
 namespace webauthn {
@@ -69,22 +77,68 @@ bool OriginIsAllowedToClaimRelyingPartyId(
     return false;
   }
 
+  if (!base::FeatureList::IsEnabled(
+          webauthn::features::kRejectRpIdsInsideCallersPublicSuffix)) {
+    return (net::registry_controlled_domains::HostHasRegistryControlledDomain(
+                caller_origin.host(),
+                net::registry_controlled_domains::INCLUDE_UNKNOWN_REGISTRIES,
+                net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES) &&
+            net::registry_controlled_domains::HostHasRegistryControlledDomain(
+                claimed_relying_party_id,
+                net::registry_controlled_domains::INCLUDE_UNKNOWN_REGISTRIES,
+                net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES));
+  }
+
   if (!net::registry_controlled_domains::HostHasRegistryControlledDomain(
-          caller_origin.host(),
-          net::registry_controlled_domains::INCLUDE_UNKNOWN_REGISTRIES,
-          net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES) ||
-      !net::registry_controlled_domains::HostHasRegistryControlledDomain(
           claimed_relying_party_id,
           net::registry_controlled_domains::INCLUDE_UNKNOWN_REGISTRIES,
           net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES)) {
-    // This prevents "https://login.awesomecompany" from claiming
-    // "awesomecompany", which is allowed by the spec but disallowed by
-    // chromium. It is a potential footgun if a company uses an internal label
-    // that later gets added to the PSL.
+    return false;
+  }
+
+  // The claimed RP ID must be strictly longer than the caller's public suffix.
+  // The "is a registrable domain suffix of" algorithm in HTML rejects when the
+  // suffix lies inside the host's own public suffix. For example, a page on
+  // "foo.up.railway.app" (where "up.railway.app" is on the PSL) must not be
+  // able to claim "railway.app" (which itself is a registrable domain).
+  const size_t caller_registry_length =
+      net::registry_controlled_domains::GetRegistryLength(
+          caller_origin.GetURL(),
+          net::registry_controlled_domains::INCLUDE_UNKNOWN_REGISTRIES,
+          net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
+  if (caller_registry_length == 0 ||
+      caller_registry_length == std::string::npos ||
+      claimed_relying_party_id.size() <= caller_registry_length) {
     return false;
   }
 
   return true;
+}
+
+std::optional<GURL> GetRemoteValidationUrl(
+    const std::string& relying_party_id) {
+  std::string canonicalized_domain_storage;
+  url::StdStringCanonOutput canon_output(&canonicalized_domain_storage);
+  url::CanonHostInfo host_info;
+  url::CanonicalizeHostVerbose(relying_party_id,
+                               url::Component(0, relying_party_id.size()),
+                               &canon_output, &host_info);
+  const std::string_view canonicalized_domain = canon_output.view();
+  if (host_info.family != url::CanonHostInfo::Family::NEUTRAL ||
+      !net::IsCanonicalizedHostCompliant(canonicalized_domain)) {
+    // The RP ID must look like a hostname, e.g. not an IP address.
+    return std::nullopt;
+  }
+
+  constexpr char well_known_url_template[] =
+      "https://domain.com/.well-known/webauthn";
+  GURL well_known_url(well_known_url_template);
+  CHECK(well_known_url.is_valid());
+
+  GURL::Replacements replace_host;
+  replace_host.SetHostStr(canonicalized_domain);
+
+  return well_known_url.ReplaceComponents(replace_host);
 }
 
 }  // namespace webauthn

@@ -3,19 +3,24 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
-import * as UI from '../../../front_end/ui/legacy/legacy.js';
 import * as Common from '../../core/common/common.js';
-import type * as Platform from '../../core/platform/platform.js';
+import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../../models/bindings/bindings.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import {assertScreenshot, raf, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
-import {createTarget, registerActions} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection, dispatchEvent} from '../../testing/MockConnection.js';
+import {createTarget, describeWithEnvironment, registerActions} from '../../testing/EnvironmentHelpers.js';
+import {dispatchEvent} from '../../testing/MockConnection.js';
+import {TestUniverse} from '../../testing/TestUniverse.js';
+import * as Components from '../../ui/legacy/components/utils/utils.js';
+import * as UI from '../../ui/legacy/legacy.js';
+import {html} from '../../ui/lit/lit.js';
+import * as PanelsCommon from '../common/common.js';
 
 import * as Elements from './elements.js';
 
@@ -46,10 +51,12 @@ function getBaseViewInput(): Elements.ElementsTreeElement.ViewInput {
     showScrollSnapAdorner: false,
     scrollSnapAdornerActive: false,
     showSlotAdorner: false,
+    showCustomElementAdorner: false,
     showStartingStyleAdorner: false,
     startingStyleAdornerActive: false,
     onStartingStyleAdornerClick: () => {},
     onSlotAdornerClick: () => {},
+    onCustomElementAdornerClick: () => {},
     topLayerIndex: -1,
     onViewSourceAdornerClick: () => {},
     onGutterClick: () => {},
@@ -62,6 +69,7 @@ function getBaseViewInput(): Elements.ElementsTreeElement.ViewInput {
     onTopLayerAdornerClick: () => {},
     isHovered: false,
     isSelected: false,
+    canInspect: false,
     showAiButton: false,
     onAiButtonClick: () => {},
     decorations: [],
@@ -126,20 +134,19 @@ describe('ElementsTreeElement', () => {
     const descendantDecorations = [
       {title: 'Descendant 1', color: 'green'},
     ];
-    Elements.ElementsTreeElement.DEFAULT_VIEW(
-        {
-          ...getBaseViewInput(),
-          decorations,
-          descendantDecorations,
-          decorationsTooltip: 'Title',
-          indent: 20,
-        },
-        {}, target);
+    Elements.ElementsTreeElement.DEFAULT_VIEW({
+      ...getBaseViewInput(),
+      decorations,
+      descendantDecorations,
+      decorationsTooltip: 'Title',
+      indent: 20,
+    },
+                                              {}, target);
     await assertScreenshot('elements/gutter_decorations.png');
   });
 });
 
-describeWithMockConnection('ElementsTreeElement', () => {
+describeWithEnvironment('ElementsTreeElement', () => {
   const DEFAULT_LAYOUT_PROPERTIES = {
     isFlex: false,
     isGrid: false,
@@ -149,7 +156,13 @@ describeWithMockConnection('ElementsTreeElement', () => {
     hasScroll: false,
   };
 
+  let universe: TestUniverse;
+
   beforeEach(() => {
+    universe = new TestUniverse();
+    sinon.stub(Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding, 'instance')
+        .returns(universe.debuggerWorkspaceBinding);
+    sinon.stub(Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding, 'instance').returns(universe.cssWorkspaceBinding);
     registerActions([{
       actionId: 'freestyler.element-panel-context',
       title: () => 'Debug with AI' as Platform.UIString.LocalizedString,
@@ -161,52 +174,43 @@ describeWithMockConnection('ElementsTreeElement', () => {
     let target: SDK.Target.Target;
 
     beforeEach(() => {
-      const workspace = Workspace.Workspace.WorkspaceImpl.instance({forceNew: true});
-      const targetManager = SDK.TargetManager.TargetManager.instance();
-      const ignoreListManager = Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
-      Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
-        forceNew: true,
-        resourceMapping: new Bindings.ResourceMapping.ResourceMapping(targetManager, workspace),
-        targetManager,
-        ignoreListManager,
-        workspace,
-      });
+      sinon.stub(Workspace.Workspace.WorkspaceImpl, 'instance').returns(universe.workspace);
+      sinon.stub(SDK.TargetManager.TargetManager, 'instance').returns(universe.targetManager);
+      sinon.stub(Workspace.IgnoreListManager.IgnoreListManager, 'instance').returns(universe.ignoreListManager);
 
-      target = createTarget();
+      target = universe.createTarget();
     });
 
     it('renders fallback tooltip when no provenance is available', () => {
       const domTarget = document.createElement('div');
       renderElementIntoDOM(domTarget);
-      Elements.ElementsTreeElement.DEFAULT_VIEW(
-          {
-            ...getBaseViewInput(),
-            adTooltipId: 'ad-tooltip-test',
-            target,
-            adProvenance: {},
-          },
-          {}, domTarget);
+      Elements.ElementsTreeElement.DEFAULT_VIEW({
+        ...getBaseViewInput(),
+        adTooltipId: 'ad-tooltip-test',
+        target,
+        adProvenance: {},
+      },
+                                                {}, domTarget);
 
       const adorners = domTarget.querySelectorAll('devtools-adorner');
       const adorner = Array.from(adorners).find(a => a.name === 'ad');
       assert.exists(adorner);
       const tooltip = domTarget.querySelector('devtools-tooltip');
       assert.exists(tooltip);
-      assert.strictEqual(
-          tooltip.querySelector('.ad-provenance-tooltip-title')?.textContent, 'No provenance data is available');
+      assert.strictEqual(tooltip.querySelector('.ad-provenance-tooltip-title')?.textContent,
+                         'No provenance data is available');
     });
 
     it('renders filter list rule', () => {
       const domTarget = document.createElement('div');
       renderElementIntoDOM(domTarget);
-      Elements.ElementsTreeElement.DEFAULT_VIEW(
-          {
-            ...getBaseViewInput(),
-            adTooltipId: 'ad-tooltip-test',
-            target,
-            adProvenance: {filterlistRule: '||ads.com^'},
-          },
-          {}, domTarget);
+      Elements.ElementsTreeElement.DEFAULT_VIEW({
+        ...getBaseViewInput(),
+        adTooltipId: 'ad-tooltip-test',
+        target,
+        adProvenance: {filterlistRule: '||ads.com^'},
+      },
+                                                {}, domTarget);
 
       const tooltip = domTarget.querySelector('devtools-tooltip');
       assert.exists(tooltip);
@@ -238,19 +242,18 @@ describeWithMockConnection('ElementsTreeElement', () => {
       dispatchEvent(target, 'Debugger.scriptParsed', scriptParsedEvent);
 
       // Render the view.
-      Elements.ElementsTreeElement.DEFAULT_VIEW(
-          {
-            ...getBaseViewInput(),
-            adTooltipId: 'ad-tooltip-test',
-            target,
-            adProvenance: {
-              adScriptAncestry: {
-                ancestryChain: [{scriptId, debuggerId, name: ''}],
-                rootScriptFilterlistRule: '/ad-script.$script',
-              },
-            },
+      Elements.ElementsTreeElement.DEFAULT_VIEW({
+        ...getBaseViewInput(),
+        adTooltipId: 'ad-tooltip-test',
+        target,
+        adProvenance: {
+          adScriptAncestry: {
+            ancestryChain: [{scriptId, debuggerId, name: ''}],
+            rootScriptFilterlistRule: '/ad-script.$script',
           },
-          {}, domTarget);
+        },
+      },
+                                                {}, domTarget);
 
       // Wait for the asynchronous Linkifier to render the script name.
       await raf();
@@ -272,8 +275,142 @@ describeWithMockConnection('ElementsTreeElement', () => {
     });
   });
 
-  async function getContextMenuForElementWithLayoutProperties(layoutProperties: SDK.CSSModel.LayoutProperties|null):
-      Promise<UI.ContextMenu.ContextMenu> {
+  describe('Relation Attributes', () => {
+    let target: SDK.Target.Target;
+    let domModel: SDK.DOMModel.DOMModel;
+
+    beforeEach(() => {
+      target = createTarget();
+      domModel = target.model(SDK.DOMModel.DOMModel)!;
+    });
+
+    it('renders empty relation attribute without quotes if no relation', async () => {
+      const domTarget = document.createElement('div');
+      renderElementIntoDOM(domTarget);
+
+      const node = new SDK.DOMModel.DOMNode(domModel);
+      sinon.stub(node, 'nodeType').returns(Node.ELEMENT_NODE);
+      sinon.stub(node, 'nodeNameInCorrectCase').returns('div');
+      sinon.stub(node, 'nodeName').returns('DIV');
+      sinon.stub(node, 'hasAttributes').returns(true);
+      sinon.stub(node, 'attributes').returns([{name: 'popovertarget', value: ''}] as SDK.DOMModel.Attribute[]);
+
+      sinon.stub(domModel, 'getElementByRelation').resolves(undefined);
+
+      Elements.ElementsTreeElement.DEFAULT_VIEW({
+        ...getBaseViewInput(),
+        node,
+      },
+                                                {}, domTarget);
+
+      await raf();  // Wait for directive to run
+
+      const attributeElement = domTarget.querySelector('.webkit-html-attribute');
+      assert.exists(attributeElement);
+
+      const nameElement = attributeElement.querySelector('.webkit-html-attribute-name');
+      assert.exists(nameElement);
+      assert.strictEqual(nameElement.textContent, 'popovertarget');
+
+      // Should NOT have quotes or equals
+      assert.notInclude(attributeElement.textContent || '', '=');
+      assert.notInclude(attributeElement.textContent || '', '"');
+    });
+
+    it('renders empty relation attribute and linkifies it if relation exists', async () => {
+      const domTarget = document.createElement('div');
+      renderElementIntoDOM(domTarget);
+
+      const node = new SDK.DOMModel.DOMNode(domModel);
+      node.id = 1 as Protocol.DOM.NodeId;
+      sinon.stub(node, 'nodeType').returns(Node.ELEMENT_NODE);
+      sinon.stub(node, 'nodeNameInCorrectCase').returns('div');
+      sinon.stub(node, 'nodeName').returns('DIV');
+      sinon.stub(node, 'hasAttributes').returns(true);
+      sinon.stub(node, 'attributes').returns([{name: 'popovertarget', value: ''}] as SDK.DOMModel.Attribute[]);
+
+      const relatedNodeId = 2 as Protocol.DOM.NodeId;
+      const relatedNode = new SDK.DOMModel.DOMNode(domModel);
+      sinon.stub(domModel, 'getElementByRelation').resolves(relatedNodeId);
+      sinon.stub(domModel, 'nodeForId').withArgs(relatedNodeId).returns(relatedNode);
+
+      const fakeLink = html`<span>LINKIFIED_TARGET</span>`;
+      const linkifyStub = sinon.stub(PanelsCommon.DOMLinkifier.Linkifier.instance(), 'linkify').returns(fakeLink);
+
+      Elements.ElementsTreeElement.DEFAULT_VIEW({
+        ...getBaseViewInput(),
+        node,
+      },
+                                                {}, domTarget);
+
+      await raf();  // Wait for directive to run
+
+      const attributeElement = domTarget.querySelector('.webkit-html-attribute');
+      assert.exists(attributeElement);
+
+      // With Philip's model, we linkify the name!
+      const nameElement = attributeElement.querySelector('.webkit-html-attribute-name');
+      assert.exists(nameElement);
+
+      // Wait for async linkify to finish rendering
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      assert.include(nameElement.textContent || '', 'LINKIFIED_TARGET');
+
+      // Value element should NOT exist
+      const valueElement = attributeElement.querySelector('.webkit-html-attribute-value');
+      assert.notExists(valueElement);
+
+      sinon.assert.calledOnce(linkifyStub);
+      const linkOptions = linkifyStub.firstCall.args[1] as PanelsCommon.DOMLinkifier.Options;
+      assert.strictEqual(linkOptions.textContent, 'popovertarget');
+    });
+
+    it('renders relation attribute with value and linkifies it', async () => {
+      const domTarget = document.createElement('div');
+      renderElementIntoDOM(domTarget);
+
+      const node = new SDK.DOMModel.DOMNode(domModel);
+      node.id = 1 as Protocol.DOM.NodeId;
+      sinon.stub(node, 'nodeType').returns(Node.ELEMENT_NODE);
+      sinon.stub(node, 'nodeNameInCorrectCase').returns('div');
+      sinon.stub(node, 'nodeName').returns('DIV');
+      sinon.stub(node, 'hasAttributes').returns(true);
+      sinon.stub(node, 'attributes').returns([{name: 'popovertarget',
+                                               value: 'targetNode'}] as SDK.DOMModel.Attribute[]);
+
+      const relatedNodeId = 2 as Protocol.DOM.NodeId;
+      const relatedNode = new SDK.DOMModel.DOMNode(domModel);
+      sinon.stub(domModel, 'getElementByRelation').resolves(relatedNodeId);
+      sinon.stub(domModel, 'nodeForId').withArgs(relatedNodeId).returns(relatedNode);
+
+      const fakeLink = html`<span>LINKIFIED_TARGET</span>`;
+      const linkifyStub = sinon.stub(PanelsCommon.DOMLinkifier.Linkifier.instance(), 'linkify').returns(fakeLink);
+
+      Elements.ElementsTreeElement.DEFAULT_VIEW({
+        ...getBaseViewInput(),
+        node,
+      },
+                                                {}, domTarget);
+
+      await raf();  // Wait for directive to run
+
+      const attributeElement = domTarget.querySelector('.webkit-html-attribute');
+      assert.exists(attributeElement);
+
+      const valueElement = attributeElement.querySelector('.webkit-html-attribute-value');
+      assert.exists(valueElement);
+
+      // Wait for async linkify to finish rendering
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      assert.include(valueElement.textContent || '', 'LINKIFIED_TARGET');
+      sinon.assert.calledOnce(linkifyStub);
+    });
+  });
+
+  async function getContextMenuForElementWithLayoutProperties(layoutProperties: SDK.CSSModel.LayoutProperties|
+                                                              null): Promise<UI.ContextMenu.ContextMenu> {
     const target = createTarget();
     const domModel = target.model(SDK.DOMModel.DOMModel);
     const cssModel = target.model(SDK.CSSModel.CSSModel);
@@ -300,8 +437,8 @@ describeWithMockConnection('ElementsTreeElement', () => {
     const contextMenu = await getContextMenuForElementWithLayoutProperties(null);
     const debugWithAiItem = contextMenu.buildDescriptor().subItems?.find(item => item.label === 'Debug with AI');
     assert.exists(debugWithAiItem);
-    assert.deepEqual(
-        debugWithAiItem?.subItems?.map(item => item.label), ['Start a chat', 'Assess visibility', 'Center element']);
+    assert.deepEqual(debugWithAiItem?.subItems?.map(item => item.label),
+                     ['Start a chat', 'Assess visibility', 'Center element']);
   });
 
   it('shows flexbox submenu items', async () => {
@@ -309,9 +446,8 @@ describeWithMockConnection('ElementsTreeElement', () => {
         await getContextMenuForElementWithLayoutProperties({...DEFAULT_LAYOUT_PROPERTIES, isFlex: true});
     const debugWithAiItem = contextMenu.buildDescriptor().subItems?.find(item => item.label === 'Debug with AI');
     assert.exists(debugWithAiItem);
-    assert.deepEqual(
-        debugWithAiItem?.subItems?.map(item => item.label),
-        ['Start a chat', 'Wrap these items', 'Distribute items evenly', 'Explain flexbox']);
+    assert.deepEqual(debugWithAiItem?.subItems?.map(item => item.label),
+                     ['Start a chat', 'Wrap these items', 'Distribute items evenly', 'Explain flexbox']);
   });
 
   it('shows grid submenu items', async () => {
@@ -319,9 +455,8 @@ describeWithMockConnection('ElementsTreeElement', () => {
         await getContextMenuForElementWithLayoutProperties({...DEFAULT_LAYOUT_PROPERTIES, isGrid: true});
     const debugWithAiItem = contextMenu.buildDescriptor().subItems?.find(item => item.label === 'Debug with AI');
     assert.exists(debugWithAiItem);
-    assert.deepEqual(
-        debugWithAiItem?.subItems?.map(item => item.label),
-        ['Start a chat', 'Align items', 'Add padding', 'Explain grid layout']);
+    assert.deepEqual(debugWithAiItem?.subItems?.map(item => item.label),
+                     ['Start a chat', 'Align items', 'Add padding', 'Explain grid layout']);
   });
 
   it('shows subgrid submenu items', async () => {
@@ -329,9 +464,8 @@ describeWithMockConnection('ElementsTreeElement', () => {
         {...DEFAULT_LAYOUT_PROPERTIES, isGrid: true, isSubgrid: true});
     const debugWithAiItem = contextMenu.buildDescriptor().subItems?.find(item => item.label === 'Debug with AI');
     assert.exists(debugWithAiItem);
-    assert.deepEqual(
-        debugWithAiItem?.subItems?.map(item => item.label),
-        ['Start a chat', 'Find grid definition', 'Change parent properties', 'Explain subgrids']);
+    assert.deepEqual(debugWithAiItem?.subItems?.map(item => item.label),
+                     ['Start a chat', 'Find grid definition', 'Change parent properties', 'Explain subgrids']);
   });
 
   it('shows scroll submenu items', async () => {
@@ -339,9 +473,8 @@ describeWithMockConnection('ElementsTreeElement', () => {
         await getContextMenuForElementWithLayoutProperties({...DEFAULT_LAYOUT_PROPERTIES, hasScroll: true});
     const debugWithAiItem = contextMenu.buildDescriptor().subItems?.find(item => item.label === 'Debug with AI');
     assert.exists(debugWithAiItem);
-    assert.deepEqual(
-        debugWithAiItem?.subItems?.map(item => item.label),
-        ['Start a chat', 'Remove scrollbars', 'Style scrollbars', 'Explain scrollbars']);
+    assert.deepEqual(debugWithAiItem?.subItems?.map(item => item.label),
+                     ['Start a chat', 'Remove scrollbars', 'Style scrollbars', 'Explain scrollbars']);
   });
 
   it('shows container submenu items', async () => {
@@ -543,9 +676,196 @@ describeWithMockConnection('ElementsTreeElement', () => {
        const finalSpacesCount = finalAttributeElement.textContent.split('\u200B').length - 1;
        assert.strictEqual(finalSpacesCount, initialSpacesCount);
      });
+
+  it('truncates long data URL attribute values in the UI but shows them in full when editing', () => {
+    const target = createTarget();
+    const domModel = target.model(SDK.DOMModel.DOMModel);
+    assert.exists(domModel);
+
+    const longDataUrl = 'data:text/plain;,' +
+        '1234567890'.repeat(10);
+    const nodePayload = {
+      nodeId: 1 as Protocol.DOM.NodeId,
+      backendNodeId: 2 as Protocol.DOM.BackendNodeId,
+      nodeType: Node.ELEMENT_NODE,
+      nodeName: 'A',
+      localName: 'a',
+      nodeValue: '',
+      attributes: ['href', longDataUrl, 'id', 'inspected'],
+      childNodeCount: 0,
+    };
+    const node = SDK.DOMModel.DOMNode.create(domModel, null, false, nodePayload);
+    // Stub resolveURL to return the URL as-is, which triggers DevTools linkification logic.
+    sinon.stub(node, 'resolveURL').callsFake(url => Platform.DevToolsPath.urlString`${url}`);
+
+    const treeOutline = new Elements.ElementsTreeOutline.ElementsTreeOutline();
+    const treeElement = new Elements.ElementsTreeElement.ElementsTreeElement(node);
+    treeElement.treeOutline = treeOutline;
+    treeElement.performUpdate();
+
+    const attributeElement = treeElement.listItemElement.querySelector('.webkit-html-attribute');
+    assert.exists(attributeElement);
+    const attributeValueElement = attributeElement.querySelector('.webkit-html-attribute-value');
+    assert.exists(attributeValueElement);
+
+    // The expected trimmed value when rendered in the UI (with zero-width spaces stripped for comparison).
+    // DevTools trims it to 60 characters (including ZWSPs).
+    // "data:text/plain;,1234567890" (27 chars) + "…" (1 char) + "23456789012345678901234567890" (29 chars) = 57 chars
+    const expectedTrimmedUrlClean = 'data:text/plain;,1234567890…23456789012345678901234567890';
+
+    // We strip zero-width spaces from the actual text content to compare it with our clean expected value,
+    // avoiding issues with invisible characters in the assertion.
+    const cleanActualText = attributeValueElement.textContent?.trim().replace(/\u200B/g, '') ?? '';
+    assert.strictEqual(cleanActualText, expectedTrimmedUrlClean);
+
+    // Start editing the 'href' attribute.
+    const editStarted = treeElement.triggerEditAttribute('href');
+    assert.isTrue(editStarted);
+    // When editing, the full, untrimmed value should be displayed without zero-width spaces.
+    assert.strictEqual(attributeValueElement.textContent?.trim(), longDataUrl);
+
+    // Cancel editing.
+    treeElement.editingCancelled(attributeElement, 'href');
+
+    // The value should be trimmed again.
+    const attributeElementAfterCancel = treeElement.listItemElement.querySelector('.webkit-html-attribute');
+    assert.exists(attributeElementAfterCancel);
+    const attributeValueElementAfterCancel = attributeElementAfterCancel.querySelector('.webkit-html-attribute-value');
+    assert.exists(attributeValueElementAfterCancel);
+    const cleanActualTextAfterCancel =
+        attributeValueElementAfterCancel.textContent?.trim().replace(/\u200B/g, '') ?? '';
+    assert.strictEqual(cleanActualTextAfterCancel, expectedTrimmedUrlClean);
+  });
+
+  describe('Linkification', () => {
+    let target: SDK.Target.Target;
+    let domModel: SDK.DOMModel.DOMModel;
+
+    beforeEach(() => {
+      target = createTarget();
+      domModel = target.model(SDK.DOMModel.DOMModel)!;
+      assert.exists(domModel);
+    });
+
+    function renderTreeNode(node: SDK.DOMModel.DOMNode): Elements.ElementsTreeElement.ElementsTreeElement {
+      const treeOutline = new Elements.ElementsTreeOutline.ElementsTreeOutline();
+      const treeElement = new Elements.ElementsTreeElement.ElementsTreeElement(node);
+      treeElement.treeOutline = treeOutline;
+      treeElement.performUpdate();
+      return treeElement;
+    }
+
+    function getLinkOutputs(treeElement: Elements.ElementsTreeElement.ElementsTreeElement):
+        Array<{text: string, href: string}> {
+      const attributeValueElement = treeElement.listItemElement.querySelector('.webkit-html-attribute-value');
+      assert.exists(attributeValueElement);
+      const linkElements = Array.from(attributeValueElement.querySelectorAll('.devtools-link'));
+      assert.isNotEmpty(linkElements, 'Expected to find .devtools-link elements');
+
+      return linkElements.map(link => {
+        const text = link.textContent?.trim().replace(/\u200B/g, '') ?? '';
+        let href = '';
+        if (link.tagName.toLowerCase() === 'devtools-link') {
+          href = link.getAttribute('href') ?? '';
+        } else {
+          href = Components.Linkifier.Linkifier.linkInfo(link)?.url ?? '';
+        }
+        return {text, href};
+      });
+    }
+
+    it('renders src attribute on img as a link', () => {
+      const nodePayload = {
+        nodeId: 1 as Protocol.DOM.NodeId,
+        backendNodeId: 2 as Protocol.DOM.BackendNodeId,
+        nodeType: Node.ELEMENT_NODE,
+        nodeName: 'IMG',
+        localName: 'img',
+        nodeValue: '',
+        attributes: ['src', 'image.png'],
+        childNodeCount: 0,
+      };
+      const node = SDK.DOMModel.DOMNode.create(domModel, null, false, nodePayload);
+      sinon.stub(node, 'resolveURL').callsFake(url => Platform.DevToolsPath.urlString`http://example.com/${url}`);
+
+      const treeElement = renderTreeNode(node);
+      const links = getLinkOutputs(treeElement);
+
+      assert.lengthOf(links, 1);
+      assert.deepEqual(links[0], {text: 'image.png', href: 'http://example.com/image.png'});
+    });
+
+    it('renders srcset attribute on img as multiple links', () => {
+      const nodePayload = {
+        nodeId: 1 as Protocol.DOM.NodeId,
+        backendNodeId: 2 as Protocol.DOM.BackendNodeId,
+        nodeType: Node.ELEMENT_NODE,
+        nodeName: 'IMG',
+        localName: 'img',
+        nodeValue: '',
+        attributes: ['srcset', '1x.png 1x, 2x.png 2x'],
+        childNodeCount: 0,
+      };
+      const node = SDK.DOMModel.DOMNode.create(domModel, null, false, nodePayload);
+      sinon.stub(node, 'resolveURL').callsFake(url => Platform.DevToolsPath.urlString`http://example.com/${url}`);
+
+      const treeElement = renderTreeNode(node);
+      const links = getLinkOutputs(treeElement);
+
+      assert.lengthOf(links, 2);
+      assert.deepEqual(links[0], {text: '1x.png', href: 'http://example.com/1x.png'});
+      assert.deepEqual(links[1], {text: '2x.png', href: 'http://example.com/2x.png'});
+    });
+
+    it('renders href attribute on a as a devtools-link', () => {
+      const nodePayload = {
+        nodeId: 1 as Protocol.DOM.NodeId,
+        backendNodeId: 2 as Protocol.DOM.BackendNodeId,
+        nodeType: Node.ELEMENT_NODE,
+        nodeName: 'A',
+        localName: 'a',
+        nodeValue: '',
+        attributes: ['href', 'http://example.com'],
+        childNodeCount: 0,
+      };
+      const node = SDK.DOMModel.DOMNode.create(domModel, null, false, nodePayload);
+      sinon.stub(node, 'resolveURL').callsFake(url => Platform.DevToolsPath.urlString`${url}`);
+
+      const treeElement = renderTreeNode(node);
+      const links = getLinkOutputs(treeElement);
+
+      assert.lengthOf(links, 1);
+      assert.deepEqual(links[0], {text: 'http://example.com', href: 'http://example.com'});
+
+      const attributeValueElement = treeElement.listItemElement.querySelector('.webkit-html-attribute-value');
+      const linkElement = attributeValueElement?.querySelector('.devtools-link');
+      assert.strictEqual(linkElement?.tagName.toLowerCase(), 'devtools-link');
+    });
+
+    it('renders href attribute on SVG image as a link', () => {
+      const nodePayload = {
+        nodeId: 1 as Protocol.DOM.NodeId,
+        backendNodeId: 2 as Protocol.DOM.BackendNodeId,
+        nodeType: Node.ELEMENT_NODE,
+        nodeName: 'image',
+        localName: 'image',
+        nodeValue: '',
+        attributes: ['href', 'image.png'],
+        childNodeCount: 0,
+      };
+      const node = SDK.DOMModel.DOMNode.create(domModel, null, false, nodePayload);
+      sinon.stub(node, 'resolveURL').callsFake(url => Platform.DevToolsPath.urlString`http://example.com/${url}`);
+
+      const treeElement = renderTreeNode(node);
+      const links = getLinkOutputs(treeElement);
+
+      assert.lengthOf(links, 1);
+      assert.deepEqual(links[0], {text: 'image.png', href: 'http://example.com/image.png'});
+    });
+  });
 });
 
-describeWithMockConnection('ElementsTreeElement highlighting', () => {
+describeWithEnvironment('ElementsTreeElement highlighting', () => {
   let domModel: SDK.DOMModel.DOMModel;
   let treeOutline: Elements.ElementsTreeOutline.ElementsTreeOutline;
   let containerNode: SDK.DOMModel.DOMNode;
@@ -599,7 +919,11 @@ describeWithMockConnection('ElementsTreeElement highlighting', () => {
   }
 
   beforeEach(async () => {
-    const target = createTarget();
+    const universe = new TestUniverse();
+    sinon.stub(Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding, 'instance')
+        .returns(universe.debuggerWorkspaceBinding);
+    sinon.stub(Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding, 'instance').returns(universe.cssWorkspaceBinding);
+    const target = universe.createTarget();
     domModel = target.model(SDK.DOMModel.DOMModel)!;
 
     const containerPayload = createDOMNodePayload('div', {id: 'container'});
@@ -912,9 +1236,16 @@ describeWithMockConnection('ElementsTreeElement highlighting', () => {
     sinon.assert.calledOnce(setNodeValueSpy);
     sinon.assert.calledWith(setNodeValueSpy, 'New Text');
   });
+
+  it('highlights search results in ordered text ranges', () => {
+    attrTestTreeElement.highlightSearchResults('foo');
+    const highlight = CSS.highlights.get('highlighted-search-result');
+    assert.exists(highlight);
+    assert.deepEqual(Array.from(highlight).map(range => range.toString()), ['Foo', 'foo']);
+  });
 });
 
-describeWithMockConnection('ElementsTreeElement in Snapshot Mode', () => {
+describeWithEnvironment('ElementsTreeElement in Snapshot Mode', () => {
   let target: SDK.Target.Target;
   let domModel: SDK.DOMModel.DOMModel;
   let treeOutline: Elements.ElementsTreeOutline.ElementsTreeOutline;
@@ -922,7 +1253,11 @@ describeWithMockConnection('ElementsTreeElement in Snapshot Mode', () => {
   let treeElement: Elements.ElementsTreeElement.ElementsTreeElement;
 
   beforeEach(() => {
-    target = createTarget();
+    const universe = new TestUniverse();
+    sinon.stub(Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding, 'instance')
+        .returns(universe.debuggerWorkspaceBinding);
+    sinon.stub(Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding, 'instance').returns(universe.cssWorkspaceBinding);
+    target = universe.createTarget();
     domModel = target.model(SDK.DOMModel.DOMModel)!;
     node = new SDK.DOMModel.DOMNode(domModel);
     node.id = 1 as Protocol.DOM.NodeId;
@@ -1097,6 +1432,50 @@ describeWithMockConnection('ElementsTreeElement in Snapshot Mode', () => {
       const revealSpy = sinon.spy(Common.Revealer.RevealerRegistry.instance(), 'reveal');
       slotAdorner!.dispatchEvent(new Event('click'));
       sinon.assert.called(revealSpy);
+    });
+  });
+
+  describe('selected hint', () => {
+    it('renders selected hint when selected and inspectable', () => {
+      const domTarget = document.createElement('div');
+      renderElementIntoDOM(domTarget);
+      Elements.ElementsTreeElement.DEFAULT_VIEW({
+        ...getBaseViewInput(),
+        isSelected: true,
+        canInspect: true,
+      },
+                                                {}, domTarget);
+
+      const hint = domTarget.querySelector('.selected-hint');
+      assert.exists(hint);
+    });
+
+    it('does not render selected hint when selected but not inspectable', () => {
+      const domTarget = document.createElement('div');
+      renderElementIntoDOM(domTarget);
+      Elements.ElementsTreeElement.DEFAULT_VIEW({
+        ...getBaseViewInput(),
+        isSelected: true,
+        canInspect: false,
+      },
+                                                {}, domTarget);
+
+      const hint = domTarget.querySelector('.selected-hint');
+      assert.isNull(hint);
+    });
+
+    it('does not render selected hint when not selected', () => {
+      const domTarget = document.createElement('div');
+      renderElementIntoDOM(domTarget);
+      Elements.ElementsTreeElement.DEFAULT_VIEW({
+        ...getBaseViewInput(),
+        isSelected: false,
+        canInspect: true,
+      },
+                                                {}, domTarget);
+
+      const hint = domTarget.querySelector('.selected-hint');
+      assert.isNull(hint);
     });
   });
 });

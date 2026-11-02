@@ -1,7 +1,7 @@
 Name: Vulkan Deps
 Short Name: Vulkan Deps
 URL: https://chromium.googlesource.com/vulkan-deps/
-Update Mechanism: Manual
+Update Mechanism: Autoroll
 Version: N/A
 Revision: DEPS
 Security Critical: yes

@@ -37,12 +37,17 @@ class JpegModule {
     bool color_transform;
   };
 
+  // `scale_denom` requests that libjpeg decode the image at a reduced size of
+  // 1/`scale_denom` in each dimension. Must be one of 1, 2, 4, or 8 (libjpeg's
+  // supported power-of-two DCT scalings). The resulting decoder reports the
+  // scaled-down dimensions via GetWidth()/GetHeight().
   static std::unique_ptr<ScanlineDecoder> CreateDecoder(
       pdfium::span<const uint8_t> src_span,
       uint32_t width,
       uint32_t height,
       int nComps,
-      bool ColorTransform);
+      bool ColorTransform,
+      uint32_t scale_denom);
 
   static std::optional<ImageInfo> LoadInfo(
       pdfium::span<const uint8_t> src_span);

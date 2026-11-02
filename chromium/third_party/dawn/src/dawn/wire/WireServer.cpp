@@ -41,8 +41,8 @@ WireServer::~WireServer() {
     mImpl.reset();
 }
 
-const volatile char* WireServer::HandleCommands(const volatile char* commands, size_t size) {
-    return mImpl->HandleCommands(commands, size);
+bool WireServer::HandleCommands(std::span<const volatile std::byte> commands) {
+    return mImpl->HandleCommands(commands);
 }
 
 bool WireServer::InjectBuffer(WGPUBuffer buffer, const Handle& handle, const Handle& deviceHandle) {
@@ -82,13 +82,9 @@ MemoryTransferService::MemoryTransferService() = default;
 
 MemoryTransferService::~MemoryTransferService() = default;
 
-MemoryTransferService::ReadHandle::ReadHandle() = default;
+MemoryTransferService::MemoryHandle::MemoryHandle() = default;
 
-MemoryTransferService::ReadHandle::~ReadHandle() = default;
-
-MemoryTransferService::WriteHandle::WriteHandle() = default;
-
-MemoryTransferService::WriteHandle::~WriteHandle() = default;
+MemoryTransferService::MemoryHandle::~MemoryHandle() = default;
 }  // namespace server
 
 }  // namespace dawn::wire

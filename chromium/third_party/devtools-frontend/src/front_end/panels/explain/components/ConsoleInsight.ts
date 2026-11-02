@@ -28,9 +28,9 @@ const UIStrings = {
    */
   consoleMessage: 'Console message',
   /**
-   * @description The title of the insight source "Stacktrace".
+   * @description Title of the insight source 'Stack trace'.
    */
-  stackTrace: 'Stacktrace',
+  stackTrace: 'Stack trace',
   /**
    * @description The title of the insight source "Network request".
    */
@@ -49,7 +49,7 @@ const UIStrings = {
    */
   insight: 'Explanation',
   /**
-   * @description The title of the a button that closes the insight pane.
+   * @description Title of a button that closes the explanation.
    */
   closeInsight: 'Close explanation',
   /**
@@ -72,9 +72,9 @@ const UIStrings = {
    */
   report: 'Report legal issue',
   /**
-   * @description The text of the header inside the console insight pane when there was an error generating an insight.
+   * @description Header text shown when there was an error generating an insight.
    */
-  error: 'DevTools has encountered an error',
+  error: 'DevTools encountered an error',
   /**
    * @description The message shown when an error has been encountered.
    */
@@ -90,11 +90,11 @@ const UIStrings = {
    */
   learnMore: 'Learn more',
   /**
-   * @description The error message when the user is not logged in into Chrome.
+   * @description The error message when the user is not logged in to Chrome.
    */
-  notLoggedIn: 'This feature is only available when you sign into Chrome with your Google account.',
+  notLoggedIn: 'This feature is only available when you sign in to Chrome with your Google account.',
   /**
-   * @description The title of a button which opens the Chrome SignIn page.
+   * @description Title of a button which opens the Chrome sign-in page.
    */
   signIn: 'Sign in',
   /**
@@ -120,13 +120,12 @@ const UIStrings = {
    * available and a page reload might populate it.
    */
   reloadRecommendation:
-      'Reload the page to capture related network request data for this message in order to create a better insight.',
+      'Reload the page to capture related network request data for this message to get a better insight.',
   /**
    * @description Shown to the user when they need to enable the console insights feature in settings in order to use it.
    * @example {Console insights in Settings} PH1
    */
-  turnOnInSettings:
-      'Turn on {PH1} to receive AI assistance for understanding and addressing console warnings and errors.',
+  turnOnInSettings: 'Turn on {PH1} to use AI assistance for understanding and addressing console warnings and errors.',
   /**
    * @description Text for a link to Chrome DevTools Settings.
    */
@@ -754,7 +753,8 @@ export type ViewFunction = typeof DEFAULT_VIEW;
 
 export class ConsoleInsight extends UI.Widget.Widget {
   static async create(promptBuilder: PublicPromptBuilder, aidaClient: PublicAidaClient): Promise<Lit.LitTemplate> {
-    const aidaPreconditions = await Host.AidaClient.AidaClient.checkAccessPreconditions();
+    const aidaPreconditions = Host.AidaClient.HostConfigTracker.instance().aidaAvailability ??
+        await Host.AidaClient.AidaClient.checkAccessPreconditions();
     return html`<devtools-widget class="devtools-console-insight" ${
         widget(element => new ConsoleInsight(promptBuilder, aidaClient, aidaPreconditions, element))}>
     </devtools-widget>`;
@@ -781,7 +781,8 @@ export class ConsoleInsight extends UI.Widget.Widget {
 
   #consoleInsightsEnabledSetting: Common.Settings.Setting<boolean>|undefined;
   #aidaPreconditions: Host.AidaClient.AidaAccessPreconditions;
-  #boundOnAidaAvailabilityChange: () => Promise<void>;
+  #boundOnAidaAvailabilityChange:
+      (ev: Common.EventTarget.EventTargetEvent<Host.AidaClient.AidaAccessPreconditions>) => void;
   #marked: Marked.Marked.Marked;
 
   constructor(
@@ -861,7 +862,8 @@ export class ConsoleInsight extends UI.Widget.Widget {
   // on -> entrypoints are shown, and console insights can be generated
   #getConsoleInsightsEnabledSetting(): Common.Settings.Setting<boolean>|undefined {
     try {
-      return Common.Settings.moduleSetting('console-insights-enabled') as Common.Settings.Setting<boolean>;
+      return Common.Settings.Settings.instance().moduleSetting('console-insights-enabled') as
+          Common.Settings.Setting<boolean>;
     } catch {
       return;
     }
@@ -885,7 +887,10 @@ export class ConsoleInsight extends UI.Widget.Widget {
     Host.AidaClient.HostConfigTracker.instance().addEventListener(
         Host.AidaClient.Events.AIDA_AVAILABILITY_CHANGED, this.#boundOnAidaAvailabilityChange);
     // If AIDA availability has changed while the component was disconnected, we need to update.
-    void this.#onAidaAvailabilityChange();
+    const initialAvailability = Host.AidaClient.HostConfigTracker.instance().aidaAvailability;
+    if (initialAvailability !== undefined) {
+      this.#updateAidaAvailability(initialAvailability);
+    }
     // The setting might have been turned on/off while the component was disconnected.
     // Update the state, unless the current state is already terminal (`INSIGHT` or `ERROR`).
     if (this.#state.type !== State.INSIGHT && this.#state.type !== State.ERROR) {
@@ -901,13 +906,16 @@ export class ConsoleInsight extends UI.Widget.Widget {
         Host.AidaClient.Events.AIDA_AVAILABILITY_CHANGED, this.#boundOnAidaAvailabilityChange);
   }
 
-  async #onAidaAvailabilityChange(): Promise<void> {
-    const currentAidaAvailability = await Host.AidaClient.AidaClient.checkAccessPreconditions();
-    if (currentAidaAvailability !== this.#aidaPreconditions) {
-      this.#aidaPreconditions = currentAidaAvailability;
+  #updateAidaAvailability(aidaAvailability: Host.AidaClient.AidaAccessPreconditions): void {
+    if (aidaAvailability !== this.#aidaPreconditions) {
+      this.#aidaPreconditions = aidaAvailability;
       this.#state = this.#getStateFromAidaAvailability();
       void this.#generateInsightIfNeeded();
     }
+  }
+
+  #onAidaAvailabilityChange(ev: Common.EventTarget.EventTargetEvent<Host.AidaClient.AidaAccessPreconditions>): void {
+    this.#updateAidaAvailability(ev.data);
   }
 
   #onConsoleInsightsSettingChanged(): void {

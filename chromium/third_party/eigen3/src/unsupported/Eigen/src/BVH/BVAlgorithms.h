@@ -220,7 +220,7 @@ typename Minimizer::Scalar BVMinimize(const BVH &tree, Minimizer &minimizer) {
                                    (std::numeric_limits<typename Minimizer::Scalar>::max)());
 }
 
-/**  Given two BVH's, runs the query on their cartesian product encapsulated by \a minimizer.
+/**  Given two BVH's, runs the query on their Cartesian product encapsulated by \a minimizer.
   *  \returns the minimum value.
   *  The Minimizer type must provide the following members: \code
      typedef Scalar //the numeric type of what is being minimized--not necessarily the Scalar type of the BVH (if it has

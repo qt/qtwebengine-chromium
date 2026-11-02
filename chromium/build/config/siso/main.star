@@ -18,7 +18,7 @@ load("./linux.star", chromium_linux = "chromium")
 load("./mac.star", chromium_mac = "chromium")
 load("./mojo.star", "mojo")
 load("./platform.star", "platform")
-load("./reproxy.star", "reproxy")
+load("./reclient.star", "reclient")
 load("./rust.star", "rust")
 load("./simple.star", "simple")
 load("./typescript_all.star", "typescript_all")
@@ -74,6 +74,7 @@ def init(ctx):
         # This is necessary for cross platform build actions. e.g. node binary for typescript
         "executables": [
             "third_party/node/linux/node-linux-x64/bin/node",
+            "third_party/typescript/linux-amd64/src/lib/tsc",
         ],
     }
     step_config = blink_all.step_config(ctx, step_config)
@@ -83,8 +84,8 @@ def init(ctx):
     step_config = rust.step_config(ctx, step_config)
     step_config = simple.step_config(ctx, step_config)
     step_config = typescript_all.step_config(ctx, step_config)
-    if reproxy.enabled(ctx):
-        step_config = reproxy.step_config(ctx, step_config)
+    if reclient.enabled(ctx):
+        step_config = reclient.step_config(ctx, step_config)
 
     step_config = denylist.step_config(ctx, step_config)
 
@@ -103,7 +104,7 @@ def init(ctx):
     handlers.update(host.handlers)
     handlers.update(rust.handlers)
     handlers.update(simple.handlers)
-    handlers.update(reproxy.handlers)
+    handlers.update(reclient.handlers)
     handlers.update(typescript_all.handlers)
 
     return module(

@@ -9,7 +9,9 @@
 
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
+#include "base/feature.h"
 #include "base/feature_list.h"
+#include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/stringprintf.h"
@@ -19,20 +21,30 @@
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_host.h"
+#include "content/browser/service_worker/service_worker_metrics.h"
 #include "content/browser/service_worker/service_worker_object_host.h"
 #include "content/browser/service_worker/service_worker_registration_object_host.h"
 #include "content/browser/service_worker/service_worker_security_utils.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/common/features.h"
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/origin_util.h"
 #include "ipc/constants.mojom.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
+#include "service_worker_container_host.h"
 #include "third_party/blink/public/common/features.h"
+#include "third_party/blink/public/common/service_worker/embedded_worker_status.h"
+#include "third_party/blink/public/common/service_worker/service_worker_status_code.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_registration_options.mojom.h"
+#include "third_party/perfetto/include/perfetto/tracing/track.h"
 
 namespace content {
+
+// Kill-switch for dropping the binding in CloneControllerServiceWorker.
+BASE_FEATURE(kAvoidBindingStoppedServiceWorkerClone,
+             base::FeatureState::FEATURE_ENABLED_BY_DEFAULT);
 
 namespace {
 
@@ -162,10 +174,10 @@ void ServiceWorkerContainerHostForClient::Register(
   }
 
   int64_t trace_id = base::TimeTicks::Now().since_origin().InMicroseconds();
-  TRACE_EVENT_BEGIN(
-      "ServiceWorker", "ServiceWorkerContainerHost::Register",
-      perfetto::NamedTrack("ServiceWorkerContainerHost::Register", trace_id),
-      "Scope", options->scope.spec(), "Script URL", script_url.spec());
+  TRACE_EVENT_INSTANT("ServiceWorker", "ServiceWorkerContainerHost::Register",
+                      perfetto::Flow::ProcessScoped(trace_id, "Register"),
+                      "Scope", options->scope.spec(), "Script URL",
+                      script_url.spec());
 
   // Wrap the callback with default invoke before passing it, since
   // RegisterServiceWorker() can drop the callback on service worker
@@ -235,11 +247,10 @@ void ServiceWorkerContainerHostForClient::GetRegistration(
   }
 
   int64_t trace_id = base::TimeTicks::Now().since_origin().InMicroseconds();
-  TRACE_EVENT_BEGIN(
+  TRACE_EVENT_INSTANT(
       "ServiceWorker", "ServiceWorkerContainerHost::GetRegistration",
-      perfetto::NamedTrack("ServiceWorkerContainerHost::GetRegistration",
-                           trace_id),
-      "Client URL", client_url.spec());
+      perfetto::Flow::ProcessScoped(trace_id, "GetRegistration"), "Client URL",
+      client_url.spec());
 
   // The client_url may be cross-origin if "disable-web-security" is active,
   // make sure we get the correct key.
@@ -276,10 +287,9 @@ void ServiceWorkerContainerHostForClient::GetRegistrations(
   }
 
   int64_t trace_id = base::TimeTicks::Now().since_origin().InMicroseconds();
-  TRACE_EVENT_BEGIN(
+  TRACE_EVENT_INSTANT(
       "ServiceWorker", "ServiceWorkerContainerHost::GetRegistrations",
-      perfetto::NamedTrack("ServiceWorkerContainerHost::GetRegistrations",
-                           trace_id));
+      perfetto::Flow::ProcessScoped(trace_id, "GetRegistrations"));
   context()->registry().GetRegistrationsForStorageKey(
       service_worker_client().key(),
       base::BindOnce(
@@ -300,9 +310,9 @@ void ServiceWorkerContainerHostForClient::GetRegistrationForReady(
     return;
   }
 
-  TRACE_EVENT_BEGIN("ServiceWorker",
-                    "ServiceWorkerContainerHost::GetRegistrationForReady",
-                    perfetto::Track::FromPointer(this));
+  TRACE_EVENT_INSTANT(
+      "ServiceWorker", "ServiceWorkerContainerHost::GetRegistrationForReady",
+      perfetto::Flow::FromPointer(this, "GetRegistrationForReady"));
   DCHECK(!get_ready_callback_);
   get_ready_callback_ =
       std::make_unique<GetRegistrationForReadyCallback>(std::move(callback));
@@ -704,6 +714,18 @@ ServiceWorkerContainerHostForClient::GetRemoteControllerServiceWorker() {
     return mojo::PendingRemote<blink::mojom::ControllerServiceWorker>();
   }
 
+  if (base::FeatureList::IsEnabled(kAvoidBindingStoppedServiceWorkerClone)) {
+    if (controller()->running_status() ==
+            blink::EmbeddedWorkerStatus::kStopped ||
+        controller()->running_status() ==
+            blink::EmbeddedWorkerStatus::kStopping) {
+      // If the worker is not running, simply return an unbound controller. This
+      // will trigger a restart of the worker by the client if it needs a
+      // started client.
+      return mojo::NullRemote();
+    }
+  }
+
   mojo::PendingRemote<blink::mojom::ControllerServiceWorker> remote_controller;
   CloneControllerServiceWorker(
       remote_controller.InitWithNewPipeAndPassReceiver());
@@ -839,8 +861,10 @@ void ServiceWorkerContainerHostForClient::ReturnRegistrationForReadyIfNeeded() {
   if (!registration || !registration->active_version())
     return;
   // ServiceWorkerContainerHost::GetRegistrationForReady
-  TRACE_EVENT_END("ServiceWorker", perfetto::Track::FromPointer(this),
-                  "Registration ID", registration->id());
+  TRACE_EVENT_INSTANT(
+      "ServiceWorker", "ServiceWorkerContainerHost::ReturnRegistrationForReady",
+      perfetto::TerminatingFlow::FromPointer(this, "GetRegistrationForReady"),
+      "Registration ID", registration->id());
   if (!context()) {
     // Here no need to run or destroy |get_ready_callback_|, which will destroy
     // together with |receiver_| when |this| destroys.
@@ -875,10 +899,10 @@ void ServiceWorkerContainerHostForClient::RegistrationComplete(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   // ServiceWorkerContainerHost::Register
-  TRACE_EVENT_END(
-      "ServiceWorker",
-      perfetto::NamedTrack("ServiceWorkerContainerHost::Register", trace_id),
-      "Status", blink::ServiceWorkerStatusToString(status), "Registration ID",
+  TRACE_EVENT_INSTANT(
+      "ServiceWorker", "ServiceWorkerContainerHost::RegistrationComplete",
+      perfetto::TerminatingFlow::ProcessScoped(trace_id, "Register"), "Status",
+      blink::ServiceWorkerStatusToString(status), "Registration ID",
       registration_id);
 
   // kErrorInvalidArguments means the renderer gave unexpectedly bad arguments,
@@ -938,10 +962,9 @@ void ServiceWorkerContainerHostForClient::GetRegistrationComplete(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   // ServiceWorkerContainerHost::GetRegistration
-  TRACE_EVENT_END(
-      "ServiceWorker",
-      perfetto::NamedTrack("ServiceWorkerContainerHost::GetRegistration",
-                           trace_id),
+  TRACE_EVENT_INSTANT(
+      "ServiceWorker", "ServiceWorkerContainerHost::GetRegistrationComplete",
+      perfetto::TerminatingFlow::ProcessScoped(trace_id, "GetRegistration"),
       "Status", blink::ServiceWorkerStatusToString(status), "Registration ID",
       registration ? registration->id()
                    : blink::mojom::kInvalidServiceWorkerRegistrationId);
@@ -990,10 +1013,10 @@ void ServiceWorkerContainerHostForClient::GetRegistrationsComplete(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   // ServiceWorkerContainerHost::GetRegistrations
-  TRACE_EVENT_END("ServiceWorker",
-                  perfetto::NamedTrack(
-                      "ServiceWorkerContainerHost::GetRegistrations", trace_id),
-                  "Status", blink::ServiceWorkerStatusToString(status));
+  TRACE_EVENT_INSTANT(
+      "ServiceWorker", "ServiceWorkerContainerHost::GetRegistrationsComplete",
+      perfetto::TerminatingFlow::ProcessScoped(trace_id, "GetRegistrations"),
+      "Status", blink::ServiceWorkerStatusToString(status));
 
   if (!context()) {
     std::move(callback).Run(
@@ -1023,6 +1046,15 @@ void ServiceWorkerContainerHostForClient::GetRegistrationsComplete(
 
   for (const auto& registration : registrations) {
     DCHECK(registration.get());
+    SCOPED_CRASH_KEY_STRING256(
+        "SWCH_GRC", "client_origin",
+        service_worker_client().key().origin().Serialize());
+    SCOPED_CRASH_KEY_STRING256("SWCH_GRC", "client_url",
+                               service_worker_client().url().spec());
+    SCOPED_CRASH_KEY_STRING256("SWCH_GRC", "reg_scope",
+                               registration->scope().spec());
+    SCOPED_CRASH_KEY_STRING256("SWCH_GRC", "reg_origin",
+                               registration->key().origin().Serialize());
     // TODO(crbug.com/372879072): remove this CHECK
     CHECK_EQ(service_worker_client().key().origin(),
              url::Origin::Create(registration->scope()));
@@ -1324,6 +1356,19 @@ void ServiceWorkerContainerHostForServiceWorker::DispatchExtendableMessageEvent(
     scoped_refptr<ServiceWorkerVersion> version,
     ::blink::TransferableMessage message,
     StatusCallback callback) {
+  bool is_allowed = AllowServiceWorker(version->scope(), version->script_url());
+  ServiceWorkerMetrics::RecordMessageDispatchContextValidationResult(
+      is_allowed
+          ? ServiceWorkerMessageDispatchContextValidationResult::kAllowed
+          : ServiceWorkerMessageDispatchContextValidationResult::kDisallowed);
+  if (base::FeatureList::IsEnabled(
+          features::kServiceWorkerStrictContextValidation)) {
+    if (!is_allowed) {
+      std::move(callback).Run(blink::ServiceWorkerStatusCode::kErrorDisallowed);
+      return;
+    }
+  }
+
   // Clamp timeout to the sending worker's remaining timeout, to prevent
   // postMessage from keeping workers alive forever.
   base::TimeDelta timeout =
@@ -1341,6 +1386,19 @@ void ServiceWorkerContainerHostForClient::DispatchExtendableMessageEvent(
     scoped_refptr<ServiceWorkerVersion> version,
     ::blink::TransferableMessage message,
     StatusCallback callback) {
+  bool is_allowed = AllowServiceWorker(version->scope(), version->script_url());
+  ServiceWorkerMetrics::RecordMessageDispatchContextValidationResult(
+      is_allowed
+          ? ServiceWorkerMessageDispatchContextValidationResult::kAllowed
+          : ServiceWorkerMessageDispatchContextValidationResult::kDisallowed);
+  if (base::FeatureList::IsEnabled(
+          features::kServiceWorkerStrictContextValidation)) {
+    if (!is_allowed) {
+      std::move(callback).Run(blink::ServiceWorkerStatusCode::kErrorDisallowed);
+      return;
+    }
+  }
+
   if (IsClientValidForCall(service_worker_client())) {
     service_worker_client_utils::GetClient(
         &service_worker_client(),

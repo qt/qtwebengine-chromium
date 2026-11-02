@@ -84,7 +84,7 @@
 #define EIGEN_COMP_GNUC 0
 #endif
 
-/// \internal EIGEN_COMP_CLANG set to version (e.g., 372 for clang 3.7.2) if the compiler is clang
+/// \internal EIGEN_COMP_CLANG set to version (e.g., 1400 for clang 14.0.0) if the compiler is clang
 #if defined(__clang__)
 #define EIGEN_COMP_CLANG (__clang_major__ * 100 + __clang_minor__ * 10 + __clang_patchlevel__)
 #else
@@ -297,6 +297,25 @@
 #define EIGEN_GNUC_STRICT_LESS_THAN(x, y, z) 0
 #endif
 
+// Work around GCC PR tree-optimization/92420, which miscompiles some packetized complex arithmetic under -ffast-math.
+// The bug was introduced by GCC r238039, fixed on the GCC 8 branch by
+// https://gcc.gnu.org/g:785eda9390473e42f0e0b7199c42032a0432de68 and on the GCC 9 branch by
+// https://gcc.gnu.org/g:2d8ea3a0a6095a56b7c59c50b1068d602cde934a.
+// See also GitLab issues #1839 and #1840.
+#if defined(__FAST_MATH__) && EIGEN_COMP_GNUC_STRICT && EIGEN_GNUC_STRICT_AT_LEAST(7, 0, 0) && \
+    (EIGEN_GNUC_STRICT_LESS_THAN(8, 4, 0) ||                                                   \
+     (EIGEN_GNUC_STRICT_AT_LEAST(9, 0, 0) && EIGEN_GNUC_STRICT_LESS_THAN(9, 3, 0)))
+#define EIGEN_GCC_FAST_MATH_COMPLEX_VECTORIZE_BUG 1
+// Disable the affected loop vectorizer around the complex packet helpers.
+#define EIGEN_GCC_FAST_MATH_COMPLEX_VECTORIZE_WORKAROUND_PUSH \
+  _Pragma("GCC push_options") _Pragma("GCC optimize(\"no-tree-loop-vectorize\")")
+#define EIGEN_GCC_FAST_MATH_COMPLEX_VECTORIZE_WORKAROUND_POP _Pragma("GCC pop_options")
+#else
+#define EIGEN_GCC_FAST_MATH_COMPLEX_VECTORIZE_BUG 0
+#define EIGEN_GCC_FAST_MATH_COMPLEX_VECTORIZE_WORKAROUND_PUSH
+#define EIGEN_GCC_FAST_MATH_COMPLEX_VECTORIZE_WORKAROUND_POP
+#endif
+
 /// \internal EIGEN_COMP_CLANG_STRICT set to 1 if the compiler is really Clang and not a compatible compiler (e.g.,
 /// AppleClang, etc.)
 #if EIGEN_COMP_CLANG && !(EIGEN_COMP_CLANGAPPLE || EIGEN_COMP_CLANGICC || EIGEN_COMP_CLANGFCC || EIGEN_COMP_CLANGCPE)
@@ -371,13 +390,13 @@
 
 /// \internal EIGEN_HAS_ARM64_FP16 set to 1 if the architecture provides an IEEE
 /// compliant Arm fp16 type
-#if EIGEN_ARCH_ARM_OR_ARM64
 #ifndef EIGEN_HAS_ARM64_FP16
-#if defined(__ARM_FP16_FORMAT_IEEE)
+// NOTE: Older versions of Clang miscompile `__fp16` implicit conversions to `float`
+// on ARMv7 targets: <https://gitlab.com/libeigen/eigen/-/merge_requests/2273#note_3400347860>.
+#if EIGEN_ARCH_ARMV8 && defined(__ARM_FP16_FORMAT_IEEE)
 #define EIGEN_HAS_ARM64_FP16 1
 #else
 #define EIGEN_HAS_ARM64_FP16 0
-#endif
 #endif
 #endif
 
@@ -447,8 +466,8 @@
 #define EIGEN_OS_ANDROID 1
 
 // Since NDK r16, `__NDK_MAJOR__` and `__NDK_MINOR__` are defined in
-// <android/ndk-version.h>. For NDK < r16, users should define these macros,
-// e.g. `-D__NDK_MAJOR__=11 -D__NKD_MINOR__=0` for NDK r11.
+// <android/ndk-version.h>. Include it when available so NDK-version-specific
+// workarounds can use these macros.
 #if defined __has_include
 #if __has_include(<android/ndk-version.h>)
 #include <android/ndk-version.h>
@@ -717,6 +736,21 @@
 // EIGEN_USE_SYCL is a user-defined macro while __SYCL_DEVICE_ONLY__ is a compiler-defined macro.
 // In most cases we want to check if both macros are defined which can be done using the define below.
 #define SYCL_DEVICE_ONLY
+#endif
+
+// Under fast-math flags (-ffinite-math-only in particular), clang attaches the
+// `nofpclass(nan inf)` attribute to every function argument and return value of floating-point
+// (vector) type. A value that is a compile-time constant of NaN or infinity class -- e.g. the
+// all-ones bitmasks of ptrue and peven_mask, or the infinity/NaN constants guarding special
+// cases -- provably violates that attribute and is folded to poison, silently deleting the code
+// that consumes it. This barrier makes such a constant unprovable, at the cost of a stack
+// store/load pair where it is materialized. It uses a memory operand so that it works for any
+// packet type, including aggregates, and expands to nothing outside affected builds.
+#if EIGEN_COMP_CLANG && defined(__FINITE_MATH_ONLY__) && __FINITE_MATH_ONLY__ && !defined(EIGEN_GPU_COMPILE_PHASE) && \
+    !defined(SYCL_DEVICE_ONLY)
+#define EIGEN_FAST_MATH_CONSTANT_BARRIER(X) __asm__("" : "+m"(X))
+#else
+#define EIGEN_FAST_MATH_CONSTANT_BARRIER(X)
 #endif
 
 //------------------------------------------------------------------------------------------
@@ -1199,26 +1233,12 @@ EIGEN_DEVICE_FUNC constexpr void ignore_unused_variable(const T&) {}
 #define EIGEN_USING_STD(FUNC) using std::FUNC;
 #endif
 
-#if EIGEN_COMP_CLANG  // workaround clang bug (see http://forum.kde.org/viewtopic.php?f=74&t=102653)
-#define EIGEN_INHERIT_ASSIGNMENT_EQUAL_OPERATOR(Derived)                                           \
-  using Base::operator=;                                                                           \
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Derived& operator=(const Derived& other) {                 \
-    Base::operator=(other);                                                                        \
-    return *this;                                                                                  \
-  }                                                                                                \
-  template <typename OtherDerived>                                                                 \
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Derived& operator=(const DenseBase<OtherDerived>& other) { \
-    Base::operator=(other.derived());                                                              \
-    return *this;                                                                                  \
-  }
-#else
 #define EIGEN_INHERIT_ASSIGNMENT_EQUAL_OPERATOR(Derived)                           \
   using Base::operator=;                                                           \
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Derived& operator=(const Derived& other) { \
     Base::operator=(other);                                                        \
     return *this;                                                                  \
   }
-#endif
 
 /**
  * \internal
@@ -1406,9 +1426,9 @@ EIGEN_DEVICE_FUNC constexpr bool all(T t, Ts... ts) {
 // Notice: Use this macro with caution. The code in the if body should still
 // compile with C++14.
 #if defined(EIGEN_HAS_CXX17_IFCONSTEXPR)
-#define EIGEN_IF_CONSTEXPR(X) if constexpr (X)
+#define EIGEN_IF_CONSTEXPR(...) if constexpr (__VA_ARGS__)
 #else
-#define EIGEN_IF_CONSTEXPR(X) if (X)
+#define EIGEN_IF_CONSTEXPR(...) if (__VA_ARGS__)
 #endif
 
 #endif  // EIGEN_MACROS_H

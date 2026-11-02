@@ -112,10 +112,10 @@ struct MapUserdata : CallbackUserdata {
 
     ObjectHandle buffer;
     WGPUBuffer bufferObj;
-    ObjectHandle eventManager;
+    ObjectId instanceId;
     WGPUFuture future;
-    uint64_t offset;
-    uint64_t size;
+    size_t offset;
+    size_t size;
     WGPUMapMode mode;
 };
 
@@ -123,14 +123,14 @@ struct ErrorScopeUserdata : CallbackUserdata {
     using CallbackUserdata::CallbackUserdata;
 
     ObjectHandle device;
-    ObjectHandle eventManager;
+    ObjectId instanceId;
     WGPUFuture future;
 };
 
 struct ShaderModuleGetCompilationInfoUserdata : CallbackUserdata {
     using CallbackUserdata::CallbackUserdata;
 
-    ObjectHandle eventManager;
+    ObjectId instanceId;
     WGPUFuture future;
 };
 
@@ -138,7 +138,7 @@ struct QueueWorkDoneUserdata : CallbackUserdata {
     using CallbackUserdata::CallbackUserdata;
 
     ObjectHandle queue;
-    ObjectHandle eventManager;
+    ObjectId instanceId;
     WGPUFuture future;
 };
 
@@ -146,7 +146,7 @@ struct CreatePipelineAsyncUserData : CallbackUserdata {
     using CallbackUserdata::CallbackUserdata;
 
     ObjectHandle device;
-    ObjectHandle eventManager;
+    ObjectId instanceId;
     WGPUFuture future;
     ObjectHandle pipeline;
 };
@@ -154,7 +154,7 @@ struct CreatePipelineAsyncUserData : CallbackUserdata {
 struct RequestAdapterUserdata : CallbackUserdata {
     using CallbackUserdata::CallbackUserdata;
 
-    ObjectHandle eventManager;
+    ObjectId instanceId;
     WGPUFuture future;
     ObjectHandle adapter;
 };
@@ -162,7 +162,7 @@ struct RequestAdapterUserdata : CallbackUserdata {
 struct RequestDeviceUserdata : CallbackUserdata {
     using CallbackUserdata::CallbackUserdata;
 
-    ObjectHandle eventManager;
+    ObjectId instanceId;
     WGPUFuture future;
     ObjectHandle device;
     WGPUFuture deviceLostFuture;
@@ -171,7 +171,7 @@ struct RequestDeviceUserdata : CallbackUserdata {
 struct DeviceLostUserdata : CallbackUserdata {
     using CallbackUserdata::CallbackUserdata;
 
-    ObjectHandle eventManager;
+    ObjectId instanceId;
     WGPUFuture future;
 };
 
@@ -184,7 +184,7 @@ class Server : public ServerBase {
     ~Server() override;
 
     // ChunkedCommandHandler implementation
-    const volatile char* HandleCommands(const volatile char* commands, size_t size) override;
+    bool HandleCommands(Span<const volatile std::byte> commands) override;
 
     WireResult InjectBuffer(WGPUBuffer buffer, const Handle& handle, const Handle& deviceHandle);
     WireResult InjectTexture(WGPUTexture texture, const Handle& handle, const Handle& deviceHandle);

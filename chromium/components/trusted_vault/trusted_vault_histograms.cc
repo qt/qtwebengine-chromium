@@ -40,6 +40,10 @@ std::string GetTrustedVaultURLFetchReasonSuffix(
       return "DownloadAuthenticationFactorsRegistrationState";
     case TrustedVaultURLFetchReasonForUMA::kRegisterICloudKeychain:
       return "RegisterICloudKeychain";
+    case TrustedVaultURLFetchReasonForUMA::kDownloadGaiaPasswordPublicKey:
+      return "DownloadGaiaPasswordPublicKey";
+    case TrustedVaultURLFetchReasonForUMA::kRotateSharedKey:
+      return "RotateSharedKey";
   }
 
   NOTREACHED();
@@ -274,6 +278,12 @@ std::string GetSecurityDomainNameForUma(SecurityDomainId domain) {
       // If adding a new value, also update the variants for SecurityDomainId
       // in tools/metrics/histograms/metadata/trusted_vault/histograms.xml.
   }
+}
+
+void RecordTrustedVaultRecoveryFlowTriggeredEndpoint(
+    TrustedVaultRecoveryFlowEndpoint endpoint) {
+  base::UmaHistogramEnumeration("TrustedVault.RecoveryFlowTriggeredEndpoint",
+                                endpoint);
 }
 
 }  // namespace trusted_vault

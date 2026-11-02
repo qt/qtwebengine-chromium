@@ -11,9 +11,9 @@ import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as Persistence from '../../models/persistence/persistence.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as uiI18n from '../../ui/i18n/i18n.js';
 import {Link} from '../../ui/kit/kit.js';
@@ -110,8 +110,8 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 let networkNavigatorViewInstance: NetworkNavigatorView;
 
 export class NetworkNavigatorView extends NavigatorView {
-  private constructor() {
-    super('navigator-network', true);
+  private constructor(networkProjectManager: Bindings.NetworkProject.NetworkProjectManager) {
+    super('navigator-network', networkProjectManager, true);
     this.registerRequiredCSS(sourcesNavigatorStyles);
     SDK.TargetManager.TargetManager.instance().addEventListener(
         SDK.TargetManager.Events.INSPECTED_URL_CHANGED, this.inspectedURLChanged, this);
@@ -123,10 +123,11 @@ export class NetworkNavigatorView extends NavigatorView {
 
   static instance(opts: {
     forceNew: boolean|null,
-  } = {forceNew: null}): NetworkNavigatorView {
-    const {forceNew} = opts;
+    networkProjectManager: Bindings.NetworkProject.NetworkProjectManager,
+  }): NetworkNavigatorView {
+    const {forceNew, networkProjectManager} = opts;
     if (!networkNavigatorViewInstance || forceNew) {
-      networkNavigatorViewInstance = new NetworkNavigatorView();
+      networkNavigatorViewInstance = new NetworkNavigatorView(networkProjectManager);
     }
 
     return networkNavigatorViewInstance;
@@ -181,8 +182,8 @@ export class FilesNavigatorView extends NavigatorView {
   #eventListeners: Common.EventTarget.EventDescriptor[] = [];
   #automaticFileSystemNudge: HTMLSpanElement;
 
-  constructor() {
-    super('navigator-files');
+  constructor(networkProjectManager: Bindings.NetworkProject.NetworkProjectManager) {
+    super('navigator-files', networkProjectManager);
     this.registerRequiredCSS(sourcesNavigatorStyles);
     const placeholder =
         new UI.EmptyWidget.EmptyWidget(i18nString(UIStrings.noWorkspace), i18nString(UIStrings.explainWorkspace));
@@ -262,8 +263,8 @@ let overridesNavigatorViewInstance: OverridesNavigatorView;
 
 export class OverridesNavigatorView extends NavigatorView {
   private readonly toolbar: UI.Toolbar.Toolbar;
-  private constructor() {
-    super('navigator-overrides');
+  private constructor(networkProjectManager: Bindings.NetworkProject.NetworkProjectManager) {
+    super('navigator-overrides', networkProjectManager);
     const placeholder = new UI.EmptyWidget.EmptyWidget(
         i18nString(UIStrings.noLocalOverrides), i18nString(UIStrings.explainLocalOverrides));
     this.setPlaceholder(placeholder);
@@ -283,10 +284,11 @@ export class OverridesNavigatorView extends NavigatorView {
 
   static instance(opts: {
     forceNew: boolean|null,
-  } = {forceNew: null}): OverridesNavigatorView {
-    const {forceNew} = opts;
+    networkProjectManager: Bindings.NetworkProject.NetworkProjectManager,
+  }): OverridesNavigatorView {
+    const {forceNew, networkProjectManager} = opts;
     if (!overridesNavigatorViewInstance || forceNew) {
-      overridesNavigatorViewInstance = new OverridesNavigatorView();
+      overridesNavigatorViewInstance = new OverridesNavigatorView(networkProjectManager);
     }
 
     return overridesNavigatorViewInstance;
@@ -330,12 +332,12 @@ export class OverridesNavigatorView extends NavigatorView {
     const title = i18nString(UIStrings.selectFolderForOverrides);
     const setupButton = new UI.Toolbar.ToolbarButton(title, 'plus', title);
     setupButton.addEventListener(UI.Toolbar.ToolbarButton.Events.CLICK, _event => {
-      void this.setupNewWorkspace();
+      void OverridesNavigatorView.setupNewWorkspace();
     }, this);
     this.toolbar.appendToolbarItem(setupButton);
   }
 
-  async setupNewWorkspace(): Promise<void> {
+  static async setupNewWorkspace(): Promise<void> {
     const fileSystem =
         await Persistence.IsolatedFileSystemManager.IsolatedFileSystemManager.instance().addFileSystem('overrides');
     if (!fileSystem) {
@@ -355,8 +357,8 @@ export class OverridesNavigatorView extends NavigatorView {
 }
 
 export class ContentScriptsNavigatorView extends NavigatorView {
-  constructor() {
-    super('navigator-content-scripts');
+  constructor(networkProjectManager: Bindings.NetworkProject.NetworkProjectManager) {
+    super('navigator-content-scripts', networkProjectManager);
     const placeholder = new UI.EmptyWidget.EmptyWidget(
         i18nString(UIStrings.noContentScripts), i18nString(UIStrings.explainContentScripts));
     this.setPlaceholder(placeholder);
@@ -369,8 +371,8 @@ export class ContentScriptsNavigatorView extends NavigatorView {
 }
 
 export class SnippetsNavigatorView extends NavigatorView {
-  constructor() {
-    super('navigator-snippets');
+  constructor(networkProjectManager: Bindings.NetworkProject.NetworkProjectManager) {
+    super('navigator-snippets', networkProjectManager);
     const placeholder =
         new UI.EmptyWidget.EmptyWidget(i18nString(UIStrings.noSnippets), i18nString(UIStrings.explainSnippets));
     this.setPlaceholder(placeholder);

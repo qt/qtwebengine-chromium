@@ -126,11 +126,6 @@ inline constexpr char kNativeMessagingAllowlist[] =
 inline constexpr char kNativeMessagingUserLevelHosts[] =
     "native_messaging.user_level_hosts";
 
-// An integer indicates the availability of manifest v2 extensions. The value is
-// controlled by the ExtensionManifestV2Availability policy. More details can
-// be found at ExtensionManifestV2Availability.yaml.
-inline constexpr char kManifestV2Availability[] = "extensions.manifest_v2";
-
 // A preference that tracks extensions pinned to the toolbar. This is a list
 // object stored in the Preferences file. The extensions are stored by ID.
 inline constexpr char kPinnedExtensions[] = "extensions.pinned_extensions";
@@ -179,6 +174,11 @@ inline constexpr char kEnterprisePromotionExpirationTime[] =
 // Web Store has been dismissed by the user by clicking the banner button.
 inline constexpr char kHasDismissedEnterprisePromotion[] =
     "extensions.has_dismissed_enterprise_promotion";
+
+// A pref that stores whether the extension was pinned to the toolbar by default
+// upon installation. This excludes extensions that are pinned by default due to
+// policies.
+inline constexpr char kWasPinnedByDefault[] = "was_pinned_by_default";
 
 }  // namespace pref_names
 }  // namespace extensions

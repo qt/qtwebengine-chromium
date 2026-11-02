@@ -104,7 +104,8 @@ if (!is_ios) {
     visibility += [
       "../cast/common:discovery_e2e_test",
       "../cast/standalone_receiver:cast_receiver",
-      "../cast/standalone_sender:cast_sender",
+      "../cast/standalone_sender:*",
+      "../cast/standalone_sender/bindings/python:*",
       "../cast/test:e2e_tests",
       "../osp:osp_demo",
       "../test:test_main",

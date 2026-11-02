@@ -69,7 +69,7 @@ inline T poly_eval(const Polynomials& poly, const T& x) {
  *  e.g. \f$ 1 + 3x^2 \f$ is stored as a vector \f$ [ 1, 0, 3 ] \f$.
  *
  *  \pre
- *   the leading coefficient of the input polynomial poly must be non zero
+ *   the leading coefficient of the input polynomial poly must be nonzero
  */
 template <typename Polynomial>
 inline typename NumTraits<typename Polynomial::Scalar>::Real cauchy_max_bound(const Polynomial& poly) {
@@ -88,7 +88,7 @@ inline typename NumTraits<typename Polynomial::Scalar>::Real cauchy_max_bound(co
 }
 
 /** \ingroup Polynomials_Module
- * \returns a minimum bound for the absolute value of any non zero root of the polynomial.
+ * \returns a minimum bound for the absolute value of any nonzero root of the polynomial.
  * \param[in] poly : the vector of coefficients of the polynomial ordered
  *  by degrees i.e. poly[i] is the coefficient of degree i of the polynomial
  *  e.g. \f$ 1 + 3x^2 \f$ is stored as a vector \f$ [ 1, 0, 3 ] \f$.

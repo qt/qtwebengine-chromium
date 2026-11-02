@@ -592,11 +592,14 @@ void Assembler::set_target_address_at(Address pc, Address constant_pool,
                                       ICacheFlushMode icache_flush_mode) {
   Instruction* instr = reinterpret_cast<Instruction*>(pc);
   if (instr->IsLdrLiteralX()) {
+    // This function is reused for code serialization, where we do not care
+    // about alignment of the code object's start address, so the constant
+    // pool might inherit non-8-byte alignment.
     if (jit_allocation) {
-      jit_allocation->WriteValue<Address>(target_pointer_address_at(pc),
-                                          target);
+      jit_allocation->WriteUnalignedValue<Address>(
+          target_pointer_address_at(pc), target);
     } else {
-      Memory<Address>(target_pointer_address_at(pc)) = target;
+      WriteUnalignedValue(target_pointer_address_at(pc), target);
     }
     // Intuitively, we would think it is necessary to always flush the
     // instruction cache after patching a target address in the code. However,
@@ -731,6 +734,19 @@ void WritableRelocInfo::set_target_external_reference(
   DCHECK(rmode_ == RelocInfo::EXTERNAL_REFERENCE);
   Assembler::set_target_address_at(pc_, constant_pool_, target,
                                    &jit_allocation_, icache_flush_mode);
+}
+
+Address RelocInfo::wasm_code_pointer() const {
+  DCHECK(rmode_ == RelocInfo::WASM_CODE_POINTER);
+  return Assembler::target_address_at(pc_, constant_pool_);
+}
+
+void WritableRelocInfo::set_wasm_code_pointer(Address target) {
+  DCHECK(rmode_ == RelocInfo::WASM_CODE_POINTER);
+  // We only call `set_wasm_code_pointer` while processing an entire code
+  // object, and will always flush the i-cache at the end of that operation.
+  Assembler::set_target_address_at(pc_, constant_pool_, target,
+                                   &jit_allocation_, SKIP_ICACHE_FLUSH);
 }
 
 WasmCodePointer RelocInfo::wasm_code_pointer_table_entry() const {

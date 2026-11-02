@@ -12,6 +12,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "components/enterprise/common/strings.h"
 #include "components/enterprise/connectors/core/analysis_settings.h"
+#include "components/enterprise/connectors/core/features.h"
 #include "components/policy/core/browser/browser_policy_connector.h"
 #include "components/safe_browsing/core/common/safebrowsing_switches.h"
 #include "net/base/url_util.h"
@@ -397,6 +398,12 @@ GURL BinaryUploadRequest::GetUrlWithParams() const {
       break;
     case enterprise_connectors::FILE_TRANSFER:
       connector = "OnFileTransfer";
+      break;
+    case enterprise_connectors::DATA_COPIED:
+      connector = "OnTextCopied";
+      break;
+    case enterprise_connectors::NETWORK_REQUEST:
+      connector = "OnNetworkRequest";
       break;
     case enterprise_connectors::ANALYSIS_CONNECTOR_UNSPECIFIED:
       break;

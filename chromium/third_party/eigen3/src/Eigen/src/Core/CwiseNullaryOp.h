@@ -142,8 +142,9 @@ EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
 #endif
     DenseBase<Derived>::NullaryExpr(Index size, const CustomNullaryOp& func) {
   EIGEN_STATIC_ASSERT_VECTOR_ONLY(Derived)
-  EIGEN_IF_CONSTEXPR(RowsAtCompileTime == 1) { return CwiseNullaryOp<CustomNullaryOp, PlainObject>(1, size, func); }
-  else {
+  EIGEN_IF_CONSTEXPR (RowsAtCompileTime == 1) {
+    return CwiseNullaryOp<CustomNullaryOp, PlainObject>(1, size, func);
+  } else {
     return CwiseNullaryOp<CustomNullaryOp, PlainObject>(size, 1, func);
   }
 }
@@ -178,8 +179,6 @@ EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
  * it is redundant to pass \a rows and \a cols as arguments, so Constant(const Scalar&) should be used
  * instead.
  *
- * The template parameter \a CustomNullaryOp is the type of the functor.
- *
  * \sa class CwiseNullaryOp
  */
 template <typename Derived>
@@ -199,8 +198,6 @@ DenseBase<Derived>::Constant(Index rows, Index cols, const Scalar& value) {
  * it is redundant to pass \a size as argument, so Constant(const Scalar&) should be used
  * instead.
  *
- * The template parameter \a CustomNullaryOp is the type of the functor.
- *
  * \sa class CwiseNullaryOp
  */
 template <typename Derived>
@@ -213,8 +210,6 @@ DenseBase<Derived>::Constant(Index size, const Scalar& value) {
  *
  * This variant is only for fixed-size DenseBase types. For dynamic-size types, you
  * need to use the variants taking size arguments.
- *
- * The template parameter \a CustomNullaryOp is the type of the functor.
  *
  * \sa class CwiseNullaryOp
  */
@@ -268,8 +263,8 @@ DenseBase<Derived>::LinSpaced(Sequential_t, const Scalar& low, const Scalar& hig
  *
  * For integer scalar types, an even spacing is possible if and only if the length of the range,
  * i.e., \c high-low is a scalar multiple of \c size-1, or if \c size is a scalar multiple of the
- * number of values \c high-low+1 (meaning each value can be repeated the same number of time).
- * If one of these two considions is not satisfied, then \c high is lowered to the largest value
+ * number of values \c high-low+1 (meaning each value can be repeated the same number of times).
+ * If one of these two conditions is not satisfied, then \c high is lowered to the largest value
  * satisfying one of this constraint.
  * Here are some examples:
  *

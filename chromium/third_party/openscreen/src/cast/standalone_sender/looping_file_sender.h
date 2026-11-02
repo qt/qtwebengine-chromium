@@ -92,14 +92,14 @@ class LoopingFileSender final : public SimulatedAudioCapturer::Client,
   int bandwidth_estimate_ = 0;
   int bandwidth_being_utilized_;
 
-  StreamingOpusEncoder audio_encoder_;
+  std::unique_ptr<StreamingOpusEncoder> audio_encoder_;
   std::unique_ptr<StreamingVideoEncoder> video_encoder_;
 
   int num_capturers_running_ = 0;
   Clock::time_point capture_begin_time_{};
   Clock::time_point latest_frame_time_{};
-  std::optional<SimulatedAudioCapturer> audio_capturer_;
-  std::optional<SimulatedVideoCapturer> video_capturer_;
+  std::unique_ptr<SimulatedAudioCapturer> audio_capturer_;
+  std::unique_ptr<SimulatedVideoCapturer> video_capturer_;
 
   struct Click {
     float x;

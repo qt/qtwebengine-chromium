@@ -1,0 +1,81 @@
+# Build configuration for fontconfig
+# Contains common build setup (venv, features) and distro-specific scripts
+
+# Common setup for all builds
+common:
+  packages:
+    - meson>=1.11.0
+    - tomli
+    - pytest
+    - pytest-tap
+    - requests
+    - certifi
+
+  features:
+    fontations:
+      shell: bash
+      script: |
+        cargo install bindgen-cli
+      env:
+        PATH: "$HOME/.cargo/bin:${PATH}"
+
+alpine:
+  setup:
+    env:
+      PATH: "${PATH}:/usr/lib/ninja-build/bin"
+
+  cross:
+    shell: sh
+    script: |
+      echo "** Cross build not supported."
+      exit 1
+
+fedora:
+  setup: null
+
+  cross:
+    shell: sh
+    script: |
+      if [ x"$FC_BUILD_PLATFORM" == "xmingw" ]; then
+          eval `rpm --eval %{mingw64_env}`
+      fi
+
+freebsd:
+  setup: null
+
+  cross:
+    shell: sh
+    script: |
+      echo "** Cross build not supported."
+      exit 1
+
+ubuntu:
+  setup: null
+
+  cross:
+    shell: sh
+    script: ""
+
+darwin:
+  setup:
+    shell: bash
+    script: |
+      # Install Rust via rustup if not already installed
+      if ! command -v rustc &> /dev/null; then
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        . "$HOME/.cargo/env"
+      fi
+
+      # Update rust
+      rustup update
+    # Certificate paths will be set by build.py using python -m certifi
+    needs_cert_setup: true
+
+  cross: null
+
+windows:
+  setup:
+    # Certificate paths will be set by build.py using python -m certifi
+    needs_cert_setup: true
+
+  cross: null

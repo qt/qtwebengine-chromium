@@ -46,6 +46,7 @@
 
 #include "src/base/macros.h"
 #include "src/base/memory.h"
+#include "src/base/strong-alias.h"
 #include "src/codegen/code-comments.h"
 #include "src/codegen/cpu-features.h"
 #include "src/codegen/external-reference.h"
@@ -187,7 +188,8 @@ class HeapNumberRequest {
 // -----------------------------------------------------------------------------
 // Platform independent assembler base class.
 
-enum class CodeObjectRequired { kNo, kYes };
+using CodeObjectRequired =
+    base::StrongAlias<struct CodeObjectRequiredTag, bool>;
 
 enum class BuiltinCallJumpMode {
   // The builtin entry point address is embedded into the instruction stream as
@@ -237,6 +239,9 @@ struct V8_EXPORT_PRIVATE AssemblerOptions {
   // PC-relative calls may be used. So, we fall back to an indirect mode.
   // TODO(v8:11527): remove once kForMksnapshot is removed.
   bool use_pc_relative_calls_and_jumps_for_mksnapshot = false;
+  // Generating builtins with mksnapshot, this option can be used when the
+  // isolate isn't available.
+  bool generating_embedded_builtin = false;
 
   // On some platforms, all code is created within a certain address range in
   // the process, and the base of this code range is configured here.
@@ -393,11 +398,12 @@ class V8_EXPORT_PRIVATE AssemblerBase : public Malloced {
 
   void skip_bytes(int num_bytes) { pc_ += num_bytes; }
 
-// MIPS, LOONG, and RISC-V need to use their own implementations to avoid the
-// influence of branch trampolines. They provide their implementations in the
-// architecture-specific assembler subclasses.
-#if !defined(V8_TARGET_ARCH_MIPS64) && !defined(V8_TARGET_ARCH_LOONG64) && \
-    !defined(V8_TARGET_ARCH_RISCV32) && !defined(V8_TARGET_ARCH_RISCV64)
+// MIPS, LOONG, RISC-V, and PPC64 need to use their own implementations to avoid
+// the influence of branch trampolines. They provide their implementations in
+// the architecture-specific assembler subclasses.
+#if !defined(V8_TARGET_ARCH_MIPS64) && !defined(V8_TARGET_ARCH_LOONG64) &&  \
+    !defined(V8_TARGET_ARCH_RISCV32) && !defined(V8_TARGET_ARCH_RISCV64) && \
+    !defined(V8_TARGET_ARCH_PPC64)
   int pc_offset_for_safepoint() const { return pc_offset(); }
 #endif
 
@@ -538,9 +544,15 @@ class V8_EXPORT_PRIVATE AssemblerBase : public Malloced {
 
   bool ShouldRecordRelocInfo(RelocInfo::Mode rmode) const {
     DCHECK(!RelocInfo::IsNoInfo(rmode));
+    // Don't record reloc info that will never be used. This applies to certain
+    // reference types that are only needed for (de)serialization and are never
+    // updated by the GC. Omitting reloc info in this cases reduce the amount of
+    // memory used. This memory optimization is overriden when debug feature
+    // that need to track all references are enabled.
     if (RelocInfo::IsOnlyForSerializer(rmode) &&
         !options().record_reloc_info_for_serialization &&
-        !v8_flags.debug_code && !v8_flags.slow_debug_code) {
+        !v8_flags.debug_code && !v8_flags.slow_debug_code &&
+        !v8_flags.validate_generated_code) {
       return false;
     }
     return true;

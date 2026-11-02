@@ -19,13 +19,13 @@
 #include "base/win/scoped_bstr.h"
 #include "base/win/scoped_variant.h"
 #include "base/win/windows_version.h"
-#include "ui/accessibility/accessibility_features.h"
 #include "ui/accessibility/ax_role_properties.h"
 #include "ui/accessibility/platform/assistive_tech.h"
 #include "ui/accessibility/platform/ax_fragment_root_win.h"
 #include "ui/accessibility/platform/ax_platform.h"
 #include "ui/accessibility/platform/ax_platform_node_delegate_utils_win.h"
 #include "ui/accessibility/platform/ax_platform_node_textprovider_win.h"
+#include "ui/accessibility/platform/ax_platform_node_win.h"
 #include "ui/accessibility/platform/ax_platform_tree_manager_delegate.h"
 #include "ui/accessibility/platform/browser_accessibility_win.h"
 #include "ui/accessibility/platform/uia_registrar_win.h"
@@ -63,6 +63,14 @@ BrowserAccessibility* GetUiaTextPatternProvider(BrowserAccessibility& node) {
 constexpr char kBrowserRootViewClassName[] = "BrowserRootView";
 constexpr char kTabClassName[] = "Tab";
 
+BrowserAccessibilityComWin* ToBrowserAccessibilityComWin(AXPlatformNode* node) {
+  if (!node) {
+    return nullptr;
+  }
+  return ::ui::ToBrowserAccessibilityComWin(
+      BrowserAccessibility::FromAXPlatformNodeDelegate(node->GetDelegate()));
+}
+
 }  // namespace
 
 // static
@@ -93,12 +101,12 @@ BrowserAccessibilityManagerWin::BrowserAccessibilityManagerWin(
     AXNodeIdDelegate& node_id_delegate,
     AXPlatformTreeManagerDelegate* delegate)
     : BrowserAccessibilityManager(node_id_delegate, delegate) {
-  // Hydrate the custom property registry if MathML support is enabled.
-  // Since we don't fire any events that call into the registrar like the other
-  // custom properties, we need to ensure it's initialized here.
-  if (features::IsUiaMathMlSupportEnabled()) {
-    ui::UiaRegistrarWin::GetInstance();
-  }
+  // Hydrate the custom property registry. Properties like MathML and
+  // AriaActions don't fire events that call into the registrar like the other
+  // custom properties, so we ensure it's initialized here. The AriaActions
+  // property is registered unconditionally; MathML is registered when its
+  // feature flag is enabled.
+  ui::UiaRegistrarWin::GetInstance();
   Initialize(initial_tree);
 }
 
@@ -134,22 +142,11 @@ AXTreeUpdate BrowserAccessibilityManagerWin::GetEmptyDocument() {
 }
 
 HWND BrowserAccessibilityManagerWin::GetParentHWND() const {
-  if (!delegate()) {
+  AXPlatformTreeManagerDelegate* delegate = GetDelegateForNativeView();
+  if (!delegate) {
     return nullptr;
   }
-
-  // For non-web-content sources (e.g., Views), the delegate directly provides
-  // the HWND. For web content, we must walk up to the root frame manager to
-  // find the HWND, because child frames (iframes) share the top-level HWND.
-  if (!delegate()->AccessibilityIsWebContentSource()) {
-    return delegate()->AccessibilityGetAcceleratedWidget();
-  }
-
-  AXPlatformTreeManagerDelegate* root_delegate = GetDelegateFromRootManager();
-  if (!root_delegate) {
-    return nullptr;
-  }
-  return root_delegate->AccessibilityGetAcceleratedWidget();
+  return delegate->AccessibilityGetAcceleratedWidget();
 }
 
 void BrowserAccessibilityManagerWin::UserIsReloading() {
@@ -345,12 +342,14 @@ void BrowserAccessibilityManagerWin::FireSourceEvent(
       // but Alt+Tabbing between windows does not, so the correct state is
       // not restored. Re-fire the event on the last selected tab when the
       // browser window is activated to bridge that gap. Only applies to
-      // BrowserRootView (not dialogs/popups).
-      // TODO(crbug.com/505781387): Collaborating with the JAWS team on a
-      // more robust signal; remove once adopted.
+      // BrowserRootView (not dialogs/popups), and only for older versions of
+      // JAWS. Newer versions detect the active tab on their own.
+      // TODO(crbug.com/505781387): Remove once the oldest supported JAWS
+      // version no longer needs this event.
       if (node == GetBrowserAccessibilityRoot() &&
           AXPlatform::GetInstance().active_assistive_tech() ==
-              AssistiveTech::kJaws) {
+              AssistiveTech::kJaws &&
+          AXPlatform::GetInstance().JawsNeedsTabSelectionEvent()) {
         const std::string& root_class = node->GetData().GetStringAttribute(
             ax::mojom::StringAttribute::kClassName);
         if (root_class == kBrowserRootViewClassName) {
@@ -364,6 +363,17 @@ void BrowserAccessibilityManagerWin::FireSourceEvent(
     default:
       break;
   }
+}
+
+// static
+LONG BrowserAccessibilityManagerWin::GetCheckedStateChangedUiaProperty(
+    const BrowserAccessibility& node) {
+  // Buttons that expose ExpandCollapse suppress Toggle (see IsToggleSupported),
+  // so their state change is reported through ExpandCollapseState.
+  if (ToBrowserAccessibilityWin(&node)->GetCOM()->IsExpandCollapseButton()) {
+    return UIA_ExpandCollapseExpandCollapseStatePropertyId;
+  }
+  return UIA_ToggleToggleStatePropertyId;
 }
 
 void BrowserAccessibilityManagerWin::FireGeneratedEvent(
@@ -400,7 +410,8 @@ void BrowserAccessibilityManagerWin::FireGeneratedEvent(
         HandleSelectedStateChanged(uia_selection_events_, wrapper,
                                    IsUIANodeSelected(wrapper));
       }
-      FireUiaPropertyChangedEvent(UIA_ToggleToggleStatePropertyId, wrapper);
+      FireUiaPropertyChangedEvent(GetCheckedStateChangedUiaProperty(*wrapper),
+                                  wrapper);
       HandleAriaPropertiesChangedEvent(*wrapper);
       break;
     case AXEventGenerator::Event::CHILDREN_CHANGED: {
@@ -458,7 +469,7 @@ void BrowserAccessibilityManagerWin::FireGeneratedEvent(
           // Fire the event on the root object, which in the absence of a text
           // field ancestor is the closest UIA text provider (other than the
           // focused object) in which the selection has changed.
-          DCHECK(IsPlatformDocument(wrapper->GetRole()));
+          DCHECK(wrapper->IsPlatformDocument());
           EnqueueSelectionChangedEvent(*wrapper);
 
           // "IA2_EVENT_TEXT_CARET_MOVED" should only be fired when a visible
@@ -1012,12 +1023,8 @@ bool BrowserAccessibilityManagerWin::CanFireEvents() const {
     return false;
   }
 
-  if (delegate()->AccessibilityIsWebContentSource()) {
-    return GetDelegateFromRootManager() &&
-           GetDelegateFromRootManager()->AccessibilityGetAcceleratedWidget();
-  }
-
-  return delegate()->AccessibilityGetAcceleratedWidget();
+  AXPlatformTreeManagerDelegate* delegate = GetDelegateForNativeView();
+  return delegate && delegate->AccessibilityGetAcceleratedWidget();
 }
 
 void BrowserAccessibilityManagerWin::OnSubtreeWillBeDeleted(AXTree* tree,
@@ -1053,8 +1060,9 @@ void BrowserAccessibilityManagerWin::OnAtomicUpdateFinished(
   // recomputes all of win_attributes_ other than IAccessibleText.
   auto state_scan = update_states.begin();
   for (auto* node : objs_to_update) {
-    static_cast<BrowserAccessibilityComWin*>(node)
-        ->UpdateStep1ComputeWinAttributes(&*state_scan);
+    if (auto* com_win = ToBrowserAccessibilityComWin(node)) {
+      com_win->UpdateStep1ComputeWinAttributes(&*state_scan);
+    }
     ++state_scan;
   }
 
@@ -1062,8 +1070,9 @@ void BrowserAccessibilityManagerWin::OnAtomicUpdateFinished(
   // concatenation of all of its child text nodes, so it can't run until
   // the text of all of the nodes was computed in the previous step.
   for (auto* node : objs_to_update) {
-    static_cast<BrowserAccessibilityComWin*>(node)
-        ->UpdateStep2ComputeHypertext();
+    if (auto* com_win = ToBrowserAccessibilityComWin(node)) {
+      com_win->UpdateStep2ComputeHypertext();
+    }
   }
 
   // The third step fires events on nodes based on what's changed - like
@@ -1075,7 +1084,9 @@ void BrowserAccessibilityManagerWin::OnAtomicUpdateFinished(
   // At the end, it deletes old_win_attributes_ since they're not needed
   // anymore.
   for (auto* node : objs_to_update) {
-    static_cast<BrowserAccessibilityComWin*>(node)->UpdateStep3FireEvents();
+    if (auto* com_win = ToBrowserAccessibilityComWin(node)) {
+      com_win->UpdateStep3FireEvents();
+    }
   }
 }
 

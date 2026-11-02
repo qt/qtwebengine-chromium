@@ -59,8 +59,9 @@ class QuicServer final : public ProtocolConnectionServer,
   std::string GetAuthToken() override { return auth_token_; }
 
   // QuicServiceBase overrides.
-  void OnClientCertificates(std::string_view instance_name,
-                            const std::vector<std::string>& certs) override;
+  void OnClientCertificates(
+      std::string_view instance_name,
+      const std::vector<std::string_view>& certs) override;
 
   const std::string& instance_name() const { return instance_name_; }
 

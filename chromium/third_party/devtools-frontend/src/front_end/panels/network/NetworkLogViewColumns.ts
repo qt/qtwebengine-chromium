@@ -72,7 +72,7 @@ const UIStrings = {
   /**
    * @description Text in Timeline UIUtils of the Performance panel
    */
-  url: 'Url',
+  url: 'URL',
   /**
    * @description Column header in the Network log view of the Network panel
    */
@@ -161,6 +161,14 @@ const UIStrings = {
    * @description Text in Network Log View Columns of the Network panel
    */
   renderBlocking: 'Render-blocking',
+  /**
+   * @description Text to show whether a request is preloaded
+   */
+  isPreloaded: 'Preloaded',
+  /**
+   * @description Column header in the Network log view of the Network panel
+   */
+  executionContext: 'Execution context',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/network/NetworkLogViewColumns.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -973,6 +981,12 @@ const DEFAULT_COLUMN_CONFIG = {
 
 const DEFAULT_COLUMNS = [
   {
+    id: 'request-number',
+    title: i18nLazyString(UIStrings.requestNumber),
+    align: DataGrid.DataGrid.Align.RIGHT,
+    sortingFunction: NetworkRequestNode.RequestNumberComparator,
+  },
+  {
     id: 'name',
     title: i18nLazyString(UIStrings.name),
     subtitle: i18nLazyString(UIStrings.path),
@@ -995,12 +1009,6 @@ const DEFAULT_COLUMNS = [
     hideable: true,
     hideableGroup: 'path',
     sortingFunction: NetworkRequestNode.RequestURLComparator,
-  },
-  {
-    id: 'request-number',
-    title: i18nLazyString(UIStrings.requestNumber),
-    align: DataGrid.DataGrid.Align.RIGHT,
-    sortingFunction: NetworkRequestNode.RequestNumberComparator,
   },
   {
     id: 'method',
@@ -1220,6 +1228,16 @@ const DEFAULT_COLUMNS = [
     id: 'render-blocking',
     title: i18nLazyString(UIStrings.renderBlocking),
     sortingFunction: NetworkRequestNode.RenderBlockingComparator,
+  },
+  {
+    id: 'is-preloaded',
+    title: i18nLazyString(UIStrings.isPreloaded),
+    sortingFunction: NetworkRequestNode.IsPreloadedComparator,
+  },
+  {
+    id: 'execution-context',
+    title: i18nLazyString(UIStrings.executionContext),
+    sortingFunction: NetworkRequestNode.ExecutionContextComparator,
   },
   // This header is a placeholder to let datagrid know that it can be sorted by this column, but never shown.
   {

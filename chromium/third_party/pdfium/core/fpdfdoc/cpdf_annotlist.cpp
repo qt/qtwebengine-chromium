@@ -12,6 +12,7 @@
 
 #include "constants/annotation_common.h"
 #include "constants/annotation_flags.h"
+#include "constants/catalog.h"
 #include "constants/form_fields.h"
 #include "constants/form_flags.h"
 #include "core/fpdfapi/page/cpdf_occontext.h"
@@ -186,7 +187,8 @@ CPDF_AnnotList::CPDF_AnnotList(CPDF_Page* pPage)
   }
 
   const CPDF_Dictionary* pRoot = document_->GetRoot();
-  RetainPtr<const CPDF_Dictionary> pAcroForm = pRoot->GetDictFor("AcroForm");
+  RetainPtr<const CPDF_Dictionary> pAcroForm =
+      pRoot->GetDictFor(pdfium::catalog::kAcroForm);
   bool bRegenerateAP =
       pAcroForm && pAcroForm->GetBooleanFor("NeedAppearances", false);
   for (size_t i = 0; i < pAnnots->size(); ++i) {

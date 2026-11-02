@@ -8,6 +8,7 @@
 
 #include <utility>
 
+#include "constants/catalog.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
@@ -522,7 +523,8 @@ void CPDFXFA_DocEnvironment::ExportData(CXFA_FFDoc* hDoc,
       return;
     }
 
-    RetainPtr<const CPDF_Dictionary> pAcroForm = pRoot->GetDictFor("AcroForm");
+    RetainPtr<const CPDF_Dictionary> pAcroForm =
+        pRoot->GetDictFor(pdfium::catalog::kAcroForm);
     if (!pAcroForm) {
       return;
     }

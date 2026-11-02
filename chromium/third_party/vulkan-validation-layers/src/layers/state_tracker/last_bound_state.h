@@ -18,6 +18,7 @@
  */
 #pragma once
 
+#include "containers/limits.h"
 #include "state_tracker/pipeline_layout_state.h"
 #include "state_tracker/descriptor_mode.h"
 #include "utils/shader_utils.h"
@@ -38,6 +39,8 @@ namespace spirv {
 struct EntryPoint;
 }  // namespace spirv
 
+struct ShaderStageState;
+
 // Track last states that are bound per pipeline bind point (Gfx & Compute)
 struct LastBound {
     LastBound(vvl::CommandBuffer &cb, const VkPipelineBindPoint bind_point) : cb_state(cb), bind_point(bind_point) {}
@@ -55,7 +58,11 @@ struct LastBound {
     vvl::Func desc_set_bound_command = vvl::Func::Empty;  // will be something like vkCmdBindDescriptorSets
     std::shared_ptr<vvl::DescriptorSet> push_descriptor_set;
 
+    // Common worst case is using task/mesh/fragment, so chose size of 3 to start
+    small_vector<const ShaderStageState*, 3> GetStages() const;
+
     struct DescriptorBufferBinding {
+        uint32_t embedded = vvl::kNoIndex32;
         uint32_t index = 0;
         VkDeviceSize offset = 0;
     };
@@ -162,6 +169,8 @@ struct LastBound {
 
     // Since GPU-AV uses this to access an array, force a getter to ensure people use this correctly.
     vvl::DescriptorMode GetActionDescriptorMode() const;
+    // Will be Unknown if shader is not using any descriptor
+    // GetActionDescriptorMode() will check the bound pipeline/shaders if Unknown
     vvl::DescriptorMode GetDescriptorMode() const { return descriptor_mode; };
     void SetDescriptorMode(vvl::DescriptorMode new_mode, vvl::Func function) {
         previous_descriptor_mode = descriptor_mode;

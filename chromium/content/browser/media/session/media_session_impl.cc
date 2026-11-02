@@ -21,18 +21,19 @@
 #include "content/browser/media/session/audio_focus_delegate.h"
 #include "content/browser/media/session/media_players_callback_aggregator.h"
 #include "content/browser/media/session/media_session_controller.h"
-#include "content/browser/media/session/media_session_player_observer.h"
 #include "content/browser/media/session/media_session_service_impl.h"
 #include "content/browser/picture_in_picture/video_picture_in_picture_window_controller_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/media_session.h"
 #include "content/public/browser/media_session_client.h"
+#include "content/public/browser/media_session_player_observer.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/content_client.h"
+#include "media/audio/audio_constants.h"
 #include "media/audio/audio_device_description.h"
 #include "media/base/media_content_type.h"
 #include "media/base/media_switches.h"
@@ -46,15 +47,12 @@
 #include "third_party/blink/public/mojom/favicon/favicon_url.mojom.h"
 #include "third_party/blink/public/strings/grit/blink_strings.h"
 #include "ui/gfx/favicon_size.h"
+#include "ui/gfx/geometry/size.h"
 #include "url/url_constants.h"
 
 #if BUILDFLAG(IS_ANDROID)
 #include "content/browser/media/session/media_session_android.h"
 #endif  // BUILDFLAG(IS_ANDROID)
-
-#if BUILDFLAG(IS_WIN)
-#include "content/public/common/content_features.h"
-#endif  // BUILDFLAG(IS_WIN)
 
 namespace content {
 
@@ -66,8 +64,18 @@ using media_session::mojom::MediaSessionInfo;
 
 namespace {
 
+// The minimum layout size of the video in the viewport (in CSS pixels) required
+// to allow browser-initiated Auto-Picture-in-Picture.
+//
+// Note that this is the layout size of the video element in the viewport, which
+// is different from the video's intrinsic natural resolution (e.g. 1920x1080).
+//
+// Blink checks this constraint by ensuring that the video's actual layout size
+// (with CSS transforms and zoom applied) is greater than or equal to both
+// dimensions of this constraint (i.e. width >= 100 AND height >= 100).
+constexpr gfx::Size kBrowserAutoPipMinSize(100, 100);
+
 const double kUnduckedVolumeMultiplier = 1.0;
-const double kDefaultDuckingVolumeMultiplier = 0.2;
 
 const char kDebugInfoOwnerSeparator[] = " - ";
 
@@ -334,6 +342,12 @@ void MediaSessionImpl::TitleWasSet(NavigationEntry* entry) {
 
 void MediaSessionImpl::DidUpdateFaviconURL(
     RenderFrameHost* rfh,
+    const std::vector<blink::mojom::FaviconURLPtr>& candidates,
+    blink::mojom::FaviconUpdateReason reason) {
+  SetSourceIconsFromFavicons(candidates);
+}
+
+void MediaSessionImpl::SetSourceIconsFromFavicons(
     const std::vector<blink::mojom::FaviconURLPtr>& candidates) {
   std::vector<media_session::MediaImage> icons;
 
@@ -833,6 +847,12 @@ MediaSessionImpl::GetMediaSessionMetadata() {
   return metadata_;
 }
 
+std::vector<media_session::mojom::MediaSessionAction>
+MediaSessionImpl::GetMediaSessionActionsSync() const {
+  return std::vector<media_session::mojom::MediaSessionAction>(actions_.begin(),
+                                                               actions_.end());
+}
+
 void MediaSessionImpl::StartDucking() {
   should_unduck_on_focus_gained_ = false;
   if (is_ducking_)
@@ -977,6 +997,7 @@ void MediaSessionImpl::OnSuspendInternal(SuspendType suspend_type,
       it.first.observer->OnSuspend(it.first.player_id, triggered_by_user);
   }
   RebuildAndNotifyMediaSessionInfoChanged();
+  RebuildAndNotifyActionsChanged();
 }
 
 void MediaSessionImpl::OnResumeInternal(SuspendType suspend_type) {
@@ -989,6 +1010,7 @@ void MediaSessionImpl::OnResumeInternal(SuspendType suspend_type) {
     it.first.observer->OnResume(it.first.player_id, triggered_by_user);
 
   RebuildAndNotifyMediaSessionInfoChanged();
+  RebuildAndNotifyActionsChanged();
 }
 
 MediaSessionImpl::MediaSessionImpl(WebContents* web_contents)
@@ -997,17 +1019,11 @@ MediaSessionImpl::MediaSessionImpl(WebContents* web_contents)
       audio_focus_state_(State::INACTIVE),
       desired_audio_focus_type_(AudioFocusType::kGainTransientMayDuck),
       is_ducking_(false),
-      ducking_volume_multiplier_(kDefaultDuckingVolumeMultiplier),
+      ducking_volume_multiplier_(media::kDefaultDuckingVolumeMultiplier),
       routed_service_(nullptr) {
 #if BUILDFLAG(IS_ANDROID)
   session_android_ = std::make_unique<MediaSessionAndroid>(this);
   should_throttle_duration_update_ = true;
-#else
-  if (base::FeatureList::IsEnabled(media::kAudioDucking)) {
-    ducking_volume_multiplier_ =
-        1.0 -
-        (std::clamp(media::kAudioDuckingAttenuation.Get(), 0, 100) / 100.0);
-  }
 #endif  // BUILDFLAG(IS_ANDROID)
   if (web_contents && web_contents->GetPrimaryMainFrame() &&
       web_contents->GetPrimaryMainFrame()->GetView()) {
@@ -1022,8 +1038,7 @@ void MediaSessionImpl::Initialize() {
   delegate_->MediaSessionInfoChanged(GetMediaSessionInfoSync());
 
   DCHECK(web_contents());
-  DidUpdateFaviconURL(web_contents()->GetPrimaryMainFrame(),
-                      web_contents()->GetFaviconURLs());
+  SetSourceIconsFromFavicons(web_contents()->GetFaviconURLs());
 
   GetContentClient()->browser()->AddPresentationObserver(this, web_contents());
 }
@@ -1101,12 +1116,12 @@ MediaSessionImpl::GetMediaSessionInfoSync() {
     info->state = MediaSessionInfo::SessionState::kDucking;
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
-  // If this is a webapp, and instanced media controls are on, mark this session
-  // as a pwa session so that the browser sessions can stay isolated. This is
-  // used to differentiate webapp sessions for different handling.
+  // If this is a web app, mark this session so the browser won't
+  // consider it when deciding which media session is "active". Needed because
+  // the browser uses an ActiveMediaSessionController which automatically
+  // follows the "active" media session.
   auto* web_contents_delegate = web_contents()->GetDelegate();
   info->ignore_for_active_session =
-      base::FeatureList::IsEnabled(features::kWebAppSystemMediaControls) &&
       web_contents_delegate &&
       web_contents_delegate->ShouldUseInstancedSystemMediaControls();
 #else
@@ -1316,7 +1331,7 @@ void MediaSessionImpl::EnterPictureInPicture() {
   }
 
   normal_players_.begin()->first.observer->OnEnterPictureInPicture(
-      normal_players_.begin()->first.player_id);
+      normal_players_.begin()->first.player_id, std::nullopt);
   uma_helper_.RecordEnterPictureInPicture(
       MediaSessionUmaHelper::EnterPictureInPictureType::kDefaultManual);
 }
@@ -1341,6 +1356,15 @@ void MediaSessionImpl::EnterAutoPictureInPicture() {
   uma_helper_.RecordEnterPictureInPicture(
       MediaSessionUmaHelper::EnterPictureInPictureType::kRegisteredAutomatic);
   ReportAutoPictureInPictureInfoChanged();
+}
+
+void MediaSessionImpl::SaveVideoFrame() {
+  if (!IsVideoFrameAvailable()) {
+    return;
+  }
+
+  auto& first = normal_players_.begin()->first;
+  first.observer->OnSaveVideoFrame(first.player_id);
 }
 
 void MediaSessionImpl::SetAudioSinkId(const std::optional<std::string>& id) {
@@ -1812,6 +1836,10 @@ void MediaSessionImpl::OnVideoVisibilityChanged() {
   RebuildAndNotifyMediaSessionInfoChanged();
 }
 
+void MediaSessionImpl::OnVideoFrameAvailabilityChanged() {
+  RebuildAndNotifyActionsChanged();
+}
+
 void MediaSessionImpl::SetRemotePlaybackMetadata(
     media_session::mojom::RemotePlaybackMetadataPtr metadata) {
   remote_playback_metadata_ = std::move(metadata);
@@ -1911,6 +1939,11 @@ void MediaSessionImpl::RebuildAndNotifyActionsChanged() {
       IsAudioOutputDeviceSwitchingSupported()) {
     actions.insert(
         media_session::mojom::MediaSessionAction::kSwitchAudioDevice);
+  }
+
+  if (base::FeatureList::IsEnabled(media::kGlobalMediaControlsSaveVideoFrame) &&
+      IsVideoFrameAvailable()) {
+    actions.insert(media_session::mojom::MediaSessionAction::kSaveVideoFrame);
   }
 
   if (actions_ == actions)
@@ -2078,6 +2111,15 @@ bool MediaSessionImpl::IsPictureInPictureAvailable() const {
 
   auto& first = normal_players_.begin()->first;
   return first.observer->IsPictureInPictureAvailable(first.player_id);
+}
+
+bool MediaSessionImpl::IsVideoFrameAvailable() const {
+  if (normal_players_.size() != 1) {
+    return false;
+  }
+
+  auto& first = normal_players_.begin()->first;
+  return first.observer->IsVideoFrameAvailable(first.player_id);
 }
 
 bool MediaSessionImpl::HasSufficientlyVisibleVideo() const {
@@ -2324,7 +2366,8 @@ void MediaSessionImpl::MaybeEnterBrowserInitiatedAutomaticPictureInPicture() {
   if (base::FeatureList::IsEnabled(
           blink::features::kBrowserInitiatedAutomaticPictureInPicture)) {
     auto& first = normal_players_.begin()->first;
-    first.observer->OnEnterPictureInPicture(first.player_id);
+    first.observer->OnEnterPictureInPicture(first.player_id,
+                                            kBrowserAutoPipMinSize);
     RecordBrowserInitiatedAutomaticPictureInPictureUkm(false);
   } else {
     RecordBrowserInitiatedAutomaticPictureInPictureUkm(true);

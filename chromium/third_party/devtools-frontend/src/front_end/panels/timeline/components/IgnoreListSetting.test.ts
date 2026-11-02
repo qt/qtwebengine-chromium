@@ -6,8 +6,6 @@ import {assert} from 'chai';
 
 import * as Common from '../../../core/common/common.js';
 import * as Platform from '../../../core/platform/platform.js';
-import * as SDK from '../../../core/sdk/sdk.js';
-import * as Bindings from '../../../models/bindings/bindings.js';
 import * as Workspace from '../../../models/workspace/workspace.js';
 import {
   dispatchBlurEvent,
@@ -16,11 +14,18 @@ import {
   dispatchKeyDownEvent,
   renderElementIntoDOM,
 } from '../../../testing/DOMHelpers.js';
-import {describeWithEnvironment} from '../../../testing/EnvironmentHelpers.js';
+import {
+  deinitializeGlobalVars,
+  describeWithEnvironment,
+  initializeGlobalVars,
+} from '../../../testing/EnvironmentHelpers.js';
 
 import * as TimelineComponents from './components.js';
 
-describeWithEnvironment('Ignore List Setting', () => {
+describe('Ignore List Setting', () => {
+  before(async () => await initializeGlobalVars());
+  after(async () => await deinitializeGlobalVars());
+
   async function renderIgnoreListSetting(): Promise<HTMLElement> {
     const component = new TimelineComponents.IgnoreListSetting.IgnoreListSetting();
     renderElementIntoDOM(component);
@@ -47,21 +52,9 @@ describeWithEnvironment('Ignore List Setting', () => {
     assert.exists(newRegexInput);
     return newRegexInput;
   }
-
   before(() => {
-    const targetManager = SDK.TargetManager.TargetManager.instance();
-    const workspace = Workspace.Workspace.WorkspaceImpl.instance({forceNew: true});
-    const resourceMapping = new Bindings.ResourceMapping.ResourceMapping(targetManager, workspace);
-    const ignoreListManager = Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
-    Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
-      forceNew: true,
-      resourceMapping,
-      targetManager,
-      ignoreListManager,
-      workspace,
-    });
+    Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
   });
-
   beforeEach(() => {
     const regexPatterns = getIgnoredRegexes();
     // There is a default rule `/node_modules/|^node:`, So let's remove it for less confusion.

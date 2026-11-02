@@ -85,7 +85,7 @@ struct TTPanelSize {
   // TileSizeDimK: determines Tile size for dimension K. The packet size is assumed to be considered
   static constexpr StorageIndex TileSizeDimK = TSDK;
   // WorkLoadPerThreadM : determines workload per thread for loading the M dimension This can be varied based on the
-  // available register on a chosen device(can be controlled by EIGEN_SYCL_REG_M macro//
+  // available register on a chosen device(can be controlled by EIGEN_SYCL_REG_M macro
 #ifndef EIGEN_SYCL_REG_M
   static constexpr StorageIndex WorkLoadPerThreadM = REG_SIZE_M;
 #else
@@ -366,8 +366,8 @@ struct BlockProperties {
  * given tensor block. This is !=K dimension of Flattened Tensor when Tall/Skinny matrix is used.
  *
  * \param is_internal : this will determined if the thread within the work-group computes an internal block of tensor or
- * the edge blocks. When it is internal, there is no need to check the boundaries and all the if stantement can be
- * resolve by compiler.
+ * the edge blocks. When it is internal, there is no need to check the boundaries and all the if statements can be
+ * resolved by compiler.
  */
 template <typename StorageIndex>
 struct ThreadProperties {
@@ -429,7 +429,7 @@ struct ThreadProperties {
  access is used to guarantee that always the memory access are coalesced.
  *
  * \tparam IsFinal : determine if this is the final kernel. If so, the result will be written in a final output.
- Otherwise, the result of contraction will be written iin a temporary buffer. This is the case when Tall/Skinny
+ Otherwise, the result of contraction will be written in a temporary buffer. This is the case when Tall/Skinny
  contraction is used. So in this case, a final reduction step is required to compute final output.
 
  * \tparam contraction_tp: it is an enum value representing whether the local memory/no local memory implementation of
@@ -619,7 +619,7 @@ class TensorContractionKernel {
                              triple_dim.K - kGroupOffset >= kSizePerWG;
     // this is used to adjust the last block
     StorageIndex kSize = IsFinal ? triple_dim.K : std::min(kSizePerWG, triple_dim.K - kGroupOffset);
-    // This is used to find out the lats K offset so that kGroupOffset -kSize can compute the coffset for loading to
+    // This is used to find out the last K offset so that kGroupOffset -kSize can compute the coffset for loading to
     // tile
     kGroupOffset += kSize;
 
@@ -657,8 +657,8 @@ class TensorContractionKernel {
     }
   }
   // The store function write the computed contraction operation in the private memory of each thread to the global
-  // memory. The store function is independent of local and no local concepts s that it can be abstract out in the base
-  // class.
+  // memory. The store function is independent of local and no local concepts so that it can be abstracted out in the
+  // base class.
   template <bool is_internal_block, StorageIndex PrivateNStride, typename OutPtr>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void store(OutPtr *out_ptr, PacketReturnType *privateRes,
                                                    StorageIndex mGlobalOffset, StorageIndex nGlobalOffset) const {
@@ -843,9 +843,8 @@ class TensorContractionKernel {
         contraction_tp == contraction_type::local ? thread_properties.mGroupOffset : thread_properties.mGlobalOffset,
         thread_properties.kGroupOffset - thread_properties.kSize);
 
-    // itemID.barrier(cl::sycl::access::fence_space::local_space);
     sync_thread<contraction_tp == contraction_type::local>(itemID);
-    // switch to compute mede
+    // switch to compute mode
     StorageIndex lhs_offset = (db_offset * LSDL * Properties::TileSizeDimK);
     StorageIndex rhs_offset = (db_offset * Properties::TileSizeDimK * LSDR);
     // Loop over the values of a single tile
@@ -972,7 +971,7 @@ class TensorContractionKernel {
  * \tparam is_lhs_vec: determines whether lhs is a vector or rhs is a vector
  *
  * \tparam IsFinal: determine if this is the final kernel. If so, the result will be written in a final output.
- * Otherwise, the result of contraction will be written iin a temporary buffer.
+ * Otherwise, the result of contraction will be written in a temporary buffer.
  *
  * \param scratch: determines the local memory containing the vector block for each work-group
  *
@@ -1003,8 +1002,7 @@ struct GeneralVectorTensor {
 
   // Since the access layout for a vector can always be coalesced, when LHS is a vector, we pass false and false to make
   // sure that the !^ is true When RHS is a vector, we pass true and true to make sure that the !^ is true.
-  typedef BlockProperties<is_lhs_vec ? false : true, is_lhs_vec ? false : true, Vectorizable, PacketReturnType>
-      VecBlockProperties;
+  typedef BlockProperties<!is_lhs_vec, !is_lhs_vec, Vectorizable, PacketReturnType> VecBlockProperties;
 
   Scratch scratch;
   const VectorMapper vec;
@@ -1125,7 +1123,7 @@ struct GeneralVectorTensor {
 
       out_scratch_ptr += (Properties::LocalThreadSizeNC * Properties::LocalThreadSizeC);
     }
-    if (is_lhs_vec) {
+    EIGEN_IF_CONSTEXPR (is_lhs_vec) {
       nonContractId = linearLocalThreadId % Properties::LocalThreadSizeNC;
       contractId = linearLocalThreadId / Properties::LocalThreadSizeNC;
       outScratchIndex = nonContractId + contractId * Properties::LocalThreadSizeNC;
@@ -1158,7 +1156,7 @@ struct GeneralVectorTensor {
           *out_ptr = res;
           out_ptr += Properties::LocalThreadSizeNC;
         }
-        // moving to next 16 by 16 block to ge the next 16 reduced elements
+        // moving to next 16 by 16 block to get the next 16 reduced elements
         out_scratch_ptr += (Properties::LocalThreadSizeNC * Properties::LocalThreadSizeC);
         if (!(is_internal_block)) global_final_offset += Properties::LocalThreadSizeNC;
       }
@@ -1200,7 +1198,7 @@ struct GeneralVectorTensor {
 
 /*!
  * \brief GeneralScalarContraction is a template class that provides the scalar value of Tensor -Tensor contraction
- * operation, when all the dimensions are contracting dimensions. This Kernel reduces two tensors to an scalar
+ * operation, when all the dimensions are contracting dimensions. This Kernel reduces two tensors to a scalar
  *
  * \tparam OutScalar: determines the output scalar type
  *
@@ -1603,7 +1601,7 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
     constexpr StorageIndex local_range = EIGEN_SYCL_LOCAL_THREAD_DIM0 * EIGEN_SYCL_LOCAL_THREAD_DIM1;
 
     // Here we force the code not to be more than 2-step reduction: Our empirical research shows that if each thread
-    // reduces at least 512 elementss individually, we get better performance.
+    // reduces at least 512 elements individually, we get better performance.
     const StorageIndex num_work_group = ((K + (512 * local_range - 1)) / (512 * local_range) > 1 ? local_range : 1);
     const StorageIndex global_range = num_work_group * local_range;
 

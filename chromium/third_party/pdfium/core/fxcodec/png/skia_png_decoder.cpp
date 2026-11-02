@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "core/fxcodec/cfx_codec_memory.h"
+#include "core/fxcodec/codec_memory_sk_stream.h"
 #include "core/fxcodec/png/png_decoder_delegate.h"
 #include "core/fxcodec/progressive_decoder_context.h"
 #include "core/fxcrt/check.h"
@@ -30,49 +31,12 @@ namespace fxcodec {
 namespace {
 
 sk_sp<SkColorSpace> GetTargetColorSpace(double gamma) {
-  skcms_ICCProfile profile;
-  skcms_Init(&profile);
-
-  skcms_TransferFunction fn;
-  fn.a = 1.0f;
-  fn.b = fn.c = fn.d = fn.e = fn.f = 0.0f;
-  fn.g = 1.0f / gamma;
-  skcms_SetTransferFunction(&profile, &fn);
-
-  skcms_Matrix3x3 to_xyzd50 = skcms_sRGB_profile()->toXYZD50;
-  skcms_SetXYZD50(&profile, &to_xyzd50);
-
-  return SkColorSpace::Make(profile);
+  const skcms_TransferFunction fn = {
+      .g = static_cast<float>(1.0 / gamma),
+      .a = 1.0f,
+  };
+  return SkColorSpace::MakeRGB(fn, SkNamedGamut::kSRGB);
 }
-
-// Implements/exposes `SkStream` API on top of `CFX_CodecMemory`.
-//
-// Note that the exposed API does *not* support seeking/rewinding, because this
-// layer only has access to the `CFX_CodecMemory` pushed into `ContinueDecode`
-// and can't reach for `IFX_SeekableReadStream` from which the bytes have been
-// pulled into `CFX_CodecMemory`.  This lack of support for seeking/rewinding
-// requires avoiding calling any Skia APIs that may necessitate this
-// functionality later (e.g. calling `SkCodec::getFrameCount` may attempt to
-// read metadata of subsequent frames).  This is not an issue today, because
-// PDFium only needs to decode the first (or only) image / animation frame.
-class CodecMemoryStream final : public SkStream {
- public:
-  explicit CodecMemoryStream(RetainPtr<CFX_CodecMemory> codec_memory)
-      : codec_memory_(std::move(codec_memory)) {}
-
-  size_t read(void* buffer, size_t size) override {
-    // SAFETY: Relying on the caller to pass correct `buffer` and `size`.
-    uint8_t* bytes = static_cast<uint8_t*>(buffer);
-    auto byte_span = UNSAFE_BUFFERS(pdfium::span(bytes, size));
-
-    return codec_memory_->ReadBlock(byte_span);
-  }
-
-  bool isAtEnd() const override { return codec_memory_->IsEOF(); }
-
- private:
-  RetainPtr<CFX_CodecMemory> const codec_memory_;
-};
 
 class SkiaPngContext final : public ProgressiveDecoderContext {
  public:
@@ -131,10 +95,10 @@ class SkiaPngContext final : public ProgressiveDecoderContext {
   double target_gamma_ = 0.0;
 
   // `CFX_CodecMemory` received in `ContinueDecode` may get wrapped in
-  // `CodecMemoryStream` and become transitively owned by `decoder_`.  This
+  // `CodecMemorySkStream` and become transitively owned by `decoder_`.  This
   // class retains `codec_memory_` to `CHECK` that all calls to `ContinueDecode`
   // use the same `CFX_CodecMemory` - this helps to ensure that `decoder_` and
-  // `CodecMemoryStream` won't accidentally use stale input data if a future,
+  // `CodecMemorySkStream` won't accidentally use stale input data if a future,
   // hypothetical refactoring of `ProgressiveDecoder` changes how it manages
   // `CFX_CodecMemory`.
   RetainPtr<CFX_CodecMemory> codec_memory_;
@@ -143,8 +107,8 @@ class SkiaPngContext final : public ProgressiveDecoderContext {
 bool SkiaPngContext::ContinueDecode(RetainPtr<CFX_CodecMemory> codec_memory) {
   // `ProgressiveDecoder` guarantees that all calls to `ContinueDecode` use the
   // same `codec_memory`.  Therefore `SkiaPngContext` expects that
-  // `codec_memory` passed to `CodecMemoryStream` below remains the right one to
-  // use going forward.
+  // `codec_memory` passed to `CodecMemorySkStream` below remains the right one
+  // to use going forward.
   if (!codec_memory_) {
     codec_memory_ = codec_memory;
   }
@@ -154,7 +118,7 @@ bool SkiaPngContext::ContinueDecode(RetainPtr<CFX_CodecMemory> codec_memory) {
     case State::kNoDecoder: {
       CHECK(!decoder_);
       auto stream =
-          std::make_unique<CodecMemoryStream>(std::move(codec_memory));
+          std::make_unique<CodecMemorySkStream>(std::move(codec_memory));
       SkCodec::Result result = SkCodec::kSuccess;
 #ifdef PDF_ENABLE_RUST_PNG
       decoder_ = SkPngRustDecoder::Decode(std::move(stream), &result);

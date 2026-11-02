@@ -9,10 +9,19 @@ import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
 import {getCss} from './broker_state.css.js';
 import {getHtml} from './broker_state.html.js';
 import {ModelUnavailableReason} from './model_broker.mojom-webui.js';
-import {BrokerAssetState, ModelBrokerDebugRemote} from './model_broker_debug.mojom-webui.js';
+import {BrokerAssetState, ModelBrokerDebugObserverReceiver, ModelBrokerDebugRemote} from './model_broker_debug.mojom-webui.js';
 import type {BrokerStateInfo} from './model_broker_debug.mojom-webui.js';
 import {browserProxyFactory} from './on_device_internals_page.mojom-webui.js';
 import type {BrowserProxy} from './on_device_internals_page.mojom-webui.js';
+
+const MANIFEST_CRITERIA_NAMES = [
+  'Enabled by feature flag',
+  'Enabled by enterprise policy',
+  'Enabled by user setting',
+  'Enough VRAM',
+  'Device Capable',
+  'Disk space available',
+];
 
 export class OnDeviceInternalsBrokerStateElement extends CrLitElement {
   static get is() {
@@ -38,15 +47,36 @@ export class OnDeviceInternalsBrokerStateElement extends CrLitElement {
     assets: [],
     useCases: [],
     models: [],
+    modelCrashCount: null,
+    maxModelCrashCount: null,
+    isAssetManagerInitialized: false,
   };
+
+  protected get manifestCriteria() {
+    return MANIFEST_CRITERIA_NAMES
+        .map(name => this.state_.properties.find(p => p.description === name))
+        .filter(p => p !== undefined);
+  }
+
+  protected get otherProperties() {
+    return this.state_.properties.filter(
+        p => !MANIFEST_CRITERIA_NAMES.includes(p.description));
+  }
 
   private proxy_: BrowserProxy = browserProxyFactory.getInstance();
   private brokerDebug_ = new ModelBrokerDebugRemote();
+  private brokerObserverReceiver_ = new ModelBrokerDebugObserverReceiver(this);
 
   constructor() {
     super();
     this.proxy_.handler.bindModelBrokerDebug(
         this.brokerDebug_.$.bindNewPipeAndPassReceiver());
+    this.brokerDebug_.addObserver(
+        this.brokerObserverReceiver_.$.bindNewPipeAndPassRemote());
+    this.getBrokerState_();
+  }
+
+  onBrokerStateChanged() {
     this.getBrokerState_();
   }
 
@@ -56,6 +86,11 @@ export class OnDeviceInternalsBrokerStateElement extends CrLitElement {
 
   protected async onUninstallModelsClick_() {
     await this.brokerDebug_.uninstallModels();
+    this.getBrokerState_();
+  }
+
+  protected async onResetCrashCountClick_() {
+    await this.brokerDebug_.resetModelCrashCount();
     this.getBrokerState_();
   }
 

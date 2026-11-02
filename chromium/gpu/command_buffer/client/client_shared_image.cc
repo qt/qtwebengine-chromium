@@ -11,10 +11,12 @@
 #include <utility>
 
 #include "base/check_is_test.h"
+#include "base/containers/to_vector.h"
 #include "base/debug/crash_logging.h"
 #include "base/feature_list.h"
 #include "base/logging.h"
 #include "base/notreached.h"
+#include "base/strings/string_util.h"
 #include "base/task/bind_post_task.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/task/thread_pool.h"
@@ -123,10 +125,45 @@ uint32_t ComputeTextureTargetForSharedImage(
 #endif  // !BUILDFLAG(IS_MAC) && !BUILDFLAG(IS_OZONE) && !BUILDFLAG(IS_ANDROID)
 }
 
+void WaitSyncTokenInternal(InterfaceBase* ib, const SyncToken& sync_token) {
+  ib->WaitSyncTokenCHROMIUM(sync_token.GetConstData());
+}
+
 }  // namespace
 
+SharedImageExportResult::SharedImageExportResult() = default;
+SharedImageExportResult::~SharedImageExportResult() = default;
+SharedImageExportResult::SharedImageExportResult(SharedImageExportResult&&) =
+    default;
+SharedImageExportResult& SharedImageExportResult::operator=(
+    SharedImageExportResult&&) = default;
+
 SharedImageExportResult::SharedImageExportResult(const SyncToken& sync_token)
-    : sync_token_(sync_token) {}
+    : sync_tokens_{sync_token} {}
+SharedImageExportResult::SharedImageExportResult(
+    std::vector<SyncToken> sync_tokens)
+    : sync_tokens_(std::move(sync_tokens)) {
+  CHECK(!sync_tokens_.empty());
+}
+
+bool SharedImageExportResult::HasData() const {
+  for (const auto& sync_token : sync_tokens_) {
+    if (sync_token.HasData()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+std::string SharedImageExportResult::ToDebugString() const {
+  if (sync_tokens_.empty()) {
+    return "empty";
+  }
+
+  std::vector<std::string> token_strings = base::ToVector(
+      sync_tokens_, [](const auto& token) { return token.ToDebugString(); });
+  return base::JoinString(token_strings, ",");
+}
 
 ClientSharedImage::ScopedMapping::ScopedMapping(const gfx::Size& size,
                                                 viz::SharedImageFormat format)
@@ -149,15 +186,7 @@ base::span<uint8_t> ClientSharedImage::ScopedMapping::GetMemoryForPlane(
 
   CHECK(height_in_pixels);
   CHECK(row_size_in_bytes);
-
-  // Note that the stride might be larger than the row size due to padding.
-  // For all rows other than the last, this is legal data for the client to
-  // access as it's part of the buffer.  However, the final row is not
-  // guaranteed to have padding (it's a system-dependent internal detail).
-  // Thus, the data that is legal for the client to access should *not*
-  // include any bytes beyond the actual end of the final row.
-  size_t span_length =
-      Stride(plane_index) * (height_in_pixels - 1) + row_size_in_bytes;
+  base::span<uint8_t> memory = buffer_->memory(plane_index);
 #if BUILDFLAG(IS_OZONE)
   // We are currently prevented from doing this tightening for
   // NativePixmap-backed MappableBuffers by the fact that
@@ -167,19 +196,18 @@ base::span<uint8_t> ClientSharedImage::ScopedMapping::GetMemoryForPlane(
   // (https://source.chromium.org/chromium/chromium/src/+/main:media/base/video_frame.cc;drc=21e6d1583d1b5683f21556f6125b340d25a6b937;l=527).
   // TODO(crbug.com/404905709): Eliminate that VideoFrame override and do
   // tightening here for NativePixmap.
-  if (buffer_->GetType() == gfx::GpuMemoryBufferType::NATIVE_PIXMAP) {
-    span_length =
-        static_cast<MappableBufferNativePixmap*>(buffer_)->GetPlaneSize(
-            plane_index);
-  }
+  return memory;
+#else
+  // Note that the stride might be larger than the row size.
+  // For all rows other than the last, this is legal data for the client to
+  // access as it's part of the buffer.  However, the final row is not
+  // guaranteed to have padding (it's a system-dependent internal detail).
+  // Thus, the data that is legal for the client to access should *not*
+  // include any bytes beyond the actual end of the final row.
+  size_t span_length =
+      Stride(plane_index) * (height_in_pixels - 1) + row_size_in_bytes;
+  return memory.first(span_length);
 #endif
-
-  // SAFETY: The underlying platform-specific buffer generation mechanisms
-  // guarantee that the buffer contains at least `span_length` bytes following
-  // the start of the plane, as that region is by definition the memory
-  // storing the data of the plane.
-  return UNSAFE_BUFFERS(base::span<uint8_t>(
-      reinterpret_cast<uint8_t*>(buffer_->memory(plane_index)), span_length));
 }
 
 size_t ClientSharedImage::ScopedMapping::Stride(const uint32_t plane_index) {
@@ -511,6 +539,32 @@ bool ClientSharedImage::AsyncMappingIsNonBlocking() const {
   return mappable_buffer_->AsyncMappingIsNonBlocking();
 }
 
+uint64_t ClientSharedImage::SignalLatestSyncToken(
+    std::vector<scoped_refptr<ClientSharedImage>> shared_images,
+    std::vector<SyncToken> sync_tokens,
+    base::OnceClosure callback,
+    ContextSupport* context_support,
+    uint64_t pending_callback_id) {
+  gpu::SyncToken latest_sync_token;
+  for (auto& sync_token : sync_tokens) {
+    if (sync_token.release_count() > latest_sync_token.release_count()) {
+      latest_sync_token = sync_token;
+    }
+  }
+  uint64_t callback_id = latest_sync_token.release_count();
+  if (callback_id == 0u) {
+    // Run callback immediately if all sync tokens are invalid.
+    std::move(callback).Run();
+  } else if (callback_id != pending_callback_id) {
+    // If the callback is different from the one the caller is already waiting
+    // on, pass the callback through to SignalSyncToken. Otherwise the request
+    // is redundant.
+    context_support->SignalSyncToken(latest_sync_token, std::move(callback));
+  }
+
+  return callback_id;
+}
+
 std::unique_ptr<ClientSharedImage::ScopedMapping> ClientSharedImage::Map() {
   std::unique_ptr<ClientSharedImage::ScopedMapping> scoped_mapping =
       ScopedMapping::Create(metadata_, mappable_buffer_.get(),
@@ -624,7 +678,7 @@ void ClientSharedImage::CreateGpuFenceForSyncTokens(
   CHECK(gl && context_support);
 
   for (auto& sync_token : sync_tokens) {
-    gl->WaitSyncTokenCHROMIUM(sync_token.GetConstData());
+    WaitSyncTokenInternal(gl, sync_token);
   }
 
   GLuint id = gl->CreateGpuFenceCHROMIUM();
@@ -641,7 +695,19 @@ gpu::SyncToken ClientSharedImage::BackingWasExternallyUpdated(
   }
 
   sii->UpdateSharedImage(sync_token, mailbox());
-  return sii->GenUnverifiedSyncToken();
+  return StoreSyncTokenInternal(sii->GenUnverifiedSyncToken());
+}
+
+gpu::SyncToken ClientSharedImage::BackingWasExternallyUpdated(
+    std::unique_ptr<gfx::GpuFence> acquire_fence) {
+  CHECK(sii_holder_);
+  auto sii = GetSharedImageInterface();
+  if (!sii) {
+    return gpu::SyncToken();
+  }
+
+  sii->UpdateSharedImage(SyncToken(), std::move(acquire_fence), mailbox());
+  return StoreSyncTokenInternal(sii->GenUnverifiedSyncToken());
 }
 
 void ClientSharedImage::OnMemoryDump(
@@ -882,6 +948,17 @@ void ClientSharedImage::RunOnTaskRunner(
                std::move(result_cb));
 }
 
+SyncToken ClientSharedImage::StoreSyncTokenInternal(
+    const SyncToken& sync_token) {
+  return sync_token;
+}
+
+SyncToken ClientSharedImage::GenSyncTokenInternal(InterfaceBase* ib) {
+  SyncToken sync_token;
+  ib->GenUnverifiedSyncTokenCHROMIUM(sync_token.GetData());
+  return StoreSyncTokenInternal(sync_token);
+}
+
 std::unique_ptr<WebGPUTextureScopedAccess>
 ClientSharedImage::BeginWebGPUTextureAccess(
     webgpu::WebGPUInterface* webgpu,
@@ -890,11 +967,8 @@ ClientSharedImage::BeginWebGPUTextureAccess(
     const wgpu::dawn::wire::client::TextureDescriptor& desc,
     uint64_t usage,
     webgpu::MailboxFlags mailbox_flags) {
-  SCOPED_CRASH_KEY_STRING64("ClientSharedImage", "DebugLabel", debug_label_);
-  SCOPED_CRASH_KEY_STRING256("ClientSharedImage", "Usage",
-                             metadata_.usage.ToString());
-  DUMP_WILL_BE_CHECK(metadata_.usage.Has(SHARED_IMAGE_USAGE_WEBGPU_READ) ||
-                     metadata_.usage.Has(SHARED_IMAGE_USAGE_WEBGPU_WRITE));
+  CHECK(metadata_.usage.Has(SHARED_IMAGE_USAGE_WEBGPU_READ) ||
+        metadata_.usage.Has(SHARED_IMAGE_USAGE_WEBGPU_WRITE));
   return base::WrapUnique(new WebGPUTextureScopedAccess(
       webgpu, this, sync_token, device, desc, usage, mailbox_flags));
 }
@@ -938,7 +1012,7 @@ SharedImageTexture::ScopedAccess::ScopedAccess(SharedImageTexture* texture,
                                                const SyncToken& sync_token,
                                                bool readonly)
     : texture_(texture), readonly_(readonly) {
-  texture_->gl_->WaitSyncTokenCHROMIUM(sync_token.GetConstData());
+  WaitSyncTokenInternal(texture_->gl_, sync_token);
   texture_->gl_->BeginSharedImageAccessDirectCHROMIUM(
       texture->id(), (readonly_)
                          ? GL_SHARED_IMAGE_ACCESS_MODE_READ_CHROMIUM
@@ -960,9 +1034,7 @@ SyncToken SharedImageTexture::ScopedAccess::EndAccess(
   gles2::GLES2Interface* gl = scoped_shared_image->texture_->gl_;
   gl->EndSharedImageAccessDirectCHROMIUM(scoped_shared_image->texture_->id());
   scoped_shared_image->DidEndAccess();
-  SyncToken sync_token;
-  gl->GenUnverifiedSyncTokenCHROMIUM(sync_token.GetData());
-  return sync_token;
+  return scoped_shared_image->texture_->shared_image_->GenSyncTokenInternal(gl);
 }
 
 SharedImageTexture::SharedImageTexture(gles2::GLES2Interface* gl,
@@ -970,8 +1042,7 @@ SharedImageTexture::SharedImageTexture(gles2::GLES2Interface* gl,
     : gl_(gl), shared_image_(shared_image) {
   CHECK(gl_);
   CHECK(shared_image_);
-  gl_->WaitSyncTokenCHROMIUM(
-      shared_image_->creation_sync_token().GetConstData());
+  WaitSyncTokenInternal(gl_, shared_image_->creation_sync_token());
   id_ = gl_->CreateAndTexStorage2DSharedImageCHROMIUM(
       shared_image_->mailbox().name);
 }
@@ -1009,7 +1080,7 @@ RasterScopedAccess::RasterScopedAccess(InterfaceBase* raster_interface,
       readonly_(readonly) {
   CHECK(raster_interface_);
   shared_image_->BeginAccess(readonly);
-  raster_interface_->WaitSyncTokenCHROMIUM(sync_token.GetConstData());
+  WaitSyncTokenInternal(raster_interface_, sync_token);
   if (readonly) {
     bool has_read_usage =
         shared_image_->usage().Has(SHARED_IMAGE_USAGE_RASTER_READ) ||
@@ -1026,10 +1097,8 @@ RasterScopedAccess::RasterScopedAccess(InterfaceBase* raster_interface,
 SyncToken RasterScopedAccess::EndAccess(
     std::unique_ptr<RasterScopedAccess> scoped_access) {
   InterfaceBase* raster_interface = scoped_access->raster_interface_;
-  SyncToken sync_token;
   scoped_access->shared_image_->EndAccess(scoped_access->readonly_);
-  raster_interface->GenUnverifiedSyncTokenCHROMIUM(sync_token.GetData());
-  return sync_token;
+  return scoped_access->shared_image_->GenSyncTokenInternal(raster_interface);
 }
 
 WebGPUTextureScopedAccess::WebGPUTextureScopedAccess(
@@ -1042,7 +1111,7 @@ WebGPUTextureScopedAccess::WebGPUTextureScopedAccess(
     webgpu::MailboxFlags mailbox_flags)
     : webgpu_(webgpu), shared_image_(shared_image) {
   // Wait on any work using the image.
-  webgpu_->WaitSyncTokenCHROMIUM(sync_token.GetConstData());
+  WaitSyncTokenInternal(webgpu_, sync_token);
 
   // Produce and inject image to WebGPU texture
   webgpu::ReservedTexture reservation = webgpu_->ReserveTexture(
@@ -1055,16 +1124,10 @@ WebGPUTextureScopedAccess::WebGPUTextureScopedAccess(
                                          wgpu::TextureUsage::RenderAttachment |
                                          wgpu::TextureUsage::StorageBinding;
   readonly_ = !((desc.usage | wgpu::TextureUsage{usage}) & write_flags);
-  SCOPED_CRASH_KEY_STRING64("ClientSharedImage", "DebugLabel",
-                            shared_image_->debug_label());
-  SCOPED_CRASH_KEY_STRING256("ClientSharedImage", "Usage",
-                             shared_image_->usage().ToString());
   if (readonly_) {
-    DUMP_WILL_BE_CHECK(
-        shared_image_->usage().Has(SHARED_IMAGE_USAGE_WEBGPU_READ));
+    CHECK(shared_image_->usage().Has(SHARED_IMAGE_USAGE_WEBGPU_READ));
   } else {
-    DUMP_WILL_BE_CHECK(
-        shared_image_->usage().Has(SHARED_IMAGE_USAGE_WEBGPU_WRITE));
+    CHECK(shared_image_->usage().Has(SHARED_IMAGE_USAGE_WEBGPU_WRITE));
   }
 
   shared_image_->BeginAccess(readonly_);
@@ -1090,7 +1153,6 @@ WebGPUTextureScopedAccess::~WebGPUTextureScopedAccess() = default;
 SyncToken WebGPUTextureScopedAccess::EndAccess(
     std::unique_ptr<WebGPUTextureScopedAccess> scoped_access) {
   webgpu::WebGPUInterface* webgpu = scoped_access->webgpu_;
-  SyncToken finished_access_token;
   if (scoped_access->needs_present_) {
     webgpu->DissociateMailboxForPresent(
         scoped_access->device_id_, scoped_access->device_generation_,
@@ -1101,8 +1163,7 @@ SyncToken WebGPUTextureScopedAccess::EndAccess(
   }
 
   scoped_access->shared_image_->EndAccess(scoped_access->readonly_);
-  webgpu->GenUnverifiedSyncTokenCHROMIUM(finished_access_token.GetData());
-  return finished_access_token;
+  return scoped_access->shared_image_->GenSyncTokenInternal(webgpu);
 }
 
 const wgpu::dawn::wire::client::Texture& WebGPUTextureScopedAccess::texture() {
@@ -1125,11 +1186,7 @@ ClientSharedImage::BeginWebGPUBufferAccess(
     const wgpu::dawn::wire::client::BufferDescriptor& desc,
     uint64_t usage,
     webgpu::MailboxFlags mailbox_flags) {
-  SCOPED_CRASH_KEY_STRING64("ClientSharedImage", "DebugLabel", debug_label_);
-  SCOPED_CRASH_KEY_STRING256("ClientSharedImage", "Usage",
-                             metadata_.usage.ToString());
-  DUMP_WILL_BE_CHECK(
-      metadata_.usage.Has(SHARED_IMAGE_USAGE_WEBGPU_SHARED_BUFFER));
+  CHECK(metadata_.usage.Has(SHARED_IMAGE_USAGE_WEBGPU_SHARED_BUFFER));
   return base::WrapUnique(new WebGPUBufferScopedAccess(
       webgpu, this, sync_token, device, desc, usage, mailbox_flags));
 }
@@ -1144,7 +1201,7 @@ WebGPUBufferScopedAccess::WebGPUBufferScopedAccess(
     webgpu::MailboxFlags mailbox_flags)
     : webgpu_(webgpu), shared_image_(shared_image) {
   // Wait on any work using the buffer.
-  webgpu_->WaitSyncTokenCHROMIUM(sync_token.GetConstData());
+  WaitSyncTokenInternal(webgpu_, sync_token);
 
   webgpu::ReservedBuffer reservation = webgpu_->ReserveBuffer(
       device.Get(), &static_cast<const WGPUBufferDescriptor&>(desc));

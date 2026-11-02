@@ -235,12 +235,14 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_KHR_shader_fma", VK_KHR_SHADER_FMA_SPEC_VERSION},
     {"VK_KHR_maintenance9", VK_KHR_MAINTENANCE_9_SPEC_VERSION},
     {"VK_KHR_video_maintenance2", VK_KHR_VIDEO_MAINTENANCE_2_SPEC_VERSION},
+    {"VK_KHR_video_encode_feedback2", VK_KHR_VIDEO_ENCODE_FEEDBACK_2_SPEC_VERSION},
     {"VK_KHR_depth_clamp_zero_one", VK_KHR_DEPTH_CLAMP_ZERO_ONE_SPEC_VERSION},
     {"VK_KHR_robustness2", VK_KHR_ROBUSTNESS_2_SPEC_VERSION},
     {"VK_KHR_present_mode_fifo_latest_ready", VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_SPEC_VERSION},
     {"VK_KHR_opacity_micromap", VK_KHR_OPACITY_MICROMAP_SPEC_VERSION},
     {"VK_KHR_maintenance10", VK_KHR_MAINTENANCE_10_SPEC_VERSION},
     {"VK_KHR_maintenance11", VK_KHR_MAINTENANCE_11_SPEC_VERSION},
+    {"VK_KHR_extended_flags", VK_KHR_EXTENDED_FLAGS_SPEC_VERSION},
     {"VK_NV_glsl_shader", VK_NV_GLSL_SHADER_SPEC_VERSION},
     {"VK_EXT_depth_range_unrestricted", VK_EXT_DEPTH_RANGE_UNRESTRICTED_SPEC_VERSION},
     {"VK_IMG_filter_cubic", VK_IMG_FILTER_CUBIC_SPEC_VERSION},
@@ -530,6 +532,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_NV_command_buffer_inheritance", VK_NV_COMMAND_BUFFER_INHERITANCE_SPEC_VERSION},
     {"VK_NV_shader_atomic_float16_vector", VK_NV_SHADER_ATOMIC_FLOAT16_VECTOR_SPEC_VERSION},
     {"VK_EXT_shader_replicated_composites", VK_EXT_SHADER_REPLICATED_COMPOSITES_SPEC_VERSION},
+    {"VK_ARM_tensor_controls", VK_ARM_TENSOR_CONTROLS_SPEC_VERSION},
     {"VK_EXT_shader_float8", VK_EXT_SHADER_FLOAT8_SPEC_VERSION},
     {"VK_NV_ray_tracing_validation", VK_NV_RAY_TRACING_VALIDATION_SPEC_VERSION},
     {"VK_NV_cluster_acceleration_structure", VK_NV_CLUSTER_ACCELERATION_STRUCTURE_SPEC_VERSION},
@@ -542,6 +545,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_HUAWEI_hdr_vivid", VK_HUAWEI_HDR_VIVID_SPEC_VERSION},
     {"VK_NV_cooperative_matrix2", VK_NV_COOPERATIVE_MATRIX_2_SPEC_VERSION},
     {"VK_ARM_pipeline_opacity_micromap", VK_ARM_PIPELINE_OPACITY_MICROMAP_SPEC_VERSION},
+    {"VK_IMG_filter_linear_2d", VK_IMG_FILTER_LINEAR_2D_SPEC_VERSION},
 #ifdef VK_USE_PLATFORM_METAL_EXT
     {"VK_EXT_external_memory_metal", VK_EXT_EXTERNAL_MEMORY_METAL_SPEC_VERSION},
 #endif
@@ -551,6 +555,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_ARM_format_pack", VK_ARM_FORMAT_PACK_SPEC_VERSION},
     {"VK_VALVE_fragment_density_map_layered", VK_VALVE_FRAGMENT_DENSITY_MAP_LAYERED_SPEC_VERSION},
     {"VK_NV_present_metering", VK_NV_PRESENT_METERING_SPEC_VERSION},
+    {"VK_EXT_multisampled_render_to_swapchain", VK_EXT_MULTISAMPLED_RENDER_TO_SWAPCHAIN_SPEC_VERSION},
     {"VK_EXT_fragment_density_map_offset", VK_EXT_FRAGMENT_DENSITY_MAP_OFFSET_SPEC_VERSION},
     {"VK_EXT_zero_initialize_device_memory", VK_EXT_ZERO_INITIALIZE_DEVICE_MEMORY_SPEC_VERSION},
     {"VK_EXT_shader_64bit_indexing", VK_EXT_SHADER_64BIT_INDEXING_SPEC_VERSION},
@@ -562,6 +567,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_EXT_shader_uniform_buffer_unsized_array", VK_EXT_SHADER_UNIFORM_BUFFER_UNSIZED_ARRAY_SPEC_VERSION},
     {"VK_NV_compute_occupancy_priority", VK_NV_COMPUTE_OCCUPANCY_PRIORITY_SPEC_VERSION},
     {"VK_EXT_shader_subgroup_partitioned", VK_EXT_SHADER_SUBGROUP_PARTITIONED_SPEC_VERSION},
+    {"VK_EXT_shader_ocp_microscaling_types", VK_EXT_SHADER_OCP_MICROSCALING_TYPES_SPEC_VERSION},
     {"VK_VALVE_shader_mixed_float_dot_product", VK_VALVE_SHADER_MIXED_FLOAT_DOT_PRODUCT_SPEC_VERSION},
     {"VK_SEC_throttle_hint", VK_SEC_THROTTLE_HINT_SPEC_VERSION},
     {"VK_ARM_data_graph_neural_accelerator_statistics", VK_ARM_DATA_GRAPH_NEURAL_ACCELERATOR_STATISTICS_SPEC_VERSION},
@@ -2508,6 +2514,21 @@ static VKAPI_ATTR void VKAPI_CALL CmdBeginPerTileExecutionQCOM(VkCommandBuffer c
 
 static VKAPI_ATTR void VKAPI_CALL CmdEndPerTileExecutionQCOM(VkCommandBuffer commandBuffer,
                                                              const VkPerTileEndInfoQCOM* pPerTileEndInfo);
+
+static VKAPI_ATTR void VKAPI_CALL SetLatencySleepModeLegacyNV(VkDevice device, VkBool32 lowLatencyMode, VkBool32 lowLatencyBoost,
+                                                              uint32_t minimumIntervalUs);
+
+static VKAPI_ATTR void VKAPI_CALL LatencySleepLegacyNV(VkDevice device, VkSemaphore signalSemaphore, uint64_t value);
+
+static VKAPI_ATTR void VKAPI_CALL SetLatencyMarkerLegacyNV(VkDevice device, uint64_t frameID, uint32_t marker);
+
+static VKAPI_ATTR void VKAPI_CALL GetLatencyTimingsLegacyNV(VkDevice device, void* pTimings);
+
+static VKAPI_ATTR void VKAPI_CALL QueueNotifyOutOfBandLegacyNV(VkQueue queue, uint32_t queueType);
+
+static VKAPI_ATTR void VKAPI_CALL GetSleepStatusLegacyNV(VkDevice device, VkBool32* pLowLatencyMode);
+
+static VKAPI_ATTR void VKAPI_CALL ShutdownLatencyDeviceLegacyNV(VkDevice device);
 #ifdef VK_USE_PLATFORM_METAL_EXT
 
 static VKAPI_ATTR void VKAPI_CALL ExportMetalObjectsEXT(VkDevice device, VkExportMetalObjectsInfoEXT* pMetalObjectsInfo);
@@ -3937,6 +3958,13 @@ static const std::unordered_map<std::string, void*> name_to_funcptr_map = {
     {"vkCmdDispatchTileQCOM", (void*)CmdDispatchTileQCOM},
     {"vkCmdBeginPerTileExecutionQCOM", (void*)CmdBeginPerTileExecutionQCOM},
     {"vkCmdEndPerTileExecutionQCOM", (void*)CmdEndPerTileExecutionQCOM},
+    {"vkSetLatencySleepModeLegacyNV", (void*)SetLatencySleepModeLegacyNV},
+    {"vkLatencySleepLegacyNV", (void*)LatencySleepLegacyNV},
+    {"vkSetLatencyMarkerLegacyNV", (void*)SetLatencyMarkerLegacyNV},
+    {"vkGetLatencyTimingsLegacyNV", (void*)GetLatencyTimingsLegacyNV},
+    {"vkQueueNotifyOutOfBandLegacyNV", (void*)QueueNotifyOutOfBandLegacyNV},
+    {"vkGetSleepStatusLegacyNV", (void*)GetSleepStatusLegacyNV},
+    {"vkShutdownLatencyDeviceLegacyNV", (void*)ShutdownLatencyDeviceLegacyNV},
 #ifdef VK_USE_PLATFORM_METAL_EXT
     {"vkExportMetalObjectsEXT", (void*)ExportMetalObjectsEXT},
 #endif

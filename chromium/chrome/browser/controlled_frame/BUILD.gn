@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/chromeos/args.gni")
 import("//extensions/buildflags/buildflags.gni")
 
 assert(enable_extensions)
@@ -93,4 +94,60 @@ source_set("test_support") {
   # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
   # enable the diagnostic by removing this line.
   configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+}
+
+source_set("unit_tests") {
+  testonly = true
+
+  sources = [
+    "controlled_frame_menu_icon_loader_unittest.cc",
+    "controlled_frame_permissions_unittest.cc",
+  ]
+
+  deps = [
+    ":controlled_frame",
+    ":test_support",
+    "//base",
+    "//base/test:test_support",
+    "//cc:test_support",
+    "//chrome/browser/extensions",
+    "//chrome/browser/web_applications",
+    "//chrome/browser/web_applications:web_app_test",
+    "//chrome/browser/web_applications:web_applications_test_support",
+    "//chrome/common:chrome_features",
+    "//chrome/test:test_support",
+    "//components/content_settings/core/common",
+    "//content/public/browser",
+    "//content/public/common",
+    "//content/test:test_support",
+    "//extensions/browser",
+    "//services/data_decoder/public/cpp:test_support",
+    "//testing/gmock",
+    "//testing/gtest",
+    "//third_party/blink/public/common",
+    "//ui/gfx",
+    "//ui/menus",
+  ]
+}
+
+if (!is_android && !is_chromeos_device) {
+  source_set("interactive_ui_tests") {
+    testonly = true
+    defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+
+    sources = [ "controlled_frame_interactive_uitest.cc" ]
+
+    deps = [
+      ":controlled_frame",
+      ":test_support",
+      "//chrome/browser/content_settings:content_settings_factory",
+      "//chrome/browser/profiles:profile",
+      "//chrome/browser/ui/browser_window",
+      "//chrome/test:test_support",
+      "//chrome/test:test_support_ui",
+      "//components/content_settings/core/browser",
+      "//components/content_settings/core/common",
+      "//content/test:test_support",
+    ]
+  }
 }

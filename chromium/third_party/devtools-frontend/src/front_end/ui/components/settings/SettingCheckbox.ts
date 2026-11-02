@@ -11,6 +11,7 @@ import type * as Common from '../../../core/common/common.js';
 import * as Host from '../../../core/host/host.js';
 import * as i18n from '../../../core/i18n/i18n.js';
 import * as Lit from '../../lit/lit.js';
+import * as SettingUIRegistration from '../../settings/settings.js';
 import * as VisualLogging from '../../visual_logging/visual_logging.js';
 import * as Buttons from '../buttons/buttons.js';
 import * as Input from '../input/input.js';
@@ -21,7 +22,7 @@ const {html, Directives: {ifDefined}} = Lit;
 
 const UIStrings = {
   /**
-   * @description Text that is usually a hyperlink to more documentation
+   * @description Text that is usually a hyperlink to more documentation.
    */
   learnMore: 'Learn more',
 } as const;
@@ -67,7 +68,8 @@ export class SettingCheckbox extends HTMLElement {
           this.#setting.deprecation}></devtools-setting-deprecation-warning>`;
     }
 
-    const learnMore = this.#setting.learnMore();
+    const uiDescriptor = SettingUIRegistration.SettingUIRegistration.maybeResolve(this.#setting.descriptor());
+    const learnMore = uiDescriptor?.learnMore ?? this.#setting.learnMore();
     if (learnMore) {
       const jsLogContext = `${this.#setting.name}-documentation`;
       const data: Buttons.Button.ButtonData = {
@@ -136,8 +138,12 @@ export class SettingCheckbox extends HTMLElement {
       throw new Error('No "Setting" object provided for rendering');
     }
 
+    const uiDescriptor = SettingUIRegistration.SettingUIRegistration.maybeResolve(this.#setting.descriptor());
+    const learnMore = uiDescriptor?.learnMore ?? this.#setting.learnMore();
+    const titleText = uiDescriptor?.title?.() ?? this.#setting.title();
+
     const icon = this.icon();
-    const title = `${this.#setting.learnMore() ? this.#setting.learnMore()?.tooltip?.() : ''}`;
+    const title = learnMore?.tooltip?.() ?? '';
     const disabledReasons = this.#setting.disabledReasons();
     const reason = disabledReasons.length ?
         html`
@@ -146,8 +152,7 @@ export class SettingCheckbox extends HTMLElement {
             onclick}></devtools-button>
     ` :
         Lit.nothing;
-    Lit.render(
-        html`
+    Lit.render(html`
       <style>${Input.checkboxStyles}</style>
       <style>${settingCheckboxStyles}</style>
       <p>
@@ -158,13 +163,13 @@ export class SettingCheckbox extends HTMLElement {
             ?disabled=${this.#setting.disabled()}
             @change=${this.#checkboxChanged}
             jslog=${VisualLogging.toggle().track({change: true}).context(this.#setting.name)}
-            aria-label=${this.#setting.title()}
+            aria-label=${titleText}
           />
-          ${this.#textOverride || this.#setting.title()}${reason}
+          ${this.#textOverride || titleText}${reason}
         </label>
         ${icon}
       </p>`,
-        this.#shadow, {host: this});
+               this.#shadow, {host: this});
   }
 
   #checkboxChanged(e: Event): void {

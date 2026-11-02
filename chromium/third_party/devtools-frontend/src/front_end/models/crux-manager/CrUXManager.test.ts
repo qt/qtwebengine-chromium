@@ -3,15 +3,17 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as EmulationModel from '../../models/emulation/emulation.js';
-import {createTarget, updateHostConfig} from '../../testing/EnvironmentHelpers.js';
+import {updateHostConfig} from '../../testing/EnvironmentHelpers.js';
 import {setupLocaleHooks} from '../../testing/LocaleHelpers.js';
 import {setupRuntimeHooks} from '../../testing/RuntimeHelpers.js';
 import {setupSettingsHooks} from '../../testing/SettingsHelpers.js';
+import {TestUniverse} from '../../testing/TestUniverse.js';
 
 import * as CrUXManager from './crux-manager.js';
 
@@ -58,6 +60,7 @@ async function triggerMicroTaskQueue(): Promise<void> {
 }
 
 describe('CrUXManager', () => {
+  let universe: TestUniverse;
   let cruxManager: CrUXManager.CrUXManager;
   let target: SDK.Target.Target;
   let resourceTreeModel: SDK.ResourceTreeModel.ResourceTreeModel;
@@ -68,23 +71,8 @@ describe('CrUXManager', () => {
   setupSettingsHooks();
   setupLocaleHooks();
 
-  beforeEach(async () => {
-    SDK.TargetManager.TargetManager.instance({forceNew: true});
-    const tabTarget = createTarget({type: SDK.Target.Type.TAB});
-    target = createTarget({parentTarget: tabTarget});
-    target.setInspectedURL(urlString`https://example.com/inspected`);
-    resourceTreeModel =
-        target.model(SDK.ResourceTreeModel.ResourceTreeModel) as SDK.ResourceTreeModel.ResourceTreeModel;
-    cruxManager = CrUXManager.CrUXManager.instance({forceNew: true});
-    mockFetch = sinon.stub(globalThis, 'fetch');
-    mockConsoleError = sinon.stub(console, 'error');
-    EmulationModel.DeviceModeModel.DeviceModeModel.instance({forceNew: true});
-  });
-
-  afterEach(() => {
-    mockFetch?.restore();
-    mockConsoleError?.restore();
-    cruxManager?.getConfigSetting().set({enabled: false});
+  beforeEach(() => {
+    universe = new TestUniverse();
   });
 
   describe('storing the user consent', () => {
@@ -93,14 +81,14 @@ describe('CrUXManager', () => {
       const dummyStorage = new Common.Settings.SettingsStorage({});
       const globalStorage = new Common.Settings.SettingsStorage({});
 
-      Common.Settings.Settings.instance({
-        forceNew: true,
-        syncedStorage: dummyStorage,
-        globalStorage,
-        localStorage: dummyStorage,
-        settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
-      });
-      const manager = CrUXManager.CrUXManager.instance({forceNew: true});
+      const manager = new TestUniverse({
+                        settingsCreationOptions: {
+                          syncedStorage: dummyStorage,
+                          globalStorage,
+                          localStorage: dummyStorage,
+                          settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
+                        },
+                      }).cruxManager;
       manager.getConfigSetting().set({enabled: true});
       assert.isTrue(globalStorage.has(manager.getConfigSetting().name));
     });
@@ -109,14 +97,14 @@ describe('CrUXManager', () => {
       updateHostConfig({isOffTheRecord: true});
       const dummyStorage = new Common.Settings.SettingsStorage({});
 
-      Common.Settings.Settings.instance({
-        forceNew: true,
-        syncedStorage: dummyStorage,
-        globalStorage: dummyStorage,
-        localStorage: dummyStorage,
-        settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
-      });
-      const manager = CrUXManager.CrUXManager.instance({forceNew: true});
+      const manager = new TestUniverse({
+                        settingsCreationOptions: {
+                          syncedStorage: dummyStorage,
+                          globalStorage: dummyStorage,
+                          localStorage: dummyStorage,
+                          settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
+                        },
+                      }).cruxManager;
       manager.getConfigSetting().set({enabled: true});
       // SessionStorage is created and managed internally to the Settings
       // class, and is a private instance variable, so we cannot actually
@@ -128,7 +116,7 @@ describe('CrUXManager', () => {
   });
 
   it('isEnabled() returns if the user has consented)', async () => {
-    const manager = CrUXManager.CrUXManager.instance({forceNew: true});
+    const manager = new TestUniverse().cruxManager;
     manager.getConfigSetting().set({enabled: true});
     assert.isTrue(manager.isEnabled());
     manager.getConfigSetting().set({enabled: false});
@@ -136,6 +124,18 @@ describe('CrUXManager', () => {
   });
 
   describe('getFieldDataForPage', () => {
+    beforeEach(() => {
+      cruxManager = universe.cruxManager;
+      mockFetch = sinon.stub(globalThis, 'fetch');
+      mockConsoleError = sinon.stub(console, 'error');
+    });
+
+    afterEach(() => {
+      mockFetch?.restore();
+      mockConsoleError?.restore();
+      cruxManager?.getConfigSetting().set({enabled: false});
+    });
+
     it('should request data for all scopes', async () => {
       mockFetch.callsFake(async () => new Response(JSON.stringify(mockResponse()), {
                             status: 200,
@@ -143,9 +143,9 @@ describe('CrUXManager', () => {
       const pageResult = await cruxManager.getFieldDataForPage('https://example.com');
 
       const fetchBodies = mockFetch.getCalls()
-                              .map(call => call.args[1].body)
+                              .map((call: sinon.SinonSpyCall) => call.args[1].body)
                               .sort()
-                              .map(body => JSON.parse(body) as CrUXManager.CrUXRequest);
+                              .map((body: string) => JSON.parse(body) as CrUXManager.CrUXRequest);
 
       assert.deepEqual(pageResult, {
         'origin-ALL': mockResponse(),
@@ -354,6 +354,14 @@ describe('CrUXManager', () => {
     let getFieldDataMock: sinon.SinonStub;
 
     beforeEach(() => {
+      cruxManager = universe.cruxManager;
+      const tabTarget = universe.createTarget({type: SDK.Target.Type.TAB});
+      target = universe.createTarget({parentTarget: tabTarget});
+      target.setInspectedURL(urlString`https://example.com/inspected`);
+      resourceTreeModel =
+          target.model(SDK.ResourceTreeModel.ResourceTreeModel) as SDK.ResourceTreeModel.ResourceTreeModel;
+      EmulationModel.DeviceModeModel.DeviceModeModel.instance({forceNew: true});
+
       getFieldDataMock = sinon.stub(cruxManager, 'getFieldDataForPage');
       getFieldDataMock.resolves({
         'origin-ALL': mockResponse({pageScope: 'origin', deviceScope: 'ALL'}),
@@ -371,16 +379,19 @@ describe('CrUXManager', () => {
 
     afterEach(() => {
       getFieldDataMock.restore();
+      cruxManager?.getConfigSetting().set({enabled: false});
     });
 
     it('should use main document URL if available', async () => {
       resourceTreeModel.dispatchEventToListeners(SDK.ResourceTreeModel.Events.FrameNavigated, {
         url: 'https://example.com/main/',
         isPrimaryFrame: () => true,
+        isOutermostFrame: () => true,
       } as SDK.ResourceTreeModel.ResourceTreeFrame);
       resourceTreeModel.dispatchEventToListeners(SDK.ResourceTreeModel.Events.FrameNavigated, {
         url: 'https://example.com/frame/',
         isPrimaryFrame: () => false,
+        isOutermostFrame: () => false,
       } as SDK.ResourceTreeModel.ResourceTreeFrame);
 
       const result = await cruxManager.getFieldDataForCurrentPageForTesting();
@@ -397,7 +408,7 @@ describe('CrUXManager', () => {
 
       const result = await cruxManager.getFieldDataForCurrentPageForTesting();
 
-      assert.deepEqual(result.warnings, ['Field metrics are configured for a different URL than the current page.']);
+      assert.deepEqual(result.warnings, ['Field metrics are for a different URL than the current page.']);
       sinon.assert.callCount(getFieldDataMock, 1);
       assert.strictEqual(getFieldDataMock.firstCall.args[0], 'https://example.com/override');
     });
@@ -414,7 +425,7 @@ describe('CrUXManager', () => {
 
       const result = await cruxManager.getFieldDataForCurrentPageForTesting();
 
-      assert.deepEqual(result.warnings, ['Field metrics are configured for a different URL than the current page.']);
+      assert.deepEqual(result.warnings, ['Field metrics are for a different URL than the current page.']);
       sinon.assert.callCount(getFieldDataMock, 1);
       assert.strictEqual(getFieldDataMock.firstCall.args[0], 'https://example.com/inspected');
     });
@@ -433,7 +444,7 @@ describe('CrUXManager', () => {
 
       const result = await cruxManager.getFieldDataForCurrentPageForTesting();
 
-      assert.deepEqual(result.warnings, ['Field metrics are configured for a different URL than the current page.']);
+      assert.deepEqual(result.warnings, ['Field metrics are for a different URL than the current page.']);
       sinon.assert.callCount(getFieldDataMock, 1);
       assert.strictEqual(getFieldDataMock.firstCall.args[0], 'https://google.com');
     });
@@ -527,6 +538,13 @@ describe('CrUXManager', () => {
     let eventBodies: Array<CrUXManager.PageResult|undefined> = [];
 
     beforeEach(() => {
+      cruxManager = universe.cruxManager;
+      const tabTarget = universe.createTarget({type: SDK.Target.Type.TAB});
+      target = universe.createTarget({parentTarget: tabTarget});
+      target.setInspectedURL(urlString`https://example.com/inspected`);
+      resourceTreeModel =
+          target.model(SDK.ResourceTreeModel.ResourceTreeModel) as SDK.ResourceTreeModel.ResourceTreeModel;
+
       eventBodies = [];
       cruxManager.addEventListener(CrUXManager.Events.FIELD_DATA_CHANGED, event => {
         eventBodies.push(event.data);
@@ -548,6 +566,7 @@ describe('CrUXManager', () => {
 
     afterEach(() => {
       getFieldDataMock.restore();
+      cruxManager?.getConfigSetting().set({enabled: false});
     });
 
     it('should update when enabled setting changes', async () => {
@@ -580,6 +599,7 @@ describe('CrUXManager', () => {
       resourceTreeModel.dispatchEventToListeners(SDK.ResourceTreeModel.Events.FrameNavigated, {
         url: 'https://example.com/main/',
         isPrimaryFrame: () => true,
+        isOutermostFrame: () => true,
       } as SDK.ResourceTreeModel.ResourceTreeFrame);
 
       await triggerMicroTaskQueue();
@@ -617,6 +637,7 @@ describe('CrUXManager', () => {
       resourceTreeModel.dispatchEventToListeners(SDK.ResourceTreeModel.Events.FrameNavigated, {
         url: 'https://example.com/main/',
         isPrimaryFrame: () => true,
+        isOutermostFrame: () => true,
       } as SDK.ResourceTreeModel.ResourceTreeFrame);
 
       await triggerMicroTaskQueue();

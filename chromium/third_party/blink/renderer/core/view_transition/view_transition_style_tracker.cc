@@ -963,11 +963,12 @@ bool ViewTransitionStyleTracker::HasContainmentBoundary(
 AtomicString ViewTransitionStyleTracker::ComputeContainingGroupName(
     const AtomicString& name,
     const StyleViewTransitionGroup& group) const {
-  if (!group_state_map_.Contains(name)) {
+  const auto it = group_state_map_.find(name);
+  if (it == group_state_map_.end()) {
     return g_null_atom;
   }
 
-  const auto& parent_state = group_state_map_.at(name);
+  const auto& parent_state = it->value;
   if (group.IsNormal() || group.IsContain()) {
     return parent_state.contain;
   }
@@ -1124,19 +1125,25 @@ void ViewTransitionStyleTracker::SetCaptureRectsFromCompositor(
     // This rect no longer matters.
     element_data->cached_captured_rect_in_layout_space.reset();
 
-    if (auto* pseudo_element = OriginatingElement()->GetStyledPseudoElement(
-            PseudoId::kPseudoIdViewTransitionOld, entry.key)) {
-      static_cast<ViewTransitionContentElement*>(pseudo_element)
-          ->SetIntrinsicSize(rect_from_compositor,
-                             element_data->GetReferenceRect(
-                                 /*use_cached_data=*/true, device_pixel_ratio_),
-                             /*propagates_max_extents_rect=*/false);
+    auto* originating_element = OriginatingElement();
+    if (!originating_element) {
+      continue;
     }
+    auto* pseudo_element = originating_element->GetStyledPseudoElement(
+        PseudoId::kPseudoIdViewTransitionOld, entry.key);
+    if (!pseudo_element) {
+      continue;
+    }
+    static_cast<ViewTransitionContentElement*>(pseudo_element)
+        ->SetIntrinsicSize(rect_from_compositor,
+                           element_data->GetReferenceRect(
+                               /*use_cached_data=*/true, device_pixel_ratio_),
+                           /*propagates_max_extents_rect=*/false);
   }
 }
 
 void ViewTransitionStyleTracker::CaptureResolved() {
-  DCHECK_EQ(state_, State::kCapturing);
+  CHECK_EQ(state_, State::kOldSnapshotFrozen);
 
   state_ = State::kCaptured;
   // TODO(crbug.com/1347473): We should also suppress hit testing at this point,
@@ -1176,10 +1183,11 @@ VectorOf<Element> ViewTransitionStyleTracker::GetTransitioningElements() const {
 const Vector<AtomicString>
 ViewTransitionStyleTracker::GetViewTransitionClassList(
     const AtomicString& name) const {
-  if (!element_data_map_.Contains(name)) {
+  const auto it = element_data_map_.find(name);
+  if (it == element_data_map_.end()) {
     return Vector<AtomicString>();
   }
-  return element_data_map_.at(name)->class_list;
+  return it->value->class_list;
 }
 
 const AtomicString& ViewTransitionStyleTracker::GetContainingGroupName(
@@ -1190,10 +1198,11 @@ const AtomicString& ViewTransitionStyleTracker::GetContainingGroupName(
 
   // GetContainingGroup can be called on an invalid name, e.g. when searching
   // for the parent of a non-existent name.
-  if (!element_data_map_.Contains(name)) {
+  const auto it = element_data_map_.find(name);
+  if (it == element_data_map_.end()) {
     return g_null_atom;
   }
-  return element_data_map_.at(name)->containing_group_name;
+  return it->value->containing_group_name;
 }
 
 bool ViewTransitionStyleTracker::Start() {
@@ -1328,7 +1337,8 @@ void ViewTransitionStyleTracker::Abort() {
 }
 
 void ViewTransitionStyleTracker::PauseRendering() {
-  DCHECK_EQ(state_, State::kCapturing);
+  CHECK_EQ(state_, State::kCapturing);
+  state_ = State::kOldSnapshotFrozen;
 
   if (scope_snapshot_layer_) {
     auto bounds = scope_snapshot_layer_->bounds();
@@ -1864,10 +1874,9 @@ gfx::Transform ViewTransitionStyleTracker::ComputeTransformForParticipant(
   }
 
   if (!scope_box->IsLayoutView()) {
-    DCHECK(RuntimeEnabledFeatures::ScopedViewTransitionsEnabled());
-
     // Adjust for the scope element's borders and scrollbars.
-    transform.Translate(-scope_box->ClientLeft(), -scope_box->ClientTop());
+    transform.Translate(
+        -gfx::Vector2dF(scope_box->PhysicalPaddingBoxRect().offset));
   }
 
   return transform;
@@ -1988,6 +1997,7 @@ bool ViewTransitionStyleTracker::HasInternalPseudoElements() const {
   switch (state_) {
     case State::kIdle:
     case State::kCapturing:
+    case State::kOldSnapshotFrozen:
     case State::kCaptured:
       return true;
     case State::kStarted:
@@ -2071,8 +2081,8 @@ gfx::Rect ViewTransitionStyleTracker::GetSnapshotRootInFixedViewport() const {
   gfx::Rect snapshot_viewport_rect =
       document_->GetSettings()->GetViewportEnabled()
           ? gfx::Rect(frame_view.Size().width(), frame_view.Size().height())
-          : gfx::Rect(layout_view.ClientWidth().ToInt(),
-                      layout_view.ClientHeight().ToInt());
+          : gfx::Rect(layout_view.PhysicalPaddingBoxRect().Width().ToInt(),
+                      layout_view.PhysicalPaddingBoxRect().Height().ToInt());
   snapshot_viewport_rect.Outset(GetFixedToSnapshotViewportOutsets(*document_));
 
   return snapshot_viewport_rect;
@@ -2475,7 +2485,7 @@ gfx::RectF ViewTransitionStyleTracker::ElementData::GetReferenceRect(
 
 bool ViewTransitionStyleTracker::ElementData::
     ShouldPropagateVisualOverflowRectAsMaxExtentsRect() const {
-  return target_element && !target_element->IsDocumentElement();
+  return !target_element || !target_element->IsDocumentElement();
 }
 
 void ViewTransitionStyleTracker::ElementData::CacheStateForOldSnapshot() {
@@ -2539,6 +2549,8 @@ const char* ViewTransitionStyleTracker::StateToString(State state) {
       return "Idle";
     case State::kCapturing:
       return "Capturing";
+    case State::kOldSnapshotFrozen:
+      return "OldSnapshotFrozen";
     case State::kCaptured:
       return "Captured";
     case State::kStarted:
@@ -2646,9 +2658,6 @@ gfx::Transform ViewTransitionStyleTracker::ContainerProperties::
 }
 
 bool ViewTransitionStyleTracker::NeedsSnapshotForCapture() const {
-  if (!RuntimeEnabledFeatures::ScopedViewTransitionsEnabled()) {
-    return !document_->GetFrame()->IsLocalRoot();
-  }
   auto* element = OriginatingElement();
   if (!element) {
     return false;

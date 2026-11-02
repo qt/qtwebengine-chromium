@@ -61,7 +61,8 @@ void FakeWebSensorProvider::Bind(
 void FakeWebSensorProvider::GetSensor(device::mojom::blink::SensorType type,
                                       bool user_gesture,
                                       GetSensorCallback callback) {
-  sensor_provider_remote_->GetSensor(type, mojo::NullRemote(),
+  sensor_provider_remote_->GetSensor(type, mojo::NullReceiver(),
+                                     /*initially_suspended=*/false,
                                      std::move(callback));
 }
 
@@ -72,10 +73,11 @@ SensorTestContext::SensorTestContext()
   // Necessary for SensorProxy::ShouldSuspendUpdates() to work correctly.
   testing_scope_.GetPage().GetFocusController().SetFocused(true);
 
+  // TODO(https://crbug.com/521917543): avoid UnretainedException().
   testing_scope_.GetFrame().GetBrowserInterfaceBroker().SetBinderForTesting(
       mojom::blink::WebSensorProvider::Name_,
       BindRepeating(&SensorTestContext::BindSensorProviderRequest,
-                    Unretained(this)));
+                    blink::subtle::UnretainedException(this)));
 }
 
 SensorTestContext::~SensorTestContext() {

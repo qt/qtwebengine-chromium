@@ -185,6 +185,12 @@ class BLINK_PLATFORM_EXPORT WebURLResponse {
   bool FromSyntheticResponse() const;
   void SetFromSyntheticResponse(bool);
 
+  // Flag whether a plugin intercepted this response and replaced its body
+  // with browser-generated markup; inline style on the committed document is
+  // then exempt from CSP.
+  // See network.mojom.URLResponseHead.intercepted_by_plugin.
+  void SetInterceptedByPlugin(bool);
+
   // Set when this request was loaded via a ServiceWorker.
   // See network.mojom.URLResponseHead.service_worker_response_source.
   network::mojom::FetchResponseSource GetServiceWorkerResponseSource() const;
@@ -271,7 +277,7 @@ class BLINK_PLATFORM_EXPORT WebURLResponse {
   void SetEncodedDataLength(int64_t);
 
   // Original size of the response body before decompression.
-  int64_t EncodedBodyLength() const;
+  uint64_t EncodedBodyLength() const;
   void SetEncodedBodyLength(uint64_t);
 
   void SetIsSignedExchangeInnerResponse(bool);

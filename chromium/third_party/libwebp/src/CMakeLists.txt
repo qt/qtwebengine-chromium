@@ -102,7 +102,6 @@ endif()
 set(SHARPYUV_DEP_LIBRARIES)
 set(SHARPYUV_DEP_INCLUDE_DIRS)
 set(WEBP_DEP_LIBRARIES)
-set(WEBP_DEP_INCLUDE_DIRS)
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release"
@@ -147,6 +146,16 @@ endif()
 
 if(WIN32 AND BUILD_SHARED_LIBS)
   add_definitions(-DWEBP_DLL)
+endif()
+
+# Compatibility with autoconf configure script's way of setting this
+if(CMAKE_C_BYTE_ORDER STREQUAL "BIG_ENDIAN")
+  set(WORDS_BIGENDIAN TRUE)
+elseif(CMAKE_C_BYTE_ORDER STREQUAL "LITTLE_ENDIAN")
+  set(WORDS_BIGENDIAN FALSE)
+else()
+  set(WORDS_BIGENDIAN FALSE)
+  message(WARNING "Endianness could not be determined.")
 endif()
 
 # pkg-config variables used by *.pc.in.
@@ -201,7 +210,7 @@ if(ANDROID)
   set(cpufeatures_include_dir ${ANDROID_NDK}/sources/android/cpufeatures)
   set(SHARPYUV_DEP_INCLUDE_DIRS ${SHARPYUV_DEP_INCLUDE_DIRS}
                                 ${cpufeatures_include_dir})
-  set(WEBP_DEP_INCLUDE_DIRS ${WEBP_DEP_INCLUDE_DIRS} ${cpufeatures_include_dir})
+  include_directories(AFTER SYSTEM ${cpufeatures_include_dir})
   add_definitions(-DHAVE_CPU_FEATURES_H=1)
   set(HAVE_CPU_FEATURES_H 1)
 else()
@@ -339,11 +348,14 @@ endfunction()
 
 parse_makefile_am(${CMAKE_CURRENT_SOURCE_DIR}/sharpyuv "WEBP_SHARPYUV_SRCS" "")
 add_library(sharpyuv ${WEBP_SHARPYUV_SRCS})
-target_link_libraries(sharpyuv ${SHARPYUV_DEP_LIBRARIES})
+target_link_libraries(sharpyuv PRIVATE ${SHARPYUV_DEP_LIBRARIES})
 set_version(sharpyuv/Makefile.am sharpyuv sharpyuv)
 target_include_directories(
-  sharpyuv PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}
-                   ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  sharpyuv
+  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/webp>
+  PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}
+          ${CMAKE_CURRENT_SOURCE_DIR}/src)
 set_target_properties(
   sharpyuv
   PROPERTIES PUBLIC_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/sharpyuv/sharpyuv.h;\
@@ -366,13 +378,12 @@ if(MSVC)
 else()
   add_compile_options(-Wall)
 endif()
-include_directories(${WEBP_DEP_INCLUDE_DIRS})
-add_library(webpdecode OBJECT ${WEBP_DEC_SRCS})
-target_include_directories(webpdecode PRIVATE ${CMAKE_CURRENT_BINARY_DIR}
-                                              ${CMAKE_CURRENT_SOURCE_DIR})
 add_library(webpdspdecode OBJECT ${WEBP_DSP_COMMON_SRCS} ${WEBP_DSP_DEC_SRCS})
-target_include_directories(webpdspdecode PRIVATE ${CMAKE_CURRENT_BINARY_DIR}
-                                                 ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(webpdspdecode PUBLIC ${CMAKE_CURRENT_BINARY_DIR}
+                           PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+add_library(webpdecode OBJECT ${WEBP_DEC_SRCS})
+target_link_libraries(webpdecode PRIVATE webpdspdecode)
+target_include_directories(webpdecode PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_library(webputilsdecode OBJECT ${WEBP_UTILS_COMMON_SRCS}
                                    ${WEBP_UTILS_DEC_SRCS})
 target_include_directories(webputilsdecode PRIVATE ${CMAKE_CURRENT_BINARY_DIR}
@@ -385,11 +396,9 @@ if(XCODE)
 endif()
 target_link_libraries(webpdecoder ${WEBP_DEP_LIBRARIES})
 target_include_directories(
-  webpdecoder
-  PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}
-  INTERFACE
-    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR};${CMAKE_CURRENT_BINARY_DIR}>"
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+  webpdecoder PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}
+  INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 set_target_properties(
   webpdecoder
   PROPERTIES PUBLIC_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/src/webp/decode.h;\
@@ -413,10 +422,12 @@ target_include_directories(webputils PRIVATE ${CMAKE_CURRENT_BINARY_DIR}
 add_library(webp $<TARGET_OBJECTS:webpdecode> $<TARGET_OBJECTS:webpdsp>
                  $<TARGET_OBJECTS:webpencode> $<TARGET_OBJECTS:webputils>)
 if(WEBP_ENABLE_FBOUNDS_SAFETY)
-  # Enable -fbounds-safety only for webputils for now.
+  # Enable -fbounds-safety only for webputils and webpdecode(r) for now.
   add_definitions(-DWEBP_SUPPORT_FBOUNDS_SAFETY=1)
   target_compile_options(webputils PRIVATE -fbounds-safety)
   target_compile_options(webputilsdecode PRIVATE -fbounds-safety)
+  target_compile_options(webpdecode PRIVATE -fbounds-safety)
+  target_compile_options(webpdecoder PRIVATE -fbounds-safety)
 endif()
 
 target_link_libraries(webp sharpyuv)
@@ -425,9 +436,9 @@ if(XCODE)
 endif()
 target_link_libraries(webp ${WEBP_DEP_LIBRARIES})
 target_include_directories(
-  webp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}
-  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
-         $<INSTALL_INTERFACE:include>)
+  webp PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+              $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set_target_properties(
   webp
   PROPERTIES PUBLIC_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/src/webp/decode.h;\
@@ -485,12 +496,9 @@ if(NOT WEBP_BUILD_LIBWEBPMUX)
   set(WEBP_BUILD_WEBPMUX OFF)
 endif()
 
-if(WEBP_BUILD_GIF2WEBP AND NOT GIF_FOUND)
-  set(WEBP_BUILD_GIF2WEBP OFF)
-endif()
-
-if(WEBP_BUILD_ANIM_UTILS AND NOT GIF_FOUND)
+if(NOT GIF_FOUND)
   set(WEBP_BUILD_ANIM_UTILS OFF)
+  set(WEBP_BUILD_GIF2WEBP OFF)
 endif()
 
 # Build the executables if asked for.
@@ -529,14 +537,12 @@ if(WEBP_BUILD_ANIM_UTILS
   parse_makefile_am(${CMAKE_CURRENT_SOURCE_DIR}/imageio "IMAGEENC_SRCS"
                     "imageenc_[^ ]*")
   add_library(imageenc STATIC ${IMAGEENC_SRCS})
-  target_link_libraries(imageenc imageioutil webp)
+  target_link_libraries(imageenc imageioutil webp ${WEBP_DEP_IMG_LIBRARIES})
 
   set_property(
     TARGET exampleutil imageioutil imagedec imageenc
     PROPERTY INCLUDE_DIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR}/src
              ${CMAKE_CURRENT_BINARY_DIR}/src)
-  target_include_directories(imagedec PRIVATE ${WEBP_DEP_IMG_INCLUDE_DIRS})
-  target_include_directories(imageenc PRIVATE ${WEBP_DEP_IMG_INCLUDE_DIRS})
 endif()
 
 if(WEBP_BUILD_DWEBP)
@@ -553,8 +559,7 @@ if(WEBP_BUILD_CWEBP)
   parse_makefile_am(${CMAKE_CURRENT_SOURCE_DIR}/examples "CWEBP_SRCS" "cwebp")
   add_executable(cwebp ${CWEBP_SRCS})
   target_link_libraries(cwebp exampleutil imagedec webp)
-  target_include_directories(cwebp PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src
-                                           ${CMAKE_CURRENT_SOURCE_DIR})
+  target_include_directories(cwebp PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src)
   install(TARGETS cwebp RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
@@ -577,27 +582,23 @@ endif()
 
 if(WEBP_BUILD_GIF2WEBP)
   # gif2webp
-  include_directories(${WEBP_DEP_GIF_INCLUDE_DIRS})
   parse_makefile_am(${CMAKE_CURRENT_SOURCE_DIR}/examples "GIF2WEBP_SRCS"
                     "gif2webp")
   add_executable(gif2webp ${GIF2WEBP_SRCS})
   target_link_libraries(gif2webp exampleutil imageioutil webp libwebpmux
-                        ${WEBP_DEP_GIF_LIBRARIES})
-  target_include_directories(gif2webp PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src
-                                              ${CMAKE_CURRENT_SOURCE_DIR})
+                        GIF::GIF)
+  target_include_directories(gif2webp PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src)
   install(TARGETS gif2webp RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
 if(WEBP_BUILD_IMG2WEBP)
   # img2webp
-  include_directories(${WEBP_DEP_IMG_INCLUDE_DIRS})
   parse_makefile_am(${CMAKE_CURRENT_SOURCE_DIR}/examples "IMG2WEBP_SRCS"
                     "img2webp")
   add_executable(img2webp ${IMG2WEBP_SRCS})
   target_link_libraries(img2webp exampleutil imagedec imageioutil webp
                         libwebpmux)
-  target_include_directories(img2webp PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src
-                                              ${CMAKE_CURRENT_SOURCE_DIR})
+  target_include_directories(img2webp PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src)
   install(TARGETS img2webp RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
@@ -605,7 +606,6 @@ if(WEBP_BUILD_VWEBP)
   # vwebp
   find_package(GLUT)
   if(GLUT_FOUND)
-    include_directories(${WEBP_DEP_IMG_INCLUDE_DIRS})
     parse_makefile_am(${CMAKE_CURRENT_SOURCE_DIR}/examples "VWEBP_SRCS" "vwebp")
     add_executable(vwebp ${VWEBP_SRCS})
     target_link_libraries(
@@ -631,13 +631,11 @@ endif()
 
 if(WEBP_BUILD_WEBPINFO)
   # webpinfo
-  include_directories(${WEBP_DEP_IMG_INCLUDE_DIRS})
   parse_makefile_am(${CMAKE_CURRENT_SOURCE_DIR}/examples "WEBPINFO_SRCS"
                     "webpinfo")
   add_executable(webpinfo ${WEBPINFO_SRCS})
   target_link_libraries(webpinfo exampleutil imageioutil)
-  target_include_directories(webpinfo PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src
-                                              ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_include_directories(webpinfo PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src)
   install(TARGETS webpinfo RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
@@ -660,30 +658,25 @@ if(WEBP_BUILD_EXTRAS)
 
   # libextras
   add_library(extras STATIC ${WEBP_EXTRAS_SRCS})
-  target_include_directories(
-    extras PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}
-                   ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_link_libraries(extras PUBLIC webp PRIVATE webpdspdecode)
 
   # get_disto
   add_executable(get_disto ${GET_DISTO_SRCS})
   target_link_libraries(get_disto imagedec)
-  target_include_directories(get_disto PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
-                                               ${CMAKE_CURRENT_BINARY_DIR}/src)
+  target_include_directories(get_disto PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src)
 
   # webp_quality
   add_executable(webp_quality ${WEBP_QUALITY_SRCS})
   target_link_libraries(webp_quality exampleutil imagedec extras)
-  target_include_directories(webp_quality PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
-                                                  ${CMAKE_CURRENT_BINARY_DIR})
+  target_include_directories(webp_quality PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
   # vwebp_sdl
   find_package(SDL2 QUIET)
   if(WEBP_BUILD_VWEBP AND SDL2_FOUND)
     add_executable(vwebp_sdl ${VWEBP_SDL_SRCS})
     target_link_libraries(vwebp_sdl ${SDL2_LIBRARIES} imageioutil webp)
-    target_include_directories(
-      vwebp_sdl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}
-                        ${CMAKE_CURRENT_BINARY_DIR}/src ${SDL2_INCLUDE_DIRS})
+    target_include_directories(vwebp_sdl PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src
+                                                 ${SDL2_INCLUDE_DIRS})
     set(WEBP_HAVE_SDL 1)
     target_compile_definitions(vwebp_sdl PUBLIC WEBP_HAVE_SDL)
 
@@ -721,7 +714,7 @@ if(WEBP_BUILD_WEBP_JS)
     # JavaScript version
     add_executable(webp_js ${CMAKE_CURRENT_SOURCE_DIR}/extras/webp_to_sdl.c)
     target_link_libraries(webp_js webpdecoder SDL2)
-    target_include_directories(webp_js PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+    target_include_directories(webp_js PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src)
     set(WEBP_HAVE_SDL 1)
     set_target_properties(
       webp_js
@@ -741,7 +734,7 @@ if(WEBP_BUILD_WEBP_JS)
   # WASM version
   add_executable(webp_wasm ${CMAKE_CURRENT_SOURCE_DIR}/extras/webp_to_sdl.c)
   target_link_libraries(webp_wasm webpdecoder SDL2)
-  target_include_directories(webp_wasm PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+  target_include_directories(webp_wasm PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src)
   set_target_properties(
     webp_wasm
     PROPERTIES
@@ -759,36 +752,47 @@ if(WEBP_BUILD_WEBP_JS)
 endif()
 
 if(WEBP_BUILD_ANIM_UTILS)
+  # anim_util
+  parse_makefile_am(${CMAKE_CURRENT_SOURCE_DIR}/examples "ANIM_UTIL_SRCS"
+                    "anim_util_[^ ]*")
+  add_library(anim_util STATIC ${ANIM_UTIL_SRCS})
+  target_include_directories(
+    anim_util
+    PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR};${CMAKE_CURRENT_BINARY_DIR}/src>
+      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+  target_link_libraries(anim_util PUBLIC webp GIF::GIF)
+
   # anim_diff
-  include_directories(${WEBP_DEP_IMG_INCLUDE_DIRS} ${WEBP_DEP_GIF_INCLUDE_DIRS})
   parse_makefile_am(${CMAKE_CURRENT_SOURCE_DIR}/examples "ANIM_DIFF_SRCS"
                     "anim_diff")
   add_executable(anim_diff ${ANIM_DIFF_SRCS})
   target_link_libraries(
     anim_diff
+    anim_util
     exampleutil
     imagedec
     imageenc
     imageioutil
     webp
     webpdemux
-    ${WEBP_DEP_GIF_LIBRARIES})
+    GIF::GIF)
   target_include_directories(anim_diff PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src)
 
   # anim_dump
-  include_directories(${WEBP_DEP_IMG_INCLUDE_DIRS} ${WEBP_DEP_GIF_INCLUDE_DIRS})
   parse_makefile_am(${CMAKE_CURRENT_SOURCE_DIR}/examples "ANIM_DUMP_SRCS"
                     "anim_dump")
   add_executable(anim_dump ${ANIM_DUMP_SRCS})
   target_link_libraries(
     anim_dump
+    anim_util
     exampleutil
     imagedec
     imageenc
     imageioutil
     webp
     webpdemux
-    ${WEBP_DEP_GIF_LIBRARIES})
+    GIF::GIF)
   target_include_directories(anim_dump PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src)
 endif()
 

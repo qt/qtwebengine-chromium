@@ -18,20 +18,24 @@ extern const char kEventNewWindow[];
 extern const char kEventPermission[];
 extern const char kEventSizeChanged[];
 extern const char kEventUnresponsive[];
+extern const char kEventZoomChange[];
 
 // Parameters on events.
 extern const char kInitialHeight[];
 extern const char kInitialWidth[];
 extern const char kNewHeight[];
 extern const char kNewWidth[];
+extern const char kNewZoomFactor[];
 extern const char kOldHeight[];
 extern const char kOldWidth[];
+extern const char kOldZoomFactor[];
 extern const char kPermission[];
 extern const char kProcessId[];
 extern const char kReason[];
 extern const char kRequestId[];
 extern const char kRequestInfo[];
 extern const char kTargetURL[];
+extern const char kUserAgentOverride[];
 extern const char kWindowOpenDisposition[];
 
 }  // namespace guest_view::slim_web_view

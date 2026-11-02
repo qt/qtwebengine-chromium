@@ -757,19 +757,10 @@ void CXFA_TextLayout::LoadText(CXFA_Node* pNode,
   float fSpaceAbove = 0;
   if (para) {
     fSpaceAbove = para->GetSpaceAbove();
-    if (fSpaceAbove < 0.1f) {
+    if (fSpaceAbove >= 0.1f) {
+      *pLinePos += fSpaceAbove;
+    } else {
       fSpaceAbove = 0;
-    }
-
-    switch (para->GetVerticalAlign()) {
-      case XFA_AttributeValue::Top:
-      case XFA_AttributeValue::Middle:
-      case XFA_AttributeValue::Bottom: {
-        *pLinePos += fSpaceAbove;
-        break;
-      }
-      default:
-        NOTREACHED();
     }
   }
 

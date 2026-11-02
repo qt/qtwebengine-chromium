@@ -19,6 +19,7 @@
 #include "media/base/test_data_util.h"
 #include "media/filters/h26x_annex_b_bitstream_builder.h"
 #include "media/gpu/h264_builder.h"
+#include "media/parsers/h26x_parser.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/abseil-cpp/absl/functional/overload.h"
 #include "ui/gfx/geometry/rect.h"
@@ -169,7 +170,7 @@ TEST(H264ParserTest, ParseNALUsFromStreamFile) {
       << "Couldn't open stream file: " << file_path.MaybeAsASCII();
 
   std::vector<H264NALU> nalus;
-  ASSERT_TRUE(H264Parser::ParseNALUs(stream.data(), stream.length(), &nalus));
+  ASSERT_TRUE(H264Parser::ParseNALUs(stream.bytes(), &nalus));
   ASSERT_EQ(kTestFileNALUnits, nalus.size());
 }
 
@@ -346,6 +347,52 @@ TEST(H264ParserTest, RecoveryPointSEIParsing) {
   EXPECT_EQ(pic_timing_sei.msgs.size(), 0u);
 }
 
+// Verify T35 SEI is correctly parsed.
+TEST(H264ParserTest, T35SEIParsing) {
+  constexpr uint8_t kStream[] = {
+      // Start code.
+      0x00,
+      0x00,
+      0x00,
+      0x01,
+      // NALU type = 6 (kSEIMessage).
+      0x06,
+      // SEI payload type = 4 (user_data_registered_itu_t_t35).
+      0x04,
+      // SEI payload size = 5.
+      0x05,
+      // Country code = 0xB5.
+      0xB5,
+      // Payload data (4 bytes).
+      0x01,
+      0x02,
+      0x03,
+      0x04,
+      // RBSP trailing bits.
+      0x80,
+  };
+
+  H264Parser parser;
+  parser.SetStream(kStream);
+
+  H264NALU target_nalu;
+  ASSERT_EQ(H264Parser::kOk, parser.AdvanceToNextNALU(&target_nalu));
+  EXPECT_EQ(target_nalu.nal_unit_type, H264NALU::kSEIMessage);
+
+  H264SEI sei;
+  ASSERT_EQ(H264Parser::kOk, parser.ParseSEI(&sei));
+  ASSERT_EQ(sei.msgs.size(), 1u);
+
+  const auto* t35 = std::get_if<H26xSEIUserDataRegisteredT35>(&sei.msgs[0]);
+  ASSERT_TRUE(t35);
+  EXPECT_EQ(t35->country_code, 0xB5);
+  ASSERT_EQ(t35->payload.size(), 4u);
+  EXPECT_EQ(t35->payload[0], 0x01);
+  EXPECT_EQ(t35->payload[1], 0x02);
+  EXPECT_EQ(t35->payload[2], 0x03);
+  EXPECT_EQ(t35->payload[3], 0x04);
+}
+
 // Verify both MDCV and CLLI message can be correctly parsed in the same SEI
 // NALU.
 TEST(H264ParserTest, RecursiveSEIParsing) {
@@ -411,12 +458,12 @@ TEST(H264ParserTest, RecursiveSEIParsing) {
   EXPECT_EQ(clli_mdcv_sei.msgs.size(), 2u);
 
   for (const auto& sei_msg : clli_mdcv_sei.msgs) {
-    std::visit(absl::Overload{[](const H264SEIContentLightLevelInfo& info) {
+    std::visit(absl::Overload{[](const H26xSEIContentLightLevelInfo& info) {
                                 EXPECT_EQ(info.max_content_light_level, 1000u);
                                 EXPECT_EQ(info.max_picture_average_light_level,
                                           200u);
                               },
-                              [](const H264SEIMasteringDisplayInfo& info) {
+                              [](const H26xSEIMasteringDisplayInfo& info) {
                                 EXPECT_EQ(info.display_primaries[0][0], 13249u);
                                 EXPECT_EQ(info.display_primaries[0][1], 34499u);
                                 EXPECT_EQ(info.display_primaries[1][0], 7500u);
@@ -488,6 +535,118 @@ TEST(H264ParserTest, RangeChecks) {
     ASSERT_EQ(H264NALU::kSEIMessage, nalu.nal_unit_type);
 
     EXPECT_EQ(H264Parser::kInvalidStream, parser.ParseSEI(&sei));
+  }
+
+  // SliceHeader: DecRefPicMarking and RefPicListModification range checks.
+  {
+    H264SPS sps;
+    sps.profile_idc = 66;  // Baseline
+    sps.level_idc = 10;
+    sps.log2_max_frame_num_minus4 = 0;
+    sps.pic_order_cnt_type = 0;
+    sps.log2_max_pic_order_cnt_lsb_minus4 = 0;
+    sps.max_num_ref_frames = 4;
+    sps.pic_width_in_mbs_minus1 = 1;
+    sps.pic_height_in_map_units_minus1 = 1;
+    sps.frame_mbs_only_flag = true;
+
+    H264PPS pps;
+    pps.pic_parameter_set_id = 0;
+    pps.seq_parameter_set_id = 0;
+
+    // Helper lambda to build a slice header with custom modification and
+    // marking ops.
+    auto build_slice = [&](uint32_t ref_mod_idc, uint32_t ref_mod_val,
+                           uint32_t mmco, uint32_t mmco_val1,
+                           uint32_t mmco_val2 = 0) {
+      H26xAnnexBBitstreamBuilder builder(
+          /*insert_emulation_prevention_bytes=*/true);
+      BuildPackedH264SPS(builder, sps);
+      BuildPackedH264PPS(builder, sps, pps);
+
+      builder.BeginNALU(H264NALU::kNonIDRSlice, 1);
+      builder.AppendUE(0);       // first_mb_in_slice
+      builder.AppendUE(0);       // slice_type (P slice)
+      builder.AppendUE(0);       // pic_parameter_set_id
+      builder.AppendBits(4, 0);  // frame_num
+      builder.AppendBits(4, 0);  // pic_order_cnt_lsb
+
+      builder.AppendBool(false);  // num_ref_idx_active_override_flag
+      if (ref_mod_idc != 3) {
+        builder.AppendBool(true);  // ref_pic_list_modification_flag_l0
+        builder.AppendUE(ref_mod_idc);
+        builder.AppendUE(ref_mod_val);
+        builder.AppendUE(3);  // end of modifications
+      } else {
+        builder.AppendBool(false);  // ref_pic_list_modification_flag_l0
+      }
+
+      if (mmco != 0) {
+        builder.AppendBool(true);  // adaptive_ref_pic_marking_mode_flag
+        builder.AppendUE(mmco);
+        if (mmco == 1 || mmco == 3) {
+          builder.AppendUE(mmco_val1);
+        }
+        if (mmco == 2) {
+          builder.AppendUE(mmco_val1);
+        }
+        if (mmco == 3 || mmco == 6) {
+          builder.AppendUE(mmco == 3 ? mmco_val2 : mmco_val1);
+        }
+        if (mmco == 4) {
+          builder.AppendUE(mmco_val1);
+        }
+        builder.AppendUE(0);  // end of MMCO
+      } else {
+        builder.AppendBool(false);  // adaptive_ref_pic_marking_mode_flag
+      }
+
+      builder.AppendSE(0);  // slice_qp_delta
+      builder.FinishNALU();
+      return std::vector<uint8_t>(builder.data().begin(), builder.data().end());
+    };
+
+    auto parse_slice = [&](const std::vector<uint8_t>& stream_data) {
+      H264Parser p;
+      p.SetStream(stream_data);
+      H264NALU n;
+      int sps_id_out, pps_id_out;
+      EXPECT_EQ(H264Parser::kOk, p.AdvanceToNextNALU(&n));  // SPS
+      EXPECT_EQ(H264Parser::kOk, p.ParseSPS(&sps_id_out));
+      EXPECT_EQ(H264Parser::kOk, p.AdvanceToNextNALU(&n));  // PPS
+      EXPECT_EQ(H264Parser::kOk, p.ParsePPS(&pps_id_out));
+      EXPECT_EQ(H264Parser::kOk, p.AdvanceToNextNALU(&n));  // Slice
+      H264SliceHeader sh;
+      return p.ParseSliceHeader(n, &sh);
+    };
+
+    // Valid slice header.
+    EXPECT_EQ(H264Parser::kOk, parse_slice(build_slice(3, 0, 0, 0)));
+
+    // MMCO 6: long_term_frame_idx = 16 (invalid, max 15).
+    EXPECT_EQ(H264Parser::kInvalidStream,
+              parse_slice(build_slice(3, 0, 6, 16)));
+
+    // MMCO 2: long_term_pic_num = 16 (invalid, max 15).
+    EXPECT_EQ(H264Parser::kInvalidStream,
+              parse_slice(build_slice(3, 0, 2, 16)));
+
+    // MMCO 1: difference_of_pic_nums_minus1 = 65536 (invalid, max 65535).
+    EXPECT_EQ(H264Parser::kInvalidStream,
+              parse_slice(build_slice(3, 0, 1, 65536)));
+
+    // MMCO 4: max_long_term_frame_idx_plus1 = 17 (invalid, max 16).
+    EXPECT_EQ(H264Parser::kInvalidStream,
+              parse_slice(build_slice(3, 0, 4, 17)));
+
+    // RefPicListModification 2: long_term_pic_num = 16 (invalid, max 15).
+    EXPECT_EQ(H264Parser::kInvalidStream,
+              parse_slice(build_slice(2, 16, 0, 0)));
+
+    // RefPicListModification 0: abs_diff_pic_num_minus1 = 65536 (invalid, max
+    // 65535).
+    EXPECT_EQ(H264Parser::kInvalidStream,
+              parse_slice(build_slice(0, 65536, 0, 0)));
   }
 }
 

@@ -45,13 +45,14 @@ struct traits<FullPivHouseholderQRMatrixQReturnType<MatrixType, PermutationIndex
  *
  * \tparam MatrixType_ the type of the matrix of which we are computing the QR decomposition
  *
- * This class performs a rank-revealing QR decomposition of a matrix \b A into matrices \b P, \b P', \b Q and \b R
- * such that
+ * This class performs a rank-revealing QR decomposition of a matrix \b A into matrices \b Q, \b R and a column
+ * permutation \b P such that
  * \f[
- *  \mathbf{P} \, \mathbf{A} \, \mathbf{P}' = \mathbf{Q} \, \mathbf{R}
+ *  \mathbf{A} \, \mathbf{P} = \mathbf{Q} \, \mathbf{R}
  * \f]
- * by using Householder transformations. Here, \b P and \b P' are permutation matrices, \b Q a unitary matrix
- * and \b R an upper triangular matrix.
+ * by using Householder transformations. Equivalently, \f$ \mathbf{A} = \mathbf{Q} \, \mathbf{R} \, \mathbf{P}^{-1} \f$.
+ * Here \b P is the column permutation returned by colsPermutation(), \b Q is the unitary matrix returned by matrixQ(),
+ * and \b R is an upper triangular matrix. Row transpositions used during pivoting are folded into \b Q.
  *
  * This decomposition performs a very prudent full pivoting in order to be rank-revealing and achieve optimal
  * numerical stability. The trade-off is that it is slower than HouseholderQR and ColPivHouseholderQR.
@@ -186,6 +187,9 @@ class FullPivHouseholderQR : public SolverBase<FullPivHouseholderQR<MatrixType_,
    *
    * \returns the exact or least-square solution if the rank is greater or equal to the number of columns of A,
    * and an arbitrary solution otherwise.
+   * For overdetermined systems, the least-square solution minimizes the Euclidean norm \f$ \Vert A x - b \Vert \f$.
+   * For rank-deficient matrices, this method generally does not compute the minimum-norm solution; use
+   * CompleteOrthogonalDecomposition or an SVD if that is required.
    *
    * \note_about_checking_solutions
    *

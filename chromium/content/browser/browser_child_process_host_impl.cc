@@ -291,6 +291,7 @@ void BrowserChildProcessHostImpl::LaunchWithoutExtraCommandLineSwitches(
       switches::kDisableBestEffortTasks,
       switches::kIPCConnectionTimeout,
       switches::kLogBestEffortTasks,
+      switches::kPartitionAllocSchedulerLoopQuarantine,
       switches::kPerfettoDisableInterning,
   };
   cmd_line->CopySwitchesFrom(browser_command_line, kForwardSwitches);
@@ -414,6 +415,10 @@ void BrowserChildProcessHostImpl::BindChildHistogramFetcherFactory(
 
 bool BrowserChildProcessHostImpl::IsWebiumRenderer() const {
   return false;
+}
+
+uint64_t BrowserChildProcessHostImpl::GetProcessIdForHistogram() const {
+  return data_.GetChildProcessId().value();
 }
 
 void BrowserChildProcessHostImpl::TerminateOnBadMessageReceived(

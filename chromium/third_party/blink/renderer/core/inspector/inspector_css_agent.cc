@@ -1687,13 +1687,38 @@ protocol::Response InspectorCSSAgent::getMatchedStylesForNode(
         function_hash_map;
     CollectReferencedFunctionRules(function_to_css_rule_map,
                                    *resolver.MatchedRules(), function_hash_map);
+
+    // Pseudos
+    for (InspectorCSSMatchedRules* match : resolver.PseudoElementRules()) {
+      if (match->matched_rules) {
+        CollectReferencedFunctionRules(
+            function_to_css_rule_map, *match->matched_rules, function_hash_map);
+      }
+    }
+    // Inherited
+    for (InspectorCSSMatchedRules* match : resolver.ParentRules()) {
+      if (match->matched_rules) {
+        CollectReferencedFunctionRules(
+            function_to_css_rule_map, *match->matched_rules, function_hash_map);
+      }
+    }
+    for (InspectorCSSMatchedPseudoElements* match :
+         resolver.ParentPseudoElementRules()) {
+      for (InspectorCSSMatchedRules* pseudo_match :
+           match->pseudo_element_rules) {
+        if (pseudo_match->matched_rules) {
+          CollectReferencedFunctionRules(function_to_css_rule_map,
+                                         *pseudo_match->matched_rules,
+                                         function_hash_map);
+        }
+      }
+    }
+
     if (!function_hash_map.empty()) {
       *css_function_rules =
           std::make_unique<protocol::Array<protocol::CSS::CSSFunctionRule>>();
       for (const auto& [scoped_name, rule] : function_hash_map) {
-        (*css_function_rules)
-            ->emplace_back(
-                BuildObjectForFunctionRule(rule, scoped_name->GetTreeScope()));
+        (*css_function_rules)->emplace_back(BuildObjectForFunctionRule(rule));
       }
     }
   }
@@ -2557,7 +2582,8 @@ protocol::Response InspectorCSSAgent::resolveValues(
   // Temporary register property with combined syntax.
   auto_registration.emplace(document, temp_custom_property_name,
                             *property_registration);
-  CustomProperty temporary_custom_property(temp_custom_property_name, document);
+  CustomProperty temporary_custom_property(&temp_custom_property_name,
+                                           document);
 
   std::optional<CSSPropertyName> property_name;
   if (property_name_str.has_value()) {
@@ -2619,7 +2645,7 @@ protocol::Response InspectorCSSAgent::resolveValues(
     const CSSValue* parsed_value = nullptr;
     if (property_name.has_value()) {
       if (property_name->IsCustomProperty()) {
-        CustomProperty custom_property(property_name->ToAtomicString(),
+        CustomProperty custom_property(&property_name->ToAtomicString(),
                                        element->GetDocument());
         // Unregistered custom properties should always be parsed against
         // combined syntax.
@@ -3317,8 +3343,8 @@ protocol::Response InspectorCSSAgent::setNavigationText(
 
   DummyExceptionStateForTesting exception_state;
   ModifyRuleAction* action = MakeGarbageCollected<ModifyRuleAction>(
-      ModifyRuleAction::kSetNavigationRuleText, inspector_style_sheet, text_range,
-      text);
+      ModifyRuleAction::kSetNavigationRuleText, inspector_style_sheet,
+      text_range, text);
   bool success = dom_agent_->History()->Perform(action, exception_state);
   if (success) {
     CSSNavigationRule* rule =
@@ -4103,8 +4129,7 @@ InspectorCSSAgent::BuildArrayForFunctionNodeChildren(CSSRuleList* rule_list) {
 }
 
 std::unique_ptr<protocol::CSS::CSSFunctionRule>
-InspectorCSSAgent::BuildObjectForFunctionRule(CSSFunctionRule* function_rule,
-                                              const TreeScope* tree_scope) {
+InspectorCSSAgent::BuildObjectForFunctionRule(CSSFunctionRule* function_rule) {
   InspectorStyleSheet* inspector_style_sheet =
       BindStyleSheet(function_rule->parentStyleSheet());
   std::unique_ptr<protocol::CSS::Value> name =
@@ -4136,6 +4161,19 @@ InspectorCSSAgent::BuildObjectForFunctionRule(CSSFunctionRule* function_rule,
   if (inspector_style_sheet->CanBindOrigin() &&
       !inspector_style_sheet->Id().empty()) {
     result->setStyleSheetId(inspector_style_sheet->Id());
+  }
+  const TreeScope* tree_scope = nullptr;
+  CSSStyleSheet* style_sheet = function_rule->parentStyleSheet();
+  while (style_sheet && style_sheet->parentStyleSheet()) {
+    style_sheet = style_sheet->parentStyleSheet();
+  }
+  if (style_sheet) {
+    if (Node* owner_node = style_sheet->ownerNode()) {
+      tree_scope = &owner_node->GetTreeScope();
+    } else if (Document* constructor_document =
+                   style_sheet->ConstructorDocument()) {
+      tree_scope = constructor_document;
+    }
   }
   if (tree_scope) {
     result->setOriginTreeScopeNodeId(tree_scope->RootNode().GetDomNodeId());
@@ -5299,7 +5337,8 @@ void InspectorCSSAgent::DidUpdateComputedStyle(Element* element,
   // included
   for (const auto& tracked_computed_style : tracked_computed_styles_) {
     const HashSet<String>& tracked_values = tracked_computed_style.value;
-    CSSPropertyRef ref(tracked_computed_style.key, element->GetDocument());
+    AtomicString property_name(tracked_computed_style.key);
+    CSSPropertyRef ref(&property_name, element->GetDocument());
     if (!ref.IsValid())
       continue;
     const CSSProperty& tracked_property = ref.GetProperty();

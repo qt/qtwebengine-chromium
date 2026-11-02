@@ -10,9 +10,10 @@ import type * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as NetworkForward from '../../panels/network/forward/forward.js';
+import * as Buttons from '../../ui/components/buttons/buttons.js';
 import {createIcon, type Icon} from '../../ui/kit/kit.js';
 import * as UI from '../../ui/legacy/legacy.js';
-import {html, render} from '../../ui/lit/lit.js';
+import {Directives, html, nothing, render, type TemplateResult} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
 import lockIconStyles from './lockIcon.css.js';
@@ -33,95 +34,94 @@ const {widget, widgetRef} = UI.Widget;
 
 const UIStrings = {
   /**
-   * @description Summary div text content in Security Panel of the Security panel
+   * @description Title of the overview section in the Security panel.
    */
   securityOverview: 'Security overview',
   /**
-   * @description Text to show something is secure
+   * @description Title of the section in the origin view indicating that the origin is secure.
    */
   secure: 'Secure',
   /**
-   * @description Sdk console message message level info of level Labels in Console View of the Console panel
+   * @description Tooltip for the neutral security state icon in the Security panel overview.
    */
   info: 'Info',
   /**
-   * @description Not secure div text content in Security Panel of the Security panel
+   * @description Title of the section in the origin view indicating that the connection is not secure.
    */
   notSecure: 'Not secure',
   /**
-   * @description Text to view a security certificate
+   * @description Text on the button that opens the certificate viewer.
    */
   viewCertificate: 'View certificate',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Tooltip for the broken security state icon in the Security panel.
    */
   notSecureBroken: 'Not secure (broken)',
   /**
-   * @description Main summary for page when it has been deemed unsafe by the SafeBrowsing service.
+   * @description Main summary in the Security panel when the page has been flagged as unsafe by Google Safe Browsing.
    */
   thisPageIsDangerousFlaggedBy: 'This page is dangerous (flagged by Google Safe Browsing).',
   /**
-   * @description Summary phrase for a security problem where the site is deemed unsafe by the SafeBrowsing service.
+   * @description Title of the security explanation when the page is flagged by Google Safe Browsing.
    */
   flaggedByGoogleSafeBrowsing: 'Flagged by Google Safe Browsing',
   /**
-   * @description Description of a security problem where the site is deemed unsafe by the SafeBrowsing service.
+   * @description Description of the security explanation directing the user to check the page's status on Safe Browsing.
    */
-  toCheckThisPagesStatusVisit: 'To check this page\'s status, visit g.co/safebrowsingstatus.',
+  toCheckThisPagesStatusVisit: 'To check this page’s status, visit g.co/safebrowsingstatus.',
   /**
-   * @description Main summary for a non cert error page.
+   * @description Main summary in the Security panel when the inspected page is an error page.
    */
   thisIsAnErrorPage: 'This is an error page.',
   /**
-   * @description Main summary for where the site is non-secure HTTP.
+   * @description Main summary in the Security panel when the site is accessed over unencrypted HTTP.
    */
   thisPageIsInsecureUnencrypted: 'This page is insecure (unencrypted HTTP).',
   /**
-   * @description Main summary for where the site has a non-cryptographic secure origin.
+   * @description Main summary in the Security panel when the page has a secure origin that does not use HTTPS.
    */
   thisPageHasANonhttpsSecureOrigin: 'This page has a non-HTTPS secure origin.',
   /**
-   * @description Message to display in devtools security tab when the page you are on triggered a safety tip.
+   * @description Summary of the security explanation when the page triggered a Chrome Safety Tip.
    */
   thisPageIsSuspicious: 'This page is suspicious',
   /**
-   * @description Body of message to display in devtools security tab when you are viewing a page that triggered a safety tip.
+   * @description First part of the description in the Security panel when a page triggered a bad reputation Safety Tip.
    */
   chromeHasDeterminedThatThisSiteS: 'Chrome has determined that this site could be fake or fraudulent.',
   /**
-   * @description Second part of the body of message to display in devtools security tab when you are viewing a page that triggered a safety tip.
+   * @description Second part of the description in the Security panel when a page triggered a bad reputation Safety Tip.
    */
-  ifYouBelieveThisIsShownIn:
-      'If you believe this is shown in error please visit https://g.co/chrome/lookalike-warnings.',
+  ifYouBelieveThisIsShownIn: 'If you believe this is shown in error, visit https://g.co/chrome/lookalike-warnings.',
   /**
-   * @description Summary of a warning when the user visits a page that triggered a Safety Tip because the domain looked like another domain.
+   * @description Summary of the security explanation when the visited domain looks similar to another known domain.
    */
   possibleSpoofingUrl: 'Possible spoofing URL',
   /**
-   * @description Body of a warning when the user visits a page that triggered a Safety Tip because the domain looked like another domain.
+   * @description Description of the security explanation when the visited domain looks similar to another known domain.
    * @example {wikipedia.org} PH1
    */
   thisSitesHostnameLooksSimilarToP:
-      'This site\'s hostname looks similar to {PH1}. Attackers sometimes mimic sites by making small, hard-to-see changes to the domain name.',
+      'This site’s hostname looks similar to {PH1}. Attackers sometimes mimic sites by making small, hard-to-see changes to the domain name.',
   /**
-   * @description second part of body of a warning when the user visits a page that triggered a Safety Tip because the domain looked like another domain.
+   * @description Second part of the description in the Security panel when a page triggered a lookalike domain Safety Tip.
    */
   ifYouBelieveThisIsShownInErrorSafety:
-      'If you believe this is shown in error please visit https://g.co/chrome/lookalike-warnings.',
+      'If you believe this is shown in error, visit https://g.co/chrome/lookalike-warnings.',
   /**
-   * @description Title of the devtools security tab when the page you are on triggered a safety tip.
+   * @description Main summary in the Security panel when the page triggered a Chrome Safety Tip.
    */
   thisPageIsSuspiciousFlaggedBy: 'This page is suspicious (flagged by Chrome).',
   /**
-   * @description Text for a security certificate
+   * @description Title of the certificate section in the Security panel explanations and origin view.
    */
   certificate: 'Certificate',
   /**
-   * @description Summary phrase for a security problem where the site's certificate chain contains a SHA1 signature.
+   * @description Summary phrase in the Security panel when the site's certificate chain contains a SHA-1 signature.
    */
   insecureSha: 'insecure (SHA-1)',
   /**
-   * @description Description of a security problem where the site's certificate chain contains a SHA1 signature.
+   * @description Description of the security explanation when the site's certificate chain contains a certificate signed using SHA-1.
    */
   theCertificateChainForThisSite: 'The certificate chain for this site contains a certificate signed using SHA-1.',
   /**
@@ -129,12 +129,12 @@ const UIStrings = {
    */
   subjectAlternativeNameMissing: '`Subject Alternative Name` missing',
   /**
-   * @description Description of a security problem where the site's certificate is missing a subjectAltName extension.
+   * @description Description of the security explanation when the site's certificate is missing a Subject Alternative Name extension.
    */
   theCertificateForThisSiteDoesNot:
-      'The certificate for this site does not contain a `Subject Alternative Name` extension containing a domain name or IP address.',
+      'The certificate for this site doesn’t contain a `Subject Alternative Name` extension containing a domain name or IP address.',
   /**
-   * @description Summary phrase for a security problem with the site's certificate.
+   * @description Summary phrase in the Security panel when the site's certificate is missing or invalid.
    */
   missing: 'missing',
   /**
@@ -143,7 +143,7 @@ const UIStrings = {
    */
   thisSiteIsMissingAValidTrusted: 'This site is missing a valid, trusted certificate ({PH1}).',
   /**
-   * @description Summary phrase for a site that has a valid server certificate.
+   * @description Summary phrase in the Security panel when the site has a valid server certificate.
    */
   validAndTrusted: 'valid and trusted',
   /**
@@ -153,28 +153,28 @@ const UIStrings = {
   theConnectionToThisSiteIsUsingA:
       'The connection to this site is using a valid, trusted server certificate issued by {PH1}.',
   /**
-   * @description Summary phrase for a security state where Private Key Pinning is ignored because the certificate chains to a locally-trusted root.
+   * @description Summary phrase in the Security panel when Public-Key-Pinning is bypassed due to a local root certificate.
    */
   publickeypinningBypassed: 'Public-Key-Pinning bypassed',
   /**
-   * @description Description of a security state where Private Key Pinning is ignored because the certificate chains to a locally-trusted root.
+   * @description Description of the security explanation when Public-Key-Pinning is bypassed by a local root certificate.
    */
   publickeypinningWasBypassedByA: 'Public-Key-Pinning was bypassed by a local root certificate.',
   /**
-   * @description Summary phrase for a site with a certificate that is expiring soon.
+   * @description Summary of the security explanation when the site's certificate is expiring soon.
    */
   certificateExpiresSoon: 'Certificate expires soon',
   /**
-   * @description Description for a site with a certificate that is expiring soon.
+   * @description Description of the security explanation when the site's certificate expires in less than 48 hours.
    */
   theCertificateForThisSiteExpires:
       'The certificate for this site expires in less than 48 hours and needs to be renewed.',
   /**
-   * @description Text that refers to the network connection
+   * @description Title of the connection section in the Security panel explanations and origin view.
    */
   connection: 'Connection',
   /**
-   * @description Summary phrase for a site that uses a modern, secure TLS protocol and cipher.
+   * @description Summary phrase in the Security panel when the site uses modern, secure connection settings.
    */
   secureConnectionSettings: 'secure connection settings',
   /**
@@ -186,244 +186,237 @@ const UIStrings = {
   theConnectionToThisSiteIs:
       'The connection to this site is encrypted and authenticated using {PH1}, {PH2}, and {PH3}.',
   /**
-   * @description A recommendation to the site owner to use a modern TLS protocol
+   * @description A recommendation to the site owner to use a modern TLS protocol.
    * @example {TLS 1.0} PH1
    */
   sIsObsoleteEnableTlsOrLater: '{PH1} is obsolete. Enable TLS 1.2 or later.',
   /**
-   * @description A recommendation to the site owner to use a modern TLS key exchange
+   * @description Recommendation to the site owner to enable an ECDHE-based cipher suite instead of RSA.
    */
   rsaKeyExchangeIsObsoleteEnableAn: 'RSA key exchange is obsolete. Enable an ECDHE-based cipher suite.',
   /**
-   * @description A recommendation to the site owner to use a modern TLS cipher
+   * @description A recommendation to the site owner to use a modern TLS cipher.
    * @example {3DES_EDE_CBC} PH1
    */
   sIsObsoleteEnableAnAesgcmbased: '{PH1} is obsolete. Enable an AES-GCM-based cipher suite.',
   /**
-   * @description A recommendation to the site owner to use a modern TLS server signature
+   * @description Recommendation to the site owner to enable a SHA-2 server signature algorithm instead of SHA-1.
    */
   theServerSignatureUsesShaWhichIs:
       'The server signature uses SHA-1, which is obsolete. Enable a SHA-2 signature algorithm instead. (Note this is different from the signature in the certificate.)',
   /**
-   * @description Summary phrase for a site that uses an outdated SSL settings (protocol, key exchange, or cipher).
+   * @description Summary phrase in the Security panel when the site uses outdated SSL settings (protocol, key exchange, or cipher).
    */
   obsoleteConnectionSettings: 'obsolete connection settings',
   /**
-   * @description A title of the 'Resources' action category
+   * @description Title of the resources section in the Security panel explanations.
    */
   resources: 'Resources',
   /**
-   * @description Summary for page when there is active mixed content
+   * @description Summary phrase in the Security panel when the page ran active mixed content.
    */
   activeMixedContent: 'active mixed content',
   /**
-   * @description Description for page when there is active mixed content
+   * @description Description of the security explanation when active mixed content (such as scripts or iframes) was allowed to run on the site.
    */
   youHaveRecentlyAllowedNonsecure:
       'You have recently allowed non-secure content (such as scripts or iframes) to run on this site.',
   /**
-   * @description Summary for page when there is mixed content
+   * @description Summary phrase in the Security panel when the page displayed passive mixed content.
    */
   mixedContent: 'mixed content',
   /**
-   * @description Description for page when there is mixed content
+   * @description Description of the security explanation when the page includes resources loaded over HTTP.
    */
   thisPageIncludesHttpResources: 'This page includes HTTP resources.',
   /**
-   * @description Summary for page when there is a non-secure form
+   * @description Summary phrase in the Security panel when the page contains a form with a non-secure action attribute.
    */
   nonsecureForm: 'non-secure form',
   /**
-   * @description Description for page when there is a non-secure form
+   * @description Description of the security explanation when the page includes a form with a non-secure action attribute.
    */
-  thisPageIncludesAFormWithA: 'This page includes a form with a non-secure "action" attribute.',
+  thisPageIncludesAFormWithA: 'This page includes a form with a non-secure `action` attribute.',
   /**
-   * @description Summary for the page when it contains active content with certificate error
+   * @description Summary phrase in the Security panel when active content with certificate errors was run on the site.
    */
   activeContentWithCertificate: 'active content with certificate errors',
   /**
-   * @description Description for the page when it contains active content with certificate error
+   * @description Description of the security explanation when active content loaded with certificate errors was allowed to run on the site.
    */
   youHaveRecentlyAllowedContent:
       'You have recently allowed content loaded with certificate errors (such as scripts or iframes) to run on this site.',
   /**
-   * @description Summary for page when there is active content with certificate errors
+   * @description Summary phrase in the Security panel when the page displayed content loaded with certificate errors.
    */
   contentWithCertificateErrors: 'content with certificate errors',
   /**
-   * @description Description for page when there is content with certificate errors
+   * @description Description of the security explanation when the page includes resources loaded with certificate errors.
    */
   thisPageIncludesResourcesThat: 'This page includes resources that were loaded with certificate errors.',
   /**
-   * @description Summary for page when all resources are served securely
+   * @description Summary phrase in the Security panel when all resources on the page are served securely.
    */
   allServedSecurely: 'all served securely',
   /**
-   * @description Description for page when all resources are served securely
+   * @description Description of the security explanation when all resources on the page are served securely.
    */
   allResourcesOnThisPageAreServed: 'All resources on this page are served securely.',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Title of the security explanation when mixed content requests were blocked on the page.
    */
   blockedMixedContent: 'Blocked mixed content',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Description of the security explanation when non-secure resources requested by the page were blocked.
    */
   yourPageRequestedNonsecure: 'Your page requested non-secure resources that were blocked.',
   /**
-   * @description Refresh prompt text content in Security Panel of the Security panel
+   * @description Prompt in the Security panel instructing the user to reload the page to record HTTP requests.
    */
   reloadThePageToRecordRequestsFor: 'Reload the page to record requests for HTTP resources.',
   /**
-   * @description Link text in the Security Panel. Clicking the link navigates the user to the
-   * Network panel. Requests refers to network requests. Each request is a piece of data transmitted
-   * from the current user's browser to a remote server.
+   * @description Link text in the Security panel. Clicking the link navigates the user to the Network panel. Requests refers to network requests. Each request is a piece of data transmitted from the current user's browser to a remote server.
    */
   viewDRequestsInNetworkPanel:
-      '{n, plural, =1 {View # request in Network Panel} other {View # requests in Network Panel}}',
+      '{n, plural, =1 {View # request in Network panel} other {View # requests in Network panel}}',
   /**
-   * @description Text for the origin of something
+   * @description Title of the origin header in the origin view of the Security panel.
    */
   origin: 'Origin',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Text on the button in the origin view that navigates to the Network panel filtered by origin.
    */
-  viewRequestsInNetworkPanel: 'View requests in Network Panel',
+  viewRequestsInNetworkPanel: 'View requests in Network panel',
   /**
-   * @description Text for security or network protocol
+   * @description Label for the protocol row in the connection details table of the Security panel.
    */
   protocol: 'Protocol',
   /**
-   * @description Text in the Security panel that refers to how the TLS handshake
-   *established encryption keys.
+   * @description Label for the key exchange row in the connection details table, referring to how the TLS handshake established encryption keys.
    */
   keyExchange: 'Key exchange',
   /**
-   * @description Text in Security Panel that refers to how the TLS handshake
-   *encrypted data.
+   * @description Label for the cipher row in the connection details table, referring to how the TLS handshake encrypted data.
    */
   cipher: 'Cipher',
   /**
-   * @description Text in Security Panel that refers to the signature algorithm
-   *used by the server for authenticate in the TLS handshake.
+   * @description Label for the server signature row in the connection details table, referring to the signature algorithm used by the server for authentication in the TLS handshake.
    */
   serverSignature: 'Server signature',
   /**
-   * @description Text in Security Panel that refers to whether the ClientHello
-   *message in the TLS handshake was encrypted.
+   * @description Label for the Encrypted ClientHello row in the connection details table, referring to whether the ClientHello message in the TLS handshake was encrypted.
    */
   encryptedClientHello: 'Encrypted ClientHello',
   /**
-   * @description Sct div text content in Security Panel of the Security panel
+   * @description Title of the Certificate Transparency section in the origin view of the Security panel.
    */
   certificateTransparency: 'Certificate Transparency',
   /**
-   * @description Text that refers to the subject of a security certificate
+   * @description Label for the subject row in the certificate details table of the Security panel.
    */
   subject: 'Subject',
   /**
-   * @description Text to show since when an item is valid
+   * @description Label for the valid from date row in the certificate details table of the Security panel.
    */
   validFrom: 'Valid from',
   /**
-   * @description Text to indicate the expiry date
+   * @description Label for the valid until date row in the certificate details table of the Security panel.
    */
   validUntil: 'Valid until',
   /**
-   * @description Text for the issuer of an item
+   * @description Label for the issuer row in the certificate details table of the Security panel.
    */
   issuer: 'Issuer',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Text on the button in the origin view that opens the full certificate viewer dialog.
    */
   openFullCertificateDetails: 'Open full certificate details',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Label for a Signed Certificate Timestamp (SCT) row in the Certificate Transparency summary table.
    */
   sct: 'SCT',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Label for the log name row in the Certificate Transparency details table.
    */
   logName: 'Log name',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Label for the log ID row in the Certificate Transparency details table.
    */
   logId: 'Log ID',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Label for the validation status row in the Certificate Transparency details table.
    */
   validationStatus: 'Validation status',
   /**
-   * @description Text for the source of something
+   * @description Label for the source row in the Certificate Transparency details table.
    */
   source: 'Source',
   /**
-   * @description Label for a date/time string in the Security panel. It indicates the time at which
-   * a security certificate was issued (created by an authority and distributed).
+   * @description Label for a date/time string in the Security panel. It indicates the time at which a security certificate was issued (created by an authority and distributed).
    */
   issuedAt: 'Issued at',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Label for the hash algorithm row in the Certificate Transparency details table.
    */
   hashAlgorithm: 'Hash algorithm',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Label for the signature algorithm row in the Certificate Transparency details table.
    */
   signatureAlgorithm: 'Signature algorithm',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Label for the signature data row in the Certificate Transparency details table.
    */
   signatureData: 'Signature data',
   /**
-   * @description Toggle scts details link text content in Security Panel of the Security panel
+   * @description Text on the button in the Certificate Transparency section to show detailed SCT information.
    */
   showFullDetails: 'Show full details',
   /**
-   * @description Toggle scts details link text content in Security Panel of the Security panel
+   * @description Text on the button in the Certificate Transparency section to hide detailed SCT information.
    */
   hideFullDetails: 'Hide full details',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Note in the Certificate Transparency section indicating that the request complies with Chrome's policy.
    */
-  thisRequestCompliesWithChromes: 'This request complies with `Chrome`\'s Certificate Transparency policy.',
+  thisRequestCompliesWithChromes: 'This request complies with Chrome’s Certificate Transparency policy.',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Note in the Certificate Transparency section indicating that the request does not comply with Chrome's policy.
    */
-  thisRequestDoesNotComplyWith: 'This request does not comply with `Chrome`\'s Certificate Transparency policy.',
+  thisRequestDoesNotComplyWith: 'This request doesn’t comply with Chrome’s Certificate Transparency policy.',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Note in the origin view warning that the response was loaded from cache and some details may be missing.
    */
   thisResponseWasLoadedFromCache: 'This response was loaded from cache. Some security details might be missing.',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Note in the origin view stating that the displayed details are from the first inspected response.
    */
   theSecurityDetailsAboveAreFrom: 'The security details above are from the first inspected response.',
   /**
-   * @description Main summary for where the site has a non-cryptographic secure origin.
+   * @description Note in the origin view when the origin is secure without using HTTPS (for example, chrome:// or about:).
    */
   thisOriginIsANonhttpsSecure: 'This origin is a non-HTTPS secure origin.',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Note in the origin view when the connection to the origin isn't secure.
    */
-  yourConnectionToThisOriginIsNot: 'Your connection to this origin is not secure.',
+  yourConnectionToThisOriginIsNot: 'Your connection to this origin isn’t secure.',
   /**
-   * @description No info div text content in Security Panel of the Security panel
+   * @description Title of the section in the origin view when no security information is available.
    */
   noSecurityInformation: 'No security information',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Note in the origin view indicating that no security details are available for the origin.
    */
   noSecurityDetailsAreAvailableFor: 'No security details are available for this origin.',
   /**
-   * @description San div text content in Security Panel of the Security panel
+   * @description Text displayed in the Subject Alternative Name (SAN) field when no SANs are present.
    */
   na: '(n/a)',
   /**
-   * @description Text to show less content
+   * @description Button text to collapse the Subject Alternative Name list when expanded.
    */
   showLess: 'Show less',
   /**
-   * @description Truncated santoggle text content in Security Panel of the Security panel
+   * @description Button text to expand the Subject Alternative Name list showing the total count.
    * @example {2} PH1
    */
   showMoreSTotal: 'Show more ({PH1} total)',
@@ -510,26 +503,31 @@ export function getSecurityStateIconForOverview(
   return createIcon(iconName, className);
 }
 
-export function createHighlightedUrl(url: Platform.DevToolsPath.UrlString, securityState: string): Element {
+function renderHighlightedUrl(url: Platform.DevToolsPath.UrlString, securityState: string): TemplateResult {
   const schemeSeparator = '://';
   const index = url.indexOf(schemeSeparator);
 
   // If the separator is not found, just display the text without highlighting.
   if (index === -1) {
-    const text = document.createElement('span');
-    text.textContent = url;
-    return text;
+    return html`<span>${url}</span>`;
   }
 
-  const highlightedUrl = document.createElement('span');
-  highlightedUrl.classList.add('highlighted-url');
   const scheme = url.substr(0, index);
   const content = url.substr(index + schemeSeparator.length);
-  highlightedUrl.createChild('span', 'url-scheme-' + securityState).textContent = scheme;
-  highlightedUrl.createChild('span', 'url-scheme-separator').textContent = schemeSeparator;
-  highlightedUrl.createChild('span').textContent = content;
 
-  return highlightedUrl;
+  return html`
+    <span class="highlighted-url">
+      <span class=${`url-scheme-${securityState}`}>${scheme}</span>
+      <span class="url-scheme-separator">${schemeSeparator}</span>
+      <span>${content}</span>
+    </span>`;
+}
+
+export function createHighlightedUrl(url: Platform.DevToolsPath.UrlString, securityState: string): Element {
+  const fragment = document.createDocumentFragment();
+  // eslint-disable-next-line @devtools/no-lit-render-outside-of-view
+  render(renderHighlightedUrl(url, securityState), fragment);
+  return fragment.firstElementChild as Element;
 }
 
 export interface ViewInput {
@@ -1314,12 +1312,48 @@ export class SecurityMainView extends UI.Widget.VBox {
   }
 }
 
+const SAN_NUM_SHOWN_WHEN_TRUNCATED = 2;
+
+function renderSan(sanList: string[], isSanListTruncatable: boolean, isSanListTruncated: boolean,
+                   onToggleTruncation: () => void): TemplateResult {
+  if (sanList.length === 0) {
+    return html`<div class="san empty-san">${i18nString(UIStrings.na)}</div>`;
+  }
+
+  const toggleButtonText =
+      isSanListTruncated ? i18nString(UIStrings.showMoreSTotal, {PH1: sanList.length}) : i18nString(UIStrings.showLess);
+
+  // clang-format off
+  return html`
+    <div class=${Directives.classMap({ san: true, 'truncated-san': isSanListTruncated })}>
+      ${sanList.map((san, index) => {
+        return html`
+          <span class=${Directives.classMap({
+            'san-entry': true,
+            'truncated-entry': isSanListTruncatable && index >= SAN_NUM_SHOWN_WHEN_TRUNCATED,
+          })}>${san}</span>`;
+      })}
+      ${isSanListTruncatable ? html`
+        <devtools-button
+          .variant=${Buttons.Button.Variant.OUTLINED}
+          .accessibleLabel=${toggleButtonText}
+          .accessibleExpanded=${!isSanListTruncated}
+          .jslogContext=${'security.toggle-san-truncation'}
+          @click=${onToggleTruncation}>${toggleButtonText}
+        </devtools-button>` : nothing}
+    </div>`;
+  // clang-format on
+}
+
 export class SecurityOriginView extends UI.Widget.VBox {
-  private readonly originLockIcon: HTMLElement;
+  readonly #origin: Platform.DevToolsPath.UrlString;
+  readonly #originDisplay: HTMLElement;
+
   constructor(origin: Platform.DevToolsPath.UrlString, originState: OriginState) {
     super({jslog: `${VisualLogging.pane('security.origin-view')}`});
     this.registerRequiredCSS(originViewStyles, lockIconStyles);
     this.setMinimumSize(200, 100);
+    this.#origin = origin;
 
     this.element.classList.add('security-origin-view');
 
@@ -1328,13 +1362,8 @@ export class SecurityOriginView extends UI.Widget.VBox {
     titleDiv.textContent = i18nString(UIStrings.origin);
     UI.ARIAUtils.markAsHeading(titleDiv, 1);
 
-    const originDisplay = titleSection.createChild('div', 'origin-display');
-    this.originLockIcon = originDisplay.createChild('span');
-    const icon = getSecurityStateIconForDetailedView(
-        originState.securityState, `security-property security-property-${originState.securityState}`);
-    this.originLockIcon.appendChild(icon);
-
-    originDisplay.appendChild(createHighlightedUrl(origin, originState.securityState));
+    this.#originDisplay = titleSection.createChild('div', 'origin-display');
+    this.#renderOriginDisplay(originState.securityState);
 
     const originNetworkDiv = titleSection.createChild('div', 'view-network-button');
     const originNetworkButton = UI.UIUtils.createTextButton(i18nString(UIStrings.viewRequestsInNetworkPanel), event => {
@@ -1420,7 +1449,7 @@ export class SecurityOriginView extends UI.Widget.VBox {
         UI.ARIAUtils.markAsHeading(sctDiv, 2);
       }
 
-      const sanDiv = this.createSanDiv(originState.securityDetails.sanList);
+      const sanDiv = this.#createSanDiv(originState.securityDetails.sanList);
       const validFromString = new Date(1000 * originState.securityDetails.validFrom).toUTCString();
       const validUntilString = new Date(1000 * originState.securityDetails.validTo).toUTCString();
 
@@ -1532,51 +1561,40 @@ export class SecurityOriginView extends UI.Widget.VBox {
     }
   }
 
-  private createSanDiv(sanList: string[]): Element {
-    const sanDiv = document.createElement('div');
-    if (sanList.length === 0) {
-      sanDiv.textContent = i18nString(UIStrings.na);
-      sanDiv.classList.add('empty-san');
-    } else {
-      const truncatedNumToShow = 2;
-      const listIsTruncated = sanList.length > truncatedNumToShow + 1;
-      for (let i = 0; i < sanList.length; i++) {
-        const span = sanDiv.createChild('span', 'san-entry');
-        span.textContent = sanList[i];
-        if (listIsTruncated && i >= truncatedNumToShow) {
-          span.classList.add('truncated-entry');
-        }
-      }
-      if (listIsTruncated) {
-        function toggleSANTruncation(): void {
-          const isTruncated = sanDiv.classList.contains('truncated-san');
-          let buttonText;
-          if (isTruncated) {
-            sanDiv.classList.remove('truncated-san');
-            buttonText = i18nString(UIStrings.showLess);
-          } else {
-            sanDiv.classList.add('truncated-san');
-            buttonText = i18nString(UIStrings.showMoreSTotal, {PH1: sanList.length});
-          }
-          truncatedSANToggle.textContent = buttonText;
-          UI.ARIAUtils.setLabel(truncatedSANToggle, buttonText);
-          UI.ARIAUtils.setExpanded(truncatedSANToggle, isTruncated);
-        }
-        const truncatedSANToggle = UI.UIUtils.createTextButton(
-            i18nString(UIStrings.showMoreSTotal, {PH1: sanList.length}), toggleSANTruncation,
-            {jslogContext: 'security.toggle-san-truncation'});
-        sanDiv.appendChild(truncatedSANToggle);
-        toggleSANTruncation();
-      }
-    }
-    return sanDiv;
+  #createSanDiv(sanList: string[]): Element {
+    const container = document.createElement('div');
+    const isSanListTruncatable = sanList.length > SAN_NUM_SHOWN_WHEN_TRUNCATED + 1;
+    let isSanListTruncated = isSanListTruncatable;
+
+    const onToggleTruncation = (): void => {
+      isSanListTruncated = !isSanListTruncated;
+      updateSan();
+    };
+
+    const updateSan = (): void => {
+      // eslint-disable-next-line @devtools/no-lit-render-outside-of-view
+      render(renderSan(sanList, isSanListTruncatable, isSanListTruncated, onToggleTruncation), container);
+    };
+
+    updateSan();
+    return container;
   }
 
   setSecurityState(newSecurityState: Protocol.Security.SecurityState): void {
-    this.originLockIcon.removeChildren();
-    const icon = getSecurityStateIconForDetailedView(
-        newSecurityState, `security-property security-property-${newSecurityState}`);
-    this.originLockIcon.appendChild(icon);
+    this.#renderOriginDisplay(newSecurityState);
+  }
+
+  #renderOriginDisplay(securityState: Protocol.Security.SecurityState): void {
+    const icon =
+        getSecurityStateIconForDetailedView(securityState, `security-property security-property-${securityState}`);
+
+    // clang-format off
+    // eslint-disable-next-line @devtools/no-lit-render-outside-of-view
+    render(html`
+      ${icon}
+      ${renderHighlightedUrl(this.#origin, securityState)}
+    `, this.#originDisplay);
+    // clang-format on
   }
 }
 

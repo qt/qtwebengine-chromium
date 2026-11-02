@@ -40,6 +40,8 @@
 {% set native_namespace = namespace_name.namespace_case() %}
 {% set native_dir = impl_dir + namespace_name.Dirs() %}
 #include "{{native_dir}}/Forward.h"
+#include "{{native_dir}}/IntegerTypes.h"
+#include "src/utils/span.h"
 
 #include <cmath>
 #include <optional>
@@ -107,7 +109,7 @@ namespace {{native_namespace}} {
         bool operator==(const StringView& rhs) const;
 
         #ifndef ABSL_USES_STD_STRING_VIEW
-        // NOLINTNEXTLINE(runtime/explicit) allow implicit conversion
+        // NOLINTNEXTLINE(google-explicit-constructor)
         operator absl::string_view() const {
             if (this->length == wgpu::kStrlen) {
                 if (IsUndefined()) {
@@ -120,8 +122,11 @@ namespace {{native_namespace}} {
         #endif
     };
 
+    // NOLINTBEGIN(bugprone-invalid-enum-default-initialization)
+
     {% for type in by_category["structure"] if type.name.get() not in SpecialStructures %}
         {% set CppType = as_cppType(type.name) %}
+        {% set spanify = not CppType in structure_spanification_blocklist %}
         {% if type.chained %}
             {% set chainedStructType = "ChainedStructOut" if type.chained == "out" else "ChainedStruct" %}
             struct {{CppType}} : {{chainedStructType}} {
@@ -147,6 +152,12 @@ namespace {{native_namespace}} {
                 {{chainedStructType}} * nextInChain = nullptr;
             {% endif %}
             {% for member in type.members %}
+                //* Align the first member after ChainedStruct to match the C struct layout.
+                //* It has to be aligned both to its natural and ChainedStruct's alignment.
+                {% if type.chained and loop.first %}
+                    alignas({{namespace}}::{{CppType}}::kFirstMemberAlignment)
+                {% endif %}
+
                 {% if type.name.get() == "bind group layout entry" %}
                     {% if member.name.canonical_case() == "buffer" %}
                         {% set forced_default_value = "{ nullptr, wgpu::BufferBindingType::BindingNotUsed, false, 0 }" %}
@@ -158,13 +169,20 @@ namespace {{native_namespace}} {
                         {% set forced_default_value = "{ nullptr, wgpu::StorageTextureAccess::BindingNotUsed, wgpu::TextureFormat::Undefined, wgpu::TextureViewDimension::e2D }" %}
                     {% endif %}
                 {% endif %}
-                {% set member_declaration = as_annotated_frontendType(member) + render_cpp_default_value(member, forced_default_value) %}
-                {% if type.chained and loop.first %}
-                    //* Align the first member after ChainedStruct to match the C struct layout.
-                    //* It has to be aligned both to its natural and ChainedStruct's alignment.
-                    alignas({{namespace}}::{{CppType}}::kFirstMemberAlignment) {{member_declaration}};
+
+                {% if spanify and member.is_length %}
+                    //* Skip as it's included in the span just below.
+                {% elif spanify and member.length and member.length != "constant" %}
+                    // TODO(https://crbug.com/524405497): Support fixed-length spans.
+                    {% if member.type.name.canonical_case() == "void" %}
+                        {% set element_type = "const std::byte" %}
+                    {% else %}
+                        {% set element_type = "std::remove_pointer_t<" + decorate(as_frontendType(member.type), member) + ">" %}
+                    {% endif %}
+                    {% set index_type = structure_span_index_type_override.get(CppType + "::" + as_varName(member.name), "size_t") %}
+                    ityp::span<{{index_type}}, {{element_type}}> {{as_varName(member.name)}};
                 {% else %}
-                    {{member_declaration}};
+                    {{as_annotated_frontendType(member)}} {{render_cpp_default_value(member, forced_default_value)}};
                 {% endif %}
             {% endfor %}
 
@@ -187,6 +205,7 @@ namespace {{native_namespace}} {
         };
 
     {% endfor %}
+    // NOLINTEND(bugprone-invalid-enum-default-initialization)
 
     {% for typeDef in by_category["typedef"] if typeDef.type.category == "structure" %}
         using {{as_cppType(typeDef.name)}} = {{as_cppType(typeDef.type.name)}};

@@ -59,7 +59,7 @@ class CFWL_Edit : public CFWL_Widget, public CFDE_TextEditEngine::Delegate {
   CFX_RectF GetWidgetRect() override;
   void Update() override;
   FWL_WidgetHit HitTest(const CFX_PointF& point) override;
-  void SetStates(uint32_t dwStates) override;
+  void SetStates(Mask<WidgetState> states) override;
   void DrawWidget(CFGAS_GEGraphics* pGraphics,
                   const CFX_Matrix& matrix) override;
   void OnProcessMessage(CFWL_Message* pMessage) override;
@@ -106,7 +106,6 @@ class CFWL_Edit : public CFWL_Widget, public CFDE_TextEditEngine::Delegate {
   void ShowCaret(CFX_RectF* pRect);
   void HideCaret(CFX_RectF* pRect);
   const CFX_RectF& GetRTClient() const { return client_rect_; }
-  CFDE_TextEditEngine* GetTxtEdtEngine() { return edit_engine_.get(); }
 
  private:
   void RenderText(CFX_RenderDevice* pRenderDev,

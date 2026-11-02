@@ -63,6 +63,8 @@ class Mask {
     return (val_ & that.val_) == that.val_;
   }
 
+  void Clear() { val_ = 0; }
+
   // Because ~ can't be applied to enum class without casting.
   void Clear(const Mask& that) { val_ &= ~that.val_; }
 

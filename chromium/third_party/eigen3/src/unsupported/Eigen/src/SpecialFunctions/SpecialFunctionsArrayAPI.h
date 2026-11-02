@@ -97,8 +97,6 @@ igammac(const Eigen::ArrayBase<Derived>& a, const Eigen::ArrayBase<ExponentDeriv
  *
  * \sa Eigen::digamma()
  */
-// * \warning Be careful with the order of the parameters: x.polygamma(n) is equivalent to polygamma(n,x)
-// * \sa ArrayBase::polygamma()
 template <typename DerivedN, typename DerivedX>
 EIGEN_STRONG_INLINE const Eigen::CwiseBinaryOp<Eigen::internal::scalar_polygamma_op<typename DerivedX::Scalar>,
                                                const DerivedN, const DerivedX>

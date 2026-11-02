@@ -4,7 +4,7 @@
 
 import {assert} from 'chai';
 
-import * as TextUtils from '../../../../models/text_utils/text_utils.js';
+import * as TextUtils from '../../../../core/text_utils/text_utils.js';
 import * as LinearMemoryInspectorComponents from '../../../../panels/linear_memory_inspector/components/components.js';
 import {raf, renderElementIntoDOM} from '../../../../testing/DOMHelpers.js';
 import {describeWithEnvironment} from '../../../../testing/EnvironmentHelpers.js';

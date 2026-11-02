@@ -39,8 +39,8 @@
 
 #if BUILDFLAG(IS_CHROMEOS)
 #include "ash/constants/ash_switches.h"
-#include "base/i18n/time_formatting.h"
-#include "third_party/icu/source/i18n/unicode/timezone.h"
+#include "base/strings/stringprintf.h"
+#include "base/time/time.h"
 #endif
 
 #if BUILDFLAG(IS_WIN)
@@ -171,12 +171,17 @@ LoggingDestination LoggingDestFromCommandLine(
   if (!enable_logging)
     return LOG_NONE;
   if (command_line.HasSwitch(switches::kEnableLogging)) {
-    // Let --enable-logging=stderr force only stderr, particularly useful for
-    // non-debug builds where otherwise you can't get logs to stderr at all.
     std::string logging_destination =
         command_line.GetSwitchValueASCII(switches::kEnableLogging);
+    // Let --enable-logging=stderr force only stderr, particularly useful for
+    // non-debug builds which otherwise default to LOG_TO_FILE.
     if (logging_destination == "stderr") {
-      return LOG_TO_SYSTEM_DEBUG_LOG | LOG_TO_STDERR;
+      return LOG_TO_STDERR;
+    }
+    // Use --enable-logging=system to write to the system debug log, such as
+    // Console.app / log(1) on Mac.
+    if (logging_destination == "system") {
+      return LOG_TO_SYSTEM_DEBUG_LOG;
     }
 #if BUILDFLAG(IS_WIN)
     if (logging_destination == "handle" &&
@@ -597,9 +602,11 @@ bool DialogsAreSuppressed() {
 #if BUILDFLAG(IS_CHROMEOS)
 base::FilePath GenerateTimestampedName(const base::FilePath& base_path,
                                        base::Time timestamp) {
-  return base_path.InsertBeforeExtensionASCII(
-      base::UnlocalizedTimeFormatWithPattern(timestamp, "_yyMMdd-HHmmss",
-                                             icu::TimeZone::getGMT()));
+  base::Time::Exploded exploded;
+  timestamp.UTCExplode(&exploded);
+  return base_path.InsertBeforeExtensionASCII(base::StringPrintf(
+      "_%02d%02d%02d-%02d%02d%02d", exploded.year % 100, exploded.month,
+      exploded.day_of_month, exploded.hour, exploded.minute, exploded.second));
 }
 #endif  // BUILDFLAG(IS_CHROMEOS)
 

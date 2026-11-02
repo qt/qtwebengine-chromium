@@ -4,6 +4,7 @@
 
 import {assert} from 'chai';
 
+import * as Common from '../../../core/common/common.js';
 import * as Platform from '../../../core/platform/platform.js';
 import * as SDK from '../../../core/sdk/sdk.js';
 import type * as Protocol from '../../../generated/protocol.js';
@@ -33,7 +34,7 @@ async function loadScriptFixture(
     ts: 0 as Trace.Types.Timing.Micro,
     inline: false,
     content: fixture.content,
-    sourceMap: new SDK.SourceMap.SourceMap(compiledUrl, mapUrl, fixture.sourceMapJson),
+    sourceMap: new SDK.SourceMap.SourceMap(compiledUrl, mapUrl, fixture.sourceMapJson, new Common.Console.Console()),
   };
 }
 
@@ -261,25 +262,26 @@ describeWithEnvironment('ScriptDuplication', function() {
 
       const results = Object.fromEntries([...getDuplication(scriptsData).entries()].map(([key, data]) => {
         return [
-          key, data.duplicates.map(v => ({scriptId: v.script.scriptId as string, resourceSize: v.attributedSize}))
+          key,
+          data.duplicates.map(v => ({scriptId: v.script.scriptId as string, resourceSize: v.attributedSize})),
         ];
       }));
       assert.deepEqual(results, {
         'coursehero:///Control/assets/js/vendor/ng/select/select.js': [
           {scriptId: '1.coursehero-bundle-1', resourceSize: 48513},
-          {scriptId: '1.coursehero-bundle-2', resourceSize: 48513}
+          {scriptId: '1.coursehero-bundle-2', resourceSize: 48513},
         ],
         'coursehero:///js/src/search/results/store/filter-store.ts': [
           {scriptId: '1.coursehero-bundle-1', resourceSize: 12717},
-          {scriptId: '1.coursehero-bundle-2', resourceSize: 12650}
+          {scriptId: '1.coursehero-bundle-2', resourceSize: 12650},
         ],
         'coursehero:///Control/assets/js/vendor/ng/select/angular-sanitize.js': [
           {scriptId: '1.coursehero-bundle-1', resourceSize: 9135},
-          {scriptId: '1.coursehero-bundle-2', resourceSize: 9135}
+          {scriptId: '1.coursehero-bundle-2', resourceSize: 9135},
         ],
         'coursehero:///js/src/common/component/school-search.tsx': [
           {scriptId: '1.coursehero-bundle-2', resourceSize: 5840},
-          {scriptId: '1.coursehero-bundle-1', resourceSize: 5316}
+          {scriptId: '1.coursehero-bundle-1', resourceSize: 5316},
         ],
         'node_modules/@babel/runtime': [
           {scriptId: '1.coursehero-bundle-1', resourceSize: 6929},
@@ -287,15 +289,15 @@ describeWithEnvironment('ScriptDuplication', function() {
         ],
         'coursehero:///js/src/search/results/view/filter/autocomplete-filter.tsx': [
           {scriptId: '1.coursehero-bundle-1', resourceSize: 3823},
-          {scriptId: '1.coursehero-bundle-2', resourceSize: 3812}
+          {scriptId: '1.coursehero-bundle-2', resourceSize: 3812},
         ],
         'coursehero:///js/src/common/component/search/abstract-taxonomy-search.tsx': [
           {scriptId: '1.coursehero-bundle-1', resourceSize: 3103},
-          {scriptId: '1.coursehero-bundle-2', resourceSize: 3098}
+          {scriptId: '1.coursehero-bundle-2', resourceSize: 3098},
         ],
         'coursehero:///js/src/search/results/view/filter/autocomplete-filter-with-icon.tsx': [
           {scriptId: '1.coursehero-bundle-1', resourceSize: 2696},
-          {scriptId: '1.coursehero-bundle-2', resourceSize: 2693}
+          {scriptId: '1.coursehero-bundle-2', resourceSize: 2693},
         ],
         'node_modules/lodash-es': [
           {scriptId: '1.coursehero-bundle-2', resourceSize: 4384},
@@ -303,26 +305,31 @@ describeWithEnvironment('ScriptDuplication', function() {
         ],
         'coursehero:///js/src/utils/service/amplitude-service.ts': [
           {scriptId: '1.coursehero-bundle-1', resourceSize: 1348},
-          {scriptId: '1.coursehero-bundle-2', resourceSize: 1325}
+          {scriptId: '1.coursehero-bundle-2', resourceSize: 1325},
         ],
         'coursehero:///js/src/search/results/view/filter/autocomplete-list.tsx': [
           {scriptId: '1.coursehero-bundle-2', resourceSize: 1143},
-          {scriptId: '1.coursehero-bundle-1', resourceSize: 1134}
+          {scriptId: '1.coursehero-bundle-1', resourceSize: 1134},
         ],
         'coursehero:///js/src/search/results/store/filter-actions.ts': [
-          {scriptId: '1.coursehero-bundle-2', resourceSize: 956}, {scriptId: '1.coursehero-bundle-1', resourceSize: 946}
+          {scriptId: '1.coursehero-bundle-2', resourceSize: 956},
+          {scriptId: '1.coursehero-bundle-1', resourceSize: 946},
         ],
         'coursehero:///js/src/search/results/store/item/resource-types.ts': [
-          {scriptId: '1.coursehero-bundle-1', resourceSize: 783}, {scriptId: '1.coursehero-bundle-2', resourceSize: 775}
+          {scriptId: '1.coursehero-bundle-1', resourceSize: 783},
+          {scriptId: '1.coursehero-bundle-2', resourceSize: 775},
         ],
         'coursehero:///js/src/utils/service/gsa-inmeta-tags.ts': [
-          {scriptId: '1.coursehero-bundle-1', resourceSize: 591}, {scriptId: '1.coursehero-bundle-2', resourceSize: 563}
+          {scriptId: '1.coursehero-bundle-1', resourceSize: 591},
+          {scriptId: '1.coursehero-bundle-2', resourceSize: 563},
         ],
         'coursehero:///js/src/search/results/service/api/filter-api-service.ts': [
-          {scriptId: '1.coursehero-bundle-1', resourceSize: 554}, {scriptId: '1.coursehero-bundle-2', resourceSize: 534}
+          {scriptId: '1.coursehero-bundle-1', resourceSize: 554},
+          {scriptId: '1.coursehero-bundle-2', resourceSize: 534},
         ],
         'coursehero:///js/src/common/component/search/course-search.tsx': [
-          {scriptId: '1.coursehero-bundle-2', resourceSize: 545}, {scriptId: '1.coursehero-bundle-1', resourceSize: 544}
+          {scriptId: '1.coursehero-bundle-2', resourceSize: 545},
+          {scriptId: '1.coursehero-bundle-1', resourceSize: 544},
         ],
       });
     });

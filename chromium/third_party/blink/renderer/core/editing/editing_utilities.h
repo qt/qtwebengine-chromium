@@ -73,9 +73,6 @@ CORE_EXPORT bool NeedsLayoutTreeUpdate(const PositionInFlatTree&);
 // Returns true if |node| has "user-select:contain".
 CORE_EXPORT bool IsUserSelectContain(const Node& /* node */);
 
-// Returns true if element is input element or has editable style.
-CORE_EXPORT bool IsEditableElement(const Node&);
-
 CORE_EXPORT bool IsEditable(const Node&);
 CORE_EXPORT bool IsRichlyEditable(const Node&);
 
@@ -123,9 +120,12 @@ CORE_EXPORT Node* EnclosingNodeOfType(
     EditingBoundaryCrossingRule = kCannotCrossEditingBoundary);
 
 HTMLSpanElement* TabSpanElement(const Node*);
-Element* TableElementJustAfter(const VisiblePosition&);
+CORE_EXPORT Element* TableElementJustBefore(const Position&);
+CORE_EXPORT Element* TableElementJustBefore(const PositionInFlatTree&);
 CORE_EXPORT Element* TableElementJustBefore(const VisiblePosition&);
 CORE_EXPORT Element* TableElementJustBefore(const VisiblePositionInFlatTree&);
+Element* TableElementJustAfter(const Position&);
+Element* TableElementJustAfter(const VisiblePosition&);
 Element* EnclosingTableCell(const Position&);
 Element* EnclosingTableCell(const PositionInFlatTree&);
 
@@ -160,21 +160,23 @@ inline bool CanHaveChildrenForEditing(const Node* node) {
 bool IsAtomicNode(const Node*);
 bool IsAtomicNodeInFlatTree(const Node*);
 CORE_EXPORT bool IsEnclosingBlock(const Node*);
-CORE_EXPORT bool IsTabHTMLSpanElement(const Node*);
-bool IsTabHTMLSpanElementTextNode(const Node*);
-bool IsMailHTMLBlockquoteElement(const Node*);
+// Returns true if the specified node is an HTMLSpanElement and its first child
+// is a Text, contains a TAB character, and the style has white-space:pre.
+CORE_EXPORT bool IsTabSpanElement(const Node*);
+bool IsTabSpanElementTextNode(const Node*);
+bool IsMailHtmlBlockquoteElement(const Node*);
 // Returns true if the specified node is visible <table>. We don't want to add
 // invalid nodes to <table> elements.
 bool IsDisplayInsideTable(const Node*);
 bool IsTableCell(const Node*);
 bool IsTablePartElement(const Node*);
-bool IsHTMLListElement(const Node*);
+bool IsHtmlListElement(const Node*);
 bool IsListItem(const Node*);
 bool IsListItemTag(const Node*);
 bool IsListElementTag(const Node*);
-bool IsPresentationalHTMLElement(const Node*);
+bool IsPresentationalHtmlElement(const Node*);
 CORE_EXPORT bool IsRenderedAsNonInlineTableImageOrHR(const Node*);
-bool IsNonTableCellHTMLBlockElement(const Node*);
+bool IsNonTableCellHtmlBlockElement(const Node*);
 bool IsBlockFlowElement(const Node&);
 bool IsInPasswordField(const Position&);
 CORE_EXPORT TextDirection DirectionOfEnclosingBlockOf(const Position&);
@@ -241,8 +243,9 @@ CORE_EXPORT PositionInFlatTree PreviousPositionOf(const PositionInFlatTree&,
 CORE_EXPORT PositionInFlatTree NextPositionOf(const PositionInFlatTree&,
                                               PositionMoveType);
 
-CORE_EXPORT int PreviousGraphemeBoundaryOf(const Node&, int current);
-CORE_EXPORT int NextGraphemeBoundaryOf(const Node&, int current);
+CORE_EXPORT wtf_size_t PreviousGraphemeBoundaryOf(const Node&,
+                                                  wtf_size_t current);
+CORE_EXPORT wtf_size_t NextGraphemeBoundaryOf(const Node&, wtf_size_t current);
 
 // Comparison functions on Position
 // Note: These functions reside in "compare_positions.cc" instead of
@@ -250,7 +253,7 @@ CORE_EXPORT int NextGraphemeBoundaryOf(const Node&, int current);
 
 // |disconnected| is optional output parameter having true if specified
 // positions don't have common ancestor.
-int16_t ComparePositionsInDOMTree(const Node* container_a,
+int16_t ComparePositionsInDomTree(const Node* container_a,
                                   int offset_a,
                                   const Node* container_b,
                                   int offset_b,

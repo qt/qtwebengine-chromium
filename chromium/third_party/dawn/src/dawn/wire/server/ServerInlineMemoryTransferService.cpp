@@ -29,44 +29,42 @@
 #include <memory>
 
 #include "dawn/wire/WireServer.h"
-#include "src/dawn/common/Assert.h"
 #include "src/dawn/wire/server/Server.h"
+#include "src/utils/assert.h"
 #include "src/utils/compiler.h"
 
 namespace dawn::wire::server {
 
 class InlineMemoryTransferService : public MemoryTransferService {
   public:
-    class ReadHandleImpl : public ReadHandle {
+    class MemoryHandleImpl : public MemoryHandle {
       public:
-        ReadHandleImpl() {}
-        ~ReadHandleImpl() override = default;
+        MemoryHandleImpl() {}
+        ~MemoryHandleImpl() override = default;
 
-        size_t SizeOfSerializeDataUpdate(size_t offset, size_t size) override { return size; }
-
-        void SerializeDataUpdate(std::span<const uint8_t> data,
-                                 size_t offset,
-                                 std::span<char> serializeData) override {
-            if (!data.empty()) {
-                DAWN_ASSERT(data.data() != nullptr);
-                DAWN_ASSERT(serializeData.data() != nullptr);
-                DAWN_UNSAFE_TODO(memcpy(serializeData.data(), data.data(), data.size()));
-            }
+        size_t GetSerializeDataUpdateSize(size_t offset, size_t size) const override {
+            return size;
         }
-    };
 
-    class WriteHandleImpl : public WriteHandle {
-      public:
-        WriteHandleImpl() {}
-        ~WriteHandleImpl() override = default;
+        void SerializeDataUpdate(std::span<volatile std::byte> serializeData,
+                                 size_t offset,
+                                 size_t size,
+                                 std::span<const std::byte> data) const override {
+            DAWN_ASSERT(serializeData.size() == GetSerializeDataUpdateSize(offset, size));
+            DAWN_ASSERT(data.size() == size);
+            DAWN_ASSERT(serializeData.size() >= data.size());
+            std::ranges::copy(data, serializeData.begin());
+        }
 
-        bool DeserializeDataUpdate(std::span<const uint8_t> deserializeData,
-                                   std::span<uint8_t> target,
-                                   size_t offset) override {
-            if (deserializeData.size() != target.size()) {
+        bool DeserializeDataUpdate(std::span<const std::byte> deserializeData,
+                                   size_t offset,
+                                   size_t size,
+                                   std::span<std::byte> target) override {
+            DAWN_ASSERT(target.size() == size);
+            if (size > deserializeData.size()) {
                 return false;
             }
-            DAWN_UNSAFE_TODO(memcpy(target.data(), deserializeData.data(), deserializeData.size()));
+            std::ranges::copy(deserializeData.subspan(0, size), target.begin());
             return true;
         }
     };
@@ -74,20 +72,12 @@ class InlineMemoryTransferService : public MemoryTransferService {
     InlineMemoryTransferService() {}
     ~InlineMemoryTransferService() override = default;
 
-    bool DeserializeReadHandle(const void* deserializePointer,
-                               size_t deserializeSize,
-                               ReadHandle** readHandle) override {
-        DAWN_ASSERT(readHandle != nullptr);
-        *readHandle = new ReadHandleImpl();
-        return true;
-    }
-
-    bool DeserializeWriteHandle(const void* deserializePointer,
-                                size_t deserializeSize,
-                                WriteHandle** writeHandle) override {
-        DAWN_ASSERT(writeHandle != nullptr);
-        *writeHandle = new WriteHandleImpl();
-        return true;
+    std::unique_ptr<MemoryHandle> DeserializeMemoryHandle(
+        std::span<const std::byte> creationData) override {
+        if (!creationData.empty()) {
+            return nullptr;
+        }
+        return std::make_unique<MemoryHandleImpl>();
     }
 };
 

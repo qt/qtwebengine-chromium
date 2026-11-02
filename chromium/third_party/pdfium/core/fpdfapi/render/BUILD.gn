@@ -52,8 +52,6 @@ source_set("render") {
     sources += [
       "cpdf_scaledrenderbuffer.cpp",
       "cpdf_scaledrenderbuffer.h",
-      "cpdf_windowsrenderdevice.cpp",
-      "cpdf_windowsrenderdevice.h",
     ]
   }
 }

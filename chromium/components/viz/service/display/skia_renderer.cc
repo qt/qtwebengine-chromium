@@ -122,6 +122,25 @@ namespace {
 BASE_FEATURE(kDumpWithoutCrashingOnMissingRenderPassBacking,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+// Killswitch for attempting to reuse scanout render pass backings across
+// non-contiguous frames.
+//
+// This is intended to improve time-to-FCP with partially delegated compositing
+// enabled, which we found to thrash allocations when going from NTP to surface
+// content fallback (i.e. a solid color quad that has no render pass) to the
+// actual surface content render pass.
+//
+// We make the assumption that there is usually, at most, one scanout render
+// pass backing (e.g. for the web contents) that may not always appear on
+// contiguous frames but maintains stable RenderPassRequirements.
+BASE_FEATURE(kReuseScanoutRenderPassBacking,
+#if BUILDFLAG(IS_WIN)
+             base::FEATURE_ENABLED_BY_DEFAULT
+#else
+             base::FEATURE_DISABLED_BY_DEFAULT
+#endif
+);
+
 // Smallest unit that impacts anti-aliasing output. We use this to determine
 // when an exterior edge (with AA) has been clipped (no AA). The specific value
 // was chosen to match that used by gl_renderer.
@@ -459,22 +478,7 @@ class SkiaRenderer::VizDebuggerLog {
               "render_pass_backings_ = [");
       for (auto& [render_pass_id, backing] : render_pass_backings) {
         base::trace_event::TracedValueJSON value;
-        base::trace_event::TracedValue::Dictionary(
-            {
-                {"size", backing.size.ToString()},
-                {"generate_mipmap", backing.generate_mipmap},
-                {"color_space", backing.color_space.ToString()},
-                {"alpha_type",
-                 backing.alpha_type == RenderPassAlphaType::kPremul ? "premul"
-                                                                    : "opaque"},
-                {"format", backing.format.ToString()},
-                {"mailbox", backing.mailbox.ToDebugString()},
-                {"is_root", backing.is_root},
-                {"is_scanout", backing.is_scanout},
-                {"scanout_dcomp_surface", backing.scanout_dcomp_surface},
-                {"drawn_rect", backing.drawn_rect.ToString()},
-            })
-            .WriteToValue(&value);
+        WriteRenderPassBackingToValue(backing, &value);
         DBG_LOG("renderer.skia.render_pass_backings", "%" PRIu64 ": %s",
                 render_pass_id.value(), value.ToFormattedJSON().c_str());
       }
@@ -489,21 +493,69 @@ class SkiaRenderer::VizDebuggerLog {
     DBG_CONNECTED_OR_TRACING(enabled);
     if (enabled) {
       base::trace_event::TracedValueJSON value;
-      base::trace_event::TracedValue::Dictionary(
-          {
-              {"size", requirements.size.ToString()},
-              {"generate_mipmap", requirements.generate_mipmap},
-              {"format", requirements.format.ToString()},
-              {"color_space", requirements.color_space.ToString()},
-              {"alpha_type", static_cast<int>(requirements.alpha_type)},
-              {"is_scanout", requirements.is_scanout},
-              {"scanout_dcomp_surface", requirements.scanout_dcomp_surface},
-          })
-          .WriteToValue(&value);
+      WriteRenderPassRequirementsToValue(requirements, &value);
       DBG_LOG("renderer.skia.render_pass_backings",
               "allocate backing for render_pass %" PRIu64 ", %s",
               render_pass_id.value(), value.ToFormattedJSON().c_str());
     }
+  }
+
+  static void DebugLogRenderPassBackingNotSufficient(
+      const AggregatedRenderPassId& render_pass_id,
+      const RenderPassBacking& backing,
+      const RenderPassRequirements& requirements) {
+    bool enabled;
+    DBG_CONNECTED_OR_TRACING(enabled);
+    if (enabled) {
+      base::trace_event::TracedValueJSON backing_value;
+      WriteRenderPassBackingToValue(backing, &backing_value);
+      base::trace_event::TracedValueJSON requirements_value;
+      WriteRenderPassRequirementsToValue(requirements, &requirements_value);
+      DBG_LOG("renderer.skia.render_pass_backings",
+              "render_pass %" PRIu64
+              " allocation no longer appropriate; backing = %s, "
+              "requirements = %s",
+              render_pass_id.value(), backing_value.ToFormattedJSON().c_str(),
+              requirements_value.ToFormattedJSON().c_str());
+    }
+  }
+
+ private:
+  static void WriteRenderPassBackingToValue(
+      const RenderPassBacking& backing,
+      base::trace_event::TracedValue* value) {
+    base::trace_event::TracedValue::Dictionary(
+        {
+            {"size", backing.size.ToString()},
+            {"generate_mipmap", backing.generate_mipmap},
+            {"color_space", backing.color_space.ToString()},
+            {"alpha_type", backing.alpha_type == RenderPassAlphaType::kPremul
+                               ? "premul"
+                               : "opaque"},
+            {"format", backing.format.ToString()},
+            {"mailbox", backing.mailbox.ToDebugString()},
+            {"is_root", backing.is_root},
+            {"is_scanout", backing.is_scanout},
+            {"scanout_dcomp_surface", backing.scanout_dcomp_surface},
+            {"drawn_rect", backing.drawn_rect.ToString()},
+        })
+        .WriteToValue(value);
+  }
+
+  static void WriteRenderPassRequirementsToValue(
+      const RenderPassRequirements& requirements,
+      base::trace_event::TracedValue* value) {
+    base::trace_event::TracedValue::Dictionary(
+        {
+            {"size", requirements.size.ToString()},
+            {"generate_mipmap", requirements.generate_mipmap},
+            {"format", requirements.format.ToString()},
+            {"color_space", requirements.color_space.ToString()},
+            {"alpha_type", static_cast<int>(requirements.alpha_type)},
+            {"is_scanout", requirements.is_scanout},
+            {"scanout_dcomp_surface", requirements.scanout_dcomp_surface},
+        })
+        .WriteToValue(value);
   }
 };
 
@@ -538,6 +590,27 @@ SkiaRenderer::RenderPassBacking::RenderPassBacking(
       buffer_queue(std::move(buffer_queue)) {}
 
 SkiaRenderer::RenderPassBacking::~RenderPassBacking() = default;
+
+bool SkiaRenderer::RenderPassBacking::IsSufficientForRequirements(
+    const RenderPassRequirements& requirements) const {
+  const bool size_is_exact_match = size == requirements.size;
+  const bool size_is_sufficient = size.width() >= requirements.size.width() &&
+                                  size.height() >= requirements.size.height();
+  const bool size_appropriate =
+      is_root ? size_is_exact_match : size_is_sufficient;
+  const bool mipmap_appropriate =
+      !requirements.generate_mipmap || generate_mipmap;
+  const bool no_change_in_format = requirements.format == format;
+  const bool no_change_in_alpha_type = requirements.alpha_type == alpha_type;
+  const bool no_change_in_color_space = requirements.color_space == color_space;
+  const bool scanout_appropriate =
+      requirements.is_scanout == is_scanout &&
+      requirements.scanout_dcomp_surface == scanout_dcomp_surface;
+
+  return size_appropriate && mipmap_appropriate && no_change_in_format &&
+         no_change_in_alpha_type && no_change_in_color_space &&
+         scanout_appropriate;
+}
 
 // chrome style prevents this from going in skia_renderer.h, but since it
 // uses std::optional, the style also requires it to have a declared ctor
@@ -640,6 +713,26 @@ SkiaRenderer::DrawQuadParams::DrawQuadParams(const gfx::Transform& cdt,
 
 #if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_OZONE) || BUILDFLAG(IS_WIN)
 struct SkiaRenderer::RenderPassOverlayParams {
+  RenderPassOverlayParams() = default;
+  RenderPassOverlayParams(RenderPassOverlayParams&& other) noexcept
+      : render_pass_id(other.render_pass_id),
+        render_pass_backing(std::move(other.render_pass_backing)),
+        rpdq(std::move(other.rpdq)),
+        shared_quad_state(std::move(other.shared_quad_state)),
+        ref_count(other.ref_count) {
+    rpdq.shared_quad_state = &shared_quad_state;
+  }
+
+  RenderPassOverlayParams& operator=(RenderPassOverlayParams&& other) noexcept {
+    render_pass_id = other.render_pass_id;
+    render_pass_backing = std::move(other.render_pass_backing);
+    rpdq = std::move(other.rpdq);
+    shared_quad_state = std::move(other.shared_quad_state);
+    ref_count = other.ref_count;
+    rpdq.shared_quad_state = &shared_quad_state;
+    return *this;
+  }
+
   AggregatedRenderPassId render_pass_id;
   RenderPassBacking render_pass_backing;
   AggregatedRenderPassDrawQuad rpdq;
@@ -1482,8 +1575,9 @@ void SkiaRenderer::DoDrawQuad(const DrawQuad* quad,
                               const gfx::QuadF* draw_region) {
   if (!current_canvas_)
     return;
-  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("viz.quads"),
-               "SkiaRenderer::DoDrawQuad");
+  TRACE_EVENT(TRACE_DISABLED_BY_DEFAULT("viz.quads"),
+              "SkiaRenderer::DoDrawQuad", "material",
+              DrawQuadMaterialToString(quad->material));
   DrawQuadParams params =
       CalculateDrawQuadParams(current_frame()->target_to_device_transform,
                               scissor_rect_, quad, draw_region);
@@ -3556,36 +3650,10 @@ void SkiaRenderer::UpdateRenderPassTextures(
     }
 
     const RenderPassRequirements& requirements = render_pass_it->second;
-    const bool size_is_exact_match = backing.size == requirements.size;
-    const bool size_is_sufficient =
-        backing.size.width() >= requirements.size.width() &&
-        backing.size.height() >= requirements.size.height();
-    bool size_appropriate =
-        backing.is_root ? size_is_exact_match : size_is_sufficient;
-    bool mipmap_appropriate =
-        !requirements.generate_mipmap || backing.generate_mipmap;
-    bool no_change_in_format = requirements.format == backing.format;
-    bool no_change_in_alpha_type =
-        requirements.alpha_type == backing.alpha_type;
-    bool no_change_in_color_space =
-        requirements.color_space == backing.color_space;
-    bool scanout_appropriate =
-        requirements.is_scanout == backing.is_scanout &&
-        requirements.scanout_dcomp_surface == backing.scanout_dcomp_surface;
-
-    if (!size_appropriate || !mipmap_appropriate || !no_change_in_format ||
-        !no_change_in_alpha_type || !no_change_in_color_space ||
-        !scanout_appropriate) {
+    if (!backing.IsSufficientForRequirements(requirements)) {
       passes_to_delete.push_back(backing_id);
-      DBG_LOG("renderer.skia.render_pass_backings",
-              "render_pass %" PRIu64
-              " allocation part not appropriate:%s%s%s%s%s%s",
-              backing_id.value(), !size_appropriate ? " size" : "",
-              !mipmap_appropriate ? " mipmap" : "",
-              !no_change_in_format ? " format" : "",
-              !no_change_in_alpha_type ? " alpha_type" : "",
-              !no_change_in_color_space ? " color_space" : "",
-              !scanout_appropriate ? " scanout" : "");
+      VizDebuggerLog::DebugLogRenderPassBackingNotSufficient(
+          backing_id, backing, requirements);
     }
   }
 
@@ -3600,7 +3668,28 @@ void SkiaRenderer::UpdateRenderPassTextures(
     // of non-root render pass backings that are managed by a BufferQueue will
     // be destroyed when the backing is destroyed.
     if (!(root_buffer_queue_ && backing.is_root) && !backing.buffer_queue) {
-      skia_output_surface_->DestroySharedImage(backing.mailbox);
+      const bool should_stash_scanout_backing =
+          backing.is_scanout && !scanout_backing_for_reuse_ &&
+          base::FeatureList::IsEnabled(kReuseScanoutRenderPassBacking);
+#if BUILDFLAG(IS_WIN)
+      // We only expect scanout backings with partially delegated compositing.
+      const bool delegated_compositing_enabled =
+          IsDelegatedCompositingSupportedAndEnabled(
+              output_surface_->capabilities().dc_support_level);
+#else
+      const bool delegated_compositing_enabled = false;
+#endif
+      if (should_stash_scanout_backing && delegated_compositing_enabled) {
+        // Stash a single scanout backing until the next time we try to allocate
+        // a scanout backing.
+        //
+        // If there are multiple scanout backings being discarded, only keep the
+        // first one we see. This is not a great heuristic, but it is not worse
+        // than not keeping a reuse pool.
+        scanout_backing_for_reuse_.emplace(std::move(backing));
+      } else {
+        skia_output_surface_->DestroySharedImage(backing.mailbox);
+      }
     }
     render_pass_backings_.erase(it);
   }
@@ -3664,6 +3753,32 @@ void SkiaRenderer::AllocateRenderPassResourceIfNeeded(
     // already in UpdateRenderPassTextures().
     DCHECK(!(root_buffer_queue_ && it->second.is_root));
     return;
+  }
+
+  // Try to reuse our previously stashed scanout backing, if possible. In the
+  // case that we cannot use it, opt to delete it to minimize memory usage.
+  if (requirements.is_scanout && scanout_backing_for_reuse_.has_value()) {
+    const RenderPassBacking& reusable = *scanout_backing_for_reuse_;
+    if (reusable.IsSufficientForRequirements(requirements)) {
+      const gpu::Mailbox& reused_mailbox = reusable.mailbox;
+      render_pass_backings_.emplace(
+          render_pass_id,
+          RenderPassBacking(requirements.size, requirements.generate_mipmap,
+                            requirements.color_space, requirements.alpha_type,
+                            requirements.format, reused_mailbox, is_root,
+                            requirements.is_scanout,
+                            requirements.scanout_dcomp_surface,
+                            /*buffer_queue=*/nullptr));
+      scanout_backing_for_reuse_.reset();
+      if (base::FeatureList::IsEnabled(
+              kDumpWithoutCrashingOnMissingRenderPassBacking)) {
+        seen_render_pass_ids_.insert(render_pass_id);
+      }
+      return;
+    } else {
+      skia_output_surface_->DestroySharedImage(reusable.mailbox);
+      scanout_backing_for_reuse_.reset();
+    }
   }
 
   gpu::SharedImageUsageSet usage = gpu::SHARED_IMAGE_USAGE_DISPLAY_READ |
@@ -3899,6 +4014,7 @@ SkiaRenderer::GetOrCreateRenderPassOverlayBacking(
   overlay_params.render_pass_id = render_pass_id;
   overlay_params.shared_quad_state.SetAll(*rpdq->shared_quad_state);
   overlay_params.rpdq.SetAll(*rpdq);
+  overlay_params.rpdq.shared_quad_state = &overlay_params.shared_quad_state;
 
   in_flight_render_pass_overlay_backings_.push_back(std::move(overlay_params));
 
@@ -3923,7 +4039,7 @@ void SkiaRenderer::PrepareRenderPassOverlay(
                                      current_frame()->root_render_pass);
 
   auto* shared_quad_state =
-      const_cast<SharedQuadState*>(quad->shared_quad_state);
+      const_cast<SharedQuadState*>(quad->shared_quad_state.get());
 
   std::optional<gfx::Transform> quad_to_target_transform_inverse;
   if (shared_quad_state->quad_to_target_transform.IsInvertible()) {
@@ -4345,6 +4461,13 @@ void SkiaRenderer::EnsureMinNumberOfBuffers(int n) {
       backing.buffer_queue->EnsureMinNumberOfBuffers(n);
     }
   }
+}
+
+int SkiaRenderer::GetCurrentAllocatedBuffers() const {
+  if (root_buffer_queue_) {
+    return root_buffer_queue_->GetCurrentAllocatedBuffers();
+  }
+  return 0;
 }
 
 #if BUILDFLAG(IS_OZONE)

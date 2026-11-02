@@ -18,6 +18,8 @@
 #include "generated/spirv_grammar_helper.h"
 #include "containers/container_utils.h"
 #include "module.h"
+#include <cassert>
+#include <cstdint>
 #include <spirv/unified1/spirv.hpp>
 #include <iostream>
 
@@ -38,8 +40,8 @@ const static OfflineFunction kOfflineFunctionCoopMat = {"inst_descriptor_class_g
 
 DescriptorClassGeneralBufferPass::DescriptorClassGeneralBufferPass(Module& module)
     : Pass(module, kOfflineModule),
-      has_robustness(module.enabled_features_.robustBufferAccess),
-      has_coop_mat_robustness(module.enabled_features_.cooperativeMatrixRobustBufferAccess) {
+      has_robustness(module.settings_.enabled_features->robustBufferAccess),
+      has_coop_mat_robustness(module.settings_.enabled_features->cooperativeMatrixRobustBufferAccess) {
     module.use_bda_ = true;
 }
 
@@ -54,21 +56,21 @@ uint32_t DescriptorClassGeneralBufferPass::GetLinkFunctionId(bool is_coop_mat) {
 
 void DescriptorClassGeneralBufferPass::CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InstructionMeta& meta) {
     assert(!meta.access_path.ac_list.empty());
-    const Constant& desc_set_constant = type_manager_.GetConstantUInt32(meta.descriptor_set);
-    const uint32_t desc_index_id = CastToUint32(meta.descriptor_index_id, block, inst_it);  // might be int32
+    const DescriptorInterface& interface = meta.access_path.variable->interface_;
+    const Constant& desc_set_constant = type_manager_.GetConstantUInt32(interface.set);
+    const uint32_t desc_index_id = CastToUint32(meta.access_path.descriptor_index_id, block, inst_it);  // might be int32
 
-    const uint32_t descriptor_offset_id =
-        GetLastByte(*meta.descriptor_type, meta.access_path.ac_list, meta.coop_mat_access, block, inst_it);
+    const uint32_t descriptor_offset_id = GetLastByte(meta.access_path, block, inst_it);
 
     const auto& layout_lut = module_.interface_.instrumentation_dsl.set_index_to_bindings_layout_lut;
-    BindingLayout binding_layout = layout_lut[meta.descriptor_set][meta.descriptor_binding];
+    BindingLayout binding_layout = layout_lut[interface.set][interface.binding];
     const Constant& binding_layout_offset = type_manager_.GetConstantUInt32(binding_layout.start);
 
     const uint32_t inst_position = meta.target_instruction->GetPositionOffset();
     const uint32_t inst_position_id = type_manager_.CreateConstantUInt32(inst_position).Id();
 
     const uint32_t function_result = module_.TakeNextId();
-    const bool is_coop_mat = meta.coop_mat_access.used;
+    const bool is_coop_mat = meta.access_path.coop_mat.used;
     const uint32_t function_def = GetLinkFunctionId(is_coop_mat);
     const uint32_t void_type = type_manager_.GetTypeVoid().Id();
 
@@ -84,6 +86,7 @@ bool DescriptorClassGeneralBufferPass::RequiresInstrumentation(const Function& f
                                                                InstructionMeta& meta) {
     const uint32_t opcode = inst.Opcode();
 
+    // Only known way to access a UBO/SSBO
     if (!IsValueIn(spv::Op(opcode),
                    {spv::OpLoad, spv::OpStore, spv::OpCooperativeMatrixLoadKHR, spv::OpCooperativeMatrixStoreKHR}) &&
         !AtomicOperation(opcode)) {
@@ -99,63 +102,37 @@ bool DescriptorClassGeneralBufferPass::RequiresInstrumentation(const Function& f
     if (!meta.access_path.IsValid()) {
         return false;
     }
-    const Variable& access_variable = *meta.access_path.variable;
 
-    uint32_t storage_class = access_variable.StorageClass();
+    if (meta.access_path.ac_list.empty()) {
+        // Apperently thie is possible, but not sure if this means we should consider this offset zero into the buffer, as that
+        // technically not allowed with typed pointers, so for now just skip these as seems no actual code generators produce this
+        // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/12618
+        return false;
+    }
+
+    uint32_t storage_class = meta.access_path.variable->StorageClass();
+    // The idea is General Buffer will not include any UniformConstant descriptor type
     if (storage_class != spv::StorageClassUniform && storage_class != spv::StorageClassStorageBuffer) {
         return false;
     }
 
-    meta.descriptor_type = access_variable.PointerType(type_manager_);
-    if (!meta.descriptor_type || meta.descriptor_type->spv_type_ == SpvType::kRuntimeArray) {
+    if (meta.access_path.pointer_type->spv_type_ == SpvType::kRuntimeArray) {
         return false;  // TODO - Currently we mark these as "bindless"
     }
 
-    const bool is_descriptor_array = meta.descriptor_type->IsArray();
-    meta.descriptor_id = is_descriptor_array ? meta.descriptor_type->inst_.Operand(0) : meta.descriptor_type->Id();
+    const bool is_descriptor_array = meta.access_path.pointer_type->IsArray();
+    meta.descriptor_block_type_id =
+        is_descriptor_array ? meta.access_path.pointer_type->inst_.Operand(0) : meta.access_path.pointer_type->Id();
+    assert(type_manager_.FindTypeById(meta.descriptor_block_type_id)->spv_type_ == SpvType::kStruct && "unexpected block type");
 
-    // Check for deprecated storage block form
-    if (storage_class == spv::StorageClassUniform) {
-        assert(type_manager_.FindTypeById(meta.descriptor_id)->spv_type_ == SpvType::kStruct && "unexpected block type");
-
-        const bool block_found = GetDecoration(meta.descriptor_id, spv::DecorationBlock) != nullptr;
-
-        // If block decoration not found, verify deprecated form of SSBO
-        if (!block_found) {
-            assert(GetDecoration(meta.descriptor_id, spv::DecorationBufferBlock) != nullptr && "block decoration not found");
-            storage_class = spv::StorageClassStorageBuffer;
-        }
-    }
-
-    // Grab front() as it will be the "final" type we access
-    const Type* value_type = type_manager_.FindValueTypeById(meta.access_path.FinalAccessedType());
-    if (!value_type) {
-        return false;
-    }
-
-    if (is_descriptor_array) {
-        // Because you can't have 2D array of descriptors, the first index of the last accessChain is the descriptor index
-        meta.descriptor_index_id = meta.access_path.DescriptorIndexId();
-    } else {
-        // There is no array of this descriptor, so we essentially have an array of 1
-        meta.descriptor_index_id = type_manager_.GetConstantZeroUint32().Id();
-    }
-
-    GetDescriptorSetAndBinding(access_variable.Id(), meta.descriptor_set, meta.descriptor_binding);
-
-    if (meta.descriptor_set >= glsl::kDebugInputBindlessMaxDescSets) {
+    if (meta.access_path.variable->interface_.set >= glsl::kDebugInputBindlessMaxDescSets) {
         module_.InternalWarning(Name(), "Tried to use a descriptor slot over the current max limit");
         return false;
     }
 
-    // The way CoopMat works, we need to get the size here as the type is not found in the access chains
-    if (is_coop_mat) {
-        meta.coop_mat_access = GetCooperativeMatrixAccess(inst, function);
-    }
-
     if (!module_.settings_.safe_mode) {
-        meta.access_offset =
-            FindOffsetInStruct(meta.descriptor_id, &meta.coop_mat_access, is_descriptor_array, meta.access_path.ac_list);
+        meta.access_offset = FindOffsetInStruct(meta.descriptor_block_type_id, &meta.access_path.coop_mat, is_descriptor_array,
+                                                meta.access_path.ac_list);
     }
 
     // Save information to be used to make the Function
@@ -205,9 +182,9 @@ bool DescriptorClassGeneralBufferPass::Instrument() {
 
                     if (meta.access_offset != 0) {
                         // set offset for the first loop of the block
-                        auto map_it = block_highest_offset_map.find(meta.descriptor_id);
+                        auto map_it = block_highest_offset_map.find(meta.descriptor_block_type_id);
                         if (map_it == block_highest_offset_map.end()) {
-                            block_highest_offset_map[meta.descriptor_id] = meta.access_offset;
+                            block_highest_offset_map[meta.descriptor_block_type_id] = meta.access_offset;
                         } else {
                             map_it->second = std::max(map_it->second, meta.access_offset);
                         }
@@ -223,7 +200,7 @@ bool DescriptorClassGeneralBufferPass::Instrument() {
                 }
 
                 if (!module_.settings_.safe_mode && meta.access_offset != 0) {
-                    const uint32_t block_highest_offset = block_highest_offset_map[meta.descriptor_id];
+                    const uint32_t block_highest_offset = block_highest_offset_map[meta.descriptor_block_type_id];
                     if (meta.access_offset < block_highest_offset) {
                         continue;  // skipping because other instruction in block will be a higher offset
                     }
@@ -240,6 +217,10 @@ bool DescriptorClassGeneralBufferPass::Instrument() {
         }
     }
 
+    return instrumentations_count_ != 0;
+}
+
+void DescriptorClassGeneralBufferPass::PostProcess() {
     if (instrumentations_count_ > 75) {
         module_.InternalWarning(
             "GPUAV-Compile-time-general-buffer",
@@ -247,8 +228,6 @@ bool DescriptorClassGeneralBufferPass::Instrument() {
             "checks for storage/uniform "
             "buffers. Turn on the |gpuav_force_on_robustness| setting to skip these checks and improve GPU-AV performance.");
     }
-
-    return instrumentations_count_ != 0;
 }
 
 }  // namespace spirv

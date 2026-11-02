@@ -4,6 +4,7 @@
 
 #include "components/exo/shell_surface.h"
 
+#include <algorithm>
 #include <sstream>
 #include <vector>
 
@@ -24,6 +25,7 @@
 #include "base/compiler_specific.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
+#include "base/scoped_observation.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/bind.h"
 #include "base/test/mock_callback.h"
@@ -51,10 +53,13 @@
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/capture_client.h"
+#include "ui/aura/client/capture_client_observer.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
 #include "ui/aura/window_event_dispatcher.h"
+#include "ui/aura/window_observer.h"
 #include "ui/aura/window_targeter.h"
+#include "ui/aura/window_tracker.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/mojom/ui_base_types.mojom-shared.h"
@@ -81,8 +86,10 @@
 #include "ui/views/widget/any_widget_observer.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/caption_button_layout_constants.h"
+#include "ui/wm/core/capture_controller.h"
 #include "ui/wm/core/shadow_controller.h"
 #include "ui/wm/core/shadow_types.h"
+#include "ui/wm/core/transient_window_manager.h"
 #include "ui/wm/core/window_properties.h"
 #include "ui/wm/core/window_util.h"
 
@@ -227,6 +234,52 @@ cc::Region CreateRegion(ui::Layer::ShapeRects shape_rects) {
   }
   return shape_region;
 }
+
+class PopupDestroyer : public aura::WindowObserver,
+                       public aura::client::CaptureClientObserver {
+ public:
+  explicit PopupDestroyer(views::Widget* widget_to_destroy)
+      : widget_to_destroy_(widget_to_destroy) {
+    window_observation_.Observe(widget_to_destroy->GetNativeWindow());
+    capture_observation_.Observe(WMHelper::GetInstance()->GetCaptureClient());
+  }
+  PopupDestroyer(const PopupDestroyer&) = delete;
+  PopupDestroyer& operator=(const PopupDestroyer&) = delete;
+  ~PopupDestroyer() override = default;
+
+  // aura::WindowObserver:
+  void OnWindowDestroying(aura::Window* window) override {
+    if (window_observation_.IsObservingSource(window)) {
+      window_observation_.Reset();
+    }
+    widget_to_destroy_ = nullptr;
+    capture_observation_.Reset();
+  }
+
+  // aura::client::CaptureClientObserver:
+  void OnCaptureChanged(aura::Window* lost_capture,
+                        aura::Window* gained_capture) override {
+    if (gained_capture == window_observation_.GetSource() &&
+        widget_to_destroy_) {
+      // Destroy the widget.
+      views::Widget* widget = widget_to_destroy_;
+      widget_to_destroy_ = nullptr;
+
+      window_observation_.Reset();
+      capture_observation_.Reset();
+
+      widget->CloseNow();
+    }
+  }
+
+ private:
+  raw_ptr<views::Widget> widget_to_destroy_;
+  base::ScopedObservation<aura::Window, aura::WindowObserver>
+      window_observation_{this};
+  base::ScopedObservation<aura::client::CaptureClient,
+                          aura::client::CaptureClientObserver>
+      capture_observation_{this};
+};
 
 }  // namespace
 
@@ -4227,6 +4280,28 @@ TEST_F(ShellSurfaceTest, SetRestoreInfo) {
                 app_restore::kRestoreWindowIdKey));
 }
 
+// Test that restore info supplied by a client is dropped when the server's
+// SecurityDelegate does not allow it.
+TEST_F(ShellSurfaceTest, SetRestoreInfoNotAllowed) {
+  exo::test::TestSecurityDelegate security_delegate;
+  security_delegate.SetCanSetRestoreInfo(false);
+
+  auto shell_surface = test::ShellSurfaceBuilder({20, 30})
+                           .SetSecurityDelegate(&security_delegate)
+                           .SetNoCommit()
+                           .BuildShellSurface();
+
+  shell_surface->SetRestoreInfo(200, 100);
+  shell_surface->SetRestoreInfoWithWindowIdSource(200, "app_id");
+  shell_surface->Restore();
+  shell_surface->root_surface()->Commit();
+
+  aura::Window* window = shell_surface->GetWidget()->GetNativeWindow();
+  EXPECT_EQ(0, window->GetProperty(app_restore::kWindowIdKey));
+  EXPECT_EQ(0, window->GetProperty(app_restore::kRestoreWindowIdKey));
+  EXPECT_EQ(nullptr, window->GetProperty(app_restore::kAppIdKey));
+}
+
 TEST_F(ShellSurfaceTest, SetNotPersistable) {
   auto shell_surface = test::ShellSurfaceBuilder(gfx::Size(20, 30))
                            .SetNoCommit()
@@ -4303,6 +4378,24 @@ TEST_F(ShellSurfaceTest, SetSystemModal) {
 
   EXPECT_EQ(ui::mojom::ModalType::kSystem, shell_surface->GetModalType());
   EXPECT_FALSE(shell_surface->frame_enabled());
+}
+
+TEST_F(ShellSurfaceTest, SetSystemModalNotAllowed) {
+  exo::test::TestSecurityDelegate security_delegate;
+  security_delegate.SetCanSetSystemModal(false);
+
+  std::unique_ptr<ShellSurface> shell_surface =
+      test::ShellSurfaceBuilder({256, 256})
+          .SetUseSystemModalContainer()
+          .SetSecurityDelegate(&security_delegate)
+          .SetNoCommit()
+          .BuildShellSurface();
+
+  shell_surface->SetSystemModal(true);
+  shell_surface->root_surface()->Commit();
+
+  EXPECT_NE(ui::mojom::ModalType::kSystem, shell_surface->GetModalType());
+  EXPECT_FALSE(ash::Shell::IsSystemModalWindowOpen());
 }
 
 TEST_F(ShellSurfaceTest, PipInitialPosition) {
@@ -4941,9 +5034,9 @@ TEST_F(ShellSurfaceTest, DisplayLayoutConfigurationUpdatesSurfaceOrigin) {
   EXPECT_EQ(kNewOrigin + gfx::Vector2d(0, kVerticalOffset), client_origin);
 }
 
-// Tests the unnecessary occlusion events are fired when opaque buffer and no
+// Tests that minimal occlusion events are fired when opaque buffer and no
 // frame are used.
-TEST_F(ShellSurfaceTest, DisplayScaleChangeDoesNotSendOcclusionUpdates) {
+TEST_F(ShellSurfaceTest, DisplayScaleChangeSendsMinimalOcclusionUpdates) {
   std::unique_ptr<ShellSurface> shell_surface1 =
       test::ShellSurfaceBuilder({256, 256})
           .SetRootFormat(kOpaqueFormat)
@@ -4978,9 +5071,12 @@ TEST_F(ShellSurfaceTest, DisplayScaleChangeDoesNotSendOcclusionUpdates) {
 
   EXPECT_FALSE(window1->GetTransparent());
   EXPECT_FALSE(window2->GetTransparent());
-  const std::vector<gfx::Rect> kMaximizedOpaqueRegion{gfx::Rect(800, 552)};
-  EXPECT_EQ(kMaximizedOpaqueRegion, window1->opaque_regions_for_occlusion());
-  EXPECT_EQ(kMaximizedOpaqueRegion, window2->opaque_regions_for_occlusion());
+
+  // Before commit, the host window is still 256x256 and centered.
+  const std::vector<gfx::Rect> kIntermediateOpaqueRegion{
+      gfx::Rect(272, 148, 256, 256)};
+  EXPECT_EQ(kIntermediateOpaqueRegion, window1->opaque_regions_for_occlusion());
+  EXPECT_EQ(kIntermediateOpaqueRegion, window2->opaque_regions_for_occlusion());
 
   // Update root surfaces (this happens asynchronously normally) and set
   // occlusion tracking.
@@ -4994,6 +5090,10 @@ TEST_F(ShellSurfaceTest, DisplayScaleChangeDoesNotSendOcclusionUpdates) {
       test::ExoTestHelper::CreateBuffer(shell_surface2.get(), kOpaqueFormat);
   surface2->Attach(surface2_buffer.get());
   surface2->Commit();
+
+  const std::vector<gfx::Rect> kMaximizedOpaqueRegion{gfx::Rect(800, 552)};
+  EXPECT_EQ(kMaximizedOpaqueRegion, window1->opaque_regions_for_occlusion());
+  EXPECT_EQ(kMaximizedOpaqueRegion, window2->opaque_regions_for_occlusion());
 
   SurfaceObserverForTest observer1(surface1->window()->GetOcclusionState());
   surface1->AddSurfaceObserver(&observer1);
@@ -5023,7 +5123,7 @@ TEST_F(ShellSurfaceTest, DisplayScaleChangeDoesNotSendOcclusionUpdates) {
     surface2->Attach(surface2_buffer_zoom.get());
     surface2->Commit();
   }
-  EXPECT_EQ(0, observer1.num_occlusion_state_changes());
+  EXPECT_EQ(2, observer1.num_occlusion_state_changes());
   EXPECT_EQ(0, observer2.num_occlusion_state_changes());
 
   display_manager->ZoomDisplay(display_id, /*up=*/false);
@@ -5039,7 +5139,7 @@ TEST_F(ShellSurfaceTest, DisplayScaleChangeDoesNotSendOcclusionUpdates) {
   }
   // Should not get any occlusion changes - requires occlusion tracking clip
   // to the root window and that the shelf occlude what is below it, too.
-  EXPECT_EQ(0, observer1.num_occlusion_state_changes());
+  EXPECT_EQ(2, observer1.num_occlusion_state_changes());
   EXPECT_EQ(0, observer2.num_occlusion_state_changes());
 
   // Test Snapped State
@@ -5049,7 +5149,7 @@ TEST_F(ShellSurfaceTest, DisplayScaleChangeDoesNotSendOcclusionUpdates) {
 
   window_state1->OnWMEvent(&snap_event);
   window_state2->OnWMEvent(&snap_event);
-  EXPECT_EQ(0, observer1.num_occlusion_state_changes());
+  EXPECT_EQ(2, observer1.num_occlusion_state_changes());
   EXPECT_EQ(0, observer2.num_occlusion_state_changes());
 
   EXPECT_TRUE(window1->GetTransparent());
@@ -5069,7 +5169,7 @@ TEST_F(ShellSurfaceTest, DisplayScaleChangeDoesNotSendOcclusionUpdates) {
     surface2->Attach(snapped_buffer2.get());
     surface2->Commit();
   }
-  EXPECT_EQ(0, observer1.num_occlusion_state_changes());
+  EXPECT_EQ(2, observer1.num_occlusion_state_changes());
   EXPECT_EQ(0, observer2.num_occlusion_state_changes());
 
   display_manager->ZoomDisplay(display_id, /*up=*/true);
@@ -5084,7 +5184,7 @@ TEST_F(ShellSurfaceTest, DisplayScaleChangeDoesNotSendOcclusionUpdates) {
     surface2->Attach(snapped_buffer2.get());
     surface2->Commit();
   }
-  EXPECT_EQ(0, observer1.num_occlusion_state_changes());
+  EXPECT_EQ(4, observer1.num_occlusion_state_changes());
   EXPECT_EQ(0, observer2.num_occlusion_state_changes());
 
   display_manager->ZoomDisplay(display_id, /*up=*/false);
@@ -5099,16 +5199,61 @@ TEST_F(ShellSurfaceTest, DisplayScaleChangeDoesNotSendOcclusionUpdates) {
     surface2->Attach(snapped_buffer2.get());
     surface2->Commit();
   }
-  EXPECT_EQ(0, observer1.num_occlusion_state_changes());
+  EXPECT_EQ(4, observer1.num_occlusion_state_changes());
   EXPECT_EQ(0, observer2.num_occlusion_state_changes());
 
   // Make sure the occlusion tracking is working.
   surface2->RemoveSurfaceObserver(&observer2);
   shell_surface2.reset();
 
-  EXPECT_EQ(1, observer1.num_occlusion_state_changes());
+  EXPECT_EQ(5, observer1.num_occlusion_state_changes());
 
   surface1->RemoveSurfaceObserver(&observer1);
+}
+
+// A frameless xdg-toplevel with a tiny opaque buffer can be maximized to trick
+// occlusion tracking. This test ensures the opaque region is properly clamped
+// to the surface content to prevent DLP bypass.
+TEST_F(ShellSurfaceTest, TinyOpaqueMaximizedSurfaceFalselyOccludesUnderlying) {
+  const gfx::Rect work_area =
+      display::Screen::Get()->GetPrimaryDisplay().work_area();
+
+  // Stand-in for a Chrome browser window hosting confidential WebContents.
+  // Occlusion tracking feeds WebContents::GetVisibility().
+  std::unique_ptr<aura::Window> victim = CreateToplevelTestWindow(work_area);
+  victim->TrackOcclusionState();
+  ASSERT_EQ(aura::Window::OcclusionState::VISIBLE, victim->GetOcclusionState());
+
+  // An untrusted Crostini Wayland client creates a frameless xdg-toplevel with
+  // a 4x4 opaque buffer. This makes FillsBoundsOpaquely() evaluate to true.
+  constexpr gfx::Size kTinyBuffer(4, 4);
+  std::unique_ptr<ShellSurface> attacker =
+      test::ShellSurfaceBuilder(kTinyBuffer)
+          .SetRootFormat(kOpaqueFormat)
+          .BuildShellSurface();
+  aura::Window* attacker_widget = attacker->GetWidget()->GetNativeWindow();
+
+  ASSERT_EQ(ui::LAYER_NOT_DRAWN, attacker_widget->layer()->type());
+  ASSERT_TRUE(attacker->root_surface()->FillsBoundsOpaquely());
+
+  // The client maximizes the window but never resizes its buffer.
+  attacker->Maximize();
+
+  // The opaque_regions_for_occlusion is correctly set to the 4x4 surface
+  // content.
+  ASSERT_FALSE(attacker_widget->opaque_regions_for_occlusion().empty());
+  EXPECT_EQ(kTinyBuffer,
+            attacker_widget->opaque_regions_for_occlusion()[0].size());
+
+  // WindowOcclusionTracker does not union the full work area.
+  // The underlying victim window remains VISIBLE.
+  EXPECT_EQ(aura::Window::OcclusionState::VISIBLE, victim->GetOcclusionState());
+
+  // The cc/viz compositor keeps compositing the victim's pixels.
+  // This is now consistent with the occlusion tracker.
+  EXPECT_EQ(kTinyBuffer, attacker->host_window()->bounds().size());
+  EXPECT_TRUE(attacker->host_window()->GetTransparent());
+  EXPECT_EQ(gfx::SizeF(kTinyBuffer), attacker->root_surface()->content_size());
 }
 
 TEST_F(ShellSurfaceTest, GetWidgetHitTestMask) {
@@ -5261,6 +5406,309 @@ TEST_F(ShellSurfaceTest, AccessibleChildTreeNodeAppId) {
   shell_surface->GetViewAccessibility().GetAccessibleNodeData(&data);
   EXPECT_FALSE(
       data.HasStringAttribute(ax::mojom::StringAttribute::kChildTreeNodeAppId));
+}
+
+// Tests that if a parent popup is destroyed while gaining capture (e.g. by an
+// observer) during a capture transfer from its child popup, we do not
+// use-after-free the parent popup.
+//
+// Structure:
+// shell_surface
+//     |
+// popup_A (grab)
+//     |
+// popup_B (grab)
+TEST_F(ShellSurfaceTest, ParentPopupDestroyedDuringCaptureTransfer) {
+  constexpr gfx::Size kBufferSize(256, 256);
+  auto shell_surface =
+      test::ShellSurfaceBuilder(kBufferSize).BuildShellSurface();
+  shell_surface->GetWidget()->SetBounds({256, 256});
+
+  auto popup_shell_surface_A = test::ShellSurfaceBuilder(kBufferSize)
+                                   .SetParent(shell_surface.get())
+                                   .SetOrigin(gfx::Point(50, 50))
+                                   .SetAsPopup()
+                                   .SetGrab()
+                                   .SetDisableMovement()
+                                   .BuildShellSurface();
+  EXPECT_TRUE(IsCaptureWindow(popup_shell_surface_A.get()));
+
+  auto popup_shell_surface_B = test::ShellSurfaceBuilder(kBufferSize)
+                                   .SetParent(popup_shell_surface_A.get())
+                                   .SetOrigin(gfx::Point(100, 50))
+                                   .SetAsPopup()
+                                   .SetGrab()
+                                   .SetDisableMovement()
+                                   .BuildShellSurface();
+  EXPECT_TRUE(IsCaptureWindow(popup_shell_surface_B.get()));
+
+  // Verify transient parent relationship.
+  EXPECT_EQ(wm::GetTransientParent(
+                popup_shell_surface_B->GetWidget()->GetNativeWindow()),
+            popup_shell_surface_A->GetWidget()->GetNativeWindow());
+
+  aura::Window* A_window =
+      popup_shell_surface_A->GetWidget()->GetNativeWindow();
+  aura::Window* B_window =
+      popup_shell_surface_B->GetWidget()->GetNativeWindow();
+  wm::TransientWindowManager::GetOrCreate(B_window)
+      ->set_parent_controls_lifetime(true);
+  const auto& children =
+      wm::TransientWindowManager::GetOrCreate(A_window)->transient_children();
+  bool B_is_child_before =
+      std::find(children.begin(), children.end(), B_window) != children.end();
+  EXPECT_TRUE(B_is_child_before);
+
+  aura::WindowTracker tracker({A_window, B_window});
+
+  // Install observer to destroy popup A's widget when it gains capture.
+  PopupDestroyer destroyer(popup_shell_surface_A->GetWidget());
+
+  // Trigger OnCaptureChanged on popup B, with lost_capture = B and
+  // gained_capture = nullptr. This will try to restore capture to popup A.
+  // During StartCapture on popup A, A will gain capture.
+  // The observer will destroy popup A's widget (and thus B's widget should be
+  // cascade destroyed). Without the fix, this will UAF.
+  popup_shell_surface_B->OnCaptureChanged(B_window, nullptr);
+
+  EXPECT_FALSE(tracker.Contains(A_window));
+  // B is not destroyed because CloseAllShellSurfaceTransientChildren removes it
+  // from A's transient children during A's widget closing.
+  EXPECT_TRUE(tracker.Contains(B_window));
+}
+
+// Tests that when a child popup (B) loses capture, and capture is restored to
+// its parent (A), and the parent (A) is destroyed while gaining capture,
+// another sibling popup (C, also a child of A) is closed because its parent (A)
+// was destroyed.
+//
+// Structure:
+// shell_surface
+//     |
+// popup_A (grab)
+//    /   \
+//   /     \
+// popup_C  popup_B (grab)
+TEST_F(ShellSurfaceTest, SiblingPopupClosedWhenParentGainedCaptureDestroyed) {
+  constexpr gfx::Size kBufferSize(256, 256);
+  auto shell_surface =
+      test::ShellSurfaceBuilder(kBufferSize).BuildShellSurface();
+  shell_surface->GetWidget()->SetBounds({256, 256});
+
+  // Create Popup A (child of shell_surface) with grab.
+  auto popup_shell_surface_A = test::ShellSurfaceBuilder(kBufferSize)
+                                   .SetParent(shell_surface.get())
+                                   .SetOrigin(gfx::Point(50, 50))
+                                   .SetAsPopup()
+                                   .SetGrab()
+                                   .SetDisableMovement()
+                                   .BuildShellSurface();
+
+  // Create Popup C (child of A) without grab.
+  auto popup_shell_surface_C = test::ShellSurfaceBuilder(kBufferSize)
+                                   .SetParent(popup_shell_surface_A.get())
+                                   .SetOrigin(gfx::Point(150, 50))
+                                   .SetAsPopup()
+                                   .SetDisableMovement()
+                                   .BuildShellSurface();
+
+  // Create Popup B (child of A) with grab.
+  auto popup_shell_surface_B = test::ShellSurfaceBuilder(kBufferSize)
+                                   .SetParent(popup_shell_surface_A.get())
+                                   .SetOrigin(gfx::Point(100, 50))
+                                   .SetAsPopup()
+                                   .SetGrab()
+                                   .SetDisableMovement()
+                                   .BuildShellSurface();
+
+  aura::Window* A_window =
+      popup_shell_surface_A->GetWidget()->GetNativeWindow();
+  aura::Window* B_window =
+      popup_shell_surface_B->GetWidget()->GetNativeWindow();
+  aura::Window* C_window =
+      popup_shell_surface_C->GetWidget()->GetNativeWindow();
+
+  // B should have capture.
+  EXPECT_TRUE(IsCaptureWindow(popup_shell_surface_B.get()));
+
+  // Set close callbacks.
+  bool B_close_requested = false;
+  popup_shell_surface_B->set_close_callback(
+      base::BindLambdaForTesting([&]() { B_close_requested = true; }));
+  bool C_close_requested = false;
+  popup_shell_surface_C->set_close_callback(
+      base::BindLambdaForTesting([&]() { C_close_requested = true; }));
+
+  // Install observer to destroy popup A's widget when it gains capture.
+  PopupDestroyer destroyer(popup_shell_surface_A->GetWidget());
+
+  aura::WindowTracker tracker({A_window, B_window, C_window});
+
+  // Trigger capture change by releasing capture from B.
+  // Exo should try to restore capture to A.
+  wm::CaptureController::Get()->SetCapture(nullptr);
+
+  // A should be destroyed immediately.
+  EXPECT_FALSE(tracker.Contains(A_window));
+
+  // B's close callback should have been called (lost capture).
+  EXPECT_TRUE(B_close_requested);
+
+  // C's close callback should have been called (closed because parent A was
+  // destroyed).
+  EXPECT_TRUE(C_close_requested);
+}
+
+// Tests that explicitly transferring capture from a child popup (B) to its
+// parent popup (A) keeps the parent popup (A) open.
+//
+// Structure:
+// shell_surface
+//     |
+// popup_A (grab)
+//     |
+// popup_B (grab)
+TEST_F(ShellSurfaceTest, CaptureTransferToParentKeepsParentOpen) {
+  constexpr gfx::Size kBufferSize(256, 256);
+  auto shell_surface =
+      test::ShellSurfaceBuilder(kBufferSize).BuildShellSurface();
+  shell_surface->GetWidget()->SetBounds({256, 256});
+
+  // Create Popup A (child of shell_surface)
+  auto popup_shell_surface_A = test::ShellSurfaceBuilder(kBufferSize)
+                                   .SetParent(shell_surface.get())
+                                   .SetOrigin(gfx::Point(50, 50))
+                                   .SetAsPopup()
+                                   .SetGrab()
+                                   .SetDisableMovement()
+                                   .BuildShellSurface();
+
+  // Create Popup B (child of A)
+  auto popup_shell_surface_B = test::ShellSurfaceBuilder(kBufferSize)
+                                   .SetParent(popup_shell_surface_A.get())
+                                   .SetOrigin(gfx::Point(100, 50))
+                                   .SetAsPopup()
+                                   .SetGrab()
+                                   .SetDisableMovement()
+                                   .BuildShellSurface();
+
+  aura::Window* A_window =
+      popup_shell_surface_A->GetWidget()->GetNativeWindow();
+
+  // B should have capture.
+  EXPECT_TRUE(IsCaptureWindow(popup_shell_surface_B.get()));
+
+  // Set close callback on A and B.
+  bool A_close_requested = false;
+  popup_shell_surface_A->set_close_callback(
+      base::BindLambdaForTesting([&]() { A_close_requested = true; }));
+  bool B_close_requested = false;
+  popup_shell_surface_B->set_close_callback(
+      base::BindLambdaForTesting([&]() { B_close_requested = true; }));
+
+  // Trigger capture change by setting capture to A (parent).
+  wm::CaptureController::Get()->SetCapture(A_window);
+
+  // B's close callback should have been called.
+  EXPECT_TRUE(B_close_requested);
+
+  // A's close callback should NOT have been called.
+  EXPECT_FALSE(A_close_requested);
+}
+
+// Tests that when capture is transferred to a sibling popup (D) which destroys
+// itself immediately upon gaining capture, the popup that lost capture (B) and
+// its child (C) are correctly requested to close, and can be destroyed without
+// UAF.
+//
+// Structure:
+// shell_surface
+//     |
+// popup_A
+//    /   \
+//   /     \
+// popup_B  popup_D (gains capture -> destroys itself)
+//   |
+// popup_C
+TEST_F(ShellSurfaceTest, PopupLostCaptureToSelfDestroyingSibling) {
+  constexpr gfx::Size kBufferSize(256, 256);
+  auto shell_surface =
+      test::ShellSurfaceBuilder(kBufferSize).BuildShellSurface();
+  shell_surface->GetWidget()->SetBounds({256, 256});
+
+  // Create Popup A (root popup)
+  auto popup_shell_surface_A = test::ShellSurfaceBuilder(kBufferSize)
+                                   .SetParent(shell_surface.get())
+                                   .SetOrigin(gfx::Point(50, 50))
+                                   .SetAsPopup()
+                                   .SetGrab()
+                                   .SetDisableMovement()
+                                   .BuildShellSurface();
+
+  // Create Popup B (child of A)
+  auto popup_shell_surface_B = test::ShellSurfaceBuilder(kBufferSize)
+                                   .SetParent(popup_shell_surface_A.get())
+                                   .SetOrigin(gfx::Point(100, 50))
+                                   .SetAsPopup()
+                                   .SetGrab()
+                                   .SetDisableMovement()
+                                   .BuildShellSurface();
+
+  // Create Popup C (child of B)
+  auto popup_shell_surface_C = test::ShellSurfaceBuilder(kBufferSize)
+                                   .SetParent(popup_shell_surface_B.get())
+                                   .SetOrigin(gfx::Point(150, 50))
+                                   .SetAsPopup()
+                                   .SetDisableMovement()
+                                   .BuildShellSurface();
+
+  // Create Popup D (child of A)
+  auto popup_shell_surface_D = test::ShellSurfaceBuilder(kBufferSize)
+                                   .SetParent(popup_shell_surface_A.get())
+                                   .SetOrigin(gfx::Point(200, 50))
+                                   .SetAsPopup()
+                                   .SetDisableMovement()
+                                   .BuildShellSurface();
+
+  aura::Window* B_window =
+      popup_shell_surface_B->GetWidget()->GetNativeWindow();
+  aura::Window* C_window =
+      popup_shell_surface_C->GetWidget()->GetNativeWindow();
+  aura::Window* D_window =
+      popup_shell_surface_D->GetWidget()->GetNativeWindow();
+
+  // B should have capture.
+  EXPECT_TRUE(IsCaptureWindow(popup_shell_surface_B.get()));
+
+  aura::WindowTracker tracker({B_window, C_window, D_window});
+
+  // Install observer to destroy popup D's widget when it gains capture.
+  PopupDestroyer destroyer(popup_shell_surface_D->GetWidget());
+
+  // Set close callbacks to verify they are closed.
+  bool B_close_requested = false;
+  popup_shell_surface_B->set_close_callback(
+      base::BindLambdaForTesting([&]() { B_close_requested = true; }));
+  bool C_close_requested = false;
+  popup_shell_surface_C->set_close_callback(
+      base::BindLambdaForTesting([&]() { C_close_requested = true; }));
+
+  // Trigger capture change by setting capture to D.
+  wm::CaptureController::Get()->SetCapture(D_window);
+
+  // D should be destroyed immediately.
+  EXPECT_FALSE(tracker.Contains(D_window));
+
+  // B and C should have lost capture and been requested to close.
+  EXPECT_TRUE(B_close_requested);
+  EXPECT_TRUE(C_close_requested);
+
+  // Simulate client destroying B and C in response to close request.
+  popup_shell_surface_B.reset();
+  popup_shell_surface_C.reset();
+
+  EXPECT_FALSE(tracker.Contains(B_window));
+  EXPECT_FALSE(tracker.Contains(C_window));
 }
 
 }  // namespace exo

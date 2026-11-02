@@ -24,6 +24,12 @@
 // This header is designed as the interface that can be shared between the instrumentation passes and the rest of GPU-AV
 
 struct Location;
+struct DeviceFeatures;
+struct CachedDescriptorSize;
+
+namespace vvl {
+struct DeviceExtensionProperties;
+}
 
 namespace spirv {
 struct Module;
@@ -81,6 +87,8 @@ struct InstrumentationInterface {
     InstrumentationDescriptorSetLayouts instrumentation_dsl;
     const VkSpecializationInfo* specialization_info = nullptr;
 
+    const VkShaderDescriptorSetAndBindingMappingInfoEXT* mapping_info = nullptr;
+
     // Used for MeshPass to know if a task will be used as well
     bool has_task_shader = false;
 
@@ -109,12 +117,20 @@ struct DeviceSettings {
     bool print_debug_info;
     // zero is same as "unlimited"
     uint32_t max_instrumentations_count;
+    bool disable_dontinline;
     bool support_non_semantic_info;
     // Lets us embed the size instead of calling OpArrayLength
     uint32_t error_buffer_data_length;
     uint32_t debug_printf_buffer_size;
-    // maxComputeSharedMemorySize limit
-    uint32_t max_compute_shared_memory_size;
+
+    bool descriptor_hashing;
+    uint32_t descriptor_hashing_total_descriptors;
+
+    CachedDescriptorSize* cached_descriptor_size;
+
+    const VkPhysicalDeviceProperties* phys_dev_props;
+    const vvl::DeviceExtensionProperties* phys_dev_ext_props;
+    const DeviceFeatures* enabled_features;
 };
 
 // When running the DebugPrintf pass, if we detect an instrumented shader has a printf call (for debugging) we can hold them until

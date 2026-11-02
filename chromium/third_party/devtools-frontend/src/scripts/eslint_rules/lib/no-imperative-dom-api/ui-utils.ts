@@ -152,7 +152,7 @@ export const uiUtils: RuleCreator = {
             domFragment.attributes.push({
               key: 'jslog',
               value: '${VisualLogging.textField(' + sourceCode.getText(jslogContext) +
-                  ').track({keydown: \'Enter\', change: true})}'
+                  ').track({keydown: \'Enter\', change: true})}',
             });
           }
         }
@@ -239,5 +239,5 @@ export const uiUtils: RuleCreator = {
         return false;
       },
     };
-  }
+  },
 };

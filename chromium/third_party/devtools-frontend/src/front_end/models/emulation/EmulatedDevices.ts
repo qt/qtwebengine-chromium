@@ -7,6 +7,7 @@
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
+import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 
@@ -14,15 +15,15 @@ import {Insets, MaxDeviceSize, MinDeviceSize} from './DeviceModeModel.js';
 
 const UIStrings = {
   /**
-   * @description Title of the Laptop with touch device
+   * @description Title of the Laptop with touch device.
    */
   laptopWithTouch: 'Laptop with touch',
   /**
-   * @description Title of the Laptop with HiDPI screen device
+   * @description Title of the Laptop with HiDPI screen device.
    */
   laptopWithHiDPIScreen: 'Laptop with HiDPI screen',
   /**
-   * @description Title of the Laptop with MDPI screen device
+   * @description Title of the Laptop with MDPI screen device.
    */
   laptopWithMDPIScreen: 'Laptop with MDPI screen',
 } as const;
@@ -101,6 +102,15 @@ export class EmulatedDevice {
         return new Insets(
             parseIntValue(json, 'left'), parseIntValue(json, 'top'), parseIntValue(json, 'right'),
             parseIntValue(json, 'bottom'));
+      }
+
+      function parseCutoutShape(json: any): CutoutShape {
+        const shape = parseValue(json, 'shape', 'string');
+        if (shape !== CutoutShape.PILL && shape !== CutoutShape.NOTCH && shape !== CutoutShape.CIRCLE &&
+            shape !== CutoutShape.RECTANGLE) {
+          throw new Error('Emulated device mode has unsupported cutout shape: ' + shape);
+        }
+        return shape;
       }
 
       function parseRGBA(json: any): SDK.OverlayModel.HighlightColor {
@@ -257,6 +267,40 @@ export class EmulatedDevice {
           throw new Error('Emulated device mode \'' + mode.title + '\'has wrong mode insets');
         }
         mode.image = (parseValue(modes[i], 'image', 'string', null) as string);
+        const safeAreaInsets = parseValue(modes[i], 'safe-area-insets', 'object', null);
+        if (safeAreaInsets) {
+          mode.safeAreaInsets = parseInsets(safeAreaInsets);
+        }
+        const cutout = parseValue(modes[i], 'cutout', 'object', null);
+        if (cutout) {
+          const shape = parseCutoutShape(cutout);
+          const baseCutout = {
+            x: parseIntValue(cutout, 'x'),
+            y: parseIntValue(cutout, 'y'),
+            width: parseIntValue(cutout, 'width'),
+            height: parseIntValue(cutout, 'height'),
+          };
+          if (shape === CutoutShape.PILL) {
+            mode.cutout = {shape, ...baseCutout, borderRadius: parseIntValue(cutout, 'border-radius')};
+          } else if (shape === CutoutShape.NOTCH) {
+            mode.cutout = {
+              shape,
+              ...baseCutout,
+              upperRadius: parseIntValue(cutout, 'upper-radius'),
+              lowerRadius: parseIntValue(cutout, 'lower-radius'),
+            };
+          } else if (shape === CutoutShape.CIRCLE) {
+            mode.cutout = {
+              shape,
+              ...baseCutout,
+              cx: parseIntValue(cutout, 'cx'),
+              cy: parseIntValue(cutout, 'cy'),
+              radius: parseIntValue(cutout, 'radius'),
+            };
+          } else {
+            mode.cutout = {shape, ...baseCutout};
+          }
+        }
         result.modes.push(mode);
       }
       result.#showByDefault = (parseValue(json, 'show-by-default', 'boolean', undefined) as boolean);
@@ -359,6 +403,35 @@ export class EmulatedDevice {
         },
         image: this.modes[i].image || undefined,
       };
+      const safeAreaInsets = this.modes[i].safeAreaInsets;
+      if (safeAreaInsets) {
+        mode['safe-area-insets'] = {
+          left: safeAreaInsets.left,
+          top: safeAreaInsets.top,
+          right: safeAreaInsets.right,
+          bottom: safeAreaInsets.bottom,
+        };
+      }
+      const cutout = this.modes[i].cutout;
+      if (cutout) {
+        mode.cutout = {
+          shape: cutout.shape,
+          x: cutout.x,
+          y: cutout.y,
+          width: cutout.width,
+          height: cutout.height,
+        };
+        if (cutout.shape === CutoutShape.PILL) {
+          mode.cutout['border-radius'] = cutout.borderRadius;
+        } else if (cutout.shape === CutoutShape.NOTCH) {
+          mode.cutout['upper-radius'] = cutout.upperRadius;
+          mode.cutout['lower-radius'] = cutout.lowerRadius;
+        } else if (cutout.shape === CutoutShape.CIRCLE) {
+          mode.cutout.cx = cutout.cx;
+          mode.cutout.cy = cutout.cy;
+          mode.cutout.radius = cutout.radius;
+        }
+      }
       json['modes'].push(mode);
     }
 
@@ -503,22 +576,20 @@ enum Show {
   /* eslint-enable @typescript-eslint/naming-convention */
 }
 
-let emulatedDevicesListInstance: EmulatedDevicesList;
-
 export class EmulatedDevicesList extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
   readonly #standardSetting: Common.Settings.Setting<any[]>;
   #standard: Set<EmulatedDevice>;
   readonly #customSetting: Common.Settings.Setting<any[]>;
   readonly #custom: Set<EmulatedDevice>;
-  constructor() {
+  constructor(settings: Common.Settings.Settings) {
     super();
 
-    this.#standardSetting = Common.Settings.Settings.instance().createSetting('standard-emulated-device-list', []);
+    this.#standardSetting = settings.createSetting('standard-emulated-device-list', []);
     this.#standard = new Set();
     this.listFromJSONV1(this.#standardSetting.get(), this.#standard);
     this.updateStandardDevices();
 
-    this.#customSetting = Common.Settings.Settings.instance().createSetting('custom-emulated-device-list', []);
+    this.#customSetting = settings.createSetting('custom-emulated-device-list', []);
     this.#custom = new Set();
     if (!this.listFromJSONV1(this.#customSetting.get(), this.#custom)) {
       this.saveCustomDevices();
@@ -526,10 +597,11 @@ export class EmulatedDevicesList extends Common.ObjectWrapper.ObjectWrapper<Even
   }
 
   static instance(): EmulatedDevicesList {
-    if (!emulatedDevicesListInstance) {
-      emulatedDevicesListInstance = new EmulatedDevicesList();
+    if (!Root.DevToolsContext.globalInstance().has(EmulatedDevicesList)) {
+      Root.DevToolsContext.globalInstance().set(EmulatedDevicesList,
+                                                new EmulatedDevicesList(Common.Settings.Settings.instance()));
     }
-    return emulatedDevicesListInstance;
+    return Root.DevToolsContext.globalInstance().get(EmulatedDevicesList);
   }
 
   private updateStandardDevices(): void {
@@ -637,7 +709,24 @@ export interface Mode {
   orientation: string;
   insets: Insets;
   image: string|null;
+  safeAreaInsets?: Insets;
+  cutout?: Cutout;
 }
+export const enum CutoutShape {
+  PILL = 'pill',
+  NOTCH = 'notch',
+  CIRCLE = 'circle',
+  RECTANGLE = 'rectangle',
+}
+export interface BaseCutout {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+export type Cutout = BaseCutout&({shape: CutoutShape.RECTANGLE}|{shape: CutoutShape.PILL, borderRadius: number}|
+                                 {shape: CutoutShape.NOTCH, upperRadius: number, lowerRadius: number}|
+                                 {shape: CutoutShape.CIRCLE, cx: number, cy: number, radius: number});
 export interface Orientation {
   width: number;
   height: number;
@@ -655,10 +744,30 @@ export interface JSONMode {
     top: number,
     bottom: number,
   };
+  'safe-area-insets'?: {
+    left: number,
+    right: number,
+    top: number,
+    bottom: number,
+  };
+  cutout?: {
+    shape: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    'border-radius'?: number,
+    'upper-radius'?: number,
+    'lower-radius'?: number,
+    cx?: number,
+    cy?: number,
+    radius?: number,
+  };
 }
 
 // These props should quoted for the script to work properly
 /* eslint-disable @stylistic/quote-props */
+// TODO(crbug.com/40718410): Add Android system navigation bar safe areas to the Pixel presets.
 const emulatedDevices = [
   // This is used by a python script to keep this list up-to-date with
   // chromedriver native code.
@@ -707,6 +816,22 @@ const emulatedDevices = [
     'user-agent-metadata':
         {'platform': 'iOS', 'platformVersion': '18.5', 'architecture': '', 'model': 'iPhone', 'mobile': true},
     'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 44, 'right': 0, 'bottom': 34},
+        'cutout':
+            {'shape': 'notch', 'x': 92, 'y': 0, 'width': 231, 'height': 33, 'upper-radius': 6, 'lower-radius': 25},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 44, 'top': 0, 'right': 44, 'bottom': 21},
+      },
+    ],
   },
   {
     'order': 14,
@@ -729,9 +854,138 @@ const emulatedDevices = [
     'user-agent-metadata':
         {'platform': 'iOS', 'platformVersion': '18.5', 'architecture': '', 'model': 'iPhone', 'mobile': true},
     'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 47, 'right': 0, 'bottom': 34},
+        'cutout':
+            {'shape': 'notch', 'x': 90, 'y': 0, 'width': 210, 'height': 32, 'upper-radius': 6, 'lower-radius': 23},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 47, 'top': 0, 'right': 47, 'bottom': 21},
+      },
+    ],
   },
   {
     'order': 15,
+    'show-by-default': false,
+    'title': 'iPhone 14',
+    'screen': {
+      'horizontal': {
+        'width': 844,
+        'height': 390,
+      },
+      'device-pixel-ratio': 3,
+      'vertical': {
+        'width': 390,
+        'height': 844,
+      },
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
+    'user-agent-metadata':
+        {'platform': 'iOS', 'platformVersion': '18.5', 'architecture': '', 'model': 'iPhone', 'mobile': true},
+    'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 47, 'right': 0, 'bottom': 34},
+        'cutout':
+            {'shape': 'notch', 'x': 114, 'y': 0, 'width': 162, 'height': 34, 'upper-radius': 5, 'lower-radius': 22},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 47, 'top': 0, 'right': 47, 'bottom': 21},
+      },
+    ],
+  },
+  {
+    'order': 16,
+    'show-by-default': false,
+    'title': 'iPhone 14 Plus',
+    'screen': {
+      'horizontal': {
+        'width': 926,
+        'height': 428,
+      },
+      'device-pixel-ratio': 3,
+      'vertical': {
+        'width': 428,
+        'height': 926,
+      },
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
+    'user-agent-metadata':
+        {'platform': 'iOS', 'platformVersion': '18.5', 'architecture': '', 'model': 'iPhone', 'mobile': true},
+    'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 47, 'right': 0, 'bottom': 34},
+        'cutout':
+            {'shape': 'notch', 'x': 133, 'y': 0, 'width': 161, 'height': 34, 'upper-radius': 5, 'lower-radius': 22},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 47, 'top': 0, 'right': 47, 'bottom': 21},
+      },
+    ],
+  },
+  {
+    'order': 17,
+    'show-by-default': false,
+    'title': 'iPhone 14 Pro',
+    'screen': {
+      'horizontal': {
+        'width': 852,
+        'height': 393,
+      },
+      'device-pixel-ratio': 3,
+      'vertical': {
+        'width': 393,
+        'height': 852,
+      },
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
+    'user-agent-metadata':
+        {'platform': 'iOS', 'platformVersion': '18.5', 'architecture': '', 'model': 'iPhone', 'mobile': true},
+    'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 59, 'right': 0, 'bottom': 34},
+        'cutout': {'shape': 'pill', 'x': 134, 'y': 11, 'width': 125, 'height': 37, 'border-radius': 19},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 59, 'top': 0, 'right': 59, 'bottom': 21},
+      },
+    ],
+  },
+  {
+    'order': 18,
     'show-by-default': true,
     'title': 'iPhone 14 Pro Max',
     'screen': {
@@ -751,9 +1005,358 @@ const emulatedDevices = [
     'user-agent-metadata':
         {'platform': 'iOS', 'platformVersion': '18.5', 'architecture': '', 'model': 'iPhone', 'mobile': true},
     'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 59, 'right': 0, 'bottom': 34},
+        'cutout': {'shape': 'pill', 'x': 153, 'y': 11, 'width': 125, 'height': 37, 'border-radius': 19},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 59, 'top': 0, 'right': 59, 'bottom': 21},
+      },
+    ],
   },
   {
-    'order': 16,
+    'order': 19,
+    'show-by-default': false,
+    'title': 'iPhone 15',
+    'screen': {
+      'horizontal': {
+        'width': 852,
+        'height': 393,
+      },
+      'device-pixel-ratio': 3,
+      'vertical': {
+        'width': 393,
+        'height': 852,
+      },
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
+    'user-agent-metadata':
+        {'platform': 'iOS', 'platformVersion': '18.5', 'architecture': '', 'model': 'iPhone', 'mobile': true},
+    'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 59, 'right': 0, 'bottom': 34},
+        'cutout': {'shape': 'pill', 'x': 134, 'y': 11, 'width': 125, 'height': 37, 'border-radius': 19},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 59, 'top': 0, 'right': 59, 'bottom': 21},
+      },
+    ],
+  },
+  {
+    'order': 20,
+    'show-by-default': false,
+    'title': 'iPhone 15 Plus',
+    'screen': {
+      'horizontal': {
+        'width': 932,
+        'height': 430,
+      },
+      'device-pixel-ratio': 3,
+      'vertical': {
+        'width': 430,
+        'height': 932,
+      },
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
+    'user-agent-metadata':
+        {'platform': 'iOS', 'platformVersion': '18.5', 'architecture': '', 'model': 'iPhone', 'mobile': true},
+    'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 59, 'right': 0, 'bottom': 34},
+        'cutout': {'shape': 'pill', 'x': 153, 'y': 11, 'width': 125, 'height': 37, 'border-radius': 19},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 59, 'top': 0, 'right': 59, 'bottom': 21},
+      },
+    ],
+  },
+  {
+    'order': 21,
+    'show-by-default': false,
+    'title': 'iPhone 15 Pro',
+    'screen': {
+      'horizontal': {
+        'width': 852,
+        'height': 393,
+      },
+      'device-pixel-ratio': 3,
+      'vertical': {
+        'width': 393,
+        'height': 852,
+      },
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
+    'user-agent-metadata':
+        {'platform': 'iOS', 'platformVersion': '18.5', 'architecture': '', 'model': 'iPhone', 'mobile': true},
+    'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 59, 'right': 0, 'bottom': 34},
+        'cutout': {'shape': 'pill', 'x': 134, 'y': 11, 'width': 125, 'height': 37, 'border-radius': 19},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 59, 'top': 0, 'right': 59, 'bottom': 21},
+      },
+    ],
+  },
+  {
+    'order': 22,
+    'show-by-default': true,
+    'title': 'iPhone 15 Pro Max',
+    'screen': {
+      'horizontal': {
+        'width': 932,
+        'height': 430,
+      },
+      'device-pixel-ratio': 3,
+      'vertical': {
+        'width': 430,
+        'height': 932,
+      },
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
+    'user-agent-metadata':
+        {'platform': 'iOS', 'platformVersion': '18.5', 'architecture': '', 'model': 'iPhone', 'mobile': true},
+    'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 59, 'right': 0, 'bottom': 34},
+        'cutout': {'shape': 'pill', 'x': 153, 'y': 11, 'width': 125, 'height': 37, 'border-radius': 19},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 59, 'top': 0, 'right': 59, 'bottom': 21},
+      },
+    ],
+  },
+  {
+    'order': 23,
+    'show-by-default': false,
+    'title': 'iPhone 16e',
+    'screen': {
+      'horizontal': {
+        'width': 844,
+        'height': 390,
+      },
+      'device-pixel-ratio': 3,
+      'vertical': {
+        'width': 390,
+        'height': 844,
+      },
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
+    'user-agent-metadata':
+        {'platform': 'iOS', 'platformVersion': '18.5', 'architecture': '', 'model': 'iPhone', 'mobile': true},
+    'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 47, 'right': 0, 'bottom': 34},
+        'cutout':
+            {'shape': 'notch', 'x': 114, 'y': 0, 'width': 162, 'height': 34, 'upper-radius': 5, 'lower-radius': 22},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 47, 'top': 0, 'right': 47, 'bottom': 21},
+      },
+    ],
+  },
+  {
+    'order': 24,
+    'show-by-default': false,
+    'title': 'iPhone 16',
+    'screen': {
+      'horizontal': {
+        'width': 852,
+        'height': 393,
+      },
+      'device-pixel-ratio': 3,
+      'vertical': {
+        'width': 393,
+        'height': 852,
+      },
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
+    'user-agent-metadata':
+        {'platform': 'iOS', 'platformVersion': '18.5', 'architecture': '', 'model': 'iPhone', 'mobile': true},
+    'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 59, 'right': 0, 'bottom': 34},
+        'cutout': {'shape': 'pill', 'x': 134, 'y': 11, 'width': 125, 'height': 37, 'border-radius': 19},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 59, 'top': 0, 'right': 59, 'bottom': 21},
+      },
+    ],
+  },
+  {
+    'order': 25,
+    'show-by-default': false,
+    'title': 'iPhone 16 Plus',
+    'screen': {
+      'horizontal': {
+        'width': 932,
+        'height': 430,
+      },
+      'device-pixel-ratio': 3,
+      'vertical': {
+        'width': 430,
+        'height': 932,
+      },
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
+    'user-agent-metadata':
+        {'platform': 'iOS', 'platformVersion': '18.5', 'architecture': '', 'model': 'iPhone', 'mobile': true},
+    'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 59, 'right': 0, 'bottom': 34},
+        'cutout': {'shape': 'pill', 'x': 153, 'y': 11, 'width': 125, 'height': 37, 'border-radius': 19},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 59, 'top': 0, 'right': 59, 'bottom': 21},
+      },
+    ],
+  },
+  {
+    'order': 26,
+    'show-by-default': false,
+    'title': 'iPhone 16 Pro',
+    'screen': {
+      'horizontal': {
+        'width': 874,
+        'height': 402,
+      },
+      'device-pixel-ratio': 3,
+      'vertical': {
+        'width': 402,
+        'height': 874,
+      },
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
+    'user-agent-metadata':
+        {'platform': 'iOS', 'platformVersion': '18.5', 'architecture': '', 'model': 'iPhone', 'mobile': true},
+    'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 62, 'right': 0, 'bottom': 34},
+        'cutout': {'shape': 'pill', 'x': 139, 'y': 14, 'width': 125, 'height': 37, 'border-radius': 19},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 62, 'top': 0, 'right': 62, 'bottom': 21},
+      },
+    ],
+  },
+  {
+    'order': 27,
+    'show-by-default': true,
+    'title': 'iPhone 16 Pro Max',
+    'screen': {
+      'horizontal': {
+        'width': 956,
+        'height': 440,
+      },
+      'device-pixel-ratio': 3,
+      'vertical': {
+        'width': 440,
+        'height': 956,
+      },
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
+    'user-agent-metadata':
+        {'platform': 'iOS', 'platformVersion': '18.5', 'architecture': '', 'model': 'iPhone', 'mobile': true},
+    'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 62, 'right': 0, 'bottom': 34},
+        'cutout': {'shape': 'pill', 'x': 158, 'y': 14, 'width': 125, 'height': 37, 'border-radius': 19},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 62, 'top': 0, 'right': 62, 'bottom': 21},
+      },
+    ],
+  },
+  {
+    'order': 28,
     'show-by-default': false,
     'title': 'Pixel 3 XL',
     'screen': {
@@ -773,9 +1376,24 @@ const emulatedDevices = [
     'user-agent-metadata':
         {'platform': 'Android', 'platformVersion': '11', 'architecture': '', 'model': 'Pixel 3', 'mobile': true},
     'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 45, 'right': 0, 'bottom': 0},
+        'cutout': {'shape': 'rectangle', 'x': 126, 'y': 0, 'width': 141, 'height': 45},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 0, 'right': 45, 'bottom': 0},
+      },
+    ],
   },
   {
-    'order': 18,
+    'order': 30,
     'show-by-default': true,
     'title': 'Pixel 7',
     'screen': {
@@ -795,9 +1413,283 @@ const emulatedDevices = [
     'user-agent-metadata':
         {'platform': 'Android', 'platformVersion': '13', 'architecture': '', 'model': 'Pixel 7', 'mobile': true},
     'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 52, 'right': 0, 'bottom': 0},
+        'cutout': {'shape': 'circle', 'x': 183, 'y': 0, 'width': 55, 'height': 52, 'cx': 206, 'cy': 26, 'radius': 13},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 0, 'right': 52, 'bottom': 0},
+      },
+    ],
   },
   {
-    'order': 20,
+    'order': 31,
+    'show-by-default': true,
+    'title': 'Pixel 8',
+    'screen': {
+      'horizontal': {
+        'width': 915,
+        'height': 412,
+      },
+      'device-pixel-ratio': 2.625,
+      'vertical': {
+        'width': 412,
+        'height': 915,
+      },
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s Mobile Safari/537.36',
+    'user-agent-metadata':
+        {'platform': 'Android', 'platformVersion': '14', 'architecture': '', 'model': 'Pixel 8', 'mobile': true},
+    'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 50, 'right': 0, 'bottom': 0},
+        'cutout': {'shape': 'circle', 'x': 182, 'y': 0, 'width': 46, 'height': 50, 'cx': 206, 'cy': 25, 'radius': 14},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 0, 'right': 50, 'bottom': 0},
+      },
+    ],
+  },
+  {
+    'order': 32,
+    'show-by-default': false,
+    'title': 'Pixel 8 Pro',
+    'screen': {
+      'horizontal': {
+        'width': 997,
+        'height': 448,
+      },
+      'device-pixel-ratio': 3,
+      'vertical': {
+        'width': 448,
+        'height': 997,
+      },
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s Mobile Safari/537.36',
+    'user-agent-metadata':
+        {'platform': 'Android', 'platformVersion': '14', 'architecture': '', 'model': 'Pixel 8 Pro', 'mobile': true},
+    'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 50, 'right': 0, 'bottom': 0},
+        'cutout': {'shape': 'circle', 'x': 205, 'y': 0, 'width': 37, 'height': 50, 'cx': 224, 'cy': 25, 'radius': 14},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 0, 'right': 50, 'bottom': 0},
+      },
+    ],
+  },
+  {
+    'order': 33,
+    'show-by-default': false,
+    'title': 'Pixel 8a',
+    'screen': {
+      'horizontal': {
+        'width': 915,
+        'height': 412,
+      },
+      'device-pixel-ratio': 2.625,
+      'vertical': {
+        'width': 412,
+        'height': 915,
+      },
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (Linux; Android 14; Pixel 8a) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s Mobile Safari/537.36',
+    'user-agent-metadata':
+        {'platform': 'Android', 'platformVersion': '14', 'architecture': '', 'model': 'Pixel 8a', 'mobile': true},
+    'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 46, 'right': 0, 'bottom': 0},
+        'cutout': {'shape': 'circle', 'x': 185, 'y': 0, 'width': 42, 'height': 46, 'cx': 206, 'cy': 26, 'radius': 13},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 0, 'right': 46, 'bottom': 0},
+      },
+    ],
+  },
+  {
+    'order': 34,
+    'show-by-default': true,
+    'title': 'Pixel 9',
+    'screen': {
+      'horizontal': {
+        'width': 924,
+        'height': 412,
+      },
+      'device-pixel-ratio': 2.625,
+      'vertical': {
+        'width': 412,
+        'height': 924,
+      },
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (Linux; Android 14; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s Mobile Safari/537.36',
+    'user-agent-metadata':
+        {'platform': 'Android', 'platformVersion': '14', 'architecture': '', 'model': 'Pixel 9', 'mobile': true},
+    'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 58, 'right': 0, 'bottom': 0},
+        'cutout': {'shape': 'circle', 'x': 188, 'y': 0, 'width': 37, 'height': 58, 'cx': 206, 'cy': 29, 'radius': 14},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 0, 'right': 58, 'bottom': 0},
+      },
+    ],
+  },
+  {
+    'order': 35,
+    'show-by-default': false,
+    'title': 'Pixel 9 Pro',
+    'screen': {
+      'horizontal': {
+        'width': 952,
+        'height': 427,
+      },
+      'device-pixel-ratio': 3,
+      'vertical': {
+        'width': 427,
+        'height': 952,
+      },
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (Linux; Android 14; Pixel 9 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s Mobile Safari/537.36',
+    'user-agent-metadata':
+        {'platform': 'Android', 'platformVersion': '14', 'architecture': '', 'model': 'Pixel 9 Pro', 'mobile': true},
+    'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 68, 'right': 0, 'bottom': 0},
+        'cutout': {'shape': 'circle', 'x': 195, 'y': 0, 'width': 36, 'height': 68, 'cx': 213, 'cy': 34, 'radius': 16},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 0, 'right': 68, 'bottom': 0},
+      },
+    ],
+  },
+  {
+    'order': 36,
+    'show-by-default': false,
+    'title': 'Pixel 9 Pro XL',
+    'screen': {
+      'horizontal': {
+        'width': 997,
+        'height': 448,
+      },
+      'device-pixel-ratio': 3,
+      'vertical': {
+        'width': 448,
+        'height': 997,
+      },
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (Linux; Android 14; Pixel 9 Pro XL) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s Mobile Safari/537.36',
+    'user-agent-metadata':
+        {'platform': 'Android', 'platformVersion': '14', 'architecture': '', 'model': 'Pixel 9 Pro XL', 'mobile': true},
+    'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 66, 'right': 0, 'bottom': 0},
+        'cutout': {'shape': 'circle', 'x': 205, 'y': 0, 'width': 38, 'height': 66, 'cx': 224, 'cy': 33, 'radius': 16},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 0, 'right': 66, 'bottom': 0},
+      },
+    ],
+  },
+  {
+    'order': 37,
+    'show-by-default': true,
+    'title': 'Pixel 10',
+    'screen': {
+      'horizontal': {
+        'width': 924,
+        'height': 412,
+      },
+      'device-pixel-ratio': 2.625,
+      'vertical': {
+        'width': 412,
+        'height': 924,
+      },
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (Linux; Android 16; Pixel 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s Mobile Safari/537.36',
+    'user-agent-metadata':
+        {'platform': 'Android', 'platformVersion': '16', 'architecture': '', 'model': 'Pixel 10', 'mobile': true},
+    'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 58, 'right': 0, 'bottom': 0},
+        'cutout': {'shape': 'circle', 'x': 188, 'y': 0, 'width': 37, 'height': 58, 'cx': 206, 'cy': 29, 'radius': 14},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 0, 'right': 58, 'bottom': 0},
+      },
+    ],
+  },
+  {
+    'order': 38,
     'show-by-default': true,
     'title': 'Samsung Galaxy S8+',
     'screen': {
@@ -819,7 +1711,7 @@ const emulatedDevices = [
     'type': 'phone',
   },
   {
-    'order': 24,
+    'order': 39,
     'show-by-default': true,
     'title': 'Samsung Galaxy S20 Ultra',
     'screen': {
@@ -841,7 +1733,7 @@ const emulatedDevices = [
     'type': 'phone',
   },
   {
-    'order': 26,
+    'order': 40,
     'show-by-default': true,
     'title': 'iPad Mini',
     'screen': {
@@ -863,7 +1755,7 @@ const emulatedDevices = [
     'type': 'tablet',
   },
   {
-    'order': 28,
+    'order': 41,
     'show-by-default': true,
     'title': 'iPad Air',
     'screen': {
@@ -885,7 +1777,7 @@ const emulatedDevices = [
     'type': 'tablet',
   },
   {
-    'order': 29,
+    'order': 42,
     'show-by-default': true,
     'title': 'iPad Pro',
     'screen': {
@@ -907,7 +1799,7 @@ const emulatedDevices = [
     'type': 'tablet',
   },
   {
-    'order': 30,
+    'order': 43,
     'show-by-default': true,
     'title': 'Surface Pro 7',
     'screen': {
@@ -927,7 +1819,7 @@ const emulatedDevices = [
     'type': 'tablet',
   },
   {
-    'order': 32,
+    'order': 44,
     'show-by-default': true,
     'dual-screen': true,
     'title': 'Surface Duo',
@@ -964,7 +1856,7 @@ const emulatedDevices = [
     ],
   },
   {
-    'order': 34,
+    'order': 46,
     'show-by-default': true,
     'foldable-screen': true,
     'title': 'Galaxy Z Fold 5',
@@ -1015,7 +1907,7 @@ const emulatedDevices = [
     ],
   },
   {
-    'order': 35,
+    'order': 47,
     'show-by-default': true,
     'foldable-screen': true,
     'title': 'Asus Zenbook Fold',
@@ -1070,7 +1962,7 @@ const emulatedDevices = [
     ],
   },
   {
-    'order': 36,
+    'order': 48,
     'show-by-default': true,
     'title': 'Samsung Galaxy A51/71',
     'screen': {
@@ -1265,6 +2157,22 @@ const emulatedDevices = [
     'user-agent-metadata':
         {'platform': 'iOS', 'platformVersion': '13.2.3', 'architecture': '', 'model': 'iPhone', 'mobile': true},
     'type': 'phone',
+    'modes': [
+      {
+        'title': 'default',
+        'orientation': 'vertical',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 0, 'top': 44, 'right': 0, 'bottom': 34},
+        'cutout':
+            {'shape': 'notch', 'x': 85, 'y': 0, 'width': 204, 'height': 30, 'upper-radius': 8, 'lower-radius': 19},
+      },
+      {
+        'title': 'default',
+        'orientation': 'horizontal',
+        'insets': {'left': 0, 'top': 0, 'right': 0, 'bottom': 0},
+        'safe-area-insets': {'left': 44, 'top': 0, 'right': 44, 'bottom': 21},
+      },
+    ],
   },
   {
     'show-by-default': false,

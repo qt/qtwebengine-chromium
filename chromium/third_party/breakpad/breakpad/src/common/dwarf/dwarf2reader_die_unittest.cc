@@ -1011,7 +1011,7 @@ TEST_F(SplitDwarfDIE, DwoFileWithoutDebugInfoOffset) {
   const SectionMap& sections = MakeSectionMap();
 
   CompilationUnit parser("", sections, 0, &byte_reader, &handler);
-  parser.SetSplitDwarf(0, 0x1234);
+  parser.SetSplitDwarf(0, 0x1234, "");
   EXPECT_EQ(parser.Start(), info_contents.size());
 }
 
@@ -1058,7 +1058,7 @@ TEST_F(SplitDwarfDIE, DwpFileWithDebugInfoOffset) {
   section_map[".debug_info_offset"].second = info_contents.size();
 
   CompilationUnit parser("", sections, 0, &byte_reader, &handler);
-  parser.SetSplitDwarf(0, 0x5678);
+  parser.SetSplitDwarf(0, 0x5678, "");
   EXPECT_EQ(parser.Start(), info_contents.size());
 }
 
@@ -1110,6 +1110,6 @@ TEST_F(SplitDwarfDIE, DwoFileWithNonZeroOffset) {
   ByteReader byte_reader(ENDIANNESS_LITTLE);
 
   CompilationUnit parser("", sections, kPaddingSize, &byte_reader, &handler);
-  parser.SetSplitDwarf(0, 0xabcd);
+  parser.SetSplitDwarf(0, 0xabcd, "");
   EXPECT_EQ(parser.Start(), cu_size);
 }

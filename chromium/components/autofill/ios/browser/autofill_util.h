@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_AUTOFILL_IOS_BROWSER_AUTOFILL_UTIL_H_
 #define COMPONENTS_AUTOFILL_IOS_BROWSER_AUTOFILL_UTIL_H_
 
+#import <map>
 #import <optional>
 #import <set>
 
@@ -64,6 +65,24 @@ enum class ExtractFormDataFailure {
 };
 // LINT.ThenChange(//tools/metrics/histograms/metadata/autofill/enums.xml:InvalidSubmittedFormReasonIOS)
 
+// LINT.IfChange(SubmissionBlockedReasonIOS)
+enum class SubmissionBlockedReason {
+  // The submission was blocked because it lacked a user gesture.
+  kNoUserGesture = 0,
+  // The submission was blocked because Autofill is disabled.
+  kAutofillDisabled = 1,
+  // The submission was blocked because the frame was missing or destroyed.
+  kNoFrame = 2,
+  // The submission was blocked because the driver was missing.
+  kNoDriver = 3,
+  // The submission was blocked because the frame is cross-origin.
+  kCrossOriginFrame = 4,
+  // The submission was blocked because the delegate is missing.
+  kNoDelegate = 5,
+  kMaxValue = kNoDelegate,
+};
+// LINT.ThenChange(//tools/metrics/histograms/metadata/autofill/enums.xml:SubmissionBlockedReasonIOS)
+
 // Checks if current context is secure from an autofill standpoint.
 bool IsContextSecureForWebState(web::WebState* web_state);
 
@@ -114,12 +133,6 @@ base::expected<FormData, ExtractFormDataFailure> ExtractFormData(
 bool ExtractFormFieldData(const base::DictValue& field,
                           const FieldDataManager& field_data_manager,
                           FormFieldData* field_data);
-
-// Extracts a single child frame's data from the JSON dictionary into a
-// FrameTokenWithPredecessor object. Returns false if the data could not be
-// extracted.
-bool ExtractRemoteFrameToken(const base::DictValue& frame_data,
-                             FrameTokenWithPredecessor* token_with_predecessor);
 
 typedef base::OnceCallback<void(const base::Value*)> JavaScriptResultCallback;
 
@@ -176,6 +189,12 @@ bool ExtractFillingResults(NSString* json_string,
 // Returns the WebFramesManager that manages the frame space in which Autofill
 // works.
 web::WebFramesManager* GetWebFramesManagerForAutofill(web::WebState* web_state);
+
+std::vector<FrameTokenWithPredecessor> ExtractChildFramesForTest(
+    const base::DictValue& form);
+
+std::optional<FrameTokenWithPredecessor> ExtractRemoteFrameTokenForTest(
+    const base::DictValue& frame_data);
 
 }  // namespace autofill
 

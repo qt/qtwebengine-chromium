@@ -241,13 +241,35 @@ enum xnn_status xnn_reshape_argmax_pooling2d_nhwc_f32(
   if (output_width_out != NULL) {
     *output_width_out = output_width;
   }
-  const size_t pooling_size = pooling_height * pooling_width;
+  size_t pooling_size = 0;
+  if (!xnn_safe_mul(pooling_height, pooling_width, &pooling_size)) {
+    xnn_log_error(
+      "failed to reshape %s operator: indirection buffer size overflows for %zux%zu pooling size",
+      xnn_operator_type_to_string(xnn_operator_type_argmax_pooling_nhwc_f32), pooling_width, pooling_height);
+    return xnn_status_out_of_memory;
+  }
   const struct xnn_argmaxpool_config* argmaxpool_config = argmax_pooling_op->argmaxpool_config;
 
   const size_t step_width = pooling_width;
-  const size_t step_height = pooling_size + (output_width - 1) * step_width * pooling_height;
+  size_t step_height = 0;
+  size_t step_height_increment = 0;
+  if (!xnn_safe_mul(output_width - 1, step_width, &step_height_increment) ||
+      !xnn_safe_mul(step_height_increment, pooling_height, &step_height_increment) ||
+      !xnn_safe_add(pooling_size, step_height_increment, &step_height)) {
+    xnn_log_error(
+      "failed to reshape %s operator: indirection buffer size overflows for %zux%zu output and %zux%zu pooling size",
+      xnn_operator_type_to_string(xnn_operator_type_argmax_pooling_nhwc_f32), output_width, output_height, pooling_width, pooling_height);
+    return xnn_status_out_of_memory;
+  }
 
-  const size_t indirection_buffer_size = sizeof(void*) * (output_height * step_height);
+  size_t indirection_buffer_size = 0;
+  if (!xnn_safe_mul(output_height, step_height, &indirection_buffer_size) ||
+      !xnn_safe_mul(indirection_buffer_size, sizeof(void*), &indirection_buffer_size)) {
+    xnn_log_error(
+      "failed to reshape %s operator: indirection buffer size overflows for %zux%zu output and %zux%zu pooling size",
+      xnn_operator_type_to_string(xnn_operator_type_argmax_pooling_nhwc_f32), output_width, output_height, pooling_width, pooling_height);
+    return xnn_status_out_of_memory;
+  }
 
   // Allocate indirection buffer as size is known here. We initialize the buffer in setup, when input pointer is known.
   const void** indirection_buffer =

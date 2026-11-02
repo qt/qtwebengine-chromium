@@ -9,8 +9,8 @@ import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import type * as TextUtils from '../../core/text_utils/text_utils.js';
 import type * as Protocol from '../../generated/protocol.js';
-import type * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import {html, nothing, render} from '../../ui/lit/lit.js';
 
@@ -18,64 +18,63 @@ import developerResourcesListViewStyles from './developerResourcesListView.css.j
 
 const UIStrings = {
   /**
-   * @description Text for the status of something
+   * @description Column header in the Developer resources panel showing the load status (pending, success, or failure) of a resource.
    */
   status: 'Status',
   /**
-   * @description Text for web URLs
+   * @description Column header in the Developer resources panel showing the URL of the developer resource.
    */
   url: 'URL',
   /**
-   * @description Text for the initiator of something
+   * @description Column header in the Developer resources panel showing the initiator (such as an extension or script) that requested the resource.
    */
   initiator: 'Initiator',
   /**
-   * @description Text in Coverage List View of the Coverage tab
+   * @description Column header in the Developer resources panel showing the total size of a resource in bytes.
    */
-  totalBytes: 'Total Bytes',
+  totalBytes: 'Total bytes',
   /**
-   * @description Column header. The column contains the time it took to load a resource.
+   * @description Column header in the Developer resources panel showing the time it took to load a resource.
    */
   duration: 'Duration',
   /**
-   * @description Text for errors
+   * @description Column header in the Developer resources panel showing the error message when loading a resource fails.
    */
   error: 'Error',
   /**
-   * @description Title for the Developer resources tab
+   * @description Accessible name for the data grid in the Developer resources panel.
    */
   developerResources: 'Developer resources',
   /**
-   * @description Text for a context menu entry
+   * @description Context menu item in the Developer resources panel for copying the selected resource's URL to the clipboard.
    */
   copyUrl: 'Copy URL',
   /**
-   * @description Text for a context menu entry. Command to copy a URL to the clipboard. The initiator
-   * of a request is the entity that caused this request to be sent.
+   * @description Context menu item in the Developer resources panel for copying the initiator's URL to the clipboard. The initiator of a request is the entity that caused this request to be sent.
    */
   copyInitiatorUrl: 'Copy initiator URL',
   /**
-   * @description Text for the status column of a list view
+   * @description Status text in the Developer resources panel indicating that a resource is currently loading.
    */
-  pending: 'pending',
+  pending: 'Pending',
   /**
-   * @description Text for the status column of a list view
+   * @description Status text in the Developer resources panel indicating that a resource loaded successfully.
    */
-  success: 'success',
+  success: 'Success',
   /**
-   * @description Text for the status column of a list view
+   * @description Status text in the Developer resources panel indicating that a resource failed to load.
    */
-  failure: 'failure',
+  failure: 'Failure',
   /**
-   * @description Accessible text for the value in bytes in memory allocation.
+   * @description Accessible label in the Developer resources panel for the size of a resource in bytes.
    */
   sBytes: '{n, plural, =1 {# byte} other {# bytes}}',
   /**
-   * @description Number of resource(s) match
+   * @description Screen reader announcement in the Developer resources panel indicating how many resources match the current text filter.
    */
   numberOfResourceMatch: '{n, plural, =1 {# resource matches} other {# resources match}}',
   /**
-   * @description No resource matches
+   * @description Screen reader announcement in the Developer resources panel when no resources match the current text filter.
    */
   noResourceMatches: 'No resource matches',
 } as const;
@@ -261,7 +260,7 @@ export class DeveloperResourcesListView extends UI.Widget.VBox {
         }
       },
       onInitiatorMouseLeave: () => {
-        SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+        SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight(SDK.TargetManager.TargetManager.instance());
       },
     };
     const output = {};

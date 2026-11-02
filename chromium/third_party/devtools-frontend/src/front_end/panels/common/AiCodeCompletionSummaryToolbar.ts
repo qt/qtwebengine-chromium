@@ -6,6 +6,7 @@ import '../../ui/components/spinners/spinners.js';
 import '../../ui/components/tooltips/tooltips.js';
 import '../../ui/kit/kit.js';
 
+import type * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import type * as AiCodeCompletion from '../../models/ai_code_completion/ai_code_completion.js';
@@ -116,7 +117,8 @@ export class AiCodeCompletionSummaryToolbar extends UI.Widget.Widget {
   #panel: AiCodeCompletion.AiCodeCompletion.ContextFlavor;
 
   #aidaAvailability?: Host.AidaClient.AidaAccessPreconditions;
-  #boundOnAidaAvailabilityChange: () => Promise<void>;
+  #boundOnAidaAvailabilityChange:
+      (ev: Common.EventTarget.EventTargetEvent<Host.AidaClient.AidaAccessPreconditions>) => void;
 
   constructor(props: AiCodeCompletionSummaryToolbarProps, view?: View) {
     super();
@@ -130,12 +132,15 @@ export class AiCodeCompletionSummaryToolbar extends UI.Widget.Widget {
     this.requestUpdate();
   }
 
-  async #onAidaAvailabilityChange(): Promise<void> {
-    const currentAidaAvailability = await Host.AidaClient.AidaClient.checkAccessPreconditions();
-    if (currentAidaAvailability !== this.#aidaAvailability) {
-      this.#aidaAvailability = currentAidaAvailability;
+  #updateAidaAvailability(aidaAvailability: Host.AidaClient.AidaAccessPreconditions): void {
+    if (aidaAvailability !== this.#aidaAvailability) {
+      this.#aidaAvailability = aidaAvailability;
       this.requestUpdate();
     }
+  }
+
+  #onAidaAvailabilityChange(ev: Common.EventTarget.EventTargetEvent<Host.AidaClient.AidaAccessPreconditions>): void {
+    this.#updateAidaAvailability(ev.data);
   }
 
   setLoading(loading: boolean): void {
@@ -172,7 +177,10 @@ export class AiCodeCompletionSummaryToolbar extends UI.Widget.Widget {
     super.wasShown();
     Host.AidaClient.HostConfigTracker.instance().addEventListener(
         Host.AidaClient.Events.AIDA_AVAILABILITY_CHANGED, this.#boundOnAidaAvailabilityChange);
-    void this.#onAidaAvailabilityChange();
+    const initialAvailability = Host.AidaClient.HostConfigTracker.instance().aidaAvailability;
+    if (initialAvailability !== undefined) {
+      this.#updateAidaAvailability(initialAvailability);
+    }
   }
 
   override willHide(): void {

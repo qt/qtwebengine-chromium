@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/check.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
@@ -36,6 +37,7 @@
 #include "content/common/input/synthetic_gesture_target.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host_view.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/frame/frame_visual_properties.h"
 #include "third_party/blink/public/common/input/web_touch_event.h"
 #include "third_party/blink/public/mojom/frame/intrinsic_sizing_info.mojom.h"
@@ -86,8 +88,16 @@ RenderWidgetHostViewChildFrame::~RenderWidgetHostViewChildFrame() {
   if (frame_connector_)
     DetachFromTouchSelectionClientManagerIfNecessary();
 
-  if (is_frame_sink_id_owner() && GetHostFrameSinkManager()) {
-    GetHostFrameSinkManager()->InvalidateFrameSinkId(frame_sink_id_, this, {});
+  if (auto* frame_sink_manager = GetHostFrameSinkManager()) {
+    if (has_frame_sink_hierarchy_registered_) {
+      CHECK(parent_frame_sink_id_.is_valid());
+      frame_sink_manager->UnregisterFrameSinkHierarchy(parent_frame_sink_id_,
+                                                       frame_sink_id_);
+      has_frame_sink_hierarchy_registered_ = false;
+    }
+    if (is_frame_sink_id_owner()) {
+      frame_sink_manager->InvalidateFrameSinkId(frame_sink_id_, this, {});
+    }
   }
 }
 
@@ -102,14 +112,17 @@ void RenderWidgetHostViewChildFrame::
   if (!selection_controller_client_)
     return;
 
-  auto* root_view = frame_connector_->GetRootRenderWidgetHostView();
+  auto* root_view = view_for_touch_selection_client_manager_.get();
+  view_for_touch_selection_client_manager_.reset();
   if (root_view) {
     auto* manager = root_view->GetTouchSelectionControllerClientManager();
     if (manager) {
       manager->RemoveObserver(this);
 #if BUILDFLAG(IS_ANDROID)
       auto* observer = root_view->GetTouchSelectionControllerInputObserver();
-      host()->RemoveInputEventObserver(observer);
+      if (observer) {
+        host()->RemoveInputEventObserver(observer);
+      }
 #endif
     }
   } else {
@@ -153,7 +166,7 @@ void RenderWidgetHostViewChildFrame::SetFrameConnector(
       frame_connector_->GetParentRenderWidgetHostView();
 
   if (parent_view) {
-    DCHECK(parent_view->GetFrameSinkId().is_valid());
+    CHECK(parent_view->GetFrameSinkId().is_valid(), base::NotFatalUntil::M152);
     SetParentFrameSinkId(parent_view->GetFrameSinkId());
   }
 
@@ -173,19 +186,33 @@ void RenderWidgetHostViewChildFrame::SetFrameConnector(
           std::make_unique<TouchSelectionControllerClientChildFrame>(this,
                                                                      manager);
       manager->AddObserver(this);
+      view_for_touch_selection_client_manager_ = root_view->GetWeakPtr();
 
 #if BUILDFLAG(IS_ANDROID)
       auto* observer = root_view->GetTouchSelectionControllerInputObserver();
-      host()->AddInputEventObserver(observer);
+      if (observer) {
+        host()->AddInputEventObserver(observer);
+      }
 #endif
     }
+  }
+
+  if (frame_connector_ && pending_sizing_info_) {
+    CHECK(base::FeatureList::IsEnabled(blink::features::kResponsiveIframes),
+          base::NotFatalUntil::M152);
+    frame_connector_->SendIntrinsicSizingInfoToParent(
+        std::move(pending_sizing_info_));
   }
 }
 
 void RenderWidgetHostViewChildFrame::UpdateIntrinsicSizingInfo(
     blink::mojom::IntrinsicSizingInfoPtr sizing_info) {
-  if (frame_connector_)
+  if (frame_connector_) {
     frame_connector_->SendIntrinsicSizingInfoToParent(std::move(sizing_info));
+  } else if (base::FeatureList::IsEnabled(
+                 blink::features::kResponsiveIframes)) {
+    pending_sizing_info_ = std::move(sizing_info);
+  }
 }
 
 std::unique_ptr<SyntheticGestureTarget>
@@ -241,17 +268,6 @@ bool RenderWidgetHostViewChildFrame::IsSurfaceAvailableForCopy() {
   return GetLocalSurfaceId().is_valid();
 }
 
-void RenderWidgetHostViewChildFrame::EnsureSurfaceSynchronizedForWebTest() {
-  // The capture sequence number which would normally be updated here is
-  // actually retrieved from the frame connector.
-}
-
-uint32_t RenderWidgetHostViewChildFrame::GetCaptureSequenceNumber() const {
-  if (!frame_connector_)
-    return 0u;
-  return frame_connector_->GetCaptureSequenceNumber();
-}
-
 void RenderWidgetHostViewChildFrame::ShowWithVisibility(
     PageVisibilityState /*page_visibility*/) {
   if (frame_connector_) {
@@ -298,19 +314,27 @@ void RenderWidgetHostViewChildFrame::WasOccluded() {
   Hide();
 }
 
-gfx::Rect RenderWidgetHostViewChildFrame::GetViewBounds() {
+gfx::Rect RenderWidgetHostViewChildFrame::GetViewBoundsHelper(
+    bool without_transform) {
   gfx::Rect screen_space_rect;
   if (frame_connector_) {
     screen_space_rect = frame_connector_->GetRectInParentViewInDip();
 
-    RenderWidgetHostView* parent_view =
+    RenderWidgetHostViewBase* parent_view =
         frame_connector_->GetParentRenderWidgetHostView();
 
     // The parent_view can be null in tests when using a TestWebContents.
     if (parent_view) {
       // Translate screen_space_rect by the parent's RenderWidgetHostView
       // offset.
-      screen_space_rect.Offset(parent_view->GetViewBounds().OffsetFromOrigin());
+      gfx::Vector2d offset;
+      if (without_transform) {
+        offset =
+            parent_view->GetViewBoundsWithoutTransform().OffsetFromOrigin();
+      } else {
+        offset = parent_view->GetViewBounds().OffsetFromOrigin();
+      }
+      screen_space_rect.Offset(offset);
     }
     // TODO(wjmaclean): GetViewBounds is a bit of a mess. It's used to determine
     // the size of the renderer content and where to place context menus and so
@@ -322,12 +346,20 @@ gfx::Rect RenderWidgetHostViewChildFrame::GetViewBounds() {
   return screen_space_rect;
 }
 
+gfx::Rect RenderWidgetHostViewChildFrame::GetViewBounds() {
+  return GetViewBoundsHelper(/*without_transform=*/false);
+}
+
+gfx::Rect RenderWidgetHostViewChildFrame::GetViewBoundsWithoutTransform() {
+  return GetViewBoundsHelper(/*without_transform=*/true);
+}
+
 gfx::Size RenderWidgetHostViewChildFrame::GetVisibleViewportSize() {
   // For subframes, the visual viewport corresponds to the main frame size so
   // this method would not even be called, the main frame's value should be
   // used instead. However a nested WebContents will have a ChildFrame view used
   // for the main frame.
-  DCHECK(host()->owner_delegate());
+  CHECK(host()->owner_delegate(), base::NotFatalUntil::M152);
 
   gfx::Rect requested_rect(GetRequestedRendererSize());
   requested_rect.Inset(insets_);
@@ -339,7 +371,7 @@ gfx::Size RenderWidgetHostViewChildFrame::GetVisibleViewportSizeDevicePx() {
   // this method would not even be called, the main frame's value should be
   // used instead. However a nested WebContents will have a ChildFrame view used
   // for the main frame.
-  DCHECK(host()->owner_delegate());
+  CHECK(host()->owner_delegate(), base::NotFatalUntil::M152);
 
   gfx::Rect requested_rect(GetRequestedRendererSizeDevicePx());
   auto scaled_insets = ScaleToCeiledInsets(insets_, GetDeviceScaleFactor());
@@ -382,9 +414,11 @@ void RenderWidgetHostViewChildFrame::UpdateFrameSinkIdRegistration() {
 }
 
 void RenderWidgetHostViewChildFrame::UpdateBackgroundColor() {
-  DCHECK(GetBackgroundColor());
+  CHECK(GetBackgroundColor(), base::NotFatalUntil::M152);
 
   SkColor color = *GetBackgroundColor();
+  // TODO(crbug.com/535539883): CHECK-exclusion: Convert to a CHECK once we
+  // are confident it won't be triggered.
   DCHECK(SkColorGetA(color) == SK_AlphaOPAQUE ||
          SkColorGetA(color) == SK_AlphaTRANSPARENT);
   if (host()->owner_delegate()) {
@@ -473,18 +507,19 @@ void RenderWidgetHostViewChildFrame::OnStartStylusWriting() {
   if (!root) {
     return;
   }
-  // Register a callback on the root view that handles the TSF
-  // FocusHandwritingTarget response directly in this child frame.
-  root->SetStylusHandwritingFocusCallback(base::BindRepeating(
-      &RenderWidgetHostViewChildFrame::OnFocusHandwritingTarget,
-      weak_factory_.GetWeakPtr()));
-  root->OnStartStylusWriting();
+  root->StartStylusWritingFromChildHostView(
+      this, base::BindRepeating(
+                &RenderWidgetHostViewChildFrame::OnFocusHandwritingTarget,
+                weak_factory_.GetWeakPtr()));
 }
 
 void RenderWidgetHostViewChildFrame::OnEditElementFocusedForStylusWriting(
     blink::mojom::StylusWritingFocusResultPtr focus_result) {
   auto* root = GetRootView();
   if (!root) {
+    if (StylusHandwritingControllerWin::GetInstance()) {
+      StylusHandwritingControllerWin::GetInstance()->OnFocusFailed();
+    }
     return;
   }
   // Transform proximate character bounds from child frame widget space to root
@@ -503,9 +538,6 @@ void RenderWidgetHostViewChildFrame::OnFocusHandwritingTarget(
     const gfx::Size& tolerance_screen_distance_in_dips) {
   // TODO(crbug.com/355578906): Consider `tolerance_screen_distance_in_dips`.
   if (!host()) {
-    if (StylusHandwritingControllerWin::GetInstance()) {
-      StylusHandwritingControllerWin::GetInstance()->OnFocusFailed();
-    }
     return;
   }
 
@@ -638,7 +670,7 @@ void RenderWidgetHostViewChildFrame::RegisterFrameSinkId() {
 }
 
 void RenderWidgetHostViewChildFrame::UnregisterFrameSinkId() {
-  DCHECK(host());
+  CHECK(host(), base::NotFatalUntil::M152);
   if (host()->delegate() && host()->delegate()->GetInputEventRouter()) {
     host()->delegate()->GetInputEventRouter()->RemoveFrameSinkIdOwner(
         frame_sink_id_);
@@ -654,7 +686,8 @@ void RenderWidgetHostViewChildFrame::UpdateViewportIntersection(
         !intersection_state.viewport_intersection.IsEmpty());
 
     // Do not send |visual_properties| to main frames.
-    DCHECK(!visual_properties.has_value() || !host()->owner_delegate());
+    CHECK(!visual_properties.has_value() || !host()->owner_delegate(),
+          base::NotFatalUntil::M152);
 
     bool is_fenced_frame = host()->frame_tree()->is_fenced_frame();
     if (!host()->owner_delegate() || is_fenced_frame) {
@@ -730,18 +763,23 @@ void RenderWidgetHostViewChildFrame::SetParentFrameSinkId(
 
   auto* host_frame_sink_manager = GetHostFrameSinkManager();
 
-  // Unregister hierarchy for the current parent, only if set.
-  if (parent_frame_sink_id_.is_valid()) {
-    host_frame_sink_manager->UnregisterFrameSinkHierarchy(parent_frame_sink_id_,
-                                                          frame_sink_id_);
+  // Unregister hierarchy for the current parent, only if set and registered.
+  if (parent_frame_sink_id_.is_valid() &&
+      has_frame_sink_hierarchy_registered_) {
+    if (host_frame_sink_manager) {
+      host_frame_sink_manager->UnregisterFrameSinkHierarchy(
+          parent_frame_sink_id_, frame_sink_id_);
+    }
+    has_frame_sink_hierarchy_registered_ = false;
   }
 
   parent_frame_sink_id_ = parent_frame_sink_id;
 
   // Register hierarchy for the new parent, only if set.
-  if (parent_frame_sink_id_.is_valid()) {
-    host_frame_sink_manager->RegisterFrameSinkHierarchy(parent_frame_sink_id_,
-                                                        frame_sink_id_);
+  if (parent_frame_sink_id_.is_valid() && host_frame_sink_manager) {
+    has_frame_sink_hierarchy_registered_ =
+        host_frame_sink_manager->RegisterFrameSinkHierarchy(
+            parent_frame_sink_id_, frame_sink_id_);
   }
 }
 
@@ -756,7 +794,7 @@ void RenderWidgetHostViewChildFrame::TransformPointToRootSurface(
   input_helper_->TransformPointToRootSurface(point);
 }
 
-gfx::Rect RenderWidgetHostViewChildFrame::GetBoundsInRootWindow() {
+gfx::Rect RenderWidgetHostViewChildFrame::GetBoundsInScreen() {
   gfx::Rect rect;
   if (frame_connector_) {
     RenderWidgetHostViewBase* root_view =
@@ -764,7 +802,21 @@ gfx::Rect RenderWidgetHostViewChildFrame::GetBoundsInRootWindow() {
 
     // The root_view can be null in tests when using a TestWebContents.
     if (root_view)
-      rect = root_view->GetBoundsInRootWindow();
+      rect = root_view->GetBoundsInScreen();
+  }
+  return rect;
+}
+
+gfx::Rect RenderWidgetHostViewChildFrame::GetBoundsInScreenWithoutTransform() {
+  gfx::Rect rect;
+  if (frame_connector_) {
+    RenderWidgetHostViewBase* root_view =
+        frame_connector_->GetRootRenderWidgetHostView();
+
+    // The root_view can be null in tests when using a TestWebContents.
+    if (root_view) {
+      rect = root_view->GetBoundsInScreenWithoutTransform();
+    }
   }
   return rect;
 }
@@ -909,8 +961,8 @@ bool RenderWidgetHostViewChildFrame::IsRenderWidgetHostViewChildFrame() const {
 
 void RenderWidgetHostViewChildFrame::
     InvalidateLocalSurfaceIdAndAllocationGroup() {
-  // This should only be handled by the top frame.
-  NOTREACHED();
+  // Child frames do not manage their own LocalSurfaceId or allocation groups in
+  // the browser process.
 }
 
 #if BUILDFLAG(IS_MAC)

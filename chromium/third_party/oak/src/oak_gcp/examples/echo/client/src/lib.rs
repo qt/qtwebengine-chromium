@@ -18,31 +18,31 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use futures::channel::mpsc::{self, Sender};
 use oak_attestation_gcp::{
-    policy_generator::confidential_space_policy_from_reference_values,
-    CONFIDENTIAL_SPACE_ROOT_CERT_PEM,
+    CONFIDENTIAL_SPACE_ROOT_CERT_PEM, OAK_SESSION_NOISE_V1_AUDIENCE,
+    assertions::GcpAssertionVerifier,
 };
-use oak_attestation_verification::EventLogVerifier;
 use oak_gcp_echo_proto::oak::standalone::example::enclave_application_client::EnclaveApplicationClient;
 use oak_proto_rust::oak::{
     attestation::v1::{
-        confidential_space_reference_values::ContainerImage, ConfidentialSpaceReferenceValues,
-        CosignReferenceValues,
+        ConfidentialSpaceReferenceValues, CosignReferenceValues,
+        confidential_space_reference_values::ContainerImage,
     },
     session::v1::{SessionRequest, SessionResponse},
 };
 use oak_proto_rust_lib::p256_ecdsa_verifying_key_to_proto;
 use oak_session::{
+    ClientSession, Session,
+    aggregators::PassThrough,
     attestation::AttestationType,
     channel::{SessionChannel, SessionInitializer},
     config::SessionConfig,
     handshake::HandshakeType,
-    key_extractor::DefaultBindingKeyExtractor,
-    session::AttestationEvidence,
-    ClientSession, Session,
+    session::{AttestationEvidence, AttestationPublisher},
+    verifier::SessionKeyBoundAssertionVerifier,
 };
 use oak_time::Clock;
 use p256::{ecdsa::VerifyingKey, pkcs8::DecodePublicKey};
-use sigstore::rekor::REKOR_PUBLIC_KEY_PEM;
+use rekor::get_rekor_v1_public_key_raw;
 use tonic::transport::{Channel, Uri};
 
 const ATTESTATION_ID: &str = "c0bbb3a6-2256-4390-a342-507b6aecb7e1";
@@ -60,6 +60,7 @@ impl EchoClient {
         url: T,
         clock: Arc<dyn Clock>,
         developer_public_key: VerifyingKey,
+        publisher: Option<Arc<dyn AttestationPublisher>>,
     ) -> Result<EchoClient> {
         let url = url.as_ref().to_owned();
         let uri = Uri::from_maybe_shared(url).context("invalid URI")?;
@@ -75,31 +76,41 @@ impl EchoClient {
 
         // We don't have a noise client impl yet, so we need to manage the session
         // manually.
-        let rekor_public_key = VerifyingKey::from_public_key_pem(REKOR_PUBLIC_KEY_PEM)
+        let rekor_public_key = VerifyingKey::from_public_key_der(&get_rekor_v1_public_key_raw())
             .map_err(|e| anyhow::anyhow!("failed to parse rekor public key: {}", e))?;
 
         let reference_values = ConfidentialSpaceReferenceValues {
             root_certificate_pem: CONFIDENTIAL_SPACE_ROOT_CERT_PEM.to_owned(),
+            #[allow(deprecated)]
             r#container_image: Some(ContainerImage::CosignReferenceValues(CosignReferenceValues {
-                developer_public_key: Some(p256_ecdsa_verifying_key_to_proto(
-                    &developer_public_key,
-                )),
-                rekor_public_key: Some(p256_ecdsa_verifying_key_to_proto(&rekor_public_key)),
+                developer_public_key: Some(
+                    p256_ecdsa_verifying_key_to_proto(&developer_public_key)
+                        .map_err(anyhow::Error::msg)?,
+                ),
+                rekor_public_key: Some(
+                    p256_ecdsa_verifying_key_to_proto(&rekor_public_key)
+                        .map_err(anyhow::Error::msg)?,
+                ),
             })),
         };
-        let policy = confidential_space_policy_from_reference_values(&reference_values)?;
-        let attestation_verifier = EventLogVerifier::new(vec![Box::new(policy)], clock.clone());
+        let assertion_verifier = Box::new(SessionKeyBoundAssertionVerifier {
+            assertion_verifier: Arc::new(GcpAssertionVerifier {
+                audience: OAK_SESSION_NOISE_V1_AUDIENCE.to_string(),
+                reference_values,
+            }),
+            clock: clock.clone(),
+        });
 
-        let client_config: SessionConfig =
+        let mut client_config_builder =
             SessionConfig::builder(AttestationType::PeerUnidirectional, HandshakeType::NoiseNN)
-                .add_peer_verifier_with_key_extractor(
-                    ATTESTATION_ID.to_string(),
-                    Box::new(attestation_verifier),
-                    Box::new(DefaultBindingKeyExtractor {}),
-                )
-                .build();
-        let mut client_session =
-            ClientSession::create(client_config).expect("Failed to create client session");
+                .add_peer_assertion_verifier(ATTESTATION_ID.to_string(), assertion_verifier)
+                .set_assertion_attestation_aggregator(Box::new(PassThrough {}));
+        if let Some(publisher) = publisher {
+            client_config_builder = client_config_builder.add_attestation_publisher(&publisher);
+        }
+
+        let mut client_session = ClientSession::create(client_config_builder.build())
+            .context("creating client session")?;
 
         while !client_session.is_open() {
             let request = client_session.next_init_message().expect("expected client init message");
@@ -108,11 +119,11 @@ impl EchoClient {
                 let response = response_stream
                     .message()
                     .await
-                    .expect("expected a response")
-                    .expect("response was failure");
+                    .context("expected a response")?
+                    .context("response was failure")?;
                 client_session
                     .handle_init_message(response)
-                    .expect("failed to handle init response");
+                    .context("failed to handle init response")?;
             }
         }
 

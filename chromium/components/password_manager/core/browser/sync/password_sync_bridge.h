@@ -81,9 +81,6 @@ class PasswordSyncBridge : public syncer::DataTypeSyncBridge {
   sync_pb::EntitySpecifics TrimAllSupportedFieldsFromRemoteSpecifics(
       const sync_pb::EntitySpecifics& entity_specifics) const override;
 
-  static std::string ComputeClientTagForTesting(
-      const sync_pb::PasswordSpecificsData& password_data);
-
  private:
   // On MacOS or Linux it may happen that some passwords cannot be decrypted due
   // to modification of encryption key in Keychain or Keyring
@@ -91,6 +88,11 @@ class PasswordSyncBridge : public syncer::DataTypeSyncBridge {
   // store. So during merge, the data in sync will be added to the password
   // store. This should be called during MergeFullSyncData().
   std::optional<syncer::ModelError> CleanupPasswordStore();
+
+  // Reads local credentials. If decryption failure is encountered, tries to
+  // clean up the database and re-read. Returns the error if fails.
+  std::optional<syncer::ModelError> ReadCredentialsOrCleanup(
+      PrimaryKeyToPasswordSpecificsDataMap* key_to_local_specifics_map);
 
   // If available, returns cached possibly trimmed PasswordSpecificsData for
   // given |storage_key|. By default, empty PasswordSpecificsData is returned.

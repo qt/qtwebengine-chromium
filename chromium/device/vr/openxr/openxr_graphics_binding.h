@@ -130,8 +130,8 @@ class OpenXrGraphicsBinding {
   // Called at the end of ActivateSwapchainImage. Allows Children to setup the
   // appropriate image to be rendered to by, e.g. Render calls, if that needs
   // to happen ahead of time.
-  virtual void OnSwapchainImageActivated(OpenXrCompositionLayer& layer,
-                                         gpu::SharedImageInterface* sii) = 0;
+  virtual void OnSwapchainImageReady(OpenXrCompositionLayer& layer,
+                                     gpu::SharedImageInterface* sii) = 0;
 
   // Return if the graphics binding supports multiple XR layers.
   virtual bool SupportsLayers() const = 0;
@@ -150,6 +150,7 @@ class OpenXrGraphicsBinding {
   // XrCompositionLayerImageLayoutFB. Otherwise, return null. The return value
   // should be set to the "next" field of the XrCompositionLayer* struct.
   const void* GetFlipLayerLayout() const;
+  const void* GetFlipLayerLayout(OpenXrCompositionLayer& layer) const;
 
   // We check if the base layer is using shared images.
   bool IsUsingSharedImages() const;
@@ -212,8 +213,11 @@ class OpenXrGraphicsBinding {
 
   // A few methods that operate on all layers.
 
-  // Acquire and activate swapchain images from the OpenXr system
-  XrResult ActivateSwapchainImages(gpu::SharedImageInterface* sii);
+  // Acquire swapchain images from the OpenXr system.
+  XrResult AcquireSwapchainImages(gpu::SharedImageInterface* sii);
+
+  // Wait for acquired swapchain images to be ready.
+  XrResult WaitSwapchainImages(gpu::SharedImageInterface* sii);
 
   // Release the active swapchain images from the OpenXr system. This is called
   // before calling EndFrame and will enable acquiring a new swapchain image for
@@ -231,6 +235,13 @@ class OpenXrGraphicsBinding {
   bool CreateCompositionLayer(
       mojom::XRCompositionLayerDataPtr layer_data,
       gpu::SharedImageInterface* shared_image_interface);
+
+  // End the export of updated layers; return layer ClientSharedImages and
+  // output SyncTokens unpacked from XRLayerUpdates via the `out_sync_tokens`
+  // parameter.
+  std::vector<scoped_refptr<gpu::ClientSharedImage>> EndSharedImagesExport(
+      const std::vector<device::mojom::XRLayerUpdatePtr>& layers,
+      std::vector<gpu::SyncToken>& out_sync_tokens);
 
   // Get a composition layer by its layer id. Returns nullptr
   // if the layer id doesn't exist.

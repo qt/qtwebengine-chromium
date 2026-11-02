@@ -6,7 +6,7 @@ import type * as ProtocolProxyApi from '../../generated/protocol-proxy-api.js';
 import * as Protocol from '../../generated/protocol.js';
 
 import {CSSModel} from './CSSModel.js';
-import {MultitargetNetworkManager} from './NetworkManager.js';
+import type {MultitargetNetworkManager} from './NetworkManager.js';
 import {Events, OverlayModel} from './OverlayModel.js';
 import {SDKModel} from './SDKModel.js';
 import {Capability, type Target} from './Target.js';
@@ -18,6 +18,7 @@ export const enum DataSaverOverride {
 }
 
 export class EmulationModel extends SDKModel<EmulationModelEventTypes> implements ProtocolProxyApi.EmulationDispatcher {
+  readonly #multitargetNetworkManager: MultitargetNetworkManager;
   readonly #emulationAgent: ProtocolProxyApi.EmulationApi;
   readonly #deviceOrientationAgent: ProtocolProxyApi.DeviceOrientationApi;
   #cssModel: CSSModel|null;
@@ -37,6 +38,7 @@ export class EmulationModel extends SDKModel<EmulationModelEventTypes> implement
 
   constructor(target: Target) {
     super(target);
+    this.#multitargetNetworkManager = target.targetManager().getNetworkManager();
     this.#emulationAgent = target.emulationAgent();
     this.#deviceOrientationAgent = target.deviceOrientationAgent();
     this.#screenOrientationLocked = false;
@@ -250,6 +252,10 @@ export class EmulationModel extends SDKModel<EmulationModelEventTypes> implement
     }
   }
 
+  async setSafeAreaInsets(insets: Protocol.Emulation.SafeAreaInsets): Promise<void> {
+    await this.#emulationAgent.invoke_setSafeAreaInsetsOverride({insets});
+  }
+
   overlayModel(): OverlayModel|null {
     return this.#overlayModel;
   }
@@ -273,7 +279,7 @@ export class EmulationModel extends SDKModel<EmulationModelEventTypes> implement
         this.#emulationAgent.invoke_setTimezoneOverride({timezoneId: ''}),
         this.#emulationAgent.invoke_setLocaleOverride({locale: ''}),
         this.#emulationAgent.invoke_setUserAgentOverride(
-            {userAgent: MultitargetNetworkManager.instance().currentUserAgent()}),
+            {userAgent: this.#multitargetNetworkManager.currentUserAgent()}),
       ]);
     } else if (location.unavailable) {
       await Promise.all([
@@ -281,7 +287,7 @@ export class EmulationModel extends SDKModel<EmulationModelEventTypes> implement
         this.#emulationAgent.invoke_setTimezoneOverride({timezoneId: ''}),
         this.#emulationAgent.invoke_setLocaleOverride({locale: ''}),
         this.#emulationAgent.invoke_setUserAgentOverride(
-            {userAgent: MultitargetNetworkManager.instance().currentUserAgent()}),
+            {userAgent: this.#multitargetNetworkManager.currentUserAgent()}),
       ]);
     } else {
       function processEmulationResult(errorType: string, result: Protocol.ProtocolResponseWithError): Promise<void> {
@@ -315,7 +321,7 @@ export class EmulationModel extends SDKModel<EmulationModelEventTypes> implement
             .then(result => processEmulationResult('emulation-set-locale', result)),
         this.#emulationAgent
             .invoke_setUserAgentOverride({
-              userAgent: MultitargetNetworkManager.instance().currentUserAgent(),
+              userAgent: this.#multitargetNetworkManager.currentUserAgent(),
               acceptLanguage: location.locale,
             })
             .then(result => processEmulationResult('emulation-set-user-agent', result)),

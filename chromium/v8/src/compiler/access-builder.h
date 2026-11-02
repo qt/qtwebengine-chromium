@@ -9,6 +9,7 @@
 #include "src/compiler/js-operator.h"
 #include "src/compiler/simplified-operator.h"
 #include "src/compiler/write-barrier-kind.h"
+#include "src/objects/bigint.h"
 #include "src/objects/elements-kind.h"
 #include "src/objects/js-objects.h"
 #include "src/objects/property-details.h"
@@ -103,6 +104,12 @@ class V8_EXPORT_PRIVATE AccessBuilder final
   // Provides access to JSFunction::prototype_or_initial_map() field.
   static FieldAccess ForJSFunctionPrototypeOrInitialMap();
 
+  // Provides access to JSProxy::target() field.
+  static FieldAccess ForJSProxyTarget();
+
+  // Provides access to JSProxy::handler() field.
+  static FieldAccess ForJSProxyHandler();
+
   // Provides access to JSFunction::context() field.
   static FieldAccess ForJSFunctionContext();
 
@@ -144,6 +151,9 @@ class V8_EXPORT_PRIVATE AccessBuilder final
 
   // Provides access to JSGeneratorObject::resume_mode() field.
   static FieldAccess ForJSGeneratorObjectResumeMode();
+
+  // Provides access to JSGeneratorObject::yielded_value() field.
+  static FieldAccess ForJSGeneratorObjectYieldedValue();
 
   // Provides access to JSAsyncFunctionObject::promise() field.
   static FieldAccess ForJSAsyncFunctionObjectPromise();

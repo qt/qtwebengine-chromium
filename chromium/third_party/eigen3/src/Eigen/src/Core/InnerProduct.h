@@ -256,8 +256,111 @@ struct default_inner_product_impl {
   }
 };
 
+template <typename T>
+struct unwrap_unary {
+  using type = T;
+  static constexpr bool HasDirectAccess = bool(traits<type>::Flags & DirectAccessBit);
+
+  static EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE constexpr T const& get(T const& xpr) { return xpr; }
+};
+
+template <typename T>
+struct unwrap_unary<T const> : unwrap_unary<T> {};
+
+template <typename Op, typename Xpr>
+struct unwrap_unary<CwiseUnaryOp<Op, Xpr>> : unwrap_unary<Xpr> {
+  static EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE constexpr typename unwrap_unary<Xpr>::type const& get(
+      CwiseUnaryOp<Op, Xpr> const& xpr) {
+    return unwrap_unary<Xpr>::get(xpr.nestedExpression());
+  }
+};
+
+template <typename T, typename Target>
+struct rewrap_unary {
+  using type = Target;
+
+  static EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE constexpr Target const& apply(T const&, Target const& target) {
+    return target;
+  }
+};
+
+template <typename T, typename Target>
+struct rewrap_unary<T const, Target> : rewrap_unary<T, Target const> {};
+
+template <typename Op, typename Xpr, typename Target>
+struct rewrap_unary<CwiseUnaryOp<Op, Xpr>, Target> {
+  using type = CwiseUnaryOp<Op, typename rewrap_unary<Xpr, Target>::type>;
+
+  static EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE constexpr type apply(CwiseUnaryOp<Op, Xpr> const& base,
+                                                                    Target const& target) {
+    return rewrap_unary<Xpr, Target>::apply(base.nestedExpression(), target).unaryExpr(base.functor());
+  }
+};
+
+template <typename Lhs, typename Rhs, bool MayMap = false>
+struct dot_impl_helper {
+  using LhsScalar = typename traits<Lhs>::Scalar;
+  using RhsScalar = typename traits<Rhs>::Scalar;
+  using ResultType = typename ScalarBinaryOpTraits<LhsScalar, RhsScalar>::ReturnType;
+
+  static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE ResultType run(const MatrixBase<Lhs>& a, const MatrixBase<Rhs>& b) {
+    return default_inner_product_impl<Lhs, Rhs, true>::run(a, b);
+  }
+};
+
 template <typename Lhs, typename Rhs>
-struct dot_impl : default_inner_product_impl<Lhs, Rhs, true> {};
+struct dot_impl_helper<Lhs, Rhs, true> {
+  using LhsScalar = typename traits<Lhs>::Scalar;
+  using RhsScalar = typename traits<Rhs>::Scalar;
+  using ResultType = typename ScalarBinaryOpTraits<LhsScalar, RhsScalar>::ReturnType;
+
+  static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE ResultType run(const MatrixBase<Lhs>& a, const MatrixBase<Rhs>& b) {
+    using LhsUnwrapper = unwrap_unary<Lhs>;
+    using RhsUnwrapper = unwrap_unary<Rhs>;
+    using LhsInner = typename LhsUnwrapper::type;
+    using RhsInner = typename RhsUnwrapper::type;
+
+    LhsInner const& lhs_inner = LhsUnwrapper::get(a.derived());
+    RhsInner const& rhs_inner = RhsUnwrapper::get(b.derived());
+
+    if (lhs_inner.innerStride() == 1 && rhs_inner.innerStride() == 1) {
+      using LhsMap = Map<Vector<typename LhsInner::Scalar, size_of_xpr_at_compile_time<LhsInner>::value> const,
+                         evaluator<LhsInner>::Alignment>;
+      using RhsMap = Map<Vector<typename RhsInner::Scalar, size_of_xpr_at_compile_time<RhsInner>::value> const,
+                         evaluator<RhsInner>::Alignment>;
+
+      LhsMap const lhs_map(lhs_inner.data(), lhs_inner.size());
+      RhsMap const rhs_map(rhs_inner.data(), rhs_inner.size());
+
+      using LhsRewrap = rewrap_unary<Lhs, LhsMap>;
+      using RhsRewrap = rewrap_unary<Rhs, RhsMap>;
+
+      return default_inner_product_impl<typename LhsRewrap::type, typename RhsRewrap::type, true>::run(
+          LhsRewrap::apply(a.derived(), lhs_map), RhsRewrap::apply(b.derived(), rhs_map));
+    }
+
+    return default_inner_product_impl<Lhs, Rhs, true>::run(a, b);
+  }
+};
+
+template <typename Lhs, typename Rhs>
+struct dot_impl {
+  using LhsScalar = typename traits<Lhs>::Scalar;
+  using RhsScalar = typename traits<Rhs>::Scalar;
+  using ResultType = typename ScalarBinaryOpTraits<LhsScalar, RhsScalar>::ReturnType;
+
+  static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE ResultType run(const MatrixBase<Lhs>& a, const MatrixBase<Rhs>& b) {
+    using LhsUnwrapper = unwrap_unary<Lhs>;
+    using RhsUnwrapper = unwrap_unary<Rhs>;
+
+    constexpr bool has_dynamic_or_nonunit_stride =
+        inner_stride_at_compile_time<typename LhsUnwrapper::type>::value != 1 ||
+        inner_stride_at_compile_time<typename RhsUnwrapper::type>::value != 1;
+    constexpr bool MayMap = LhsUnwrapper::HasDirectAccess && RhsUnwrapper::HasDirectAccess && has_dynamic_or_nonunit_stride;
+
+    return dot_impl_helper<Lhs, Rhs, MayMap>::run(a, b);
+  }
+};
 
 }  // namespace internal
 }  // namespace Eigen

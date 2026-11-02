@@ -52,10 +52,15 @@ def RunGenerators(api: str, registry: str, grammar: str, directory: str, styleFi
     sys.path.insert(0, registry_headers_path)
     try:
         from reg import Registry
-    except:
-        print("ModuleNotFoundError: No module named 'reg'") # normal python error message
-        print(f'{registry_headers_path} is not pointing to the Vulkan-Headers registry directory.')
-        print("Inside Vulkan-Headers there is a registry/reg.py file that is used.")
+    except Exception as e:
+        reg_path = os.path.join(registry_headers_path, 'reg.py')
+        if not os.path.isfile(reg_path):
+            print("ModuleNotFoundError: No module named 'reg'") # normal python error message
+            print(f'{registry_headers_path} is not pointing to the Vulkan-Headers registry directory.')
+            print("Inside Vulkan-Headers there is a registry/reg.py file that is used.")
+        else:
+            print(f'Found {reg_path}, but failed to import it:')
+            print(f'{type(e).__name__}: {e}')
         sys.exit(1) # Return without call stack so easy to spot error
 
     from base_generator import BaseGeneratorOptions
@@ -520,11 +525,10 @@ def main(argv):
     caching = not args.no_caching
     RunGenerators(args.api, registry, grammar, gen_dir, styleFile, args.target, caching)
 
-    # Generate vk_validation_error_messages.h (ignore if targeting a single generator)
+    # Generate vk_validation_error_messages.h/cpp (ignore if targeting a single generator)
     if (not args.target):
         valid_usage_file = os.path.abspath(os.path.join(os.path.dirname(registry), "validusage.json"))
-        error_message_file = os.path.join(gen_dir, 'vk_validation_error_messages.h')
-        GenerateSpecErrorMessage(args.api, valid_usage_file, error_message_file)
+        GenerateSpecErrorMessage(args.api, valid_usage_file, gen_dir)
 
     # optional post-generation steps
     if args.verify:

@@ -24,6 +24,8 @@ class TabRestoreServiceImplTest;
 
 namespace sessions {
 
+class CommandStorageManager;
+
 // Tab restore service that persists data on disk.
 class SESSIONS_EXPORT TabRestoreServiceImpl : public TabRestoreService {
  public:
@@ -60,7 +62,7 @@ class SESSIONS_EXPORT TabRestoreServiceImpl : public TabRestoreService {
       LiveTabContext* context) override;
   void RemoveEntryById(SessionID id) override;
   void RemoveLeastRecentlyUsedEntries(int num_to_remove) override;
-  std::vector<LiveTab*> RestoreEntryById(
+  std::optional<std::vector<LiveTab*>> RestoreEntryById(
       LiveTabContext* context,
       SessionID id,
       WindowOpenDisposition disposition) override;
@@ -71,6 +73,8 @@ class SESSIONS_EXPORT TabRestoreServiceImpl : public TabRestoreService {
   void Shutdown() override;
 
   void CreateRestoredEntryCommandForTest(SessionID id);
+
+  CommandStorageManager* command_storage_manager_for_testing();
 
  private:
   friend class ::TabRestoreServiceImplTest;

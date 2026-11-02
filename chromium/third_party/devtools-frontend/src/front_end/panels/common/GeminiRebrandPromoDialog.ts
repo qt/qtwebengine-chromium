@@ -121,7 +121,7 @@ export const DEFAULT_VIEW: View = (input, _output, target): void => {
           @click=${input.onGetStartedClick}>${i18nString(UIStrings.getStarted)}</devtools-button>
       </div>
     `,
-    target
+    target,
   );
   // clang-format on
 };
@@ -177,7 +177,7 @@ export class GeminiRebrandPromoDialog extends UI.Widget.VBox {
       return;
     }
 
-    const currentAidaAvailability = await Host.AidaClient.AidaClient.checkAccessPreconditions();
+    const currentAidaAvailability = Host.AidaClient.HostConfigTracker.instance().aidaAvailability;
     if (currentAidaAvailability !== Host.AidaClient.AidaAccessPreconditions.AVAILABLE) {
       return;
     }

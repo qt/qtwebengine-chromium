@@ -14,6 +14,8 @@
 
 #include "src/gav1/decoder.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <new>
 #include <vector>

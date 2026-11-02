@@ -4,13 +4,10 @@
 // found in the LICENSE file.
 //
 
-#ifdef UNSAFE_BUFFERS_BUILD
-#    pragma allow_unsafe_buffers
-#endif
-
 // FramebufferGL.cpp: Implements the class methods for FramebufferGL.
 
 #include "libANGLE/renderer/gl/FramebufferGL.h"
+#include "common/unsafe_buffers.h"
 
 #include "common/bitset_utils.h"
 #include "common/debug.h"
@@ -282,17 +279,6 @@ bool RequiresMultiviewClear(const FramebufferState &state, bool scissorTestEnabl
     return false;
 }
 
-bool IsEmulatedAlphaChannelTextureAttachment(const FramebufferAttachment *attachment)
-{
-    if (!attachment || attachment->type() != GL_TEXTURE)
-    {
-        return false;
-    }
-
-    const Texture *texture     = attachment->getTexture();
-    const TextureGL *textureGL = GetImplAs<TextureGL>(texture);
-    return textureGL->hasEmulatedAlphaChannel(attachment->getTextureImageIndex());
-}
 
 class [[nodiscard]] ScopedEXTTextureNorm16ReadbackWorkaround
 {
@@ -348,7 +334,7 @@ class [[nodiscard]] ScopedEXTTextureNorm16ReadbackWorkaround
             ANGLE_CHECK_GL_MATH(contextGL, checkedAllocatedBytes.IsValid());
             const GLuint allocatedBytes = checkedAllocatedBytes.ValueOrDie();
             tmpPixels                   = new GLubyte[allocatedBytes];
-            memset(tmpPixels, 0, allocatedBytes);
+            ANGLE_UNSAFE_TODO(memset(tmpPixels, 0, allocatedBytes));
         }
 
         return angle::Result::Continue;
@@ -409,8 +395,8 @@ angle::Result RearrangeEXTTextureNorm16Pixels(const gl::Context *context,
     GLubyte *srcRowStart = tmpPixels;
     GLubyte *dstRowStart = clientPixels;
 
-    srcRowStart += skipBytes;
-    dstRowStart += originalReadFormatSkipBytes;
+    ANGLE_UNSAFE_TODO(srcRowStart += skipBytes);
+    ANGLE_UNSAFE_TODO(dstRowStart += originalReadFormatSkipBytes);
 
     for (GLint y = 0; y < area.height; ++y)
     {
@@ -421,18 +407,18 @@ angle::Result RearrangeEXTTextureNorm16Pixels(const gl::Context *context,
             GLushort *srcPixel = reinterpret_cast<GLushort *>(src);
             GLushort *dstPixel = reinterpret_cast<GLushort *>(dst);
             dstPixel[0]        = srcPixel[0];
-            dstPixel[1]        = format == GL_RG ? srcPixel[1] : 0;
+            ANGLE_UNSAFE_TODO(dstPixel[1] = format == GL_RG ? srcPixel[1] : 0);
             // Set other channel of RGBA to 0 (GB when format == GL_RED, B when format == GL_RG)
-            dstPixel[2] = 0;
+            ANGLE_UNSAFE_TODO(dstPixel[2]) = 0;
             // Set alpha channel to 1
-            dstPixel[3] = 0xFFFF;
+            ANGLE_UNSAFE_TODO(dstPixel[3]) = 0xFFFF;
 
-            src += pixelBytes;
-            dst += originalReadFormatPixelBytes;
+            ANGLE_UNSAFE_TODO(src += pixelBytes);
+            ANGLE_UNSAFE_TODO(dst += originalReadFormatPixelBytes);
         }
 
-        srcRowStart += rowBytes;
-        dstRowStart += originalReadFormatRowBytes;
+        ANGLE_UNSAFE_TODO(srcRowStart += rowBytes);
+        ANGLE_UNSAFE_TODO(dstRowStart += originalReadFormatRowBytes);
     }
 
     return angle::Result::Continue;
@@ -449,9 +435,9 @@ bool IsValidUnsignedShortReadPixelsFormat(GLenum readFormat, const gl::Context *
 // - transparent/opaque white
 bool IsNonTrivialClearColor(const GLfloat *color)
 {
-    return !(((color[0] == 0.0f && color[1] == 0.0f && color[2] == 0.0f) ||
-              (color[0] == 1.0f && color[1] == 1.0f && color[2] == 1.0f)) &&
-             (color[3] == 0.0f || color[3] == 1.0f));
+    return !ANGLE_UNSAFE_TODO(((color[0] == 0.0f && color[1] == 0.0f && color[2] == 0.0f) ||
+                               (color[0] == 1.0f && color[1] == 1.0f && color[2] == 1.0f)) &&
+                              (color[3] == 0.0f || color[3] == 1.0f));
 }
 
 // Returns true for all colors except
@@ -459,18 +445,36 @@ bool IsNonTrivialClearColor(const GLfloat *color)
 // - (1, 1, 1, 0 or 1)
 bool IsNonTrivialClearColor(const GLuint *color)
 {
-    return !(((color[0] == 0 && color[1] == 0 && color[2] == 0) ||
-              (color[0] == 1 && color[1] == 1 && color[2] == 1)) &&
-             (color[3] == 0 || color[3] == 1));
+    return !ANGLE_UNSAFE_TODO(((color[0] == 0 && color[1] == 0 && color[2] == 0) ||
+                               (color[0] == 1 && color[1] == 1 && color[2] == 1)) &&
+                              (color[3] == 0 || color[3] == 1));
 }
 
 }  // namespace
 
-FramebufferGL::FramebufferGL(const gl::FramebufferState &data, GLuint id, bool emulatedAlpha)
+bool IsEmulatedAlphaChannelTextureAttachment(const gl::FramebufferAttachment *attachment)
+{
+    if (!attachment || attachment->type() != GL_TEXTURE)
+    {
+        return false;
+    }
+
+    const Texture *texture     = attachment->getTexture();
+    const TextureGL *textureGL = GetImplAs<TextureGL>(texture);
+    return textureGL->hasEmulatedAlphaChannel(attachment->getTextureImageIndex());
+}
+
+FramebufferGL::FramebufferGL(const gl::FramebufferState &data,
+                             GLuint id,
+                             bool emulatedAlpha,
+                             const FunctionsGL *functions,
+                             StateManagerGL *stateManager)
     : FramebufferImpl(data),
       mFramebufferID(id),
       mHasEmulatedAlphaAttachment(emulatedAlpha),
-      mAppliedEnabledDrawBuffers(1)
+      mAppliedEnabledDrawBuffers(1),
+      mFunctions(functions),
+      mStateManager(stateManager)
 {
     ASSERT((isDefault() && id == 0) || !isDefault());
 }
@@ -534,6 +538,8 @@ angle::Result FramebufferGL::invalidate(const gl::Context *context,
                                              finalAttachmentsPtr);
         }
     }
+    ContextGL *contextGL = GetImplAs<ContextGL>(context);
+    contextGL->tickGC();
 
     return angle::Result::Continue;
 }
@@ -792,9 +798,19 @@ angle::Result FramebufferGL::readPixels(const gl::Context *context,
         stateManager->getHasSeparateFramebufferBindings() ? GL_READ_FRAMEBUFFER : GL_FRAMEBUFFER;
     stateManager->bindFramebuffer(framebufferTarget, mFramebufferID);
 
+    const gl::InternalFormat &glFormat = gl::GetInternalFormatInfo(readFormat, readType);
+    GLuint rowBytes                    = 0;
+    ANGLE_CHECK_GL_MATH(contextGL,
+                        glFormat.computeRowPitch(readType, area.width, packState.alignment,
+                                                 packState.rowLength, &rowBytes));
+
     bool useOverlappingRowsWorkaround = features.packOverlappingRowsSeparatelyPackBuffer.enabled &&
                                         packBuffer && packState.rowLength != 0 &&
                                         packState.rowLength < clippedArea.width;
+
+    bool useLargeRowLengthWorkaround =
+        features.packLargeRowLengthSeparatelyPackBuffer.enabled && packBuffer &&
+        rowBytes >= 0x10000000u;  // Mali int32 stride-in-bits wrap threshold
 
     GLubyte *outPtr = static_cast<GLubyte *>(pixels);
     int leftClip    = clippedArea.x - area.x;
@@ -802,13 +818,7 @@ angle::Result FramebufferGL::readPixels(const gl::Context *context,
     if (leftClip || topClip)
     {
         // Adjust destination to match portion clipped off left and/or top.
-        const gl::InternalFormat &glFormat = gl::GetInternalFormatInfo(readFormat, readType);
-
-        GLuint rowBytes = 0;
-        ANGLE_CHECK_GL_MATH(contextGL,
-                            glFormat.computeRowPitch(readType, area.width, packState.alignment,
-                                                     packState.rowLength, &rowBytes));
-        outPtr += leftClip * glFormat.pixelBytes + topClip * rowBytes;
+        ANGLE_UNSAFE_TODO(outPtr += leftClip * glFormat.pixelBytes + topClip * rowBytes);
     }
 
     if (packState.rowLength == 0 && clippedArea.width != area.width)
@@ -825,7 +835,8 @@ angle::Result FramebufferGL::readPixels(const gl::Context *context,
     bool usePackSkipWorkaround = features.emulatePackSkipRowsAndPackSkipPixels.enabled &&
                                  (packState.skipRows != 0 || packState.skipPixels != 0);
 
-    if (cannotSetDesiredRowLength || useOverlappingRowsWorkaround || usePackSkipWorkaround)
+    if (cannotSetDesiredRowLength || useOverlappingRowsWorkaround || useLargeRowLengthWorkaround ||
+        usePackSkipWorkaround)
     {
         return readPixelsRowByRow(context, clippedArea, format, readFormat, readType, packState,
                                   outPtr);
@@ -1351,10 +1362,19 @@ angle::Result FramebufferGL::ensureAttachmentsInitialized(
     bool depth,
     bool stencil)
 {
-    if (colorAttachments != getState().getEnabledDrawBuffers())
+    const gl::FramebufferState &state                  = getState();
+    const gl::FramebufferAttachment *depthAttachment   = state.getDepthAttachment();
+    const gl::FramebufferAttachment *stencilAttachment = state.getStencilAttachment();
+
+    const bool isPartialDepthStencilInit =
+        depthAttachment && stencilAttachment &&
+        depthAttachment->getResource() == stencilAttachment->getResource() && depth != stencil;
+
+    if (colorAttachments != state.getEnabledDrawBuffers() || isPartialDepthStencilInit)
     {
         // Fall back to the default implementation when there are gaps in the enabled draw buffers
-        // to avoid modifying the draw buffer state.
+        // to avoid modifying the draw buffer state, or when we are performing a partial clear of a
+        // packed depth-stencil attachment.
         return FramebufferImpl::ensureAttachmentsInitialized(context, colorAttachments, depth,
                                                              stencil);
     }
@@ -1363,78 +1383,13 @@ angle::Result FramebufferGL::ensureAttachmentsInitialized(
     return blitter->clearFramebuffer(context, colorAttachments, depth, stencil, this);
 }
 
-angle::Result FramebufferGL::recreateFbo(const gl::Context *context)
+angle::Result FramebufferGL::onAttachmentLayerCountChange(gl::FramebufferAttachment *attachment)
 {
-    const FunctionsGL *functions = GetFunctionsGL(context);
-    StateManagerGL *stateManager = GetStateManagerGL(context);
-
-    stateManager->deleteFramebuffer(mFramebufferID);
-    mFramebufferID = 0;
-    functions->genFramebuffers(1, &mFramebufferID);
-    stateManager->bindFramebuffer(GL_FRAMEBUFFER, mFramebufferID);
-
-    const gl::FramebufferState &state = getState();
-    size_t numColorAttachments        = state.getColorAttachments().size();
-    gl::Framebuffer::DirtyBits dirtyBits;
-
-    // Setting dirty bits that require entry points from later context
-    // versions will crash, as syncState dereferences null function
-    // pointers.
-    for (size_t i = 0; i < numColorAttachments; ++i)
-    {
-        dirtyBits.set(Framebuffer::DIRTY_BIT_COLOR_ATTACHMENT_0 + i);
-    }
-    if (state.getDepthAttachment())
-    {
-        dirtyBits.set(Framebuffer::DIRTY_BIT_DEPTH_ATTACHMENT);
-    }
-    if (state.getStencilAttachment())
-    {
-        dirtyBits.set(Framebuffer::DIRTY_BIT_STENCIL_ATTACHMENT);
-    }
-    const DrawBuffersVector<GLenum> &drawBufferStates = state.getDrawBufferStates();
-    if (drawBufferStates[0] != GL_COLOR_ATTACHMENT0 ||
-        std::find_if_not(drawBufferStates.begin() + 1, drawBufferStates.end(),
-                         [](const GLenum &current) { return current == GL_NONE; }) !=
-            drawBufferStates.end())
-    {
-        dirtyBits.set(Framebuffer::DIRTY_BIT_DRAW_BUFFERS);
-    }
-    if (state.getReadBufferState() != GL_COLOR_ATTACHMENT0)
-    {
-        dirtyBits.set(Framebuffer::DIRTY_BIT_READ_BUFFER);
-    }
-    if (state.getDefaultWidth() != 0)
-    {
-        dirtyBits.set(Framebuffer::DIRTY_BIT_DEFAULT_WIDTH);
-    }
-    if (state.getDefaultHeight() != 0)
-    {
-        dirtyBits.set(Framebuffer::DIRTY_BIT_DEFAULT_HEIGHT);
-    }
-    if (state.getDefaultSamples() != 0)
-    {
-        dirtyBits.set(Framebuffer::DIRTY_BIT_DEFAULT_SAMPLES);
-    }
-    if (state.getDefaultFixedSampleLocations() != 0)
-    {
-        dirtyBits.set(Framebuffer::DIRTY_BIT_DEFAULT_FIXED_SAMPLE_LOCATIONS);
-    }
-    if (state.getDefaultLayers() != 0)
-    {
-        dirtyBits.set(Framebuffer::DIRTY_BIT_DEFAULT_LAYERS);
-    }
-    if (state.getWriteControlMode() != SrgbWriteControlMode::Default)
-    {
-        dirtyBits.set(Framebuffer::DIRTY_BIT_FRAMEBUFFER_SRGB_WRITE_CONTROL_MODE);
-    }
-    if (state.getFlipY() != GL_FALSE)
-    {
-        dirtyBits.set(Framebuffer::DIRTY_BIT_FLIP_Y);
-    }
-
-    // Leave other bits like DIRTY_BIT_FOVEATION alone.
-    return syncState(context, GL_FRAMEBUFFER, dirtyBits, gl::Command::Other);
+    ASSERT(!isDefault() && attachment && attachment->isAttached() &&
+           attachment->type() == GL_TEXTURE && mFunctions->framebufferTextureLayer);
+    mStateManager->bindFramebuffer(GL_FRAMEBUFFER, mFramebufferID);
+    mFunctions->framebufferTextureLayer(GL_FRAMEBUFFER, attachment->getBinding(), 0, 0, 0);
+    return angle::Result::Continue;
 }
 
 angle::Result FramebufferGL::syncState(const gl::Context *context,
@@ -1564,6 +1519,12 @@ angle::Result FramebufferGL::syncState(const gl::Context *context,
             context->getState().getProgramExecutable(), getState());
     }
 
+    if (dirtyBits.any())
+    {
+        ContextGL *contextGL = GetImplAs<ContextGL>(context);
+        contextGL->tickGC();
+    }
+
     return angle::Result::Continue;
 }
 
@@ -1668,7 +1629,7 @@ bool FramebufferGL::modifyInvalidateAttachmentsForEmulatedDefaultFBO(
     modifiedAttachments->resize(count);
     for (size_t i = 0; i < count; i++)
     {
-        switch (attachments[i])
+        switch (ANGLE_UNSAFE_TODO(attachments[i]))
         {
             case GL_COLOR:
                 (*modifiedAttachments)[i] = GL_COLOR_ATTACHMENT0;
@@ -1725,12 +1686,12 @@ angle::Result FramebufferGL::readPixelsRowByRow(const gl::Context *context,
     ANGLE_TRY(stateManager->setPixelPackState(context, directPack));
 
     GLubyte *readbackPixels = workaround.Pixels();
-    readbackPixels += skipBytes;
+    ANGLE_UNSAFE_TODO(readbackPixels += skipBytes);
     for (GLint y = area.y; y < area.y + area.height; ++y)
     {
-        ANGLE_GL_TRY(context,
-                     functions->readPixels(area.x, y, area.width, 1, format, type, readbackPixels));
-        readbackPixels += rowBytes;
+        ANGLE_GL_TRY_ALWAYS_CHECK(
+            context, functions->readPixels(area.x, y, area.width, 1, format, type, readbackPixels));
+        ANGLE_UNSAFE_TODO(readbackPixels += rowBytes);
     }
 
     if (workaround.IsEnabled())
@@ -1777,8 +1738,9 @@ angle::Result FramebufferGL::readPixelsAllAtOnce(const gl::Context *context,
     if (height > 0)
     {
         ANGLE_TRY(stateManager->setPixelPackState(context, pack));
-        ANGLE_GL_TRY(context, functions->readPixels(area.x, area.y, area.width, height, format,
-                                                    type, workaround.Pixels()));
+        ANGLE_GL_TRY_ALWAYS_CHECK(
+            context, functions->readPixels(area.x, area.y, area.width, height, format, type,
+                                           workaround.Pixels()));
     }
 
     if (readLastRowSeparately)
@@ -1788,9 +1750,10 @@ angle::Result FramebufferGL::readPixelsAllAtOnce(const gl::Context *context,
         ANGLE_TRY(stateManager->setPixelPackState(context, directPack));
 
         GLubyte *readbackPixels = workaround.Pixels();
-        readbackPixels += skipBytes + (area.height - 1) * rowBytes;
-        ANGLE_GL_TRY(context, functions->readPixels(area.x, area.y + area.height - 1, area.width, 1,
-                                                    format, type, readbackPixels));
+        ANGLE_UNSAFE_TODO(readbackPixels += skipBytes + (area.height - 1) * rowBytes);
+        ANGLE_GL_TRY_ALWAYS_CHECK(
+            context, functions->readPixels(area.x, area.y + area.height - 1, area.width, 1, format,
+                                           type, readbackPixels));
     }
 
     if (workaround.IsEnabled())

@@ -75,7 +75,7 @@
 namespace Eigen {
 namespace internal {
 
-enum MemType { LUSUP, UCOL, LSUB, USUB, LLVL, ULVL };
+enum MemType { LUSUP, UCOL, LSUB, USUB };
 
 template <typename IndexVector, typename ScalarVector>
 struct LU_GlobalLU_t {

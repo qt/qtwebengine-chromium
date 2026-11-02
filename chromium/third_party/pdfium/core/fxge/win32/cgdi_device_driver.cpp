@@ -403,6 +403,8 @@ int CGdiDeviceDriver::GetBitsPerPixel() const {
   return bits_per_pixel_;
 }
 
+void CGdiDeviceDriver::Clear(uint32_t color) {}
+
 void CGdiDeviceDriver::SaveState() {
   SaveDC(dc_handle_);
 }

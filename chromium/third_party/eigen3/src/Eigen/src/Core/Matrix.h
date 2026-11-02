@@ -147,7 +147,8 @@ struct traits<Matrix<Scalar_, Rows_, Cols_, Options_, MaxRows_, MaxCols_>> {
  *
  * <i><b>ABI and storage layout</b></i>
  *
- * The table below summarizes the ABI of some possible Matrix instances which is fixed thorough the lifetime of Eigen 3.
+ * The table below summarizes the ABI of some possible Matrix instances which is fixed throughout the lifetime of Eigen
+ * 3.
  * <table  class="manual">
  * <tr><th>Matrix type</th><th>Equivalent C structure</th></tr>
  * <tr><td>\code Matrix<T,Dynamic,Dynamic> \endcode</td><td>\code
@@ -265,7 +266,7 @@ class Matrix : public PlainObjectBase<Matrix<Scalar_, Rows_, Cols_, Options_, Ma
     return *this;
   }
 
-  /** \brief Construct a row of column vector with fixed size from an arbitrary number of coefficients.
+  /** \brief Construct a row or column vector with fixed size from an arbitrary number of coefficients.
    *
    * \only_for_vectors
    *

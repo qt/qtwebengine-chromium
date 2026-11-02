@@ -43,7 +43,7 @@
 
 "use strict";
 
-import { AST_Node } from "../ast.js";
+import { AST_Node, AST_Number, AST_UnaryPrefix } from "../ast.js";
 
 function characters(str) {
     return str.split("");
@@ -79,7 +79,7 @@ function defaults(args, defs, croak) {
     for (const i in defs) if (HOP(defs, i)) {
         if (!args || !HOP(args, i)) {
             ret[i] = defs[i];
-        } else if (i === "ecma") {
+        } else if (i === "ecma" || i === "builtins_ecma") {
             let ecma = args[i] | 0;
             if (ecma > 5 && ecma < 2015) ecma += 2009;
             ret[i] = ecma;
@@ -128,6 +128,15 @@ function make_node(ctor, orig, props) {
         if (!props.end) props.end = orig.end;
     }
     return new ctor(props);
+}
+
+/** Makes a `void 0` expression. Use instead of AST_Undefined which may conflict
+ * with an existing variable called `undefined` */
+function make_void_0(orig) {
+    return make_node(AST_UnaryPrefix, orig, {
+        operator: "void",
+        expression: make_node(AST_Number, orig, { value: 0 })
+    });
 }
 
 function push_uniq(array, el) {
@@ -272,6 +281,7 @@ export {
     HOP,
     keep_name,
     make_node,
+    make_void_0,
     makePredicate,
     map_add,
     map_from_object,

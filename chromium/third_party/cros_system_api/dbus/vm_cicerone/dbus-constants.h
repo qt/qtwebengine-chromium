@@ -28,7 +28,6 @@ const char kApplyAnsiblePlaybookMethod[] = "ApplyAnsiblePlaybook";
 const char kAttachUsbToContainerMethod[] = "AttachUsbToContainer";
 const char kCancelExportLxdContainerMethod[] = "CancelExportLxdContainer";
 const char kCancelImportLxdContainerMethod[] = "CancelImportLxdContainer";
-const char kCancelUpgradeContainerMethod[] = "CancelUpgradeContainer";
 const char kConfigureForArcSideloadMethod[] = "ConfigureForArcSideload";
 const char kCreateLxdContainerMethod[] = "CreateLxdContainer";
 const char kDeleteLxdContainerMethod[] = "DeleteLxdContainer";
@@ -54,7 +53,6 @@ const char kStartLxdMethod[] = "StartLxd";
 const char kStopLxdContainerMethod[] = "StopLxdContainer";
 const char kUninstallPackageOwningFileMethod[] = "UninstallPackageOwningFile";
 const char kUpdateContainerDevicesMethod[] = "UpdateContainerDevices";
-const char kUpgradeContainerMethod[] = "UpgradeContainer";
 // keep-sorted end
 
 // Methods to be called from chunneld.
@@ -85,7 +83,6 @@ const char kStartLxdProgressSignal[] = "StartLxdProgress";
 const char kTremplinStartedSignal[] = "TremplinStarted";
 const char kUninhibitScreensaverSignal[] = "UninhibitScreensaver";
 const char kUninstallPackageProgressSignal[] = "UninstallPackageProgress";
-const char kUpgradeContainerProgressSignal[] = "UpgradeContainerProgress";
 // keep-sorted end
 // LINT.ThenChange(/vm_tools/dbus_bindings/org.chromium.VmCicerone.xml)
 

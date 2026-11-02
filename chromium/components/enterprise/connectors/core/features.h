@@ -33,10 +33,6 @@ BASE_DECLARE_FEATURE_PARAM(size_t, kMaxContentAnalysisFileSizeMB);
 // experiments. See http://crbug.com/444472089.
 inline constexpr int kDefaultMaxParallelActiveRequests = 30;
 
-// Controls enabling and count of concurrent upload limit for content analysis.
-BASE_DECLARE_FEATURE(kEnableNewUploadCountLimit);
-BASE_DECLARE_FEATURE_PARAM(size_t, kParallelContentAnalysisRequestCountMax);
-
 // Controls whether encrypted file upload is enabled.
 BASE_DECLARE_FEATURE(kEnableEncryptedFileUpload);
 
@@ -56,6 +52,12 @@ BASE_DECLARE_FEATURE(kEnableCancelUploadOnContentAnalysis);
 // Controls whether the audit-only network request connector policy will be
 // applied if set.
 BASE_DECLARE_FEATURE(kEnableAuditOnlyNetworkRequestConnector);
+
+// Controls whether copy to clipboard is enabled for content analysis.
+BASE_DECLARE_FEATURE(kContentAnalysisClipboardCopy);
+
+// Controls whether virtual file DLP scanning is enabled.
+BASE_DECLARE_FEATURE(kEnableDlpFileSystemApi);
 
 }  // namespace enterprise_connectors
 

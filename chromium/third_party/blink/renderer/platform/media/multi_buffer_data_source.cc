@@ -333,13 +333,6 @@ void MultiBufferDataSource::Stop() {
   {
     base::AutoLock auto_lock(lock_);
     StopInternal_Locked();
-
-    // Cleanup resources immediately if we're already on the right thread.
-    if (render_task_runner_->BelongsToCurrentThread()) {
-      reader_.reset();
-      url_data_.reset();
-      return;
-    }
   }
 
   PostCrossThreadTask(*render_task_runner_, FROM_HERE,
@@ -580,6 +573,12 @@ void MultiBufferDataSource::StopLoader() {
 
 void MultiBufferDataSource::SetBitrateTask(int bitrate) {
   DCHECK(render_task_runner_->BelongsToCurrentThread());
+  {
+    base::AutoLock auto_lock(lock_);
+    if (stop_signal_received_) {
+      return;
+    }
+  }
 
   bitrate_ = bitrate;
   UpdateBufferSizes();
@@ -808,7 +807,8 @@ void MultiBufferDataSource::Factory::Create(
     const GURL& uri,
     media::DataSource::CacheMode cache_mode,
     media::DataSource::EncodingMode encoding_mode,
-    DataSourceCb cb) {
+    base::OnceCallback<void(std::unique_ptr<media::CrossOriginDataSource>)>
+        cb) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
   auto download_cb =
 #if DCHECK_IS_ON()
@@ -828,7 +828,7 @@ void MultiBufferDataSource::Factory::Create(
 }
 
 void MultiBufferDataSource::Factory::OnUrlData(
-    DataSourceCb cb,
+    base::OnceCallback<void(std::unique_ptr<media::CrossOriginDataSource>)> cb,
     base::RepeatingCallback<void(bool)> download_cb,
     scoped_refptr<UrlData> data) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());

@@ -13,8 +13,8 @@ import type {PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
 import type {PageCallbackRouter, PageHandlerRemote as SearchboxPageHandlerRemote} from '//resources/mojo/components/omnibox/browser/searchbox.mojom-webui.js';
 import type {Size} from '//resources/mojo/ui/gfx/geometry/mojom/geometry.mojom-webui.js';
 
-import {SubmitButtonIconType} from './composebox.js';
 import type {PageHandlerRemote} from './composebox.mojom-webui.js';
+import {SubmitButtonIconType} from './composebox_mixin.js';
 import {ComposeboxProxyImpl} from './composebox_proxy.js';
 import {getCss} from './composebox_voice_search.css.js';
 import {getHtml} from './composebox_voice_search.html.js';
@@ -109,6 +109,14 @@ export enum VoiceSearchMetricType {
   ERROR = 'Errors',
 }
 
+export enum VoiceSearchQuerySource {
+  NTP_REALBOX = 0,
+  NTP_COMPOSEBOX = 1,
+  OMNIBOX_COMPOSEBOX = 2,
+  NEXTBOX_COMPOSEBOX = 3,
+  MAX_VALUE = NEXTBOX_COMPOSEBOX,
+}
+
 function toError(webkitError: string): VoiceSearchError {
   switch (webkitError) {
     case 'aborted':
@@ -129,13 +137,6 @@ function toError(webkitError: string): VoiceSearchError {
       return VoiceSearchError.BAD_GRAMMAR;
     default:
       return VoiceSearchError.OTHER;
-  }
-}
-
-// TODO(crbug.com/40449919): Remove when bug is fixed.
-declare global {
-  interface Window {
-    webkitSpeechRecognition: typeof SpeechRecognition;
   }
 }
 
@@ -165,8 +166,12 @@ export class ComposeboxVoiceSearchElement extends
   static override get properties() {
     return {
       submitStopButtonsEnabled: {type: Boolean},
-      liveTranscriptEnabled: {type: Boolean},
+      liveTranscriptEnabled: {
+        type: Boolean,
+        reflect: true,
+      },
       pageCallbackRouter: {type: Object},
+      metricSource: {type: String, attribute: 'metric-source'},
       transcript_: {type: String},
       listeningPlaceholder_: {type: String},
       state_: {type: Number},
@@ -175,9 +180,12 @@ export class ComposeboxVoiceSearchElement extends
       errorMessage_: {type: String},
       error_: {type: Number},
       detailsUrl_: {type: String},
-      detailedError_: {type: Number},
+      detailedError: {type: Number},
       hasErrorTimer: {type: Boolean},
-      isPermissionPromptOpen_: {type: Boolean, reflect: true},
+      isPermissionPromptOpen: {
+        type: Boolean,
+        reflect: true,
+      },
       submitButtonIconType: {type: String},
       /**
        * Determines whether to automatically submit the query upon receiving a
@@ -194,8 +202,6 @@ export class ComposeboxVoiceSearchElement extends
       /**
        * Maximum number of characters recognized before force-submitting a
        * query. Includes characters of non-confident recognition transcripts.
-       * TODO(crbug.com/510393520): Enforce a 120-character limit for the
-       * Searchbox surface.
        */
       queryLengthLimit: {type: Number},
       /**
@@ -205,56 +211,64 @@ export class ComposeboxVoiceSearchElement extends
        * `dynamicTimeoutEnabled` is set, then this number is ignored.
        */
       idleTimeout: {type: Number},
+      /**
+       * Whether voice search was activated by a keyboard shortcut.
+       */
+      activatedByKeyboard: {type: Boolean},
     };
   }
-
-  accessor submitStopButtonsEnabled: boolean = false;
-  accessor liveTranscriptEnabled: boolean = true;
-  // Accept page callback router attribute asynchronously, so that the parent
-  // and voice search component can share the same mojo connection and source of
-  // truth (to avoid race conditions).
-  accessor pageCallbackRouter: PageCallbackRouter|null = null;
-  protected accessor transcript_: string = '';
-  protected accessor listeningPlaceholder_: string =
-      loadTimeData.getString('voiceListening');
-  protected accessor finalResult_: string = '';
-  protected accessor interimResult_: string = '';
-  protected accessor error_: VoiceSearchError|null = null;
-  protected accessor errorMessage_: string = '';
-  accessor detailedError_: VoiceSearchError|null = null;
-  protected accessor detailsUrl_: string =
-      `https://support.google.com/chrome/?p=ui_voice_search&hl=${
-          window.navigator.language}`;
-  protected accessor isPermissionPromptOpen_: boolean = false;
-
-  private accessor state_: State = State.UNINITIALIZED;
-  private metricSource_: string = '';
-  private blurTimeoutId_: number|null = null;
 
   // Shared statically to coordinate the singleton SpeechRecognition service
   // across element instances (which are destroyed/recreated on toggle) and
   // prevent InvalidStateError crashes on rapid restarts.
   private static activeRecognition_: SpeechRecognition|null = null;
-  private static pendingStartInstance_: ComposeboxVoiceSearchElement|null = null;
+  private static pendingStartInstance_: ComposeboxVoiceSearchElement|null =
+      null;
 
-  private pageHandler_: PageHandlerRemote =
-      ComposeboxProxyImpl.getInstance().handler;
-  private voiceRecognition_: SpeechRecognition;
-  private timerId_: number|null = null;
-  private searchboxHandler_: SearchboxPageHandlerRemote =
-      ComposeboxProxyImpl.getInstance().searchboxHandler;
-  private listenerIds_: number[] = [];
+  accessor activatedByKeyboard: boolean = false;
+  accessor autosubmitEnabled: boolean = false;
+  accessor detailedError: VoiceSearchError|null = null;
+  accessor dynamicTimeoutEnabled: boolean = false;
   accessor hasErrorTimer: boolean = false;
+  accessor idleTimeout: number = 3000;
+  accessor isPermissionPromptOpen: boolean = false;
+  accessor liveTranscriptEnabled: boolean = true;
+  accessor metricSource: string = '';
+  // Accept page callback router attribute asynchronously, so that the parent
+  // and voice search component can share the same mojo connection and source of
+  // truth (to avoid race conditions).
+  accessor pageCallbackRouter: PageCallbackRouter|null = null;
+  accessor queryLengthLimit: number|undefined = undefined;
   accessor submitButtonIconType: SubmitButtonIconType =
       SubmitButtonIconType.FORWARD;
-  accessor autosubmitEnabled: boolean = false;
-  accessor dynamicTimeoutEnabled: boolean = false;
-  accessor queryLengthLimit: number|undefined = undefined;
-  accessor idleTimeout: number = 3000;
+  accessor submitStopButtonsEnabled: boolean = false;
+
+  protected accessor detailsUrl_: string =
+      `https://support.google.com/chrome/?p=ui_voice_search&hl=${
+          window.navigator.language}`;
+  protected accessor error_: VoiceSearchError|null = null;
+  protected accessor errorMessage_: string = '';
+  protected accessor finalResult_: string = '';
+  protected accessor interimResult_: string = '';
+  protected accessor listeningPlaceholder_: string =
+      loadTimeData.getString('voiceListening');
+  protected accessor transcript_: string = '';
+
+  private accessor state_: State = State.UNINITIALIZED;
+
+  private blurTimeoutId_: number|null = null;
+  private listenerIds_: number[] = [];
+  private pageHandler_: PageHandlerRemote =
+      ComposeboxProxyImpl.getInstance().handler;
+  private searchboxHandler_: SearchboxPageHandlerRemote =
+      ComposeboxProxyImpl.getInstance().searchboxHandler;
+  private timerId_: number|null = null;
+  private voiceRecognition_: SpeechRecognition;
 
   constructor() {
     super();
-    this.voiceRecognition_ = new window.webkitSpeechRecognition();
+    this.voiceRecognition_ =
+        WindowProxy.getInstance().createSpeechRecognition();
     this.voiceRecognition_.interimResults = true;
     this.voiceRecognition_.lang = window.navigator.language;
     this.voiceRecognition_.onresult = this.onResult_.bind(this);
@@ -271,9 +285,11 @@ export class ComposeboxVoiceSearchElement extends
 
   override connectedCallback() {
     super.connectedCallback();
-    this.searchboxHandler_.getPageClassification().then(({metricSource}) => {
-      this.metricSource_ = metricSource || '';
-    });
+    if (!this.metricSource) {
+      this.searchboxHandler_.getPageClassification().then(({metricSource}) => {
+        this.metricSource = metricSource || '';
+      });
+    }
   }
 
   override disconnectedCallback() {
@@ -323,10 +339,10 @@ export class ComposeboxVoiceSearchElement extends
     ComposeboxVoiceSearchElement.activeRecognition_ = this.voiceRecognition_;
     this.state_ = State.STARTED;
     this.resetIdleTimer_();
-    // TODO(crbug.com/504726157): When the NTP searchbox migrates to use this
-    // component, it will need to log VoiceSearchAction.ACTIVATED_BY_KEYBOARD.
     this.recordMetric_(
-        VoiceSearchMetricType.ACTION, VoiceSearchAction.ACTIVATED_BY_ICON,
+        VoiceSearchMetricType.ACTION,
+        this.activatedByKeyboard ? VoiceSearchAction.ACTIVATED_BY_KEYBOARD :
+                                   VoiceSearchAction.ACTIVATED_BY_ICON,
         VoiceSearchAction.MAX_VALUE + 1);
     this.addOutsideListeners_();
   }
@@ -347,7 +363,7 @@ export class ComposeboxVoiceSearchElement extends
       // If permission prompt is open currently, ignore the blur event,
       // as the blur is from the permission prompt, and need voice search
       // to stay open during prompt.
-      if (this.isPermissionPromptOpen_) {
+      if (this.isPermissionPromptOpen) {
         return;
       }
 
@@ -356,7 +372,7 @@ export class ComposeboxVoiceSearchElement extends
       // (~15ms). This way, it is certain that this blur event is not due to
       // a permission prompt popping up.
       this.blurTimeoutId_ = WindowProxy.getInstance().setTimeout(() => {
-        if (!this.isPermissionPromptOpen_) {
+        if (!this.isPermissionPromptOpen) {
           this.onStopClick_();
         }
         this.blurTimeoutId_ = null;
@@ -399,7 +415,7 @@ export class ComposeboxVoiceSearchElement extends
   private onVoicePermissionPromptChanged(isOpened: boolean, promptSize: Size) {
     // Track the state for the blur event handler to ignore if
     // permission prompt open.
-    this.isPermissionPromptOpen_ = isOpened;
+    this.isPermissionPromptOpen = isOpened;
 
     // If the prompt just opened, cancel any pending closure triggered by a
     // premature blur event.
@@ -568,6 +584,10 @@ export class ComposeboxVoiceSearchElement extends
         // decided to time out.
         if (!this.dynamicTimeoutEnabled) {
           this.onError_(VoiceSearchError.NO_MATCH);
+        } else if (this.transcript_) {
+          this.onFinalResult_(this.transcript_);
+        } else {
+          this.onError_(VoiceSearchError.NO_MATCH);
         }
         return;
       case State.UNINITIALIZED:
@@ -586,11 +606,11 @@ export class ComposeboxVoiceSearchElement extends
     if (!chrome.metricsPrivate) {
       return;
     }
-    if (!this.metricSource_) {
+    if (!this.metricSource) {
       return;
     }
 
-    const metricName = `VoiceSearch.${type}.${this.metricSource_}`;
+    const metricName = `VoiceSearch.${type}.${this.metricSource}`;
     chrome.metricsPrivate.recordEnumerationValue(
         metricName, metricEnumValue, max);
 
@@ -598,16 +618,45 @@ export class ComposeboxVoiceSearchElement extends
     chrome.metricsPrivate.recordEnumerationValue(
         aggregateMetricName, metricEnumValue, max);
 
+    // Record query submission source.
+    if (type === VoiceSearchMetricType.ACTION &&
+        metricEnumValue === VoiceSearchAction.QUERY_SUBMITTED) {
+      let sourceEnum: VoiceSearchQuerySource|null = null;
+      if (this.metricSource === 'NTP_REALBOX') {
+        sourceEnum = VoiceSearchQuerySource.NTP_REALBOX;
+      } else if (this.metricSource === 'NTP_COMPOSEBOX') {
+        sourceEnum = VoiceSearchQuerySource.NTP_COMPOSEBOX;
+      } else if (
+          this.metricSource === 'NTP_OMNIBOX_COMPOSEBOX' ||
+          this.metricSource === 'OTHER_OMNIBOX_COMPOSEBOX' ||
+          this.metricSource === 'SRP_OMNIBOX_COMPOSEBOX') {
+        sourceEnum = VoiceSearchQuerySource.OMNIBOX_COMPOSEBOX;
+      } else if (this.metricSource === 'CO_BROWSING_COMPOSEBOX') {
+        sourceEnum = VoiceSearchQuerySource.NEXTBOX_COMPOSEBOX;
+      }
+      if (sourceEnum !== null) {
+        chrome.metricsPrivate.recordEnumerationValue(
+            'VoiceSearch.QuerySubmission.Source', sourceEnum,
+            VoiceSearchQuerySource.MAX_VALUE + 1);
+      }
+    }
+
     // TODO(b/501544449): This dual-logging block is temporary to ensure data
     // continuity. Remove this once the unified VoiceSearch metrics are
     // validated.
-    if (this.metricSource_ === 'NTP_REALBOX') {
+    if (this.metricSource === 'NTP_REALBOX') {
       if (type === VoiceSearchMetricType.ACTION) {
         // Handle the case that NewTabPage metric `CLOSE_OVERLAY` is replaced by
         // `CANCELED_BY_USER`.
         let legacyMetricEnumValue = metricEnumValue;
         if (metricEnumValue === VoiceSearchAction.CANCELED_BY_USER) {
           legacyMetricEnumValue = 2;
+        }
+        // The legacy NewTabPageVoiceAction enum in enums.xml only defines values 0 to 6.
+        // Prevent newly added VoiceSearchAction values (>6, e.g. Stop = 7, Resume = 8)
+        // from leaking into and polluting the legacy NewTabPage.VoiceActions histogram.
+        if (legacyMetricEnumValue > 6) {
+          return;
         }
         chrome.metricsPrivate.recordEnumerationValue(
             'NewTabPage.VoiceActions', legacyMetricEnumValue, max);
@@ -632,7 +681,7 @@ export class ComposeboxVoiceSearchElement extends
     WindowProxy.getInstance().clearTimeout(this.timerId_);
     this.state_ = State.ERROR_RECEIVED;
     this.error_ = error;
-    this.detailedError_ = error;
+    this.detailedError = error;
 
     // Handle error display and dismissal behavior based on the embedder.
     if (!this.hasErrorTimer) {
@@ -662,6 +711,7 @@ export class ComposeboxVoiceSearchElement extends
     } else {
       // If there is a timer, an error message would show up.
       this.errorMessage_ = this.getErrorText_(error);
+      this.fire('voice-search-error', /*canceled-by-error=*/ false);
 
       if (error === VoiceSearchError.NO_MATCH || error === VoiceSearchError.NO_SPEECH) {
         // NO_MATCH and NO_SPEECH errors auto-close after a longer delay.
@@ -734,6 +784,13 @@ export class ComposeboxVoiceSearchElement extends
   }
 
   protected onCloseClick_() {
+    // If closing while an error is showing, the close action is to dismiss
+    // the error state, so it should not log as a user-canceled voice session.
+    if (this.shouldShowErrorScrim_()) {
+      this.fire('voice-search-cancel', /*canceled-by-user=*/ false);
+      this.voiceModeEndCleanup_();
+      return;
+    }
     this.voiceModeEndCleanup_();
     // Record metric by setting canceled-by-user param to true in this event:
     this.fire(
@@ -751,7 +808,7 @@ export class ComposeboxVoiceSearchElement extends
     this.interimResult_ = '';
     this.error_ = null;
     this.errorMessage_ = '';
-    this.detailedError_ = null;
+    this.detailedError = null;
     WindowProxy.getInstance().clearTimeout(this.timerId_);
     this.timerId_ = null;
   }
@@ -782,9 +839,11 @@ export class ComposeboxVoiceSearchElement extends
         VoiceSearchAction.MAX_VALUE + 1);
     this.errorMessage_ = '';
     this.error_ = null;
+    this.detailedError = null;
     this.start();
+    this.fire('voice-search-restart');
   }
-  }
+}
 
 declare global {
   interface HTMLElementTagNameMap {

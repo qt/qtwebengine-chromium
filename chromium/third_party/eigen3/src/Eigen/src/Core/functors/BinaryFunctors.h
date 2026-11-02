@@ -100,6 +100,31 @@ struct functor_traits<scalar_product_op<LhsScalar, RhsScalar>> {
   };
 };
 
+// Same as scalar_product_op, but its scalar path uses pmul instead of operator*. For complex scalars
+// pmul is Eigen's explicit (non-Annex-G) complex multiply, so this avoids std::complex::operator*,
+// which GCC lowers to the slow libgcc __mul?c3 call. The packet path (packetOp/predux) is inherited
+// unchanged -- it already uses pmul -- so the vectorized reduction and its precision are identical to
+// scalar_product_op (this only matters for the non-vectorized scalar tail). Used by the coeff-based
+// product's coeff(); pmul requires matching operand types, so mixed types fall back to operator*
+// (which is cheap for real*complex and never hits the complex*complex libcall).
+template <typename LhsScalar, typename RhsScalar>
+struct fast_mult_op : scalar_product_op<LhsScalar, RhsScalar> {
+  using result_type = typename scalar_product_op<LhsScalar, RhsScalar>::result_type;
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE result_type operator()(const LhsScalar& a, const RhsScalar& b) const {
+    return mul(a, b, bool_constant<std::is_same<LhsScalar, RhsScalar>::value>());
+  }
+
+ private:
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE result_type mul(const LhsScalar& a, const RhsScalar& b, std::true_type) const {
+    return pmul(a, b);
+  }
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE result_type mul(const LhsScalar& a, const RhsScalar& b, std::false_type) const {
+    return a * b;
+  }
+};
+template <typename LhsScalar, typename RhsScalar>
+struct functor_traits<fast_mult_op<LhsScalar, RhsScalar>> : functor_traits<scalar_product_op<LhsScalar, RhsScalar>> {};
+
 template <>
 EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE bool scalar_product_op<bool, bool>::operator()(const bool& a,
                                                                                                const bool& b) const {

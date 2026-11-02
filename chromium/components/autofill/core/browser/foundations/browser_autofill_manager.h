@@ -20,6 +20,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
+#include "base/types/optional_ref.h"
 #include "build/build_config.h"
 #include "components/autofill/core/browser/at_memory/at_memory_manager.h"
 #include "components/autofill/core/browser/autofill_trigger_source.h"
@@ -39,7 +40,8 @@
 #include "components/autofill/core/browser/integrators/one_time_tokens/metrics/otp_form_event_logger.h"
 #include "components/autofill/core/browser/integrators/one_time_tokens/otp_manager.h"
 #include "components/autofill/core/browser/integrators/password_manager/password_manager_delegate.h"
-#include "components/autofill/core/browser/integrators/touch_to_fill/touch_to_fill_delegate.h"
+#include "components/autofill/core/browser/integrators/touch_to_fill/touch_to_fill_autofill_delegate.h"
+#include "components/autofill/core/browser/integrators/touch_to_fill/touch_to_fill_payment_method_delegate.h"
 #include "components/autofill/core/browser/metrics/autofill_metrics.h"
 #include "components/autofill/core/browser/metrics/form_events/address_form_event_logger.h"
 #include "components/autofill/core/browser/metrics/form_events/credit_card_form_event_logger.h"
@@ -71,6 +73,7 @@ class FormFieldData;
 struct SuggestionsContext;
 
 namespace payments {
+class AiCardRecommendationManager;
 class AmountExtractionManager;
 class BnplManager;
 }  // namespace payments
@@ -146,27 +149,25 @@ class BrowserAutofillManager : public AutofillManager {
 
   ~BrowserAutofillManager() override;
 
-  // Fills or previews `form` with the information in `filling_payload`.
-  // `action_persistence` denotes whether the operation should fill or preview
-  // the form.
-  // `field_id` is the ID of the field that triggered the filling operation.
+  // Fills or previews the form corresponding to `form_id` with the information
+  // in `filling_payload`.
+  // `action_persistence` denotes whether the operation is a fill or preview.
   // `trigger_source` is the reason for triggering the filling operation.
   // `blocked_fields` are fields which must not be filled because another
   // filling product of higher priority claims them.
   virtual void FillOrPreviewForm(
       mojom::ActionPersistence action_persistence,
-      const FormData& form,
-      const FieldGlobalId& field_id,
+      const FormGlobalId& form_id,
+      const FieldGlobalId& trigger_field_id,
       const FillingPayload& filling_payload,
       AutofillTriggerSource trigger_source,
       const base::flat_set<FieldGlobalId>& blocked_fields);
 
   // Routes calls from external components to FormFiller::FillOrPreviewField.
-  // TODO(crbug.com/40227496): Replace FormFieldData parameter by FieldGlobalId.
   void FillOrPreviewField(mojom::ActionPersistence action_persistence,
                           mojom::FieldActionType action_type,
-                          const FormData& form,
-                          const FormFieldData& field,
+                          const FormGlobalId& form_id,
+                          const FieldGlobalId& field_id,
                           const std::u16string& value,
                           FillingProduct filling_product,
                           std::optional<FieldType> field_type_used) override;
@@ -193,26 +194,29 @@ class BrowserAutofillManager : public AutofillManager {
 
   // Calls FormFiller::UndoAutofill and logs metrics. Virtual for testing.
   virtual void UndoAutofill(mojom::ActionPersistence action_persistence,
-                            const FormData& form,
-                            const FormFieldData& trigger_field);
+                            const FormGlobalId& form_id,
+                            const FieldGlobalId& trigger_field_id);
 
   // Defers the suggestion selection to the password manager.
   void DelegateSelectToPasswordManager(const Suggestion& suggestion,
-                                       const FormFieldData& trigger_field);
+                                       const FieldGlobalId& trigger_field_id);
 
   // Defers the suggestion selection to the password manager.
   void DelegateAcceptToPasswordManager(
       const Suggestion& suggestion,
       const AutofillSuggestionDelegate::SuggestionMetadata& metadata,
-      const FormFieldData& trigger_field);
+      const FieldGlobalId& trigger_field_id);
 
-  void DidShowSuggestions(base::span<const Suggestion> suggestions,
-                          const FormGlobalId& form_id,
-                          const FieldGlobalId& field_id,
-                          AutofillExternalDelegate::UpdateSuggestionsCallback
-                              update_suggestions_callback,
-                          AutofillSuggestionTriggerSource trigger_source =
-                              AutofillSuggestionTriggerSource::kUnspecified);
+  void DidShowSuggestions(
+      base::span<const Suggestion> suggestions,
+      base::optional_ref<const AutofillSuggestionDelegate::SuggestionMetadata>
+          parent_suggestion_metadata,
+      const FormGlobalId& form_id,
+      const FieldGlobalId& field_id,
+      AutofillExternalDelegate::UpdateSuggestionsCallback
+          update_suggestions_callback,
+      AutofillSuggestionTriggerSource trigger_source =
+          AutofillSuggestionTriggerSource::kUnspecified);
 
   // Invoked when the user selected the `suggestion` in a suggestions list from
   // single field filling.
@@ -237,9 +241,6 @@ class BrowserAutofillManager : public AutofillManager {
   // Gets the Autofill AI access manager owned by `this`.
   virtual AutofillAiAccessManager& GetAutofillAiAccessManager();
 
-  // Triggers suggestions for @memory.
-  void TriggerAtMemorySuggestions(const FieldGlobalId& field_id);
-
   // Gets the payments BNPL manager owned by `this`. This will be used to
   // handle BNPL flows. May return nullptr if BNPL is not supported on the
   // current platform.
@@ -248,6 +249,11 @@ class BrowserAutofillManager : public AutofillManager {
   // Gets the amount extraction manager owned by `this`. This will be used for
   // flows that require amount extraction from the page.
   virtual payments::AmountExtractionManager& GetAmountExtractionManager();
+
+  // Gets the AI card recommendation manager owned by `this`. This will be used
+  // to handle AI-based card recommendation flows.
+  virtual payments::AiCardRecommendationManager&
+  GetAiCardRecommendationManager();
 
   // Handles post-filling logic of `form`, like notifying observers and logging
   // form metrics.
@@ -264,6 +270,8 @@ class BrowserAutofillManager : public AutofillManager {
       const AutofillField& trigger_field,
       base::span<const AutofillField* const> safe_filled_fields,
       const base::flat_set<FieldGlobalId>& filled_field_ids,
+      const base::flat_map<FieldGlobalId, DenseSet<FieldFillingSkipReason>>&
+          skip_reasons,
       const FillingPayload& filling_payload,
       AutofillTriggerSource trigger_source,
       std::optional<RefillTriggerReason> refill_trigger_reason);
@@ -276,24 +284,6 @@ class BrowserAutofillManager : public AutofillManager {
   // AutofillManager:
   base::WeakPtr<AutofillManager> GetWeakPtr() override;
   bool ShouldClearPreviewedForm() override;
-  void OnFocusOnNonFormFieldImpl() override;
-  void OnFocusOnFormFieldImpl(const FormData& form,
-                              const FieldGlobalId& field_id) override;
-  void OnDidAutofillFormImpl(const FormData& form) override;
-  void SuppressAutomaticRefillsImpl(const FillId& fill_id) override;
-  void RequestRefillImpl(const FillId& fill_id) override;
-  void OnDidEndTextFieldEditingImpl() override;
-  void OnHidePopupImpl() override;
-  void OnSelectFieldOptionsDidChangeImpl(
-      const FormData& form,
-      const FieldGlobalId& field_id) override;
-  void OnJavaScriptChangedAutofilledValueImpl(
-      const FormData& form,
-      const FieldGlobalId& field_id,
-      const std::u16string& old_value) override;
-  void OnLoadedServerPredictionsImpl(
-      base::span<const raw_ref<FormStructure>> forms) override;
-  void Reset() override;
 
   base::WeakPtr<BrowserAutofillManager> GetBrowserAutofillManagerWeakPtr();
 
@@ -312,9 +302,6 @@ class BrowserAutofillManager : public AutofillManager {
                                            const FormGlobalId& form_id,
                                            const FieldGlobalId& field_id);
 
-  // Returns the last form the autofill manager considered in this frame.
-  virtual const FormData& last_query_form() const;
-
   // Reports whether a document collects phone numbers, uses one time code, uses
   // WebOTP. There are cases that the reporting is not expected:
   //   1. some unit tests do not set necessary members,
@@ -322,13 +309,26 @@ class BrowserAutofillManager : public AutofillManager {
   //   2. there is no form and WebOTP is not used
   void ReportAutofillWebOTPMetrics(bool used_web_otp) override;
 
-  TouchToFillDelegate* touch_to_fill_delegate() {
-    return touch_to_fill_delegate_.get();
+  TouchToFillPaymentMethodDelegate* touch_to_fill_payment_method_delegate() {
+    return touch_to_fill_payment_method_delegate_.get();
   }
 
-  void set_touch_to_fill_delegate(
-      std::unique_ptr<TouchToFillDelegate> touch_to_fill_delegate) {
-    touch_to_fill_delegate_ = std::move(touch_to_fill_delegate);
+  void set_touch_to_fill_payment_method_delegate(
+      std::unique_ptr<TouchToFillPaymentMethodDelegate>
+          touch_to_fill_payment_method_delegate) {
+    touch_to_fill_payment_method_delegate_ =
+        std::move(touch_to_fill_payment_method_delegate);
+  }
+
+  TouchToFillAutofillDelegate* touch_to_fill_autofill_delegate() {
+    return touch_to_fill_autofill_delegate_.get();
+  }
+
+  void set_touch_to_fill_autofill_delegate(
+      std::unique_ptr<TouchToFillAutofillDelegate>
+          touch_to_fill_autofill_delegate) {
+    touch_to_fill_autofill_delegate_ =
+        std::move(touch_to_fill_autofill_delegate);
   }
 
   // This reference is not stable over the lifetime of BrowserAutofillManager.
@@ -352,8 +352,45 @@ class BrowserAutofillManager : public AutofillManager {
   virtual const gfx::Image& GetCardImage(const CreditCard& credit_card);
 
   // AutofillManager:
+  bool ShouldParseForms() override;
+  void OnBeforeProcessParsedForms() override;
+  void OnFormProcessed(const FormStructure& form) override;
+
+ private:
+  friend class BrowserAutofillManagerTestApi;
+
+  // AutofillManager:
+  void Reset() override;
+
+  // AutofillManager:
+  // These functions should be called only by AutofillManager::OnFoo().
+  void OnFocusOnNonFormFieldImpl() override;
+  void OnFocusOnFormFieldImpl(const FormData& form,
+                              const FieldGlobalId& field_id) override;
+  void OnDidAutofillFormImpl(const FormData& form) override;
+  void SuppressAutomaticRefillsImpl(const FillId& fill_id) override;
+  void RequestRefillImpl(const FillId& fill_id) override;
+  void OnDidEndTextFieldEditingImpl() override;
+  void OnHidePopupImpl() override;
+  void OnSelectFieldOptionsDidChangeImpl(
+      const FormData& form,
+      const FieldGlobalId& field_id) override;
+  void OnJavaScriptChangedAutofilledValueImpl(
+      const FormData& form,
+      const FieldGlobalId& field_id,
+      const std::u16string& old_value) override;
+  void OnLoadedServerPredictionsImpl(
+      base::span<const raw_ref<FormStructure>> forms) override;
+  void OnDidDetectJavaScriptAutofillImpl(
+      const FormData& form,
+      const FieldGlobalId& trigger_field_id,
+      const std::vector<JavaScriptFieldModification>& field_modifications)
+      override;
   void OnFormSubmittedImpl(const FormData& form,
                            mojom::SubmissionSource source) override;
+  void OnFormWithEmailVerificationTokenSubmittedImpl(
+      const FormData& form,
+      const FieldGlobalId& field_id) override;
   void OnCaretMovedInFormFieldImpl(const FormData& form,
                                    const FieldGlobalId& field_id,
                                    const gfx::Rect& caret_bounds) override {}
@@ -371,28 +408,10 @@ class BrowserAutofillManager : public AutofillManager {
   void OnSelectControlSelectionChangedImpl(
       const FormData& form,
       const FieldGlobalId& field_id) override;
-  bool ShouldParseForms() override;
-  void OnBeforeProcessParsedForms() override;
-  void OnFormProcessed(const FormData& form,
-                       const FormStructure& form_structure) override;
 
- private:
-  friend class BrowserAutofillManagerTestApi;
-
-  struct FormAndField {
-    STACK_ALLOCATED();
-
-   public:
-    FormStructure* form_structure = nullptr;
-    AutofillField* autofill_field = nullptr;
-  };
-
-  // Returns the cached form and field corresponding to `form_id` and
-  // `field_id`. This might have the side-effect of updating the cache. The
-  // returned `FormAndField` may not contain form or field, if the form is not
-  // autofillable, or if either the form or the field cannot be found.
-  FormAndField GetCachedFormAndField(const FormGlobalId& form_id,
-                                     const FieldGlobalId& field_id);
+  // Mutable version of `FindFormAndField`.
+  MutableFormAndField FindMutableFormAndField(const FormGlobalId& form_id,
+                                              const FieldGlobalId& field_id);
 
   // Emits all metrics that should be recorded at submission time.
   void LogSubmissionMetrics(const FormStructure* submitted_form,
@@ -440,18 +459,16 @@ class BrowserAutofillManager : public AutofillManager {
       const FormFieldData& field,
       const AutofillField* autofill_field);
 
-  // Fills or previews `form` with the information in `credit_card`.
-  // `autofill_field` is the field that triggered the filling operation.
+  // Fills or previews the form corresponding to `form_id` with the information
+  // in `credit_card`.
   // `trigger_source` is the reason for triggering the filling operation.
-  // `action_persistence` denotes whether the operation is a filling or preview
-  // operation.
+  // `action_persistence` denotes whether the operation is a fill or preview.
   // `blocked_fields` are fields which must not be filled because another
   // filling product of higher priority claims them.
   void FillOrPreviewCreditCardForm(
       mojom::ActionPersistence action_persistence,
-      const FormData& form,
-      const FormStructure& form_structure,
-      const AutofillField& autofill_field,
+      const FormStructure& form,
+      const AutofillField& trigger_field,
       const CreditCard& credit_card,
       AutofillTriggerSource trigger_source,
       const base::flat_set<FieldGlobalId>& blocked_fields);
@@ -565,23 +582,24 @@ class BrowserAutofillManager : public AutofillManager {
   // user and whether the suggestion is shown.
   void OnGenerateSuggestionsComplete(
       const FormGlobalId& form_id,
-      const FieldGlobalId& field_id,
+      const FormFieldData& trigger_field,
       AutofillSuggestionTriggerSource trigger_source,
       const SuggestionsContext& context,
       base::TimeTicks suggestion_generation_start_time,
       bool show_suggestions,
       std::vector<Suggestion> suggestions);
 
-  // Combines passkey suggestion and existing suggestions into a single list,
+  // Combines passkey suggestions and existing suggestions into a single list,
   // prioritizing existing suggestions first.
-  void MergePasskeysAndExistingSuggestions(std::vector<Suggestion>& suggestions,
-                                           Suggestion passkey_suggestions);
+  void MergePasskeysAndExistingSuggestions(
+      std::vector<Suggestion>& suggestions,
+      std::vector<Suggestion> passkey_suggestions);
 
-  // Creates passkey suggestion that will be used in
-  // MergePasskeysIntoExistingSuggestions.
+  // Creates passkey suggestions that will be used in
+  // MergePasskeysAndExistingSuggestions.
   // TODO(crbug.com/409962888): Remove after new suggestion generation logic is
   // launched.
-  std::optional<Suggestion> CreatePasskeySuggestionForMerge(
+  std::vector<Suggestion> CreatePasskeySuggestionsForMerge(
       const FormFieldData& field);
 
   // Combines identity credential suggestions and existing suggestions into a
@@ -639,13 +657,15 @@ class BrowserAutofillManager : public AutofillManager {
   void InitializeSuggestionGenerators(
       AutofillSuggestionTriggerSource trigger_source,
       FormGlobalId form_id,
-      FieldGlobalId field_id);
+      const FormFieldData& field);
 
   // Delegates to perform external processing (display, selection) on
   // our behalf.
   std::unique_ptr<AutofillExternalDelegate> external_delegate_ =
       std::make_unique<AutofillExternalDelegate>(this);
-  std::unique_ptr<TouchToFillDelegate> touch_to_fill_delegate_;
+  std::unique_ptr<TouchToFillPaymentMethodDelegate>
+      touch_to_fill_payment_method_delegate_;
+  std::unique_ptr<TouchToFillAutofillDelegate> touch_to_fill_autofill_delegate_;
 
   // This is always non-nullopt except very briefly during Reset().
   std::optional<MetricsState> metrics_ = std::make_optional<MetricsState>(this);
@@ -670,6 +690,12 @@ class BrowserAutofillManager : public AutofillManager {
   // amount from merchant websites.
   // Lazily initialized: access only through GetAmountExtractionManager().
   std::unique_ptr<payments::AmountExtractionManager> amount_extraction_manager_;
+
+  // The AI card recommendation manager. This will be used to handle AI-based
+  // card recommendation flows.
+  // Lazily initialized: access only through GetAiCardRecommendationManager().
+  std::unique_ptr<payments::AiCardRecommendationManager>
+      ai_card_recommendation_manager_;
 
   // Helper class to autofill forms and fields. Do not use directly, use
   // form_filler() instead, because tests inject test objects.

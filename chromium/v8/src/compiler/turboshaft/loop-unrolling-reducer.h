@@ -202,7 +202,7 @@ class V8_EXPORT_PRIVATE LoopUnrollingAnalyzer {
 
     auto iter_count = GetIterationCount(loop_header);
     return iter_count.IsExact() &&
-           iter_count.exact_count() < kMaxLoopIterationsForFullUnrolling;
+           iter_count.exact_count() <= kMaxLoopIterationsForFullUnrolling;
   }
 
   bool ShouldPartiallyUnrollLoop(const Block* loop_header) const {
@@ -338,11 +338,11 @@ class LoopStackCheckElisionReducer : public Next {
 
 #if V8_ENABLE_WEBASSEMBLY
   V<None> REDUCE_INPUT_GRAPH(WasmStackCheck)(
-      V<None> ig_idx, const WasmStackCheckOp& stack_check) {
+      V<Any> ig_idx, const WasmStackCheckOp& stack_check) {
     if (skip_next_stack_check_ &&
         stack_check.kind == WasmStackCheckOp::Kind::kLoop) {
       skip_next_stack_check_ = false;
-      return {};
+      return V<None>::Invalid();
     }
     return Next::ReduceInputGraphWasmStackCheck(ig_idx, stack_check);
   }
@@ -448,7 +448,7 @@ class LoopUnrollingReducer : public Next {
   }
 
 #if V8_ENABLE_WEBASSEMBLY
-  V<None> REDUCE_INPUT_GRAPH(WasmStackCheck)(V<None> ig_idx,
+  V<None> REDUCE_INPUT_GRAPH(WasmStackCheck)(V<Any> ig_idx,
                                              const WasmStackCheckOp& check) {
     if (ShouldSkipOptimizationStep() || !skip_next_stack_check_) {
       return Next::ReduceInputGraphWasmStackCheck(ig_idx, check);

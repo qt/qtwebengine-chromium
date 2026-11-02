@@ -37,7 +37,7 @@ void RegisterBufferDeviceAddressValidation(Validator& gpuav, CommandBufferSubSta
     }
 
     cb.on_instrumentation_error_logger_register_functions.emplace_back([](Validator& gpuav, CommandBufferSubState& cb,
-                                                                          const LastBound& last_bound) {
+                                                                          const LastBound&) {
         CommandBufferSubState::InstrumentationErrorLogger inst_error_logger =
             [](Validator& gpuav, const Location&, const uint32_t* error_record, const InstrumentedShader* instrumented_shader,
                std::string& out_error_msg, std::string& out_vuid_msg) {
@@ -48,30 +48,51 @@ void RegisterBufferDeviceAddressValidation(Validator& gpuav, CommandBufferSubSta
                 }
                 error_found = true;
 
-                std::ostringstream strm;
+                std::ostringstream ss;
 
                 const uint32_t payload = error_record[kInst_LogError_ParameterOffset_2];
                 const bool is_write = ((payload >> kInst_BuffAddrAccess_PayloadShiftIsWrite) & 1) != 0;
                 const bool is_struct = ((payload >> kInst_BuffAddrAccess_PayloadShiftIsStruct) & 1) != 0;
 
                 const uint64_t address = *reinterpret_cast<const uint64_t*>(error_record + kInst_LogError_ParameterOffset_0);
-
                 const uint32_t error_sub_code = GetSubError(error_record);
                 switch (error_sub_code) {
                     case kErrorSubCode_BufferDeviceAddress_UnallocRef: {
-                        const char* access_type = is_write ? "written" : "read";
+                        const char* access_type = is_write ? "write" : "read";
                         const uint32_t byte_size = payload & kInst_BuffAddrAccess_PayloadMaskAccessInfo;
-                        strm << "Out of bounds access: " << byte_size << " bytes " << access_type << " at buffer device address 0x"
-                             << std::hex << address << '.';
+                        ss << "Out of bounds: trying to " << access_type << " " << byte_size << " bytes at [0x" << std::hex
+                           << address << ", 0x" << (address + byte_size) - 1
+                           << ") but no buffer device address was found at this range.";
                         if (is_struct) {
                             // Added because glslang currently has no way to seperate out the struct (Slang does as of 2025.6.2)
-                            strm << " This " << (is_write ? "write" : "read") << " corresponds to a full OpTypeStruct load";
+                            ss << " This " << (is_write ? "write" : "read") << " corresponds to a full OpTypeStruct load";
                             const uint32_t instruction_position_offset =
                                 error_record[kHeader_StageInstructionIdOffset] & kInstructionId_Mask;
-                            ::spirv::FindOpStructFromBDA(strm, instrumented_shader->original_spirv, instruction_position_offset);
-                            strm << ". While not all members of the struct might be accessed, "
-                                    "it is up "
-                                    "to the source language or tooling to detect that and reflect it in the SPIR-V.";
+                            ::spirv::FindOpStructFromBDA(ss, instrumented_shader->original_spirv, instruction_position_offset);
+                            ss << ". While not all members of the struct might be accessed, "
+                                  "it is up "
+                                  "to the source language or tooling to detect that and reflect it in the SPIR-V.";
+                        }
+
+                        const NearestBufferResult nearest = gpuav.GetNearestBuffersByAddress(address);
+                        auto plural = [&](uint64_t counter) -> const char* { return counter > 1 ? "s" : ""; };
+                        if (!nearest.above_buffers.empty()) {
+                            const VkDeviceAddress offset = nearest.above_range.begin - address;
+                            ss << "\nNearest above committed device address range " << vvl::string_range_hex(nearest.above_range)
+                               << " is above address by " << std::dec << offset << " byte" << plural(offset) << " and has buffer"
+                               << plural(nearest.above_buffers.size()) << ":";
+                            for (const auto buffer : nearest.above_buffers) {
+                                ss << "\n  " << buffer->Describe(gpuav);
+                            }
+                        }
+                        if (!nearest.below_buffers.empty()) {
+                            const VkDeviceAddress offset = address - nearest.below_range.end + 1;
+                            ss << "\nNearest below committed device address range " << vvl::string_range_hex(nearest.below_range)
+                               << " is below address by " << std::dec << offset << " byte" << plural(offset) << " and has buffer"
+                               << plural(nearest.below_buffers.size()) << ":";
+                            for (const auto buffer : nearest.below_buffers) {
+                                ss << "\n  " << buffer->Describe(gpuav);
+                            }
                         }
                         out_vuid_msg = "VUID-RuntimeSpirv-PhysicalStorageBuffer64-11819";
 
@@ -79,8 +100,15 @@ void RegisterBufferDeviceAddressValidation(Validator& gpuav, CommandBufferSubSta
                     case kErrorSubCode_BufferDeviceAddress_Alignment: {
                         const char* access_type = is_write ? "OpStore" : "OpLoad";
                         const uint32_t alignment = (payload & kInst_BuffAddrAccess_PayloadMaskAccessInfo);
-                        strm << "Unaligned pointer access: The " << access_type << " at buffer device address 0x" << std::hex
-                             << address << " is not aligned to the instruction Aligned operand of " << std::dec << alignment << '.';
+                        ss << "Unaligned pointer access: The " << access_type << " at buffer device address 0x" << std::hex
+                           << address << " is not aligned to the instruction Aligned operand of " << std::dec << alignment << '.';
+                        if (auto buffers = gpuav.GetBuffersByAddress(address); !buffers.empty()) {
+                            ss << "\nAddress belongs to the follwing buffer(s):\n";
+                            for (const auto buffer : buffers) {
+                                ss << "\n  " << buffer->Describe(gpuav);
+                            }
+                        }
+                        // else it's an invalid address, handled by error logic above
                         out_vuid_msg = "VUID-RuntimeSpirv-PhysicalStorageBuffer64-06315";
 
                     } break;
@@ -88,7 +116,7 @@ void RegisterBufferDeviceAddressValidation(Validator& gpuav, CommandBufferSubSta
                         error_found = false;
                         break;
                 }
-                out_error_msg += strm.str();
+                out_error_msg += ss.str();
                 return error_found;
             };
 

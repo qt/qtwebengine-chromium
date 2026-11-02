@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import * as TextUtils from '../../models/text_utils/text_utils.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 
 /**
  * @file using private properties isn't a Closure violation in tests.

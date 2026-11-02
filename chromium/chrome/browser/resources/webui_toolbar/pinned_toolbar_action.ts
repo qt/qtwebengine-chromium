@@ -2,27 +2,48 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import '//resources/cr_elements/cr_icon_button/cr_icon_button.js';
 // <if expr="_google_chrome">
-import './internal/icons.html.js';
+import './internal/icons.js';
 // </if>
 
+import '//resources/cr_elements/cr_icon_button/cr_icon_button.js';
+
+import type {CrIconButtonElement} from '//resources/cr_elements/cr_icon_button/cr_icon_button.js';
 import {assertNotReachedCase} from '//resources/js/assert.js';
-import {TrackedElementManager} from '//resources/js/tracked_element/tracked_element_manager.js';
 import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
-import type {PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
+import {IconTable} from '/shared/icon_table.js';
+import {PinnedToolbarAction} from '/shared/toolbar_ui_api_data_model.mojom-webui.js';
+import type {PinnedToolbarActionState} from '/shared/toolbar_ui_api_data_model.mojom-webui.js';
 
 import {BrowserProxyImpl} from './browser_proxy.js';
 import type {BrowserProxy} from './browser_proxy.js';
 import {ContextMenuType} from './browser_proxy.js';
-import {IconTable} from './icon_table.js';
-import {getCss} from './pinned_toolbar_action.css.js';
 import {getHtml} from './pinned_toolbar_action.html.js';
+import {ToolbarActionMixin} from './toolbar_action_mixin.js';
+import {getCss} from './toolbar_button.css.js';
 import {getContextMenuPosition, getContextMenuSourceType} from './toolbar_button.js';
-import {PinnedToolbarAction} from './toolbar_ui_api_data_model.mojom-webui.js';
-import type {PinnedToolbarActionState} from './toolbar_ui_api_data_model.mojom-webui.js';
 
-export class PinnedToolbarActionElement extends CrLitElement {
+const initialState: PinnedToolbarActionState = {
+  action: PinnedToolbarAction.kUnspecified,
+  highlighted: false,
+  enabled: true,
+  activated: false,
+  tooltip: '',
+  accessibilityText: '',
+  elementId: null,
+  icon: {handleId: 0n},
+};
+
+const PinnedToolbarActionElementBase =
+    ToolbarActionMixin(CrLitElement, initialState);
+
+export interface PinnedToolbarActionElement {
+  $: {
+    button: CrIconButtonElement,
+  };
+}
+
+export class PinnedToolbarActionElement extends PinnedToolbarActionElementBase {
   static get is() {
     return 'pinned-toolbar-action';
   }
@@ -35,57 +56,14 @@ export class PinnedToolbarActionElement extends CrLitElement {
     return getHtml.bind(this)();
   }
 
-  static override get properties() {
-    return {
-      state: {type: Object},
-      trackedHighlighted: {type: Boolean},
-    };
-  }
-
-  accessor state: PinnedToolbarActionState = {
-    action: PinnedToolbarAction.kUnspecified,
-    highlighted: false,
-    enabled: true,
-    activated: false,
-    tooltip: '',
-    accessibilityText: '',
-    elementId: null,
-    icon: {handleId: 0n},
-  };
-
-  private browserProxy_: BrowserProxy = BrowserProxyImpl.getInstance();
-  private trackedElementManager_: TrackedElementManager =
-      TrackedElementManager.getInstance();
   private iconTable_: IconTable = IconTable.getInstance();
 
-  protected accessor trackedHighlighted: boolean = false;
-
-  override disconnectedCallback() {
-    super.disconnectedCallback();
-    this.trackedElementManager_.stopTracking(this);
+  private get browserProxy_(): BrowserProxy {
+    return BrowserProxyImpl.getInstance();
   }
 
-  override updated(changedProperties: PropertyValues<this>) {
-    super.updated(changedProperties);
-
-    if (changedProperties.has('state')) {
-      const oldState = changedProperties.get('state');
-      const oldId = oldState?.elementId;
-      const newId = this.state.elementId;
-
-      if (oldId !== newId) {
-        if (oldId) {
-          this.trackedElementManager_.stopTracking(this);
-        }
-        if (newId) {
-          this.trackedElementManager_.startTracking(this, newId, {
-            onHighlightChanged: (highlighted: boolean) => {
-              this.trackedHighlighted = highlighted;
-            },
-          });
-        }
-      }
-    }
+  override getElementId(state: PinnedToolbarActionState): string|undefined {
+    return state.elementId ?? undefined;
   }
 
   protected getIronIcon_(): string|undefined {
@@ -109,6 +87,52 @@ export class PinnedToolbarActionElement extends CrLitElement {
   protected onActionClick_() {
     this.browserProxy_.toolbarUIHandler.invokePinnedToolbarAction(
         this.state.action);
+  }
+
+  // Delegate focus to the internal button element. Custom elements do not
+  // automatically delegate focus to their shadow DOM content unless configured
+  // with delegatesFocus, which Lit doesn't do by default for wrapper elements.
+  override focus() {
+    this.$.button.focus();
+  }
+
+  protected onDragstart_(e: DragEvent) {
+    if (!this.state.enabled || !e.dataTransfer) {
+      e.preventDefault();
+      return;
+    }
+    const payload = JSON.stringify({
+      actionId: this.state.action,
+    });
+    e.dataTransfer.setData('application/x-webui-pinned-action', payload);
+    e.dataTransfer.effectAllowed = 'move';
+
+    this.fire('pinned-action-drag-start', {action: this.state.action});
+  }
+
+  protected onDragend_(e: DragEvent) {
+    this.fire('pinned-action-drag-end', {
+      action: this.state.action,
+      dropEffect: e.dataTransfer?.dropEffect,
+    });
+  }
+
+
+  protected onKeydown_(e: KeyboardEvent) {
+    const isModifier = e.ctrlKey || e.metaKey;
+    if (!isModifier || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) {
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    const delta = e.key === 'ArrowLeft' ? -1 : 1;
+    // Notify the parent container that a keyboard reorder is occurring.
+    // The container will use this to lock and restore focus to this action
+    // button after the DOM updates with the new order.
+    this.fire('pinned-action-keyboard-reorder', {action: this.state.action});
+
+    this.browserProxy_.toolbarUIHandler.movePinnedToolbarActionBy(
+        this.state.action, delta);
   }
 
   private getContextMenuType_(): ContextMenuType {
@@ -175,6 +199,10 @@ export class PinnedToolbarActionElement extends CrLitElement {
       default:
         assertNotReachedCase(this.state.action);
     }
+  }
+
+  protected getTooltip_(): string {
+    return this.adjustTooltipForHelpBubble(this.state.tooltip);
   }
 
   protected onContextmenu_(e: Event) {

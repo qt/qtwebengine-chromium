@@ -8,6 +8,7 @@
 
 #include <utility>
 
+#include "core/fpdfapi/font/cpdf_facebasedsimplefont.h"
 #include "core/fpdfapi/page/test_with_page_module.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_name.h"
@@ -22,13 +23,13 @@ namespace {
 
 using CPDFSimpleFontTest = TestWithPageModule;
 
-class TestSimpleFont : public CPDF_SimpleFont {
+class TestSimpleFont : public CPDF_FaceBasedSimpleFont {
  public:
   TestSimpleFont(CPDF_Document* doc, RetainPtr<CPDF_Dictionary> font_dict)
-      : CPDF_SimpleFont(doc, std::move(font_dict)) {}
+      : CPDF_FaceBasedSimpleFont(doc, std::move(font_dict)) {}
   ~TestSimpleFont() override = default;
 
-  // CPDF_SimpleFont:
+  // CPDF_FaceBasedSimpleFont:
   bool Load() override { return LoadCommon(); }
   void LoadGlyphMap() override {}
 };

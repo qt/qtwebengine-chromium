@@ -23,7 +23,7 @@ CFGAS_Break::CFGAS_Break(Mask<LayoutStyle> dwLayoutStyles)
 CFGAS_Break::~CFGAS_Break() = default;
 
 void CFGAS_Break::Reset() {
-  char_type_ = FX_CHARTYPE::kUnknown;
+  char_type_ = CharType::kUnknown;
   for (CFGAS_BreakLine& line : lines_) {
     line.Clear();
   }
@@ -91,8 +91,8 @@ bool CFGAS_Break::IsGreaterThanLineWidth(int32_t width) const {
   return line_width.IsValid() && width > line_width.ValueOrDie();
 }
 
-FX_CHARTYPE CFGAS_Break::GetUnifiedCharType(FX_CHARTYPE chartype) const {
-  return chartype >= FX_CHARTYPE::kArabicAlef ? FX_CHARTYPE::kArabic : chartype;
+CharType CFGAS_Break::GetUnifiedCharType(CharType chartype) const {
+  return chartype >= CharType::kArabicAlef ? CharType::kArabic : chartype;
 }
 
 void CFGAS_Break::SetTabWidth(float fTabWidth) {
@@ -141,7 +141,7 @@ CFGAS_Char* CFGAS_Break::GetLastChar(int32_t index,
   while (iStart > -1) {
     CFGAS_Char* pTC = &tca[iStart--];
     if (((bRichText && pTC->char_width_ < 0) || bOmitChar) &&
-        pTC->GetCharType() == FX_CHARTYPE::kCombination) {
+        pTC->GetCharType() == CharType::kCombination) {
       continue;
     }
     if (--index < 0) {

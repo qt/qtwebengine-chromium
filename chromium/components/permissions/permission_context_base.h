@@ -10,6 +10,7 @@
 
 #include "base/functional/callback_forward.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/safe_ref.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/time/time.h"
@@ -135,6 +136,13 @@ class PermissionContextBase : public content_settings::Observer {
       content::RenderFrameHost* render_frame_host,
       const GURL& requesting_origin,
       const GURL& embedding_origin) const;
+
+  // Optionally overwrites the result before returning it to the caller (for a
+  // permissions request or status query). Default implementation does nothing.
+  // Useful (for example) to mask an internal DENIED state and expose it as
+  // PROMPT to the web.
+  virtual void MaybeOverridePermissionResultToReturn(
+      content::PermissionResult& result) const;
 
   // Returns whether the permission is usable by requesting/embedding origins.
   bool IsPermissionAvailableToOrigins(const GURL& requesting_origin,
@@ -323,7 +331,7 @@ class PermissionContextBase : public content_settings::Observer {
   const network::mojom::PermissionsPolicyFeature permissions_policy_feature_;
   std::unordered_map<
       std::string,
-      std::pair<base::WeakPtr<PermissionRequest>, BrowserPermissionCallback>>
+      std::pair<base::SafeRef<PermissionRequest>, BrowserPermissionCallback>>
       pending_requests_;
 
   mutable std::optional<bool> last_has_device_permission_result_ = std::nullopt;

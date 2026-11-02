@@ -52,6 +52,13 @@ void ClearAnimatedImage(AnimatedImage* const image);
 int ReadAnimatedImage(const char filename[], AnimatedImage* const image,
                       int dump_frames, const char dump_folder[]);
 
+// Same as 'ReadAnimatedImage', but from a memory buffer.
+// filename is only used for log messages.
+int ReadAnimatedImageFromMemory(const char filename[],
+                                const uint8_t* const data, size_t size,
+                                AnimatedImage* const image, int dump_frames,
+                                const char dump_folder[]);
+
 // Given two RGBA buffers, calculate max pixel difference and PSNR.
 // If 'premultiply' is true, R/G/B values will be pre-multiplied by the
 // transparency before comparison.
@@ -62,6 +69,12 @@ void GetDiffAndPSNR(const uint8_t rgba1[], const uint8_t rgba2[],
 // Return library versions used by anim_util.
 void GetAnimatedImageVersions(int* const decoder_version,
                               int* const demux_version);
+
+// Check whether val1 * val2 fits in a size_t. Returns 1 on success.
+int CheckMultiplicationOverflow(uint32_t val1, uint32_t val2, size_t* product);
+
+// Check whether val1 + val2 fits in a size_t. Returns 1 on success.
+int CheckAdditionOverflow(size_t val1, uint32_t val2, size_t* addition);
 
 #ifdef __cplusplus
 }  // extern "C"

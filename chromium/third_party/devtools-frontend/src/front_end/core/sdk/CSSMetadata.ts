@@ -55,6 +55,15 @@ export class CSSMetadata {
     for (let i = 0; i < properties.length; ++i) {
       const property = properties[i];
       const propertyName = property.name;
+      if ('is_descriptor' in property && 'is_property' in property) {
+        if (property.is_descriptor && !property.is_property) {
+          continue;
+        }
+      }
+      const runtimeFlagStatus = property.runtime_flag_status;
+      if (Boolean(runtimeFlagStatus) && runtimeFlagStatus !== 'stable') {
+        continue;
+      }
       if (!CSS.supports(propertyName, 'initial')) {
         continue;
       }
@@ -99,9 +108,41 @@ export class CSSMetadata {
         propertyValueSets.set(propertyName, extraValues);
       }
     }
-    // finally add common keywords to value sets and convert property #values
+    // and add common keywords for shorthands
+    const commonKeywordSet = new Set(CommonKeywords);
+    for (const propertyName of this.#longhands.keys()) {
+      // skip "all" because it is a CSS-wide keyword
+      // skip shorthands that are defined in generatedPropertyValues because they have their own value sets
+      if (propertyName === 'all' || propertyValueSets.has(propertyName)) {
+        continue;
+      }
+      const longhands = this.#longhands.get(propertyName);
+      if (!longhands) {
+        continue;
+      }
+      const values = new Array<string>();
+      for (const longhand of longhands) {
+        const longhandValues = propertyValueSets.get(longhand);
+        if (!longhandValues) {
+          continue;
+        }
+        const commonKeywordsInLonghandValues = longhandValues.intersection(commonKeywordSet);
+        values.push(...commonKeywordsInLonghandValues);
+      }
+      propertyValueSets.set(propertyName, new Set(values));
+    }
+    // finally add keywords from alias property, common keywords to value sets and convert property #values
     // into arrays since callers expect arrays
     for (const [propertyName, values] of propertyValueSets) {
+      const aliasFor = this.#aliasesFor.get(propertyName);
+      if (aliasFor) {
+        const aliasForValues = propertyValueSets.get(aliasFor);
+        if (aliasForValues) {
+          for (const val of aliasForValues) {
+            values.add(val);
+          }
+        }
+      }
       for (const commonKeyword of CommonKeywords) {
         if (!values.has(commonKeyword) && CSS.supports(propertyName, commonKeyword)) {
           values.add(commonKeyword);
@@ -113,7 +154,18 @@ export class CSSMetadata {
 
     for (const name of this.#valuesSet) {
       const values = this.specificPropertyValues(name)
-                         .filter(value => CSS.supports(name, value))
+                         .filter(value => {
+                           // Filter out values which are just the function name (e.g. 'url', 'radial-gradient', etc.)
+                           // The 'preset' is the full function (e.g. 'url(||)').
+                           const preset = valuePresets.get(name)?.get(value);
+                           if (preset && preset !== value) {
+                             return false;
+                           }
+                           if (partialValueKeywordsNoPresets.get(name)?.has(value)) {
+                             return false;
+                           }
+                           return CSS.supports(name, value);
+                         })
                          .sort(CSSMetadata.sortPrefixesAndCSSWideKeywordsToEnd);
       const presets = values.map(value => `${name}: ${value}`);
       if (!this.isSVGProperty(name)) {
@@ -424,13 +476,24 @@ export function cssMetadata(): CSSMetadata {
 
 /**
  * The pipe character '|' indicates where text selection should be set.
+ *
+ * Spec: https://drafts.csswg.org/css-images-4/#image-values
+ * <image> = <url> | <image()> | <image-set()> | <cross-fade()> | <element()> | <gradient>
+ * <gradient> = [
+ * <linear-gradient()> | <repeating-linear-gradient()> |
+ * <radial-gradient()> | <repeating-radial-gradient()> |
+ * <conic-gradient()>  | <repeating-conic-gradient()> ]
  */
 const imageValuePresetMap = new Map([
-  ['linear-gradient', 'linear-gradient(|45deg, black, transparent|)'],
-  ['radial-gradient', 'radial-gradient(|black, transparent|)'],
-  ['repeating-linear-gradient', 'repeating-linear-gradient(|45deg, black, transparent 100px|)'],
-  ['repeating-radial-gradient', 'repeating-radial-gradient(|black, transparent 100px|)'],
-  ['url', 'url(||)'],
+  ['linear-gradient()', 'linear-gradient(|45deg, black, transparent|)'],
+  ['radial-gradient()', 'radial-gradient(|black, transparent|)'],
+  ['conic-gradient()', 'conic-gradient(|from 45deg, red, orange, yellow, green, teal, blue, purple|)'],
+  ['repeating-linear-gradient()', 'repeating-linear-gradient(|45deg, black, transparent 100px|)'],
+  ['repeating-radial-gradient()', 'repeating-radial-gradient(|black, transparent 100px|)'],
+  ['repeating-conic-gradient()', 'repeating-conic-gradient(|black 0deg 25%, white 0deg 50%|)'],  // Checkerboard
+  ['url()', 'url(||)'],
+  ['image-set()', 'image-set(|url("") 1x, url("") 2x|)'],
+  ['cross-fade()', 'cross-fade(|url("") 50%, url("") 50%|)'],
 ]);
 
 const filterValuePresetMap = new Map([
@@ -453,8 +516,16 @@ const cornerShapeValuePresetMap = new Map([
 ]);
 
 const valuePresets = new Map([
-  ['filter', filterValuePresetMap], ['backdrop-filter', filterValuePresetMap], ['background', imageValuePresetMap],
-  ['background-image', imageValuePresetMap], ['-webkit-mask-image', imageValuePresetMap],
+  ['filter', filterValuePresetMap],
+  ['backdrop-filter', filterValuePresetMap],
+  ['background', imageValuePresetMap],
+  ['background-image', imageValuePresetMap],
+  ['mask-image', imageValuePresetMap],
+  ['-webkit-mask-image', imageValuePresetMap],
+  ['list-style', imageValuePresetMap],
+  ['list-style-image', imageValuePresetMap],
+  ['border-image', imageValuePresetMap],
+  ['border-image-source', imageValuePresetMap],
   [
     'transform',
     new Map([
@@ -491,7 +562,81 @@ const valuePresets = new Map([
       ['ornaments', 'ornaments(||)'],
       ['annotation', 'annotation(||)'],
     ]),
-  ]
+  ],
+  [
+    'clip-path',
+    new Map([
+      ['inset', 'inset(|10px|)'],
+      ['circle', 'circle(|100px|)'],
+      ['ellipse', 'ellipse(|100px 100px|)'],
+      ['polygon', 'polygon(|50px 0px, 100px 100px, 0px 100px|)'],
+      ['url', 'url(||)'],
+    ]),
+  ],
+  [
+    'transition-timing-function',
+    new Map([
+      ['steps', 'steps(|5, end|)'],
+      ['cubic-bezier', 'cubic-bezier(|0.25, 0.1, 0.25, 1|)'],
+    ]),
+  ],
+  [
+    'animation-timing-function',
+    new Map([
+      ['steps', 'steps(|5, end|)'],
+      ['cubic-bezier', 'cubic-bezier(|0.25, 0.1, 0.25, 1|)'],
+    ]),
+  ],
+  [
+    'box-shadow',
+    new Map([
+      ['inset', 'inset |0 0 10px black|'],
+    ]),
+  ],
+  [
+    'font-size-adjust',
+    new Map([
+      ['ex-height', 'ex-height |0.5|'],
+      ['cap-height', 'cap-height |0.5|'],
+      ['ch-width', 'ch-width |0.5|'],
+      ['ic-width', 'ic-width |0.5|'],
+      ['ic-height', 'ic-height |0.5|'],
+    ]),
+  ],
+  [
+    'initial-letter',
+    new Map([
+      ['drop', 'drop |2|'],
+      ['raise', 'raise |2|'],
+    ]),
+  ],
+  [
+    'text-box-edge',
+    new Map([
+      ['cap', 'cap alphabetic'],
+      ['ex', 'ex alphabetic'],
+    ]),
+  ],
+]);
+
+const partialValueKeywordsNoPresets = new Map<string, Set<string>>([
+  ['scroll-snap-type', new Set(['mandatory', 'proximity'])],
+  ['scrollbar-gutter', new Set(['both-edges'])],
+  ['animation-timing-function', new Set(['jump-both', 'jump-end', 'jump-none', 'jump-start'])],
+  ['transition-timing-function', new Set(['jump-both', 'jump-end', 'jump-none', 'jump-start'])],
+  [
+    'animation-trigger',
+    new Set([
+      'play',
+      'pause',
+      'play-once',
+      'play-alternate',
+      'play-forwards',
+      'play-backwards',
+      'play-pause',
+      'replay',
+    ]),
+  ],
 ]);
 
 const distanceProperties = new Set<string>([
@@ -745,7 +890,44 @@ const extraPropertyValues = new Map<string, Set<string>>([
   ['-webkit-text-emphasis-position', textEmphasisPosition],
   ['alignment-baseline', new Set(['before-edge', 'after-edge', 'text-before-edge', 'text-after-edge', 'hanging'])],
   ['page-break-before', new Set(['left', 'right', 'always', 'avoid'])],
-  ['border-image', new Set(['repeat', 'stretch', 'space', 'round'])],
+  [
+    'border-image',
+    new Set([
+      'none',  // border-image-source
+      'repeat',
+      'stretch',
+      'space',
+      'round',
+      'auto',  // border-image-width
+      'fill',  // border-image-slice
+      'linear-gradient()',
+      'radial-gradient()',
+      'conic-gradient()',
+      'repeating-linear-gradient()',
+      'repeating-radial-gradient()',
+      'repeating-conic-gradient()',
+      'image-set()',
+      'cross-fade()',
+      'url()',
+    ]),
+  ],
+  ['border-image-width', new Set(['auto'])],
+  ['border-image-slice', new Set(['fill'])],
+  [
+    'border-image-source',
+    new Set([
+      'none',
+      'linear-gradient()',
+      'radial-gradient()',
+      'conic-gradient()',
+      'repeating-linear-gradient()',
+      'repeating-radial-gradient()',
+      'repeating-conic-gradient()',
+      'image-set()',
+      'cross-fade()',
+      'url()',
+    ]),
+  ],
   [
     'text-decoration',
     new Set(['blink', 'line-through', 'overline', 'underline', 'wavy', 'double', 'solid', 'dashed', 'dotted']),
@@ -829,7 +1011,7 @@ const extraPropertyValues = new Map<string, Set<string>>([
   ],
   [
     'font-variant-alternates',
-    new Set(['historical-forms', 'stylistic', 'styleset', 'character-variant', 'swash', 'ornaments', 'annotation'])
+    new Set(['historical-forms', 'stylistic', 'styleset', 'character-variant', 'swash', 'ornaments', 'annotation']),
   ],
   ['vertical-align', new Set(['top', 'bottom', '-webkit-baseline-middle'])],
   ['page-break-after', new Set(['left', 'right', 'always', 'avoid'])],
@@ -1058,16 +1240,31 @@ const extraPropertyValues = new Map<string, Set<string>>([
       'border-box',
       'content-box',
       'padding-box',
-      'linear-gradient',
-      'radial-gradient',
-      'repeating-linear-gradient',
-      'repeating-radial-gradient',
-      'url',
+      'text',  // background-clip
+      'linear-gradient()',
+      'radial-gradient()',
+      'conic-gradient()',
+      'repeating-linear-gradient()',
+      'repeating-radial-gradient()',
+      'repeating-conic-gradient()',
+      'image-set()',
+      'cross-fade()',
+      'url()',
     ]),
   ],
   [
     'background-image',
-    new Set(['linear-gradient', 'radial-gradient', 'repeating-linear-gradient', 'repeating-radial-gradient', 'url']),
+    new Set([
+      'linear-gradient()',
+      'radial-gradient()',
+      'conic-gradient()',
+      'repeating-linear-gradient()',
+      'repeating-radial-gradient()',
+      'repeating-conic-gradient()',
+      'image-set()',
+      'cross-fade()',
+      'url()',
+    ]),
   ],
   ['background-position', new Set(['top', 'bottom', 'left', 'right', 'center'])],
   ['background-position-x', new Set(['left', 'right', 'center'])],
@@ -1320,8 +1517,32 @@ const extraPropertyValues = new Map<string, Set<string>>([
     ]),
   ],
   [
+    'mask-image',
+    new Set([
+      'linear-gradient()',
+      'radial-gradient()',
+      'conic-gradient()',
+      'repeating-linear-gradient()',
+      'repeating-radial-gradient()',
+      'repeating-conic-gradient()',
+      'image-set()',
+      'cross-fade()',
+      'url()',
+    ]),
+  ],
+  [
     '-webkit-mask-image',
-    new Set(['linear-gradient', 'radial-gradient', 'repeating-linear-gradient', 'repeating-radial-gradient', 'url']),
+    new Set([
+      'linear-gradient()',
+      'radial-gradient()',
+      'conic-gradient()',
+      'repeating-linear-gradient()',
+      'repeating-radial-gradient()',
+      'repeating-conic-gradient()',
+      'image-set()',
+      'cross-fade()',
+      'url()',
+    ]),
   ],
   ['-webkit-mask-origin', new Set(['border', 'border-box', 'content', 'content-box', 'padding', 'padding-box'])],
   ['-webkit-mask-position', new Set(['top', 'bottom', 'left', 'right', 'center'])],
@@ -1358,7 +1579,6 @@ const extraPropertyValues = new Map<string, Set<string>>([
   ['timeline-trigger-activation-range-end', new Set(['normal'])],
   ['timeline-trigger-active-range-start', new Set(['normal'])],
   ['timeline-trigger-active-range-end', new Set(['normal'])],
-
   ['contain-intrinsic-width', new Set(['auto none', 'auto 100px'])],
   ['contain-intrinsic-height', new Set(['auto none', 'auto 100px'])],
   ['contain-intrinsic-size', new Set(['auto none', 'auto 100px'])],
@@ -1397,6 +1617,17 @@ const extraPropertyValues = new Map<string, Set<string>>([
     ]),
   ],
   [
+    'text-wrap',
+    new Set([
+      'auto',
+      'wrap',
+      'nowrap',
+      'balance',
+      'pretty',
+      'stable',
+    ]),
+  ],
+  [
     'corner-shape',
     new Set([
       'round',
@@ -1409,6 +1640,11 @@ const extraPropertyValues = new Map<string, Set<string>>([
       'superellipse(infinity)',
     ]),
   ],
+  ['outline-style', new Set(['auto'])],
+  ['overflow-block', new Set(['auto', 'hidden', 'visible', 'overlay', 'scroll', 'clip'])],
+  ['overflow-inline', new Set(['auto', 'hidden', 'visible', 'overlay', 'scroll', 'clip'])],
+  ['overscroll-behavior-block', new Set(['auto', 'none', 'contain'])],
+  ['overscroll-behavior-inline', new Set(['auto', 'none', 'contain'])],
 ]);
 
 // Weight of CSS properties based on their usage from https://www.chromestatus.com/metrics/css/popularity
@@ -1674,4 +1910,10 @@ export interface CSSPropertyDefinition {
   longhands: string[]|null;
   inherited: boolean|null;
   svg: boolean|null;
+  // eslint-disable-next-line @typescript-eslint/naming-convention
+  is_descriptor?: boolean;
+  // eslint-disable-next-line @typescript-eslint/naming-convention
+  is_property?: boolean;
+  // eslint-disable-next-line @typescript-eslint/naming-convention
+  runtime_flag_status?: string;
 }

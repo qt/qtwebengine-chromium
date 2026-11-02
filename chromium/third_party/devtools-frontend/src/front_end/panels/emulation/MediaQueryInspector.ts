@@ -138,12 +138,12 @@ function renderLabel(
   const containerClassMap = {
     'media-inspector-marker-label-container': true,
     'media-inspector-marker-label-container-left': atLeft,
-    'media-inspector-marker-label-container-right': !atLeft
+    'media-inspector-marker-label-container-right': !atLeft,
   };
   const labelClassMap = {
     'media-inspector-marker-label': true,
     'media-inspector-label-left': leftAlign,
-    'media-inspector-label-right': !leftAlign
+    'media-inspector-label-right': !leftAlign,
   };
 
   // clang-format off
@@ -158,27 +158,39 @@ function renderLabel(
 export class MediaQueryInspector extends UI.Widget.Widget<ShadowRoot> implements
     SDK.TargetManager.SDKModelObserver<SDK.CSSModel.CSSModel> {
   private readonly view: typeof DEFAULT_VIEW;
-  private readonly mediaThrottler: Common.Throttler.Throttler;
-  private readonly getWidthCallback: () => number;
-  private readonly setWidthCallback: (arg0: number) => void;
-  private scale: number;
+  readonly mediaThrottler: Common.Throttler.Throttler = new Common.Throttler.Throttler(0);
+  #getWidthCallback?: () => number;
+  #setWidthCallback?: (arg0: number) => void;
+  #scale: number;
   private cssModel?: SDK.CSSModel.CSSModel;
   private cachedQueryModels?: MediaQueryUIModel[];
 
-  constructor(
-      getWidthCallback: () => number, setWidthCallback: (arg0: number) => void,
-      mediaThrottler: Common.Throttler.Throttler, view = DEFAULT_VIEW) {
-    super({useShadowDom: 'pure'});
+  constructor(element?: HTMLElement, view = DEFAULT_VIEW) {
+    super(element, {useShadowDom: 'pure'});
     this.view = view;
-    this.mediaThrottler = mediaThrottler;
-
-    this.getWidthCallback = getWidthCallback;
-    this.setWidthCallback = setWidthCallback;
-    this.scale = 1;
+    this.#scale = 1;
 
     SDK.TargetManager.TargetManager.instance().observeModels(SDK.CSSModel.CSSModel, this);
     UI.ZoomManager.ZoomManager.instance().addEventListener(
         UI.ZoomManager.Events.ZOOM_CHANGED, this.requestUpdate.bind(this), this);
+  }
+
+  get getWidthCallback(): (() => number)|undefined {
+    return this.#getWidthCallback;
+  }
+
+  set getWidthCallback(callback: (() => number)|undefined) {
+    this.#getWidthCallback = callback;
+    this.requestUpdate();
+  }
+
+  get setWidthCallback(): ((arg0: number) => void)|undefined {
+    return this.#setWidthCallback;
+  }
+
+  set setWidthCallback(callback: ((arg0: number) => void)|undefined) {
+    this.#setWidthCallback = callback;
+    this.requestUpdate();
   }
 
   modelAdded(cssModel: SDK.CSSModel.CSSModel): void {
@@ -205,12 +217,16 @@ export class MediaQueryInspector extends UI.Widget.Widget<ShadowRoot> implements
     delete this.cssModel;
   }
 
-  setAxisTransform(scale: number): void {
-    if (Math.abs(this.scale - scale) < 1e-8) {
+  get scale(): number {
+    return this.#scale;
+  }
+
+  set scale(scale: number) {
+    if (Math.abs(this.#scale - scale) < 1e-8) {
       return;
     }
-    this.scale = scale;
-    this.performUpdate();
+    this.#scale = scale;
+    this.requestUpdate();
   }
 
   private onMediaQueryClicked(model: MediaQueryUIModel): void {
@@ -218,18 +234,18 @@ export class MediaQueryInspector extends UI.Widget.Widget<ShadowRoot> implements
     const modelMinWidth = model.minWidthExpression();
 
     if (model.section() === Section.MAX) {
-      this.setWidthCallback(modelMaxWidth ? modelMaxWidth.computedLength() || 0 : 0);
+      this.setWidthCallback?.(modelMaxWidth ? modelMaxWidth.computedLength() || 0 : 0);
       return;
     }
     if (model.section() === Section.MIN) {
-      this.setWidthCallback(modelMinWidth ? modelMinWidth.computedLength() || 0 : 0);
+      this.setWidthCallback?.(modelMinWidth ? modelMinWidth.computedLength() || 0 : 0);
       return;
     }
-    const currentWidth = this.getWidthCallback();
+    const currentWidth = this.getWidthCallback?.() ?? 0;
     if (modelMinWidth && currentWidth !== modelMinWidth.computedLength()) {
-      this.setWidthCallback(modelMinWidth.computedLength() || 0);
+      this.setWidthCallback?.(modelMinWidth.computedLength() || 0);
     } else {
-      this.setWidthCallback(modelMaxWidth ? modelMaxWidth.computedLength() || 0 : 0);
+      this.setWidthCallback?.(modelMaxWidth ? modelMaxWidth.computedLength() || 0 : 0);
     }
   }
 
@@ -356,16 +372,20 @@ export class MediaQueryInspector extends UI.Widget.Widget<ShadowRoot> implements
   }
 
   private zoomFactor(): number {
-    return UI.ZoomManager.ZoomManager.instance().zoomFactor() / this.scale;
+    return UI.ZoomManager.ZoomManager.instance().zoomFactor() / this.#scale;
   }
 
   override wasShown(): void {
     super.wasShown();
     this.scheduleMediaQueriesUpdate();
+    // TODO(crbug.com/407750803): Revisit once DeviceModeView is migrated.
     this.performUpdate();  // Trigger a manual update eagerly, DeviceModeView needs to measure our height.
   }
 
   override performUpdate(): void {
+    if (!this.isShowing() || !this.getWidthCallback || !this.setWidthCallback) {
+      return;
+    }
     const markers = Map.groupBy(this.buildMediaQueryMarkers(), marker => marker.model.section());
 
     this.view(

@@ -68,7 +68,7 @@ class MaglevPhiRepresentationSelector {
     }
   }
   BlockProcessResult PreProcessBasicBlock(BasicBlock* block);
-  void PostProcessBasicBlock(BasicBlock* block);
+  BlockProcessResult PostProcessBasicBlock(BasicBlock* block);
   void PostPhiProcessing() {}
 
   enum ProcessPhiResult { kNone, kRetryOnChange, kChanged };
@@ -111,6 +111,10 @@ class MaglevPhiRepresentationSelector {
     // Int32Constants as well.
     kHeapNumberConstant,
 
+    // The 'undefined' constant can be turned into the undefined NaN pattern
+    // when untagging to HoleyFloat64.
+    kUndefinedConstant,
+
     // Untagged inputs can be retrieved by taking the input of a conversion
     // nodes.
     kConversion,
@@ -148,6 +152,14 @@ class MaglevPhiRepresentationSelector {
     kSpeculativeOSRValue,
   };
   using UntaggingKindList = base::SmallVector<UntaggingKind, 8>;
+
+  enum class RetaggingKind {
+    kSmi,  // Input guaranteed to be in Smi range, so we'll use an Unsafe
+           // conversion.
+    kHeapNumber,
+    kAnyNumber
+  };
+  RetaggingKind GetRetaggingKindForPhi(Phi* phi);
 
  private:
   // Update the inputs of {phi} so that they all have {repr} representation, and
@@ -219,8 +231,8 @@ class MaglevPhiRepresentationSelector {
         // we need to retag it (with some additional checks/changes for some
         // nodes, cf the overload of UpdateNodePhiInput).
         ProcessResult result = UpdateNodePhiInput(node, phi, i, state);
-        if (V8_UNLIKELY(result == ProcessResult::kRemove)) {
-          return ProcessResult::kRemove;
+        if (V8_UNLIKELY(result != ProcessResult::kContinue)) {
+          return result;
         }
       }
     }
@@ -235,7 +247,11 @@ class MaglevPhiRepresentationSelector {
                                    const ProcessingState* state);
   ProcessResult UpdateNodePhiInput(CheckNumber* node, Phi* phi, int input_index,
                                    const ProcessingState* state);
-
+  ProcessResult UpdateNodePhiInput(CheckedNumberOrOddballToUint8Clamped* node,
+                                   Phi* phi, int input_index,
+                                   const ProcessingState* state);
+  ProcessResult UpdateNodePhiInput(AssumeType* node, Phi* phi, int input_index,
+                                   const ProcessingState* state);
   ProcessResult UpdateNodePhiInput(BranchIfToBooleanTrue* node, Phi* phi,
                                    int input_index,
                                    const ProcessingState* state);
@@ -256,6 +272,8 @@ class MaglevPhiRepresentationSelector {
   // Updates {old_untagging} to reflect that its Phi input has been untagged and
   // that a different conversion is now needed.
   ProcessResult UpdateUntaggingOfPhi(Phi* phi, ValueNode* old_untagging);
+
+  ProcessResult EmitUnconditionalDeopt(NodeBase* node, DeoptimizeReason reason);
 
   // Returns a tagged node that represents a tagged version of {phi}.
   // If we are calling EnsurePhiTagged to ensure a Phi input of a Phi is tagged,

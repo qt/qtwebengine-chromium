@@ -38,11 +38,13 @@
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "base/timer/timer.h"
+#include "base/trace_event/trace_event.h"
 #include "base/types/pass_key.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "build/chromecast_buildflags.h"
 #include "components/vrp_flags/buildflags.h"
+#include "components/webrtc/features.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/scoped_message_error_crash_key.h"
@@ -67,6 +69,7 @@
 #include "net/dns/public/dns_config_overrides.h"
 #include "net/dns/public/dns_over_https_config.h"
 #include "net/dns/public/doh_provider_entry.h"
+#include "net/dns/public/insecure_dns_mode.h"
 #include "net/dns/system_dns_config_change_notifier.h"
 #include "net/dns/test_dns_config_service.h"
 #include "net/filter/filter_source_stream.h"
@@ -384,7 +387,9 @@ NetworkService::NetworkService(
     std::unique_ptr<service_manager::BinderRegistry> registry,
     mojo::PendingReceiver<mojom::NetworkService> receiver,
     bool delay_initialization_until_set_client)
-    : net_log_(net::NetLog::Get()), registry_(std::move(registry)) {
+    : net_log_(net::NetLog::Get()),
+      registry_(std::move(registry)),
+      time_to_first_context_timer_(base::ElapsedTimer()) {
   DCHECK(!g_network_service);
   g_network_service = this;
 
@@ -395,7 +400,7 @@ NetworkService::NetworkService(
   ContentDecodingInterceptor::SetIsNetworkServiceRunningInTheCurrentProcess(
       true, {});
 
-  // |registry_| is nullptr when a NetworkService is out-of-process.
+  // `registry` holds a valid instance when a NetworkService is out-of-process.
   if (registry_) {
     mojo::SetDefaultProcessErrorHandler(base::BindRepeating(&HandleBadMessage));
 #if BUILDFLAG(IS_LINUX)
@@ -421,6 +426,8 @@ void NetworkService::Initialize(mojom::NetworkServiceParamsPtr params,
   if (initialized_) {
     return;
   }
+
+  TRACE_EVENT0("loading", "NetworkService::Initialize");
 
   initialized_ = true;
 
@@ -671,13 +678,15 @@ void NetworkService::SetSystemDnsResolver(
 void NetworkService::StartNetLog(base::File file,
                                  uint64_t max_total_size,
                                  net::NetLogCaptureMode capture_mode,
+                                 net::NetLogFileFormat file_format,
                                  base::DictValue constants,
                                  std::optional<base::TimeDelta> duration) {
   if (max_total_size == net::FileNetLogObserver::kNoLimit) {
-    StartNetLogUnbounded(std::move(file), capture_mode, std::move(constants));
+    StartNetLogUnbounded(std::move(file), capture_mode, file_format,
+                         std::move(constants));
   } else {
     StartNetLogBounded(std::move(file), max_total_size, capture_mode,
-                       std::move(constants));
+                       file_format, std::move(constants));
   }
   if (duration.has_value() && !duration->is_zero()) {
     base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
@@ -724,6 +733,13 @@ void NetworkService::SetSSLKeyLogFile(base::File file) {
 void NetworkService::CreateNetworkContext(
     mojo::PendingReceiver<mojom::NetworkContext> receiver,
     mojom::NetworkContextParamsPtr params) {
+  TRACE_EVENT0("loading", "NetworkService::CreateNetworkContext");
+  if (time_to_first_context_timer_) {
+    base::UmaHistogramMediumTimes(
+        "NetworkService.TimeToFirstCreateNetworkContext",
+        time_to_first_context_timer_->Elapsed());
+    time_to_first_context_timer_.reset();
+  }
 #if BUILDFLAG(IS_ANDROID)
   if (params->cookie_store_ready_callback) {
     auto pending = std::make_unique<PendingNetworkContext>(
@@ -754,13 +770,13 @@ void NetworkService::ConfigureStubHostResolver(
     bool insecure_dns_via_platform_apis_enabled) {
   // Enable or disable the insecure part of DnsClient. "DnsClient" is the class
   // that implements the stub resolver.
-  net::HostResolverManager::InsecureDnsMode mode;
+  net::InsecureDnsMode mode;
   if (insecure_dns_client_enabled && insecure_dns_via_platform_apis_enabled) {
-    mode = net::HostResolverManager::InsecureDnsMode::kEnabledPlatform;
+    mode = net::InsecureDnsMode::kEnabledPlatform;
   } else if (insecure_dns_client_enabled) {
-    mode = net::HostResolverManager::InsecureDnsMode::kEnabledBuiltIn;
+    mode = net::InsecureDnsMode::kEnabledBuiltIn;
   } else {
-    mode = net::HostResolverManager::InsecureDnsMode::kDisabled;
+    mode = net::InsecureDnsMode::kDisabled;
   }
 
   host_resolver_manager_->SetInsecureDnsClientEnabled(
@@ -915,6 +931,19 @@ void NetworkService::OnClientCertStoreChanged() {
 void NetworkService::OnPeerToPeerConnectionsCountChange(uint32_t count) {
   network_quality_estimator_manager_->GetNetworkQualityEstimator()
       ->OnPeerToPeerConnectionsCountChange(count);
+
+  // Only boost when running out of process (|registry_| is non-null); the
+  // in-process network thread has its own priority handling (see
+  // BoostNetworkThreadPriority in
+  // content/browser/network_service_instance_impl.cc).
+  if (registry_ && base::FeatureList::IsEnabled(
+                       webrtc::features::kWebRTCBoostMediaIOThreads)) {
+    if (count > 0 && !io_thread_type_lease_) {
+      io_thread_type_lease_.emplace(base::ThreadType::kAudioProcessing);
+    } else if (count == 0) {
+      io_thread_type_lease_.reset();
+    }
+  }
 }
 
 #if BUILDFLAG(IS_ANDROID)
@@ -1121,6 +1150,7 @@ void NetworkService::SetTLS13EarlyDataEnabled(bool enabled) {
 void NetworkService::StartNetLogBounded(base::File file,
                                         uint64_t max_total_size,
                                         net::NetLogCaptureMode capture_mode,
+                                        net::NetLogFileFormat file_format,
                                         base::DictValue client_constants) {
   base::DictValue constants = net::GetNetConstants();
   constants.Merge(std::move(client_constants));
@@ -1134,13 +1164,14 @@ void NetworkService::StartNetLogBounded(base::File file,
       base::BindOnce(
           &NetworkService::OnStartNetLogBoundedScratchDirectoryCreated,
           weak_factory_.GetWeakPtr(), std::move(file), max_total_size,
-          capture_mode, std::move(constants)));
+          capture_mode, file_format, std::move(constants)));
 }
 
 void NetworkService::OnStartNetLogBoundedScratchDirectoryCreated(
     base::File file,
     uint64_t max_total_size,
     net::NetLogCaptureMode capture_mode,
+    net::NetLogFileFormat file_format,
     base::DictValue constants,
     const base::FilePath& in_progress_dir_path) {
   if (in_progress_dir_path.empty()) {
@@ -1150,19 +1181,20 @@ void NetworkService::OnStartNetLogBoundedScratchDirectoryCreated(
 
   file_net_log_observer_ = net::FileNetLogObserver::CreateBoundedPreExisting(
       in_progress_dir_path, std::move(file), max_total_size, capture_mode,
-      std::make_unique<base::DictValue>(std::move(constants)));
+      std::make_unique<base::DictValue>(std::move(constants)), file_format);
   file_net_log_observer_->StartObserving(net_log_);
 }
 
 void NetworkService::StartNetLogUnbounded(base::File file,
                                           net::NetLogCaptureMode capture_mode,
+                                          net::NetLogFileFormat file_format,
                                           base::DictValue client_constants) {
   base::DictValue constants = net::GetNetConstants();
   constants.Merge(std::move(client_constants));
 
   file_net_log_observer_ = net::FileNetLogObserver::CreateUnboundedPreExisting(
       std::move(file), capture_mode,
-      std::make_unique<base::DictValue>(std::move(constants)));
+      std::make_unique<base::DictValue>(std::move(constants)), file_format);
   file_net_log_observer_->StartObserving(net_log_);
 }
 
@@ -1264,6 +1296,11 @@ void NetworkService::Bind(
     mojo::PendingReceiver<mojom::NetworkService> receiver) {
   DCHECK(!receiver_.is_bound());
   receiver_.Bind(std::move(receiver));
+}
+
+void NetworkService::BindNetworkContextCreator(
+    mojo::PendingReceiver<mojom::NetworkContextCreator> receiver) {
+  context_creator_receiver_set_.Add(this, std::move(receiver));
 }
 
 mojom::URLLoaderNetworkServiceObserver*

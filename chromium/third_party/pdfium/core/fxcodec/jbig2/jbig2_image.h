@@ -14,9 +14,7 @@
 #include <optional>
 
 #include "core/fxcodec/jbig2/jbig2_define.h"
-#include "core/fxcrt/compiler_specific.h"
-#include "core/fxcrt/fx_memory_wrappers.h"
-#include "core/fxcrt/maybe_owned.h"
+#include "core/fxcrt/maybe_owned_data_vector.h"
 #include "core/fxcrt/span.h"
 
 struct FX_RECT;
@@ -45,7 +43,7 @@ class CJBig2_Image {
   int32_t height() const { return height_; }
   int32_t stride() const { return stride_; }
 
-  bool has_data() const { return static_cast<bool>(data_); }
+  bool has_data() const { return !data_.span().empty(); }
 
   pdfium::span<const uint8_t> span() const;
   pdfium::span<uint8_t> span();
@@ -114,11 +112,10 @@ class CJBig2_Image {
                          JBig2ComposeOp op,
                          const FX_RECT& rtSrc);
 
-  MaybeOwned<uint8_t, FxFreeDeleter> data_;
+  MaybeOwnedDataVector<uint8_t> data_;
   int32_t width_ = 0;   // 1-bit pixels
   int32_t height_ = 0;  // lines
   int32_t stride_ = 0;  // bytes, must be multiple of 4.
-  size_t data_size_ = 0;  // Total cached span size
 };
 
 #endif  // CORE_FXCODEC_JBIG2_JBIG2_IMAGE_H_

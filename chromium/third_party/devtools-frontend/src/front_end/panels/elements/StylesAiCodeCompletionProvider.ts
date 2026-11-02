@@ -7,8 +7,8 @@ import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Root from '../../core/root/root.js';
 import type * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as AiCodeCompletion from '../../models/ai_code_completion/ai_code_completion.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as TextEditor from '../../ui/components/text_editor/text_editor.js';
 
 export class StylesAiCodeCompletionProvider {
@@ -29,17 +29,29 @@ export class StylesAiCodeCompletionProvider {
     sampleId?: number,
   }|null) => void;
 
-  #boundOnUpdateAiCodeCompletionState = this.#updateAiCodeCompletionState.bind(this);
+  #boundOnAidaAvailabilityChange =
+      (ev: Common.EventTarget.EventTargetEvent<Host.AidaClient.AidaAccessPreconditions>): void => {
+        this.#updateAiCodeCompletionStateWithAvailability(ev.data);
+      };
+  #boundOnSettingChange = (): void => {
+    const aidaAvailability = Host.AidaClient.HostConfigTracker.instance().aidaAvailability;
+    if (aidaAvailability !== undefined) {
+      this.#updateAiCodeCompletionStateWithAvailability(aidaAvailability);
+    }
+  };
 
   private constructor(aiCodeCompletionConfig: TextEditor.AiCodeCompletionProvider.AiCodeCompletionConfig) {
     if (!AiCodeCompletion.AiCodeCompletion.AiCodeCompletion.isAiCodeCompletionStylesAvailable()) {
       throw new Error('AI code completion feature in Styles is not available.');
     }
     this.#aiCodeCompletionConfig = aiCodeCompletionConfig;
-    Host.AidaClient.HostConfigTracker.instance().addEventListener(
-        Host.AidaClient.Events.AIDA_AVAILABILITY_CHANGED, this.#boundOnUpdateAiCodeCompletionState);
-    this.#aiCodeCompletionSetting.addChangeListener(this.#boundOnUpdateAiCodeCompletionState);
-    void this.#updateAiCodeCompletionState();
+    Host.AidaClient.HostConfigTracker.instance().addEventListener(Host.AidaClient.Events.AIDA_AVAILABILITY_CHANGED,
+                                                                  this.#boundOnAidaAvailabilityChange);
+    this.#aiCodeCompletionSetting.addChangeListener(this.#boundOnSettingChange);
+    const initialAvailability = Host.AidaClient.HostConfigTracker.instance().aidaAvailability;
+    if (initialAvailability !== undefined) {
+      this.#updateAiCodeCompletionStateWithAvailability(initialAvailability);
+    }
   }
 
   static createInstance(aiCodeCompletionConfig: TextEditor.AiCodeCompletionProvider.AiCodeCompletionConfig):
@@ -60,12 +72,12 @@ export class StylesAiCodeCompletionProvider {
     if (this.#aiCodeCompletionConfig.completionContext.stopSequences) {
       stopSequences.push(...this.#aiCodeCompletionConfig.completionContext.stopSequences);
     }
-    this.#aiCodeCompletion = new AiCodeCompletion.AiCodeCompletion.AiCodeCompletion(
-        {
-          aidaClient: this.#aidaClient,
-          serverSideLoggingEnabled: !Root.Runtime.hostConfig.aidaAvailability?.disallowLogging
-        },
-        this.#aiCodeCompletionConfig.panel, undefined, stopSequences);
+    this.#aiCodeCompletion = new AiCodeCompletion.AiCodeCompletion.AiCodeCompletion({
+      aidaClient: this.#aidaClient,
+      serverSideLoggingEnabled: !Root.Runtime.hostConfig.aidaAvailability?.disallowLogging,
+    },
+                                                                                    this.#aiCodeCompletionConfig.panel,
+                                                                                    undefined, stopSequences);
     this.#aiCodeCompletionConfig.onFeatureEnabled();
   }
 
@@ -78,8 +90,7 @@ export class StylesAiCodeCompletionProvider {
     this.#aiCodeCompletionConfig?.onFeatureDisabled();
   }
 
-  async #updateAiCodeCompletionState(): Promise<void> {
-    const aidaAvailability = await Host.AidaClient.AidaClient.checkAccessPreconditions();
+  #updateAiCodeCompletionStateWithAvailability(aidaAvailability: Host.AidaClient.AidaAccessPreconditions): void {
     const isAvailable = aidaAvailability === Host.AidaClient.AidaAccessPreconditions.AVAILABLE;
     const devtoolsLocale = i18n.DevToolsLocale.DevToolsLocale.instance().locale;
     const isEnabled =
@@ -137,7 +148,15 @@ export class StylesAiCodeCompletionProvider {
     }
     currentPropertyString = currentPropertyString + text;
     prefix = prefix + text;
-    const suffix = content.substring(propertyEndOffset);
+    let suffix = content.substring(propertyEndOffset);
+
+    const maxLength = TextEditor.AiCodeCompletionProvider.MAX_PREFIX_SUFFIX_LENGTH;
+    if (prefix.length > maxLength) {
+      prefix = prefix.substring(prefix.length - maxLength);
+    }
+    if (suffix.length > maxLength) {
+      suffix = suffix.substring(0, maxLength);
+    }
 
     const startTime = performance.now();
     // TODO(b/476098133): Consider adjusting cursor position

@@ -35,6 +35,7 @@ enum {
   amxint8 = 1 << 16,
 
   avx2_fma3 = avx2 | fma3,
+  sse2_fma = sse2,
   avx512 = avx512f | avx512bw | avx512vl | avx512dq,
 #endif  // YNN_ARCH_X86
 #ifdef YNN_ARCH_ARM
@@ -44,10 +45,12 @@ enum {
   neonfp16 = 1 << 3,
   neonfp16arith = 1 << 4,
   neonbf16 = 1 << 5,
-  neoni8mm = 1 << 6,
-  sme = 1 << 7,
-  sme2 = 1 << 8,
-  sve = 1 << 9,
+  neonfp8 = 1 << 6,
+  neonfp8dot4 = 1 << 7,
+  neoni8mm = 1 << 8,
+  sme = 1 << 9,
+  sme2 = 1 << 10,
+  sve = 1 << 11,
 #endif
 #ifdef YNN_ARCH_HEXAGON
   hvx = 1 << 0,

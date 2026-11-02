@@ -39,6 +39,7 @@
 #include "net/base/net_errors.h"
 #include "net/base/network_anonymization_key.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
+#include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/ip_address_space_util.h"
 #include "services/network/public/cpp/simple_host_resolver.h"
 #include "services/network/public/mojom/network_context.mojom.h"
@@ -245,13 +246,6 @@ void RequestPrivateNetworkAccess(
           [&](content::RenderFrameHost* rfh) {
             if (AreDirectSocketsAllowedByEmbedder(rfh)) {
               std::move(callback).Run(/*access_allowed=*/true);
-              return;
-            }
-
-            if (!rfh->IsFeatureEnabled(
-                    network::mojom::PermissionsPolicyFeature::
-                        kDirectSocketsPrivate)) {
-              std::move(callback).Run(/*access_allowed=*/false);
               return;
             }
 
@@ -776,6 +770,15 @@ void DirectSocketsServiceImpl::OnResolveCompleteForUDPSocket(
 
   DCHECK(!resolved_addresses.empty());
 
+  const auto& peer_addr = resolved_addresses.front();
+  if (base::FeatureList::IsEnabled(
+          network::features::
+              kDirectSocketsUdpSendRequireMulticastPermissionPolicy) &&
+      !IsMulticastAllowed(context_) && peer_addr.address().IsMulticast()) {
+    FulfillWithError(std::move(callback), net::ERR_MULTICAST_NOT_ALLOWED);
+    return;
+  }
+
   auto socket_options = network::mojom::UDPSocketOptions::New();
   if (options->send_buffer_size.has_value()) {
     socket_options->send_buffer_size = *options->send_buffer_size;
@@ -796,7 +799,6 @@ void DirectSocketsServiceImpl::OnResolveCompleteForUDPSocket(
   auto params = network::mojom::RestrictedUDPSocketParams::New();
   params->socket_options = std::move(socket_options);
 
-  const auto& peer_addr = resolved_addresses.front();
   auto finish_callback = base::BindOnce(
       [](OpenConnectedUDPSocketCallback callback, net::IPEndPoint peer_addr,
          int result, const std::optional<net::IPEndPoint>& local_addr) {
@@ -845,7 +847,9 @@ void DirectSocketsServiceImpl::CreateRestrictedUDPSocketImpl(
       net::MutableNetworkTrafficAnnotationTag(kDirectSocketsTrafficAnnotation),
       std::move(options), std::move(socket), std::move(listener),
       IsMulticastAllowed(context_),
-      /*allow_source_specific_multicast=*/false, std::move(callback));
+      base::FeatureList::IsEnabled(
+          blink::features::kSourceSpecificMulticastInDirectSockets),
+      std::move(callback));
 }
 
 }  // namespace content

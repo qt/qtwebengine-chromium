@@ -26,6 +26,8 @@
 #include "src/webp/decode.h"
 #include "src/webp/types.h"
 
+WEBP_ASSUME_UNSAFE_INDEXABLE_ABI
+
 //------------------------------------------------------------------------------
 // Main reconstruction function.
 
@@ -47,7 +49,7 @@ static int CheckMode(int mb_x, int mb_y, int mode) {
 }
 
 static void Copy32b(uint8_t* const dst, const uint8_t* const src) {
-  memcpy(dst, src, 4);
+  WEBP_UNSAFE_MEMCPY(dst, src, 4);
 }
 
 static WEBP_INLINE void DoTransform(uint32_t bits, const int16_t* const src,
@@ -103,9 +105,9 @@ static void ReconstructRow(const VP8Decoder* const dec,
   } else {
     // we only need to do this init once at block (0,0).
     // Afterward, it remains valid for the whole topmost row.
-    memset(y_dst - BPS - 1, 127, 16 + 4 + 1);
-    memset(u_dst - BPS - 1, 127, 8 + 1);
-    memset(v_dst - BPS - 1, 127, 8 + 1);
+    WEBP_UNSAFE_MEMSET(y_dst - BPS - 1, 127, 16 + 4 + 1);
+    WEBP_UNSAFE_MEMSET(u_dst - BPS - 1, 127, 8 + 1);
+    WEBP_UNSAFE_MEMSET(v_dst - BPS - 1, 127, 8 + 1);
   }
 
   // Reconstruct one row.
@@ -131,9 +133,9 @@ static void ReconstructRow(const VP8Decoder* const dec,
       int n;
 
       if (mb_y > 0) {
-        memcpy(y_dst - BPS, top_yuv[0].y, 16);
-        memcpy(u_dst - BPS, top_yuv[0].u, 8);
-        memcpy(v_dst - BPS, top_yuv[0].v, 8);
+        WEBP_UNSAFE_MEMCPY(y_dst - BPS, top_yuv[0].y, 16);
+        WEBP_UNSAFE_MEMCPY(u_dst - BPS, top_yuv[0].u, 8);
+        WEBP_UNSAFE_MEMCPY(v_dst - BPS, top_yuv[0].v, 8);
       }
 
       // predict and add residuals
@@ -142,9 +144,9 @@ static void ReconstructRow(const VP8Decoder* const dec,
 
         if (mb_y > 0) {
           if (mb_x >= dec->mb_w - 1) {  // on rightmost border
-            memset(top_right, top_yuv[0].y[15], sizeof(*top_right));
+            WEBP_UNSAFE_MEMSET(top_right, top_yuv[0].y[15], sizeof(*top_right));
           } else {
-            memcpy(top_right, top_yuv[1].y, sizeof(*top_right));
+            WEBP_UNSAFE_MEMCPY(top_right, top_yuv[1].y, sizeof(*top_right));
           }
         }
         // replicate the top-right pixels below
@@ -177,9 +179,9 @@ static void ReconstructRow(const VP8Decoder* const dec,
 
       // stash away top samples for next block
       if (mb_y < dec->mb_h - 1) {
-        memcpy(top_yuv[0].y, y_dst + 15 * BPS, 16);
-        memcpy(top_yuv[0].u, u_dst + 7 * BPS, 8);
-        memcpy(top_yuv[0].v, v_dst + 7 * BPS, 8);
+        WEBP_UNSAFE_MEMCPY(top_yuv[0].y, y_dst + 15 * BPS, 16);
+        WEBP_UNSAFE_MEMCPY(top_yuv[0].u, u_dst + 7 * BPS, 8);
+        WEBP_UNSAFE_MEMCPY(top_yuv[0].v, v_dst + 7 * BPS, 8);
       }
     }
     // Transfer reconstructed samples from yuv_b cache to final destination.
@@ -190,11 +192,14 @@ static void ReconstructRow(const VP8Decoder* const dec,
       uint8_t* const u_out = dec->cache_u + mb_x * 8 + uv_offset;
       uint8_t* const v_out = dec->cache_v + mb_x * 8 + uv_offset;
       for (j = 0; j < 16; ++j) {
-        memcpy(y_out + j * dec->cache_y_stride, y_dst + j * BPS, 16);
+        WEBP_UNSAFE_MEMCPY(y_out + j * dec->cache_y_stride, y_dst + j * BPS,
+                           16);
       }
       for (j = 0; j < 8; ++j) {
-        memcpy(u_out + j * dec->cache_uv_stride, u_dst + j * BPS, 8);
-        memcpy(v_out + j * dec->cache_uv_stride, v_dst + j * BPS, 8);
+        WEBP_UNSAFE_MEMCPY(u_out + j * dec->cache_uv_stride, u_dst + j * BPS,
+                           8);
+        WEBP_UNSAFE_MEMCPY(v_out + j * dec->cache_uv_stride, v_dst + j * BPS,
+                           8);
       }
     }
   }
@@ -494,9 +499,12 @@ static int FinishRow(void* arg1, void* arg2) {
   // rotate top samples if needed
   if (cache_id + 1 == dec->num_caches) {
     if (!is_last_row) {
-      memcpy(dec->cache_y - ysize, ydst + 16 * dec->cache_y_stride, ysize);
-      memcpy(dec->cache_u - uvsize, udst + 8 * dec->cache_uv_stride, uvsize);
-      memcpy(dec->cache_v - uvsize, vdst + 8 * dec->cache_uv_stride, uvsize);
+      WEBP_UNSAFE_MEMCPY(dec->cache_y - ysize, ydst + 16 * dec->cache_y_stride,
+                         ysize);
+      WEBP_UNSAFE_MEMCPY(dec->cache_u - uvsize, udst + 8 * dec->cache_uv_stride,
+                         uvsize);
+      WEBP_UNSAFE_MEMCPY(dec->cache_v - uvsize, vdst + 8 * dec->cache_uv_stride,
+                         uvsize);
     }
   }
 
@@ -782,11 +790,11 @@ static int AllocateMemory(VP8Decoder* const dec) {
   assert(mem <= (uint8_t*)dec->mem + dec->mem_size);
 
   // note: left/top-info is initialized once for all.
-  memset(dec->mb_info - 1, 0, mb_info_size);
+  WEBP_UNSAFE_MEMSET(dec->mb_info - 1, 0, mb_info_size);
   VP8InitScanline(dec);  // initialize left too.
 
   // initialize top
-  memset(dec->intra_t, B_DC_PRED, intra_pred_mode_size);
+  WEBP_UNSAFE_MEMSET(dec->intra_t, B_DC_PRED, intra_pred_mode_size);
 
   return 1;
 }

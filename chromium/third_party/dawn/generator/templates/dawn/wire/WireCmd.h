@@ -30,10 +30,13 @@
 
 #include <webgpu/webgpu.h>
 
+#include <optional>
+
 #include "dawn/wire/ObjectType_autogen.h"
 #include "src/dawn/wire/BufferConsumer.h"
 #include "src/dawn/wire/ObjectHandle.h"
 #include "src/dawn/wire/WireResult.h"
+#include "src/utils/span.h"
 
 namespace dawn::wire {
 
@@ -41,7 +44,7 @@ namespace dawn::wire {
     // nullptr is treated as an error.
     class DeserializeAllocator {
         public:
-            virtual void* GetSpace(size_t size) = 0;
+            virtual std::optional<Span<std::byte>> TryGetSpace(size_t size) = 0;
     };
 
     // Interface to convert an ID to a server object, if possible.
@@ -58,8 +61,8 @@ namespace dawn::wire {
     class ObjectIdProvider {
         public:
             {% for type in by_category["object"] %}
-                virtual WireResult GetId({{as_cType(type.name)}} object, ObjectId* out) const = 0;
-                virtual WireResult GetOptionalId({{as_cType(type.name)}} object, ObjectId* out) const = 0;
+                virtual WireResult GetId({{as_cType(type.name)}} object, volatile ObjectId* out) const = 0;
+                virtual WireResult GetOptionalId({{as_cType(type.name)}} object, volatile ObjectId* out) const = 0;
             {% endfor %}
     };
 
@@ -82,6 +85,28 @@ namespace dawn::wire {
 
     struct CmdHeader {
         uint64_t commandSize;
+        WireCmd commandId;
+
+        CmdHeader() = default;
+        CmdHeader(const CmdHeader&) = default;
+        CmdHeader(CmdHeader&&) = default;
+
+        // Volatile constructors and assignment operators are never expected to be called at
+        // runtime when handling wire commands. They exist solely to satisfy C++20 iterator and
+        // std::span requirements (e.g. std::indirectly_readable) when constructing views over
+        // volatile shared memory buffers.
+        [[noreturn]] CmdHeader(const volatile CmdHeader& other) {
+            DAWN_UNREACHABLE();
+        }
+        [[noreturn]] CmdHeader(volatile CmdHeader&& other) {
+            DAWN_UNREACHABLE();
+        }
+        [[noreturn]] CmdHeader(const volatile CmdHeader&& other) {
+            DAWN_UNREACHABLE();
+        }
+        [[noreturn]] CmdHeader& operator=(const volatile CmdHeader& other) {
+            DAWN_UNREACHABLE();
+        }
     };
 
 {% macro write_command_struct(command, is_return_command) %}

@@ -17,7 +17,7 @@
 namespace Eigen {
 
 /* \class AutoDiffScalar
- * \brief A scalar type replacement with automatic differentation capability
+ * \brief A scalar type replacement with automatic differentiation capability
  *
  * \param DerType the vector type used to store/represent the derivatives (e.g. Vector3f)
  *

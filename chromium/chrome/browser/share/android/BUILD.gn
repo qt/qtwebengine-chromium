@@ -19,6 +19,8 @@ android_resources("java_resources") {
     "java/res/layout/qrcode_dialog.xml",
     "java/res/layout/qrcode_share_layout.xml",
     "java/res/layout/screenshot_share_sheet.xml",
+    "java/res/layout/send_tab_to_self_enhanced_list_item.xml",
+    "java/res/layout/send_tab_to_self_enhanced_sheet.xml",
     "java/res/values/dimens.xml",
     "java/res/values/drawables.xml",
   ]

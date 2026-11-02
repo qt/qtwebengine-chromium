@@ -64,12 +64,20 @@ describe('SharedStorageAccessGrid', () => {
     const rowValues = getValuesOfAllBodyRows(dataGridShadowRoot);
     const expectedValues = [
       [
-        (new Date(0 * 1e3)).toLocaleString(), 'window', 'append', 'https://owner1.com', 'https://owner1.com',
-        JSON.stringify(params1)
+        (new Date(0 * 1e3)).toLocaleString(),
+        'window',
+        'append',
+        'https://owner1.com',
+        'https://owner1.com',
+        JSON.stringify(params1),
       ],
       [
-        (new Date(10 * 1e3)).toLocaleString(), 'sharedStorageWorklet', 'delete', 'https://owner2.com',
-        'https://owner2.com', JSON.stringify(params2)
+        (new Date(10 * 1e3)).toLocaleString(),
+        'sharedStorageWorklet',
+        'delete',
+        'https://owner2.com',
+        'https://owner2.com',
+        JSON.stringify(params2),
       ],
     ];
     assert.deepEqual(rowValues, expectedValues);

@@ -17,6 +17,7 @@ import {createIcon} from '../../ui/kit/kit.js';
 import * as QuickOpen from '../../ui/legacy/components/quick_open/quick_open.js';
 import * as SourceFrame from '../../ui/legacy/components/source_frame/source_frame.js';
 import * as UI from '../../ui/legacy/legacy.js';
+import {render} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
 import * as Components from './components/components.js';
@@ -344,10 +345,15 @@ export class SourcesView extends Common.ObjectWrapper.eventMixin<EventTypes, typ
     if (view instanceof UI.View.SimpleView) {
       void view.toolbarItems().then(items => {
         this.#scriptViewToolbar.removeToolbarItems();
-        for (const action of getRegisteredEditorActions()) {
-          this.#scriptViewToolbar.appendToolbarItem(action.getOrCreateButton(this));
+        if (Array.isArray(items)) {
+          items.map(item => this.#scriptViewToolbar.appendToolbarItem(item));
+        } else {
+          const wrapper = document.createElement('div');
+          wrapper.style.display = 'contents';
+          // eslint-disable-next-line @devtools/no-lit-render-outside-of-view
+          render(items, wrapper);
+          this.#scriptViewToolbar.appendToolbarItem(new UI.Toolbar.ToolbarItem(wrapper));
         }
-        items.map(item => this.#scriptViewToolbar.appendToolbarItem(item));
       });
     }
   }
@@ -646,20 +652,6 @@ export interface EditorClosedEvent {
 export interface EventTypes {
   [Events.EDITOR_CLOSED]: EditorClosedEvent;
   [Events.EDITOR_SELECTED]: Workspace.UISourceCode.UISourceCode;
-}
-
-export interface EditorAction {
-  getOrCreateButton(sourcesView: SourcesView): UI.Toolbar.ToolbarButton;
-}
-
-const registeredEditorActions: Array<() => EditorAction> = [];
-
-export function registerEditorAction(editorAction: () => EditorAction): void {
-  registeredEditorActions.push(editorAction);
-}
-
-export function getRegisteredEditorActions(): EditorAction[] {
-  return registeredEditorActions.map(editorAction => editorAction());
 }
 
 export class SwitchFileActionDelegate implements UI.ActionRegistration.ActionDelegate {

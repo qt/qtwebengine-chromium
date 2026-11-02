@@ -10,7 +10,13 @@ include_rules = [
   "+chrome/browser/ui/webui/ash/login",
   "+chrome/browser/ui/webui/ash/internet",
   "+chrome/browser/ui/webui/ash/system_web_dialog",
-  "+chrome/common",
   "+chrome/grit",
   "+chrome/test/base",
 ]
+
+specific_include_rules = {
+  "floating_workspace_ui\\.cc": [
+    "+chrome/browser/profiles/profile.h",
+    "+chrome/browser/ui/webui/theme_source.h",
+  ],
+}

@@ -229,7 +229,7 @@ uint64_t ComputeExtraArraySizeForIntelGen12(uint32_t width,
     }
     uint32_t tileWidth = kTileSize / tileHeight;
 
-    uint64_t layerxSamples = arrayLayerCount * sampleCount;
+    uint64_t layerxSamples = static_cast<uint64_t>(arrayLayerCount) * sampleCount;
 
     if (layerxSamples <= 1) {
         return 0;
@@ -237,7 +237,7 @@ uint64_t ComputeExtraArraySizeForIntelGen12(uint32_t width,
 
     uint32_t columnPitch = GetColumnPitch(height, mipLevelCount);
 
-    uint64_t totalWidth = width * colorFormatBytesPerBlock;
+    uint64_t totalWidth = static_cast<uint64_t>(width) * colorFormatBytesPerBlock;
     uint64_t totalHeight = columnPitch * layerxSamples;
 
     // Texture should be aligned on both tile width (512 bytes) and tile height (128 rows) on Intel
@@ -295,18 +295,28 @@ D3D12_HEAP_FLAGS GetHeapFlagsForCommittedResource(Device* device,
 
 }  // namespace
 
-ResourceAllocatorManager::ResourceAllocatorManager(Device* device) : mDevice(device) {
+ResourceAllocatorManager::ResourceAllocatorManager(Device* device, QueueBase* queue)
+    : mDevice(device) {
     D3D12_HEAP_FLAGS createNotZeroedHeapFlag =
         mDevice->IsToggleEnabled(Toggle::D3D12CreateNotZeroedHeap)
             ? D3D12_HEAP_FLAG_CREATE_NOT_ZEROED
             : D3D12_HEAP_FLAG_NONE;
+
+    mAllocatedMemoryTracker = AcquireRef(new AllocationSizeTracker());
+    mUsedMemoryTracker = AcquireRef(new AllocationSizeTracker());
+
+    // Register with the execution queue so UpdateCompletedSerialTo is called automatically.
+    queue->RegisterSerialProcessor(QueuePriority::BestEffort,
+                                   Ref<AllocationSizeTracker>(mAllocatedMemoryTracker));
+    queue->RegisterSerialProcessor(QueuePriority::BestEffort,
+                                   Ref<AllocationSizeTracker>(mUsedMemoryTracker));
 
     for (uint32_t i = 0; i < ResourceHeapKind::EnumCount; i++) {
         const ResourceHeapKind resourceHeapKind = static_cast<ResourceHeapKind>(i);
         D3D12_HEAP_FLAGS heapFlags = GetD3D12HeapFlags(resourceHeapKind) | createNotZeroedHeapFlag;
         mHeapAllocators[i] = std::make_unique<HeapAllocator>(
             mDevice, resourceHeapKind, heapFlags, GetMemorySegment(mDevice, resourceHeapKind),
-            &mAllocatedMemory);
+            mAllocatedMemoryTracker.Get());
         mPooledHeapAllocators[i] =
             std::make_unique<PooledResourceMemoryAllocator>(mHeapAllocators[i].get());
         mSubAllocatedResourceAllocators[i] = std::make_unique<BuddyMemoryAllocator>(
@@ -404,9 +414,6 @@ void ResourceAllocatorManager::Tick(ExecutionSerial completedSerial) {
     }
     mAllocationsToDelete.ClearUpTo(completedSerial);
     mHeapsToDelete.ClearUpTo(completedSerial);
-
-    mAllocatedMemory.Tick(completedSerial);
-    mUsedMemory.Tick(completedSerial);
 }
 
 void ResourceAllocatorManager::DeallocateMemory(ResourceHeapAllocation& allocation) {
@@ -425,13 +432,13 @@ void ResourceAllocatorManager::DeallocateMemory(ResourceHeapAllocation& allocati
         mHeapsToDelete.Enqueue(std::unique_ptr<ResourceHeapBase>(allocation.GetResourceHeap()),
                                mDevice->GetQueue()->GetPendingCommandSerial());
 
-        mUsedMemory.Decrement(mDevice->GetQueue()->GetPendingCommandSerial(),
-                              allocation.GetInfo().mRequestedSize);
-        mAllocatedMemory.Decrement(mDevice->GetQueue()->GetPendingCommandSerial(),
-                                   allocation.GetInfo().mRequestedSize);
+        mUsedMemoryTracker->Decrement(mDevice->GetQueue()->GetPendingCommandSerial(),
+                                      allocation.GetInfo().mRequestedSize);
+        mAllocatedMemoryTracker->Decrement(mDevice->GetQueue()->GetPendingCommandSerial(),
+                                           allocation.GetInfo().mRequestedSize);
     } else if (allocation.GetInfo().mMethod == AllocationMethod::kSubAllocated) {
-        mUsedMemory.Decrement(mDevice->GetQueue()->GetPendingCommandSerial(),
-                              allocation.GetInfo().mRequestedSize);
+        mUsedMemoryTracker->Decrement(mDevice->GetQueue()->GetPendingCommandSerial(),
+                                      allocation.GetInfo().mRequestedSize);
     }
 
     // Invalidate the allocation immediately in case one accidentally
@@ -514,7 +521,7 @@ ResultOrError<ResourceHeapAllocation> ResourceAllocatorManager::CreatePlacedReso
             optimizedClearValue, IID_PPV_ARGS(&placedResource)),
         "ID3D12Device::CreatePlacedResource"));
 
-    mUsedMemory.Increment(resourceInfo.SizeInBytes);
+    mUsedMemoryTracker->Increment(resourceInfo.SizeInBytes);
 
     // After CreatePlacedResource has finished, the heap can be unlocked from residency. This
     // will insert it into the residency LRU.
@@ -570,8 +577,8 @@ ResultOrError<ResourceHeapAllocation> ResourceAllocatorManager::CreateCommittedR
             optimizedClearValue, IID_PPV_ARGS(&committedResource)),
         "ID3D12Device::CreateCommittedResource"));
 
-    mAllocatedMemory.Increment(resourceInfo.SizeInBytes);
-    mUsedMemory.Increment(resourceInfo.SizeInBytes);
+    mAllocatedMemoryTracker->Increment(resourceInfo.SizeInBytes);
+    mUsedMemoryTracker->Increment(resourceInfo.SizeInBytes);
 
     // When using CreateCommittedResource, D3D12 creates an implicit heap that contains the
     // resource allocation. Because Dawn's memory residency management occurs at the resource
@@ -601,11 +608,11 @@ void ResourceAllocatorManager::FreeRecycledAllocations() {
 }
 
 uint64_t ResourceAllocatorManager::GetTotalAllocatedMemory() const {
-    return mAllocatedMemory.GetSize();
+    return mAllocatedMemoryTracker->GetSize();
 }
 
 uint64_t ResourceAllocatorManager::GetTotalUsedMemory() const {
-    return mUsedMemory.GetSize();
+    return mUsedMemoryTracker->GetSize();
 }
 
 }  // namespace dawn::native::d3d12

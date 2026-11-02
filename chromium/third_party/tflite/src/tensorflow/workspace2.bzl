@@ -26,6 +26,7 @@ load("@xla//third_party/gpus:sycl_configure.bzl", "sycl_configure")
 load("@xla//third_party/highwayhash:workspace.bzl", highwayhash = "repo")
 load("@xla//third_party/hwloc:workspace.bzl", hwloc = "repo")
 load("@xla//third_party/implib_so:workspace.bzl", implib_so = "repo")
+load("@xla//third_party/libdrm:workspace.bzl", libdrm = "repo")
 load("@xla//third_party/llvm:workspace.bzl", llvm = "repo")
 load("@xla//third_party/mkl_dnn:workspace.bzl", onednn = "repo")
 load("@xla//third_party/nanobind:workspace.bzl", nanobind = "repo")
@@ -119,6 +120,7 @@ def _initialize_third_party():
     hwloc()
     icu()
     implib_so()
+    libdrm()
     jpeg()
     jpegxl()
     kissfft()
@@ -234,9 +236,9 @@ def _tf_repositories():
     # XNNPack dependency.
     tf_http_archive(
         name = "KleidiAI",
-        sha256 = "be1d6fb524b2a5e3772b38472a24d660e22b210f6b53b73bd8a5437ac2d882a7",
-        strip_prefix = "kleidiai-d41219d3db13758074a6440d7b55a87487334c8b",
-        urls = tf_mirror_urls("https://github.com/ARM-software/kleidiai/archive/d41219d3db13758074a6440d7b55a87487334c8b.zip"),
+        sha256 = "cbdacbcc10c79056105c8a2aee0c7737cabb8ad1f56fda4acd38cd728bcaa248",
+        strip_prefix = "kleidiai-b87ef9c94f45f11c81a6b1fdaed1b2b45ea58c0c",
+        urls = tf_mirror_urls("https://github.com/ARM-software/kleidiai/archive/b87ef9c94f45f11c81a6b1fdaed1b2b45ea58c0c.zip"),
     )
 
     FXdiv()
@@ -347,9 +349,9 @@ def _tf_repositories():
     tf_http_archive(
         name = "com_google_googletest",
         # Use the commit on 2025/6/09:
-        # https://github.com/google/googletest/commit/28e9d1f26771c6517c3b4be10254887673c94018
-        sha256 = "f253ca1a07262f8efde8328e4b2c68979e40ddfcfc001f70d1d5f612c7de2974",
-        strip_prefix = "googletest-28e9d1f26771c6517c3b4be10254887673c94018",
+        # https://github.com/google/googletest/commit/d72f9c8aea6817cdf1ca0ac10887f328de7f3da2
+        sha256 = "a4cb11930215b071168811982dfbebc82a2bb0f90db0e8713245931eb742ea46",
+        strip_prefix = "googletest-d72f9c8aea6817cdf1ca0ac10887f328de7f3da2",
         # Patch googletest to:
         #   - avoid dependencies on @fuchsia_sdk,
         #   - refer to re2 as @com_googlesource_code_re2,
@@ -361,13 +363,13 @@ def _tf_repositories():
         # $ cd github
         # $ git clone https://github.com/google/googletest.git
         # $ cd googletest
-        # $ git checkout 28e9d1f26771c6517c3b4be10254887673c94018
+        # $ git checkout d72f9c8aea6817cdf1ca0ac10887f328de7f3da2
         # ... make local changes to googletest ...
         # $ git diff > <client-root>/third_party/tensorflow/third_party/googletest/googletest.patch
         #
         # The patch path is relative to third_party/tensorflow.
         patch_file = ["@xla//third_party/googletest:googletest.patch"],
-        urls = tf_mirror_urls("https://github.com/google/googletest/archive/28e9d1f26771c6517c3b4be10254887673c940189.zip"),
+        urls = tf_mirror_urls("https://github.com/google/googletest/archive/d72f9c8aea6817cdf1ca0ac10887f328de7f3da29.zip"),
     )
 
     tf_http_archive(
@@ -395,13 +397,13 @@ def _tf_repositories():
 
     tf_http_archive(
         name = "com_github_grpc_grpc",
-        sha256 = "e2ace790a5f2d0f83259d1390a816a33b013ea34df2e86084d927e58daa4c5d9",
-        strip_prefix = "grpc-1.78.0",
+        sha256 = "41b695614b26652ff9e97ce50cfd4a6c7a3d45a9fe598d1454407746499bbf2c",
+        strip_prefix = "grpc-1.81.0",
         system_build_file = "//third_party/systemlibs:grpc.BUILD",
         patch_file = [
             "@xla//third_party/grpc:grpc.patch",
         ],
-        urls = tf_mirror_urls("https://github.com/grpc/grpc/archive/refs/tags/v1.78.0.tar.gz"),
+        urls = tf_mirror_urls("https://github.com/grpc/grpc/archive/refs/tags/v1.81.0.tar.gz"),
     )
 
     linenoise()

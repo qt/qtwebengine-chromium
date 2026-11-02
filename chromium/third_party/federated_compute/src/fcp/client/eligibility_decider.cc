@@ -28,12 +28,12 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
+#include "absl/status/status_macros.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
+#include "absl/time/clock_interface.h"
 #include "absl/time/time.h"
-#include "fcp/base/clock.h"
 #include "fcp/base/digest.h"
-#include "fcp/base/monitoring.h"
 #include "fcp/base/time_util.h"
 #include "fcp/client/engine/example_iterator_factory.h"
 #include "fcp/client/example_query_result.pb.h"
@@ -82,7 +82,7 @@ bool ExecutionOutsideSworPeriod(
 absl::flat_hash_set<std::string> ComputePerTaskSworEligibility(
     const SamplingWithoutReplacementPolicy& swor_policy,
     const absl::flat_hash_set<std::string>& task_names,
-    const opstats::OpStatsSequence& opstats_sequence, Clock& clock) {
+    const opstats::OpStatsSequence& opstats_sequence, absl::Clock& clock) {
   // First, check that the period we're looking for does not exceed the opstats
   // db's trustworthiness timestamp. This timestamp tracks when the opstats db
   // was initialized, so if the swor period covers a time span beyond this
@@ -90,7 +90,7 @@ absl::flat_hash_set<std::string> ComputePerTaskSworEligibility(
   // participate within the period.
   absl::Duration min_period =
       fcp::TimeUtil::ConvertProtoToAbslDuration(swor_policy.min_period());
-  absl::Time now = clock.Now();
+  absl::Time now = clock.TimeNow();
   absl::Duration trustworthiness_period =
       now - fcp::TimeUtil::ConvertProtoToAbslTime(
                 opstats_sequence.earliest_trustworthy_time());
@@ -206,12 +206,12 @@ absl::StatusOr<bool> ComputeDataAvailabilityEligibility(
             QueryTimeComputationProperties::EXAMPLE_QUERY_RESULT);
   }
 
-  FCP_ASSIGN_OR_RETURN(
+  ABSL_ASSIGN_OR_RETURN(
       std::unique_ptr<ExampleIterator> iterator,
       iterator_factory->CreateExampleIterator(selector, selector_context));
   int32_t min_example_count = data_availability_policy.min_example_count();
   if (use_example_query_result_format) {
-    FCP_ASSIGN_OR_RETURN(std::string result, iterator->Next());
+    ABSL_ASSIGN_OR_RETURN(std::string result, iterator->Next());
     ExampleQueryResult example_query_result;
     if (!example_query_result.ParseFromString(result)) {
       return absl::InvalidArgumentError("Failed to parse ExampleQueryResult");
@@ -258,7 +258,7 @@ int32_t GetMinSepImplementationVersion(const Flags* flags) {
 absl::flat_hash_set<std::string> ComputeMinimumSeparationPolicyEligibility(
     const MinimumSeparationPolicy& min_sep_policy,
     const absl::flat_hash_set<std::string>& task_names,
-    const opstats::OpStatsSequence& opstats_sequence, Clock& clock,
+    const opstats::OpStatsSequence& opstats_sequence, absl::Clock& clock,
     const Flags& flags, LogManager& log_manager) {
   if (flags.check_trustworthiness_for_min_sep_policy()) {
     // First, check that the policy's min trustworthiness period does not exceed
@@ -270,7 +270,7 @@ absl::flat_hash_set<std::string> ComputeMinimumSeparationPolicyEligibility(
     absl::Duration min_period = fcp::TimeUtil::ConvertProtoToAbslDuration(
         min_sep_policy.min_trustworthiness_period());
     if (min_period != absl::ZeroDuration()) {
-      absl::Time now = clock.Now();
+      absl::Time now = clock.TimeNow();
       absl::Duration trustworthiness_period =
           now - fcp::TimeUtil::ConvertProtoToAbslTime(
                     opstats_sequence.earliest_trustworthy_time());
@@ -313,7 +313,7 @@ absl::flat_hash_set<std::string> ComputeMinimumSeparationPolicyEligibility(
 absl::StatusOr<TaskEligibilityInfo> ComputeEligibility(
     const PopulationEligibilitySpec& population_eligibility_spec,
     LogManager& log_manager, PhaseLogger& phase_logger,
-    const opstats::OpStatsSequence& opstats_sequence, Clock& clock,
+    const opstats::OpStatsSequence& opstats_sequence, absl::Clock& clock,
     std::vector<engine::ExampleIteratorFactory*> example_iterator_factories,
     EetPlanRunner& eet_plan_runner, const Flags* flags) {
   // Initialize the TaskEligibilityInfo to return. If eligibility cannot be

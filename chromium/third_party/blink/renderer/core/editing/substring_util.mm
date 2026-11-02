@@ -103,8 +103,8 @@ NSAttributedString* AttributedSubstringFromRange(LocalFrame* frame,
     // device scale factor must be divided out from the font size and the page
     // scale factor must be multiplied in.
 
-    const ComputedStyle* style = layout_object->Style();
-    const SimpleFontData* primaryFont = style->GetFont()->PrimaryFont();
+    const ComputedStyle& style = layout_object->StyleRef();
+    const SimpleFontData* primaryFont = style.GetFont()->PrimaryFont();
     const FontPlatformData& font_platform_data = primaryFont->PlatformData();
 
     const float page_scale_factor = frame->GetPage()->PageScaleFactor();
@@ -133,24 +133,24 @@ NSAttributedString* AttributedSubstringFromRange(LocalFrame* frame,
     // transforms, not just pinch-zoom.
     if (!font || floor(font_platform_data.size()) !=
                      floor(original_font.fontDescriptor.pointSize)) {
-      font = [NSFont systemFontOfSize:style->GetFont()
+      font = [NSFont systemFontOfSize:style.GetFont()
                                           ->GetFontDescription()
                                           .ComputedSize() *
                                       page_scale_factor / device_scale_factor];
     }
     attrs[NSFontAttributeName] = font;
 
-    if (!style->VisitedDependentColor(GetCSSPropertyColor())
+    if (!style.VisitedDependentColor(GetCSSPropertyColor())
              .IsFullyTransparent()) {
       attrs[NSForegroundColorAttributeName] =
-          NsColor(style->VisitedDependentColor(GetCSSPropertyColor()));
+          NsColor(style.VisitedDependentColor(GetCSSPropertyColor()));
     } else {
       [attrs removeObjectForKey:NSForegroundColorAttributeName];
     }
-    if (!style->VisitedDependentColor(GetCSSPropertyBackgroundColor())
+    if (!style.VisitedDependentColor(GetCSSPropertyBackgroundColor())
              .IsFullyTransparent()) {
-      attrs[NSBackgroundColorAttributeName] = NsColor(
-          style->VisitedDependentColor(GetCSSPropertyBackgroundColor()));
+      attrs[NSBackgroundColorAttributeName] =
+          NsColor(style.VisitedDependentColor(GetCSSPropertyBackgroundColor()));
     } else {
       [attrs removeObjectForKey:NSBackgroundColorAttributeName];
     }
@@ -200,8 +200,8 @@ SubstringUtil::AttributedWordAtPoint(WebFrameWidgetImpl* frame_widget,
   }
 
   // Expand to word under point.
-  const SelectionInDOMTree selection = ExpandWithGranularity(
-      SelectionInDOMTree::Builder().SetBaseAndExtent(range).Build(),
+  const SelectionInDomTree selection = ExpandWithGranularity(
+      SelectionInDomTree::Builder().SetBaseAndExtent(range).Build(),
       TextGranularity::kWord);
   const EphemeralRange word_range = NormalizeRange(selection);
 
@@ -222,7 +222,7 @@ SubstringUtil::AttributedSubstringInRange(LocalFrame* frame,
   ContainerNode* container_node = nullptr;
   if (RuntimeEnabledFeatures::HandleShadowDOMInSubstringUtilEnabled()) {
     Position start =
-        frame->Selection().ComputeVisibleSelectionInDOMTree().Start();
+        frame->Selection().ComputeVisibleSelectionInDomTree().Start();
     if (IsEditablePosition(start)) {
       container_node = RootEditableElementOf(start);
     } else if (start.AnchorNode() && start.AnchorNode()->IsInShadowTree()) {

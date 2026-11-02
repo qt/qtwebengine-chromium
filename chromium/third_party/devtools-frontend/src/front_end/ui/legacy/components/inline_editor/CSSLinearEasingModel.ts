@@ -6,8 +6,17 @@ import * as CodeMirror from '../../../../third_party/codemirror.next/codemirror.
 
 const cssParser = CodeMirror.css.cssLanguage.parser;
 
+/**
+ * Represents a point in a linear easing function graph.
+ */
 export interface Point {
+  /**
+   * The timeline percentage fraction (0 to 100).
+   */
   input: number;
+  /**
+   * The progress value (typically between 0 and 1, but can exceed bounds for bounce/elastic effects).
+   */
   output: number;
 }
 
@@ -105,6 +114,10 @@ const KeywordToValue: Record<string, string> = {
   linear: 'linear(0 0%, 1 100%)',
 };
 
+/**
+ * Model representing a CSS `linear()` easing function, conforming to the CSS Easing Level 1 specification.
+ * It parses CSS linear easing text into a list of control points and manages point mutations.
+ */
 export class CSSLinearEasingModel {
   #points: Point[];
 
@@ -207,7 +220,17 @@ export class CSSLinearEasingModel {
     this.#points.splice(index, 1);
   }
 
+  /**
+   * Sets the timing point at the specified index, clamping its input value (percentage)
+   * to ensure it remains non-decreasing and within the bounds of neighboring points.
+   *
+   * @param index The index of the point to update.
+   * @param point The new timing point coordinates.
+   */
   setPoint(index: number, point: Point): void {
+    const minInput = index > 0 ? this.#points[index - 1].input : 0;
+    const maxInput = index < this.#points.length - 1 ? this.#points[index + 1].input : 100;
+    point.input = Math.max(minInput, Math.min(point.input, maxInput));
     this.#points[index] = point;
   }
 

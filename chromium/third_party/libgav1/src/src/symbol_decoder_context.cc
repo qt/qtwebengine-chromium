@@ -15,8 +15,11 @@
 #include "src/symbol_decoder_context.h"
 
 #include <cassert>
+#include <cstdint>
 #include <cstring>
 #include <type_traits>
+
+#include "src/utils/constants.h"
 
 namespace libgav1 {
 namespace {

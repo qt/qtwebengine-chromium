@@ -8,12 +8,12 @@
 #define GrOpFlushState_DEFINED
 
 #include "include/core/SkRefCnt.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkTArray.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkTArray.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/base/SkArenaAlloc.h"
-#include "src/base/SkArenaAllocList.h"
+#include "src/core/SkArenaAlloc.h"
+#include "src/core/SkArenaAllocList.h"
 #include "src/gpu/ganesh/GrAppliedClip.h"
 #include "src/gpu/ganesh/GrAtlasTypes.h"
 #include "src/gpu/ganesh/GrBuffer.h"
@@ -67,7 +67,7 @@ public:
 
     /** This is called after each op has a chance to prepare its draws and before the draws are
         executed. */
-    void preExecuteDraws();
+    [[nodiscard]] bool preExecuteDraws();
 
     /** Called to upload data to a texture using the GrDeferredTextureUploadFn. If the uploaded
         surface needs to be prepared for being sampled in a draw after the upload, the caller

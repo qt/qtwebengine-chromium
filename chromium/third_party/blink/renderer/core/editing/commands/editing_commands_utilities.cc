@@ -36,9 +36,11 @@
 #include "third_party/blink/renderer/core/editing/commands/typing_command.h"
 #include "third_party/blink/renderer/core/editing/editing_utilities.h"
 #include "third_party/blink/renderer/core/editing/frame_selection.h"
+#include "third_party/blink/renderer/core/editing/position_units.h"
 #include "third_party/blink/renderer/core/editing/selection_template.h"
 #include "third_party/blink/renderer/core/editing/visible_position.h"
 #include "third_party/blink/renderer/core/editing/visible_selection.h"
+#include "third_party/blink/renderer/core/editing/visible_units.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/frame/web_feature_forward.h"
@@ -48,6 +50,9 @@
 #include "third_party/blink/renderer/core/html/html_head_element.h"
 #include "third_party/blink/renderer/core/html/html_html_element.h"
 #include "third_party/blink/renderer/core/html/html_olist_element.h"
+#include "third_party/blink/renderer/core/html/html_table_cell_element.h"
+#include "third_party/blink/renderer/core/html/html_table_row_element.h"
+#include "third_party/blink/renderer/core/html/html_table_section_element.h"
 #include "third_party/blink/renderer/core/html/html_ulist_element.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
@@ -274,6 +279,15 @@ bool LineBreakExistsAtPosition(const Position& position) {
       position.AtFirstEditingPositionForNode())
     return true;
 
+  // Parent-anchored caret immediately after a <br>: equivalent to a caret
+  // anchored on the <br> itself. The VP path catches this implicitly via
+  // CreateVisiblePosition re-anchoring onto the <br>; on the raw-DOM path
+  // we have to detect the sibling explicitly.
+  if (RuntimeEnabledFeatures::EditingUseDomPositionApiEnabled() &&
+      IsA<HTMLBRElement>(position.ComputeNodeBeforePosition())) {
+    return true;
+  }
+
   if (!position.AnchorNode()->GetLayoutObject())
     return false;
 
@@ -283,7 +297,7 @@ bool LineBreakExistsAtPosition(const Position& position) {
     return false;
   }
 
-  unsigned offset = position.OffsetInContainerNode();
+  wtf_size_t offset = position.OffsetInContainerNode();
   return offset < text_node->length() && text_node->data()[offset] == '\n';
 }
 
@@ -362,11 +376,12 @@ Position LeadingCollapsibleWhitespacePosition(const Position& position,
   return prev;
 }
 
-unsigned NumEnclosingMailBlockquotes(const Position& p) {
-  unsigned num = 0;
+wtf_size_t NumEnclosingMailBlockquotes(const Position& p) {
+  wtf_size_t num = 0;
   for (const Node* n = p.AnchorNode(); n; n = n->parentNode()) {
-    if (IsMailHTMLBlockquoteElement(n))
-      num++;
+    if (IsMailHtmlBlockquoteElement(n)) {
+      ++num;
+    }
   }
   return num;
 }
@@ -485,13 +500,13 @@ VisibleSelection SelectionForParagraphIteration(
           PreviousPositionOf(end_of_selection, kCannotCrossEditingBoundary);
       if (new_end.IsNotNull()) {
         new_selection = CreateVisibleSelection(
-            SelectionInDOMTree::Builder()
+            SelectionInDomTree::Builder()
                 .Collapse(start_of_selection.ToPositionWithAffinity())
                 .Extend(new_end.DeepEquivalent())
                 .Build());
       } else {
         new_selection = CreateVisibleSelection(
-            SelectionInDOMTree::Builder()
+            SelectionInDomTree::Builder()
                 .Collapse(start_of_selection.ToPositionWithAffinity())
                 .Build());
       }
@@ -509,13 +524,13 @@ VisibleSelection SelectionForParagraphIteration(
           NextPositionOf(start_of_selection, kCannotCrossEditingBoundary);
       if (new_start.IsNotNull()) {
         new_selection = CreateVisibleSelection(
-            SelectionInDOMTree::Builder()
+            SelectionInDomTree::Builder()
                 .Collapse(new_start.ToPositionWithAffinity())
                 .Extend(end_of_selection.DeepEquivalent())
                 .Build());
       } else {
         new_selection = CreateVisibleSelection(
-            SelectionInDOMTree::Builder()
+            SelectionInDomTree::Builder()
                 .Collapse(end_of_selection.ToPositionWithAffinity())
                 .Build());
       }
@@ -523,6 +538,113 @@ VisibleSelection SelectionForParagraphIteration(
   }
 
   return new_selection;
+}
+
+Position SnapIntoTableCell(const Position& position, TableCellEdge edge) {
+  const bool snap_to_start = edge == TableCellEdge::kStart;
+  Node* anchor = position.AnchorNode();
+  if (!anchor) {
+    return position;
+  }
+  if (!IsA<HTMLTableSectionElement>(*anchor) &&
+      !IsA<HTMLTableRowElement>(*anchor)) {
+    return position;
+  }
+  // Restrict the cell search to the child the offset points at: the child
+  // after the position for a start endpoint, before it for an end endpoint.
+  Node* scope = snap_to_start ? position.ComputeNodeAfterPosition()
+                              : position.ComputeNodeBeforePosition();
+  if (!scope) {
+    return position;
+  }
+  Node* cell = nullptr;
+  if (IsA<HTMLTableCellElement>(*scope)) {
+    cell = scope;
+  } else if (snap_to_start) {
+    for (Node* n = scope; n; n = NodeTraversal::Next(*n, scope)) {
+      if (IsA<HTMLTableCellElement>(*n)) {
+        cell = n;
+        break;
+      }
+    }
+  } else {
+    for (Node* n = &NodeTraversal::LastWithinOrSelf(*scope); n;
+         n = NodeTraversal::Previous(*n, scope)) {
+      if (IsA<HTMLTableCellElement>(*n)) {
+        cell = n;
+        break;
+      }
+    }
+  }
+  if (!cell) {
+    return position;
+  }
+  return snap_to_start ? Position::FirstPositionInNode(*cell)
+                       : Position::LastPositionInNode(*cell);
+}
+
+SelectionInDomTree SelectionForParagraphIteration(
+    const SelectionInDomTree& original) {
+  if (original.IsNone()) {
+    return original;
+  }
+
+  // Canonicalize endpoints to their nearest visible candidate. This handles
+  // the common (non-table) cases; table-internal anchors are handled by the
+  // offset-aware snap below, since MostForward/Backward can't cross a cell
+  // block boundary.
+  Position start_of_selection =
+      MostForwardCaretPosition(original.ComputeStartPosition());
+  Position end_of_selection =
+      MostBackwardCaretPosition(original.ComputeEndPosition());
+
+  // Snap endpoints anchored on table-internal structure into the cell their
+  // offset points at, so paragraph iteration runs per-cell instead of wrapping
+  // the whole table as one paragraph.
+  start_of_selection =
+      SnapIntoTableCell(start_of_selection, TableCellEdge::kStart);
+  end_of_selection = SnapIntoTableCell(end_of_selection, TableCellEdge::kEnd);
+
+  // If the end of the selection to modify is just after a table, and if the
+  // start of the selection is inside that table, then the last paragraph that
+  // we'll want modify is the last one inside the table, not the table itself (a
+  // table is itself a paragraph).
+  if (Element* table = TableElementJustBefore(end_of_selection)) {
+    DCHECK(start_of_selection.IsNotNull());
+    if (start_of_selection.AnchorNode()->IsDescendantOf(table)) {
+      const Position new_end =
+          PreviousPositionOf(end_of_selection, kCannotCrossEditingBoundary);
+      if (new_end.IsNotNull()) {
+        end_of_selection = new_end;
+      } else {
+        end_of_selection = start_of_selection;
+      }
+    }
+  }
+
+  // If the start of the selection to modify is just before a table, and if the
+  // end of the selection is inside that table, then the first paragraph we'll
+  // want to modify is the first one inside the table, not the paragraph
+  // containing the table itself.
+  if (Element* table = TableElementJustAfter(start_of_selection)) {
+    DCHECK(end_of_selection.IsNotNull());
+    if (end_of_selection.AnchorNode()->IsDescendantOf(table)) {
+      const Position new_start =
+          NextPositionOf(start_of_selection, kCannotCrossEditingBoundary);
+      if (new_start.IsNotNull()) {
+        start_of_selection = new_start;
+      } else {
+        start_of_selection = end_of_selection;
+      }
+    }
+  }
+
+  if (start_of_selection == end_of_selection) {
+    return SelectionInDomTree::Builder().Collapse(start_of_selection).Build();
+  }
+  return SelectionInDomTree::Builder()
+      .SetBaseAndExtent(start_of_selection, end_of_selection)
+      .Build();
 }
 
 const String& NonBreakingSpaceString() {
@@ -534,7 +656,7 @@ const String& NonBreakingSpaceString() {
 // TODO(tkent): This is a workaround of some crash bugs in the editing code,
 // which assumes a document has a valid HTML structure. We should make the
 // editing code more robust, and should remove this hack. crbug.com/580941.
-void TidyUpHTMLStructure(Document& document) {
+void TidyUpHtmlStructure(Document& document) {
   // IsEditable() needs up-to-date ComputedStyle.
   document.UpdateStyleAndLayoutTree();
   const bool needs_valid_structure =
@@ -656,12 +778,12 @@ void DispatchInputEventEditableContentChanged(
     DispatchInputEvent(end_root, input_type, data, is_composing, data_transfer);
 }
 
-SelectionInDOMTree CorrectedSelectionAfterCommand(
+SelectionInDomTree CorrectedSelectionAfterCommand(
     const SelectionForUndoStep& passed_selection,
     Document* document) {
   if (!passed_selection.Anchor().IsValidFor(*document) ||
       !passed_selection.Focus().IsValidFor(*document)) {
-    return SelectionInDOMTree();
+    return SelectionInDomTree();
   }
   if (RuntimeEnabledFeatures::RemoveVisibleSelectionInDOMSelectionEnabled()) {
     document->UpdateStyleAndLayout(DocumentUpdateReason::kEditing);
@@ -672,14 +794,14 @@ SelectionInDOMTree CorrectedSelectionAfterCommand(
 }
 
 void ChangeSelectionAfterCommand(LocalFrame* frame,
-                                 const SelectionInDOMTree& new_selection,
+                                 const SelectionInDomTree& new_selection,
                                  const SetSelectionOptions& options) {
   if (new_selection.IsNone())
     return;
   // See <rdar://problem/5729315> Some shouldChangeSelectedDOMRange contain
   // Ranges for selections that are no longer valid
   const bool selection_did_not_change_dom_position =
-      new_selection == frame->Selection().GetSelectionInDOMTree() &&
+      new_selection == frame->Selection().GetSelectionInDomTree() &&
       options.IsDirectional() == frame->Selection().IsDirectional();
   const bool handle_visible =
       frame->Selection().IsHandleVisible() && new_selection.IsRange();
@@ -702,7 +824,7 @@ void ChangeSelectionAfterCommand(LocalFrame* frame,
   if (!selection_did_not_change_dom_position)
     return;
   frame->Client()->DidChangeSelection(
-      !frame->Selection().GetSelectionInDOMTree().IsRange(),
+      !frame->Selection().GetSelectionInDomTree().IsRange(),
       blink::SyncCondition::kNotForced);
 }
 

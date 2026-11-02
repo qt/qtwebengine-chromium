@@ -1,4 +1,4 @@
-<!-- Copyright 2021-2025 LunarG, Inc. -->
+<!-- Copyright 2021-2026 LunarG, Inc. -->
 [![Khronos Vulkan][1]][2]
 
 [1]: https://vulkan.lunarg.com/img/Vulkan_100px_Dec16.png "https://www.khronos.org/vulkan/"
@@ -71,8 +71,6 @@ The current focus for optimization is core validation, implemented in the `CoreC
 ## Keep, but disable, validation_object_mutex
 
 The `ValidationObject` methods `ReadLock()` and `WriteLock()` create lock guard objects that keep this mutex locked until they are destroyed. By overriding these methods to create the guards using the[ std::defer_lock](https://en.cppreference.com/w/cpp/thread/lock_tag) policy, the returned lock guard will not actually lock the lock. This technique is also used by the Thread Safety and Object Tracking validation objects.
-
-The `CoreCheck's` `ValidationObject` overrides these methods to **optionally** lock `validation_object_mutex`, depending on a runtime setting.  If the environment variable `VK_LAYER_FINE_GRAINED_LOCKING` or the settings file value `khronos_validation.fine_grained_locking` is true, this lock will not be locked.
 
 ###### PRs:
 
@@ -275,7 +273,6 @@ Since VkDevice’s state is a ValidationStateTracker, we don’t have a real C++
 
 State tracker Per-Device state that is changed:
 
-* ahb_ext_formats_map - map of android external format to VkFormatFeatureFlags. Thread safe because it uses `vvl::concurrent_unordered_map`.
 * custom_border_color_sampler_count - simple counter
 * performance_lock_acquired - boolean flag
 * fake_memory - fake address generator for synchronization validation, basically a uint64_t counter of the next free address

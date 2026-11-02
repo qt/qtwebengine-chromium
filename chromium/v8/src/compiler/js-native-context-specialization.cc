@@ -6,6 +6,7 @@
 
 #include <optional>
 
+#include "src/api/api.h"
 #include "src/base/iterator.h"
 #include "src/base/logging.h"
 #include "src/builtins/accessors.h"
@@ -36,6 +37,7 @@
 #include "src/heap/factory.h"
 #include "src/heap/heap-layout-inl.h"
 #include "src/heap/heap-write-barrier-inl.h"
+#include "src/ic/handler-configuration-inl.h"
 #include "src/ic/handler-configuration.h"
 #include "src/objects/elements-kind.h"
 #include "src/objects/feedback-vector.h"
@@ -944,6 +946,14 @@ Reduction JSNativeContextSpecialization::ReduceJSResolvePromise(Node* node) {
   AccessInfoFactory access_info_factory(broker(), graph()->zone());
 
   for (MapRef map : resolution_maps) {
+    // Reducing to FulfillPromise skips the SameValue(resolution, promise)
+    // self-resolution cycle check, which precedes the "then" lookup in the
+    // spec. That is only sound because a promise resolution would carry a
+    // "then" property; a JSPromise whose prototype chain was mutated to drop
+    // "then" breaks that reasoning, so refuse promise values explicitly.
+    // Instance types are immutable per object, so this needs no stability
+    // dependency.
+    if (map.IsJSPromiseMap()) return inference.NoChange();
     access_infos.push_back(broker()->GetPropertyAccessInfo(
         map, broker()->then_string(), AccessMode::kLoad));
   }
@@ -1019,7 +1029,7 @@ Reduction JSNativeContextSpecialization::ReduceGlobalAccess(
   PropertyCellType property_cell_type = property_details.cell_type();
   DCHECK_EQ(PropertyKind::kData, property_details.kind());
 
-  Node* control = NodeProperties::GetControlInput(node);
+  Control control{NodeProperties::GetControlInput(node)};
   if (effect == nullptr) {
     effect = NodeProperties::GetEffectInput(node);
   }
@@ -1054,7 +1064,7 @@ Reduction JSNativeContextSpecialization::ReduceGlobalAccess(
 
   // Ensure that {key} matches the specified {name} (if {key} is given).
   if (key != nullptr) {
-    effect = BuildCheckEqualsName(name, key, effect, control);
+    effect = BuildCheckEqualsName(name, key, effect, &control);
   }
 
   // If we have a {lookup_start_object} to validate, we do so by checking that
@@ -1288,6 +1298,143 @@ Reduction JSNativeContextSpecialization::ReduceJSStoreGlobal(Node* node) {
   }
 }
 
+Reduction JSNativeContextSpecialization::ReduceProxyAccess(
+    Node* node, Node* value, ProxyFeedback const& feedback,
+    AccessMode access_mode, FeedbackSource const& source, Node* key) {
+  DCHECK_EQ(access_mode, AccessMode::kLoad);
+
+  // For a super property load the proxy sits on the home object's prototype,
+  // not on input 0 (the receiver). The fast path below assumes the proxy is
+  // the receiver and lookup start object, so bail out and let the generic IC
+  // handle super accesses.
+  if (node->opcode() == IrOpcode::kJSLoadNamedFromSuper) return NoChange();
+
+  Node* context = NodeProperties::GetContextInput(node);
+  FrameState frame_state{NodeProperties::GetFrameStateInput(node)};
+  Effect effect{NodeProperties::GetEffectInput(node)};
+  Control control{NodeProperties::GetControlInput(node)};
+
+  // Ensure that {key} matches the specified name (if {key} is given).
+  if (key != nullptr) {
+    effect = BuildCheckEqualsName(feedback.name(), key, effect, &control);
+  }
+
+  Node* receiver = NodeProperties::GetValueInput(node, 0);
+  Node* lookup_start_object = receiver;
+
+  PropertyAccessInfo handler_access_info = broker()->GetPropertyAccessInfo(
+      feedback.handler_map(), broker()->get_string(), AccessMode::kLoad);
+
+  if (handler_access_info.IsInvalid()) {
+    return NoChange();
+  }
+
+  // Collect call nodes to rewire exception edges.
+  ZoneVector<Node*> if_exception_nodes(zone());
+  ZoneVector<Node*>* if_exceptions = nullptr;
+  Node* if_exception = nullptr;
+  if (NodeProperties::IsExceptionalCall(node, &if_exception)) {
+    if_exceptions = &if_exception_nodes;
+  }
+
+  PropertyAccessBuilder access_builder(jsgraph(), broker());
+
+  // 1. Check receiver map
+  ZoneVector<MapRef> receiver_maps({feedback.receiver_map()}, zone());
+  access_builder.BuildCheckMaps(receiver, &effect, control, receiver_maps);
+
+  // 2. Load proxy target
+  Node* proxy_target = effect = graph()->NewNode(
+      simplified()->LoadField(AccessBuilder::ForJSProxyTarget()),
+      lookup_start_object, effect, control);
+
+  // 3. Check proxy target map
+  ZoneVector<MapRef> target_maps({feedback.target_map()}, zone());
+  Effect e_effect(effect);
+  Control e_control(control);
+  access_builder.BuildCheckMaps(proxy_target, &e_effect, e_control,
+                                target_maps);
+  effect = e_effect;
+  control = e_control;
+
+  // 4. Load proxy handler
+  Node* proxy_handler = effect = graph()->NewNode(
+      simplified()->LoadField(AccessBuilder::ForJSProxyHandler()),
+      lookup_start_object, effect, control);
+
+  // 5. Check proxy handler map
+  ZoneVector<MapRef> handler_maps({feedback.handler_map()}, zone());
+  e_effect = Effect(effect);
+  e_control = Control(control);
+  access_builder.BuildCheckMaps(proxy_handler, &e_effect, e_control,
+                                handler_maps);
+  effect = e_effect;
+  control = e_control;
+
+  // 6. Check trap
+  Node* target_function =
+      jsgraph()->ConstantNoHole(feedback.trap_method(), broker());
+
+  DCHECK(!feedback.trap_method().IsUndefined());
+  DCHECK(feedback.trap_method().IsJSFunction());
+
+  handler_access_info.RecordDependencies(dependencies());
+  std::optional<JSNativeContextSpecialization::ValueEffectControl>
+      maybe_loaded_trap = BuildPropertyLoad(
+          proxy_handler, proxy_handler, context, frame_state, effect, control,
+          broker()->get_string(), if_exceptions, handler_access_info, source);
+
+  if (!maybe_loaded_trap.has_value()) {
+    return NoChange();
+  }
+
+  Node* loaded_trap = maybe_loaded_trap->value();
+  effect = maybe_loaded_trap->effect();
+  control = maybe_loaded_trap->control();
+
+  Node* check = graph()->NewNode(simplified()->ReferenceEqual(), loaded_trap,
+                                 target_function);
+  effect = graph()->NewNode(
+      simplified()->CheckIf(DeoptimizeReason::kWrongCallTarget), check, effect,
+      control);
+
+  // 6. Call trap
+  Node* name_node = jsgraph()->ConstantNoHole(feedback.name(), broker());
+  Node* call_feedback = jsgraph()->UndefinedConstant();
+
+  Node* value_node = effect = control = graph()->NewNode(
+      jsgraph()->javascript()->Call(JSCallNode::ArityForArgc(3),
+                                    CallFrequency(feedback.frequency()), source,
+                                    ConvertReceiverMode::kNotNullOrUndefined),
+      target_function, proxy_handler, proxy_target, name_node, receiver,
+      call_feedback, context, frame_state, effect, control);
+
+  if (if_exceptions != nullptr) {
+    Node* const if_exception_node =
+        graph()->NewNode(common()->IfException(), control, effect);
+    Node* const if_success = graph()->NewNode(common()->IfSuccess(), control);
+    if_exceptions->push_back(if_exception_node);
+    control = if_success;
+  }
+
+  // Rewire exception edges if needed
+  if (if_exceptions != nullptr) {
+    DCHECK_EQ(1, if_exceptions->size());
+    Node* merge =
+        graph()->NewNode(common()->Merge(1), 1, &if_exceptions->front());
+    if_exceptions->push_back(merge);
+    Node* ephi =
+        graph()->NewNode(common()->EffectPhi(1), 2, &if_exceptions->front());
+    Node* phi =
+        graph()->NewNode(common()->Phi(MachineRepresentation::kTagged, 1), 2,
+                         &if_exceptions->front());
+    ReplaceWithValue(if_exception, phi, ephi, merge);
+  }
+
+  ReplaceWithValue(node, value_node, effect, control);
+  return Changed(value_node);
+}
+
 Reduction JSNativeContextSpecialization::ReduceMegaDOMPropertyAccess(
     Node* node, Node* value, MegaDOMPropertyAccessFeedback const& feedback,
     FeedbackSource const& source) {
@@ -1490,7 +1637,7 @@ Reduction JSNativeContextSpecialization::ReduceNamedAccess(
   // Ensure that {key} matches the specified name (if {key} is given).
   if (key != nullptr) {
     effect = BuildCheckEqualsName(feedback.original_name_maybe_thin(), key,
-                                  effect, control);
+                                  effect, &control);
   }
 
   // Collect call nodes to rewire exception edges.
@@ -2658,6 +2805,10 @@ Reduction JSNativeContextSpecialization::ReducePropertyAccess(
       return ReduceEagerDeoptimize(
           node,
           DeoptimizeReason::kInsufficientTypeFeedbackForGenericNamedAccess);
+    case ProcessedFeedback::kProxy:
+      if (access_mode != AccessMode::kLoad) return NoChange();
+      return ReduceProxyAccess(node, value, feedback->AsProxy(), access_mode,
+                               source, key);
     case ProcessedFeedback::kNamedAccess:
       return ReduceNamedAccess(node, value, feedback->AsNamedAccess(),
                                access_mode, source, key);
@@ -3159,9 +3310,9 @@ JSNativeContextSpecialization::BuildPropertyLoad(
     } else {
       const ZoneVector<MapRef>& maps = access_info.lookup_start_object_maps();
       DCHECK_EQ(maps.size(), 1);
-      value = graph()->NewNode(
+      value = effect = graph()->NewNode(
           simplified()->TypedArrayLength(maps[0].elements_kind()),
-          lookup_start_object);
+          lookup_start_object, effect, control);
     }
   } else {
     DCHECK(access_info.IsDataField() || access_info.IsFastDataConstant() ||
@@ -3175,8 +3326,8 @@ JSNativeContextSpecialization::BuildPropertyLoad(
       value = maybe_value.value();
     } else if (access_info.IsDictionaryDataField()) {
       value = access_builder.BuildLoadDictionaryField(
-          name, access_info, lookup_start_object, &effect, &control, source,
-          context, frame_state);
+          name, access_info, lookup_start_object, receiver, &effect, &control,
+          source, context, frame_state);
       if (if_exceptions != nullptr) {
         Node* const if_exception =
             graph()->NewNode(common()->IfException(), effect, control);
@@ -4501,21 +4652,57 @@ Node* JSNativeContextSpecialization::BuildExtendPropertiesBackingStore(
 Node* JSNativeContextSpecialization::BuildCheckEqualsName(NameRef name,
                                                           Node* value,
                                                           Node* effect,
-                                                          Node* control) {
+                                                          Control* control) {
   DCHECK(name.IsUniqueName());
-  Operator const* op;
   if (name.IsSymbol()) {
-    op = simplified()->CheckEqualsSymbol();
     // CheckEqualsSymbol is really just a TaggedEqual and will just return false
     // if {value} is not a Symbol.
+    return graph()->NewNode(simplified()->CheckEqualsSymbol(),
+                            jsgraph()->ConstantNoHole(name, broker()), value,
+                            effect, *control);
   } else {
     DCHECK(name.IsString());
-    op = simplified()->CheckEqualsInternalizedString();
-    effect = graph()->NewNode(simplified()->CheckString(FeedbackSource()),
-                              value, effect, control);
+    JSHeapBroker* b = broker();
+    Node* expected_primitive = nullptr;
+    if (name.equals(b->undefined_string())) {
+      expected_primitive = jsgraph()->UndefinedConstant();
+    } else if (name.equals(b->null_string())) {
+      expected_primitive = jsgraph()->NullConstant();
+    } else if (name.equals(b->true_string())) {
+      expected_primitive = jsgraph()->TrueConstant();
+    } else if (name.equals(b->false_string())) {
+      expected_primitive = jsgraph()->FalseConstant();
+    }
+
+    if (expected_primitive != nullptr) {
+      Node* cond = graph()->NewNode(simplified()->ReferenceEqual(), value,
+                                    expected_primitive);
+      Node* branch = graph()->NewNode(common()->Branch(), cond, *control);
+
+      Node* if_true = graph()->NewNode(common()->IfTrue(), branch);
+      Node* etrue = effect;
+
+      Node* if_false = graph()->NewNode(common()->IfFalse(), branch);
+      Node* efalse = effect;
+
+      efalse = graph()->NewNode(simplified()->CheckString(FeedbackSource()),
+                                value, efalse, if_false);
+      Node* check_false = graph()->NewNode(
+          simplified()->CheckEqualsInternalizedString(),
+          jsgraph()->ConstantNoHole(name, broker()), value, efalse, if_false);
+
+      *control =
+          Control(graph()->NewNode(common()->Merge(2), if_true, if_false));
+      return graph()->NewNode(common()->EffectPhi(2), etrue, check_false,
+                              *control);
+    } else {
+      effect = graph()->NewNode(simplified()->CheckString(FeedbackSource()),
+                                value, effect, *control);
+      return graph()->NewNode(simplified()->CheckEqualsInternalizedString(),
+                              jsgraph()->ConstantNoHole(name, broker()), value,
+                              effect, *control);
+    }
   }
-  return graph()->NewNode(op, jsgraph()->ConstantNoHole(name, broker()), value,
-                          effect, control);
 }
 
 bool JSNativeContextSpecialization::CanTreatHoleAsUndefined(

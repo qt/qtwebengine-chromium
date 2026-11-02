@@ -33,7 +33,7 @@
     "commands": {
         "buffer map async": [
             { "name": "buffer id", "type": "ObjectId", "id_type": "buffer" },
-            { "name": "event manager handle", "type": "ObjectHandle" },
+            { "name": "instance id", "type": "ObjectId", "id_type": "instance" },
             { "name": "future", "type": "future" },
             { "name": "mode", "type": "map mode" },
             { "name": "offset", "type": "size_t"},
@@ -41,8 +41,8 @@
         ],
         "buffer update mapped data": [
             { "name": "buffer id", "type": "ObjectId", "id_type": "buffer" },
-            { "name": "write data update info length", "type": "size_t" },
-            { "name": "write data update info", "type": "uint8_t", "annotation": "const*", "length": "write data update info length", "skip_serialize": true},
+            { "name": "data update info length", "type": "size_t" },
+            { "name": "data update info", "type": "std::byte", "annotation": "const*", "length": "data update info length", "skip_serialize": true},
             { "name": "offset", "type": "size_t"},
             { "name": "size", "type": "size_t"}
         ],
@@ -50,28 +50,26 @@
             { "name": "device id", "type": "ObjectId", "id_type": "device" },
             { "name": "descriptor", "type": "buffer descriptor", "annotation": "const*" },
             { "name": "result", "type": "ObjectHandle", "handle_type": "buffer" },
-            { "name": "read handle create info length", "type": "size_t" },
-            { "name": "read handle create info", "type": "uint8_t", "annotation": "const*", "length": "read handle create info length", "skip_serialize": true},
-            { "name": "write handle create info length", "type": "size_t" },
-            { "name": "write handle create info", "type": "uint8_t", "annotation": "const*", "length": "write handle create info length", "skip_serialize": true}
+            { "name": "memory handle create info length", "type": "size_t" },
+            { "name": "memory handle create info", "type": "std::byte", "annotation": "const*", "length": "memory handle create info length", "skip_serialize": true}
         ],
         "device create compute pipeline async": [
             { "name": "device id", "type": "ObjectId", "id_type": "device"},
-            { "name": "event manager handle", "type": "ObjectHandle" },
+            { "name": "instance id", "type": "ObjectId", "id_type": "instance" },
             { "name": "future", "type": "future" },
             { "name": "pipeline object handle", "type": "ObjectHandle", "handle_type": "compute pipeline"},
             { "name": "descriptor", "type": "compute pipeline descriptor", "annotation": "const*"}
         ],
         "device create render pipeline async": [
             { "name": "device id", "type": "ObjectId", "id_type": "device" },
-            { "name": "event manager handle", "type": "ObjectHandle" },
+            { "name": "instance id", "type": "ObjectId", "id_type": "instance" },
             { "name": "future", "type": "future" },
             { "name": "pipeline object handle", "type": "ObjectHandle", "handle_type": "render pipeline"},
             { "name": "descriptor", "type": "render pipeline descriptor", "annotation": "const*"}
         ],
         "device pop error scope": [
             { "name": "device id", "type": "ObjectId", "id_type": "device" },
-            { "name": "event manager handle", "type": "ObjectHandle" },
+            { "name": "instance id", "type": "ObjectId", "id_type": "instance" },
             { "name": "future", "type": "future" }
         ],
         "unregister object": [
@@ -80,7 +78,7 @@
         ],
         "queue on submitted work done": [
             { "name": "queue id", "type": "ObjectId", "id_type": "queue" },
-            { "name": "event manager handle", "type": "ObjectHandle" },
+            { "name": "instance id", "type": "ObjectId", "id_type": "instance" },
             { "name": "future", "type": "future" }
         ],
         "queue write buffer": [
@@ -95,10 +93,10 @@
             { "name": "buffer id", "type": "ObjectId", "id_type": "buffer" },
             { "name": "buffer offset", "type": "uint64_t"},
             { "name": "size", "type": "size_t"},
-            { "name": "write handle create info length", "type": "size_t" },
-            { "name": "write handle create info", "type": "uint8_t", "annotation": "const*", "length": "write handle create info length", "skip_serialize": true},
-            { "name": "write data update info length", "type": "size_t" },
-            { "name": "write data update info", "type": "uint8_t", "annotation": "const*", "length": "write data update info length", "skip_serialize": true}
+            { "name": "memory handle create info length", "type": "size_t" },
+            { "name": "memory handle create info", "type": "std::byte", "annotation": "const*", "length": "memory handle create info length", "skip_serialize": true},
+            { "name": "memory data update info length", "type": "size_t" },
+            { "name": "memory data update info", "type": "std::byte", "annotation": "const*", "length": "memory data update info length", "skip_serialize": true}
         ],
         "queue write texture": [
             {"name": "queue id", "type": "ObjectId", "id_type": "queue" },
@@ -114,14 +112,14 @@
             { "name": "data size", "type": "size_t"},
             { "name": "data layout", "type": "texel copy buffer layout", "annotation": "const*"},
             { "name": "writeSize", "type": "extent 3D", "annotation": "const*"},
-            { "name": "write handle create info length", "type": "size_t" },
-            { "name": "write handle create info", "type": "uint8_t", "annotation": "const*", "length": "write handle create info length", "skip_serialize": true},
-            { "name": "write data update info length", "type": "size_t" },
-            { "name": "write data update info", "type": "uint8_t", "annotation": "const*", "length": "write data update info length", "skip_serialize": true}
+            { "name": "memory handle create info length", "type": "size_t" },
+            { "name": "memory handle create info", "type": "std::byte", "annotation": "const*", "length": "memory handle create info length", "skip_serialize": true},
+            { "name": "memory data update info length", "type": "size_t" },
+            { "name": "memory data update info", "type": "std::byte", "annotation": "const*", "length": "memory data update info length", "skip_serialize": true}
         ],
         "shader module get compilation info": [
             { "name": "shader module id", "type": "ObjectId", "id_type": "shader module" },
-            { "name": "event manager handle", "type": "ObjectHandle" },
+            { "name": "instance id", "type": "ObjectId", "id_type": "instance" },
             { "name": "future", "type": "future" }
         ],
         "surface get current texture": [
@@ -131,14 +129,13 @@
         ],
         "instance request adapter": [
             { "name": "instance id", "type": "ObjectId", "id_type": "instance" },
-            { "name": "event manager handle", "type": "ObjectHandle" },
             { "name": "future", "type": "future" },
             { "name": "adapter object handle", "type": "ObjectHandle", "handle_type": "adapter"},
             { "name": "options", "type": "request adapter options", "annotation": "const*", "optional": true }
         ],
         "adapter request device": [
             { "name": "adapter id", "type": "ObjectId", "id_type": "adapter" },
-            { "name": "event manager handle", "type": "ObjectHandle" },
+            { "name": "instance id", "type": "ObjectId", "id_type": "instance" },
             { "name": "future", "type": "future" },
             { "name": "device object handle", "type": "ObjectHandle", "handle_type": "device"},
             { "name": "device lost future", "type": "future" },
@@ -165,21 +162,21 @@
     },
     "return commands": {
         "buffer map async callback": [
-            { "name": "event manager", "type": "ObjectHandle" },
+            { "name": "instance id", "type": "ObjectId", "id_type": "instance" },
             { "name": "future", "type": "future" },
             { "name": "status", "type": "map async status" },
             { "name": "message", "type": "string view" },
             { "name": "read data update info length", "type": "size_t" },
-            { "name": "read data update info", "type": "uint8_t", "annotation": "const*", "length": "read data update info length", "skip_serialize": true }
+            { "name": "read data update info", "type": "std::byte", "annotation": "const*", "length": "read data update info length", "skip_serialize": true }
         ],
         "device create compute pipeline async callback": [
-            { "name": "event manager", "type": "ObjectHandle" },
+            { "name": "instance id", "type": "ObjectId", "id_type": "instance" },
             { "name": "future", "type": "future" },
             { "name": "status", "type": "create pipeline async status" },
             { "name": "message", "type": "string view"}
         ],
         "device create render pipeline async callback": [
-            { "name": "event manager", "type": "ObjectHandle" },
+            { "name": "instance id", "type": "ObjectId", "id_type": "instance" },
             { "name": "future", "type": "future" },
             { "name": "status", "type": "create pipeline async status" },
             { "name": "message", "type": "string view"}
@@ -195,32 +192,32 @@
             { "name": "message", "type": "string view" }
         ],
         "device lost callback" : [
-            { "name": "event manager", "type": "ObjectHandle" },
+            { "name": "instance id", "type": "ObjectId", "id_type": "instance" },
             { "name": "future", "type": "future" },
             { "name": "reason", "type": "device lost reason" },
             { "name": "message", "type": "string view"}
         ],
         "device pop error scope callback": [
-            { "name": "event manager", "type": "ObjectHandle" },
+            { "name": "instance id", "type": "ObjectId", "id_type": "instance" },
             { "name": "future", "type": "future" },
             { "name": "status", "type": "pop error scope status" },
             { "name": "type", "type": "error type" },
             { "name": "message", "type": "string view"}
         ],
         "queue work done callback": [
-            { "name": "event manager", "type": "ObjectHandle" },
+            { "name": "instance id", "type": "ObjectId", "id_type": "instance" },
             { "name": "future", "type": "future" },
             { "name": "status", "type": "queue work done status" },
             { "name": "message", "type": "string view" }
         ],
         "shader module get compilation info callback": [
-            { "name": "event manager", "type": "ObjectHandle" },
+            { "name": "instance id", "type": "ObjectId", "id_type": "instance" },
             { "name": "future", "type": "future" },
             { "name": "status", "type": "compilation info request status" },
             { "name": "info", "type": "compilation info", "annotation": "const*", "optional": true }
         ],
         "instance request adapter callback": [
-            { "name": "event manager", "type": "ObjectHandle" },
+            { "name": "instance id", "type": "ObjectId", "id_type": "instance" },
             { "name": "future", "type": "future" },
             { "name": "status", "type": "request adapter status" },
             { "name": "message", "type": "string view" },
@@ -230,7 +227,7 @@
             { "name": "features", "type": "feature name", "annotation": "const*", "length": "features count"}
         ],
         "adapter request device callback": [
-            { "name": "event manager", "type": "ObjectHandle" },
+            { "name": "instance id", "type": "ObjectId", "id_type": "instance" },
             { "name": "future", "type": "future" },
             { "name": "status", "type": "request device status" },
             { "name": "message", "type": "string view" },
@@ -243,11 +240,45 @@
         "chunked command": [
             {"name": "id", "type": "uint64_t"},
             {"name": "size", "type": "size_t"},
-            {"name": "chunk data", "type": "char", "annotation": "const*", "length": "chunk size", "wire_is_data_only": true},
-            {"name": "chunk size", "type": "uint32_t"}
+            {"name": "chunk data", "type": "std::byte", "annotation": "const*", "length": "chunk size", "wire_is_data_only": true},
+            {"name": "chunk size", "type": "size_t"}
         ]
     },
     "special items": {
+        "_function_cpp_blocklist_comment": "// TODO(https://crbug.com/526537254): Drive this list down.",
+        "function_cpp_blocklist": [
+            "AdapterGetFeatures",
+            "AdapterGetInfo",
+            "AdapterGetLimits",
+            "AdapterGetInstance",
+            "AdapterHasFeature",
+            "AdapterRequestDevice",
+            "BufferReadMappedRange",
+            "BufferWriteMappedRange",
+            "ComputePassEncoderSetImmediates",
+            "DeviceCreateBuffer",
+            "DeviceCreateComputePipelineAsync",
+            "DeviceCreateErrorBuffer",
+            "DeviceCreateErrorTexture",
+            "DeviceCreateRenderPipelineAsync",
+            "DeviceCreateResourceTable",
+            "DeviceCreateTexture",
+            "DeviceGetAdapterInfo",
+            "DeviceGetFeatures",
+            "DeviceGetLimits",
+            "DeviceHasFeature",
+            "InstanceGetWGSLLanguageFeatures",
+            "InstanceHasWGSLLanguageFeature",
+            "InstanceWaitAny",
+            "QueueSubmit",
+            "QueueWriteBuffer",
+            "QueueWriteTexture",
+            "RenderBundleEncoderSetImmediates",
+            "RenderPassEncoderSetImmediates",
+            "SurfaceConfigure",
+            "SurfaceGetCapabilities",
+            "SurfaceGetCurrentTexture"
+        ],
         "client_side_structures": [
             "FutureWaitInfo",
             "SurfaceDescriptorFromWindowsCoreWindow",
@@ -301,7 +332,7 @@
             "RenderBundleEncoderSetImmediates",
             "RenderPassEncoderSetImmediates",
             "ResourceTableGetSize",
-            "ResourceTableInsertBinding",
+            "ResourceTableInsert",
             "ShaderModuleGetCompilationInfo",
             "SurfaceGetCapabilities",
             "SurfaceGetCurrentTexture",
@@ -332,7 +363,7 @@
             "InstanceWaitAny",
             "QueueSubmit",
             "ResourceTableDestroy",
-            "ResourceTableRemoveBinding",
+            "ResourceTableRemove",
             "ResourceTableUpdate",
             "SurfaceConfigure",
             "SurfacePresent",

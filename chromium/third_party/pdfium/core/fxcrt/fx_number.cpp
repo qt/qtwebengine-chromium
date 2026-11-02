@@ -34,7 +34,7 @@ FX_Number::FX_Number(ByteStringView strc) {
   // for things like the Permissions on the encryption hash the number is
   // actually an unsigned value. We use a uint32_t so we can deal with the
   // unsigned and then check for overflow if the user actually signed the value.
-  // The Permissions flag is listed in Table 3.20 PDF 1.7 spec.
+  // The Permissions flag is listed in ISO 32000-1:2008 spec, table 22.
   FX_SAFE_UINT32 unsigned_val = 0;
   bool bIsSigned = false;
   bool bNegative = false;

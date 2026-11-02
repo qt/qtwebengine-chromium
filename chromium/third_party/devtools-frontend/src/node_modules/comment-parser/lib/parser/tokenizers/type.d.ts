@@ -18,7 +18,7 @@ export type Joiner = (parts: string[]) => string;
  */
 export type Spacing = 'compact' | 'preserve' | Joiner;
 /**
- * Sets splits remaining `Spec.lines[].tokes.description` into `type` and `description`
+ * Sets splits remaining `Spec.lines[].tokens.description` into `type` and `description`
  * tokens and populates Spec.type`
  *
  * @param {Spacing} spacing tells how to deal with a whitespace

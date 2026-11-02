@@ -240,7 +240,7 @@ static int32_t wait_on_num_active_threads(pthreadpool_t threadpool,
         // First increase the `num_waiting_threads` counter and re-check
         // `num_active_threads` thereafter to avoid slipping past calls to
         // `signal_num_active_threads`.
-        pthreadpool_fetch_add_acquire_release_uint32_t(
+        pthreadpool_fetch_add_sequentially_consistent_uint32_t(
             &threadpool->num_waiting_threads, 1);
         if ((curr_active_threads = pthreadpool_load_consume_int32_t(
                  &threadpool->num_active_threads)) <= 0) {
@@ -324,7 +324,8 @@ static void signal_num_active_threads(pthreadpool_t threadpool,
                                       uint32_t max_num_waiting) {
 #if PTHREADPOOL_USE_FUTEX
   const uint32_t num_waiting_threads =
-      pthreadpool_load_consume_uint32_t(&threadpool->num_waiting_threads);
+      pthreadpool_load_sequentially_consistent_uint32_t(
+          &threadpool->num_waiting_threads);
   if (num_waiting_threads > max_num_waiting) {
     futex_wake_n((pthreadpool_atomic_uint32_t*)&threadpool->num_active_threads,
                  num_waiting_threads - max_num_waiting);
@@ -547,10 +548,18 @@ static pthreadpool_thread_return_t thread_main(void* arg) {
         const uint32_t max_active_threads =
             pthreadpool_load_acquire_size_t(&threadpool->threads_count);
         if (curr_active_threads < max_active_threads) {
+          // If we have more threads than requested, spoof the `thread_id` to be
+          // `curr_active_threads`, which will be unique for each thread in
+          // this task.
+          const uint32_t curr_thread_id =
+              (max_active_threads < threadpool->max_num_threads)
+                  ? curr_active_threads
+                  : thread_id;
+          pthreadpool_log_debug("thread %u working on job %u as thread %u.",
+                                thread_id, threadpool->job_id, curr_thread_id);
+
           // Do the needful.
-          pthreadpool_log_debug("thread %u working on job %u.", thread_id,
-                                threadpool->job_id);
-          run_thread_function(threadpool, thread_id);
+          run_thread_function(threadpool, curr_thread_id);
         }
 
         // Ring the bell on the way out.

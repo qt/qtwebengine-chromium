@@ -71,6 +71,11 @@ conf_links = [
   '90-synthetic.conf',
 ]
 
+if host_machine.system() == 'darwin'
+  conf_files += '05-macos.conf'
+  conf_links += '05-macos.conf'
+endif
+
 if preferred_hinting != 'noinstall'
   conf_links += '10-hinting-@0@.conf'.format(preferred_hinting)
 endif

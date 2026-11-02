@@ -21,7 +21,7 @@
 #include "skia/ext/legacy_display_globals.h"
 #include "third_party/blink/renderer/platform/graphics/accelerated_static_bitmap_image.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_deferred_paint_record.h"
-#include "third_party/blink/renderer/platform/graphics/canvas_resource_provider.h"
+#include "third_party/blink/renderer/platform/graphics/canvas_non_2d_resource_provider.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
 #include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
@@ -30,6 +30,7 @@
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/skia/include/core/SkColorSpace.h"
 #include "third_party/skia/include/core/SkImageInfo.h"
+#include "third_party/skia/include/core/SkSurface.h"
 #include "third_party/skia/include/gpu/ganesh/GrDriverBugWorkarounds.h"
 #include "ui/gfx/color_space.h"
 #include "ui/gfx/geometry/rect_f.h"
@@ -94,22 +95,23 @@ sk_sp<SkSurface> CreateSoftwareSurface(const CanvasSnapshotInfo& info) {
 
 scoped_refptr<StaticBitmapImage> CreateImageFromVideoFrame(
     scoped_refptr<media::VideoFrame> frame,
-    CanvasNon2DResourceProviderSharedImage* snapshot_provider,
+    CanvasNon2DResourceProvider* snapshot_provider,
     std::optional<CanvasSnapshotInfo> sw_draw_info,
     media::PaintCanvasVideoRenderer* video_renderer,
     bool prefer_tagged_orientation,
-    bool reinterpret_video_as_srgb) {
+    bool reinterpret_video_as_srgb,
+    std::optional<media::VideoTransformation> transformation_override) {
   CHECK(sw_draw_info || snapshot_provider);
   CHECK(!sw_draw_info || !snapshot_provider);
 
   auto raster_context_provider = GetRasterContextProvider();
-  bool is_accelerated = snapshot_provider && snapshot_provider->IsAccelerated();
+  bool is_accelerated = snapshot_provider && !snapshot_provider->IsSoftware();
   if (is_accelerated) {
     prefer_tagged_orientation = false;
   }
 
-  const auto transform =
-      frame->metadata().transformation.value_or(media::kNoTransformation);
+  const auto transform = transformation_override.value_or(
+      frame->metadata().transformation.value_or(media::kNoTransformation));
 
   // If not doing an accelerated draw, avoid GPU round trips to upload frame
   // data from MappableSI-backed frames.
@@ -133,6 +135,8 @@ scoped_refptr<StaticBitmapImage> CreateImageFromVideoFrame(
   media_flags.setAlphaf(1.0f);
   media_flags.setFilterQuality(cc::PaintFlags::FilterQuality::kLow);
   media_flags.setBlendMode(SkBlendMode::kSrc);
+  media_flags.setTargetedHdrHeadroom(
+      cc::PaintFlags::TargetedHdrHeadroom::kDisableEverything);
 
   std::unique_ptr<media::PaintCanvasVideoRenderer> local_video_renderer;
   if (!video_renderer) {
@@ -160,7 +164,7 @@ scoped_refptr<StaticBitmapImage> CreateImageFromVideoFrame(
                                   orientation);
   }
 
-  return static_cast<CanvasNon2DResourceProviderSharedImage*>(snapshot_provider)
+  return static_cast<CanvasNon2DResourceProvider*>(snapshot_provider)
       ->DoExternalOverdrawAndSnapshot(draw_callback, orientation);
 }
 
@@ -188,6 +192,7 @@ scoped_refptr<StaticBitmapImage> DrawAndSnapshotToImage(
         PaintImageBuilder::WithDefault()
             .set_id(cc::PaintImage::GetNextId())
             .set_image(std::move(sk_image), PaintImage::GetNextContentId())
+            .set_hdr_metadata(info.hdr_metadata)
             .TakePaintImage();
   }
 
@@ -273,14 +278,16 @@ bool WillCreateAcceleratedImagesFromVideoFrame() {
 
 scoped_refptr<StaticBitmapImage> CreateAcceleratedImageFromVideoFrame(
     scoped_refptr<media::VideoFrame> frame,
-    CanvasNon2DResourceProviderSharedImage* snapshot_provider,
+    CanvasNon2DResourceProvider* snapshot_provider,
     media::PaintCanvasVideoRenderer* video_renderer,
     bool prefer_tagged_orientation,
-    bool reinterpret_video_as_srgb) {
+    bool reinterpret_video_as_srgb,
+    std::optional<media::VideoTransformation> transformation_override) {
   CHECK(snapshot_provider);
   return CreateImageFromVideoFrame(
       std::move(frame), snapshot_provider, /*sw_draw_info=*/std::nullopt,
-      video_renderer, prefer_tagged_orientation, reinterpret_video_as_srgb);
+      video_renderer, prefer_tagged_orientation, reinterpret_video_as_srgb,
+      transformation_override);
 }
 
 scoped_refptr<StaticBitmapImage> CreateUnacceleratedImageFromVideoFrame(
@@ -288,10 +295,12 @@ scoped_refptr<StaticBitmapImage> CreateUnacceleratedImageFromVideoFrame(
     const CanvasSnapshotInfo& draw_info,
     media::PaintCanvasVideoRenderer* video_renderer,
     bool prefer_tagged_orientation,
-    bool reinterpret_video_as_srgb) {
+    bool reinterpret_video_as_srgb,
+    std::optional<media::VideoTransformation> transformation_override) {
   return CreateImageFromVideoFrame(
       std::move(frame), /*snapshot_provider=*/nullptr, draw_info,
-      video_renderer, prefer_tagged_orientation, reinterpret_video_as_srgb);
+      video_renderer, prefer_tagged_orientation, reinterpret_video_as_srgb,
+      transformation_override);
 }
 
 void DrawVideoFrameIntoCanvas(scoped_refptr<media::VideoFrame> frame,
@@ -333,6 +342,7 @@ CanvasSnapshotInfo CreateSnapshotProviderInfoForVideoFrame(
                                                     : kPremul_SkAlphaType,
       .color_space = reinterpret_video_as_srgb ? gfx::ColorSpace::CreateSRGB()
                                                : frame.CompatRGBColorSpace(),
+      .hdr_metadata = frame.hdr_metadata(),
       // TODO(https://crbug.com/40230609): N32 may be incorrect when drawing
       // high bit depth frames destined for a high bit depth canvas.
       .format = GetN32FormatForCanvas(),

@@ -18,7 +18,7 @@
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/span.h"
 #include "core/fxcrt/to_underlying.h"
-#include "core/fxge/cfx_fontmapper.h"
+#include "core/fxge/cfx_standardfont.h"
 
 class CPDF_StockFontArray;
 class CPDF_Font;
@@ -34,10 +34,9 @@ class CPDF_FontGlobals {
   void LoadEmbeddedMaps();
 
   void Clear(CPDF_Document* doc);
-  RetainPtr<CPDF_Font> Find(CPDF_Document* doc,
-                            CFX_FontMapper::StandardFont index);
+  RetainPtr<CPDF_Font> Find(CPDF_Document* doc, CFX_StandardFont::Index index);
   void Set(CPDF_Document* doc,
-           CFX_FontMapper::StandardFont index,
+           CFX_StandardFont::Index index,
            RetainPtr<CPDF_Font> font);
 
   void SetEmbeddedCharset(CIDSet idx, pdfium::span<const fxcmap::CMap> map) {

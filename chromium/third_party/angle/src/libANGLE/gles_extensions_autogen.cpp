@@ -45,18 +45,8 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_APPLE_clip_distance"] = enableableExtension(&Extensions::clipDistanceAPPLE);
         map["GL_EXT_color_buffer_float"] = enableableExtension(&Extensions::colorBufferFloatEXT);
         map["GL_EXT_color_buffer_half_float"] = enableableExtension(&Extensions::colorBufferHalfFloatEXT);
-        map["GL_OES_compressed_EAC_R11_signed_texture"] = enableableExtension(&Extensions::compressedEACR11SignedTextureOES);
-        map["GL_OES_compressed_EAC_R11_unsigned_texture"] = enableableExtension(&Extensions::compressedEACR11UnsignedTextureOES);
-        map["GL_OES_compressed_EAC_RG11_signed_texture"] = enableableExtension(&Extensions::compressedEACRG11SignedTextureOES);
-        map["GL_OES_compressed_EAC_RG11_unsigned_texture"] = enableableExtension(&Extensions::compressedEACRG11UnsignedTextureOES);
         map["GL_EXT_compressed_ETC1_RGB8_sub_texture"] = enableableExtension(&Extensions::compressedETC1RGB8SubTextureEXT);
         map["GL_OES_compressed_ETC1_RGB8_texture"] = enableableExtension(&Extensions::compressedETC1RGB8TextureOES);
-        map["GL_OES_compressed_ETC2_punchthroughA_RGBA8_texture"] = enableableExtension(&Extensions::compressedETC2PunchthroughARGBA8TextureOES);
-        map["GL_OES_compressed_ETC2_punchthroughA_sRGB8_alpha_texture"] = enableableExtension(&Extensions::compressedETC2PunchthroughASRGB8AlphaTextureOES);
-        map["GL_OES_compressed_ETC2_RGB8_texture"] = enableableExtension(&Extensions::compressedETC2RGB8TextureOES);
-        map["GL_OES_compressed_ETC2_RGBA8_texture"] = enableableExtension(&Extensions::compressedETC2RGBA8TextureOES);
-        map["GL_OES_compressed_ETC2_sRGB8_alpha8_texture"] = enableableExtension(&Extensions::compressedETC2SRGB8Alpha8TextureOES);
-        map["GL_OES_compressed_ETC2_sRGB8_texture"] = enableableExtension(&Extensions::compressedETC2SRGB8TextureOES);
         map["GL_OES_compressed_paletted_texture"] = enableableExtension(&Extensions::compressedPalettedTextureOES);
         map["GL_EXT_conservative_depth"] = enableableExtension(&Extensions::conservativeDepthEXT);
         map["GL_EXT_copy_image"] = enableableExtension(&Extensions::copyImageEXT);
@@ -225,7 +215,6 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_OES_vertex_array_object"] = enableableExtension(&Extensions::vertexArrayObjectOES);
         map["GL_OES_vertex_half_float"] = enableableExtension(&Extensions::vertexHalfFloatOES);
         map["GL_OES_vertex_type_10_10_10_2"] = enableableExtension(&Extensions::vertexType1010102OES);
-        map["GL_WEBGL_video_texture"] = enableableExtension(&Extensions::videoTextureWEBGL);
         map["GL_EXT_YUV_target"] = enableableExtension(&Extensions::YUVTargetEXT);
 
         // ANGLE unofficial extension strings
@@ -243,6 +232,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_CHROMIUM_copy_compressed_texture"] = esOnlyExtension(&Extensions::copyCompressedTextureCHROMIUM);
         map["GL_CHROMIUM_copy_texture"] = esOnlyExtension(&Extensions::copyTextureCHROMIUM);
         map["GL_ANGLE_copy_texture_3d"] = enableableExtension(&Extensions::copyTexture3dANGLE);
+        map["GL_ANGLE_explicit_context"] = esOnlyExtension(&Extensions::explicitContextANGLE);
         map["GL_CHROMIUM_framebuffer_mixed_samples"] = esOnlyExtension(&Extensions::framebufferMixedSamplesCHROMIUM);
         map["GL_ANGLE_framebuffer_multisample"] = enableableExtension(&Extensions::framebufferMultisampleANGLE);
         map["GL_ANGLE_get_image"] = enableableExtension(&Extensions::getImageANGLE);
@@ -250,7 +240,6 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_ANGLE_get_tex_level_parameter"] = enableableExtension(&Extensions::getTexLevelParameterANGLE);
         map["GL_ANGLE_logic_op"] = enableableExtension(&Extensions::logicOpANGLE);
         map["GL_CHROMIUM_lose_context"] = enableableExtension(&Extensions::loseContextCHROMIUM);
-        map["GL_ANGLE_lossy_etc_decode"] = enableableExtension(&Extensions::lossyEtcDecodeANGLE);
         map["GL_ANGLE_memory_object_flags"] = enableableExtension(&Extensions::memoryObjectFlagsANGLE);
         map["GL_ANGLE_memory_object_fuchsia"] = enableableExtension(&Extensions::memoryObjectFuchsiaANGLE);
         map["GL_ANGLE_memory_size"] = enableableExtension(&Extensions::memorySizeANGLE);
@@ -276,7 +265,6 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_ANGLE_stencil_texturing"] = enableableExtension(&Extensions::stencilTexturingANGLE);
         map["GL_ANGLE_texture_compression_dxt3"] = enableableExtension(&Extensions::textureCompressionDxt3ANGLE);
         map["GL_ANGLE_texture_compression_dxt5"] = enableableExtension(&Extensions::textureCompressionDxt5ANGLE);
-        map["GL_ANGLE_texture_external_update"] = enableableExtension(&Extensions::textureExternalUpdateANGLE);
         map["GL_ANGLE_texture_multisample"] = enableableExtension(&Extensions::textureMultisampleANGLE);
         map["GL_ANGLE_texture_rectangle"] = enableableExtension(&Extensions::textureRectangleANGLE);
         map["GL_ANGLE_vulkan_image"] = enableableExtension(&Extensions::vulkanImageANGLE);

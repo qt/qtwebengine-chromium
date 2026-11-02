@@ -53,11 +53,14 @@ export class ExtensionsSidebarElement extends ExtensionsSidebarElementBase {
        * displayed.
        */
       selectedPath_: {type: String},
+      webuiRoundedIconsEnabled_: {type: Boolean},
     };
   }
 
   accessor enableEnhancedSiteControls: boolean = false;
   protected accessor selectedPath_: Page = Page.LIST;
+  protected accessor webuiRoundedIconsEnabled_: boolean =
+      loadTimeData.getBoolean('webuiRoundedIconsEnabled');
   accessor inDevMode: boolean = false;
 
   /**
@@ -104,7 +107,7 @@ export class ExtensionsSidebarElement extends ExtensionsSidebarElementBase {
   protected onLinkClick_(e: Event) {
     e.preventDefault();
     navigation.navigateTo(
-        {page: ((e.target as HTMLElement).dataset['path'] as Page)});
+        {page: ((e.currentTarget as HTMLElement).dataset['path'] as Page)});
     this.fire('close-drawer');
   }
 
@@ -122,11 +125,11 @@ export class ExtensionsSidebarElement extends ExtensionsSidebarElementBase {
     });
   }
 
-  protected computeDocsPromoText_(): TrustedHTML {
+  protected computeModernWebGuidancePromoText_(): TrustedHTML {
     return this.i18nAdvanced('sidebarDocsPromo', {
       tags: ['a'],
       attrs: ['target'],
-      substitutions: [loadTimeData.getString('extensionsWhatsNewURL')],
+      substitutions: [loadTimeData.getString('modernWebGuidanceURL')],
     });
   }
 }

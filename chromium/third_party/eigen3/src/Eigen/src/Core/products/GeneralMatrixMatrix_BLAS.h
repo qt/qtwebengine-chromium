@@ -84,7 +84,7 @@ namespace internal {
       ldc = convert_index<BlasIndex>(resStride);                                                                    \
                                                                                                                     \
       /* Set a, b, c */                                                                                             \
-      if ((LhsStorageOrder == ColMajor) && (ConjugateLhs)) {                                                        \
+      EIGEN_IF_CONSTEXPR ((LhsStorageOrder == ColMajor) && (ConjugateLhs)) {                                        \
         Map<const MatrixX##EIGPREFIX, 0, OuterStride<> > lhs(lhs_, m, k, OuterStride<>(lhsStride));                 \
         a_tmp = lhs.conjugate();                                                                                    \
         a = a_tmp.data();                                                                                           \
@@ -92,7 +92,7 @@ namespace internal {
       } else                                                                                                        \
         a = lhs_;                                                                                                   \
                                                                                                                     \
-      if ((RhsStorageOrder == ColMajor) && (ConjugateRhs)) {                                                        \
+      EIGEN_IF_CONSTEXPR ((RhsStorageOrder == ColMajor) && (ConjugateRhs)) {                                        \
         Map<const MatrixX##EIGPREFIX, 0, OuterStride<> > rhs(rhs_, k, n, OuterStride<>(rhsStride));                 \
         b_tmp = rhs.conjugate();                                                                                    \
         b = b_tmp.data();                                                                                           \
@@ -167,7 +167,7 @@ struct general_matrix_matrix_product<Index, Eigen::bfloat16, LhsStorageOrder, Co
     ldc = convert_index<BlasIndex>(m);
 
     /* Set a, b, c */
-    if ((LhsStorageOrder == ColMajor) && (ConjugateLhs)) {
+    EIGEN_IF_CONSTEXPR ((LhsStorageOrder == ColMajor) && (ConjugateLhs)) {
       Map<const MatrixXbf16, 0, OuterStride<> > lhs(lhs_, m, k, OuterStride<>(lhsStride));
       a_tmp = lhs.conjugate();
       a = a_tmp.data();
@@ -176,7 +176,7 @@ struct general_matrix_matrix_product<Index, Eigen::bfloat16, LhsStorageOrder, Co
       a = lhs_;
     }
 
-    if ((RhsStorageOrder == ColMajor) && (ConjugateRhs)) {
+    EIGEN_IF_CONSTEXPR ((RhsStorageOrder == ColMajor) && (ConjugateRhs)) {
       Map<const MatrixXbf16, 0, OuterStride<> > rhs(rhs_, k, n, OuterStride<>(rhsStride));
       b_tmp = rhs.conjugate();
       b = b_tmp.data();
@@ -197,7 +197,7 @@ struct general_matrix_matrix_product<Index, Eigen::bfloat16, LhsStorageOrder, Co
   }
 };
 
-#endif  // EIGEN_USE_OPENBLAS_SBGEMM
+#endif  // EIGEN_USE_OPENBLAS_BFLOAT16
 
 #undef EIGEN_BLAS_GEMM_SPECIALIZATION
 }  // namespace internal

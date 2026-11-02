@@ -40,7 +40,7 @@ export default \`${stylesheetContents}
 }
 
 async function runMain() {
-  const [, , buildTimestamp, isDebugString, targetName, srcDir, targetGenDir, files, ] = process.argv;
+  const [, , buildTimestamp, isDebugString, targetName, srcDir, targetGenDir, files] = process.argv;
 
   const filenames = files.split(',');
   const configFiles = [];

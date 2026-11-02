@@ -18,10 +18,10 @@
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
 #include "include/gpu/ganesh/gl/GrGLFunctions.h"
 #include "include/gpu/ganesh/gl/GrGLInterface.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkMath.h"
-#include "include/private/base/SkTemplates.h"
-#include "include/private/base/SkTo.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkMath.h"
+#include "include/private/SkTemplates.h"
+#include "include/private/SkTo.h"
 #include "src/core/SkCompressedDataUtils.h"
 #include "src/gpu/Blend.h"
 #include "src/gpu/GpuTypesPriv.h"
@@ -676,6 +676,7 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
     if (ctxInfo.vendor() == GrGLVendor::kARM) {
         // On Mali G71, RT's above 4k have been observed to incur a performance cost.
         fMaxPreferredRenderTargetSize = std::min(4096, fMaxPreferredRenderTargetSize);
+        fDriverBugWorkarounds.flush_queries_before_deleting_or_unbinding_fbo = true;
     }
 
     fGpuTracingSupport = ctxInfo.hasExtension("GL_EXT_debug_marker");
@@ -4784,6 +4785,12 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         ctxInfo.driver()        == GrGLDriver::kImagination &&
         driverVersion <  GR_GL_DRIVER_VER(1, 16, 0)) {
         fShaderCaps->fShaderDerivativeSupport = false;
+    }
+
+    // b/532941869
+    if (ctxInfo.vendor() == GrGLVendor::kImagination ||
+        ctxInfo.driver() == GrGLDriver::kImagination) {
+        fDriverBugWorkarounds.ensure_previous_framebuffer_not_deleted = true;
     }
 
     if (ctxInfo.driver() == GrGLDriver::kFreedreno) {

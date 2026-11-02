@@ -14,7 +14,7 @@
 # limitations under the License.
 #
 
-load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
 load("@rules_rust//rust:defs.bzl", "rust_library")
 
@@ -32,6 +32,7 @@ proto_library(
     ],
     deps = [
         "@com_google_protobuf//:timestamp_proto",
+        "@googleapis//google/rpc:status_proto",
         "@oak//proto/session:session_proto",
     ],
 )
@@ -44,7 +45,6 @@ cargo_build_script(
     build_script_env = {
         "PROTOC": "$(execpath @com_google_protobuf//:protoc)",
         "DESCRIPTOR_PROTO_PATH": "$(location @com_google_protobuf//:descriptor_proto_srcs)",
-        "OAK_PROTO_PATH": "$(location @oak//proto/session:session.proto)",
     },
     data = [
         ":database.proto",
@@ -52,8 +52,11 @@ cargo_build_script(
         ":sealed_memory.proto",
         "@com_google_protobuf//:descriptor_proto_srcs",
         "@com_google_protobuf//:well_known_type_protos",
+        "@googleapis//google/rpc:status.proto",
         "@oak//proto:digest.proto",
+        "@oak//proto:validity.proto",
         "@oak//proto:variant.proto",
+        "@oak//proto/attestation:assertion.proto",
         "@oak//proto/attestation:endorsement.proto",
         "@oak//proto/attestation:eventlog.proto",
         "@oak//proto/attestation:evidence.proto",
@@ -67,10 +70,11 @@ cargo_build_script(
         "@com_google_protobuf//:protoc",
     ],
     deps = [
+        "@oak//oak_file_utils",
         "@oak//oak_grpc_utils",
         "@oak//oak_proto_build_utils",
         "@oak_crates_index//:prost-build",
-        "@oak_crates_index//:serde",
+        "@rules_rust//tools/runfiles",
     ],
 )
 
@@ -83,15 +87,12 @@ rust_library(
     proc_macro_deps = [
         "@oak_crates_index//:prost-derive",
     ],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":build",
         "@oak//oak_proto_rust",
-        "@oak_crates_index//:base64",
-        "@oak_crates_index//:chrono",
         "@oak_crates_index//:prost",
         "@oak_crates_index//:prost-types",
-        "@oak_crates_index//:serde",
-        "@oak_crates_index//:serde-aux",
         "@oak_crates_index//:tonic",
     ],
 )

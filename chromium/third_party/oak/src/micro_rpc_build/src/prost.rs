@@ -53,6 +53,12 @@ pub fn compile(
     if options.enable_type_names {
         config.enable_type_names();
     }
+    if let Some(out_dir) = options.out_dir {
+        config.out_dir(out_dir);
+    }
+    if let Some(protoc_executable) = options.protoc_executable {
+        config.protoc_executable(protoc_executable);
+    }
     config
         // Use BTreeMap to allow using this function in no-std crates.
         .btree_map(["."])
@@ -98,7 +104,7 @@ fn method_id(method: &prost_build::Method) -> anyhow::Result<u32> {
         .comments
         .leading
         .iter()
-        .filter_map(|line| line.strip_prefix(" method_id: "))
+        .filter_map(|line| line.strip_prefix("method_id: "))
         .collect::<Vec<_>>();
     if method_ids.is_empty() {
         anyhow::bail!("no method_id comment on method {}", method.proto_name)

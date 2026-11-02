@@ -55,6 +55,7 @@ class Adapter final : public ObjectWithEventsBase {
     void SetFeatures(const WGPUFeatureName* features, uint32_t featuresCount);
     void SetInfo(const WGPUAdapterInfo* info);
 
+    WGPUInstance APIGetInstance() const;
     WGPUStatus APIGetLimits(WGPULimits* limits) const;
     bool APIHasFeature(WGPUFeatureName feature) const;
     WGPUStatus APIGetInfo(WGPUAdapterInfo* info) const;
@@ -62,11 +63,10 @@ class Adapter final : public ObjectWithEventsBase {
     WGPUFuture APIRequestDevice(const WGPUDeviceDescriptor* descriptor,
                                 const WGPURequestDeviceCallbackInfo& callbackInfo);
 
-    // Unimplementable. Only availale in dawn_native.
-    WGPUInstance APIGetInstance() const;
-    WGPUDevice APICreateDevice(const WGPUDeviceDescriptor*);
-    WGPUStatus APIGetFormatCapabilities(WGPUTextureFormat format,
-                                        WGPUDawnFormatCapabilities* capabilities);
+    // Unimplementable. Only available in dawn_native.
+    Device* APICreateDevice(const DeviceDescriptor*);
+    wgpu::Status APIGetFormatCapabilities(wgpu::TextureFormat format,
+                                          DawnFormatCapabilities* capabilities);
 
   private:
     LimitsAndFeatures mLimitsAndFeatures;

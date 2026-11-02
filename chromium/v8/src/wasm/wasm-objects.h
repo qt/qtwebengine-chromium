@@ -39,6 +39,7 @@
 namespace v8 {
 namespace internal {
 namespace wasm {
+class InterpreterHandle;
 class NativeModule;
 class WasmCode;
 struct WasmFunction;
@@ -67,8 +68,6 @@ template <typename CppType>
 class Managed;
 template <typename CppType>
 class TrustedManaged;
-
-#include "torque-generated/src/wasm/wasm-objects-tq.inc"
 
 #define DECL_OPTIONAL_ACCESSORS(name, type) \
   DECL_GETTER(has_##name, bool)             \
@@ -145,16 +144,17 @@ V8_OBJECT class WasmModuleObject : public JSObject {
  public:
   using Super = JSObject;
 
-  inline Tagged<Managed<wasm::NativeModule>> managed_native_module() const;
+  inline Tagged<Managed<wasm::NativeModule>> managed_native_module() const
+      V8_LIFETIME_BOUND;
   inline void set_managed_native_module(
       Tagged<Managed<wasm::NativeModule>> value,
       WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
 
-  inline Tagged<Script> script() const;
+  inline Tagged<Script> script() const V8_LIFETIME_BOUND;
   inline void set_script(Tagged<Script> value,
                          WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
 
-  inline Managed<wasm::NativeModule>::Ptr native_module();
+  inline Managed<wasm::NativeModule>::Ptr native_module() V8_LIFETIME_BOUND;
 
   // Dispatched behavior.
   DECL_PRINTER(WasmModuleObject)
@@ -193,7 +193,7 @@ V8_OBJECT class WasmModuleObject : public JSObject {
   // property lookup anyway.)
   static DirectHandle<String> ExtractUtf8StringFromModuleBytes(
       Isolate*, base::Vector<const uint8_t> wire_bytes, wasm::WireBytesRef,
-      InternalizeString, SharedFlag shared = SharedFlag::kNo);
+      InternalizeString, SharedFlag shared = SharedFlag{false});
 
   TaggedMember<Managed<wasm::NativeModule>> managed_native_module_;
   TaggedMember<Script> script_;
@@ -361,56 +361,7 @@ inline constexpr int WasmTableObject::kTrustedDataOffsetEnd =
     offsetof(WasmTableObject, trusted_data_) + kTrustedPointerSize - 1;
 inline constexpr int WasmTableObject::kHeaderSize = sizeof(WasmTableObject);
 
-V8_OBJECT class WasmMemoryMapDescriptor : public JSObject {
- public:
-  using Super = JSObject;
 
-  inline Tagged<Weak<HeapObject>> memory() const;
-  inline void set_memory(Tagged<Weak<HeapObject>> value,
-                         WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline int32_t file_descriptor() const;
-  inline void set_file_descriptor(int32_t value);
-
-  inline uint32_t offset() const;
-  inline void set_offset(uint32_t value);
-
-  inline uint32_t size() const;
-  inline void set_size(uint32_t value);
-
-  V8_EXPORT_PRIVATE static MaybeDirectHandle<WasmMemoryMapDescriptor>
-  NewFromAnonymous(Isolate* isolate, size_t length);
-
-  V8_EXPORT_PRIVATE static DirectHandle<WasmMemoryMapDescriptor>
-  NewFromFileDescriptor(
-      Isolate* isolate,
-      v8::WasmMemoryMapDescriptor::WasmFileDescriptor file_descriptor);
-
-  // Returns the number of bytes that got mapped into the WebAssembly.Memory.
-  V8_EXPORT_PRIVATE size_t MapDescriptor(DirectHandle<WasmMemoryObject> memory,
-                                         size_t offset);
-
-  // Returns `false` if an error occurred, otherwise `true`.
-  V8_EXPORT_PRIVATE bool UnmapDescriptor();
-
-  DECL_PRINTER(WasmMemoryMapDescriptor)
-  DECL_VERIFIER(WasmMemoryMapDescriptor)
-
-  class BodyDescriptor;
-
-  static const int kHeaderSize;
-
-  TaggedMember<Weak<HeapObject>> memory_;
-  int32_t file_descriptor_;
-  uint32_t offset_;
-  uint32_t size_;
-#if TAGGED_SIZE_8_BYTES
-  uint32_t padding_;
-#endif  // TAGGED_SIZE_8_BYTES
-} V8_OBJECT_END;
-
-inline constexpr int WasmMemoryMapDescriptor::kHeaderSize =
-    sizeof(WasmMemoryMapDescriptor);
 
 // Representation of a WebAssembly.Memory JavaScript-level object.
 V8_OBJECT class WasmMemoryObject : public JSObject {
@@ -460,7 +411,6 @@ V8_OBJECT class WasmMemoryObject : public JSObject {
   V8_EXPORT_PRIVATE static void UseInInstance(
       Isolate* isolate, DirectHandle<WasmMemoryObject> memory,
       DirectHandle<WasmTrustedInstanceData> trusted_instance_data,
-      DirectHandle<WasmTrustedInstanceData> shared_trusted_instance_data,
       uint32_t memory_index_in_instance);
   inline bool has_maximum_pages();
 
@@ -630,7 +580,8 @@ V8_OBJECT class V8_EXPORT_PRIVATE WasmTrustedInstanceData
   DECL_OPTIONAL_ACCESSORS(native_context, Tagged<NativeContext>)
   DECL_ACCESSORS(memory_objects, Tagged<FixedArray>)
 #if V8_ENABLE_DRUMBRAKE
-  DECL_OPTIONAL_ACCESSORS(interpreter_object, Tagged<Tuple2>)
+  DECL_PROTECTED_POINTER_ACCESSORS(interpreter_handle,
+                                   TrustedManaged<wasm::InterpreterHandle>)
 #endif  // V8_ENABLE_DRUMBRAKE
   // `untagged_globals_buffer`: Storage for non-ref globals.
   DECL_ACCESSORS(untagged_globals_buffer, Tagged<ByteArray>)
@@ -658,11 +609,10 @@ V8_OBJECT class V8_EXPORT_PRIVATE WasmTrustedInstanceData
   // interpreter.
   DECL_ACCESSORS(imported_function_indices, Tagged<FixedInt32Array>)
 #endif  // V8_ENABLE_DRUMBRAKE
-  DECL_PROTECTED_POINTER_ACCESSORS(shared_part, WasmTrustedInstanceData)
   DECL_PROTECTED_POINTER_ACCESSORS(dispatch_table0, WasmDispatchTable)
   DECL_PROTECTED_POINTER_ACCESSORS(dispatch_tables, ProtectedFixedArray)
   inline Tagged<WasmDispatchTable> dispatch_table(uint32_t i) const;
-  DECL_OPTIONAL_ACCESSORS(tags_table, Tagged<FixedArray>)
+  DECL_PROTECTED_POINTER_ACCESSORS(tags_table, TrustedFixedArray)
   DECL_ACCESSORS(func_refs, Tagged<FixedArray>)
   DECL_ACCESSORS(managed_object_maps, Tagged<FixedArray>)
   DECL_ACCESSORS(feedback_vectors, Tagged<FixedArray>)
@@ -689,10 +639,10 @@ V8_OBJECT class V8_EXPORT_PRIVATE WasmTrustedInstanceData
   inline uint8_t* memory_base(uint32_t memory_index) const;
   inline size_t memory_size(uint32_t memory_index) const;
 
-  inline wasm::NativeModule* native_module() const;
+  inline wasm::NativeModule* native_module() const V8_LIFETIME_BOUND;
 
-  inline Tagged<WasmModuleObject> module_object() const;
-  inline const wasm::WasmModule* module() const;
+  inline Tagged<WasmModuleObject> module_object() const V8_LIFETIME_BOUND;
+  inline const wasm::WasmModule* module() const V8_LIFETIME_BOUND;
 
   // Dispatched behavior.
   DECL_PRINTER(WasmTrustedInstanceData)
@@ -722,14 +672,13 @@ V8_OBJECT class V8_EXPORT_PRIVATE WasmTrustedInstanceData
   V(kElementSegmentsOffset, kTaggedSize)                                  \
   V(kInstanceObjectOffset, kTaggedSize)                                   \
   V(kNativeContextOffset, kTaggedSize)                                    \
-  V(kProtectedSharedPartOffset, kTaggedSize)                              \
   V(kMemoryObjectsOffset, kTaggedSize)                                    \
   V(kUntaggedGlobalsBufferOffset, kTaggedSize)                            \
   V(kTaggedGlobalsBufferOffset, kTaggedSize)                              \
-  IF_WASM_DRUMBRAKE(V, kInterpreterObjectOffset, kTaggedSize)             \
+  IF_WASM_DRUMBRAKE(V, kProtectedInterpreterHandleOffset, kTaggedSize)    \
   V(kTablesOffset, kTaggedSize)                                           \
   V(kProtectedDispatchTablesOffset, kTaggedSize)                          \
-  V(kTagsTableOffset, kTaggedSize)                                        \
+  V(kProtectedTagsTableOffset, kTaggedSize)                               \
   V(kFuncRefsOffset, kTaggedSize)                                         \
   V(kManagedObjectMapsOffset, kTaggedSize)                                \
   V(kFeedbackVectorsOffset, kTaggedSize)                                  \
@@ -765,9 +714,7 @@ V8_OBJECT class V8_EXPORT_PRIVATE WasmTrustedInstanceData
   V(kTaggedGlobalsBufferOffset, "tagged_globals_buffer")                      \
   V(kImportedMutableGlobalsBuffersOffset, "imported_mutable_globals_buffers") \
   V(kImportedMutableGlobalsOffsetsOffset, "imported_mutable_globals_offsets") \
-  IF_WASM_DRUMBRAKE(V, kInterpreterObjectOffset, "interpreter_object")        \
   V(kTablesOffset, "tables")                                                  \
-  V(kTagsTableOffset, "tags_table")                                           \
   V(kFuncRefsOffset, "func_refs")                                             \
   V(kManagedObjectMapsOffset, "managed_object_maps")                          \
   V(kFeedbackVectorsOffset, "feedback_vectors")                               \
@@ -776,12 +723,14 @@ V8_OBJECT class V8_EXPORT_PRIVATE WasmTrustedInstanceData
                     "imported_function_indices")                              \
   V(kElementSegmentsOffset, "element_segments")
 #define WASM_PROTECTED_INSTANCE_DATA_FIELDS(V)                             \
-  V(kProtectedSharedPartOffset, "shared_part")                             \
   V(kProtectedMemoryBasesAndSizesOffset, "memory_bases_and_sizes")         \
   V(kProtectedDataSegmentsOffset, "data_segments")                         \
   V(kProtectedDispatchTable0Offset, "dispatch_table0")                     \
   V(kProtectedDispatchTablesOffset, "dispatch_tables")                     \
   V(kProtectedDispatchTableForImportsOffset, "dispatch_table_for_imports") \
+  V(kProtectedTagsTableOffset, "tags_table")                               \
+  IF_WASM_DRUMBRAKE(V, kProtectedInterpreterHandleOffset,                  \
+                    "interpreter_handle")                                  \
   V(kProtectedManagedNativeModuleOffset, "managed_native_module")
 
 #define WASM_INSTANCE_FIELD_OFFSET(offset, _) offset,
@@ -819,18 +768,10 @@ V8_OBJECT class V8_EXPORT_PRIVATE WasmTrustedInstanceData
 
   void SetRawMemory(uint32_t memory_index, uint8_t* mem_start, size_t mem_size);
 
-#if V8_ENABLE_DRUMBRAKE
-  // Get the interpreter object associated with the given wasm object.
-  // If no interpreter object exists yet, it is created automatically.
-  static DirectHandle<Tuple2> GetOrCreateInterpreterObject(
-      DirectHandle<WasmInstanceObject>);
-  static DirectHandle<Tuple2> GetInterpreterObject(
-      DirectHandle<WasmInstanceObject>);
-#endif  // V8_ENABLE_DRUMBRAKE
 
   static DirectHandle<WasmTrustedInstanceData> New(
       Isolate*, DirectHandle<WasmModuleObject>,
-      std::shared_ptr<wasm::NativeModule>, SharedFlag shared);
+      std::shared_ptr<wasm::NativeModule>);
 
   WasmCodePointer GetCallTarget(uint32_t func_index);
 
@@ -847,7 +788,6 @@ V8_OBJECT class V8_EXPORT_PRIVATE WasmTrustedInstanceData
   static std::optional<MessageTemplate> InitTableEntries(
       Isolate* isolate,
       DirectHandle<WasmTrustedInstanceData> trusted_instance_data,
-      DirectHandle<WasmTrustedInstanceData> shared_trusted_instance_data,
       uint32_t table_index, uint32_t segment_index, uint32_t dst, uint32_t src,
       uint32_t count) V8_WARN_UNUSED_RESULT;
 
@@ -893,15 +833,13 @@ V8_OBJECT class WasmInstanceObject : public JSObject {
   inline Tagged<WasmTrustedInstanceData> trusted_data_allow_unpublished(
       IsolateForSandbox isolate) const;
 
-  inline Tagged<WasmModuleObject> module_object() const;
+  inline Tagged<WasmModuleObject> module_object() const V8_LIFETIME_BOUND;
   inline void set_module_object(Tagged<WasmModuleObject> value,
                                 WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
 
-  inline Tagged<JSObject> exports_object() const;
+  inline Tagged<JSObject> exports_object() const V8_LIFETIME_BOUND;
   inline void set_exports_object(Tagged<JSObject> value,
                                  WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline const wasm::WasmModule* module() const;
 
   class BodyDescriptor;
 
@@ -1223,7 +1161,7 @@ V8_OBJECT class WasmDispatchTableForImports : public TrustedObject {
 } V8_OBJECT_END;
 
 // A Wasm exception that has been thrown out of Wasm code.
-class V8_EXPORT_PRIVATE WasmExceptionPackage : public JSObject {
+V8_OBJECT class V8_EXPORT_PRIVATE WasmExceptionPackage : public JSObject {
  public:
   static DirectHandle<WasmExceptionPackage> New(
       Isolate* isolate, DirectHandle<WasmExceptionTag> exception_tag,
@@ -1255,7 +1193,7 @@ class V8_EXPORT_PRIVATE WasmExceptionPackage : public JSObject {
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(WasmExceptionPackage);
-};
+} V8_OBJECT_END;
 
 void V8_EXPORT_PRIVATE
 EncodeI32ExceptionValue(DirectHandle<FixedArray> encoded_values,
@@ -1295,14 +1233,12 @@ class WasmExportedFunction : public JSFunction {
       Isolate* isolate, DirectHandle<WasmTrustedInstanceData> instance_data,
       DirectHandle<WasmFuncRef> func_ref,
       DirectHandle<WasmInternalFunction> internal_function, int arity,
-      DirectHandle<Code> export_wrapper, wasm::ModuleOrigin origin,
-      int func_index, wasm::Promise promise);
+      DirectHandle<Code> export_wrapper, int func_index, wasm::Promise promise);
 
   // Returns the generic wrapper, or a cached compiled wrapper, or
   // a freshly-compiled wrapper.
   static DirectHandle<Code> GetWrapper(Isolate* isolate,
-                                       const wasm::CanonicalSig* sig,
-                                       wasm::ModuleOrigin origin);
+                                       const wasm::CanonicalSig* sig);
 
   // Return a null-terminated string with the debug name in the form
   // 'js-to-wasm:<sig>'.
@@ -1735,38 +1671,6 @@ V8_OBJECT class WasmExceptionTag : public Struct {
   TaggedMember<Smi> index_;
 } V8_OBJECT_END;
 
-// Data annotated to the asm.js Module function. Used for later instantiation of
-// that function.
-V8_OBJECT class AsmWasmData : public ExposedTrustedObject {
- public:
-  static Handle<AsmWasmData> New(
-      Isolate* isolate, std::shared_ptr<wasm::NativeModule> native_module,
-      uint64_t uses_bitset);
-
-  inline Tagged<TrustedManaged<wasm::NativeModule>> managed_native_module()
-      const;
-  inline void set_managed_native_module(
-      Tagged<TrustedManaged<wasm::NativeModule>> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-  inline bool has_managed_native_module() const;
-  inline void clear_managed_native_module();
-
-  inline uint64_t uses_bitset() const;
-  inline void set_uses_bitset(uint64_t value);
-
-  DECL_PRINTER(AsmWasmData)
-  DECL_VERIFIER(AsmWasmData)
-
-  class BodyDescriptor;
-
- private:
-  friend class TorqueGeneratedAsmWasmDataAsserts;
-
-  ProtectedTaggedMember<TrustedManaged<wasm::NativeModule>>
-      managed_native_module_;
-  UnalignedValueMember<uint64_t> uses_bitset_;
-} V8_OBJECT_END;
-
 V8_OBJECT class WasmTypeInfo : public HeapObject {
  public:
   inline uint32_t canonical_type() const;
@@ -2157,7 +2061,7 @@ DirectHandle<Map> CreateArrayMap(Isolate* isolate,
 DirectHandle<Map> CreateFuncRefMap(Isolate* isolate,
                                    wasm::CanonicalTypeIndex type,
                                    DirectHandle<Map> opt_rtt_parent,
-                                   int num_supertypes, SharedFlag shared);
+                                   int num_supertypes);
 
 DirectHandle<Map> CreateContRefMap(Isolate* isolate,
                                    wasm::CanonicalTypeIndex type);

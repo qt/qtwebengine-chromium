@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/trace_event/trace_event.h"
 #include "cc/paint/clear_for_opaque_raster.h"
@@ -60,7 +61,9 @@ PlaybackParams PaintOpBufferSerializer::MakeParams(
     const SkCanvas* canvas) const {
   // We don't use an ImageProvider here since the ops are played onto a no-draw
   // canvas for state tracking and don't need decoded images.
-  PlaybackParams params(nullptr, canvas->getLocalToDevice());
+  PlaybackCallbacks callbacks;
+  callbacks.custom_callback = options_.custom_callback;
+  PlaybackParams params(nullptr, canvas->getLocalToDevice(), callbacks);
   params.raster_inducing_scroll_offsets =
       options_.raster_inducing_scroll_offsets;
   params.is_analyzing = true;

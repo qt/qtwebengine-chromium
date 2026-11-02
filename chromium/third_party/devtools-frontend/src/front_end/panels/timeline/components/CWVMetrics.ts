@@ -58,7 +58,7 @@ const UIStrings = {
    */
   fieldMismatchNotice:
       'There are many reasons why local and field metrics [may not match](https://web.dev/articles/lab-and-field-data-differences). ' +
-      'Adjust [throttling settings and device emulation](https://developer.chrome.com/docs/devtools/device-mode) to analyze traces more similar to the average user\'s environment.',
+      'Adjust [throttling settings and device emulation](https://developer.chrome.com/docs/devtools/device-mode) to analyze traces more similar to the average user’s environment.',
 } as const;
 
 const str_ = i18n.i18n.registerUIStrings('panels/timeline/components/CWVMetrics.ts', UIStrings);

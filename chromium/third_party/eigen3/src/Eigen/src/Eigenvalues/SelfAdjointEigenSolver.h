@@ -326,9 +326,9 @@ class SelfAdjointEigenSolver {
     return m_eivec * m_eivalues.cwiseSqrt().asDiagonal() * m_eivec.adjoint();
   }
 
-  /** \brief Computes the matrix exponential the matrix.
+  /** \brief Computes the matrix exponential of the matrix.
    *
-   * \returns the matrix exponential the matrix.
+   * \returns the matrix exponential of the matrix.
    *
    * \pre The eigenvalues and eigenvectors of a positive-definite matrix
    * have been computed before.
@@ -918,7 +918,7 @@ EIGEN_DEVICE_FUNC static void tridiagonal_qr_step(RealScalar* diag, RealScalar* 
   // underflow thus leading to inf/NaN values when using the following commented code:
   //   RealScalar e2 = numext::abs2(subdiag[end-1]);
   //   RealScalar mu = diag[end] - e2 / (td + (td>0 ? 1 : -1) * sqrt(td*td + e2));
-  // This explain the following, somewhat more complicated, version:
+  // This explains the following, somewhat more complicated, version:
   RealScalar mu = diag[end];
   if (numext::is_exactly_zero(td)) {
     mu -= numext::abs(e);
@@ -940,14 +940,24 @@ EIGEN_DEVICE_FUNC static void tridiagonal_qr_step(RealScalar* diag, RealScalar* 
     JacobiRotation<RealScalar> rot;
     rot.makeGivens(x, z);
 
-    // do T = G' T G
-    RealScalar sdk = rot.s() * diag[k] + rot.c() * subdiag[k];
-    RealScalar dkp1 = rot.s() * subdiag[k] + rot.c() * diag[k + 1];
+    // do T = G' T G. The two new diagonal entries and the new off-diagonal are all expressed below
+    // as functions of the original difference diff = diag[k] - diag[k+1] and the original subdiag[k],
+    // so capture diff and compute delta/subdiag[k] before overwriting the diagonal.
+    const RealScalar diff = diag[k] - diag[k + 1];
 
-    diag[k] =
-        rot.c() * (rot.c() * diag[k] - rot.s() * subdiag[k]) - rot.s() * (rot.c() * subdiag[k] - rot.s() * diag[k + 1]);
-    diag[k + 1] = rot.s() * sdk + rot.c() * dkp1;
-    subdiag[k] = rot.c() * sdk - rot.s() * dkp1;
+    // Update the 2x2 diagonal block by the symmetric change delta, applied with opposite signs to
+    // diag[k] and diag[k+1]. A similarity leaves the trace invariant, so this preserves diag[k] +
+    // diag[k+1] exactly. Forming the two new diagonal entries from independent explicit formulas
+    // (diag[k] = c^2 d_k - 2 c s e_k + s^2 d_{k+1}, diag[k+1] = s^2 d_k + 2 c s e_k + c^2 d_{k+1})
+    // instead lets the two roundings drift the trace a little on every rotation, an error that
+    // accumulates over the O(n^2) rotations of a full solve and measurably degrades the eigenvalues.
+    // Algebraically delta = s^2 (d_k - d_{k+1}) + 2 c s e_k, which is exactly d_k minus the formula above.
+    const RealScalar delta = rot.s() * (rot.s() * diff + RealScalar(2) * rot.c() * subdiag[k]);
+    // The exact (G' T G) off-diagonal, c*s*(d_k - d_{k+1}) + (c^2 - s^2)*e_k, written in the same diff
+    // form rather than via the c*sdk - s*dkp1 temporaries.
+    subdiag[k] = rot.c() * rot.s() * diff + (rot.c() * rot.c() - rot.s() * rot.s()) * subdiag[k];
+    diag[k] -= delta;
+    diag[k + 1] += delta;
 
     if (k > start) subdiag[k - 1] = rot.c() * subdiag[k - 1] - rot.s() * z;
 

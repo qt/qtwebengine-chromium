@@ -26,12 +26,13 @@ devtools_module("persistence") {
     "../../core/host:bundle",
     "../../core/i18n:bundle",
     "../../core/platform:bundle",
+    "../../core/root:bundle",
     "../../core/sdk:bundle",
+    "../../core/text_utils:bundle",
     "../../generated",
     "../../models/bindings:bundle",
     "../../models/breakpoints:bundle",
     "../../models/project_settings:bundle",
-    "../../models/text_utils:bundle",
     "../../models/workspace:bundle",
   ]
 }
@@ -45,6 +46,7 @@ devtools_entrypoint("bundle") {
     ":*",
     "../../core/sdk/*",
     "../../entrypoints/main/*",
+    "../../foundation/*",
     "../../models/ai_assistance/*",
     "../../panels/ai_assistance/*",
     "../../panels/changes/*",
@@ -74,15 +76,22 @@ devtools_entrypoint("meta") {
     "../../core/i18n:bundle",
   ]
 
-  visibility = [ "../../entrypoints/*" ]
+  visibility = [
+    "../../../mcp/*",
+    "../../../test/api/*",
+    "../../entrypoints/*",
+  ]
 }
 
 ts_library("unittests") {
   testonly = true
 
   sources = [
+    "Automapping.test.ts",
     "AutomaticFileSystemManager.test.ts",
     "AutomaticFileSystemWorkspaceBinding.test.ts",
+    "FileSystemWorkspaceBinding.test.ts",
+    "IsolatedFileSystemManager.test.ts",
     "NetworkPersistenceManager.test.ts",
     "PersistenceImpl.test.ts",
     "PlatformFileSystem.test.ts",

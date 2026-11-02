@@ -10,6 +10,7 @@
 
 #include "core/fxcrt/fx_stream.h"
 #include "core/fxcrt/fx_string.h"
+#include "core/fxcrt/span_io.h"
 
 // static
 std::unique_ptr<FileAccessIface> FileAccessIface::Create() {
@@ -90,29 +91,11 @@ FX_FILESIZE CFX_FileAccess_Windows::SetPosition(FX_FILESIZE pos) {
 }
 
 size_t CFX_FileAccess_Windows::Read(pdfium::span<uint8_t> buffer) {
-  if (!file_) {
-    return 0;
-  }
-
-  size_t szRead = 0;
-  if (!::ReadFile(file_, buffer.data(), (DWORD)buffer.size(), (LPDWORD)&szRead,
-                  nullptr)) {
-    return 0;
-  }
-  return szRead;
+  return file_ ? fxcrt::spanread(buffer, file_).size() : 0;
 }
 
-size_t CFX_FileAccess_Windows::Write(pdfium::span<const uint8_t> buffer) {
-  if (!file_) {
-    return 0;
-  }
-
-  size_t szWrite = 0;
-  if (!::WriteFile(file_, buffer.data(), (DWORD)buffer.size(),
-                   (LPDWORD)&szWrite, nullptr)) {
-    return 0;
-  }
-  return szWrite;
+bool CFX_FileAccess_Windows::Write(pdfium::span<const uint8_t> buffer) {
+  return file_ && fxcrt::spanwrite(buffer, file_) == buffer.size();
 }
 
 size_t CFX_FileAccess_Windows::ReadPos(pdfium::span<uint8_t> buffer,

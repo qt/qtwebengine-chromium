@@ -7,8 +7,8 @@ import '../../ui/legacy/legacy.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import type * as TextUtils from '../../core/text_utils/text_utils.js';
 import type * as Protocol from '../../generated/protocol.js';
-import type * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import {html, render} from '../../ui/lit/lit.js';
@@ -107,7 +107,7 @@ export const DEFAULT_VIEW = (input: ViewInput, _output: undefined, target: HTMLE
                          .iconName=${'refresh'}
                          .variant=${Buttons.Button.Variant.TOOLBAR}
                          jslog=${VisualLogging.action('refresh').track({
-                           click: true
+                           click: true,
                          })}>
         </devtools-button>
         <devtools-toolbar-input type="filter" placeholder=${i18nString(UIStrings.filterByText)}
@@ -127,8 +127,8 @@ export const DEFAULT_VIEW = (input: ViewInput, _output: undefined, target: HTMLE
                     data: {
                       entries: frame.entries.map(e => ({key: e.key, value: e.value})),
                       selectedKey: input.selectedKey || undefined,
-                      filters: input.filters
-                    }
+                      filters: input.filters,
+                    },
                   })}
                   @select=${(e: CustomEvent<string>) => input.onRowSelected(e.detail)}>
                 </devtools-widget>

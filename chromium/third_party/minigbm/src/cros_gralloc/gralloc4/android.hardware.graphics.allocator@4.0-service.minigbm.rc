@@ -21,4 +21,4 @@ service vendor.graphics.allocator-4-0 /vendor/bin/hw/android.hardware.graphics.a
     group graphics drmrpc
     capabilities SYS_NICE
     onrestart restart surfaceflinger
-    writepid /dev/cpuset/system-background/tasks
+    task_profiles ServiceCapacityLow

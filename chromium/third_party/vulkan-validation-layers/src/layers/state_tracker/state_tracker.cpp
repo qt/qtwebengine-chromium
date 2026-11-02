@@ -31,7 +31,9 @@
 #include "containers/container_utils.h"
 #include "error_message/error_strings.h"
 #include "generated/vk_extension_helper.h"
+#include "state_tracker/bind_point.h"
 #include "state_tracker/data_graph_pipeline_session_state.h"
+#include "state_tracker/descriptor_hashing.h"
 #include "state_tracker/shader_stage_state.h"
 #include "state_tracker/image_state.h"
 #include "state_tracker/buffer_state.h"
@@ -50,6 +52,8 @@
 #include "chassis/chassis_modification_state.h"
 #include "spirv-tools/optimizer.hpp"
 #include "utils/assert_utils.h"
+#include "utils/descriptor_utils.h"
+#include "utils/lock_utils.h"
 #include "utils/spirv_tools_utils.h"
 #include "utils/math_utils.h"
 
@@ -84,7 +88,10 @@ void DeviceState::RemoveProxy(LayerObjectTypeId id) {
 // cleanup tries to destroy the substate)
 void DeviceState::RemoveSubState(LayerObjectTypeId id) {
     // Currently we have not good way to track all objects that have a substate, so this is a list from manual inspection
-    ForEachShared<vvl::CommandBuffer>([id](std::shared_ptr<vvl::CommandBuffer> state) { state->RemoveSubState(id); });
+    ForEachShared<vvl::CommandBuffer>([id](std::shared_ptr<vvl::CommandBuffer> state) {
+        state->RemoveSubState(id);
+        state->RemoveOwnedSubState(id);
+    });
     ForEachShared<vvl::Queue>([id](std::shared_ptr<vvl::Queue> state) { state->RemoveSubState(id); });
     ForEachShared<vvl::Swapchain>([id](std::shared_ptr<vvl::Swapchain> state) { state->RemoveSubState(id); });
     ForEachShared<vvl::ImageView>([id](std::shared_ptr<vvl::ImageView> state) { state->RemoveSubState(id); });
@@ -117,6 +124,24 @@ VkDeviceAddress DeviceState::GetBufferDeviceAddressHelper(VkBuffer buffer, const
             return 0;
         }
     }
+}
+
+// From the spec:
+// If multiple VkBuffer objects are bound to overlapping ranges of VkDeviceMemory, implementations may return
+// address ranges which overlap. In this case, it is ambiguous which VkBuffer is associated with any given
+// device address. For purposes of valid usage, if multiple VkBuffer objects can be attributed to
+// a device address, a VkBuffer is selected such that valid usage passes, if it exists.
+// Regarding using raw pointers instead of shared: The reason is performance, because arrays of vvl::Buffer* are used, it is
+// more efficient to store them using raw pointers. It is safe to do so (at time of writing) because those raw pointers come
+// from shared ones created when the buffer is first recorded, and they are removed from buffer_address_map_ at BufferDestroy
+// time
+vvl::span<vvl::Buffer* const> DeviceState::GetBuffersByAddress(VkDeviceAddress address) const {
+    ReadLockGuard guard(buffer_address_lock_);
+    auto found_it = buffer_address_map_.find(address);
+    if (found_it == buffer_address_map_.end()) {
+        return vvl::make_span<vvl::Buffer* const>(nullptr, static_cast<size_t>(0));
+    }
+    return found_it->second;
 }
 
 small_vector<vvl::Buffer*, 2> DeviceState::GetBuffersByAddressRange(const VkDeviceAddressRangeKHR& address_range,
@@ -210,6 +235,29 @@ std::vector<std::shared_ptr<const ImageView>> DeviceState::GetAttachmentViews(co
     return GetAttachmentViewsImpl<std::shared_ptr<const ImageView>>(rp_begin, fb_state, get_fn);
 }
 
+std::shared_ptr<vvl::ShaderModule> DeviceState::GetShaderModuleStateFromIdentifier(const VkShaderModuleIdentifierEXT& ident) const {
+    ReadLockGuard guard(shader_identifier_map_lock_);
+    if (const auto itr = shader_identifier_map_.find(ident); itr != shader_identifier_map_.cend()) {
+        return itr->second;
+    }
+    return {};
+}
+
+std::shared_ptr<vvl::ShaderModule> DeviceState::GetShaderModuleStateFromIdentifier(
+    const VkPipelineShaderStageModuleIdentifierCreateInfoEXT& shader_stage_id) const {
+    if (shader_stage_id.pIdentifier) {
+        VkShaderModuleIdentifierEXT shader_id = vku::InitStructHelper();
+        shader_id.identifierSize = shader_stage_id.identifierSize;
+        const uint32_t copy_size = std::min(VK_MAX_SHADER_MODULE_IDENTIFIER_SIZE_EXT, shader_stage_id.identifierSize);
+        std::copy(shader_stage_id.pIdentifier, shader_stage_id.pIdentifier + copy_size, shader_id.identifier);
+        ReadLockGuard guard(shader_identifier_map_lock_);
+        if (const auto itr = shader_identifier_map_.find(shader_id); itr != shader_identifier_map_.cend()) {
+            return itr->second;
+        }
+    }
+    return {};
+}
+
 DescriptorSetLayoutId DeviceState::GetCanonicalId(const VkDescriptorSetLayoutCreateInfo* p_create_info) {
     return descriptor_set_layout_canonical_ids_.LookUp(DescriptorSetLayoutDef(*this, p_create_info));
 }
@@ -222,6 +270,7 @@ VkFormatFeatureFlags2 DeviceState::GetExternalFormatFeaturesANDROID(const void* 
     VkFormatFeatureFlags2 format_features = 0;
     const uint64_t external_format = GetExternalFormat(pNext);
     if ((0 != external_format)) {
+        ReadLockGuard guard(ahb_lock_);
         // VUID 01894 will catch if not found in map
         auto it = ahb_ext_formats_map.find(external_format);
         if (it != ahb_ext_formats_map.end()) {
@@ -231,22 +280,32 @@ VkFormatFeatureFlags2 DeviceState::GetExternalFormatFeaturesANDROID(const void* 
     return format_features;
 }
 
+VkFormat DeviceState::GetExternalFormatResolveANDROID(uint64_t external_format) const {
+    ReadLockGuard guard(ahb_lock_);
+    auto it = ahb_ext_resolve_formats_map.find(external_format);
+    if (it != ahb_ext_resolve_formats_map.end()) {
+        return it->second;
+    }
+    return VK_FORMAT_UNDEFINED;
+}
+
 void DeviceState::PostCallRecordGetAndroidHardwareBufferPropertiesANDROID(VkDevice device, const struct AHardwareBuffer* buffer,
                                                                           VkAndroidHardwareBufferPropertiesANDROID* pProperties,
                                                                           const RecordObject& record_obj) {
     if (record_obj.result != VK_SUCCESS) {
         return;
     }
+    WriteLockGuard guard(ahb_lock_);
     uint64_t external_format = 0;
     auto ahb_format_props2 = vku::FindStructInPNextChain<VkAndroidHardwareBufferFormatProperties2ANDROID>(pProperties->pNext);
     if (ahb_format_props2) {
         external_format = ahb_format_props2->externalFormat;
-        ahb_ext_formats_map.insert(external_format, ahb_format_props2->formatFeatures);
+        ahb_ext_formats_map.emplace(external_format, ahb_format_props2->formatFeatures);
     } else {
         auto ahb_format_props = vku::FindStructInPNextChain<VkAndroidHardwareBufferFormatPropertiesANDROID>(pProperties->pNext);
         if (ahb_format_props) {
             external_format = ahb_format_props->externalFormat;
-            ahb_ext_formats_map.insert(external_format, static_cast<VkFormatFeatureFlags2>(ahb_format_props->formatFeatures));
+            ahb_ext_formats_map.emplace(external_format, static_cast<VkFormatFeatureFlags2>(ahb_format_props->formatFeatures));
         }
     }
 
@@ -256,7 +315,7 @@ void DeviceState::PostCallRecordGetAndroidHardwareBufferPropertiesANDROID(VkDevi
             vku::FindStructInPNextChain<VkAndroidHardwareBufferFormatResolvePropertiesANDROID>(pProperties->pNext);
         if (ahb_format_resolve_props && external_format != 0) {
             // easy case, caller provided both structs for us
-            ahb_ext_resolve_formats_map.insert(external_format, ahb_format_resolve_props->colorAttachmentFormat);
+            ahb_ext_resolve_formats_map.emplace(external_format, ahb_format_resolve_props->colorAttachmentFormat);
         } else {
             // If caller didn't provide both struct, re-call for them
             VkAndroidHardwareBufferFormatResolvePropertiesANDROID new_ahb_format_resolve_props = vku::InitStructHelper();
@@ -264,8 +323,8 @@ void DeviceState::PostCallRecordGetAndroidHardwareBufferPropertiesANDROID(VkDevi
                 vku::InitStructHelper(&new_ahb_format_resolve_props);
             VkAndroidHardwareBufferPropertiesANDROID new_ahb_props = vku::InitStructHelper(&new_ahb_format_props);
             DispatchGetAndroidHardwareBufferPropertiesANDROID(device, buffer, &new_ahb_props);
-            ahb_ext_resolve_formats_map.insert(new_ahb_format_props.externalFormat,
-                                               new_ahb_format_resolve_props.colorAttachmentFormat);
+            ahb_ext_resolve_formats_map.emplace(new_ahb_format_props.externalFormat,
+                                                new_ahb_format_resolve_props.colorAttachmentFormat);
         }
     }
 }
@@ -275,6 +334,11 @@ void DeviceState::PostCallRecordGetAndroidHardwareBufferPropertiesANDROID(VkDevi
 VkFormatFeatureFlags2 DeviceState::GetExternalFormatFeaturesANDROID(const void* pNext) const {
     (void)pNext;
     return 0;
+}
+
+VkFormat DeviceState::GetExternalFormatResolveANDROID(uint64_t external_format) const {
+    (void)external_format;
+    return VK_FORMAT_UNDEFINED;
 }
 
 #endif  // VK_USE_PLATFORM_ANDROID_KHR
@@ -386,6 +450,15 @@ void DeviceState::PostCallRecordCreateImage(VkDevice device, const VkImageCreate
 
 void DeviceState::PreCallRecordDestroyImage(VkDevice device, VkImage image, const VkAllocationCallbacks* pAllocator,
                                             const RecordObject& record_obj) {
+    if (global_settings.descriptor_hashing) {
+        if (auto image_state = Get<Image>(image)) {
+            WriteLockGuard guard(descriptor_hashing->map_lock);
+            for (uint64_t key : image_state->descriptor_hashes) {
+                descriptor_hashing->table.Erase(key);
+                descriptor_hashing->debug_names.erase(key);
+            }
+        }
+    }
     Destroy<Image>(image);
 }
 
@@ -851,6 +924,15 @@ void DeviceState::PreCallRecordDestroyBuffer(VkDevice device, VkBuffer buffer, c
                 return false;
             });
         }
+
+        // TODO - mix with the |buffer_address_map_| logic to handle multiple buffers on the same address
+        if (global_settings.descriptor_hashing) {
+            WriteLockGuard hash_guard(descriptor_hashing->map_lock);
+            for (uint64_t key : buffer_state->descriptor_hashes) {
+                descriptor_hashing->table.Erase(key);
+                descriptor_hashing->debug_names.erase(key);
+            }
+        }
     }
     Destroy<Buffer>(buffer);
 }
@@ -1119,6 +1201,38 @@ std::shared_ptr<Queue> DeviceState::CreateQueue(VkQueue handle, uint32_t family_
     return std::make_shared<Queue>(*this, handle, family_index, queue_index, flags, queueFamilyProperties);
 }
 
+vvl::unordered_set<VkFormat> DeviceState::GetOpticalFlowFormats(const uint32_t queue_index,
+                                                                const VkPhysicalDeviceDataGraphProcessingEngineARM engine,
+                                                                const VkDataGraphOpticalFlowImageUsageFlagsARM usage) {
+    // make sure we have filled this in
+    assert(!physical_device_state->data_graph.queue_family_properties.empty());
+
+    VkDataGraphOpticalFlowImageFormatInfoARM format_info = vku::InitStructHelper();
+    format_info.usage = usage;
+    vvl::unordered_set<VkFormat> formats;  // set because we might have duplications between queue families
+    for (const auto& prop : physical_device_state->data_graph.queue_family_properties[queue_index]) {
+        if (prop.operation.operationType != VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_OPTICAL_FLOW_ARM ||
+            prop.engine.type != engine.type || prop.engine.isForeign != engine.isForeign) {
+            continue;
+        }
+
+        uint32_t format_count = 0;
+        [[maybe_unused]] VkResult result = DispatchGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+            physical_device, queue_index, &prop, &format_info, &format_count, nullptr);
+        assert(VK_SUCCESS == result);
+        std::vector<VkDataGraphOpticalFlowImageFormatPropertiesARM> format_properties(format_count,
+            vku::InitStruct<VkDataGraphOpticalFlowImageFormatPropertiesARM>());
+        result = DispatchGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+            physical_device, queue_index, &prop, &format_info, &format_count, format_properties.data());
+        assert(VK_SUCCESS == result);
+
+        for (auto& fp : format_properties) {
+            formats.insert(fp.format);
+        }
+    }
+    return formats;
+}
+
 void DeviceState::FinishDeviceSetup(const VkDeviceCreateInfo* pCreateInfo, const Location& loc) {
     const auto* device_group_ci = vku::FindStructInPNextChain<VkDeviceGroupDeviceCreateInfo>(pCreateInfo->pNext);
     if (device_group_ci) {
@@ -1135,10 +1249,11 @@ void DeviceState::FinishDeviceSetup(const VkDeviceCreateInfo* pCreateInfo, const
         physical_device_count = 1;
     }
 
+    uint32_t num_queue_families = 0;
+    DispatchGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families, nullptr);
+
     // Store queue family data
     if (pCreateInfo->pQueueCreateInfos != nullptr) {
-        uint32_t num_queue_families = 0;
-        DispatchGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families, nullptr);
         std::vector<VkQueueFamilyProperties> queue_family_properties_list(num_queue_families);
         DispatchGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families, queue_family_properties_list.data());
 
@@ -1252,16 +1367,101 @@ void DeviceState::FinishDeviceSetup(const VkDeviceCreateInfo* pCreateInfo, const
     }
 
     if (IsExtEnabled(extensions.vk_arm_data_graph)) {
-        uint32_t n_families{0};
-        DispatchGetPhysicalDeviceQueueFamilyProperties(physical_device, &n_families, nullptr);
-        for (uint32_t i = 0; i < n_families; i++) {
+        for (uint32_t i = 0; i < num_queue_families; i++) {
             std::vector<VkQueueFamilyDataGraphPropertiesARM> family_properties;
             uint32_t n_properties{0};
             DispatchGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(physical_device, i, &n_properties, nullptr);
             family_properties.resize(n_properties, vku::InitStruct<VkQueueFamilyDataGraphPropertiesARM>());
             DispatchGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(physical_device, i, &n_properties, family_properties.data());
-            queue_family_data_graph_properties.try_emplace(i, std::move(family_properties));
+            physical_device_state->data_graph.queue_family_properties.try_emplace(i, std::move(family_properties));
         }
+    }
+
+    if (IsExtEnabled(extensions.vk_arm_data_graph_optical_flow)) {
+        // VK_ARM_data_graph_optical_flow depends on VK_ARM_data_graph
+        assert(IsExtEnabled(extensions.vk_arm_data_graph));
+
+        // make sure we have filled this in
+        assert(!physical_device_state->data_graph.queue_family_properties.empty());
+
+        for (uint32_t i = 0; i < num_queue_families; i++) {
+            for (const auto& prop : physical_device_state->data_graph.queue_family_properties[i]) {
+                if (prop.operation.operationType != VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_OPTICAL_FLOW_ARM) {
+                    continue;
+                }
+                VkQueueFamilyDataGraphOpticalFlowPropertiesARM op_flow_properties = vku::InitStructHelper();
+                VkBaseOutStructure* base_properties = reinterpret_cast<VkBaseOutStructure*>(&op_flow_properties);
+                DispatchGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(physical_device, i, &prop,
+                                                                                          base_properties);
+
+                vvl::PhysicalDevice::DataGraph::QueueAndEngine queue_and_engine{i, prop.engine};
+                physical_device_state->data_graph.optical_flow_properties.try_emplace(queue_and_engine, op_flow_properties);
+
+                vvl::PhysicalDevice::DataGraph::OpticalFlowFormats& of_formats =
+                    physical_device_state->data_graph.optical_flow_formats;
+                of_formats.input.try_emplace(
+                    queue_and_engine, GetOpticalFlowFormats(i, prop.engine, VK_DATA_GRAPH_OPTICAL_FLOW_IMAGE_USAGE_INPUT_BIT_ARM));
+                of_formats.output.try_emplace(
+                    queue_and_engine, GetOpticalFlowFormats(i, prop.engine, VK_DATA_GRAPH_OPTICAL_FLOW_IMAGE_USAGE_OUTPUT_BIT_ARM));
+                of_formats.cost.try_emplace(
+                    queue_and_engine, GetOpticalFlowFormats(i, prop.engine, VK_DATA_GRAPH_OPTICAL_FLOW_IMAGE_USAGE_COST_BIT_ARM));
+            }
+        }
+    }
+
+    if (IsExtEnabled(extensions.vk_arm_data_graph_instruction_set_tosa)) {
+        // VK_ARM_data_graph_instruction_set_tosa depends on VK_ARM_data_graph
+        assert(IsExtEnabled(extensions.vk_arm_data_graph));
+
+        // make sure we have filled this in
+        assert(!physical_device_state->data_graph.queue_family_properties.empty());
+
+        for (uint32_t i = 0; i < num_queue_families; i++) {
+            VkQueueFamilyDataGraphTOSAPropertiesARM tosa_properties = vku::InitStructHelper();
+            for (const auto& prop : physical_device_state->data_graph.queue_family_properties[i]) {
+                if (prop.operation.operationType !=
+                    VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_SPIRV_EXTENDED_INSTRUCTION_SET_ARM) {
+                    continue;
+                }
+                auto* base_properties = reinterpret_cast<VkBaseOutStructure*>(&tosa_properties);
+                DispatchGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(physical_device, i, &prop,
+                                                                                          base_properties);
+                physical_device_state->data_graph.tosa_properties.try_emplace({i, prop.engine}, tosa_properties);
+            }
+        }
+    }
+
+    if (IsExtEnabled(extensions.vk_ext_descriptor_heap) || IsExtEnabled(extensions.vk_ext_descriptor_buffer)) {
+        cached_descriptor_size.Init(*this);
+        descriptor_hashing = std::make_unique<DescriptorHashing>(global_settings.descriptor_hashing_total_descriptors);
+        if (IsExtEnabled(extensions.vk_ext_descriptor_heap)) {
+            descriptor_hashing->heap_all_descriptor_sizes = cached_descriptor_size.GetAllSizes(true);
+            for (VkDeviceSize size : descriptor_hashing->heap_all_descriptor_sizes) {
+                if (size > descriptor_hashing->heap_max_descriptor_size) {
+                    descriptor_hashing->heap_max_descriptor_size = size;
+                }
+            }
+        }
+        if (IsExtEnabled(extensions.vk_ext_descriptor_buffer)) {
+            descriptor_hashing->buffer_all_descriptor_sizes = cached_descriptor_size.GetAllSizes(false);
+            for (VkDeviceSize size : descriptor_hashing->buffer_all_descriptor_sizes) {
+                if (size > descriptor_hashing->buffer_max_descriptor_size) {
+                    descriptor_hashing->buffer_max_descriptor_size = size;
+                }
+            }
+        }
+
+        // |force_on_robustness| marks the "modified" feature so need to check for both
+        if (enabled_features.nullDescriptor || gpuav_settings.force_on_robustness) {
+            descriptor_hashing->null_descriptor_allowed = true;
+        }
+    } else if (global_settings.descriptor_hashing) {
+        // In theory this shouldn't need to be turned off, but there are cases where we use
+        // |descriptor_hashing->map_lock| and it can be null
+        global_settings.descriptor_hashing = false;
+        LogWarning("WARNING-Setting-Limit-Adjusted", device, loc,
+                   "|descriptor_hashing| was enabled, but neither VK_EXT_descriptor_heap nor VK_EXT_descriptor_buffer was enabled. "
+                   "[Disabling descriptor_hashing]");
     }
 
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
@@ -2259,6 +2459,31 @@ bool DeviceState::PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPipe
     return skip;
 }
 
+void DeviceState::PreCallRecordCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t count,
+                                                       const VkGraphicsPipelineCreateInfo* pCreateInfos,
+                                                       const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
+                                                       const RecordObject& record_obj, PipelineStates& pipeline_states,
+                                                       chassis::CreateGraphicsPipelines& chassis_state) {
+    // Can't call in PreCallValidate as that is a const function
+    //
+    // Normally this would be called during
+    //    Add(std::move(pipeline_states[i]));
+    // but we do the notify first to create subset
+    for (uint32_t i = 0; i < count; i++) {
+        NotifyCreatedPipeline(*pipeline_states[i]);
+    }
+}
+
+// GPL was the worst thing ever added... we have to make MORE hacks around the fact we create a Pipeline state object in
+// PreCallValidate. The goal of this is go ahead of create the PipelineSubState such that GPU-AV can use it in PreCallRecord...I'm
+// just as mad as you are reading this that we have this.
+void DeviceState::NotifyCreatedPipeline(vvl::Pipeline& pipeline_state) {
+    // Normally called on Add()
+    for (auto& item : proxies) {
+        item.second.Created(pipeline_state);
+    }
+}
+
 void DeviceState::PostCallRecordCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t count,
                                                         const VkGraphicsPipelineCreateInfo* pCreateInfos,
                                                         const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
@@ -2303,6 +2528,16 @@ bool DeviceState::PreCallValidateCreateComputePipelines(VkDevice device, VkPipel
             &pCreateInfos[i], pipeline_cache, Get<PipelineLayout>(pCreateInfos[i].layout), &chassis_state.stateless_data));
     }
     return false;
+}
+
+void DeviceState::PreCallRecordCreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t count,
+                                                      const VkComputePipelineCreateInfo* pCreateInfos,
+                                                      const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
+                                                      const RecordObject& record_obj, PipelineStates& pipeline_states,
+                                                      chassis::CreateComputePipelines& chassis_state) {
+    for (uint32_t i = 0; i < count; i++) {
+        NotifyCreatedPipeline(*pipeline_states[i]);
+    }
 }
 
 void DeviceState::PostCallRecordCreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t count,
@@ -2391,6 +2626,17 @@ bool DeviceState::PreCallValidateCreateRayTracingPipelinesKHR(VkDevice device, V
             &pCreateInfos[i], pipeline_cache, Get<PipelineLayout>(pCreateInfos[i].layout), chassis_state.stateless_data));
     }
     return false;
+}
+
+void DeviceState::PreCallRecordCreateRayTracingPipelinesKHR(VkDevice device, VkDeferredOperationKHR deferredOperation,
+                                                            VkPipelineCache pipelineCache, uint32_t count,
+                                                            const VkRayTracingPipelineCreateInfoKHR* pCreateInfos,
+                                                            const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
+                                                            const RecordObject& record_obj, PipelineStates& pipeline_states,
+                                                            chassis::CreateRayTracingPipelinesKHR& chassis_state) {
+    for (uint32_t i = 0; i < count; i++) {
+        NotifyCreatedPipeline(*pipeline_states[i]);
+    }
 }
 
 void DeviceState::PostCallRecordCreateRayTracingPipelinesKHR(VkDevice device, VkDeferredOperationKHR deferredOperation,
@@ -2853,30 +3099,10 @@ void DeviceState::PostCallRecordCreateAccelerationStructure2KHR(VkDevice device,
     Add(std::make_shared<AccelerationStructureKHR>(*this, pCreateInfo, *pAccelerationStructure));
 }
 
-void DeviceState::PostCallRecordBuildAccelerationStructuresKHR(
-    VkDevice device, VkDeferredOperationKHR deferredOperation, uint32_t infoCount,
-    const VkAccelerationStructureBuildGeometryInfoKHR* pInfos,
-    const VkAccelerationStructureBuildRangeInfoKHR* const* ppBuildRangeInfos, const RecordObject& record_obj) {
-    // Discussion what a failed build with multiple AccelerationStructures would mean
-    // https://gitlab.khronos.org/vulkan/vulkan/-/issues/4254
-    if (record_obj.result != VK_SUCCESS) {
-        return;
-    }
-
-    for (uint32_t i = 0; i < infoCount; ++i) {
-        if (auto dst_as_state = Get<AccelerationStructureKHR>(pInfos[i].dstAccelerationStructure)) {
-            dst_as_state->Build(&pInfos[i], true, *ppBuildRangeInfos);
-        }
-    }
-}
-
 // helper method for device side acceleration structure builds
 void DeviceState::RecordDeviceAccelerationStructureBuildInfo(CommandBuffer& cb_state,
                                                              const VkAccelerationStructureBuildGeometryInfoKHR& info) {
     auto dst_as_state = Get<AccelerationStructureKHR>(info.dstAccelerationStructure);
-    if (dst_as_state) {
-        dst_as_state->Build(&info, false, nullptr);
-    }
     if (disabled[command_buffer_state]) {
         return;
     }
@@ -2901,9 +3127,6 @@ void DeviceState::PostCallRecordCmdBuildAccelerationStructuresKHR(
     cb_state->RecordCommand(record_obj.location);
     for (const auto [i, info] : enumerate(pInfos, infoCount)) {
         RecordDeviceAccelerationStructureBuildInfo(*cb_state, info);
-        if (auto dst_as_state = Get<AccelerationStructureKHR>(info.dstAccelerationStructure)) {
-            dst_as_state->UpdateBuildRangeInfos(ppBuildRangeInfos[i], info.geometryCount);
-        }
     }
 }
 
@@ -3049,6 +3272,19 @@ void DeviceState::PreCallRecordDestroyAccelerationStructureKHR(VkDevice device, 
             as_state->SetAccelerationStructureAddress(0);
         }
     }
+    // Remove any serialized_as_map_ entries whose source AS is being destroyed.
+    // Without this, the map grows unboundedly because entries are never removed.
+    // Once the source AS is gone its build info can no longer be propagated anyway.
+    {
+        WriteLockGuard guard(serialized_as_map_lock_);
+        for (auto it = serialized_as_map_.begin(); it != serialized_as_map_.end();) {
+            if (it->second == accelerationStructure) {
+                it = serialized_as_map_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
     Destroy<AccelerationStructureKHR>(accelerationStructure);
 }
 
@@ -3166,7 +3402,7 @@ void DeviceState::PostCallRecordCmdBindDescriptorSets(VkCommandBuffer commandBuf
     cb_state->UpdateLastBoundDescriptorSets(pipelineBindPoint, pipeline_layout, firstSet, setCount, pDescriptorSets, no_push_desc,
                                             dynamicOffsetCount, pDynamicOffsets, record_obj.location);
 
-    cb_state->SetDescriptorMode(vvl::DescriptorModeClassic, record_obj.location.function);
+    cb_state->SetDescriptorMode(DescriptorModeClassic, record_obj.location.function);
 }
 
 void DeviceState::PostCallRecordCmdBindDescriptorSets2(VkCommandBuffer commandBuffer,
@@ -3202,7 +3438,7 @@ void DeviceState::PostCallRecordCmdBindDescriptorSets2(VkCommandBuffer commandBu
             pBindDescriptorSetsInfo->dynamicOffsetCount, pBindDescriptorSetsInfo->pDynamicOffsets, record_obj.location);
     }
 
-    cb_state->SetDescriptorMode(vvl::DescriptorModeClassic, record_obj.location.function);
+    cb_state->SetDescriptorMode(DescriptorModeClassic, record_obj.location.function);
 }
 
 void DeviceState::PostCallRecordCmdBindDescriptorSets2KHR(VkCommandBuffer commandBuffer,
@@ -3222,9 +3458,9 @@ void DeviceState::PostCallRecordCmdPushDescriptorSet(VkCommandBuffer commandBuff
                                      record_obj.location);
 
     if (pipeline_layout->has_descriptor_buffer) {
-        cb_state->SetDescriptorMode(vvl::DescriptorModeBuffer, record_obj.location.function);
+        cb_state->SetDescriptorMode(DescriptorModeBuffer, record_obj.location.function);
     } else {
-        cb_state->SetDescriptorMode(vvl::DescriptorModeClassic, record_obj.location.function);
+        cb_state->SetDescriptorMode(DescriptorModeClassic, record_obj.location.function);
     }
 }
 
@@ -3259,9 +3495,9 @@ void DeviceState::PostCallRecordCmdPushDescriptorSet2(VkCommandBuffer commandBuf
     }
 
     if (pipeline_layout->has_descriptor_buffer) {
-        cb_state->SetDescriptorMode(vvl::DescriptorModeBuffer, record_obj.location.function);
+        cb_state->SetDescriptorMode(DescriptorModeBuffer, record_obj.location.function);
     } else {
-        cb_state->SetDescriptorMode(vvl::DescriptorModeClassic, record_obj.location.function);
+        cb_state->SetDescriptorMode(DescriptorModeClassic, record_obj.location.function);
     }
 }
 
@@ -3275,22 +3511,12 @@ void DeviceState::PostCallRecordCmdBindDescriptorBuffersEXT(VkCommandBuffer comm
                                                             const VkDescriptorBufferBindingInfoEXT* pBindingInfos,
                                                             const RecordObject& record_obj) {
     auto cb_state = Get<CommandBuffer>(commandBuffer);
-    cb_state->descriptor_buffer.ever_bound = true;
+    cb_state->RecordBindDescriptorBuffer(*this, bufferCount, pBindingInfos, record_obj.location);
 
-    cb_state->descriptor_buffer.binding_info.resize(bufferCount);
-    for (uint32_t i = 0; i < bufferCount; i++) {
-        const VkDescriptorBufferBindingInfoEXT& binding_info = pBindingInfos[i];
-        VkBufferUsageFlags2 buffer_usage = binding_info.usage;
-        if (const auto usage_flags2 = vku::FindStructInPNextChain<VkBufferUsageFlags2CreateInfo>(binding_info.pNext)) {
-            buffer_usage = usage_flags2->usage;
-        }
-
-        cb_state->descriptor_buffer.binding_info[i] = {binding_info.address, buffer_usage};
-    }
-
-    // So really this should be set at vkCmdSetDescriptorBufferOffsetsEXT time where the bindpoint is known.
-    // In practice, setting it here is better as if the app messes up, it might crash things.
-    cb_state->SetDescriptorMode(DescriptorModeBuffer, record_obj.location.function);
+    // We tried to once call SetDescriptorMode(DescriptorModeBuffer) here
+    // but after much discussion
+    // (https://gitlab.khronos.org/vulkan/vulkan/-/merge_requests/7504#note_546442)
+    // it seems this call alone is not the correct spot to invalidate anything
 }
 
 void DeviceState::PostCallRecordCmdBindDescriptorBufferEmbeddedSamplersEXT(VkCommandBuffer commandBuffer,
@@ -3298,6 +3524,11 @@ void DeviceState::PostCallRecordCmdBindDescriptorBufferEmbeddedSamplersEXT(VkCom
                                                                            VkPipelineLayout layout, uint32_t set,
                                                                            const RecordObject& record_obj) {
     auto cb_state = Get<CommandBuffer>(commandBuffer);
+    auto pipeline_layout = Get<PipelineLayout>(layout);
+    ASSERT_AND_RETURN(pipeline_layout);
+
+    LastBound& last_bound = cb_state->lastBound[ConvertToVvlBindPoint(pipelineBindPoint)];
+    cb_state->UpdateLastBoundDescriptorBuffersEmbedded(last_bound, pipeline_layout, set);
     cb_state->SetDescriptorMode(DescriptorModeBuffer, record_obj.location.function);
 }
 
@@ -3305,6 +3536,26 @@ void DeviceState::PostCallRecordCmdBindDescriptorBufferEmbeddedSamplers2EXT(
     VkCommandBuffer commandBuffer, const VkBindDescriptorBufferEmbeddedSamplersInfoEXT* pBindDescriptorBufferEmbeddedSamplersInfo,
     const RecordObject& record_obj) {
     auto cb_state = Get<CommandBuffer>(commandBuffer);
+
+    auto pipeline_layout = Get<PipelineLayout>(pBindDescriptorBufferEmbeddedSamplersInfo->layout);
+    ASSERT_AND_RETURN(pipeline_layout);
+
+    if (IsStageInPipelineBindPoint(pBindDescriptorBufferEmbeddedSamplersInfo->stageFlags, VK_PIPELINE_BIND_POINT_GRAPHICS)) {
+        LastBound& last_bound = cb_state->lastBound[BindPointGraphics];
+        cb_state->UpdateLastBoundDescriptorBuffersEmbedded(last_bound, pipeline_layout,
+                                                           pBindDescriptorBufferEmbeddedSamplersInfo->set);
+    }
+    if (IsStageInPipelineBindPoint(pBindDescriptorBufferEmbeddedSamplersInfo->stageFlags, VK_PIPELINE_BIND_POINT_COMPUTE)) {
+        LastBound& last_bound = cb_state->lastBound[BindPointCompute];
+        cb_state->UpdateLastBoundDescriptorBuffersEmbedded(last_bound, pipeline_layout,
+                                                           pBindDescriptorBufferEmbeddedSamplersInfo->set);
+    }
+    if (IsStageInPipelineBindPoint(pBindDescriptorBufferEmbeddedSamplersInfo->stageFlags, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR)) {
+        LastBound& last_bound = cb_state->lastBound[BindPointRayTracing];
+        cb_state->UpdateLastBoundDescriptorBuffersEmbedded(last_bound, pipeline_layout,
+                                                           pBindDescriptorBufferEmbeddedSamplersInfo->set);
+    }
+
     cb_state->SetDescriptorMode(DescriptorModeBuffer, record_obj.location.function);
 }
 
@@ -3317,9 +3568,10 @@ void DeviceState::PostCallRecordCmdSetDescriptorBufferOffsetsEXT(VkCommandBuffer
     auto pipeline_layout = Get<PipelineLayout>(layout);
     ASSERT_AND_RETURN(pipeline_layout);
 
-    cb_state->UpdateLastBoundDescriptorBuffers(pipelineBindPoint, pipeline_layout, firstSet, setCount, pBufferIndices, pOffsets);
+    LastBound& last_bound = cb_state->lastBound[ConvertToVvlBindPoint(pipelineBindPoint)];
+    cb_state->UpdateLastBoundDescriptorBuffers(last_bound, pipeline_layout, firstSet, setCount, pBufferIndices, pOffsets);
 
-    cb_state->SetDescriptorMode(vvl::DescriptorModeBuffer, record_obj.location.function);
+    cb_state->SetDescriptorMode(DescriptorModeBuffer, record_obj.location.function);
 }
 
 void DeviceState::PostCallRecordCmdSetDescriptorBufferOffsets2EXT(
@@ -3330,25 +3582,25 @@ void DeviceState::PostCallRecordCmdSetDescriptorBufferOffsets2EXT(
     ASSERT_AND_RETURN(pipeline_layout);
 
     if (IsStageInPipelineBindPoint(pSetDescriptorBufferOffsetsInfo->stageFlags, VK_PIPELINE_BIND_POINT_GRAPHICS)) {
+        LastBound& last_bound = cb_state->lastBound[BindPointGraphics];
         cb_state->UpdateLastBoundDescriptorBuffers(
-            VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, pSetDescriptorBufferOffsetsInfo->firstSet,
-            pSetDescriptorBufferOffsetsInfo->setCount, pSetDescriptorBufferOffsetsInfo->pBufferIndices,
-            pSetDescriptorBufferOffsetsInfo->pOffsets);
+            last_bound, pipeline_layout, pSetDescriptorBufferOffsetsInfo->firstSet, pSetDescriptorBufferOffsetsInfo->setCount,
+            pSetDescriptorBufferOffsetsInfo->pBufferIndices, pSetDescriptorBufferOffsetsInfo->pOffsets);
     }
     if (IsStageInPipelineBindPoint(pSetDescriptorBufferOffsetsInfo->stageFlags, VK_PIPELINE_BIND_POINT_COMPUTE)) {
+        LastBound& last_bound = cb_state->lastBound[BindPointCompute];
         cb_state->UpdateLastBoundDescriptorBuffers(
-            VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout, pSetDescriptorBufferOffsetsInfo->firstSet,
-            pSetDescriptorBufferOffsetsInfo->setCount, pSetDescriptorBufferOffsetsInfo->pBufferIndices,
-            pSetDescriptorBufferOffsetsInfo->pOffsets);
+            last_bound, pipeline_layout, pSetDescriptorBufferOffsetsInfo->firstSet, pSetDescriptorBufferOffsetsInfo->setCount,
+            pSetDescriptorBufferOffsetsInfo->pBufferIndices, pSetDescriptorBufferOffsetsInfo->pOffsets);
     }
     if (IsStageInPipelineBindPoint(pSetDescriptorBufferOffsetsInfo->stageFlags, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR)) {
+        LastBound& last_bound = cb_state->lastBound[BindPointRayTracing];
         cb_state->UpdateLastBoundDescriptorBuffers(
-            VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipeline_layout, pSetDescriptorBufferOffsetsInfo->firstSet,
-            pSetDescriptorBufferOffsetsInfo->setCount, pSetDescriptorBufferOffsetsInfo->pBufferIndices,
-            pSetDescriptorBufferOffsetsInfo->pOffsets);
+            last_bound, pipeline_layout, pSetDescriptorBufferOffsetsInfo->firstSet, pSetDescriptorBufferOffsetsInfo->setCount,
+            pSetDescriptorBufferOffsetsInfo->pBufferIndices, pSetDescriptorBufferOffsetsInfo->pOffsets);
     }
 
-    cb_state->SetDescriptorMode(vvl::DescriptorModeBuffer, record_obj.location.function);
+    cb_state->SetDescriptorMode(DescriptorModeBuffer, record_obj.location.function);
 }
 
 void DeviceState::PostCallRecordCmdPushConstants(VkCommandBuffer commandBuffer, VkPipelineLayout layout,
@@ -3362,8 +3614,8 @@ void DeviceState::PostCallRecordCmdPushConstants(VkCommandBuffer commandBuffer, 
     cb_state->RecordPushConstants(*pipeline_layout_state, stageFlags, offset, size, pValues);
 
     const DescriptorMode descriptor_mode =
-        pipeline_layout_state->has_descriptor_buffer ? vvl::DescriptorModeBuffer : vvl::DescriptorModeClassic;
-    cb_state->InvalidateDescriptorMode(vvl::DescriptorModeHeap, descriptor_mode, record_obj.location.function);
+        pipeline_layout_state->has_descriptor_buffer ? DescriptorModeBuffer : DescriptorModeClassic;
+    cb_state->InvalidateDescriptorMode(DescriptorModeHeap, descriptor_mode, record_obj.location.function);
 }
 
 void DeviceState::PostCallRecordCmdPushConstants2(VkCommandBuffer commandBuffer, const VkPushConstantsInfo* pPushConstantsInfo,
@@ -3538,7 +3790,7 @@ void DeviceState::PostCallRecordCmdWaitEvents(VkCommandBuffer commandBuffer, uin
                                               const RecordObject& record_obj) {
     auto cb_state = GetWrite<CommandBuffer>(commandBuffer);
     cb_state->RecordCommand(record_obj.location);
-    cb_state->RecordWaitEvents(vvl::make_span(pEvents, eventCount), srcStageMask, record_obj.location);
+    cb_state->RecordWaitEvents(vvl::make_span(pEvents, eventCount), srcStageMask, dstStageMask, record_obj.location);
     cb_state->RecordBarrierObjects(bufferMemoryBarrierCount, pBufferMemoryBarriers, imageMemoryBarrierCount, pImageMemoryBarriers,
                                    srcStageMask, dstStageMask, record_obj.location);
 }
@@ -3679,6 +3931,14 @@ void DeviceState::PostCallRecordCmdWriteAccelerationStructuresPropertiesKHR(
     VkQueryType queryType, VkQueryPool queryPool, uint32_t firstQuery, const RecordObject& record_obj) {
     auto cb_state = GetWrite<CommandBuffer>(commandBuffer);
     cb_state->RecordWriteAccelerationStructuresProperties(queryPool, firstQuery, accelerationStructureCount, record_obj.location);
+}
+
+void DeviceState::PostCallRecordCmdWriteMicromapsPropertiesEXT(VkCommandBuffer commandBuffer, uint32_t micromapCount,
+                                                               const VkMicromapEXT* pMicromaps, VkQueryType queryType,
+                                                               VkQueryPool queryPool, uint32_t firstQuery,
+                                                               const RecordObject& record_obj) {
+    auto cb_state = GetWrite<CommandBuffer>(commandBuffer);
+    cb_state->RecordWriteAccelerationStructuresProperties(queryPool, firstQuery, micromapCount, record_obj.location);
 }
 
 void DeviceState::PostCallRecordCreateVideoSessionKHR(VkDevice device, const VkVideoSessionCreateInfoKHR* pCreateInfo,
@@ -4137,15 +4397,33 @@ void DeviceState::PostCallRecordBindImageMemory2KHR(VkDevice device, uint32_t bi
     PostCallRecordBindImageMemory2(device, bindInfoCount, pBindInfos, record_obj);
 }
 
+void DeviceState::PostCallRecordResetEvent(VkDevice device, VkEvent event, const RecordObject& record_obj) {
+    if (record_obj.result != VK_SUCCESS) {
+        return;
+    }
+    auto event_state = Get<Event>(event);
+    const bool can_unsignal = event_state && event_state->signaled;
+    if (can_unsignal) {
+        event_state->signaled = false;
+        event_state->signal_dependency_info.reset();
+        event_state->signal_src_stage_mask = VK_PIPELINE_STAGE_NONE;
+        event_state->signaling_queue = VK_NULL_HANDLE;
+        event_state->last_signaling_command = vvl::Func::vkResetEvent;
+    }
+}
+
 void DeviceState::PostCallRecordSetEvent(VkDevice device, VkEvent event, const RecordObject& record_obj) {
     if (record_obj.result != VK_SUCCESS) {
         return;
     }
-    if (auto event_state = Get<Event>(event)) {
+    auto event_state = Get<Event>(event);
+    const bool can_signal = event_state && !event_state->signaled;
+    if (can_signal) {
         event_state->signaled = true;
         event_state->signal_dependency_info.reset();
         event_state->signal_src_stage_mask = VK_PIPELINE_STAGE_HOST_BIT;
         event_state->signaling_queue = VK_NULL_HANDLE;
+        event_state->last_signaling_command = vvl::Func::vkSetEvent;
     }
 }
 
@@ -4169,7 +4447,7 @@ void InstanceState::PostCallRecordCreateWin32SurfaceKHR(VkInstance instance, con
     if (record_obj.result != VK_SUCCESS) {
         return;
     }
-    RecordVulkanSurface(pSurface);
+    RecordVulkanSurface(pSurface, SurfaceType::Win32);
 }
 
 void DeviceState::PostCallRecordAcquireFullScreenExclusiveModeEXT(VkDevice device, VkSwapchainKHR swapchain,
@@ -4394,6 +4672,16 @@ void DeviceState::RecordCreateSwapchainState(VkResult result, const VkSwapchainC
         if (old_swapchain_state) {
             old_swapchain_state->new_swapchain = swapchain;
             swapchain->old_swapchain = old_swapchain_state->shared_from_this();
+
+            // Add all currently waiting present semaphores on images
+            // of the old swapchain to the list that will be cleared when
+            // a present completes on the new swapchain.
+            // see SwapchainImage::ResetPresentWaitSemaphores()
+            for (auto& image : old_swapchain_state->images) {
+                swapchain->old_swapchain_present_wait_semaphores.insert(swapchain->old_swapchain_present_wait_semaphores.end(),
+                                                                        image.present_wait_semaphores.begin(),
+                                                                        image.present_wait_semaphores.end());
+            }
         }
         Add(std::move(swapchain));
     } else {
@@ -4574,9 +4862,9 @@ void DeviceState::PostCallRecordQueuePresentKHR(VkQueue queue, const VkPresentIn
         uint64_t present_id = 0;
         // TODO - need to know what happens if both are included
         // https://gitlab.khronos.org/vulkan/vulkan/-/issues/4317
-        if (present_id_info_2 && i < present_id_info_2->swapchainCount) {
+        if (present_id_info_2 && i < present_id_info_2->swapchainCount && present_id_info_2->pPresentIds) {
             present_id = present_id_info_2->pPresentIds[i];
-        } else if (present_id_info && i < present_id_info->swapchainCount) {
+        } else if (present_id_info && i < present_id_info->swapchainCount && present_id_info->pPresentIds) {
             present_id = present_id_info->pPresentIds[i];
         }
 
@@ -4853,7 +5141,7 @@ void InstanceState::PreCallRecordDestroySurfaceKHR(VkInstance instance, VkSurfac
     Destroy<Surface>(surface);
 }
 
-void InstanceState::RecordVulkanSurface(VkSurfaceKHR* pSurface) { Add(std::make_shared<Surface>(*pSurface)); }
+void InstanceState::RecordVulkanSurface(VkSurfaceKHR* pSurface, SurfaceType type) { Add(std::make_shared<Surface>(*pSurface, type)); }
 
 void InstanceState::PostCallRecordCreateDisplayPlaneSurfaceKHR(VkInstance instance,
                                                                const VkDisplaySurfaceCreateInfoKHR* pCreateInfo,
@@ -4862,7 +5150,7 @@ void InstanceState::PostCallRecordCreateDisplayPlaneSurfaceKHR(VkInstance instan
     if (record_obj.result != VK_SUCCESS) {
         return;
     }
-    RecordVulkanSurface(pSurface);
+    RecordVulkanSurface(pSurface, SurfaceType::DisplayPlane);
 }
 
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
@@ -4872,7 +5160,7 @@ void InstanceState::PostCallRecordCreateAndroidSurfaceKHR(VkInstance instance, c
     if (record_obj.result != VK_SUCCESS) {
         return;
     }
-    RecordVulkanSurface(pSurface);
+    RecordVulkanSurface(pSurface, SurfaceType::Android);
 }
 #endif  // VK_USE_PLATFORM_ANDROID_KHR
 
@@ -4884,7 +5172,7 @@ void InstanceState::PostCallRecordCreateImagePipeSurfaceFUCHSIA(VkInstance insta
     if (record_obj.result != VK_SUCCESS) {
         return;
     }
-    RecordVulkanSurface(pSurface);
+    RecordVulkanSurface(pSurface, SurfaceType::ImagePipe_FUCHSIA);
 }
 #endif  // VK_USE_PLATFORM_FUCHSIA
 
@@ -4895,7 +5183,7 @@ void InstanceState::PostCallRecordCreateIOSSurfaceMVK(VkInstance instance, const
     if (record_obj.result != VK_SUCCESS) {
         return;
     }
-    RecordVulkanSurface(pSurface);
+    RecordVulkanSurface(pSurface, SurfaceType::IOS_MVK);
 }
 #endif  // VK_USE_PLATFORM_IOS_MVK
 
@@ -4906,7 +5194,7 @@ void InstanceState::PostCallRecordCreateMacOSSurfaceMVK(VkInstance instance, con
     if (record_obj.result != VK_SUCCESS) {
         return;
     }
-    RecordVulkanSurface(pSurface);
+    RecordVulkanSurface(pSurface, SurfaceType::MacOS_MVK);
 }
 #endif  // VK_USE_PLATFORM_MACOS_MVK
 
@@ -4917,7 +5205,7 @@ void InstanceState::PostCallRecordCreateMetalSurfaceEXT(VkInstance instance, con
     if (record_obj.result != VK_SUCCESS) {
         return;
     }
-    RecordVulkanSurface(pSurface);
+    RecordVulkanSurface(pSurface, SurfaceType::Metal);
 }
 #endif  // VK_USE_PLATFORM_METAL_EXT
 
@@ -4928,7 +5216,7 @@ void InstanceState::PostCallRecordCreateWaylandSurfaceKHR(VkInstance instance, c
     if (record_obj.result != VK_SUCCESS) {
         return;
     }
-    RecordVulkanSurface(pSurface);
+    RecordVulkanSurface(pSurface, SurfaceType::Wayland);
 }
 #endif  // VK_USE_PLATFORM_WAYLAND_KHR
 
@@ -4942,7 +5230,7 @@ void InstanceState::PostCallRecordCreateXcbSurfaceKHR(VkInstance instance, const
 #if defined(DEBUG_CAPTURE_KEYBOARD)
     xcb_connection = (void*)pCreateInfo->connection;
 #endif
-    RecordVulkanSurface(pSurface);
+    RecordVulkanSurface(pSurface, SurfaceType::Xcb);
 }
 #endif  // VK_USE_PLATFORM_XCB_KHR
 
@@ -4956,7 +5244,7 @@ void InstanceState::PostCallRecordCreateXlibSurfaceKHR(VkInstance instance, cons
 #if defined(DEBUG_CAPTURE_KEYBOARD)
     xlib_display = (void*)pCreateInfo->dpy;
 #endif
-    RecordVulkanSurface(pSurface);
+    RecordVulkanSurface(pSurface, SurfaceType::Xlib);
 }
 #endif  // VK_USE_PLATFORM_XLIB_KHR
 
@@ -4967,7 +5255,7 @@ void InstanceState::PostCallRecordCreateScreenSurfaceQNX(VkInstance instance, co
     if (record_obj.result != VK_SUCCESS) {
         return;
     }
-    RecordVulkanSurface(pSurface);
+    RecordVulkanSurface(pSurface, SurfaceType::Screen_QNX);
 }
 #endif  // VK_USE_PLATFORM_SCREEN_QNX
 
@@ -4977,7 +5265,7 @@ void InstanceState::PostCallRecordCreateHeadlessSurfaceEXT(VkInstance instance, 
     if (record_obj.result != VK_SUCCESS) {
         return;
     }
-    RecordVulkanSurface(pSurface);
+    RecordVulkanSurface(pSurface, SurfaceType::Headless);
 }
 
 void InstanceState::PostCallRecordGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
@@ -5253,9 +5541,9 @@ void DeviceState::PostCallRecordCmdPushDescriptorSetWithTemplate(VkCommandBuffer
     auto pipeline_layout = Get<PipelineLayout>(layout);
 
     if (pipeline_layout->has_descriptor_buffer) {
-        cb_state->SetDescriptorMode(vvl::DescriptorModeBuffer, record_obj.location.function);
+        cb_state->SetDescriptorMode(DescriptorModeBuffer, record_obj.location.function);
     } else {
-        cb_state->SetDescriptorMode(vvl::DescriptorModeClassic, record_obj.location.function);
+        cb_state->SetDescriptorMode(DescriptorModeClassic, record_obj.location.function);
     }
 
     if (!template_state || !pipeline_layout) {
@@ -5286,9 +5574,9 @@ void DeviceState::PostCallRecordCmdPushDescriptorSetWithTemplate2(
     auto pipeline_layout = Get<PipelineLayout>(pPushDescriptorSetWithTemplateInfo->layout);
 
     if (pipeline_layout->has_descriptor_buffer) {
-        cb_state->SetDescriptorMode(vvl::DescriptorModeBuffer, record_obj.location.function);
+        cb_state->SetDescriptorMode(DescriptorModeBuffer, record_obj.location.function);
     } else {
-        cb_state->SetDescriptorMode(vvl::DescriptorModeClassic, record_obj.location.function);
+        cb_state->SetDescriptorMode(DescriptorModeClassic, record_obj.location.function);
     }
 
     if (!template_state || !pipeline_layout) {
@@ -5852,17 +6140,32 @@ void DeviceState::PostCallRecordCreateShadersEXT(VkDevice device, uint32_t creat
     }
 }
 
-void DeviceState::PostCallRecordCopyAccelerationStructureKHR(VkDevice device, VkDeferredOperationKHR deferredOperation,
-                                                             const VkCopyAccelerationStructureInfoKHR* pInfo,
-                                                             const RecordObject& record_obj) {
+void DeviceState::PostCallRecordCopyAccelerationStructureToMemoryKHR(VkDevice device, VkDeferredOperationKHR deferredOperation,
+                                                                     const VkCopyAccelerationStructureToMemoryInfoKHR* pInfo,
+                                                                     const RecordObject& record_obj) {
     // Might be deferred
     if (record_obj.result < VK_SUCCESS) {
         return;
     }
-    auto src_as_state = Get<AccelerationStructureKHR>(pInfo->src);
+    // Record the mapping from serialized host address to original AS handle,
+    // so that when the data is later deserialized, we can copy the build info.
+    if (pInfo->mode == VK_COPY_ACCELERATION_STRUCTURE_MODE_SERIALIZE_KHR && pInfo->dst.hostAddress != nullptr) {
+        WriteLockGuard guard(serialized_as_map_lock_);
+        serialized_as_map_[pInfo->dst.hostAddress] = pInfo->src;
+    }
+}
+
+void DeviceState::PostCallRecordCopyMemoryToAccelerationStructureKHR(VkDevice device, VkDeferredOperationKHR deferredOperation,
+                                                                     const VkCopyMemoryToAccelerationStructureInfoKHR* pInfo,
+                                                                     const RecordObject& record_obj) {
+    // Might be deferred
+    if (record_obj.result < VK_SUCCESS) {
+        return;
+    }
     auto dst_as_state = Get<AccelerationStructureKHR>(pInfo->dst);
-    if (dst_as_state && src_as_state) {
-        dst_as_state->SetBuildInfo(src_as_state->GetBuildInfo());
+    ASSERT_AND_RETURN(dst_as_state);
+    if (pInfo->mode == VK_COPY_ACCELERATION_STRUCTURE_MODE_DESERIALIZE_KHR) {
+        dst_as_state->MarkAsDeserialized();
     }
 }
 
@@ -5875,7 +6178,6 @@ void DeviceState::PostCallRecordCmdCopyAccelerationStructureKHR(VkCommandBuffer 
     auto src_as_state = Get<AccelerationStructureKHR>(pInfo->src);
     auto dst_as_state = Get<AccelerationStructureKHR>(pInfo->dst);
     if (dst_as_state && src_as_state) {
-        dst_as_state->SetBuildInfo(src_as_state->GetBuildInfo());
         if (!disabled[command_buffer_state]) {
             cb_state->AddChild(dst_as_state);
             cb_state->AddChild(src_as_state);
@@ -5902,9 +6204,15 @@ void DeviceState::PostCallRecordCmdCopyMemoryToAccelerationStructureKHR(VkComman
                                                                         const RecordObject& record_obj) {
     auto cb_state = GetWrite<CommandBuffer>(commandBuffer);
     cb_state->RecordCommand(record_obj.location);
+
+    auto dst_as_state = Get<AccelerationStructureKHR>(pInfo->dst);
+    ASSERT_AND_RETURN(dst_as_state);
+
+    if (pInfo->mode == VK_COPY_ACCELERATION_STRUCTURE_MODE_DESERIALIZE_KHR) {
+        dst_as_state->MarkAsDeserialized();
+    }
+
     if (!disabled[command_buffer_state]) {
-        auto dst_as_state = Get<AccelerationStructureKHR>(pInfo->dst);
-        ASSERT_AND_RETURN(dst_as_state);
         cb_state->AddChild(dst_as_state);
 
         // Issue https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/6461
@@ -6639,7 +6947,7 @@ std::shared_ptr<Swapchain> DeviceState::CreateSwapchainState(const VkSwapchainCr
 
 std::shared_ptr<CommandBuffer> DeviceState::CreateCmdBufferState(VkCommandBuffer handle,
                                                                  const VkCommandBufferAllocateInfo* allocate_info,
-                                                                 const CommandPool* pool) {
+                                                                 const CommandPool& pool) {
     return std::make_shared<CommandBuffer>(*this, handle, allocate_info, pool);
 }
 
@@ -6697,6 +7005,50 @@ void DeviceState::PostCallRecordGetAccelerationStructureDeviceAddressKHR(VkDevic
             as_with_addresses.array.reserve(as_with_addresses.array.capacity() * 2);
         }
         as_with_addresses.array.emplace_back(as_state.get());
+    }
+}
+
+NearestBufferResult DeviceState::GetNearestBuffersByAddress(VkDeviceAddress address) const {
+    ReadLockGuard guard(buffer_address_lock_);
+
+    NearestBufferResult result = {vvl::range<VkDeviceAddress>(), vvl::range<VkDeviceAddress>(),
+                                  vvl::make_span<vvl::Buffer* const>(nullptr, static_cast<size_t>(0)),
+                                  vvl::make_span<vvl::Buffer* const>(nullptr, static_cast<size_t>(0))};
+
+    if (buffer_address_map_.empty()) {
+        return result;
+    }
+
+    // lower_bound returns the first range that ends *after* the address.
+    // Since we assume 'find' has already failed (address is in a gap),
+    // this will point to the nearest range *above* the requested address.
+    const auto range_key = vvl::range<VkDeviceAddress>(address, address + 1);
+    auto it = buffer_address_map_.lower_bound(range_key);
+
+    if (it != buffer_address_map_.end()) {
+        result.above_range = it->first;
+        result.above_buffers = it->second;
+    }
+
+    // If at the beginning, there is nothing below.
+    // Otherwise, the element immediately preceding the lower_bound
+    // is the nearest range below the address.
+    if (it != buffer_address_map_.begin()) {
+        auto prev = it;
+        --prev;
+        result.below_range = prev->first;
+        result.below_buffers = prev->second;
+    }
+
+    return result;
+}
+
+void DeviceState::GetBufferAddressRanges(BufferAddressRange* ranges) const {
+    ReadLockGuard guard(buffer_address_lock_);
+
+    size_t written_count = 0;
+    for (const auto& [address_range, buffers] : buffer_address_map_) {
+        ranges[written_count++] = address_range;
     }
 }
 
@@ -6889,43 +7241,13 @@ void DeviceState::RemoveCommandBufferHeapReservedAddressMap(vvl::CommandBuffer* 
 void DeviceState::PostCallRecordCmdBindSamplerHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT* pBindInfo,
                                                       const RecordObject& record_obj) {
     auto cb_state = GetWrite<CommandBuffer>(commandBuffer);
-    cb_state->descriptor_heap.sampler_bound = true;
-
-    vvl::range<VkDeviceAddress> reserved = {
-        pBindInfo->heapRange.address + pBindInfo->reservedRangeOffset,
-        pBindInfo->heapRange.address + pBindInfo->reservedRangeOffset + pBindInfo->reservedRangeSize};
-
-    if (cb_state->descriptor_heap.sampler_reserved != reserved) {
-        UpdateCommandBufferHeapReservedAddressMap(cb_state.get(), reserved, true);
-        cb_state->descriptor_heap.sampler_reserved = reserved;
-    }
-
-    vvl::range<VkDeviceAddress> range = {pBindInfo->heapRange.address, pBindInfo->heapRange.address + pBindInfo->heapRange.size};
-    cb_state->descriptor_heap.sampler_range = range;
-
-    cb_state->SetDescriptorMode(DescriptorModeHeap, record_obj.location.function);
-    TrackDeviceAddressRange(*cb_state, range, VK_BUFFER_USAGE_2_DESCRIPTOR_HEAP_BIT_EXT);
+    cb_state->RecordBindSamplerHeap(*this, *pBindInfo, record_obj.location);
 }
 
 void DeviceState::PostCallRecordCmdBindResourceHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT* pBindInfo,
                                                        const RecordObject& record_obj) {
     auto cb_state = GetWrite<CommandBuffer>(commandBuffer);
-    cb_state->descriptor_heap.resource_bound = true;
-
-    vvl::range<VkDeviceAddress> reserved = {
-        pBindInfo->heapRange.address + pBindInfo->reservedRangeOffset,
-        pBindInfo->heapRange.address + pBindInfo->reservedRangeOffset + pBindInfo->reservedRangeSize};
-
-    if (cb_state->descriptor_heap.resource_reserved != reserved) {
-        UpdateCommandBufferHeapReservedAddressMap(cb_state.get(), reserved, false);
-        cb_state->descriptor_heap.resource_reserved = reserved;
-    }
-
-    vvl::range<VkDeviceAddress> range = {pBindInfo->heapRange.address, pBindInfo->heapRange.address + pBindInfo->heapRange.size};
-    cb_state->descriptor_heap.resource_range = range;
-
-    cb_state->SetDescriptorMode(DescriptorModeHeap, record_obj.location.function);
-    TrackDeviceAddressRange(*cb_state, range, VK_BUFFER_USAGE_2_DESCRIPTOR_HEAP_BIT_EXT);
+    cb_state->RecordBindResourceHeap(*this, *pBindInfo, record_obj.location);
 }
 
 void DeviceState::PostCallRecordCmdPushDataEXT(VkCommandBuffer commandBuffer, const VkPushDataInfoEXT* pPushDataInfo,
@@ -6934,6 +7256,249 @@ void DeviceState::PostCallRecordCmdPushDataEXT(VkCommandBuffer commandBuffer, co
     cb_state->RecordPushData(*pPushDataInfo, record_obj.location);
 
     cb_state->SetDescriptorMode(DescriptorModeHeap, record_obj.location.function);
+}
+
+void DeviceState::PostCallRecordWriteResourceDescriptorsEXT(VkDevice device, uint32_t resourceCount,
+                                                            const VkResourceDescriptorInfoEXT* pResources,
+                                                            const VkHostAddressRangeEXT* pDescriptors,
+                                                            const RecordObject& record_obj) {
+    if (!global_settings.descriptor_hashing) {
+        return;
+    }
+    WriteLockGuard guard(descriptor_hashing->map_lock);
+    for (uint32_t i = 0; i < resourceCount; i++) {
+        const VkResourceDescriptorInfoEXT& resource = pResources[i];
+        const VkHostAddressRangeEXT& host_range = pDescriptors[i];
+        // pDescriptors[i].size might be larger than the real descriptor
+        const VkDeviceSize descriptor_size = cached_descriptor_size.GetSize(resource.type);
+        const uint64_t key = descriptor_hashing->Hash(host_range.address, descriptor_size);
+        const uint8_t vvl_type = (uint8_t)GetMaskFromDescriptorType(resource.type);
+        if (const auto* debug_info = vku::FindStructInPNextChain<VkDebugUtilsObjectNameInfoEXT>(resource.pNext)) {
+            if (debug_info->pObjectName) {
+                descriptor_hashing->debug_names.emplace(key, debug_info->pObjectName);
+            }
+        }
+
+        bool null_descriptor = false;
+
+        switch (resource.type) {
+            case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+            case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: {
+                if (resource.data.pAddressRange) {
+                    const bool added = descriptor_hashing->table.Insert(
+                        key, DescriptorHashTable::Entry(vvl_type, DescriptorHashTable::EntryBuffer{*resource.data.pAddressRange}),
+                        *this, record_obj.location);
+                    if (added) {
+                        auto buffer_list = GetBuffersByAddress(resource.data.pAddressRange->address);
+                        // This is not a perfect system, and could leak if multiple VkBuffer to a single address
+                        // but in practice, we find there is noramlly a single buffer tied to an address to make this "good enough"
+                        if (buffer_list.size() == 1) {
+                            buffer_list[0]->descriptor_hashes.emplace_back(key);
+                        }
+                    }
+                } else {
+                    null_descriptor = true;
+                }
+            } break;
+            case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+            case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+            case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT: {
+                if (resource.data.pImage) {
+                    const VkImageViewCreateInfo& view_ci = *resource.data.pImage->pView;
+                    const bool added = descriptor_hashing->table.Insert(
+                        key,
+                        DescriptorHashTable::Entry(
+                            vvl_type, DescriptorHashTable::EntryImage{view_ci.image, view_ci.format, view_ci.viewType}),
+                        *this, record_obj.location);
+                    if (added) {
+                        if (auto image_state = Get<vvl::Image>(view_ci.image)) {
+                            image_state->descriptor_hashes.emplace_back(key);
+                        }
+                    }
+                } else {
+                    null_descriptor = true;
+                }
+            } break;
+            case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+            case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER: {
+                if (pResources[i].data.pTexelBuffer) {
+                    const bool added = descriptor_hashing->table.Insert(
+                        key,
+                        DescriptorHashTable::Entry(vvl_type,
+                                                   DescriptorHashTable::EntryBuffer{resource.data.pTexelBuffer->addressRange}),
+                        *this, record_obj.location);
+                    if (added) {
+                        auto buffer_list = GetBuffersByAddress(resource.data.pTexelBuffer->addressRange.address);
+                        if (buffer_list.size() == 1) {
+                            buffer_list[0]->descriptor_hashes.emplace_back(key);
+                        }
+                    }
+                } else {
+                    null_descriptor = true;
+                }
+            } break;
+            case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR: {
+                if (pResources[i].data.pAddressRange) {
+                    descriptor_hashing->table.Insert(
+                        key, DescriptorHashTable::Entry(vvl_type, DescriptorHashTable::EntryBuffer{*resource.data.pAddressRange}),
+                        *this, record_obj.location);
+                    // TODO - Add somewhere to be removed when AS are deleted
+                } else {
+                    null_descriptor = true;
+                }
+            } break;
+            default:
+                break;
+        }
+
+        // TODO - might be lots of descriptor, should cache if added already
+        if (null_descriptor) {
+            descriptor_hashing->table.Insert(key, DescriptorHashTable::Entry(vvl_type, DescriptorHashTable::EntryNull{}), *this,
+                                             record_obj.location);
+        }
+    }
+}
+
+void DeviceState::PostCallRecordWriteSamplerDescriptorsEXT(VkDevice device, uint32_t samplerCount,
+                                                           const VkSamplerCreateInfo* pSamplers,
+                                                           const VkHostAddressRangeEXT* pDescriptors,
+                                                           const RecordObject& record_obj) {
+    if (!global_settings.descriptor_hashing) {
+        return;
+    }
+    WriteLockGuard guard(descriptor_hashing->map_lock);
+    for (uint32_t i = 0; i < samplerCount; i++) {
+        const VkHostAddressRangeEXT& host_range = pDescriptors[i];
+
+        const VkDeviceSize descriptor_size = phys_dev_ext_props.descriptor_heap_props.samplerDescriptorSize;
+        const uint64_t key = descriptor_hashing->Hash(host_range.address, descriptor_size);
+
+        if (const auto* debug_info = vku::FindStructInPNextChain<VkDebugUtilsObjectNameInfoEXT>(pSamplers->pNext)) {
+            if (debug_info->pObjectName) {
+                descriptor_hashing->debug_names.emplace(key, debug_info->pObjectName);
+            }
+        }
+
+        // Because there is no concept of a VkSampler anymore, there is no way to know if the user will be done using this sampler
+        // descriptor. This means we will never be able to remove this descriptor from the hash map.
+        descriptor_hashing->table.Insert(key, DescriptorHashTable::Entry(DescriptorHashTable::EntrySampler{}), *this,
+                                         record_obj.location);
+    }
+}
+
+void DeviceState::PostCallRecordGetDescriptorEXT(VkDevice device, const VkDescriptorGetInfoEXT* pDescriptorInfo, size_t dataSize,
+                                                 void* pDescriptor, const RecordObject& record_obj) {
+    if (!global_settings.descriptor_hashing) {
+        return;
+    }
+    if (pDescriptorInfo->type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) {
+        return;  // TODO - need to handle
+    }
+    WriteLockGuard guard(descriptor_hashing->map_lock);
+
+    const VkDescriptorType vk_type = pDescriptorInfo->type;
+    const uint8_t vvl_type = (uint8_t)GetMaskFromDescriptorType(vk_type);
+    // dataSize might be larger than the real descriptor
+    const VkDeviceSize descriptor_size = cached_descriptor_size.GetSize(vk_type, false);
+    const uint64_t key = descriptor_hashing->Hash(pDescriptor, descriptor_size);
+    if (const auto* debug_info = vku::FindStructInPNextChain<VkDebugUtilsObjectNameInfoEXT>(pDescriptorInfo->pNext)) {
+        if (debug_info->pObjectName) {
+            descriptor_hashing->debug_names.emplace(key, debug_info->pObjectName);
+        }
+    }
+
+    bool null_descriptor = false;
+
+    switch (vk_type) {
+        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: {
+            const VkDescriptorAddressInfoEXT* address_info = vk_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
+                                                                 ? pDescriptorInfo->data.pStorageBuffer
+                                                                 : pDescriptorInfo->data.pUniformBuffer;
+            if (address_info && address_info->address != 0) {
+                VkDeviceAddressRangeEXT address_range{address_info->address, address_info->range};
+                const bool added = descriptor_hashing->table.Insert(
+                    key, DescriptorHashTable::Entry(vvl_type, DescriptorHashTable::EntryBuffer{address_range}), *this,
+                    record_obj.location);
+                if (added) {
+                    auto buffer_list = GetBuffersByAddress(address_info->address);
+                    if (buffer_list.size() == 1) {
+                        buffer_list[0]->descriptor_hashes.emplace_back(key);
+                    }
+                }
+            } else {
+                null_descriptor = true;
+            }
+        } break;
+        case VK_DESCRIPTOR_TYPE_SAMPLER:
+            if (pDescriptorInfo->data.pSampler) {
+                descriptor_hashing->table.Insert(key, DescriptorHashTable::Entry(DescriptorHashTable::EntrySampler{}), *this,
+                                                 record_obj.location);
+            }
+            break;
+        case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+        case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+        case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT: {
+            const VkDescriptorImageInfo* image_info =
+                vk_type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE   ? pDescriptorInfo->data.pSampledImage
+                : vk_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE ? pDescriptorInfo->data.pStorageImage
+                                                              : pDescriptorInfo->data.pInputAttachmentImage;
+            if (image_info && image_info->imageView != VK_NULL_HANDLE) {
+                if (const auto view_state = Get<vvl::ImageView>(image_info->imageView)) {
+                    const bool added = descriptor_hashing->table.Insert(
+                        key,
+                        DescriptorHashTable::Entry(
+                            vvl_type, DescriptorHashTable::EntryImage{view_state->create_info.image, view_state->create_info.format,
+                                                                      view_state->create_info.viewType}),
+                        *this, record_obj.location);
+                    if (added && view_state->image_state) {
+                        view_state->image_state->descriptor_hashes.emplace_back(key);
+                    }
+                }
+            } else {
+                null_descriptor = true;
+            }
+        } break;
+        case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+        case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER: {
+            const VkDescriptorAddressInfoEXT* address_info = vk_type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER
+                                                                 ? pDescriptorInfo->data.pStorageTexelBuffer
+                                                                 : pDescriptorInfo->data.pUniformTexelBuffer;
+            if (address_info && address_info->address != 0) {
+                VkDeviceAddressRangeEXT address_range{address_info->address, address_info->range};
+                const bool added = descriptor_hashing->table.Insert(
+                    key, DescriptorHashTable::Entry(vvl_type, DescriptorHashTable::EntryBuffer{address_range}), *this,
+                    record_obj.location);
+                if (added) {
+                    auto buffer_list = GetBuffersByAddress(address_info->address);
+                    if (buffer_list.size() == 1) {
+                        buffer_list[0]->descriptor_hashes.emplace_back(key);
+                    }
+                }
+            } else {
+                null_descriptor = true;
+            }
+        } break;
+        case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR: {
+            if (pDescriptorInfo->data.accelerationStructure) {
+                VkDeviceAddressRangeEXT address_range{pDescriptorInfo->data.accelerationStructure, 0};
+                descriptor_hashing->table.Insert(
+                    key, DescriptorHashTable::Entry(vvl_type, DescriptorHashTable::EntryBuffer{address_range}), *this,
+                    record_obj.location);
+                // TODO - Add somewhere to be removed when AS are deleted
+            } else {
+                null_descriptor = true;
+            }
+        } break;
+        default:
+            break;
+    }
+
+    // TODO - might be lots of descriptor, should cache if added already
+    if (null_descriptor) {
+        descriptor_hashing->table.Insert(key, DescriptorHashTable::Entry(vvl_type, DescriptorHashTable::EntryNull{}), *this,
+                                         record_obj.location);
+    }
 }
 
 }  // namespace vvl

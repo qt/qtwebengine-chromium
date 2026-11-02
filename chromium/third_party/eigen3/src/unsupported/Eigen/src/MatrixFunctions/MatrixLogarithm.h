@@ -222,7 +222,7 @@ void matrix_log_compute_pade(MatrixType& result, const MatrixType& T, int degree
 }
 
 /** \brief Compute logarithm of triangular matrices with size > 2.
- * \details This uses a inverse scale-and-square algorithm. */
+ * \details This uses an inverse scale-and-square algorithm. */
 template <typename MatrixType>
 void matrix_log_compute_big(const MatrixType& A, MatrixType& result) {
   typedef typename MatrixType::Scalar Scalar;

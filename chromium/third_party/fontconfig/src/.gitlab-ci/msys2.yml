@@ -1,0 +1,74 @@
+# Fake template for MSYS2
+
+.fdo.msys2:
+  variables:
+    FDO_DISTRIBUTION_NAME: msys2
+    FDO_CBUILD: https://gitlab.freedesktop.org/api/v4/projects/5761/packages/generic/cbuild/sha256-679ce0ba1077495a53c205a25176a4caf1d062a9d3af465c565bd824c07c8f1f/cbuild
+
+.pull.cbuild@msys2:
+  script: &pull-cbuild
+  - echo $FDO_CBUILD
+  - echo $CI_API_V4_URL
+  - |
+    curl --help || :
+    if [[ "$FDO_CBUILD" =~ ^$CI_API_V4_URL ]]
+    then
+      # the given URL is on the instance (gitlab.fd.o) API endpoint, use our token
+      # so private projects can also retrieve cbuild in their namespace
+      curl --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+           --retry 4 --fail --retry-all-errors --retry-delay 60 \
+           -L -o /app/cbuild \
+           $FDO_CBUILD
+    else
+      curl -L --retry 4 --fail --retry-all-errors --retry-delay 60 \
+           -o /app/cbuild $FDO_CBUILD
+    fi
+  - sed -i 's/SH_EXEC_CMD=(sh -c)/SH_EXEC_CMD=(msys2 -c)/' /app/cbuild
+  - chmod +x /app/cbuild
+
+.fdo.container-build-common@msys2:
+  extends: .fdo.msys2
+  stage: build
+  script:
+  - *pull-cbuild
+  - /app/cbuild --debug build-container arch $FDO_DISTRIBUTION_VERSION $FDO_DISTRIBUTION_TAG
+  variables:
+    FDO_BASE_IMAGE: ghcr.io/msys2/msys2-docker-experimental
+    FDO_REPO_SUFFIX: msys2/latest
+  artifacts:
+    paths:
+      - container-build-report.xml
+    reports:
+      junit: container-build-report.xml
+
+.fdo.container-build@msys2:
+  extends: .fdo.container-build-common@msys2
+  image: quay.io/freedesktop.org/ci-templates:container-build-base-2025-08-15.0
+
+.fdo.container-build@msys2@x86_64:
+  extends: .fdo.container-build@msys2
+
+.fdo.distribution-image@msys2:
+  extends: .fdo.msys2
+  image: $CI_REGISTRY_IMAGE/msys2/$FDO_DISTRIBUTION_VERSION:$FDO_DISTRIBUTION_TAG
+  variables:
+    FDO_DISTRIBUTION_IMAGE: $CI_REGISTRY_IMAGE/msys2/$FDO_DISTRIBUTION_VERSION:$FDO_DISTRIBUTION_TAG
+
+.fdo.suffixed-image@msys2:
+  extends: .fdo.msys2
+  image: $CI_REGISTRY_IMAGE/$FDO_REPO_SUFFIX:$FDO_DISTRIBUTION_TAG
+  variables:
+    FDO_DISTRIBUTION_IMAGE: $CI_REGISTRY_IMAGE/$FDO_REPO_SUFFIX:$FDO_DISTRIBUTION_TAG
+
+.fdo.b2c-image@msys2:
+  extends: .fdo.msys2
+  image: quay.io/freedesktop.org/ci-templates:qemu-base-2024-07-12.0
+  variables:
+    FDO_DISTRIBUTION_IMAGE: $CI_REGISTRY_IMAGE/msys2/$FDO_DISTRIBUTION_VERSION:$FDO_DISTRIBUTION_TAG
+    B2C_IMAGE: $FDO_DISTRIBUTION_IMAGE
+
+.fdo.b2c-suffixed-image@msys2:
+  extends: .fdo.b2c-image@msys2
+  variables:
+    FDO_DISTRIBUTION_IMAGE: $CI_REGISTRY_IMAGE/$FDO_REPO_SUFFIX:$FDO_DISTRIBUTION_TAG
+    B2C_IMAGE: $FDO_DISTRIBUTION_IMAGE

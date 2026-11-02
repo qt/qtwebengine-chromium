@@ -29,7 +29,6 @@ class generic_dense_assignment_kernel<DstEvaluatorTypeT, SrcEvaluatorTypeT,
                                           swap_assign_op<typename DstEvaluatorTypeT::Scalar>, BuiltIn>
       Base;
   using Base::m_dst;
-  using Base::m_functor;
   using Base::m_src;
 
  public:

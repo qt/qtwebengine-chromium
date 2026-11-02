@@ -69,7 +69,7 @@ class LuSolveExpr {
   std::reference_wrapper<const DeviceMatrix<Scalar>> B_;
 };
 
-// ---- LLTView: d_A.llt() -> view with .solve() and .device() ----------------
+// ---- LLTView: d_A.llt() -> view with .solve() -------------------------------
 
 template <typename Scalar_, int UpLo_ = Lower>
 class LLTView {
@@ -92,7 +92,7 @@ class LLTView {
   std::reference_wrapper<const DeviceMatrix<Scalar>> mat_;
 };
 
-// ---- LUView: d_A.lu() -> view with .solve() and .device() ------------------
+// ---- LUView: d_A.lu() -> view with .solve() ---------------------------------
 
 template <typename Scalar_>
 class LUView {

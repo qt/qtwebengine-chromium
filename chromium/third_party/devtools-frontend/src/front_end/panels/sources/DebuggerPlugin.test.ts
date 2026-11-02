@@ -3,16 +3,16 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import * as sinon from 'sinon';
 
 import * as Platform from '../../core/platform/platform.js';
-import * as SDK from '../../core/sdk/sdk.js';
+import type * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../../models/bindings/bindings.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
-import * as Workspace from '../../models/workspace/workspace.js';
-import {createTarget, describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
-import {MockProtocolBackend, parseScopeChain} from '../../testing/MockScopeChain.js';
+import {deinitializeGlobalVars, describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
+import {MockDebuggerBackend, parseScopeChain} from '../../testing/MockScopeChain.js';
+import {setupSettingsHooks} from '../../testing/SettingsHelpers.js';
 import * as CodeMirror from '../../third_party/codemirror.next/codemirror.next.js';
 import * as TextEditor from '../../ui/components/text_editor/text_editor.js';
 
@@ -20,25 +20,23 @@ import * as Sources from './sources.js';
 
 const {urlString} = Platform.DevToolsPath;
 
-describeWithMockConnection('Inline variable view scope helpers', () => {
+describe('Inline variable view scope helpers', () => {
+  setupSettingsHooks();
+
   const URL = urlString`file:///tmp/example.js`;
   let target: SDK.Target.Target;
-  let backend: MockProtocolBackend;
+  let backend: MockDebuggerBackend;
 
   beforeEach(() => {
-    const workspace = Workspace.Workspace.WorkspaceImpl.instance();
-    const targetManager = SDK.TargetManager.TargetManager.instance();
-    const resourceMapping = new Bindings.ResourceMapping.ResourceMapping(targetManager, workspace);
-    const ignoreListManager = Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
-    Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
-      forceNew: true,
-      resourceMapping,
-      targetManager,
-      ignoreListManager,
-      workspace,
-    });
-    target = createTarget();
-    backend = new MockProtocolBackend();
+    backend = new MockDebuggerBackend();
+    target = backend.createTarget();
+    sinon.stub(Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding, 'instance')
+        .returns(backend.universe.debuggerWorkspaceBinding);
+  });
+
+  afterEach(async () => {
+    sinon.restore();
+    await deinitializeGlobalVars();
   });
 
   async function toOffsetWithSourceMap(
@@ -667,6 +665,47 @@ a[foo()];`;
           );
         }
       });
+
+      it('correctly identifies side-effecting constructs (new, tagged template, import, delete)', () => {
+        const {containsSideEffects} = Sources.DebuggerPlugin;
+
+        const checkCode = (code: string) => {
+          const state = CodeMirror.EditorState.create({doc: code, extensions});
+          const tree = CodeMirror.ensureSyntaxTree(state, code.length, 5000);
+          assert.exists(tree);
+          return containsSideEffects(state.doc, tree.topNode);
+        };
+
+        assert.isTrue(checkCode('new Trap()'));
+        assert.isTrue(checkCode('myTag`hello`'));
+        assert.isTrue(checkCode('import("./mod.js")'));
+        assert.isTrue(checkCode('delete obj.prop'));
+        assert.isTrue(checkCode('x = 1'));
+        assert.isTrue(checkCode('fn()'));
+        assert.isFalse(checkCode('obj.prop'));
+        assert.isFalse(checkCode('x'));
+      });
+
+      it('correctly reports new expressions, tagged templates, dynamic imports, and delete operators as side-effecting in popover range',
+         () => {
+           const checkHoverSideEffects = (doc: string, cursorOffset: number) => {
+             const state = CodeMirror.EditorState.create({doc, extensions});
+             const result = computePopoverHighlightRange(state, 'text/javascript', cursorOffset);
+             return result?.containsSideEffects;
+           };
+
+           const code1 = 'let v = new Trap().status;';
+           assert.isTrue(checkHoverSideEffects(code1, code1.indexOf('status')));
+
+           const code2 = 'let v = myTag`test`.status;';
+           assert.isTrue(checkHoverSideEffects(code2, code2.indexOf('status')));
+
+           const code3 = 'let v = (import("./mod.js")).status;';
+           assert.isTrue(checkHoverSideEffects(code3, code3.indexOf('status')));
+
+           const code4 = 'let v = a[delete obj.prop];';
+           assert.isTrue(checkHoverSideEffects(code4, code4.indexOf('[')));
+         });
     });
 
     describe('in HTML files', () => {

@@ -31,6 +31,7 @@
 #include <utility>
 
 #include "dawn/native/ObjectType_autogen.h"
+#include "src/dawn/common/ColorSpace.h"
 #include "src/dawn/native/Buffer.h"
 #include "src/dawn/native/Device.h"
 #include "src/dawn/native/Queue.h"
@@ -177,20 +178,20 @@ ExternalTextureParams ComputeExternalTextureParams(const ExternalTextureDescript
 
     // TODO(https://crbug.com/496604550): Make the conversion matrix required, users can pass the
     // identity if needed.
-    math::Mat3x4f yMat = {
-        {1, 0, 0, 0},  //
-        {0, 1, 0, 0},  //
-        {0, 0, 1, 0},  //
-    };
+    auto yMat = math::Mat3x4f::FromRows({
+        {1, 0, 0},
+        {0, 1, 0},
+        {0, 0, 1},
+        {0, 0, 0},
+    });
     if (descriptor->yuvToRgbConversionMatrix) {
-        const float* yMatIn = descriptor->yuvToRgbConversionMatrix;
+        // TODO(https://crbug.com/524405497): Spanify the input API with fixed extent spans once
+        // they are supported.
+        Span<const float> yMatIn = DAWN_UNSAFE_TODO({descriptor->yuvToRgbConversionMatrix, 12});
         yMat = {
-            {yMatIn[0], DAWN_UNSAFE_TODO(yMatIn[1]), DAWN_UNSAFE_TODO(yMatIn[2]),
-             DAWN_UNSAFE_TODO(yMatIn[3])},  //
-            {DAWN_UNSAFE_TODO(yMatIn[4]), DAWN_UNSAFE_TODO(yMatIn[5]), DAWN_UNSAFE_TODO(yMatIn[6]),
-             DAWN_UNSAFE_TODO(yMatIn[7])},  //
-            {DAWN_UNSAFE_TODO(yMatIn[8]), DAWN_UNSAFE_TODO(yMatIn[9]), DAWN_UNSAFE_TODO(yMatIn[10]),
-             DAWN_UNSAFE_TODO(yMatIn[11])},
+            {yMatIn[0], yMatIn[1], yMatIn[2], yMatIn[3]},  //
+            {yMatIn[4], yMatIn[5], yMatIn[6], yMatIn[7]},  //
+            {yMatIn[8], yMatIn[9], yMatIn[10], yMatIn[11]},
         };
     }
 
@@ -198,12 +199,12 @@ ExternalTextureParams ComputeExternalTextureParams(const ExternalTextureDescript
     // Cr, 1. Reorder them by appending a "swizzling" matrix first.
     if (descriptor->plane0->GetTexture()->GetFormat().format ==
         wgpu::TextureFormat::OpaqueYCbCrAndroid) {
-        constexpr math::Mat4x4f kUndoVulkanSwizzle = {
-            {0, 1, 0, 0},
+        constexpr auto kUndoVulkanSwizzle = math::Mat4x4f::FromRows({
             {0, 0, 1, 0},
             {1, 0, 0, 0},
+            {0, 1, 0, 0},
             {0, 0, 0, 1},
-        };
+        });
         yMat = math::Mul(kUndoVulkanSwizzle, yMat);
     }
 
@@ -212,11 +213,12 @@ ExternalTextureParams ComputeExternalTextureParams(const ExternalTextureDescript
     // Gamut correction is performed by multiplying a 3x3 matrix passed from Chromium. The
     // matrix was computed by multiplying the appropriate source and destination gamut
     // matrices sourced from ui/gfx/color_space.cc.
-    const float* gMat = descriptor->gamutConversionMatrix;
-    params.gamutConversionMatrix = {
-        {gMat[0], DAWN_UNSAFE_TODO(gMat[1]), DAWN_UNSAFE_TODO(gMat[2])},                    //
-        {DAWN_UNSAFE_TODO(gMat[3]), DAWN_UNSAFE_TODO(gMat[4]), DAWN_UNSAFE_TODO(gMat[5])},  //
-        {DAWN_UNSAFE_TODO(gMat[6]), DAWN_UNSAFE_TODO(gMat[7]), DAWN_UNSAFE_TODO(gMat[8])}};
+    // TODO(https://crbug.com/524405497): Spanify the input API with fixed extent spans once
+    // they are supported.
+    Span<const float> gMat = DAWN_UNSAFE_TODO({descriptor->gamutConversionMatrix, 9});
+    params.gamutConversionMatrix = {{gMat[0], gMat[1], gMat[2]},  //
+                                    {gMat[3], gMat[4], gMat[5]},  //
+                                    {gMat[6], gMat[7], gMat[8]}};
 
     // Gamma decode/encode is performed by the logic:
     //    if (abs(v) < params.D) {
@@ -225,7 +227,10 @@ ExternalTextureParams ComputeExternalTextureParams(const ExternalTextureDescript
     //    return pow(A * x + B, G) + E
     //
     // Constants are passed from Chromium and originally sourced from ui/gfx/color_space.cc
-    auto ToTransferFunctionParams = [](const float* params) -> TransferFunctionParams {
+    auto ToTransferFunctionParams = [](const float* paramsPtr) -> TransferFunctionParams {
+        // TODO(https://crbug.com/524405497): Spanify the input API with fixed extent spans once
+        // they are supported.
+        Span<const float> params = DAWN_UNSAFE_TODO({paramsPtr, 7});
         TransferFunctionMode mode = TransferFunctionMode::Gamma;
 
         // TODO(https://crbug.com/496604550): Passing the mode as a negative value for G is a hack.
@@ -236,12 +241,12 @@ ExternalTextureParams ComputeExternalTextureParams(const ExternalTextureDescript
 
         return {
             .mode = mode,
-            .a = DAWN_UNSAFE_TODO(params[1]),
-            .b = DAWN_UNSAFE_TODO(params[2]),
-            .c = DAWN_UNSAFE_TODO(params[3]),
-            .d = DAWN_UNSAFE_TODO(params[4]),
-            .e = DAWN_UNSAFE_TODO(params[5]),
-            .f = DAWN_UNSAFE_TODO(params[6]),
+            .a = params[1],
+            .b = params[2],
+            .c = params[3],
+            .d = params[4],
+            .e = params[5],
+            .f = params[6],
             // This is the first param for historical reasons.
             // TODO(https://crbug.com/496604550): Make the parameters to Dawn a struct with members
             // in alphabetical order.
@@ -252,6 +257,16 @@ ExternalTextureParams ComputeExternalTextureParams(const ExternalTextureDescript
         ToTransferFunctionParams(descriptor->srcTransferFunctionParameters);
     params.dstTransferFunction =
         ToTransferFunctionParams(descriptor->dstTransferFunctionParameters);
+
+    // Configure the HLG OOTF to perform a gamma 1.2 on the Rec2020 luminance.
+    // TODO(https://crbug.com/521494707): Make the parameters configurable.
+    if (params.srcTransferFunction.mode == TransferFunctionMode::HLG) {
+        // The factors to compute Y from RGB are derived from the YCbCr to RGB matrix.
+        constexpr math::Vec3f yFactors = kYCbCrToRGB_Rec2020.Inverse().Transposed()[0];
+        // Gamma is 1.2, which means that Y is multiplied 0.2 times to the color to achieve a total
+        // of 1.2 gamma.
+        params.ootfParam = {yFactors[0], yFactors[1], yFactors[2], 0.2};
+    }
 
     // Compute the various transforms and bounds used for sampling and loading operations. They make
     // them appear as if operating on a `apparentSize` texture but instead they are all happening in

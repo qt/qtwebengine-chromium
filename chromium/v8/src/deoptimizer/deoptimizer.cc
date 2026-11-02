@@ -992,11 +992,9 @@ CompileWithLiftoffAndGetDeoptInfo(wasm::NativeModule* native_module,
   // change any more. We can thus hold a non-owning vector here.
   base::Vector<const uint8_t> wire_bytes = native_module->wire_bytes();
   const wasm::WasmFunction* function = &env.module->functions[function_index];
-  SharedFlag is_shared = env.module->type(function->sig_index).is_shared;
   wasm::FunctionBody body{function->sig, function->code.offset(),
                           wire_bytes.begin() + function->code.offset(),
-                          wire_bytes.begin() + function->code.end_offset(),
-                          is_shared};
+                          wire_bytes.begin() + function->code.end_offset()};
   wasm::ForDebugging for_debugging = v8_flags.wasm_code_coverage
                                          ? wasm::ForDebugging::kForDebugging
                                          : wasm::ForDebugging::kNotForDebugging;
@@ -1181,13 +1179,17 @@ FrameDescription* Deoptimizer::DoComputeWasmLiftoffFrame(
           intptr_t reg_value = kZapValue;
           switch (value.kind()) {
             case TranslatedValue::Kind::kInt32:
+              CHECK_EQ(liftoff_iter->kind(), wasm::ValueKind::kI32);
               // Ensure that the upper half is zeroed out.
               reg_value = static_cast<uint32_t>(value.int32_value());
               break;
             case TranslatedValue::Kind::kTagged:
+              CHECK(liftoff_iter->kind() == wasm::ValueKind::kRef ||
+                    liftoff_iter->kind() == wasm::ValueKind::kRefNull);
               reg_value = value.raw_literal().ptr();
               break;
             case TranslatedValue::Kind::kInt64:
+              CHECK_EQ(liftoff_iter->kind(), wasm::ValueKind::kI64);
               reg_value = value.int64_value();
               break;
             default:
@@ -1197,10 +1199,12 @@ FrameDescription* Deoptimizer::DoComputeWasmLiftoffFrame(
         } else if (liftoff_iter->is_fp_reg()) {
           switch (value.kind()) {
             case TranslatedValue::Kind::kDouble:
+              CHECK_EQ(liftoff_iter->kind(), wasm::ValueKind::kF64);
               output_frame->SetDoubleRegister(liftoff_iter->reg().fp().code(),
                                               value.double_value());
               break;
             case TranslatedValue::Kind::kFloat:
+              CHECK_EQ(liftoff_iter->kind(), wasm::ValueKind::kF32);
               // Liftoff doesn't have a concept of floating point registers.
               // This is an important distinction as e.g. on arm s1 and d1 are
               // two completely distinct registers.
@@ -1211,6 +1215,7 @@ FrameDescription* Deoptimizer::DoComputeWasmLiftoffFrame(
                   Float64::FromBits(value.float_value().get_bits()));
               break;
             case TranslatedValue::Kind::kSimd128:
+              CHECK_EQ(liftoff_iter->kind(), wasm::ValueKind::kS128);
               output_frame->SetSimd128Register(liftoff_iter->reg().fp().code(),
                                                value.simd_value());
               break;
@@ -1218,13 +1223,15 @@ FrameDescription* Deoptimizer::DoComputeWasmLiftoffFrame(
               UNIMPLEMENTED();
           }
         } else if (liftoff_iter->is_simd128_reg()) {
-          DCHECK_EQ(TranslatedValue::Kind::kSimd128, value.kind());
+          CHECK_EQ(liftoff_iter->kind(), wasm::ValueKind::kS128);
+          CHECK_EQ(TranslatedValue::Kind::kSimd128, value.kind());
           output_frame->SetSimd128Register(liftoff_iter->reg().simd128().code(),
                                            value.simd_value());
         } else if (!Is64() && liftoff_iter->is_gp_reg_pair()) {
           intptr_t reg_value = kZapValue;
           switch (value.kind()) {
             case TranslatedValue::Kind::kInt32:
+              CHECK_EQ(liftoff_iter->kind(), wasm::ValueKind::kI64);
               // Ensure that the upper half is zeroed out.
               reg_value = static_cast<uint32_t>(value.int32_value());
               break;
@@ -1241,6 +1248,7 @@ FrameDescription* Deoptimizer::DoComputeWasmLiftoffFrame(
           if (int64_lowering_is_low) skip_increase_liftoff_iter = true;
           int64_lowering_is_low = !int64_lowering_is_low;
         } else if (!Is64() && liftoff_iter->is_fp_reg_pair()) {
+          CHECK_EQ(liftoff_iter->kind(), wasm::ValueKind::kS128);
           CHECK_EQ(value.kind(), TranslatedValue::Kind::kSimd128);
           Simd128 simd_value = value.simd_value();
           Address val_ptr = reinterpret_cast<Address>(&simd_value);
@@ -1299,6 +1307,7 @@ FrameDescription* Deoptimizer::DoComputeWasmLiftoffFrame(
             }
             break;
           case wasm::ValueKind::kS128: {
+            CHECK_EQ(value.kind(), TranslatedValue::Kind::kSimd128);
             Simd128::int64x2 values = value.simd_value().to_i64x2();
             const int offset = base_offset - liftoff_iter->offset();
             output_frame->SetLiftoffFrameSlot64(offset, values[0]);
@@ -1330,10 +1339,25 @@ FrameDescription* Deoptimizer::DoComputeWasmLiftoffFrame(
   }
 
   // Store frame kind.
+  // For growable stacks, the frame at the entry point of a new stack segment
+  // is marked as WASM_SEGMENT_START. Preserving this marker on the bottommost
+  // frame during deoptimization ensures that the return sequence will shrink
+  // the stack segment when returning to the caller.
   uint32_t frame_type_offset =
       base_offset + WasmLiftoffFrameConstants::kFrameTypeOffset;
+  StackFrame::Type frame_type = StackFrame::WASM;
+  if (is_bottommost) {
+    intptr_t input_frame_marker =
+        base::Memory<intptr_t>(input_->GetFramePointerAddress() +
+                               TypedFrameConstants::kFrameTypeOffset);
+    if (StackFrame::MarkerToType(input_frame_marker) ==
+        StackFrame::WASM_SEGMENT_START) {
+      DCHECK(v8_flags.wasm_growable_stacks);
+      frame_type = StackFrame::WASM_SEGMENT_START;
+    }
+  }
   output_frame->SetFrameSlot(frame_type_offset,
-                             StackFrame::TypeToMarker(StackFrame::WASM));
+                             StackFrame::TypeToMarker(frame_type));
   // Fill feedback vector stack slot.
   // Instead of storing the actual feedback vector, we simply store the declared
   // function index of the wasm function. This is done because the feedback
@@ -1415,6 +1439,10 @@ void Deoptimizer::DoComputeOutputFramesWasmImpl() {
   caller_frame_top_ = stack_fp_ + CommonFrameConstants::kFixedFrameSizeAboveFp +
                       input_->parameter_count() * kSystemPointerSize;
 
+  StackGuard* const stack_guard = isolate()->stack_guard();
+  CHECK_GT(static_cast<uintptr_t>(caller_frame_top_),
+           stack_guard->real_jslimit());
+
   FILE* trace_file =
       verbose_tracing_enabled() ? trace_scope()->file() : nullptr;
   translated_state_.Init(isolate_, input_->GetFramePointerAddress(), stack_fp_,
@@ -1445,10 +1473,12 @@ void Deoptimizer::DoComputeOutputFramesWasmImpl() {
           WasmLiftoffFrameConstants::kInstanceDataOffset))));
 
   std::stack<intptr_t> shadow_stack;
+  size_t total_output_frame_size = 0;
   for (int i = 0; i < output_count_; ++i) {
     TranslatedFrame& frame = translated_state_.frames()[i];
     output_[i] = DoComputeWasmLiftoffFrame(
         frame, native_module, wasm_trusted_instance, i, shadow_stack);
+    total_output_frame_size += output_[i]->GetFrameSize();
   }
 
 #ifdef V8_ENABLE_CET_SHADOW_STACK
@@ -1507,6 +1537,18 @@ void Deoptimizer::DoComputeOutputFramesWasmImpl() {
   if (verbose_tracing_enabled()) {
     TraceDeoptEnd(timer.Elapsed().InMillisecondsF());
   }
+
+  // The following invariant is fairly tricky to guarantee, since the size of
+  // an optimized frame and its deoptimized counterparts usually differs. We
+  // thus need to consider the case in which deoptimized frames are larger than
+  // the optimized frame in stack checks in optimized code. We do this by
+  // applying an offset to stack checks (see kArchStackPointerGreaterThan in the
+  // code generator).
+  // Note that we explicitly allow deopts to exceed the limit by a certain
+  // number of slack bytes.
+  CHECK_GT(
+      static_cast<uintptr_t>(caller_frame_top_) - total_output_frame_size,
+      stack_guard->real_jslimit() - kStackLimitSlackForDeoptimizationInBytes);
 }
 
 void Deoptimizer::GetWasmStackSlotsCounts(const wasm::FunctionSig* sig,

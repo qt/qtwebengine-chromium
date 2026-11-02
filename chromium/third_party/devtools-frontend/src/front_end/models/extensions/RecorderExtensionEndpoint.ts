@@ -6,22 +6,24 @@ import type * as Platform from '../../core/platform/platform.js';
 
 import {PrivateAPI} from './ExtensionAPI.js';
 import {ExtensionEndpoint} from './ExtensionEndpoint.js';
-import {RecorderPluginManager} from './RecorderPluginManager.js';
+import type {RecorderPluginManager} from './RecorderPluginManager.js';
 
 export class RecorderExtensionEndpoint extends ExtensionEndpoint {
   private readonly name: string;
   private readonly mediaType?: string;
   private readonly capabilities: PrivateAPI.RecordingExtensionPluginCapability[];
   readonly #extensionOrigin: Platform.DevToolsPath.UrlString;
+  readonly #recorderPluginManager: RecorderPluginManager;
 
-  constructor(
-      name: string, port: MessagePort, capabilities: PrivateAPI.RecordingExtensionPluginCapability[],
-      extensionOrigin: Platform.DevToolsPath.UrlString, mediaType?: string) {
+  constructor(name: string, port: MessagePort, capabilities: PrivateAPI.RecordingExtensionPluginCapability[],
+              extensionOrigin: Platform.DevToolsPath.UrlString, recorderPluginManager: RecorderPluginManager,
+              mediaType?: string) {
     super(port);
     this.name = name;
     this.mediaType = mediaType;
     this.capabilities = capabilities;
     this.#extensionOrigin = extensionOrigin;
+    this.#recorderPluginManager = recorderPluginManager;
   }
 
   getName(): string {
@@ -44,7 +46,7 @@ export class RecorderExtensionEndpoint extends ExtensionEndpoint {
     switch (event) {
       case PrivateAPI.RecorderExtensionPluginEvents.UnregisteredRecorderExtensionPlugin: {
         this.disconnect();
-        RecorderPluginManager.instance().removePlugin(this);
+        this.#recorderPluginManager.removePlugin(this);
         break;
       }
       default:

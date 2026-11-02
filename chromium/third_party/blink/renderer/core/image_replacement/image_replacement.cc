@@ -4,6 +4,8 @@
 
 #include "third_party/blink/renderer/core/image_replacement/image_replacement.h"
 
+#include "base/notreached.h"
+#include "base/numerics/safe_conversions.h"
 #include "components/viz/common/surfaces/tracked_element_rects.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 #include "third_party/blink/public/common/features.h"
@@ -16,6 +18,7 @@
 #include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/layout/layout_image_replacement.h"
 #include "third_party/blink/renderer/core/layout/map_coordinates_flags.h"
+#include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/platform/image-encoders/image_encoder.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/skia/include/core/SkImage.h"
@@ -44,7 +47,7 @@ mojom::blink::ImageDataPtr ImageDataForImageResource(
   Vector<uint8_t> buffer;
   if (!sk_image->peekPixels(&pixmap)) {
     SkImageInfo info = sk_image->imageInfo();
-    buffer.resize(info.computeMinByteSize());
+    buffer.resize(base::checked_cast<wtf_size_t>(info.computeMinByteSize()));
     pixmap.reset(info, buffer.data(), info.minRowBytes());
     if (!sk_image->readPixels(pixmap, 0, 0)) {
       return nullptr;
@@ -64,6 +67,22 @@ mojom::blink::ImageDataPtr ImageDataForImageResource(
   mojom::blink::ImageDataPtr image_data = mojom::blink::ImageData::New();
   image_data->webp_bytes = base::span<const uint8_t>(webp_bytes);
   return image_data;
+}
+
+mojom::blink::ObjectFit ConvertObjectFit(EObjectFit object_fit) {
+  switch (object_fit) {
+    case EObjectFit::kFill:
+      return mojom::blink::ObjectFit::kFill;
+    case EObjectFit::kContain:
+      return mojom::blink::ObjectFit::kContain;
+    case EObjectFit::kCover:
+      return mojom::blink::ObjectFit::kCover;
+    case EObjectFit::kNone:
+      return mojom::blink::ObjectFit::kNone;
+    case EObjectFit::kScaleDown:
+      return mojom::blink::ObjectFit::kScaleDown;
+  }
+  NOTREACHED();
 }
 
 }  // namespace
@@ -179,11 +198,20 @@ void ImageReplacement::StartReplacement(
           tracking_feature,
           TrackedElementSubRect(
               TrackedElementId(*tracking_token),
-              /*should_add_to_compositor_frame_metadata=*/false));
+              /*should_add_to_compositor_frame_metadata=*/false,
+              /*should_exclude_fixed_and_sticky_occlusions=*/true));
     }
 
+    mojom::blink::ObjectFit object_fit = mojom::blink::ObjectFit::kFill;
+    if (const ComputedStyle* style = image_element_->GetComputedStyle()) {
+      object_fit = ConvertObjectFit(style->GetObjectFit());
+    }
+    mojom::blink::ReplacementDataPtr replacement_data =
+        mojom::blink::ReplacementData::New(std::move(image_data),
+                                           tracking_token, object_fit);
+
     host_->ReplacementFrameAttached(frame->GetLocalFrameToken(),
-                                    std::move(image_data), tracking_token);
+                                    std::move(replacement_data));
   }
 }
 

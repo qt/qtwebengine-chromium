@@ -257,7 +257,7 @@ void PredictionManager::FetchModels() {
     }
 
     if (const ModelInfo* info = registry_.GetModel(target); info) {
-      model_info.set_version(info->GetVersion());
+      model_info.set_version(info->version);
     }
 
     models_info.push_back(model_info);
@@ -559,7 +559,6 @@ base::flat_map<std::string, bool>
 PredictionManager::GetOnDeviceSupplementaryModelsInfoForWebUI() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   std::vector<proto::OptimizationTarget> supp_targets = {
-      proto::OptimizationTarget::OPTIMIZATION_TARGET_TEXT_SAFETY,
       proto::OptimizationTarget::OPTIMIZATION_TARGET_GENERALIZED_SAFETY,
       proto::OptimizationTarget::OPTIMIZATION_TARGET_LANGUAGE_DETECTION};
   base::flat_map<std::string, bool> supp_models_info;
@@ -722,7 +721,7 @@ bool PredictionManager::ProcessAndStoreLoadedModel(
     return false;
   }
 
-  std::unique_ptr<ModelInfo> model_info = ModelInfo::Create(model);
+  std::optional<ModelInfo> model_info = ModelInfo::CreateFromProto(model);
 
   base::UmaHistogramBoolean(
       base::StrCat({"OptimizationGuide.IsPredictionModelValid.",
@@ -739,10 +738,7 @@ bool PredictionManager::ProcessAndStoreLoadedModel(
     return true;
   }
 
-  // Update prediction model file if that is what we have loaded.
-  if (model_info) {
-    StoreLoadedModelInfo(optimization_target, std::move(model_info));
-  }
+  StoreLoadedModelInfo(optimization_target, std::move(*model_info));
 
   return true;
 }
@@ -752,16 +748,15 @@ bool PredictionManager::ShouldUpdateStoredModelForTarget(
     int64_t new_version) const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (const ModelInfo* info = registry_.GetModel(optimization_target); info) {
-    return info->GetVersion() != new_version;
+    return info->version != new_version;
   }
   return true;
 }
 
 void PredictionManager::StoreLoadedModelInfo(
     proto::OptimizationTarget optimization_target,
-    std::unique_ptr<ModelInfo> model_info) {
+    ModelInfo model_info) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  DCHECK(model_info);
   registry_.UpdateModel(optimization_target, std::move(model_info));
 }
 
@@ -773,11 +768,11 @@ base::FilePath PredictionManager::GetBaseModelDirForDownload(
 
 void PredictionManager::OverrideTargetModelForTesting(
     proto::OptimizationTarget optimization_target,
-    std::unique_ptr<ModelInfo> model_info) {
+    std::optional<ModelInfo> model_info) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (model_info) {
     registry_.UpdateModelImmediatelyForTesting(  // IN-TEST
-        optimization_target, std::move(model_info));
+        optimization_target, std::move(*model_info));
   } else {
     registry_.RemoveModel(optimization_target);
   }

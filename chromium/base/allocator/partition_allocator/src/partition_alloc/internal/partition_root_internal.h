@@ -5,6 +5,7 @@
 #ifndef PARTITION_ALLOC_INTERNAL_PARTITION_ROOT_INTERNAL_H_
 #define PARTITION_ALLOC_INTERNAL_PARTITION_ROOT_INTERNAL_H_
 
+#include <bit>
 #include <cstring>
 
 #include "partition_alloc/address_pool_manager_types.h"
@@ -43,13 +44,13 @@
 
 // When a memory tool is replacing malloc to keep aligned behaviour working we
 // use window's aligned_malloc and aligned_free, but otherwise we need memalign.
-#if defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
+#if PA_BUILDFLAG(MEMORY_TOOL_REPLACES_ALLOCATOR)
 #if PA_BUILDFLAG(PA_COMPILER_MSVC)
 #include <malloc.h>
 #else
 #include <stdlib.h>
 #endif  // PA_BUILDFLAG(PA_COMPILER_MSVC)
-#endif  // defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
+#endif  // PA_BUILDFLAG(MEMORY_TOOL_REPLACES_ALLOCATOR)
 
 namespace partition_alloc {
 
@@ -95,9 +96,10 @@ PA_ALWAYS_INLINE void DCheckIfManagedByPartitionAllocBRPPool(
 template <AllocFlags flags>
 PA_NOINLINE PA_MALLOC_FN void* PartitionRoot::AllocInternalForTesting(
     size_t requested_size,
-    size_t slot_span_alignment,
+    size_t alignment,
     const char* type_name) {
-  return AllocInternal<flags>(requested_size, slot_span_alignment, type_name);
+  static_assert(!ContainsFlags(flags, AllocFlags::kAlignedAlloc));
+  return AllocInternal<flags>(requested_size, alignment, type_name);
 }
 
 PA_ALWAYS_INLINE size_t
@@ -313,7 +315,7 @@ PA_ALWAYS_INLINE internal::UntaggedSlotStart PartitionRoot::AllocFromBucket(
     size_t* slot_size,
     bool* is_already_zeroed) {
   PA_DCHECK((slot_span_alignment >= internal::PartitionPageSize()) &&
-            internal::base::bits::HasSingleBit(slot_span_alignment));
+            std::has_single_bit(slot_span_alignment));
   SlotSpanMetadata* slot_span = bucket->active_slot_spans_head;
   // There always must be a slot span on the active list (could be a sentinel).
   PA_DCHECK(slot_span);
@@ -413,7 +415,7 @@ template <FreeFlags flags>
 PA_ALWAYS_INLINE bool PartitionRoot::FreeProlog(void* object,
                                                 const PartitionRoot* root) {
   static_assert(AreValidFlags(flags));
-#if defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
+#if PA_BUILDFLAG(MEMORY_TOOL_REPLACES_ALLOCATOR)
   if constexpr (!ContainsFlags(flags, FreeFlags::kNoMemoryToolOverride)) {
 #if PA_BUILDFLAG(PA_COMPILER_MSVC)
     if (ContainsFlags(flags, FreeFlags::kAlignedFreeForMemoryTool)) {
@@ -426,11 +428,11 @@ PA_ALWAYS_INLINE bool PartitionRoot::FreeProlog(void* object,
 #endif  // PA_BUILDFLAG(PA_COMPILER_MSVC)
     return true;
   }
-#else   // !defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
+#else   // !PA_BUILDFLAG(MEMORY_TOOL_REPLACES_ALLOCATOR)
   // If the memory tool is not replacing the allocator, then the
   // kAlignedFreeForMemoryTool flag is unused and should not be passed.
   static_assert(!ContainsFlags(flags, FreeFlags::kAlignedFreeForMemoryTool));
-#endif  // defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
+#endif  // PA_BUILDFLAG(MEMORY_TOOL_REPLACES_ALLOCATOR)
 
   if (!object) [[unlikely]] {
     return true;
@@ -601,6 +603,7 @@ template <FreeFlags flags>
 PA_ALWAYS_INLINE void PartitionRoot::FreeNoHooksImmediateInternal(
     internal::SlotStart slot_start,
     SlotSpanMetadata* slot_span,
+    FreeHintType<FreeHintFlags(flags)> hint,
     const internal::BucketSizeDetails& size_details) {
   // The thread cache is added "in the middle" of the main allocator, that is:
   // - After all the cookie/in-slot metadata management
@@ -676,31 +679,36 @@ PA_ALWAYS_INLINE void PartitionRoot::FreeNoHooksImmediateInternal(
   }
 #endif  // PA_BUILDFLAG(ENABLE_BACKUP_REF_PTR_SUPPORT)
 
-  // memset() can be really expensive.
-#if PA_BUILDFLAG(EXPENSIVE_DCHECKS_ARE_ON)
-  internal::DebugMemset(slot_start.ToObject(), internal::kFreedByte,
-                        slot_span->GetUtilizedSlotSize());
-#endif  // PA_BUILDFLAG(EXPENSIVE_DCHECKS_ARE_ON)
-
   if constexpr (ContainsFlags(flags, FreeFlags::kIntendedLeak)) {
     // Must not enable `thread_cache` and `brp` to use `kIntendedLeak`.
     PA_CHECK(!settings_.with_thread_cache);
 #if PA_BUILDFLAG(ENABLE_BACKUP_REF_PTR_SUPPORT)
     PA_CHECK(!brp_enabled());
 #endif
+    if constexpr (ContainsFlags(flags, FreeFlags::kWithTypeIdHint)) {
+      Zap(slot_start, slot_span, hint.type_id);
+      RecordLeakSizePerTypeId(hint.type_id, size_details.slot_size);
+    }
     intended_leak_size_.fetch_add(size_details.slot_size);
     return;  // Leak
-  } else if constexpr (ContainsFlags(flags,
-                                     FreeFlags::kSchedulerLoopQuarantine)) {
-    internal::ThreadCache* thread_cache = GetThreadCache();
-    if (internal::ThreadCache::IsValid(thread_cache)) [[likely]] {
-      thread_cache->GetSchedulerLoopQuarantineBranch().Quarantine(
-          slot_start, slot_span, size_details);
-    } else {
-      scheduler_loop_quarantine_.Quarantine(slot_start, slot_span,
-                                            size_details);
-    }
-    return;
+  }
+
+  // memset() can be really expensive.
+#if PA_BUILDFLAG(EXPENSIVE_DCHECKS_ARE_ON)
+  if constexpr (
+      ContainsFlags(
+          flags,
+          FreeFlags::kSchedulerLoopQuarantineForAdvancedMemorySafetyChecks)) {
+    internal::DebugMemset(slot_start.ToObject(), internal::kFreedByte,
+                          GetSlotUsableSize(size_details, slot_span));
+  } else {
+    internal::DebugMemset(slot_start.ToObject(), internal::kFreedByte,
+                          slot_span->GetUtilizedSlotSize());
+  }
+#endif  // PA_BUILDFLAG(EXPENSIVE_DCHECKS_ARE_ON)
+
+  if constexpr (ContainsFlags(flags, FreeFlags::kSchedulerLoopQuarantine)) {
+    return SchedulerLoopQuarantine(slot_start, slot_span, size_details);
   } else if constexpr (
       ContainsFlags(
           flags,
@@ -718,7 +726,7 @@ PA_ALWAYS_INLINE void PartitionRoot::FreeNoHooksImmediate(
     internal::SlotStart slot_start,
     SlotSpanMetadata* slot_span) {
   auto size_details = SlotSpanToBucketSizeDetails(slot_span);
-  FreeNoHooksImmediateInternal<flags>(slot_start, slot_span, size_details);
+  FreeNoHooksImmediateInternal<flags>(slot_start, slot_span, {}, size_details);
 }
 
 template <FreeFlags flags>
@@ -730,13 +738,15 @@ PA_ALWAYS_INLINE void PartitionRoot::FreeNoHooksImmediate(
   if constexpr (ContainsFlags(flags, FreeFlags::kWithSizeHint)) {
     if (settings_.enable_free_with_size) {
       size_details = SizeToBucketSizeDetails(hint.size, slot_span);
-      FreeNoHooksImmediateInternal<flags>(slot_start, slot_span, size_details);
+      FreeNoHooksImmediateInternal<flags>(slot_start, slot_span, hint,
+                                          size_details);
       return;
     }
   }
   size_details = SlotSpanToBucketSizeDetails(slot_span);
 
-  FreeNoHooksImmediateInternal<flags>(slot_start, slot_span, size_details);
+  FreeNoHooksImmediateInternal<flags>(slot_start, slot_span, hint,
+                                      size_details);
 }
 
 #if PA_BUILDFLAG(ENABLE_BACKUP_REF_PTR_SUPPORT)
@@ -784,14 +794,7 @@ PA_ALWAYS_INLINE void PartitionRoot::FreeAfterBRPQuarantine(
   // `FreeFlags::kSchedulerLoopQuarantine` was used for the original `Free()`
   // call. Send the allocation to yet another quarantine.
   if (metadata->PopQuarantineRequest()) {
-    internal::ThreadCache* thread_cache = root->GetThreadCache();
-    if (internal::ThreadCache::IsValid(thread_cache)) [[likely]] {
-      thread_cache->GetSchedulerLoopQuarantineBranch().Quarantine(
-          slot_start.Tag(), slot_span, size_details);
-    } else {
-      root->scheduler_loop_quarantine_.Quarantine(slot_start.Tag(), slot_span,
-                                                  size_details);
-    }
+    root->SchedulerLoopQuarantine(slot_start.Tag(), slot_span, size_details);
   } else {
     root->RawFreeWithThreadCache(slot_start.Tag(), size_details, slot_span);
   }
@@ -1254,15 +1257,19 @@ PartitionRoot::SizeToBucketSizeDetails(size_t requested_size,
 
 template <AllocFlags flags>
 PA_ALWAYS_INLINE void* PartitionRoot::AllocInternal(size_t requested_size,
-                                                    size_t slot_span_alignment,
+                                                    size_t alignment,
                                                     const char* type_name) {
   static_assert(AreValidFlags(flags));
+  size_t slot_span_alignment = alignment;
+  if constexpr (ContainsFlags(flags, AllocFlags::kAlignedAlloc)) {
+    slot_span_alignment = std::max(alignment, internal::PartitionPageSize());
+  }
   PA_DCHECK((slot_span_alignment >= internal::PartitionPageSize()) &&
-            internal::base::bits::HasSingleBit(slot_span_alignment));
+            std::has_single_bit(slot_span_alignment));
   static_assert(!ContainsFlags(
       flags, AllocFlags::kMemoryShouldBeTaggedForMte));  // Internal only.
 
-#if defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
+#if PA_BUILDFLAG(MEMORY_TOOL_REPLACES_ALLOCATOR)
   if constexpr (!ContainsFlags(flags, AllocFlags::kNoMemoryToolOverride)) {
     if (!PartitionRoot::AllocWithMemoryToolProlog<flags>(requested_size)) {
       // Early return if AllocWithMemoryToolProlog returns false
@@ -1270,8 +1277,7 @@ PA_ALWAYS_INLINE void* PartitionRoot::AllocInternal(size_t requested_size,
     }
     void* result = nullptr;
     // Taken from base::AlignedAlloc implementation.
-    if constexpr (ContainsFlags(flags,
-                                AllocFlags::kAlignedAllocForMemoryTool)) {
+    if constexpr (ContainsFlags(flags, AllocFlags::kAlignedAlloc)) {
 #if PA_BUILDFLAG(PA_COMPILER_MSVC)
       result = _aligned_malloc(requested_size, slot_span_alignment);
 #elif PA_BUILDFLAG(IS_ANDROID)
@@ -1305,11 +1311,7 @@ PA_ALWAYS_INLINE void* PartitionRoot::AllocInternal(size_t requested_size,
     }
     return result;
   }
-#else   // !defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
-  // If `MEMORY_TOOL_REPLACES_ALLOCATOR` is not defined,
-  // `kAlignedAllocForMemoryTool` should not be passed to `AllocInternal`.
-  static_assert(!ContainsFlags(flags, AllocFlags::kAlignedAllocForMemoryTool));
-#endif  // defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
+#endif  // PA_BUILDFLAG(MEMORY_TOOL_REPLACES_ALLOCATOR)
 
   constexpr bool no_hooks = ContainsFlags(flags, AllocFlags::kNoHooks);
   bool hooks_enabled;
@@ -1330,8 +1332,13 @@ PA_ALWAYS_INLINE void* PartitionRoot::AllocInternal(size_t requested_size,
       // request to the default mechanisms.
       // TODO(crbug.com/40152647): See if we can make the forwarding more
       // verbose to ensure that this situation doesn't go unnoticed.
+      std::optional<size_t> override_alignment = std::nullopt;
+      if constexpr (ContainsFlags(flags, AllocFlags::kAlignedAlloc)) {
+        override_alignment = alignment;
+      }
       if (PartitionAllocHooks::AllocationOverrideHookIfEnabled(
-              &object, flags | additional_flags, requested_size, type_name)) {
+              &object, flags | additional_flags, requested_size, type_name,
+              override_alignment)) {
         PartitionAllocHooks::AllocationObserverHookIfEnabled(
             CreateAllocationNotificationData(object, requested_size,
                                              type_name));
@@ -1568,7 +1575,7 @@ PartitionRoot::GetAdjustedSizeForAlignment(size_t alignment,
   // crbug.com/1185484.
 
   // This is mandated by |posix_memalign()|, so should never fire.
-  PA_CHECK(internal::base::bits::HasSingleBit(alignment));
+  PA_CHECK(std::has_single_bit(alignment));
   // Catch unsupported alignment requests early.
   PA_CHECK(alignment <= internal::kMaxSupportedAlignment);
 
@@ -1596,7 +1603,7 @@ PartitionRoot::GetAdjustedSizeForAlignment(size_t alignment,
           << (int{sizeof(size_t) * 8} -
               partition_alloc::internal::base::bits::CountlZero(raw_size - 1));
     }
-    PA_DCHECK(internal::base::bits::HasSingleBit(raw_size));
+    PA_DCHECK(std::has_single_bit(raw_size));
     // Adjust back, because AllocInternalNoHooks/Alloc will adjust it again.
     adjusted_size = AdjustSizeForExtrasSubtract(raw_size);
   }
@@ -1622,18 +1629,8 @@ PA_ALWAYS_INLINE void* PartitionRoot::AlignedAllocInline(
     PA_NOTREACHED();
   }
 
-  // Slot spans are naturally aligned on partition page size, but make sure you
-  // don't pass anything less, because it'll mess up callee's calculations.
-  size_t slot_span_alignment =
-      std::max(alignment, internal::PartitionPageSize());
-  constexpr AllocFlags kMaybeAlignedAllocForMemoryTool =
-#if defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
-      AllocFlags::kAlignedAllocForMemoryTool;
-#else
-      AllocFlags::kNone;
-#endif
-  void* object = AllocInternal<flags | kMaybeAlignedAllocForMemoryTool>(
-      adjusted_size, slot_span_alignment, nullptr);
+  void* object = AllocInternal<flags | AllocFlags::kAlignedAlloc>(
+      adjusted_size, alignment, nullptr);
 
   // |alignment| is a power of two, but the compiler doesn't necessarily know
   // that. A regular % operation is very slow, make sure to use the equivalent,
@@ -1648,7 +1645,8 @@ template <AllocFlags alloc_flags, FreeFlags free_flags>
 void* PartitionRoot::ReallocInline(void* ptr,
                                    size_t new_size,
                                    const char* type_name) {
-#if defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
+  static_assert(!ContainsFlags(alloc_flags, AllocFlags::kAlignedAlloc));
+#if PA_BUILDFLAG(MEMORY_TOOL_REPLACES_ALLOCATOR)
   if (!PartitionRoot::AllocWithMemoryToolProlog<alloc_flags>(new_size)) {
     // Early return if AllocWithMemoryToolProlog returns false
     return nullptr;
@@ -1789,6 +1787,31 @@ internal::SchedulerLoopQuarantineRoot&
 PartitionRoot::GetSchedulerLoopQuarantineRoot() {
   return scheduler_loop_quarantine_root_;
 }
+
+bool PartitionRoot::IsSchedulerLoopQuarantineTarget(
+    const internal::BucketSizeDetails& size_details) {
+  internal::ThreadCache* thread_cache = GetThreadCache();
+  if (internal::ThreadCache::IsValid(thread_cache)) [[likely]] {
+    return thread_cache->GetSchedulerLoopQuarantineBranch().IsQuarantineTarget(
+        size_details);
+  } else {
+    return scheduler_loop_quarantine_.IsQuarantineTarget(size_details);
+  }
+}
+
+void PartitionRoot::SchedulerLoopQuarantine(
+    internal::SlotStart slot_start,
+    SlotSpanMetadata* slot_span,
+    const internal::BucketSizeDetails& size_details) {
+  internal::ThreadCache* thread_cache = GetThreadCache();
+  if (internal::ThreadCache::IsValid(thread_cache)) [[likely]] {
+    thread_cache->GetSchedulerLoopQuarantineBranch().Quarantine(
+        slot_start, slot_span, size_details);
+  } else {
+    scheduler_loop_quarantine_.Quarantine(slot_start, slot_span, size_details);
+  }
+}
+
 }  // namespace partition_alloc
 
 #endif  // PARTITION_ALLOC_INTERNAL_PARTITION_ROOT_INTERNAL_H_

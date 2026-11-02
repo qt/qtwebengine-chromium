@@ -11,17 +11,21 @@
 
 #include "core/fxcrt/fx_unicode.h"
 
-enum class FX_LINEBREAKTYPE : uint8_t {
-  kUNKNOWN = 0x00,
-  kDIRECT_BRK = 0x1A,
-  kINDIRECT_BRK = 0x2B,
-  kCOM_INDIRECT_BRK = 0x3C,
-  kCOM_PROHIBITED_BRK = 0x4D,
-  kPROHIBITED_BRK = 0x5E,
-  kHANGUL_SPACE_BRK = 0x6F,
+namespace pdfium {
+
+enum class LineBreakType : uint8_t {
+  kUnknown = 0x00,
+  kDirectBreak = 0x1A,
+  kIndirectBreak = 0x2B,
+  kCommonIndirectBreak = 0x3C,
+  kCommonProhibitedBreak = 0x4D,
+  kProhibitedBreak = 0x5E,
+  kHangulSpaceBreak = 0x6F,
 };
 
-FX_LINEBREAKTYPE GetLineBreakTypeFromPair(FX_BREAKPROPERTY curr_char,
-                                          FX_BREAKPROPERTY next_char);
+LineBreakType GetLineBreakTypeFromPair(BreakProperty curr_char,
+                                       BreakProperty next_char);
+
+}  // namespace pdfium
 
 #endif  // XFA_FGAS_LAYOUT_FGAS_LINEBREAK_H_

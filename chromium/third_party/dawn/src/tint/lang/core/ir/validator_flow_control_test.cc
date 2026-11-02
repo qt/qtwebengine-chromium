@@ -512,9 +512,12 @@ TEST_F(IR_ValidatorTest, Loop_ContinuingEmptyWithParams) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(
-        res.Failure().reason,
-        testing::HasSubstr(R"(error: loop: loop continuing block has parameters but is empty)"));
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(
+                    R"(error: loop: loop continuing block has parameters but is empty
+    loop [b: $B2, c: $B3] {  # loop_1
+    ^^^^^^^^^^^^^^^^^^^^^
+)"));
 }
 
 TEST_F(IR_ValidatorTest, Loop_BodyEmptyWithParams) {
@@ -1266,7 +1269,7 @@ TEST_F(IR_ValidatorTest, NextIteration_InLoopBody) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:5:9 error: next_iteration: must only be called from loop initializer or continuing
+            R"(:5:9 error: next_iteration: must only be called directly from loop initializer or continuing
         next_iteration  # -> $B2
         ^^^^^^^^^^^^^^
 )")) << res.Failure();
@@ -1283,6 +1286,30 @@ TEST_F(IR_ValidatorTest, NextIteration_InLoopContinuing) {
 
     auto res = ir::Validate(mod);
     ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, NextIteration_NestedInLoopContinuing) {
+    auto* f = b.Function("my_func", ty.void_());
+    b.Append(f->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Body(), [&] { b.ExitLoop(loop); });
+        b.Append(loop->Continuing(), [&] {
+            auto* if_ = b.If(true);
+            b.Append(if_->True(), [&] { b.NextIteration(loop); });
+            b.NextIteration(loop);
+        });
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(error: next_iteration: must only be called directly from loop initializer or continuing
+            next_iteration  # -> $B2
+            ^^^^^^^^^^^^^^
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, NextIteration_UnexpectedValues) {
@@ -2535,6 +2562,27 @@ TEST_F(IR_ValidatorTest, Switch_CaseSelectorTypeMismatchesConditionType) {
     EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr("error: switch: case selector type 'i32' must match the switch "
                                    "condition type 'u32'"));
+}
+
+TEST_F(IR_ValidatorTest, Loop_ContinuingWithoutContinue) {
+    auto* f = b.Function("f", ty.void_());
+    auto* loop = b.Loop();
+    loop->Body()->Append(b.Let("let", b.Constant(u32(1u))));
+    loop->Body()->Append(b.Return(f));
+    b.Append(loop->Continuing(), [&] {
+        auto* add = b.Add(1_u, 1_u);
+        add->Result()->SetType(ty.bool_());
+        b.NextIteration(loop);
+    });
+    f->Block()->Append(loop);
+    f->Block()->Append(b.Return(f));
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(error: binary: result value type 'bool' does not match '+' result type 'u32')"));
 }
 
 }  // namespace tint::core::ir

@@ -9,7 +9,7 @@ import {describeWithEnvironment} from '../../../testing/EnvironmentHelpers.js';
 import {
   createTraceExtensionDataFromPerformanceAPITestInput,
   getBaseTraceHandlerData,
-  type PerformanceAPIExtensionTestData
+  type PerformanceAPIExtensionTestData,
 } from '../../../testing/TraceHelpers.js';
 import {TraceLoader} from '../../../testing/TraceLoader.js';
 import * as PerfUI from '../../../ui/legacy/components/perf_ui/perf_ui.js';

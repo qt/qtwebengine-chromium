@@ -12,7 +12,6 @@
 #include "base/unguessable_token.h"
 #include "base/values.h"
 #include "content/browser/service_worker/service_worker_host.h"
-#include "content/browser/shared_storage/shared_storage_worklet_host.h"
 #include "content/browser/worker_host/dedicated_worker_host.h"
 #include "content/browser/worker_host/shared_worker_host.h"
 #include "content/public/browser/browser_thread.h"
@@ -243,6 +242,27 @@ class ReportingServiceProxyImpl : public blink::mojom::ReportingServiceProxy {
     QueueReport(url, endpoint, "csp-hash", std::move(body));
   }
 
+  void QueueConnectionAllowlistViolationReport(
+      const GURL& url,
+      const std::string& endpoint,
+      const std::string& url_string,
+      const std::string& connection,
+      const std::vector<std::string>& allowlist,
+      const std::string& disposition) override {
+    base::DictValue body;
+    body.Set("url", url_string);
+    body.Set("connection", connection);
+
+    base::ListValue script_allowlist;
+    for (const std::string& val : allowlist) {
+      script_allowlist.Append(val);
+    }
+    body.Set("allowlist", std::move(script_allowlist));
+    body.Set("disposition", disposition);
+
+    QueueReport(url, endpoint, "connection-allowlist", std::move(body));
+  }
+
   ChildProcessId render_process_id() const { return render_process_id_; }
 
  private:
@@ -311,26 +331,6 @@ void CreateReportingServiceProxyForDedicatedWorker(
           dedicated_worker_host->GetProcessHost()->GetID(),
           dedicated_worker_host->GetReportingSource(),
           dedicated_worker_host->GetNetworkAnonymizationKey()),
-      std::move(receiver));
-}
-
-void CreateReportingServiceProxyForSharedStorageWorklet(
-    SharedStorageWorkletHost* shared_storage_worklet_host,
-    mojo::PendingReceiver<blink::mojom::ReportingServiceProxy> receiver) {
-  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  CHECK(shared_storage_worklet_host->GetProcessHost());
-  // The worklet may outlive its document, leaving no valid NetworkIsolationKey.
-  const net::NetworkIsolationKey& network_isolation_key =
-      shared_storage_worklet_host->MaybeGetNetworkIsolationKey();
-  if (network_isolation_key.IsEmpty()) {
-    return;
-  }
-  mojo::MakeSelfOwnedReceiver(
-      std::make_unique<ReportingServiceProxyImpl>(
-          shared_storage_worklet_host->GetProcessHost()->GetID(),
-          shared_storage_worklet_host->GetWorkletToken(),
-          net::NetworkAnonymizationKey::CreateFromNetworkIsolationKey(
-              network_isolation_key)),
       std::move(receiver));
 }
 

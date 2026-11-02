@@ -144,15 +144,14 @@ export class LayoutShiftDetails extends UI.Widget.Widget {
   }
 
   override performUpdate(): Promise<void>|void {
-    this.#view(
-        {
-          event: this.#event,
-          parsedTrace: this.#parsedTrace,
-          isFreshRecording: this.#isFreshRecording,
-          togglePopover: e => this.#togglePopover(e),
-          onEventClick: e => this.#handleTraceEventClick(e)
-        },
-        {}, this.contentElement);
+    this.#view({
+      event: this.#event,
+      parsedTrace: this.#parsedTrace,
+      isFreshRecording: this.#isFreshRecording,
+      togglePopover: e => this.#togglePopover(e),
+      onEventClick: e => this.#handleTraceEventClick(e),
+    },
+               {}, this.contentElement);
   }
 }
 
@@ -436,7 +435,6 @@ function linkifyURL(url: Platform.DevToolsPath.UrlString): HTMLElement {
   return LegacyComponents.Linkifier.Linkifier.linkifyURL(url, {
     tabStop: true,
     showColumnNumber: false,
-    inlineFrameIndex: 0,
     maxLength: MAX_URL_LENGTH,
   });
 }

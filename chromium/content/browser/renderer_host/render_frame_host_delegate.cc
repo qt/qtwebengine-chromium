@@ -12,7 +12,9 @@
 
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
+#include "base/notreached.h"
 #include "build/build_config.h"
+#include "content/browser/back_forward_cache/back_forward_cache_impl.h"
 #include "content/public/browser/cookie_access_details.h"
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/trust_token_access_details.h"
@@ -189,6 +191,10 @@ RenderFrameHostDelegate::GetActiveTopLevelDocumentsInBrowsingContextGroup(
   return std::vector<RenderFrameHostImpl*>();
 }
 
+bool RenderFrameHostDelegate::IsBeingDestroyed() {
+  return false;
+}
+
 PrerenderHostRegistry* RenderFrameHostDelegate::GetPrerenderHostRegistry() {
   return nullptr;
 }
@@ -216,6 +222,10 @@ gfx::NativeWindow RenderFrameHostDelegate::GetOwnerNativeWindow() {
 media::PictureInPictureEventsInfo::AutoPipInfo
 RenderFrameHostDelegate::GetAutoPipInfo() const {
   return media::PictureInPictureEventsInfo::AutoPipInfo();
+}
+
+BackForwardCacheImpl& RenderFrameHostDelegate::GetBackForwardCache() {
+  NOTREACHED();
 }
 
 }  // namespace content

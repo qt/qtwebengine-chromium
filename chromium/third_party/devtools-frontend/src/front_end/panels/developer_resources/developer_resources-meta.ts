@@ -11,11 +11,11 @@ import type * as DeveloperResources from './developer_resources.js';
 
 const UIStrings = {
   /**
-   * @description Title for developer resources panel
+   * @description Title for the Developer resources panel.
    */
   developerResources: 'Developer resources',
   /**
-   * @description Command for showing the developer resources panel
+   * @description Command for showing the Developer resources panel.
    */
   showDeveloperResources: 'Show Developer resources',
 } as const;

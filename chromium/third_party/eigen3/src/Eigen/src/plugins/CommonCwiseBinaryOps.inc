@@ -99,7 +99,7 @@ operator&(const EIGEN_CURRENT_STORAGE_BASE_CLASS<OtherDerived>& other) const {
                                                                                                    other.derived());
 }
 
-/** \returns an expression of the bitwise boolean \b or operator of \c *this and \a other
+/** \returns an expression of the bitwise \b or operator of \c *this and \a other
  *
  * \sa operator&(), operator^()
  */

@@ -10,10 +10,24 @@ devtools_foundation_module("foundation") {
 
   deps = [
     "../core/common:bundle",
+    "../core/host:bundle",
     "../core/root:bundle",
     "../core/sdk:bundle",
+    "../models/ai_assistance:bundle",
+    "../models/autofill_manager:bundle",
+    "../models/badges:bundle",
     "../models/bindings:bundle",
+    "../models/breakpoints:bundle",
+    "../models/crux-manager:bundle",
+    "../models/emulation:bundle",
+    "../models/issues_manager:bundle",
+    "../models/javascript_metadata:bundle",
+    "../models/live-metrics:bundle",
+    "../models/logs:bundle",
+    "../models/persistence:bundle",
+    "../models/project_settings:bundle",
     "../models/workspace:bundle",
+    "../models/workspace_diff:bundle",
   ]
 }
 
@@ -25,11 +39,24 @@ devtools_entrypoint("bundle") {
   # IMPORTANT: core/ or models/ must not be added here.
   visibility = [
     "../../mcp/*",
+    "../../test/api/*",
     "../entrypoints/*",
     "../panels/*",
     "../testing/*",
     "../ui/*",
     "./*",
+  ]
+}
+
+devtools_api_test_module("api_tests") {
+  sources = [ "Universe.test.api.ts" ]
+
+  deps = [
+    ":bundle",
+    "../core/common:bundle",
+    "../core/root:bundle",
+    "../generated:protocol",
+    "../testing",
   ]
 }
 
@@ -41,5 +68,8 @@ devtools_foundation_module("unittests") {
   deps = [
     ":bundle",
     "../core/common:bundle",
+    "../core/root:bundle",
+    "../generated:protocol",
+    "../testing",
   ]
 }

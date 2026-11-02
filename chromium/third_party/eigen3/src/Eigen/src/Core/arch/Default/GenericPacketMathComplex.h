@@ -18,6 +18,8 @@
 namespace Eigen {
 namespace internal {
 
+EIGEN_GCC_FAST_MATH_COMPLEX_VECTORIZE_WORKAROUND_PUSH
+
 //----------------------------------------------------------------------
 // Complex Arithmetic and Functions
 //----------------------------------------------------------------------
@@ -57,8 +59,6 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pmul_complex(const Pa
 
 template <typename Packet>
 EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet plog_complex(const Packet& x) {
-  typedef typename unpacket_traits<Packet>::type Scalar;
-  typedef typename Scalar::value_type RealScalar;
   typedef typename unpacket_traits<Packet>::as_real RealPacket;
 
   // Real part
@@ -69,7 +69,7 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet plog_complex(const Pa
   // Imag part
   RealPacket ximg = patan2(x.v, x_flip);  // atan2(a, b), atan2(b, a)
 
-  const RealPacket cst_pos_inf = pset1<RealPacket>(NumTraits<RealScalar>::infinity());
+  const RealPacket cst_pos_inf = pinf<RealPacket>();
   RealPacket x_abs = pabs(x.v);
   RealPacket is_x_pos_inf = pcmp_eq(x_abs, cst_pos_inf);
   RealPacket is_y_pos_inf = pcplxflip(Packet(is_x_pos_inf)).v;
@@ -101,8 +101,8 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pexp_complex(const Pa
   RealPacket cisy = psincos_selector<RealPacket>(y);
   cisy = pcplxflip(Packet(cisy)).v;  // cos(y) + i * sin(y)
 
-  const RealPacket cst_pos_inf = pset1<RealPacket>(NumTraits<RealScalar>::infinity());
-  const RealPacket cst_neg_inf = pset1<RealPacket>(-NumTraits<RealScalar>::infinity());
+  const RealPacket cst_pos_inf = pinf<RealPacket>();
+  const RealPacket cst_neg_inf = por(psignmask<RealPacket>(), pinf<RealPacket>());
 
   // If x is -inf, we know that cossin(y) is bounded,
   //   so the result is (0, +/-0), where the sign of the imaginary part comes
@@ -119,7 +119,7 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pexp_complex(const Pa
   // prevent inf * 0 = NaN. The vectorized sincos may compute exact zero
   // for near-zero values like cos(pi/2), and inf * +-1 = +-inf is correct.
   // The y=0 case is handled separately below.
-  RealPacket cisy_sign_one = por(pand(cisy, pset1<RealPacket>(RealScalar(-0.0))), pset1<RealPacket>(RealScalar(1)));
+  RealPacket cisy_sign_one = por(pand(cisy, psignmask<RealPacket>()), pset1<RealPacket>(RealScalar(1)));
   RealPacket expx_inf_y_finite = pand(pcmp_eq(expx, cst_pos_inf), pcmp_lt(pabs(y), cst_pos_inf));
   cisy = pselect(expx_inf_y_finite, cisy_sign_one, cisy);
 
@@ -149,7 +149,7 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet psqrt_complex(const P
   // a single complex square root of the number x + i*y. We want to find real numbers
   // u and v such that
   //    (u + i*v)^2 = x + i*y  <=>
-  //    u^2 - v^2 + i*2*u*v = x + i*v.
+  //    u^2 - v^2 + i*2*u*v = x + i*y.
   // By equating the real and imaginary parts we get:
   //    u^2 - v^2 = x
   //    2*u*v = y.
@@ -164,7 +164,7 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet psqrt_complex(const P
   //  To avoid unnecessary over- and underflow, we compute sqrt(x^2 + y^2) as
   //     l = max(|x|, |y|) * sqrt(1 + (min(|x|, |y|) / max(|x|, |y|))^2) ,
 
-  // In the following, without lack of generality, we have annotated the code, assuming
+  // In the following, without loss of generality, we have annotated the code, assuming
   // that the input is a packet of 2 complex numbers.
   //
   // Step 1. Compute l = [l0, l0, l1, l1], where
@@ -194,7 +194,7 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet psqrt_complex(const P
 
   // Step 3. Compute [rho0, eta0, rho1, eta1], where
   // eta0 = (y0 / l0) / 2, and eta1 = (y1 / l1) / 2.
-  // set eta = 0 of input is 0 + i0.
+  // set eta = 0 if input is 0 + i0.
   RealPacket eta = pandnot(pmul(cst_half, pdiv(a.v, pcplxflip(rho).v)), a_max_zero_mask);
   RealPacket real_mask = peven_mask(a.v);
   Packet positive_real_result;
@@ -203,7 +203,8 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet psqrt_complex(const P
 
   // Step 4. Compute solution for inputs with negative real part:
   //         [|eta0|, sign(y0)*rho0, |eta1|, sign(y1)*rho1]
-  const RealPacket cst_imag_sign_mask = pset1<Packet>(Scalar(RealScalar(0.0), RealScalar(-0.0))).v;
+  // [+0.0, -0.0, ...]: the sign bit of the imaginary (odd) lanes only.
+  const RealPacket cst_imag_sign_mask = pandnot(psignmask<RealPacket>(), real_mask);
   RealPacket imag_signs = pand(a.v, cst_imag_sign_mask);
   Packet negative_real_result;
   // Notice that rho is positive, so taking its absolute value is a noop.
@@ -220,7 +221,7 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet psqrt_complex(const P
   // * If z is (x,-∞), the result is (+∞,-∞) even if x is NaN
   // * If z is (-∞,y), the result is (0*|y|,+∞) for finite or NaN y
   // * If z is (+∞,y), the result is (+∞,0*|y|) for finite or NaN y
-  const RealPacket cst_pos_inf = pset1<RealPacket>(NumTraits<RealScalar>::infinity());
+  const RealPacket cst_pos_inf = pinf<RealPacket>();
   Packet is_inf;
   is_inf.v = pcmp_eq(a_abs, cst_pos_inf);
   Packet is_real_inf;
@@ -277,6 +278,8 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet phypot_complex(const 
   h = pandnot(h, iszero);  // |sqrt(a^2+b^2), sqrt(a^2+b^2)|
   return Packet(h);        // |sqrt(a^2+b^2), sqrt(a^2+b^2)|
 }
+
+EIGEN_GCC_FAST_MATH_COMPLEX_VECTORIZE_WORKAROUND_POP
 
 }  // end namespace internal
 }  // end namespace Eigen

@@ -7,14 +7,13 @@ import type * as Platform from '../../core/platform/platform.js';
 import {assertNotNullOrUndefined} from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import type * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../bindings/bindings.js';
 import * as Formatter from '../formatter/formatter.js';
 import * as SourceMapScopes from '../source_map_scopes/source_map_scopes.js';
-import type * as TextUtils from '../text_utils/text_utils.js';
 import * as Workspace from '../workspace/workspace.js';
 
-let breakpointManagerInstance: BreakpointManager;
 const INITIAL_RESTORE_BREAKPOINT_COUNT = 100;
 
 export class BreakpointManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> implements
@@ -35,10 +34,9 @@ export class BreakpointManager extends Common.ObjectWrapper.ObjectWrapper<EventT
   readonly #breakpointByStorageId = new Map<string, Breakpoint>();
   #updateBindingsCallbacks: Array<(uiSourceCode: Workspace.UISourceCode.UISourceCode) => Promise<void>> = [];
 
-  private constructor(
-      targetManager: SDK.TargetManager.TargetManager, workspace: Workspace.Workspace.WorkspaceImpl,
-      debuggerWorkspaceBinding: Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding,
-      settings: Common.Settings.Settings, restoreInitialBreakpointCount?: number) {
+  constructor(targetManager: SDK.TargetManager.TargetManager, workspace: Workspace.Workspace.WorkspaceImpl,
+              debuggerWorkspaceBinding: Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding,
+              settings: Common.Settings.Settings, restoreInitialBreakpointCount?: number) {
     super();
     this.#workspace = workspace;
     this.targetManager = targetManager;
@@ -85,18 +83,20 @@ export class BreakpointManager extends Common.ObjectWrapper.ObjectWrapper<EventT
   }): BreakpointManager {
     const {forceNew, targetManager, workspace, debuggerWorkspaceBinding, settings, restoreInitialBreakpointCount} =
         opts;
-    if (!breakpointManagerInstance || forceNew) {
+    if (!Root.DevToolsContext.globalInstance().has(BreakpointManager) || forceNew) {
       if (!targetManager || !workspace || !debuggerWorkspaceBinding || !settings) {
         throw new Error(
             `Unable to create settings: targetManager, workspace, debuggerWorkspaceBinding, and settings must be provided: ${
                 new Error().stack}`);
       }
 
-      breakpointManagerInstance = new BreakpointManager(
-          targetManager, workspace, debuggerWorkspaceBinding, settings, restoreInitialBreakpointCount);
+      Root.DevToolsContext.globalInstance().set(
+          BreakpointManager,
+          new BreakpointManager(targetManager, workspace, debuggerWorkspaceBinding, settings,
+                                restoreInitialBreakpointCount));
     }
 
-    return breakpointManagerInstance;
+    return Root.DevToolsContext.globalInstance().get(BreakpointManager);
   }
 
   modelAdded(debuggerModel: SDK.DebuggerModel.DebuggerModel): void {
@@ -837,7 +837,8 @@ export class Breakpoint implements SDK.TargetManager.SDKModelObserver<SDK.Debugg
     };
 
     if (location) {
-      return SourceMapScopes.NamesResolver.allVariablesAtPosition(location)
+      return SourceMapScopes.NamesResolver
+          .allVariablesAtPosition(location, this.breakpointManager.debuggerWorkspaceBinding)
           .then(nameMap => Formatter.FormatterWorkerPool.formatterWorkerPool().javaScriptSubstitute(condition, nameMap))
           .catch(() => condition)
           .then(subsitutedCondition => addSourceUrl(subsitutedCondition), () => addSourceUrl(condition));

@@ -126,6 +126,13 @@ class Generator(CppGenerator):
     for kind in self.module.enums + self.module.structs + self.module.unions:
       AddKind(kind)
 
+    parameters = (param for interface in self.module.interfaces
+                  for method in interface.methods
+                  for param in (method.parameters +
+                                (method.response_parameters or [])))
+    for parameter in parameters:
+      AddKind(parameter.kind)
+
     return all_typemaps
 
   def _ProtoImports(self):
@@ -397,7 +404,7 @@ class Generator(CppGenerator):
       raise Exception("Unrecognized kind %s" % kind.spec)
     return _kind_to_cpp_proto_type[kind]
 
-  def _GetProtoFieldType(self, kind, quantified=True):
+  def _GetProtoFieldType(self, kind, quantified=True, field=None):
     # TODO(markbrand): This will not handle array<array> or array<map>
     # TODO(markbrand): This also will not handle array<x, 10>
     unquantified = ''
@@ -432,7 +439,8 @@ class Generator(CppGenerator):
     else:
       unquantified = _kind_to_proto_type[kind]
 
-    if quantified and mojom.IsNullableKind(kind):
+    if quantified and (mojom.IsNullableKind(kind) or
+                       (field and field.default is not None)):
       return 'optional %s' % unquantified
     elif quantified:
       return 'required %s' % unquantified

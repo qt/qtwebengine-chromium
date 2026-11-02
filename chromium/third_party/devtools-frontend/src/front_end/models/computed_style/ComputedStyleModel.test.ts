@@ -3,11 +3,12 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
-import {createTarget, stubNoopSettings} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {createTarget, describeWithEnvironment, stubNoopSettings} from '../../testing/EnvironmentHelpers.js';
+import {MockCDPConnection} from '../../testing/MockCDPConnection.js';
 import {getMatchedStyles, ruleMatch} from '../../testing/StyleHelpers.js';
 
 import * as ComputedStyle from './computed_style.js';
@@ -28,14 +29,16 @@ function createNode(target: SDK.Target.Target, {nodeId}: {nodeId: Protocol.DOM.N
   return node;
 }
 
-describeWithMockConnection('ComputedStyleModel', () => {
+describeWithEnvironment('ComputedStyleModel', () => {
   let target: SDK.Target.Target;
   let computedStyleModel: ComputedStyle.ComputedStyleModel.ComputedStyleModel;
   let domNode1: SDK.DOMModel.DOMNode;
+  let connection: MockCDPConnection;
 
   beforeEach(() => {
     stubNoopSettings();
-    target = createTarget();
+    connection = new MockCDPConnection();
+    target = createTarget({connection});
     domNode1 = createNode(target, {nodeId: 1 as Protocol.DOM.NodeId});
     const cssModel = target.model(SDK.CSSModel.CSSModel);
     sinon.stub(ComputedStyle.ComputedStyleModel.ComputedStyleModel.prototype, 'cssModel').returns(cssModel);
@@ -111,6 +114,7 @@ describeWithMockConnection('ComputedStyleModel', () => {
     const domNode2 = createNode(target, {nodeId: 2 as Protocol.DOM.NodeId});
     const mockMatchedStylesForNode2 = await getMatchedStyles({
       node: domNode2,
+      connection,
     });
     const cachedMatchedCascadeForNodeStub =
         sinon.stub(cssModel, 'cachedMatchedCascadeForNode').resolves(mockMatchedStylesForNode2);
@@ -147,10 +151,84 @@ describeWithMockConnection('ComputedStyleModel', () => {
     assert.isNull(styles);
   });
 
+  describe('onDOMModelChanged', () => {
+    let cssModel: SDK.CSSModel.CSSModel;
+    let domModel: SDK.DOMModel.DOMModel;
+    let parentNode: sinon.SinonStubbedInstance<SDK.DOMModel.DOMNode>;
+    let fooNode: sinon.SinonStubbedInstance<SDK.DOMModel.DOMNode>;
+    let siblingNode: sinon.SinonStubbedInstance<SDK.DOMModel.DOMNode>;
+    let childNode: sinon.SinonStubbedInstance<SDK.DOMModel.DOMNode>;
+    let childOfSiblingNode: sinon.SinonStubbedInstance<SDK.DOMModel.DOMNode>;
+    let modelChangedListener: sinon.SinonSpy;
+
+    beforeEach(() => {
+      cssModel = domNode1.domModel().cssModel() as SDK.CSSModel.CSSModel;
+      assert.isOk(cssModel);
+      domModel = domNode1.domModel();
+
+      parentNode = sinon.createStubInstance(SDK.DOMModel.DOMNode);
+      fooNode = sinon.createStubInstance(SDK.DOMModel.DOMNode);
+      siblingNode = sinon.createStubInstance(SDK.DOMModel.DOMNode);
+      childNode = sinon.createStubInstance(SDK.DOMModel.DOMNode);
+      childOfSiblingNode = sinon.createStubInstance(SDK.DOMModel.DOMNode);
+
+      fooNode.domModel.returns(domModel);
+
+      // Hierarchical structure:
+      // parent
+      //   foo
+      //     child
+      //   sibling
+      //     child-of-sibling
+      (fooNode as unknown as {parentNode: SDK.DOMModel.DOMNode | null}).parentNode =
+          parentNode as unknown as SDK.DOMModel.DOMNode;
+      (siblingNode as unknown as {parentNode: SDK.DOMModel.DOMNode | null}).parentNode =
+          parentNode as unknown as SDK.DOMModel.DOMNode;
+      (childNode as unknown as {parentNode: SDK.DOMModel.DOMNode | null}).parentNode =
+          fooNode as unknown as SDK.DOMModel.DOMNode;
+      (childOfSiblingNode as unknown as {parentNode: SDK.DOMModel.DOMNode | null}).parentNode =
+          siblingNode as unknown as SDK.DOMModel.DOMNode;
+
+      parentNode.isAncestor.withArgs(fooNode as unknown as SDK.DOMModel.DOMNode).returns(true);
+      fooNode.isAncestor.returns(false);
+      siblingNode.isAncestor.returns(false);
+      childNode.isAncestor.returns(false);
+      childOfSiblingNode.isAncestor.returns(false);
+
+      computedStyleModel.node = fooNode as unknown as SDK.DOMModel.DOMNode;
+
+      modelChangedListener = sinon.spy();
+      computedStyleModel.addEventListener(ComputedStyle.ComputedStyleModel.Events.CSS_MODEL_CHANGED,
+                                          modelChangedListener);
+    });
+
+    it('emits CSS_MODEL_CHANGED when a sibling node is mutated', () => {
+      domModel.dispatchEventToListeners(SDK.DOMModel.Events.DOMMutated, siblingNode as unknown as SDK.DOMModel.DOMNode);
+      sinon.assert.calledOnce(modelChangedListener);
+    });
+
+    it('does not emit CSS_MODEL_CHANGED when a sibling\'s child node is mutated', () => {
+      domModel.dispatchEventToListeners(SDK.DOMModel.Events.DOMMutated,
+                                        childOfSiblingNode as unknown as SDK.DOMModel.DOMNode);
+      sinon.assert.notCalled(modelChangedListener);
+    });
+
+    it('emits CSS_MODEL_CHANGED when a parent node is mutated', () => {
+      domModel.dispatchEventToListeners(SDK.DOMModel.Events.DOMMutated, parentNode as unknown as SDK.DOMModel.DOMNode);
+      sinon.assert.calledOnce(modelChangedListener);
+    });
+
+    it('does not emit CSS_MODEL_CHANGED when a child node is mutated', () => {
+      domModel.dispatchEventToListeners(SDK.DOMModel.Events.DOMMutated, childNode as unknown as SDK.DOMModel.DOMNode);
+      sinon.assert.notCalled(modelChangedListener);
+    });
+  });
+
   describe('computePropertyTraces', () => {
     it('should return a map of property traces from the matched styles', async () => {
       const mockMatchedStyles = await getMatchedStyles({
         matchedPayload: [ruleMatch('div', [{name: 'color', value: 'red'}, {name: 'font-size', value: '12px'}])],
+        connection,
       });
       const traces = computedStyleModel.computePropertyTraces(mockMatchedStyles);
       assert.sameMembers(Array.from(traces.keys()), ['color', 'font-size']);
@@ -163,6 +241,7 @@ describeWithMockConnection('ComputedStyleModel', () => {
     it('should not include properties that are not active in the style', async () => {
       const mockMatchedStyles = await getMatchedStyles({
         matchedPayload: [ruleMatch('div', [{name: 'color', value: 'red'}])],
+        connection,
       });
       const colorProperty = mockMatchedStyles.nodeStyles()[0].allProperties()[0];
       sinon.stub(colorProperty, 'activeInStyle').returns(false);
@@ -174,6 +253,7 @@ describeWithMockConnection('ComputedStyleModel', () => {
     it('should not include properties whose state is not determined', async () => {
       const mockMatchedStyles = await getMatchedStyles({
         matchedPayload: [ruleMatch('div', [{name: 'color', value: 'red'}])],
+        connection,
       });
       sinon.stub(mockMatchedStyles, 'propertyState').returns(null);
 

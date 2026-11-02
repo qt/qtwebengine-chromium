@@ -10,35 +10,34 @@ import * as Media from './media.js';
 
 describeWithEnvironment('EventDisplayTable', () => {
   it('correctly displays the timestamp for events', () => {
-    const eventDisplayTable = new Media.PlayerEventsView.PlayerEventsView();
+    let viewInput: Media.PlayerEventsView.PlayerEventsViewInput|undefined;
+    const view = (input: Media.PlayerEventsView.PlayerEventsViewInput) => {
+      viewInput = input;
+    };
+    const eventDisplayTable = new Media.PlayerEventsView.PlayerEventsView(view);
     const event1 = {
       timestamp: 1000,
       value: JSON.stringify({event: 'testEvent', data: 'data1'}),
     } as Media.MediaModel.PlayerEvent;
 
     eventDisplayTable.onEvent(event1);
+    eventDisplayTable.performUpdate();
 
-    const rootNode = (eventDisplayTable as unknown & {
-                       dataGrid: {
-                         rootNode: () => {
-                           children: Media.PlayerEventsView.EventNode[],
-                         },
-                       },
-                     }).dataGrid.rootNode();
-    assert.lengthOf(rootNode.children, 1);
+    assert.isDefined(viewInput);
+    assert.lengthOf(viewInput!.parsedEvents, 1);
 
-    const firstNode = rootNode.children[0] as Media.PlayerEventsView.EventNode;
+    const firstEvent = viewInput!.parsedEvents[0];
 
     // Verify the data property is set correctly
-    assert.strictEqual(firstNode.data['displayTimestamp'], '0.000');
-
-    // Verify the cell is created with the correct content for the 'displayTimestamp' column
-    const cell = firstNode.createCell('displayTimestamp');
-    assert.strictEqual(cell.textContent, '0.000');
+    assert.strictEqual(firstEvent.displayTimestamp, '0.000');
   });
 
   it('subtracts the first event time from subsequent events', () => {
-    const eventDisplayTable = new Media.PlayerEventsView.PlayerEventsView();
+    let viewInput: Media.PlayerEventsView.PlayerEventsViewInput|undefined;
+    const view = (input: Media.PlayerEventsView.PlayerEventsViewInput) => {
+      viewInput = input;
+    };
+    const eventDisplayTable = new Media.PlayerEventsView.PlayerEventsView(view);
     const event1 = {
       timestamp: 1000,
       value: JSON.stringify({event: 'testEvent', data: 'data1'}),
@@ -51,16 +50,13 @@ describeWithEnvironment('EventDisplayTable', () => {
 
     eventDisplayTable.onEvent(event1);
     eventDisplayTable.onEvent(event2);
+    eventDisplayTable.performUpdate();
 
-    const rootNode = (eventDisplayTable as unknown & {
-                       dataGrid: {
-                         rootNode: () => {
-                           children: Media.PlayerEventsView.EventNode[],
-                         },
-                       },
-                     }).dataGrid.rootNode();
-    const secondNode = rootNode.children[1] as Media.PlayerEventsView.EventNode;
+    assert.isDefined(viewInput);
+    assert.lengthOf(viewInput!.parsedEvents, 2);
 
-    assert.strictEqual(secondNode.data['displayTimestamp'], '234.568');
+    const secondEvent = viewInput!.parsedEvents[1];
+
+    assert.strictEqual(secondEvent.displayTimestamp, '234.568');
   });
 });

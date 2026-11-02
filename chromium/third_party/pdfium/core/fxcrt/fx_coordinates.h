@@ -8,6 +8,7 @@
 #define CORE_FXCRT_FX_COORDINATES_H_
 
 #include <stdint.h>
+#include <stdlib.h>
 
 #include "core/fxcrt/span.h"
 
@@ -163,6 +164,12 @@ struct FX_RECT {
   }
 
   friend constexpr bool operator==(const FX_RECT&, const FX_RECT&) = default;
+  bool Near(const FX_RECT& other, int tolerance) const {
+    return abs(left - other.left) <= tolerance &&
+           abs(top - other.top) <= tolerance &&
+           abs(right - other.right) <= tolerance &&
+           abs(bottom - other.bottom) <= tolerance;
+  }
 
   bool Contains(int x, int y) const {
     return x >= left && x < right && y >= top && y < bottom;

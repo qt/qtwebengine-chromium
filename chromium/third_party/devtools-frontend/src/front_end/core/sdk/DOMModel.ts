@@ -38,16 +38,29 @@ import type * as ProtocolProxyApi from '../../generated/protocol-proxy-api.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as Common from '../common/common.js';
 import * as Platform from '../platform/platform.js';
+import * as Root from '../root/root.js';
 
 import {CSSModel} from './CSSModel.js';
-import {FrameManager} from './FrameManager.js';
+import type {FrameManager} from './FrameManager.js';
 import {OverlayModel} from './OverlayModel.js';
 import {RemoteObject} from './RemoteObject.js';
 import {Events as ResourceTreeModelEvents, type ResourceTreeFrame, ResourceTreeModel} from './ResourceTreeModel.js';
 import {RuntimeModel} from './RuntimeModel.js';
 import {SDKModel} from './SDKModel.js';
 import {Capability, type Target} from './Target.js';
-import {TargetManager} from './TargetManager.js';
+import type {TargetManager} from './TargetManager.js';
+
+export const enum NodeType {
+  ELEMENT_NODE = 1,
+  ATTRIBUTE_NODE = 2,
+  TEXT_NODE = 3,
+  CDATA_SECTION_NODE = 4,
+  PROCESSING_INSTRUCTION_NODE = 7,
+  COMMENT_NODE = 8,
+  DOCUMENT_NODE = 9,
+  DOCUMENT_TYPE_NODE = 10,
+  DOCUMENT_FRAGMENT_NODE = 11,
+}
 
 /** Keep this list in sync with https://w3c.github.io/aria/#state_prop_def **/
 export const ARIA_ATTRIBUTES = new Set<string>([
@@ -129,6 +142,7 @@ export interface DOMNodeEventTypes {
 
 export class DOMNode extends Common.ObjectWrapper.ObjectWrapper<DOMNodeEventTypes> {
   #domModel: DOMModel;
+  readonly #frameManager: FrameManager;
   #agent: ProtocolProxyApi.DOMApi;
   ownerDocument!: DOMDocument|null;
   #isInShadowTree!: boolean;
@@ -194,6 +208,7 @@ export class DOMNode extends Common.ObjectWrapper.ObjectWrapper<DOMNodeEventType
   constructor(domModel: DOMModel) {
     super();
     this.#domModel = domModel;
+    this.#frameManager = domModel.target().targetManager().getFrameManager();
     this.#agent = this.#domModel.getAgent();
   }
 
@@ -294,7 +309,7 @@ export class DOMNode extends Common.ObjectWrapper.ObjectWrapper<DOMNodeEventType
       this.#adProvenance = payload.adProvenance;
     }
 
-    if (this.#nodeType === Node.ELEMENT_NODE) {
+    if (this.#nodeType === NodeType.ELEMENT_NODE) {
       // HTML and BODY from internal iframes should not overwrite top-level ones.
       if (this.ownerDocument && !this.ownerDocument.documentElement && this.#nodeName === 'HTML') {
         this.ownerDocument.documentElement = this;
@@ -302,18 +317,18 @@ export class DOMNode extends Common.ObjectWrapper.ObjectWrapper<DOMNodeEventType
       if (this.ownerDocument && !this.ownerDocument.body && this.#nodeName === 'BODY') {
         this.ownerDocument.body = this;
       }
-    } else if (this.#nodeType === Node.DOCUMENT_TYPE_NODE) {
+    } else if (this.#nodeType === NodeType.DOCUMENT_TYPE_NODE) {
       this.publicId = payload.publicId;
       this.systemId = payload.systemId;
       this.internalSubset = payload.internalSubset;
-    } else if (this.#nodeType === Node.ATTRIBUTE_NODE) {
+    } else if (this.#nodeType === NodeType.ATTRIBUTE_NODE) {
       this.name = payload.name;
       this.value = payload.value;
     }
   }
 
   private async requestChildDocument(frameId: Protocol.Page.FrameId, notInTarget: Target): Promise<DOMDocument|null> {
-    const frame = await FrameManager.instance().getOrWaitForFrame(frameId, notInTarget);
+    const frame = await this.#frameManager.getOrWaitForFrame(frameId, notInTarget);
     const childModel = frame.resourceTreeModel()?.target().model(DOMModel);
     return await (childModel?.requestDocument() || null);
   }
@@ -341,7 +356,7 @@ export class DOMNode extends Common.ObjectWrapper.ObjectWrapper<DOMNodeEventType
       return undefined;
     }
 
-    const frame = FrameManager.instance().getFrame(this.#frameOwnerFrameId);
+    const frame = this.#frameManager.getFrame(this.#frameOwnerFrameId);
     if (frame && frame.adFrameType() !== Protocol.Page.AdFrameType.None) {
       // The frame is ad-related, but provenance information is unavailable.
       return {};
@@ -351,7 +366,7 @@ export class DOMNode extends Common.ObjectWrapper.ObjectWrapper<DOMNodeEventType
   }
 
   isRootNode(): boolean {
-    if (this.nodeType() === Node.ELEMENT_NODE && this.nodeName() === 'HTML') {
+    if (this.nodeType() === NodeType.ELEMENT_NODE && this.nodeName() === 'HTML') {
       return true;
     }
     return false;
@@ -510,6 +525,10 @@ export class DOMNode extends Common.ObjectWrapper.ObjectWrapper<DOMNodeEventType
 
   pickerIconPseudoElement(): DOMNode|undefined {
     return this.#pseudoElements.get(Protocol.DOM.PseudoType.PickerIcon)?.at(-1);
+  }
+
+  interestButtonPseudoElement(): DOMNode|undefined {
+    return this.#pseudoElements.get(Protocol.DOM.PseudoType.InterestButton)?.at(-1);
   }
 
   markerPseudoElement(): DOMNode|undefined {
@@ -755,7 +774,7 @@ export class DOMNode extends Common.ObjectWrapper.ObjectWrapper<DOMNodeEventType
       if (node.isShadowRoot()) {
         return node.shadowRootType() === DOMNode.ShadowRootTypes.UserAgent ? 'u' : 'a';
       }
-      if (node.nodeType() === Node.DOCUMENT_NODE) {
+      if (node.nodeType() === NodeType.DOCUMENT_NODE) {
         return 'd';
       }
       return null;
@@ -1010,6 +1029,27 @@ export class DOMNode extends Common.ObjectWrapper.ObjectWrapper<DOMNodeEventType
     return Boolean(this.#xmlVersion);
   }
 
+  isCustomElement(): boolean {
+    if (this.nodeType() !== NodeType.ELEMENT_NODE || this.isXMLNode()) {
+      return false;
+    }
+    const localName = this.localName() || this.nodeName().toLowerCase();
+    if (localName.includes('-')) {
+      const builtInExclusionList = [
+        'annotation-xml',
+        'color-profile',
+        'font-face',
+        'font-face-src',
+        'font-face-uri',
+        'font-face-format',
+        'font-face-name',
+        'missing-glyph',
+      ];
+      return !builtInExclusionList.includes(localName);
+    }
+    return this.getAttribute('is') !== undefined;
+  }
+
   setMarker(name: string, value: unknown): void {
     if (value === null) {
       if (!this.#markers.has(name)) {
@@ -1099,36 +1139,42 @@ export class DOMNode extends Common.ObjectWrapper.ObjectWrapper<DOMNodeEventType
     return model;
   }
 
+  canInspectNode(): boolean {
+    if (this.ancestorUserAgentShadowRoot()) {
+      return false;
+    }
+
+    if (this.#pseudoType) {
+      return [
+        Protocol.DOM.PseudoType.Before,
+        Protocol.DOM.PseudoType.After,
+        Protocol.DOM.PseudoType.Marker,
+        Protocol.DOM.PseudoType.ScrollMarker,
+        Protocol.DOM.PseudoType.Backdrop,
+        Protocol.DOM.PseudoType.ViewTransition,
+        Protocol.DOM.PseudoType.ViewTransitionGroup,
+        Protocol.DOM.PseudoType.ViewTransitionImagePair,
+        Protocol.DOM.PseudoType.ViewTransitionOld,
+        Protocol.DOM.PseudoType.ViewTransitionNew,
+      ].includes(this.#pseudoType);
+    }
+    return true;
+  }
+
   async setAsInspectedNode(): Promise<void> {
-    let node: DOMNode|null = this;
-    if (node?.pseudoType()) {
-      node = node.parentNode;
+    if (!this.canInspectNode()) {
+      return;
     }
-    while (node) {
-      let ancestor = node.ancestorUserAgentShadowRoot();
-      if (!ancestor) {
-        break;
-      }
-      ancestor = node.ancestorShadowHost();
-      if (!ancestor) {
-        break;
-      }
-      // User #agent shadow root, keep climbing up.
-      node = ancestor;
-    }
-    if (!node) {
-      throw new Error('In DOMNode.setAsInspectedNode: node is expected to not be null.');
-    }
-    await this.#agent.invoke_setInspectedNode({nodeId: node.id});
+    await this.#agent.invoke_setInspectedNode({nodeId: this.id});
   }
 
   enclosingElementOrSelf(): DOMNode|null {
     let node: DOMNode|null = this;
-    if (node && node.nodeType() === Node.TEXT_NODE && node.parentNode) {
+    if (node && node.nodeType() === NodeType.TEXT_NODE && node.parentNode) {
       node = node.parentNode;
     }
 
-    if (node && node.nodeType() !== Node.ELEMENT_NODE) {
+    if (node && node.nodeType() !== NodeType.ELEMENT_NODE) {
       node = null;
     }
     return node;
@@ -1189,7 +1235,7 @@ export class DOMNode extends Common.ObjectWrapper.ObjectWrapper<DOMNodeEventType
 
   simpleSelector(): string {
     const lowerCaseName = this.localName() || this.nodeName().toLowerCase();
-    if (this.nodeType() !== Node.ELEMENT_NODE) {
+    if (this.nodeType() !== NodeType.ELEMENT_NODE) {
       return lowerCaseName;
     }
     const type = this.getAttribute('type');
@@ -1440,7 +1486,7 @@ export class DOMModel extends SDKModel<EventTypes> {
   #lastMutationId!: number;
   #pendingDocumentRequestPromise: Promise<DOMDocument|null>|null = null;
   #frameOwnerNode?: DOMNode|null;
-  #loadNodeAttributesTimeout?: number;
+  #loadNodeAttributesTimeout?: ReturnType<typeof setTimeout>;
   #searchId?: string;
   #topLayerThrottler = new Common.Throttler.Throttler(100);
   #topLayerNodes: DOMNode[] = [];
@@ -1474,7 +1520,7 @@ export class DOMModel extends SDKModel<EventTypes> {
     return this.target().model(OverlayModel) as OverlayModel;
   }
 
-  static cancelSearch(targetManager: TargetManager = TargetManager.instance()): void {
+  static cancelSearch(targetManager: TargetManager): void {
     for (const domModel of targetManager.models(DOMModel)) {
       domModel.cancelSearch();
     }
@@ -1629,7 +1675,7 @@ export class DOMModel extends SDKModel<EventTypes> {
   inlineStyleInvalidated(nodeIds: Protocol.DOM.NodeId[]): void {
     nodeIds.forEach(nodeId => this.#attributeLoadNodeIds.add(nodeId));
     if (!this.#loadNodeAttributesTimeout) {
-      this.#loadNodeAttributesTimeout = window.setTimeout(this.loadNodeAttributes.bind(this), 20);
+      this.#loadNodeAttributesTimeout = globalThis.setTimeout(this.loadNodeAttributes.bind(this), 20);
     }
   }
 
@@ -1692,7 +1738,7 @@ export class DOMModel extends SDKModel<EventTypes> {
     } else {
       this.#document = null;
     }
-    DOMModelUndoStack.instance().dispose(this);
+    this.#undoStack().dispose(this);
 
     if (!this.parentModel()) {
       this.dispatchEventToListeners(Events.DocumentUpdated, this);
@@ -2028,7 +2074,7 @@ export class DOMModel extends SDKModel<EventTypes> {
   }
 
   markUndoableState(minorChange?: boolean): void {
-    void DOMModelUndoStack.instance().markUndoableState(this, minorChange || false);
+    void this.#undoStack().markUndoableState(this, minorChange || false);
   }
 
   async nodeForLocation(x: number, y: number, includeUserAgentShadowDOM: boolean): Promise<DOMNode|null> {
@@ -2065,7 +2111,17 @@ export class DOMModel extends SDKModel<EventTypes> {
 
   override dispose(): void {
     this.#resourceTreeModel?.removeEventListener(ResourceTreeModelEvents.DocumentOpened, this.onDocumentOpened, this);
-    DOMModelUndoStack.instance().dispose(this);
+    this.#undoStack().dispose(this);
+  }
+
+  // TODO(crbug.com/493763857): Remove fallback once all unit tests use TestUniverse.
+  #undoStack(): DOMModelUndoStack {
+    const context = this.target().targetManager().context;
+    if ('has' in context && typeof context.has === 'function' && context.has(DOMModelUndoStack)) {
+      return context.get(DOMModelUndoStack);
+    }
+    // eslint-disable-next-line @devtools/no-instance-of-migrated-singletons
+    return DOMModelUndoStack.instance();
   }
 
   parentModel(): DOMModel|null {
@@ -2206,8 +2262,6 @@ class DOMDispatcher implements ProtocolProxyApi.DOMDispatcher {
   }
 }
 
-let domModelUndoStackInstance: DOMModelUndoStack|null = null;
-
 export class DOMModelUndoStack {
   #stack: DOMModel[];
   #index: number;
@@ -2222,11 +2276,11 @@ export class DOMModelUndoStack {
     forceNew: boolean|null,
   } = {forceNew: null}): DOMModelUndoStack {
     const {forceNew} = opts;
-    if (!domModelUndoStackInstance || forceNew) {
-      domModelUndoStackInstance = new DOMModelUndoStack();
+    if (!Root.DevToolsContext.globalInstance().has(DOMModelUndoStack) || forceNew) {
+      Root.DevToolsContext.globalInstance().set(DOMModelUndoStack, new DOMModelUndoStack());
     }
 
-    return domModelUndoStackInstance;
+    return Root.DevToolsContext.globalInstance().get(DOMModelUndoStack);
   }
 
   async markUndoableState(model: DOMModel, minorChange: boolean): Promise<void> {
@@ -2330,6 +2384,10 @@ export class DOMNodeSnapshot extends DOMNode {
       _callback?: ((arg0: string|null, arg1: DOMNode|null) => void)|undefined): void {
   }
 
+  override canInspectNode(): boolean {
+    return false;
+  }
+
   override setAsInspectedNode(): Promise<void> {
     return Promise.resolve();
   }
@@ -2373,6 +2431,10 @@ export class DOMDocumentSnapshot extends DOMDocument {
   override moveTo(
       _targetNode: DOMNode, _anchorNode: DOMNode|null,
       _callback?: ((arg0: string|null, arg1: DOMNode|null) => void)|undefined): void {
+  }
+
+  override canInspectNode(): boolean {
+    return false;
   }
 
   override setAsInspectedNode(): Promise<void> {

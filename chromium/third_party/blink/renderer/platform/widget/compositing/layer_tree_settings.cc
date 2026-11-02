@@ -12,6 +12,7 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial_params.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/system/sys_info.h"
 #include "build/build_config.h"
@@ -34,6 +35,10 @@
 #include "ui/native_theme/native_theme.h"
 #include "ui/native_theme/overlay_scrollbar_constants.h"
 
+#if BUILDFLAG(IS_ANDROID)
+#include "base/android/device_info.h"
+#endif
+
 namespace blink {
 
 namespace {
@@ -54,7 +59,10 @@ constexpr base::FeatureParam<double> kFadeDurationScalingFactor{
 bool ShouldUseDesktopOverlayScrollbars() {
 #if BUILDFLAG(IS_ANDROID)
   return base::CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableDesktopAndroidScrollbars);
+             switches::kEnableDesktopAndroidScrollbars) &&
+         // This feature is not ready for non-desktop devices. See
+         // crbug.com/522529331.
+         base::android::device_info::is_desktop();
 #else
   return ui::NativeTheme::GetInstanceForWeb()->use_overlay_scrollbar();
 #endif  // BUILDFLAG(IS_ANDROID)
@@ -113,40 +121,6 @@ std::pair<int, int> GetTilingInterestAreaSizes() {
       2 * ::features::kDefaultInterestAreaSizeInPixels / 3);
   return {interest_area_size_in_pixels, (2 * interest_area_size_in_pixels) / 3};
 }
-
-#if !BUILDFLAG(IS_ANDROID)
-// Adjusting tile memory size in case a lot more websites need more tile
-// memory than the current calculation.
-BASE_FEATURE(kAdjustTileGpuMemorySize, base::FEATURE_DISABLED_BY_DEFAULT);
-
-constexpr size_t kLargeResolutionMemoryMB = 1152;
-constexpr size_t kDefaultMemoryMB = 512;
-
-constexpr base::FeatureParam<int> kNewLargeResolutionMemoryMB{
-    &kAdjustTileGpuMemorySize, "new_large_resolution_memory_mb",
-    /*default_value=*/kLargeResolutionMemoryMB};
-
-constexpr base::FeatureParam<int> kNewDefaultMemoryMB{
-    &kAdjustTileGpuMemorySize, "new_default_memory_mb",
-    /*default_value=*/kDefaultMemoryMB};
-
-size_t GetLargeResolutionMemoryMB() {
-  if (base::FeatureList::IsEnabled(kAdjustTileGpuMemorySize)) {
-    return kNewLargeResolutionMemoryMB.Get();
-  } else {
-    return kLargeResolutionMemoryMB;
-  }
-}
-
-size_t GetDefaultMemoryMB() {
-  if (base::FeatureList::IsEnabled(kAdjustTileGpuMemorySize)) {
-    return kNewDefaultMemoryMB.Get();
-  } else {
-    return kDefaultMemoryMB;
-  }
-}
-#endif
-
 }  // namespace
 
 // static
@@ -181,6 +155,9 @@ cc::ManagedMemoryPolicy GetGpuMemoryPolicy(
     actual.bytes_limit_when_visible = 256 * 1024 * 1024;
   }
 #else
+  static constexpr size_t kLargeResolutionMemoryMB = 1152;
+  static constexpr size_t kDefaultMemoryMB = 512;
+
   // This calculation will increase the tile memory size. It should apply to
   // the other plateforms if no regression on Mac.
   //
@@ -196,20 +173,18 @@ cc::ManagedMemoryPolicy GetGpuMemoryPolicy(
       std::round(initial_screen_size.width() * initial_device_scale_factor *
                  initial_screen_size.height() * initial_device_scale_factor);
 
-  size_t large_resolution_memory_mb = GetLargeResolutionMemoryMB();
   size_t mb_limit_when_visible =
-      large_resolution_memory_mb * (display_size * 1.0 / kLargeResolution);
+      kLargeResolutionMemoryMB * (display_size * 1.0 / kLargeResolution);
 
   // Cap the memory size to one fourth of the total system memory so it won't
   // consume too much of the system memory. Still keep the minimum to the
   // default of 512MB.
-  size_t default_memory_mb = GetDefaultMemoryMB();
-  size_t memory_cap_mb =
-      base::SysInfo::AmountOfTotalPhysicalMemory().InMiB() / 4;
+  size_t memory_cap_mb = base::checked_cast<size_t>(
+      base::SysInfo::AmountOfTotalPhysicalMemory().InMiB() / 4);
   if (mb_limit_when_visible > memory_cap_mb) {
     mb_limit_when_visible = memory_cap_mb;
-  } else if (mb_limit_when_visible < default_memory_mb) {
-    mb_limit_when_visible = default_memory_mb;
+  } else if (mb_limit_when_visible < kDefaultMemoryMB) {
+    mb_limit_when_visible = kDefaultMemoryMB;
   }
 
   actual.bytes_limit_when_visible = mb_limit_when_visible * 1024 * 1024;
@@ -534,16 +509,12 @@ cc::LayerTreeSettings GenerateLayerTreeSettings(
     //  - If we are not running in a WebView, where 4444 isn't supported.
     //  - If we are not using vulkan, since some GPU drivers don't support
     //    using RGBA4444 as color buffer.
-    //  - If we are not using Skia's Graphite-Dawn backend, since dawn does not
-    //  support RGBA_4444 formats.
     // TODO(crbug.com/398868042): Instead of Graphite/Vulkan feature checks, add
     // appropriate shared image capability and check for its support.
     if (!cmd.HasSwitch(switches::kDisableRGBA4444Textures) &&
         base::SysInfo::AmountOfTotalPhysicalMemory().InMiB() <= 512 &&
-        !::features::IsUsingVulkan() &&
-        !::features::IsSkiaGraphiteEnabled(
-            base::CommandLine::ForCurrentProcess())) {
-      settings.use_rgba_4444 = true;
+        !::features::IsUsingVulkan()) {
+      settings.prefer_rgba_4444 = true;
 
       // TODO(crbug.com/40042400): Determine whether this is actually necessary;
       // its purpose was to support unpremultiply-and-dither, but it ended up
@@ -554,7 +525,7 @@ cc::LayerTreeSettings GenerateLayerTreeSettings(
 
   if (cmd.HasSwitch(switches::kEnableRGBA4444Textures) &&
       !cmd.HasSwitch(switches::kDisableRGBA4444Textures)) {
-    settings.use_rgba_4444 = true;
+    settings.prefer_rgba_4444 = true;
   }
 
   settings.max_staging_buffer_usage_in_bytes = 32 * 1024 * 1024;  // 32MB

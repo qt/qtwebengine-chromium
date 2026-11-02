@@ -44,5 +44,5 @@ export const adorner: RuleCreator = {
         }
       },
     };
-  }
+  },
 };

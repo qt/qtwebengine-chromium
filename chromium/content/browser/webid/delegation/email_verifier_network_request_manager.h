@@ -13,7 +13,6 @@
 #include "base/memory/weak_ptr.h"
 #include "content/browser/webid/network_request_manager.h"
 #include "content/common/content_export.h"
-#include "services/data_decoder/public/cpp/data_decoder.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/mojom/client_security_state.mojom-forward.h"
 #include "url/gurl.h"
@@ -22,6 +21,7 @@
 namespace content {
 
 class RenderFrameHostImpl;
+class WeakDocumentPtr;
 
 namespace webid {
 
@@ -62,7 +62,8 @@ class CONTENT_EXPORT EmailVerifierNetworkRequestManager
       const url::Origin& relying_party_origin,
       scoped_refptr<network::SharedURLLoaderFactory> loader_factory,
       network::mojom::ClientSecurityStatePtr client_security_state,
-      content::FrameTreeNodeId frame_tree_node_id);
+      FrameTreeNodeId frame_tree_node_id,
+      WeakDocumentPtr initiator_document);
   ~EmailVerifierNetworkRequestManager() override;
 
   EmailVerifierNetworkRequestManager(

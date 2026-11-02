@@ -13,6 +13,8 @@ static_assert(BUILDFLAG(ENABLE_PDF_INK2), "ENABLE_PDF_INK2 not set to true");
 
 namespace chrome_pdf {
 
+struct InkTextBoxAttributes;
+
 // These values are persisted to logs. Entries should not be renumbered and
 // numeric values should never be reused.
 //
@@ -103,6 +105,47 @@ enum class StrokeMetricPenColor {
 // These values are persisted to logs. Entries should not be renumbered and
 // numeric values should never be reused.
 //
+// LINT.IfChange(PDFInk2TextAnnotationColor)
+enum class TextAnnotationColor {
+  kBlack = 0,
+  kDarkGrey2 = 1,
+  kDarkGrey1 = 2,
+  kLightGrey = 3,
+  kWhite = 4,
+  kRed1 = 5,
+  kYellow1 = 6,
+  kGreen1 = 7,
+  kCyan1 = 8,
+  kBlue1 = 9,
+  kRed2 = 10,
+  kYellow2 = 11,
+  kGreen2 = 12,
+  kCyan2 = 13,
+  kBlue2 = 14,
+  kRed3 = 15,
+  kYellow3 = 16,
+  kGreen3 = 17,
+  kCyan3 = 18,
+  kBlue3 = 19,
+  kMaxValue = 19,
+};
+// LINT.ThenChange(//tools/metrics/histograms/metadata/pdf/enums.xml:PDFInk2TextAnnotationColor)
+
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+//
+// LINT.IfChange(PDFLoadedWithInkTextAnnotations)
+enum class PDFLoadedWithInkTextAnnotations {
+  kUnknown = 0,
+  kTrue = 1,
+  kFalse = 2,
+  kMaxValue = kFalse,
+};
+// LINT.ThenChange(//tools/metrics/histograms/metadata/pdf/enums.xml:PDFLoadedWithInkTextAnnotations)
+
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+//
 // LINT.IfChange(PDFLoadedWithV2InkAnnotations)
 enum class PDFLoadedWithV2InkAnnotations {
   kUnknown = 0,
@@ -123,8 +166,23 @@ void ReportTextHighlight(const ink::Brush& brush,
 
 void ReportKeyboardTextHighlight(const ink::Brush& brush);
 
+void RecordPdfLoadedWithInkTextAnnotations(
+    PDFLoadedWithInkTextAnnotations loaded_with_annotations);
+
 void RecordPdfLoadedWithV2InkAnnotations(
     PDFLoadedWithV2InkAnnotations loaded_with_annotations);
+
+// Reports the number of text annotations added when saving.
+// Note that only one of `RecordTextAnnotationAddedCountOnSave()` or
+// `RecordTextAnnotationRemovedCountOnSave()` should be called for any given
+// save operation.
+void RecordTextAnnotationAddedCountOnSave(size_t count);
+
+// Reports the number of text annotations removed when saving. See comments
+// above for `RecordTextAnnotationAddedCountOnSave()`.
+void RecordTextAnnotationRemovedCountOnSave(size_t count);
+
+void ReportTextAnnotationMetrics(const InkTextBoxAttributes& attributes);
 
 }  // namespace chrome_pdf
 

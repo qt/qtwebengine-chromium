@@ -14,8 +14,14 @@ specific_include_rules = {
     "client_hints_util.h": [
         "+services/network/public/cpp/client_hints.h",
     ],
+    "anchor_element_utils.cc" : [
+        "+base/command_line.h"
+    ],
     "html_anchor_element.cc" : [
         "+base/command_line.h"
+    ],
+    "html_iframe_element.cc": [
+        "+services/network/public/cpp/connection_allowlist_parser.h",
     ],
     "html_login_element.cc" : [
         "+services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h",

@@ -37,7 +37,8 @@ mojom::AudioDataS16Ptr AudioDataS16Converter::ConvertToAudioDataS16(
     signed_buffer->channel_count = buffer->channel_count();
     signed_buffer->frame_count = buffer->frame_count();
     signed_buffer->sample_rate = buffer->sample_rate();
-    int16_t* audio_data = reinterpret_cast<int16_t*>(buffer->channel_data()[0]);
+    int16_t* audio_data =
+        reinterpret_cast<int16_t*>(buffer->channel_data()[0].get());
     signed_buffer->data.assign(
         audio_data, UNSAFE_TODO(audio_data + buffer->frame_count() *
                                                  buffer->channel_count()));
@@ -119,8 +120,8 @@ void AudioDataS16Converter::ResetChannelMixerIfNeeded(
     channel_layout_ = channel_layout;
     channel_count_ = channel_count;
     channel_mixer_ = std::make_unique<ChannelMixer>(
-        channel_layout, channel_count, CHANNEL_LAYOUT_MONO,
-        1 /*output_channels*/);
+        ChannelLayoutConfig(channel_layout, channel_count),
+        ChannelLayoutConfig::Mono());
   }
 }
 

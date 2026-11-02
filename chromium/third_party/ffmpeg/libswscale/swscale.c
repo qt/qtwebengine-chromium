@@ -1003,6 +1003,16 @@ static int scale_cascaded(SwsInternal *c,
                              0, dstH0);
     if (ret < 0)
         return ret;
+
+    /* The first stage assembles the full intermediate image from the input,
+     * one slice at a time (it is itself a regular slice-capable context). The
+     * second stage scales that whole intermediate to the output in one step,
+     * so it can only run once the entire source has been consumed. The first
+     * stage resets its slice direction to 0 at end of frame; until then the
+     * intermediate is incomplete and this call produces no output lines. */
+    if (sws_internal(c->cascaded_context[0])->sliceDir != 0)
+        return 0;
+
     ret = scale_internal(c->cascaded_context[1],
                          (const uint8_t * const * )c->cascaded_tmp[0], c->cascaded_tmpStride[0],
                          0, dstH0, dstSlice, dstStride, dstSliceY, dstSliceH);
@@ -1067,7 +1077,7 @@ static int scale_internal(SwsContext *sws,
         return scale_gamma(c, srcSlice, srcStride, srcSliceY, srcSliceH,
                            dstSlice, dstStride, dstSliceY, dstSliceH);
 
-    if (c->cascaded_context[0] && srcSliceY == 0 && srcSliceH == c->cascaded_context[0]->src_h)
+    if (c->cascaded_context[0])
         return scale_cascaded(c, srcSlice, srcStride, srcSliceY, srcSliceH,
                               dstSlice, dstStride, dstSliceY, dstSliceH);
 
@@ -1441,6 +1451,9 @@ static int validate_params(SwsContext *ctx)
     VALIDATE(threads,       0, SWS_MAX_THREADS);
     VALIDATE(dither,        0, SWS_DITHER_NB - 1)
     VALIDATE(alpha_blend,   0, SWS_ALPHA_BLEND_NB - 1)
+    VALIDATE(intent,        0, SWS_INTENT_NB - 1);
+    VALIDATE(scaler,        0, SWS_SCALE_NB - 1)
+    VALIDATE(scaler_sub,    0, SWS_SCALE_NB - 1)
     return 0;
 }
 
@@ -1485,6 +1498,7 @@ int sws_frame_setup(SwsContext *ctx, const AVFrame *dst, const AVFrame *src)
     }
 
     int dst_width = dst->width;
+    const SwsBackend backends = ff_sws_enabled_backends(ctx);
     for (int field = 0; field < 2; field++) {
         SwsFormat src_fmt = ff_fmt_from_frame(src, field);
         SwsFormat dst_fmt = ff_fmt_from_frame(dst, field);
@@ -1496,9 +1510,9 @@ int sws_frame_setup(SwsContext *ctx, const AVFrame *dst, const AVFrame *src)
             goto fail;
         }
 
-        src_ok = ff_test_fmt(&src_fmt, 0);
-        dst_ok = ff_test_fmt(&dst_fmt, 1);
-        if ((!src_ok || !dst_ok) && !ff_props_equal(&src_fmt, &dst_fmt)) {
+        src_ok = ff_test_fmt(backends, &src_fmt, 0);
+        dst_ok = ff_test_fmt(backends, &dst_fmt, 1);
+        if ((!src_ok || !dst_ok) && !ff_fmt_equal(&src_fmt, &dst_fmt)) {
             err_msg = src_ok ? "Unsupported output" : "Unsupported input";
             ret = AVERROR(ENOTSUP);
             goto fail;
@@ -1513,7 +1527,7 @@ int sws_frame_setup(SwsContext *ctx, const AVFrame *dst, const AVFrame *src)
             }
         }
 
-        ret = ff_sws_graph_reinit(s->graph[field], ctx, &dst_fmt, &src_fmt, field);
+        ret = ff_sws_graph_reinit(s->graph[field], ctx, &dst_fmt, &src_fmt);
         if (ret < 0) {
             err_msg = "Failed initializing scaling graph";
             goto fail;

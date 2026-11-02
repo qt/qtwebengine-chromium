@@ -24,17 +24,14 @@
 #include "components/autofill/core/browser/metrics/form_events/form_event_logger_base.h"
 #include "components/autofill/core/browser/metrics/form_events/form_events.h"
 #include "components/autofill/core/browser/metrics/payments/card_metadata_metrics.h"
+#include "components/autofill/core/browser/payments/unmask_auth_flow_type.h"
 #include "components/autofill/core/browser/suggestions/payments/payments_suggestion_generator_util.h"
 #include "components/autofill/core/browser/suggestions/suggestion_util.h"
 #include "components/autofill/core/common/dense_set.h"
 #include "components/autofill/core/common/signatures.h"
 #include "components/autofill/core/common/unique_ids.h"
 
-namespace autofill {
-
-enum class UnmaskAuthFlowType;
-
-namespace autofill_metrics {
+namespace autofill::autofill_metrics {
 
 class CreditCardFormEventLogger : public FormEventLoggerBase {
  public:
@@ -154,8 +151,10 @@ class CreditCardFormEventLogger : public FormEventLoggerBase {
   }
 
   // Logging when the user decided to use BNPL (for example, accepting a BNPL
-  // suggestion chip if present).
-  void OnUserDecisionToUseBnpl();
+  // suggestion chip if present). `suggestions_shown` is used to log extra
+  // metadata around user decisions to use BNPL, for example the number of
+  // credit card suggestions shown when a user clicks the BNPL suggestion.
+  void OnUserDecisionToUseBnpl(base::span<const Suggestion> suggestions_shown);
 
   // Logging when the user decided to switch from the Pay Later tab to the Pay
   // Now tab.
@@ -168,6 +167,17 @@ class CreditCardFormEventLogger : public FormEventLoggerBase {
   // Called by AutofillExternalDelegate after the Save and Fill suggestion is
   // accepted.
   void OnDidAcceptSaveAndFillSuggestion();
+
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+  // Called by OmniboxAutofillDelegate after the Omnibox Autofill chip is shown.
+  void OnOmniboxAutofillChipShown();
+  // Called by OmniboxAutofillDelegate after the Omnibox Autofill chip is
+  // clicked.
+  void OnOmniboxAutofillChipClicked();
+  // Called by OmniboxAutofillDelegate after an Omnibox Autofill suggestion is
+  // accepted.
+  void OnOmniboxAutofillSuggestionAccepted();
+#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 
   std::optional<CreditCard> GetFilledCreditCardForTesting();
 
@@ -195,6 +205,8 @@ class CreditCardFormEventLogger : public FormEventLoggerBase {
   using FormEventLoggerBase::Log;
 
  private:
+  friend class CreditCardFormEventLoggerTestApi;
+
   FormEvent GetCardNumberStatusFormEvent(const CreditCard& credit_card);
   void RecordCardUnmaskFlowEvent(UnmaskAuthFlowType flow,
                                  UnmaskAuthFlowEvent event);
@@ -203,7 +215,7 @@ class CreditCardFormEventLogger : public FormEventLoggerBase {
 
   size_t server_record_type_count_ = 0;
   size_t local_record_type_count_ = 0;
-  UnmaskAuthFlowType current_authentication_flow_;
+  UnmaskAuthFlowType current_authentication_flow_ = UnmaskAuthFlowType::kNone;
   bool has_logged_suggestion_with_metadata_shown_ = false;
   bool has_logged_suggestion_with_metadata_selected_ = false;
   bool has_logged_local_card_suggestion_selected_ = false;
@@ -271,6 +283,20 @@ class CreditCardFormEventLogger : public FormEventLoggerBase {
   // If true, the Save and Fill suggestion has already been logged as accepted
   // and should not be logged again.
   bool has_logged_save_and_fill_suggestion_accepted_ = false;
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+  // If true, the Omnibox Autofill chip has already been logged as shown and
+  // should not be logged again.
+  bool has_logged_omnibox_autofill_chip_shown_ = false;
+  // If true, the Omnibox Autofill chip has already been logged as clicked and
+  // should not be logged again.
+  bool has_logged_omnibox_autofill_chip_clicked_ = false;
+  // If true, an Omnibox Autofill suggestion has already been logged as accepted
+  // and should not be logged again.
+  bool has_logged_omnibox_autofill_suggestion_accepted_ = false;
+  // If true, the metrics for a form filled from Omnibox Autofill were already
+  // logged and should not be logged again.
+  bool has_logged_form_filled_from_omnibox_autofill_ = false;
+#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
   // If true, one of the cards in the suggestions fetched is externally-saved.
   bool suggestion_contains_externally_saved_card_ = false;
   // If true, an externally-saved card suggestion shown is logged and should not
@@ -310,8 +336,6 @@ class CreditCardFormEventLogger : public FormEventLoggerBase {
   std::optional<CreditCard> filled_credit_card_;
 };
 
-}  // namespace autofill_metrics
-
-}  // namespace autofill
+}  // namespace autofill::autofill_metrics
 
 #endif  // COMPONENTS_AUTOFILL_CORE_BROWSER_METRICS_FORM_EVENTS_CREDIT_CARD_FORM_EVENT_LOGGER_H_

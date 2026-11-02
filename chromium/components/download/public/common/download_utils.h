@@ -44,12 +44,16 @@ using URLSecurityPolicy =
 
 // Handle the url request completion status and return the interrupt reasons.
 // |cert_status| is ignored if error_code is not net::ERR_ABORTED.
+// |is_served_from_service_worker| reinterprets a net::ERR_ABORTED completion as
+// a resumable network failure rather than a user cancellation (see the function
+// body for rationale).
 COMPONENTS_DOWNLOAD_EXPORT DownloadInterruptReason
 HandleRequestCompletionStatus(net::Error error_code,
                               bool has_strong_validators,
                               net::CertStatus cert_status,
                               bool is_partial_request,
-                              DownloadInterruptReason abort_reason);
+                              DownloadInterruptReason abort_reason,
+                              bool is_served_from_service_worker);
 
 // Parse the HTTP server response code.
 // If |fetch_error_body| is true, most of HTTP response codes will be accepted
@@ -174,7 +178,12 @@ COMPONENTS_DOWNLOAD_EXPORT
 bool IsContentDispositionAttachmentInHead(
     const network::mojom::URLResponseHead& response_head);
 
-// Truncates large `data:` URLs in the URL chain to save memory.
+// Truncates large `data:` URLs in the URL chain to save memory. If the `data:`
+// url is base64 encoded, ensures the truncated URL is a valid
+// (strictly-decodable) URL.
+COMPONENTS_DOWNLOAD_EXPORT void TruncateDataUrlAtTheEndIfNeeded(
+    GURL& url);
+
 COMPONENTS_DOWNLOAD_EXPORT void TruncateDataUrlAtTheEndIfNeeded(
     std::vector<GURL>* url_chain);
 

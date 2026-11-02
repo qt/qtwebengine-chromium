@@ -15,6 +15,8 @@
 #include "src/dsp/super_res.h"
 
 #include <cassert>
+#include <cstddef>
+#include <cstdint>
 
 #include "src/dsp/dsp.h"
 #include "src/utils/common.h"

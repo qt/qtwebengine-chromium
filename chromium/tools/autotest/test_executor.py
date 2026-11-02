@@ -7,6 +7,8 @@ import shlex
 import shutil
 import subprocess
 import sys
+import logging
+from colorama import Fore
 
 import utils.command_util as command
 import utils.constants as const
@@ -19,31 +21,89 @@ sys.path.append(str(const.SRC_DIR / 'agents' / 'common'))
 import gemini_helpers
 
 
+def _log_build(msg: str):
+  logging.info(msg, extra={"color": Fore.CYAN})
+
+
+def _log_run(msg: str):
+  logging.info(msg, extra={"color": Fore.GREEN})
+
+
+def _log_failure(msg: str):
+  logging.info(msg, extra={"color": Fore.RED})
+
+
 @telemetry.tracer.start_as_current_span('chromium.tools.autotest.build')
 def BuildTestTargets(out_dir: str, targets: list[str], dry_run: bool,
                      quiet: bool, is_retry: bool) -> bool:
   """Builds the specified targets with ninja"""
   cmd: list[str] = gn_helpers.CreateBuildCommand(out_dir) + targets
-  print('Building: ' + shlex.join(cmd))
+  _log_build(f"\n>>> Building {len(targets)} target(s): {shlex.join(cmd)}\n")
   if (dry_run):
     return True
 
-  completed_process: subprocess.CompletedProcess[str] = subprocess.run(
-      cmd, capture_output=quiet, encoding='utf-8')
+  should_capture = quiet or not sys.stdout.isatty()
+  completed_process = subprocess.run(cmd,
+                                     capture_output=should_capture,
+                                     encoding='utf-8')
 
-  telemetry.RecordBuildAttributes(is_retry, completed_process.returncode == 0)
+  is_successful = completed_process.returncode == 0
+  telemetry.RecordBuildAttributes(is_retry, is_successful)
 
-  if completed_process.returncode != 0:
-    if quiet:
+  if is_successful:
+    _log_build("\n<<< Build completed successfully\n")
+  else:
+    if should_capture:
       before, _, after = completed_process.stdout.partition('stderr:')
       if not after:
         before, _, after = completed_process.stdout.partition('stdout:')
-      if after:
-        print(after)
-      else:
-        print(before)
-    return False
-  return True
+      output = after or before
+      print(output)
+      if completed_process.stderr:
+        print(completed_process.stderr)
+    _log_failure("\n<<< Build failed\n")
+
+  return is_successful
+
+
+def _CreateWebTestCommand(out_dir: str,
+                          web_test_files: list[str] | set[str] | None,
+                          extra_args: list[str]) -> list[str]:
+  run_web_tests_path = os.path.join(const.SRC_DIR, 'third_party', 'blink',
+                                    'tools', 'run_web_tests.py')
+  cmd = [
+      'vpython3', run_web_tests_path, f'--build-directory={out_dir}',
+      '--no-build'
+  ]
+  if web_test_files:
+    cmd.extend(sorted(web_test_files))
+  cmd.extend(extra_args)
+  return cmd
+
+
+def _CreateGtestCommand(out_dir: str, target_binary: str,
+                        gtest_filter: str | None,
+                        pref_mapping_filter: str | None, extra_args: list[str],
+                        no_try_android_wrappers: bool, no_fast_local_dev: bool,
+                        no_single_variant: bool) -> list[str]:
+  path: str = os.path.join(out_dir, 'bin', f'run_{target_binary}')
+  target_extra_args = list(extra_args)
+  if no_try_android_wrappers or not os.path.isfile(path):
+    path = os.path.join(out_dir, target_binary)
+  else:
+    if not no_fast_local_dev:
+      target_extra_args.append('--fast-local-dev')
+    if not no_single_variant:
+      target_extra_args.append('--single-variant')
+
+  cmd: list[str] = [path]
+  if gtest_filter:
+    cmd.append(f'--gtest_filter={gtest_filter}')
+  if pref_mapping_filter:
+    cmd.append(f'--test_policy_to_pref_mappings_filter={pref_mapping_filter}')
+
+  cmd.extend(target_extra_args)
+  return cmd
 
 
 def RunTestTargets(out_dir: str,
@@ -56,7 +116,8 @@ def RunTestTargets(out_dir: str,
                    no_fast_local_dev: bool,
                    no_single_variant: bool,
                    is_suite: bool = False,
-                   gemini: bool | None = False) -> int:
+                   gemini: bool | None = False,
+                   web_test_files: list[str] | set[str] | None = None) -> int:
   total_passed = total_failed = 0
   failed_test_names = []
   any_failed = False
@@ -64,32 +125,28 @@ def RunTestTargets(out_dir: str,
   for target in targets:
     target_binary: str = target.split(':')[-1]
 
-    # Look for the Android wrapper script first.
-    path: str = os.path.join(out_dir, 'bin', f'run_{target_binary}')
-    if no_try_android_wrappers or not os.path.isfile(path):
-      # If the wrapper is not found or disabled use the Desktop target
-      # which is an executable.
-      path = os.path.join(out_dir, target_binary)
+    if target_binary == 'blink_tests':
+      test_type = const.TestType.WEB
+      cmd = _CreateWebTestCommand(out_dir, web_test_files, extra_args)
     else:
-      if not no_fast_local_dev:
-        # Usually want this flag when developing locally.
-        extra_args = extra_args + ['--fast-local-dev']
-      if not no_single_variant:
-        extra_args = extra_args + ['--single-variant']
+      test_type = const.TestType.GTEST
+      cmd = _CreateGtestCommand(out_dir, target_binary, gtest_filter,
+                                pref_mapping_filter, extra_args,
+                                no_try_android_wrappers, no_fast_local_dev,
+                                no_single_variant)
 
-    cmd: list[str] = [path]
-    if gtest_filter:
-      cmd.append(f'--gtest_filter={gtest_filter}')
-    if pref_mapping_filter:
-      cmd.append(f'--test_policy_to_pref_mappings_filter={pref_mapping_filter}')
-
-    cmd.extend(extra_args)
-
-    print('Running test: ' + shlex.join(cmd))
+    command_str = shlex.join(cmd)
+    _log_run(f"\n>>> Running {target_binary}")
+    logging.info(f"Command: {command_str}\n")
     if dry_run:
       continue
 
-    return_code, summary = command.RunTestCommandWithSummary(cmd)
+    return_code, summary = command.RunTestCommandWithSummary(
+        cmd, test_type=test_type)
+
+    if return_code != 0:
+      _log_failure(
+          f"\n<<< {target_binary} failed with exit code {return_code}\n")
 
     if not is_suite:
       if return_code != 0:
@@ -99,8 +156,8 @@ def RunTestTargets(out_dir: str,
       continue
 
     if summary.parse_error:
-      print(
-          f"Warning: Could not parse test summary JSON for {target_binary}. {summary.parse_error}"
+      logging.warning(
+          f"Could not parse test summary JSON for {target_binary}. {summary.parse_error}"
       )
     else:
       total_passed += len(summary.passed_tests)
@@ -116,24 +173,24 @@ def RunTestTargets(out_dir: str,
   if dry_run or not is_suite:
     return 0
 
-  print('\n' + '=' * 40)
-  print('SUITE EXECUTION SUMMARY')
-  print('=' * 40)
-  print(f'Total Tests Passed/Skipped: {total_passed}')
-  print(f'Total Tests Failed:         {total_failed}')
-  print('=' * 40)
+  logging.info('=' * 40)
+  logging.info('SUITE EXECUTION SUMMARY')
+  logging.info('=' * 40)
+  logging.info(f'Total Tests Passed/Skipped: {total_passed}')
+  logging.info(f'Total Tests Failed:         {total_failed}')
+  logging.info('=' * 40)
 
   if failed_test_names:
-    print('\nFAILED TESTS:')
+    logging.info('FAILED TESTS:')
     for test in failed_test_names:
-      print(f'  - {test}')
+      logging.info(f'  - {test}')
 
   return 1 if any_failed else 0
 
 
 def _RunGeminiDiagnostic(cmd: list[str],
                          test_summary: command.TestSummary) -> None:
-  print('\n=== Diagnosis and Suggested Fix ===\n')
+  logging.info('\n=== Diagnosis and Suggested Fix ===\n')
 
   command_str = shlex.join(cmd)
 
@@ -160,7 +217,7 @@ def _RunGeminiDiagnostic(cmd: list[str],
       f"3.  **Ask for Confirmation:** Before writing any code or modifying any files, explicitly ask the user for confirmation to go ahead and implement the proposed fix."
   )
 
-  print(
+  logging.info(
       "Launching Gemini CLI to analyze the failure (this may take a moment)...")
   try:
     gemini_cmd = gemini_helpers.get_gemini_command(use_alias=True)
@@ -168,14 +225,14 @@ def _RunGeminiDiagnostic(cmd: list[str],
     # Do not capture output so the user can interact.
     subprocess.run(gemini_cmd + ['-i', prompt], check=True)
   except FileNotFoundError:
-    print(
-        "Error: Gemini CLI ('gemini') is not installed or not in system PATH.")
-    print(
+    logging.error(
+        "Gemini CLI ('gemini') is not installed or not in system PATH.")
+    logging.error(
         "\nNote: If 'gemini' is configured as a shell alias, Python cannot execute it."
     )
-    print(
+    logging.error(
         "Please add the gemini executable directory to your PATH, or create a symlink:"
     )
-    print("  ln -s /path/to/actual/gemini ~/.local/bin/gemini")
+    logging.error("  ln -s /path/to/actual/gemini ~/.local/bin/gemini")
   except subprocess.CalledProcessError as e:
-    print(f"Error: Gemini CLI failed with exit status {e.returncode}.")
+    logging.error(f"Gemini CLI failed with exit status {e.returncode}.")

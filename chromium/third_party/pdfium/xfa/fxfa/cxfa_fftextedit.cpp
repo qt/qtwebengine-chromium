@@ -77,14 +77,14 @@ void CXFA_FFTextEdit::UpdateWidgetProperty() {
     return;
   }
 
-  uint32_t dwStyle = 0;
+  Mask<pdfium::WidgetStyle> dwStyle;
   uint32_t dwExtendedStyle =
       FWL_STYLEEXT_EDT_ShowScrollbarFocus | FWL_STYLEEXT_EDT_OuterScrollbar;
   dwExtendedStyle |= UpdateUIProperty();
   if (node_->IsMultiLine()) {
     dwExtendedStyle |= FWL_STYLEEXT_EDT_MultiLine | FWL_STYLEEXT_EDT_WantReturn;
     if (!node_->IsVerticalScrollPolicyOff()) {
-      dwStyle |= FWL_STYLE_WGT_VScroll;
+      dwStyle |= pdfium::WidgetStyle::kVScroll;
       dwExtendedStyle |= FWL_STYLEEXT_EDT_AutoVScroll;
     }
   } else if (!node_->IsHorizontalScrollPolicyOff()) {
@@ -112,7 +112,7 @@ void CXFA_FFTextEdit::UpdateWidgetProperty() {
   }
 
   dwExtendedStyle |= GetAlignment();
-  GetNormalWidget()->ModifyStyles(dwStyle, 0xFFFFFFFF);
+  GetNormalWidget()->SetStyles(dwStyle);
   GetNormalWidget()->ModifyStyleExts(dwExtendedStyle, 0xFFFFFFFF);
 }
 

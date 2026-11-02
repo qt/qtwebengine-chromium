@@ -42,11 +42,11 @@ import * as Platform from '../../core/platform/platform.js';
 import {assertNotNullOrUndefined} from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as AiCodeCompletion from '../../models/ai_code_completion/ai_code_completion.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import type * as ComputedStyle from '../../models/computed_style/computed_style.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as CodeMirror from '../../third_party/codemirror.next/codemirror.next.js';
 import * as TextEditor from '../../ui/components/text_editor/text_editor.js';
 import {createIcon, Icon} from '../../ui/kit/kit.js';
@@ -154,6 +154,8 @@ const lockedString = i18n.i18n.lockedString;
 const FILTER_IDLE_PERIOD = 500;
 // Minimum number of @property rules for the @property section block to be folded initially
 const MIN_FOLDED_SECTIONS_COUNT = 5;
+// The number of properties required in a matched styles cascade to trigger IntersectionObserver lazy rendering.
+const LAZY_RENDER_THRESHOLD = 200;
 /** Title of the registered properties section **/
 export const REGISTERED_PROPERTY_SECTION_NAME = '@property';
 /** Title of the function section **/
@@ -230,6 +232,11 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
   aiCodeCompletionProvider?: StylesAiCodeCompletionProvider.StylesAiCodeCompletionProvider;
   #aiCodeCompletionSummaryToolbarContainer?: HTMLElement;
   #aiCodeCompletionSummaryToolbar?: PanelsCommon.AiCodeCompletionSummaryToolbar.AiCodeCompletionSummaryToolbar;
+  #shouldRenderLazily = false;
+  #lazyRenderObserver?: IntersectionObserver;
+  #lazyRenderCallbacks = new WeakMap<Element, () => void>();
+  #elementsForSyncViewportCheck: Element[] = [];
+  #updateId = 0;
 
   constructor(computedStyleModel: ComputedStyle.ComputedStyleModel.ComputedStyleModel) {
     super(computedStyleModel, {delegatesFocus: true, useShadowDom: true, classes: ['flex-none']});
@@ -339,16 +346,16 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     }
   }
 
-  jumpToSection(sectionName: string, blockName: string): void {
-    this.decorator.findAndHighlightSection(sectionName, blockName);
+  jumpToSection(sectionName: string, blockName: string, treeScopeDistance?: number): void {
+    this.decorator.findAndHighlightSection(sectionName, blockName, treeScopeDistance);
   }
 
   jumpToSectionBlock(section: string): void {
     this.decorator.findAndHighlightSectionBlock(section);
   }
 
-  jumpToFunctionDefinition(functionName: string): void {
-    this.jumpToSection(functionName, FUNCTION_SECTION_NAME);
+  jumpToFunctionDefinition(functionName: string, treeScopeDistance: number): void {
+    this.jumpToSection(functionName, FUNCTION_SECTION_NAME, treeScopeDistance);
   }
 
   jumpToFontPaletteDefinition(paletteName: string): void {
@@ -562,10 +569,9 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     // Hide all popovers when scrolling.
     // Styles and Computed panels both have popover (e.g. imagePreviewPopover),
     // so we need to bind both scroll events.
-    const scrollerElementLists =
-        this?.contentElement?.enclosingNodeOrSelfWithClass('style-panes-wrapper')
-            ?.parentElement?.querySelectorAll('.style-panes-wrapper') as unknown as NodeListOf<Element>;
-    if (scrollerElementLists.length > 0) {
+    const scrollerElementLists = this?.contentElement?.enclosingNodeOrSelfWithClass('style-panes-wrapper')
+                                     ?.parentElement?.querySelectorAll('.style-panes-wrapper');
+    if (scrollerElementLists && scrollerElementLists.length > 0) {
       for (const element of scrollerElementLists) {
         this.scrollerElement = element;
         this.scrollerElement.addEventListener('scroll', this.boundOnScroll, false);
@@ -595,8 +601,9 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     const parentNodeId = this.matchedStyles?.getParentLayoutNodeId();
 
     const [computedStyles, parentsComputedStyles, computedStyleExtraFields] = await Promise.all([
-      this.fetchComputedStylesFor(nodeId), this.fetchComputedStylesFor(parentNodeId),
-      this.fetchComputedStyleExtraFieldsFor(nodeId)
+      this.fetchComputedStylesFor(nodeId),
+      this.fetchComputedStylesFor(parentNodeId),
+      this.fetchComputedStyleExtraFieldsFor(nodeId),
     ]);
 
     signal?.throwIfAborted();
@@ -612,9 +619,15 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
       this.dispatchEventToListeners(Events.INITIAL_UPDATE_COMPLETED);
     }
 
-    this.nodeStylesUpdatedForTest((this.node() as SDK.DOMModel.DOMNode), true);
+    this.#updateId += 1;
+    const currentUpdateId = this.#updateId;
 
-    this.dispatchEventToListeners(Events.STYLES_UPDATE_COMPLETED, {hasMatchedStyles: this.hasMatchedStyles});
+    void UI.Widget.Widget.allUpdatesComplete.then(() => {
+      if (this.#updateId === currentUpdateId) {
+        this.nodeStylesUpdatedForTest((this.node() as SDK.DOMModel.DOMNode), true);
+        this.dispatchEventToListeners(Events.STYLES_UPDATE_COMPLETED, {hasMatchedStyles: this.hasMatchedStyles});
+      }
+    });
   }
 
   #getRegisteredPropertyDetails(matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles, variableName: string):
@@ -708,7 +721,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
 
   setActiveProperty(treeElement: StylePropertyTreeElement|null): void {
     if (this.isActivePropertyHighlighted) {
-      SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+      SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight(SDK.TargetManager.TargetManager.instance());
     }
     this.isActivePropertyHighlighted = false;
 
@@ -978,6 +991,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
 
     const focusedIndex = this.focusedSectionIndex();
 
+    this.#elementsForSyncViewportCheck = [];
     this.linkifier.reset();
     const prevSections = this.sectionBlocks.map(block => block.sections).flat();
 
@@ -1035,6 +1049,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     }
 
     this.sectionsContainer.contentElement.appendChild(fragment);
+    this.#performSyncViewportCheck();
 
     if (elementToFocus) {
       elementToFocus.focus();
@@ -1118,6 +1133,14 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     const animationsPanelVisible = UI.ViewManager.ViewManager.instance().isViewVisible('animations');
     const cssAnimationsOnlyWhenAnimationsTabOpen =
         Common.Settings.Settings.instance().moduleSetting('css-animations-only-when-animations-tab-open').get();
+
+    let totalProperties = 0;
+    for (const style of matchedStyles.nodeStyles()) {
+      totalProperties += style.leadingProperties().length;
+    }
+    // Always render eagerly for layout tests.
+    this.#shouldRenderLazily = !Host.InspectorFrontendHost.isUnderTest() && totalProperties > LAZY_RENDER_THRESHOLD;
+
     for (const style of matchedStyles.nodeStyles()) {
       const isTransitionOrAnimationStyle = style.type === SDK.CSSStyleDeclaration.Type.Transition ||
           style.type === SDK.CSSStyleDeclaration.Type.Animation;
@@ -1619,6 +1642,80 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
   #onAiCodeCompletionResponseReceived(): void {
     this.#aiCodeCompletionSummaryToolbar?.setLoading(false);
   }
+
+  trackForLazyRendering(element: Element, callback: () => void): void {
+    if (!this.#lazyRenderObserver) {
+      this.#lazyRenderObserver = new IntersectionObserver(entries => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            const cb = this.#lazyRenderCallbacks.get(entry.target);
+            if (cb) {
+              cb();
+              this.untrackForLazyRendering(entry.target);
+            }
+          }
+        }
+      }, {rootMargin: '100px'});
+    }
+    this.#lazyRenderCallbacks.set(element, callback);
+    this.#elementsForSyncViewportCheck.push(element);
+    this.#lazyRenderObserver.observe(element);
+  }
+
+  #performSyncViewportCheck(): void {
+    if (!this.#shouldRenderLazily || this.#elementsForSyncViewportCheck.length === 0) {
+      this.#elementsForSyncViewportCheck = [];
+      return;
+    }
+    const scrollContainer = this.contentElement.parentElement;
+    if (!scrollContainer) {
+      this.#elementsForSyncViewportCheck = [];
+      return;
+    }
+    const {top, bottom} = scrollContainer.getBoundingClientRect();
+    if (bottom === top) {
+      this.#elementsForSyncViewportCheck = [];
+      return;
+    }
+    // Expand the bounding calculation by ±100px to accurately match the {rootMargin: '100px'}
+    // option configured on the IntersectionObserver in trackForLazyRendering.
+    const viewportTop = top - 100;
+    const viewportBottom = bottom + 100;
+
+    const visibleElements: Element[] = [];
+    for (const element of this.#elementsForSyncViewportCheck) {
+      if (!element.isConnected || !this.#lazyRenderCallbacks.has(element)) {
+        continue;
+      }
+      const rect = element.getBoundingClientRect();
+      if (rect.top > viewportBottom) {
+        break;
+      }
+      if (rect.bottom >= viewportTop) {
+        visibleElements.push(element);
+      }
+    }
+    this.#elementsForSyncViewportCheck = [];
+
+    for (const element of visibleElements) {
+      const callback = this.#lazyRenderCallbacks.get(element);
+      if (callback) {
+        callback();
+        this.untrackForLazyRendering(element);
+      }
+    }
+  }
+
+  shouldRenderLazily(): boolean {
+    return this.#shouldRenderLazily;
+  }
+
+  untrackForLazyRendering(element: Element): void {
+    if (this.#lazyRenderObserver) {
+      this.#lazyRenderObserver.unobserve(element);
+    }
+    this.#lazyRenderCallbacks.delete(element);
+  }
 }
 
 export const enum Events {
@@ -1990,9 +2087,21 @@ export class CSSPropertyPrompt extends UI.TextPrompt.TextPrompt {
   override onInput(event: Event): void {
     super.onInput(event);
     if (this.aiCodeCompletionProvider) {
-      this.#updateAiCodeSuggestion();
-      this.#debouncedTriggerAiCodeCompletion();
+      const inputEvent = event as InputEvent;
+      const isDeletion = inputEvent.inputType?.startsWith('delete');
+      if (isDeletion) {
+        this.#debouncedTriggerAiCodeCompletion.cancel();
+        this.setAiAutoCompletion(null);
+      } else {
+        this.#updateAiCodeSuggestion();
+        this.#debouncedTriggerAiCodeCompletion();
+      }
     }
+  }
+
+  override detach(): void {
+    this.#debouncedTriggerAiCodeCompletion.cancel();
+    super.detach();
   }
 
   #handleEscape(keyboardEvent: KeyboardEvent): boolean {
@@ -2002,12 +2111,13 @@ export class CSSPropertyPrompt extends UI.TextPrompt.TextPrompt {
     keyboardEvent.preventDefault();
     if (this.isSuggestBoxVisible()) {
       this.suggestBox?.hide();
-      // Required for ensuring the suggestion is not cleared.
-      keyboardEvent.consume(true);
-      return true;
+    } else {
+      this.setAiAutoCompletion(null);
     }
-    this.setAiAutoCompletion(null);
-    return false;
+    // Consume the event to prevent it from bubbling up to cancel the editing session,
+    // and return true to prevent TextPrompt from processing it.
+    keyboardEvent.consume(true);
+    return true;
   }
 
   private handleNameOrValueUpDown(event: Event): boolean {
@@ -2283,6 +2393,7 @@ export class CSSPropertyPrompt extends UI.TextPrompt.TextPrompt {
     if (!args) {
       this.treeElement.section().activeAiSuggestion = undefined;
       this.activeAiSuggestionInfo = undefined;
+      this.applySuggestion(null);
       return;
     }
 
@@ -2340,7 +2451,7 @@ export class CSSPropertyPrompt extends UI.TextPrompt.TextPrompt {
             });
           }
         }
-      }
+      },
     });
     return properties;
   }

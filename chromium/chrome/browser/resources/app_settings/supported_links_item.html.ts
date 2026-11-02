@@ -18,7 +18,10 @@ export function getHtml(this: SupportedLinksItemElement) {
 </div>
 ${this.disabled_ ? html`
   <span class="info-text-row" id="disabledExplanationText">
-    <cr-icon id="infoIcon" icon="app-management:info"></cr-icon>
+    <cr-icon id="infoIcon"
+        icon="${this.webuiRoundedIconsEnabled_
+            ? 'app-management:info'
+            : 'app-management:info-old'}"></cr-icon>
     <localized-link id="infoString"
         .localizedString="${this.getDisabledExplanation_()}">
     </localized-link>
@@ -37,7 +40,7 @@ ${this.disabled_ ? html`
     <cr-radio-button
         id="browserRadioButton"
         name="browser"
-        label="$i18n{appManagementIntentSharingOpenBrowserLabel}">
+        label="${this.getBrowserLabel_()}">
     </cr-radio-button>
     ${this.showOverlappingAppsWarning_ ? html`
       <div id="overlapWarning">${this.overlappingAppsWarning_}</div>

@@ -107,6 +107,7 @@ set(private_headers
     "InternalPipelineStore.h"
     "Limits.h"
     "LogEmitter.h"
+    "MemoryBlockAllocator.h"
     "ObjectBase.h"
     "ObjectContentHasher.h"
     "ObjectLabel.h"
@@ -224,8 +225,10 @@ set(sources
     "Instance.cpp"
     "InternalPipelineStore.cpp"
     "Limits.cpp"
+    "MemoryBlockAllocator.cpp"
     "ObjectBase.cpp"
     "ObjectContentHasher.cpp"
+    "PassResourceUsage.cpp"
     "PassResourceUsageTracker.cpp"
     "PerStage.cpp"
     "PhysicalDevice.cpp"
@@ -446,6 +449,7 @@ if (DAWN_ENABLE_D3D12)
         "d3d12/PageableD3D12.h"
         "d3d12/PhysicalDeviceD3D12.h"
         "d3d12/PipelineLayoutD3D12.h"
+        "d3d12/PipelineLayoutHandle.h"
         "d3d12/PlatformFunctionsD3D12.h"
         "d3d12/QuerySetD3D12.h"
         "d3d12/QueueD3D12.h"
@@ -485,6 +489,7 @@ if (DAWN_ENABLE_D3D12)
         "d3d12/PageableD3D12.cpp"
         "d3d12/PhysicalDeviceD3D12.cpp"
         "d3d12/PipelineLayoutD3D12.cpp"
+        "d3d12/PipelineLayoutHandle.cpp"
         "d3d12/PlatformFunctionsD3D12.cpp"
         "d3d12/QuerySetD3D12.cpp"
         "d3d12/QueueD3D12.cpp"
@@ -774,6 +779,7 @@ if (DAWN_ENABLE_VULKAN)
         "vulkan/Forward.h"
         "vulkan/FramebufferCache.h"
         "vulkan/FramebufferFetchHelper.h"
+        "vulkan/ImmediatesLayoutVk.h"
         "vulkan/MemoryTypeSelector.h"
         "vulkan/PhysicalDeviceVk.h"
         "vulkan/PipelineCacheVk.h"
@@ -981,6 +987,36 @@ if (DAWN_ENABLE_D3D12)
         target_compile_definitions(dawn_native PRIVATE "DAWN_USE_BUILT_DXC")
         target_compile_definitions(dawn_native_objects PRIVATE "DAWN_USE_BUILT_DXC")
         add_dependencies(dawn_native copy_dxil_dll)
+    endif()
+    if (DAWN_USE_AGILITY_SDK)
+        target_compile_definitions(dawn_native PRIVATE "DAWN_USE_AGILITY_SDK")
+        target_compile_definitions(dawn_native_objects PRIVATE "DAWN_USE_AGILITY_SDK")
+        target_include_directories(dawn_native_objects PRIVATE "${DAWN_AGILITY_SDK_DIR}/src/build/native/include")
+
+        # Determine the architecture-specific DLL source directory
+        if (CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|arm64|aarch64")
+            set(_agility_sdk_bin_dir "${DAWN_AGILITY_SDK_DIR}/src/build/native/bin/arm64")
+        elseif (CMAKE_SIZEOF_VOID_P EQUAL 4)
+            set(_agility_sdk_bin_dir "${DAWN_AGILITY_SDK_DIR}/src/build/native/bin/win32")
+        else()
+            set(_agility_sdk_bin_dir "${DAWN_AGILITY_SDK_DIR}/src/build/native/bin/x64")
+        endif()
+
+        get_property(isMultiConfig GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+        if (isMultiConfig)
+            set(_agility_sdk_out_dir "${CMAKE_BINARY_DIR}/$<CONFIG>/D3D12")
+        else()
+            set(_agility_sdk_out_dir "${CMAKE_BINARY_DIR}/D3D12")
+        endif()
+
+        add_custom_target(copy_agility_sdk_dlls
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${_agility_sdk_out_dir}"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${_agility_sdk_bin_dir}/D3D12Core.dll"
+                "${_agility_sdk_bin_dir}/d3d12SDKLayers.dll"
+                "${_agility_sdk_out_dir}"
+            COMMENT "Copying Agility SDK DLLs to ${_agility_sdk_out_dir}")
+        add_dependencies(dawn_native copy_agility_sdk_dlls)
     endif()
 endif()
 

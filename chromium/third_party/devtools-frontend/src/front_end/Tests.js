@@ -496,8 +496,8 @@
 
   TestSuite.prototype.testConsoleOnNavigateBack = function() {
     function filteredMessages() {
-      return SDK.ConsoleModel.ConsoleModel.allMessagesUnordered().filter(
-          a => a.source !== Protocol.Log.LogEntrySource.Violation);
+      return SDK.ConsoleModel.ConsoleModel.allMessagesUnordered(SDK.TargetManager.TargetManager.instance())
+          .filter(a => a.source !== Protocol.Log.LogEntrySource.Violation);
     }
 
     if (filteredMessages().length === 1) {
@@ -710,7 +710,7 @@
     SDK.TargetManager.TargetManager.instance().addModelListener(
         SDK.ConsoleModel.ConsoleModel, SDK.ConsoleModel.Events.MessageAdded, onConsoleMessage, this);
 
-    const messages = SDK.ConsoleModel.ConsoleModel.allMessagesUnordered();
+    const messages = SDK.ConsoleModel.ConsoleModel.allMessagesUnordered(SDK.TargetManager.TargetManager.instance());
     if (messages.length) {
       const text = messages[0].messageText;
       this.assertEquals('ready', text);
@@ -761,7 +761,7 @@
       this.releaseControl();
     });
 
-    Common.Settings.moduleSetting('active-keybind-set').set('vsCode');
+    Common.Settings.Settings.instance().moduleSetting('active-keybind-set').set('vsCode');
   };
 
   TestSuite.prototype.testDispatchKeyEventDoesNotCrash = function() {
@@ -850,7 +850,7 @@
           'LenVOavSot+3i9DAgBkcRcAtjOj4LaR0VknFBbVPFd5uRHg5h6h+u/N5GJG7' +
           '9G+dwfCMNYxdAfvDbbnvRG15RjF+Cv6pgsH/76tuIMRQyV+dTZsXjAzlAcmg' +
           'QWpzU/qlULRuJQ/7TBj0/VLZjmmx6BEP3ojY+x1J96relc8geMJgEtslQIxq' +
-          '/H5COEBkEveegeGTLg=='
+          '/H5COEBkEveegeGTLg==',
     ]);
   };
 
@@ -901,22 +901,21 @@
     step1();
 
     function step1() {
-      testPreset(
-          MobileThrottling.networkPresets[3],
-          [
-            'offline event: online = false', 'connection change event: type = none; downlinkMax = 0; effectiveType = 4g'
-          ],
-          step2);
+      testPreset(MobileThrottling.networkPresets[3],
+                 [
+                   'offline event: online = false',
+                   'connection change event: type = none; downlinkMax = 0; effectiveType = 4g',
+                 ],
+                 step2);
     }
 
     function step2() {
-      testPreset(
-          MobileThrottling.networkPresets[2],
-          [
-            'online event: online = true',
-            'connection change event: type = cellular; downlinkMax = 0.3814697265625; effectiveType = 2g'
-          ],
-          step3);
+      testPreset(MobileThrottling.networkPresets[2],
+                 [
+                   'online event: online = true',
+                   'connection change event: type = cellular; downlinkMax = 0.3814697265625; effectiveType = 2g',
+                 ],
+                 step3);
     }
 
     function step3() {
@@ -958,6 +957,7 @@
         ...Main.Main.instanceForTest.createSettingsStorage(prefs),
         settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
         runSettingsMigration: false,
+        console: Common.Console.Console.instance(),
       });
 
       const localSetting = Common.Settings.Settings.instance().createLocalSetting('local', undefined);
@@ -975,7 +975,7 @@
   TestSuite.prototype.testWindowInitializedOnNavigateBack = function() {
     const test = this;
     test.takeControl();
-    const messages = SDK.ConsoleModel.ConsoleModel.allMessagesUnordered();
+    const messages = SDK.ConsoleModel.ConsoleModel.allMessagesUnordered(SDK.TargetManager.TargetManager.instance());
     if (messages.length === 1) {
       checkMessages();
     } else {
@@ -984,7 +984,7 @@
     }
 
     function checkMessages() {
-      const messages = SDK.ConsoleModel.ConsoleModel.allMessagesUnordered();
+      const messages = SDK.ConsoleModel.ConsoleModel.allMessagesUnordered(SDK.TargetManager.TargetManager.instance());
       test.assertEquals(1, messages.length);
       test.assertTrue(messages[0].messageText.indexOf('Uncaught') === -1);
       test.releaseControl();
@@ -1061,7 +1061,7 @@
   };
 
   TestSuite.prototype.waitForTestResultsInConsole = function() {
-    const messages = SDK.ConsoleModel.ConsoleModel.allMessagesUnordered();
+    const messages = SDK.ConsoleModel.ConsoleModel.allMessagesUnordered(SDK.TargetManager.TargetManager.instance());
     for (let i = 0; i < messages.length; ++i) {
       const text = messages[i].messageText;
       if (text === 'PASS') {
@@ -1310,14 +1310,14 @@
     await SDK.TargetManager.TargetManager.instance().primaryPageTarget()?.runtimeAgent().invoke_evaluate({
       expression: `fetch("/set-cookie?devtools-test-cookie=Bar",
                          {credentials: 'include'})`,
-      awaitPromise: true
+      awaitPromise: true,
     });
     await testCase(baseURL + 'echoheader?Cookie', undefined, 200, ['cache-control'], 'devtools-test-cookie=Bar');
 
     await SDK.TargetManager.TargetManager.instance().primaryPageTarget()?.runtimeAgent().invoke_evaluate({
       expression: `fetch("/set-cookie?devtools-test-cookie=same-site-cookie;SameSite=Lax",
                          {credentials: 'include'})`,
-      awaitPromise: true
+      awaitPromise: true,
     });
     await testCase(
         baseURL + 'echoheader?Cookie', undefined, 200, ['cache-control'], 'devtools-test-cookie=same-site-cookie');

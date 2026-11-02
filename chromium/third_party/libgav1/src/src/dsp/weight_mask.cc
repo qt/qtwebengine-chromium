@@ -18,7 +18,6 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <string>
 #include <type_traits>
 
 #include "src/dsp/dsp.h"

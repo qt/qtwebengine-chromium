@@ -6,13 +6,13 @@
 #define INCLUDE_V8_TEMPLATE_H_
 
 #include <cstddef>
+#include <span>
 #include <string_view>
 
 #include "v8-data.h"               // NOLINT(build/include_directory)
 #include "v8-exception.h"          // NOLINT(build/include_directory)
 #include "v8-function-callback.h"  // NOLINT(build/include_directory)
 #include "v8-local-handle.h"       // NOLINT(build/include_directory)
-#include "v8-memory-span.h"        // NOLINT(build/include_directory)
 #include "v8-object.h"             // NOLINT(build/include_directory)
 #include "v8config.h"              // NOLINT(build/include_directory)
 
@@ -107,7 +107,7 @@ class V8_EXPORT Template : public Data {
       PropertyAttribute attribute = None,
       SideEffectType getter_side_effect_type = SideEffectType::kHasSideEffect,
       SideEffectType setter_side_effect_type = SideEffectType::kHasSideEffect);
-  V8_DEPRECATE_SOON("Use AccessorNameSetterCallbackV2 setter instead")
+  V8_DEPRECATED("Use AccessorNameSetterCallbackV2 setter instead")
   void SetNativeDataProperty(
       Local<Name> name, AccessorNameGetterCallback getter,
       AccessorNameSetterCallback setter, Local<Value> data = Local<Value>(),
@@ -433,6 +433,12 @@ using IndexedPropertyIndexOfCallback =
                  uint32_t* out_length, const PropertyCallbackInfo<void>& info);
 
 /**
+ * Experimental API, do not use!
+ */
+using IndexedPropertyIterableToListCallback =
+    void (*)(const PropertyCallbackInfo<Value>& info);
+
+/**
  * Returns true if the given context should be allowed to access the given
  * object.
  */
@@ -569,7 +575,7 @@ class V8_EXPORT FunctionTemplate : public Template {
       Local<Signature> signature = Local<Signature>(), int length = 0,
       ConstructorBehavior behavior = ConstructorBehavior::kAllow,
       SideEffectType side_effect_type = SideEffectType::kHasSideEffect,
-      const MemorySpan<const CFunction>& c_function_overloads = {});
+      const std::span<const CFunction>& c_function_overloads = {});
 
   /**
    * Creates a function template backed/cached by a private property.
@@ -602,7 +608,7 @@ class V8_EXPORT FunctionTemplate : public Template {
   void SetCallHandler(
       FunctionCallback callback, Local<Data> data = {},
       SideEffectType side_effect_type = SideEffectType::kHasSideEffect,
-      const MemorySpan<const CFunction>& c_function_overloads = {});
+      const std::span<const CFunction>& c_function_overloads = {});
 
   /** Set the predefined length property for the FunctionTemplate. */
   void SetLength(int length);
@@ -730,6 +736,13 @@ enum class PropertyHandlerFlags {
   kHasNoSideEffect = 1 << 2,
 
   /**
+   * The interceptor may return non-configurable (PropertyAttribute::DontDelete)
+   * properties. When set on a global object's interceptor, it will be consulted
+   * during HasRestrictedGlobalProperty checks for lexical declarations.
+   */
+  kHasDontDeleteProperty = 1 << 3,
+
+  /**
    * This flag is used to distinguish which callbacks were provided -
    * GenericNamedPropertyXXXCallback (old signature) or
    * NamedPropertyXXXCallback (new signature).
@@ -756,7 +769,7 @@ struct NamedPropertyHandlerConfiguration {
       NamedPropertySetterCallbackV2 value) {
     return value;
   }
-  V8_DEPRECATE_SOON("Use NamedPropertySetterCallbackV2 setter instead")
+  V8_DEPRECATED("Use NamedPropertySetterCallbackV2 setter instead")
   static NamedPropertySetterCallbackV2 ConvertSetter(
       NamedPropertySetterCallback value) {
     return NamedPropertySetterCallbackV2(value);
@@ -769,7 +782,7 @@ struct NamedPropertyHandlerConfiguration {
       NamedPropertyDefinerCallbackV2 value) {
     return value;
   }
-  V8_DEPRECATE_SOON("Use NamedPropertyDefinerCallbackV2 definer instead")
+  V8_DEPRECATED("Use NamedPropertyDefinerCallbackV2 definer instead")
   static NamedPropertyDefinerCallbackV2 ConvertDefiner(
       NamedPropertyDefinerCallback value) {
     return NamedPropertyDefinerCallbackV2(value);
@@ -887,7 +900,7 @@ struct IndexedPropertyHandlerConfiguration {
       IndexedPropertySetterCallback value) {
     return value;
   }
-  V8_DEPRECATE_SOON("Use IndexedPropertySetterCallback setter instead")
+  V8_DEPRECATED("Use IndexedPropertySetterCallback setter instead")
   static IndexedPropertySetterCallback ConvertSetter(
       IndexedPropertySetterCallbackV2 value) {
     return IndexedPropertySetterCallback(value);
@@ -900,7 +913,7 @@ struct IndexedPropertyHandlerConfiguration {
       IndexedPropertyDefinerCallback value) {
     return value;
   }
-  V8_DEPRECATE_SOON("Use IndexedPropertyDefinerCallback definer instead")
+  V8_DEPRECATED("Use IndexedPropertyDefinerCallback definer instead")
   static IndexedPropertyDefinerCallback ConvertDefiner(
       IndexedPropertyDefinerCallbackV2 value) {
     return IndexedPropertyDefinerCallback(value);
@@ -1000,6 +1013,8 @@ struct IndexedPropertyHandlerConfiguration {
              (std::is_same_v<TDefiner, std::nullptr_t> ||
               std::is_same_v<TDefiner, IndexedPropertyDefinerCallback> ||
               std::is_same_v<TDefiner, IndexedPropertyDefinerCallbackV2>))
+  V8_DEPRECATE_SOON(
+      "Use IndexedPropertyHandlerConfiguration with iterable_to_list")
   IndexedPropertyHandlerConfiguration(
       IndexedPropertyGetterCallback getter,          //
       TSetter setter,                                //
@@ -1019,6 +1034,41 @@ struct IndexedPropertyHandlerConfiguration {
         definer(ConvertDefiner(definer)),
         descriptor(descriptor),
         index_of(index_of),
+        iterable_to_list(nullptr),
+        data(data),
+        flags(flags) {}
+
+  // TODO(https://crbug.com/348660658): cleanup once migration to
+  // IndexedPropertySetterCallback/IndexedPropertyDefinerCallback is done.
+  template <typename TSetter = std::nullptr_t,
+            typename TDefiner = std::nullptr_t>
+    requires((std::is_same_v<TSetter, std::nullptr_t> ||
+              std::is_same_v<TSetter, IndexedPropertySetterCallback> ||
+              std::is_same_v<TSetter, IndexedPropertySetterCallbackV2>) &&
+             (std::is_same_v<TDefiner, std::nullptr_t> ||
+              std::is_same_v<TDefiner, IndexedPropertyDefinerCallback> ||
+              std::is_same_v<TDefiner, IndexedPropertyDefinerCallbackV2>))
+  IndexedPropertyHandlerConfiguration(
+      IndexedPropertyGetterCallback getter,          //
+      TSetter setter,                                //
+      IndexedPropertyQueryCallback query,            //
+      IndexedPropertyDeleterCallback deleter,        //
+      IndexedPropertyEnumeratorCallback enumerator,  //
+      TDefiner definer,                              //
+      IndexedPropertyDescriptorCallback descriptor,  //
+      IndexedPropertyIndexOfCallback index_of,       //
+      IndexedPropertyIterableToListCallback iterable_to_list,
+      Local<Value> data = Local<Value>(),
+      PropertyHandlerFlags flags = PropertyHandlerFlags::kNone)
+      : getter(getter),
+        setter(ConvertSetter(setter)),
+        query(query),
+        deleter(deleter),
+        enumerator(enumerator),
+        definer(ConvertDefiner(definer)),
+        descriptor(descriptor),
+        index_of(index_of),
+        iterable_to_list(iterable_to_list),
         data(data),
         flags(flags) {}
 
@@ -1030,6 +1080,7 @@ struct IndexedPropertyHandlerConfiguration {
   IndexedPropertyDefinerCallback definer;
   IndexedPropertyDescriptorCallback descriptor;
   IndexedPropertyIndexOfCallback index_of = nullptr;
+  IndexedPropertyIterableToListCallback iterable_to_list = nullptr;
   Local<Value> data;
   PropertyHandlerFlags flags;
 };
@@ -1185,8 +1236,8 @@ class V8_EXPORT DictionaryTemplate final : public Data {
    *
    * \param names the keys that can be passed on instantiation.
    */
-  static Local<DictionaryTemplate> New(
-      Isolate* isolate, MemorySpan<const std::string_view> names);
+  static Local<DictionaryTemplate> New(Isolate* isolate,
+                                       std::span<const std::string_view> names);
 
   /**
    * Creates a new instance of this template.
@@ -1198,7 +1249,7 @@ class V8_EXPORT DictionaryTemplate final : public Data {
    *   empty `MaybeLocal`s.
    */
   V8_WARN_UNUSED_RESULT Local<Object> NewInstance(
-      Local<Context> context, MemorySpan<MaybeLocal<Value>> property_values);
+      Local<Context> context, std::span<MaybeLocal<Value>> property_values);
 
   V8_INLINE static DictionaryTemplate* Cast(Data* data);
 

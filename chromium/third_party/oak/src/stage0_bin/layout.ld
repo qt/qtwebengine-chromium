@@ -53,6 +53,7 @@ HIDDEN(DESCRIPTOR_INTERRUPT_GATE = 0xE << 40);
 HIDDEN(SEV_SECTION_UNMEASURED = 0x1);
 HIDDEN(SEV_SECTION_SECRET = 0x2);
 HIDDEN(SEV_SECTION_CPUID = 0x3);
+HIDDEN(SEV_SECTION_KERNEL_HASHES = 0x10);
 
 /*
  * LD doesn't follow the order of the layout script when placing segments without explicit phdrs
@@ -60,9 +61,11 @@ HIDDEN(SEV_SECTION_CPUID = 0x3);
  */
 PHDRS
 {
+    bda PT_LOAD;
     boot PT_LOAD;
     ap_text PT_LOAD;
     ap_bss PT_LOAD;
+    snp_hash_table PT_LOAD;
     bss PT_LOAD;
     data PT_LOAD;
     stack PT_LOAD;
@@ -71,6 +74,7 @@ PHDRS
     text PT_LOAD;
     descriptors PT_LOAD;
     text16 PT_LOAD;
+    sev_metadata PT_LOAD;
     guid_tables PT_LOAD;
     descriptors PT_LOAD;
     reset_vector PT_LOAD;
@@ -86,6 +90,12 @@ SECTIONS {
      *
      * These sections have to be marked NOLOAD, otherwise you risk ending up with a 4GB BIOS image.
      */
+
+    /* BIOS Data Area (BDA) - 256 bytes at 0x400.*/
+    .bda 0x400 (NOLOAD) : {
+        KEEP(*(.bda))
+    } > ram_low : bda
+    ASSERT(. <= 0x500, "BDA overflow")
 
     .boot 0x1000 (NOLOAD) : {
         KEEP(*(.boot))
@@ -105,6 +115,14 @@ SECTIONS {
     ap_bss_size = SIZEOF(.ap_bss);
 
     ASSERT(. <= 0x10000, "AP bootstrap code needs to be in the first 64K")
+
+    /* Linkable in the bootloader
+     * UEFI hardcodes this address and table size:
+     * https://github.com/tianocore/edk2/blob/f98662c5e35b6ab60f46ee4350fa0e6eab0497cf/OvmfPkg/Include/Fdf/MemFd.fdf.inc#L89-L93
+     */
+    .snp_hash_table 0x10c00 (NOLOAD) : {
+       . += 0x400; /* 1k */
+    } > ram_low : snp_hash_table
 
     .bss (NOLOAD) : {
         bss_start = .;
@@ -281,27 +299,12 @@ SECTIONS {
     gdt_desc_offset = ADDR(.gdt_desc) & 0xFFFF;
     idt_desc_offset = ADDR(.idt_desc) & 0xFFFF;
 
-    /* GUIDed tables have to *end* at 0x20 from the end of the file.
-     * Documentation about the GUID table format can be found in QEMU docs:
-     * https://github.com/qemu/qemu/blob/master/docs/specs/sev-guest-firmware.rst
-     * and EDK2 source code:
-     * https://github.com/tianocore/edk2/blob/master/OvmfPkg/ResetVector/Ia16/ResetVectorVtf0.asm
-     *
-     * Unfortunately it doesn't look like `SIZEOF()` works here, so we have to keep track of the data
-     * structure size by hand to ensure that it ends at the correct location in memory.
-     */
-    .guid_tables TOP - 0x20 - (16             /* AMD SEV header       <--------|     */
-                                  + 3*12      /* AMD SEV metadata sections     |     */
-                                  + 22        /* AMD SEV metadata offset block |     */
-                                  + 22        /* AMD SEV-ES reset block              */
-                                  + 18        /* footer */) : {
-        /* SEV metadata. This data structure is not part of the GUIDed tables, but it makes sense to have
-         * them together at the end of the file, thus we put them in the .guid_tables section along with
-         * the GUIDed tables themselves. The data structure is defined in the EDK2 source:
-         * https://github.com/tianocore/edk2/blob/master/OvmfPkg/ResetVector/X64/OvmfSevMetadata.asm
-         *
-         * Size: header is 16 bytes + a number of 12-byte sections.
-         */
+    /* SEV metadata. The data structure is defined in the EDK2 source:
+    * https://github.com/tianocore/edk2/blob/master/OvmfPkg/ResetVector/X64/OvmfSevMetadata.asm
+    *
+    * Size: header is 16 bytes + a number of 12-byte sections.
+    */
+    .sev_metadata ALIGN(16) : {
         HIDDEN(sev_guided_structure_start = .);
         /* Header: uint32 signature ("ASEV"), uint32 length, uint32 version, uint32 number of sections */
         BYTE(0x41) BYTE(0x53) BYTE(0x45) BYTE(0x56)
@@ -328,7 +331,37 @@ SECTIONS {
         LONG(SEV_CPUID)
         LONG(0x1000)
         LONG(SEV_SECTION_CPUID)
+        /* Kernel hashes location
+         * https://github.com/tianocore/edk2/blob/f98662c5e35b6ab60f46ee4350fa0e6eab0497cf/OvmfPkg/ResetVector/X64/OvmfSevMetadata.asm#L88-L91
+         * UEFI calculates this as
+         * https://github.com/tianocore/edk2/blob/f98662c5e35b6ab60f46ee4350fa0e6eab0497cf/OvmfPkg/Include/Fdf/MemFd.fdf.inc#L86-L87
+         */
+        LONG(0x10000)
+        /* This is calculated from the following:
+         * https://github.com/tianocore/edk2/blob/0192f2d7cb3098d5cf1a2ed25874f47a08001de7/OvmfPkg/ResetVector/ResetVector.nasmb#L78
+         * where those other values are set in the .fdf file here:
+         * https://github.com/tianocore/edk2/blob/0192f2d7cb3098d5cf1a2ed25874f47a08001de7/OvmfPkg/AmdSev/AmdSevX64.fdf#L74-L78
+         * Since both of them just add up to a single page (4096), we just calculate that directly.
+         */
+        LONG(0x1000)
+        LONG(SEV_SECTION_KERNEL_HASHES)
         HIDDEN(sev_guided_structure_end = .);
+    } > bios : sev_metadata
+
+    /* GUIDed tables have to *end* at 0x20 from the end of the file.
+     * Documentation about the GUID table format can be found in QEMU docs:
+     * https://github.com/qemu/qemu/blob/master/docs/specs/sev-guest-firmware.rst
+     * and EDK2 source code:
+     * https://github.com/tianocore/edk2/blob/master/OvmfPkg/ResetVector/Ia16/ResetVectorVtf0.asm
+     *
+     * Unfortunately it doesn't look like `SIZEOF()` works here, so we have to keep track of the data
+     * structure size by hand to ensure that it ends at the correct location in memory.
+     */
+    .guid_tables TOP - 0x20 - (22             /* AMD SEV metadata offset block       */
+                                  + 22        /* AMD SEV-ES reset block              */
+                                  + 26        /* AMD SEV kernel hashes block   |     */
+                                  + 18        /* footer */) : {
+
 
         /*
          * This is where the GUIDed tables actually start.
@@ -345,6 +378,22 @@ SECTIONS {
         SHORT(0x5ea7)
         BYTE(0x55) BYTE(0x85) BYTE(0xa7) BYTE(0xbf) BYTE(0x67) BYTE(0xcc)
         HIDDEN(sev_metadata_offset_end = .);
+
+        /* GUID calculated from
+         * https://github.com/tianocore/edk2/blob/f98662c5e35b6ab60f46ee4350fa0e6eab0497cf/OvmfPkg/ResetVector/Ia16/ResetVectorVtf0.asm#L106-L114
+         */
+        HIDDEN(sev_kernel_fw_hash_block_start = .);
+        /* SEV Hash GUID table. */
+        LONG(0x10c00)
+        /* This is the lower 1024 bits of the 4k page starting from the launch secrets page. */
+        LONG(0x400)
+        SHORT(sev_kernel_fw_hash_block_end - sev_kernel_fw_hash_block_start)
+        LONG(0x7255371f)
+        SHORT(0x3a3b)
+        SHORT(0x4b04)
+        SHORT(0x7b92)
+        BYTE(0x1d) BYTE(0xa6) BYTE(0xef) BYTE(0xa8) BYTE(0xd4) BYTE(0x54)
+        HIDDEN(sev_kernel_fw_hash_block_end = .);
 
         /* SEV-ES reset block: uint32 addr, uint16 size, 16-byte GUID */
         HIDDEN(sev_es_reset_block_start = .);

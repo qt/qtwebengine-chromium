@@ -3,11 +3,14 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import type * as Common from '../../../../core/common/common.js';
+import * as Host from '../../../../core/host/host.js';
 import type * as Platform from '../../../../core/platform/platform.js';
 import * as Trace from '../../../../models/trace/trace.js';
 import * as Extensions from '../../../../panels/timeline/extensions/extensions.js';
+import {findMenuItemWithLabel} from '../../../../testing/ContextMenuHelpers.js';
 import {assertScreenshot, raf, renderElementIntoDOM} from '../../../../testing/DOMHelpers.js';
 import {describeWithEnvironment} from '../../../../testing/EnvironmentHelpers.js';
 import {
@@ -19,6 +22,7 @@ import {
 } from '../../../../testing/TraceHelpers.js';
 import {TraceLoader} from '../../../../testing/TraceLoader.js';
 import * as VisualLogging from '../../../../ui/visual_logging/visual_logging.js';
+import * as UI from '../../legacy.js';
 
 import * as PerfUI from './perf_ui.js';
 
@@ -430,7 +434,7 @@ describeWithEnvironment('FlameChart', () => {
                 style: {
                   ...defaultGroupStyle,
                   collapsible: PerfUI.FlameChart.GroupCollapsibleState.ALWAYS,
-                  nestingLevel: 1
+                  nestingLevel: 1,
                 },
               },
             ],
@@ -662,6 +666,130 @@ describeWithEnvironment('FlameChart', () => {
         assert.strictEqual(chartInstance.groupIndexToOffsetForTest(3), 123);
         assert.strictEqual(chartInstance.levelToOffset(3), 123);
       });
+    });
+  });
+
+  describe('track header interactions', () => {
+    class TooltipTestProvider extends FakeFlameChartProvider {
+      override timelineData(): PerfUI.FlameChart.FlameChartTimelineData {
+        return PerfUI.FlameChart.FlameChartTimelineData.create({
+          entryLevels: [0],
+          entryTotalTimes: [10],
+          entryStartTimes: [10],
+          groups: [{
+            name: 'Very Long Header Name That Won\'t Fit' as Platform.UIString.LocalizedString,
+            startLevel: 0,
+            style: defaultGroupStyle,
+            fullTrackName: 'Very Long Header Name That Won\'t Fit',
+          }],
+        });
+      }
+    }
+
+    it('shows popover tooltip when hovering a truncated track header', () => {
+      const provider = new TooltipTestProvider();
+      const delegate = new MockFlameChartDelegate();
+      chartInstance = new PerfUI.FlameChart.FlameChart(provider, delegate);
+      chartInstance.element.style.width = '100px';
+      chartInstance.element.style.height = '400px';
+      chartInstance.setWindowTimes(0, 100);
+      renderChart(chartInstance);
+
+      const event = new MouseEvent('mousemove');
+      Object.defineProperty(event, 'offsetX', {value: 22, writable: true});
+      Object.defineProperty(event, 'offsetY', {value: 17, writable: true});
+      chartInstance.getCanvas().dispatchEvent(event);
+
+      assert.strictEqual(chartInstance.getPopoverElementForTest().innerText, 'Very Long Header Name That Won\'t Fit');
+    });
+
+    it('does not throw when updatePopoverContents is called after hideHighlight or track header hovering', () => {
+      const provider = new TooltipTestProvider();
+      const delegate = new MockFlameChartDelegate();
+      const chart = new PerfUI.FlameChart.FlameChart(provider, delegate);
+      chartInstance = chart;
+      chart.element.style.width = '100px';
+      chart.element.style.height = '400px';
+      chart.setWindowTimes(0, 100);
+      renderChart(chart);
+
+      const popoverElement1 = document.createElement('div');
+      popoverElement1.textContent = 'Entry 1 Info';
+      chart.updatePopoverContents(popoverElement1);
+      assert.strictEqual(chart.getPopoverElementForTest().innerText, 'Entry 1 Info');
+
+      chart.hideHighlight();
+
+      const popoverElement2 = document.createElement('div');
+      popoverElement2.textContent = 'Entry 2 Info';
+      assert.doesNotThrow(() => {
+        chart.updatePopoverContents(popoverElement2);
+      });
+      assert.strictEqual(chart.getPopoverElementForTest().innerText, 'Entry 2 Info');
+
+      const event = new MouseEvent('mousemove');
+      Object.defineProperty(event, 'offsetX', {value: 22, writable: true});
+      Object.defineProperty(event, 'offsetY', {value: 17, writable: true});
+      chart.getCanvas().dispatchEvent(event);
+      assert.strictEqual(chart.getPopoverElementForTest().innerText, 'Very Long Header Name That Won\'t Fit');
+
+      assert.doesNotThrow(() => {
+        chart.updatePopoverContents(popoverElement1);
+      });
+      assert.strictEqual(chart.getPopoverElementForTest().innerText, 'Entry 1 Info');
+    });
+
+    class ContextMenuTestProvider extends FakeFlameChartProvider {
+      override timelineData(): PerfUI.FlameChart.FlameChartTimelineData {
+        return PerfUI.FlameChart.FlameChartTimelineData.create({
+          entryLevels: [0],
+          entryTotalTimes: [10],
+          entryStartTimes: [10],
+          groups: [{
+            name: 'Main Thread' as Platform.UIString.LocalizedString,
+            startLevel: 0,
+            style: defaultGroupStyle,
+            url: 'https://example.com/main.js',
+          }],
+        });
+      }
+    }
+
+    it('shows context menu with copy actions when right clicking a track header', () => {
+      const provider = new ContextMenuTestProvider();
+      const delegate = new MockFlameChartDelegate();
+      chartInstance = new PerfUI.FlameChart.FlameChart(provider, delegate);
+      chartInstance.element.style.width = '100px';
+      chartInstance.element.style.height = '400px';
+      chartInstance.setWindowTimes(0, 100);
+      renderChart(chartInstance);
+
+      const event = new MouseEvent('contextmenu', {bubbles: true});
+      Object.defineProperty(event, 'offsetX', {value: 22, writable: true});
+      Object.defineProperty(event, 'offsetY', {value: 17, writable: true});
+
+      const showStub = sinon.stub(UI.ContextMenu.ContextMenu.prototype, 'show').resolves();
+      const copyTextStub = sinon.stub(Host.InspectorFrontendHost.InspectorFrontendHostInstance, 'copyText');
+
+      chartInstance.getCanvas().dispatchEvent(event);
+
+      const menu = chartInstance.getContextMenu();
+      assert.exists(menu);
+
+      // Verify Copy track name item
+      const copyNameItem = findMenuItemWithLabel(menu.defaultSection(), 'Copy track name');
+      assert.exists(copyNameItem);
+      menu.invokeHandler(copyNameItem.id());
+      sinon.assert.calledWith(copyTextStub, 'Main Thread');
+
+      // Verify Copy track URL item
+      const copyUrlItem = findMenuItemWithLabel(menu.defaultSection(), 'Copy track URL');
+      assert.exists(copyUrlItem);
+      menu.invokeHandler(copyUrlItem.id());
+      sinon.assert.calledWith(copyTextStub, 'https://example.com/main.js');
+
+      showStub.restore();
+      copyTextStub.restore();
     });
   });
 
@@ -900,8 +1028,7 @@ describeWithEnvironment('FlameChart', () => {
             {groupIndex: -1, hoverType: PerfUI.FlameChart.HoverType.OUTSIDE_TRACKS});
       });
 
-      // After https://crrev.com/c/7205876 this test starts failing.
-      it.skip('[crbug.com/465838131] returns the correct group index and the icon type for given coordinates', () => {
+      it('returns the correct group index and the icon type for given coordinates', () => {
         const provider = new IndexAndCoordinatesConversionTestProvider();
         const delegate = new MockFlameChartDelegate();
         chartInstance = new PerfUI.FlameChart.FlameChart(provider, delegate);
@@ -1322,8 +1449,7 @@ describeWithEnvironment('FlameChart', () => {
     await assertScreenshot('timeline/interactions_track_candystripe.png');
   });
 
-  // Flaky
-  it.skip('[crbug.com/474036476]: renders the frames track with screenshots', async function() {
+  it(`renders the frames track with screenshots`, async function() {
     const {flameChart} = await renderFlameChartIntoDOM(this, {
       dataProvider: 'MAIN',
       fileNameOrParsedTrace: 'web-dev-screenshot-source-ids.json.gz',
@@ -1346,11 +1472,11 @@ describeWithEnvironment('FlameChart', () => {
     });
     flameChart.toggleGroupExpand(0);
     await raf();
+    flameChart.blurCanvasForTesting();
     await assertScreenshot('timeline/frames_track_screenshots.png');
   });
 
-  // Flaky
-  it.skip('[crbug.com/474034100]: renders correctly with a vertical offset', async function() {
+  it('renders correctly with a vertical offset', async function() {
     const {flameChart, parsedTrace, dataProvider} = await renderFlameChartIntoDOM(this, {
       dataProvider: 'MAIN',
       fileNameOrParsedTrace: 'web-dev.json.gz',
@@ -1373,6 +1499,7 @@ describeWithEnvironment('FlameChart', () => {
     assert.isOk(index);
     flameChart.revealEntryVertically(index);
     await raf();
+    flameChart.blurCanvasForTesting();
     await assertScreenshot('timeline/flamechart_with_vertical_offset.png');
   });
 
@@ -1428,22 +1555,6 @@ describeWithEnvironment('FlameChart', () => {
       },
     });
     await assertScreenshot('timeline/timings_track.png');
-  });
-
-  it('renders the auction worklets track', async function() {
-    await renderFlameChartIntoDOM(this, {
-      dataProvider: 'MAIN',
-      fileNameOrParsedTrace: 'fenced-frame-fledge.json.gz',
-      filterTracks(trackName) {
-        return trackName.includes('Worklet');
-      },
-      expandTracks() {
-        return true;
-      },
-      customStartTime: Trace.Types.Timing.Milli(220391498.289),
-      customEndTime: Trace.Types.Timing.Milli(220391697.601),
-    });
-    await assertScreenshot('timeline/auction_worklets_track.png');
   });
 
   it('renders the layout shifts track', async function() {
@@ -1656,5 +1767,89 @@ describeWithEnvironment('FlameChart', () => {
         new FakeProviderWithExtensionColors(),
     );
     await assertScreenshot('timeline/flamechart_extension_track_colors.png');
+  });
+
+  describe('calculatePopoverOffset', () => {
+    it('correctly places popover to the right when there is space', () => {
+      const offset = PerfUI.FlameChart.calculatePopoverOffset({
+        mouseX: 100,
+        mouseY: 100,
+        parentWidth: 1000,
+        parentHeight: 500,
+        infoWidth: 200,
+        infoHeight: 100,
+        offsetX: 10,
+        offsetY: 6,
+      });
+      // Mouse is at mouseX = 100, mouseY = 100.
+      // Popover fits to the right (100 + 10 + 200 = 310 <= 1000).
+      // Popover fits below the mouse (100 + 6 + 100 = 206 <= 500).
+      // It chooses the bottom-right quadrant: dx = 10, dy = 6.
+      // Target x = mouseX + dx = 100 + 10 = 110.
+      // Target y = mouseY + dy = 100 + 6 = 106.
+      assert.deepEqual(offset, {x: 110, y: 106});
+    });
+
+    it('uses left-side position if popover does not fit on the right', () => {
+      const offset = PerfUI.FlameChart.calculatePopoverOffset({
+        mouseX: 950,
+        mouseY: 200,
+        parentWidth: 1000,
+        parentHeight: 500,
+        infoWidth: 300,
+        infoHeight: 100,
+        offsetX: 10,
+        offsetY: 6,
+      });
+      // Mouse is at mouseX = 950, mouseY = 200.
+      // Right-side positions (quadrants 0 and 1) do not fit because they overlap the mouse (mouseX 950 is inside the clamped popover span [700, 1000]).
+      // The loop moves to bottom-left (quadrant 2), which fits without overlap:
+      // dx = -offsetX - infoWidth = -10 - 300 = -310.
+      // Target x = mouseX + dx = 950 - 310 = 640 (which is within [0, 700] and the right edge 940 is to the left of mouseX 950).
+      // Target y = mouseY + dy = 200 + 6 = 206 (fits).
+      assert.deepEqual(offset, {x: 640, y: 206});
+    });
+
+    it('clamps to the left edge (0) when using left-side position if it would otherwise exceed the left boundary',
+       () => {
+         const offset = PerfUI.FlameChart.calculatePopoverOffset({
+           mouseX: 300,
+           mouseY: 200,
+           parentWidth: 500,
+           parentHeight: 500,
+           infoWidth: 300,
+           infoHeight: 100,
+           offsetX: 10,
+           offsetY: 6,
+         });
+         // Mouse is at mouseX = 300, mouseY = 200.
+         // Right-side positions (quadrants 0 and 1) do not fit because they overlap the mouse (mouseX 300 is inside the clamped popover span [200, 500]).
+         // The loop moves to bottom-left (quadrant 2):
+         // dx = -offsetX - infoWidth = -10 - 300 = -310.
+         // Target x = mouseX + dx = 300 - 310 = -10.
+         // Clamps x to the left boundary [0, 200] => x = 0.
+         // Since the clamped right edge (x + infoWidth = 300) is exactly at mouseX (300), it fits without overlap.
+         // Target y = mouseY + dy = 200 + 6 = 206.
+         assert.deepEqual(offset, {x: 0, y: 206});
+       });
+
+    it('safely clamps without throwing if popover width exceeds parent width', () => {
+      const offset = PerfUI.FlameChart.calculatePopoverOffset({
+        mouseX: 100,
+        mouseY: 100,
+        parentWidth: 500,
+        parentHeight: 500,
+        infoWidth: 600,
+        infoHeight: 100,
+        offsetX: 10,
+        offsetY: 6,
+      });
+      // Mouse is at mouseX = 100, mouseY = 100.
+      // Popover width (600) is larger than parent width (500), so the standard upper clamp boundary (parentWidth - infoWidth = -100) is negative.
+      // The function ensures the upper bound is at least 0, clamping the popover to x = 0.
+      // In the second pass (pass = 1 / relaxed check), since the popover does not overlap the mouse vertically (popover y-span is [106, 206], which is below mouseY 100), it returns.
+      // Target x = 0, y = 106.
+      assert.deepEqual(offset, {x: 0, y: 106});
+    });
   });
 });

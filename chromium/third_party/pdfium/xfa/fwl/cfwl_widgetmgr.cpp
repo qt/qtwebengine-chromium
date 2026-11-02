@@ -147,14 +147,14 @@ CFWL_Widget* CFWL_WidgetMgr::GetWidgetAtPoint(CFWL_Widget* parent,
 
 CFWL_Widget* CFWL_WidgetMgr::GetDefaultButton(CFWL_Widget* pParent) const {
   if (pParent->GetClassID() == FWL_Type::PushButton &&
-      (pParent->GetStates() & FWL_STATE_PSB_Default)) {
+      (pParent->GetStates() & WidgetState::kPushbuttonDefault)) {
     return pParent;
   }
 
   CFWL_Widget* child = GetFirstChildWidget(pParent);
   while (child) {
     if (child->GetClassID() == FWL_Type::PushButton &&
-        (child->GetStates() & FWL_STATE_PSB_Default)) {
+        (child->GetStates() & WidgetState::kPushbuttonDefault)) {
       return child;
     }
     if (CFWL_Widget* find = GetDefaultButton(child)) {

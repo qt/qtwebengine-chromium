@@ -9,6 +9,7 @@
 #include <optional>
 #include <utility>
 
+#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/task/single_thread_task_runner.h"
@@ -17,7 +18,9 @@
 #include "net/base/address_list.h"
 #include "net/base/net_errors.h"
 #include "net/base/network_anonymization_key.h"
+#include "net/base/network_handle.h"
 #include "net/base/network_interfaces.h"
+#include "net/base/port_util.h"
 #include "net/base/sys_addrinfo.h"
 #include "net/dns/dns_util.h"
 #include "net/dns/host_resolver.h"
@@ -120,8 +123,13 @@ class P2PSocketManager::DnsRequest {
     if (family.has_value()) {
       parameters.dns_query_type = net::AddressFamilyToDnsQueryType(*family);
     }
-    request_ = resolver_->CreateRequest(host, network_anonymization_key,
-                                        net::NetLogWithSource(), parameters);
+    request_ = resolver_->CreateRequest(
+        host, network_anonymization_key,
+        // There are currently no plans to support multi-network for
+        // network::P2PSocket: always target the default network.
+        // Revisit this decision if a need arises.
+        net::handles::kInvalidNetworkHandle, net::NetLogWithSource(),
+        parameters);
 
     int result = request_->Start(base::BindOnce(
         &P2PSocketManager::DnsRequest::OnDone, base::Unretained(this)));
@@ -310,10 +318,14 @@ void P2PSocketManager::GetDefaultLocalAddress(int family,
                                               GetDefaultCallback callback) {
   DCHECK(family == AF_INET || family == AF_INET6);
 
-  auto socket =
-      url_request_context_->GetNetworkSessionContext()
-          ->client_socket_factory->CreateDatagramClientSocket(
-              net::DatagramSocket::DEFAULT_BIND, nullptr, net::NetLogSource());
+  auto socket = url_request_context_->GetNetworkSessionContext()
+                    ->client_socket_factory->CreateDatagramClientSocket(
+                        net::DatagramSocket::DEFAULT_BIND,
+                        // There are currently no plans to support multi-network
+                        // for network::P2PSocket: always target the default
+                        // network. Revisit this decision if a need arises.
+                        net::handles::kInvalidNetworkHandle,
+                        nullptr /* net_log */, net::NetLogSource());
 
   net::IPAddress ip_address;
   if (family == AF_INET) {
@@ -403,6 +415,20 @@ void P2PSocketManager::CreateSocket(
       (port_range.min_port == 0 && port_range.max_port != 0)) {
     trusted_socket_manager_client_->InvalidSocketPortRangeRequested();
     return;
+  }
+
+  if (base::FeatureList::IsEnabled(kEnforceP2PSocketPortRestrictions)) {
+    // When creating UDP sockets, the renderer initially passes port 0.
+    // Port 0 is normally restricted, so we skip validation when type is UDP
+    // and port is 0.
+    bool should_skip_port_validation =
+        type == P2P_SOCKET_UDP && remote_address.ip_address.port() == 0;
+    bool is_restricted_port =
+        !net::IsPortAllowedForIpEndpoint(remote_address.ip_address) ||
+        !net::IsPortAllowedForScheme(remote_address.ip_address.port(), "stun");
+    if (is_restricted_port && !should_skip_port_validation) {
+      return;
+    }
   }
 
   if (!proxy_resolving_socket_factory_) {

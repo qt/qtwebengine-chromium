@@ -48,12 +48,16 @@
 namespace blink {
 
 class Animation;
+struct AnimationCompositingDecisionState;
 class CompositorAnimation;
 class Element;
 class KeyframeEffectModelBase;
 class Node;
 class PaintArtifactCompositor;
 class SVGElement;
+
+// Enum indicating why we're calling StartAnimationOnCompositor.
+enum class StartOnCompositorReason { kGeneric, kAnimationTrigger };
 
 class CORE_EXPORT CompositorAnimations {
   STATIC_ONLY(CompositorAnimations);
@@ -133,6 +137,10 @@ class CORE_EXPORT CompositorAnimations {
     // the values are used in UMA histograms. It should also be noted that it
     // excludes the kNoFailure value.
     kFailureReasonCount = 21,
+
+    // Sentinel value not affecting histograms. This is used to differentiate
+    // the case where the state is not checked.
+    kUnchecked = 1 << kFailureReasonCount,
   };
 
   static FailureReasons CheckCanStartAnimationOnCompositor(
@@ -140,10 +148,10 @@ class CORE_EXPORT CompositorAnimations {
       const Timing::NormalizedTiming&,
       const Element&,
       const Animation*,
+      AnimationCompositingDecisionState&,
       const EffectModel&,
       const PaintArtifactCompositor*,
-      double animation_playback_rate,
-      PropertyHandleSet* unsupported_properties_for_tracing = nullptr);
+      double animation_playback_rate);
   static bool CompositorPropertyAnimationsHaveNoEffect(
       const Element& target_element,
       const Animation* animation,
@@ -224,13 +232,14 @@ class CORE_EXPORT CompositorAnimations {
       const Timing::NormalizedTiming&,
       const Element&,
       const Animation*,
+      AnimationCompositingDecisionState&,
       const EffectModel&,
       const PaintArtifactCompositor*,
-      double animation_playback_rate,
-      PropertyHandleSet* unsupported_properties_for_tracing = nullptr);
+      double animation_playback_rate);
   static FailureReasons CheckCanStartElementOnCompositor(
       const Element& element,
-      const EffectModel& model);
+      const EffectModel& model,
+      AnimationCompositingDecisionState& state);
   static FailureReasons CheckCanStartSVGElementOnCompositor(const SVGElement&);
   // This doesn't include the reasons returned from the above function.
   static FailureReasons CheckCanStartTransformAnimationOnCompositorForSVG(

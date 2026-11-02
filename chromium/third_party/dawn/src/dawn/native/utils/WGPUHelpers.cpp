@@ -34,7 +34,6 @@
 #include <mutex>
 #include <sstream>
 
-#include "src/dawn/common/Assert.h"
 #include "src/dawn/common/Constants.h"
 #include "src/dawn/native/BindGroup.h"
 #include "src/dawn/native/BindGroupLayout.h"
@@ -45,6 +44,7 @@
 #include "src/dawn/native/Queue.h"
 #include "src/dawn/native/Sampler.h"
 #include "src/dawn/native/ShaderModule.h"
+#include "src/utils/assert.h"
 #include "src/utils/compiler.h"
 
 namespace dawn::native::utils {
@@ -81,9 +81,7 @@ ResultOrError<Ref<PipelineLayoutBase>> MakeBasicPipelineLayout(
     DeviceBase* device,
     const Ref<BindGroupLayoutBase>& bindGroupLayout) {
     PipelineLayoutDescriptor descriptor;
-    descriptor.bindGroupLayoutCount = 1;
-    BindGroupLayoutBase* bgl = bindGroupLayout.Get();
-    descriptor.bindGroupLayouts = &bgl;
+    descriptor.bindGroupLayouts = SpanFromRef<BindGroupIndex>(bindGroupLayout.Get());
     return device->CreatePipelineLayout(&descriptor);
 }
 
@@ -97,8 +95,7 @@ ResultOrError<Ref<BindGroupLayoutBase>> MakeBindGroupLayout(
     }
 
     BindGroupLayoutDescriptor descriptor;
-    descriptor.entryCount = entries.size();
-    descriptor.entries = entries.data();
+    descriptor.entries = entries;
     return device->CreateBindGroupLayout(&descriptor, allowInternalBinding);
 }
 
@@ -205,8 +202,7 @@ ResultOrError<Ref<BindGroupBase>> MakeBindGroup(
 
     BindGroupDescriptor descriptor;
     descriptor.layout = layout.Get();
-    descriptor.entryCount = entries.size();
-    descriptor.entries = entries.data();
+    descriptor.entries = entries;
 
     return device->CreateBindGroup(&descriptor, mode);
 }

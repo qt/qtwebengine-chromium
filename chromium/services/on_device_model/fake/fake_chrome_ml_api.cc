@@ -178,10 +178,6 @@ struct FakeSessionInstance {
   bool awaiting_tool_responses = false;
 };
 
-struct FakeTsModelInstance {
-  std::string model_data;
-};
-
 struct FakeCancelInstance {
   bool cancelled = false;
 };
@@ -198,13 +194,6 @@ ChromeMLModel SessionCreateModel(const ChromeMLModelDescriptor* descriptor,
 void DestroyModel(ChromeMLModel model) {
   auto* instance = reinterpret_cast<FakeModelInstance*>(model);
   delete instance;
-}
-
-ChromeMLSafetyResult ClassifyTextSafety(ChromeMLModel model,
-                                        const char* text,
-                                        float* scores,
-                                        size_t* num_scores) {
-  return ChromeMLSafetyResult::kNoClassifier;
 }
 
 ChromeMLSession CreateSession(ChromeMLModel model,
@@ -447,6 +436,8 @@ void SetConstraintFns(const ChromeMLConstraintFns* fns) {
   g_constraint_fns = *fns;
 }
 
+// TODO(crbug.com/500473306): Remove this once we switch over to
+// GetTokenizerParamsV3.
 bool GetTokenizerParams(ChromeMLModel model,
                         ChromeMLSession session,
                         const ChromeMLGetTokenizerParamsFn& fn,
@@ -471,38 +462,35 @@ bool GetTokenizerParams(ChromeMLModel model,
   return true;
 }
 
+// TODO(crbug.com/500473306): Remove this once we switch over to
+// GetTokenizerParamsV3. This was a temporary transition function to test out an
+// optimization, but is now abandoned since the optimization is unlikely to have
+// much of an impact.
 bool GetTokenizerParamsV2(ChromeMLModel model,
                           ChromeMLSession session,
                           const ChromeMLGetTokenizerParamsFn& fn) {
   return GetTokenizerParams(session, model, fn, /*use_optimization=*/true);
 }
 
-ChromeMLTSModel CreateTSModel(const ChromeMLTSModelDescriptor* descriptor) {
-  auto* instance = new FakeTsModelInstance{};
-  return reinterpret_cast<ChromeMLTSModel>(instance);
-}
-
-void DestroyTSModel(ChromeMLTSModel model) {
-  auto* instance = reinterpret_cast<FakeTsModelInstance*>(model);
-  delete instance;
-}
-
-ChromeMLSafetyResult TSModelClassifyTextSafety(ChromeMLTSModel model,
-                                               const char* text,
-                                               float* scores,
-                                               size_t* num_scores) {
-  if (*num_scores != 2) {
-    *num_scores = 2;
-    return ChromeMLSafetyResult::kInsufficientStorage;
-  }
-  bool has_unsafe = std::string(text).find("unsafe") != std::string::npos;
-  // SAFETY: Follows a C-API, num_scores checked above, test-only code.
-  UNSAFE_BUFFERS(scores[0]) = has_unsafe ? 0.8 : 0.2;
-  bool has_reasonable =
-      std::string(text).find("reasonable") != std::string::npos;
-  // SAFETY: Follows a C-API, num_scores checked above, test-only code.
-  UNSAFE_BUFFERS(scores[1]) = has_reasonable ? 0.2 : 0.8;
-  return ChromeMLSafetyResult::kOk;
+// TODO(crbug.com/500473306): Rename this to `GetTokenizerParams` once the other
+// versions of this function have been removed.
+bool GetTokenizerParamsV3(ChromeMLModel model,
+                          ChromeMLSession session,
+                          const ChromeMLGetTokenizerParamsV3Fn& fn) {
+  return GetTokenizerParamsV2(
+      model, session, [fn](const ChromeMLTokenizerParams& params) {
+        ChromeMLTokenizerParamsV3 paramsV3{
+            // TODO(crbug.com/531814326): Support multiple tokens.
+            .vocab_size = params.vocab_size,
+            .eos_token_ids_size = 1u,
+            .eos_token_ids = &params.eos_token_id,
+            .token_lens = params.token_lens,
+            .token_bytes = params.token_bytes,
+            .tokenize_fn = params.tokenize_fn,
+            .tokenize_user_data = params.tokenize_user_data,
+        };
+        fn(paramsV3);
+      });
 }
 
 TfLiteDelegate* CreateGpuDelegate() {
@@ -532,13 +520,11 @@ const ChromeMLAPI g_api = {
     .InitDawnProcs = &InitDawnProcs,
     .SetMetricsFns = &SetMetricsFns,
     .SetFatalErrorFn = &SetFatalErrorFn,
-    .ClassifyTextSafety = &ClassifyTextSafety,
     .DestroyModel = &DestroyModel,
     .GetEstimatedPerformance = &GetEstimatedPerformance,
     .QueryGPUAdapter = &QueryGPUAdapter,
     .GetCapabilities = &GetCapabilities,
     .SetFatalErrorNonGpuFn = &SetFatalErrorNonGpuFn,
-
     .SessionCreateModel = &SessionCreateModel,
     .SessionAppend = &SessionAppend,
     .SessionGenerate = &SessionGenerate,
@@ -554,15 +540,10 @@ const ChromeMLAPI g_api = {
     .SetConstraintFns = &SetConstraintFns,
     .GetTokenizerParams = &GetTokenizerParams,
     .GetTokenizerParamsV2 = &GetTokenizerParamsV2,
+    .GetTokenizerParamsV3 = &GetTokenizerParamsV3,
     .CreateGpuDelegate = &CreateGpuDelegate,
     .CreateGpuDelegateWithPrecision = &CreateGpuDelegateWithPrecision,
     .DestroyGpuDelegate = &DestroyGpuDelegate,
-    .ts_api =
-        {
-            .CreateModel = &CreateTSModel,
-            .DestroyModel = &DestroyTSModel,
-            .ClassifyTextSafety = &TSModelClassifyTextSafety,
-        },
     .asr_api =
         {
             .CreateStream = &ASRCreateStream,

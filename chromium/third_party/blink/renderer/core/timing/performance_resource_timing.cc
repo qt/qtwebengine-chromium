@@ -98,7 +98,7 @@ PerformanceResourceTiming::PerformanceResourceTiming(
     base::TimeTicks time_origin,
     bool cross_origin_isolated_capability,
     ExecutionContext* context,
-    uint32_t navigation_id)
+    uint64_t navigation_id)
     : PerformanceEntry(
           info->name.IsNull() ? g_empty_atom : AtomicString(info->name),
           Performance::MonotonicTimeToDOMHighResTimeStamp(
@@ -528,16 +528,10 @@ void PerformanceResourceTiming::BuildJSONValue(V8ObjectBuilder& builder) const {
   builder.AddString("initiatorType", initiatorType());
   builder.AddString("deliveryType", deliveryType());
   builder.AddString("nextHopProtocol", nextHopProtocol());
-  if (RuntimeEnabledFeatures::RenderBlockingStatusEnabled()) {
-    builder.AddString("renderBlockingStatus",
-                      renderBlockingStatus().AsStringView());
-  }
-  if (RuntimeEnabledFeatures::ResourceTimingContentTypeEnabled()) {
-    builder.AddString("contentType", contentType());
-  }
-  if (RuntimeEnabledFeatures::ResourceTimingContentEncodingEnabled()) {
-    builder.AddString("contentEncoding", contentEncoding());
-  }
+  builder.AddString("renderBlockingStatus",
+                    renderBlockingStatus().AsStringView());
+  builder.AddString("contentType", contentType());
+  builder.AddString("contentEncoding", contentEncoding());
   builder.AddNumber("workerStart", workerStart());
   if (RuntimeEnabledFeatures::ServiceWorkerStaticRouterTimingInfoEnabled(
           ExecutionContext::From(builder.GetScriptState()))) {

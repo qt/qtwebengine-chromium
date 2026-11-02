@@ -2,12 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "public/fpdf_ppo.h"
+
 #include <array>
 #include <iterator>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include "constants/catalog.h"
 #include "core/fpdfapi/page/cpdf_form.h"
 #include "core/fpdfapi/page/cpdf_formobject.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
@@ -17,11 +20,10 @@
 #include "core/fpdfapi/parser/cpdf_number.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
-#include "core/fxge/cfx_defaultrenderdevice.h"
+#include "core/fxge/cfx_renderdevice.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
 #include "public/cpp/fpdf_scopers.h"
 #include "public/fpdf_edit.h"
-#include "public/fpdf_ppo.h"
 #include "public/fpdf_save.h"
 #include "public/fpdfview.h"
 #include "testing/embedder_test.h"
@@ -397,7 +399,8 @@ TEST_F(FPDFPPOEmbedderTest, CopyViewerPrefTypes) {
   const CPDF_Document* output_doc_impl =
       CPDFDocumentFromFPDFDocument(output_doc.get());
   RetainPtr<const CPDF_Dictionary> prefs =
-      output_doc_impl->GetRoot()->GetDictFor("ViewerPreferences");
+      output_doc_impl->GetRoot()->GetDictFor(
+          pdfium::catalog::kViewerPreferences);
   ASSERT_TRUE(prefs);
   EXPECT_EQ(6u, prefs->size());
 
@@ -616,6 +619,25 @@ TEST_F(FPDFPPOEmbedderTest, ImportWithZeroLengthStream) {
   ASSERT_TRUE(new_page);
   ScopedFPDFBitmap new_bitmap = RenderPage(new_page.get());
   CompareBitmapWithExpectationSuffix(new_bitmap.get(), pdfium::kHelloWorldPng);
+}
+
+TEST_F(FPDFPPOEmbedderTest, ImportWithSelfReferentialPageParent) {
+  ASSERT_TRUE(OpenDocument("bug_517126568.pdf"));
+  ASSERT_EQ(1, FPDF_GetPageCount(document()));
+
+  ScopedPage page = LoadScopedPage(0);
+  ASSERT_TRUE(page);
+
+  ScopedFPDFDocument new_doc(FPDF_CreateNewDocument());
+  ASSERT_TRUE(new_doc);
+
+  static constexpr int kIndices[] = {0};
+  EXPECT_TRUE(FPDF_ImportPagesByIndex(new_doc.get(), document(), kIndices,
+                                      std::size(kIndices), 0));
+  EXPECT_EQ(1, FPDF_GetPageCount(new_doc.get()));
+
+  EXPECT_TRUE(FPDF_ImportPages(new_doc.get(), document(), "1", 1));
+  EXPECT_EQ(2, FPDF_GetPageCount(new_doc.get()));
 }
 
 TEST_F(FPDFPPOEmbedderTest, ImportIntoDestDocWithoutInfo) {

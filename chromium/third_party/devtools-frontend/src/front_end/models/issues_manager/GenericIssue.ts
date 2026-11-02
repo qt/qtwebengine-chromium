@@ -15,37 +15,37 @@ import {
 
 const UIStrings = {
   /**
-   * @description title for autofill documentation page
+   * @description Title for autofill documentation page.
    */
   howDoesAutofillWorkPageTitle: 'How does autofill work?',
 
   /**
-   * @description title for label form elements usage example page
+   * @description Title for label form elements usage example page.
    */
   labelFormlementsPageTitle: 'The label elements',
 
   /**
-   * @description title for input form elements usage example page
+   * @description Title for input form elements usage example page.
    */
   inputFormElementPageTitle: 'The form input element',
 
   /**
-   * @description title for autocomplete attribute documentation page.
+   * @description Title for autocomplete attribute documentation page.
    */
   autocompleteAttributePageTitle: 'HTML attribute: autocomplete',
 
   /**
-   * @description title for CORB explainer.
+   * @description Title for CORB explainer.
    */
   corbExplainerPageTitle: 'CORB explainer',
 
   /**
-   * @description title for history intervention documentation page.
+   * @description Title for history intervention documentation page.
    */
   historyManipulationInterventionPageTitle: 'History manipulation intervention explainer',
 
   /**
-   * @description title for back-to-ad intervention documentation page.
+   * @description Title for back-to-ad intervention documentation page.
    */
   backToAdInterventionPageTitle: 'Back-to-ad intervention explainer',
 } as const;
@@ -241,7 +241,7 @@ const issueDescriptions = new Map<Protocol.Audits.GenericIssueErrorType, LazyMar
   [Protocol.Audits.GenericIssueErrorType.FormDuplicateIdForInputError, genericFormDuplicateIdForInputError],
   [
     Protocol.Audits.GenericIssueErrorType.FormAriaLabelledByToNonExistingIdError,
-    genericFormAriaLabelledByToNonExistingIdError
+    genericFormAriaLabelledByToNonExistingIdError,
   ],
   [
     Protocol.Audits.GenericIssueErrorType.FormEmptyIdAndNameAttributesForInputError,

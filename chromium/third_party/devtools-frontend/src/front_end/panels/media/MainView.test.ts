@@ -3,21 +3,21 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import type * as Common from '../../core/common/common.js';
 import type * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
-import {createTarget} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {createTarget, describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
 import * as RenderCoordinator from '../../ui/components/render_coordinator/render_coordinator.js';
 
 import * as Media from './media.js';
 
 const PLAYER_ID = 'PLAYER_ID' as Protocol.Media.PlayerId;
 
-describeWithMockConnection('MediaMainView', () => {
+describeWithEnvironment('MediaMainView', () => {
   let target: SDK.Target.Target;
 
   beforeEach(() => {

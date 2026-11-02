@@ -14,6 +14,7 @@ import {setupLocaleHooks} from '../../../../testing/LocaleHelpers.js';
 import {setupRuntimeHooks} from '../../../../testing/RuntimeHelpers.js';
 import {setupSettingsHooks} from '../../../../testing/SettingsHelpers.js';
 import {TestUniverse} from '../../../../testing/TestUniverse.js';
+import * as RenderCoordinator from '../../../../ui/components/render_coordinator/render_coordinator.js';
 
 import * as Components from './utils.js';
 
@@ -28,6 +29,10 @@ describe('JSPresentationUtils', () => {
 
   beforeEach(() => {
     universe = new TestUniverse();
+  });
+
+  afterEach(async () => {
+    await RenderCoordinator.done();
   });
 
   function setUpEnvironment() {
@@ -55,6 +60,7 @@ describe('JSPresentationUtils', () => {
     const stackTrace = await createStackTrace(target, debuggerWorkspaceBinding);
     const component = new Components.JSPresentationUtils.StackTracePreviewContent();
     component.options = {tabStops: false, ignoreListManager: universe.ignoreListManager};
+    renderElementIntoDOM(component);
     component.stackTrace = stackTrace;
     await component.updateComplete;
 

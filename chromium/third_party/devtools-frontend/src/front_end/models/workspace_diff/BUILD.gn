@@ -13,9 +13,9 @@ devtools_module("workspace_diff") {
   deps = [
     "../../core/common:bundle",
     "../../core/host:bundle",
+    "../../core/text_utils:bundle",
     "../../models/formatter:bundle",
     "../../models/persistence:bundle",
-    "../../models/text_utils:bundle",
     "../../models/workspace:bundle",
     "../../third_party/diff:bundle",
   ]
@@ -28,6 +28,7 @@ devtools_entrypoint("bundle") {
 
   visibility = [
     ":*",
+    "../../foundation/*",
     "../../panels/ai_assistance/*",
     "../../panels/changes/*",
     "../../panels/common/*",

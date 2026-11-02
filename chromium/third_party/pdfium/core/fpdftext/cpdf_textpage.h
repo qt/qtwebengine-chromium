@@ -9,7 +9,6 @@
 
 #include <stdint.h>
 
-#include <deque>
 #include <functional>
 #include <optional>
 #include <vector>
@@ -85,7 +84,7 @@ class CPDF_TextPage {
     UnownedPtr<CPDF_TextObject> text_object_;
   };
 
-  CPDF_TextPage(const CPDF_Page* pPage, bool rtl);
+  CPDF_TextPage(const CPDF_Page* page, bool rtl);
   ~CPDF_TextPage();
 
   int CharIndexFromTextIndex(int text_index) const;
@@ -102,7 +101,7 @@ class CPDF_TextPage {
   std::vector<CFX_FloatRect> GetRectArray(int start, int count) const;
   int GetIndexAtPos(const CFX_PointF& point, const CFX_SizeF& tolerance) const;
   WideString GetTextByRect(const CFX_FloatRect& rect) const;
-  WideString GetTextByObject(const CPDF_TextObject* pTextObj) const;
+  WideString GetTextByObject(const CPDF_TextObject* text_obj) const;
 
   // Returns string with the text from |text_buf_| that are covered by the input
   // range. |start| and |count| are in terms of the |char_indices_|, so the
@@ -110,7 +109,7 @@ class CPDF_TextPage {
   WideString GetPageText(int start, int count) const;
   WideString GetAllPageText() const { return GetPageText(0, CountChars()); }
 
-  int CountRects(int start, int nCount);
+  int CountRects(int start, int count);
   bool GetRect(int rectIndex, CFX_FloatRect* pRect) const;
 
  private:
@@ -139,52 +138,58 @@ class CPDF_TextPage {
   };
 
   void Init();
-  bool IsHyphen(wchar_t curChar) const;
+  bool IsHyphen(wchar_t current_char) const;
   void ProcessObject();
-  void ProcessFormObject(CPDF_FormObject* pFormObj,
+  void ProcessFormObject(CPDF_FormObject* form_obj,
                          const CFX_Matrix& form_matrix);
   void ProcessTextObject(const TransformedTextObject& obj);
-  void ProcessTextObject(CPDF_TextObject* pTextObj,
+  void ProcessTextObject(CPDF_TextObject* text_obj,
                          const CFX_Matrix& form_matrix,
-                         const CPDF_PageObjectHolder* pObjList,
-                         CPDF_PageObjectHolder::const_iterator ObjPos);
-  GenerateCharacter ProcessInsertObject(const CPDF_TextObject* pObj,
+                         const CPDF_PageObjectHolder* obj_list,
+                         CPDF_PageObjectHolder::const_iterator obj_iter);
+  GenerateCharacter ProcessInsertObject(const CPDF_TextObject* text_obj,
                                         const CFX_Matrix& form_matrix);
   // Returns whether to continue or not.
   bool ProcessGenerateCharacter(GenerateCharacter type,
                                 const CPDF_TextObject* text_object,
                                 const CFX_Matrix& form_matrix);
-  void ProcessTextObjectItems(CPDF_TextObject* text_object,
+  // Processes character items in `text_object` and appends character info and
+  // text to `temp_char_list_` and `temp_text_buf_`.
+  // Returns true if the caller needs to call ReverseTempTextBufs() because the
+  // text is RTL with a mirrored transformation matrix, requiring the newly
+  // appended character order to be reversed.
+  bool ProcessTextObjectItems(CPDF_TextObject* text_object,
                               const CFX_Matrix& form_matrix,
                               const CFX_Matrix& matrix);
   const CharInfo* GetPrevCharInfo() const;
   std::optional<CharInfo> GenerateCharInfo(wchar_t unicode,
                                            const CFX_Matrix& form_matrix);
-  bool IsSameAsPreTextObject(CPDF_TextObject* pTextObj,
-                             const CPDF_PageObjectHolder* pObjList,
+  bool IsSameAsPreTextObject(CPDF_TextObject* text_obj,
+                             const CPDF_PageObjectHolder* obj_list,
                              CPDF_PageObjectHolder::const_iterator iter) const;
-  bool IsSameTextObject(CPDF_TextObject* pTextObj1,
-                        CPDF_TextObject* pTextObj2) const;
+  bool IsSameTextObject(CPDF_TextObject* text_obj1,
+                        CPDF_TextObject* text_obj2) const;
   void CloseTempLine();
-  MarkedContentState PreMarkedContent(const CPDF_TextObject* pTextObj);
+  MarkedContentState PreMarkedContent(const CPDF_TextObject* text_obj);
   void ProcessMarkedContent(const TransformedTextObject& obj);
   void FindPreviousTextObject();
-  void AddCharInfoByLRDirection(wchar_t wChar, const CharInfo& info);
-  void AddCharInfoByRLDirection(wchar_t wChar, const CharInfo& info);
+  void AddCharInfo(wchar_t wc, const CharInfo& info, bool is_rtl);
   TextOrientation GetTextObjectWritingMode(
-      const CPDF_TextObject* pTextObj) const;
+      const CPDF_TextObject* text_obj) const;
   TextOrientation FindTextlineFlowOrientation() const;
   void AppendGeneratedCharacter(wchar_t unicode,
                                 const CFX_Matrix& form_matrix,
                                 bool use_temp_buffer);
-  void SwapTempTextBuf(size_t iCharListStartAppend, size_t iBufStartAppend);
+  // Reverses elements in `temp_char_list_` starting at `char_list_index` and
+  // characters in `temp_text_buf_` starting at `buf_index`.
+  void ReverseTempTextBufs(size_t char_list_index, size_t buf_index);
   WideString GetTextByPredicate(
       const std::function<bool(const CharInfo&)>& predicate) const;
 
   UnownedPtr<const CPDF_Page> const page_;
   DataVector<TextPageCharSegment> char_indices_;
-  std::deque<CharInfo> char_list_;
-  std::deque<CharInfo> temp_char_list_;
+  std::vector<CharInfo> char_list_;
+  std::vector<CharInfo> temp_char_list_;
   WideTextBuffer text_buf_;
   WideTextBuffer temp_text_buf_;
   UnownedPtr<const CPDF_TextObject> prev_text_obj_;

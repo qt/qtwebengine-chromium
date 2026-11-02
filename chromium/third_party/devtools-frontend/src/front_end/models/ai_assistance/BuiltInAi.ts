@@ -6,8 +6,6 @@ import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as Root from '../../core/root/root.js';
 
-let builtInAiInstance: BuiltInAi|undefined;
-
 export interface LanguageModel {
   promptStreaming: (arg0: string, opts?: {
     signal?: AbortSignal,
@@ -33,10 +31,11 @@ export class BuiltInAi extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
   #currentlyCreatingSession = false;
 
   static instance(): BuiltInAi {
-    if (builtInAiInstance === undefined) {
-      builtInAiInstance = new BuiltInAi();
+    if (!Root.DevToolsContext.globalInstance().has(BuiltInAi)) {
+      Root.DevToolsContext.globalInstance().set(BuiltInAi, new BuiltInAi());
     }
-    return builtInAiInstance;
+
+    return Root.DevToolsContext.globalInstance().get(BuiltInAi);
   }
 
   constructor() {
@@ -107,6 +106,12 @@ export class BuiltInAi extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
   }
 
   #isGpuAvailable(): boolean {
+    // In node-based API tests, there is no global `document` available. Since this
+    // class is instantiated during Universe bootstrapping, we need to guard against
+    // using document when not in the browser.
+    if (typeof document === 'undefined') {
+      return false;
+    }
     const canvas = document.createElement('canvas');
     try {
       const webgl = canvas.getContext('webgl');
@@ -175,7 +180,7 @@ Your instructions are as follows:
     headings or code blocks. Only write a single paragraph of text.
   - Your response should be concise and to the point. Avoid lengthy explanations
     or unnecessary details.
-          `
+          `,
         }],
         expectedInputs: [{
           type: 'text',
@@ -197,7 +202,7 @@ Your instructions are as follows:
   }
 
   static removeInstance(): void {
-    builtInAiInstance = undefined;
+    Root.DevToolsContext.globalInstance().delete(BuiltInAi);
   }
 
   async * getConsoleInsight(prompt: string, abortController: AbortController): AsyncGenerator<string> {

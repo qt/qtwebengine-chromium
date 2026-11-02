@@ -6,6 +6,7 @@
 
 #include "src/base/fpu.h"
 #include "src/codegen/compiler.h"
+#include "src/common/synchronization-point-support.h"
 #include "src/compiler/compilation-dependencies.h"
 #include "src/compiler/js-heap-broker.h"
 #include "src/execution/isolate.h"
@@ -112,13 +113,32 @@ MaglevCompilationJob::MaglevCompilationJob(
 
 MaglevCompilationJob::~MaglevCompilationJob() = default;
 
+CompilationJob::Status MaglevCompilationJob::AbortOptimization(
+    Isolate* isolate, BailoutReason reason) {
+  DCHECK_EQ(ThreadId::Current(), isolate->thread_id());
+  bailout_reason_ = reason;
+  DirectHandle<SharedFunctionInfo> shared(function()->shared(), isolate);
+  shared->DisableOptimization(isolate, reason);
+  return UpdateState(FAILED, State::kFailed);
+}
+
 CompilationJob::Status MaglevCompilationJob::PrepareJobImpl(Isolate* isolate) {
+  if (function()->shared()->GetBytecodeArray(isolate)->length() >
+      v8_flags.max_optimized_bytecode_size) {
+    return AbortOptimization(isolate, BailoutReason::kFunctionTooBig);
+  }
   BeginPhaseKind("V8.MaglevPrepareJob");
   if (info()->collect_source_positions()) {
     SharedFunctionInfo::EnsureSourcePositionsAvailable(
         isolate,
         info()->toplevel_compilation_unit()->shared_function_info().object());
   }
+  if (info()->is_tracing_enabled() || info()->trace_json_enabled()) {
+    // Warm up the CodeTracer on the main thread to avoid a data race if it is
+    // initialized on the background thread.
+    isolate->GetCodeTracer();
+  }
+  SYNCHRONIZATION_POINT("MaglevPrepareJob");
   EndPhaseKind();
   // TODO(v8:7700): Actual return codes.
   return CompilationJob::SUCCEEDED;
@@ -127,6 +147,7 @@ CompilationJob::Status MaglevCompilationJob::PrepareJobImpl(Isolate* isolate) {
 CompilationJob::Status MaglevCompilationJob::ExecuteJobImpl(
     RuntimeCallStats* stats, LocalIsolate* local_isolate) {
   BeginPhaseKind("V8.MaglevExecuteJob");
+  SYNCHRONIZATION_POINT("MaglevExecuteJob");
   LocalIsolateScope scope{info(), local_isolate};
   if (!maglev::MaglevCompiler::Compile(local_isolate, info())) {
     EndPhaseKind();

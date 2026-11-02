@@ -7,6 +7,7 @@ import("//third_party/jni_zero/jni_zero.gni")
 
 java_cpp_enum("autofill_generated_enums") {
   sources = [
+    "//chrome/browser/android/preferences/autofill/settings_navigation_helper.h",
     "//chrome/browser/autofill/android/android_autofill_availability_status.h",
     "//chrome/browser/autofill/android/autofill_profile_bridge.h",
     "//chrome/browser/autofill/android/save_update_address_profile_prompt_mode.h",
@@ -80,13 +81,21 @@ android_library("java") {
     "java/src/org/chromium/chrome/browser/autofill/editors/common/text_field/TextFieldView.java",
     "java/src/org/chromium/chrome/browser/autofill/editors/common/text_field/TextFieldViewBinder.java",
     "java/src/org/chromium/chrome/browser/autofill/helpers/FaviconHelper.java",
-    "java/src/org/chromium/chrome/browser/autofill/options/AutofillAiPreference.java",
-    "java/src/org/chromium/chrome/browser/autofill/options/AutofillOptionsCoordinator.java",
-    "java/src/org/chromium/chrome/browser/autofill/options/AutofillOptionsFragment.java",
-    "java/src/org/chromium/chrome/browser/autofill/options/AutofillOptionsMediator.java",
-    "java/src/org/chromium/chrome/browser/autofill/options/AutofillOptionsProperties.java",
-    "java/src/org/chromium/chrome/browser/autofill/options/AutofillOptionsViewBinder.java",
-    "java/src/org/chromium/chrome/browser/autofill/options/RadioButtonGroupThirdPartyPreference.java",
+    "java/src/org/chromium/chrome/browser/autofill/settings/AutofillHelpMenuProvider.java",
+    "java/src/org/chromium/chrome/browser/autofill/settings/PersonalContextSettingsLauncher.java",
+    "java/src/org/chromium/chrome/browser/autofill/settings/options/AutofillAiPreference.java",
+    "java/src/org/chromium/chrome/browser/autofill/settings/options/AutofillOptionsCoordinator.java",
+    "java/src/org/chromium/chrome/browser/autofill/settings/options/AutofillOptionsFragment.java",
+    "java/src/org/chromium/chrome/browser/autofill/settings/options/AutofillOptionsMediator.java",
+    "java/src/org/chromium/chrome/browser/autofill/settings/options/AutofillOptionsProperties.java",
+    "java/src/org/chromium/chrome/browser/autofill/settings/options/AutofillOptionsViewBinder.java",
+    "java/src/org/chromium/chrome/browser/autofill/settings/options/RadioButtonGroupThirdPartyPreference.java",
+    "java/src/org/chromium/chrome/browser/autofill/settings/personal_context/AutofillPersonalContextCoordinator.java",
+    "java/src/org/chromium/chrome/browser/autofill/settings/personal_context/AutofillPersonalContextFragment.java",
+    "java/src/org/chromium/chrome/browser/autofill/settings/personal_context/AutofillPersonalContextMediator.java",
+    "java/src/org/chromium/chrome/browser/autofill/settings/personal_context/AutofillPersonalContextNoticePreference.java",
+    "java/src/org/chromium/chrome/browser/autofill/settings/personal_context/AutofillPersonalContextProperties.java",
+    "java/src/org/chromium/chrome/browser/autofill/settings/personal_context/AutofillPersonalContextViewBinder.java",
   ]
 
   resources_package = "org.chromium.chrome.browser.autofill"
@@ -102,6 +111,7 @@ android_library("java") {
     "//chrome/browser/feedback/android:java",
     "//chrome/browser/feedback/android:java_resources",
     "//chrome/browser/flags:java",
+    "//chrome/browser/language/android:java_resources",
     "//chrome/browser/preferences:java",
     "//chrome/browser/profiles/android:java",
     "//chrome/browser/settings:java",
@@ -175,17 +185,6 @@ android_library("test_support_java") {
   srcjar_deps = [ ":jni_test_headers" ]
 }
 
-android_library("bottom_sheet_utils_java") {
-  sources = [ "java/src/org/chromium/chrome/browser/autofill/bottom_sheet_utils/DetailScreenScrollListener.java" ]
-
-  deps = [
-    "//base:base_java",
-    "//components/browser_ui/bottomsheet/android:java",
-    "//third_party/androidx:androidx_annotation_annotation_jvm_java",
-    "//third_party/androidx:androidx_recyclerview_recyclerview_java",
-  ]
-}
-
 generate_jni("jni_headers") {
   sources = [
     "java/src/org/chromium/chrome/browser/autofill/AddressNormalizerFactory.java",
@@ -209,12 +208,16 @@ android_resources("java_resources") {
   deps = [
     "//components/browser_ui/settings/android:java_resources",
     "//components/strings:components_strings_grd",
+    "//ui/android:ui_java_resources",
   ]
   sources = [
+    "java/res/drawable/account_box.xml",
     "java/res/drawable/autofill_editor_notice_background.xml",
+    "java/res/drawable/finance.xml",
     "java/res/drawable/google_24dp.xml",
+    "java/res/drawable/insight_spark.xml",
+    "java/res/drawable/personal_recommendations.xml",
     "java/res/drawable/store_locally_tooltip_background.xml",
-    "java/res/drawable/text_analysis_24dp.xml",
     "java/res/layout/autofill_ai_attribute_info.xml",
     "java/res/layout/autofill_ai_attribute_info_with_edit_button.xml",
     "java/res/layout/autofill_ai_preference.xml",
@@ -231,6 +234,7 @@ android_resources("java_resources") {
     "java/res/layout/autofill_local_card_editor.xml",
     "java/res/layout/autofill_local_iban_editor.xml",
     "java/res/layout/autofill_migrate_address_profile_prompt.xml",
+    "java/res/layout/autofill_personal_context_expandable_notice.xml",
     "java/res/layout/autofill_save_address_profile_prompt.xml",
     "java/res/layout/autofill_update_address_profile_prompt.xml",
     "java/res/layout/autofill_vcn_enroll_bottom_sheet_content.xml",
@@ -238,8 +242,9 @@ android_resources("java_resources") {
     "java/res/menu/prefeditor_editor_menu.xml",
     "java/res/values/dimens.xml",
     "java/res/values/ids.xml",
+    "java/res/xml/autofill_and_passwords_preferences.xml",
     "java/res/xml/autofill_options_preferences.xml",
-    "java/res/xml/home_of_transactions_preferences.xml",
+    "java/res/xml/autofill_personal_context_preferences.xml",
   ]
 }
 
@@ -257,6 +262,8 @@ android_library("test_java") {
     "javatest/src/org/chromium/chrome/browser/autofill/autofill_ai/AutofillAiSaveUpdateEntityPromptRenderTest.java",
     "javatest/src/org/chromium/chrome/browser/autofill/editors/address/AddressEditorRenderTest.java",
     "javatest/src/org/chromium/chrome/browser/autofill/editors/common/dropdown_field/DropdownFieldViewTest.java",
+    "javatest/src/org/chromium/chrome/browser/autofill/settings/options/AutofillOptionsRenderTest.java",
+    "javatest/src/org/chromium/chrome/browser/autofill/settings/personal_context/AutofillPersonalContextSettingsRenderTest.java",
   ]
 
   deps = [
@@ -302,7 +309,6 @@ robolectric_library("junit") {
     "junit/src/org/chromium/chrome/browser/autofill/SaveUpdateAddressProfilePromptTest.java",
     "junit/src/org/chromium/chrome/browser/autofill/autofill_ai/AutofillAiSaveUpdateEntityPromptTest.java",
     "junit/src/org/chromium/chrome/browser/autofill/autofill_ai/EntityDataManagerTest.java",
-    "junit/src/org/chromium/chrome/browser/autofill/bottom_sheet_utils/DetailScreenScrollListenerTest.java",
     "junit/src/org/chromium/chrome/browser/autofill/editors/address/AddressEditorTest.java",
     "junit/src/org/chromium/chrome/browser/autofill/editors/autofill_ai/EntityEditorModuleTest.java",
     "junit/src/org/chromium/chrome/browser/autofill/editors/autofill_ai/EntityEditorViewTest.java",
@@ -310,23 +316,26 @@ robolectric_library("junit") {
     "junit/src/org/chromium/chrome/browser/autofill/editors/common/dropdown_field/DropdownFieldViewUnitTest.java",
     "junit/src/org/chromium/chrome/browser/autofill/editors/common/text_field/TextFieldViewUnitTest.java",
     "junit/src/org/chromium/chrome/browser/autofill/editors/utils/TestUtils.java",
-    "junit/src/org/chromium/chrome/browser/autofill/options/AutofillOptionsTest.java",
+    "junit/src/org/chromium/chrome/browser/autofill/settings/options/AutofillOptionsTest.java",
+    "junit/src/org/chromium/chrome/browser/autofill/settings/personal_context/AutofillPersonalContextTest.java",
   ]
 
   deps = [
-    ":bottom_sheet_utils_java",
     ":java",
     ":java_resources",
     ":third_party_provider_java",
     "//base:base_java",
     "//base:base_java_test_support",
     "//base:base_junit_test_support",
+    "//chrome/android:chrome_java",
     "//chrome/browser/device_reauth/android:java",
     "//chrome/browser/feedback/android:factory_java",
     "//chrome/browser/feedback/android:java",
     "//chrome/browser/flags:java",
     "//chrome/browser/preferences:java",
     "//chrome/browser/profiles/android:java",
+    "//chrome/browser/settings:java",
+    "//chrome/browser/settings:search_java",
     "//chrome/browser/signin/services/android:java",
     "//chrome/browser/sync/android:java",
     "//chrome/test/android:chrome_java_unit_test_support",

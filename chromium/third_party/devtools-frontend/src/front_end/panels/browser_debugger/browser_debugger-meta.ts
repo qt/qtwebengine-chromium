@@ -12,71 +12,71 @@ import type * as BrowserDebugger from './browser_debugger.js';
 
 const UIStrings = {
   /**
-   * @description Command for showing the 'Event Listener Breakpoints' tool
+   * @description Command for showing the Event listener breakpoints sidebar in the Sources panel.
    */
-  showEventListenerBreakpoints: 'Show Event Listener Breakpoints',
+  showEventListenerBreakpoints: 'Show Event listener breakpoints',
   /**
-   * @description Title of the 'Event Listener Breakpoints' tool in the bottom sidebar of the Sources tool
+   * @description Title of the Event listener breakpoints sidebar in the Sources panel.
    */
-  eventListenerBreakpoints: 'Event Listener Breakpoints',
+  eventListenerBreakpoints: 'Event listener breakpoints',
   /**
-   * @description Title for showing the 'CSP Violation Breakpoints' tool in the Sources panel
+   * @description Command for showing the CSP violation breakpoints sidebar in the Sources panel.
    */
-  showCspViolationBreakpoints: 'Show CSP Violation Breakpoints',
+  showCspViolationBreakpoints: 'Show CSP violation breakpoints',
   /**
-   * @description Title of the 'CSP Violation Breakpoints' tool in the bottom sidebar of the Sources tool
+   * @description Title of the CSP violation breakpoints sidebar in the Sources panel.
    */
-  cspViolationBreakpoints: 'CSP Violation Breakpoints',
+  cspViolationBreakpoints: 'CSP violation breakpoints',
   /**
-   * @description Command for showing the 'XHR/fetch Breakpoints' in the sources panel
+   * @description Command for showing the XHR/fetch breakpoints sidebar in the Sources panel.
    */
-  showXhrfetchBreakpoints: 'Show XHR/fetch Breakpoints',
+  showXhrfetchBreakpoints: 'Show XHR/fetch breakpoints',
   /**
-   * @description Title of the 'XHR/fetch Breakpoints' tool in the bottom sidebar of the Sources tool
+   * @description Title of the XHR/fetch breakpoints sidebar in the Sources panel.
    */
-  xhrfetchBreakpoints: 'XHR/fetch Breakpoints',
+  xhrfetchBreakpoints: 'XHR/fetch breakpoints',
   /**
-   * @description Command for showing the 'DOM Breakpoints' tool in the Elements panel
+   * @description Command for showing the DOM breakpoints sidebar.
    */
-  showDomBreakpoints: 'Show DOM Breakpoints',
+  showDomBreakpoints: 'Show DOM breakpoints',
   /**
-   * @description Title of the 'DOM Breakpoints' tool in the bottom sidebar of the Sources tool
+   * @description Title of the DOM breakpoints sidebar.
    */
-  domBreakpoints: 'DOM Breakpoints',
+  domBreakpoints: 'DOM breakpoints',
   /**
-   * @description Command for showing the 'Global Listeners' tool in the sources panel
+   * @description Command for showing the Global listeners sidebar in the Sources panel.
    */
-  showGlobalListeners: 'Show Global Listeners',
+  showGlobalListeners: 'Show Global listeners',
   /**
-   * @description Title of the 'Global Listeners' tool in the bottom sidebar of the Sources tool
+   * @description Title of the Global listeners sidebar in the Sources panel.
    */
-  globalListeners: 'Global Listeners',
+  globalListeners: 'Global listeners',
   /**
-   * @description Text that refers to one or a group of webpages
+   * @description Title of the Page tab in the Sources panel.
    */
   page: 'Page',
   /**
-   * @description Command for showing the 'Page' tab in the Sources panel
+   * @description Command for showing the Page tab in the Sources panel.
    */
   showPage: 'Show Page',
   /**
-   * @description Title as part of a tool to override existing configurations
+   * @description Title of the Overrides tab in the Sources panel.
    */
   overrides: 'Overrides',
   /**
-   * @description Command for showing the 'Overrides' tool in the Sources panel
+   * @description Command for showing the Overrides tab in the Sources panel.
    */
   showOverrides: 'Show Overrides',
   /**
-   * @description Title for a type of source files
+   * @description Title of the Content scripts tab in the Sources panel.
    */
   contentScripts: 'Content scripts',
   /**
-   * @description Command for showing the 'Content scripts' tool in the sources panel
+   * @description Command for showing the Content scripts tab in the Sources panel.
    */
   showContentScripts: 'Show Content scripts',
   /**
-   * @description Label for a button in the sources panel that refreshes the list of global event listeners.
+   * @description Label for a button in the Sources panel that refreshes the list of global event listeners.
    */
   refreshGlobalListeners: 'Refresh global listeners',
 } as const;
@@ -202,9 +202,10 @@ UI.ViewManager.registerViewExtension({
   commandPrompt: i18nLazyString(UIStrings.showPage),
   order: 2,
   persistence: UI.ViewManager.ViewPersistence.PERMANENT,
-  async loadView() {
+  async loadView(universe) {
     const Sources = await loadSourcesModule();
-    return Sources.SourcesNavigator.NetworkNavigatorView.instance();
+    return Sources.SourcesNavigator.NetworkNavigatorView.instance(
+        {forceNew: null, networkProjectManager: universe.networkProjectManager});
   },
 });
 
@@ -216,9 +217,10 @@ UI.ViewManager.registerViewExtension({
   order: 4,
   persistence: UI.ViewManager.ViewPersistence.PERMANENT,
   condition: () => !Root.Runtime.Runtime.isTraceApp(),
-  async loadView() {
+  async loadView(universe) {
     const Sources = await loadSourcesModule();
-    return Sources.SourcesNavigator.OverridesNavigatorView.instance();
+    return Sources.SourcesNavigator.OverridesNavigatorView.instance(
+        {forceNew: null, networkProjectManager: universe.networkProjectManager});
   },
 });
 
@@ -230,9 +232,9 @@ UI.ViewManager.registerViewExtension({
   order: 5,
   persistence: UI.ViewManager.ViewPersistence.PERMANENT,
   condition: () => Root.Runtime.getPathName() !== '/bundled/worker_app.html' && !Root.Runtime.Runtime.isTraceApp(),
-  async loadView() {
+  async loadView(universe) {
     const Sources = await loadSourcesModule();
-    return new Sources.SourcesNavigator.ContentScriptsNavigatorView();
+    return new Sources.SourcesNavigator.ContentScriptsNavigatorView(universe.networkProjectManager);
   },
 });
 

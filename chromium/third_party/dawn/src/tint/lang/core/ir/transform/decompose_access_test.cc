@@ -40,7 +40,13 @@ using namespace tint::core::number_suffixes;  // NOLINT
 namespace tint::core::ir::transform {
 namespace {
 
-using IR_DecomposeAccessTest = core::ir::transform::TransformTest;
+struct IR_DecomposeAccessTest : public core::ir::transform::TransformTest {
+    void SetUp() override {
+        mod.properties.Add(Property::kAllow16BitFloats);
+        mod.properties.Add(Property::kAllow16BitIntegers);
+        mod.properties.Add(Property::kAllowBufferTypes);
+    }
+};
 
 TEST_F(IR_DecomposeAccessTest, OverflowArraySize) {
     auto* S =
@@ -1676,7 +1682,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -1851,7 +1856,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -1928,7 +1932,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.workgroup = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -2006,7 +2009,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -2086,7 +2088,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -2168,7 +2169,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -2253,7 +2253,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -2345,7 +2344,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -2442,7 +2440,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -2526,7 +2523,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.workgroup = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -2617,7 +2613,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.workgroup = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -2713,7 +2708,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.workgroup = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -2790,7 +2784,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -2870,7 +2863,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -2951,7 +2943,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -3027,7 +3018,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.workgroup = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -3106,7 +3096,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.workgroup = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -3186,7 +3175,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.workgroup = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -3258,7 +3246,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -3340,7 +3327,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -3415,7 +3401,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -3489,7 +3474,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.workgroup = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -3573,7 +3557,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.workgroup = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -3650,7 +3633,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.workgroup = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -3758,7 +3740,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.workgroup = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -3863,7 +3844,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.workgroup = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -3910,7 +3890,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -3957,7 +3936,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -4004,7 +3982,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -4051,7 +4028,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -4097,7 +4073,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.workgroup = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -4168,7 +4143,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -4240,7 +4214,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.workgroup = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -4313,7 +4286,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -4390,7 +4362,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -4471,7 +4442,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -4556,7 +4526,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -4651,7 +4620,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -4756,7 +4724,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -4845,7 +4812,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.workgroup = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -4946,7 +4912,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.workgroup = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -5059,7 +5024,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.workgroup = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -5130,7 +5094,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -5204,7 +5167,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -5281,7 +5243,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -5359,7 +5320,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -5447,7 +5407,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -5520,7 +5479,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.workgroup = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -5597,7 +5555,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.workgroup = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -5678,7 +5635,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.workgroup = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -5750,7 +5706,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -5808,7 +5763,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -5823,7 +5777,7 @@ TEST_F(IR_DecomposeAccessTest, Storage_UnsizedBuffer) {
     b.Append(func->Block(), [&] {
         auto* call = b.CallExplicit<core::ir::CoreBuiltinCall>(
             ty.ptr(storage, ty.u32(), core::Access::kReadWrite), core::BuiltinFn::kBufferView,
-            Vector{ty.u32()}, var, 16_u);
+            Vector<TemplateParameter, 1>{ty.u32()}, var, 16_u);
         b.Store(call, 33_u);
         b.Return(func);
     });
@@ -5857,7 +5811,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -5871,7 +5824,7 @@ TEST_F(IR_DecomposeAccessTest, Workgroup_SizedBuffer) {
     b.Append(func->Block(), [&] {
         auto* call = b.CallExplicit<core::ir::CoreBuiltinCall>(
             ty.ptr(workgroup, ty.u32(), core::Access::kReadWrite), core::BuiltinFn::kBufferView,
-            Vector{ty.u32()}, var, 16_u);
+            Vector<TemplateParameter, 1>{ty.u32()}, var, 16_u);
         b.Store(call, 33_u);
         b.Return(func);
     });
@@ -5905,7 +5858,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.workgroup = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -5920,7 +5872,7 @@ TEST_F(IR_DecomposeAccessTest, Uniform_SizedBuffer) {
     b.Append(func->Block(), [&] {
         auto* call = b.CallExplicit<core::ir::CoreBuiltinCall>(
             ty.ptr(uniform, ty.u32(), core::Access::kRead), core::BuiltinFn::kBufferView,
-            Vector{ty.u32()}, var, 36_u);
+            Vector<TemplateParameter, 1>{ty.u32()}, var, 36_u);
         b.Load(call);
         b.Return(func);
     });
@@ -5954,7 +5906,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.uniform = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -6000,7 +5951,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.uniform = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -6048,7 +5998,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.uniform = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -6095,7 +6044,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -6142,7 +6090,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -6204,7 +6151,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -6285,7 +6231,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -6306,9 +6251,9 @@ TEST_F(IR_DecomposeAccessTest, ArrayLength_StructMinF16_Offset_BufferView) {
 
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
-        auto* view =
-            b.CallExplicit(ty.ptr(storage, ty.runtime_array(sb), core::Access::kRead),
-                           core::BuiltinFn::kBufferView, Vector{ty.runtime_array(sb)}, var, 64_u);
+        auto* view = b.CallExplicit(ty.ptr(storage, ty.runtime_array(sb), core::Access::kRead),
+                                    core::BuiltinFn::kBufferView,
+                                    Vector<TemplateParameter, 1>{ty.runtime_array(sb)}, var, 64_u);
         auto* call = b.Call(ty.u32(), core::BuiltinFn::kArrayLength, view);
         b.Let("a", call->Result());
         b.Return(func);
@@ -6366,7 +6311,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -6390,9 +6334,10 @@ TEST_F(IR_DecomposeAccessTest, ArrayLength_StructMinF16_Offset_BufferView_Runtim
 
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
-        auto* view = b.CallExplicit(ty.ptr(storage, ty.runtime_array(sb), core::Access::kRead),
-                                    core::BuiltinFn::kBufferView, Vector{ty.runtime_array(sb)}, var,
-                                    b.Load(val));
+        auto* view =
+            b.CallExplicit(ty.ptr(storage, ty.runtime_array(sb), core::Access::kRead),
+                           core::BuiltinFn::kBufferView,
+                           Vector<TemplateParameter, 1>{ty.runtime_array(sb)}, var, b.Load(val));
         auto* call = b.Call(ty.u32(), core::BuiltinFn::kArrayLength, view);
         b.Let("a", call->Result());
         b.Return(func);
@@ -6456,7 +6401,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -6482,7 +6426,8 @@ TEST_F(IR_DecomposeAccessTest, ArrayLength_StructMinF16_Offset_Both) {
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
         auto* view = b.CallExplicit(ty.ptr(storage, outer, core::Access::kRead),
-                                    core::BuiltinFn::kBufferView, Vector{outer}, var, b.Load(val));
+                                    core::BuiltinFn::kBufferView,
+                                    Vector<TemplateParameter, 1>{outer}, var, b.Load(val));
         auto* call =
             b.Call(ty.u32(), core::BuiltinFn::kArrayLength,
                    b.Access(ty.ptr(storage, ty.runtime_array(sb), core::Access::kRead), view, 1_u));
@@ -6550,7 +6495,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.storage = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -6645,7 +6589,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.uniform = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -6661,7 +6604,7 @@ TEST_F(IR_DecomposeAccessTest, BufferArrayView_Basic_U32) {
         auto* arr_ty = ty.array<u32>();
         auto* call = b.CallExplicit<core::ir::CoreBuiltinCall>(
             ty.ptr(storage, arr_ty, core::Access::kReadWrite), core::BuiltinFn::kBufferArrayView,
-            Vector{arr_ty}, var, 16_u, 100_u);
+            Vector<TemplateParameter, 1>{arr_ty}, var, 16_u, 100_u);
         auto* access = b.Access(ty.ptr(storage, ty.u32(), core::Access::kReadWrite), call, 5_u);
         b.Load(access);
         b.Return(func);
@@ -6713,7 +6656,7 @@ TEST_F(IR_DecomposeAccessTest, BufferArrayView_Basic_Vec4f) {
         auto* arr_ty = ty.runtime_array(ty.vec4(ty.f32()));
         auto* call = b.CallExplicit<core::ir::CoreBuiltinCall>(
             ty.ptr(storage, arr_ty, core::Access::kReadWrite), core::BuiltinFn::kBufferArrayView,
-            Vector{arr_ty}, var, 16_u, 100_u);
+            Vector<TemplateParameter, 1>{arr_ty}, var, 16_u, 100_u);
         auto* access =
             b.Access(ty.ptr(storage, ty.vec4(ty.f32()), core::Access::kReadWrite), call, 5_u);
         b.Load(access);
@@ -6772,7 +6715,7 @@ TEST_F(IR_DecomposeAccessTest, BufferArrayView_Basic_Struct) {
         auto* arr_ty = ty.runtime_array(str_);
         auto* call = b.CallExplicit<core::ir::CoreBuiltinCall>(
             ty.ptr(storage, arr_ty, core::Access::kReadWrite), core::BuiltinFn::kBufferArrayView,
-            Vector{arr_ty}, var, 16_u, 100_u);
+            Vector<TemplateParameter, 1>{arr_ty}, var, 16_u, 100_u);
         auto* access = b.Access(ty.ptr(storage, str_, core::Access::kReadWrite), call, 5_u);
         b.Load(access);
         b.Return(func);
@@ -6848,7 +6791,7 @@ TEST_F(IR_DecomposeAccessTest, ArrayLength_BufferArrayView_Size_U32) {
         auto* arr_ty = ty.array<u32>();
         auto* call = b.CallExplicit<core::ir::CoreBuiltinCall>(
             ty.ptr(storage, arr_ty, core::Access::kReadWrite), core::BuiltinFn::kBufferArrayView,
-            Vector{arr_ty}, var, 16_u, 100_u);
+            Vector<TemplateParameter, 1>{arr_ty}, var, 16_u, 100_u);
         auto* len = b.Call(ty.u32(), core::BuiltinFn::kArrayLength, call);
         b.Let("a", len->Result());
         b.Return(func);
@@ -6900,7 +6843,7 @@ TEST_F(IR_DecomposeAccessTest, ArrayLength_BufferArrayView_Size_Vec4f) {
         auto* arr_ty = ty.runtime_array(ty.vec4(ty.f32()));
         auto* call = b.CallExplicit<core::ir::CoreBuiltinCall>(
             ty.ptr(storage, arr_ty, core::Access::kReadWrite), core::BuiltinFn::kBufferArrayView,
-            Vector{arr_ty}, var, 16_u, 100_u);
+            Vector<TemplateParameter, 1>{arr_ty}, var, 16_u, 100_u);
         auto* len = b.Call(ty.u32(), core::BuiltinFn::kArrayLength, call);
         b.Let("a", len->Result());
         b.Return(func);
@@ -6957,7 +6900,7 @@ TEST_F(IR_DecomposeAccessTest, ArrayLength_BufferArrayView_Size_Struct) {
         auto* arr_ty = ty.runtime_array(str_);
         auto* call = b.CallExplicit<core::ir::CoreBuiltinCall>(
             ty.ptr(storage, arr_ty, core::Access::kReadWrite), core::BuiltinFn::kBufferArrayView,
-            Vector{arr_ty}, var, 16_u, 100_u);
+            Vector<TemplateParameter, 1>{arr_ty}, var, 16_u, 100_u);
         auto* len = b.Call(ty.u32(), core::BuiltinFn::kArrayLength, call);
         b.Let("a", len->Result());
         b.Return(func);
@@ -7027,7 +6970,7 @@ TEST_F(IR_DecomposeAccessTest, ArrayLength_BufferArrayView_Size_RuntimeStruct) {
     b.Append(func->Block(), [&] {
         auto* call = b.CallExplicit<core::ir::CoreBuiltinCall>(
             ty.ptr(storage, str_, core::Access::kReadWrite), core::BuiltinFn::kBufferArrayView,
-            Vector{str_}, var, offset, size);
+            Vector<TemplateParameter, 1>{str_}, var, offset, size);
         auto* access = b.Access(ty.ptr(storage, ty.runtime_array(ty.f32())), call, 1_u);
         auto* len = b.Call(ty.u32(), core::BuiltinFn::kArrayLength, access);
         b.Let("a", len->Result());
@@ -7102,7 +7045,7 @@ TEST_F(IR_DecomposeAccessTest, ArrayLength_BufferView_Length_U32) {
         auto* arr_ty = ty.runtime_array(ty.f32());
         auto* call = b.CallExplicit<core::ir::CoreBuiltinCall>(
             ty.ptr(storage, str_, core::Access::kReadWrite), core::BuiltinFn::kBufferView,
-            Vector{str_}, var, offset, length);
+            Vector<TemplateParameter, 1>{str_}, var, offset, length);
         auto* access = b.Access(ty.ptr(storage, arr_ty), call, 1_u);
         auto* len = b.Call(ty.u32(), core::BuiltinFn::kArrayLength, access);
         b.Let("a", len->Result());
@@ -7197,7 +7140,6 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(Capability::kAllow16BitIntegers);
     DecomposeAccessOptions options{.workgroup = true};
     Run(DecomposeAccess, options);
     EXPECT_EQ(expect, str());
@@ -7293,6 +7235,94 @@ $B1: {  # root
 
     DecomposeAccessOptions options{.workgroup = true};
     Run(DecomposeAccess, options);
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(IR_DecomposeAccessTest, Workgroup_SubgroupMatrix) {
+    // Subgroup matrix load/store should be no-ops.
+    auto* var = b.Var("v", workgroup, ty.array<u32, 1024>());
+    b.ir.root_block->Append(var);
+
+    auto* mat_ty = ty.subgroup_matrix(core::SubgroupMatrixKind::kLeft, ty.u32(), 8, 8);
+    auto* func = b.Function("foo", ty.void_());
+    b.Append(func->Block(), [&] {
+        auto* ld = b.CallExplicit(mat_ty, BuiltinFn::kSubgroupMatrixLoad,
+                                  Vector<TemplateParameter, 2>{mat_ty, core::Majorness::kRowMajor},
+                                  var, 0_u, 8_u);
+        b.CallExplicit(ty.void_(), BuiltinFn::kSubgroupMatrixStore,
+                       Vector<TemplateParameter, 1>{core::Majorness::kRowMajor}, var, 0_u, ld, 8_u);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %v:ptr<workgroup, array<u32, 1024>, read_write> = var undef
+}
+
+%foo = func():void {
+  $B2: {
+    %3:subgroup_matrix_left<u32, 8, 8> = subgroupMatrixLoad<subgroup_matrix_left<u32, 8, 8>, row_major> %v, 0u, 8u
+    %4:void = subgroupMatrixStore<row_major> %v, 0u, %3, 8u
+    ret
+  }
+}
+)";
+
+    ASSERT_EQ(src, str());
+
+    DecomposeAccessOptions options{.workgroup = true};
+    Run(DecomposeAccess, options);
+    EXPECT_EQ(src, str());
+}
+
+// Regression test: an immediate struct whose Size() is rounded up by member alignment (here a
+// vec4 forces 16-byte alignment, padding 24 bytes of content to 32) must be decomposed to an array
+// sized by minimum_array_size (the reserved push constant range), not by the padded Size(). Using
+// the padded Size() emitted a block larger than the reserved range and failed Vulkan push constant
+// validation (VUID-VkGraphicsPipelineCreateInfo-layout-10069).
+TEST_F(IR_DecomposeAccessTest, ImmediateAccessPaddedStructCappedByMinimumArraySize) {
+    auto* SB = ty.Struct(mod.symbols.New("SB"), {
+                                                    {mod.symbols.New("a"), ty.vec4<f32>()},
+                                                    {mod.symbols.New("b"), ty.f32()},
+                                                    {mod.symbols.New("c"), ty.f32()},
+                                                });
+
+    auto* var = b.Var("v", immediate, SB, core::Access::kRead);
+
+    b.ir.root_block->Append(var);
+    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
+    b.Append(func->Block(), [&] {
+        b.Let("b", b.Load(b.Access(ty.ptr<immediate, f32, core::Access::kRead>(), var, 2_u)));
+        b.Return(func);
+    });
+
+    auto* expect = R"(
+SB = struct @align(16) {
+  a:vec4<f32> @offset(0)
+  b:f32 @offset(16)
+  c:f32 @offset(20)
+}
+
+$B1: {  # root
+  %v:ptr<immediate, array<u32, 6>, read> = var undef
+}
+
+%foo = @fragment func():void {
+  $B2: {
+    %3:ptr<immediate, u32, read> = access %v, 5u
+    %4:u32 = load %3
+    %5:f32 = bitcast<f32> %4
+    %b:f32 = let %5
+    ret
+  }
+}
+)";
+
+    // SB has align 16 (from the vec4), so SB->Size() is roundUp(16, 24) = 32 -> 8 u32 elements.
+    // minimum_array_size is the reserved range of 24 bytes -> the array must be capped at 6.
+    DecomposeAccessOptions options{.immediate = true, .minimum_array_size = 24};
+    Run(DecomposeAccess, options);
+
     EXPECT_EQ(expect, str());
 }
 

@@ -1184,7 +1184,7 @@ class db_dxil(object):
                 "compute",
             )
 
-        for i in insts("DebugBreak", "IsDebuggerPresent"):
+        for i in insts("DebugBreak", "IsDebuggingEnabled"):
             i.category = "Debugging"
             i.shader_model = experimental_sm
 
@@ -6599,10 +6599,10 @@ class db_dxil(object):
             "",
             [
                 db_dxil_param(0, "v", "", ""),
-                db_dxil_param(2, "$o", "vector", "vector to accumulate"),
-                db_dxil_param(3, "res", "handle", "buffer to accumulate into"),
-                db_dxil_param(4, "i32", "offset", "starting offset in the buffer"),
-                db_dxil_param(5, "i32", "align", "alignment of starting offset"),
+                db_dxil_param(2, "res", "handle", "buffer to accumulate into"),
+                db_dxil_param(3, "i32", "offset", "starting offset in the buffer"),
+                db_dxil_param(4, "i32", "align", "alignment of starting offset"),
+                db_dxil_param(5, "$o", "vector", "vector to accumulate"),
             ],
         )
 
@@ -6612,7 +6612,7 @@ class db_dxil(object):
         add_dxil_op(
             "DebugBreak",
             "DebugBreak",
-            "triggers a breakpoint if a debugger is attached",
+            "triggers a breakpoint if debugging is enabled",
             "v",
             "nd",
             [
@@ -6620,13 +6620,13 @@ class db_dxil(object):
             ],
         )
         add_dxil_op(
-            "IsDebuggerPresent",
-            "IsDebuggerPresent",
-            "returns true if a debugger is attached",
+            "IsDebuggingEnabled",
+            "IsDebuggingEnabled",
+            "returns true if debugging is enabled",
             "v",
-            "ro",
+            "",
             [
-                db_dxil_param(0, "i1", "", "true if a debugger is attached"),
+                db_dxil_param(0, "i1", "", "true if debugging is enabled"),
             ],
         )
 
@@ -8635,6 +8635,38 @@ class db_dxil(object):
         self.add_valrule(
             "Instr.ReorderCoherentRequiresSM69",
             "reordercoherent requires SM 6.9 or later.",
+        )
+        self.add_valrule(
+            "Instr.LinAlgIllegalKDim",
+            "Matrix K Dimension out of bounds. K=%0 must be >= %1 and <= %2.",
+        )
+        self.add_valrule(
+            "Instr.LinAlgIllegalComponentType",
+            "Matrix Component Type '%0' not allowed in LinAlg Matrix.",
+        )
+        self.add_valrule(
+            "Instr.LinAlgMatrixScopeNotAllowed",
+            "Matrix Scope '%0' not allowed in %1 operation.",
+        )
+        self.add_valrule(
+            "Instr.LinAlgMatrixScopeMismatch",
+            "Matrix Scope '%0' does not match expected scope %1.",
+        )
+        self.add_valrule(
+            "Instr.LinAlgMatrixDimMismatch",
+            "Matrix Dimension '%0x%1' does not match expected dimension %2x%3.",
+        )
+        self.add_valrule(
+            "Instr.LinAlgMatrixUseMismatch",
+            "Matrix Use '%0' does not match expected use %1.",
+        )
+        self.add_valrule(
+            "Instr.LinAlgMatrixUseMismatch2",
+            "Matrix Use '%0' does not match expected use %1 or %2.",
+        )
+        self.add_valrule(
+            "Instr.LinAlgMatrixNotExactMatch",
+            "Matrix '%0' must exactly match matrix '%1'.",
         )
 
         # Some legacy rules:

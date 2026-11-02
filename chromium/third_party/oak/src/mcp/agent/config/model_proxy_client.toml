@@ -1,0 +1,3 @@
+listen_address = "0.0.0.0:11434"
+attestation_generators = []
+attestation_verifiers = []

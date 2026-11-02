@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../../core/common/common.js';
 import * as Platform from '../../../core/platform/platform.js';
@@ -11,14 +12,14 @@ import * as SDK from '../../../core/sdk/sdk.js';
 import {createNetworkRequest, createUISourceCode} from '../../../testing/AiAssistanceHelpers.js';
 import {
   createTarget,
+  describeWithEnvironment,
 } from '../../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../../testing/MockConnection.js';
 import {loadBasicSourceMapExample} from '../../../testing/SourceMapHelpers.js';
 import * as Bindings from '../../bindings/bindings.js';
 import * as Workspace from '../../workspace/workspace.js';
 import {FileFormatter} from '../ai_assistance.js';
 
-describeWithMockConnection('FileFormatter', () => {
+describeWithEnvironment('FileFormatter', () => {
   beforeEach(() => {
     const workspace = Workspace.Workspace.WorkspaceImpl.instance();
     const targetManager = SDK.TargetManager.TargetManager.instance();
@@ -72,9 +73,9 @@ lorem ipsum
         requestContentData: true,
         url: networkRequest.url(),
       });
-      sinon.stub(SDK.ResourceTreeModel.ResourceTreeModel, 'resourceForURL').withArgs(networkRequest.url()).returns({
-        request: networkRequest
-      } as SDK.Resource.Resource);
+      sinon.stub(SDK.ResourceTreeModel.ResourceTreeModel, 'resourceForURL')
+          .withArgs(sinon.match.any, networkRequest.url())
+          .returns({request: networkRequest} as SDK.Resource.Resource);
       assert.strictEqual(new FileFormatter.FileFormatter(uiSourceCode).formatFile(), `File name: script.js
 URL: https://www.example.com/script.js
 Request initiator chain:

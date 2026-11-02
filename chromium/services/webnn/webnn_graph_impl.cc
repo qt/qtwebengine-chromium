@@ -40,40 +40,29 @@ WebNNGraphImpl::ComputeResourceInfo::ComputeResourceInfo(
           std::move(operand_to_producing_operation)) {}
 
 WebNNGraphImpl::ComputeResourceInfo::ComputeResourceInfo(
+    base::flat_map<std::string, OperandDescriptor> input_names_to_descriptors,
+    base::flat_map<std::string, OperandDescriptor> output_names_to_descriptors,
+    base::PassKey<ort::DispatchContextImplOrt> pass_key)
+    : input_names_to_descriptors(std::move(input_names_to_descriptors)),
+      output_names_to_descriptors(std::move(output_names_to_descriptors)) {}
+
+WebNNGraphImpl::ComputeResourceInfo::ComputeResourceInfo(
     ComputeResourceInfo&&) = default;
 WebNNGraphImpl::ComputeResourceInfo&
 WebNNGraphImpl::ComputeResourceInfo::operator=(ComputeResourceInfo&&) = default;
 
 WebNNGraphImpl::ComputeResourceInfo::~ComputeResourceInfo() = default;
 
-WebNNGraphImpl::WebNNGraphImpl(
-    mojo::PendingReceiver<mojom::WebNNGraph> receiver,
-    WebNNContextImpl& context,
-    ComputeResourceInfo compute_resource_info,
-    std::vector<mojom::Device> devices)
-    : WebNNObjectImpl<mojom::WebNNGraph,
-                      blink::WebNNGraphToken,
-                      mojo::Receiver<mojom::WebNNGraph>>(
-          std::move(receiver),
-          context.mojo_task_runner(),
+WebNNGraphImpl::WebNNGraphImpl(WebNNContextImpl& context,
+                               ComputeResourceInfo compute_resource_info,
+                               std::vector<mojom::Device> devices)
+    : base::RefCountedDeleteOnSequence<WebNNGraphImpl>(
           context.owning_task_runner()),
       context_(context),
       compute_resource_info_(std::move(compute_resource_info)),
       devices_(std::move(devices)) {}
 
 WebNNGraphImpl::~WebNNGraphImpl() = default;
-
-// TODO(crbug.com/514413524): Remove the WebNNGraph interface
-void WebNNGraphImpl::OnDisconnect() {
-  // Graph pipe disconnect does not remove the graph from graph_impls_. Removal
-  // is handled by DestroyGraph on the context pipe, which preserves ordering
-  // with Dispatch/ReadTensor/WriteTensor.
-  //
-  // If the renderer crashes without sending DestroyGraph, the graph remains in
-  // graph_impls_ until the context pipe also disconnects, which destroys the
-  // entire context and all its graphs.
-  ResetMojoReceiver();
-}
 
 void WebNNGraphImpl::RunDispatch(
     base::flat_map<std::string, scoped_refptr<WebNNTensorImpl>>
@@ -82,7 +71,6 @@ void WebNNGraphImpl::RunDispatch(
         name_to_output_tensor_map,
     ScopedTrace scoped_trace,
     mojo::ReportBadMessageCallback bad_message_cb) {
-  // Call DispatchImpl() implemented by an `mojom::WebNNGraph` backend.
   context_->RunOrScheduleTask(base::BindOnce(
       [](WebNNGraphImpl* self,
          base::flat_map<std::string, scoped_refptr<WebNNTensorImpl>>

@@ -23,10 +23,24 @@ auto is_ref_compatible_test(T& matrix) -> decltype(Ref<const T>(matrix), std::tr
 std::false_type is_ref_compatible_test(...);
 
 template <typename MatrixType>
-struct is_ref_compatible_impl : decltype(is_ref_compatible_test(std::declval<MatrixType&>())) {};
+using is_ref_compatible = decltype(is_ref_compatible_test(std::declval<remove_all_t<MatrixType>&>()));
 
+// Returns a \a rows x \a cols matrix whose columns are an orthonormal basis of a random subspace,
+// obtained by QR-orthonormalizing a random matrix. The IDR(s)-type solvers use this to build the
+// shadow space; the basis only has to be (almost surely) non-degenerate, so any random seed is fine.
 template <typename MatrixType>
-struct is_ref_compatible : std::integral_constant<bool, is_ref_compatible_impl<remove_all_t<MatrixType>>::value> {};
+MatrixType random_orthonormal_basis(Index rows, Index cols) {
+  HouseholderQR<MatrixType> qr(MatrixType::Random(rows, cols));
+  return qr.householderQ() * MatrixType::Identity(rows, cols);
+}
+
+template <typename RealScalar>
+EIGEN_DEVICE_FUNC RealScalar iterative_solver_scaling_factor(RealScalar norm) {
+  // Scale only when forming a quadratic recurrence term from norm may underflow or overflow.
+  const RealScalar sqrtMin = numext::sqrt((std::numeric_limits<RealScalar>::min)());
+  const RealScalar sqrtMax = numext::sqrt((std::numeric_limits<RealScalar>::max)());
+  return norm < sqrtMin || norm > sqrtMax ? norm : RealScalar(1);
+}
 
 template <typename MatrixType, bool MatrixFree = !internal::is_ref_compatible<MatrixType>::value>
 class generic_matrix_wrapper;
@@ -81,7 +95,7 @@ class generic_matrix_wrapper<MatrixType, true> {
 
   enum { MatrixFree = true };
 
-  generic_matrix_wrapper() : mp_matrix(0) {}
+  generic_matrix_wrapper() = default;
 
   generic_matrix_wrapper(const MatrixType& mat) : mp_matrix(&mat) {}
 
@@ -90,7 +104,7 @@ class generic_matrix_wrapper<MatrixType, true> {
   void grab(const MatrixType& mat) { mp_matrix = &mat; }
 
  protected:
-  const ActualMatrixType* mp_matrix;
+  const ActualMatrixType* mp_matrix = nullptr;
 };
 
 }  // namespace internal
@@ -138,8 +152,6 @@ class IterativeSolverBase : public SparseSolverBase<Derived> {
   }
 
   IterativeSolverBase(IterativeSolverBase&&) = default;
-
-  ~IterativeSolverBase() {}
 
   /** Initializes the iterative solver for the sparsity pattern of the matrix \a A for further solving \c Ax=b problems.
    *
@@ -316,7 +328,7 @@ class IterativeSolverBase : public SparseSolverBase<Derived> {
       typename Rhs::ConstColXpr bk(b, k);
       derived()._solve_vector_with_guess_impl(bk, xk);
 
-      // The call to _solve_vector_with_guess updates m_info, so if it failed for a previous column
+      // The call to _solve_vector_with_guess_impl updates m_info, so if it failed for a previous column
       // we need to restore it to the worst value.
       if (m_info == NumericalIssue)
         global_info = NumericalIssue;

@@ -16,12 +16,13 @@
 #include "components/autofill/core/browser/data_manager/addresses/address_data_manager.h"
 #include "components/autofill/core/browser/data_manager/payments/test_payments_data_manager.h"
 #include "components/autofill/core/browser/data_model/valuables/loyalty_card.h"
+#include "components/autofill/core/browser/foundations/autofill_manager_test_api.h"
 #include "components/autofill/core/browser/foundations/browser_autofill_manager_test_api.h"
 #include "components/autofill/core/browser/foundations/test_autofill_client.h"
 #include "components/autofill/core/browser/foundations/test_autofill_driver.h"
 #include "components/autofill/core/browser/foundations/test_browser_autofill_manager.h"
 #include "components/autofill/core/browser/foundations/with_test_autofill_client_driver_manager.h"
-#include "components/autofill/core/browser/integrators/touch_to_fill/touch_to_fill_delegate.h"
+#include "components/autofill/core/browser/integrators/touch_to_fill/touch_to_fill_payment_method_delegate.h"
 #include "components/autofill/core/browser/payments/payments_autofill_client.h"
 #include "components/autofill/core/browser/payments/test_credit_card_save_manager.h"
 #include "components/autofill/core/browser/payments/test_payments_autofill_client.h"
@@ -56,7 +57,7 @@ class MockPaymentsAutofillClient : public payments::TestPaymentsAutofillClient {
 
   MOCK_METHOD(bool,
               ShowTouchToFillCreditCard,
-              ((base::WeakPtr<TouchToFillDelegate>),
+              ((base::WeakPtr<TouchToFillPaymentMethodDelegate>),
                (base::span<const autofill::Suggestion>)),
               (override));
 };
@@ -200,25 +201,29 @@ class AutofillMetricsBaseTest : public WithTestAutofillClientDriverManager<
     field.set_is_autofilled_according_to_renderer(false);
     field.set_value(new_value);
     if (field.IsSelectElement()) {
-      autofill_manager().OnSelectControlSelectionChanged(form,
-                                                         field.global_id());
+      autofill_manager().OnSelectControlSelectionChanged(
+          form, field.global_id(), AutofillManagerTestApi::pass_key());
     } else {
-      autofill_manager().OnTextFieldValueChanged(form, field.global_id(),
-                                                 timestamp);
+      autofill_manager().OnTextFieldValueChanged(
+          form, field.global_id(), timestamp,
+          AutofillManagerTestApi::pass_key());
     }
   }
 
   void AutofillForm(const FormData& form) {
-    autofill_manager().OnDidAutofillForm(form);
+    autofill_manager().OnDidAutofillForm(form,
+                                         AutofillManagerTestApi::pass_key());
   }
 
   void SeeForm(const FormData& form) {
-    autofill_manager().OnFormsSeen({form}, {});
+    autofill_manager().OnFormsSeen({form}, {},
+                                   AutofillManagerTestApi::pass_key());
   }
 
   void SubmitForm(const FormData& form) {
-    autofill_manager().OnFormSubmitted(
-        form, mojom::SubmissionSource::FORM_SUBMISSION);
+    autofill_manager().OnFormSubmitted(form,
+                                       mojom::SubmissionSource::FORM_SUBMISSION,
+                                       AutofillManagerTestApi::pass_key());
   }
 
   static CreditCard BuildCard(const std::u16string& real_pan,
@@ -252,8 +257,8 @@ class AutofillMetricsBaseTest : public WithTestAutofillClientDriverManager<
       SuggestionType suggestion_type = SuggestionType::kAddressEntry) {
     Suggestion suggestion(suggestion_type);
     autofill_manager().DidShowSuggestions(
-        {suggestion}, form.global_id(), form.fields()[field_index].global_id(),
-        {});
+        {suggestion}, std::nullopt, form.global_id(),
+        form.fields()[field_index].global_id(), {});
   }
 
   void FillTestProfile(const FormData& form, size_t field_index = 0) {
@@ -264,7 +269,7 @@ class AutofillMetricsBaseTest : public WithTestAutofillClientDriverManager<
                          const std::string& profile_guid,
                          size_t field_index = 0) {
     autofill_manager().FillOrPreviewForm(
-        mojom::ActionPersistence::kFill, form,
+        mojom::ActionPersistence::kFill, form.global_id(),
         form.fields()[field_index].global_id(),
         personal_data().address_data_manager().GetProfileByGUID(profile_guid),
         AutofillTriggerSource::kPopup, /*blocked_fields=*/{});
@@ -275,7 +280,7 @@ class AutofillMetricsBaseTest : public WithTestAutofillClientDriverManager<
                        size_t field_index = 0) {
     autofill_manager().FillOrPreviewField(
         mojom::ActionPersistence::kFill, mojom::FieldActionType::kReplaceAll,
-        form, form.fields()[field_index],
+        form.global_id(), form.fields()[field_index].global_id(),
         base::UTF8ToUTF16(card.loyalty_card_number()),
         FillingProduct::kLoyaltyCard, LOYALTY_MEMBERSHIP_ID);
     autofill_manager().LogAndRecordLoyaltyCardFill(
@@ -283,8 +288,9 @@ class AutofillMetricsBaseTest : public WithTestAutofillClientDriverManager<
   }
 
   void UndoAutofill(const FormData& form) {
-    autofill_manager().UndoAutofill(mojom::ActionPersistence::kFill, form,
-                                    form.fields().front());
+    autofill_manager().UndoAutofill(mojom::ActionPersistence::kFill,
+                                    form.global_id(),
+                                    form.fields().front().global_id());
   }
 
   [[nodiscard]] FormData CreateEmptyForm() {

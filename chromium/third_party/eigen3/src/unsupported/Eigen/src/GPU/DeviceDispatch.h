@@ -535,13 +535,13 @@ namespace internal {
 // Real: dot(x,x) returns DeviceScalar<Scalar> which IS DeviceScalar<RealScalar>.
 // Move-construct without any sync.
 template <typename Scalar, typename RealScalar>
-typename std::enable_if<std::is_same<Scalar, RealScalar>::value, DeviceScalar<RealScalar>>::type squaredNorm_from_dot(
+std::enable_if_t<std::is_same<Scalar, RealScalar>::value, DeviceScalar<RealScalar>> squaredNorm_from_dot(
     DeviceScalar<Scalar>&& d, cudaStream_t) {
   return std::move(d);
 }
 // Complex: must sync to extract the real part (DeviceScalar arithmetic is real-only).
 template <typename Scalar, typename RealScalar>
-typename std::enable_if<!std::is_same<Scalar, RealScalar>::value, DeviceScalar<RealScalar>>::type squaredNorm_from_dot(
+std::enable_if_t<!std::is_same<Scalar, RealScalar>::value, DeviceScalar<RealScalar>> squaredNorm_from_dot(
     DeviceScalar<Scalar>&& d, cudaStream_t stream) {
   return DeviceScalar<RealScalar>(numext::real(Scalar(d)), stream);
 }

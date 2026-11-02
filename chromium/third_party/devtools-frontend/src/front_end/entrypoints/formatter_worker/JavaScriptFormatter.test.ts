@@ -772,6 +772,21 @@ function formatted2() {
     assert.strictEqual(formattedCode, '`foo${bar}foo${bar}`\n');
   });
 
+  it('formats deeply nested template literals correctly', () => {
+    const formattedCode = formatJavaScript('`foo${`foo${x instanceof foo}`}`');
+    assert.strictEqual(formattedCode, '`foo${`foo${x instanceof foo}`}`\n');
+
+    const formattedCode2 = formatJavaScript('`${`x` instanceof foo}` instanceof foo');
+    assert.strictEqual(formattedCode2, '`${`x` instanceof foo}` instanceof foo\n');
+
+    const formattedCode3 = formatJavaScript('`${`x`, async function() {}}`, async function*() {}');
+    assert.strictEqual(formattedCode3,
+                       '`${`x`,\n' +
+                           'async function() {}\n' +
+                           '}`,\n' +
+                           'async function*() {}\n');
+  });
+
   it('formats template literals with nested JS expressions correctly', () => {
     const formattedCode = formatJavaScript('`${function(){let a}}`');
     assert.strictEqual(
@@ -792,5 +807,52 @@ str = "abc".toUpperCase();
   it('formats import attributes correctly', () => {
     const formattedCode = formatJavaScript('import  data  from  \'./data.json\'  with  {  type:  \'json\'  };');
     assert.strictEqual(formattedCode, 'import data from \'./data.json\' with {type: \'json\'};\n');
+  });
+
+  it('enforces space between words inside template literal expressions (crbug.com/442209349)', () => {
+    const input = '`${foo instanceof bar}`;`${async function() {}}`;`${async function*() {}}`;';
+    const formattedCode = formatJavaScript(input);
+    assert.strictEqual(formattedCode,
+                       '`${foo instanceof bar}`;\n`${async function() {}\n}`;\n`${async function*() {}\n}`;\n');
+
+    const multiLineCode = formatJavaScript(`function _() {
+  bar = function() {};
+  \`\${foo instanceof bar}\`;
+  \`\${async function() {}}\`;
+  \`\${async function*() {}}\`;
+}`);
+    assert.strictEqual(multiLineCode, `function _() {
+  bar = function() {}
+  ;
+  \`\${foo instanceof bar}\`;
+  \`\${async function() {}
+  }\`;
+  \`\${async function*() {}
+  }\`;
+}
+`);
+  });
+
+  it('formats regex literals and expressions correctly', () => {
+    assert.strictEqual(formatJavaScript('/abc/g;'), '/abc/g;\n');
+    assert.strictEqual(formatJavaScript('/abc/g instanceof String;'), '/abc/g instanceof String;\n');
+    assert.strictEqual(formatJavaScript('/abc/ instanceof String;'), '/abc/ instanceof String;\n');
+    assert.strictEqual(formatJavaScript('/[a-z]/v;'), '/[a-z]/v;\n');
+    assert.strictEqual(formatJavaScript('/[\\p{ASCII}&&[a-z]]/v;'), '/[\\p{ASCII}&&[a-z]]/v;\n');
+  });
+
+  it('formats regex literals and expressions inside template literals correctly', () => {
+    assert.strictEqual(formatJavaScript('`${/abc/g}`;'), '`${/abc/g}`;\n');
+    assert.strictEqual(formatJavaScript('`${/abc/g instanceof String}`;'), '`${/abc/g instanceof String}`;\n');
+    assert.strictEqual(formatJavaScript('`${/abc/ instanceof String}`;'), '`${/abc/ instanceof String}`;\n');
+  });
+
+  it('formats tagged template literals and strings containing HTML closing tags correctly', () => {
+    assert.strictEqual(formatJavaScript('const myView = $`<div><span>Hello</span></div>`;\n'),
+                       'const myView = $`<div><span>Hello</span></div>`;\n');
+    assert.strictEqual(formatJavaScript('const myView = html`<div><span>Hello</span></div>`;\n'),
+                       'const myView = html`<div><span>Hello</span></div>`;\n');
+    assert.strictEqual(formatJavaScript('const str = "<div><span>foo</span></div>";\n'),
+                       'const str = "<div><span>foo</span></div>";\n');
   });
 });

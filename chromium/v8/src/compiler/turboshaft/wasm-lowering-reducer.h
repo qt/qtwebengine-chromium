@@ -74,7 +74,7 @@ class WasmLoweringReducer : public Next {
                                   wasm::ValueType type, TrapId trap_id) {
     if (trap_id == TrapId::kTrapNullDereference) {
       // Skip the check altogether if null checks are turned off.
-      if (!v8_flags.experimental_wasm_skip_null_checks) {
+      if (!v8_flags.wasm_skip_null_checks) {
         if (null_check_strategy_ == NullCheckStrategy::kTrapHandler) {
           // To make sure load elimination sees consistent representations, we
           // load known fields of objects.
@@ -93,8 +93,8 @@ class WasmLoweringReducer : public Next {
           } else if (wasm::IsSubtypeOf(type.AsNonShared(), wasm::kWasmFuncRef,
                                        module_)) {
             __ Load(object, LoadOp::Kind::TrapOnNull().Immutable(),
-                    MemoryRepresentation::TaggedSigned(),
-                    offsetof(WasmInternalFunction, function_index_));
+                    MemoryRepresentation::AnyTagged(),
+                    offsetof(WasmFuncRef, trusted_internal_));
           } else {
             __ TrapIf(__ IsNull(object, type), frame_state, trap_id);
           }
@@ -126,12 +126,12 @@ class WasmLoweringReducer : public Next {
   }
 
   V<Object> REDUCE(WasmTypeCast)(V<Object> object, OptionalV<Map> rtt,
-                                 WasmTypeCheckConfig config,
-                                 OptionalV<EagerFrameState> frame_state) {
+                                 OptionalV<EagerFrameState> frame_state,
+                                 WasmTypeCheckConfig config) {
     if (rtt.has_value()) {
-      return ReduceWasmTypeCastRtt(object, rtt, config, frame_state);
+      return ReduceWasmTypeCastRtt(object, rtt, frame_state, config);
     } else {
-      return ReduceWasmTypeCastAbstract(object, config, frame_state);
+      return ReduceWasmTypeCastAbstract(object, frame_state, config);
     }
   }
 
@@ -175,15 +175,12 @@ class WasmLoweringReducer : public Next {
       GOTO(end_label, object);
 
       BIND(convert_to_heap_number_label);
-      V<Object> heap_number;
-      heap_number =
-          is_shared == SharedFlag::kYes
-              ? __ template CallWasmBuiltin<deprecated::BuiltinCallDescriptor::
-                                                WasmInt32ToSharedHeapNumber>(
-                    {int_value})
-              : __ template CallWasmBuiltin<
-                    deprecated::BuiltinCallDescriptor::WasmInt32ToHeapNumber>(
-                    {int_value});
+      V<Object> heap_number =
+          is_shared
+              ? __ template CallWasmBuiltin<
+                    builtin::WasmInt32ToSharedHeapNumber>({.value = int_value})
+              : __ template CallWasmBuiltin<builtin::WasmInt32ToHeapNumber>(
+                    {.value = int_value});
       GOTO(end_label, heap_number);
     }
 
@@ -293,7 +290,8 @@ class WasmLoweringReducer : public Next {
                             wasm::ModuleTypeIndex type_index, int field_index,
                             CheckForNull null_check,
                             std::optional<AtomicMemoryOrder> memory_order,
-                            WriteBarrierKind write_barrier) {
+                            WriteBarrierKind write_barrier,
+                            StructSetOp::Kind kind) {
     // TODO(rezvan): We do not support AcqRel memory order for non-memory
     // instructions currently.
     if (memory_order == AtomicMemoryOrder::kAcqRel) {
@@ -327,7 +325,8 @@ class WasmLoweringReducer : public Next {
     DCHECK_IMPLIES(write_barrier == kFullWriteBarrier,
                    type->field(field_index).is_ref());
     __ Store(object, value, store_kind, repr, write_barrier, memory_order,
-             field_offset(type, field_index));
+             field_offset(type, field_index), 0,
+             kind == StructSetOp::Kind::kInitialize);
 
     return OpIndex::Invalid();
   }
@@ -385,7 +384,8 @@ class WasmLoweringReducer : public Next {
   V<None> REDUCE(ArraySet)(V<WasmArrayNullable> array, V<Word32> index,
                            V<Any> value, wasm::ValueType element_type,
                            std::optional<AtomicMemoryOrder> memory_order,
-                           WriteBarrierKind write_barrier) {
+                           WriteBarrierKind write_barrier,
+                           ArraySetOp::Kind kind) {
     // TODO(rezvan): We do not support AcqRel memory order for non-memory
     // instructions currently.
     if (memory_order == AtomicMemoryOrder::kAcqRel) {
@@ -398,7 +398,8 @@ class WasmLoweringReducer : public Next {
     DCHECK_IMPLIES(write_barrier == kFullWriteBarrier, element_type.is_ref());
     __ Store(array, __ ChangeInt32ToIntPtr(index), value, store_kind,
              RepresentationFor(element_type, true), write_barrier, memory_order,
-             WasmArray::kHeaderSize, element_type.value_kind_size_log2());
+             WasmArray::kHeaderSize, element_type.value_kind_size_log2(),
+             kind == ArraySetOp::Kind::kInitialize);
     return {};
   }
 
@@ -465,17 +466,16 @@ class WasmLoweringReducer : public Next {
     Uninitialized<WasmArray> a = __ template Allocate<WasmArray>(
         __ ChangeUint32ToUintPtr(
             __ Word32Add(padded_length, WasmArray::kHeaderSize)),
-        is_shared == SharedFlag::kYes ? AllocationType::kSharedOld
-                                      : AllocationType::kYoung,
-        is_shared == SharedFlag::kYes ? kDoubleUnaligned : kTaggedAligned);
+        is_shared ? AllocationType::kSharedOld : AllocationType::kYoung,
+        is_shared ? kDoubleUnaligned : kTaggedAligned);
 
     // TODO(14108): The map and empty fixed array initialization should be an
     // immutable store.
-    __ InitializeField(a,
-                       AccessBuilder::ForMap(is_shared == SharedFlag::kYes
-                                                 ? compiler::kMapWriteBarrier
-                                                 : compiler::kNoWriteBarrier),
-                       rtt);
+    __ InitializeField(
+        a,
+        AccessBuilder::ForMap(is_shared ? compiler::kMapWriteBarrier
+                                        : compiler::kNoWriteBarrier),
+        rtt);
     __ InitializeField(a, AccessBuilder::ForJSObjectPropertiesOrHash(),
                        __ template LoadRoot<RootIndex::kEmptyFixedArray>());
     __ InitializeField(a, AccessBuilder::ForWasmArrayLength(), length);
@@ -492,18 +492,15 @@ class WasmLoweringReducer : public Next {
     int size = WasmStruct::Size(struct_type);
     Uninitialized<WasmStruct> s = __ template Allocate<WasmStruct>(
         size,
-        struct_type->is_shared() == SharedFlag::kYes
-            ? AllocationType::kSharedOld
-            : AllocationType::kYoung,
-        struct_type->is_shared() == SharedFlag::kYes ? kDoubleAligned
-                                                     : kTaggedAligned);
+        struct_type->is_shared() ? AllocationType::kSharedOld
+                                 : AllocationType::kYoung,
+        struct_type->is_shared() ? kDoubleAligned : kTaggedAligned);
     // Objects allocated into old-space need a write barrier for initialization.
-    __ InitializeField(
-        s,
-        AccessBuilder::ForMap(struct_type->is_shared() == SharedFlag::kYes
-                                  ? compiler::kMapWriteBarrier
-                                  : compiler::kNoWriteBarrier),
-        rtt);
+    __ InitializeField(s,
+                       AccessBuilder::ForMap(struct_type->is_shared()
+                                                 ? compiler::kMapWriteBarrier
+                                                 : compiler::kNoWriteBarrier),
+                       rtt);
     __ InitializeField(s, AccessBuilder::ForJSObjectPropertiesOrHash(),
                        __ template LoadRoot<RootIndex::kEmptyFixedArray>());
     // Note: Struct initialization isn't finished here, the user defined fields
@@ -521,15 +518,10 @@ class WasmLoweringReducer : public Next {
 
     Label<WasmFuncRef> done(&Asm());
     IF (UNLIKELY(__ IsSmi(maybe_func_ref))) {
-      bool extract_shared_data =
-          shared_ == SharedFlag::kNo &&
-          module_->function_is_shared(function_index) == SharedFlag::kYes;
-
-      V<WasmFuncRef> from_builtin;
-      from_builtin = __ template CallWasmBuiltin<
-          deprecated::BuiltinCallDescriptor::WasmRefFunc>(
-          {wasm_instance, __ Word32Constant(function_index),
-           __ Word32Constant(extract_shared_data ? 1 : 0)});
+      V<WasmFuncRef> from_builtin =
+          __ template CallWasmBuiltin<builtin::WasmRefFunc>(
+              {.wasm_instance = wasm_instance,
+               .function_index = __ Word32Constant(function_index)});
 
       GOTO(done, from_builtin);
     } ELSE {
@@ -716,8 +708,7 @@ class WasmLoweringReducer : public Next {
   void RejectSharedWasmObjectsIfUnshared(V<HeapObject> object,
                                          WasmTypeCheckConfig config,
                                          Label<Word32>& result_label) {
-    if (!v8_flags.experimental_wasm_shared ||
-        config.to.is_shared() == SharedFlag::kYes ||
+    if (!v8_flags.wasm_shared || config.to.is_shared() ||
         config.from.AsNullable() != wasm::kWasmAnyRef) {
       return;
     }
@@ -804,8 +795,7 @@ class WasmLoweringReducer : public Next {
   void TrapOnSharedWasmObjectsIfUnshared(
       V<HeapObject> object, WasmTypeCheckConfig config,
       OptionalV<EagerFrameState> frame_state) {
-    if (!v8_flags.experimental_wasm_shared ||
-        config.to.is_shared() == SharedFlag::kYes ||
+    if (!v8_flags.wasm_shared || config.to.is_shared() ||
         config.from.AsNullable() != wasm::kWasmAnyRef) {
       return;
     }
@@ -814,8 +804,8 @@ class WasmLoweringReducer : public Next {
   }
 
   V<Object> ReduceWasmTypeCastAbstract(V<Object> object,
-                                       WasmTypeCheckConfig config,
-                                       OptionalV<EagerFrameState> frame_state) {
+                                       OptionalV<EagerFrameState> frame_state,
+                                       WasmTypeCheckConfig config) {
     const bool object_can_be_null = config.from.is_nullable();
     const bool null_succeeds = config.to.is_nullable();
     const bool object_can_be_i31 =
@@ -839,7 +829,7 @@ class WasmLoweringReducer : public Next {
       // fails, because it's covered by the Smi check
       // or instance type check we'll do later.
       if (object_can_be_null && null_succeeds &&
-          !v8_flags.experimental_wasm_skip_null_checks) {
+          !v8_flags.wasm_skip_null_checks) {
         GOTO_IF(UNLIKELY(__ IsNull(object, config.from)), end_label);
       }
       if (to_kind == wasm::GenericKind::kI31) {
@@ -901,8 +891,8 @@ class WasmLoweringReducer : public Next {
   }
 
   V<Object> ReduceWasmTypeCastRtt(V<Object> object, OptionalV<Map> rtt,
-                                  WasmTypeCheckConfig config,
-                                  OptionalV<EagerFrameState> frame_state) {
+                                  OptionalV<EagerFrameState> frame_state,
+                                  WasmTypeCheckConfig config) {
     DCHECK(rtt.has_value());
     int rtt_depth = wasm::GetSubtypingDepth(module_, config.to.ref_index());
     bool object_can_be_null = config.from.is_nullable();
@@ -920,7 +910,7 @@ class WasmLoweringReducer : public Next {
       V<Word32> is_null = __ IsNull(object, wasm::kWasmAnyRef);
       if (config.to.is_nullable()) {
         GOTO_IF(UNLIKELY(is_null), end_label);
-      } else if (!v8_flags.experimental_wasm_skip_null_checks) {
+      } else if (!v8_flags.wasm_skip_null_checks) {
         __ TrapIf(is_null, frame_state, TrapId::kTrapIllegalCast);
       }
     }
@@ -1180,7 +1170,6 @@ class WasmLoweringReducer : public Next {
 
   const wasm::WasmModule* module_ = __ data() -> wasm_module();
 
-  const SharedFlag shared_ = __ data() -> wasm_shared();
   // Wasm-in-JS inlining runs in the JS pipeline where we cannot use the
   // trap handler. For these cases, `is_wasm()` ensures we use explicit checks.
   const NullCheckStrategy null_check_strategy_ =

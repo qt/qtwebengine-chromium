@@ -93,7 +93,7 @@ const UIStrings = {
   /**
    * @description Content for the problem column in the affected resources table for a CORS issue that indicates that the HTTP status the preflight request was not successful.
    */
-  preflightInvalidStatus: 'HTTP status of preflight request didn\'t indicate success',
+  preflightInvalidStatus: 'HTTP status of preflight request didn’t indicate success',
   /**
    * @description Title for a column in the affected resources for a CORS issue showing the origin that was allowed according to CORS headers.
    */

@@ -156,7 +156,9 @@ bool DisplayResourceProvider::IsOverlayCandidate(ResourceId id) const {
 
 bool DisplayResourceProvider::IsLowLatencyRendering(ResourceId id) const {
   const ChildResource* resource = TryGetResource(id);
-  return resource && resource->transferable.is_low_latency_rendering;
+  return resource && !resource->transferable.is_empty() &&
+         resource->transferable.shared_image()->usage().Has(
+             gpu::SHARED_IMAGE_USAGE_CONCURRENT_READ_WRITE);
 }
 
 SurfaceId DisplayResourceProvider::GetSurfaceId(ResourceId id) const {
@@ -543,7 +545,9 @@ void DisplayResourceProvider::ScopedReadLockSharedImage::Reset() {
     return;
   DCHECK(resource_->lock_for_overlay_count);
   resource_->lock_for_overlay_count--;
-  resource_provider_->TryReleaseResource(resource_id_, resource_);
+  ChildResource* resource = resource_;
+  resource_ = nullptr;
+  resource_provider_->TryReleaseResource(resource_id_, resource);
   resource_provider_ = nullptr;
   resource_id_ = kInvalidResourceId;
 }

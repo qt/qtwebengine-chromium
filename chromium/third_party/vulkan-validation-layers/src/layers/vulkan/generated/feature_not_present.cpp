@@ -1334,6 +1334,17 @@ void DispatchInstance::ReportErrorFeatureNotPresent(VkPhysicalDevice gpu, const 
                 }
                 break;
             }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_FLAGS_FEATURES_KHR: {
+                VkPhysicalDeviceExtendedFlagsFeaturesKHR supported = vku::InitStructHelper();
+                features_2.pNext = &supported;
+                DispatchGetPhysicalDeviceFeatures2(gpu, &features_2);
+                const VkPhysicalDeviceExtendedFlagsFeaturesKHR* enabling =
+                    reinterpret_cast<const VkPhysicalDeviceExtendedFlagsFeaturesKHR*>(current);
+                if (enabling->extendedFlags && !supported.extendedFlags) {
+                    ss << "VkPhysicalDeviceExtendedFlagsFeaturesKHR::extendedFlags is not supported\n";
+                }
+                break;
+            }
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_SPARSE_ADDRESS_SPACE_FEATURES_NV: {
                 VkPhysicalDeviceExtendedSparseAddressSpaceFeaturesNV supported = vku::InitStructHelper();
                 features_2.pNext = &supported;
@@ -2065,6 +2076,18 @@ void DispatchInstance::ReportErrorFeatureNotPresent(VkPhysicalDevice gpu, const 
                     reinterpret_cast<const VkPhysicalDeviceMultisampledRenderToSingleSampledFeaturesEXT*>(current);
                 if (enabling->multisampledRenderToSingleSampled && !supported.multisampledRenderToSingleSampled) {
                     ss << "VkPhysicalDeviceMultisampledRenderToSingleSampledFeaturesEXT::multisampledRenderToSingleSampled is not "
+                          "supported\n";
+                }
+                break;
+            }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTISAMPLED_RENDER_TO_SWAPCHAIN_FEATURES_EXT: {
+                VkPhysicalDeviceMultisampledRenderToSwapchainFeaturesEXT supported = vku::InitStructHelper();
+                features_2.pNext = &supported;
+                DispatchGetPhysicalDeviceFeatures2(gpu, &features_2);
+                const VkPhysicalDeviceMultisampledRenderToSwapchainFeaturesEXT* enabling =
+                    reinterpret_cast<const VkPhysicalDeviceMultisampledRenderToSwapchainFeaturesEXT*>(current);
+                if (enabling->multisampledRenderToSwapchain && !supported.multisampledRenderToSwapchain) {
+                    ss << "VkPhysicalDeviceMultisampledRenderToSwapchainFeaturesEXT::multisampledRenderToSwapchain is not "
                           "supported\n";
                 }
                 break;
@@ -3300,6 +3323,26 @@ void DispatchInstance::ReportErrorFeatureNotPresent(VkPhysicalDevice gpu, const 
                 }
                 break;
             }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OCP_MICROSCALING_TYPES_FEATURES_EXT: {
+                VkPhysicalDeviceShaderOCPMicroscalingTypesFeaturesEXT supported = vku::InitStructHelper();
+                features_2.pNext = &supported;
+                DispatchGetPhysicalDeviceFeatures2(gpu, &features_2);
+                const VkPhysicalDeviceShaderOCPMicroscalingTypesFeaturesEXT* enabling =
+                    reinterpret_cast<const VkPhysicalDeviceShaderOCPMicroscalingTypesFeaturesEXT*>(current);
+                if (enabling->shaderFloat4 && !supported.shaderFloat4) {
+                    ss << "VkPhysicalDeviceShaderOCPMicroscalingTypesFeaturesEXT::shaderFloat4 is not supported\n";
+                }
+                if (enabling->shaderFloat6 && !supported.shaderFloat6) {
+                    ss << "VkPhysicalDeviceShaderOCPMicroscalingTypesFeaturesEXT::shaderFloat6 is not supported\n";
+                }
+                if (enabling->shaderFloat8UnsignedE8M0 && !supported.shaderFloat8UnsignedE8M0) {
+                    ss << "VkPhysicalDeviceShaderOCPMicroscalingTypesFeaturesEXT::shaderFloat8UnsignedE8M0 is not supported\n";
+                }
+                if (enabling->shaderMXInt8 && !supported.shaderMXInt8) {
+                    ss << "VkPhysicalDeviceShaderOCPMicroscalingTypesFeaturesEXT::shaderMXInt8 is not supported\n";
+                }
+                break;
+            }
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OBJECT_FEATURES_EXT: {
                 VkPhysicalDeviceShaderObjectFeaturesEXT supported = vku::InitStructHelper();
                 features_2.pNext = &supported;
@@ -3801,6 +3844,17 @@ void DispatchInstance::ReportErrorFeatureNotPresent(VkPhysicalDevice gpu, const 
                     reinterpret_cast<const VkPhysicalDeviceVideoEncodeAV1FeaturesKHR*>(current);
                 if (enabling->videoEncodeAV1 && !supported.videoEncodeAV1) {
                     ss << "VkPhysicalDeviceVideoEncodeAV1FeaturesKHR::videoEncodeAV1 is not supported\n";
+                }
+                break;
+            }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_FEEDBACK_2_FEATURES_KHR: {
+                VkPhysicalDeviceVideoEncodeFeedback2FeaturesKHR supported = vku::InitStructHelper();
+                features_2.pNext = &supported;
+                DispatchGetPhysicalDeviceFeatures2(gpu, &features_2);
+                const VkPhysicalDeviceVideoEncodeFeedback2FeaturesKHR* enabling =
+                    reinterpret_cast<const VkPhysicalDeviceVideoEncodeFeedback2FeaturesKHR*>(current);
+                if (enabling->videoEncodeFeedback2 && !supported.videoEncodeFeedback2) {
+                    ss << "VkPhysicalDeviceVideoEncodeFeedback2FeaturesKHR::videoEncodeFeedback2 is not supported\n";
                 }
                 break;
             }

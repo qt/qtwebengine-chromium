@@ -12,6 +12,10 @@
 
 #include "build/build_config.h"
 
+#if defined(PDF_USE_SKIA)
+#include "third_party/skia/include/core/SkBlendMode.h"  // nogncheck
+#endif
+
 #if BUILDFLAG(IS_WIN)
 #include <windows.h>
 #endif
@@ -67,5 +71,44 @@ FX_ARGB AlphaAndColorRefToArgb(int a, FX_COLORREF colorref) {
   return ArgbEncode(a, FXSYS_GetRValue(colorref), FXSYS_GetGValue(colorref),
                     FXSYS_GetBValue(colorref));
 }
+
+#if defined(PDF_USE_SKIA)
+SkBlendMode GetSkiaBlendMode(BlendMode blend_type) {
+  switch (blend_type) {
+    case BlendMode::kMultiply:
+      return SkBlendMode::kMultiply;
+    case BlendMode::kScreen:
+      return SkBlendMode::kScreen;
+    case BlendMode::kOverlay:
+      return SkBlendMode::kOverlay;
+    case BlendMode::kDarken:
+      return SkBlendMode::kDarken;
+    case BlendMode::kLighten:
+      return SkBlendMode::kLighten;
+    case BlendMode::kColorDodge:
+      return SkBlendMode::kColorDodge;
+    case BlendMode::kColorBurn:
+      return SkBlendMode::kColorBurn;
+    case BlendMode::kHardLight:
+      return SkBlendMode::kHardLight;
+    case BlendMode::kSoftLight:
+      return SkBlendMode::kSoftLight;
+    case BlendMode::kDifference:
+      return SkBlendMode::kDifference;
+    case BlendMode::kExclusion:
+      return SkBlendMode::kExclusion;
+    case BlendMode::kHue:
+      return SkBlendMode::kHue;
+    case BlendMode::kSaturation:
+      return SkBlendMode::kSaturation;
+    case BlendMode::kColor:
+      return SkBlendMode::kColor;
+    case BlendMode::kLuminosity:
+      return SkBlendMode::kLuminosity;
+    case BlendMode::kNormal:
+      return SkBlendMode::kSrcOver;
+  }
+}
+#endif
 
 }  // namespace fxge

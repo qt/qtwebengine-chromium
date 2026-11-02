@@ -22,7 +22,7 @@ import {
   matchDeclaration,
   matcherBase,
   type SyntaxTree,
-  tokenizeDeclaration
+  tokenizeDeclaration,
 } from './CSSPropertyParser.js';
 import type {CSSStyleDeclaration} from './CSSStyleDeclaration.js';
 
@@ -130,6 +130,71 @@ export class VariableMatcher extends matcherBase(VariableMatch) {
   }
 }
 
+export class VariableNameMatch implements Match {
+  constructor(
+      readonly node: CodeMirror.SyntaxNode,
+      readonly text: string,
+      readonly matchedStyles: CSSMatchedStyles,
+      readonly style: CSSStyleDeclaration,
+  ) {
+  }
+
+  resolveVariable(): CSSVariableValue|null {
+    return this.matchedStyles.computeCSSVariable(this.style, this.text);
+  }
+}
+
+// clang-format off
+export class VariableNameMatcher extends matcherBase(VariableNameMatch) {
+  // clang-format on
+  constructor(readonly matchedStyles: CSSMatchedStyles, readonly style: CSSStyleDeclaration) {
+    super();
+  }
+
+  override accepts(): boolean {
+    return true;
+  }
+
+  override matches(node: CodeMirror.SyntaxNode, matching: BottomUpTreeMatching): VariableNameMatch|null {
+    if (node.name !== 'VariableName' && node.name !== 'FeatureName' && node.name !== 'KeywordQuery') {
+      // TODO(b/484268589): The result shouldn't be KeywordQuery, but currently
+      // sometimes Lezer parses it that way. Fix this when Lezer is fixed.
+      return null;
+    }
+    const rawText = matching.ast.text(node);
+    if (!rawText.startsWith('--')) {
+      return null;
+    }
+
+    let cur: CodeMirror.SyntaxNode|null = node.parent;
+    let foundStyleCall: CodeMirror.SyntaxNode|null = null;
+    while (cur) {
+      if (cur.name === 'CallExpression') {
+        return null;
+      }
+      if (cur.name === 'CallQuery') {
+        const callee = cur.getChild('QueryCallee');
+        if (callee && matching.ast.text(callee) === 'style') {
+          foundStyleCall = cur;
+          break;
+        }
+        return null;
+      }
+      cur = cur.parent;
+    }
+
+    if (!foundStyleCall) {
+      return null;
+    }
+
+    // When parsing style(--foo > 10px), Lezer thinks it is a KeywordQuery and
+    // includes the > in the token with --foo. We need to strip it.
+    const text = node.name === 'KeywordQuery' ? rawText.split(/\s|[>!=<:]/)[0] : rawText;
+
+    return new VariableNameMatch(node, text, this.matchedStyles, this.style);
+  }
+}
+
 export class AttributeMatch extends BaseVariableMatch {
   constructor(
       text: string,
@@ -176,6 +241,18 @@ function getCssEvaluationElement(): HTMLElement {
     }
   }
   return cssEvaluationElement;
+}
+
+/**
+ * If a test calls localEvalCSS, an element is created on demand for this
+ * purpose. This element is not removed from the DOM and will leak between tests
+ * if not removed.
+ */
+export function removeCSSEvaluationElement(): void {
+  if (cssEvaluationElement) {
+    document.body.removeChild(cssEvaluationElement);
+    cssEvaluationElement = null;
+  }
 }
 
 /**
@@ -561,9 +638,8 @@ export class ColorMatcher extends matcherBase(ColorMatch) {
         const colorText = args.length >= 2 ? matching.getComputedTextRange(args[0], args[args.length - 1]) : '';
         // colorText holds the fully substituted parenthesized expression, so colorFunc + colorText is the color
         // function call.
-        const isRelativeColorSyntax = Boolean(
-            colorText.match(/^[^)]*\(\W*from\W+/) && !matching.hasUnresolvedSubstitutions(node) &&
-            CSS.supports('color', colorFunc + colorText));
+        const isRelativeColorSyntax =
+            Boolean(colorText.match(/^[^)]*\(\W*from\W+/) && !matching.hasUnresolvedSubstitutions(node));
         if (!isRelativeColorSyntax) {
           return new ColorMatch(text, node);
         }
@@ -966,7 +1042,7 @@ export class LengthMatcher extends matcherBase(LengthMatch) {
     'em',    'ex',    'ch',  'cap', 'ic',    'lh',    'rem',   'rex',   'rch',  'rlh',  'ric', 'rcap', 'pt',    'pc',
     'in',    'cm',    'mm',  'Q',   'vw',    'vh',    'vi',    'vb',    'vmin', 'vmax', 'dvw', 'dvh',  'dvi',   'dvb',
     'dvmin', 'dvmax', 'svw', 'svh', 'svi',   'svb',   'svmin', 'svmax', 'lvw',  'lvh',  'lvi', 'lvb',  'lvmin', 'lvmax',
-    'cqw',   'cqh',   'cqi', 'cqb', 'cqmin', 'cqmax', 'cqem',  'cqlh',  'cqex', 'cqch', '%'
+    'cqw',   'cqh',   'cqi', 'cqb', 'cqmin', 'cqmax', 'cqem',  'cqlh',  'cqex', 'cqch', '%',
   ]);
   override matches(node: CodeMirror.SyntaxNode, matching: BottomUpTreeMatching): LengthMatch|null {
     if (node.name !== 'NumberLiteral') {

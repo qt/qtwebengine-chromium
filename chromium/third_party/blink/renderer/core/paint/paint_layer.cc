@@ -1346,8 +1346,11 @@ PaintLayer* PaintLayer::HitTestLayer(
   }
 
   ShouldRespectOverflowClipType clip_behavior = kRespectOverflowClip;
-  if (result.GetHitTestRequest().IgnoreClipping())
+  if (result.GetHitTestRequest().IgnoreClipping() ||
+      (RuntimeEnabledFeatures::UnboundedElementEnabled() &&
+       layout_object.IsInclusiveDescendantOfUnboundedElement())) {
     clip_behavior = kIgnoreOverflowClip;
+  }
 
   // For the global root scroller, hit test the layout viewport scrollbars
   // first, as they are visually presented on top of the content.
@@ -2511,12 +2514,6 @@ void PaintLayer::StyleDidChange(StyleDifference diff,
   }
 }
 
-gfx::Vector2d PaintLayer::PixelSnappedScrolledContentOffset() const {
-  if (GetLayoutObject().IsScrollContainer())
-    return GetLayoutBox()->PixelSnappedScrolledContentOffset();
-  return gfx::Vector2d();
-}
-
 PaintLayerClipper PaintLayer::Clipper() const {
   return PaintLayerClipper(this);
 }
@@ -2527,18 +2524,14 @@ FilterOperations PaintLayer::FilterOperationsIncludingReflection() const {
   if (GetLayoutObject().HasReflection() && GetLayoutObject().IsBox()) {
     BoxReflection reflection = BoxReflectionForPaintLayer(*this, style);
 
-    if (RuntimeEnabledFeatures::CanvasDrawElementEnabled(
-            GetLayoutObject().GetDocument().GetExecutionContext())) {
-      auto* element = DynamicTo<Element>(GetLayoutObject().GetNode());
-      if (element && element->IsInCanvasSubtree()) {
-        if (const auto* reflect_style = style.BoxReflect()) {
-          if (auto* style_image = reflect_style->Mask().GetImage()) {
-            // Strip the mask image if it is being rendered into a canvas and it
-            // is cross-origin.
-            if (!style_image->IsCorsSameOrigin()) {
-              reflection =
-                  BoxReflection(reflection.Direction(), reflection.Offset());
-            }
+    if (GetLayoutObject().IsInCanvasSubtree()) {
+      if (const auto* reflect_style = style.BoxReflect()) {
+        if (auto* style_image = reflect_style->Mask().GetImage()) {
+          // Strip the mask image if it is being rendered into a canvas and it
+          // is cross-origin.
+          if (!style_image->IsCorsSameOrigin()) {
+            reflection =
+                BoxReflection(reflection.Direction(), reflection.Offset());
           }
         }
       }

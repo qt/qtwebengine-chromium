@@ -31,11 +31,12 @@ source_set("lib") {
     "//components/gwp_asan/common:crash_keys",
     "//components/memory_system",
     "//components/metrics",
+    "//components/metrics:call_stack_profile_builder",
     "//components/payments/content/android",
     "//components/safe_browsing/android:safe_browsing_api_handler",
+    "//components/sampling_profiler:profile_params",
     "//components/services/heap_profiling/public/cpp",
     "//components/spellcheck:buildflags",
-    "//components/stylus_handwriting/android",
     "//components/variations",
     "//components/variations:variations_associated_data",
     "//components/version_info",
@@ -68,8 +69,6 @@ source_set("webview_entry_point") {
     "//base",
     "//base:jni_onload",
   ]
-  if (enable_javaless_renderers) {
-    deps += [ "//content/app:javaless_renderer" ]
-  }
+
   sources = [ "webview_entry_point.cc" ]
 }

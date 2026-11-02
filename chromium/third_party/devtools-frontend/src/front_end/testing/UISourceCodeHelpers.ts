@@ -3,13 +3,15 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../core/common/common.js';
 import * as Platform from '../core/platform/platform.js';
 import type * as SDK from '../core/sdk/sdk.js';
+import * as TextUtils from '../core/text_utils/text_utils.js';
+import type * as Foundation from '../foundation/foundation.js';
 import * as Bindings from '../models/bindings/bindings.js';
 import * as Persistence from '../models/persistence/persistence.js';
-import * as TextUtils from '../models/text_utils/text_utils.js';
 import * as Workspace from '../models/workspace/workspace.js';
 
 const {urlString} = Platform.DevToolsPath;
@@ -25,11 +27,12 @@ export function createContentProviderUISourceCodes(options: {
   projectType?: Workspace.Workspace.projectTypes,
   projectId?: string,
   target?: SDK.Target.Target,
+  universe?: Foundation.Universe.Universe,
 }): {
   project: Bindings.ContentProviderBasedProject.ContentProviderBasedProject,
   uiSourceCodes: Workspace.UISourceCode.UISourceCode[],
 } {
-  const workspace = Workspace.Workspace.WorkspaceImpl.instance();
+  const workspace = options.universe?.workspace || Workspace.Workspace.WorkspaceImpl.instance();
   const projectType = options.projectType || Workspace.Workspace.projectTypes.Formatter;
   assert.notEqual(
       projectType, Workspace.Workspace.projectTypes.FileSystem,
@@ -60,19 +63,21 @@ export function createContentProviderUISourceCode(options: {
   projectId?: string,
   metadata?: Workspace.UISourceCode.UISourceCodeMetadata,
   target?: SDK.Target.Target,
+  universe?: Foundation.Universe.Universe,
 }): {
   project: Bindings.ContentProviderBasedProject.ContentProviderBasedProject,
   uiSourceCode: Workspace.UISourceCode.UISourceCode,
 } {
-  const {url, content, mimeType, metadata, projectType, projectId, target} = options;
-  const {project, uiSourceCodes} =
-      createContentProviderUISourceCodes({items: [{url, content, mimeType, metadata}], projectType, projectId, target});
+  const {url, content, mimeType, metadata, projectType, projectId, target, universe} = options;
+  const {project, uiSourceCodes} = createContentProviderUISourceCodes(
+      {items: [{url, content, mimeType, metadata}], projectType, projectId, target, universe});
   return {project, uiSourceCode: uiSourceCodes[0]};
 }
 
 class TestPlatformFileSystem extends Persistence.PlatformFileSystem.PlatformFileSystem {
   readonly #mimeType: string;
   readonly #autoMapping: boolean;
+  readonly #files = new Set<Platform.DevToolsPath.UrlString>();
 
   constructor(
       path: Platform.DevToolsPath.UrlString, type: Persistence.PlatformFileSystem.PlatformFileSystemType,
@@ -81,14 +86,23 @@ class TestPlatformFileSystem extends Persistence.PlatformFileSystem.PlatformFile
     this.#mimeType = mimeType;
     this.#autoMapping = autoMapping;
   }
+  addFileForSearch(url: Platform.DevToolsPath.UrlString): void {
+    this.#files.add(url);
+  }
   override tooltipForURL(_url: Platform.DevToolsPath.UrlString): string {
     return 'tooltip-for-url';
   }
   override supportsAutomapping(): boolean {
     return this.#autoMapping;
   }
+  override contentType(_path: string): Common.ResourceType.ResourceType {
+    return Common.ResourceType.ResourceType.fromMimeType(this.#mimeType);
+  }
   override mimeFromPath(_path: Platform.DevToolsPath.UrlString): string {
     return this.#mimeType;
+  }
+  override searchInPath(_query: string, _progress: Common.Progress.Progress): Promise<string[]> {
+    return Promise.resolve([...this.#files]);
   }
 }
 
@@ -127,9 +141,11 @@ export function createFileSystemUISourceCode(options: {
   autoMapping?: boolean,
   type?: Persistence.PlatformFileSystem.PlatformFileSystemType,
   metadata?: Workspace.UISourceCode.UISourceCodeMetadata,
+  universe?: Foundation.Universe.Universe,
 }): {uiSourceCode: Workspace.UISourceCode.UISourceCode, project: Persistence.FileSystemWorkspaceBinding.FileSystem} {
-  const workspace = Workspace.Workspace.WorkspaceImpl.instance();
-  const isolatedFileSystemManager = Persistence.IsolatedFileSystemManager.IsolatedFileSystemManager.instance();
+  const workspace = options.universe?.workspace || Workspace.Workspace.WorkspaceImpl.instance();
+  const isolatedFileSystemManager = options.universe?.isolatedFileSystemManager ||
+      Persistence.IsolatedFileSystemManager.IsolatedFileSystemManager.instance();
   const fileSystemWorkspaceBinding =
       new Persistence.FileSystemWorkspaceBinding.FileSystemWorkspaceBinding(isolatedFileSystemManager, workspace);
   const fileSystemPath = urlString`${options.fileSystemPath || ''}`;
@@ -138,6 +154,7 @@ export function createFileSystemUISourceCode(options: {
   const platformFileSystem = new TestPlatformFileSystem(
       fileSystemPath, type || Persistence.PlatformFileSystem.PlatformFileSystemType.WORKSPACE_PROJECT, options.mimeType,
       Boolean(options.autoMapping));
+  platformFileSystem.addFileForSearch(options.url);
   const metadata = options.metadata || new Workspace.UISourceCode.UISourceCodeMetadata(null, null);
 
   const project = new TestFileSystem({fileSystemWorkspaceBinding, platformFileSystem, workspace, content, metadata});

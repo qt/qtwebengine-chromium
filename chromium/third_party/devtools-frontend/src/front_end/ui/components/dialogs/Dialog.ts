@@ -19,7 +19,7 @@ const {html} = Lit;
 const UIStrings = {
 
   /**
-   * @description Title of close button for the shortcuts dialog.
+   * @description Title of the close button in a dialog.
    */
   close: 'Close',
 } as const;
@@ -118,6 +118,9 @@ type DialogAnchor = HTMLElement|DOMRect|DOMPoint;
 export const MODAL = 'MODAL';
 
 export type DialogOrigin = DialogAnchor|null|(() => DialogAnchor)|typeof MODAL;
+/**
+ * @deprecated in favor of UI.Dialog.Dialog.
+ */
 export class Dialog extends HTMLElement {
   readonly #shadow = this.attachShadow({mode: 'open'});
   readonly #forceDialogCloseInDevToolsBound = this.#forceDialogCloseInDevToolsMutation.bind(this);
@@ -773,7 +776,7 @@ export const enum DialogVerticalPosition {
 export const enum DialogState {
   EXPANDED = 'expanded',
   COLLAPSED = 'collapsed',
-  DISABLED = 'disabled'
+  DISABLED = 'disabled',
 }
 
 export const enum DialogHorizontalAlignment {

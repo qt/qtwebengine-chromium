@@ -52,7 +52,6 @@ omnibox::NTPComposeboxConfig GetNTPComposeboxConfig() {
   auto* composebox = default_config.mutable_composebox();
 
   auto* image_upload = composebox->mutable_image_upload();
-  image_upload->set_enable_webp_encoding(false);
   image_upload->set_downscale_max_image_size(1500000);
   image_upload->set_downscale_max_image_width(1600);
   image_upload->set_downscale_max_image_height(1600);
@@ -166,7 +165,7 @@ CreateQueryControllerConfigParams() {
   return config_params;
 }
 
-BASE_FEATURE(kNtpComposebox, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kNtpComposebox, base::FEATURE_ENABLED_BY_DEFAULT);
 
 const base::FeatureParam<std::string> kConfigParam(&kNtpComposebox,
                                                    "NtpComposeboxConfigParam",
@@ -190,11 +189,6 @@ const base::FeatureParam<bool> kShowContextMenuTabPreviews(
     "NtpComposeboxShowContextMenuTabPreviews",
     false);
 
-const base::FeatureParam<bool> kShowContextMenuDescription(
-    &kNtpComposebox,
-    "NtpComposeboxShowContextMenuDescription",
-    true);
-
 const base::FeatureParam<bool> kShowContextMenuHeaders(&kNtpComposebox,
                                                        "ShowContextMenuHeaders",
                                                        true);
@@ -211,17 +205,6 @@ const base::FeatureParam<bool> kContextMenuEnableMultiTabSelection(
     &kNtpComposebox,
     "NtpComposeboxContextMenuEnableMultiTabSelection",
     true);
-
-const base::FeatureParam<bool> kEnableThreadsRail(&kNtpComposebox,
-                                                  "EnableThreadsRail",
-                                                  false);
-const base::FeatureParam<bool> kEnableThreadsRailLogo(&kNtpComposebox,
-                                                      "EnableThreadsRailLogo",
-                                                      false);
-
-const base::FeatureParam<bool> kUseNtpComposeboxFork(&kNtpComposebox,
-                                                     "useNtpComposeboxFork",
-                                                     false);
 
 FeatureConfig::FeatureConfig() : config(GetNTPComposeboxConfig()) {}
 
@@ -268,7 +251,7 @@ bool IsNtpRealboxNextEnabled(Profile* profile) {
          aim_eligibility_service->IsFuseboxEligible();
 }
 
-BASE_FEATURE(kNtpRealboxNext, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kNtpRealboxNext, base::FEATURE_ENABLED_BY_DEFAULT);
 
 const base::FeatureParam<PlaceholderText>::Option kSteadyPlaceholderOptions[] =
     {

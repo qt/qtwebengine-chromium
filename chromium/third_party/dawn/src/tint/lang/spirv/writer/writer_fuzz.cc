@@ -138,10 +138,12 @@ Result<SuccessType> ValidateUsingVulkan(const std::string& vk_icd_path,
     // This setenv call is why this works on Linux/Mac but not Windows
     setenv("VK_ICD_FILENAMES", vk_icd_path.c_str(), 1);
 
+    TINT_BEGIN_DISABLE_WARNING(OLD_STYLE_CAST);
     VkApplicationInfo app_info = {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .apiVersion = VK_API_VERSION_1_1,
     };
+    TINT_END_DISABLE_WARNING(OLD_STYLE_CAST);
 
     VkInstanceCreateInfo create_info = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
@@ -274,6 +276,11 @@ std::unordered_map<uint32_t, tint::BindingPoint> GenerateColourBindings(core::ir
 Result<SuccessType> IRFuzzer(core::ir::Module& module,
                              const fuzz::ir::Context& context,
                              FuzzedOptions fuzzed_options) {
+    if (context.options.verbose) {
+        PrintReflected(std::cout, fuzzed_options);
+        std::cout << "\n";
+    }
+
     // TODO(375388101): We cannot run the backend for every entry point in the module unless we
     // clone the whole module each time, so for now we just generate the first entry point.
 
@@ -314,7 +321,6 @@ Result<SuccessType> IRFuzzer(core::ir::Module& module,
     options.workarounds.dva_transform_handle = fuzzed_options.dva_transform_handle;
     options.workarounds.polyfill_pack_unpack_4x8_norm =
         fuzzed_options.polyfill_pack_unpack_4x8_norm;
-    options.workarounds.subgroup_shuffle_clamped = fuzzed_options.subgroup_shuffle_clamped;
     options.workarounds.polyfill_subgroup_broadcast_f16 =
         fuzzed_options.polyfill_subgroup_broadcast_f16;
     options.workarounds.pass_matrix_by_pointer = fuzzed_options.pass_matrix_by_pointer;
@@ -349,23 +355,23 @@ Result<SuccessType> IRFuzzer(core::ir::Module& module,
 
     TINT_CHECK_RESULT_UNWRAP(output, Generate(module, options));
 
-    spv_target_env target_env = SPV_ENV_VULKAN_1_1;
+    validate::Options validation_options;
     switch (options.spirv_version) {
         case SpvVersion::kSpv13:
-            target_env = SPV_ENV_VULKAN_1_1;
+            validation_options.target_env = SPV_ENV_VULKAN_1_1;
             break;
         case SpvVersion::kSpv14:
-            target_env = SPV_ENV_VULKAN_1_1_SPIRV_1_4;
+            validation_options.target_env = SPV_ENV_VULKAN_1_1_SPIRV_1_4;
             break;
         case SpvVersion::kSpv15:
-            target_env = SPV_ENV_VULKAN_1_2;
+            validation_options.target_env = SPV_ENV_VULKAN_1_2;
             break;
         default:
             TINT_ICE() << "unsupported SPIR-V version";
     }
 
     auto& spirv = output.spirv;
-    auto res = validate::Validate(spirv, target_env);
+    auto res = validate::Validate(spirv, validation_options);
     TINT_ASSERT(res == Success) << "output of SPIR-V writer failed to validate with SPIR-V Tools\n"
                                 << res.Failure() << "\n\n"
                                 << "IR:\n"
@@ -383,6 +389,4 @@ Result<SuccessType> IRFuzzer(core::ir::Module& module,
 }  // namespace
 }  // namespace tint::spirv::writer
 
-TINT_IR_MODULE_FUZZER(tint::spirv::writer::IRFuzzer,
-                      tint::core::ir::Capabilities{},
-                      tint::spirv::writer::kPrinterCapabilities);
+TINT_IR_MODULE_FUZZER(tint::spirv::writer::IRFuzzer);

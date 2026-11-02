@@ -819,7 +819,7 @@ SkiaOutputSurfaceImplOnGpu::CreateSharedImageRepresentationSkia(
       gpu::SharedImageInfo(format, size, color_space, kTopLeft_GrSurfaceOrigin,
                            kPremul_SkAlphaType,
                            CopyOutputResult::kDefaultSharedImageUsage,
-                           std::string(debug_label)),
+                           debug_label),
       gpu::kNullSurfaceHandle);
   if (!result) {
     DLOG(ERROR) << "Failed to create shared image.";
@@ -827,7 +827,8 @@ SkiaOutputSurfaceImplOnGpu::CreateSharedImageRepresentationSkia(
   }
 
   auto representation = dependency_->GetSharedImageManager()->ProduceSkia(
-      mailbox, context_state_->memory_type_tracker(), context_state_);
+      mailbox, context_state_->memory_type_tracker(), context_state_,
+      /*required_usages=*/{});
   shared_image_factory_->DestroySharedImage(mailbox);
 
   return representation;
@@ -972,7 +973,8 @@ void SkiaOutputSurfaceImplOnGpu::CopyOutputRGBAInTexture(
         request->blit_request().shared_image()->mailbox();
 
     representation = dependency_->GetSharedImageManager()->ProduceSkia(
-        mailbox, context_state_->memory_type_tracker(), context_state_);
+        mailbox, context_state_->memory_type_tracker(), context_state_,
+        /*required_usages=*/{gpu::SHARED_IMAGE_USAGE_DISPLAY_WRITE});
   } else {
     auto plane_format =
         request->result_format() == CopyOutputRequest::ResultFormat::RGBA
@@ -1127,6 +1129,15 @@ void SkiaOutputSurfaceImplOnGpu::CopyOutputRGBAInTexture(
     return;
   }
 
+  // End write access before sending the result to avoid racing with the
+  // client's subsequent readback.
+  scoped_write.reset();
+
+  // We conditionally move from request (if `should_wait_for_gpu_work` is true),
+  // DCHECK that we don't accidentally enter this codepath after the request was
+  // moved from.
+  DCHECK(request);
+
   if (request->has_blit_request()) {
     request->SendResult(std::make_unique<CopyOutputSharedImageResult>(
         CopyOutputResult::Format::RGBA, geometry.result_selection,
@@ -1240,7 +1251,8 @@ bool SkiaOutputSurfaceImplOnGpu::CreateDestinationImageIfNeededAndBeginAccess(
         request->blit_request().shared_image()->mailbox();
 
     representation = dependency_->GetSharedImageManager()->ProduceSkia(
-        mailbox, context_state_->memory_type_tracker(), context_state_);
+        mailbox, context_state_->memory_type_tracker(), context_state_,
+        /*required_usages=*/{gpu::SHARED_IMAGE_USAGE_DISPLAY_WRITE});
   } else {
     representation = CreateSharedImageRepresentationSkia(
         MultiPlaneFormat::kNV12, intermediate_dst_size, color_space,
@@ -1535,6 +1547,10 @@ void SkiaOutputSurfaceImplOnGpu::CopyOutputNV12(
     // called.
     return;
   }
+
+  // End write access before sending the result to avoid racing with the
+  // client's subsequent readback.
+  mailbox_access_data.scoped_write.reset();
 
   // We conditionally move from request (if `should_wait_for_gpu_work` is true),
   // DCHECK that we don't accidentally enter this codepath after the request was
@@ -1892,10 +1908,6 @@ void SkiaOutputSurfaceImplOnGpu::ScheduleOverlays(
 void SkiaOutputSurfaceImplOnGpu::SetVSyncDisplayID(int64_t display_id,
                                                    bool force_update) {
   output_device_->SetVSyncDisplayID(display_id, force_update);
-}
-
-void SkiaOutputSurfaceImplOnGpu::RefreshRateChangedOnSameDisplay() {
-  output_device_->RefreshRateChangedOnSameDisplay();
 }
 
 #if BUILDFLAG(IS_ANDROID)
@@ -2323,13 +2335,20 @@ void SkiaOutputSurfaceImplOnGpu::PostSubmit(
   semaphores.reserve(pending_release_fence_cbs_.size());
 
   while (!pending_release_fence_cbs_.empty()) {
+    gfx::GpuFenceHandle release_fence;
+
     auto& item = pending_release_fence_cbs_.front();
-    auto release_fence = CreateReleaseFenceForVulkan(item.first);
-    if (release_fence.is_null()) {
-      LOG(ERROR) << "Unable to create a release fence for Vulkan.";
-    } else {
-      semaphores.emplace_back(GrBackendSemaphores::GetVkSemaphore(item.first));
+    VkSemaphore semaphore = GrBackendSemaphores::GetVkSemaphore(item.first);
+
+    if (semaphore != VK_NULL_HANDLE) {
+      semaphores.emplace_back(semaphore);
+
+      release_fence = CreateReleaseFenceForVulkan(semaphore);
+      if (release_fence.is_null()) {
+        LOG(ERROR) << "Unable to create a release fence for Vulkan.";
+      }
     }
+
     std::move(item.second).Run(std::move(release_fence));
     pending_release_fence_cbs_.pop_front();
   }
@@ -2595,25 +2614,14 @@ void SkiaOutputSurfaceImplOnGpu::DiscardBackbuffer() {
 
 #if BUILDFLAG(ENABLE_VULKAN)
 gfx::GpuFenceHandle SkiaOutputSurfaceImplOnGpu::CreateReleaseFenceForVulkan(
-    const GrBackendSemaphore& semaphore) {
+    VkSemaphore semaphore) {
   DCHECK(is_using_vulkan());
-
-  if (GrBackendSemaphores::GetVkSemaphore(semaphore) == VK_NULL_HANDLE) {
-    return {};
-  }
 
   auto* implementation = vulkan_context_provider_->GetVulkanImplementation();
   VkDevice device =
       vulkan_context_provider_->GetDeviceQueue()->GetVulkanDevice();
 
-  auto handle = implementation->GetSemaphoreHandle(
-      device, GrBackendSemaphores::GetVkSemaphore(semaphore));
-  if (!handle.is_valid()) {
-    vkDestroySemaphore(device, GrBackendSemaphores::GetVkSemaphore(semaphore),
-                       /*pAllocator=*/nullptr);
-    LOG(ERROR) << "Failed to create a release fence for Vulkan.";
-    return {};
-  }
+  auto handle = implementation->GetSemaphoreHandle(device, semaphore);
   return std::move(handle).ToGpuFenceHandle();
 }
 

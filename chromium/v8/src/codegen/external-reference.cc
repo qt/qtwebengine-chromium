@@ -8,7 +8,7 @@
 
 #include "include/cppgc/allocation.h"
 #include "include/v8-fast-api-calls.h"
-#include "src/api/api-inl.h"
+#include "src/api/api.h"
 #include "src/base/bits.h"
 #include "src/base/ieee754.h"
 #include "src/base/logging.h"
@@ -23,6 +23,7 @@
 #include "src/execution/isolate.h"
 #include "src/execution/microtask-queue.h"
 #include "src/execution/simulator.h"
+#include "src/handles/handle-scope-implementer-inl.h"
 #include "src/heap/heap-inl.h"
 #include "src/heap/heap.h"
 #include "src/ic/stub-cache.h"
@@ -32,6 +33,7 @@
 #include "src/numbers/hash-seed-inl.h"
 #include "src/numbers/ieee754.h"
 #include "src/numbers/math-random.h"
+#include "src/objects/dictionary-inl.h"
 #include "src/objects/elements-kind.h"
 #include "src/objects/elements.h"
 #include "src/objects/module.h"
@@ -281,11 +283,6 @@ ExternalReference ExternalReference::isolate_address() {
   return ExternalReference(IsolateFieldId::kIsolateAddress);
 }
 
-ExternalReference ExternalReference::handle_scope_implementer_address(
-    Isolate* isolate) {
-  return ExternalReference(isolate->handle_scope_implementer_address());
-}
-
 #ifdef V8_ENABLE_SANDBOX
 ExternalReference ExternalReference::sandbox_base_address() {
   return ExternalReference(Sandbox::current()->base_address());
@@ -337,23 +334,6 @@ ExternalReference ExternalReference::shared_trusted_pointer_table_base_address(
   return ExternalReference(
       isolate->shared_trusted_pointer_table_base_address());
 }
-
-ExternalReference
-ExternalReference::address_of_code_pointer_table_base_address() {
-  return ExternalReference(IsolateFieldId::kCodePointerTableBaseAddress);
-}
-
-ExternalReference ExternalReference::code_pointer_table_base_address(
-    Isolate* isolate) {
-  return ExternalReference(isolate->code_pointer_table_base_address());
-}
-
-#ifndef V8_COMPRESS_POINTERS_IN_MULTIPLE_CAGES
-ExternalReference ExternalReference::global_code_pointer_table_base_address() {
-  return ExternalReference(
-      IsolateGroup::current()->code_pointer_table()->base_address());
-}
-#endif
 
 ExternalReference ExternalReference::memory_chunk_metadata_table_address() {
   return ExternalReference(
@@ -603,6 +583,8 @@ FUNCTION_REFERENCE(wasm_switch_wasmfx_stack, wasm::switch_wasmfx_stack)
 FUNCTION_REFERENCE(wasm_return_jspi_stack, wasm::return_jspi_stack)
 FUNCTION_REFERENCE(wasm_return_wasmfx_stack, wasm::return_wasmfx_stack)
 FUNCTION_REFERENCE(wasm_retire_stack, wasm::retire_stack)
+FUNCTION_REFERENCE(wasmfx_set_wasm_code, wasm::wasmfx_set_wasm_code)
+FUNCTION_REFERENCE(wasm_cont_bind, wasm::cont_bind)
 FUNCTION_REFERENCE(wasm_switch_to_the_central_stack,
                    wasm::switch_to_the_central_stack)
 FUNCTION_REFERENCE(wasm_switch_from_the_central_stack,
@@ -751,29 +733,6 @@ void* allocate_buffer_impl(Isolate* isolate, size_t size) {
 }  // namespace
 
 FUNCTION_REFERENCE(allocate_buffer, allocate_buffer_impl)
-
-static void f64_acos_wrapper(Address data) {
-  double input = ReadUnalignedValue<double>(data);
-  WriteUnalignedValue(data, base::ieee754::acos(input));
-}
-
-FUNCTION_REFERENCE(f64_acos_wrapper_function, f64_acos_wrapper)
-
-static void f64_asin_wrapper(Address data) {
-  double input = ReadUnalignedValue<double>(data);
-  WriteUnalignedValue<double>(data, base::ieee754::asin(input));
-}
-
-FUNCTION_REFERENCE(f64_asin_wrapper_function, f64_asin_wrapper)
-
-
-static void f64_mod_wrapper(Address data) {
-  double dividend = ReadUnalignedValue<double>(data);
-  double divisor = ReadUnalignedValue<double>(data + sizeof(dividend));
-  WriteUnalignedValue<double>(data, Modulo(dividend, divisor));
-}
-
-FUNCTION_REFERENCE(f64_mod_wrapper_function, f64_mod_wrapper)
 
 ExternalReference ExternalReference::isolate_root(Isolate* isolate) {
   return ExternalReference(isolate->isolate_root());
@@ -1220,6 +1179,8 @@ FUNCTION_REFERENCE_WITH_TYPE(ieee754_atan2_function, base::ieee754::atan2,
                              BUILTIN_FP_FP_CALL)
 FUNCTION_REFERENCE_WITH_TYPE(ieee754_cbrt_function, base::ieee754::cbrt,
                              BUILTIN_FP_CALL)
+FUNCTION_REFERENCE_WITH_TYPE(ieee754_cos_function, base::ieee754::cos,
+                             BUILTIN_FP_CALL)
 FUNCTION_REFERENCE_WITH_TYPE(ieee754_cosh_function, base::ieee754::cosh,
                              BUILTIN_FP_CALL)
 FUNCTION_REFERENCE_WITH_TYPE(ieee754_exp_function, base::ieee754::exp,
@@ -1234,6 +1195,8 @@ FUNCTION_REFERENCE_WITH_TYPE(ieee754_log10_function, base::ieee754::log10,
                              BUILTIN_FP_CALL)
 FUNCTION_REFERENCE_WITH_TYPE(ieee754_log2_function, base::ieee754::log2,
                              BUILTIN_FP_CALL)
+FUNCTION_REFERENCE_WITH_TYPE(ieee754_sin_function, base::ieee754::sin,
+                             BUILTIN_FP_CALL)
 FUNCTION_REFERENCE_WITH_TYPE(ieee754_sinh_function, base::ieee754::sinh,
                              BUILTIN_FP_CALL)
 FUNCTION_REFERENCE_WITH_TYPE(ieee754_tan_function, base::ieee754::tan,
@@ -1242,32 +1205,6 @@ FUNCTION_REFERENCE_WITH_TYPE(ieee754_tanh_function, base::ieee754::tanh,
                              BUILTIN_FP_CALL)
 FUNCTION_REFERENCE_WITH_TYPE(ieee754_pow_function, math::pow,
                              BUILTIN_FP_FP_CALL)
-
-#if defined(V8_USE_LIBM_TRIG_FUNCTIONS)
-ExternalReference ExternalReference::ieee754_sin_function() {
-  static_assert(
-      IsValidExternalReferenceType<decltype(&base::ieee754::libm_sin)>::value);
-  static_assert(IsValidExternalReferenceType<
-                decltype(&base::ieee754::fdlibm_sin)>::value);
-  auto* f = v8_flags.use_libm_trig_functions ? base::ieee754::libm_sin
-                                             : base::ieee754::fdlibm_sin;
-  return ExternalReference(Redirect(FUNCTION_ADDR(f), BUILTIN_FP_CALL));
-}
-ExternalReference ExternalReference::ieee754_cos_function() {
-  static_assert(
-      IsValidExternalReferenceType<decltype(&base::ieee754::libm_cos)>::value);
-  static_assert(IsValidExternalReferenceType<
-                decltype(&base::ieee754::fdlibm_cos)>::value);
-  auto* f = v8_flags.use_libm_trig_functions ? base::ieee754::libm_cos
-                                             : base::ieee754::fdlibm_cos;
-  return ExternalReference(Redirect(FUNCTION_ADDR(f), BUILTIN_FP_CALL));
-}
-#else
-FUNCTION_REFERENCE_WITH_TYPE(ieee754_sin_function, base::ieee754::sin,
-                             BUILTIN_FP_CALL)
-FUNCTION_REFERENCE_WITH_TYPE(ieee754_cos_function, base::ieee754::cos,
-                             BUILTIN_FP_CALL)
-#endif
 
 void* libc_memchr(void* string, int character, size_t search_length) {
   return memchr(string, character, search_length);
@@ -1660,6 +1597,16 @@ ExternalReference::compare_operation_feedback_transition_table() {
 ExternalReference ExternalReference::compare_operation_feedback_encode_table() {
   return ExternalReference(
       CompareOperationFeedback::GetFeedbackEncodeTableAddress());
+}
+
+ExternalReference
+ExternalReference::binary_operation_feedback_transition_table() {
+  return ExternalReference(BinaryOperationFeedback::GetTransitionMapAddress());
+}
+
+ExternalReference ExternalReference::binary_operation_feedback_encode_table() {
+  return ExternalReference(
+      BinaryOperationFeedback::GetFeedbackEncodeTableAddress());
 }
 
 ExternalReference ExternalReference::promise_hook_address(Isolate* isolate) {

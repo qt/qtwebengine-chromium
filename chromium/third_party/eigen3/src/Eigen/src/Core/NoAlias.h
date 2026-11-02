@@ -25,7 +25,7 @@ namespace Eigen {
  *
  * This class represents an expression with special assignment operators
  * assuming no aliasing between the target expression and the source expression.
- * More precisely it alloas to bypass the EvalBeforeAssignBit flag of the source expression.
+ * More precisely it allows to bypass the EvalBeforeAssignBit flag of the source expression.
  * It is the return type of MatrixBase::noalias()
  * and most of the time this is the only way it is used.
  *

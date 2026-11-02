@@ -32,7 +32,7 @@ const UIStrings = {
    * @description Explanation for how to populate the autofill panel with data. Shown when there is
    * no data available.
    */
-  toStartDebugging: 'To start debugging autofill, use Chrome\'s autofill menu to fill an address form.',
+  toStartDebugging: 'To start debugging autofill, use Chrome’s autofill menu to fill an address form.',
   /**
    * @description Column header for column containing form field values
    */
@@ -209,7 +209,7 @@ const DEFAULT_VIEW: View = (input: ViewInput, _output: ViewOutput, target: HTMLE
                             Lit.nothing}
                   </td>
                   <td>"${field.value}"</td>
-                </tr>`
+                </tr>`,
             )}
           </table>
         </devtools-data-grid>
@@ -260,24 +260,24 @@ const DEFAULT_VIEW: View = (input: ViewInput, _output: ViewOutput, target: HTMLE
       <style>${UI.inspectorCommonStyles}</style>
       <main>
         <div class="content-container" jslog=${VisualLogging.pane('autofill')}>
-          <div class="right-to-left" role="region" aria-label=${i18nString(UIStrings.addressPreview)}>
-            <div class="header">
-              <div class="label-container">
-                <devtools-checkbox
-                    ${bindToSetting(input.showTestAddressesInAutofillMenuSetting)}
-                    title=${i18nString(UIStrings.showTestAddressesInAutofillMenu)}>
-                  ${i18nString(UIStrings.showTestAddressesInAutofillMenu)}
-                </devtools-checkbox>
-              </div>
-              <div class="label-container">
-                <devtools-checkbox
-                    ${bindToSetting(input.autoOpenViewSetting)}
-                    title=${i18nString(UIStrings.autoShowTooltip)}>
-                  ${i18nString(UIStrings.autoShow)}
-                </devtools-checkbox>
-              </div>
-              <devtools-link href=${AUTOFILL_FEEDBACK_URL} class="feedback link" jslogcontext="feedback">${i18nString(UIStrings.sendFeedback)}</devtools-link>
+          <div class="header">
+            <div class="label-container">
+              <devtools-checkbox
+                  ${bindToSetting(input.showTestAddressesInAutofillMenuSetting)}
+                  title=${i18nString(UIStrings.showTestAddressesInAutofillMenu)}>
+                ${i18nString(UIStrings.showTestAddressesInAutofillMenu)}
+              </devtools-checkbox>
             </div>
+            <div class="label-container">
+              <devtools-checkbox
+                  ${bindToSetting(input.autoOpenViewSetting)}
+                  title=${i18nString(UIStrings.autoShowTooltip)}>
+                ${i18nString(UIStrings.autoShow)}
+              </devtools-checkbox>
+            </div>
+            <devtools-link href=${AUTOFILL_FEEDBACK_URL} class="feedback link" jslogcontext="feedback">${i18nString(UIStrings.sendFeedback)}</devtools-link>
+          </div>
+          <div role="region" aria-label=${i18nString(UIStrings.addressPreview)}>
             ${renderAddress()}
           </div>
           ${renderFilledFields()}
@@ -298,7 +298,7 @@ export class AutofillView extends UI.Widget.VBox {
   #matches: AutofillManager.AutofillManager.Match[] = [];
   #highlightedMatches: AutofillManager.AutofillManager.Match[] = [];
 
-  constructor(autofillManager = AutofillManager.AutofillManager.AutofillManager.instance(), view = DEFAULT_VIEW) {
+  constructor(autofillManager: AutofillManager.AutofillManager.AutofillManager, view = DEFAULT_VIEW) {
     super({useShadowDom: true});
     this.#autofillManager = autofillManager;
     this.#view = view;

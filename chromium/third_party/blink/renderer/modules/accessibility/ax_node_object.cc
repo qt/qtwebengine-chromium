@@ -38,6 +38,7 @@
 
 #include "base/auto_reset.h"
 #include "base/containers/fixed_flat_set.h"
+#include "base/containers/span.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/numerics/safe_conversions.h"
 #include "third_party/blink/public/common/features.h"
@@ -48,6 +49,7 @@
 #include "third_party/blink/renderer/core/accessibility/ax_utilities_generated.h"
 #include "third_party/blink/renderer/core/css/counter_style_map.h"
 #include "third_party/blink/renderer/core/css/css_resolution_units.h"
+#include "third_party/blink/renderer/core/css/parser/css_parser.h"
 #include "third_party/blink/renderer/core/css/properties/longhands.h"
 #include "third_party/blink/renderer/core/display_lock/display_lock_utilities.h"
 #include "third_party/blink/renderer/core/dom/column_pseudo_element.h"
@@ -121,6 +123,7 @@
 #include "third_party/blink/renderer/core/html/html_progress_element.h"
 #include "third_party/blink/renderer/core/html/html_slot_element.h"
 #include "third_party/blink/renderer/core/html/html_span_element.h"
+#include "third_party/blink/renderer/core/html/html_sub_menu_element.h"
 #include "third_party/blink/renderer/core/html/html_summary_element.h"
 #include "third_party/blink/renderer/core/html/html_table_caption_element.h"
 #include "third_party/blink/renderer/core/html/html_table_cell_element.h"
@@ -1277,6 +1280,12 @@ AXObjectInclusion AXNodeObject::ShouldIncludeBasedOnSemantics(
       ignored_reasons->push_back(IgnoredReason(kAXPresentational));
     }
     return kIgnoreObject;
+  }
+
+  if (IsCanvas()) {
+    if (!CanvasAnnotation().empty()) {
+      return kIncludeObject;
+    }
   }
 
   return kDefaultBehavior;
@@ -2539,20 +2548,15 @@ ax::mojom::blink::Role AXNodeObject::NativeRoleIgnoringAria() const {
   }
 
   if (auto* menu_item = DynamicTo<HTMLMenuItemElement>(*GetNode())) {
-    if (menu_item->IsCheckable()) {
-      DCHECK(menu_item->NearestAncestorFieldSet())
-          << "IsCheckable implies that it has a NearestAncestorFieldSet";
-      // We have to look at the parent <fieldset>'s checkable attribute to see
-      // if this menu item behaves as a radio button or a checkbox.
-      const AtomicString& checkable_type =
-          menu_item->NearestAncestorFieldSet()->FastGetAttribute(
-              html_names::kCheckableAttr);
-      if (EqualIgnoringAsciiCase(checkable_type, keywords::kSingle)) {
+    switch (menu_item->CheckableState()) {
+      case HTMLFieldSetElement::Checkable::Single:
         return ax::mojom::blink::Role::kMenuItemRadio;
-      }
-      return ax::mojom::blink::Role::kMenuItemCheckBox;
+      case HTMLFieldSetElement::Checkable::Multiple:
+        return ax::mojom::blink::Role::kMenuItemCheckBox;
+      case HTMLFieldSetElement::Checkable::None:
+        return ax::mojom::blink::Role::kMenuItem;
     }
-    return ax::mojom::blink::Role::kMenuItem;
+    NOTREACHED();
   }
 
   if (IsA<HTMLMenuBarElement>(GetNode())) {
@@ -2570,8 +2574,9 @@ ax::mojom::blink::Role AXNodeObject::NativeRoleIgnoringAria() const {
   if (IsA<HTMLTextAreaElement>(*GetNode()))
     return ax::mojom::blink::Role::kTextField;
 
-  if (HeadingLevel())
+  if (GetNode()->GetElementType() == ElementType::kHTMLHeadingElement) {
     return ax::mojom::blink::Role::kHeading;
+  }
 
   if (IsA<HTMLDivElement>(*GetNode()))
     return RoleFromLayoutObjectOrNode();
@@ -3473,6 +3478,12 @@ AccessibilityExpanded AXNodeObject::IsExpanded() const {
     }
   }
 
+  if (auto* menuitem = DynamicTo<HTMLMenuItemElement>(element)) {
+    if (HTMLMenuListElement* submenu = menuitem->GetInvokedSubmenu()) {
+      return submenu->popoverOpen() ? kExpandedExpanded : kExpandedCollapsed;
+    }
+  }
+
   if (IsA<HTMLSummaryElement>(*element)) {
     if (element->parentNode() &&
         IsA<HTMLDetailsElement>(element->parentNode())) {
@@ -3521,6 +3532,35 @@ bool AXNodeObject::CanvasHasFallbackContent() const {
     return false;
   Node* node = GetNode();
   return IsA<HTMLCanvasElement>(node) && node->hasChildren();
+}
+
+String AXNodeObject::CanvasAnnotation() const {
+  if (IsDetached()) {
+    return String();
+  }
+  if (auto* canvas = DynamicTo<HTMLCanvasElement>(GetNode())) {
+    return canvas->CanvasAnnotation();
+  }
+  return String();
+}
+
+bool AXNodeObject::HasRequestedOCR() const {
+  if (IsDetached()) {
+    return false;
+  }
+  if (auto* canvas = DynamicTo<HTMLCanvasElement>(GetNode())) {
+    return canvas->HasRequestedOCR();
+  }
+  return false;
+}
+
+void AXNodeObject::ClearHasRequestedOCR() {
+  if (IsDetached()) {
+    return;
+  }
+  if (auto* canvas = DynamicTo<HTMLCanvasElement>(GetNode())) {
+    canvas->ClearHasRequestedOCR();
+  }
 }
 
 int AXNodeObject::HeadingLevel() const {
@@ -4296,9 +4336,9 @@ RGBA32 AXNodeObject::ColorValue() const {
     return AXObject::ColorValue();
   }
 
-  // HTMLInputElement::Value always returns a string parseable by Color.
+  // HTMLInputElement::Value always returns a string parseable as a CSS color.
   Color color;
-  bool success = color.SetFromString(input->Value());
+  bool success = CSSParser::ParseColor(color, input->Value());
   DCHECK(success);
   return color.Rgb();
 }
@@ -4851,10 +4891,6 @@ String AXNodeObject::GetValueForControl(AXObjectSet& visited) const {
     return masked_text.ToString();
   }
 
-  if (IsRangeValueSupported()) {
-    return AriaAttribute(html_names::kAriaValuetextAttr).GetString();
-  }
-
   // Handle other HTML input elements that aren't text controls, like date and
   // time controls, by returning their value converted to text, with the
   // exception of checkboxes and radio buttons (which would return "on"), and
@@ -4925,10 +4961,10 @@ ax::mojom::blink::HasPopup AXNodeObject::HasPopup() const {
     return ax::mojom::blink::HasPopup::kMenu;
   }
 
-  // If this element invokes a menulist via popovertarget OR commandfor, give it
-  // haspopup=menu.
-  Element* invoked_target = nullptr;
+  // If this element (typically a button) invokes a menulist via popovertarget
+  // OR commandfor, give it haspopup=menu.
   if (auto* html_element = DynamicTo<HTMLElement>(GetElement())) {
+    Element* invoked_target = nullptr;
     if (HTMLElement* command_for_element =
             DynamicTo<HTMLElement>(html_element->commandForElement())) {
       CommandEventType command = command_for_element->GetCommandEventType(
@@ -4943,10 +4979,16 @@ ax::mojom::blink::HasPopup AXNodeObject::HasPopup() const {
         invoked_target = form_control->popoverTargetElement().popover;
       }
     }
+    if (invoked_target && IsA<HTMLMenuListElement>(invoked_target)) {
+      return ax::mojom::blink::HasPopup::kMenu;
+    }
   }
 
-  if (invoked_target && IsA<HTMLMenuListElement>(invoked_target)) {
-    return ax::mojom::blink::HasPopup::kMenu;
+  // Also give haspopup=menu for menuitems associated via DOM structure.
+  if (auto* menuitem = DynamicTo<HTMLMenuItemElement>(GetNode())) {
+    if (menuitem->GetInvokedSubmenu()) {
+      return ax::mojom::blink::HasPopup::kMenu;
+    }
   }
 
   return AXObject::HasPopup();
@@ -5413,8 +5455,9 @@ String AXNodeObject::TextAlternative(
     // <img> can be used to indicate that the image is presentational and should
     // be ignored by ATs.
     name_from = ax::mojom::blink::NameFrom::kAttributeExplicitlyEmpty;
+  } else {
+    name_from = ax::mojom::blink::NameFrom::kNone;
   }
-
   return String();
 }
 
@@ -7111,9 +7154,18 @@ String AXNodeObject::NativeTextAlternative(
   String text_alternative;
   AXRelatedObjectVector local_related_objects;
 
-  if (auto* menulist = DynamicTo<HTMLMenuListElement>(GetNode());
-      menulist && menulist->GetPopoverData()) {
-    if (Element* invoker = menulist->GetPopoverData()->invoker()) {
+  if (auto* menulist = DynamicTo<HTMLMenuListElement>(GetNode())) {
+    Element* invoker = nullptr;
+    if (menulist->GetPopoverData()) {
+      invoker = menulist->GetPopoverData()->invoker();
+    }
+    if (!invoker) {
+      if (auto* submenu =
+              DynamicTo<HTMLSubMenuElement>(menulist->parentNode())) {
+        invoker = submenu->MenuItem();
+      }
+    }
+    if (invoker) {
       if (AXObject* ax_invoker = AXObjectCache().Get(invoker)) {
         name_from = ax::mojom::blink::NameFrom::kRelatedElement;
         text_alternative = RecursiveTextAlternative(
@@ -7657,7 +7709,6 @@ String AXNodeObject::GetSavedTextAlternativeFromNameSource(
     ax::mojom::NameFrom& name_from,
     AXRelatedObjectVector* related_objects,
     NameSources* name_sources) {
-  name_from = ax::mojom::blink::NameFrom::kNone;
   if (!name_sources || !found_text_alternative) {
     return String();
   }

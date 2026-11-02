@@ -51,6 +51,7 @@ target_sources(VkLayer_utils PRIVATE
     ${API_TYPE}/generated/pnext_chain_extraction.h
     ${API_TYPE}/generated/vk_function_pointers.cpp
     ${API_TYPE}/generated/vk_function_pointers.h
+    ${API_TYPE}/generated/vk_validation_error_messages.cpp
     ${API_TYPE}/generated/vk_validation_error_messages.h
     ${API_TYPE}/generated/vk_layer_dispatch_table.h
     ${API_TYPE}/generated/vk_dispatch_table_helper.h
@@ -156,6 +157,14 @@ elseif(MSVC)
     )
 endif()
 
+if(APPLE)
+    # Github runners recently updated from Apple Clang 17 to 21
+    # This caused issues with the current custom hash solution
+    target_compile_options(VkLayer_utils PUBLIC
+        -Wno-deprecated-declarations
+    )
+endif()
+
 option(DEBUG_CAPTURE_KEYBOARD "Every QueueSubmit if F1 is pressed, a DebugCapture function will be called and a custom action can be done (default: OFF)" OFF)
 if (DEBUG_CAPTURE_KEYBOARD)
     target_compile_definitions(VkLayer_utils PUBLIC DEBUG_CAPTURE_KEYBOARD)
@@ -211,6 +220,7 @@ target_sources(vvl PRIVATE
     chassis/chassis_modification_state.h
     chassis/chassis_manual.cpp
     chassis/dispatch_object_manual.cpp
+    chassis/dispatch_object.h
     containers/range.h
     containers/range_map.h
     core_checks/cc_android.cpp
@@ -329,15 +339,17 @@ target_sources(vvl PRIVATE
     gpuav/descriptor_validation/gpuav_descriptor_set.h
     gpuav/debug_printf/debug_printf.cpp
     gpuav/debug_printf/debug_printf.h
-    gpuav/debug_descriptor/debug_descriptor.cpp
-    gpuav/debug_descriptor/debug_descriptor.h
     gpuav/instrumentation/gpuav_shader_instrumentor.cpp
     gpuav/instrumentation/gpuav_shader_instrumentor.h
     gpuav/instrumentation/gpuav_instrumentation.h
     gpuav/instrumentation/gpuav_instrumentation.cpp
     gpuav/instrumentation/buffer_device_address.cpp
-    gpuav/instrumentation/descriptor_checks.h
-    gpuav/instrumentation/descriptor_checks.cpp
+    gpuav/instrumentation/descriptor_checks_buffer.h
+    gpuav/instrumentation/descriptor_checks_buffer.cpp
+    gpuav/instrumentation/descriptor_checks_classic.h
+    gpuav/instrumentation/descriptor_checks_classic.cpp
+    gpuav/instrumentation/descriptor_checks_heap.h
+    gpuav/instrumentation/descriptor_checks_heap.cpp
     gpuav/instrumentation/mesh_shading.cpp
     gpuav/instrumentation/post_process_descriptor_indexing.cpp
     gpuav/instrumentation/register_validation.h
@@ -359,11 +371,14 @@ target_sources(vvl PRIVATE
     gpu_dump/gpu_dump.cpp
     gpu_dump/gpu_dump_copy_memory_indirect.cpp
     gpu_dump/gpu_dump_descriptor.cpp
+    gpu_dump/gpu_dump_descriptor_buffer.cpp
+    gpu_dump/gpu_dump_descriptor_heap.cpp
     gpu_dump/gpu_dump_device_generated_commands.cpp
     gpu_dump/gpu_dump_settings.h
     gpu_dump/gpu_dump_state.h
     gpu_dump/gpu_dump_state.cpp
     legacy/legacy_manual.cpp
+    legacy/legacy_settings.h
     object_tracker/object_lifetime_validation.cpp
     object_tracker/object_lifetime_validation.h
     state_tracker/bind_point.h
@@ -373,6 +388,8 @@ target_sources(vvl PRIVATE
     state_tracker/cmd_buffer_state.h
     state_tracker/data_graph_pipeline_session_state.cpp
     state_tracker/data_graph_pipeline_session_state.h
+    state_tracker/descriptor_hashing.cpp
+    state_tracker/descriptor_hashing.h
     state_tracker/descriptor_mode.h
     state_tracker/descriptor_set_layouts.cpp
     state_tracker/descriptor_set_layouts.h
@@ -483,6 +500,8 @@ target_sources(vvl PRIVATE
     sync/sync_common.h
     sync/sync_error_messages.cpp
     sync/sync_error_messages.h
+    sync/sync_event.cpp
+    sync/sync_event.h
     sync/sync_hazard_detection.cpp
     sync/sync_image.cpp
     sync/sync_image.h
@@ -501,6 +520,8 @@ target_sources(vvl PRIVATE
     sync/sync_validation.h
     thread_tracker/thread_safety_validation.cpp
     thread_tracker/thread_safety_validation.h
+    utils/descriptor_utils.cpp
+    utils/descriptor_utils.h
     utils/shader_utils.cpp
     utils/shader_utils.h
     utils/spirv_tools_utils.cpp
@@ -542,6 +563,12 @@ elseif(MINGW)
     target_sources(vvl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/${LAYER_NAME}.def)
     target_compile_options(vvl PRIVATE -Wa,-mbig-obj)
     set_target_properties(vvl PROPERTIES PREFIX "") # remove the prefix "lib" so the manifest json "library_path" matches
+elseif(WIN32)
+    # A GNU-frontend clang targeting *-windows-msvc (i.e. clang/clang++, not
+    # clang-cl) is detected as neither MSVC nor MINGW, so without this branch it
+    # falls through to the ELF --version-script case below, which the Windows
+    # linker (lld-link) rejects. Forward the MSVC-style .def through the driver.
+    target_link_options(vvl PRIVATE LINKER:/DEF:${CMAKE_CURRENT_SOURCE_DIR}/${LAYER_NAME}.def)
 elseif(APPLE)
 
 # IOS and APPLE can both be true (FYI)

@@ -9,11 +9,8 @@
 //   See: https://www.khronos.org/registry/vulkan/specs/misc/GL_KHR_vulkan_glsl.txt
 //
 
-#ifdef UNSAFE_BUFFERS_BUILD
-#    pragma allow_unsafe_buffers
-#endif
-
 #include "compiler/translator/spirv/TranslatorSPIRV.h"
+#include "common/unsafe_buffers.h"
 
 #include "common/PackedEnums.h"
 #include "common/utilities.h"
@@ -60,6 +57,7 @@ namespace sh
 namespace
 {
 constexpr ImmutableString kFlippedPointCoordName    = ImmutableString("flippedPointCoord");
+constexpr ImmutableString kFlippedSamplePositionName = ImmutableString("flippedSamplePosition");
 constexpr ImmutableString kFlippedFragCoordName     = ImmutableString("flippedFragCoord");
 constexpr ImmutableString kDefaultUniformsBlockName = ImmutableString("defaultUniforms");
 
@@ -898,13 +896,13 @@ bool TranslatorSPIRV::translateImpl(TIntermBlock *root,
                         static_cast<const TVariable *>(getSymbolTable().findBuiltIn(
                             ImmutableString("gl_SampleID"), getShaderVersion()));
                     assignSpirvId(sampleID->uniqueId(), vk::spirv::kIdSampleID);
-                    break;
+                    continue;
                 }
 
                 if (inputVarying.name == "gl_PointCoord")
                 {
                     usesPointCoord = true;
-                    break;
+                    continue;
                 }
 
                 if (inputVarying.name == "gl_FragCoord")
@@ -914,7 +912,7 @@ bool TranslatorSPIRV::translateImpl(TIntermBlock *root,
                         static_cast<const TVariable *>(getSymbolTable().findBuiltIn(
                             ImmutableString("gl_FragCoord"), getShaderVersion()));
                     assignSpirvId(fragCoord->uniqueId(), vk::spirv::kIdFragCoord);
-                    break;
+                    continue;
                 }
             }
 
@@ -977,7 +975,7 @@ bool TranslatorSPIRV::translateImpl(TIntermBlock *root,
                         ImmutableString("gl_SamplePosition"), getShaderVersion()));
                 if (!RotateAndFlipBuiltinVariable(this, root, GetMainSequence(root), swapXY, flipXY,
                                                   &getSymbolTable(), samplePositionBuiltin,
-                                                  kFlippedPointCoordName, pivot))
+                                                  kFlippedSamplePositionName, pivot))
                 {
                     return false;
                 }
@@ -1315,7 +1313,7 @@ void TranslatorSPIRV::assignSpirvIds(TIntermBlock *root)
             if (angle::BeginsWith(name.data(), "webgl_") &&
                 symbol->variable().symbolType() == SymbolType::AngleInternal)
             {
-                name = ImmutableString(name.data() + 3, name.length() - 3);
+                name = ImmutableString(ANGLE_UNSAFE_TODO(name.data() + 3), name.length() - 3);
             }
 
             ShaderVariable *output = FindShaderVariable(&mOutputVariables, name);

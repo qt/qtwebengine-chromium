@@ -41,6 +41,8 @@ variables:
   EIGEN_CI_IMAGE_LINUX_AMD64_SMOKETEST_RUN: "registry.gitlab.com/libeigen/eigen/ubuntu-24.04-amd64-smoketest-run:latest"
   EIGEN_CI_IMAGE_LINUX_ARM64_SMOKETEST_BUILD: "registry.gitlab.com/libeigen/eigen/ubuntu-24.04-arm64-smoketest-build:latest"
   EIGEN_CI_IMAGE_LINUX_ARM64_SMOKETEST_RUN: "registry.gitlab.com/libeigen/eigen/ubuntu-24.04-arm64-smoketest-run:latest"
+  EIGEN_CI_IMAGE_LINUX_RISCV64_SMOKETEST_BUILD: "registry.gitlab.com/libeigen/eigen/ubuntu-26.04-riscv64-smoketest-build:latest"
+  EIGEN_CI_IMAGE_LINUX_RISCV64_SMOKETEST_RUN: "registry.gitlab.com/libeigen/eigen/ubuntu-26.04-riscv64-smoketest-run:latest"
   # CMake build directory.
   EIGEN_CI_BUILDDIR: .build
   # Specify the CMake build target.

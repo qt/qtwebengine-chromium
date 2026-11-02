@@ -9,6 +9,7 @@
 #include <cstring>
 #include <vector>
 
+#include "core/fxcrt/compiler_specific.h"
 #include "core/fxcrt/fx_memcpy_wrappers.h"
 #include "core/fxcrt/numerics/safe_conversions.h"
 #include "public/fpdfview.h"
@@ -59,7 +60,7 @@ bool GetExternalData(const std::string& exe_path,
 
   // `result_data` takes ownership.
   void* copy = malloc(data_buffer.size());
-  FXSYS_memcpy(copy, data_buffer.data(), data_buffer.size());
+  UNSAFE_TODO(FXSYS_memcpy(copy, data_buffer.data(), data_buffer.size()));
   result_data->data = static_cast<char*>(copy);
   result_data->raw_size = pdfium::checked_cast<int>(data_buffer.size());
   return true;

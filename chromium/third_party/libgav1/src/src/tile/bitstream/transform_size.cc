@@ -13,11 +13,10 @@
 // limitations under the License.
 
 #include <algorithm>
+#include <cassert>
 #include <cstdint>
 #include <cstring>
 
-#include "src/dsp/constants.h"
-#include "src/obu_parser.h"
 #include "src/symbol_decoder_context.h"
 #include "src/tile.h"
 #include "src/utils/array_2d.h"
@@ -25,7 +24,6 @@
 #include "src/utils/common.h"
 #include "src/utils/constants.h"
 #include "src/utils/entropy_decoder.h"
-#include "src/utils/segmentation.h"
 #include "src/utils/stack.h"
 #include "src/utils/types.h"
 

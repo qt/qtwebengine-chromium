@@ -10,7 +10,7 @@
 namespace pdfium {
 namespace annotation_flags {
 
-// PDF 1.7 spec, table 8.16.
+// ISO 32000-1:2008 spec, table 165.
 constexpr uint32_t kInvisible = 1 << 0;
 constexpr uint32_t kHidden = 1 << 1;
 constexpr uint32_t kPrint = 1 << 2;

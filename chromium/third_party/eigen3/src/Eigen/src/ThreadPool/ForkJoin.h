@@ -61,7 +61,7 @@ class ForkJoinScheduler {
  public:
   // Runs `do_func` asynchronously for the range [start, end) with a specified
   // granularity. `do_func` should be of type `std::function<void(Index,
-  // Index)`. `done()` is called exactly once after all tasks have been executed.
+  // Index)>`. `done()` is called exactly once after all tasks have been executed.
   //
   // WARNING: like `ParallelFor` below, scheduling nested `ParallelForAsync`
   // calls (one task body invokes ParallelForAsync on the same pool) can deadlock
@@ -113,7 +113,7 @@ class ForkJoinScheduler {
   }
 
   static Index ComputeMidpoint(Index start, Index end, Index granularity) {
-    // Typical workloads choose initial values of `{start, end, granularity}` such that `start - end` and
+    // Typical workloads choose initial values of `{start, end, granularity}` such that `end - start` and
     // `granularity` are powers of two. Since modern processors usually implement (2^x)-way
     // set-associative caches, we minimize the number of cache misses by choosing midpoints that are not
     // powers of two (to avoid having two addresses in the main memory pointing to the same point in the

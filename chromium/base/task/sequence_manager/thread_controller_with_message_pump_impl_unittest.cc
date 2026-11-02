@@ -8,9 +8,11 @@
 #include <optional>
 #include <queue>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
+#include "base/features.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
@@ -147,11 +149,12 @@ class FakeSequencedTaskSource : public SequencedTaskSource {
     }
     task_execution_stack_.push_back(std::move(tasks_.front()));
     tasks_.pop();
+
     return SelectedTask(task_execution_stack_.back(),
                         TaskExecutionTraceLogger(),
                         static_cast<TaskQueue::QueuePriority>(
                             TaskQueue::DefaultQueuePriority::kNormalPriority),
-                        ThreadType::kDefault, QueueName::TEST_TQ);
+                        thread_type_, QueueName::TEST_TQ);
   }
 
   void DidRunTask(LazyNow& lazy_now) override {
@@ -183,7 +186,7 @@ class FakeSequencedTaskSource : public SequencedTaskSource {
     DCHECK(tasks_.empty() || delayed_run_time.is_null() ||
            tasks_.back().delayed_run_time < delayed_run_time);
     tasks_.emplace(
-        PostedTask(nullptr, std::move(task), posted_from, delayed_run_time,
+        PostedTask(task_runner_, std::move(task), posted_from, delayed_run_time,
                    base::subtle::DelayPolicy::kFlexibleNoSooner),
         EnqueueOrder::FromIntForTesting(13), EnqueueOrder(), queue_time);
   }
@@ -203,6 +206,12 @@ class FakeSequencedTaskSource : public SequencedTaskSource {
   void MaybeEmitTaskDetails(perfetto::EventContext& ctx,
                             const SelectedTask& selected_task) const override {}
 
+  void set_thread_type(ThreadType thread_type) { thread_type_ = thread_type; }
+
+  void set_task_runner(scoped_refptr<SingleThreadTaskRunner> task_runner) {
+    task_runner_ = std::move(task_runner);
+  }
+
  private:
   raw_ptr<TickClock> clock_;
   std::queue<Task> tasks_;
@@ -215,6 +224,8 @@ class FakeSequencedTaskSource : public SequencedTaskSource {
   // See also `SequenceManagerImpl::MainThreadOnly::task_execution_stack`.
   std::deque<Task> task_execution_stack_;
   bool next_wakeup_needs_high_res = false;
+  ThreadType thread_type_ = ThreadType::kDefault;
+  scoped_refptr<SingleThreadTaskRunner> task_runner_;
 };
 
 }  // namespace
@@ -225,7 +236,6 @@ class ThreadControllerWithMessagePumpTestBase : public testing::Test {
       bool can_run_tasks_by_batches)
       : settings_(SequenceManager::Settings::Builder()
                       .SetTickClock(&clock_)
-                      .SetShouldReportLockMetrics(true)
                       .SetCanRunTasksByBatches(can_run_tasks_by_batches)
                       .Build()),
         thread_controller_(
@@ -248,7 +258,10 @@ class ThreadControllerWithMessagePumpTestBase : public testing::Test {
     ThreadControllerPowerMonitor::OverrideUsePowerMonitorForTesting(true);
   }
 
-  void TearDown() override { ThreadControllerPowerMonitor::ResetForTesting(); }
+  void TearDown() override {
+    ThreadControllerPowerMonitor::ResetForTesting();
+    LockMetricsRecorder::DisableRecordingOnCurrentThreadForTesting();
+  }
 
   TimeTicks FromNow(TimeDelta delta) { return clock_.NowTicks() + delta; }
 
@@ -499,14 +512,43 @@ TEST_F(ThreadControllerWithMessagePumpTest,
 TEST_F(ThreadControllerWithMessagePumpTest, SetDefaultTaskRunner) {
   scoped_refptr<SingleThreadTaskRunner> task_runner1 =
       MakeRefCounted<FakeTaskRunner>();
-  thread_controller_.SetDefaultTaskRunner(task_runner1);
+  thread_controller_.SetDefaultTaskRunner(task_runner1, ThreadType::kDefault);
   EXPECT_EQ(task_runner1, SingleThreadTaskRunner::GetCurrentDefault());
 
   // Check that we are correctly supporting overriding.
   scoped_refptr<SingleThreadTaskRunner> task_runner2 =
       MakeRefCounted<FakeTaskRunner>();
-  thread_controller_.SetDefaultTaskRunner(task_runner2);
+  thread_controller_.SetDefaultTaskRunner(task_runner2, ThreadType::kDefault);
   EXPECT_EQ(task_runner2, SingleThreadTaskRunner::GetCurrentDefault());
+}
+
+TEST_F(ThreadControllerWithMessagePumpTest,
+       CurrentTaskRunnerInheritsThreadType) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitFromCommandLine("CurrentTaskRunnerInheritsThreadType", "");
+  thread_controller_.InitializeFeatures();
+
+  scoped_refptr<SingleThreadTaskRunner> default_task_runner =
+      MakeRefCounted<FakeTaskRunner>();
+  thread_controller_.SetDefaultTaskRunner(default_task_runner,
+                                          ThreadType::kDefault);
+
+  scoped_refptr<SingleThreadTaskRunner> low_priority_task_runner =
+      MakeRefCounted<FakeTaskRunner>();
+  task_source_.set_thread_type(ThreadType::kBackground);
+  task_source_.set_task_runner(low_priority_task_runner);
+
+  bool task_ran = false;
+  task_source_.AddTask(FROM_HERE, BindLambdaForTesting([&] {
+                         EXPECT_EQ(low_priority_task_runner,
+                                   SingleThreadTaskRunner::GetCurrentDefault());
+                         task_ran = true;
+                       }));
+
+  EXPECT_CALL(*message_pump_, Run(_))
+      .WillOnce([](MessagePump::Delegate* delegate) { delegate->DoWork(); });
+  RunLoop().Run();
+  EXPECT_TRUE(task_ran);
 }
 
 TEST_F(ThreadControllerWithMessagePumpTest, EnsureWorkScheduled) {
@@ -2218,40 +2260,47 @@ TEST_F(ThreadControllerWithMessagePumpTest, WorkIdIncrementedDelegateRun) {
 }
 
 TEST_F(ThreadControllerWithMessagePumpTest, LockMetricsReportedOnIdle) {
+  base::test::ScopedFeatureList scoped_feature_list_;
+  scoped_feature_list_.InitAndEnableFeature(
+      base::features::kRecordLockAcquisitionTime);
+
+  LockMetricsRecorder::SetAllowedThreadsForTesting(
+      {"LockMetricsReportedOnIdle"});
   constexpr TimeDelta test_sample1 = Microseconds(42);
   constexpr TimeDelta test_sample2 = Milliseconds(42);
-  const std::string base_lock_histogram_name =
-      StrCat({"Scheduling.ContendedLockAcquisitionTime.BaseLock.",
-              PlatformThread::GetName()});
-  const std::string pa_lock_histogram_name =
-      StrCat({"Scheduling.ContendedLockAcquisitionTime.PartitionAllocLock.",
-              PlatformThread::GetName()});
+  constexpr std::string_view kBaseLockHistogramName =
+      "Scheduling.ContendedLockAcquisitionTime.BaseLock."
+      "LockMetricsReportedOnIdle";
+  constexpr std::string_view kPartitionAllocLockHistogramName =
+      "Scheduling.ContendedLockAcquisitionTime.PartitionAllocLock."
+      "LockMetricsReportedOnIdle";
 
   SingleThreadTaskRunner::CurrentDefaultHandle handle(
       MakeRefCounted<FakeTaskRunner>());
-  ASSERT_TRUE(LockMetricsRecorder::Get()->IsCurrentThreadTarget());
+  LockMetricsRecorder::EnableRecordingOnCurrentThread(
+      "LockMetricsReportedOnIdle");
 
   HistogramTester histogram_tester;
 
-  LockMetricsRecorder::Get()->RecordLockAcquisitionTime(
+  base::LockMetricsRecorder::GetForCurrentThread()->RecordLockAcquisitionTime(
       test_sample1, LockMetricsRecorder::LockType::kBaseLock);
-  LockMetricsRecorder::Get()->RecordLockAcquisitionTime(
+  base::LockMetricsRecorder::GetForCurrentThread()->RecordLockAcquisitionTime(
       test_sample2, LockMetricsRecorder::LockType::kPartitionAllocLock);
-  LockMetricsRecorder::Get()->RecordLockAcquisitionTime(
+  base::LockMetricsRecorder::GetForCurrentThread()->RecordLockAcquisitionTime(
       test_sample2, LockMetricsRecorder::LockType::kPartitionAllocLock);
 
   EXPECT_CALL(*message_pump_, Run(_))
       .WillOnce([&](MessagePump::Delegate* delegate) {
-        histogram_tester.ExpectBucketCount(base_lock_histogram_name,
+        histogram_tester.ExpectBucketCount(kBaseLockHistogramName,
                                            test_sample1.InMicroseconds(), 0);
-        histogram_tester.ExpectBucketCount(pa_lock_histogram_name,
+        histogram_tester.ExpectBucketCount(kPartitionAllocLockHistogramName,
                                            test_sample2.InMicroseconds(), 0);
 
         thread_controller_.DoIdleWork();
 
-        histogram_tester.ExpectBucketCount(base_lock_histogram_name,
+        histogram_tester.ExpectBucketCount(kBaseLockHistogramName,
                                            test_sample1.InMicroseconds(), 1);
-        histogram_tester.ExpectBucketCount(pa_lock_histogram_name,
+        histogram_tester.ExpectBucketCount(kPartitionAllocLockHistogramName,
                                            test_sample2.InMicroseconds(), 2);
       });
 

@@ -16,23 +16,26 @@ if (!build_with_chromium) {
 
   config("standalone_external_libs") {
     defines = []
+    include_dirs = []
     if (have_external_libs) {
       defines += [ "CAST_STANDALONE_SENDER_HAVE_EXTERNAL_LIBS" ]
+      include_dirs +=
+          ffmpeg_include_dirs + libopus_include_dirs + libvpx_include_dirs
     }
     if (have_libaom) {
       defines += [ "CAST_STANDALONE_SENDER_HAVE_LIBAOM" ]
+      include_dirs += libaom_include_dirs
     }
   }
 
-  openscreen_executable("cast_sender") {
+  openscreen_source_set("cast_sender_core") {
     testonly = true
-    visibility += [ "../..:gn_all" ]
-    deps = [
+    visibility += [ "../*" ]
+    public_deps = [
       "../../discovery:dnssd",
       "../../discovery:public",
       "../../platform",
       "../../platform:standalone_impl",
-      "../../third_party/getopt",
       "../../third_party/jsoncpp",
       "../../util",
       "../common:certificate_boringssl",
@@ -42,8 +45,9 @@ if (!build_with_chromium) {
       "../streaming:common",
       "../streaming:sender",
     ]
+    deps = []
 
-    sources = [ "main.cc" ]
+    sources = []
     include_dirs = []
     lib_dirs = []
     libs = []
@@ -69,7 +73,7 @@ if (!build_with_chromium) {
         "streaming_vpx_encoder.cc",
         "streaming_vpx_encoder.h",
       ]
-      deps += [ "../standalone_common:ffmpeg_glue" ]
+      public_deps += [ "../standalone_common:ffmpeg_glue" ]
 
       include_dirs +=
           ffmpeg_include_dirs + libopus_include_dirs + libvpx_include_dirs
@@ -77,8 +81,6 @@ if (!build_with_chromium) {
                   libvpx_lib_dirs
       libs += ffmpeg_libs + libopus_libs + libvpx_libs
 
-      # LibAOM support currently recommends building from source, so is included
-      # separately here.
       if (have_libaom) {
         sources += [
           "streaming_av1_encoder.cc",
@@ -92,7 +94,19 @@ if (!build_with_chromium) {
     }
 
     configs = [ "../common:certificate_config" ]
+    public_configs = [ ":standalone_external_libs" ]
+  }
 
+  openscreen_executable("cast_sender") {
+    testonly = true
+    visibility += [ "../..:gn_all" ]
+    deps = [
+      ":cast_sender_core",
+      "../../third_party/getopt",
+    ]
+
+    sources = [ "main.cc" ]
+    configs = [ "../common:certificate_config" ]
     public_configs = [ ":standalone_external_libs" ]
   }
 }

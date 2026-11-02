@@ -16,3 +16,8 @@ group("llvm-libc-shared") {
 
   public_configs = [ ":llvm-libc-config" ]
 }
+
+group("headers") {
+  visibility = [ "//v8:v8_libbase" ]
+  public_configs = [ ":llvm-libc-config" ]
+}

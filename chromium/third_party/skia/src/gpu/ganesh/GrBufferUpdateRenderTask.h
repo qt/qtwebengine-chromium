@@ -9,7 +9,7 @@
 #define GrBufferUpdateRenderTask_DEFINED
 
 #include "include/core/SkRefCnt.h"
-#include "include/private/base/SkDebug.h"
+#include "include/private/SkDebug.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/ganesh/GrRenderTask.h"
 
@@ -37,7 +37,7 @@ private:
     ExpectedOutcome onMakeClosed(GrRecordingContext*, SkIRect* targetUpdateBounds) override {
         return ExpectedOutcome::kTargetUnchanged;  // no target
     }
-    bool onExecute(GrOpFlushState*) override;
+    ExecutionResult onExecute(GrOpFlushState*) override;
 
 #if defined(GPU_TEST_UTILS)
     const char* name() const final { return "BufferUpdate"; }

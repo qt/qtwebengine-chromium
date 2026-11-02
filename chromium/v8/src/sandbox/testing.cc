@@ -4,11 +4,13 @@
 
 #include "src/sandbox/testing.h"
 
+#include <cstring>
 #include <vector>
 
 #include "src/api/api-inl.h"
 #include "src/api/api-natives.h"
 #include "src/base/platform/mutex.h"
+#include "src/base/strong-alias.h"
 #include "src/base/virtual-address-space.h"
 #include "src/builtins/builtins.h"
 #include "src/common/globals.h"
@@ -17,12 +19,16 @@
 #include "src/heap/heap.h"
 #include "src/heap/read-only-spaces.h"
 #include "src/objects/backing-store.h"
+#include "src/objects/contexts.h"
 #include "src/objects/feedback-vector.h"
 #include "src/objects/fixed-array.h"
+#include "src/objects/fixed-primitive-array-inl.h"
 #include "src/objects/instance-type.h"
 #include "src/objects/js-objects.h"
+#include "src/objects/tagged-field-inl.h"
 #include "src/objects/templates.h"
 #include "src/sandbox/sandbox.h"
+#include "src/sandbox/trusted-pointer-table-inl.h"
 
 #ifdef V8_INTL_SUPPORT
 #include "src/objects/js-segments.h"
@@ -71,11 +77,40 @@ void ThrowTypeError(v8::Isolate* isolate, std::string_view message) {
 
 namespace {
 bool IsLocatedInMappedMemory(Address address, Heap* heap) {
+#if CONTIGUOUS_COMPRESSED_READ_ONLY_SPACE_BOOL
+  // Under contiguous compressed read-only space, any address inside the
+  // contiguous read-only reservation belongs to the read-only space. This
+  // check is 100% safe against crashes on arbitrary invalid addresses because
+  // it performs only bitwise operations on integers without dereferencing any
+  // memory.
+  if ((address & kContiguousReadOnlySpaceMask) == 0) {
+    return heap->read_only_space()->ContainsSlow(address);
+  }
+#else
+  // Fallback check for read-only space when contiguous compression is not used.
+  if (heap->read_only_space()->ContainsSlow(address)) {
+    return true;
+  }
+#endif
+
+  // Check the local memory allocator's normal and large pages.
   if (heap->memory_allocator()->LookupChunkContainingAddress(address) !=
       nullptr) {
     return true;
   }
-  return heap->read_only_space()->ContainsSlow(address);
+
+  // Also check the shared heap memory allocator if this isolate uses a shared
+  // space.
+  if (heap->isolate()->has_shared_space() &&
+      heap->isolate()
+              ->shared_space_isolate()
+              ->heap()
+              ->memory_allocator()
+              ->LookupChunkContainingAddress(address) != nullptr) {
+    return true;
+  }
+
+  return false;
 }
 
 bool IsValidHeapObject(Address addr, Heap* heap) {
@@ -148,7 +183,7 @@ void SandboxMemoryView(const v8::FunctionCallbackInfo<v8::Value>& info) {
   Factory* factory = reinterpret_cast<Isolate*>(isolate)->factory();
   std::unique_ptr<BackingStore> memory = BackingStore::WrapAllocation(
       reinterpret_cast<void*>(sandbox->base() + offset), size,
-      v8::BackingStore::EmptyDeleter, nullptr, SharedFlag::kNo);
+      v8::BackingStore::EmptyDeleter, nullptr, SharedFlag{false});
   if (!memory) {
     isolate->ThrowError("Out of memory: MemoryView backing store");
     return;
@@ -450,6 +485,28 @@ void SandboxGetFieldOffset(const v8::FunctionCallbackInfo<v8::Value>& info) {
   }
 }
 
+// Sandbox.unpublishTrustedHandle(Number) -> Void
+void SandboxUnpublishTrustedHandle(
+    const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(ValidateCallbackInfo(info));
+  v8::Isolate* isolate = info.GetIsolate();
+  Isolate* i_isolate = reinterpret_cast<Isolate*>(isolate);
+
+  if (info.Length() < 1) {
+    ThrowTypeError(isolate, "First argument must be a handle");
+    return;
+  }
+  uint32_t handle_value;
+  if (!info[0]->Uint32Value(isolate->GetCurrentContext()).To(&handle_value)) {
+    ThrowTypeError(isolate, "First argument must be a handle");
+    return;
+  }
+
+  IndirectPointerHandle handle =
+      static_cast<IndirectPointerHandle>(handle_value);
+  i_isolate->trusted_pointer_table().Unpublish(handle);
+}
+
 // Returns an array of all builtin names, index of the name is the builtin id.
 //
 // This can be used to determine the id of a specific builtin for use with
@@ -664,6 +721,34 @@ void SandboxReadObjectField(const v8::FunctionCallbackInfo<v8::Value>& info) {
   }
 }
 
+// Sandbox.dereferenceTaggedPointerField(Object, Number|String) -> Object
+//
+// Reads a tagged pointer field from an object and returns the pointed-to
+// object. The second argument is the field offset (Number) or field name
+// (String). This is a convenience method that combines reading the compressed
+// pointer, decompressing it, and wrapping the result in a V8 handle.
+// Note: this method specifically handles standard tagged (compressed) pointers.
+// If used on fields containing ExternalPointers or TrustedPointerHandles, it
+// will return incorrect results or null.
+void SandboxDereferenceTaggedPointerField(
+    const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(ValidateCallbackInfo(info));
+  v8::Isolate* isolate = info.GetIsolate();
+
+  ResolvedField field;
+  if (!ResolveObjectField(info, 2, &field)) return;
+
+  Isolate* i_isolate = reinterpret_cast<Isolate*>(isolate);
+  Tagged<Object> value = TaggedField<Object>::load(field.holder, field.offset);
+
+  if (IsHeapObject(value)) {
+    Handle<HeapObject> handle(Cast<HeapObject>(value), i_isolate);
+    info.GetReturnValue().Set(ToApiHandle<v8::Value>(handle));
+  } else {
+    info.GetReturnValue().Set(v8::Null(isolate));
+  }
+}
+
 // Corrupt one field of an object without setting up a memory view first.
 //
 //   Sandbox.corruptObjectField(obj, offset, value, bit_size);
@@ -834,6 +919,8 @@ void SandboxTesting::InstallMemoryCorruptionApi(Isolate* isolate) {
   InstallFunction(isolate, sandbox, SandboxGetInstanceTypeIdFor,
                   "getInstanceTypeIdFor", 1);
   InstallFunction(isolate, sandbox, SandboxGetFieldOffset, "getFieldOffset", 2);
+  InstallFunction(isolate, sandbox, SandboxUnpublishTrustedHandle,
+                  "unpublishTrustedHandle", 1);
 
   InstallFunction(isolate, sandbox, SandboxGetBuiltinNames, "getBuiltinNames",
                   0);
@@ -842,6 +929,8 @@ void SandboxTesting::InstallMemoryCorruptionApi(Isolate* isolate) {
                   "setFunctionCodeToBuiltin", 2);
   InstallFunction(isolate, sandbox, SandboxReadObjectField, "readObjectField",
                   2);
+  InstallFunction(isolate, sandbox, SandboxDereferenceTaggedPointerField,
+                  "dereferenceTaggedPointerField", 2);
   InstallFunction(isolate, sandbox, SandboxCorruptObjectField,
                   "corruptObjectField", 3);
 
@@ -1096,12 +1185,13 @@ void CrashFilter(int signal, siginfo_t* info, void* context) {
       }
 
       if (info->si_code == SI_KERNEL && faultaddr == 0) {
-        // This combination appears to indicate a crash at a non-canonical
-        // address on Linux. Crashes at non-canonical addresses are for example
-        // caused by failed external pointer type checks. Memory accesses that
-        // _always_ land at a non-canonical address are not exploitable and so
-        // these are filtered out here. However, testcases need to be written
-        // with this in mind and must cause crashes at valid addresses.
+        // This combination indicates a crash at a non-canonical address on some
+        // architectures on Linux (e.g., x64). Crashes at non-canonical
+        // addresses are for example caused by failed external pointer type
+        // checks. Memory accesses that _always_ land at a non-canonical address
+        // are not exploitable and so these are filtered out here. However,
+        // testcases need to be written with this in mind and must cause crashes
+        // at valid addresses.
         FilterCrash(
             "Caught harmless memory access violation (non-canonical address).");
       }
@@ -1114,6 +1204,14 @@ void CrashFilter(int signal, siginfo_t* info, void* context) {
         // of the address is set, and if so assume that it's a kernel address.
         FilterCrash(
             "Caught harmless memory access violation (kernel space address).");
+      }
+
+      if ((faultaddr >> Sandbox::kMaxVirtualAddressBitsForCrashFilter) != 0) {
+        // On some architectures (e.g., ARM64) unaddressable dereferences
+        // trigger SEGV_MAPERR and the actual faultaddr (instead of SI_KERNEL
+        // with nullptr). Filter out similarly to the non-canonical case above.
+        FilterCrash(
+            "Caught harmless memory access violation (unaddressable access).");
       }
 
       if (faultaddr < 0x1000) {
@@ -1231,22 +1329,63 @@ void CrashFilter(int signal, siginfo_t* info, void* context) {
   // (after uninstalling itself), so we need to allow for that.
 }
 
+#ifdef V8_USE_ADDRESS_SANITIZER
+bool IsHarmlessMemcpyParamOverlap() {
+  const void* src_addr = nullptr;
+  size_t src_size = 0;
+  const void* dest_addr = nullptr;
+  size_t dest_size = 0;
+  if (!__asan_get_report_src_address(&src_addr, &src_size) ||
+      !__asan_get_report_dest_address(&dest_addr, &dest_size)) {
+    PrintToStderr(
+        "Warning: ASan report indicates a memcpy-param-overlap, but we "
+        "couldn't obtain the src/dest ranges.\n");
+    return false;
+  }
+
+  if (src_size == 0 || dest_size == 0) {
+    PrintToStderr(
+        "Warning: ASan report indicates a memcpy-param-overlap, but "
+        "one or both of the sizes is 0.\n");
+    return false;
+  }
+
+  Address src_begin = reinterpret_cast<Address>(src_addr);
+  Address dest_begin = reinterpret_cast<Address>(dest_addr);
+  Address src_last = src_begin + src_size - 1;
+  Address dest_last = dest_begin + dest_size - 1;
+
+  Sandbox* sandbox = Sandbox::current();
+  return src_begin <= src_last && dest_begin <= dest_last &&
+         sandbox->ReservationContains(src_begin) &&
+         sandbox->ReservationContains(src_last) &&
+         sandbox->ReservationContains(dest_begin) &&
+         sandbox->ReservationContains(dest_last);
+}
+#endif  // V8_USE_ADDRESS_SANITIZER
+
 #ifdef V8_USE_ANY_SANITIZER
 void SanitizerFaultHandler() {
 #ifdef V8_USE_ADDRESS_SANITIZER
   if (__asan_report_present()) {
-    Address faultaddr = reinterpret_cast<Address>(__asan_get_report_address());
-
-    if (faultaddr == kNullAddress) {
+    const char* const description = __asan_get_report_description();
+    const Address faultaddr =
+        reinterpret_cast<Address>(__asan_get_report_address());
+    const MemoryAccessType access_type = __asan_get_report_access_type() == 0
+                                             ? MemoryAccessType::kRead
+                                             : MemoryAccessType::kWrite;
+    if (description && strcmp(description, "memcpy-param-overlap") == 0) {
+      if (IsHarmlessMemcpyParamOverlap()) {
+        FilterCrash(
+            "Caught harmless ASan fault (overlapping memcpy safely contained "
+            "in the sandbox).");
+      }
+      // Otherwise, fall through to the sandbox report.
+    } else if (faultaddr == kNullAddress) {
       FilterCrash(
           "Caught ASan fault without a fault address. Ignoring it as we cannot "
           "check if it is a sandbox violation.");
-    }
-
-    MemoryAccessType access_type = __asan_get_report_access_type() == 0
-                                       ? MemoryAccessType::kRead
-                                       : MemoryAccessType::kWrite;
-    if (IsCrashInSafeMemoryRegion(faultaddr, access_type)) {
+    } else if (IsCrashInSafeMemoryRegion(faultaddr, access_type)) {
       FilterCrash("Caught harmless ASan fault (inside safe region).");
     }
   }
@@ -1358,8 +1497,11 @@ SandboxTesting::InstanceTypeMap& SandboxTesting::GetInstanceTypeMap() {
     types["SHARED_FUNCTION_INFO"] = SHARED_FUNCTION_INFO_TYPE;
     types["FEEDBACK_CELL_TYPE"] = FEEDBACK_CELL_TYPE;
     types["FEEDBACK_VECTOR_TYPE"] = FEEDBACK_VECTOR_TYPE;
+    types["FIXED_ARRAY_TYPE"] = FIXED_ARRAY_TYPE;
+    types["FIXED_DOUBLE_ARRAY_TYPE"] = FIXED_DOUBLE_ARRAY_TYPE;
     types["WEAK_HOMOMORPHIC_FIXED_ARRAY_TYPE"] =
         WEAK_HOMOMORPHIC_FIXED_ARRAY_TYPE;
+    types["NATIVE_CONTEXT_TYPE"] = NATIVE_CONTEXT_TYPE;
 #ifdef V8_ENABLE_WEBASSEMBLY
     types["WASM_MODULE_OBJECT_TYPE"] = WASM_MODULE_OBJECT_TYPE;
     types["WASM_INSTANCE_OBJECT_TYPE"] = WASM_INSTANCE_OBJECT_TYPE;
@@ -1382,12 +1524,17 @@ SandboxTesting::FieldOffsetMap& SandboxTesting::GetFieldOffsetMap() {
   auto& fields = *g_known_fields.get();
   bool is_initialized = fields.size() != 0;
   if (!is_initialized) {
+    fields[FIXED_DOUBLE_ARRAY_TYPE]["length"] =
+        offsetof(FixedDoubleArray, length_);
+    fields[FIXED_DOUBLE_ARRAY_TYPE]["data"] =
+        FixedDoubleArray::OffsetOfElementAt(0);
     fields[JS_FUNCTION_TYPE]["dispatch_handle"] =
         offsetof(JSFunction, dispatch_handle_);
     fields[JS_FUNCTION_TYPE]["shared_function_info"] =
         offsetof(JSFunction, shared_function_info_);
     fields[JS_FUNCTION_TYPE]["feedback_cell"] =
         offsetof(JSFunction, feedback_cell_);
+    fields[JS_FUNCTION_TYPE]["context"] = offsetof(JSFunction, context_);
     fields[JS_BOUND_FUNCTION_TYPE]["bound_arguments"] =
         offsetof(JSBoundFunction, bound_arguments_);
     fields[JS_ARRAY_TYPE]["elements"] = offsetof(JSObject, elements_);
@@ -1409,6 +1556,8 @@ SandboxTesting::FieldOffsetMap& SandboxTesting::GetFieldOffsetMap() {
     }
     fields[SLICED_ONE_BYTE_STRING_TYPE]["parent"] =
         offsetof(SlicedString, parent_);
+    fields[SLICED_ONE_BYTE_STRING_TYPE]["offset"] =
+        offsetof(SlicedString, offset_);
     fields[CONS_ONE_BYTE_STRING_TYPE]["first"] = offsetof(ConsString, first_);
     fields[CONS_ONE_BYTE_STRING_TYPE]["second"] = offsetof(ConsString, second_);
     fields[SHARED_FUNCTION_INFO_TYPE]["trusted_function_data"] =
@@ -1431,8 +1580,12 @@ SandboxTesting::FieldOffsetMap& SandboxTesting::GetFieldOffsetMap() {
     fields[FEEDBACK_VECTOR_TYPE]["length"] = offsetof(FeedbackVector, length_);
     fields[FEEDBACK_VECTOR_TYPE]["data"] =
         FeedbackVector::kRawFeedbackSlotsOffset;
+    fields[FIXED_ARRAY_TYPE]["length"] = offsetof(FixedArray, length_);
+    fields[FIXED_ARRAY_TYPE]["data"] = FixedArray::kHeaderSize;
     fields[WEAK_HOMOMORPHIC_FIXED_ARRAY_TYPE]["length"] =
         offsetof(WeakFixedArray, length_);
+    fields[NATIVE_CONTEXT_TYPE]["microtask_queue"] =
+        NativeContext::kMicrotaskQueueOffset;
 #ifdef V8_INTL_SUPPORT
     fields[JS_SEGMENTS_TYPE]["icu_iterator_with_text"] =
         offsetof(JSSegments, icu_iterator_with_text_);
@@ -1444,6 +1597,8 @@ SandboxTesting::FieldOffsetMap& SandboxTesting::GetFieldOffsetMap() {
         offsetof(WasmModuleObject, script_);
     fields[WASM_INSTANCE_OBJECT_TYPE]["module_object"] =
         offsetof(WasmInstanceObject, module_object_);
+    fields[WASM_INSTANCE_OBJECT_TYPE]["trusted_data"] =
+        offsetof(WasmInstanceObject, trusted_data_);
     fields[WASM_FUNC_REF_TYPE]["trusted_internal"] =
         offsetof(WasmFuncRef, trusted_internal_);
     fields[WASM_TABLE_OBJECT_TYPE]["entries"] =
@@ -1456,11 +1611,15 @@ SandboxTesting::FieldOffsetMap& SandboxTesting::GetFieldOffsetMap() {
         offsetof(WasmTableObject, raw_type_);
     fields[WASM_TABLE_OBJECT_TYPE]["trusted_dispatch_table"] =
         offsetof(WasmTableObject, trusted_dispatch_table_);
+    fields[WASM_TABLE_OBJECT_TYPE]["trusted_data"] =
+        offsetof(WasmTableObject, trusted_data_);
     fields[WASM_TAG_OBJECT_TYPE]["tag"] = offsetof(WasmTagObject, tag_);
-    fields[WASM_RESUME_DATA_TYPE]["trusted_suspender"] =
-        offsetof(WasmResumeData, trusted_suspender_);
+    fields[WASM_GLOBAL_OBJECT_TYPE]["buffer"] =
+        offsetof(WasmGlobalObject, buffer_);
     fields[WASM_GLOBAL_OBJECT_TYPE]["raw_type"] =
         offsetof(WasmGlobalObject, raw_type_);
+    fields[WASM_RESUME_DATA_TYPE]["trusted_suspender"] =
+        offsetof(WasmResumeData, trusted_suspender_);
 #endif  // V8_ENABLE_WEBASSEMBLY
   }
   return fields;

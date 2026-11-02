@@ -9,11 +9,13 @@
 #include <unordered_set>
 #include <vector>
 
+#include "base/byte_size.h"
 #include "base/memory/weak_ptr.h"
 #include "base/run_loop.h"
 #include "base/time/time.h"
 #include "components/page_load_metrics/browser/metrics_lifecycle_observer.h"
 #include "components/page_load_metrics/browser/page_load_tracker.h"
+#include "components/page_load_metrics/common/page_load_metrics.mojom.h"
 #include "content/public/browser/render_frame_host.h"
 #include "third_party/blink/public/common/use_counter/use_counter_feature_tracker.h"
 #include "ui/gfx/geometry/size.h"
@@ -104,6 +106,9 @@ class PageLoadMetricsTestWaiter : public MetricsLifecycleObserver {
   // Add a single UseCounterFeature expectation.
   void AddUseCounterFeatureExpectation(const blink::UseCounterFeature& feature);
 
+  // Add a custom user timing mark expectation.
+  void AddCustomUserTimingMarkExpectation(const std::string& mark_name);
+
   // Wait for the subframe to navigate at least once.
   void AddSubframeNavigationExpectation();
 
@@ -116,7 +121,7 @@ class PageLoadMetricsTestWaiter : public MetricsLifecycleObserver {
 
   // Add aggregate received resource bytes expectation.
   void AddMinimumNetworkBytesExpectation(
-      base::ByteCount expected_minimum_network_bytes);
+      base::ByteSize expected_minimum_network_bytes);
 
   // Add aggregate time spent in cpu for page expectation.
   void AddMinimumAggregateCpuTimeExpectation(base::TimeDelta minimum);
@@ -162,11 +167,11 @@ class PageLoadMetricsTestWaiter : public MetricsLifecycleObserver {
   // All expectations are reset when the wait ends.
   void Wait();
 
-  base::ByteCount current_network_bytes() const {
+  base::ByteSize current_network_bytes() const {
     return current_network_bytes_;
   }
 
-  base::ByteCount current_network_body_bytes() const {
+  base::ByteSize current_network_body_bytes() const {
     return current_network_body_bytes_;
   }
 
@@ -294,6 +299,11 @@ class PageLoadMetricsTestWaiter : public MetricsLifecycleObserver {
       content::RenderFrameHost* rfh,
       const std::vector<blink::UseCounterFeature>& features);
 
+  void OnCustomUserTimingMarksObserved(
+      content::RenderFrameHost* rfh,
+      const std::vector<page_load_metrics::mojom::CustomUserTimingMarkPtr>&
+          timings);
+
   // Updates |observed_.layout_shift_| to record any update of new layout
   // shift. Stops waiting if expectations are satisfied after update.
   void OnPageRenderDataUpdate(const mojom::FrameRenderDataUpdate& render_data,
@@ -339,6 +349,7 @@ class PageLoadMetricsTestWaiter : public MetricsLifecycleObserver {
   bool LargestContentfulPaintGreaterThanExpectationSatisfied() const;
   bool SoftNavigationCountExpectationSatisfied() const;
   bool SoftNavigationLargestContentfulPaintExpectationSatisfied() const;
+  bool CustomUserTimingMarksExpectationsSatisfied() const;
 
   void AddObserver(page_load_metrics::PageLoadTracker* tracker);
 
@@ -354,6 +365,7 @@ class PageLoadMetricsTestWaiter : public MetricsLifecycleObserver {
     TimingFieldBitSet subframe_fields_;
     base::flat_map<size_t, TimingFieldBitSet> page_bfcache_restore_fields_;
     blink::UseCounterFeatureTracker feature_tracker_;
+    std::unordered_set<std::string> custom_user_timing_marks_;
     int loading_behavior_flags_ = 0;
     bool subframe_navigation_ = false;
     bool subframe_data_ = false;
@@ -369,16 +381,16 @@ class PageLoadMetricsTestWaiter : public MetricsLifecycleObserver {
   State observed_;
 
   int current_complete_resources_ = 0;
-  base::ByteCount current_network_bytes_;
+  base::ByteSize current_network_bytes_;
 
   // The last observed main frame ad rectangle for each id. This doesn't
   // get reset in `ResetExpectations`.
   base::flat_map<int, gfx::Rect> main_frame_ad_rects_;
 
   // Network body bytes are only counted for complete resources.
-  base::ByteCount current_network_body_bytes_;
+  base::ByteSize current_network_body_bytes_;
   int expected_minimum_complete_resources_ = 0;
-  base::ByteCount expected_minimum_network_bytes_;
+  base::ByteSize expected_minimum_network_bytes_;
 
   // Total time spent int the cpu aggregated across the frames on the page.
   base::TimeDelta current_aggregate_cpu_time_;

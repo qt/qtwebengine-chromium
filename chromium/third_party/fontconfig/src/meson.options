@@ -9,6 +9,9 @@ option('nls', type : 'feature', value : 'auto', yield: true,
   description : 'Enable native language support (translations)')
 option('tests', type : 'feature', value : 'auto', yield : true,
   description: 'Enable unit tests')
+option('tests-bwrap', type: 'feature', value: 'auto')
+option('tests-external-fonts', type: 'feature', value: 'enabled', yield: true,
+  description: 'Download external test fonts (requires network access)')
 option('tools', type : 'feature', value : 'auto', yield : true,
   description: 'Build command-line tools (fc-list, fc-query, etc.)')
 option('cache-build', type : 'feature', value : 'enabled',

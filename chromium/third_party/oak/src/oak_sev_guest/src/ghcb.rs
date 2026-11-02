@@ -20,19 +20,19 @@
 
 use bitflags::bitflags;
 use x86_64::{
-    structures::paging::{page::NotGiantPageSize, PageSize, PhysFrame, Size2MiB, Size4KiB},
     PhysAddr, VirtAddr,
+    structures::paging::{PageSize, PhysFrame, Size2MiB, Size4KiB, page::NotGiantPageSize},
 };
 use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes};
 
 use crate::{
+    Translator,
     cpuid::{CpuidInput, CpuidOutput},
     instructions::PageSize as SevPageSize,
     msr::{
-        register_ghcb_location, set_ghcb_address_and_exit, GhcbGpa, PageAssignment,
-        RegisterGhcbGpaError, RegisterGhcbGpaRequest,
+        GhcbGpa, PageAssignment, RegisterGhcbGpaError, RegisterGhcbGpaRequest,
+        register_ghcb_location, set_ghcb_address_and_exit,
     },
-    Translator,
 };
 
 /// The size of the GHCB page.
@@ -135,7 +135,7 @@ pub struct Ghcb {
     pub cpl: u8,
     /// Reserved. Must be 0.
     _reserved_1: [u8; 116],
-    /// The value of the IA32_XSS model-specific reqister.
+    /// The value of the IA32_XSS model-specific register.
     pub xss: u64,
     /// Reserved. Must be 0.
     _reserved_2: [u8; 24],
@@ -290,32 +290,7 @@ impl Ghcb {
 
     /// Zeroes the entire GHCB.
     pub fn reset(&mut self) {
-        reset_slice(&mut self._reserved_0[..]);
-        self.cpl = 0;
-        reset_slice(&mut self._reserved_1[..]);
-        self.xss = 0;
-        reset_slice(&mut self._reserved_2[..]);
-        self.dr7 = 0;
-        reset_slice(&mut self._reserved_3[..]);
-        self.rax = 0;
-        reset_slice(&mut self._reserved_4[..]);
-        self.rbx = 0;
-        self.rcx = 0;
-        self.rcx = 0;
-        reset_slice(&mut self._reserved_5[..]);
-        self.sw_exit_code = 0;
-        self.sw_exit_info_1 = 0;
-        self.sw_exit_info_2 = 0;
-        self.sw_scratch = 0;
-        reset_slice(&mut self._reserved_6[..]);
-        self.xcr0 = 0;
-        self.valid_bitmap = ValidBitmap::empty();
-        self.x87_state_gpa = 0;
-        reset_slice(&mut self._reserved_7[..]);
-        reset_slice(&mut self.shared_buffer[..]);
-        reset_slice(&mut self._reserved_8[..]);
-        self.protocol_version = 0;
-        self.ghcb_usage = 0;
+        self.zero();
     }
 }
 
@@ -663,13 +638,6 @@ where
             // For now we treat all non-zero return values as unrecoverable errors.
             Err("VMGEXIT call returned an error")
         }
-    }
-}
-
-/// Resets a byte slice to all zeroes.
-fn reset_slice(slice: &mut [u8]) {
-    for byte in slice {
-        *byte = 0;
     }
 }
 

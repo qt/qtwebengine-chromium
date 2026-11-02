@@ -20,7 +20,7 @@ const UIStrings = {
    * @description Tooltip text that appears when hovering over the 'Invalid user entry' attribute name under the Computed Properties section in the Accessibility pane of the Elements pane
    */
   ifTrueThisElementsUserentered:
-      'If true, this element\'s user-entered value does not conform to validation requirement.',
+      'If true, this element’s user-entered value does not conform to validation requirement.',
   /**
    * @description Accessibility attribute name that appears under the Computed Properties section in the Accessibility pane of the Elements pane
    */
@@ -153,7 +153,7 @@ const UIStrings = {
   /**
    * @description Tooltip text that appears when hovering over the 'Orientation' attribute name under the Computed Properties section in the Accessibility pane of the Elements pane
    */
-  whetherThisLinearElements: 'Whether this linear element\'s orientation is horizontal or vertical.',
+  whetherThisLinearElements: 'Whether this linear element’s orientation is horizontal or vertical.',
   /**
    * @description Accessibility attribute name that appears under the Computed Properties section in the Accessibility pane of the Elements pane
    */

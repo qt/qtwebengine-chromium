@@ -2,20 +2,29 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import sinon from 'sinon';
+
 import * as SDK from '../core/sdk/sdk.js';
 import * as Protocol from '../generated/protocol.js';
 
-import {
-  clearMockConnectionResponseHandler,
-  type ProtocolCommandHandler,
-  setMockConnectionResponseHandler
-} from './MockConnection.js';
+import type {MockCDPConnection} from './MockCDPConnection.js';
+
+type GetEnvironmentVariablesCallback = (params: unknown) =>
+    Omit<Protocol.CSS.GetEnvironmentVariablesResponse, 'getError'>|{getError(): string}|
+    PromiseLike<Omit<Protocol.CSS.GetEnvironmentVariablesResponse, 'getError'>|{getError(): string}>;
+
+export function mockGetEnvironmentVariables(connection: MockCDPConnection,
+                                            environmentVariables: Record<string, string> = {}) {
+  connection.setHandler('CSS.getEnvironmentVariables', null);
+  connection.setSuccessHandler('CSS.getEnvironmentVariables', () => ({environmentVariables}));
+}
 
 export function getMatchedStylesWithStylesheet(payload: {
   cssModel: SDK.CSSModel.CSSModel,
   origin: Protocol.CSS.StyleSheetOrigin,
   styleSheetId: Protocol.DOM.StyleSheetId,
-  getEnvironmentVariablesCallback?: ProtocolCommandHandler<'CSS.getEnvironmentVariables'>,
+  connection: MockCDPConnection,
+  getEnvironmentVariablesCallback?: GetEnvironmentVariablesCallback,
 }&Partial<Protocol.CSS.CSSStyleSheetHeader>&Partial<SDK.CSSMatchedStyles.CSSMatchedStylesPayload>):
     Promise<SDK.CSSMatchedStyles.CSSMatchedStyles> {
   payload.cssModel.styleSheetAdded({
@@ -33,16 +42,17 @@ export function getMatchedStylesWithStylesheet(payload: {
     endColumn: 0,
     ...payload,
   });
-  return getMatchedStyles(payload, payload.getEnvironmentVariablesCallback);
+  return getMatchedStyles(payload, payload.getEnvironmentVariablesCallback, payload.connection);
 }
 
 export function getMatchedStylesWithBlankRule(payload: {
   cssModel: SDK.CSSModel.CSSModel,
+  connection: MockCDPConnection,
   selector?: string,
   range?: Protocol.CSS.SourceRange,
   origin?: Protocol.CSS.StyleSheetOrigin,
   styleSheetId?: Protocol.DOM.StyleSheetId,
-  getEnvironmentVariablesCallback?: ProtocolCommandHandler<'CSS.getEnvironmentVariables'>,
+  getEnvironmentVariablesCallback?: GetEnvironmentVariablesCallback,
 }&Partial<SDK.CSSMatchedStyles.CSSMatchedStylesPayload>) {
   return getMatchedStylesWithProperties({properties: {}, ...payload});
 }
@@ -107,11 +117,12 @@ export function ruleMatch(
 export function getMatchedStylesWithProperties(payload: {
   cssModel: SDK.CSSModel.CSSModel,
   properties: Protocol.CSS.CSSProperty[]|Record<string, string>,
+  connection: MockCDPConnection,
   selector?: string,
   range?: Protocol.CSS.SourceRange,
   origin?: Protocol.CSS.StyleSheetOrigin,
   styleSheetId?: Protocol.DOM.StyleSheetId,
-  getEnvironmentVariablesCallback?: ProtocolCommandHandler<'CSS.getEnvironmentVariables'>,
+  getEnvironmentVariablesCallback?: GetEnvironmentVariablesCallback,
 }&Partial<SDK.CSSMatchedStyles.CSSMatchedStylesPayload>) {
   const styleSheetId = payload.styleSheetId ?? '0' as Protocol.DOM.StyleSheetId;
   const range = payload.range;
@@ -121,11 +132,25 @@ export function getMatchedStylesWithProperties(payload: {
 }
 
 export function getMatchedStyles(
-    payload: Partial<SDK.CSSMatchedStyles.CSSMatchedStylesPayload> = {},
-    getEnvironmentVariablesCallback: ProtocolCommandHandler<'CSS.getEnvironmentVariables'> = () =>
-        ({environmentVariables: {}})) {
-  clearMockConnectionResponseHandler('CSS.getEnvironmentVariables');
-  setMockConnectionResponseHandler('CSS.getEnvironmentVariables', getEnvironmentVariablesCallback);
+    payload: Partial<SDK.CSSMatchedStyles.CSSMatchedStylesPayload>&{connection: MockCDPConnection},
+    getEnvironmentVariablesCallback: GetEnvironmentVariablesCallback = () => ({environmentVariables: {}}),
+    connection: MockCDPConnection = payload.connection) {
+  connection.setHandler('CSS.getEnvironmentVariables', null);
+  connection.setHandler('CSS.getEnvironmentVariables', params => {
+    const result = getEnvironmentVariablesCallback(params);
+    if (result && 'then' in result) {
+      return Promise.resolve(result).then(res => {
+        if ('getError' in res && typeof res.getError === 'function' && res.getError()) {
+          return {error: {message: res.getError(), code: -32000}};
+        }
+        return {result: res as Protocol.CSS.GetEnvironmentVariablesResponse};
+      });
+    }
+    if (result && 'getError' in result && typeof result.getError === 'function' && result.getError()) {
+      return {error: {message: result.getError(), code: -32000}};
+    }
+    return {result: result as Protocol.CSS.GetEnvironmentVariablesResponse};
+  });
   let node = payload.node;
   if (!node) {
     node = sinon.createStubInstance(SDK.DOMModel.DOMNode);
@@ -166,7 +191,7 @@ export function getMatchedStyles(
  * to find the actual models.
  */
 export function createStubbedDomNodeWithModels(opts: {nodeId: number} = {
-  nodeId: 1
+  nodeId: 1,
 }): {
   node: SDK.DOMModel.DOMNode,
   domModel: SDK.DOMModel.DOMModel,

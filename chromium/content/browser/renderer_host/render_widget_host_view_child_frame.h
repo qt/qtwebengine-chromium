@@ -95,11 +95,11 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
       base::TimeDelta timeout,
       base::OnceCallback<void(const content::CopyFromSurfaceResult&)> callback)
       override;
-  void EnsureSurfaceSynchronizedForWebTest() override;
   void Hide() override;
   bool IsShowing() override;
   void WasOccluded() override;
   gfx::Rect GetViewBounds() override;
+  gfx::Rect GetViewBoundsWithoutTransform() override;
   gfx::Size GetVisibleViewportSize() override;
   gfx::Size GetVisibleViewportSizeDevicePx() override;
   void SetInsets(const gfx::Insets& insets) override;
@@ -128,7 +128,6 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   void OnEditElementFocusedForStylusWriting(
       blink::mojom::StylusWritingFocusResultPtr focus_result) override;
 #endif  // BUILDFLAG(IS_WIN)
-  uint32_t GetCaptureSequenceNumber() const override;
   gfx::Size GetCompositorViewportPixelSize() override;
   void InitAsPopup(RenderWidgetHostView* parent_host_view,
                    const gfx::Rect& bounds,
@@ -153,7 +152,8 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   void OnUnconfirmedTapConvertedToTap() override;
 
   void TransformPointToRootSurface(gfx::PointF* point) override;
-  gfx::Rect GetBoundsInRootWindow() override;
+  gfx::Rect GetBoundsInScreen() override;
+  gfx::Rect GetBoundsInScreenWithoutTransform() override;
   void DidStopFlinging() override;
   blink::mojom::PointerLockResult LockPointer(
       bool request_unadjusted_movement) override;
@@ -334,6 +334,8 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
 
   void DetachFromTouchSelectionClientManagerIfNecessary();
 
+  gfx::Rect GetViewBoundsHelper(bool without_transform);
+
   // Returns false if the view cannot be shown. This is the case where the frame
   // associated with this view or a cross process ancestor frame has been hidden
   // using CSS.
@@ -364,10 +366,19 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   // The surface client ID of the parent RenderWidgetHostView.  0 if none.
   viz::FrameSinkId parent_frame_sink_id_;
 
+  // True if there is an active frame sink hierarchy registration for
+  // `parent_frame_sink_id_` and `frame_sink_id_`.
+  bool has_frame_sink_hierarchy_registered_ = false;
+
   gfx::Insets insets_;
 
   std::unique_ptr<TouchSelectionControllerClientChildFrame>
       selection_controller_client_;
+
+  // Weak pointer to the view which owns the
+  // TouchSelectionControllerClientManager that this object is registered with.
+  base::WeakPtr<RenderWidgetHostViewBase>
+      view_for_touch_selection_client_manager_;
 
   // If a new RWHVCF is created for a cross-origin navigation, the parent
   // will typically not notice and will not transmit a full complement of
@@ -382,6 +393,10 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
       const gfx::Rect& focus_screen_rect_in_dips,
       const gfx::Size& tolerance_screen_distance_in_dips);
 #endif  // BUILDFLAG(IS_WIN)
+
+  // A queue for `IntrinsicSizingInfo` sent from the child renderer before the
+  // frame connector is set.
+  blink::mojom::IntrinsicSizingInfoPtr pending_sizing_info_;
 
   base::WeakPtrFactory<RenderWidgetHostViewChildFrame> weak_factory_{this};
 };

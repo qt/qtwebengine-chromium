@@ -172,6 +172,7 @@ xnnpack_cxx_library(
     ],
 ) for kernel in [
     "bf16_gemm",
+    "qd8_bf16_qb4w_gemm",
     "qd8_f16_qb4w_gemm",
     "qd8_f32_qb4w_gemm",
     "qd8_f16_qc8w_gemm",
@@ -305,6 +306,7 @@ xnnpack_benchmark(
     ],
     deps = MICROKERNEL_BENCHMARK_DEPS,
 ) for kernel in [
+    "xx_pad",
     "xx_transposev",
     "xN_transposec",
 ]]
@@ -369,6 +371,14 @@ xnnpack_benchmark(
     ],
     deps = MICROKERNEL_BENCHMARK_DEPS + [
         ":conv",
+        "//:indirection",
+    ],
+)
+
+xnnpack_benchmark(
+    name = "indirection_bench",
+    srcs = ["indirection.cc"],
+    deps = MICROKERNEL_BENCHMARK_DEPS + [
         "//:indirection",
     ],
 )

@@ -9,9 +9,11 @@
 
 #include "base/logging.h"
 #include "base/notreached.h"
+#include "media/base/agtm.h"
 #include "media/base/limits.h"
 #include "media/base/media_switches.h"
 #include "media/base/video_types.h"
+#include "media/parsers/h26x_parser.h"
 #include "third_party/abseil-cpp/absl/functional/overload.h"
 
 namespace media {
@@ -309,6 +311,7 @@ H265Decoder::DecodeResult H265Decoder::Decode() {
             break;
           }
           case H265NALU::SPS_NUT: {
+            CHECK_ACCELERATOR_RESULT(FinishPrevFrameIfPresent());
             int sps_id;
             par_res = parser_.ParseSPS(&sps_id);
             if (par_res != H265Parser::kOk) {
@@ -318,6 +321,7 @@ H265Decoder::DecodeResult H265Decoder::Decode() {
             break;
           }
           case H265NALU::PPS_NUT: {
+            CHECK_ACCELERATOR_RESULT(FinishPrevFrameIfPresent());
             int pps_id;
             par_res = parser_.ParsePPS(*curr_nalu_, &pps_id);
             if (par_res != H265Parser::kOk) {
@@ -505,11 +509,16 @@ H265Decoder::DecodeResult H265Decoder::Decode() {
         for (const auto& sei_msg : sei.msgs) {
           std::visit(absl::Overload{
                          [](const H265SEIAlphaChannelInfo& info) {},
-                         [this](const H265SEIContentLightLevelInfo& info) {
+                         [this](const H26xSEIContentLightLevelInfo& info) {
                            hdr_metadata_bitstream_.SetCLLI(info.ToSkHdr());
                          },
-                         [this](const H265SEIMasteringDisplayInfo& info) {
+                         [this](const H26xSEIMasteringDisplayInfo& info) {
                            hdr_metadata_bitstream_.SetMDCV(info.ToSkHdr());
+                         },
+                         [this](const H26xSEIUserDataRegisteredT35& info) {
+                           SetAgtmFromT35WithCountryCode(
+                               hdr_metadata_bitstream_, info.country_code,
+                               info.payload);
                          },
                          [](std::monostate) {},
                      },
@@ -587,6 +596,10 @@ bool H265Decoder::ProcessPPS(int pps_id, bool* need_new_buffers) {
 
   gfx::Size new_pic_size = sps->GetCodedSize();
   gfx::Rect new_visible_rect = sps->GetVisibleRect();
+  // H265Parser::ParseSPS guarantees that the crop window (and VUI display
+  // window) parameters fit within the coded picture size and are non-empty.
+  CHECK(gfx::Rect(new_pic_size).Contains(new_visible_rect));
+  CHECK(!new_visible_rect.IsEmpty());
   if (visible_rect_ != new_visible_rect) {
     DVLOG(2) << "New visible rect: " << new_visible_rect.ToString();
     visible_rect_ = new_visible_rect;
@@ -690,6 +703,10 @@ H265Decoder::H265Accelerator::Status H265Decoder::PreprocessCurrentSlice() {
       return result;
 
     DCHECK(!curr_pic_);
+  } else if (!curr_pic_) {
+    DVLOG(1) << "Received slice segment with first_slice_segment_in_pic_flag "
+             << "equal to 0 without an active picture";
+    return H265Accelerator::Status::kFail;
   }
 
   return H265Accelerator::Status::kOk;

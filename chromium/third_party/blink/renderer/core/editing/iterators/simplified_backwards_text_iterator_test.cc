@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/editing/iterators/simplified_backwards_text_iterator.h"
 
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/editing/ephemeral_range.h"
 #include "third_party/blink/renderer/core/editing/selection_template.h"
 #include "third_party/blink/renderer/core/editing/testing/editing_test_base.h"
@@ -25,7 +26,7 @@ class SimplifiedBackwardsTextIteratorTest : public EditingTestBase {
   std::string ExtractStringInRange(
       const std::string selection_text,
       const TextIteratorBehavior& behavior = TextIteratorBehavior()) {
-    const SelectionInDOMTree selection = SetSelectionTextToBody(selection_text);
+    const SelectionInDomTree selection = SetSelectionTextToBody(selection_text);
     StringBuilder builder;
     bool is_first = true;
     for (SimplifiedBackwardsTextIterator iterator(selection.ComputeRange(),

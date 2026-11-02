@@ -15,10 +15,10 @@ namespace media {
 // The initialization data for encrypted media files using the ISO Common
 // Encryption ('cenc') protection scheme may contain one or more protection
 // system specific header ('pssh') boxes.
-// ref: https://w3c.github.io/encrypted-media/cenc-format.html
+// ref: https://www.w3.org/TR/eme-initdata-cenc/
 
 // CENC SystemID for the Common System.
-// https://w3c.github.io/encrypted-media/cenc-format.html#common-system
+// https://www.w3.org/TR/eme-initdata-cenc/#common-system
 constexpr auto kCencCommonSystemId =
     std::to_array<uint8_t>({0x10, 0x77, 0xef, 0xec, 0xc0, 0xb2, 0x4d, 0x02,
                             0xac, 0xe3, 0x3c, 0x1e, 0x52, 0xe2, 0xfb, 0x4b});
@@ -43,8 +43,7 @@ static bool ReadAllPsshBoxes(
   // so this simply verifies that |input| only contains 'pssh' boxes and
   // nothing else.
   std::unique_ptr<mp4::BoxReader> input_reader(
-      mp4::BoxReader::ReadConcatentatedBoxes(input.data(), input.size(),
-                                             &media_log));
+      mp4::BoxReader::ReadConcatentatedBoxes(input, &media_log));
   std::vector<mp4::ProtectionSystemSpecificHeader> raw_pssh_boxes;
   if (!input_reader->ReadAllChildrenAndCheckFourCC(&raw_pssh_boxes))
     return false;
@@ -56,8 +55,7 @@ static bool ReadAllPsshBoxes(
   // ignoring any boxes that can't be parsed.
   for (const auto& raw_pssh_box : raw_pssh_boxes) {
     std::unique_ptr<mp4::BoxReader> raw_pssh_reader(
-        mp4::BoxReader::ReadConcatentatedBoxes(raw_pssh_box.raw_box.data(),
-                                               raw_pssh_box.raw_box.size(),
+        mp4::BoxReader::ReadConcatentatedBoxes(raw_pssh_box.raw_box,
                                                &media_log));
     // ReadAllChildren() appends any successfully parsed box onto it's
     // parameter, so |pssh_boxes| will contain the collection of successfully

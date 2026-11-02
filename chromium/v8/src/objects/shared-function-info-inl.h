@@ -12,19 +12,24 @@
 
 #include "src/base/macros.h"
 #include "src/base/platform/mutex.h"
+#include "src/base/strong-alias.h"
 #include "src/builtins/builtins.h"
 #include "src/codegen/optimized-compilation-info.h"
 #include "src/common/globals.h"
+#include "src/common/synchronization-point-support.h"
 #include "src/handles/handles-inl.h"
 #include "src/heap/heap-write-barrier-inl.h"
-#include "src/objects/abstract-code-inl.h"
+#include "src/objects/abstract-code.h"
+#include "src/objects/contexts-inl.h"
 #include "src/objects/debug-objects-inl.h"
 #include "src/objects/feedback-vector-inl.h"
 #include "src/objects/function-kind.h"
 #include "src/objects/heap-object-inl.h"
+#include "src/objects/heap-object-set-map-inl.h"
 #include "src/objects/hole.h"
 #include "src/objects/instance-type-inl.h"
 #include "src/objects/objects-inl.h"
+#include "src/objects/oddball-predicates-inl.h"
 #include "src/objects/scope-info-inl.h"
 #include "src/objects/script-inl.h"
 #include "src/objects/string.h"
@@ -38,8 +43,6 @@
 #include "src/objects/object-macros.h"
 
 namespace v8::internal {
-
-#include "torque-generated/src/objects/shared-function-info-tq-inl.inc"
 
 // static
 int PreparseData::SizeFor(int data_length, int children_length) {
@@ -433,9 +436,8 @@ SharedFunctionInfo::Inlineability SharedFunctionInfo::GetInlineability(
 
   if (!IsUserJavaScript()) return kIsNotUserCode;
 
-  // If there is no bytecode array, it is either not compiled or it is compiled
-  // with WebAssembly for the asm.js pipeline. In either case we don't want to
-  // inline.
+  // If there is no bytecode array, the function is not compiled, so we don't
+  // want to inline.
   if (!HasBytecodeArray()) return kHasNoBytecode;
 
   if (GetBytecodeArray(isolate)->length() >
@@ -483,10 +485,6 @@ BIT_FIELD_ACCESSORS(SharedFunctionInfo, relaxed_flags, has_duplicate_parameters,
 
 BIT_FIELD_ACCESSORS(SharedFunctionInfo, relaxed_flags, native,
                     SharedFunctionInfo::IsNativeBit)
-#if V8_ENABLE_WEBASSEMBLY
-BIT_FIELD_ACCESSORS(SharedFunctionInfo, relaxed_flags, is_asm_wasm_broken,
-                    SharedFunctionInfo::IsAsmWasmBrokenBit)
-#endif  // V8_ENABLE_WEBASSEMBLY
 BIT_FIELD_ACCESSORS(SharedFunctionInfo, relaxed_flags,
                     requires_instance_members_initializer,
                     SharedFunctionInfo::RequiresInstanceMembersInitializerBit)
@@ -667,7 +665,7 @@ Tagged<ScopeInfo> SharedFunctionInfo::EarlyScopeInfo(AcquireLoadTag tag) {
   if (IsScopeInfo(maybe_scope_info)) {
     return Cast<ScopeInfo>(maybe_scope_info);
   }
-  return EarlyGetReadOnlyRoots().empty_scope_info();
+  return ReadOnlyHeap::EarlyGetReadOnlyRoots(this).empty_scope_info();
 }
 
 void SharedFunctionInfo::SetScopeInfo(Tagged<ScopeInfo> scope_info,
@@ -730,6 +728,36 @@ Tagged<ScopeInfo> SharedFunctionInfo::GetOuterScopeInfo() const {
   Tagged<ScopeInfo> info = scope_info(kAcquireLoad);
   if (info->IsEmpty()) return Cast<ScopeInfo>(outer_scope_info());
   return info->OuterScopeInfo();
+}
+
+Tagged<ScopeInfo> SharedFunctionInfo::TryGetScopeInfoForMerge() const {
+  Tagged<Object> maybe_scope_info = name_or_scope_info(kAcquireLoad);
+  if (IsScopeInfo(maybe_scope_info)) {
+    return Cast<ScopeInfo>(maybe_scope_info);
+  }
+  Tagged<Object> maybe_outer_scope_info_or_feedback =
+      raw_outer_scope_info_or_feedback_metadata(kAcquireLoad);
+  if (IsScopeInfo(maybe_outer_scope_info_or_feedback)) {
+    return Cast<ScopeInfo>(maybe_outer_scope_info_or_feedback);
+  }
+  return GetReadOnlyRoots().empty_scope_info();
+}
+
+Tagged<ScopeInfo> SharedFunctionInfo::TryGetOuterScopeInfo() const {
+  if (Tagged<ScopeInfo> scope_info;
+      TryCast(name_or_scope_info(kAcquireLoad), &scope_info)) {
+    if (scope_info->HasOuterScopeInfo()) {
+      return scope_info->OuterScopeInfo();
+    }
+    return GetReadOnlyRoots().empty_scope_info();
+  }
+  SYNCHRONIZATION_POINT("BeforeGetOuterScopeInfo");
+  if (Tagged<ScopeInfo> outer_scope_info;
+      TryCast(raw_outer_scope_info_or_feedback_metadata(kAcquireLoad),
+              &outer_scope_info)) {
+    return outer_scope_info;
+  }
+  return GetReadOnlyRoots().empty_scope_info();
 }
 
 void SharedFunctionInfo::set_outer_scope_info(
@@ -1023,10 +1051,6 @@ void SharedFunctionInfo::FlushBaselineCode() {
 }
 
 #if V8_ENABLE_WEBASSEMBLY
-bool SharedFunctionInfo::HasAsmWasmData() const {
-  return IsAsmWasmData(GetTrustedData(GetCurrentIsolateForSandbox()));
-}
-
 bool SharedFunctionInfo::HasWasmFunctionData(IsolateForSandbox isolate) const {
   return IsWasmFunctionData(GetTrustedData(isolate));
 }
@@ -1043,19 +1067,6 @@ bool SharedFunctionInfo::HasWasmCapiFunctionData(
 
 bool SharedFunctionInfo::HasWasmResumeData() const {
   return IsWasmResumeData(GetUntrustedData());
-}
-
-DEF_GETTER(SharedFunctionInfo, asm_wasm_data, Tagged<AsmWasmData>) {
-  DCHECK(HasAsmWasmData());
-  return GetTrustedData<AsmWasmData, kAsmWasmDataIndirectPointerTag>(
-      GetCurrentIsolateForSandbox());
-}
-
-void SharedFunctionInfo::set_asm_wasm_data(Tagged<AsmWasmData> data,
-                                           WriteBarrierMode mode) {
-  DCHECK(GetUntrustedData() == Smi::FromEnum(Builtin::kCompileLazy) ||
-         HasUncompiledData(GetCurrentIsolateForSandbox()) || HasAsmWasmData());
-  SetTrustedData(data, mode);
 }
 
 DEF_GETTER(SharedFunctionInfo, wasm_function_data, Tagged<WasmFunctionData>) {
@@ -1168,8 +1179,8 @@ void SharedFunctionInfo::ClearPreparseData(IsolateForSandbox isolate) {
 
   // We are basically trimming that object to its supertype, so recorded slots
   // within the object don't need to be invalidated.
-  heap->NotifyObjectLayoutChange(data, no_gc, InvalidateRecordedSlots::kNo,
-                                 InvalidateExternalPointerSlots::kNo);
+  heap->NotifyObjectLayoutChange(data, no_gc, InvalidateRecordedSlots{false},
+                                 InvalidateExternalPointerSlots{false});
   static_assert(sizeof(UncompiledDataWithoutPreparseData) <
                 sizeof(UncompiledDataWithPreparseData));
   static_assert(sizeof(UncompiledDataWithoutPreparseData) ==
@@ -1180,7 +1191,7 @@ void SharedFunctionInfo::ClearPreparseData(IsolateForSandbox isolate) {
   DCHECK_LE(sizeof(UncompiledDataWithPreparseData), old_size);
   heap->NotifyObjectSizeChange(data, old_size,
                                sizeof(UncompiledDataWithoutPreparseData),
-                               ClearRecordedSlots::kYes);
+                               ClearRecordedSlots{true});
 
   // Swap the map.
   data->set_map(heap->isolate(),
@@ -1244,7 +1255,6 @@ bool SharedFunctionInfo::IsUserJavaScript() const {
 
 bool SharedFunctionInfo::IsSubjectToDebugging() const {
 #if V8_ENABLE_WEBASSEMBLY
-  if (HasAsmWasmData()) return false;
   if (HasWasmExportedFunctionData(GetCurrentIsolateForSandbox())) return false;
 #endif  // V8_ENABLE_WEBASSEMBLY
   return IsUserJavaScript();

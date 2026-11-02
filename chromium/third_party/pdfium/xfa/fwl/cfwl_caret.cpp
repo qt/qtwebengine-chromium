@@ -19,15 +19,13 @@ namespace {
 
 const uint32_t kBlinkPeriodMs = 600;
 
-constexpr int kStateHighlight = (1 << 0);
-
 }  // namespace
 
 CFWL_Caret::CFWL_Caret(CFWL_App* app,
                        const Properties& properties,
                        CFWL_Widget* pOuter)
     : CFWL_Widget(app, properties, pOuter) {
-  SetStates(kStateHighlight);
+  SetStates({WidgetState::kCaretHighlight});
 }
 
 CFWL_Caret::~CFWL_Caret() = default;
@@ -55,18 +53,18 @@ void CFWL_Caret::DrawWidget(CFGAS_GEGraphics* pGraphics,
 void CFWL_Caret::ShowCaret() {
   timer_ = std::make_unique<CFX_Timer>(GetFWLApp()->GetTimerHandler(), this,
                                        kBlinkPeriodMs);
-  RemoveStates(FWL_STATE_WGT_Invisible);
-  SetStates(kStateHighlight);
+  ClearStates(WidgetState::kInvisible);
+  SetStates({WidgetState::kCaretHighlight});
 }
 
 void CFWL_Caret::HideCaret() {
   timer_.reset();
-  SetStates(FWL_STATE_WGT_Invisible);
+  SetStates(WidgetState::kInvisible);
 }
 
 void CFWL_Caret::DrawCaretBK(CFGAS_GEGraphics* pGraphics,
                              const CFX_Matrix& mtMatrix) {
-  if (!(properties_.states_ & kStateHighlight)) {
+  if (!(properties_.states_ & WidgetState::kCaretHighlight)) {
     return;
   }
 
@@ -86,10 +84,10 @@ void CFWL_Caret::OnDrawWidget(CFGAS_GEGraphics* pGraphics,
 }
 
 void CFWL_Caret::OnTimerFired() {
-  if (!(GetStates() & kStateHighlight)) {
-    SetStates(kStateHighlight);
+  if (!(GetStates() & WidgetState::kCaretHighlight)) {
+    SetStates({WidgetState::kCaretHighlight});
   } else {
-    RemoveStates(kStateHighlight);
+    ClearStates(WidgetState::kCaretHighlight);
   }
 
   CFX_RectF rt = GetWidgetRect();

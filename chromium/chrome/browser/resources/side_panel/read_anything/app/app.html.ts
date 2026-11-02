@@ -9,7 +9,9 @@ import type {AppElement} from './app.js';
 export function getHtml(this: AppElement) {
   // clang-format off
   return html`<!--_html_template_start_-->
-<div id="appFlexParent" class="${this.getImmersiveClass_()}">
+<div id="appFlexParent"
+    class="${this.getImmersiveClass_()} ${
+        this.hasValidSelection_ ? 'has-selection' : ''}">
   <!-- Overlay to prevent cursor from interacting with background elements when
   the settings menu is open. -->
   <div id="settingsOverlay" class="settings-overlay"></div>
@@ -32,7 +34,9 @@ export function getHtml(this: AppElement) {
         .pageLanguage="${this.pageLanguage_}"
         .isImmersiveMode="${this.isImmersiveMode()}"
         .lineFocusStyle="${this.lineFocusStyle_}"
+        .lineFocusEnabled="${this.lineFocusEnabled_}"
         .lineFocusMovement="${this.lineFocusMovement_}"
+        .isLineFocusShowing="${this.computeIsLineFocusShowing_()}"
         @select-voice="${this.onSelectVoice_}"
         @voice-language-toggle="${this.onVoiceLanguageToggle_}"
         @preview-voice="${this.onPreviewVoice_}"
@@ -48,6 +52,7 @@ export function getHtml(this: AppElement) {
         @images-toggle="${this.onImagesToggle_}"
         @letter-spacing-change="${this.onLetterSpacingChange_}"
         @theme-change="${this.onThemeChange_}"
+        @presentation-change="${this.onPresentationChange_}"
         @line-spacing-change="${this.onLineSpacingChange_}"
         @highlight-change="${this.onHighlightChange_}"
         @reset-toolbar="${this.onResetToolbar_}"
@@ -55,6 +60,7 @@ export function getHtml(this: AppElement) {
         @language-menu-open="${this.onLanguageMenuOpen_}"
         @language-menu-close="${this.onLanguageMenuClose_}"
         @line-focus-style-change="${this.onLineFocusStyleChange_}"
+        @line-focus-toggle-change="${this.onLineFocusToggleChange_}"
         @line-focus-movement-change="${this.onLineFocusMovementChange_}"
         @close-all-menus="${this.onCloseAllMenus_}"
         @settings-opened="${this.onSettingsOpened_}"

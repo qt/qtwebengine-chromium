@@ -38,7 +38,7 @@ class SparseLUTransposeView : public SparseSolverBase<SparseLUTransposeView<Conj
 
   enum { ColsAtCompileTime = MatrixType::ColsAtCompileTime, MaxColsAtCompileTime = MatrixType::MaxColsAtCompileTime };
 
-  SparseLUTransposeView() : APIBase(), m_sparseLU(NULL) {}
+  SparseLUTransposeView() = default;
   SparseLUTransposeView(const SparseLUTransposeView& view) : APIBase() {
     this->m_sparseLU = view.m_sparseLU;
     this->m_isInitialized = view.m_isInitialized;
@@ -70,7 +70,7 @@ class SparseLUTransposeView : public SparseSolverBase<SparseLUTransposeView<Conj
   inline Index cols() const { return m_sparseLU->cols(); }
 
  private:
-  SparseLUType* m_sparseLU;
+  SparseLUType* m_sparseLU = nullptr;
   SparseLUTransposeView& operator=(const SparseLUTransposeView&);
 };
 
@@ -137,10 +137,10 @@ class SparseLUTransposeView : public SparseSolverBase<SparseLUTransposeView<Conj
  * \note Unlike the initial SuperLU implementation, there is no step to equilibrate the matrix.
  * For badly scaled matrices, this step can be useful to reduce the pivoting during factorization.
  * If this is the case for your matrices, you can try the basic scaling method at
- *  "unsupported/Eigen/src/IterativeSolvers/Scaling.h"
+ *  "Eigen/src/IterativeLinearSolvers/Scaling.h"
  *
  * \tparam MatrixType_ The type of the sparse matrix. It must be a column-major SparseMatrix<>
- * \tparam OrderingType_ The ordering method to use, either AMD, COLAMD or METIS. Default is COLMAD
+ * \tparam OrderingType_ The ordering method to use, either AMD, COLAMD or METIS. Default is COLAMD
  *
  * \implsparsesolverconcept
  *
@@ -306,7 +306,7 @@ class SparseLU : public SparseSolverBase<SparseLU<MatrixType_, OrderingType_>>,
    *
    * \returns the solution X of \f$ A X = B \f$ using the current decomposition of A.
    *
-   * \warning the destination matrix X in X = this->solve(B) must be colmun-major.
+   * \warning the destination matrix X in X = this->solve(B) must be column-major.
    *
    * \sa compute()
    */
@@ -521,13 +521,13 @@ class SparseLU : public SparseSolverBase<SparseLU<MatrixType_, OrderingType_>>,
  *
  * It is possible to call compute() instead of analyzePattern() + factorize().
  *
- * If the matrix is row-major this function will do an heavy copy.
+ * If the matrix is row-major this function will do a heavy copy.
  *
  * \sa factorize(), compute()
  */
 template <typename MatrixType, typename OrderingType>
 void SparseLU<MatrixType, OrderingType>::analyzePattern(const MatrixType& mat) {
-  // TODO  It is possible as in SuperLU to compute row and columns scaling vectors to equilibrate the matrix mat.
+  // TODO  It is possible as in SuperLU to compute row and column scaling vectors to equilibrate the matrix mat.
 
   // Firstly, copy the whole input matrix.
   m_mat = mat;
@@ -768,7 +768,7 @@ void SparseLU<MatrixType, OrderingType>::factorize(const MatrixType& matrix) {
       }
 
       // Form the L-segment
-      // Return O if success, i > 0 if U(i, i) is exactly zero.
+      // Return 0 if success, i > 0 if U(i, i) is exactly zero.
       info = Base::pivotL(jj, m_diagpivotthresh, m_perm_r.indices(), iperm_c.indices(), pivrow, m_glu);
       if (info) {
         m_lastError = "THE MATRIX IS STRUCTURALLY SINGULAR";
@@ -925,7 +925,7 @@ struct SparseLUMatrixUReturnType : internal::no_assignment_operator {
         Map<const Matrix<Scalar, Dynamic, Dynamic, ColMajor>, 0, OuterStride<>> A(&(m_mapL.valuePtr()[luptr]), nsupc,
                                                                                   nsupc, OuterStride<>(lda));
         typename Dest::RowsBlockXpr U = X.derived().middleRows(fsupc, nsupc);
-        if (Conjugate)
+        EIGEN_IF_CONSTEXPR (Conjugate)
           U = A.adjoint().template triangularView<Lower>().solve(U);
         else
           U = A.transpose().template triangularView<Lower>().solve(U);

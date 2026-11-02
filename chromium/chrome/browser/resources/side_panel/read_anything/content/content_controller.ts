@@ -9,12 +9,19 @@ import {previousReadHighlightClass} from '../read_aloud/movement.js';
 import {getReadAloudModel} from '../read_aloud/read_aloud_model_browser_proxy.js';
 import {ReadAloudNode} from '../read_aloud/read_aloud_types.js';
 import {SpeechController} from '../read_aloud/speech_controller.js';
-import {getReadingModeTextNodes, isDistilledByReadability, LOG_EMPTY_DELAY_MS} from '../shared/common.js';
+import {isDistilledByReadability, LOG_EMPTY_DELAY_MS} from '../shared/common.js';
 import {LinkStatus, ReadAnythingLogger} from '../shared/read_anything_logger.js';
+import {getReadingModeTextNodes} from '../shared/tree_traversal.js';
 
 import {NodeStore} from './node_store.js';
 import {removeExtraneousElementsFrom} from './readability_content_processing.js';
 import {ReadabilityImageClassifier} from './readability_image_classifier.js';
+
+const READABILITY_SET_HTML_OPTIONS: SetHtmlOptions = {
+  sanitizer: {
+    removeElements: ['style', 'meta', 'template'],
+  },
+};
 
 const DATA_PREFIX = 'data-';
 const LINK_DATA_ATTR = 'link';
@@ -141,13 +148,6 @@ export class ContentController {
   private currentState_: ContentState = CONTENT_STATES[ContentType.NO_CONTENT];
   private previousRootId_?: number;
 
-  // The Trusted Types policy is registered globally on the window object.
-  // The browser only allows a policy name to be registered once per page load.
-  // Making this static ensures that multiple instances of ContentController
-  // (which occur frequently during WebUI test runs) share the same policy
-  // reference and do not trigger a "Policy already exists" TypeError.
-  private static trustedUpdatePolicy: TrustedTypePolicy|undefined;
-
   // Holds the text nodes extracted from the current rendered distillation.
   // This array ensures that we can link a DOM node back to its AXTree
   // mapping for text selection via its index in this array.
@@ -261,8 +261,7 @@ export class ContentController {
       }
 
       const contentContainer = document.createElement('div');
-      contentContainer.innerHTML = this.getTrustedHtml(contentHtml);
-
+      contentContainer.setHTML(contentHtml, READABILITY_SET_HTML_OPTIONS);
 
       // Strip single newlines from text nodes to prevent unexpected sentence
       // breaks, as Readability preserves raw HTML newlines which are visually
@@ -507,6 +506,10 @@ export class ContentController {
     }
 
     const element = document.createElement(htmlTag);
+    const htmlId = chrome.readingMode.getHtmlId(nodeId);
+    if (htmlId) {
+      element.id = htmlId;
+    }
     // Add required data attributes.
     for (const [attr, val] of dataAttributes) {
       element.dataset[attr] = val;
@@ -546,6 +549,74 @@ export class ContentController {
       const childNode = this.buildSubtree_(childNodeId);
       node.appendChild(childNode);
     }
+  }
+
+  private safeParseUrl_(url: string, base?: string): URL|null {
+    try {
+      return base ? new URL(url, base) : new URL(url);
+    } catch (e) {
+      console.warn('Failed to parse URL:', url, base, e);
+      return null;
+    }
+  }
+
+  scrollToAnchor(url: string, root: ShadowRoot|Document): boolean {
+    if (!url) {
+      return false;
+    }
+
+    const pageUrlString = chrome.readingMode.documentUrl;
+    if (!pageUrlString) {
+      return false;
+    }
+
+    const pageUrl = this.safeParseUrl_(pageUrlString);
+    const linkUrl = pageUrl ? this.safeParseUrl_(url, pageUrl.href) : null;
+
+    if (!pageUrl || !linkUrl) {
+      return false;
+    }
+
+    // The browser is only sending same document links, but this is an
+    // additional safety check.
+    const isSameDocument = linkUrl.origin === pageUrl.origin &&
+        linkUrl.pathname === pageUrl.pathname &&
+        linkUrl.search === pageUrl.search;
+
+    if (!isSameDocument) {
+      return false;
+    }
+
+    let targetId: string|null = null;
+    if (linkUrl.hash) {
+      try {
+        targetId = decodeURIComponent(linkUrl.hash.substring(1));
+      } catch (e) {
+        targetId = linkUrl.hash.substring(1);
+      }
+    }
+
+    // Case 1: We have a specific target ID. Try to scroll to it.
+    if (targetId) {
+      const target = root.getElementById(targetId);
+      if (target) {
+        target.scrollIntoView({behavior: 'smooth'});
+        return true;
+      }
+      if (targetId.toLowerCase() !== 'top') {
+        return false;  // Target ID was specified but element not found.
+      }
+      // Fall through to Case 2 for 'top'
+    }
+
+    // Case 2: Same-document navigation with no hash (navigated back to top).
+    const scroller = root.getElementById('containerScroller');
+    if (scroller) {
+      scroller.scrollTo({top: 0, behavior: 'smooth'});
+      return true;
+    }
+
+    return false;
   }
 
   private setLinkAttributes_(
@@ -623,7 +694,9 @@ export class ContentController {
       const links = root.querySelectorAll('a');
       for (const link of links) {
         const nodeId = this.nodeStore_.getAxId(link);
-        this.setLinkAttributes_(link, link.href, nodeId);
+        // Use raw href attribute instead of resolved link.href
+        const rawHref = link.getAttribute('href') || '';
+        this.setLinkAttributes_(link, rawHref, nodeId);
       }
     }
   }
@@ -790,7 +863,8 @@ export class ContentController {
     let noMatchCount = 0;
     let tooManyMatchesCount = 0;
     for (const anchor of anchors) {
-      const url = anchor.href;
+      // Use raw href attribute to match axTreeAnchors keys correctly
+      const url = anchor.getAttribute('href') || '';
       if (!url) {
         noHrefCount++;
         this.transformLinkContainer_(anchor, false);
@@ -1017,25 +1091,6 @@ export class ContentController {
         }
       });
     });
-  }
-
-  private getTrustedHtml(html: string): TrustedHTML {
-    if (!ContentController.trustedUpdatePolicy || !isDistilledByReadability()) {
-      return window.trustedTypes!.emptyHTML;
-    }
-    return ContentController.trustedUpdatePolicy.createHTML(html);
-  }
-
-  configureTrustedTypes(): void {
-    if (!window.trustedTypes || ContentController.trustedUpdatePolicy) {
-      return;
-    }
-    ContentController.trustedUpdatePolicy =
-        window.trustedTypes.createPolicy('reader-mode-policy', {
-          createHTML: (s: string) => s,
-          createScript: () => '',
-          createScriptURL: () => '',
-        });
   }
 
   static getInstance(): ContentController {

@@ -37,7 +37,7 @@
 import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
-import type * as TextUtils from '../../models/text_utils/text_utils.js';
+import type * as TextUtils from '../../core/text_utils/text_utils.js';
 import type * as Buttons from '../components/buttons/buttons.js';
 import * as Highlighting from '../components/highlighting/highlighting.js';
 import type {Icon} from '../kit/kit.js';
@@ -409,11 +409,11 @@ export class TreeOutlineInShadow extends TreeOutline {
   shadowRoot: ShadowRoot;
   private readonly disclosureElement: Element;
   override renderSelection: boolean;
-  constructor(variant: TreeVariant = TreeVariant.OTHER, element?: HTMLElement) {
+  constructor(variant: TreeVariant = TreeVariant.OTHER, element?: HTMLElement, delegatesFocus?: boolean) {
     super();
     this.contentElement.classList.add('tree-outline');
     this.element = element ?? document.createElement('div');
-    this.shadowRoot = createShadowRootWithCoreStyles(this.element, {cssFile: treeoutlineStyles});
+    this.shadowRoot = createShadowRootWithCoreStyles(this.element, {cssFile: treeoutlineStyles, delegatesFocus});
     this.disclosureElement = this.shadowRoot.createChild('div', 'tree-outline-disclosure');
     this.disclosureElement.appendChild(this.contentElement);
     this.renderSelection = true;
@@ -824,6 +824,21 @@ export class TreeElement {
     }
     // eslint-disable-next-line @devtools/no-lit-render-outside-of-view
     render(icons, this.leadingIconsElement);
+  }
+
+  setTrailingIcons(icons: Icon[]|Lit.TemplateResult[]): void {
+    if (!this.trailingIconsElement && !icons.length) {
+      return;
+    }
+    if (!this.trailingIconsElement) {
+      this.trailingIconsElement = document.createElement('div');
+      this.trailingIconsElement.classList.add('trailing-icons');
+      this.trailingIconsElement.classList.add('icons-container');
+      this.listItemNode.appendChild(this.trailingIconsElement);
+      this.ensureSelection();
+    }
+    // eslint-disable-next-line @devtools/no-lit-render-outside-of-view
+    render(icons, this.trailingIconsElement);
   }
 
   get tooltip(): string {
@@ -1412,8 +1427,8 @@ function hasBooleanAttribute(element: Element, name: string): boolean {
   return element.hasAttribute(name) && element.getAttribute(name) !== 'false';
 }
 
-interface TreeNode<NodeT> {
-  children(): NodeT[];
+export interface TreeNode<NodeT> {
+  treeNodeChildren(): Iterable<NodeT>;
 }
 
 export interface TreeSearchResult<NodeT> {
@@ -1423,15 +1438,21 @@ export interface TreeSearchResult<NodeT> {
 }
 
 export class TreeSearch < NodeT extends TreeNode<NodeT>,
-                                        SearchResultT extends TreeSearchResult<NodeT >= TreeSearchResult<NodeT>> {
+                                        SearchResultT extends TreeSearchResult<NodeT >= TreeSearchResult<NodeT>> extends
+    Common.ObjectWrapper.ObjectWrapper<TreeSearch.EventTypes> {
   #matches: SearchResultT[] = [];
   #currentMatchIndex = 0;
   #nodeMatchMap: WeakMap<NodeT, SearchResultT[]>|undefined;
 
-  reset(): void {
+  #reset(): void {
     this.#matches = [];
     this.#nodeMatchMap = undefined;
     this.#currentMatchIndex = 0;
+  }
+
+  reset(): void {
+    this.#reset();
+    this.dispatchEventToListeners(TreeSearch.Events.SEARCH_CHANGED);
   }
 
   currentMatch(): SearchResultT|undefined {
@@ -1482,11 +1503,13 @@ export class TreeSearch < NodeT extends TreeNode<NodeT>,
 
   next(): SearchResultT|undefined {
     this.#currentMatchIndex = Platform.NumberUtilities.mod(this.#currentMatchIndex + 1, this.#matches.length);
+    this.dispatchEventToListeners(TreeSearch.Events.SEARCH_CHANGED);
     return this.currentMatch();
   }
 
   prev(): SearchResultT|undefined {
     this.#currentMatchIndex = Platform.NumberUtilities.mod(this.#currentMatchIndex - 1, this.#matches.length);
+    this.dispatchEventToListeners(TreeSearch.Events.SEARCH_CHANGED);
     return this.currentMatch();
   }
 
@@ -1514,7 +1537,7 @@ export class TreeSearch < NodeT extends TreeNode<NodeT>,
     this.#matches.push(...preOrderMatches);
     updateCurrentMatchIndex(/* isPostOrder=*/ false);
     yield* preOrderMatches.values();
-    for (const child of node.children()) {
+    for (const child of node.treeNodeChildren()) {
       yield* this.#innerSearch(child, currentMatch, jumpBackwards, match);
     }
     const postOrderMatches = match(node, /* isPostOrder=*/ true);
@@ -1525,13 +1548,24 @@ export class TreeSearch < NodeT extends TreeNode<NodeT>,
 
   search(node: NodeT, jumpBackwards: boolean, match: (node: NodeT, isPostOrder: boolean) => SearchResultT[]): number {
     const currentMatch = this.currentMatch();
-    this.reset();
+    this.#reset();
     // eslint-disable-next-line @typescript-eslint/naming-convention,@typescript-eslint/no-unused-vars
     for (const _ of this.#innerSearch(node, currentMatch, jumpBackwards, match)) {
       // run the generator
     }
     this.#currentMatchIndex = Platform.NumberUtilities.mod(this.#currentMatchIndex, this.#matches.length);
+    this.dispatchEventToListeners(TreeSearch.Events.SEARCH_CHANGED);
     return this.#matches.length;
+  }
+}
+
+export namespace TreeSearch {
+  export const enum Events {
+    SEARCH_CHANGED = 'SearchChanged',
+  }
+
+  export interface EventTypes {
+    [Events.SEARCH_CHANGED]: void;
   }
 }
 
@@ -1542,6 +1576,7 @@ class TreeViewTreeElement extends TreeElement {
   #userExpanded = false;
   #isProcessingAttribute = false;
   #previousOpenAttributeValue?: string|null;
+  #refreshScheduled = false;
 
   static #elementToTreeElement = new WeakMap<Node, TreeViewTreeElement>();
   readonly configElement: HTMLLIElement;
@@ -1587,6 +1622,17 @@ class TreeViewTreeElement extends TreeElement {
     } finally {
       this.#isProcessingAttribute = false;
     }
+  }
+
+  refreshSoon(): void {
+    if (this.#refreshScheduled) {
+      return;
+    }
+    this.#refreshScheduled = true;
+    queueMicrotask(() => {
+      this.#refreshScheduled = false;
+      this.refresh();
+    });
   }
 
   refresh(): void {
@@ -1646,7 +1692,7 @@ function getTreeNodes(nodeList: NodeList|Node[]): Array<HTMLLIElement|TreeElemen
           return [
             node,
             ...node.querySelectorAll<HTMLLIElement|TreeElementWrapper>(
-                'ul[role="group"] li[role="treeitem"],ul[role="group"] devtools-tree-wrapper')
+                'ul[role="group"] li[role="treeitem"],ul[role="group"] devtools-tree-wrapper'),
           ];
         }
         if (node instanceof HTMLElement) {
@@ -1754,10 +1800,17 @@ function removeNode(node: TreeElement, preserveParentExpandable = false): void {
 export class TreeViewElement extends HTMLElementWithLightDOMTemplate {
   static readonly observedAttributes =
       ['navigation-variant', 'hide-overflow', 'dense', 'show-selection-on-keyboard-focus'];
-  readonly #treeOutline = new TreeOutlineInShadow(undefined, this);
+  readonly #treeOutline = new TreeOutlineInShadow(undefined, this, true);
 
   constructor() {
     super();
+    this.addEventListener('focusin', (event: Event) => {
+      const actualTarget = event.composedPath()[0];
+      if (actualTarget === this.#treeOutline.contentElement && !this.#treeOutline.selectedTreeElement &&
+          this.#treeOutline.firstChild()) {
+        this.#treeOutline.firstChild()?.select(/* omitFocus */ true, /* selectedByUser */ false);
+      }
+    });
     this.#treeOutline.addEventListener(Events.ElementSelected, event => {
       if (event.data instanceof TreeViewTreeElement) {
         event.data.listItemElement.dispatchEvent(new TreeViewElement.SelectEvent());
@@ -1782,6 +1835,14 @@ export class TreeViewElement extends HTMLElementWithLightDOMTemplate {
 
   getInternalTreeOutlineForTest(): TreeOutlineInShadow {
     return this.#treeOutline;
+  }
+
+  override focus(): void {
+    if (!this.#treeOutline.selectedTreeElement && this.#treeOutline.firstChild()) {
+      this.#treeOutline.firstChild()?.select(/* omitFocus */ true, /* selectedByUser */ false);
+    } else {
+      this.#treeOutline.focus();
+    }
   }
 
   #getParentTreeElement(element: HTMLLIElement|TreeElementWrapper):
@@ -1813,7 +1874,7 @@ export class TreeViewElement extends HTMLElementWithLightDOMTemplate {
     if (!treeElement) {
       return;
     }
-    treeElement.refresh();
+    treeElement.refreshSoon();
     if (node === treeNode && attributeName === 'selected' && hasBooleanAttribute(treeNode, 'selected')) {
       treeElement.revealAndSelect(true);
     }
@@ -1822,7 +1883,7 @@ export class TreeViewElement extends HTMLElementWithLightDOMTemplate {
     }
   }
 
-  protected override addNodes(nodes: NodeList|Node[], nextSibling?: Node|null): void {
+  protected override addNodes(nodes: NodeList|Node[]): void {
     for (const node of getTreeNodes(nodes)) {
       if (TreeViewTreeElement.get(node)) {
         continue;  // Not sure this can happen
@@ -1834,10 +1895,18 @@ export class TreeViewElement extends HTMLElementWithLightDOMTemplate {
       if (parent.treeElement.childCount() === 0) {
         parent.treeElement.childrenListElement.classList.add(...parent.classes.values());
       }
-      while (nextSibling && nextSibling.nodeType !== Node.ELEMENT_NODE) {
-        nextSibling = nextSibling.nextSibling;
+      let nextElement: TreeElement|null = null;
+      for (let e: Element|null = node.nextElementSibling; e; e = e.nextElementSibling) {
+        const nextTreeEl = TreeViewTreeElement.get(e);
+        if (nextTreeEl) {
+          nextElement = nextTreeEl;
+          break;
+        }
+        if (e instanceof TreeElementWrapper && e.treeElement && e.treeElement.parent === parent.treeElement) {
+          nextElement = e.treeElement;
+          break;
+        }
       }
-      const nextElement = nextSibling ? TreeViewTreeElement.get(nextSibling) : null;
       const index = nextElement ? parent.treeElement.indexOfChild(nextElement) : parent.treeElement.children().length;
       let treeElement;
       if (node instanceof HTMLLIElement) {
@@ -1853,6 +1922,9 @@ export class TreeViewElement extends HTMLElementWithLightDOMTemplate {
           removeNode(treeElement);
         }
         parent.treeElement.insertChild(treeElement, index);
+        if (parent.treeElement instanceof TreeViewTreeElement) {
+          parent.treeElement.updateExpansionFromAttribute();
+        }
         if (hasBooleanAttribute(node, 'selected')) {
           treeElement.revealAndSelect(true);
         }
@@ -1861,12 +1933,12 @@ export class TreeViewElement extends HTMLElementWithLightDOMTemplate {
         }
       }
     }
-    for (const element of getStyleElements(nodes)) {
+    for (const element of new Set(getStyleElements(nodes))) {
       this.#treeOutline.shadowRoot.appendChild(element.cloneNode(true));
     }
   }
 
-  protected override removeNodes(nodes: NodeList): void {
+  protected override removeNodes(nodes: NodeList|Node[]): void {
     for (const node of getTreeNodes(nodes)) {
       if (node instanceof HTMLLIElement) {
         TreeViewTreeElement.get(node)?.remove();
@@ -1992,6 +2064,9 @@ export const ifExpanded = Lit.Directive.directive(IfExpandedDirective);
 export class TreeElementWrapper extends HTMLElement {
   #treeElement?: TreeElement;
   set treeElement(treeElement: TreeElement) {
+    if (this.#treeElement === treeElement) {
+      return;
+    }
     if (this.#treeElement?.parent) {
       const parent = this.#treeElement.parent;
       const index = parent.indexOfChild(this.#treeElement);

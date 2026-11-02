@@ -47,10 +47,12 @@
 #include "chrome/browser/ui/webui/managed_ui_handler.h"
 #include "chrome/browser/ui/webui/metrics_handler.h"
 #include "chrome/browser/ui/webui/page_not_available_for_guest/page_not_available_for_guest_ui.h"
+#include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/generated_resources.h"
 #include "chrome/grit/history_resources.h"
 #include "chrome/grit/history_resources_map.h"
+#include "components/critical_actions/core/browser/features.h"
 #include "components/grit/components_scaled_resources.h"
 #include "components/history/core/browser/features.h"
 #include "components/history/core/common/pref_names.h"
@@ -62,6 +64,7 @@
 #include "components/page_image_service/image_service_handler.h"
 #include "components/prefs/pref_service.h"
 #include "components/sessions/core/session_types.h"
+#include "components/signin/public/base/signin_buildflags.h"
 #include "components/signin/public/base/signin_pref_names.h"
 #include "components/signin/public/base/signin_switches.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
@@ -74,6 +77,10 @@
 #include "ui/base/webui/web_ui_util.h"
 #include "ui/webui/tracked_element/tracked_element_handler_document_singleton.h"
 #include "ui/webui/webui_util.h"
+
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+#include "chrome/browser/ui/webui/history/history_cross_device_signin_promo_handler.h"
+#endif
 
 namespace {
 
@@ -101,6 +108,10 @@ content::WebUIDataSource* CreateAndAddHistoryUIHTMLSource(Profile* profile) {
       {"compareHistoryRow", IDS_COMPARE_HISTORY_ROW},
       {"compareHistoryMenuAriaLabel", IDS_COMPARE_HISTORY_MENU_ARIA_LABEL},
       {"noSyncedResults", IDS_HISTORY_NO_SYNCED_RESULTS},
+      {"signinOnPhonePromoButton", IDS_HISTORY_SIGNIN_ON_PHONE_PROMO_BUTTON},
+      {"signinOnPhonePromoSubtitle",
+       IDS_HISTORY_SIGNIN_ON_PHONE_PROMO_SUBTITLE},
+      {"signinOnPhonePromoTitle", IDS_HISTORY_SIGNIN_ON_PHONE_PROMO_TITLE},
       {"turnOnSyncPromo", IDS_HISTORY_TURN_ON_SYNC_PROMO},
       {"turnOnSyncPromoDesc", IDS_HISTORY_TURN_ON_SYNC_PROMO_DESC},
       {"turnOnSyncHistoryPromo", IDS_HISTORY_SYNC_HISTORY_PROMO},
@@ -217,6 +228,9 @@ content::WebUIDataSource* CreateAndAddHistoryUIHTMLSource(Profile* profile) {
   source->AddLocalizedStrings(kHistoryEmbeddingsStrings);
   source->AddBoolean("isBrowsingHistoryActorIntegrationM3Enabled",
                      history::IsBrowsingHistoryActorIntegrationM3Enabled());
+  source->AddBoolean("isCriticalActionsEnabled",
+                     base::FeatureList::IsEnabled(
+                         critical_actions::features::kCriticalActionHistory));
 
   source->AddString("webuiRefresh2026", features::IsWebuiRefresh2026Enabled()
                                             ? "webui-refresh-2026"
@@ -253,6 +267,8 @@ HistoryUI::HistoryUI(content::WebUI* web_ui)
       CreateAndAddHistoryUIHTMLSource(profile);
   ManagedUIHandler::Initialize(web_ui, data_source);
 
+  content::URLDataSource::Add(profile, std::make_unique<ThemeSource>(profile));
+
   pref_change_registrar_.Init(profile->GetPrefs());
   pref_change_registrar_.Add(history_clusters::prefs::kVisible,
                              base::BindRepeating(&HistoryUI::UpdateDataSource,
@@ -282,10 +298,18 @@ base::RefCountedMemory* HistoryUI::GetFaviconResourceBytes(
 }
 
 void HistoryUI::BindInterface(
-    mojo::PendingReceiver<history_embeddings::mojom::PageHandler>
-        pending_page_handler) {
+    mojo::PendingReceiver<history_embeddings::mojom::PageHandlerFactory>
+        pending_page_handler_factory) {
+  history_embeddings_handler_factory_receiver_.reset();
+  history_embeddings_handler_factory_receiver_.Bind(
+      std::move(pending_page_handler_factory));
+}
+
+void HistoryUI::CreatePageHandler(
+    mojo::PendingRemote<history_embeddings::mojom::Page> page,
+    mojo::PendingReceiver<history_embeddings::mojom::PageHandler> receiver) {
   history_embeddings_handler_ = std::make_unique<HistoryEmbeddingsHandler>(
-      std::move(pending_page_handler),
+      std::move(receiver), std::move(page),
       Profile::FromWebUI(web_ui())->GetWeakPtr(), web_ui(),
       /*for_side_panel=*/false);
 }
@@ -297,12 +321,31 @@ void HistoryUI::BindInterface(
       web_ui()->GetWebContents());
 }
 
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
 void HistoryUI::BindInterface(
-    mojo::PendingReceiver<history::mojom::ForeignSessionPageHandler>
-        pending_page_handler) {
+    mojo::PendingReceiver<history_cross_device_signin_promo::mojom::
+                              HistoryCrossDeviceSigninPromoHandler>
+        pending_receiver) {
+  history_cross_device_signin_promo_handler_ =
+      std::make_unique<HistoryCrossDeviceSigninPromoHandler>(
+          std::move(pending_receiver), web_ui()->GetWebContents());
+}
+#endif
+
+void HistoryUI::BindInterface(
+    mojo::PendingReceiver<history::mojom::ForeignSessionPageHandlerFactory>
+        pending_receiver) {
+  foreign_session_page_handler_factory_receiver_.reset();
+  foreign_session_page_handler_factory_receiver_.Bind(
+      std::move(pending_receiver));
+}
+
+void HistoryUI::CreateForeignSessionPageHandler(
+    mojo::PendingRemote<history::mojom::ForeignSessionPage> page,
+    mojo::PendingReceiver<history::mojom::ForeignSessionPageHandler> receiver) {
   foreign_session_handler_ =
       std::make_unique<browser_sync::ForeignSessionHandler>(
-          std::move(pending_page_handler), Profile::FromWebUI(web_ui()),
+          std::move(receiver), std::move(page), Profile::FromWebUI(web_ui()),
           web_ui()->GetWebContents(),
           base::BindRepeating([](content::WebContents* source_web_contents,
                                  const ::sessions::SessionTab& tab,
@@ -320,11 +363,19 @@ void HistoryUI::BindInterface(
 }
 
 void HistoryUI::BindInterface(
-    mojo::PendingReceiver<history_clusters::mojom::PageHandler>
-        pending_page_handler) {
+    mojo::PendingReceiver<history_clusters::mojom::PageHandlerFactory>
+        pending_page_handler_factory) {
+  history_clusters_handler_factory_receiver_.reset();
+  history_clusters_handler_factory_receiver_.Bind(
+      std::move(pending_page_handler_factory));
+}
+
+void HistoryUI::CreatePageHandler(
+    mojo::PendingRemote<history_clusters::mojom::Page> page,
+    mojo::PendingReceiver<history_clusters::mojom::PageHandler> receiver) {
   history_clusters_handler_ =
       std::make_unique<history_clusters::HistoryClustersHandler>(
-          std::move(pending_page_handler), Profile::FromWebUI(web_ui()),
+          std::move(receiver), std::move(page), Profile::FromWebUI(web_ui()),
           web_ui()->GetWebContents(),
           // HistoryUI should always be in a tab. Look it up unconditionally.
           tabs::TabInterface::GetFromContents(web_ui()->GetWebContents()));

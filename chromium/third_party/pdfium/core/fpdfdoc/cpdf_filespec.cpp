@@ -171,6 +171,14 @@ RetainPtr<CPDF_Dictionary> CPDF_FileSpec::GetMutableParamsDict() {
       const_cast<CPDF_Dictionary*>(GetParamsDict().Get()));
 }
 
+RetainPtr<const CPDF_Dictionary> CPDF_FileSpec::GetFileSpecDict() const {
+  return pdfium::WrapRetain(obj_->AsDictionary());
+}
+
+RetainPtr<CPDF_Dictionary> CPDF_FileSpec::GetMutableFileSpecDict() {
+  return pdfium::WrapRetain(const_cast<CPDF_Dictionary*>(obj_->AsDictionary()));
+}
+
 WideString CPDF_FileSpec::EncodeFileName(const WideString& filepath) {
   if (filepath.IsEmpty()) {
     return WideString();

@@ -36,9 +36,11 @@ namespace content {
 class FrameTree;
 class RenderFrameHost;
 class RenderFrameHostImpl;
+class RenderWidgetHostImpl;
 class RenderViewHostDelegateView;
 class RenderWidgetHostViewChildFrame;
 class TextInputManager;
+class WebContentsDelegate;
 class WebContentsImpl;
 class WebContentsView;
 
@@ -52,6 +54,12 @@ class CONTENT_EXPORT SurfaceEmbedConnectorImpl
 
   WebContentsView* GetParentWebContentsView() const;
   RenderViewHostDelegateView* GetParentRenderViewHostDelegateView() const;
+
+  // Returns the first WebContentsDelegate found in the embedding chain.
+  // If this connector has a parent WebContents, it delegates the query
+  // to the parent; otherwise it returns nullptr (since the child's delegate
+  // was already checked and must have been null to reach here).
+  WebContentsDelegate* GetFirstWebContentsDelegate() const;
 
   // Returns the InputEventRouter appropriate for the child web contents to
   // register with. Note that this is the parent web contents's
@@ -98,7 +106,6 @@ class CONTENT_EXPORT SurfaceEmbedConnectorImpl
   const viz::LocalSurfaceId& GetLocalSurfaceId() override;
   const blink::mojom::ViewportIntersectionState& GetIntersectionState()
       override;
-  uint32_t GetCaptureSequenceNumber() override;
   const gfx::Rect& GetRectInParentViewInDip() override;
   const gfx::Size& GetLocalFrameSizeInDip() override;
   const gfx::Size& GetLocalFrameSizeInPixels() override;
@@ -126,8 +133,6 @@ class CONTENT_EXPORT SurfaceEmbedConnectorImpl
   input::RenderWidgetHostViewInput* GetParentViewInput() override;
   input::RenderWidgetHostViewInput* GetRootViewInput() override;
 
-  void OnRenderFrameCreated();
-
   // Updates the `view_` member to track the current RenderWidgetHostView
   // associated with the child WebContents.
   void UpdateViewForCurrentRenderFrameHost();
@@ -138,8 +143,24 @@ class CONTENT_EXPORT SurfaceEmbedConnectorImpl
   void SetFocusedFrameTree(FrameTree* frame_tree_to_focus);
   void ClearFocusOnInnerWebContents();
 
+  // Returns true if any WebContents in the parent chain has a pointer lock
+  // widget.
+  bool HasPointerLockWidgetInParentChain() const;
+
+  // Sets the pointer lock widget for all WebContents in the parent chain.
+  void SetPointerLockWidgetInParentChain(RenderWidgetHostImpl* widget);
+
+  // Returns true if the parent WebContents (or any ancestor) has a pointer lock
+  // for the given `render_widget_host`.
+  bool HasPointerLock(RenderWidgetHostImpl* render_widget_host) const;
+
+  // Returns the pointer lock widget from the parent WebContents (or any
+  // ancestor) if it exists and is locked.
+  RenderWidgetHostImpl* GetPointerLockWidget() const;
+
  private:
   class WCObserver;
+  class ParentWCObserver;
 
   friend class SurfaceEmbedConnector;
   friend class SurfaceEmbedConnectorImplBrowserTest;
@@ -166,12 +187,19 @@ class CONTENT_EXPORT SurfaceEmbedConnectorImpl
 
   RenderFrameHostImpl* current_child_frame_host() const;
 
-  // Observes the child web contents to send notifications to the connector.
+  void ParentVisibilityChanged(Visibility visibility);
+  void UpdateChildVisibility();
+
+  // Observes the child WebContents to send notifications to the connector.
   std::unique_ptr<WCObserver> wc_observer_;
+  // Observes the parent WebContents to propagate visibility changes.
+  std::unique_ptr<ParentWCObserver> parent_wc_observer_;
 
   raw_ptr<SurfaceEmbedConnector::Delegate> delegate_ = nullptr;
 
   raw_ptr<WebContentsImpl> child_web_contents_;  // Owns this object.
+  // WeakPtr to the parent WebContents. Automatically clears to nullptr when the
+  // observed parent is destroyed, safely notifying all consumers.
   base::WeakPtr<WebContents> parent_web_contents_;
   raw_ptr<RenderWidgetHostViewChildFrame> view_ = nullptr;
 
@@ -185,8 +213,6 @@ class CONTENT_EXPORT SurfaceEmbedConnectorImpl
   // process which is set through CSS or scrolling.
   blink::mojom::FrameVisibility visibility_ =
       blink::mojom::FrameVisibility::kRenderedInViewport;
-
-  uint32_t capture_sequence_number_ = 0u;
 
   display::ScreenInfos screen_infos_;
   blink::mojom::ViewportIntersectionState intersection_state_;

@@ -5,6 +5,7 @@
 #include "src/execution/arguments-inl.h"
 #include "src/heap/heap-inl.h"
 #include "src/numbers/conversions.h"
+#include "src/objects/dictionary-inl.h"
 #include "src/objects/js-array-inl.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/slots.h"
@@ -214,7 +215,7 @@ Tagged<Object> StringAdd_StringConstant_Internalize(
 
   FeedbackSlot cache_slot(FeedbackVector::ToSlot(
       slot_index + kAdd_StringConstant_Internalize_CacheSlotOffset));
-  DCHECK_LT(cache_slot.ToInt(), feedback_vector->length());
+  DCHECK_LT(cache_slot.ToInt(), feedback_vector->length().value());
   Handle<Object> cache_obj(Cast<Object>(feedback_vector->Get(cache_slot)),
                            isolate);
   Handle<SimpleNameDictionary> cache;

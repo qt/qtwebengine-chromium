@@ -35,6 +35,7 @@
 #include "ui/base/dragdrop/mojom/drag_drop_types.mojom.h"
 #include "ui/base/ime/constants.h"
 #include "ui/base/ime/input_method.h"
+#include "ui/base/ime/text_input_flags.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/base/mojom/menu_source_type.mojom.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -91,7 +92,6 @@
 
 #if BUILDFLAG(IS_LINUX)
 #include "ui/base/ime/linux/text_edit_command_auralinux.h"
-#include "ui/base/ime/text_input_flags.h"
 #include "ui/linux/linux_ui.h"
 #endif
 
@@ -620,7 +620,7 @@ size_t Textfield::GetCursorPosition() const {
 
 void Textfield::SetColor(SkColor value) {
   GetRenderText()->SetColor(value);
-  cursor_view_->layer()->SetColor(value);
+  cursor_view_->layer()->AsSolidColor()->SetColor(SkColor4f::FromColor(value));
   OnPropertyChanged(
       ui::metadata::MakeUniquePropertyKey(&model_, kTextfieldTextColor),
       PropertyEffects::kPaint);
@@ -1210,7 +1210,9 @@ void Textfield::OnFocus() {
   }
 
 #if BUILDFLAG(IS_MAC)
-  if (text_input_type_ == ui::TEXT_INPUT_TYPE_PASSWORD) {
+  if (text_input_type_ == ui::TEXT_INPUT_TYPE_PASSWORD ||
+      text_input_flags_ & ui::TEXT_INPUT_FLAG_HAS_BEEN_PASSWORD ||
+      text_input_flags_ & ui::TEXT_INPUT_FLAG_HAS_BEEN_CUSTOM_PASSWORD) {
     password_input_enabler_ =
         std::make_unique<ui::ScopedPasswordInputEnabler>();
   }
@@ -1264,7 +1266,8 @@ void Textfield::OnThemeChanged() {
   render_text->set_selection_color(GetSelectionTextColor());
   render_text->set_selection_background_focused_color(
       GetSelectionBackgroundColor());
-  cursor_view_->layer()->SetColor(GetTextColor());
+  cursor_view_->layer()->AsSolidColor()->SetColor(
+      SkColor4f::FromColor(GetTextColor()));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1646,8 +1649,10 @@ bool Textfield::IsCommandIdEnabled(int command_id) const {
       GetTextEditCommandFromMenuCommand(command_id, HasSelection()));
 }
 
-bool Textfield::GetAcceleratorForCommandId(int command_id,
-                                           ui::Accelerator* accelerator) const {
+// static
+bool Textfield::GetStandardAcceleratorForCommandId(
+    int command_id,
+    ui::Accelerator* accelerator) {
   switch (command_id) {
     case kUndo:
       *accelerator = ui::Accelerator(ui::VKEY_Z, ui::EF_PLATFORM_ACCELERATOR);
@@ -1670,9 +1675,17 @@ bool Textfield::GetAcceleratorForCommandId(int command_id,
       return true;
 
     default:
-      return text_services_context_menu_->GetAcceleratorForCommandId(
-          command_id, accelerator);
+      return false;
   }
+}
+
+bool Textfield::GetAcceleratorForCommandId(int command_id,
+                                           ui::Accelerator* accelerator) const {
+  if (GetStandardAcceleratorForCommandId(command_id, accelerator)) {
+    return true;
+  }
+  return text_services_context_menu_->GetAcceleratorForCommandId(command_id,
+                                                                 accelerator);
 }
 
 void Textfield::ExecuteCommand(int command_id, int event_flags) {
@@ -3149,6 +3162,36 @@ void Textfield::OnTextReadForPaste(base::OnceCallback<void(bool)> callback,
   std::move(callback).Run(pasted);
 }
 
+// static
+std::unique_ptr<views::ViewsTextServicesContextMenu>
+Textfield::UpdateContextMenuContents(Textfield* textfield,
+                                     TextfieldController* controller,
+                                     ui::SimpleMenuModel* menu_contents) {
+  CHECK(textfield);
+  menu_contents->AddItemWithStringId(kUndo, IDS_APP_UNDO);
+  menu_contents->AddSeparator(ui::NORMAL_SEPARATOR);
+  menu_contents->AddItemWithStringId(
+      std::to_underlying(ui::TouchEditable::MenuCommands::kCut), IDS_APP_CUT);
+  menu_contents->AddItemWithStringId(
+      std::to_underlying(ui::TouchEditable::MenuCommands::kCopy), IDS_APP_COPY);
+  menu_contents->AddItemWithStringId(
+      std::to_underlying(ui::TouchEditable::MenuCommands::kPaste),
+      IDS_APP_PASTE);
+  menu_contents->AddItemWithStringId(kDelete, IDS_APP_DELETE);
+  menu_contents->AddSeparator(ui::NORMAL_SEPARATOR);
+  menu_contents->AddItemWithStringId(
+      std::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll),
+      IDS_APP_SELECT_ALL);
+
+  // If the controller adds menu commands, also override ExecuteCommand() and
+  // IsCommandIdEnabled() as appropriate, for the commands added.
+  if (controller) {
+    controller->UpdateContextMenu(menu_contents);
+  }
+
+  return ViewsTextServicesContextMenu::Create(menu_contents, textfield);
+}
+
 void Textfield::UpdateContextMenu() {
   // TextfieldController may modify Textfield's menu, so the menu should be
   // recreated each time it's shown. Destroy the existing objects in the reverse
@@ -3157,30 +3200,8 @@ void Textfield::UpdateContextMenu() {
   context_menu_contents_.reset();
 
   context_menu_contents_ = std::make_unique<ui::SimpleMenuModel>(this);
-  context_menu_contents_->AddItemWithStringId(kUndo, IDS_APP_UNDO);
-  context_menu_contents_->AddSeparator(ui::NORMAL_SEPARATOR);
-  context_menu_contents_->AddItemWithStringId(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kCut), IDS_APP_CUT);
-  context_menu_contents_->AddItemWithStringId(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kCopy), IDS_APP_COPY);
-  context_menu_contents_->AddItemWithStringId(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kPaste),
-      IDS_APP_PASTE);
-  context_menu_contents_->AddItemWithStringId(kDelete, IDS_APP_DELETE);
-  context_menu_contents_->AddSeparator(ui::NORMAL_SEPARATOR);
-  context_menu_contents_->AddItemWithStringId(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll),
-      IDS_APP_SELECT_ALL);
-
-  // If the controller adds menu commands, also override ExecuteCommand() and
-  // IsCommandIdEnabled() as appropriate, for the commands added.
-  if (controller_) {
-    controller_->UpdateContextMenu(context_menu_contents_.get());
-  }
-
-  text_services_context_menu_ =
-      ViewsTextServicesContextMenu::Create(context_menu_contents_.get(), this);
-
+  text_services_context_menu_ = UpdateContextMenuContents(
+      this, controller_.get(), context_menu_contents_.get());
   context_menu_runner_ = std::make_unique<MenuRunner>(
       context_menu_contents_.get(),
       MenuRunner::HAS_MNEMONICS | MenuRunner::CONTEXT_MENU);
@@ -3528,7 +3549,7 @@ void Textfield::UpdateAccessibleDefaultActionVerb() {
 
 BEGIN_METADATA(Textfield)
 ADD_PROPERTY_METADATA(bool, ReadOnly)
-ADD_PROPERTY_METADATA(std::u16string_view, Text)
+ADD_PROPERTY_METADATA(std::u16string, Text)
 ADD_PROPERTY_METADATA(ui::TextInputType, TextInputType)
 ADD_PROPERTY_METADATA(int, TextInputFlags)
 ADD_READONLY_PROPERTY_METADATA(SkColor,
@@ -3543,7 +3564,7 @@ ADD_READONLY_PROPERTY_METADATA(SkColor,
                                SelectionBackgroundColor,
                                ui::metadata::SkColorConverter)
 ADD_PROPERTY_METADATA(bool, CursorEnabled)
-ADD_PROPERTY_METADATA(std::u16string_view, PlaceholderText)
+ADD_PROPERTY_METADATA(std::u16string, PlaceholderText)
 ADD_READONLY_PROPERTY_METADATA(SkColor,
                                PlaceholderTextColor,
                                ui::metadata::SkColorConverter)

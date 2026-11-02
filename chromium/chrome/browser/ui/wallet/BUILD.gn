@@ -24,11 +24,16 @@ source_set("wallet") {
     "//base",
     "//chrome/browser/signin",
     "//chrome/browser/ui/autofill",
+    "//chrome/browser/ui/views:layout_provider",
     "//chrome/browser/ui/views/location_bar",
     "//components/wallet/core/browser",
     "//content/public/browser",
     "//ui/views",
   ]
+
+  if (!is_android) {
+    deps += [ "//chrome/browser/ui:chrome_pages" ]
+  }
 
   public_deps = [ "//chrome/browser:browser_public_dependencies" ]
 }

@@ -21,17 +21,6 @@ inline constexpr base::FeatureParam<int>
         &kDeferredSyncStartupCustomDelay,
         "DeferredSyncStartupCustomDelayInSeconds", 1};
 
-// Enables syncing of settings from the user's account.
-BASE_DECLARE_FEATURE(kSyncAccountSettings);
-
-// Enables syncing of valuables from the user's account.
-#if BUILDFLAG(IS_IOS)
-BASE_DECLARE_FEATURE(kSyncAutofillValuable);
-#endif
-
-// Enables syncing of usage metadata from Google Wallet passes.
-BASE_DECLARE_FEATURE(kSyncAutofillValuableMetadata);
-
 // Enables syncing account-local metadata for shared tab groups.
 BASE_DECLARE_FEATURE(kSyncSharedTabGroupAccountData);
 
@@ -47,6 +36,9 @@ BASE_DECLARE_FEATURE(kSyncContextualTask);
 // Enables syncing of Gemini threads across devices.
 BASE_DECLARE_FEATURE(kSyncGeminiThread);
 
+// Enables syncing of Encrypted Tab Context Containers across devices.
+BASE_DECLARE_FEATURE(kSyncEncryptedTabContextContainer);
+
 // Enables syncing of themes across iOS devices.
 BASE_DECLARE_FEATURE(kSyncThemesIos);
 
@@ -55,6 +47,9 @@ BASE_DECLARE_FEATURE(kNewTabPageCustomizationThemeSync);
 
 // Enables syncing of usage metadata for loyalty cards.
 BASE_DECLARE_FEATURE(kSyncLoyaltyCardMetadata);
+
+// Enables syncing Notebooks.
+BASE_DECLARE_FEATURE(kSyncNotebook);
 
 #if !BUILDFLAG(IS_CHROMEOS)
 // Flag that controls Uno fast-follow features which are:
@@ -68,10 +63,6 @@ BASE_DECLARE_FEATURE(kSyncLoyaltyCardMetadata);
 // `kReplaceSyncPromosWithSignInPromos`.
 BASE_DECLARE_FEATURE(kUnoPhase2FollowUp);
 #endif  // !BUILDFLAG(IS_CHROMEOS)
-
-// If enabled, shows a user-actionable error when the bookmarks count limit is
-// exceeded.
-BASE_DECLARE_FEATURE(kSyncShowBookmarksLimitExceededError);
 
 // Do not use this flag directly. Use
 // IsContactInfoDataTypeForCustomPassphraseUsersEnabled() instead.
@@ -101,31 +92,40 @@ BASE_DECLARE_FEATURE(kReplaceSyncPromosWithSigninPromosNewSignin);
 // prefer using this function over checking the feature flags directly.
 bool IsReplaceSyncPromosWithSignInPromosEnabled();
 
-// If enabled, allowlisted priority preferences will be synced even if the
-// preferences user toggle is off. Note that this flag is only meaningful if
-// kEnablePreferencesAccountStorage is enabled.
-BASE_DECLARE_FEATURE(kSyncSupportAlwaysSyncingPriorityPreferences);
+// AutofillAi is launched globally on desktop, but restricted to certain
+// countries on mobile.
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+#define DECLARE_SYNC_AUTOFILL_AI_FEATURE(feature_name) \
+  BASE_DECLARE_FEATURE_WITH_COUNTRY_RESTRICTIONS(feature_name)
+#else
+#define DECLARE_SYNC_AUTOFILL_AI_FEATURE(feature_name) \
+  BASE_DECLARE_FEATURE(feature_name)
+#endif
+
+// Enables syncing of settings from the user's account.
+DECLARE_SYNC_AUTOFILL_AI_FEATURE(kSyncAccountSettings);
+
+// Enables syncing of valuables from the user's account.
+#if BUILDFLAG(IS_IOS)
+DECLARE_SYNC_AUTOFILL_AI_FEATURE(kSyncAutofillValuable);
+#endif
+
+// Enables syncing of usage metadata from Google Wallet passes.
+DECLARE_SYNC_AUTOFILL_AI_FEATURE(kSyncAutofillValuableMetadata);
 
 // Enables syncing of flight reservations coming from Google Wallet.
-BASE_DECLARE_FEATURE(kSyncWalletFlightReservations);
+DECLARE_SYNC_AUTOFILL_AI_FEATURE(kSyncWalletFlightReservations);
 
 // Enables syncing of vehicle registrations coming from Google Wallet.
-BASE_DECLARE_FEATURE(kSyncWalletVehicleRegistrations);
+DECLARE_SYNC_AUTOFILL_AI_FEATURE(kSyncWalletVehicleRegistrations);
+
+#undef DECLARE_SYNC_AUTOFILL_AI_FEATURE
 
 // If enabled, the spellcheck custom dictionary will keep the account dictionary
 // separate from the local dictionary.
 // TODO(crbug.com/443954137): This feature doesn't yet do anything. Implement
 // the local and account data separation behind this feature flag.
 BASE_DECLARE_FEATURE(kSpellcheckSeparateLocalAndAccountDictionaries);
-
-// Normally, if kReplaceSyncPromosWithSignInPromos is disabled,
-// UserSelectableType::kBookmarks is disabled by default upon sign-in. This
-// flag makes the type enabled by default, for manual testing.
-BASE_DECLARE_FEATURE(kEnableBookmarksSelectedTypeOnSigninForTesting);
-
-// If enabled, avoids committing changes containing only favicon URL related
-// change.
-BASE_DECLARE_FEATURE(kSearchEngineAvoidFaviconOnlyCommits);
 
 // Feature flag used for enabling sync (transport mode) for signed-in users that
 // haven't turned on full sync.
@@ -159,9 +159,6 @@ BASE_DECLARE_FEATURE(kSyncReadingListBatchUploadSelectedItems);
 
 // If enabled, distinguishes between local and account themes.
 BASE_DECLARE_FEATURE(kSeparateLocalAndAccountThemes);
-
-// If enabled, offers batch upload of local themes upon sign in.
-BASE_DECLARE_FEATURE(kThemesBatchUpload);
 
 // If enabled, the local change nudge delays for single-client users are
 // increased by some factor, specified via the FeatureParam below.
@@ -200,10 +197,6 @@ BASE_DECLARE_FEATURE(kSyncTrustedVaultInfobarMessageImprovements);
 // determine whether the pref values should be set in the account storage.
 BASE_DECLARE_FEATURE(kSyncPreferencesUseSelectedTypes);
 
-BASE_DECLARE_FEATURE(kSyncDetermineAccountManagedStatus);
-BASE_DECLARE_FEATURE_PARAM(base::TimeDelta,
-                           kSyncDetermineAccountManagedStatusTimeout);
-
 // If enabled, the new sync dashboard URL will be opened when the user clicks
 // on the "Review your synced data" (or equivalent) entrypoint in settings.
 BASE_DECLARE_FEATURE(kSyncEnableNewSyncDashboardUrl);
@@ -239,6 +232,12 @@ BASE_DECLARE_FEATURE(kSyncSearchEnginesAndroidLFF);
 // If enabled, ignores the value set in sessions_invalidations_enabled_ and
 // always registers for sessions invalidations.
 BASE_DECLARE_FEATURE(kAlwaysRegisterSessionsInvalidationsAndroid);
+
+// If enabled, the android.os.Build.FINGERPRINT prefix is uploaded in
+// DeviceInfo.
+// TODO(crbug.com/522788942): Consolidate this with
+// kSyncUseServerDeterminedDeviceName.
+BASE_DECLARE_FEATURE(kSyncUploadAndroidBuildFingerprintPrefix);
 #endif  // BUILDFLAG(IS_ANDROID)
 
 #if BUILDFLAG(IS_CHROMEOS)
@@ -250,6 +249,26 @@ BASE_DECLARE_FEATURE(kEstimateNewSignInUsersWithFinchAvailablePopulation);
 // values even if they are stale. This ensures that we log the last known cookie
 // sign-in status for short-lived sessions instead of the default OFF value.
 BASE_DECLARE_FEATURE(kSyncFixWebSigninSessionDurationForShortLivedSessions);
+
+// If enabled, simplifies the device naming architecture by using the
+// most user friendly name that can be computed for a device (the so-called
+// "preferred name" in legacy path) as a single source of truth, bypassing the
+// legacy deduplication and name-based local device filtering. This affects Send
+// Tab to Self and Sharing features.
+BASE_DECLARE_FEATURE(kSyncSimplifyDeviceNaming);
+
+// If enabled, uses the server-determined model name (marketing name) as the
+// preferred name (and fallback name) if available. This provides a more
+// recognizable name for the user.
+BASE_DECLARE_FEATURE(kSyncUseServerDeterminedDeviceName);
+
+// If enabled, copies selected types preferences from global profile preferences
+// to account-keyed preferences upon a DISABLE_SYNC_ON_CLIENT protocol error
+// before entering transport mode.
+BASE_DECLARE_FEATURE(kSyncCopyPreferencesToTransportModeOnServerForcedDisable);
+
+// Authenticate the Initialization Vector (IV) in Nigori encryption.
+BASE_DECLARE_FEATURE(kSyncNigoriAuthenticateIV);
 
 }  // namespace syncer
 

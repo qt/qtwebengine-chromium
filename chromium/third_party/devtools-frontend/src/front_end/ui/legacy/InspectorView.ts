@@ -81,7 +81,7 @@ const UIStrings = {
    * is configured with a different locale than Chrome. This option means DevTools will
    * always try and display the DevTools UI in the same language as Chrome.
    */
-  setToBrowserLanguage: 'Always match Chrome\'s language',
+  setToBrowserLanguage: 'Always match Chrome’s language',
   /**
    * @description An option the user can select when DevTools notices that DevTools
    * is configured with a different locale than Chrome. This option means DevTools UI
@@ -228,7 +228,10 @@ export class InspectorView extends VBox implements ViewLocationResolver {
     this.tabbedLocation = ViewManager.instance().createTabbedLocation(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance.bringToFront.bind(
             Host.InspectorFrontendHost.InspectorFrontendHostInstance),
-        'panel', true, true, {defaultTab: Root.Runtime.Runtime.queryParam('panel')});
+        'panel', true, true, {
+          defaultTab: Root.Runtime.Runtime.queryParam('panel'),
+          plusButton: {jslogContext: 'plus-button-panel'},
+        });
 
     this.tabbedPane = this.tabbedLocation.tabbedPane();
     this.tabbedPane.setMinimumSize(MIN_MAIN_PANEL_WIDTH, 0);
@@ -313,10 +316,6 @@ export class InspectorView extends VBox implements ViewLocationResolver {
   }
 
   #applyDrawerOrientationForDockSide(): void {
-    if (!this.drawerVisible()) {
-      this.applyDrawerOrientationForDockSideForTest();
-      return;
-    }
     const newOrientation = this.#getOrientationForDockMode();
     this.#applyDrawerOrientation(newOrientation);
     this.applyDrawerOrientationForDockSideForTest();
@@ -362,12 +361,17 @@ export class InspectorView extends VBox implements ViewLocationResolver {
 
   #observedResize(): void {
     const rect = this.element.getBoundingClientRect();
-    this.element.style.setProperty('--devtools-window-left', `${rect.left}px`);
-    this.element.style.setProperty('--devtools-window-right', `${window.innerWidth - rect.right}px`);
-    this.element.style.setProperty('--devtools-window-width', `${rect.width}px`);
-    this.element.style.setProperty('--devtools-window-top', `${rect.top}px`);
-    this.element.style.setProperty('--devtools-window-bottom', `${window.innerHeight - rect.bottom}px`);
-    this.element.style.setProperty('--devtools-window-height', `${rect.height}px`);
+    // Set custom properties on the root element so top-layer elements
+    // (such as native popovers inside Shadow DOM) can inherit them.
+    // Top-layer popovers inside Shadow DOM roots inherit CSS custom properties
+    // from documentElement rather than local parent elements or shadow hosts.
+    const root = this.element.ownerDocument.documentElement;
+    root.style.setProperty('--devtools-window-left', `${rect.left}px`);
+    root.style.setProperty('--devtools-window-right', `${window.innerWidth - rect.right}px`);
+    root.style.setProperty('--devtools-window-width', `${rect.width}px`);
+    root.style.setProperty('--devtools-window-top', `${rect.top}px`);
+    root.style.setProperty('--devtools-window-bottom', `${window.innerHeight - rect.bottom}px`);
+    root.style.setProperty('--devtools-window-height', `${rect.height}px`);
   }
 
   override wasShown(): void {
@@ -496,6 +500,7 @@ export class InspectorView extends VBox implements ViewLocationResolver {
       }
       return;
     }
+    this.#applyDrawerOrientationForDockSide();
     this.#drawerView.show(hasTargetDrawer);
     if (focus) {
       this.focusRestorer = new WidgetFocusRestorer(this.drawerTabbedPane);
@@ -504,7 +509,6 @@ export class InspectorView extends VBox implements ViewLocationResolver {
       this.focusRestorer = null;
       this.#mainPanelAtDrawerFocus = null;
     }
-    this.#applyDrawerOrientationForDockSide();
     ARIAUtils.LiveAnnouncer.alert(i18nString(UIStrings.drawerShown));
   }
 
@@ -676,7 +680,7 @@ export class InspectorView extends VBox implements ViewLocationResolver {
     }
 
     // Ctrl/Cmd + 1-9 should show corresponding panel.
-    const panelShortcutEnabled = Common.Settings.moduleSetting('shortcut-panel-switch').get();
+    const panelShortcutEnabled = Common.Settings.Settings.instance().moduleSetting('shortcut-panel-switch').get();
     if (panelShortcutEnabled) {
       let panelIndex = -1;
       if (event.keyCode > 0x30 && event.keyCode < 0x3A) {

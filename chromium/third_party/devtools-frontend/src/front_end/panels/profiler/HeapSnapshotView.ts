@@ -12,6 +12,7 @@ import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as HeapSnapshotModel from '../../models/heap_snapshot/heap_snapshot.js';
+import * as Workspace from '../../models/workspace/workspace.js';
 import * as DataGrid from '../../ui/legacy/components/data_grid/data_grid.js';
 import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
 import * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
@@ -107,11 +108,6 @@ const UIStrings = {
    */
   otherNonJSObjects: 'Other non-JS objects (such as HTML and CSS)',
   /**
-   * @description The reported total size used in the selected time frame of the allocation sampling profile
-   * @example {3 MB} PH1
-   */
-  selectedSizeS: 'Selected size: {PH1}',
-  /**
    * @description Text in Heap Snapshot View of a profiler tool
    */
   allObjects: 'All objects',
@@ -138,6 +134,11 @@ const UIStrings = {
   objectsRetainedByDetachedDomNodes: 'Objects retained by detached DOM nodes',
   /**
    * @description An option which will filter the heap snapshot to show only
+   * objects kept alive by contexts
+   */
+  objectsRetainedByContexts: 'Objects retained by contexts',
+  /**
+   * @description An option which will filter the heap snapshot to show only
    * objects kept alive by the DevTools console
    */
   objectsRetainedByConsole: 'Objects retained by DevTools Console',
@@ -146,6 +147,32 @@ const UIStrings = {
    * objects retained by event handlers
    */
   objectsRetainedByEventHandlers: 'Objects retained by Event Handlers',
+  /**
+   * @description An option which will filter the heap snapshot to show only
+   * objects attributed to a specific native context (roughly, a JavaScript
+   * realm such as a frame). PH1 is a name identifying the context
+   * (often a URL) which may be empty, PH2 is the id of the native context
+   * object, and PH3 is the context's attributed size.
+   * @example {https://example.com/ } PH1
+   * @example {1234} PH2
+   * @example {1.2 MB} PH3
+   */
+  objectsAttributedToNativeContextS: 'Native context {PH1}@{PH2} ({PH3})',
+  /**
+   * @description An option which will filter the heap snapshot to show only
+   * objects which are shared between multiple native contexts (roughly,
+   * JavaScript realms such as frames). PH1 is their total size.
+   * @example {1.2 MB} PH1
+   */
+  objectsSharedBetweenNativeContextsS: 'Objects shared between native contexts ({PH1})',
+  /**
+   * @description An option which will filter the heap snapshot to show only
+   * objects which could not be attributed to any single native context
+   * (roughly, a JavaScript realm such as a frame). PH1 is their
+   * total size.
+   * @example {1.2 MB} PH1
+   */
+  objectsNotAttributedToNativeContextS: 'Objects not attributed to a native context ({PH1})',
   /**
    * @description Text for the summary view
    */
@@ -245,12 +272,18 @@ const UIStrings = {
    * @description Text of a DOM element in Heap Snapshot View of a profiler tool
    */
   stackWasNotRecordedForThisObject:
-      'Stack wasn\'t recorded for this object because it had been allocated before this profile recording started.',
+      'Stack wasn’t recorded for this object because it had been allocated before this profile recording started.',
   /**
    * @description Text in Heap Snapshot View of a profiler tool.
    * This text is on a button to undo all previous "Ignore this retainer" actions.
    */
   restoreIgnoredRetainers: 'Restore ignored retainers',
+  /**
+   * @description Text in Heap Snapshot View showing summary stats (count of objects and total shallow size) for the selected filter
+   * @example {1,000} PH1
+   * @example {1.5 MB} PH2
+   */
+  filterSummarySObjectsS: '{PH1} objects ({PH2})',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/profiler/HeapSnapshotView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -261,6 +294,19 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 // eslint-disable-next-line @typescript-eslint/naming-convention
 const moduleUIstr_ = i18n.i18n.registerUIStrings('panels/profiler/ModuleUIStrings.ts', ModuleUIStrings.UIStrings);
 const moduleI18nString = i18n.i18n.getLocalizedString.bind(undefined, moduleUIstr_);
+
+interface NamedFilter {
+  uiName: string;
+  filterName: string;
+}
+
+interface FilterOption {
+  uiName: string;
+  profileIndex: number;
+  filterName?: string;
+  disabled?: boolean;
+}
+
 export class HeapSnapshotView extends UI.View.SimpleView implements DataDisplayDelegate, UI.SearchableView.Searchable {
   searchResults: number[] = [];
   profile: HeapProfileHeader;
@@ -288,6 +334,8 @@ export class HeapSnapshotView extends UI.View.SimpleView implements DataDisplayD
   readonly perspectiveSelect: UI.Toolbar.ToolbarComboBox;
   baseSelect: UI.Toolbar.ToolbarComboBox;
   readonly filterSelect: UI.Toolbar.ToolbarComboBox;
+  #filterOptions: FilterOption[] = [];
+  #nativeContextFilters: NamedFilter[] = [];
   readonly classNameFilter: UI.Toolbar.ToolbarInput;
   readonly selectedSizeText: UI.Toolbar.ToolbarText;
   readonly resetRetainersButton: UI.Toolbar.ToolbarButton;
@@ -358,6 +406,8 @@ export class HeapSnapshotView extends UI.View.SimpleView implements DataDisplayD
 
     this.constructorsDataGrid = new HeapSnapshotConstructorsDataGrid(heapProfilerModel, this);
     this.constructorsDataGrid.addEventListener(DataGrid.DataGrid.Events.SELECTED_NODE, this.selectionChanged, this);
+    this.constructorsDataGrid.addEventListener(HeapSnapshotSortableDataGridEvents.AggregatesReceived,
+                                               this.#onAggregatesReceived, this);
     this.constructorsWidget = this.constructorsDataGrid.asWidget();
     this.constructorsWidget.setMinimumSize(50, 25);
     this.constructorsWidget.element.setAttribute(
@@ -551,6 +601,7 @@ export class HeapSnapshotView extends UI.View.SimpleView implements DataDisplayD
     const heapSnapshotProxy = await this.profile.loadPromise;
 
     void this.retrieveStatistics(heapSnapshotProxy);
+    void this.updateNativeContextFilters(heapSnapshotProxy);
     if (this.dataGrid) {
       void this.dataGrid.setDataSource(heapSnapshotProxy, 0);
     }
@@ -594,25 +645,86 @@ export class HeapSnapshotView extends UI.View.SimpleView implements DataDisplayD
       {
         value: otherJSObjectsSize,
         color: 'var(--app-color-other-js-objects)',
-        title: i18nString(UIStrings.otherJSObjects)
+        title: i18nString(UIStrings.otherJSObjects),
       },
       {
         value: native.total - native.typedArrays,
         color: 'var(--app-color-other-non-js-objects)',
-        title: i18nString(UIStrings.otherNonJSObjects)
+        title: i18nString(UIStrings.otherNonJSObjects),
       },
     ];
     this.statisticsView.setTotalAndRecords(statistics.total, records);
     return statistics;
   }
 
+  async updateNativeContextFilters(heapSnapshotProxy: HeapSnapshotModel.HeapSnapshotProxy.HeapSnapshotProxy):
+      Promise<void> {
+    const sizes = await heapSnapshotProxy.getNativeContextSizes();
+    const filters: NamedFilter[] = [];
+
+    // List the individual native contexts first, sorted by attributed size
+    // (largest first), then the shared and unattributed buckets.
+    const nativeContexts = sizes.nativeContexts.toSorted((a, b) => b.attributedSize - a.attributedSize);
+    for (const nativeContext of nativeContexts) {
+      // Drop the "system / NativeContext" boilerplate (and any "Detached "
+      // marker) so the label shows just the distinguishing part of the name
+      // (e.g. the URL). The remaining name (if any) is followed by the native
+      // context object id, e.g. "Native context https://example.com @1234".
+      let name = nativeContext.nodeName;
+      if (name.startsWith('Detached ')) {
+        name = name.substring('Detached '.length);
+      }
+      if (name.startsWith('system / NativeContext / ')) {
+        name = name.substring('system / NativeContext / '.length);
+      } else if (name.startsWith('system / NativeContext')) {
+        name = name.substring('system / NativeContext'.length);
+      }
+      filters.push({
+        uiName: i18nString(UIStrings.objectsAttributedToNativeContextS, {
+          PH1: name ? `${name} ` : '',
+          PH2: nativeContext.nodeId,
+          PH3: i18n.ByteUtilities.bytesToString(nativeContext.attributedSize),
+        }),
+        filterName: `nativeContext_${nativeContext.nodeIndex}`,
+      });
+    }
+    filters.push({
+      uiName: i18nString(UIStrings.objectsSharedBetweenNativeContextsS,
+                         {PH1: i18n.ByteUtilities.bytesToString(sizes.sharedSize)}),
+      filterName: 'sharedNativeContext',
+    });
+    filters.push({
+      uiName: i18nString(UIStrings.objectsNotAttributedToNativeContextS,
+                         {PH1: i18n.ByteUtilities.bytesToString(sizes.noAttributionSize)}),
+      filterName: 'noNativeContext',
+    });
+
+    this.#nativeContextFilters = filters;
+    this.updateFilterOptions();
+  }
+
   onIdsRangeChanged(event: Common.EventTarget.EventTargetEvent<IdsRangeChangedEvent>): void {
     const {minId, maxId} = event.data;
-    this.selectedSizeText.setText(
-        i18nString(UIStrings.selectedSizeS, {PH1: i18n.ByteUtilities.bytesToString(event.data.size)}));
     if (this.constructorsDataGrid.snapshot) {
       this.constructorsDataGrid.setSelectionRange(minId, maxId);
     }
+  }
+
+  updateFilterSummaryText(totals?: {count: number, size: number}): void {
+    if (this.currentPerspective instanceof SummaryPerspective) {
+      const totalCount = totals?.count ?? this.constructorsDataGrid.filterTotalCount;
+      const totalSize = totals?.size ?? this.constructorsDataGrid.filterTotalSize;
+      if (totalCount !== undefined && totalSize !== undefined) {
+        this.selectedSizeText.setText(i18nString(UIStrings.filterSummarySObjectsS, {
+          PH1: totalCount.toLocaleString(),
+          PH2: i18n.ByteUtilities.bytesToString(totalSize),
+        }));
+      }
+    }
+  }
+
+  #onAggregatesReceived(event: Common.EventTarget.EventTargetEvent<{count: number, size: number}>): void {
+    this.updateFilterSummaryText(event.data);
   }
 
   override async toolbarItems(): Promise<UI.Toolbar.ToolbarItem[]> {
@@ -770,24 +882,23 @@ export class HeapSnapshotView extends UI.View.SimpleView implements DataDisplayD
     this.performSearch(this.currentSearch, false);
   }
 
-  static readonly ALWAYS_AVAILABLE_FILTERS: ReadonlyArray<{uiName: string, filterName: string}> = [
-    {uiName: i18nString(UIStrings.duplicatedStrings), filterName: 'duplicatedStrings'},
-    {uiName: i18nString(UIStrings.objectsRetainedByDetachedDomNodes), filterName: 'objectsRetainedByDetachedDomNodes'},
-    {uiName: i18nString(UIStrings.objectsRetainedByConsole), filterName: 'objectsRetainedByConsole'},
-    {uiName: i18nString(UIStrings.objectsRetainedByEventHandlers), filterName: 'objectsRetainedByEventHandlers'},
-  ];
+  static get alwaysAvailableFilters(): readonly NamedFilter[] {
+    return [
+      {uiName: i18nString(UIStrings.duplicatedStrings), filterName: 'duplicatedStrings'},
+      {
+        uiName: i18nString(UIStrings.objectsRetainedByDetachedDomNodes),
+        filterName: 'objectsRetainedByDetachedDomNodes',
+      },
+      {uiName: i18nString(UIStrings.objectsRetainedByContexts), filterName: 'objectsRetainedByContexts'},
+      {uiName: i18nString(UIStrings.objectsRetainedByConsole), filterName: 'objectsRetainedByConsole'},
+      {uiName: i18nString(UIStrings.objectsRetainedByEventHandlers), filterName: 'objectsRetainedByEventHandlers'},
+    ];
+  }
 
   changeFilter(): void {
-    let selectedIndex = this.filterSelect.selectedIndex();
-    let filterName = undefined;
-    const indexOfFirstAlwaysAvailableFilter =
-        this.filterSelect.size() - HeapSnapshotView.ALWAYS_AVAILABLE_FILTERS.length;
-    if (selectedIndex >= indexOfFirstAlwaysAvailableFilter) {
-      filterName =
-          HeapSnapshotView.ALWAYS_AVAILABLE_FILTERS[selectedIndex - indexOfFirstAlwaysAvailableFilter].filterName;
-      selectedIndex = 0;
-    }
-    const profileIndex = selectedIndex - 1;
+    const selectedOption = this.#filterOptions[this.filterSelect.selectedIndex()];
+    const profileIndex = selectedOption?.profileIndex ?? -1;
+    const filterName = selectedOption?.filterName;
     if (!this.dataGrid) {
       return;
     }
@@ -1018,10 +1129,20 @@ export class HeapSnapshotView extends UI.View.SimpleView implements DataDisplayD
   updateFilterOptions(): void {
     const list = this.profiles();
     const selectedIndex = this.filterSelect.selectedIndex();
-    const originalSize = this.filterSelect.size();
+    const selectedOption = this.#filterOptions[selectedIndex];
+    const filterOptions: FilterOption[] = [];
+    const createOption = (filterOption: FilterOption): HTMLOptionElement => {
+      filterOptions.push(filterOption);
+      const option = this.filterSelect.createOption(filterOption.uiName);
+      option.disabled = Boolean(filterOption.disabled);
+      return option;
+    };
+    const createSeparator = (): HTMLOptionElement => {
+      return createOption({uiName: '\u2014'.repeat(18), profileIndex: -1, disabled: true});
+    };
 
     this.filterSelect.removeOptions();
-    this.filterSelect.createOption(i18nString(UIStrings.allObjects));
+    createOption({uiName: i18nString(UIStrings.allObjects), profileIndex: -1});
     for (let i = 0; i < list.length; ++i) {
       let title;
       if (!i) {
@@ -1029,33 +1150,30 @@ export class HeapSnapshotView extends UI.View.SimpleView implements DataDisplayD
       } else {
         title = i18nString(UIStrings.objectsAllocatedBetweenSAndS, {PH1: list[i - 1].title, PH2: list[i].title});
       }
-      this.filterSelect.createOption(title);
+      createOption({uiName: title, profileIndex: i});
     }
 
-    // Create a dividing line using em dashes.
-    const dividerIndex = this.filterSelect.size();
-    const divider = this.filterSelect.createOption('\u2014'.repeat(18));
-    (divider).disabled = true;
+    createSeparator();
 
-    for (const filter of HeapSnapshotView.ALWAYS_AVAILABLE_FILTERS) {
-      this.filterSelect.createOption(filter.uiName);
+    for (const filter of HeapSnapshotView.alwaysAvailableFilters) {
+      createOption({uiName: filter.uiName, profileIndex: -1, filterName: filter.filterName});
     }
 
-    const newSize = this.filterSelect.size();
-
-    if (selectedIndex > -1) {
-      const distanceFromEnd = originalSize - selectedIndex;
-      if (distanceFromEnd <= HeapSnapshotView.ALWAYS_AVAILABLE_FILTERS.length) {
-        // If one of the always-available filters was selected, then select the
-        // same filter again even though its index may have changed.
-        this.filterSelect.setSelectedIndex(newSize - distanceFromEnd);
-      } else if (selectedIndex >= dividerIndex) {
-        // If the select list is now shorter than it was, such that we can't
-        // keep the index unchanged, set it to -1, which causes it to be blank.
-        this.filterSelect.setSelectedIndex(-1);
-      } else {
-        this.filterSelect.setSelectedIndex(selectedIndex);
+    if (this.#nativeContextFilters.length > 0) {
+      createSeparator();
+      for (const filter of this.#nativeContextFilters) {
+        createOption({uiName: filter.uiName, profileIndex: -1, filterName: filter.filterName});
       }
+    }
+
+    this.#filterOptions = filterOptions;
+
+    if (selectedOption) {
+      const newSelectedIndex = this.#filterOptions.findIndex(option => {
+        return !option.disabled && option.profileIndex === selectedOption.profileIndex &&
+            option.filterName === selectedOption.filterName;
+      });
+      this.filterSelect.setSelectedIndex(newSelectedIndex);
     }
   }
 
@@ -1116,6 +1234,7 @@ export class Perspective {
     heapSnapshotView.baseSelect.setVisible(false);
     heapSnapshotView.filterSelect.setVisible(false);
     heapSnapshotView.classNameFilter.setVisible(false);
+    heapSnapshotView.selectedSizeText.setText('');
     if (heapSnapshotView.trackingOverviewGrid) {
       heapSnapshotView.trackingOverviewGrid.detach();
     }
@@ -1154,6 +1273,7 @@ export class SummaryPerspective extends Perspective {
     heapSnapshotView.splitWidget.show(heapSnapshotView.searchableViewInternal.element);
     heapSnapshotView.filterSelect.setVisible(true);
     heapSnapshotView.classNameFilter.setVisible(true);
+    heapSnapshotView.updateFilterSummaryText();
     if (!heapSnapshotView.trackingOverviewGrid) {
       return;
     }
@@ -1695,8 +1815,8 @@ export class HeapProfileHeader extends ProfileHeader {
 
   setupWorker(): void {
     console.assert(!this.workerProxy, 'HeapSnapshotWorkerProxy already exists');
-    this.workerProxy =
-        new HeapSnapshotModel.HeapSnapshotProxy.HeapSnapshotWorkerProxy(this.handleWorkerEvent.bind(this));
+    this.workerProxy = new HeapSnapshotModel.HeapSnapshotProxy.HeapSnapshotWorkerProxy(
+        this.handleWorkerEvent.bind(this), Common.Console.Console.instance());
     this.workerProxy.addEventListener(
         HeapSnapshotModel.HeapSnapshotProxy.HeapSnapshotWorkerProxy.Events.WAIT, event => {
           this.updateStatus(null, event.data);
@@ -1736,7 +1856,7 @@ export class HeapProfileHeader extends ProfileHeader {
 
   transferChunk(chunk: string): void {
     if (!this.bufferedWriter) {
-      this.bufferedWriter = new Bindings.TempFile.TempFile();
+      this.bufferedWriter = new Bindings.TempFile.TempFile(Common.Console.Console.instance());
     }
     this.bufferedWriter.write([chunk]);
 
@@ -1773,7 +1893,7 @@ export class HeapProfileHeader extends ProfileHeader {
 
   override async saveToFile(): Promise<void> {
     await this.loadPromise;
-    const fileOutputStream = new Bindings.FileUtils.FileOutputStream();
+    const fileOutputStream = new Bindings.FileUtils.FileOutputStream(Workspace.FileManager.FileManager.instance());
     this.fileName = this.fileName ||
         'Heap-' + Platform.DateUtilities.toISO8601Compact(new Date()) + this.profileType().fileExtension() as
             Platform.DevToolsPath.RawPathString;
@@ -1949,7 +2069,7 @@ export class HeapAllocationStackView extends UI.Widget.Widget {
         continue;
       }
       const target = this.heapProfilerModel ? this.heapProfilerModel.target() : null;
-      const options = {columnNumber: frame.column - 1, inlineFrameIndex: 0};
+      const options = {columnNumber: frame.column - 1};
       const urlElement = this.linkifier.linkifyScriptLocation(
           target, String(frame.scriptId) as Protocol.Runtime.ScriptId,
           frame.scriptName as Platform.DevToolsPath.UrlString, frame.line - 1, options);

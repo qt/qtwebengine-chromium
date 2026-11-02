@@ -17,7 +17,7 @@ g.test('enable_subgroup_size_control_requires_subgroups')
   .params(u => u.combine('enableSubgroups', [false, true] as const))
   .beforeAllSubcases(t => {
     t.selectDeviceOrSkipTestCase({
-      requiredFeatures: ['subgroup-size-control' as GPUFeatureName],
+      requiredFeatures: ['subgroup-size-control'],
     });
   })
   .fn(t => {
@@ -43,7 +43,7 @@ g.test('use_subgroup_size_attribute_requires_subgroup_size_control_extension_ena
   .params(u => u.combine('enableExtension', [false, true] as const))
   .beforeAllSubcases(t => {
     t.selectDeviceOrSkipTestCase({
-      requiredFeatures: ['subgroup-size-control' as GPUFeatureName],
+      requiredFeatures: ['subgroup-size-control'],
     });
   })
   .fn(t => {
@@ -69,7 +69,7 @@ g.test('subgroup_size_attribute_only_valid_in_compute_stage')
   .params(u => u.combine('stage', ['compute', 'vertex', 'fragment'] as const))
   .beforeAllSubcases(t => {
     t.selectDeviceOrSkipTestCase({
-      requiredFeatures: ['subgroup-size-control' as GPUFeatureName],
+      requiredFeatures: ['subgroup-size-control'],
     });
   })
   .fn(t => {
@@ -133,7 +133,7 @@ g.test('subgroup_size_value_must_be_const_or_override_i32_u32')
   .params(u => u.combine('case', keysOf(kSubgroupSizeValueCases)))
   .beforeAllSubcases(t => {
     t.selectDeviceOrSkipTestCase({
-      requiredFeatures: ['subgroup-size-control' as GPUFeatureName],
+      requiredFeatures: ['subgroup-size-control'],
     });
   })
   .fn(t => {
@@ -161,7 +161,7 @@ g.test('subgroup_size_constant_value_must_be_power_of_2')
   )
   .beforeAllSubcases(t => {
     t.selectDeviceOrSkipTestCase({
-      requiredFeatures: ['subgroup-size-control' as GPUFeatureName],
+      requiredFeatures: ['subgroup-size-control'],
     });
   })
   .fn(t => {
@@ -183,10 +183,10 @@ g.test('subgroup_size_override_must_be_power_of_2_at_pipeline_creation')
     `Checks that when @subgroup_size is an override expression, it is a pipeline creation error
      if the override value resolves to a value that is not a power of 2.`
   )
-  .params(u => u.combine('size', [3, 5, 7, 15, 31, 63, 127] as const))
+  .params(u => u.combine('size', [0, 3, 5, 7, 15, 31, 63, 127] as const))
   .beforeAllSubcases(t => {
     t.selectDeviceOrSkipTestCase({
-      requiredFeatures: ['subgroup-size-control' as GPUFeatureName],
+      requiredFeatures: ['subgroup-size-control'],
     });
   })
   .fn(t => {
@@ -209,14 +209,13 @@ g.test('subgroup_size_override_must_be_power_of_2_at_pipeline_creation')
  * between subgroupMinSize and subgroupMaxSize inclusive.
  */
 async function getValidSubgroupSizes(device: GPUDevice): Promise<number[]> {
-  interface SubgroupProperties extends GPUAdapterInfo {
-    subgroupMinSize: number;
-    subgroupMaxSize: number;
-  }
-  const { subgroupMinSize, subgroupMaxSize } = device.adapterInfo as SubgroupProperties;
+  const subgroupMinSize = device.adapterInfo.subgroupMinSize!;
+  const subgroupMaxSize = device.adapterInfo.subgroupMaxSize!;
+  const maxWorkgroupSizeX = device.limits.maxComputeWorkgroupSizeX;
 
   const sizes: number[] = [];
   for (let subgroupSize = subgroupMinSize; subgroupSize <= subgroupMaxSize; subgroupSize *= 2) {
+    if (subgroupSize > maxWorkgroupSizeX) break;
     const wgsl = `
 enable subgroups;
 enable subgroup_size_control;
@@ -247,7 +246,7 @@ g.test('subgroup_size_override_valid_values_no_error')
   )
   .beforeAllSubcases(t => {
     t.selectDeviceOrSkipTestCase({
-      requiredFeatures: ['subgroup-size-control' as GPUFeatureName],
+      requiredFeatures: ['subgroup-size-control'],
     });
   })
   .fn(async t => {
@@ -283,7 +282,7 @@ g.test('workgroup_size_x_must_be_multiple_of_subgroup_size_at_pipeline_creation'
   )
   .beforeAllSubcases(t => {
     t.selectDeviceOrSkipTestCase({
-      requiredFeatures: ['subgroup-size-control' as GPUFeatureName],
+      requiredFeatures: ['subgroup-size-control'],
     });
   })
   .fn(async t => {
@@ -294,6 +293,7 @@ g.test('workgroup_size_x_must_be_multiple_of_subgroup_size_at_pipeline_creation'
     for (const subgroupSize of validSubgroupSizes) {
       const workgroupSizeX = subgroupSize * multiplier + offset;
       if (workgroupSizeX <= 0) continue;
+      if (workgroupSizeX > t.device.limits.maxComputeWorkgroupSizeX) continue;
 
       const isMultiple = workgroupSizeX % subgroupSize === 0;
 
@@ -313,4 +313,74 @@ g.test('workgroup_size_x_must_be_multiple_of_subgroup_size_at_pipeline_creation'
         addWorkgroupSize: false,
       });
     }
+  });
+
+g.test('subgroup_size_must_be_between_min_and_max_at_pipeline_creation')
+  .desc(
+    `Checks that a pipeline-creation error results if the subgroup_size value is smaller than
+     subgroupMinSize or greater than subgroupMaxSize. Tests both constant and override expressions
+     for the subgroup_size attribute.`
+  )
+  .params(u =>
+    u
+      .combine('subgroupSizeIsOverride', [false, true] as const)
+      .combine('relation', ['below_min', 'at_min', 'at_max', 'above_max'] as const)
+  )
+  .beforeAllSubcases(t => {
+    t.selectDeviceOrSkipTestCase({
+      requiredFeatures: ['subgroup-size-control'],
+    });
+  })
+  .fn(t => {
+    const { subgroupSizeIsOverride, relation } = t.params;
+    const subgroupMinSize = t.device.adapterInfo.subgroupMinSize!;
+    const subgroupMaxSize = t.device.adapterInfo.subgroupMaxSize!;
+
+    let subgroupSize: number;
+    let shouldSucceed: boolean;
+    switch (relation) {
+      case 'below_min':
+        // Use a power-of-2 value below min. If min is already 1, skip.
+        subgroupSize = subgroupMinSize / 2;
+        if (subgroupSize < 1) {
+          t.skip('subgroupMinSize is 1, cannot test below minimum');
+          return;
+        }
+        shouldSucceed = false;
+        break;
+      case 'at_min':
+        subgroupSize = subgroupMinSize;
+        shouldSucceed = true;
+        break;
+      case 'at_max':
+        subgroupSize = subgroupMaxSize;
+        shouldSucceed = true;
+        break;
+      case 'above_max':
+        // Use a power-of-2 value above max.
+        subgroupSize = subgroupMaxSize * 2;
+        shouldSucceed = false;
+        break;
+    }
+
+    // Ensure workgroup_size x is a multiple of subgroup_size and within limits.
+    const workgroupSizeX = subgroupSize;
+    if (workgroupSizeX > t.device.limits.maxComputeWorkgroupSizeX) {
+      t.skip('subgroup size exceeds maxComputeWorkgroupSizeX');
+      return;
+    }
+
+    t.expectPipelineResult({
+      expectedResult: shouldSucceed,
+      code: `
+          enable subgroups;
+          enable subgroup_size_control;
+          const const_S = ${subgroupSize}u;
+          override override_S: u32;
+          @workgroup_size(${workgroupSizeX})
+          @subgroup_size(${subgroupSizeIsOverride ? 'override_S' : 'const_S'})
+        `,
+      constants: { override_S: subgroupSize },
+      addWorkgroupSize: false,
+    });
   });

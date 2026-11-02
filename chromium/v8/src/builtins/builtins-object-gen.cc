@@ -1408,11 +1408,7 @@ TF_BUILTIN(CreateGeneratorObject, ObjectBuiltinsAssembler) {
   // have one.
   Label done(this), runtime(this);
   GotoIfForceSlowPath(&runtime);
-  GotoIfNot(IsJSFunctionWithPrototypeMap(LoadMap(closure)), &runtime);
-  TNode<UnionOf<JSPrototype, Map, TheHole>> maybe_map =
-      LoadJSFunctionPrototypeOrInitialMap(closure);
-  GotoIfNot(IsMap(maybe_map), &runtime);
-  TNode<Map> map = CAST(maybe_map);
+  TNode<Map> map = LoadJSFunctionInitialMap(closure, &runtime);
 
   TNode<SharedFunctionInfo> shared = LoadObjectField<SharedFunctionInfo>(
       closure, offsetof(JSFunction, shared_function_info_));
@@ -1453,6 +1449,8 @@ TF_BUILTIN(CreateGeneratorObject, ObjectBuiltinsAssembler) {
   TNode<Smi> executing = SmiConstant(JSGeneratorObject::kGeneratorExecuting);
   StoreObjectFieldNoWriteBarrier(
       result, offsetof(JSGeneratorObject, continuation_), executing);
+  StoreObjectFieldNoWriteBarrier(
+      result, offsetof(JSGeneratorObject, yielded_value_), UndefinedConstant());
   GotoIfNot(InstanceTypeEqual(LoadMapInstanceType(map),
                               JS_ASYNC_GENERATOR_OBJECT_TYPE),
             &done);

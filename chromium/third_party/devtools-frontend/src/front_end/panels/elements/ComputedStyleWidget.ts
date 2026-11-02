@@ -95,8 +95,9 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 function matchProperty(name: string, value: string): SDK.CSSPropertyParser.BottomUpTreeMatching|null {
   return SDK.CSSPropertyParser.matchDeclaration(name, value, [
-    new SDK.CSSPropertyParserMatchers.ColorMatcher(), new SDK.CSSPropertyParserMatchers.URLMatcher(),
-    new SDK.CSSPropertyParserMatchers.StringMatcher()
+    new SDK.CSSPropertyParserMatchers.ColorMatcher(),
+    new SDK.CSSPropertyParserMatchers.URLMatcher(),
+    new SDK.CSSPropertyParserMatchers.StringMatcher(),
   ]);
 }
 

@@ -15,7 +15,7 @@ import {
 
 const UIStrings = {
   /**
-   * @description Title for Compression Dictionary Transport specification url link
+   * @description Title for Compression Dictionary Transport specification URL link.
    */
   compressionDictionaryTransport: 'Compression Dictionary Transport',
 } as const;

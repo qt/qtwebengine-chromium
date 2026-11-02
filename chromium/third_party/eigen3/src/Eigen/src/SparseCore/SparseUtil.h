@@ -51,35 +51,26 @@ class SparseVector;
 
 template <typename MatrixType, unsigned int UpLo>
 class SparseSelfAdjointView;
-template <typename Lhs, typename Rhs>
-class SparseDiagonalProduct;
 template <typename MatrixType>
 class SparseView;
 
 template <typename Lhs, typename Rhs>
 class SparseSparseProduct;
-template <typename Lhs, typename Rhs>
-class SparseTimeDenseProduct;
-template <typename Lhs, typename Rhs>
-class DenseTimeSparseProduct;
-template <typename Lhs, typename Rhs, bool Transpose>
-class SparseDenseOuterProduct;
-
-template <typename Lhs, typename Rhs>
-struct SparseSparseProductReturnType;
-template <typename Lhs, typename Rhs,
-          int InnerSize = internal::min_size_prefer_fixed(internal::traits<Lhs>::ColsAtCompileTime,
-                                                          internal::traits<Rhs>::RowsAtCompileTime)>
-struct DenseSparseProductReturnType;
-
-template <typename Lhs, typename Rhs,
-          int InnerSize = internal::min_size_prefer_fixed(internal::traits<Lhs>::ColsAtCompileTime,
-                                                          internal::traits<Rhs>::RowsAtCompileTime)>
-struct SparseDenseProductReturnType;
 template <typename MatrixType, int UpLo>
 class SparseSymmetricPermutationProduct;
 
 namespace internal {
+
+/** \internal
+ * Compile-time test for whether a sparse expression exposes its storage directly
+ * through outerIndexPtr() / innerIndexPtr() / valuePtr() / innerNonZeroPtr()
+ * (the \ref CompressedAccessBit contract: SparseMatrix, SparseVector,
+ * Ref<Sparse>, Map<SparseMatrix>, ...). Such expressions can drive raw-pointer
+ * fast paths; anything else must be walked via InnerIterator.
+ */
+template <typename Derived>
+struct has_compressed_access : std::integral_constant<bool, (int(traits<Derived>::Flags) & CompressedAccessBit) != 0> {
+};
 
 template <typename T, int Rows, int Cols, int Flags>
 struct sparse_eval;
@@ -168,10 +159,10 @@ struct glue_shapes<SparseShape, TriangularShape> {
 
 // return type of SparseCompressedBase::lower_bound;
 struct LowerBoundIndex {
-  LowerBoundIndex() : value(-1), found(false) {}
+  LowerBoundIndex() = default;
   LowerBoundIndex(Index val, bool ok) : value(val), found(ok) {}
-  Index value;
-  bool found;
+  Index value = -1;
+  bool found = false;
 };
 
 }  // end namespace internal
@@ -187,7 +178,7 @@ struct LowerBoundIndex {
 template <typename Scalar, typename StorageIndex = typename SparseMatrix<Scalar>::StorageIndex>
 class Triplet {
  public:
-  Triplet() : m_row(0), m_col(0), m_value(0) {}
+  Triplet() = default;
 
   Triplet(const StorageIndex& i, const StorageIndex& j, const Scalar& v = Scalar(0)) : m_row(i), m_col(j), m_value(v) {}
 
@@ -201,8 +192,9 @@ class Triplet {
   const Scalar& value() const { return m_value; }
 
  protected:
-  StorageIndex m_row, m_col;
-  Scalar m_value;
+  StorageIndex m_row = 0;
+  StorageIndex m_col = 0;
+  Scalar m_value = Scalar(0);
 };
 
 }  // end namespace Eigen

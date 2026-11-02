@@ -3,19 +3,21 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 import type {SinonStub, SinonStubbedInstance} from 'sinon';
 
 import * as Common from '../../core/common/common.js';
+import type * as ProtocolClient from '../../core/protocol_client/protocol_client.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as ComputedStyle from '../../models/computed_style/computed_style.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
-import {createTarget} from '../../testing/EnvironmentHelpers.js';
+import {createTarget, describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
 import {expectCalled, spyCall} from '../../testing/ExpectStubCall.js';
-import {describeWithMockConnection, setMockConnectionResponseHandler} from '../../testing/MockConnection.js';
+import {MockCDPConnection} from '../../testing/MockCDPConnection.js';
 import {
   getMatchedStyles,
   getMatchedStylesWithBlankRule,
@@ -29,19 +31,24 @@ import * as LegacyUI from '../../ui/legacy/legacy.js';
 import * as ElementsComponents from './components/components.js';
 import * as Elements from './elements.js';
 
-describeWithMockConnection('StylePropertyTreeElement', () => {
+describeWithEnvironment('StylePropertyTreeElement', () => {
   let stylesSidebarPane: Elements.StylesSidebarPane.StylesSidebarPane;
   let computedStyleModel: ComputedStyle.ComputedStyleModel.ComputedStyleModel;
+  let connection: MockCDPConnection;
   let mockVariableMap: Record<string, string|SDK.CSSProperty.CSSProperty>;
   let matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles;
-  let fakeComputeCSSVariable: SinonStub<
-      [style: SDK.CSSStyleDeclaration.CSSStyleDeclaration, variableName: string],
-      SDK.CSSMatchedStyles.CSSVariableValue|null>;
+  let fakeComputeCSSVariable: SinonStub<[
+    style: SDK.CSSStyleDeclaration.CSSStyleDeclaration,
+    variableName: string,
+    containerNode?: SDK.DOMModel.DOMNode|undefined,
+  ],
+                                        SDK.CSSMatchedStyles.CSSVariableValue|null>;
   let cssModel: SDK.CSSModel.CSSModel;
 
   const environmentVariables = {a: 'A'};
 
   beforeEach(async () => {
+    connection = new MockCDPConnection();
     computedStyleModel = new ComputedStyle.ComputedStyleModel.ComputedStyleModel();
     stylesSidebarPane = new Elements.StylesSidebarPane.StylesSidebarPane(computedStyleModel);
     mockVariableMap = {
@@ -56,17 +63,18 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
     };
 
     matchedStyles = await getMatchedStylesWithBlankRule({
-      cssModel: new SDK.CSSModel.CSSModel(createTarget()),
+      cssModel: new SDK.CSSModel.CSSModel(createTarget({connection})),
       range: {
         startLine: 0,
         startColumn: 0,
         endLine: 0,
         endColumn: 1,
       },
-      getEnvironmentVariablesCallback: () => ({environmentVariables})
+      getEnvironmentVariablesCallback: () => ({environmentVariables}),
+      connection,
     });
     sinon.stub(matchedStyles, 'availableCSSVariables').returns(Object.keys(mockVariableMap));
-    fakeComputeCSSVariable = sinon.stub(matchedStyles, 'computeCSSVariable').callsFake((_style, name) => {
+    fakeComputeCSSVariable = sinon.stub(matchedStyles, 'computeCSSVariable').callsFake((_style, name, _node) => {
       const value = mockVariableMap[name];
       if (!value) {
         return null;
@@ -86,8 +94,8 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
     Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding.instance(
         {forceNew: true, resourceMapping, targetManager: SDK.TargetManager.TargetManager.instance()});
 
-    setMockConnectionResponseHandler('CSS.enable', () => ({}));
-    cssModel = new SDK.CSSModel.CSSModel(createTarget());
+    connection.setSuccessHandler('CSS.enable', () => ({}));
+    cssModel = new SDK.CSSModel.CSSModel(createTarget({connection}));
     await cssModel.resumeModel();
     const domModel = cssModel.domModel();
     const node = new SDK.DOMModel.DOMNode(domModel);
@@ -106,8 +114,9 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
 
   async function getTreeElementForFunctionRule(functionName: string, result: string, propertyName = 'result') {
     const matchedStyles = await getMatchedStyles({
+      connection,
       functionRules:
-          [{name: {text: functionName}, origin: Protocol.CSS.StyleSheetOrigin.Regular, parameters: [], children: []}]
+          [{name: {text: functionName}, origin: Protocol.CSS.StyleSheetOrigin.Regular, parameters: [], children: []}],
     });
 
     const property = new SDK.CSSProperty.CSSProperty(
@@ -171,23 +180,25 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
        });
 
     it('is able to expand longhands with vars', async () => {
-      setMockConnectionResponseHandler(
-          'CSS.getLonghandProperties', (request: Protocol.CSS.GetLonghandPropertiesRequest) => {
-            if (request.shorthandName !== 'shorthand') {
-              return {getError: () => 'Invalid shorthand'};
-            }
-            const longhands = request.value.split(' ');
-            if (longhands.length !== 3) {
-              return {getError: () => 'Invalid value'};
-            }
-            return {
-              longhandProperties: [
-                {name: 'first', value: longhands[0]},
-                {name: 'second', value: longhands[1]},
-                {name: 'third', value: longhands[2]},
-              ]
-            };
-          });
+      connection.setHandler('CSS.getLonghandProperties', null);
+      connection.setHandler('CSS.getLonghandProperties', (request: Protocol.CSS.GetLonghandPropertiesRequest) => {
+        if (request.shorthandName !== 'shorthand') {
+          return {error: {message: 'Invalid shorthand', code: -32000 as ProtocolClient.CDPConnection.CDPErrorStatus}};
+        }
+        const longhands = request.value.split(' ');
+        if (longhands.length !== 3) {
+          return {error: {message: 'Invalid value', code: -32000 as ProtocolClient.CDPConnection.CDPErrorStatus}};
+        }
+        return {
+          result: {
+            longhandProperties: [
+              {name: 'first', value: longhands[0]},
+              {name: 'second', value: longhands[1]},
+              {name: 'third', value: longhands[2]},
+            ],
+          },
+        };
+      });
       const stylePropertyTreeElement = getTreeElement(
           'shorthand', 'var(--a) var(--space)',
           [{name: 'first', value: ''}, {name: 'second', value: ''}, {name: 'third', value: ''}]);
@@ -197,6 +208,13 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
       const children = stylePropertyTreeElement.children().map(
           child => (child as Elements.StylePropertyTreeElement.StylePropertyTreeElement).valueElement?.innerText);
       assert.deepEqual(children, ['red', 'shorter', 'hue']);
+    });
+
+    it('does not break inspector for empty URL', () => {
+      const stylePropertyTreeElement = getTreeElement('background-image', 'url()');
+      stylePropertyTreeElement.updateTitle();
+      assert.exists(stylePropertyTreeElement.valueElement);
+      assert.strictEqual(stylePropertyTreeElement.valueElement.textContent, 'url()');
     });
 
     describe('color-mix swatch', () => {
@@ -325,10 +343,10 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
 
       it('supports evaluation during tracing', async () => {
         const property = addProperty('color', 'color-mix(in srgb, black, white)');
-        setMockConnectionResponseHandler(
-            'CSS.resolveValues',
-            (request: Protocol.CSS.ResolveValuesRequest) =>
-                ({results: request.values.map(v => v === property.value ? 'grey' : v)}));
+        connection.setHandler('CSS.resolveValues', null);
+        connection.setSuccessHandler('CSS.resolveValues',
+                                     (request: Protocol.CSS.ResolveValuesRequest) =>
+                                         ({results: request.values.map(v => v === property.value ? 'grey' : v)}));
         const matchedResult = property.parseValue(matchedStyles, new Map());
 
         const context =
@@ -904,6 +922,22 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
     });
   });
 
+  describe('VariableNameRenderer', () => {
+    it('creates links for style queries in if() correctly', async () => {
+      addProperty('--b', '3');
+      const stylePropertyTreeElement = getTreeElement('color', 'if(style(--b: 3): red)');
+
+      stylePropertyTreeElement.updateTitle();
+      assert.exists(stylePropertyTreeElement.valueElement?.querySelector('devtools-link-swatch'));
+    });
+
+    it('does not render inside function rules', async () => {
+      const stylePropertyTreeElement = await getTreeElementForFunctionRule('--func', 'if(style(--b: 3): red)');
+      stylePropertyTreeElement.updateTitle();
+      assert.notExists(stylePropertyTreeElement.valueElement?.querySelector('devtools-link-swatch'));
+    });
+  });
+
   describe('ColorRenderer', () => {
     it('correctly renders children of the color swatch', () => {
       const value = 'rgb(255, var(--zero), var(--zero))';
@@ -1014,10 +1048,10 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
     });
 
     it('evaluates relative color channels during tracing', async () => {
-      setMockConnectionResponseHandler(
-          'CSS.resolveValues',
-          (request: Protocol.CSS.ResolveValuesRequest) =>
-              ({results: request.values.map(v => v === 'calc(1.000 / 2)' ? '0.5' : '')}));
+      connection.setHandler('CSS.resolveValues', null);
+      connection.setSuccessHandler('CSS.resolveValues',
+                                   (request: Protocol.CSS.ResolveValuesRequest) =>
+                                       ({results: request.values.map(v => v === 'calc(1.000 / 2)' ? '0.5' : '')}));
       const property = addProperty('color', 'rgb(from #ff0c0c calc(r / 2) g b)');
 
       const {promise, resolve} = Promise.withResolvers<void>();
@@ -1034,7 +1068,12 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
       const {evaluations} = view.args[0][0];
 
       assert.deepEqual(evaluations.flat().map(args => args?.textContent).flat(), [
-        '', 'rgb(from #ff0c0c calc(1.000 / 2) 0.047 0.047)', '', 'rgb(from #ff0c0c 0.5 0.047 0.047)', '', '#800c0c'
+        '',
+        'rgb(from #ff0c0c calc(1.000 / 2) 0.047 0.047)',
+        '',
+        'rgb(from #ff0c0c 0.5 0.047 0.047)',
+        '',
+        '#800c0c',
       ]);
     });
   });
@@ -1469,8 +1508,9 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
       highlightMock = sinon.mock();
       revealStub = sinon.stub(Common.Revealer.RevealerRegistry.prototype, 'reveal');
       hideDOMNodeHighlightStub = sinon.stub(SDK.OverlayModel.OverlayModel, 'hideDOMNodeHighlight');
-      setMockConnectionResponseHandler(
-          'DOM.getAnchorElement', () => ({result: undefined} as unknown as Protocol.DOM.GetAnchorElementResponse));
+      connection.setHandler('DOM.getAnchorElement', null);
+      connection.setSuccessHandler('DOM.getAnchorElement',
+                                   () => ({result: undefined} as unknown as Protocol.DOM.GetAnchorElementResponse));
     });
 
     it('renders anchor() function correctly', async () => {
@@ -1973,19 +2013,20 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
 
   describe('LengthRenderer', () => {
     it('shows a popover with pixel values for relative units', async () => {
-      setMockConnectionResponseHandler(
-          'CSS.resolveValues',
-          (request: Protocol.CSS.ResolveValuesRequest) =>
-              ({results: request.values.map(v => v === '2em' ? '15px' : v)}));
-      const cssModel = new SDK.CSSModel.CSSModel(createTarget());
+      connection.setHandler('CSS.resolveValues', null);
+      connection.setSuccessHandler('CSS.resolveValues',
+                                   (request: Protocol.CSS.ResolveValuesRequest) =>
+                                       ({results: request.values.map(v => v === '2em' ? '15px' : v)}));
+      const cssModel = new SDK.CSSModel.CSSModel(createTarget({connection}));
       const domModel = cssModel.domModel();
       const node = new SDK.DOMModel.DOMNode(domModel);
       node.id = 0 as Protocol.DOM.NodeId;
       LegacyUI.Context.Context.instance().setFlavor(SDK.DOMModel.DOMNode, node);
       computedStyleModel.node = node;
       const stylePropertyTreeElement = getTreeElement('property', '5px 2em');
-      setMockConnectionResponseHandler(
-          'CSS.getComputedStyleForNode', () => ({computedStyle: {}} as Protocol.CSS.GetComputedStyleForNodeResponse));
+      connection.setHandler('CSS.getComputedStyleForNode', null);
+      connection.setSuccessHandler('CSS.getComputedStyleForNode',
+                                   () => ({computedStyle: {}} as Protocol.CSS.GetComputedStyleForNodeResponse));
 
       await stylePropertyTreeElement.onpopulate();
       stylePropertyTreeElement.updateTitle();
@@ -2029,7 +2070,7 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
           fakeFn: (name, nodeIds, ...values) => {
             resolvedValues.push(name);
             return Promise.resolve(values.slice(0));
-          }
+          },
         });
         const tooltips = stylePropertyTreeElement.valueElement?.querySelectorAll('devtools-tooltip');
         assert.exists(tooltips);
@@ -2074,12 +2115,26 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
 
   describe('MathFunctionRenderer', () => {
     it('strikes out non-selected values', async () => {
-      setMockConnectionResponseHandler(
-          'CSS.resolveValues',
-          (request: Protocol.CSS.ResolveValuesRequest) => ({
-            results: request.values.map(
-                value => value.startsWith('min') ? '4px' : value.trim().replaceAll(/(em|pt)$/g, 'px'))
-          }));
+      connection.setHandler('CSS.resolveValues', null);
+      connection.setSuccessHandler('CSS.resolveValues', (request: Protocol.CSS.ResolveValuesRequest) => {
+        const stripCalc = (v: string) => {
+          const match = v.match(/^calc\((.*)\)$/);
+          return match ? match[1] : v;
+        };
+        return {
+          results: request.values.map(value => {
+            // The first value passed is the entire function expression (e.g. min(5em, 4px, 8pt)).
+            // We mock the browser resolving the whole function's result to '4px'.
+            if (value.startsWith('min')) {
+              return '4px';
+            }
+            // Subsequent values are the individual arguments wrapped in calc() (e.g. calc(5em)).
+            // We strip calc() to simulate the mock browser resolving the inner unit values to px.
+            const innerValue = stripCalc(value.trim());
+            return innerValue.replaceAll(/(em|pt)$/g, 'px');
+          }),
+        };
+      });
       const strikeOutSpy =
           sinon.spy(Elements.StylePropertyTreeElement.MathFunctionRenderer.prototype, 'applyMathFunction');
       const stylePropertyTreeElement = getTreeElement('width', 'min(5em, 4px, 8pt)');
@@ -2092,6 +2147,46 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
       assert.lengthOf(args, 3);
       assert.deepEqual(
           Array.from(args.values()).map(arg => arg.classList.contains('inactive-value')), [true, false, true]);
+    });
+
+    it('does not strike out active values inside math functions when arithmetic is used', async () => {
+      connection.setHandler('CSS.resolveValues', null);
+      connection.setSuccessHandler('CSS.resolveValues', (request: Protocol.CSS.ResolveValuesRequest) => {
+        return {
+          results: request.values.map(val => {
+            const trimmed = val.trim();
+            // The first value passed is the entire max() expression.
+            // We mock the browser resolving it to '8px'.
+            if (trimmed.startsWith('max(')) {
+              return '8px';
+            }
+            // Subsequent values are the individual arguments. If they are properly wrapped in calc()
+            // they resolve successfully. Otherwise, they are invalid standalone values and return "".
+            if (trimmed === 'calc(48px - 40px)') {
+              return '8px';
+            }
+            if (trimmed === '48px - 40px') {
+              // Simulate backend failing to parse standalone math expression (without calc())
+              return '';
+            }
+            if (trimmed === 'calc(0px)' || trimmed === '0px') {
+              return '0px';
+            }
+            return '';
+          }),
+        };
+      });
+      const strikeOutSpy =
+          sinon.spy(Elements.StylePropertyTreeElement.MathFunctionRenderer.prototype, 'applyMathFunction');
+      const stylePropertyTreeElement = getTreeElement('margin-block', 'max(48px - 40px, 0px)');
+      stylePropertyTreeElement.updateTitle();
+
+      sinon.assert.calledOnce(strikeOutSpy);
+      await strikeOutSpy.returnValues[0];
+      const args = stylePropertyTreeElement.valueElement?.querySelectorAll(
+                       ':scope > span > span:not(.tracing-anchor)') as NodeListOf<HTMLSpanElement>;
+      assert.lengthOf(args, 2);
+      assert.deepEqual(Array.from(args.values()).map(arg => arg.classList.contains('inactive-value')), [false, true]);
     });
 
     it('shows a value tracing tooltip on the calc function', async () => {
@@ -2109,7 +2204,8 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
     });
 
     it('shows the original text during tracing when evaluation fails', async () => {
-      setMockConnectionResponseHandler(
+      connection.setHandler('CSS.resolveValues', null);
+      connection.setSuccessHandler(
           'CSS.resolveValues',
           (request: Protocol.CSS.ResolveValuesRequest) => ({results: request.values.map(() => '')}));
       const evaluationSpy =
@@ -2217,7 +2313,8 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
 
     function setParentComputedStyle(style: Record<string, string>) {
       const computedStyle = Object.keys(style).map(name => ({name, value: style[name]}));
-      setMockConnectionResponseHandler('CSS.getComputedStyleForNode', ({nodeId}) => {
+      connection.setHandler('CSS.getComputedStyleForNode', null);
+      connection.setSuccessHandler('CSS.getComputedStyleForNode', ({nodeId}) => {
         if (nodeId === 0) {
           return {computedStyle} as Protocol.CSS.GetComputedStyleForNodeResponse;
         }
@@ -2233,7 +2330,16 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
       stylePropertyTreeElement.startEditingValue();
       const autocompletions = await suggestions();
       assert.deepEqual(autocompletions.map(({text}) => text), [
-        'row-name', 'row-name-2', 'auto', 'none', 'inherit', 'initial', 'revert', 'revert-layer', 'revert-rule', 'unset'
+        'row-name',
+        'row-name-2',
+        'auto',
+        'none',
+        'inherit',
+        'initial',
+        'revert',
+        'revert-layer',
+        'revert-rule',
+        'unset',
       ]);
     });
 
@@ -2245,7 +2351,16 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
       stylePropertyTreeElement.startEditingValue();
       const autocompletions = await suggestions();
       assert.deepEqual(autocompletions.map(({text}) => text), [
-        'col-name', 'col-name-2', 'auto', 'none', 'inherit', 'initial', 'revert', 'revert-layer', 'revert-rule', 'unset'
+        'col-name',
+        'col-name-2',
+        'auto',
+        'none',
+        'inherit',
+        'initial',
+        'revert',
+        'revert-layer',
+        'revert-rule',
+        'unset',
       ]);
     });
 
@@ -2262,6 +2377,83 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
         'area-name-c',
         'auto',
         'none',
+        'inherit',
+        'initial',
+        'revert',
+        'revert-layer',
+        'revert-rule',
+        'unset',
+      ]);
+    });
+
+    it('includes image function keyword suggestions for background-image', async () => {
+      setParentComputedStyle({});
+      const stylePropertyTreeElement = getTreeElement('background-image', '');
+      await stylePropertyTreeElement.onpopulate();
+      stylePropertyTreeElement.updateTitle();
+      stylePropertyTreeElement.startEditingValue();
+      const autocompletions = await suggestions();
+      assert.includeMembers(autocompletions.map(({text}) => text), [
+        'conic-gradient(from 45deg, red, orange, yellow, green, teal, blue, purple)',
+        'repeating-conic-gradient(black 0deg 25%, white 0deg 50%)',
+        'image-set(url("") 1x, url("") 2x)',
+        'cross-fade(url("") 50%, url("") 50%)',
+      ]);
+    });
+
+    it('includes auto keyword suggestions for border-image-width', async () => {
+      setParentComputedStyle({});
+      const stylePropertyTreeElement = getTreeElement('border-image-width', '');
+      await stylePropertyTreeElement.onpopulate();
+      stylePropertyTreeElement.updateTitle();
+      stylePropertyTreeElement.startEditingValue();
+      const autocompletions = await suggestions();
+      assert.includeMembers(autocompletions.map(({text}) => text), [
+        'auto',
+      ]);
+    });
+
+    it('includes fill keyword suggestions for border-image-slice', async () => {
+      setParentComputedStyle({});
+      const stylePropertyTreeElement = getTreeElement('border-image-slice', '');
+      await stylePropertyTreeElement.onpopulate();
+      stylePropertyTreeElement.updateTitle();
+      stylePropertyTreeElement.startEditingValue();
+      const autocompletions = await suggestions();
+      assert.includeMembers(autocompletions.map(({text}) => text), [
+        'fill',
+      ]);
+    });
+
+    it('includes border-image keyword suggestions', async () => {
+      setParentComputedStyle({});
+      const stylePropertyTreeElement = getTreeElement('border-image', '');
+      await stylePropertyTreeElement.onpopulate();
+      stylePropertyTreeElement.updateTitle();
+      stylePropertyTreeElement.startEditingValue();
+      const autocompletions = await suggestions();
+      assert.includeMembers(autocompletions.map(({text}) => text), [
+        'auto',
+        'fill',
+        'image-set(url("") 1x, url("") 2x)',
+        'cross-fade(url("") 50%, url("") 50%)',
+      ]);
+    });
+
+    it('includes text-wrap keyword suggestions', async () => {
+      setParentComputedStyle({});
+      const stylePropertyTreeElement = getTreeElement('text-wrap', '');
+      await stylePropertyTreeElement.onpopulate();
+      stylePropertyTreeElement.updateTitle();
+      stylePropertyTreeElement.startEditingValue();
+      const autocompletions = await suggestions();
+      assert.deepEqual(autocompletions.map(({text}) => text), [
+        'auto',
+        'balance',
+        'nowrap',
+        'pretty',
+        'stable',
+        'wrap',
         'inherit',
         'initial',
         'revert',
@@ -2449,6 +2641,29 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
       sinon.assert.calledOnceWithExactly(applyStyleTextStub, 'color: blue;', true);
       sinon.assert.calledOnce(editingEndedSpy);
     });
+
+    it('formats grid area defining property value into multiline text when editing value', () => {
+      const stylePropertyTreeElement = getTreeElement('grid-template-areas', '\'a a\' \'b b\'');
+      stylePropertyTreeElement.updateTitle();
+      stylePropertyTreeElement.startEditingValue();
+      assert.strictEqual(stylePropertyTreeElement.valueElement?.textContent, '\'a a\'\n\'b b\'');
+    });
+  });
+
+  describe('Editing value', () => {
+    it('editing property value triggers style update', async () => {
+      const stylePropertyTreeElement = getTreeElement('font-size', '19px');
+      const applyStyleTextStub = sinon.stub(stylePropertyTreeElement, 'applyStyleText').resolves();
+
+      stylePropertyTreeElement.updateTitle();
+      stylePropertyTreeElement.startEditingValue();
+
+      assert.exists(stylePropertyTreeElement.valueElement);
+      stylePropertyTreeElement.valueElement.textContent = '119px';
+      await stylePropertyTreeElement.kickFreeFlowStyleEditForTest();
+
+      sinon.assert.calledOnceWithExactly(applyStyleTextStub, 'font-size: 119px', false);
+    });
   });
 
   it('re-enables a disabled property when edited', async () => {
@@ -2479,7 +2694,7 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
         name: 'font-weight',
         value: 'normal',
         disabled: false,
-        range: {startLine: 0, startColumn: 0, endLine: 0, endColumn: 21}
+        range: {startLine: 0, startColumn: 0, endLine: 0, endColumn: 21},
       }],
       shorthandEntries: [],
       range: {startLine: 0, startColumn: 0, endLine: 0, endColumn: 21},
@@ -2497,7 +2712,8 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
       ]);
       return {styles: [updatedStylePayload]};
     });
-    setMockConnectionResponseHandler('CSS.setStyleTexts', setStyleTextsHandler);
+    connection.setHandler('CSS.setStyleTexts', null);
+    connection.setSuccessHandler('CSS.setStyleTexts', setStyleTextsHandler);
 
     // We must attach the element to the DOM because applyStyleText checks isConnected
     renderElementIntoDOM(treeElement.listItemElement);
@@ -2523,6 +2739,40 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
     assert.isFalse(treeElement.property.disabled);
     // Assert that the UI reflects the enabled state
     assert.isFalse(treeElement.listItemElement.classList.contains('disabled'));
+  });
+
+  it('does not render new properties lazily even if the styles container allows it', () => {
+    sinon.stub(stylesSidebarPane, 'shouldRenderLazily').returns(true);
+    const trackForLazyRenderingSpy = sinon.spy(stylesSidebarPane, 'trackForLazyRendering');
+
+    const stylePropertyTreeElement = getTreeElement('color', 'red');
+    const section = stylePropertyTreeElement.section();
+    section.propertiesTreeOutline.appendChild(stylePropertyTreeElement);
+
+    sinon.assert.notCalled(trackForLazyRenderingSpy);
+  });
+
+  it('renders existing properties lazily if the styles container allows it', () => {
+    sinon.stub(stylesSidebarPane, 'shouldRenderLazily').returns(true);
+    const trackForLazyRenderingSpy = sinon.spy(stylesSidebarPane, 'trackForLazyRendering');
+
+    const property = addProperty('color', 'red');
+    const section = new Elements.StylePropertiesSection.StylePropertiesSection(
+        new Elements.StylesSidebarPane.StylesSidebarPane(computedStyleModel), matchedStyles, property.ownerStyle, 0,
+        null, null, null);
+    const stylePropertyTreeElement = new Elements.StylePropertyTreeElement.StylePropertyTreeElement({
+      stylesContainer: stylesSidebarPane,
+      section,
+      matchedStyles,
+      property,
+      isShorthand: false,
+      inherited: false,
+      overloaded: false,
+      newProperty: false,
+    });
+    section.propertiesTreeOutline.appendChild(stylePropertyTreeElement);
+
+    sinon.assert.calledOnce(trackForLazyRenderingSpy);
   });
 
   it('applies overflow-wrap: break-word to tree outline list items for long values', () => {

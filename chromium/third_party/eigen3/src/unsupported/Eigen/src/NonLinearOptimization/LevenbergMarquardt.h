@@ -38,10 +38,10 @@ enum Status {
 
 /**
  * \ingroup NonLinearOptimization_Module
- * \brief Performs non linear optimization over a non-linear function,
- * using a variant of the Levenberg Marquardt algorithm.
+ * \brief Performs non-linear optimization over a non-linear function,
+ * using a variant of the Levenberg-Marquardt algorithm.
  *
- * Check wikipedia for more information.
+ * Check Wikipedia for more information.
  * http://en.wikipedia.org/wiki/Levenberg%E2%80%93Marquardt_algorithm
  */
 template <typename FunctorType, typename Scalar = double>
@@ -354,7 +354,7 @@ LevenbergMarquardtSpace::Status LevenbergMarquardt<FunctorType, Scalar>::minimiz
   // Only R is stored in fjac. Q is only used to compute 'qtf', which is
   // Q.transpose()*rhs. qtf will be updated using givens rotation,
   // instead of storing them in Q.
-  // The purpose it to only use a nxn matrix, instead of mxn here, so
+  // The purpose is to only use a nxn matrix, instead of mxn here, so
   // that we can handle cases where m>>n :
   fjac.resize(n, n);
   if (!useExternalScaling) diag.resize(n);

@@ -1,0 +1,242 @@
+# Font families for serif generic family
+AppleMyungjo
+AR PL Mingti2L Big5
+AR PL New Sung
+AR PL ShanHeiSun Uni
+AR PL SungtiL GB
+AR PL Zenkai Uni  # FIXME: cursive
+AR PL ZenKai Uni  # FIXME: cursive
+Artsounk
+B Compset
+B Davat
+Badr
+Bitstream Vera Serif
+BPG UTF8 M
+Cambria
+Code2000
+Code2001
+Constantia
+DejaVu Serif
+Dror
+Elephant
+Ferdosi
+Frank Ruehl
+Frank Ruehl CLM
+FreeSerif
+Garamond
+Georgia
+HanyiSong
+Hapax Berbère
+Hiragino Mincho ProN
+IPAMincho
+IPAMonaMincho
+Jadid
+JG LaoTimes
+Kacst-Qr
+KacstQura
+Khmer OS
+Kinnari
+Kochi Mincho
+Liberation Serif
+LKLUG
+Lohit Bengali  # FIXME: sans-serif
+Lohit Gujarati  # FIXME: sans-serif
+Lohit Hindi  # FIXME: sans-serif
+Lohit Kannada  # FIXME: sans-serif
+Lohit Kashmiri  # FIXME: sans-serif
+Lohit Konkani  # FIXME: sans-serif
+Lohit Maithili  # FIXME: sans-serif
+Lohit Malayalam  # FIXME: sans-serif
+Lohit Marathi  # FIXME: sans-serif
+Lohit Nepali  # FIXME: sans-serif
+Lohit Odia  # FIXME: sans-serif
+Lohit Punjabi  # FIXME: sans-serif
+Lohit Sindhi  # FIXME: sans-serif
+Lohit Tamil  # FIXME: sans-serif
+Lohit Telugu  # FIXME: sans-serif
+Lotoos
+Luxi Serif
+malayalam  # FIXME: sans-serif
+MgOpen Canonica
+Mitra
+MS Mincho
+MS Serif
+Mukti Narrow
+NanumMyeongjo
+Nazli
+Nimbus Roman
+Nimbus Roman No9 L
+Norasi
+Noto Serif
+Noto Serif CJK KR
+padmaa  # FIXME: sans-serif
+Palatino Linotype
+Pigiarniq
+PMingLiu
+Rachana
+Raghindi
+Sampige  # FIXME: sans-serif
+Saysettha Unicode
+Sazanami Mincho
+SimSong
+SimSun
+Songti SC
+Songti TC
+Thorndale
+Thorndale AMT
+Times
+Times New Roman
+Titr
+Urdu Nastaliq Unicode
+WenQuanYi Bitmap Song
+Zar
+ZYSong18030
+ＭＳ 明朝
+AR PL UKai HK  # FIXME: cursive
+AR PL UKai TW  # FIXME: cursive
+AR PL UMing HK
+AR PL UMing TW
+Abyssinica SIL
+Alegreya
+Alexander
+Amiri
+Amiri Quran
+Amiri Quran Colored
+Anaktoria
+AntykwaTorunska
+AntykwaTorunska Light
+AntykwaTorunska Medium
+AntykwaTorunskaCond
+AntykwaTorunskaCond Light
+AntykwaTorunskaCond Medium
+Arundina Serif
+Asana Math
+Asea
+Avdira
+BIZ UDMincho
+BIZ UDPMincho
+Baekmuk Batang
+Caladea
+Crete Round
+David CLM
+Droid Arabic Naskh
+Droid Serif
+DrugulinCLM
+Dustismo  # FIXME: sans-serif
+Edwin
+Gentium Basic
+Gentium Book Basic
+Goudy Bookletter 1911
+Grand Hotel
+Gubbi
+Hadasim CLM
+HanaMin
+Heuristica
+IPAPMincho
+IPAexMincho
+IPAex明朝
+Jomolhari
+KacstArt
+KacstDecorative
+LPfont
+Lateef
+Libertinus
+Linux Libertine
+Mukta Devanagari
+Mukta Mahee
+Mukta Malar
+Mukta Vaani
+Musica
+New Athena Unicode
+Old Standard SFD
+PT Serif
+PT Serif Caption
+Prociono
+Roboto Slab
+Saab
+Scheherazade New
+Shofar
+Source Han Serif CN
+Source Han Serif JP
+Source Han Serif KR
+Source Han Serif TW
+Source Serif 4
+Stam Ashkenaz CLM
+Stam Sefarad CLM
+Symbola
+Tinos
+Ume Mincho
+Ume Mincho S3
+Ume P Mincho
+Ume P Mincho S3
+UnBatang
+WenQuanYi Zen Hei Sharp  # FIXME: sans-serif
+Zilla Slab
+Zilla Slab Highlight
+conakry
+Accanthis ADF Std
+Alkalami
+Annapurna SIL
+Apparatus SIL
+Awami Nastaliq
+Charis SIL
+Charis SIL Compact
+Cormorant
+Dai Banna SIL
+Ethiopic WashRa
+Ezra SIL
+GFS Artemisia
+GFS Bodoni
+GFS Didot
+GFS Didot Classic
+GFS Galatea
+GFS Göschen
+GFS Orpheus
+GFS Orpheus Classic
+GFS Philostratos
+Gentium Plus
+Gentium Plus Compact
+Khmer Mondulkiri
+Literata
+Merriweather
+Namdhinggo SIL
+Noto Serif CJK HK
+Noto Serif CJK JP
+Noto Serif CJK SC
+Noto Serif CJK TC
+RIT Rachana
+STIX
+Spectral
+Tagmukay
+Tai Heritage Pro
+Tribun ADF Std
+Uniol
+C059
+David CLM
+Jomolhari
+Latin Modern Roman
+Latin Modern Roman Caps
+Latin Modern Roman Demi
+Latin Modern Roman Dunhill
+Latin Modern Roman Slanted
+Latin Modern Roman Unslanted
+Nimbus Roman
+P052
+RIT Rachana
+STIX Two Text
+TeX Gyre Bonum
+TeX Gyre Pagella
+TeX Gyre Schola
+TeX Gyre Termes
+URW Bookman
+Z003
+Noto Naskh Arabic
+KacstNaskh
+PakType Naskh Basic
+PakType Naskh Basic Semi Wide
+PakType Naskh Basic Wide
+GB_SS_GB18030
+GB_SS_GB18030_Extended
+GB_SS_GB18030_ExtendedK
+# Nerd Fonts - Nerd Font serif variants
+Tinos Nerd Font

@@ -25,9 +25,23 @@ export interface Chunk {
 
 export type ChunkCallback = (arg0: Chunk) => void;
 
-export function createTokenizer(mimeType: string): (
-    arg0: string, arg1: (arg0: string, arg1: string|null, arg2: number, arg3: number) => (Object | undefined | void)) =>
-    void {
+export type TokenizerCallback = (value: string, style: string|null, start: number, end: number) =>
+    Object|undefined|void;
+
+/**
+ * A tokenizer function returned by {@link createTokenizer}.
+ *
+ * @param line The string content to tokenize.
+ * @param callback A callback function invoked for each token parsed.
+ * @param startOffset An optional offset pointing to where tokenization should start within
+ * the line, avoiding the need to allocate substrings when tokenizing a block inside a larger file.
+ */
+export type Tokenizer = (line: string, callback: TokenizerCallback, startOffset?: number) => void;
+
+/**
+ * Creates a tokenizer for the specified MIME type.
+ */
+export function createTokenizer(mimeType: string): Tokenizer {
   const mode = CodeMirror.getMode({indentUnit: 2}, mimeType);
   const state = CodeMirror.startState(mode);
 
@@ -40,8 +54,13 @@ export function createTokenizer(mimeType: string): (
   }
 
   return (line: string,
-          callback: (arg0: string, arg1: string|null, arg2: number, arg3: number) => void|Object|undefined) => {
+          callback: (arg0: string, arg1: string|null, arg2: number, arg3: number) => void|Object|undefined,
+          startOffset = 0) => {
     const stream = new CodeMirror.StringStream(line);
+    if (startOffset) {
+      stream.pos = startOffset;
+      stream.start = startOffset;
+    }
     while (!stream.eol()) {
       const style = mode.token(stream, state);
       const value = stream.current();

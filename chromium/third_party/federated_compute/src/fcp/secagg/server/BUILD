@@ -67,6 +67,7 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:node_hash_map",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/time",
     ],
 )
@@ -143,6 +144,9 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/container:node_hash_set",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_builder",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
@@ -157,13 +161,13 @@ cc_library(
         ":secret_sharing_graph",
         ":secret_sharing_harary_graph",
         "//fcp/base",
+        "@com_google_absl//absl/memory",
     ],
 )
 
 cc_library(
     name = "secret_sharing_graph",
     hdrs = ["secret_sharing_graph.h"],
-    deps = ["//fcp/base"],
 )
 
 cc_library(
@@ -204,6 +208,10 @@ cc_library(
         ":distribution_utilities",
         ":server_cc_proto",
         "//fcp/base",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_builder",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/status:statusor",
     ],
 )
 
@@ -214,8 +222,8 @@ cc_library(
         "distribution_utilities.h",
     ],
     deps = [
-        "//fcp/base",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_builder",
         "@com_google_absl//absl/status:statusor",
     ],
 )
@@ -226,7 +234,7 @@ cc_test(
     deps = [
         ":distribution_utilities",
         "//fcp/base",
-        "//fcp/testing",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -242,7 +250,6 @@ cc_test(
         ":server",
         ":server_cc_proto",
         ":tracing_schema",
-        "//fcp/base",
         "//fcp/secagg/shared",
         "//fcp/secagg/shared:cc_proto",
         "//fcp/secagg/testing:common_mocks",
@@ -250,6 +257,8 @@ cc_test(
         "//fcp/secagg/testing/server:server_mocks",
         "//fcp/testing",
         "//fcp/tracing:test_tracing_recorder",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -291,6 +300,7 @@ cc_test(
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/container:node_hash_map",
         "@com_google_absl//absl/container:node_hash_set",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
     ],
@@ -326,6 +336,7 @@ cc_test(
     deps = [
         ":graph_parameter_finder",
         ":server_cc_proto",
+        "//fcp/base",
         "//fcp/testing",
         "@com_google_googletest//:gtest_main",
     ],
@@ -341,11 +352,9 @@ cc_library(
     ],
     deps = [
         "//fcp/base",
-        "//fcp/base:clock",
         "//fcp/base:reentrancy_guard",
         "//fcp/base:scheduler",
         "@com_google_absl//absl/synchronization",
-        "@com_google_absl//absl/time",
     ],
 )
 
@@ -357,7 +366,6 @@ cc_test(
         ":secagg_scheduler",
         "//fcp/base",
         "//fcp/base:scheduler",
-        "//fcp/base:simulated_clock",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",

@@ -59,7 +59,7 @@ export default createRule({
             messageId: 'litRenderInsideOfViewMustUseTarget',
             fix(fixer) {
               return fixer.replaceText(targetArgument, targetParameterName);
-            }
+            },
           });
           return;
         }
@@ -95,11 +95,11 @@ export default createRule({
                   return fixer.removeRange([renderOption.range[0], nextToken.range[1]]);
                 }
                 return [];
-              }
+              },
             });
           }
         }
       },
     };
-  }
+  },
 });

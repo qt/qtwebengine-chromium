@@ -26,6 +26,8 @@
 #include "src/webp/format_constants.h"
 #include "src/webp/types.h"
 
+WEBP_ASSUME_UNSAFE_INDEXABLE_ABI
+
 //------------------------------------------------------------------------------
 // ALPHDecoder object.
 
@@ -56,7 +58,6 @@ WEBP_NODISCARD static int ALPHInit(ALPHDecoder* const dec, const uint8_t* data,
                                    uint8_t* output) {
   int ok = 0;
   const uint8_t* const alpha_data = data + ALPHA_HEADER_LEN;
-  const size_t alpha_data_size = data_size - ALPHA_HEADER_LEN;
   int rsrv;
   VP8Io* const io = &dec->io;
 
@@ -99,12 +100,20 @@ WEBP_NODISCARD static int ALPHInit(ALPHDecoder* const dec, const uint8_t* data,
   io->crop_bottom = src_io->crop_bottom;
   // No need to copy the scaling parameters.
 
-  if (dec->method == ALPHA_NO_COMPRESSION) {
-    const size_t alpha_decoded_size = dec->width * dec->height;
-    ok = (alpha_data_size >= alpha_decoded_size);
-  } else {
-    assert(dec->method == ALPHA_LOSSLESS_COMPRESSION);
-    ok = VP8LDecodeAlphaHeader(dec, alpha_data, alpha_data_size);
+  {
+    const size_t alpha_data_size = data_size - ALPHA_HEADER_LEN;
+    if (dec->method == ALPHA_NO_COMPRESSION) {
+      const size_t alpha_decoded_size = dec->width * dec->height;
+      ok = (alpha_data_size >= alpha_decoded_size);
+    } else {
+      assert(dec->method == ALPHA_LOSSLESS_COMPRESSION);
+      {
+        const uint8_t* WEBP_BIDI_INDEXABLE const bounded_alpha_data =
+            WEBP_UNSAFE_FORGE_BIDI_INDEXABLE(const uint8_t*, alpha_data,
+                                             alpha_data_size);
+        ok = VP8LDecodeAlphaHeader(dec, bounded_alpha_data, alpha_data_size);
+      }
+    }
   }
 
   return ok;
@@ -223,7 +232,11 @@ WEBP_NODISCARD const uint8_t* VP8DecompressAlphaRows(VP8Decoder* const dec,
       if (dec->alpha_dithering > 0) {
         uint8_t* const alpha =
             dec->alpha_plane + io->crop_top * width + io->crop_left;
-        if (!WebPDequantizeLevels(alpha, io->crop_right - io->crop_left,
+        uint8_t* WEBP_BIDI_INDEXABLE const bounded_alpha =
+            WEBP_UNSAFE_FORGE_BIDI_INDEXABLE(
+                uint8_t*, alpha,
+                (size_t)width*(io->crop_bottom - io->crop_top));
+        if (!WebPDequantizeLevels(bounded_alpha, io->crop_right - io->crop_left,
                                   io->crop_bottom - io->crop_top, width,
                                   dec->alpha_dithering)) {
           goto Error;

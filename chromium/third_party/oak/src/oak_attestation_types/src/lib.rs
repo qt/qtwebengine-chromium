@@ -18,6 +18,8 @@
 
 extern crate alloc;
 
+pub mod assertion_generator;
 pub mod attester;
 pub mod endorser;
+pub mod transparent_attester;
 pub mod util;

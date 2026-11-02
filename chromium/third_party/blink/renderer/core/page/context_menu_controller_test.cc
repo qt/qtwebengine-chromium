@@ -18,20 +18,14 @@
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
-#include "components/attribution_reporting/data_host.mojom-blink.h"
-#include "components/attribution_reporting/os_registration.h"
-#include "components/attribution_reporting/registration_header_error.h"
-#include "components/attribution_reporting/source_registration.h"
-#include "components/attribution_reporting/suitable_origin.h"
-#include "components/attribution_reporting/trigger_registration.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
-#include "services/network/public/mojom/attribution.mojom-blink.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/context_menu_data/context_menu_data.h"
 #include "third_party/blink/public/common/context_menu_data/edit_flags.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/input/web_keyboard_event.h"
+#include "third_party/blink/public/common/input/web_mouse_event.h"
 #include "third_party/blink/public/mojom/context_menu/context_menu.mojom-blink.h"
 #include "third_party/blink/public/web/web_plugin.h"
 #include "third_party/blink/renderer/core/dom/events/native_event_listener.h"
@@ -161,99 +155,6 @@ void RegisterMockedImageURLLoad(const String& url) {
       test::CoreTestDataPath(kTestResourceFilename), kTestResourceMimeType);
 }
 
-class MockAttributionHost
-    : public mojom::blink::AttributionHost,
-      public attribution_reporting::mojom::blink::DataHost {
- public:
-  explicit MockAttributionHost(blink::AssociatedInterfaceProvider* provider)
-      : provider_(provider), on_data_host_bound_(base::DoNothing()) {
-    provider_->OverrideBinderForTesting(
-        mojom::blink::AttributionHost::Name_,
-        BindRepeating(&MockAttributionHost::BindReceiver, Unretained(this)));
-  }
-
-  ~MockAttributionHost() override {
-    CHECK(provider_);
-    provider_->OverrideBinderForTesting(mojom::blink::AttributionHost::Name_,
-                                        base::NullCallback());
-  }
-
-  size_t NumBoundDataHosts() {
-    // Ensure that any pending disconnects have been propagated.
-    receiver_.FlushForTesting();
-    return data_hosts_.size();
-  }
-
-  void WaitUntilDataHostsBound(size_t expected) {
-    if (data_hosts_.size() >= expected) {
-      return;
-    }
-    base::RunLoop wait_loop;
-    on_data_host_bound_ = base::BarrierClosure(expected - data_hosts_.size(),
-                                               wait_loop.QuitClosure());
-    wait_loop.Run();
-  }
-
- private:
-  // mojom::blink::AttributionHost:
-
-  void BindReceiver(mojo::ScopedInterfaceEndpointHandle handle) {
-    receiver_.Bind(
-        mojo::PendingAssociatedReceiver<mojom::blink::AttributionHost>(
-            std::move(handle)));
-  }
-
-  void RegisterDataHost(
-      mojo::PendingReceiver<attribution_reporting::mojom::blink::DataHost>,
-      attribution_reporting::mojom::RegistrationEligibility,
-      bool is_for_background_requests,
-      const Vector<scoped_refptr<const blink::SecurityOrigin>>&
-          reporting_origins) override {}
-
-  void RegisterNavigationDataHost(
-      mojo::PendingReceiver<attribution_reporting::mojom::blink::DataHost>
-          data_host,
-      const AttributionSrcToken&) override {
-    data_hosts_.Add(this, std::move(data_host));
-    on_data_host_bound_.Run();
-  }
-
-  void NotifyNavigationWithBackgroundRegistrationsWillStart(
-      const AttributionSrcToken&,
-      uint32_t expected_registrations) override {}
-
-  // attribution_reporting::mojom::blink::DataHost:
-
-  void SourceDataAvailable(
-      attribution_reporting::SuitableOrigin reporting_origin,
-      attribution_reporting::SourceRegistration,
-      bool was_fetched_via_serivce_worker) override {}
-
-  void TriggerDataAvailable(
-      attribution_reporting::SuitableOrigin reporting_origin,
-      attribution_reporting::TriggerRegistration,
-      bool was_fetched_via_serivce_worker) override {}
-
-  void OsSourceDataAvailable(
-      std::vector<attribution_reporting::OsRegistrationItem>,
-      bool was_fetched_via_serivce_worker) override {}
-
-  void OsTriggerDataAvailable(
-      std::vector<attribution_reporting::OsRegistrationItem>,
-      bool was_fetched_via_serivce_worker) override {}
-
-  void ReportRegistrationHeaderError(
-      attribution_reporting::SuitableOrigin reporting_origin,
-      attribution_reporting::RegistrationHeaderError) override {}
-
-  blink::AssociatedInterfaceProvider* provider_;
-  mojo::AssociatedReceiver<mojom::blink::AttributionHost> receiver_{this};
-
-  base::RepeatingClosure on_data_host_bound_;
-
-  mojo::ReceiverSet<attribution_reporting::mojom::blink::DataHost> data_hosts_;
-};
-
 }  // namespace
 
 template <>
@@ -329,6 +230,66 @@ class ContextMenuControllerTest : public testing::Test {
   base::test::ScopedFeatureList feature_list_;
   TestWebFrameClientImpl web_frame_client_;
   frame_test_helpers::WebViewHelper web_view_helper_;
+};
+
+class ContextMenuControllerInputTest : public ContextMenuControllerTest {
+ protected:
+  HTMLInputElement* SetUpTextInput(const String& value) {
+    LoadAhem();
+    GetDocument()->documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+      <style>
+        body { margin: 0; }
+        input { border: 0; padding: 0; width: 80px; font: 10px/10px Ahem; }
+      </style>
+      <input>
+    )HTML");
+    auto* input = To<HTMLInputElement>(
+        GetDocument()->QuerySelector(AtomicString("input")));
+    input->SetValue(value);
+    input->Focus();
+    return input;
+  }
+
+  gfx::Point SetCaret(HTMLInputElement& input, unsigned offset) {
+    Node* text = input.InnerEditorElement()->firstChild();
+    FrameSelection& selection = GetDocument()->GetFrame()->Selection();
+    selection.SetSelection(
+        SelectionInDomTree::Builder().Collapse(Position(text, offset)).Build(),
+        SetSelectionOptions());
+    LocalMainFrame()->ViewImpl()->MainFrameWidget()->UpdateAllLifecyclePhases(
+        DocumentUpdateReason::kTest);
+    return selection.AbsoluteCaretBounds().CenterPoint();
+  }
+
+  void SendMouseEvent(const gfx::Point& location,
+                      WebInputEvent::Type type,
+                      WebInputEvent::Modifiers modifiers,
+                      WebMouseEvent::Button button) {
+    WebMouseEvent event(type, modifiers,
+                        WebInputEvent::GetStaticTimeStampForTests());
+    event.SetFrameScale(1);
+    event.button = button;
+    event.SetPositionInWidget(location.x(), location.y());
+    event.click_count = 1;
+    GetWebView()->MainFrameWidget()->HandleInputEvent(
+        WebCoalescedInputEvent(event, ui::LatencyInfo()));
+  }
+
+  void LeftClick(const gfx::Point& location) {
+    SendMouseEvent(location, WebInputEvent::Type::kMouseDown,
+                   WebInputEvent::kLeftButtonDown,
+                   WebMouseEvent::Button::kLeft);
+    SendMouseEvent(location, WebInputEvent::Type::kMouseUp,
+                   WebInputEvent::kNoModifiers, WebMouseEvent::Button::kLeft);
+  }
+
+  void RightClick(const gfx::Point& location) {
+    SendMouseEvent(location, WebInputEvent::Type::kMouseDown,
+                   WebInputEvent::kRightButtonDown,
+                   WebMouseEvent::Button::kRight);
+    SendMouseEvent(location, WebInputEvent::Type::kMouseUp,
+                   WebInputEvent::kNoModifiers, WebMouseEvent::Button::kRight);
+  }
 };
 
 TEST_F(ContextMenuControllerTest, CopyFromPlugin) {
@@ -2012,7 +1973,7 @@ TEST_F(ContextMenuControllerTest,
   const auto& selected_end = Position(first_paragraph, 9);
 
   GetDocument()->GetFrame()->Selection().SetSelection(
-      SelectionInDOMTree::Builder()
+      SelectionInDomTree::Builder()
           .SetBaseAndExtent(selected_start, selected_end)
           .Build(),
       SetSelectionOptions());
@@ -2023,6 +1984,75 @@ TEST_F(ContextMenuControllerTest,
   EXPECT_TRUE(
       ShowContextMenu(location, ui::mojom::blink::MenuSourceType::kKeyboard));
   EXPECT_EQ(GetDocument()->GetFrame()->Selection().SelectedText(), "is a");
+}
+
+TEST_F(ContextMenuControllerInputTest,
+       MouseContextMenuAwayFromCaretSelectsWord) {
+  HTMLInputElement* input = SetUpTextInput("test");
+  GetDocument()->GetFrame()->GetSettings()->SetEditingBehaviorType(
+      mojom::EditingBehavior::kEditingMacBehavior);
+  gfx::Point location = SetCaret(*input, 2);
+  SetCaret(*input, 4);
+  RightClick(location);
+  EXPECT_EQ(0u, input->selectionStart());
+  EXPECT_EQ(4u, input->selectionEnd());
+}
+
+TEST_F(ContextMenuControllerInputTest,
+       MouseContextMenuOnExistingCaretPreservesCaret) {
+  HTMLInputElement* input = SetUpTextInput("test");
+  GetDocument()->GetFrame()->GetSettings()->SetEditingBehaviorType(
+      mojom::EditingBehavior::kEditingMacBehavior);
+  const gfx::Point location = SetCaret(*input, 2);
+  LeftClick(location);
+  const unsigned caret_offset = input->selectionStart();
+  ASSERT_EQ(caret_offset, input->selectionEnd());
+  ASSERT_GT(caret_offset, 0u);
+  ASSERT_LT(caret_offset, 4u);
+
+  RightClick(location);
+  EXPECT_EQ(caret_offset, input->selectionStart());
+  EXPECT_EQ(caret_offset, input->selectionEnd());
+}
+
+TEST_F(ContextMenuControllerInputTest,
+       MouseContextMenuAfterTextPreservesEndCaret) {
+  HTMLInputElement* input = SetUpTextInput("test");
+  GetDocument()->GetFrame()->GetSettings()->SetEditingBehaviorType(
+      mojom::EditingBehavior::kEditingMacBehavior);
+  gfx::Point location = SetCaret(*input, 4);
+  const int end_caret_x = location.x();
+  location.set_x(static_cast<int>(input->GetBoundingClientRect()->right()) - 5);
+  ASSERT_GT(location.x(), end_caret_x);
+  LeftClick(location);
+  ASSERT_EQ(4u, input->selectionStart());
+  ASSERT_EQ(4u, input->selectionEnd());
+  RightClick(location);
+  EXPECT_EQ(4u, input->selectionStart());
+  EXPECT_EQ(4u, input->selectionEnd());
+}
+
+TEST_F(ContextMenuControllerInputTest,
+       MouseContextMenuAtCaretSelectsMisspellingAndProvidesSuggestions) {
+  HTMLInputElement* input = SetUpTextInput("spllchck");
+  Node* text = input->InnerEditorElement()->firstChild();
+  gfx::Point location = SetCaret(*input, 4);
+  GetDocument()->Markers().AddSpellingMarker(
+      EphemeralRange(Position(text, 0), Position(text, 8)), "spellcheck");
+  LocalMainFrame()->ViewImpl()->MainFrameWidget()->UpdateAllLifecyclePhases(
+      DocumentUpdateReason::kTest);
+  LeftClick(location);
+  ASSERT_EQ(input->selectionStart(), input->selectionEnd());
+  ASSERT_GT(input->selectionStart(), 0u);
+  ASSERT_LT(input->selectionStart(), 8u);
+  RightClick(location);
+
+  const ContextMenuData& data = GetWebFrameClient().GetContextMenuData();
+  EXPECT_EQ(u"spllchck", data.misspelled_word);
+  ASSERT_EQ(1u, data.dictionary_suggestions.size());
+  EXPECT_EQ(u"spellcheck", data.dictionary_suggestions[0]);
+  EXPECT_EQ(0u, input->selectionStart());
+  EXPECT_EQ(8u, input->selectionEnd());
 }
 
 TEST_F(ContextMenuControllerTest, CheckRendererIdFromContextMenuOnTextField) {
@@ -2075,196 +2105,11 @@ TEST_F(ContextMenuControllerTest, CheckRendererIdFromContextMenuOnTextField) {
         form_element, ui::mojom::blink::MenuSourceType::kMouse));
     ContextMenuData context_menu_data =
         GetWebFrameClient().GetContextMenuData();
-    EXPECT_EQ(context_menu_data.form_renderer_id != 0,
+    EXPECT_EQ(!context_menu_data.form_renderer_id.is_null(),
               is_form_renderer_id_present);
+    EXPECT_EQ(!context_menu_data.field_renderer_id.is_null(),
+              is_field_renderer_id_present);
     EXPECT_EQ(context_menu_data.form_control_type, form_control_type);
-  }
-}
-
-TEST_F(ContextMenuControllerTest, AttributionSrc) {
-  // The context must be secure for attributionsrc to work at all.
-  frame_test_helpers::LoadHTMLString(
-      LocalMainFrame(), R"(<html><body>)",
-      url_test_helpers::ToKURL("https://test.com/"));
-
-  static constexpr char kSecureURL[] = "https://a.com/";
-  static constexpr char kInsecureURL[] = "http://b.com/";
-
-  const struct {
-    const char* href;
-    const char* attributionsrc;
-    bool impression_expected;
-  } kTestCases[] = {
-      {
-          .href = nullptr,
-          .attributionsrc = nullptr,
-          .impression_expected = false,
-      },
-      {
-          .href = nullptr,
-          .attributionsrc = "",
-          .impression_expected = false,
-      },
-      {
-          .href = nullptr,
-          .attributionsrc = kInsecureURL,
-          .impression_expected = false,
-      },
-      {
-          .href = nullptr,
-          .attributionsrc = kSecureURL,
-          .impression_expected = false,
-      },
-      {
-          .href = kInsecureURL,
-          .attributionsrc = nullptr,
-          .impression_expected = false,
-      },
-      {
-          .href = kInsecureURL,
-          .attributionsrc = "",
-          .impression_expected = false,
-      },
-      {
-          .href = kInsecureURL,
-          .attributionsrc = kInsecureURL,
-          .impression_expected = false,
-      },
-      {
-          .href = kInsecureURL,
-          .attributionsrc = kSecureURL,
-          .impression_expected = true,
-      },
-      {
-          .href = kSecureURL,
-          .attributionsrc = nullptr,
-          .impression_expected = false,
-      },
-      {
-          .href = kSecureURL,
-          .attributionsrc = "",
-          .impression_expected = true,
-      },
-      {
-          .href = kSecureURL,
-          .attributionsrc = kInsecureURL,
-          .impression_expected = true,
-      },
-      {
-          .href = kSecureURL,
-          .attributionsrc = kSecureURL,
-          .impression_expected = true,
-      },
-  };
-
-  for (bool use_anchor : {true, false}) {
-    for (const auto& test_case : kTestCases) {
-      Persistent<HTMLAnchorElementBase> anchor;
-      if (use_anchor) {
-        anchor = MakeGarbageCollected<HTMLAnchorElement>(*GetDocument());
-      } else {
-        anchor = MakeGarbageCollected<HTMLAreaElement>(*GetDocument());
-      }
-
-      anchor->setInnerText("abc");
-
-      if (test_case.href) {
-        anchor->SetHref(AtomicString(test_case.href));
-      }
-
-      if (test_case.attributionsrc) {
-        anchor->setAttribute(html_names::kAttributionsrcAttr,
-                             AtomicString(test_case.attributionsrc));
-      }
-
-      GetPage()->SetAttributionSupport(
-          network::mojom::AttributionSupport::kWeb);
-
-      GetDocument()->body()->AppendChild(anchor);
-      ASSERT_TRUE(ShowContextMenuForElement(
-          anchor, ui::mojom::blink::MenuSourceType::kMouse));
-
-      ContextMenuData context_menu_data =
-          GetWebFrameClient().GetContextMenuData();
-
-      EXPECT_EQ(context_menu_data.impression.has_value(),
-                test_case.impression_expected);
-    }
-  }
-}
-
-TEST_F(ContextMenuControllerTest, AttributionSrc_DataHostLifetime) {
-  // The context must be secure for attributionsrc to work at all.
-  frame_test_helpers::LoadHTMLString(
-      LocalMainFrame(), R"(<html><body>)",
-      url_test_helpers::ToKURL("https://test.com/"));
-
-  Persistent<HTMLAnchorElement> anchor =
-      MakeGarbageCollected<HTMLAnchorElement>(*GetDocument());
-  anchor->setInnerText("abc");
-
-  anchor->SetHref(AtomicString("https://a.com/"));
-
-  anchor->setAttribute(html_names::kAttributionsrcAttr,
-                       AtomicString("https://b.com/ https://c.com/"));
-
-  GetPage()->SetAttributionSupport(network::mojom::AttributionSupport::kWeb);
-
-  GetDocument()->body()->AppendChild(anchor);
-
-  enum CloseMechanism {
-    kContextMenuClosedInvalidNavigationUrl,
-    kContextMenuClosedValidNavigationUrl,
-    kClearContextMenu,
-  };
-
-  for (CloseMechanism close_mechanism :
-       {kContextMenuClosedInvalidNavigationUrl,
-        kContextMenuClosedValidNavigationUrl, kClearContextMenu}) {
-    SCOPED_TRACE(close_mechanism);
-
-    MockAttributionHost host(
-        GetWebFrameClient().GetRemoteNavigationAssociatedInterfaces());
-
-    ASSERT_TRUE(ShowContextMenuForElement(
-        anchor, ui::mojom::blink::MenuSourceType::kMouse));
-
-    // https://b.com/ and https://c.com/ should share a single data host.
-    host.WaitUntilDataHostsBound(/*expected=*/1);
-
-    ContextMenuData context_menu_data =
-        GetWebFrameClient().GetContextMenuData();
-
-    ASSERT_TRUE(context_menu_data.impression.has_value());
-
-    switch (close_mechanism) {
-      case kContextMenuClosedInvalidNavigationUrl:
-        GetPage()->GetContextMenuController().ContextMenuClosed(
-            KURL(), context_menu_data.impression);
-        EXPECT_EQ(host.NumBoundDataHosts(), 0u);
-        break;
-      case kContextMenuClosedValidNavigationUrl:
-        RegisterMockedImageURLLoad("https://b.com/");
-        RegisterMockedImageURLLoad("https://c.com/");
-
-        GetPage()->GetContextMenuController().ContextMenuClosed(
-            url_test_helpers::ToKURL("https://d.com/"),
-            context_menu_data.impression);
-
-        // The data host should remain bound because it will be used to handle
-        // responses from https://b.com/ and https://c.com/.
-        EXPECT_EQ(host.NumBoundDataHosts(), 1u);
-
-        // Flush the image-loading microtasks to prevent DCHECK failure on test
-        // exit.
-        base::RunLoop().RunUntilIdle();
-        url_test_helpers::ServeAsynchronousRequests();
-        break;
-      case kClearContextMenu:
-        GetPage()->GetContextMenuController().ClearContextMenu();
-        EXPECT_EQ(host.NumBoundDataHosts(), 0u);
-        break;
-    }
   }
 }
 
@@ -2285,7 +2130,7 @@ TEST_F(ContextMenuControllerTest, SelectUnselectableContent) {
   const auto& start = Position(element->firstChild(), 0);
   const auto& end = Position(element->lastChild(), 2);
   document->GetFrame()->Selection().SetSelection(
-      SelectionInDOMTree::Builder().SetBaseAndExtent(start, end).Build(),
+      SelectionInDomTree::Builder().SetBaseAndExtent(start, end).Build(),
       SetSelectionOptions());
 
   // The context menu should omit the unselectable content from the selected
@@ -2514,6 +2359,25 @@ TEST_F(ContextMenuControllerTest, MixedContentImageAutoupgrade) {
   EXPECT_EQ(context_menu_data.media_type,
             mojom::blink::ContextMenuDataMediaType::kImage);
   EXPECT_EQ(context_menu_data.src_url.spec(), "https://example.com/image.png");
+}
+
+TEST_F(ContextMenuControllerTest, RevealedPasswordField) {
+  Document* document = GetDocument();
+  document->documentElement()->SetInnerHTMLWithoutTrustedTypes(
+      "<input type=text id=test>");
+  document->UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+  document->GetFrame()->Selection().SelectAll();
+
+  Element* element = document->getElementById(AtomicString("test"));
+  HTMLInputElement* input_element = To<HTMLInputElement>(element);
+  ASSERT_TRUE(input_element);
+  input_element->MaybeSetHasBeenPasswordField();
+
+  ASSERT_TRUE(ShowContextMenuForElement(
+      element, ui::mojom::blink::MenuSourceType::kMouse));
+  ContextMenuData context_menu_data = GetWebFrameClient().GetContextMenuData();
+  EXPECT_EQ(context_menu_data.form_control_type,
+            mojom::blink::FormControlType::kInputPassword);
 }
 
 }  // namespace blink

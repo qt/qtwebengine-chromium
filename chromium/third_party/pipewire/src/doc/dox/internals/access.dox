@@ -1,0 +1,124 @@
+/** \page page_access Access Control
+
+This document explains how access control is designed and implemented.
+
+PipeWire implements per client permissions on the objects in the graph.
+Permissions include `R` (read), `W` (write), `X` (execute) and `M` (metadata).
+
+- `R`: An object with permission `R` is visible to the client. The client will receive
+  registry events for the object and can interact with it.
+- `W`: An object with permission `W` can be modified. This is usually done
+  through a method that modifies the state of the object. The `W` permission
+  usually implies the `X` permission.
+- `X`: An object with permission `X` allows invoking methods on the object.
+  Some of those methods will only query state, others will modify the object.
+  As said above, modifying the object through one of these methods requires
+  the `W` permission.
+- `M`: An object with `M` permission can be used as the subject in metadata.
+
+Clients with all permissions set are referred to as "ALL" in the
+documentation.
+
+
+# Use Cases
+
+## New Clients Need Their Permissions Configured
+
+A new client is not allowed to communicate with the PipeWire daemon until
+it has been configured with permissions.
+
+## Flatpaks Can't Modify Other Stream/Device Volumes
+
+An application running as Flatpak should not be able to modify the state of
+certain objects. Permissions of the relevant PipeWire objects should not have
+the `W` permission to avoid this.
+
+## Flatpaks Can't Move Other Streams To Different Devices
+
+Streams are moved to another device by setting the `target.node` metadata
+on the node ID. By not setting the `M` bit on the other objects, this can be
+avoided.
+
+## Application Should Be Restricted In What They Can See
+
+In general, applications should only be able to see the objects that they are
+allowed to see. For example, a web browser that was given access to a camera
+should not be able to see (and thus receive input data from) audio devices.
+
+## "Manager" Applications Require Full Access
+
+Some applications require full access to the PipeWire graph, including
+moving streams between nodes (by setting metadata) and modifying properties
+(eg. volume). These applications must work even when running as Flatpak.
+
+
+# Design
+
+## The PipeWire Daemon
+
+Immediately after a new client connects to the PipeWire daemon and updates
+its properties, the client will be registered and made visible to other
+clients.
+
+The PipeWire core will emit a `check_access` event in the \ref pw_context_events
+context for the the new client. The implementer of this event is responsible
+for assigning permissions to the client.
+
+Clients with permission `R` on the core object can continue communicating
+with the daemon. Clients without permission `R` on the core are suspended
+and are not able to send more messages.
+
+A suspended client can only resume processing after some other client
+sets the core permissions to `R`. This other client is usually a session
+manager, see e.g. \ref page_session_manager.
+
+## The PipeWire Access Module
+
+The \ref page_module_access hooks into the `check_access` event that is
+emitted when a new client is registered. The module checks the permissions of
+the client and stores those in the \ref PW_KEY_ACCESS
+property on the client object. If this property is already set, the access
+module does nothing.
+
+If the property is not set it will go through a set of checks to determine
+the permissions for a client. See the \ref page_module_access documentation
+for details.
+
+Depending on the resolution, it grants permissions to the client as follows:
+
+- `"unrestricted"`:  ALL permissions are set on the core
+    object and the client will be able to resume.
+- any other value: No permissions are set on the core object
+  and the client will be suspended.
+
+As detailed above, the client may be suspended. In that case the session
+manager or another client is required to configure permissions on the object
+for it to resume.
+
+## The Session Manager
+
+The session manager listens for new clients to appear. It will use the
+\ref PW_KEY_ACCESS property to determine what to do.
+
+For clients that are not unrestricted, the session manager needs to set permissions on the
+client for the various PipeWire objects in the graph that it is allowed to
+interact with.  To resume a client, the session manager needs to set
+permission `R` on the core object for the client.
+
+Permissions of objects for a client can be changed at any time by the
+session manager. Removing the client core permission `R` will suspend the
+client.
+
+The session manager needs to do additional checks to determine if the
+manager permissions can be given to the particular client and then
+configure ALL permissions on the client. Possible checks include
+permission store checks or ask the user if the application is allowed
+full access.
+
+Manager applications (ie. applications that need to modify the graph) will
+set the \ref PW_KEY_MEDIA_CATEGORY property in the client object to "Manager".
+
+For details on the pipewire-media-session implementation of access control,
+see \ref page_media_session.
+
+*/

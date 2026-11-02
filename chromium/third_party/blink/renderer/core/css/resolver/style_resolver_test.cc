@@ -68,7 +68,8 @@ class StyleResolverTest : public PageTestBase {
   }
 
   String ComputedValue(String name, const ComputedStyle& style) {
-    CSSPropertyRef ref(name, GetDocument());
+    AtomicString atomic_name(name);
+    CSSPropertyRef ref(&atomic_name, GetDocument());
     DCHECK(ref.IsValid());
     return ref.GetProperty()
         .CSSValueFromComputedStyle(style, nullptr, false,
@@ -673,8 +674,13 @@ TEST_F(StyleResolverTest, BackgroundImageFetch) {
       << "Fetch for display:contents";
   EXPECT_FALSE(GetBackgroundImageValue(inside_contents).IsCachePending())
       << "Fetch for image inherited from display:contents";
-  EXPECT_TRUE(GetBackgroundImageValue(non_slotted).IsCachePending())
-      << "No fetch for element outside the flat tree";
+
+  if (RuntimeEnabledFeatures::GetComputedStyleOutsideFlatTreeEnabled()) {
+    EXPECT_TRUE(GetBackgroundImageValue(non_slotted).IsCachePending())
+        << "No fetch for element outside the flat tree";
+  } else {
+    ASSERT_EQ(non_slotted->GetComputedStyle(), nullptr);
+  }
 
   // Added two frameset elements to hit the MatchedPropertiesCache for the
   // second one. Frameset adjusts style to display:block in StyleAdjuster, but
@@ -1175,6 +1181,8 @@ TEST_F(StyleResolverTestCQ, CascadedValuesForPseudoElementInContainer) {
 }
 
 TEST_F(StyleResolverTest, EnsureComputedStyleSlotFallback) {
+  ScopedGetComputedStyleOutsideFlatTreeForTest scoped_feature(true);
+
   GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <div id="host"><span></span></div>
   )HTML");
@@ -1207,6 +1215,8 @@ TEST_F(StyleResolverTest, EnsureComputedStyleSlotFallback) {
 }
 
 TEST_F(StyleResolverTest, EnsureComputedStyleOutsideFlatTree) {
+  ScopedGetComputedStyleOutsideFlatTreeForTest scoped_feature(true);
+
   GetDocument().documentElement()->SetHTMLUnsafeWithoutTrustedTypes(R"HTML(
     <div id=host>
       <template shadowrootmode=open>
@@ -1349,6 +1359,36 @@ TEST_F(StyleResolverTest, ComputedValueRootElement) {
   EXPECT_EQ("42px", computed_value->CssText());
 }
 
+TEST_F(StyleResolverTest, ComputedValueFontSizeRelative) {
+  Element* target = GetDocument().documentElement();
+  ASSERT_TRUE(target);
+  target->SetInlineStyleProperty(CSSPropertyID::kFontSize, "30px");
+  UpdateAllLifecyclePhasesForTest();
+  CSSPropertyID property_id = CSSPropertyID::kWidth;
+  const CSSValue* parsed_value = css_test_helpers::ParseLonghand(
+      GetDocument(), GetCSSPropertyWidth(), "2em");
+  ASSERT_TRUE(parsed_value);
+  const CSSValue* computed_value = StyleResolver::ComputeValue(
+      target, CSSPropertyName(property_id), *parsed_value);
+  ASSERT_TRUE(computed_value);
+  EXPECT_EQ("60px", computed_value->CssText());
+}
+
+TEST_F(StyleResolverTest, ComputedValueLineHeight) {
+  Element* target = GetDocument().documentElement();
+  ASSERT_TRUE(target);
+  target->SetInlineStyleProperty(CSSPropertyID::kLineHeight, "50px");
+  UpdateAllLifecyclePhasesForTest();
+  CSSPropertyID property_id = CSSPropertyID::kWidth;
+  const CSSValue* parsed_value = css_test_helpers::ParseLonghand(
+      GetDocument(), GetCSSPropertyWidth(), "2lh");
+  ASSERT_TRUE(parsed_value);
+  const CSSValue* computed_value = StyleResolver::ComputeValue(
+      target, CSSPropertyName(property_id), *parsed_value);
+  ASSERT_TRUE(computed_value);
+  EXPECT_EQ("100px", computed_value->CssText());
+}
+
 namespace {
 
 const CSSValue* ParseCustomProperty(Document& document,
@@ -1377,7 +1417,7 @@ TEST_F(StyleResolverTest, ComputeValueCustomProperty) {
 
   AtomicString custom_property_name("--color");
   const CSSValue* parsed_value = ParseCustomProperty(
-      GetDocument(), CustomProperty(custom_property_name, GetDocument()),
+      GetDocument(), CustomProperty(&custom_property_name, GetDocument()),
       "blue");
   ASSERT_TRUE(parsed_value);
   const CSSValue* computed_value = StyleResolver::ComputeValue(
@@ -4117,7 +4157,16 @@ TEST_F(StyleResolverTest, TryTacticsSet_Flip) {
   ASSERT_TRUE(try_tactics_set);
 
   AnchorEvaluatorImpl anchor_evaluator(
-      {WritingMode::kHorizontalTb, TextDirection::kLtr});
+      *div->GetLayoutBox(),
+      /*anchor_map=*/nullptr,
+      /*implicit_anchor=*/nullptr,
+      /*containing_block=*/nullptr,
+      /*actual_containing_block=*/nullptr,
+      /*grid_layout_data=*/nullptr,
+      {WritingMode::kHorizontalTb, TextDirection::kLtr},
+      /*container_size=*/LogicalSize(),
+      /*container_rect=*/LogicalRect(),
+      /*scroll_rect=*/std::nullopt);
   const ComputedStyle* try_style = StyleForId(
       "div", StyleRecalcContext{.anchor_evaluator = &anchor_evaluator,
                                 .try_set = try_set,

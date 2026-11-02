@@ -4,7 +4,7 @@
 
 export const enum TokenType {
   LITERAL = 0,
-  URL = 1
+  URL = 1,
 }
 
 export interface Token {

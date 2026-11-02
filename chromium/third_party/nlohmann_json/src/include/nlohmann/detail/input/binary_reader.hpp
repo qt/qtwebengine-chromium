@@ -3,7 +3,7 @@
 // |  |  |__   |  |  | | | |  version 3.12.0
 // |_____|_____|_____|_|___|  https://github.com/nlohmann/json
 //
-// SPDX-FileCopyrightText: 2013-2025 Niels Lohmann <https://nlohmann.me>
+// SPDX-FileCopyrightText: 2013-2026 Niels Lohmann <https://nlohmann.me>
 // SPDX-License-Identifier: MIT
 
 #pragma once
@@ -12,7 +12,7 @@
 #include <array> // array
 #include <cmath> // ldexp
 #include <cstddef> // size_t
-#include <cstdint> // uint8_t, uint16_t, uint32_t, uint64_t
+#include <cstdint> // uint8_t, uint16_t, uint32_t, uint64_t, uintmax_t
 #include <cstdio> // snprintf
 #include <cstring> // memcpy
 #include <iterator> // back_inserter
@@ -425,6 +425,25 @@ class binary_reader
 
     @return whether a valid CBOR value was passed to the SAX parser
     */
+
+    template<typename NumberType>
+    bool get_cbor_negative_integer()
+    {
+        NumberType number{};
+        if (JSON_HEDLEY_UNLIKELY(!get_number(input_format_t::cbor, number)))
+        {
+            return false;
+        }
+        const auto max_val = static_cast<NumberType>((std::numeric_limits<number_integer_t>::max)());
+        if (number > max_val)
+        {
+            return sax->parse_error(chars_read, get_token_string(),
+                                    parse_error::create(112, chars_read,
+                                            exception_message(input_format_t::cbor, "negative integer overflow", "value"), nullptr));
+        }
+        return sax->number_integer(static_cast<number_integer_t>(-1) - static_cast<number_integer_t>(number));
+    }
+
     bool parse_cbor_internal(const bool get_char,
                              const cbor_tag_handler_t tag_handler)
     {
@@ -513,29 +532,16 @@ class binary_reader
                 return sax->number_integer(static_cast<std::int8_t>(0x20 - 1 - current));
 
             case 0x38: // Negative integer (one-byte uint8_t follows)
-            {
-                std::uint8_t number{};
-                return get_number(input_format_t::cbor, number) && sax->number_integer(static_cast<number_integer_t>(-1) - number);
-            }
+                return get_cbor_negative_integer<std::uint8_t>();
 
             case 0x39: // Negative integer -1-n (two-byte uint16_t follows)
-            {
-                std::uint16_t number{};
-                return get_number(input_format_t::cbor, number) && sax->number_integer(static_cast<number_integer_t>(-1) - number);
-            }
+                return get_cbor_negative_integer<std::uint16_t>();
 
             case 0x3A: // Negative integer -1-n (four-byte uint32_t follows)
-            {
-                std::uint32_t number{};
-                return get_number(input_format_t::cbor, number) && sax->number_integer(static_cast<number_integer_t>(-1) - number);
-            }
+                return get_cbor_negative_integer<std::uint32_t>();
 
             case 0x3B: // Negative integer -1-n (eight-byte uint64_t follows)
-            {
-                std::uint64_t number{};
-                return get_number(input_format_t::cbor, number) && sax->number_integer(static_cast<number_integer_t>(-1)
-                        - static_cast<number_integer_t>(number));
-            }
+                return get_cbor_negative_integer<std::uint64_t>();
 
             // Binary data (0x00..0x17 bytes follow)
             case 0x40:
@@ -1841,6 +1847,29 @@ class binary_reader
     }
 
     /*!
+    @brief reject a negative UBJSON/BJData string length
+
+    String and key lengths are written with signed integer markers (i, I, l,
+    L). A negative value is malformed; without this check get_string() would
+    silently treat it as an empty string and leave the following bytes to be
+    misread as the next value. This mirrors the non-negative check the
+    optimized-container count path already performs in get_ubjson_size_value.
+
+    @param[in] len  the string length read from the input
+    @return whether the length is valid (non-negative)
+    */
+    template<typename NumberType>
+    bool check_ubjson_string_length(const NumberType len)
+    {
+        if (JSON_HEDLEY_UNLIKELY(len < 0))
+        {
+            return sax->parse_error(chars_read, get_token_string(), parse_error::create(113, chars_read,
+                                    exception_message(input_format, "string length must not be negative", "string"), nullptr));
+        }
+        return true;
+    }
+
+    /*!
     @brief reads a UBJSON string
 
     This function is either called after reading the 'S' byte explicitly
@@ -1877,25 +1906,25 @@ class binary_reader
             case 'i':
             {
                 std::int8_t len{};
-                return get_number(input_format, len) && get_string(input_format, len, result);
+                return get_number(input_format, len) && check_ubjson_string_length(len) && get_string(input_format, len, result);
             }
 
             case 'I':
             {
                 std::int16_t len{};
-                return get_number(input_format, len) && get_string(input_format, len, result);
+                return get_number(input_format, len) && check_ubjson_string_length(len) && get_string(input_format, len, result);
             }
 
             case 'l':
             {
                 std::int32_t len{};
-                return get_number(input_format, len) && get_string(input_format, len, result);
+                return get_number(input_format, len) && check_ubjson_string_length(len) && get_string(input_format, len, result);
             }
 
             case 'L':
             {
                 std::int64_t len{};
-                return get_number(input_format, len) && get_string(input_format, len, result);
+                return get_number(input_format, len) && check_ubjson_string_length(len) && get_string(input_format, len, result);
             }
 
             case 'u':
@@ -2902,18 +2931,7 @@ class binary_reader
                     const NumberType len,
                     string_t& result)
     {
-        bool success = true;
-        for (NumberType i = 0; i < len; i++)
-        {
-            get();
-            if (JSON_HEDLEY_UNLIKELY(!unexpect_eof(format, "string")))
-            {
-                success = false;
-                break;
-            }
-            result.push_back(static_cast<typename string_t::value_type>(current));
-        }
-        return success;
+        return get_bytes(format, len, "string", result);
     }
 
     /*!
@@ -2935,18 +2953,66 @@ class binary_reader
                     const NumberType len,
                     binary_t& result)
     {
-        bool success = true;
-        for (NumberType i = 0; i < len; i++)
+        return get_bytes(format, len, "binary", result);
+    }
+
+    /*!
+    @brief read @a len bytes from the input into a string or byte container
+
+    @tparam NumberType    the type of the length
+    @tparam ContainerType the destination container (string_t or binary_t)
+    @param[in] format   the current format (for diagnostics)
+    @param[in] len      number of bytes to read
+    @param[in] context  further context information (for diagnostics)
+    @param[out] result  container the bytes are appended to
+
+    @return whether reading completed
+
+    @note We cannot reserve @a len bytes for the result up front, because
+          @a len may be far larger than the actual input. Instead we read in
+          bounded chunks, so the peak allocation is capped regardless of the
+          claimed length while the per-byte loop is replaced by block copies
+          (a std::memcpy for contiguous inputs). @ref unexpect_eof() still
+          detects a premature end of input.
+    */
+    template<typename NumberType, typename ContainerType>
+    bool get_bytes(const input_format_t format,
+                   NumberType len,
+                   const char* context,
+                   ContainerType& result)
+    {
+        // upper bound on the number of bytes read (and allocated) per chunk
+        constexpr std::size_t chunk_size = 4096;
+
+        while (len > 0)
         {
-            get();
-            if (JSON_HEDLEY_UNLIKELY(!unexpect_eof(format, "binary")))
+            // number of bytes to read this iteration: min(chunk_size, len),
+            // computed without truncating chunk_size to a narrow NumberType
+            const std::size_t wanted = (static_cast<std::uintmax_t>(len) < static_cast<std::uintmax_t>(chunk_size))
+                                       ? static_cast<std::size_t>(len)
+                                       : chunk_size;
+            const std::size_t old_size = result.size();
+            result.resize(old_size + wanted);
+            // resize() is required to make size() exactly old_size + wanted;
+            // that is the room get_elements() is allowed to write into
+            JSON_ASSERT(result.size() == old_size + wanted);
+            const std::size_t bytes_read = ia.get_elements(&result[old_size], wanted);
+            chars_read += bytes_read;
+            if (JSON_HEDLEY_UNLIKELY(bytes_read < wanted))
             {
-                success = false;
-                break;
+                // premature end of input: shrink to what was actually read and
+                // report the failure at the first missing byte (same position
+                // accounting as get_to() for partial number reads)
+                result.resize(old_size + bytes_read);
+                ++chars_read;
+                current = char_traits<char_type>::eof();
+                return unexpect_eof(format, context);
             }
-            result.push_back(static_cast<typename binary_t::value_type>(current));
+            // a full chunk was read; get_elements() never returns more than requested
+            JSON_ASSERT(bytes_read == wanted);
+            len = static_cast<NumberType>(len - static_cast<NumberType>(wanted));
         }
-        return success;
+        return true;
     }
 
     /*!

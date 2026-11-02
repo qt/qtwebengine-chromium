@@ -5,7 +5,7 @@
 import * as Common from '../../core/common/common.js';
 import type * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
-import type * as TextUtils from '../text_utils/text_utils.js';
+import type * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as Workspace from '../workspace/workspace.js';
 
 import {ContentProviderBasedProject} from './ContentProviderBasedProject.js';
@@ -23,9 +23,9 @@ export class DefaultScriptMapping implements DebuggerSourceMapping {
       debuggerWorkspaceBinding: DebuggerWorkspaceBinding) {
     defaultScriptMappings.add(this);
     this.#debuggerWorkspaceBinding = debuggerWorkspaceBinding;
-    this.#project = new ContentProviderBasedProject(
-        workspace, 'debugger:' + debuggerModel.target().id(), Workspace.Workspace.projectTypes.Debugger, '',
-        true /* isServiceProject */);
+    this.#project =
+        new ContentProviderBasedProject(workspace, 'debugger:' + debuggerModel.target().id(),
+                                        Workspace.Workspace.projectTypes.Debugger, '', true /* isServiceProject */);
     this.#eventListeners = [
       debuggerModel.addEventListener(SDK.DebuggerModel.Events.GlobalObjectCleared, this.globalObjectCleared, this),
       debuggerModel.addEventListener(SDK.DebuggerModel.Events.ParsedScriptSource, this.parsedScriptSource, this),
@@ -107,7 +107,8 @@ export class DefaultScriptMapping implements DebuggerSourceMapping {
     }
     this.#uiSourceCodeToScript.set(uiSourceCode, script);
     this.#scriptToUISourceCode.set(script, uiSourceCode);
-    this.#project.addUISourceCodeWithProvider(uiSourceCode, script, null, 'text/javascript');
+    const mimeType = script.isWasm() ? 'application/wasm' : 'text/javascript';
+    this.#project.addUISourceCodeWithProvider(uiSourceCode, script, null, mimeType);
     void this.#debuggerWorkspaceBinding.updateLocations(script);
   }
 

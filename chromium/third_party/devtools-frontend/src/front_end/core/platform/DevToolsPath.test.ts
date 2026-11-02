@@ -20,7 +20,7 @@ describe('Platform', () => {
       void encPathString;
     }
 
-    describe('UrlString', () => {
+    describe('UrlString type', () => {
       it('is correctly type checked', () => {
         // eslint-disable-next-line @devtools/prefer-url-string
         const urlString = 'urlStr' as Platform.DevToolsPath.UrlString;

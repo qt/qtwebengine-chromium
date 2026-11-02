@@ -35,7 +35,6 @@
 #include "build/build_config.h"
 #include "components/viz/common/features.h"
 #include "content/browser/back_forward_cache/back_forward_cache_metrics.h"
-#include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/devtools/render_frame_devtools_agent_host.h"
 #include "content/browser/preloading/prefetch/prefetch_features.h"
 #include "content/browser/process_lock.h"
@@ -63,6 +62,7 @@
 #include "content/browser/renderer_host/render_widget_host_view_child_frame.h"
 #include "content/browser/renderer_host/spare_render_process_host_manager_impl.h"
 #include "content/browser/security/coop/cross_origin_opener_policy_reporter.h"
+#include "content/browser/security/cpsp/child_process_security_policy_impl.h"
 #include "content/browser/site_info.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
@@ -108,9 +108,6 @@ using LifecycleStateImpl = RenderFrameHostImpl::LifecycleStateImpl;
 using perfetto::protos::pbzero::ChromeTrackEvent;
 
 namespace {
-const char kWouldSwapAboutBlankHistogramName[] =
-    "Navigation.ProcessSwap.V8Optimizer."
-    "WouldSwapRendererInitiatedAboutBlankNavigation";
 
 // Enables swapping BrowsingInstances when a navigation requires different
 // process-level flags (e.g., V8 optimizers, jitless) than the current process.
@@ -185,13 +182,7 @@ bool ShouldSwapBrowsingInstancesForDynamicIsolation(
 // into a new tab before taking effect.
 bool ShouldSwapBrowsingInstancesForDifferentProcessFlags(
     RenderFrameHostImpl* current_rfh,
-    const UrlInfo& destination_effective_url_info,
-    SiteInstanceImpl* source_instance) {
-  // TODO(crbug.com/493684112): Clean up this way of checking for
-  // renderer-initiated navigations for the histogram.
-  const bool is_renderer_initiated_about_blank =
-      destination_effective_url_info.url.IsAboutBlank() && source_instance;
-
+    const UrlInfo& destination_effective_url_info) {
   if (!base::FeatureList::IsEnabled(
           kSwapBrowsingInstancesForDifferentProcessFlags)) {
     return false;
@@ -204,9 +195,12 @@ bool ShouldSwapBrowsingInstancesForDifferentProcessFlags(
   // Skip cases when there are other windows that might script this one.
   SiteInstanceImpl* current_instance = current_rfh->GetSiteInstance();
   if (current_instance->GetRelatedActiveContentsCount() > 1u) {
-    if (is_renderer_initiated_about_blank) {
-      base::UmaHistogramBoolean(kWouldSwapAboutBlankHistogramName, false);
-    }
+    return false;
+  }
+
+  // Navigation to about:blank should stay in its initiator's
+  // SiteInstance/process.
+  if (destination_effective_url_info.url.IsAboutBlank()) {
     return false;
   }
 
@@ -217,21 +211,6 @@ bool ShouldSwapBrowsingInstancesForDifferentProcessFlags(
   const SiteInfo& site_info_in_future_context = SiteInfo::Create(
       future_isolation_context, destination_effective_url_info);
   const SiteInfo& current_site_info = current_instance->GetSiteInfo();
-
-  if (is_renderer_initiated_about_blank) {
-    const bool should_swap_for_flags =
-        current_site_info.are_v8_optimizations_disabled() !=
-            site_info_in_future_context.are_v8_optimizations_disabled() ||
-        current_site_info.is_jit_disabled() !=
-            site_info_in_future_context.is_jit_disabled();
-    base::UmaHistogramBoolean(kWouldSwapAboutBlankHistogramName,
-                              should_swap_for_flags);
-  }
-  // Navigation to about:blank should stay in its initiator's
-  // SiteInstance/process.
-  if (destination_effective_url_info.url.IsAboutBlank()) {
-    return false;
-  }
 
   if (current_site_info.are_v8_optimizations_disabled() !=
       site_info_in_future_context.are_v8_optimizations_disabled()) {
@@ -844,6 +823,7 @@ void RenderFrameHostManager::InitRoot(
               // hashes of hosts for insecure request upgrades
               std::vector<uint32_t>(),
               false /* has_potentially_trustworthy_unique_origin */,
+              false /* is_secure_context_root */,
               false /* has_active_user_gesture */,
               false /* has_received_user_gesture_before_nav */,
               false /* is_ad_frame */),
@@ -899,6 +879,7 @@ void RenderFrameHostManager::InitChild(
               // hashes of hosts for insecure request upgrades
               std::vector<uint32_t>(),
               false /* has_potentially_trustworthy_unique_origin */,
+              false /* is_secure_context_root */,
               false /* has_active_user_gesture */,
               false /* has_received_user_gesture_before_nav */,
               false /* is_ad_frame */),
@@ -1217,13 +1198,21 @@ void RenderFrameHostManager::DidChangeOpener(
     if (opener_rfhi) {
       // Ignore this message if |opener_rfhi| is inactive (e.g., in BFCache or
       // pending deletion), or if the FrameTreeNode's current RenderFrameHost
-      // is in a different BrowsingInstance, as it would be incorrect to
-      // establish an opener relationship in those cases.
+      // is in a different BrowsingInstance from the new opener, as it would be
+      // incorrect to establish an opener relationship in those cases.
+      //
+      // Note that `IsInactiveAndDisallowActivation` may return false for
+      // speculative and pending commit RFHs (while killing their renderer
+      // process), because this case is unexpected except for compromised
+      // renderers. As a result, also confirm that opener_rfhi is the current
+      // frame of its FTN, to catch speculative and pending commit cases.
       if (opener_rfhi->IsInactiveAndDisallowActivation(
               DisallowActivationReasonId::kDidChangeOpener) ||
+          opener_rfhi != opener_rfhi->frame_tree_node()->current_frame_host() ||
           !render_frame_host_->GetSiteInstance()
                ->group()
-               ->IsRelatedSiteInstanceGroup(source_site_instance_group)) {
+               ->IsRelatedSiteInstanceGroup(
+                   opener_rfhi->GetSiteInstance()->group())) {
         return;
       }
       opener = opener_rfhi->frame_tree_node();
@@ -1255,7 +1244,7 @@ void RenderFrameHostManager::DidChangeOpener(
 std::unique_ptr<StoredPage> RenderFrameHostManager::TakePrerenderedPage() {
   CHECK(frame_tree_node_->IsMainFrame());
   auto main_render_frame_host = SetRenderFrameHost(nullptr);
-  return CollectPage(std::move(main_render_frame_host));
+  return CollectPage(std::move(main_render_frame_host), FrameTreeNodeId());
 }
 
 void RenderFrameHostManager::PrepareForCollectingPage(
@@ -1333,7 +1322,8 @@ void RenderFrameHostManager::PrepareForCollectingPage(
 }
 
 std::unique_ptr<StoredPage> RenderFrameHostManager::CollectPage(
-    std::unique_ptr<RenderFrameHostImpl> main_render_frame_host) {
+    std::unique_ptr<RenderFrameHostImpl> main_render_frame_host,
+    FrameTreeNodeId focused_frame_tree_node_id) {
   CHECK(main_render_frame_host->is_main_frame());
 
   StoredPage::RenderViewHostImplSafeRefSet render_view_hosts;
@@ -1345,6 +1335,7 @@ std::unique_ptr<StoredPage> RenderFrameHostManager::CollectPage(
   auto stored_page = std::make_unique<StoredPage>(
       std::move(main_render_frame_host), std::move(proxy_hosts),
       std::move(render_view_hosts));
+  stored_page->set_focused_frame_tree_node_id(focused_frame_tree_node_id);
   return stored_page;
 }
 
@@ -1374,7 +1365,8 @@ void RenderFrameHostManager::UnloadOldFrame(
     std::unique_ptr<RenderFrameHostImpl> old_render_frame_host,
     const ViewTransitionCommitInfo& view_transition_commit_info,
     const base::optional_ref<const GURL> navigation_request_url,
-    bool is_backward_navigation) {
+    bool is_backward_navigation,
+    FrameTreeNodeId focused_frame_tree_node_id) {
   TRACE_EVENT1("navigation", "RenderFrameHostManager::UnloadOldFrame",
                "FrameTreeNode id", frame_tree_node_->frame_tree_node_id());
 
@@ -1417,7 +1409,8 @@ void RenderFrameHostManager::UnloadOldFrame(
   // If the old RenderFrameHost can be stored in the BackForwardCache, return
   // early without unloading and running unload handlers, as the document may
   // be restored later.
-  if (!old_render_frame_host->GetParentOrOuterDocument()) {
+  if (!old_render_frame_host->GetParentOrOuterDocument() &&
+      frame_tree_node_->frame_tree().is_primary()) {
     BackForwardCacheImpl& back_forward_cache =
         GetNavigationController().GetBackForwardCache();
 
@@ -1443,10 +1436,7 @@ void RenderFrameHostManager::UnloadOldFrame(
                 "old_render_frame_host", old_render_frame_host,
                 "bfcache_eligibility",
                 bfcache_eligibility.flattened_reasons.ToString());
-    if (view_transition_commit_info.HasViewTransitionResources()) {
-      base::UmaHistogramBoolean("Navigation.ViewTransition.PerformsUnload",
-                                !can_store);
-    }
+
     if (can_store) {
       bool is_same_process =
           (old_render_frame_host->GetProcess() ==
@@ -1468,7 +1458,8 @@ void RenderFrameHostManager::UnloadOldFrame(
         base::debug::DumpWithoutCrashing();
       }
 
-      auto stored_page = CollectPage(std::move(old_render_frame_host));
+      auto stored_page = CollectPage(std::move(old_render_frame_host),
+                                     focused_frame_tree_node_id);
       auto entry =
           std::make_unique<BackForwardCacheImpl::Entry>(std::move(stored_page));
       // Ensures RenderViewHosts are not reused while they are in the cache.
@@ -1642,7 +1633,14 @@ void RenderFrameHostManager::RestorePage(
 }
 
 void RenderFrameHostManager::ClearRFHsPendingShutdown() {
-  pending_delete_hosts_.clear();
+  // Move the pending-delete RenderFrameHosts to a local set before destroying
+  // them so that `pending_delete_hosts_` is already empty while their
+  // destructors run, and verify that nothing re-entrantly adds new entries to
+  // `pending_delete_hosts_` during destruction (see https://crbug.com/567160164).
+  RFHPendingDeleteSet pending_delete_hosts;
+  pending_delete_hosts_.swap(pending_delete_hosts);
+  pending_delete_hosts.clear();
+  CHECK(pending_delete_hosts_.empty());
 }
 
 void RenderFrameHostManager::ClearWebUIInstances() {
@@ -1993,7 +1991,7 @@ RenderFrameHostManager::GetFrameHostForNavigation(
   // A subframe should always be in the same BrowsingInstance as the parent
   // (see also https://crbug.com/1107269).
   //
-  // TODO(https://crbug.com/497761255): CHECK-exclusion: Convert to CHECK once
+  // TODO(https://crbug.com/526542490): CHECK-exclusion: Convert to CHECK once
   // we are sure this isn't hit.
   RenderFrameHostImpl* parent = frame_tree_node_->parent();
   DCHECK(!parent ||
@@ -2535,7 +2533,7 @@ RenderFrameHostManager::UnsetSpeculativeRenderFrameHost(
                   kSpeculativeMainFrameForNavigationCancelled);
   } else {
     // TODO(dcheng): Upgrade this to a CHECK()?
-    // TODO(https://crbug.com/503784536): CHECK-exclusion: Convert to CHECK once
+    // TODO(https://crbug.com/526543099): CHECK-exclusion: Convert to CHECK once
     // we are sure this isn't hit.
     DCHECK_EQ(speculative_render_frame_host_->lifecycle_state(),
               LifecycleStateImpl::kPendingCommit);
@@ -2932,7 +2930,7 @@ RenderFrameHostManager::ShouldSwapBrowsingInstancesForNavigation(
   // applied. This ensures that the user's security preferences are applied
   // without needing to open a new tab.
   if (ShouldSwapBrowsingInstancesForDifferentProcessFlags(
-          render_frame_host_.get(), url_info_to_test, source_instance)) {
+          render_frame_host_.get(), url_info_to_test)) {
     return BrowsingContextGroupSwap::CreateSecuritySwap();
   }
 
@@ -3299,7 +3297,9 @@ RenderFrameHostManager::GetSiteInstanceForNavigation(
   // If |new_instance| is a new SiteInstance for a subframe or a fenced frame
   // that require a dedicated process, set its process reuse policy so that such
   // subframes and fenced frames are consolidated into existing processes for
-  // that site. Avoid aggressive process reuse for PDF content frames.
+  // that site. Avoid aggressive process reuse for content with embedder-imposed
+  // isolation (PDF viewers and unique-instance content such as MimeHandler
+  // extensions).
   // TODO(crbug.com/40230422): The model described in fenced frames process
   // isolation explainer is still in the design stage. Determining correctness
   // here will also involve resolving on the FF process model plan (see
@@ -3307,7 +3307,7 @@ RenderFrameHostManager::GetSiteInstanceForNavigation(
   // frame/blob/master/explainer/process_isolation.md).
   if (!frame_tree_node_->IsOutermostMainFrame() &&
       !new_instance->HasProcess() && new_instance->RequiresDedicatedProcess() &&
-      !new_instance->IsPdf()) {
+      new_instance->GetSiteInfo().embedder_isolation_info().is_none()) {
     // Also give the embedder and user-specifiable feature a chance to override
     // this decision. Certain frames have different enough workloads so that
     // it's better to avoid placing a subframe into an existing process for
@@ -3435,7 +3435,7 @@ RenderFrameHostManager::GetSiteInstanceForNavigation(
   }
 
   if (process_to_reuse) {
-    // TODO(https://crbug.com/497761255): CHECK-exclusion: Convert to CHECK once
+    // TODO(https://crbug.com/526542622): CHECK-exclusion: Convert to CHECK once
     // we are sure this isn't hit.
     DCHECK(frame_tree_node_->IsMainFrame());
     new_instance->ReuseExistingProcessIfPossible(process_to_reuse);
@@ -4144,6 +4144,35 @@ bool RenderFrameHostManager::CanUseSourceSiteInstance(
     return false;
   }
 
+  // If `dest_url_info` is for an isolated MIME handler instance, it cannot
+  // share a SiteInstance with content of a different MIME-handler
+  // classification or with a different isolation id. A single
+  // EmbedderIsolationInfo equality check covers both directions: when one
+  // side is `Mode::kNone` the asymmetry case fails; when both are
+  // unique-instance but with different ids the per-instance isolation case
+  // fails. Two simultaneous MIME handler instances must run in distinct
+  // processes, and a MIME handler instance must never share a process with
+  // non-handler content. In particular, this prevents the PDF viewer
+  // extension from sharing a process with PDF content loaded from a data
+  // URL (crbug.com/1259635).
+  if (dest_url_info.embedder_isolation_info !=
+      source_site_info.embedder_isolation_info()) {
+    // The PDF-asymmetry case is reported with the historical
+    // "(pdf-content)" debug label to preserve existing diagnostics; other
+    // mismatches fall through to the generic reason.
+    if (dest_url_info.embedder_isolation_info.is_pdf() !=
+        source_site_info.embedder_isolation_info().is_pdf()) {
+      AppendReason(reason,
+                   "CanUseSourceSiteInstance => false "
+                   "(pdf-content)");
+    } else {
+      AppendReason(reason,
+                   "CanUseSourceSiteInstance => false "
+                   "(mime-handler-isolation-id-mismatched)");
+    }
+    return false;
+  }
+
   // One exception (where data URLs, about:srcdoc or about:blank pages are *not*
   // controlled by the initiator) is when these URLs are reached via a server
   // redirect.
@@ -4188,17 +4217,6 @@ bool RenderFrameHostManager::CanUseSourceSiteInstance(
     AppendReason(reason,
                  "CanUseSourceSiteInstance => false "
                  "(cross-origin-isolation-key)");
-    return false;
-  }
-
-  // PDF content should never share a SiteInstance with non-PDF content. In
-  // practice, this prevents the PDF viewer extension from incorrectly sharing
-  // a process with PDF content that was loaded from a data URL.
-  if (dest_url_info.embedder_isolation_info.is_pdf()) {
-    CHECK(!source_instance->GetProcess()->IsPdf());
-    AppendReason(reason,
-                 "CanUseSourceSiteInstance => false "
-                 "(pdf-content)");
     return false;
   }
 
@@ -4589,9 +4607,11 @@ RenderFrameHostManager::CreateSpeculativeRenderFrame(
   // about to create.
   // TODO(https://crbug.com/354382462): Make this a proper fix with a repro
   // test and delete the debugging code around this.
-  GetNavigationController()
-      .GetBackForwardCache()
-      .EvictFramesInRelatedSiteInstances(instance);
+  if (frame_tree_node_->frame_tree().is_primary()) {
+    GetNavigationController()
+        .GetBackForwardCache()
+        .EvictFramesInRelatedSiteInstances(instance);
+  }
 
   // Since CreateSpeculativeRenderFrameHost should have already called
   // GetOrCreateProcess(), a process allocation is not expected in
@@ -4657,7 +4677,7 @@ RenderFrameHostManager::CreateSpeculativeRenderFrame(
         ->Hide();
   }
 
-  // TODO(https://crbug.com/503784536): CHECK-exclusion: Convert to CHECK once
+  // TODO(https://crbug.com/526543245): CHECK-exclusion: Convert to CHECK once
   // we are sure this isn't hit.
   DCHECK(render_view_host->IsRenderViewLive());
   // RenderViewHost for |instance| might exist prior to calling
@@ -5258,6 +5278,21 @@ void RenderFrameHostManager::CommitPending(
       old_view && old_view->HasFocus() &&
       render_frame_host_->GetMainFrame()->GetRenderWidgetHost()->is_focused();
 
+  // Remember which frame within the outgoing page is focused before the swap
+  // moves focus to the new page, so that the focused frame can be restored if
+  // the outgoing page is stored in the back-forward cache. This is passed down
+  // to UnloadOldFrame() (and ultimately CollectPage()), which runs
+  // synchronously below, so it can travel with the page into the cache. This is
+  // recorded regardless of whether the page widget is focused, since
+  // element-level focus within the frame is preserved either way.
+  FrameTreeNodeId focused_frame_tree_node_id;
+  if (is_main_frame) {
+    if (FrameTreeNode* focused_frame =
+            frame_tree_node_->frame_tree().GetFocusedFrame()) {
+      focused_frame_tree_node_id = focused_frame->frame_tree_node_id();
+    }
+  }
+
   // Remove the current frame and its descendants from the set of fullscreen
   // frames immediately. They can stay in pending deletion for some time.
   // Removing them when they are deleted is too late.
@@ -5375,7 +5410,7 @@ void RenderFrameHostManager::CommitPending(
       CHECK_EQ(prev_state,
                RenderFrameHostImpl::LifecycleStateImpl::kPrerendering);
       current_frame_host()->GetPage().Activate(
-          PageImpl::ActivationType::kPrerendering, render_view_hosts_to_restore,
+          render_view_hosts_to_restore,
           pending_stored_page->TakeViewTransitionState(), base::DoNothing());
     }
   }
@@ -5440,7 +5475,7 @@ void RenderFrameHostManager::CommitPending(
     }
   }
 
-  RenderWidgetHostView* new_view = render_frame_host_->GetView();
+  RenderWidgetHostViewBase* new_view = render_frame_host_->GetView();
   // Since the committing renderer frame is live, the RenderWidgetHostView must
   // also exist. For a local root frame, they share lifetimes exactly. For
   // another child frame, the RenderWidgetHostView comes from a parent, but if
@@ -5449,18 +5484,20 @@ void RenderFrameHostManager::CommitPending(
 
   if (focus_render_view) {
     if (is_main_frame) {
-      // If the old page was focused, ensure the new one preserves
-      // focus. This needs to be done differently depending on whether the main
-      // frame is an outermost main frame or embedded in a nested FrameTree,
-      // such as for a <webview> guest.  In the outermost case, focus the root
-      // RenderWidgetHostView, which will also end up focusing the
-      // RenderWidgetHost.  For the nested main frame case this won't work,
-      // since the view will be a RenderWidgetHostViewChildFrame, and focusing
-      // it would end up trying to focus the root view. Instead, we need to
-      // focus the new main frame's RenderWidgetHost, which would set the new
-      // widget as focused and also propagate page-level focus to the
-      // corresponding renderer process.
-      if (frame_tree_node_->GetParentOrOuterDocumentOrEmbedder()) {
+      // If the old page was focused, ensure the new one preserves focus. This
+      // needs to be done differently depending on whether the view is a
+      // top-level view or child frame view., e.g., for a <webview> guest or an
+      // <embed> embedded surface.
+      //
+      // In the top-level case, focus the view directly, which will focus the
+      // platform window (aura::Window and such), which will also end up
+      // focusing the RenderWidgetHost via RenderWidgetHostImpl::GotFocus.
+      //
+      // For a child frame view this won't work, since focusing it would end up
+      // trying to focus the root view, which has a different RenderWidgetHost.
+      // Therefore, focus the child frame's RenderWidgetHost directly, which
+      // will propagate page-level focus to the corresponding renderer process.
+      if (new_view->IsRenderWidgetHostViewChildFrame()) {
         render_frame_host_->GetRenderWidgetHost()->Focus();
       } else {
         new_view->Focus();
@@ -5483,6 +5520,27 @@ void RenderFrameHostManager::CommitPending(
             ->SetFocusedFrame();
       }
       frame_tree_node_->frame_tree().SetPageFocus(site_instance_group, true);
+    }
+  }
+
+  // When restoring a page from the back-forward cache, restore the frame that
+  // was focused within the page. Committing the navigation focuses the new
+  // page's main frame, but BFCache preserves the focused element in the
+  // renderer, so re-point the browser's focused frame at the previously focused
+  // subframe to keep the browser and renderer in sync. This is done regardless
+  // of whether the page widget is focused, since the per-page focused-frame
+  // tracking is independent of page-level focus.
+  if (pending_stored_page &&
+      pending_stored_page->focused_frame_tree_node_id()) {
+    FrameTreeNode* restored_focused_frame =
+        frame_tree_node_->frame_tree().FindByID(
+            pending_stored_page->focused_frame_tree_node_id());
+    if (restored_focused_frame && !restored_focused_frame->IsMainFrame() &&
+        restored_focused_frame->current_frame_host()->IsActive()) {
+      frame_tree_node_->frame_tree().SetFocusedFrame(
+          restored_focused_frame, restored_focused_frame->current_frame_host()
+                                      ->GetSiteInstance()
+                                      ->group());
     }
   }
 
@@ -5564,7 +5622,8 @@ void RenderFrameHostManager::CommitPending(
   // This will unload it and schedule it for deletion when the unload ack
   // arrives (or immediately if the process isn't live).
   UnloadOldFrame(std::move(old_render_frame_host), view_transition_commit_info,
-                 navigation_request_url, is_backward_navigation);
+                 navigation_request_url, is_backward_navigation,
+                 focused_frame_tree_node_id);
 
   // Since the new RenderFrameHost is now committed, there must be no proxies
   // for its SiteInstance. Delete any existing ones.
@@ -5674,6 +5733,38 @@ void RenderFrameHostManager::CommitPending(
       render_frame_host_->GetSiteInstance()->group()));
 }
 
+namespace {
+void CheckForRenderFrameHostSetCollisionsForDebugging(
+    FrameTree* frame_tree,
+    RenderFrameHostImpl* render_frame_host) {
+  if (!render_frame_host || !frame_tree->is_primary()) {
+    return;
+  }
+
+  SiteInstanceGroupId sig_id =
+      render_frame_host->GetSiteInstance()->group()->GetId();
+  auto& bfcache = frame_tree->controller().GetBackForwardCache();
+  bool rfh_in_bfcache =
+      bfcache.IsRenderFrameHostWithSIGInBackForwardCacheForDebugging(sig_id);
+  bool rfph_in_bfcache =
+      bfcache.IsRenderFrameProxyHostWithSIGInBackForwardCacheForDebugging(
+          sig_id);
+  bool rvh_in_bfcache =
+      bfcache.IsRenderViewHostWithMapIdInBackForwardCacheForDebugging(
+          *static_cast<RenderViewHostImpl*>(
+              render_frame_host->GetRenderViewHost()));
+  if (rfh_in_bfcache || rfph_in_bfcache || rvh_in_bfcache) {
+    SCOPED_CRASH_KEY_BOOL("rvh-double", "rfh_in_bfcache", rfh_in_bfcache);
+    SCOPED_CRASH_KEY_BOOL("rvh-double", "rfph_in_bfcache", rfph_in_bfcache);
+    SCOPED_CRASH_KEY_BOOL("rvh-double", "rvh_in_bfcache", rvh_in_bfcache);
+    SCOPED_CRASH_KEY_NUMBER(
+        "rvh-double", "related_active_contents",
+        render_frame_host->GetSiteInstance()->GetRelatedActiveContentsCount());
+    base::debug::DumpWithoutCrashing();
+  }
+}
+}  // namespace
+
 std::unique_ptr<RenderFrameHostImpl> RenderFrameHostManager::SetRenderFrameHost(
     std::unique_ptr<RenderFrameHostImpl> render_frame_host) {
   // Swap the two.
@@ -5774,32 +5865,8 @@ std::unique_ptr<RenderFrameHostImpl> RenderFrameHostManager::SetRenderFrameHost(
   }
 
   if (render_frame_host_) {
-    SiteInstanceGroupId sig_id =
-        render_frame_host_->GetSiteInstance()->group()->GetId();
-    bool rfh_in_bfcache =
-        GetNavigationController()
-            .GetBackForwardCache()
-            .IsRenderFrameHostWithSIGInBackForwardCacheForDebugging(sig_id);
-    bool rfph_in_bfcache =
-        GetNavigationController()
-            .GetBackForwardCache()
-            .IsRenderFrameProxyHostWithSIGInBackForwardCacheForDebugging(
-                sig_id);
-    bool rvh_in_bfcache =
-        GetNavigationController()
-            .GetBackForwardCache()
-            .IsRenderViewHostWithMapIdInBackForwardCacheForDebugging(
-                *static_cast<RenderViewHostImpl*>(
-                    render_frame_host_->GetRenderViewHost()));
-    if (rfh_in_bfcache || rfph_in_bfcache || rvh_in_bfcache) {
-      SCOPED_CRASH_KEY_BOOL("rvh-double", "rfh_in_bfcache", rfh_in_bfcache);
-      SCOPED_CRASH_KEY_BOOL("rvh-double", "rfph_in_bfcache", rfph_in_bfcache);
-      SCOPED_CRASH_KEY_BOOL("rvh-double", "rvh_in_bfcache", rvh_in_bfcache);
-      SCOPED_CRASH_KEY_NUMBER("rvh-double", "related_active_contents",
-                              render_frame_host_->GetSiteInstance()
-                                  ->GetRelatedActiveContentsCount());
-      base::debug::DumpWithoutCrashing();
-    }
+    CheckForRenderFrameHostSetCollisionsForDebugging(&frame_tree,
+                                                     render_frame_host_.get());
   }
   return old_render_frame_host;
 }
@@ -5892,7 +5959,7 @@ void RenderFrameHostManager::CreateOpenerProxies(
 
     auto opener_frame_token =
         node->render_manager()->GetOpenerFrameToken(group);
-    // TODO(https://crbug.com/497761255): CHECK-exclusion: Convert to CHECK once
+    // TODO(https://crbug.com/526543318): CHECK-exclusion: Convert to CHECK once
     // we are sure this isn't hit.
     DCHECK(opener_frame_token);
     proxy->GetAssociatedRemoteFrame()->UpdateOpener(opener_frame_token);

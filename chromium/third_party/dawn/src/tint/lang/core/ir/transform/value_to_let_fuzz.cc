@@ -28,7 +28,6 @@
 #include "src/tint/cmd/fuzz/common/ir_fuzzer.h"
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/transform/value_to_let.h"
-#include "src/tint/lang/core/ir/validator.h"
 
 namespace tint::core::ir::transform {
 namespace {
@@ -57,5 +56,7 @@ Result<SuccessType> ValueToLetFuzzer(Module& module,
 }  // namespace
 }  // namespace tint::core::ir::transform
 
-TINT_IR_MODULE_FUZZER(tint::core::ir::transform::ValueToLetFuzzer,
-                      tint::core::ir::transform::kValueToLetCapabilities);
+constexpr auto kUnsupportedProperties = tint::core::ir::Properties{
+    tint::core::ir::Property::kAllowOverrides,
+};
+TINT_IR_MODULE_FUZZER(tint::core::ir::transform::ValueToLetFuzzer, kUnsupportedProperties);

@@ -19,15 +19,6 @@ source_set("shadow") {
   ]
 }
 
-source_set("immersive_mode_controller") {
-  sources = [ "immersive_mode_controller.h" ]
-
-  deps = [
-    "//base",
-    "//ui/base/unowned_user_data",
-  ]
-}
-
 static_library("test_support") {
   testonly = true
 
@@ -36,9 +27,9 @@ static_library("test_support") {
     "mock_immersive_mode_controller.h",
   ]
   deps = [
-    ":immersive_mode_controller",
     "//base",
     "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/immersive:immersive_mode_controller",
     "//testing/gmock",
   ]
 }
@@ -74,3 +65,12 @@ source_set("frame") {
     "//ui/views",
   ]
 }
+
+source_set("app_menu_button_observer") {
+  sources = [ "app_menu_button_observer.h" ]
+}
+
+source_set("top_controls_slide_controller") {
+  sources = [ "top_controls_slide_controller.h" ]
+}
+

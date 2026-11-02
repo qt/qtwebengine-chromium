@@ -621,7 +621,9 @@ TEST_F(ResolverTypeValidationTest, RuntimeArrayInFunction_Fail) {
          });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), R"(12:34 error: function-scope 'var' must have a constructible type)");
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: runtime-sized arrays cannot be used in the <function> address space
+56:78 note: while instantiating 'var' a)");
 }
 
 TEST_F(ResolverTypeValidationTest, PtrType_ArrayIncomplete) {
@@ -786,7 +788,8 @@ TEST_F(ResolverTypeValidationTest, RuntimeArrayAsGlobalVariable) {
     ASSERT_FALSE(r()->Resolve());
 
     EXPECT_EQ(r()->error(),
-              R"(56:78 error: variables in 'private' address space must have a fixed footprint)");
+              R"(12:34 error: runtime-sized arrays cannot be used in the <private> address space
+56:78 note: while instantiating 'var' g)");
 }
 
 TEST_F(ResolverTypeValidationTest, RuntimeArrayAsLocalVariable) {
@@ -795,7 +798,9 @@ TEST_F(ResolverTypeValidationTest, RuntimeArrayAsLocalVariable) {
 
     ASSERT_FALSE(r()->Resolve());
 
-    EXPECT_EQ(r()->error(), R"(12:34 error: function-scope 'var' must have a constructible type)");
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: runtime-sized arrays cannot be used in the <function> address space
+56:78 note: while instantiating 'var' g)");
 }
 
 TEST_F(ResolverTypeValidationTest, RuntimeArrayAsParameter_Fail) {
@@ -810,7 +815,8 @@ TEST_F(ResolverTypeValidationTest, RuntimeArrayAsParameter_Fail) {
          });
 
     EXPECT_FALSE(r()->Resolve()) << r()->error();
-    EXPECT_EQ(r()->error(), R"(12:34 error: type of function parameter must be constructible)");
+    EXPECT_EQ(r()->error(), R"(12:34 error: runtime-sized arrays must be used with an address space
+56:78 note: while instantiating parameter a)");
 }
 
 TEST_F(ResolverTypeValidationTest, PtrToPtr_Fail) {
@@ -1219,23 +1225,6 @@ TEST_F(StorageTextureAccessTest, ReadOnlyAccess_Pass) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 }
 
-TEST_F(StorageTextureAccessTest, ReadOnlyAccess_FeatureDisallowed) {
-    // @group(0) @binding(0)
-    // var a : texture_storage_1d<r32uint, read>;
-
-    auto st = ty.storage_texture(Source{{12, 34}}, core::type::TextureDimension::k1d,
-                                 core::TexelFormat::kR32Uint, core::Access::kRead);
-
-    GlobalVar("a", st, Group(0_a), Binding(0_a));
-
-    auto resolver = Resolver{this, wgsl::AllowedFeatures{}};
-    EXPECT_FALSE(resolver.Resolve());
-    EXPECT_EQ(resolver.error(),
-              "12:34 error: read-only storage textures require the "
-              "readonly_and_readwrite_storage_textures language feature, which is not allowed in "
-              "the current environment");
-}
-
 TEST_F(StorageTextureAccessTest, RWAccess_Pass) {
     // @group(0) @binding(0)
     // var a : texture_storage_1d<r32uint, read_write>;
@@ -1246,23 +1235,6 @@ TEST_F(StorageTextureAccessTest, RWAccess_Pass) {
     GlobalVar("a", st, Group(0_a), Binding(0_a));
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
-}
-
-TEST_F(StorageTextureAccessTest, RWAccess_FeatureDisallowed) {
-    // @group(0) @binding(0)
-    // var a : texture_storage_1d<r32uint, read_write>;
-
-    auto st = ty.storage_texture(Source{{12, 34}}, core::type::TextureDimension::k1d,
-                                 core::TexelFormat::kR32Uint, core::Access::kReadWrite);
-
-    GlobalVar("a", st, Group(0_a), Binding(0_a));
-
-    Resolver resolver{this, wgsl::AllowedFeatures{}};
-    EXPECT_FALSE(resolver.Resolve());
-    EXPECT_EQ(resolver.error(),
-              "12:34 error: read-write storage textures require the "
-              "readonly_and_readwrite_storage_textures language feature, which is not allowed in "
-              "the current environment");
 }
 
 }  // namespace StorageTextureTests

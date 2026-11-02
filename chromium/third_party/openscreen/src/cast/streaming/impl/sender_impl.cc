@@ -20,6 +20,16 @@
 #include "util/trace_logging.h"
 
 namespace openscreen::cast {
+namespace {
+
+// The minimum amount of media the Sender keeps in-flight, regardless of the
+// measured network round-trip time. This keeps the encoder pipeline flowing on
+// low-latency networks (roughly two video frames at 30 FPS). See
+// crbug.com/498035450.
+constexpr Clock::duration kMinSenderInFlight =
+    Clock::to_duration(milliseconds(66));
+
+}  // namespace
 
 using clock_operators::operator<<;
 
@@ -80,19 +90,23 @@ Clock::duration SenderImpl::GetInFlightMediaDuration(
 }
 
 Clock::duration SenderImpl::GetMaxInFlightMediaDuration() const {
-  // Assumption: The total amount of allowed in-flight media should equal the
-  // half of the playout delay window, plus the amount of time it takes to
-  // receive an ACK from the Receiver.
+  // The Sender keeps only enough media in-flight to drive the loss-detection
+  // and retransmit feedback loop, which takes on the order of two network
+  // round-trips (one to detect a loss via NACK, one to retransmit). A small
+  // floor (`kMinSenderInFlight`) keeps the encoder pipeline flowing on
+  // low-latency networks where 2*RTT is negligible.
   //
-  // Why half of the playout delay window? It's assumed here that capture and
-  // media encoding, which occur before EnqueueFrame() is called, are executing
-  // within the first half of the playout delay window. This leaves the second
-  // half for executing all network transmits/re-transmits, plus decoding and
-  // play-out at the Receiver.
+  // The result is capped at a third of the playout delay window so that the
+  // majority of the budget is reserved for the Receiver, which needs buffer to
+  // absorb NACK retransmissions. Bounding the Sender this way also makes it
+  // drop frames earlier during congestion (saving bandwidth and CPU) rather
+  // than over-buffering. See crbug.com/498035450.
   //
-  // TODO(crbug.com/498035450): this needs to be modernized and is based on
-  // outdated assumptions.
-  return (target_playout_delay_ / 2) + (round_trip_time_ / 2);
+  // Note: the upper bound is held at or above `kMinSenderInFlight` so the
+  // std::clamp() bounds remain well-ordered even for very small playout delays.
+  const Clock::duration max_in_flight = std::max(
+      kMinSenderInFlight, Clock::to_duration(target_playout_delay_) / 3);
+  return std::clamp(round_trip_time_ * 2, kMinSenderInFlight, max_in_flight);
 }
 
 bool SenderImpl::NeedsKeyFrame() const {

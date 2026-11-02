@@ -4,7 +4,7 @@
 
 import * as Common from '../../../../core/common/common.js';
 import * as Platform from '../../../../core/platform/platform.js';
-import type * as TextUtils from '../../../../models/text_utils/text_utils.js';
+import type * as TextUtils from '../../../../core/text_utils/text_utils.js';
 import * as RenderCoordinator from '../../../components/render_coordinator/render_coordinator.js';
 
 import {type DataGridData, DataGridImpl, DataGridNode, Events as DataGridEvents, type Parameters} from './DataGrid.js';

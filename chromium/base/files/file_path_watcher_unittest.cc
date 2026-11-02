@@ -772,7 +772,7 @@ TEST_F(FilePathWatcherTest, NonExistentDirectory) {
   // The delegate is only watching the file. Parent directory creation should
   // not trigger an event.
   ASSERT_TRUE(CreateDirectory(dir));
-  // TODO(crbug.com/40263777): Expect that no events are fired.
+  delegate.SpinAndExpectNoEvents();
 
   // It may take some time for `watcher` to re-construct its watch list, so it's
   // possible an event is missed. _At least_ one event should be fired, though.
@@ -821,8 +821,8 @@ TEST_F(FilePathWatcherTest, DirectoryChain) {
   for (const auto& dir_name : dir_names) {
     sub_path = sub_path.AppendASCII(dir_name);
     ASSERT_TRUE(CreateDirectory(sub_path));
-    // TODO(crbug.com/40263777): Expect that no events are fired.
   }
+  delegate.SpinAndExpectNoEvents();
 
   // It may take some time for `watcher` to re-construct its watch list, so it's
   // possible an event is missed. _At least_ one event should be fired, though.
@@ -914,13 +914,15 @@ TEST_F(FilePathWatcherTest, WatchDirectory) {
   }
   delegate.RunUntilEventsMatch(event_expecter);
 
-#if !BUILDFLAG(IS_APPLE)
   ASSERT_TRUE(WriteFile(file1, "content v2"));
-  // Mac implementation does not detect files modified in a directory.
-  // TODO(crbug.com/40263777): Expect that no events are fired on Mac.
+#if BUILDFLAG(IS_APPLE)
+  // Apple implementation does not detect files modified in a directory.
   // TODO(crbug.com/40105284): Consider using FSEvents to support
   // watching a directory and its immediate children, as Type::kNonRecursive
   // does on other platforms.
+  delegate.RunUntilEventsMatch(event_expecter.GetMatcher(),
+                               ExpectedEventsSinceLastWait::kNone);
+#else
   VLOG(1) << "Waiting for file1 modification";
   event_expecter.AddExpectedEventForPath(dir);
 #if BUILDFLAG(IS_WIN)
@@ -929,7 +931,7 @@ TEST_F(FilePathWatcherTest, WatchDirectory) {
   event_expecter.AddExpectedEventForPath(dir);
 #endif
   delegate.RunUntilEventsMatch(event_expecter);
-#endif  // !BUILDFLAG(IS_APPLE)
+#endif  // BUILDFLAG(IS_APPLE)
 
   ASSERT_TRUE(DeleteFile(file1));
   VLOG(1) << "Waiting for file1 deletion";
@@ -967,8 +969,7 @@ TEST_F(FilePathWatcherTest, MAYBE_MoveParent) {
   // We should only get notified on `subdir_delegate` of its creation.
   ASSERT_TRUE(CreateDirectory(subdir));
   subdir_event_expecter.AddExpectedEventForPath(subdir);
-  // TODO(crbug.com/40263777): Expect that no events are fired on the
-  // file delegate.
+  file_delegate.SpinAndExpectNoEvents();
   subdir_delegate.RunUntilEventsMatch(subdir_event_expecter);
 
   ASSERT_TRUE(WriteFile(file, "content"));
@@ -1044,20 +1045,22 @@ TEST_F(FilePathWatcherTest, RecursiveWatch) {
   delegate.RunUntilEventsMatch(event_expecter);
 
 // Mac and Win don't generate events for Touch.
-// TODO(crbug.com/40263777): Add explicit expectations for Mac and Win.
+// TODO(crbug.com/40263777): Add explicit expectations for Win.
 // Android TouchFile returns false.
-#if !(BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID))
+#if !(BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID))
   // Touch "$dir".
   Time access_time;
   ASSERT_TRUE(Time::FromString("Wed, 16 Nov 1994, 00:00:00", &access_time));
   ASSERT_TRUE(TouchFile(dir, access_time, access_time));
+#if !BUILDFLAG(IS_APPLE)
   // TODO(crbug.com/40263766): Investigate why we're getting two events
   // here from inotify.
   event_expecter.AddExpectedEventForPath(dir);
   event_expecter.AddExpectedEventForPath(dir);
+#endif  // !BUILDFLAG(IS_APPLE)
   delegate.RunUntilEventsMatch(event_expecter);
   // TODO(crbug.com/40263777): Add a test touching `subdir`.
-#endif  // !(BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID))
+#endif  // !(BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID))
 
   // Create "$dir/subdir/subdir_file1".
   FilePath subdir_file1(subdir.AppendASCII("subdir_file1"));
@@ -1928,7 +1931,7 @@ TEST_F(FilePathWatcherTest, DirAttributesChanged) {
   // to access the file.
   ASSERT_TRUE(ChangeFilePermissions(test_dir1, Read, false));
   ASSERT_TRUE(ChangeFilePermissions(test_dir1, Read, true));
-  // TODO(crbug.com/40263777): Expect that no events are fired.
+  delegate.SpinAndExpectNoEvents();
 
   // We should get notified in this case because filepathwatcher can no
   // longer access the file.
@@ -1937,7 +1940,7 @@ TEST_F(FilePathWatcherTest, DirAttributesChanged) {
   delegate.RunUntilEventsMatch(event_expecter);
 
   ASSERT_TRUE(ChangeFilePermissions(test_dir1, Execute, true));
-  // TODO(crbug.com/40263777): Expect that no events are fired.
+  delegate.RunUntilEventsMatch(event_expecter);
 }
 
 #endif  // BUILDFLAG(IS_APPLE)

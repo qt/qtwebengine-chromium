@@ -4,20 +4,34 @@
 
 if (is_android) {
   import("//build/config/android/rules.gni")
+  import("//third_party/jni_zero/jni_zero.gni")
+
+  generate_jni("jni_headers") {
+    sources = [ "android/java/src/org/chromium/chrome/browser/personal_context/first_run/PersonalContextFirstRunService.java" ]
+  }
+
+  android_library("java") {
+    deps = [
+      "//base:base_java",
+      "//chrome/browser/profiles/android:java",
+      "//third_party/jni_zero:jni_zero_java",
+    ]
+
+    srcjar_deps = [ ":jni_headers" ]
+
+    sources = [ "android/java/src/org/chromium/chrome/browser/personal_context/first_run/PersonalContextFirstRunService.java" ]
+  }
 }
 
 source_set("first_run") {
   sources = [
-    "chrome_personal_context_first_run_client.cc",
-    "chrome_personal_context_first_run_client.h",
     "personal_context_first_run_service_factory.cc",
     "personal_context_first_run_service_factory.h",
   ]
 
   if (is_android) {
     sources += [
-      "android/personal_context_first_run_bottom_sheet_bridge.cc",
-      "android/personal_context_first_run_bottom_sheet_bridge.h",
+      "android/personal_context_first_run_service_bridge.cc",
     ]
   }
 
@@ -25,39 +39,20 @@ source_set("first_run") {
     "//base",
     "//chrome/browser/personal_context",
     "//chrome/browser/profiles:profile",
-    "//components/accessibility_annotator/core",
-    "//components/accessibility_annotator/core:features",
+    "//chrome/browser/signin",
     "//components/keyed_service/content",
+    "//components/personal_context/core",
+    "//components/personal_context/core:features",
     "//components/personal_context/first_run",
     "//content/public/browser",
   ]
 
   if (is_android) {
     deps += [
+      ":jni_headers",
       "//chrome/android:jni_headers",
       "//ui/android",
     ]
-  } else {
-    deps += [ "//chrome/browser/ui/views/personal_context" ]
   }
 }
 
-source_set("unit_tests") {
-  testonly = true
-  sources = []
-
-  if (is_android) {
-    sources +=
-        [ "android/personal_context_first_run_bottom_sheet_bridge_unittest.cc" ]
-  }
-
-  deps = [
-    ":first_run",
-    "//base",
-    "//base/test:test_support",
-    "//components/personal_context/first_run",
-    "//content/test:test_support",
-    "//testing/gmock",
-    "//testing/gtest",
-  ]
-}

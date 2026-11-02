@@ -92,9 +92,10 @@ EIGEN_DONT_INLINE void product_triangular_matrix_matrix<
 
   Matrix<Scalar, SmallPanelWidth, SmallPanelWidth, LhsStorageOrder> triangularBuffer;
   triangularBuffer.setZero();
-  EIGEN_IF_CONSTEXPR((Mode & ZeroDiag) == ZeroDiag)
-  triangularBuffer.diagonal().setZero();
-  else triangularBuffer.diagonal().setOnes();
+  EIGEN_IF_CONSTEXPR ((Mode & ZeroDiag) == ZeroDiag)
+    triangularBuffer.diagonal().setZero();
+  else
+    triangularBuffer.diagonal().setOnes();
 
   gebp_kernel<Scalar, Scalar, Index, ResMapper, Traits::mr, Traits::nr, ConjugateLhs, ConjugateRhs> gebp_kernel;
   gemm_pack_lhs<Scalar, Index, LhsMapper, Traits::mr, Traits::LhsProgress, typename Traits::LhsPacket4Packing,
@@ -107,9 +108,11 @@ EIGEN_DONT_INLINE void product_triangular_matrix_matrix<
     Index actual_k2 = IsLower ? k2 - actual_kc : k2;
 
     // align blocks with the end of the triangular part for trapezoidal lhs
-    if ((!IsLower) && (k2 < rows) && (k2 + actual_kc > rows)) {
-      actual_kc = rows - k2;
-      k2 = k2 + actual_kc - kc;
+    EIGEN_IF_CONSTEXPR (!IsLower) {
+      if ((k2 < rows) && (k2 + actual_kc > rows)) {
+        actual_kc = rows - k2;
+        k2 = k2 + actual_kc - kc;
+      }
     }
 
     pack_rhs(blockB, rhs.getSubMapper(actual_k2, 0), actual_kc, cols);
@@ -132,7 +135,7 @@ EIGEN_DONT_INLINE void product_triangular_matrix_matrix<
         // The trick is to pack this micro block while filling the opposite triangular part with zeros.
         // To this end we do an extra triangular copy to a small temporary buffer
         for (Index k = 0; k < actualPanelWidth; ++k) {
-          if (SetDiag) triangularBuffer.coeffRef(k, k) = lhs(startBlock + k, startBlock + k);
+          EIGEN_IF_CONSTEXPR (SetDiag) triangularBuffer.coeffRef(k, k) = lhs(startBlock + k, startBlock + k);
           for (Index i = IsLower ? k + 1 : 0; IsLower ? i < actualPanelWidth : i < k; ++i)
             triangularBuffer.coeffRef(i, k) = lhs(startBlock + i, startBlock + k);
         }
@@ -217,9 +220,10 @@ EIGEN_DONT_INLINE void product_triangular_matrix_matrix<
 
   Matrix<Scalar, SmallPanelWidth, SmallPanelWidth, RhsStorageOrder> triangularBuffer;
   triangularBuffer.setZero();
-  EIGEN_IF_CONSTEXPR((Mode & ZeroDiag) == ZeroDiag)
-  triangularBuffer.diagonal().setZero();
-  else triangularBuffer.diagonal().setOnes();
+  EIGEN_IF_CONSTEXPR ((Mode & ZeroDiag) == ZeroDiag)
+    triangularBuffer.diagonal().setZero();
+  else
+    triangularBuffer.diagonal().setOnes();
 
   gebp_kernel<Scalar, Scalar, Index, ResMapper, Traits::mr, Traits::nr, ConjugateLhs, ConjugateRhs> gebp_kernel;
   gemm_pack_lhs<Scalar, Index, LhsMapper, Traits::mr, Traits::LhsProgress, typename Traits::LhsPacket4Packing,
@@ -233,7 +237,7 @@ EIGEN_DONT_INLINE void product_triangular_matrix_matrix<
     Index actual_k2 = IsLower ? k2 : k2 - actual_kc;
 
     // align blocks with the end of the triangular part for trapezoidal rhs
-    EIGEN_IF_CONSTEXPR(IsLower) {
+    EIGEN_IF_CONSTEXPR (IsLower) {
       if ((k2 < cols) && (actual_k2 + actual_kc > cols)) {
         actual_kc = cols - k2;
         k2 = actual_k2 + actual_kc - kc;
@@ -263,7 +267,7 @@ EIGEN_DONT_INLINE void product_triangular_matrix_matrix<
 
         // append the triangular part via a temporary buffer
         for (Index j = 0; j < actualPanelWidth; ++j) {
-          if (SetDiag) triangularBuffer.coeffRef(j, j) = rhs(actual_j2 + j, actual_j2 + j);
+          EIGEN_IF_CONSTEXPR (SetDiag) triangularBuffer.coeffRef(j, j) = rhs(actual_j2 + j, actual_j2 + j);
           for (Index k = IsLower ? j + 1 : 0; IsLower ? k < actualPanelWidth : k < j; ++k)
             triangularBuffer.coeffRef(k, j) = rhs(actual_j2 + k, actual_j2 + j);
         }
@@ -355,13 +359,17 @@ struct triangular_product_impl<Mode, LhsIsTriangular, Lhs, false, Rhs, false> {
                                              actualAlpha, blocking);
 
     // Apply correction if the diagonal is unit and a scalar factor was nested:
-    EIGEN_IF_CONSTEXPR((Mode & UnitDiag) == UnitDiag) {
-      if (LhsIsTriangular && !numext::is_exactly_one(lhs_alpha)) {
-        Index diagSize = (std::min)(lhs.rows(), lhs.cols());
-        dst.topRows(diagSize) -= ((lhs_alpha - LhsScalar(1)) * a_rhs).topRows(diagSize);
-      } else if ((!LhsIsTriangular) && !numext::is_exactly_one(rhs_alpha)) {
-        Index diagSize = (std::min)(rhs.rows(), rhs.cols());
-        dst.leftCols(diagSize) -= (rhs_alpha - RhsScalar(1)) * a_lhs.leftCols(diagSize);
+    EIGEN_IF_CONSTEXPR ((Mode & UnitDiag) == UnitDiag) {
+      EIGEN_IF_CONSTEXPR (LhsIsTriangular) {
+        if (!numext::is_exactly_one(lhs_alpha)) {
+          Index diagSize = (std::min)(lhs.rows(), lhs.cols());
+          dst.topRows(diagSize) -= ((lhs_alpha - LhsScalar(1)) * a_rhs).topRows(diagSize);
+        }
+      } else {
+        if (!numext::is_exactly_one(rhs_alpha)) {
+          Index diagSize = (std::min)(rhs.rows(), rhs.cols());
+          dst.leftCols(diagSize) -= (rhs_alpha - RhsScalar(1)) * a_lhs.leftCols(diagSize);
+        }
       }
     }
   }

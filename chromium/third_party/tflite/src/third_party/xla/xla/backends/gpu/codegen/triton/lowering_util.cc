@@ -26,6 +26,7 @@ limitations under the License.
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
+#include "xla/tsl/platform/status_macros.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -133,7 +134,7 @@ absl::StatusOr<stream_executor::gpu::TmaMetadata> ExtractTmaMetadata(
     if (auto attr =
             func_op.getArgAttrOfType<mlir::triton::xla::TmaDescriptorAttr>(
                 idx, "tt.tma_descriptor")) {
-      TF_ASSIGN_OR_RETURN(
+      ASSIGN_OR_RETURN(
           auto tma_desc,
           CreateTmaDescriptor(attr.getGlobalShape(), attr.getTileShape(),
                               attr.getTileStrides(), attr.getLayout(),
@@ -302,8 +303,17 @@ std::pair<mlir::Value, mlir::Value> CreateTensorOfPointersAndMask(
       upper_bound =
           arith::SubIOp::create(builder, upper_bound, cast_offsets[dim]);
       upper_bound = ttir::SplatOp::create(builder, i64_tile_type, upper_bound);
-      mlir::Value mask = arith::CmpIOp::create(
+      mlir::Value mask_right = arith::CmpIOp::create(
           builder, arith::CmpIPredicate::slt, range, upper_bound);
+
+      mlir::Value lower_bound =
+          arith::ConstantIntOp::create(builder, i64_type, 0);
+      lower_bound =
+          arith::SubIOp::create(builder, lower_bound, cast_offsets[dim]);
+      lower_bound = ttir::SplatOp::create(builder, i64_tile_type, lower_bound);
+      mlir::Value mask_left = arith::CmpIOp::create(
+          builder, arith::CmpIPredicate::sge, range, lower_bound);
+      mlir::Value mask = arith::AndIOp::create(builder, mask_left, mask_right);
 
       // Combine mask with previous iteration.
       mask_tile = add_if(arith::AndIOp(), mask, mask_tile);

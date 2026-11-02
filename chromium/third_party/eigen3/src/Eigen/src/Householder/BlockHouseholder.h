@@ -12,7 +12,7 @@
 #ifndef EIGEN_BLOCK_HOUSEHOLDER_H
 #define EIGEN_BLOCK_HOUSEHOLDER_H
 
-// This file contains some helper function to deal with block householder reflectors
+// This file contains some helper functions to deal with block householder reflectors
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -22,7 +22,7 @@ namespace Eigen {
 namespace internal {
 
 /** \internal */
-// This variant avoid modifications in vectors
+// This variant avoids modifications in vectors
 template <typename TriangularFactorType, typename VectorsType, typename CoeffsType>
 void make_block_householder_triangular_factor(TriangularFactorType& triFactor, const VectorsType& vectors,
                                               const CoeffsType& hCoeffs) {

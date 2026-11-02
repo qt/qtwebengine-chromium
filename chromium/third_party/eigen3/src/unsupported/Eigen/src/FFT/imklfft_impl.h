@@ -41,7 +41,7 @@ inline MKL_Complex8* complex_cast(const std::complex<float>* p) {
  * precision: enum, Precision of the transform: DFTI_SINGLE or DFTI_DOUBLE.
  * forward_domain: enum, Forward domain of the transform: DFTI_COMPLEX or
  * DFTI_REAL. dimension: MKL_LONG Dimension of the transform. sizes: MKL_LONG if
- * dimension = 1.Length of the transform for a one-dimensional transform. sizes:
+ * dimension = 1. Length of the transform for a one-dimensional transform. sizes:
  * Array of type MKL_LONG otherwise. Lengths of each dimension for a
  * multi-dimensional transform.
  */

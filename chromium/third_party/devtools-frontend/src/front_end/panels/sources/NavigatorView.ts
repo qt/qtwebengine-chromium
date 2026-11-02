@@ -9,10 +9,10 @@ import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as AiAssistance from '../../models/ai_assistance/ai_assistance.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as Persistence from '../../models/persistence/persistence.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as Spinners from '../../ui/components/spinners/spinners.js';
@@ -186,7 +186,8 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
   private groupByAuthored?: boolean;
   private groupByDomain?: boolean;
   private groupByFolder?: boolean;
-  constructor(jslogContext: string, enableAuthoredGrouping?: boolean) {
+  constructor(jslogContext: string, networkProjectManager: Bindings.NetworkProject.NetworkProjectManager,
+              enableAuthoredGrouping?: boolean) {
     super({
       jslog: `${VisualLogging.pane(jslogContext).track({resize: true})}`,
       useShadowDom: true,
@@ -242,10 +243,10 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
     SDK.TargetManager.TargetManager.instance().observeTargets(this);
     this.resetWorkspace(Workspace.Workspace.WorkspaceImpl.instance());
     this.#workspace.uiSourceCodes().forEach(this.addUISourceCode.bind(this));
-    Bindings.NetworkProject.NetworkProjectManager.instance().addEventListener(
-        Bindings.NetworkProject.Events.FRAME_ATTRIBUTION_ADDED, this.frameAttributionAdded, this);
-    Bindings.NetworkProject.NetworkProjectManager.instance().addEventListener(
-        Bindings.NetworkProject.Events.FRAME_ATTRIBUTION_REMOVED, this.frameAttributionRemoved, this);
+    networkProjectManager.addEventListener(Bindings.NetworkProject.Events.FRAME_ATTRIBUTION_ADDED,
+                                           this.frameAttributionAdded, this);
+    networkProjectManager.addEventListener(Bindings.NetworkProject.Events.FRAME_ATTRIBUTION_REMOVED,
+                                           this.frameAttributionRemoved, this);
   }
 
   private static treeElementOrder(treeElement: UI.TreeOutline.TreeElement): number {
@@ -726,7 +727,7 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
           overlayModel.highlightFrame(frame.id);
         }
       } else {
-        SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+        SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight(SDK.TargetManager.TargetManager.instance());
       }
     }
     return frameNode;

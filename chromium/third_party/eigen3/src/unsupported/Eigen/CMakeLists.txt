@@ -23,6 +23,7 @@ set(Eigen_HEADERS
   SparseExtra
   SpecialFunctions
   Splines
+  StructuredMatrices
   Tensor
   TensorSymmetry
   ThreadPool

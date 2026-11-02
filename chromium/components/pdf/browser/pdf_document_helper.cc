@@ -200,15 +200,14 @@ void PDFDocumentHelper::SelectionChanged(const gfx::PointF& left,
 }
 
 void PDFDocumentHelper::SetPluginCanSave(bool can_save) {
-  client_->SetPluginCanSave(pdf_host_receivers_.GetCurrentTargetFrame(),
-                            can_save);
+  client_->SetPluginCanSave(pdf_host_receivers_.CurrentTargetFrame(), can_save);
 }
 
 #if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
 void PDFDocumentHelper::OnSearchifyStarted() {
   if (!searchify_started_) {
     searchify_started_ = true;
-    client_->OnSearchifyStarted(&render_frame_host());
+    client_->OnSearchifyStarted(render_frame_host());
   }
 }
 #endif
@@ -339,6 +338,33 @@ void PDFDocumentHelper::RegisterForDocumentLoadComplete(
     return;
   }
   document_load_complete_callbacks_.push_back(std::move(callback));
+}
+
+void PDFDocumentHelper::HasMeaningfulText(
+    pdf::mojom::PdfListener::HasMeaningfulTextCallback callback) {
+  if (!remote_pdf_client_ || !is_document_load_complete_) {
+    std::move(callback).Run(false);
+    return;
+  }
+  remote_pdf_client_->HasMeaningfulText(std::move(callback));
+}
+
+void PDFDocumentHelper::HasJavaScript(
+    pdf::mojom::PdfListener::HasJavaScriptCallback callback) {
+  if (!remote_pdf_client_ || !is_document_load_complete_) {
+    std::move(callback).Run(false);
+    return;
+  }
+  remote_pdf_client_->HasJavaScript(std::move(callback));
+}
+
+void PDFDocumentHelper::IsPasswordProtected(
+    pdf::mojom::PdfListener::IsPasswordProtectedCallback callback) {
+  if (!remote_pdf_client_ || !is_document_load_complete_) {
+    std::move(callback).Run(false);
+    return;
+  }
+  remote_pdf_client_->IsPasswordProtected(std::move(callback));
 }
 
 void PDFDocumentHelper::OnSelectionEvent(ui::SelectionEventType event) {
@@ -472,7 +498,7 @@ void PDFDocumentHelper::OnDocumentLoadComplete() {
   }
   document_load_complete_callbacks_.clear();
 
-  client_->OnDocumentLoadComplete(&render_frame_host());
+  client_->OnDocumentLoadComplete(render_frame_host());
 }
 
 void PDFDocumentHelper::SavePdf() {
@@ -495,8 +521,8 @@ void PDFDocumentHelper::SavePdf() {
 
 void PDFDocumentHelper::UpdateContentRestrictions(
     int32_t content_restrictions) {
-  client_->UpdateContentRestrictions(
-      pdf_host_receivers_.GetCurrentTargetFrame(), content_restrictions);
+  client_->UpdateContentRestrictions(pdf_host_receivers_.CurrentTargetFrame(),
+                                     content_restrictions);
 }
 
 DOCUMENT_USER_DATA_KEY_IMPL(PDFDocumentHelper);

@@ -61,7 +61,6 @@
 #include "components/input/switches.h"
 #include "components/input/utils.h"
 #include "components/viz/host/host_frame_sink_manager.h"
-#include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/compositor/surface_utils.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
@@ -1723,12 +1722,22 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest, ProcessTransferAfterError) {
   EXPECT_EQ(2, shell()->web_contents()->GetController().GetEntryCount());
 
   // Ensure that we have created a new process for the subframe.
-  EXPECT_EQ(
-      " Site A ------------ proxies for B\n"
-      "   +--Site B ------- proxies for A\n"
-      "Where A = http://a.com/\n"
-      "      B = http://b.com/",
-      DepictFrameTree(root));
+  if (SiteIsolationPolicy::IsErrorPageIsolationEnabled(
+          /*in_main_frame=*/false)) {
+    EXPECT_EQ(
+        " Site A ------------ proxies for B\n"
+        "   +--Site B ------- proxies for A\n"
+        "Where A = http://a.com/\n"
+        "      B = chrome-error://chromewebdata/",
+        DepictFrameTree(root));
+  } else {
+    EXPECT_EQ(
+        " Site A ------------ proxies for B\n"
+        "   +--Site B ------- proxies for A\n"
+        "Where A = http://a.com/\n"
+        "      B = http://b.com/",
+        DepictFrameTree(root));
+  }
   EXPECT_NE(shell()->web_contents()->GetSiteInstance(),
             child->current_frame_host()->GetSiteInstance());
 
@@ -1757,12 +1766,21 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest, ProcessTransferAfterError) {
             child->current_origin().Serialize() + '/');
 
   // Ensure that we have created a new process for the subframe.
-  EXPECT_EQ(
-      " Site A ------------ proxies for B\n"
-      "   +--Site B ------- proxies for A\n"
-      "Where A = http://a.com/\n"
-      "      B = http://b.com/",
-      DepictFrameTree(root));
+  if (base::FeatureList::IsEnabled(features::kIsolateSubframeErrorPages)) {
+    EXPECT_EQ(
+        " Site A ------------ proxies for C\n"
+        "   +--Site C ------- proxies for A\n"
+        "Where A = http://a.com/\n"
+        "      C = http://b.com/",
+        DepictFrameTree(root));
+  } else {
+    EXPECT_EQ(
+        " Site A ------------ proxies for B\n"
+        "   +--Site B ------- proxies for A\n"
+        "Where A = http://a.com/\n"
+        "      B = http://b.com/",
+        DepictFrameTree(root));
+  }
   EXPECT_NE(shell()->web_contents()->GetSiteInstance(),
             child->current_frame_host()->GetSiteInstance());
 
@@ -6405,8 +6423,7 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest,
       event);
   run_loop1.Run();
 
-  auto first_popup_global_id =
-      GlobalRoutingID(process1->GetDeprecatedID(), routing_id1);
+  auto first_popup_global_id = GlobalRoutingID(process1->GetID(), routing_id1);
   // Add an interceptor for first popup widget so it doesn't get closed
   // immediately while the other one is being opened.
   EXPECT_TRUE(web_contents()->pending_widgets_.contains(first_popup_global_id));
@@ -6431,7 +6448,7 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest,
   // At this point, we should have two pending widgets.
   EXPECT_TRUE(web_contents()->pending_widgets_.contains(first_popup_global_id));
   EXPECT_TRUE(web_contents()->pending_widgets_.contains(
-      GlobalRoutingID(process2->GetDeprecatedID(), routing_id2)));
+      GlobalRoutingID(process2->GetID(), routing_id2)));
 
   // Both subframes were set up in the same way, so the next routing ID for the
   // new popup widgets should match up (this led to the collision in the
@@ -6442,9 +6459,9 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest,
   interceptor1.ResumeShowPopupWidget();
   interceptor2.ResumeShowPopupWidget();
   EXPECT_FALSE(web_contents()->pending_widgets_.contains(
-      GlobalRoutingID(process1->GetDeprecatedID(), routing_id1)));
+      GlobalRoutingID(process1->GetID(), routing_id1)));
   EXPECT_FALSE(web_contents()->pending_widgets_.contains(
-      GlobalRoutingID(process2->GetDeprecatedID(), routing_id2)));
+      GlobalRoutingID(process2->GetID(), routing_id2)));
 
   // There are posted tasks that must be run before the test shuts down, lest
   // they access deleted state.
@@ -14646,12 +14663,12 @@ class CrossProcessSubframeRenderProcessGoneLogger
     crashed_rfhs_.push_back(render_frame_host);
   }
 
-  const std::vector<RenderFrameHost*>& crashed_rfhs() const {
+  const std::vector<raw_ptr<RenderFrameHost>>& crashed_rfhs() const {
     return crashed_rfhs_;
   }
 
  private:
-  std::vector<RenderFrameHost*> crashed_rfhs_;
+  std::vector<raw_ptr<RenderFrameHost>> crashed_rfhs_;
 };
 
 // Test that when a process hosting multiple subframes dies,

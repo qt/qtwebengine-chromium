@@ -64,7 +64,9 @@
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/svg/svg_text_content_element.h"
 #include "third_party/blink/renderer/core/svg/svg_tree_scope_resources.h"
+#include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
 #include "third_party/blink/renderer/platform/bindings/script_forbidden_scope.h"
+#include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "ui/gfx/geometry/point_conversions.h"
@@ -299,15 +301,28 @@ Element* TreeScope::ElementForHitTest(Node* node, HitTestPointType type) const {
   return element;
 }
 
-CustomElementRegistry* TreeScope::customElementRegistry() const {
+CustomElementRegistry* TreeScope::customElementRegistry(
+    ScriptState* script_state) const {
   if (custom_element_registry_) {
     CHECK(RuntimeEnabledFeatures::ScopedCustomElementRegistryEnabled());
     DCHECK(!waiting_for_registry_);
+    // A null script_state indicates an internal call that bypasses the check.
+    if (script_state &&
+        script_state->World().GetWorldId() !=
+            custom_element_registry_->GetWorldId()) {
+      return nullptr;
+    }
     return custom_element_registry_;
   }
 
   if (RuntimeEnabledFeatures::ScopedCustomElementRegistryEnabled() &&
       waiting_for_registry_) {
+    return nullptr;
+  }
+
+  // The global registry must only be accessible from the main world.
+  // A null script_state indicates an internal call that bypasses the check.
+  if (script_state && !script_state->World().IsMainWorld()) {
     return nullptr;
   }
 
@@ -322,20 +337,36 @@ CustomElementRegistry* TreeScope::customElementRegistry() const {
 // tree scope is using a global registry and it can be reset during cross
 // document node adoption. Otherwise, setting registry on a tree scope with
 // existing registry will fail.
-bool TreeScope::SetCustomElementRegistry(CustomElementRegistry* registry) {
+bool TreeScope::SetCustomElementRegistry(
+    CustomElementRegistryAssignment assignment) {
   if (!RuntimeEnabledFeatures::ScopedCustomElementRegistryEnabled() ||
       (custom_element_registry_ &&
        !custom_element_registry_->IsGlobalRegistry())) {
     return false;
   }
 
-  if (registry) {
-    custom_element_registry_ = registry;
-    waiting_for_registry_ = false;
-    registry->AssociatedWith(GetDocument());
+  if (assignment.IsInherit()) {
+    DCHECK(!custom_element_registry_ && !waiting_for_registry_);
     return true;
-  } else if (!custom_element_registry_ ||
-             custom_element_registry_->IsGlobalRegistry()) {
+  }
+
+  if (assignment.IsExplicit()) {
+    // An explicit registry is only overwritten with another explicit registry
+    // during cross-document adoption, where the global registry from the
+    // previous document is replaced with the current document's registry.
+    DCHECK(!custom_element_registry_ ||
+           (custom_element_registry_->IsGlobalRegistry() &&
+            assignment.Registry()->IsGlobalRegistry()));
+    custom_element_registry_ = assignment.Registry();
+    waiting_for_registry_ = false;
+    custom_element_registry_->AssociatedWith(GetDocument());
+    return true;
+  }
+
+  // Wait for a scoped registry.
+  DCHECK(assignment.IsWait());
+  if (!custom_element_registry_ ||
+      custom_element_registry_->IsGlobalRegistry()) {
     custom_element_registry_ = nullptr;
     waiting_for_registry_ = true;
     return true;

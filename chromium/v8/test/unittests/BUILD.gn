@@ -270,6 +270,8 @@ v8_cluster_source_set("v8_unittests_sources") {
   testonly = true
 
   sources = [
+    "../../src/d8/memory-access-information.cc",
+    "../../src/d8/memory-access-information.h",
     "../../testing/gmock-support.h",
     "../../testing/gtest-support.h",
     "../common/assembler-tester.h",
@@ -350,6 +352,7 @@ v8_cluster_source_set("v8_unittests_sources") {
     "common/thread-isolation-unittest.cc",
     "compiler-dispatcher/compiler-dispatcher-unittest.cc",
     "compiler-dispatcher/optimizing-compile-dispatcher-unittest.cc",
+    "d8/memory-access-information-unittest.cc",
     "date/date-cache-unittest.cc",
     "date/date-unittest.cc",
     "debug/debug-property-iterator-unittest.cc",
@@ -406,6 +409,7 @@ v8_cluster_source_set("v8_unittests_sources") {
     "heap/object-stats-unittest.cc",
     "heap/page-casting-unittest.cc",
     "heap/page-promotion-unittest.cc",
+    "heap/pending-allocations-unittest.cc",
     "heap/persistent-handles-unittest.cc",
     "heap/pool-unittest.cc",
     "heap/safepoint-unittest.cc",
@@ -454,6 +458,7 @@ v8_cluster_source_set("v8_unittests_sources") {
     "maglev/hamt-unittest.cc",
     "maglev/maglev-assembler-unittest.cc",
     "maglev/maglev-graph-builder-unittest.cc",
+    "maglev/maglev-graph-processor-unittest.cc",
     "maglev/maglev-test.cc",
     "maglev/maglev-test.h",
     "maglev/node-type-unittest.cc",
@@ -504,14 +509,17 @@ v8_cluster_source_set("v8_unittests_sources") {
     "profiler/heap-snapshot-utils.h",
     "profiler/strings-storage-unittest.cc",
     "regexp/regexp-unittest.cc",
+    "regress/regress-536271629-unittest.cc",
     "regress/regress-crbug-1041240-unittest.cc",
     "regress/regress-crbug-1056054-unittest.cc",
     "regress/regress-crbug-938251-unittest.cc",
     "run-all-unittests.cc",
     "runtime/runtime-debug-unittest.cc",
     "sandbox/bytecode-verifier-unittest.cc",
+    "sandbox/generated-code-validator-unittest.cc",
     "sandbox/libcxx-hardening-unittest.cc",
     "sandbox/pointer-table-unittest.cc",
+    "sandbox/sandbox-crash-filter-unittest.cc",
     "sandbox/sandbox-hardware-support-unittest.cc",
     "sandbox/sandbox-unittest.cc",
     "sandbox/sandbox-violation-unittest.cc",
@@ -674,8 +682,6 @@ v8_cluster_source_set("v8_unittests_sources") {
     sources += [
       "../../test/common/wasm/wasm-macro-gen.h",
       "api/api-wasm-unittest.cc",
-      "asmjs/asm-scanner-unittest.cc",
-      "asmjs/asm-types-unittest.cc",
       "compiler/int64-lowering-unittest.cc",
       "compiler/turboshaft/wasm-simd-unittest.cc",
       "compiler/wasm-address-reassociation-unittest.cc",
@@ -765,10 +771,13 @@ v8_cluster_source_set("v8_unittests_sources") {
       "assembler/test-utils-arm64.cc",
       "assembler/test-utils-arm64.h",
       "execution/pointer-auth-arm64-unittest.cc",
+      "execution/simulator-arm64-unittest.cc",
     ]
     if (v8_enable_turbofan) {
-      sources +=
-          [ "compiler/arm64/turboshaft-instruction-selector-arm64-unittest.cc" ]
+      sources += [
+        "compiler/arm64/turboshaft-instruction-scheduler-arm64-unittest.cc",
+        "compiler/arm64/turboshaft-instruction-selector-arm64-unittest.cc",
+      ]
     }
   } else if (v8_current_cpu == "x86") {
     sources += [

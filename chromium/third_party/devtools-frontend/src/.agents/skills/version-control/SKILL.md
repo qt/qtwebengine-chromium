@@ -1,9 +1,13 @@
 ---
 name: devtools-version-control
-description: Use when managing branches, creating and uploading CLs, or handling stacked changes in the DevTools Gerrit-based workflow.
+description: Use when starting a new task, creating a branch, switching branches, managing branches, creating and uploading CLs, handling stacked changes, or checking release and roll status in the DevTools Gerrit-based workflow. ALWAYS use this instead of running standard git checkout/switch commands for branch creation.
 ---
 
 # DevTools Version Control
+
+> [!IMPORTANT]
+> **DO NOT use standard Git commands like `git checkout -b` or `git switch -c` to create branches.**
+> In Chrome DevTools, you MUST always use `git new-branch <branch-name>` (or `git new-branch --upstream_current <branch-name>` for stacked CLs). Standard commands fail to configure the correct upstream tracking branch required by `depot_tools` and Gerrit.
 
 ## Overview
 Chrome DevTools uses Gerrit for code review. The standard workflow is **one branch per Change List (CL)** and **one commit per branch**. Instead of multiple commits, you amend your single commit locally.
@@ -56,8 +60,9 @@ git rebase-update
 ### Initial upload
 When a CL is ready, upload it with:
 ```bash
-git cl upload -d --commit-description="<description>"
+git cl upload -f -d --commit-description="<description>"
 ```
+* Always include `-f` (`--force`) so that `git cl upload` runs non-interactively without opening a text editor or prompting.
 * Use the same writing style as the current committer
 * Keep line length below 72
 * Add a "Bug: <issue number>" or "Bug: None" trailer on a separate line.
@@ -66,8 +71,14 @@ git cl upload -d --commit-description="<description>"
 ### Subsequent upload
 To upload an updated CL:
 ```bash
-git cl upload -d -t "<one sentence patch set description>"
+git cl upload -f -d -t "<one sentence patch set description>"
 ```
+
+## Release and Roll Status
+
+To check whether a DevTools commit (`devtools/devtools-frontend`) has rolled into `chromium/src` (`Roll status`) and what version or channel it is deployed to (`Release status`), look it up via the Chromium Dash API:
+
+`https://chromiumdash.appspot.com/fetch_commit?commit=<sha>`
 
 ## Quick Reference
 
@@ -76,9 +87,10 @@ git cl upload -d -t "<one sentence patch set description>"
 | Create new CL from main | `git new-branch <name>` |
 | Create stacked CL | `git new-branch --upstream_current <name>` |
 | Update current CL | `git commit --amend` |
-| Upload to Gerrit | `git cl upload` |
+| Upload to Gerrit | `git cl upload -f` |
 | Change branch parent | `git reparent-branch <new-parent>` |
 | Sync all branches | `git rebase-update` |
+| Check release & roll status | Query `https://chromiumdash.appspot.com/fetch_commit?commit=<sha>` |
 
 ## Common Mistakes
 - **Multiple commits on one branch:** Gerrit expects one commit per CL. Always `commit --amend`.

@@ -16,12 +16,14 @@
 
 #include <cstdint>
 #include <optional>
+#include <utility>
 
 #include "absl/container/flat_hash_set.h"
 #include "absl/container/inlined_vector.h"
 #include "absl/log/absl_check.h"
 #include "absl/log/absl_log.h"
 #include "absl/status/status.h"
+#include "absl/status/status_macros.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_format.h"
 #include "absl/types/span.h"
@@ -57,10 +59,12 @@ void InProgressStroke::Clear() {
   inputs_are_finished_ = true;
 }
 
-void InProgressStroke::Start(const Brush& brush, uint32_t noise_seed) {
+void InProgressStroke::Start(const Brush& brush, uint32_t noise_seed,
+                             float base_animation_phase) {
   Clear();
   brush_ = brush;
   processed_inputs_.SetNoiseSeed(noise_seed);
+  processed_inputs_.SetBaseAnimationPhase(base_animation_phase);
   inputs_are_finished_ = false;
 
   absl::Span<const BrushCoat> coats = brush_->GetCoats();
@@ -97,10 +101,8 @@ absl::Status InProgressStroke::EnqueueInputs(
   // `StrokeInputBatch::Append` below always succeed. This helps ensure that we
   // don't modify the `InProgressStroke` if an error occurs. Since we expect
   // the subsequent calls to `Append` to succeed, we log an error if they don't.
-  if (auto status = ValidateNewInputsAttributes(real_inputs, predicted_inputs);
-      !status.ok()) {
-    return status;
-  }
+  ABSL_RETURN_IF_ERROR(
+      ValidateNewInputsAttributes(real_inputs, predicted_inputs));
 
   ABSL_CHECK_OK(queued_real_inputs_.Append(
       real_inputs, GetFirstValidInput(real_inputs), real_inputs.Size()));
@@ -130,10 +132,7 @@ absl::Status InProgressStroke::UpdateShape(Duration32 current_elapsed_time) {
         "`UpdateShape()`.");
   }
 
-  if (auto status = ValidateNewElapsedTime(current_elapsed_time);
-      !status.ok()) {
-    return status;
-  }
+  ABSL_RETURN_IF_ERROR(ValidateNewElapsedTime(current_elapsed_time));
   current_elapsed_time_ = current_elapsed_time;
 
   if (HasQueuedInputs()) {
@@ -144,24 +143,15 @@ absl::Status InProgressStroke::UpdateShape(Duration32 current_elapsed_time) {
     return absl::OkStatus();
   }
 
-  if (absl::Status status = processed_inputs_.Append(queued_real_inputs_);
-      !status.ok()) {
-    ABSL_LOG(ERROR)
-        << "Failed to appened queued real inputs to processed inputs "
-           "after validation: "
-        << status;
-    return status;
-  }
+  ABSL_RETURN_IF_ERROR(processed_inputs_.Append(queued_real_inputs_)).LogError()
+      << "Failed to appened queued real inputs to processed inputs "
+         "after validation: ";
   real_input_count_ += queued_real_inputs_.Size();
 
-  if (absl::Status status = processed_inputs_.Append(queued_predicted_inputs_);
-      !status.ok()) {
-    ABSL_LOG(ERROR)
-        << "Failed to appened queued predicted inputs to processed inputs "
-           "after validation: "
-        << status;
-    return status;
-  }
+  ABSL_RETURN_IF_ERROR(processed_inputs_.Append(queued_predicted_inputs_))
+          .LogError()
+      << "Failed to appened queued predicted inputs to processed inputs "
+         "after validation.";
 
   input_modeler_.ExtendStroke(queued_real_inputs_, queued_predicted_inputs_,
                               current_elapsed_time);
@@ -234,21 +224,17 @@ absl::Status InProgressStroke::ValidateNewInputsAttributes(
             : queued_real_inputs_.Last();
     const StrokeInput& first_new_input =
         real_inputs.IsEmpty() ? predicted_inputs.First() : real_inputs.First();
-    if (absl::Status status =
-            ValidateConsistentAttributes(last_old_real_input, first_new_input);
-        !status.ok()) {
-      return status;
-    }
+    ABSL_RETURN_IF_ERROR(
+        ValidateConsistentAttributes(last_old_real_input, first_new_input))
+        << "Failed to validate new inputs against previous real inputs.";
   }
 
   // If there are both new real and predicted inputs, check that the first
   // predicted input is valid against the last real input.
   if (!real_inputs.IsEmpty() && !predicted_inputs.IsEmpty()) {
-    if (absl::Status status = ValidateConsistentAttributes(
-            real_inputs.Last(), predicted_inputs.First());
-        !status.ok()) {
-      return status;
-    }
+    ABSL_RETURN_IF_ERROR(ValidateConsistentAttributes(real_inputs.Last(),
+                                                      predicted_inputs.First()))
+        << "Failed to validate predicted inputs against real inputs.";
   }
 
   return absl::OkStatus();
@@ -317,15 +303,15 @@ Stroke InProgressStroke::CopyToStroke(
   }
   absl::StatusOr<PartitionedMesh> partitioned_mesh =
       PartitionedMesh::FromMutableMeshGroups(mesh_groups);
-  if (partitioned_mesh.ok()) {
-    return Stroke(*brush, processed_inputs_.MakeDeepCopy(), *partitioned_mesh);
-  } else {
+  if (!partitioned_mesh.ok()) {
     ABSL_LOG(WARNING)
         << "Failed to create PartitionedMesh for InProgressStroke: "
         << partitioned_mesh.status();
-    return Stroke(*brush, processed_inputs_.MakeDeepCopy(),
-                  PartitionedMesh::WithEmptyGroups(brush->CoatCount()));
   }
+  return Stroke(*brush, processed_inputs_.MakeDeepCopy(),
+                partitioned_mesh.ok()
+                    ? *std::move(partitioned_mesh)
+                    : PartitionedMesh::WithEmptyGroups(brush->CoatCount()));
 }
 
 }  // namespace ink

@@ -16,6 +16,7 @@
 
 #include "ynnpack/base/base.h"
 #include "ynnpack/base/bfloat16.h"
+#include "ynnpack/base/fp8.h"
 #include "ynnpack/base/half.h"
 #include "ynnpack/include/ynnpack.h"
 
@@ -29,8 +30,12 @@ using int32x1_t = int32_t;
 using uint32x1_t = uint32_t;
 using float16x1_t = half;
 using bfloat16x1_t = bfloat16;
+using float8_e5m2x1_t = fp8_e5m2;
+using float8_e4m3x1_t = fp8_e4m3;
 using float32x1_t = float;
+#if !defined(__aarch64__) || !defined(__ARM_NEON)
 using float64x1_t = double;
+#endif
 
 // TODO: b/501068911 - When we have an option to disable fp64 support, we should
 // make this float when fp64 is disabled.
@@ -297,6 +302,10 @@ ynn_type type_of() {
     return ynn_type_fp16;
   } else if (std::is_same<T, bfloat16>::value) {
     return ynn_type_bf16;
+  } else if (std::is_same<T, fp8_e5m2>::value) {
+    return ynn_type_fp8_e5m2;
+  } else if (std::is_same<T, fp8_e4m3>::value) {
+    return ynn_type_fp8_e4m3;
   } else if (std::is_same<T, float>::value) {
     return ynn_type_fp32;
   } else if (std::is_same<T, double>::value) {
@@ -340,6 +349,10 @@ constexpr decltype(auto) SwitchRealType(ynn_type type, F&& f) {
       return std::forward<F>(f)(half());
     case ynn_type_bf16:
       return std::forward<F>(f)(bfloat16());
+    case ynn_type_fp8_e5m2:
+      return std::forward<F>(f)(fp8_e5m2());
+    case ynn_type_fp8_e4m3:
+      return std::forward<F>(f)(fp8_e4m3());
     case ynn_type_fp32:
       return std::forward<F>(f)(float());
     case ynn_type_fp64:
@@ -398,6 +411,7 @@ class type_info<half> {
 
   static constexpr half epsilon() { return half::epsilon(); }
   static constexpr half infinity() { return half::infinity(); }
+  static constexpr half nan() { return half::nan(); }
   static constexpr half min() { return half::min(); }
   static constexpr half max() { return half::max(); }
   static constexpr half smallest_normal() { return half::smallest_normal(); }
@@ -423,6 +437,7 @@ class type_info<bfloat16> {
     return bfloat16::from_bits(0x3c00);  // 2^-7 = 0.0078125
   }
   static constexpr bfloat16 infinity() { return bfloat16::from_bits(0x7f80); }
+  static constexpr bfloat16 nan() { return bfloat16::from_bits(0x7fc0); }
   static constexpr bfloat16 min() { return bfloat16::from_bits(0xff7f); }
   static constexpr bfloat16 max() { return bfloat16::from_bits(0x7f7f); }
   static constexpr bfloat16 smallest_normal() {
@@ -445,6 +460,60 @@ class type_info<bfloat16> {
     x[i] = value;
   }
   YNN_ALWAYS_INLINE static bfloat16& ref(bfloat16* x, size_t i) { return x[i]; }
+};
+
+template <>
+class type_info<fp8_e5m2> {
+ public:
+  using element_type = fp8_e5m2;
+
+  static constexpr fp8_e5m2 epsilon() { return fp8_e5m2::epsilon(); }
+  static constexpr fp8_e5m2 infinity() { return fp8_e5m2::infinity(); }
+  static constexpr fp8_e5m2 min() { return fp8_e5m2::min(); }
+  static constexpr fp8_e5m2 max() { return fp8_e5m2::max(); }
+  static constexpr fp8_e5m2 smallest_normal() {
+    return fp8_e5m2::smallest_normal();
+  }
+  static constexpr fp8_e5m2 min_identity() { return fp8_e5m2::min_identity(); }
+  static constexpr fp8_e5m2 max_identity() { return fp8_e5m2::max_identity(); }
+  static constexpr fp8_e5m2 sum_identity() { return fp8_e5m2::sum_identity(); }
+
+  static constexpr size_t element_count() { return 1; }
+
+  YNN_ALWAYS_INLINE static fp8_e5m2 get(const fp8_e5m2* x, size_t i) {
+    return x[i];
+  }
+  YNN_ALWAYS_INLINE static void set(fp8_e5m2* x, size_t i, fp8_e5m2 value) {
+    x[i] = value;
+  }
+  YNN_ALWAYS_INLINE static fp8_e5m2& ref(fp8_e5m2* x, size_t i) { return x[i]; }
+};
+
+template <>
+class type_info<fp8_e4m3> {
+ public:
+  using element_type = fp8_e4m3;
+
+  static constexpr fp8_e4m3 epsilon() { return fp8_e4m3::epsilon(); }
+  static constexpr fp8_e4m3 infinity() { return fp8_e4m3::infinity(); }
+  static constexpr fp8_e4m3 min() { return fp8_e4m3::min(); }
+  static constexpr fp8_e4m3 max() { return fp8_e4m3::max(); }
+  static constexpr fp8_e4m3 smallest_normal() {
+    return fp8_e4m3::smallest_normal();
+  }
+  static constexpr fp8_e4m3 min_identity() { return fp8_e4m3::min_identity(); }
+  static constexpr fp8_e4m3 max_identity() { return fp8_e4m3::max_identity(); }
+  static constexpr fp8_e4m3 sum_identity() { return fp8_e4m3::sum_identity(); }
+
+  static constexpr size_t element_count() { return 1; }
+
+  YNN_ALWAYS_INLINE static fp8_e4m3 get(const fp8_e4m3* x, size_t i) {
+    return x[i];
+  }
+  YNN_ALWAYS_INLINE static void set(fp8_e4m3* x, size_t i, fp8_e4m3 value) {
+    x[i] = value;
+  }
+  YNN_ALWAYS_INLINE static fp8_e4m3& ref(fp8_e4m3* x, size_t i) { return x[i]; }
 };
 
 template <>
@@ -698,7 +767,7 @@ struct quantization_params {
 template <typename Dst, typename F>
 void generate_n(Dst* dst, size_t offset, size_t n, F&& f) {
   using DstInfo = type_info<Dst>;
-  if (DstInfo::element_count() == 1) {
+  if constexpr (DstInfo::element_count() == 1) {
     std::generate_n(dst + offset, n, std::forward<F>(f));
   } else {
     // We could relax these requirements if needed...
@@ -720,7 +789,8 @@ void copy_n(Src* src, size_t src_offset, size_t n, Dst* dst,
             size_t dst_offset) {
   using SrcInfo = type_info<std::remove_cv_t<Src>>;
   using DstInfo = type_info<std::remove_cv_t<Dst>>;
-  if (SrcInfo::element_count() == 1 && DstInfo::element_count() == 1) {
+  if constexpr (SrcInfo::element_count() == 1 &&
+                DstInfo::element_count() == 1) {
     std::copy_n(src + src_offset, n, dst + dst_offset);
   } else {
     // We could relax these requirements if needed...

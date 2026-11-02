@@ -11,7 +11,7 @@ import {
   type CDPReceivableMessage,
   type Command,
   type CommandParams,
-  type CommandResult
+  type CommandResult,
 } from './CDPConnection.js';
 import type {ConnectionTransport} from './ConnectionTransport.js';
 import {InspectorBackend, type MessageError, type QualifiedName, test} from './InspectorBackend.js';
@@ -101,7 +101,7 @@ export class DevToolsCDPConnection implements CDPConnection {
         error: {
           message: `Session is unregistering, can\'t dispatch pending call to ${method}`,
           code: CDPErrorStatus.SESSION_NOT_FOUND,
-        }
+        },
       });
     }
   }

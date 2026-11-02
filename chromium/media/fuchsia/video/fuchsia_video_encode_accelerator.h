@@ -9,8 +9,10 @@
 #include <stdint.h>
 
 #include <memory>
+#include <optional>
 #include <vector>
 
+#include "base/containers/queue.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/sequence_checker.h"
@@ -26,6 +28,7 @@
 namespace media {
 
 class VideoFrame;
+class VideoFrameWriterQueue;
 
 class MEDIA_EXPORT FuchsiaVideoEncodeAccelerator final
     : public VideoEncodeAccelerator,
@@ -39,6 +42,9 @@ class MEDIA_EXPORT FuchsiaVideoEncodeAccelerator final
 
   // VideoEncodeAccelerator implementation.
   SupportedProfiles GetSupportedProfiles() override;
+  // Initializes the encoder. Returning a failure status will abort
+  // initialization, preventing the encoder stream from starting, and return
+  // an error to the JavaScript layer.
   EncoderStatus Initialize(const Config& config,
                            VideoEncodeAccelerator::Client* client,
                            std::unique_ptr<MediaLog> media_log) override;
@@ -56,7 +62,6 @@ class MEDIA_EXPORT FuchsiaVideoEncodeAccelerator final
   ~FuchsiaVideoEncodeAccelerator() override;
 
  private:
-  class VideoFrameWriterQueue;
   class OutputPacketsQueue;
 
   // StreamProcessorHelper::Client implementation.

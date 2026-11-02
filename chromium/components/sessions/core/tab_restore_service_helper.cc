@@ -304,6 +304,10 @@ std::optional<SessionID> TabRestoreServiceHelper::CreateHistoricalTab(
 }
 
 void TabRestoreServiceHelper::BrowserClosing(LiveTabContext* context) {
+  if (restoring_) {
+    return;
+  }
+
   closing_contexts_.insert(context);
 
   auto window = std::make_unique<Window>();
@@ -386,6 +390,10 @@ TabRestoreServiceHelper::CreateHistoricalGroupImpl(
 void TabRestoreServiceHelper::CreateHistoricalGroup(
     LiveTabContext* context,
     const tab_groups::TabGroupId& id) {
+  if (restoring_) {
+    return;
+  }
+
   closing_groups_.insert(id);
 
   auto group = CreateHistoricalGroupImpl(context, id);
@@ -397,6 +405,10 @@ void TabRestoreServiceHelper::CreateHistoricalGroup(
 void TabRestoreServiceHelper::CreateHistoricalSplit(
     LiveTabContext* context,
     const split_tabs::SplitTabId& id) {
+  if (restoring_) {
+    return;
+  }
+
   std::vector<std::pair<int, LiveTab*>> split_tabs;
   for (int tab_index = 0; tab_index < context->GetTabCount(); ++tab_index) {
     if (context->GetSplitForTab(tab_index) == id) {
@@ -649,7 +661,8 @@ std::vector<LiveTab*> TabRestoreServiceHelper::RestoreMostRecentEntry(
     return std::vector<LiveTab*>();
   }
   return RestoreEntryById(context, entries_.front()->id,
-                          WindowOpenDisposition::UNKNOWN);
+                          WindowOpenDisposition::UNKNOWN)
+      .value();
 }
 
 void TabRestoreServiceHelper::RemoveEntryById(SessionID id) {
@@ -680,7 +693,7 @@ LiveTabContext* TabRestoreServiceHelper::RestoreTabOrGroupFromWindow(
     SessionID id,
     LiveTabContext* context,
     WindowOpenDisposition disposition,
-    std::vector<LiveTab*>* live_tabs) {
+    std::vector<base::WeakPtr<LiveTab>>* live_tabs) {
   // 1. Determine if `id` corresponds to a tab. If so, restore the tab.
   bool found_tab_to_delete = false;
   SessionID::id_type restored_tab_browser_id;
@@ -697,7 +710,9 @@ LiveTabContext* TabRestoreServiceHelper::RestoreTabOrGroupFromWindow(
     context = RestoreTab(tab, context, disposition,
                          sessions::tab_restore::WINDOW, &restored_tab,
                          /*is_restoring_group_or_window=*/false);
-    live_tabs->push_back(restored_tab);
+    if (restored_tab) {
+      live_tabs->push_back(restored_tab->GetWeakPtr());
+    }
 
     // Cleanup.
     std::optional<tab_groups::TabGroupId> group_id = tab.group;
@@ -769,7 +784,9 @@ LiveTabContext* TabRestoreServiceHelper::RestoreTabOrGroupFromWindow(
           DCHECK_EQ(new_context, context);
         }
         context = new_context;
-        live_tabs->push_back(restored_tab);
+        if (restored_tab) {
+          live_tabs->push_back(restored_tab->GetWeakPtr());
+        }
 
         window.tabs.erase(window.tabs.begin() + tab_i);
       }
@@ -821,7 +838,7 @@ LiveTabContext* TabRestoreServiceHelper::RestoreTabOrGroupFromWindow(
             RestoreTab(tab, context, disposition, sessions::tab_restore::WINDOW,
                        &restored_tab, /*is_restoring_group_or_window=*/false);
         if (restored_tab) {
-          live_tabs->push_back(restored_tab);
+          live_tabs->push_back(restored_tab->GetWeakPtr());
           restored_tab_map[tab.id] = restored_tab;
         }
 
@@ -886,14 +903,13 @@ TabRestoreServiceHelper::CreateLocalSavedGroupIDMapping(
   return group_mapping;
 }
 
-std::vector<LiveTab*> TabRestoreServiceHelper::RestoreEntryById(
+std::optional<std::vector<LiveTab*>> TabRestoreServiceHelper::RestoreEntryById(
     LiveTabContext* context,
     SessionID id,
     WindowOpenDisposition disposition) {
   auto entry_iterator = GetEntryIteratorById(id);
   if (entry_iterator == entries_.end()) {
-    // Don't hoark here, we allow an invalid id.
-    return std::vector<LiveTab*>();
+    return std::nullopt;
   }
 
   if (observer_) {
@@ -911,7 +927,12 @@ std::vector<LiveTab*> TabRestoreServiceHelper::RestoreEntryById(
   // |context| will be NULL in cases where one isn't already available (eg,
   // when invoked on Mac OS X with no windows open). In this case, create a
   // new browser into which we restore the tabs.
-  std::vector<LiveTab*> live_tabs;
+  //
+  // The restored tabs are tracked with WeakPtrs because restoring involves
+  // deletion-capable calls (e.g. showing and activating browser windows) that
+  // can synchronously close restored tabs, or even the window they were
+  // restored into, before this method returns.
+  std::vector<base::WeakPtr<LiveTab>> live_tabs;
   switch (entry.type) {
     case tab_restore::Type::TAB: {
       auto& tab = static_cast<const Tab&>(entry);
@@ -925,7 +946,9 @@ std::vector<LiveTab*> TabRestoreServiceHelper::RestoreEntryById(
       LiveTab* restored_tab = nullptr;
       context = RestoreTab(tab, context, disposition, entry.type, &restored_tab,
                            /*is_restoring_group_or_window=*/false);
-      live_tabs.push_back(restored_tab);
+      if (restored_tab) {
+        live_tabs.push_back(restored_tab->GetWeakPtr());
+      }
       context->ShowBrowserWindow();
       break;
     }
@@ -988,7 +1011,7 @@ std::vector<LiveTab*> TabRestoreServiceHelper::RestoreEntryById(
             client_->OnTabRestored(
                 tab->navigations.at(tab->current_navigation_index)
                     .virtual_url());
-            live_tabs.push_back(restored_tab);
+            live_tabs.push_back(restored_tab->GetWeakPtr());
             restored_tab_map[tab->id] = restored_tab;
           }
 
@@ -1071,7 +1094,7 @@ std::vector<LiveTab*> TabRestoreServiceHelper::RestoreEntryById(
               *tab.get(), context->GetTabCount(), group.tabs[0]->id == tab->id,
               /*restored_from_group_or_window_context=*/true, entry.type);
           if (restored_tab) {
-            live_tabs.push_back(restored_tab);
+            live_tabs.push_back(restored_tab->GetWeakPtr());
             restored_tab_map[tab->id] = restored_tab;
           }
           if (tab->split_id.has_value()) {
@@ -1110,7 +1133,9 @@ std::vector<LiveTab*> TabRestoreServiceHelper::RestoreEntryById(
           context =
               RestoreTab(**it, context, disposition, entry.type, &restored_tab,
                          /*is_restoring_group_or_window=*/false);
-          live_tabs.push_back(restored_tab);
+          if (restored_tab) {
+            live_tabs.push_back(restored_tab->GetWeakPtr());
+          }
           CHECK(ValidateGroup(group));
           group.tabs.erase(it);
         } else {
@@ -1143,7 +1168,7 @@ std::vector<LiveTab*> TabRestoreServiceHelper::RestoreEntryById(
         context = RestoreTab(*split.tabs[0], context, disposition, entry.type,
                              &restored_leading_tab, false);
         if (restored_leading_tab) {
-          live_tabs.push_back(restored_leading_tab);
+          live_tabs.push_back(restored_leading_tab->GetWeakPtr());
         }
 
         // Directly restore the trailing tab into the same context as the
@@ -1157,7 +1182,7 @@ std::vector<LiveTab*> TabRestoreServiceHelper::RestoreEntryById(
               static_cast<int>(split.tabs[1]->navigations.size() - 1));
           client_->OnTabRestored(
               split.tabs[1]->navigations.at(nav_index).virtual_url());
-          live_tabs.push_back(restored_trailing_tab);
+          live_tabs.push_back(restored_trailing_tab->GetWeakPtr());
         }
 
         if (restored_leading_tab && restored_trailing_tab &&
@@ -1189,7 +1214,15 @@ std::vector<LiveTab*> TabRestoreServiceHelper::RestoreEntryById(
 
   restoring_ = false;
   NotifyEntriesChanged();
-  return live_tabs;
+
+  std::vector<LiveTab*> result;
+  result.reserve(live_tabs.size());
+  for (const base::WeakPtr<LiveTab>& weak_tab : live_tabs) {
+    if (weak_tab) {
+      result.push_back(weak_tab.get());
+    }
+  }
+  return result;
 }
 
 bool TabRestoreServiceHelper::IsRestoring() const {
@@ -1542,7 +1575,7 @@ TabRestoreServiceHelper::RestoreOneTabFromSplit(
     LiveTabContext** context,
     WindowOpenDisposition disposition,
     tab_restore::Type session_restore_type,
-    std::vector<LiveTab*>& live_tabs) {
+    std::vector<base::WeakPtr<LiveTab>>& live_tabs) {
   for (size_t i = 0; i < split.tabs.size(); i++) {
     const Tab& tab = *split.tabs[i];
     if (tab.id == id) {
@@ -1551,7 +1584,7 @@ TabRestoreServiceHelper::RestoreOneTabFromSplit(
           RestoreTab(tab, *context, disposition, session_restore_type,
                      &restored_tab, /*is_restoring_group_or_window=*/false);
       if (restored_tab) {
-        live_tabs.push_back(restored_tab);
+        live_tabs.push_back(restored_tab->GetWeakPtr());
       }
 
       // Extract the remaining tab, remove split association, and return it.
@@ -1569,7 +1602,7 @@ bool TabRestoreServiceHelper::RestoreSplitFromGroup(
     SessionID id,
     LiveTabContext** context,
     WindowOpenDisposition disposition,
-    std::vector<LiveTab*>& live_tabs) {
+    std::vector<base::WeakPtr<LiveTab>>& live_tabs) {
   for (auto& split_pair : group.split_tabs) {
     auto& split = split_pair.second;
     if (split->id != id && split->original_id != id) {
@@ -1591,7 +1624,7 @@ bool TabRestoreServiceHelper::RestoreSplitFromGroup(
                               tab_restore::Type::GROUP, &restored_tab,
                               /*is_restoring_group_or_window=*/false);
         if (restored_tab) {
-          live_tabs.push_back(restored_tab);
+          live_tabs.push_back(restored_tab->GetWeakPtr());
           restored_tab_map[tab.id] = restored_tab;
         }
         reconstruct_split_tabs[split_id].push_back(tab_i.get());

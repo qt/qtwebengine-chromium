@@ -112,7 +112,7 @@ EIGEN_DEVICE_FUNC inline typename DenseBase<Derived>::ReverseReturnType DenseBas
   return ReverseReturnType(derived());
 }
 
-// reverse const overload moved DenseBase.h due to a CUDA compiler bug
+// reverse const overload moved to DenseBase.h due to a CUDA compiler bug
 
 /** This is the "in place" version of reverse: it reverses \c *this.
  *

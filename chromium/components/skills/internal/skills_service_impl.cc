@@ -336,9 +336,13 @@ void SkillsServiceImpl::Handle1pSkills(
     first_party_skill_objects_map_.reserve(
         first_party_data_.skills_list.size());
     for (const auto& proto_skill : first_party_data_.skills_list) {
+      GURL image_url(proto_skill.image_url());
+      if (!SkillsService::IsValidSkillImageUrl(image_url)) {
+        image_url = GURL();
+      }
       Skill skill(proto_skill.id(), proto_skill.name(), proto_skill.icon(),
                   proto_skill.prompt(), proto_skill.description(),
-                  proto_skill.curated_by(), GURL(proto_skill.image_url()),
+                  proto_skill.curated_by(), image_url,
                   sync_pb::SkillSource::SKILL_SOURCE_FIRST_PARTY);
       first_party_skill_objects_map_.insert(
           {proto_skill.id(), std::move(skill)});
@@ -447,6 +451,23 @@ void SkillsServiceImpl::RefreshDiscoverySkills() {
 
   if (requires_refresh) {
     FetchDiscoverySkills();
+    for (auto& provider : providers_) {
+      provider->RefreshSkills();
+    }
+  }
+}
+
+void SkillsServiceImpl::AddProvider(std::unique_ptr<SkillsProvider> provider) {
+  SkillsProvider* provider_ptr = provider.get();
+  provider_subscriptions_.push_back(provider->RegisterSkillsChangedCallback(
+      base::BindRepeating(&SkillsServiceImpl::OnProviderSkillsChanged,
+                          base::Unretained(this), provider_ptr)));
+  providers_.push_back(std::move(provider));
+}
+
+void SkillsServiceImpl::OnProviderSkillsChanged(SkillsProvider* provider) {
+  for (Observer& observer : observers_) {
+    observer.OnProvidedSkillsChanged(provider);
   }
 }
 

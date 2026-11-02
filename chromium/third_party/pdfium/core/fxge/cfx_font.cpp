@@ -143,8 +143,8 @@ FX_Charset CFX_Font::GetCharSetFromUnicode(uint16_t word) {
 CFX_Font::CFX_Font() = default;
 
 int CFX_Font::GetSubstFontItalicAngle() const {
-  CFX_SubstFont* subst_font = GetSubstFont();
-  return subst_font ? subst_font->italic_angle_ : 0;
+  const CFX_SubstFont* subst_font = GetSubstFont();
+  return subst_font ? subst_font->GetItalicAngle() : 0;
 }
 
 std::vector<CharCodeAndIndex> CFX_Font::GetCharCodesAndIndices(
@@ -336,7 +336,7 @@ ByteString CFX_Font::GetFamilyName() const {
   if (face_) {
     return face_->GetFamilyName();
   }
-  return subst_font_->family_;
+  return subst_font_->GetFamily();
 }
 
 ByteString CFX_Font::GetFamilyNameOrUntitled() const {
@@ -361,7 +361,7 @@ ByteString CFX_Font::GetBaseFontName() const {
     return facename;
   }
   if (subst_font_) {
-    return subst_font_->family_;
+    return subst_font_->GetFamily();
   }
   return ByteString();
 }
@@ -413,14 +413,14 @@ std::unique_ptr<CFX_Path> CFX_Font::LoadGlyphPathImpl(uint32_t glyph_index,
 
 const CFX_GlyphBitmap* CFX_Font::LoadGlyphBitmap(
     uint32_t glyph_index,
-    bool bFontStyle,
+    bool is_cid_font,
     const CFX_Matrix& matrix,
     int dest_width,
     FontAntiAliasingMode anti_alias,
     CFX_TextRenderOptions* text_options) const {
-  return GetOrCreateGlyphCache()->LoadGlyphBitmap(this, glyph_index, bFontStyle,
-                                                  matrix, dest_width,
-                                                  anti_alias, text_options);
+  return GetOrCreateGlyphCache()->LoadGlyphBitmap(
+      this, glyph_index, is_cid_font, matrix, dest_width, anti_alias,
+      text_options);
 }
 
 const CFX_Path* CFX_Font::LoadGlyphPath(uint32_t glyph_index,

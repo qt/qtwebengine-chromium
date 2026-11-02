@@ -74,6 +74,30 @@ class BnplStrategy {
     kMaxValue = kCloseCurrentUi,
   };
 
+  // Defines the next step that the BnplManager should take after AI-based
+  // amount extraction returns. The strategy implementation determines which
+  // action to return based on the platform.
+  enum class BnplAiBasedAmountExtractionReturnedNextAction {
+    // Replaces the loading throbber with issuer suggestions.
+    kReplaceLoadingThrobberWithIssuerSuggestionsOnDesktop = 0,
+
+    // Show the issuer selection screen.
+    kSwitchToIssuerSelectionScreenOnAndroid = 1,
+
+    kMaxValue = kSwitchToIssuerSelectionScreenOnAndroid,
+  };
+
+  // Defines the action to take to dismiss the active BNPL UI.
+  enum class UiDismissalAction {
+    // Dismiss the suggestions popup/accessory.
+    kHideSuggestions = 0,
+
+    // Dismiss the explicit BNPL UI (dialog or sheet) via the delegate.
+    kRemoveBnplUi = 1,
+
+    kMaxValue = kRemoveBnplUi,
+  };
+
   virtual ~BnplStrategy();
 
   // Returns the next action to take after the user has been shown a payment
@@ -90,6 +114,14 @@ class BnplStrategy {
 
   // Returns the action to take before switching to the next view.
   virtual BeforeSwitchingViewAction GetBeforeViewSwitchAction();
+
+  // Returns the next action to take after the AI-based amount extraction is
+  // finished.
+  virtual BnplAiBasedAmountExtractionReturnedNextAction
+  GetNextActionOnAiBasedAmountExtractionReturned();
+
+  // Returns the action to take to dismiss the active BNPL UI.
+  virtual UiDismissalAction GetUiDismissalAction();
 
   // Returns whether the existing UI should be removed after a server response.
   // `result` is used by platforms to check if the UI should remain open.

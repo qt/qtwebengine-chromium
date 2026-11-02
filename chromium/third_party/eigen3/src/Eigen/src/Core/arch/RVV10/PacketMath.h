@@ -247,15 +247,15 @@ EIGEN_STRONG_INLINE numext::int32_t predux_mul<Packet1Xi>(const Packet1Xi& a) {
   Packet1Xi prod = __riscv_vmul_vv_i32m1(preverse(a), a, unpacket_traits<Packet1Xi>::size);
   Packet1Xi half_prod;
 
-  if (EIGEN_RISCV64_RVV_VL >= 1024) {
+  EIGEN_IF_CONSTEXPR (EIGEN_RISCV64_RVV_VL >= 1024) {
     half_prod = __riscv_vslidedown_vx_i32m1(prod, 8, unpacket_traits<Packet1Xi>::size);
     prod = __riscv_vmul_vv_i32m1(prod, half_prod, unpacket_traits<Packet1Xi>::size);
   }
-  if (EIGEN_RISCV64_RVV_VL >= 512) {
+  EIGEN_IF_CONSTEXPR (EIGEN_RISCV64_RVV_VL >= 512) {
     half_prod = __riscv_vslidedown_vx_i32m1(prod, 4, unpacket_traits<Packet1Xi>::size);
     prod = __riscv_vmul_vv_i32m1(prod, half_prod, unpacket_traits<Packet1Xi>::size);
   }
-  if (EIGEN_RISCV64_RVV_VL >= 256) {
+  EIGEN_IF_CONSTEXPR (EIGEN_RISCV64_RVV_VL >= 256) {
     half_prod = __riscv_vslidedown_vx_i32m1(prod, 2, unpacket_traits<Packet1Xi>::size);
     prod = __riscv_vmul_vv_i32m1(prod, half_prod, unpacket_traits<Packet1Xi>::size);
   }
@@ -307,7 +307,9 @@ EIGEN_STRONG_INLINE Packet2Xf __riscv_vreinterpret_v_u64m2_f32m2(const Packet2Xu
 
 template <>
 EIGEN_STRONG_INLINE Packet1Xf ptrue<Packet1Xf>(const Packet1Xf& /*a*/) {
-  return __riscv_vreinterpret_f32m1(__riscv_vmv_v_x_u32m1(0xffffffffu, unpacket_traits<Packet1Xf>::size));
+  Packet1Xf r = __riscv_vreinterpret_f32m1(__riscv_vmv_v_x_u32m1(0xffffffffu, unpacket_traits<Packet1Xf>::size));
+  EIGEN_FAST_MATH_CONSTANT_BARRIER(r);
+  return r;
 }
 
 template <>
@@ -620,15 +622,15 @@ EIGEN_STRONG_INLINE float predux_mul<Packet1Xf>(const Packet1Xf& a) {
   Packet1Xf prod = __riscv_vfmul_vv_f32m1(preverse(a), a, unpacket_traits<Packet1Xf>::size);
   Packet1Xf half_prod;
 
-  if (EIGEN_RISCV64_RVV_VL >= 1024) {
+  EIGEN_IF_CONSTEXPR (EIGEN_RISCV64_RVV_VL >= 1024) {
     half_prod = __riscv_vslidedown_vx_f32m1(prod, 8, unpacket_traits<Packet1Xf>::size);
     prod = __riscv_vfmul_vv_f32m1(prod, half_prod, unpacket_traits<Packet1Xf>::size);
   }
-  if (EIGEN_RISCV64_RVV_VL >= 512) {
+  EIGEN_IF_CONSTEXPR (EIGEN_RISCV64_RVV_VL >= 512) {
     half_prod = __riscv_vslidedown_vx_f32m1(prod, 4, unpacket_traits<Packet1Xf>::size);
     prod = __riscv_vfmul_vv_f32m1(prod, half_prod, unpacket_traits<Packet1Xf>::size);
   }
-  if (EIGEN_RISCV64_RVV_VL >= 256) {
+  EIGEN_IF_CONSTEXPR (EIGEN_RISCV64_RVV_VL >= 256) {
     half_prod = __riscv_vslidedown_vx_f32m1(prod, 2, unpacket_traits<Packet1Xf>::size);
     prod = __riscv_vfmul_vv_f32m1(prod, half_prod, unpacket_traits<Packet1Xf>::size);
   }
@@ -945,15 +947,15 @@ EIGEN_STRONG_INLINE numext::int64_t predux_mul<Packet1Xl>(const Packet1Xl& a) {
   Packet1Xl prod = __riscv_vmul_vv_i64m1(preverse(a), a, unpacket_traits<Packet1Xl>::size);
   Packet1Xl half_prod;
 
-  if (EIGEN_RISCV64_RVV_VL >= 1024) {
+  EIGEN_IF_CONSTEXPR (EIGEN_RISCV64_RVV_VL >= 1024) {
     half_prod = __riscv_vslidedown_vx_i64m1(prod, 4, unpacket_traits<Packet1Xl>::size);
     prod = __riscv_vmul_vv_i64m1(prod, half_prod, unpacket_traits<Packet1Xl>::size);
   }
-  if (EIGEN_RISCV64_RVV_VL >= 512) {
+  EIGEN_IF_CONSTEXPR (EIGEN_RISCV64_RVV_VL >= 512) {
     half_prod = __riscv_vslidedown_vx_i64m1(prod, 2, unpacket_traits<Packet1Xl>::size);
     prod = __riscv_vmul_vv_i64m1(prod, half_prod, unpacket_traits<Packet1Xl>::size);
   }
-  if (EIGEN_RISCV64_RVV_VL >= 256) {
+  EIGEN_IF_CONSTEXPR (EIGEN_RISCV64_RVV_VL >= 256) {
     half_prod = __riscv_vslidedown_vx_i64m1(prod, 1, unpacket_traits<Packet1Xl>::size);
     prod = __riscv_vmul_vv_i64m1(prod, half_prod, unpacket_traits<Packet1Xl>::size);
   }
@@ -994,7 +996,10 @@ EIGEN_DEVICE_FUNC inline void ptranspose(PacketBlock<Packet1Xl, N>& kernel) {
 
 template <>
 EIGEN_STRONG_INLINE Packet1Xd ptrue<Packet1Xd>(const Packet1Xd& /*a*/) {
-  return __riscv_vreinterpret_f64m1(__riscv_vmv_v_x_u64m1(0xffffffffffffffffu, unpacket_traits<Packet1Xd>::size));
+  Packet1Xd r =
+      __riscv_vreinterpret_f64m1(__riscv_vmv_v_x_u64m1(0xffffffffffffffffu, unpacket_traits<Packet1Xd>::size));
+  EIGEN_FAST_MATH_CONSTANT_BARRIER(r);
+  return r;
 }
 
 template <>
@@ -1034,7 +1039,7 @@ EIGEN_STRONG_INLINE Packet1Xd plset<Packet1Xd>(const double& a) {
 template <>
 EIGEN_STRONG_INLINE void pbroadcast4<Packet1Xd>(const double* a, Packet1Xd& a0, Packet1Xd& a1, Packet1Xd& a2,
                                                 Packet1Xd& a3) {
-  if (EIGEN_RISCV64_RVV_VL >= 256) {
+  EIGEN_IF_CONSTEXPR (EIGEN_RISCV64_RVV_VL >= 256) {
     Packet1Xd aa = __riscv_vle64_v_f64m1(a, 4);
     a0 = __riscv_vrgather_vx_f64m1(aa, 0, unpacket_traits<Packet1Xd>::size);
     a1 = __riscv_vrgather_vx_f64m1(aa, 1, unpacket_traits<Packet1Xd>::size);
@@ -1316,15 +1321,15 @@ EIGEN_STRONG_INLINE double predux_mul<Packet1Xd>(const Packet1Xd& a) {
   Packet1Xd prod = __riscv_vfmul_vv_f64m1(preverse(a), a, unpacket_traits<Packet1Xd>::size);
   Packet1Xd half_prod;
 
-  if (EIGEN_RISCV64_RVV_VL >= 1024) {
+  EIGEN_IF_CONSTEXPR (EIGEN_RISCV64_RVV_VL >= 1024) {
     half_prod = __riscv_vslidedown_vx_f64m1(prod, 4, unpacket_traits<Packet1Xd>::size);
     prod = __riscv_vfmul_vv_f64m1(prod, half_prod, unpacket_traits<Packet1Xd>::size);
   }
-  if (EIGEN_RISCV64_RVV_VL >= 512) {
+  EIGEN_IF_CONSTEXPR (EIGEN_RISCV64_RVV_VL >= 512) {
     half_prod = __riscv_vslidedown_vx_f64m1(prod, 2, unpacket_traits<Packet1Xd>::size);
     prod = __riscv_vfmul_vv_f64m1(prod, half_prod, unpacket_traits<Packet1Xd>::size);
   }
-  if (EIGEN_RISCV64_RVV_VL >= 256) {
+  EIGEN_IF_CONSTEXPR (EIGEN_RISCV64_RVV_VL >= 256) {
     half_prod = __riscv_vslidedown_vx_f64m1(prod, 1, unpacket_traits<Packet1Xd>::size);
     prod = __riscv_vfmul_vv_f64m1(prod, half_prod, unpacket_traits<Packet1Xd>::size);
   }
@@ -1643,15 +1648,15 @@ EIGEN_STRONG_INLINE numext::int16_t predux_mul<Packet1Xs>(const Packet1Xs& a) {
   Packet1Xs prod = __riscv_vmul_vv_i16m1(preverse(a), a, unpacket_traits<Packet1Xs>::size);
   Packet1Xs half_prod;
 
-  if (EIGEN_RISCV64_RVV_VL >= 1024) {
+  EIGEN_IF_CONSTEXPR (EIGEN_RISCV64_RVV_VL >= 1024) {
     half_prod = __riscv_vslidedown_vx_i16m1(prod, 16, unpacket_traits<Packet1Xs>::size);
     prod = __riscv_vmul_vv_i16m1(prod, half_prod, unpacket_traits<Packet1Xs>::size);
   }
-  if (EIGEN_RISCV64_RVV_VL >= 512) {
+  EIGEN_IF_CONSTEXPR (EIGEN_RISCV64_RVV_VL >= 512) {
     half_prod = __riscv_vslidedown_vx_i16m1(prod, 8, unpacket_traits<Packet1Xs>::size);
     prod = __riscv_vmul_vv_i16m1(prod, half_prod, unpacket_traits<Packet1Xs>::size);
   }
-  if (EIGEN_RISCV64_RVV_VL >= 256) {
+  EIGEN_IF_CONSTEXPR (EIGEN_RISCV64_RVV_VL >= 256) {
     half_prod = __riscv_vslidedown_vx_i16m1(prod, 4, unpacket_traits<Packet1Xs>::size);
     prod = __riscv_vmul_vv_i16m1(prod, half_prod, unpacket_traits<Packet1Xs>::size);
   }

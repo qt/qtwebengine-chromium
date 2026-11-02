@@ -160,6 +160,10 @@ const UIStrings = {
    * @description Whether CSS rules that do not apply active styles in the Styles pane are collapsed by default.
    */
   collapseNonContributingCSSRules: 'Collapse non-contributing CSS rules',
+  /**
+   * @description Title of a setting in the Event Listeners widget.
+   */
+  frameworkListeners: 'Framework listeners',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/elements/elements-meta.ts', UIStrings);
 const i18nLazyString = i18n.i18n.getLazilyComputedLocalizedString.bind(undefined, str_);
@@ -186,9 +190,10 @@ UI.ViewManager.registerViewExtension({
   order: 10,
   persistence: UI.ViewManager.ViewPersistence.PERMANENT,
   hasToolbar: false,
-  async loadView() {
+  async loadView(universe) {
     const Elements = await loadElementsModule();
-    return Elements.ElementsPanel.ElementsPanel.instance();
+    const {targetManager, settings} = universe;
+    return Elements.ElementsPanel.ElementsPanel.instance({forceNew: null, targetManager, settings});
   },
 });
 
@@ -622,8 +627,11 @@ UI.ViewManager.registerLocationResolver({
 Common.Revealer.registerRevealer({
   contextTypes() {
     return [
-      SDK.DOMModel.DOMNode, SDK.DOMModel.DeferredDOMNode, SDK.RemoteObject.RemoteObject, SDK.DOMModel.AdoptedStyleSheet,
-      Elements.ElementsPanel.NodeComputedStyles
+      SDK.DOMModel.DOMNode,
+      SDK.DOMModel.DeferredDOMNode,
+      SDK.RemoteObject.RemoteObject,
+      SDK.DOMModel.AdoptedStyleSheet,
+      Elements.ElementsPanel.NodeComputedStyles,
     ];
   },
   destination: Common.Revealer.RevealerDestination.ELEMENTS_PANEL,
@@ -696,4 +704,13 @@ UI.UIUtils.registerRenderer({
     const Elements = await loadElementsModule();
     return Elements.ElementsTreeOutlineRenderer.Renderer.instance();
   },
+});
+
+Common.Settings.registerSettingExtension({
+  category: Common.Settings.SettingCategory.NONE,
+  storageType: Common.Settings.SettingStorageType.GLOBAL,
+  title: i18nLazyString(UIStrings.frameworkListeners),
+  settingName: 'show-frameowkr-listeners',
+  settingType: Common.Settings.SettingType.BOOLEAN,
+  defaultValue: true,
 });

@@ -38,9 +38,6 @@
 #include "core/fxcrt/check_op.h"
 #include "core/fxcrt/compiler_specific.h"
 #include "core/fxcrt/containers/contains.h"
-#include "core/fxcrt/data_vector.h"
-#include "core/fxcrt/fx_2d_size.h"
-#include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/maybe_owned.h"
 #include "core/fxcrt/notreached.h"
@@ -246,7 +243,6 @@ class CPDF_ICCBasedCS final : public CPDF_BasedCS {
                                       uint32_t nComponents);
 
   RetainPtr<CPDF_IccProfile> profile_;
-  mutable DataVector<uint8_t> cache_;
   std::vector<float> ranges_;
 };
 
@@ -940,9 +936,9 @@ uint32_t CPDF_ICCBasedCS::v_Load(CPDF_Document* doc,
     return 0;
   }
 
-  // The PDF 1.7 spec says the number of components must be valid. While some
-  // PDF viewers tolerate invalid values, Acrobat does not, so be consistent
-  // with Acrobat and reject bad values.
+  // The ISO 32000-1:2008 spec says the number of components must be valid.
+  // While some PDF viewers tolerate invalid values, Acrobat does not, so be
+  // consistent with Acrobat and reject bad values.
   RetainPtr<const CPDF_Dictionary> dict = pStream->GetDict();
   const int32_t nDictComponents = dict->GetIntegerFor("N");
   if (!fxcodec::IccTransform::IsValidIccComponents(nDictComponents)) {
@@ -962,7 +958,7 @@ uint32_t CPDF_ICCBasedCS::v_Load(CPDF_Document* doc,
   if (!profile_->IsSupported() &&
       !FindAlternateProfile(doc, dict.Get(), pVisited, nComponents)) {
     // If there is no alternate profile, use a stock profile as mentioned in
-    // the PDF 1.7 spec in table 4.16 in the "Alternate" key description.
+    // the ISO 32000-1:2008 spec in table 66 in the "Alternate" key description.
     DCHECK(!base_cs_);
     base_cs_ = GetStockAlternateProfile(nComponents);
   }
@@ -1012,58 +1008,7 @@ void CPDF_ICCBasedCS::TranslateImageLine(pdfium::span<uint8_t> dest_span,
     return;
   }
 
-  // |nMaxColors| will not overflow since |nComponents| is limited in size.
-  const uint32_t nComponents = ComponentCount();
-  DCHECK(fxcodec::IccTransform::IsValidIccComponents(nComponents));
-  int nMaxColors = 1;
-  for (uint32_t i = 0; i < nComponents; i++) {
-    nMaxColors *= 52;
-  }
-
-  bool bTranslate = nComponents > 3;
-  if (!bTranslate) {
-    FX_SAFE_INT32 nPixelCount = image_width;
-    nPixelCount *= image_height;
-    if (nPixelCount.IsValid()) {
-      bTranslate = nPixelCount.ValueOrDie() < nMaxColors * 3 / 2;
-    }
-  }
-  if (bTranslate && profile_->IsSupported()) {
-    profile_->TranslateScanline(dest_span, src_span, pixels);
-    return;
-  }
-  if (cache_.empty()) {
-    cache_.resize(Fx2DSizeOrDie(nMaxColors, 3));
-    DataVector<uint8_t> temp_src(Fx2DSizeOrDie(nMaxColors, nComponents));
-    size_t src_index = 0;
-    for (int i = 0; i < nMaxColors; i++) {
-      uint32_t color = i;
-      uint32_t order = nMaxColors / 52;
-      for (uint32_t c = 0; c < nComponents; c++) {
-        temp_src[src_index++] = static_cast<uint8_t>(color / order * 5);
-        color %= order;
-        order /= 52;
-      }
-    }
-    if (profile_->IsSupported()) {
-      profile_->TranslateScanline(cache_, temp_src, nMaxColors);
-    }
-  }
-  uint8_t* pDestBuf = dest_span.data();
-  const uint8_t* pSrcBuf = src_span.data();
-  UNSAFE_TODO({
-    for (int i = 0; i < pixels; i++) {
-      int index = 0;
-      for (uint32_t c = 0; c < nComponents; c++) {
-        index = index * 52 + (*pSrcBuf) / 5;
-        pSrcBuf++;
-      }
-      index *= 3;
-      *pDestBuf++ = cache_[index];
-      *pDestBuf++ = cache_[index + 1];
-      *pDestBuf++ = cache_[index + 2];
-    }
-  });
+  profile_->TranslateScanline(dest_span, src_span, pixels);
 }
 
 bool CPDF_ICCBasedCS::IsNormal() const {

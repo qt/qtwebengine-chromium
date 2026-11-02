@@ -14,8 +14,11 @@
 
 import Foundation
 
-class QuantizerCelebi: Quantizer {
-  func quantize(_ pixels: [Int], _ maxColors: Int, returnInputPixelToClusterPixel: Bool = false)
+public class QuantizerCelebi: Quantizer {
+  public init() {}
+  public func quantize(
+    _ pixels: [Int], _ maxColors: Int, returnInputPixelToClusterPixel: Bool = false
+  )
     -> QuantizerResult
   {
     let wu = QuantizerWu()
@@ -23,7 +26,7 @@ class QuantizerCelebi: Quantizer {
     let wsmeansResult = QuantizerWsmeans.quantize(
       pixels,
       maxColors,
-      startingClusters: Array(wuResult.colorToCount.keys),
+      startingClusters: Array(wuResult.colorToCount.keys).sorted(by: { $0 > $1 }),
       pointProvider: PointProviderLab(),
       returnInputPixelToClusterPixel: returnInputPixelToClusterPixel
     )

@@ -424,10 +424,10 @@ bool SVDBase<Derived>::allocate(Index rows, Index cols, unsigned int computation
 
   m_diagSize.setValue(numext::mini(m_rows.value(), m_cols.value()));
   m_singularValues.resize(m_diagSize.value());
-  EIGEN_IF_CONSTEXPR(RowsAtCompileTime == Dynamic) {
+  EIGEN_IF_CONSTEXPR (RowsAtCompileTime == Dynamic) {
     m_matrixU.resize(m_rows.value(), m_computeFullU ? m_rows.value() : m_computeThinU ? m_diagSize.value() : 0);
   }
-  EIGEN_IF_CONSTEXPR(ColsAtCompileTime == Dynamic) {
+  EIGEN_IF_CONSTEXPR (ColsAtCompileTime == Dynamic) {
     m_matrixV.resize(m_cols.value(), m_computeFullV ? m_cols.value() : m_computeThinV ? m_diagSize.value() : 0);
   }
 

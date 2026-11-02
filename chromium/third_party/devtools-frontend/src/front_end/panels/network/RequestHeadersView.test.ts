@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -15,9 +16,11 @@ import {
   dispatchCopyEvent,
   dispatchKeyDownEvent,
   getCleanTextContentFromElements,
+  raf,
   renderElementIntoDOM,
 } from '../../testing/DOMHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {cleanTestDOM} from '../../testing/DOMHooks.js';
+import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
 import {createWorkspaceProject, setUpEnvironment} from '../../testing/OverridesHelpers.js';
 import {createFileSystemUISourceCode} from '../../testing/UISourceCodeHelpers.js';
 import {
@@ -74,7 +77,7 @@ async function renderHeadersComponent(request: SDK.NetworkRequest.NetworkRequest
   Object.setPrototypeOf(request, SDK.NetworkRequest.NetworkRequest.prototype);
   const component = new Network.RequestHeadersView.RequestHeadersView();
   component.request = request;
-  renderElementIntoDOM(component);
+  renderElementIntoDOM(component, {includeCommonStyles: true});
   await UI.Widget.Widget.allUpdatesComplete;
   await RenderCoordinator.done();
   return component;
@@ -108,12 +111,17 @@ const getRowHighlightStatus = (container: HTMLDetailsElement) => {
   });
 };
 
-describeWithMockConnection('RequestHeadersView', () => {
+describeWithEnvironment('RequestHeadersView', () => {
   let component: Network.RequestHeadersView.RequestHeadersView|null|undefined = null;
 
   beforeEach(() => {
     setUpEnvironment();
     resetRecordedMetrics();
+  });
+
+  afterEach(async () => {
+    cleanTestDOM();
+    await raf();
   });
 
   it('renders the General section', async () => {
@@ -199,19 +207,18 @@ describeWithMockConnection('RequestHeadersView', () => {
   it('can switch between source and parsed view', async () => {
     const container = document.createElement('div');
     renderElementIntoDOM(container);
-    Network.RequestHeadersView.DEFAULT_VIEW(
-        {
-          showRequestHeadersText: false,
-          showResponseHeadersText: true,
-          request: defaultRequest,
-          toggleShowRawResponseHeaders: function(): void {
-            throw new Error('Function not implemented.');
-          },
-          toggleShowRawRequestHeaders: function(): void {
-            throw new Error('Function not implemented.');
-          }
-        },
-        {}, container);
+    Network.RequestHeadersView.DEFAULT_VIEW({
+      showRequestHeadersText: false,
+      showResponseHeadersText: true,
+      request: defaultRequest,
+      toggleShowRawResponseHeaders: function(): void {
+        throw new Error('Function not implemented.');
+      },
+      toggleShowRawRequestHeaders: function(): void {
+        throw new Error('Function not implemented.');
+      },
+    },
+                                            {}, container);
     await UI.Widget.Widget.allUpdatesComplete;
     await RenderCoordinator.done();
 
@@ -222,19 +229,18 @@ describeWithMockConnection('RequestHeadersView', () => {
         rawTextContent,
         'HTTP/1.1 200 OK\nage: 0\ncache-control: max-age=600\ncontent-encoding: gzip\ncontent-length: 661\n');
 
-    Network.RequestHeadersView.DEFAULT_VIEW(
-        {
-          showRequestHeadersText: false,
-          showResponseHeadersText: false,
-          request: defaultRequest,
-          toggleShowRawResponseHeaders: function(): void {
-            throw new Error('Function not implemented.');
-          },
-          toggleShowRawRequestHeaders: function(): void {
-            throw new Error('Function not implemented.');
-          }
-        },
-        {}, container);
+    Network.RequestHeadersView.DEFAULT_VIEW({
+      showRequestHeadersText: false,
+      showResponseHeadersText: false,
+      request: defaultRequest,
+      toggleShowRawResponseHeaders: function(): void {
+        throw new Error('Function not implemented.');
+      },
+      toggleShowRawRequestHeaders: function(): void {
+        throw new Error('Function not implemented.');
+      },
+    },
+                                            {}, container);
     await UI.Widget.Widget.allUpdatesComplete;
     await RenderCoordinator.done();
 
@@ -255,19 +261,18 @@ describeWithMockConnection('RequestHeadersView', () => {
     defaultRequest.responseHeadersText = loremIpsum;
     const container = document.createElement('div');
     renderElementIntoDOM(container);
-    Network.RequestHeadersView.DEFAULT_VIEW(
-        {
-          showRequestHeadersText: false,
-          showResponseHeadersText: true,
-          request: defaultRequest,
-          toggleShowRawResponseHeaders: function(): void {
-            throw new Error('Function not implemented.');
-          },
-          toggleShowRawRequestHeaders: function(): void {
-            throw new Error('Function not implemented.');
-          }
-        },
-        {}, container);
+    Network.RequestHeadersView.DEFAULT_VIEW({
+      showRequestHeadersText: false,
+      showResponseHeadersText: true,
+      request: defaultRequest,
+      toggleShowRawResponseHeaders: function(): void {
+        throw new Error('Function not implemented.');
+      },
+      toggleShowRawRequestHeaders: function(): void {
+        throw new Error('Function not implemented.');
+      },
+    },
+                                            {}, container);
     await UI.Widget.Widget.allUpdatesComplete;
     await RenderCoordinator.done();
 

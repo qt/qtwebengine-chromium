@@ -369,27 +369,47 @@ struct State {
     void SubgroupMatrixLoad(core::ir::Var* var,
                             core::ir::CoreBuiltinCall* call,
                             OffsetData offset) {
+        const bool template_majorness = call->ExplicitTemplateParams().Length() == 2;
         auto args = call->Args();
         auto* call_offset = args[1];
-        auto* col_major = args[2];
-        auto* stride = args[3];
+        auto* stride = args[template_majorness ? 2 : 3];
 
         auto* sm = call->Result()->Type()->As<core::type::SubgroupMatrix>();
         TINT_IR_ASSERT(ir, sm);
 
         b.InsertBefore(call, [&] {
-            UpdateOffsetData(call_offset, sm->Type()->Size(), &offset);
+            // Majorness template variant has offset and stride sized in scalar type size.
+            uint32_t offset_size = sm->Type()->Size();
+            if (template_majorness) {
+                offset_size = ty.ShaderScalarType(sm)->Size();
+            }
+            UpdateOffsetData(call_offset, offset_size, &offset);
 
+            core::ir::Value* col_major = nullptr;
+            if (template_majorness) {
+                TINT_IR_ASSERT(
+                    ir, std::holds_alternative<core::Majorness>(call->ExplicitTemplateParams()[1]));
+                col_major =
+                    b.Constant(std::get<core::Majorness>(call->ExplicitTemplateParams()[1]) ==
+                               core::Majorness::kColMajor);
+            } else {
+                col_major = args[2];
+            }
             auto* layout = ColMajorToMatrixLayout(col_major);
             // TODO(crbug.com/490062439): This will need to be updated if we change stride.
             uint32_t bytes_per_element = sm->Type()->Size();
+            if (template_majorness) {
+                bytes_per_element = ty.ShaderScalarType(sm)->Size();
+            }
             if (auto* cnst = stride->As<core::ir::Constant>()) {
                 stride = b.Constant(u32(cnst->Value()->ValueAs<uint32_t>() * bytes_per_element));
             } else {
-                stride = b.Multiply(stride, u32(bytes_per_element))->Result();
+                auto* u32_stride = b.InsertBitcastIfNeeded(ty.u32(), stride);
+                stride = b.Multiply(u32_stride, u32(bytes_per_element))->Result();
             }
             auto* load = b.CallExplicit<hlsl::ir::BuiltinCall>(
-                sm, BuiltinFn::kLoad, Vector{sm}, var, OffsetToValue(offset), stride, layout);
+                sm, BuiltinFn::kLoad, Vector<core::ir::TemplateParameter, 1>{sm}, var,
+                OffsetToValue(offset), stride, layout);
             call->Result()->ReplaceAllUsesWith(load->Result());
         });
         call->Destroy();
@@ -398,26 +418,45 @@ struct State {
     void SubgroupMatrixStore(core::ir::Var* var,
                              core::ir::CoreBuiltinCall* call,
                              OffsetData offset) {
+        const bool template_majorness = call->ExplicitTemplateParams().Length() == 1;
         auto args = call->Args();
         auto* call_offset = args[1];
         auto* value = args[2];
-        auto* col_major = args[3];
-        auto* stride = args[4];
+        auto* stride = args[template_majorness ? 3 : 4];
 
         auto* sm = value->Type()->As<core::type::SubgroupMatrix>();
         TINT_IR_ASSERT(ir, sm);
 
         b.InsertBefore(call, [&] {
-            UpdateOffsetData(call_offset, sm->Type()->Size(), &offset);
+            // Majorness template variant has offset and stride sized in scalar type size.
+            uint32_t offset_size = sm->Type()->Size();
+            if (template_majorness) {
+                offset_size = ty.ShaderScalarType(sm)->Size();
+            }
+            UpdateOffsetData(call_offset, offset_size, &offset);
 
+            core::ir::Value* col_major = nullptr;
+            if (template_majorness) {
+                TINT_IR_ASSERT(
+                    ir, std::holds_alternative<core::Majorness>(call->ExplicitTemplateParams()[0]));
+                col_major =
+                    b.Constant(std::get<core::Majorness>(call->ExplicitTemplateParams()[0]) ==
+                               core::Majorness::kColMajor);
+            } else {
+                col_major = args[3];
+            }
             auto* layout = ColMajorToMatrixLayout(col_major);
 
             // TODO(crbug.com/490062439): This will need to be updated if we change stride.
             uint32_t bytes_per_element = sm->Type()->Size();
+            if (template_majorness) {
+                bytes_per_element = ty.ShaderScalarType(sm)->Size();
+            }
             if (auto* cnst = stride->As<core::ir::Constant>()) {
                 stride = b.Constant(u32(cnst->Value()->ValueAs<uint32_t>() * bytes_per_element));
             } else {
-                stride = b.Multiply(stride, u32(bytes_per_element))->Result();
+                auto* u32_stride = b.InsertBitcastIfNeeded(ty.u32(), stride);
+                stride = b.Multiply(u32_stride, u32(bytes_per_element))->Result();
             }
             b.MemberCall<hlsl::ir::MemberBuiltinCall>(ty.void_(), BuiltinFn::kStore, value, var,
                                                       OffsetToValue(offset), stride, layout);
@@ -1034,16 +1073,11 @@ struct State {
 }  // namespace
 
 Result<SuccessType> DecomposeStorageAccess(core::ir::Module& ir) {
-    core::ir::AssertValid(ir,
-                          core::ir::Capabilities{
-                              core::ir::Capability::kAllow8BitIntegers,
-                              core::ir::Capability::kAllow16BitIntegers,
-                              core::ir::Capability::kAllowClipDistancesOnF32ScalarAndVector,
-                              core::ir::Capability::kAllowDuplicateBindings,
-                          },
-                          "before hlsl.DecomposeStorageAccess");
+    core::ir::AssertValid(ir, "before hlsl.DecomposeStorageAccess");
 
     State{ir}.Process();
+
+    ir.properties.Add(core::ir::Property::kAllowNonCoreTypes);
 
     return Success;
 }

@@ -63,7 +63,8 @@ behavior:
   object will agree on the name-value mappings.
 - When the names within an object are not unique, it is unspecified which one of the values for a given key will be
   chosen. For instance, `#!json {"key": 2, "key": 1}` could be equal to either `#!json {"key": 1}` or
-  `#!json {"key": 2}`.
+  `#!json {"key": 2}`. To reject duplicate keys instead of silently resolving them one way or another, see
+  [this parsing recipe](../../features/parsing/parser_callbacks.md#recipe-rejecting-duplicate-object-keys).
 - Internally, name/value pairs are stored in lexicographical order of the names. Objects will also be serialized (see
   [`dump`](dump.md)) in this order. For instance, `#!json {"b": 1, "a": 2}` and `#!json {"a": 2, "b": 1}` will be stored
   and serialized as `#!json {"a": 2, "b": 1}`.
@@ -92,6 +93,15 @@ may return name/value pairs in a different order than they were originally store
 alphabetical order as `std::map` with `std::less` is used by default. Please note this behavior conforms to
 [RFC 8259](https://tools.ietf.org/html/rfc8259), because any order implements the specified "unordered" nature of JSON
 objects.
+
+#### Cross-`basic_json` conversion requirements
+
+When converting an object from one `basic_json` specialization to another via the
+[converting constructor](basic_json.md#overload-4), the target `object_t`'s `key_type` must be
+directly constructible from the source `basic_json`'s `string_t` type (or more generally, from the
+source object's key type). If this requirement is not met, the conversion does not fail; instead,
+the object is silently converted as an array of key-value pairs, which is incorrect. See
+[issue #3425](https://github.com/nlohmann/json/issues/3425) for details and an example.
 
 ## Examples
 

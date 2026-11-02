@@ -34,7 +34,7 @@ export const waitForServiceWorker = function(callback) {
       }
     },
 
-    targetRemoved: function(target) {}
+    targetRemoved: function(target) {},
   });
 };
 

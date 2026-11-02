@@ -10,6 +10,7 @@
 #ifndef LIBANGLE_RENDERER_GL_RENDERERGLUTILS_H_
 #define LIBANGLE_RENDERER_GL_RENDERERGLUTILS_H_
 
+#include "common/FixedVector.h"
 #include "common/debug.h"
 #include "libANGLE/Caps.h"
 #include "libANGLE/Error.h"
@@ -18,6 +19,7 @@
 #include "libANGLE/renderer/driver_utils.h"
 #include "libANGLE/renderer/gl/functionsgl_typedefs.h"
 
+#include <array>
 #include <string>
 #include <vector>
 
@@ -66,6 +68,10 @@ StateManagerGL *GetStateManagerGL(const gl::Context *context);
 BlitGL *GetBlitGL(const gl::Context *context);
 ClearMultiviewGL *GetMultiviewClearer(const gl::Context *context);
 const angle::FeaturesGL &GetFeaturesGL(const gl::Context *context);
+// Returns a 16-byte fixed vector containing the binary representation of 1.0 depth
+// (and 0 stencil) formatted for the specified OpenGL component type.
+angle::FixedVector<uint8_t, 16> GetDepthOnePixel(GLenum type);
+void FillDepthOneMemory(GLenum type, angle::Span<uint8_t> span);
 
 // Clear all errors on the stored context, emits console warnings
 void ClearErrors(const gl::Context *context,
@@ -123,10 +129,45 @@ void ReInitializeFeaturesAtGPUSwitch(const FunctionsGL *functions, angle::Featur
 namespace nativegl
 {
 bool SupportsVertexArrayObjects(const FunctionsGL *functions);
+bool SupportsTextureBufferObjects(const FunctionsGL *functions);
+bool SupportsPixelBufferObjects(const FunctionsGL *functions);
 bool CanUseDefaultVertexArrayObject(const FunctionsGL *functions);
 bool CanUseClientSideArrays(const FunctionsGL *functions, GLuint vao);
+bool SupportsSettingCubemapSeamless(const FunctionsGL *functions);
+bool SupportsLogicOp(const FunctionsGL *functions);
+bool SupportsProvokingVertex(const FunctionsGL *functions);
+bool SupportsPrimitiveRestartFixedIndex(const FunctionsGL *functions);
+bool SupportsPrimitiveRestart(const FunctionsGL *functions);  // note: The non-fixed index (desktop)
 bool SupportsCompute(const FunctionsGL *functions);
+bool SupportsCubeMapArrayTextures(const FunctionsGL *functions);
+bool SupportsRectangleTextures(const FunctionsGL *functions);
+bool SupportsExternalTextures(const FunctionsGL *functions);
+bool Supports3DTextures(const FunctionsGL *functions);
+bool Supports2DArrayTextures(const FunctionsGL *functions);
+bool Supports2DMultisampleTextures(const FunctionsGL *functions);
+bool Supports2DMultisampleArrayTextures(const FunctionsGL *functions);
 bool SupportsOcclusionQueries(const FunctionsGL *functions);
+bool SupportsTransformFeedback(const FunctionsGL *functions);
+bool SupportsUniformBufferObjects(const FunctionsGL *functions);
+bool SupportsCopyReadWriteBufferObjects(const FunctionsGL *functions);
+bool SupportsDrawIndirect(const FunctionsGL *functions);
+bool SupportsSeparateFramebufferBindings(const FunctionsGL *functions);
+bool SupportsUnpackSubImage(const FunctionsGL *functions);
+bool SupportsPackSubImage(const FunctionsGL *functions);
+bool SupportsClipControl(const FunctionsGL *functions);
+bool SupportsDrawBuffersIndexed(const FunctionsGL *functions);
+bool SupportsBlendEquationAdvancedCoherent(const FunctionsGL *functions);
+bool SupportsPolygonMode(const FunctionsGL *functions);
+bool SupportsPolygonModeNV(const FunctionsGL *functions);
+bool SupportsPolygonOffsetClamp(const FunctionsGL *functions);
+bool SupportsDepthClamp(const FunctionsGL *functions);
+bool SupportsSRGBWriteControl(const FunctionsGL *functions);
+bool SupportsMultisampleComatibility(const FunctionsGL *functions);
+bool SupportsFramebufferMixedSamples(const FunctionsGL *functions);
+bool SupportsShaderIOBlocks(const FunctionsGL *functions);
+bool SupportsClipCullDistance(const FunctionsGL *functions);
+bool SupportsSampleMask(const FunctionsGL *functions);
+bool SupportsRasterizerDiscard(const FunctionsGL *functions);
 bool SupportsNativeRendering(const FunctionsGL *functions,
                              gl::TextureType type,
                              GLenum internalFormat);
@@ -138,8 +179,6 @@ GLenum GetTextureBindingTarget(gl::TextureType textureType);
 GLenum GetTextureBindingTarget(gl::TextureTarget textureTarget);
 GLenum GetBufferBindingQuery(gl::BufferBinding bufferBinding);
 std::string GetBufferBindingString(gl::BufferBinding bufferBinding);
-gl::TextureType GetNativeTextureType(gl::TextureType type);
-gl::TextureTarget GetNativeTextureTarget(gl::TextureTarget target);
 }  // namespace nativegl
 
 bool CanMapBufferForRead(const FunctionsGL *functions);
@@ -182,6 +221,11 @@ std::vector<ContextCreationTry> GenerateContextCreationToTry(EGLint requestedTyp
 std::string GetRendererString(const FunctionsGL *functions);
 std::string GetVendorString(const FunctionsGL *functions);
 std::string GetVersionString(const FunctionsGL *functions);
+
+bool GetPowerVRDriverVersion(const std::string &vendorString,
+                             const std::string &rendererString,
+                             const std::string &versionString,
+                             std::array<int, 2> *versionOut);
 
 }  // namespace rx
 

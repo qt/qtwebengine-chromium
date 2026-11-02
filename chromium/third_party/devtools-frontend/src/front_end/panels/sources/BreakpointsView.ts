@@ -10,9 +10,9 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import {assertNotNullOrUndefined} from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as Breakpoints from '../../models/breakpoints/breakpoints.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as Input from '../../ui/components/input/input.js';
 import * as RenderCoordinator from '../../ui/components/render_coordinator/render_coordinator.js';
@@ -575,7 +575,7 @@ export const DEFAULT_VIEW: View = (input, _output, target) => {
                           .checked=${group.breakpointItems.some(item => item.status === BreakpointStatus.ENABLED)}
                           @change=${input.groupCheckboxToggled.bind(undefined, group)}
                           tabindex=-1
-                          jslog=${VisualLogging.toggle('breakpoint-group').track({change: true,})}>
+                          jslog=${VisualLogging.toggle('breakpoint-group').track({change: true})}>
                   </span>
                   <span class='group-header-title' title=${group.url}>
                     ${group.name}

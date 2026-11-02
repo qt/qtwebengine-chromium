@@ -39,7 +39,7 @@ export default createRule({
       },
       PropertyDefinition(node) {
         isTypeScriptPrivate(node);
-      }
+      },
     };
-  }
+  },
 });

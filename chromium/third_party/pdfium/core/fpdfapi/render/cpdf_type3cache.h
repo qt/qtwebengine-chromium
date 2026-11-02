@@ -26,8 +26,8 @@ class CPDF_Type3Cache final : public Retainable, public Observable {
  public:
   CONSTRUCT_VIA_MAKE_RETAIN;
 
-  const CFX_GlyphBitmap* LoadGlyph(uint32_t charcode,
-                                   const CFX_Matrix& mtMatrix);
+  const CFX_GlyphBitmap* LoadGlyphBitmap(uint32_t charcode,
+                                         const CFX_Matrix& mtMatrix);
 
  private:
   using SizeKey = std::tuple<int, int, int, int>;

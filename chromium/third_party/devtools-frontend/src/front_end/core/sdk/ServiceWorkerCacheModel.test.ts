@@ -3,24 +3,24 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import type * as ProtocolProxyApi from '../../generated/protocol-proxy-api.js';
 import * as Protocol from '../../generated/protocol.js';
-import {createTarget} from '../../testing/EnvironmentHelpers.js';
-import {
-  clearMockConnectionResponseHandler,
-  describeWithMockConnection,
-  setMockConnectionResponseHandler,
-} from '../../testing/MockConnection.js';
+import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
+import {MockCDPConnection} from '../../testing/MockCDPConnection.js';
+import {TestUniverse} from '../../testing/TestUniverse.js';
 
 import * as SDK from './sdk.js';
 
-describeWithMockConnection('ServiceWorkerCacheModel', () => {
+describeWithEnvironment('ServiceWorkerCacheModel', () => {
   let cacheStorageModel: SDK.ServiceWorkerCacheModel.ServiceWorkerCacheModel;
   let cache: SDK.ServiceWorkerCacheModel.Cache;
   let target: SDK.Target.Target;
   let manager: SDK.StorageBucketsModel.StorageBucketsModel|null;
   let cacheAgent: ProtocolProxyApi.CacheStorageApi;
+  let universe: TestUniverse;
+  let connection: MockCDPConnection;
 
   const testKey = 'test-key';
   const testStorageBucket = {
@@ -38,7 +38,9 @@ describeWithMockConnection('ServiceWorkerCacheModel', () => {
   };
 
   beforeEach(() => {
-    target = createTarget();
+    universe = new TestUniverse();
+    connection = new MockCDPConnection();
+    target = universe.createTarget({connection});
     cacheStorageModel = new SDK.ServiceWorkerCacheModel.ServiceWorkerCacheModel(target);
     cache = new SDK.ServiceWorkerCacheModel.Cache(
         cacheStorageModel, testStorageBucket, 'test-cache', 'id' as Protocol.CacheStorage.CacheId);
@@ -54,7 +56,7 @@ describeWithMockConnection('ServiceWorkerCacheModel', () => {
           resolve(event.data.cache.cacheName);
         });
       });
-      setMockConnectionResponseHandler(
+      connection.setSuccessHandler(
           'CacheStorage.requestCacheNames',
           () => ({
             caches: [{cacheId: 'id', storageKey: testKey, storageBucket: testStorageBucket, cacheName: 'test-cache'}],
@@ -110,7 +112,7 @@ describeWithMockConnection('ServiceWorkerCacheModel', () => {
         resolve();
       });
     });
-    setMockConnectionResponseHandler(
+    connection.setSuccessHandler(
         'CacheStorage.requestCacheNames',
         () => ({
           caches: [{cacheId: 'id', storageKey: testKey, storageBucket: testStorageBucket, cacheName: 'test-cache'}],
@@ -154,7 +156,7 @@ describeWithMockConnection('ServiceWorkerCacheModel', () => {
         resolve();
       });
     });
-    setMockConnectionResponseHandler(
+    connection.setSuccessHandler(
         'CacheStorage.requestCacheNames',
         () => ({
           caches: [
@@ -173,7 +175,7 @@ describeWithMockConnection('ServiceWorkerCacheModel', () => {
   });
 
   it('removes caches for storage key on clearForStorageKey', async () => {
-    setMockConnectionResponseHandler(
+    connection.setSuccessHandler(
         'CacheStorage.requestCacheNames',
         () => ({
           caches: [
@@ -184,7 +186,7 @@ describeWithMockConnection('ServiceWorkerCacheModel', () => {
     cacheStorageModel.enable();
     manager?.storageBucketCreatedOrUpdated({bucketInfo: testStorageBucketInfo});
     cacheStorageModel.refreshCacheNames();
-    clearMockConnectionResponseHandler('CacheStorage.requestCacheNames');
+    connection.setHandler('CacheStorage.requestCacheNames', null);
 
     cacheStorageModel.clearForStorageKey(testKey);
 
@@ -198,5 +200,60 @@ describeWithMockConnection('ServiceWorkerCacheModel', () => {
     cacheStorageModel.enable();
 
     sinon.assert.calledOnceWithExactly(trackCacheSpy, {storageKey: testKey});
+  });
+
+  describe('deleteCache', () => {
+    it('calls invoke_deleteCache on the cache agent', async () => {
+      const deleteCacheSpy = sinon.spy(cacheAgent, 'invoke_deleteCache');
+      connection.setSuccessHandler('CacheStorage.deleteCache', () => ({}));
+
+      await cacheStorageModel.deleteCache(cache);
+
+      sinon.assert.calledOnceWithExactly(deleteCacheSpy, {cacheId: cache.cacheId});
+    });
+
+    it('removes the cache from the model and dispatches event', async () => {
+      connection.setSuccessHandler('CacheStorage.requestCacheNames',
+                                   () => ({
+                                     caches: [{
+                                       cacheId: cache.cacheId,
+                                       storageKey: testKey,
+                                       storageBucket: testStorageBucket,
+                                       cacheName: cache.cacheName,
+                                     }],
+                                   } as Protocol.CacheStorage.RequestCacheNamesResponse));
+      cacheStorageModel.enable();
+      manager?.storageBucketCreatedOrUpdated({bucketInfo: testStorageBucketInfo});
+      // Wait for cache to be added
+      await new Promise<void>(resolve => {
+        cacheStorageModel.addEventListener(SDK.ServiceWorkerCacheModel.Events.CACHE_ADDED, () => resolve());
+      });
+
+      const cacheRemovedPromise = new Promise<void>(resolve => {
+        cacheStorageModel.addEventListener(SDK.ServiceWorkerCacheModel.Events.CACHE_REMOVED, event => {
+          if (event.data.cache.cacheId === cache.cacheId) {
+            resolve();
+          }
+        });
+      });
+
+      connection.setSuccessHandler('CacheStorage.deleteCache', () => ({}));
+      await cacheStorageModel.deleteCache(cache);
+
+      await cacheRemovedPromise;
+      assert.isEmpty(cacheStorageModel.caches());
+    });
+  });
+
+  describe('deleteCacheEntry', () => {
+    it('calls invoke_deleteEntry on the cache agent', async () => {
+      const deleteEntrySpy = sinon.spy(cacheAgent, 'invoke_deleteEntry');
+      connection.setSuccessHandler('CacheStorage.deleteEntry', () => ({}));
+      const request = 'http://fake.request.com/1';
+
+      await cacheStorageModel.deleteCacheEntry(cache, request);
+
+      sinon.assert.calledOnceWithExactly(deleteEntrySpy, {cacheId: cache.cacheId, request});
+    });
   });
 });

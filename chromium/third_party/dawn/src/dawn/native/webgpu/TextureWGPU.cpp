@@ -313,9 +313,10 @@ MaybeError MapBufferAndWriteTextureData(CaptureContext::ScopedContentWriter& wri
     }
 
     // We only write out the beginning of each row, the rest is padding.
-    for (BlockCount blockRow{0}; blockRow < blockRows; ++blockRow) {
+    for (BlockCount blockRow{0u}; blockRow < blockRows; ++blockRow) {
         const void* data = wgpu->bufferGetConstMappedRange(
-            copyBuffer, uint32_t(blockRow) * alignedBytesPerRow, mappableBytesPerRow);
+            copyBuffer, static_cast<size_t>(dchecked_cast<uint32_t>(blockRow)) * alignedBytesPerRow,
+            mappableBytesPerRow);
         writer.WriteContentBytes(data, usedBytesPerRow);
     }
     wgpu->bufferUnmap(copyBuffer);
@@ -386,12 +387,12 @@ MaybeError Texture::CaptureContentIfNeeded(CaptureContext& captureContext,
                     .layout = {{
                         .offset = 0,
                         .bytesPerRow = usedBytesPerRow,
-                        .rowsPerImage = uint32_t(blockSize.height),
+                        .rowsPerImage = dchecked_cast<uint32_t>(blockSize.height),
                     }},
                     .size = {{
-                        .width = uint32_t(size.width),
-                        .height = uint32_t(size.height),
-                        .depthOrArrayLayers = uint32_t(size.depthOrArrayLayers),
+                        .width = dchecked_cast<uint32_t>(size.width),
+                        .height = dchecked_cast<uint32_t>(size.height),
+                        .depthOrArrayLayers = dchecked_cast<uint32_t>(size.depthOrArrayLayers),
                     }},
                     .dataSize = blockInfo.ToBytes(blockSize.width * blockSize.height *
                                                   blockSize.depthOrArrayLayers),
@@ -403,10 +404,10 @@ MaybeError Texture::CaptureContentIfNeeded(CaptureContext& captureContext,
 
             uint32_t alignedBytesPerRow = Align(usedBytesPerRow, 256);
             BlockCount maxBlockRowsPerRead{CaptureContext::kCopyBufferSize / alignedBytesPerRow};
-            DAWN_ASSERT(maxBlockRowsPerRead > BlockCount{0});
+            DAWN_ASSERT(maxBlockRowsPerRead > BlockCount{0u});
 
-            for (BlockCount z{0}; z < blockSize.depthOrArrayLayers; ++z) {
-                for (BlockCount y{0}; y < blockSize.height; y += maxBlockRowsPerRead) {
+            for (BlockCount z{0u}; z < blockSize.depthOrArrayLayers; ++z) {
+                for (BlockCount y{0u}; y < blockSize.height; y += maxBlockRowsPerRead) {
                     BlockCount blockRows = std::min(maxBlockRowsPerRead, blockSize.height - y);
 
                     // Copy Data from Texture to Buffer. Then map and write buffer.
@@ -416,8 +417,8 @@ MaybeError Texture::CaptureContentIfNeeded(CaptureContext& captureContext,
                         .origin =
                             {
                                 .x = 0,
-                                .y = uint32_t(blockInfo.ToTexelHeight(y)),
-                                .z = uint32_t(blockInfo.ToTexelHeight(z)),
+                                .y = dchecked_cast<uint32_t>(blockInfo.ToTexelHeight(y)),
+                                .z = dchecked_cast<uint32_t>(blockInfo.ToTexelHeight(z)),
                             },
                         .aspect = ToWGPU(aspect),
                     };
@@ -426,13 +427,13 @@ MaybeError Texture::CaptureContentIfNeeded(CaptureContext& captureContext,
                             {
                                 .offset = 0,
                                 .bytesPerRow = alignedBytesPerRow,
-                                .rowsPerImage = uint32_t(blockRows),
+                                .rowsPerImage = dchecked_cast<uint32_t>(blockRows),
                             },
                         .buffer = copyBuffer,
                     };
                     WGPUExtent3D copySize{
-                        .width = uint32_t(blockInfo.ToTexelWidth(blockSize.width)),
-                        .height = uint32_t(blockInfo.ToTexelHeight(blockRows)),
+                        .width = dchecked_cast<uint32_t>(blockInfo.ToTexelWidth(blockSize.width)),
+                        .height = dchecked_cast<uint32_t>(blockInfo.ToTexelHeight(blockRows)),
                         .depthOrArrayLayers = 1,
                     };
 

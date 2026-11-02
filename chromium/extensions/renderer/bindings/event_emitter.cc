@@ -95,6 +95,10 @@ size_t EventEmitter::GetNumListenersForTesting() const {
   return listeners_->GetNumListeners();
 }
 
+size_t EventEmitter::GetNumPendingFiltersForTesting() const {
+  return pending_filters_.size();
+}
+
 int EventEmitter::PushFilter(mojom::EventFilteringInfoPtr filter) {
   // In order to dispatch (potentially) asynchronously (such as when script is
   // suspended), use a helper function to run once JS is allowed to run,
@@ -296,6 +300,16 @@ v8::Local<v8::Value> EventEmitter::DispatchSync(
       }
       exception_handler_->HandleException(context, "Error in event handler",
                                           &try_catch);
+      // `ExceptionHandler:HandleException()` can run arbitrary JS code (e.g. if
+      // the thrown error defines a custom `stack` property getter), which might
+      // invalidate and tear down `context`. In this case, bail out to avoid
+      // executing remaining listeners on a destroyed context or dereferencing
+      // freed per-context data. We `break` so that any previous listeners
+      // return values are sent back to interested callers.
+      if (!binding::IsContextValid(context)) {
+        context.Clear();
+        break;
+      }
       try_catch.Reset();
     }
   }

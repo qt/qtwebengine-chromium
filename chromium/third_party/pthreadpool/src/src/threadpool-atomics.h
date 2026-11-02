@@ -308,6 +308,11 @@ static inline int32_t pthreadpool_fetch_add_sequentially_consistent_int32_t(
   return atomic_fetch_add_explicit(address, value, memory_order_seq_cst);
 }
 
+static inline uint32_t pthreadpool_fetch_add_sequentially_consistent_uint32_t(
+    pthreadpool_atomic_uint32_t* address, uint32_t value) {
+  return atomic_fetch_add_explicit(address, value, memory_order_seq_cst);
+}
+
 static inline uint32_t pthreadpool_exchange_acquire_uint32_t(
     pthreadpool_atomic_uint32_t* address, uint32_t value) {
   return atomic_exchange_explicit(address, value, memory_order_acquire);

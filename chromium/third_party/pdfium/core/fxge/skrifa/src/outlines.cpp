@@ -23,25 +23,24 @@ void skrifa::run(rust::Str font_path) {
   // Load the font data
   std::string path_str(font_path.data(), font_path.size());
   std::ifstream input(path_str, std::ios::binary);
-  std::vector<char> bytes((std::istreambuf_iterator<char>(input)),
-                          (std::istreambuf_iterator<char>()));
+  std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(input)),
+                             (std::istreambuf_iterator<char>()));
   input.close();
 
-  // Create a rust slice containing the font data
-  rust::Slice<const uint8_t> slice((const uint8_t*)bytes.data(), bytes.size());
+  rust::Slice<const uint8_t> slice(bytes);
 
   // Load the font. Note that the bytes vector must live as long as the font
-  auto font = skrifa::new_ps_font(slice);
+  auto font = skrifa::new_font(slice, 0);
   if (!font->is_ok()) {
     printf("Failed to load font!\n");
     return;
   }
 
   // Get the PostScript name
-  auto name = (std::string)font->name();
+  std::string name(font->postscript_name());
 
   // And the family name
-  auto family_name = (std::string)font->family_name();
+  auto family_name = std::string(font->family_name());
 
   printf("ps name = %s, family name = %s\n", name.c_str(), family_name.c_str());
 

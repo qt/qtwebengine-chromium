@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "base/base64.h"
+#include "base/byte_size.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
@@ -27,7 +28,6 @@
 #include "components/feed/core/proto/v2/wire/response.pb.h"
 #include "components/feed/core/proto/v2/wire/upload_actions_request.pb.h"
 #include "components/feed/core/proto/v2/wire/upload_actions_response.pb.h"
-#include "components/feed/core/proto/v2/wire/web_feeds.pb.h"
 #include "components/feed/core/v2/feed_network.h"
 #include "components/feed/core/v2/public/types.h"
 #include "components/feed/core/v2/test/callback_receiver.h"
@@ -191,7 +191,7 @@ class FeedNetworkTest : public testing::Test {
         head->headers = base::MakeRefCounted<net::HttpResponseHeaders>(
             "HTTP/1.1 " + base::NumberToString(code));
       }
-      status.decoded_body_length = response_string.length();
+      status.decoded_body_length = base::ByteSize(response_string.length());
     }
 
     test_factory_.AddResponse(url, std::move(head), response_string, status);

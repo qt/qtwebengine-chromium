@@ -95,7 +95,7 @@ VkPipelineStageFlags2 DisabledPipelineStages(const DeviceFeatures& features, con
     if (!features.rayTracingMaintenance1) {
         result |= VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR;
     }
-    if (!features.micromap) {
+    if (!features.micromapEXT) {
         result |= VK_PIPELINE_STAGE_2_MICROMAP_BUILD_BIT_EXT;
     }
     return result;
@@ -149,11 +149,38 @@ VkPipelineStageFlags2 ExpandPipelineStages(VkPipelineStageFlags2 stage_mask, VkQ
     }
     if (VK_PIPELINE_STAGE_2_PRE_RASTERIZATION_SHADERS_BIT & stage_mask) {
         expanded &= ~VK_PIPELINE_STAGE_2_PRE_RASTERIZATION_SHADERS_BIT;
+        // TODO: get this from vk.xml
         expanded |= VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_TESSELLATION_CONTROL_SHADER_BIT |
-                    VK_PIPELINE_STAGE_2_TESSELLATION_EVALUATION_SHADER_BIT | VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT;
+                    VK_PIPELINE_STAGE_2_TESSELLATION_EVALUATION_SHADER_BIT | VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT |
+                    VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT |
+                    VK_PIPELINE_STAGE_2_CLUSTER_CULLING_SHADER_BIT_HUAWEI;
     }
-
     return expanded;
+}
+
+static VkPipelineStageFlags2 RelatedPipelineStages(
+    VkPipelineStageFlags2 stage_mask,
+    const vvl::unordered_map<VkPipelineStageFlagBits2, VkPipelineStageFlags2>& earlier_or_later_stages) {
+    VkPipelineStageFlags2 unscanned = stage_mask;
+    VkPipelineStageFlags2 related = 0;
+    for (const auto& [stage, related_stages] : earlier_or_later_stages) {
+        if (stage & unscanned) {
+            related |= related_stages;
+            unscanned &= ~stage;
+            if (!unscanned) {
+                break;
+            }
+        }
+    }
+    return related;
+}
+
+VkPipelineStageFlags2 AddEarlierPipelineStages(VkPipelineStageFlags2 stage_mask) {
+    return stage_mask | RelatedPipelineStages(stage_mask, syncLogicallyEarlierStages());
+}
+
+VkPipelineStageFlags2 AddLaterPipelineStages(VkPipelineStageFlags2 stage_mask) {
+    return stage_mask | RelatedPipelineStages(stage_mask, syncLogicallyLaterStages());
 }
 
 VkAccessFlags2 CompatibleAccessMask(VkPipelineStageFlags2 stage_mask) {

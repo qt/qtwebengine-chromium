@@ -13,14 +13,14 @@ pub struct EndorsedEvidence {
         super::super::attestation::v1::Endorsements,
     >,
 }
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetEndorsedEvidenceRequest {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetEndorsedEvidenceResponse {
     #[prost(message, optional, tag = "1")]
     pub endorsed_evidence: ::core::option::Option<EndorsedEvidence>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct InvokeRequest {
     /// Body of the request, encrypted using Hybrid Public Key Encryption (HPKE).
     /// <<https://www.rfc-editor.org/rfc/rfc9180.html>>
@@ -29,7 +29,7 @@ pub struct InvokeRequest {
         super::super::crypto::v1::EncryptedRequest,
     >,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct InvokeResponse {
     /// Body of the request, encrypted using Hybrid Public Key Encryption (HPKE).
     /// <<https://www.rfc-editor.org/rfc/rfc9180.html>>
@@ -38,22 +38,19 @@ pub struct InvokeResponse {
         super::super::crypto::v1::EncryptedResponse,
     >,
 }
-/// Assertion that an attesting party is making to the verifying peer. Assertion
-/// represents a claim that the attesting party is making to the verifying party,
-/// which the verifying party can use to make a decision on whether to proceed
-/// with establishing a secure session. and must contain all evidence needed to
-/// verify the assertion.
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[serde(default)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Assertion {
-    /// Bytes of the assertion. We make no assumption about the format used: it can
-    /// be a serialized proto, JWT or any other data that the peer can use to make
-    /// the pass/fail decision about the assertion.
+/// Assertion that wraps an assertion of a different type that signs a public key
+/// used to bind this assertion to the session. Allows the use of arbitrary
+/// assertion generators and verifiers for attestation within the session.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionBindingKeyWrapperAssertion {
+    /// Public component of the P256 ECDSA binding key signing the attested data.
     #[prost(bytes = "vec", tag = "1")]
-    #[serde(with = "crate::base64data")]
-    pub content: ::prost::alloc::vec::Vec<u8>,
+    pub public_binding_key: ::prost::alloc::vec::Vec<u8>,
+    /// Inner assertion over the public binding key.
+    #[prost(message, optional, tag = "2")]
+    pub inner_assertion: ::core::option::Option<
+        super::super::attestation::v1::Assertion,
+    >,
 }
 /// Request message for the remote attestation.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -75,7 +72,7 @@ pub struct AttestRequest {
     #[prost(btree_map = "string, message", tag = "2")]
     pub assertions: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
-        Assertion,
+        super::super::attestation::v1::Assertion,
     >,
 }
 /// Response message for the remote attestation.
@@ -98,7 +95,7 @@ pub struct AttestResponse {
     #[prost(btree_map = "string, message", tag = "2")]
     pub assertions: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
-        Assertion,
+        super::super::attestation::v1::Assertion,
     >,
 }
 /// Noise handshake message containing fields for all handshake patterns.
@@ -106,7 +103,7 @@ pub struct AttestResponse {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(default)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct NoiseHandshakeMessage {
     /// Noise Protocol ephemeral public key 'e'.
     /// <<http://www.noiseprotocol.org/noise.html#overview-of-handshake-state-machine>>
@@ -132,7 +129,7 @@ pub struct NoiseHandshakeMessage {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(default)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SessionBinding {
     /// Representation the serialized message cryptographically bound to the
     /// handshake and the associated data (e.g., a signature).
@@ -167,7 +164,7 @@ pub struct HandshakeRequest {
 pub mod handshake_request {
     #[derive(serde::Serialize, serde::Deserialize)]
     #[serde(rename_all = "camelCase")]
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum HandshakeType {
         #[prost(message, tag = "1")]
         NoiseHandshakeMessage(super::NoiseHandshakeMessage),
@@ -200,7 +197,7 @@ pub struct HandshakeResponse {
 pub mod handshake_response {
     #[derive(serde::Serialize, serde::Deserialize)]
     #[serde(rename_all = "camelCase")]
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum HandshakeType {
         #[prost(message, tag = "1")]
         NoiseHandshakeMessage(super::NoiseHandshakeMessage),
@@ -210,7 +207,7 @@ pub mod handshake_response {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(default)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct EncryptedMessage {
     #[prost(bytes = "vec", tag = "1")]
     #[serde(with = "crate::base64data")]
@@ -226,7 +223,7 @@ pub struct EncryptedMessage {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(default)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PlaintextMessage {
     #[prost(bytes = "vec", tag = "1")]
     #[serde(with = "crate::base64data")]
@@ -266,9 +263,9 @@ pub mod session_request {
 /// arbitrary identifier that can be used to look up a previously created
 /// `ServerSession` instances cached by the server.
 ///
-///   This shouldn't be used for general session ID needs; for example, to track
-///   sessions that span multiple servers. In that case, create your own
-///   ID-containing envelope, place that inside the encrypted message.
+/// This shouldn't be used for general session ID needs; for example, to track
+/// sessions that span multiple servers. In that case, create your own
+/// ID-containing envelope, place that inside the encrypted message.
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(default)]
@@ -308,14 +305,14 @@ pub mod session_response {
         EncryptedMessage(super::EncryptedMessage),
     }
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct RequestWrapper {
     #[prost(oneof = "request_wrapper::Request", tags = "2, 3")]
     pub request: ::core::option::Option<request_wrapper::Request>,
 }
 /// Nested message and enum types in `RequestWrapper`.
 pub mod request_wrapper {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum Request {
         #[prost(message, tag = "2")]
         InvokeRequest(super::InvokeRequest),

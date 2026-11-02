@@ -5,7 +5,7 @@
 #include "testing/helpers/dump.h"
 
 #include <limits.h>
-#include <string.h>
+#include <stdio.h>
 
 #include <algorithm>
 #include <functional>
@@ -13,6 +13,8 @@
 #include <string>
 #include <utility>
 
+#include "core/fxcrt/compiler_specific.h"
+#include "core/fxcrt/fx_memcpy_wrappers.h"
 #include "public/cpp/fpdf_scopers.h"
 #include "public/fpdf_doc.h"
 #include "public/fpdf_transformpage.h"
@@ -27,7 +29,7 @@ std::wstring ConvertToWString(const unsigned short* buf,
                               unsigned long buf_size) {
   std::wstring result;
   result.reserve(buf_size);
-  std::copy(buf, buf + buf_size, std::back_inserter(result));
+  std::copy(buf, UNSAFE_TODO(buf + buf_size), std::back_inserter(result));
   return result;
 }
 
@@ -38,11 +40,11 @@ void DumpBoxInfo(GetBoxInfoFunc func,
   FS_RECTF rect;
   bool ret = func(page, &rect.left, &rect.bottom, &rect.right, &rect.top);
   if (!ret) {
-    printf("Page %d: No %s.\n", page_idx, box_type);
+    UNSAFE_TODO(printf("Page %d: No %s.\n", page_idx, box_type));
     return;
   }
-  printf("Page %d: %s: %0.2f %0.2f %0.2f %0.2f\n", page_idx, box_type,
-         rect.left, rect.bottom, rect.right, rect.top);
+  UNSAFE_TODO(printf("Page %d: %s: %0.2f %0.2f %0.2f %0.2f\n", page_idx,
+                     box_type, rect.left, rect.bottom, rect.right, rect.top));
 }
 
 void DumpStructureElementAttributeValues(
@@ -50,8 +52,8 @@ void DumpStructureElementAttributeValues(
     const char* name,
     int indent) {
   if (!attr_value) {
-    printf("%*s FPDF_StructElement_Attr_GetValue failed for %s\n", indent, "",
-           name);
+    UNSAFE_TODO(printf("%*s FPDF_StructElement_Attr_GetValue failed for %s\n",
+                       indent, "", name));
     return;
   }
 
@@ -60,20 +62,22 @@ void DumpStructureElementAttributeValues(
     case FPDF_OBJECT_BOOLEAN: {
       int value;
       if (FPDF_StructElement_Attr_GetBooleanValue(attr_value, &value)) {
-        printf("%*s %s: %d\n", indent, "", name, value);
+        UNSAFE_TODO(printf("%*s %s: %d\n", indent, "", name, value));
       } else {
-        printf("%*s %s: Failed FPDF_StructElement_Attr_GetBooleanValue\n",
-               indent, "", name);
+        UNSAFE_TODO(
+            printf("%*s %s: Failed FPDF_StructElement_Attr_GetBooleanValue\n",
+                   indent, "", name));
       }
       break;
     }
     case FPDF_OBJECT_NUMBER: {
       float value;
       if (FPDF_StructElement_Attr_GetNumberValue(attr_value, &value)) {
-        printf("%*s %s: %f\n", indent, "", name, value);
+        UNSAFE_TODO(printf("%*s %s: %f\n", indent, "", name, value));
       } else {
-        printf("%*s %s: Failed FPDF_StructElement_Attr_GetNumberValue\n",
-               indent, "", name);
+        UNSAFE_TODO(
+            printf("%*s %s: Failed FPDF_StructElement_Attr_GetNumberValue\n",
+                   indent, "", name));
       }
       break;
     }
@@ -84,16 +88,17 @@ void DumpStructureElementAttributeValues(
       unsigned long len;
       if (FPDF_StructElement_Attr_GetStringValue(attr_value, buffer,
                                                  sizeof(buffer), &len)) {
-        printf("%*s %s: %ls\n", indent, "", name,
-               ConvertToWString(buffer, len).c_str());
+        UNSAFE_TODO(printf("%*s %s: %ls\n", indent, "", name,
+                           ConvertToWString(buffer, len).c_str()));
       } else {
-        printf("%*s %s: Failed FPDF_StructElement_Attr_GetStringValue\n",
-               indent, "", name);
+        UNSAFE_TODO(
+            printf("%*s %s: Failed FPDF_StructElement_Attr_GetStringValue\n",
+                   indent, "", name));
       }
       break;
     }
     case FPDF_OBJECT_ARRAY: {
-      printf("%*s %s:\n", indent, "", name);
+      UNSAFE_TODO(printf("%*s %s:\n", indent, "", name));
       int count = FPDF_StructElement_Attr_CountChildren(attr_value);
       for (int i = 0; i < count; ++i) {
         DumpStructureElementAttributeValues(
@@ -103,11 +108,12 @@ void DumpStructureElementAttributeValues(
       break;
     }
     case FPDF_OBJECT_UNKNOWN: {
-      printf("%*s %s: FPDF_OBJECT_UNKNOWN\n", indent, "", name);
+      UNSAFE_TODO(printf("%*s %s: FPDF_OBJECT_UNKNOWN\n", indent, "", name));
       break;
     }
     default: {
-      printf("%*s %s: NOT_YET_IMPLEMENTED: %d\n", indent, "", name, type);
+      UNSAFE_TODO(
+          printf("%*s %s: NOT_YET_IMPLEMENTED: %d\n", indent, "", name, type));
       break;
     }
   }
@@ -151,27 +157,27 @@ void DumpChildStructure(FPDF_STRUCTELEMENT child, int indent) {
     DumpStructureElementAttributes(child_attr, indent * 2 + 2);
   }
 
-  memset(buf, 0, sizeof(buf));
+  UNSAFE_TODO(FXSYS_memset(buf, 0, sizeof(buf)));
   len = FPDF_StructElement_GetActualText(child, buf, kBufSize);
   if (len > 0) {
     printf("%*s ActualText: %ls\n", indent * 2, "",
            ConvertToWString(buf, len).c_str());
   }
 
-  memset(buf, 0, sizeof(buf));
+  UNSAFE_TODO(FXSYS_memset(buf, 0, sizeof(buf)));
   len = FPDF_StructElement_GetAltText(child, buf, kBufSize);
   if (len > 0) {
     printf("%*s AltText: %ls\n", indent * 2, "",
            ConvertToWString(buf, len).c_str());
   }
 
-  memset(buf, 0, sizeof(buf));
+  UNSAFE_TODO(FXSYS_memset(buf, 0, sizeof(buf)));
   len = FPDF_StructElement_GetID(child, buf, kBufSize);
   if (len > 0) {
     printf("%*s ID: %ls\n", indent * 2, "", ConvertToWString(buf, len).c_str());
   }
 
-  memset(buf, 0, sizeof(buf));
+  UNSAFE_TODO(FXSYS_memset(buf, 0, sizeof(buf)));
   len = FPDF_StructElement_GetLang(child, buf, kBufSize);
   if (len > 0) {
     printf("%*s Lang: %ls\n", indent * 2, "",
@@ -188,7 +194,7 @@ void DumpChildStructure(FPDF_STRUCTELEMENT child, int indent) {
 
   FPDF_STRUCTELEMENT parent = FPDF_StructElement_GetParent(child);
   if (parent) {
-    memset(buf, 0, sizeof(buf));
+    UNSAFE_TODO(FXSYS_memset(buf, 0, sizeof(buf)));
     len = FPDF_StructElement_GetID(parent, buf, kBufSize);
     if (len > 0) {
       printf("%*s Parent ID: %ls\n", indent * 2, "",
@@ -196,14 +202,14 @@ void DumpChildStructure(FPDF_STRUCTELEMENT child, int indent) {
     }
   }
 
-  memset(buf, 0, sizeof(buf));
+  UNSAFE_TODO(FXSYS_memset(buf, 0, sizeof(buf)));
   len = FPDF_StructElement_GetTitle(child, buf, kBufSize);
   if (len > 0) {
     printf("%*s Title: %ls\n", indent * 2, "",
            ConvertToWString(buf, len).c_str());
   }
 
-  memset(buf, 0, sizeof(buf));
+  UNSAFE_TODO(FXSYS_memset(buf, 0, sizeof(buf)));
   len = FPDF_StructElement_GetObjType(child, buf, kBufSize);
   if (len > 0) {
     printf("%*s Type: %ls\n", indent * 2, "",
@@ -262,7 +268,7 @@ void DumpMetaData(FPDF_DOCUMENT doc) {
     }
 
     auto* meta_string = reinterpret_cast<unsigned short*>(meta_buffer);
-    printf("%-12s = %ls (%lu bytes)\n", meta_tag,
-           GetPlatformWString(meta_string).c_str(), len);
+    UNSAFE_TODO(printf("%-12s = %ls (%lu bytes)\n", meta_tag,
+                       GetPlatformWString(meta_string).c_str(), len));
   }
 }

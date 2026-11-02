@@ -10,6 +10,7 @@
 #include <stdint.h>
 
 #include "core/fxcrt/fx_coordinates.h"
+#include "core/fxcrt/mask.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "core/fxcrt/widestring.h"
 #include "core/fxge/dib/fx_dib.h"
@@ -31,19 +32,37 @@ class CFWL_Event;
 class CFWL_Widget;
 class IFWL_ThemeProvider;
 
-#define FWL_STYLE_WGT_OverLapper 0
-#define FWL_STYLE_WGT_Popup (1L << 0)
-#define FWL_STYLE_WGT_Child (2L << 0)
-#define FWL_STYLE_WGT_WindowTypeMask (3L << 0)
-#define FWL_STYLE_WGT_Border (1L << 2)
-#define FWL_STYLE_WGT_VScroll (1L << 11)
-#define FWL_STYLE_WGT_Group (1L << 22)
-#define FWL_STYLE_WGT_NoBackground (1L << 28)
+enum class WidgetStyle : uint32_t {
+  kOverLapper = 0,
+  kPopup = 1L << 0,
+  kChild = 2L << 0,
+  kBorder = 1L << 2,
+  kVScroll = 1L << 11,
+  kGroup = 1L << 22,
+  kNoBackground = 1L << 28,
+};
 
-#define FWL_STATE_WGT_Disabled (1L << 2)
-#define FWL_STATE_WGT_Focused (1L << 4)
-#define FWL_STATE_WGT_Invisible (1L << 5)
-#define FWL_STATE_WGT_MAX 6
+inline constexpr Mask<WidgetStyle> kWidgetStyleWindowTypeMask = {
+    WidgetStyle::kPopup, WidgetStyle::kChild};
+
+// Widget state flags. Per-widget state values (kHovered/kPressed and the
+// checkbox-specific Check* bits, which are also shared by some buttons) are
+// folded into this enum because they all live in CFWL_Widget::Properties
+// `states_`.
+enum class WidgetState : uint32_t {
+  // Used by CFWL_Caret.
+  kCaretHighlight = 1L << 0,
+  kDisabled = 1L << 2,
+  kFocused = 1L << 4,
+  kInvisible = 1L << 5,
+  kHovered = 1L << 6,
+  kPressed = 1L << 7,
+  kCheckboxChecked = 1L << 8,
+  kCheckboxNeutral = 2L << 8,
+  kCheckboxCheckMask = 3L << 8,
+  // Aliases the same bit as kCheckboxChecked; widgets only use one role.
+  kPushbuttonDefault = 1L << 8,
+};
 
 enum class FWL_Type {
   Unknown = 0,
@@ -81,9 +100,9 @@ class CFWL_Widget : public cppgc::GarbageCollected<CFWL_Widget>,
 
   class Properties {
    public:
-    uint32_t styles_ = FWL_STYLE_WGT_Child;  // Mask of FWL_STYLE_*_*.
-    uint32_t style_exts_ = 0;                // Mask of FWL_STYLEEXT_*_*.
-    uint32_t states_ = 0;                    // Mask of FWL_STATE_*_*.
+    Mask<WidgetStyle> styles_ = WidgetStyle::kChild;
+    uint32_t style_exts_ = 0;  // Mask of FWL_STYLEEXT_*_*.
+    Mask<WidgetState> states_;
   };
 
   class ScopedUpdateLock {
@@ -110,8 +129,8 @@ class CFWL_Widget : public cppgc::GarbageCollected<CFWL_Widget>,
   virtual CFX_RectF GetClientRect();
   virtual void ModifyStyleExts(uint32_t dwStyleExtsAdded,
                                uint32_t dwStyleExtsRemoved);
-  virtual void SetStates(uint32_t dwStates);
-  virtual void RemoveStates(uint32_t dwStates);
+  virtual void SetStates(Mask<WidgetState> states);
+  virtual void ClearStates(Mask<WidgetState> states);
   virtual void Update() = 0;
   virtual FWL_WidgetHit HitTest(const CFX_PointF& point);
   virtual void DrawWidget(CFGAS_GEGraphics* pGraphics,
@@ -133,9 +152,9 @@ class CFWL_Widget : public cppgc::GarbageCollected<CFWL_Widget>,
   CFWL_Widget* GetOuter() const { return outer_; }
   CFWL_Widget* GetOutmost() const;
 
-  void ModifyStyles(uint32_t dwStylesAdded, uint32_t dwStylesRemoved);
+  void SetStyles(Mask<WidgetStyle> styles);
   uint32_t GetStyleExts() const { return properties_.style_exts_; }
-  uint32_t GetStates() const { return properties_.states_; }
+  Mask<WidgetState> GetStates() const { return properties_.states_; }
 
   CFX_PointF TransformTo(CFWL_Widget* pWidget, const CFX_PointF& point);
   CFX_Matrix GetMatrix() const;

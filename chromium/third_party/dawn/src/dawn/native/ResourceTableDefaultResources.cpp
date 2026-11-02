@@ -79,7 +79,7 @@ constexpr auto kDefaults = ityp::array<ResourceTableSlot, tint::ResourceType, 35
     tint::ResourceType::kSampler_non_filtering,
     tint::ResourceType::kSampler_comparison,
 };
-constexpr auto kNumDefaultSamplers = ResourceTableSlot{3};
+constexpr auto kNumDefaultSamplers = ResourceTableSlot{3u};
 
 // This helper function is used in ASSERTs to check that the default resources are compatible with
 // the typeIds that they will be used as defaults for.
@@ -132,7 +132,7 @@ ResultOrError<std::unique_ptr<ResourceTableDefaultResources>> ResourceTableDefau
 
 // static
 ityp::span<ResourceTableSlot, const tint::ResourceType> ResourceTableDefaultResources::GetOrder() {
-    return {kDefaults.data(), ResourceTableSlot(uint32_t(kDefaults.size()))};
+    return kDefaults;
 }
 
 // static
@@ -160,15 +160,13 @@ SamplerBase* ResourceTableDefaultResources::GetPlaceholderSampler() const {
 
 ityp::span<ResourceTableSlot, const ResourceTableDefaultResources::Resource>
 ResourceTableDefaultResources::GetResources() const {
-    return {mDefaultResources.data(), mDefaultResources.size()};
+    return mDefaultResources;
 }
 
 MaybeError ResourceTableDefaultResources::Initialize(DeviceBase* device) {
     // Each resource is added in the order specified by GetOrder()
     auto AddDefaultTextureView = [&](TextureBase* texture, const TextureViewDescriptor* viewDesc =
                                                                nullptr) -> MaybeError {
-        DAWN_TRY(texture->Pin(wgpu::TextureUsage::TextureBinding));
-
         Ref<TextureViewBase> view;
         DAWN_TRY_ASSIGN(view, device->CreateTextureView(texture, viewDesc));
 

@@ -35,6 +35,7 @@
 #include "src/dawn/native/d3d/BlobD3D.h"
 #include "src/dawn/native/d3d/D3DError.h"
 #include "src/dawn/native/d3d12/DeviceD3D12.h"
+#include "src/dawn/native/d3d12/ImmediatesLayoutD3D12.h"
 #include "src/dawn/native/d3d12/PipelineLayoutD3D12.h"
 #include "src/dawn/native/d3d12/PlatformFunctionsD3D12.h"
 #include "src/dawn/native/d3d12/ShaderModuleD3D12.h"
@@ -50,6 +51,15 @@ Ref<ComputePipeline> ComputePipeline::CreateUninitialized(
 }
 
 ResultOrError<Extent3D> ComputePipeline::InitializeImpl() {
+    if (UsesNumWorkgroups()) {
+        mImmediateMask |= GetImmediateBlockBits(offsetof(ComputeImmediates, numWorkgroups),
+                                                sizeof(NumWorkgroupsDimensions));
+    }
+
+    // Create PipelineLayoutHandle after setup internal immediates.
+    DAWN_TRY_ASSIGN(mPipelineLayoutHandle,
+                    ToBackend(GetLayout())->GetOrCreatePipelineLayoutHandle(GetImmediateMask()));
+
     Device* device = ToBackend(GetDevice());
     uint32_t compileFlags = 0;
 
@@ -85,15 +95,16 @@ ResultOrError<Extent3D> ComputePipeline::InitializeImpl() {
     }
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC d3dDesc = {};
-    d3dDesc.pRootSignature = ToBackend(GetLayout())->GetRootSignature();
+    d3dDesc.pRootSignature = mPipelineLayoutHandle->GetRootSignature();
 
     d3d::CompiledShader compiledShader;
-    DAWN_TRY_ASSIGN(compiledShader, module->Compile(computeStage, SingleShaderStage::Compute,
-                                                    ToBackend(GetLayout()), compileFlags,
-                                                    /* usedInterstageVariables */ {}));
+    DAWN_TRY_ASSIGN(compiledShader,
+                    module->Compile(computeStage, SingleShaderStage::Compute,
+                                    ToBackend(GetLayout()), compileFlags, GetImmediateMask(),
+                                    /* usedInterstageVariables */ {}));
     d3dDesc.CS = {compiledShader.shaderBlob.DataPtr(), compiledShader.shaderBlob.Size()};
 
-    StreamIn(&mCacheKey, d3dDesc, ToBackend(GetLayout())->GetRootSignatureBlob());
+    StreamIn(&mCacheKey, d3dDesc, *mPipelineLayoutHandle->GetRootSignatureBlob());
 
     // Try to see if we have anything in the blob cache.
     Blob blob = device->LoadCachedBlob(GetCacheKey());
@@ -143,6 +154,7 @@ ComputePipeline::~ComputePipeline() = default;
 void ComputePipeline::DestroyImpl(DestroyReason reason) {
     ComputePipelineBase::DestroyImpl(reason);
     ToBackend(GetDevice())->ReferenceUntilUnused(mPipelineState);
+    mPipelineLayoutHandle = nullptr;
 }
 
 ID3D12PipelineState* ComputePipeline::GetPipelineState() const {
@@ -157,9 +169,13 @@ bool ComputePipeline::UsesNumWorkgroups() const {
     return GetStage(SingleShaderStage::Compute).metadata->usesNumWorkgroups;
 }
 
+PipelineLayoutHandle* ComputePipeline::GetPipelineLayoutHandle() const {
+    return mPipelineLayoutHandle.Get();
+}
+
 ComPtr<ID3D12CommandSignature> ComputePipeline::GetDispatchIndirectCommandSignature() {
     if (UsesNumWorkgroups()) {
-        return ToBackend(GetLayout())->GetDispatchIndirectCommandSignatureWithNumWorkgroups();
+        return mPipelineLayoutHandle->GetDispatchIndirectCommandSignatureWithNumWorkgroups();
     }
     return ToBackend(GetDevice())->GetDispatchIndirectSignature();
 }

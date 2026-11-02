@@ -363,7 +363,10 @@ TEST_F(ResolverVariableValidationTest, NonConstructibleType_RuntimeArray) {
     WrapInFunction(v);
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), R"(error: function-scope 'var' must have a constructible type)");
+    EXPECT_EQ(r()->error(),
+              R"(error: runtime-sized arrays cannot be used in the <function> address space
+12:34 note: while analyzing structure member S.m
+56:78 note: while instantiating 'var' v)");
 }
 
 TEST_F(ResolverVariableValidationTest, NonConstructibleType_Struct_WithAtomic) {
@@ -527,6 +530,40 @@ TEST_F(ResolverVariableValidationTest, GlobalVariable_ImmediateWithInitializer) 
     EXPECT_EQ(
         r()->error(),
         R"(1:2 error: var of address space 'immediate' cannot have an initializer. var initializers are only supported for the address spaces 'private' and 'function')");
+}
+
+TEST_F(ResolverVariableValidationTest, GlobalVariable_Immediate_Array) {
+    EXPECT_ERROR(R"(var<immediate> v : array<u32, 4>;)",
+                 R"(input.wgsl:1:20 error: arrays cannot be used in the <immediate> address space
+var<immediate> v : array<u32, 4>;
+                   ^^^^^^^^^^^^^
+
+input.wgsl:1:1 note: while instantiating 'var' v
+var<immediate> v : array<u32, 4>;
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+)");
+}
+
+TEST_F(ResolverVariableValidationTest, GlobalVariable_Immediate_ArrayInStruct) {
+    EXPECT_ERROR(R"(
+struct S {
+  a : u32,
+  b : array<u32, 4>,
+}
+var<immediate> v : S;
+)",
+                 R"(input.wgsl:4:7 error: arrays cannot be used in the <immediate> address space
+  b : array<u32, 4>,
+      ^^^^^^^^^^^^^
+
+input.wgsl:4:3 note: while analyzing structure member S.b
+  b : array<u32, 4>,
+  ^
+
+input.wgsl:6:1 note: while instantiating 'var' v
+var<immediate> v : S;
+^^^^^^^^^^^^^^^^^^^^
+)");
 }
 
 }  // namespace

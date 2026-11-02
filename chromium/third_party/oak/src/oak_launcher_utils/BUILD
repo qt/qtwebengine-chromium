@@ -30,6 +30,7 @@ rust_library(
     proc_macro_deps = [
         "@oak_crates_index//:async-trait",
     ],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//micro_rpc",
         "//micro_rpc_build",
@@ -37,7 +38,6 @@ rust_library(
         "//oak_proto_rust",
         "//oak_restricted_kernel_interface",
         "@oak_crates_index//:anyhow",
-        "@oak_crates_index//:bmrng",
         "@oak_crates_index//:clap",
         "@oak_crates_index//:command-fds",
         "@oak_crates_index//:log",

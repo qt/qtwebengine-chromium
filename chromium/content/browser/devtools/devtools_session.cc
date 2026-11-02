@@ -226,8 +226,8 @@ void DevToolsSession::AttachToAgent(blink::mojom::DevToolsAgent* agent,
       receiver_.BindNewEndpointAndPassRemote(),
       session_.BindNewEndpointAndPassReceiver(),
       io_session_.BindNewPipeAndPassReceiver(), session_state_cookie_.Clone(),
-      script_to_evaluate_on_load_, client_->UsesBinaryProtocol(),
-      client_->IsTrusted(), session_id_, IsWaitingForDebuggerOnStart());
+      client_->UsesBinaryProtocol(), client_->IsTrusted(), session_id_,
+      IsWaitingForDebuggerOnStart());
   session_.set_disconnect_handler(base::BindOnce(
       &DevToolsSession::MojoConnectionDestroyed, base::Unretained(this)));
 
@@ -237,8 +237,9 @@ void DevToolsSession::AttachToAgent(blink::mojom::DevToolsAgent* agent,
         blink::mojom::RendererOriginatingSessionState::New();
   }
 
-  // Only use script_to_evaluate_on_load_ once.
-  script_to_evaluate_on_load_.clear();
+  // Only use script_to_evaluate_on_load_once once.
+  session_state_cookie_->browser_originating_session_state
+      ->script_to_evaluate_on_load_once.clear();
 
   // We're attaching to a new agent while suspended; therefore, messages that
   // have been sent previously either need to be terminated or re-sent once we
@@ -286,12 +287,12 @@ void DevToolsSession::MojoConnectionDestroyed() {
 void DevToolsSession::DispatchProtocolMessage(
     base::span<const uint8_t> message) {
   if (client_->UsesBinaryProtocol()) {
-    crdtp::Status status =
+    crdtp::StatusOr<size_t> status =
         crdtp::cbor::CheckCBORMessage(crdtp::SpanFrom(message));
     if (!status.ok()) {
       DispatchProtocolMessageToClient(
-          crdtp::CreateErrorNotification(
-              crdtp::DispatchResponse::ParseError(status.ToASCIIString()))
+          crdtp::CreateErrorNotification(crdtp::DispatchResponse::ParseError(
+                                             status.status().ToASCIIString()))
               ->Serialize());
       return;
     }
@@ -724,7 +725,8 @@ void DevToolsSession::RemoveObserver(ChildObserver* obs) {
 
 
 void DevToolsSession::PrepareForReload(std::string script_to_evaluate_on_load) {
-  script_to_evaluate_on_load_ = std::move(script_to_evaluate_on_load);
+  session_state_cookie_->browser_originating_session_state
+      ->script_to_evaluate_on_load_once = std::move(script_to_evaluate_on_load);
   io_session_->UnpauseAndTerminate();
 }
 
@@ -778,6 +780,24 @@ bool DevToolsSession::ValidateMessage(const std::string& expected_session_id,
       return false;  // Safely terminate renderer on malformed JSON
     }
     span_message = crdtp::SpanFrom(cbor_message);
+  } else {
+    // Perform top-level validation of CBOR envelope.
+    crdtp::StatusOr<size_t> status_or_outer_size =
+        crdtp::cbor::CheckCBORMessage(span_message);
+    if (!status_or_outer_size.ok()) {
+      DLOG(ERROR) << status_or_outer_size.status().ToASCIIString();
+      return false;
+    }
+    if (status_or_outer_size.value() != message.size()) {
+      DLOG(ERROR) << "Unexpected trailing data in CBOR message from child";
+      return false;
+    }
+  }
+
+  if (!expected_has_id &&
+      crdtp::cbor::HasKeyInMap(span_message, crdtp::SpanFrom("id"))) {
+    DLOG(ERROR) << "Expected no id in the message but received one";
+    return false;
   }
 
   // Do NOT use crdtp::Dispatchable here. It enforces the presence of both
@@ -785,12 +805,6 @@ bool DevToolsSession::ValidateMessage(const std::string& expected_session_id,
   crdtp::span<uint8_t> extracted_session_id =
       crdtp::cbor::GetString8ValueFromMap(span_message,
                                           crdtp::SpanFrom("sessionId"));
-
-  if (!expected_has_id &&
-      crdtp::cbor::HasKeyInMap(span_message, crdtp::SpanFrom("id"))) {
-    DLOG(ERROR) << "Expected no id in the message but received one";
-    return false;
-  }
 
   if (expected_session_id.empty()) {
     if (!extracted_session_id.empty()) {
@@ -801,21 +815,26 @@ bool DevToolsSession::ValidateMessage(const std::string& expected_session_id,
                                         extracted_session_id.end()));
       return false;
     }
-    return true;
-  } else {
-    if (extracted_session_id.empty() ||
-        !crdtp::SpanEquals(crdtp::SpanFrom(expected_session_id),
-                           extracted_session_id)) {
-      DLOG(ERROR) << "Child session expected sessionId: " << expected_session_id
-                  << ", but got: "
-                  << (extracted_session_id.empty()
-                          ? ""
-                          : std::string(extracted_session_id.begin(),
-                                        extracted_session_id.end()));
+    // This additional check is necessary since GetString8ValueFromMap returns
+    // the empty span when encountering duplicate entries.
+    if (crdtp::cbor::HasKeyInMap(span_message, crdtp::SpanFrom("sessionId"))) {
+      DLOG(ERROR) << "Root session expected no sessionId but received dupes.";
       return false;
     }
     return true;
   }
+  if (extracted_session_id.empty() ||
+      !crdtp::SpanEquals(crdtp::SpanFrom(expected_session_id),
+                         extracted_session_id)) {
+    DLOG(ERROR) << "Child session expected sessionId: " << expected_session_id
+                << ", but got: "
+                << (extracted_session_id.empty()
+                        ? ""
+                        : std::string(extracted_session_id.begin(),
+                                      extracted_session_id.end()));
+    return false;
+  }
+  return true;
 }
 
 }  // namespace content

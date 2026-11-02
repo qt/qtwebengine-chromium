@@ -23,10 +23,6 @@
 #include "services/network/public/mojom/url_loader.mojom.h"
 #include "ui/base/l10n/l10n_util.h"
 
-#if BUILDFLAG(IS_CHROMEOS)
-#include "chromeos/ash/components/login/login_state/login_state.h"
-#endif
-
 using content::BrowserContext;
 
 namespace extensions {
@@ -63,21 +59,7 @@ class TestExtensionManagementClient : public ExtensionManagementClient {
   }
   bool BlocklistedByDefault() const override { return false; }
   GURL GetEffectiveUpdateURL(const Extension& extension) override { return {}; }
-  bool IsExemptFromMV2DeprecationByPolicy(
-      int manifest_version,
-      const std::string& extension_id,
-      Manifest::Type manifest_type) override {
-    return false;
-  }
 
-  bool IsAllowedManifestVersion(int manifest_version,
-                                const std::string& extension_id,
-                                Manifest::Type manifest_type) override {
-    return false;
-  }
-  bool IsAllowedManifestVersion(const Extension* extension) override {
-    return false;
-  }
   bool IsAllowedManifestType(Manifest::Type manifest_type,
                              const std::string& extension_id) const override {
     return false;
@@ -234,14 +216,6 @@ bool TestExtensionsBrowserClient::IsActiveContext(
     content::BrowserContext* browser_context) const {
   return true;
 }
-
-std::string TestExtensionsBrowserClient::GetUserIdHashFromContext(
-    content::BrowserContext* context) {
-  if (context != main_context_ || !ash::LoginState::IsInitialized()) {
-    return "";
-  }
-  return ash::LoginState::Get()->primary_user_hash();
-}
 #endif
 
 bool TestExtensionsBrowserClient::IsGuestSession(
@@ -281,7 +255,8 @@ void TestExtensionsBrowserClient::LoadResourceFromResourceBundle(
     const base::FilePath& resource_relative_path,
     int resource_id,
     scoped_refptr<net::HttpResponseHeaders> headers,
-    mojo::PendingRemote<network::mojom::URLLoaderClient> client) {
+    mojo::PendingRemote<network::mojom::URLLoaderClient> client,
+    content::BrowserContext* browser_context) {
   // Should not be called because GetBundleResourcePath() returned empty path.
   NOTREACHED() << "Resource is not from a bundle.";
 }

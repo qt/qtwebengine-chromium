@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import type * as ProtocolProxyApi from '../../generated/protocol-proxy-api.js';
 import type * as Protocol from '../../generated/protocol.js';
-import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
-import * as Common from '../common/common.js';
+import {TestUniverse} from '../../testing/TestUniverse.js';
 import * as Platform from '../platform/platform.js';
 
 import * as SDK from './sdk.js';
@@ -16,18 +16,6 @@ const {urlString} = Platform.DevToolsPath;
 
 type PersistentHighlightSettingItem = SDK.OverlayPersistentHighlighter.PersistentHighlightSettingItem;
 type PersistentHighlighterCallbacks = SDK.OverlayPersistentHighlighter.PersistentHighlighterCallbacks;
-
-function resetSavedSetting(forcedState: PersistentHighlightSettingItem[] = []): void {
-  const setting = Common.Settings.Settings.instance().createLocalSetting<PersistentHighlightSettingItem[]>(
-      'persistent-highlight-setting', []);
-  setting.set(forcedState);
-}
-
-function assertSavedSettingState(expected: unknown): void {
-  const setting = Common.Settings.Settings.instance().createLocalSetting<PersistentHighlightSettingItem[]>(
-      'persistent-highlight-setting', []);
-  assert.deepEqual(setting.get(), expected);
-}
 
 const NON_RELATED_DOCUMENT_URL_FOR_TEST = urlString`https://notexample.com/`;
 const DOCUMENT_URL_FOR_TEST = urlString`https://example.com/`;
@@ -58,12 +46,26 @@ function createStubDOMNode(nodeId: Protocol.DOM.NodeId|null): SDK.DOMModel.DOMNo
   return domNode;
 }
 
-describeWithEnvironment('OverlayPersistentHighlighter', () => {
+describe('OverlayPersistentHighlighter', () => {
+  let universe: TestUniverse;
   let mockOverlayModel: sinon.SinonStubbedInstance<SDK.OverlayModel.OverlayModel>;
   let stubbedCallbacks: sinon.SinonStubbedInstance<PersistentHighlighterCallbacks>;
   let highlighter: SDK.OverlayPersistentHighlighter.OverlayPersistentHighlighter;
 
+  function resetSavedSetting(forcedState: PersistentHighlightSettingItem[] = []): void {
+    const setting =
+        universe.settings.createLocalSetting<PersistentHighlightSettingItem[]>('persistent-highlight-setting', []);
+    setting.set(forcedState);
+  }
+
+  function assertSavedSettingState(expected: unknown): void {
+    const setting =
+        universe.settings.createLocalSetting<PersistentHighlightSettingItem[]>('persistent-highlight-setting', []);
+    assert.deepEqual(setting.get(), expected);
+  }
+
   beforeEach(() => {
+    universe = new TestUniverse();
     stubbedCallbacks = {
       onFlexOverlayStateChanged: sinon.stub(),
       onGridOverlayStateChanged: sinon.stub(),
@@ -97,8 +99,8 @@ describeWithEnvironment('OverlayPersistentHighlighter', () => {
       }),
     });
 
-    highlighter = new SDK.OverlayPersistentHighlighter.OverlayPersistentHighlighter(
-        mockOverlayModel, Common.Settings.Settings.instance(), stubbedCallbacks);
+    highlighter = new SDK.OverlayPersistentHighlighter.OverlayPersistentHighlighter(mockOverlayModel, universe.settings,
+                                                                                    stubbedCallbacks);
     resetSavedSetting();
   });
 

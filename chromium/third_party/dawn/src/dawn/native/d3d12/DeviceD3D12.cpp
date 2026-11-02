@@ -74,7 +74,7 @@ static constexpr uint16_t kShaderVisibleDescriptorHeapSize = 1024;
 static constexpr uint8_t kAttachmentDescriptorHeapSize = 64;
 
 // Value may change in the future to better accommodate large clears.
-static constexpr uint64_t kZeroBufferSize = 1024 * 1024 * 4;  // 4 Mb
+static constexpr uint64_t kZeroBufferSize = 1024ULL * 1024 * 4;  // 4 Mb
 
 static constexpr uint64_t kMaxDebugMessagesToPrint = 5;
 }  // namespace
@@ -136,15 +136,16 @@ MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
     }
 
     mRenderTargetViewAllocator = std::make_unique<MutexProtected<StagingDescriptorAllocator>>(
-        this, 1, kAttachmentDescriptorHeapSize, D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+        this, 1u, kAttachmentDescriptorHeapSize, D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
     mDepthStencilViewAllocator = std::make_unique<MutexProtected<StagingDescriptorAllocator>>(
-        this, 1, kAttachmentDescriptorHeapSize, D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+        this, 1u, kAttachmentDescriptorHeapSize, D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 
     mSamplerHeapCache = std::make_unique<SamplerHeapCache>(this);
 
     mResidencyManager = std::make_unique<MutexProtected<ResidencyManager>>(this);
-    mResourceAllocatorManager = std::make_unique<MutexProtected<ResourceAllocatorManager>>(this);
+    mResourceAllocatorManager =
+        std::make_unique<MutexProtected<ResourceAllocatorManager>>(this, queue.Get());
 
     // ShaderVisibleDescriptorAllocators use the ResidencyManager and must be initialized after.
     DAWN_TRY_ASSIGN(
@@ -186,13 +187,23 @@ MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
     if (IsToggleEnabled(Toggle::UseDXC)) {
         uint32_t appliedShaderModel =
             ToBackend(GetPhysicalDevice())->GetAppliedShaderModelUnderToggles(GetTogglesState());
-        uint32_t shaderModelMajor = appliedShaderModel / 10;
-        uint32_t shaderModelMinor = appliedShaderModel % 10;
+
+        uint32_t shaderModelMajor = 0;
+        uint32_t shaderModelMinor = 0;
+
+        // TODO(crbug.com/513251803): Don't use shader model as decimal value
+        DAWN_ASSERT(appliedShaderModel <= 76);
+        if (appliedShaderModel >= 70 && appliedShaderModel <= 76) {
+            shaderModelMajor = 6;
+            shaderModelMinor = appliedShaderModel - 60;
+        } else {
+            shaderModelMajor = appliedShaderModel / 10;
+            shaderModelMinor = appliedShaderModel % 10;
+        }
+
         // Profiles are always <stage>s_<minor>_<major> so we build the s_<minor>_major and add
         // it to each of the stage's suffix.
-        std::wstring profileSuffix = L"s_M_n";
-        profileSuffix[2] = wchar_t('0' + shaderModelMajor);
-        profileSuffix[4] = wchar_t('0' + shaderModelMinor);
+        std::wstring profileSuffix = std::format(L"s_{}_{}", shaderModelMajor, shaderModelMinor);
         mDxcShaderProfiles[SingleShaderStage::Vertex] = L"v" + profileSuffix;
         mDxcShaderProfiles[SingleShaderStage::Fragment] = L"p" + profileSuffix;
         mDxcShaderProfiles[SingleShaderStage::Compute] = L"c" + profileSuffix;
@@ -319,9 +330,9 @@ MaybeError Device::CreateZeroBuffer() {
 
         DAWN_TRY_ASSIGN(zeroBufferBase, CreateBuffer(&zeroBufferDescriptor));
 
-        void* mappedPointer = zeroBufferBase->GetMappedPointer();
-        DAWN_ASSERT(mappedPointer != nullptr);
-        DAWN_UNSAFE_TODO(memset(mappedPointer, 0, zeroBufferBase->GetAllocatedSize()));
+        auto mapping = zeroBufferBase->GetCurrentMapping();
+        DAWN_ASSERT(!mapping.mappedSpan.empty());
+        std::ranges::fill(mapping.mappedSpan, std::byte{0});
         DAWN_TRY(zeroBufferBase->Unmap());
     } else {
         zeroBufferDescriptor.usage = wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::CopyDst;
@@ -332,6 +343,7 @@ MaybeError Device::CreateZeroBuffer() {
         CommandRecordingContext* commandContext =
             ToBackend(GetQueue())->GetPendingCommandContext(QueueBase::SubmitMode::Passive);
 
+        // TODO(https://crbug.com/534203108): Spanify WithUploadReservation.
         DAWN_TRY(GetDynamicUploader()->WithUploadReservation(
             kZeroBufferSize, kCopyBufferToBufferOffsetAlignment,
             [&](UploadReservation reservation) -> MaybeError {
@@ -466,10 +478,9 @@ ResultOrError<Ref<SharedBufferMemoryBase>> Device::ImportSharedBufferMemoryImpl(
     DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(descriptor));
 
     wgpu::SType type;
-    DAWN_TRY_ASSIGN(type,
-                    (unpacked.ValidateBranches<
-                        Branch<SharedBufferMemoryD3D12ResourceDescriptor>,
-                        Branch<SharedBufferMemoryD3D12SharedMemoryFileMappingHandleDescriptor>>()));
+    DAWN_TRY_ASSIGN(
+        type, (unpacked.ValidateBranches<Branch<SharedBufferMemoryD3D12ResourceDescriptor>,
+                                         Branch<SharedBufferMemoryFromWindowsHandleDescriptor>>()));
 
     switch (type) {
         case wgpu::SType::SharedBufferMemoryD3D12ResourceDescriptor:
@@ -478,14 +489,13 @@ ResultOrError<Ref<SharedBufferMemoryBase>> Device::ImportSharedBufferMemoryImpl(
                             wgpu::FeatureName::SharedBufferMemoryD3D12Resource);
             return SharedBufferMemory::Create(
                 this, descriptor->label, unpacked.Get<SharedBufferMemoryD3D12ResourceDescriptor>());
-        case wgpu::SType::SharedBufferMemoryD3D12SharedMemoryFileMappingHandleDescriptor:
-            DAWN_INVALID_IF(
-                !HasFeature(Feature::SharedBufferMemoryD3D12SharedMemoryFileMappingHandle),
-                "%s is not enabled.",
-                wgpu::FeatureName::SharedBufferMemoryD3D12SharedMemoryFileMappingHandle);
+        case wgpu::SType::SharedBufferMemoryFromWindowsHandleDescriptor:
+            DAWN_INVALID_IF(!HasFeature(Feature::SharedBufferMemoryFromWindowsHandle),
+                            "%s is not enabled.",
+                            wgpu::FeatureName::SharedBufferMemoryFromWindowsHandle);
             return SharedBufferMemory::Create(
                 this, descriptor->label,
-                unpacked.Get<SharedBufferMemoryD3D12SharedMemoryFileMappingHandleDescriptor>());
+                unpacked.Get<SharedBufferMemoryFromWindowsHandleDescriptor>());
         default:
             DAWN_UNREACHABLE();
     }
@@ -698,8 +708,8 @@ void AppendDebugLayerMessagesToError(ID3D12InfoQueue* infoQueue,
             continue;
         }
 
-        std::unique_ptr<uint8_t[]> messageData(new uint8_t[messageLength]);
-        D3D12_MESSAGE* message = reinterpret_cast<D3D12_MESSAGE*>(messageData.get());
+        HeapArray<uint8_t> messageData(messageLength);
+        D3D12_MESSAGE* message = reinterpret_cast<D3D12_MESSAGE*>(messageData.data());
         hr = infoQueue->GetMessage(i, message, &messageLength);
         if (FAILED(hr)) {
             messageStream << " ID3D12InfoQueue::GetMessage failed with " << hr;
@@ -873,7 +883,7 @@ bool Device::MayRequireDuplicationOfIndirectParameters() const {
 
 bool Device::ShouldDuplicateParametersForDrawIndirect(
     const RenderPipelineBase* renderPipelineBase) const {
-    return ToBackend(renderPipelineBase)->UsesVertexOrInstanceIndex();
+    return renderPipelineBase->UsesVertexIndex() || renderPipelineBase->UsesInstanceIndex();
 }
 
 uint64_t Device::GetBufferCopyOffsetAlignmentForDepthStencil() const {

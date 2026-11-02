@@ -8,6 +8,7 @@
 #include "src/codegen/cpu-features.h"
 #include "src/objects/compressed-slots.h"
 #include "src/objects/fixed-array-inl.h"
+#include "src/objects/fixed-primitive-array-inl.h"
 #include "src/objects/heap-number-inl.h"
 #include "src/objects/js-array-buffer-inl.h"
 #include "src/objects/smi-inl.h"
@@ -916,7 +917,8 @@ void Uint8ArrayToHexFastWithNeon(const char* bytes, uint8_t* output,
 #endif
 }  // namespace
 
-Tagged<Object> Uint8ArrayToHex(const char* bytes, size_t length, bool is_shared,
+Tagged<Object> Uint8ArrayToHex(const char* bytes, size_t length,
+                               SharedFlag is_shared,
                                DirectHandle<SeqOneByteString> string_output) {
   // TODO(rezvan): Add relaxed version for simd methods to handle shared array
   // buffers.
@@ -1356,8 +1358,9 @@ bool Uint8ArrayFromHexWithNeon(const base::Vector<T>& input_vector,
 }  // namespace
 
 template <typename T>
-bool ArrayBufferFromHex(const base::Vector<T>& input_vector, bool is_shared,
-                        uint8_t* buffer, size_t output_length) {
+bool ArrayBufferFromHex(const base::Vector<T>& input_vector,
+                        SharedFlag is_shared, uint8_t* buffer,
+                        size_t output_length) {
   size_t input_length = input_vector.size();
   USE(input_length);
   DCHECK_LE(output_length, input_length / 2);
@@ -1399,10 +1402,10 @@ bool ArrayBufferFromHex(const base::Vector<T>& input_vector, bool is_shared,
 }
 
 template bool ArrayBufferFromHex(
-    const base::Vector<const uint8_t>& input_vector, bool is_shared,
+    const base::Vector<const uint8_t>& input_vector, SharedFlag is_shared,
     uint8_t* buffer, size_t output_length);
 template bool ArrayBufferFromHex(
-    const base::Vector<const base::uc16>& input_vector, bool is_shared,
+    const base::Vector<const base::uc16>& input_vector, SharedFlag is_shared,
     uint8_t* buffer, size_t output_length);
 
 #ifdef NEON64

@@ -169,14 +169,12 @@ class TensorFixedSize : public TensorBase<TensorFixedSize<Scalar_, Dimensions_, 
   }
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Scalar& operator[](Index index) {
-    // The bracket operator is only for vectors, use the parenthesis operator instead
+    // The bracket operator is only for vectors, use the parenthesis operator instead.
     EIGEN_STATIC_ASSERT(NumIndices == 1, YOU_MADE_A_PROGRAMMING_MISTAKE)
     return coeffRef(index);
   }
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorFixedSize() : m_storage() {}
-
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorFixedSize(const Self& other) : Base(other), m_storage(other.m_storage) {}
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorFixedSize(Self&& other) : m_storage(other.m_storage) {}
 
@@ -195,7 +193,7 @@ class TensorFixedSize : public TensorBase<TensorFixedSize<Scalar_, Dimensions_, 
 
   // FIXME: check that the dimensions of other match the dimensions of *this.
   // Unfortunately this isn't possible yet when the rhs is an expression.
-  EIGEN_TENSOR_INHERIT_ASSIGNMENT_EQUAL_OPERATOR(TensorFixedSize)
+  EIGEN_INHERIT_ASSIGNMENT_OPERATORS(TensorFixedSize)
 
  protected:
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool checkIndexRange(const array<Index, NumIndices>& /*indices*/) const {
@@ -203,8 +201,9 @@ class TensorFixedSize : public TensorBase<TensorFixedSize<Scalar_, Dimensions_, 
   }
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index linearizedIndex(const array<Index, NumIndices>& indices) const {
-    EIGEN_IF_CONSTEXPR(Options & RowMajor) { return m_storage.dimensions().IndexOfRowMajor(indices); }
-    else {
+    EIGEN_IF_CONSTEXPR (Options & RowMajor) {
+      return m_storage.dimensions().IndexOfRowMajor(indices);
+    } else {
       return m_storage.dimensions().IndexOfColMajor(indices);
     }
   }

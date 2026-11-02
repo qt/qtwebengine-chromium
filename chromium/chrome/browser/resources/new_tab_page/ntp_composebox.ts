@@ -15,28 +15,31 @@ import '//resources/cr_components/composebox/composebox_voice_search.js';
 import '//resources/cr_components/search/animated_glow.js';
 import '//resources/cr_components/localized_link/localized_link.js';
 
+import {getLoadTimeBoolean} from '//resources/cr_components/composebox/common.js';
 import type {ComposeboxFile} from '//resources/cr_components/composebox/common.js';
 import type {PageHandlerRemote} from '//resources/cr_components/composebox/composebox.mojom-webui.js';
 import type {ComposeboxDropdownElement} from '//resources/cr_components/composebox/composebox_dropdown.js';
 import type {ComposeboxFileInputsElement} from '//resources/cr_components/composebox/composebox_file_inputs.js';
 import type {ComposeboxInputElement} from '//resources/cr_components/composebox/composebox_input.js';
 import {ComposeboxEmbedderMixin} from '//resources/cr_components/composebox/composebox_mixin.js';
+import type {ComposeboxEmbedderMixinInterface} from '//resources/cr_components/composebox/composebox_mixin.js';
 import {ComposeboxProxyImpl} from '//resources/cr_components/composebox/composebox_proxy.js';
 import type {ContextualEntrypointAndMenuElement} from '//resources/cr_components/composebox/contextual_entrypoint_and_menu.js';
 import type {ErrorScrimElement} from '//resources/cr_components/composebox/error_scrim.js';
 import type {ComposeboxFileCarouselElement} from '//resources/cr_components/composebox/file_carousel.js';
 import {GlowAnimationState} from '//resources/cr_components/search/constants.js';
-import {DragAndDropHandler} from '//resources/cr_components/search/drag_drop_handler.js';
-import type {DragAndDropHost} from '//resources/cr_components/search/drag_drop_host.js';
 import {EventTracker} from '//resources/js/event_tracker.js';
 import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
+import type {PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
 import type {PageCallbackRouter as SearchboxPageCallbackRouter, PageHandlerRemote as SearchboxPageHandlerRemote} from '//resources/mojo/components/omnibox/browser/searchbox.mojom-webui.js';
 import type {UnguessableToken} from '//resources/mojo/mojo/public/mojom/base/unguessable_token.mojom-webui.js';
 
+import {InputSource, QueryActionOverride} from './fusebox_action.mojom-webui.js';
+import type {FuseboxAction} from './fusebox_action.mojom-webui.js';
 import {getCss} from './ntp_composebox.css.js';
 import {getHtml} from './ntp_composebox.html.js';
 
-export interface NtpComposeboxElement {
+export interface NtpComposeboxElement extends ComposeboxEmbedderMixinInterface {
   $: {
     composeboxInput: ComposeboxInputElement,
     composebox: HTMLElement,
@@ -48,7 +51,7 @@ export interface NtpComposeboxElement {
 }
 
 export class NtpComposeboxElement extends ComposeboxEmbedderMixin
-(CrLitElement) implements DragAndDropHost {
+(CrLitElement) {
   static get is() {
     return 'ntp-composebox';
   }
@@ -63,6 +66,7 @@ export class NtpComposeboxElement extends ComposeboxEmbedderMixin
 
   static override get properties() {
     return {
+      entrypointName: {type: String, reflect: true},
       /*
       `expanding_` property is used in composebox.css styles. It is added
       so that the imported styles work well. Remove this property once each
@@ -72,15 +76,32 @@ export class NtpComposeboxElement extends ComposeboxEmbedderMixin
         reflect: true,
         type: Boolean,
       },
+      shouldRemainFolded_: {
+        reflect: true,
+        type: Boolean,
+      },
+      isDark: {
+        reflect: true,
+        type: Boolean,
+      },
     };
   }
 
+  accessor isDark: boolean = false;
+  accessor entrypointName: string = 'Realbox';
   private searchboxCallbackRouter_: SearchboxPageCallbackRouter;
   private pageHandler_: PageHandlerRemote;
   private searchboxHandler_: SearchboxPageHandlerRemote;
   private eventTracker_: EventTracker = new EventTracker();
-  protected dragAndDropHandler_: DragAndDropHandler;
+  // Chip suggestion shown as the input placeholder while a hint action is
+  // active. Set or replaced only by hint deliveries; ends with the element.
+  private chipHint_: string|null = null;
   protected accessor expanding_: boolean = true;
+  protected accessor shouldRemainFolded_: boolean = true;
+
+  override get keepMenuOpenOnTabSelect(): boolean {
+    return getLoadTimeBoolean('keepMenuOpenOnTabSelectForRealbox', false);
+  }
 
   override getPageHandler(): PageHandlerRemote {
     return this.pageHandler_;
@@ -119,8 +140,6 @@ export class NtpComposeboxElement extends ComposeboxEmbedderMixin
     this.searchboxCallbackRouter_ =
         ComposeboxProxyImpl.getInstance().searchboxCallbackRouter;
     this.searchboxHandler_ = ComposeboxProxyImpl.getInstance().searchboxHandler;
-    this.dragAndDropHandler_ =
-        new DragAndDropHandler(this, this.dragAndDropEnabled);
   }
 
   override connectedCallback() {
@@ -135,10 +154,25 @@ export class NtpComposeboxElement extends ComposeboxEmbedderMixin
     this.eventTracker_.removeAll();
   }
 
-  /* Used by drag/drop host interface so the
-  drag and drop handler can access addDroppedFiles(). */
-  getDropTarget() {
-    return this;
+  override willUpdate(changedProperties: PropertyValues<this>) {
+    super.willUpdate(changedProperties);
+    this.shouldRemainFolded_ = this.computeShouldRemainFolded();
+  }
+
+  private computeShouldRemainFolded(): boolean {
+    if (this.errorMessage) {
+      return false;
+    }
+    if ((this.files?.size ?? 0) > 0) {
+      return false;
+    }
+    if (this.inToolMode) {
+      return false;
+    }
+    if ((this.result?.matches?.length ?? 0) > 0) {
+      return false;
+    }
+    return true;
   }
 
   override shouldShowDivider(): boolean {
@@ -156,6 +190,69 @@ export class NtpComposeboxElement extends ComposeboxEmbedderMixin
       this.queryAutocomplete(/* clearMatches= */ true);
     }
     return file;
+  }
+
+  // Keeps the active chip hint as the placeholder so that asynchronous
+  // inputState recomputes cannot clobber it.
+  override updateInputPlaceholder() {
+    if (this.chipHint_ !== null) {
+      this.inputPlaceholder = this.chipHint_;
+      return;
+    }
+    super.updateInputPlaceholder();
+  }
+
+  async handleFuseboxAction(action: FuseboxAction, suggestion?: string) {
+    if (action.queryActionOverride === QueryActionOverride.kHint &&
+        suggestion !== undefined) {
+      this.chipHint_ = suggestion;
+      this.updateInputPlaceholder();
+    }
+
+    if (action.preselectedInputSource) {
+      switch (action.preselectedInputSource) {
+        case InputSource.kInputSourceGallery:
+          this.$.fileInputs.shadowRoot
+              ?.querySelector<HTMLInputElement>('#imageInput')
+              ?.click();
+          break;
+        case InputSource.kInputSourceFilePicker:
+          this.$.fileInputs.shadowRoot
+              ?.querySelector<HTMLInputElement>('#fileInput')
+              ?.click();
+          break;
+        case InputSource.kInputSourceTabPicker:
+          await this.openTabPicker();
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
+  async openTabPicker() {
+    if (!this.inputState) {
+      const response = await this.getSearchboxHandler().getInputState();
+      if (response) {
+        this.inputState = response.state;
+      }
+    }
+    this.shareTabsFlyoutOpen = true;
+    await this.refreshTabSuggestions(/*forceRefresh=*/ true);
+    await this.updateComplete;
+
+    const contextEntrypoint = this.getContextEntrypointElement();
+    if (contextEntrypoint) {
+      await contextEntrypoint.updateComplete;
+      const entrypointButton =
+          contextEntrypoint.shadowRoot?.querySelector<CrLitElement>(
+              '#entrypointButton');
+      if (entrypointButton) {
+        await entrypointButton.updateComplete;
+      }
+      entrypointButton?.shadowRoot?.querySelector<HTMLElement>('#entrypoint')
+          ?.click();
+    }
   }
 }
 

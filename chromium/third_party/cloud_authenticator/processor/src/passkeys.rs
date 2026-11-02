@@ -21,8 +21,8 @@ extern crate prost;
 
 use super::{
     debug, get_secret_from_request, open_aes_256_gcm, AuthLevel, Authentication, DirtyFlag,
-    OneTimeUV, PINState, ParsedState, Reauth, RequestError, SourceOfSecret, COUNTER_ID_KEY,
-    KEY_PURPOSE_SECURITY_DOMAIN_SECRET, PUB_KEY, VAULT_HANDLE_WITHOUT_TYPE_KEY,
+    ExternalContext, OneTimeUV, PINState, ParsedState, Reauth, RequestError, SourceOfSecret,
+    COUNTER_ID_KEY, KEY_PURPOSE_SECURITY_DOMAIN_SECRET, PUB_KEY, VAULT_HANDLE_WITHOUT_TYPE_KEY,
     WRAPPED_PIN_DATA_KEY, WRAPPED_SECRET_KEY,
 };
 use crate::pin::VaultCohortDetails;
@@ -39,15 +39,21 @@ use crypto::EcdsaKeyPair;
 use prost::Message;
 
 map_keys! {
+    AUTHENTICATOR_DATA, AUTHENTICATOR_DATA_KEY = "authenticator_data",
     CLAIMED_PIN, CLAIMED_PIN_KEY = "claimed_pin",
     CLIENT_DATA_JSON, CLIENT_DATA_JSON_KEY = "client_data_json",
     CLIENT_DATA_JSON_HASH, CLIENT_DATA_JSON_HASH_KEY = "client_data_json_hash",
+    CMTG_DEVICE_KEY, CMTG_DEVICE_KEY_KEY = "cmtg_device_key",
+    CMTG_DEVICE_KEYS, CMTG_DEVICE_KEYS_KEY = "cmtg_device_keys",
+    CMTG_KEY, CMTG_KEY_KEY = "cmtgKey",
     COSE_ALGORITHM, COSE_ALGORITHM_KEY = "alg",
+    CREDENTIAL_ID, CREDENTIAL_ID_KEY = "credential_id",
     ENCRYPTED, ENCRYPTED_KEY = "encrypted",
     EVAL, EVAL_KEY = "eval",
     EVAL_BY_CREDENTIAL, EVAL_BY_CREDENTIAL_KEY = "evalByCredential",
     EXTENSIONS, EXTENSIONS_KEY = "extensions",
     FIRST, FIRST_KEY = "first",
+    ID, ID_KEY = "id",
     LARGE_BLOB, LARGE_BLOB_KEY = "largeBlob",
     LARGE_BLOB_READ, LARGE_BLOB_READ_KEY = "read",
     LARGE_BLOB_WRITE, LARGE_BLOB_WRITE_KEY = "write",
@@ -60,8 +66,11 @@ map_keys! {
     PRF, PRF_KEY = "prf",
     PROTOBUF, PROTOBUF_KEY = "protobuf",
     PUB_KEY_CRED_PARAMS, PUB_KEY_CRED_PARAMS_KEY = "pubKeyCredParams",
+    RP, RP_KEY = "rp",
     RP_ID, RP_ID_KEY = "rpId",
     SECOND, SECOND_KEY = "second",
+    SIGNATURE, SIGNATURE_KEY = "signature",
+    USER_PRESENT, USER_PRESENT_KEY = "up",
     VERSION, VERSION_KEY = "version",
     WEBAUTHN_REQUEST, WEBAUTHN_REQUEST_KEY = "request",
 }
@@ -79,6 +88,11 @@ const FLAG_USER_PRESENT: u8 = 1 << 0;
 const FLAG_USER_VERIFIED: u8 = 1 << 2;
 const FLAG_BACKUP_ELIGIBLE: u8 = 1 << 3;
 const FLAG_BACKED_UP: u8 = 1 << 4;
+const FLAG_ATTESTED_CREDENTIAL_DATA_PRESENT: u8 = 1 << 6;
+
+const GPM_AAGUID: [u8; 16] = [
+    0xea, 0x9b, 0x8d, 0x66, 0x4d, 0x01, 0x1d, 0x21, 0x3c, 0xe4, 0xb6, 0xb4, 0x8c, 0xb5, 0x75, 0xd4,
+];
 
 // The signed authenticator data contains a four-byte signature counter. This
 // is the special zero value that indicates that a counter is not supported.
@@ -92,6 +106,13 @@ const COSE_ALGORITHM_ECDSA_P256_SHA256: i64 = -7;
 // denied.
 const MAX_PIN_ATTEMPTS: i64 = 5;
 
+// CMTG key AAD input.
+const CMTG_KEY_AAD: &[u8] = b"WEBAUTHN_GPM_CMTG_KEY_V1";
+
+// A request to add a CMTG key to a passkey over `MAX_CMTG_KEYS` will result in
+// the assertion being returned, but no new CMTG key being added.
+const MAX_CMTG_KEYS: usize = 100;
+
 fn key(k: &str) -> MapKey {
     MapKey::String(String::from(k))
 }
@@ -104,6 +125,7 @@ fn key(k: &str) -> MapKey {
 /// If a client passes `client_data_json`, the enclave will return it as part of
 /// the assertion response. Otherwise, clients are expected to fill it in.
 pub(crate) fn do_assert(
+    ext_ctx: &ExternalContext,
     metrics: &mut MetricsUpdate,
     auth: &Authentication,
     state: &mut DirtyFlag<ParsedState>,
@@ -155,15 +177,8 @@ pub(crate) fn do_assert(
 
     let pin_verified =
         maybe_validate_pin_from_request(&request, state, device_id, &security_domain_secret)?;
-    let user_verification = matches!(auth_level, AuthLevel::UserVerification)
-        || matches!(auth_level, AuthLevel::SoftwareUserVerification)
-        || pin_verified
-        // If the client provided the security domain secret itself, then it could have
-        // done the signing itself too. Thus this is sufficient to claim UV.
-        || matches!(secret_source, SourceOfSecret::Direct)
-        // A client can also nominate to get one free UV when registering their
-        // UV key, which is also sufficient for an assertion.
-        || matches!(one_time_uv, OneTimeUV::Consumed);
+    let user_verification =
+        is_user_verified(*auth_level, pin_verified, secret_source, *one_time_uv);
 
     let flags = [FLAG_BACKUP_ELIGIBLE
         | FLAG_BACKED_UP
@@ -182,7 +197,10 @@ pub(crate) fn do_assert(
 
     // https://w3c.github.io/webauthn/#dictdef-authenticatorassertionresponsejson
     let mut assertion_response_json = BTreeMap::<MapKey, Value>::from([
-        (key("authenticatorData"), Value::from(authenticator_data)),
+        (
+            key("authenticatorData"),
+            Value::from(authenticator_data.clone()),
+        ),
         (key("signature"), Value::from(signature.as_ref())),
         (key("userHandle"), Value::from(user_id.to_vec())),
     ]);
@@ -201,27 +219,84 @@ pub(crate) fn do_assert(
     )? {
         response.insert(key(PRF), prf_result);
     }
+    let mut entity_encrypted_updated = false;
+
+    if let Some(ref mut enc) = entity_secrets.encrypted {
+        // CMTG is only supported for newer passkeys that use the `Encrypted`
+        // protobuf.
+        let cmtg_output = handle_cmtg(
+            metrics,
+            &request,
+            ext_ctx,
+            &authenticator_data,
+            Some(&client_data_json_hash),
+            enc,
+        )?;
+        if let Some((output_map, updated)) = cmtg_output {
+            response.insert(key(CMTG_KEY), output_map);
+            entity_encrypted_updated |= updated;
+        }
+    }
+
+    // handle_large_blob must be called after other extensions (like
+    // `handle_cmtg`) that mutate the `entity_secrets.encrypted` structure,
+    // since handle_large_blob includes the `encrypted` structure within the
+    // `largeBlob` object for backwards compatibility.
     if let Some(large_blob_out) = handle_large_blob(
         webauthn_request,
         &mut entity_secrets,
         &security_domain_secret,
     )? {
+        if let Value::Map(ref map) = large_blob_out {
+            entity_encrypted_updated |= matches!(
+                map.get(&key(LARGE_BLOB_WRITTEN)),
+                Some(Value::Boolean(true))
+            );
+        }
         response.insert(key(LARGE_BLOB), large_blob_out);
     }
+
+    // If the `encrypted` field was updated, include it in the response.
+    if entity_encrypted_updated {
+        let enc = entity_secrets
+            .encrypted
+            .as_ref()
+            .ok_or_else(|| RequestError::Debug("attempted to update missing encrypted field"))?;
+        let ciphertext = encrypt(
+            &security_domain_secret,
+            enc.encode_to_vec(),
+            ENCRYPTED_FIELD_AAD,
+        )?;
+        response.insert(key(ENCRYPTED), Value::from(ciphertext));
+    }
+
     metrics.passkeys_assert += 1;
     Ok(Value::Map(response))
 }
 
+/// Returns a passkey creation response.
+///
+/// If the request contains an RP ID (inside the `"rp"` map) and user presence
+/// requirement ("up"), this function will construct the `authenticatorData`
+/// (containing the `attestedCredentialData`) and return it in the response map
+/// under `AUTHENTICATOR_DATA_KEY`. Clients must be careful to extract the
+/// credential ID from the attested credential data to fill the
+/// WebAuthnCredentialSpecifics credential_id field.
+///
+/// Otherwise, it falls back to the old behavior where the `authenticatorData`
+/// is generated by the client.
 pub(crate) fn do_create(
+    ext_ctx: &ExternalContext,
     metrics: &mut MetricsUpdate,
     auth: &Authentication,
     state: &mut DirtyFlag<ParsedState>,
     request: BTreeMap<MapKey, Value>,
 ) -> Result<cbor::Value, RequestError> {
-    let Authentication::Device(device_id, _, _, _) = auth else {
+    let Authentication::Device(device_id, auth_level, one_time_uv, _) = auth else {
         return debug("device identity required");
     };
-    let (security_domain_secret, _) = get_secret_from_request(state, &request, device_id)?;
+    let (security_domain_secret, secret_source) =
+        get_secret_from_request(state, &request, device_id)?;
     let Some(Value::Map(webauthn_request)) = request.get(WEBAUTHN_REQUEST_KEY) else {
         return debug("WebAuthn request required");
     };
@@ -247,10 +322,11 @@ pub(crate) fn do_create(
     if !cose_algorithms.contains(&COSE_ALGORITHM_ECDSA_P256_SHA256) {
         return Err(RequestError::NoSupportedAlgorithm);
     }
-    // Creating a credential doesn't sign anything, so the return value here
-    // isn't used. But an incorrect PIN will still cause the request to fail
-    // so that the client can check whether it was correct.
-    maybe_validate_pin_from_request(&request, state, device_id, &security_domain_secret)?;
+    // Validate the PIN if provided in the request. The result is used to set
+    // the User Verification (UV) flag in the returned `authenticatorData`.
+    // An incorrect PIN will cause the request to fail so the client is informed.
+    let pin_verified =
+        maybe_validate_pin_from_request(&request, state, device_id, &security_domain_secret)?;
 
     let pkcs8 = EcdsaKeyPair::generate_pkcs8();
     let key = EcdsaKeyPair::from_pkcs8(pkcs8.as_ref())
@@ -259,13 +335,77 @@ pub(crate) fn do_create(
 
     let mut hmac_secret = [0u8; 32];
     crypto::rand_bytes(&mut hmac_secret);
-    let pb = chromesync::pb::webauthn_credential_specifics::Encrypted {
+
+    // `rp_id` and `user_present` are optional, but required to generate the
+    // authenticator data.
+    let rp_id = webauthn_request
+        .get(RP_KEY)
+        .and_then(|rp| match rp {
+            Value::Map(m) => m.get(ID_KEY),
+            _ => None,
+        })
+        .and_then(|id| match id {
+            Value::String(s) => Some(s.as_str()),
+            _ => None,
+        });
+    let user_present = request.get(USER_PRESENT_KEY).and_then(|up| match up {
+        Value::Boolean(up) => Some(up),
+        _ => None,
+    });
+
+    let mut authenticator_data = None;
+    if let (Some(rp_id), Some(user_present)) = (rp_id, user_present) {
+        // Generate the authenticator data if the client has passed the required inputs.
+        let mut credential_id = [0u8; 16];
+        crypto::rand_bytes(&mut credential_id);
+        let cose_pub_key = crypto::cose_encode_ecdsa_public_key(pub_key.as_ref());
+        let attested_cred_data = build_attested_credential_data(
+            &credential_id,
+            &cose_pub_key.expect("Unexpected public key format"),
+        );
+
+        let user_verification =
+            is_user_verified(*auth_level, pin_verified, secret_source, *one_time_uv);
+        let mut flags =
+            FLAG_BACKUP_ELIGIBLE | FLAG_BACKED_UP | FLAG_ATTESTED_CREDENTIAL_DATA_PRESENT;
+        if *user_present {
+            flags |= FLAG_USER_PRESENT;
+        }
+        if user_verification {
+            flags |= FLAG_USER_VERIFIED;
+        }
+
+        authenticator_data = Some(build_registration_auth_data(
+            rp_id,
+            flags,
+            &attested_cred_data,
+        ));
+    }
+    let mut pb = chromesync::pb::webauthn_credential_specifics::Encrypted {
         private_key: Some(pkcs8.as_ref().to_vec()),
         hmac_secret: Some(hmac_secret.to_vec()),
-        cred_blob: None,
-        large_blob: None,
-        large_blob_uncompressed_size: None,
+        ..Default::default()
     };
+
+    let mut cmtg_output = None;
+    if let Some(ref auth_data) = authenticator_data {
+        let client_data_json_hash =
+            request
+                .get(CLIENT_DATA_JSON_HASH_KEY)
+                .and_then(|val| match val {
+                    Value::Bytestring(bs) => Some(bs.deref()),
+                    _ => None,
+                });
+        cmtg_output = handle_cmtg(
+            metrics,
+            &request,
+            ext_ctx,
+            auth_data,
+            client_data_json_hash,
+            &mut pb,
+        )?;
+    }
+
     let ciphertext = encrypt(
         &security_domain_secret,
         pb.encode_to_vec(),
@@ -282,6 +422,15 @@ pub(crate) fn do_create(
             Value::from(pub_key.as_ref().to_vec()),
         ),
     ]);
+    if let Some((output_map, _)) = cmtg_output {
+        result.insert(MapKey::String(String::from(CMTG_KEY)), output_map);
+    }
+    if let Some(auth_data) = authenticator_data {
+        result.insert(
+            MapKey::String(String::from(AUTHENTICATOR_DATA)),
+            Value::from(auth_data),
+        );
+    }
     if let Some(prf_result) = handle_prf(webauthn_request, &hmac_secret, None)? {
         result.insert(MapKey::String(String::from(PRF)), prf_result);
     }
@@ -319,12 +468,30 @@ fn maybe_validate_pin_from_request(
     }
 }
 
+/// Returns `true` if the user is considered to have performed user verification.
+fn is_user_verified(
+    auth_level: AuthLevel,
+    pin_verified: bool,
+    secret_source: SourceOfSecret,
+    one_time_uv: OneTimeUV,
+) -> bool {
+    matches!(auth_level, AuthLevel::UserVerification)
+        || matches!(auth_level, AuthLevel::SoftwareUserVerification)
+        || pin_verified
+        // If the client provided the security domain secret itself, then it could have
+        // done the signing itself too. Thus this is sufficient to claim UV.
+        || matches!(secret_source, SourceOfSecret::Direct)
+        // A client can also nominate to get one free UV when registering their
+        // UV key, which is also sufficient for an assertion.
+        || matches!(one_time_uv, OneTimeUV::Consumed)
+}
+
 /// Contains the secrets from a specific passkey Sync entity.
 struct EntitySecrets {
     primary_key: EcdsaKeyPair,
     hmac_secret: [u8; 32],
     // The encrypted part of the WebauthnCredentialSpecifics protobuf.
-    // This is needed to update the large blob data.
+    // This is needed to update large blob and CMTG keys.
     encrypted: Option<chromesync::pb::webauthn_credential_specifics::Encrypted>,
     // This field is not yet implemented but is contained in the protobuf
     // definition.
@@ -376,6 +543,9 @@ fn entity_secrets_from_proto(
                 hmac_secret,
                 encrypted: Some(encrypted),
             })
+        }
+        EncryptedData::SecurityDomainEncrypted(_) => {
+            return debug("security domain encryption is not yet supported");
         }
     }
 }
@@ -840,6 +1010,169 @@ fn handle_write_large_blob(
     ]));
 
     Ok(Some(resp))
+}
+
+/// Constructs the serialized attestedCredentialData byte array.
+fn build_attested_credential_data(credential_id: &[u8; 16], cose_public_key: &[u8]) -> Vec<u8> {
+    let mut ret = Vec::new();
+    ret.extend_from_slice(&GPM_AAGUID);
+    let len = credential_id.len() as u16;
+    ret.extend_from_slice(&len.to_be_bytes());
+    ret.extend_from_slice(credential_id);
+    ret.extend_from_slice(cose_public_key);
+    ret
+}
+
+/// Constructs the authenticatorData byte array for registration.
+fn build_registration_auth_data(rp_id: &str, flags: u8, attested_cred_data: &[u8]) -> Vec<u8> {
+    let rp_id_hash = crypto::sha256(rp_id.as_bytes());
+    let mut ret = Vec::new();
+    ret.extend_from_slice(&rp_id_hash);
+    ret.push(flags);
+    ret.extend_from_slice(ZERO_SIGNATURE_COUNTER);
+    ret.extend_from_slice(attested_cred_data);
+    ret
+}
+
+/// Handles CMTG keys for do_create and do_assert.
+///
+/// Returns a tuple with a CBOR map that has the public key and signature, and a
+/// boolean indicating if the `Encrypted` model was modified.
+/// Returns None if CMTG key was not requested.
+/// Returns a RequestError if an unexpected error occurs.
+fn handle_cmtg(
+    metrics: &mut MetricsUpdate,
+    request: &BTreeMap<MapKey, Value>,
+    ext_ctx: &ExternalContext,
+    auth_data: &[u8],
+    client_data_json_hash: Option<&[u8]>,
+    encrypted_data: &mut chromesync::pb::webauthn_credential_specifics::Encrypted,
+) -> Result<Option<(Value, bool)>, RequestError> {
+    // Parse device keys.
+    let cmtg_device_key = match request.get(CMTG_DEVICE_KEY_KEY) {
+        Some(Value::Bytestring(bs)) => Some(bs.deref()),
+        _ => None,
+    };
+    let cmtg_device_keys = match request.get(CMTG_DEVICE_KEYS_KEY) {
+        Some(Value::Array(arr)) => {
+            let mut keys = Vec::new();
+            for val in arr {
+                if let Value::Bytestring(bs) = val {
+                    keys.push(bs.deref());
+                } else {
+                    return Err(RequestError::Debug(
+                        "invalid cmtg_device_keys array element",
+                    ));
+                }
+            }
+            Some(keys)
+        }
+        _ => None,
+    };
+    let mut device_keys = Vec::new();
+    if let Some(key) = cmtg_device_key {
+        device_keys.push(key);
+    }
+    if let Some(keys) = cmtg_device_keys {
+        device_keys.extend(keys);
+    }
+    let device_keys: Vec<[u8; 32]> = device_keys
+        .into_iter()
+        .map(|key| {
+            <[u8; 32]>::try_from(key).map_err(|_| {
+                RequestError::Debug("invalid cmtg device key length, expected 32 bytes")
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // If not device keys were passed, that means CMTG was not requested.
+    if device_keys.is_empty() {
+        return Ok(None);
+    }
+
+    // Client data JSON hash is mandatory for CMTG keys.
+    let client_data_json_hash = match client_data_json_hash {
+        Some(hash) => hash,
+        None => {
+            return Err(RequestError::Debug(
+                "client_data_json_hash required for CMTG keys",
+            ))
+        }
+    };
+    if client_data_json_hash.len() != 32 {
+        return Err(RequestError::Debug(
+            "client_data_json_hash must be 32 bytes",
+        ));
+    }
+
+    // Find the first CMTG key that matches.
+    let mut resolved_cmtg_key: Option<Vec<u8>> = None;
+    'outer: for stored_key in &encrypted_data.cmtg_keys {
+        if let Some(ref encrypted_pk) = stored_key.private_key {
+            for device_key in &device_keys {
+                if let Some(plaintext) = open_aes_256_gcm(device_key, encrypted_pk, CMTG_KEY_AAD) {
+                    resolved_cmtg_key = Some(plaintext);
+                    break 'outer;
+                }
+            }
+        }
+    }
+
+    let mut updated = false;
+    if resolved_cmtg_key.is_none() {
+        if encrypted_data.cmtg_keys.len() >= MAX_CMTG_KEYS {
+            metrics.cmtg_limit_reached += 1;
+            return Ok(None);
+        }
+
+        // If we couldn't find a CMTG key, create one instead.
+        let pkcs8 = EcdsaKeyPair::generate_pkcs8();
+        let pkcs8_vec = pkcs8.as_ref().to_vec();
+        let ciphertext =
+            encrypt_aes_256_gcm(device_keys.first().unwrap(), &pkcs8_vec, CMTG_KEY_AAD)?;
+        let new_cmtg_key_proto =
+            chromesync::pb::webauthn_credential_specifics::encrypted::CmtgKey {
+                private_key: Some(ciphertext),
+                creation_time_unix_epoch_millis: Some(ext_ctx.current_time_epoch_millis),
+            };
+        encrypted_data.cmtg_keys.push(new_cmtg_key_proto);
+        updated = true;
+        resolved_cmtg_key = Some(pkcs8_vec);
+    }
+
+    let signed_data = [auth_data, client_data_json_hash].concat();
+    let key_pair = EcdsaKeyPair::from_pkcs8(&resolved_cmtg_key.unwrap())
+        .map_err(|_| RequestError::Debug("failed to load resolved CMTG key"))?;
+    let signature = key_pair
+        .sign(&signed_data)
+        .map_err(|_| RequestError::Debug("failed to sign with CMTG key"))?;
+
+    let public_key = key_pair.public_key();
+    let cose_pub_key = crypto::cose_encode_ecdsa_public_key(public_key.as_ref())
+        .map_err(|_| RequestError::Debug("failed to COSE encode CMTG public key"))?;
+
+    let output_map = BTreeMap::from([
+        (key(CMTG_KEY), Value::from(cose_pub_key)),
+        (key(SIGNATURE), Value::from(signature.as_ref())),
+    ]);
+
+    if updated {
+        metrics.cmtg_key_created += 1;
+    }
+
+    Ok(Some((Value::Map(output_map), updated)))
+}
+
+fn encrypt_aes_256_gcm(
+    key: &[u8; 32],
+    plaintext: &[u8],
+    aad: &[u8],
+) -> Result<Vec<u8>, RequestError> {
+    let mut nonce_bytes = [0u8; 12];
+    crypto::rand_bytes(&mut nonce_bytes);
+    let mut buffer = plaintext.to_vec();
+    crypto::aes_256_gcm_seal_in_place(key, &nonce_bytes, aad, &mut buffer);
+    Ok([nonce_bytes.as_slice(), &buffer].concat())
 }
 
 #[cfg(test)]
@@ -1335,6 +1668,437 @@ pub mod tests {
                 "largeBlobSize": 0,
             })
         );
+    }
+
+    // Tests trying to write a large blob with an old style credential.
+    #[test]
+    fn test_do_assert_large_blob_write_old_style() {
+        let mut metrics = MetricsUpdate::default();
+        let auth = Authentication::Device(
+            vec![0; 16],
+            AuthLevel::Software,
+            OneTimeUV::None,
+            Reauth::None,
+        );
+        let mut parsed_state = ParsedState::default();
+        let mut state = DirtyFlag::new(&mut parsed_state);
+
+        let ext_ctx = ExternalContext {
+            current_time_epoch_millis: 123456789,
+            client_device_identifier: vec![],
+            is_reauthenticated: false,
+            device_auth_keys_ctx: crate::DeviceAuthorizationKeyContext::None,
+        };
+
+        let b64_blob = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"abc");
+        let webauthn_request = cbor!({
+            "rpId": "test.example",
+            "extensions": {
+                "largeBlob": {
+                    "write": (b64_blob.as_str()),
+                    "largeBlobSize": 3_i64
+                }
+            }
+        });
+
+        let mut request = BTreeMap::new();
+        request.insert(
+            key("protobuf"),
+            Value::Bytestring(PROTOBUF_BYTES.to_vec().into()),
+        );
+        request.insert(key("secret"), Value::from(SAMPLE_SECURITY_DOMAIN_SECRET));
+        request.insert(key("request"), webauthn_request);
+        request.insert(
+            key("client_data_json"),
+            Value::String(String::from("client_data_json_placeholder")),
+        );
+
+        let result = do_assert(&ext_ctx, &mut metrics, &auth, &mut state, request).unwrap();
+        let Value::Map(result_map) = result else {
+            panic!("expected map");
+        };
+        let Some(Value::Map(large_blob_map)) = result_map.get(&key(LARGE_BLOB)) else {
+            panic!("expected map for largeBlob");
+        };
+        assert_eq!(
+            large_blob_map.get(&key(LARGE_BLOB_WRITTEN)),
+            Some(&Value::Boolean(false))
+        );
+        assert!(!result_map.contains_key(&key(ENCRYPTED)));
+    }
+
+    #[test]
+    fn test_do_create_success() {
+        let mut metrics = MetricsUpdate::default();
+        let auth =
+            Authentication::Device(vec![], AuthLevel::Software, OneTimeUV::None, Reauth::None);
+        let mut parsed_state = ParsedState::default();
+        let mut state = DirtyFlag::new(&mut parsed_state);
+
+        let mut cred_param = BTreeMap::new();
+        cred_param.insert(MapKey::String(String::from("alg")), Value::Int(-7));
+        let webauthn_request = cbor!({
+            "rp": {
+                "id": "test.example"
+            },
+            "pubKeyCredParams": [
+                (Value::Map(cred_param))
+            ]
+        });
+
+        let mut request = BTreeMap::new();
+        request.insert(
+            MapKey::String(String::from(WEBAUTHN_REQUEST)),
+            webauthn_request,
+        );
+        request.insert(
+            MapKey::String(String::from("secret")),
+            Value::from(SAMPLE_SECURITY_DOMAIN_SECRET),
+        );
+        request.insert(
+            MapKey::String(String::from(USER_PRESENT)),
+            Value::from(true),
+        );
+
+        let ext_ctx = ExternalContext {
+            current_time_epoch_millis: 123456789,
+            client_device_identifier: vec![],
+            is_reauthenticated: false,
+            device_auth_keys_ctx: crate::DeviceAuthorizationKeyContext::None,
+        };
+        let result = do_create(&ext_ctx, &mut metrics, &auth, &mut state, request).unwrap();
+        let Value::Map(map) = result else {
+            panic!("expected map");
+        };
+
+        assert!(map.contains_key(&MapKey::String(String::from(ENCRYPTED))));
+        assert!(map.contains_key(&MapKey::String(String::from(PUB_KEY))));
+        assert!(map.contains_key(&MapKey::String(String::from(AUTHENTICATOR_DATA))));
+    }
+
+    #[test]
+    fn test_do_create_fallback_without_rp_id() {
+        let mut metrics = MetricsUpdate::default();
+        let auth =
+            Authentication::Device(vec![], AuthLevel::Software, OneTimeUV::None, Reauth::None);
+        let mut parsed_state = ParsedState::default();
+        let mut state = DirtyFlag::new(&mut parsed_state);
+
+        let mut cred_param = BTreeMap::new();
+        cred_param.insert(MapKey::String(String::from("alg")), Value::Int(-7));
+        let webauthn_request = cbor!({
+            "pubKeyCredParams": [
+                (Value::Map(cred_param))
+            ]
+        });
+
+        let mut request = BTreeMap::new();
+        request.insert(
+            MapKey::String(String::from(WEBAUTHN_REQUEST)),
+            webauthn_request,
+        );
+        request.insert(
+            MapKey::String(String::from("secret")),
+            Value::from(SAMPLE_SECURITY_DOMAIN_SECRET),
+        );
+
+        let ext_ctx = ExternalContext {
+            current_time_epoch_millis: 123456789,
+            client_device_identifier: vec![],
+            is_reauthenticated: false,
+            device_auth_keys_ctx: crate::DeviceAuthorizationKeyContext::None,
+        };
+        let result = do_create(&ext_ctx, &mut metrics, &auth, &mut state, request).unwrap();
+        let Value::Map(map) = result else {
+            panic!("expected map");
+        };
+
+        assert!(map.contains_key(&MapKey::String(String::from(ENCRYPTED))));
+        assert!(map.contains_key(&MapKey::String(String::from(PUB_KEY))));
+        assert!(!map.contains_key(&MapKey::String(String::from(AUTHENTICATOR_DATA))));
+    }
+
+    #[test]
+    fn test_handle_cmtg_fallback() {
+        let ext_ctx = ExternalContext {
+            current_time_epoch_millis: 123456789,
+            client_device_identifier: vec![],
+            is_reauthenticated: false,
+            device_auth_keys_ctx: crate::DeviceAuthorizationKeyContext::None,
+        };
+        let request = BTreeMap::new();
+        let mut encrypted_data =
+            chromesync::pb::webauthn_credential_specifics::Encrypted::default();
+        let auth_data = vec![1, 2, 3];
+
+        let mut metrics = MetricsUpdate::default();
+        let result = handle_cmtg(
+            &mut metrics,
+            &request,
+            &ext_ctx,
+            &auth_data,
+            None,
+            &mut encrypted_data,
+        )
+        .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_handle_cmtg_create_success() {
+        let ext_ctx = ExternalContext {
+            current_time_epoch_millis: 123456789,
+            client_device_identifier: vec![],
+            is_reauthenticated: false,
+            device_auth_keys_ctx: crate::DeviceAuthorizationKeyContext::None,
+        };
+        let device_key = [1u8; 32];
+        let client_data_hash = [2u8; 32];
+
+        let mut request = BTreeMap::new();
+        request.insert(key("cmtg_device_key"), Value::from(&device_key[..]));
+        request.insert(
+            key("client_data_json_hash"),
+            Value::from(&client_data_hash[..]),
+        );
+
+        let mut encrypted_data =
+            chromesync::pb::webauthn_credential_specifics::Encrypted::default();
+        let auth_data = vec![3u8; 32];
+
+        let mut metrics = MetricsUpdate::default();
+        let result = handle_cmtg(
+            &mut metrics,
+            &request,
+            &ext_ctx,
+            &auth_data,
+            Some(&client_data_hash),
+            &mut encrypted_data,
+        )
+        .unwrap();
+        assert!(result.is_some());
+
+        let (output_value, updated) = result.unwrap();
+        assert!(updated);
+        assert_eq!(metrics.cmtg_key_created, 1);
+
+        let Value::Map(output_map) = output_value else {
+            panic!("expected map");
+        };
+        assert!(output_map.contains_key(&key(CMTG_KEY)));
+        assert!(output_map.contains_key(&key(SIGNATURE)));
+
+        assert_eq!(encrypted_data.cmtg_keys.len(), 1);
+        assert!(encrypted_data.cmtg_keys[0].private_key.is_some());
+        assert_eq!(
+            encrypted_data.cmtg_keys[0].creation_time_unix_epoch_millis,
+            Some(123456789)
+        );
+    }
+
+    #[test]
+    fn test_handle_cmtg_assert_match_success() {
+        let ext_ctx = ExternalContext {
+            current_time_epoch_millis: 123456789,
+            client_device_identifier: vec![],
+            is_reauthenticated: false,
+            device_auth_keys_ctx: crate::DeviceAuthorizationKeyContext::None,
+        };
+        let device_key = [1u8; 32];
+        let client_data_hash = [2u8; 32];
+
+        // 1. Create a dummy encrypted CMTG key.
+        let pkcs8 = EcdsaKeyPair::generate_pkcs8();
+        let pkcs8_vec = pkcs8.as_ref().to_vec();
+        let encrypted_pk = encrypt_aes_256_gcm(&device_key, &pkcs8_vec, CMTG_KEY_AAD).unwrap();
+
+        let mut encrypted_data =
+            chromesync::pb::webauthn_credential_specifics::Encrypted::default();
+        encrypted_data.cmtg_keys.push(
+            chromesync::pb::webauthn_credential_specifics::encrypted::CmtgKey {
+                private_key: Some(encrypted_pk),
+                creation_time_unix_epoch_millis: Some(1000),
+            },
+        );
+
+        // 2. Form request with matching device key.
+        let mut request = BTreeMap::new();
+        let mut keys_array = Vec::new();
+        keys_array.push(Value::from(&device_key[..]));
+        request.insert(key("cmtg_device_keys"), Value::from(keys_array));
+        request.insert(
+            key("client_data_json_hash"),
+            Value::from(&client_data_hash[..]),
+        );
+
+        let auth_data = vec![3u8; 32];
+
+        let mut metrics = MetricsUpdate::default();
+        let result = handle_cmtg(
+            &mut metrics,
+            &request,
+            &ext_ctx,
+            &auth_data,
+            Some(&client_data_hash),
+            &mut encrypted_data,
+        )
+        .unwrap();
+        assert!(result.is_some());
+
+        let (output_value, updated) = result.unwrap();
+        assert!(!updated);
+        assert_eq!(metrics.cmtg_key_created, 0); // Should not update as key already existed.
+
+        let Value::Map(output_map) = output_value else {
+            panic!("expected map");
+        };
+        assert!(output_map.contains_key(&key(CMTG_KEY)));
+        assert!(output_map.contains_key(&key(SIGNATURE)));
+    }
+
+    #[test]
+    fn test_handle_cmtg_assert_no_matching_key() {
+        let ext_ctx = ExternalContext {
+            current_time_epoch_millis: 123456789,
+            client_device_identifier: vec![],
+            is_reauthenticated: false,
+            device_auth_keys_ctx: crate::DeviceAuthorizationKeyContext::None,
+        };
+        let old_device_key = [1u8; 32];
+        let new_device_key = [2u8; 32];
+        let client_data_hash = [3u8; 32];
+
+        // 1. Create a dummy encrypted CMTG key with old key.
+        let pkcs8 = EcdsaKeyPair::generate_pkcs8();
+        let pkcs8_vec = pkcs8.as_ref().to_vec();
+        let encrypted_pk = encrypt_aes_256_gcm(&old_device_key, &pkcs8_vec, CMTG_KEY_AAD).unwrap();
+
+        let mut encrypted_data =
+            chromesync::pb::webauthn_credential_specifics::Encrypted::default();
+        encrypted_data.cmtg_keys.push(
+            chromesync::pb::webauthn_credential_specifics::encrypted::CmtgKey {
+                private_key: Some(encrypted_pk),
+                creation_time_unix_epoch_millis: Some(1000),
+            },
+        );
+
+        // 2. Form request with new device key only.
+        let mut request = BTreeMap::new();
+        let mut keys_array = Vec::new();
+        keys_array.push(Value::from(&new_device_key[..]));
+        request.insert(key("cmtg_device_keys"), Value::from(keys_array));
+        request.insert(
+            key("client_data_json_hash"),
+            Value::from(&client_data_hash[..]),
+        );
+
+        let auth_data = vec![4u8; 32];
+
+        let mut metrics = MetricsUpdate::default();
+        let result = handle_cmtg(
+            &mut metrics,
+            &request,
+            &ext_ctx,
+            &auth_data,
+            Some(&client_data_hash),
+            &mut encrypted_data,
+        )
+        .unwrap();
+        assert!(result.is_some());
+
+        let (output_value, updated) = result.unwrap();
+        assert!(updated);
+        assert_eq!(metrics.cmtg_key_created, 1); // Should update as new key was created.
+
+        let Value::Map(output_map) = output_value else {
+            panic!("expected map");
+        };
+        assert!(output_map.contains_key(&key(CMTG_KEY)));
+        assert!(output_map.contains_key(&key(SIGNATURE)));
+
+        assert_eq!(encrypted_data.cmtg_keys.len(), 2); // Now has 2 keys
+        assert_eq!(
+            encrypted_data.cmtg_keys[1].creation_time_unix_epoch_millis,
+            Some(123456789)
+        );
+    }
+
+    #[test]
+    fn test_handle_cmtg_missing_hash() {
+        let ext_ctx = ExternalContext {
+            current_time_epoch_millis: 123456789,
+            client_device_identifier: vec![],
+            is_reauthenticated: false,
+            device_auth_keys_ctx: crate::DeviceAuthorizationKeyContext::None,
+        };
+        let device_key = [1u8; 32];
+
+        let mut request = BTreeMap::new();
+        request.insert(key("cmtg_device_key"), Value::from(&device_key[..]));
+        // Do NOT insert client_data_json_hash.
+
+        let mut encrypted_data =
+            chromesync::pb::webauthn_credential_specifics::Encrypted::default();
+        let auth_data = vec![3u8; 32];
+
+        let mut metrics = MetricsUpdate::default();
+        let result = handle_cmtg(
+            &mut metrics,
+            &request,
+            &ext_ctx,
+            &auth_data,
+            None,
+            &mut encrypted_data,
+        );
+        assert!(matches!(
+            result,
+            Err(RequestError::Debug(msg)) if msg.contains("client_data_json_hash required for CMTG keys")
+        ));
+    }
+
+    #[test]
+    fn test_handle_cmtg_limit_reached() {
+        let ext_ctx = ExternalContext {
+            current_time_epoch_millis: 123456789,
+            client_device_identifier: vec![],
+            is_reauthenticated: false,
+            device_auth_keys_ctx: crate::DeviceAuthorizationKeyContext::None,
+        };
+        let device_key = [1u8; 32];
+        let client_data_hash = [2u8; 32];
+
+        let mut request = BTreeMap::new();
+        request.insert(key("cmtg_device_key"), Value::from(&device_key[..]));
+
+        let mut encrypted_data =
+            chromesync::pb::webauthn_credential_specifics::Encrypted::default();
+        // Fill with MAX_CMTG_KEYS dummy keys.
+        for i in 0..MAX_CMTG_KEYS {
+            encrypted_data.cmtg_keys.push(
+                chromesync::pb::webauthn_credential_specifics::encrypted::CmtgKey {
+                    private_key: Some(vec![i as u8]), // Dummy data
+                    creation_time_unix_epoch_millis: Some(1000),
+                },
+            );
+        }
+
+        let auth_data = vec![3u8; 32];
+        let mut metrics = MetricsUpdate::default();
+
+        let result = handle_cmtg(
+            &mut metrics,
+            &request,
+            &ext_ctx,
+            &auth_data,
+            Some(&client_data_hash),
+            &mut encrypted_data,
+        )
+        .unwrap();
+
+        assert!(result.is_none());
+        assert_eq!(metrics.cmtg_limit_reached, 1);
+        assert_eq!(metrics.cmtg_key_created, 0);
+        assert_eq!(encrypted_data.cmtg_keys.len(), MAX_CMTG_KEYS); // Ensure no new key was added
     }
 
     // Integration tests of this code are done in Chromium, which builds this

@@ -425,6 +425,13 @@ void LayerImpl::SetTrackedElementRects(viz::TrackedElementRects rects) {
   }
 }
 
+void LayerImpl::SetCanvasChildId(ElementId id) {
+  if (rare_properties_ || id) {
+    EnsureRareProperties().canvas_child_id = id;
+    SetNeedsPushProperties();
+  }
+}
+
 std::unique_ptr<LayerImpl> LayerImpl::CreateLayerImpl(
     LayerTreeImpl* tree_impl) const {
   return LayerImpl::Create(tree_impl, layer_id_);
@@ -935,6 +942,20 @@ gfx::Transform LayerImpl::ScreenSpaceTransform() const {
   }
 
   return draw_properties().screen_space_transform;
+}
+
+gfx::Rect LayerImpl::VisibleLayerRect() const {
+  if (!contributes_to_drawn_render_surface()) {
+    return draw_property_utils::LayerVisibleRect(this, GetPropertyTrees());
+  }
+
+#if DCHECK_IS_ON()
+  gfx::Rect computed_visible_layer_rect =
+      draw_property_utils::LayerVisibleRect(this, GetPropertyTrees());
+  DCHECK_EQ(visible_layer_rect(), computed_visible_layer_rect);
+#endif
+
+  return visible_layer_rect();
 }
 
 int LayerImpl::GetSortingContextId() const {

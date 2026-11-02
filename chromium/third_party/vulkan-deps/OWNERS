@@ -14,3 +14,6 @@ per-file vulkan-loader/src=chromium-autoroll@skia-public.iam.gserviceaccount.com
 per-file vulkan-tools/src=chromium-autoroll@skia-public.iam.gserviceaccount.com
 per-file vulkan-utility-libraries/src=chromium-autoroll@skia-public.iam.gserviceaccount.com
 per-file vulkan-validation-layers/src=chromium-autoroll@skia-public.iam.gserviceaccount.com
+
+# Allow autoroller to update metadata 'Revision'.
+per-file ...README.chromium=chromium-autoroll@skia-public.iam.gserviceaccount.com

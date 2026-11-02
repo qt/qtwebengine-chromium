@@ -16,11 +16,11 @@ const {styleMap} = Directives;
 
 const UIStrings = {
   /**
-   * @description Text in Edit File System View of the Workspace settings in Settings to indicate that the following string is a folder URL
+   * @description Text in edit file system view of the Workspace settings in Settings to indicate that the following string is a folder URL.
    */
   url: 'URL',
   /**
-   * @description Text in Edit File System View of the Workspace settings in Settings
+   * @description Text in edit file system view of the Workspace settings in Settings.
    */
   excludedFolders: 'Excluded sub-folders',
   /**

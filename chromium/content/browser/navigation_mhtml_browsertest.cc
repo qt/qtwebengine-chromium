@@ -30,6 +30,7 @@
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
 #include "content/test/content_browser_test_utils_internal.h"
+#include "content/test/frame_host_interceptor.h"
 #include "mojo/public/c/system/trap.h"
 #include "mojo/public/c/system/types.h"
 #include "mojo/public/cpp/system/data_pipe.h"
@@ -41,6 +42,7 @@
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/page_state/page_state.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 #include "url/url_constants.h"
 
 namespace content {
@@ -963,6 +965,130 @@ IN_PROC_BROWSER_TEST_F(NavigationMhtmlFencedFrameBrowserTest,
   main_document->ForEachRenderFrameHostImpl(
       [&](RenderFrameHostImpl* rfh) { num_documents++; });
   EXPECT_EQ(1, num_documents);
+}
+
+// Helper test fixture to enable `kMHTML_Improvements`. Enabling this feature
+// allows script execution in MHTML documents, which is necessary for the tests
+// to execute the JavaScript payload that triggers the Mojo IPC request.
+class NavigationMhtmlImprovementsBrowserTest
+    : public NavigationMhtmlBrowserTest {
+ public:
+  NavigationMhtmlImprovementsBrowserTest() {
+    scoped_feature_list_.InitAndEnableFeature(
+        blink::features::kMHTML_Improvements);
+  }
+
+ private:
+  base::test::ScopedFeatureList scoped_feature_list_;
+};
+
+IN_PROC_BROWSER_TEST_F(NavigationMhtmlImprovementsBrowserTest,
+                       MhtmlBlocksWebSocket) {
+  MhtmlArchive mhtml_archive;
+  mhtml_archive.AddHtmlDocument(GURL("http://example.com"), "MHTML content");
+  GURL mhtml_url = mhtml_archive.Write("index.mhtml");
+  EXPECT_TRUE(NavigateToURL(shell(), mhtml_url));
+
+  RenderFrameHostImpl* main_document = main_frame_host();
+  EXPECT_TRUE(main_document->is_mhtml_document());
+
+  RenderProcessHostBadMojoMessageWaiter kill_waiter(
+      main_document->GetProcess());
+
+  ExecuteScriptAsync(main_document, "new WebSocket('ws://127.0.0.1');");
+
+  EXPECT_EQ(
+      "Received bad user message: WebSockets are not allowed in MHTML "
+      "documents.",
+      kill_waiter.Wait());
+}
+
+IN_PROC_BROWSER_TEST_F(NavigationMhtmlImprovementsBrowserTest,
+                       MhtmlBlocksWebTransport) {
+  MhtmlArchive mhtml_archive;
+  mhtml_archive.AddHtmlDocument(GURL("http://example.com"), "MHTML content");
+  GURL mhtml_url = mhtml_archive.Write("index.mhtml");
+  EXPECT_TRUE(NavigateToURL(shell(), mhtml_url));
+
+  RenderFrameHostImpl* main_document = main_frame_host();
+  EXPECT_TRUE(main_document->is_mhtml_document());
+
+  RenderProcessHostBadMojoMessageWaiter kill_waiter(
+      main_document->GetProcess());
+
+  ExecuteScriptAsync(main_document, "new WebTransport('https://127.0.0.1');");
+
+  EXPECT_EQ(
+      "Received bad user message: WebTransport is not allowed in MHTML "
+      "documents.",
+      kill_waiter.Wait());
+}
+
+// Verifies that an MHTML subframe cannot start a navigation with an opaque
+// initiator origin whose precursor doesn't correspond to anything that has
+// committed in the MHTML document's process.
+IN_PROC_BROWSER_TEST_F(NavigationMhtmlImprovementsBrowserTest,
+                       MhtmlSubframeBeginNavigationOpaqueInitiatorPrecursor) {
+  // Intercepts BeginNavigation to overwrite the initiator origin once
+  // activated. This simulates a renderer that lies about the initiator.
+  class BeginNavigationInitiatorReplacer : public FrameHostInterceptor {
+   public:
+    BeginNavigationInitiatorReplacer(WebContents* web_contents,
+                                     url::Origin initiator_to_inject)
+        : FrameHostInterceptor(web_contents),
+          initiator_to_inject_(std::move(initiator_to_inject)) {}
+
+    bool WillDispatchBeginNavigation(
+        RenderFrameHost* render_frame_host,
+        blink::mojom::CommonNavigationParamsPtr* common_params,
+        blink::mojom::BeginNavigationParamsPtr* begin_params,
+        mojo::PendingRemote<blink::mojom::BlobURLToken>* blob_url_token,
+        mojo::PendingAssociatedRemote<mojom::NavigationClient>*
+            navigation_client) override {
+      if (is_activated_) {
+        (*common_params)->initiator_origin = initiator_to_inject_;
+        is_activated_ = false;
+      }
+      return true;
+    }
+
+    void Activate() { is_activated_ = true; }
+
+   private:
+    url::Origin initiator_to_inject_;
+    bool is_activated_ = false;
+  };
+
+  // The interceptor must be created before the frames whose IPCs it will
+  // intercept. Use an opaque origin whose precursor is unrelated to anything
+  // the MHTML archive contains.
+  url::Origin injected_origin =
+      url::Origin::Create(GURL("https://other-precursor.example"))
+          .DeriveNewOpaqueOrigin();
+  BeginNavigationInitiatorReplacer injector(web_contents(), injected_origin);
+
+  MhtmlArchive mhtml_archive;
+  mhtml_archive.AddHtmlDocument(
+      GURL("http://example.com"),
+      "<iframe src=\"http://example.com/subframe.html\"></iframe>");
+  mhtml_archive.AddHtmlDocument(GURL("http://example.com/subframe.html"),
+                                "subframe content");
+  GURL mhtml_url = mhtml_archive.Write("index.mhtml");
+  EXPECT_TRUE(NavigateToURL(shell(), mhtml_url));
+
+  RenderFrameHostImpl* main_document = main_frame_host();
+  ASSERT_EQ(1u, main_document->child_count());
+  RenderFrameHostImpl* sub_document =
+      main_document->child_at(0)->current_frame_host();
+  ASSERT_TRUE(sub_document->IsMhtmlSubframe());
+
+  // Start a renderer-initiated navigation in the subframe and overwrite its
+  // initiator origin. The renderer should be terminated since the precursor
+  // doesn't match anything the process is allowed to host.
+  RenderProcessHostBadIpcMessageWaiter kill_waiter(sub_document->GetProcess());
+  injector.Activate();
+  ExecuteScriptAsync(sub_document, "window.location = 'about:blank';");
+  EXPECT_EQ(bad_message::INVALID_INITIATOR_ORIGIN, kill_waiter.Wait());
 }
 
 }  // namespace content

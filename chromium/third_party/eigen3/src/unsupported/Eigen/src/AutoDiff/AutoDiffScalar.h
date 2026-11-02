@@ -28,7 +28,7 @@ struct maybe_coherent_pad_helper {
   using type = CoherentPadOp<DerivativeType, SizeAtCompileTime>;
   static type pad(const DerivativeType& x, const OtherDerivativeType& y) {
     // CoherentPadOp uses variable_if_dynamic<SizeAtCompileTime>.  In this case, `SizeAtCompileTime` might
-    // by Dynamic, so we need to take the runtime maximum of x, y.
+    // be Dynamic, so we need to take the runtime maximum of x, y.
     return CoherentPadOp<DerivativeType, SizeAtCompileTime>(x, numext::maxi(x.size(), y.size()));
   }
 };
@@ -74,14 +74,14 @@ inline AutoDiffScalar<NewDerType> MakeAutoDiffScalar(const typename NewDerType::
  *                 Typical choices include, e.g., \c Vector4f for 4 derivatives, or \c VectorXf
  *                 if the number of derivatives is not known at compile time, and/or, the number
  *                 of derivatives is large.
- *                 Note that DerivativeType can also be a reference (e.g., \c VectorXf&) to wrap a
+ *                 Note that DerivativeType can also be a reference (e.g., \c VectorXf&) to wrap an
  *                 existing vector into an AutoDiffScalar.
  *                 Finally, DerivativeType can also be any Eigen compatible expression.
  *
  * This class represents a scalar value while tracking its respective derivatives using Eigen's expression
  * template mechanism.
  *
- * It supports the following list of global math function:
+ * It supports the following list of global math functions:
  *  - std::abs, std::sqrt, std::pow, std::exp, std::log, std::sin, std::cos,
  *  - internal::abs, internal::sqrt, numext::pow, internal::exp, internal::log, internal::sin, internal::cos,
  *  - internal::conj, internal::real, internal::imag, numext::abs2.
@@ -334,10 +334,7 @@ class AutoDiffScalar
 namespace internal {
 
 template <typename DerivativeType>
-struct auto_diff_special_op<DerivativeType, true>
-//   : auto_diff_scalar_op<DerivativeType, typename NumTraits<Scalar>::Real,
-//                            std::is_same<Scalar,typename NumTraits<Scalar>::Real>::value>
-{
+struct auto_diff_special_op<DerivativeType, true> {
   typedef remove_all_t<DerivativeType> DerType;
   typedef typename traits<DerType>::Scalar Scalar;
   typedef typename NumTraits<Scalar>::Real Real;

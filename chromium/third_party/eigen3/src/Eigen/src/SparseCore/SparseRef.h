@@ -39,7 +39,7 @@ struct traits<Ref<SparseMatrix<MatScalar, MatOptions, MatIndex>, Options_, Strid
                           ((PlainObjectType::Flags & RowMajorBit) == (Derived::Flags & RowMajorBit)),
       MatchAtCompileTime = (Derived::Flags & CompressedAccessBit) && StorageOrderMatch
     };
-    typedef std::conditional_t<MatchAtCompileTime, std::true_type, std::false_type> type;
+    typedef bool_constant<MatchAtCompileTime> type;
   };
 };
 
@@ -61,7 +61,7 @@ struct traits<Ref<SparseVector<MatScalar, MatOptions, MatIndex>, Options_, Strid
   template <typename Derived>
   struct match {
     enum { MatchAtCompileTime = (Derived::Flags & CompressedAccessBit) && Derived::IsVectorAtCompileTime };
-    typedef std::conditional_t<MatchAtCompileTime, std::true_type, std::false_type> type;
+    typedef bool_constant<MatchAtCompileTime> type;
   };
 };
 
@@ -90,18 +90,16 @@ class SparseRefBase : public SparseMapBase<Derived> {
  protected:
   template <typename Expression>
   void construct(Expression& expr) {
-    EIGEN_IF_CONSTEXPR(Expression::IsVectorAtCompileTime) {
+    EIGEN_IF_CONSTEXPR (Expression::IsVectorAtCompileTime) {
       const Index offset = expr.outerIndexPtr() ? expr.outerIndexPtr()[0] : 0;
       auto inner_index_ptr = expr.innerIndexPtr();
       auto value_ptr = expr.valuePtr();
       if (inner_index_ptr) inner_index_ptr += offset;
       if (value_ptr) value_ptr += offset;
       internal::construct_at<Base>(this, expr.size(), expr.nonZeros(), inner_index_ptr, value_ptr);
-    }
-    else if (expr.outerIndexPtr() == 0) {
+    } else if (expr.outerIndexPtr() == 0) {
       internal::construct_at<Base>(this, expr.size(), expr.nonZeros(), expr.innerIndexPtr(), expr.valuePtr());
-    }
-    else {
+    } else {
       internal::construct_at<Base>(this, expr.rows(), expr.cols(), expr.nonZeros(), expr.outerIndexPtr(),
                                    expr.innerIndexPtr(), expr.valuePtr(), expr.innerNonZeroPtr());
     }
@@ -116,7 +114,7 @@ class SparseRefBase : public SparseMapBase<Derived> {
  * \brief A sparse matrix expression referencing an existing sparse expression
  *
  * \tparam SparseMatrixType the equivalent sparse matrix type of the referenced data, it must be a template instance of
- * class SparseMatrix. \tparam Options specifies whether the a standard compressed format is required \c Options is  \c
+ * class SparseMatrix. \tparam Options specifies whether a standard compressed format is required \c Options is  \c
  * #StandardCompressedFormat, or \c 0. The default is \c 0.
  *
  * \sa class Ref
@@ -132,7 +130,6 @@ class Ref<SparseMatrixType, Options>
                                                      // correctly via CRTP.
 #endif
 {
-  typedef SparseMatrix<MatScalar, MatOptions, MatIndex> PlainObjectType;
   typedef internal::traits<Ref> Traits;
   template <int OtherOptions>
   inline Ref(const SparseMatrix<MatScalar, OtherOptions, MatIndex>& expr);
@@ -211,13 +208,15 @@ class Ref<const SparseMatrix<MatScalar, MatOptions, MatIndex>, Options, StrideTy
  protected:
   template <typename Expression>
   void construct(const Expression& expr, std::true_type) {
-    if ((Options & int(StandardCompressedFormat)) && (!expr.isCompressed())) {
-      TPlainObjectType* obj = internal::construct_at(reinterpret_cast<TPlainObjectType*>(&m_storage), expr);
-      m_hasCopy = true;
-      Base::construct(*obj);
-    } else {
-      Base::construct(expr);
+    EIGEN_IF_CONSTEXPR (Options & int(StandardCompressedFormat)) {
+      if (!expr.isCompressed()) {
+        TPlainObjectType* obj = internal::construct_at(reinterpret_cast<TPlainObjectType*>(&m_storage), expr);
+        m_hasCopy = true;
+        Base::construct(*obj);
+        return;
+      }
     }
+    Base::construct(expr);
   }
 
   template <typename Expression>
@@ -227,7 +226,6 @@ class Ref<const SparseMatrix<MatScalar, MatOptions, MatIndex>, Options, StrideTy
     Base::construct(*obj);
   }
 
- protected:
   typename internal::aligned_storage<sizeof(TPlainObjectType), EIGEN_ALIGNOF(TPlainObjectType)>::type m_storage;
   bool m_hasCopy;
 };
@@ -329,7 +327,6 @@ class Ref<const SparseVector<MatScalar, MatOptions, MatIndex>, Options, StrideTy
     Base::construct(*obj);
   }
 
- protected:
   typename internal::aligned_storage<sizeof(TPlainObjectType), EIGEN_ALIGNOF(TPlainObjectType)>::type m_storage;
   bool m_hasCopy;
 };
@@ -344,7 +341,7 @@ struct evaluator<Ref<SparseMatrix<MatScalar, MatOptions, MatIndex>, Options, Str
     : evaluator<SparseCompressedBase<Ref<SparseMatrix<MatScalar, MatOptions, MatIndex>, Options, StrideType>>> {
   typedef evaluator<SparseCompressedBase<Ref<SparseMatrix<MatScalar, MatOptions, MatIndex>, Options, StrideType>>> Base;
   typedef Ref<SparseMatrix<MatScalar, MatOptions, MatIndex>, Options, StrideType> XprType;
-  evaluator() : Base() {}
+  evaluator() = default;
   explicit evaluator(const XprType& mat) : Base(mat) {}
 };
 
@@ -354,7 +351,7 @@ struct evaluator<Ref<const SparseMatrix<MatScalar, MatOptions, MatIndex>, Option
   typedef evaluator<SparseCompressedBase<Ref<const SparseMatrix<MatScalar, MatOptions, MatIndex>, Options, StrideType>>>
       Base;
   typedef Ref<const SparseMatrix<MatScalar, MatOptions, MatIndex>, Options, StrideType> XprType;
-  evaluator() : Base() {}
+  evaluator() = default;
   explicit evaluator(const XprType& mat) : Base(mat) {}
 };
 
@@ -363,7 +360,7 @@ struct evaluator<Ref<SparseVector<MatScalar, MatOptions, MatIndex>, Options, Str
     : evaluator<SparseCompressedBase<Ref<SparseVector<MatScalar, MatOptions, MatIndex>, Options, StrideType>>> {
   typedef evaluator<SparseCompressedBase<Ref<SparseVector<MatScalar, MatOptions, MatIndex>, Options, StrideType>>> Base;
   typedef Ref<SparseVector<MatScalar, MatOptions, MatIndex>, Options, StrideType> XprType;
-  evaluator() : Base() {}
+  evaluator() = default;
   explicit evaluator(const XprType& mat) : Base(mat) {}
 };
 
@@ -373,7 +370,7 @@ struct evaluator<Ref<const SparseVector<MatScalar, MatOptions, MatIndex>, Option
   typedef evaluator<SparseCompressedBase<Ref<const SparseVector<MatScalar, MatOptions, MatIndex>, Options, StrideType>>>
       Base;
   typedef Ref<const SparseVector<MatScalar, MatOptions, MatIndex>, Options, StrideType> XprType;
-  evaluator() : Base() {}
+  evaluator() = default;
   explicit evaluator(const XprType& mat) : Base(mat) {}
 };
 

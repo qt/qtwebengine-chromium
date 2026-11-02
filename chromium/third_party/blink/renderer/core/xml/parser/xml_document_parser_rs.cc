@@ -46,6 +46,7 @@
 #include "third_party/blink/renderer/core/html/custom/ce_reactions_scope.h"
 #include "third_party/blink/renderer/core/html/custom/custom_element_registry.h"
 #include "third_party/blink/renderer/core/html/html_html_element.h"
+#include "third_party/blink/renderer/core/html/html_iframe_element.h"
 #include "third_party/blink/renderer/core/html/html_template_element.h"
 #include "third_party/blink/renderer/core/html/parser/html_construction_site.h"
 #include "third_party/blink/renderer/core/html_names.h"
@@ -53,6 +54,7 @@
 #include "third_party/blink/renderer/core/svg/graphics/svg_image.h"
 #include "third_party/blink/renderer/core/xml/document_xml_tree_viewer.h"
 #include "third_party/blink/renderer/core/xml/parser/xhtml_subset.h"
+#include "third_party/blink/renderer/core/xml/parser/xml_document_parser.h"
 #include "third_party/blink/renderer/core/xmlns_names.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/text/strcat.h"
@@ -77,9 +79,20 @@ inline bool HasNoStyleInformation(Document* document) {
     return false;
   }
 
-  if (!document->IsInMainFrame() ||
-      document->GetFrame()->IsInFencedFrameTree()) {
+  if (document->GetFrame()->IsInFencedFrameTree()) {
     return false;  // This document has style information from a parent.
+  }
+
+  if (!document->IsInMainFrame()) {
+    if (!RuntimeEnabledFeatures::XMLViewerForIframesEnabled()) {
+      return false;
+    }
+    auto* owner = document->GetFrame()->DeprecatedLocalOwner();
+    if (!owner || !IsA<HTMLIFrameElement>(*owner) ||
+        document->Url().ProtocolIs("blob") ||
+        document->contentType() == "image/svg+xml") {
+      return false;
+    }
   }
 
   if (SVGImage::IsInSVGImage(document)) {
@@ -378,6 +391,11 @@ void XMLDocumentParserRs::StartElementNs(
   bool is_first_element = !saw_first_element_;
   saw_first_element_ = true;
 
+  if (!parsing_fragment_ && is_first_element && local_name == "alert" &&
+      has_ns && IsCAPAlertNamespace(RustStrToAtomicString(ns))) {
+    UseCounter::Count(document_, WebFeature::kXmlCAPAlert);
+  }
+
   Vector<Attribute, kAttributePrealloc> prefixed_attributes;
   bool encountered_namespace_reset = false;
   if (!HandleNamespaceAttributes(prefixed_attributes, namespaces,
@@ -652,7 +670,9 @@ void XMLDocumentParserRs::EndDocument() {
       !saw_error_ && !saw_css_ && HasNoStyleInformation(GetDocument());
   if (xml_viewer_mode) {
     GetDocument()->SetIsViewSource(true);
-    TransformDocumentToXMLTreeView(*GetDocument());
+    TransformDocumentToXMLTreeView(
+        *GetDocument(),
+        /*preserve_document_element=*/!GetDocument()->IsInMainFrame());
   }
   // The XML crate keeps sending EndDocument as a next event if you keep
   // querying. Change state here to break out of the ProcessEvents loop.

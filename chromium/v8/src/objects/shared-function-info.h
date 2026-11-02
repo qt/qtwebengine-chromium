@@ -10,6 +10,7 @@
 
 #include "src/base/bit-field.h"
 #include "src/base/macros.h"
+#include "src/base/strong-alias.h"
 #include "src/builtins/builtins.h"
 #include "src/codegen/bailout-reason.h"
 #include "src/common/globals.h"
@@ -27,14 +28,12 @@
 #include "src/objects/trusted-object.h"
 #include "src/roots/roots.h"
 #include "testing/gtest/include/gtest/gtest_prod.h"  // nogncheck
-#include "torque-generated/bit-fields.h"
 
 // Has to be the last include (doesn't have include guards):
 #include "src/objects/object-macros.h"
 
 namespace v8::internal {
 
-class AsmWasmData;
 class BytecodeArray;
 class CoverageInfo;
 class DebugInfo;
@@ -54,11 +53,10 @@ class ValueType;
 }  // namespace wasm
 #endif
 
-#include "torque-generated/src/objects/shared-function-info-tq.inc"
-
 // Defines whether the source positions should be created during function
 // compilation.
-enum class CreateSourcePositions { kNo, kYes };
+using CreateSourcePositions =
+    base::StrongAlias<struct CreateSourcePositionsTag, bool>;
 
 // Data collected by the pre-parser storing information about scopes and inner
 // functions.
@@ -261,8 +259,42 @@ using NameOrScopeInfoT = UnionOf<Smi, String, ScopeInfo>;
 // shared by multiple instances of the function.
 V8_OBJECT class SharedFunctionInfo : public HeapObject {
  public:
-  DEFINE_TORQUE_GENERATED_SHARED_FUNCTION_INFO_FLAGS()
-  DEFINE_TORQUE_GENERATED_SHARED_FUNCTION_INFO_FLAGS2()
+  // Bit positions in |flags|.
+  using FunctionKindBits = base::BitField<FunctionKind, 0, 5, uint32_t>;
+  using IsNativeBit = FunctionKindBits::Next<bool, 1>;
+  using IsStrictBit = IsNativeBit::Next<bool, 1>;
+  using FunctionSyntaxKindBits = IsStrictBit::Next<FunctionSyntaxKind, 3>;
+  using IsClassConstructorBit = FunctionSyntaxKindBits::Next<bool, 1>;
+  using HasDuplicateParametersBit = IsClassConstructorBit::Next<bool, 1>;
+  using AllowLazyCompilationBit = HasDuplicateParametersBit::Next<bool, 1>;
+  using FunctionMapIndexBits = AllowLazyCompilationBit::Next<uint32_t, 5>;
+  using DisabledOptimizationReasonBits =
+      FunctionMapIndexBits::Next<BailoutReason, 4>;
+  using RequiresInstanceMembersInitializerBit =
+      DisabledOptimizationReasonBits::Next<bool, 1>;
+  using ConstructAsBuiltinBit =
+      RequiresInstanceMembersInitializerBit::Next<bool, 1>;
+  using NameShouldPrintAsAnonymousBit = ConstructAsBuiltinBit::Next<bool, 1>;
+  using HasReportedBinaryCoverageBit =
+      NameShouldPrintAsAnonymousBit::Next<bool, 1>;
+  using IsTopLevelBit = HasReportedBinaryCoverageBit::Next<bool, 1>;
+  using PropertiesAreFinalBit = IsTopLevelBit::Next<bool, 1>;
+  using PrivateNameLookupSkipsOuterClassBit =
+      PropertiesAreFinalBit::Next<bool, 1>;
+  using IsHoistedInContextBit =
+      PrivateNameLookupSkipsOuterClassBit::Next<bool, 1>;
+  using LiveEditedBit = IsHoistedInContextBit::Next<bool, 1>;
+  // Bit positions in |flags2|.
+  using ClassScopeHasPrivateBrandBit = base::BitField<bool, 0, 1, uint8_t>;
+  using HasStaticPrivateMethodsOrAccessorsBit =
+      ClassScopeHasPrivateBrandBit::Next<bool, 1>;
+  using IsSparkplugCompilingBit =
+      HasStaticPrivateMethodsOrAccessorsBit::Next<bool, 1>;
+  using MaglevCompilationFailedBit = IsSparkplugCompilingBit::Next<bool, 1>;
+  using CachedTieringDecisionBits =
+      MaglevCompilationFailedBit::Next<CachedTieringDecision, 3>;
+  using FunctionContextIndependentCompiledBit =
+      CachedTieringDecisionBits::Next<bool, 1>;
 
   // Primitive header accessors (equivalents of the previously Torque-
   // generated inline getters/setters). Kept in the same order as the
@@ -376,6 +408,8 @@ V8_OBJECT class SharedFunctionInfo : public HeapObject {
   // Get the outer scope info whether this function is compiled or not.
   inline bool HasOuterScopeInfo() const;
   inline Tagged<ScopeInfo> GetOuterScopeInfo() const;
+  inline Tagged<ScopeInfo> TryGetScopeInfoForMerge() const;
+  inline Tagged<ScopeInfo> TryGetOuterScopeInfo() const;
 
   // [feedback metadata] Metadata template for feedback vectors of instances of
   // this function.
@@ -428,7 +462,6 @@ V8_OBJECT class SharedFunctionInfo : public HeapObject {
   //  - a BytecodeArray for the interpreter [HasBytecodeArray()].
   //  - a InterpreterData with the BytecodeArray and a copy of the
   //    interpreter trampoline [HasInterpreterData()]
-  //  - an AsmWasmData with Asm->Wasm conversion [HasAsmWasmData()].
   //  - a Smi containing the builtin id [HasBuiltinId()]
   //  - a UncompiledDataWithoutPreparseData for lazy compilation
   //    [HasUncompiledDataWithoutPreparseData()]
@@ -515,12 +548,10 @@ V8_OBJECT class SharedFunctionInfo : public HeapObject {
                                      IsolateForSandbox isolate);
 
 #if V8_ENABLE_WEBASSEMBLY
-  inline bool HasAsmWasmData() const;
   inline bool HasWasmFunctionData(IsolateForSandbox) const;
   inline bool HasWasmExportedFunctionData(IsolateForSandbox) const;
   inline bool HasWasmCapiFunctionData(IsolateForSandbox) const;
   inline bool HasWasmResumeData() const;
-  DECL_ACCESSORS(asm_wasm_data, Tagged<AsmWasmData>)
 
   // Note: The accessors below will read a trusted pointer; when accessing it
   // again, you must assume that it might have been swapped out e.g. by a
@@ -577,7 +608,7 @@ V8_OBJECT class SharedFunctionInfo : public HeapObject {
   std::unique_ptr<char[]> DebugNameCStr() const;
   static Handle<String> DebugName(
       Isolate* isolate, DirectHandle<SharedFunctionInfo> shared,
-      AllowAllocation allow_allocation = AllowAllocation::kYes);
+      AllowAllocation allow_allocation = AllowAllocation{true});
 
   // Used for flags such as --turbo-filter.
   bool PassesFilter(const char* raw_filter);
@@ -654,11 +685,6 @@ V8_OBJECT class SharedFunctionInfo : public HeapObject {
   // global object.
   DECL_BOOLEAN_ACCESSORS(native)
 
-#if V8_ENABLE_WEBASSEMBLY
-  // Indicates that asm->wasm conversion failed and should not be re-attempted.
-  DECL_BOOLEAN_ACCESSORS(is_asm_wasm_broken)
-#endif  // V8_ENABLE_WEBASSEMBLY
-
   // Indicates that the function was created by the Function function.
   // Though it's anonymous, toString should treat it as if it had the name
   // "anonymous".  We don't set the name itself so that the system does not
@@ -728,13 +754,8 @@ V8_OBJECT class SharedFunctionInfo : public HeapObject {
   // Whether this function is defined in user-provided JavaScript code.
   inline bool IsUserJavaScript() const;
 
-#if V8_ENABLE_WEBASSEMBLY
-  using DiscardableData = UnionOf<BytecodeArray, InterpreterData, Code,
-                                  UncompiledDataWithPreparseData, AsmWasmData>;
-#else
   using DiscardableData = UnionOf<BytecodeArray, InterpreterData, Code,
                                   UncompiledDataWithPreparseData>;
-#endif
   inline bool CanDiscardCompiled(
       Tagged<DiscardableData>* out_data = nullptr) const;
 
@@ -806,7 +827,7 @@ V8_OBJECT class SharedFunctionInfo : public HeapObject {
   static void EnsureBytecodeArrayAvailable(
       Isolate* isolate, Handle<SharedFunctionInfo> shared_info,
       IsCompiledScope* is_compiled_scope,
-      CreateSourcePositions flag = CreateSourcePositions::kNo);
+      CreateSourcePositions flag = CreateSourcePositions{false});
 
   inline bool CanCollectSourcePosition(Isolate* isolate);
   static void EnsureSourcePositionsAvailable(

@@ -4,6 +4,7 @@
 
 import * as Common from '../../core/common/common.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import type * as Bindings from '../bindings/bindings.js';
 
 import {resolveScopeChain} from './NamesResolver.js';
 
@@ -21,14 +22,17 @@ import {resolveScopeChain} from './NamesResolver.js';
  */
 export class ScopeChainModel extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
   readonly #callFrame: SDK.DebuggerModel.CallFrame;
+  readonly #debuggerWorkspaceBinding: Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding;
 
   /** We use the `Throttler` here to make sure that `#boundUpdate` is not run multiple times simultanously */
   readonly #throttler = new Common.Throttler.Throttler(5);
   readonly #boundUpdate = this.#update.bind(this);
 
-  constructor(callFrame: SDK.DebuggerModel.CallFrame) {
+  constructor(callFrame: SDK.DebuggerModel.CallFrame,
+              debuggerWorkspaceBinding: Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding) {
     super();
     this.#callFrame = callFrame;
+    this.#debuggerWorkspaceBinding = debuggerWorkspaceBinding;
     this.#callFrame.debuggerModel.addEventListener(
         SDK.DebuggerModel.Events.DebugInfoAttached, this.#debugInfoAttached, this);
     this.#callFrame.debuggerModel.sourceMapManager().addEventListener(
@@ -46,7 +50,7 @@ export class ScopeChainModel extends Common.ObjectWrapper.ObjectWrapper<EventTyp
   }
 
   async #update(): Promise<void> {
-    const scopeChain = await resolveScopeChain(this.#callFrame);
+    const scopeChain = await resolveScopeChain(this.#callFrame, this.#debuggerWorkspaceBinding);
     this.dispatchEventToListeners(Events.SCOPE_CHAIN_UPDATED, new ScopeChain(scopeChain));
   }
 

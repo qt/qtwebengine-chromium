@@ -108,12 +108,14 @@ int CheckPDFiumCApi() {
     CHK(FPDFPage_RemoveAnnot);
 
     // fpdf_attachment.h
+    CHK(FPDFAttachment_GetDescription);
     CHK(FPDFAttachment_GetFile);
     CHK(FPDFAttachment_GetName);
     CHK(FPDFAttachment_GetStringValue);
     CHK(FPDFAttachment_GetSubtype);
     CHK(FPDFAttachment_GetValueType);
     CHK(FPDFAttachment_HasKey);
+    CHK(FPDFAttachment_SetDescription);
     CHK(FPDFAttachment_SetFile);
     CHK(FPDFAttachment_SetStringValue);
     CHK(FPDFDoc_AddAttachment);
@@ -143,6 +145,7 @@ int CheckPDFiumCApi() {
     CHK(FPDFAction_GetURIPath);
     CHK(FPDFBookmark_Find);
     CHK(FPDFBookmark_GetAction);
+    CHK(FPDFBookmark_GetColor);
     CHK(FPDFBookmark_GetCount);
     CHK(FPDFBookmark_GetDest);
     CHK(FPDFBookmark_GetFirstChild);

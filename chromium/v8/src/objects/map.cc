@@ -19,21 +19,18 @@
 #include "src/logging/runtime-call-stats-scope.h"
 #include "src/objects/arguments-inl.h"
 #include "src/objects/descriptor-array.h"
+#include "src/objects/dictionary-inl.h"
 #include "src/objects/elements-kind.h"
 #include "src/objects/field-type.h"
 #include "src/objects/instance-type.h"
 #include "src/objects/js-objects.h"
 #include "src/objects/map-updater.h"
-#include "src/objects/maybe-object.h"
 #include "src/objects/objects.h"
 #include "src/objects/oddball.h"
 #include "src/objects/property-details.h"
 #include "src/objects/property.h"
-#include "src/objects/tagged-field.h"
 #include "src/objects/transitions-inl.h"
 #include "src/roots/roots.h"
-#include "src/utils/ostreams.h"
-#include "src/zone/zone-containers.h"
 
 namespace v8::internal {
 
@@ -154,9 +151,6 @@ VisitorId Map::GetVisitorId(Tagged<Map> map) {
 
     case DESCRIPTOR_ARRAY_TYPE:
       return kVisitDescriptorArray;
-
-    case STRONG_DESCRIPTOR_ARRAY_TYPE:
-      return kVisitStrongDescriptorArray;
 
     case FEEDBACK_CELL_TYPE:
       return kVisitFeedbackCell;
@@ -396,8 +390,9 @@ VisitorId Map::GetVisitorId(Tagged<Map> map) {
     // Objects that are used as API wrapper objects and can have embedder
     // fields. Note that there's more of these kinds (e.g. JS_ARRAY_BUFFER_TYPE)
     // but they have their own visitor id for other reasons
-    case JS_API_OBJECT_TYPE:
     case JS_GLOBAL_PROXY_TYPE:
+      return kVisitJSGlobalProxy;
+    case JS_API_OBJECT_TYPE:
     case JS_GLOBAL_OBJECT_TYPE:
     case JS_SPECIAL_API_OBJECT_TYPE:
       return kVisitJSApiObject;
@@ -426,6 +421,9 @@ VisitorId Map::GetVisitorId(Tagged<Map> map) {
 
     case HEAP_NUMBER_TYPE:
       return kVisitHeapNumber;
+
+    case HASH_SEED_WRAPPER_TYPE:
+      return kVisitHashSeedWrapper;
 
     case FOREIGN_TYPE:
       return kVisitForeign;
@@ -479,9 +477,6 @@ VisitorId Map::GetVisitorId(Tagged<Map> map) {
     case PROTOTYPE_SHARED_CLOSURE_INFO_TYPE:
       return kVisitPrototypeSharedClosureInfo;
 
-    case DEBUG_INFO_TYPE:
-      return kVisitDebugInfo;
-
     case CALL_SITE_INFO_TYPE:
       return kVisitCallSiteInfo;
 
@@ -509,8 +504,6 @@ VisitorId Map::GetVisitorId(Tagged<Map> map) {
 #if V8_ENABLE_WEBASSEMBLY
     case WASM_ARRAY_TYPE:
       return kVisitWasmArray;
-    case WASM_MEMORY_MAP_DESCRIPTOR_TYPE:
-      return kVisitWasmMemoryMapDescriptor;
     case WASM_FUNC_REF_TYPE:
       return kVisitWasmFuncRef;
     case WASM_GLOBAL_OBJECT_TYPE:
@@ -747,10 +740,6 @@ void Map::ReplaceDescriptors(Isolate* isolate,
   // descriptors will not be trimmed in the mark-compactor, we need to mark
   // all its elements.
   Tagged<Map> current = this;
-#ifndef V8_DISABLE_WRITE_BARRIERS
-  WriteBarrier::ForDescriptorArray(to_replace,
-                                   to_replace->number_of_descriptors());
-#endif
   while (current->instance_descriptors() == to_replace) {
     Tagged<Map> next;
     if (!current->TryGetBackPointer(&next)) {
@@ -940,14 +929,6 @@ void Map::EnsureDescriptorSlack(Isolate* isolate, DirectHandle<Map> map,
   // enumerated descriptors than available in the original cache, the cache
   // will be lazily replaced by the extended cache when needed.
   new_descriptors->CopyEnumCacheFrom(*descriptors);
-
-  // Replace descriptors by new_descriptors in all maps that share it. The old
-  // descriptors will not be trimmed in the mark-compactor, we need to mark
-  // all its elements.
-#ifndef V8_DISABLE_WRITE_BARRIERS
-  WriteBarrier::ForDescriptorArray(*descriptors,
-                                   descriptors->number_of_descriptors());
-#endif
 
   // Update the descriptors from {map} (inclusive) until the initial map
   // (exclusive). In the case that {map} is the initial map, update it.
@@ -1389,8 +1370,10 @@ Handle<Map> Map::Normalize(Isolate* isolate, DirectHandle<Map> fast_map,
   }
   DirectHandle<NormalizedMapCache> cache;
   if (use_cache) {
+    Tagged<Object> maybe_native_context = meta_map->native_context_or_null();
+    DCHECK(!IsNull(maybe_native_context));
     Tagged<Object> normalized_map_cache =
-        meta_map->native_context()->normalized_map_cache();
+        Cast<NativeContext>(maybe_native_context)->normalized_map_cache();
     use_cache = !IsUndefined(normalized_map_cache);
     if (use_cache) {
       cache = Cast<NormalizedMapCache>(
@@ -1868,6 +1851,9 @@ DirectHandle<Map> Map::AsLanguageMode(
     Isolate* isolate, DirectHandle<Map> initial_map,
     DirectHandle<SharedFunctionInfo> shared_info) {
   DCHECK(InstanceTypeChecker::IsJSFunction(initial_map->instance_type()));
+#ifndef V8_FUNCTION_ARGUMENTS_CALLER_ARE_OWN_PROPS
+  return initial_map;
+#else
   // Initial map for sloppy mode function is stored in the function
   // constructor. Initial maps for strict mode are cached as special transitions
   // using |strict_function_transition_symbol| as a key.
@@ -1903,6 +1889,7 @@ DirectHandle<Map> Map::AsLanguageMode(
                            SPECIAL_TRANSITION);
   }
   return map;
+#endif  // !V8_FUNCTION_ARGUMENTS_CALLER_ARE_OWN_PROPS
 }
 
 Handle<Map> Map::CopyForElementsTransition(Isolate* isolate,
@@ -2546,9 +2533,6 @@ void Map::SetInstanceDescriptors(Tagged<DescriptorArray> descriptors,
 #endif
   set_instance_descriptors(descriptors, kReleaseStore, barrier_mode);
   SetNumberOfOwnDescriptors(number_of_own_descriptors);
-#ifndef V8_DISABLE_WRITE_BARRIERS
-  WriteBarrier::ForDescriptorArray(descriptors, number_of_own_descriptors);
-#endif
 }
 
 // static

@@ -6,6 +6,7 @@
 
 #include "core/fxcodec/jpeg/jpegmodule.h"
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <type_traits>
@@ -90,7 +91,8 @@ class JpegDecoder final : public ScanlineDecoder {
               uint32_t width,
               uint32_t height,
               int nComps,
-              bool ColorTransform);
+              bool ColorTransform,
+              uint32_t scale_denom);
 
   // ScanlineDecoder:
   [[nodiscard]] bool Rewind() override;
@@ -128,8 +130,16 @@ class JpegDecoder final : public ScanlineDecoder {
   bool decompress_created_ = false;
   bool started_ = false;
   bool jpeg_transform_ = false;
-  uint32_t default_scale_denom_ = 1;
+  uint32_t scale_denom_ = 1;
 };
+
+// Returns the output dimension libjpeg produces for `dim` when decoding at
+// 1/`scale_denom` scale. Matches jpeg_core_output_dimensions() for the
+// power-of-two scalings (scale_denom of 1, 2, 4, 8), which reduce to
+// ceil(dim / scale_denom).
+uint32_t ScaledJpegSize(uint32_t dim, uint32_t scale_denom) {
+  return (dim + scale_denom - 1) / scale_denom;
+}
 
 JpegDecoder::JpegDecoder() = default;
 
@@ -191,9 +201,40 @@ bool JpegDecoder::InitDecode(bool bAcceptKnownBadHeader) {
 
   orig_width_ = common_.cinfo.image_width;
   orig_height_ = common_.cinfo.image_height;
-  output_width_ = orig_width_;
-  output_height_ = orig_height_;
-  default_scale_denom_ = common_.cinfo.scale_denom;
+
+  // Reduced-size (scale_denom) decoding collapses each 8x8 DCT block toward its
+  // low-frequency content, ultimately its average at 1/8. If a dimension is not
+  // a multiple of the MCU size, the encoder had to pad the partial edge blocks;
+  // that padding is not required to replicate the edge (some encoders fill it
+  // with black), and reduced decoding cannot crop it back out, so it would
+  // contaminate the visible edge pixels (e.g. a too-dark right/bottom fringe).
+  // Only decode at reduced size when there are no padded edge blocks in any
+  // component, which makes the result exact regardless of the encoder. The MCU
+  // size in pixels is max_samp_factor * DCTSIZE; derive it from the per-
+  // component sampling factors, which are valid immediately after read_header.
+  // See https://crbug.com/890745 and
+  // https://github.com/libjpeg-turbo/libjpeg-turbo/issues/297.
+  int max_h_samp = 1;
+  int max_v_samp = 1;
+  // SAFETY: libjpeg guarantees `comp_info` points to `num_components` entries
+  // once the header has been read.
+  auto comp_info = UNSAFE_BUFFERS(
+      pdfium::span(common_.cinfo.comp_info,
+                   static_cast<size_t>(common_.cinfo.num_components)));
+  for (const jpeg_component_info& comp : comp_info) {
+    max_h_samp = std::max(max_h_samp, comp.h_samp_factor);
+    max_v_samp = std::max(max_v_samp, comp.v_samp_factor);
+  }
+  if (orig_width_ % (max_h_samp * DCTSIZE) != 0 ||
+      orig_height_ % (max_v_samp * DCTSIZE) != 0) {
+    // Reset to 1 (no reduction). This is equivalent to using
+    // common_.cinfo.scale_denom, which libjpeg leaves at its default of 1 until
+    // jpeg_start_decompress(); that has not run yet here.
+    scale_denom_ = 1;
+  }
+
+  output_width_ = ScaledJpegSize(orig_width_, scale_denom_);
+  output_height_ = ScaledJpegSize(orig_height_, scale_denom_);
   return true;
 }
 
@@ -201,7 +242,15 @@ bool JpegDecoder::Create(pdfium::span<const uint8_t> src_span,
                          uint32_t width,
                          uint32_t height,
                          int nComps,
-                         bool ColorTransform) {
+                         bool ColorTransform,
+                         uint32_t scale_denom) {
+  // Only power-of-two scalings up to 1/8 are supported: ScaledJpegSize() (which
+  // sizes the scanline buffer via CalcPitch()) only matches libjpeg's actual
+  // output dimensions for these. A different value would desynchronize the two
+  // and lead to a scanline-buffer overflow.
+  DCHECK(scale_denom == 1 || scale_denom == 2 || scale_denom == 4 ||
+         scale_denom == 8);
+  scale_denom_ = scale_denom;
   src_span_ = JpegScanSOI(src_span);
   if (src_span_.size() < 2) {
     return false;
@@ -249,14 +298,19 @@ bool JpegDecoder::Rewind() {
       return false;
     }
   }
-  common_.cinfo.scale_denom = default_scale_denom_;
-  output_width_ = orig_width_;
-  output_height_ = orig_height_;
+  // `Created()` validated `scale_denom_` and, for non-MCU-aligned images,
+  // reset it to 1 in `InitDecode()` (called from `Create()`, and again just
+  // above when re-decoding), so it is safe to use as-is here.
+  common_.cinfo.scale_denom = scale_denom_;
+  output_width_ = ScaledJpegSize(orig_width_, scale_denom_);
+  output_height_ = ScaledJpegSize(orig_height_, scale_denom_);
   if (!jpeg_common_start_decompress(&common_)) {
     jpeg_common_destroy_decompress(&common_);
     return false;
   }
-  CHECK_LE(static_cast<int>(common_.cinfo.output_width), orig_width_);
+  // `CalcPitch()` sized the scanline buffer for `output_width_` columns,
+  // so libjpeg must not produce more than that per scanline.
+  CHECK_LE(static_cast<int>(common_.cinfo.output_width), output_width_);
   started_ = true;
   return true;
 }
@@ -276,8 +330,11 @@ uint32_t JpegDecoder::GetSrcOffset() {
 }
 
 void JpegDecoder::CalcPitch() {
-  pitch_ = static_cast<uint32_t>(common_.cinfo.image_width) *
-           common_.cinfo.num_components;
+  // `output_width_` must be finalized (post scale/alignment decision in
+  // `InitDecode()`) before this runs; the sole caller is `Create()`, after
+  // `InitDecode()`.
+  DCHECK_GT(output_width_, 0);
+  pitch_ = static_cast<uint32_t>(output_width_) * common_.cinfo.num_components;
   pitch_ += 3;
   pitch_ /= 4;
   pitch_ *= 4;
@@ -354,11 +411,13 @@ std::unique_ptr<ScanlineDecoder> JpegModule::CreateDecoder(
     uint32_t width,
     uint32_t height,
     int nComps,
-    bool ColorTransform) {
+    bool ColorTransform,
+    uint32_t scale_denom) {
   DCHECK(!src_span.empty());
 
   auto pDecoder = std::make_unique<JpegDecoder>();
-  if (!pDecoder->Create(src_span, width, height, nComps, ColorTransform)) {
+  if (!pDecoder->Create(src_span, width, height, nComps, ColorTransform,
+                        scale_denom)) {
     return nullptr;
   }
 

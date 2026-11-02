@@ -15,9 +15,9 @@
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/ganesh/GrBackendSurface.h"
 #include "include/gpu/ganesh/GrTypes.h"
-#include "include/private/base/SingleOwner.h"
-#include "include/private/base/SkTemplates.h"
-#include "src/base/SkMathPriv.h"
+#include "include/private/SingleOwner.h"
+#include "include/private/SkTemplates.h"
+#include "src/core/SkMathPriv.h"
 #include "src/core/SkMipmap.h"
 #include "src/gpu/BufferWriter.h"
 #include "src/gpu/ResourceKey.h"
@@ -478,8 +478,6 @@ sk_sp<const GrGpuBuffer> GrResourceProvider::findOrMakeStaticBuffer(
     SkASSERT(buffer->size() == size);
     SkASSERT(!buffer->resourcePriv().getScratchKey().isValid());
 
-    buffer->resourcePriv().setUniqueKey(uniqueKey);
-
     // Map the buffer. Use a staging buffer on the heap if mapping isn't supported.
     skgpu::VertexWriter vertexWriter = {buffer->map(), size};
     AutoTMalloc<char> stagingBuffer;
@@ -493,8 +491,12 @@ sk_sp<const GrGpuBuffer> GrResourceProvider::findOrMakeStaticBuffer(
     if (buffer->isMapped()) {
         buffer->unmap();
     } else {
-        buffer->updateData(stagingBuffer, /*offset=*/0, size, /*preserve=*/false);
+        if (!buffer->updateData(stagingBuffer, /*offset=*/0, size, /*preserve=*/false)) {
+            return nullptr;
+        }
     }
+
+    buffer->resourcePriv().setUniqueKey(uniqueKey);
 
     return buffer;
 }
@@ -922,11 +924,13 @@ sk_sp<GrTexture> GrResourceProvider::writePixels(sk_sp<GrTexture> texture,
     if (tempColorType == GrColorType::kUnknown) {
         return nullptr;
     }
-    SkAssertResult(fGpu->writePixels(texture.get(),
-                                     SkIRect::MakeSize(baseSize),
-                                     colorType,
-                                     tempColorType,
-                                     tmpTexels.get(),
-                                     mipLevelCount));
+    if (!fGpu->writePixels(texture.get(),
+                           SkIRect::MakeSize(baseSize),
+                           colorType,
+                           tempColorType,
+                           tmpTexels.get(),
+                           mipLevelCount)) {
+        return nullptr;
+    }
     return texture;
 }

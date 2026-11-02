@@ -25,7 +25,7 @@ export const widget: RuleCreator = {
         if (isIdentifier(property, 'setMinimumSize')) {
           domFragment.bindings.push({
             key: 'minimumSize',
-            value: `{width: ${sourceCode.getText(firstArg)}, height: ${sourceCode.getText(secondArg)}}`
+            value: `{width: ${sourceCode.getText(firstArg)}, height: ${sourceCode.getText(secondArg)}}`,
           });
           return true;
         }
@@ -92,5 +92,5 @@ export const DEFAULT_VIEW = (input, ${output}, target) => {
         return false;
       },
     };
-  }
+  },
 };

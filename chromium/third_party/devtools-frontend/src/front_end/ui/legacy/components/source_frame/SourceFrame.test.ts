@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../../../core/common/common.js';
 import * as Root from '../../../../core/root/root.js';
-import * as TextUtils from '../../../../models/text_utils/text_utils.js';
+import * as TextUtils from '../../../../core/text_utils/text_utils.js';
 import {
   dispatchInputEvent,
   dispatchPasteEvent,

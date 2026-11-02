@@ -28,7 +28,6 @@
 #ifndef SRC_TINT_LANG_CORE_IR_TRANSFORM_BUILTIN_POLYFILL_H_
 #define SRC_TINT_LANG_CORE_IR_TRANSFORM_BUILTIN_POLYFILL_H_
 
-#include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/utils/reflection/reflection.h"
 #include "src/tint/utils/result.h"
 
@@ -39,14 +38,6 @@ class Module;
 
 namespace tint::core::ir::transform {
 
-/// The capabilities that the transform can support.
-const Capabilities kBuiltinPolyfillCapabilities{
-    Capability::kAllowDuplicateBindings,
-    Capability::kAllowNonCoreTypes,
-    Capability::kAllow8BitIntegers,
-    Capability::kAllow16BitIntegers,
-};
-
 /// Enumerator of polyfill levels.
 enum class BuiltinPolyfillLevel {
     /// No polyfill needed, supported by the backend.
@@ -56,6 +47,26 @@ enum class BuiltinPolyfillLevel {
     /// Polyfill the entire function.
     kFull,
 };
+
+/// @param out the stream to write to
+/// @param level the polyfill level
+/// @returns @p out so calls can be chained
+template <typename STREAM>
+    requires(traits::IsOStream<STREAM>)
+auto& operator<<(STREAM& out, BuiltinPolyfillLevel level) {
+    switch (level) {
+        case BuiltinPolyfillLevel::kNone:
+            out << "none";
+            break;
+        case BuiltinPolyfillLevel::kClampOrRangeCheck:
+            out << "clamp_or_range_check";
+            break;
+        case BuiltinPolyfillLevel::kFull:
+            out << "full";
+            break;
+    }
+    return out;
+}
 
 /// The set of polyfills that should be applied.
 struct BuiltinPolyfillConfig {

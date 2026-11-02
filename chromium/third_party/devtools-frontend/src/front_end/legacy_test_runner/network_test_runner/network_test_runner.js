@@ -177,7 +177,7 @@ NetworkTestRunner.clearNetworkCache = function() {
   return Promise.all([
     TestRunner.NetworkAgent.invoke_clearBrowserCache(),
     TestRunner.NetworkAgent.invoke_setCacheDisabled({cacheDisabled: true})
-        .then(() => TestRunner.NetworkAgent.invoke_setCacheDisabled({cacheDisabled: false}))
+        .then(() => TestRunner.NetworkAgent.invoke_setCacheDisabled({cacheDisabled: false})),
   ]);
 };
 
@@ -200,7 +200,7 @@ NetworkTestRunner.HARPropertyFormatters = {
   _transferSize: 'formatAsTypeName',
   _error: 'skip',
   _initiator: 'formatAsTypeName',
-  _priority: 'formatAsTypeName'
+  _priority: 'formatAsTypeName',
 };
 
 NetworkTestRunner.HARPropertyFormattersWithSize = JSON.parse(JSON.stringify(NetworkTestRunner.HARPropertyFormatters));

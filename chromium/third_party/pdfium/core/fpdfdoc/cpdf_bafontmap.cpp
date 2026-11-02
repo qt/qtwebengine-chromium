@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "constants/annotation_common.h"
+#include "constants/catalog.h"
 #include "core/fpdfapi/font/cpdf_font.h"
 #include "core/fpdfapi/font/cpdf_fontencoding.h"
 #include "core/fpdfapi/page/cpdf_docpagedata.h"
@@ -28,6 +29,7 @@
 #include "core/fxge/cfx_fontmapper.h"
 #include "core/fxge/cfx_fontmgr.h"
 #include "core/fxge/cfx_gemodule.h"
+#include "core/fxge/cfx_standardfont.h"
 
 namespace {
 
@@ -196,7 +198,7 @@ RetainPtr<CPDF_Font> CPDF_BAFontMap::FindFontSameCharset(ByteString* sFontAlias,
   }
 
   RetainPtr<const CPDF_Dictionary> pAcroFormDict =
-      pRootDict->GetDictFor("AcroForm");
+      pRootDict->GetDictFor(pdfium::catalog::kAcroForm);
   if (!pAcroFormDict) {
     return nullptr;
   }
@@ -254,7 +256,7 @@ RetainPtr<CPDF_Font> CPDF_BAFontMap::GetAnnotDefaultFont(ByteString* sAlias) {
   if (bWidget) {
     RetainPtr<CPDF_Dictionary> pRootDict = document_->GetMutableRoot();
     if (pRootDict) {
-      pAcroFormDict = pRootDict->GetMutableDictFor("AcroForm");
+      pAcroFormDict = pRootDict->GetMutableDictFor(pdfium::catalog::kAcroForm);
     }
   }
 
@@ -436,7 +438,7 @@ ByteString CPDF_BAFontMap::GetCachedNativeFontName(FX_Charset nCharset) {
 
 RetainPtr<CPDF_Font> CPDF_BAFontMap::AddFontToDocument(ByteString sFontName,
                                                        FX_Charset nCharset) {
-  if (CFX_FontMapper::IsStandardFontName(sFontName)) {
+  if (CFX_StandardFont::IsStandardFontName(sFontName)) {
     return AddStandardFont(sFontName);
   }
 

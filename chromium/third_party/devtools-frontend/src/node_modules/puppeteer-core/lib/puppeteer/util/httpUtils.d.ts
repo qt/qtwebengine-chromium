@@ -9,5 +9,5 @@
  *
  * @internal
  */
-export declare function normalizeHeaderValue(header: string): string;
+export declare function normalizeHeaderValue(name: string, value: string): string;
 //# sourceMappingURL=httpUtils.d.ts.map

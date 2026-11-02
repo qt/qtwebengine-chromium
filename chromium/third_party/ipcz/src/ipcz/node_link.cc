@@ -274,11 +274,8 @@ void NodeLink::RelayMessage(const NodeName& to_node, Message& message) {
 
   msg::RelayMessage relay;
   relay.v0()->destination = to_node;
-  relay.v0()->data = relay.AllocateArray<uint8_t>(message.data_view().size());
+  relay.v0()->data = relay.AllocateAndSetArray<uint8_t>(message.data_view());
   relay.v0()->padding = 0;
-  IPCZ_UNSAFE_TODO(memcpy(relay.GetArrayData(relay.v0()->data),
-                          message.data_view().data(),
-                          message.data_view().size()));
   relay.v0()->driver_objects =
       relay.AppendDriverObjects(message.driver_objects());
   Transmit(relay);
@@ -490,6 +487,13 @@ bool NodeLink::OnRequestIntroduction(msg::RequestIntroduction& request) {
 
 bool NodeLink::OnAcceptIntroduction(msg::AcceptIntroduction& accept) {
   if (remote_node_type_ != Node::Type::kBroker) {
+    return false;
+  }
+
+  if (node()->type() == Node::Type::kBroker &&
+      accept.v0()->remote_node_type == Node::Type::kBroker) {
+    // Brokers are never introduced to other brokers; broker-to-broker links
+    // are always established directly via ConnectNode().
     return false;
   }
 
@@ -838,7 +842,9 @@ bool NodeLink::OnProvideMemory(msg::ProvideMemory& provide) {
 }
 
 bool NodeLink::OnRelayMessage(msg::RelayMessage& relay) {
-  if (node_->type() != Node::Type::kBroker) {
+  // Relay requests are only sent by non-brokers to their own broker.
+  if (node_->type() != Node::Type::kBroker ||
+      remote_node_type_ != Node::Type::kNormal) {
     return false;
   }
 

@@ -238,8 +238,7 @@ struct reduce<Reducer, A> {
 
 template <typename Reducer, typename A, typename... Ts>
 struct reduce<Reducer, A, Ts...> {
-  EIGEN_DEVICE_FUNC constexpr static auto run(A a, Ts... ts)
-      -> decltype(Reducer::run(a, reduce<Reducer, Ts...>::run(ts...))) {
+  EIGEN_DEVICE_FUNC constexpr static auto run(A a, Ts... ts) {
     return Reducer::run(a, reduce<Reducer, Ts...>::run(ts...));
   }
 };
@@ -248,14 +247,14 @@ struct reduce<Reducer, A, Ts...> {
 
 struct sum_op {
   template <typename A, typename B>
-  EIGEN_DEVICE_FUNC constexpr static auto run(A a, B b) -> decltype(a + b) {
+  EIGEN_DEVICE_FUNC constexpr static auto run(A a, B b) {
     return a + b;
   }
   static constexpr int Identity = 0;
 };
 struct product_op {
   template <typename A, typename B>
-  EIGEN_DEVICE_FUNC constexpr static auto run(A a, B b) -> decltype(a * b) {
+  EIGEN_DEVICE_FUNC constexpr static auto run(A a, B b) {
     return a * b;
   }
   static constexpr int Identity = 1;
@@ -263,15 +262,13 @@ struct product_op {
 
 /* reductions for lists */
 
-// Using auto -> return value spec makes ICC 13.0 and 13.1 crash here,
-// so the return type is specified explicitly using decltype.
 template <typename... Ts>
-EIGEN_DEVICE_FUNC constexpr decltype(reduce<product_op, Ts...>::run((*((Ts*)0))...)) arg_prod(Ts... ts) {
+EIGEN_DEVICE_FUNC constexpr auto arg_prod(Ts... ts) {
   return reduce<product_op, Ts...>::run(ts...);
 }
 
 template <typename... Ts>
-constexpr decltype(reduce<sum_op, Ts...>::run((*((Ts*)0))...)) arg_sum(Ts... ts) {
+constexpr auto arg_sum(Ts... ts) {
   return reduce<sum_op, Ts...>::run(ts...);
 }
 
@@ -284,8 +281,7 @@ constexpr decltype(reduce<sum_op, Ts...>::run((*((Ts*)0))...)) arg_sum(Ts... ts)
 // an infinite loop)
 template <typename Reducer, typename T, std::size_t N, std::size_t n = N - 1>
 struct h_array_reduce {
-  EIGEN_DEVICE_FUNC constexpr static auto run(array<T, N> arr, T identity)
-      -> decltype(Reducer::run(h_array_reduce<Reducer, T, N, n - 1>::run(arr, identity), array_get<n>(arr))) {
+  EIGEN_DEVICE_FUNC constexpr static auto run(const array<T, N>& arr, T identity) {
     return Reducer::run(h_array_reduce<Reducer, T, N, n - 1>::run(arr, identity), array_get<n>(arr));
   }
 };
@@ -301,22 +297,19 @@ struct h_array_reduce<Reducer, T, 0> {
 };
 
 template <typename Reducer, typename T, std::size_t N>
-EIGEN_DEVICE_FUNC constexpr auto array_reduce(const array<T, N>& arr, T identity)
-    -> decltype(h_array_reduce<Reducer, T, N>::run(arr, identity)) {
+EIGEN_DEVICE_FUNC constexpr auto array_reduce(const array<T, N>& arr, T identity) {
   return h_array_reduce<Reducer, T, N>::run(arr, identity);
 }
 
 /* standard array reductions */
 
 template <typename T, std::size_t N>
-EIGEN_DEVICE_FUNC constexpr auto array_sum(const array<T, N>& arr)
-    -> decltype(array_reduce<sum_op, T, N>(arr, static_cast<T>(0))) {
+EIGEN_DEVICE_FUNC constexpr auto array_sum(const array<T, N>& arr) {
   return array_reduce<sum_op, T, N>(arr, static_cast<T>(0));
 }
 
 template <typename T, std::size_t N>
-EIGEN_DEVICE_FUNC constexpr auto array_prod(const array<T, N>& arr)
-    -> decltype(array_reduce<product_op, T, N>(arr, static_cast<T>(1))) {
+EIGEN_DEVICE_FUNC constexpr auto array_prod(const array<T, N>& arr) {
   return array_reduce<product_op, T, N>(arr, static_cast<T>(1));
 }
 

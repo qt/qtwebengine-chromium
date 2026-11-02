@@ -428,6 +428,10 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityScriptTest, AXSize) {
   RunTypedTest<kMacAttributes>("ax-size.html");
 }
 
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityScriptTest, AXSubrole) {
+  RunTypedTest<kMacAttributes>("ax-subrole.html");
+}
+
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityScriptTest, AXTitleUIElement) {
   RunTypedTest<kMacAttributes>("ax-title-ui-element.html");
 }
@@ -735,6 +739,12 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityScriptTest,
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityScriptTest, AXStringForRange) {
   RunTypedTest<kMacParameterizedAttributes>("ax-string-for-range.html");
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityScriptTest,
+                       AXLineForIndexAndRangeForLine) {
+  RunTypedTest<kMacParameterizedAttributes>(
+      "ax-line-for-index-and-range-for-line.html");
 }
 
 // Text Operation

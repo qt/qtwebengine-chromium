@@ -28,6 +28,7 @@ source_set("font") {
     "../../:xfa_warnings",
   ]
   deps = [
+    "../../../constants",
     "../../../core/fpdfapi/font",
     "../../../core/fpdfapi/page",
     "../../../core/fpdfapi/parser",

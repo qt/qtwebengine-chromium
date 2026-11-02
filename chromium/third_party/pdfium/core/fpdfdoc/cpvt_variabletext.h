@@ -17,8 +17,10 @@
 #include "core/fpdfdoc/cpvt_lineinfo.h"
 #include "core/fpdfdoc/cpvt_wordplace.h"
 #include "core/fpdfdoc/cpvt_wordrange.h"
+#include "core/fxcrt/cfx_bidi_resolver.h"
 #include "core/fxcrt/fx_codepage_forward.h"
 #include "core/fxcrt/fx_coordinates.h"
+#include "core/fxcrt/to_underlying.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "core/fxcrt/widestring.h"
 
@@ -41,6 +43,7 @@ class CPVT_VariableText {
     void SetAt(int32_t nWordIndex);
     void SetAt(const CPVT_WordPlace& place);
     const CPVT_WordPlace& GetWordPlace() const { return cur_pos_; }
+    float GetLineCaretX(const CPVT_Line& line);
 
    private:
     CPVT_WordPlace cur_pos_;
@@ -66,6 +69,22 @@ class CPVT_VariableText {
     UnownedPtr<IPVT_FontMap> const font_map_;
   };
 
+  // These values correspond to the "Q" (Quadding) entry from the
+  // ISO 32000-1:2008 spec, table 222. Do not change these values.
+  enum class Alignment {
+    kLeft = 0,
+    kCenter = 1,
+    kRight = 2,
+  };
+
+  static constexpr Alignment ToAlignment(int align) {
+    if (align < fxcrt::to_underlying(Alignment::kLeft) ||
+        align > fxcrt::to_underlying(Alignment::kRight)) {
+      return Alignment::kLeft;
+    }
+    return static_cast<Alignment>(align);
+  }
+
   explicit CPVT_VariableText(Provider* Provider);
   ~CPVT_VariableText();
 
@@ -77,7 +96,7 @@ class CPVT_VariableText {
   void SetPlateRect(const CFX_FloatRect& rect);
   const CFX_FloatRect& GetPlateRect() const;
 
-  void SetAlignment(int32_t nFormat) { alignment_ = nFormat; }
+  void SetAlignment(Alignment alignment) { alignment_ = alignment; }
   void SetPasswordChar(uint16_t wSubWord) { sub_word_ = wSubWord; }
   void SetLimitChar(int32_t nLimitChar) { limit_char_ = nLimitChar; }
   void SetMultiLine(bool bMultiLine) { multi_line_ = bMultiLine; }
@@ -85,6 +104,12 @@ class CPVT_VariableText {
   void SetFontSize(float fFontSize) { font_size_ = fFontSize; }
   void SetCharArray(int32_t nCharArray) { char_array_ = nCharArray; }
   void SetAutoFontSize(bool bAuto) { auto_font_size_ = bAuto; }
+  void SetTextDirection(CFX_BidiResolver::ParagraphDirection direction) {
+    text_direction_ = direction;
+  }
+  CFX_BidiResolver::ParagraphDirection GetTextDirection() const {
+    return text_direction_;
+  }
   void Initialize();
 
   bool IsValid() const { return initialized_; }
@@ -102,7 +127,7 @@ class CPVT_VariableText {
 
   int32_t GetTotalWords() const;
   float GetFontSize() const { return font_size_; }
-  int32_t GetAlignment() const { return alignment_; }
+  Alignment GetAlignment() const { return alignment_; }
   uint16_t GetPasswordChar() const { return GetSubWord(); }
   int32_t GetCharArray() const { return char_array_; }
   int32_t GetLimitChar() const { return limit_char_; }
@@ -123,8 +148,6 @@ class CPVT_VariableText {
   CPVT_WordPlace GetSectionBeginPlace(const CPVT_WordPlace& place) const;
   CPVT_WordPlace GetSectionEndPlace(const CPVT_WordPlace& place) const;
   void UpdateWordPlace(CPVT_WordPlace& place) const;
-  CPVT_WordPlace PrevLineHeaderPlace(const CPVT_WordPlace& place) const;
-  CPVT_WordPlace NextLineHeaderPlace(const CPVT_WordPlace& place) const;
   int32_t WordPlaceToWordIndex(const CPVT_WordPlace& place) const;
   CPVT_WordPlace WordIndexToWordPlace(int32_t index) const;
 
@@ -133,11 +156,6 @@ class CPVT_VariableText {
   float GetPlateWidth() const { return plate_rect_.right - plate_rect_.left; }
   float GetPlateHeight() const { return plate_rect_.top - plate_rect_.bottom; }
   CFX_PointF GetBTPoint() const;
-  CFX_PointF GetETPoint() const;
-
-  CFX_PointF InToOut(const CFX_PointF& point) const;
-  CFX_PointF OutToIn(const CFX_PointF& point) const;
-  CFX_FloatRect InToOut(const CPVT_FloatRect& rect) const;
 
   float GetFontAscent(int32_t nFontIndex, float fFontSize) const;
   float GetFontDescent(int32_t nFontIndex, float fFontSize) const;
@@ -168,7 +186,13 @@ class CPVT_VariableText {
                          const CPVT_LineInfo& lineinfo);
   CPVT_WordPlace AddWord(const CPVT_WordPlace& place,
                          const CPVT_WordInfo& wordinfo);
-  float GetWordFontSize() const;
+
+  CPVT_WordPlace PrevLineHeaderPlace(const CPVT_WordPlace& place) const;
+  CPVT_WordPlace NextLineHeaderPlace(const CPVT_WordPlace& place) const;
+
+  CFX_PointF InToOut(const CFX_PointF& point) const;
+  CFX_PointF OutToIn(const CFX_PointF& point) const;
+  CFX_FloatRect InToOut(const CPVT_FloatRect& rect) const;
 
   void ClearSectionRightWords(const CPVT_WordPlace& place);
 
@@ -188,10 +212,12 @@ class CPVT_VariableText {
   bool multi_line_ = false;
   bool limit_width_ = false;
   bool auto_font_size_ = false;
+  CFX_BidiResolver::ParagraphDirection text_direction_ =
+      CFX_BidiResolver::ParagraphDirection::kAuto;
   uint16_t sub_word_ = 0;
   int32_t limit_char_ = 0;
   int32_t char_array_ = 0;
-  int32_t alignment_ = 0;
+  Alignment alignment_ = Alignment::kLeft;
   float line_leading_ = 0.0f;
   float font_size_ = 0.0f;
   std::vector<std::unique_ptr<CPVT_Section>> section_array_;

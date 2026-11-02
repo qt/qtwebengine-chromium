@@ -4,7 +4,7 @@
 
 import {assert} from 'chai';
 
-import type * as HeapSnapshotModel from '../../models/heap_snapshot/heap_snapshot.js';
+import * as HeapSnapshotModel from '../../models/heap_snapshot/heap_snapshot.js';
 
 import * as HeapSnapshotWorker from './heap_snapshot_worker.js';
 
@@ -12,6 +12,9 @@ describe('HeapSnapshot', () => {
   class MockArray extends Uint32Array {
     getValue(i: number): number {
       return this[i];
+    }
+    setValue(i: number, value: number): void {
+      this[i] = value;
     }
   }
 
@@ -85,7 +88,7 @@ describe('HeapSnapshot', () => {
       firstEdgeIndexes: new MockArray([0, 6, 12, 18, 21, 21, 21]),
       createNode: HeapSnapshotWorker.HeapSnapshot.JSHeapSnapshot.prototype.createNode,
       createEdge: HeapSnapshotWorker.HeapSnapshot.JSHeapSnapshot.prototype.createEdge,
-      createRetainingEdge: HeapSnapshotWorker.HeapSnapshot.JSHeapSnapshot.prototype.createRetainingEdge
+      createRetainingEdge: HeapSnapshotWorker.HeapSnapshot.JSHeapSnapshot.prototype.createRetainingEdge,
     };
     return result as unknown as HeapSnapshotWorker.HeapSnapshot.JSHeapSnapshot;
   }
@@ -100,16 +103,16 @@ describe('HeapSnapshot', () => {
           edge_types: [['element', 'property', 'shortcut'], '', ''],
           location_fields: ['object_index', 'script_id', 'line', 'column'],
           trace_function_info_fields: ['function_id', 'name', 'script_name', 'script_id', 'line', 'column'],
-          trace_node_fields: ['id', 'function_info_index', 'count', 'size', 'children']
+          trace_node_fields: ['id', 'function_info_index', 'count', 'size', 'children'],
         },
         node_count: 6,
         edge_count: 7,
-        trace_function_count: 1
+        trace_function_count: 1,
       },
 
       nodes: [
         0, 0, 1, 0, 20, 0, 2, 1, 1, 2, 2, 2, 0,  2, 1, 2, 3, 3, 8, 0,  2,
-        1, 3, 4, 4, 10, 0, 1, 1, 4, 5, 5, 5, 14, 0, 1, 5, 6, 6, 6, 21, 0
+        1, 3, 4, 4, 10, 0, 1, 1, 4, 5, 5, 5, 14, 0, 1, 5, 6, 6, 6, 21, 0,
       ],
 
       edges: [1, 6, 7, 1, 7, 14, 0, 1, 14, 1, 8, 21, 1, 9, 21, 1, 10, 28, 1, 11, 35],
@@ -120,7 +123,7 @@ describe('HeapSnapshot', () => {
 
       locations: [0, 1, 2, 3, 18, 2, 3, 4],
 
-      strings: ['', 'A', 'B', 'C', 'D', 'E', 'a', 'b', 'ac', 'bc', 'bd', 'ce']
+      strings: ['', 'A', 'B', 'C', 'D', 'E', 'a', 'b', 'ac', 'bc', 'bd', 'ce'],
     };
   }
 
@@ -137,6 +140,55 @@ describe('HeapSnapshot', () => {
     return postprocessHeapSnapshotMock(createHeapSnapshotMockRaw());
   }
 
+  function createHeapSnapshotMockWithDetachedness() {
+    return postprocessHeapSnapshotMock({
+      snapshot: {
+        meta: {
+          node_fields: ['type', 'name', 'id', 'self_size', 'retained_size', 'dominator', 'edge_count', 'detachedness'],
+          node_types: [['hidden', 'object'], '', '', '', '', '', '', ''],
+          edge_fields: ['type', 'name_or_index', 'to_node'],
+          edge_types: [['element', 'property', 'shortcut'], '', ''],
+          location_fields: ['object_index', 'script_id', 'line', 'column'],
+          trace_function_info_fields: ['function_id', 'name', 'script_name', 'script_id', 'line', 'column'],
+          trace_node_fields: ['id', 'function_info_index', 'count', 'size', 'children'],
+        },
+        node_count: 2,
+        edge_count: 1,
+        trace_function_count: 0,
+      },
+      nodes: [
+        // Root node: type=hidden (0), name="" (0), id=1, self_size=0, retained_size=0, dominator=0, edge_count=1, detachedness=unknown (0)
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        // Window node: type=object (1), name="Window" (1), id=2, self_size=8, retained_size=8, dominator=0, edge_count=0, detachedness=detached (2)
+        1,
+        1,
+        2,
+        8,
+        8,
+        0,
+        0,
+        2,
+      ],
+      edges: [
+        // Property edge from Root to Window: type=property (1), name="window" (2), to_node=8 (Window)
+        1,
+        2,
+        8,
+      ],
+      trace_function_infos: [],
+      trace_tree: [],
+      locations: [],
+      strings: ['', 'Window', 'window'],
+    });
+  }
+
   function createHeapSnapshotMockWithDOM() {
     return postprocessHeapSnapshotMock({
       snapshot: {
@@ -145,26 +197,26 @@ describe('HeapSnapshot', () => {
           node_types: [['hidden', 'object', 'synthetic'], '', '', ''],
           edge_fields: ['type', 'name_or_index', 'to_node'],
           edge_types: [['element', 'hidden', 'internal'], '', ''],
-          location_fields: ['object_index', 'script_id', 'line', 'column']
+          location_fields: ['object_index', 'script_id', 'line', 'column'],
         },
 
         node_count: 13,
-        edge_count: 13
+        edge_count: 13,
       },
 
       nodes: [
         2, 0, 1, 4, 1, 11, 2, 2, 1, 11, 3, 3, 2,  5, 4, 0, 2,  6, 5, 1,  1,  1, 6, 0, 1,  2,
-        7, 1, 1, 4, 8, 2,  1, 8, 9, 0,  1, 7, 10, 0, 1, 3, 11, 0, 1, 10, 12, 0, 1, 9, 13, 0
+        7, 1, 1, 4, 8, 2,  1, 8, 9, 0,  1, 7, 10, 0, 1, 3, 11, 0, 1, 10, 12, 0, 1, 9, 13, 0,
       ],
 
       edges: [
-        0,  1, 4, 0,  2, 8, 0,  3, 12, 0,  4, 16, 0,  1, 20, 0,  2, 24, 0, 1,
-        24, 0, 2, 28, 1, 3, 32, 0, 1,  36, 0, 1,  40, 2, 12, 44, 2, 1,  48
+        0,  1, 4, 0,  2, 8, 0,  3, 12, 0,  4, 16, 0,  1, 20, 0,  2, 24, 0,  1,
+        24, 0, 2, 28, 1, 3, 32, 0, 1,  36, 0, 1,  40, 2, 12, 44, 2, 1,  48,
       ],
 
       locations: [0, 2, 1, 1, 6, 2, 2, 2],
 
-      strings: ['', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'M', 'N', 'Window', 'native']
+      strings: ['', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'M', 'N', 'Window', 'native'],
     });
   }
 
@@ -288,7 +340,17 @@ describe('HeapSnapshot', () => {
       this.extraNativeBytes = 0;
 
       const nodeTypes = [
-        'hidden', 'array', 'string', 'object', 'code', 'closure', 'regexp', 'number', 'native', 'synthetic', 'bigint'
+        'hidden',
+        'array',
+        'string',
+        'object',
+        'code',
+        'closure',
+        'regexp',
+        'number',
+        'native',
+        'synthetic',
+        'bigint',
       ];
       for (let i = 0; i < nodeTypes.length; i++) {
         this.nodeTypesMap[nodeTypes[i]] = i;
@@ -312,15 +374,15 @@ describe('HeapSnapshot', () => {
             node_fields: ['type', 'name', 'id', 'self_size', 'retained_size', 'dominator', 'edge_count'],
             node_types: [this.nodeTypesArray, 'string', 'number', 'number', 'number', 'number', 'number'],
             edge_fields: ['type', 'name_or_index', 'to_node'],
-            edge_types: [this.edgeTypesArray, 'string_or_number', 'node']
+            edge_types: [this.edgeTypesArray, 'string_or_number', 'node'],
           },
-          extra_native_bytes: this.extraNativeBytes
+          extra_native_bytes: this.extraNativeBytes,
         },
 
         nodes: [],
         edges: [],
         locations: [],
-        strings: []
+        strings: [],
       };
 
       for (let i = 0; i < this.nodes.length; ++i) {
@@ -587,6 +649,327 @@ describe('HeapSnapshot', () => {
     }
   });
 
+  async function createMockSnapshotWithGCRoots() {
+    //                  [ root ]
+    //                     |
+    //                     v
+    //                [ (GC roots) ]
+    //                     |
+    //                     v
+    //              [ (Stack roots) ]
+    //               /               \
+    //              /                 \
+    //             v                   v
+    //           [ A ]               [ B ]
+    //             |                 /   \
+    //             v                /     \
+    //          [ A1 ]             /       \
+    //             |              /         \
+    //             v             /           \
+    //          [ A2 ]          /             \
+    //             \           /               \
+    //              v         v                 v
+    //                [ C ]                  [ D ]
+    //                  |
+    //                  v
+    //                [ E ]
+    //
+    const builder = new HeapSnapshotBuilder();
+    const root = builder.rootNode;
+
+    const gcRoots = new HeapNode('(GC roots)', 0, 'synthetic');
+    const stackRoots = new HeapNode('(Stack roots)', 0, 'synthetic');
+    const aNode = new HeapNode('A');
+    const a1Node = new HeapNode('A1');
+    const a2Node = new HeapNode('A2');
+    const bNode = new HeapNode('B');
+    const cNode = new HeapNode('C');
+    const dNode = new HeapNode('D');
+    const eNode = new HeapNode('E');
+
+    root.linkNode(gcRoots, 'element', 1);
+    gcRoots.linkNode(stackRoots, 'element', 1);
+    stackRoots.linkNode(aNode, 'element', 1);
+    stackRoots.linkNode(bNode, 'element', 2);
+
+    aNode.linkNode(a1Node, 'property', 'aa1');
+    a1Node.linkNode(a2Node, 'property', 'a1a2');
+    a2Node.linkNode(cNode, 'property', 'a2c');
+    bNode.linkNode(cNode, 'property', 'bc');
+    bNode.linkNode(dNode, 'property', 'bd');
+    cNode.linkNode(eNode, 'property', 'ce');
+
+    return await builder.createJSHeapSnapshot();
+  }
+
+  function findNodeIndexByName(snapshot: HeapSnapshotWorker.HeapSnapshot.JSHeapSnapshot, name: string): number {
+    const nodeIterator = new HeapSnapshotWorker.HeapSnapshot.HeapSnapshotNodeIterator(snapshot.createNode(0));
+    for (; nodeIterator.hasNext(); nodeIterator.next()) {
+      const node = nodeIterator.item();
+      if (node.name() === name) {
+        return node.nodeIndex;
+      }
+    }
+    throw new Error(`Node with name "${name}" not found in snapshot`);
+  }
+
+  it('heapSnapshotRetainingPaths', async () => {
+    const snapshot = await createMockSnapshotWithGCRoots();
+
+    const eNodeIndex = findNodeIndexByName(snapshot, 'E');
+    const {paths: forest, limitsReached} = snapshot.getRetainingPaths(eNodeIndex);
+    assert.deepEqual(limitsReached, {});
+    assert.lengthOf(forest, 1);
+
+    const cNode = forest[0];
+    assert.strictEqual(cNode.nodeName, 'C');
+    // Target E (5) -> C (4) -> B (3) -> stackRoots (2) -> gcRoots (1)
+    // The other path is E (5) -> C (4) -> A2 (5) -> A1 (4) -> A (3) -> stackRoots (2) -> gcRoots (1)
+    assert.strictEqual(cNode.distance, 4);
+    assert.strictEqual(cNode.edgeName, 'ce');
+    assert.isNumber(cNode.edgeIndex);
+    assert.lengthOf(cNode.children, 2);
+
+    cNode.children.sort((a, b) => a.nodeName.localeCompare(b.nodeName));
+
+    // A2 Node (direct child of C, alphabetically first) - distance 5
+    const a2Node = cNode.children[0];
+    assert.strictEqual(a2Node.nodeName, 'A2');
+    assert.strictEqual(a2Node.distance, 5);
+    assert.strictEqual(a2Node.edgeName, 'a2c');
+    assert.lengthOf(a2Node.children, 1);
+
+    // A2's child: A1 Node - distance 4
+    const a1Node = a2Node.children[0];
+    assert.strictEqual(a1Node.nodeName, 'A1');
+    assert.strictEqual(a1Node.distance, 4);
+    assert.strictEqual(a1Node.edgeName, 'a1a2');
+    assert.lengthOf(a1Node.children, 1);
+
+    // A1's child: A Node - distance 3
+    const aNode = a1Node.children[0];
+    assert.strictEqual(aNode.nodeName, 'A');
+    assert.strictEqual(aNode.distance, 3);
+    assert.strictEqual(aNode.edgeName, 'aa1');
+    assert.lengthOf(aNode.children, 1);
+
+    // A's child: (Stack roots) (dist 2)
+    const stackRootsFromA = aNode.children[0];
+    assert.strictEqual(stackRootsFromA.nodeName, '(Stack roots)');
+    assert.strictEqual(stackRootsFromA.distance, 2);
+    assert.strictEqual(stackRootsFromA.edgeName, '1');
+    assert.lengthOf(stackRootsFromA.children, 0);
+
+    // B Node (direct child of C) - distance 3
+    const bNode = cNode.children[1];
+    assert.strictEqual(bNode.nodeName, 'B');
+    assert.strictEqual(bNode.distance, 3);
+    assert.strictEqual(bNode.edgeName, 'bc');
+    assert.lengthOf(bNode.children, 1);  // B has 1 child: stackRoots (dist 2)
+
+    // B's child 1: (Stack roots) (dist 2)
+    const stackRootsFromB = bNode.children[0];
+    assert.strictEqual(stackRootsFromB.nodeName, '(Stack roots)');
+    assert.strictEqual(stackRootsFromB.distance, 2);
+    assert.strictEqual(stackRootsFromB.edgeName, '2');
+    assert.lengthOf(stackRootsFromB.children, 0);
+  });
+
+  it('heapSnapshotRetainingPathsIgnoresWeakEdges', async () => {
+    const builder = new HeapSnapshotBuilder();
+    const root = builder.rootNode;
+
+    const gcRootsNode = new HeapNode('(GC roots)', 0, 'synthetic');
+    const stackRootsNode = new HeapNode('(Stack roots)', 0, 'synthetic');
+    const aNode = new HeapNode('A');
+    const bNode = new HeapNode('B');
+    const cNode = new HeapNode('C');
+    const weakParent = new HeapNode('WeakParent');
+    const target = new HeapNode('Target');
+
+    root.linkNode(gcRootsNode, 'shortcut', 'gc_roots');
+
+    // Strong path: gcRoots -> stackRoots -> A -> B -> C -> target
+    gcRootsNode.linkNode(stackRootsNode, 'element', 1);
+    stackRootsNode.linkNode(aNode, 'element', 1);
+    aNode.linkNode(bNode, 'property', 'strong_to_b');
+    bNode.linkNode(cNode, 'property', 'strong_to_c');
+    cNode.linkNode(target, 'property', 'strong_to_target');
+
+    // Weak shortcut path: stackRootsNode -> weakParent -> target (weak link to target)
+    stackRootsNode.linkNode(weakParent, 'property', 'weak_to_parent_retaining_edge');
+    weakParent.linkNode(target, 'weak', 'weak_shortcut_to_target');
+
+    const snapshot = await builder.createJSHeapSnapshot();
+
+    const targetNodeIndex = findNodeIndexByName(snapshot, 'Target');
+
+    const {paths: forest, limitsReached} = snapshot.getRetainingPaths(targetNodeIndex);
+    assert.deepEqual(limitsReached, {});
+
+    // Target -> C -> B -> A -> stackRoots
+    assert.lengthOf(forest, 1);
+
+    const cRetainer = forest[0];
+    assert.strictEqual(cRetainer.nodeName, 'C');
+    assert.strictEqual(cRetainer.distance, 5);
+    assert.strictEqual(cRetainer.edgeName, 'strong_to_target');
+    assert.lengthOf(cRetainer.children, 1);
+
+    const bRetainer = cRetainer.children[0];
+    assert.strictEqual(bRetainer.nodeName, 'B');
+    assert.strictEqual(bRetainer.distance, 4);
+    assert.strictEqual(bRetainer.edgeName, 'strong_to_c');
+    assert.lengthOf(bRetainer.children, 1);
+
+    const aRetainer = bRetainer.children[0];
+    assert.strictEqual(aRetainer.nodeName, 'A');
+    assert.strictEqual(aRetainer.distance, 3);
+    assert.strictEqual(aRetainer.edgeName, 'strong_to_b');
+    assert.lengthOf(aRetainer.children, 1);
+
+    const stackRootsRetainer = aRetainer.children[0];
+    assert.strictEqual(stackRootsRetainer.nodeName, '(Stack roots)');
+    assert.strictEqual(stackRootsRetainer.distance, 2);
+    assert.strictEqual(stackRootsRetainer.edgeName, '1');
+    assert.lengthOf(stackRootsRetainer.children, 0);
+  });
+
+  it('heapSnapshotRetainingPathsMaxNodes', async () => {
+    const snapshot = await createMockSnapshotWithGCRoots();
+    const targetNodeIndex = findNodeIndexByName(snapshot, 'E');
+
+    // Set maxNodes limit to 4.
+    // E (1) -> C (2) -> B (3) -> stackRoots (4) are allowed.
+    // A2 (5) is reached but truncated.
+    //
+    // Forest produced:
+    //
+    //          [ C (4) ] (edge: ce)
+    //            /
+    //    (bc)   /
+    //          v
+    //      [ B (3) ]
+    //        /
+    //       v
+    //  [ (Stack roots) (2) ]
+    //
+    const {paths: forest, limitsReached} = snapshot.getRetainingPaths(targetNodeIndex, 15, 4);
+    assert.deepEqual(limitsReached, {nodes: true});
+
+    assert.lengthOf(forest, 1);
+
+    const cNode = forest[0];
+    assert.strictEqual(cNode.nodeName, 'C');
+    assert.strictEqual(cNode.distance, 4);
+    assert.lengthOf(cNode.children, 1, 'C should only have B as child, A2 should be truncated');
+
+    const bNode = cNode.children[0];
+    assert.strictEqual(bNode.nodeName, 'B');
+    assert.strictEqual(bNode.distance, 3);
+    assert.lengthOf(bNode.children, 1);
+
+    const stackRoots = bNode.children[0];
+    assert.strictEqual(stackRoots.nodeName, '(Stack roots)');
+    assert.strictEqual(stackRoots.distance, 2);
+    assert.lengthOf(stackRoots.children, 0);
+  });
+
+  it('heapSnapshotRetainingPathsMaxDepth', async () => {
+    const snapshot = await createMockSnapshotWithGCRoots();
+    const targetNodeIndex = findNodeIndexByName(snapshot, 'E');
+
+    // 1. With maxDepth = 3, the path E -> C -> B -> stackRoots (3 edges) should be found.
+    const {paths: forest, limitsReached} = snapshot.getRetainingPaths(targetNodeIndex, 3);
+    assert.deepEqual(limitsReached, {depth: true});
+    assert.lengthOf(forest, 1, 'Should find the path with maxDepth = 3');
+
+    const cNode = forest[0];
+    assert.strictEqual(cNode.nodeName, 'C');
+    assert.lengthOf(cNode.children, 1);
+    const bNode = cNode.children[0];
+    assert.strictEqual(bNode.nodeName, 'B');
+    assert.lengthOf(bNode.children, 1);
+    const stackRoots = bNode.children[0];
+    assert.strictEqual(stackRoots.nodeName, '(Stack roots)');
+
+    // 2. With maxDepth = 2, the path should be truncated (empty forest because C is rejected at depth 0).
+    const {paths: truncatedForest, limitsReached: truncatedLimits} = snapshot.getRetainingPaths(targetNodeIndex, 2);
+    assert.deepEqual(truncatedLimits, {depth: true});
+    assert.lengthOf(truncatedForest, 0, 'Should not find the path with maxDepth = 2');
+  });
+
+  it('heapSnapshotRetainingPathsMaxSiblings', async () => {
+    const builder = new HeapSnapshotBuilder();
+    const root = builder.rootNode;
+    const gcRoots = new HeapNode('(GC roots)', 0, 'synthetic');
+    const stackRoots = new HeapNode('(Stack roots)', 0, 'synthetic');
+    root.linkNode(gcRoots, 'element', 1);
+    gcRoots.linkNode(stackRoots, 'element', 1);
+    const target = new HeapNode('Target');
+
+    const siblingCount = 105;
+    for (let i = 0; i < siblingCount; i++) {
+      const parentNode = new HeapNode('Parent' + i);
+      stackRoots.linkNode(parentNode, 'property', 'stack_to_p' + i);
+      parentNode.linkNode(target, 'property', 'p' + i + '_to_target');
+    }
+
+    const snapshot = await builder.createJSHeapSnapshot();
+
+    const targetNodeIndex = findNodeIndexByName(snapshot, 'Target');
+
+    // 1. Test Default Sibling Limit (should be 100)
+    const {paths: defaultForest, limitsReached: defaultLimits} = snapshot.getRetainingPaths(targetNodeIndex);
+    assert.deepEqual(defaultLimits, {siblings: true});
+    assert.lengthOf(defaultForest, 100, 'Children count should be capped at default 100');
+
+    // 2. Test Custom Sibling Limit (setting maxSiblings explicitly to 5)
+    const {paths: customForest, limitsReached: customLimits} = snapshot.getRetainingPaths(targetNodeIndex, 15, 5000, 5);
+    assert.deepEqual(customLimits, {siblings: true});
+    assert.lengthOf(customForest, 5, 'Children count should be capped at custom 5');
+  });
+
+  it('heapSnapshotRetainingPathsMaxSiblingsWithMiddle', async () => {
+    const builder = new HeapSnapshotBuilder();
+    const root = builder.rootNode;
+    const gcRoots = new HeapNode('(GC roots)', 0, 'synthetic');
+    const stackRoots = new HeapNode('(Stack roots)', 0, 'synthetic');
+    root.linkNode(gcRoots, 'element', 1);
+    gcRoots.linkNode(stackRoots, 'element', 1);
+    const target = new HeapNode('Target');
+    const middle = new HeapNode('Middle');
+    stackRoots.linkNode(middle, 'property', 'stack_to_middle');
+
+    const siblingCount = 105;
+    for (let i = 0; i < siblingCount; i++) {
+      const parentNode = new HeapNode('Parent' + i);
+      middle.linkNode(parentNode, 'property', 'middle_to_p' + i);
+      parentNode.linkNode(target, 'property', 'p' + i + '_to_target');
+    }
+
+    const snapshot = await builder.createJSHeapSnapshot();
+
+    const targetNodeIndex = findNodeIndexByName(snapshot, 'Target');
+
+    const {paths: forest, limitsReached} = snapshot.getRetainingPaths(targetNodeIndex);
+    assert.deepEqual(limitsReached, {siblings: true});
+    // Here we should only have one retaining path. Non-root edges get deduplicated.
+    assert.lengthOf(forest, 1, 'Should only get 1 retaining path due to shared Middle node');
+
+    const parentNode = forest[0];
+    assert.strictEqual(parentNode.nodeName, 'Parent104');
+    assert.lengthOf(parentNode.children, 1);
+
+    const middleNode = parentNode.children[0];
+    assert.strictEqual(middleNode.nodeName, 'Middle');
+    assert.lengthOf(middleNode.children, 1);
+
+    const stackRootsNode = middleNode.children[0];
+    assert.strictEqual(stackRootsNode.nodeName, '(Stack roots)');
+    assert.lengthOf(stackRootsNode.children, 0);
+  });
+
   it('heapSnapshotAggregates', async () => {
     const snapshot = await HeapSnapshotWorker.HeapSnapshot.createJSHeapSnapshotForTesting(createHeapSnapshotMock());
     const expectedAggregates: Record<string, Partial<HeapSnapshotModel.HeapSnapshotModel.AggregatedInfo>> = {
@@ -594,7 +977,7 @@ describe('HeapSnapshot', () => {
       B: {count: 1, self: 3, maxRet: 8, name: 'B'},
       C: {count: 1, self: 4, maxRet: 10, name: 'C'},
       D: {count: 1, self: 5, maxRet: 5, name: 'D'},
-      E: {count: 1, self: 6, maxRet: 6, name: 'E'}
+      E: {count: 1, self: 6, maxRet: 6, name: 'E'},
     };
     const aggregates = snapshot.getAggregatesByClassKey(false);
     for (const key in aggregates) {
@@ -632,7 +1015,7 @@ describe('HeapSnapshot', () => {
       H: false,
       M: false,
       N: false,
-      Window: true
+      Window: true,
     };
     const nodeIterator = new HeapSnapshotWorker.HeapSnapshot.HeapSnapshotNodeIterator(snapshot.createNode(0));
     for (; nodeIterator.hasNext(); nodeIterator.next()) {
@@ -705,5 +1088,721 @@ describe('HeapSnapshot', () => {
     };
 
     assert.strictEqual(JSON.stringify(referenceToCompare), JSON.stringify(resultToCompare));
+  });
+
+  it('heapSnapshotNodeIndexForId', async () => {
+    const builder = new HeapSnapshotBuilder();
+    const root = builder.rootNode;
+
+    const zeroSizeNode = new HeapNode('ZeroSizeNode', 0, 'object', 42);
+    root.linkNode(zeroSizeNode, 'element');
+
+    const normalNode = new HeapNode('NormalNode', 100, 'object', 99);
+    root.linkNode(normalNode, 'element');
+
+    const snapshot = await builder.createJSHeapSnapshot();
+
+    const zeroSizeIndex = snapshot.nodeIndexForId(42);
+    assert.isDefined(zeroSizeIndex);
+    const resolvedZeroSizeNode = snapshot.createNode(zeroSizeIndex!);
+    assert.strictEqual(resolvedZeroSizeNode.name(), 'ZeroSizeNode');
+    assert.strictEqual(resolvedZeroSizeNode.id(), 42);
+
+    const normalIndex = snapshot.nodeIndexForId(99);
+    assert.isDefined(normalIndex);
+    const resolvedNormalNode = snapshot.createNode(normalIndex!);
+    assert.strictEqual(resolvedNormalNode.name(), 'NormalNode');
+    assert.strictEqual(resolvedNormalNode.id(), 99);
+
+    const nonExistentIndex = snapshot.nodeIndexForId(999);
+    assert.isUndefined(nonExistentIndex);
+  });
+
+  it('heapSnapshotGetDominatorsOf', async () => {
+    const builder = new HeapSnapshotBuilder();
+    const root = builder.rootNode;
+
+    // Create a chain: Root -> A -> B
+    const nodeA = new HeapNode('A', 10, 'object', 100);
+    const nodeB = new HeapNode('B', 20, 'object', 200);
+
+    root.linkNode(nodeA, 'property', 'a');
+    nodeA.linkNode(nodeB, 'property', 'b');
+
+    const snapshot = await builder.createJSHeapSnapshot();
+
+    const nodeAIndex = snapshot.nodeIndexForId(100)!;
+    const nodeBIndex = snapshot.nodeIndexForId(200)!;
+
+    const dominatorsB = snapshot.getDominatorsOf(nodeBIndex);
+    assert.lengthOf(dominatorsB, 3);
+    assert.strictEqual(dominatorsB[0].nodeIndex, nodeBIndex);
+    assert.strictEqual(dominatorsB[0].nodeName, 'B');
+    assert.strictEqual(dominatorsB[1].nodeIndex, nodeAIndex);
+    assert.strictEqual(dominatorsB[1].nodeName, 'A');
+    assert.strictEqual(dominatorsB[2].nodeIndex, 0);
+    assert.strictEqual(dominatorsB[2].nodeName, 'root');
+
+    const dominatorsA = snapshot.getDominatorsOf(nodeAIndex);
+    assert.lengthOf(dominatorsA, 2);
+    assert.strictEqual(dominatorsA[0].nodeIndex, nodeAIndex);
+    assert.strictEqual(dominatorsA[0].nodeName, 'A');
+    assert.strictEqual(dominatorsA[1].nodeIndex, 0);
+    assert.strictEqual(dominatorsA[1].nodeName, 'root');
+  });
+
+  it('heapSnapshotGetDominatorsOfDiamond', async () => {
+    const builder = new HeapSnapshotBuilder();
+    const root = builder.rootNode;
+
+    // Create a diamond: Root -> A -> C, Root -> B -> C
+    const nodeA = new HeapNode('A', 10, 'object', 100);
+    const nodeB = new HeapNode('B', 20, 'object', 200);
+    const nodeC = new HeapNode('C', 30, 'object', 300);
+
+    root.linkNode(nodeA, 'property', 'a');
+    root.linkNode(nodeB, 'property', 'b');
+    nodeA.linkNode(nodeC, 'property', 'c');
+    nodeB.linkNode(nodeC, 'property', 'c');
+
+    const snapshot = await builder.createJSHeapSnapshot();
+
+    const nodeCIndex = snapshot.nodeIndexForId(300)!;
+
+    const dominatorsC = snapshot.getDominatorsOf(nodeCIndex);
+    // Root dominates C, because both A and B lead to C.
+    // So the chain should be C -> Root.
+    assert.lengthOf(dominatorsC, 2);
+    assert.strictEqual(dominatorsC[0].nodeIndex, nodeCIndex);
+    assert.strictEqual(dominatorsC[0].nodeName, 'C');
+    assert.strictEqual(dominatorsC[1].nodeIndex, 0);
+    assert.strictEqual(dominatorsC[1].nodeName, 'root');
+  });
+
+  it('heapSnapshotRetainedByContext', async () => {
+    const builder = new HeapSnapshotBuilder();
+    const root = builder.rootNode;
+
+    const context1 = new HeapNode('system / Context', 10, 'hidden', 10);
+    const context2 = new HeapNode('system / Context / Foo', 20, 'hidden', 20);
+    const nodeA = new HeapNode('NodeA', 30, 'object', 30);
+    const nodeB = new HeapNode('NodeB', 40, 'object', 40);
+    const nodeC = new HeapNode('NodeC', 50, 'object', 50);
+
+    root.linkNode(context1, 'property', 'context1');
+    root.linkNode(context2, 'property', 'context2');
+    root.linkNode(nodeB, 'property', 'nodeB');
+
+    context1.linkNode(nodeA, 'property', 'a');
+    context2.linkNode(nodeB, 'property', 'b');
+
+    nodeC.setBuilder(builder);
+
+    const snapshot = await builder.createJSHeapSnapshot();
+
+    const filter = new HeapSnapshotModel.HeapSnapshotModel.NodeFilter();
+    filter.filterName = 'objectsRetainedByContexts';
+    const aggregates = snapshot.aggregatesWithFilter(filter);
+    const filteredNodeIndexes = new Set(Object.values(aggregates).flatMap(aggregate => aggregate.idxs));
+
+    const context1Index = snapshot.nodeIndexForId(10)!;
+    const context2Index = snapshot.nodeIndexForId(20)!;
+    const nodeAIndex = snapshot.nodeIndexForId(30)!;
+    const nodeBIndex = snapshot.nodeIndexForId(40)!;
+    const nodeCIndex = snapshot.nodeIndexForId(50)!;
+
+    // The three covered nodes should be context1, context2, and nodeA.
+    // nodeB is not covered because it is also reachable directly from root (not only via contexts).
+    // nodeC is not covered because it is unreachable from root.
+    assert.strictEqual(filteredNodeIndexes.size, 3, 'only three nodes should be covered');
+
+    assert.isTrue(filteredNodeIndexes.has(context1Index), 'context1 should be covered');
+    assert.isTrue(filteredNodeIndexes.has(context2Index), 'context2 should be covered');
+    assert.isTrue(filteredNodeIndexes.has(nodeAIndex), 'nodeA should be covered');
+    assert.isFalse(filteredNodeIndexes.has(nodeBIndex), 'nodeB should NOT be covered');
+    assert.isFalse(filteredNodeIndexes.has(nodeCIndex), 'nodeC (unreachable) should NOT be covered');
+  });
+
+  describe('getDuplicateStrings', () => {
+    it('finds duplicate strings and groups them', async () => {
+      const builder = new HeapSnapshotBuilder();
+      const root = builder.rootNode;
+
+      const str1a = new HeapNode('str1', 10, 'string');
+      const str1b = new HeapNode('str1', 10, 'string');
+      root.linkNode(str1a, 'element');
+      root.linkNode(str1b, 'element');
+
+      const str2a = new HeapNode('str2', 20, 'string');
+      const str2b = new HeapNode('str2', 20, 'string');
+      root.linkNode(str2a, 'element');
+      root.linkNode(str2b, 'element');
+
+      const str3 = new HeapNode('str3', 30, 'string');
+      root.linkNode(str3, 'element');
+
+      const snapshot = await builder.createJSHeapSnapshot();
+      const duplicates = snapshot.getDuplicateStrings();
+
+      assert.lengthOf(duplicates, 2);
+
+      assert.strictEqual(duplicates[0].value, 'str2');
+      assert.strictEqual(duplicates[0].count, 2);
+      assert.strictEqual(duplicates[0].totalSelfSize, 40);
+      assert.strictEqual(duplicates[0].totalRetainedSize, 40);
+      assert.lengthOf(duplicates[0].nodes, 2);
+
+      assert.strictEqual(duplicates[1].value, 'str1');
+      assert.strictEqual(duplicates[1].count, 2);
+      assert.strictEqual(duplicates[1].totalSelfSize, 20);
+      assert.strictEqual(duplicates[1].totalRetainedSize, 20);
+      assert.lengthOf(duplicates[1].nodes, 2);
+    });
+
+    function addIntEdge(node: HeapNode, name: string, value: number) {
+      const intNode = new HeapNode('int', 0, 'number');
+      const valueNode = new HeapNode(String(value), 0, 'string');
+      node.linkNode(intNode, 'internal', name);
+      intNode.linkNode(valueNode, 'internal', 'value');
+    }
+
+    function markTruncated(node: HeapNode) {
+      const truncNode = new HeapNode('bool', 0, 'number');
+      const valueNode = new HeapNode('true', 0, 'number');
+      node.linkNode(truncNode, 'internal', 'truncated');
+      truncNode.linkNode(valueNode, 'internal', 'value');
+    }
+
+    it('groups truncated strings if they have same prefix, length and hash', async () => {
+      const builder = new HeapSnapshotBuilder();
+      const root = builder.rootNode;
+
+      const str1 = new HeapNode('prefix...', 10, 'string');
+      root.linkNode(str1, 'element');
+      markTruncated(str1);
+      addIntEdge(str1, 'length', 100);
+      addIntEdge(str1, 'hash', 12345);
+
+      const str2 = new HeapNode('prefix...', 10, 'string');
+      root.linkNode(str2, 'element');
+      markTruncated(str2);
+      addIntEdge(str2, 'length', 100);
+      addIntEdge(str2, 'hash', 12345);
+
+      const snapshot = await builder.createJSHeapSnapshot();
+      const duplicates = snapshot.getDuplicateStrings();
+
+      assert.lengthOf(duplicates, 1);
+      assert.strictEqual(duplicates[0].value, 'prefix...');
+      assert.isTrue(duplicates[0].truncated);
+      assert.strictEqual(duplicates[0].count, 2);
+      assert.lengthOf(duplicates[0], 100);
+      assert.strictEqual(duplicates[0].hash, 12345);
+    });
+
+    it('does not group truncated strings if they have different length', async () => {
+      const builder = new HeapSnapshotBuilder();
+      const root = builder.rootNode;
+
+      const str1 = new HeapNode('prefix...', 10, 'string');
+      root.linkNode(str1, 'element');
+      markTruncated(str1);
+      addIntEdge(str1, 'length', 100);
+      addIntEdge(str1, 'hash', 12345);
+
+      const str2 = new HeapNode('prefix...', 10, 'string');
+      root.linkNode(str2, 'element');
+      markTruncated(str2);
+      addIntEdge(str2, 'length', 200);
+      addIntEdge(str2, 'hash', 12345);
+
+      const snapshot = await builder.createJSHeapSnapshot();
+      const duplicates = snapshot.getDuplicateStrings();
+
+      assert.lengthOf(duplicates, 0);
+    });
+
+    it('does not group truncated strings if they have different hash', async () => {
+      const builder = new HeapSnapshotBuilder();
+      const root = builder.rootNode;
+
+      const str1 = new HeapNode('prefix...', 10, 'string');
+      root.linkNode(str1, 'element');
+      markTruncated(str1);
+      addIntEdge(str1, 'length', 100);
+      addIntEdge(str1, 'hash', 12345);
+
+      const str2 = new HeapNode('prefix...', 10, 'string');
+      root.linkNode(str2, 'element');
+      markTruncated(str2);
+      addIntEdge(str2, 'length', 100);
+      addIntEdge(str2, 'hash', 54321);
+
+      const snapshot = await builder.createJSHeapSnapshot();
+      const duplicates = snapshot.getDuplicateStrings();
+
+      assert.lengthOf(duplicates, 0);
+    });
+
+    it('does not group truncated strings with non-truncated strings', async () => {
+      const builder = new HeapSnapshotBuilder();
+      const root = builder.rootNode;
+
+      const str1a = new HeapNode('prefix...', 10, 'string');
+      root.linkNode(str1a, 'element');
+      markTruncated(str1a);
+      addIntEdge(str1a, 'length', 100);
+      addIntEdge(str1a, 'hash', 12345);
+      const str1b = new HeapNode('prefix...', 10, 'string');
+      root.linkNode(str1b, 'element');
+      markTruncated(str1b);
+      addIntEdge(str1b, 'length', 100);
+      addIntEdge(str1b, 'hash', 12345);
+
+      const str2a = new HeapNode('prefix...', 10, 'string');
+      root.linkNode(str2a, 'element');
+      const str2b = new HeapNode('prefix...', 10, 'string');
+      root.linkNode(str2b, 'element');
+
+      const snapshot = await builder.createJSHeapSnapshot();
+      const duplicates = snapshot.getDuplicateStrings();
+
+      assert.lengthOf(duplicates, 2);
+
+      assert.strictEqual(duplicates[0].value, 'prefix...');
+      assert.isNotTrue(duplicates[0].truncated);
+      assert.strictEqual(duplicates[0].count, 2);
+
+      assert.strictEqual(duplicates[1].value, 'prefix...');
+      assert.isTrue(duplicates[1].truncated);
+      assert.strictEqual(duplicates[1].count, 2);
+      assert.lengthOf(duplicates[1], 100);
+      assert.strictEqual(duplicates[1].hash, 12345);
+    });
+
+    it('groups truncated strings with same prefix and length if hash is missing on both', async () => {
+      const builder = new HeapSnapshotBuilder();
+      const root = builder.rootNode;
+
+      const str1 = new HeapNode('prefix...', 10, 'string');
+      root.linkNode(str1, 'element');
+      markTruncated(str1);
+      addIntEdge(str1, 'length', 100);
+
+      const str2 = new HeapNode('prefix...', 10, 'string');
+      root.linkNode(str2, 'element');
+      markTruncated(str2);
+      addIntEdge(str2, 'length', 100);
+
+      const str3 = new HeapNode('prefix...', 10, 'string');
+      root.linkNode(str3, 'element');
+      markTruncated(str3);
+      addIntEdge(str3, 'length', 100);
+      addIntEdge(str3, 'hash', 12345);
+
+      const snapshot = await builder.createJSHeapSnapshot();
+      const duplicates = snapshot.getDuplicateStrings();
+
+      assert.lengthOf(duplicates, 1);
+      assert.strictEqual(duplicates[0].value, 'prefix...');
+      assert.isTrue(duplicates[0].truncated);
+      assert.strictEqual(duplicates[0].count, 2);
+      assert.lengthOf(duplicates[0], 100);
+      assert.isUndefined(duplicates[0].hash);
+    });
+
+    it('groups truncated strings with same prefix if length and hash are missing on both', async () => {
+      const builder = new HeapSnapshotBuilder();
+      const root = builder.rootNode;
+
+      const str1 = new HeapNode('prefix...', 10, 'string');
+      root.linkNode(str1, 'element');
+      markTruncated(str1);
+      // No length, no hash
+
+      const str2 = new HeapNode('prefix...', 10, 'string');
+      root.linkNode(str2, 'element');
+      markTruncated(str2);
+      // No length, no hash
+
+      const str3 = new HeapNode('prefix...', 10, 'string');
+      root.linkNode(str3, 'element');
+      markTruncated(str3);
+      addIntEdge(str3, 'length', 100);
+
+      const snapshot = await builder.createJSHeapSnapshot();
+      const duplicates = snapshot.getDuplicateStrings();
+
+      assert.lengthOf(duplicates, 1);
+      assert.strictEqual(duplicates[0].value, 'prefix...');
+      assert.isTrue(duplicates[0].truncated);
+      assert.strictEqual(duplicates[0].count, 2);
+      assert.isUndefined(duplicates[0].length);
+      assert.isUndefined(duplicates[0].hash);
+    });
+  });
+
+  it('nativeContextAttribution', async () => {
+    const builder = new HeapSnapshotBuilder();
+    const root = builder.rootNode;
+
+    // Native Context 1
+    const nc1 = new HeapNode('system / NativeContext / url1', 10, 'object', 10);
+    root.linkNode(nc1, 'element');
+
+    // Native Context 2
+    const nc2 = new HeapNode('system / NativeContext / url2', 20, 'object', 20);
+    root.linkNode(nc2, 'element');
+
+    // Node owned by nc1
+    const nodeA = new HeapNode('NodeA', 100, 'object', 100);
+    nc1.linkNode(nodeA, 'property', 'a');
+
+    // Node owned by nc2
+    const nodeB = new HeapNode('NodeB', 200, 'object', 200);
+    nc2.linkNode(nodeB, 'property', 'b');
+
+    // Node shared by nc1 and nc2
+    const nodeShared = new HeapNode('NodeShared', 300, 'object', 300);
+    nc1.linkNode(nodeShared, 'property', 'shared');
+    nc2.linkNode(nodeShared, 'property', 'shared');
+
+    // Unattributed node (only reachable from root, not via native contexts)
+    const nodeUnattributed = new HeapNode('NodeUnattributed', 400, 'object', 400);
+    root.linkNode(nodeUnattributed, 'element');
+
+    // Context chain attribution
+    const context = new HeapNode('system / Context', 50, 'object', 50);
+    context.setBuilder(builder);
+    context.linkNode(nc1, 'internal', 'previous');
+    nc1.linkNode(context, 'internal', 'context');
+
+    const nodeViaContext = new HeapNode('NodeViaContext', 500, 'object', 500);
+    context.linkNode(nodeViaContext, 'property', 'var');
+
+    const snapshot = await builder.createJSHeapSnapshot();
+
+    const nc1Index = snapshot.nodeIndexForId(10)!;
+    const nc2Index = snapshot.nodeIndexForId(20)!;
+    const nodeAIndex = snapshot.nodeIndexForId(100)!;
+    const nodeBIndex = snapshot.nodeIndexForId(200)!;
+    const nodeSharedIndex = snapshot.nodeIndexForId(300)!;
+    const nodeUnattributedIndex = snapshot.nodeIndexForId(400)!;
+    const contextIndex = snapshot.nodeIndexForId(50)!;
+    const nodeViaContextIndex = snapshot.nodeIndexForId(500)!;
+
+    // NC1 should own itself
+    assert.strictEqual(snapshot.nodeNativeContext(nc1Index), nc1Index, 'NC1 owns itself');
+    // NC2 should own itself
+    assert.strictEqual(snapshot.nodeNativeContext(nc2Index), nc2Index, 'NC2 owns itself');
+
+    // NodeA should be owned by NC1
+    assert.strictEqual(snapshot.nodeNativeContext(nodeAIndex), nc1Index, 'NodeA owned by NC1');
+    // NodeB should be owned by NC2
+    assert.strictEqual(snapshot.nodeNativeContext(nodeBIndex), nc2Index, 'NodeB owned by NC2');
+
+    // NodeShared should be SHARED (-2)
+    assert.strictEqual(snapshot.nodeNativeContext(nodeSharedIndex), -2, 'NodeShared is shared');
+
+    // NodeUnattributed should be UNATTRIBUTED (-1)
+    assert.strictEqual(snapshot.nodeNativeContext(nodeUnattributedIndex), -1, 'NodeUnattributed is unattributed');
+
+    // Context should be owned by NC1 (via fixed owner/context owner map)
+    assert.strictEqual(snapshot.nodeNativeContext(contextIndex), nc1Index, 'Context owned by NC1');
+
+    // NodeViaContext should be owned by NC1 (propagated from Context)
+    assert.strictEqual(snapshot.nodeNativeContext(nodeViaContextIndex), nc1Index, 'NodeViaContext owned by NC1');
+  });
+
+  it('nativeContextAttributionViaMetaMap', async () => {
+    const builder = new HeapSnapshotBuilder();
+    const root = builder.rootNode;
+
+    // Native Context
+    const nc = new HeapNode('system / NativeContext', 10, 'object', 10);
+    root.linkNode(nc, 'element');
+
+    // MapMap (meta-map)
+    const mm = new HeapNode('MapMap', 20, 'object', 20);
+    root.linkNode(mm, 'element');
+    mm.linkNode(nc, 'internal', 'native_context');
+
+    // Map
+    const m = new HeapNode('Map', 30, 'object', 30);
+    root.linkNode(m, 'element');
+    m.linkNode(mm, 'internal', 'map');
+
+    // JSObject
+    const o = new HeapNode('JSObject', 100, 'object', 100);
+    root.linkNode(o, 'element');
+    o.linkNode(m, 'internal', 'map');
+
+    const snapshot = await builder.createJSHeapSnapshot();
+
+    const ncIndex = snapshot.nodeIndexForId(10)!;
+    const oIndex = snapshot.nodeIndexForId(100)!;
+
+    // O should be owned by NC because O -> M -> MM -> NC
+    assert.strictEqual(snapshot.nodeNativeContext(oIndex), ncIndex, 'JSObject owned by NC via meta-map');
+  });
+
+  it('attributes objects to detached native contexts via meta-map links', async () => {
+    const builder = new HeapSnapshotBuilder();
+    const root = builder.rootNode;
+
+    const nc = new HeapNode('Detached system / NativeContext', 10, 'object', 10);
+    root.linkNode(nc, 'element');
+
+    const mm = new HeapNode('MapMap', 20, 'object', 20);
+    root.linkNode(mm, 'element');
+    mm.linkNode(nc, 'internal', 'native_context');
+
+    const m = new HeapNode('Map', 30, 'object', 30);
+    root.linkNode(m, 'element');
+    m.linkNode(mm, 'internal', 'map');
+
+    const o = new HeapNode('JSObject', 100, 'object', 100);
+    root.linkNode(o, 'element');
+    o.linkNode(m, 'internal', 'map');
+
+    const snapshot = await builder.createJSHeapSnapshot();
+    const ncIndex = snapshot.nodeIndexForId(10)!;
+    const oIndex = snapshot.nodeIndexForId(100)!;
+
+    assert.strictEqual(snapshot.nodeNativeContext(oIndex), ncIndex, 'JSObject owned by detached NC via meta-map');
+
+    const info = snapshot.getNativeContextSizes();
+    assert.deepEqual(info.nativeContexts, [
+      {
+        nodeId: 10,
+        nodeIndex: ncIndex,
+        nodeName: 'Detached system / NativeContext',
+        attributedSize: 160,
+        retainedSize: 10,
+        selfSize: 10,
+      },
+    ]);
+  });
+
+  it('does not attribute objects to non-native contexts via meta-map links', async () => {
+    const builder = new HeapSnapshotBuilder();
+    const root = builder.rootNode;
+
+    const nc = new HeapNode('system / NativeContext', 10, 'object', 10);
+    root.linkNode(nc, 'element');
+
+    const notNativeContext = new HeapNode('NotNativeContext', 20, 'object', 20);
+    root.linkNode(notNativeContext, 'element');
+
+    const mm = new HeapNode('MapMap', 30, 'object', 30);
+    root.linkNode(mm, 'element');
+    mm.linkNode(notNativeContext, 'internal', 'native_context');
+
+    const m = new HeapNode('Map', 40, 'object', 40);
+    root.linkNode(m, 'element');
+    m.linkNode(mm, 'internal', 'map');
+
+    const o = new HeapNode('JSObject', 100, 'object', 100);
+    root.linkNode(o, 'element');
+    o.linkNode(m, 'internal', 'map');
+
+    const snapshot = await builder.createJSHeapSnapshot();
+    const ncIndex = snapshot.nodeIndexForId(10)!;
+    const oIndex = snapshot.nodeIndexForId(100)!;
+
+    assert.strictEqual(snapshot.nodeNativeContext(oIndex), -1, 'JSObject should not be owned by a non-native context');
+
+    const info = snapshot.getNativeContextSizes();
+    assert.deepEqual(info.nativeContexts, [
+      {
+        nodeId: 10,
+        nodeIndex: ncIndex,
+        nodeName: 'system / NativeContext',
+        attributedSize: 10,
+        retainedSize: 10,
+        selfSize: 10,
+      },
+    ]);
+    assert.isAtLeast(info.noAttributionSize, 100, 'Unattributed size should include JSObject');
+  });
+
+  it('can calculate native contexts and their sizes', async () => {
+    const builder = new HeapSnapshotBuilder();
+    const root = builder.rootNode;
+
+    // Native Context 1
+    const nc1 = new HeapNode('system / NativeContext', 10, 'object', 10);
+    root.linkNode(nc1, 'element');
+
+    // Native Context 2 (starts with prefix)
+    const nc2 = new HeapNode('system / NativeContext / https://example.com', 20, 'object', 20);
+    root.linkNode(nc2, 'element');
+
+    // Meta-map pointing to NC1
+    const mm1 = new HeapNode('MapMap1', 30, 'object', 30);
+    root.linkNode(mm1, 'element');
+    mm1.linkNode(nc1, 'internal', 'native_context');
+
+    // Map pointing to MM1
+    const m1 = new HeapNode('Map1', 40, 'object', 40);
+    root.linkNode(m1, 'element');
+    m1.linkNode(mm1, 'internal', 'map');
+
+    // JSObject pointing to Map1 (attributed to NC1)
+    const o1 = new HeapNode('JSObject1', 100, 'object', 100);
+    root.linkNode(o1, 'element');
+    o1.linkNode(m1, 'internal', 'map');
+
+    // Unattributed node (size 300, not linked to any map or native context)
+    const unattributedNode = new HeapNode('UnattributedNode', 300, 'object', 300);
+    root.linkNode(unattributedNode, 'element');
+
+    // Shared object (size 400, linked from both NC1 and NC2)
+    const sharedObj = new HeapNode('SharedObject', 400, 'object', 400);
+    nc1.linkNode(sharedObj, 'element');
+    nc2.linkNode(sharedObj, 'element');
+
+    const snapshot = await builder.createJSHeapSnapshot();
+
+    // 1. Verify getNativeContextSizes returns native contexts with correct sizes
+    const info = snapshot.getNativeContextSizes();
+    assert.lengthOf(info.nativeContexts, 2, 'Should find 2 native contexts');
+
+    const nc1Index = snapshot.nodeIndexForId(10)!;
+    const nc2Index = snapshot.nodeIndexForId(20)!;
+    assert.deepEqual(info.nativeContexts, [
+      {
+        nodeId: 10,
+        nodeIndex: nc1Index,
+        nodeName: 'system / NativeContext',
+        attributedSize: 180,
+        retainedSize: 10,
+        selfSize: 10,
+      },
+      {
+        nodeId: 20,
+        nodeIndex: nc2Index,
+        nodeName: 'system / NativeContext / https://example.com',
+        attributedSize: 20,
+        retainedSize: 20,
+        selfSize: 20,
+      },
+    ]);
+
+    assert.strictEqual(info.sharedSize, 400, 'Shared size should be 400');
+    assert.strictEqual(info.noAttributionSize, 300, 'No attribution size should be 300');
+  });
+
+  it('can filter objects by native context', async () => {
+    const builder = new HeapSnapshotBuilder();
+    const root = builder.rootNode;
+
+    // Native Context 1
+    const nc1 = new HeapNode('system / NativeContext', 10, 'object', 10);
+    root.linkNode(nc1, 'element');
+
+    // Native Context 2 (starts with prefix)
+    const nc2 = new HeapNode('system / NativeContext / https://example.com', 20, 'object', 20);
+    root.linkNode(nc2, 'element');
+
+    // Meta-map pointing to NC1
+    const mm1 = new HeapNode('MapMap1', 30, 'object', 30);
+    root.linkNode(mm1, 'element');
+    mm1.linkNode(nc1, 'internal', 'native_context');
+
+    // Map pointing to MM1
+    const m1 = new HeapNode('Map1', 40, 'object', 40);
+    root.linkNode(m1, 'element');
+    m1.linkNode(mm1, 'internal', 'map');
+
+    // JSObject pointing to Map1 (attributed to NC1)
+    const o1 = new HeapNode('JSObject1', 100, 'object', 100);
+    root.linkNode(o1, 'element');
+    o1.linkNode(m1, 'internal', 'map');
+
+    // Unattributed node (size 300, not linked to any map or native context)
+    const unattributedNode = new HeapNode('UnattributedNode', 300, 'object', 300);
+    root.linkNode(unattributedNode, 'element');
+
+    // Shared object (size 400, linked from both NC1 and NC2)
+    const sharedObj = new HeapNode('SharedObject', 400, 'object', 400);
+    nc1.linkNode(sharedObj, 'element');
+    nc2.linkNode(sharedObj, 'element');
+
+    const snapshot = await builder.createJSHeapSnapshot();
+    const nc1Index = snapshot.nodeIndexForId(10)!;
+
+    // Filter for NC1
+    const filter1 = new HeapSnapshotModel.HeapSnapshotModel.NodeFilter();
+    filter1.filterName = `nativeContext_${nc1Index}`;
+    const aggregates1 = snapshot.aggregatesWithFilter(filter1);
+    const indexes1 = new Set(Object.values(aggregates1).flatMap(a => a.idxs));
+
+    assert.isTrue(indexes1.has(snapshot.nodeIndexForId(10)!), 'NC1 should be in NC1 aggregates');
+    assert.isTrue(indexes1.has(snapshot.nodeIndexForId(100)!), 'JSObject1 should be in NC1 aggregates');
+    assert.isTrue(indexes1.has(snapshot.nodeIndexForId(40)!), 'Map1 should be in NC1 aggregates (propagated)');
+    assert.isFalse(indexes1.has(snapshot.nodeIndexForId(20)!), 'NC2 should NOT be in NC1 aggregates');
+    assert.isFalse(indexes1.has(snapshot.rootNodeIndex), 'Root should NOT be in NC1 aggregates');
+
+    // Filter for noNativeContext
+    const filterNoNc = new HeapSnapshotModel.HeapSnapshotModel.NodeFilter();
+    filterNoNc.filterName = 'noNativeContext';
+    const aggregatesNoNc = snapshot.aggregatesWithFilter(filterNoNc);
+    const indexesNoNc = new Set(Object.values(aggregatesNoNc).flatMap(a => a.idxs));
+
+    assert.isTrue(indexesNoNc.has(snapshot.nodeIndexForId(300)!),
+                  'UnattributedNode should be in noNativeContext aggregates');
+    assert.isFalse(indexesNoNc.has(snapshot.nodeIndexForId(100)!),
+                   'JSObject1 should NOT be in noNativeContext aggregates');
+
+    // Filter for sharedNativeContext
+    const filterShared = new HeapSnapshotModel.HeapSnapshotModel.NodeFilter();
+    filterShared.filterName = 'sharedNativeContext';
+    const aggregatesShared = snapshot.aggregatesWithFilter(filterShared);
+    const indexesShared = new Set(Object.values(aggregatesShared).flatMap(a => a.idxs));
+
+    assert.isTrue(indexesShared.has(snapshot.nodeIndexForId(400)!),
+                  'SharedObject should be in sharedNativeContext aggregates');
+    assert.isFalse(indexesShared.has(snapshot.nodeIndexForId(100)!),
+                   'JSObject1 should NOT be in sharedNativeContext aggregates');
+  });
+
+  it('heapSnapshotGetObjectInfo', async () => {
+    const snapshot =
+        await HeapSnapshotWorker.HeapSnapshot.createJSHeapSnapshotForTesting(createHeapSnapshotMockWithDetachedness());
+
+    // Root node
+    const rootInfo = snapshot.getObjectInfo(0);
+
+    // Window node
+    const windowInfo = snapshot.getObjectInfo(8);
+
+    assert.deepEqual(rootInfo, {
+      id: 1,
+      name: '',
+      type: 'hidden',
+      nodeIndex: 0,
+      detachedness: HeapSnapshotModel.HeapSnapshotModel.DOMLinkState.UNKNOWN,
+      selfSize: 0,
+      retainedSize: 8,
+      distance: HeapSnapshotModel.HeapSnapshotModel.baseSystemDistance,
+      edgeCount: 1,
+      retainerCount: 0,
+    });
+
+    assert.deepEqual(windowInfo, {
+      id: 2,
+      name: 'Window',
+      type: 'object',
+      nodeIndex: 8,
+      detachedness: HeapSnapshotModel.HeapSnapshotModel.DOMLinkState.DETACHED,
+      selfSize: 8,
+      retainedSize: 8,
+      distance: 1,
+      edgeCount: 0,
+      retainerCount: 1,
+    });
+
+    assert.throws(() => snapshot.getObjectInfo(5), 'Invalid nodeIndex 5');
   });
 });

@@ -19,6 +19,11 @@ BASE_DECLARE_FEATURE(kWebXROrientationSensorDevice);
 COMPONENT_EXPORT(VR_FEATURES) BASE_DECLARE_FEATURE(kWebXRPlaneDetection);
 COMPONENT_EXPORT(VR_FEATURES) BASE_DECLARE_FEATURE(kWebXrVisibleBlurred);
 
+#if BUILDFLAG(IS_ANDROID)
+COMPONENT_EXPORT(VR_FEATURES)
+BASE_DECLARE_FEATURE(kOpenXrAndroidSystemKeyboard);
+#endif
+
 #if BUILDFLAG(ENABLE_OPENXR)
 // Note that this feature can be overridden by logic contained within
 // `IsOpenXrEnabled` and therefore should generally not be queried directly.
@@ -26,6 +31,7 @@ COMPONENT_EXPORT(VR_FEATURES) BASE_DECLARE_FEATURE(kOpenXR);
 COMPONENT_EXPORT(VR_FEATURES) BASE_DECLARE_FEATURE(kSpatialEntitesDepthHitTest);
 #if BUILDFLAG(IS_ANDROID)
 COMPONENT_EXPORT(VR_FEATURES) BASE_DECLARE_FEATURE(kOpenXrAndroidSmoothDepth);
+COMPONENT_EXPORT(VR_FEATURES) BASE_DECLARE_FEATURE(kOpenXrAndroidCubeMap);
 #endif
 
 // Helper method to check if OpenXR should be enabled, this is because we want

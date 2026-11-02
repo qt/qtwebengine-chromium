@@ -14,7 +14,8 @@
 # limitations under the License.
 #
 
-load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test", "rust_test_suite")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 package(
     default_visibility = ["//:internal"],
@@ -31,6 +32,7 @@ rust_library(
     proc_macro_deps = [
         "@oak_crates_index//:async-trait",
     ],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//oak_containers/launcher:lib",
         "//oak_crypto",
@@ -41,10 +43,12 @@ rust_library(
         "@oak_crates_index//:async-stream",
         "@oak_crates_index//:clap",
         "@oak_crates_index//:futures",
+        "@oak_crates_index//:http",
         "@oak_crates_index//:hyper-util",
         "@oak_crates_index//:log",
         "@oak_crates_index//:prost",
         "@oak_crates_index//:tokio",
+        "@oak_crates_index//:tokio-stream",
         "@oak_crates_index//:tokio-vsock",
         "@oak_crates_index//:tonic",
         "@oak_crates_index//:tower",
@@ -55,11 +59,13 @@ rust_library(
 rust_test(
     name = "unit_tests",
     crate = ":lib",
+    target_compatible_with = ["@platforms//os:linux"],
 )
 
 rust_binary(
     name = "oak_functions_containers_launcher",
     srcs = ["src/main.rs"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":lib",
         "//oak_containers/launcher:lib",
@@ -68,6 +74,7 @@ rust_binary(
         "@oak_crates_index//:anyhow",
         "@oak_crates_index//:clap",
         "@oak_crates_index//:env_logger",
+        "@oak_crates_index//:http",
         "@oak_crates_index//:log",
         "@oak_crates_index//:prost",
         "@oak_crates_index//:tokio",
@@ -75,26 +82,32 @@ rust_binary(
     ],
 )
 
-rust_test_suite(
+rust_test(
     name = "oak_functions_containers_launcher_test",
     srcs = ["tests/integration_test.rs"],
     data = [
         ":oak_functions_containers_launcher",
         "//cc/client:cli",
-        "//java/src/main/java/com/google/oak/client/oak_functions_client",
         "//oak_containers/kernel",
         "//oak_functions/examples/echo",
         "//oak_functions/examples/key_value_lookup",
         "//oak_functions_containers_app:bundle",
         "//oak_functions_launcher:mock_lookup_data",
     ],
+    # Tracking: b/5034099
+    flaky = True,
+    shard_count = 5,
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//oak_client",
         "//oak_file_utils",
         "//oak_functions_client:lib",
         "//oak_functions_test_utils",
         "@oak_crates_index//:env_logger",
+        "@oak_crates_index//:http",
         "@oak_crates_index//:log",
+        "@oak_crates_index//:portpicker",
+        "@oak_crates_index//:tempfile",
         "@oak_crates_index//:tokio",
     ],
 )

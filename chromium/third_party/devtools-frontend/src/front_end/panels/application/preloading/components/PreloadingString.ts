@@ -22,7 +22,7 @@ const UIStrings = {
   /**
    * @description  Description text for Prefetch status PrefetchFailedMIMENotSupported.
    */
-  PrefetchFailedMIMENotSupported: 'The prefetch failed because the response\'s Content-Type header was not supported.',
+  PrefetchFailedMIMENotSupported: 'The prefetch failed because the response’s Content-Type header was not supported.',
   /**
    * @description  Description text for Prefetch status PrefetchFailedNetError.
    */
@@ -293,7 +293,7 @@ const UIStrings = {
    *  Description text for PrerenderFinalStatus::kActivatedDuringMainFrameNavigation.
    */
   prerenderFinalStatusActivatedDuringMainFrameNavigation:
-      'Prerendered page activated during initiating page\'s main frame navigation.',
+      'Prerendered page activated during initiating page’s main frame navigation.',
   /**
    *  Description text for PrerenderFinalStatus::kCrossSiteRedirectInMainFrameNavigation.
    */
@@ -332,7 +332,7 @@ const UIStrings = {
    * Description text for PrerenderFinalStatus::kSpeculationRuleRemoved.
    */
   prerenderFinalStatusSpeculationRuleRemoved:
-      'The prerendered page was unloaded because the initiating page removed the corresponding prerender rule from <script type="speculationrules">.',
+      'The prerendered page was unloaded because the initiating page removed the corresponding prerender rule from `<script type="speculationrules">`.',
   /**
    * Description text for PrerenderFinalStatus::kActivatedWithAuxiliaryBrowsingContexts.
    */
@@ -342,7 +342,7 @@ const UIStrings = {
    * Description text for PrerenderFinalStatus::kMaxNumOfRunningEagerPrerendersExceeded.
    */
   prerenderFinalStatusMaxNumOfRunningEagerPrerendersExceeded:
-      'The prerender whose eagerness is "eager" was not performed because the initiating page already has too many prerenders ongoing. Remove other speculation rules with "eager" to enable further prerendering.',
+      'The prerender whose eagerness is "`eager`" was not performed because the initiating page already has too many prerenders ongoing. Remove other speculation rules with "`eager`" to enable further prerendering.',
   /**
    * Description text for PrerenderFinalStatus::kMaxNumOfRunningEmbedderPrerendersExceeded.
    */
@@ -352,7 +352,7 @@ const UIStrings = {
    * Description text for PrerenderFinalStatus::kMaxNumOfRunningNonEagerPrerendersExceeded.
    */
   prerenderFinalStatusMaxNumOfRunningNonEagerPrerendersExceeded:
-      'The old non-eager prerender (with a "moderate" or "conservative" eagerness and triggered by hovering or clicking links) was automatically canceled due to starting a new non-eager prerender. It can be retriggered by interacting with the link again.',
+      'The old non-eager prerender (with a "`moderate`" or "`conservative`" eagerness and triggered by hovering or clicking links) was automatically canceled due to starting a new non-eager prerender. It can be retriggered by interacting with the link again.',
   /**
    * Description text for PrenderFinalStatus::kPrerenderingUrlHasEffectiveUrl.
    */
@@ -454,6 +454,8 @@ export const PrefetchReasonDescription: Record<string, {name: () => Platform.UIS
   PrefetchNotEligibleRedirectFromServiceWorker: {name: () => i18n.i18n.lockedString('Unknown')},
   PrefetchNotEligibleRedirectToServiceWorker: {name: () => i18n.i18n.lockedString('Unknown')},
   PrefetchEvictedAfterBrowsingDataRemoved: {name: i18nLazyString(UIStrings.PrefetchEvictedAfterBrowsingDataRemoved)},
+  PrefetchNotEligibleBlockedByConnectionAllowlist: {name: () => i18n.i18n.lockedString('Unknown')},
+  PrefetchCancelledOnUserNavigation: {name: () => i18n.i18n.lockedString('Unknown')},
 };
 
 /** Decoding PrefetchFinalStatus prefetchAttempt to failure description. **/
@@ -540,6 +542,10 @@ export function prefetchFailureReason(
       return PrefetchReasonDescription['PrefetchNotEligibleRedirectToServiceWorker'].name();
     case Protocol.Preload.PrefetchStatus.PrefetchEvictedAfterBrowsingDataRemoved:
       return PrefetchReasonDescription['PrefetchEvictedAfterBrowsingDataRemoved'].name();
+    case Protocol.Preload.PrefetchStatus.PrefetchNotEligibleBlockedByConnectionAllowlist:
+      return PrefetchReasonDescription['PrefetchNotEligibleBlockedByConnectionAllowlist'].name();
+    case Protocol.Preload.PrefetchStatus.PrefetchCancelledOnUserNavigation:
+      return PrefetchReasonDescription['PrefetchCancelledOnUserNavigation'].name();
     default:
       // Note that we use switch and exhaustiveness check to prevent to
       // forget updating these strings, but allow to handle unknown

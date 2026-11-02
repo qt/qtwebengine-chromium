@@ -464,7 +464,6 @@ export interface HostConfigFreestyler {
   enabled: boolean;
   userTier: string;
   executionMode?: HostConfigFreestylerExecutionMode;
-  patching?: boolean;
   multimodal?: boolean;
   multimodalUploadInput?: boolean;
   functionCalling?: boolean;
@@ -600,6 +599,10 @@ interface LiveEdit {
   enabled: boolean;
 }
 
+interface ExtensionsOnChromeUrls {
+  enabled: boolean;
+}
+
 interface DevToolsFlexibleLayout {
   verticalDrawerEnabled: boolean;
 }
@@ -637,7 +640,19 @@ interface DevToolsWebMCPSupport {
   enabled: boolean;
 }
 
+interface DevToolsAdsPanel {
+  enabled: boolean;
+}
+
 interface DevToolsPlusButton {
+  enabled: boolean;
+}
+
+interface DevToolsInstrumentationBreakpoints {
+  enabled: boolean;
+}
+
+interface DevToolsMobileSafeAreaEmulation {
   enabled: boolean;
 }
 
@@ -695,8 +710,12 @@ export type HostConfig = Platform.TypeScriptUtilities.RecursivePartial<{
   devToolsGeminiRebranding: HostConfigGeminiRebranding,
   devToolsProtocolMonitor: DevToolsProtocolMonitor,
   devToolsWebMCPSupport: DevToolsWebMCPSupport,
+  devToolsAdsPanel: DevToolsAdsPanel,
   devToolsUseGcaApi: UseGcaApi,
   devToolsPlusButton: DevToolsPlusButton,
+  devToolsInstrumentationBreakpoints: DevToolsInstrumentationBreakpoints,
+  devToolsMobileSafeAreaEmulation: DevToolsMobileSafeAreaEmulation,
+  extensionsOnChromeUrls: ExtensionsOnChromeUrls,
 }>;
 
 /**

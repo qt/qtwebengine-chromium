@@ -12,9 +12,6 @@ option java_package = 'org.chromium.components.omnibox';
 option java_outer_classname = 'IconResourceIdsProto';
 
 package omnibox;
-
-// These values represent mapping for icon resource ids
-// Next ID: 104
 enum IconResourceIds {
   // DEPRECATED
   reserved 80;
@@ -191,7 +188,6 @@ enum IconResourceIds {
   EMPTY = 53;
 
   // ic_cricket_worldcup_2019
-  // LINT: LEGACY_NAMES
   CRICKET_WORLDCUP_2019 = 55;
 
   // ic_cricket_fallback
@@ -241,11 +237,7 @@ enum IconResourceIds {
 
   // Bookmarks
   BOOKMARKS = 76;
-
-  // Screenshot: https://screenshot.googleplex.com/B5wRtTHgRYkzBKk
   COLORED_SEARCH_LOUPE_WITH_SPARKLE = 84;
-
-  // Screenshot: https://screenshot.googleplex.com/4FNrAJE79snwYne
   SEARCH_LOUPE_WITH_SPARKLE = 86;
 
   // follow_up
@@ -264,77 +256,95 @@ enum IconResourceIds {
   //////////////////////////////////////////////////////////////////
   // Google Material Icons
   //////////////////////////////////////////////////////////////////
-
-  //
   LOCATION_PIN = 74;
-
-  //
   STORY_SUGGESTION = 77;
 
-  // http://fonts/icons?selected=Google+Symbols:group:FILL@0;wght@400;GRAD@0;opsz@48
+  // Icon: Google Symbols:group:FILL@0;wght@400;GRAD@0;opsz@48
   GROUP_SYMBOL = 78;
 
   // http://shortn/_0sp4vlu2bM
   CELEBRATION = 79;
 
-  // http://fonts/icons?selected=Google+Symbols:update:FILL@0;wght@400;GRAD@0;opsz@24&icon.query=update
+  // Icon: Google Symbols:update:FILL@0;wght@400;GRAD@0;opsz@24
   PERSONAL_UPDATE = 81;
 
-  // http://fonts/icons?selected=Google+Symbols:cloud_off:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24
+  // Icon: Google Symbols:cloud_off:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24
   OFFLINE = 82;
 
-  // http://fonts/icons?selected=Google+Symbols:refresh:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24
+  // Icon: Google Symbols:refresh:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24
   REFRESH = 83;
 
   // Query Builder icon
-  // (https://screenshot.googleplex.com/9HTD9HwsnUnKDWY.png)
   QUERY_BUILDER = 85;
 
   // Pen with spark icon
   PEN_SPARK = 88;
 
-  // https://fonts.corp.google.com/icons?selected=Google+Symbols:astrophotography_mode:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24&icon.size=24&icon.color=%23e3e3e3
-  // For AIM.
+  // Icon: Google
+  // Symbols:astrophotography_mode:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24 For
+  // AIM.
   ASTROPHOTOGRAPHY_MODE = 89;
-  // https://fonts.corp.google.com/icons?selected=Google+Symbols:autorenew:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24&icon.size=24&icon.color=%23e3e3e3
+  // Icon: Google Symbols:autorenew:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24
   // For AIM.
   AUTORENEW = 90;
-  // https://fonts.corp.google.com/icons?selected=Google+Symbols:bolt:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24&icon.size=24&icon.color=%23e3e3e3
+  // Icon: Google Symbols:bolt:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24
   // For AIM.
   BOLT = 91;
-  // https://fonts.corp.google.com/icons?selected=Google+Symbols:attach_file:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24&icon.size=24&icon.color=%23e3e3e3
+  // Icon: Google Symbols:attach_file:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24
   // For AIM.
   ATTACH_FILE = 92;
-  // https://fonts.corp.google.com/icons?selected=Google+Symbols:add_photo_alternate:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24&icon.size=24&icon.color=%23e3e3e3
-  // For AIM.
+  // Icon: Google
+  // Symbols:add_photo_alternate:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24 For AIM.
   ADD_PHOTO_ALTERNATE = 93;
-  // https://fonts.corp.google.com/icons?selected=Google+Symbols:travel_explore:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24&icon.size=24&icon.color=%23e3e3e3&
+  // Icon: Google Symbols:travel_explore:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24
   // For AIM.
   TRAVEL_EXPLORE = 94;
-  // https://fonts.corp.google.com/icons?selected=Google+Symbols:task_spark:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24&icon.size=24&icon.color=%23e3e3e3
+  // Icon: Google Symbols:task_spark:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24
   // For AIM.
   TASK_SPARK = 95;
-  // https://fonts.corp.google.com/icons?selected=Google+Symbols:draft_spark:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24&icon.size=24&icon.color=%23e3e3e3
+  // Icon: Google Symbols:draft_spark:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24
   // For AIM.
   DRAFT_SPARK = 96;
-  // https://fonts.corp.google.com/icons?selected=Google+Symbols:timer:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24&icon.size=24&icon.color=%23e3e3e3
+  // Icon: Google Symbols:timer:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24
   // For AIM.
   TIMER = 97;
-  // https://fonts.corp.google.com/icons?selected=Google+Symbols:photo_spark:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24&icon.size=24&icon.color=%23e3e3e3
+  // Icon: Google Symbols:photo_spark:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24
   // For AIM.
   PHOTO_SPARK = 98;
-  // https://fonts.corp.google.com/icons?selected=Google+Symbols:lens_camera:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24&icon.size=24&icon.color=%23e3e3e3
+  // Icon: Google Symbols:lens_camera:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24
   // For AIM.
   LENS_CAMERA = 99;
   // Banana emoji icon "🍌" for AIM.
   BANANA = 100;
-  // https://fonts.corp.google.com/icons?selected=Google+Symbols:check_small:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24&icon.size=24&icon.color=%23e3e3e3
+  // Icon: Google Symbols:check_small:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24
   // For AIM.
   CHECK_SMALL = 101;
-  // https://fonts.corp.google.com/icons?selected=Google+Symbols:photo_prints:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24&icon.size=24&icon.color=%23e3e3e3
+  // Icon: Google Symbols:photo_prints:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24
   // For AIM.
   PHOTO_PRINTS = 102;
-  // https://fonts.corp.google.com/icons?selected=Google+Symbols:drive:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24&icon.size=24&icon.color=%2523e3e3e3&icon.query=drive
+  // Icon: Google Symbols:drive:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24
   // For AIM.
   DRIVE = 103;
+  // Icon: Google Symbols:agent_mode_2:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24
+  // For AIM.
+  // LINT: LEGACY_NAMES
+  AGENT_MODE_2 = 104;
+
+  // Icon: Google Symbols:schedule_auto:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24
+  // AIM History icon.
+  SCHEDULE_AUTO = 105;
+
+  // Icon: Google Symbols:sort_spark:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24
+  // AIM Threads History icon.
+  SORT_SPARK = 106;
+
+  // Icon: Google Symbols:acute:FILL@0;ROND@50;wght@400;GRAD@0;opsz@24
+  // AIM 'Fast' model icon.
+  ACUTE = 107;
+}
+
+enum IconPositions {
+  UNKNOWN = 0;
+  LEFT = 1;
+  RIGHT = 2;
 }

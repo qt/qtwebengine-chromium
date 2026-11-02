@@ -43,7 +43,7 @@
 #include "dawn/native/ValidationUtils_autogen.h"
 #include "dawn/platform/DawnPlatform.h"
 #include "partition_alloc/pointers/raw_ptr.h"
-#include "src/dawn/common/Log.h"
+#include "src/dawn/common/GPUInfo.h"
 #include "src/dawn/common/Ref.h"
 #include "src/dawn/common/Sha3.h"
 #include "src/dawn/common/StringViewUtils.h"
@@ -70,6 +70,7 @@
 #include "src/dawn/native/ExternalTexture.h"
 #include "src/dawn/native/Instance.h"
 #include "src/dawn/native/InternalPipelineStore.h"
+#include "src/dawn/native/MemoryBlockAllocator.h"
 #include "src/dawn/native/PhysicalDevice.h"
 #include "src/dawn/native/PipelineCache.h"
 #include "src/dawn/native/QuerySet.h"
@@ -91,6 +92,7 @@
 #include "src/dawn/platform/metrics/HistogramMacros.h"
 #include "src/dawn/platform/tracing/TraceEvent.h"
 #include "src/utils/compiler.h"
+#include "src/utils/log.h"
 
 namespace dawn::native {
 
@@ -237,7 +239,6 @@ ResultOrError<Ref<PipelineLayoutBase>> ValidateLayoutAndGetComputePipelineDescri
                                                               SingleShaderStage::Compute,
                                                               outDescriptor->compute.module,
                                                               outDescriptor->compute.entryPoint,
-                                                              outDescriptor->compute.constantCount,
                                                               outDescriptor->compute.constants,
                                                           }},
                                                           /*allowInternalBinding=*/false));
@@ -299,27 +300,33 @@ DeviceBase::DeviceBase(AdapterBase* adapter,
         cacheDesc = *cacheDescIn;
     }
 
-    if (cacheDesc.loadDataFunction == nullptr && cacheDesc.storeDataFunction == nullptr &&
-        cacheDesc.functionUserdata == nullptr && GetPlatform()->GetCachingInterface() != nullptr) {
+    if (cacheDesc.dawnLoadCacheDataCallbackInfo.callback == nullptr &&
+        cacheDesc.dawnStoreCacheDataCallbackInfo.callback == nullptr &&
+        GetPlatform()->GetCachingInterface() != nullptr) {
         // Populate cache functions and userdata from legacy cachingInterface.
-        cacheDesc.loadDataFunction = [](const void* key, size_t keySize, void* value,
-                                        size_t valueSize, void* userdata) {
-            auto* cachingInterface = static_cast<dawn::platform::CachingInterface*>(userdata);
-            return cachingInterface->LoadData(key, keySize, value, valueSize);
-        };
-        cacheDesc.storeDataFunction = [](const void* key, size_t keySize, const void* value,
-                                         size_t valueSize, void* userdata) {
-            auto* cachingInterface = static_cast<dawn::platform::CachingInterface*>(userdata);
-            return cachingInterface->StoreData(key, keySize, value, valueSize);
-        };
-        cacheDesc.functionUserdata = GetPlatform()->GetCachingInterface();
+        ToCppAPI(&cacheDesc)
+            ->SetDawnLoadCacheDataCallback(
+                [](std::span<const std::byte> key, std::span<std::byte> value,
+                   dawn::platform::CachingInterface* cachingInterface) -> size_t {
+                    if (value.empty()) {
+                        return cachingInterface->FindKey(key);
+                    }
+                    return cachingInterface->LoadData(key, value);
+                },
+                GetPlatform()->GetCachingInterface());
+        ToCppAPI(&cacheDesc)
+            ->SetDawnStoreCacheDataCallback(
+                [](std::span<const std::byte> key, std::span<const std::byte> value,
+                   dawn::platform::CachingInterface* cachingInterface) {
+                    cachingInterface->StoreData(key, value);
+                },
+                GetPlatform()->GetCachingInterface());
     }
 
     // Disable caching if the DisableBlobCache toggle is enabled.
     if (IsToggleEnabled(Toggle::DisableBlobCache)) {
-        cacheDesc.loadDataFunction = nullptr;
-        cacheDesc.storeDataFunction = nullptr;
-        cacheDesc.functionUserdata = nullptr;
+        cacheDesc.dawnLoadCacheDataCallbackInfo = {};
+        cacheDesc.dawnStoreCacheDataCallbackInfo = {};
     }
 
     mBlobCache =
@@ -405,6 +412,7 @@ MaybeError DeviceBase::Initialize(const UnpackedPtr<DeviceDescriptor>& descripto
 
     mCaches = std::make_unique<DeviceBase::Caches>();
     mDynamicUploader = std::make_unique<DynamicUploader>(this);
+    mMemoryBlockAllocator = std::make_unique<MemoryBlockAllocator>();
     mCallbackTaskManager = AcquireRef(new CallbackTaskManager());
     mInternalPipelineStore = std::make_unique<InternalPipelineStore>(this);
 
@@ -439,7 +447,7 @@ MaybeError DeviceBase::Initialize(const UnpackedPtr<DeviceDescriptor>& descripto
     }
 
     if (HasFeature(Feature::ImplicitDeviceSynchronization)) {
-        mMutex = AcquireRef(new DeviceMutex);
+        mMutex = AcquireRef(new DeviceMutex(GetPlatform()));
     } else {
         mMutex = nullptr;
     }
@@ -625,6 +633,7 @@ void DeviceBase::Destroy(DestroyReason reason) {
     mInternalPipelineStore = nullptr;
     mExternalTexturePlaceholderView = nullptr;
     mTemporaryUniformBuffer = nullptr;
+    mMemoryBlockAllocator = nullptr;
 
     // Note: mQueue is not released here since the application may still get it after calling
     // Destroy() via APIGetQueue.
@@ -668,14 +677,8 @@ void DeviceBase::HandleError(std::unique_ptr<ErrorData> error,
         AppendDeviceLostMessage(error.get());
     }
 
-    // If ErrorInjectorEnabled() then this may be an injected DeviceLost, not a real one.
-    bool deviceDefinitelyStopped = type == InternalErrorType::DeviceLost && !ErrorInjectorEnabled();
-    if (deviceDefinitelyStopped) {
-        // If the device was lost naturally, the backend device has already stopped.
-        mState = State::Disconnected;
-    }
-
     InternalErrorType allowedErrors = InternalErrorType::Validation | additionalAllowedErrors;
+
     if (!(allowedErrors & type)) {
         // If we receive an error which we did not explicitly allow, assume the backend can't
         // recover and lose the device now. Cleanup for the device will be deferred until the last
@@ -684,9 +687,14 @@ void DeviceBase::HandleError(std::unique_ptr<ErrorData> error,
                              allowedErrors);
 
         // Handle the remainder of this error as if it caused a device lost.
+        type = InternalErrorType::DeviceLost;
+    }
+
+    if (type == InternalErrorType::DeviceLost) {
+        // Transition to a non-alive state if we are currently alive so that the application can no
+        // longer use the device.
         State prev = State::Alive;
         mState.compare_exchange_strong(prev, State::BeingDisconnected, std::memory_order::acq_rel);
-        type = InternalErrorType::DeviceLost;
     }
 
     // Re-enable validation on device loss or OOM to avoid unpredictable behaviors afterwards.
@@ -1054,16 +1062,13 @@ ResultOrError<Ref<BindGroupLayoutBase>> DeviceBase::GetOrCreateBindGroupLayout(
 // Private function used at initialization
 ResultOrError<Ref<BindGroupLayoutBase>> DeviceBase::CreateEmptyBindGroupLayout() {
     BindGroupLayoutDescriptor desc = {};
-    desc.entryCount = 0;
-    desc.entries = nullptr;
-
+    desc.entries = {};
     return GetOrCreateBindGroupLayout(Unpack(&desc));
 }
 
 ResultOrError<Ref<PipelineLayoutBase>> DeviceBase::CreateEmptyPipelineLayout() {
     PipelineLayoutDescriptor desc = {};
-    desc.bindGroupLayoutCount = 0;
-    desc.bindGroupLayouts = nullptr;
+    desc.bindGroupLayouts = {};
 
     return GetOrCreatePipelineLayout(Unpack(&desc));
 }
@@ -1552,8 +1557,16 @@ BufferBase* DeviceBase::APICreateErrorBuffer(const BufferDescriptor* desc) {
     return ReturnToAPI(BufferBase::MakeError(this, desc));
 }
 
+ComputePipelineBase* DeviceBase::APICreateErrorComputePipeline(StringView label) {
+    return ReturnToAPI(ComputePipelineBase::MakeError(this, label));
+}
+
 ExternalTextureBase* DeviceBase::APICreateErrorExternalTexture() {
     return ReturnToAPI(ExternalTextureBase::MakeError(this));
+}
+
+RenderPipelineBase* DeviceBase::APICreateErrorRenderPipeline(StringView label) {
+    return ReturnToAPI(RenderPipelineBase::MakeError(this, label));
 }
 
 TextureBase* DeviceBase::APICreateErrorTexture(const TextureDescriptor* desc) {
@@ -1614,6 +1627,7 @@ MaybeError DeviceBase::Tick() {
     // reclaiming resources one tick earlier.
     mDynamicUploader->Deallocate(mQueue->GetCompletedCommandSerial());
     mQueue->Tick(mQueue->GetCompletedCommandSerial());
+    mMemoryBlockAllocator->Tick();
 
     return {};
 }
@@ -1701,11 +1715,11 @@ void DeviceBase::ApplyFeatures(const UnpackedPtr<DeviceDescriptor>& deviceDescri
                                wgpu::FeatureLevel level) {
     DAWN_CHECK(deviceDescriptor);
     // Validate all required features with device toggles.
-    DAWN_ASSERT(GetPhysicalDevice()->SupportsAllRequiredFeatures(
-        {deviceDescriptor->requiredFeatures, deviceDescriptor->requiredFeatureCount}, mToggles));
+    DAWN_ASSERT(GetPhysicalDevice()->SupportsAllRequiredFeatures(deviceDescriptor->requiredFeatures,
+                                                                 mToggles));
 
-    for (uint32_t i = 0; i < deviceDescriptor->requiredFeatureCount; ++i) {
-        mEnabledFeatures.EnableFeature(DAWN_UNSAFE_TODO(deviceDescriptor->requiredFeatures[i]));
+    for (wgpu::FeatureName feature : deviceDescriptor->requiredFeatures) {
+        mEnabledFeatures.EnableFeature(feature);
     }
 
     // Handle features that implicitly enable other features.
@@ -2411,6 +2425,10 @@ DynamicUploader* DeviceBase::GetDynamicUploader() const {
     return mDynamicUploader.get();
 }
 
+MemoryBlockAllocator* DeviceBase::GetMemoryBlockAllocator() {
+    return mMemoryBlockAllocator.get();
+}
+
 // The Toggle device facility
 
 std::vector<const char*> DeviceBase::GetTogglesUsed() const {
@@ -2563,6 +2581,11 @@ bool DeviceBase::NeedsIndirectGPUValidation() const {
     return true;
 }
 
+bool DeviceBase::IsTileBasedRenderer() const {
+    return gpu_info::IsTileBasedRenderer(GetPhysicalDevice()->GetVendorId(),
+                                         GetPhysicalDevice()->GetDeviceId());
+}
+
 uint64_t DeviceBase::GetBufferCopyOffsetAlignmentForDepthStencil() const {
     // For depth-stencil texture, buffer offset must be a multiple of 4, which is required
     // by WebGPU and Vulkan SPEC.
@@ -2681,6 +2704,7 @@ bool DeviceBase::ReduceMemoryUsage() {
         return false;
     }
     GetDynamicUploader()->Deallocate(GetQueue()->GetCompletedCommandSerial(), /*freeAll=*/true);
+    mMemoryBlockAllocator->TrimMemory();
     mInternalPipelineStore->ResetScratchBuffers();
     mTemporaryUniformBuffer = nullptr;
 
@@ -2757,7 +2781,7 @@ std::pair<std::string, bool> DeviceBase::GetTraceInfo() {
 
     uint32_t count = s_count.fetch_add(1, std::memory_order_acq_rel);
 
-    std::time_t now = std::time(0);
+    std::time_t now = std::time(nullptr);
     std::tm tm(*std::localtime(&now));
     std::string traceName(absl::StrFormat("%s-%04d-%02d-%02dT%02d-%02d-%02d-c%03d", traceFileBase,
                                           tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour,

@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Google LLC
+// Copyright 2024 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@
 #include <jni.h>
 
 #include "ink/strokes/input/stroke_input.h"
+#include "ink/strokes/internal/jni/in_progress_stroke_native.h"
 #include "ink/strokes/internal/jni/stroke_input_batch_native.h"
 
 namespace ink::jni {
@@ -30,6 +31,9 @@ void UpdateJStrokeInputOrThrow(JNIEnv* env, const StrokeInput& input_in,
                                jobject j_input_out);
 void UpdateJStrokeInputOrThrow(JNIEnv* env,
                                const StrokeInputBatchNative_Input& input_in,
+                               jobject j_input_out);
+void UpdateJStrokeInputOrThrow(JNIEnv* env,
+                               const InProgressStrokeNative_Input& input_in,
                                jobject j_input_out);
 
 }  // namespace ink::jni

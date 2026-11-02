@@ -6,6 +6,7 @@
 
 load("@builtin//encoding.star", "json")
 load("@builtin//lib/gn.star", "gn")
+load("@builtin//path.star", "path")
 load("@builtin//struct.star", "module")
 load("./config.star", "config")
 load("./gn_logs.star", "gn_logs")
@@ -184,10 +185,6 @@ def __step_config(ctx, step_config):
             "name": "android/dex",
             "command_prefix": "python3 ../../build/android/gyp/dex.py",
             "handler": "android_dex",
-            # TODO(crbug.com/40270798): include only required jar, dex files in GN config.
-            "indirect_inputs": {
-                "includes": ["*.dex", "*.ijar.jar", "*.turbine.jar"],
-            },
             "exclude_input_patterns": [
                 "*.a",
                 "*.cc",
@@ -280,13 +277,28 @@ def __step_config(ctx, step_config):
             "name": "android/apkbuilder",
             "command_prefix": "python3 ../../build/android/gyp/apkbuilder.py",
             "handler": "android_apkbuilder",
-            "remote": config.get(ctx, "remote-link") or config.get(ctx, "builder"),
+            "remote": config.get(ctx, "remote-link") or config.get(ctx, "default-remote") or config.get(ctx, "builder"),
             "platform_ref": "large",
             "timeout": "5m",
             "exclude_input_patterns": [
                 "*.a",
                 "*.proto",
                 "*.o",
+            ],
+        },
+        {
+            "name": "android/create_size_info_files",
+            "command_prefix": "python3 ../../build/android/gyp/create_size_info_files.py",
+            "handler": "android_create_size_info_files",
+            "remote": remote_run,
+            "platform_ref": "large",
+            "exclude_input_patterns": [
+                "*.o",
+                "*.h",
+                "*.cc",
+                "*.a",
+                "*.inc",
+                "*.cpp",
             ],
         },
     ])
@@ -406,7 +418,7 @@ def __android_dex_handler(ctx, cmd):
     for i, arg in enumerate(cmd.args):
         if arg == "--desugar-dependencies":
             outputs.append(ctx.fs.canonpath(cmd.args[i + 1]))
-        for k in ["--class-inputs=", "--bootclasspath=", "--classpath=", "--class-inputs-filearg=", "--dex-inputs-filearg="]:
+        for k in ["--class-inputs=", "--bootclasspath=", "--classpath=", "--class-inputs-filearg=", "--dex-inputs-filearg=", "--dex-inputs="]:
             if arg.startswith(k):
                 arg = arg.removeprefix(k)
                 _, v = __filearg(ctx, arg)
@@ -628,6 +640,61 @@ def __android_apkbuilder_handler(ctx, cmd):
 
     ctx.actions.fix(inputs = cmd.inputs + inputs)
 
+def __android_create_size_info_files_handler(ctx, cmd):
+    inputs = []
+    for i, arg in enumerate(cmd.args):
+        jar_files_val = ""
+        if arg.startswith("--jar-files="):
+            jar_files_val = arg.removeprefix("--jar-files=")
+        elif arg == "--jar-files":
+            jar_files_val = cmd.args[i + 1]
+
+        if jar_files_val:
+            jars = []
+            fn, v = __filearg(ctx, jar_files_val)
+            if fn:
+                inputs.append(ctx.fs.canonpath(fn))
+
+            for f in v:
+                f, _, _ = f.partition(":")
+                jars.append(f)
+            for jar in jars:
+                if jar.endswith(".jar"):
+                    if jar.endswith(".turbine.jar"):
+                        # Turbine jars are header jars used for compilation and do not have .info files.
+                        # They are lightweight enough to upload directly.
+                        inputs.append(ctx.fs.canonpath(jar))
+                    elif not jar.startswith("../"):
+                        # For generated jars, we use .jar.info files to reduce file transfer size.
+                        info_path = jar + ".info"
+                        inputs.append(ctx.fs.canonpath(info_path))
+                    else:
+                        # For prebuilts, no .jar.info exists, so we fall back to full .jar files.
+                        inputs.append(ctx.fs.canonpath(jar))
+
+                        # There is special handling for .jar files that come from .aar files. Find and
+                        # upload the android_aar_prebuild()'s source.info file for them.
+                        parent_path = path.dir(jar)
+                        if path.base(parent_path) == "libs":
+                            parent_path = path.dir(parent_path)
+                        source_info_path = ctx.fs.canonpath(path.join(parent_path, "source.info"))
+                        if ctx.fs.exists(source_info_path):
+                            inputs.append(source_info_path)
+
+        for k in ["--assets=", "--uncompressed-assets="]:
+            if arg.startswith(k):
+                arg = arg.removeprefix(k)
+                _, v = __filearg(ctx, arg)
+                if type(v) == "string":
+                    v = [v]
+                for f in v:
+                    f, _, _ = f.partition(":")
+                    if f.endswith(".pak"):
+                        inputs.append(ctx.fs.canonpath(f + ".info"))
+                break
+
+    ctx.actions.fix(inputs = cmd.inputs + inputs)
+
 __handlers = {
     "android_apkbuilder": __android_apkbuilder_handler,
     "android_compile_java": __android_compile_java_handler,
@@ -638,6 +705,7 @@ __handlers = {
     "android_trace_references": __android_trace_references_handler,
     "android_turbine": __android_turbine_handler,
     "android_write_build_config": __android_write_build_config_handler,
+    "android_create_size_info_files": __android_create_size_info_files_handler,
 }
 
 android = module(

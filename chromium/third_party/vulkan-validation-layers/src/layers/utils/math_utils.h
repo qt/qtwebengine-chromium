@@ -25,7 +25,7 @@
 #include <limits>
 #include <type_traits>
 
-#ifdef WIN32
+#ifdef _WIN32
 #include <intrin.h>  // For __lzcnt()
 #else
 #include <strings.h>  // For ffs()
@@ -91,7 +91,7 @@ static inline small_vector<uint8_t, 8> GetSetBitIndices(uint32_t value) {
 }
 
 static inline int u_ffs(int val) {
-#ifdef WIN32
+#ifdef _WIN32
     unsigned long bit_pos = 0;
     if (_BitScanForward(&bit_pos, val) != 0) {
         bit_pos += 1;
@@ -201,3 +201,14 @@ static inline uint32_t GetSmallestGreaterOrEquallPowerOfTwo(uint32_t v) {
     return v;
 }
 
+// Used to get how many bits to shift to get value
+// if alignment is |16| this returns |4| (1 << 4)
+constexpr uint32_t GetAlignmentShift(uint32_t value) {
+    assert(IsPowerOfTwo(value));
+    uint32_t shift = 0;
+    while (value > 1) {
+        value >>= 1;
+        ++shift;
+    }
+    return shift;
+}

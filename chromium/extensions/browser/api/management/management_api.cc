@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/functional/bind.h"
+#include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/lazy_instance.h"
 #include "base/location.h"
@@ -20,7 +21,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
-#include "base/types/expected_macros.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "components/supervised_user/core/common/buildflags.h"
@@ -35,6 +35,7 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/management_policy.h"
+#include "extensions/browser/manifest_v2_handler.h"
 #include "extensions/browser/requirements_checker.h"
 #include "extensions/browser/supervised_user_extensions_delegate.h"
 #include "extensions/browser/uninstall_reason.h"
@@ -46,16 +47,17 @@
 #include "extensions/common/extension_urls.h"
 #include "extensions/common/icons/extension_icon_set.h"
 #include "extensions/common/manifest.h"
+#include "extensions/common/manifest_handlers/description_info.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
 #include "extensions/common/manifest_handlers/manifest_url_handlers.h"
 #include "extensions/common/manifest_handlers/offline_enabled_info.h"
 #include "extensions/common/manifest_handlers/options_page_info.h"
 #include "extensions/common/manifest_handlers/replacement_apps.h"
+#include "extensions/common/manifest_handlers/version_name_info.h"
 #include "extensions/common/mojom/context_type.mojom.h"
 #include "extensions/common/permissions/permission_message.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/url_pattern.h"
-#include "services/data_decoder/public/cpp/data_decoder.h"
 #include "url/gurl.h"
 #include "url/url_constants.h"
 
@@ -134,10 +136,8 @@ management::ExtensionInfo CreateExtensionInfo(
   info.enabled = registry->enabled_extensions().Contains(info.id);
   info.offline_enabled = OfflineEnabledInfo::IsOfflineEnabled(&extension);
   info.version = extension.VersionString();
-  if (!extension.version_name().empty()) {
-    info.version_name = extension.version_name();
-  }
-  info.description = extension.description();
+  info.version_name = VersionNameInfo::GetVersionName(extension);
+  info.description = DescriptionInfo::GetDescription(extension);
   info.options_url = OptionsPageInfo::GetOptionsPage(&extension).spec();
   info.homepage_url = ManifestURL::GetHomepageURL(&extension).spec();
   info.may_disable =
@@ -355,46 +355,30 @@ ManagementGetPermissionWarningsByManifestFunction::Run() {
       management::GetPermissionWarningsByManifest::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  data_decoder::DataDecoder::ParseJsonIsolated(
-      params->manifest_str,
-      base::BindOnce(
-          &ManagementGetPermissionWarningsByManifestFunction::OnParse, this));
+  base::JSONReader::Result json_result =
+      base::JSONReader::ReadAndReturnValueWithError(params->manifest_str,
+                                                    base::JSON_PARSE_RFC);
+  if (!json_result.has_value()) {
+    return RespondNow(Error(json_result.error().message));
+  }
 
-  // Matched with a Release() in OnParse().
-  AddRef();
+  const base::DictValue* parsed_manifest = json_result->GetIfDict();
+  if (!parsed_manifest) {
+    return RespondNow(Error(keys::kManifestParseError));
+  }
 
-  // Response is sent async in OnParse().
-  return RespondLater();
-}
+  std::u16string error;
+  scoped_refptr<Extension> extension =
+      Extension::Create(base::FilePath(), ManifestLocation::kInvalidLocation,
+                        *parsed_manifest, Extension::NO_FLAGS, &error);
+  // TODO(lazyboy): Do we need to use |error|?
+  if (!extension) {
+    return RespondNow(Error(keys::kExtensionCreateError));
+  }
 
-void ManagementGetPermissionWarningsByManifestFunction::OnParse(
-    data_decoder::DataDecoder::ValueOrError result) {
-  Respond([&]() -> ResponseValue {
-    ASSIGN_OR_RETURN(
-        base::Value value, std::move(result),
-        [&](std::string error) { return Error(std::move(error)); });
-
-    const base::DictValue* parsed_manifest = value.GetIfDict();
-    if (!parsed_manifest) {
-      return Error(keys::kManifestParseError);
-    }
-
-    std::u16string error;
-    scoped_refptr<Extension> extension =
-        Extension::Create(base::FilePath(), ManifestLocation::kInvalidLocation,
-                          *parsed_manifest, Extension::NO_FLAGS, &error);
-    // TODO(lazyboy): Do we need to use |error|?
-    if (!extension) {
-      return Error(keys::kExtensionCreateError);
-    }
-
-    return ArgumentList(
-        management::GetPermissionWarningsByManifest::Results::Create(
-            CreateWarningsList(extension.get())));
-  }());
-
-  // Matched with AddRef() in Run().
-  Release();
+  return RespondNow(
+      ArgumentList(management::GetPermissionWarningsByManifest::Results::Create(
+          CreateWarningsList(extension.get()))));
 }
 
 ExtensionFunction::ResponseAction ManagementLaunchAppFunction::Run() {
@@ -603,45 +587,11 @@ void ManagementSetEnabledFunction::CheckManifestV2Deprecation() {
     return;
   }
 
-  ExtensionPrefs* prefs = ExtensionPrefs::Get(browser_context());
-  if (prefs->HasDisableReason(
-          extension_id_,
-          disable_reason::DISABLE_UNSUPPORTED_MANIFEST_VERSION)) {
-    if (!user_gesture()) {
-      FinishEnable(Error(keys::kGestureNeededForMV2DeprecationReEnableError));
-      return;
-    }
-
-    // Show re-enable dialog.
-    const ManagementAPIDelegate* delegate = ManagementAPI::GetFactoryInstance()
-                                                ->Get(browser_context())
-                                                ->GetDelegate();
-    delegate->ShowMv2DeprecationReEnableDialog(
-        browser_context(), GetSenderWebContents(), *extension,
-        base::BindOnce(
-            &ManagementSetEnabledFunction::OnManifestV2DeprecationChecked,
-            this));
-    return;
-  }
-
-  // Call OnManifestV2DeprecationChecked with enable allowed set to true,
-  // since the MV2 deprecation doesn't affect this extension.
-  OnManifestV2DeprecationChecked(/*enable_allowed=*/true);
-}
-
-void ManagementSetEnabledFunction::OnManifestV2DeprecationChecked(
-    bool enable_allowed) {
-  if (!enable_allowed) {
-    FinishEnable(Error(keys::kUserDidNotReEnableError));
-    return;
-  }
-
-  // Extension could have been uninstalled externally while previous check was
-  // happening.
-  const Extension* extension = GetExtension();
-  if (!extension) {
-    FinishEnable(Error(keys::kNoExtensionError));
-    return;
+  auto* mv2_handler = ManifestV2Handler::Get(browser_context());
+  if (mv2_handler) {
+    // This should have been caught earlier as part of the policy-related
+    // checks.
+    CHECK(!mv2_handler->ShouldBlockExtensionEnable(*extension));
   }
 
   // This was the last check in the enable flow. We can now finish enabling

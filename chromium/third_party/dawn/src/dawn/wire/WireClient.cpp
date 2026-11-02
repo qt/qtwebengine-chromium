@@ -43,8 +43,8 @@ WireClient::~WireClient() {
     mImpl.reset();
 }
 
-const volatile char* WireClient::HandleCommands(const volatile char* commands, size_t size) {
-    return mImpl->HandleCommands(commands, size);
+bool WireClient::HandleCommands(std::span<const volatile std::byte> commands) {
+    return mImpl->HandleCommands(commands);
 }
 
 ReservedBuffer WireClient::ReserveBuffer(WGPUDevice device,
@@ -100,13 +100,9 @@ MemoryTransferService::MemoryTransferService() = default;
 
 MemoryTransferService::~MemoryTransferService() = default;
 
-MemoryTransferService::ReadHandle::ReadHandle() = default;
+MemoryTransferService::MemoryHandle::MemoryHandle() = default;
 
-MemoryTransferService::ReadHandle::~ReadHandle() = default;
-
-MemoryTransferService::WriteHandle::WriteHandle() = default;
-
-MemoryTransferService::WriteHandle::~WriteHandle() = default;
+MemoryTransferService::MemoryHandle::~MemoryHandle() = default;
 }  // namespace client
 
 }  // namespace dawn::wire

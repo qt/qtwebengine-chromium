@@ -12,7 +12,7 @@ import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
 import type {PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
 import {NavigationPredictor} from '//resources/mojo/components/omnibox/browser/omnibox.mojom-webui.js';
 import type {ACMatchClassification, AutocompleteMatch, OmniboxPopupSelection, PageHandlerInterface} from '//resources/mojo/components/omnibox/browser/searchbox.mojom-webui.js';
-import {SelectionLineState, SideType} from '//resources/mojo/components/omnibox/browser/searchbox.mojom-webui.js';
+import {KeywordType, SelectionLineState, SideType} from '//resources/mojo/components/omnibox/browser/searchbox.mojom-webui.js';
 
 import {createAutocompleteMatch, SearchboxBrowserProxy} from './searchbox_browser_proxy.js';
 import type {SearchboxIconElement} from './searchbox_icon.js';
@@ -100,7 +100,7 @@ export class SearchboxMatchElement extends CrLitElement {
         reflect: true,
       },
 
-      hasKeyword: {
+      hasKeywordChip: {
         type: Boolean,
         reflect: true,
       },
@@ -139,6 +139,8 @@ export class SearchboxMatchElement extends CrLitElement {
 
       showEllipsis: {type: Boolean},
       sideType: {type: Number},
+
+      virtualFocusEnabled: {type: Boolean},
 
       //========================================================================
       // Private properties
@@ -188,7 +190,7 @@ export class SearchboxMatchElement extends CrLitElement {
   override accessor ariaLabel: string = '';
   accessor hasAction: boolean = false;
   accessor hasImage: boolean = false;
-  accessor hasKeyword: boolean = false;
+  accessor hasKeywordChip: boolean = false;
   accessor isEntitySuggestion: boolean = false;
   accessor isRichSuggestion: boolean = false;
   accessor match: AutocompleteMatch = createAutocompleteMatch();
@@ -197,6 +199,7 @@ export class SearchboxMatchElement extends CrLitElement {
   accessor sideType: SideType = SideType.kDefaultPrimary;
   accessor showThumbnail: boolean = false;
   accessor showEllipsis: boolean = false;
+  accessor virtualFocusEnabled: boolean = false;
   private accessor isContextualSuggestion_: boolean = false;
   private accessor isTopChromeSearchbox_: boolean =
       loadTimeData.getBoolean('isTopChromeSearchbox');
@@ -231,7 +234,7 @@ export class SearchboxMatchElement extends CrLitElement {
       this.contentsHtml_ = this.computeContentsHtml_();
       this.descriptionHtml_ = this.computeDescriptionHtml_();
       this.hasAction = this.computeHasAction_();
-      this.hasKeyword = this.computeHasKeyword_();
+      this.hasKeywordChip = this.computeHasKeywordChip_();
       this.hasImage = this.computeHasImage_();
       this.isContextualSuggestion_ = this.computeIsContextualSuggestion_();
       this.isEntitySuggestion = this.computeIsEntitySuggestion_();
@@ -257,6 +260,35 @@ export class SearchboxMatchElement extends CrLitElement {
     this.addEventListener('auxclick', (event) => this.onMatchClick_(event));
     this.addEventListener('focusin', () => this.onMatchFocusin_());
     this.addEventListener('mousedown', () => this.onMatchMouseDown_());
+  }
+
+  override updated(changedProperties: PropertyValues<this>) {
+    super.updated(changedProperties);
+    if (changedProperties.has('selection') || changedProperties.has('match')) {
+      this.updateAriaLabel_();
+    }
+  }
+
+  private updateAriaLabel_() {
+    if (!this.virtualFocusEnabled) {
+      return;
+    }
+
+    const state = this.selection.state;
+    if (this.selection.line === this.matchIndex) {
+      if (state === SelectionLineState.kNormal) {
+        this.ariaLabel = this.computeAriaLabel_();
+      } else if (state === SelectionLineState.kKeywordMode) {
+        this.ariaLabel = this.match.keywordModel?.chipA11y || '';
+      } else if (state === SelectionLineState.kFocusedButtonAction) {
+        const action = this.match.actions[this.selection.actionIndex];
+        this.ariaLabel = action ? action.a11yLabel : '';
+      } else if (state === SelectionLineState.kFocusedButtonRemoveSuggestion) {
+        this.ariaLabel = this.removeButtonAriaLabel_ || '';
+      }
+    } else {
+      this.ariaLabel = this.computeAriaLabel_();
+    }
   }
 
   //============================================================================
@@ -296,8 +328,14 @@ export class SearchboxMatchElement extends CrLitElement {
 
     this.pageHandler_.openAutocompleteMatch(
         this.matchIndex, this.match.destinationUrl,
-        /* are_matches_showing */ true, e.button || 0, e.altKey, e.ctrlKey,
-        e.metaKey, e.shiftKey);
+        /*areMatchesShowing=*/ true,
+        /*mouseButton=*/ e.button || 0, {
+          altKey: e.altKey,
+          ctrlKey: e.ctrlKey,
+          metaKey: e.metaKey,
+          shiftKey: e.shiftKey,
+        },
+        /*viaKeyboard=*/ false);
 
     // Duplicates the logic in `ui::DispositionFromClick()`.
     const backgroundTab = (e.metaKey || e.ctrlKey) && e.shiftKey;
@@ -327,6 +365,7 @@ export class SearchboxMatchElement extends CrLitElement {
     e.preventDefault();   // Prevents default browser action (navigation).
     e.stopPropagation();  // Prevents <iron-selector> from selecting the match.
 
+    this.fire('match-remove');
     this.pageHandler_.deleteAutocompleteMatch(
         this.matchIndex, this.match.destinationUrl);
   }
@@ -399,8 +438,8 @@ export class SearchboxMatchElement extends CrLitElement {
     return this.match?.actions?.length > 0;
   }
 
-  private computeHasKeyword_(): boolean {
-    return this.match && !!this.match.keywordChipHint;
+  private computeHasKeywordChip_(): boolean {
+    return this.match?.keywordModel?.type === KeywordType.kChip;
   }
 
   private computeHasImage_(): boolean {
@@ -572,7 +611,7 @@ export class SearchboxMatchElement extends CrLitElement {
   protected getFocusIndicatorCssClass_(): string {
     return this.selection.line === this.matchIndex &&
             this.selection.state !== SelectionLineState.kNormal &&
-            !this.match.hasInstantKeyword ?
+            this.match.keywordModel?.type !== KeywordType.kInstant ?
         'selected-within' :
         '';
   }

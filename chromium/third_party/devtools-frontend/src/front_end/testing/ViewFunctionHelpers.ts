@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import sinon from 'sinon';
+
 import type * as Platform from '../core/platform/platform.js';
 import type * as UI from '../ui/legacy/legacy.js';
 
@@ -59,7 +61,7 @@ export function createViewFunctionStub<WidgetConstructorT extends WidgetConstruc
       return new Promise<ViewInput<WidgetConstructorT>>(resolve => {
         result.invoked = resolve;
       });
-    }
+    },
   });
   return result as ViewFunctionStub<WidgetConstructorT>;
 }

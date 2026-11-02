@@ -4,7 +4,7 @@ project('openh264', ['c', 'cpp'],
   default_options : [ 'warning_level=1',
                       'buildtype=debugoptimized' ])
 
-major_version = '7'
+major_version = '8'
 
 cpp = meson.get_compiler('cpp')
 
@@ -57,7 +57,7 @@ cpp_lib = '-lstdc++'
 libm_dep = cpp.find_library('m', required : false)
 deps += [libm_dep]
 
-if ['linux', 'android', 'ios', 'darwin'].contains(system)
+if ['linux', 'freebsd', 'android', 'ios', 'darwin'].contains(system)
   asm_format32 = 'elf'
   asm_format64 = 'elf64'
   if ['ios', 'darwin'].contains(system)

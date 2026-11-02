@@ -9,8 +9,11 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 
+#include "ynnpack/base/algorithm.h"
+#include "ynnpack/base/base.h"
 #include "ynnpack/base/log.h"
 #include "ynnpack/base/type.h"
 #include "ynnpack/include/ynnpack.h"
@@ -29,6 +32,8 @@ ynn_status to_physical_shape(ynn_type type, size_t rank,
   if (dense_dim % element_count != 0) {
     // The logical size of the dense dimension must be a multiple of the number
     // of elements in an instance of the type.
+    YNN_LOG_ERROR() << "dense dimension must be an integer multiple of the "
+                       "number of elements in the type";
     return ynn_status_invalid_parameter;
   }
 
@@ -67,20 +72,44 @@ void init_buffer(slinky::raw_buffer& buffer, size_t elem_size, size_t num_dims,
   }
 }
 
-extern "C" {
+namespace {
 
-ynn_status ynn_define_tensor(ynn_subgraph_t subgraph, enum ynn_type type,
-                             size_t rank, const size_t* dims, const void* data,
-                             uint32_t flags, uint32_t* id_out) {
-  YNN_RETURN_IF_ERROR(validate_subgraph("define_tensor", subgraph));
-  if (rank > YNN_MAX_TENSOR_RANK) {
-    YNN_LOG_ERROR() << "rank " << rank << " exceeds YNN_MAX_TENSOR_RANK "
-                    << YNN_MAX_TENSOR_RANK;
-    return ynn_status_unsupported_parameter;
+bool find_static_tensor(ynn_subgraph_t subgraph, ynn_type type,
+                        const slinky::raw_buffer& data, uint32_t* id_out) {
+  for (const ynn_value& value : subgraph->values) {
+    if (!value.is_valid()) continue;
+    if (!value.is_static()) continue;
+    if (value.type != type) continue;
+    if (value.data->rank != data.rank) continue;
+    if (!ynn::all_n(data.rank, [&](size_t i) {
+          return value.data->dim(i).extent() == data.dim(i).extent();
+        })) {
+      continue;
+    }
+    // We don't check very large tensors for duplicates. We assume that callers
+    // will not define duplicates of large tensors, and it may be expensive to
+    // check them.
+    constexpr size_t max_search_size_bytes = 1024 * 1024;
+    const size_t size_bytes = value.data->size_bytes();
+    if (size_bytes > max_search_size_bytes) {
+      continue;
+    }
+    if (std::memcmp(value.data->base, data.base, size_bytes) != 0) {
+      continue;
+    }
+    *id_out = value.id;
+    return true;
   }
-  if (!id_out) {
-    YNN_LOG_ERROR() << "id_out must be non-null";
-    return ynn_status_invalid_parameter;
+  return false;
+}
+
+ynn_status define_tensor(ynn_subgraph_t subgraph, ynn_type type, size_t rank,
+                         const size_t* dims, slinky::raw_buffer_ptr data,
+                         uint32_t flags, uint32_t* id_out) {
+  if (*id_out == YNN_INVALID_VALUE_ID && data && data->base) {
+    if (find_static_tensor(subgraph, type, *data, id_out)) {
+      return ynn_status_success;
+    }
   }
 
   ynn_value* value;
@@ -96,72 +125,113 @@ ynn_status ynn_define_tensor(ynn_subgraph_t subgraph, enum ynn_type type,
   }
   value->type = type;
   value->flags = flags;
-  value->scale_id = YNN_INVALID_VALUE_ID;
-  value->zero_point_id = YNN_INVALID_VALUE_ID;
 
   *id_out = value->id;
-  if (!(data || value->is_external())) {
-    // We don't care about the shape of this value, it will be inferred.
-    return ynn_status_success;
-  }
 
-  size_t physical_dims[YNN_MAX_TENSOR_RANK];
-  if (dims) {
-    if (value->is_external_output()) {
-      // We want to infer this later.
-      dims = nullptr;
-    } else {
-      ynn_status status = to_physical_shape(type, rank, dims, physical_dims);
-      if (status != ynn_status_success) {
-        return status;
-      }
-      for (size_t d = 0; d < rank; ++d) {
-        // Any (logical) extent 1 dimensions of static values may be implicitly
-        // broadcasted.
-        const slinky::index_t logical = dims[rank - 1 - d];
-        value->extents.push_back(logical == 1 ? slinky::expr{} : logical);
-      }
-    }
-  }
+  value->data = data;
+  const bool is_external_input = (flags & YNN_VALUE_FLAG_EXTERNAL_INPUT) != 0;
 
-  value->data = slinky::raw_buffer::make(rank);
-  init_buffer(*value->data, ynn::type_size_bytes(type), rank,
-              dims ? physical_dims : nullptr, data);
-  if (data) {
-    if (flags & YNN_VALUE_FLAG_COPY_DATA) {
-      // TODO: This makes an extra heap allocation of the raw_buffer structure.
-      // It's small, but this is wasteful.
-      value->data = slinky::raw_buffer::make_copy(*value->data);
+  if (dims || is_external_input) {
+    if (is_external_input) {
+      value->symbol = subgraph->globals.symbols.insert_unique(value->name());
     }
-    // Don't allow static values to be interpreted as inputs/outputs.
-    value->flags &=
-        ~(YNN_VALUE_FLAG_EXTERNAL_INPUT | YNN_VALUE_FLAG_EXTERNAL_OUTPUT);
-  } else if (value->is_external_input()) {
-    value->symbol = subgraph->globals.symbols.insert_unique(value->name());
     value->extents.resize(rank);
-    // Replace any constant 0 dimensions with dynamic extents.
     for (size_t d = 0; d < rank; ++d) {
-      if (!dims || physical_dims[rank - 1 - d] == 0) {
+      const size_t logical = dims ? dims[rank - 1 - d] : 0;
+      if (logical == 1) {
+        value->extents[d] = slinky::expr{};
+        if (data) {
+          data->mutable_dim(d) = slinky::dim::broadcast();
+        }
+      } else if (is_external_input && logical == 0) {
         slinky::expr extent_d = buffer_max(value->symbol, d) + 1;
-        if (d == 0) {
-          int elem_count = ynn::type_element_count(type);
-          if (elem_count != 1) {
-            extent_d *= elem_count;
-          }
+        if (d == 0 && type_element_count(type) != 1) {
+          extent_d *= type_element_count(type);
         }
         value->extents[d] = extent_d;
+      } else if (logical > 1) {
+        value->extents[d] = logical;
       }
-    }
-  }
-
-  for (size_t d = 0; d < value->extents.size(); ++d) {
-    if (!value->extents[d].defined() ||
-        slinky::is_constant(value->extents[d], 1)) {
-      value->data->mutable_dim(d) = slinky::dim::broadcast();
     }
   }
 
   return ynn_status_success;
+}
+
+}  // namespace
+
+extern "C" {
+
+ynn_status ynn_define_tensor(ynn_subgraph_t subgraph, enum ynn_type type,
+                             size_t rank, const size_t* dims, const void* data,
+                             uint32_t flags, uint32_t* id_out) {
+  YNN_RETURN_IF_ERROR(validate_subgraph("define_tensor", subgraph));
+  if (rank > YNN_MAX_TENSOR_RANK) {
+    YNN_LOG_ERROR() << "rank " << rank << " exceeds YNN_MAX_TENSOR_RANK "
+                    << YNN_MAX_TENSOR_RANK;
+    return ynn_status_unsupported_parameter;
+  }
+  if (!id_out) {
+    YNN_LOG_ERROR() << "id_out must be non-null";
+    return ynn_status_invalid_parameter;
+  }
+  const bool is_external_input = (flags & YNN_VALUE_FLAG_EXTERNAL_INPUT) != 0;
+  const bool is_external_output = (flags & YNN_VALUE_FLAG_EXTERNAL_OUTPUT) != 0;
+  if (data) {
+    if (is_external_input || is_external_output) {
+      YNN_LOG_ERROR() << "data must be null for external tensors";
+      return ynn_status_invalid_parameter;
+    }
+    if (rank > 0 && !dims) {
+      YNN_LOG_ERROR()
+          << "dims must be non-null for non-scalar external tensors";
+      return ynn_status_invalid_parameter;
+    }
+  }
+
+  if (!data && !is_external_input) {
+    // We only use dims for static or input tensors.
+    dims = nullptr;
+  }
+
+  size_t physical_dims[YNN_MAX_TENSOR_RANK];
+  if (dims) {
+    YNN_RETURN_IF_ERROR(to_physical_shape(type, rank, dims, physical_dims));
+  }
+
+  slinky::raw_buffer_ptr data_buffer;
+  if (data) {
+    const bool copy_data = (flags & YNN_VALUE_FLAG_COPY_DATA) != 0;
+    const bool copy_data_fp32 = (flags & YNN_VALUE_FLAG_COPY_DATA_FP32) != 0;
+
+    if (copy_data || copy_data_fp32) {
+      // Initialize a buffer just to get the dims.
+      slinky::buffer<char, YNN_MAX_TENSOR_RANK> dims_buf(rank);
+      init_buffer(dims_buf, ynn::type_size_bytes(type), rank,
+                  dims ? physical_dims : nullptr, nullptr);
+
+      data_buffer = slinky::raw_buffer::make(
+          rank, ynn::type_size_bytes(type), dims_buf.dims,
+          YNN_ALLOCATION_ALIGNMENT);
+
+      if (copy_data_fp32 && type != ynn_type_fp32) {
+        ynn::convert_n(static_cast<const float*>(data),
+                       data_buffer->elem_count(), type, data_buffer->base);
+      } else {
+        std::memcpy(data_buffer->base, data, data_buffer->size_bytes());
+      }
+    } else {
+      data_buffer = slinky::raw_buffer::make(rank);
+      init_buffer(*data_buffer, ynn::type_size_bytes(type), rank,
+                  dims ? physical_dims : nullptr, data);
+    }
+  } else if (is_external_input || is_external_output) {
+    data_buffer = slinky::raw_buffer::make(rank);
+    init_buffer(*data_buffer, ynn::type_size_bytes(type), rank,
+                dims ? physical_dims : nullptr, nullptr);
+  }
+
+  return define_tensor(subgraph, type, rank, dims, data_buffer, flags, id_out);
 }
 
 }  // extern "C"

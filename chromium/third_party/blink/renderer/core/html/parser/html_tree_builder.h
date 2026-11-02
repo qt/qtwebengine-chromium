@@ -46,7 +46,6 @@ namespace blink {
 
 class AtomicHTMLToken;
 class Element;
-class HTMLDocument;
 class HTMLDocumentParser;
 class ParserRootInsertionPoint;
 class StreamingSanitizer;
@@ -290,6 +289,8 @@ class HTMLTreeBuilder final : public GarbageCollected<HTMLTreeBuilder> {
   bool should_skip_leading_newline_;
 
   const bool include_shadow_roots_;
+
+  const bool is_text_document_;
 
   bool frameset_ok_;
 #if DCHECK_IS_ON()

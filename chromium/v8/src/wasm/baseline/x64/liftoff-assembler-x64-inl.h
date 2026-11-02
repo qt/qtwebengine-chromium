@@ -252,7 +252,14 @@ void LiftoffAssembler::PatchPrepareStackFrame(
       AssemblerOptions{},
       ExternalAssemblerBuffer(buffer_start_ + offset, kAvailableSpace));
 
-  if (V8_LIKELY(frame_size < 4 * KB)) {
+  int max_stack_space =
+      frame_size + max_pushed_argument_slots_ * kSystemPointerSize;
+
+  // The threshold here must match the DCHECK in {Isolate::StackOverflow}:
+  // we could use up this limit once for parameters in a caller, once for the
+  // fixed frame size in its callee, plus we must leave some space for the
+  // runtime call that leads to the DCHECK.
+  if (V8_LIKELY(max_stack_space < 3 * KB)) {
     // This is the standard case for small frames: just subtract from SP and be
     // done with it.
     patching_assembler.sub_sp_32(frame_size);
@@ -284,15 +291,15 @@ void LiftoffAssembler::PatchPrepareStackFrame(
   // check in the condition code.
   RecordComment("OOL: stack check for large frame");
   Label continuation;
-  if (frame_size < v8_flags.stack_size * 1024) {
+  if (max_stack_space < v8_flags.stack_size * 1024) {
     movq(kScratchRegister,
          StackLimitAsOperand(StackLimitKind::kRealStackLimit));
-    addq(kScratchRegister, Immediate(frame_size));
+    addq(kScratchRegister, Immediate(max_stack_space));
     cmpq(rsp, kScratchRegister);
     j(above_equal, &continuation, Label::kNear);
   }
 
-  if (v8_flags.experimental_wasm_growable_stacks) {
+  if (v8_flags.wasm_growable_stacks) {
     LiftoffRegList regs_to_save;
     regs_to_save.set(WasmHandleStackOverflowDescriptor::GapRegister());
     regs_to_save.set(WasmHandleStackOverflowDescriptor::FrameBaseRegister());
@@ -300,7 +307,7 @@ void LiftoffAssembler::PatchPrepareStackFrame(
     for (auto reg : kFpParamRegisters) regs_to_save.set(reg);
     PushRegisters(regs_to_save);
     movq(WasmHandleStackOverflowDescriptor::GapRegister(),
-         Immediate(frame_size));
+         Immediate(max_stack_space));
     movq(WasmHandleStackOverflowDescriptor::FrameBaseRegister(), rbp);
     addq(WasmHandleStackOverflowDescriptor::FrameBaseRegister(),
          Immediate(static_cast<int32_t>(
@@ -367,7 +374,7 @@ void LiftoffAssembler::CheckTierUp(int declared_func_index, int budget_used,
 }
 
 Register LiftoffAssembler::LoadOldFramePointer() {
-  if (!v8_flags.experimental_wasm_growable_stacks) {
+  if (!v8_flags.wasm_growable_stacks) {
     return rbp;
   }
   LiftoffRegister old_fp = GetUnusedRegister(RegClass::kGpReg, {});
@@ -434,6 +441,10 @@ void LiftoffAssembler::LoadConstant(LiftoffRegister reg, WasmValue value) {
     default:
       UNREACHABLE();
   }
+}
+
+void LiftoffAssembler::PrepareDebugTrap(MessageTemplate message) {
+  Push(Smi::FromInt(static_cast<int>(message)));
 }
 
 void LiftoffAssembler::LoadInstanceDataFromFrame(Register dst) {
@@ -681,6 +692,7 @@ void LiftoffAssembler::Store(Register dst_addr, Register offset_reg,
     case StoreType::kF32StoreF16: {
       CpuFeatureScope fscope(this, F16C);
       vcvtps2ph(kScratchDoubleReg, src.fp(), 0);
+      if (trapping_store_pc) *trapping_store_pc = pc_offset();
       Pextrw(dst_op, kScratchDoubleReg, static_cast<uint8_t>(0));
       break;
     }
@@ -1145,7 +1157,13 @@ void LiftoffAssembler::AtomicCompareExchangeTaggedPointer(
   }
 }
 
-void LiftoffAssembler::AtomicFence() { mfence(); }
+void LiftoffAssembler::AtomicFence(AtomicMemoryOrder order) {
+  if (order == AtomicMemoryOrder::kSeqCst) {
+    mfence();
+  } else {
+    DCHECK_EQ(order, AtomicMemoryOrder::kAcqRel);
+  }
+}
 
 void LiftoffAssembler::Pause() { pause(); }
 
@@ -1828,6 +1846,30 @@ void LiftoffAssembler::emit_i64_shli(LiftoffRegister dst, LiftoffRegister src,
                                      int32_t amount) {
   if (dst.gp() != src.gp()) movq(dst.gp(), src.gp());
   shlq(dst.gp(), Immediate(amount & 63));
+}
+
+void LiftoffAssembler::emit_i64_rol(LiftoffRegister dst, LiftoffRegister src,
+                                    Register amount) {
+  liftoff::EmitShiftOperation<kI64>(this, dst.gp(), src.gp(), amount,
+                                    &Assembler::rolq_cl);
+}
+
+void LiftoffAssembler::emit_i64_roli(LiftoffRegister dst, LiftoffRegister src,
+                                     int32_t amount) {
+  if (dst.gp() != src.gp()) movq(dst.gp(), src.gp());
+  rolq(dst.gp(), Immediate(amount & 63));
+}
+
+void LiftoffAssembler::emit_i64_ror(LiftoffRegister dst, LiftoffRegister src,
+                                    Register amount) {
+  liftoff::EmitShiftOperation<kI64>(this, dst.gp(), src.gp(), amount,
+                                    &Assembler::rorq_cl);
+}
+
+void LiftoffAssembler::emit_i64_rori(LiftoffRegister dst, LiftoffRegister src,
+                                     int32_t amount) {
+  if (dst.gp() != src.gp()) movq(dst.gp(), src.gp());
+  rorq(dst.gp(), Immediate(amount & 63));
 }
 
 void LiftoffAssembler::emit_i64_sar(LiftoffRegister dst, LiftoffRegister src,
@@ -5193,22 +5235,15 @@ void LiftoffAssembler::TailCallNativeWasmCode(Address addr) {
   near_jmp(addr, RelocInfo::WASM_CALL);
 }
 
-void LiftoffAssembler::CallIndirect(const ValueKindSig* sig,
-                                    compiler::CallDescriptor* call_descriptor,
+void LiftoffAssembler::CallIndirect(compiler::CallDescriptor* call_descriptor,
                                     Register target) {
-  if (target == no_reg) {
-    popq(kScratchRegister);
-    target = kScratchRegister;
-  }
+  DCHECK(target.is_valid());
   CallWasmCodePointer(target, call_descriptor->signature_hash());
 }
 
 void LiftoffAssembler::TailCallIndirect(
     compiler::CallDescriptor* call_descriptor, Register target) {
-  if (target == no_reg) {
-    popq(kScratchRegister);
-    target = kScratchRegister;
-  }
+  DCHECK(target.is_valid());
   CallWasmCodePointer(target, call_descriptor->signature_hash(),
                       CallJumpMode::kTailCall);
 }
@@ -5232,6 +5267,13 @@ void LiftoffAssembler::MaybeOSR() {
   cmpq(liftoff::kOSRTargetSlot, Immediate(0));
   j(not_equal, static_cast<Address>(Builtin::kWasmOnStackReplace),
     RelocInfo::WASM_STUB_CALL);
+}
+
+void LiftoffAssembler::AssertOSREmpty() {
+  if (v8_flags.debug_code) {
+    cmpq(liftoff::kOSRTargetSlot, Immediate(0));
+    Check(equal, AbortReason::kOSREmptyCheckFailed);
+  }
 }
 
 void LiftoffStackSlots::Construct(int param_slots) {

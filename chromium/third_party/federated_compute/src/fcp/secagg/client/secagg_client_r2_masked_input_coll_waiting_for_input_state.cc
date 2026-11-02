@@ -22,6 +22,7 @@
 #include <utility>
 
 #include "absl/container/node_hash_map.h"
+#include "absl/status/status.h"
 #include "fcp/base/monitoring.h"
 #include "fcp/secagg/client/other_client_state.h"
 #include "fcp/secagg/client/secagg_client_aborted_state.h"
@@ -98,9 +99,8 @@ SecAggClientR2MaskedInputCollWaitingForInputState::SetInput(
   // Only need to do 3 things: Validate input, send message to server, and
   // return the new state.
   if (!ValidateInput(*input_map, *input_vector_specs_)) {
-    return FCP_STATUS(INVALID_ARGUMENT)
-           << "The input to SetInput does not match the "
-              "InputVectorSpecification.";
+    return absl::InvalidArgumentError(
+        "The input to SetInput does not match the InputVectorSpecification.");
   }
 
   SendMaskedInput(std::move(input_map), std::move(map_of_masks_));

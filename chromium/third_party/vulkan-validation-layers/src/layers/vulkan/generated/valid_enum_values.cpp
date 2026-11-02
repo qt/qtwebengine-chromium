@@ -1374,6 +1374,12 @@ ValidValue stateless::Context::IsValidEnumValue(VkComponentTypeKHR value) const 
         case VK_COMPONENT_TYPE_FLOAT8_E4M3_EXT:
         case VK_COMPONENT_TYPE_FLOAT8_E5M2_EXT:
             return IsExtEnabled(extensions.vk_ext_shader_float8) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_COMPONENT_TYPE_FLOAT6_E2M3_EXT:
+        case VK_COMPONENT_TYPE_FLOAT6_E3M2_EXT:
+        case VK_COMPONENT_TYPE_FLOAT4_E2M1_EXT:
+        case VK_COMPONENT_TYPE_FLOAT8_UNSIGNED_E8M0_EXT:
+        case VK_COMPONENT_TYPE_MXINT8_EXT:
+            return IsExtEnabled(extensions.vk_ext_shader_ocp_microscaling_types) ? ValidValue::Valid : ValidValue::NoExtension;
         default:
             return ValidValue::NotFound;
     };
@@ -2155,6 +2161,12 @@ ValidValue stateless::Context::IsValidEnumValue(VkTensorTilingARM value) const {
         case VK_TENSOR_TILING_OPTIMAL_ARM:
         case VK_TENSOR_TILING_LINEAR_ARM:
             return ValidValue::Valid;
+        case VK_TENSOR_TILING_BRICK_16_WIDE_ARM:
+        case VK_TENSOR_TILING_BRICK_8_WIDE_ARM:
+        case VK_TENSOR_TILING_BRICK_4_WIDE_ARM:
+        case VK_TENSOR_TILING_BLOCK_U_INTERLEAVED_ARM:
+        case VK_TENSOR_TILING_BLOCK_U_INTERLEAVED_64K_ARM:
+            return IsExtEnabled(extensions.vk_arm_tensor_controls) ? ValidValue::Valid : ValidValue::NoExtension;
         default:
             return ValidValue::NotFound;
     };
@@ -3542,6 +3554,12 @@ vvl::Extensions stateless::Context::GetEnumExtensions(VkComponentTypeKHR value) 
         case VK_COMPONENT_TYPE_FLOAT8_E4M3_EXT:
         case VK_COMPONENT_TYPE_FLOAT8_E5M2_EXT:
             return {vvl::Extension::_VK_EXT_shader_float8};
+        case VK_COMPONENT_TYPE_FLOAT6_E2M3_EXT:
+        case VK_COMPONENT_TYPE_FLOAT6_E3M2_EXT:
+        case VK_COMPONENT_TYPE_FLOAT4_E2M1_EXT:
+        case VK_COMPONENT_TYPE_FLOAT8_UNSIGNED_E8M0_EXT:
+        case VK_COMPONENT_TYPE_MXINT8_EXT:
+            return {vvl::Extension::_VK_EXT_shader_ocp_microscaling_types};
         default:
             return {};
     };
@@ -4073,11 +4091,20 @@ const char* stateless::Context::DescribeEnum(VkDirectDriverLoadingModeLUNARG val
 
 template <>
 vvl::Extensions stateless::Context::GetEnumExtensions(VkTensorTilingARM value) const {
-    return {};
+    switch (value) {
+        case VK_TENSOR_TILING_BRICK_16_WIDE_ARM:
+        case VK_TENSOR_TILING_BRICK_8_WIDE_ARM:
+        case VK_TENSOR_TILING_BRICK_4_WIDE_ARM:
+        case VK_TENSOR_TILING_BLOCK_U_INTERLEAVED_ARM:
+        case VK_TENSOR_TILING_BLOCK_U_INTERLEAVED_64K_ARM:
+            return {vvl::Extension::_VK_ARM_tensor_controls};
+        default:
+            return {};
+    };
 }
 template <>
 const char* stateless::Context::DescribeEnum(VkTensorTilingARM value) const {
-    return nullptr;
+    return string_VkTensorTilingARM(value);
 }
 
 template <>

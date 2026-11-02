@@ -71,22 +71,35 @@ struct SemaphoreSubmitState {
     bool ValidateSignalSemaphore(const Location &semaphore_loc, const vvl::Semaphore &semaphore_state, uint64_t value);
 };
 
+// WaitEventSubmitInfo/WaitEvent2SubmitInfo store event waits that need
+// submit-time validation.
+//
+// Event waits can be validated directly during QueueSubmit instead of being
+// deferred through SubmitTimeTracker. SubmitTimeTracker handles submit-time
+// validation that can be affected by timeline semaphore wait-before-signal
+// reordering. Events are used within a single queue, so this reordering is
+// not applicable. A validation error is reported if an event's set and wait
+// are executed on different queues
+//
 struct WaitEventSubmitInfo {
     std::vector<VkEvent> wait_events;
     VkPipelineStageFlags wait_src_stage_mask = VK_PIPELINE_STAGE_NONE;
 
     // Subset of waited events with known signaling state
-    EventSignalingStateMap signaling_states;
+    EventSignalStateMap signal_states;
+
+    vvl::Func wait_command = vvl::Func::Empty;
 
     bool Validate(const CoreChecks& core, const vvl::Queue& queue_state, const vvl::CommandBuffer& cb_state,
-                  EventSignalingStateMap& submit_signaling_states, const Location& loc) const;
+                  EventSignalStateMap& local_signal_states, const Location& loc) const;
 };
 
 struct WaitEvent2SubmitInfo {
     VkEvent wait_event = VK_NULL_HANDLE;
     vku::safe_VkDependencyInfo wait_dependency_info;
-    std::optional<EventSignalingState> signaling_state;
+    std::optional<EventSignalState> signal_state;
+    vvl::Func wait_command = vvl::Func::Empty;
 
     bool Validate(const CoreChecks& core, const vvl::Queue& queue_state, const vvl::CommandBuffer& cb_state,
-                  EventSignalingStateMap& submit_signaling_states, const Location& loc) const;
+                  EventSignalStateMap& local_signal_states, const Location& loc) const;
 };

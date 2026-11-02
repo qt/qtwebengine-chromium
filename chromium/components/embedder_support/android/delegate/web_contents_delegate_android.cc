@@ -18,7 +18,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/notimplemented.h"
 #include "base/trace_event/trace_event.h"
-#include "components/embedder_support/android/delegate/color_picker_bridge.h"
+#include "components/embedder_support/android/delegate/html_color_picker_bridge.h"
 #include "components/input/native_web_keyboard_event.h"
 #include "content/public/browser/color_chooser.h"
 #include "content/public/browser/global_request_id.h"
@@ -31,6 +31,7 @@
 #include "content/public/common/content_features.h"
 #include "content/public/common/referrer.h"
 #include "content/public/common/resource_request_body_android.h"
+#include "printing/buildflags/buildflags.h"
 #include "third_party/blink/public/common/features_generated.h"
 #include "third_party/blink/public/mojom/devtools/console_message.mojom.h"
 #include "third_party/blink/public/mojom/frame/blocked_navigation_types.mojom.h"
@@ -38,11 +39,16 @@
 #include "ui/android/color_utils_android.h"
 #include "ui/android/resources/capture_result.h"
 #include "ui/android/view_android.h"
+#include "ui/android/window_android.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/android/java_bitmap.h"
 #include "ui/gfx/android/rect_jni_conversion.h"
 #include "url/android/gurl_android.h"
 #include "url/gurl.h"
+
+#if BUILDFLAG(ENABLE_PRINTING)
+#include "components/printing/browser/print_composite_client.h"  // nogncheck
+#endif
 
 // Must come after all headers that specialize FromJniType() / ToJniType().
 #include "components/embedder_support/android/web_contents_delegate_jni/WebContentsDelegateAndroid_jni.h"
@@ -89,7 +95,7 @@ WebContentsDelegateAndroid::OpenColorChooser(
     WebContents* source,
     SkColor color,
     const std::vector<blink::mojom::ColorSuggestionPtr>& suggestions) {
-  return std::make_unique<ColorPickerBridge>(source, color, suggestions);
+  return std::make_unique<HtmlColorPickerBridge>(source, color, suggestions);
 }
 
 // OpenURLFromTab() will be called when we're performing a browser-intiated
@@ -227,6 +233,25 @@ bool WebContentsDelegateAndroid::IsWebContentsCreationOverridden(
                                                                   java_gurl);
 }
 
+void WebContentsDelegateAndroid::CanDownload(
+    const GURL& url,
+    const std::string& request_method,
+    base::OnceCallback<void(bool)> callback) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = GetJavaDelegate(env);
+  if (obj.is_null()) {
+    std::move(callback).Run(true);
+    return;
+  }
+  ScopedJavaLocalRef<jobject> j_gurl =
+      url::GURLAndroid::FromNativeGURL(env, url);
+  ScopedJavaLocalRef<jstring> j_method =
+      base::android::ConvertUTF8ToJavaString(env, request_method);
+  bool allowed =
+      Java_WebContentsDelegateAndroid_canDownload(env, obj, j_gurl, j_method);
+  std::move(callback).Run(allowed);
+}
+
 void WebContentsDelegateAndroid::CloseContents(WebContents* source) {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = GetJavaDelegate(env);
@@ -285,6 +310,24 @@ void WebContentsDelegateAndroid::UpdateTargetURL(WebContents* source,
       env, obj, url::GURLAndroid::FromNativeGURL(env, url));
 }
 
+content::KeyboardEventProcessingResult
+WebContentsDelegateAndroid::PreHandleKeyboardEvent(
+    WebContents* source,
+    const input::NativeWebKeyboardEvent& event) {
+  if (event.os_event.is_null()) {
+    return content::KeyboardEventProcessingResult::NOT_HANDLED;
+  }
+  ui::WindowAndroid* window = source->GetTopLevelNativeWindow();
+  if (window) {
+    JNIEnv* env = AttachCurrentThread();
+    if (Java_WebContentsDelegateAndroid_preHandleKeyboardEvent(
+            env, window->GetJavaObject(), event.os_event)) {
+      return content::KeyboardEventProcessingResult::HANDLED;
+    }
+  }
+  return content::KeyboardEventProcessingResult::NOT_HANDLED;
+}
+
 bool WebContentsDelegateAndroid::HandleKeyboardEvent(
     WebContents* source,
     const input::NativeWebKeyboardEvent& event) {
@@ -292,12 +335,19 @@ bool WebContentsDelegateAndroid::HandleKeyboardEvent(
   if (!key_event.is_null()) {
     JNIEnv* env = AttachCurrentThread();
     ScopedJavaLocalRef<jobject> obj = GetJavaDelegate(env);
-    if (obj.is_null()) {
-      return true;
+    if (!obj.is_null()) {
+      Java_WebContentsDelegateAndroid_handleKeyboardEvent(env, obj, key_event);
     }
-    Java_WebContentsDelegateAndroid_handleKeyboardEvent(env, obj, key_event);
+
+    ui::WindowAndroid* window = source->GetTopLevelNativeWindow();
+    if (window) {
+      if (Java_WebContentsDelegateAndroid_handleKeyboardEventFallback(
+              env, window->GetJavaObject(), event.os_event)) {
+        return true;
+      }
+    }
   }
-  return true;
+  return WebContentsDelegate::HandleKeyboardEvent(source, event);
 }
 
 bool WebContentsDelegateAndroid::TakeFocus(WebContents* source, bool reverse) {
@@ -329,6 +379,17 @@ bool WebContentsDelegateAndroid::ShouldBlockMediaRequest(const GURL& url) {
       url::GURLAndroid::FromNativeGURL(env, url);
   return Java_WebContentsDelegateAndroid_shouldBlockMediaRequest(env, obj,
                                                                  j_gurl);
+}
+
+bool WebContentsDelegateAndroid::CanEnterFullscreenModeForTab(
+    content::RenderFrameHost* requesting_frame) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = GetJavaDelegate(env);
+  if (obj.is_null()) {
+    return true;
+  }
+  return Java_WebContentsDelegateAndroid_canEnterFullscreenModeForTab(
+      env, obj, requesting_frame->GetJavaRenderFrameHost());
 }
 
 void WebContentsDelegateAndroid::EnterFullscreenModeForTab(
@@ -704,6 +765,19 @@ void WebContentsDelegateAndroid::SetContentsBounds(content::WebContents* source,
   ScopedJavaLocalRef<jobject> jsource = source->GetJavaWebContents();
 
   Java_WebContentsDelegateAndroid_setContentsBounds(env, obj, jsource, bounds);
+}
+
+void WebContentsDelegateAndroid::PrintCrossProcessSubframe(
+    content::WebContents* web_contents,
+    const gfx::Rect& rect,
+    int document_cookie,
+    content::RenderFrameHost* subframe_host) const {
+#if BUILDFLAG(ENABLE_PRINTING)
+  auto* client = printing::PrintCompositeClient::FromWebContents(web_contents);
+  if (client) {
+    client->PrintCrossProcessSubframe(rect, document_cookie, subframe_host);
+  }
+#endif
 }
 
 }  // namespace web_contents_delegate_android

@@ -60,17 +60,17 @@ struct traits<Reshaped<XprType, Rows, Cols, Order> > : traits<XprType> {
     ColsAtCompileTime = Cols,
     MaxRowsAtCompileTime = Rows,
     MaxColsAtCompileTime = Cols,
-    XpxStorageOrder = ((int(traits<XprType>::Flags) & RowMajorBit) == RowMajorBit) ? RowMajor : ColMajor,
+    XprStorageOrder = ((int(traits<XprType>::Flags) & RowMajorBit) == RowMajorBit) ? RowMajor : ColMajor,
     ReshapedStorageOrder = (RowsAtCompileTime == 1 && ColsAtCompileTime != 1)   ? RowMajor
                            : (ColsAtCompileTime == 1 && RowsAtCompileTime != 1) ? ColMajor
-                                                                                : XpxStorageOrder,
-    HasSameStorageOrderAsXprType = (ReshapedStorageOrder == XpxStorageOrder),
+                                                                                : XprStorageOrder,
+    HasSameStorageOrderAsXprType = (ReshapedStorageOrder == XprStorageOrder),
     InnerSize = (ReshapedStorageOrder == int(RowMajor)) ? int(ColsAtCompileTime) : int(RowsAtCompileTime),
     InnerStrideAtCompileTime =
         HasSameStorageOrderAsXprType ? int(inner_stride_at_compile_time<XprType>::value) : Dynamic,
     OuterStrideAtCompileTime = Dynamic,
 
-    HasDirectAccess = internal::has_direct_access<XprType>::value && (Order == int(XpxStorageOrder)) &&
+    HasDirectAccess = internal::has_direct_access<XprType>::value && (Order == int(XprStorageOrder)) &&
                       ((evaluator<XprType>::Flags & LinearAccessBit) == LinearAccessBit),
 
     MaskPacketAccessBit =
@@ -296,11 +296,10 @@ struct reshaped_evaluator<ArgType, Rows, Cols, Order, /* HasDirectAccess */ fals
   typedef std::pair<Index, Index> RowCol;
 
   EIGEN_DEVICE_FUNC constexpr inline RowCol index_remap(Index rowId, Index colId) const {
-    EIGEN_IF_CONSTEXPR(Order == ColMajor) {
+    EIGEN_IF_CONSTEXPR (Order == ColMajor) {
       const Index nth_elem_idx = colId * m_xpr.rows() + rowId;
       return RowCol(nth_elem_idx % m_xpr.nestedExpression().rows(), nth_elem_idx / m_xpr.nestedExpression().rows());
-    }
-    else {
+    } else {
       const Index nth_elem_idx = colId + rowId * m_xpr.cols();
       return RowCol(nth_elem_idx / m_xpr.nestedExpression().cols(), nth_elem_idx % m_xpr.nestedExpression().cols());
     }

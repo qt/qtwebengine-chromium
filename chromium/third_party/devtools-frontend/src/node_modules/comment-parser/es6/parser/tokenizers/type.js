@@ -1,6 +1,6 @@
 import { splitSpace } from '../../util.js';
 /**
- * Sets splits remaining `Spec.lines[].tokes.description` into `type` and `description`
+ * Sets splits remaining `Spec.lines[].tokens.description` into `type` and `description`
  * tokens and populates Spec.type`
  *
  * @param {Spacing} spacing tells how to deal with a whitespace
@@ -11,10 +11,19 @@ export default function typeTokenizer(spacing = 'compact') {
     return (spec) => {
         let curlies = 0;
         let lines = [];
-        for (const [i, { tokens }] of spec.source.entries()) {
+        let descriptionBegun = false;
+        let firstTypeIteration = true;
+        for (const { tokens } of spec.source.values()) {
             let type = '';
-            if (i === 0 && tokens.description[0] !== '{')
+            if (!descriptionBegun && tokens.description.trim()) {
+                descriptionBegun = true;
+            }
+            else if (!descriptionBegun) {
+                continue;
+            }
+            if (firstTypeIteration && tokens.description[0] !== '{')
                 return spec;
+            firstTypeIteration = false;
             for (const ch of tokens.description) {
                 if (ch === '{')
                     curlies++;
@@ -27,6 +36,9 @@ export default function typeTokenizer(spacing = 'compact') {
             lines.push([tokens, type]);
             if (curlies === 0)
                 break;
+        }
+        if (!descriptionBegun) {
+            return spec;
         }
         if (curlies !== 0) {
             spec.problems.push({

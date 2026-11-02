@@ -91,7 +91,7 @@ class IndexedViewImpl;
  * \tparam ColIndices the type of the object defining the sequence of column indices
  *
  * This class represents an expression of a sub-matrix (or sub-vector) defined as the intersection
- * of sub-sets of rows and columns, that are themself defined by generic sequences of row indices \f$
+ * of sub-sets of rows and columns, that are themselves defined by generic sequences of row indices \f$
  * \{r_0,r_1,..r_{m-1}\} \f$ and column indices \f$ \{c_0,c_1,..c_{n-1} \}\f$. Let \f$ A \f$  be the nested matrix, then
  * the resulting matrix \f$ B \f$ has \c m rows and \c n columns, and its entries are given by: \f$ B(i,j) = A(r_i,c_j)
  * \f$.
@@ -199,13 +199,13 @@ class IndexedViewImpl<XprType, RowIndices, ColIndices, StorageKind, true>
   IndexedViewImpl(XprType& xpr, const T0& rowIndices, const T1& colIndices) : Base(xpr, rowIndices, colIndices) {}
 
   Index rowIncrement() const {
-    EIGEN_IF_CONSTEXPR(traits<Derived>::RowIncr != DynamicIndex && traits<Derived>::RowIncr != Undefined) {
+    EIGEN_IF_CONSTEXPR (traits<Derived>::RowIncr != DynamicIndex && traits<Derived>::RowIncr != Undefined) {
       return traits<Derived>::RowIncr;
     }
     return IndexedViewHelper<RowIndices>::incr(this->rowIndices());
   }
   Index colIncrement() const {
-    EIGEN_IF_CONSTEXPR(traits<Derived>::ColIncr != DynamicIndex && traits<Derived>::ColIncr != Undefined) {
+    EIGEN_IF_CONSTEXPR (traits<Derived>::ColIncr != DynamicIndex && traits<Derived>::ColIncr != Undefined) {
       return traits<Derived>::ColIncr;
     }
     return IndexedViewHelper<ColIndices>::incr(this->colIndices());
@@ -228,14 +228,14 @@ class IndexedViewImpl<XprType, RowIndices, ColIndices, StorageKind, true>
   }
 
   EIGEN_DEVICE_FUNC constexpr Index innerStride() const noexcept {
-    EIGEN_IF_CONSTEXPR(traits<Derived>::InnerStrideAtCompileTime != Dynamic) {
+    EIGEN_IF_CONSTEXPR (traits<Derived>::InnerStrideAtCompileTime != Dynamic) {
       return traits<Derived>::InnerStrideAtCompileTime;
     }
     return innerIncrement() * this->nestedExpression().innerStride();
   }
 
   EIGEN_DEVICE_FUNC constexpr Index outerStride() const noexcept {
-    EIGEN_IF_CONSTEXPR(traits<Derived>::OuterStrideAtCompileTime != Dynamic) {
+    EIGEN_IF_CONSTEXPR (traits<Derived>::OuterStrideAtCompileTime != Dynamic) {
       return traits<Derived>::OuterStrideAtCompileTime;
     }
     return outerIncrement() * this->nestedExpression().outerStride();

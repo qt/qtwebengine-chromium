@@ -111,8 +111,9 @@ void HTMLSourceElement::RemovedFrom(ContainerNode& removal_root) {
     media->SourceWasRemoved(this);
   if (auto* picture = DynamicTo<HTMLPictureElement>(parent)) {
     RemoveMediaQueryListListener();
-    if (was_removed_from_parent)
+    if (was_removed_from_parent) {
       picture->SourceChanged(ImageSourceChangeType::kRemoved);
+    }
   }
   HTMLElement::RemovedFrom(removal_root);
 }

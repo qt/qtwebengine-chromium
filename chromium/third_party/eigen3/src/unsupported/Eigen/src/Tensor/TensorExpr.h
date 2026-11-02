@@ -22,7 +22,6 @@ struct traits<TensorCwiseNullaryOp<NullaryOp, XprType> > : traits<XprType> {
   typedef traits<XprType> XprTraits;
   typedef typename XprType::Scalar Scalar;
   typedef typename XprType::Nested XprTypeNested;
-  typedef std::remove_reference_t<XprTypeNested> XprTypeNested_;
   static constexpr int NumDimensions = XprTraits::NumDimensions;
   static constexpr int Layout = XprTraits::Layout;
   typedef typename XprTraits::PointerType PointerType;
@@ -69,7 +68,6 @@ struct traits<TensorCwiseUnaryOp<UnaryOp, XprType> > : traits<XprType> {
   typedef typename result_of<UnaryOp(typename XprType::Scalar)>::type Scalar;
   typedef traits<XprType> XprTraits;
   typedef typename XprType::Nested XprTypeNested;
-  typedef std::remove_reference_t<XprTypeNested> XprTypeNested_;
   static constexpr int NumDimensions = XprTraits::NumDimensions;
   static constexpr int Layout = XprTraits::Layout;
   typedef typename TypeConversion<Scalar, typename XprTraits::PointerType>::type PointerType;
@@ -135,8 +133,6 @@ struct traits<TensorCwiseBinaryOp<BinaryOp, LhsXprType, RhsXprType> > {
       typename promote_index_type<typename traits<LhsXprType>::Index, typename traits<RhsXprType>::Index>::type Index;
   typedef typename LhsXprType::Nested LhsNested;
   typedef typename RhsXprType::Nested RhsNested;
-  typedef std::remove_reference_t<LhsNested> LhsNested_;
-  typedef std::remove_reference_t<RhsNested> RhsNested_;
   static constexpr int NumDimensions = XprTraits::NumDimensions;
   static constexpr int Layout = XprTraits::Layout;
   typedef typename TypeConversion<Scalar,
@@ -213,9 +209,6 @@ struct traits<TensorCwiseTernaryOp<TernaryOp, Arg1XprType, Arg2XprType, Arg3XprT
   typedef typename Arg1XprType::Nested Arg1Nested;
   typedef typename Arg2XprType::Nested Arg2Nested;
   typedef typename Arg3XprType::Nested Arg3Nested;
-  typedef std::remove_reference_t<Arg1Nested> Arg1Nested_;
-  typedef std::remove_reference_t<Arg2Nested> Arg2Nested_;
-  typedef std::remove_reference_t<Arg3Nested> Arg3Nested_;
   static constexpr int NumDimensions = XprTraits::NumDimensions;
   static constexpr int Layout = XprTraits::Layout;
   typedef typename TypeConversion<Scalar,

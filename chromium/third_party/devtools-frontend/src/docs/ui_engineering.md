@@ -34,7 +34,38 @@ This approach has two main benefits:
 1.  **Testability**: In unit tests, we can pass a simple stub as the view function, which allows us to test the presenter's logic without any DOM manipulation.
 2.  **Clarity**: It cleanly separates the presenter's logic from its rendering logic.
 
+Note that `VBox` and `HBox` inherit directly from `Widget`. They fully support view injection (`view = DEFAULT_VIEW`), `performUpdate()`, and `requestUpdate()` without modification.
+
 To test the `DEFAULT_VIEW` function itself, we should use screenshot and e2e tests.
+
+### Dependency Injection via `INJECT`
+
+Subclasses of `UI.Widget.Widget` can declare dependencies from `Universe` to be automatically injected when instantiated (e.g. via `<devtools-widget>` or `UI.Widget.widget()`).
+
+To opt into dependency injection, define a static `INJECT` array containing dependency constructors:
+
+```ts
+class MyWidget extends UI.Widget.Widget {
+  static override readonly INJECT = [SDK.TargetManager.TargetManager, Common.Settings.Settings] as const;
+
+  #targetManager: SDK.TargetManager.TargetManager;
+  #settings: Common.Settings.Settings;
+
+  constructor(
+    element?: HTMLElement,
+    [targetManager, settings]: UI.Widget.WidgetDependencies<typeof MyWidget> = [],
+    view: View = DEFAULT_VIEW,
+  ) {
+    super(element);
+    this.#targetManager = targetManager;
+    this.#settings = settings;
+  }
+}
+```
+
+When `instantiateWidget` creates a widget with a non-empty `INJECT` array, it automatically resolves each requested constructor from the active `Universe` and passes the resolved instances array as parameter #2 to the constructor.
+
+Use `UI.Widget.WidgetDependencies<typeof MyWidget>` to type the injected dependencies parameter.
 
 ## Declarative and orchestrated DOM updates
 
@@ -42,7 +73,7 @@ We should no longer use imperative API to update DOM. Instead we rely on orchest
 
 To embed another presenter (`UI.Widget`) in the lit-html template, use `widget(<class>, {foo: 1, bar: 2})`
 
-This will instantiate a `Widget` class with the web component as its `element` and, optionally, will set the properties provided in the second parameter. The widget won’t be re-instantiated on the subsequent template renders, but the properties would be updated. For this to work, the widget needs to accept `HTMLElement` as a sole constructor parameter and properties need to be public members or setters.
+This will instantiate a `Widget` class with the web component as its `element` and, optionally, will set the properties provided in the second parameter. The widget won’t be re-instantiated on the subsequent template renders, but the properties would be updated. For this to work, the widget needs to accept `HTMLElement` as its first constructor parameter, optional injected dependencies as parameter #2 (if `INJECT` is declared), and properties need to be public members or setters.
 
 For backwards compatibility, the first argument to `widget` can also be a factory function: `widget(element => new MyWidget(foo, bar, element))`. Similar to the class constructor version, `element` is the actual `<devtools-widget>` so the following two invocations of `widget` are equivalent: `widget(MyWidget)` and `widget(element => new MyWidget(element))`.
 
@@ -209,9 +240,25 @@ assert.deepStrictEqual((await viewCall).headersForSourceURL, [{...}]);
 
 // ❌ not recommended: mocking CDP responses to make the models behave in a certain way
 // while testing a presenter is fragile.
-setMockConnectionResponseHandler('CSS.getHeaders', () => ({}));
+const connection = new MockCDPConnection();
+connection.setSuccessHandler('CSS.getHeaders', () => ({}));
+createTarget({connection});
 const presenter = new Presenter();
 presenter.doSomething();
+```
+
+#### Testing widgets with `INJECT` dependencies
+
+When rendering widgets into DOM in unit tests (e.g. via `renderElementIntoDOM`), DOM test helpers automatically supply a default `TestUniverse` for resolving `INJECT` dependencies.
+
+If a test requires a custom `TestUniverse` instance, pass it via `setTestUniverseForWidgets`:
+
+```ts
+import {setTestUniverseForWidgets} from '../../testing/DOMHelpers.js';
+import {TestUniverse} from '../../testing/TestUniverse.js';
+
+const customUniverse = new TestUniverse();
+setTestUniverseForWidgets(customUniverse);
 ```
 
 # Migrating Widgets and other "legacy" components
@@ -220,25 +267,38 @@ This section provides a series of examples for migrating from imperative DOM man
 
 ## Setting `className` on `this.element`
 
-Instead of setting `className` directly on `this.element`, define the component's structure declaratively using a lit-html template.
+Instead of setting `className` directly on `this.element`, define the component's structure declaratively using a lit-html template. When classes or attributes (`jslog`) must be set directly on `target` itself (for example when `target` is positioned externally via `.positionAt()`), use the `container` option in DevTools' custom `render()` (`front_end/ui/lit/render.ts`).
 
 **Before:**
 ```typescript
 class SomeWidget extends UI.Widget.Widget {
-          constructor() {
-            super();
-            this.element.className = 'some-class';
-          }
-      }
+  constructor(element?: HTMLElement) {
+    super(element, {jslog: `${VisualLogging.deviceModeRuler().track({click: true})}`});
+    this.element.className = 'some-class';
+  }
+}
 ```
 
-**After:**
+**After (when creating an inner wrapper):**
 ```typescript
-
 export const DEFAULT_VIEW = (input, _output, target) => {
   render(html`
     <div class="some-class"></div>`,
-    target, {host: input});
+    target);
+};
+```
+
+**After (when classes or attributes must be applied directly to `target` itself):**
+```typescript
+export const DEFAULT_VIEW = (input, _output, target) => {
+  render(html`
+    <div class="some-content">...</div>`,
+    target, {
+      container: {
+        classes: ['some-class'],
+        attributes: {jslog: VisualLogging.deviceModeRuler().track({click: true})},
+      },
+    });
 };
 ```
 
@@ -266,7 +326,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
     <div>
       <div></div>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -294,7 +354,7 @@ class SomeWidget extends UI.Widget.Widget {
 export const DEFAULT_VIEW = (input, _output, target) => {
   render(html`
     <div class="some-class" aria-label="some-label">some-text</div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -324,7 +384,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
     <div>
       <div class="some-class container" @click=${this.onClick.bind(this)}></div>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -351,7 +411,7 @@ class SomeWidget extends UI.Widget.Widget {
 export const DEFAULT_VIEW = (input, _output, target) => {
   render(html`
     <div style="width:100%; margin-left:10px"></div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -381,7 +441,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
     <div>
       <div class="some-class"></div>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -409,7 +469,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
     <div>
       <span class="some-class">some-text</span>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -448,7 +508,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
         </devtools-toolbar-input>
       </devtools-toolbar>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -481,7 +541,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
             aria-label="accessible-placeholder" style="flex-grow:0.5; flex-shrink:1"></devtools-toolbar-input>
       </devtools-toolbar>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -521,7 +581,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
         <span><div style="font-size: 12px;">💫</div></span>
       </devtools-adorner>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -556,7 +616,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
             .jslogContext=${'edit-name'}></devtools-button>
       </devtools-toolbar>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -616,7 +676,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
       <input type="text" placeholder="some-placeholder" value="some-value"
           ?disabled=${!this.enabled} checked>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -659,7 +719,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
       <devtools-button class="some-class" title=${i18nString(UIStrings.someTitle)} @click=${onClick}
           .jslogContext=${'some-button'} .variant=${Buttons.Button.Variant.PRIMARY}>Some button</devtools-button>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -687,7 +747,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
     <div>
       <div class="some-class">some-text</div>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -758,7 +818,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
       <devtools-icon name="checkmark"
           style="color:var(--icon-checkmark-green); width:14px; height:14px"></devtools-icon>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -809,7 +869,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
         <devtools-checkbox ${bindToSetting(this.someOtherSetting)}>${this.someOtherSetting.title()}</devtools-checkbox>
       </devtools-toolbar>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -842,7 +902,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
         <devtools-button ${bindToAction('elements.refresh-event-listeners')}></devtools-button>
       </devtools-toolbar>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -876,7 +936,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
         </devtools-checkbox>
       </devtools-toolbar>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -908,7 +968,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
             @change=${this.someToolbarComboBoxClicked.bind(this)}></select>
       </devtools-toolbar>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -968,7 +1028,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
         <div class="toolbar-spacer"></div>
       </devtools-toolbar>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -999,7 +1059,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
     <div>
       <iframe sandbox tabindex="-1"></iframe>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -1028,7 +1088,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
       <input class="harmony-input add-source-map" spellcheck="false" type="text"
           jslog=${VisualLogging.textField('url').track({keydown: 'Enter', change: true})}>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -1096,7 +1156,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
         </table>
       </devtools-data-grid>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -1180,7 +1240,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
         </devtools-split-view>
       </devtools-split-view>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -1231,7 +1291,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
       <div role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0.5"
           aria-valuetext="50% done"></div>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -1263,15 +1323,20 @@ export const DEFAULT_VIEW = (input, _output, target) => {
           header: i18nString(UIStrings.nothingToSeeHere), text: this.explanation,
           link: 'http://www.google.com',})}
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
-## Migrating `TextPrompt`
+## Migrating `TextPrompt` and `InplaceEditor`
 
-Replace imperative `TextPrompt` creation with the declarative `<devtools-prompt>` component, providing completions via `<datalist>`.
+Replace imperative `TextPrompt` or `UI.InplaceEditor` creation with the declarative `<devtools-prompt>` component, providing completions via `<datalist>`.
 
-**Before:**
+### Critical Rules for `<devtools-prompt>`:
+1. **Prompt Owns the Content (`<slot>`)**: When `editing` is `false`, `<devtools-prompt>` renders `<span class="entrypoint"><slot></slot></span>` in shadow DOM. Therefore, `<devtools-prompt>` **must contain the display text/title directly as a child** (`<devtools-prompt ...>${title}</devtools-prompt>`) and live inside the element container (e.g., inside `<devtools-checkbox>`).
+2. **Do Not Conditionally Swap Elements**: Do NOT render `<devtools-prompt>` conditionally *in place of* a `<span>` or text node (`isEditing ? html`<devtools-prompt>...` : html`<span>${title}</span>``). Mount `<devtools-prompt>` unconditionally, holding the text content at all times, and only toggle its boolean property `?editing=${item === input.editingItem}`.
+3. **Conditional Input Styling**: Because `<devtools-prompt>` is present in both display and editing modes, any input-mode borders or background classes must be applied conditionally (e.g., `class=${Directives.classMap({'condition-input': isEditing})}`) so non-editing rows remain unbordered.
+
+**Before (`InplaceEditor` or imperative `TextPrompt`):**
 ```typescript
 class SomeWidget extends UI.Widget.Widget {
   constructor() {
@@ -1284,10 +1349,15 @@ class SomeWidget extends UI.Widget.Widget {
     const promptElement = this.contentElement.createChild('span');
     prompt.attach(promptElement);
   }
+
+  #startEditing(item: string, element: HTMLElement): void {
+    const config = new UI.InplaceEditor.Config(this.#commit.bind(this), this.#cancel.bind(this), element);
+    UI.InplaceEditor.InplaceEditor.startEditing(element, config);
+  }
 }
 ```
 
-**After:**
+**After (Declarative `<devtools-prompt>` inside Lit):**
 ```typescript
 export const DEFAULT_VIEW = (input, _output, target) => {
   render(html`
@@ -1296,9 +1366,19 @@ export const DEFAULT_VIEW = (input, _output, target) => {
         <option>completion1</option>
         <option>completion2</option>
       </datalist>
-      <devtools-prompt completions="my-completions" editing></devtools-prompt>
+      <devtools-checkbox .checked=${input.enabled}>
+        <devtools-prompt
+            value=${input.item}
+            completions="my-completions"
+            ?editing=${input.item === input.editingItem}
+            class=${Directives.classMap({'prompt-editing-border': input.item === input.editingItem})}
+            @commit=${(e: CustomEvent) => input.onCommit(input.item, e.detail)}
+            @cancel=${() => input.onCancel(input.item)}>
+          ${input.title}
+        </devtools-prompt>
+      </devtools-checkbox>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -1344,7 +1424,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
         </ul>
       `}></devtools-tree>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -1370,7 +1450,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
         </ul>
       `}></devtools-tree>
     </div>`,
-    target, {host: input});
+    target);
 };
 ```
 
@@ -1478,3 +1558,92 @@ The component will automatically sort and merge the ranges provided.
 
 In this example, the ranges `1,3` and `2,3` will be merged into `1,4`. The
 ranges `10,2` and the current range `5,3` will also be highlighted.
+
+## Migrating `UI.ListWidget.ListWidget`
+
+Replace the legacy imperative `UI.ListWidget.ListWidget` (which rendered inline editing controls and required custom delegates) with the modern `<devtools-list>` component.
+
+### Guidelines
+1. **Dialogue Modals for Complex Editors:** If the editor contains multiple input fields (e.g., location details, headers), show the editor in a modal card dialog powered by `UI.Dialog.Dialog`.
+2. **Inline Prompts for Trivial Editors:** If the editor is trivial (i.e., a single text input, such as URL pattern blocking rules), handle editing inline using a `<devtools-prompt>` component. In this case, clicking the item focuses the prompt and toggles `editing` mode inline, dispatching `@commit` and `@cancel` events to update the state. See `RequestConditionsDrawer` for a reference implementation.
+3. **Conditionally render list:** Use `<devtools-list>` and conditionally render it inside the card only if the list has elements (`input.locations.length > 0`). This ensures empty state layout rules are correctly applied and prevents extra spacing/gaps.
+4. **Declarative dialog views:** Define the edit/add modal content in a separate, customizable view function (e.g. `DEFAULT_DIALOG_VIEW`). Instantiating `UI.Dialog.Dialog` in the class is fine, but its content rendering should be driven declaratively by the dialog view function.
+5. **Common styles integration:** Ensure `{includeCommonStyles: true}` is passed when rendering elements into the DOM inside test setups to import proper layout variables and global typography styles (e.g. Roboto).
+
+**Before:**
+```typescript
+class SettingsTab extends UI.Widget.VBox implements UI.ListWidget.Delegate<Location> {
+  private readonly listWidget: UI.ListWidget.ListWidget<Location>;
+  constructor() {
+    super();
+    this.listWidget = new UI.ListWidget.ListWidget(this);
+    this.listWidget.show(this.element);
+  }
+
+  renderItem(item: Location, editable: boolean): Element {
+    const element = document.createElement('div');
+    element.createChild('span').textContent = item.title;
+    return element;
+  }
+
+  beginEdit(item: Location): UI.ListWidget.Editor<Location> {
+    const editor = new UI.ListWidget.Editor<Location>();
+    editor.createInput('title', 'text', 'Title', titleValidator);
+    return editor;
+  }
+
+  commitEdit(item: Location, editor: UI.ListWidget.Editor<Location>, isNew: boolean): void {
+    item.title = editor.control('title').value;
+    this.update();
+  }
+}
+```
+
+**After:**
+```typescript
+export interface SettingsTabInput {
+  items: Location[];
+  onAddClicked: () => void;
+  onEdit: (index: number) => void;
+  onDelete: (index: number) => void;
+}
+
+export const DEFAULT_VIEW: View = (input, _output, target) => {
+  render(html`
+    <devtools-card heading="Locations">
+      ${input.items.length > 0 ? html`
+        <devtools-list
+          .editable=${true}
+          .deletable=${true}
+          @edit=${(e: Lists.List.ItemEditEvent) => input.onEdit(e.detail.index)}
+          @delete=${(e: Lists.List.ItemRemoveEvent) => input.onDelete(e.detail.index)}>
+          ${input.items.map((item, index) => html`
+            <div slot="slot-${index}">
+              <span>${item.title}</span>
+            </div>
+          `)}
+        </devtools-list>
+      ` : nothing}
+      <devtools-button @click=${input.onAddClicked}>Add location</devtools-button>
+    </devtools-card>
+  `, target);
+};
+
+export interface SettingsTabDialogInput {
+  editingValues: {title: string};
+  validationErrors: {title: string | null};
+  onTitleInput: (val: string) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}
+
+export const DEFAULT_DIALOG_VIEW = (input: SettingsTabDialogInput, target: HTMLElement) => {
+  render(html`
+    <div class="editor-container">
+      <input type="text" .value=${input.editingValues.title} @input=${(e: Event) => input.onTitleInput((e.target as HTMLInputElement).value)}>
+      <devtools-button @click=${input.onCancel}>Cancel</devtools-button>
+      <devtools-button @click=${input.onSave}>Save</devtools-button>
+    </div>
+  `, target);
+};
+```

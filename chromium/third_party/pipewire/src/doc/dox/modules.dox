@@ -1,0 +1,100 @@
+/** \page page_modules Modules
+
+A PipeWire module is effectively a PipeWire client in an `.so` file that
+shares the \ref pw_context with the loading entity. Usually modules are
+loaded when they are listed in the configuration files. For example the
+default configuration file loads several modules:
+
+```
+context.modules = [
+    ...
+    # The native communication protocol.
+    {   name = libpipewire-module-protocol-native }
+
+    # The profile module. Allows application to access profiler
+    # and performance data. It provides an interface that is used
+    # by pw-top and pw-profiler.
+    {   name = libpipewire-module-profiler }
+
+    # Allows applications to create metadata objects. It creates
+    # a factory for Metadata objects.
+    {   name = libpipewire-module-metadata }
+
+    # Creates a factory for making devices that run in the
+    # context of the PipeWire server.
+    {   name = libpipewire-module-spa-device-factory }
+    ...
+]
+```
+The matching libraries are:
+```
+$ ls -1 /usr/lib64/pipewire-0.3/libpipewire-module*
+...
+/usr/lib64/pipewire-0.3/libpipewire-module-metadata.so
+/usr/lib64/pipewire-0.3/libpipewire-module-profiler.so
+/usr/lib64/pipewire-0.3/libpipewire-module-protocol-native.so
+/usr/lib64/pipewire-0.3/libpipewire-module-spa-device-factory.so
+...
+```
+
+A module's entry point is the `pipewire__module_init` function, see \ref
+PIPEWIRE_SYMBOL_MODULE_INIT.
+
+\code
+int pipewire__module_init(struct pw_impl_module *module, const char *args).`
+\endcode
+
+See the \ref page_module_example_sink and \ref page_module_example_source
+modules for a general oveview of how modules look like.
+
+List of known modules:
+
+- \subpage page_module_access
+- \subpage page_module_adapter
+- \subpage page_module_avb
+- \subpage page_module_client_device
+- \subpage page_module_client_node
+- \subpage page_module_combine_stream
+- \subpage page_module_echo_cancel
+- \subpage page_module_example_filter
+- \subpage page_module_example_sink
+- \subpage page_module_example_source
+- \subpage page_module_fallback_sink
+- \subpage page_module_ffado_driver
+- \subpage page_module_filter_chain
+- \subpage page_module_jackdbus_detect
+- \subpage page_module_jack_tunnel
+- \subpage page_module_link_factory
+- \subpage page_module_loopback
+- \subpage page_module_metadata
+- \subpage page_module_netjack2_driver
+- \subpage page_module_netjack2_manager
+- \subpage page_module_parametric_equalizer
+- \subpage page_module_pipe_tunnel
+- \subpage page_module_portal
+- \subpage page_module_profiler
+- \subpage page_module_protocol_native
+- \subpage page_module_protocol_pulse
+- \subpage page_module_protocol_simple
+- \subpage page_module_pulse_tunnel
+- \subpage page_module_raop_sink
+- \subpage page_module_raop_discover
+- \subpage page_module_roc_sink
+- \subpage page_module_roc_source
+- \subpage page_module_rtp_sap
+- \subpage page_module_rtp_sink
+- \subpage page_module_rtp_source
+- \subpage page_module_rtp_session
+- \subpage page_module_rt
+- \subpage page_module_spa_node
+- \subpage page_module_spa_node_factory
+- \subpage page_module_spa_device
+- \subpage page_module_spa_device_factory
+- \subpage page_module_session_manager
+- \subpage page_module_snapcast_discover
+- \subpage page_module_vban_recv
+- \subpage page_module_vban_send
+- \subpage page_module_x11_bell
+- \subpage page_module_zeroconf_discover
+
+*/

@@ -17,8 +17,11 @@ Persistence.Persistence.PersistenceBinding.prototype.toString = function() {
 
 Persistence.Automapping.AutomappingStatus.prototype.toString = function() {
   const lines = [
-    '{', '       network: ' + this.network.url(), '    fileSystem: ' + this.fileSystem.url(),
-    '    exactMatch: ' + this.exactMatch, '}'
+    '{',
+    '       network: ' + this.network.url(),
+    '    fileSystem: ' + this.fileSystem.url(),
+    '    exactMatch: ' + this.exactMatch,
+    '}',
   ];
 
   return lines.join('\n');

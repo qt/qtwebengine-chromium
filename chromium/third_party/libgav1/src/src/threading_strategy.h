@@ -19,9 +19,9 @@
 
 #include <memory>
 
-#include "src/obu_parser.h"
 #include "src/utils/compiler_attributes.h"
 #include "src/utils/threadpool.h"
+#include "src/utils/types.h"
 
 namespace libgav1 {
 

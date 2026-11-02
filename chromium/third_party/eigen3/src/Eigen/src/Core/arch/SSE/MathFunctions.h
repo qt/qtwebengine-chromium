@@ -9,7 +9,7 @@
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 // SPDX-License-Identifier: MPL-2.0
 
-/* The sin and cos and functions of this file come from
+/* The sin and cos functions of this file come from
  * Julien Pommier's sse math library: http://gruntthepeon.free.fr/ssemath/
  */
 

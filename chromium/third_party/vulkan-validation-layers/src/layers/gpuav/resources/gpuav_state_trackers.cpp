@@ -28,11 +28,17 @@
 
 #include "profiling/profiling.h"
 #include "state_tracker/last_bound_state.h"
+#include "state_tracker/pipeline_layout_state.h"
 
 namespace gpuav {
 
 CommandBufferSubState::CommandBufferSubState(Validator& gpuav, vvl::CommandBuffer& cb)
-    : vvl::CommandBufferSubState(cb), gpu_resources_manager(gpuav, false), cmd_errors_counts_buffer_(gpuav), gpuav_(gpuav) {
+    : vvl::CommandBufferSubState(cb),
+      gpu_resources_manager(gpuav, false),
+      cmd_errors_counts_buffer_(gpuav),
+      gpuav_(gpuav),
+      internal_descriptor_buffer_(gpuav),
+      internal_descriptor_heap_(gpuav) {
     Location loc(vvl::Func::vkAllocateCommandBuffers);
     AllocateResources(loc);
 }
@@ -93,6 +99,8 @@ void CommandBufferSubState::AllocateResources(const Location& loc) {
 void CommandBufferSubState::RecordActionCommand(LastBound& last_bound, const Location&) {
     PostCallSetupShaderInstrumentationResources(gpuav_, *this, last_bound);
     IncrementActionCommandCount(last_bound.bind_point);
+
+    push_data_updated = false;
 }
 
 void CommandBufferSubState::UpdateLastBoundDescriptorSets(VkPipelineBindPoint bind_point, const Location& loc) {
@@ -143,6 +151,21 @@ void CommandBufferSubState::ClearPushConstants() {
     push_constant_latest_used_layout.fill(VK_NULL_HANDLE);
 }
 
+void CommandBufferSubState::RecordPushData(const VkPushDataInfoEXT& push_data_info) {
+    if (push_data_value.empty()) {
+        push_data_value.resize((size_t)base.dev_data.phys_dev_ext_props.descriptor_heap_props.maxPushDataSize);
+    }
+
+    memcpy(push_data_value.data() + push_data_info.offset, push_data_info.data.address, push_data_info.data.size);
+    push_data_updated = true;
+}
+
+void CommandBufferSubState::ClearPushData() { push_data_value.clear(); }
+
+void CommandBufferSubState::RecordBindResourceHeap() { descriptor::UpdateBoundDescriptorHeap(gpuav_, *this, false); }
+
+void CommandBufferSubState::RecordBindSamplerHeap() { descriptor::UpdateBoundDescriptorHeap(gpuav_, *this, true); }
+
 void CommandBufferSubState::RecordEndRendering(const VkRenderingEndInfoEXT*) { valcmd::FlushValidationCmds(gpuav_, *this); }
 
 void CommandBufferSubState::RecordEndRenderPass(const VkSubpassEndInfo*, const Location&) {
@@ -188,6 +211,9 @@ void CommandBufferSubState::ResetCBState(bool should_destroy) {
     if (should_destroy) {
         error_output_buffer_range_ = {};
         cmd_errors_counts_buffer_.Destroy();
+
+        internal_descriptor_buffer_.Destroy();
+        internal_descriptor_heap_.Destroy();
     }
 
     draw_index = 0;
@@ -195,6 +221,8 @@ void CommandBufferSubState::ResetCBState(bool should_destroy) {
     trace_rays_index = 0;
 
     resource_descriptor_buffer_index_ = 0;
+
+    push_data_updated = false;
 
     ClearPushConstants();
 }
@@ -225,6 +253,8 @@ uint32_t CommandBufferSubState::GetActionCommandIndex(VkPipelineBindPoint bind_p
                                                                     : 0;
 }
 
+uint32_t CommandBufferSubState::GetTotalActionCommandCount() const { return draw_index + compute_index + trace_rays_index; }
+
 std::string CommandBufferSubState::GetDebugLabelRegion(uint32_t label_command_i,
                                                        const std::vector<std::string>& initial_label_stack) const {
     std::string debug_region_name;
@@ -243,6 +273,42 @@ std::string CommandBufferSubState::GetDebugLabelRegion(uint32_t label_command_i,
         }
     }
     return debug_region_name;
+}
+
+vko::Buffer& CommandBufferSubState::GetInternalDescriptorBuffer() {
+    if (internal_descriptor_buffer_.IsDestroyed()) {
+        VkBufferCreateInfo buffer_info = vku::InitStructHelper();
+        // TODO - This is about 6MB and need a fraction of this if using DebugPrintf only
+        buffer_info.size = gpuav_.resource_descriptor_buffer_stride_ * gpuav_.gpuav_settings.indices_buffer_count;
+        buffer_info.usage = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        VmaAllocationCreateInfo alloc_info = {};
+        alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        alloc_info.preferredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        const VkResult result = internal_descriptor_buffer_.Create(&buffer_info, &alloc_info);
+        if (result != VK_SUCCESS) {
+            gpuav_.InternalVmaError(base.Handle(), result, "Failed to create an internal resource Descriptor Buffer.");
+        }
+    }
+    return internal_descriptor_buffer_;
+}
+
+// This buffer is going to be the indirect buffer for a VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_EXT mapping.
+vko::Buffer& CommandBufferSubState::GetInternalDescriptorHeap() {
+    if (internal_descriptor_heap_.IsDestroyed()) {
+        VkBufferCreateInfo buffer_info = vku::InitStructHelper();
+        buffer_info.size = gpuav_.heap_indirect_buffer_stride_ * gpuav_.gpuav_settings.indices_buffer_count;
+        // Note that maxUniformBufferRange is smaller likely to what we need here, but this buffer doesn't need to worry because we
+        // are not "binding" this, so we can use maxBufferSize instead
+        buffer_info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        VmaAllocationCreateInfo alloc_info = {};
+        alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        alloc_info.preferredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        const VkResult result = internal_descriptor_heap_.Create(&buffer_info, &alloc_info);
+        if (result != VK_SUCCESS) {
+            gpuav_.InternalVmaError(base.Handle(), result, "Failed to create an internal resource Descriptor Heap.");
+        }
+    }
+    return internal_descriptor_heap_;
 }
 
 struct FenceWaiter {
@@ -592,43 +658,43 @@ void QueueSubState::Retire(vvl::QueueSubmission& submission) {
     }
 }
 
-ImageSubState::ImageSubState(vvl::Image& obj, DescriptorHeap& heap)
-    : vvl::ImageSubState(obj), id_tracker(std::in_place, heap, obj.Handle()) {}
+ImageSubState::ImageSubState(vvl::Image& obj, DescriptorIdPool& id_pool)
+    : vvl::ImageSubState(obj), id_tracker(std::in_place, id_pool, obj.Handle()) {}
 
 void ImageSubState::Destroy() { id_tracker.reset(); }
 
 void ImageSubState::NotifyInvalidate(const vvl::StateObject::NodeList& invalid_nodes, bool unlink) { id_tracker.reset(); }
 
-ImageViewSubState::ImageViewSubState(vvl::ImageView& obj, DescriptorHeap& heap)
-    : vvl::ImageViewSubState(obj), id_tracker(std::in_place, heap, obj.Handle()) {}
+ImageViewSubState::ImageViewSubState(vvl::ImageView& obj, DescriptorIdPool& id_pool)
+    : vvl::ImageViewSubState(obj), id_tracker(std::in_place, id_pool, obj.Handle()) {}
 
 void ImageViewSubState::Destroy() { id_tracker.reset(); }
 
 void ImageViewSubState::NotifyInvalidate(const vvl::StateObject::NodeList& invalid_nodes, bool unlink) { id_tracker.reset(); }
 
-BufferSubState::BufferSubState(vvl::Buffer& obj, DescriptorHeap& heap)
-    : vvl::BufferSubState(obj), id_tracker(std::in_place, heap, obj.Handle()) {}
+BufferSubState::BufferSubState(vvl::Buffer& obj, DescriptorIdPool& id_pool)
+    : vvl::BufferSubState(obj), id_tracker(std::in_place, id_pool, obj.Handle()) {}
 
 void BufferSubState::Destroy() { id_tracker.reset(); }
 
 void BufferSubState::NotifyInvalidate(const vvl::StateObject::NodeList& invalid_nodes, bool unlink) { id_tracker.reset(); }
 
-BufferViewSubState::BufferViewSubState(vvl::BufferView& obj, DescriptorHeap& heap)
-    : vvl::BufferViewSubState(obj), id_tracker(std::in_place, heap, obj.Handle()) {}
+BufferViewSubState::BufferViewSubState(vvl::BufferView& obj, DescriptorIdPool& id_pool)
+    : vvl::BufferViewSubState(obj), id_tracker(std::in_place, id_pool, obj.Handle()) {}
 
 void BufferViewSubState::Destroy() { id_tracker.reset(); }
 
 void BufferViewSubState::NotifyInvalidate(const vvl::StateObject::NodeList& invalid_nodes, bool unlink) { id_tracker.reset(); }
 
-SamplerSubState::SamplerSubState(vvl::Sampler& obj, DescriptorHeap& heap)
-    : vvl::SamplerSubState(obj), id_tracker(std::in_place, heap, obj.Handle()) {}
+SamplerSubState::SamplerSubState(vvl::Sampler& obj, DescriptorIdPool& id_pool)
+    : vvl::SamplerSubState(obj), id_tracker(std::in_place, id_pool, obj.Handle()) {}
 
 void SamplerSubState::Destroy() { id_tracker.reset(); }
 
 void SamplerSubState::NotifyInvalidate(const vvl::StateObject::NodeList& invalid_nodes, bool unlink) { id_tracker.reset(); }
 
-AccelerationStructureNVSubState::AccelerationStructureNVSubState(vvl::AccelerationStructureNV& obj, DescriptorHeap& heap)
-    : vvl::AccelerationStructureNVSubState(obj), id_tracker(std::in_place, heap, obj.Handle()) {}
+AccelerationStructureNVSubState::AccelerationStructureNVSubState(vvl::AccelerationStructureNV& obj, DescriptorIdPool& id_pool)
+    : vvl::AccelerationStructureNVSubState(obj), id_tracker(std::in_place, id_pool, obj.Handle()) {}
 
 void AccelerationStructureNVSubState::Destroy() { id_tracker.reset(); }
 
@@ -637,8 +703,8 @@ void AccelerationStructureNVSubState::NotifyInvalidate(const vvl::StateObject::N
 }
 
 AccelerationStructureKHRSubState::AccelerationStructureKHRSubState(Validator& validator, vvl::AccelerationStructureKHR& obj,
-                                                                   DescriptorHeap& heap)
-    : vvl::AccelerationStructureKHRSubState(obj), id_tracker(std::in_place, heap, obj.Handle()), validator(validator) {
+                                                                   DescriptorIdPool& id_pool)
+    : vvl::AccelerationStructureKHRSubState(obj), id_tracker(std::in_place, id_pool, obj.Handle()), validator(validator) {
     gpu_state = validator.gpu_resources_manager_.GetHostCoherentBufferRange(sizeof(uint32_t));
     gpu_state.Clear();
 }
@@ -652,15 +718,15 @@ void AccelerationStructureKHRSubState::NotifyInvalidate(const vvl::StateObject::
     id_tracker.reset();
 }
 
-TensorSubState::TensorSubState(vvl::Tensor& obj, DescriptorHeap& heap)
-    : vvl::TensorSubState(obj), id_tracker(std::in_place, heap, obj.Handle()) {}
+TensorSubState::TensorSubState(vvl::Tensor& obj, DescriptorIdPool& id_pool)
+    : vvl::TensorSubState(obj), id_tracker(std::in_place, id_pool, obj.Handle()) {}
 
 void TensorSubState::Destroy() { id_tracker.reset(); }
 
 void TensorSubState::NotifyInvalidate(const vvl::StateObject::NodeList& invalid_nodes, bool unlink) { id_tracker.reset(); }
 
-TensorViewSubState::TensorViewSubState(vvl::TensorView& obj, DescriptorHeap& heap)
-    : vvl::TensorViewSubState(obj), id_tracker(std::in_place, heap, obj.Handle()) {}
+TensorViewSubState::TensorViewSubState(vvl::TensorView& obj, DescriptorIdPool& id_pool)
+    : vvl::TensorViewSubState(obj), id_tracker(std::in_place, id_pool, obj.Handle()) {}
 
 void TensorViewSubState::Destroy() { id_tracker.reset(); }
 
@@ -670,10 +736,11 @@ ShaderObjectSubState::ShaderObjectSubState(vvl::ShaderObject& obj) : vvl::Shader
 
 PipelineSubState::PipelineSubState(Validator& gpuav, vvl::Pipeline& pipeline) : vvl::PipelineSubState(pipeline), gpuav_(gpuav) {}
 
-VkPipelineLayout PipelineSubState::GetPipelineLayoutUnion(const Location& loc, vvl::DescriptorMode mode) const {
-    std::unique_lock<std::mutex> recreated_layout_lock(recreated_layout_mutex);
-    if (recreated_layout != VK_NULL_HANDLE) {
-        return recreated_layout;
+VkPipelineLayout PipelineSubState::GetPipelineLayoutUnion(const LastBound& last_bound, const Location& loc,
+                                                          vvl::DescriptorMode mode) const {
+    std::unique_lock<std::mutex> recreated_layout_lock(mutex_);
+    if (recreated_layout_ != VK_NULL_HANDLE) {
+        return recreated_layout_;
     }
 
     const std::shared_ptr<const vvl::PipelineLayout> pipeline_layout_state = base.PipelineLayoutState();
@@ -695,8 +762,26 @@ VkPipelineLayout PipelineSubState::GetPipelineLayoutUnion(const Location& loc, v
         } else {
             VkDescriptorSetLayout recreated_desc_set_layout = VK_NULL_HANDLE;
 
-            const VkResult result = DispatchCreateDescriptorSetLayout(gpuav_.device, set_layout->GetCreateInfo().ptr(), nullptr,
-                                                                      &recreated_desc_set_layout);
+            // So ya, this is a fun
+            // Someone can call vkCmdBindPipeline whose pipeline layout was created with an immutable sampler and the VkSampler was
+            // destroyed, so we need to use the one from vkCmdBindDescriptorSets which must still be valid... I tried to use
+            // |desc_set_pipeline_layout| instead of |PipelineLayoutState| but you can have draw/dispatch that use no descriptor
+            // such that there is no vkCmdBindDescriptorSets call.
+            //
+            // This feels like there is some way to unwind all of this into a more elegant solution,
+            // but if you are reading this (unhinged comment), you likely are already confused why we have this function as well
+            // and rather just bandaid until someone complains
+            vku::safe_VkDescriptorSetLayoutCreateInfo dsl_create_info = set_layout->GetCreateInfo();
+            if (pipeline_layout_state->has_immutable_samplers) {
+                if (last_bound.desc_set_pipeline_layout && last_bound.desc_set_pipeline_layout->set_layouts.list[set_layout_i]) {
+                    dsl_create_info = last_bound.desc_set_pipeline_layout->set_layouts.list[set_layout_i]->GetCreateInfo();
+                } else {
+                    assert(false);  // Should not be possible, but at this point, not even the LLM knows
+                }
+            }
+
+            const VkResult result =
+                DispatchCreateDescriptorSetLayout(gpuav_.device, dsl_create_info.ptr(), nullptr, &recreated_desc_set_layout);
             (void)result;
             assert(result == VK_SUCCESS);
 
@@ -719,7 +804,7 @@ VkPipelineLayout PipelineSubState::GetPipelineLayoutUnion(const Location& loc, v
         pipeline_layout_ci.pPushConstantRanges = pipeline_layout_state->push_constant_ranges_layout->data();
     }
 
-    const VkResult result = DispatchCreatePipelineLayout(gpuav_.device, &pipeline_layout_ci, nullptr, &recreated_layout);
+    const VkResult result = DispatchCreatePipelineLayout(gpuav_.device, &pipeline_layout_ci, nullptr, &recreated_layout_);
     (void)result;
     assert(result == VK_SUCCESS);
 
@@ -727,15 +812,27 @@ VkPipelineLayout PipelineSubState::GetPipelineLayoutUnion(const Location& loc, v
         DispatchDestroyDescriptorSetLayout(gpuav_.device, set_layout_handles[i], nullptr);
     }
 
-    return recreated_layout;
+    return recreated_layout_;
 }
 
 void PipelineSubState::Destroy() {
-    std::unique_lock<std::mutex> recreated_layout_lock(recreated_layout_mutex);
-    if (recreated_layout != VK_NULL_HANDLE) {
-        DispatchDestroyPipelineLayout(gpuav_.device, recreated_layout, nullptr);
-        recreated_layout = VK_NULL_HANDLE;
+    std::unique_lock<std::mutex> recreated_layout_lock(mutex_);
+    if (recreated_layout_ != VK_NULL_HANDLE) {
+        DispatchDestroyPipelineLayout(gpuav_.device, recreated_layout_, nullptr);
+        recreated_layout_ = VK_NULL_HANDLE;
     }
+    if (uninstrumented_pipeline != VK_NULL_HANDLE) {
+        // vkDestroyPipeline expects an unwrapped handle,
+        // so cannot use DispatchDestroyPipeline as it will try to unwrap supplied pipeline handle
+        auto layer_data = vvl::GetDispatchDevice(gpuav_.device);
+        layer_data->device_dispatch_table.DestroyPipeline(gpuav_.device, uninstrumented_pipeline, nullptr);
+    }
+}
+
+void PipelineSubState::AddHandleToDestroy(VkPipeline pipeline) {
+    std::unique_lock<std::mutex> lock(mutex_);
+    assert(uninstrumented_pipeline == VK_NULL_HANDLE);
+    uninstrumented_pipeline = pipeline;
 }
 
 }  // namespace gpuav

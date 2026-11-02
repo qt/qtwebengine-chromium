@@ -16,38 +16,38 @@
 
 pub mod mmio;
 
-use core::arch::x86_64::{CpuidResult, __cpuid};
+use core::arch::x86_64::{__cpuid, CpuidResult};
 
 pub use mmio::*;
 use oak_attestation::dice::DiceAttester;
 use oak_dice::evidence::TeePlatform;
+use oak_hal::PageAssignment;
 use oak_linux_boot_params::BootE820Entry;
 use oak_stage0_dice::DerivedKey;
 use x86_64::{
     registers::model_specific::Msr,
     structures::{
-        paging::{Page, PageSize, Size4KiB},
+        paging::{Page, PhysFrame, Size4KiB},
         port::{PortRead, PortWrite},
     },
 };
 use zerocopy::{FromBytes, IntoBytes};
 
-use super::{PageAssignment, PortFactory};
-use crate::{acpi_tables::Rsdp, paging::PageEncryption, zero_page::ZeroPage};
+use super::PortFactory;
+use crate::{acpi::tables::AcpiTables, zero_page::ZeroPage};
 
 pub struct Base {}
 
 impl crate::Platform for Base {
-    type Mmio<S: PageSize> = mmio::Mmio<S>;
-    type Attester = DiceAttester;
+    type Mmio = mmio::Mmio;
 
     fn cpuid(leaf: u32) -> CpuidResult {
         // Safety: all CPUs we care about are modern enough to support CPUID.
-        unsafe { __cpuid(leaf) }
+        __cpuid(leaf)
     }
 
-    unsafe fn mmio<S: PageSize>(base_address: x86_64::PhysAddr) -> Self::Mmio<S> {
-        mmio::Mmio::new(base_address)
+    unsafe fn mmio(base_address: x86_64::PhysAddr, size: usize) -> Self::Mmio {
+        unsafe { mmio::Mmio::new(base_address, size) }
     }
 
     fn port_factory() -> PortFactory {
@@ -71,16 +71,41 @@ impl crate::Platform for Base {
             },
         }
     }
-
     fn early_initialize_platform() {}
+
+    fn change_frame_state(_frame: PhysFrame<Size4KiB>, _state: PageAssignment) {}
+
+    fn revalidate_page(_page: Page<Size4KiB>) {}
+
+    fn wbvind() {
+        // Safety: this shouldn't have any (visible) effects that affect Rust safety.
+        unsafe {
+            core::arch::asm! {
+                "wbinvd",
+                 options(preserves_flags, nostack)
+
+            }
+        }
+    }
+
+    fn init_memory_encryption() -> bool {
+        false
+    }
+
+    fn is_memory_encryption_enabled() -> bool {
+        false
+    }
+}
+
+impl super::FirmwarePlatform for Base {
+    fn initialize_platform(_e820_table: &[BootE820Entry]) {}
+    type Attester = DiceAttester;
 
     fn prefill_e820_table<T: IntoBytes + FromBytes>(_: &mut T) -> Result<usize, &'static str> {
         Err("not needed")
     }
 
-    fn initialize_platform(_e820_table: &[BootE820Entry]) {}
-
-    fn finalize_acpi_tables(_rsdp: &mut Rsdp) -> Result<(), &'static str> {
+    fn finalize_acpi_tables(_rsdp: &mut AcpiTables) -> Result<(), &'static str> {
         Ok(())
     }
 
@@ -101,38 +126,27 @@ impl crate::Platform for Base {
         oak_stage0_dice::mock_derived_key()
     }
 
-    fn change_page_state(_page: Page<Size4KiB>, _state: PageAssignment) {}
-
-    fn revalidate_page(_page: Page<Size4KiB>) {}
-
-    fn page_table_mask(_encryption_state: PageEncryption) -> u64 {
-        0
-    }
-
-    fn encrypted() -> u64 {
-        0
-    }
-
     fn tee_platform() -> TeePlatform {
         TeePlatform::None
     }
 
+    fn validate_measured_boot(
+        _cmdline: &[u8],
+        _initrd_digest: &[u8],
+        _kernel_setup_data: &[u8],
+        _kernel_bytes: &[u8],
+    ) -> bool {
+        log::debug!("Empty implementation for measured boot");
+        true
+    }
+}
+
+impl oak_hal::MsrAccess for Base {
     unsafe fn read_msr(msr: u32) -> u64 {
-        Msr::new(msr).read()
+        unsafe { Msr::new(msr).read() }
     }
 
     unsafe fn write_msr(msr: u32, value: u64) {
-        Msr::new(msr).write(value)
-    }
-
-    fn wbvind() {
-        // Safety: this shouldn't have any (visible) effects that affect Rust safety.
-        unsafe {
-            core::arch::asm! {
-                "wbinvd",
-                 options(preserves_flags, nostack)
-
-            }
-        }
+        unsafe { Msr::new(msr).write(value) }
     }
 }

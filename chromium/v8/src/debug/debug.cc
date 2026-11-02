@@ -9,6 +9,7 @@
 
 #include "src/api/api-inl.h"
 #include "src/base/platform/mutex.h"
+#include "src/base/strong-alias.h"
 #include "src/builtins/builtins.h"
 #include "src/codegen/compilation-cache.h"
 #include "src/codegen/compiler.h"
@@ -18,9 +19,7 @@
 #include "src/debug/debug-evaluate.h"
 #include "src/debug/liveedit.h"
 #include "src/deoptimizer/deoptimizer.h"
-#include "src/execution/execution.h"
 #include "src/execution/frames-inl.h"
-#include "src/execution/frames.h"
 #include "src/execution/isolate-inl.h"
 #include "src/execution/protectors-inl.h"
 #include "src/execution/v8threads.h"
@@ -31,6 +30,7 @@
 #include "src/interpreter/bytecode-array-iterator.h"
 #include "src/logging/counters.h"
 #include "src/logging/runtime-call-stats-scope.h"
+#include "src/objects/abstract-code-inl.h"
 #include "src/objects/api-callbacks-inl.h"
 #include "src/objects/debug-objects-inl.h"
 #include "src/objects/js-generator-inl.h"
@@ -54,7 +54,10 @@ class Debug::TemporaryObjectsTracker : public HeapObjectAllocationTracker {
   TemporaryObjectsTracker& operator=(const TemporaryObjectsTracker&) = delete;
 
   void AllocationEvent(Address addr, int size) override {
-    if (disabled) return;
+    if (disabled) {
+      RemoveFromRegions(addr, addr + size);
+      return;
+    }
     AddRegion(addr, addr + size);
   }
 
@@ -73,7 +76,7 @@ class Debug::TemporaryObjectsTracker : public HeapObjectAllocationTracker {
     }
   }
 
-  bool HasObject(DirectHandle<HeapObject> obj) {
+  bool HasObject(DirectHandle<HeapObject> obj) const {
     if (IsJSObject(*obj) && Cast<JSObject>(obj)->GetEmbedderFieldCount()) {
       // Embedder may store any pointers using embedder fields and implements
       // non trivial logic, e.g. create wrappers lazily and store pointer to
@@ -88,7 +91,7 @@ class Debug::TemporaryObjectsTracker : public HeapObjectAllocationTracker {
   bool disabled = false;
 
  private:
-  bool HasRegionContainingObject(Address start, Address end) {
+  bool HasRegionContainingObject(Address start, Address end) const {
     // Check if there is a region that contains (overlaps) this object's space.
     auto it = FindOverlappingRegion(start, end, false);
     // If there is, we expect the region to contain the entire object.
@@ -100,8 +103,8 @@ class Debug::TemporaryObjectsTracker : public HeapObjectAllocationTracker {
   // This function returns any one of the overlapping regions (there might be
   // multiple). If {include_adjacent} is true, it will also consider regions
   // that have no overlap but are directly connected.
-  std::map<Address, Address>::iterator FindOverlappingRegion(
-      Address start, Address end, bool include_adjacent) {
+  std::map<Address, Address>::const_iterator FindOverlappingRegion(
+      Address start, Address end, bool include_adjacent) const {
     // Region A = [start, end) overlaps with an existing region [existing_start,
     // existing_end) iff (start <= existing_end) && (existing_start <= end).
     // Since we index {regions_} by end address, we can find a candidate that
@@ -191,7 +194,7 @@ BreakLocation BreakLocation::FromFrame(Handle<DebugInfo> debug_info,
   if (debug_info->CanBreakAtEntry()) {
     return BreakLocation(Debug::kBreakAtEntryPosition, DEBUG_BREAK_AT_ENTRY);
   }
-  auto summary = FrameSummary::GetTop(frame).AsJavaScript();
+  auto summary = FrameSummary::GetInnermost(frame).AsJavaScript();
   int offset = summary.code_offset();
   DirectHandle<AbstractCode> abstract_code = summary.abstract_code();
   BreakIterator it(debug_info);
@@ -200,7 +203,7 @@ BreakLocation BreakLocation::FromFrame(Handle<DebugInfo> debug_info,
 }
 
 bool BreakLocation::IsPausedInJsFunctionEntry(JavaScriptFrame* frame) {
-  auto summary = FrameSummary::GetTop(frame);
+  auto summary = FrameSummary::GetInnermost(frame);
   return summary.code_offset() == kFunctionEntryBytecodeOffset;
 }
 
@@ -238,7 +241,7 @@ void BreakLocation::AllAtCurrentStatement(
     Handle<DebugInfo> debug_info, JavaScriptFrame* frame,
     std::vector<BreakLocation>* result_out) {
   DCHECK(!debug_info->CanBreakAtEntry());
-  auto summary = FrameSummary::GetTop(frame).AsJavaScript();
+  auto summary = FrameSummary::GetInnermost(frame).AsJavaScript();
   int offset = summary.code_offset();
   DirectHandle<AbstractCode> abstract_code = summary.abstract_code();
   if (IsCode(*abstract_code)) offset = offset - 1;
@@ -477,7 +480,7 @@ void Debug::ThreadInit() {
   base::Relaxed_Store(&thread_local_.current_debug_scope_,
                       static_cast<base::AtomicWord>(0));
   thread_local_.break_on_next_function_call_ = false;
-  thread_local_.scheduled_break_on_next_function_call_ = false;
+  thread_local_.scheduled_break_on_next_function_call_ = {};
   UpdateHookOnFunctionCall();
   thread_local_.muted_function_ = Smi::zero();
   thread_local_.muted_position_ = -1;
@@ -563,7 +566,7 @@ void DebugInfoCollection::Insert(Tagged<SharedFunctionInfo> sfi,
 bool DebugInfoCollection::Contains(Tagged<SharedFunctionInfo> sfi) const {
   auto it = map_.find(sfi->unique_id());
   if (it == map_.end()) return false;
-  DCHECK_EQ(Cast<DebugInfo>(Tagged<Object>(*it->second))->shared(), sfi);
+  DCHECK_EQ(TrustedCast<DebugInfo>(Tagged<Object>(*it->second))->shared(), sfi);
   return true;
 }
 
@@ -571,7 +574,7 @@ std::optional<Tagged<DebugInfo>> DebugInfoCollection::Find(
     Tagged<SharedFunctionInfo> sfi) const {
   auto it = map_.find(sfi->unique_id());
   if (it == map_.end()) return {};
-  Tagged<DebugInfo> di = Cast<DebugInfo>(Tagged<Object>(*it->second));
+  Tagged<DebugInfo> di = TrustedCast<DebugInfo>(Tagged<Object>(*it->second));
   DCHECK_EQ(di->shared(), sfi);
   return di;
 }
@@ -589,7 +592,7 @@ void DebugInfoCollection::DeleteSlow(Tagged<SharedFunctionInfo> sfi) {
 
 Tagged<DebugInfo> DebugInfoCollection::EntryAsDebugInfo(size_t index) const {
   DCHECK_LT(index, list_.size());
-  return Cast<DebugInfo>(Tagged<Object>(*list_[index]));
+  return TrustedCast<DebugInfo>(Tagged<Object>(*list_[index]));
 }
 
 void DebugInfoCollection::DeleteIndex(size_t index) {
@@ -684,8 +687,9 @@ void Debug::Break(JavaScriptFrame* frame,
   if (!break_points_hit.is_null() || break_on_next_function_call() ||
       scheduled_break) {
     StepAction lastStepAction = last_step_action();
-    debug::BreakReasons break_reasons;
-    if (scheduled_break) {
+    debug::BreakReasons break_reasons =
+        thread_local_.scheduled_break_on_next_function_call_;
+    if (shouldPauseAfterInstrumentation) {
       break_reasons.Add(debug::BreakReason::kScheduled);
     }
     // If it's a debugger statement, add the reason and then mute the location
@@ -769,7 +773,7 @@ void Debug::Break(JavaScriptFrame* frame,
         }
         return;
       }
-      FrameSummary summary = FrameSummary::GetTop(frame);
+      FrameSummary summary = FrameSummary::GetInnermost(frame);
       const bool frame_or_statement_changed =
           current_frame_count != last_frame_count ||
           thread_local_.last_statement_position_ !=
@@ -1457,7 +1461,7 @@ void Debug::PrepareStep(StepAction step_action) {
     DCHECK(IsJSFunction(js_frame->function()));
 
     // Get the debug info (create it if it does not exist).
-    auto summary = FrameSummary::GetTop(frame).AsJavaScript();
+    auto summary = FrameSummary::GetInnermost(frame).AsJavaScript();
     DirectHandle<JSFunction> function(summary.function());
     shared = Handle<SharedFunctionInfo>(function->shared(), isolate_);
     if (!EnsureBreakInfo(shared)) return;
@@ -1670,7 +1674,7 @@ void Debug::ClearStepping() {
   thread_local_.last_frame_count_ = -1;
   thread_local_.target_frame_count_ = -1;
   thread_local_.break_on_next_function_call_ = false;
-  thread_local_.scheduled_break_on_next_function_call_ = false;
+  thread_local_.scheduled_break_on_next_function_call_ = {};
   clear_restart_frame();
   UpdateHookOnFunctionCall();
 }
@@ -2315,7 +2319,7 @@ bool Debug::EnsureBreakInfo(Handle<SharedFunctionInfo> shared) {
   IsCompiledScope is_compiled_scope = shared->is_compiled_scope(isolate_);
   if (!is_compiled_scope.is_compiled() &&
       !Compiler::Compile(isolate_, shared, Compiler::CLEAR_EXCEPTION,
-                         &is_compiled_scope, CreateSourcePositions::kYes)) {
+                         &is_compiled_scope, CreateSourcePositions{true})) {
     return false;
   }
   CreateBreakInfo(shared);
@@ -2583,7 +2587,7 @@ void Debug::OnException(DirectHandle<Object> exception,
     for (; !it.done(); it.Advance()) {
       if (it.frame()->is_javascript()) {
         JavaScriptFrame* frame = JavaScriptFrame::cast(it.frame());
-        FrameSummary summary = FrameSummary::GetTop(frame);
+        FrameSummary summary = FrameSummary::GetInnermost(frame);
         DirectHandle<SharedFunctionInfo> shared{
             summary.AsJavaScript().function()->shared(), isolate_};
         if (shared->IsSubjectToDebugging()) {
@@ -2605,7 +2609,7 @@ void Debug::OnException(DirectHandle<Object> exception,
       } else if (it.frame()->is_wasm()) {
         const WasmFrame* frame = WasmFrame::cast(it.frame());
         int top_wasm_position =
-            FrameSummary::GetTop(frame).AsWasm().SourcePosition();
+            FrameSummary::GetInnermost(frame).AsWasm().SourcePosition();
         if (IsMutedAtWasmLocation(frame->script(), top_wasm_position)) return;
         // Wasm is always subject to debugging
         break;
@@ -2899,14 +2903,28 @@ void Debug::HandleDebugBreak(IgnoreBreakMode ignore_break_mode,
       DirectHandle<JSFunction> function(frame->function(), isolate_);
       DirectHandle<SharedFunctionInfo> shared(function->shared(), isolate_);
 
-      // kScheduled breaks are triggered by the stack check. While we could
-      // pause here, the JSFunction didn't have time yet to create and push
-      // it's context. Instead, we step into the function and pause at the
+      // If the top frame is optimized, deoptimize it. A debugger pause can
+      // execute arbitrary JS (e.g. via evaluation or inspector listeners),
+      // which can modify heap state (like detaching typed arrays). We must
+      // deoptimize the execution stack to discard any load-eliminated values
+      // (like backing store pointers or array lengths) that could be
+      // invalidated. We only need to deoptimize the topmost frame because any
+      // caller frames are at a call site, which acts as a memory serialization
+      // barrier, forcing them to reload all heap state upon return anyway.
+      if (frame->is_optimized()) {
+        Deoptimizer::DeoptimizeFunction(*function,
+                                        LazyDeoptimizeReason::kDebugger);
+      }
+
+      // kScheduled and kOOM breaks are triggered by the stack check. While we
+      // could pause here, the JSFunction didn't have time yet to create and
+      // push its context. Instead, we step into the function and pause at the
       // first official breakable position.
       // This behavior mirrors "BreakOnNextFunctionCall".
-      if (break_reasons.contains(v8::debug::BreakReason::kScheduled) &&
+      if ((break_reasons.contains(v8::debug::BreakReason::kScheduled) ||
+           break_reasons.contains(v8::debug::BreakReason::kOOM)) &&
           BreakLocation::IsPausedInJsFunctionEntry(frame)) {
-        thread_local_.scheduled_break_on_next_function_call_ = true;
+        thread_local_.scheduled_break_on_next_function_call_.Add(break_reasons);
         PrepareStepIn(function);
         return;
       }
@@ -3403,6 +3421,13 @@ void Debug::SetTemporaryObjectTrackingDisabled(bool disabled) {
 bool Debug::GetTemporaryObjectTrackingDisabled() const {
   if (temporary_objects_) {
     return temporary_objects_->disabled;
+  }
+  return false;
+}
+
+bool Debug::IsTemporaryObject(DirectHandle<HeapObject> object) const {
+  if (temporary_objects_) {
+    return temporary_objects_->HasObject(object);
   }
   return false;
 }

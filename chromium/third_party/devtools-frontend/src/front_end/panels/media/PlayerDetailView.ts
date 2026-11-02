@@ -15,7 +15,7 @@ import {PlayerPropertiesView} from './PlayerPropertiesView.js';
 
 const UIStrings = {
   /**
-   * @description Title of the 'Properties' tool in the sidebar of the elements tool
+   * @description Title of the 'Properties' tool in the sidebar of the Elements tool.
    */
   properties: 'Properties',
   /**
@@ -31,19 +31,19 @@ const UIStrings = {
    */
   playerEvents: 'Player events',
   /**
-   * @description Text in Network Item View of the Network panel
+   * @description Text in Network item view of the Network panel.
    */
   messages: 'Messages',
   /**
-   * @description Column header for messages view.
+   * @description Column header for Messages view.
    */
   playerMessages: 'Player messages',
   /**
-   * @description Title for the timeline tab.
+   * @description Title for the Timeline tab.
    */
   timeline: 'Timeline',
   /**
-   * @description Hovertext for Timeline tab.
+   * @description Hover text for Timeline tab.
    */
   playerTimeline: 'Player timeline',
 } as const;

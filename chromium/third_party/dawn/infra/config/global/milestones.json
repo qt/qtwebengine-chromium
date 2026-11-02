@@ -118,5 +118,25 @@
             "mac",
             "win"
         ]
+    },
+    "150": {
+        "name": "m150",
+        "chromium_project": "chromium-m150",
+        "ref": "refs/heads/chromium/7871",
+        "platforms": [
+            "linux",
+            "mac",
+            "win"
+        ]
+    },
+    "151": {
+        "name": "m151",
+        "chromium_project": "chromium-m151",
+        "ref": "refs/heads/chromium/7922",
+        "platforms": [
+            "linux",
+            "mac",
+            "win"
+        ]
     }
 }

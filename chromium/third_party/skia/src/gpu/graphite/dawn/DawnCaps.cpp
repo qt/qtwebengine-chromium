@@ -280,9 +280,8 @@ void DawnCaps::initCaps(const DawnBackendContext& backendContext, const ContextO
 
 #if defined(__EMSCRIPTEN__)
     wgpu::SupportedLimits supportedLimits;
-    // TODO(crbug.com/42241199): Update to use wgpu::Status when webgpu.h in Emscripten is updated.
-    [[maybe_unused]] bool limitsSucceeded = backendContext.fDevice.GetLimits(&supportedLimits);
-    SkASSERT(limitsSucceeded);
+    [[maybe_unused]] wgpu::Status status = backendContext.fDevice.GetLimits(&supportedLimits);
+    SkASSERT(status == wgpu::Status::Success);
     wgpu::Limits& limits = supportedLimits.limits;
 #else
     wgpu::CompatibilityModeLimits compatLimits;
@@ -450,12 +449,9 @@ void DawnCaps::initCaps(const DawnBackendContext& backendContext, const ContextO
 void DawnCaps::initShaderCaps(const wgpu::Device& device) {
     SkSL::ShaderCaps* shaderCaps = fShaderCaps.get();
 
-    // WGSL does not support infinities regardless of hardware support. There are discussions around
-    // enabling it using an extension in the future.
+    // WGSL does not actually support infinities regardless of hardware support. There are
+    // discussions around enabling it using an extension in the future.
     shaderCaps->fInfinitySupport = false;
-
-    // WGSL supports shader derivatives in the fragment shader
-    shaderCaps->fShaderDerivativeSupport = true;
 
     if (device.HasFeature(wgpu::FeatureName::DualSourceBlending)) {
         shaderCaps->fDualSourceBlendingSupport = true;
@@ -571,6 +567,11 @@ bool DawnCaps::extractGraphicsDescs(const UniqueKey& key,
     SampleCount depthStencilSamples =
             KeyToSamples((rpDescBits >> kDepthStencilNumSamplesOffset) & kNumSamplesMask);
 
+    if ((colorSamples > SampleCount::k1 && this->avoidMSAA()) ||
+        (depthStencilFormat != TextureFormat::kUnsupported && this->avoidDepthMode())) {
+        return false;
+    }
+
     const bool loadFromResolve = (rpDescBits & kResolveMask) != 0;
     // This bit should only be set if Dawn supports ExpandResolveTexture load op
     SkASSERT(!loadFromResolve || this->loadOpAffectsMSAAPipelines());
@@ -584,10 +585,12 @@ bool DawnCaps::extractGraphicsDescs(const UniqueKey& key,
                                         LoadOp::kClear,
                                         StoreOp::kStore,
                                         colorSamples};
-    renderPassDesc->fDepthStencilAttachment = {depthStencilFormat,
-                                               LoadOp::kClear,
-                                               StoreOp::kDiscard,
-                                               depthStencilSamples};
+    if (!this->avoidDepthMode()) {
+        renderPassDesc->fDepthStencilAttachment = {depthStencilFormat,
+                                                   LoadOp::kClear,
+                                                   StoreOp::kDiscard,
+                                                   depthStencilSamples};
+    }
     if (colorSamples > SampleCount::k1) {
         renderPassDesc->fColorResolveAttachment = {colorFormat,
                                                    loadFromResolve ? LoadOp::kLoad : LoadOp::kClear,

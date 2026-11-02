@@ -24,7 +24,7 @@ namespace Eigen {
  * \param MatrixType the type of the dense matrix storing the coefficients
  * \param Mode can be either \c #Lower or \c #Upper
  *
- * This class is an expression of a sefladjoint matrix from a triangular part of a matrix
+ * This class is an expression of a selfadjoint matrix from a triangular part of a matrix
  * with given dense storage of the coefficients. It is the return type of MatrixBase::selfadjointView()
  * and most of the time this is the only way that it is used.
  *
@@ -290,7 +290,7 @@ struct Assignment<DstXprType, SrcXprType, Functor, SparseSelfAdjoint2Sparse> {
 }  // end namespace internal
 
 /***************************************************************************
- * Implementation of sparse self-adjoint time dense matrix
+ * Implementation of sparse self-adjoint times dense matrix
  ***************************************************************************/
 
 namespace internal {
@@ -321,7 +321,7 @@ inline void sparse_selfadjoint_time_dense_product(const SparseLhsType& lhs, cons
     for (Index j = 0; j < lhs.outerSize(); ++j) {
       LhsIterator i(lhsEval, j);
       // handle diagonal coeff
-      if (ProcessSecondHalf) {
+      EIGEN_IF_CONSTEXPR (ProcessSecondHalf) {
         while (i && i.index() < j) ++i;
         if (i && i.index() == j) {
           res.coeffRef(j, k) += alpha * i.value() * rhs.coeff(j, k);
@@ -335,7 +335,9 @@ inline void sparse_selfadjoint_time_dense_product(const SparseLhsType& lhs, cons
       typename DenseResType::Scalar res_j(0);
       for (; (ProcessFirstHalf ? i && i.index() < j : i); ++i) {
         LhsScalar lhs_ij = i.value();
-        EIGEN_IF_CONSTEXPR(!LhsIsRowMajor) { lhs_ij = numext::conj(lhs_ij); }
+        EIGEN_IF_CONSTEXPR (!LhsIsRowMajor) {
+          lhs_ij = numext::conj(lhs_ij);
+        }
         res_j += lhs_ij * rhs.coeff(i.index(), k);
         res(i.index(), k) += numext::conj(lhs_ij) * rhs_j;
       }
@@ -456,9 +458,10 @@ void permute_symm_to_fullsymm(
       Index r = it.row();
       Index c = it.col();
       Index ip = perm ? perm[i] : i;
-      EIGEN_IF_CONSTEXPR(Mode == int(Upper | Lower))
-      count[StorageOrderMatch ? jp : ip]++;
-      else if (r == c) count[ip]++;
+      EIGEN_IF_CONSTEXPR (Mode == int(Upper | Lower))
+        count[StorageOrderMatch ? jp : ip]++;
+      else if (r == c)
+        count[ip]++;
       else if ((Mode == Lower && r > c) || (Mode == Upper && r < c)) {
         count[ip]++;
         count[jp]++;
@@ -483,18 +486,16 @@ void permute_symm_to_fullsymm(
       StorageIndex jp = perm ? perm[j] : j;
       StorageIndex ip = perm ? perm[i] : i;
 
-      EIGEN_IF_CONSTEXPR(Mode == int(Upper | Lower)) {
+      EIGEN_IF_CONSTEXPR (Mode == int(Upper | Lower)) {
         Index k = count[StorageOrderMatch ? jp : ip]++;
         dest.innerIndexPtr()[k] = StorageOrderMatch ? ip : jp;
         dest.valuePtr()[k] = it.value();
-      }
-      else if (r == c) {
+      } else if (r == c) {
         Index k = count[ip]++;
         dest.innerIndexPtr()[k] = ip;
         dest.valuePtr()[k] = it.value();
-      }
-      else if (((Mode & Lower) == Lower && r > c) || ((Mode & Upper) == Upper && r < c)) {
-        EIGEN_IF_CONSTEXPR(!StorageOrderMatch) std::swap(ip, jp);
+      } else if (((Mode & Lower) == Lower && r > c) || ((Mode & Upper) == Upper && r < c)) {
+        EIGEN_IF_CONSTEXPR (!StorageOrderMatch) std::swap(ip, jp);
         Index k = count[jp]++;
         dest.innerIndexPtr()[k] = ip;
         dest.valuePtr()[k] = it.value();
@@ -556,8 +557,8 @@ void permute_symm_to_symm(const MatrixType& mat,
       Index k = count[int(DstMode) == int(Lower) ? (std::min)(ip, jp) : (std::max)(ip, jp)]++;
       dest.innerIndexPtr()[k] = int(DstMode) == int(Lower) ? (std::max)(ip, jp) : (std::min)(ip, jp);
 
-      EIGEN_IF_CONSTEXPR(!StorageOrderMatch) std::swap(ip, jp);
-      if (((int(DstMode) == int(Lower) && ip < jp) || (int(DstMode) == int(Upper) && ip > jp)))
+      EIGEN_IF_CONSTEXPR (!StorageOrderMatch) std::swap(ip, jp);
+      if ((int(DstMode) == int(Lower) && ip < jp) || (int(DstMode) == int(Upper) && ip > jp))
         dest.valuePtr()[k] = (NonHermitian ? it.value() : numext::conj(it.value()));
       else
         dest.valuePtr()[k] = it.value();
@@ -566,8 +567,6 @@ void permute_symm_to_symm(const MatrixType& mat,
 }
 
 }  // namespace internal
-
-// TODO implement twists in a more evaluator friendly fashion
 
 namespace internal {
 
@@ -617,7 +616,6 @@ struct Assignment<DstXprType, SparseSymmetricPermutationProduct<MatrixType, Mode
   template <int Options>
   static void run(SparseMatrix<Scalar, Options, DstIndex>& dst, const SrcXprType& src,
                   const internal::assign_op<Scalar, typename MatrixType::Scalar>&) {
-    // internal::permute_symm_to_fullsymm<Mode>(m_matrix,_dest,m_perm.indices().data());
     SparseMatrix<Scalar, (Options & RowMajor) == RowMajor ? ColMajor : RowMajor, DstIndex> tmp;
     internal::permute_symm_to_fullsymm<Mode, false>(src.matrix(), tmp, src.perm().indices().data());
     dst = tmp;

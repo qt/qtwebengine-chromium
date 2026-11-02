@@ -130,11 +130,20 @@ struct ContextWithStyleScopeFrame {
     }
 
     bool force_starting_style = false;
-    Element* originating_element =
-        context.element->IsPseudoElement()
-            ? &To<PseudoElement>(context.element)->UltimateOriginatingElement()
-            : context.element;
-    probe::ForceStartingStyle(originating_element, &force_starting_style);
+    Element* originating_element = context.element;
+    Element* pseudo_element = context.pseudo_element;
+
+    if (!pseudo_element && context.pseudo_id != kPseudoIdNone && originating_element) {
+      pseudo_element = originating_element->GetPseudoElement(
+          context.pseudo_id, *context.pseudo_argument);
+    }
+
+    if (pseudo_element) {
+      probe::ForceStartingStyle(pseudo_element, &force_starting_style);
+    }
+    if (!force_starting_style && originating_element) {
+      probe::ForceStartingStyle(originating_element, &force_starting_style);
+    }
 
     reject_starting_styles = (style_recalc_context.is_ensuring_style ||
                               style_recalc_context.old_style ||
@@ -1017,17 +1026,6 @@ DISABLE_CFI_PERF bool ElementRuleCollector::CollectMatchingRulesInternal(
     }
   }
 
-  if (SelectorChecker::MatchesOverscrollTarget(element)) {
-    for (const auto bundle : match_request.AllRuleSets()) {
-      if (CollectMatchingRulesForList<stop_at_first_match>(
-              bundle.rule_set->OverscrollTargetRules(), match_request,
-              bundle.rule_set, bundle.style_sheet_index, checker, context) &&
-          stop_at_first_match) {
-        return true;
-      }
-    }
-  }
-
   if (context.context.pseudo_id >= kPseudoIdScrollbarThumb &&
       context.context.pseudo_id <= kPseudoIdScrollbarCorner) {
     for (const auto bundle : match_request.AllRuleSets()) {
@@ -1308,6 +1306,10 @@ void CountPseudoElementUsage(const Element& element, PseudoId id) {
     }
     case kPseudoIdPickerIcon: {
       element.GetDocument().CountUse(WebFeature::kPickerIconPseudoElement);
+      break;
+    }
+    case kPseudoIdInterestButton: {
+      element.GetDocument().CountUse(WebFeature::kInterestButtonPseudoElement);
       break;
     }
     case kPseudoIdMarker: {

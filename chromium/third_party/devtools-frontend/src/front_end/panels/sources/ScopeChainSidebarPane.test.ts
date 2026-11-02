@@ -3,19 +3,22 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as StackTrace from '../../models/stack_trace/stack_trace.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import {assertScreenshot, raf, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
 import {MockDebuggerBackend, parseScopeChain} from '../../testing/MockScopeChain.js';
 import {createViewFunctionStub} from '../../testing/ViewFunctionHelpers.js';
+import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
+import * as UI from '../../ui/legacy/legacy.js';
 
 import * as Sources from './sources.js';
 
-describeWithMockConnection('ScopeChainSidebarPane', () => {
+describeWithEnvironment('ScopeChainSidebarPane', () => {
   let backend: MockDebuggerBackend;
   let target: SDK.Target.Target;
 
@@ -56,13 +59,16 @@ describeWithMockConnection('ScopeChainSidebarPane', () => {
 
     const flavor = StackTrace.StackTrace.DebuggableFrameFlavor.for(debuggableFrame);
 
-    pane.flavorChanged(flavor);
+    const populateSpy =
+        sinon.spy(ObjectUI.ObjectPropertiesSection.ObjectPropertyTreeElement, 'populateChildrenIfNeeded');
 
+    pane.flavorChanged(flavor);
     await pane.updateComplete;
 
     // Object properties are rendered asynchronously.
-    await raf();
-
+    await populateSpy.returnValues[0];
+    await raf();  // Wait for Lit and MutationObserver to tick
+    await UI.Widget.Widget.allUpdatesComplete;
     await assertScreenshot('sources/scope-chain-sidebar-pane.png');
   });
 
@@ -90,6 +96,10 @@ describeWithMockConnection('ScopeChainSidebarPane', () => {
     pane.flavorChanged(flavor);
 
     await view.nextInput;
+    // Wait for the scope chain update to trigger the view update.
+    while (!view.input.scopeChain) {
+      await view.nextInput;
+    }
 
     const {scopeChain} = view.input;
     assert.isNotNull(scopeChain);

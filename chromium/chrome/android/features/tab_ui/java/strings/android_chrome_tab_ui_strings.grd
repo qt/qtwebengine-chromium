@@ -641,12 +641,7 @@
       <message name="IDS_ACCESSIBILITY_TAB_GROUP_COLOR_ICON_DESCRIPTION" desc="Accessibility string describing what color the current tab group color icon has. Tap this item to change the color.">
         <ph name="COLOR_NAME">%1$s<ex>Blue</ex></ph> tab group color icon
       </message>
-      <message name="IDS_ACCESSIBILITY_TAB_GROUP_COLOR_PICKER_COLOR_ITEM_SELECTED_DESCRIPTION" desc="Accessibility string describing the icon that indicates that this color item is the currently selected one.">
-        <ph name="COLOR_NAME">%1$s<ex>Blue</ex></ph> Selected
-      </message>
-      <message name="IDS_ACCESSIBILITY_TAB_GROUP_COLOR_PICKER_COLOR_ITEM_NOT_SELECTED_DESCRIPTION" desc="Accessibility string describing that no icon is shown to indicate that this color item is the currently selected one.">
-        <ph name="COLOR_NAME">%1$s<ex>Blue</ex></ph> Not selected
-      </message>
+
       <message name="IDS_ACCESSIBILITY_EXPAND_TAB_GROUP_WITH_COLOR" desc="The accessibility text to read when a card representing a tab group is clicked in grid tab switcher. NUMBER_OF_TABS is the number of tabs within this group. COLOR_NAME is the color of this group.">
         {NUMBER_OF_TABS, plural,
           =1 {Expand tab group with <ph name="TABS_COUNT_ONE">%1$d<ex>1</ex></ph> tab, color <ph name="COLOR_NAME">%2$s<ex>Blue</ex></ph>.}
@@ -720,6 +715,12 @@
       <!-- Tab Group Pane and Sync Strings -->
       <message name="IDS_ACCESSIBILITY_TAB_GROUPS" desc="Content description for the button to show tab groups UI.">
         Tab groups
+      </message>
+      <message name="IDS_ACCESSIBILITY_COLLAPSE_VERTICAL_TABS" desc="Content description for the button to collapse the vertical tabs rail.">
+        Collapse Tabs
+      </message>
+      <message name="IDS_ACCESSIBILITY_EXPAND_VERTICAL_TABS" desc="Content description for the button to expand the vertical tabs rail.">
+        Expand Tabs
       </message>
       <message name="IDS_TAB_GROUPS_CREATED_AGO_NOW" desc="A subtitle on a row for a tab group. Explains the group was created less than a minute ago.">
         Created just now
@@ -1163,6 +1164,15 @@
       </message>
       <message name="IDS_SHOW_TABS_HORIZONTALLY" desc="Context menu item text to show the horizontal tabs.">
         Show tabs horizontally
+      </message>
+      <message name="IDS_NEW_TAB_BELOW_MENU_ITEM" desc="Context menu item text to create a new tab below the selected tab.">
+        New tab below
+      </message>
+      <message name="IDS_CLOSE_TABS_BELOW_MENU_ITEM" desc="Context menu item text to close all tabs below the selected tab.">
+        Close tabs below
+      </message>
+      <message name="IDS_SEND_FEEDBACK_ABOUT_TAB_STRIP" desc="Context menu item text to send feedback about the tab strip.">
+        Send feedback about the tab strip
       </message>
 
       <!-- Tab Group List Bottom Sheet -->

@@ -40,6 +40,7 @@
 #include "src/SparseCore/AmbiVector.h"
 #include "src/SparseCore/SparseCompressedBase.h"
 #include "src/SparseCore/SparseMatrix.h"
+#include "src/SparseCore/BlockSparseMatrix.h"
 #include "src/SparseCore/SparseMap.h"
 #include "src/SparseCore/SparseVector.h"
 #include "src/SparseCore/SparseRef.h"
@@ -57,11 +58,20 @@
 #include "src/SparseCore/SparseDenseProduct.h"
 #include "src/SparseCore/SparseSelfAdjointView.h"
 #include "src/SparseCore/SparseTriangularView.h"
+#include "src/SparseCore/TriangularReachSolver.h"
 #include "src/SparseCore/TriangularSolver.h"
 #include "src/SparseCore/SparsePermutation.h"
 #include "src/SparseCore/SparseFuzzy.h"
 #include "src/SparseCore/SparseSolverBase.h"
 #include "src/SparseCore/SparsityPatternRef.h"
+
+// Thread-pool-based threaded SpMV with a cached, nnz-balanced row partition
+// for repeated multiplication by the same sparse matrix. Pulls in
+// Eigen::ThreadPool, so it is opt-in via EIGEN_USE_THREADS.
+#ifdef EIGEN_USE_THREADS
+#include "ThreadPool"
+#include "src/SparseCore/ThreadedSparseProduct.h"
+#endif
 // IWYU pragma: end_exports
 
 #include "src/Core/util/ReenableStupidWarnings.h"

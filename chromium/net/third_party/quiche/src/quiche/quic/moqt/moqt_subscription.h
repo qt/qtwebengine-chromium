@@ -28,6 +28,7 @@
 #include "quiche/quic/moqt/moqt_types.h"
 #include "quiche/quic/moqt/moqt_uni_stream.h"
 #include "quiche/common/platform/api/quiche_export.h"
+#include "quiche/common/quiche_callbacks.h"
 #include "quiche/common/quiche_weak_ptr.h"
 #include "quiche/web_transport/web_transport.h"
 
@@ -83,6 +84,7 @@ class QUICHE_EXPORT SessionToPublisherInterface {
   virtual quic::QuicAlarmFactory* alarm_factory() = 0;
   // Destroy any state associated with the subscription. It is OK destroy
   // SubscriptionPublisher in this method.
+  // TODO(martinduke): Delete once SUBSCRIBE is on the bidi stream.
   virtual void PublishIsDone(uint64_t request_id) = 0;
   // Returns nullptr if MoqtSession is closing.
   virtual webtransport::Session* session() = 0;
@@ -93,6 +95,11 @@ class QUICHE_EXPORT SessionToPublisherInterface {
 class SubscriptionPublisher : public MoqtObjectListener,
                               public SubscriptionPublisherInterface {
  public:
+  // The provider of this callback will delete whatever state it is tracking for
+  // the subscription. This will be used by both PUBLISH and SUBSCRIBE streams.
+  // For control stream SUBSCRIBE, visitor->PublishIsDone() does this instead.
+  using RemoveCallback =
+      quiche::SingleUseCallback<void(SubscriptionPublisher*)>;
   SubscriptionPublisher(MoqtFramer framer,
                         std::shared_ptr<MoqtTrackPublisher> track_publisher,
                         MoqtBidiStreamBase* absl_nonnull bidi_stream,
@@ -101,7 +108,7 @@ class SubscriptionPublisher : public MoqtObjectListener,
                         SessionToPublisherInterface* absl_nonnull visitor,
                         MoqtPublishingMonitorInterface* monitoring_interface,
                         const quic::QuicClock* absl_nonnull clock,
-                        MoqtTraceRecorder& trace_recorder);
+                        MoqtTraceRecorder& trace_recorder, bool is_publish);
   ~SubscriptionPublisher();
 
   SubscriptionPublisher(const SubscriptionPublisher&) = delete;
@@ -210,8 +217,7 @@ class SubscriptionPublisher : public MoqtObjectListener,
   webtransport::Stream* absl_nullable OpenDataStream(
       const NewDataStreamParameters& parameters);
 
-  void PublishIsDone(uint64_t request_id, PublishDoneCode code,
-                     absl::string_view reason);
+  void PublishIsDone(PublishDoneCode code, absl::string_view reason);
 
   MoqtPriority subscriber_priority() const {
     return parameters_.subscriber_priority.value_or(kDefaultSubscriberPriority);
@@ -228,7 +234,7 @@ class SubscriptionPublisher : public MoqtObjectListener,
   SessionToPublisherInterface* absl_nonnull visitor_;
   uint64_t request_id_;
   // Subscription is in the ESTABLISHED state.
-  bool established_ = false;
+  bool established_;
   const uint64_t track_alias_;
   MoqtFramer framer_;
   MoqtTraceRecorder& trace_recorder_;

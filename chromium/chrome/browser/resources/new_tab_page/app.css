@@ -175,7 +175,8 @@ cr-most-visited {
   }
 }
 
-:host([show-composebox_]) #content {
+:host([show-composebox_]) #content,
+:host([show-voice-search-scrim_]) #content {
   z-index: unset;
 }
 
@@ -184,6 +185,7 @@ cr-most-visited {
 }
 
 :host([show-composebox_]) #logo,
+:host([show-voice-search-scrim_]) #logo,
 :host([ntp-realbox-next-enabled_][show-scrim_]) #logo {
   z-index: 2;
 }
@@ -391,10 +393,7 @@ ntp-lens-upload-dialog {
   position: absolute;
   position-anchor: --dialog-anchor;
   top: anchor(top);
-}
-
-#composeboxDialog::backdrop {
-  display: none;
+  z-index: 100;
 }
 
 #undoToast {
@@ -408,4 +407,92 @@ ntp-lens-upload-dialog {
   #scrim {
     transition: none;
   }
+}
+
+#voiceSearchDialog {
+  --color-composebox-submit-button-background: var(
+      --color-new-tab-page-composebox-submit-button-background);
+  --color-composebox-submit-button-icon: white;
+  --cr-composebox-submit-border-radius: 100px;
+  --cr-composebox-submit-height: 36px;
+  --cr-composebox-submit-icon-offset: 0;
+  --cr-composebox-submit-icon-size: 24px;
+  --cr-composebox-submit-width: 48px;
+  background: var(--color-composebox-background);
+  border: none;
+  border-radius: 28px;
+  bottom: auto;
+  box-shadow: var(--cr-searchbox-shadow);
+  font-family: inherit;
+  height: 128px;
+  inset-inline-start: anchor(start);
+  margin: 0;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  position-anchor: --dialog-anchor;
+  top: anchor(top);
+  width: var(--ntp-search-box-width);
+}
+
+#voiceSearchDialog:has(#voiceSearch[live-transcript-enabled]) {
+  height: auto;
+  max-height: 254px;
+  min-height: 128px;
+}
+
+/* Disable default scrim and use custom scrim instead. */
+#voiceSearchDialog::backdrop {
+  display: none;
+}
+
+#voiceSearchCardContainer {
+  height: 100%;
+  position: relative;
+  width: 100%;
+}
+
+#voiceSearchDialog:has(#voiceSearch[live-transcript-enabled])
+    #voiceSearchCardContainer {
+  height: auto;
+}
+
+#voiceSearch {
+  height: 100%;
+  width: 100%;
+  --composebox-voice-search-top-padding: 9px;
+  --composebox-cancel-button-top: 10px;
+  --voice-bottom-actions-bottom: 12px;
+  --voice-bottom-actions-inset-inline-end: 12px;
+  /* Minimum height used for error modes, etc., where 'composebox_voice_search'
+   * determines the composebox height. In normal voice search mode, 'search-animated-glow'
+   * determines the composebox height and min-height is ignored.
+   */
+  --voice-search-minimum-height: 128px;
+}
+
+#voiceSearch[live-transcript-enabled] {
+  height: auto;
+  inset: auto;
+  position: static;
+}
+
+#voiceSearch::part(voice-stop-button) {
+  position: relative;
+}
+
+#voiceSearch::part(submit) {
+  position: relative;
+}
+
+#voiceSearchGlow {
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+#voiceSearch:not([live-transcript-enabled])
+    ~ #voiceSearchGlow::part(full-container-overlay) {
+  min-block-size: 0;
+  position: absolute;
 }

@@ -122,25 +122,24 @@ describeWithEnvironment('RequestHeaderSection', () => {
 
   it('renders correctly', async () => {
     const container = document.createElement('div');
-    renderElementIntoDOM(container);
-    NetworkComponents.RequestHeaderSection.DEFAULT_VIEW(
+    renderElementIntoDOM(container, {includeCommonStyles: true});
+    NetworkComponents.RequestHeaderSection.DEFAULT_VIEW({
+      headers: [
         {
-          headers: [
-            {
-              name: Platform.StringUtilities.toLowerCaseString('Referer'),
-              value: 'https://example.com',
-              valueEditable: NetworkComponents.HeaderSectionRow.EditingAllowedStatus.FORBIDDEN,
-            },
-            {
-              name: Platform.StringUtilities.toLowerCaseString('User-agent'),
-              value: 'Chrome',
-              valueEditable: NetworkComponents.HeaderSectionRow.EditingAllowedStatus.ENABLED,
-            }
-          ],
-          isProvisionalHeaders: true,
-          isRequestCached: true,
+          name: Platform.StringUtilities.toLowerCaseString('Referer'),
+          value: 'https://example.com',
+          valueEditable: NetworkComponents.HeaderSectionRow.EditingAllowedStatus.FORBIDDEN,
         },
-        undefined, container);
+        {
+          name: Platform.StringUtilities.toLowerCaseString('User-agent'),
+          value: 'Chrome',
+          valueEditable: NetworkComponents.HeaderSectionRow.EditingAllowedStatus.ENABLED,
+        },
+      ],
+      isProvisionalHeaders: true,
+      isRequestCached: true,
+    },
+                                                        undefined, container);
     await assertScreenshot('network/request_header_section_default.png');
   });
 });

@@ -10,12 +10,31 @@ if [ -z "$TASK_ID" ]; then
   exit 1
 fi
 
+TOPLEVEL=$(git rev-parse --show-toplevel 2>/dev/null)
 COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null)
-if [ -z "$COMMON_DIR" ]; then
+if [ -z "$COMMON_DIR" ] || [ -z "$TOPLEVEL" ]; then
   echo "Error: Not in a git repository."
   exit 1
 fi
 V8_ROOT="$(cd "$COMMON_DIR/.." && pwd)"
+WS_ROOT="$(dirname "$TOPLEVEL")"
+
+if command -v rift >/dev/null 2>&1 && [ -f "$WS_ROOT/.rift_prime_directive.json" ]; then
+  CURRENT_WS="$(basename "$WS_ROOT")"
+
+  # Mirror create_worktree.sh: a bare TASK_ID names the subagent workspace only
+  # when it already carries the prefix, otherwise derive it.
+  if [[ "$TASK_ID" == "${CURRENT_WS}_subagent_"* ]]; then
+    SUBAGENT_WS="$TASK_ID"
+  else
+    SUBAGENT_WS="${CURRENT_WS}_subagent_${TASK_ID}"
+  fi
+
+  if ! rift -y subagent close "$TASK_ID" > /dev/null 2>&1; then
+    rift close -y "$SUBAGENT_WS" > /dev/null 2>&1
+  fi
+  exit 0
+fi
 
 BRANCH_NAME="task-$TASK_ID"
 WORKTREE_PATH="$V8_ROOT/worktrees/$BRANCH_NAME"

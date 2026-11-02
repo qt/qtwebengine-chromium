@@ -8,9 +8,9 @@
 #include "components/viz/common/resources/shared_image_format_utils.h"
 #include "gpu/command_buffer/client/raster_interface.h"
 #include "gpu/config/gpu_finch_features.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_canvas_tone_mapping.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_canvas_tone_mapping_mode.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_htmlcanvaselement_offscreencanvas.h"
-#include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_tone_mapping.h"
-#include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_tone_mapping_mode.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_canvas_alpha_mode.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_canvas_configuration.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_union_offscreen_rendering_context.h"
@@ -29,8 +29,9 @@
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/graphics/accelerated_static_bitmap_image.h"
+#include "third_party/blink/renderer/platform/graphics/canvas_2d_resource_provider.h"
+#include "third_party/blink/renderer/platform/graphics/canvas_non_2d_resource_provider.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_resource.h"
-#include "third_party/blink/renderer/platform/graphics/canvas_resource_provider.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/webgpu_mailbox_texture.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/webgpu_texture_alpha_clearer.h"
@@ -214,30 +215,29 @@ scoped_refptr<StaticBitmapImage> GPUCanvasContext::GetImage() {
   return SnapshotInternal(front_buffer_texture->GetTexture());
 }
 
-CanvasNon2DResourceProviderSharedImage*
-GPUCanvasContext::GetOrCreateCanvasResourceProvider() {
+CanvasNon2DResourceProvider*
+GPUCanvasContext::GetOrCreateCanvasNon2DResourceProvider() {
   auto* provider = resource_provider_.get();
   if (!provider && !did_fail_to_create_resource_provider_) {
     if (Host()->IsValidImageSize()) {
       if (SharedGpuContext::IsGpuCompositingEnabled()) {
         // This code path could be used for compositing so add the necessary
         // shared image usage flags.
-        resource_provider_ =
-            CanvasNon2DResourceProviderSharedImage::CreateForWebGPU(
-                Host()->Size(), GetSharedImageFormat(), GetAlphaType(),
-                GetColorSpace(),
-                swap_buffers_->GetSharedImageUsagesForDisplay(), Host());
+        resource_provider_ = CanvasNon2DResourceProvider::CreateForWebGPU(
+            Host()->Size(), GetSharedImageFormat(), GetAlphaType(),
+            GetColorSpace(), swap_buffers_->GetHDRMetadata(),
+            swap_buffers_->GetSharedImageUsagesForDisplay(), Host());
       }
       Host()->UpdateMemoryUsage();
       provider = resource_provider_.get();
     }
     if (!provider) {
       did_fail_to_create_resource_provider_ = true;
-    } else if (provider->IsValid()) {
+    } else {
       base::UmaHistogramBoolean("Blink.Canvas.ResourceProviderIsAccelerated",
-                                provider->IsAccelerated());
+                                true);
       base::UmaHistogramEnumeration("Blink.Canvas.ResourceProviderType",
-                                    provider->GetType());
+                                    CanvasResourceProviderType::kSharedImage);
     }
   }
   return provider;
@@ -256,7 +256,7 @@ GPUCanvasContext::PaintRenderingResultsToSnapshot(
     Host()->DiscardResources();
   }
 
-  auto* resource_provider = GetOrCreateCanvasResourceProvider();
+  auto* resource_provider = GetOrCreateCanvasNon2DResourceProvider();
   if (!resource_provider) {
     return nullptr;
   }
@@ -319,12 +319,14 @@ void GPUCanvasContext::SizeChanged() {
   resource_provider_.reset();
 }
 
-bool GPUCanvasContext::PushFrame() {
+scoped_refptr<CanvasResource> GPUCanvasContext::GetResourceForPushFrame(
+    bool& should_call_push_frame) {
+  should_call_push_frame = false;
   DCHECK(Host());
   DCHECK(Host()->IsOffscreenCanvas());
 
   if (!swap_buffers_) {
-    return false;
+    return nullptr;
   }
 
   gpu::SyncToken sync_token;
@@ -332,7 +334,7 @@ bool GPUCanvasContext::PushFrame() {
   auto client_si =
       swap_buffers_->ExportCurrentSharedImage(sync_token, &release_callback);
   if (!client_si) {
-    return false;
+    return nullptr;
   }
 
   auto canvas_resource = ExternalCanvasResource::Create(
@@ -340,11 +342,12 @@ bool GPUCanvasContext::PushFrame() {
       viz::TransferableResource::ResourceSource::kWebGPUSwapBuffer,
       swap_buffers_->GetHDRMetadata(), std::move(release_callback),
       GetContextProviderWeakPtr());
-  if (!canvas_resource)
-    return false;
+  if (!canvas_resource) {
+    return nullptr;
+  }
 
-  bool result = Host()->PushFrame(std::move(canvas_resource));
-  return result;
+  should_call_push_frame = true;
+  return canvas_resource;
 }
 
 ImageBitmap* GPUCanvasContext::TransferToImageBitmap(
@@ -903,7 +906,7 @@ void GPUCanvasContext::CopyToSwapTexture() {
 
 bool GPUCanvasContext::CopyTextureToResourceProvider(
     const wgpu::Texture& texture,
-    CanvasNon2DResourceProviderSharedImage* resource_provider) const {
+    CanvasNon2DResourceProvider* resource_provider) const {
 #if BUILDFLAG(USE_DAWN)
   DCHECK(resource_provider);
 
@@ -1034,10 +1037,10 @@ scoped_refptr<StaticBitmapImage> GPUCanvasContext::SnapshotInternal(
   // These paths are usually related to either printing or either video and
   // usually related to OffscreenCanvas; in cases where the image created from
   // this Snapshot will be sent eventually to the Display Compositor.
-  auto resource_provider =
-      CanvasNon2DResourceProviderSharedImage::CreateForWebGPU(
-          size, GetSharedImageFormat(), GetAlphaType(), GetColorSpace(),
-          swap_buffers_->GetSharedImageUsagesForDisplay());
+  auto resource_provider = CanvasNon2DResourceProvider::CreateForWebGPU(
+      size, GetSharedImageFormat(), GetAlphaType(), GetColorSpace(),
+      swap_buffers_->GetHDRMetadata(),
+      swap_buffers_->GetSharedImageUsagesForDisplay());
   if (!resource_provider)
     return nullptr;
 

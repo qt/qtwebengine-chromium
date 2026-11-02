@@ -3,20 +3,21 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import type * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
-import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
-import {createTarget, stubNoopSettings} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection, setMockConnectionResponseHandler} from '../../testing/MockConnection.js';
+import {assertScreenshot, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
+import {createTarget, describeWithEnvironment, stubNoopSettings} from '../../testing/EnvironmentHelpers.js';
+import {MockCDPConnection} from '../../testing/MockCDPConnection.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import * as Accessibility from './accessibility.js';
 
 const NODE_ID = 1 as Protocol.DOM.NodeId;
 
-describeWithMockConnection('AccessibilitySidebarView', () => {
+describeWithEnvironment('AccessibilitySidebarView', () => {
   let target: SDK.Target.Target;
   let view: Accessibility.AccessibilitySidebarView.AccessibilitySidebarView;
 
@@ -29,15 +30,33 @@ describeWithMockConnection('AccessibilitySidebarView', () => {
       title: () => 'Toggle Accessibility Tree' as Platform.UIString.LocalizedString,
       toggleable: true,
     });
-    target = createTarget();
-    setMockConnectionResponseHandler(
-        'DOM.getDocument', () => ({root: {nodeId: NODE_ID}} as Protocol.DOM.GetDocumentResponse));
-    setMockConnectionResponseHandler('DOM.getNodesForSubtreeByStyle', () => ({nodeIds: []}));
+    const connection = new MockCDPConnection();
+    connection.setSuccessHandler('DOM.getDocument',
+                                 () => ({root: {nodeId: NODE_ID}} as Protocol.DOM.GetDocumentResponse));
+    connection.setSuccessHandler('DOM.getNodesForSubtreeByStyle', () => ({nodeIds: []}));
+    target = createTarget({connection});
   });
 
   afterEach(() => {
     UI.ActionRegistration.maybeRemoveActionExtension('elements.toggle-a11y-tree');
     view.detach();
+  });
+
+  it('notifies ViewManager when visibility is toggled', async () => {
+    view = Accessibility.AccessibilitySidebarView.AccessibilitySidebarView.instance({forceNew: true});
+    renderElementIntoDOM(view);
+    const viewManager = UI.ViewManager.ViewManager.instance();
+    const visibilitySpy = sinon.spy();
+    viewManager.addEventListener(UI.ViewManager.Events.VIEW_VISIBILITY_CHANGED, visibilitySpy);
+
+    const action = UI.ActionRegistry.ActionRegistry.instance().getAction('elements.toggle-a11y-tree');
+    action.setToggled(true);
+
+    sinon.assert.calledWith(visibilitySpy, sinon.match({data: sinon.match({revealedViewId: 'aria-attributes'})}));
+
+    action.setToggled(false);
+
+    sinon.assert.calledWith(visibilitySpy, sinon.match({data: sinon.match({hiddenViewId: 'aria-attributes'})}));
   });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -76,4 +95,10 @@ describeWithMockConnection('AccessibilitySidebarView', () => {
      updatesUiOnEvent(SDK.DOMModel.Events.ChildNodeCountUpdated, true));
   it('does not update UI on out of scope child node count updated event',
      updatesUiOnEvent(SDK.DOMModel.Events.ChildNodeCountUpdated, false));
+
+  it('renders the view', async () => {
+    view = Accessibility.AccessibilitySidebarView.AccessibilitySidebarView.instance({forceNew: true});
+    renderElementIntoDOM(view, {includeCommonStyles: true});
+    await assertScreenshot('accessibility/accessibility_sidebar_view.png');
+  });
 });

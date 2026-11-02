@@ -36,13 +36,14 @@ devtools_foundation_module("foundation_unittests") {
 
   deps = [
     "..:bundle",
+    "../../../core/common:bundle",
     "../../../core/platform:bundle",
     "../../../core/sdk:bundle",
+    "../../../core/text_utils:bundle",
     "../../../generated",
     "../../../testing",
     "../../crux-manager:bundle",
     "../../lighthouse:bundle",
-    "../../text_utils:bundle",
     "../../trace:bundle",
     "../../workspace:bundle",
   ]

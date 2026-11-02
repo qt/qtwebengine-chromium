@@ -31,7 +31,7 @@ const UIStrings = {
   enableAiAssistance: 'Enable AI assistance',
   /**
    * @description Text of a context menu item to redirect to the AI assistance panel with
-   * the current context
+   * the current context.
    */
   debugWithAi: 'Debug with AI',
   /**
@@ -47,7 +47,7 @@ const UIStrings = {
    */
   enableGemini: 'Enable Gemini',
   /**
-   * @description Text of a context menu item to redirect to the Gemini panel with the current context
+   * @description Text of a context menu item to redirect to the Gemini panel with the current context.
    */
   debugWithGemini: 'Debug with Gemini',
   /**
@@ -296,4 +296,36 @@ UI.ActionRegistration.registerActionExtension({
     return new AiAssistance.ActionDelegate();
   },
   condition: config => isFileAgentFeatureAvailable(config) && !isPolicyRestricted(config) && !isGeoRestricted(config),
+});
+
+UI.ActionRegistration.registerActionExtension({
+  actionId: 'ai-assistance.storage-floating-button',
+  contextTypes(): [] {
+    return [];
+  },
+  category: UI.ActionRegistration.ActionCategory.GLOBAL,
+  title: i18nAiBrandedString(UIStrings.debugWithGemini, UIStrings.debugWithAi),
+  configurableBindings: false,
+  async loadActionDelegate() {
+    const AiAssistance = await loadAiAssistanceModule();
+    return new AiAssistance.ActionDelegate();
+  },
+  condition: config =>
+      isStorageAgentFeatureAvailable(config) && !isPolicyRestricted(config) && !isGeoRestricted(config),
+});
+
+UI.ActionRegistration.registerActionExtension({
+  actionId: 'ai-assistance.application-panel-context',
+  contextTypes(): [] {
+    return [];
+  },
+  category: UI.ActionRegistration.ActionCategory.GLOBAL,
+  title: i18nAiBrandedString(UIStrings.debugWithGemini, UIStrings.debugWithAi),
+  configurableBindings: false,
+  async loadActionDelegate() {
+    const AiAssistance = await loadAiAssistanceModule();
+    return new AiAssistance.ActionDelegate();
+  },
+  condition: config =>
+      isStorageAgentFeatureAvailable(config) && !isPolicyRestricted(config) && !isGeoRestricted(config),
 });

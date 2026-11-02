@@ -5,8 +5,14 @@
 import * as SDK from '../../core/sdk/sdk.js';
 import * as CrUXManager from '../../models/crux-manager/crux-manager.js';
 
+import {
+  CalibratedMidTierMobileThrottlingOption,
+  type CPUThrottlingOption,
+  MidTierThrottlingOption,
+} from './CPUThrottlingOption.js';
+
 export interface ThrottlingRecommendations {
-  cpuOption: SDK.CPUThrottlingManager.CPUThrottlingOption|null;
+  cpuOption: CPUThrottlingOption|null;
   networkConditions: SDK.NetworkManager.Conditions|null;
 }
 
@@ -18,10 +24,9 @@ export function getThrottlingRecommendations(): ThrottlingRecommendations {
   const cruxManager = CrUXManager.CrUXManager.instance();
   const roundTripTimeMetricData = cruxManager.getSelectedFieldMetricData('round_trip_time');
 
-  let cpuOption: SDK.CPUThrottlingManager.CPUThrottlingOption =
-      SDK.CPUThrottlingManager.CalibratedMidTierMobileThrottlingOption;
+  let cpuOption: CPUThrottlingOption = CalibratedMidTierMobileThrottlingOption;
   if (cpuOption.rate() === 0) {
-    cpuOption = SDK.CPUThrottlingManager.MidTierThrottlingOption;
+    cpuOption = MidTierThrottlingOption;
   }
 
   const networkConditions = getRecommendedNetworkConditions(roundTripTimeMetricData);

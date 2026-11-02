@@ -816,6 +816,13 @@ static int audio_element_obu(void *s, IAMFContext *c, AVIOContext *pb, int len)
     }
 
     nb_substreams = ffio_read_leb(pbc);
+    /* Each substream consumes at least one byte (its leb128 id) from the
+     * remaining OBU buffer, so a count larger than that cannot be valid and
+     * would only serve to force an oversized allocation. */
+    if (nb_substreams > len - avio_tell(pbc) || !nb_substreams) {
+        ret = AVERROR_INVALIDDATA;
+        goto fail;
+    }
     audio_element->codec_config_id = codec_config_id;
     audio_element->audio_element_id = audio_element_id;
     audio_element->substreams = av_calloc(nb_substreams, sizeof(*audio_element->substreams));
@@ -1002,6 +1009,11 @@ static int mix_presentation_obu(void *s, IAMFContext *c, AVIOContext *pb, int le
     mix_presentation->cmix = mix;
 
     mix_presentation->count_label = ffio_read_leb(pbc);
+    if (mix_presentation->count_label > len - avio_tell(pbc)) {
+        mix_presentation->count_label = 0;
+        ret = AVERROR_INVALIDDATA;
+        goto fail;
+    }
     mix_presentation->language_label = av_calloc(mix_presentation->count_label,
                                                  sizeof(*mix_presentation->language_label));
     if (!mix_presentation->language_label) {

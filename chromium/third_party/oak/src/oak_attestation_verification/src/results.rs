@@ -14,7 +14,11 @@
 // limitations under the License.
 //
 
-//! Provides utilities to process the attestation results.
+//! Provides accessors to attestation results.
+
+#![no_std]
+
+extern crate alloc;
 
 use alloc::{string::ToString, vec::Vec};
 
@@ -35,6 +39,10 @@ const HYBRID_ENCRYPTION_PUBLIC_KEY_ID: &str = "oak-hybrid-encryption-public-key:
 /// signed by the enclave.
 const SIGNING_PUBLIC_KEY_ID: &str = "oak-signing-public-key:ecdsa-p256";
 
+/// Denotes an artifact ID of the user data payload extracted from the signed
+/// user data certificate in the attestation evidence.
+const USER_DATA_PAYLOAD_ID: &str = "user-data-payload";
+
 pub fn get_initial_measurement(results: &EventAttestationResults) -> Option<&Vec<u8>> {
     results.artifacts.get(INITIAL_MEASUREMENT_ID)
 }
@@ -43,52 +51,82 @@ pub fn set_initial_measurement(results: &mut EventAttestationResults, key: &[u8]
     results.artifacts.insert(INITIAL_MEASUREMENT_ID.to_string(), key.to_vec());
 }
 
-pub fn get_session_binding_public_key(results: &AttestationResults) -> Option<&Vec<u8>> {
-    get_event_artifact(results, SESSION_BINDING_PUBLIC_KEY_ID)
+/// Returns the session binding key artifact contained in the event results,
+/// or an error whenever it is missing or not unique.
+pub fn unique_session_binding_public_key(
+    results: &AttestationResults,
+) -> Result<&Vec<u8>, &'static str> {
+    unique_event_artifact(results, SESSION_BINDING_PUBLIC_KEY_ID)
 }
 
 pub fn set_session_binding_public_key(results: &mut EventAttestationResults, key: &[u8]) {
     results.artifacts.insert(SESSION_BINDING_PUBLIC_KEY_ID.to_string(), key.to_vec());
 }
 
-pub fn get_hybrid_encryption_public_key(results: &AttestationResults) -> Option<&Vec<u8>> {
-    get_event_artifact(results, HYBRID_ENCRYPTION_PUBLIC_KEY_ID)
+/// Returns the hybrid encryption key artifact contained in the event results,
+/// or an error whenever it is missing or not unique.
+pub fn unique_hybrid_encryption_public_key(
+    results: &AttestationResults,
+) -> Result<&Vec<u8>, &'static str> {
+    unique_event_artifact(results, HYBRID_ENCRYPTION_PUBLIC_KEY_ID)
+}
+
+pub fn get_hybrid_encryption_public_key(results: &EventAttestationResults) -> Option<&Vec<u8>> {
+    results.artifacts.get(HYBRID_ENCRYPTION_PUBLIC_KEY_ID)
 }
 
 pub fn set_hybrid_encryption_public_key(results: &mut EventAttestationResults, key: &[u8]) {
     results.artifacts.insert(HYBRID_ENCRYPTION_PUBLIC_KEY_ID.to_string(), key.to_vec());
 }
 
-pub fn get_signing_public_key(results: &AttestationResults) -> Option<&Vec<u8>> {
-    get_event_artifact(results, SIGNING_PUBLIC_KEY_ID)
+/// Returns the signing key artifact contained in the attestation results,
+/// or an error whenever it is missing or not unique.
+pub fn unique_signing_public_key(results: &AttestationResults) -> Result<&Vec<u8>, &'static str> {
+    unique_event_artifact(results, SIGNING_PUBLIC_KEY_ID)
 }
 
 pub fn set_signing_public_key(results: &mut EventAttestationResults, key: &[u8]) {
     results.artifacts.insert(SIGNING_PUBLIC_KEY_ID.to_string(), key.to_vec());
 }
 
-/// Returns a reference to the event artifact from `attestation_results` with a
-/// given `artifact_id`.
-pub fn get_event_artifact<'a>(
-    attestation_results: &'a AttestationResults,
+pub fn get_user_data_payload(results: &EventAttestationResults) -> Option<&Vec<u8>> {
+    results.artifacts.get(USER_DATA_PAYLOAD_ID)
+}
+
+pub fn set_user_data_payload(results: &mut EventAttestationResults, payload: &[u8]) {
+    results.artifacts.insert(USER_DATA_PAYLOAD_ID.to_string(), payload.to_vec());
+}
+
+/// Returns a reference to the event artifact in the attestation results
+/// specified by the given ID, or an error if that reference does not exist,
+/// or if there is more than a single reference (`artifact_id` key exists
+/// in results from multiple events).
+fn unique_event_artifact<'a>(
+    results: &'a AttestationResults,
     artifact_id: &str,
-) -> Option<&'a Vec<u8>> {
-    attestation_results
-        .event_attestation_results
-        .iter()
-        .find_map(|event| event.artifacts.get(artifact_id))
+) -> Result<&'a Vec<u8>, &'static str> {
+    let mut iter =
+        results.event_attestation_results.iter().filter_map(|e| e.artifacts.get(artifact_id));
+    let first = iter.next();
+    if first.is_none() {
+        return Err("missing artifact");
+    }
+    if iter.next().is_some() {
+        return Err("duplicate artifact");
+    }
+    Ok(first.unwrap())
 }
 
 #[cfg(test)]
 mod tests {
-    use alloc::collections::BTreeMap;
+    use alloc::{collections::BTreeMap, string::String, vec};
 
     use oak_proto_rust::oak::attestation::v1::EventAttestationResults;
 
     use super::*;
 
     #[test]
-    fn test_get_event_artifact() {
+    fn test_unique_event_artifact() {
         let empty_results = AttestationResults { ..Default::default() };
         let results = AttestationResults {
             event_attestation_results: vec![
@@ -117,16 +155,16 @@ mod tests {
             ..Default::default()
         };
 
-        assert!(get_event_artifact(&empty_results, "id_1").is_none());
+        assert!(unique_event_artifact(&empty_results, "id_1").is_err());
 
-        let artifact_1 = get_event_artifact(&results, "id_1");
-        assert!(artifact_1.is_some());
+        let artifact_1 = unique_event_artifact(&results, "id_1");
+        assert!(artifact_1.is_ok());
         assert_eq!(*artifact_1.unwrap(), b"artifact_1".to_vec());
 
-        let artifact_5 = get_event_artifact(&results, "id_5");
-        assert!(artifact_5.is_some());
+        let artifact_5 = unique_event_artifact(&results, "id_5");
+        assert!(artifact_5.is_ok());
         assert_eq!(*artifact_5.unwrap(), b"artifact_5".to_vec());
 
-        assert!(get_event_artifact(&results, "id_999").is_none());
+        assert!(unique_event_artifact(&results, "id_999").is_err());
     }
 }

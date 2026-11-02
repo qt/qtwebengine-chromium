@@ -180,8 +180,7 @@ void CPWL_ComboBox::CreateButton(const CreateParams& cp) {
   CreateParams bcp = cp;
   bcp.dwFlags = {Styles::kWindowVisible, Styles::kWindowBorder,
                  Styles::kWindowBackground};
-  bcp.sBackgroundColor = CFX_Color(CFX_Color::Type::kRGB, 220.0f / 255.0f,
-                                   220.0f / 255.0f, 220.0f / 255.0f);
+  bcp.sBackgroundColor = CFX_Color::MakeRGBBytes(220, 220, 220);
   bcp.sBorderColor = kDefaultBlackColor;
   bcp.dwBorderWidth = 2;
   bcp.nBorderStyle = BorderStyle::kBeveled;

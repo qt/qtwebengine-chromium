@@ -17,25 +17,29 @@
 use core::mem::size_of;
 
 use oak_stage0::hal::base::Mmio as BaseMmio;
-use x86_64::{structures::paging::PageSize, PhysAddr};
+use x86_64::PhysAddr;
 
 use super::GHCB_WRAPPER;
 
-pub struct Mmio<S: PageSize> {
-    mmio: BaseMmio<S>,
+pub struct Mmio {
+    mmio: BaseMmio,
 }
 
-impl<S: PageSize> Mmio<S> {
-    pub unsafe fn new(base_address: PhysAddr) -> Self {
-        Self { mmio: BaseMmio::new(base_address) }
+impl Mmio {
+    /// # Safety
+    ///
+    /// The caller must ensure that the base address is the start of a valid
+    /// 4KiB MMIO region.
+    pub unsafe fn new(base_address: PhysAddr, size: usize) -> Self {
+        Self { mmio: unsafe { BaseMmio::new(base_address, size) } }
     }
 }
 
-impl<S: PageSize> oak_stage0::hal::Mmio<S> for Mmio<S> {
+impl oak_stage0::hal::Mmio for Mmio {
     fn read_u32(&self, offset: usize) -> u32 {
         if let Some(mut ghcb) = GHCB_WRAPPER.get() {
             let offset = offset * size_of::<u32>();
-            if offset >= S::SIZE as usize {
+            if offset >= self.mmio.layout.size() {
                 panic!("invalid MMIO access for read: offset would read beyond memory boundary");
             }
             ghcb.mmio_read_u32(self.mmio.base_address + (offset as u64))
@@ -48,13 +52,17 @@ impl<S: PageSize> oak_stage0::hal::Mmio<S> for Mmio<S> {
     unsafe fn write_u32(&mut self, offset: usize, value: u32) {
         if let Some(mut ghcb) = GHCB_WRAPPER.get() {
             let offset = offset * size_of::<u32>();
-            if offset >= S::SIZE as usize {
+            if offset >= self.mmio.layout.size() {
                 panic!("invalid MMIO access for write: offset would write beyond memory boundary");
             }
             ghcb.mmio_write_u32(self.mmio.base_address + (offset as u64), value)
                 .expect("couldn't read the MSR using the GHCB protocol")
         } else {
-            self.mmio.write_u32(offset, value)
+            unsafe { self.mmio.write_u32(offset, value) }
         }
+    }
+
+    fn region_size(&self) -> usize {
+        self.mmio.region_size()
     }
 }

@@ -14,10 +14,9 @@
 # limitations under the License.
 #
 
-load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
-load("//bazel:defs.bzl", "oci_runtime_bundle")
+load("//oak_containers/app_base:defs.bzl", "app_bundle")
 
 package(
     default_visibility = ["//:internal"],
@@ -32,6 +31,7 @@ rust_library(
         "src/lib.rs",
     ],
     proc_macro_deps = ["@oak_crates_index//:async-trait"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//oak_containers/examples/hello_world/proto:hello_world_rust_proto",
         "//oak_crypto",
@@ -51,6 +51,7 @@ rust_test(
     name = "standalone_test",
     srcs = ["tests/standalone_test.rs"],
     proc_macro_deps = ["@oak_crates_index//:async-trait"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":oak_containers_examples_hello_world_enclave_app",
         "//oak_client",
@@ -59,7 +60,6 @@ rust_test(
         "//oak_crypto",
         "//oak_proto_rust",
         "//oak_proto_rust/grpc",
-        "//oak_sdk/standalone:oak_sdk_standalone",
         "//oak_session",
         "@oak_crates_index//:anyhow",
         "@oak_crates_index//:futures",
@@ -72,6 +72,7 @@ rust_test(
 rust_binary(
     name = "bin/oak_containers_examples_hello_world_enclave_app",
     srcs = ["src/main.rs"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":oak_containers_examples_hello_world_enclave_app",
         "//oak_sdk/containers:oak_sdk_containers",
@@ -81,21 +82,8 @@ rust_binary(
     ],
 )
 
-pkg_tar(
-    name = "tar",
-    srcs = [":bin/oak_containers_examples_hello_world_enclave_app"],
-    package_dir = "/usr/local/bin",
-    strip_prefix = "/oak_containers/examples/hello_world/enclave_app/bin",
-)
-
-oci_image(
-    name = "image",
-    base = "@distroless_cc_debian12",
-    entrypoint = ["/usr/local/bin/oak_containers_examples_hello_world_enclave_app"],
-    tars = [":tar"],
-)
-
-oci_runtime_bundle(
+app_bundle(
     name = "bundle",
-    image = ":image",
+    binary = ":bin/oak_containers_examples_hello_world_enclave_app",
+    target_compatible_with = ["@platforms//os:linux"],
 )

@@ -10,7 +10,7 @@ const stripEncapsulatingBrackets = (container, isArr) => {
   if (isArr) {
     const firstItem = /** @type {JsdocTypeLine[]} */ (container)[0];
     firstItem.rawType = firstItem.rawType.replace(
-      /^\{/u, ''
+      /^\{/v, ''
     );
 
     const lastItem = /** @type {JsdocTypeLine} */ (
@@ -18,14 +18,14 @@ const stripEncapsulatingBrackets = (container, isArr) => {
         container
       ).at(-1)
     );
-    lastItem.rawType = lastItem.rawType.replace(/\}$/u, '');
+    lastItem.rawType = lastItem.rawType.replace(/\}$/v, '');
 
     return;
   }
   /** @type {JsdocTag} */ (container).rawType =
     /** @type {JsdocTag} */ (container).rawType.replace(
-      /^\{/u, ''
-    ).replace(/\}$/u, '');
+      /^\{/v, ''
+    ).replace(/\}$/v, '');
 };
 
 /**
@@ -387,7 +387,7 @@ const commentParserToESTree = (jsdoc, mode = 'typescript', {
         type: 'JsdocTag',
         typeLines: []
       };
-      tagObj.tag = tagObj.tag.replace(/^@/u, '');
+      tagObj.tag = tagObj.tag.replace(/^@/v, '');
 
       lastTag = tagObj;
       tagDescriptionSeen = false;

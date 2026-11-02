@@ -8,6 +8,7 @@
 #include <optional>
 #include <utility>
 
+#include "constants/catalog.h"
 #include "core/fpdfapi/page/test_with_page_module.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
@@ -137,8 +138,9 @@ class PageLabelTest : public TestWithPageModule {
     TestWithPageModule::SetUp();
 
     auto root_dict = pdfium::MakeRetain<CPDF_Dictionary>();
-    root_dict->SetNewFor<CPDF_Dictionary>("Pages");
-    auto page_labels_dict = root_dict->SetNewFor<CPDF_Dictionary>("PageLabels");
+    root_dict->SetNewFor<CPDF_Dictionary>(pdfium::catalog::kPages);
+    auto page_labels_dict =
+        root_dict->SetNewFor<CPDF_Dictionary>(pdfium::catalog::kPageLabels);
     FillPageLabelsTreeDict(page_labels_dict.Get());
 
     doc_ = std::make_unique<CPDF_TestDocument>();

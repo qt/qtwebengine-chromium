@@ -16,10 +16,6 @@
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
 
-namespace media {
-class PaintCanvasVideoRenderer;
-}  // namespace media
-
 namespace blink {
 
 class ExceptionState;
@@ -159,13 +155,11 @@ class GPUExternalTexture : public DawnObject<wgpu::ExternalTexture> {
       ExternalTextureCache* cache,
       const GPUExternalTextureDescriptor* webgpu_desc,
       scoped_refptr<media::VideoFrame> media_video_frame,
-      media::PaintCanvasVideoRenderer* video_renderer,
       std::optional<media::VideoFrame::ID> media_video_frame_unique_id,
       ExceptionState& exception_state);
 
-  void SetLabelImpl(const String& value) override {
-    std::string utf8_label = value.Utf8();
-    GetHandle().SetLabel(utf8_label.c_str());
+  void SetLabelImpl(std::string_view value) override {
+    GetHandle().SetLabel(value);
   }
 
   bool IsCurrentFrameFromHTMLVideoElementValid();

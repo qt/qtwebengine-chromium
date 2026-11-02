@@ -48,10 +48,11 @@ If you don't have the `libx11-xbc-dev` supporting library, then you must use the
 
 #### With GN
 
-Set `dawn_build_node_bindings = true` in `args.gn` and build the `dawn_node` target:
+When the `dawn_node` variable is set in `.gclient`, `dawn_node` will be
+available to build by default.
+
 ```sh
-gn gen out/Default --args='dawn_build_node_bindings=true'
-autoninja -C out/Default dawn_node
+autoninja -C out/YOUR_BUILD_DIR dawn_node
 ```
 
 #### With CMake
@@ -318,7 +319,9 @@ and [this extension for MSVC](https://marketplace.visualstudio.com/items?itemNam
 
 #### Building as part of Dawn
 
-Dawn can automatically build and configure Lavapipe as part of its build process.
+Dawn can automatically build and configure Lavapipe as part of its build process on Linux.
+
+> **Note:** Building Mesa/Lavapipe as part of Dawn is only supported on Linux.
 
 1.  **GN Build:**
     *   Ensure `checkout_mesa = True` is set in your `.gclient` file's `custom_vars` section, and run `gclient sync`.
@@ -328,7 +331,7 @@ Dawn can automatically build and configure Lavapipe as part of its build process
     *   Add `-DTINT_BUILD_MESA=ON` to your CMake configuration command.
     *   Build with `ninja` or `make`.
 
-The build system will automatically copy `libvulkan_lvp.so` (or platform equivalent) and `lvp_icd.json` to the root of your build directory.
+The build system will automatically copy `libvulkan_lvp.so` and `lvp_icd.json` to the root of your build directory.
 
 #### Building manually
 

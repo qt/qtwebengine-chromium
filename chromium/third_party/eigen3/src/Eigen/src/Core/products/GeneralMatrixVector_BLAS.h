@@ -62,7 +62,7 @@ struct general_matrix_vector_product_gemv;
     static void run(Index rows, Index cols, const const_blas_data_mapper<Scalar, Index, ColMajor>& lhs,          \
                     const const_blas_data_mapper<Scalar, Index, RowMajor>& rhs, Scalar* res, Index resIncr,      \
                     Scalar alpha) {                                                                              \
-      if (ConjugateLhs) {                                                                                        \
+      EIGEN_IF_CONSTEXPR (ConjugateLhs) {                                                                        \
         general_matrix_vector_product<Index, Scalar, const_blas_data_mapper<Scalar, Index, ColMajor>, ColMajor,  \
                                       ConjugateLhs, Scalar, const_blas_data_mapper<Scalar, Index, RowMajor>,     \
                                       ConjugateRhs, BuiltIn>::run(rows, cols, lhs, rhs, res, resIncr, alpha);    \
@@ -103,12 +103,12 @@ EIGEN_BLAS_GEMV_SPECIALIZE(scomplex)
       const EIGTYPE beta(1);                                                                                        \
       const EIGTYPE* x_ptr;                                                                                         \
       char trans = (LhsStorageOrder == ColMajor) ? 'N' : (ConjugateLhs) ? 'C' : 'T';                                \
-      if (LhsStorageOrder == RowMajor) {                                                                            \
+      EIGEN_IF_CONSTEXPR (LhsStorageOrder == RowMajor) {                                                            \
         m = convert_index<BlasIndex>(cols);                                                                         \
         n = convert_index<BlasIndex>(rows);                                                                         \
       }                                                                                                             \
       GEMVVector x_tmp;                                                                                             \
-      if (ConjugateRhs) {                                                                                           \
+      EIGEN_IF_CONSTEXPR (ConjugateRhs) {                                                                           \
         Map<const GEMVVector, 0, InnerStride<> > map_x(rhs, cols, 1, InnerStride<>(incx));                          \
         x_tmp = map_x.conjugate();                                                                                  \
         x_ptr = x_tmp.data();                                                                                       \

@@ -311,6 +311,8 @@ void PaymentAppServiceBridge::ShowProcessingSpinner() {
   // Java UI determines when the show a spinner itself.
 }
 
+void PaymentAppServiceBridge::ShowLoadingView() {}
+
 base::WeakPtr<PaymentRequestSpec> PaymentAppServiceBridge::GetSpec() const {
   return spec_;
 }
@@ -360,11 +362,6 @@ base::WeakPtr<CSPChecker> PaymentAppServiceBridge::GetCSPChecker() {
 
 void PaymentAppServiceBridge::SetOptOutOffered() {
   set_opt_out_offered_callback_.Run();
-}
-
-std::optional<base::UnguessableToken>
-PaymentAppServiceBridge::GetChromeOSTWAInstanceId() const {
-  return std::nullopt;
 }
 
 PaymentAppServiceBridge::PaymentAppServiceBridge(

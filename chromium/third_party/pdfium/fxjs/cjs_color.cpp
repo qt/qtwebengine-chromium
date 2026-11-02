@@ -102,7 +102,7 @@ CFX_Color CJS_Color::ConvertArrayToPWLColor(CJS_Runtime* pRuntime,
   WideString sSpace = pRuntime->ToWideStringReentrant(
       pRuntime->GetArrayElementReentrant(array, 0));
   if (sSpace.EqualsASCII("T")) {
-    return CFX_Color(CFX_Color::Type::kTransparent);
+    return CFX_Color::MakeTransparent();
   }
 
   float d1 = 0;
@@ -111,7 +111,7 @@ CFX_Color CJS_Color::ConvertArrayToPWLColor(CJS_Runtime* pRuntime,
         pRuntime->GetArrayElementReentrant(array, 1)));
   }
   if (sSpace.EqualsASCII("G")) {
-    return CFX_Color(CFX_Color::Type::kGray, d1);
+    return CFX_Color::MakeGray(d1);
   }
 
   float d2 = 0;
@@ -125,7 +125,7 @@ CFX_Color CJS_Color::ConvertArrayToPWLColor(CJS_Runtime* pRuntime,
         pRuntime->GetArrayElementReentrant(array, 3)));
   }
   if (sSpace.EqualsASCII("RGB")) {
-    return CFX_Color(CFX_Color::Type::kRGB, d1, d2, d3);
+    return CFX_Color::MakeRGB(d1, d2, d3);
   }
 
   float d4 = 0;
@@ -134,7 +134,7 @@ CFX_Color CJS_Color::ConvertArrayToPWLColor(CJS_Runtime* pRuntime,
         pRuntime->GetArrayElementReentrant(array, 4)));
   }
   if (sSpace.EqualsASCII("CMYK")) {
-    return CFX_Color(CFX_Color::Type::kCMYK, d1, d2, d3, d4);
+    return CFX_Color::MakeCMYK(d1, d2, d3, d4);
   }
 
   return CFX_Color();
@@ -142,18 +142,18 @@ CFX_Color CJS_Color::ConvertArrayToPWLColor(CJS_Runtime* pRuntime,
 
 CJS_Color::CJS_Color(v8::Local<v8::Object> pObject, CJS_Runtime* pRuntime)
     : CJS_Object(pObject, pRuntime),
-      transparent_(CFX_Color::Type::kTransparent),
-      black_(CFX_Color::Type::kGray, 0),
-      white_(CFX_Color::Type::kGray, 1),
-      red_(CFX_Color::Type::kRGB, 1, 0, 0),
-      green_(CFX_Color::Type::kRGB, 0, 1, 0),
-      blue_(CFX_Color::Type::kRGB, 0, 0, 1),
-      cyan_(CFX_Color::Type::kCMYK, 1, 0, 0, 0),
-      magenta_(CFX_Color::Type::kCMYK, 0, 1, 0, 0),
-      yellow_(CFX_Color::Type::kCMYK, 0, 0, 1, 0),
-      dkgray_(CFX_Color::Type::kGray, 0.25),
-      gray_(CFX_Color::Type::kGray, 0.5),
-      ltgray_(CFX_Color::Type::kGray, 0.75) {}
+      transparent_(CFX_Color::MakeTransparent()),
+      black_(CFX_Color::MakeGray(0.0f)),
+      white_(CFX_Color::MakeGray(1.0f)),
+      red_(CFX_Color::MakeRGB(1.0f, 0.0f, 0.0f)),
+      green_(CFX_Color::MakeRGB(0.0f, 1.0f, 0.0f)),
+      blue_(CFX_Color::MakeRGB(0.0f, 0.0f, 1.0f)),
+      cyan_(CFX_Color::MakeCMYK(1.0f, 0.0f, 0.0f, 0.0f)),
+      magenta_(CFX_Color::MakeCMYK(0.0f, 1.0f, 0.0f, 0.0f)),
+      yellow_(CFX_Color::MakeCMYK(0.0f, 0.0f, 1.0f, 0.0f)),
+      dkgray_(CFX_Color::MakeGray(0.25f)),
+      gray_(CFX_Color::MakeGray(0.5f)),
+      ltgray_(CFX_Color::MakeGray(0.75f)) {}
 
 CJS_Color::~CJS_Color() = default;
 

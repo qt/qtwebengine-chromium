@@ -156,24 +156,73 @@ function JsdocTag (node, opts) {
 
       result += '}';
     }
+    /* v8 ignore start */
   } else if (parsedType?.type.startsWith('JsdocType')) {
     result += `{${prattStringify(
       /** @type {import('jsdoc-type-pratt-parser').RootResult} */ (
         parsedType
       )
     )}}`;
+    /* v8 ignore stop */
   }
 
-  result += name ? `${postType}${name}${postName}` : postType;
+  // Check if the name appears on a separate line from the tag/type
+  // This is indicated by postTag and postType both being empty
+  let nameLineOffset = 0;
+  if (name && postTag === '' && postType === '') {
+    // The name is on a separate line from the tag
+    result += '\n';
 
-  for (let i = 0; i < descriptionLines.length; i++) {
+    if (descriptionLines.length > 0) {
+      const firstDescLine = descriptionLines[0];
+      /* v8 ignore next 3 */
+      if (firstDescLine.description === '' && firstDescLine.delimiter === '' &&
+          firstDescLine.postDelimiter === '' && firstDescLine.initial === '') {
+        // Empty first line, check if there's a second line with formatting
+        if (descriptionLines.length > 1) {
+          const nameLine = descriptionLines[1];
+          result += `${
+            nameLine.initial
+          }${nameLine.delimiter}${
+            nameLine.postDelimiter
+          }${name}${postName}${
+            nameLine.description
+          }`;
+          nameLineOffset = 2;
+        } else {
+          /* v8 ignore start */
+          // Fallback: just add name (shouldn't normally happen)
+          result += name + postName;
+          nameLineOffset = 1;
+          /* v8 ignore stop */
+        }
+      } else {
+        /* v8 ignore start */
+        // First description line has content, use it for the name line
+        const nameLine = descriptionLines[0];
+        result += `${nameLine.initial}${
+          nameLine.delimiter
+        }${nameLine.postDelimiter}${name}${postName}${nameLine.description}`;
+        nameLineOffset = 1;
+        /* v8 ignore stop */
+      }
+    } else {
+      // No description lines, need to construct the name line
+      // Use the same formatting as the tag line
+      result += `${initial}${delimiter}${postDelimiter}${name}${postName}`;
+    }
+  } else {
+    result += name ? `${postType}${name}${postName}` : postType;
+  }
+
+  for (let i = nameLineOffset; i < descriptionLines.length; i++) {
     const descriptionLine = descriptionLines[i];
 
-    result += estreeToString(descriptionLine);
-
-    if (i !== descriptionLines.length - 1) {
+    if (i > 0 || nameLineOffset > 0) {
       result += '\n';
     }
+
+    result += estreeToString(descriptionLine);
   }
 
   return result;

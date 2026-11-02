@@ -15,11 +15,13 @@
 #include "extensions/common/mojom/event_dispatcher.mojom.h"
 #include "extensions/renderer/bindings/api_binding_test.h"
 #include "extensions/renderer/bindings/api_binding_test_util.h"
+#include "extensions/renderer/bindings/api_binding_util.h"
 #include "extensions/renderer/bindings/exception_handler.h"
 #include "extensions/renderer/bindings/test_js_runner.h"
 #include "gin/arguments.h"
 #include "gin/converter.h"
 #include "gin/public/context_holder.h"
+#include "gin/public/gin_embedders.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "v8/include/v8-object.h"
 #include "v8/include/v8-primitive.h"
@@ -40,6 +42,13 @@ size_t GetNumListeners(v8::Isolate* isolate, v8::Local<v8::Object> event) {
   gin::Converter<EventEmitter*>::FromV8(isolate, event, &emitter);
   CHECK(emitter);
   return emitter->GetNumListenersForTesting();
+}
+
+size_t GetNumPendingFilters(v8::Isolate* isolate, v8::Local<v8::Object> event) {
+  EventEmitter* emitter = nullptr;
+  gin::Converter<EventEmitter*>::FromV8(isolate, event, &emitter);
+  CHECK(emitter);
+  return emitter->GetNumPendingFiltersForTesting();
 }
 
 // Note: Not function-local to RemoveListener() because it's used in one place
@@ -874,6 +883,66 @@ TEST_F(APIEventHandlerTest, TestArgumentMassagersNeverDispatch) {
   // that we don't crash.)
 }
 
+// Test that an event dispatch handler receives the raw arguments and takes over
+// dispatch entirely: the emitter's listeners are not notified, and firing with
+// a non-null filter doesn't push (and leak) one, since the handler is never
+// given a dispatch function to pop it.
+TEST_F(APIEventHandlerTest, TestEventDispatchHandler) {
+  v8::HandleScope handle_scope(isolate());
+  v8::Local<v8::Context> context = MainContext();
+
+  const char kEventName[] = "alpha";
+  v8::Local<v8::Object> event = handler()->CreateEventInstance(
+      kEventName, /*supports_filters=*/true, true, binding::kNoListenerMax,
+      true, context);
+  ASSERT_FALSE(event.IsEmpty());
+
+  // A dispatch handler receives only the original arguments (no dispatch
+  // function) and is responsible for invoking listeners itself.
+  const char kDispatchHandler[] =
+      "(function(args) { this.handlerArgs = args; })";
+  v8::Local<v8::Function> dispatch_handler =
+      FunctionFromString(context, kDispatchHandler);
+  handler()->RegisterEventDispatchHandler(context, kEventName,
+                                          dispatch_handler);
+
+  // A listener registered on the emitter must never be notified, since the
+  // handler owns dispatch and never fans out to the emitter.
+  const char kListenerFunction[] =
+      "(function() { this.eventArgs = Array.from(arguments); })";
+  v8::Local<v8::Function> listener_function =
+      FunctionFromString(context, kListenerFunction);
+  ASSERT_FALSE(listener_function.IsEmpty());
+  auto filter =
+      V8ValueFromScriptSource(context, "({url: [{hostSuffix: 'test.com'}]})")
+          .As<v8::Object>();
+  AddFilteredListener(context, listener_function, event, filter);
+
+  ASSERT_EQ(0u, GetNumPendingFilters(isolate(), event));
+
+  // Fire twice with a non-null filter: the argument-massager path would push it
+  // onto the emitter and (since the handler never pops it) leak one entry per
+  // dispatch; the dispatch-handler path must not push a filter at all.
+  const char kArguments[] = "['first', 'second']";
+  base::ListValue event_args = ListValueFromString(kArguments);
+  for (int i = 0; i < 2; ++i) {
+    mojom::EventFilteringInfoPtr filter_info = mojom::EventFilteringInfo::New();
+    filter_info->url = GURL("https://test.com");
+    handler()->FireEventInContext(kEventName, context, event_args,
+                                  std::move(filter_info));
+  }
+
+  // The handler received the raw arguments...
+  EXPECT_EQ(
+      R"(["first","second"])",
+      GetStringPropertyFromObject(context->Global(), context, "handlerArgs"));
+  // ...the emitter's listener was not notified...
+  EXPECT_EQ("undefined", GetStringPropertyFromObject(context->Global(), context,
+                                                     "eventArgs"));
+  // ...and no filter was pushed (and leaked) for the dispatch-handler path.
+  EXPECT_EQ(0u, GetNumPendingFilters(isolate(), event));
+}
+
 // Test that event results of dispatch are passed to the calling argument
 // massager. Regression test for https://crbug.com/40586543.
 TEST_F(APIEventHandlerTest, TestArgumentMassagersDispatchResult) {
@@ -1338,6 +1407,87 @@ TEST_F(APIEventHandlerTest,
       .Times(1);
   RemoveListener(context_beta1, listener_beta1, event_beta1);
   ::testing::Mock::VerifyAndClearExpectations(&change_handler);
+}
+
+// Tests the behavior of a context getting invalidated during event dispatch.
+// Regression test for https://crbug.com/536512612.
+TEST_F(APIEventHandlerTest, ContextInvalidationDuringEventDispatch) {
+  TestJSRunner::AllowErrors allow_errors;
+  v8::HandleScope handle_scope(isolate());
+  v8::Local<v8::Context> context = MainContext();
+  v8::Context::Scope context_scope(context);
+
+  const char kEventName[] = "alpha";
+  v8::Local<v8::Object> event = handler()->CreateEventInstance(
+      kEventName, /*supports_filters=*/false, /*supports_lazy_listeners=*/true,
+      binding::kNoListenerMax, /*notify_on_change=*/true, context);
+  ASSERT_FALSE(event.IsEmpty());
+
+  // Craft a JS function to invalidate the context directly and expose it on
+  // the global.
+  auto invalidate_context =
+      [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+        v8::Local<v8::Context> context = info.GetIsolate()->GetCurrentContext();
+        APIEventHandler* handler =
+            static_cast<APIEventHandler*>(info.Data().As<v8::External>()->Value(
+                gin::kExternalPointerTypeTagDefaultTag));
+        handler->InvalidateContext(context);
+        binding::InvalidateContext(context);
+      };
+  v8::Local<v8::Function> invalidate_func =
+      v8::Function::New(
+          context, invalidate_context,
+          v8::External::New(isolate(), handler(),
+                            gin::kExternalPointerTypeTagDefaultTag))
+          .ToLocalChecked();
+  context->Global()
+      ->Set(context, gin::StringToSymbol(isolate(), "invalidateContext"),
+            invalidate_func)
+      .Check();
+
+  // An attacker script that defines a sneaky getter on index '0' for all
+  // objects in an effort to inject itself into our bindings. It then
+  // invalidates the context.
+  const char kAttackerScript[] = R"(
+    (function() {
+      Object.defineProperty(Object.prototype, '0', {
+        get: function() {
+          globalThis.invalidateContext();
+          return 'foo';
+        },
+        configurable: true
+      });
+    })
+  )";
+  v8::Local<v8::Function> attacker_script =
+      FunctionFromString(context, kAttackerScript);
+  RunFunction(attacker_script, context, 0, nullptr);
+
+  // An unsuspecting argument massager that accidentally triggers the attacker
+  // getter.
+  const char kArgumentMassager[] = R"(
+    (function(originalArgs, dispatch) {
+        let args = [];
+        args.length = 1;
+        dispatch(args);
+    });
+    )";
+  v8::Local<v8::Function> massager =
+      FunctionFromString(context, kArgumentMassager);
+  handler()->RegisterArgumentMassager(context, kEventName, massager);
+
+  v8::Local<v8::Function> listener_function =
+      FunctionFromString(context, "(function() {})");
+  AddListener(context, listener_function, event);
+
+  const char kArguments[] = "[{}]";
+  base::ListValue event_args = ListValueFromString(kArguments);
+  // Dispatching the event will invoke the massager, which calls `dispatch()`.
+  // `dispatch` attempts to convert `args` via `FromV8()`, which triggers the
+  // getter on index '0'. The getter calls `invalidateContext()`, invalidating
+  // the context and clearing emitters.
+  handler()->FireEventInContext(kEventName, context, event_args, nullptr);
+  EXPECT_FALSE(binding::IsContextValid(context));
 }
 
 }  // namespace extensions

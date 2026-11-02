@@ -111,6 +111,8 @@ CSSFontFaceSrcValue::FontTechnology ValueIDToTechnology(CSSValueID valueID) {
       return CSSFontFaceSrcValue::FontTechnology::kTechnologyCDBT;
     case CSSValueID::kColorSbix:
       return CSSFontFaceSrcValue::FontTechnology::kTechnologySBIX;
+    case CSSValueID::kIncremental:
+      return CSSFontFaceSrcValue::FontTechnology::kTechnologyIncremental;
     default:
       NOTREACHED();
   }
@@ -524,10 +526,22 @@ CSSValue* AtRuleDescriptorParser::ParseAtViewTransitionDescriptor(
       }
       break;
     case AtRuleDescriptorID::Types: {
+      stream.ConsumeWhitespace();
+      if (CSSIdentifierValue* none =
+              css_parsing_utils::ConsumeIdent<CSSValueID::kNone>(stream)) {
+        parsed_value = none;
+        break;
+      }
+
       CSSValueList* types = CSSValueList::CreateSpaceSeparated();
-      parsed_value = types;
       while (!stream.AtEnd()) {
         stream.ConsumeWhitespace();
+        if (stream.AtEnd()) {
+          break;
+        }
+        if (stream.Peek().GetType() != kIdentToken) {
+          return nullptr;
+        }
         if (stream.Peek().Id() == CSSValueID::kNone) {
           return nullptr;
         }
@@ -540,6 +554,12 @@ CSSValue* AtRuleDescriptorParser::ParseAtViewTransitionDescriptor(
         }
         types->Append(*ident);
       }
+
+      if (!types->length()) {
+        return nullptr;
+      }
+
+      parsed_value = types;
       break;
     }
     default:

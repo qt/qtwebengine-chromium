@@ -382,8 +382,9 @@ void materialize_selfadjoint_pattern(const SparsityPatternRef<StorageIndex>& A,
   for (Index j = 0; j < n; ++j) {
     const StorageIndex* a_col = A.inner + A.outer[j];
     const Index a_nz = A.nonZeros(j);
-    EIGEN_IF_CONSTEXPR(IsLower) { a_split(j) = std::lower_bound(a_col, a_col + a_nz, StorageIndex(j)) - a_col; }
-    else {
+    EIGEN_IF_CONSTEXPR (IsLower) {
+      a_split(j) = std::lower_bound(a_col, a_col + a_nz, StorageIndex(j)) - a_col;
+    } else {
       a_split(j) = std::upper_bound(a_col, a_col + a_nz, StorageIndex(j)) - a_col;
     }
   }

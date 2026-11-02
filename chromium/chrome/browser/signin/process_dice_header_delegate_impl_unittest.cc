@@ -11,6 +11,7 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "chrome/browser/signin/dice_tab_helper.h"
 #include "chrome/browser/signin/dice_web_signin_interceptor.h"
 #include "chrome/browser/signin/dice_web_signin_interceptor_factory.h"
@@ -22,6 +23,7 @@
 #include "components/metrics/profile_metrics_service.h"
 #include "components/signin/public/base/account_consistency_method.h"
 #include "components/signin/public/base/signin_metrics.h"
+#include "components/signin/public/base/signin_prefs.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/signin/public/identity_manager/identity_test_environment.h"
 #include "components/sync/base/features.h"
@@ -101,7 +103,8 @@ class MockDiceWebSigninInterceptor : public DiceWebSigninInterceptor {
                CoreAccountId account_id,
                signin_metrics::AccessPoint access_point,
                bool is_new_account,
-               bool is_sync_signin),
+               bool is_sync_signin,
+               signin::Tribool primary_is_connected),
               (override));
 
  private:
@@ -119,7 +122,8 @@ class ProcessDiceHeaderDelegateImplTest
  public:
   ProcessDiceHeaderDelegateImplTest()
       : email_("foo@bar.com"),
-        auth_error_(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS) {
+        auth_error_(GoogleServiceAuthError::FromInvalidGaiaCredentialsReason(
+            GoogleServiceAuthError::InvalidGaiaCredentialsReason::UNKNOWN)) {
     account_info_.gaia = GaiaId("12345");
     account_info_.account_id = CoreAccountId::FromGaiaId(account_info_.gaia);
     account_info_.email = "email@gmail.com";
@@ -411,6 +415,38 @@ TEST_F(ProcessDiceHeaderDelegateImplTest, SigninHeaderReceived_SyncingTabOff) {
   EXPECT_FALSE(signin_header_received_);
 }
 
+TEST_F(ProcessDiceHeaderDelegateImplTest, AttemptChromeSigninChoiceRemembered) {
+  base::HistogramTester histogram_tester;
+
+  if (!identity_test_environment_profile_adaptor_) {
+    InitializeIdentityTestEnvironment();
+  }
+  identity_test_environment_profile_adaptor_->identity_test_env()
+      ->MakeAccountAvailable(account_info_.email,
+                             {.gaia_id = account_info_.gaia});
+
+  SigninPrefs signin_prefs(*profile()->GetPrefs());
+  signin_prefs.SetChromeSigninInterceptionUserChoice(
+      account_info_.gaia, ChromeSigninUserChoice::kSignin);
+
+  std::unique_ptr<ProcessDiceHeaderDelegateImpl> delegate =
+      CreateDelegateAndNavigateToSignin(/*is_sync_signin_tab=*/false,
+                                        /*redirect_url=*/GURL());
+
+  delegate->HandleTokenExchangeSuccess(
+      account_info_.account_id,
+      /*is_new_account=*/true,
+      /*primary_is_connected=*/signin::Tribool::kUnknown);
+
+  histogram_tester.ExpectUniqueSample(
+      "Signin.SignIn.Offered",
+      signin_metrics::AccessPoint::kSigninChoiceRemembered, 1);
+
+  histogram_tester.ExpectUniqueSample(
+      "Signin.SignIn.Started",
+      signin_metrics::AccessPoint::kSigninChoiceRemembered, 1);
+}
+
 struct TestConfiguration {
   // Test setup.
   bool signed_in;   // User was already signed in at the start of the flow.
@@ -563,11 +599,13 @@ TEST_P(ProcessDiceHeaderDelegateImplTestHandleTokenExchangeSuccess,
 
   EXPECT_CALL(
       *mock_interceptor(),
-      MaybeInterceptWebSignin(web_contents(), account_info_.account_id,
-                              GetParam().access_point, !GetParam().is_reauth,
-                              GetParam().sync_signin));
-  delegate->HandleTokenExchangeSuccess(account_info_.account_id,
-                                       !GetParam().is_reauth);
+      MaybeInterceptWebSignin(
+          web_contents(), account_info_.account_id, GetParam().access_point,
+          !GetParam().is_reauth, GetParam().sync_signin,
+          /*primary_is_connected=*/signin::Tribool::kUnknown));
+  delegate->HandleTokenExchangeSuccess(
+      account_info_.account_id, !GetParam().is_reauth,
+      /*primary_is_connected=*/signin::Tribool::kUnknown);
 
   // Check that the sync signin flow is complete.
   if (GetParam().signin_tab) {

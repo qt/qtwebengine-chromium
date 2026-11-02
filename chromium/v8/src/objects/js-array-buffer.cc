@@ -8,6 +8,7 @@
 #include "src/logging/counters.h"
 #include "src/objects/js-array-buffer-inl.h"
 #include "src/objects/property-descriptor.h"
+#include "src/sandbox/check.h"
 
 namespace v8 {
 namespace internal {
@@ -51,7 +52,7 @@ void JSArrayBuffer::Setup(SharedFlag shared, ResizableFlag resizable,
     // Count usage may lead to a blink allocation, through the callback, which
     // may trigger a GC. It is important to delay this, until the array buffer
     // is properly initialized.
-    if (shared == SharedFlag::kYes) {
+    if (shared) {
       isolate->CountUsage(
           v8::Isolate::UseCounterFeature::kSharedArrayBufferConstructed);
     }
@@ -60,9 +61,9 @@ void JSArrayBuffer::Setup(SharedFlag shared, ResizableFlag resizable,
   init_extension();
   set_views_or_detach_key(views);
   set_bit_field(0);
-  set_is_shared(shared == SharedFlag::kYes);
-  set_is_resizable_by_js(resizable == ResizableFlag::kResizable);
-  set_is_detachable(shared == SharedFlag::kNo);
+  set_is_shared(shared);
+  set_is_resizable_by_js(resizable);
+  set_is_detachable(!shared);
   cpp_heap_wrappable_.SetupLazilyInitialized();
   for (int i = 0; i < v8::ArrayBuffer::kEmbedderFieldCount; i++) {
     SetEmbedderField(i, Smi::zero());
@@ -241,7 +242,7 @@ void JSArrayBuffer::DetachInternal(DirectHandle<JSArrayBuffer> array_buffer,
 void JSArrayBuffer::MakeImmutable(Isolate* isolate) {
   if (is_immutable()) return;
   DCHECK(!was_detached());
-  set_is_immutable(true);
+  set_is_immutable(ImmutableFlag{true});
   if (auto backing_store = GetBackingStore()) {
     backing_store->set_is_immutable(true);
   }
@@ -333,6 +334,9 @@ ArrayBufferExtension* JSArrayBuffer::CreateExtension(
 std::shared_ptr<BackingStore> JSArrayBuffer::RemoveExtension() {
   ArrayBufferExtension* extension = this->extension();
   DCHECK_NOT_NULL(extension);
+  // Prevent concurrent detachment vs background copying if an attacker
+  // swapped the extension pointer to a shared buffer's extension.
+  SBXCHECK(!extension->is_shared());
   auto result = extension->RemoveBackingStore();
   // Remove pointer to extension such that the next GC will free it
   // automatically.
@@ -357,7 +361,7 @@ Handle<JSArrayBuffer> JSTypedArray::GetBuffer(Isolate* isolate) {
   // Allocate a new backing store and attach it to the existing array buffer.
   size_t byte_length = self->byte_length();
   auto backing_store = BackingStore::Allocate(
-      isolate, byte_length, SharedFlag::kNo, InitializedFlag::kUninitialized);
+      isolate, byte_length, SharedFlag{false}, InitializedFlag{false});
 
   if (!backing_store) {
     isolate->heap()->FatalProcessOutOfMemory("JSTypedArray::GetBuffer");
@@ -374,7 +378,7 @@ Handle<JSArrayBuffer> JSTypedArray::GetBuffer(Isolate* isolate) {
                  array_buffer->views().GetHeapObject() == *self);
 
   // Attach the backing store to the array buffer.
-  array_buffer->Setup(SharedFlag::kNo, ResizableFlag::kNotResizable,
+  array_buffer->Setup(SharedFlag{false}, ResizableFlag{false},
                       std::move(backing_store), isolate, array_buffer->views());
 
   // Clear the elements of the typed array.

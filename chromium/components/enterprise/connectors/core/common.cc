@@ -92,6 +92,8 @@ ContentAnalysisAcknowledgement::FinalAction RuleActionToAckAction(
       return ContentAnalysisAcknowledgement::REPORT_ONLY;
     case TriggeredRule::WARN:
       return ContentAnalysisAcknowledgement::WARN;
+    case TriggeredRule::KEEP_IN_MANAGED_CHROME:
+      return ContentAnalysisAcknowledgement::KEEP_IN_MANAGED_CHROME;
     case TriggeredRule::FORCE_SAVE_TO_CLOUD:
     case TriggeredRule::BLOCK:
       return ContentAnalysisAcknowledgement::BLOCK;
@@ -119,10 +121,14 @@ const char* AnalysisConnectorPref(AnalysisConnector connector) {
       return kOnFileAttachedPref;
     case AnalysisConnector::PRINT:
       return kOnPrintPref;
+    case AnalysisConnector::NETWORK_REQUEST:
+      return kOnNetworkRequestPref;
     case AnalysisConnector::FILE_TRANSFER:
 #if BUILDFLAG(IS_CHROMEOS)
       return kOnFileTransferPref;
 #endif
+    case AnalysisConnector::DATA_COPIED:
+      return kOnTextCopiedPref;
     case AnalysisConnector::ANALYSIS_CONNECTOR_UNSPECIFIED:
       NOTREACHED() << "Using unspecified analysis connector";
   }
@@ -138,10 +144,14 @@ const char* AnalysisConnectorScopePref(AnalysisConnector connector) {
       return kOnFileAttachedScopePref;
     case AnalysisConnector::PRINT:
       return kOnPrintScopePref;
+    case AnalysisConnector::NETWORK_REQUEST:
+      return kOnNetworkRequestScopePref;
     case AnalysisConnector::FILE_TRANSFER:
 #if BUILDFLAG(IS_CHROMEOS)
       return kOnFileTransferScopePref;
 #endif
+    case AnalysisConnector::DATA_COPIED:
+      return kOnTextCopiedScopePref;
     case AnalysisConnector::ANALYSIS_CONNECTOR_UNSPECIFIED:
       NOTREACHED() << "Using unspecified analysis connector";
   }
@@ -176,13 +186,18 @@ TriggeredRule::Action GetHighestPrecedenceAction(
   // Don't use the enum's int values to determine precedence since that
   // may introduce bugs for new actions later.
   //
-  // The current precedence is BLOCK > WARN > REPORT_ONLY > UNSPECIFIED
+  // The current precedence is BLOCK > FORCE_SAVE_TO_CLOUD >
+  // KEEP_IN_MANAGED_CHROME > WARN > REPORT_ONLY > UNSPECIFIED
   if (action_1 == TriggeredRule::BLOCK || action_2 == TriggeredRule::BLOCK) {
     return TriggeredRule::BLOCK;
   }
   if (action_1 == TriggeredRule::FORCE_SAVE_TO_CLOUD ||
       action_2 == TriggeredRule::FORCE_SAVE_TO_CLOUD) {
     return TriggeredRule::FORCE_SAVE_TO_CLOUD;
+  }
+  if (action_1 == TriggeredRule::KEEP_IN_MANAGED_CHROME ||
+      action_2 == TriggeredRule::KEEP_IN_MANAGED_CHROME) {
+    return TriggeredRule::KEEP_IN_MANAGED_CHROME;
   }
   if (action_1 == TriggeredRule::WARN || action_2 == TriggeredRule::WARN) {
     return TriggeredRule::WARN;
@@ -204,10 +219,15 @@ ContentAnalysisAcknowledgement::FinalAction GetHighestPrecedenceAction(
   // Don't use the enum's int values to determine precedence since that
   // may introduce bugs for new actions later.
   //
-  // The current precedence is BLOCK > WARN > REPORT_ONLY > ALLOW > UNSPECIFIED
+  // The current precedence is BLOCK > KEEP_IN_MANAGED_CHROME > WARN >
+  // REPORT_ONLY > ALLOW > UNSPECIFIED
   if (action_1 == ContentAnalysisAcknowledgement::BLOCK ||
       action_2 == ContentAnalysisAcknowledgement::BLOCK) {
     return ContentAnalysisAcknowledgement::BLOCK;
+  }
+  if (action_1 == ContentAnalysisAcknowledgement::KEEP_IN_MANAGED_CHROME ||
+      action_2 == ContentAnalysisAcknowledgement::KEEP_IN_MANAGED_CHROME) {
+    return ContentAnalysisAcknowledgement::KEEP_IN_MANAGED_CHROME;
   }
   if (action_1 == ContentAnalysisAcknowledgement::WARN ||
       action_2 == ContentAnalysisAcknowledgement::WARN) {
@@ -467,6 +487,10 @@ std::string DeepScanAccessPointToString(DeepScanAccessPoint access_point) {
       return "FileTransfer";
     case DeepScanAccessPoint::ACTOR:
       return "Actor";
+    case DeepScanAccessPoint::COPY:
+      return "Copy";
+    case DeepScanAccessPoint::NETWORK_REQUEST:
+      return "NetworkRequest";
   }
   NOTREACHED();
 }
@@ -491,6 +515,8 @@ std::string FinalContentAnalysisResultToString(
       return "ForceSaveToCloud";
     case FinalContentAnalysisResult::CANCELLED:
       return "Cancelled";
+    case FinalContentAnalysisResult::KEPT_IN_MANAGED_CHROME:
+      return "KeptInManagedChrome";
   }
   NOTREACHED();
 }

@@ -11,6 +11,7 @@
 #include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -35,9 +36,11 @@ void FrameViewAutoSizeInfo::ConfigureAutoSizeMode(const gfx::Size& min_size,
   min_auto_size_ = min_size;
   max_auto_size_ = max_size;
   did_run_autosize_ = false;
+  handled_post_load_reset_ = false;
+  measurement_after_reset_pending_ = false;
 }
 
-bool FrameViewAutoSizeInfo::AutoSizeIfNeeded() {
+bool FrameViewAutoSizeInfo::AutoSizeIfNeeded(bool should_reset_for_content) {
   DCHECK(!in_auto_size_);
   base::AutoReset<bool> change_in_auto_size(&in_auto_size_, true);
 
@@ -49,17 +52,51 @@ bool FrameViewAutoSizeInfo::AutoSizeIfNeeded() {
   if (!document_element)
     return false;
 
-  // If this is the first time we run autosize, start from small height and
-  // allow it to grow.
+  const bool uses_scroll_width =
+      RuntimeEnabledFeatures::AutoSizeUsesScrollWidthForOverflowEnabled();
   gfx::Size size = frame_view_->Size();
-  if (!did_run_autosize_) {
+
+  // Start initial autosizing at the minimum height, or at the full minimum size
+  // for scroll-width autosizing so narrower content can be measured.
+  const bool is_first_autosize = !did_run_autosize_;
+  if (is_first_autosize) {
     running_first_autosize_ = true;
     did_run_autosize_ = true;
-    if (size.height() != min_auto_size_.height()) {
-      frame_view_->Resize(size.width(), min_auto_size_.height());
-      return true;
-    }
   }
+
+  // Once loading finishes, remeasure for any suppressed shrink and on
+  // subsequent layout or overflow changes.
+  const bool load_finished = document->LoadEventFinished();
+  const bool should_reset_after_load =
+      uses_scroll_width && load_finished &&
+      (should_reset_for_content || !handled_post_load_reset_);
+  if (should_reset_after_load) {
+    handled_post_load_reset_ = true;
+  }
+
+  // After initial and post-load sizing, start a new measurement sequence only
+  // for layout or overflow invalidation. Re-reading a viewport-dependent scroll
+  // width can make autosize oscillate. Allow an existing sequence to continue.
+  if (uses_scroll_width && !num_passes_ && !is_first_autosize &&
+      !measurement_after_reset_pending_ && !should_reset_for_content &&
+      !should_reset_after_load) {
+    return false;
+  }
+
+  gfx::Size reset_size = size;
+  if (uses_scroll_width && is_first_autosize) {
+    reset_size = min_auto_size_;
+  } else if (should_reset_after_load) {
+    reset_size.set_width(min_auto_size_.width());
+  } else if (is_first_autosize) {
+    reset_size.set_height(min_auto_size_.height());
+  }
+  if (reset_size != size) {
+    measurement_after_reset_pending_ = uses_scroll_width;
+    frame_view_->Resize(reset_size);
+    return true;
+  }
+  measurement_after_reset_pending_ = false;
 
   PaintLayerScrollableArea* layout_viewport = frame_view_->LayoutViewport();
 
@@ -73,31 +110,39 @@ bool FrameViewAutoSizeInfo::AutoSizeIfNeeded() {
   if (!layout_view)
     return false;
 
-  // TODO(bokan): This code doesn't handle subpixel sizes correctly. Because
-  // of that, it's forced to maintain all the special ScrollbarMode code
-  // below. https://crbug.com/812311.
-  int width = layout_view->ComputeMinimumWidth().ToInt();
-
   LayoutBox* document_layout_box = document_element->GetLayoutBox();
   if (!document_layout_box)
     return false;
 
+  // TODO(bokan): This code doesn't handle subpixel sizes correctly. Because
+  // of that, it's forced to maintain all the special ScrollbarMode code
+  // below. https://crbug.com/812311.
+  int width = uses_scroll_width ? document_layout_box->ScrollWidth().ToInt()
+                                : layout_view->ComputeMinimumWidth().ToInt();
+
   int height = document_layout_box->ScrollHeight().ToInt();
   gfx::Size new_size(width, height);
+
+  const bool uses_overlay_scrollbars =
+      RuntimeEnabledFeatures::AutoSizeUsesScrollWidthForOverflowEnabled() &&
+      layout_viewport->GetLayoutBox()->UsesOverlayScrollbars();
 
   // Check to see if a scrollbar is needed for a given dimension and
   // if so, increase the other dimension to account for the scrollbar.
   // Since the dimensions are only for the view rectangle, once a
   // dimension exceeds the maximum, there is no need to increase it further.
-  if (new_size.width() > max_auto_size_.width()) {
+  if (new_size.width() > max_auto_size_.width() && !uses_overlay_scrollbars) {
     new_size.Enlarge(0, layout_viewport->HypotheticalScrollbarThickness(
                             kHorizontalScrollbar));
     // Don't bother checking for a vertical scrollbar because the width is at
     // already greater the maximum.
   } else if (new_size.height() > max_auto_size_.height() &&
-             // If we have a real vertical scrollbar, it's already included in
-             // PreferredLogicalWidths(), so don't add a hypothetical one.
-             !layout_viewport->HasVerticalScrollbar()) {
+             !uses_overlay_scrollbars &&
+             (RuntimeEnabledFeatures::
+                  AutoSizeUsesScrollWidthForOverflowEnabled() ||
+              // If we have a real vertical scrollbar, it's already included in
+              // PreferredLogicalWidths(), so don't add a hypothetical one.
+              !layout_viewport->HasVerticalScrollbar())) {
     new_size.Enlarge(
         layout_viewport->HypotheticalScrollbarThickness(kVerticalScrollbar), 0);
     // Don't bother checking for a horizontal scrollbar because the height is
@@ -135,7 +180,7 @@ bool FrameViewAutoSizeInfo::AutoSizeIfNeeded() {
   }
 
   if (change_size)
-    frame_view_->Resize(new_size.width(), new_size.height());
+    frame_view_->Resize(new_size);
 
   // Force the scrollbar state to avoid the scrollbar code adding them and
   // causing them to be needed. For example, a vertical scrollbar may cause
@@ -151,6 +196,7 @@ bool FrameViewAutoSizeInfo::AutoSizeIfNeeded() {
 }
 
 void FrameViewAutoSizeInfo::Clear() {
+  measurement_after_reset_pending_ = false;
   if (num_passes_) {
     num_passes_ = 0u;
     running_first_autosize_ = false;

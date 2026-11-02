@@ -15,7 +15,7 @@ import {
 
 const UIStrings = {
   /**
-   *@description Title for Connection-Allowlist specification url
+   * @description Title for Connection-Allowlist specification URL.
    */
   connectionAllowlistHeader: 'Connection-Allowlist specification',
 } as const;

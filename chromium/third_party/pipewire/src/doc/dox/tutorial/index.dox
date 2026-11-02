@@ -1,0 +1,21 @@
+/** \page page_tutorial API Tutorial
+
+Welcome to the PipeWire API tutorial. The goal is to learn
+PipeWire API step-by-step with simple short examples.
+
+- \subpage page_tutorial1
+- \subpage page_tutorial2
+- \subpage page_tutorial3
+- \subpage page_tutorial4
+- \subpage page_tutorial5
+- \subpage page_tutorial6
+- \subpage page_tutorial7
+
+
+# More Example Programs
+
+- \ref audio-src.c "": \snippet{doc} audio-src.c title
+- \ref video-play.c "": \snippet{doc} video-play.c title
+- \subpage page_examples
+
+*/

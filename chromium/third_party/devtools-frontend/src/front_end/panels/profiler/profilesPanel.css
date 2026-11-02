@@ -33,33 +33,29 @@
   position: relative;
 }
 
-.profile-view .data-grid table.data {
+.data-grid table.data {
   background: var(--sys-color-cdt-base-container);
 }
 
-.profile-view .data-grid tr:not(.selected) .highlight {
-  background-color: var(--sys-color-tonal-container);
-}
-
-.profile-view .data-grid tr:hover td:not(.bottom-filler-td) {
+.data-grid tr:hover td:not(.bottom-filler-td) {
   background-color: var(--sys-color-state-hover-on-subtle);
 }
 
-.profile-view .data-grid td.numeric-column {
+.data-grid td.numeric-column {
   text-align: right;
 }
 
-.profile-view .data-grid div.profile-multiple-values {
+.data-grid div.profile-multiple-values {
   float: right;
 }
 
-.profile-view .data-grid span.percent-column {
+.data-grid span.percent-column {
   color: var(--sys-color-token-subtle);
   width: 9ex;
   display: inline-block;
 }
 
-.profile-view .data-grid tr.selected span {
+.data-grid tr.selected span {
   color: inherit;
 }
 
@@ -83,13 +79,13 @@
   overflow: hidden;
 }
 
-.profile-view .data-grid {
+.data-grid {
   border: none;
   flex: auto;
 }
 
-.profile-view .data-grid th.self-column,
-.profile-view .data-grid th.total-column {
+.data-grid th.self-column,
+.data-grid th.total-column {
   text-align: center;
 }
 

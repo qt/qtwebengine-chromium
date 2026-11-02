@@ -12,7 +12,6 @@
 
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
-#include "base/memory/raw_ptr_exclusion.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/types/pass_key.h"
@@ -161,15 +160,19 @@ class GPU_GLES2_EXPORT SharedImageRepresentation {
     }
 
    private:
-    // RAW_PTR_EXCLUSION: Performance reasons (based on analysis of MotionMark).
-    RAW_PTR_EXCLUSION RepresentationClass* const representation_ = nullptr;
+    // Uses UnprotectedInRelease for performance reasons (based on analysis of
+    // MotionMark).
+    const raw_ptr<RepresentationClass, UnprotectedInRelease> representation_ =
+        nullptr;
   };
 
  private:
-  // RAW_PTR_EXCLUSION: Performance reasons (based on analysis of MotionMark).
-  RAW_PTR_EXCLUSION SharedImageManager* const manager_ = nullptr;
-  RAW_PTR_EXCLUSION SharedImageBacking* backing_ = nullptr;
-  RAW_PTR_EXCLUSION MemoryTypeTracker* const tracker_ = nullptr;
+  // Uses UnprotectedInRelease for performance reasons (based on analysis of
+  // MotionMark).
+  const raw_ptr<SharedImageManager, UnprotectedInRelease> manager_ = nullptr;
+  raw_ptr<SharedImageBacking, DanglingUntriaged | UnprotectedInRelease>
+      backing_ = nullptr;
+  const raw_ptr<MemoryTypeTracker, UnprotectedInRelease> tracker_ = nullptr;
   bool has_context_ = true;
   AccessMode access_mode_ = AccessMode::kNone;
 };
@@ -459,7 +462,8 @@ class GPU_GLES2_EXPORT SkiaImageRepresentation
 
   SkiaImageRepresentation(SharedImageManager* manager,
                           SharedImageBacking* backing,
-                          MemoryTypeTracker* tracker);
+                          MemoryTypeTracker* tracker,
+                          bool is_graphite);
   ~SkiaImageRepresentation() override;
 
   // Note: See BeginWriteAccess below for a description of the semaphore
@@ -504,6 +508,8 @@ class GPU_GLES2_EXPORT SkiaImageRepresentation
 
   virtual void EndWriteAccess() = 0;
   virtual void EndReadAccess() = 0;
+
+  const bool is_graphite_;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -929,6 +935,7 @@ class GPU_GLES2_EXPORT WebNNTensorRepresentation
 
 #if BUILDFLAG(IS_WIN)
   virtual Microsoft::WRL::ComPtr<ID3D12Resource> GetD3D12Buffer() const;
+  virtual base::win::ScopedHandle GetD3D12HeapHandle() const;
 #endif  // BUILDFLAG(IS_WIN)
 #if BUILDFLAG(IS_APPLE)
   virtual IOSurfaceRef GetIOSurface() const;

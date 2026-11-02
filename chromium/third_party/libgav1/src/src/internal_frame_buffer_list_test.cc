@@ -14,8 +14,6 @@
 
 #include "src/internal_frame_buffer_list.h"
 
-#include <cstdint>
-
 #include "gtest/gtest.h"
 #include "src/gav1/decoder_buffer.h"
 #include "src/gav1/frame_buffer.h"

@@ -3,11 +3,12 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
-import {describeWithEnvironment, updateHostConfig} from '../../testing/EnvironmentHelpers.js';
+import {deinitializeGlobalVars, initializeGlobalVars, updateHostConfig} from '../../testing/EnvironmentHelpers.js';
 import {expectCall} from '../../testing/ExpectStubCall.js';
 import {setupSettingsHooks} from '../../testing/SettingsHelpers.js';
 
@@ -27,8 +28,11 @@ function getDrawerOrientationSettingByDock(dockMode: LegacyUI.InspectorView.Dock
   return (setting.get() as LegacyUI.InspectorView.DrawerOrientationByDockMode)[dockMode];
 }
 
-describeWithEnvironment('InspectorDrawerView', () => {
+describe('InspectorDrawerView', () => {
   setupSettingsHooks();
+
+  before(async () => await initializeGlobalVars());
+  after(async () => await deinitializeGlobalVars());
 
   function createInspectorViewWithDockState(dockState: LegacyUI.DockController.DockState): {
     inspectorView: LegacyUI.InspectorView.InspectorView,
@@ -620,18 +624,18 @@ describeWithEnvironment('InspectorDrawerView', () => {
           assert.isFalse(inspectorView.isDrawerOrientationVertical());
         });
 
-        it('does not change orientation when drawer is closed during dock switch', async () => {
+        it('updates orientation when drawer is closed during dock switch', async () => {
           const {inspectorView, dockController} = createInspectorViewWithDockState(DockState.BOTTOM);
           const waitForDockSideChangeHandled = expectCall(
               sinon.stub(LegacyUI.InspectorView.InspectorView.instance(), 'applyDrawerOrientationForDockSideForTest'));
 
           assert.isFalse(inspectorView.drawerVisible());
-          const initialOrientation = inspectorView.isDrawerOrientationVertical();
+          assert.isTrue(inspectorView.isDrawerOrientationVertical());
 
           dockController.setDockSide(DockState.RIGHT);
           await waitForDockSideChangeHandled;
 
-          assert.strictEqual(inspectorView.isDrawerOrientationVertical(), initialOrientation);
+          assert.isFalse(inspectorView.isDrawerOrientationVertical());
         });
 
         it('updates orientation correctly when showing the drawer for the first time after a dock switch', async () => {
@@ -862,6 +866,30 @@ describeWithEnvironment('InspectorDrawerView', () => {
       const closeButton = drawerElement.shadowRoot!.querySelector('[aria-label="Close drawer"]');
       assert.exists(closeButton, 'close drawer button should exist in drawer toolbar');
     });
+
+    it('hides the plus button when vertical and minimized', () => {
+      // The plus button is slotted into the `trailing-button` slot,
+      // which lives inside `headerContentsElement`. When the drawer is
+      // vertically minimized `headerContentsElement` receives the
+      // `hide-element` class — hiding the slot (and therefore the
+      // slotted plus button) along with the tab strip. If the slot
+      // is ever relocated outside that container the plus button would
+      // remain visible in the collapsed drawer strip and overlap the
+      // close/orientation buttons.
+      const {inspectorView} = createInspectorViewWithDockState(DockState.BOTTOM);
+      inspectorView.showDrawer({focus: false, hasTargetDrawer: false});
+      assert.isTrue(inspectorView.isDrawerOrientationVertical());
+
+      inspectorView.setDrawerMinimized(true);
+
+      const drawerElement = inspectorView.element.querySelector('.drawer-tabbed-pane');
+      assert.exists(drawerElement);
+      const trailingSlot = drawerElement.shadowRoot!.querySelector('slot[name="trailing-button"]');
+      assert.exists(trailingSlot, 'drawer TabbedPane must declare a `trailing-button` slot for the plus button');
+      const hiddenAncestor = trailingSlot.closest('.hide-element');
+      assert.exists(hiddenAncestor,
+                    'trailing-button slot must live inside a `.hide-element` container while vertically minimized');
+    });
   });
 
   describe('drawer minimize/expand with orientation changes', () => {
@@ -892,6 +920,65 @@ describeWithEnvironment('InspectorDrawerView', () => {
 
       inspectorView.toggleDrawerOrientation({force: DrawerOrientation.VERTICAL});
       assert.isTrue(inspectorView.isDrawerMinimized());
+    });
+  });
+
+  describe('inspector minimum width', () => {
+    it('uses horizontal minimum width when vertical drawer is hidden', () => {
+      const {inspectorView} = createInspectorViewWithDockState(DockState.BOTTOM);
+      assert.isTrue(inspectorView.isDrawerOrientationVertical());
+      assert.isFalse(inspectorView.drawerVisible());
+
+      // 250px corresponds to MIN_INSPECTOR_WIDTH_HORIZONTAL_DRAWER
+      // (minimum main panel width + slack for borders).
+      assert.strictEqual(inspectorView.constraints().minimum.width, 250);
+    });
+
+    it('uses vertical minimum width when vertical drawer is shown and expanded', () => {
+      const {inspectorView} = createInspectorViewWithDockState(DockState.BOTTOM);
+      inspectorView.showDrawer({focus: false, hasTargetDrawer: false});
+      assert.isTrue(inspectorView.isDrawerOrientationVertical());
+      assert.isTrue(inspectorView.drawerVisible());
+      assert.isFalse(inspectorView.isDrawerMinimized());
+
+      // 530px corresponds to MIN_INSPECTOR_WIDTH_VERTICAL_DRAWER
+      // (minimum main panel width + minimum vertical drawer width + slack for borders).
+      assert.strictEqual(inspectorView.constraints().minimum.width, 530);
+    });
+
+    it('uses horizontal minimum width when vertical drawer is minimized', () => {
+      const {inspectorView} = createInspectorViewWithDockState(DockState.BOTTOM);
+      inspectorView.showDrawer({focus: false, hasTargetDrawer: false});
+      inspectorView.setDrawerMinimized(true);
+      assert.isTrue(inspectorView.isDrawerOrientationVertical());
+      assert.isTrue(inspectorView.drawerVisible());
+      assert.isTrue(inspectorView.isDrawerMinimized());
+
+      // 250px corresponds to MIN_INSPECTOR_WIDTH_HORIZONTAL_DRAWER
+      assert.strictEqual(inspectorView.constraints().minimum.width, 250);
+    });
+
+    it('uses horizontal minimum width when vertical drawer is closed after being open', () => {
+      const {inspectorView} = createInspectorViewWithDockState(DockState.BOTTOM);
+      inspectorView.showDrawer({focus: false, hasTargetDrawer: false});
+      // 530px corresponds to MIN_INSPECTOR_WIDTH_VERTICAL_DRAWER
+      assert.strictEqual(inspectorView.constraints().minimum.width, 530);
+
+      inspectorView.closeDrawer();
+
+      // 250px corresponds to MIN_INSPECTOR_WIDTH_HORIZONTAL_DRAWER
+      assert.strictEqual(inspectorView.constraints().minimum.width, 250);
+    });
+
+    it('uses horizontal minimum width when switched from bottom dock to side dock', async () => {
+      const {inspectorView, dockController} = createInspectorViewWithDockState(DockState.BOTTOM);
+      const waitForDockSideChangeHandled = expectCall(
+          sinon.stub(LegacyUI.InspectorView.InspectorView.instance(), 'applyDrawerOrientationForDockSideForTest'));
+
+      dockController.setDockSide(DockState.RIGHT);
+      await waitForDockSideChangeHandled;
+
+      assert.strictEqual(inspectorView.constraints().minimum.width, 250);
     });
   });
 });

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as SDK from '../../../core/sdk/sdk.js';
 import * as Protocol from '../../../generated/protocol.js';
@@ -16,10 +17,7 @@ import {
   renderElementIntoDOM,
 } from '../../../testing/DOMHelpers.js';
 import {createTarget, describeWithEnvironment} from '../../../testing/EnvironmentHelpers.js';
-import {
-  describeWithMockConnection,
-  dispatchEvent,
-} from '../../../testing/MockConnection.js';
+import {dispatchEvent} from '../../../testing/MockConnection.js';
 import * as RenderCoordinator from '../../../ui/components/render_coordinator/render_coordinator.js';
 import * as ReportView from '../../../ui/components/report_view/report_view.js';
 import * as UI from '../../../ui/legacy/legacy.js';
@@ -324,7 +322,7 @@ function clickClearButton(view: Resources.PreloadingView.PreloadingAttemptView):
   dispatchClickEvent(button);
 }
 
-describeWithMockConnection('PreloadingRuleSetView', () => {
+describeWithEnvironment('PreloadingRuleSetView', () => {
   beforeEach(() => {
     SDK.ChildTargetManager.ChildTargetManager.install();
   });
@@ -563,7 +561,7 @@ describeWithMockConnection('PreloadingRuleSetView', () => {
   });
 });
 
-describeWithMockConnection('PreloadingAttemptView', () => {
+describeWithEnvironment('PreloadingAttemptView', () => {
   beforeEach(() => {
     SDK.ChildTargetManager.ChildTargetManager.install();
   });
@@ -1901,7 +1899,7 @@ describeWithMockConnection('PreloadingAttemptView', () => {
   });
 });
 
-describeWithMockConnection('PreloadingSummaryView', () => {
+describeWithEnvironment('PreloadingSummaryView', () => {
   beforeEach(() => {
     SDK.ChildTargetManager.ChildTargetManager.install();
   });

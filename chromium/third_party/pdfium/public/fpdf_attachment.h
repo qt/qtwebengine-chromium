@@ -132,6 +132,37 @@ FPDFAttachment_GetStringValue(FPDF_ATTACHMENT attachment,
                               unsigned long buflen);
 
 // Experimental API.
+// Sets the string value corresponding to "/Desc" in the file specification
+// dictionary (ISO 32000-1:2008 section 7.11.3) of the embedded file
+// |attachment| to the string value.
+//
+//   attachment - handle to an attachment.
+//   value      - the string value to be set as /Desc, encoded in UTF-16LE.
+//
+// Returns true if successful.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAttachment_SetDescription(FPDF_ATTACHMENT attachment,
+                              FPDF_WIDESTRING value);
+
+// Experimental API.
+// Gets the string value corresponding to "/Desc" in the file specification
+// dictionary (ISO 32000-1:2008 section 7.11.3) of the embedded file
+// |attachment|. Similarly to the above APIs, |buffer| is only modified if
+// |buflen| is longer than the length of the string's value. If the key doesn't
+// exist, or is not a string then 2 is returned by the API, alongside an empty
+// string. Other errors return 0 instead.
+//
+//   attachment - handle to an attachment.
+//   buffer     - buffer for holding the string value encoded in UTF-16LE.
+//   buflen     - length of the buffer in bytes.
+//
+// Returns the length of the description string in bytes.
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFAttachment_GetDescription(FPDF_ATTACHMENT attachment,
+                              FPDF_WCHAR* buffer,
+                              unsigned long buflen);
+
+// Experimental API.
 // Set the file data of |attachment|, overwriting the existing file data if any.
 // The creation date and checksum will be updated, while all other dictionary
 // entries will be deleted. Note that only contents with |len| smaller than

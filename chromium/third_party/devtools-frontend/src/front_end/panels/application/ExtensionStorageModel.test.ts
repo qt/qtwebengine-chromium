@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import type * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
-import {createTarget} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {createTarget, describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
 
 import * as Resources from './application.js';
 
@@ -59,7 +59,7 @@ class ExtensionStorageListener {
   }
 }
 
-describeWithMockConnection('ExtensionStorageModel', () => {
+describeWithEnvironment('ExtensionStorageModel', () => {
   let extensionStorageModel: Resources.ExtensionStorageModel.ExtensionStorageModel;
   let extensionStorage: Resources.ExtensionStorageModel.ExtensionStorage;
   let target: SDK.Target.Target;

@@ -15,13 +15,30 @@
 #ifndef INK_GEOMETRY_INTERNAL_TEST_MATCHERS_H_
 #define INK_GEOMETRY_INTERNAL_TEST_MATCHERS_H_
 
+#include <algorithm>
+#include <vector>
+
 #include "gmock/gmock.h"
 #include "ink/geometry/internal/circle.h"
+#include "ink/geometry/internal/outline_processing.h"
 
 namespace ink::geometry_internal {
 
 ::testing::Matcher<Circle> CircleEq(const Circle& expected);
 ::testing::Matcher<Circle> CircleNear(const Circle& expected, float tolerance);
+
+MATCHER_P(IsCyclicPermutationOf, expected, "") {
+  // Two arrays are cyclic permutations of each other iff they are the same
+  // size, and one is a subarray of the other concatenated with itself.
+  if (arg.size() != expected.size()) return false;
+  auto doubled = std::vector(expected.begin(), expected.end());
+  doubled.insert(doubled.end(), expected.begin(), expected.end());
+  return std::search(doubled.begin(), doubled.end(), arg.begin(), arg.end()) !=
+         doubled.end();
+}
+
+::testing::Matcher<ShapeOutline> ShapeOutlineNear(const ShapeOutline& expected,
+                                                  float tolerance);
 
 }  // namespace ink::geometry_internal
 

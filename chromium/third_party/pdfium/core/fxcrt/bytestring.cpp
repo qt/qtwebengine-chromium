@@ -24,11 +24,9 @@
 #include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/span.h"
 #include "core/fxcrt/span_util.h"
-#include "core/fxcrt/string_pool_template.h"
 
 // Instantiate.
 template class fxcrt::StringViewTemplate<char>;
-template class fxcrt::StringPoolTemplate<ByteString>;
 template struct std::hash<ByteString>;
 
 namespace {

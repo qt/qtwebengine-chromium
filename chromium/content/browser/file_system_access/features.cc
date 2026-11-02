@@ -27,6 +27,9 @@ BASE_FEATURE(kFileSystemAccessDirectoryIterationBlocklistCheck,
 BASE_FEATURE(kFileSystemAccessObserverQuotaLimit,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+// When enabled, check for hidden WebContents before showing chooser.
+BASE_FEATURE(kFileSystemAccessCheckHidden, base::FEATURE_ENABLED_BY_DEFAULT);
+
 // On Linux, the quota limit is found by:
 // 1. Rounding down the system limit (read from
 //    /proc/sys/fs/inotify/max_user_watches) to the nearest
@@ -68,4 +71,15 @@ BASE_FEATURE_PARAM(size_t,
                    2 << 28  // 1/2GiB
 );
 
+// When enabled, rename in the local file system requires write permission to
+// its parent directory.
+BASE_FEATURE(kFileSystemAccessRenameRequiresParentWritePermission,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Controls whether the rename permission check is restricted to the home
+// directory.
+BASE_FEATURE_PARAM(bool,
+                   kOnlyInHomedir,
+                   &kFileSystemAccessRenameRequiresParentWritePermission,
+                   false);
 }  // namespace content::features

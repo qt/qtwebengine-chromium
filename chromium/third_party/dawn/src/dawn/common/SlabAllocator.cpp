@@ -32,8 +32,8 @@
 #include <new>
 
 #include "src/dawn/common/AlignedAlloc.h"
-#include "src/dawn/common/Assert.h"
 #include "src/dawn/common/Math.h"
+#include "src/utils/assert.h"
 #include "src/utils/compiler.h"
 
 namespace dawn {
@@ -78,7 +78,8 @@ SlabAllocatorImpl::SlabAllocatorImpl(Index blocksPerSlab,
       mIndexLinkNodeOffset(Align(objectSize, alignof(IndexLinkNode))),
       mBlockStride(Align(mIndexLinkNodeOffset + u32_sizeof<IndexLinkNode>, objectAlignment)),
       mBlocksPerSlab(blocksPerSlab),
-      mTotalAllocationSize(static_cast<size_t>(mSlabBlocksOffset) + mBlocksPerSlab * mBlockStride) {
+      mTotalAllocationSize(static_cast<size_t>(mSlabBlocksOffset) +
+                           static_cast<size_t>(mBlocksPerSlab) * mBlockStride) {
     DAWN_ASSERT(blocksPerSlab > 0);
     DAWN_ASSERT(IsPowerOfTwo(mAllocationAlignment));
 }
@@ -196,8 +197,8 @@ void SlabAllocatorImpl::DeleteEmptySlabs() {
 }
 
 uint32_t SlabAllocatorImpl::CountAllocatedSlabsForTesting() const {
-    auto CountSlabs = [](const SentinelSlab& sentinel) {
-        int count = 0;
+    auto CountSlabs = [](const SentinelSlab& sentinel) -> uint32_t {
+        uint32_t count = 0;
         for (Slab* current = sentinel.next; current != nullptr;) {
             ++count;
             current = current->next;

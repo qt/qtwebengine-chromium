@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "base/check_deref.h"
+#include "base/containers/span.h"
 #include "third_party/blink/renderer/core/layout/inline/fragment_item.h"
 #include "third_party/blink/renderer/core/layout/inline/inline_item_span.h"
 #include "third_party/blink/renderer/core/layout/inline/offset_mapping.h"
@@ -192,14 +193,17 @@ AXBlockFlowData::Neighbor AXBlockFlowData::ComputeNeighborOnLine(
         return FailureReason::kAtLineBoundary;
 
       case FragmentItem::kBox:
-        if (it->BoxFragment()) {
+        if (it->BoxFragment() && !it->IsInlineBox()) {
           // TODO(accessibility): Add a test that exercises this branch.
           // TODO(crbug.com/399204651): Implement navigating into separate
           // PhysicalBox
           // fragments.
           return FailureReason::kAtBoxFragment;
         }
-        // Inline-box continues on to the next/previous item.
+        // Inline-box continues on to the next/previous item. An inline box
+        // like <span> or <a> can have a box fragment of its own, for instance
+        // when it has an outline, but its contents are still in this item
+        // list and it does not change where the lines break.
         break;
 
       case FragmentItem::kInvalid:
@@ -272,7 +276,7 @@ void AXBlockFlowData::ProcessBoxFragment(const PhysicalBoxFragment* fragment,
   // Then item 5 is on a separate nested line containing the annotation. For the
   // purpose of next-previous on-line, we want to be using the line within the
   // paragraph (item 1).
-  std::optional<size_t> current_outermost_line_index;
+  std::optional<wtf_size_t> current_outermost_line_index;
   for (auto it = items->Items().begin(); it != items->Items().end();
        it++, fragment_index++) {
     const LayoutObject* layout_object = it->GetLayoutObject();

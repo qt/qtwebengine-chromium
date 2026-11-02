@@ -34,15 +34,8 @@
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/core/ir/validator_test.h"
 #include "src/tint/lang/core/number.h"
-#include "src/tint/lang/core/type/abstract_float.h"
-#include "src/tint/lang/core/type/abstract_int.h"
-#include "src/tint/lang/core/type/function.h"
 #include "src/tint/lang/core/type/manager.h"
-#include "src/tint/lang/core/type/matrix.h"
-#include "src/tint/lang/core/type/memory_view.h"
-#include "src/tint/lang/core/type/reference.h"
-#include "src/tint/lang/core/type/storage_texture.h"
-#include "src/tint/lang/core/type/struct.h"
+#include "src/tint/lang/core/type/reference.h"  // IWYU pragma: export
 
 namespace tint::core::ir {
 
@@ -363,7 +356,8 @@ TEST_F(IR_ValidatorTest, Function_Param_WorkgroupPlusOtherIOAnnotation) {
 
     b.Append(f->Block(), [&] { b.Return(f); });
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kMslAllowEntryPointInterface});
+    mod.properties.Add(Property::kAllowMslEntryPointInterface);
+    auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
@@ -387,7 +381,8 @@ TEST_F(IR_ValidatorTest, Function_Param_Struct_WorkgroupPlusOtherIOAnnotations) 
 
     b.Append(f->Block(), [&] { b.Return(f); });
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kMslAllowEntryPointInterface});
+    mod.properties.Add(Property::kAllowMslEntryPointInterface);
+    auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
@@ -443,7 +438,7 @@ TEST_F(IR_ValidatorTest, Function_Param_Struct_Location_InvalidType) {
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Function_Param_Location_Struct_WithCapability) {
+TEST_F(IR_ValidatorTest, Function_Param_Location_Struct_WithProperty) {
     auto* f = FragmentEntryPoint("my_func");
 
     auto* str_ty = ty.Struct(mod.symbols.New("MyStruct"), {
@@ -455,11 +450,12 @@ TEST_F(IR_ValidatorTest, Function_Param_Location_Struct_WithCapability) {
 
     b.Append(f->Block(), [&] { b.Return(f); });
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kAllowLocationForNumericElements});
+    mod.properties.Add(Property::kAllowLocationForNumericComposites);
+    auto res = ir::Validate(mod);
     ASSERT_EQ(res, Success) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Function_Param_Location_Struct_WithoutCapability) {
+TEST_F(IR_ValidatorTest, Function_Param_Location_Struct_WithoutProperty) {
     auto* f = FragmentEntryPoint("my_func");
 
     auto* str_ty = ty.Struct(mod.symbols.New("MyStruct"), {
@@ -1229,9 +1225,10 @@ TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_ArrayOfStructs) {
         b.Unreachable();
     });
 
-    // Need to add Capability::kAllowUnannotatedModuleIOVariables to prevent earlier checks
+    // Need to add Property::kAllowUnannotatedModuleIOVariables to prevent earlier checks
     // rejecting the shader
-    auto res = ir::Validate(mod, Capabilities{Capability::kAllowUnannotatedModuleIOVariables});
+    mod.properties.Add(ir::Property::kAllowUnannotatedModuleIOVariables);
+    auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
@@ -1263,7 +1260,8 @@ TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_NestedStruct) {
     auto* f = FragmentEntryPoint("my_func");
     b.Append(f->Block(), [&] { b.Store(v, b.Zero(outer_struct_ty)); });
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kAllowUnannotatedModuleIOVariables});
+    mod.properties.Add(ir::Property::kAllowUnannotatedModuleIOVariables);
+    auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
@@ -1339,7 +1337,7 @@ TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_PartialStructAndMSV) {
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_NonMember_WithoutCapability) {
+TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_NonMember_WithoutProperty) {
     auto* f = FragmentEntryPoint("my_func");
 
     auto* var0 = b.Var("var0", ty.ptr(AddressSpace::kOut, ty.f32()));
@@ -1367,7 +1365,7 @@ TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_NonMember_WithoutCapability) {
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_NonMember_WithCapability) {
+TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_NonMember_WithProperty) {
     auto* f = FragmentEntryPoint("my_func");
 
     auto* var0 = b.Var("var0", ty.ptr(AddressSpace::kOut, ty.f32()));
@@ -1385,9 +1383,8 @@ TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_NonMember_WithCapability) {
         b.Store(var1, 1_f);
         b.Return(f);
     });
-    auto res = ir::Validate(mod, Capabilities{
-                                     Capability::kLoosenValidationForShaderIO,
-                                 });
+    mod.properties.Add(ir::Property::kAllowBackendSpecificShaderIO);
+    auto res = ir::Validate(mod);
     ASSERT_EQ(res, Success) << res.Failure();
 }
 
@@ -1436,7 +1433,8 @@ TEST_F(IR_ValidatorTest, Function_Interpolate_WithoutLocation_LoosenValidation) 
 
     b.Append(f->Block(), [&] { b.Return(f); });
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kLoosenValidationForShaderIO});
+    mod.properties.Add(ir::Property::kAllowBackendSpecificShaderIO);
+    auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
@@ -1488,7 +1486,7 @@ TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_WithoutLocation) {
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_LocationOnStruct_WithCapability) {
+TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_LocationOnStruct_WithProperty) {
     auto* f = FragmentEntryPoint("my_func");
 
     IOAttributes attr;
@@ -1502,11 +1500,12 @@ TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_LocationOnStruct_WithCapabi
 
     b.Append(f->Block(), [&] { b.Return(f); });
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kAllowLocationForNumericElements});
+    mod.properties.Add(Property::kAllowLocationForNumericComposites);
+    auto res = ir::Validate(mod);
     ASSERT_EQ(res, Success) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_LocationOnStruct_WithoutCapability) {
+TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_LocationOnStruct_WithoutProperty) {
     auto* f = FragmentEntryPoint("my_func");
 
     IOAttributes attr;
@@ -1530,7 +1529,7 @@ TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_LocationOnStruct_WithoutCap
                           ^^^^
 )")) << res.Failure();
 }
-TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_WithoutCapability) {
+TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_WithoutProperty) {
     auto* f = FragmentEntryPoint("my_func");
 
     IOAttributes attr_a;
@@ -1549,13 +1548,13 @@ TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_WithoutCapability) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:5:27 error: interpolation cannot be applied to a struct without 'kAllowLocationForNumericElements' capability
+            R"(:5:27 error: interpolation cannot be applied to a struct without 'kAllowLocationForNumericComposites' property
 %my_func = @fragment func(%p:S):void {
                           ^^^^
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_LocationOnAllMembers_WithCapability) {
+TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_LocationOnAllMembers_WithProperty) {
     auto* f = FragmentEntryPoint("my_func");
 
     IOAttributes attr_a;
@@ -1572,11 +1571,12 @@ TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_LocationOnAllMembers_WithCa
 
     b.Append(f->Block(), [&] { b.Return(f); });
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kAllowLocationForNumericElements});
+    mod.properties.Add(Property::kAllowLocationForNumericComposites);
+    auto res = ir::Validate(mod);
     ASSERT_EQ(res, Success) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_LocationOnAllMembers_WithoutCapability) {
+TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_LocationOnAllMembers_WithoutProperty) {
     auto* f = FragmentEntryPoint("my_func");
 
     IOAttributes attr_a;
@@ -1598,14 +1598,14 @@ TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_LocationOnAllMembers_Withou
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:6:27 error: interpolation cannot be applied to a struct without 'kAllowLocationForNumericElements' capability
+            R"(:6:27 error: interpolation cannot be applied to a struct without 'kAllowLocationForNumericComposites' property
 %my_func = @fragment func(%p:S):void {
                           ^^^^
 
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_LocationOnSomeMembers_WithCapability) {
+TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_LocationOnSomeMembers_WithProperty) {
     auto* f = FragmentEntryPoint("my_func");
 
     IOAttributes attr_a;
@@ -1620,7 +1620,8 @@ TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_LocationOnSomeMembers_WithC
 
     b.Append(f->Block(), [&] { b.Return(f); });
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kAllowLocationForNumericElements});
+    mod.properties.Add(Property::kAllowLocationForNumericComposites);
+    auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr(
@@ -1630,7 +1631,7 @@ TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_LocationOnSomeMembers_WithC
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Function_Interpolate_WithBuiltin_WithCapability) {
+TEST_F(IR_ValidatorTest, Function_Interpolate_WithBuiltin_WithProperty) {
     auto* f = FragmentEntryPoint("my_func");
 
     auto* p = b.FunctionParam("p", ty.u32());
@@ -1641,11 +1642,12 @@ TEST_F(IR_ValidatorTest, Function_Interpolate_WithBuiltin_WithCapability) {
 
     b.Append(f->Block(), [&] { b.Return(f); });
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kLoosenValidationForShaderIO});
+    mod.properties.Add(ir::Property::kAllowBackendSpecificShaderIO);
+    auto res = ir::Validate(mod);
     ASSERT_EQ(res, Success) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Function_Interpolate_WithBuiltin_WithoutCapability) {
+TEST_F(IR_ValidatorTest, Function_Interpolate_WithBuiltin_WithoutProperty) {
     auto* f = FragmentEntryPoint("my_func");
 
     auto* p = b.FunctionParam("p", ty.u32());
@@ -1955,6 +1957,7 @@ TEST_F(IR_ValidatorTest, Function_ParameterWithVoidType) {
 TEST_F(IR_ValidatorTest, Function_EntryPointParameterWithPointerType) {
     auto* f = b.Function("my_func", ty.void_(), Function::PipelineStage::kFragment);
     auto* p = b.FunctionParam("my_param", ty.ptr<function, u32>());
+    p->SetLocation(0);
     f->SetParams({p});
     f->Block()->Append(b.Return(f));
 
@@ -1962,7 +1965,7 @@ TEST_F(IR_ValidatorTest, Function_EntryPointParameterWithPointerType) {
     ASSERT_NE(res, Success);
     EXPECT_THAT(res.Failure().reason, testing::HasSubstr(
                                           R"(:1:27 error: entry point parameters cannot be pointers
-%my_func = @fragment func(%my_param:ptr<function, u32, read_write>):void {
+%my_func = @fragment func(%my_param:ptr<function, u32, read_write> [@location(0)]):void {
                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 )")) << res.Failure();
 }
@@ -2071,7 +2074,7 @@ TEST_F(IR_ValidatorTest, Function_Param_StructNested_InvariantWithoutPosition) {
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Function_Param_BindingPointWithoutCapability) {
+TEST_F(IR_ValidatorTest, Function_Param_BindingPointWithoutProperty) {
     auto* f = b.Function("my_func", ty.void_());
     auto* p = b.FunctionParam("my_param", ty.ptr<uniform, i32>());
     p->SetBindingPoint(0, 0);
@@ -2089,7 +2092,7 @@ TEST_F(IR_ValidatorTest, Function_Param_BindingPointWithoutCapability) {
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Function_EntryPointParam_BindingPointWithoutCapability) {
+TEST_F(IR_ValidatorTest, Function_EntryPointParam_BindingPointWithoutProperty) {
     auto* f = ComputeEntryPoint("my_func");
     auto* p = b.FunctionParam("my_param", ty.ptr<uniform, i32>());
     p->SetBindingPoint(0, 0);
@@ -2107,7 +2110,7 @@ TEST_F(IR_ValidatorTest, Function_EntryPointParam_BindingPointWithoutCapability)
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Function_EntryPointParam_BindingPointWithCapability) {
+TEST_F(IR_ValidatorTest, Function_EntryPointParam_BindingPointWithProperty) {
     auto* f = ComputeEntryPoint("my_func");
     auto* p = b.FunctionParam("my_param", ty.ptr<uniform, i32>());
     p->SetBindingPoint(0, 0);
@@ -2115,7 +2118,8 @@ TEST_F(IR_ValidatorTest, Function_EntryPointParam_BindingPointWithCapability) {
 
     b.Append(f->Block(), [&] { b.Return(f); });
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kMslAllowEntryPointInterface});
+    mod.properties.Add(Property::kAllowMslEntryPointInterface);
+    auto res = ir::Validate(mod);
     ASSERT_EQ(res, Success) << res.Failure();
 }
 
@@ -2127,7 +2131,7 @@ TEST_F(IR_ValidatorTest, Function_Param_Color_F16) {
 
     b.Append(f->Block(), [&] { b.Return(f); });
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kAllowNonCoreTypes});
+    auto res = ir::Validate(mod);
     EXPECT_EQ(res, Success);
 }
 
@@ -2764,7 +2768,7 @@ TEST_F(IR_ValidatorTest, Function_NonConstructibleReturnType_Ref) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(res.Failure().reason,
-                testing::HasSubstr(R"(:1:1 error: function return type must be constructible
+                testing::HasSubstr(R"(:1:1 error: reference types are not permitted here
 %1 = func():ref<function, u32, read_write> {
 ^^
 )")) << res.Failure();
@@ -3315,9 +3319,9 @@ TEST_F(IR_ValidatorTest, Function_Vertex_StructOnlyClipDistances) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(
-        res.Failure().reason,
-        testing::HasSubstr(R"(:5:1 error: position must be declared for vertex entry point output
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(
+                    R"(:5:1 error: position must be declared on the return of a vertex entry point
 %my_func = @vertex func():MyStruct {
 ^^^^^^^^
 )")) << res.Failure();
@@ -3331,11 +3335,66 @@ TEST_F(IR_ValidatorTest, Function_Vertex_MissingPosition) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(
-        res.Failure().reason,
-        testing::HasSubstr(R"(:1:1 error: position must be declared for vertex entry point output
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(
+                    R"(:1:1 error: position must be declared on the return of a vertex entry point
 %my_func = @vertex func():vec4<f32> [@location(0)] {
 ^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Vertex_PositionOnVarWithProperty) {
+    auto pos_ty = ty.vec4f();
+    auto pos_attr = IOAttributes();
+    pos_attr.builtin = BuiltinValue::kPosition;
+
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("pos"), pos_ty, pos_attr},
+                                               });
+
+    auto* v = b.Var(ty.ptr(AddressSpace::kOut, str_ty, core::Access::kReadWrite));
+    mod.root_block->Append(v);
+
+    auto* f = b.Function("my_func", ty.void_(), Function::PipelineStage::kVertex);
+    b.Append(f->Block(), [&] {
+        b.Phony(v);
+        b.Return(f);
+    });
+
+    mod.properties.Add(ir::Property::kAllowPhonyInstructions);
+    mod.properties.Add(ir::Property::kAllowBackendSpecificShaderIO);
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success);
+}
+
+TEST_F(IR_ValidatorTest, Function_Vertex_PositionOnVarWithoutProperty) {
+    auto pos_ty = ty.vec4f();
+    auto pos_attr = IOAttributes();
+    pos_attr.builtin = BuiltinValue::kPosition;
+
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("pos"), pos_ty, pos_attr},
+                                               });
+
+    auto* v = b.Var(ty.ptr(AddressSpace::kOut, str_ty, core::Access::kReadWrite));
+    mod.root_block->Append(v);
+
+    auto* f = b.Function("my_func", ty.void_(), Function::PipelineStage::kVertex);
+    b.Append(f->Block(), [&] {
+        b.Phony(v);
+        b.Return(f);
+    });
+
+    mod.properties.Add(ir::Property::kAllowPhonyInstructions);
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(
+                    R"(:6:41 error: var: position as part of a `var`, it must be part of the return
+  %1:ptr<__out, MyStruct, read_write> = var undef
 )")) << res.Failure();
 }
 
@@ -3518,6 +3577,7 @@ TEST_F(IR_ValidatorTest, Function_IndirectRecursion) {
 TEST_F(IR_ValidatorTest, Function_ParamPixelLocal) {
     auto* f = FragmentEntryPoint();
     auto* p = b.FunctionParam("invalid", ty.ptr<core::AddressSpace::kPixelLocal>(ty.i32()));
+    p->SetLocation(0);
     f->AppendParam(p);
 
     b.Append(f->Block(), [&] { b.Unreachable(); });
@@ -3526,7 +3586,7 @@ TEST_F(IR_ValidatorTest, Function_ParamPixelLocal) {
     ASSERT_NE(res, Success);
     EXPECT_THAT(res.Failure().reason, testing::HasSubstr(
                                           R"(:1:21 error: pixel_local param must be of type struct
-%f = @fragment func(%invalid:ptr<pixel_local, i32, read_write>):void {
+%f = @fragment func(%invalid:ptr<pixel_local, i32, read_write> [@location(0)]):void {
                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 )")) << res.Failure();
 }

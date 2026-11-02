@@ -21,7 +21,6 @@ import "services/network/public/mojom/web_client_hints_types.mojom";
 import "services/network/public/mojom/web_sandbox_flags.mojom";
 import "services/viz/public/mojom/compositing/local_surface_id.mojom";
 import "third_party/blink/public/mojom/back_forward_cache_not_restored_reasons.mojom";
-import "third_party/blink/public/mojom/conversions/conversions.mojom";
 import "third_party/blink/public/mojom/fenced_frame/fenced_frame_config.mojom";
 import "third_party/blink/public/mojom/fetch/fetch_api_request.mojom";
 import "third_party/blink/public/mojom/frame/agent_cluster_key.mojom";
@@ -162,11 +161,6 @@ struct BeginNavigationParams {
   // operation (https://github.com/wicg/trust-token-api) and attach headers
   // conveying the result of the operation. Set on some child frame navigations.
   network.mojom.TrustTokenParams? trust_token_params;
-
-  // Carries optional information associated with conversion measurement for
-  // this navigation. Only set on navigations originating from anchors with
-  // relevant impression attributes set.
-  Impression? impression;
 
   // Timestamps of the renderer running beforeunload handlers on local frames
   // in preparation for navigating. Used for metrics.
@@ -359,6 +353,21 @@ struct NavigationTiming {
       ParentResourceTimingAccess.kDoNotReport;
 };
 
+// Contains both the redirect info and response head for a given redirect in the
+// array of redirects for a navigation. Both values must be set for a given
+// redirect.
+struct NavigationRedirectParams {
+  // Contains information about the redirect (such as the redirect response HTTP
+  // status code) as well as the fields in the request that will change for the
+  // next leg of the redirect chain. Maps to net::RedirectInfo in C++.
+  network.mojom.URLRequestRedirectInfo redirect_info;
+
+  // Contains the full network response details received for the redirect
+  // itself (such as headers, MIME type, load timings, connection info, and SSL
+  // status). Maps to net::URLResponseHead in C++.
+  network.mojom.URLResponseHead response_head;
+};
+
 // Sent with CommitNavigationParams and should only be set for main-frame
 // same-site navigations where we did a proactive BrowsingInstance swap and
 // we're reusing the old page's process. Needed to ensure that the previous
@@ -405,15 +414,20 @@ struct CommitNavigationParams {
   // Whether or not the user agent override string should be used.
   bool is_overriding_user_agent = false;
 
-  // Any redirect URLs that occurred before |url|. Useful for cross-process
-  // navigations; defaults to empty.
+  // The complete list of redirect URLs in chronological order that occurred
+  // during the lifecycle of this navigation. This includes both "prior"
+  // redirects (e.g. those that happened prior to starting this navigation
+  // request, if this is a cross-process navigation) as well as subsequent
+  // redirects. The last element is the URL prior to the current URL in
+  // CommonNavigationParams.
   array<url.mojom.Url> redirects;
 
-  // The ResourceResponseInfos received during redirects.
-  array<network.mojom.URLResponseHead> redirect_response;
-
-  // The RedirectInfos received during redirects.
-  array<network.mojom.URLRequestRedirectInfo> redirect_infos;
+  // The redirect infos and response heads received during redirects. This is
+  // only populated for redirects that occurred *after* the browser started this
+  // navigation request. It does not contain redirect params for prior redirects
+  // that happened before this NavigationRequest was created, and thus may be a
+  // different size than the |redirects| array.
+  array<NavigationRedirectParams> redirect_params;
 
   // The content type from the request headers for POST requests.
   string post_content_type;
@@ -573,6 +587,16 @@ struct CommitNavigationParams {
   // Resources preloaded by Early Hints responses, represented as LinkHeader
   // structs containing the parsed href, as, and crossorigin attributes.
   array<network.mojom.LinkHeader> early_hints_preloaded_resources;
+
+  // Origins preconnected to by Early Hints responses, represented as LinkHeader
+  // structs containing the parsed href and crossorigin attribute. Deduped by
+  // (origin, crossorigin). Used by the SpeculationMeasurement API.
+  array<network.mojom.LinkHeader> early_hints_preconnects;
+
+  // Origins preconnected to by `Link: rel=preconnect` headers on the final
+  // navigation response (as opposed to a 103 Early Hints response). Used by the
+  // SpeculationMeasurement API.
+  array<network.mojom.LinkHeader> navigation_preconnects;
 
   // The time the commit was sent from the browser.
   mojo_base.mojom.TimeTicks commit_sent;
@@ -734,6 +758,14 @@ struct CommitNavigationParams {
   // The string should contain only the selector value (the part after
   // "text=" in a URL directive), not the "text=" prefix itself.
   string? internal_scroll_to_text_fragment;
+
+  // Browser-authoritative per-frame secure-context-root bit (see
+  // `ContentBrowserClient::IsSecureContextRoot()`). Stored on the
+  // LocalDOMWindow's SecurityContext at document install so descendants'
+  // ancestor walks can consult it. The browser is authoritative because
+  // the renderer cannot independently determine if a frame is a MIME
+  // handler (which requires browser-side state).
+  bool is_secure_context_root = false;
 };
 
 // Parameters used to dispatch the `pageswap` event on the old Document for

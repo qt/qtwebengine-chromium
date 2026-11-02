@@ -418,9 +418,11 @@ impl Encoder {
         stream.start_box("iprp")?;
         // ipco
         stream.start_box("ipco")?;
+        #[allow(unused_mut)] // Warning when "satofloat" is disabled.
+        let mut must_write_extended_pixi = self.settings.must_write_extended_pixi();
         let mut property_streams = Vec::new();
         for item in &mut self.items {
-            let mut bit_depth_extension_metadata;
+            let mut tmp_metadata;
             let item_metadata = if item.is_tmap() {
                 &self.alt_image_metadata
             } else if item.category == Category::Gainmap {
@@ -431,21 +433,56 @@ impl Encoder {
                     Recipe::None => &self.image_metadata,
                     Recipe::BitDepthExtension8b8b => {
                         if item.is_sato() {
+                            // Sample Transform derived image item.
+                            assert_eq!(self.image_metadata.depth, 16);
                             &self.image_metadata
                         } else {
-                            bit_depth_extension_metadata = self.image_metadata.shallow_clone();
-                            bit_depth_extension_metadata.depth = 8;
-                            &bit_depth_extension_metadata
+                            // Primary item (most significant bits) or hidden image item (least
+                            // significant bits).
+                            tmp_metadata = self.image_metadata.shallow_clone();
+                            tmp_metadata.depth = 8;
+                            &tmp_metadata
                         }
                     }
                     Recipe::BitDepthExtension12b4b | Recipe::BitDepthExtension12b8bOverlap4b => {
                         if item.is_sato() {
+                            // Sample Transform derived image item.
+                            assert_eq!(self.image_metadata.depth, 16);
                             &self.image_metadata
+                        } else if item.is_sato_least_significant_input {
+                            // Hidden image item (least significant bits).
+                            tmp_metadata = self.image_metadata.shallow_clone();
+                            tmp_metadata.depth = 8;
+                            &tmp_metadata
                         } else {
-                            bit_depth_extension_metadata = self.image_metadata.shallow_clone();
-                            bit_depth_extension_metadata.depth =
-                                if item.is_sato_least_significant_input { 8 } else { 12 };
-                            &bit_depth_extension_metadata
+                            // Primary item (most significant bits).
+                            tmp_metadata = self.image_metadata.shallow_clone();
+                            tmp_metadata.depth = 12;
+                            &tmp_metadata
+                        }
+                    }
+                    #[cfg(feature = "satofloat")]
+                    Recipe::Float32b => {
+                        if item.is_sato() {
+                            // Sample Transform derived image item.
+                            tmp_metadata = self.image_metadata.try_deep_clone()?; // Keep ICC.
+                            tmp_metadata.depth = 32;
+                            must_write_extended_pixi = true; // To signal floating point format.
+                            &tmp_metadata
+                        } else if item.hidden_image {
+                            // Any of the two hidden image items (containing 1 lsb of exponent plus
+                            // 11 bits of mantissa, or 12 bits of mantissa).
+                            tmp_metadata = self.image_metadata.shallow_clone();
+                            tmp_metadata.depth = 12;
+                            &tmp_metadata
+                        } else {
+                            // Primary image item (containing the sign bit and 7 msb of exponent).
+                            // This should be signaled as signed 8-bit integer samples through the
+                            // extended 'pixi' property. However displaying 7 bits of exponent makes
+                            // little sense as a primary image item anyway, so keep them unsigned
+                            // and use a regular 'pixi' for maximum compatibility.
+                            assert_eq!(self.image_metadata.depth, 8);
+                            &self.image_metadata
                         }
                     }
                 }
@@ -454,7 +491,7 @@ impl Encoder {
                 &self.image_metadata,
                 item_metadata,
                 &mut property_streams,
-                self.settings.must_write_extended_pixi(),
+                must_write_extended_pixi,
                 self.settings.codec_supports_native_alpha_channel(),
             )?;
         }

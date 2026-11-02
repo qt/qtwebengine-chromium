@@ -167,8 +167,7 @@ class PaymentsDataManagerHelper : public PaymentsDataManagerTestBase {
   void SetUpReferenceLocalCreditCards() {
     ASSERT_EQ(0U, payments_data_manager().GetCreditCards().size());
 
-    CreditCard credit_card0("287151C8-6AB1-487C-9095-28E80BE5DA15",
-                            test::kEmptyOrigin);
+    CreditCard credit_card0("287151C8-6AB1-487C-9095-28E80BE5DA15");
     test::SetCreditCardInfo(&credit_card0, "Clyde Barrow",
                             "378282246310005" /* American Express */, "04",
                             "2999", "1");
@@ -177,8 +176,7 @@ class PaymentsDataManagerHelper : public PaymentsDataManagerTestBase {
                                               base::Days(1));
     payments_data_manager().AddCreditCard(credit_card0);
 
-    CreditCard credit_card1("1141084B-72D7-4B73-90CF-3D6AC154673B",
-                            test::kEmptyOrigin);
+    CreditCard credit_card1("1141084B-72D7-4B73-90CF-3D6AC154673B");
     credit_card1.usage_history().set_use_count(300);
     credit_card1.usage_history().set_use_date(AutofillClock::Now() -
                                               base::Days(10));
@@ -186,8 +184,7 @@ class PaymentsDataManagerHelper : public PaymentsDataManagerTestBase {
                             "4234567890123456" /* Visa */, "01", "2999", "1");
     payments_data_manager().AddCreditCard(credit_card1);
 
-    CreditCard credit_card2("002149C1-EE28-4213-A3B9-DA243FFF021B",
-                            test::kEmptyOrigin);
+    CreditCard credit_card2("002149C1-EE28-4213-A3B9-DA243FFF021B");
     credit_card2.usage_history().set_use_count(1);
     credit_card2.usage_history().set_use_date(AutofillClock::Now() -
                                               base::Days(1));
@@ -633,20 +630,17 @@ TEST_P(PaymentsDataManagerServerTest, RecordIbanUsage_ServerIban) {
 }
 
 TEST_F(PaymentsDataManagerTest, AddUpdateRemoveCreditCards) {
-  CreditCard credit_card0(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                          test::kEmptyOrigin);
+  CreditCard credit_card0(base::Uuid::GenerateRandomV4().AsLowercaseString());
   test::SetCreditCardInfo(&credit_card0, "John Dillinger",
                           "4234567890123456" /* Visa */, "01", "2999", "1");
   credit_card0.SetNickname(u"card zero");
 
-  CreditCard credit_card1(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                          test::kEmptyOrigin);
+  CreditCard credit_card1(base::Uuid::GenerateRandomV4().AsLowercaseString());
   test::SetCreditCardInfo(&credit_card1, "Bonnie Parker",
                           "5105105105105100" /* Mastercard */, "12", "2999",
                           "1");
 
-  CreditCard credit_card2(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                          test::kEmptyOrigin);
+  CreditCard credit_card2(base::Uuid::GenerateRandomV4().AsLowercaseString());
   test::SetCreditCardInfo(&credit_card2, "Clyde Barrow",
                           "378282246310005" /* American Express */, "04",
                           "2999", "1");
@@ -686,8 +680,7 @@ TEST_F(PaymentsDataManagerTest, AddUpdateRemoveCreditCards) {
       UnorderedElementsAre(Pointee(credit_card0), Pointee(credit_card2)));
 
   // Add a server card.
-  CreditCard credit_card3(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                          test::kEmptyOrigin);
+  CreditCard credit_card3(base::Uuid::GenerateRandomV4().AsLowercaseString());
   test::SetCreditCardInfo(&credit_card3, "Jane Doe", "1111", "04", "2999", "1");
   credit_card3.set_record_type(CreditCard::RecordType::kMaskedServerCard);
   credit_card3.set_server_id("server_id");
@@ -853,8 +846,7 @@ TEST_F(PaymentsDataManagerTest, AddCreditCard_BasicInformation) {
   AdvanceClock(kArbitraryTime - base::Time::Now());
 
   // Add a credit card to the database.
-  CreditCard credit_card(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                         test::kEmptyOrigin);
+  CreditCard credit_card(base::Uuid::GenerateRandomV4().AsLowercaseString());
   test::SetCreditCardInfo(&credit_card, "John Dillinger",
                           "4234567890123456" /* Visa */, "01", "2999", "1");
   payments_data_manager().AddCreditCard(credit_card);
@@ -962,7 +954,7 @@ TEST_P(PaymentsDataManagerServerTest, GetCreditCardByServerId) {
 TEST_F(PaymentsDataManagerTest, UpdateUnverifiedCreditCards) {
   // Start with unverified data.
   CreditCard credit_card = test::GetCreditCard();
-  EXPECT_FALSE(credit_card.IsVerified());
+  EXPECT_FALSE(credit_card.is_user_confirmed());
 
   // Add the data to the database.
   payments_data_manager().AddCreditCard(credit_card);
@@ -973,8 +965,8 @@ TEST_F(PaymentsDataManagerTest, UpdateUnverifiedCreditCards) {
 
   // Try to update with just the origin changed.
   CreditCard original_credit_card(credit_card);
-  credit_card.set_origin(kSettingsOrigin);
-  EXPECT_TRUE(credit_card.IsVerified());
+  credit_card.set_is_user_confirmed(true);
+  EXPECT_TRUE(credit_card.is_user_confirmed());
   payments_data_manager().UpdateCreditCard(credit_card);
 
   // Credit Card origin should not be overwritten.
@@ -991,23 +983,17 @@ TEST_F(PaymentsDataManagerTest, UpdateUnverifiedCreditCards) {
 }
 
 TEST_F(PaymentsDataManagerTest, SetUniqueCreditCardLabels) {
-  CreditCard credit_card0(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                          test::kEmptyOrigin);
+  CreditCard credit_card0(base::Uuid::GenerateRandomV4().AsLowercaseString());
   credit_card0.SetRawInfo(CREDIT_CARD_NAME_FULL, u"John");
-  CreditCard credit_card1(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                          test::kEmptyOrigin);
+  CreditCard credit_card1(base::Uuid::GenerateRandomV4().AsLowercaseString());
   credit_card1.SetRawInfo(CREDIT_CARD_NAME_FULL, u"Paul");
-  CreditCard credit_card2(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                          test::kEmptyOrigin);
+  CreditCard credit_card2(base::Uuid::GenerateRandomV4().AsLowercaseString());
   credit_card2.SetRawInfo(CREDIT_CARD_NAME_FULL, u"Ringo");
-  CreditCard credit_card3(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                          test::kEmptyOrigin);
+  CreditCard credit_card3(base::Uuid::GenerateRandomV4().AsLowercaseString());
   credit_card3.SetRawInfo(CREDIT_CARD_NAME_FULL, u"Other");
-  CreditCard credit_card4(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                          test::kEmptyOrigin);
+  CreditCard credit_card4(base::Uuid::GenerateRandomV4().AsLowercaseString());
   credit_card4.SetRawInfo(CREDIT_CARD_NAME_FULL, u"Ozzy");
-  CreditCard credit_card5(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                          test::kEmptyOrigin);
+  CreditCard credit_card5(base::Uuid::GenerateRandomV4().AsLowercaseString());
   credit_card5.SetRawInfo(CREDIT_CARD_NAME_FULL, u"Dio");
 
   // Add the test credit cards to the database.
@@ -1031,8 +1017,7 @@ TEST_F(PaymentsDataManagerTest, SetUniqueCreditCardLabels) {
 }
 
 TEST_F(PaymentsDataManagerTest, SetEmptyCreditCard) {
-  CreditCard credit_card0(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                          test::kEmptyOrigin);
+  CreditCard credit_card0(base::Uuid::GenerateRandomV4().AsLowercaseString());
   test::SetCreditCardInfo(&credit_card0, "", "", "", "", "");
 
   // Add the empty credit card to the database.
@@ -1316,8 +1301,7 @@ TEST_F(PaymentsDataManagerTest,
   prefs::SetAutofillPaymentMethodsEnabled(prefs_.get(), false);
 
   // Add a local credit card.
-  CreditCard credit_card("002149C1-EE28-4213-A3B9-DA243FFF021B",
-                         "https://www.example.com");
+  CreditCard credit_card("002149C1-EE28-4213-A3B9-DA243FFF021B");
   test::SetCreditCardInfo(&credit_card, "Bonnie Parker",
                           "5105105105105100" /* Mastercard */, "04", "2999",
                           "1");
@@ -1332,8 +1316,7 @@ TEST_F(PaymentsDataManagerTest,
 // for loop.
 TEST_P(PaymentsDataManagerServerTest,
        GetCreditCardsToSuggest_Deduplication_MaskedIsKept) {
-  CreditCard local_card("1141084B-72D7-4B73-90CF-3D6AC154673B",
-                        test::kEmptyOrigin);
+  CreditCard local_card("1141084B-72D7-4B73-90CF-3D6AC154673B");
   test::SetCreditCardInfo(&local_card, "Homer Simpson",
                           "4234567890123456" /* Visa */, "01", "2999", "1");
   payments_data_manager().AddCreditCard(local_card);
@@ -1355,8 +1338,7 @@ TEST_P(PaymentsDataManagerServerTest,
 // Tests that different local and server credit cards are not deduped.
 TEST_P(PaymentsDataManagerServerTest,
        GetCreditCardsToSuggest_Deduplication_DifferentCards) {
-  CreditCard local_card("002149C1-EE28-4213-A3B9-DA243FFF021B",
-                        test::kEmptyOrigin);
+  CreditCard local_card("002149C1-EE28-4213-A3B9-DA243FFF021B");
   test::SetCreditCardInfo(&local_card, "Homer Simpson",
                           "5105105105105100" /* Mastercard */, "", "", "");
   payments_data_manager().AddCreditCard(local_card);
@@ -1377,8 +1359,7 @@ TEST_P(PaymentsDataManagerServerTest,
 // kept for duplicate cards except different name casing.
 TEST_P(PaymentsDataManagerServerTest,
        GetCreditCardsToSuggest_Deduplication_CaseInsensitiveName) {
-  CreditCard local_card("1141084B-72D7-4B73-90CF-3D6AC154673B",
-                        test::kEmptyOrigin);
+  CreditCard local_card("1141084B-72D7-4B73-90CF-3D6AC154673B");
   test::SetCreditCardInfo(&local_card, "homer simpson",
                           "4234567890123456" /* Visa */, "01", "2999", "1");
   payments_data_manager().AddCreditCard(local_card);
@@ -1401,18 +1382,15 @@ TEST_P(PaymentsDataManagerServerTest,
 }
 
 TEST_F(PaymentsDataManagerTest, DeleteLocalCreditCards) {
-  CreditCard credit_card1(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                          test::kEmptyOrigin);
+  CreditCard credit_card1(base::Uuid::GenerateRandomV4().AsLowercaseString());
   test::SetCreditCardInfo(&credit_card1, "Alice",
                           "378282246310005" /* American Express */, "04",
                           "2020", "1");
-  CreditCard credit_card2(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                          test::kEmptyOrigin);
+  CreditCard credit_card2(base::Uuid::GenerateRandomV4().AsLowercaseString());
   test::SetCreditCardInfo(&credit_card2, "Ben",
                           "378282246310006" /* American Express */, "04",
                           "2021", "1");
-  CreditCard credit_card3(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                          test::kEmptyOrigin);
+  CreditCard credit_card3(base::Uuid::GenerateRandomV4().AsLowercaseString());
   test::SetCreditCardInfo(&credit_card3, "Clyde",
                           "5105105105105100" /* Mastercard */, "04", "2022",
                           "1");
@@ -1770,8 +1748,7 @@ TEST_F(
     PaymentsDataManagerTest,
     SyncServiceInitializedWithAutofillDisabled_ClearCreditCardNonSettingsOrigins) {
   // Create a card with a non-settings, non-empty origin.
-  CreditCard credit_card(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                         "https://www.example.com");
+  CreditCard credit_card(base::Uuid::GenerateRandomV4().AsLowercaseString());
   test::SetCreditCardInfo(&credit_card, "Bob0",
                           "5105105105105100" /* Mastercard */, "04", "1999",
                           "1");
@@ -1796,7 +1773,8 @@ TEST_F(
   ASSERT_EQ(1U, payments_data_manager().GetCreditCards().size());
 
   // The card's origin should be cleared
-  EXPECT_TRUE(payments_data_manager().GetCreditCards()[0]->origin().empty());
+  EXPECT_FALSE(
+      payments_data_manager().GetCreditCards()[0]->is_user_confirmed());
 }
 
 TEST_F(PaymentsDataManagerTest, ClearAllCvcs) {
@@ -2954,6 +2932,240 @@ TEST_F(PaymentsDataManagerTest,
 }
 
 // Params:
+// 1. Benefit source.
+// 2. Whether the travel category and merchant benefits experiment is enabled.
+class PaymentsDataManagerIsCardEligibleForBenefitsTest
+    : public PaymentsDataManagerHelper,
+      public testing::Test {
+ public:
+  void SetUp() override {
+    SetUpTest();
+    ResetPaymentsDataManager();
+  }
+  void TearDown() override { TearDownTest(); }
+};
+
+#if BUILDFLAG(IS_IOS)
+
+// Tests that `IsCardEligibleForBenefits` returns `false` for iOS platforms.
+TEST_F(PaymentsDataManagerIsCardEligibleForBenefitsTest, UnsupportedPlatform) {
+  CreditCard card = test::GetMaskedServerCard();
+  card.set_benefit_source(kAmexCardBenefitSource);
+  EXPECT_FALSE(payments_data_manager().IsCardEligibleForBenefits(card));
+}
+
+#endif  // BUILDFLAG(IS_IOS)
+
+#if !BUILDFLAG(IS_IOS)
+
+// Tests that `IsCardEligibleForBenefits` returns `false` when the benefit
+// source is invalid.
+TEST_F(PaymentsDataManagerIsCardEligibleForBenefitsTest, InvalidBenefitSource) {
+  CreditCard card = test::GetMaskedServerCard();
+  card.set_benefit_source("invalid");
+  EXPECT_FALSE(payments_data_manager().IsCardEligibleForBenefits(card));
+}
+
+// Tests that `IsCardEligibleForBenefits` returns `true` when the benefit
+// source is `kAmexCardBenefitSource`.
+TEST_F(PaymentsDataManagerIsCardEligibleForBenefitsTest, AmexBenefitSource) {
+  CreditCard card = test::GetMaskedServerCard();
+  card.set_benefit_source(std::string(kAmexCardBenefitSource));
+  EXPECT_TRUE(payments_data_manager().IsCardEligibleForBenefits(card));
+}
+
+// Tests that `IsCardEligibleForBenefits` returns `true` when the benefit
+// source is `kBmoCardBenefitSource`.
+TEST_F(PaymentsDataManagerIsCardEligibleForBenefitsTest, BmoBenefitSource) {
+  CreditCard card = test::GetMaskedServerCard();
+  card.set_benefit_source(std::string(kBmoCardBenefitSource));
+  EXPECT_TRUE(payments_data_manager().IsCardEligibleForBenefits(card));
+}
+
+// Tests that `IsCardEligibleForBenefits` returns `true` for flat rate benefits
+// sourced from `kCurinosCardBenefitSource`.
+TEST_F(PaymentsDataManagerIsCardEligibleForBenefitsTest,
+       CurinosBenefitSource_FlatRateBenefit) {
+  CreditCard card = test::GetMaskedServerCard();
+  card.set_benefit_source(std::string(kCurinosCardBenefitSource));
+
+  // Add a flat rate benefit to the card.
+  CreditCardFlatRateBenefit flat_rate_benefit =
+      test::GetActiveCreditCardFlatRateBenefit();
+  card.set_instrument_id(*flat_rate_benefit.linked_card_instrument_id());
+  payments_data_manager().AddCreditCardBenefitForTest(
+      std::move(flat_rate_benefit));
+
+  EXPECT_TRUE(payments_data_manager().IsCardEligibleForBenefits(card));
+}
+
+// Tests that `IsCardEligibleForBenefits` returns `true` for merchant benefits
+// sourced from `kCurinosCardBenefitSource`.
+TEST_F(PaymentsDataManagerIsCardEligibleForBenefitsTest,
+       CurinosBenefitSource_MerchantBenefit) {
+  base::test::ScopedFeatureList feature_list(
+      features::kAutofillEnableTravelCategoryAndMerchantBenefitsFromCurinos);
+
+  CreditCard card = test::GetMaskedServerCard();
+  card.set_benefit_source(std::string(kCurinosCardBenefitSource));
+
+  // Add a merchant benefit to the card.
+  CreditCardMerchantBenefit merchant_benefit =
+      test::GetActiveCreditCardMerchantBenefit();
+  card.set_instrument_id(*merchant_benefit.linked_card_instrument_id());
+  payments_data_manager().AddCreditCardBenefitForTest(
+      std::move(merchant_benefit));
+
+  EXPECT_TRUE(payments_data_manager().IsCardEligibleForBenefits(card));
+}
+
+// Tests that `IsCardEligibleForBenefits` returns `false` for merchant benefits
+// sourced from `kCurinosCardBenefitSource` when the flag is disabled.
+TEST_F(PaymentsDataManagerIsCardEligibleForBenefitsTest,
+       CurinosBenefitSource_MerchantBenefit_FlagDisabled) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndDisableFeature(
+      features::kAutofillEnableTravelCategoryAndMerchantBenefitsFromCurinos);
+
+  CreditCard card = test::GetMaskedServerCard();
+  card.set_benefit_source(std::string(kCurinosCardBenefitSource));
+
+  // Add a merchant benefit to the card.
+  CreditCardMerchantBenefit merchant_benefit =
+      test::GetActiveCreditCardMerchantBenefit();
+  card.set_instrument_id(*merchant_benefit.linked_card_instrument_id());
+  payments_data_manager().AddCreditCardBenefitForTest(
+      std::move(merchant_benefit));
+
+  EXPECT_FALSE(payments_data_manager().IsCardEligibleForBenefits(card));
+}
+
+// Tests that `IsCardEligibleForBenefits` returns `true` for travel category
+// benefits sourced from `kCurinosCardBenefitSource`.
+TEST_F(PaymentsDataManagerIsCardEligibleForBenefitsTest,
+       CurinosBenefitSource_TravelCategoryBenefit) {
+  base::test::ScopedFeatureList feature_list(
+      features::kAutofillEnableTravelCategoryAndMerchantBenefitsFromCurinos);
+
+  CreditCard card = test::GetMaskedServerCard();
+  card.set_benefit_source(std::string(kCurinosCardBenefitSource));
+
+  // Add a travel category benefit to the card.
+  CreditCardCategoryBenefit category_benefit =
+      test::GetActiveCreditCardCategoryBenefit();
+  test_api(category_benefit)
+      .SetLinkedCardInstrumentId(
+          CreditCardBenefitBase::LinkedCardInstrumentId(card.instrument_id()));
+  test_api(category_benefit)
+      .SetBenefitCategory(CreditCardCategoryBenefit::BenefitCategory::kTravel);
+  payments_data_manager().AddCreditCardBenefitForTest(
+      std::move(category_benefit));
+
+  EXPECT_TRUE(payments_data_manager().IsCardEligibleForBenefits(card));
+}
+
+// Tests that `IsCardEligibleForBenefits` returns `false` for travel category
+// benefits sourced from `kCurinosCardBenefitSource` when the flag is disabled.
+TEST_F(PaymentsDataManagerIsCardEligibleForBenefitsTest,
+       CurinosBenefitSource_TravelCategoryBenefit_FlagDisabled) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndDisableFeature(
+      features::kAutofillEnableTravelCategoryAndMerchantBenefitsFromCurinos);
+
+  CreditCard card = test::GetMaskedServerCard();
+  card.set_benefit_source(std::string(kCurinosCardBenefitSource));
+
+  // Add a travel category benefit to the card.
+  CreditCardCategoryBenefit category_benefit =
+      test::GetActiveCreditCardCategoryBenefit();
+  test_api(category_benefit)
+      .SetLinkedCardInstrumentId(
+          CreditCardBenefitBase::LinkedCardInstrumentId(card.instrument_id()));
+  test_api(category_benefit)
+      .SetBenefitCategory(CreditCardCategoryBenefit::BenefitCategory::kTravel);
+  payments_data_manager().AddCreditCardBenefitForTest(
+      std::move(category_benefit));
+
+  EXPECT_FALSE(payments_data_manager().IsCardEligibleForBenefits(card));
+}
+
+// Tests that `IsCardEligibleForBenefits` returns `false` for non-travel
+// category benefits sourced from `kCurinosCardBenefitSource`.
+TEST_F(PaymentsDataManagerIsCardEligibleForBenefitsTest,
+       CurinosBenefitSource_NonTravelCategoryBenefit) {
+  base::test::ScopedFeatureList feature_list(
+      features::kAutofillEnableTravelCategoryAndMerchantBenefitsFromCurinos);
+
+  CreditCard card = test::GetMaskedServerCard();
+  card.set_benefit_source(std::string(kCurinosCardBenefitSource));
+
+  // Add a non-travel category benefit to the card.
+  CreditCardCategoryBenefit category_benefit =
+      test::GetActiveCreditCardCategoryBenefit();
+  test_api(category_benefit)
+      .SetLinkedCardInstrumentId(
+          CreditCardBenefitBase::LinkedCardInstrumentId(card.instrument_id()));
+  test_api(category_benefit)
+      .SetBenefitCategory(
+          CreditCardCategoryBenefit::BenefitCategory::kOfficeSupplies);
+  payments_data_manager().AddCreditCardBenefitForTest(
+      std::move(category_benefit));
+
+  EXPECT_FALSE(payments_data_manager().IsCardEligibleForBenefits(card));
+}
+
+// Tests that `IsCardEligibleForBenefits` returns `true` for travel subcategory
+// benefits sourced from `kCurinosCardBenefitSource`.
+TEST_F(PaymentsDataManagerIsCardEligibleForBenefitsTest,
+       CurinosBenefitSource_TravelSubcategoryBenefit) {
+  base::test::ScopedFeatureList feature_list(
+      features::kAutofillEnableTravelCategoryAndMerchantBenefitsFromCurinos);
+
+  CreditCard card = test::GetMaskedServerCard();
+  card.set_benefit_source(std::string(kCurinosCardBenefitSource));
+
+  // Add travel subcategory benefit to the card.
+  CreditCardCategoryBenefit category_benefit =
+      test::GetActiveCreditCardCategoryBenefit();
+  test_api(category_benefit)
+      .SetLinkedCardInstrumentId(
+          CreditCardBenefitBase::LinkedCardInstrumentId(card.instrument_id()));
+  test_api(category_benefit)
+      .SetBenefitCategory(CreditCardCategoryBenefit::BenefitCategory::kFlights);
+  payments_data_manager().AddCreditCardBenefitForTest(
+      std::move(category_benefit));
+
+  EXPECT_TRUE(payments_data_manager().IsCardEligibleForBenefits(card));
+}
+
+// Tests that `IsCardEligibleForBenefits` returns `false` for travel subcategory
+// benefits sourced from `kCurinosCardBenefitSource` when the flag is disabled.
+TEST_F(PaymentsDataManagerIsCardEligibleForBenefitsTest,
+       CurinosBenefitSource_TravelSubcategoryBenefit_FlagDisabled) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndDisableFeature(
+      features::kAutofillEnableTravelCategoryAndMerchantBenefitsFromCurinos);
+
+  CreditCard card = test::GetMaskedServerCard();
+  card.set_benefit_source(std::string(kCurinosCardBenefitSource));
+
+  // Add travel subcategory benefit to the card.
+  CreditCardCategoryBenefit category_benefit =
+      test::GetActiveCreditCardCategoryBenefit();
+  test_api(category_benefit)
+      .SetLinkedCardInstrumentId(
+          CreditCardBenefitBase::LinkedCardInstrumentId(card.instrument_id()));
+  test_api(category_benefit)
+      .SetBenefitCategory(CreditCardCategoryBenefit::BenefitCategory::kFlights);
+  payments_data_manager().AddCreditCardBenefitForTest(
+      std::move(category_benefit));
+
+  EXPECT_FALSE(payments_data_manager().IsCardEligibleForBenefits(card));
+}
+
+#endif  // !BUILDFLAG(IS_IOS)
+
+// Params:
 // 1. App Locale.
 class PaymentsDataManagerShouldBlockBenefitsTest
     : public PaymentsDataManagerHelper,
@@ -2984,7 +3196,7 @@ TEST_P(PaymentsDataManagerShouldBlockBenefitsTest, NonSupportedAppLocale) {
 TEST_P(PaymentsDataManagerShouldBlockBenefitsTest,
        BlockedUrlForFlateRateBenefit) {
   if (app_locale() != "en-US" && app_locale() != "en-GB") {
-    GTEST_SKIP() << "This test should not run for not supported app locale.";
+    GTEST_SKIP() << "This test should not run for unsupported app locales.";
   }
 
   const url::Origin origin =
@@ -3005,11 +3217,11 @@ TEST_P(PaymentsDataManagerShouldBlockBenefitsTest,
   payments_data_manager().AddCreditCardBenefitForTest(
       std::move(flat_rate_benefit));
 
-  EXPECT_TRUE(payments_data_manager()
-                  .GetApplicableBenefitDescriptionForCardAndOrigin(
-                      test::GetMaskedServerCard(), origin,
-                      autofill_client()->GetAutofillOptimizationGuideDecider())
-                  .empty());
+  EXPECT_FALSE(payments_data_manager()
+                   .GetApplicableBenefitForCardAndOrigin(
+                       test::GetMaskedServerCard(), origin,
+                       autofill_client()->GetAutofillOptimizationGuideDecider())
+                   .has_value());
 
   // Add other benefit.
   CreditCardMerchantBenefit merchant_benefit =
@@ -3020,11 +3232,14 @@ TEST_P(PaymentsDataManagerShouldBlockBenefitsTest,
   test_api(merchant_benefit).SetMerchantDomains({origin});
   payments_data_manager().AddCreditCardBenefitForTest(merchant_benefit);
 
-  EXPECT_EQ(
-      payments_data_manager().GetApplicableBenefitDescriptionForCardAndOrigin(
+  std::optional<CreditCardBenefit> benefit =
+      payments_data_manager().GetApplicableBenefitForCardAndOrigin(
           card, origin,
-          autofill_client()->GetAutofillOptimizationGuideDecider()),
-      merchant_benefit.benefit_description());
+          autofill_client()->GetAutofillOptimizationGuideDecider());
+  ASSERT_TRUE(benefit.has_value());
+  EXPECT_EQ(std::get<CreditCardMerchantBenefit>(benefit.value())
+                .benefit_description(),
+            merchant_benefit.benefit_description());
 }
 
 // Tests that card flat rate benefits should not be blocked if the given url is
@@ -3033,7 +3248,7 @@ TEST_P(PaymentsDataManagerShouldBlockBenefitsTest,
 TEST_P(PaymentsDataManagerShouldBlockBenefitsTest,
        BlockedUrlForFlateRateBenefit_BlocklistDisabled) {
   if (app_locale() != "en-US" && app_locale() != "en-GB") {
-    GTEST_SKIP() << "This test should not run for not supported app locale.";
+    GTEST_SKIP() << "This test should not run for unsupported app locales.";
   }
 
   base::test::ScopedFeatureList scoped_feature_list;
@@ -3057,11 +3272,135 @@ TEST_P(PaymentsDataManagerShouldBlockBenefitsTest,
   test_api(payments_data_manager()).AddServerCreditCard(card);
   payments_data_manager().AddCreditCardBenefitForTest(flat_rate_benefit);
 
-  EXPECT_EQ(
-      payments_data_manager().GetApplicableBenefitDescriptionForCardAndOrigin(
+  std::optional<CreditCardBenefit> benefit =
+      payments_data_manager().GetApplicableBenefitForCardAndOrigin(
           card, origin,
-          autofill_client()->GetAutofillOptimizationGuideDecider()),
-      flat_rate_benefit.benefit_description());
+          autofill_client()->GetAutofillOptimizationGuideDecider());
+  ASSERT_TRUE(benefit.has_value());
+  EXPECT_EQ(std::get<CreditCardFlatRateBenefit>(benefit.value())
+                .benefit_description(),
+            flat_rate_benefit.benefit_description());
+}
+
+// Tests that parent category travel benefit is returned when optimization guide
+// suggests a travel subcategory (e.g. flights) but no direct subcategory
+// benefit is available. Also verifies that direct subcategory benefits take
+// precedence if both are available.
+TEST_P(PaymentsDataManagerShouldBlockBenefitsTest,
+       ApplicableBenefitDescriptionForTravelSubcategoryFallback) {
+  if (app_locale() != "en-US" && app_locale() != "en-GB") {
+    GTEST_SKIP() << "This test should not run for unsupported app locales.";
+  }
+
+  base::test::ScopedFeatureList scoped_feature_list(
+      features::kAutofillEnableTravelCategoryAndMerchantBenefitsFromCurinos);
+
+  const url::Origin origin =
+      url::Origin::Create(GURL("https://example-travel.com/"));
+  ON_CALL(*static_cast<MockAutofillOptimizationGuideDecider*>(
+              autofill_client()->GetAutofillOptimizationGuideDecider()),
+          AttemptToGetEligibleCreditCardBenefitCategory)
+      .WillByDefault(testing::Return(
+          CreditCardCategoryBenefit::BenefitCategory::kFlights));
+
+  // Create a card and a generic travel category benefit.
+  CreditCard card = test::GetMaskedServerCard();
+  test_api(payments_data_manager()).AddServerCreditCard(card);
+
+  CreditCardCategoryBenefit travel_benefit =
+      test::GetActiveCreditCardCategoryBenefit();
+  test_api(travel_benefit)
+      .SetLinkedCardInstrumentId(
+          CreditCardBenefitBase::LinkedCardInstrumentId(card.instrument_id()));
+  test_api(travel_benefit)
+      .SetBenefitCategory(CreditCardCategoryBenefit::BenefitCategory::kTravel);
+  std::u16string travel_description = u"5% back on Travel";
+  test_api(travel_benefit).SetBenefitDescription(travel_description);
+
+  payments_data_manager().AddCreditCardBenefitForTest(travel_benefit);
+
+  // Fallback path: returns broad travel benefit description when flight benefit
+  // is missing.
+  std::optional<CreditCardBenefit> benefit =
+      payments_data_manager().GetApplicableBenefitForCardAndOrigin(
+          card, origin,
+          autofill_client()->GetAutofillOptimizationGuideDecider());
+  ASSERT_TRUE(benefit.has_value());
+  EXPECT_EQ(std::get<CreditCardCategoryBenefit>(benefit.value())
+                .benefit_description(),
+            travel_description);
+
+  // Now add a specific flight benefit to the same card.
+  CreditCardCategoryBenefit flight_benefit =
+      test::GetActiveCreditCardCategoryBenefit();
+  test_api(flight_benefit)
+      .SetLinkedCardInstrumentId(
+          CreditCardBenefitBase::LinkedCardInstrumentId(card.instrument_id()));
+  test_api(flight_benefit)
+      .SetBenefitCategory(CreditCardCategoryBenefit::BenefitCategory::kFlights);
+  std::u16string flight_description = u"10% back on Flights";
+  test_api(flight_benefit).SetBenefitDescription(flight_description);
+  // Ensure unique benefit id to avoid overwriting or map collisions.
+  test_api(flight_benefit)
+      .SetBenefitId(CreditCardBenefitBase::BenefitId("flight_benefit_id"));
+
+  payments_data_manager().AddCreditCardBenefitForTest(flight_benefit);
+
+  // Direct path precedence: returns specific flight benefit description.
+  benefit = payments_data_manager().GetApplicableBenefitForCardAndOrigin(
+      card, origin, autofill_client()->GetAutofillOptimizationGuideDecider());
+  ASSERT_TRUE(benefit.has_value());
+  EXPECT_EQ(std::get<CreditCardCategoryBenefit>(benefit.value())
+                .benefit_description(),
+            flight_description);
+}
+
+// Tests that no category benefit is returned when optimization guide
+// suggests a travel subcategory (e.g. flights) but no direct subcategory
+// benefit is available when the Curinos category and merchant benefit flag is
+// disabled.
+TEST_P(
+    PaymentsDataManagerShouldBlockBenefitsTest,
+    ApplicableBenefitDescriptionForTravelSubcategoryFallback_CurinosCategoryBenefitDisabled) {
+  if (app_locale() != "en-US" && app_locale() != "en-GB") {
+    GTEST_SKIP() << "This test should not run for unsupported app locales.";
+  }
+
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndDisableFeature(
+      features::kAutofillEnableTravelCategoryAndMerchantBenefitsFromCurinos);
+
+  const url::Origin origin =
+      url::Origin::Create(GURL("https://example-travel.com/"));
+  ON_CALL(*static_cast<MockAutofillOptimizationGuideDecider*>(
+              autofill_client()->GetAutofillOptimizationGuideDecider()),
+          AttemptToGetEligibleCreditCardBenefitCategory)
+      .WillByDefault(testing::Return(
+          CreditCardCategoryBenefit::BenefitCategory::kFlights));
+
+  // Create a card and a generic travel category benefit.
+  CreditCard card = test::GetMaskedServerCard();
+  test_api(payments_data_manager()).AddServerCreditCard(card);
+
+  CreditCardCategoryBenefit travel_benefit =
+      test::GetActiveCreditCardCategoryBenefit();
+  test_api(travel_benefit)
+      .SetLinkedCardInstrumentId(
+          CreditCardBenefitBase::LinkedCardInstrumentId(card.instrument_id()));
+  test_api(travel_benefit)
+      .SetBenefitCategory(CreditCardCategoryBenefit::BenefitCategory::kTravel);
+  std::u16string travel_description = u"5% back on Travel";
+  test_api(travel_benefit).SetBenefitDescription(travel_description);
+
+  payments_data_manager().AddCreditCardBenefitForTest(travel_benefit);
+
+  // Fallback path: returns std::nullopt when flight benefit is missing and
+  // Curinos travel benefits are disabled.
+  std::optional<CreditCardBenefit> benefit =
+      payments_data_manager().GetApplicableBenefitForCardAndOrigin(
+          card, origin,
+          autofill_client()->GetAutofillOptimizationGuideDecider());
+  EXPECT_FALSE(benefit.has_value());
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -3073,11 +3412,11 @@ INSTANTIATE_TEST_SUITE_P(
 // OnAcceptedLocalCreditCardSave.
 TEST_F(PaymentsDataManagerTest, OnAcceptedLocalCreditCardSaveWithVerifiedData) {
   // Start with a verified credit card.
-  CreditCard credit_card(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                         kSettingsOrigin);
+  CreditCard credit_card(base::Uuid::GenerateRandomV4().AsLowercaseString());
+  credit_card.set_is_user_confirmed(true);
   test::SetCreditCardInfo(&credit_card, "Biggie Smalls",
                           "4111 1111 1111 1111" /* Visa */, "01", "2999", "");
-  EXPECT_TRUE(credit_card.IsVerified());
+  EXPECT_TRUE(credit_card.is_user_confirmed());
 
   // Add the credit card to the database.
   payments_data_manager().AddCreditCard(credit_card);
@@ -3090,7 +3429,7 @@ TEST_F(PaymentsDataManagerTest, OnAcceptedLocalCreditCardSaveWithVerifiedData) {
   new_verified_card.set_guid(
       base::Uuid::GenerateRandomV4().AsLowercaseString());
   new_verified_card.SetRawInfo(CREDIT_CARD_NAME_FULL, u"B. Small");
-  EXPECT_TRUE(new_verified_card.IsVerified());
+  EXPECT_TRUE(new_verified_card.is_user_confirmed());
 
   payments_data_manager().OnAcceptedLocalCreditCardSave(new_verified_card);
 
@@ -3190,8 +3529,7 @@ TEST_F(PaymentsDataManagerTest, IsKnownCard_MatchesMaskedServerCard) {
 
 TEST_F(PaymentsDataManagerTest, IsKnownCard_MatchesLocalCard) {
   // Add a local card.
-  CreditCard credit_card0("287151C8-6AB1-487C-9095-28E80BE5DA15",
-                          test::kEmptyOrigin);
+  CreditCard credit_card0("287151C8-6AB1-487C-9095-28E80BE5DA15");
   test::SetCreditCardInfo(&credit_card0, "Clyde Barrow",
                           "4234 5678 9012 2110" /* Visa */, "04", "2999", "1");
   payments_data_manager().AddCreditCard(credit_card0);
@@ -3208,8 +3546,7 @@ TEST_F(PaymentsDataManagerTest, IsKnownCard_MatchesLocalCard) {
 
 TEST_F(PaymentsDataManagerTest, IsKnownCard_TypeDoesNotMatch) {
   // Add a local card.
-  CreditCard credit_card0("287151C8-6AB1-487C-9095-28E80BE5DA15",
-                          test::kEmptyOrigin);
+  CreditCard credit_card0("287151C8-6AB1-487C-9095-28E80BE5DA15");
   test::SetCreditCardInfo(&credit_card0, "Clyde Barrow",
                           "4234 5678 9012 2110" /* Visa */, "04", "2999", "1");
   payments_data_manager().AddCreditCard(credit_card0);
@@ -3226,8 +3563,7 @@ TEST_F(PaymentsDataManagerTest, IsKnownCard_TypeDoesNotMatch) {
 
 TEST_F(PaymentsDataManagerTest, IsKnownCard_LastFourDoesNotMatch) {
   // Add a local card.
-  CreditCard credit_card0("287151C8-6AB1-487C-9095-28E80BE5DA15",
-                          test::kEmptyOrigin);
+  CreditCard credit_card0("287151C8-6AB1-487C-9095-28E80BE5DA15");
   test::SetCreditCardInfo(&credit_card0, "Clyde Barrow",
                           "4234 5678 9012 2110" /* Visa */, "04", "2999", "1");
   payments_data_manager().AddCreditCard(credit_card0);
@@ -3253,8 +3589,7 @@ TEST_F(PaymentsDataManagerTest, IsServerCard_DuplicateOfMaskedServerCard) {
   SetServerCards(server_cards);
 
   // Add a dupe local card of the masked server card.
-  CreditCard local_card("287151C8-6AB1-487C-9095-28E80BE5DA15",
-                        test::kEmptyOrigin);
+  CreditCard local_card("287151C8-6AB1-487C-9095-28E80BE5DA15");
   test::SetCreditCardInfo(&local_card, "Emmet Dalton",
                           "4234 5678 9012 2110" /* Visa */, "12", "2999", "1");
   payments_data_manager().AddCreditCard(local_card);
@@ -3291,8 +3626,7 @@ TEST_F(PaymentsDataManagerTest, IsServerCard_AlreadyServerCard) {
 
 TEST_F(PaymentsDataManagerTest, IsServerCard_UniqueLocalCard) {
   // Add a unique local card.
-  CreditCard local_card("1141084B-72D7-4B73-90CF-3D6AC154673B",
-                        test::kEmptyOrigin);
+  CreditCard local_card("1141084B-72D7-4B73-90CF-3D6AC154673B");
   test::SetCreditCardInfo(&local_card, "Homer Simpson",
                           "4234567890123456" /* Visa */, "01", "2999", "1");
   payments_data_manager().AddCreditCard(local_card);
@@ -3508,8 +3842,8 @@ TEST_F(PaymentsDataManagerTest,
         // BUILDFLAG(IS_CHROMEOS)
 
 TEST_F(PaymentsDataManagerTest, SaveCardLocallyIfNewWithNewCard) {
-  CreditCard credit_card(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                         kSettingsOrigin);
+  CreditCard credit_card(base::Uuid::GenerateRandomV4().AsLowercaseString());
+  credit_card.set_is_user_confirmed(true);
   test::SetCreditCardInfo(&credit_card, "Sunraku Emul",
                           "4111 1111 1111 1111" /* Visa */, "01", "2999", "");
 
@@ -3531,8 +3865,8 @@ TEST_F(PaymentsDataManagerTest, SaveCardLocallyIfNewWithNewCard) {
 
 TEST_F(PaymentsDataManagerTest, SaveCardLocallyIfNewWithExistingCard) {
   const char* credit_card_number = "4111 1111 1111 1111" /* Visa */;
-  CreditCard credit_card(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                         kSettingsOrigin);
+  CreditCard credit_card(base::Uuid::GenerateRandomV4().AsLowercaseString());
+  credit_card.set_is_user_confirmed(true);
   test::SetCreditCardInfo(&credit_card, "Sunraku Emul", credit_card_number,
                           "01", "2999", "");
 
@@ -3544,7 +3878,8 @@ TEST_F(PaymentsDataManagerTest, SaveCardLocallyIfNewWithExistingCard) {
   // Create a new credit card with the same card number but different detailed
   // information.
   CreditCard similar_credit_card(
-      base::Uuid::GenerateRandomV4().AsLowercaseString(), kSettingsOrigin);
+      base::Uuid::GenerateRandomV4().AsLowercaseString());
+  similar_credit_card.set_is_user_confirmed(true);
   test::SetCreditCardInfo(&similar_credit_card, "Sunraku Emul",
                           credit_card_number, "02", "3999",
                           "Different billing address");
@@ -3563,8 +3898,8 @@ TEST_F(PaymentsDataManagerTest, SaveCardLocallyIfNewWithExistingCard) {
 }
 
 TEST_F(PaymentsDataManagerTest, SaveCardLocallyIfNewWithDisallowedCvcStripped) {
-  CreditCard credit_card(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                         kSettingsOrigin);
+  CreditCard credit_card(base::Uuid::GenerateRandomV4().AsLowercaseString());
+  credit_card.set_is_user_confirmed(true);
   test::SetCreditCardInfo(&credit_card, "Sunraku Emul",
                           /*card_number=*/"4111 1111 1111 1111" /* Visa */,
                           /*expiration_month=*/"01", /*expiration_year=*/"2999",
@@ -3618,8 +3953,7 @@ TEST_F(PaymentsDataManagerTest, OnAccountsCookieDeletedByUserAction) {
 TEST_F(PaymentsDataManagerTest, RecordLocalCardAdded) {
   base::HistogramTester histogram_tester;
   // Add a local card.
-  CreditCard credit_card0("287151C8-6AB1-487C-9095-28E80BE5DA15",
-                          test::kEmptyOrigin);
+  CreditCard credit_card0("287151C8-6AB1-487C-9095-28E80BE5DA15");
   test::SetCreditCardInfo(&credit_card0, "Clyde Barrow",
                           "4234 5678 9012 2110" /* Visa */, "04", "2999", "1");
   payments_data_manager().AddCreditCard(credit_card0);
@@ -4093,16 +4427,50 @@ TEST_P(PaymentsDataManagerServerTest, AreBnplIssuersSupported_LocaleIsEnUS) {
   EXPECT_TRUE(test_api(payments_data_manager()).AreBnplIssuersSupported());
 }
 
-// Tests that BNPL issuers are not supported for "es-US" app locales.
-TEST_P(PaymentsDataManagerServerTest, AreBnplIssuersSupported_LocaleIsEsUS) {
+// Tests that BNPL issuers are not supported for "es-US" app locales when
+// internationalization flags are all disabled.
+TEST_P(PaymentsDataManagerServerTest,
+       AreBnplIssuersSupported_InternationalizationDisabled) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitWithFeatures(
+      /*enabled_features=*/
+      {features::kAutofillEnableBuyNowPayLaterSyncing},
+      /*disabled_features=*/{
+          features::kAutofillEnableBnplAffirmInternationalization,
+          features::kAutofillEnableBnplKlarnaInternationalization});
   ResetPaymentsDataManager(UseSyncTransportMode(), "es-US", "US");
   EXPECT_FALSE(test_api(payments_data_manager()).AreBnplIssuersSupported());
 }
 
+// Tests that app locale and country checks in `AreBnplIssuersSupported` are
+// skipped when internationalization flags are enabled.
+TEST_P(
+    PaymentsDataManagerServerTest,
+    AreBnplIssuersSupported_LocaleIsEsUS_CountryIsCa_WithInternationalization) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitWithFeatures(
+      /*enabled_features=*/
+      {features::kAutofillEnableBuyNowPayLaterSyncing,
+       features::kAutofillEnableBnplAffirmInternationalization,
+       features::kAutofillEnableBnplKlarnaInternationalization},
+      /*disabled_features=*/{});
+  ResetPaymentsDataManager(UseSyncTransportMode(), "es-US", "CA");
+  EXPECT_TRUE(test_api(payments_data_manager()).AreBnplIssuersSupported());
+}
+
 // Tests that Buy-now-pay-later issuer getters does not return any issuers if
-// `experiment_country_code` is not "US".
+// `experiment_country_code` is not "US" when internationalization flags are all
+// disabled.
 TEST_P(PaymentsDataManagerServerTest,
        BnplIssuerGetters_AutofillBnplCountryNotSupported) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitWithFeatures(
+      /*enabled_features=*/
+      {features::kAutofillEnableBuyNowPayLaterSyncing},
+      /*disabled_features=*/{
+          features::kAutofillEnableBnplAffirmInternationalization,
+          features::kAutofillEnableBnplKlarnaInternationalization});
+
   test_api(payments_data_manager())
       .AddBnplIssuer(test::GetTestLinkedBnplIssuer());
   test_api(payments_data_manager())

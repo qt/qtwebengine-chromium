@@ -118,6 +118,8 @@ int CPSPrinterDriver::GetVertSize() const {
   return vert_size_;
 }
 
+void CPSPrinterDriver::Clear(uint32_t color) {}
+
 void CPSPrinterDriver::SaveState() {
   psrenderer_.SaveState();
 }

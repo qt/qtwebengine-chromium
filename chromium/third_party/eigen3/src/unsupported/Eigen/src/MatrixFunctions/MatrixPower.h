@@ -334,7 +334,7 @@ inline typename MatrixPowerAtomic<MatrixType>::RealScalar MatrixPowerAtomic<Matr
  *
  * This class is capable of computing real/complex matrices raised to
  * an arbitrary real power. Meanwhile, it saves the result of Schur
- * decomposition if an non-integral power has even been calculated.
+ * decomposition if a non-integral power has ever been calculated.
  * Therefore, if you want to compute multiple (>= 2) matrix powers
  * for the same matrix, using the class directly is more efficient than
  * calling MatrixBase::pow().

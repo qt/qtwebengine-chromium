@@ -17,7 +17,7 @@
 use alloc::boxed::Box;
 use core::{arch::asm, pin::Pin};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use goblin::{
     elf::{Elf, ProgramHeader, ProgramHeaders},
     elf64::program_header::{PF_W, PF_X, PT_LOAD},
@@ -25,8 +25,8 @@ use goblin::{
 use oak_restricted_kernel_interface::syscalls::{MmapFlags, MmapProtection};
 use self_cell::self_cell;
 use x86_64::{
-    structures::paging::{PageSize, Size2MiB},
     VirtAddr,
+    structures::paging::{PageSize, Size2MiB},
 };
 
 use crate::syscall::mmap::mmap;
@@ -53,16 +53,42 @@ pub struct ElfExecuteable {
     binary: Binary,
 }
 
+/// Checks the ELF invariant that a loadable segment's on-disk size does not
+/// exceed its in-memory size.
+///
+/// `load_segment` maps `p_memsz` bytes for the segment but copies `p_filesz`
+/// bytes into it. goblin accepts a segment with `p_filesz > p_memsz`, so
+/// without this check such a segment would copy past the mapped region.
+fn validate_load_segment(phdr: &ProgramHeader) -> Result<()> {
+    if phdr.p_filesz > phdr.p_memsz {
+        return Err(anyhow!(
+            "invalid ELF segment: p_filesz {} exceeds p_memsz {}",
+            phdr.p_filesz,
+            phdr.p_memsz
+        ));
+    }
+    Ok(())
+}
+
 impl ElfExecuteable {
     /// Attempts to parse the provided binary blob as an ELF file representing
     /// a Restricted Application.
     pub fn new(blob: Box<[u8]>) -> Result<Self> {
-        Ok(ElfExecuteable {
+        let elf_executeable = ElfExecuteable {
             binary: Binary::try_new(blob, |boxed| {
                 goblin::elf::Elf::parse(boxed)
                     .map_err(|err| anyhow!("failed to parse ELF file: {}", err))
             })?,
-        })
+        };
+        // The binary is untrusted: it arrives via the host-supplied ramdisk or the
+        // `create_process` syscall. Reject segments that violate the on-disk vs
+        // in-memory size invariant here, before any of them are mapped, so
+        // `load_segment` never writes past the memory it allocates for a segment.
+        for phdr in elf_executeable.program_headers().iter().filter(|&phdr| phdr.p_type == PT_LOAD)
+        {
+            validate_load_segment(phdr)?;
+        }
+        Ok(elf_executeable)
     }
 
     fn program_headers(&self) -> &ProgramHeaders {
@@ -107,8 +133,9 @@ impl ElfExecuteable {
         )
         .expect("failed to allocate user memory");
 
-        // Safety: we know the target memory is valid as we've just allocated it with
-        // mmap().
+        // Safety: we've just allocated the target memory with mmap(), and
+        // `ElfExecuteable::new` rejected any segment whose `p_filesz` exceeds its
+        // `p_memsz`, so copying `p_filesz` bytes stays within the mapped region.
         unsafe {
             core::ptr::copy_nonoverlapping(
                 self.slice(phdr.p_offset, phdr.p_filesz).as_ptr(),
@@ -177,12 +204,11 @@ impl Process {
         // Load the process's page table, so the application can be loaded into its
         // memory. Hold onto the previous PT, so we can revert to it once the
         // application has been mapped into the process pt.
-        let mut outer_prev_page_table = {
+        let outer_prev_page_table = {
             let pml4_frame = identify_pml4_frame(&pml4).context("could not get pml4 frame")?;
             // Safety: the new page table maintains the same mappings for kernel space.
             unsafe { crate::PAGE_TABLES.lock().replace(pml4_frame) }
                 .context("at this point there should be a previous root pt")?
-                .into_inner()
         };
 
         // Safety: caller ensured the application is a valid ELF file representing an
@@ -192,8 +218,7 @@ impl Process {
         // We've mapped the memory into the process page tables. Let's revert to the
         // previous page table.
         {
-            let mapped_prev_pt = outer_prev_page_table.inner().lock();
-            let prev_page_table = mapped_prev_pt.level_4_table();
+            let prev_page_table = outer_prev_page_table.level_4_table();
             let pml4_frame =
                 identify_pml4_frame(prev_page_table).context("could not get pml4 frame")?;
             // Safety: the new page table maintains the same mappings for kernel space.
@@ -209,17 +234,41 @@ impl Process {
     pub unsafe fn execute(&self) -> anyhow::Result<!> {
         let pml4_frame = identify_pml4_frame(&self.pml4).expect("could not get pml4 frame");
 
-        let pid = crate::syscall::GsData::register_process(pml4_frame)?;
-        crate::syscall::GsData::set_current_pid(pid)?;
+        let pid = unsafe { crate::syscall::GsData::register_process(pml4_frame)? };
+        unsafe {
+            crate::syscall::GsData::set_current_pid(pid)?;
+        }
 
         let entry = self.entry;
-        asm! {
-            "mov rsp, {}", // user stack
-            "sysretq",
-            in(reg) APPLICATION_STACK_VIRT_ADDR - 8,
-            in("rcx") entry.as_u64(), // initial RIP
-            in("r11") 0x202, // initial RFLAGS (interrupts enabled)
-            options(noreturn)
+        unsafe {
+            asm! {
+                "mov rsp, {}", // user stack
+                "sysretq",
+                in(reg) APPLICATION_STACK_VIRT_ADDR - 8,
+                in("rcx") entry.as_u64(), // initial RIP
+                in("r11") 0x202, // initial RFLAGS (interrupts enabled)
+                options(noreturn)
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn load_segment(p_filesz: u64, p_memsz: u64) -> ProgramHeader {
+        ProgramHeader { p_type: PT_LOAD, p_filesz, p_memsz, ..Default::default() }
+    }
+
+    #[test]
+    fn rejects_filesz_greater_than_memsz() {
+        assert!(validate_load_segment(&load_segment(0x2000, 0x1000)).is_err());
+    }
+
+    #[test]
+    fn accepts_filesz_within_memsz() {
+        assert!(validate_load_segment(&load_segment(0x1000, 0x1000)).is_ok());
+        assert!(validate_load_segment(&load_segment(0, 0x1000)).is_ok());
     }
 }

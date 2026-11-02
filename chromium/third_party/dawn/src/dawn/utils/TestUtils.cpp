@@ -33,10 +33,10 @@
 #include <thread>
 #include <vector>
 
-#include "src/dawn/common/Assert.h"
 #include "src/dawn/common/Math.h"
 #include "src/dawn/utils/TextureUtils.h"
 #include "src/dawn/utils/WGPUHelpers.h"
+#include "src/utils/assert.h"
 
 namespace dawn::utils {
 
@@ -198,6 +198,7 @@ uint32_t VertexFormatSize(wgpu::VertexFormat format) {
         case wgpu::VertexFormat::Uint32:
         case wgpu::VertexFormat::Sint32:
         case wgpu::VertexFormat::Unorm10_10_10_2:
+        case wgpu::VertexFormat::Snorm10_10_10_2:
         case wgpu::VertexFormat::Unorm8x4BGRA:
             return 4;
         case wgpu::VertexFormat::Uint16x4:

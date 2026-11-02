@@ -105,11 +105,20 @@ class VIEWS_EXPORT HWNDMessageHandler : public gfx::WindowImpl,
 
   ~HWNDMessageHandler() override;
 
+  base::WeakPtr<HWNDMessageHandler> GetWeakPtr() {
+    return msg_handler_weak_factory_.GetWeakPtr();
+  }
+
   virtual void Init(HWND parent, const gfx::Rect& bounds);
   virtual void InitModalType(ui::mojom::ModalType modal_type);
 
   virtual void Close();
   virtual void CloseNow();
+
+  void DestroyHandler();
+
+  // Delete `this` if `in_wnd_proc_depth_` is 0.
+  void DeleteIfStackUnwound();
 
   virtual gfx::Rect GetWindowBoundsInScreen() const;
   virtual gfx::Rect GetClientAreaBoundsInScreen() const;
@@ -169,6 +178,9 @@ class VIEWS_EXPORT HWNDMessageHandler : public gfx::WindowImpl,
 
   // Returns true if any HWndMessageHandler is in a native move/resize loop.
   static bool IsInNativeMoveResizeLoop();
+
+  // Returns true if any HWNDMessageHandler is in a native menu loop.
+  static bool IsInNativeMenuLoop();
 
   // Tells the HWND its client area has changed.
   virtual void SendFrameChanged();
@@ -275,13 +287,10 @@ class VIEWS_EXPORT HWNDMessageHandler : public gfx::WindowImpl,
   // Returns true if IsFrameSystemDrawn() and there's actually a frame to draw.
   bool HasSystemFrame() const;
 
-  // Allow WeakPtr use in subclasses.
-  base::WeakPtr<HWNDMessageHandler> GetWeakPtr() {
-    return msg_handler_weak_factory_.GetWeakPtr();
-  }
-
  private:
   friend class ::views::test::DesktopWindowTreeHostWinTestApi;
+
+  class ScopedWndProcDepth;
 
   using TouchIDs = std::set<DWORD>;
   enum class DwmFrameState { kOff, kOn };
@@ -807,8 +816,8 @@ class VIEWS_EXPORT HWNDMessageHandler : public gfx::WindowImpl,
   // glass. Defaults to false.
   bool dwm_transition_desired_;
 
-  // True if HandleWindowSizeChanging has been called in the delegate, but not
-  // HandleClientSizeChanged.
+  // True if a size-changing WM_WINDOWPOSCHANGING has been observed but the
+  // corresponding client size change hasn't been processed yet.
   bool sent_window_size_changing_;
 
   // This is used to keep track of whether a WM_WINDOWPOSCHANGED has
@@ -920,6 +929,15 @@ class VIEWS_EXPORT HWNDMessageHandler : public gfx::WindowImpl,
 
   base::ScopedObservation<ui::InputMethod, ui::InputMethodObserver>
       observation_{this};
+
+  bool delete_pending_ = false;
+
+  // Tracks how many instances of OnWndProc are on the stack.
+  int in_wnd_proc_depth_ = 0;
+
+  // Returns true if the message handler has been destroyed, and CHECKs that
+  // kDeferHWNDMessageHandlerDestruction is not enabled in that case.
+  static bool IsDestroyed(const base::WeakPtr<HWNDMessageHandler>& ref);
 
   // The WeakPtrFactories below (one inside the
   // CR_MSG_MAP_CLASS_DECLARATIONS macro and autohide_factory_) must

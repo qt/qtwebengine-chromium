@@ -11,17 +11,11 @@
 
 #include "base/observer_list.h"
 #include "base/time/time.h"
-#include "components/optimization_guide/core/delivery/test_model_info_builder.h"
 #include "components/passage_embeddings/core/passage_embeddings_types.h"
 
 namespace passage_embeddings {
 
 inline constexpr int64_t kEmbeddingsModelVersion = 1l;
-
-// Returns a model info builder preloaded with valid model info.
-optimization_guide::TestModelInfoBuilder GetBuilderWithValidModelInfo();
-
-////////////////////////////////////////////////////////////////////////////////
 
 // An Embedder that generates Embeddings asynchronously.
 class TestEmbedder : public Embedder {
@@ -37,12 +31,12 @@ class TestEmbedder : public Embedder {
   base::WeakPtr<Embedder> GetWeakPtr() override;
 
  protected:
-  void ReprioritizeTasks(PassagePriority priority,
-                         const std::set<TaskId>& tasks) override;
-  bool TryCancel(TaskId task_id) override;
+  void ReprioritizeJobs(PassagePriority priority,
+                        const std::set<uint64_t>& job_ids) override;
+  bool TryCancel(uint64_t job_id) override;
 
  private:
-  TaskId next_task_id_ = 1;
+  uint64_t next_job_id_ = 1;
   base::WeakPtrFactory<TestEmbedder> weak_ptr_factory_{this};
 };
 

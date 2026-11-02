@@ -302,6 +302,13 @@ typedef struct FPDF_LIBRARY_CONFIG_ {
   // corresponding font library is not included in the build will similarly fail
   // with an immediate crash.
   FPDF_FONT_BACKEND_TYPE m_FontLibraryType;
+
+  // Version 6 - Experimental.
+
+  // Boolean to specify whether the experimental PDF 2.0 /BrotliDecode filter
+  // is enabled. For setting the bool to true to have an effect, PDFium must be
+  // built with |PDF_ENABLE_BROTLI|.
+  FPDF_BOOL m_BrotliEnabled;
 } FPDF_LIBRARY_CONFIG;
 
 // Function: FPDF_InitLibraryWithConfig

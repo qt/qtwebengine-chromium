@@ -7,20 +7,20 @@ import("//third_party/jni_zero/jni_zero.gni")
 
 _jni_sources = [
   "android/java/src/org/chromium/chrome/browser/enterprise/util/DataProtectionBridge.java",
-  "android/java/src/org/chromium/chrome/browser/enterprise/util/EnterpriseInfo.java",
   "android/java/src/org/chromium/chrome/browser/enterprise/util/ManagedBrowserUtils.java",
 ]
 
 android_library("java") {
   srcjar_deps = [ ":jni_headers" ]
   sources = _jni_sources
-  sources += [ "android/java/src/org/chromium/chrome/browser/enterprise/util/EnterpriseInfoImpl.java" ]
 
   deps = [
     "//base:base_java",
     "//build/android:build_java",
     "//chrome/browser/flags:java",
     "//chrome/browser/profiles/android:java",
+    "//chrome/browser/tab:java",
+    "//components/policy/android:policy_java",
     "//content/public/android:content_java",
     "//third_party/androidx:androidx_annotation_annotation_java",
     "//third_party/jni_zero:jni_zero_java",
@@ -32,10 +32,7 @@ generate_jni("jni_headers") {
 }
 
 robolectric_library("junit") {
-  sources = [
-    "android/java/src/org/chromium/chrome/browser/enterprise/util/DataProtectionBridgeUnitTest.java",
-    "android/java/src/org/chromium/chrome/browser/enterprise/util/EnterpriseInfoImplTest.java",
-  ]
+  sources = [ "android/java/src/org/chromium/chrome/browser/enterprise/util/DataProtectionBridgeUnitTest.java" ]
 
   deps = [
     ":java",
@@ -43,19 +40,12 @@ robolectric_library("junit") {
     "//base:base_java_test_support",
     "//base:base_junit_test_support",
     "//chrome/browser/flags:java",
+    "//chrome/browser/profiles/android:java",
+    "//chrome/browser/tab:java",
     "//content/public/android:content_java",
     "//third_party/androidx:androidx_test_runner_java",
     "//third_party/jni_zero:jni_zero_java",
     "//third_party/junit",
     "//third_party/mockito:mockito_java",
-  ]
-}
-
-android_library("test_support_java") {
-  sources = [ "android/java/src/org/chromium/chrome/browser/enterprise/util/FakeEnterpriseInfo.java" ]
-  deps = [
-    ":java",
-    "//base:base_java",
-    "//content/public/android:content_main_dex_java",
   ]
 }

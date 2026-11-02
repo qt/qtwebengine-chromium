@@ -6,30 +6,36 @@ import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
+import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as EmulationModel from '../../models/emulation/emulation.js';
+import * as CrUXManager from '../crux-manager/crux-manager.js';
 
 import * as Spec from './web-vitals-injected/spec/spec.js';
+
+export const timelineEnableSoftNavigationsSettingDescriptor: Common.Settings.SettingDescriptor<boolean> = {
+  name: 'timeline-enable-soft-navigations',
+  type: Common.Settings.SettingType.BOOLEAN,
+  storageType: Common.Settings.SettingStorageType.SYNCED,
+  defaultValue: true,
+};
 
 const UIStrings = {
   /**
    * @description Warning text indicating that the Largest Contentful Paint (LCP) performance metric was affected by the user changing the simulated device.
    */
-  lcpEmulationWarning:
-      'Simulating a new device after the page loads can affect LCP. Reload the page after simulating a new device for accurate LCP data.',
+  lcpEmulationWarning: 'Simulating a device after the page loads can affect LCP. Reload the page for accurate LCP.',
   /**
    * @description Warning text indicating that the Largest Contentful Paint (LCP) performance metric was affected by the page loading in the background.
    */
-  lcpVisibilityWarning: 'LCP value may be inflated because the page started loading in the background.',
+  lcpVisibilityWarning: 'LCP may be inflated because the page started loading in the background.',
 } as const;
 
 const str_ = i18n.i18n.registerUIStrings('models/live-metrics/LiveMetrics.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 const LIVE_METRICS_WORLD_NAME = 'DevTools Performance Metrics';
-
-let liveMetricsInstance: LiveMetrics;
 
 class InjectedScript {
   static #injectedScript?: string;
@@ -47,6 +53,7 @@ export type InteractionMap = Map<InteractionId, Interaction>;
 
 export class LiveMetrics extends Common.ObjectWrapper.ObjectWrapper<EventTypes> implements SDK.TargetManager.Observer {
   #enabled = false;
+  #isCollectingMetrics = false;
   #target?: SDK.Target.Target;
   #scriptIdentifier?: Protocol.Page.ScriptIdentifier;
   #lastResetContextId?: Protocol.Runtime.ExecutionContextId;
@@ -56,44 +63,64 @@ export class LiveMetrics extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
   #interactions: InteractionMap = new Map();
   #interactionsByGroupId = new Map<Spec.InteractionEntryGroupId, Interaction[]>();
   #layoutShifts: LayoutShift[] = [];
+  #navigationType?: Spec.NavigationType;
   #lastEmulationChangeTime?: number;
   #mutex = new Common.Mutex.Mutex();
-  #deviceModeModel = EmulationModel.DeviceModeModel.DeviceModeModel.tryInstance();
+  readonly #targetManager: SDK.TargetManager.TargetManager;
+  readonly #deviceModeModel: EmulationModel.DeviceModeModel.DeviceModeModel|null;
+  readonly #settings: Common.Settings.Settings;
 
-  private constructor() {
+  constructor(targetManager: SDK.TargetManager.TargetManager, settings: Common.Settings.Settings,
+              deviceModeModel: EmulationModel.DeviceModeModel.DeviceModeModel|null) {
     super();
-    const targetManager = SDK.TargetManager.TargetManager.instance();
-    targetManager.observeTargets(this, {scoped: true});
-    // Listen for target info changes to detect prerender activation.
-    // Scoped observers don't receive events when a prerendered target becomes
-    // primary because setScopeTarget() isn't called during that transition.
-    targetManager.addEventListener(
-        SDK.TargetManager.Events.AVAILABLE_TARGETS_CHANGED, this.#onAvailableTargetsChanged, this);
+    this.#targetManager = targetManager;
+    this.#settings = settings;
+    this.#deviceModeModel = deviceModeModel;
+    this.#targetManager.observeTargets(this, {scoped: true});
+    this.#targetManager.addModelListener(SDK.ResourceTreeModel.ResourceTreeModel,
+                                         SDK.ResourceTreeModel.Events.PrimaryPageChanged, this.#onPrimaryPageChanged,
+                                         this);
+    this.#settings.resolve(timelineEnableSoftNavigationsSettingDescriptor)
+        .addChangeListener(this.#onSettingChanged, this);
   }
 
-  #onAvailableTargetsChanged(): void {
-    const primaryTarget = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
-    if (primaryTarget && primaryTarget !== this.#target) {
-      // Primary target changed (e.g., prerender activation). Switch to it.
+  #onPrimaryPageChanged(
+      event: Common.EventTarget.EventTargetEvent<
+          {frame: SDK.ResourceTreeModel.ResourceTreeFrame, type: SDK.ResourceTreeModel.PrimaryPageChangeType}>): void {
+    const primaryTarget = this.#targetManager.primaryPageTarget();
+    if (!primaryTarget) {
+      return;
+    }
+    if (primaryTarget !== this.#target || event.data.type === SDK.ResourceTreeModel.PrimaryPageChangeType.ACTIVATION) {
+      // Primary target changed or prerender activated. Switch to it and reset metrics.
+      this.#clearMetrics();
+      this.#sendStatusUpdate();
       void this.#switchToTarget(primaryTarget);
     }
   }
 
   async #switchToTarget(newTarget: SDK.Target.Target): Promise<void> {
     if (this.#target) {
-      await this.disable();
+      await this.#stopCollectingMetrics();
     }
     this.#target = newTarget;
-    await this.enable();
+    await this.#startCollectingMetrics();
   }
 
   static instance(opts: {forceNew?: boolean} = {forceNew: false}): LiveMetrics {
     const {forceNew} = opts;
-    if (!liveMetricsInstance || forceNew) {
-      liveMetricsInstance = new LiveMetrics();
+    if (!Root.DevToolsContext.globalInstance().has(LiveMetrics) || forceNew) {
+      Root.DevToolsContext.globalInstance().set(
+          LiveMetrics,
+          new LiveMetrics(SDK.TargetManager.TargetManager.instance(), Common.Settings.Settings.instance(),
+                          EmulationModel.DeviceModeModel.DeviceModeModel.tryInstance()));
     }
 
-    return liveMetricsInstance;
+    return Root.DevToolsContext.globalInstance().get(LiveMetrics);
+  }
+
+  get navigationType(): Spec.NavigationType|undefined {
+    return this.#navigationType;
   }
 
   get lcpValue(): LcpValue|undefined {
@@ -233,6 +260,7 @@ export class LiveMetrics extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
       inp: this.#inpValue,
       interactions: this.#interactions,
       layoutShifts: this.#layoutShifts,
+      navigationType: this.#navigationType,
     });
   }
 
@@ -242,6 +270,7 @@ export class LiveMetrics extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
     this.#inpValue = status.inp;
     this.#interactions = status.interactions;
     this.#layoutShifts = status.layoutShifts;
+    this.#navigationType = status.navigationType;
     this.#sendStatusUpdate();
   }
 
@@ -286,7 +315,7 @@ export class LiveMetrics extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
         const warnings: string[] = [];
         const lcpEvent: LcpValue = {
           value: webVitalsEvent.value,
-          phases: webVitalsEvent.phases,
+          subparts: webVitalsEvent.subparts,
           warnings,
         };
         if (webVitalsEvent.nodeIndex !== undefined) {
@@ -318,7 +347,10 @@ export class LiveMetrics extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
       case 'INP': {
         const inpEvent: InpValue = {
           value: webVitalsEvent.value,
-          phases: webVitalsEvent.phases,
+          subparts: webVitalsEvent.subparts,
+          // Use our own "interactionId" rather than the Chrome/web-vitals
+          // provided one, so we can group events with same start time
+          // (e.g. `pointerup` and `click` are one interaction log entry)
           interactionId: `interaction-${webVitalsEvent.entryGroupId}-${webVitalsEvent.startTime}`,
         };
         this.#inpValue = inpEvent;
@@ -329,18 +361,22 @@ export class LiveMetrics extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
             Platform.MapUtilities.getWithDefault(this.#interactionsByGroupId, webVitalsEvent.entryGroupId, () => []);
 
         // `nextPaintTime` uses the event duration which is rounded to the nearest 8ms. The best we can do
-        // is check if the `nextPaintTime`s are within 8ms.
+        // is check if the `nextPaintTime`s are within 8ms. Exclude undefined/null/0 nextPaintTimes.
         // https://developer.mozilla.org/en-US/docs/Web/API/PerformanceEntry/duration#event
-        let interaction = groupInteractions.find(
-            interaction => Math.abs(interaction.nextPaintTime - webVitalsEvent.nextPaintTime) < 8);
+        let interaction =
+            groupInteractions.find(interaction => interaction.nextPaintTime && webVitalsEvent.nextPaintTime &&
+                                       Math.abs(interaction.nextPaintTime - webVitalsEvent.nextPaintTime) < 8);
 
         if (!interaction) {
           interaction = {
+            // Use our own "interactionId" rather than the Chrome/web-vitals
+            // provided one, so we can group events with same start time
+            // (e.g. `pointerup` and `click` are one interaction log entry)
             interactionId: `interaction-${webVitalsEvent.entryGroupId}-${webVitalsEvent.startTime}`,
             interactionType: webVitalsEvent.interactionType,
             duration: webVitalsEvent.duration,
             eventNames: [],
-            phases: webVitalsEvent.phases,
+            subparts: webVitalsEvent.subparts,
             startTime: webVitalsEvent.startTime,
             nextPaintTime: webVitalsEvent.nextPaintTime,
             longAnimationFrameTimings: webVitalsEvent.longAnimationFrameEntries,
@@ -381,16 +417,27 @@ export class LiveMetrics extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
         break;
       }
       case 'reset': {
-        this.#lcpValue = undefined;
-        this.#clsValue = undefined;
-        this.#inpValue = undefined;
-        this.#interactions.clear();
-        this.#layoutShifts = [];
+        this.#clearMetrics();
+        this.#navigationType = webVitalsEvent.navigationType;
+        if (webVitalsEvent.url) {
+          CrUXManager.CrUXManager.instance().setMainDocumentURL(webVitalsEvent.url);
+          void CrUXManager.CrUXManager.instance().refresh();
+        }
         break;
       }
     }
 
     this.#sendStatusUpdate();
+  }
+
+  #clearMetrics(): void {
+    this.#lcpValue = undefined;
+    this.#clsValue = undefined;
+    this.#inpValue = undefined;
+    this.#interactions.clear();
+    this.#interactionsByGroupId.clear();
+    this.#layoutShifts = [];
+    this.#navigationType = undefined;
   }
 
   #isPrimaryFrameExecutionContext(executionContextId: Protocol.Runtime.ExecutionContextId): boolean {
@@ -460,6 +507,7 @@ export class LiveMetrics extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
 
   clearInteractions(): void {
     this.#interactions.clear();
+    this.#interactionsByGroupId.clear();
     this.#sendStatusUpdate();
   }
 
@@ -470,11 +518,11 @@ export class LiveMetrics extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
 
   async targetAdded(target: SDK.Target.Target): Promise<void> {
     // Scoped observers can also receive events for OOPIFs and workers.
-    if (target !== SDK.TargetManager.TargetManager.instance().primaryPageTarget()) {
+    if (target !== this.#targetManager.primaryPageTarget()) {
       return;
     }
     this.#target = target;
-    await this.enable();
+    await this.#startCollectingMetrics();
   }
 
   async targetRemoved(target: SDK.Target.Target): Promise<void> {
@@ -482,11 +530,68 @@ export class LiveMetrics extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
     if (target !== this.#target) {
       return;
     }
-    await this.disable();
+    await this.#stopCollectingMetrics();
     this.#target = undefined;
   }
 
+  async #injectScript(): Promise<void> {
+    // Extra check in case the target was removed while we were initializing.
+    // It's possible to be halfway-through enabling when the target is removed
+    // eg try loading 'devtools://devtools/bundled/devtools_app.html?ws=127.0.0.1:99/blah'
+    if (!this.#target) {
+      return;
+    }
+
+    // If DevTools is closed and reopened, the live metrics context from the previous
+    // session will persist. We should ensure any old live metrics contexts are killed
+    // before starting a new one.
+    await this.#killAllLiveMetricContexts();
+
+    // Remove any old instances of the script
+    if (this.#scriptIdentifier) {
+      await this.#target.pageAgent().invoke_removeScriptToEvaluateOnNewDocument({
+        identifier: this.#scriptIdentifier,
+      });
+    }
+
+    const softNavsSettingValue = this.#settings.resolve(timelineEnableSoftNavigationsSettingDescriptor).get();
+    const source = `window.devToolsReportSoftNavs = ${softNavsSettingValue};\n` + await InjectedScript.get();
+
+    // Inject the script
+    const {identifier} = await this.#target.pageAgent().invoke_addScriptToEvaluateOnNewDocument({
+      source,
+      worldName: LIVE_METRICS_WORLD_NAME,
+      runImmediately: true,
+    });
+    this.#scriptIdentifier = identifier;
+  }
+
+  async #onSettingChanged(): Promise<void> {
+    if (!this.#target || !this.#enabled) {
+      return;
+    }
+    await this.#injectScript();
+  }
+
   async enable(): Promise<void> {
+    if (this.#enabled) {
+      return;
+    }
+    this.#enabled = true;
+    if (this.#target) {
+      await this.#startCollectingMetrics();
+    }
+  }
+
+  async disable(): Promise<void> {
+    if (!this.#enabled) {
+      return;
+    }
+    this.#enabled = false;
+    await this.#stopCollectingMetrics();
+  }
+
+  async #startCollectingMetrics(): Promise<void> {
     if (Host.InspectorFrontendHost.isUnderTest()) {
       // Enabling this impacts a lot of layout tests; we will work on fixing
       // them but for now it is easier to not run this page in layout tests.
@@ -494,7 +599,7 @@ export class LiveMetrics extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
       return;
     }
 
-    if (!this.#target || this.#enabled) {
+    if (!this.#target || !this.#enabled || this.#isCollectingMetrics) {
       return;
     }
 
@@ -522,34 +627,16 @@ export class LiveMetrics extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
       executionContextName: LIVE_METRICS_WORLD_NAME,
     });
 
-    // If DevTools is closed and reopened, the live metrics context from the previous
-    // session will persist. We should ensure any old live metrics contexts are killed
-    // before starting a new one.
-    await this.#killAllLiveMetricContexts();
-
-    const source = await InjectedScript.get();
-
-    // Extra check in case the target was removed while we were initializing.
-    // It's possible to be halfway-through enabling when the target is removed
-    // eg try loading 'devtools://devtools/bundled/devtools_app.html?ws=127.0.0.1:99/blah'
-    if (!this.#target) {
-      return;
-    }
-    const {identifier} = await this.#target?.pageAgent().invoke_addScriptToEvaluateOnNewDocument({
-      source,
-      worldName: LIVE_METRICS_WORLD_NAME,
-      runImmediately: true,
-    });
-    this.#scriptIdentifier = identifier;
+    await this.#injectScript();
 
     this.#deviceModeModel?.addEventListener(
         EmulationModel.DeviceModeModel.Events.UPDATED, this.#onEmulationChanged, this);
 
-    this.#enabled = true;
+    this.#isCollectingMetrics = true;
   }
 
-  async disable(): Promise<void> {
-    if (!this.#target || !this.#enabled) {
+  async #stopCollectingMetrics(): Promise<void> {
+    if (!this.#target || !this.#isCollectingMetrics) {
       return;
     }
 
@@ -583,7 +670,7 @@ export class LiveMetrics extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
     this.#deviceModeModel?.removeEventListener(
         EmulationModel.DeviceModeModel.Events.UPDATED, this.#onEmulationChanged, this);
 
-    this.#enabled = false;
+    this.#isCollectingMetrics = false;
   }
 }
 
@@ -591,6 +678,9 @@ export const enum Events {
   STATUS = 'status',
 }
 
+// Use our own "interactionId" rather than the Chrome/web-vitals
+// provided one, so we can group events with same start time
+// (e.g. `pointerup` and `click` are one interaction log entry)
 export type InteractionId = `interaction-${number}-${number}`;
 
 export interface MetricValue {
@@ -599,12 +689,12 @@ export interface MetricValue {
 }
 
 export interface LcpValue extends MetricValue {
-  phases: Spec.LcpPhases;
+  subparts: Spec.LcpSubparts;
   nodeRef?: SDK.DOMModel.DOMNode;
 }
 
 export interface InpValue extends MetricValue {
-  phases: Spec.InpPhases;
+  subparts: Spec.InpSubparts;
   interactionId: InteractionId;
 }
 
@@ -618,14 +708,21 @@ export interface LayoutShift {
   affectedNodeRefs: SDK.DOMModel.DOMNode[];
 }
 
+/*
+ * Note web-vitals can emit "fake" INP events without an interactionType nor a
+ * nextPaintTime for small interactions after soft navs or bfcache restores.
+ * For hardNavs these would have a FID event, but for soft navs or bfcache
+ * restores there is no FID equivalent (it's only emitted once per page)
+ * so dummy events without full details are used.
+ */
 export interface Interaction {
   interactionId: InteractionId;
-  interactionType: Spec.InteractionEntryEvent['interactionType'];
+  interactionType?: Spec.InteractionEntryEvent['interactionType'];
   eventNames: string[];
   duration: number;
   startTime: number;
-  nextPaintTime: number;
-  phases: Spec.InpPhases;
+  nextPaintTime?: number;
+  subparts: Spec.InpSubparts;
   longAnimationFrameTimings: Spec.PerformanceLongAnimationFrameTimingJSON[];
   nodeRef?: SDK.DOMModel.DOMNode;
 }
@@ -636,6 +733,7 @@ export interface StatusEvent {
   inp?: InpValue;
   interactions: InteractionMap;
   layoutShifts: LayoutShift[];
+  navigationType?: Spec.NavigationType;
 }
 
 interface EventTypes {

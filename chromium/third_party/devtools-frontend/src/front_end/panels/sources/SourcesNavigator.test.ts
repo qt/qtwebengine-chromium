@@ -6,66 +6,79 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as Breakpoints from '../../models/breakpoints/breakpoints.js';
 import * as Persistence from '../../models/persistence/persistence.js';
 import * as Workspace from '../../models/workspace/workspace.js';
-import {createTarget} from '../../testing/EnvironmentHelpers.js';
+import {deinitializeGlobalVars} from '../../testing/EnvironmentHelpers.js';
+import {setupLocaleHooks} from '../../testing/LocaleHelpers.js';
+import {dispatchEvent} from '../../testing/MockConnection.js';
+import {MockDebuggerBackend} from '../../testing/MockScopeChain.js';
+import {setupRuntimeHooks} from '../../testing/RuntimeHelpers.js';
 import {
-  describeWithMockConnection,
-  dispatchEvent,
-  setMockConnectionResponseHandler,
-} from '../../testing/MockConnection.js';
-import {MockProtocolBackend} from '../../testing/MockScopeChain.js';
-import {setMockResourceTree} from '../../testing/ResourceTreeHelpers.js';
-import {createContentProviderUISourceCodes} from '../../testing/UISourceCodeHelpers.js';
+  createContentProviderUISourceCodes,
+  createFileSystemUISourceCode,
+} from '../../testing/UISourceCodeHelpers.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import * as Sources from './sources.js';
 
 const {urlString} = Platform.DevToolsPath;
 
-describeWithMockConnection('NetworkNavigatorView', () => {
+describe('NetworkNavigatorView', () => {
+  setupRuntimeHooks();
+  setupLocaleHooks();
   let workspace: Workspace.Workspace.WorkspaceImpl;
+  let backend: MockDebuggerBackend;
+  let networkProjectManager: Bindings.NetworkProject.NetworkProjectManager;
+
   beforeEach(async () => {
-    setMockResourceTree(false);
+    backend = new MockDebuggerBackend();
+    workspace = backend.universe.workspace;
+    const targetManager = backend.universe.targetManager;
+    const debuggerWorkspaceBinding = backend.universe.debuggerWorkspaceBinding;
+
     const actionRegistryInstance = UI.ActionRegistry.ActionRegistry.instance({forceNew: true});
-    workspace = Workspace.Workspace.WorkspaceImpl.instance();
-    const targetManager = SDK.TargetManager.TargetManager.instance();
-    const resourceMapping = new Bindings.ResourceMapping.ResourceMapping(targetManager, workspace);
-    const ignoreListManager = Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
-    const debuggerWorkspaceBinding = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
-      forceNew: true,
-      resourceMapping,
-      targetManager,
-      ignoreListManager,
-      workspace,
-    });
+
+    sinon.stub(Workspace.Workspace.WorkspaceImpl, 'instance').returns(workspace);
+    sinon.stub(SDK.TargetManager.TargetManager, 'instance').returns(targetManager);
+    sinon.stub(Workspace.IgnoreListManager.IgnoreListManager, 'instance').returns(backend.universe.ignoreListManager);
+    sinon.stub(Common.Settings.Settings, 'instance').returns(backend.universe.settings);
+
     const breakpointManager = Breakpoints.BreakpointManager.BreakpointManager.instance({
       forceNew: true,
       targetManager,
       workspace,
       debuggerWorkspaceBinding,
-      settings: Common.Settings.Settings.instance()
+      settings: backend.universe.settings,
     });
     Persistence.Persistence.PersistenceImpl.instance({forceNew: true, workspace, breakpointManager});
     Persistence.NetworkPersistenceManager.NetworkPersistenceManager.instance({forceNew: true, workspace});
     UI.ShortcutRegistry.ShortcutRegistry.instance({forceNew: true, actionRegistry: actionRegistryInstance});
+    networkProjectManager = new Bindings.NetworkProject.NetworkProjectManager();
+  });
+
+  afterEach(async () => {
+    sinon.restore();
+    await deinitializeGlobalVars();
   });
 
   describe('reveals main target', () => {
+    let tabTarget: SDK.Target.Target;
     let target: SDK.Target.Target;
     let project: Bindings.ContentProviderBasedProject.ContentProviderBasedProject;
 
     beforeEach(async () => {
-      const tabTarget = createTarget({type: SDK.Target.Type.TAB});
-      createTarget({parentTarget: tabTarget, subtype: 'prerender'});
-      target = createTarget({parentTarget: tabTarget});
+      tabTarget = backend.createTarget({type: SDK.Target.Type.TAB});
+      backend.createTarget({parentTarget: tabTarget, subtype: 'prerender'});
+      target = backend.createTarget({parentTarget: tabTarget});
       ({project} = createContentProviderUISourceCodes({
          items: [
            {url: urlString`http://example.com/`, mimeType: 'text/html'},
@@ -94,7 +107,8 @@ describeWithMockConnection('NetworkNavigatorView', () => {
         target,
       });
 
-      const navigatorView = Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true});
+      const navigatorView =
+          Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true, networkProjectManager});
       const rootElement = navigatorView.scriptsTree.rootElement();
       const folder = rootElement.firstChild();
       const file = folder?.firstChild();
@@ -123,7 +137,8 @@ describeWithMockConnection('NetworkNavigatorView', () => {
         target,
       });
 
-      const navigatorView = Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true});
+      const navigatorView =
+          Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true, networkProjectManager});
       const rootElement = navigatorView.scriptsTree.rootElement();
       assert.lengthOf(rootElement.children(), 0);
 
@@ -131,7 +146,8 @@ describeWithMockConnection('NetworkNavigatorView', () => {
     });
 
     it('reveals main frame target on navigation', async () => {
-      const navigatorView = Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true});
+      const navigatorView =
+          Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true, networkProjectManager});
 
       const rootElement = navigatorView.scriptsTree.rootElement();
       assert.strictEqual(rootElement.childCount(), 1);
@@ -147,7 +163,8 @@ describeWithMockConnection('NetworkNavigatorView', () => {
 
     it('reveals main frame target when added', async () => {
       target.setInspectedURL(urlString`http://example.com/`);
-      const navigatorView = Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true});
+      const navigatorView =
+          Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true, networkProjectManager});
 
       const rootElement = navigatorView.scriptsTree.rootElement();
       assert.strictEqual(rootElement.childCount(), 1);
@@ -158,7 +175,7 @@ describeWithMockConnection('NetworkNavigatorView', () => {
   });
 
   it('updates in scope change', () => {
-    const target = createTarget();
+    const target = backend.createTarget();
     const {project} = createContentProviderUISourceCodes({
       items: [
         {url: urlString`http://example.com/`, mimeType: 'text/html'},
@@ -169,7 +186,7 @@ describeWithMockConnection('NetworkNavigatorView', () => {
       projectType: Workspace.Workspace.projectTypes.Network,
       target,
     });
-    const anotherTarget = createTarget();
+    const anotherTarget = backend.createTarget();
     const {project: anotherProject} = createContentProviderUISourceCodes({
       items: [
         {url: urlString`http://example.org/`, mimeType: 'text/html'},
@@ -181,7 +198,8 @@ describeWithMockConnection('NetworkNavigatorView', () => {
     });
 
     SDK.TargetManager.TargetManager.instance().setScopeTarget(target);
-    const navigatorView = Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true});
+    const navigatorView =
+        Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true, networkProjectManager});
 
     let rootElement = navigatorView.scriptsTree.rootElement();
     assert.strictEqual(rootElement.childCount(), 1);
@@ -197,13 +215,15 @@ describeWithMockConnection('NetworkNavigatorView', () => {
 
     project.removeProject();
     anotherProject.removeProject();
+    anotherTarget.dispose('test');
+    target.dispose('test');
   });
 
   describe('removing source codes selection throttling', () => {
     let target: SDK.Target.Target;
 
     beforeEach(() => {
-      target = createTarget();
+      target = backend.createTarget();
     });
 
     it('selects just once when removing multiple sibling source codes', () => {
@@ -224,7 +244,8 @@ describeWithMockConnection('NetworkNavigatorView', () => {
         target,
       });
 
-      const navigatorView = Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true});
+      const navigatorView =
+          Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true, networkProjectManager});
       const rootElement = navigatorView.scriptsTree.rootElement();
       const exampleComNode = rootElement.firstChild();
       assert.exists(exampleComNode);
@@ -261,7 +282,8 @@ describeWithMockConnection('NetworkNavigatorView', () => {
         target,
       });
 
-      const navigatorView = Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true});
+      const navigatorView =
+          Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true, networkProjectManager});
       const rootElement = navigatorView.scriptsTree.rootElement();
       const nodeExampleCom = rootElement.firstChild();
       assert.exists(nodeExampleCom);
@@ -310,7 +332,8 @@ describeWithMockConnection('NetworkNavigatorView', () => {
         target,
       });
 
-      const navigatorView = Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true});
+      const navigatorView =
+          Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true, networkProjectManager});
       const rootElement = navigatorView.scriptsTree.rootElement();
       const exampleComNode = rootElement.firstChild();
       assert.exists(exampleComNode);
@@ -365,7 +388,8 @@ describeWithMockConnection('NetworkNavigatorView', () => {
         target,
       });
 
-      const navigatorView = Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true});
+      const navigatorView =
+          Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true, networkProjectManager});
       const rootElement = navigatorView.scriptsTree.rootElement();
       const exampleComNode = rootElement.firstChild();
       assert.exists(exampleComNode);
@@ -406,8 +430,6 @@ describeWithMockConnection('NetworkNavigatorView', () => {
     });
 
     it('selects just once when excution-context-destroyed event removes sibling source codes', async () => {
-      const backend = new MockProtocolBackend();
-
       dispatchEvent(target, 'Runtime.executionContextCreated', {
         context: {
           id: 2 as Protocol.Runtime.ExecutionContextId,
@@ -426,7 +448,8 @@ describeWithMockConnection('NetworkNavigatorView', () => {
           target, {content: '42', url: 'http://example.com/b.js', executionContextId: 2, hasSourceURL: false}, null);
       await backend.addScript(target, {content: '42', url: 'http://example.com/c.js', hasSourceURL: false}, null);
 
-      const navigatorView = Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true});
+      const navigatorView =
+          Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true, networkProjectManager});
       const rootElement = navigatorView.scriptsTree.rootElement();
       const exampleComNode = rootElement.firstChild();
       assert.exists(exampleComNode);
@@ -461,15 +484,15 @@ describeWithMockConnection('NetworkNavigatorView', () => {
     let resolveFn: (() => void)|null = null;
 
     beforeEach(() => {
-      target = createTarget();
+      backend.cdpConnection.setSuccessHandler('Debugger.setBlackboxPatterns', () => ({}));
+      backend.cdpConnection.setSuccessHandler('Debugger.setBlackboxExecutionContexts', () => ({}));
+      target = backend.createTarget();
       Workspace.IgnoreListManager.IgnoreListManager.instance().addChangeListener(() => {
         if (resolveFn) {
           resolveFn();
           resolveFn = null;
         }
       });
-      setMockConnectionResponseHandler('Debugger.setBlackboxPatterns', () => ({}));
-      setMockConnectionResponseHandler('Debugger.setBlackboxExecutionContexts', () => ({}));
     });
 
     const updatePatternSetting = async (settingValue: Common.Settings.RegExpSettingItem[]) => {
@@ -509,7 +532,8 @@ describeWithMockConnection('NetworkNavigatorView', () => {
         target,
       });
 
-      const navigatorView = Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true});
+      const navigatorView =
+          Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true, networkProjectManager});
       const rootElement = navigatorView.scriptsTree.rootElement();
       const nodeExampleCom = rootElement.firstChild();
       const ignoredFolder = nodeExampleCom!.childAt(0);
@@ -518,6 +542,7 @@ describeWithMockConnection('NetworkNavigatorView', () => {
       assert.strictEqual(mixedFolder!.tooltip, 'mixed');
       assert.strictEqual(ignoredFolder!.tooltip, 'ignored (ignore listed)');
 
+      await disableIgnoreListing();
       project.removeProject();
     });
 
@@ -545,7 +570,8 @@ describeWithMockConnection('NetworkNavigatorView', () => {
         target,
       });
 
-      const navigatorView = Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true});
+      const navigatorView =
+          Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true, networkProjectManager});
       const rootElement = navigatorView.scriptsTree.rootElement();
       const nodeExampleCom = rootElement.firstChild();
       const ignoredFolder = nodeExampleCom!.childAt(0);
@@ -588,7 +614,8 @@ describeWithMockConnection('NetworkNavigatorView', () => {
         target,
       });
 
-      const navigatorView = Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true});
+      const navigatorView =
+          Sources.SourcesNavigator.NetworkNavigatorView.instance({forceNew: true, networkProjectManager});
       const rootElement = navigatorView.scriptsTree.rootElement();
       const nodeExampleCom = rootElement.firstChild();
       const ignoredFolder = nodeExampleCom!.childAt(0);
@@ -616,7 +643,135 @@ describeWithMockConnection('NetworkNavigatorView', () => {
       assert.strictEqual(mixedFolder!.tooltip, 'mixed (ignore listed)');
       assert.strictEqual(ignoredFolder!.tooltip, 'ignored (ignore listed)');
 
+      await disableIgnoreListing();
       project.removeProject();
     });
+  });
+});
+
+describe('FilesNavigatorView', () => {
+  setupRuntimeHooks();
+  setupLocaleHooks();
+
+  let workspace: Workspace.Workspace.WorkspaceImpl;
+  let backend: MockDebuggerBackend;
+  let networkProjectManager: Bindings.NetworkProject.NetworkProjectManager;
+
+  beforeEach(() => {
+    backend = new MockDebuggerBackend();
+    workspace = backend.universe.workspace;
+    const targetManager = backend.universe.targetManager;
+
+    sinon.stub(Workspace.Workspace.WorkspaceImpl, 'instance').returns(workspace);
+    sinon.stub(SDK.TargetManager.TargetManager, 'instance').returns(targetManager);
+    sinon.stub(Workspace.IgnoreListManager.IgnoreListManager, 'instance').returns(backend.universe.ignoreListManager);
+    sinon.stub(Common.Settings.Settings, 'instance').returns(backend.universe.settings);
+
+    const debuggerWorkspaceBinding = backend.universe.debuggerWorkspaceBinding;
+    const breakpointManager = Breakpoints.BreakpointManager.BreakpointManager.instance({
+      forceNew: true,
+      targetManager,
+      workspace,
+      debuggerWorkspaceBinding,
+      settings: backend.universe.settings,
+    });
+    Persistence.Persistence.PersistenceImpl.instance({forceNew: true, workspace, breakpointManager});
+    Persistence.NetworkPersistenceManager.NetworkPersistenceManager.instance({forceNew: true, workspace});
+
+    const automaticFileSystemManager =
+        sinon.createStubInstance(Persistence.AutomaticFileSystemManager.AutomaticFileSystemManager);
+    sinon.stub(Persistence.AutomaticFileSystemManager.AutomaticFileSystemManager, 'instance')
+        .returns(automaticFileSystemManager);
+
+    networkProjectManager = new Bindings.NetworkProject.NetworkProjectManager();
+  });
+
+  afterEach(async () => {
+    sinon.restore();
+    await deinitializeGlobalVars();
+  });
+
+  it('shows unique names for file system UISourceCodes', async () => {
+    const {project: project1} = createFileSystemUISourceCode({
+      url: urlString`file:///home/workspace/good/foo/bar/1.js`,
+      mimeType: 'application/javascript',
+      fileSystemPath: 'file:///home/workspace/good/foo/bar',
+      universe: backend.universe,
+    });
+    const {project: project2} = createFileSystemUISourceCode({
+      url: urlString`file:///home/workspace/bad/foo/bar/2.js`,
+      mimeType: 'application/javascript',
+      fileSystemPath: 'file:///home/workspace/bad/foo/bar',
+      universe: backend.universe,
+    });
+    const {project: project3} = createFileSystemUISourceCode({
+      url: urlString`file:///home/workspace/ugly/bar/3.js`,
+      mimeType: 'application/javascript',
+      fileSystemPath: 'file:///home/workspace/ugly/bar',
+      universe: backend.universe,
+    });
+
+    const navigatorView = new Sources.SourcesNavigator.FilesNavigatorView(networkProjectManager);
+
+    const rootElement = navigatorView.scriptsTree.rootElement();
+    const children = rootElement.children();
+    assert.lengthOf(children, 3);
+    const expectedTitles = ['bad/foo/bar', 'good/foo/bar', 'ugly/bar'];
+    assert.deepEqual(children.map((c: UI.TreeOutline.TreeElement) => c.title).sort(), expectedTitles);
+
+    const badProjectNode = children.find((c: UI.TreeOutline.TreeElement) => c.title === 'bad/foo/bar');
+    assert.strictEqual(badProjectNode?.childCount(), 1);
+    assert.strictEqual(badProjectNode?.childAt(0)?.title, '2.js');
+
+    const goodProjectNode = children.find((c: UI.TreeOutline.TreeElement) => c.title === 'good/foo/bar');
+    assert.strictEqual(goodProjectNode?.childCount(), 1);
+    assert.strictEqual(goodProjectNode?.childAt(0)?.title, '1.js');
+
+    const uglyProjectNode = children.find((c: UI.TreeOutline.TreeElement) => c.title === 'ugly/bar');
+    assert.strictEqual(uglyProjectNode?.childCount(), 1);
+    assert.strictEqual(uglyProjectNode?.childAt(0)?.title, '3.js');
+
+    project1.removeProject();
+    project2.removeProject();
+    project3.removeProject();
+  });
+
+  it('supports making a copy of a file', async () => {
+    const {uiSourceCode: originalUISourceCode, project} = createFileSystemUISourceCode({
+      url: urlString`file:///home/workspace/script.js`,
+      mimeType: 'application/javascript',
+      content: 'testme',
+      fileSystemPath: 'file:///home/workspace',
+      universe: backend.universe,
+    });
+
+    const navigatorView = new Sources.SourcesNavigator.FilesNavigatorView(networkProjectManager);
+
+    // Stub createFile on the platform file system to simulate successful creation.
+    const createFileStub = sinon.stub(project.fileSystem(), 'createFile');
+    createFileStub.callsFake((path, name) => {
+      const newFileName = name || 'NewFile';
+      const relativePath = path ? path + '/' + newFileName : newFileName;
+      return Promise.resolve(relativePath as Platform.DevToolsPath.EncodedPathString);
+    });
+
+    // Stub rename to avoid UI prompts.
+    sinon.stub(navigatorView, 'rename');
+
+    await navigatorView.create(project, '' as Platform.DevToolsPath.EncodedPathString, originalUISourceCode);
+
+    // Verify that the new file was created in the project.
+    const newFileUrl = urlString`file:///home/workspace/NewFile`;
+    const newUISourceCode = project.uiSourceCodeForURL(newFileUrl);
+    assert.exists(newUISourceCode);
+
+    // Verify content was copied.
+    const contentData = await newUISourceCode.requestContentData();
+    if (TextUtils.ContentData.ContentData.isError(contentData)) {
+      throw new Error('Content data is an error: ' + contentData.error);
+    }
+    assert.strictEqual(contentData.text, 'testme');
+
+    project.removeProject();
   });
 });

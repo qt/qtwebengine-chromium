@@ -8,6 +8,7 @@
 #include <string_view>
 
 #include "base/compiler_specific.h"
+#include "base/containers/span.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -1092,6 +1093,17 @@ void GeneratedCodeCache::CollectStatisticsForTest(
     const GURL& origin_lock,
     GeneratedCodeCache::CacheEntryStatus status) {
   CollectStatistics(resource_url, origin_lock, status);
+}
+
+void GeneratedCodeCache::ShutdownForTesting(base::OnceClosure callback) {
+  weak_ptr_factory_.InvalidateWeakPtrs();
+  while (!pending_ops_.empty()) {
+    pending_ops_.pop();
+  }
+  active_entries_map_.clear();
+  backend_.reset();
+  disk_cache::WaitForBackendCleanupForTesting(path_,  // IN-TEST
+                                              std::move(callback));
 }
 
 }  // namespace content

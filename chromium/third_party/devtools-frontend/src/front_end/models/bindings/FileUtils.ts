@@ -4,7 +4,7 @@
 
 import * as Common from '../../core/common/common.js';
 import type * as Platform from '../../core/platform/platform.js';
-import * as TextUtils from '../text_utils/text_utils.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as Workspace from '../workspace/workspace.js';
 
 export interface ChunkedReader {
@@ -170,10 +170,12 @@ export class ChunkedFileReader implements ChunkedReader {
 }
 
 export class FileOutputStream implements Common.StringOutputStream.OutputStream {
+  readonly #fileManager: Workspace.FileManager.FileManager;
   #writeCallbacks: Array<() => void>;
   #fileName!: Platform.DevToolsPath.RawPathString|Platform.DevToolsPath.UrlString;
   #closed?: boolean;
-  constructor() {
+  constructor(fileManager: Workspace.FileManager.FileManager) {
+    this.#fileManager = fileManager;
     this.#writeCallbacks = [];
   }
 
@@ -181,11 +183,10 @@ export class FileOutputStream implements Common.StringOutputStream.OutputStream 
     this.#closed = false;
     this.#writeCallbacks = [];
     this.#fileName = fileName;
-    const saveResponse = await Workspace.FileManager.FileManager.instance().save(
-        this.#fileName, TextUtils.ContentData.EMPTY_TEXT_CONTENT_DATA, /* forceSaveAs=*/ true);
+    const saveResponse = await this.#fileManager.save(this.#fileName, TextUtils.ContentData.EMPTY_TEXT_CONTENT_DATA,
+                                                      /* forceSaveAs=*/ true);
     if (saveResponse) {
-      Workspace.FileManager.FileManager.instance().addEventListener(
-          Workspace.FileManager.Events.APPENDED_TO_URL, this.onAppendDone, this);
+      this.#fileManager.addEventListener(Workspace.FileManager.Events.APPENDED_TO_URL, this.onAppendDone, this);
     }
     return Boolean(saveResponse);
   }
@@ -193,7 +194,7 @@ export class FileOutputStream implements Common.StringOutputStream.OutputStream 
   write(data: string): Promise<void> {
     return new Promise(resolve => {
       this.#writeCallbacks.push(resolve);
-      Workspace.FileManager.FileManager.instance().append(this.#fileName, data);
+      this.#fileManager.append(this.#fileName, data);
     });
   }
 
@@ -202,9 +203,8 @@ export class FileOutputStream implements Common.StringOutputStream.OutputStream 
     if (this.#writeCallbacks.length) {
       return;
     }
-    Workspace.FileManager.FileManager.instance().removeEventListener(
-        Workspace.FileManager.Events.APPENDED_TO_URL, this.onAppendDone, this);
-    Workspace.FileManager.FileManager.instance().close(this.#fileName);
+    this.#fileManager.removeEventListener(Workspace.FileManager.Events.APPENDED_TO_URL, this.onAppendDone, this);
+    this.#fileManager.close(this.#fileName);
   }
 
   private onAppendDone(event: Common.EventTarget.EventTargetEvent<string>): void {
@@ -221,8 +221,7 @@ export class FileOutputStream implements Common.StringOutputStream.OutputStream 
     if (!this.#closed) {
       return;
     }
-    Workspace.FileManager.FileManager.instance().removeEventListener(
-        Workspace.FileManager.Events.APPENDED_TO_URL, this.onAppendDone, this);
-    Workspace.FileManager.FileManager.instance().close(this.#fileName);
+    this.#fileManager.removeEventListener(Workspace.FileManager.Events.APPENDED_TO_URL, this.onAppendDone, this);
+    this.#fileManager.close(this.#fileName);
   }
 }

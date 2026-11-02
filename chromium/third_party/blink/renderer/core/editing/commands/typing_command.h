@@ -59,7 +59,7 @@ class CORE_EXPORT TypingCommand final : public CompositeEditCommand {
     kKillRing = 1 << 1,
     kSmartDelete = 1 << 2
   };
-  typedef unsigned Options;
+  using Options = unsigned;
 
   static void DeleteSelection(Document&, Options = 0);
   static void DeleteKeyPressed(Document&,
@@ -79,7 +79,7 @@ class CORE_EXPORT TypingCommand final : public CompositeEditCommand {
   static void InsertText(
       Document&,
       const String&,
-      const SelectionInDOMTree&,
+      const SelectionInDomTree&,
       Options,
       EditingState*,
       PasswordEchoBehavior,

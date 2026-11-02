@@ -24,6 +24,7 @@
 #include "platform/api/task_runner.h"
 #include "platform/api/time.h"
 #include "util/thread_annotations.h"
+#include "util/weak_ptr.h"
 
 namespace openscreen {
 
@@ -163,6 +164,8 @@ class StreamingVpxEncoder : public StreamingVideoEncoder {
 
   // libvpx VP8/9 encoder instance. Only the encode thread accesses this.
   vpx_codec_ctx_t encoder_;
+
+  WeakPtrFactory<StreamingVpxEncoder> weak_factory_{this};
 };
 
 }  // namespace cast

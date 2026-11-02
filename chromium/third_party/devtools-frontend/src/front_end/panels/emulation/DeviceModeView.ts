@@ -1,21 +1,26 @@
 // Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as EmulationModel from '../../models/emulation/emulation.js';
 import * as Geometry from '../../models/geometry/geometry.js';
+import * as Workspace from '../../models/workspace/workspace.js';
 import * as UI from '../../ui/legacy/legacy.js';
+import {Directives, html, nothing, render} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
 import {DeviceModeToolbar} from './DeviceModeToolbar.js';
 import deviceModeViewStyles from './deviceModeView.css.js';
 import {MediaQueryInspector} from './MediaQueryInspector.js';
+
+const {classMap, ref, styleMap} = Directives;
+const {widget} = UI.Widget;
 
 const UIStrings = {
   /**
@@ -56,31 +61,218 @@ const UIStrings = {
 const str_ = i18n.i18n.registerUIStrings('panels/emulation/DeviceModeView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
+export interface DeviceModeViewInput {
+  model: EmulationModel.DeviceModeModel.DeviceModeModel;
+  showMediaInspectorSetting: Common.Settings.Setting<boolean>;
+  showRulersSetting: Common.Settings.Setting<boolean>;
+  outlineImage: string;
+  outlineImageLoaded: boolean;
+  screenImage: string;
+  screenImageLoaded: boolean;
+  resizable: boolean;
+  showRulers: boolean;
+  showMediaInspector: boolean;
+  scale: number;
+  cachedCssScreenRect?: EmulationModel.DeviceModeModel.Rect;
+  cachedCssVisiblePageRect?: EmulationModel.DeviceModeModel.Rect;
+  cachedOutlineRect?: EmulationModel.DeviceModeModel.Rect;
+  onApplyPresetSize: (size: number, e: Event) => void;
+  bottomRightResizer: UI.ResizerWidget.ResizerWidget;
+  bottomLeftResizer: UI.ResizerWidget.ResizerWidget;
+  rightResizer: UI.ResizerWidget.ResizerWidget;
+  leftResizer: UI.ResizerWidget.ResizerWidget;
+  bottomResizer: UI.ResizerWidget.ResizerWidget;
+  bottomRightResizerRef: (el?: Element) => void;
+  bottomLeftResizerRef: (el?: Element) => void;
+  rightResizerRef: (el?: Element) => void;
+  leftResizerRef: (el?: Element) => void;
+  bottomResizerRef: (el?: Element) => void;
+  onDoubleclickBottomResizer: () => void;
+  onOutlineImageLoaded: (success: boolean) => void;
+  onScreenImageLoaded: (success: boolean) => void;
+}
+
+export type DeviceModeViewView = (
+    input: DeviceModeViewInput,
+    output: undefined,
+    target: HTMLElement,
+    ) => void;
+
+function resizerRef(
+    resizer: UI.ResizerWidget.ResizerWidget,
+    onConnect?: (el: HTMLElement) => void,
+    ): (el?: Element) => void {
+  let oldEl: HTMLElement|undefined;
+  return (el?: Element) => {
+    if (el instanceof HTMLElement) {
+      if (oldEl === el) {
+        return;
+      }
+      if (oldEl) {
+        resizer.removeElement(oldEl);
+      }
+      oldEl = el;
+      resizer.addElement(el);
+      onConnect?.(el);
+    } else if (oldEl) {
+      resizer.removeElement(oldEl);
+      oldEl = undefined;
+    }
+  };
+}
+
+export const DEFAULT_DEVICE_MODE_VIEW: DeviceModeViewView = (
+    input: DeviceModeViewInput,
+    _output: undefined,
+    target: HTMLElement,
+    ): void => {
+  const sizes = [320, 375, 425, 768, 1024, 1440, 2560];
+  const titles = [
+    i18nString(UIStrings.mobileS),
+    i18nString(UIStrings.mobileM),
+    i18nString(UIStrings.mobileL),
+    i18nString(UIStrings.tablet),
+    i18nString(UIStrings.laptop),
+    i18nString(UIStrings.laptopL),
+    '4K',
+  ];
+  // clang-format off
+  render(html`
+    ${UI.Widget.widget(DeviceModeToolbar, {model: input.model})}
+    <div class=${classMap({
+      'device-mode-content-clip': true,
+      vbox: true,
+      'device-mode-outline-visible': Boolean(input.outlineImage),
+      'device-mode-rulers-visible': input.showRulers,
+    })}>
+      <div class="device-mode-presets-container" jslog=${VisualLogging.responsivePresets()}>
+        <div class="device-mode-presets-container-inner">
+          ${sizes.map((size, idx) => html`
+            <div class="fill device-mode-preset-bar-outer">
+              <div class="device-mode-preset-bar"
+                   style="width: ${size * input.scale}px;"
+                   jslog=${VisualLogging.action().track({click: true}).context(`device-mode-preset-${size}px`)}
+                   @click=${(e: Event) => input.onApplyPresetSize(size, e)}>
+                <span>${titles[idx]} – ${size}px</span>
+              </div>
+            </div>
+          `).reverse()}
+        </div>
+      </div>
+      <div class="device-mode-media-container">
+        ${input.showMediaInspector ? widget(MediaQueryInspector, {
+                                       scale: input.scale,
+                                       getWidthCallback: () => input.model.appliedDeviceSize().width,
+                                       setWidthCallback:  input.model.setWidth.bind(input.model),
+                                     }) : nothing}
+      </div>
+      <div class="device-mode-content-area">
+        <img class="device-mode-outline-image fill"
+             ?hidden=${!input.outlineImage || !input.outlineImageLoaded}
+             style=${styleMap(input.cachedOutlineRect ? {
+               left: `${input.cachedOutlineRect.left}px`,
+               top: `${input.cachedOutlineRect.top}px`,
+               width: `${input.cachedOutlineRect.width}px`,
+               height: `${input.cachedOutlineRect.height}px`,
+             } : {})}
+             srcset=${input.outlineImage || nothing}
+             @load=${(): void => input.onOutlineImageLoaded(true)}
+             @error=${(): void => input.onOutlineImageLoaded(false)}>
+        <div class="device-mode-screen-area"
+             style=${styleMap(input.cachedCssScreenRect ? {
+               left: `${input.cachedCssScreenRect.left}px`,
+               top: `${input.cachedCssScreenRect.top}px`,
+               width: `${input.cachedCssScreenRect.width}px`,
+               height: `${input.cachedCssScreenRect.height}px`,
+             } : {})}>
+          <img class="device-mode-screen-image"
+               ?hidden=${!input.screenImage || !input.screenImageLoaded}
+               srcset=${input.screenImage || nothing}
+               @load=${(): void => input.onScreenImageLoaded(true)}
+               @error=${(): void => input.onScreenImageLoaded(false)}>
+          <div class="device-mode-resizer device-mode-bottom-right-resizer"
+               ?hidden=${!input.resizable}
+               jslog=${VisualLogging.slider('device-mode-resizer').track({drag: true})}
+               ${ref(input.bottomRightResizerRef)}>
+            <div></div>
+          </div>
+          <div class="device-mode-resizer device-mode-bottom-left-resizer"
+               ?hidden=${!input.resizable}
+               jslog=${VisualLogging.slider('device-mode-resizer').track({drag: true})}
+               ${ref(input.bottomLeftResizerRef)}>
+            <div></div>
+          </div>
+          <div class="device-mode-resizer device-mode-right-resizer"
+               ?hidden=${!input.resizable}
+               jslog=${VisualLogging.slider('device-mode-resizer').track({drag: true})}
+               ${ref(input.rightResizerRef)}>
+            <div></div>
+          </div>
+          <div class="device-mode-resizer device-mode-left-resizer"
+               ?hidden=${!input.resizable}
+               jslog=${VisualLogging.slider('device-mode-resizer').track({drag: true})}
+               ${ref(input.leftResizerRef)}>
+            <div></div>
+          </div>
+          <div class="device-mode-resizer device-mode-bottom-resizer"
+               ?hidden=${!input.resizable}
+               jslog=${VisualLogging.slider('device-mode-resizer').track({drag: true})}
+               title=${i18nString(UIStrings.doubleclickForFullHeight)}
+               ${ref(input.bottomResizerRef)}
+               @dblclick=${input.onDoubleclickBottomResizer}>
+            <div></div>
+          </div>
+          <div class="device-mode-page-area"
+               style=${styleMap(input.cachedCssVisiblePageRect ? {
+                 left: `${input.cachedCssVisiblePageRect.left}px`,
+                 top: `${input.cachedCssVisiblePageRect.top}px`,
+                 width: `${input.cachedCssVisiblePageRect.width}px`,
+                 height: `${input.cachedCssVisiblePageRect.height}px`,
+               } : {})}><slot></slot></div>
+        </div>
+        ${input.showRulers ? html`
+          <devtools-widget class="device-mode-ruler-top device-mode-ruler"
+              style=${styleMap({left: `${input.cachedCssScreenRect?.left ?? 0}px`, top: `${input.cachedCssScreenRect?.top ?? 0}px`})}
+              ${UI.Widget.widget(Ruler, {
+                scale: input.scale,
+                horizontal: true,
+              })}
+              @device-mode-ruler-marker-selected=${(e: CustomEvent<number>): void => input.model.setWidthAndScaleToFit(e.detail)}>
+          </devtools-widget>
+          <devtools-widget class="device-mode-ruler-left device-mode-ruler"
+              style=${styleMap({left: `${input.cachedCssScreenRect?.left ?? 0}px`, top: `${input.cachedCssScreenRect?.top ?? 0}px`})}
+              ${UI.Widget.widget(Ruler, {
+                scale: input.scale,
+                horizontal: false,
+              })}
+              @device-mode-ruler-marker-selected=${(e: CustomEvent<number>): void => input.model.setHeightAndScaleToFit(e.detail)}>
+          </devtools-widget>
+        ` : nothing}
+      </div>
+    </div>
+  `, target, {
+    container: {
+      classes: ['device-mode-view'],
+    },
+  });
+  // clang-format on
+};
+
 export class DeviceModeView extends UI.Widget.VBox {
   wrapperInstance!: UI.Widget.VBox|null;
-  blockElementToWidth: WeakMap<HTMLElement, number>;
   private model: EmulationModel.DeviceModeModel.DeviceModeModel;
-  private readonly mediaInspector: MediaQueryInspector;
   private showMediaInspectorSetting: Common.Settings.Setting<boolean>;
   private showRulersSetting: Common.Settings.Setting<boolean>;
-  private readonly topRuler: Ruler;
-  private readonly leftRuler: Ruler;
-  private presetBlocks!: HTMLElement[];
-  private responsivePresetsContainer!: HTMLElement;
-  private screenArea!: HTMLElement;
-  private pageArea!: HTMLElement;
-  private outlineImage!: HTMLElement;
-  private contentClip!: HTMLElement;
-  private contentArea!: HTMLElement;
-  private rightResizerElement!: HTMLElement;
-  private leftResizerElement!: HTMLElement;
-  private bottomResizerElement!: HTMLElement;
-  private bottomRightResizerElement!: HTMLElement;
-  private bottomLeftResizerElement!: HTMLElement;
-  private cachedResizable!: boolean|undefined;
-  private mediaInspectorContainer!: HTMLElement;
-  private screenImage!: HTMLElement;
-  private toolbar!: DeviceModeToolbar;
+  private readonly bottomRightResizer = this.createResizer(2, 1);
+  private readonly bottomLeftResizer = this.createResizer(-2, 1);
+  private readonly rightResizer = this.createResizer(2, 0);
+  private readonly leftResizer = this.createResizer(-2, 0);
+  private readonly bottomResizer = this.createResizer(0, 1);
+  private readonly bottomRightResizerRef = resizerRef(this.bottomRightResizer);
+  private readonly bottomLeftResizerRef = resizerRef(this.bottomLeftResizer);
+  private readonly rightResizerRef = resizerRef(this.rightResizer);
+  private readonly leftResizerRef = resizerRef(this.leftResizer);
+  private readonly bottomResizerRef = resizerRef(this.bottomResizer);
   private slowPositionStart?: {
     x: number,
     y: number,
@@ -92,111 +284,93 @@ export class DeviceModeView extends UI.Widget.VBox {
   private cachedMediaInspectorVisible?: boolean;
   private cachedShowRulers?: boolean;
   private cachedScale?: number;
-  private handleWidth?: number;
-  private handleHeight?: number;
+  #outlineImageLoaded = false;
+  #lastOutlineImageSrc?: string;
+  #screenImageLoaded = false;
+  #lastScreenImageSrc?: string;
+  #view: DeviceModeViewView;
 
-  constructor() {
+  constructor(view: DeviceModeViewView = DEFAULT_DEVICE_MODE_VIEW) {
     super({useShadowDom: true});
-
-    this.blockElementToWidth = new WeakMap();
+    this.#view = view;
 
     this.setMinimumSize(150, 150);
-    this.element.classList.add('device-mode-view');
     this.registerRequiredCSS(deviceModeViewStyles);
 
     this.model = EmulationModel.DeviceModeModel.DeviceModeModel.instance();
     this.model.addEventListener(EmulationModel.DeviceModeModel.Events.UPDATED, this.updateUI, this);
-    this.mediaInspector = new MediaQueryInspector(
-        () => this.model.appliedDeviceSize().width, this.model.setWidth.bind(this.model),
-        new Common.Throttler.Throttler(0));
     this.showMediaInspectorSetting = Common.Settings.Settings.instance().moduleSetting('show-media-query-inspector');
     this.showMediaInspectorSetting.addChangeListener(this.updateUI, this);
     this.showRulersSetting = Common.Settings.Settings.instance().moduleSetting('emulation.show-rulers');
     this.showRulersSetting.addChangeListener(this.updateUI, this);
 
-    this.topRuler = new Ruler(true, this.model.setWidthAndScaleToFit.bind(this.model));
-    this.topRuler.element.classList.add('device-mode-ruler-top');
-    this.leftRuler = new Ruler(false, this.model.setHeightAndScaleToFit.bind(this.model));
-    this.leftRuler.element.classList.add('device-mode-ruler-left');
-    this.createUI();
+    this.performUpdate();
     UI.ZoomManager.ZoomManager.instance().addEventListener(UI.ZoomManager.Events.ZOOM_CHANGED, this.zoomChanged, this);
   }
 
-  private createUI(): void {
-    this.toolbar = new DeviceModeToolbar(this.model, this.showMediaInspectorSetting, this.showRulersSetting);
-    this.toolbar.show(this.contentElement);
-    this.contentClip = this.contentElement.createChild('div', 'device-mode-content-clip vbox');
-    this.responsivePresetsContainer = this.contentClip.createChild('div', 'device-mode-presets-container');
-    this.responsivePresetsContainer.setAttribute('jslog', `${VisualLogging.responsivePresets()}`);
-    this.populatePresetsContainer();
-    this.mediaInspectorContainer = this.contentClip.createChild('div', 'device-mode-media-container');
-    this.contentArea = this.contentClip.createChild('div', 'device-mode-content-area');
-    this.outlineImage = this.contentArea.createChild('img', 'device-mode-outline-image hidden fill');
-    this.outlineImage.addEventListener('load', this.onImageLoaded.bind(this, this.outlineImage, true), false);
-    this.outlineImage.addEventListener('error', this.onImageLoaded.bind(this, this.outlineImage, false), false);
-    this.screenArea = this.contentArea.createChild('div', 'device-mode-screen-area');
-    this.screenImage = this.screenArea.createChild('img', 'device-mode-screen-image hidden');
-    this.screenImage.addEventListener('load', this.onImageLoaded.bind(this, this.screenImage, true), false);
-    this.screenImage.addEventListener('error', this.onImageLoaded.bind(this, this.screenImage, false), false);
-    this.bottomRightResizerElement =
-        this.screenArea.createChild('div', 'device-mode-resizer device-mode-bottom-right-resizer');
-    this.bottomRightResizerElement.createChild('div', '');
-    this.createResizer(this.bottomRightResizerElement, 2, 1);
-    this.bottomLeftResizerElement =
-        this.screenArea.createChild('div', 'device-mode-resizer device-mode-bottom-left-resizer');
-    this.bottomLeftResizerElement.createChild('div', '');
-    this.createResizer(this.bottomLeftResizerElement, -2, 1);
-    this.rightResizerElement = this.screenArea.createChild('div', 'device-mode-resizer device-mode-right-resizer');
-    this.rightResizerElement.createChild('div', '');
-    this.createResizer(this.rightResizerElement, 2, 0);
-    this.leftResizerElement = this.screenArea.createChild('div', 'device-mode-resizer device-mode-left-resizer');
-    this.leftResizerElement.createChild('div', '');
-    this.createResizer(this.leftResizerElement, -2, 0);
-    this.bottomResizerElement = this.screenArea.createChild('div', 'device-mode-resizer device-mode-bottom-resizer');
-    this.bottomResizerElement.createChild('div', '');
-    this.createResizer(this.bottomResizerElement, 0, 1);
-    this.bottomResizerElement.addEventListener('dblclick', this.model.setHeight.bind(this.model, 0), false);
-    UI.Tooltip.Tooltip.install(this.bottomResizerElement, i18nString(UIStrings.doubleclickForFullHeight));
-    this.pageArea = this.screenArea.createChild('div', 'device-mode-page-area');
-    this.pageArea.createChild('slot');
+  override performUpdate(): void {
+    if (this.#lastOutlineImageSrc !== this.model.outlineImage()) {
+      this.#lastOutlineImageSrc = this.model.outlineImage();
+      this.#outlineImageLoaded = false;
+    }
+    if (this.#lastScreenImageSrc !== this.model.screenImage()) {
+      this.#lastScreenImageSrc = this.model.screenImage();
+      this.#screenImageLoaded = false;
+    }
+    const input: DeviceModeViewInput = {
+      model: this.model,
+      showMediaInspectorSetting: this.showMediaInspectorSetting,
+      showRulersSetting: this.showRulersSetting,
+      outlineImage: this.model.outlineImage(),
+      outlineImageLoaded: this.#outlineImageLoaded,
+      screenImage: this.model.screenImage(),
+      screenImageLoaded: this.#screenImageLoaded,
+      resizable: this.model.type() === EmulationModel.DeviceModeModel.Type.Responsive,
+      showRulers: this.showRulersSetting.get() && this.model.type() !== EmulationModel.DeviceModeModel.Type.None,
+      showMediaInspector:
+          this.showMediaInspectorSetting.get() && this.model.type() !== EmulationModel.DeviceModeModel.Type.None,
+      scale: this.model.scale(),
+      cachedCssScreenRect: this.cachedCssScreenRect,
+      cachedCssVisiblePageRect: this.cachedCssVisiblePageRect,
+      cachedOutlineRect: this.cachedOutlineRect,
+      onApplyPresetSize: (width: number, e: Event): void => {
+        this.model.emulate(EmulationModel.DeviceModeModel.Type.Responsive, null, null);
+        this.model.setWidthAndScaleToFit(width);
+        e.consume();
+      },
+      bottomRightResizer: this.bottomRightResizer,
+      bottomLeftResizer: this.bottomLeftResizer,
+      rightResizer: this.rightResizer,
+      leftResizer: this.leftResizer,
+      bottomResizer: this.bottomResizer,
+      bottomRightResizerRef: this.bottomRightResizerRef,
+      bottomLeftResizerRef: this.bottomLeftResizerRef,
+      rightResizerRef: this.rightResizerRef,
+      leftResizerRef: this.leftResizerRef,
+      bottomResizerRef: this.bottomResizerRef,
+      onDoubleclickBottomResizer: (): void => this.model.setHeight(0),
+      onOutlineImageLoaded: (success: boolean): void => this.onOutlineImageLoaded(success),
+      onScreenImageLoaded: (success: boolean): void => this.onScreenImageLoaded(success),
+    };
+    this.#view(input, undefined, this.contentElement);
   }
 
-  private populatePresetsContainer(): void {
-    const sizes = [320, 375, 425, 768, 1024, 1440, 2560];
-    const titles = [
-      i18nString(UIStrings.mobileS),
-      i18nString(UIStrings.mobileM),
-      i18nString(UIStrings.mobileL),
-      i18nString(UIStrings.tablet),
-      i18nString(UIStrings.laptop),
-      i18nString(UIStrings.laptopL),
-      '4K',
-    ];
-    this.presetBlocks = [];
-    const inner = this.responsivePresetsContainer.createChild('div', 'device-mode-presets-container-inner');
-    for (let i = sizes.length - 1; i >= 0; --i) {
-      const outer = inner.createChild('div', 'fill device-mode-preset-bar-outer');
-      const block = outer.createChild('div', 'device-mode-preset-bar');
-      block.createChild('span').textContent = titles[i] + ' \u2013 ' + sizes[i] + 'px';
-      block.setAttribute(
-          'jslog', `${VisualLogging.action().track({click: true}).context(`device-mode-preset-${sizes[i]}px`)}`);
-      block.addEventListener('click', applySize.bind(this, sizes[i]), false);
-      this.blockElementToWidth.set(block, sizes[i]);
-      this.presetBlocks.push(block);
-    }
-
-    function applySize(this: DeviceModeView, width: number, e: Event): void {
-      this.model.emulate(EmulationModel.DeviceModeModel.Type.Responsive, null, null);
-      this.model.setWidthAndScaleToFit(width);
-      e.consume();
+  private onOutlineImageLoaded(success: boolean): void {
+    if (this.#outlineImageLoaded !== success) {
+      this.#outlineImageLoaded = success;
+      this.requestUpdate();
     }
   }
 
-  private createResizer(element: HTMLElement, widthFactor: number, heightFactor: number):
-      UI.ResizerWidget.ResizerWidget {
+  private onScreenImageLoaded(success: boolean): void {
+    if (this.#screenImageLoaded !== success) {
+      this.#screenImageLoaded = success;
+      this.requestUpdate();
+    }
+  }
+
+  private createResizer(widthFactor: number, heightFactor: number): UI.ResizerWidget.ResizerWidget {
     const resizer = new UI.ResizerWidget.ResizerWidget();
-    element.setAttribute('jslog', `${VisualLogging.slider('device-mode-resizer').track({drag: true})}`);
-    resizer.addElement(element);
     let cursor: 'nwse-resize'|'nesw-resize'|('ew-resize' | 'ns-resize') = widthFactor ? 'ew-resize' : 'ns-resize';
     if (widthFactor * heightFactor > 0) {
       cursor = 'nwse-resize';
@@ -265,13 +439,6 @@ export class DeviceModeView extends UI.Widget.VBox {
   }
 
   private updateUI(): void {
-    function applyRect(element: HTMLElement, rect: EmulationModel.DeviceModeModel.Rect): void {
-      element.style.left = rect.left + 'px';
-      element.style.top = rect.top + 'px';
-      element.style.width = rect.width + 'px';
-      element.style.height = rect.height + 'px';
-    }
-
     if (!this.isShowing()) {
       return;
     }
@@ -280,19 +447,15 @@ export class DeviceModeView extends UI.Widget.VBox {
     let callDoResize = false;
     const showRulers = this.showRulersSetting.get() && this.model.type() !== EmulationModel.DeviceModeModel.Type.None;
     let contentAreaResized = false;
-    let updateRulers = false;
 
     const cssScreenRect = this.model.screenRect().scale(1 / zoomFactor);
     if (!this.cachedCssScreenRect || !cssScreenRect.isEqual(this.cachedCssScreenRect)) {
-      applyRect(this.screenArea, cssScreenRect);
-      updateRulers = true;
       callDoResize = true;
       this.cachedCssScreenRect = cssScreenRect;
     }
 
     const cssVisiblePageRect = this.model.visiblePageRect().scale(1 / zoomFactor);
     if (!this.cachedCssVisiblePageRect || !cssVisiblePageRect.isEqual(this.cachedCssVisiblePageRect)) {
-      applyRect(this.pageArea, cssVisiblePageRect);
       callDoResize = true;
       this.cachedCssVisiblePageRect = cssVisiblePageRect;
     }
@@ -301,97 +464,37 @@ export class DeviceModeView extends UI.Widget.VBox {
     if (outlineRectFromModel) {
       const outlineRect = outlineRectFromModel.scale(1 / zoomFactor);
       if (!this.cachedOutlineRect || !outlineRect.isEqual(this.cachedOutlineRect)) {
-        applyRect(this.outlineImage, outlineRect);
         callDoResize = true;
         this.cachedOutlineRect = outlineRect;
       }
-    }
-    this.contentClip.classList.toggle('device-mode-outline-visible', Boolean(this.model.outlineImage()));
-
-    const resizable = this.model.type() === EmulationModel.DeviceModeModel.Type.Responsive;
-    if (resizable !== this.cachedResizable) {
-      this.rightResizerElement.classList.toggle('hidden', !resizable);
-      this.leftResizerElement.classList.toggle('hidden', !resizable);
-      this.bottomResizerElement.classList.toggle('hidden', !resizable);
-      this.bottomRightResizerElement.classList.toggle('hidden', !resizable);
-      this.bottomLeftResizerElement.classList.toggle('hidden', !resizable);
-      this.cachedResizable = resizable;
     }
 
     const mediaInspectorVisible =
         this.showMediaInspectorSetting.get() && this.model.type() !== EmulationModel.DeviceModeModel.Type.None;
     if (mediaInspectorVisible !== this.cachedMediaInspectorVisible) {
-      if (mediaInspectorVisible) {
-        this.mediaInspector.show(this.mediaInspectorContainer);
-      } else {
-        this.mediaInspector.detach();
-      }
       contentAreaResized = true;
       callDoResize = true;
       this.cachedMediaInspectorVisible = mediaInspectorVisible;
     }
 
     if (showRulers !== this.cachedShowRulers) {
-      this.contentClip.classList.toggle('device-mode-rulers-visible', showRulers);
-      if (showRulers) {
-        this.topRuler.show(this.contentArea);
-        this.leftRuler.show(this.contentArea);
-      } else {
-        this.topRuler.detach();
-        this.leftRuler.detach();
-      }
       contentAreaResized = true;
       callDoResize = true;
       this.cachedShowRulers = showRulers;
     }
 
     if (this.model.scale() !== this.cachedScale) {
-      updateRulers = true;
       callDoResize = true;
-      for (const block of this.presetBlocks) {
-        const blockWidth = this.blockElementToWidth.get(block);
-        if (!blockWidth) {
-          throw new Error('Could not get width for block.');
-        }
-        block.style.width = blockWidth * this.model.scale() + 'px';
-      }
       this.cachedScale = this.model.scale();
     }
 
-    this.toolbar.requestUpdate();
-    this.loadImage(this.screenImage, this.model.screenImage());
-    this.loadImage(this.outlineImage, this.model.outlineImage());
-    this.mediaInspector.setAxisTransform(this.model.scale());
+    this.requestUpdate();
     if (callDoResize) {
       this.doResize();
-    }
-    if (updateRulers) {
-      this.topRuler.render(this.model.scale());
-      this.leftRuler.render(this.model.scale());
-      this.topRuler.element.positionAt(
-          this.cachedCssScreenRect ? this.cachedCssScreenRect.left : 0,
-          this.cachedCssScreenRect ? this.cachedCssScreenRect.top : 0);
-      this.leftRuler.element.positionAt(
-          this.cachedCssScreenRect ? this.cachedCssScreenRect.left : 0,
-          this.cachedCssScreenRect ? this.cachedCssScreenRect.top : 0);
     }
     if (contentAreaResized) {
       this.contentAreaResized();
     }
-  }
-
-  private loadImage(element: Element, srcset: string): void {
-    if (element.getAttribute('srcset') === srcset) {
-      return;
-    }
-    element.setAttribute('srcset', srcset);
-    if (!srcset) {
-      element.classList.toggle('hidden', true);
-    }
-  }
-
-  private onImageLoaded(element: Element, success: boolean): void {
-    element.classList.toggle('hidden', !success);
   }
 
   setNonEmulatedAvailableSize(element: Element): void {
@@ -406,31 +509,24 @@ export class DeviceModeView extends UI.Widget.VBox {
   }
 
   private contentAreaResized(): void {
+    const contentArea = this.contentElement.querySelector<HTMLElement>('.device-mode-content-area');
+    if (!contentArea) {
+      return;
+    }
     const zoomFactor = UI.ZoomManager.ZoomManager.instance().zoomFactor();
-    const rect = this.contentArea.getBoundingClientRect();
+    const rect = contentArea.getBoundingClientRect();
+    const handleWidth = this.contentElement.querySelector<HTMLElement>('.device-mode-right-resizer')?.offsetWidth || 20;
+    const handleHeight =
+        this.contentElement.querySelector<HTMLElement>('.device-mode-bottom-resizer')?.offsetHeight || 20;
     const availableSize =
         new Geometry.Size(Math.max(rect.width * zoomFactor, 1), Math.max(rect.height * zoomFactor, 1));
-    const preferredSize = new Geometry.Size(
-        Math.max((rect.width - 2 * (this.handleWidth || 0)) * zoomFactor, 1),
-        Math.max((rect.height - (this.handleHeight || 0)) * zoomFactor, 1));
+    const preferredSize = new Geometry.Size(Math.max((rect.width - 2 * handleWidth) * zoomFactor, 1),
+                                            Math.max((rect.height - handleHeight) * zoomFactor, 1));
     this.model.setAvailableSize(availableSize, preferredSize);
   }
 
-  private measureHandles(): void {
-    const hidden = this.rightResizerElement.classList.contains('hidden');
-    this.rightResizerElement.classList.toggle('hidden', false);
-    this.bottomResizerElement.classList.toggle('hidden', false);
-    this.handleWidth = this.rightResizerElement.offsetWidth;
-    this.handleHeight = this.bottomResizerElement.offsetHeight;
-    this.rightResizerElement.classList.toggle('hidden', hidden);
-    this.bottomResizerElement.classList.toggle('hidden', hidden);
-  }
-
   private zoomChanged(): void {
-    delete this.handleWidth;
-    delete this.handleHeight;
     if (this.isShowing()) {
-      this.measureHandles();
       this.contentAreaResized();
     }
   }
@@ -443,8 +539,6 @@ export class DeviceModeView extends UI.Widget.VBox {
 
   override wasShown(): void {
     super.wasShown();
-    this.measureHandles();
-    this.toolbar.restore();
   }
 
   override willHide(): void {
@@ -472,11 +566,10 @@ export class DeviceModeView extends UI.Widget.VBox {
       const contentLeft = screenRect.left + visiblePageRect.left - outlineRect.left;
       const contentTop = screenRect.top + visiblePageRect.top - outlineRect.top;
 
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.floor(outlineRect.width);
-      // Cap the height to not hit the GPU limit.
-      // https://crbug.com/1260828
-      canvas.height = Math.min((1 << 14), Math.floor(outlineRect.height));
+      const canvas = new OffscreenCanvas(Math.floor(outlineRect.width),
+                                         // Cap the height to not hit the GPU limit.
+                                         // https://crbug.com/1260828
+                                         Math.min((1 << 14), Math.floor(outlineRect.height)));
       const ctx = canvas.getContext('2d', {willReadFrequently: true});
       if (!ctx) {
         throw new Error('Could not get 2d context from canvas.');
@@ -490,7 +583,7 @@ export class DeviceModeView extends UI.Widget.VBox {
         await this.paintImage(ctx, this.model.screenImage(), screenRect.relativeTo(outlineRect));
       }
       ctx.drawImage(pageImage, Math.floor(contentLeft), Math.floor(contentTop));
-      this.saveScreenshot((canvas));
+      void this.saveScreenshot(canvas);
     };
   }
 
@@ -514,23 +607,22 @@ export class DeviceModeView extends UI.Widget.VBox {
     const pageImage = new Image();
     pageImage.src = 'data:image/png;base64,' + screenshot;
     pageImage.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = pageImage.naturalWidth;
-      // Cap the height to not hit the GPU limit.
-      // https://crbug.com/1260828
-      canvas.height = Math.min((1 << 14), Math.floor(pageImage.naturalHeight));
+      const canvas = new OffscreenCanvas(pageImage.naturalWidth,
+                                         // Cap the height to not hit the GPU limit.
+                                         // https://crbug.com/1260828
+                                         Math.min((1 << 14), Math.floor(pageImage.naturalHeight)));
       const ctx = canvas.getContext('2d', {willReadFrequently: true});
       if (!ctx) {
         throw new Error('Could not get 2d context for base64 screenshot.');
       }
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(pageImage, 0, 0);
-      this.saveScreenshot((canvas));
+      void this.saveScreenshot(canvas);
     };
   }
 
-  private paintImage(ctx: CanvasRenderingContext2D, src: string, rect: EmulationModel.DeviceModeModel.Rect):
-      Promise<void> {
+  private paintImage(ctx: OffscreenCanvasRenderingContext2D|CanvasRenderingContext2D, src: string,
+                     rect: EmulationModel.DeviceModeModel.Rect): Promise<void> {
     return new Promise(resolve => {
       const image = new Image();
       image.crossOrigin = 'Anonymous';
@@ -543,7 +635,7 @@ export class DeviceModeView extends UI.Widget.VBox {
     });
   }
 
-  private saveScreenshot(canvas: HTMLCanvasElement): void {
+  private async saveScreenshot(canvas: OffscreenCanvas): Promise<void> {
     const url = this.model.inspectedURL();
     let fileName = '';
     if (url) {
@@ -555,115 +647,159 @@ export class DeviceModeView extends UI.Widget.VBox {
     if (device && this.model.type() === EmulationModel.DeviceModeModel.Type.Device) {
       fileName += `(${device.title})`;
     }
-    const link = document.createElement('a');
-    link.download = fileName + '.png';
-    canvas.toBlob(blob => {
-      if (blob === null) {
-        return;
-      }
-      link.href = URL.createObjectURL(blob);
-      link.click();
+    fileName += '.png';
+    const blob = await canvas.convertToBlob({type: 'image/png'});
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
     });
+    const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+    const contentData = new TextUtils.ContentData.ContentData(base64, /* isBase64=*/ true, 'image/png');
+    await Workspace.FileManager.FileManager.instance().save(fileName as Platform.DevToolsPath.RawPathString,
+                                                            contentData, /* forceSaveAs=*/ true);
+    Workspace.FileManager.FileManager.instance().close(fileName as Platform.DevToolsPath.RawPathString);
   }
 }
 
-export class Ruler extends UI.Widget.VBox {
-  #contentElement: HTMLElement;
-  private readonly horizontal: boolean;
-  private scale: number;
-  private count: number;
-  private readonly throttler: Common.Throttler.Throttler;
-  private readonly applyCallback: (arg0: number) => void;
-  private renderedScale!: number|undefined;
-  private renderedZoomFactor!: number|undefined;
-  constructor(horizontal: boolean, applyCallback: (arg0: number) => void) {
-    super({jslog: `${VisualLogging.deviceModeRuler().track({click: true})}`});
-    this.element.classList.add('device-mode-ruler');
-    this.#contentElement =
-        this.element.createChild('div', 'device-mode-ruler-content').createChild('div', 'device-mode-ruler-inner');
-    this.horizontal = horizontal;
-    this.scale = 1;
-    this.count = 0;
-    this.throttler = new Common.Throttler.Throttler(0);
-    this.applyCallback = applyCallback;
+export interface RulerViewInput {
+  horizontal: boolean;
+  scale: number;
+  onMarkerClick: (size: number) => void;
+}
+
+export type RulerView = (input: RulerViewInput, output: undefined, target: HTMLElement) => void;
+
+export const DEFAULT_RULER_VIEW: RulerView = (input: RulerViewInput, output: undefined, target: HTMLElement): void => {
+  const zoomFactor = UI.ZoomManager.ZoomManager.instance().zoomFactor();
+  const size = input.horizontal ? target.offsetWidth : target.offsetHeight;
+
+  const dipSize = size * zoomFactor / input.scale;
+  const count = Math.ceil(dipSize / 5);
+  let step = 1;
+  if (input.scale < 0.8) {
+    step = 2;
+  }
+  if (input.scale < 0.6) {
+    step = 4;
+  }
+  if (input.scale < 0.4) {
+    step = 8;
+  }
+  if (input.scale < 0.2) {
+    step = 16;
+  }
+  if (input.scale < 0.1) {
+    step = 32;
   }
 
-  render(scale: number): void {
-    this.scale = scale;
-    void this.throttler.schedule(this.update.bind(this));
+  const markers = [];
+  for (let i = 0; i < count; i++) {
+    if (i % step) {
+      continue;
+    }
+    const isLarge = !(i % 10);
+    const isMedium = !(i % 5);
+    const offset = i ? `${(5 * i) * input.scale / zoomFactor}px` : undefined;
+
+    // clang-format off
+    markers.push(html`
+      <div
+        class=${classMap({
+          'device-mode-ruler-marker': true,
+          'device-mode-ruler-marker-large': isLarge,
+          'device-mode-ruler-marker-medium': isMedium && !isLarge,
+        })}
+        style=${styleMap(input.horizontal ? {left: offset} : {top: offset})}>
+          ${i && !(i % 20) ?
+            html`<div class="device-mode-ruler-text" @click=${() => input.onMarkerClick(i * 5)}>${i * 5}</div>` :
+            nothing}
+      </div>
+    `);
+    // clang-format on
+  }
+
+  render(html`
+    <div class="device-mode-ruler-content">
+      <div class="device-mode-ruler-inner">
+        ${markers}
+      </div>
+    </div>
+  `,
+         target, {
+           container: {
+             classes: ['device-mode-ruler'],
+             attributes: {jslog: VisualLogging.deviceModeRuler().track({click: true})},
+           },
+         });
+};
+
+export const enum RulerEvents {
+  MARKER_SELECTED = 'MarkerSelected',
+}
+
+export interface RulerEventTypes {
+  [RulerEvents.MARKER_SELECTED]: number;
+}
+
+export class Ruler extends Common.ObjectWrapper.eventMixin<RulerEventTypes, typeof UI.Widget.Widget>(UI.Widget.Widget) {
+  #view: RulerView;
+  #horizontal = true;
+  #scale = 1;
+
+  constructor(element?: HTMLElement, view: RulerView = DEFAULT_RULER_VIEW) {
+    super(element);
+    this.#view = view;
+  }
+
+  get horizontal(): boolean {
+    return this.#horizontal;
+  }
+
+  set horizontal(horizontal: boolean) {
+    if (this.#horizontal === horizontal) {
+      return;
+    }
+    this.#horizontal = horizontal;
+    this.requestUpdate();
+  }
+
+  get scale(): number {
+    return this.#scale;
+  }
+
+  set scale(scale: number) {
+    if (this.#scale === scale) {
+      return;
+    }
+    this.#scale = scale;
+    this.requestUpdate();
+  }
+
+  override wasShown(): void {
+    super.wasShown();
+    this.requestUpdate();
   }
 
   override onResize(): void {
-    void this.throttler.schedule(this.update.bind(this));
+    super.onResize();
+    this.requestUpdate();
   }
 
-  update(): void {
-    const zoomFactor = UI.ZoomManager.ZoomManager.instance().zoomFactor();
-    const size = this.horizontal ? this.#contentElement.offsetWidth : this.#contentElement.offsetHeight;
+  #onMarkerClick = (size: number): void => {
+    this.dispatchEventToListeners(RulerEvents.MARKER_SELECTED, size);
+  };
 
-    if (this.scale !== this.renderedScale || zoomFactor !== this.renderedZoomFactor) {
-      this.#contentElement.removeChildren();
-      this.count = 0;
-      this.renderedScale = this.scale;
-      this.renderedZoomFactor = zoomFactor;
+  override performUpdate(): void {
+    if (!this.isShowing()) {
+      return;
     }
-
-    const dipSize = size * zoomFactor / this.scale;
-    const count = Math.ceil(dipSize / 5);
-    let step = 1;
-    if (this.scale < 0.8) {
-      step = 2;
-    }
-    if (this.scale < 0.6) {
-      step = 4;
-    }
-    if (this.scale < 0.4) {
-      step = 8;
-    }
-    if (this.scale < 0.2) {
-      step = 16;
-    }
-    if (this.scale < 0.1) {
-      step = 32;
-    }
-
-    for (let i = count; i < this.count; i++) {
-      if (!(i % step)) {
-        const lastChild = this.#contentElement.lastChild;
-        if (lastChild) {
-          lastChild.remove();
-        }
-      }
-    }
-
-    for (let i = this.count; i < count; i++) {
-      if (i % step) {
-        continue;
-      }
-      const marker = this.#contentElement.createChild('div', 'device-mode-ruler-marker');
-      if (i) {
-        if (this.horizontal) {
-          marker.style.left = (5 * i) * this.scale / zoomFactor + 'px';
-        } else {
-          marker.style.top = (5 * i) * this.scale / zoomFactor + 'px';
-        }
-        if (!(i % 20)) {
-          const text = marker.createChild('div', 'device-mode-ruler-text');
-          text.textContent = String(i * 5);
-          text.addEventListener('click', this.onMarkerClick.bind(this, i * 5), false);
-        }
-      }
-      if (!(i % 10)) {
-        marker.classList.add('device-mode-ruler-marker-large');
-      } else if (!(i % 5)) {
-        marker.classList.add('device-mode-ruler-marker-medium');
-      }
-    }
-
-    this.count = count;
-  }
-
-  private onMarkerClick(size: number): void {
-    this.applyCallback.call(null, size);
+    const viewInput: RulerViewInput = {
+      horizontal: this.#horizontal,
+      scale: this.#scale,
+      onMarkerClick: this.#onMarkerClick,
+    };
+    this.#view(viewInput, undefined, this.contentElement);
   }
 }

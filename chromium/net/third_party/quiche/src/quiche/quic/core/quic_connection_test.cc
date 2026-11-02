@@ -697,6 +697,7 @@ class QuicConnectionTest : public QuicTestWithParam<TestParams> {
     EXPECT_CALL(visitor_, ShouldKeepConnectionAlive())
         .WillRepeatedly(Return(false));
     EXPECT_CALL(visitor_, OnCongestionWindowChange(_)).Times(AnyNumber());
+    EXPECT_CALL(visitor_, OnRttSampleAvailable).Times(AnyNumber());
     EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_)).Times(AnyNumber());
     EXPECT_CALL(visitor_, MaybeBundleOpportunistically()).Times(AnyNumber());
     EXPECT_CALL(visitor_, GetFlowControlSendWindowSize(_)).Times(AnyNumber());
@@ -2592,15 +2593,17 @@ class TestQuicPathValidationContext : public QuicPathValidationContext {
 
 class TestValidationResultDelegate : public QuicPathValidator::ResultDelegate {
  public:
-  TestValidationResultDelegate(QuicConnection* connection,
-                               const QuicSocketAddress& expected_self_address,
-                               const QuicSocketAddress& expected_peer_address,
-                               bool* success)
+  TestValidationResultDelegate(
+      QuicConnection* connection,
+      const QuicSocketAddress& expected_self_address,
+      const QuicSocketAddress& expected_peer_address, bool* success,
+      std::optional<PathValidationFailure::Reason>* failure_reason = nullptr)
       : QuicPathValidator::ResultDelegate(),
         connection_(connection),
         expected_self_address_(expected_self_address),
         expected_peer_address_(expected_peer_address),
-        success_(success) {}
+        success_(success),
+        failure_reason_(failure_reason) {}
   void OnPathValidationSuccess(
       std::unique_ptr<QuicPathValidationContext> context,
       QuicTime /*start_time*/) override {
@@ -2613,6 +2616,9 @@ class TestValidationResultDelegate : public QuicPathValidator::ResultDelegate {
       std::unique_ptr<QuicPathValidationContext> context) override {
     EXPECT_EQ(expected_self_address_, context->self_address());
     EXPECT_EQ(expected_peer_address_, context->peer_address());
+    if (failure_reason_ != nullptr) {
+      *failure_reason_ = context->failure_reason();
+    }
     if (connection_->perspective() == Perspective::IS_CLIENT) {
       connection_->OnPathValidationFailureAtClient(/*is_multi_port=*/false,
                                                    *context);
@@ -2625,6 +2631,7 @@ class TestValidationResultDelegate : public QuicPathValidator::ResultDelegate {
   QuicSocketAddress expected_self_address_;
   QuicSocketAddress expected_peer_address_;
   bool* success_;
+  std::optional<PathValidationFailure::Reason>* failure_reason_;
 };
 
 // A test implementation which migrates to server preferred address
@@ -5336,6 +5343,87 @@ TEST_P(QuicConnectionTest, MtuDiscoveryEnabled) {
   EXPECT_FALSE(connection_.connected());
   EXPECT_THAT(saved_connection_close_frame_.quic_error_code,
               IsError(QUIC_PACKET_WRITE_ERROR));
+}
+
+// Repro test for https://github.com/google/quiche/issues/107.
+TEST_P(QuicConnectionTest, MtuDiscoveryEnabledWithSoftMaxPacketLength) {
+  set_perspective(Perspective::IS_CLIENT);
+  QuicPacketCreatorPeer::SetSendVersionInPacket(creator_, false);
+  if (version().IsIetfQuic()) {
+    QuicConnectionPeer::SetAddressValidated(&connection_);
+  }
+  connection_.SetDefaultEncryptionLevel(ENCRYPTION_FORWARD_SECURE);
+  peer_creator_.set_encryption_level(ENCRYPTION_FORWARD_SECURE);
+  EXPECT_CALL(visitor_, GetHandshakeState())
+      .WillRepeatedly(Return(HANDSHAKE_CONFIRMED));
+  EXPECT_TRUE(connection_.connected());
+
+  SetQuicReloadableFlag(quic_enable_mtu_discovery_at_server, false);
+
+  const QuicPacketCount packets_between_probes_base = 5;
+  set_packets_between_probes_base(packets_between_probes_base);
+
+  QuicConfig config;
+  QuicTagVector connection_options;
+  connection_options.push_back(kMTUH);
+  config.SetClientConnectionOptions(connection_options);
+
+  EXPECT_CALL(*send_algorithm_, SetFromConfig(_, _));
+  EXPECT_CALL(*send_algorithm_, EnableECT1()).WillRepeatedly(Return(false));
+  EXPECT_CALL(*send_algorithm_, EnableECT0()).WillRepeatedly(Return(false));
+  EXPECT_CALL(*send_algorithm_, PacingRate(_))
+      .WillRepeatedly(Return(QuicBandwidth::Infinite()));
+
+  const QuicByteCount kOriginalMaxPacketSize = connection_.max_packet_length();
+
+  // Simulate packet coalescing active by setting soft max packet length to
+  // 1015, which is lower than kOriginalMaxPacketSize.
+  ASSERT_LT(1015, kOriginalMaxPacketSize);
+  creator_->SetSoftMaxPacketLength(1015);
+
+  // This enables MTU discovery.
+  connection_.SetFromConfig(config);
+
+  QuicPacketCreatorPeer::RemoveSoftMaxPacketLength(creator_);
+
+  // Send enough packets so that the next one triggers path MTU discovery.
+  for (QuicPacketCount i = 0; i < packets_between_probes_base - 1; i++) {
+    SendStreamDataToPeer(3, ".", i, NO_FIN, nullptr);
+    ASSERT_FALSE(connection_.GetMtuDiscoveryAlarm()->IsSet());
+  }
+
+  // Trigger the probe.
+  SendStreamDataToPeer(3, "!", packets_between_probes_base - 1, NO_FIN,
+                       nullptr);
+  ASSERT_TRUE(connection_.GetMtuDiscoveryAlarm()->IsSet());
+  QuicByteCount probe_size;
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _))
+      .WillOnce(SaveArg<3>(&probe_size));
+  connection_.GetMtuDiscoveryAlarm()->Fire();
+
+  if (GetQuicReloadableFlag(quic_fix_mtu_discovery)) {
+    // Probe size should be larger than the original max packet length.
+    EXPECT_GT(probe_size, kOriginalMaxPacketSize);
+  } else {
+    EXPECT_LT(probe_size, kOriginalMaxPacketSize);
+  }
+
+  const QuicPacketNumber probe_packet_number =
+      FirstSendingPacketNumber() + packets_between_probes_base;
+  ASSERT_EQ(probe_packet_number, creator_->packet_number());
+
+  // Acknowledge the probe packet, to trigger OnPathMtuIncreased().
+  QuicAckFrame probe_ack = InitAckFrame(probe_packet_number);
+  EXPECT_CALL(*send_algorithm_, OnCongestionEvent(true, _, _, _, _, _, _))
+      .Times(AnyNumber());
+  ProcessAckPacket(&probe_ack);
+
+  if (GetQuicReloadableFlag(quic_fix_mtu_discovery)) {
+    // The max packet length should be increased.
+    EXPECT_GT(connection_.max_packet_length(), kOriginalMaxPacketSize);
+  } else {
+    EXPECT_EQ(connection_.max_packet_length(), kOriginalMaxPacketSize);
+  }
 }
 
 // After a successful MTU probe, one and only one write error should be ignored
@@ -15283,17 +15371,20 @@ TEST_P(QuicConnectionTest, ServerConnectionIdRetiredUponPathValidationFailure) {
   const QuicSocketAddress kNewSelfAddress(QuicIpAddress::Loopback4(),
                                           /*port=*/34567);
   bool success;
+  std::optional<PathValidationFailure::Reason> failure_reason;
   connection_.ValidatePath(
       std::make_unique<TestQuicPathValidationContext>(
           kNewSelfAddress, connection_.peer_address(), writer_.get()),
       std::make_unique<TestValidationResultDelegate>(
-          &connection_, kNewSelfAddress, connection_.peer_address(), &success),
+          &connection_, kNewSelfAddress, connection_.peer_address(), &success,
+          &failure_reason),
       PathValidationReason::kReasonUnknown);
 
   auto* path_validator = QuicConnectionPeer::path_validator(&connection_);
-  path_validator->CancelPathValidation();
+  path_validator->CancelPathValidation(PathValidationFailure::Reason::kUnknown);
   QuicConnectionPeer::RetirePeerIssuedConnectionIdsNoLongerOnPath(&connection_);
   EXPECT_FALSE(success);
+  EXPECT_TRUE(failure_reason == PathValidationFailure::Reason::kUnknown);
   const auto* alternative_path =
       QuicConnectionPeer::GetAlternativePath(&connection_);
   EXPECT_TRUE(alternative_path->client_connection_id.IsEmpty());

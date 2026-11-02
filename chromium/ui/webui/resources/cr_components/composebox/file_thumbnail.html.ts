@@ -122,7 +122,7 @@ export function getHtml(this: ComposeboxFileThumbnailElement) {
           <div class="chip-overlay"></div>
         </div>
       ` : (this.file.type.startsWith('image/') || this.file.objectUrl
-            || this.file.dataUrl) ? html`
+            || this.file.dataUrl || this.file.thumbnailUrl) ? html`
         <div id="imgChip" class="img-chip">
           ${this.isUploading_ ? html`
             <svg role="image" class="spinner" viewBox="0 0 100 100">
@@ -133,6 +133,16 @@ export function getHtml(this: ComposeboxFileThumbnailElement) {
               <img is="cr-auto-img" class="img-thumbnail"
                 auto-src="${this.file.thumbnailUrl}"
                 aria-label="${this.file.name}">
+            ` : this.isVideo_() && this.file.objectUrl ? html`
+              <video class="img-thumbnail"
+                src="${this.file.objectUrl}#t=0.001"
+                preload="metadata"
+                muted
+                playsinline
+                disablepictureinpicture
+                disableremoteplayback
+                aria-label="${this.file.name}">
+              </video>
             ` : html`
             <img class="img-thumbnail"
               src="${this.file.objectUrl || this.file.dataUrl}"

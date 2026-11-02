@@ -16,5 +16,5 @@ function isEnvVarTrue(envVar) {
 export default {
   treeshake: true,
   output: [{format: 'iife'}],
-  plugins: isEnvVarTrue(process.env.DEBUG_INJECTED) ? [] : [terser()]
+  plugins: isEnvVarTrue(process.env.DEBUG_INJECTED) ? [] : [terser()],
 };

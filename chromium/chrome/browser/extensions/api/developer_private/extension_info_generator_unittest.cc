@@ -26,6 +26,7 @@
 #include "chrome/browser/extensions/chrome_test_extension_loader.h"
 #include "chrome/browser/extensions/error_console/error_console.h"
 #include "chrome/browser/extensions/extension_action_test_util.h"
+#include "chrome/browser/extensions/extension_management_test_util.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_service_test_with_install.h"
 #include "chrome/browser/extensions/extension_util.h"
@@ -58,7 +59,6 @@
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_builder.h"
-#include "extensions/common/extension_features.h"
 #include "extensions/common/extension_id.h"
 #include "extensions/common/extension_urls.h"
 #include "extensions/common/features/feature_channel.h"
@@ -1244,6 +1244,36 @@ TEST_F(ExtensionInfoGeneratorUnitTest, IsPinnedToToolbar) {
                                 {disable_reason::DISABLE_USER_ACTION});
   info = GenerateExtensionInfo(extension->id());
   EXPECT_FALSE(info->pinned_to_toolbar.has_value());
+}
+
+// Test that a policy-recommended extension (normal_installed) has the correct
+// controlled_info and must_remain_installed fields.
+TEST_F(ExtensionInfoGeneratorUnitTest, RecommendedExtension) {
+  const scoped_refptr<const Extension> extension =
+      CreateExtension("recommended_extension", base::ListValue(),
+                      ManifestLocation::kExternalPrefDownload);
+
+  {
+    ExtensionManagementPrefUpdater<sync_preferences::TestingPrefServiceSyncable>
+        updater(testing_pref_service());
+    updater.SetIndividualExtensionAutoInstalled(
+        extension->id(), extension_urls::kChromeWebstoreUpdateURL,
+        /*forced=*/false);
+  }
+
+  std::unique_ptr<developer::ExtensionInfo> info =
+      GenerateExtensionInfo(extension->id());
+  ASSERT_TRUE(info);
+
+  // Recommended extensions should be marked as controlled by enterprise policy.
+  ASSERT_TRUE(info->controlled_info.has_value());
+  EXPECT_EQ(
+      l10n_util::GetStringUTF8(IDS_EXTENSIONS_INSTALL_LOCATION_ENTERPRISE),
+      info->controlled_info->text);
+
+  // Recommended extensions must remain installed (user cannot uninstall them,
+  // only disable them).
+  EXPECT_TRUE(info->must_remain_installed);
 }
 
 // Test that extensions cannot be uploaded to the user's account if they are

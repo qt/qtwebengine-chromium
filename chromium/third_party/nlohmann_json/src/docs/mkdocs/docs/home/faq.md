@@ -38,6 +38,26 @@ for objects.
 
     To avoid any confusion and ensure portable code, **do not** use brace initialization with the types `basic_json`, `json`, or `ordered_json` unless you want to create an object or array as shown in the examples above.
 
+    To explicitly create a single-element array, use `json::array({value})`:
+
+    ```cpp
+    json j = json::array({true});  // [true]
+    ```
+
+**Opt-in copy semantics (since version 3.12.0)**
+
+If you define `JSON_BRACE_INIT_COPY_SEMANTICS` to `1` before including the library, single-element brace initialization is treated as copy/move instead of creating a single-element array:
+
+```cpp
+#define JSON_BRACE_INIT_COPY_SEMANTICS 1
+#include <nlohmann/json.hpp>
+
+json obj = {{"key", "value"}};
+json j{obj};   // -> {"key":"value"}  (copy, not array)
+```
+
+Without the macro (default behavior), `json j{obj}` creates `[{"key":"value"}]`. This opt-in macro fixes issue #5074 while preserving backwards compatibility for existing code.
+
 ## Limitations
 
 ### Relaxed parsing
@@ -109,6 +129,29 @@ As described [above](#parse-errors-reading-non-ascii-characters), the library as
     }
     ```
 
+## Usage
+
+### Thread safety
+
+!!! question
+
+    Is `basic_json` thread-safe?
+
+No. `basic_json` provides no built-in synchronization, the same as `std::map` or `std::vector`. Concurrent reads of
+the same value from multiple threads are safe, as are concurrent (non-overlapping) accesses to independent `json`
+objects. However, any concurrent write to a `json` object -- or a concurrent read while another thread writes to the
+same object -- is a data race and requires external synchronization (e.g., a `std::mutex`) by the caller.
+
+### Schema validation
+
+!!! question
+
+    Does this library support JSON Schema validation?
+
+Not directly, but the companion project [json-schema-validator](https://github.com/pboettch/json-schema-validator)
+builds JSON Schema (draft 4, 6, 7, and 2019-09) validation on top of this library and is a common recommendation
+for this use case.
+
 ## Exceptions
 
 ### Parsing without exceptions
@@ -150,6 +193,31 @@ The library uses `std::numeric_limits<number_float_t>::digits10` (15 for IEEE `d
     The website https://float.exposed gives a good insight into the internal storage of floating-point numbers.
 
 See [this section](../features/types/number_handling.md#number-serialization) on the library's number handling for more information.
+
+### Using JSON values with `std::format` or `fmt`
+
+!!! question
+
+    - Can I use `std::format("{}", j)` on a JSON value?
+    - Can I use `fmt::format("{}", j)` or `fmt::print("{}", j)` (the [{fmt}](https://github.com/fmtlib/fmt) library) on a JSON value?
+
+`std::format` works out of the box since version 3.13.0, as long as the standard library provides
+`<format>` (see [`JSON_HAS_STD_FORMAT`](../api/macros/json_has_std_format.md)); see
+[`std::formatter<basic_json>`](../api/basic_json/std_formatter.md) for details, including the `#!cpp "{:#}"`
+pretty-print spec, indent widths (`#!cpp "{:2}"`), and custom indent characters (`#!cpp "{:.>#}"`).
+
+For `fmt`, the library ships [`format_as`](../api/basic_json/format_as.md), a small customization point
+`fmt` looks for via argument-dependent lookup. It only has an effect on fmt 10.0.0 through 11.0.2 — from
+fmt 11.1.0 onwards, `fmt` no longer picks up a `format_as` overload that returns a `std::string`. On such
+versions (or any version, if you also want the same `#!cpp "{:#}"`/width/fill-and-align spec support that
+`std::formatter<basic_json>` has), define your own `fmt::formatter` specialization; see
+[`format_as`](../api/basic_json/format_as.md) for a recipe that mirrors it.
+
+If you get ambiguous-overload errors when passing a JSON value to `fmt::format`/`fmt::print` without any
+`fmt::formatter<json>` specialization in scope, that's `fmt` picking up `basic_json`'s implicit
+`operator ValueType()` conversion operator (see [#964](https://github.com/nlohmann/json/issues/964) and
+[#958](https://github.com/nlohmann/json/issues/958)); disabling it via
+[`JSON_USE_IMPLICIT_CONVERSIONS 0`](../api/macros/json_use_implicit_conversions.md) avoids the ambiguity.
 
 ## Compilation issues
 

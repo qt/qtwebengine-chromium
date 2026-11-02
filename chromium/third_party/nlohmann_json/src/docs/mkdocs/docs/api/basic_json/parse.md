@@ -10,8 +10,8 @@ static basic_json parse(InputType&& i,
                         const bool ignore_trailing_commas = false);
 
 // (2)
-template<typename IteratorType>
-static basic_json parse(IteratorType first, IteratorType last,
+template<typename IteratorType, typename SentinelType = IteratorType>
+static basic_json parse(IteratorType first, SentinelType last,
                         const parser_callback_t cb = nullptr,
                         const bool allow_exceptions = true,
                         const bool ignore_comments = false,
@@ -19,10 +19,11 @@ static basic_json parse(IteratorType first, IteratorType last,
 ```
 
 1. Deserialize from a compatible input.
-2. Deserialize from a pair of character iterators
+2. Deserialize from a pair of character iterators, or an iterator and a sentinel of a different type (C++20 ranges support)
     
     The `value_type` of the iterator must be an integral type with size of 1, 2, or 4 bytes, which will be interpreted
-    respectively as UTF-8, UTF-16, and UTF-32.
+    respectively as UTF-8, UTF-16, and UTF-32. If `SentinelType` differs from `IteratorType`, it must be comparable to
+    the iterator type with `operator!=`.
 
 ## Template parameters
 
@@ -34,13 +35,20 @@ static basic_json parse(IteratorType first, IteratorType last,
     - a C-style array of characters
     - a pointer to a null-terminated string of single byte characters (throws if null)
     - a `std::string`
-    - an object `obj` for which `begin(obj)` and `end(obj)` produces a valid pair of iterators.
+    - a container `obj` for which `begin(obj)` and `end(obj)` produce a valid pair of iterators
+      (as found via ADL or member functions, with semantics compatible to `std::begin` and `std::end`)
 
 `IteratorType`
 :   a compatible iterator type, for instance.
 
     - a pair of `std::string::iterator` or `std::vector<std::uint8_t>::iterator`
     - a pair of pointers such as `ptr` and `ptr + len`
+
+`SentinelType`
+:   defaults to `IteratorType`; may be a different type comparable to `IteratorType` via `operator!=`, for instance.
+
+    - a custom sentinel type for C++20 ranges
+    - `std::default_sentinel_t`, when `IteratorType` is `std::counted_iterator`
 
 ## Parameters
 
@@ -66,7 +74,7 @@ static basic_json parse(IteratorType first, IteratorType last,
 :   iterator to the start of a character range
 
 `last` (in)
-:   iterator to the end of a character range
+:   iterator to the end of a character range, or a sentinel value that compares equal to the end iterator with `operator!=`
 
 ## Return value
 
@@ -81,9 +89,6 @@ Strong guarantee: if an exception is thrown, there are no changes in the JSON va
 
 - Throws [`parse_error.101`](../../home/exceptions.md#jsonexceptionparse_error101) in case of an unexpected token, or
   empty input like a null `FILE*` or `char*` pointer.
-- Throws [`parse_error.102`](../../home/exceptions.md#jsonexceptionparse_error102) if `to_unicode` fails or surrogate
-  error.
-- Throws [`parse_error.103`](../../home/exceptions.md#jsonexceptionparse_error103) if `to_unicode` fails.
 
 ## Complexity
 
@@ -94,6 +99,9 @@ super-linear complexity.
 ## Notes
 
 A UTF-8 byte order mark is silently ignored.
+
+Invalid Unicode escapes and unpaired surrogates in the input are reported as
+[`parse_error.101`](../../home/exceptions.md#jsonexceptionparse_error101) with a detailed message.
 
 ## Examples
 
@@ -183,7 +191,7 @@ A UTF-8 byte order mark is silently ignored.
 
 ??? example "Effect of `allow_exceptions` parameter"
 
-    The example below demonstrates the effect of the `allow_exceptions` parameter in the ´parse()` function.
+    The example below demonstrates the effect of the `allow_exceptions` parameter in the `parse()` function.
 
     ```cpp
     --8<-- "examples/parse__allow_exceptions.cpp"
@@ -226,6 +234,7 @@ A UTF-8 byte order mark is silently ignored.
 ## See also
 
 - [accept](accept.md) - check if the input is valid JSON
+- [sax_parse](sax_parse.md) - parse input using the SAX interface
 - [operator>>](../operator_gtgt.md) - deserialize from stream
 
 ## Version history
@@ -234,7 +243,9 @@ A UTF-8 byte order mark is silently ignored.
 - Overload for contiguous containers (1) added in version 2.0.3.
 - Ignoring comments via `ignore_comments` added in version 3.9.0.
 - Changed [runtime assertion](../../features/assertions.md) in case of `FILE*` null pointers to exception in version 3.12.0.
-- Added `ignore_trailing_commas` in version 3.12.1.
+- Added `ignore_trailing_commas` in version 3.13.0.
+- Extended container support (1) to include types with lvalue-only ADL `begin`/`end` (matching `std::begin`/`std::end` semantics) in version 3.13.0.
+- Extended overload (2) to accept heterogeneous iterator+sentinel pairs (C++20 ranges support) in version 3.13.0.
 
 !!! warning "Deprecation"
 

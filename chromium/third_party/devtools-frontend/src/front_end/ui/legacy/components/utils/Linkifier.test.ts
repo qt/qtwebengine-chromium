@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
-import * as Common from '../../../../core/common/common.js';
 import * as Platform from '../../../../core/platform/platform.js';
 import * as SDK from '../../../../core/sdk/sdk.js';
 import type * as Protocol from '../../../../generated/protocol.js';
@@ -14,15 +14,10 @@ import type * as StackTrace from '../../../../models/stack_trace/stack_trace.js'
 import * as Workspace from '../../../../models/workspace/workspace.js';
 import {findMenuItemWithLabel} from '../../../../testing/ContextMenuHelpers.js';
 import {
-  createTarget,
   describeWithEnvironment,
 } from '../../../../testing/EnvironmentHelpers.js';
-import {
-  describeWithMockConnection,
-  dispatchEvent,
-} from '../../../../testing/MockConnection.js';
-import {MockProtocolBackend} from '../../../../testing/MockScopeChain.js';
-import {setMockResourceTree} from '../../../../testing/ResourceTreeHelpers.js';
+import {dispatchEvent} from '../../../../testing/MockConnection.js';
+import {MockDebuggerBackend} from '../../../../testing/MockScopeChain.js';
 import {TestUniverse} from '../../../../testing/TestUniverse.js';
 import * as UI from '../../legacy.js';
 
@@ -40,17 +35,18 @@ function foo(x) {
 }
 `;
 
-describeWithMockConnection('Linkifier', () => {
+describeWithEnvironment('Linkifier', () => {
   function setUpEnvironment() {
-    setMockResourceTree(false);
-    const target = createTarget();
+    const backend = new MockDebuggerBackend();
+    const target = backend.createTarget();
     const linkifier = new Components.Linkifier.Linkifier(100, false);
     linkifier.targetAdded(target);
-    const workspace = Workspace.Workspace.WorkspaceImpl.instance();
+    const workspace = backend.universe.workspace;
     const forceNew = true;
-    const targetManager = target.targetManager();
+    const targetManager = backend.universe.targetManager;
     const resourceMapping = new Bindings.ResourceMapping.ResourceMapping(targetManager, workspace);
-    const ignoreListManager = Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
+    const ignoreListManager = backend.universe.ignoreListManager;
+    sinon.stub(Workspace.IgnoreListManager.IgnoreListManager, 'instance').returns(ignoreListManager);
     const debuggerWorkspaceBinding = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
       forceNew: true,
       resourceMapping,
@@ -59,8 +55,7 @@ describeWithMockConnection('Linkifier', () => {
       workspace,
     });
     Breakpoints.BreakpointManager.BreakpointManager.instance(
-        {forceNew, targetManager, workspace, debuggerWorkspaceBinding, settings: Common.Settings.Settings.instance()});
-    const backend = new MockProtocolBackend();
+        {forceNew, targetManager, workspace, debuggerWorkspaceBinding, settings: backend.universe.settings});
     return {target, linkifier, backend};
   }
 
@@ -70,7 +65,6 @@ describeWithMockConnection('Linkifier', () => {
       const link = Components.Linkifier.Linkifier.linkifyURL(url, {
         text: 'foo',
         showColumnNumber: false,
-        inlineFrameIndex: 1,
       });
       assert.strictEqual(link.innerText, 'foo');
     });
@@ -80,7 +74,6 @@ describeWithMockConnection('Linkifier', () => {
       const link = Components.Linkifier.Linkifier.linkifyURL(url, {
         text: '',
         showColumnNumber: false,
-        inlineFrameIndex: 1,
       });
       assert.strictEqual(link.innerText, 'www.example.com');
     });
@@ -90,9 +83,50 @@ describeWithMockConnection('Linkifier', () => {
       const link = Components.Linkifier.Linkifier.linkifyURL(url, {
         text: '',
         showColumnNumber: false,
-        inlineFrameIndex: 1,
       });
       assert.strictEqual(link.innerText, '(unknown)');
+    });
+
+    it('omits line number and renders column number as hex if omitLineAndRenderColumnAsHex is true', async () => {
+      const url = urlString`http://www.example.com/script.js`;
+      const link = Components.Linkifier.Linkifier.linkifyURL(url, {
+        lineNumber: 10,
+        columnNumber: 33,
+        omitLineAndRenderColumnAsHex: true,
+      });
+      assert.strictEqual(link.innerText, 'www.example.com/script.js:0x21');
+    });
+
+    it('throws an error if omitLineAndRenderColumnAsHex is true and showColumnNumber is explicitly false', async () => {
+      const url = urlString`http://www.example.com/script.js`;
+      assert.throws(() => {
+        Components.Linkifier.Linkifier.linkifyURL(url, {
+          lineNumber: 10,
+          columnNumber: 33,
+          omitLineAndRenderColumnAsHex: true,
+          showColumnNumber: false,
+        });
+      }, 'omitLineAndRenderColumnAsHex requires showColumnNumber to not be explicitly false');
+    });
+
+    it('renders privileged URLs as plain span by default', async () => {
+      const url = urlString`chrome://settings`;
+      const link = Components.Linkifier.Linkifier.linkifyURL(url);
+      assert.strictEqual(link.tagName, 'SPAN');
+      assert.isFalse(link.classList.contains('devtools-link'));
+    });
+
+    it('renders privileged URLs as interactive links if allowPrivileged is true', async () => {
+      const url = urlString`chrome://settings`;
+      const link = Components.Linkifier.Linkifier.linkifyURL(url, {allowPrivileged: true});
+      assert.isTrue(link.classList.contains('devtools-link'));
+    });
+
+    it('renders file URLs as plain span by default', async () => {
+      const url = urlString`file:///etc/passwd`;
+      const link = Components.Linkifier.Linkifier.linkifyURL(url);
+      assert.strictEqual(link.tagName, 'SPAN');
+      assert.isFalse(link.classList.contains('devtools-link'));
     });
   });
 
@@ -240,7 +274,7 @@ describeWithMockConnection('Linkifier', () => {
     void debuggerModel.suspendModel();
 
     const lineNumber = 4;
-    const options = {columnNumber: 8, showColumnNumber: true, inlineFrameIndex: 0};
+    const options = {columnNumber: 8, showColumnNumber: true};
     // Explicitly set url to empty string and let it resolve through the live location.
     const url = Platform.DevToolsPath.EmptyUrlString;
     const anchor = linkifier.maybeLinkifyScriptLocation(target, scriptId1, url, lineNumber, options);
@@ -376,14 +410,16 @@ describeWithMockConnection('Linkifier', () => {
 
          const responder = backend.responderToBreakpointByUrlRequest(url, lineNumber);
          void responder({
-           breakpointId: 'BREAK_ID' as Protocol.Debugger.BreakpointId,
-           locations: [
-             {
-               scriptId: script.scriptId,
-               lineNumber,
-               columnNumber,
-             },
-           ],
+           result: {
+             breakpointId: 'BREAK_ID' as Protocol.Debugger.BreakpointId,
+             locations: [
+               {
+                 scriptId: script.scriptId,
+                 lineNumber,
+                 columnNumber,
+               },
+             ],
+           },
          });
          const breakpoint = await breakpointManager.setBreakpoint(
              uiSourceCode, lineNumber, columnNumber, 'x' as Breakpoints.BreakpointManager.UserCondition,
@@ -391,8 +427,8 @@ describeWithMockConnection('Linkifier', () => {
          assert.exists(breakpoint);
 
          // Create a link that matches exactly the breakpoint location.
-         const anchor = linkifier.maybeLinkifyScriptLocation(
-             target, script.scriptId, url, lineNumber, {inlineFrameIndex: 0, revealBreakpoint: true});
+         const anchor =
+             linkifier.maybeLinkifyScriptLocation(target, script.scriptId, url, lineNumber, {revealBreakpoint: true});
          assert.exists(anchor);
 
          await debuggerWorkspaceBinding.pendingLiveLocationChangesPromise();
@@ -434,6 +470,7 @@ describeWithMockConnection('Linkifier', () => {
       // Detach the source map and check we get the update event.
       const debuggerModel = target.model(SDK.DebuggerModel.DebuggerModel);
       assert.exists(debuggerModel);
+      await debuggerModel.sourceMapManager().waitForSourceMapsProcessedForTest();
       debuggerModel.sourceMapManager().detachSourceMap(script);
 
       await debuggerWorkspaceBinding.pendingLiveLocationChangesPromise();
@@ -468,9 +505,8 @@ describeWithMockConnection('Linkifier', () => {
         liveLocation: null,
         lineNumber: null,
         columnNumber: null,
-        inlineFrameIndex: 0,
         revealable: null,
-        fallback: null
+        fallback: null,
       });
       const openUsingActions = actions.filter(action => action.title.startsWith('Open using'));
       assert.isEmpty(openUsingActions);
@@ -497,9 +533,8 @@ describeWithMockConnection('Linkifier', () => {
         liveLocation: null,
         lineNumber: null,
         columnNumber: null,
-        inlineFrameIndex: 0,
         revealable: null,
-        fallback: null
+        fallback: null,
       });
       const openUsingAction = actions.find(action => action.title === 'Open using Handler for foo-extension');
       assert.exists(openUsingAction);
@@ -540,9 +575,8 @@ describeWithMockConnection('Linkifier', () => {
           liveLocation: null,
           lineNumber: null,
           columnNumber: null,
-          inlineFrameIndex: 0,
           revealable: null,
-          fallback: null
+          fallback: null,
         });
         assert.lengthOf(actions, 3);  // Two fallback actions are always added.
 
@@ -561,9 +595,8 @@ describeWithMockConnection('Linkifier', () => {
           liveLocation: null,
           lineNumber: null,
           columnNumber: null,
-          inlineFrameIndex: 0,
           revealable: null,
-          fallback: null
+          fallback: null,
         });
         assert.lengthOf(actions, 3);  // One for our handler + 'Open in New Tab' and 'Copy link'.
 
@@ -582,9 +615,8 @@ describeWithMockConnection('Linkifier', () => {
           liveLocation: null,
           lineNumber: null,
           columnNumber: null,
-          inlineFrameIndex: 0,
           revealable: null,
-          fallback: null
+          fallback: null,
         });
         assert.lengthOf(actions, 3);  // One for our handler + 'Open in New Tab' and 'Copy link'.
 
@@ -614,5 +646,102 @@ describeWithEnvironment('ContentProviderContextMenuProvider', () => {
     provider.appendApplicableItems({} as Event, contextMenu, uiSourceCode);
     openInNewTabItem = findMenuItemWithLabel(contextMenu.revealSection(), 'Open in new tab');
     assert.isUndefined(openInNewTabItem);
+  });
+});
+
+describeWithEnvironment('isRegisteredLinkHandlerScheme', () => {
+  const registrations: Components.Linkifier.LinkHandlerRegistration[] = [];
+
+  afterEach(() => {
+    for (const registration of registrations) {
+      Components.Linkifier.Linkifier.unregisterLinkHandler(registration);
+    }
+    registrations.length = 0;
+  });
+
+  function registerHandler(registration: Components.Linkifier.LinkHandlerRegistration): void {
+    Components.Linkifier.Linkifier.registerLinkHandler(registration);
+    registrations.push(registration);
+  }
+
+  it('returns false when no handlers are registered', () => {
+    assert.isFalse(Components.Linkifier.Linkifier.isRegisteredLinkHandlerScheme('ext:'));
+  });
+
+  it('returns true for a registered scheme', () => {
+    registerHandler({
+      title: 'Ext A',
+      origin: urlString`ext-a:origin`,
+      scheme: 'ext-a:',
+      handler: () => {},
+      shouldHandleOpenResource: () => true,
+    });
+
+    assert.isTrue(Components.Linkifier.Linkifier.isRegisteredLinkHandlerScheme('ext-a:'));
+    assert.isFalse(Components.Linkifier.Linkifier.isRegisteredLinkHandlerScheme('ext-b:'));
+  });
+
+  it('returns false for handlers registered without a scheme', () => {
+    registerHandler({
+      title: 'Global Handler',
+      origin: urlString`global:origin`,
+      handler: () => {},
+      shouldHandleOpenResource: () => true,
+    });
+
+    assert.isFalse(Components.Linkifier.Linkifier.isRegisteredLinkHandlerScheme('global:'));
+  });
+
+  it('returns false after unregistration', () => {
+    const registration: Components.Linkifier.LinkHandlerRegistration = {
+      title: 'Ext',
+      origin: urlString`ext:origin`,
+      scheme: 'ext:',
+      handler: () => {},
+      shouldHandleOpenResource: () => true,
+    };
+    Components.Linkifier.Linkifier.registerLinkHandler(registration);
+    Components.Linkifier.Linkifier.unregisterLinkHandler(registration);
+
+    assert.isFalse(Components.Linkifier.Linkifier.isRegisteredLinkHandlerScheme('ext:'));
+  });
+});
+
+describeWithEnvironment('LinkHandlerSettingUI', () => {
+  let registrations: Components.Linkifier.LinkHandlerRegistration[] = [];
+
+  afterEach(() => {
+    for (const registration of registrations) {
+      Components.Linkifier.Linkifier.unregisterLinkHandler(registration);
+    }
+    registrations = [];
+  });
+
+  function registerHandler(registration: Components.Linkifier.LinkHandlerRegistration): void {
+    Components.Linkifier.Linkifier.registerLinkHandler(registration);
+    registrations.push(registration);
+  }
+
+  it('displays the title of the registered link handlers', () => {
+    const origin = urlString`chrome-extension://test-origin`;
+    const title = 'Test Link Handler';
+    const registration: Components.Linkifier.LinkHandlerRegistration = {
+      title,
+      origin,
+      handler: () => {},
+      shouldHandleOpenResource: () => true,
+    };
+
+    registerHandler(registration);
+
+    const ui = Components.Linkifier.LinkHandlerSettingUI.instance({forceNew: true});
+    const element = ui.settingElement();
+    const select = element.querySelector('select') as HTMLSelectElement;
+    assert.exists(select);
+
+    const options = Array.from(select.options);
+    const testOption = options.find(option => option.value === origin);
+    assert.exists(testOption);
+    assert.strictEqual(testOption.text, title);
   });
 });

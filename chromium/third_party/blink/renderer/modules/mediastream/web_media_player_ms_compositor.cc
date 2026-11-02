@@ -118,43 +118,46 @@ scoped_refptr<media::VideoFrame> CopyFrame(
     }
 
     if (frame->format() == media::PIXEL_FORMAT_NV12) {
-      libyuv::NV12Copy(frame->data(media::VideoFrame::Plane::kY),
-                       frame->stride(media::VideoFrame::Plane::kY),
-                       frame->data(media::VideoFrame::Plane::kUV),
-                       frame->stride(media::VideoFrame::Plane::kUV),
-                       new_frame->writable_data(media::VideoFrame::Plane::kY),
-                       new_frame->stride(media::VideoFrame::Plane::kY),
-                       new_frame->writable_data(media::VideoFrame::Plane::kUV),
-                       new_frame->stride(media::VideoFrame::Plane::kUV),
-                       coded_size.width(), coded_size.height());
+      libyuv::NV12Copy(
+          frame->data(media::VideoFrame::Plane::kY),
+          static_cast<int>(frame->stride(media::VideoFrame::Plane::kY)),
+          frame->data(media::VideoFrame::Plane::kUV),
+          static_cast<int>(frame->stride(media::VideoFrame::Plane::kUV)),
+          new_frame->writable_data(media::VideoFrame::Plane::kY),
+          static_cast<int>(new_frame->stride(media::VideoFrame::Plane::kY)),
+          new_frame->writable_data(media::VideoFrame::Plane::kUV),
+          static_cast<int>(new_frame->stride(media::VideoFrame::Plane::kUV)),
+          coded_size.width(), coded_size.height());
     } else if (frame->format() == media::PIXEL_FORMAT_ARGB) {
       libyuv::ARGBCopy(
           frame->data(media::VideoFrame::Plane::kARGB),
-          frame->stride(media::VideoFrame::Plane::kARGB),
+          static_cast<int>(frame->stride(media::VideoFrame::Plane::kARGB)),
           new_frame->writable_data(media::VideoFrame::Plane::kARGB),
-          new_frame->stride(media::VideoFrame::Plane::kARGB),
+          static_cast<int>(new_frame->stride(media::VideoFrame::Plane::kARGB)),
           coded_size.width(), coded_size.height());
     } else {
-      libyuv::I420Copy(frame->data(media::VideoFrame::Plane::kY),
-                       frame->stride(media::VideoFrame::Plane::kY),
-                       frame->data(media::VideoFrame::Plane::kU),
-                       frame->stride(media::VideoFrame::Plane::kU),
-                       frame->data(media::VideoFrame::Plane::kV),
-                       frame->stride(media::VideoFrame::Plane::kV),
-                       new_frame->writable_data(media::VideoFrame::Plane::kY),
-                       new_frame->stride(media::VideoFrame::Plane::kY),
-                       new_frame->writable_data(media::VideoFrame::Plane::kU),
-                       new_frame->stride(media::VideoFrame::Plane::kU),
-                       new_frame->writable_data(media::VideoFrame::Plane::kV),
-                       new_frame->stride(media::VideoFrame::Plane::kV),
-                       coded_size.width(), coded_size.height());
+      libyuv::I420Copy(
+          frame->data(media::VideoFrame::Plane::kY),
+          static_cast<int>(frame->stride(media::VideoFrame::Plane::kY)),
+          frame->data(media::VideoFrame::Plane::kU),
+          static_cast<int>(frame->stride(media::VideoFrame::Plane::kU)),
+          frame->data(media::VideoFrame::Plane::kV),
+          static_cast<int>(frame->stride(media::VideoFrame::Plane::kV)),
+          new_frame->writable_data(media::VideoFrame::Plane::kY),
+          static_cast<int>(new_frame->stride(media::VideoFrame::Plane::kY)),
+          new_frame->writable_data(media::VideoFrame::Plane::kU),
+          static_cast<int>(new_frame->stride(media::VideoFrame::Plane::kU)),
+          new_frame->writable_data(media::VideoFrame::Plane::kV),
+          static_cast<int>(new_frame->stride(media::VideoFrame::Plane::kV)),
+          coded_size.width(), coded_size.height());
     }
     if (frame->format() == media::PIXEL_FORMAT_I420A) {
-      libyuv::CopyPlane(frame->data(media::VideoFrame::Plane::kA),
-                        frame->stride(media::VideoFrame::Plane::kA),
-                        new_frame->writable_data(media::VideoFrame::Plane::kA),
-                        new_frame->stride(media::VideoFrame::Plane::kA),
-                        coded_size.width(), coded_size.height());
+      libyuv::CopyPlane(
+          frame->data(media::VideoFrame::Plane::kA),
+          static_cast<int>(frame->stride(media::VideoFrame::Plane::kA)),
+          new_frame->writable_data(media::VideoFrame::Plane::kA),
+          static_cast<int>(new_frame->stride(media::VideoFrame::Plane::kA)),
+          coded_size.width(), coded_size.height());
     }
   }
 
@@ -217,7 +220,6 @@ WebMediaPlayerMSCompositor::WebMediaPlayerMSCompositor(
     scoped_refptr<base::SequencedTaskRunner> video_task_runner,
     MediaStreamDescriptor* media_stream_descriptor,
     std::unique_ptr<WebVideoFrameSubmitter> submitter,
-    bool use_surface_layer,
     const base::WeakPtr<WebMediaPlayerMS>& player)
     : video_frame_compositor_task_runner_(video_frame_compositor_task_runner),
       video_task_runner_(video_task_runner),
@@ -232,18 +234,16 @@ WebMediaPlayerMSCompositor::WebMediaPlayerMSCompositor(
       stopped_(true),
       render_started_(!stopped_) {
   weak_this_ = weak_ptr_factory_.GetWeakPtr();
-  if (use_surface_layer) {
-    submitter_ = std::move(submitter);
+  submitter_ = std::move(submitter);
 
-    PostCrossThreadTask(
-        *video_frame_compositor_task_runner_, FROM_HERE,
-        CrossThreadBindOnce(&WebMediaPlayerMSCompositor::InitializeSubmitter,
-                            weak_this_));
-    update_submission_state_callback_ = base::BindPostTask(
-        video_frame_compositor_task_runner_,
-        ConvertToBaseRepeatingCallback(CrossThreadBindRepeating(
-            &WebMediaPlayerMSCompositor::SetIsSurfaceVisible, weak_this_)));
-  }
+  PostCrossThreadTask(
+      *video_frame_compositor_task_runner_, FROM_HERE,
+      CrossThreadBindOnce(&WebMediaPlayerMSCompositor::InitializeSubmitter,
+                          weak_this_));
+  update_submission_state_callback_ = base::BindPostTask(
+      video_frame_compositor_task_runner_,
+      ConvertToBaseRepeatingCallback(CrossThreadBindRepeating(
+          &WebMediaPlayerMSCompositor::SetIsSurfaceVisible, weak_this_)));
 
   auto* video_component = GetVideoComponent(media_stream_descriptor);
   const bool is_remote_video = video_component && video_component->Remote();
@@ -550,9 +550,9 @@ bool WebMediaPlayerMSCompositor::UpdateCurrentFrame(
   TRACE_EVENT("media", "UpdateCurrentFrame");
   DCHECK(video_frame_compositor_task_runner_->BelongsToCurrentThread());
 
-  TRACE_EVENT_BEGIN2("media", "UpdateCurrentFrame", "Actual Render Begin",
-                     deadline_min.ToInternalValue(), "Actual Render End",
-                     deadline_max.ToInternalValue());
+  TRACE_EVENT_BEGIN("media", "UpdateCurrentFrame", "Actual Render Begin",
+                    deadline_min.ToInternalValue(), "Actual Render End",
+                    deadline_max.ToInternalValue());
   if (stopped_)
     return false;
 
@@ -579,8 +579,8 @@ bool WebMediaPlayerMSCompositor::UpdateCurrentFrame(
               !rendering_frame_buffer_->NeedsReferenceTime()))
           << "VideoFrames need REFERENCE_TIME to use "
              "sophisticated video rendering algorithm.";
-      TRACE_EVENT_END2("media", "UpdateCurrentFrame", "Ideal Render Instant",
-                       render_time.ToInternalValue(), "Serial", serial_);
+      TRACE_EVENT_END("media", "Ideal Render Instant",
+                      render_time.ToInternalValue(), "Serial", serial_);
     }
   }
 
@@ -920,7 +920,7 @@ void WebMediaPlayerMSCompositor::
   if (negative_display_duration_count_ > 0) {
     base::UmaHistogramCounts100(
         "Media.WebMediaPlayerCompositor.NegativeDisplayDurationCount",
-        negative_display_duration_count_);
+        base::saturated_cast<int>(negative_display_duration_count_));
     negative_display_duration_count_ = 0;
   }
 
@@ -1100,10 +1100,6 @@ void WebMediaPlayerMSCompositor::CheckForFrameChanges(
   }
 
   if (new_frame_transform.has_value()) {
-    PostCrossThreadTask(
-        *main_task_runner_, FROM_HERE,
-        CrossThreadBindOnce(&WebMediaPlayerMS::OnTransformChanged, player_,
-                            *new_frame_transform));
     if (submitter_)
       submitter_->SetTransform(*new_frame_transform);
   }

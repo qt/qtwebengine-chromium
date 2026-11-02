@@ -135,7 +135,7 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
 
     // The first VkDescriptorSetLayout is the one for the framebuffer fetch and/or resource table if
     // needed and pushes the bindings for all other bindgroups.
-    BindGroupIndex startOfBindGroups{0};
+    BindGroupIndex startOfBindGroups{0u};
 
     std::unordered_map<uint32_t, tint::BindingPoint> framebuffer_fetch_bindings;
     if (in.pipelineUsesFramebufferFetch) {
@@ -144,11 +144,11 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
                 framebuffer_fetch_bindings[i] = {static_cast<uint32_t>(startOfBindGroups), i};
             }
         }
-        startOfBindGroups = startOfBindGroups + BindGroupIndex(1);
+        startOfBindGroups = startOfBindGroups + BindGroupIndex(1u);
     }
 
     if (in.layout->UsesResourceTable()) {
-        startOfBindGroups = BindGroupIndex(1);
+        startOfBindGroups = BindGroupIndex(1u);
     }
 
     auto ToWGSLBindPoint = [](BindGroupIndex group, BindingNumber binding) -> tint::BindingPoint {
@@ -317,8 +317,22 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
     req.tintOptions.extensions.use_uniform_buffers =
         !GetDevice()->IsToggleEnabled(Toggle::DecomposeUniformBuffers);
 
-    req.tintOptions.workarounds.subgroup_shuffle_clamped =
-        GetDevice()->IsToggleEnabled(Toggle::SubgroupShuffleClamped);
+    // Maximal reconvergence takes precedence over subgroup uniform control flow in the SPIR-V
+    // backend so just try to turn both on.
+    if (GetDevice()->IsToggleEnabled(Toggle::UseSpirvReconvergenceMode)) {
+        req.tintOptions.extensions.use_maximal_reconvergence =
+            ToBackend(GetDevice())->GetDeviceInfo().HasExt(DeviceExt::MaximalReconvergence) &&
+            ToBackend(GetDevice())
+                    ->GetDeviceInfo()
+                    .shaderMaximalReconvergenceFeatures.shaderMaximalReconvergence == VK_TRUE;
+        req.tintOptions.extensions.use_subgroup_uniform_control_flow =
+            ToBackend(GetDevice())->GetDeviceInfo().HasExt(DeviceExt::SubgroupUniformControlFlow) &&
+            ToBackend(GetDevice())
+                    ->GetDeviceInfo()
+                    .shaderSubgroupUniformControlFlowFeatures.shaderSubgroupUniformControlFlow ==
+                VK_TRUE;
+    }
+
     req.tintOptions.workarounds.texture_sample_compare_depth_cube_array =
         GetDevice()->IsToggleEnabled(Toggle::VulkanSampleCompareDepthCubeArrayWorkaround);
     req.tintOptions.workarounds.texture_sample_compare_2d_polyfill =
@@ -349,6 +363,9 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
     }
 
     // Set internal immediate offsets
+    // Size the immediate block to the pipeline's used slots so the decomposed array matches the
+    // push constant range reserved by the pipeline layout (see ToPushConstantBytes).
+    req.tintOptions.minimum_immediate_size = in.immediateMask.count() * kImmediateElementByteSize;
     if (HasImmediates(&RenderImmediates::clampFragDepth, in.immediateMask)) {
         uint32_t offsetStartBytes =
             GetImmediateByteOffsetInPipeline(&RenderImmediates::clampFragDepth, in.immediateMask);
@@ -456,7 +473,7 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
 
 #ifdef DAWN_ENABLE_SPIRV_VALIDATION
     if (GetDevice()->IsToggleEnabled(Toggle::DumpShaders)) {
-        DumpSpirv(GetDevice(), compilation->spirv.data(), compilation->spirv.size());
+        DumpSpirv(GetDevice(), compilation->spirv);
     }
 
     if (GetDevice()->IsToggleEnabled(Toggle::EnableSpirvValidation)) {
@@ -464,8 +481,7 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
 
         // Validate and if required dump the compiled SPIR-V code.
         const bool spv14 = GetDevice()->IsToggleEnabled(Toggle::UseSpirv14);
-        DAWN_TRY(ValidateSpirv(GetDevice(), compilation->spirv.data(), compilation->spirv.size(),
-                               spv14));
+        DAWN_TRY(ValidateSpirv(GetDevice(), compilation->spirv, spv14));
     }
 #endif
 

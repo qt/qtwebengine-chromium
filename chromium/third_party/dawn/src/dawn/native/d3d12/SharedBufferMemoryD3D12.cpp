@@ -101,8 +101,8 @@ ResultOrError<SharedBufferMemoryProperties> GetSharedBufferMemoryProperties(
     Device* device,
     D3D12_HEAP_PROPERTIES heapProperties,
     D3D12_HEAP_FLAGS heapFlags,
-    bool allowUAV,
-    uint64_t size) {
+    uint64_t size,
+    wgpu::BufferUsage blockedUsages = wgpu::BufferUsage::None) {
     HeapAccessType heapType;
     DAWN_TRY_ASSIGN(heapType, MapToHeapAccessType(heapProperties, heapFlags, device));
 
@@ -119,11 +119,8 @@ ResultOrError<SharedBufferMemoryProperties> GetSharedBufferMemoryProperties(
             // wgpu::BufferUsage::Uniform is not allowed in SharedBufferMemoryBase::CreateBuffer().
             usages |= wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::CopyDst |
                       wgpu::BufferUsage::Vertex | wgpu::BufferUsage::Index |
-                      wgpu::BufferUsage::Indirect | wgpu::BufferUsage::QueryResolve;
-            if (allowUAV) {
-                usages |= wgpu::BufferUsage::Storage;
-            }
-
+                      wgpu::BufferUsage::Indirect | wgpu::BufferUsage::QueryResolve |
+                      wgpu::BufferUsage::Uniform | wgpu::BufferUsage::Storage;
             if (device->GetDeviceInfo().isUMA) {
                 // On UMA systems, buffers with WRITE_COMBINE or WRITE_BACK heaps can also be
                 // mapped.
@@ -139,12 +136,13 @@ ResultOrError<SharedBufferMemoryProperties> GetSharedBufferMemoryProperties(
                     usages |= wgpu::BufferUsage::MapRead | wgpu::BufferUsage::MapWrite;
                 }
             }
+
             break;
     }
 
     SharedBufferMemoryProperties properties;
     properties.size = size;
-    properties.usage = usages;
+    properties.usage = usages & (~blockedUsages);
 
     return properties;
 }
@@ -193,11 +191,15 @@ ResultOrError<Ref<SharedBufferMemory>> SharedBufferMemory::Create(
     D3D12_HEAP_FLAGS heapFlags;
     d3d12Resource->GetHeapProperties(&heapProperties, &heapFlags);
 
-    bool allowUAV = desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-
+    // wgpu::BufferUsage::Uniform is disabled because the external D3D12 resource may not meet the
+    // requirement of D3D12 constant buffer alignment(256).
+    wgpu::BufferUsage blockedUsages = wgpu::BufferUsage::Uniform;
+    if (!(desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS)) {
+        blockedUsages |= wgpu::BufferUsage::Storage;
+    }
     SharedBufferMemoryProperties properties;
     DAWN_TRY_ASSIGN(properties, GetSharedBufferMemoryProperties(device, heapProperties, heapFlags,
-                                                                allowUAV, desc.Width));
+                                                                desc.Width, blockedUsages));
 
     auto result =
         AcquireRef(new SharedBufferMemory(device, label, properties, std::move(d3d12Resource)));
@@ -209,7 +211,7 @@ ResultOrError<Ref<SharedBufferMemory>> SharedBufferMemory::Create(
 ResultOrError<Ref<SharedBufferMemory>> SharedBufferMemory::Create(
     Device* device,
     StringView label,
-    const SharedBufferMemoryD3D12SharedMemoryFileMappingHandleDescriptor* descriptor) {
+    const SharedBufferMemoryFromWindowsHandleDescriptor* descriptor) {
     HANDLE sharedMemoryFileHandle = descriptor->handle;
     DAWN_INVALID_IF(sharedMemoryFileHandle == nullptr, "shared HANDLE is missing.");
 
@@ -231,7 +233,7 @@ ResultOrError<Ref<SharedBufferMemory>> SharedBufferMemory::Create(
     D3D12_HEAP_FLAGS heapFlags = heapDesc.Flags;
     SharedBufferMemoryProperties properties;
     DAWN_TRY_ASSIGN(properties, GetSharedBufferMemoryProperties(device, heapProperties, heapFlags,
-                                                                true, descriptor->size));
+                                                                descriptor->size));
 
     D3D12_RESOURCE_DESC resourceDescriptor;
     resourceDescriptor.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
@@ -293,9 +295,7 @@ MaybeError SharedBufferMemory::BeginAccessImpl(
     BufferBase* buffer,
     const UnpackedPtr<BeginAccessDescriptor>& descriptor) {
     DAWN_TRY(descriptor.ValidateSubset<>());
-    for (size_t i = 0; i < descriptor->fenceCount; ++i) {
-        SharedFenceBase* fence = DAWN_UNSAFE_TODO(descriptor->fences[i]);
-
+    for (SharedFenceBase* fence : descriptor->fences) {
         SharedFenceExportInfo exportInfo;
         DAWN_TRY(fence->ExportInfo(&exportInfo));
         switch (exportInfo.type) {

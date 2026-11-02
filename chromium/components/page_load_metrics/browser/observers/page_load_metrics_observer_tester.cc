@@ -80,6 +80,11 @@ class TestPageLoadMetricsEmbedderInterface
 
   bool ShouldObserveScheme(std::string_view scheme) override { return false; }
 
+  NavigationScenario GetNavigationScenario(
+      content::NavigationHandle* navigation_handle) const override {
+    return test_->GetNavigationScenario(navigation_handle);
+  }
+
  private:
   raw_ptr<PageLoadMetricsObserverTester> test_;
 };
@@ -351,7 +356,8 @@ void PageLoadMetricsObserverTester::SimulateLoadedResource(
     resource_load_info.load_timing_info.request_start = base::TimeTicks::Now();
 
   metrics_web_contents_observer_->ResourceLoadComplete(
-      web_contents()->GetPrimaryMainFrame(), request_id, resource_load_info);
+      web_contents()->GetPrimaryMainFrame(), request_id,
+      resource_load_info.original_url, resource_load_info);
 }
 
 void PageLoadMetricsObserverTester::SimulateFrameReceivedUserActivation(

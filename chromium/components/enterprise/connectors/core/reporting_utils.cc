@@ -228,6 +228,9 @@ proto::ContentTransferMethod ToProtoContentTransferMethod(
   if (method == kContentTransferMethodFilePaste) {
     return proto::CONTENT_TRANSFER_METHOD_FILE_PASTE;
   }
+  if (method == kContentTransferMethodClipboardCopy) {
+    return proto::CONTENT_TRANSFER_METHOD_CLIPBOARD_COPY;
+  }
   NOTREACHED();
 }
 
@@ -282,6 +285,9 @@ proto::TriggeredRuleInfo::Action ActionProtoFromTriggerRuleAction(
     case TriggeredRule::Action::
         ContentAnalysisResponse_Result_TriggeredRule_Action_BLOCK:
       return proto::TriggeredRuleInfo::BLOCK;
+    case TriggeredRule::Action::
+        ContentAnalysisResponse_Result_TriggeredRule_Action_KEEP_IN_MANAGED_CHROME:
+      return proto::TriggeredRuleInfo::KEEP_IN_MANAGED_CHROME;
   }
 }
 

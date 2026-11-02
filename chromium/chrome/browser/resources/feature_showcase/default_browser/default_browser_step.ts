@@ -8,6 +8,8 @@ import '../feature_showcase_step.js';
 
 import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
 
+import {browserProxyFactory} from '../default_browser.mojom-webui.js';
+
 import {getCss} from './default_browser_step.css.js';
 import {getHtml} from './default_browser_step.html.js';
 
@@ -33,12 +35,14 @@ export class FeatureShowcaseDefaultBrowserStepElement extends CrLitElement {
   accessor buttonsDisabled: boolean = false;
 
   protected onConfirmButtonClick_() {
-    // TODO(b/505629973): Add sending the event to the browser.
+    this.buttonsDisabled = true;
+    browserProxyFactory.getInstance().handler.setAsDefaultBrowser();
     this.fire('step-completed');
   }
 
   protected onSkipButtonClick_() {
-    // TODO(b/505629973): Add sending the event to the browser.
+    this.buttonsDisabled = true;
+    browserProxyFactory.getInstance().handler.skipSetAsDefaultBrowser();
     this.fire('step-completed');
   }
 }

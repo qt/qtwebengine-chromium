@@ -43,13 +43,16 @@ import * as SDK from '../../core/sdk/sdk.js';
  * Opens the given `url` in a new Chrome tab.
  *
  * If the `url` is a Google owned documentation page (currently that includes
- * `web.dev`, `developers.google.com`, and `developer.chrome.com`), the `url`
- * will also be checked for UTM parameters:
+ * `web.dev`, `developers.google.com`, and `developer.chrome.com`) or an MDN
+ * documentation page (`developer.mozilla.org`), the `url` will also be checked
+ * for UTM parameters:
  *
- * - If no `utm_source` search parameter is present, this method will add a new
- *   search parameter `utm_source=devtools` to `url`.
- * - If no `utm_campaign` search parameter is present, and DevTools is running
- *   within a branded build, this method will add `utm_campaign=<channel>` to
+ * - For MDN links (`developer.mozilla.org`), if neither `utm_source` nor `utm_medium` is present,
+ *   this method will add `utm_source=chrome-devtools` and `utm_medium=referral`.
+ * - For Google documentation links, if no `utm_source` search parameter is present, this method
+ *   will add a new search parameter `utm_source=devtools` to `url`.
+ * - If no `utm_campaign` search parameter is present on Google documentation links, and DevTools
+ *   is running within a branded build, this method will add `utm_campaign=<channel>` to
  *   the search parameters, with `<channel>` being the release channel of
  *   Chrome ("stable", "beta", "dev", or "canary").
  *
@@ -57,15 +60,15 @@ import * as SDK from '../../core/sdk/sdk.js';
  * @throws TypeError if `url` is not a valid URL.
  * @see https://en.wikipedia.org/wiki/UTM_parameters
  */
-export function openInNewTab(url: URL|string): void {
+export function openInNewTab(url: URL|string, allowPrivileged?: boolean): void {
   url = new URL(url);
   if (Common.ParsedURL.schemeIs(url, 'javascript:')) {
     return;
   }
 
   // Navigating to a chrome:// link via a normal anchor doesn't work, so we "navigate"
-  // there using CDP.
-  if (Common.ParsedURL.schemeIs(url, 'chrome:')) {
+  // there using CDP if explicitly requested.
+  if (allowPrivileged && Common.ParsedURL.schemeIs(url, 'chrome:')) {
     const rootTarget = SDK.TargetManager.TargetManager.instance().rootTarget();
     if (rootTarget === null) {
       return;
@@ -77,7 +80,12 @@ export function openInNewTab(url: URL|string): void {
       }
     });
   } else {
-    if (['developer.chrome.com', 'developers.google.com', 'web.dev'].includes(url.hostname)) {
+    if (url.hostname === 'developer.mozilla.org') {
+      if (!url.searchParams.has('utm_source') && !url.searchParams.has('utm_medium')) {
+        url.searchParams.append('utm_source', 'chrome-devtools');
+        url.searchParams.append('utm_medium', 'referral');
+      }
+    } else if (['developer.chrome.com', 'developers.google.com', 'web.dev'].includes(url.hostname)) {
       if (!url.searchParams.has('utm_source')) {
         url.searchParams.append('utm_source', 'devtools');
       }

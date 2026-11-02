@@ -8,7 +8,6 @@
 #define CORE_FPDFDOC_CPDF_FILESPEC_H_
 
 #include "core/fxcrt/retain_ptr.h"
-#include "core/fxcrt/string_pool_template.h"
 #include "core/fxcrt/weak_ptr.h"
 #include "core/fxcrt/widestring.h"
 
@@ -31,6 +30,8 @@ class CPDF_FileSpec {
   RetainPtr<const CPDF_Stream> GetFileStream() const;
   RetainPtr<const CPDF_Dictionary> GetParamsDict() const;
   RetainPtr<CPDF_Dictionary> GetMutableParamsDict();
+  RetainPtr<const CPDF_Dictionary> GetFileSpecDict() const;
+  RetainPtr<CPDF_Dictionary> GetMutableFileSpecDict();
 
  private:
   RetainPtr<const CPDF_Object> const obj_;

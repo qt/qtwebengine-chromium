@@ -105,7 +105,8 @@ class StyleEngineTest : public PageTestBase {
   }
 
   const CSSValue* ComputedValue(Element* element, String property_name) {
-    CSSPropertyRef ref(property_name, GetDocument());
+    AtomicString atomic_name(property_name);
+    CSSPropertyRef ref(&atomic_name, GetDocument());
     DCHECK(ref.IsValid());
     return ref.GetProperty().CSSValueFromComputedStyle(
         element->ComputedStyleRef(),
@@ -3111,6 +3112,8 @@ TEST_F(StyleEngineTest, RecalcPropagatedWritingMode) {
 }
 
 TEST_F(StyleEngineTest, GetComputedStyleOutsideFlatTree) {
+  ScopedGetComputedStyleOutsideFlatTreeForTest scoped_feature(true);
+
   GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(
       R"HTML(<div id="host"><div id="outer"><div id="inner"><div id="innermost"></div></div></div></div>)HTML");
 
@@ -3284,6 +3287,8 @@ TEST_F(StyleEngineTest, RemoveStyleRecalcRootFromFlatTree) {
 }
 
 TEST_F(StyleEngineTest, SlottedWithEnsuredStyleOutsideFlatTree) {
+  ScopedGetComputedStyleOutsideFlatTreeForTest scoped_feature(true);
+
   GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <div id="host"><span></span></div>
   )HTML");
@@ -5948,6 +5953,8 @@ TEST_F(StyleEngineTest, CascadeLayersSheetsRemoved) {
 }
 
 TEST_F(StyleEngineTest, NonSlottedStyleDirty) {
+  ScopedGetComputedStyleOutsideFlatTreeForTest scoped_feature(true);
+
   GetDocument().body()->SetInnerHTMLWithoutTrustedTypes("<div id=host></div>");
   auto* host = GetDocument().getElementById(AtomicString("host"));
   ASSERT_TRUE(host);
@@ -6373,8 +6380,8 @@ TEST_F(StyleEngineTest, ScrollbarStyleNoExcessiveCaching) {
   UpdateAllLifecyclePhases();
   EXPECT_FALSE(container->GetComputedStyle()->GetPseudoElementStyleCache());
   EXPECT_EQ("rgb(255, 0, 0)", custom_scrollbar->GetPart(kThumbPart)
-                                  ->Style()
-                                  ->BackgroundColor()
+                                  ->StyleRef()
+                                  .BackgroundColor()
                                   .GetColor()
                                   .SerializeAsCSSColor());
 
@@ -6382,8 +6389,8 @@ TEST_F(StyleEngineTest, ScrollbarStyleNoExcessiveCaching) {
   UpdateAllLifecyclePhases();
   EXPECT_FALSE(container->GetComputedStyle()->GetPseudoElementStyleCache());
   EXPECT_EQ("rgb(0, 128, 0)", custom_scrollbar->GetPart(kThumbPart)
-                                  ->Style()
-                                  ->BackgroundColor()
+                                  ->StyleRef()
+                                  .BackgroundColor()
                                   .GetColor()
                                   .SerializeAsCSSColor());
 }
@@ -7735,7 +7742,7 @@ TEST_F(StyleEngineTest, UpdateRootFontRelativeUnits_NoRecalcForNonInherited) {
   UpdateAllLifecyclePhasesForTest();
 
   // Verify that the document is using root font-relative units (rem).
-  ASSERT_TRUE(GetStyleEngine().UsesRootFontRelativeUnits())
+  ASSERT_TRUE(GetStyleEngine().UsesRootRelativeUnits())
       << "Document should be using root font-relative units (rem)";
   // Also verify glyph-relative units (ch) are tracked.
   ASSERT_TRUE(GetStyleEngine().UsesGlyphRelativeUnits())

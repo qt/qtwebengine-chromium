@@ -111,15 +111,14 @@ struct TensorEvaluator<const TensorInflationOp<Strides, ArgType>, Device> {
     }
 
     const typename TensorEvaluator<ArgType, Device>::Dimensions& input_dims = m_impl.dimensions();
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       m_outputStrides[0] = 1;
       m_inputStrides[0] = 1;
       for (int i = 1; i < NumDims; ++i) {
         m_outputStrides[i] = m_outputStrides[i - 1] * m_dimensions[i - 1];
         m_inputStrides[i] = m_inputStrides[i - 1] * input_dims[i - 1];
       }
-    }
-    else {  // RowMajor
+    } else {  // RowMajor
       m_outputStrides[NumDims - 1] = 1;
       m_inputStrides[NumDims - 1] = 1;
       for (int i = NumDims - 2; i >= 0; --i) {
@@ -142,7 +141,7 @@ struct TensorEvaluator<const TensorInflationOp<Strides, ArgType>, Device> {
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool getInputIndex(Index index, Index* inputIndex) const {
     eigen_assert(index < dimensions().TotalSize());
     *inputIndex = 0;
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       EIGEN_UNROLL_LOOP
       for (int i = NumDims - 1; i > 0; --i) {
         const Index idx = index / m_outputStrides[i];
@@ -157,8 +156,7 @@ struct TensorEvaluator<const TensorInflationOp<Strides, ArgType>, Device> {
       }
       *inputIndex += index / m_strides[0];
       return true;
-    }
-    else {
+    } else {
       EIGEN_UNROLL_LOOP
       for (int i = 0; i < NumDims - 1; ++i) {
         const Index idx = index / m_outputStrides[i];

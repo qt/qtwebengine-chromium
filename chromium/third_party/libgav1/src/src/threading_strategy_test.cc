@@ -21,7 +21,6 @@
 #include "absl/strings/str_cat.h"
 #include "gtest/gtest.h"
 #include "src/frame_scratch_buffer.h"
-#include "src/obu_parser.h"
 #include "src/utils/constants.h"
 #include "src/utils/threadpool.h"
 #include "src/utils/types.h"

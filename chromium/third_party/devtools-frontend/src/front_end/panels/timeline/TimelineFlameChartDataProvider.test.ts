@@ -7,7 +7,6 @@ import {assert} from 'chai';
 import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
-import * as Bindings from '../../models/bindings/bindings.js';
 import * as Trace from '../../models/trace/trace.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import {
@@ -26,22 +25,13 @@ const {urlString} = Platform.DevToolsPath;
 
 describeWithEnvironment('TimelineFlameChartDataProvider', function() {
   beforeEach(() => {
-    const targetManager = SDK.TargetManager.TargetManager.instance({forceNew: true});
-    const workspace = Workspace.Workspace.WorkspaceImpl.instance({forceNew: true});
-    const resourceMapping = new Bindings.ResourceMapping.ResourceMapping(targetManager, workspace);
-    const ignoreListManager = Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
-    Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
-      forceNew: true,
-      resourceMapping,
-      targetManager,
-      ignoreListManager,
-      workspace,
-    });
+    SDK.TargetManager.TargetManager.instance({forceNew: true});
+    Workspace.Workspace.WorkspaceImpl.instance({forceNew: true});
+    Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
   });
   afterEach(() => {
     SDK.TargetManager.TargetManager.removeInstance();
     Workspace.Workspace.WorkspaceImpl.removeInstance();
-    Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.removeInstance();
     Workspace.IgnoreListManager.IgnoreListManager.removeInstance();
   });
 
@@ -162,11 +152,20 @@ describeWithEnvironment('TimelineFlameChartDataProvider', function() {
     dataProvider.setModel(parsedTrace, entityMapper);
     const groupNames = dataProvider.timelineData().groups.map(g => [g.name, g.subtitle]);
     assert.deepEqual(groupNames, [
-      ['Frames', undefined], ['Timings', undefined], ['Interactions', undefined], ['A track group', '— Custom'],
-      ['Another Extension Track', undefined], ['An Extension Track', '— Custom'], ['TimeStamp track', '— Custom'],
-      ['Main — http://localhost:3000/', undefined], ['Thread pool', undefined], ['Thread pool worker 1', undefined],
-      ['Thread pool worker 2', undefined], ['Thread pool worker 3', undefined], ['StackSamplingProfiler', undefined],
-      ['GPU', undefined]
+      ['Frames', undefined],
+      ['Timings', undefined],
+      ['Interactions', undefined],
+      ['A track group', '— Custom'],
+      ['Another Extension Track', undefined],
+      ['An Extension Track', '— Custom'],
+      ['TimeStamp track', '— Custom'],
+      ['Main — http://localhost:3000/', undefined],
+      ['Thread pool', undefined],
+      ['Thread pool worker 1', undefined],
+      ['Thread pool worker 2', undefined],
+      ['Thread pool worker 3', undefined],
+      ['StackSamplingProfiler', undefined],
+      ['GPU', undefined],
     ]);
   });
 
@@ -368,7 +367,7 @@ describeWithEnvironment('TimelineFlameChartDataProvider', function() {
         originalIndex: 2,
         visualIndex: 1,
         trackName: 'Animations',
-      }
+      },
     ]);
   });
 });

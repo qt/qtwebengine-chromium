@@ -91,6 +91,7 @@ void CreateAndAddPolicyUIHtmlSource(Profile* profile) {
 
   static constexpr webui::LocalizedString kStrings[] = {
       // Localized strings (alphabetical order).
+      {"clearSearch", IDS_CLEAR},
       {"copyPoliciesJSON", IDS_COPY_POLICIES_JSON},
       {"exportPoliciesJSON", IDS_EXPORT_POLICIES_JSON},
       {"filterPlaceholder", IDS_POLICY_FILTER_PLACEHOLDER},
@@ -149,9 +150,9 @@ void CreateAndAddPolicyUIHtmlSource(Profile* profile) {
       {"statusFlexOrgNoPolicy", IDS_POLICY_STATUS_FLEX_ORG_NO_POLICY},
       {"statusDevice", IDS_POLICY_STATUS_DEVICE},
       {"statusMachine", IDS_POLICY_STATUS_MACHINE},
-#if BUILDFLAG(IS_WIN) && BUILDFLAG(GOOGLE_CHROME_BRANDING)
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
       {"statusUpdater", IDS_POLICY_STATUS_UPDATER},
-#endif
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
       {"statusUser", IDS_POLICY_STATUS_USER},
 #if !BUILDFLAG(IS_CHROMEOS)
       {"uploadReport", IDS_UPLOAD_REPORT},

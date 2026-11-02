@@ -27,13 +27,13 @@
 
 #include "src/dawn/native/EncodingContext.h"
 
-#include "src/dawn/common/Assert.h"
 #include "src/dawn/native/CommandEncoder.h"
 #include "src/dawn/native/Commands.h"
 #include "src/dawn/native/Device.h"
 #include "src/dawn/native/ErrorData.h"
 #include "src/dawn/native/IndirectDrawValidationEncoder.h"
 #include "src/dawn/native/RenderBundleEncoder.h"
+#include "src/utils/assert.h"
 
 namespace dawn::native {
 
@@ -41,6 +41,7 @@ EncodingContext::EncodingContext(DeviceBase* device, const ApiObjectBase* initia
     : mDevice(device),
       mTopLevelEncoder(initialEncoder),
       mCurrentEncoder(initialEncoder),
+      mPendingCommands(device->GetMemoryBlockAllocator()),
       mStatus(Status::Open) {
     DAWN_CHECK(!initialEncoder->IsError());
 }
@@ -49,6 +50,7 @@ EncodingContext::EncodingContext(DeviceBase* device, ErrorMonad::ErrorTag tag)
     : mDevice(device),
       mTopLevelEncoder(nullptr),
       mCurrentEncoder(nullptr),
+      mPendingCommands(/*pool=*/nullptr),
       mStatus(Status::ErrorAtCreation) {}
 
 EncodingContext::~EncodingContext() {
@@ -64,6 +66,10 @@ void EncodingContext::Destroy() {
     if (!mWereCommandsAcquired) {
         CommandIterator commands = AcquireCommands();
         FreeCommands(&commands);
+    }
+    mPendingCommands.Destroy();
+    for (CommandAllocator& allocator : mAllocators) {
+        allocator.Destroy();
     }
 
     CloseWithStatus(Status::Destroyed);

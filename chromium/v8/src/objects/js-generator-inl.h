@@ -18,8 +18,6 @@
 namespace v8 {
 namespace internal {
 
-#include "torque-generated/src/objects/js-generator-tq-inl.inc"
-
 Tagged<UnionOf<AsyncGeneratorRequest, Undefined>> AsyncGeneratorRequest::next()
     const {
   return next_.load();
@@ -99,6 +97,14 @@ Tagged<FixedArray> JSGeneratorObject::parameters_and_registers() const {
 void JSGeneratorObject::set_parameters_and_registers(Tagged<FixedArray> value,
                                                      WriteBarrierMode mode) {
   parameters_and_registers_.store(this, value, mode);
+}
+
+Tagged<JSAny> JSGeneratorObject::yielded_value() const {
+  return yielded_value_.load();
+}
+void JSGeneratorObject::set_yielded_value(Tagged<JSAny> value,
+                                          WriteBarrierMode mode) {
+  yielded_value_.store(this, value, mode);
 }
 
 Tagged<JSPromise> JSAsyncFunctionObject::promise() const {

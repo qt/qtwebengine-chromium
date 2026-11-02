@@ -22,7 +22,7 @@ std::unique_ptr<LZWDecompressor> LZWDecompressor::Create(uint8_t color_exp,
                                                          uint8_t code_exp) {
   // |color_exp| generates 2^(n + 1) codes, where as the code_exp reserves 2^n.
   // This is a quirk of the GIF spec.
-  if (code_exp > GIF_MAX_LZW_EXP || code_exp < color_exp + 1) {
+  if (code_exp > kGifMaxLzwExp || code_exp < color_exp + 1) {
     return nullptr;
   }
 
@@ -68,7 +68,7 @@ LZWDecompressor::Status LZWDecompressor::Decode(uint8_t* dest_buf,
 
   while (i.ValueOrDie() <= *dest_size &&
          (!avail_input_.empty() || bits_left_ >= code_size_cur_)) {
-    if (code_size_cur_ > GIF_MAX_LZW_EXP) {
+    if (code_size_cur_ > kGifMaxLzwExp) {
       return Status::kError;
     }
 
@@ -104,7 +104,7 @@ LZWDecompressor::Status LZWDecompressor::Decode(uint8_t* dest_buf,
       }
 
       if (code_old_ != static_cast<uint16_t>(-1)) {
-        if (code_next_ < GIF_MAX_LZW_CODE) {
+        if (code_next_ < kGifMaxLzwCode) {
           if (code == code_next_) {
             AddCode(code_old_, code_first_);
             if (!DecodeString(code)) {
@@ -159,13 +159,13 @@ void LZWDecompressor::ClearTable() {
 }
 
 void LZWDecompressor::AddCode(uint16_t prefix_code, uint8_t append_char) {
-  if (code_next_ == GIF_MAX_LZW_CODE) {
+  if (code_next_ == kGifMaxLzwCode) {
     return;
   }
 
   code_table_[code_next_].prefix = prefix_code;
   code_table_[code_next_].suffix = append_char;
-  if (++code_next_ < GIF_MAX_LZW_CODE) {
+  if (++code_next_ < kGifMaxLzwCode) {
     if (code_next_ >> code_size_cur_) {
       code_size_cur_++;
     }

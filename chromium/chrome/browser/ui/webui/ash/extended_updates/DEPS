@@ -16,7 +16,12 @@ include_rules = [
   "+chrome/browser/ui/ash/login",
   "+chrome/browser/ui/webui/ash/login",
   "+chrome/browser/ui/webui/ash/system_web_dialog",
-  "+chrome/common",
   "+chrome/grit",
 ]
+
+specific_include_rules = {
+  "extended_updates_ui\\.cc": [
+    "+chrome/browser/ui/webui/theme_source.h",
+  ],
+}
 

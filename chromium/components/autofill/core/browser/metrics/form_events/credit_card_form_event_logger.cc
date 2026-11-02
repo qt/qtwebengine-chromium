@@ -53,6 +53,10 @@
 #include "components/autofill/core/common/signatures.h"
 #include "components/autofill/core/common/unique_ids.h"
 
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+#include "components/autofill/core/browser/metrics/payments/omnibox_autofill_metrics.h"
+#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+
 namespace autofill::autofill_metrics {
 
 CreditCardFormEventLogger::CreditCardFormEventLogger(
@@ -415,6 +419,15 @@ void CreditCardFormEventLogger::OnDidFillFormFillingSuggestion(
     save_and_fill_manager->LogCreditCardFormFilled();
     return;
   }
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+  if (trigger_source_ == AutofillTriggerSource::kOmniboxAutofill) {
+    if (!has_logged_form_filled_from_omnibox_autofill_) {
+      LogOmniboxAutofillEvents(OmniboxAutofillEvents::kFormFilledOnce);
+      has_logged_form_filled_from_omnibox_autofill_ = true;
+    }
+    LogOmniboxAutofillEvents(OmniboxAutofillEvents::kFormFilled);
+  }
+#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 
   latest_filled_card_was_masked_server_card_ = false;
   latest_filled_card_was_card_info_retrieval_enrolled_ = false;
@@ -538,7 +551,7 @@ void CreditCardFormEventLogger::OnDidFillFormFillingSuggestion(
         if (credit_card.is_bnpl_card()) {
           if (!has_logged_form_filled_with_bnpl_vcn_) {
             LogFormFilledWithBnplVcn(
-                autofill::ConvertToBnplIssuerIdEnum(credit_card.issuer_id()));
+                ConvertToBnplIssuerIdEnum(credit_card.issuer_id()));
             has_logged_form_filled_with_bnpl_vcn_ = true;
           }
         } else {
@@ -618,12 +631,20 @@ void CreditCardFormEventLogger::LogCardUnmaskAuthenticationPromptCompleted(
   current_authentication_flow_ = flow;
 }
 
-void CreditCardFormEventLogger::OnUserDecisionToUseBnpl() {
+void CreditCardFormEventLogger::OnUserDecisionToUseBnpl(
+    base::span<const Suggestion> suggestions_shown) {
   if (!has_logged_user_decision_to_use_bnpl_) {
     if (suggestion_contains_pay_later_tab_entry_) {
       LogPayLaterTabSelected(driver().GetPageUkmSourceId());
     } else {
-      LogBnplSuggestionAccepted(driver().GetPageUkmSourceId());
+      LogBnplSuggestionAccepted(
+          driver().GetPageUkmSourceId(),
+          std::ranges::count_if(
+              suggestions_shown, [](const Suggestion& suggestion) {
+                return suggestion.type == SuggestionType::kCreditCardEntry ||
+                       suggestion.type ==
+                           SuggestionType::kVirtualCreditCardEntry;
+              }));
     }
     has_logged_user_decision_to_use_bnpl_ = true;
   }
@@ -649,6 +670,34 @@ void CreditCardFormEventLogger::OnDidAcceptSaveAndFillSuggestion() {
     has_logged_save_and_fill_suggestion_accepted_ = true;
   }
 }
+
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+
+void CreditCardFormEventLogger::OnOmniboxAutofillChipShown() {
+  if (!has_logged_omnibox_autofill_chip_shown_) {
+    LogOmniboxAutofillEvents(OmniboxAutofillEvents::kChipShownOnce);
+    has_logged_omnibox_autofill_chip_shown_ = true;
+  }
+  LogOmniboxAutofillEvents(OmniboxAutofillEvents::kChipShown);
+}
+
+void CreditCardFormEventLogger::OnOmniboxAutofillChipClicked() {
+  if (!has_logged_omnibox_autofill_chip_clicked_) {
+    LogOmniboxAutofillEvents(OmniboxAutofillEvents::kChipClickedOnce);
+    has_logged_omnibox_autofill_chip_clicked_ = true;
+  }
+  LogOmniboxAutofillEvents(OmniboxAutofillEvents::kChipClicked);
+}
+
+void CreditCardFormEventLogger::OnOmniboxAutofillSuggestionAccepted() {
+  if (!has_logged_omnibox_autofill_suggestion_accepted_) {
+    LogOmniboxAutofillEvents(OmniboxAutofillEvents::kSuggestionAcceptedOnce);
+    has_logged_omnibox_autofill_suggestion_accepted_ = true;
+  }
+  LogOmniboxAutofillEvents(OmniboxAutofillEvents::kSuggestionAccepted);
+}
+
+#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 
 std::optional<CreditCard>
 CreditCardFormEventLogger::GetFilledCreditCardForTesting() {
@@ -741,6 +790,12 @@ void CreditCardFormEventLogger::LogFormSubmitted(const FormStructure& form) {
     save_and_fill_manager->LogCreditCardFormSubmitted();
     return;
   }
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+  if (trigger_source_ == AutofillTriggerSource::kOmniboxAutofill &&
+      has_logged_form_filled_from_omnibox_autofill_) {
+    LogOmniboxAutofillEvents(OmniboxAutofillEvents::kFormSubmittedOnce);
+  }
+#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 
   if (!has_logged_form_filling_suggestion_filled_) {
     Log(FORM_EVENT_NO_SUGGESTION_SUBMITTED_ONCE, form);
@@ -760,8 +815,8 @@ void CreditCardFormEventLogger::LogFormSubmitted(const FormStructure& form) {
     // influencing other VCN metrics, as these represent distinct user flows.
     if (filled_credit_card_->is_bnpl_card()) {
       if (!has_logged_form_submitted_with_bnpl_vcn_) {
-        LogFormSubmittedWithBnplVcn(autofill::ConvertToBnplIssuerIdEnum(
-            filled_credit_card_->issuer_id()));
+        LogFormSubmittedWithBnplVcn(
+            ConvertToBnplIssuerIdEnum(filled_credit_card_->issuer_id()));
         has_logged_form_submitted_with_bnpl_vcn_ = true;
       }
     } else {

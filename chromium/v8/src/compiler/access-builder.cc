@@ -282,6 +282,32 @@ FieldAccess AccessBuilder::ForJSFunctionPrototypeOrInitialMap() {
 }
 
 // static
+FieldAccess AccessBuilder::ForJSProxyTarget() {
+  FieldAccess access = {kTaggedBase,
+                        offsetof(JSProxy, target_),
+                        MaybeHandle<Name>(),
+                        OptionalMapRef(),
+                        Type::ReceiverOrNull(),
+                        MachineType::TaggedPointer(),
+                        kPointerWriteBarrier,
+                        "JSProxyTarget"};
+  return access;
+}
+
+// static
+FieldAccess AccessBuilder::ForJSProxyHandler() {
+  FieldAccess access = {kTaggedBase,
+                        offsetof(JSProxy, handler_),
+                        MaybeHandle<Name>(),
+                        OptionalMapRef(),
+                        Type::ReceiverOrNull(),
+                        MachineType::TaggedPointer(),
+                        kPointerWriteBarrier,
+                        "JSProxyHandler"};
+  return access;
+}
+
+// static
 FieldAccess AccessBuilder::ForJSFunctionContext() {
   FieldAccess access = {kTaggedBase,          offsetof(JSFunction, context_),
                         MaybeHandle<Name>(),  OptionalMapRef(),
@@ -434,6 +460,16 @@ FieldAccess AccessBuilder::ForJSGeneratorObjectResumeMode() {
       Handle<Name>(),      OptionalMapRef(),
       Type::SignedSmall(), MachineType::TaggedSigned(),
       kNoWriteBarrier,     "JSGeneratorObjectResumeMode"};
+  return access;
+}
+
+// static
+FieldAccess AccessBuilder::ForJSGeneratorObjectYieldedValue() {
+  FieldAccess access = {
+      kTaggedBase,       offsetof(JSGeneratorObject, yielded_value_),
+      Handle<Name>(),    OptionalMapRef(),
+      Type::Any(),       MachineType::AnyTagged(),
+      kFullWriteBarrier, "JSGeneratorObjectYieldedValue"};
   return access;
 }
 

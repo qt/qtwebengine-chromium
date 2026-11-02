@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -1015,13 +1016,16 @@ describe('LoggingDriver', () => {
     assert.isTrue(recordResize.calledBefore(recordImpression));
   });
 
-  // Flaky test.
-  it.skip('[crbug.com/453711161] logs keydown, then resize, then impressions', async () => {
+  it('logs keydown, then resize, then impressions', async () => {
     await addLoggableElements();
     const element = document.getElementById('element')!;
     element.setAttribute('jslog', 'TreeItem; context:42; track: keydown: KeyA, resize');
     const keyboardLogThrottler = new Common.Throttler.Throttler(100);
     const resizeLogThrottler = new Common.Throttler.Throttler(100);
+    // Prime the throttlers to ensure they have a recent lastCompleteTime,
+    // so that subsequent schedules actually wait for the timeout instead of firing instantly.
+    await keyboardLogThrottler.schedule(async () => {});
+    await resizeLogThrottler.schedule(async () => {});
     await VisualLoggingTesting.LoggingDriver.startLogging({
       processingThrottler: throttler,
       keyboardLogThrottler,

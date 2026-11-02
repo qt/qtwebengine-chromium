@@ -10,24 +10,19 @@
 #include <algorithm>
 
 #include "core/fxcrt/check_op.h"
+#include "core/fxcrt/fx_memory.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/notreached.h"
 #include "core/fxge/cfx_font.h"
+#include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/dib/cfx_dibbase.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "core/fxge/text_char_pos.h"
 
 CTextOnlyPrinterDriver::CTextOnlyPrinterDriver(HDC hDC)
     : dc_handle_(hDC),
-      width_(INT_MAX),
-      height_(INT_MAX),
-      horz_size_(INT_MAX),
-      vert_size_(INT_MAX),
-      origin_y_(0.0f),
-      set_origin_(false) {
-  bits_per_pixel_ = ::GetDeviceCaps(dc_handle_, BITSPIXEL);
-}
+      bits_per_pixel_(::GetDeviceCaps(dc_handle_, BITSPIXEL)) {}
 
 CTextOnlyPrinterDriver::~CTextOnlyPrinterDriver() = default;
 
@@ -36,11 +31,11 @@ DeviceType CTextOnlyPrinterDriver::GetDeviceType() const {
 }
 
 int CTextOnlyPrinterDriver::GetPixelWidth() const {
-  return width_;
+  return INT_MAX;
 }
 
 int CTextOnlyPrinterDriver::GetPixelHeight() const {
-  return height_;
+  return INT_MAX;
 }
 
 int CTextOnlyPrinterDriver::GetBitsPerPixel() const {
@@ -48,12 +43,14 @@ int CTextOnlyPrinterDriver::GetBitsPerPixel() const {
 }
 
 int CTextOnlyPrinterDriver::GetHorzSize() const {
-  return horz_size_;
+  return INT_MAX;
 }
 
 int CTextOnlyPrinterDriver::GetVertSize() const {
-  return vert_size_;
+  return INT_MAX;
 }
+
+void CTextOnlyPrinterDriver::Clear(uint32_t color) {}
 
 void CTextOnlyPrinterDriver::SaveState() {}
 
@@ -93,7 +90,7 @@ bool CTextOnlyPrinterDriver::SetDIBits(RetainPtr<const CFX_DIBBase> bitmap,
 }
 
 FX_RECT CTextOnlyPrinterDriver::GetClipBox() const {
-  return FX_RECT(0, 0, width_, height_);
+  return FX_RECT(0, 0, INT_MAX, INT_MAX);
 }
 
 bool CTextOnlyPrinterDriver::StretchDIBits(RetainPtr<const CFX_DIBBase> bitmap,
@@ -125,7 +122,7 @@ bool CTextOnlyPrinterDriver::DrawDeviceText(
     float font_size,
     uint32_t color,
     const CFX_TextRenderOptions& /*options*/) {
-  if (g_pdfium_print_mode != WindowsPrintMode::kTextOnly) {
+  if (CFX_GEModule::GetPrintMode() != WindowsPrintMode::kTextOnly) {
     return false;
   }
   if (pCharPos.empty() || !font) {

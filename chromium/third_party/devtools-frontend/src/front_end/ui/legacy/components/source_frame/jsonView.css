@@ -8,3 +8,7 @@
   padding: 2px 6px;
   overflow: auto;
 }
+
+devtools-tree {
+  display: block;
+}

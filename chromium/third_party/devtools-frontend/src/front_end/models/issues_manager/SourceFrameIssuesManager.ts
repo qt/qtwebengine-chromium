@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import * as Common from '../../core/common/common.js';
+import type * as SDK from '../../core/sdk/sdk.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 
@@ -19,8 +20,18 @@ import {PropertyRuleIssue} from './PropertyRuleIssue.js';
 import {lateImportStylesheetLoadingCode, type StylesheetLoadingIssue} from './StylesheetLoadingIssue.js';
 
 export class SourceFrameIssuesManager {
-  #sourceFrameMessageManager = new Bindings.PresentationConsoleMessageHelper.PresentationSourceFrameMessageManager();
-  constructor(private readonly issuesManager: IssuesManager) {
+  #sourceFrameMessageManager: Bindings.PresentationConsoleMessageHelper.PresentationSourceFrameMessageManager;
+  constructor(
+      private readonly issuesManager: IssuesManager,
+      targetManager: SDK.TargetManager.TargetManager,
+      workspace: Workspace.Workspace.WorkspaceImpl,
+      debuggerWorkspaceBinding: Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding,
+      cssWorkspaceBinding: Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding,
+  ) {
+    this.#sourceFrameMessageManager =
+        new Bindings.PresentationConsoleMessageHelper.PresentationSourceFrameMessageManager(
+            targetManager, workspace, debuggerWorkspaceBinding, cssWorkspaceBinding);
+    this.#sourceFrameMessageManager.enable();
     this.issuesManager.addEventListener(Events.ISSUE_ADDED, this.#onIssueAdded, this);
     this.issuesManager.addEventListener(Events.FULL_UPDATE_REQUIRED, this.#onFullUpdateRequired, this);
   }

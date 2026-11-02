@@ -10,7 +10,7 @@
 #include "base/base64url.h"
 #include "base/functional/bind.h"
 #include "base/memory/weak_ptr.h"
-#include "base/task/single_thread_task_runner.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "chrome/browser/autocomplete/aim_eligibility_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -102,6 +102,8 @@ AimEligibilityPageHandler::QueryEligibilityState() {
   state->is_eligible = aim_eligibility_service_->IsAimEligible();
   state->is_eligible_by_policy =
       AimEligibilityService::IsAimAllowedByPolicy(pref_service_);
+  state->is_third_party_eligible_by_policy =
+      AimEligibilityService::IsAimAllowedByThirdPartyPolicy(pref_service_);
   state->is_eligible_by_dse = aim_eligibility_service_->IsAimAllowedByDse();
   state->is_server_eligibility_enabled =
       aim_eligibility_service_->IsServerEligibilityEnabled();
@@ -137,9 +139,18 @@ AimEligibilityPageHandler::QueryEligibilityState() {
   #if !BUILDFLAG(IS_ANDROID)
   if (!disclaimer_check_started_) {
     disclaimer_check_started_ = true;
-    drive_disclaimer_controller_->CheckDisclaimerStatusAsync(
-        base::BindOnce(&AimEligibilityPageHandler::OnDisclaimerStatusChecked,
-                       weak_ptr_factory_.GetWeakPtr()));
+    if (base::FeatureList::IsEnabled(omnibox::kForceDriveDisclaimerAccepted)) {
+      base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+          FROM_HERE,
+          base::BindOnce(&AimEligibilityPageHandler::OnDisclaimerStatusChecked,
+                         weak_ptr_factory_.GetWeakPtr(),
+                         drive_picker::DriveDisclaimerController::
+                             DisclaimerStatus::kAccepted));
+    } else {
+      drive_disclaimer_controller_->CheckDisclaimerStatusAsync(
+          base::BindOnce(&AimEligibilityPageHandler::OnDisclaimerStatusChecked,
+                         weak_ptr_factory_.GetWeakPtr()));
+    }
   }
   #endif
 
@@ -177,6 +188,8 @@ AimEligibilityPageHandler::QueryDriveStatus(
       base::FeatureList::IsEnabled(omnibox::kComposeboxDriveContextMenuOption);
   drive_status->is_force_drive_disclaimer_accepted =
       base::FeatureList::IsEnabled(omnibox::kForceDriveDisclaimerAccepted);
+  drive_status->is_disclaimer_flag_enabled = base::FeatureList::IsEnabled(
+      omnibox::kComposeboxDriveContextMenuOptionDisclaimer);
 
   int search_sharing_value = pref_service_->GetInteger(
       contextual_search::kSearchContentSharingSettings);
@@ -188,12 +201,17 @@ AimEligibilityPageHandler::QueryDriveStatus(
   drive_status->disclaimer_state = disclaimer_state;
 
   // Replicate logic from InputStateModel::IsDriveSupported()
+  bool consented = drive_status->disclaimer_state ==
+                       aim_eligibility::mojom::DisclaimerState::kAccepted ||
+                   drive_status->is_force_drive_disclaimer_accepted ||
+                   (drive_status->is_disclaimer_flag_enabled &&
+                    drive_status->disclaimer_state !=
+                        aim_eligibility::mojom::DisclaimerState::kRestricted);
+
   drive_status->is_drive_supported =
       drive_status->is_pec_eligible && drive_status->is_identity_match &&
       !drive_status->is_incognito && drive_status->is_feature_flag_enabled &&
-      (drive_status->disclaimer_state ==
-           aim_eligibility::mojom::DisclaimerState::kAccepted ||
-       drive_status->is_force_drive_disclaimer_accepted);
+      consented;
 
   return drive_status;
 }

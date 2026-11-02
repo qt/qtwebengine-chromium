@@ -54,12 +54,13 @@ class SystemFontInfoWrapper : public SystemFontInfoIface {
   void EnumFontList(CFX_FontMapper* pMapper) override {
     impl_->EnumFontList(pMapper);
   }
-  void* MapFont(int weight,
+  void* MapFont(CFX_FontMapper* mapper,
+                int weight,
                 bool bItalic,
                 FX_Charset charset,
                 int pitch_family,
                 const ByteString& face) override {
-    void* font = impl_->MapFont(weight, bItalic, charset, pitch_family,
+    void* font = impl_->MapFont(mapper, weight, bItalic, charset, pitch_family,
                                 RenameFontForTesting(face));
     if (font) {
       bool inserted = active_fonts_.insert(font).second;
@@ -101,7 +102,8 @@ TestFonts::TestFonts() {
   }
   font_path_.push_back(PATH_SEPARATOR);
   font_path_.append("test_fonts");
-  font_paths_ = std::vector<const char*>{font_path_.c_str(), nullptr};
+  font_paths_.push_back(font_path_.c_str());
+  font_paths_.push_back(nullptr);
 }
 
 TestFonts::~TestFonts() = default;
@@ -110,6 +112,18 @@ void TestFonts::InstallFontMapper() {
   auto* font_mapper = CFX_GEModule::Get()->GetFontMgr()->GetBuiltinMapper();
   font_mapper->SetSystemFontInfo(std::make_unique<SystemFontInfoWrapper>(
       font_mapper->TakeSystemFontInfo()));
+}
+
+std::optional<pdfium::span<const char* const>> TestFonts::FontPathsSpan()
+    const {
+  if (font_path_.empty()) {
+    return std::nullopt;
+  }
+  auto font_span = pdfium::span<const char* const>(font_paths_);
+  if (font_span.empty()) {
+    return font_span;
+  }
+  return font_span.first(font_span.size() - 1);
 }
 
 // static

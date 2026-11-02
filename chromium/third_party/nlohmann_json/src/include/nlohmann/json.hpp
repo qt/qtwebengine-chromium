@@ -3,7 +3,7 @@
 // |  |  |__   |  |  | | | |  version 3.12.0
 // |_____|_____|_____|_|___|  https://github.com/nlohmann/json
 //
-// SPDX-FileCopyrightText: 2013-2025 Niels Lohmann <https://nlohmann.me>
+// SPDX-FileCopyrightText: 2013-2026 Niels Lohmann <https://nlohmann.me>
 // SPDX-License-Identifier: MIT
 
 /****************************************************************************\
@@ -17,6 +17,16 @@
 
 #ifndef INCLUDE_NLOHMANN_JSON_HPP_
 #define INCLUDE_NLOHMANN_JSON_HPP_
+
+// Workaround for GCC template redefinition errors in C++ modules
+// When nlohmann/json.hpp is included in a C++20 module preamble after
+// other module imports, GCC may report spurious redefinition errors for
+// STL templates. These pragmas suppress those false positives.
+// See: https://github.com/nlohmann/json/issues/5103
+#if defined(__GNUC__) && !defined(__clang__) && __cplusplus >= 202002L
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wignored-attributes"
+#endif
 
 #include <algorithm> // all_of, find, for_each
 #include <cstddef> // nullptr_t, ptrdiff_t, size_t
@@ -69,12 +79,31 @@
     #include <string_view>
 #endif
 
+#if JSON_HAS_STD_FORMAT
+    #include <format> // format_parse_context, format_context, formatter, format_error
+#endif
+
 /*!
 @brief namespace for Niels Lohmann
 @see https://github.com/nlohmann
 @since version 1.0.0
 */
 NLOHMANN_JSON_NAMESPACE_BEGIN
+
+namespace detail
+{
+// Trait to detect std::optional<T> specializations. It is defined here rather
+// than in type_traits.hpp so that adding the <optional> include does not change
+// the include order of the C++20 module's global module fragment (the include
+// is already pulled in by the conversion headers above); see src/modules/json.cppm.
+template<typename>
+struct is_std_optional : std::false_type {};
+
+#ifdef JSON_HAS_CPP_17
+template<typename T>
+struct is_std_optional<std::optional<T>> : std::true_type {};
+#endif
+}  // namespace detail
 
 /*!
 @brief a class to store JSON values
@@ -253,7 +282,7 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
     {
         basic_json result;
 
-        result["copyright"] = "(C) 2013-2025 Niels Lohmann";
+        result["copyright"] = "(C) 2013-2026 Niels Lohmann";
         result["name"] = "JSON for Modern C++";
         result["url"] = "https://github.com/nlohmann/json";
         result["version"]["string"] =
@@ -390,7 +419,7 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
         };
         std::unique_ptr<T, decltype(deleter)> obj(AllocatorTraits::allocate(alloc, 1), deleter);
         AllocatorTraits::construct(alloc, obj.get(), std::forward<Args>(args)...);
-        JSON_ASSERT(obj != nullptr);
+        JSON_ASSERT(obj);
         return obj.release();
     }
 
@@ -741,10 +770,10 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
 #endif
     }
 
-    iterator set_parents(iterator it, typename iterator::difference_type count_set_parents)
+    iterator set_parents(iterator it, std::ptrdiff_t count_set_parents)
     {
 #if JSON_DIAGNOSTICS
-        for (typename iterator::difference_type i = 0; i < count_set_parents; ++i)
+        for (std::ptrdiff_t i = 0; i < count_set_parents; ++i)
         {
             (it + i)->m_parent = this;
         }
@@ -955,6 +984,15 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
         }
         else
         {
+#if JSON_BRACE_INIT_COPY_SEMANTICS
+            if (type_deduction && init.size() == 1)
+            {
+                *this = init.begin()->moved_or_copied();
+                set_parents();
+                assert_invariant();
+                return;
+            }
+#endif
             // the initializer list describes an array -> create an array
             m_data.m_type = value_t::array;
             m_data.m_value.array = create<array_t>(init.begin(), init.end());
@@ -1919,6 +1957,11 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
 #if defined(JSON_HAS_CPP_17) && JSON_HAS_STATIC_RTTI
                                                 detail::negation<std::is_same<ValueType, std::any>>,
 #endif
+#if defined(JSON_HAS_CPP_17)
+                                                // std::optional<T> can construct itself from basic_json; excluding it
+                                                // here avoids an ambiguity with that constructor (e.g., under C++26)
+                                                detail::negation<detail::is_std_optional<ValueType>>,
+#endif
                                                 detail::is_detected_lazy<detail::get_template_function, const basic_json_t&, ValueType>
                                                 >::value, int >::type = 0 >
                                         JSON_EXPLICIT operator ValueType() const
@@ -2354,19 +2397,18 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
                    && !std::is_same<value_t, detail::uncvref_t<ValueType>>::value, int > = 0 >
     ValueType value(const json_pointer& ptr, const ValueType& default_value) const
     {
-        // value only works for objects
-        if (JSON_HEDLEY_LIKELY(is_object()))
+        // value only works for arrays and objects
+        if (JSON_HEDLEY_LIKELY(is_structured()))
         {
             // If the pointer resolves to a value, return it. Otherwise, return
             // 'default_value'.
-            JSON_TRY
+            const auto* res = ptr.get_checked_or_null(this);
+            if (JSON_HEDLEY_LIKELY(res != nullptr))
             {
-                return ptr.get_checked(this).template get<ValueType>();
+                return res->template get<ValueType>();
             }
-            JSON_INTERNAL_CATCH (out_of_range&)
-            {
-                return default_value;
-            }
+
+            return default_value;
         }
 
         JSON_THROW(type_error::create(306, detail::concat("cannot use value() with ", type_name()), this));
@@ -2380,19 +2422,18 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
                    && !std::is_same<value_t, detail::uncvref_t<ValueType>>::value, int > = 0 >
     ReturnType value(const json_pointer& ptr, ValueType && default_value) const
     {
-        // value only works for objects
-        if (JSON_HEDLEY_LIKELY(is_object()))
+        // value only works for arrays and objects
+        if (JSON_HEDLEY_LIKELY(is_structured()))
         {
             // If the pointer resolves to a value, return it. Otherwise, return
             // 'default_value'.
-            JSON_TRY
+            const auto* res = ptr.get_checked_or_null(this);
+            if (JSON_HEDLEY_LIKELY(res != nullptr))
             {
-                return ptr.get_checked(this).template get<ReturnType>();
+                return res->template get<ReturnType>();
             }
-            JSON_INTERNAL_CATCH (out_of_range&)
-            {
-                return std::forward<ValueType>(default_value);
-            }
+
+            return std::forward<ValueType>(default_value);
         }
 
         JSON_THROW(type_error::create(306, detail::concat("cannot use value() with ", type_name()), this));
@@ -3478,6 +3519,9 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
                 if (it2 != m_data.m_value.object->end())
                 {
                     it2->second.update(it.value(), true);
+#if JSON_DIAGNOSTICS
+                    it2->second.set_parents();
+#endif
                     continue;
                 }
             }
@@ -3732,17 +3776,6 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
         return *this == basic_json(rhs);
     }
 
-    /// @brief comparison: not equal
-    /// @sa https://json.nlohmann.me/api/basic_json/operator_ne/
-    bool operator!=(const_reference rhs) const noexcept
-    {
-        if (compares_unordered(rhs, true))
-        {
-            return false;
-        }
-        return !operator==(rhs);
-    }
-
     /// @brief comparison: 3-way
     /// @sa https://json.nlohmann.me/api/basic_json/operator_spaceship/
     std::partial_ordering operator<=>(const_reference rhs) const noexcept // *NOPAD*
@@ -3848,10 +3881,6 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
     /// @sa https://json.nlohmann.me/api/basic_json/operator_ne/
     friend bool operator!=(const_reference lhs, const_reference rhs) noexcept
     {
-        if (compares_unordered(lhs, rhs, true))
-        {
-            return false;
-        }
         return !(lhs == rhs);
     }
 
@@ -4054,12 +4083,13 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
         return result;
     }
 
-    /// @brief deserialize from a pair of character iterators
+    /// @brief deserialize from a pair of character iterators (or an iterator+sentinel pair, C++20 ranges support)
     /// @sa https://json.nlohmann.me/api/basic_json/parse/
-    template<typename IteratorType>
+    template<typename IteratorType, typename SentinelType = IteratorType,
+             detail::enable_if_t<detail::can_compare_ne<IteratorType, SentinelType>::value, int> = 0>
     JSON_HEDLEY_WARN_UNUSED_RESULT
     static basic_json parse(IteratorType first,
-                            IteratorType last,
+                            SentinelType last,
                             parser_callback_t cb = nullptr,
                             const bool allow_exceptions = true,
                             const bool ignore_comments = false,
@@ -4093,10 +4123,11 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
         return parser(detail::input_adapter(std::forward<InputType>(i)), nullptr, false, ignore_comments, ignore_trailing_commas).accept(true);
     }
 
-    /// @brief check if the input is valid JSON
+    /// @brief check if the input is valid JSON (iterator pair, or iterator+sentinel pair for C++20 ranges support)
     /// @sa https://json.nlohmann.me/api/basic_json/accept/
-    template<typename IteratorType>
-    static bool accept(IteratorType first, IteratorType last,
+    template<typename IteratorType, typename SentinelType = IteratorType,
+             detail::enable_if_t<detail::can_compare_ne<IteratorType, SentinelType>::value, int> = 0>
+    static bool accept(IteratorType first, SentinelType last,
                        const bool ignore_comments = false,
                        const bool ignore_trailing_commas = false)
     {
@@ -4122,54 +4153,23 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
                           const bool ignore_comments = false,
                           const bool ignore_trailing_commas = false)
     {
-#if defined(__clang__)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wtautological-pointer-compare"
-#elif defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wnonnull-compare"
-#endif
-        if (sax == nullptr)
-        {
-            JSON_THROW(other_error::create(502, "SAX handler must not be null", nullptr));
-        }
-#if defined(__clang__)
-#pragma clang diagnostic pop
-#elif defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
         auto ia = detail::input_adapter(std::forward<InputType>(i));
         return format == input_format_t::json
                ? parser(std::move(ia), nullptr, true, ignore_comments, ignore_trailing_commas).sax_parse(sax, strict)
                : detail::binary_reader<basic_json, decltype(ia), SAX>(std::move(ia), format).sax_parse(format, sax, strict);
     }
 
-    /// @brief generate SAX events
+    /// @brief generate SAX events (iterator pair, or iterator+sentinel pair for C++20 ranges support)
     /// @sa https://json.nlohmann.me/api/basic_json/sax_parse/
-    template<class IteratorType, class SAX>
+    template<class IteratorType, class SAX, class SentinelType = IteratorType,
+             detail::enable_if_t<detail::can_compare_ne<IteratorType, SentinelType>::value, int> = 0>
     JSON_HEDLEY_NON_NULL(3)
-    static bool sax_parse(IteratorType first, IteratorType last, SAX* sax,
+    static bool sax_parse(IteratorType first, SentinelType last, SAX* sax,
                           input_format_t format = input_format_t::json,
                           const bool strict = true,
                           const bool ignore_comments = false,
                           const bool ignore_trailing_commas = false)
     {
-#if defined(__clang__)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wtautological-pointer-compare"
-#elif defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wnonnull-compare"
-#endif
-        if (sax == nullptr)
-        {
-            JSON_THROW(other_error::create(502, "SAX handler must not be null", nullptr));
-        }
-#if defined(__clang__)
-#pragma clang diagnostic pop
-#elif defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
         auto ia = detail::input_adapter(std::move(first), std::move(last));
         return format == input_format_t::json
                ? parser(std::move(ia), nullptr, true, ignore_comments, ignore_trailing_commas).sax_parse(sax, strict)
@@ -4190,22 +4190,6 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
                           const bool ignore_comments = false,
                           const bool ignore_trailing_commas = false)
     {
-#if defined(__clang__)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wtautological-pointer-compare"
-#elif defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wnonnull-compare"
-#endif
-        if (sax == nullptr)
-        {
-            JSON_THROW(other_error::create(502, "SAX handler must not be null", nullptr));
-        }
-#if defined(__clang__)
-#pragma clang diagnostic pop
-#elif defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
         auto ia = i.get();
         return format == input_format_t::json
                // NOLINTNEXTLINE(hicpp-move-const-arg,performance-move-const-arg)
@@ -4306,7 +4290,7 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
         }
     };
 
-    data m_data = {};
+    data m_data = {}; // NOLINT(readability-redundant-member-init)
 
 #if JSON_DIAGNOSTICS
     /// a pointer to a parent value (for debugging purposes)
@@ -4480,11 +4464,12 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
         return res ? result : basic_json(value_t::discarded);
     }
 
-    /// @brief create a JSON value from an input in CBOR format
+    /// @brief create a JSON value from an input in CBOR format (iterator pair, or iterator+sentinel pair for C++20 ranges support)
     /// @sa https://json.nlohmann.me/api/basic_json/from_cbor/
-    template<typename IteratorType>
+    template<typename IteratorType, typename SentinelType = IteratorType,
+             detail::enable_if_t<detail::can_compare_ne<IteratorType, SentinelType>::value, int> = 0>
     JSON_HEDLEY_WARN_UNUSED_RESULT
-    static basic_json from_cbor(IteratorType first, IteratorType last,
+    static basic_json from_cbor(IteratorType first, SentinelType last,
                                 const bool strict = true,
                                 const bool allow_exceptions = true,
                                 const cbor_tag_handler_t tag_handler = cbor_tag_handler_t::error)
@@ -4537,11 +4522,12 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
         return res ? result : basic_json(value_t::discarded);
     }
 
-    /// @brief create a JSON value from an input in MessagePack format
+    /// @brief create a JSON value from an input in MessagePack format (iterator pair, or iterator+sentinel pair for C++20 ranges support)
     /// @sa https://json.nlohmann.me/api/basic_json/from_msgpack/
-    template<typename IteratorType>
+    template<typename IteratorType, typename SentinelType = IteratorType,
+             detail::enable_if_t<detail::can_compare_ne<IteratorType, SentinelType>::value, int> = 0>
     JSON_HEDLEY_WARN_UNUSED_RESULT
-    static basic_json from_msgpack(IteratorType first, IteratorType last,
+    static basic_json from_msgpack(IteratorType first, SentinelType last,
                                    const bool strict = true,
                                    const bool allow_exceptions = true)
     {
@@ -4591,11 +4577,12 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
         return res ? result : basic_json(value_t::discarded);
     }
 
-    /// @brief create a JSON value from an input in UBJSON format
+    /// @brief create a JSON value from an input in UBJSON format (iterator pair, or iterator+sentinel pair for C++20 ranges support)
     /// @sa https://json.nlohmann.me/api/basic_json/from_ubjson/
-    template<typename IteratorType>
+    template<typename IteratorType, typename SentinelType = IteratorType,
+             detail::enable_if_t<detail::can_compare_ne<IteratorType, SentinelType>::value, int> = 0>
     JSON_HEDLEY_WARN_UNUSED_RESULT
-    static basic_json from_ubjson(IteratorType first, IteratorType last,
+    static basic_json from_ubjson(IteratorType first, SentinelType last,
                                   const bool strict = true,
                                   const bool allow_exceptions = true)
     {
@@ -4645,11 +4632,12 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
         return res ? result : basic_json(value_t::discarded);
     }
 
-    /// @brief create a JSON value from an input in BJData format
+    /// @brief create a JSON value from an input in BJData format (iterator pair, or iterator+sentinel pair for C++20 ranges support)
     /// @sa https://json.nlohmann.me/api/basic_json/from_bjdata/
-    template<typename IteratorType>
+    template<typename IteratorType, typename SentinelType = IteratorType,
+             detail::enable_if_t<detail::can_compare_ne<IteratorType, SentinelType>::value, int> = 0>
     JSON_HEDLEY_WARN_UNUSED_RESULT
-    static basic_json from_bjdata(IteratorType first, IteratorType last,
+    static basic_json from_bjdata(IteratorType first, SentinelType last,
                                   const bool strict = true,
                                   const bool allow_exceptions = true)
     {
@@ -4675,11 +4663,12 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
         return res ? result : basic_json(value_t::discarded);
     }
 
-    /// @brief create a JSON value from an input in BSON format
+    /// @brief create a JSON value from an input in BSON format (iterator pair, or iterator+sentinel pair for C++20 ranges support)
     /// @sa https://json.nlohmann.me/api/basic_json/from_bson/
-    template<typename IteratorType>
+    template<typename IteratorType, typename SentinelType = IteratorType,
+             detail::enable_if_t<detail::can_compare_ne<IteratorType, SentinelType>::value, int> = 0>
     JSON_HEDLEY_WARN_UNUSED_RESULT
-    static basic_json from_bson(IteratorType first, IteratorType last,
+    static basic_json from_bson(IteratorType first, SentinelType last,
                                 const bool strict = true,
                                 const bool allow_exceptions = true)
     {
@@ -4896,16 +4885,17 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
                     break;
                 }
 
-                // if there exists a parent, it cannot be primitive
-                case value_t::string: // LCOV_EXCL_LINE
-                case value_t::boolean: // LCOV_EXCL_LINE
-                case value_t::number_integer: // LCOV_EXCL_LINE
-                case value_t::number_unsigned: // LCOV_EXCL_LINE
-                case value_t::number_float: // LCOV_EXCL_LINE
-                case value_t::binary: // LCOV_EXCL_LINE
-                case value_t::discarded: // LCOV_EXCL_LINE
-                default:            // LCOV_EXCL_LINE
-                    JSON_ASSERT(false); // NOLINT(cert-dcl03-c,hicpp-static-assert,misc-static-assert) LCOV_EXCL_LINE
+                // the parent of an "add" target must be an object or array
+                // (see #4292)
+                case value_t::string:
+                case value_t::boolean:
+                case value_t::number_integer:
+                case value_t::number_unsigned:
+                case value_t::number_float:
+                case value_t::binary:
+                case value_t::discarded:
+                default:
+                    JSON_THROW(out_of_range::create(411, detail::concat("cannot add value: the JSON Patch 'add' target's parent is of type ", parent.type_name(), ", but must be an object or array"), &parent));
             }
         };
 
@@ -5265,6 +5255,14 @@ std::string to_string(const NLOHMANN_BASIC_JSON_TPL& j)
     return j.dump();
 }
 
+/// @brief user-defined format_as function for JSON values (fmt <= 11.0.x support)
+/// @sa https://json.nlohmann.me/api/basic_json/format_as/
+NLOHMANN_BASIC_JSON_TPL_DECLARATION
+std::string format_as(const NLOHMANN_BASIC_JSON_TPL& j)
+{
+    return j.dump();
+}
+
 inline namespace literals
 {
 inline namespace json_literals
@@ -5368,6 +5366,84 @@ inline void swap(nlohmann::NLOHMANN_BASIC_JSON_TPL& j1, nlohmann::NLOHMANN_BASIC
 
 #endif
 
+#if JSON_HAS_STD_FORMAT
+
+/// @brief std::formatter specialization for JSON values
+/// @sa https://json.nlohmann.me/api/basic_json/std_formatter/
+NLOHMANN_BASIC_JSON_TPL_DECLARATION
+struct formatter<nlohmann::NLOHMANN_BASIC_JSON_TPL, char> // NOLINT(cert-dcl58-cpp)
+{
+    // -1 means compact output (dump()); any value >= 0 means pretty-printed
+    // output with that many spaces (or indent_char) per level (dump(indent, indent_char)).
+    int indent = -1;
+    char indent_char = ' ';
+
+    constexpr auto parse(format_parse_context& ctx) -> format_parse_context::iterator
+    {
+        auto it = ctx.begin();
+        const auto end = ctx.end();
+        constexpr auto is_align = [](char c)
+        {
+            return c == '<' || c == '>' || c == '^';
+        };
+
+        // [[fill] align] - repurposed here to pick a custom indent character,
+        // e.g. "{:.>#4}" pretty-prints with '.' as the indent character
+        if (it != end && it + 1 != end && is_align(it[1]))
+        {
+            indent_char = *it;
+            it += 2;
+        }
+        else if (it != end && is_align(*it))
+        {
+            ++it;
+        }
+
+        // ['#'] - "alternate form", used here to request pretty-printing with a
+        // default indent of 4 (overridden by an explicit width below, if given)
+        if (it != end && *it == '#')
+        {
+            indent = 4;
+            ++it;
+        }
+
+        // [width] - repurposed here to pick the indent size for pretty-printing,
+        // e.g. "{:2}" or "{:#2}" pretty-print with an indent of 2; a width without
+        // '#' implies pretty-printing since an indent otherwise has no meaning
+        if (it != end && *it >= '1' && *it <= '9')
+        {
+            indent = 0;
+            while (it != end && *it >= '0' && *it <= '9')
+            {
+                indent = (indent * 10) + (*it - '0');
+                ++it;
+            }
+        }
+
+        // sign, the '0' flag, precision, locale-specific formatting ('L'), dynamic
+        // width/precision ("{...}"), and type characters all have no meaning for
+        // JSON values; none of them are consumed above, so they all end up rejected
+        // by this single check along with any other unrecognized trailing spec.
+        if (it != end && *it != '}')
+        {
+            JSON_THROW(format_error("invalid format args for nlohmann::json"));
+        }
+
+        return it;
+    }
+
+    template<typename FormatContext>
+    auto format(const nlohmann::NLOHMANN_BASIC_JSON_TPL& j, FormatContext& ctx) const -> decltype(ctx.out())
+    {
+        // dump()'s own default (indent = -1) already means compact output, so this
+        // covers both the compact and pretty-printed cases without a branch.
+        const auto dumped = j.dump(indent, indent_char);
+        return std::copy(dumped.begin(), dumped.end(), ctx.out());
+    }
+};
+
+#endif
+
 }  // namespace std
 
 #if JSON_USE_GLOBAL_UDLS
@@ -5382,5 +5458,10 @@ inline void swap(nlohmann::NLOHMANN_BASIC_JSON_TPL& j1, nlohmann::NLOHMANN_BASIC
 #endif
 
 #include <nlohmann/detail/macro_unscope.hpp>
+
+// End of GCC diagnostic pragmas for C++ modules support
+#if defined(__GNUC__) && !defined(__clang__) && __cplusplus >= 202002L
+    #pragma GCC diagnostic pop
+#endif
 
 #endif  // INCLUDE_NLOHMANN_JSON_HPP_

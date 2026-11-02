@@ -35,7 +35,7 @@ void ApproximatedDeviceMemory::CalculateAndSetApproximatedDeviceMemory() {
   // The calculations in this method are described in the specification:
   // https://w3c.github.io/device-memory/.
   DCHECK_GT(physical_memory_mb_, 0);
-  int lower_bound = physical_memory_mb_;
+  int64_t lower_bound = physical_memory_mb_;
   int power = 0;
 
   // Extract the most-significant-bit and its location.
@@ -57,12 +57,10 @@ void ApproximatedDeviceMemory::CalculateAndSetApproximatedDeviceMemory() {
     approximated_device_memory_gb_ = static_cast<float>(upper_bound) / 1024.0;
 
   // Limit the values to reduce fingerprintability.
-  float kMinMemory = 0.25f;
-  float kMaxMemory = 8.0f;
+  // See: https://crbug.com/454354290 for updated limits.
+  float kMinMemory = 2.0f;
+  float kMaxMemory = 32.0f;
 
-  // We're rolling out improved limits. See: https://crbug.com/454354290.
-  if (base::FeatureList::IsEnabled(
-          blink::features::kUpdatedDeviceMemoryLimitsFor2026)) {
 #if BUILDFLAG(IS_ANDROID)
     // Allow smaller lower limits on Android where lower RAM is still common.
     // Note: As of Jan-2026 some Google Search tests in our test suite
@@ -70,12 +68,8 @@ void ApproximatedDeviceMemory::CalculateAndSetApproximatedDeviceMemory() {
     // content to 1GB and lower. So when increasing this lower limit you will
     // likely see memory regressions.
     kMinMemory = 1.0f;
-#else
-    // Increased limits on other platforms where higher RAM is more common.
-    kMinMemory = 2.0f;
-    kMaxMemory = 32.0f;
+    kMaxMemory = 8.0f;
 #endif
-  }
 
   if (approximated_device_memory_gb_ < kMinMemory) {
     approximated_device_memory_gb_ = kMinMemory;

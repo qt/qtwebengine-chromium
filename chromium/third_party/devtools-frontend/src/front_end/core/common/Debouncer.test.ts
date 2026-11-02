@@ -3,11 +3,13 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from './common.js';
 
 describe('Debouncer', () => {
-  it('debounces correctly', done => {
+  it('debounces correctly', () => {
+    const clock = sinon.useFakeTimers();
     let count = 0;
     function increment() {
       count++;
@@ -18,11 +20,29 @@ describe('Debouncer', () => {
     // once after 10ms.
     debouncedIncrement();
     debouncedIncrement();
+    assert.strictEqual(count, 0);
 
     // Then wait a while before checking the value.
-    setTimeout(() => {
-      assert.strictEqual(count, 1);
-      done();
-    }, 50);
+    clock.tick(10);
+    assert.strictEqual(count, 1);
+    clock.restore();
+  });
+
+  it('can be cancelled', () => {
+    const clock = sinon.useFakeTimers();
+    let count = 0;
+    function increment() {
+      count++;
+    }
+
+    const debouncedIncrement = Common.Debouncer.debounce(increment, 10);
+    debouncedIncrement();
+    debouncedIncrement.cancel();
+    assert.strictEqual(count, 0);
+
+    // Then wait a while before checking the value.
+    clock.tick(10);
+    assert.strictEqual(count, 0);
+    clock.restore();
   });
 });

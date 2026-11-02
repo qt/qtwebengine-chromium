@@ -13,6 +13,8 @@
 #include "base/test/test_future.h"
 #include "components/personal_context/core/personal_context_features.h"
 #include "components/signin/public/identity_manager/identity_test_environment.h"
+#include "components/variations/net/variations_http_headers.h"
+#include "components/variations/scoped_variations_ids_provider.h"
 #include "net/http/http_status_code.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
@@ -39,11 +41,6 @@ class PersonalContextServiceImplTest : public testing::Test {
   ~PersonalContextServiceImplTest() override = default;
 
   void SetUp() override {
-    scoped_feature_list_.InitAndEnableFeatureWithParameters(
-        features::kPersonalContext,
-        {{features::kContextMemoryFetchContextEndpointUrl.name,
-          "https://example.com/v1:fetchContext"},
-         {features::kPersonalContextEnableFetchContext.name, "true"}});
     url_loader_factory_ =
         base::MakeRefCounted<network::WeakWrapperSharedURLLoaderFactory>(
             &test_url_loader_factory_);
@@ -60,8 +57,8 @@ class PersonalContextServiceImplTest : public testing::Test {
   bool SimulateResponse(const std::string& content,
                         net::HttpStatusCode http_status) {
     return test_url_loader_factory_.SimulateResponseForPendingRequest(
-        "https://example.com/v1:fetchContext", content, http_status,
-        network::TestURLLoaderFactory::kUrlMatchPrefix);
+        "https://contextmemoryservice.pa.googleapis.com/v1:fetchContext",
+        content, http_status, network::TestURLLoaderFactory::kUrlMatchPrefix);
   }
 
   bool SimulateSuccessfulResponse() {
@@ -79,7 +76,10 @@ class PersonalContextServiceImplTest : public testing::Test {
  protected:
   base::test::TaskEnvironment task_environment_{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
-  base::test::ScopedFeatureList scoped_feature_list_;
+  variations::test::ScopedVariationsIdsProvider scoped_variations_ids_provider_{
+      variations::VariationsIdsProvider::Mode::kUseSignedInState};
+  base::test::ScopedFeatureList scoped_feature_list_{
+      features::kPersonalContext};
   signin::IdentityTestEnvironment identity_test_env_;
   scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
   network::TestURLLoaderFactory test_url_loader_factory_;
@@ -101,6 +101,31 @@ TEST_F(PersonalContextServiceImplTest, FetchContextDelegatesToManager) {
   FetchContextResult result = future.Take();
   ASSERT_TRUE(result.response.has_value());
   ASSERT_EQ("foo response", result.response.value().value());
+}
+
+TEST_F(PersonalContextServiceImplTest, FetchPiiEntitiesDelegatesToManager) {
+  SetAutomaticIssueOfAccessTokens();
+
+  base::test::TestFuture<FetchPiiEntitiesResult> future;
+
+  proto::FetchPiiEntitiesRequest request;
+  request.set_feature(proto::CONTEXT_MEMORY_FEATURE_AMBIENT_AUTOFILL);
+  ContextMemoryRequestOptions options;
+  personal_context_service()->FetchPiiEntities(request, options,
+                                               future.GetCallback());
+
+  proto::FetchPiiEntitiesResponse pii_response;
+  pii_response.set_server_request_id("test_id");
+  std::string serialized_response;
+  pii_response.SerializeToString(&serialized_response);
+  test_url_loader_factory_.SimulateResponseForPendingRequest(
+      "https://contextmemoryservice.pa.googleapis.com/v1:fetchPiiEntities",
+      serialized_response, net::HTTP_OK,
+      network::TestURLLoaderFactory::kUrlMatchPrefix);
+
+  FetchPiiEntitiesResult result = future.Take();
+  ASSERT_TRUE(result.response.has_value());
+  EXPECT_EQ("test_id", result.response.value().server_request_id());
 }
 
 }  // namespace

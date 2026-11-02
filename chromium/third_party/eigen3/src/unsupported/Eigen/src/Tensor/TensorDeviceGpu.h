@@ -24,7 +24,7 @@ static const int kGpuScratchSize = 1024;
 // HIP / CUDA streams underneath.
 class StreamInterface {
  public:
-  virtual ~StreamInterface() {}
+  virtual ~StreamInterface() = default;
 
   virtual const gpuStream_t& stream() const = 0;
   virtual const gpuDeviceProp_t& deviceProperties() const = 0;
@@ -99,7 +99,7 @@ class GpuStreamDevice : public StreamInterface {
   // Use the default stream on the specified device
   GpuStreamDevice(int device) : stream_(&default_stream), device_(device), scratch_(NULL), semaphore_(NULL) {}
   // Use the specified stream. Note that it's the
-  // caller responsibility to ensure that the stream can run on
+  // caller's responsibility to ensure that the stream can run on
   // the specified device. If no device is specified the code
   // assumes that the stream is associated to the current gpu device.
   GpuStreamDevice(const gpuStream_t* stream, int device = -1)

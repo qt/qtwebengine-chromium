@@ -112,14 +112,17 @@ EXTRA_DIST = \
     asciitab.h \
     expat_external.h \
     expat.h \
+    fallthrough.h \
     iasciitab.h \
     internal.h \
     latin1tab.h \
     libexpat.def.cmake \
+    memory_sanitizer.h \
     nametab.h \
     siphash.h \
     utf8tab.h \
     winconfig.h \
+    xcsinc.c \
     xmlrole.h \
     xmltok.h \
     xmltok_impl.c \

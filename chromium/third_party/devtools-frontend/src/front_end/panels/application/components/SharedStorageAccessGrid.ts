@@ -36,7 +36,7 @@ const UIStrings = {
   /**
    * @description Text in Shared Storage Events View of the Application panel
    * Scope of shared storage event such as 'window', 'sharedStorageWorklet',
-   * 'protectedAudienceWorklet', or 'header'.
+   * or 'header'.
    */
   eventScope: 'Access Scope',
   /**

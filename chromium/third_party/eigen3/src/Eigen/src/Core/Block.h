@@ -56,7 +56,7 @@ struct traits<Block<XprType_, BlockRows, BlockCols, InnerPanel_>> : traits<XprTy
     // FIXME DirectAccessBit should not be handled by expressions
     //
     // Alignment is needed by MapBase's assertions
-    // We can sefely set it to false here. Internal alignment errors will be detected by an eigen_internal_assert in the
+    // We can safely set it to false here. Internal alignment errors will be detected by an eigen_internal_assert in the
     // respective evaluator
     Alignment = 0,
     InnerPanel = InnerPanel_ ? 1 : 0

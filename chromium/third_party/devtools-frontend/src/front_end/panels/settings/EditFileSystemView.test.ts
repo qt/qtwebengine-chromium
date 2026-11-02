@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Platform from '../../core/platform/platform.js';
 import * as Persistence from '../../models/persistence/persistence.js';
@@ -18,7 +19,7 @@ const {urlString} = Platform.DevToolsPath;
 describeWithEnvironment('EditFileSystemView view', () => {
   it('renders excluded sub-directories', async () => {
     const target = document.createElement('div');
-    renderElementIntoDOM(target);
+    renderElementIntoDOM(target, {includeCommonStyles: true});
 
     DEFAULT_VIEW(
         {
@@ -38,7 +39,7 @@ describeWithEnvironment('EditFileSystemView view', () => {
 
   it('renders errors for invalid sub-directories', async () => {
     const target = document.createElement('div');
-    renderElementIntoDOM(target);
+    renderElementIntoDOM(target, {includeCommonStyles: true});
 
     DEFAULT_VIEW(
         {

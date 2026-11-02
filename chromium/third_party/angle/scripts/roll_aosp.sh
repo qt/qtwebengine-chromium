@@ -52,7 +52,6 @@ function generate_Android_bp_file() {
             # Disable all backends except Vulkan
             "angle_enable_vulkan = true"
             "angle_enable_gl = false"
-            "angle_enable_d3d9 = false"
             "angle_enable_d3d11 = false"
             "angle_enable_null = false"
             "angle_enable_metal = false"
@@ -160,6 +159,13 @@ is_in_android_repo() {
     fi
     return 1
 }
+
+# throw an error if ANGLE_UPSTREAM_HASH is not set (b/348044346)
+if [[ -z "${ANGLE_UPSTREAM_HASH}" ]]; then
+    echo "ANGLE_UPSTREAM_HASH environment variable is not set. Please run command 'export ANGLE_UPSTREAM_HASH=\"{git_hash}\"' before running roll_aosp.sh.
+{git_hash} should be the git hash of the most recent ANGLE commit in upstream that current repo has already rolled in."
+    exit 1
+fi
 
 CLEAN_GIT_SUBMODULES=false
 if is_in_android_repo; then
@@ -351,6 +357,7 @@ done
 # Delete the .git files in each dep so that it can be copied to this repo. Some deps like jsoncpp
 # have multiple layers of deps so delete everything before adding them.
 for dep in "${copy_to_aosp_paths[@]}"; do
+   git rm -rf --cached --ignore-unmatch "$dep"
    rm -rf "$dep"/.git
 done
 

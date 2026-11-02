@@ -17,6 +17,7 @@
 #include "src/base/flags.h"
 #include "src/base/hashmap.h"
 #include "src/base/pointer-with-payload.h"
+#include "src/base/strong-alias.h"
 #include "src/codegen/bailout-reason.h"
 #include "src/common/globals.h"
 #include "src/common/message-template.h"
@@ -2205,7 +2206,7 @@ ParserBase<Impl>::ParsePrimaryExpression() {
       IdentifierT name = ParseAndClassifyIdentifier(token);
       ClassifyParameter(name, beg_pos, end_position());
       ExpressionT result =
-          impl()->ExpressionFromIdentifier(name, beg_pos, InferName::kNo);
+          impl()->ExpressionFromIdentifier(name, beg_pos, InferName{false});
       parsing_scope.SetInitializers(0, peek_position());
       next_arrow_function_info_.scope = parsing_scope.ValidateAndCreateScope();
       next_arrow_function_info_.function_literal_id =
@@ -2670,7 +2671,7 @@ bool ParserBase<Impl>::VerifyCanHaveAutoAccessorOrThrow(
     default:
       impl()->ReportUnexpectedTokenAt(
           Scanner::Location(name_token_position,
-                            name_expression->position() == -1
+                            name_expression->position() < name_token_position
                                 ? name_token_position
                                 : name_expression->position()),
           Token::kAccessor);
@@ -2891,7 +2892,7 @@ ParserBase<Impl>::ParseClassPropertyDefinition(ClassInfo* class_info,
     case ParsePropertyKind::kSpread:
       impl()->ReportUnexpectedTokenAt(
           Scanner::Location(name_token_position,
-                            name_expression->position() == -1
+                            name_expression->position() < name_token_position
                                 ? name_token_position
                                 : name_expression->position()),
           name_token);
@@ -4131,13 +4132,16 @@ ParserBase<Impl>::ParseMemberWithPresentNewPrefixesExpression() {
   CheckStackOverflow();
 
   if (peek() == Token::kImport) {
-    result = ParseMemberExpression();
+    result = ParseImportExpressions();
     if (result->IsImportCallExpression()) {
       // new import() and new import.source() are never allowed.
+      // new import().prop and new import.source().prop are not allowed as well.
       impl()->ReportMessageAt(scanner()->location(),
                               MessageTemplate::kImportCallNotNewExpression);
       return impl()->FailureExpression();
     }
+    // import.meta is a valid MemberExpression.
+    result = ParseMemberExpressionContinuation(result);
   } else if (peek() == Token::kPeriod) {
     result = ParseNewTargetExpression();
     return ParseMemberExpressionContinuation(result);
@@ -5762,18 +5766,11 @@ void ParserBase<Impl>::ParseStatementList(StatementListT* body,
 
   while (peek() == Token::kString) {
     bool use_strict = false;
-#if V8_ENABLE_WEBASSEMBLY
-    bool use_asm = false;
-#endif  // V8_ENABLE_WEBASSEMBLY
 
     Scanner::Location token_loc = scanner()->peek_location();
 
     if (scanner()->NextLiteralExactlyEquals("use strict")) {
       use_strict = true;
-#if V8_ENABLE_WEBASSEMBLY
-    } else if (scanner()->NextLiteralExactlyEquals("use asm")) {
-      use_asm = true;
-#endif  // V8_ENABLE_WEBASSEMBLY
     }
 
     StatementT stat = ParseStatementListItem();
@@ -5796,11 +5793,6 @@ void ParserBase<Impl>::ParseStatementList(StatementListT* body,
                                 "use strict");
         return;
       }
-#if V8_ENABLE_WEBASSEMBLY
-    } else if (use_asm) {
-      // Directive "use asm".
-      impl()->SetAsmModule();
-#endif  // V8_ENABLE_WEBASSEMBLY
     } else {
       // Possibly an unknown directive.
       // Should not change mode, but will increment usage counters

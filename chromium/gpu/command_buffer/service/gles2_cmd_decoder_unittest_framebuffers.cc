@@ -996,6 +996,50 @@ TEST_P(GLES2DecoderManualInitTest, ReadPixels2RowLengthWorkaround) {
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 }
 
+TEST_P(GLES2DecoderManualInitTest, ReadPixels2LargeRowLengthWorkaround) {
+  gpu::GpuDriverBugWorkarounds workarounds;
+  workarounds.pack_large_row_length_separately_pack_buffer = true;
+  InitState init;
+  init.gl_version = "OpenGL ES 3.0";
+  init.context_type = CONTEXT_TYPE_OPENGLES3;
+  InitDecoderWithWorkarounds(init, workarounds);
+
+  const GLsizei kWidth = 1;
+  const GLsizei kHeight = 2;
+  const GLenum kFormat = GL_RGBA;
+  const GLenum kType = GL_UNSIGNED_BYTE;
+  const GLint kLargeRowLength = 0x7fffffc;
+  constexpr GLsizeiptr kByteOffsetToVerify = 0x1ffffff0;
+  GLsizeiptr size = kByteOffsetToVerify + 256;
+
+  DoBindBuffer(GL_PIXEL_PACK_BUFFER, client_buffer_id_, kServiceBufferId);
+  DoBufferData(GL_PIXEL_PACK_BUFFER, size);
+
+  DoPixelStorei(GL_PACK_ROW_LENGTH, kLargeRowLength);
+
+  EXPECT_CALL(*gl_, GetError())
+      .WillOnce(Return(GL_NO_ERROR))
+      .RetiresOnSaturation();
+
+  EXPECT_CALL(*gl_, PixelStorei(GL_PACK_ROW_LENGTH, 0))
+      .Times(1)
+      .RetiresOnSaturation();
+  for (GLint ii = 0; ii < kHeight; ++ii) {
+    void* offset = reinterpret_cast<void*>(ii * kByteOffsetToVerify);
+    EXPECT_CALL(*gl_, ReadPixels(0, ii, kWidth, 1, kFormat, kType, offset))
+        .Times(1)
+        .RetiresOnSaturation();
+  }
+  EXPECT_CALL(*gl_, PixelStorei(GL_PACK_ROW_LENGTH, kLargeRowLength))
+      .Times(1)
+      .RetiresOnSaturation();
+
+  cmds::ReadPixels cmd;
+  cmd.Init(0, 0, kWidth, kHeight, kFormat, kType, 0, 0, 0, 0, false);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+}
+
 TEST_P(GLES2DecoderManualInitTest, ReadPixels2AlignmentWorkaround) {
   gpu::GpuDriverBugWorkarounds workarounds;
   workarounds.pack_parameters_workaround_with_pack_buffer = true;
@@ -2858,6 +2902,120 @@ TEST_P(GLES2DecoderManualInitTest,
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 }
 
+// Regression test: when lazily clearing a READ FBO (with a different DRAW
+// FBO), the decoder must rebind the lazy-clear target as DRAW before
+// calling PrepareDrawBuffersForClearingUninitializedAttachments().
+// Otherwise the wrong FBO's state is mutated, leading to skipped clears
+// and potential memory disclosure.
+TEST_P(GLES3DecoderTest, LazyClearReadFBORebindsDrawBeforePrepareDrawBuffers) {
+  // Setup: fboA with uncleared RGBA8 renderbuffer and drawBuffers=NONE
+  DoBindRenderbuffer(GL_RENDERBUFFER, client_renderbuffer_id_,
+                     kServiceRenderbufferId);
+  DoRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, 1, 1, GL_NO_ERROR);
+
+  DoBindFramebuffer(GL_DRAW_FRAMEBUFFER, client_framebuffer_id_,
+                    kServiceFramebufferId);
+  DoFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                            GL_RENDERBUFFER, client_renderbuffer_id_,
+                            kServiceRenderbufferId, GL_NO_ERROR);
+  {
+    // Set drawBuffers to NONE on fboA.
+    const GLenum bufs[] = {GL_NONE};
+    EXPECT_CALL(*gl_, DrawBuffersARB(1, _)).Times(1).RetiresOnSaturation();
+    auto& db = *GetImmediateAs<cmds::DrawBuffersEXTImmediate>();
+    db.Init(1, bufs);
+    EXPECT_EQ(error::kNoError, ExecuteImmediateCmd(db, sizeof(bufs)));
+  }
+
+  // Bind fboB as DRAW (draw_framebuffer != fboA).
+  EXPECT_CALL(*gl_, GenFramebuffersEXT(1, _))
+      .WillOnce(SetArgPointee<1>(kNewServiceId))
+      .RetiresOnSaturation();
+  GLuint fbo_b_client = client_framebuffer_id_ + 1;
+  GenHelper<cmds::GenFramebuffersImmediate>(fbo_b_client);
+  DoBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo_b_client, kNewServiceId);
+
+  // Bind fboA as READ.
+  DoBindFramebuffer(GL_READ_FRAMEBUFFER, client_framebuffer_id_,
+                    kServiceFramebufferId);
+
+  // Trigger ReadPixels, which should lazy clear fboA.
+  struct Tracker {
+    GLuint bound_draw_fbo;
+    GLuint fbo_at_prepare_drawbuffers;
+    GLuint fbo_at_clear;
+    int drawbuffers_calls;
+  };
+  auto t = std::make_shared<Tracker>();
+  t->bound_draw_fbo = kNewServiceId;
+  t->fbo_at_prepare_drawbuffers = 0xDEADBEEF;
+  t->fbo_at_clear = 0xDEADBEEF;
+  t->drawbuffers_calls = 0;
+
+  EXPECT_CALL(*gl_, CheckFramebufferStatusEXT(GL_READ_FRAMEBUFFER))
+      .WillOnce(Return(GL_FRAMEBUFFER_COMPLETE))
+      .RetiresOnSaturation();
+
+  EXPECT_CALL(*gl_, BindFramebufferEXT(_, _))
+      .WillRepeatedly([t](GLenum target, GLuint id) {
+        if (target == GL_DRAW_FRAMEBUFFER || target == GL_FRAMEBUFFER) {
+          t->bound_draw_fbo = id;
+        }
+      });
+
+  EXPECT_CALL(*gl_, DrawBuffersARB(_, _))
+      .WillRepeatedly([t](GLsizei, const GLenum*) {
+        // First call is PrepareDrawBuffers, second is RestoreDrawBuffers.
+        if (t->drawbuffers_calls++ == 0) {
+          t->fbo_at_prepare_drawbuffers = t->bound_draw_fbo;
+        }
+      });
+
+  EXPECT_CALL(*gl_, Clear(GL_COLOR_BUFFER_BIT))
+      .WillOnce([t](GLbitfield) { t->fbo_at_clear = t->bound_draw_fbo; })
+      .RetiresOnSaturation();
+
+  // Absorb the rest of the lazy-clear / restore-state noise.
+  EXPECT_CALL(*gl_, ClearColor(_, _, _, _)).Times(AnyNumber());
+  EXPECT_CALL(*gl_, ColorMask(_, _, _, _)).Times(AnyNumber());
+  EXPECT_CALL(*gl_, ClearStencil(_)).Times(AnyNumber());
+  EXPECT_CALL(*gl_, ClearDepth(_)).Times(AnyNumber());
+  EXPECT_CALL(*gl_, StencilMaskSeparate(_, _)).Times(AnyNumber());
+  EXPECT_CALL(*gl_, DepthMask(_)).Times(AnyNumber());
+  EXPECT_CALL(*gl_, Disable(_)).Times(AnyNumber());
+  EXPECT_CALL(*gl_, Enable(_)).Times(AnyNumber());
+  EXPECT_CALL(*gl_, Scissor(_, _, _, _)).Times(AnyNumber());
+  EXPECT_CALL(*gl_, WindowRectanglesEXT(_, _, _)).Times(AnyNumber());
+  EXPECT_CALL(*gl_, GetError()).WillRepeatedly(Return(GL_NO_ERROR));
+  EXPECT_CALL(*gl_, ReadPixels(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, _))
+      .Times(1)
+      .RetiresOnSaturation();
+
+  auto* result = GetSharedMemoryAs<cmds::ReadPixels::Result*>();
+  cmds::ReadPixels rp;
+  rp.Init(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, shared_memory_id_,
+          kSharedMemoryOffset + sizeof(*result), shared_memory_id_,
+          kSharedMemoryOffset, false);
+  result->success = 0;
+  EXPECT_EQ(error::kNoError, ExecuteCmd(rp));
+
+  // Assertions
+  // PrepareDrawBuffers should have been called.
+  EXPECT_GE(t->drawbuffers_calls, 1)
+      << "PrepareDrawBuffers should have issued glDrawBuffersARB.";
+
+  // glClear must target fboA.
+  EXPECT_EQ(static_cast<GLuint>(kServiceFramebufferId), t->fbo_at_clear)
+      << "glClear targetted wrong FBO.";
+
+  // Verify fboA was bound as DRAW when PrepareDrawBuffers was called.
+  EXPECT_EQ(static_cast<GLuint>(kServiceFramebufferId),
+            t->fbo_at_prepare_drawbuffers)
+      << "PrepareDrawBuffers called with wrong DRAW framebuffer bound: "
+      << t->fbo_at_prepare_drawbuffers << " instead of "
+      << kServiceFramebufferId;
+}
+
 TEST_P(GLES2DecoderWithShaderTest, CopyTexImageWithInCompleteFBOFails) {
   GLenum target = GL_TEXTURE_2D;
   GLint level = 0;
@@ -3835,6 +3993,140 @@ TEST_P(GLES3DecoderTest, BlitFramebufferMissingDepthOrStencil) {
     EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
     EXPECT_EQ(GL_NO_ERROR, GetGLError());
   }
+}
+
+TEST_P(GLES3DecoderTest, ClearDepthStencilRenderbufferAttachedAtDepthOnly) {
+  // A DEPTH24_STENCIL8 renderbuffer attached at GL_DEPTH_ATTACHMENT only must
+  // have both its depth and stencil components cleared before being marked as
+  // cleared.
+  DoBindRenderbuffer(GL_RENDERBUFFER, client_renderbuffer_id_,
+                     kServiceRenderbufferId);
+  DoRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, 1, 1,
+                        GL_NO_ERROR);
+
+  GLuint color_renderbuffer = client_renderbuffer_id_ + 1;
+  GLuint color_renderbuffer_service = kServiceRenderbufferId + 1;
+  EXPECT_CALL(*gl_, GenRenderbuffersEXT(1, _))
+      .WillOnce(SetArgPointee<1>(color_renderbuffer_service))
+      .RetiresOnSaturation();
+  GenHelper<cmds::GenRenderbuffersImmediate>(color_renderbuffer);
+  DoBindRenderbuffer(GL_RENDERBUFFER, color_renderbuffer,
+                     color_renderbuffer_service);
+  DoRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, 1, 1, GL_NO_ERROR);
+
+  DoBindFramebuffer(GL_FRAMEBUFFER, client_framebuffer_id_,
+                    kServiceFramebufferId);
+  DoFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                            GL_RENDERBUFFER, color_renderbuffer,
+                            color_renderbuffer_service, GL_NO_ERROR);
+  DoFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                            GL_RENDERBUFFER, client_renderbuffer_id_,
+                            kServiceRenderbufferId, GL_NO_ERROR);
+
+  // The packed renderbuffer is bound at the stencil point for the duration of
+  // the implicit clear so that glClear writes both components.
+  EXPECT_CALL(*gl_, FramebufferRenderbufferEXT(
+                        GL_DRAW_FRAMEBUFFER, GL_STENCIL_ATTACHMENT,
+                        GL_RENDERBUFFER, kServiceRenderbufferId))
+      .Times(1)
+      .RetiresOnSaturation();
+  EXPECT_CALL(
+      *gl_, FramebufferRenderbufferEXT(
+                GL_DRAW_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, 0))
+      .Times(1)
+      .RetiresOnSaturation();
+  SetupExpectationsForFramebufferClearing(
+      GL_DRAW_FRAMEBUFFER,  // target
+      GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT |
+          GL_STENCIL_BUFFER_BIT,  // clear bits
+      0, 0, 0, 0,                 // color
+      0,                          // stencil
+      1.0f,                       // depth
+      false,                      // scissor test
+      0, 0, 128, 64);
+  SetupExpectationsForApplyingDirtyState(false,   // Framebuffer is RGB
+                                         true,    // Framebuffer has depth
+                                         false,   // Framebuffer has stencil
+                                         0x1111,  // color bits
+                                         true,    // depth mask
+                                         false,   // depth enabled
+                                         0,       // front stencil mask
+                                         0,       // back stencil mask
+                                         false);  // stencil enabled
+  EXPECT_CALL(*gl_, DrawBuffersARB(_, _)).Times(1).RetiresOnSaturation();
+  EXPECT_CALL(*gl_, Clear(GL_COLOR_BUFFER_BIT)).Times(1).RetiresOnSaturation();
+
+  cmds::Clear cmd;
+  cmd.Init(GL_COLOR_BUFFER_BIT);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+}
+
+TEST_P(GLES3DecoderTest, ClearDepthStencilRenderbufferAttachedAtStencilOnly) {
+  // A DEPTH24_STENCIL8 renderbuffer attached at GL_STENCIL_ATTACHMENT only
+  // must have both its depth and stencil components cleared before being
+  // marked as cleared.
+  DoBindRenderbuffer(GL_RENDERBUFFER, client_renderbuffer_id_,
+                     kServiceRenderbufferId);
+  DoRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, 1, 1,
+                        GL_NO_ERROR);
+
+  GLuint color_renderbuffer = client_renderbuffer_id_ + 1;
+  GLuint color_renderbuffer_service = kServiceRenderbufferId + 1;
+  EXPECT_CALL(*gl_, GenRenderbuffersEXT(1, _))
+      .WillOnce(SetArgPointee<1>(color_renderbuffer_service))
+      .RetiresOnSaturation();
+  GenHelper<cmds::GenRenderbuffersImmediate>(color_renderbuffer);
+  DoBindRenderbuffer(GL_RENDERBUFFER, color_renderbuffer,
+                     color_renderbuffer_service);
+  DoRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, 1, 1, GL_NO_ERROR);
+
+  DoBindFramebuffer(GL_FRAMEBUFFER, client_framebuffer_id_,
+                    kServiceFramebufferId);
+  DoFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                            GL_RENDERBUFFER, color_renderbuffer,
+                            color_renderbuffer_service, GL_NO_ERROR);
+  DoFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT,
+                            GL_RENDERBUFFER, client_renderbuffer_id_,
+                            kServiceRenderbufferId, GL_NO_ERROR);
+
+  // The packed renderbuffer is bound at the depth point for the duration of
+  // the implicit clear so that glClear writes both components.
+  EXPECT_CALL(
+      *gl_, FramebufferRenderbufferEXT(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                                       GL_RENDERBUFFER, kServiceRenderbufferId))
+      .Times(1)
+      .RetiresOnSaturation();
+  EXPECT_CALL(
+      *gl_, FramebufferRenderbufferEXT(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                                       GL_RENDERBUFFER, 0))
+      .Times(1)
+      .RetiresOnSaturation();
+  SetupExpectationsForFramebufferClearing(
+      GL_DRAW_FRAMEBUFFER,  // target
+      GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT |
+          GL_STENCIL_BUFFER_BIT,  // clear bits
+      0, 0, 0, 0,                 // color
+      0,                          // stencil
+      1.0f,                       // depth
+      false,                      // scissor test
+      0, 0, 128, 64);
+  SetupExpectationsForApplyingDirtyState(false,   // Framebuffer is RGB
+                                         false,   // Framebuffer has depth
+                                         true,    // Framebuffer has stencil
+                                         0x1111,  // color bits
+                                         false,   // depth mask
+                                         false,   // depth enabled
+                                         0xFFFFFFFFU,  // front stencil mask
+                                         0xFFFFFFFFU,  // back stencil mask
+                                         false);       // stencil enabled
+  EXPECT_CALL(*gl_, DrawBuffersARB(_, _)).Times(1).RetiresOnSaturation();
+  EXPECT_CALL(*gl_, Clear(GL_COLOR_BUFFER_BIT)).Times(1).RetiresOnSaturation();
+
+  cmds::Clear cmd;
+  cmd.Init(GL_COLOR_BUFFER_BIT);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
 }
 
 TEST_P(GLES2DecoderManualInitTest, MESAFramebufferFlipYExtensionEnabled) {

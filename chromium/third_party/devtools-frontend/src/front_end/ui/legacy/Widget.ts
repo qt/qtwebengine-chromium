@@ -32,13 +32,35 @@
 import '../dom_extension/dom_extension.js';
 
 import * as Platform from '../../core/platform/platform.js';
+import type * as Root from '../../core/root/root.js';
+import type * as Foundation from '../../foundation/foundation.js';
 import * as Geometry from '../../models/geometry/geometry.js';
 import * as Lit from '../../ui/lit/lit.js';
 
 import {appendStyle, deepActiveElement} from './DOMUtilities.js';
 import {cloneCustomElement, createShadowRootWithCoreStyles} from './UIUtils.js';
+import {UniverseRequestEvent} from './UniverseRequestEvent.js';
+
+// eslint-disable-next-line @typescript-eslint/naming-convention
+type InjectReturn<T> = T extends {INJECT: infer I} ? I :
+                                                     // eslint-disable-next-line @typescript-eslint/naming-convention
+                                                     T extends {constructor: {INJECT: infer I}} ? I : [];
+
+type MapConstructors<T> = {
+  [K in keyof T]: T[K] extends Root.DevToolsContext.ConstructorT<infer Instance>?
+      Instance :
+      T[K] extends new (...args: any[]) => infer Instance ? Instance : never;
+};
+
+export type WidgetDependencies<T> = MapConstructors<InjectReturn<T>>;
 
 const {html} = Lit;
+
+export function lookupUniverseForElement(element: HTMLElement): Foundation.Universe.Universe|undefined {
+  const event = new UniverseRequestEvent();
+  element.dispatchEvent(event);
+  return event.universe;
+}
 
 // Remember the original DOM mutation methods here, since we
 // will override them below to sanity check the Widget system.
@@ -55,8 +77,9 @@ function assert(condition: unknown, message: string): void {
 
 export type AnyWidget = Widget<HTMLElement|DocumentFragment>;
 
-type WidgetConstructor<WidgetT extends AnyWidget> = new (element: HTMLElement) => WidgetT;
-type WidgetProducer<WidgetT extends AnyWidget> = (element: HTMLElement) => WidgetT;
+type WidgetConstructor<WidgetT extends AnyWidget> = new (element: HTMLElement, ...args: any[]) => WidgetT;
+type WidgetProducer<WidgetT extends AnyWidget> = (element: HTMLElement, universe?: Foundation.Universe.Universe) =>
+    WidgetT;
 type WidgetFactory<WidgetT extends AnyWidget> = WidgetConstructor<WidgetT>|WidgetProducer<WidgetT>;
 type InferWidgetTFromFactory<F> = F extends WidgetFactory<infer WidgetT>? WidgetT : never;
 
@@ -76,15 +99,20 @@ export function widgetConfig<F extends WidgetFactory<AnyWidget>, ParamKeys exten
 let currentUpdateQueue: Map<AnyWidget, PromiseWithResolvers<void>>|null = null;
 const currentlyProcessed = new Set<AnyWidget>();
 let nextUpdateQueue = new Map<AnyWidget, PromiseWithResolvers<void>>();
-let pendingAnimationFrame: number|null = null;
+const pendingAnimationFrames = new WeakMap<Window, number>();
 let overallUpdatePromise: PromiseWithResolvers<void>|null = null;
 
 function enqueueIntoNextUpdateQueue(widget: AnyWidget): Promise<void> {
   const scheduledUpdate = nextUpdateQueue.get(widget) ?? Promise.withResolvers<void>();
   nextUpdateQueue.delete(widget);
   nextUpdateQueue.set(widget, scheduledUpdate);
-  if (pendingAnimationFrame === null) {
-    pendingAnimationFrame = requestAnimationFrame(runNextUpdate);
+  const widgetWindow = widget.contentElement.window() || window;
+  if (!pendingAnimationFrames.has(widgetWindow)) {
+    const frameId = widgetWindow.requestAnimationFrame(() => {
+      pendingAnimationFrames.delete(widgetWindow);
+      runNextUpdate();
+    });
+    pendingAnimationFrames.set(widgetWindow, frameId);
   }
   return scheduledUpdate.promise;
 }
@@ -118,13 +146,30 @@ function cancelUpdate(widget: AnyWidget): void {
   }
 }
 
+function resolveOverallUpdatePromise(): void {
+  if (currentlyProcessed.size === 0 && (!currentUpdateQueue || currentUpdateQueue.size === 0) &&
+      nextUpdateQueue.size === 0 && overallUpdatePromise) {
+    overallUpdatePromise.resolve();
+    overallUpdatePromise = null;
+  }
+}
+
 function runNextUpdate(): void {
-  pendingAnimationFrame = null;
   if (!currentUpdateQueue) {
     currentUpdateQueue = nextUpdateQueue;
     nextUpdateQueue = new Map();
   }
-  for (const [widget, {resolve}] of currentUpdateQueue) {
+  for (const [widget, update] of currentUpdateQueue) {
+    if (currentlyProcessed.has(widget)) {
+      const scheduledUpdate = nextUpdateQueue.get(widget);
+      if (!scheduledUpdate) {
+        nextUpdateQueue.set(widget, update);
+      } else {
+        void scheduledUpdate.promise.then(update.resolve);
+      }
+      continue;
+    }
+    const {resolve} = update;
     currentlyProcessed.add(widget);
     void (async () => {
       try {
@@ -132,7 +177,22 @@ function runNextUpdate(): void {
         widget.addUpdateController(controller);
         await widget.performUpdate(controller.signal);
       } finally {
-        resolve();
+        currentlyProcessed.delete(widget);
+        const nextUpdate = nextUpdateQueue.get(widget);
+        if (nextUpdate) {
+          void nextUpdate.promise.then(resolve);
+          const widgetWindow = widget.contentElement.window() || window;
+          if (!pendingAnimationFrames.has(widgetWindow)) {
+            const frameId = widgetWindow.requestAnimationFrame(() => {
+              pendingAnimationFrames.delete(widgetWindow);
+              runNextUpdate();
+            });
+            pendingAnimationFrames.set(widgetWindow, frameId);
+          }
+        } else {
+          resolve();
+        }
+        resolveOverallUpdatePromise();
       }
     })().catch(e => {
       if (e.name !== 'AbortError') {
@@ -146,11 +206,7 @@ function runNextUpdate(): void {
       runNextUpdate();
     } else {
       currentUpdateQueue = null;
-      currentlyProcessed.clear();
-      if (!pendingAnimationFrame && overallUpdatePromise) {
-        overallUpdatePromise.resolve();
-        overallUpdatePromise = null;
-      }
+      resolveOverallUpdatePromise();
     }
   });
 }
@@ -158,16 +214,16 @@ function runNextUpdate(): void {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const widgetConfigs = new WeakMap<HTMLElement, WidgetConfig<any>>();
 
-export function registerWidgetConfig<WidgetT extends AnyWidget>(
-    element: HTMLElement, config: WidgetConfig<WidgetT>): void {
+export function registerWidgetConfig<WidgetT extends AnyWidget>(element: HTMLElement,
+                                                                config: WidgetConfig<WidgetT>): void {
   if (!widgetConfigs.has(element)) {
     setUpLifecycleTracking(element);
   }
   widgetConfigs.set(element, config);
 }
 
-function instantiateWidget<WidgetT extends AnyWidget>(
-    element: HTMLElement, widgetConfig: WidgetConfig<WidgetT>): WidgetT {
+export function instantiateWidget<WidgetT extends AnyWidget>(element: HTMLElement,
+                                                             widgetConfig: WidgetConfig<WidgetT>): WidgetT {
   if (!widgetConfig.widgetClass) {
     throw new Error('No widgetClass defined');
   }
@@ -175,10 +231,21 @@ function instantiateWidget<WidgetT extends AnyWidget>(
   let newWidget: WidgetT;
   if (Widget.isPrototypeOf(widgetConfig.widgetClass)) {
     const ctor = widgetConfig.widgetClass as WidgetConstructor<WidgetT>;
-    newWidget = new ctor(element);
+    const depsCtors = (ctor as unknown as typeof Widget).INJECT;
+    if (depsCtors && depsCtors.length > 0) {
+      const universe = lookupUniverseForElement(element);
+      if (!universe) {
+        throw new Error(`No Universe found for widget ${ctor.name} requesting dependencies via INJECT.`);
+      }
+      const deps = depsCtors.map(depCtor => universe.get(depCtor));
+      newWidget = new ctor(element, deps);
+    } else {
+      newWidget = new ctor(element);
+    }
   } else {
     const factory = widgetConfig.widgetClass as WidgetProducer<WidgetT>;
-    newWidget = factory(element);
+    const universe = lookupUniverseForElement(element);
+    newWidget = factory(element, universe);
   }
 
   if (widgetConfig.widgetParams) {
@@ -459,6 +526,12 @@ export type WidgetOptions<ContentTypeT extends HTMLElement|DocumentFragment = HT
                                         classes?: never,
                                       });
 
+const enum UpdateState {
+  NORMAL = 'NORMAL',            // Standard state: update can be aborted for efficiency.
+  INTERRUPTED = 'INTERRUPTED',  // An update was physically running and got aborted; replacement must be shielded.
+  SHIELDED = 'SHIELDED',        // Current update is a replacement for an interrupted one and cannot be aborted.
+}
+
 export class Widget<ContentTypeT extends HTMLElement|DocumentFragment = HTMLElement> {
   readonly element: HTMLElement;
   #contentElement: ContentTypeT;
@@ -477,6 +550,7 @@ export class Widget<ContentTypeT extends HTMLElement|DocumentFragment = HTMLElem
   #externallyManaged?: boolean;
   #updateComplete = UPDATE_COMPLETE;
   #updateController?: AbortController;
+  #updateState = UpdateState.NORMAL;
 
   /**
    * Constructs a new `Widget` with the given `options`.
@@ -534,6 +608,15 @@ export class Widget<ContentTypeT extends HTMLElement|DocumentFragment = HTMLElem
   }
 
   /**
+   * An array of dependency constructors that this widget class expects to receive as an array
+   * in the second positional argument to its constructor during `instantiateWidget`:
+   * `constructor(element: HTMLElement, deps: WidgetDependencies<typeof MyWidget>)`
+   *
+   * Override this static field in sub-classes to specify dependency constructors to be retrieved from `Universe`.
+   */
+  static readonly INJECT: ReadonlyArray<Root.DevToolsContext.ConstructorT<unknown>> = [];
+
+  /**
    * Returns the {@link Widget} whose element is the given `node`, or `undefined`
    * if the `node` is not an element for a widget.
    *
@@ -545,7 +628,7 @@ export class Widget<ContentTypeT extends HTMLElement|DocumentFragment = HTMLElem
   }
 
   static get allUpdatesComplete(): Promise<void> {
-    if (!pendingAnimationFrame && !currentUpdateQueue) {
+    if (nextUpdateQueue.size === 0 && !currentUpdateQueue && currentlyProcessed.size === 0) {
       return Promise.resolve();
     }
     if (!overallUpdatePromise) {
@@ -763,9 +846,8 @@ export class Widget<ContentTypeT extends HTMLElement|DocumentFragment = HTMLElem
     if (this.#isRoot) {
       assert(!currentParent, 'Attempt to show root widget under another widget');
     } else {
-      assert(
-          currentParent && widgetMap.get(currentParent) === this.#parentWidget,
-          'Attempt to show under node belonging to alien widget');
+      assert(currentParent && widgetMap.get(currentParent) === this.#parentWidget,
+             'Attempt to show under node belonging to alien widget');
     }
 
     const wasVisible = this.#visible;
@@ -1000,9 +1082,8 @@ export class Widget<ContentTypeT extends HTMLElement|DocumentFragment = HTMLElem
   getDefaultFocusedElement(): HTMLElement|null {
     const elements = this.getDefaultFocusedElements();
     if (elements.length > 1) {
-      console.error(
-          'Multiple autofocus elements found', this.constructor.name,
-          ...elements.map(e => Platform.StringUtilities.trimMiddle(e.outerHTML, 250)));
+      console.error('Multiple autofocus elements found', this.constructor.name,
+                    ...elements.map(e => Platform.StringUtilities.trimMiddle(e.outerHTML, 250)));
     }
     return elements[0] || null;
   }
@@ -1079,9 +1160,8 @@ export class Widget<ContentTypeT extends HTMLElement|DocumentFragment = HTMLElem
 
   private hasNonZeroConstraints(): boolean {
     const constraints = this.constraints();
-    return Boolean(
-        constraints.minimum.width || constraints.minimum.height || constraints.preferred.width ||
-        constraints.preferred.height);
+    return Boolean(constraints.minimum.width || constraints.minimum.height || constraints.preferred.width ||
+                   constraints.preferred.height);
   }
 
   suspendInvalidations(): void {
@@ -1141,12 +1221,17 @@ export class Widget<ContentTypeT extends HTMLElement|DocumentFragment = HTMLElem
   }
 
   addUpdateController(controller: AbortController): void {
+    const wasInterrupted = this.#updateState === UpdateState.INTERRUPTED;
     this.#updateController?.abort();
     this.#updateController = controller;
+    // Transition to SHIELDED if we are replacing a starved update, otherwise reset to NORMAL.
+    this.#updateState = wasInterrupted ? UpdateState.SHIELDED : UpdateState.NORMAL;
   }
 
   cancelUpdateController(): void {
     this.#updateController?.abort();
+    this.#updateController = undefined;
+    this.#updateState = UpdateState.NORMAL;
   }
 
   /**
@@ -1156,7 +1241,13 @@ export class Widget<ContentTypeT extends HTMLElement|DocumentFragment = HTMLElem
    * frame.
    */
   requestUpdate(): void {
-    this.#updateController?.abort();
+    // If the state is SHIELDED, we skip the abort call entirely to break the starvation loop.
+    if (this.#updateState !== UpdateState.SHIELDED) {
+      if (currentlyProcessed.has(this)) {
+        this.#updateState = UpdateState.INTERRUPTED;
+      }
+      this.#updateController?.abort();
+    }
     this.#updateComplete = enqueueWidgetUpdate(this);
   }
 

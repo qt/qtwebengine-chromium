@@ -6,7 +6,11 @@ import {assert} from 'chai';
 
 import * as Platform from '../../../core/platform/platform.js';
 import type * as Protocol from '../../../generated/protocol.js';
-import {describeWithEnvironment} from '../../../testing/EnvironmentHelpers.js';
+import {
+  deinitializeGlobalVars,
+  describeWithEnvironment,
+  initializeGlobalVars,
+} from '../../../testing/EnvironmentHelpers.js';
 import {getFirstOrError, getInsightOrError, processTrace} from '../../../testing/InsightHelpers.js';
 import {TraceLoader} from '../../../testing/TraceLoader.js';
 import * as Trace from '../trace.js';
@@ -16,7 +20,14 @@ import type {InsightSetContextWithNavigation, RelatedEventsMap} from './types.js
 
 const {urlString} = Platform.DevToolsPath;
 
-describeWithEnvironment('NetworkDependencyTree', function() {
+describe('NetworkDependencyTree', function() {
+  before(async () => {
+    await initializeGlobalVars();
+  });
+
+  after(async () => {
+    await deinitializeGlobalVars();
+  });
   let insight: Trace.Insights.Types.InsightModels['NetworkDependencyTree'];
 
   before(async function() {
@@ -134,6 +145,14 @@ describeWithEnvironment('NetworkDependencyTree', function() {
 });
 
 describe('generatePreconnectedOrigins', () => {
+  before(async () => {
+    await initializeGlobalVars();
+  });
+
+  after(async () => {
+    await deinitializeGlobalVars();
+  });
+
   describe('generatePreconnectedOriginsFromDom', () => {
     const mockParsedTrace = {
       NetworkRequests: {
@@ -173,7 +192,7 @@ describe('generatePreconnectedOrigins', () => {
                          url: 'https://example.com',
                          unused: false,
                          crossorigin: false,
-                         source: 'DOM'
+                         source: 'DOM',
                        }]);
     });
 
@@ -202,7 +221,7 @@ describe('generatePreconnectedOrigins', () => {
                          url: 'https://example.com',
                          unused: true,
                          crossorigin: false,
-                         source: 'DOM'
+                         source: 'DOM',
                        }]);
     });
 
@@ -227,7 +246,7 @@ describe('generatePreconnectedOrigins', () => {
                          url: 'https://example.com',
                          unused: true,
                          crossorigin: true,
-                         source: 'DOM'
+                         source: 'DOM',
                        }]);
     });
 
@@ -252,12 +271,12 @@ describe('generatePreconnectedOrigins', () => {
                          url: 'https://example.com',
                          unused: true,
                          crossorigin: false,
-                         source: 'DOM'
+                         source: 'DOM',
                        }]);
     });
   });
 
-  describeWithEnvironment('PreconnectedOriginFromResponseHeader', function() {
+  describe('PreconnectedOriginFromResponseHeader', function() {
     let insight: Trace.Insights.Types.InsightModels['NetworkDependencyTree'];
     let documentRequest: Trace.Types.Events.SyntheticNetworkRequest|undefined;
 
@@ -358,7 +377,8 @@ describe('generatePreconnectedOrigins', () => {
       assert.deepEqual(
           result, [{
             url: 'https://imaginary.url.notreal/segment;foo=bar;baz/item?name=What,+me+worry',
-            headerText: '<https://imaginary.url.notreal/segment;foo=bar;baz/item?name=What,+me+worry>; rel="preconnect"'
+            headerText:
+                '<https://imaginary.url.notreal/segment;foo=bar;baz/item?name=What,+me+worry>; rel="preconnect"',
           }]);
     });
 
@@ -408,7 +428,7 @@ describeWithEnvironment('generatePreconnectCandidates', () => {
     },
     Samples: {
       entryToNode: new Map(),
-    }
+    },
   } as Trace.Handlers.Types.HandlerData;
 
   const mockContext = {
@@ -448,14 +468,14 @@ describeWithEnvironment('generatePreconnectCandidates', () => {
         url: 'https://main.com',
         requestId: 'main-request',
         syntheticData: {finishTime: 1_000},
-        timing: {connectEnd: 0, connectStart: 0}
+        timing: {connectEnd: 0, connectStart: 0},
       },
     },
     ts: 0,
     rawSourceEvent: {
       cat: 'devtools.timeline',
       name: 'ResourceSendRequest',
-    }
+    },
   } as unknown as Trace.Types.Events.SyntheticNetworkRequest;
 
   const validRequest: Trace.Types.Events.SyntheticNetworkRequest = {
@@ -470,7 +490,7 @@ describeWithEnvironment('generatePreconnectCandidates', () => {
     rawSourceEvent: {
       cat: 'devtools.timeline',
       name: 'ResourceSendRequest',
-    }
+    },
   } as unknown as Trace.Types.Events.SyntheticNetworkRequest;
 
   beforeEach(() => {

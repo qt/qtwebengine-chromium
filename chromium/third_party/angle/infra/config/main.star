@@ -31,9 +31,8 @@ lucicfg.config(
         "luci/luci-scheduler.cfg",
         "luci/project.cfg",
         "luci/realms.cfg",
-        # TODO(crbug.com/475260235): Remove project.pyl once all builders are
-        # defined src-side.
-        "project.pyl",
+        # No current need for other generated files such as mixins.pyl.
+        "testing/gn_isolate_map.pyl",
     ],
     fail_on_warnings = True,
 )
@@ -126,6 +125,10 @@ chromium_luci.configure_builders(
 
 chromium_luci.configure_per_builder_outputs(
     root_dir = "builders",
+)
+
+chromium_luci.configure_targets(
+    generate_pyl_files = chromium_luci.pyl_generation_configuration(),
 )
 
 chromium_luci.configure_recipe_experiments(
@@ -318,6 +321,52 @@ luci.gitiles_poller(
     schedule = "with 10s interval",
 )
 
+# CQ
+
+luci.cq(
+    status_host = "chromium-cq-status.appspot.com",
+    submit_max_burst = 4,
+    submit_burst_delay = 480 * time.second,
+)
+
+luci.cq_group(
+    name = "main",
+    watch = cq.refset(
+        "https://chromium.googlesource.com/angle/angle",
+        refs = [r"refs/heads/main"],
+    ),
+    acls = [
+        acl.entry(
+            acl.CQ_COMMITTER,
+            groups = "project-angle-submit-access",
+        ),
+        acl.entry(
+            acl.CQ_DRY_RUNNER,
+            groups = "project-angle-tryjob-access",
+        ),
+    ],
+    verifiers = [
+        luci.cq_tryjob_verifier(
+            builder = "chromium:try/android-angle-chromium-try",
+        ),
+        luci.cq_tryjob_verifier(
+            builder = "chromium:try/fuchsia-angle-try",
+        ),
+        luci.cq_tryjob_verifier(
+            builder = "chromium:try/linux-angle-chromium-try",
+        ),
+        luci.cq_tryjob_verifier(
+            builder = "chromium:try/mac-angle-chromium-try",
+        ),
+        luci.cq_tryjob_verifier(
+            builder = "chromium:try/win-angle-chromium-x64-try",
+        ),
+        luci.cq_tryjob_verifier(
+            builder = "chromium:try/win-angle-chromium-x86-try",
+        ),
+    ],
+)
+
 # Views
 
 consoles.console_view(
@@ -337,10 +386,15 @@ consoles.list_view(
 )
 
 # Run other non-builder setup.
+exec("@chromium-targets//mixins.star")
+exec("//binaries.star")
+exec("//bundles.star")
+exec("//compile_targets.star")
 exec("//gn_args.star")
+exec("//mixins.star")
 exec("//recipes.star")
+exec("//tests.star")
 
 # Handle any other builders defined in other files.
-exec("//angle_v2_ci.star")
-exec("//angle_v2_try.star")
-exec("//legacy_builders.star")
+exec("//angle_ci.star")
+exec("//angle_try.star")

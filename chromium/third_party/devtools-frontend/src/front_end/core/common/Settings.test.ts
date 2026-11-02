@@ -3,6 +3,9 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
+
+import * as Root from '../root/root.js';
 
 import * as Common from './common.js';
 
@@ -93,6 +96,7 @@ describe('Settings instance', () => {
       globalStorage: dummyStorage,
       localStorage: dummyStorage,
       settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
+      console: new Common.Console.Console(),
     });
 
     assert.isOk(settings);
@@ -100,13 +104,16 @@ describe('Settings instance', () => {
 
   it('throws when constructed without storage', () => {
     Common.Settings.Settings.removeInstance();  // Some tests don't clean up well.
+    // eslint-disable-next-line @devtools/no-instance-of-migrated-singletons
     assert.throws(() => Common.Settings.Settings.instance());
+    // eslint-disable-next-line @devtools/no-instance-of-migrated-singletons
     assert.throws(() => Common.Settings.Settings.instance({
       forceNew: true,
       syncedStorage: null,
       globalStorage: null,
       localStorage: null,
-      settingRegistrations: null
+      settingRegistrations: null,
+      console: null,
     }));
   });
 
@@ -123,7 +130,8 @@ describe('Settings instance', () => {
       syncedStorage,
       globalStorage: dummyStorage,
       localStorage: dummyStorage,
-      settingRegistrations: Common.SettingRegistration.getRegisteredSettings()
+      settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
+      console: new Common.Console.Console(),
     });
 
     const dynamicSetting: Common.Settings.Setting<string> =
@@ -153,7 +161,8 @@ describe('Settings instance', () => {
       syncedStorage: storage,
       globalStorage: storage,
       localStorage: storage,
-      settingRegistrations: Common.SettingRegistration.getRegisteredSettings()
+      settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
+      console: new Common.Console.Console(),
     });
     settings.createSetting('dynamic-local-setting', 42, Common.Settings.SettingStorageType.LOCAL);
     settings.createSetting('dynamic-synced-setting', 'foo', Common.Settings.SettingStorageType.SYNCED);
@@ -174,6 +183,7 @@ describe('Settings instance', () => {
            globalStorage: settingsStorage,
            localStorage: settingsStorage,
            settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
+           console: new Common.Console.Console(),
          });
          const testSetting: Common.Settings.Setting<string> =
              settings.createSetting('test', 'default val', Common.Settings.SettingStorageType.GLOBAL);
@@ -198,6 +208,7 @@ describe('Settings instance', () => {
       localStorage: storage,
       settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
       runSettingsMigration: false,
+      console: new Common.Console.Console(),
     });
     const testSetting = settings.createSetting('test-setting', 'some value');
     assert.strictEqual(testSetting.getIfNotDisabled(), 'some value');
@@ -216,6 +227,7 @@ describe('Settings instance', () => {
       globalStorage: storage,
       localStorage: storage,
       settingRegistrations: [],
+      console: new Common.Console.Console(),
     });
     const setting = settings.createSetting('test-setting', 'initial value');
     const changeStub = sinon.stub();
@@ -223,7 +235,7 @@ describe('Settings instance', () => {
 
     setting.set('new value');
 
-    sinon.assert.calledOnceWithMatch(changeStub, sinon.match(event => {
+    sinon.assert.calledOnceWithMatch(changeStub, sinon.match((event: Common.EventTarget.EventTargetEvent<string>) => {
       return event.data === 'new value';
     }));
   });
@@ -240,11 +252,268 @@ describe('Settings instance', () => {
         settingName: 'test-setting',
         defaultValue: false,
       }],
+      console: new Common.Console.Console(),
     });
 
     const setting = settings.moduleSetting('test-setting');
 
     assert.isFalse(setting.get());
     assert.strictEqual(setting.category(), Common.Settings.SettingCategory.CONSOLE);
+    assert.deepEqual(setting.descriptor(), {
+      name: 'test-setting',
+      type: Common.Settings.SettingType.BOOLEAN,
+      defaultValue: false,
+      storageType: undefined,
+    });
+  });
+
+  describe('resolve', () => {
+    let dummyStorage: Common.Settings.SettingsStorage;
+    let settings: Common.Settings.Settings;
+
+    beforeEach(() => {
+      dummyStorage = new SettingsStorage({});
+      settings = new Common.Settings.Settings({
+        syncedStorage: dummyStorage,
+        globalStorage: dummyStorage,
+        localStorage: dummyStorage,
+        settingRegistrations: [],
+        console: new Common.Console.Console(),
+      });
+    });
+
+    it('fails TS compilation when passing a ConditionalSettingDescriptor', () => {
+      const conditionalDescriptor: Common.Settings.ConditionalSettingDescriptor<boolean, string> = {
+        name: 'conditional-setting',
+        type: Common.Settings.SettingType.BOOLEAN,
+        defaultValue: false,
+        isAvailable: () => ({status: Common.Settings.SettingAvailability.AVAILABLE}),
+      };
+      assert.throws(() => {
+        // @ts-expect-error: This is the test assertion. Passing ConditionalSettingDescriptor to resolve() should fail compilation.
+        settings.resolve(conditionalDescriptor);
+      }, 'Use Settings#maybeResolve for conditional descriptors.');
+    });
+
+    it('throws when passing a ConditionalSettingDescriptor down-cast to a SettingDescriptor', () => {
+      const conditionalDescriptor = {
+        name: 'conditional-setting',
+        type: Common.Settings.SettingType.BOOLEAN,
+        defaultValue: false,
+        isAvailable: () => ({status: Common.Settings.SettingAvailability.AVAILABLE}),
+      };
+      assert.throws(() => {
+        settings.resolve(conditionalDescriptor as unknown as Common.Settings.SettingDescriptor<boolean>);
+      }, 'Use Settings#maybeResolve for conditional descriptors.');
+    });
+
+    it('returns the same setting instance when resolving the same descriptor twice', () => {
+      const descriptor: Common.Settings.SettingDescriptor<boolean> = {
+        name: 'test-setting',
+        type: Common.Settings.SettingType.BOOLEAN,
+        defaultValue: false,
+      };
+      const setting1 = settings.resolve(descriptor);
+      const setting2 = settings.resolve(descriptor);
+      assert.strictEqual(setting1, setting2);
+    });
+
+    it('returns different setting instances when resolving the same descriptor in different Settings instances', () => {
+      const descriptor: Common.Settings.SettingDescriptor<boolean> = {
+        name: 'test-setting',
+        type: Common.Settings.SettingType.BOOLEAN,
+        defaultValue: false,
+      };
+      const settings2 = new Common.Settings.Settings({
+        syncedStorage: dummyStorage,
+        globalStorage: dummyStorage,
+        localStorage: dummyStorage,
+        settingRegistrations: [],
+        console: new Common.Console.Console(),
+      });
+      const setting1 = settings.resolve(descriptor);
+      const setting2 = settings2.resolve(descriptor);
+      assert.notStrictEqual(setting1, setting2);
+    });
+
+    it('supports defaultValue as a function', () => {
+      let passedConfig: Root.Runtime.HostConfig|null = null;
+      const defaultValueFunc = (config: Root.Runtime.HostConfig) => {
+        passedConfig = config;
+        return true;
+      };
+      const descriptor: Common.Settings.SettingDescriptor<boolean> = {
+        name: 'test-setting-func-default',
+        type: Common.Settings.SettingType.BOOLEAN,
+        defaultValue: defaultValueFunc,
+      };
+      const setting = settings.resolve(descriptor);
+      assert.isTrue(setting.get());
+      assert.strictEqual(passedConfig, Root.Runtime.hostConfig);
+    });
+
+    it('sets the setting type from the descriptor', () => {
+      const descriptor: Common.Settings.SettingDescriptor<boolean> = {
+        name: 'test-setting-type-from-descriptor',
+        type: Common.Settings.SettingType.BOOLEAN,
+        defaultValue: true,
+      };
+      const setting = settings.resolve(descriptor);
+      assert.strictEqual(setting.type(), Common.Settings.SettingType.BOOLEAN);
+    });
+
+    it('returns the same setting instance when resolving two different descriptors with the same name', () => {
+      const descriptor1: Common.Settings.SettingDescriptor<boolean> = {
+        name: 'test-setting-shared-name',
+        type: Common.Settings.SettingType.BOOLEAN,
+        defaultValue: false,
+      };
+      const descriptor2: Common.Settings.SettingDescriptor<boolean> = {
+        name: 'test-setting-shared-name',
+        type: Common.Settings.SettingType.BOOLEAN,
+        defaultValue: true,
+      };
+      const setting1 = settings.resolve(descriptor1);
+      const setting2 = settings.resolve(descriptor2);
+      assert.strictEqual(setting1, setting2);
+      assert.isFalse(setting2.get());
+    });
+
+    it('produces the same setting instance as moduleSetting when resolving a descriptor matching a registration',
+       () => {
+         const registration: Common.SettingRegistration.SettingRegistration = {
+           settingName: 'registered-setting',
+           settingType: Common.Settings.SettingType.BOOLEAN,
+           defaultValue: false,
+         };
+         const settingsWithReg = new Common.Settings.Settings({
+           syncedStorage: dummyStorage,
+           globalStorage: dummyStorage,
+           localStorage: dummyStorage,
+           settingRegistrations: [registration],
+           console: new Common.Console.Console(),
+         });
+         const descriptor: Common.Settings.SettingDescriptor<boolean> = {
+           name: 'registered-setting',
+           type: Common.Settings.SettingType.BOOLEAN,
+           defaultValue: false,
+         };
+         const settingFromModule = settingsWithReg.moduleSetting('registered-setting');
+         const settingFromResolve = settingsWithReg.resolve(descriptor);
+         assert.strictEqual(settingFromModule, settingFromResolve);
+       });
+
+    it('fails TS compilation if the setting type is a function', () => {
+      const descriptor: Common.Settings.SettingDescriptor<() => void> = {
+        name: 'function-setting',
+        type: Common.Settings.SettingType.BOOLEAN,
+        defaultValue: () => {},
+      };
+      // @ts-expect-error: This is the test assertion. Setting type cannot be a function.
+      settings.resolve(descriptor);
+    });
+  });
+
+  describe('maybeResolve', () => {
+    let dummyStorage: Common.Settings.SettingsStorage;
+    let settings: Common.Settings.Settings;
+
+    beforeEach(() => {
+      dummyStorage = new SettingsStorage({});
+      settings = new Common.Settings.Settings({
+        syncedStorage: dummyStorage,
+        globalStorage: dummyStorage,
+        localStorage: dummyStorage,
+        settingRegistrations: [],
+        console: new Common.Console.Console(),
+      });
+    });
+
+    it('returns the setting if it is available', () => {
+      const descriptor: Common.Settings.ConditionalSettingDescriptor<boolean, string> = {
+        name: 'test-conditional-available',
+        type: Common.Settings.SettingType.BOOLEAN,
+        defaultValue: false,
+        isAvailable: () => ({status: Common.Settings.SettingAvailability.AVAILABLE}),
+      };
+      const result = settings.maybeResolve(descriptor);
+      assert.property(result, 'setting');
+      assert.propertyVal((result as {setting: Common.Settings.Setting<boolean>}).setting, 'name',
+                         'test-conditional-available');
+    });
+
+    it('returns unavailable status and reason if it is unavailable', () => {
+      const descriptor: Common.Settings.ConditionalSettingDescriptor<boolean, string> = {
+        name: 'test-conditional-unavailable',
+        type: Common.Settings.SettingType.BOOLEAN,
+        defaultValue: false,
+        isAvailable: () => ({
+          status: Common.Settings.SettingAvailability.UNAVAILABLE,
+          reason: 'Not supported on this platform',
+        }),
+      };
+      const result = settings.maybeResolve(descriptor);
+      assert.notProperty(result, 'setting');
+      assert.deepEqual(result, {
+        status: Common.Settings.SettingAvailability.UNAVAILABLE,
+        reason: 'Not supported on this platform',
+      });
+    });
+
+    it('returns disabled status and reason if it is disabled', () => {
+      const descriptor: Common.Settings.ConditionalSettingDescriptor<boolean, string> = {
+        name: 'test-conditional-disabled',
+        type: Common.Settings.SettingType.BOOLEAN,
+        defaultValue: false,
+        isAvailable: () => ({
+          status: Common.Settings.SettingAvailability.DISABLED,
+          reason: 'Requires feature flag X',
+        }),
+      };
+      const result = settings.maybeResolve(descriptor);
+      assert.notProperty(result, 'setting');
+      assert.deepEqual(result, {
+        status: Common.Settings.SettingAvailability.DISABLED,
+        reason: 'Requires feature flag X',
+      });
+    });
+
+    it('fails TS compilation when passing a SettingDescriptor', () => {
+      const regularDescriptor: Common.Settings.SettingDescriptor<boolean> = {
+        name: 'regular-setting',
+        type: Common.Settings.SettingType.BOOLEAN,
+        defaultValue: false,
+      };
+      assert.throws(() => {
+        // @ts-expect-error: This is the test assertion. Passing SettingDescriptor to maybeResolve() should fail compilation.
+        settings.maybeResolve(regularDescriptor);
+      });
+    });
+
+    it('passes hostConfig to isAvailable function', () => {
+      let passedConfig: Root.Runtime.HostConfig|null = null;
+      const descriptor: Common.Settings.ConditionalSettingDescriptor<boolean, string> = {
+        name: 'test-conditional-config-check',
+        type: Common.Settings.SettingType.BOOLEAN,
+        defaultValue: false,
+        isAvailable: config => {
+          passedConfig = config;
+          return {status: Common.Settings.SettingAvailability.AVAILABLE};
+        },
+      };
+      settings.maybeResolve(descriptor);
+      assert.strictEqual(passedConfig, Root.Runtime.hostConfig);
+    });
+
+    it('fails TS compilation if the setting type is a function', () => {
+      const descriptor: Common.Settings.ConditionalSettingDescriptor<() => void, string> = {
+        name: 'function-setting',
+        type: Common.Settings.SettingType.BOOLEAN,
+        defaultValue: () => {},
+        isAvailable: () => ({status: Common.Settings.SettingAvailability.AVAILABLE}),
+      };
+      // @ts-expect-error: This is the test assertion. Setting type cannot be a function.
+      settings.maybeResolve(descriptor);
+    });
   });
 });

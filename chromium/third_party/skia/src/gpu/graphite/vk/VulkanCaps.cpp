@@ -13,7 +13,7 @@
 #include "include/gpu/graphite/vk/VulkanGraphiteTypes.h"
 #include "include/gpu/vk/VulkanExtensions.h"
 #include "include/gpu/vk/VulkanTypes.h"
-#include "include/private/base/SkMath.h"
+#include "include/private/SkMath.h"
 #include "src/gpu/SwizzlePriv.h"
 #include "src/gpu/graphite/ContextUtils.h"
 #include "src/gpu/graphite/GraphicsPipelineDesc.h"
@@ -138,6 +138,11 @@ void VulkanCaps::init(const ContextOptions& contextOptions,
     fRequiredUniformBufferAlignment = deviceLimits.minUniformBufferOffsetAlignment;
     fRequiredStorageBufferAlignment = deviceLimits.minStorageBufferOffsetAlignment;
     fRequiredTransferBufferAlignment = 4;
+
+    // We require a minimum alignment of 4 bytes for CPU memcpy safety when doing memcpys into
+    // buffers for upload.
+    fTextureDataRowBytesAlignment =
+            std::max<size_t>(4, deviceLimits.optimalBufferCopyRowPitchAlignment);
 
     fMaxVaryings = std::min(deviceLimits.maxVertexOutputComponents,
                             deviceLimits.maxFragmentInputComponents) / 4;
@@ -663,7 +668,6 @@ void VulkanCaps::initShaderCaps(const EnabledFeatures enabledFeatures, const uin
     // Avoid RelaxedPrecision with OpImageSampleImplicitLod due to driver bug with YCbCr sampling.
     // (skbug.com/421927604)
     fShaderCaps->fCannotUseRelaxedPrecisionOnImageSample = vendorID == kNvidia_VkVendor;
-
     fShaderCaps->fDualSourceBlendingSupport = enabledFeatures.fDualSrcBlend;
 }
 
@@ -1140,6 +1144,16 @@ bool VulkanCaps::extractGraphicsDescs(const UniqueKey& key,
             SwizzleCtorAccessor::Make(rawKeyData[kPipelineKeyWriteSwizzleIndex]),
             this->getDstReadStrategy(),
             renderPassDesc);
+
+    if ((renderPassDesc->fColorAttachment.fSampleCount > SampleCount::k1 && this->avoidMSAA()) ||
+        (renderPassDesc->fDepthStencilAttachment.fFormat != TextureFormat::kUnsupported &&
+         this->avoidDepthMode())) {
+        *renderPassDesc = {};
+        return false;
+    }
+    if (this->avoidDepthMode()) {
+        renderPassDesc->fDepthStencilAttachment = {};
+    }
 
     return true;
 }

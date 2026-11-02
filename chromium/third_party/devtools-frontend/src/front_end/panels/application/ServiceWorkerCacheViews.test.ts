@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
@@ -10,16 +11,13 @@ import {
   getCleanTextContentFromElements,
   renderElementIntoDOM,
 } from '../../testing/DOMHelpers.js';
-import {createTarget} from '../../testing/EnvironmentHelpers.js';
-import {
-  describeWithMockConnection,
-  setMockConnectionResponseHandler,
-} from '../../testing/MockConnection.js';
+import {createTarget, describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
+import {MockCDPConnection} from '../../testing/MockCDPConnection.js';
 import * as RenderCoordinator from '../../ui/components/render_coordinator/render_coordinator.js';
 
 import * as Application from './application.js';
 
-describeWithMockConnection('ServiceWorkerCacheView', function() {
+describeWithEnvironment('ServiceWorkerCacheView', function() {
   let target: SDK.Target.Target;
   let cacheStorageModel: SDK.ServiceWorkerCacheModel.ServiceWorkerCacheModel;
   let cache: SDK.ServiceWorkerCacheModel.Cache;
@@ -31,12 +29,12 @@ describeWithMockConnection('ServiceWorkerCacheView', function() {
   };
 
   beforeEach(() => {
-    target = createTarget();
+    const connection = new MockCDPConnection();
+    connection.setSuccessHandler('CacheStorage.requestEntries', () => ({cacheDataEntries: [], returnCount: 0}));
+    target = createTarget({connection});
     cacheStorageModel = new SDK.ServiceWorkerCacheModel.ServiceWorkerCacheModel(target);
     cache = new SDK.ServiceWorkerCacheModel.Cache(
         cacheStorageModel, testStorageBucket, 'test-cache', 'id' as Protocol.CacheStorage.CacheId);
-
-    setMockConnectionResponseHandler('CacheStorage.requestEntries', () => ({cacheDataEntries: [], returnCount: 0}));
   });
 
   it('creates the expected view structure with toolbar, metadata, grid, and details pane', () => {
@@ -74,6 +72,8 @@ describeWithMockConnection('ServiceWorkerCacheView', function() {
       'https://example.org',
       'Yes, because the origin is outside of the top-level site',
     ]);
+
+    view.detach();
   });
 
   it('renders metadata with storage bucket info when found', async () => {
@@ -112,5 +112,47 @@ describeWithMockConnection('ServiceWorkerCacheView', function() {
       'Yes, because the origin is outside of the top-level site',
       'test-bucket',
     ]);
+
+    view.detach();
+  });
+
+  it('updates when the cache is changed', async () => {
+    let resolveUpdate: () => void;
+    let updatedForTestPromise = new Promise<void>(resolve => {
+      resolveUpdate = resolve;
+    });
+
+    const loadStub =
+        sinon.stub(cacheStorageModel, 'loadAllCacheData').callsFake((_cache, _skipCount, callback) => callback([], 0));
+
+    const updateStub = sinon
+                           .stub(Application.ServiceWorkerCacheViews.ServiceWorkerCacheView.prototype as unknown as
+                                     {updatedForTest: () => void},
+                                 'updatedForTest')
+                           .callsFake(() => {
+                             resolveUpdate();
+                           });
+
+    const view = new Application.ServiceWorkerCacheViews.ServiceWorkerCacheView(cacheStorageModel, cache);
+    view.markAsRoot();
+    renderElementIntoDOM(view);
+
+    try {
+      await updatedForTestPromise;
+      sinon.assert.calledOnce(loadStub);
+
+      updatedForTestPromise = new Promise<void>(resolve => {
+        resolveUpdate = resolve;
+      });
+
+      cacheStorageModel.dispatchEventToListeners(SDK.ServiceWorkerCacheModel.Events.CACHE_STORAGE_CONTENT_UPDATED,
+                                                 {cacheName: cache.cacheName, storageBucket: cache.storageBucket});
+
+      await updatedForTestPromise;
+      sinon.assert.calledTwice(loadStub);
+    } finally {
+      view.detach();
+      updateStub.restore();
+    }
   });
 });

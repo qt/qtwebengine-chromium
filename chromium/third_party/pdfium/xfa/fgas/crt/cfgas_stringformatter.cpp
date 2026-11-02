@@ -27,10 +27,6 @@
 // that exploits the well-defined behaviour for unsigned underflow (and hence
 // the standard x < size() can be used in all cases to validate indices).
 
-#define FX_NUMSTYLE_Percent 0x01
-#define FX_NUMSTYLE_Exponent 0x02
-#define FX_NUMSTYLE_DotVorv 0x04
-
 namespace {
 
 struct LocaleDateTimeSubcategoryWithHash {
@@ -1079,9 +1075,9 @@ WideString CFGAS_StringFormatter::GetTextFormat(
 LocaleIface* CFGAS_StringFormatter::GetNumericFormat(
     LocaleMgrIface* pLocaleMgr,
     size_t* iDotIndex,
-    uint32_t* dwStyle,
+    Mask<NumStyle>* dwStyle,
     WideString* wsPurgePattern) const {
-  *dwStyle = 0;
+  dwStyle->Clear();
   LocaleIface* pLocale = nullptr;
   size_t ccf = 0;
   bool bFindDot = false;
@@ -1147,21 +1143,21 @@ LocaleIface* CFGAS_StringFormatter::GetNumericFormat(
               *iDotIndex = wsPurgePattern->GetLength() + result.value();
             }
             bFindDot = true;
-            *dwStyle |= FX_NUMSTYLE_DotVorv;
+            *dwStyle |= NumStyle::kDotVorv;
           }
           *wsPurgePattern += wsSubCategory;
           if (eSubCategory == LocaleIface::NumSubcategory::kPercent) {
-            *dwStyle |= FX_NUMSTYLE_Percent;
+            *dwStyle |= NumStyle::kPercent;
           }
           continue;
         }
         ccf++;
       }
     } else if (pattern_span_[ccf] == 'E') {
-      *dwStyle |= FX_NUMSTYLE_Exponent;
+      *dwStyle |= NumStyle::kExponent;
       *wsPurgePattern += pattern_span_[ccf];
     } else if (pattern_span_[ccf] == '%') {
-      *dwStyle |= FX_NUMSTYLE_Percent;
+      *dwStyle |= NumStyle::kPercent;
       *wsPurgePattern += pattern_span_[ccf];
     } else if (pattern_span_[ccf] != '}') {
       *wsPurgePattern += pattern_span_[ccf];
@@ -1171,7 +1167,7 @@ LocaleIface* CFGAS_StringFormatter::GetNumericFormat(
          pattern_span_[ccf] == 'v')) {
       bFindDot = true;
       *iDotIndex = wsPurgePattern->GetLength() - 1;
-      *dwStyle |= FX_NUMSTYLE_DotVorv;
+      *dwStyle |= NumStyle::kDotVorv;
     }
     ccf++;
   }
@@ -1265,7 +1261,7 @@ bool CFGAS_StringFormatter::ParseNum(LocaleMgrIface* pLocaleMgr,
   }
 
   size_t dot_index_f = pattern_span_.size();
-  uint32_t dwFormatStyle = 0;
+  Mask<NumStyle> dwFormatStyle;
   WideString wsNumFormat;
   LocaleIface* pLocale =
       GetNumericFormat(pLocaleMgr, &dot_index_f, &dwFormatStyle, &wsNumFormat);
@@ -1291,7 +1287,7 @@ bool CFGAS_StringFormatter::ParseNum(LocaleMgrIface* pLocaleMgr,
   // If we're looking for a '.', 'V' or 'v' and the input string does not
   // have a dot index for one of those, then we disable parsing the decimal.
   if (!GetNumericDotIndex(wsSrcNum, wsDotSymbol, &dot_index) &&
-      (dwFormatStyle & FX_NUMSTYLE_DotVorv)) {
+      (dwFormatStyle & NumStyle::kDotVorv)) {
     bReverseParse = true;
   }
 
@@ -1359,17 +1355,20 @@ bool CFGAS_StringFormatter::ParseNum(LocaleMgrIface* pLocaleMgr,
         ccf--;
         break;
       case 'E': {
-        iExponent = 0;
-        bool bExpSign = false;
+        bool has_exp_sign = false;
+        pdfium::CheckedNumeric<int32_t> safe_exponent = 0;
+        pdfium::CheckedNumeric<int32_t> safe_multiplier = 1;
         while (cc < spSrcNum.size()) {
           if (spSrcNum[cc] == 'E' || spSrcNum[cc] == 'e') {
             break;
           }
           if (FXSYS_IsDecimalDigit(spSrcNum[cc])) {
-            if (iExponent > std::numeric_limits<int>::max() / 10) {
+            int32_t digit = FXSYS_DecimalCharToInt(spSrcNum[cc]);
+            safe_exponent += safe_multiplier * digit;
+            safe_multiplier *= 10;
+            if (!safe_exponent.IsValid() || !safe_multiplier.IsValid()) {
               return false;
             }
-            iExponent = iExponent + FXSYS_DecimalCharToInt(spSrcNum[cc]) * 10;
             cc--;
             continue;
           }
@@ -1380,7 +1379,7 @@ bool CFGAS_StringFormatter::ParseNum(LocaleMgrIface* pLocaleMgr,
           if (cc - iMinusLen + 1 <= spSrcNum.size() &&
               UNSAFE_TODO(wcsncmp(spSrcNum.data() + (cc - iMinusLen + 1),
                                   wsMinus.c_str(), iMinusLen)) == 0) {
-            bExpSign = true;
+            has_exp_sign = true;
             cc -= iMinusLen;
             continue;
           }
@@ -1388,7 +1387,8 @@ bool CFGAS_StringFormatter::ParseNum(LocaleMgrIface* pLocaleMgr,
           return false;
         }
         cc--;
-        iExponent = bExpSign ? -iExponent : iExponent;
+        iExponent = safe_exponent.ValueOrDie();
+        iExponent = has_exp_sign ? -iExponent : iExponent;
         ccf--;
         break;
       }
@@ -1501,7 +1501,7 @@ bool CFGAS_StringFormatter::ParseNum(LocaleMgrIface* pLocaleMgr,
       return false;
     }
   }
-  if ((dwFormatStyle & FX_NUMSTYLE_DotVorv) && dot_index < spSrcNum.size()) {
+  if ((dwFormatStyle & NumStyle::kDotVorv) && dot_index < spSrcNum.size()) {
     *wsValue += '.';
   }
 
@@ -1561,13 +1561,13 @@ bool CFGAS_StringFormatter::ParseNum(LocaleMgrIface* pLocaleMgr,
             return false;
           }
           iExponent = 0;
-          bool bExpSign = false;
+          bool has_exp_sign = false;
           cc++;
           if (cc < spSrcNum.size()) {
             if (spSrcNum[cc] == '+') {
               cc++;
             } else if (spSrcNum[cc] == '-') {
-              bExpSign = true;
+              has_exp_sign = true;
               cc++;
             }
           }
@@ -1582,7 +1582,7 @@ bool CFGAS_StringFormatter::ParseNum(LocaleMgrIface* pLocaleMgr,
             iExponent = iExponent * 10 + digit;
             cc++;
           }
-          iExponent = bExpSign ? -iExponent : iExponent;
+          iExponent = has_exp_sign ? -iExponent : iExponent;
           break;
         }
         case '$': {
@@ -2007,7 +2007,7 @@ bool CFGAS_StringFormatter::FormatNum(LocaleMgrIface* pLocaleMgr,
   }
 
   size_t dot_index_f = pattern_span_.size();
-  uint32_t dwNumStyle = 0;
+  Mask<NumStyle> dwNumStyle;
   WideString wsNumFormat;
   LocaleIface* pLocale =
       GetNumericFormat(pLocaleMgr, &dot_index_f, &dwNumStyle, &wsNumFormat);
@@ -2023,13 +2023,13 @@ bool CFGAS_StringFormatter::FormatNum(LocaleMgrIface* pLocaleMgr,
   }
 
   CFGAS_Decimal decimal = CFGAS_Decimal(wsSrcNum.AsStringView());
-  if (dwNumStyle & FX_NUMSTYLE_Percent) {
+  if (dwNumStyle & NumStyle::kPercent) {
     decimal = decimal * CFGAS_Decimal(100);
     wsSrcNum = decimal.ToWideString();
   }
 
   int32_t exponent = 0;
-  if (dwNumStyle & FX_NUMSTYLE_Exponent) {
+  if (dwNumStyle & NumStyle::kExponent) {
     int fixed_count = 0;
     size_t ccf = 0;
     while (ccf < dot_index_f) {

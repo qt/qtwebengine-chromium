@@ -26,20 +26,8 @@ export const resetState = async function() {
   }
 };
 
-export const createWebSQLDatabase = function(name) {
-  return TestRunner.evaluateInPageAsync(`_openWebSQLDatabase("${name}")`);
-};
-
 export const requestURLComparer = function(r1, r2) {
   return r1.request.url.localeCompare(r2.request.url);
-};
-
-export const runAfterCachedResourcesProcessed = function(callback) {
-  if (!TestRunner.resourceTreeModel.cachedResourcesProcessed) {
-    TestRunner.resourceTreeModel.addEventListener(SDK.ResourceTreeModel.Events.CachedResourcesLoaded, callback);
-  } else {
-    callback();
-  }
 };
 
 export const runAfterResourcesAreFinished = function(resourceURLs, callback) {
@@ -166,9 +154,3 @@ export const domStorageModel = function() {
 export const indexedDBModel = function() {
   return TestRunner.mainTarget.model(Application.IndexedDBModel.IndexedDBModel);
 };
-
-TestRunner.deprecatedInitAsync(`
-  function _openWebSQLDatabase(name) {
-    return new Promise(resolve => openDatabase(name, '1.0', '', 1024 * 1024, resolve));
-  }
-`);

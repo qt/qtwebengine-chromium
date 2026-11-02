@@ -114,6 +114,14 @@ def add_presubmit_builder_to_main_and_milestone_cq_groups(kwargs):
     try_.presubmit_builder(**kwargs)
     add_builder_to_milestone_cq_groups(kwargs["name"], disable_reuse = True)
 
+def dawn_android_functional_cq_tester(**kwargs):
+    kwargs = apply_linux_cq_builder_defaults(kwargs)
+    kwargs = apply_functional_builder_with_node_defaults(kwargs)
+
+    # TODO(crbug.com/520153663): Add to branches once both arm and arm64 are
+    # added to the CQ.
+    try_.builder(**kwargs)
+
 def dawn_linux_functional_cq_tester(**kwargs):
     kwargs = apply_linux_cq_builder_defaults(kwargs)
     kwargs = apply_functional_builder_with_node_defaults(kwargs)
@@ -149,6 +157,27 @@ def dawn_linux_presubmit_builder(**kwargs):
     add_presubmit_builder_to_main_and_milestone_cq_groups(kwargs)
 
 ## Functional testers
+
+dawn_android_functional_cq_tester(
+    name = "dawn-cq-android-arm-rel",
+    description_html = "Tests release Dawn on Android/arm on multiple hardware configs. Blocks CL submission.",
+    mirrors = [
+        "ci/dawn-android-arm-builder-rel",
+    ],
+    gn_args = "ci/dawn-android-arm-builder-rel",
+    # TODO(crbug.com/520153663): Add to CQ + branches once we confirm there is
+    # sufficient GCE capacity.
+    cq_settings = try_.cq_settings(includable_only = True),
+)
+
+dawn_android_functional_cq_tester(
+    name = "dawn-cq-android-arm64-rel",
+    description_html = "Tests release Dawn on Android/arm64 on multiple hardware configs. Blocks CL submission.",
+    mirrors = [
+        "ci/dawn-android-arm64-builder-rel",
+    ],
+    gn_args = "ci/dawn-android-arm64-builder-rel",
+)
 
 dawn_linux_functional_cq_tester(
     name = "dawn-cq-linux-x64-dbg",
@@ -471,6 +500,16 @@ dawn_linux_manual_builder(
         "ci/dawn-linux-x86-sws-rel",
     ],
     gn_args = "ci/dawn-linux-x86-builder-rel",
+)
+
+dawn_mac_manual_builder(
+    name = "dawn-try-mac-arm64-apple-m2-exp-rel",
+    description_html = "Tests release Dawn on Mac/arm64 on Apple M2 devices w/ experimental OS configs. Manual only.",
+    mirrors = [
+        "ci/dawn-mac-arm64-builder-rel",
+        "ci/dawn-mac-arm64-apple-m2-exp-rel",
+    ],
+    gn_args = "ci/dawn-mac-arm64-builder-rel",
 )
 
 dawn_mac_manual_builder(

@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
-load("//ynnpack:build_defs.bzl", "ynn_arch_copts", "ynn_arch_flag", "ynn_benchmark_deps", "ynn_binary_linkopts", "ynn_binary_malloc", "ynn_if_arch")
+load("//ynnpack:build_defs.bzl", "ynn_arch_copts", "ynn_arch_defines", "ynn_benchmark_deps", "ynn_binary_linkopts", "ynn_binary_malloc", "ynn_if_arch")
 
 package(default_visibility = ["//ynnpack:__subpackages__"])
 
@@ -38,10 +38,7 @@ package(default_visibility = ["//ynnpack:__subpackages__"])
         "-use_header_modules",
     ],
     linkopts = ynn_binary_linkopts(),
-    local_defines = ynn_if_arch(
-        arch,
-        ["YNN_ARCH=" + ynn_arch_flag(arch)],
-    ),
+    local_defines = ynn_arch_defines(arch),
     malloc = ynn_binary_malloc(),
     deps = [
         "//ynnpack/base",
@@ -50,12 +47,38 @@ package(default_visibility = ["//ynnpack:__subpackages__"])
     ] + ynn_benchmark_deps(),
 ) for arch in [
     "arm_neon",
+    "arm_neonfma",
+    "arm_neonfp16arith",
     "arm64_neon",
     "arm64_sve",
     "hexagon_hvx",
     "x86_sse2",
+    "x86_sse2_fma",
     "x86_avx",
     "x86_avx2",
+    "x86_avx2_fma3",
     "x86_avx512",
+    "x86_avx512fp16",
     "x86_fma3",
 ]]
+
+cc_binary(
+    name = "gnu_vector",
+    srcs = select({
+        "//ynnpack:ynn_enable_gnu_vector": [
+            "generic.h",
+            "gnu_vector.cc",
+        ],
+        "//conditions:default": [],
+    }),
+    features = [
+        "-use_header_modules",
+    ],
+    linkopts = ynn_binary_linkopts(),
+    malloc = ynn_binary_malloc(),
+    deps = [
+        "//ynnpack/base",
+        "//ynnpack/base/simd",
+        "@slinky//slinky/base",
+    ] + ynn_benchmark_deps(),
+)

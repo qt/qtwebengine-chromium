@@ -217,6 +217,7 @@ FcConfigCreate (void)
     config->desktop_name = NULL;
 
     config->prefer_app_fonts = FcFalse;
+    config->warns = 0;
 
     FcRefInit (&config->ref, 1);
     FcObjectInit();
@@ -495,11 +496,15 @@ FcConfigAddCache (FcConfig *config, FcCache *cache,
 
 	    if (relocated) {
 		FcChar8 *base = FcStrBasename (dir);
-		dir = s = FcStrBuildFilename (forDir, base, NULL);
+		FcChar8 *p;
+		p = FcStrBuildFilename (forDir, base, NULL);
+		dir = s = FcStrCopyFilename (p);
+		FcStrFree (p);
 		FcStrFree (base);
 	    }
-	    if (FcConfigAcceptFilename (config, dir))
-		FcStrSetAddFilename (dirSet, dir);
+	    if (FcConfigAcceptFilename (config, dir)) {
+		FcStrSetAddTriple (dirSet, dir, NULL, NULL);
+	    }
 	    if (s)
 		FcStrFree (s);
 	}
@@ -2821,6 +2826,61 @@ FcConfigPreferAppFont (FcConfig *config, FcBool flag)
     config->prefer_app_fonts = flag;
 
     FcConfigDestroy (config);
+}
+
+void
+FcConfigSetWarningFlags (FcConfig *config, int warn, FcBool flag)
+{
+    FcBool init = FcFalse;
+    int    nretry = 3;
+
+retry:
+    if (!config) {
+	/* We can't use FcConfigGetCurrent() here to initialize
+	 * bitfields before loading config files
+	 */
+	config = fc_atomic_ptr_get (&_fcConfig);
+	if (!config) {
+	    config = FcConfigCreate();
+	    if (!config)
+		return;
+	    init = FcTrue;
+	}
+    }
+    if (flag)
+	config->warns |= warn;
+    else
+	config->warns ^= warn;
+
+    if (init) {
+	config = FcInitLoadOwnConfigAndFonts (config);
+	if (!config) {
+	    /* Something failed. this is usually unlikely. so retrying */
+	    init = FcFalse;
+	    if (--nretry == 0) {
+		fprintf (stderr, "Fontconfig warning: Unable to initialize config and retry limit exceeded. all warning flags are turned off.\n");
+		return;
+	    }
+	    goto retry;
+	}
+	FcConfigSetCurrent (config);
+	FcConfigDestroy (config);
+    }
+}
+
+int
+FcConfigGetWarningFlags (FcConfig *config)
+{
+    int ret;
+
+    config = FcConfigReference (config);
+    if (!config)
+	return 0;
+    ret = config->warns;
+
+    FcConfigDestroy (config);
+
+    return ret;
 }
 
 /*

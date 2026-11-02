@@ -4,6 +4,7 @@
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
+import * as Root from '../../core/root/root.js';
 import * as VisualLogging from '../visual_logging/visual_logging.js';
 
 import * as ARIAUtils from './ARIAUtils.js';
@@ -129,11 +130,19 @@ export class InspectorDrawerView {
     this.#isConsoleOpenInMainAndDrawer = options.isConsoleOpenInMainAndDrawer;
     this.#drawerMinimizedSetting =
         Common.Settings.Settings.instance().createLocalSetting('inspector.drawer-minimized', false);
-    this.tabbedLocation = ViewManager.instance().createTabbedLocation(
-        options.revealDrawer, 'drawer-view', true, true,
-        {isLocationVisible: options.isVisible, tabbedPaneFactory: () => new DrawerTabbedPane()});
-    this.#moreTabsButton = this.tabbedLocation.enableMoreTabsButton();
-    this.#moreTabsButton.setTitle(i18nString(UIStrings.moreTools));
+    this.tabbedLocation = ViewManager.instance().createTabbedLocation(options.revealDrawer, 'drawer-view', true, true, {
+      isLocationVisible: options.isVisible,
+      tabbedPaneFactory: () => new DrawerTabbedPane(),
+      plusButton: {title: i18nString(UIStrings.moreTools), jslogContext: 'plus-button-drawer'},
+    });
+    // When the plus button is disabled we keep the legacy left-toolbar
+    // three-dot menu so users can still reach hidden / addable tools.
+    if (Root.Runtime.hostConfig.devToolsPlusButton?.enabled) {
+      this.#moreTabsButton = null;
+    } else {
+      this.#moreTabsButton = this.tabbedLocation.enableMoreTabsButton();
+      this.#moreTabsButton.setTitle(i18nString(UIStrings.moreTools));
+    }
     this.tabbedPane = this.tabbedLocation.tabbedPane() as DrawerTabbedPane;
     this.tabbedPane.element.classList.add('drawer-tabbed-pane');
     this.tabbedPane.element.setAttribute('jslog', `${VisualLogging.drawer()}`);
@@ -235,6 +244,7 @@ export class InspectorDrawerView {
     const wasDrawerVisible = this.isVisibleForEvents();
     this.tabbedPane.setAutoSelectFirstItemOnShow(!hasTargetDrawer);
     this.#splitWidget.showBoth();
+    this.#updatePresentation(this.isMinimized());
     this.#dispatchPaneVisibilityChangedIfNeeded(wasDrawerVisible);
   }
 
@@ -242,8 +252,8 @@ export class InspectorDrawerView {
     const wasDrawerVisible = this.isVisibleForEvents();
     const wasMinimized = this.isMinimized();
     this.#splitWidget.hideSidebar(!wasMinimized);
+    this.#updatePresentation(false);
     if (wasMinimized) {
-      this.#updatePresentation(false);
       this.#splitWidget.setSidebarMinimized(false);
       this.#splitWidget.setResizable(true);
     }
@@ -332,11 +342,12 @@ export class InspectorDrawerView {
   }
 
   #updatePresentation(minimized: boolean): void {
+    const requireVerticalMinimumWidth =
+        this.#splitWidget.isVertical() && this.#splitWidget.sidebarIsShowing() && !minimized;
+    this.#setInspectorMinimumSize(requireVerticalMinimumWidth ? this.#minimumSizes.inspectorWidthWhenVertical :
+                                                                this.#minimumSizes.inspectorWidthWhenHorizontal,
+                                  this.#minimumSizes.inspectorHeight);
     const drawerIsVertical = this.#splitWidget.isVertical();
-    this.#setInspectorMinimumSize(
-        drawerIsVertical ? this.#minimumSizes.inspectorWidthWhenVertical :
-                           this.#minimumSizes.inspectorWidthWhenHorizontal,
-        this.#minimumSizes.inspectorHeight);
     this.updatePresentation({
       isVertical: drawerIsVertical,
       isMinimized: minimized,

@@ -150,8 +150,9 @@ std::ostream& print_matrix(std::ostream& s, const Derived& _m, const IOFormat& f
   if (fmt.precision == StreamPrecision) {
     explicit_precision = 0;
   } else if (fmt.precision == FullPrecision) {
-    EIGEN_IF_CONSTEXPR(NumTraits<Scalar>::IsInteger) { explicit_precision = 0; }
-    else {
+    EIGEN_IF_CONSTEXPR (NumTraits<Scalar>::IsInteger) {
+      explicit_precision = 0;
+    } else {
       explicit_precision = significant_decimals_impl<Scalar>::run();
     }
   } else {

@@ -68,7 +68,8 @@ bool IsAllowlistedSourceId(SourceId source_id) {
     case ukm::SourceIdObj::Type::CHROMEOS_WEBSITE_ID:
     case ukm::SourceIdObj::Type::NOTIFICATION_ID:
     case ukm::SourceIdObj::Type::EXTENSION_ID:
-    case ukm::SourceIdObj::Type::CDM_ID: {
+    case ukm::SourceIdObj::Type::CDM_ID:
+    case ukm::SourceIdObj::Type::IWA_BUNDLE_ID: {
       return true;
     }
     case ukm::SourceIdObj::Type::DEFAULT:
@@ -83,7 +84,7 @@ bool IsAllowlistedSourceId(SourceId source_id) {
 bool HasSupportedScheme(const GURL& url) {
   return url.SchemeIsHTTPOrHTTPS() || url.SchemeIs(url::kAboutScheme) ||
          url.SchemeIs(kChromeUIScheme) || url.SchemeIs(kExtensionScheme) ||
-         url.SchemeIs(kAppScheme);
+         url.SchemeIs(kAppScheme) || url.SchemeIs(kIsolatedAppScheme);
 }
 
 void RecordDroppedSource(DroppedDataReason reason) {
@@ -464,13 +465,18 @@ void UkmRecorderImpl::StoreRecordingsInReport(Report* report) {
   std::set<SourceId> source_ids_seen;
   std::vector<mojom::UkmEntry*> document_created_entries;
   for (const auto& entry : recordings_.entries) {
+    // DocumentCreated events are only needed to map navigation source IDs
+    // to document source IDs on the client-side (which helps populate
+    // `resolved_urls`), so there is no need to send them to the server.
+    // TODO(crbug.com/502906724): Remove DocumentCreated.
+    if (entry->event_hash == builders::DocumentCreated::kEntryNameHash) {
+      document_created_entries.push_back(entry.get());
+      continue;
+    }
+
     Entry* proto_entry = report->add_entries();
     StoreEntryProto(*entry, proto_entry);
     source_ids_seen.insert(entry->source_id);
-
-    if (entry->event_hash == builders::DocumentCreated::kEntryNameHash) {
-      document_created_entries.push_back(entry.get());
-    }
   }
 
   for (const auto& [source_id, features_set] : recordings_.webdx_features) {
@@ -572,7 +578,7 @@ void UkmRecorderImpl::StoreRecordingsInReport(Report* report) {
     num_serialized_sources += source_type_and_count.second;
   }
 
-  int num_serialized_entries = recordings_.entries.size();
+  int num_serialized_entries = report->entries_size();
   UMA_HISTOGRAM_COUNTS_1000("UKM.Sources.SerializedCount2",
                             num_serialized_sources);
   UMA_HISTOGRAM_COUNTS_100000("UKM.Entries.SerializedCount2",
@@ -863,6 +869,7 @@ void UkmRecorderImpl::RecordNavigation(
 UkmConsentType UkmRecorderImpl::GetConsentType(SourceIdType type) {
   switch (type) {
     case SourceIdType::APP_ID:
+    case SourceIdType::IWA_BUNDLE_ID:
       return UkmConsentType::APPS;
     case SourceIdType::DEFAULT:
     case SourceIdType::NAVIGATION_ID:
@@ -943,6 +950,7 @@ void UkmRecorderImpl::MaybeMarkForDeletion(SourceId source_id) {
     case ukm::SourceIdObj::Type::NAVIGATION_ID:
     case ukm::SourceIdObj::Type::WORKER_ID:
     case ukm::SourceIdObj::Type::REDIRECT_ID:
+    case ukm::SourceIdObj::Type::IWA_BUNDLE_ID:
       break;
   }
 }

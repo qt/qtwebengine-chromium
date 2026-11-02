@@ -370,11 +370,8 @@ void FramebufferManager::StopTracking(
 void FramebufferManager::CreateFramebuffer(
     GLuint client_id, GLuint service_id) {
   std::pair<FramebufferMap::iterator, bool> result =
-      framebuffers_.insert(
-          std::make_pair(
-              client_id,
-              scoped_refptr<Framebuffer>(
-                  new Framebuffer(this, service_id))));
+      framebuffers_.insert(std::make_pair(
+          client_id, base::MakeRefCounted<Framebuffer>(this, service_id)));
   DCHECK(result.second);
 }
 
@@ -709,7 +706,7 @@ bool Framebuffer::GetReadBufferIsMultisampledTexture() const {
 bool Framebuffer::GetReadBufferIsMultisampledRenderbuffer() const {
   const Attachment* attachment = GetReadBufferAttachment();
   return attachment ? attachment->IsRenderbufferAttachment() &&
-                          attachment->samples() > 1
+                          attachment->samples() > 0
                     : false;
 }
 
@@ -1084,6 +1081,37 @@ void Framebuffer::ReattachAttachments(GLenum framebuffer_target) {
   RestoreDrawBuffers();
 }
 
+// static
+void Framebuffer::BindAttachmentToPoint(GLenum target,
+                                        GLenum attachment_point,
+                                        const Attachment* attachment) {
+  if (!attachment) {
+    glFramebufferRenderbufferEXT(target, attachment_point, GL_RENDERBUFFER, 0);
+    return;
+  }
+  if (attachment->IsRenderbufferAttachment()) {
+    const RenderbufferAttachment* rb =
+        static_cast<const RenderbufferAttachment*>(attachment);
+    glFramebufferRenderbufferEXT(target, attachment_point, GL_RENDERBUFFER,
+                                 rb->renderbuffer()->service_id());
+  } else if (attachment->IsTextureAttachment()) {
+    const TextureAttachment* tex =
+        static_cast<const TextureAttachment*>(attachment);
+    if (tex->Is3D()) {
+      glFramebufferTextureLayer(target, attachment_point,
+                                tex->texture()->service_id(), tex->level(),
+                                tex->layer());
+    } else if (tex->samples() > 0) {
+      glFramebufferTexture2DMultisampleEXT(
+          target, attachment_point, tex->target(), tex->texture()->service_id(),
+          tex->level(), tex->samples());
+    } else {
+      glFramebufferTexture2DEXT(target, attachment_point, tex->target(),
+                                tex->texture()->service_id(), tex->level());
+    }
+  }
+}
+
 void Framebuffer::OnInsertUpdateLastColorAttachmentId(GLenum attachment) {
   if (attachment >= GL_COLOR_ATTACHMENT0 &&
       attachment < GL_COLOR_ATTACHMENT0 + manager_->max_color_attachments_) {
@@ -1242,15 +1270,23 @@ bool FramebufferManager::IsComplete(const Framebuffer* framebuffer) {
 }
 
 std::vector<std::pair<scoped_refptr<Framebuffer>, GLenum>>
-FramebufferManager::GetBindingFramebuffersForTexture(TextureRef* texture_ref) {
+FramebufferManager::GetBindingFramebuffersForTexture(
+    TextureRef* texture_ref,
+    bool include_color_attachments) {
   std::vector<std::pair<scoped_refptr<Framebuffer>, GLenum>> result;
   if (!texture_ref) {
     return result;
   }
   for (const auto& pair : framebuffers_) {
     Framebuffer* framebuffer = pair.second.get();
-    for (GLenum attachment_point :
-         {GL_DEPTH_ATTACHMENT, GL_STENCIL_ATTACHMENT}) {
+    std::vector<GLenum> attachment_points = {GL_DEPTH_ATTACHMENT,
+                                             GL_STENCIL_ATTACHMENT};
+    if (include_color_attachments) {
+      for (uint32_t i = 0; i < max_color_attachments_; ++i) {
+        attachment_points.push_back(GL_COLOR_ATTACHMENT0 + i);
+      }
+    }
+    for (GLenum attachment_point : attachment_points) {
       const Framebuffer::Attachment* attachment =
           framebuffer->GetAttachment(attachment_point);
       if (attachment && attachment->IsTexture(texture_ref)) {

@@ -242,7 +242,7 @@ struct BrushPaint {
     // zero to disable looping animations (in which case the animation frame is
     // controlled solely by any `kTextureAnimationProgressOffset` behavior
     // targets). If nonzero, this duration must be a whole number of
-    // milliseconds between 1 and 2^24 (inclusive).
+    // milliseconds, and no greater than 2^24 ms (about 4.66 hours).
     //
     // Note that this duration is ignored if `animation_frames` is 1 (its
     // default value), because that indicates that animation is disabled.
@@ -294,8 +294,19 @@ struct BrushPaint {
     // PDF page object or annotation, where a stroke can be filled only with a
     // solid color or textures using `TilingTexture`. This is the default
     // behavior for renderers that use the stroke outline rather than its mesh.
+    //
+    // This is incompatible with `BrushBehavior`s which target opacity or color,
+    // and with `StampingTexture`. This is because `SelfOverlap::kDiscard`
+    // forces usage of the path renderer, and the aforementioned features
+    // require the mesh renderer. In the case where both are specified on the
+    // same `BrushPaint`, the effects of the `BrushBehavior` or
+    // `StampingTexture` will not be rendered.
     kDiscard,
   };
+
+  // Returns the maximum number of `TextureLayer`s that a valid `BrushPaint` is
+  // allowed to have. Note that this limit may increase in the future.
+  static uint32_t MaxTextureLayers();
 
   std::vector<TextureLayer> texture_layers;
   // Transformations to apply to the base brush color (in order) before drawing

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../core/common/common.js';
 import {SnapshotTester} from '../../testing/SnapshotTester.js';
@@ -14,19 +15,16 @@ describe('AiHistoryStorage', () => {
     id: 'id1',
     type: AiAssistance.AiHistoryStorage.ConversationType.STYLING,
     history: [],
-    isExternal: false,
   };
   const agent2: AiAssistance.AiHistoryStorage.SerializedConversation = {
     id: 'id2',
     type: AiAssistance.AiHistoryStorage.ConversationType.FILE,
     history: [],
-    isExternal: false,
   };
   const agent3: AiAssistance.AiHistoryStorage.SerializedConversation = {
     id: 'id3',
     type: AiAssistance.AiHistoryStorage.ConversationType.NETWORK,
     history: [],
-    isExternal: false,
   };
   const agent4: AiAssistance.AiHistoryStorage.SerializedConversation = {
     id: 'id4',
@@ -50,7 +48,6 @@ describe('AiHistoryStorage', () => {
         imageInput: undefined,
       },
     ],
-    isExternal: false,
   };
   const serializedImage1: AiAssistance.AiHistoryStorage.SerializedImage = {
     id: 'image-id1',
@@ -86,6 +83,7 @@ describe('AiHistoryStorage', () => {
       globalStorage: dummyStorage,
       localStorage: dummyStorage,
       settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
+      console: new Common.Console.Console(),
     });
   });
 
@@ -102,7 +100,6 @@ describe('AiHistoryStorage', () => {
           id: 'id1',
           type: 'freestyler' as AiAssistance.AiHistoryStorage.ConversationType,
           history: [],
-          isExternal: false,
         }],
     );
     await storage.upsertHistoryEntry(agent2);
@@ -113,15 +110,72 @@ describe('AiHistoryStorage', () => {
             id: 'id1',
             type: 'freestyler' as AiAssistance.AiHistoryStorage.ConversationType,
             history: [],
-            isExternal: false,
           },
           {
             id: 'id2',
             type: 'drjones-file' as AiAssistance.AiHistoryStorage.ConversationType,
             history: [],
-            isExternal: false,
           },
         ],
+    );
+  });
+
+  it('should cap history entries to MAX_CONVERSATIONS_COUNT and evict oldest and clean up their images', async () => {
+    const storage = getStorage();
+
+    await storage.upsertImage(serializedImage1);
+    const oldestConv: AiAssistance.AiHistoryStorage.SerializedConversation = {
+      id: 'oldest-id',
+      type: AiAssistance.AiHistoryStorage.ConversationType.STYLING,
+      history: [
+        {
+          type: AiAssistance.AiAgent.ResponseType.USER_QUERY,
+          query: 'oldest text',
+          imageId: 'image-id1',
+          imageInput: undefined,
+        },
+      ],
+    };
+    await storage.upsertHistoryEntry(oldestConv);
+
+    await storage.upsertImage(serializedImage2);
+    const newerConvWithImage: AiAssistance.AiHistoryStorage.SerializedConversation = {
+      id: 'newer-id-with-image',
+      type: AiAssistance.AiHistoryStorage.ConversationType.STYLING,
+      history: [
+        {
+          type: AiAssistance.AiAgent.ResponseType.USER_QUERY,
+          query: 'newer text',
+          imageId: 'image-id2',
+          imageInput: undefined,
+        },
+      ],
+    };
+    await storage.upsertHistoryEntry(newerConvWithImage);
+
+    assert.deepEqual(
+        storage.getImageHistory(),
+        [serializedImage1, serializedImage2],
+    );
+
+    // Insert dummy entries to trigger eviction
+    for (let i = 0; i < AiAssistance.AiHistoryStorage.MAX_CONVERSATIONS_COUNT - 1; i++) {
+      await storage.upsertHistoryEntry({
+        id: `dummy-id-${i}`,
+        type: AiAssistance.AiHistoryStorage.ConversationType.STYLING,
+        history: [],
+      });
+    }
+
+    const history = storage.getHistory();
+    assert.lengthOf(history, 50);
+
+    assert.isUndefined(history.find(c => c.id === 'oldest-id'));
+    assert.isDefined(history.find(c => c.id === 'newer-id-with-image'));
+
+    assert.deepEqual(
+        storage.getImageHistory(),
+        [serializedImage2],
     );
   });
 
@@ -150,13 +204,11 @@ describe('AiHistoryStorage', () => {
                 query: 'text',
               },
             ],
-            isExternal: false,
           },
           {
             id: 'id2',
             type: 'drjones-file' as AiAssistance.AiHistoryStorage.ConversationType,
             history: [],
-            isExternal: false,
           },
         ],
     );
@@ -174,19 +226,16 @@ describe('AiHistoryStorage', () => {
                 query: 'text',
               },
             ],
-            isExternal: false,
           },
           {
             id: 'id2',
             type: 'drjones-file' as AiAssistance.AiHistoryStorage.ConversationType,
             history: [],
-            isExternal: false,
           },
           {
             id: 'id3',
             type: 'drjones-network-request' as AiAssistance.AiHistoryStorage.ConversationType,
             history: [],
-            isExternal: false,
           },
         ],
     );
@@ -210,19 +259,16 @@ describe('AiHistoryStorage', () => {
                 query: 'text',
               },
             ],
-            isExternal: false,
           },
           {
             id: 'id2',
             type: 'drjones-file' as AiAssistance.AiHistoryStorage.ConversationType,
             history: [],
-            isExternal: false,
           },
           {
             id: 'id3',
             type: 'drjones-network-request' as AiAssistance.AiHistoryStorage.ConversationType,
             history: [],
-            isExternal: false,
           },
           {
             id: 'id4',
@@ -246,7 +292,6 @@ describe('AiHistoryStorage', () => {
                 imageInput: undefined,
               },
             ],
-            isExternal: false,
           },
         ],
     );
@@ -262,7 +307,7 @@ describe('AiHistoryStorage', () => {
             id: 'image-id2',
             data: 'imageInput',
             mimeType: 'image/jpeg',
-          }
+          },
         ],
     );
   });
@@ -280,13 +325,11 @@ describe('AiHistoryStorage', () => {
             id: 'id1',
             type: 'freestyler' as AiAssistance.AiHistoryStorage.ConversationType,
             history: [],
-            isExternal: false,
           },
           {
             id: 'id3',
             type: 'drjones-network-request' as AiAssistance.AiHistoryStorage.ConversationType,
             history: [],
-            isExternal: false,
           },
         ],
     );
@@ -308,19 +351,16 @@ describe('AiHistoryStorage', () => {
             id: 'id1',
             type: 'freestyler' as AiAssistance.AiHistoryStorage.ConversationType,
             history: [],
-            isExternal: false,
           },
           {
             id: 'id2',
             type: 'drjones-file' as AiAssistance.AiHistoryStorage.ConversationType,
             history: [],
-            isExternal: false,
           },
           {
             id: 'id3',
             type: 'drjones-network-request' as AiAssistance.AiHistoryStorage.ConversationType,
             history: [],
-            isExternal: false,
           },
         ],
     );
@@ -467,7 +507,7 @@ describe('AiHistoryStorage', () => {
           data: [{
             type: AiAssistance.AiAgent.ResponseType.USER_QUERY,
             query: 'this is less than 80',
-          }]
+          }],
         });
         assert.strictEqual(conversation.title, 'this is less than 80');
       });
@@ -480,7 +520,7 @@ describe('AiHistoryStorage', () => {
                type: AiAssistance.AiAgent.ResponseType.USER_QUERY,
                query:
                    'this is more than 80 characters because I\'m just going to keep typing words and words and words until it\'s really, really long, see?',
-             }]
+             }],
            });
 
            assert.strictEqual(
@@ -497,7 +537,7 @@ describe('AiHistoryStorage', () => {
           inlineData: {
             data: '1',
             mimeType: 'image/jpeg',
-          }
+          },
         },
         imageId: 'image-id1',
       };
@@ -508,7 +548,7 @@ describe('AiHistoryStorage', () => {
           inlineData: {
             data: '2',
             mimeType: 'image/jpeg',
-          }
+          },
         },
         imageId: 'image-id2',
       };
@@ -554,7 +594,6 @@ describe('AiHistoryStorage', () => {
             query: 'text',
             imageId: 'image-id1',
           }],
-          isExternal: false,
         });
         assert.deepEqual(historyWithoutImages[1], {
           id: 'id2',
@@ -565,7 +604,6 @@ describe('AiHistoryStorage', () => {
             imageInput: undefined,
             imageId: 'image-id2',
           }],
-          isExternal: false,
         });
       });
 
@@ -602,7 +640,7 @@ describe('AiHistoryStorage', () => {
                              inlineData: {
                                data: AiAssistance.AiConversation.NOT_FOUND_IMAGE_DATA,
                                mimeType: 'image/jpeg',
-                             }
+                             },
                            },
                            imageId: 'image-id1',
                          }]);
@@ -613,7 +651,7 @@ describe('AiHistoryStorage', () => {
                              inlineData: {
                                data: '2',
                                mimeType: 'image/jpeg',
-                             }
+                             },
                            },
                            imageId: 'image-id2',
                          }]);

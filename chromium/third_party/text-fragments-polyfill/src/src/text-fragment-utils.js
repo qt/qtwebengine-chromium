@@ -117,11 +117,14 @@ const parseTextFragmentDirective = (textFragment) => {
  *     process.
  * @param {Document} documentToProcess - document where to extract and mark
  *     fragments in.
- * @return {{text: (Element[])[]}} `<mark>` elements created to highlight the
+ * @param {Element=} root - the root element where to extract and mark
+ *     fragments in.
+ * @return {{text: Element[][]}} `<mark>` elements created to highlight the
  *     text fragments.
  */
 export const processFragmentDirectives =
-    (parsedFragmentDirectives, documentToProcess = document) => {
+    (parsedFragmentDirectives, documentToProcess = document,
+     root = document.body) => {
       const processedFragmentDirectives = {};
       for (const
                [fragmentDirectiveType,
@@ -131,7 +134,7 @@ export const processFragmentDirectives =
           processedFragmentDirectives[fragmentDirectiveType] =
               fragmentDirectivesOfType.map((fragmentDirectiveOfType) => {
                 const result = processTextFragmentDirective(
-                    fragmentDirectiveOfType, documentToProcess);
+                    fragmentDirectiveOfType, documentToProcess, root);
                 if (result.length >= 1) {
                   // Per spec, the first matching text on the page should be
                   // highlighted when multiple segments match.
@@ -150,7 +153,9 @@ export const processFragmentDirectives =
  * @param {TextFragment} textFragment - Text Fragment to highlight.
  * @param {Document} documentToProcess - document where to extract and mark
  *     fragments in.
- * @return {Ranges[]} - Zero or more ranges within the document corresponding
+ * @param {Element=} root - the root element where to extract and mark
+ *     fragments in.
+ * @return {Range[]} - Zero or more ranges within the document corresponding
  *     to the fragment. If the fragment corresponds to more than one location
  *     in the document (i.e., is ambiguous) then the first two matches will be
  *     returned (regardless of how many more matches there may be in the
@@ -158,11 +163,11 @@ export const processFragmentDirectives =
  */
 
 export const processTextFragmentDirective =
-    (textFragment, documentToProcess = document) => {
+    (textFragment, documentToProcess = document, root = document.body) => {
       const results = [];
 
       const searchRange = documentToProcess.createRange();
-      searchRange.selectNodeContents(documentToProcess.body);
+      searchRange.selectNodeContents(root);
 
       while (!searchRange.collapsed && results.length < 2) {
         let potentialMatch;
@@ -339,9 +344,9 @@ const CheckSuffixResult = {
  *     |potentialMatch| will be considered.
  * @param {Document} documentToProcess - document where to extract and mark
  *     fragments in.
- * @return {CheckSuffixResult} - enum value indicating that potentialMatch
- *     should be accepted, that the search should continue, or that the search
- *     should halt.
+ * @return {(typeof CheckSuffixResult)[keyof typeof CheckSuffixResult]} - enum
+ *     value indicating that potentialMatch should be accepted, that the search
+ *     should continue, or that the search should halt.
  */
 const checkSuffix =
     (suffix, potentialMatch, searchRange, documentToProcess) => {
@@ -482,8 +487,8 @@ export const markRange = (range, documentToProcess = document) => {
         acceptNode: function(node) {
           if (!range.intersectsNode(node)) return NodeFilter.FILTER_REJECT;
 
-          if (BLOCK_ELEMENTS.includes(node.tagName) ||
-              node.nodeType === Node.TEXT_NODE)
+          if (node.nodeType === Node.TEXT_NODE ||
+              BLOCK_ELEMENTS.includes(node.tagName.toUpperCase()))
             return NodeFilter.FILTER_ACCEPT;
           return NodeFilter.FILTER_SKIP;
         },
@@ -512,11 +517,49 @@ export const markRange = (range, documentToProcess = document) => {
 };
 
 /**
+ * Helper function to check if the element has attribute `hidden="until-found"`.
+ * @param {Element} node - the element to evaluate
+ * @return {Boolean} - true if the element has attribute `hidden="until-found"`
+ */
+const isHiddenUntilFound = (elt) => {
+  if (elt.hidden === 'until-found') {
+    return true;
+  }
+  // Workaround for WebKit. See https://bugs.webkit.org/show_bug.cgi?id=238266
+  const attributes = elt.attributes;
+  if (attributes && attributes['hidden']) {
+    const value = attributes['hidden'].value;
+    if (value === 'until-found') {
+      return true;
+    }
+  }
+  return false;
+};
+
+/**
+ * Helper function to send `beforematch` event and reset the `hidden` attribute
+ * of elements with the `hidden="until-found"` attribute from the provided
+ * element up to the root. Implements
+ * https://html.spec.whatwg.org/multipage/interaction.html#ancestor-hidden-until-found-revealing-algorithm
+ * @param {Element} elt - the element to start with
+ */
+const revealHiddenUntilFoundHierarchy = (elt) => {
+  while (elt) {
+    if (isHiddenUntilFound(elt)) {
+      elt.dispatchEvent(new Event('beforematch'));
+      elt.hidden = '';
+    }
+    elt = elt.parentElement;
+  }
+};
+
+/**
  * Scrolls an element into view, following the recommendation of
  * https://wicg.github.io/scroll-to-text-fragment/#navigating-to-text-fragment
  * @param {Element} element - Element to scroll into view.
  */
 export const scrollElementIntoView = (element) => {
+  revealHiddenUntilFoundHierarchy(element);
   const behavior = {
     behavior: 'auto',
     block: 'center',
@@ -544,11 +587,17 @@ const isNodeVisible =
       let elt = node;
       while (elt != null && !(elt instanceof HTMLElement)) elt = elt.parentNode;
       if (elt != null) {
+        if (isHiddenUntilFound(elt)) {
+          return true;
+        }
         const nodeStyle = window.getComputedStyle(elt);
         // If the node is not rendered, just skip it.
         if (nodeStyle.visibility === 'hidden' || nodeStyle.display === 'none' ||
-            nodeStyle.height === 0 || nodeStyle.width === 0 ||
-            nodeStyle.opacity === 0) {
+            parseInt(nodeStyle.height, 10) === 0 &&
+                nodeStyle.overflowY != 'visible' ||
+            parseInt(nodeStyle.width, 10) === 0 &&
+                nodeStyle.overflowX != 'visible' ||
+            parseInt(nodeStyle.opacity, 10) === 0) {
           return false;
         }
       }
@@ -559,9 +608,9 @@ const isNodeVisible =
  * Filter function for use with TreeWalkers. Rejects nodes that aren't in the
  * given range or aren't visible.
  * @param {Node} node - the Node to evaluate
- * @param {Range|Undefined} range - the range in which node must fall. Optional;
+ * @param {Range|undefined} range - the range in which node must fall. Optional;
  *     if null, the range check is skipped.
- * @return {NodeFilter} - FILTER_ACCEPT or FILTER_REJECT, to be passed along to
+ * @return {Number} - FILTER_ACCEPT or FILTER_REJECT, to be passed along to
  *     a TreeWalker.
  */
 const acceptNodeIfVisibleInRange = (node, range) => {
@@ -580,7 +629,7 @@ const acceptNodeIfVisibleInRange = (node, range) => {
  * @param {Node} node - the Node to evaluate
  * @param {Range} range - the range in which node must fall. Optional;
  *     if null, the range check is skipped/
- * @return {NodeFilter} - NodeFilter value to be passed along to a TreeWalker.
+ * @return {Number} - NodeFilter value to be passed along to a TreeWalker.
  * Values returned:
  *  - FILTER_REJECT: Node not in range or not visible.
  *  - FILTER_SKIP: Non Text Node visible and in range
@@ -602,7 +651,7 @@ const acceptTextNodeIfVisibleInRange = (node, range) => {
  * Extracts all the text nodes within the given range.
  * @param {Node} root - the root node in which to search
  * @param {Range} range - a range restricting the scope of extraction
- * @return {Array<String[]>} - a list of lists of text nodes, in document order.
+ * @return {Array<Text[]>} - a list of lists of text nodes, in document order.
  *     Lists represent block boundaries; i.e., two nodes appear in the same list
  *     iff there are no block element starts or ends in between them.
  */
@@ -622,8 +671,8 @@ const getAllTextNodes = (root, range) => {
     if (node.nodeType === Node.TEXT_NODE) {
       tmp.push(node);
     } else if (
-        node instanceof HTMLElement && BLOCK_ELEMENTS.includes(node.tagName) &&
-        tmp.length > 0) {
+        node instanceof HTMLElement &&
+        BLOCK_ELEMENTS.includes(node.tagName.toUpperCase()) && tmp.length > 0) {
       // If this is a block element, the current set of text nodes in |tmp| is
       // complete, and we need to move on to a new one.
       blocks.push(tmp);
@@ -659,7 +708,7 @@ const getTextContent = (nodes, startOffset, endOffset) => {
 /**
  * @callback ElementFilterFunction
  * @param {HTMLElement} element - Node to accept, reject or skip.
- * @returns {number} Either NodeFilter.FILTER_ACCEPT, NodeFilter.FILTER_REJECT
+ * @return {number} Either NodeFilter.FILTER_ACCEPT, NodeFilter.FILTER_REJECT
  *     or NodeFilter.FILTER_SKIP.
  */
 
@@ -688,7 +737,7 @@ function* getElementsIn(root, filter) {
  * Returns a range pointing to the first instance of |query| within |range|.
  * @param {String} query - the string to find
  * @param {Range} range - the range in which to search
- * @return {Range|Undefined} - The first found instance of |query| within
+ * @return {Range|undefined} - The first found instance of |query| within
  *     |range|.
  */
 const findTextInRange = (query, range) => {
@@ -710,23 +759,29 @@ const findTextInRange = (query, range) => {
  * @param {Node[]} textNodes - the visible text nodes within |range|
  * @param {Intl.Segmenter} [segmenter] - a segmenter to be used for finding word
  *     boundaries, if supported
- * @return {Range} - the found range, or undefined if no such range could be
- *     found
+ * @return {Range|undefined} - the found range, or undefined if no such range
+ *     could be found
  */
 const findRangeFromNodeList = (query, range, textNodes, segmenter) => {
   if (!query || !range || !(textNodes || []).length) return undefined;
-  const data = normalizeString(getTextContent(textNodes, 0, undefined));
+  const startOffset =
+      textNodes[0] === range.startContainer ? range.startOffset : 0;
+  const data =
+      normalizeString(getTextContent(textNodes, startOffset, undefined));
   const normalizedQuery = normalizeString(query);
-  let searchStart = textNodes[0] === range.startNode ? range.startOffset : 0;
+  let searchStart = 0;
   let start;
   let end;
   while (searchStart < data.length) {
     const matchIndex = data.indexOf(normalizedQuery, searchStart);
     if (matchIndex === -1) return undefined;
     if (isWordBounded(data, matchIndex, normalizedQuery.length, segmenter)) {
-      start = getBoundaryPointAtIndex(matchIndex, textNodes, /* isEnd=*/ false);
+      const normalizedStartOffset =
+          normalizeString(textNodes[0].data.slice(0, startOffset)).length;
+      start = getBoundaryPointAtIndex(
+          normalizedStartOffset + matchIndex, textNodes, /* isEnd=*/ false);
       end = getBoundaryPointAtIndex(
-          matchIndex + normalizedQuery.length,
+          normalizedStartOffset + matchIndex + normalizedQuery.length,
           textNodes,
           /* isEnd=*/ true,
       );
@@ -763,8 +818,8 @@ const findRangeFromNodeList = (query, range, textNodes, segmenter) => {
  *     space
  * @param {bool} isEnd - indicates whether the offset is the start or end of the
  *     substring
- * @return {BoundaryPoint} - a boundary point suitable for setting as the start
- *     or end of a Range, or undefined if it couldn't be computed.
+ * @return {BoundaryPoint|undefined} - a boundary point suitable for setting as
+ *     the start or end of a Range, or undefined if it couldn't be computed.
  */
 const getBoundaryPointAtIndex = (index, textNodes, isEnd) => {
   let counted = 0;
@@ -849,7 +904,7 @@ const getBoundaryPointAtIndex = (index, textNodes, isEnd) => {
  * @param {Number} length - the length of the substring
  * @param {Intl.Segmenter} [segmenter] - a segmenter to be used for finding word
  *     boundaries, if supported
- * @return {bool} - true iff startPos and length point to a word-bounded
+ * @return {boolean} - true iff startPos and length point to a word-bounded
  *     substring of |text|.
  */
 const isWordBounded = (text, startPos, length, segmenter) => {
@@ -942,7 +997,7 @@ const makeNewSegmenter = () => {
   if (Intl.Segmenter) {
     let lang = document.documentElement.lang;
     if (!lang) {
-      lang = navigator.languages;
+      lang = navigator.language;
     }
     return new Intl.Segmenter(lang, {granularity: 'word'});
   }
@@ -1083,7 +1138,7 @@ export const applyTargetTextStyle = () => {
   for (const style of styles) {
     const cssRules = style.innerHTML;
     const targetTextRules =
-        cssRules.match(/(\w*)::target-text\s*{\s*((.|\n)*?)\s*}/g);
+        cssRules.match(/::target-text\s*{\s*(?:(?:.|\n)*?)\s*}/g);
     if (!targetTextRules) continue;
 
     const markCss = targetTextRules.join('\n');
@@ -1100,23 +1155,15 @@ export const applyTargetTextStyle = () => {
  *     to the CSS class.
  */
 export const setDefaultTextFragmentsStyle = ({backgroundColor, color}) => {
-  const styles = document.getElementsByTagName('style');
   const defaultStyle = `.${TEXT_FRAGMENT_CSS_CLASS_NAME} {
     background-color: ${backgroundColor};
     color: ${color};
   }
-  
+
   .${TEXT_FRAGMENT_CSS_CLASS_NAME} a, a .${TEXT_FRAGMENT_CSS_CLASS_NAME} {
     text-decoration: underline;
   }
   `
-  if (styles.length === 0) {
-    document.head.insertAdjacentHTML(
-        'beforeend', `<style type="text/css">${defaultStyle}</style>`);
-  }
-  else {
-    applyTargetTextStyle();
-    const defaultStyleNode = document.createTextNode(defaultStyle);
-    styles[0].insertBefore(defaultStyleNode, styles[0].firstChild);
-  }
+  document.head.insertAdjacentHTML(
+      'beforeend', `<style type="text/css">${defaultStyle}</style>`);
 };

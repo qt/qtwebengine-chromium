@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as ProtocolClient from '../../core/protocol_client/protocol_client.js';
 import * as Protocol from '../../generated/protocol.js';
@@ -134,6 +135,153 @@ describe('CSSModel', () => {
       const cssModel = target.model(SDK.CSSModel.CSSModel)!;
 
       assert.isNull(await cssModel.getStyleSheetText('id' as Protocol.DOM.StyleSheetId));
+    });
+  });
+
+  describe('getLayoutPropertiesFromComputedStyle', () => {
+    it('correctly identifies display: contents', async () => {
+      const target = universe.createTarget();
+      const cssModel = target.model(SDK.CSSModel.CSSModel)!;
+      sinon.stub(cssModel, 'getComputedStyle').resolves(new Map([['display', 'contents']]));
+
+      const layoutProperties = await cssModel.getLayoutPropertiesFromComputedStyle(1 as Protocol.DOM.NodeId);
+      assert.isNotNull(layoutProperties);
+      assert.isTrue(layoutProperties?.isContents);
+    });
+  });
+
+  describe('stylesheet tracking', () => {
+    it('tracks styleSheetAdded and styleSheetRemoved events', async () => {
+      const connection = new MockCDPConnection();
+      const target = universe.createTarget({connection});
+      const cssModel = target.model(SDK.CSSModel.CSSModel)!;
+
+      const header: Protocol.CSS.CSSStyleSheetHeader = {
+        styleSheetId: 'stylesheet' as Protocol.DOM.StyleSheetId,
+        frameId: 'frame' as Protocol.Page.FrameId,
+        sourceURL: 'http://example.com/styles.css',
+        origin: Protocol.CSS.StyleSheetOrigin.Regular,
+        title: 'title',
+        disabled: false,
+        isInline: false,
+        isMutable: false,
+        isConstructed: false,
+        loadingFailed: false,
+        startLine: 0,
+        startColumn: 0,
+        length: 0,
+        endLine: 0,
+        endColumn: 0,
+      };
+
+      const addedPromise = cssModel.once(SDK.CSSModel.Events.StyleSheetAdded);
+      connection.dispatchEvent('CSS.styleSheetAdded', {header}, undefined);
+      const addedHeader = await addedPromise;
+      assert.strictEqual(addedHeader.id, 'stylesheet');
+      assert.deepEqual(cssModel.styleSheetHeaders(), [addedHeader]);
+
+      const removedPromise = cssModel.once(SDK.CSSModel.Events.StyleSheetRemoved);
+      connection.dispatchEvent('CSS.styleSheetRemoved', {styleSheetId: 'stylesheet' as Protocol.DOM.StyleSheetId},
+                               undefined);
+      const removedHeader = await removedPromise;
+      assert.strictEqual(removedHeader.id, 'stylesheet');
+      assert.deepEqual(cssModel.styleSheetHeaders(), []);
+    });
+
+    it('tracks stylesheets in multiple frames', async () => {
+      const connection = new MockCDPConnection();
+      const target = universe.createTarget({connection});
+      const cssModel = target.model(SDK.CSSModel.CSSModel)!;
+
+      const header1: Protocol.CSS.CSSStyleSheetHeader = {
+        styleSheetId: 'stylesheet1' as Protocol.DOM.StyleSheetId,
+        frameId: 'frame1' as Protocol.Page.FrameId,
+        sourceURL: 'http://example.com/styles1.css',
+        origin: Protocol.CSS.StyleSheetOrigin.Regular,
+        title: 'title1',
+        disabled: false,
+        isInline: false,
+        isMutable: false,
+        isConstructed: false,
+        loadingFailed: false,
+        startLine: 0,
+        startColumn: 0,
+        length: 0,
+        endLine: 0,
+        endColumn: 0,
+      };
+
+      const header2: Protocol.CSS.CSSStyleSheetHeader = {
+        styleSheetId: 'stylesheet2' as Protocol.DOM.StyleSheetId,
+        frameId: 'frame2' as Protocol.Page.FrameId,
+        sourceURL: 'http://example.com/styles2.css',
+        origin: Protocol.CSS.StyleSheetOrigin.Regular,
+        title: 'title2',
+        disabled: false,
+        isInline: false,
+        isMutable: false,
+        isConstructed: false,
+        loadingFailed: false,
+        startLine: 0,
+        startColumn: 0,
+        length: 0,
+        endLine: 0,
+        endColumn: 0,
+      };
+
+      connection.dispatchEvent('CSS.styleSheetAdded', {header: header1}, undefined);
+      connection.dispatchEvent('CSS.styleSheetAdded', {header: header2}, undefined);
+
+      assert.deepEqual(cssModel.styleSheetHeaders().map(h => h.id), ['stylesheet1', 'stylesheet2']);
+      assert.deepEqual(cssModel.getStyleSheetIdsForURL(urlString`http://example.com/styles1.css`), ['stylesheet1']);
+      assert.deepEqual(cssModel.getStyleSheetIdsForURL(urlString`http://example.com/styles2.css`), ['stylesheet2']);
+    });
+
+    it('creates inspector stylesheet', async () => {
+      const connection = new MockCDPConnection();
+      const target = universe.createTarget({connection});
+      const cssModel = target.model(SDK.CSSModel.CSSModel)!;
+      const frameId = 'frame1' as Protocol.Page.FrameId;
+      const styleSheetId = 'inspector-sheet-id' as Protocol.DOM.StyleSheetId;
+
+      connection.setSuccessHandler('CSS.createStyleSheet', params => {
+        assert.strictEqual(params.frameId, frameId);
+
+        const header: Protocol.CSS.CSSStyleSheetHeader = {
+          styleSheetId,
+          frameId,
+          sourceURL: 'http://example.com/inspector-stylesheet',
+          origin: Protocol.CSS.StyleSheetOrigin.Inspector,
+          title: 'inspector',
+          disabled: false,
+          isInline: false,
+          isMutable: true,
+          isConstructed: false,
+          loadingFailed: false,
+          startLine: 0,
+          startColumn: 0,
+          length: 0,
+          endLine: 0,
+          endColumn: 0,
+        };
+        connection.dispatchEvent('CSS.styleSheetAdded', {header}, undefined);
+
+        return {styleSheetId};
+      });
+
+      const header = await cssModel.requestViaInspectorStylesheet(frameId);
+      assert.isNotNull(header);
+      assert.strictEqual(header?.id, styleSheetId);
+      assert.isTrue(header?.isViaInspector());
+
+      // Requesting again should return the cached one without calling the backend again.
+      connection.setHandler('CSS.createStyleSheet', null);
+      connection.setHandler('CSS.createStyleSheet', () => {
+        throw new Error('Should not be called again');
+      });
+
+      const header2 = await cssModel.requestViaInspectorStylesheet(frameId);
+      assert.strictEqual(header2, header);
     });
   });
 });

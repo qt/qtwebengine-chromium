@@ -23,6 +23,7 @@ namespace v8::internal::wasm {
   V(WasmTriggerTierUp)                                                         \
   V(WasmLiftoffFrameSetup)                                                     \
   V(WasmDebugBreak)                                                            \
+  V(WasmDebugTrap)                                                             \
   V(WasmInt32ToHeapNumber)                                                     \
   V(WasmInt32ToSharedHeapNumber)                                               \
   V(WasmFloat64ToString)                                                       \
@@ -156,8 +157,8 @@ namespace v8::internal::wasm {
   V(WasmAnyConvertExtern)                                                      \
   V(WasmAnyConvertExternShared)                                                \
   V(WasmStringFromDataSegment)                                                 \
-  V(WasmStringAdd_CheckNone)                                                   \
-  V(WasmStringAdd_CheckNone_Shared)                                            \
+  V(WasmStringAdd_NoMapCheck)                                                  \
+  V(WasmStringAdd_NoMapCheck_Shared)                                           \
   V(DebugPrintWord32)                                                          \
   V(DebugPrintWord64)                                                          \
   V(DebugPrintFloat32)                                                         \

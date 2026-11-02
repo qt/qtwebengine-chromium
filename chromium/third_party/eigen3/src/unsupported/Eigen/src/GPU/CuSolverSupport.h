@@ -12,7 +12,7 @@
 //   - cuSOLVER error-checking macro
 //   - RAII wrapper for cusolverDnParams
 //   - Scalar → cudaDataType_t mapping
-//   - (UpLo, StorageOrder) → cublasFillMode_t mapping
+//   - UpLo → cublasFillMode_t mapping
 //
 // Generic CUDA runtime utilities (DeviceBuffer, EIGEN_CUDA_RUNTIME_CHECK)
 // are in GpuSupport.h.

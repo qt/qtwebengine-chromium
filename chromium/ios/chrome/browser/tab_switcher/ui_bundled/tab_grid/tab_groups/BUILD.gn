@@ -255,7 +255,6 @@ source_set("snapshots_view") {
   deps = [
     ":tab_groups_constant",
     "//base",
-    "//ios/chrome/browser/shared/public/features",
     "//ios/chrome/browser/shared/ui/elements",
     "//ios/chrome/browser/shared/ui/elements/gradient",
     "//ios/chrome/browser/shared/ui/util",
@@ -427,7 +426,6 @@ source_set("eg2_tests") {
     "//ios/chrome/test/earl_grey:switches",
     "//ios/testing/earl_grey:eg_test_support+eg2",
     "//ios/testing/earl_grey:launch_configuration",
-    "//ios/web/public/test/http_server",
     "//net:test_support",
     "//ui/base",
   ]
@@ -461,7 +459,9 @@ source_set("eg_app_support+eg2") {
     "//ios/chrome/browser/share_kit/model:factory",
     "//ios/chrome/browser/share_kit/model:test_support",
     "//ios/chrome/browser/shared/model/application_context",
+    "//ios/chrome/browser/shared/model/browser",
     "//ios/chrome/browser/shared/model/profile",
+    "//ios/chrome/browser/shared/public/commands",
     "//ios/chrome/browser/shared/public/features",
     "//ios/chrome/test/app:test_support",
   ]

@@ -118,12 +118,6 @@ bool LayoutReplaced::HitTestClippedOutByBorder(
     const HitTestLocation& hit_test_location,
     const PhysicalOffset& border_box_location) const {
   NOT_DESTROYED();
-
-  if (StyleRef().HasBorderShape()) {
-    return HitTestClippedOutByBorderShape(*this, hit_test_location,
-                                          border_box_location);
-  }
-
   PhysicalRect border_rect = PhysicalBorderBoxRect();
   border_rect.Move(border_box_location);
   return !hit_test_location.Intersects(
@@ -151,10 +145,13 @@ bool LayoutReplaced::NodeAtPoint(HitTestResult& result,
     // PaintLayer::HitTestFragmentsWithPhase() checked the fragments'
     // foreground rect for intersection if a layer is self painting,
     // so only do the overflow clip check here for non-self-painting layers.
-    if (!HasSelfPaintingLayer() &&
-        !hit_test_location.Intersects(OverflowClipRect(
-            accumulated_offset, kExcludeOverlayScrollbarSizeForHitTesting))) {
-      skip_children = true;
+    if (!HasSelfPaintingLayer()) {
+      PhysicalRect clip_rect =
+          OverflowClipRect(kExcludeOverlayScrollbarSizeForHitTesting);
+      clip_rect.Move(accumulated_offset);
+      if (!hit_test_location.Intersects(clip_rect)) {
+        skip_children = true;
+      }
     }
     if (!skip_children && StyleRef().HasBorderShape()) {
       skip_children = HitTestClippedOutByBorderShape(*this, hit_test_location,
@@ -172,16 +169,17 @@ bool LayoutReplaced::NodeAtPoint(HitTestResult& result,
     return true;
   }
 
-  if (StyleRef().HasBorderShape() &&
-      HitTestClippedOutByBorderShape(*this, hit_test_location,
-                                     accumulated_offset)) {
-    if (!result.GetHitTestRequest().IsHitTestVisualOverflow()) {
-      return false;
-    }
-  } else if (StyleRef().HasBorderRadius() &&
-             HitTestClippedOutByBorder(hit_test_location, accumulated_offset)) {
-    if (!result.GetHitTestRequest().IsHitTestVisualOverflow()) {
-      return false;
+  if (!result.GetHitTestRequest().IsHitTestVisualOverflow()) {
+    // Check if the location is outside any border-shape or border-radius.
+    if (StyleRef().HasBorderShape()) {
+      if (HitTestClippedOutByBorderShape(*this, hit_test_location,
+                                         accumulated_offset)) {
+        return false;
+      }
+    } else if (StyleRef().HasBorderRadius()) {
+      if (HitTestClippedOutByBorder(hit_test_location, accumulated_offset)) {
+        return false;
+      }
     }
   }
 

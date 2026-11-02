@@ -15,12 +15,11 @@
 #include "src/utils/entropy_decoder.h"
 
 #include <cassert>
+#include <cstdint>
 #include <cstring>
 
 #include "src/utils/common.h"
-#include "src/utils/compiler_attributes.h"
 #include "src/utils/constants.h"
-#include "src/utils/cpu.h"
 
 #if defined(__ARM_NEON__) || defined(__aarch64__) || \
     (defined(_MSC_VER) && defined(_M_ARM))

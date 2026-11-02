@@ -25,6 +25,7 @@ copy_to_gen("network") {
     "json-subtype-ld.rawresponse",
     "last-modified.html",
     "last-modified.rawresponse",
+    "preload.html",
     "requests.html",
     "resources-from-cache.html",
     "search-result-1.js",

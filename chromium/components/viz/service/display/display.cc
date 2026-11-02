@@ -247,8 +247,7 @@ void Display::PresentationGroupTiming::OnDraw(
     HintSession::BoostType boost_type,
     int64_t choreographer_vsync_id,
     int64_t swap_trace_id,
-    std::optional<PossibleDeadline> deadline,
-    std::optional<PossibleDeadline> preferred) {
+    std::optional<PossibleDeadline> selected_deadline) {
   frame_time_ = frame_time;
   interval_ = interval;
   draw_start_timestamp_ = draw_start_timestamp;
@@ -257,8 +256,7 @@ void Display::PresentationGroupTiming::OnDraw(
   boost_type_ = boost_type;
   choreographer_vsync_id_ = choreographer_vsync_id;
   swap_trace_id_ = swap_trace_id;
-  deadline_ = std::move(deadline);
-  preferred_ = std::move(preferred);
+  selected_deadline_ = std::move(selected_deadline);
 }
 
 void Display::PresentationGroupTiming::OnSwap(gfx::SwapTimings timings,
@@ -337,9 +335,6 @@ Display::~Display() {
   if (resource_provider_) {
     resource_provider_->SetAllowAccessToGPUThread(true);
   }
-
-  if (no_pending_swaps_callback_)
-    std::move(no_pending_swaps_callback_).Run();
 
   for (auto& observer : observers_)
     observer.OnDisplayDestroyed();
@@ -461,7 +456,6 @@ void Display::Resize(const gfx::Size& size) {
   DCHECK(!clamped_size_px.IsEmpty());
   TRACE_EVENT0("viz", "Display::Resize");
 
-  swapped_since_resize_ = false;
   current_surface_size_ = clamped_size_px;
 
   damage_tracker_->DisplayResized();
@@ -476,30 +470,6 @@ void Display::InvalidateCurrentSurfaceId() {
   // Force a gc as the display may not be visible (gc occurs after drawing,
   // which won't happen when display is hidden).
   surface_manager_->GarbageCollectSurfaces();
-}
-
-void Display::DisableSwapUntilResize(
-    base::OnceClosure no_pending_swaps_callback) {
-  TRACE_EVENT0("viz", "Display::DisableSwapUntilResize");
-  DCHECK(no_pending_swaps_callback_.is_null());
-
-  if (!disable_swap_until_resize_) {
-    DCHECK(scheduler_);
-
-    if (!swapped_since_resize_)
-      scheduler_->ForceImmediateSwapIfPossible();
-
-    if (no_pending_swaps_callback && pending_swaps_ > 0 &&
-        output_surface_->AsSkiaOutputSurface()) {
-      no_pending_swaps_callback_ = std::move(no_pending_swaps_callback);
-    }
-
-    disable_swap_until_resize_ = true;
-  }
-
-  // There are no pending swaps for current size so immediately run callback.
-  if (no_pending_swaps_callback)
-    std::move(no_pending_swaps_callback).Run();
 }
 
 void Display::SetColorMatrix(const SkM44& matrix) {
@@ -532,6 +502,13 @@ void Display::SetOutputIsSecure(bool secure) {
     // Force a redraw.
     if (current_surface_id_.is_valid())
       aggregator_->SetFullDamageForSurface(current_surface_id_);
+  }
+}
+
+void Display::NotifyMinSupportedVsyncInterval(
+    base::TimeDelta min_vsync_interval) {
+  if (scheduler_) {
+    scheduler_->NotifyMinSupportedVsyncInterval(min_vsync_interval);
   }
 }
 
@@ -660,7 +637,7 @@ void DebugDrawFrame(
         render_pass->transform_to_root_target.ToDecomposedString().c_str());
 
     for (auto* quad : render_pass->quad_list) {
-      auto* sqs = quad->shared_quad_state;
+      const SharedQuadState* sqs = quad->shared_quad_state;
       auto quad_to_root_transform = sqs->quad_to_target_transform;
       if (non_root_passes_in_root_space()) {
         quad_to_root_transform.PostConcat(
@@ -770,9 +747,12 @@ OverdrawTracker::OverdrawTimeSeries Display::StopTrackingOverdraw() {
   return overdraw_data;
 }
 
+int Display::GetCurrentAllocatedBuffers() const {
+  return renderer_ ? renderer_->GetCurrentAllocatedBuffers() : 0;
+}
+
 bool Display::DrawAndSwap(const DrawAndSwapParams& params) {
   TRACE_EVENT0("viz", "Display::DrawAndSwap");
-  VIZ_HIT_PATH("DrawAndSwap");
 #if !BUILDFLAG(IS_APPLE)
   RecordFDUsageUMA();
 #endif
@@ -864,7 +844,6 @@ bool Display::DrawAndSwap(const DrawAndSwapParams& params) {
     // aggregated again so that the trail exists for a single frame.
     target_damage_bounding_rect.Union(
         renderer_->GetDelegatedInkTrailDamageRect());
-    VIZ_HIT_PATH("Aggregate");
     frame = aggregator_->Aggregate(
         current_surface_id_, params.expected_display_time,
         current_display_transform, target_damage_bounding_rect,
@@ -879,9 +858,6 @@ bool Display::DrawAndSwap(const DrawAndSwapParams& params) {
         "ink metadata", frame.delegated_ink_metadata->ToString());
     renderer_->SetDelegatedInkMetadata(std::move(frame.delegated_ink_metadata));
   }
-
-  UMA_HISTOGRAM_ENUMERATION("Compositing.ColorGamut",
-                            frame.content_color_usage);
 
 #if BUILDFLAG(IS_ANDROID)
   bool wide_color_enabled =
@@ -901,8 +877,9 @@ bool Display::DrawAndSwap(const DrawAndSwapParams& params) {
     return false;
   }
 
-  TRACE_EVENT_BEGIN("viz,benchmark", "Graphics.Pipeline.DrawAndSwap",
-                    perfetto::Track(display_trace_id));
+  TRACE_EVENT_BEGIN(
+      "viz,benchmark", "Graphics.Pipeline.DrawAndSwap",
+      perfetto::NamedTrack("Graphics.Pipeline", display_trace_id));
 
   // Run callbacks early to allow pipelining and collect presented callbacks.
   damage_tracker_->RunDrawCallbacks();
@@ -961,8 +938,9 @@ bool Display::DrawAndSwap(const DrawAndSwapParams& params) {
 
   std::optional<base::ElapsedTimer> draw_timer;
   if (should_draw) {
-    TRACE_EVENT_BEGIN("viz,benchmark", "Graphics.Pipeline.Draw",
-                      perfetto::Track(display_trace_id));
+    TRACE_EVENT_BEGIN(
+        "viz,benchmark", "Graphics.Pipeline.Draw",
+        perfetto::NamedTrack("Graphics.Pipeline", display_trace_id));
     base::ElapsedTimer draw_occlusion_timer;
     occlusion_culler_->RemoveOverdrawQuads(&frame);
     DebugDrawFrameVisible(frame);
@@ -987,7 +965,8 @@ bool Display::DrawAndSwap(const DrawAndSwapParams& params) {
                          current_surface_size, display_color_spaces_,
                          std::move(frame.surface_damage_rect_list_),
                          frame.tracked_element_rects);
-    TRACE_EVENT_END("viz,benchmark", perfetto::Track(display_trace_id));
+    TRACE_EVENT_END("viz,benchmark", perfetto::NamedTrack("Graphics.Pipeline",
+                                                          display_trace_id));
   } else {
     TRACE_EVENT_INSTANT("viz", "Draw skipped.");
   }
@@ -1061,7 +1040,7 @@ bool Display::DrawAndSwap(const DrawAndSwapParams& params) {
         std::move(renderer_main_thread_ids),
         /*boost_type=*/HintSession::BoostType::kDefault,
         params.choreographer_vsync_id.value_or(0), display_trace_id,
-        params.deadline, params.preferred_deadline);
+        params.selected_deadline);
 
     bool has_interactive_frame = false;
     bool has_animated_frame = false;
@@ -1083,9 +1062,9 @@ bool Display::DrawAndSwap(const DrawAndSwapParams& params) {
       }
     }
 
-    TRACE_EVENT_INSTANT("viz,benchmark", "Graphics.Pipeline.WaitForSwap",
-                        perfetto::Track(display_trace_id));
-    swapped_since_resize_ = true;
+    TRACE_EVENT_INSTANT(
+        "viz,benchmark", "Graphics.Pipeline.WaitForSwap",
+        perfetto::NamedTrack("Graphics.Pipeline", display_trace_id));
 
     IssueDisplayRenderingStatsEvent();
     DirectRenderer::SwapFrameData swap_frame_data;
@@ -1152,10 +1131,10 @@ bool Display::DrawAndSwap(const DrawAndSwapParams& params) {
     if (should_draw)
       renderer_->SwapBuffersSkipped();
 
-    TRACE_EVENT_END(
-        "viz,benchmark",
-        /* Graphics.Pipeline.DrawAndSwap */ perfetto::Track(display_trace_id),
-        "status", "canceled");
+    TRACE_EVENT_END("viz,benchmark",
+                    /* Graphics.Pipeline.DrawAndSwap */
+                    perfetto::NamedTrack("Graphics.Pipeline", display_trace_id),
+                    "status", "canceled");
     if (scheduler_) {
       scheduler_->DidSwapBuffers();
       scheduler_->DidReceiveSwapBuffersAck();
@@ -1198,11 +1177,14 @@ void Display::DidReceiveSwapBuffersAck(gpu::SwapBuffersCompleteParams params,
   }
 
   const gfx::SwapTimings& timings = params.swap_response.timings;
-  TRACE_EVENT_INSTANT("viz,benchmark", "Swap",
-                      perfetto::Track(params.swap_trace_id),
-                      timings.swap_start);
-  TRACE_EVENT_INSTANT("viz,benchmark", "WaitForPresentation",
-                      perfetto::Track(params.swap_trace_id), timings.swap_end);
+  TRACE_EVENT_INSTANT(
+      "viz,benchmark", "Swap",
+      perfetto::NamedTrack("Graphics.Pipeline", params.swap_trace_id),
+      timings.swap_start);
+  TRACE_EVENT_INSTANT(
+      "viz,benchmark", "WaitForPresentation",
+      perfetto::NamedTrack("Graphics.Pipeline", params.swap_trace_id),
+      timings.swap_end);
 
   if (overlay_processor_)
     overlay_processor_->OverlayPresentationComplete();
@@ -1215,9 +1197,6 @@ void Display::DidReceiveSwapBuffersAck(gpu::SwapBuffersCompleteParams params,
   if (scheduler_) {
     scheduler_->DidReceiveSwapBuffersAck();
   }
-
-  if (no_pending_swaps_callback_ && pending_swaps_ == 0)
-    std::move(no_pending_swaps_callback_).Run();
 
   // It's possible to receive multiple calls to DidReceiveSwapBuffersAck()
   // before DidReceivePresentationFeedback(). Ensure that we're matching
@@ -1278,12 +1257,12 @@ void Display::DidReceiveSwapBuffersAck(gpu::SwapBuffersCompleteParams params,
 
   if (!timings.gpu_started_overlay.is_null()) {
     DCHECK_LE(draw_start_timestamp, timings.gpu_started_overlay);
-    TRACE_EVENT_ASYNC_BEGIN_WITH_TIMESTAMP0("viz", "DrawToScheduleOverlay",
-                                            params.swap_trace_id,
-                                            draw_start_timestamp);
-    TRACE_EVENT_ASYNC_END_WITH_TIMESTAMP0("viz", "DrawToScheduleOverlay",
-                                          params.swap_trace_id,
-                                          timings.gpu_started_overlay);
+    auto track = perfetto::NamedTrack("Graphics.Pipeline.DrawToScheduleOverlay",
+                                      params.swap_trace_id);
+    TRACE_EVENT_BEGIN("viz", "DrawToScheduleOverlay", track,
+                      draw_start_timestamp);
+    TRACE_EVENT_END("viz", track, timings.gpu_started_overlay);
+
     base::TimeDelta draw_start_to_overlay_start =
         timings.gpu_started_overlay - draw_start_timestamp;
     UMA_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(
@@ -1293,6 +1272,14 @@ void Display::DidReceiveSwapBuffersAck(gpu::SwapBuffersCompleteParams params,
   }
 
   if (!timings.viz_scheduled_draw.is_null()) {
+    DCHECK_LE(draw_start_timestamp, timings.viz_scheduled_draw);
+    base::TimeDelta draw_start_to_scheduled_draw =
+        timings.viz_scheduled_draw - draw_start_timestamp;
+    UMA_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(
+        "Compositing.Display.DrawToVizScheduledDraw",
+        draw_start_to_scheduled_draw, kDrawToSwapMin, kDrawToSwapMax,
+        kDrawToSwapUsBuckets);
+
     DCHECK(!timings.gpu_started_draw.is_null());
     DCHECK_LE(timings.viz_scheduled_draw, timings.gpu_started_draw);
     base::TimeDelta schedule_draw_to_gpu_start =
@@ -1358,10 +1345,10 @@ void Display::DidReceivePresentationFeedback(
 
   int64_t presented_trace_id = presentation_group_timing.swap_trace_id();
   copy_feedback.display_trace_id = presented_trace_id;
-  TRACE_EVENT_END(
-      "viz,benchmark",
-      /* Graphics.Pipeline.DrawAndSwap */ perfetto::Track(presented_trace_id),
-      copy_feedback.timestamp);
+  TRACE_EVENT_END("viz,benchmark",
+                  /* Graphics.Pipeline.DrawAndSwap */
+                  perfetto::NamedTrack("Graphics.Pipeline", presented_trace_id),
+                  copy_feedback.timestamp);
   TRACE_EVENT_INSTANT(
       "benchmark,viz," TRACE_DISABLED_BY_DEFAULT("display.framedisplayed"),
       "Display::FrameDisplayed", copy_feedback.timestamp);
@@ -1380,8 +1367,7 @@ void Display::DidReceivePresentationFeedback(
         copy_feedback, presentation_group_timing.choreographer_vsync_id(),
         presentation_group_timing.frame_time(),
         presentation_group_timing.interval(),
-        presentation_group_timing.deadline(),
-        presentation_group_timing.preferred());
+        presentation_group_timing.selected_deadline());
   }
   pending_presentation_group_timings_.erase(group_it);
 }
@@ -1398,9 +1384,10 @@ void Display::AddChildWindowToBrowser(gpu::SurfaceHandle child_window) {
   }
 }
 
-void Display::DidFinishFrame(const BeginFrameAck& ack) {
+void Display::DidFinishFrame(const BeginFrameId& frame_id,
+                             DisplaySchedulerDrawResult result) {
   for (auto& observer : observers_)
-    observer.OnDisplayDidFinishFrame(ack);
+    observer.OnDisplayDidFinishFrame(frame_id, result);
 
   // Prevent a delegated ink trail from staying on the screen
   // for more than one frame by forcing a new frame to be produced.
@@ -1408,7 +1395,7 @@ void Display::DidFinishFrame(const BeginFrameAck& ack) {
     scheduler_->SetNeedsOneBeginFrame(BeginFrameArgs(), /*needs_draw=*/true);
   }
 
-  frame_sequence_number_ = ack.frame_id.sequence_number;
+  frame_sequence_number_ = frame_id.sequence_number;
 }
 
 const SurfaceId& Display::CurrentSurfaceId() const {

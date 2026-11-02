@@ -9,6 +9,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/task/single_thread_task_runner.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_audio_worklet_node_options.h"
+#include "third_party/blink/renderer/modules/modules_export.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_node.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_param_map.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_worklet_processor_error_details.h"
@@ -20,7 +21,7 @@ namespace blink {
 class AudioNodeInput;
 class AudioWorkletProcessor;
 
-class AudioWorkletHandler final : public AudioHandler {
+class MODULES_EXPORT AudioWorkletHandler final : public AudioHandler {
  public:
   static scoped_refptr<AudioWorkletHandler> Create(
       AudioNode&,
@@ -47,6 +48,7 @@ class AudioWorkletHandler final : public AudioHandler {
   void SetProcessorOnRenderThread(AudioWorkletProcessor*);
 
   bool IsProcessorActive() { return is_processor_active_; }
+  void MarkProcessorInactiveOnMainThread();
 
  private:
   AudioWorkletHandler(
@@ -64,7 +66,8 @@ class AudioWorkletHandler final : public AudioHandler {
   void NotifyProcessorError(
       const AudioWorkletProcessorErrorDetails& error_details);
 
-  void MarkProcessorInactiveOnMainThread();
+  bool HasActiveInputs();
+  void FinishProcessorOnRenderThread();
 
   const String name_;
 
@@ -94,6 +97,16 @@ class AudioWorkletHandler final : public AudioHandler {
   // lifecycle of an AudioWorkletNode and its handler. This flag becomes false
   // when a processor stops invoking the user-defined `process()` callback.
   bool is_processor_active_ = true;
+
+  // The active source flag of the AudioWorkletProcessor, which is updated by
+  // the return value of the user-defined `process()` callback.
+  bool is_active_source_ = true;
+
+  // Pre-bound WeakPtr to this handler. Storing it on the main thread avoids
+  // calling GetWeakPtr() on the WeakPtrFactory from the audio thread (which is
+  // not thread-safe). The audio thread can then safely copy this pre-bound
+  // WeakPtr to post tasks back to the main thread.
+  base::WeakPtr<AudioWorkletHandler> weak_this_;
 
   base::WeakPtrFactory<AudioWorkletHandler> weak_ptr_factory_{this};
 };

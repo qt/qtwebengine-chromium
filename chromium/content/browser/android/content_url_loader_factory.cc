@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/android/content_uri_utils.h"
+#include "base/byte_size.h"
 #include "base/command_line.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
@@ -258,9 +259,9 @@ class ContentURLLoader : public network::mojom::URLLoader {
 
     if (result == MOJO_RESULT_OK) {
       network::URLLoaderCompletionStatus status(net::OK);
-      status.encoded_data_length = total_bytes_written_;
-      status.encoded_body_length = total_bytes_written_;
-      status.decoded_body_length = total_bytes_written_;
+      status.encoded_data_length = base::ByteSize(total_bytes_written_);
+      status.encoded_body_length = base::ByteSize(total_bytes_written_);
+      status.decoded_body_length = base::ByteSize(total_bytes_written_);
       client_->OnComplete(status);
     } else {
       client_->OnComplete(network::URLLoaderCompletionStatus(net::ERR_FAILED));
@@ -283,8 +284,9 @@ class ContentURLLoader : public network::mojom::URLLoader {
 
 ContentURLLoaderFactory::ContentURLLoaderFactory(
     scoped_refptr<base::SequencedTaskRunner> task_runner,
-    mojo::PendingReceiver<network::mojom::URLLoaderFactory> factory_receiver)
-    : network::SelfDeletingURLLoaderFactory(std::move(factory_receiver)),
+    mojo::PendingReceiver<network::mojom::URLLoaderFactory> factory_receiver,
+    base::SelfDeletingPassKey key)
+    : network::SelfDeletingURLLoaderFactory(std::move(factory_receiver), key),
       task_runner_(std::move(task_runner)) {}
 
 ContentURLLoaderFactory::~ContentURLLoaderFactory() = default;
@@ -309,7 +311,7 @@ ContentURLLoaderFactory::Create() {
   // The ContentURLLoaderFactory will delete itself when there are no more
   // receivers - see the network::SelfDeletingURLLoaderFactory::OnDisconnect
   // method.
-  new ContentURLLoaderFactory(
+  base::MakeSelfDeleting<ContentURLLoaderFactory>(
       base::ThreadPool::CreateSequencedTaskRunner(
           {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
            base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN}),

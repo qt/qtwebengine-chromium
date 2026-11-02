@@ -844,8 +844,9 @@ GLES2DecoderPassthroughImpl::GLES2DecoderPassthroughImpl(
       context_(),
       offscreen_(false),
       group_(group),
-      feature_info_(new FeatureInfo(group->feature_info()->workarounds(),
-                                    group->gpu_feature_info())),
+      feature_info_(base::MakeRefCounted<FeatureInfo>(
+          group->feature_info()->workarounds(),
+          group->gpu_feature_info())),
       emulated_back_buffer_(nullptr),
       bound_draw_framebuffer_(0),
       bound_read_framebuffer_(0),
@@ -1450,13 +1451,8 @@ gpu::Capabilities GLES2DecoderPassthroughImpl::GetCapabilities() {
   caps.avoid_stencil_buffers =
       feature_info_->workarounds().avoid_stencil_buffers;
 
-  if (base::FeatureList::IsEnabled(
-          features::kNvidiaWaylandYuvHardwareConversionWorkaround) &&
-      feature_info_->workarounds().disable_rgb_to_yuv_conversion) {
-    caps.supports_rgb_to_yuv_conversion = false;
-  } else {
-    caps.supports_rgb_to_yuv_conversion = true;
-  }
+  caps.supports_rgb_to_yuv_conversion =
+      !feature_info_->workarounds().disable_rgb_to_yuv_conversion;
   // Technically, YUV readback is handled on the client side, but enable it
   // here so that clients can use this to detect support.
   caps.supports_yuv_readback = true;
@@ -2617,7 +2613,8 @@ void GLES2DecoderPassthroughImpl::ProcessDescheduleUntilFinished() {
 
   TRACE_EVENT_END(
       "cc", /*"GLES2DecoderPassthroughImpl::DescheduleUntilFinished"*/
-      perfetto::Track::FromPointer(this));
+      perfetto::NamedTrack::FromPointer(
+          "gpu::gles2::GLES2DecoderPassthroughImpl", this));
   deschedule_until_finished_fences_.pop_front();
   client()->OnRescheduleAfterFinished();
 }

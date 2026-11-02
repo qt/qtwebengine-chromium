@@ -1,0 +1,39 @@
+# Font families for system-ui generic family
+Adwaita Sans
+Cantarell
+Khmer UI
+Lao UI
+Leelawadee UI
+Meiryo UI
+Microsoft JhengHei UI
+Microsoft YaHei UI
+MS UI Gothic
+Nirmala UI
+Noto Sans Arabic UI
+Noto Sans Bengali UI
+Noto Sans Devanagari UI
+Noto Sans Gujarati UI
+Noto Sans Gurmukhi UI
+Noto Sans Kannada UI
+Noto Sans Khmer UI
+Noto Sans Lao UI
+Noto Sans Malayalam UI
+Noto Sans Myanmar UI
+Noto Sans Oriya UI
+Noto Sans Sinhala UI
+Noto Sans Tamil UI
+Noto Sans Telugu UI
+Noto Sans Thai UI
+Noto Sans UI
+Segoe UI
+Segoe UI Historic
+Segoe UI Symbol
+Yu Gothic UI
+Khmer OS System
+Ume UI Gothic
+Ume UI Gothic O5
+Vazirmatn RD UI
+Vazirmatn RD UI NL
+Vazirmatn UI
+Vazirmatn UI NL
+Noto Naskh Arabic UI

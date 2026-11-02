@@ -7,7 +7,7 @@ import {assert} from 'chai';
 import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
-import type * as Protocol from '../../generated/protocol.js';
+import * as Protocol from '../../generated/protocol.js';
 import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
 import * as Diff from '../../third_party/diff/diff.js';
@@ -95,6 +95,17 @@ describeWithEnvironment('panels/utils', () => {
       const iconElement = renderIcon(request);
       const iconImage = iconElement.getAttribute('name');
       assert.strictEqual('cross-circle-filled', iconImage);
+    });
+
+    it('creates a warning icon for failed preloading request', async () => {
+      const request = SDK.NetworkRequest.NetworkRequest.create('requestId' as Protocol.Network.RequestId,
+                                                               urlString`https://www.example.com`, urlString``, null,
+                                                               null, {type: Protocol.Network.InitiatorType.Preload});
+      request.statusCode = 404;
+
+      const iconElement = renderIcon(request);
+      const iconImage = iconElement.getAttribute('name');
+      assert.strictEqual('warning-filled', iconImage);
     });
 
     it('show document icon', async () => {
@@ -229,6 +240,40 @@ describeWithEnvironment('panels/utils', () => {
       const iconElement = renderIcon(request);
       const iconImage = iconElement.getAttribute('name');
       assert.strictEqual('file-json', iconImage);
+    });
+
+    it('preserves specific icon for overridden stylesheet request', async () => {
+      const request = SDK.NetworkRequest.NetworkRequest.create('requestId' as Protocol.Network.RequestId,
+                                                               urlString`https://www.example.com/styles.css`,
+                                                               urlString``, null, null, null);
+      request.setResourceType(Common.ResourceType.resourceTypes.Stylesheet);
+      request.mimeType = 'text/css';
+      request.hasOverriddenContent = true;
+
+      const markerElement = renderIcon(request);
+      assert.strictEqual(markerElement.className, 'network-override-marker');
+      const iconElement = markerElement.querySelector('devtools-icon');
+      assert.isNotNull(iconElement);
+      assert.strictEqual(iconElement?.getAttribute('name'), 'file-stylesheet');
+      assert.strictEqual(iconElement?.getAttribute('title'), 'Request content is overridden');
+    });
+
+    it('preserves specific icon for overridden image request', async () => {
+      const request = SDK.NetworkRequest.NetworkRequest.create('requestId' as Protocol.Network.RequestId,
+                                                               urlString`https://www.example.com/image.png`,
+                                                               urlString``, null, null, null);
+      request.setResourceType(Common.ResourceType.resourceTypes.Image);
+      request.mimeType = 'image/png';
+      request.responseHeaders = [{name: 'foo', value: 'overridden'}];
+      request.originalResponseHeaders = [{name: 'foo', value: 'original'}];
+
+      const markerElement = renderIcon(request);
+      assert.strictEqual(markerElement.className, 'network-override-marker');
+      const iconElement = markerElement.querySelector('.image.icon');
+      assert.isNotNull(iconElement);
+      const imgElement = iconElement?.querySelector('img');
+      assert.isNotNull(imgElement);
+      assert.strictEqual(imgElement?.getAttribute('title'), 'Request headers are overridden');
     });
   });
 });

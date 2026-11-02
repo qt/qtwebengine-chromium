@@ -490,7 +490,7 @@ describeWithEnvironment('CSSRuleValidator', () => {
       computedStyles: new Map<string, string>([['display', 'none']]),
       validator: () => new Elements.CSSRuleValidator.PositionAnchorValidator(),
       hintExpected: true,
-    }
+    },
   ];
 
   for (const test of tests) {

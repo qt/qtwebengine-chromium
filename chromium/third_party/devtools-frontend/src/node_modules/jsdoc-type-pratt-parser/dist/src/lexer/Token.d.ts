@@ -2,6 +2,9 @@ export type TokenType = '(' | ')' | '[' | ']' | '{' | '}' | '|' | '&' | '<' | '>
 export interface Token {
     type: TokenType;
     text: string;
+    reduced?: number;
+    line?: number;
+    column?: number;
     startOfLine: boolean;
 }
 export declare const baseNameTokens: TokenType[];

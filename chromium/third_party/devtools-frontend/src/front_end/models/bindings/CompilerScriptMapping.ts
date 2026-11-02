@@ -5,9 +5,9 @@
 import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 // eslint-disable-next-line @devtools/es-modules-import
 import * as StackTraceImpl from '../stack_trace/stack_trace_impl.js';
-import * as TextUtils from '../text_utils/text_utils.js';
 import * as Workspace from '../workspace/workspace.js';
 
 import {ContentProviderBasedProject} from './ContentProviderBasedProject.js';
@@ -55,9 +55,9 @@ export class CompilerScriptMapping implements DebuggerSourceMapping {
     this.#debuggerModel = debuggerModel;
     this.#ignoreListManager = debuggerWorkspaceBinding.ignoreListManager;
 
-    this.#stubProject = new ContentProviderBasedProject(
-        workspace, 'jsSourceMaps:stub:' + debuggerModel.target().id(), Workspace.Workspace.projectTypes.Service, '',
-        true /* isServiceProject */);
+    this.#stubProject =
+        new ContentProviderBasedProject(workspace, 'jsSourceMaps:stub:' + debuggerModel.target().id(),
+                                        Workspace.Workspace.projectTypes.Service, '', true /* isServiceProject */);
     this.#eventListeners = [
       this.#sourceMapManager.addEventListener(
           SDK.SourceMapManager.Events.SourceMapWillAttach, this.sourceMapWillAttach, this),
@@ -463,8 +463,8 @@ export class CompilerScriptMapping implements DebuggerSourceMapping {
     if (!project) {
       const projectType = script.isContentScript() ? Workspace.Workspace.projectTypes.ContentScripts :
                                                      Workspace.Workspace.projectTypes.Network;
-      project = new ContentProviderBasedProject(
-          this.#stubProject.workspace(), projectId, projectType, /* displayName */ '', /* isServiceProject */ false);
+      project = new ContentProviderBasedProject(this.#stubProject.workspace(), projectId, projectType,
+                                                /* displayName */ '', /* isServiceProject */ false);
       NetworkProject.setTargetForProject(project, target);
       this.#projects.set(projectId, project);
     }
@@ -480,7 +480,8 @@ export class CompilerScriptMapping implements DebuggerSourceMapping {
       const contentProvider = content !== null ?
           TextUtils.StaticContentProvider.StaticContentProvider.fromString(url, contentType, content) :
           new SDK.CompilerSourceMappingContentProvider.CompilerSourceMappingContentProvider(
-              url, contentType, script.createPageResourceLoadInitiator());
+              url, contentType, script.createPageResourceLoadInitiator(),
+              target.targetManager().getPageResourceLoader());
       let metadata: Workspace.UISourceCode.UISourceCodeMetadata|null = null;
       if (content !== null) {
         const encoder = new TextEncoder();

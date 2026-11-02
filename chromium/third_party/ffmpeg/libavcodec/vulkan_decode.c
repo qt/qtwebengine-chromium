@@ -28,6 +28,7 @@
 #define DECODER_IS_SDR(codec_id) \
     (((codec_id) == AV_CODEC_ID_FFV1) || \
      ((codec_id) == AV_CODEC_ID_DPX) || \
+     ((codec_id) == AV_CODEC_ID_APV) || \
      ((codec_id) == AV_CODEC_ID_PRORES_RAW) || \
      ((codec_id) == AV_CODEC_ID_PRORES))
 
@@ -55,6 +56,9 @@ extern const FFVulkanDecodeDescriptor ff_vk_dec_prores_desc;
 #if CONFIG_DPX_VULKAN_HWACCEL
 extern const FFVulkanDecodeDescriptor ff_vk_dec_dpx_desc;
 #endif
+#if CONFIG_APV_VULKAN_HWACCEL
+extern const FFVulkanDecodeDescriptor ff_vk_dec_apv_desc;
+#endif
 
 static const FFVulkanDecodeDescriptor *dec_descs[] = {
 #if CONFIG_H264_VULKAN_HWACCEL
@@ -80,6 +84,9 @@ static const FFVulkanDecodeDescriptor *dec_descs[] = {
 #endif
 #if CONFIG_DPX_VULKAN_HWACCEL
     &ff_vk_dec_dpx_desc,
+#endif
+#if CONFIG_APV_VULKAN_HWACCEL
+    &ff_vk_dec_apv_desc,
 #endif
 };
 
@@ -242,53 +249,6 @@ int ff_vk_decode_prepare_frame(FFVulkanDecodeContext *dec, AVFrame *pic,
         if (!alloc_dpb) {
             vkpic->view.ref[0] = vkpic->view.out[0];
             vkpic->view.aspect_ref[0] = vkpic->view.aspect[0];
-        }
-    }
-
-    return 0;
-}
-
-int ff_vk_decode_prepare_frame_sdr(FFVulkanDecodeContext *dec, AVFrame *pic,
-                                   FFVulkanDecodePicture *vkpic, int is_current,
-                                   enum FFVkShaderRepFormat rep_fmt, int alloc_dpb)
-{
-    int err;
-    FFVulkanDecodeShared *ctx = dec->shared_ctx;
-    AVHWFramesContext *frames = (AVHWFramesContext *)pic->hw_frames_ctx->data;
-
-    vkpic->slices_size = 0;
-
-    if (vkpic->view.ref[0])
-        return 0;
-
-    init_frame(dec, vkpic);
-
-    for (int i = 0; i < av_pix_fmt_count_planes(frames->sw_format); i++) {
-        if (alloc_dpb) {
-            vkpic->dpb_frame = vk_get_dpb_pool(ctx);
-            if (!vkpic->dpb_frame)
-                return AVERROR(ENOMEM);
-
-            err = ff_vk_create_imageview(&ctx->s,
-                                         &vkpic->view.ref[i], &vkpic->view.aspect_ref[i],
-                                         vkpic->dpb_frame, i, rep_fmt);
-            if (err < 0)
-                return err;
-
-            vkpic->view.dst[i] = vkpic->view.ref[i];
-        }
-
-        if (!alloc_dpb || is_current) {
-            err = ff_vk_create_imageview(&ctx->s,
-                                         &vkpic->view.out[i], &vkpic->view.aspect[i],
-                                         pic, i, rep_fmt);
-            if (err < 0)
-                return err;
-
-            if (!alloc_dpb) {
-                vkpic->view.ref[i] = vkpic->view.out[i];
-                vkpic->view.aspect_ref[i] = vkpic->view.aspect[i];
-            }
         }
     }
 

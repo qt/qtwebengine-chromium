@@ -5,6 +5,7 @@
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import type * as Platform from '../../core/platform/platform.js';
+import * as Root from '../../core/root/root.js';
 import * as ProjectSettings from '../project_settings/project_settings.js';
 
 /**
@@ -25,8 +26,6 @@ export interface AutomaticFileSystem {
  * (if it exists) provides workspace information.
  */
 export type AutomaticFileSystemAvailability = 'available'|'unavailable';
-
-let automaticFileSystemManagerInstance: AutomaticFileSystemManager|undefined;
 
 /**
  * Automatically connects and disconnects workspace folders.
@@ -66,9 +65,8 @@ export class AutomaticFileSystemManager extends Common.ObjectWrapper.ObjectWrapp
   /**
    * @internal
    */
-  private constructor(
-      inspectorFrontendHost: Host.InspectorFrontendHostAPI.InspectorFrontendHostAPI,
-      projectSettingsModel: ProjectSettings.ProjectSettingsModel.ProjectSettingsModel) {
+  constructor(inspectorFrontendHost: Host.InspectorFrontendHostAPI.InspectorFrontendHostAPI,
+              projectSettingsModel: ProjectSettings.ProjectSettingsModel.ProjectSettingsModel) {
     super();
     this.#automaticFileSystem = null;
     this.#inspectorFrontendHost = inspectorFrontendHost;
@@ -93,27 +91,30 @@ export class AutomaticFileSystemManager extends Common.ObjectWrapper.ObjectWrapp
     inspectorFrontendHost: Host.InspectorFrontendHostAPI.InspectorFrontendHostAPI|null,
     projectSettingsModel: ProjectSettings.ProjectSettingsModel.ProjectSettingsModel|null,
   } = {forceNew: false, inspectorFrontendHost: null, projectSettingsModel: null}): AutomaticFileSystemManager {
-    if (!automaticFileSystemManagerInstance || forceNew) {
+    if (!Root.DevToolsContext.globalInstance().has(AutomaticFileSystemManager) || forceNew) {
       if (!inspectorFrontendHost || !projectSettingsModel) {
         throw new Error(
             'Unable to create AutomaticFileSystemManager: ' +
             'inspectorFrontendHost, and projectSettingsModel must be provided');
       }
-      automaticFileSystemManagerInstance = new AutomaticFileSystemManager(
-          inspectorFrontendHost,
-          projectSettingsModel,
+      Root.DevToolsContext.globalInstance().set(
+          AutomaticFileSystemManager,
+          new AutomaticFileSystemManager(
+              inspectorFrontendHost,
+              projectSettingsModel,
+              ),
       );
     }
-    return automaticFileSystemManagerInstance;
+    return Root.DevToolsContext.globalInstance().get(AutomaticFileSystemManager);
   }
 
   /**
    * Clears the `AutomaticFileSystemManager` singleton (if any);
    */
   static removeInstance(): void {
-    if (automaticFileSystemManagerInstance) {
-      automaticFileSystemManagerInstance.#dispose();
-      automaticFileSystemManagerInstance = undefined;
+    if (Root.DevToolsContext.globalInstance().has(AutomaticFileSystemManager)) {
+      Root.DevToolsContext.globalInstance().get(AutomaticFileSystemManager).#dispose();
+      Root.DevToolsContext.globalInstance().delete(AutomaticFileSystemManager);
     }
   }
 

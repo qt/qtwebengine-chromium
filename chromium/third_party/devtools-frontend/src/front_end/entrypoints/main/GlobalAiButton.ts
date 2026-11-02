@@ -16,19 +16,19 @@ const {render, html, Directives: {classMap}} = Lit;
 
 const UIStrings = {
   /**
-   * @description Button's string in promotion state.
+   * @description Text label for the AI assistance button in the main DevTools toolbar when expanded.
    */
   aiAssistance: 'AI assistance',
   /**
-   * @description Button's tooltip text.
+   * @description Tooltip for the AI assistance button in the main DevTools toolbar.
    */
   openAiAssistance: 'Open AI assistance panel',
   /**
-   * @description Button's string in promotion state.
+   * @description Text label for the Gemini button in the main DevTools toolbar when expanded.
    */
   gemini: 'Gemini',
   /**
-   * @description Button's tooltip text.
+   * @description Tooltip for the Gemini button in the main DevTools toolbar.
    */
   openGemini: 'Open Gemini panel',
 } as const;
@@ -38,13 +38,12 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 const DELAY_BEFORE_PROMOTION_COLLAPSE_IN_MS = 5000;
 const PROMOTION_END_DATE = new Date('2026-09-30');
 
-function getClickCountSetting(): Common.Settings.Setting<number> {
-  return Common.Settings.Settings.instance().createSetting<number>(
-      'global-ai-button-click-count', 0, Common.Settings.SettingStorageType.SYNCED);
+function getClickCountSetting(settings: Common.Settings.Settings): Common.Settings.Setting<number> {
+  return settings.createSetting<number>('global-ai-button-click-count', 0, Common.Settings.SettingStorageType.SYNCED);
 }
 
-function incrementClickCountSetting(): void {
-  const setting = getClickCountSetting();
+function incrementClickCountSetting(settings: Common.Settings.Settings): void {
+  const setting = getClickCountSetting(settings);
   setting.set(setting.get() + 1);
 }
 
@@ -89,10 +88,19 @@ export class GlobalAiButton extends UI.Widget.Widget {
   #buttonState: GlobalAiButtonState = GlobalAiButtonState.DEFAULT;
   #mouseOnMainToolbar = false;
   #returnToDefaultStateTimeout?: number;
+  readonly #settings: Common.Settings.Settings;
+  readonly #inspectorView: UI.InspectorView.InspectorView;
+  readonly #viewManager: UI.ViewManager.ViewManager;
 
-  constructor(element?: HTMLElement, view?: View) {
+  constructor(element?: HTMLElement, view?: View,
+              settings: Common.Settings.Settings = Common.Settings.Settings.instance(),
+              inspectorView: UI.InspectorView.InspectorView = UI.InspectorView.InspectorView.instance(),
+              viewManager: UI.ViewManager.ViewManager = UI.ViewManager.ViewManager.instance()) {
     super(element);
     this.#view = view ?? DEFAULT_VIEW;
+    this.#settings = settings;
+    this.#inspectorView = inspectorView;
+    this.#viewManager = viewManager;
     this.requestUpdate();
 
     if (this.#shouldTriggerPromotion()) {
@@ -118,17 +126,13 @@ export class GlobalAiButton extends UI.Widget.Widget {
   };
 
   #addHoverEventListeners(): void {
-    UI.InspectorView.InspectorView.instance().tabbedPane.headerElement().addEventListener(
-        'mouseenter', this.#handleMainToolbarMouseEnter);
-    UI.InspectorView.InspectorView.instance().tabbedPane.headerElement().addEventListener(
-        'mouseleave', this.#handleMainToolbarMouseLeave);
+    this.#inspectorView.tabbedPane.headerElement().addEventListener('mouseenter', this.#handleMainToolbarMouseEnter);
+    this.#inspectorView.tabbedPane.headerElement().addEventListener('mouseleave', this.#handleMainToolbarMouseLeave);
   }
 
   #removeHoverEventListeners(): void {
-    UI.InspectorView.InspectorView.instance().tabbedPane.headerElement().removeEventListener(
-        'mouseenter', this.#handleMainToolbarMouseEnter);
-    UI.InspectorView.InspectorView.instance().tabbedPane.headerElement().removeEventListener(
-        'mouseleave', this.#handleMainToolbarMouseLeave);
+    this.#inspectorView.tabbedPane.headerElement().removeEventListener('mouseenter', this.#handleMainToolbarMouseEnter);
+    this.#inspectorView.tabbedPane.headerElement().removeEventListener('mouseleave', this.#handleMainToolbarMouseLeave);
   }
 
   // We only want to enable promotion when:
@@ -138,7 +142,7 @@ export class GlobalAiButton extends UI.Widget.Widget {
   #shouldTriggerPromotion(): boolean {
     const isFlagEnabled = Boolean(Root.Runtime.hostConfig.devToolsGlobalAiButton?.promotionEnabled);
     const isBeforeEndDate = (new Date()) < PROMOTION_END_DATE;
-    return isFlagEnabled && isBeforeEndDate && getClickCountSetting().get() < 2;
+    return isFlagEnabled && isBeforeEndDate && getClickCountSetting(this.#settings).get() < 2;
   }
 
   #triggerPromotion(): void {
@@ -173,23 +177,21 @@ export class GlobalAiButton extends UI.Widget.Widget {
   }
 
   #onClick(): void {
-    UI.ViewManager.ViewManager.instance().showViewInLocation('freestyler', 'drawer-view');
-    incrementClickCountSetting();
+    this.#viewManager.showViewInLocation('freestyler', 'drawer-view');
+    incrementClickCountSetting(this.#settings);
 
-    const hasExplicitUserPreference =
-        UI.InspectorView.InspectorView.instance().isUserExplicitlyUpdatedDrawerOrientation();
+    const hasExplicitUserPreference = this.#inspectorView.isUserExplicitlyUpdatedDrawerOrientation();
     const isVerticalDrawerFeatureEnabled =
         Boolean(Root.Runtime.hostConfig.devToolsFlexibleLayout?.verticalDrawerEnabled);
     if (isVerticalDrawerFeatureEnabled && !hasExplicitUserPreference) {
       // This mimics what we're doing while showing the drawer via `ESC`.
       // There is a bug where opening the sidebar directly for the first time,
       // and triggering a drawer rotation without calling `showDrawer({focus: true})` makes the drawer disappear.
-      UI.InspectorView.InspectorView.instance().showDrawer({
+      this.#inspectorView.showDrawer({
         focus: true,
         hasTargetDrawer: false,
       });
-      UI.InspectorView.InspectorView.instance().toggleDrawerOrientation(
-          {force: UI.InspectorView.DrawerOrientation.VERTICAL});
+      this.#inspectorView.toggleDrawerOrientation({force: UI.InspectorView.DrawerOrientation.VERTICAL});
     }
   }
 
@@ -203,14 +205,15 @@ export class GlobalAiButton extends UI.Widget.Widget {
   }
 }
 
-let globalAiButtonToolbarProviderInstance: GlobalAiButtonToolbarProvider;
 export class GlobalAiButtonToolbarProvider implements UI.Toolbar.Provider {
   #toolbarItem: UI.Toolbar.ToolbarItemWithCompactLayout;
   #widgetElement: UI.Widget.WidgetElement<GlobalAiButton>;
 
-  private constructor() {
+  constructor(settings: Common.Settings.Settings = Common.Settings.Settings.instance(),
+              inspectorView: UI.InspectorView.InspectorView = UI.InspectorView.InspectorView.instance(),
+              viewManager: UI.ViewManager.ViewManager = UI.ViewManager.ViewManager.instance()) {
     this.#widgetElement = document.createElement('devtools-widget') as UI.Widget.WidgetElement<GlobalAiButton>;
-    new GlobalAiButton(this.#widgetElement);
+    new GlobalAiButton(this.#widgetElement, undefined, settings, inspectorView, viewManager);
 
     this.#toolbarItem = new UI.Toolbar.ToolbarItemWithCompactLayout(this.#widgetElement);
     this.#toolbarItem.setVisible(false);
@@ -218,14 +221,5 @@ export class GlobalAiButtonToolbarProvider implements UI.Toolbar.Provider {
 
   item(): UI.Toolbar.ToolbarItem|null {
     return this.#toolbarItem;
-  }
-
-  static instance(opts: {forceNew: boolean|null} = {forceNew: null}): GlobalAiButtonToolbarProvider {
-    const {forceNew} = opts;
-    if (!globalAiButtonToolbarProviderInstance || forceNew) {
-      globalAiButtonToolbarProviderInstance = new GlobalAiButtonToolbarProvider();
-    }
-
-    return globalAiButtonToolbarProviderInstance;
   }
 }

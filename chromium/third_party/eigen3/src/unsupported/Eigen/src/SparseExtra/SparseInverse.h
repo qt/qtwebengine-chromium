@@ -112,7 +112,7 @@ typename Derived::Scalar accurateDot(const SparseMatrixBase<Derived>& A, const S
  * This class returns a sparse subset of the inverse of the input matrix.
  * The nonzeros correspond to the nonzeros of the input, plus any additional
  * elements required due to fill-in of the internal LU factorization. This is
- * is minimized via a applying a fill-reducing permutation as part of the LU
+ * minimized by applying a fill-reducing permutation as part of the LU
  * factorization.
  *
  * If there are specific entries of the input matrix which you need inverse
@@ -122,7 +122,7 @@ typename Derived::Scalar accurateDot(const SparseMatrixBase<Derived>& A, const S
  * Due to the sensitive nature of matrix inversion, particularly on large
  * matrices which are made possible via sparsity, high accuracy dot products
  * based on Kahan summation are used to reduce numerical error. If you still
- * encounter numerical errors you may with to equilibrate your matrix before
+ * encounter numerical errors you may wish to equilibrate your matrix before
  * calculating the inverse, as well as making sure it is actually full rank.
  */
 template <typename Scalar>

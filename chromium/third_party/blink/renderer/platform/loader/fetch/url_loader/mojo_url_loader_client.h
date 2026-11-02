@@ -9,6 +9,7 @@
 
 #include <vector>
 
+#include "base/byte_size.h"
 #include "base/functional/callback_forward.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
@@ -51,7 +52,8 @@ class BLINK_PLATFORM_EXPORT MojoURLLoaderClient final
       base::OnceCallback<void(mojom::blink::RendererEvictionReason)>
           evict_from_bfcache_callback,
       base::RepeatingCallback<void(size_t)>
-          did_buffer_load_while_in_bfcache_callback);
+          did_buffer_load_while_in_bfcache_callback,
+      bool keepalive);
   ~MojoURLLoaderClient() override;
 
   // Freezes the loader. See blink/renderer/platform/loader/README.md for the
@@ -108,7 +110,7 @@ class BLINK_PLATFORM_EXPORT MojoURLLoaderClient final
   bool has_received_response_body_ = false;
   bool has_received_complete_ = false;
   LoaderFreezeMode freeze_mode_ = LoaderFreezeMode::kNone;
-  int32_t accumulated_transfer_size_diff_during_deferred_ = 0;
+  base::ByteSize accumulated_transfer_size_diff_during_deferred_;
   const raw_ptr<ResourceRequestSender, DanglingUntriaged>
       resource_request_sender_;
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
@@ -118,6 +120,7 @@ class BLINK_PLATFORM_EXPORT MojoURLLoaderClient final
       evict_from_bfcache_callback_;
   base::RepeatingCallback<void(size_t)>
       did_buffer_load_while_in_bfcache_callback_;
+  bool keepalive_;
 
   base::WeakPtrFactory<MojoURLLoaderClient> weak_factory_{this};
 };

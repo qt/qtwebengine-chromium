@@ -334,6 +334,16 @@ bool CoreChecks::ValidatePipelineLibraryCreateInfo(const vvl::Pipeline& pipeline
         const Location& library_loc = create_info_loc.pNext(Struct::VkPipelineLibraryCreateInfoKHR, Field::pLibraries, i);
         const VkPipelineCreateFlags2 lib_pipeline_flags = lib->create_flags;
 
+        if ((pipeline_flags & VK_PIPELINE_CREATE_2_OPACITY_MICROMAP_DISALLOW_MIXED_SPECIAL_INDEX_BIT_KHR) &&
+            !(lib_pipeline_flags & VK_PIPELINE_CREATE_2_OPACITY_MICROMAP_DISALLOW_MIXED_SPECIAL_INDEX_BIT_KHR)) {
+            const LogObjectList objlist(device, lib->Handle());
+            skip |= LogError("VUID-VkGraphicsPipelineCreateInfo-pLibraries-11594", objlist, library_loc,
+                             "(%s) was created with flags (%s), which is missing "
+                             "VK_PIPELINE_CREATE_2_OPACITY_MICROMAP_DISALLOW_MIXED_SPECIAL_INDEX_BIT_KHR, but %s is %s.",
+                             string_VkGraphicsPipelineLibraryFlagsEXT(lib->graphics_lib_type).c_str(),
+                             string_VkPipelineCreateFlags2(lib_pipeline_flags).c_str(), flags_loc.Fields().c_str(),
+                             string_VkPipelineCreateFlags2(pipeline_flags).c_str());
+        }
         const bool lib_has_retain_link_time_opt =
             (lib_pipeline_flags & VK_PIPELINE_CREATE_2_RETAIN_LINK_TIME_OPTIMIZATION_INFO_BIT_EXT) != 0;
         if (has_link_time_opt && !lib_has_retain_link_time_opt) {
@@ -694,10 +704,12 @@ bool CoreChecks::ValidateGraphicsPipelineLibrary(const vvl::Pipeline& pipeline, 
 
     if (pipeline.HasFullState()) {
         if (is_create_library) {
-            skip |= LogError("VUID-VkGraphicsPipelineCreateInfo-flags-06608", device, flags_loc,
-                             "(%s) includes VK_PIPELINE_CREATE_LIBRARY_BIT_KHR, but defines a complete set of state. (Did you "
-                             "forget to add VkGraphicsPipelineLibraryCreateInfoEXT with the library stages to create?)",
-                             string_VkPipelineCreateFlags2(pipeline_flags).c_str());
+            skip |=
+                LogError("VUID-VkGraphicsPipelineCreateInfo-flags-06608", device, flags_loc,
+                         "(%s) includes VK_PIPELINE_CREATE_LIBRARY_BIT_KHR, but defines a complete set of state.\nHint: Did you "
+                         "forget to add VkGraphicsPipelineLibraryCreateInfoEXT with the library stages to create?\nHint: Did you "
+                         "forget to remove VK_PIPELINE_CREATE_2_LIBRARY_BIT_KHR?",
+                         string_VkPipelineCreateFlags2(pipeline_flags).c_str());
         }
 
         // A valid pipeline layout must _always_ be provided, even if the pipeline is defined completely from libraries.
@@ -1371,12 +1383,15 @@ bool CoreChecks::ValidateGraphicsPipelineBlendEnable(const vvl::Pipeline& pipeli
         if (attachment_desc.format == VK_FORMAT_E5B9G9R9_UFLOAT_PACK32 &&
             !pipeline.IsDynamic(CB_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT)) {
             const VkColorComponentFlags& color_write_mask = pipeline.AttachmentStates()[i].colorWriteMask;
-            VkColorComponentFlags rgb = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT;
-            if ((color_write_mask & rgb) != rgb && (color_write_mask & rgb) != 0) {
+            const VkColorComponentFlags rgba =
+                VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+            if ((color_write_mask & rgba) != rgba && (color_write_mask & rgba) != 0) {
                 skip |= LogError("VUID-VkGraphicsPipelineCreateInfo-None-09043", device, create_info_loc.dot(Field::renderPass),
                                  "was created with pAttachments[%" PRIu32
                                  "].format of VK_FORMAT_E5B9G9R9_UFLOAT_PACK32, but pColorBlendState->pAttachments[%" PRIu32
-                                 "].colorWriteMask is %s.",
+                                 "].colorWriteMask is %s.\nThe 999E5 format is special as it overlaps the traditional 8-bit "
+                                 "boundary and has no real alpha channel. When updating, the driver needs the full RGBA mask in "
+                                 "order to properly handle this format.",
                                  attachment, i, string_VkColorComponentFlags(color_write_mask).c_str());
             }
         }
@@ -3319,14 +3334,17 @@ bool CoreChecks::ValidateGraphicsPipelineDynamicRendering(const vvl::Pipeline& p
 
                 if (color_format == VK_FORMAT_E5B9G9R9_UFLOAT_PACK32 &&
                     !pipeline.IsDynamic(CB_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT)) {
-                    VkColorComponentFlags rgb = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT;
-                    if ((color_blend_attachment.colorWriteMask & rgb) != rgb &&
-                        (color_blend_attachment.colorWriteMask & rgb) != 0) {
+                    const VkColorComponentFlags rgba =
+                        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+                    if ((color_blend_attachment.colorWriteMask & rgba) != rgba &&
+                        (color_blend_attachment.colorWriteMask & rgba) != 0) {
                         skip |= LogError("VUID-VkGraphicsPipelineCreateInfo-None-09043", device,
                                          create_info_loc.pNext(Struct::VkPipelineRenderingCreateInfo,
                                                                Field::pColorAttachmentFormats, color_index),
                                          "is VK_FORMAT_E5B9G9R9_UFLOAT_PACK32, but pColorBlendState->pAttachments[%" PRIu32
-                                         "].colorWriteMask is %s.",
+                                         "].colorWriteMask is %s.\nThe 999E5 format is special as it overlaps the traditional "
+                                         "8-bit boundary and has no real alpha channel. When updating, the driver needs the full "
+                                         "RGBA mask in order to properly handle this format.",
                                          color_index, string_VkColorComponentFlags(color_blend_attachment.colorWriteMask).c_str());
                     }
                 }
@@ -4116,18 +4134,21 @@ bool CoreChecks::ValidateDrawPipelineDynamicRenderpassSampleCount(const LastBoun
             const auto* attachment = attachment_info.image_view;
             if (!attachment) {
                 continue;
-            } else if (attachment_info.IsColor() &&
-                       sample_count_info->pColorAttachmentSamples[attachment_info.type_index] != attachment->samples) {
-                const LogObjectList objlist(cb_state.Handle(), pipeline.Handle(), attachment->Handle(),
-                                            attachment->create_info.image);
-                skip |=
-                    LogError(CreateActionVuid(loc.function, vvl::ActionVUID::DYNAMIC_RENDERING_COLOR_SAMPLE_06185), objlist, loc,
-                             "%s was created with an image sample count (%s) which does not match the corresponding "
-                             "VkAttachmentSampleCountInfoAMD::pColorAttachmentSamples[%" PRIu32 "] (%s)",
-                             attachment_info.Describe(cb_state, i).c_str(), string_VkSampleCountFlagBits(attachment->samples),
-                             attachment_info.type_index,
-                             string_VkSampleCountFlagBits(sample_count_info->pColorAttachmentSamples[attachment_info.type_index]));
-
+            } else if (attachment_info.IsColor()) {
+                const bool has_color_samples = sample_count_info->pColorAttachmentSamples &&
+                                               attachment_info.type_index < sample_count_info->colorAttachmentCount;
+                if (has_color_samples &&
+                    sample_count_info->pColorAttachmentSamples[attachment_info.type_index] != attachment->samples) {
+                    const LogObjectList objlist(cb_state.Handle(), pipeline.Handle(), attachment->Handle(),
+                                                attachment->create_info.image);
+                    skip |= LogError(
+                        CreateActionVuid(loc.function, vvl::ActionVUID::DYNAMIC_RENDERING_COLOR_SAMPLE_06185), objlist, loc,
+                        "%s was created with an image sample count (%s) which does not match the corresponding "
+                        "VkAttachmentSampleCountInfoAMD::pColorAttachmentSamples[%" PRIu32 "] (%s)",
+                        attachment_info.Describe(cb_state, i).c_str(), string_VkSampleCountFlagBits(attachment->samples),
+                        attachment_info.type_index,
+                        string_VkSampleCountFlagBits(sample_count_info->pColorAttachmentSamples[attachment_info.type_index]));
+                }
             } else if (attachment_info.IsDepthOrStencil() &&
                        sample_count_info->depthStencilAttachmentSamples != attachment->samples) {
                 const LogObjectList objlist(cb_state.Handle(), pipeline.Handle(), attachment->Handle(),

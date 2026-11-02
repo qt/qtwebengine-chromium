@@ -31,6 +31,15 @@ BnplStrategy::GetBeforeViewSwitchAction() {
   NOTREACHED();
 }
 
+BnplStrategy::BnplAiBasedAmountExtractionReturnedNextAction
+BnplStrategy::GetNextActionOnAiBasedAmountExtractionReturned() {
+  NOTREACHED();
+}
+
+BnplStrategy::UiDismissalAction BnplStrategy::GetUiDismissalAction() {
+  NOTREACHED();
+}
+
 bool BnplStrategy::ShouldRemoveExistingUiOnServerReturn(
     PaymentsAutofillClient::PaymentsRpcResult result) {
   NOTREACHED();

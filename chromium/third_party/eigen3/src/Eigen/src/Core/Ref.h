@@ -56,7 +56,7 @@ struct traits<Ref<PlainObjectType_, Options_, StrideType_> >
       MatchAtCompileTime = HasDirectAccess && StorageOrderMatch && InnerStrideMatch && OuterStrideMatch &&
                            AlignmentMatch && ScalarTypeMatch
     };
-    typedef std::conditional_t<MatchAtCompileTime, std::true_type, std::false_type> type;
+    typedef bool_constant<MatchAtCompileTime> type;
   };
 };
 
@@ -126,12 +126,11 @@ class RefBase : public MapBase<Derived> {
     // Determine runtime rows and columns.
     Index rows = expr.rows();
     Index cols = expr.cols();
-    EIGEN_IF_CONSTEXPR(PlainObjectType::RowsAtCompileTime == 1) {
+    EIGEN_IF_CONSTEXPR (PlainObjectType::RowsAtCompileTime == 1) {
       eigen_assert(expr.rows() == 1 || expr.cols() == 1);
       rows = 1;
       cols = expr.size();
-    }
-    else EIGEN_IF_CONSTEXPR(PlainObjectType::ColsAtCompileTime == 1) {
+    } else EIGEN_IF_CONSTEXPR (PlainObjectType::ColsAtCompileTime == 1) {
       eigen_assert(expr.rows() == 1 || expr.cols() == 1);
       rows = expr.size();
       cols = 1;
@@ -203,7 +202,7 @@ class RefBase : public MapBase<Derived> {
  * \brief A matrix or vector expression mapping an existing expression
  *
  * \tparam PlainObjectType the equivalent matrix type of the mapped data
- * \tparam Options specifies the pointer alignment in bytes. It can be: \c #Aligned128, , \c #Aligned64, \c #Aligned32,
+ * \tparam Options specifies the pointer alignment in bytes. It can be: \c #Aligned128, \c #Aligned64, \c #Aligned32,
  * \c #Aligned16, \c #Aligned8 or \c #Unaligned. The default is \c #Unaligned. \tparam StrideType optionally specifies
  * strides. By default, Ref implies a contiguous storage along the inner dimension (inner stride==1), but accepts a
  * variable outer stride (leading dimension). This can be overridden by specifying strides. The type passed here must be

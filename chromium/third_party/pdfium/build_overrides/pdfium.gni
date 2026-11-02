@@ -9,6 +9,10 @@
 # Default: Use a bundled FreeType.
 pdf_bundle_freetype_override = true
 
+# Build PDFium with experimental Brotli compression support.
+# Default: Brotli support is disabled until PDF 2.0 spec is confirmed.
+pdf_enable_brotli_override = false
+
 # Build PDFium either with or without v8 support.
 # Default: With V8 support.
 pdf_enable_v8_override = true
@@ -38,6 +42,11 @@ pdf_skia_font_manager_target_override = ""
 # library is selectable at runtime.
 # The default is to use FreeType when `pdf_enable_fontations_override` is false.
 pdf_enable_fontations_override = false
+
+# Build PDFium with Rust-based BMP decoder. If enabled, it ensures that PDFium
+# doesn't depend on its native C++ BMP decoder. Note that `pdf_enable_rust_bmp`
+# requires Skia and Rust support.
+pdf_enable_rust_bmp_override = false
 
 # Build PDFium with Rust-based PNG decoder and encoder.
 # If enabled, it ensures that PDFium doesn't depend on `libpng`.

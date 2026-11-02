@@ -26,6 +26,7 @@
 #include "src/utils/array_2d.h"
 #include "src/utils/common.h"
 #include "src/utils/compiler_attributes.h"
+#include "src/utils/constants.h"
 #include "src/utils/logging.h"
 
 #if defined(FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION)

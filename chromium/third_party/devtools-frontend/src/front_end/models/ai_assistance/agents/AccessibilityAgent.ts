@@ -13,22 +13,21 @@ import {ChangeManager} from '../ChangeManager.js';
 import {LighthouseFormatter} from '../data_formatters/LighthouseFormatter.js';
 import {debugLog} from '../debug.js';
 import {ExtensionScope} from '../ExtensionScope.js';
+import {ToolName} from '../tools/Tool.js';
+import {ToolRegistry} from '../tools/ToolRegistry.js';
 
 import {
   AiAgent,
   type AiWidget,
-  type ContextDetail,
   type ContextResponse,
-  ConversationContext,
+  type ConversationContext,
   type RequestOptions,
   ResponseType,
 } from './AiAgent.js';
 import {
   type CreateExtensionScopeFunction,
-  executeJavaScriptFunction,
   type ExecuteJsAgentOptions,
   executeJsCode,
-  JavascriptExecutor
 } from './ExecuteJavascript.js';
 
 /**
@@ -81,31 +80,6 @@ If the user asks a question that requires an investigation of a problem, use thi
     - [Suggestion 2]
 `;
 
-export class AccessibilityContext extends ConversationContext<LHModel.ReporterTypes.ReportJSON> {
-  #lh: LHModel.ReporterTypes.ReportJSON;
-
-  constructor(report: LHModel.ReporterTypes.ReportJSON) {
-    super();
-    this.#lh = report;
-  }
-
-  #url(): string {
-    return this.#lh.finalUrl ?? this.#lh.finalDisplayedUrl;
-  }
-
-  override getOrigin(): string {
-    return new URL(this.#url()).origin;
-  }
-
-  override getItem(): LHModel.ReporterTypes.ReportJSON {
-    return this.#lh;
-  }
-
-  override getTitle(): string {
-    return `Lighthouse report: ${this.#url()}`;
-  }
-}
-
 /**
  * One agent instance handles one conversation. Create a new agent
  * instance for a new conversation.
@@ -117,28 +91,17 @@ export class AccessibilityAgent extends AiAgent<LHModel.ReporterTypes.ReportJSON
       (overrides?: LHModel.RunTypes.RunOverrides) => Promise<LHModel.ReporterTypes.ReportJSON|null>;
 
   #execJs: typeof executeJsCode;
-  #javascriptExecutor: JavascriptExecutor;
   #changes: ChangeManager;
   #createExtensionScope: CreateExtensionScopeFunction;
-  #currentTurnId = 0;
 
   constructor(opts: ExecuteJsAgentOptions) {
     super(opts);
     this.#lighthouseRecording = opts.lighthouseRecording;
-    this.#changes = opts.changeManager || new ChangeManager();
+    this.#changes = opts.changeManager || new ChangeManager(opts.targetManager);
     this.#execJs = opts.execJs ?? executeJsCode;
-    this.#createExtensionScope =
-        opts.createExtensionScope ?? ((changes: ChangeManager) => {
-          return new ExtensionScope(changes, this.sessionId, this.#getDocumentBodyNode(), this.#currentTurnId);
-        });
-    this.#javascriptExecutor = new JavascriptExecutor(
-        {
-          executionMode: this.executionMode,
-          getContextNode: () => this.#getDocumentBodyNode(),
-          createExtensionScope: this.#createExtensionScope.bind(this),
-          changes: this.#changes,
-        },
-        this.#execJs);
+    this.#createExtensionScope = opts.createExtensionScope ?? ((changes: ChangeManager) => {
+                                   return new ExtensionScope(changes, this.sessionId, this.#getDocumentBodyNode());
+                                 });
   }
 
   get userTier(): string|undefined {
@@ -161,13 +124,8 @@ export class AccessibilityAgent extends AiAgent<LHModel.ReporterTypes.ReportJSON
     };
   }
 
-  override preambleFeatures(): string[] {
-    return ['function_calling'];
-  }
-
   protected override async preRun(): Promise<void> {
-    this.#currentTurnId++;
-    const target = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
+    const target = this.targetManager.primaryPageTarget();
     const domModel = target?.model(SDK.DOMModel.DOMModel);
     // We need to ensure the document is requested so that #getDocumentBodyNode()
     // can return a valid node for the JavaScript execution context.
@@ -186,10 +144,7 @@ export class AccessibilityAgent extends AiAgent<LHModel.ReporterTypes.ReportJSON
    * so that the AI has a valid $0 to start with.
    */
   #getDocumentBodyNode(): SDK.DOMModel.DOMNode|null {
-    const document = SDK.TargetManager.TargetManager.instance()
-                         .primaryPageTarget()
-                         ?.model(SDK.DOMModel.DOMModel)
-                         ?.existingDocument();
+    const document = this.targetManager.primaryPageTarget()?.model(SDK.DOMModel.DOMModel)?.existingDocument();
     return document?.body ?? document ?? null;
   }
 
@@ -200,14 +155,17 @@ export class AccessibilityAgent extends AiAgent<LHModel.ReporterTypes.ReportJSON
       return;
     }
 
-    yield {
-      type: ResponseType.CONTEXT,
-      details: this.#createContextDetails(lhr),
-    };
+    const details = await lhr.getUserFacingDetails();
+    if (details) {
+      yield {
+        type: ResponseType.CONTEXT,
+        details,
+      };
+    }
   }
 
   async #resolvePathToNode(path: string): Promise<SDK.DOMModel.DOMNode|null> {
-    const target = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
+    const target = this.targetManager.primaryPageTarget();
     if (!target) {
       return null;
     }
@@ -239,51 +197,7 @@ export class AccessibilityAgent extends AiAgent<LHModel.ReporterTypes.ReportJSON
   }
 
   #declareFunctions(): void {
-    this.declareFunction('executeJavaScript', executeJavaScriptFunction(this.#javascriptExecutor));
-
-    this.declareFunction<{explanation: string}, {audits: string}>('runAccessibilityAudits', {
-      description:
-          'Triggers new Lighthouse accessibility audits in snapshot mode. Use this if the user has made changes to the page and you want to re-evaluate the accessibility audits.',
-      parameters: {
-        type: Host.AidaClient.ParametersTypes.OBJECT,
-        description: '',
-        nullable: false,
-        properties: {
-          explanation: {
-            type: Host.AidaClient.ParametersTypes.STRING,
-            description: 'Explain why you want to run new audits.',
-            nullable: false,
-          },
-        },
-        required: ['explanation'],
-      },
-      displayInfoFromArgs: params => {
-        return {
-          title: i18n.i18n.lockedString('Running accessibility audits'),
-          thought: params.explanation,
-          action: 'runAccessibilityAudits()'
-        };
-      },
-      handler: async params => {
-        debugLog('Function call: runAccessibilityAudits', params);
-        if (!this.#lighthouseRecording) {
-          return {error: 'Lighthouse recording is not available.'};
-        }
-        const report = await this.#lighthouseRecording({
-          mode: 'snapshot',
-          categoryIds: ['accessibility'],
-          isAIControlled: true,
-        });
-        if (!report) {
-          return {error: 'Failed to run accessibility audits.'};
-        }
-        const audits = new LighthouseFormatter().audits(report, 'accessibility');
-        return {
-          result: {audits},
-          widgets: [{name: 'LIGHTHOUSE_REPORT', data: {report, snapshotReport: true}}],
-        };
-      }
-    });
+    const isImported = this.context?.getItem().isImported;
 
     this.declareFunction<{categoryId: LHModel.RunTypes.CategoryId}, {audits: string}>('getLighthouseAudits', {
       description:
@@ -305,7 +219,7 @@ export class AccessibilityAgent extends AiAgent<LHModel.ReporterTypes.ReportJSON
       displayInfoFromArgs: params => {
         return {
           title: i18n.i18n.lockedString(`Getting Lighthouse audits for ${params.categoryId}`),
-          action: `getLighthouseAudits('${params.categoryId}')`
+          action: `getLighthouseAudits('${params.categoryId}')`,
         };
       },
       handler: async params => {
@@ -319,7 +233,84 @@ export class AccessibilityAgent extends AiAgent<LHModel.ReporterTypes.ReportJSON
           result: {audits},
           widgets: [{name: 'LIGHTHOUSE_REPORT', data: {report}}],
         };
-      }
+      },
+    });
+
+    const executeJsTool = ToolRegistry.get(ToolName.EXECUTE_JAVASCRIPT);
+    if (!executeJsTool) {
+      throw new Error('Required tool "executeJavaScript" not found');
+    }
+    this.declareFunction(executeJsTool.name, {
+      description: executeJsTool.description,
+      parameters: executeJsTool.parameters,
+      displayInfoFromArgs: executeJsTool.displayInfoFromArgs,
+      handler: async (args, options) => {
+        if (isImported) {
+          return {
+            error: 'Cannot use this tool on an imported file.',
+          };
+        }
+        return await executeJsTool.handler(
+            args,
+            {
+              conversationContext: this.context ?? null,
+              changeManager: this.#changes,
+              createExtensionScope: this.#createExtensionScope.bind(this),
+              execJs: this.#execJs,
+              getExecutionContextNode: () => this.#getDocumentBodyNode(),
+            },
+            options,
+        );
+      },
+    });
+
+    this.declareFunction<{explanation: string}, {audits: string}>('runAccessibilityAudits', {
+      description:
+          'Triggers new Lighthouse accessibility audits in snapshot mode. Use this if the user has made changes to the page and you want to re-evaluate the accessibility audits.',
+      parameters: {
+        type: Host.AidaClient.ParametersTypes.OBJECT,
+        description: '',
+        nullable: false,
+        properties: {
+          explanation: {
+            type: Host.AidaClient.ParametersTypes.STRING,
+            description: 'Explain why you want to run new audits.',
+            nullable: false,
+          },
+        },
+        required: ['explanation'],
+      },
+      displayInfoFromArgs: params => {
+        return {
+          title: i18n.i18n.lockedString('Running accessibility audits'),
+          thought: params.explanation,
+          action: 'runAccessibilityAudits()',
+        };
+      },
+      handler: async params => {
+        debugLog('Function call: runAccessibilityAudits', params);
+        if (isImported) {
+          return {
+            error: 'Cannot use this tool on an imported file.',
+          };
+        }
+        if (!this.#lighthouseRecording) {
+          return {error: 'Lighthouse recording is not available.'};
+        }
+        const report = await this.#lighthouseRecording({
+          mode: 'snapshot',
+          categoryIds: ['accessibility'],
+          isAIControlled: true,
+        });
+        if (!report) {
+          return {error: 'Failed to run accessibility audits.'};
+        }
+        const audits = new LighthouseFormatter().audits(report, 'accessibility');
+        return {
+          result: {audits},
+          widgets: [{name: 'LIGHTHOUSE_REPORT', data: {report, snapshotReport: true}}],
+        };
+      },
     });
 
     this.declareFunction<{
@@ -352,11 +343,11 @@ export class AccessibilityAgent extends AiAgent<LHModel.ReporterTypes.ReportJSON
             nullable: false,
             items: {
               type: Host.AidaClient.ParametersTypes.STRING,
-              description: 'A CSS style property name to retrieve. For example, \'background-color\'.'
-            }
+              description: 'A CSS style property name to retrieve. For example, \'background-color\'.',
+            },
           },
         },
-        required: ['explanation', 'path', 'styleProperties']
+        required: ['explanation', 'path', 'styleProperties'],
       },
       displayInfoFromArgs: params => {
         return {
@@ -367,6 +358,11 @@ export class AccessibilityAgent extends AiAgent<LHModel.ReporterTypes.ReportJSON
       },
       handler: async params => {
         debugLog('Function call: getStyles', params);
+        if (isImported) {
+          return {
+            error: 'Cannot use this tool on an imported file.',
+          };
+        }
         const node = await this.#resolvePathToNode(params.path);
         if (!node) {
           return {error: `Could not find the element with path: ${params.path}`};
@@ -392,7 +388,7 @@ export class AccessibilityAgent extends AiAgent<LHModel.ReporterTypes.ReportJSON
               backendNodeId: node.backendNodeId(),
               matchedCascade: matchedStyles,
               properties: params.styleProperties,
-            }
+            },
           });
         }
 
@@ -426,7 +422,7 @@ export class AccessibilityAgent extends AiAgent<LHModel.ReporterTypes.ReportJSON
             nullable: false,
           },
         },
-        required: ['explanation', 'path']
+        required: ['explanation', 'path'],
       },
       displayInfoFromArgs: params => {
         return {
@@ -437,6 +433,11 @@ export class AccessibilityAgent extends AiAgent<LHModel.ReporterTypes.ReportJSON
       },
       handler: async params => {
         debugLog('Function call: getElementAccessibilityDetails', params);
+        if (isImported) {
+          return {
+            error: 'Cannot use this tool on an imported file.',
+          };
+        }
         const node = await this.#resolvePathToNode(params.path);
         if (!node) {
           return {error: `Could not find the element with path: ${params.path}`};
@@ -479,6 +480,8 @@ export class AccessibilityAgent extends AiAgent<LHModel.ReporterTypes.ReportJSON
           name: 'DOM_TREE',
           data: {
             root: snapshot,
+            title: i18n.i18n.lockedString('Element details'),
+            accessibleRevealLabel: i18n.i18n.lockedString('Reveal element'),
           },
         });
 
@@ -490,38 +493,14 @@ export class AccessibilityAgent extends AiAgent<LHModel.ReporterTypes.ReportJSON
     });
   }
 
-  /**
-   * This is the initial payload we send at the start of a conversation.
-   * Because the agent is focused on Accessibility, we include the
-   * Accessibility Audits summary in the payload to avoid an extra round step of
-   * the AI querying them.
-   */
-  #getInitialPayload(context: ConversationContext<LHModel.ReporterTypes.ReportJSON>): string {
-    const report = context.getItem();
-    const formatter = new LighthouseFormatter();
-    const summary = formatter.summary(report);
-    const audits = formatter.audits(report, 'accessibility');
-    const allFailed = Object.values(report.categories).every(category => category.score === null);
-    if (allFailed) {
-      return '**CRITICAL**: The Lighthouse report failed to record or all category scores are error/unavailable (n/a). This indicates a failed run or missing data.';
-    }
-    return `# Lighthouse Report:\n${summary}\n${audits}`;
-  }
-
   override async enhanceQuery(query: string, lhr: ConversationContext<LHModel.ReporterTypes.ReportJSON>|null):
       Promise<string> {
     this.clearDeclaredFunctions();
     if (lhr) {
       this.#declareFunctions();
     }
-    const enhancedQuery = lhr ? `${this.#getInitialPayload(lhr)}\n# User request:\n\n` : '';
+    const promptDetails = lhr ? await lhr.getPromptDetails() : null;
+    const enhancedQuery = promptDetails ? `${promptDetails}\n# User request:\n\n` : '';
     return `${enhancedQuery}${query}`;
-  }
-
-  #createContextDetails(lhr: ConversationContext<LHModel.ReporterTypes.ReportJSON>):
-      [ContextDetail, ...ContextDetail[]] {
-    return [
-      {title: 'Lighthouse report', text: this.#getInitialPayload(lhr)},
-    ];
   }
 }

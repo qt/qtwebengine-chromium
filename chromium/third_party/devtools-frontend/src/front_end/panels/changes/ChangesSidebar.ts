@@ -17,7 +17,7 @@ import changesSidebarStyles from './changesSidebar.css.js';
 
 const UIStrings = {
   /**
-   * @description Name of an item from source map
+   * @description Tooltip title for a file item in the Changes sidebar when the file is generated from a source map.
    * @example {compile.html} PH1
    */
   sFromSourceMap: '{PH1} (from source map)',
@@ -95,7 +95,7 @@ export class ChangesSidebar extends Common.ObjectWrapper.eventMixin<EventTypes, 
     const input: ViewInput = {
       onSelect: uiSourceCode => this.#selectionChanged(uiSourceCode),
       sourceCodes: this.#sourceCodes,
-      selectedSourceCode: this.#selectedUISourceCode
+      selectedSourceCode: this.#selectedUISourceCode,
     };
     this.#view(input, {}, this.contentElement);
   }

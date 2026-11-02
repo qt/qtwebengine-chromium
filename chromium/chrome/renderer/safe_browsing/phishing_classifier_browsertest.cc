@@ -23,12 +23,12 @@
 #include "chrome/test/base/chrome_render_view_test.h"
 #include "components/safe_browsing/buildflags.h"
 #include "components/safe_browsing/content/common/safe_browsing.mojom.h"
-#include "components/safe_browsing/content/renderer/phishing_classifier/features.h"
 #include "components/safe_browsing/content/renderer/phishing_classifier/murmurhash3_util.h"
 #include "components/safe_browsing/content/renderer/phishing_classifier/phishing_image_embedder.h"
-#include "components/safe_browsing/content/renderer/phishing_classifier/scorer.h"
 #include "components/safe_browsing/core/common/fbs/client_model_generated.h"
 #include "components/safe_browsing/core/common/features.h"
+#include "components/safe_browsing/core/common/phishing_classifier/features.h"
+#include "components/safe_browsing/core/common/phishing_classifier/scorer.h"
 #include "components/safe_browsing/core/common/proto/client_model.pb.h"
 #include "components/safe_browsing/core/common/proto/csd.pb.h"
 #include "content/public/renderer/render_frame.h"
@@ -348,6 +348,27 @@ TEST_F(PhishingClassifierTest, DisableDetection) {
   // Set a NULL scorer, which turns detection back off.
   ScorerStorage::GetInstance()->SetScorer(nullptr);
   EXPECT_FALSE(classifier_->is_ready());
+}
+
+TEST_F(PhishingClassifierTest, CancelWhenNotReady) {
+  EXPECT_TRUE(classifier_->is_ready());
+  // Set a NULL scorer, which turns detection back off.
+  ScorerStorage::GetInstance()->SetScorer(nullptr);
+  EXPECT_FALSE(classifier_->is_ready());
+
+  // This used to DCHECK, but now it should safely do nothing.
+  classifier_->CancelPendingClassification();
+}
+
+TEST_F(PhishingClassifierTest, CancelImageEmbeddingWhenNotReady) {
+  SetUpImageEmbedder();
+  EXPECT_TRUE(image_embedder_->is_ready());
+  // Set a NULL scorer, which turns detection back off.
+  ScorerStorage::GetInstance()->SetScorer(nullptr);
+  EXPECT_FALSE(image_embedder_->is_ready());
+
+  // This used to DCHECK, but now it should safely do nothing.
+  image_embedder_->CancelPendingImageEmbedding();
 }
 
 #if BUILDFLAG(IS_ANDROID)

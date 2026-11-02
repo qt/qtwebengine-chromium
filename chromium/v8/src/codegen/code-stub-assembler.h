@@ -11,6 +11,7 @@
 
 #include "src/base/functional/function-ref.h"
 #include "src/base/macros.h"
+#include "src/base/strong-alias.h"
 #include "src/codegen/bailout-reason.h"
 #include "src/codegen/heap-object-list.h"
 #include "src/codegen/tnode.h"
@@ -24,11 +25,11 @@
 #include "src/objects/cell.h"
 #include "src/objects/dictionary.h"
 #include "src/objects/feedback-vector.h"
-#include "src/objects/fixed-array.h"
 #include "src/objects/foreign.h"
 #include "src/objects/heap-number.h"
 #include "src/objects/heap-object.h"
 #include "src/objects/hole.h"
+#include "src/objects/js-collection.h"
 #include "src/objects/js-function.h"
 #include "src/objects/js-objects.h"
 #include "src/objects/js-promise.h"
@@ -460,6 +461,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                             Label* if_overflow);
   TNode<Smi> TrySmiAdd(TNode<Smi> a, TNode<Smi> b, Label* if_overflow);
   TNode<Smi> TrySmiSub(TNode<Smi> a, TNode<Smi> b, Label* if_overflow);
+  TNode<Smi> TrySmiMul(TNode<Smi> lhs, TNode<Smi> rhs, Label* bailout);
   TNode<Smi> TrySmiAbs(TNode<Smi> a, Label* if_overflow);
 
   TNode<Smi> UnsignedSmiShl(TNode<Smi> a, int shift) {
@@ -820,6 +822,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<Int32T> TruncateWordToInt32(TNode<WordT> value);
   TNode<Int32T> TruncateIntPtrToInt32(TNode<IntPtrT> value);
   TNode<Word32T> TruncateWord64ToWord32(TNode<Word64T> value);
+  TNode<Uint16T> TruncateWord32ToUint16(TNode<Word32T> value);
 
   // Check a value for smi-ness
   TNode<BoolT> TaggedIsSmi(TNode<MaybeObject> a);
@@ -921,6 +924,15 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   void BranchIfJSReceiver(TNode<Object> object, Label* if_true,
                           Label* if_false);
 
+  TNode<BoolT> HasIndexedInterceptor(TNode<Map> map);
+
+  // Checks if given iterable is an indexed interceptor that supports fast
+  // iterable-to-list conversion. In case one of the required checks fail
+  // it also resets the supports-fast-iterable-to-list bit in the
+  // interceptor's map.
+  void BranchIfFastIterableToListInterceptor(TNode<JSAnyNotSmi> iterable,
+                                             Label* if_true, Label* if_false);
+
   // Branches to {if_true} when --force-slow-path flag has been passed.
   // It's used for testing to ensure that slow path implementation behave
   // equivalent to corresponding fast paths (where applicable).
@@ -1003,6 +1015,21 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                                     TNode<RawPtrT> pointer,
                                     ExternalPointerTag tag);
 
+  //
+  // CppHeapPointerT-related functionality.
+  //
+
+  // Load a CppHeap pointer value from an object.
+  TNode<RawPtrT> LoadCppHeapPointerFromObject(TNode<HeapObject> object,
+                                              int offset,
+                                              CppHeapPointerTag tag) {
+    return LoadCppHeapPointerFromObject(object, IntPtrConstant(offset), tag);
+  }
+
+  TNode<RawPtrT> LoadCppHeapPointerFromObject(TNode<HeapObject> object,
+                                              TNode<IntPtrT> offset,
+                                              CppHeapPointerTag tag);
+
   // Load a trusted pointer field.
   // When the sandbox is enabled, these are indirect pointers using the trusted
   // pointer table. Otherwise they are regular tagged fields.
@@ -1030,12 +1057,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<TrustedObject> LoadIndirectPointerFromObject(
       TNode<HeapObject> object, int offset, IndirectPointerTagRange tag_range);
 
-  // Determines whether the given indirect pointer handle is a trusted pointer
-  // handle or a code pointer handle.
-  TNode<BoolT> IsTrustedPointerHandle(TNode<IndirectPointerHandleT> handle);
-
-  // Retrieve the heap object referenced by the given indirect pointer handle,
-  // which can either be a trusted pointer handle or a code pointer handle.
+  // Retrieve the heap object referenced by the given indirect pointer handle.
   TNode<TrustedObject> ResolveIndirectPointerHandle(
       TNode<IndirectPointerHandleT> handle, IndirectPointerTagRange tag_range);
 
@@ -1044,24 +1066,6 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
       TVariable<Uint16T>* type_out, Label* if_default,
       const std::initializer_list<std::pair<InstanceType, Label*>>& cases,
       IndirectPointerTagRange tag_range = kAllIndirectPointerTags);
-
-  // Retrieve the Code object referenced by the given trusted pointer handle.
-  TNode<Code> ResolveCodePointerHandle(TNode<IndirectPointerHandleT> handle);
-
-  // Retrieve the heap object referenced by the given trusted pointer handle.
-  TNode<TrustedObject> ResolveTrustedPointerHandle(
-      TNode<IndirectPointerHandleT> handle, IndirectPointerTagRange tag_range);
-
-  // Helper function to compute the offset into the code pointer table from a
-  // code pointer handle.
-  TNode<UintPtrT> ComputeCodePointerTableEntryOffset(
-      TNode<IndirectPointerHandleT> handle);
-
-  // Load the value of Code pointer table corresponding to
-  // IsolateGroup::current()->code_pointer_table_.
-  // Only available when the sandbox is enabled.
-  TNode<RawPtrT> LoadCodePointerTableBase();
-
 #endif
 
   TNode<JSDispatchHandleT> InvalidDispatchHandleConstant();
@@ -1735,17 +1739,26 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   TNode<Uint32T> LoadFunctionKind(TNode<JSFunction> function);
   TNode<BoolT> IsGeneratorFunction(TNode<JSFunction> function);
-  void GotoIfPrototypeRequiresRuntimeLookup(TNode<JSFunction> function,
+  void GotoIfPrototypeRequiresRuntimeLookup(TNode<HeapObject> function,
                                             TNode<Map> map, Label* runtime);
 
-  TNode<Union<JSReceiver, Map, TheHole>> LoadJSFunctionPrototypeOrInitialMap(
-      TNode<JSFunction> function);
+  TNode<UnionOf<JSReceiver, Map, Tuple2, TheHole>>
+  LoadJSFunctionPrototypeOrInitialMap(TNode<JSFunction> function);
   void StoreJSFunctionPrototypeOrInitialMap(
-      TNode<JSFunction> function, TNode<Union<JSReceiver, Map, TheHole>> value);
+      TNode<JSFunction> function,
+      TNode<UnionOf<JSReceiver, Map, Tuple2, TheHole>> value);
 
-  // Load the "prototype" property of a JSFunction.
-  TNode<JSPrototype> LoadJSFunctionPrototype(TNode<JSFunction> function,
-                                             Label* if_bailout);
+  // Load the initial map of a JSFunctionWithPrototype.
+  TNode<Map> LoadJSFunctionInitialMap(TNode<JSFunction> function,
+                                      Label* if_bailout);
+
+  // Load the "prototype" property of a JSFunctionWithPrototype.
+  // If |if_non_instance_prototype| label is provided then the non-instance
+  // prototype value will be read to |var_non_instance_prototype|.
+  TNode<JSAny> LoadJSFunctionPrototype(
+      TNode<JSFunction> function, Label* if_bailout,
+      Label* if_non_instance_prototype = nullptr,
+      TVariable<JSAny>* var_non_instance_prototype = nullptr);
 
   TNode<Object> LoadSharedFunctionInfoUntrustedData(
       TNode<SharedFunctionInfo> sfi);
@@ -2401,18 +2414,18 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                                       TNode<IntPtrT> from_index,
                                       TNode<IntPtrT> to_index);
 
-  enum class DestroySource { kNo, kYes };
+  using DestroySource = base::StrongAlias<struct DestroySourceTag, bool>;
 
   // Increment the call count for a CALL_IC or construct call.
   // The call count is located at feedback_vector[slot_id + 1].
   void IncrementCallCount(TNode<FeedbackVector> feedback_vector,
                           TNode<UintPtrT> slot_id);
 
-  // Specify DestroySource::kYes if {from_array} is being supplanted by
+  // Specify DestroySource{true} if {from_array} is being supplanted by
   // {to_array}. This offers a slight performance benefit by simply copying the
   // array word by word. The source may be destroyed at the end of this macro.
   //
-  // Otherwise, specify DestroySource::kNo for operations where an Object is
+  // Otherwise, specify DestroySource{false} for operations where an Object is
   // being cloned, to ensure that mutable HeapNumbers are unique between the
   // source and cloned object.
   void CopyPropertyArrayValues(TNode<HeapObject> from_array,
@@ -2717,11 +2730,13 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                               Label* if_number, TVariable<Word32T>* var_word32,
                               Label* if_bigint, Label* if_bigint64,
                               TVariable<BigInt>* var_maybe_bigint);
+  using FeedbackUpdater = std::function<void(TNode<Smi>)>;
   struct FeedbackValues {
     TVariable<Smi>* var_feedback = nullptr;
     const LazyNode<HeapObject>* maybe_feedback_vector = nullptr;
     TNode<UintPtrT>* slot = nullptr;
     UpdateFeedbackMode update_mode = UpdateFeedbackMode::kNoFeedback;
+    const FeedbackUpdater* feedback_updater = nullptr;
   };
   void TaggedToWord32OrBigIntWithFeedback(TNode<Context> context,
                                           TNode<Object> value, Label* if_number,
@@ -2972,6 +2987,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<BoolT> IsJSSharedStruct(TNode<HeapObject> object);
   TNode<BoolT> IsJSSharedStruct(TNode<Object> object);
   TNode<BoolT> IsJSWrappedFunction(TNode<HeapObject> object);
+  TNode<BoolT> IsMapMap(TNode<Map> map);
   TNode<BoolT> IsMap(TNode<HeapObject> object);
   TNode<BoolT> IsMapInstanceType(TNode<Int32T> instance_type);
   TNode<BoolT> IsName(TNode<HeapObject> object);
@@ -3162,7 +3178,8 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   // Load a character from a String (might flatten a ConsString).
   TNode<Uint16T> StringCharCodeAt(TNode<String> string, TNode<UintPtrT> index);
   // Return the single character string with only {code}.
-  TNode<String> StringFromSingleCharCode(TNode<Int32T> code);
+  TNode<String> StringFromSingleCharCode(TNode<Uint16T> code);
+  TNode<String> StringFromSingleCharCode(TNode<Uint8T> code);
   // Return the one byte single character string with only {code}.
   TNode<String> StringFromSingleOneByteCharCode(TNode<Uint8T> code);
 
@@ -3918,6 +3935,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                            TNode<HeapObject> maybe_feedback_vector,
                            TNode<UintPtrT> slot_id);
 
+  template <typename Feedback>
   void UpdateEmbeddedFeedback(TNode<Smi> feedback,
                               TNode<BytecodeArray> bytecode_array,
                               TNode<IntPtrT> feedback_offset);
@@ -3936,12 +3954,14 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   // existing_feedback is nullptr.
   void OverwriteFeedback(TVariable<Smi>* existing_feedback, int new_feedback);
 
-  // Convert comparison feedback to corresponding feedback index.
-  TNode<Int32T> EncodeCompareOperationFeedback(TNode<Smi> feedback_value);
+  // Convert feedback value to corresponding feedback index.
+  template <typename Feedback>
+  TNode<Int32T> EncodeEmbeddedFeedback(TNode<Smi> feedback_value);
 
-  // Combine comparison feedback index using transition map.
-  TNode<Uint8T> CombineCompareOperationFeedback(
-      TNode<Int32T> old_feedback_index, TNode<Int32T> current_feedback_index);
+  // Combine feedback index using transition map.
+  template <typename Feedback>
+  TNode<Uint8T> CombineEmbeddedFeedback(TNode<Int32T> old_feedback_index,
+                                        TNode<Int32T> current_feedback_index);
 
   // Check if a property name might require protector invalidation when it is
   // used for a property store or deletion.
@@ -4039,7 +4059,10 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   enum class IndexAdvanceMode { kPre, kPost };
   enum class IndexAdvanceDirection { kUp, kDown };
-  enum class LoopUnrollingMode { kNo, kYes };
+  using LoopUnrollingMode =
+      base::StrongAlias<struct LoopUnrollingModeTag, bool>;
+  static constexpr LoopUnrollingMode kNoLoopUnrolling{false};
+  static constexpr LoopUnrollingMode kLoopUnrolling{true};
 
   template <typename TIndex>
   using FastLoopBody = std::function<void(TNode<TIndex> index)>;
@@ -4242,6 +4265,35 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                                        TNode<Object> rhs,
                                        TNode<UintPtrT> feedback_offset,
                                        Builtin fallback_builtin);
+
+  void GenerateSmiBinaryOp(Operation op, TNode<Object> lhs, TNode<Object> rhs,
+                           TNode<UintPtrT> feedback_offset,
+                           Builtin fallback_builtin);
+
+  void TailCallPatchBinopToNumberHandler(TNode<Number> result,
+                                         TNode<UintPtrT> feedback_offset);
+
+  void GenerateTrySmiBinaryOpAndWiden(Operation op, TNode<Smi> lhs_smi,
+                                      TNode<Smi> rhs_smi,
+                                      TNode<UintPtrT> feedback_offset);
+
+  void GenerateSmiToNumberBinaryOpAndMaybeWiden(
+      Operation op, TNode<Smi> lhs_smi, TNode<Smi> rhs_smi,
+      TNode<UintPtrT> feedback_offset);
+
+  void GenerateNumberBinaryOp(Operation op, TNode<Object> lhs,
+                              TNode<Object> rhs,
+                              TNode<UintPtrT> feedback_offset,
+                              Builtin fallback_builtin);
+
+  void GenerateStringAdd(TNode<Object> lhs, TNode<Object> rhs,
+                         TNode<UintPtrT> feedback_offset,
+                         Builtin fallback_builtin);
+
+  void GenerateBinaryOpAndTryPatchCode(Operation op, TNode<Object> lhs,
+                                       TNode<Object> rhs,
+                                       TNode<Int32T> current_type_feedback,
+                                       TNode<UintPtrT> feedback_offset);
 #endif  // V8_ENABLE_SPARKPLUG_PLUS
 
   TNode<Boolean> Equal(TNode<Object> lhs, TNode<Object> rhs,
@@ -5019,7 +5071,8 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
       TNode<Context> context, TNode<HeapObject> input, Object::Conversion mode,
       BigIntHandling bigint_handling = BigIntHandling::kThrow);
 
-  enum IsKnownTaggedPointer { kNo, kYes };
+  using IsKnownTaggedPointer =
+      base::StrongAlias<struct IsKnownTaggedPointerTag, bool>;
   template <Object::Conversion conversion>
   void TaggedToWord32OrBigIntImpl(
       TNode<Context> context, TNode<Object> value, Label* if_number,
@@ -5247,7 +5300,6 @@ class ToDirectStringAssembler : public CodeStubAssembler {
 #else
   TVariable<Int32T> var_instance_type_;
 #endif
-  // TODO(v8:9880): Use UintPtrT here.
   TVariable<IntPtrT> var_offset_;
   TVariable<Word32T> var_is_external_;
 

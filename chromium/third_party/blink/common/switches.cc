@@ -181,6 +181,9 @@ const char kJavaScriptFlags[] = "js-flags";
 const char kWebAudioBypassOutputBufferingOptOut[] =
     "web-audio-bypass-output-buffering-opt-out";
 
+const char kDisableBackForwardCacheForWebSockets[] =
+    "disable-back-forward-cache-for-web-sockets";
+
 // Override mechanism for ReduceAcceptLanguage. This feature is typically
 // controlled by base features, but requires an enterprise policy override.
 const char kDisableReduceAcceptLanguage[] = "disable-reduce-accept-language";
@@ -192,6 +195,9 @@ const char kXSLTEnabledPolicy[] = "xslt-enabled-policy";
 // via enterprise policy.
 const char kRestrictBackgroundFetchFromServiceWorker[] =
     "restrict-background-fetch-from-service-worker";
+
+// A switch passed to renderer processes hosting Top Chrome WebUI.
+const char kTopChromeWebUI[] = "top-chrome-webui";
 
 }  // namespace switches
 }  // namespace blink

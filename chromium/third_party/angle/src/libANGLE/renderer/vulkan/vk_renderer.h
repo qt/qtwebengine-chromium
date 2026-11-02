@@ -34,6 +34,7 @@
 #include "libANGLE/renderer/vulkan/vk_internal_shaders_autogen.h"
 #include "libANGLE/renderer/vulkan/vk_mem_alloc_wrapper.h"
 #include "libANGLE/renderer/vulkan/vk_resource.h"
+#include "vulkan/vulkan_core.h"
 
 namespace angle
 {
@@ -199,6 +200,10 @@ class Renderer : angle::NonCopyable
     {
         return mSubgroupProperties;
     }
+    const VkPhysicalDeviceShaderCorePropertiesAMD &getPhysicalDeviceShaderCorePropertiesAMD() const
+    {
+        return mShaderCorePropertiesAMD;
+    }
 
     const VkPhysicalDeviceFeatures &getPhysicalDeviceFeatures() const
     {
@@ -230,7 +235,7 @@ class Renderer : angle::NonCopyable
     uint32_t getQueueFamilyIndex() const { return mCurrentQueueFamilyIndex; }
     const VkQueueFamilyProperties &getQueueFamilyProperties() const
     {
-        return mQueueFamilyProperties[mCurrentQueueFamilyIndex];
+        return mQueueFamilyProperties2[mCurrentQueueFamilyIndex].queueFamilyProperties;
     }
     const DeviceQueueIndex getDeviceQueueIndex(egl::ContextPriority priority) const
     {
@@ -380,9 +385,6 @@ class Renderer : angle::NonCopyable
     angle::Result mergeIntoPipelineCache(vk::ErrorContext *context,
                                          const vk::PipelineCache &pipelineCache);
 
-    void onNewValidationMessage(const std::string &message);
-    std::string getAndClearLastValidationMessage(uint32_t *countSinceLastClear);
-
     const std::vector<const char *> &getSkippedValidationMessages() const
     {
         return mSkippedValidationMessages;
@@ -405,12 +407,10 @@ class Renderer : angle::NonCopyable
 
     ANGLE_INLINE bool isCommandQueueBusy() { return mCommandQueue.isBusy(this); }
 
-    angle::VulkanPerfCounters getCommandQueuePerfCounters()
+    vk::CommandQueuePerfCounters getCommandQueuePerfCounters()
     {
         return mCommandQueue.getPerfCounters();
     }
-    void resetCommandQueuePerFrameCounters() { mCommandQueue.resetPerFramePerfCounters(); }
-
     vk::GlobalOps *getGlobalOps() const { return mGlobalOps; }
 
     bool enableDebugUtils() const { return mEnableDebugUtils; }
@@ -726,7 +726,9 @@ class Renderer : angle::NonCopyable
                               const angle::FeatureOverrides &featureOverrides,
                               UseVulkanSwapchain useVulkanSwapchain,
                               angle::NativeWindowSystem nativeWindowSystem);
-    angle::Result createDeviceAndQueue(vk::ErrorContext *context, uint32_t queueFamilyIndex);
+    angle::Result createDeviceAndQueue(vk::ErrorContext *context,
+                                       uint32_t queueFamilyIndex,
+                                       VkQueueGlobalPriority globalPriority);
     void ensureCapsInitialized() const;
     void initializeValidationMessageSuppressions();
 
@@ -933,6 +935,7 @@ class Renderer : angle::NonCopyable
     VkPhysicalDeviceTileMemoryHeapFeaturesQCOM mTileMemoryHeapFeatures;
     VkPhysicalDeviceTileMemoryHeapPropertiesQCOM mTileMemoryHeapProperties;
     VkPhysicalDeviceTextureCompressionASTC3DFeaturesEXT mTextureCompressionASTC3DFeatures;
+    VkPhysicalDeviceShaderCorePropertiesAMD mShaderCorePropertiesAMD;
 
     uint32_t mLegacyDitheringVersion = 0;
 
@@ -940,7 +943,7 @@ class Renderer : angle::NonCopyable
     angle::ShadingRateSet mSupportedFragmentShadingRatesEXT;
     angle::ShadingRateMap mSupportedFragmentShadingRateEXTSampleCounts;
 
-    std::vector<VkQueueFamilyProperties> mQueueFamilyProperties;
+    std::vector<VkQueueFamilyProperties2> mQueueFamilyProperties2;
     uint32_t mCurrentQueueFamilyIndex;
     uint32_t mMaxVertexAttribDivisor;
     VkDeviceSize mMaxVertexAttribStride;
@@ -1002,10 +1005,6 @@ class Renderer : angle::NonCopyable
     uint32_t mPipelineCacheVkUpdateTimeout;
     size_t mPipelineCacheSizeAtLastSync;
     std::atomic<bool> mPipelineCacheInitialized;
-
-    // Latest validation data for debug overlay.
-    std::string mLastValidationMessage;
-    uint32_t mValidationMessageCount;
 
     // Skipped validation messages.  The exact contents of the list depends on the availability
     // of certain extensions.

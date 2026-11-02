@@ -171,7 +171,7 @@ function getEventTrack(event: Types.Events.SyntheticEventPair|Types.Events.Conso
  *
  */
 export function userTimingComparator<T extends Types.Events.SyntheticEventPair|Types.Events.ConsoleTimeStamp>(
-    a: T, b: T, originalArray: readonly T[]): number {
+    a: T, b: T, originalIndex: ReadonlyMap<T, number>): number {
   const {start: aStart, end: aEnd} = getEventTimings(a);
   const {start: bStart, end: bEnd} = getEventTimings(b);
   const timeDifference = Helpers.Trace.compareBeginAndEnd(aStart, bStart, aEnd, bEnd);
@@ -186,9 +186,13 @@ export function userTimingComparator<T extends Types.Events.SyntheticEventPair|T
     return 0;  // Preserve current positions.
   }
 
-  // Prefer the event located in a further position in the original array.
-  const aIndex = originalArray.indexOf(a);
-  const bIndex = originalArray.indexOf(b);
+  // When events share the same timestamp, use their original array position
+  // to determine stacking order: children are appended after their parents,
+  // so reversing by index ensures children render on top.
+  // Uses a pre-computed index map for O(1) lookups instead of indexOf
+  // to keep the overall sort at O(N log N).
+  const aIndex = originalIndex.get(a) ?? -1;
+  const bIndex = originalIndex.get(b) ?? -1;
   return bIndex - aIndex;
 }
 
@@ -217,8 +221,15 @@ export function handleEvent(event: Types.Events.Event): void {
 export async function finalize(): Promise<void> {
   const asyncEvents = [...performanceMeasureEvents, ...consoleTimings];
   syntheticEvents = Helpers.Trace.createMatchedSortedSyntheticEvents(asyncEvents);
-  syntheticEvents = syntheticEvents.sort((a, b) => userTimingComparator(a, b, [...syntheticEvents]));
-  timestampEvents = timestampEvents.sort((a, b) => userTimingComparator(a, b, [...timestampEvents]));
+
+  // Pre-compute event→index maps before sorting so the comparator can
+  // resolve original positions in O(1). This keeps the sort O(N log N)
+  // rather than O(N² log N) which would occur if the index were looked
+  // up via indexOf or if the array were re-spread per comparison.
+  const syntheticIndex = new Map(syntheticEvents.map((e, i) => [e, i] as const));
+  syntheticEvents = syntheticEvents.sort((a, b) => userTimingComparator(a, b, syntheticIndex));
+  const timestampIndex = new Map(timestampEvents.map((e, i) => [e, i] as const));
+  timestampEvents = timestampEvents.sort((a, b) => userTimingComparator(a, b, timestampIndex));
 }
 
 export function data(): UserTimingsData {

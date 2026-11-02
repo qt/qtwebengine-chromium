@@ -18,15 +18,15 @@ import * as Main from '../main/main.js';
 
 const UIStrings = {
   /**
-   * @description Text that refers to the main target.
+   * @description Name of the primary target connection when debugging Node.js.
    */
   main: 'Main',
   /**
-   * @description Title of the 'Scripts' tool in the Network Navigator View, which is part of the Sources tool
+   * @description Title of the 'Scripts' tab in the navigation tree inside the Sources panel.
    */
   networkTitle: 'Scripts',
   /**
-   * @description Command for showing the 'Scripts' tool in the Network Navigator View, which is part of the Sources tool
+   * @description Command in the command menu for showing the 'Scripts' tab in the navigation tree inside the Sources panel.
    */
   showNode: 'Show Scripts',
 } as const;
@@ -71,9 +71,10 @@ UI.ViewManager.registerViewExtension({
   commandPrompt: i18nLazyString(UIStrings.showNode),
   order: 2,
   persistence: UI.ViewManager.ViewPersistence.PERMANENT,
-  async loadView() {
+  async loadView(universe) {
     const Sources = await loadSourcesModule();
-    return Sources.SourcesNavigator.NetworkNavigatorView.instance();
+    return Sources.SourcesNavigator.NetworkNavigatorView.instance(
+        {forceNew: null, networkProjectManager: universe.networkProjectManager});
   },
 });
 

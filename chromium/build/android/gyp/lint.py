@@ -302,12 +302,19 @@ def _RunLint(lint_jar_path,
   else:
     fail_func = lambda returncode, _: returncode != 0
 
+  # Lint writes an analytics.settings file here.
+  env = os.environ.copy()
+  env['ANDROID_SDK_HOME'] = lint_gen_dir
+
   try:
-    build_utils.CheckOutput(cmd,
-                            print_stdout=True,
-                            stdout_filter=stdout_filter,
-                            fail_on_output=warnings_as_errors,
-                            fail_func=fail_func)
+    build_utils.CheckOutput(
+        cmd,
+        env=env,
+        print_stdout=True,
+        stdout_filter=stdout_filter,
+        stderr_filter=build_utils.FilterReflectiveAccessJavaWarnings,
+        fail_on_output=warnings_as_errors,
+        fail_func=fail_func)
   except build_utils.CalledProcessError as e:
     failed = True
     # Do not output the python stacktrace because it is lengthy and is not

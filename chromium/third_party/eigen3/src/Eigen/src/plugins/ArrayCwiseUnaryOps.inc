@@ -15,6 +15,7 @@ typedef CwiseUnaryOp<internal::scalar_bitwise_not_op<Scalar>, const Derived> Bit
 
 typedef CwiseUnaryOp<internal::scalar_exp_op<Scalar>, const Derived> ExpReturnType;
 typedef CwiseUnaryOp<internal::scalar_exp2_op<Scalar>, const Derived> Exp2ReturnType;
+typedef CwiseUnaryOp<internal::scalar_ldexp_op<Scalar>, const Derived> LdexpReturnType;
 typedef CwiseUnaryOp<internal::scalar_expm1_op<Scalar>, const Derived> Expm1ReturnType;
 typedef CwiseUnaryOp<internal::scalar_log_op<Scalar>, const Derived> LogReturnType;
 typedef CwiseUnaryOp<internal::scalar_log1p_op<Scalar>, const Derived> Log1pReturnType;
@@ -96,6 +97,22 @@ EIGEN_DEVICE_FUNC constexpr inline const ExpReturnType exp() const { return ExpR
  */
 EIGEN_DEVICE_FUNC constexpr inline const Exp2ReturnType exp2() const { return Exp2ReturnType(derived()); }
 
+/** \returns an expression of the coefficients of \c *this multiplied by \f$ 2^{exponent} \f$.
+ *
+ * The scaling is exact: it directly adjusts the floating-point exponent, so it produces
+ * correct results (including denormals) even when \f$ 2^{exponent} \f$ itself is not
+ * representable as a \c Scalar. The result saturates to zero or infinity when the scaled
+ * value falls outside the finite range of \c Scalar.
+ *
+ * Example: \include Cwise_ldexp.cpp
+ * Output: \verbinclude Cwise_ldexp.out
+ *
+ * \sa <a href="group__CoeffwiseMathFunctions.html#cwisetable_ldexp">Math functions</a>, exp2(), pow()
+ */
+EIGEN_DEVICE_FUNC constexpr inline const LdexpReturnType ldexp(int exponent) const {
+  return LdexpReturnType(derived(), internal::scalar_ldexp_op<Scalar>(exponent));
+}
+
 /** \returns an expression of the coefficient-wise exponential of *this minus 1.
  *
  * In exact arithmetic, \c x.expm1() is equivalent to \c x.exp() - 1,
@@ -119,7 +136,7 @@ EIGEN_DEVICE_FUNC constexpr inline const LogReturnType log() const { return LogR
 
 /** \returns an expression of the coefficient-wise logarithm of 1 plus \c *this.
  *
- * In exact arithmetic, \c x.log() is equivalent to \c (x+1).log(),
+ * In exact arithmetic, \c x.log1p() is equivalent to \c (x+1).log(),
  * however, with finite precision, this function is much more accurate when \c x is close to zero.
  *
  * \sa <a href="group__CoeffwiseMathFunctions.html#cwisetable_log1p">Math functions</a>, log()
@@ -507,7 +524,7 @@ EIGEN_DEVICE_FUNC constexpr inline const ErfReturnType erf() const { return ErfR
  */
 EIGEN_DEVICE_FUNC constexpr inline const ErfcReturnType erfc() const { return ErfcReturnType(derived()); }
 
-/** \returns an expression of the coefficient-wise inverse of the CDF of the Normal distribution function
+/** \returns an expression of the coefficient-wise inverse of the CDF of the Normal distribution
  * function of *this.
  *
  * \specialfunctions_module

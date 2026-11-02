@@ -8,7 +8,6 @@
     rust-overlay.url = "github:oxalica/rust-overlay";
     rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
     crane.url = "github:ipetkov/crane";
-    crane.inputs.nixpkgs.follows = "nixpkgs";
   };
   outputs = { self, systems, nixpkgs, flake-utils, rust-overlay, crane }:
     (flake-utils.lib.eachDefaultSystem
@@ -20,9 +19,19 @@
               rust-overlay.overlays.default
             ];
           };
+          # Create a bazelisk package that can be called as "bazel".
+          bazelisk-as-bazel = pkgs.symlinkJoin {
+            name = "bazelisk-as-bazel";
+            paths = [ pkgs.bazelisk ];
+            postBuild = ''
+              # Remove the original binary link if you only want the alias
+              # or keep it. Here we explicitly create the alias link:
+              ln -s $out/bin/bazelisk $out/bin/bazel
+            '';
+          };
           rustToolchain =
             # This should be kept in sync with the value in bazel/rust/defs.bzl
-            pkgs.rust-bin.nightly."2025-03-01".default.override {
+            pkgs.rust-bin.nightly."2026-04-11".default.override {
               extensions = [
                 "clippy"
                 "llvm-tools-preview"
@@ -40,7 +49,7 @@
           src = ./.;
         in
         {
-          packages = {  };
+          packages = { };
           formatter = pkgs.nixpkgs-fmt;
           # We define a recursive set of shells, so that we can easily create a shell with a subset
           # of the dependencies for specific CI steps, without having to pull everything all the time.
@@ -82,18 +91,20 @@
               shellHook = ''
                 # https://github.com/NixOS/nix/issues/262
                 unset TMPDIR
+
+                export BAZELISK_VERIFY_SHA256=${if stdenv.isDarwin then "cb6d2f19ad92157e7186f64151e665c1b0c3bacaa690784e66f446f1b7660140" else "61d89402f0368e64b6c827be5de79d8e65382e8124c3cbb97325611a1851392e"}
               '';
               packages = [
                 autoconf
                 autogen
                 automake
-                bazel_7
+                bazelisk-as-bazel
                 bazel-buildtools
               ];
             };
             # By default create a shell with all the inputs.
             default = pkgs.mkShell {
-              packages = [];
+              packages = [ ];
               inputsFrom = [
                 rust
                 bazelShell

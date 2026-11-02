@@ -9,9 +9,9 @@ import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as Geometry from '../../models/geometry/geometry.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import {Directives, html, type LitTemplate, nothing, render, type TemplateResult} from '../../ui/lit/lit.js';
@@ -28,99 +28,99 @@ const {widget} = UI.Widget;
 
 const UIStrings = {
   /**
-   * @description Label for the summary in the CSS overview report
+   * @description Label for the summary in the CSS overview report.
    */
   overviewSummary: 'Overview summary',
   /**
-   * @description Title of colors subsection in the CSS overview panel
+   * @description Title of colors subsection in the CSS overview panel.
    */
   colors: 'Colors',
   /**
-   * @description Title of font info subsection in the CSS overview panel
+   * @description Title of font info subsection in the CSS overview panel.
    */
   fontInfo: 'Font info',
   /**
-   * @description Label to denote unused declarations in the target page
+   * @description Label to denote unused declarations in the target page.
    */
   unusedDeclarations: 'Unused declarations',
   /**
-   * @description Label for the number of media queries in the CSS overview report
+   * @description Label for the number of media queries in the CSS overview report.
    */
   mediaQueries: 'Media queries',
   /**
-   * @description Title of the Elements Panel
+   * @description Title of the Elements panel.
    */
   elements: 'Elements',
   /**
-   * @description Label for the number of External stylesheets in the CSS overview report
+   * @description Label for the number of external stylesheets in the CSS overview report.
    */
   externalStylesheets: 'External stylesheets',
   /**
-   * @description Label for the number of inline style elements in the CSS overview report
+   * @description Label for the number of inline style elements in the CSS overview report.
    */
   inlineStyleElements: 'Inline style elements',
   /**
-   * @description Label for the number of style rules in CSS overview report
+   * @description Label for the number of style rules in CSS overview report.
    */
   styleRules: 'Style rules',
   /**
-   * @description Label for the number of type selectors in the CSS overview report
+   * @description Label for the number of type selectors in the CSS overview report.
    */
   typeSelectors: 'Type selectors',
   /**
-   * @description Label for the number of ID selectors in the CSS overview report
+   * @description Label for the number of ID selectors in the CSS overview report.
    */
   idSelectors: 'ID selectors',
   /**
-   * @description Label for the number of class selectors in the CSS overview report
+   * @description Label for the number of class selectors in the CSS overview report.
    */
   classSelectors: 'Class selectors',
   /**
-   * @description Label for the number of universal selectors in the CSS overview report
+   * @description Label for the number of universal selectors in the CSS overview report.
    */
   universalSelectors: 'Universal selectors',
   /**
-   * @description Label for the number of Attribute selectors in the CSS overview report
+   * @description Label for the number of attribute selectors in the CSS overview report.
    */
   attributeSelectors: 'Attribute selectors',
   /**
-   * @description Label for the number of non-simple selectors in the CSS overview report
+   * @description Label for the number of non-simple selectors in the CSS overview report.
    */
   nonsimpleSelectors: 'Non-simple selectors',
   /**
-   * @description Label for unique background colors in the CSS overview panel
+   * @description Label for unique background colors in the CSS overview panel.
    * @example {32} PH1
    */
   backgroundColorsS: 'Background colors: {PH1}',
   /**
-   * @description Label for unique text colors in the CSS overview panel
+   * @description Label for unique text colors in the CSS overview panel.
    * @example {32} PH1
    */
   textColorsS: 'Text colors: {PH1}',
   /**
-   * @description Label for unique fill colors in the CSS overview panel
+   * @description Label for unique fill colors in the CSS overview panel.
    * @example {32} PH1
    */
   fillColorsS: 'Fill colors: {PH1}',
   /**
-   * @description Label for unique border colors in the CSS overview panel
+   * @description Label for unique border colors in the CSS overview panel.
    * @example {32} PH1
    */
   borderColorsS: 'Border colors: {PH1}',
   /**
-   * @description Label to indicate that there are no fonts in use
+   * @description Label to indicate that no fonts are in use.
    */
-  thereAreNoFonts: 'There are no fonts.',
+  thereAreNoFonts: 'No fonts',
   /**
-   * @description Message to show when no unused declarations in the target page
+   * @description Message to show when no unused declarations are in the target page.
    */
-  thereAreNoUnusedDeclarations: 'There are no unused declarations.',
+  thereAreNoUnusedDeclarations: 'No unused declarations',
   /**
-   * @description Message to show when no media queries are found in the target page
+   * @description Message to show when no media queries are found in the target page.
    */
-  thereAreNoMediaQueries: 'There are no media queries.',
+  thereAreNoMediaQueries: 'No media queries',
   /**
-   * @description Title of the Drawer for contrast issues in the CSS overview panel
+   * @description Title of the drawer for contrast issues in the CSS overview panel.
    */
   contrastIssues: 'Contrast issues',
   /**
@@ -128,43 +128,43 @@ const UIStrings = {
    */
   nOccurrences: '{n, plural, =1 {# occurrence} other {# occurrences}}',
   /**
-   * @description Section header for contrast issues in the CSS overview panel
+   * @description Section header for contrast issues in the CSS overview panel.
    * @example {1} PH1
    */
   contrastIssuesS: 'Contrast issues: {PH1}',
   /**
-   * @description Title of the button for a contrast issue in the CSS overview panel
+   * @description Title of the button for a contrast issue in the CSS overview panel.
    * @example {#333333} PH1
    * @example {#333333} PH2
    * @example {2} PH3
    */
   textColorSOverSBackgroundResults: 'Text color {PH1} over {PH2} background results in low contrast for {PH3} elements',
   /**
-   * @description Label aa text content in Contrast Details of the Color Picker
+   * @description Label aa text content in contrast details of the color picker.
    */
   aa: 'AA',
   /**
-   * @description Label aaa text content in Contrast Details of the Color Picker
+   * @description Label aaa text content in contrast details of the color picker.
    */
   aaa: 'AAA',
   /**
-   * @description Label for the APCA contrast in Color Picker
+   * @description Label for the APCA contrast in color picker.
    */
   apca: 'APCA',
   /**
-   * @description Label for the column in the element list in the CSS overview report
+   * @description Label for the column in the element list in the CSS overview report.
    */
   element: 'Element',
   /**
-   * @description Column header title denoting which declaration is unused
+   * @description Column header title denoting which declaration is unused.
    */
   declaration: 'Declaration',
   /**
-   * @description Text for the source of something
+   * @description Text for the source of something.
    */
   source: 'Source',
   /**
-   * @description Text of a DOM element in Contrast Details of the Color Picker
+   * @description Text of a DOM element in contrast details of the color picker.
    */
   contrastRatio: 'Contrast ratio',
   /**
@@ -172,7 +172,7 @@ const UIStrings = {
    */
   cssOverviewElements: 'CSS overview elements',
   /**
-   * @description Title of the button to show the element in the CSS overview panel
+   * @description Title of the button to show the element in the CSS overview panel.
    */
   showElement: 'Show element',
   /**
@@ -287,7 +287,7 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
             {name: i18nString(UIStrings.colors), id: 'colors'},
             {name: i18nString(UIStrings.fontInfo), id: 'font-info'},
             {name: i18nString(UIStrings.unusedDeclarations), id: 'unused-declarations'},
-            {name: i18nString(UIStrings.mediaQueries), id: 'media-queries'}
+            {name: i18nString(UIStrings.mediaQueries), id: 'media-queries'},
           ],
           selectedId: input.selectedSection,
           onItemSelected: input.onSectionSelected,
@@ -575,7 +575,7 @@ export class CSSOverviewCompletedView extends UI.Widget.VBox {
   #viewOutput: ViewOutput = {
     revealSection: new Map(),
     closeAllTabs: () => {},
-    addTab: (_id, _tabTitle, _view, _jslogContext) => {}
+    addTab: (_id, _tabTitle, _view, _jslogContext) => {},
   };
 
   constructor(element?: HTMLElement, view = DEFAULT_VIEW) {
@@ -852,7 +852,7 @@ export class CSSOverviewCompletedView extends UI.Widget.VBox {
         font,
         fontMetrics: fontMetricInfo.map(([label, values]) => {
           return {label, values: this.#sortGroupBySize(values)};
-        })
+        }),
       };
     });
   }

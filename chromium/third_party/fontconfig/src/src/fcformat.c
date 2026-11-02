@@ -57,6 +57,7 @@
  * delete	delete chars
  * escape	escape chars
  * translate	translate chars
+ * const	FcNameGetConstantNameFrom
  *
  * builtins:
  * unparse	FcNameUnparse
@@ -885,24 +886,51 @@ translate_chars (FcFormatContext *c,
 }
 
 static FcBool
+const_chars (FcFormatContext *c,
+             const FcChar8   *elm,
+             const FcChar8   *str,
+             FcStrBuf        *buf)
+{
+    int            n;
+    char          *p = NULL;
+    const FcChar8 *con;
+
+    n = strtoul ((const char *)str, &p, 10);
+    if (p && *p != 0)
+        return FcFalse;
+    con = FcNameGetConstantNameFrom ((const char *)elm, n);
+    if (!con)
+        return FcFalse;
+
+    FcStrBufString (buf, con);
+
+    return FcTrue;
+}
+
+static FcBool
 interpret_convert (FcFormatContext *c,
                    FcStrBuf        *buf,
                    int              start)
 {
     const FcChar8 *str;
-    FcChar8       *new_str;
+    FcChar8       *new_str, *elm;
     FcStrBuf       new_buf;
     FcChar8        buf_static[8192];
     FcBool         ret;
 
+    elm = FcStrCopy (c->word);
     if (!expect_char (c, '|') ||
-        !read_word (c))
-	return FcFalse;
+        !read_word (c)) {
+        ret = FcFalse;
+        goto bail;
+    }
 
     /* prepare the buffer */
     FcStrBufChar (buf, '\0');
-    if (buf->failed)
-	return FcFalse;
+    if (buf->failed) {
+        ret = FcFalse;
+        goto bail;
+    }
     str = buf->buf + start;
     buf->len = start;
 
@@ -926,9 +954,12 @@ interpret_convert (FcFormatContext *c,
 	if (new_str) {
 	    FcStrBufString (buf, new_str);
 	    FcStrFree (new_str);
-	    return FcTrue;
-	} else
-	    return FcFalse;
+            ret = FcTrue;
+            goto bail;
+	} else {
+            ret = FcFalse;
+            goto bail;
+        }
     }
 
     FcStrBufInit (&new_buf, buf_static, sizeof (buf_static));
@@ -936,6 +967,8 @@ interpret_convert (FcFormatContext *c,
     /* now try our custom converters */
     if (0) {
     }
+    else if (strcmp ((const char *)c->word, "const") == 0)
+        ret = const_chars(c, elm, str, &new_buf);
 #define CONVERTER(name, func)                           \
     else if (0 == strcmp ((const char *)c->word, name)) \
 	ret = func (c, str, &new_buf)
@@ -956,6 +989,8 @@ interpret_convert (FcFormatContext *c,
 	         c->word);
 
     FcStrBufDestroy (&new_buf);
+ bail:
+    FcStrFree (elm);
 
     return ret;
 }

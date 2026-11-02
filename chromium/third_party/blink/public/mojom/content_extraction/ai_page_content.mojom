@@ -11,6 +11,7 @@ import "ui/accessibility/ax_enums.mojom";
 import "ui/gfx/geometry/mojom/geometry.mojom";
 import "url/mojom/origin.mojom";
 import "url/mojom/url.mojom";
+import "mojo/public/mojom/base/big_buffer.mojom";
 
 // This is a mojom representation of the corresponding AnnotatedPageContent
 // proto.
@@ -48,6 +49,10 @@ enum AIPageContentAttributeType {
   kOrderedList,
   kUnorderedList,
   kListItem,
+
+  // Dialogs.
+  kDialogModal,
+  kDialogModeless,
 };
 
 enum AIPageContentAnnotatedRole {
@@ -238,6 +243,8 @@ enum AIPageContentInteractionDisabledReason {
   kDisabled,
   kAriaDisabled,
   kCursorNotAllowed,
+  kAriaHidden,
+  kAriaRolePresentational,
 };
 
 struct AIPageContentNodeInteractionInfo {
@@ -286,14 +293,22 @@ struct AIPageContentNodeInteractionInfo {
   // may be triggered by clicking or hovering on the element.
   array<AIPageContentClickabilityReason> clickability_reasons;
 
-  // Whether the content node is explicitly disabled from being actionable. For
-  // example, a `select` element with the `disabled` or `aria-disabled`
-  // attribute. Disabled nodes are still valid action targets and can consume
-  // events. This is false for nodes which are not hit-testable and will ignore
-  // events, for example with `pointer-events: none`.
+  // Whether the node is in a strong disabled state. When this is true, attempts
+  // to generate a click action for the node will be rejected.
   //
-  // TODO(b/465736813): Deprecate when consumers move to
-  // `interaction_disabled_reasons`.
+  // `is_disabled` is true for a native control disabled by HTML, such as
+  // `<button disabled>`.
+  //
+  // Other interaction-disabled reasons are advisory. APC records them, but
+  // click actions are still technically allowed. `is_disabled` is false for:
+  // - A node with `aria-disabled="true"`, or a node inside such an ancestor.
+  // - A node styled with `cursor: not-allowed`.
+  // - A node hidden from the accessibility tree with `aria-hidden="true"`.
+  // - A node with `role="presentation"` or `role="none"`.
+  //
+  // Disabled nodes can still be hit-testable and consume events. Nodes that
+  // cannot be hit-tested, such as those with `pointer-events: none`, do not
+  // receive interaction info.
   bool is_disabled;
 
   // Provides hints on why the interaction with the element is disabled.
@@ -366,6 +381,13 @@ struct AIPageContentImageInfo {
   // rendered. For example, an image element whose resource is not available
   // will be empty.
   url.mojom.Origin? source_origin;
+
+  // The image's source (`src`) URL.
+  url.mojom.Url url;
+
+  // The MIME type of the image. Common MIME types include image/jpeg,
+  // image/png, image/gif, image/webp, and image/svg+xml.
+  string? mime_type;
 };
 
 struct AIPageContentSvgRootData {
@@ -725,6 +747,15 @@ struct AIPageContentOptions {
   bool include_otps_for_redaction = false;
 };
 
+// Result containing extracted image bytes and associated metadata. Supports
+// normal images (e.g. <img>, <picture>), content images with
+// "content: url(/path/to/image.png)", and SVG image elements <image>. See
+// `LayoutImage` and `LayoutSVGImage`.
+struct AIPageContentImageBytesResult {
+  mojo_base.mojom.BigBuffer image_bytes;
+  AIPageContentImageInfo image_info;
+};
+
 // Used to obtain the AIPageContent representation for Documents. Lives in the
 // renderer process and called by the browser process to pull data for a
 // Document.
@@ -734,4 +765,9 @@ interface AIPageContentAgent {
   // LocalFrames accessible from the LocalFrameRoot.
   GetAIPageContent(AIPageContentOptions request)
       => (AIPageContent? page_content);
+
+  // Gets the raw encoded image bytes (e.g., JPEG, PNG) for a specific image by
+  // its DOM node ID. Returns null if the node is not found or is not an image.
+  GetImageBytes(int32 dom_node_id)
+      => (AIPageContentImageBytesResult? result);
 };

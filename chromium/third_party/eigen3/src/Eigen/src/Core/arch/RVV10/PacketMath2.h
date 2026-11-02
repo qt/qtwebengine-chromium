@@ -291,7 +291,9 @@ EIGEN_STRONG_INLINE Packet4Xf __riscv_vreinterpret_v_u64m4_f32m4(const Packet4Xu
 
 template <>
 EIGEN_STRONG_INLINE Packet2Xf ptrue<Packet2Xf>(const Packet2Xf& /*a*/) {
-  return __riscv_vreinterpret_f32m2(__riscv_vmv_v_x_u32m2(0xffffffffu, unpacket_traits<Packet2Xf>::size));
+  Packet2Xf r = __riscv_vreinterpret_f32m2(__riscv_vmv_v_x_u32m2(0xffffffffu, unpacket_traits<Packet2Xf>::size));
+  EIGEN_FAST_MATH_CONSTANT_BARRIER(r);
+  return r;
 }
 
 template <>
@@ -930,7 +932,10 @@ EIGEN_STRONG_INLINE
 
 template <>
 EIGEN_STRONG_INLINE Packet2Xd ptrue<Packet2Xd>(const Packet2Xd& /*a*/) {
-  return __riscv_vreinterpret_f64m2(__riscv_vmv_v_x_u64m2(0xffffffffffffffffu, unpacket_traits<Packet2Xd>::size));
+  Packet2Xd r =
+      __riscv_vreinterpret_f64m2(__riscv_vmv_v_x_u64m2(0xffffffffffffffffu, unpacket_traits<Packet2Xd>::size));
+  EIGEN_FAST_MATH_CONSTANT_BARRIER(r);
+  return r;
 }
 
 template <>
@@ -971,7 +976,7 @@ template <>
 EIGEN_STRONG_INLINE void pbroadcast4<Packet2Xd>(const double* a, Packet2Xd& a0, Packet2Xd& a1, Packet2Xd& a2,
                                                 Packet2Xd& a3) {
   Packet2Xd aa;
-  if (EIGEN_RISCV64_RVV_VL >= 256) {
+  EIGEN_IF_CONSTEXPR (EIGEN_RISCV64_RVV_VL >= 256) {
     aa = __riscv_vlmul_ext_f64m2(__riscv_vle64_v_f64m1(a, 4));
   } else {
     aa = __riscv_vle64_v_f64m2(a, 4);

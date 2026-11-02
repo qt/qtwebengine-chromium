@@ -42,6 +42,8 @@ const int kErrorGroup_GpuPreBuildAccelerationStructures = 12;
 const int kErrorGroup_InstMeshShading = 13;
 const int kErrorGroup_SharedMemoryDataRace = 15;
 const int kErrorGroup_TraceRay = 16;
+const int kErrorGroup_InstDescriptorHeap = 17;
+const int kErrorGroup_InstDescriptorBuffer = 18;
 
 // We just take ExecutionModel and normalize it so we only use 5 bits to store it
 const int kExecutionModel_Vertex = 0;
@@ -77,6 +79,26 @@ const int kErrorSubCode_DescriptorClass_GeneralBufferBounds = 1;
 const int kErrorSubCode_DescriptorClass_TexelBufferBounds = 2;
 // Buffers, but with Cooperative Matrix
 const int kErrorSubCode_DescriptorClass_GeneralBufferCoopMatBounds = 3;
+
+// Descriptor Heap
+//
+const int kErrorSubCode_DescriptorHeap_HeapOOB = 1;
+const int kErrorSubCode_DescriptorHeap_ReservedRange = 2;
+const int kErrorSubCode_DescriptorHeap_DescriptorAlignment = 3;
+const int kErrorSubCode_DescriptorHeap_DescriptorAlignmentUntyped = 4;
+const int kErrorSubCode_DescriptorHeap_IndirectIndexPushAlignment = 5;
+const int kErrorSubCode_DescriptorHeap_IndirectAddressPushAlignment = 6;
+const int kErrorSubCode_DescriptorHeap_AddressBufferAlignment = 7;
+const int kErrorSubCode_DescriptorHeap_InvalidDeviceAddress = 8;
+const int kErrorSubCode_DescriptorHeap_InvalidDeviceAddressResource = 9;
+const int kErrorSubCode_DescriptorHeap_HeapBufferAlignment = 10;
+const int kErrorSubCode_DescriptorHeap_DescriptorHashing_None = 11;
+const int kErrorSubCode_DescriptorHeap_DescriptorHashing_Wrong = 12;
+
+// Descriptor Buffer
+//
+const int kErrorSubCode_DescriptorBuffer_DescriptorHashing_None = 1;
+const int kErrorSubCode_DescriptorBuffer_DescriptorHashing_Wrong = 2;
 
 // Buffer Device Address
 //

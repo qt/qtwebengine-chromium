@@ -52,7 +52,7 @@ struct translate_type_imp<std::complex<float>> {
   using type = lapack_complex_float;
 };
 
-/// Given an Eigen types, this is defined to be the corresponding, layout-compatible lapack type
+/// Given an Eigen type, this is defined to be the corresponding, layout-compatible lapack type
 template <typename Scalar>
 using translated_type = typename translate_type_imp<Scalar>::type;
 
@@ -63,7 +63,7 @@ EIGEN_ALWAYS_INLINE auto to_lapack(Source value) {
   return static_cast<Target>(value);
 }
 
-/// This function performs conversions for pointer types corresponding to the translations abovce.
+/// This function performs conversions for pointer types corresponding to the translations above.
 /// This is valid because the translations are between layout-compatible types.
 template <typename Source, typename Target = translated_type<Source>>
 EIGEN_ALWAYS_INLINE auto to_lapack(Source *value) {
@@ -87,7 +87,7 @@ EIGEN_ALWAYS_INLINE constexpr lapack_int lapack_storage_of(const EigenBase<Deriv
 /*!
  * \internal
  * \brief Helper type to facilitate the wrapping of raw LAPACKE functions for different types into a single, overloaded
- * C++ function. This is achieved in combination with \r EIGEN_MAKE_LAPACKE_WRAPPER \details This implementation works
+ * C++ function. This is achieved in combination with \ref EIGEN_MAKE_LAPACKE_WRAPPER \details This implementation works
  * by providing an overloaded call function that just forwards its arguments to the underlying lapack function. Each of
  * these overloads is enabled only if the call is actually well formed. Because these lapack functions take pointers to
  * the underlying scalar type as arguments, even though the actual Scalars would be implicitly convertible, the pointers

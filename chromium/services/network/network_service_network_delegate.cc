@@ -75,14 +75,6 @@ void NetworkServiceNetworkDelegate::MaybeTruncateReferrer(
     request->set_referrer_policy(net::ReferrerPolicy::NO_REFERRER);
     return;
   }
-
-  if (base::FeatureList::IsEnabled(
-          net::features::kCapReferrerToOriginOnCrossOrigin)) {
-    if (!url::IsSameOriginWith(effective_url, GURL(request->referrer()))) {
-      auto capped_referrer = url::Origin::Create(GURL(request->referrer()));
-      request->SetReferrer(capped_referrer.GetURL().spec());
-    }
-  }
 }
 
 int NetworkServiceNetworkDelegate::OnBeforeURLRequest(
@@ -425,7 +417,7 @@ int NetworkServiceNetworkDelegate::HandleClearSiteDataHeader(
   auto& cookie_settings = network_context_->cookie_manager()->cookie_settings();
   net::NetworkDelegate::PrivacySetting privacy_settings =
       cookie_settings.IsPrivacyModeEnabled(
-          request->url(), request->site_for_cookies(),
+          request->url(), request->isolation_info().site_for_cookies(),
           request->isolation_info().top_frame_origin(),
           request->cookie_setting_overrides());
   bool partitioned_state_allowed_only =

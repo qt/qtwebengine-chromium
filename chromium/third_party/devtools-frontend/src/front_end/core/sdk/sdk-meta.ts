@@ -7,354 +7,431 @@ import * as i18n from '../i18n/i18n.js';
 
 const UIStrings = {
   /**
-   * @description Title of a setting under the Console category that can be invoked through the Command Menu
+   * @description Title of a setting under the Console category that can be invoked through the Command Menu.
    */
-  preserveLogUponNavigation: 'Preserve log upon navigation',
+  preserveLogUponNavigation: 'Keep log on navigation',
   /**
-   * @description Title of a setting under the Console category that can be invoked through the Command Menu
+   * @description Title of a setting under the Console category that can be invoked through the Command Menu.
    */
-  doNotPreserveLogUponNavigation: 'Do not preserve log upon navigation',
+  doNotPreserveLogUponNavigation: 'Don’t keep log on navigation',
   /**
-   * @description Text for pausing the debugger on exceptions
+   * @description Text for pausing the debugger on exceptions.
    */
   pauseOnExceptions: 'Pause on exceptions',
   /**
-   * @description Title of a setting under the Debugger category that can be invoked through the Command Menu
+   * @description Title of a setting under the Debugger category that can be invoked through the Command Menu.
    */
   doNotPauseOnExceptions: 'Do not pause on exceptions',
   /**
-   * @description Title of a setting under the Debugger category that can be invoked through the Command Menu
+   * @description Title of a setting under the Debugger category that can be invoked through the Command Menu.
    */
   disableJavascript: 'Disable JavaScript',
   /**
-   * @description Title of a setting under the Debugger category that can be invoked through the Command Menu
+   * @description Title of a setting under the Debugger category that can be invoked through the Command Menu.
    */
   enableJavascript: 'Enable JavaScript',
   /**
-   * @description Title of a setting under the Debugger category in Settings
+   * @description Title of a setting under the Debugger category in Settings.
    */
   disableAsyncStackTraces: 'Disable async stack traces',
   /**
-   * @description Title of a setting under the Debugger category that can be invoked through the Command Menu
+   * @description Title of a setting under the Debugger category that can be invoked through the Command Menu.
    */
   doNotCaptureAsyncStackTraces: 'Do not capture async stack traces',
   /**
-   * @description Title of a setting under the Debugger category that can be invoked through the Command Menu
+   * @description Title of a setting under the Debugger category that can be invoked through the Command Menu.
    */
   captureAsyncStackTraces: 'Capture async stack traces',
   /**
-   * @description Text of a setting that turn on the measuring rulers when hover over a target
+   * @description Text of a setting that turn on the measuring rulers when hover over a target.
    */
   rulersOnHover: 'Rulers on hover',
   /**
-   * @description Text of an option that turn on the measuring rulers when hover over a target through the Command Menu
+   * @description Text of an option that turn on the measuring rulers when hover over a target through the Command Menu.
    */
   showRulersOnHover: 'Show rulers on hover',
   /**
-   * @description Text of a setting that do turn off the measuring rulers when hover over a target
+   * @description Text of a setting that do turn off the measuring rulers when hover over a target.
    */
-  doNotShowRulersOnHover: 'Don\'t show rulers on hover',
+  doNotShowRulersOnHover: 'Don’t show rulers on hover',
   /**
-   * @description Title of a setting that turns on grid area name labels
+   * @description Title of a setting that turns on grid area name labels.
    */
   showAreaNames: 'Show area names',
   /**
-   * @description Title of a setting under the Grid category that turns CSS Grid Area highlighting on
+   * @description Title of a setting under the Grid category that turns CSS Grid Area highlighting on.
    */
   showGridNamedAreas: 'Show grid named areas',
   /**
-   * @description Title of a setting under the Grid category that turns CSS Grid Area highlighting off
+   * @description Title of a setting under the Grid category that turns CSS Grid Area highlighting off.
    */
   doNotShowGridNamedAreas: 'Do not show grid named areas',
   /**
-   * @description Title of a setting that turns on grid track size labels
+   * @description Title of a setting that turns on grid track size labels.
    */
   showTrackSizes: 'Show track sizes',
   /**
-   * @description Title for CSS Grid tooling option
+   * @description Title for CSS Grid tooling option.
    */
   showGridTrackSizes: 'Show grid track sizes',
   /**
-   * @description Title for CSS Grid tooling option
+   * @description Title for CSS Grid tooling option.
    */
   doNotShowGridTrackSizes: 'Do not show grid track sizes',
   /**
-   * @description Title of a setting that turns on grid extension lines
+   * @description Title of a setting that turns on grid extension lines.
    */
   extendGridLines: 'Extend grid lines',
   /**
-   * @description Title of a setting that turns off the grid extension lines
+   * @description Title of a setting that turns off the grid extension lines.
    */
   doNotExtendGridLines: 'Do not extend grid lines',
   /**
-   * @description Title of a setting that turns on grid line labels
+   * @description Title of a setting that turns on grid line labels.
    */
   showLineLabels: 'Show line labels',
   /**
-   * @description Title of a setting that turns off the grid line labels
+   * @description Title of a setting that turns off the grid line labels.
    */
   hideLineLabels: 'Hide line labels',
   /**
-   * @description Title of a setting that turns on grid line number labels
+   * @description Title of a setting that turns on grid line number labels.
    */
   showLineNumbers: 'Show line numbers',
   /**
-   * @description Title of a setting that turns on grid line name labels
+   * @description Title of a setting that turns on grid line name labels.
    */
   showLineNames: 'Show line names',
   /**
-   * @description Title of an option under the Rendering category that can be invoked through the Command Menu
+   * @description Title of an option under the Rendering category that can be invoked through the Command Menu.
    */
   showPaintFlashingRectangles: 'Show paint flashing rectangles',
   /**
-   * @description Title of an option under the Rendering category that can be invoked through the Command Menu
+   * @description Title of an option under the Rendering category that can be invoked through the Command Menu.
    */
   hidePaintFlashingRectangles: 'Hide paint flashing rectangles',
   /**
-   * @description Title of an option under the Rendering category that can be invoked through the Command Menu
+   * @description Title of an option under the Rendering category that can be invoked through the Command Menu.
    */
   showLayoutShiftRegions: 'Show layout shift regions',
   /**
-   * @description Title of an option under the Rendering category that can be invoked through the Command Menu
+   * @description Title of an option under the Rendering category that can be invoked through the Command Menu.
    */
   hideLayoutShiftRegions: 'Hide layout shift regions',
   /**
-   * @description Text to highlight the rendering frames for ads
+   * @description Text to highlight the rendering frames for ads.
    */
   highlightAdFrames: 'Highlight ad frames',
   /**
-   * @description Title of an option under the Rendering category that can be invoked through the Command Menu
+   * @description Title of an option under the Rendering category that can be invoked through the Command Menu.
    */
   doNotHighlightAdFrames: 'Do not highlight ad frames',
   /**
-   * @description Title of an option under the Rendering category that can be invoked through the Command Menu
+   * @description Title of an option under the Rendering category that can be invoked through the Command Menu.
    */
   showLayerBorders: 'Show layer borders',
   /**
-   * @description Title of an option under the Rendering category that can be invoked through the Command Menu
+   * @description Title of an option under the Rendering category that can be invoked through the Command Menu.
    */
   hideLayerBorders: 'Hide layer borders',
   /**
-   * @description Title of an option under the Rendering category that can be invoked through the Command Menu
+   * @description Title of an option under the Rendering category that can be invoked through the Command Menu.
    */
   showFramesPerSecondFpsMeter: 'Show frames per second (FPS) meter',
   /**
-   * @description Title of an option under the Rendering category that can be invoked through the Command Menu
+   * @description Title of an option under the Rendering category that can be invoked through the Command Menu.
    */
   hideFramesPerSecondFpsMeter: 'Hide frames per second (FPS) meter',
   /**
-   * @description Title of an option under the Rendering category that can be invoked through the Command Menu
+   * @description Title of an option under the Rendering category that can be invoked through the Command Menu.
    */
   showScrollPerformanceBottlenecks: 'Show scroll performance bottlenecks',
   /**
-   * @description Title of an option under the Rendering category that can be invoked through the Command Menu
+   * @description Title of an option under the Rendering category that can be invoked through the Command Menu.
    */
   hideScrollPerformanceBottlenecks: 'Hide scroll performance bottlenecks',
   /**
-   * @description Title of a Rendering setting that can be invoked through the Command Menu
+   * @description Title of a Rendering setting that can be invoked through the Command Menu.
    */
   emulateAFocusedPage: 'Emulate a focused page',
   /**
-   * @description Title of a Rendering setting that can be invoked through the Command Menu
+   * @description Title of a Rendering setting that can be invoked through the Command Menu.
    */
   doNotEmulateAFocusedPage: 'Do not emulate a focused page',
   /**
-   * @description Title of a setting under the Rendering category that can be invoked through the Command Menu
+   * @description Title of a setting under the Rendering category that can be invoked through the Command Menu.
    */
   doNotEmulateCssMediaType: 'Do not emulate CSS media type',
   /**
-   * @description A drop-down menu option to do not emulate css media type
+   * @description A drop-down menu option to do not emulate css media type.
    */
   noEmulation: 'No emulation',
   /**
-   * @description Title of a setting under the Rendering category that can be invoked through the Command Menu
+   * @description Text for the CPU Pressure type to simulate on a device.
+   */
+  cpuPressure: 'CPU Pressure',
+  /**
+   * @description Title of an option in Sensors tab cpu pressure emulation drop-down. Turns off emulation of cpu pressure state.
+   */
+  noPressureEmulation: 'No override',
+  /**
+   * @description An option that appears in a drop-down that represents the nominal state.
+   */
+  nominal: 'Nominal',
+  /**
+   * @description An option that appears in a drop-down that represents the fair state.
+   */
+  fair: 'Fair',
+  /**
+   * @description An option that appears in a drop-down that represents the serious state.
+   */
+  serious: 'Serious',
+  /**
+   * @description An option that appears in a drop-down that represents the critical state.
+   */
+  critical: 'Critical',
+  /**
+   * @description Text for the touch type to simulate on a device. Refers to touch input as opposed to
+   * mouse input.
+   */
+  touch: 'Touch',
+  /**
+   * @description Text in Sensors View of the Device Toolbar. Means that touch input will be forced
+   *on, even if the device type e.g. desktop computer does not normally have touch input.
+   */
+  forceEnabled: 'Force enabled',
+  /**
+   * @description Text in Sensors View of the Device Toolbar. Refers to device-based touch input,
+   *which means the input type will be 'touch' only if the device normally has touch input e.g. a
+   *phone or tablet.
+   */
+  devicebased: 'Device-based',
+  /**
+   * @description Title of a section option in Sensors tab for idle emulation. This is a command, to
+   *emulate the state of the 'Idle Detector'.
+   */
+  emulateIdleDetectorState: 'Emulate Idle Detector state',
+  /**
+   * @description Title of an option in Sensors tab idle emulation drop-down. Turns off emulation of idle state.
+   */
+  noIdleEmulation: 'No idle emulation',
+  /**
+   * @description Title of an option in Sensors tab idle emulation drop-down.
+   */
+  userActiveScreenUnlocked: 'User active, screen unlocked',
+  /**
+   * @description Title of an option in Sensors tab idle emulation drop-down.
+   */
+  userActiveScreenLocked: 'User active, screen locked',
+  /**
+   * @description Title of an option in Sensors tab idle emulation drop-down.
+   */
+  userIdleScreenUnlocked: 'User idle, screen unlocked',
+  /**
+   * @description Title of an option in Sensors tab idle emulation drop-down.
+   */
+  userIdleScreenLocked: 'User idle, screen locked',
+  /**
+   * @description Title of a setting under the Rendering category that can be invoked through the Command Menu.
    */
   emulateCssPrintMediaType: 'Emulate CSS print media type',
   /**
-   * @description A drop-down menu option to emulate css print media type
+   * @description A drop-down menu option to emulate css print media type.
    */
   print: 'print',
   /**
-   * @description Title of a setting under the Rendering category that can be invoked through the Command Menu
+   * @description Title of a setting under the Rendering category that can be invoked through the Command Menu.
    */
   emulateCssScreenMediaType: 'Emulate CSS screen media type',
   /**
-   * @description A drop-down menu option to emulate css screen media type
+   * @description A drop-down menu option to emulate css screen media type.
    */
   screen: 'screen',
   /**
-   * @description A tag of Emulate CSS screen media type setting that can be searched in the command menu
+   * @description A tag of Emulate CSS screen media type setting that can be searched in the command menu.
    */
   query: 'query',
   /**
-   * @description Title of a setting under the Rendering drawer
+   * @description Title of a setting under the Rendering drawer.
    */
   emulateCssMediaType: 'Emulate CSS media type',
   /**
-   * @description Title of a setting under the Rendering drawer that can be invoked through the Command Menu
+   * @description Title of a setting under the Rendering drawer that can be invoked through the Command Menu.
    * @example {prefers-color-scheme} PH1
    */
   doNotEmulateCss: 'Do not emulate CSS {PH1}',
   /**
-   * @description Title of a setting under the Rendering drawer that can be invoked through the Command Menu
+   * @description Title of a setting under the Rendering drawer that can be invoked through the Command Menu.
    * @example {prefers-color-scheme: light} PH1
    */
   emulateCss: 'Emulate CSS {PH1}',
   /**
-   * @description Title of a setting under the Rendering drawer that can be invoked through the Command Menu
+   * @description Title of a setting under the Rendering drawer that can be invoked through the Command Menu.
    * @example {prefers-color-scheme} PH1
    */
   emulateCssMediaFeature: 'Emulate CSS media feature {PH1}',
   /**
-   * @description Title of a setting under the Rendering drawer that can be invoked through the Command Menu
+   * @description Title of a setting under the Rendering drawer that can be invoked through the Command Menu.
    */
   doNotEmulateAnyVisionDeficiency: 'Do not emulate any vision deficiency',
   /**
-   * @description Title of a setting under the Rendering drawer that can be invoked through the Command Menu
+   * @description Title of a setting under the Rendering drawer that can be invoked through the Command Menu.
    */
   emulateBlurredVision: 'Emulate blurred vision',
   /**
-   * @description Title of a setting under the Rendering drawer that can be invoked through the Command Menu
+   * @description Title of a setting under the Rendering drawer that can be invoked through the Command Menu.
    */
   emulateReducedContrast: 'Emulate reduced contrast',
   /**
-   * @description Name of a vision deficiency that can be emulated via the Rendering drawer
+   * @description Name of a vision deficiency that can be emulated via the Rendering drawer.
    */
   blurredVision: 'Blurred vision',
   /**
-   * @description Name of a vision deficiency that can be emulated via the Rendering drawer
+   * @description Name of a vision deficiency that can be emulated via the Rendering drawer.
    */
   reducedContrast: 'Reduced contrast',
   /**
-   * @description Title of a setting under the Rendering drawer that can be invoked through the Command Menu
+   * @description Title of a setting under the Rendering drawer that can be invoked through the Command Menu.
    */
   emulateProtanopia: 'Emulate protanopia (no red)',
   /**
-   * @description Name of a color vision deficiency that can be emulated via the Rendering drawer
+   * @description Name of a color vision deficiency that can be emulated via the Rendering drawer.
    */
   protanopia: 'Protanopia (no red)',
   /**
-   * @description Title of a setting under the Rendering drawer that can be invoked through the Command Menu
+   * @description Title of a setting under the Rendering drawer that can be invoked through the Command Menu.
    */
   emulateDeuteranopia: 'Emulate deuteranopia (no green)',
   /**
-   * @description Name of a color vision deficiency that can be emulated via the Rendering drawer
+   * @description Name of a color vision deficiency that can be emulated via the Rendering drawer.
    */
   deuteranopia: 'Deuteranopia (no green)',
   /**
-   * @description Title of a setting under the Rendering drawer that can be invoked through the Command Menu
+   * @description Title of a setting under the Rendering drawer that can be invoked through the Command Menu.
    */
   emulateTritanopia: 'Emulate tritanopia (no blue)',
   /**
-   * @description Name of a color vision deficiency that can be emulated via the Rendering drawer
+   * @description Name of a color vision deficiency that can be emulated via the Rendering drawer.
    */
   tritanopia: 'Tritanopia (no blue)',
   /**
-   * @description Title of a setting under the Rendering drawer that can be invoked through the Command Menu
+   * @description Title of a setting under the Rendering drawer that can be invoked through the Command Menu.
    */
   emulateAchromatopsia: 'Emulate achromatopsia (no color)',
   /**
-   * @description Name of a color vision deficiency that can be emulated via the Rendering drawer
+   * @description Name of a color vision deficiency that can be emulated via the Rendering drawer.
    */
   achromatopsia: 'Achromatopsia (no color)',
   /**
-   * @description Title of a setting under the Rendering drawer
+   * @description Title of a setting under the Rendering drawer.
    */
   emulateVisionDeficiencies: 'Emulate vision deficiencies',
   /**
-   * @description Title of a setting under the Rendering drawer
+   * @description Title of a setting under the Rendering drawer.
    */
   emulateOsTextScale: 'Emulate OS text scale',
   /**
-   * @description Title of a setting under the Rendering category that can be invoked through the Command Menu
+   * @description Title of a setting under the Rendering category that can be invoked through the Command Menu.
    */
   doNotEmulateOsTextScale: 'Do not emulate OS text scale',
   /**
-   * @description A drop-down menu option to not emulate OS text scale
+   * @description A drop-down menu option to not emulate OS text scale.
    */
   osTextScaleEmulationNone: 'No emulation',
   /**
-   * @description A drop-down menu option to emulate an OS text scale 85%
+   * @description A drop-down menu option to emulate an OS text scale 85%.
    */
   osTextScaleEmulation85: '85%',
   /**
-   * @description A drop-down menu option to emulate an OS text scale of 100%
+   * @description A drop-down menu option to emulate an OS text scale of 100%.
    */
   osTextScaleEmulation100: '100% (default)',
   /**
-   * @description A drop-down menu option to emulate an OS text scale of 115%
+   * @description A drop-down menu option to emulate an OS text scale of 115%.
    */
   osTextScaleEmulation115: '115%',
   /**
-   * @description A drop-down menu option to emulate an OS text scale of 130%
+   * @description A drop-down menu option to emulate an OS text scale of 130%.
    */
   osTextScaleEmulation130: '130%',
   /**
-   * @description A drop-down menu option to emulate an OS text scale of 150%
+   * @description A drop-down menu option to emulate an OS text scale of 150%.
    */
   osTextScaleEmulation150: '150%',
   /**
-   * @description A drop-down menu option to emulate an OS text scale of 180%
+   * @description A drop-down menu option to emulate an OS text scale of 180%.
    */
   osTextScaleEmulation180: '180%',
   /**
-   * @description A drop-down menu option to emulate an OS text scale of 200%
+   * @description A drop-down menu option to emulate an OS text scale of 200%.
    */
   osTextScaleEmulation200: '200%',
   /**
-   * @description Text that refers to disabling local fonts
+   * @description A drop-down menu option to emulate an OS text scale of 250%.
+   */
+  osTextScaleEmulation250: '250%',
+  /**
+   * @description A drop-down menu option to emulate an OS text scale of 300%.
+   */
+  osTextScaleEmulation300: '300%',
+  /**
+   * @description A drop-down menu option to emulate an OS text scale of 350%.
+   */
+  osTextScaleEmulation350: '350%',
+  /**
+   * @description Text that refers to disabling local fonts.
    */
   disableLocalFonts: 'Disable local fonts',
   /**
-   * @description Text that refers to enabling local fonts
+   * @description Text that refers to enabling local fonts.
    */
   enableLocalFonts: 'Enable local fonts',
   /**
-   * @description Title of a setting that disables AVIF format
+   * @description Title of a setting that disables AVIF format.
    */
   disableAvifFormat: 'Disable `AVIF` format',
   /**
-   * @description Title of a setting that enables AVIF format
+   * @description Title of a setting that enables AVIF format.
    */
   enableAvifFormat: 'Enable `AVIF` format',
   /**
-   * @description Title of a setting that disables JPEG XL format
+   * @description Title of a setting that disables JPEG XL format.
    */
   disableJpegXlFormat: 'Disable `JPEG XL` format',
   /**
-   * @description Title of a setting that enables JPEG XL format
+   * @description Title of a setting that enables JPEG XL format.
    */
   enableJpegXlFormat: 'Enable `JPEG XL` format',
   /**
-   * @description Title of a setting that disables WebP format
+   * @description Title of a setting that disables WebP format.
    */
   disableWebpFormat: 'Disable `WebP` format',
   /**
-   * @description Title of a setting that enables WebP format
+   * @description Title of a setting that enables WebP format.
    */
   enableWebpFormat: 'Enable `WebP` format',
   /**
-   * @description Title of a setting under the Console category in Settings
+   * @description Title of a setting under the Console category in Settings.
    */
   customFormatters: 'Custom formatters',
   /**
-   * @description Title of a setting under the Network category
+   * @description Title of a setting under the Network category.
    */
   networkRequestBlocking: 'Network request blocking',
   /**
-   * @description Title of a setting under the Network category that can be invoked through the Command Menu
+   * @description Title of a setting under the Network category that can be invoked through the Command Menu.
    */
   enableNetworkRequestBlocking: 'Enable network request blocking',
   /**
-   * @description Title of a setting under the Network category that can be invoked through the Command Menu
+   * @description Title of a setting under the Network category that can be invoked through the Command Menu.
    */
   disableNetworkRequestBlocking: 'Disable network request blocking',
   /**
-   * @description Title of a setting under the Network category that can be invoked through the Command Menu
+   * @description Title of a setting under the Network category that can be invoked through the Command Menu.
    */
   enableCache: 'Enable cache',
   /**
-   * @description Title of a setting under the Network category that can be invoked through the Command Menu
+   * @description Title of a setting under the Network category that can be invoked through the Command Menu.
    */
   disableCache: 'Disable cache while DevTools is open',
   /**
@@ -369,44 +446,27 @@ const UIStrings = {
   /**
    * @description Tooltip text for a setting that controls whether external resource can be loaded in DevTools.
    */
-  remoteFileLoadingInfo: 'Example resource are source maps. Disabled by default for security reasons.',
+  remoteFileLoadingInfo: 'Example resources are source maps. Disabled by default for security reasons.',
   /**
    * @description Tooltip text for a setting that controls the network cache. Disabling the network cache can simulate the network connections of users that are visiting a page for the first time.
    */
   networkCacheExplanation:
       'Disabling the network cache will simulate a network experience similar to a first time visitor.',
   /**
-   * @description Setting under the Sources category to toggle usage of JavaScript source maps.
-   */
-  javaScriptSourceMaps: 'JavaScript source maps',
-  /**
-   * @description Title of an option under the Sources category that can be invoked through the Command Menu
-   */
-  enableJavaScriptSourceMaps: 'Enable JavaScript source maps',
-  /**
-   * @description Title of an option under the Sources category that can be invoked through the Command Menu
-   */
-  disableJavaScriptSourceMaps: 'Disable JavaScript source maps',
-  /**
-   * @description Title of a setting under the Sources category
-   */
-  cssSourceMaps: 'CSS source maps',
-  /**
-   * @description Title of an option under the Sources category that can be invoked through the Command Menu
-   */
-  enableCssSourceMaps: 'Enable CSS source maps',
-  /**
-   * @description Title of an option under the Sources category that can be invoked through the Command Menu
-   */
-  disableCssSourceMaps: 'Disable CSS source maps',
-  /**
-   * @description Title of a setting under the Console category in Settings
+   * @description Title of a setting under the Console category in Settings.
    */
   logXmlhttprequests: 'Log XMLHttpRequests',
   /**
    * @description Title of a setting under the Elements category in Settings.
    */
   apca: 'Advanced Perceptual Contrast Algorithm (APCA) replacing previous contrast ratio and AA/AAA guidelines',
+  /**
+   * @description Title of a setting under the Appearance category in Settings. When the webpage is
+   * paused by devtools, an overlay is shown on top of the page to indicate that it is paused. The
+   * overlay is a pause/unpause button and some text, which appears on top of the paused page. This
+   * setting turns off this overlay.
+   */
+  disablePaused: 'Disable paused state overlay',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('core/sdk/sdk-meta.ts', UIStrings);
 const i18nLazyString = i18n.i18n.getLazilyComputedLocalizedString.bind(undefined, str_);
@@ -774,6 +834,95 @@ Common.Settings.registerSettingExtension({
 });
 
 Common.Settings.registerSettingExtension({
+  title: i18nLazyString(UIStrings.cpuPressure),
+  reloadRequired: true,
+  settingName: 'emulation.cpu-pressure',
+  settingType: Common.Settings.SettingType.ENUM,
+  defaultValue: 'none',
+  options: [
+    {
+      value: 'none',
+      title: i18nLazyString(UIStrings.noPressureEmulation),
+      text: i18nLazyString(UIStrings.noPressureEmulation),
+    },
+    {
+      value: 'nominal',
+      title: i18nLazyString(UIStrings.nominal),
+      text: i18nLazyString(UIStrings.nominal),
+    },
+    {
+      value: 'fair',
+      title: i18nLazyString(UIStrings.fair),
+      text: i18nLazyString(UIStrings.fair),
+    },
+    {
+      value: 'serious',
+      title: i18nLazyString(UIStrings.serious),
+      text: i18nLazyString(UIStrings.serious),
+    },
+    {
+      value: 'critical',
+      title: i18nLazyString(UIStrings.critical),
+      text: i18nLazyString(UIStrings.critical),
+    },
+  ],
+});
+
+Common.Settings.registerSettingExtension({
+  title: i18nLazyString(UIStrings.touch),
+  reloadRequired: true,
+  settingName: 'emulation.touch',
+  settingType: Common.Settings.SettingType.ENUM,
+  defaultValue: 'none',
+  options: [
+    {
+      value: 'none',
+      title: i18nLazyString(UIStrings.devicebased),
+      text: i18nLazyString(UIStrings.devicebased),
+    },
+    {
+      value: 'force',
+      title: i18nLazyString(UIStrings.forceEnabled),
+      text: i18nLazyString(UIStrings.forceEnabled),
+    },
+  ],
+});
+
+Common.Settings.registerSettingExtension({
+  title: i18nLazyString(UIStrings.emulateIdleDetectorState),
+  settingName: 'emulation.idle-detection',
+  settingType: Common.Settings.SettingType.ENUM,
+  defaultValue: 'none',
+  options: [
+    {
+      value: 'none',
+      title: i18nLazyString(UIStrings.noIdleEmulation),
+      text: i18nLazyString(UIStrings.noIdleEmulation),
+    },
+    {
+      value: '{\"isUserActive\":true,\"isScreenUnlocked\":true}',
+      title: i18nLazyString(UIStrings.userActiveScreenUnlocked),
+      text: i18nLazyString(UIStrings.userActiveScreenUnlocked),
+    },
+    {
+      value: '{\"isUserActive\":true,\"isScreenUnlocked\":false}',
+      title: i18nLazyString(UIStrings.userActiveScreenLocked),
+      text: i18nLazyString(UIStrings.userActiveScreenLocked),
+    },
+    {
+      value: '{\"isUserActive\":false,\"isScreenUnlocked\":true}',
+      title: i18nLazyString(UIStrings.userIdleScreenUnlocked),
+      text: i18nLazyString(UIStrings.userIdleScreenUnlocked),
+    },
+    {
+      value: '{\"isUserActive\":false,\"isScreenUnlocked\":false}',
+      title: i18nLazyString(UIStrings.userIdleScreenLocked),
+      text: i18nLazyString(UIStrings.userIdleScreenLocked),
+    },
+  ],
+});
+
+Common.Settings.registerSettingExtension({
   category: Common.Settings.SettingCategory.RENDERING,
   settingName: 'emulated-css-media-feature-prefers-color-scheme',
   settingType: Common.Settings.SettingType.ENUM,
@@ -1054,6 +1203,21 @@ Common.Settings.registerSettingExtension({
       text: i18nLazyString(UIStrings.osTextScaleEmulation200),
       value: '2',
     },
+    {
+      title: i18nLazyString(UIStrings.osTextScaleEmulation250),
+      text: i18nLazyString(UIStrings.osTextScaleEmulation250),
+      value: '2.5',
+    },
+    {
+      title: i18nLazyString(UIStrings.osTextScaleEmulation300),
+      text: i18nLazyString(UIStrings.osTextScaleEmulation300),
+      value: '3',
+    },
+    {
+      title: i18nLazyString(UIStrings.osTextScaleEmulation350),
+      text: i18nLazyString(UIStrings.osTextScaleEmulation350),
+      value: '3.5',
+    },
   ],
   tags: [
     i18nLazyString(UIStrings.query),
@@ -1167,7 +1331,6 @@ Common.Settings.registerSettingExtension({
   settingType: Common.Settings.SettingType.BOOLEAN,
   order: 0,
   defaultValue: false,
-  userActionCondition: 'hasOtherClients',
   options: [
     {
       value: true,
@@ -1201,45 +1364,7 @@ Common.Settings.registerSettingExtension({
   defaultValue: false,
   learnMore: {
     tooltip: i18nLazyString(UIStrings.remoteFileLoadingInfo),
-  }
-});
-
-Common.Settings.registerSettingExtension({
-  category: Common.Settings.SettingCategory.SOURCES,
-  storageType: Common.Settings.SettingStorageType.SYNCED,
-  title: i18nLazyString(UIStrings.javaScriptSourceMaps),
-  settingName: 'js-source-maps-enabled',
-  settingType: Common.Settings.SettingType.BOOLEAN,
-  defaultValue: true,
-  options: [
-    {
-      value: true,
-      title: i18nLazyString(UIStrings.enableJavaScriptSourceMaps),
-    },
-    {
-      value: false,
-      title: i18nLazyString(UIStrings.disableJavaScriptSourceMaps),
-    },
-  ],
-});
-
-Common.Settings.registerSettingExtension({
-  category: Common.Settings.SettingCategory.SOURCES,
-  storageType: Common.Settings.SettingStorageType.SYNCED,
-  title: i18nLazyString(UIStrings.cssSourceMaps),
-  settingName: 'css-source-maps-enabled',
-  settingType: Common.Settings.SettingType.BOOLEAN,
-  defaultValue: true,
-  options: [
-    {
-      value: true,
-      title: i18nLazyString(UIStrings.enableCssSourceMaps),
-    },
-    {
-      value: false,
-      title: i18nLazyString(UIStrings.disableCssSourceMaps),
-    },
-  ],
+  },
 });
 
 Common.Settings.registerSettingExtension({
@@ -1247,6 +1372,15 @@ Common.Settings.registerSettingExtension({
   storageType: Common.Settings.SettingStorageType.SYNCED,
   title: i18nLazyString(UIStrings.logXmlhttprequests),
   settingName: 'monitoring-xhr-enabled',
+  settingType: Common.Settings.SettingType.BOOLEAN,
+  defaultValue: false,
+});
+
+Common.Settings.registerSettingExtension({
+  category: Common.Settings.SettingCategory.APPEARANCE,
+  storageType: Common.Settings.SettingStorageType.SYNCED,
+  title: i18nLazyString(UIStrings.disablePaused),
+  settingName: 'disable-paused-state-overlay',
   settingType: Common.Settings.SettingType.BOOLEAN,
   defaultValue: false,
 });

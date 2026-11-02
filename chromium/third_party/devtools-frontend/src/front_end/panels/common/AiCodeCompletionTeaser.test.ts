@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -105,9 +106,8 @@ describeWithEnvironment('AiCodeCompletionTeaser', () => {
 
     assert.strictEqual(view.input.aidaAvailability, Host.AidaClient.AidaAccessPreconditions.NO_ACCOUNT_EMAIL);
 
-    checkAccessPreconditionsStub.resolves(Host.AidaClient.AidaAccessPreconditions.AVAILABLE);
     Host.AidaClient.HostConfigTracker.instance().dispatchEventToListeners(
-        Host.AidaClient.Events.AIDA_AVAILABILITY_CHANGED);
+        Host.AidaClient.Events.AIDA_AVAILABILITY_CHANGED, Host.AidaClient.AidaAccessPreconditions.AVAILABLE);
 
     await view.nextInput;
 
@@ -122,9 +122,8 @@ describeWithEnvironment('AiCodeCompletionTeaser', () => {
 
     assert.strictEqual(view.input.aidaAvailability, Host.AidaClient.AidaAccessPreconditions.AVAILABLE);
 
-    checkAccessPreconditionsStub.resolves(Host.AidaClient.AidaAccessPreconditions.NO_ACCOUNT_EMAIL);
     Host.AidaClient.HostConfigTracker.instance().dispatchEventToListeners(
-        Host.AidaClient.Events.AIDA_AVAILABILITY_CHANGED);
+        Host.AidaClient.Events.AIDA_AVAILABILITY_CHANGED, Host.AidaClient.AidaAccessPreconditions.NO_ACCOUNT_EMAIL);
 
     await view.nextInput;
 

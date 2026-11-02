@@ -11,8 +11,9 @@ import 'chrome://resources/cr_elements/cr_icon/cr_icon.js';
 import 'chrome://resources/cr_elements/icons.html.js';
 
 import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
+import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 
-import {BrowserServiceImpl} from './browser_service.js';
+import {BrowserProxyImpl} from './browser_proxy.js';
 import {getCss} from './history_filter_chips.css.js';
 import {getHtml} from './history_filter_chips.html.js';
 
@@ -76,12 +77,15 @@ export class HistoryFilterChipsElement extends CrLitElement {
     }
 
     if (action !== '') {
-      BrowserServiceImpl.getInstance().recordAction(action);
+      BrowserProxyImpl.getInstance().recordAction(action);
     }
   }
 
   protected getUserVisitsIcon_(): string {
-    return this.isUserSelected() ? 'cr:check' : 'cr:person';
+    if (this.isUserSelected()) {
+      return 'cr:check';
+    }
+    return this.isCriticalActionsEnabled_() ? 'cr:person-outline' : 'cr:person';
   }
 
   protected getActorVisitsIcon_(): string {
@@ -89,11 +93,18 @@ export class HistoryFilterChipsElement extends CrLitElement {
       return 'cr:check';
     }
     // <if expr="_google_chrome">
-    return 'history-internal:screensaver-auto';
+    return this.isCriticalActionsEnabled_() ?
+        'history-internal:arrow-selector-spark' :
+        'history-internal:screensaver-auto';
     // </if>
     // <if expr="not _google_chrome">
     return '';
     // </if>
+  }
+
+  private isCriticalActionsEnabled_(): boolean {
+    return loadTimeData.valueExists('isCriticalActionsEnabled') &&
+        loadTimeData.getBoolean('isCriticalActionsEnabled');
   }
 
   private fireChange_(userVisits: boolean, actorVisits: boolean) {

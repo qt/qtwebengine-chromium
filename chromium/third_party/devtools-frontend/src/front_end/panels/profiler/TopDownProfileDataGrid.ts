@@ -30,9 +30,9 @@
 import type * as CPUProfile from '../../models/cpu_profile/cpu_profile.js';
 import type * as UI from '../../ui/legacy/legacy.js';
 
-import {type Formatter, ProfileDataGridNode, ProfileDataGridTree} from './ProfileDataGrid.js';
+import {type Formatter, ProfileDataGridTree, ProfileEntry} from './ProfileDataGrid.js';
 
-export class TopDownProfileDataGridNode extends ProfileDataGridNode {
+export class TopDownProfileEntry extends ProfileEntry {
   remainingChildren: CPUProfile.ProfileTreeModel.ProfileNode[];
   constructor(profileNode: CPUProfile.ProfileTreeModel.ProfileNode, owningTree: TopDownProfileDataGridTree) {
     const hasChildren = Boolean(profileNode.children?.length);
@@ -42,21 +42,20 @@ export class TopDownProfileDataGridNode extends ProfileDataGridNode {
     this.remainingChildren = profileNode.children;
   }
 
-  static sharedPopulate(container: TopDownProfileDataGridTree|TopDownProfileDataGridNode): void {
+  static sharedPopulate(container: TopDownProfileDataGridTree|TopDownProfileEntry): void {
     const children = container.remainingChildren;
     const childrenLength = children.length;
 
     for (let i = 0; i < childrenLength; ++i) {
-      container.appendChild(
-          new TopDownProfileDataGridNode(children[i], (container.tree as TopDownProfileDataGridTree)));
+      container.appendChild(new TopDownProfileEntry(children[i], (container.tree as TopDownProfileDataGridTree)));
     }
 
     container.remainingChildren = [];
   }
 
-  static excludeRecursively(container: TopDownProfileDataGridTree|TopDownProfileDataGridNode, aCallUID: string): void {
+  static excludeRecursively(container: TopDownProfileDataGridTree|TopDownProfileEntry, aCallUID: string): void {
     if (container.remainingChildren.length > 0) {
-      (container as TopDownProfileDataGridNode).populate();
+      (container as TopDownProfileEntry).populate();
     }
 
     container.save();
@@ -65,18 +64,18 @@ export class TopDownProfileDataGridNode extends ProfileDataGridNode {
     let index = container.children.length;
 
     while (index--) {
-      TopDownProfileDataGridNode.excludeRecursively((children[index] as TopDownProfileDataGridNode), aCallUID);
+      TopDownProfileEntry.excludeRecursively((children[index] as TopDownProfileEntry), aCallUID);
     }
 
     const child = container.childrenByCallUID.get(aCallUID);
 
     if (child) {
-      ProfileDataGridNode.merge(container, child, true);
+      ProfileEntry.merge(container, child, true);
     }
   }
 
   override populateChildren(): void {
-    TopDownProfileDataGridNode.sharedPopulate(this);
+    TopDownProfileEntry.sharedPopulate(this);
   }
 }
 
@@ -88,10 +87,10 @@ export class TopDownProfileDataGridTree extends ProfileDataGridTree {
       rootProfileNode: CPUProfile.ProfileTreeModel.ProfileNode, total: number) {
     super(formatter, searchableView, total);
     this.remainingChildren = rootProfileNode.children;
-    ProfileDataGridNode.populate(this);
+    ProfileEntry.populate(this);
   }
 
-  override focus(profileDataGridNode: ProfileDataGridNode): void {
+  override focus(profileDataGridNode: ProfileEntry): void {
     if (!profileDataGridNode) {
       return;
     }
@@ -99,22 +98,19 @@ export class TopDownProfileDataGridTree extends ProfileDataGridTree {
     this.save();
     profileDataGridNode.savePosition();
 
-    this.children = [profileDataGridNode];
+    this.removeChildren();
+    this.appendChild(profileDataGridNode);
     this.total = profileDataGridNode.total;
   }
 
-  override exclude(profileDataGridNode: ProfileDataGridNode): void {
+  override exclude(profileDataGridNode: ProfileEntry): void {
     if (!profileDataGridNode) {
       return;
     }
 
     this.save();
 
-    TopDownProfileDataGridNode.excludeRecursively(this, profileDataGridNode.callUID);
-
-    if (this.lastComparator) {
-      this.sort(this.lastComparator, true);
-    }
+    TopDownProfileEntry.excludeRecursively(this, profileDataGridNode.callUID);
   }
 
   override restore(): void {
@@ -122,12 +118,12 @@ export class TopDownProfileDataGridTree extends ProfileDataGridTree {
       return;
     }
 
-    this.children[0].restorePosition();
+    this.children[0]?.restorePosition();
 
     super.restore();
   }
 
   override populateChildren(): void {
-    TopDownProfileDataGridNode.sharedPopulate(this);
+    TopDownProfileEntry.sharedPopulate(this);
   }
 }

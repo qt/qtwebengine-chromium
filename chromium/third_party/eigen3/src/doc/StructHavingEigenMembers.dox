@@ -151,7 +151,7 @@ Foo<3> *foo3 = new Foo<3>; // foo3 has only the system default alignment guarant
 
 \section StructHavingEigenMembers_othersolutions Other solutions
 
-In case putting the `EIGEN_MAKE_ALIGNED_OPERATOR_NEW` macro everywhere is too intrusive, there exists at least two other solutions.
+In case putting the `EIGEN_MAKE_ALIGNED_OPERATOR_NEW` macro everywhere is too intrusive, there are other solutions.
 
 \subsection othersolutions1 Disabling alignment
 
@@ -168,9 +168,38 @@ This `v` is fully compatible with aligned Eigen::Vector4d.
 This has only for effect to make load/stores to `v` more expensive (usually slightly, but that's hardware dependent).
 
 
-\subsection othersolutions2 Private structure
+\subsection othersolutions2 Owning Eigen objects through smart pointers
 
-The second consist in storing the fixed-size objects into a private struct which will be dynamically allocated at the construction time of the main object:
+If only one or two fixed-size vectorizable Eigen objects are involved, the containing class can store them through
+owning smart pointers instead of storing them directly. Then each Eigen object is dynamically allocated on its own and
+uses Eigen's aligned allocation, while the containing object no longer has an over-aligned Eigen member:
+
+\code
+class Foo
+{
+  ...
+  std::unique_ptr<Eigen::Vector4d> v;
+  ...
+public:
+  Foo() : v(new Eigen::Vector4d) {}
+  void bar()
+  {
+    // use *v instead of v
+    ...
+  }
+};
+\endcode
+
+Do not use a naked owning pointer for this unless you also define the destructor and copy/move operations correctly.
+A `std::unique_ptr` member also makes `Foo` non-copyable unless you define copy operations with the desired ownership
+semantics.
+For several Eigen members, grouping them into a helper structure as shown below is usually clearer and requires only
+one additional allocation.
+
+\subsection othersolutions3 Private structure
+
+Another solution consists in storing the fixed-size objects into a private struct which will be dynamically allocated
+at the construction time of the main object:
 
 \code
 struct Foo_d

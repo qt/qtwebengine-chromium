@@ -16,19 +16,18 @@
 #include "util.h"
 #include "virtgpu.h"
 
-#define CAPSET_CROSS_DOMAIN 5
 #define CAPSET_CROSS_FAKE 30
 
-static const uint32_t scanout_render_formats[] = { DRM_FORMAT_ABGR2101010, DRM_FORMAT_ABGR8888,
-						   DRM_FORMAT_ARGB2101010, DRM_FORMAT_ARGB8888,
-						   DRM_FORMAT_RGB565,	   DRM_FORMAT_XBGR2101010,
-						   DRM_FORMAT_XBGR8888,	   DRM_FORMAT_XRGB2101010,
+static const uint32_t scanout_render_formats[] = { DRM_FORMAT_ABGR8888, DRM_FORMAT_ARGB8888,
+						   DRM_FORMAT_RGB565, DRM_FORMAT_XBGR8888,
 						   DRM_FORMAT_XRGB8888 };
 
-static const uint32_t render_formats[] = { DRM_FORMAT_ABGR16161616F };
-
-static const uint32_t texture_only_formats[] = { DRM_FORMAT_R8, DRM_FORMAT_NV12, DRM_FORMAT_P010,
-						 DRM_FORMAT_YVU420, DRM_FORMAT_YVU420_ANDROID };
+static const uint32_t texture_only_formats[] = {
+	DRM_FORMAT_R8,		 DRM_FORMAT_NV12,	    DRM_FORMAT_P010,
+	DRM_FORMAT_YVU420,	 DRM_FORMAT_YVU420_ANDROID, DRM_FORMAT_ABGR2101010,
+	DRM_FORMAT_ARGB2101010,	 DRM_FORMAT_XBGR2101010,    DRM_FORMAT_XRGB2101010,
+	DRM_FORMAT_ABGR16161616F
+};
 
 extern struct virtgpu_param params[];
 
@@ -36,7 +35,8 @@ struct cross_domain_private {
 	uint32_t ring_handle;
 	void *ring_addr;
 	struct drv_array *metadata_cache;
-	pthread_mutex_t metadata_cache_lock;
+	pthread_mutex_t bo_create_lock;
+	bool mt8183_camera_quirk_;
 };
 
 static void cross_domain_release_private(struct driver *drv)
@@ -61,7 +61,7 @@ static void cross_domain_release_private(struct driver *drv)
 	if (priv->metadata_cache)
 		drv_array_destroy(priv->metadata_cache);
 
-	pthread_mutex_destroy(&priv->metadata_cache_lock);
+	pthread_mutex_destroy(&priv->bo_create_lock);
 
 	free(priv);
 }
@@ -77,9 +77,6 @@ static void add_combinations(struct driver *drv)
 
 	drv_add_combinations(drv, scanout_render_formats, ARRAY_SIZE(scanout_render_formats),
 			     &metadata, BO_USE_RENDER_MASK | BO_USE_SCANOUT);
-
-	drv_add_combinations(drv, render_formats, ARRAY_SIZE(render_formats), &metadata,
-			     BO_USE_RENDER_MASK);
 
 	drv_add_combinations(drv, texture_only_formats, ARRAY_SIZE(texture_only_formats), &metadata,
 			     BO_USE_TEXTURE_MASK);
@@ -112,10 +109,10 @@ static int cross_domain_submit_cmd(struct driver *drv, uint32_t *cmd, uint32_t c
 	struct drm_virtgpu_execbuffer exec = { 0 };
 	struct cross_domain_private *priv = drv->priv;
 
+	exec.flags = VIRTGPU_EXECBUF_RING_IDX;
 	exec.command = (uint64_t)&cmd[0];
 	exec.size = cmd_size;
 	if (wait) {
-		exec.flags = VIRTGPU_EXECBUF_RING_IDX;
 		exec.bo_handles = (uint64_t)&priv->ring_handle;
 		exec.num_bo_handles = 1;
 	}
@@ -155,17 +152,16 @@ static int cross_domain_metadata_query(struct driver *drv, struct bo_metadata *m
 	struct cross_domain_private *priv = drv->priv;
 	struct CrossDomainGetImageRequirements cmd_get_reqs;
 	uint32_t *addr = (uint32_t *)priv->ring_addr;
-	uint32_t plane, remaining_size;
+	uint32_t plane;
 
 	memset(&cmd_get_reqs, 0, sizeof(cmd_get_reqs));
-	pthread_mutex_lock(&priv->metadata_cache_lock);
 	for (uint32_t i = 0; i < drv_array_size(priv->metadata_cache); i++) {
 		cached_data = (struct bo_metadata *)drv_array_at_idx(priv->metadata_cache, i);
 		if (!metadata_equal(metadata, cached_data))
 			continue;
 
 		memcpy(metadata, cached_data, sizeof(*cached_data));
-		goto out_unlock;
+		return 0;
 	}
 
 	cmd_get_reqs.hdr.cmd = CROSS_DOMAIN_CMD_GET_IMAGE_REQUIREMENTS;
@@ -173,9 +169,17 @@ static int cross_domain_metadata_query(struct driver *drv, struct bo_metadata *m
 
 	cmd_get_reqs.width = metadata->width;
 	cmd_get_reqs.height = metadata->height;
-	cmd_get_reqs.drm_format =
-	    (metadata->format == DRM_FORMAT_YVU420_ANDROID) ? DRM_FORMAT_YVU420 : metadata->format;
+	cmd_get_reqs.drm_format = metadata->format;
 	cmd_get_reqs.flags = metadata->use_flags;
+
+	// HACK(b/360937659): see also: b/172389166,  for history
+	// host minigbm has a hack that recognizes DRM_FORMAT_YVU420 + BO_USE_LINEAR and replaces
+	// the format internally back to DRM_FORMAT_YVU420_ANDROID to use the approrpriate layout
+	// rules.
+	if (cmd_get_reqs.drm_format == DRM_FORMAT_YVU420_ANDROID) {
+		cmd_get_reqs.drm_format = DRM_FORMAT_YVU420;
+		cmd_get_reqs.flags |= BO_USE_LINEAR;
+	}
 
 	/*
 	 * It is possible to avoid blocking other bo_create() calls by unlocking before
@@ -187,7 +191,7 @@ static int cross_domain_metadata_query(struct driver *drv, struct bo_metadata *m
 	ret = cross_domain_submit_cmd(drv, (uint32_t *)&cmd_get_reqs, cmd_get_reqs.hdr.cmd_size,
 				      true);
 	if (ret < 0)
-		goto out_unlock;
+		return ret;
 
 	memcpy(&metadata->strides, &addr[0], 4 * sizeof(uint32_t));
 	memcpy(&metadata->offsets, &addr[4], 4 * sizeof(uint32_t));
@@ -199,25 +203,14 @@ static int cross_domain_metadata_query(struct driver *drv, struct bo_metadata *m
 	metadata->memory_idx = addr[14];
 	metadata->physical_device_idx = addr[15];
 
-	/* Detect buffers, which have no particular stride alignment requirement: */
-	if ((metadata->height == 1) && (metadata->format == DRM_FORMAT_R8)) {
-		metadata->strides[0] = metadata->width;
+	for (plane = 1; plane < metadata->num_planes; plane++) {
+		metadata->sizes[plane - 1] =
+		    metadata->offsets[plane] - metadata->offsets[plane - 1];
 	}
+	metadata->sizes[plane - 1] = metadata->total_size - metadata->offsets[plane - 1];
 
-	remaining_size = metadata->total_size;
-	for (plane = 0; plane < metadata->num_planes; plane++) {
-		if (plane != 0) {
-			metadata->sizes[plane - 1] = metadata->offsets[plane];
-			remaining_size -= metadata->offsets[plane];
-		}
-	}
-
-	metadata->sizes[plane - 1] = remaining_size;
 	drv_array_append(priv->metadata_cache, metadata);
-
-out_unlock:
-	pthread_mutex_unlock(&priv->metadata_cache_lock);
-	return ret;
+	return 0;
 }
 
 /* Fill out metadata for guest buffers, used only for CPU access: */
@@ -253,7 +246,7 @@ static int cross_domain_init(struct driver *drv)
 	if (!params[param_context_init].value)
 		return -ENOTSUP;
 
-	if ((params[param_supported_capset_ids].value & (1 << CAPSET_CROSS_DOMAIN)) == 0)
+	if ((params[param_supported_capset_ids].value & (1 << VIRTIO_GPU_CAPSET_CROSS_DOMAIN)) == 0)
 		return -ENOTSUP;
 
 	if (!params[param_resource_blob].value)
@@ -267,7 +260,7 @@ static int cross_domain_init(struct driver *drv)
 	if (!priv)
 		return -ENOMEM;
 
-	ret = pthread_mutex_init(&priv->metadata_cache_lock, NULL);
+	ret = pthread_mutex_init(&priv->bo_create_lock, NULL);
 	if (ret) {
 		free(priv);
 		return ret;
@@ -282,7 +275,7 @@ static int cross_domain_init(struct driver *drv)
 	priv->ring_addr = MAP_FAILED;
 	drv->priv = priv;
 
-	args.cap_set_id = CAPSET_CROSS_DOMAIN;
+	args.cap_set_id = VIRTIO_GPU_CAPSET_CROSS_DOMAIN;
 	args.size = sizeof(struct CrossDomainCapabilities);
 	args.addr = (unsigned long long)&cross_domain_caps;
 
@@ -303,7 +296,7 @@ static int cross_domain_init(struct driver *drv)
 	// Intialize the cross domain context.  Create one fence context to wait for metadata
 	// queries.
 	ctx_set_params[0].param = VIRTGPU_CONTEXT_PARAM_CAPSET_ID;
-	ctx_set_params[0].value = CAPSET_CROSS_DOMAIN;
+	ctx_set_params[0].value = VIRTIO_GPU_CAPSET_CROSS_DOMAIN;
 	ctx_set_params[1].param = VIRTGPU_CONTEXT_PARAM_NUM_RINGS;
 	ctx_set_params[1].value = 1;
 
@@ -352,6 +345,10 @@ static int cross_domain_init(struct driver *drv)
 	if (ret < 0)
 		goto free_private;
 
+	const char *name;
+	name = drv_get_os_option("ro.product.name");
+	priv->mt8183_camera_quirk_ = name && !strcmp(name, "kukui");
+
 	// minigbm bookkeeping
 	add_combinations(drv);
 	return 0;
@@ -366,8 +363,8 @@ static void cross_domain_close(struct driver *drv)
 	cross_domain_release_private(drv);
 }
 
-static int cross_domain_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint32_t format,
-				  uint64_t use_flags)
+static int cross_domain_bo_create_locked(struct bo *bo, uint32_t width, uint32_t height,
+					 uint32_t format, uint64_t use_flags)
 {
 	int ret;
 	uint32_t blob_flags = VIRTGPU_BLOB_FLAG_USE_SHAREABLE;
@@ -412,18 +409,40 @@ static int cross_domain_bo_create(struct bo *bo, uint32_t width, uint32_t height
 		return -errno;
 	}
 
-	for (uint32_t plane = 0; plane < bo->meta.num_planes; plane++)
-		bo->handles[plane].u32 = drm_rc_blob.bo_handle;
+	bo->handle.u32 = drm_rc_blob.bo_handle;
 
 	return 0;
 }
 
-static void *cross_domain_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint32_t map_flags)
+static int cross_domain_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint32_t format,
+				  uint64_t use_flags)
+{
+
+	int ret = 0;
+	struct cross_domain_private *priv = bo->drv->priv;
+
+	// HACK(b/395748805): Any host GET_IMAGE_REQUIREMENTS request must be immediately followed
+	// by the matching CREATE_BLOB request, as the current implementation in crosvm stashes a
+	// single buffer allocation for the first to be returned by the second. We ensure the two
+	// requests are made back to back by using a mutex lock, where the lock is acquired for the
+	// duration of the allocation requests.
+	//
+	// This forces all guest allocations to be made in serial order, and allows the host buffer
+	// stash to be an optimization.
+	pthread_mutex_lock(&priv->bo_create_lock);
+
+	ret = cross_domain_bo_create_locked(bo, width, height, format, use_flags);
+
+	pthread_mutex_unlock(&priv->bo_create_lock);
+	return ret;
+}
+
+static void *cross_domain_bo_map(struct bo *bo, struct vma *vma, uint32_t map_flags)
 {
 	int ret;
 	struct drm_virtgpu_map gem_map = { 0 };
 
-	gem_map.handle = bo->handles[0].u32;
+	gem_map.handle = bo->handle.u32;
 	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_VIRTGPU_MAP, &gem_map);
 	if (ret) {
 		drv_loge("DRM_IOCTL_VIRTGPU_MAP failed with %s\n", strerror(errno));
@@ -435,14 +454,51 @@ static void *cross_domain_bo_map(struct bo *bo, struct vma *vma, size_t plane, u
 		    gem_map.offset);
 }
 
+static void cross_domain_resolve_format_and_use_flags(struct driver *drv, uint32_t format,
+						      uint64_t use_flags, uint32_t *out_format,
+						      uint64_t *out_use_flags)
+{
+	struct cross_domain_private *priv = drv->priv;
+	*out_format = format;
+	*out_use_flags = use_flags;
+
+	switch (format) {
+	case DRM_FORMAT_FLEX_IMPLEMENTATION_DEFINED:
+		if (priv->mt8183_camera_quirk_ && (use_flags & BO_USE_CAMERA_READ) &&
+		    !(use_flags & BO_USE_SCANOUT)) {
+			*out_format = DRM_FORMAT_MTISP_SXYZW10;
+			break;
+		}
+		/* Common camera implementation defined format. */
+		if (use_flags & (BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE)) {
+			*out_format = DRM_FORMAT_NV12;
+		} else {
+			/* HACK: See b/28671744 */
+			*out_format = DRM_FORMAT_XBGR8888;
+			*out_use_flags &= ~BO_USE_HW_VIDEO_ENCODER;
+		}
+		break;
+	case DRM_FORMAT_FLEX_YCbCr_420_888:
+		/* Common flexible video format. */
+		*out_format = DRM_FORMAT_NV12;
+		break;
+	case DRM_FORMAT_YVU420_ANDROID:
+		*out_use_flags &= ~BO_USE_SCANOUT;
+		break;
+	default:
+		break;
+	}
+}
+
 const struct backend virtgpu_cross_domain = {
 	.name = "virtgpu_cross_domain",
 	.init = cross_domain_init,
 	.close = cross_domain_close,
 	.bo_create = cross_domain_bo_create,
 	.bo_import = drv_prime_bo_import,
+	.bo_export = drv_prime_bo_export,
 	.bo_destroy = drv_gem_bo_destroy,
 	.bo_map = cross_domain_bo_map,
 	.bo_unmap = drv_bo_munmap,
-	.resolve_format_and_use_flags = drv_resolve_format_and_use_flags_helper,
+	.resolve_format_and_use_flags = cross_domain_resolve_format_and_use_flags,
 };

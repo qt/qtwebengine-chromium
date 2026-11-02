@@ -1,0 +1,72 @@
+// This file is part of Eigen, a lightweight C++ template library
+// for linear algebra.
+//
+// This Source Code Form is subject to the terms of the Mozilla
+// Public License v. 2.0. If a copy of the MPL was not distributed
+// with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
+#ifndef EIGEN_STRUCTURED_MATRICES_MODULE_H
+#define EIGEN_STRUCTURED_MATRICES_MODULE_H
+
+#include "../../Eigen/Core"
+#include "../../Eigen/LU"
+#include "../../Eigen/SVD"
+#include "../../Eigen/IterativeLinearSolvers"
+#include "FFT"
+
+namespace Eigen {
+
+/**
+ * \defgroup StructuredMatrices_Module StructuredMatrices module
+ *
+ * This module provides lightweight operator types for displacement-structured
+ * matrices together with fast, FFT-based matrix-vector products and direct
+ * solvers:
+ *   - \c Circulant : a circulant matrix, diagonalized by the DFT;
+ *   - \c Toeplitz  : a (possibly rectangular) Toeplitz matrix, multiplied in
+ *     O(n log n) via circulant embedding;
+ *   - \c Hankel    : a (possibly rectangular) Hankel matrix -- a column-reversed
+ *     Toeplitz matrix -- with the same O(n log n) products, and square solves
+ *     through the Toeplitz equivalent.
+ *
+ * The operator types derive from \c EigenBase and store only their generating
+ * vectors together with a precomputed DFT symbol that every product reuses.
+ * Because they expose \c operator* returning an Eigen product expression, they
+ * also plug directly into the matrix-free iterative solvers
+ * (\c ConjugateGradient, \c GMRES, \c MINRES, ...) without forming the dense
+ * matrix; and since they hook into the evaluator system, they can be assigned
+ * to a dense matrix when an explicit representation is needed. Like every
+ * matrix-free operator, they carry no coefficient storage the default
+ * preconditioners could read, so the iterative solvers must be instantiated
+ * with \c IdentityPreconditioner.
+ *
+ * The operator types are closed under transposition (\c transpose(),
+ * \c conjugate(), \c adjoint() return operators of the same kind, reusing the
+ * cached symbol), which in particular feeds the least-squares solvers \c LSMR
+ * and \c LeastSquaresConjugateGradient (again with \c IdentityPreconditioner).
+ * \c Circulant additionally exposes its closed-form eigendecomposition and SVD
+ * in the Fourier basis, a pseudo-inverse (minimum-norm least-squares) solve,
+ * \c rank(), \c inverse() and \c determinant().
+ *
+ * \code
+ * #include <unsupported/Eigen/StructuredMatrices>
+ * \endcode
+ */
+
+}  // namespace Eigen
+
+#include "../../Eigen/src/Core/util/DisableStupidWarnings.h"
+
+// IWYU pragma: begin_exports
+#include "src/StructuredMatrices/StructuredMatrixUtils.h"
+#include "src/StructuredMatrices/Circulant.h"
+#include "src/StructuredMatrices/Toeplitz.h"
+#include "src/StructuredMatrices/LookAheadLevinson.h"
+#include "src/StructuredMatrices/Hankel.h"
+// IWYU pragma: end_exports
+
+#include "../../Eigen/src/Core/util/ReenableStupidWarnings.h"
+
+#endif  // EIGEN_STRUCTURED_MATRICES_MODULE_H

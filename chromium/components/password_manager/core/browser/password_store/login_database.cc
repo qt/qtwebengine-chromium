@@ -818,7 +818,8 @@ bool MigrateDatabase(unsigned current_version,
     fix_time_format.Assign(db->GetUniqueStatement(
         "UPDATE logins SET date_created = (date_created * ?) + ?"));
     fix_time_format.BindInt64(0, base::Time::kMicrosecondsPerSecond);
-    fix_time_format.BindInt64(1, base::Time::kTimeTToMicrosecondsOffset);
+    fix_time_format.BindInt64(1,
+                              base::Time::kMicrosecondsFromWindowsToUnixEpoch);
     if (!fix_time_format.Run()) {
       return false;
     }
@@ -1512,6 +1513,8 @@ PasswordStoreChangeList LoginDatabase::UpdateLogin(
   // TODO(crbug.com/40774419): It should be the responsibility of the caller to
   // set `password_issues` to empty.
   // Remove this once all `UpdateLogin` calls have been checked.
+  // TODO(crbug.com/530591026): Re-evaluate if the credential could be updated
+  // in a way that it has `password_issues` set when the password was changed.
   if (password_changed) {
     updated_cred.password_issues =
         base::flat_map<InsecureType, InsecurityMetadata>();
@@ -1940,19 +1943,9 @@ DatabaseCleanupResult LoginDatabase::DeleteUndecryptableLogins() {
   return DatabaseCleanupResult::kSuccess;
 }
 
-bool LoginDatabase::BeginTransaction() {
-  TRACE_EVENT0("passwords", "LoginDatabase::BeginTransaction");
-  return db_.BeginTransactionDeprecated();
-}
-
-void LoginDatabase::RollbackTransaction() {
-  TRACE_EVENT0("passwords", "LoginDatabase::RollbackTransaction");
-  db_.RollbackTransactionDeprecated();
-}
-
-bool LoginDatabase::CommitTransaction() {
-  TRACE_EVENT0("passwords", "LoginDatabase::CommitTransaction");
-  return db_.CommitTransactionDeprecated();
+std::unique_ptr<sql::Transaction> LoginDatabase::CreateTransaction() {
+  TRACE_EVENT0("passwords", "LoginDatabase::CreateTransaction");
+  return std::make_unique<sql::Transaction>(&db_);
 }
 
 LoginDatabase::SyncMetadataStore::SyncMetadataStore(LoginDatabase* login_db)

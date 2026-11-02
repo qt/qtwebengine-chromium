@@ -77,10 +77,8 @@ fn main() {
                 let public_key_proof =
                     PublicKeyProof::from_hex(test_vector.args.get("public_key_proof").unwrap())
                         .unwrap();
-                let mut rng = rand::thread_rng();
                 // Ignore output, just checking that the proofs pass.
-                let _ =
-                    athm::token_request(&public_key, &public_key_proof, &params, &mut rng).unwrap();
+                let _ = athm::token_request(&public_key, &public_key_proof, &params).unwrap();
                 println!("{}: OK", procedure);
             }
             "token_response" => {
@@ -92,14 +90,12 @@ fn main() {
                     TokenRequest::from_hex(test_vector.args.get("token_request").unwrap()).unwrap();
                 let hidden_metadata =
                     test_vector.args.get("hidden_metadata").unwrap().parse::<u8>().unwrap();
-                let mut rng = rand::thread_rng();
                 let _ = athm::token_response(
                     &private_key,
                     &public_key,
                     &token_request,
                     hidden_metadata,
                     &params,
-                    &mut rng,
                 )
                 .unwrap();
                 println!("{}: OK", procedure);
@@ -116,14 +112,12 @@ fn main() {
                     &params,
                 )
                 .unwrap();
-                let mut rng = rand::thread_rng();
                 let _ = athm::finalize_token(
                     &token_context,
                     &public_key,
                     &token_request,
                     &token_response,
                     &params,
-                    &mut rng,
                 )
                 .unwrap();
                 println!("{}: OK", procedure);

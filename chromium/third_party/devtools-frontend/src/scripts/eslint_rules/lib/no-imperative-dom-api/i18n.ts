@@ -43,7 +43,7 @@ export const i18n: RuleCreator = {
                 paramsString.join('')})`;
           };
         }
-      }
+      },
     };
-  }
+  },
 };

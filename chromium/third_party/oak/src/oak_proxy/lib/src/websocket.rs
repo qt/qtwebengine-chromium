@@ -20,7 +20,7 @@ use futures::{SinkExt, StreamExt};
 use prost::Message;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
-    tungstenite::protocol::Message as TungsteniteMessage, MaybeTlsStream, WebSocketStream,
+    MaybeTlsStream, WebSocketStream, tungstenite::protocol::Message as TungsteniteMessage,
 };
 
 /// Writes a Protobuf message to the given WebSocket stream.
@@ -46,6 +46,26 @@ where
     let message = stream.next().await.ok_or(anyhow::anyhow!("stream closed"))??;
     match message {
         TungsteniteMessage::Binary(bytes) => M::decode(&bytes[..]).map_err(anyhow::Error::from),
+        _ => Err(anyhow::anyhow!("unexpected message type: {:?}", message)),
+    }
+}
+
+/// Writes a raw binary message to the given WebSocket stream.
+pub async fn write_raw_message(
+    stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+    message: Vec<u8>,
+) -> anyhow::Result<()> {
+    stream.send(TungsteniteMessage::Binary(message.into())).await?;
+    Ok(())
+}
+
+/// Reads a raw binary message from the given WebSocket stream.
+pub async fn read_raw_message(
+    stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+) -> anyhow::Result<Vec<u8>> {
+    let message = stream.next().await.ok_or(anyhow::anyhow!("stream closed"))??;
+    match message {
+        TungsteniteMessage::Binary(bytes) => Ok(bytes.to_vec()),
         _ => Err(anyhow::anyhow!("unexpected message type: {:?}", message)),
     }
 }

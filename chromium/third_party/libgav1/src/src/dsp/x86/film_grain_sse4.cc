@@ -23,7 +23,6 @@
 #include <cstdint>
 #include <cstring>
 
-#include "src/dsp/constants.h"
 #include "src/dsp/dsp.h"
 #include "src/dsp/film_grain_common.h"
 #include "src/dsp/x86/common_sse4.h"

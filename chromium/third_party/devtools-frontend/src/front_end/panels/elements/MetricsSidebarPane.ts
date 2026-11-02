@@ -33,6 +33,7 @@
 import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import type * as Protocol from '../../generated/protocol.js';
 import type * as ComputedStyle from '../../models/computed_style/computed_style.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import {Directives, html, type LitTemplate, nothing, render} from '../../ui/lit/lit.js';
@@ -188,6 +189,7 @@ export class MetricsSidebarPane extends ElementsSidebarPane<ShadowRoot> {
   private inlineStyle: SDK.CSSStyleDeclaration.CSSStyleDeclaration|null;
   private highlightMode: string;
   private computedStyle: Map<string, string>|null;
+  private boxModelInternal: Protocol.DOM.BoxModel|null = null;
   private isEditingMetrics?: boolean;
   private view: View;
 
@@ -200,6 +202,7 @@ export class MetricsSidebarPane extends ElementsSidebarPane<ShadowRoot> {
     this.inlineStyle = null;
     this.highlightMode = '';
     this.computedStyle = null;
+    this.boxModelInternal = null;
     this.view = view;
   }
 
@@ -228,28 +231,27 @@ export class MetricsSidebarPane extends ElementsSidebarPane<ShadowRoot> {
       return await Promise.resolve();
     }
 
-    function callback(this: MetricsSidebarPane, style: Map<string, string>|null): void {
-      if (!style || this.node() !== node) {
-        this.computedStyle = null;
-        return;
-      }
-      this.computedStyle = style;
-      this.updateMetrics(style);
-    }
-
     if (!node.id) {
       return await Promise.resolve();
     }
 
-    const promises = [
-      cssModel.getComputedStyle(node.id).then(callback.bind(this)),
-      cssModel.getInlineStyles(node.id).then(inlineStyleResult => {
-        if (inlineStyleResult && this.node() === node) {
-          this.inlineStyle = inlineStyleResult.inlineStyle;
-        }
-      }),
-    ];
-    return await (Promise.all(promises) as unknown as Promise<void>);
+    const [style, boxModel, inlineStyleResult] = await Promise.all([
+      cssModel.getComputedStyle(node.id),
+      node.boxModel().catch(() => null),
+      cssModel.getInlineStyles(node.id),
+    ]);
+
+    if (!style || this.node() !== node) {
+      this.computedStyle = null;
+      this.boxModelInternal = null;
+      return;
+    }
+    this.computedStyle = style;
+    this.boxModelInternal = boxModel;
+    if (inlineStyleResult && this.node() === node) {
+      this.inlineStyle = inlineStyleResult.inlineStyle;
+    }
+    this.updateMetrics(style, 'all', boxModel);
   }
 
   override onCSSModelChanged(): void {
@@ -288,15 +290,66 @@ export class MetricsSidebarPane extends ElementsSidebarPane<ShadowRoot> {
       node.highlight(mode);
     } else {
       this.highlightMode = '';
-      SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+      SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight(SDK.TargetManager.TargetManager.instance());
     }
 
     if (this.computedStyle) {
-      this.updateMetrics(this.computedStyle, mode);
+      this.updateMetrics(this.computedStyle, mode, this.boxModelInternal);
     }
   }
 
-  private getContentAreaWidthPx(style: Map<string, string>): string {
+  /**
+   * Checks whether the array represents a valid Protocol.DOM.Quad (8 coordinates: 4 corner points).
+   */
+  private isDOMQuad(quad?: number[]): boolean {
+    return Boolean(quad && quad.length === 8);
+  }
+
+  /**
+   * Calculates the rendered content box width from a DOM Quad.
+   * A Quad contains 8 numbers representing 4 corner points clockwise from top-left:
+   *   P0 (x=quad[0], y=quad[1]): Top-Left
+   *   P1 (x=quad[2], y=quad[3]): Top-Right
+   *   P2 (x=quad[4], y=quad[5]): Bottom-Right
+   *   P3 (x=quad[6], y=quad[7]): Bottom-Left
+   *
+   * Math.hypot(quad[2] - quad[0], quad[3] - quad[1]) is the distance from Top-Left to Top-Right (top edge).
+   * Math.hypot(quad[4] - quad[6], quad[5] - quad[7]) is the distance from Bottom-Left to Bottom-Right (bottom edge).
+   * Averaging the top and bottom edges gives the rendered width, which accounts for scrollbars and handles
+   * rotated or skewed elements.
+   */
+  private computeQuadWidth(quad: Protocol.DOM.Quad): number {
+    const topWidth = Math.hypot(quad[2] - quad[0], quad[3] - quad[1]);
+    const bottomWidth = Math.hypot(quad[4] - quad[6], quad[5] - quad[7]);
+    return (topWidth + bottomWidth) / 2;
+  }
+
+  /**
+   * Calculates the rendered content box height from a DOM Quad.
+   * Math.hypot(quad[6] - quad[0], quad[7] - quad[1]) is the distance from Top-Left to Bottom-Left (left edge).
+   * Math.hypot(quad[4] - quad[2], quad[5] - quad[3]) is the distance from Top-Right to Bottom-Right (right edge).
+   * Averaging the left and right edges gives the rendered height, which accounts for scrollbars and handles
+   * rotated or skewed elements.
+   */
+  private computeQuadHeight(quad: Protocol.DOM.Quad): number {
+    const leftHeight = Math.hypot(quad[6] - quad[0], quad[7] - quad[1]);
+    const rightHeight = Math.hypot(quad[4] - quad[2], quad[5] - quad[3]);
+    return (leftHeight + rightHeight) / 2;
+  }
+
+  /**
+   * Computes the content area width in pixels for display in the Box Model diagram.
+   * - Branch 1: If a DOM quad is available, we compute width directly
+   *   from the rendered quad. This accurately reflects the content box when scrollbars are present
+   *   (which getComputedStyle does not subtract).
+   * - Branch 2: Fallback to parsing the CSS 'width' property from getComputedStyle.
+   */
+  private getContentAreaWidthPx(style: Map<string, string>, boxModel?: Protocol.DOM.BoxModel|null): string {
+    if (boxModel && this.isDOMQuad(boxModel.content)) {
+      const width = this.computeQuadWidth(boxModel.content);
+      return Platform.NumberUtilities.toFixedIfFloating(width.toString());
+    }
+
     let width = style.get('width');
     if (!width) {
       return '';
@@ -313,7 +366,19 @@ export class MetricsSidebarPane extends ElementsSidebarPane<ShadowRoot> {
     return Platform.NumberUtilities.toFixedIfFloating(width);
   }
 
-  private getContentAreaHeightPx(style: Map<string, string>): string {
+  /**
+   * Computes the content area height in pixels for display in the Box Model diagram.
+   * - Branch 1: If a DOM quad is available, we compute height directly
+   *   from the rendered quad. This accurately reflects the content box when scrollbars are present
+   *   (which getComputedStyle does not subtract).
+   * - Branch 2: Fallback to parsing the CSS 'height' property from getComputedStyle.
+   */
+  private getContentAreaHeightPx(style: Map<string, string>, boxModel?: Protocol.DOM.BoxModel|null): string {
+    if (boxModel && this.isDOMQuad(boxModel.content)) {
+      const height = this.computeQuadHeight(boxModel.content);
+      return Platform.NumberUtilities.toFixedIfFloating(height.toString());
+    }
+
     let height = style.get('height');
     if (!height) {
       return '';
@@ -330,18 +395,19 @@ export class MetricsSidebarPane extends ElementsSidebarPane<ShadowRoot> {
     return Platform.NumberUtilities.toFixedIfFloating(height);
   }
 
-  private updateMetrics(style: Map<string, string>, highlightedMode = 'all'): void {
-    this.view(
-        {
-          style,
-          highlightedMode,
-          node: this.node(),
-          contentWidth: this.getContentAreaWidthPx(style),
-          contentHeight: this.getContentAreaHeightPx(style),
-          onHighlightNode: this.highlightDOMNode.bind(this),
-          onStartEditing: this.startEditing.bind(this),
-        },
-        undefined, this.contentElement);
+  private updateMetrics(style: Map<string, string>, highlightedMode = 'all',
+                        boxModel?: Protocol.DOM.BoxModel|null): void {
+    const boxModelToUse = boxModel ?? this.boxModelInternal;
+    this.view({
+      style,
+      highlightedMode,
+      node: this.node(),
+      contentWidth: this.getContentAreaWidthPx(style, boxModelToUse),
+      contentHeight: this.getContentAreaHeightPx(style, boxModelToUse),
+      onHighlightNode: this.highlightDOMNode.bind(this),
+      onStartEditing: this.startEditing.bind(this),
+    },
+              undefined, this.contentElement);
   }
 
   startEditing(targetElement: Element, box: string, styleProperty: string, computedStyle: Map<string, string>): void {

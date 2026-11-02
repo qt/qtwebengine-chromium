@@ -43,8 +43,13 @@ PaintPropertyChangeType ScrollPaintPropertyNode::State::ComputeChange(
       main_thread_repaint_reasons != other.main_thread_repaint_reasons ||
       compositor_element_id != other.compositor_element_id ||
       overscroll_behavior != other.overscroll_behavior ||
-      snap_container_data != other.snap_container_data) {
+      snap_container_data != other.snap_container_data ||
+      prevent_scroll_axis_locking != other.prevent_scroll_axis_locking) {
     return PaintPropertyChangeType::kChangedOnlyValues;
+  }
+  if (RuntimeEnabledFeatures::ScrollingContentsCullRectOnScrollNodeEnabled() &&
+      scrolling_contents_cull_rect != other.scrolling_contents_cull_rect) {
+    return PaintPropertyChangeType::kChangedOnlySimpleValues;
   }
   return PaintPropertyChangeType::kUnchanged;
 }
@@ -108,6 +113,10 @@ std::unique_ptr<JSONObject> ScrollPaintPropertyNode::ToJSON() const {
                                                  state_.overscroll_behavior.y));
   }
 
+  if (state_.prevent_scroll_axis_locking) {
+    json->SetBoolean("preventScrollAxisLock", true);
+  }
+
   if (state_.snap_container_data) {
     json->SetString("snap_container_rect",
                     state_.snap_container_data->rect().ToString().c_str());
@@ -119,6 +128,13 @@ std::unique_ptr<JSONObject> ScrollPaintPropertyNode::ToJSON() const {
       }
       json->SetArray("snap_area_rects", std::move(area_rects_json));
     }
+  }
+
+  if (RuntimeEnabledFeatures::ScrollingContentsCullRectOnScrollNodeEnabled()) {
+    auto& rect = state_.scrolling_contents_cull_rect;
+    json->SetString("contents_cull_rect", rect == InfiniteIntRect()
+                                              ? "Inf"
+                                              : String(rect.ToString()));
   }
 
   return json;

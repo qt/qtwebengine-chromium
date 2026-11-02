@@ -9,21 +9,16 @@
 
 namespace storage {
 
-// Overrides DomStorageDatabaseFactory::Create() and Destroy() for the duration
-// of this object's lifetime. Tests provide callbacks that define the behavior
-// of Create() and Destroy().
+// Overrides DomStorageDatabaseFactory::Open() for the duration of this object's
+// lifetime. Tests provide a callback that defines the behavior of Open(),
+// including destroying a pre-existing database when `dir_to_destroy` is
+// non-empty.
 class ScopedDomStorageDatabaseFactoryForTesting {
  public:
-  using CreateCallback = DomStorageDatabaseFactory::CreateCallback;
-  using DestroyCallback = DomStorageDatabaseFactory::DestroyCallback;
+  using OpenCallback = DomStorageDatabaseFactory::OpenCallback;
 
-  // Overload that only takes a CreateCallback. Uses a default Destroy()
-  // implementation that always reports success (DbStatus::OK()).
   explicit ScopedDomStorageDatabaseFactoryForTesting(
-      CreateCallback create_callback);
-
-  ScopedDomStorageDatabaseFactoryForTesting(CreateCallback create_callback,
-                                            DestroyCallback destroy_callback);
+      OpenCallback open_callback);
   ~ScopedDomStorageDatabaseFactoryForTesting();
 
   ScopedDomStorageDatabaseFactoryForTesting(
@@ -32,8 +27,7 @@ class ScopedDomStorageDatabaseFactoryForTesting {
       const ScopedDomStorageDatabaseFactoryForTesting&) = delete;
 
  private:
-  CreateCallback default_create_callback_;
-  DestroyCallback default_destroy_callback_;
+  OpenCallback default_open_callback_;
 };
 
 }  // namespace storage

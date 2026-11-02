@@ -15,31 +15,30 @@
 //
 
 #![cfg_attr(not(feature = "std"), no_std)]
-#![feature(assert_matches)]
-#![feature(let_chains)]
 
 extern crate alloc;
 
 mod amd;
 mod compare;
-mod endorsement;
 mod expect;
 mod extract;
 mod intel;
 mod platform;
 mod policy;
-mod rekor;
-pub mod results;
+pub mod results {
+    pub use oak_attestation_verification_results::*;
+}
 mod util;
 pub mod verifier;
 mod verifiers;
+mod x509;
 
 #[cfg(test)]
 mod test_util;
 
-use anyhow::Context;
 pub use expect::get_expected_values;
 pub use extract::extract_evidence;
+pub use key_util::convert_pem_to_raw;
 use oak_proto_rust::oak::attestation::v1::{
     EndorsementDetails, EndorsementReferenceValue, SignedEndorsement,
 };
@@ -50,24 +49,24 @@ pub use policy::{
     application::ApplicationPolicy,
     application_keys::ApplicationKeysPolicy,
     binary::BinaryPolicy,
+    cb_transparent::{TransparentLayer1Policy, TransparentLayer2Policy, TransparentStage0Policy},
     container::ContainerPolicy,
     firmware::FirmwarePolicy,
     kernel::KernelPolicy,
-    platform::AmdSevSnpPolicy,
+    platform::{AmdSevSnpPolicy, IntelTdxPolicy},
     session_binding_public_key::{
         SessionBindingPublicKeyPolicy, SessionBindingPublicKeyVerificationError,
         SessionBindingPublicKeyVerificationReport,
     },
     system::SystemPolicy,
 };
-pub use rekor::verify_rekor_log_entry;
-pub use util::{
-    convert_pem_to_raw, decode_event_proto, decode_protobuf_any, hex_to_raw_digest,
-    raw_to_hex_digest,
-};
+pub use rekor::log_entry::verify_rekor_log_entry; // Exported utility function.
+pub use util::decode_event_proto;
 pub use verifiers::{
-    create_amd_verifier, create_insecure_verifier, AmdSevSnpDiceAttestationVerifier,
-    EventLogVerifier, InsecureAttestationVerifier,
+    AmdSevSnpDiceAttestationVerifier, AmdSevSnpTransparentDiceAttestationVerifier,
+    EventLogVerifier, InsecureAttestationVerifier, IntelTdxAttestationVerifier,
+    RestrictedKernelVerificationReport, create_amd_verifier, create_insecure_verifier,
+    create_intel_tdx_verifier,
 };
 
 /// Verifies a signed endorsement against a reference value.
@@ -82,13 +81,6 @@ pub fn verify_endorsement(
     signed_endorsement: &SignedEndorsement,
     ref_value: &EndorsementReferenceValue,
 ) -> anyhow::Result<EndorsementDetails> {
-    let s = endorsement::verify_endorsement(now_utc_millis, signed_endorsement, ref_value)?;
-    let digest = hex_to_raw_digest(&intoto::statement::get_digest(&s)?)?;
-    let validity = s.predicate.validity.context("missing validity in statement")?;
-
-    Ok(EndorsementDetails {
-        subject_digest: Some(digest),
-        valid: Some(oak_proto_rust::oak::Validity::from(&validity)),
-        claim_types: s.predicate.claims.into_iter().map(|x| x.r#type).collect(),
-    })
+    let s = verify_endorsement::verify_endorsement(now_utc_millis, signed_endorsement, ref_value)?;
+    s.get_details()
 }

@@ -18,7 +18,7 @@ import shortcutDialogStyles from './shortcutDialog.css.js';
 const UIStrings = {
 
   /**
-   * @description Title of question mark button for the shortcuts dialog.
+   * @description Title of the question mark button for the shortcuts dialog.
    */
   showShortcutTitle: 'Show shortcuts',
   /**

@@ -15,6 +15,7 @@ declare const window: Window&{
   getNodeForIndex: (index: number) => Node | undefined,
   [Spec.INTERNAL_KILL_SWITCH]: () => void,
   [Spec.EVENT_BINDING_NAME]: (payload: string) => void,
+  devToolsReportSoftNavs?: boolean,
 };
 
 const eventListenerCleanupController = new AbortController();
@@ -174,15 +175,20 @@ function initialize(): void {
   // callback before any others.
   WebVitals.onBFCacheRestore(() => {
     startedHidden = false;
-    sendEventToDevTools({name: 'reset'});
+    sendEventToDevTools({name: 'reset', navigationType: 'back-forward-cache'});
   });
 
+  let lastLcpNavigationId: number|undefined;
   onLCP(metric => {
+    if (lastLcpNavigationId && metric.navigationId && metric.navigationId !== lastLcpNavigationId) {
+      sendEventToDevTools({name: 'reset', url: window.location.href, navigationType: metric.navigationType});
+    }
+    lastLcpNavigationId = metric.navigationId;
     const event: Spec.LcpChangeEvent = {
       name: 'LCP',
       value: metric.value as Trace.Types.Timing.Milli,
       startedHidden: Boolean(startedHidden),
-      phases: {
+      subparts: {
         timeToFirstByte: metric.attribution.timeToFirstByte as Trace.Types.Timing.Milli,
         resourceLoadDelay: metric.attribution.resourceLoadDelay as Trace.Types.Timing.Milli,
         resourceLoadTime: metric.attribution.resourceLoadDuration as Trace.Types.Timing.Milli,
@@ -195,7 +201,7 @@ function initialize(): void {
       event.nodeIndex = establishNodeIndex(element);
     }
     sendEventToDevTools(event);
-  }, {reportAllChanges: true});
+  }, {reportAllChanges: true, reportSoftNavs: window.devToolsReportSoftNavs});
 
   onCLS(metric => {
     const event: Spec.ClsChangeEvent = {
@@ -204,7 +210,7 @@ function initialize(): void {
       clusterShiftIds: metric.entries.map(Spec.getUniqueLayoutShiftId),
     };
     sendEventToDevTools(event);
-  }, {reportAllChanges: true});
+  }, {reportAllChanges: true, reportSoftNavs: window.devToolsReportSoftNavs});
 
   function onEachInteraction(interaction: WebVitals.INPMetricWithAttribution): void {
     // Multiple `InteractionEntry` events can be emitted for the same `uniqueInteractionId`
@@ -213,12 +219,13 @@ function initialize(): void {
     const event: Spec.InteractionEntryEvent = {
       name: 'InteractionEntry',
       duration: interaction.value as Trace.Types.Timing.Milli,
-      phases: {
+      subparts: {
         inputDelay: interaction.attribution.inputDelay as Trace.Types.Timing.Milli,
         processingDuration: interaction.attribution.processingDuration as Trace.Types.Timing.Milli,
         presentationDelay: interaction.attribution.presentationDelay as Trace.Types.Timing.Milli,
       },
       startTime: interaction.entries[0].startTime,
+      navigationId: interaction.navigationId,
       entryGroupId: interaction.entries[0].interactionId as Spec.InteractionEntryGroupId,
       nextPaintTime: interaction.attribution.nextPaintTime,
       interactionType: interaction.attribution.interactionType,
@@ -238,7 +245,7 @@ function initialize(): void {
     const event: Spec.InpChangeEvent = {
       name: 'INP',
       value: metric.value as Trace.Types.Timing.Milli,
-      phases: {
+      subparts: {
         inputDelay: metric.attribution.inputDelay as Trace.Types.Timing.Milli,
         processingDuration: metric.attribution.processingDuration as Trace.Types.Timing.Milli,
         presentationDelay: metric.attribution.presentationDelay as Trace.Types.Timing.Milli,
@@ -252,6 +259,7 @@ function initialize(): void {
     reportAllChanges: true,
     durationThreshold: 0,
     includeProcessedEventEntries: false,
+    reportSoftNavs: window.devToolsReportSoftNavs,
     onEachInteraction,
     generateTarget(el) {
       if (el) {

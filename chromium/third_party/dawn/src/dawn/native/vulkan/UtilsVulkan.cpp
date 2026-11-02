@@ -27,7 +27,6 @@
 
 #include "src/dawn/native/vulkan/UtilsVulkan.h"
 
-#include "src/dawn/common/Assert.h"
 #include "src/dawn/native/EnumMaskIterator.h"
 #include "src/dawn/native/Format.h"
 #include "src/dawn/native/Pipeline.h"
@@ -38,7 +37,9 @@
 #include "src/dawn/native/vulkan/TextureVk.h"
 #include "src/dawn/native/vulkan/VulkanError.h"
 #include "src/dawn/native/vulkan/VulkanFunctions.h"
+#include "src/utils/assert.h"
 #include "src/utils/compiler.h"
+#include "src/utils/numeric.h"
 
 namespace dawn::native::vulkan {
 
@@ -178,6 +179,7 @@ VkAttachmentLoadOp VulkanAttachmentLoadOp(wgpu::LoadOp op) {
             DAWN_UNREACHABLE();
             return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     }
+    DAWN_UNREACHABLE();
 }
 
 VkAttachmentStoreOp VulkanAttachmentStoreOp(wgpu::StoreOp op) {
@@ -192,6 +194,7 @@ VkAttachmentStoreOp VulkanAttachmentStoreOp(wgpu::StoreOp op) {
             DAWN_UNREACHABLE();
             return VK_ATTACHMENT_STORE_OP_DONT_CARE;
     }
+    DAWN_UNREACHABLE();
 }
 
 // Vulkan SPEC requires the source/destination region specified by each element of
@@ -242,9 +245,10 @@ VkBufferImageCopy ComputeBufferImageCopyRegion(const BufferCopy& bufferCopy,
     TexelExtent3D copySizeTexels = blockInfo.ToTexel(copySize);
 
     // In Vulkan the row length is in texels while it is in blocks for Dawn
-    region.bufferRowLength = static_cast<uint32_t>(blockInfo.ToTexelWidth(bufferCopy.blocksPerRow));
+    region.bufferRowLength =
+        dchecked_cast<uint32_t>(blockInfo.ToTexelWidth(bufferCopy.blocksPerRow));
     region.bufferImageHeight =
-        static_cast<uint32_t>(blockInfo.ToTexelHeight(bufferCopy.rowsPerImage));
+        dchecked_cast<uint32_t>(blockInfo.ToTexelHeight(bufferCopy.rowsPerImage));
 
     region.imageSubresource.aspectMask = VulkanAspectMask(textureCopy.aspect);
     region.imageSubresource.mipLevel = textureCopy.mipLevel;
@@ -253,48 +257,48 @@ VkBufferImageCopy ComputeBufferImageCopyRegion(const BufferCopy& bufferCopy,
         case wgpu::TextureDimension::Undefined:
             DAWN_UNREACHABLE();
         case wgpu::TextureDimension::e1D:
-            DAWN_ASSERT(textureCopy.origin.z == TexelCount{0} &&
-                        copySizeTexels.depthOrArrayLayers == TexelCount{1});
-            region.imageOffset.x = static_cast<uint32_t>(textureCopy.origin.x);
+            DAWN_ASSERT(textureCopy.origin.z == TexelCount{0u} &&
+                        copySizeTexels.depthOrArrayLayers == TexelCount{1u});
+            region.imageOffset.x = dchecked_cast<int32_t>(textureCopy.origin.x);
             region.imageOffset.y = 0;
             region.imageOffset.z = 0;
             region.imageSubresource.baseArrayLayer = 0;
             region.imageSubresource.layerCount = 1;
 
             DAWN_ASSERT(!textureCopy.texture->GetFormat().isCompressed);
-            region.imageExtent.width = static_cast<uint32_t>(copySizeTexels.width);
+            region.imageExtent.width = dchecked_cast<uint32_t>(copySizeTexels.width);
             region.imageExtent.height = 1;
             region.imageExtent.depth = 1;
             break;
 
         case wgpu::TextureDimension::e2D: {
-            region.imageOffset.x = static_cast<uint32_t>(textureCopy.origin.x);
-            region.imageOffset.y = static_cast<uint32_t>(textureCopy.origin.y);
+            region.imageOffset.x = dchecked_cast<int32_t>(textureCopy.origin.x);
+            region.imageOffset.y = dchecked_cast<int32_t>(textureCopy.origin.y);
             region.imageOffset.z = 0;
-            region.imageSubresource.baseArrayLayer = static_cast<uint32_t>(textureCopy.origin.z);
+            region.imageSubresource.baseArrayLayer = dchecked_cast<uint32_t>(textureCopy.origin.z);
             region.imageSubresource.layerCount =
-                static_cast<uint32_t>(copySizeTexels.depthOrArrayLayers);
+                dchecked_cast<uint32_t>(copySizeTexels.depthOrArrayLayers);
 
             TexelExtent3D imageExtent =
                 ComputeTextureCopyExtent(textureCopy, copySizeTexels.ToExtent3D());
-            region.imageExtent.width = static_cast<uint32_t>(imageExtent.width);
-            region.imageExtent.height = static_cast<uint32_t>(imageExtent.height);
+            region.imageExtent.width = dchecked_cast<uint32_t>(imageExtent.width);
+            region.imageExtent.height = dchecked_cast<uint32_t>(imageExtent.height);
             region.imageExtent.depth = 1;
             break;
         }
 
         case wgpu::TextureDimension::e3D: {
-            region.imageOffset.x = static_cast<uint32_t>(textureCopy.origin.x);
-            region.imageOffset.y = static_cast<uint32_t>(textureCopy.origin.y);
-            region.imageOffset.z = static_cast<uint32_t>(textureCopy.origin.z);
+            region.imageOffset.x = dchecked_cast<int32_t>(textureCopy.origin.x);
+            region.imageOffset.y = dchecked_cast<int32_t>(textureCopy.origin.y);
+            region.imageOffset.z = dchecked_cast<int32_t>(textureCopy.origin.z);
             region.imageSubresource.baseArrayLayer = 0;
             region.imageSubresource.layerCount = 1;
 
             TexelExtent3D imageExtent =
                 ComputeTextureCopyExtent(textureCopy, copySizeTexels.ToExtent3D());
-            region.imageExtent.width = static_cast<uint32_t>(imageExtent.width);
-            region.imageExtent.height = static_cast<uint32_t>(imageExtent.height);
-            region.imageExtent.depth = static_cast<uint32_t>(copySizeTexels.depthOrArrayLayers);
+            region.imageExtent.width = dchecked_cast<uint32_t>(imageExtent.width);
+            region.imageExtent.height = dchecked_cast<uint32_t>(imageExtent.height);
+            region.imageExtent.depth = dchecked_cast<uint32_t>(copySizeTexels.depthOrArrayLayers);
             break;
         }
     }
@@ -343,24 +347,23 @@ std::string GetNextDeviceDebugPrefix() {
     return objectName.str();
 }
 
-std::string GetDeviceDebugPrefixFromDebugName(const char* debugName) {
-    if (debugName == nullptr) {
+std::string GetDeviceDebugPrefixFromDebugName(const char* cDebugName) {
+    if (cDebugName == nullptr) {
         return {};
     }
 
-    if (DAWN_UNSAFE_TODO(strncmp(debugName, kDeviceDebugPrefix, sizeof(kDeviceDebugPrefix) - 1)) !=
-        0) {
+    std::string_view debugName = cDebugName;
+
+    if (debugName.starts_with(kDeviceDebugPrefix)) {
         return {};
     }
 
-    const char* separator =
-        DAWN_UNSAFE_TODO(strstr(debugName + sizeof(kDeviceDebugPrefix), kDeviceDebugSeparator));
-    if (separator == nullptr) {
+    size_t separatorIndex = debugName.find(kDeviceDebugSeparator);
+    if (separatorIndex == std::string_view::npos) {
         return {};
     }
 
-    size_t length = separator - debugName;
-    return std::string(debugName, length);
+    return std::string(debugName.substr(0u, separatorIndex));
 }
 
 std::string FormatAPIVersion(uint32_t version) {

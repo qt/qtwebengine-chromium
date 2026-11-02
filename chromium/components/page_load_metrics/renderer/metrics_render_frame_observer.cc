@@ -4,6 +4,7 @@
 
 #include "components/page_load_metrics/renderer/metrics_render_frame_observer.h"
 
+#include <map>
 #include <string>
 #include <utility>
 
@@ -25,6 +26,7 @@
 #include "third_party/blink/public/web/web_local_frame.h"
 #include "third_party/blink/public/web/web_local_frame_client.h"
 #include "third_party/blink/public/web/web_performance_metrics_for_reporting.h"
+#include "third_party/icu/source/common/unicode/uscript.h"
 #include "url/gurl.h"
 
 namespace page_load_metrics {
@@ -45,6 +47,36 @@ base::TimeDelta CreateTimeDeltaFromTimestampsInSeconds(
 
 base::TimeTicks ClampToStart(base::TimeTicks event, base::TimeTicks start) {
   return event < start ? start : event;
+}
+
+mojom::ScriptType MapToMojoScriptType(UScriptCode script_code, bool is_emoji) {
+  if (is_emoji) {
+    return mojom::ScriptType::kEmoji;
+  }
+  switch (script_code) {
+    case USCRIPT_LATIN:
+      return mojom::ScriptType::kLatin;
+    case USCRIPT_HAN:
+      return mojom::ScriptType::kHan;
+    case USCRIPT_HANGUL:
+      return mojom::ScriptType::kHangul;
+    case USCRIPT_HIRAGANA:
+      return mojom::ScriptType::kHiragana;
+    case USCRIPT_KATAKANA:
+      return mojom::ScriptType::kKatakana;
+    case USCRIPT_ARABIC:
+      return mojom::ScriptType::kArabic;
+    case USCRIPT_BENGALI:
+      return mojom::ScriptType::kBengali;
+    case USCRIPT_DEVANAGARI:
+      return mojom::ScriptType::kDevanagari;
+    case USCRIPT_CYRILLIC:
+      return mojom::ScriptType::kCyrillic;
+    case USCRIPT_COMMON:
+      return mojom::ScriptType::kCommon;
+    default:
+      return mojom::ScriptType::kOther;
+  }
 }
 
 class MojoPageTimingSender : public PageTimingSender {
@@ -314,10 +346,6 @@ void MetricsRenderFrameObserver::DidStartResponse(
     bool is_ad_resource) {
   if (provisional_frame_resource_data_use_ &&
       blink::IsRequestDestinationFrame(request_destination)) {
-    // TODO(rajendrant): This frame request might start before the provisional
-    // load starts, and data use of the frame request might be missed in that
-    // case. There should be a guarantee that DidStartProvisionalLoad be called
-    // before DidStartResponse for the frame request.
     provisional_frame_resource_data_use_->DidStartResponse(
         final_response_url, request_id, response_head, request_destination,
         is_ad_resource);
@@ -353,7 +381,7 @@ void MetricsRenderFrameObserver::DidCancelResponse(int request_id) {
 
 void MetricsRenderFrameObserver::DidReceiveTransferSizeUpdate(
     int request_id,
-    base::ByteCount received_data_length) {
+    base::ByteSize received_data_length) {
   if (provisional_frame_resource_data_use_ &&
       provisional_frame_resource_data_use_->resource_id() == request_id) {
     provisional_frame_resource_data_use_->DidReceiveTransferSizeUpdate(
@@ -368,7 +396,7 @@ void MetricsRenderFrameObserver::DidReceiveTransferSizeUpdate(
 void MetricsRenderFrameObserver::DidLoadResourceFromMemoryCache(
     const GURL& response_url,
     int request_id,
-    base::ByteCount encoded_body_length,
+    base::ByteSize encoded_body_length,
     const std::string& mime_type,
     bool from_archive) {
   // Resources from archives, such as subresources from a MHTML archive, do not
@@ -890,6 +918,17 @@ mojom::FontLoadingMetricsPtr MetricsRenderFrameObserver::GetFontLoadingMetrics()
         perf.SystemFallbackFontInitialDuration();
     font_metrics->shape_cache_hit_count = perf.ShapeCacheHitCount();
     font_metrics->shape_cache_miss_count = perf.ShapeCacheMissCount();
+    std::map<mojom::ScriptType, size_t> aggregated;
+    for (const auto& details : perf.GetScriptFontFallbackDetails()) {
+      aggregated[MapToMojoScriptType(details.script_code, details.is_emoji)] +=
+          details.fallback_count;
+    }
+    for (const auto& [type, count] : aggregated) {
+      auto info = mojom::ScriptFallbackInfo::New();
+      info->script_type = type;
+      info->fallback_count = static_cast<uint32_t>(count);
+      font_metrics->script_fallback_metrics.push_back(std::move(info));
+    }
     return font_metrics;
   }
   return nullptr;

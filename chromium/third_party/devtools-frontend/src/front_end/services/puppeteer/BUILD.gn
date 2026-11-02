@@ -23,3 +23,15 @@ devtools_entrypoint("bundle") {
 
   visibility = [ "*" ]
 }
+
+ts_library("unittests") {
+  testonly = true
+
+  sources = [ "PuppeteerConnection.test.ts" ]
+
+  deps = [
+    ":bundle",
+    "../../core/protocol_client:bundle",
+    "../../generated",
+  ]
+}

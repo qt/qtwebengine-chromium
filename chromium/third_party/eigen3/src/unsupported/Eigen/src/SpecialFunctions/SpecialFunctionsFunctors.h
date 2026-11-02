@@ -312,7 +312,7 @@ struct scalar_ndtri_op {
 template <typename Scalar>
 struct functor_traits<scalar_ndtri_op<Scalar> > {
   enum {
-    // On average, We are evaluating rational functions with degree N=9 in the
+    // On average, we are evaluating rational functions with degree N=9 in the
     // numerator and denominator. This results in 2*N additions and 2*N
     // multiplications.
     Cost = 18 * NumTraits<Scalar>::MulCost + 18 * NumTraits<Scalar>::AddCost,

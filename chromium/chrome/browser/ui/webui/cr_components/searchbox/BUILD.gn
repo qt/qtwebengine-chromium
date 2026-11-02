@@ -14,7 +14,11 @@ source_set("searchbox") {
     "searchbox_omnibox_client.h",
     "searchbox_utils.h",
   ]
-  public_deps = [ "//components/tabs:public" ]
+  public_deps = [
+    "//components/contextual_search/footprints/public",
+    "//components/tabs:public",
+    "//third_party/omnibox_proto",
+  ]
   deps = [
     "//base",
     "//chrome/browser/autocomplete",
@@ -64,6 +68,7 @@ source_set("searchbox_impl") {
     "//chrome/browser/contextual_tasks",
     "//chrome/browser/contextual_tasks:ui",
     "//chrome/browser/contextual_tasks:user_data",
+    "//chrome/browser/favicon",
     "//chrome/browser/feature_engagement",
     "//chrome/browser/omnibox",
     "//chrome/browser/predictors",
@@ -74,6 +79,7 @@ source_set("searchbox_impl") {
     "//chrome/browser/safe_browsing",
     "//chrome/browser/search_engines",
     "//chrome/browser/tab_list",
+    "//chrome/browser/ui:ui_features",
     "//chrome/browser/ui/browser_window",
     "//chrome/browser/ui/contextual_search",
     "//chrome/browser/ui/omnibox",
@@ -83,6 +89,7 @@ source_set("searchbox_impl") {
     "//chrome/browser/ui/webui/new_tab_page/composebox/variations",
     "//components/contextual_search:prefs",
     "//components/contextual_search:public",
+    "//components/contextual_search/footprints/public",
     "//components/contextual_tasks/public:query_contextualizer",
     "//components/favicon/content",
     "//components/favicon/core",
@@ -92,7 +99,6 @@ source_set("searchbox_impl") {
     "//components/search",
     "//components/sessions",
     "//components/vector_icons",
-    "//components/contextual_search/footprints/public",
   ]
   if (!is_android) {
     deps += [
@@ -101,8 +107,10 @@ source_set("searchbox_impl") {
       "//chrome/browser/ui/lens",
       "//chrome/browser/ui/tabs",
       "//chrome/browser/ui/views/drive_picker_host",
+      "//chrome/browser/ui/views/location_bar",
       "//chrome/browser/ui/webui/drive_picker_host",
       "//chrome/browser/ui/webui/drive_picker_host:drive_picker_host_request",
+      "//chrome/browser/ui/webui/omnibox_popup",
       "//components/contextual_search/footprints/internal",
     ]
   }

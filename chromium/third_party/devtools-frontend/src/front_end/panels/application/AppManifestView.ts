@@ -387,13 +387,13 @@ const UIStrings = {
    * @example {Image} PH1
    * @example {https://example.com/image.png} PH2
    */
-  sSWidthDoesNotComplyWithRatioRequirement: '{PH1} {PH2} width can\'t be more than 2.3 times as long as the height',
+  sSWidthDoesNotComplyWithRatioRequirement: '{PH1} {PH2} width can’t be more than 2.3 times as long as the height',
   /**
    * @description Warning message for image resources from the manifest
    * @example {Image} PH1
    * @example {https://example.com/image.png} PH2
    */
-  sSHeightDoesNotComplyWithRatioRequirement: '{PH1} {PH2} height can\'t be more than 2.3 times as long as the width',
+  sSHeightDoesNotComplyWithRatioRequirement: '{PH1} {PH2} height can’t be more than 2.3 times as long as the width',
   /**
    * @description Manifest installability error in the Application panel
    * @example {https://example.com/image.png} url
@@ -435,11 +435,11 @@ const UIStrings = {
    * @example {https://developer.mozilla.org/en-US/docs/Web/Manifest/display_override} PH1
    */
   wcoNotFound:
-      'Define {PH1} in the manifest to use the Window Controls Overlay API and customize your app\'s title bar.',
+      'Define {PH1} in the manifest to use the Window Controls Overlay API and customize your app’s title bar.',
   /**
    * @description Link text for more information on customizing Window Controls Overlay title bar in the Application panel
    */
-  customizePwaTitleBar: 'Customize the window controls overlay of your PWA\'s title bar',
+  customizePwaTitleBar: 'Customize the window controls overlay of your PWA’s title bar',
   /**
    * @description Text wrapping link to documentation on how to customize WCO title bar
    * @example {https://learn.microsoft.com/en-us/microsoft-edge/progressive-web-apps-chromium/how-to/window-controls-overlay} PH1
@@ -1098,7 +1098,7 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
     ${isEmpty ? widget(UI.EmptyWidget.EmptyWidget, {
       header: i18nString(UIStrings.noManifestDetected),
       text: i18nString(UIStrings.manifestDescription),
-      link: 'https://web.dev/add-manifest/' as Platform.DevToolsPath.UrlString
+      link: 'https://web.dev/add-manifest/' as Platform.DevToolsPath.UrlString,
     }) : html`
     <devtools-report .data=${{reportTitle: i18nString(UIStrings.appManifest), reportUrl: url}}>
       ${renderErrors(warnings, errors, imageErrors, output)}

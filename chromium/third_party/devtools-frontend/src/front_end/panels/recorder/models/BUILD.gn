@@ -56,10 +56,8 @@ devtools_entrypoint("bundle") {
     "../../entrypoints/main/*",
     "../../panels/sources/*",
     "../../recorder/*",
-    "../../recorder/components/*",
     "../../recorder/controllers/*",
     "../../recorder/converters/*",
-    "../components/*",
   ]
 }
 

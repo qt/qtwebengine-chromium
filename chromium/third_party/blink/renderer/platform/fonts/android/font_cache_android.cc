@@ -94,14 +94,14 @@ sk_sp<SkTypeface> FontCache::CreateLocaleSpecificTypeface(
 
   const char* bcp47 = locale.LocaleForSkFontMgr();
   DCHECK(bcp47);
-  sk_sp<SkTypeface> typeface(skia::DefaultFontMgr()->matchFamilyStyleCharacter(
+  sk_sp<SkTypeface> typeface = MatchFamilyStyleCharacter(
       locale_family_name, font_description.SkiaFontStyle(), &bcp47,
       /* bcp47Count */ 1,
       // |matchFamilyStyleCharacter| is the only API that accepts |bcp47|, but
       // it also checks if a character has a glyph. To look up the first
       // match, use the space character, because all fonts are likely to have
       // a glyph for it.
-      uchar::kSpace));
+      uchar::kSpace);
   if (!typeface)
     return nullptr;
 
@@ -112,9 +112,9 @@ sk_sp<SkTypeface> FontCache::CreateLocaleSpecificTypeface(
   // with what we get.
   SkString skia_family_name;
   typeface->getFamilyName(&skia_family_name);
-  sk_sp<SkTypeface> fallback(skia::DefaultFontMgr()->matchFamilyStyleCharacter(
-      nullptr, font_description.SkiaFontStyle(), &bcp47,
-      /* bcp47Count */ 1, uchar::kSpace));
+  sk_sp<SkTypeface> fallback =
+      MatchFamilyStyleCharacter(nullptr, font_description.SkiaFontStyle(),
+                                &bcp47, /* bcp47Count */ 1, uchar::kSpace);
   SkString skia_fallback_name;
   fallback->getFamilyName(&skia_fallback_name);
   if (typeface != fallback)
@@ -139,8 +139,7 @@ const SimpleFontData* FontCache::PlatformFallbackFontForCharacter(
 
   FontFallbackPriority fallback_priority_with_emoji_text = fallback_priority;
 
-  if (RuntimeEnabledFeatures::SystemFallbackEmojiVSSupportEnabled() &&
-      fallback_priority == FontFallbackPriority::kText &&
+  if (fallback_priority == FontFallbackPriority::kText &&
       Character::IsEmoji(c)) {
     fallback_priority_with_emoji_text = FontFallbackPriority::kEmojiText;
   }
@@ -170,8 +169,7 @@ const SimpleFontData* FontCache::PlatformFallbackFontForCharacter(
   // try to get monochromatic font by searching for the font without emoji
   // locales "Zsym" or "Zsye", see
   // https://unicode.org/reports/tr51/#Emoji_Script.
-  if (RuntimeEnabledFeatures::SystemFallbackEmojiVSSupportEnabled() &&
-      IsTextPresentationEmoji(fallback_priority_with_emoji_text) &&
+  if (IsTextPresentationEmoji(fallback_priority_with_emoji_text) &&
       is_color(font_platform_data)) {
     font_platform_data = CreateFontPlatformDataForCharacter(
         fm.get(), c, font_description, generic_family_name,
@@ -272,8 +270,8 @@ AtomicString FontCache::GetGenericFamilyNameForScript(
 
   Bcp47Vector locales =
       GetBcp47LocaleForRequest(font_description, FontFallbackPriority::kText);
-  sk_sp<SkTypeface> typeface(skia::DefaultFontMgr()->matchFamilyStyleCharacter(
-      nullptr, SkFontStyle(), locales.data(), locales.size(), exampler_char));
+  sk_sp<SkTypeface> typeface = MatchFamilyStyleCharacter(
+      nullptr, SkFontStyle(), locales.data(), locales.size(), exampler_char);
   if (!typeface) {
     return g_empty_atom;
   }

@@ -44,6 +44,7 @@
 #include "src/dawn/native/IntegerTypes.h"
 #include "src/dawn/native/ObjectBase.h"
 #include "src/dawn/native/dawn_platform.h"
+#include "src/utils/span.h"
 
 namespace dawn::native {
 
@@ -74,12 +75,11 @@ class QueueBase : public ExecutionQueueBase, public WeakRefSupport<QueueBase> {
     void FormatLabel(absl::FormatSink* s) const override;
 
     // Dawn API
-    void APISubmit(uint32_t commandCount, CommandBufferBase* const* commands);
+    void APISubmit(Span<CommandBufferBase* const> commands);
     Future APIOnSubmittedWorkDone(const WGPUQueueWorkDoneCallbackInfo& callbackInfo);
-    void APIWriteBuffer(BufferBase* buffer, uint64_t bufferOffset, const void* data, size_t size);
+    void APIWriteBuffer(BufferBase* buffer, uint64_t bufferOffset, Span<const std::byte> data);
     void APIWriteTexture(const TexelCopyTextureInfo* destination,
-                         const void* data,
-                         size_t dataSize,
+                         Span<const std::byte> data,
                          const TexelCopyBufferLayout* dataLayout,
                          const Extent3D* writeSize);
     void APICopyTextureForBrowser(const TexelCopyTextureInfo* source,
@@ -91,10 +91,7 @@ class QueueBase : public ExecutionQueueBase, public WeakRefSupport<QueueBase> {
                                           const Extent3D* copySize,
                                           const CopyTextureForBrowserOptions* options);
 
-    MaybeError WriteBuffer(BufferBase* buffer,
-                           uint64_t bufferOffset,
-                           const void* data,
-                           size_t size);
+    MaybeError WriteBuffer(BufferBase* buffer, uint64_t bufferOffset, Span<const std::byte> data);
 
     // Ensure a flush occurs if needed, and track this task as complete after the
     // scheduled work is complete.
@@ -117,21 +114,18 @@ class QueueBase : public ExecutionQueueBase, public WeakRefSupport<QueueBase> {
 
     void DestroyImpl(DestroyReason reason) override;
 
-    virtual MaybeError SubmitImpl(uint32_t commandCount, CommandBufferBase* const* commands) = 0;
+    virtual MaybeError SubmitImpl(Span<CommandBufferBase* const> commands) = 0;
     virtual MaybeError WriteBufferImpl(BufferBase* buffer,
                                        uint64_t bufferOffset,
-                                       const void* data,
-                                       size_t size);
+                                       Span<const std::byte> data);
     virtual MaybeError WriteTextureImpl(const TexelCopyTextureInfo& destination,
-                                        const void* data,
-                                        size_t dataSize,
+                                        Span<const std::byte> data,
                                         const TexelCopyBufferLayout& dataLayout,
                                         const Extent3D& writeSize);
 
   private:
     MaybeError WriteTextureInternal(const TexelCopyTextureInfo* destination,
-                                    const void* data,
-                                    size_t dataSize,
+                                    Span<const std::byte> data,
                                     const TexelCopyBufferLayout& dataLayout,
                                     const Extent3D* writeSize);
     MaybeError CopyTextureForBrowserInternal(const TexelCopyTextureInfo* source,
@@ -142,8 +136,7 @@ class QueueBase : public ExecutionQueueBase, public WeakRefSupport<QueueBase> {
                                                      const TexelCopyTextureInfo* destination,
                                                      const Extent3D* copySize,
                                                      const CopyTextureForBrowserOptions* options);
-    MaybeError ValidateSubmit(uint32_t commandCount,
-                              CommandBufferBase* const* commands,
+    MaybeError ValidateSubmit(Span<CommandBufferBase* const> commands,
                               BufferSet& buffersFromCommands) const;
     MaybeError ValidateOnSubmittedWorkDone() const;
     MaybeError ValidateWriteTexture(const TexelCopyTextureInfo* destination,
@@ -151,7 +144,7 @@ class QueueBase : public ExecutionQueueBase, public WeakRefSupport<QueueBase> {
                                     const TexelCopyBufferLayout& dataLayout,
                                     const Extent3D* writeSize) const;
 
-    MaybeError SubmitInternal(uint32_t commandCount, CommandBufferBase* const* commands);
+    MaybeError SubmitInternal(Span<CommandBufferBase* const> commands);
 
     MutexProtected<SerialMap<ExecutionSerial, std::unique_ptr<TrackTaskCallback>>> mTasksInFlight;
 };

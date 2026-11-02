@@ -1,0 +1,17 @@
+Title: AccessibilityModel axNodeToText correctly formats an accessibility node tree to text
+Content:
+dialog "Confirmation"
+  button "Submit" focusable: true
+=== end content
+
+Title: AccessibilityModel axNodeToText correctly formats when the root node is ignored
+Content:
+Ignored
+  button "Submit" focusable: true
+=== end content
+
+Title: AccessibilityModel axNodeToText correctly formats when a nested node is ignored
+Content:
+dialog "Confirmation"
+  button "Submit" focusable: true
+=== end content

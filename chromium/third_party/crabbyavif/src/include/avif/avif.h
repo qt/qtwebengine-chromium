@@ -41,13 +41,22 @@ constexpr static const uint32_t AVIF_STRICT_CLAP_VALID = (1 << 1);
 
 constexpr static const uint32_t AVIF_STRICT_ALPHA_ISPE_REQUIRED = (1 << 2);
 
-constexpr static const uint32_t AVIF_STRICT_ENABLED = ((AVIF_STRICT_PIXI_REQUIRED | AVIF_STRICT_CLAP_VALID) | AVIF_STRICT_ALPHA_ISPE_REQUIRED);
+constexpr static const uint32_t AVIF_STRICT_MULTIPLE_ILOC_ENTRIES_FOR_SAME_ITEM_DISALLOWED = (1 << 4);
+
+constexpr static const uint32_t AVIF_STRICT_ENABLED = (((AVIF_STRICT_PIXI_REQUIRED | AVIF_STRICT_CLAP_VALID) | AVIF_STRICT_ALPHA_ISPE_REQUIRED) | AVIF_STRICT_MULTIPLE_ILOC_ENTRIES_FOR_SAME_ITEM_DISALLOWED);
 
 constexpr static const uint32_t AVIF_IMAGE_CONTENT_NONE = 0;
 
-constexpr static const uint32_t AVIF_IMAGE_CONTENT_COLOR_AND_ALPHA = ((1 << 0) | (1 << 1));
+constexpr static const uint32_t AVIF_IMAGE_CONTENT_COLOR = (1 << 0);
+
+/// Alpha only is not currently supported.
+constexpr static const uint32_t AVIF_IMAGE_CONTENT_ALPHA = (1 << 1);
+
+constexpr static const uint32_t AVIF_IMAGE_CONTENT_COLOR_AND_ALPHA = (AVIF_IMAGE_CONTENT_COLOR | AVIF_IMAGE_CONTENT_ALPHA);
 
 constexpr static const uint32_t AVIF_IMAGE_CONTENT_GAIN_MAP = (1 << 2);
+
+constexpr static const uint32_t AVIF_IMAGE_CONTENT_COLOR_AND_GAIN_MAP = (AVIF_IMAGE_CONTENT_COLOR | AVIF_IMAGE_CONTENT_GAIN_MAP);
 
 constexpr static const uint32_t AVIF_IMAGE_CONTENT_ALL = (AVIF_IMAGE_CONTENT_COLOR_AND_ALPHA | AVIF_IMAGE_CONTENT_GAIN_MAP);
 
@@ -660,6 +669,8 @@ void crabby_avifDecoderDestroy(avifDecoder *decoder);
 /// Used by the C API with the following pre-conditions:
 /// - if decoder is not null, it has to point to a valid avifDecoder object.
 /// - if image is not null, it has to point to a valid avifImage object.
+///
+/// This function does not support decoding gainmaps.
 avifResult crabby_avifDecoderRead(avifDecoder *decoder, avifImage *image);
 
 /// # Safety
@@ -667,6 +678,8 @@ avifResult crabby_avifDecoderRead(avifDecoder *decoder, avifImage *image);
 /// - if decoder is not null, it has to point to a valid avifDecoder object.
 /// - if image is not null, it has to point to a valid avifImage object.
 /// - if data is not null, it has to be a valid buffer of size bytes.
+///
+/// This function does not support decoding gainmaps.
 avifResult crabby_avifDecoderReadMemory(avifDecoder *decoder,
                                         avifImage *image,
                                         const uint8_t *data,
@@ -677,6 +690,8 @@ avifResult crabby_avifDecoderReadMemory(avifDecoder *decoder,
 /// - if decoder is not null, it has to point to a valid avifDecoder object.
 /// - if image is not null, it has to point to a valid avifImage object.
 /// - if filename is not null, it has to point to a valid C-style string.
+///
+/// This function does not support decoding gainmaps.
 avifResult crabby_avifDecoderReadFile(avifDecoder *decoder, avifImage *image, const char *filename);
 
 /// # Safety

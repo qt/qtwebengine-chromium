@@ -28,6 +28,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_data.h"
 #include "content/public/browser/client_hints_controller_delegate.h"
+#include "content/public/browser/immersive_playback_options.h"
 #include "content/public/browser/login_delegate.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/navigation_throttle_registry.h"
@@ -58,7 +59,6 @@
 #include "content/web_test/browser/web_test_fedcm_manager.h"
 #include "content/web_test/browser/web_test_origin_trial_throttle.h"
 #include "content/web_test/browser/web_test_permission_manager.h"
-#include "content/web_test/browser/web_test_privacy_sandbox.h"
 #include "content/web_test/browser/web_test_sensor_provider_manager.h"
 #include "content/web_test/browser/web_test_storage_access_manager.h"
 #include "content/web_test/browser/web_test_tts_platform.h"
@@ -90,7 +90,6 @@
 #include "storage/browser/quota/quota_settings.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
 #include "third_party/blink/public/common/web_preferences/web_preferences.h"
-#include "third_party/blink/public/mojom/picture_in_picture/picture_in_picture.mojom.h"
 #include "third_party/blink/public/test/mojom/device_posture/device_posture_provider_automation.test-mojom.h"
 #include "ui/base/ui_base_switches.h"
 #include "url/origin.h"
@@ -160,8 +159,7 @@ class BoundsMatchVideoSizeOverlayWindow : public VideoOverlayWindow {
       const std::vector<media_session::MediaImage>& images) override {}
   void SetSurfaceId(const viz::SurfaceId& surface_id) override {}
   void SetPlaybackControlsVisibility(bool is_visible) override {}
-  void SetImmersiveVideoOptions(
-      blink::mojom::ImmersiveOptionsPtr options) override {}
+  void SetImmersiveVideoOptions(const ImmersiveOptions& options) override {}
 
  private:
   gfx::Size size_;
@@ -586,9 +584,6 @@ void WebTestContentBrowserClient::RegisterBrowserInterfaceBindersForFrame(
   map->Add<blink::test::mojom::WebSensorProviderAutomation>(base::BindRepeating(
       &WebTestContentBrowserClient::BindWebSensorProviderAutomation,
       base::Unretained(this)));
-  map->Add<blink::test::mojom::WebPrivacySandboxAutomation>(base::BindRepeating(
-      &WebTestContentBrowserClient::BindWebPrivacySandboxAutomation,
-      base::Unretained(this)));
 
 #if BUILDFLAG(ENABLE_COMPUTE_PRESSURE)
   map->Add<blink::test::mojom::WebPressureManagerAutomation>(
@@ -680,15 +675,6 @@ void WebTestContentBrowserClient::BindWebSensorProviderAutomation(
 
 void WebTestContentBrowserClient::ResetWebSensorProviderAutomation() {
   sensor_provider_manager_.reset();
-}
-
-void WebTestContentBrowserClient::BindWebPrivacySandboxAutomation(
-    RenderFrameHost* render_frame_host,
-    mojo::PendingReceiver<blink::test::mojom::WebPrivacySandboxAutomation>
-        receiver) {
-  WebTestPrivacySandbox::GetOrCreate(
-      WebContents::FromRenderFrameHost(render_frame_host))
-      ->Bind(std::move(receiver));
 }
 
 #if BUILDFLAG(ENABLE_COMPUTE_PRESSURE)
@@ -784,15 +770,6 @@ std::string WebTestContentBrowserClient::GetAcceptLangs(
   return GetShellLanguage();
 }
 
-bool WebTestContentBrowserClient::IsInterestGroupAPIAllowed(
-    BrowserContext* browser_context,
-    RenderFrameHost* render_frame_host,
-    InterestGroupApiOperation operation,
-    const url::Origin& top_frame_origin,
-    const url::Origin& api_origin) {
-  return true;
-}
-
 bool WebTestContentBrowserClient::IsPrivacySandboxReportingDestinationAttested(
     BrowserContext* browser_context,
     const url::Origin& destination_origin,
@@ -820,10 +797,5 @@ void WebTestContentBrowserClient::
       MojoBinderAssociatedPolicy::kGrant);
 }
 
-void WebTestContentBrowserClient::RegisterMojoBinderPoliciesForPreview(
-    MojoBinderPolicyMap& policy_map) {
-  policy_map.SetAssociatedPolicy<mojom::WebTestControlHost>(
-      MojoBinderAssociatedPolicy::kGrant);
-}
 
 }  // namespace content

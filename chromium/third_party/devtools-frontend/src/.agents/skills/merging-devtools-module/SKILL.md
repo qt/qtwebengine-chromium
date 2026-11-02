@@ -1,5 +1,5 @@
 ---
-name: devtools-module-merging
+name: merging-devtools-module
 description: Workflow for merging a DevTools submodule into its parent module. Covers BUILD.gn consolidation and updating devtools_grd_files.gni.
 ---
 

@@ -60,6 +60,7 @@
 #include "src/dawn/native/PerStage.h"
 #include "src/dawn/native/Serializable.h"
 #include "src/dawn/native/dawn_platform.h"
+#include "src/utils/span.h"
 #include "tint/tint.h"
 
 namespace tint {
@@ -314,7 +315,6 @@ using OverridesMap = absl::flat_hash_map<std::string, Override>;
     X(bool, usesInstanceIndex)                                                                    \
     X(bool, usesNumWorkgroups)                                                                    \
     X(bool, usesSampleMaskOutput)                                                                 \
-    X(bool, usesSampleMaskInput)                                                                  \
     X(bool, usesSampleIndex)                                                                      \
     X(bool, usesVertexIndex)                                                                      \
     X(bool, usesGlobalInvocationIndex)                                                            \
@@ -351,6 +351,10 @@ union OverrideScalar {
     int32_t i32;
     uint32_t u32;
 };
+
+// wgpu::ShaderSourceSPIRV uses a uint32_t for its size, so it cannot be automatically converted to
+// use a dawn::Span, use this helper instead.
+Span<const uint32_t> ToSpirvSpan(const ShaderSourceSPIRV* spirvSource);
 
 class ShaderModuleBase : public RefCountedWithExternalCount<ApiObjectBase>,
                          public CachedObject,

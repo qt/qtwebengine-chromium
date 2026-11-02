@@ -117,7 +117,7 @@ DecodeTimestamp DecodeTimestampFromRational(int64_t numer, int64_t denom) {
 }
 
 TrackRunIterator::TrackRunIterator(const Movie* moov, MediaLog* media_log)
-    : moov_(moov), media_log_(media_log) {
+    : moov_(moov), media_log_(MediaLog::CloneSafely(media_log)) {
   CHECK(moov);
 }
 
@@ -307,8 +307,8 @@ bool TrackRunIterator::Init(const MovieFragment& moof) {
     std::unique_ptr<BufferReader> sample_encryption_reader;
     uint32_t sample_encryption_entries_count = 0;
     if (!sample_encryption_data.empty()) {
-      sample_encryption_reader = std::make_unique<BufferReader>(
-          sample_encryption_data.data(), sample_encryption_data.size());
+      sample_encryption_reader =
+          std::make_unique<BufferReader>(sample_encryption_data);
       RCHECK(sample_encryption_reader->Read4(&sample_encryption_entries_count));
     }
 
@@ -447,7 +447,7 @@ bool TrackRunIterator::Init(const MovieFragment& moof) {
       for (size_t k = 0; k < trun.sample_count; k++) {
         if (!PopulateSampleInfo(*trex, traf.header, trun, edit_list_offset, k,
                                 &tri.samples[k], traf.sdtp.sample_depends_on(k),
-                                tri.track_type, media_log_)) {
+                                tri.track_type, media_log_.get())) {
           return false;
         }
 
@@ -593,8 +593,8 @@ bool TrackRunIterator::CacheAuxInfo(base::span<const uint8_t> buf) {
       info_size = run_itr_->aux_info_sizes[i];
 
     if (IsSampleEncrypted(i)) {
-      BufferReader reader(buf.subspan(base::checked_cast<size_t>(pos)).data(),
-                          info_size);
+      BufferReader reader(buf.subspan(base::checked_cast<size_t>(pos),
+                                      base::checked_cast<size_t>(info_size)));
       const uint8_t iv_size = GetIvSize(i);
       const bool has_subsamples = info_size > iv_size;
       SampleEncryptionEntry& entry = sample_encryption_entries[i];

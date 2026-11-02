@@ -13,7 +13,7 @@
 #include "content/browser/webid/config_fetcher.h"
 #include "content/browser/webid/idp_network_request_manager.h"
 #include "content/common/content_export.h"
-#include "third_party/blink/public/mojom/webid/federated_auth_request.mojom.h"
+#include "third_party/blink/public/mojom/webid/federated_request.mojom.h"
 
 namespace content {
 
@@ -25,7 +25,7 @@ namespace webid {
 class ConfigFetcher;
 class DisconnectRequestTest;
 class Metrics;
-class RequestServiceTest;
+class RequestTest;
 
 // Fetches data for a FedCM disconnect request.
 class CONTENT_EXPORT DisconnectRequest {
@@ -46,12 +46,12 @@ class CONTENT_EXPORT DisconnectRequest {
   // on having a pointer to this object, hence cannot be passed in the
   // constructor. Once the callback is set, start fetching.
   void SetCallbackAndStart(
-      blink::mojom::FederatedAuthRequest::DisconnectCallback callback,
+      blink::mojom::FederatedRequestService::DisconnectCallback callback,
       FederatedIdentityApiPermissionContextDelegate* api_permission_delegate);
 
  private:
   friend class DisconnectRequestTest;
-  friend class RequestServiceTest;
+  friend class RequestTest;
 
   DisconnectRequest(
       std::unique_ptr<IdpNetworkRequestManager> network_manager,
@@ -86,7 +86,7 @@ class CONTENT_EXPORT DisconnectRequest {
   url::Origin origin_;
   url::Origin embedding_origin_;
 
-  blink::mojom::FederatedAuthRequest::DisconnectCallback callback_;
+  blink::mojom::FederatedRequestService::DisconnectCallback callback_;
 
   // The time when this class is created. Approximates the time in which the
   // disconnect() call begins.

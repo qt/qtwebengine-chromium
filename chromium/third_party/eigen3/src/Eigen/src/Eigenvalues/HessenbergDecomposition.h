@@ -79,7 +79,7 @@ class HessenbergDecomposition {
   /** \brief Type for vector of Householder coefficients.
    *
    * This is column vector with entries of type #Scalar. The length of the
-   * vector is one less than the size of #MatrixType, if it is a fixed-side
+   * vector is one less than the size of #MatrixType, if it is a fixed-size
    * type.
    */
   typedef Matrix<Scalar, SizeMinusOne, 1, Options & ~RowMajor, MaxSizeMinusOne, 1> CoeffVectorType;
@@ -138,7 +138,7 @@ class HessenbergDecomposition {
    * Computations</i>). The cost is \f$ 10n^3/3 \f$ flops, where \f$ n \f$
    * denotes the size of the given matrix.
    *
-   * This method reuses of the allocated data in the HessenbergDecomposition
+   * This method reuses the allocated data in the HessenbergDecomposition
    * object.
    *
    * Example: \include HessenbergDecomposition_compute.cpp
@@ -315,7 +315,7 @@ namespace internal {
  *
  * Objects of this type represent the Hessenberg matrix in the Hessenberg
  * decomposition of some matrix. The object holds a reference to the
- * HessenbergDecomposition class until the it is assigned or evaluated for
+ * HessenbergDecomposition class until it is assigned or evaluated for
  * some other reason (the reference should remain valid during the life time
  * of this object). This class is the return type of
  * HessenbergDecomposition::matrixH(); there is no other intended use for this

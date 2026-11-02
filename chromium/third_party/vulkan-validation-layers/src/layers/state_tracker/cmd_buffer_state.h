@@ -168,18 +168,17 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
   public:
     using AliasedLayoutMap = vvl::unordered_map<const ImageLayoutMap *, std::shared_ptr<CommandBufferImageLayoutMap>>;
 
-    VkCommandBufferAllocateInfo allocate_info;
-
-    VkCommandBufferUsageFlags begin_info_flags;
-    bool has_inheritance;
-    vku::safe_VkCommandBufferInheritanceInfo inheritance_info;
-    vku::safe_VkCommandBufferInheritanceDescriptorHeapInfoEXT inheritance_descriptor_heap_info;
-
-    // since command buffers can only be destroyed by their command pool, this does not need to be a shared_ptr
-    const vvl::CommandPool *command_pool;
-    DeviceState &dev_data;
+    const VkCommandBufferAllocateInfo allocate_info;
 
     const bool unprotected;  // can't be used for protected memory
+
+    bool has_inheritance{false};
+    VkCommandBufferUsageFlags begin_info_flags;
+    vku::safe_VkCommandBufferInheritanceInfo inheritance_info;
+
+    // since command buffers can only be destroyed by their command pool, this does not need to be a shared_ptr
+    const vvl::CommandPool& command_pool;
+    DeviceState &dev_data;
 
     CbState state;           // Track cmd buffer update state
     uint64_t command_count;  // Number of commands recorded. Currently only used with VK_KHR_performance_query
@@ -212,9 +211,6 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
 
     // These are values that are being set with vkCmdSet* tied to a command buffer
     struct DynamicStateValue {
-        // VK_DYNAMIC_STATE_STENCIL_WRITE_MASK
-        uint32_t write_mask_front{};
-        uint32_t write_mask_back{};
         // VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE
         bool depth_write_enable{};
         // VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE
@@ -223,42 +219,12 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
         bool depth_bounds_test_enable{};
         // VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE
         bool stencil_test_enable{};
-        // VK_DYNAMIC_STATE_STENCIL_OP
-        VkStencilOp fail_op_front{};
-        VkStencilOp pass_op_front{};
-        VkStencilOp depth_fail_op_front{};
-        VkStencilOp fail_op_back{};
-        VkStencilOp pass_op_back{};
-        VkStencilOp depth_fail_op_back{};
-        // VK_DYNAMIC_STATE_CULL_MODE
-        VkCullModeFlags cull_mode{};
-        // VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY
-        VkPrimitiveTopology primitive_topology{};
-        // VK_DYNAMIC_STATE_SAMPLE_LOCATIONS_EXT
-        VkSampleLocationsInfoEXT sample_locations_info{};
         // VK_DYNAMIC_STATE_DISCARD_RECTANGLE_ENABLE_EXT
         bool discard_rectangle_enable{};
-        // VK_DYNAMIC_STATE_DISCARD_RECTANGLE_EXT
-        // maxDiscardRectangles is at max 8 on all known implementations currently
-        std::bitset<32> discard_rectangles{};
-        // VK_DYNAMIC_STATE_POLYGON_MODE_EXT
-        VkPolygonMode polygon_mode{};
-        // VK_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT
-        VkSampleCountFlagBits rasterization_samples{};
-        // VK_DYNAMIC_STATE_RASTERIZATION_STREAM_EXT
-        uint32_t rasterization_stream{};
-        // VK_DYNAMIC_STATE_SAMPLE_MASK_EXT
-        VkSampleCountFlagBits samples_mask_samples{};
-        // VK_DYNAMIC_STATE_LINE_RASTERIZATION_MODE_KHR
-        VkLineRasterizationMode line_rasterization_mode{};
         // VK_DYNAMIC_STATE_LINE_STIPPLE_ENABLE_EXT
         bool stippled_line_enable{};
         // VK_DYNAMIC_STATE_COVERAGE_TO_COLOR_ENABLE_NV
         bool coverage_to_color_enable{};
-        // VK_DYNAMIC_STATE_COVERAGE_TO_COLOR_LOCATION_NV
-        uint32_t coverage_to_color_location{};
-        // VK_DYNAMIC_STATE_COVERAGE_MODULATION_MODE_NV
-        VkCoverageModulationModeNV coverage_modulation_mode{};
         // VK_DYNAMIC_STATE_COVERAGE_MODULATION_TABLE_ENABLE_NV
         bool coverage_modulation_table_enable{};
         // VK_DYNAMIC_STATE_SHADING_RATE_IMAGE_ENABLE_NV
@@ -275,12 +241,52 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
         bool alpha_to_one_enable{};
         // VK_DYNAMIC_STATE_LOGIC_OP_ENABLE_EXT
         bool logic_op_enable{};
-        // VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR
-        VkExtent2D fragment_size{};
         // VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE
         bool primitive_restart_enable{};
+        // VK_DYNAMIC_STATE_SAMPLE_LOCATIONS_ENABLE_EXT
+        bool sample_locations_enable{};
+        // VK_DYNAMIC_STATE_VIEWPORT_W_SCALING_ENABLE
+        bool viewport_w_scaling_enable{};
 
-        uint32_t color_write_enable_attachment_count{};
+        // VK_DYNAMIC_STATE_STENCIL_WRITE_MASK
+        uint32_t write_mask_front{};
+        uint32_t write_mask_back{};
+        // VK_DYNAMIC_STATE_STENCIL_OP
+        VkStencilOp fail_op_front{};
+        VkStencilOp pass_op_front{};
+        VkStencilOp depth_fail_op_front{};
+        VkStencilOp fail_op_back{};
+        VkStencilOp pass_op_back{};
+        VkStencilOp depth_fail_op_back{};
+        // VK_DYNAMIC_STATE_CULL_MODE
+        VkCullModeFlags cull_mode{};
+        // VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY
+        VkPrimitiveTopology primitive_topology{};
+        // VK_DYNAMIC_STATE_POLYGON_MODE_EXT
+        VkPolygonMode polygon_mode{};
+        // VK_DYNAMIC_STATE_SAMPLE_LOCATIONS_EXT
+        VkSampleLocationsInfoEXT sample_locations_info{};
+        // VK_DYNAMIC_STATE_DISCARD_RECTANGLE_EXT
+        // maxDiscardRectangles is at max 8 on all known implementations currently
+        std::bitset<32> discard_rectangles{};
+        // VK_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT
+        VkSampleCountFlagBits rasterization_samples{};
+        // VK_DYNAMIC_STATE_RASTERIZATION_STREAM_EXT
+        uint32_t rasterization_stream{};
+        // VK_DYNAMIC_STATE_SAMPLE_MASK_EXT
+        VkSampleCountFlagBits samples_mask_samples{};
+        // VK_DYNAMIC_STATE_LINE_RASTERIZATION_MODE_KHR
+        VkLineRasterizationMode line_rasterization_mode{};
+        // VK_DYNAMIC_STATE_COVERAGE_TO_COLOR_LOCATION_NV
+        uint32_t coverage_to_color_location{};
+        // VK_DYNAMIC_STATE_COVERAGE_MODULATION_MODE_NV
+        VkCoverageModulationModeNV coverage_modulation_mode{};
+
+        // VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR
+        VkExtent2D fragment_size{};
+
+        // VK_DYNAMIC_STATE_VERTEX_INPUT_EXT, key is binding number
+        vvl::unordered_map<uint32_t, VertexBindingState> vertex_bindings;
 
         // maxColorAttachments is at max 8 on all known implementations currently
         std::bitset<32> color_blend_enable_attachments{};            // VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT
@@ -292,28 +298,24 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
         std::vector<VkColorBlendEquationEXT> color_blend_equations;  // VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT
         std::vector<VkColorComponentFlags> color_write_masks;        // VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT
 
-        // VK_DYNAMIC_STATE_VERTEX_INPUT_EXT, key is binding number
-        vvl::unordered_map<uint32_t, VertexBindingState> vertex_bindings;
+        uint32_t color_write_enable_attachment_count{};
 
         // VK_DYNAMIC_STATE_CONSERVATIVE_RASTERIZATION_MODE_EXT
         VkConservativeRasterizationModeEXT conservative_rasterization_mode{};
-        // VK_DYNAMIC_STATE_SAMPLE_LOCATIONS_ENABLE_EXT
-        bool sample_locations_enable{};
         // VK_DYNAMIC_STATE_ATTACHMENT_FEEDBACK_LOOP_ENABLE_EXT
         VkImageAspectFlags attachment_feedback_loop_enable{};
 
-        // VK_DYNAMIC_STATE_VIEWPORT
-        std::vector<VkViewport> viewports;
         // and VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT
         uint32_t viewport_count{};
         // VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT
         uint32_t scissor_count{};
+        // VK_DYNAMIC_STATE_VIEWPORT
+        std::vector<VkViewport> viewports;
         // VK_DYNAMIC_STATE_VIEWPORT_W_SCALING_NV
         std::vector<VkViewportWScalingNV> viewport_w_scalings;
+
         uint32_t viewport_w_scaling_first{};
         uint32_t viewport_w_scaling_count{};
-        // VK_DYNAMIC_STATE_VIEWPORT_W_SCALING_ENABLE
-        bool viewport_w_scaling_enable{};
         // VK_DYNAMIC_STATE_VIEWPORT_SWIZZLE_NV
         uint32_t viewport_swizzle_count{};
         // VK_DYNAMIC_STATE_VIEWPORT_SHADING_RATE_PALETTE_NV
@@ -396,13 +398,13 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     std::shared_ptr<const CommandBuffer> shared_from_this() const { return SharedFromThisImpl(this); }
     std::shared_ptr<CommandBuffer> shared_from_this() { return SharedFromThisImpl(this); }
 
-    // Track if any dynamic state is set that is static in the currently bound pipeline
-    bool dirty_static_state;
-
     // Device Mask at start of command buffer
     uint32_t initial_device_mask;
     // Device mask from vkCmdBeginRenderPass/vkCmdBeginRendering
     uint32_t render_pass_device_mask;
+
+    // Track if any dynamic state is set that is static in the currently bound pipeline
+    bool dirty_static_state;
 
     // Set to true when the first render pass instance is encountered during recording.
     // When recording is finished, it indicates if command buffer has render pass instances.
@@ -506,10 +508,11 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     // If primary, the secondary command buffers we will call.
     vvl::unordered_set<CommandBuffer *> linked_command_buffers;
 
-    bool performance_lock_acquired = false;
-    bool performance_lock_released = false;
-
     PushConstantRangesId push_constant_ranges_layout;
+
+    // VK_EXT_descriptor_heap - Mark which ranges vkCmdPushDataKHR has been set
+    // Note - this is one boolean per 32-bit dword as VkPushDataInfoEXT offset/size are required to be multiple of 4
+    std::vector<bool> push_data_dword_mask{};
 
     // Video coding related state tracking
     std::shared_ptr<vvl::VideoSession> bound_video_session;
@@ -519,16 +522,19 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     std::optional<uint32_t> video_encode_quality_level{};
     VideoSessionUpdateMap video_session_updates;
 
-    bool transform_feedback_active{false};
     uint32_t transform_feedback_buffers_bound;
+    uint32_t conditional_rendering_subpass{0};
+    bool transform_feedback_active{false};
 
     bool conditional_rendering_active{false};
     bool conditional_rendering_inside_render_pass{false};
-    uint32_t conditional_rendering_subpass{0};
 
     // vkCmdBindVertexBuffers3KHR
     bool bind_vertex_buffer_3_used{false};
     bool stride_set_with_bind_vertex_buffer_3{false};
+
+    bool performance_lock_acquired = false;
+    bool performance_lock_released = false;
 
     std::shared_ptr<vvl::DeviceMemory> bound_tile_memory;
 
@@ -551,23 +557,35 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
 
     // VK_EXT_descriptor_heap
     struct DescriptorHeap {
-        // Heap buffer area and for-implementation-reserved-area currently bound by vkCmdBindSamplerHeapEXT
         bool sampler_bound;
+        bool resource_bound;
+        // If heap is from VkCommandBufferInheritanceDescriptorHeapInfoEXT
+        bool is_sampler_inherited;
+        bool is_resource_inherited;
+        bool is_sampler_invalidated;
+        bool is_resource_invalidated;
+
+        // Heap buffer area and for-implementation-reserved-area currently bound by vkCmdBindSamplerHeapEXT
         vvl::range<VkDeviceAddress> sampler_range;
         vvl::range<VkDeviceAddress> sampler_reserved;
         // Heap buffer area and for-implementation-reserved-area currently bound by vkCmdBindResourceHeapEXT
-        bool resource_bound;
         vvl::range<VkDeviceAddress> resource_range;
         vvl::range<VkDeviceAddress> resource_reserved;
 
         void Reset() {
             sampler_bound = false;
+            resource_bound = false;
+            is_sampler_inherited = false;
+            is_resource_inherited = false;
+            is_sampler_invalidated = false;
+            is_resource_invalidated = false;
             sampler_reserved = {};
             sampler_range = {};
-            resource_bound = false;
             resource_reserved = {};
             resource_range = {};
         }
+        void Update(const VkBindHeapInfoEXT& bind_info, bool is_sampler);
+        std::string Describe(bool is_sampler) const;
     } descriptor_heap;
 
     void SetDescriptorMode(vvl::DescriptorMode new_mode, vvl::Func function);
@@ -577,8 +595,8 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     ReadLockGuard ReadLock() const { return ReadLockGuard(lock); }
     WriteLockGuard WriteLock() { return WriteLockGuard(lock); }
 
-    CommandBuffer(DeviceState &dev, VkCommandBuffer handle, const VkCommandBufferAllocateInfo *allocate_info,
-                  const vvl::CommandPool *cmd_pool);
+    CommandBuffer(DeviceState& dev, VkCommandBuffer handle, const VkCommandBufferAllocateInfo* allocate_info,
+                  const vvl::CommandPool& cmd_pool);
 
     virtual ~CommandBuffer() { Destroy(); }
 
@@ -612,13 +630,13 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     LogObjectList GetObjectList(VkShaderStageFlagBits stage) const;
     LogObjectList GetObjectList(VkPipelineBindPoint pipeline_bind_point) const;
 
-    VkQueueFlags GetQueueFlags() const { return command_pool->queue_flags; }
+    VkQueueFlags GetQueueFlags() const { return command_pool.queue_flags; }
 
     bool IsReleaseOp(const OwnershipTransferBarrier &barrier) const {
-        return (IsOwnershipTransfer(barrier)) && (command_pool->queueFamilyIndex == barrier.srcQueueFamilyIndex);
+        return (IsOwnershipTransfer(barrier)) && (command_pool.queueFamilyIndex == barrier.srcQueueFamilyIndex);
     }
     bool IsAcquireOp(const OwnershipTransferBarrier &barrier) const {
-        return (IsOwnershipTransfer(barrier)) && (command_pool->queueFamilyIndex == barrier.dstQueueFamilyIndex);
+        return (IsOwnershipTransfer(barrier)) && (command_pool.queueFamilyIndex == barrier.dstQueueFamilyIndex);
     }
 
     void Begin(const VkCommandBufferBeginInfo *pBeginInfo);
@@ -664,9 +682,11 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
                                        std::shared_ptr<vvl::DescriptorSet> &push_descriptor_set, uint32_t dynamic_offset_count,
                                        const uint32_t *p_dynamic_offsets, const Location &loc);
 
-    void UpdateLastBoundDescriptorBuffers(VkPipelineBindPoint pipeline_bind_point,
-                                          std::shared_ptr<const vvl::PipelineLayout> pipeline_layout, uint32_t first_set,
-                                          uint32_t set_count, const uint32_t *buffer_indicies, const VkDeviceSize *buffer_offsets);
+    void UpdateLastBoundDescriptorBuffers(LastBound& last_bound, std::shared_ptr<const vvl::PipelineLayout> pipeline_layout,
+                                          uint32_t first_set, uint32_t set_count, const uint32_t* buffer_indicies,
+                                          const VkDeviceSize* buffer_offsets);
+    void UpdateLastBoundDescriptorBuffersEmbedded(LastBound& last_bound, std::shared_ptr<const vvl::PipelineLayout> pipeline_layout,
+                                                  uint32_t set);
 
     void PushDescriptorSetState(VkPipelineBindPoint pipelineBindPoint, std::shared_ptr<const vvl::PipelineLayout> pipeline_layout,
                                 uint32_t set, uint32_t descriptorWriteCount, const VkWriteDescriptorSet *pDescriptorWrites,
@@ -738,11 +758,18 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     void RecordSetEvent(VkEvent event, VkPipelineStageFlags stageMask, const Location& loc);
     void RecordSetEvent2(VkEvent event, const VkDependencyInfo& dependency_info, const Location& loc);
     void RecordResetEvent(VkEvent event, VkPipelineStageFlags2KHR stageMask, const Location &loc);
-    void RecordWaitEvents(vvl::span<const VkEvent> events, VkPipelineStageFlags src_stage_mask, const Location& loc);
+    void RecordWaitEvents(vvl::span<const VkEvent> events, VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask,
+                          const Location& loc);
     void RecordWaitEvent2(VkEvent event, const VkDependencyInfo& dependency_info, const Location& dep_info_loc);
     void RecordPushConstants(const vvl::PipelineLayout& pipeline_layout_state, VkShaderStageFlags stage_flags, uint32_t offset,
                              uint32_t size, const void *values);
     void RecordPushData(const VkPushDataInfoEXT& push_data_info, const Location& loc);
+    bool VerifyPushData(uint32_t offset, uint32_t size) const;
+
+    void RecordBindDescriptorBuffer(vvl::DeviceState& device_state, uint32_t buffer_count,
+                                    const VkDescriptorBufferBindingInfoEXT* binding_infos, const Location& loc);
+    void RecordBindResourceHeap(vvl::DeviceState& device_state, const VkBindHeapInfoEXT& bind_info, const Location& loc);
+    void RecordBindSamplerHeap(vvl::DeviceState& device_state, const VkBindHeapInfoEXT& bind_info, const Location& loc);
 
     void RecordBeginConditionalRendering(const Location &loc);
     void RecordEndConditionalRendering(const Location &loc);
@@ -805,6 +832,9 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     static std::string GetDebugRegionName(const std::vector<LabelCommand>& label_commands, uint32_t label_command_index,
                                           const std::vector<std::string>& initial_label_stack = {});
 
+    // This command buffer might contain a push descriptor set, which is not tracked in the object maps.
+    // So the only way to cleanup SubStates on the descriptor set is through here.
+    void RemoveOwnedSubState(LayerObjectTypeId id);
   private:
     void ResetCBState();
 
@@ -824,6 +854,7 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     void NotifyInvalidate(const StateObject::NodeList &invalid_nodes, bool unlink) override;
     void UpdateAttachmentsView(const VkRenderPassBeginInfo *pRenderPassBegin);
     void RecordVideoInlineQueries(const VkVideoInlineQueryInfoKHR &query_info);
+    void RecordVideoEncodeQuantizationMap(const VkVideoEncodeQuantizationMapInfoKHR &quant_map_info);
     void UnbindResources();
 };
 
@@ -905,9 +936,10 @@ class CommandBufferSubState {
     virtual void RecordUpdateBuffer(vvl::Buffer &buffer_state, VkDeviceSize offset, VkDeviceSize size, const Location &loc) {}
 
     virtual void RecordSetEvent(VkEvent event, VkPipelineStageFlags stage_mask) {}
-    virtual void RecordSetEvent2(VkEvent event, const VkDependencyInfo& dependency_info) {}
-    virtual void RecordResetEvent(VkEvent event, VkPipelineStageFlags2 stage_mask) {}
-    virtual void RecordWaitEvents(vvl::span<const VkEvent> events, VkPipelineStageFlags src_stage_mask, const Location& loc) {}
+    virtual void RecordSetEvent2(VkEvent event, const VkDependencyInfo& dependency_info, const Location& loc) {}
+    virtual void RecordResetEvent(VkEvent event, VkPipelineStageFlags2 stage_mask, const Location& loc) {}
+    virtual void RecordWaitEvents(vvl::span<const VkEvent> events, VkPipelineStageFlags src_stage_mask,
+                                  VkPipelineStageFlags dst_stage_mask, const Location& loc) {}
     virtual void RecordWaitEvent2(VkEvent event, const VkDependencyInfo& dependency_info, const Location& loc) {}
     virtual void RecordBarriers(uint32_t buffer_barrier_count, const VkBufferMemoryBarrier *buffer_barriers,
                                 uint32_t image_barrier_count, const VkImageMemoryBarrier *image_barriers,
@@ -920,6 +952,10 @@ class CommandBufferSubState {
 
     virtual void ClearPushConstants() {}
     virtual void ClearPushData() {}
+
+    // VK_EXT_descriptor_heap
+    virtual void RecordBindResourceHeap() {}
+    virtual void RecordBindSamplerHeap() {}
 
     virtual void RecordBeginRendering(const VkRenderingInfo &rendering_info, const Location &loc) {}
     virtual void RecordBeginRenderPass(const VkRenderPassBeginInfo &render_pass_begin, const VkSubpassBeginInfo &subpass_begin_info,
@@ -945,6 +981,7 @@ class CommandBufferSubState {
     virtual void RecordWriteAccelerationStructuresProperties(VkQueryPool queryPool, uint32_t firstQuery,
                                                              uint32_t accelerationStructureCount, const Location &loc) {}
     virtual void RecordVideoInlineQueries(const VkVideoInlineQueryInfoKHR &query_info) {}
+    virtual void RecordVideoEncodeQuantizationMap(const VkVideoEncodeQuantizationMapInfoKHR &quant_map_info) {}
 
     virtual void RecordBeginVideoCoding(vvl::VideoSession &vs_state, const VkVideoBeginCodingInfoKHR &begin_info,
                                         const Location &loc) {}

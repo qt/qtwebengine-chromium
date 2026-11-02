@@ -27,7 +27,7 @@ M      = @$(call ECHO,$(TAG),$@);
 $(foreach VAR,$(BRIEF), \
     $(eval override $(VAR) = @$$(call ECHO,$(VAR),$$(MSG)); $($(VAR))))
 $(foreach VAR,$(SILENT),$(eval override $(VAR) = @$($(VAR))))
-$(eval INSTALL = @$(call ECHO,INSTALL,$$(^:$(SRC_DIR)/%=%)); $(INSTALL))
+$(eval INSTALL = @$(call ECHO,INSTALL,$$(^:$(SRC_PATH)/%=%)); $(INSTALL))
 endif
 
 # Prepend to a recursively expanded variable without making it simply expanded.
@@ -114,8 +114,8 @@ $(BIN2CEXE): ffbuild/bin2c_host.o
 	$(HOSTLD) $(HOSTLDFLAGS) $(HOSTLD_O) $^ $(HOSTEXTRALIBS)
 
 RUN_BIN2C = $(BIN2C) $(patsubst $(SRC_PATH)/%,$(SRC_LINK)/%,$<) $@ $(subst .,_,$(basename $(notdir $@)))
-RUN_GZIP  = $(M)gzip -nc9 $(patsubst $(SRC_PATH)/%,$(SRC_LINK)/%,$<) >$@
-RUN_MINIFY = $(M)sed 's!/\\*.*\\*/!!g' $< | tr '\n' ' ' | tr -s ' ' | sed 's/^ //; s/ $$//' > $@
+RUN_GZIP  = $(M)mkdir -p $(dir $@) && gzip -nc9 $(patsubst $(SRC_PATH)/%,$(SRC_LINK)/%,$<) >$@
+RUN_MINIFY = $(M)mkdir -p $(dir $@) && sed 's!/\\*.*\\*/!!g' $< | tr '\n' ' ' | tr -s ' ' | sed 's/^ //; s/ $$//' > $@
 %.gz: TAG = GZIP
 %.min: TAG = MINIFY
 
@@ -205,6 +205,7 @@ OBJS      += $(OBJS-yes)
 SHLIBOBJS += $(SHLIBOBJS-yes)
 STLIBOBJS += $(STLIBOBJS-yes)
 FFLIBS    := $($(NAME)_FFLIBS) $(FFLIBS-yes) $(FFLIBS)
+DEVPROGS  += $(DEVPROGS-yes)
 TESTPROGS += $(TESTPROGS-yes)
 
 LDLIBS       = $(FFLIBS:%=%$(BUILDSUF))
@@ -213,7 +214,8 @@ FFEXTRALIBS := $(LDLIBS:%=$(LD_LIB)) $(foreach lib,EXTRALIBS-$(NAME) $(FFLIBS:%=
 OBJS      := $(sort $(OBJS:%=$(SUBDIR)%))
 SHLIBOBJS := $(sort $(SHLIBOBJS:%=$(SUBDIR)%))
 STLIBOBJS := $(sort $(STLIBOBJS:%=$(SUBDIR)%))
-TESTOBJS  := $(TESTOBJS:%=$(SUBDIR)tests/%) $(TESTPROGS:%=$(SUBDIR)tests/%.o)
+TESTOBJS  := $(TESTOBJS:%=$(SUBDIR)tests/%) $(TESTPROGS:%=$(SUBDIR)tests/%.o) $(DEVPROGS:%=$(SUBDIR)%.o)
+DEVPROGS  := $(DEVPROGS:%=$(SUBDIR)%$(EXESUF))
 TESTPROGS := $(TESTPROGS:%=$(SUBDIR)tests/%$(EXESUF))
 HOSTOBJS  := $(HOSTPROGS:%=$(SUBDIR)%.o)
 HOSTPROGS := $(HOSTPROGS:%=$(SUBDIR)%$(HOSTEXESUF))
@@ -254,12 +256,12 @@ $(TOOLOBJS): | tools
 
 OUTDIRS := $(OUTDIRS) $(dir $(OBJS) $(HOBJS) $(HOSTOBJS) $(SHLIBOBJS) $(STLIBOBJS) $(TESTOBJS))
 
-CLEANSUFFIXES     = *.d *.gcda *.gcno *.h.c *.ho *.map *.o *.objs *.pc *.ptx *.ptx.gz *.ptx.c *.spv *.spv.gz *.spv.c *.gen.c *.gen.S *.ver *.version *.html.gz *.html.c *.css.min.gz *.css.min *.css.c *~ *.ilk *.pdb
+CLEANSUFFIXES     = *.d *.gcda *.gcno *.h.c *.ho *.map *.o *.objs *.pc *.ptx *.ptx.gz *.ptx.c *.spv *.spv.gz *.spv.c *.gen.asm *.gen.c *.gen.S *.ver *.version *.html.gz *.html.c *.css.min.gz *.css.min *.css.c *~ *.ilk *.pdb
 LIBSUFFIXES       = *.a *.lib *.so *.so.* *.dylib *.dll *.def *.dll.a
 
 define RULES
 clean::
-	$(RM) $(HOSTPROGS) $(TESTPROGS) $(TOOLS)
+	$(RM) $(DEVPROGS) $(HOSTPROGS) $(TESTPROGS) $(TOOLS)
 endef
 
 $(eval $(RULES))

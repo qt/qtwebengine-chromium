@@ -25,6 +25,7 @@
 #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "url/gurl.h"
 
+// TODO(crbug.com/362791941): replace all |comments| with `comments` for v5.
 namespace net {
 class HttpRequestHeaders;
 }  // namespace net
@@ -146,7 +147,9 @@ enum class SBThreatType {
   // A report of Google ad that caused a blocked popup was collected.
   SB_THREAT_TYPE_BLOCKED_AD_POPUP = 19,
 
-  // The page loaded a resource from the Suspicious Site list.
+  // This site is considered suspicious enough to trigger logging a report to
+  // Safe Browsing with more details.
+  // TODO(awado): Rename this to SB_THREAT_TYPE_LOGGABLE_SUSPICIOUS_SITE.
   SB_THREAT_TYPE_SUSPICIOUS_SITE = 20,
 
   // Enterprise password reuse detected on low reputation page.
@@ -173,7 +176,12 @@ enum class SBThreatType {
   // CSD Download allowlist.
   SB_THREAT_TYPE_CSD_DOWNLOAD_ALLOWLIST = 28,
 
-  kMaxValue = SB_THREAT_TYPE_CSD_DOWNLOAD_ALLOWLIST,
+  // Sites that are classified as suspicious by SafeBrowsing and should display
+  // a nonblocking warning.
+  SB_THREAT_TYPE_WARNABLE_SUSPICIOUS_SITE = 29,
+
+  kMaxValue = SB_THREAT_TYPE_WARNABLE_SUSPICIOUS_SITE,
+
 };
 
 using SBThreatTypeSet = base::flat_set<SBThreatType>;
@@ -255,8 +263,56 @@ class ListIdentifier {
 
 std::ostream& operator<<(std::ostream& os, const ListIdentifier& id);
 
+// Associates metadata for a list with its ListIdentifier.
+class ListInfo {
+ public:
+  ListInfo(const bool fetch_updates,
+           const std::string& name,
+           const ListIdentifier& list_id,
+           const SBThreatType sb_threat_type);
+  ~ListInfo();
+  ListInfo(const ListInfo&);
+  ListInfo(ListInfo&&) noexcept;
+  ListInfo& operator=(const ListInfo&);
+  ListInfo& operator=(ListInfo&&) noexcept;
+  ListInfo() = delete;
+
+  const ListIdentifier& list_id() const { return list_id_; }
+  const std::string& filename() const { return filename_; }
+  const std::string& v4_filename() const { return v4_filename_; }
+  SBThreatType sb_threat_type() const { return sb_threat_type_; }
+  bool fetch_updates() const { return fetch_updates_; }
+  std::optional<PrefixSize> v5_prefix_size() const { return v5_prefix_size_; }
+
+ private:
+  // Whether to fetch and store updates for this list.
+  bool fetch_updates_;
+
+  // The ASCII name of the file on disk. This file is created inside the
+  // user-data directory.
+  std::string filename_;
+
+  // The ASCII name of the V4 file on disk. This file is created inside the
+  // user-data directory.
+  std::string v4_filename_;
+
+  // The list being read from/written to the disk.
+  ListIdentifier list_id_;
+
+  // The threat type enum value for this store.
+  SBThreatType sb_threat_type_;
+
+  // The expected prefix size for the hash prefixes in V5 store. Not populated
+  // when not fetching updates for this list.
+  std::optional<PrefixSize> v5_prefix_size_;
+};
+
+using ListInfos = std::vector<ListInfo>;
+
 PlatformType GetCurrentPlatformType();
 ListIdentifier GetChromeExtMalwareId();
+// TODO(crbug.com/372395685): Rename method and SB_THREAT_TYPE_API_ABUSE to be
+// notifications-specific once v4 is deprecated.
 ListIdentifier GetChromeUrlApiId();
 ListIdentifier GetUrlBillingId();
 ListIdentifier GetUrlCsdDownloadAllowlistId();
@@ -274,6 +330,9 @@ std::string GetUmaSuffixForStore(const base::FilePath& file_path);
 
 // Get the prefix size of a v5 list.
 PrefixSize GetV5ListPrefixSize(const ListIdentifier& list_identifier);
+
+// Get the prefix size of a v5 list based on SBThreatType.
+PrefixSize GetV5PrefixSizeForThreatType(SBThreatType threat_type);
 
 // Get the name of a v5 list.
 std::string GetV5ListName(const ListIdentifier& list_identifier);
@@ -360,8 +419,12 @@ class SBProtocolManagerUtil {
                               std::string* canonicalized_query);
 
   // This method returns the host suffix combinations from the hostname in the
-  // URL, as described here:
+  // URL, as described here for v4:
   // https://developers.google.com/safe-browsing/v4/urls-hashing
+  // In v5, the base component is the eTLD+1 rather than TLD+1:
+  // https://developers.google.com/safe-browsing/reference/URLs.and.Hashing
+  // Note: `host` must be canonicalized before calling this method.
+  // TODO(crbug.com/372395685): make description v5-only
   static void GenerateHostVariantsToCheck(const std::string& host,
                                           std::vector<std::string>* hosts);
 
@@ -405,6 +468,9 @@ class SBProtocolManagerUtil {
   static void UrlToFullHashes(const GURL& url,
                               std::vector<FullHashStr>* full_hashes);
 
+  // Returns the 4-byte prefix of the requested 32-byte `full_hash`.
+  static HashPrefixStr GetHashPrefix(const FullHashStr& full_hash);
+
   static bool FullHashToHashPrefix(const FullHashStr& full_hash,
                                    PrefixSize prefix_size,
                                    HashPrefixStr* hash_prefix);
@@ -420,6 +486,7 @@ class SBProtocolManagerUtil {
 
   // Stores the client state values for each of the lists in |store_state_map|
   // into |list_client_states|.
+  // TODO(crbug.com/372395685): Deprecate with v4.
   static void GetListClientStatesFromStoreStateMap(
       const std::unique_ptr<StoreStateMap>& store_state_map,
       std::vector<std::string>* list_client_states);
@@ -430,7 +497,7 @@ class SBProtocolManagerUtil {
   FRIEND_TEST_ALL_PREFIXES(SBProtocolManagerUtilTest, TestBackOffLogic);
   FRIEND_TEST_ALL_PREFIXES(SBProtocolManagerUtilTest,
                            TestGetRequestUrlAndUpdateHeaders);
-  FRIEND_TEST_ALL_PREFIXES(SBProtocolManagerUtilTest, UrlParsing);
+  FRIEND_TEST_ALL_PREFIXES(SBProtocolManagerUtilUrlParsingTest, UrlParsing);
   FRIEND_TEST_ALL_PREFIXES(SBProtocolManagerUtilTest, CanonicalizeUrl);
 
   // Composes a URL using |prefix|, |method| (e.g.: encodedFullHashes).

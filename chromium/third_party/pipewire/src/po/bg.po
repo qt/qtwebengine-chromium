@@ -1,0 +1,686 @@
+# Bulgarian translation of pipewire po-file.
+# Copyright (C) 2023 Alexander Shopov <ash@kambanaria.org>
+# Alexander Shopov <ash@kambanaria.org>, 2023.
+# This file is licensed under the same terms as pipewire.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: pipewire 1.0.0.\n"
+"Report-Msgid-Bugs-To: https://gitlab.freedesktop.org/pipewire/pipewire/"
+"issues/new\n"
+"POT-Creation-Date: 2022-06-30 12:50+0200\n"
+"PO-Revision-Date: 2023-12-09 15:17+0100\n"
+"Last-Translator: Alexander Shopov <ash@kambanaria.org>\n"
+"Language-Team: Bulgarian <dict@fsa-bg.org>\n"
+"Language: bg\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: src/daemon/pipewire.c:46
+#, c-format
+msgid ""
+"%s [options]\n"
+"  -h, --help                            Show this help\n"
+"      --version                         Show version\n"
+"  -c, --config                          Load config (Default %s)\n"
+msgstr ""
+"%s [ОПЦИЯ…]\n"
+"\n"
+"    -h --help            Извеждане на тази помощ\n"
+"    -V --version         Извеждане на версията\n"
+"    -c, --config         Зареждане на настройки (стандартно „%s“)\n"
+
+#: src/modules/module-protocol-pulse/modules/module-tunnel-sink.c:180
+#: src/modules/module-protocol-pulse/modules/module-tunnel-source.c:180
+#, c-format
+msgid "Tunnel to %s/%s"
+msgstr "Тунелиране към „%s/%s“"
+
+#: src/modules/module-fallback-sink.c:51
+msgid "Dummy Output"
+msgstr "Фиктивен изход"
+
+#: src/modules/module-pulse-tunnel.c:662
+#, c-format
+msgid "Tunnel for %s@%s"
+msgstr "Тунелиране за %s@%s"
+
+#: src/modules/module-zeroconf-discover.c:332
+msgid "Unknown device"
+msgstr "Непознато устройство"
+
+#: src/modules/module-zeroconf-discover.c:344
+#, c-format
+msgid "%s on %s@%s"
+msgstr "„%s“ на „%s@%s“"
+
+#: src/modules/module-zeroconf-discover.c:348
+#, c-format
+msgid "%s on %s"
+msgstr "„%s“ на „%s“"
+
+#: src/tools/pw-cat.c:784
+#, c-format
+msgid ""
+"%s [options] [<file>|-]\n"
+"  -h, --help                            Show this help\n"
+"      --version                         Show version\n"
+"  -v, --verbose                         Enable verbose operations\n"
+"\n"
+msgstr ""
+"%s [ОПЦИЯ…] [ФАЙЛ|-]\n"
+"\n"
+"  -h, --help             Извеждане на тази помощ\n"
+"      --version          Извеждане на версията\n"
+"  -v, --verbose          Включване на подробен режим\n"
+
+#: src/tools/pw-cat.c:791
+#, c-format
+msgid ""
+"  -R, --remote                          Remote daemon name\n"
+"      --media-type                      Set media type (default %s)\n"
+"      --media-category                  Set media category (default %s)\n"
+"      --media-role                      Set media role (default %s)\n"
+"      --target                          Set node target (default %s)\n"
+"                                          0 means don't link\n"
+"      --latency                         Set node latency (default %s)\n"
+"                                          Xunit (unit = s, ms, us, ns)\n"
+"                                          or direct samples (256)\n"
+"                                          the rate is the one of the source "
+"file\n"
+"  -P  --properties                      Set node properties\n"
+"\n"
+msgstr ""
+"  -R, --remote           Име на отдалечения демон\n"
+"      --media-type       Вид на медията (стандартно: „%s“)\n"
+"      --media-category   Категория на медията (стандартно: „%s“)\n"
+"      --media-role       Роля на медията (стандартно: „%s“)\n"
+"      --target           Цел на възела (стандартно: „%s“)\n"
+"                           „0“ означава без свързване\n"
+"      --latency          Латентност на възела (стандартно: „%s“)\n"
+"                           Xединица (единица е една от „s“/„ms“/„us“/„ns“)\n"
+"                           или пряко отчитане (256)\n"
+"                           честотата е тази на изходния файл\n"
+
+#: src/tools/pw-cat.c:809
+#, c-format
+msgid ""
+"      --rate                            Sample rate (req. for rec) (default "
+"%u)\n"
+"      --channels                        Number of channels (req. for rec) "
+"(default %u)\n"
+"      --channel-map                     Channel map\n"
+"                                            one of: \"stereo\", "
+"\"surround-51\",... or\n"
+"                                            comma separated list of channel "
+"names: eg. \"FL,FR\"\n"
+"      --format                          Sample format %s (req. for rec) "
+"(default %s)\n"
+"      --volume                          Stream volume 0-1.0 (default %.3f)\n"
+"  -q  --quality                         Resampler quality (0 - 15) (default "
+"%d)\n"
+"\n"
+msgstr ""
+"      --rate             Честота на отчитане (задължително при запис)\n"
+"                           (стандартно: „%u“)\n"
+"      --channels         Брой канали (задължително при запис)\n"
+"                           (стандартно: „%u“)\n"
+"      --channel-map      Карта на каналите:\n"
+"                           едно от: „stereo“, „surround-51“, … или\n"
+"                           списък с разделител „,“, напр. „FL,FR“\n"
+"      --format           Формат на отчѐта %s (задължително при запис)\n"
+"                           (стандартно: „%s“)\n"
+"      --volume           Сила на звука на потока 0-1.0 (стандартно: %.3f)\n"
+"  -q  --quality          Качество при ново отчитане (0 - 15) (стандартно: %d)\n"
+
+#: src/tools/pw-cat.c:826
+msgid ""
+"  -p, --playback                        Playback mode\n"
+"  -r, --record                          Recording mode\n"
+"  -m, --midi                            Midi mode\n"
+"  -d, --dsd                             DSD mode\n"
+"\n"
+msgstr ""
+"  -p, --playback         Режим за изпълнение\n"
+"  -r, --record           Режим за запис\n"
+"  -m, --midi             Режим за Midi\n"
+"  -d, --dsd              Режим за DSD\n"
+"\n"
+
+#: src/tools/pw-cli.c:2250
+#, c-format
+msgid ""
+"%s [options] [command]\n"
+"  -h, --help                            Show this help\n"
+"      --version                         Show version\n"
+"  -d, --daemon                          Start as daemon (Default false)\n"
+"  -r, --remote                          Remote daemon name\n"
+"\n"
+msgstr ""
+"%s [ОПЦИЯ…] [КОМАНДА]\n"
+"  -h, --help             Извеждане на тази помощ\n"
+"      --version          Извеждане на версията\n"
+"  -d, --daemon           Стартиране като демон (стандартно: не)\n"
+"  -r, --remote           Име на отдалечения демон\n"
+
+#: spa/plugins/alsa/acp/acp.c:321
+msgid "Pro Audio"
+msgstr "Професионално аудио"
+
+#: spa/plugins/alsa/acp/acp.c:444 spa/plugins/alsa/acp/alsa-mixer.c:4648
+#: spa/plugins/bluez5/bluez5-device.c:1236
+msgid "Off"
+msgstr "Изключено"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2652
+msgid "Input"
+msgstr "Вход"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2653
+msgid "Docking Station Input"
+msgstr "Вход на станцията за скачане"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2654
+msgid "Docking Station Microphone"
+msgstr "Микрофон на станцията за скачане"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2655
+msgid "Docking Station Line In"
+msgstr "Вход на станцията за скачане"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2656
+#: spa/plugins/alsa/acp/alsa-mixer.c:2747
+msgid "Line In"
+msgstr "Вход"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2657
+#: spa/plugins/alsa/acp/alsa-mixer.c:2741
+#: spa/plugins/bluez5/bluez5-device.c:1454
+msgid "Microphone"
+msgstr "Микрофон"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2658
+#: spa/plugins/alsa/acp/alsa-mixer.c:2742
+msgid "Front Microphone"
+msgstr "Преден микрофон"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2659
+#: spa/plugins/alsa/acp/alsa-mixer.c:2743
+msgid "Rear Microphone"
+msgstr "Заден микрофон"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2660
+msgid "External Microphone"
+msgstr "Външен микрофон"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2661
+#: spa/plugins/alsa/acp/alsa-mixer.c:2745
+msgid "Internal Microphone"
+msgstr "Вътрешен микрофон"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2662
+#: spa/plugins/alsa/acp/alsa-mixer.c:2748
+msgid "Radio"
+msgstr "Радио"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2663
+#: spa/plugins/alsa/acp/alsa-mixer.c:2749
+msgid "Video"
+msgstr "Видео"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2664
+msgid "Automatic Gain Control"
+msgstr "Автоматично усилване"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2665
+msgid "No Automatic Gain Control"
+msgstr "Без автоматично усилване"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2666
+msgid "Boost"
+msgstr "Подсилване"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2667
+msgid "No Boost"
+msgstr "Без подсилване"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2668
+msgid "Amplifier"
+msgstr "Усилвател"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2669
+msgid "No Amplifier"
+msgstr "Без усилвател"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2670
+msgid "Bass Boost"
+msgstr "Усилване на басите"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2671
+msgid "No Bass Boost"
+msgstr "Без усилване на басите"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2672
+#: spa/plugins/bluez5/bluez5-device.c:1460
+msgid "Speaker"
+msgstr "Високоговорител"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2673
+#: spa/plugins/alsa/acp/alsa-mixer.c:2751
+msgid "Headphones"
+msgstr "Слушалки"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2740
+msgid "Analog Input"
+msgstr "Аналогов вход"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2744
+msgid "Dock Microphone"
+msgstr "Микрофон за скачане"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2746
+msgid "Headset Microphone"
+msgstr "Микрофон на слушалките"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2750
+msgid "Analog Output"
+msgstr "Аналогов изход"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2752
+msgid "Headphones 2"
+msgstr "Слушалки 2"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2753
+msgid "Headphones Mono Output"
+msgstr "Моно изход на слушалките"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2754
+msgid "Line Out"
+msgstr "Изход"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2755
+msgid "Analog Mono Output"
+msgstr "Аналогов моно изход"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2756
+msgid "Speakers"
+msgstr "Тонколони"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2757
+msgid "HDMI / DisplayPort"
+msgstr "HDMI/DisplayPort"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2758
+msgid "Digital Output (S/PDIF)"
+msgstr "Цифров изход (S/PDIF)"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2759
+msgid "Digital Input (S/PDIF)"
+msgstr "Цифров вход (S/PDIF)"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2760
+msgid "Multichannel Input"
+msgstr "Многоканален вход"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2761
+msgid "Multichannel Output"
+msgstr "Многоканален изход"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2762
+msgid "Game Output"
+msgstr "Изход за игри"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2763
+#: spa/plugins/alsa/acp/alsa-mixer.c:2764
+msgid "Chat Output"
+msgstr "Изход за разговори"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2765
+msgid "Chat Input"
+msgstr "Вход за разговори"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2766
+msgid "Virtual Surround 7.1"
+msgstr "Виртуален съраунд 7.1"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4471
+msgid "Analog Mono"
+msgstr "Аналогово моно"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4472
+msgid "Analog Mono (Left)"
+msgstr "Аналогово моно (отляво)"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4473
+msgid "Analog Mono (Right)"
+msgstr "Аналогово моно (отдясно)"
+
+#. Note: Not translated to "Analog Stereo Input", because the source
+#. * name gets "Input" appended to it automatically, so adding "Input"
+#. * here would lead to the source name to become "Analog Stereo Input
+#. * Input". The same logic applies to analog-stereo-output,
+#. * multichannel-input and multichannel-output.
+#: spa/plugins/alsa/acp/alsa-mixer.c:4474
+#: spa/plugins/alsa/acp/alsa-mixer.c:4482
+#: spa/plugins/alsa/acp/alsa-mixer.c:4483
+msgid "Analog Stereo"
+msgstr "Аналогово стерео"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4475
+msgid "Mono"
+msgstr "Моно"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4476
+msgid "Stereo"
+msgstr "Стерео"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4484
+#: spa/plugins/alsa/acp/alsa-mixer.c:4642
+#: spa/plugins/bluez5/bluez5-device.c:1442
+msgid "Headset"
+msgstr "Слушалки с микрофон"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4485
+#: spa/plugins/alsa/acp/alsa-mixer.c:4643
+msgid "Speakerphone"
+msgstr "Високоговорител на телефон"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4486
+#: spa/plugins/alsa/acp/alsa-mixer.c:4487
+msgid "Multichannel"
+msgstr "Многоканален"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4488
+msgid "Analog Surround 2.1"
+msgstr "Аналогов съраунд 2.1"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4489
+msgid "Analog Surround 3.0"
+msgstr "Аналогов съраунд 3.0"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4490
+msgid "Analog Surround 3.1"
+msgstr "Аналогов съраунд 3.1"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4491
+msgid "Analog Surround 4.0"
+msgstr "Аналогов съраунд 4.0"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4492
+msgid "Analog Surround 4.1"
+msgstr "Аналогов съраунд 4.1"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4493
+msgid "Analog Surround 5.0"
+msgstr "Аналогов съраунд 5.0"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4494
+msgid "Analog Surround 5.1"
+msgstr "Аналогов съраунд 5.1"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4495
+msgid "Analog Surround 6.0"
+msgstr "Аналогов съраунд 6.0"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4496
+msgid "Analog Surround 6.1"
+msgstr "Аналогов съраунд 6.1"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4497
+msgid "Analog Surround 7.0"
+msgstr "Аналогов съраунд 7.0"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4498
+msgid "Analog Surround 7.1"
+msgstr "Аналогов съраунд 7.1"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4499
+msgid "Digital Stereo (IEC958)"
+msgstr "Цифрово стерео (IEC958)"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4500
+msgid "Digital Surround 4.0 (IEC958/AC3)"
+msgstr "Цифров съраунд 4.0 (IEC958/AC3)"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4501
+msgid "Digital Surround 5.1 (IEC958/AC3)"
+msgstr "Цифров съраунд 5.1 (IEC958/AC3)"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4502
+msgid "Digital Surround 5.1 (IEC958/DTS)"
+msgstr "Цифров съраунд 5.1 (IEC958/DTS)"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4503
+msgid "Digital Stereo (HDMI)"
+msgstr "Цифрово стерео (HDMI)"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4504
+msgid "Digital Surround 5.1 (HDMI)"
+msgstr "Цифров съраунд 5.1 (HDMI)"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4505
+msgid "Chat"
+msgstr "Разговор"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4506
+msgid "Game"
+msgstr "Игра"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4640
+msgid "Analog Mono Duplex"
+msgstr "Двупосочно аналогово моно"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4641
+msgid "Analog Stereo Duplex"
+msgstr "Двупосочно аналогово стерео"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4644
+msgid "Digital Stereo Duplex (IEC958)"
+msgstr "Двупосочно цифрово стерео (IEC958)"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4645
+msgid "Multichannel Duplex"
+msgstr "Двупосочна многоканална връзка"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4646
+msgid "Stereo Duplex"
+msgstr "Двупосочно стерео"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4647
+msgid "Mono Chat + 7.1 Surround"
+msgstr "Моно разговор + съраунд 7.1"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4754
+#, c-format
+msgid "%s Output"
+msgstr "Изход %s"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4761
+#, c-format
+msgid "%s Input"
+msgstr "Вход %s"
+
+#: spa/plugins/alsa/acp/alsa-util.c:1187 spa/plugins/alsa/acp/alsa-util.c:1281
+#, c-format
+msgid ""
+"snd_pcm_avail() returned a value that is exceptionally large: %lu byte (%lu "
+"ms).\n"
+"Most likely this is a bug in the ALSA driver '%s'. Please report this issue "
+"to the ALSA developers."
+msgid_plural ""
+"snd_pcm_avail() returned a value that is exceptionally large: %lu bytes (%lu "
+"ms).\n"
+"Most likely this is a bug in the ALSA driver '%s'. Please report this issue "
+"to the ALSA developers."
+msgstr[0] ""
+"„snd_pcm_avail()“ върна неочаквано голяма стойност: %lu байт (%lu ms).\n"
+"Най-вероятно се дължи на грешка в драйвера на ALSA „%s“. Молим да докладвате "
+"това на разработчиците на ALSA."
+msgstr[1] ""
+"„snd_pcm_avail()“ върна неочаквано голяма стойност: %lu байта (%lu ms).\n"
+"Най-вероятно се дължи на грешка в драйвера на ALSA „%s“. Молим да докладвате "
+"това на разработчиците на ALSA."
+
+#: spa/plugins/alsa/acp/alsa-util.c:1253
+#, c-format
+msgid ""
+"snd_pcm_delay() returned a value that is exceptionally large: %li byte "
+"(%s%lu ms).\n"
+"Most likely this is a bug in the ALSA driver '%s'. Please report this issue "
+"to the ALSA developers."
+msgid_plural ""
+"snd_pcm_delay() returned a value that is exceptionally large: %li bytes "
+"(%s%lu ms).\n"
+"Most likely this is a bug in the ALSA driver '%s'. Please report this issue "
+"to the ALSA developers."
+msgstr[0] ""
+"„snd_pcm_delay()“ върна неочаквано голяма стойност: %li байт (%s%lu ms).\n"
+"Най-вероятно се дължи на грешка в драйвера на ALSA „%s“. Молим да докладвате "
+"това на разработчиците на ALSA."
+msgstr[1] ""
+"„snd_pcm_delay()“ върна неочаквано голяма стойност: %li байта (%s%lu ms).\n"
+"Най-вероятно се дължи на грешка в драйвера на ALSA „%s“. Молим да докладвате "
+"това на разработчиците на ALSA.<"
+
+#: spa/plugins/alsa/acp/alsa-util.c:1300
+#, c-format
+msgid ""
+"snd_pcm_avail_delay() returned strange values: delay %lu is less than avail "
+"%lu.\n"
+"Most likely this is a bug in the ALSA driver '%s'. Please report this issue "
+"to the ALSA developers."
+msgstr ""
+"„snd_pcm_avail_delay()“ върна неочаквана стойност: забавянето %lu е по-малко "
+"от наличното %lu.\n"
+"Най-вероятно се дължи на грешка в драйвера на ALSA „%s“. Молим да докладвате "
+"това на разработчиците на ALSA."
+
+#: spa/plugins/alsa/acp/alsa-util.c:1343
+#, c-format
+msgid ""
+"snd_pcm_mmap_begin() returned a value that is exceptionally large: %lu byte "
+"(%lu ms).\n"
+"Most likely this is a bug in the ALSA driver '%s'. Please report this issue "
+"to the ALSA developers."
+msgid_plural ""
+"snd_pcm_mmap_begin() returned a value that is exceptionally large: %lu bytes "
+"(%lu ms).\n"
+"Most likely this is a bug in the ALSA driver '%s'. Please report this issue "
+"to the ALSA developers."
+msgstr[0] ""
+"„snd_pcm_mmap_begin()“ върна неочаквано голяма стойност: %lu байт (%lu ms).\n"
+"Най-вероятно се дължи на грешка в драйвера на ALSA „%s“. Молим да докладвате "
+"това на разработчиците на ALSA."
+msgstr[1] ""
+"„snd_pcm_mmap_begin()“ върна неочаквано голяма стойност: %lu байта (%lu "
+"ms).\n"
+"Най-вероятно се дължи на грешка в драйвера на ALSA „%s“. Молим да докладвате "
+"това на разработчиците на ALSA."
+
+#: spa/plugins/alsa/acp/channelmap.h:457
+msgid "(invalid)"
+msgstr "(неправилно)"
+
+#: spa/plugins/alsa/acp/compat.c:189
+msgid "Built-in Audio"
+msgstr "Вградено аудио"
+
+#: spa/plugins/alsa/acp/compat.c:194
+msgid "Modem"
+msgstr "Модем"
+
+#: spa/plugins/bluez5/bluez5-device.c:1247
+msgid "Audio Gateway (A2DP Source & HSP/HFP AG)"
+msgstr "Аудио шлюз (източник A2DP и HSP/HFP AG)"
+
+#: spa/plugins/bluez5/bluez5-device.c:1272
+#, c-format
+msgid "High Fidelity Playback (A2DP Sink, codec %s)"
+msgstr "Изпълнение с висока точност (елемент-приемник A2DP, кодер „%s“)"
+
+#: spa/plugins/bluez5/bluez5-device.c:1275
+#, c-format
+msgid "High Fidelity Duplex (A2DP Source/Sink, codec %s)"
+msgstr ""
+"Двупосочна връзка с висока точност (елемент-източник/приемник A2DP, кодер "
+"„%s“)"
+
+#: spa/plugins/bluez5/bluez5-device.c:1283
+msgid "High Fidelity Playback (A2DP Sink)"
+msgstr "Изпълнение с висока точност (елемент-приемник A2DP)"
+
+#: spa/plugins/bluez5/bluez5-device.c:1285
+msgid "High Fidelity Duplex (A2DP Source/Sink)"
+msgstr "Двупосочна връзка с висока точност (елемент-източник/приемник A2DP)"
+
+#: spa/plugins/bluez5/bluez5-device.c:1322
+#, c-format
+msgid "High Fidelity Playback (BAP Sink, codec %s)"
+msgstr "Изпълнение с висока точност (елемент-приемник BAP, кодер „%s“)"
+
+#: spa/plugins/bluez5/bluez5-device.c:1326
+#, c-format
+msgid "High Fidelity Input (BAP Source, codec %s)"
+msgstr "Вход с висока точност (елемент-източник BAP, кодер „%s“)"
+
+#: spa/plugins/bluez5/bluez5-device.c:1330
+#, c-format
+msgid "High Fidelity Duplex (BAP Source/Sink, codec %s)"
+msgstr ""
+"Двупосочна връзка с висока точност (елемент-източник/приемник BAP, кодер "
+"„%s“)"
+
+#: spa/plugins/bluez5/bluez5-device.c:1359
+#, c-format
+msgid "Headset Head Unit (HSP/HFP, codec %s)"
+msgstr "Слушалки с микрофон (HSP/HFP, кодер „%s“)<"
+
+#: spa/plugins/bluez5/bluez5-device.c:1364
+msgid "Headset Head Unit (HSP/HFP)"
+msgstr "Слушалки с микрофон (HSP/HFP)"
+
+#: spa/plugins/bluez5/bluez5-device.c:1443
+#: spa/plugins/bluez5/bluez5-device.c:1448
+#: spa/plugins/bluez5/bluez5-device.c:1455
+#: spa/plugins/bluez5/bluez5-device.c:1461
+#: spa/plugins/bluez5/bluez5-device.c:1467
+#: spa/plugins/bluez5/bluez5-device.c:1473
+#: spa/plugins/bluez5/bluez5-device.c:1479
+#: spa/plugins/bluez5/bluez5-device.c:1485
+#: spa/plugins/bluez5/bluez5-device.c:1491
+msgid "Handsfree"
+msgstr "Слушалка за свободни ръце"
+
+#: spa/plugins/bluez5/bluez5-device.c:1449
+msgid "Handsfree (HFP)"
+msgstr "Слушалка за свободни ръце (HFP)"
+
+#: spa/plugins/bluez5/bluez5-device.c:1466
+msgid "Headphone"
+msgstr "Слушалки"
+
+#: spa/plugins/bluez5/bluez5-device.c:1472
+msgid "Portable"
+msgstr "Преносимо"
+
+#: spa/plugins/bluez5/bluez5-device.c:1478
+msgid "Car"
+msgstr "Кола̀"
+
+#: spa/plugins/bluez5/bluez5-device.c:1484
+msgid "HiFi"
+msgstr "HiFi"
+
+#: spa/plugins/bluez5/bluez5-device.c:1490
+msgid "Phone"
+msgstr "Телефон"
+
+#: spa/plugins/bluez5/bluez5-device.c:1497
+msgid "Bluetooth"
+msgstr "Bluetooth"
+
+#: spa/plugins/bluez5/bluez5-device.c:1498
+msgid "Bluetooth (HFP)"
+msgstr "Bluetooth (HFP)"

@@ -14,6 +14,7 @@
 
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/containers/flat_set.h"
 #include "base/feature_list.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_forward.h"
@@ -21,8 +22,9 @@
 #include "base/no_destructor.h"
 #include "base/notreached.h"
 #include "base/scoped_observation.h"
-#include "build/build_config.h"
-#include "components/accessibility_annotator/core/accessibility_query_service.h"
+#if !BUILDFLAG(IS_FUCHSIA)
+#include "components/variations/service/google_groups_manager.h"  // nogncheck
+#endif  // !BUILDFLAG(IS_FUCHSIA)
 #include "components/autofill/core/browser/country_type.h"
 #include "components/autofill/core/browser/crowdsourcing/autofill_crowdsourcing_manager.h"
 #include "components/autofill/core/browser/crowdsourcing/mock_autofill_crowdsourcing_manager.h"
@@ -38,6 +40,7 @@
 #include "components/autofill/core/browser/foundations/autofill_client.h"
 #include "components/autofill/core/browser/foundations/autofill_driver_factory.h"
 #include "components/autofill/core/browser/foundations/test_autofill_driver_factory.h"
+#include "components/autofill/core/browser/integrators/at_memory/at_memory_query_service.h"
 #include "components/autofill/core/browser/integrators/autofill_ai/mock_autofill_ai_manager.h"
 #include "components/autofill/core/browser/integrators/compose/autofill_compose_delegate.h"
 #include "components/autofill/core/browser/integrators/identity_credential/identity_credential_delegate.h"
@@ -82,6 +85,7 @@
 #include "components/prefs/pref_service.h"
 #include "components/signin/public/identity_manager/account_capabilities_test_mutator.h"
 #include "components/signin/public/identity_manager/identity_test_environment.h"
+#include "components/subscription_eligibility/subscription_eligibility_service.h"
 #include "components/translate/core/browser/language_state.h"
 #include "components/translate/core/browser/mock_translate_driver.h"
 #include "components/ukm/test_ukm_recorder.h"
@@ -94,6 +98,7 @@
 
 namespace autofill {
 
+class AutofillAiPersonalContextAccessManager;
 class TestAutofillClient;
 
 // This class is for easier writing of tests. There are two instances of the
@@ -128,6 +133,8 @@ class TestAutofillClientTemplate : public T {
   }
 
   bool IsOffTheRecord() const override { return is_off_the_record_; }
+
+  bool UsesPlatformAutofill() const override { return false; }
 
   AutofillCrowdsourcingManager& GetCrowdsourcingManager() override {
     if (!crowdsourcing_manager_) {
@@ -188,6 +195,21 @@ class TestAutofillClientTemplate : public T {
     return mock_autofill_ai_delegate_.get();
   }
 
+  AutofillAiPersonalContextAccessManager*
+  GetAutofillAiPersonalContextAccessManager() override {
+    return personal_context_access_manager_;
+  }
+
+  void set_personal_context_access_manager(
+      AutofillAiPersonalContextAccessManager* personal_context_access_manager) {
+    personal_context_access_manager_ = personal_context_access_manager;
+  }
+
+  const subscription_eligibility::SubscriptionEligibilityService*
+  GetSubscriptionEligibilityService() const override {
+    return &subscription_eligibility_service_;
+  }
+
   consent_auditor::ConsentAuditor* GetConsentAuditor() override {
     if (!consent_auditor_) {
       consent_auditor_ =
@@ -210,19 +232,18 @@ class TestAutofillClientTemplate : public T {
     return &mock_autocomplete_history_manager_;
   }
 
-  accessibility_annotator::AccessibilityQueryService*
-  GetAccessibilityQueryService() override {
-    return accessibility_query_service_.get();
+  AtMemoryQueryService* GetAtMemoryQueryService() override {
+    return at_memory_query_service_.get();
   }
 
-  personal_context::PersonalContextEnablementState
-  GetPersonalContextEnablementState() const override {
-    return personal_context_enablement_state_;
+  personal_context::PersonalContextEligibilityState
+  GetPersonalContextEligibilityState() const override {
+    return personal_context_eligibility_state_;
   }
 
-  void set_personal_context_enablement_state(
-      personal_context::PersonalContextEnablementState state) {
-    personal_context_enablement_state_ = state;
+  void set_personal_context_eligibility_state(
+      personal_context::PersonalContextEligibilityState state) {
+    personal_context_eligibility_state_ = state;
   }
 
   IdentityCredentialDelegate* GetIdentityCredentialDelegate() override {
@@ -230,7 +251,7 @@ class TestAutofillClientTemplate : public T {
   }
 
   PasswordManagerDelegate* GetPasswordManagerDelegate(
-      const autofill::FieldGlobalId& field_id) override {
+      const FieldGlobalId& field_id) override {
     return password_manager_delegate_.get();
   }
 
@@ -313,6 +334,8 @@ class TestAutofillClientTemplate : public T {
   url::Origin GetLastCommittedPrimaryMainFrameOrigin() const override {
     return last_committed_primary_main_frame_origin_;
   }
+
+  std::u16string_view GetPageTitle() const override { return page_title_; }
 
   security_state::SecurityLevel GetSecurityLevelForUmaHistograms() override {
     return security_level_;
@@ -413,14 +436,48 @@ class TestAutofillClientTemplate : public T {
     is_tab_in_actor_mode_ = is_in_actor_mode;
   }
 
+  bool IsGlicEnabled() const override { return is_glic_enabled_; }
+  void set_is_glic_enabled(bool enabled) { is_glic_enabled_ = enabled; }
+
   bool IsAutofillEnabled() const override {
-    return IsAutofillProfileEnabled() ||
-           AutofillClient::GetPaymentsAutofillClient()
-               ->IsAutofillPaymentMethodsEnabled();
+    if (IsAutofillProfileEnabled() ||
+        AutofillClient::GetPaymentsAutofillClient()
+            ->IsAutofillPaymentMethodsEnabled()) {
+      return true;
+    }
+
+    if (base::FeatureList::IsEnabled(
+            features::kAutofillEnableAutofillSettingsEnterprisePolicy)) {
+      return !IsAutofillTypeBlockedByPolicy(
+                 GURL(),
+                 AutofillClient::AutofillPolicyDataCategory::kIdentityDocs) ||
+             !IsAutofillTypeBlockedByPolicy(
+                 GURL(), AutofillClient::AutofillPolicyDataCategory::kTravel) ||
+             !IsAutofillTypeBlockedByPolicy(
+                 GURL(), AutofillClient::AutofillPolicyDataCategory::kShopping);
+    }
+
+    return false;
   }
 
   bool IsAutofillProfileEnabled() const override {
     return autofill_profile_enabled_;
+  }
+
+  bool IsAutofillTypeBlockedByPolicy(
+      const GURL& url,
+      AutofillClient::AutofillPolicyDataCategory category) const override {
+    return blocked_policy_categories_.contains(category);
+  }
+
+  void SetAutofillTypeBlockedByPolicy(
+      AutofillClient::AutofillPolicyDataCategory category,
+      bool blocked) {
+    if (blocked) {
+      blocked_policy_categories_.insert(category);
+    } else {
+      blocked_policy_categories_.erase(category);
+    }
   }
 
   bool IsWalletPublicPassStorageEnabled() const override {
@@ -464,8 +521,13 @@ class TestAutofillClientTemplate : public T {
     return is_device_large_form_factor_;
   }
 
+  bool SupportsDeviceReauth() const override { return supports_device_reauth_; }
+
   std::unique_ptr<device_reauth::DeviceAuthenticator> GetDeviceAuthenticator(
       std::string histogram) const override {
+    if (device_authenticator_) {
+      return std::move(device_authenticator_);
+    }
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID) || \
     BUILDFLAG(IS_CHROMEOS)
     return std::make_unique<device_reauth::MockDeviceAuthenticator>();
@@ -500,6 +562,75 @@ class TestAutofillClientTemplate : public T {
     return test_addresses_;
   }
 
+  bool ShouldShowPersonalContextAmbientAutofillNotice() const override {
+    return should_show_personal_context_ambient_autofill_notice_;
+  }
+  void set_should_show_personal_context_ambient_autofill_notice(
+      bool should_show) {
+    should_show_personal_context_ambient_autofill_notice_ = should_show;
+  }
+  void MarkPersonalContextAmbientAutofillNoticeAsAcknowledged() override {
+    is_personal_context_ambient_autofill_notice_acknowledged_ = true;
+  }
+  bool is_personal_context_ambient_autofill_notice_acknowledged() const {
+    return is_personal_context_ambient_autofill_notice_acknowledged_;
+  }
+#if BUILDFLAG(IS_ANDROID)
+  bool ShowAmbientAutoFillNotice(
+      base::WeakPtr<TouchToFillAutofillDelegate> delegate) override {
+    show_ambient_autofill_notice_called_ = true;
+    return show_ambient_autofill_notice_result_;
+  }
+  bool show_ambient_autofill_notice_called() const {
+    return show_ambient_autofill_notice_called_;
+  }
+  void set_show_ambient_autofill_notice_result(bool result) {
+    show_ambient_autofill_notice_result_ = result;
+  }
+  void HideAmbientAutoFillNotice() override {
+    hide_ambient_autofill_notice_called_ = true;
+  }
+  bool hide_ambient_autofill_notice_called() const {
+    return hide_ambient_autofill_notice_called_;
+  }
+#endif
+
+  bool ShouldShowPersonalContextAtMemoryNotice() const override {
+    return should_show_personal_context_at_memory_notice_;
+  }
+  void set_should_show_personal_context_at_memory_notice(bool should_show) {
+    should_show_personal_context_at_memory_notice_ = should_show;
+  }
+  void MarkPersonalContextAtMemoryNoticeAsAcknowledged() override {
+    is_personal_context_at_memory_notice_acknowledged_ = true;
+  }
+  bool is_personal_context_at_memory_notice_acknowledged() const {
+    return is_personal_context_at_memory_notice_acknowledged_;
+  }
+
+  personal_context::PersonalContextEligibilityService*
+  GetPersonalContextEligibilityService() const override {
+    return personal_context_eligibility_service_;
+  }
+  void set_personal_context_eligibility_service(
+      personal_context::PersonalContextEligibilityService* service) {
+    personal_context_eligibility_service_ = service;
+  }
+
+  const GoogleGroupsManager* GetGoogleGroupsManager() const override {
+#if !BUILDFLAG(IS_FUCHSIA)
+    return google_groups_manager_.get();
+#else   // !BUILDFLAG(IS_FUCHSIA)
+    return nullptr;
+#endif  // !BUILDFLAG(IS_FUCHSIA)
+  }
+
+#if !BUILDFLAG(IS_FUCHSIA)
+  void set_google_groups_manager(std::unique_ptr<GoogleGroupsManager> manager) {
+    google_groups_manager_ = std::move(manager);
+  }
+#endif  // !BUILDFLAG(IS_FUCHSIA)
+
   void SetAutofillProfileEnabled(bool autofill_profile_enabled) {
     autofill_profile_enabled_ = autofill_profile_enabled;
     if (PrefService* prefs = GetPrefs()) {
@@ -526,10 +657,16 @@ class TestAutofillClientTemplate : public T {
         std::to_underlying(optimization_guide::model_execution::prefs::
                                ModelExecutionEnterprisePolicyValue::kAllow),
         PrefRegistry::LOSSY_PREF);
+    GetPrefs()->registry()->RegisterIntegerPref(
+        optimization_guide::prefs::kGeminiSettings,
+        std::to_underlying(
+            optimization_guide::prefs::GeminiSettingsPolicyState::kEnabled),
+        PrefRegistry::LOSSY_PREF);
 
     identity_test_environment().MakePrimaryAccountAvailable(
         "foo@gmail.com", signin::ConsentLevel::kSignin);
     SetCanUseModelExecutionFeatures(true);
+    SetSupportsWalletPrivatePassesInAutofill(true);
     SetVariationConfigCountryCode(GeoIpCountryCode("US"));
     return SetAutofillAiOptInStatus(*this, AutofillAiOptInStatus::kOptedIn);
   }
@@ -541,8 +678,20 @@ class TestAutofillClientTemplate : public T {
         GetIdentityManager()->GetPrimaryAccountInfo(
             signin::ConsentLevel::kSignin));
     CHECK(!account_info.account_id.empty());
-    AccountCapabilitiesTestMutator(&account_info.capabilities)
+    AccountCapabilitiesTestMutator(&account_info)
         .set_can_use_model_execution_features(can_use_model_execution);
+    signin::UpdateAccountInfoForAccount(GetIdentityManager(), account_info);
+  }
+
+  // Updates whether the currently signed in primary account has the Wallet
+  // private passes capability enabled.
+  void SetSupportsWalletPrivatePassesInAutofill(bool supported) {
+    AccountInfo account_info = GetIdentityManager()->FindExtendedAccountInfo(
+        GetIdentityManager()->GetPrimaryAccountInfo(
+            signin::ConsentLevel::kSignin));
+    CHECK(!account_info.account_id.empty());
+    AccountCapabilitiesTestMutator(&account_info)
+        .set_supports_wallet_private_passes_in_autofill(supported);
     signin::UpdateAccountInfoForAccount(GetIdentityManager(), account_info);
   }
 
@@ -636,6 +785,15 @@ class TestAutofillClientTemplate : public T {
     is_credit_card_upload_enabled_ = is_credit_card_upload_enabled;
   }
 
+  void set_supports_device_reauth(bool supports_device_reauth) {
+    supports_device_reauth_ = supports_device_reauth;
+  }
+
+  void set_device_authenticator(
+      std::unique_ptr<device_reauth::DeviceAuthenticator> authenticator) {
+    device_authenticator_ = std::move(authenticator);
+  }
+
   void set_crowdsourcing_manager(
       std::unique_ptr<AutofillCrowdsourcingManager> crowdsourcing_manager) {
     crowdsourcing_manager_ = std::move(crowdsourcing_manager);
@@ -646,10 +804,9 @@ class TestAutofillClientTemplate : public T {
     test_shared_loader_factory_ = url_loader_factory;
   }
 
-  void set_accessibility_query_service(
-      std::unique_ptr<accessibility_annotator::AccessibilityQueryService>
-          accessibility_query_service) {
-    accessibility_query_service_ = std::move(accessibility_query_service);
+  void set_at_memory_query_service(
+      std::unique_ptr<AtMemoryQueryService> at_memory_query_service) {
+    at_memory_query_service_ = std::move(at_memory_query_service);
   }
 
   void set_identity_credential_delegate(
@@ -722,12 +879,18 @@ class TestAutofillClientTemplate : public T {
   metrics::ProfileMetricsService test_profile_metrics_service_{
       metrics::ProfileMetricsContext(1)};
   raw_ptr<syncer::SyncService> test_sync_service_ = nullptr;
+  raw_ptr<AutofillAiPersonalContextAccessManager>
+      personal_context_access_manager_ = nullptr;
+  raw_ptr<personal_context::PersonalContextEligibilityService>
+      personal_context_eligibility_service_ = nullptr;
+#if !BUILDFLAG(IS_FUCHSIA)
+  std::unique_ptr<GoogleGroupsManager> google_groups_manager_;
+#endif
   std::unique_ptr<OtpPhishGuardDelegate> otp_phish_guard_delegate_;
-  std::unique_ptr<accessibility_annotator::AccessibilityQueryService>
-      accessibility_query_service_;
-  personal_context::PersonalContextEnablementState
-      personal_context_enablement_state_ =
-          personal_context::PersonalContextEnablementState::kEnabled;
+  std::unique_ptr<AtMemoryQueryService> at_memory_query_service_;
+  personal_context::PersonalContextEligibilityState
+      personal_context_eligibility_state_ =
+          personal_context::PersonalContextEligibilityState::kEligible;
   std::unique_ptr<IdentityCredentialDelegate> identity_credential_delegate_;
   std::unique_ptr<PasswordManagerDelegate> password_manager_delegate_;
   std::unique_ptr<AutofillComposeDelegate> compose_delegate_;
@@ -755,7 +918,9 @@ class TestAutofillClientTemplate : public T {
   bool wallet_public_pass_storage_enabled_ = true;
 
   std::unique_ptr<test::AutofillTestingPrefService> prefs_ =
-      autofill::test::PrefServiceForTesting();
+      test::PrefServiceForTesting();
+  subscription_eligibility::SubscriptionEligibilityService
+      subscription_eligibility_service_{GetPrefs()};
   std::unique_ptr<TestStrikeDatabase> test_strike_database_;
 
   std::unique_ptr<TestPersonalDataManager> test_personal_data_manager_;
@@ -795,7 +960,22 @@ class TestAutofillClientTemplate : public T {
 
   bool is_credit_card_upload_enabled_ = true;
 
+  bool supports_device_reauth_ = true;
+
+  mutable std::unique_ptr<device_reauth::DeviceAuthenticator>
+      device_authenticator_;
+
   bool is_tab_in_actor_mode_ = false;
+
+  bool should_show_personal_context_ambient_autofill_notice_ = false;
+  bool is_personal_context_ambient_autofill_notice_acknowledged_ = false;
+  bool show_ambient_autofill_notice_called_ = false;
+  bool show_ambient_autofill_notice_result_ = false;
+  bool hide_ambient_autofill_notice_called_ = false;
+  bool should_show_personal_context_at_memory_notice_ = false;
+  bool is_personal_context_at_memory_notice_acknowledged_ = false;
+
+  bool is_glic_enabled_ = false;
 
   SuggestionHidingReason popup_hidden_reason_;
 
@@ -819,9 +999,13 @@ class TestAutofillClientTemplate : public T {
   GURL last_committed_primary_main_frame_url_{"https://example.test"};
   url::Origin last_committed_primary_main_frame_origin_ =
       url::Origin::Create(last_committed_primary_main_frame_url_);
+  std::u16string page_title_ = u"Test page title";
 
   std::optional<AutofillClient::SuggestionUiSessionId>
       suggestion_ui_session_id_;
+
+  base::flat_set<AutofillClient::AutofillPolicyDataCategory>
+      blocked_policy_categories_;
 
   base::WeakPtr<AutofillSuggestionDelegate> active_suggestion_delegate_;
 

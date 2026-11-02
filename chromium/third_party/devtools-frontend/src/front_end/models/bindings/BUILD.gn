@@ -35,10 +35,10 @@ devtools_module("bindings") {
     "../../core/platform:bundle",
     "../../core/root:bundle",
     "../../core/sdk:bundle",
+    "../../core/text_utils:bundle",
     "../../generated",
     "../../models/stack_trace:bundle",
     "../../models/stack_trace:impl",
-    "../../models/text_utils:bundle",
     "../../models/workspace:bundle",
     "../formatter:bundle",
   ]
@@ -102,6 +102,7 @@ ts_library("unittests") {
   testonly = true
 
   sources = [
+    "CSSWorkspaceBinding.test.ts",
     "CompilerScriptMapping.test.ts",
     "ContentProviderBasedProject.test.ts",
     "DebuggerLanguagePlugins.test.ts",
@@ -113,6 +114,7 @@ ts_library("unittests") {
     "ResourceMapping.test.ts",
     "ResourceScriptMapping.test.ts",
     "ResourceUtils.test.ts",
+    "StylesSourceMapping.test.ts",
     "SymbolizedError.test.ts",
   ]
 
@@ -121,14 +123,13 @@ ts_library("unittests") {
     "../../../extension-api",
     "../../core/common:bundle",
     "../../core/platform:bundle",
-    "../../core/root:bundle",
     "../../core/sdk:bundle",
+    "../../core/text_utils:bundle",
     "../../generated",
     "../../testing",
     "../../third_party/source-map-scopes-codec:bundle",
     "../stack_trace:bundle",
     "../stack_trace:impl",
-    "../text_utils:bundle",
     "../workspace:bundle",
   ]
 }

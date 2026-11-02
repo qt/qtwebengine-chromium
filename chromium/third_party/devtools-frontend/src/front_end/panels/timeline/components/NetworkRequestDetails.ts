@@ -4,6 +4,7 @@
 
 import '../../../ui/components/request_link_icon/request_link_icon.js';
 
+import * as Common from '../../../core/common/common.js';
 import * as i18n from '../../../core/i18n/i18n.js';
 import type * as Platform from '../../../core/platform/platform.js';
 import * as SDK from '../../../core/sdk/sdk.js';
@@ -157,7 +158,7 @@ export class NetworkRequestDetails extends UI.Widget.Widget {
       // while this feature is experimental, to enable easier trials.
       if (headerName === 'server-timing' || headerName === 'server-timing-test') {
         header.name = 'server-timing';
-        this.#serverTimings = SDK.ServerTiming.ServerTiming.parseHeaders([header]);
+        this.#serverTimings = SDK.ServerTiming.ServerTiming.parseHeaders([header], Common.Console.Console.instance());
         break;
       }
     }
@@ -267,14 +268,14 @@ function renderURL(request: Trace.Types.Events.SyntheticNetworkRequest): Lit.Tem
   const options: LegacyComponents.Linkifier.LinkifyURLOptions = {
     tabStop: true,
     showColumnNumber: false,
-    inlineFrameIndex: 0,
     maxLength: MAX_URL_LENGTH,
   };
   const linkifiedURL = LegacyComponents.Linkifier.Linkifier.linkifyURL(
       request.args.data.url as Platform.DevToolsPath.UrlString, options);
 
   // Potentially link to request within Network Panel
-  const networkRequest = SDK.TraceObject.RevealableNetworkRequest.create(request);
+  const networkRequest =
+      SDK.TraceObject.RevealableNetworkRequest.create(SDK.TargetManager.TargetManager.instance(), request);
   if (networkRequest) {
     linkifiedURL.addEventListener('contextmenu', (event: MouseEvent) => {
       const contextMenu = new UI.ContextMenu.ContextMenu(event);
@@ -439,7 +440,6 @@ function renderInitiatedBy(
   const options: LegacyComponents.Linkifier.LinkifyOptions = {
     tabStop: true,
     showColumnNumber: true,
-    inlineFrameIndex: 0,
   };
   // If we have a stack trace, that is the most reliable way to get the initiator data and display a link to the source.
   if (hasStackTrace) {

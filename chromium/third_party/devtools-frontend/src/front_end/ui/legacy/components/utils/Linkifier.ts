@@ -9,11 +9,11 @@ import * as Host from '../../../../core/host/host.js';
 import * as i18n from '../../../../core/i18n/i18n.js';
 import * as Platform from '../../../../core/platform/platform.js';
 import * as SDK from '../../../../core/sdk/sdk.js';
+import * as TextUtils from '../../../../core/text_utils/text_utils.js';
 import type * as Protocol from '../../../../generated/protocol.js';
 import * as Bindings from '../../../../models/bindings/bindings.js';
 import * as Breakpoints from '../../../../models/breakpoints/breakpoints.js';
 import type * as StackTrace from '../../../../models/stack_trace/stack_trace.js';
-import * as TextUtils from '../../../../models/text_utils/text_utils.js';
 import type * as Trace from '../../../../models/trace/trace.js';
 import * as Workspace from '../../../../models/workspace/workspace.js';
 import * as UIHelpers from '../../../helpers/helpers.js';
@@ -91,7 +91,7 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
   }
 
   #onWorkingCopyChangedOrCommitted({
-    data: {uiSourceCode}
+    data: {uiSourceCode},
   }: Common.EventTarget.EventTargetEvent<{uiSourceCode: Workspace.UISourceCode.UISourceCode}>): void {
     const anchors = anchorsByUISourceCode.get(uiSourceCode);
     if (!anchors) {
@@ -237,10 +237,10 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
       showColumnNumber: Boolean(options?.showColumnNumber),
       className: options?.className,
       tabStop: options?.tabStop,
-      inlineFrameIndex: options?.inlineFrameIndex ?? 0,
       userMetric: options?.userMetric,
       jslogContext: options?.jslogContext || 'script-location',
       omitOrigin: options?.omitOrigin,
+      allowPrivileged: options?.allowPrivileged,
     } satisfies LinkifyURLOptions;
     const {columnNumber, className = ''} = linkifyURLOptions;
     if (sourceURL) {
@@ -257,10 +257,8 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
     // Prefer createRawLocationByScriptId() here, since it will always produce a correct
     // link, since the script ID is unique. Only fall back to createRawLocationByURL()
     // when all we have is an URL, which is not guaranteed to be unique.
-    const rawLocation = scriptId ? debuggerModel.createRawLocationByScriptId(
-                                       scriptId, lineNumber || 0, columnNumber, linkifyURLOptions.inlineFrameIndex) :
-                                   debuggerModel.createRawLocationByURL(
-                                       sourceURL, lineNumber || 0, columnNumber, linkifyURLOptions.inlineFrameIndex);
+    const rawLocation = scriptId ? debuggerModel.createRawLocationByScriptId(scriptId, lineNumber || 0, columnNumber) :
+                                   debuggerModel.createRawLocationByURL(sourceURL, lineNumber || 0, columnNumber);
     if (!rawLocation) {
       return fallbackAnchor;
     }
@@ -313,10 +311,10 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
       className: options?.className,
       columnNumber: options?.columnNumber,
       showColumnNumber: Boolean(options?.showColumnNumber),
-      inlineFrameIndex: options?.inlineFrameIndex ?? 0,
       tabStop: options?.tabStop,
       userMetric: options?.userMetric,
       jslogContext: options?.jslogContext || 'script-source-url',
+      allowPrivileged: options?.allowPrivileged,
     };
 
     return scriptLink || Linkifier.linkifyURL(sourceURL, linkifyURLOptions);
@@ -329,7 +327,6 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
         rawLocation.debuggerModel.target(), rawLocation.scriptId, fallbackUrl, rawLocation.lineNumber, {
           columnNumber: rawLocation.columnNumber,
           className,
-          inlineFrameIndex: rawLocation.inlineFrameIndex,
           tabStop: options?.tabStop,
         });
   }
@@ -340,7 +337,6 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
     const linkifyOptions: LinkifyOptions = {
       ...options,
       columnNumber: callFrame.columnNumber,
-      inlineFrameIndex: options?.inlineFrameIndex ?? 0,
     };
     return this.maybeLinkifyScriptLocation(
         target, String(callFrame.scriptId) as Protocol.Runtime.ScriptId,
@@ -355,7 +351,6 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
       showColumnNumber: Boolean(options?.showColumnNumber),
       className: options?.className,
       tabStop: options?.tabStop,
-      inlineFrameIndex: options?.inlineFrameIndex ?? 0,
       userMetric: options?.userMetric,
       jslogContext: options?.jslogContext || 'script-location',
       omitOrigin: options?.omitOrigin,
@@ -394,12 +389,16 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
       showColumnNumber: Boolean(options?.showColumnNumber),
       className: options?.className,
       tabStop: options?.tabStop,
-      inlineFrameIndex: options?.inlineFrameIndex ?? 0,
       userMetric: options?.userMetric,
       jslogContext: options?.jslogContext || 'script-location',
       omitOrigin: options?.omitOrigin,
     } satisfies LinkifyURLOptions;
-    const fallbackAnchor = Linkifier.linkifyURL(frame.url as Platform.DevToolsPath.UrlString, linkifyURLOptions);
+    const fallbackOptions = {
+      ...linkifyURLOptions,
+      showColumnNumber: frame.isWasm || Boolean(options?.showColumnNumber),
+      omitLineAndRenderColumnAsHex: frame.isWasm,
+    };
+    const fallbackAnchor = Linkifier.linkifyURL(frame.url as Platform.DevToolsPath.UrlString, fallbackOptions);
     if (!frame.uiSourceCode) {
       const isIgnoreListed = (options?.ignoreListManager ?? Workspace.IgnoreListManager.IgnoreListManager.instance())
                                  .isUserIgnoreListedURL(frame.url as Platform.DevToolsPath.UrlString);
@@ -419,7 +418,6 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
       lineNumber,
       columnNumber,
       showColumnNumber: false,
-      inlineFrameIndex: 0,
       maxLength: this.maxLength,
       preventClick: true,
       jslogContext: 'script-source-url',
@@ -590,7 +588,6 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
   static renderLinkifiedUrl(url: Platform.DevToolsPath.UrlString, options?: LinkifyURLOptions): TemplateResult {
     options = options || {
       showColumnNumber: false,
-      inlineFrameIndex: 0,
     };
 
     const text = options.text;
@@ -598,10 +595,17 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
     const lineNumber = options.lineNumber;
     const columnNumber = options.columnNumber;
     const showColumnNumber = options.showColumnNumber;
+    const isPrivileged = Common.ParsedURL.schemeIs(url, 'chrome:') || Common.ParsedURL.schemeIs(url, 'file:') ||
+        Common.ParsedURL.schemeIs(url, 'devtools:');
     const preventClick = options.preventClick;
     const maxLength = options.maxLength || UI.UIUtils.MaxLengthForDisplayedURLs;
     const bypassURLTrimming = options.bypassURLTrimming;
     const omitOrigin = options.omitOrigin;
+    const omitLineAndRenderColumnAsHex = options.omitLineAndRenderColumnAsHex;
+
+    if (omitLineAndRenderColumnAsHex && showColumnNumber === false) {
+      throw new Error('omitLineAndRenderColumnAsHex requires showColumnNumber to not be explicitly false');
+    }
 
     if (!url || Common.ParsedURL.schemeIs(url, 'javascript:')) {
       // clang-format off
@@ -619,12 +623,20 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
       }
     }
 
-    if (typeof lineNumber === 'number' && !text) {
+    if (omitLineAndRenderColumnAsHex && !text) {
+      if (typeof columnNumber === 'number') {
+        linkText += ':0x' + columnNumber.toString(16);
+      }
+    } else if (typeof lineNumber === 'number' && !text) {
       linkText += ':' + (lineNumber + 1);
       if (showColumnNumber && typeof columnNumber === 'number') {
         linkText += ':' + (columnNumber + 1);
       }
     }
+    if (isPrivileged && !options?.allowPrivileged) {
+      return html`<span class=${className}>${linkText}</span>`;
+    }
+
     const title = linkText !== url ? url : '';
     const linkOptions = {
       maxLength,
@@ -710,7 +722,6 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
           url: options.href || null,
           lineNumber: options.lineNumber ?? null,
           columnNumber: options.columnNumber ?? null,
-          inlineFrameIndex: 0,
           revealable: null,
           fallback: null,
           userMetric: options.userMetric,
@@ -864,6 +875,10 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
     LinkHandlerSettingUI.instance().update();
   }
 
+  static isRegisteredLinkHandlerScheme(scheme: string): boolean {
+    return linkHandlers.values().some(r => r.scheme === scheme);
+  }
+
   // The primary filter implementation for the openResourceHandlers. Returns false
   // if the handler is NOT supposed to handle the `url`. Usually, this happens if
   // a handler has registered for a particular `scheme` and the scheme for that url
@@ -947,7 +962,7 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
     }
 
     for (const registration of linkHandlers.values().filter(r => r.handler)) {
-      const {title, handler, shouldHandleOpenResource} = registration;
+      const {title, origin, handler, shouldHandleOpenResource} = registration;
       if (url && !shouldHandleOpenResource(url, specificSchemeHandlers)) {
         continue;
       }
@@ -957,7 +972,7 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
         jslogContext: 'open-using',
         handler: handler.bind(null, contentProviderOrUrl, lineNumber, columnNumber),
       };
-      if (title === Linkifier.linkHandlerSetting().get()) {
+      if (origin === Linkifier.linkHandlerSetting().get()) {
         result.unshift(action);
       } else {
         result.push(action);
@@ -1049,15 +1064,21 @@ export class LinkHandlerSettingUI {
 
   update(): void {
     this.element.removeChildren();
-    const names = [...linkHandlers.keys()];
-    names.unshift(i18nString(UIStrings.auto));
-    for (const name of names) {
+    // Populate the dropdown with extension origins. The first option is the
+    // special "Auto" value which is not a real origin.
+    const origins = [...linkHandlers.keys()];
+    origins.unshift(i18nString(UIStrings.auto));
+    for (const origin of origins) {
       const option = document.createElement('option');
-      option.textContent = name;
-      option.selected = name === Linkifier.linkHandlerSetting().get();
+      const registration = linkHandlers.get(origin);
+      // If the origin has a registered handler, display its user-friendly title.
+      // Otherwise, fallback to the origin string itself (e.g. for the "Auto" option).
+      option.textContent = registration === undefined ? origin : registration.title;
+      option.value = origin;
+      option.selected = origin === Linkifier.linkHandlerSetting().get();
       this.element.appendChild(option);
     }
-    this.element.disabled = names.length <= 1;
+    this.element.disabled = origins.length <= 1;
   }
 
   private onChange(event: Event): void {
@@ -1160,7 +1181,6 @@ interface LinkInfo {
   url: Platform.DevToolsPath.UrlString|null;
   lineNumber: number|null;
   columnNumber: number|null;
-  inlineFrameIndex: number;
   revealable: Object|null;
   fallback: Element|null;
   userMetric?: Host.UserMetrics.Action;
@@ -1168,12 +1188,12 @@ interface LinkInfo {
 }
 
 export interface LinkifyURLOptions {
+  allowPrivileged?: boolean;
   text?: string;
   className?: string;
   lineNumber?: number;
   columnNumber?: number;
   showColumnNumber?: boolean;
-  inlineFrameIndex?: number;
   preventClick?: boolean;
   maxLength?: number;
   tabStop?: boolean;
@@ -1182,13 +1202,14 @@ export interface LinkifyURLOptions {
   jslogContext?: string;
   omitOrigin?: boolean;
   onRef?: (el: HTMLElement) => void;
+  omitLineAndRenderColumnAsHex?: boolean;
 }
 
 export interface LinkifyOptions {
+  allowPrivileged?: boolean;
   className?: string;
   columnNumber?: number;
   showColumnNumber?: boolean;
-  inlineFrameIndex?: number;
   tabStop?: boolean;
   userMetric?: Host.UserMetrics.Action;
   jslogContext?: string;

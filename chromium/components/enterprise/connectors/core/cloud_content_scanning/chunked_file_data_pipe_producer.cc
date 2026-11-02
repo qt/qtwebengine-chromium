@@ -12,17 +12,11 @@ namespace enterprise_connectors {
 
 class ChunkedFileDataPipeProducer::BackgroundReader {
  public:
-  BackgroundReader(
-      base::File file,
-      bool is_obfuscated,
-      std::optional<enterprise_obfuscation::HeaderData> header_data) {
-    if (is_obfuscated) {
-      CHECK(header_data.has_value());
-      auto reader = enterprise_obfuscation::ObfuscatedFileReader::Create(
-          header_data.value(), std::move(file));
-      if (reader.has_value()) {
-        obfuscated_reader_ = std::move(reader.value());
-      }
+  BackgroundReader(base::File file,
+                   std::optional<enterprise_obfuscation::ObfuscatedFileReader>
+                       obfuscated_reader) {
+    if (obfuscated_reader.has_value()) {
+      obfuscated_reader_ = std::move(obfuscated_reader.value());
     } else {
       file_data_source_ =
           std::make_unique<mojo::FileDataSource>(std::move(file));
@@ -69,14 +63,14 @@ class ChunkedFileDataPipeProducer::BackgroundReader {
 
 ChunkedFileDataPipeProducer::ChunkedFileDataPipeProducer(
     base::File file,
-    bool is_obfuscated,
     int64_t file_size,
-    std::optional<enterprise_obfuscation::HeaderData> header_data)
+    std::optional<enterprise_obfuscation::ObfuscatedFileReader>
+        obfuscated_reader)
     : background_task_runner_(base::ThreadPool::CreateSequencedTaskRunner(
           {base::MayBlock(), base::TaskPriority::USER_VISIBLE})),
       file_size_(file_size) {
   background_reader_ = std::make_unique<BackgroundReader>(
-      std::move(file), is_obfuscated, std::move(header_data));
+      std::move(file), std::move(obfuscated_reader));
 }
 
 ChunkedFileDataPipeProducer::~ChunkedFileDataPipeProducer() {

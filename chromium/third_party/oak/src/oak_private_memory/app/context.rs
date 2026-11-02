@@ -14,18 +14,21 @@
 // limitations under the License.
 //
 
-use oak_private_memory_database::DatabaseWithCache;
+use oak_private_memory_database::database::Database;
 use sealed_memory_grpc_proto::oak::private_memory::sealed_memory_database_service_client::SealedMemoryDatabaseServiceClient;
 use tonic::transport::Channel;
-
-use crate::MessageType;
 
 /// The state for each client connection.
 pub struct UserSessionContext {
     pub dek: Vec<u8>,
     pub uid: String,
-    pub message_type: MessageType,
 
-    pub database: DatabaseWithCache,
+    pub database: Database,
+    // This is the opaque version string received when reading in the current database.
+    // It should be provided to calls that will write the database back, so that the version can be
+    // checked, to prevent data loss due to concurrent database write-back.
+    pub database_version: String,
     pub database_service_client: SealedMemoryDatabaseServiceClient<Channel>,
+    /// When true, the database is not persisted when the session closes.
+    pub disable_persistence_on_close: bool,
 }

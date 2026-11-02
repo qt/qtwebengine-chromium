@@ -4,9 +4,16 @@
 
 /** @fileoverview Definitions for chrome.readingMode API */
 
+// Sanitizer API definitions for Element.prototype.setHTML.
+// Note: SanitizerConfig and related types are already declared in lib.dom.d.ts.
+interface SetHtmlOptions {
+  sanitizer?: SanitizerConfig;
+}
+
 // Add non-standard function to element for TS to compile correctly.
 interface Element {
   scrollIntoViewIfNeeded: () => void;
+  setHTML(html: string, options?: SetHtmlOptions): void;
 }
 
 interface AxTreeAnchorMetadata {
@@ -111,6 +118,12 @@ declare namespace chrome {
     // Whether the Improved Read Aloud feature flag is enabled.
     let isImprovedReadAloudEnabled: boolean;
 
+    // Whether the Read Anything Improved UI feature flag is enabled.
+    let isReadAnythingImprovedUiEnabled: boolean;
+
+    // Whether the Read Anything Translate Entry Point feature flag is enabled.
+    let isReadAnythingTranslateEntryPointEnabled: boolean;
+
     // Whether Read Anything is pinned to the toolbar.
     let isReadAnythingPinned: boolean;
 
@@ -162,6 +175,9 @@ declare namespace chrome {
 
     // Distiled html content from DOM distiller distillation.
     let htmlContent: string;
+
+    // The active URL of the main panel document.
+    let documentUrl: string;
 
     let axTreeAnchors: Record<string, AxTreeAnchorMetadata[]>;
 
@@ -228,6 +244,9 @@ declare namespace chrome {
     // Returns the url of the AXNode for the provided AXNodeID.
     function getUrl(nodeId: number): string;
 
+    // Returns the HTML id of the AXNode for the provided AXNodeID.
+    function getHtmlId(nodeId: number): string;
+
     // Returns the alt text of the AXNode for the provided AXNodeID.
     function getAltText(nodeId: number): string;
 
@@ -239,6 +258,12 @@ declare namespace chrome {
 
     // Returns true if the element is a leaf node.
     function isLeafNode(nodeId: number): boolean;
+
+    // Returns true if the original page has a section with key points.
+    function maybeHasKeyPointsSection(): boolean;
+
+    // Returns a regex string of keywords used to identify a key points section.
+    function getKeyPointsRegex(): string;
 
     // Connects to the browser process. Called by ts when the read anything
     // element is added to the document.
@@ -271,6 +296,9 @@ declare namespace chrome {
 
     // Called when a user toggles links via the webui toolbar.
     function onLinksEnabledToggled(): void;
+
+    // Called when a user requests translation via the webui toolbar.
+    function onTranslationRequested(): void;
 
     // Called when a user toggles images via the webui toolbar.
     function onImagesEnabledToggled(): void;
@@ -589,5 +617,12 @@ declare namespace chrome {
     // whereas the other returns a segment (word or phrase) within the sentence.
     function getCurrentTextSegments():
         Array<{nodeId: number, start: number, length: number}>;
+
+    // Called when the main frame undergoes a same document navigation (such as
+    // a fragment navigation).
+    let onMainFrameSameDocumentNavigation: (url: string) => void;
+
+    // Called to inform the web ui to play read aloud on open.
+    let setPlayOnOpen: (playOnOpen: boolean) => void;
   }
 }

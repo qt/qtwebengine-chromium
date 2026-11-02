@@ -24,11 +24,10 @@
 //! Example usage:
 //!
 //! ```rust
-//! #![feature(naked_functions)]
 //! #![feature(asm_sym)]
 //!
 //! use oak_sev_guest::interrupts::{
-//!     mutable_interrupt_handler_with_error_code, MutableInterruptStackFrame,
+//!     MutableInterruptStackFrame, mutable_interrupt_handler_with_error_code,
 //! };
 //!
 //! mutable_interrupt_handler_with_error_code!(
@@ -95,7 +94,7 @@ pub struct MutableInterruptStackFrame {
 #[macro_export]
 macro_rules! mutable_interrupt_handler_with_error_code {
     (unsafe fn $name:ident ( $stack_frame:ident : &mut MutableInterruptStackFrame , $error_code:ident : u64 $(,)? ) $code:block) => {
-        #[naked]
+        #[unsafe(naked)]
         unsafe extern "sysv64" fn $name() -> ! {
             use core::arch::naked_asm;
 

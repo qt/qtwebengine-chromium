@@ -132,7 +132,7 @@ const Utils = {
       }
     }
     return csv;
-  }
+  },
 };
 
 const examplesMapCache = {};
@@ -203,7 +203,7 @@ const viewState = {
   dataIds: [],
   dataId: null,
   compareWithDataId: null,
-  selectedExampleIndex: 0
+  selectedExampleIndex: 0,
 };
 
 const evaluationStateTextFromStorage = localStorage.getItem('evaluationState');
@@ -273,7 +273,7 @@ function createChatBubble({text, evaluationId, onEvaluationChange}) {
     id: evaluationId,
     onChange: point => {
       onEvaluationChange(point);
-    }
+    },
   }));
   el.append(pointsContainer);
   return el;
@@ -300,7 +300,7 @@ function renderExample(container, sourceMap, {onEvaluationChange}) {
         evaluationState[evaluationId] = point;
         localStorage.setItem('evaluationState', JSON.stringify(evaluationState));
         onEvaluationChange();
-      }
+      },
     }));
     i++;
   }
@@ -321,7 +321,7 @@ function renderExample(container, sourceMap, {onEvaluationChange}) {
       evaluationState[finalEvaluationId] = point;
       localStorage.setItem('evaluationState', JSON.stringify(evaluationState));
       onEvaluationChange();
-    }
+    },
   }));
   container.append(finalResponseRatingContainer);
 }
@@ -512,7 +512,7 @@ async function renderMainPage() {
         onChange: selectedExampleIndex => {
           viewState.selectedExampleIndex = selectedExampleIndex;
           viewState.handleExampleChange();
-        }
+        },
       });
     });
   };
@@ -529,7 +529,7 @@ async function renderMainPage() {
     onChange: selectedExampleIndex => {
       viewState.selectedExampleIndex = selectedExampleIndex;
       viewState.handleExampleChange();
-    }
+    },
   });
 
   if (!viewState.addedEventListener) {

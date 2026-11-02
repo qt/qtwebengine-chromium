@@ -12,6 +12,14 @@ export class ReplayFinishedEvent extends Event {
   }
 }
 
+export class SetRecordingFinishedEvent extends Event {
+  static readonly eventName = 'setrecordingfinished';
+
+  constructor() {
+    super(SetRecordingFinishedEvent.eventName, {bubbles: true, composed: true});
+  }
+}
+
 export class RecordingStateChangedEvent extends Event {
   static readonly eventName = 'recordingstatechanged';
 

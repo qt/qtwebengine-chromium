@@ -167,7 +167,7 @@ struct bfloat16 : public bfloat16_impl::bfloat16_base {
   }
 };
 
-// TODO(majnemer): Get rid of this once we can rely on C++17 inline variables do
+// TODO(majnemer): Get rid of this once we can rely on C++17 inline variables to
 // solve the ODR issue.
 namespace bfloat16_impl {
 template <typename = void>
@@ -658,6 +658,10 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 abs(const bfloat16& a) {
 EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 exp(const bfloat16& a) { return bfloat16(::expf(float(a))); }
 EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 exp2(const bfloat16& a) { return bfloat16(::exp2f(float(a))); }
 EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 expm1(const bfloat16& a) { return bfloat16(numext::expm1(float(a))); }
+// float covers the bfloat16 range, so the single conversion back rounds correctly.
+EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 ldexp(const bfloat16& a, int exponent) {
+  return bfloat16(numext::ldexp(float(a), exponent));
+}
 EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 log(const bfloat16& a) { return bfloat16(::logf(float(a))); }
 EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 log1p(const bfloat16& a) { return bfloat16(numext::log1p(float(a))); }
 EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 log10(const bfloat16& a) { return bfloat16(::log10f(float(a))); }

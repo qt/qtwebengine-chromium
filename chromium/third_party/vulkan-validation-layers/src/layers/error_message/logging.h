@@ -1,6 +1,7 @@
 /* Copyright (c) 2015-2026 The Khronos Group Inc.
  * Copyright (c) 2015-2026 Valve Corporation
  * Copyright (c) 2015-2026 LunarG, Inc.
+ * Copyright (c) 2026 RasterGrid Kft.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -251,6 +252,8 @@ class DebugReport {
     void ResetCmdDebugUtilsLabel(VkCommandBuffer command_buffer);
     void EraseCmdDebugUtilsLabel(VkCommandBuffer command_buffer);
 
+    bool HasSeverityLevel(VkDebugUtilsMessageSeverityFlagBitsEXT level) const { return (active_msg_severities & level) != 0; }
+
   private:
     std::string CreateMessageText(const Location &loc, std::string_view vuid_text, const std::string &main_message,
                                   bool at_message_limit);
@@ -365,6 +368,10 @@ VKAPI_ATTR void DeactivateInstanceDebugCallbacks(DebugReport *debug_report);
 VKAPI_ATTR VkBool32 VKAPI_CALL MessengerBreakCallback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
                                                       VkDebugUtilsMessageTypeFlagsEXT message_type,
                                                       const VkDebugUtilsMessengerCallbackDataEXT *callback_data, void *user_data);
+
+VKAPI_ATTR VkBool32 VKAPI_CALL MessengerFailCallback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
+                                                     VkDebugUtilsMessageTypeFlagsEXT message_type,
+                                                     const VkDebugUtilsMessengerCallbackDataEXT *callback_data, void *user_data);
 
 VKAPI_ATTR VkBool32 VKAPI_CALL MessengerLogCallback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
                                                     VkDebugUtilsMessageTypeFlagsEXT message_type,

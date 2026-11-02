@@ -1190,7 +1190,7 @@ export function setTitle(element: HTMLElement, title: string): void {
 }
 
 export class CheckboxLabel extends HTMLElement {
-  static readonly observedAttributes = ['checked', 'disabled', 'indeterminate', 'name', 'title', 'aria-label'];
+  static readonly observedAttributes = ['checked', 'disabled', 'indeterminate', 'name', 'title', 'aria-label', 'small'];
 
   readonly #shadowRoot!: DocumentFragment;
   #checkboxElement!: HTMLInputElement;
@@ -1255,6 +1255,8 @@ export class CheckboxLabel extends HTMLElement {
       this.#textElement.title = newValue ?? '';
     } else if (name === 'aria-label') {
       this.#checkboxElement.ariaLabel = newValue;
+    } else if (name === 'small') {
+      this.#checkboxElement.classList.toggle('small', newValue !== null);
     }
   }
 
@@ -1280,6 +1282,14 @@ export class CheckboxLabel extends HTMLElement {
 
   set checked(checked: boolean) {
     this.toggleAttribute('checked', checked);
+  }
+
+  get small(): boolean {
+    return this.hasAttribute('small');
+  }
+
+  set small(small: boolean) {
+    this.toggleAttribute('small', small);
   }
 
   set disabled(disabled: boolean) {
@@ -2114,10 +2124,6 @@ export class HTMLElementWithLightDOMTemplate extends HTMLElement {
           value['_$litType$'] === 1);
     }
 
-    function isLitDirective(value: unknown): value is {values: unknown[]} {
-      return Boolean(typeof value === 'object' && value && '_$litDirective$' in value && 'values' in value);
-    }
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function isCallable(value: unknown): value is(...args: any[]) => any {
       // Native class constructors cannot be invoked without 'new', and we shouldn't attempt to wrap them.
@@ -2138,7 +2144,7 @@ export class HTMLElementWithLightDOMTemplate extends HTMLElement {
         HTMLElementWithLightDOMTemplate.patchLitTemplate(value);
         return value;
       }
-      if (isLitDirective(value)) {
+      if (Lit.isLitDirective(value)) {
         for (let i = 0; i < value.values.length; i++) {
           const subvalue = value.values[i];
           if (isCallable(subvalue)) {
@@ -2176,9 +2182,28 @@ export class HTMLElementWithLightDOMTemplate extends HTMLElement {
 
   #onChange(mutationList: MutationRecord[]): void {
     this.onChange(mutationList);
-    for (const mutation of mutationList) {
-      this.removeNodes(mutation.removedNodes);
-      this.addNodes(mutation.addedNodes, mutation.nextSibling);
+    const addedNodes = new Set<Node>();
+    const removedNodes = new Set<Node>();
+    for (let i = 0; i < mutationList.length; i++) {
+      const mutation = mutationList[i];
+      for (const node of mutation.addedNodes) {
+        addedNodes.add(node);
+      }
+      for (const node of mutation.removedNodes) {
+        removedNodes.add(node);
+      }
+    }
+    if (removedNodes.size > 0) {
+      this.removeNodes([...removedNodes]);
+    }
+
+    const finalAddedNodes = [...addedNodes].filter(n => this.templateRoot.contains(n));
+    if (finalAddedNodes.length > 0) {
+      this.addNodes(finalAddedNodes);
+    }
+
+    for (let i = 0; i < mutationList.length; i++) {
+      const mutation = mutationList[i];
       this.updateNode(mutation.target, mutation.attributeName);
     }
   }
@@ -2189,10 +2214,10 @@ export class HTMLElementWithLightDOMTemplate extends HTMLElement {
   protected updateNode(_node: Node, _attributeName: string|null): void {
   }
 
-  protected addNodes(_nodes: NodeList|Node[], _nextSibling?: Node|null): void {
+  protected addNodes(_nodes: NodeList|Node[]): void {
   }
 
-  protected removeNodes(_nodes: NodeList): void {
+  protected removeNodes(_nodes: NodeList|Node[]): void {
   }
 
   static findCorrespondingElement(

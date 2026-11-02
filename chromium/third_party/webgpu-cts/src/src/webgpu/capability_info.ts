@@ -970,6 +970,9 @@ export const kFeatureNameInfo: {
   'texture-formats-tier2':              {},
   'primitive-index':                    {},
   'texture-component-swizzle':          {},
+  'subgroup-size-control':              {},
+  ['atomic-vec2u-min-max' as GPUFeatureName]: {},
+  ['texture-compression-unaligned' as GPUFeatureName]: {},
 };
 /** List of all GPUFeatureName values. */
 export const kFeatureNames = keysOf(kFeatureNameInfo);
@@ -987,6 +990,8 @@ export const kKnownWGSLLanguageFeatures = [
   'swizzle_assignment',
   'linear_indexing',
   'texture_formats_tier1',
+  'immediate_address_space',
+  'buffer_view',
 ] as const;
 
 export type WGSLLanguageFeature = (typeof kKnownWGSLLanguageFeatures)[number];

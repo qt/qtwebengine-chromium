@@ -37,6 +37,10 @@ void ExternalDisplayLinkMac::TryRecordDisplayLinkCreation(
   auto& globals = DisplayLinkGlobals::Get();
   base::AutoLock lock(globals.lock);
 
+  if (!VSyncProviderMac::GetInstance()->IsConnectedToBrowserOnVizThread()) {
+    return;
+  }
+
   auto [it, inserted] = globals.recorded_displays.insert(display_id);
   if (inserted) {
     UMA_HISTOGRAM_BOOLEAN("Viz.DisplayLink.Create.GPU.ExternalDisplayLink",
@@ -115,19 +119,22 @@ void ExternalDisplayLinkMac::UnregisterCallback(VSyncCallbackMac* callback) {
 }
 
 base::TimeDelta ExternalDisplayLinkMac::GetRefreshInterval() const {
-  return display::GetNSScreenRefreshInterval(display_id_);
+  return display::GetCGRefreshInterval(display_id_);
 }
 
 void ExternalDisplayLinkMac::GetRefreshIntervalRange(
     base::TimeDelta& min_interval,
     base::TimeDelta& max_interval,
     base::TimeDelta& granularity) const {
-  display::GetNSScreenRefreshIntervalRange(display_id_, min_interval,
-                                           max_interval, granularity);
+  min_interval = max_interval = granularity = GetRefreshInterval();
 }
 
 base::TimeTicks ExternalDisplayLinkMac::GetCurrentTime() const {
   return base::TimeTicks::Now();
+}
+
+void ExternalDisplayLinkMac::OnSuspend() {
+  vsync_provider_->OnSuspend();
 }
 
 }  // namespace ui

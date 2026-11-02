@@ -117,6 +117,7 @@ class RootVisitor;
   V(Map, feedback_metadata_map, FeedbackMetadataArrayMap)                      \
   V(Map, feedback_vector_map, FeedbackVectorMap)                               \
   V(Map, foreign_map, ForeignMap)                                              \
+  V(Map, hash_seed_wrapper_map, HashSeedWrapperMap)                            \
   V(Map, function_template_info_map, FunctionTemplateInfoMap)                  \
   V(Map, global_dictionary_map, GlobalDictionaryMap)                           \
   V(Map, instruction_stream_map, InstructionStreamMap)                         \
@@ -151,7 +152,6 @@ class RootVisitor;
   V(Map, swiss_name_dictionary_map, SwissNameDictionaryMap)                    \
   V(Map, synthetic_module_map, SyntheticModuleMap)                             \
   IF_WASM(V, Map, wasm_import_data_map, WasmImportDataMap)                     \
-  IF_WASM(V, Map, asm_wasm_data_map, AsmWasmDataMap)                           \
   IF_WASM(V, Map, wasm_capi_function_data_map, WasmCapiFunctionDataMap)        \
   IF_WASM(V, Map, wasm_dispatch_table_map, WasmDispatchTableMap)               \
   IF_WASM(V, Map, wasm_dispatch_table_for_imports_map,                         \
@@ -177,6 +177,7 @@ class RootVisitor;
   V(Map, protected_fixed_array_map, ProtectedFixedArrayMap)                    \
   V(Map, protected_weak_fixed_array_map, ProtectedWeakFixedArrayMap)           \
   V(Map, interpreter_data_map, InterpreterDataMap)                             \
+  V(Map, debug_info_map, DebugInfoMap)                                         \
   V(Map, shared_function_info_wrapper_map, SharedFunctionInfoWrapperMap)       \
   V(Map, trusted_foreign_map, TrustedForeignMap)                               \
   V(Map, uncompiled_data_without_preparse_data_map,                            \
@@ -228,7 +229,6 @@ class RootVisitor;
   V(Map, js_atomics_mutex_map, JSAtomicsMutexMap)                              \
   V(Map, js_atomics_condition_map, JSAtomicsConditionMap)                      \
   V(Map, descriptor_array_map, DescriptorArrayMap)                             \
-  V(Map, strong_descriptor_array_map, StrongDescriptorArrayMap)                \
   V(Map, on_heap_basic_block_profiler_data_map,                                \
     OnHeapBasicBlockProfilerDataMap)                                           \
   V(Map, turbofan_bitset_type_map, TurbofanBitsetTypeMap)                      \
@@ -283,7 +283,7 @@ class RootVisitor;
   V(RegisteredSymbolTable, empty_symbol_table, EmptySymbolTable)               \
   V(ContextCell, undefined_context_cell, UndefinedContextCell)                 \
   /* Hash seed */                                                              \
-  V(ByteArray, hash_seed, HashSeed)                                            \
+  V(HashSeedWrapper, hash_seed, HashSeed)                                      \
   V(FixedArray, preallocated_number_string_table,                              \
     PreallocatedNumberStringTable)                                             \
   IF_WASM(V, WasmNull, wasm_null, WasmNull)

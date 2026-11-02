@@ -22,6 +22,7 @@
 #include "src/objects/casting.h"
 #include "src/objects/compressed-slots.h"
 #include "src/objects/descriptor-array.h"
+#include "src/objects/heap-object-field-inl.h"
 #include "src/objects/heap-object.h"
 #include "src/objects/js-objects.h"
 #include "src/objects/objects.h"
@@ -451,6 +452,14 @@ size_t MarkingVisitorBase<ConcreteVisitor>::VisitJSFunction(
 }
 
 template <typename ConcreteVisitor>
+size_t MarkingVisitorBase<ConcreteVisitor>::VisitJSGlobalProxy(
+    Tagged<Map> map, Tagged<JSGlobalProxy> object,
+    MaybeObjectSize maybe_object_size) {
+  this->heap_->tracer()->IncrementJSGlobalProxyCount();
+  return Base::VisitJSGlobalProxy(map, object, maybe_object_size);
+}
+
+template <typename ConcreteVisitor>
 size_t MarkingVisitorBase<ConcreteVisitor>::VisitSharedFunctionInfo(
     Tagged<Map> map, Tagged<SharedFunctionInfo> shared_info,
     MaybeObjectSize maybe_object_size) {
@@ -499,6 +508,7 @@ size_t MarkingVisitorBase<ConcreteVisitor>::VisitSharedFunctionInfo(
 template <typename ConcreteVisitor>
 bool MarkingVisitorBase<ConcreteVisitor>::HasBytecodeArrayForFlushing(
     Tagged<SharedFunctionInfo> sfi) const {
+  if (HeapLayout::InReadOnlySpace(sfi)) return false;
   if (IsFlushingDisabled(code_flush_mode_)) return false;
 
   // TODO(rmcilroy): Enable bytecode flushing for resumable functions.
@@ -815,7 +825,7 @@ size_t MarkingVisitorBase<ConcreteVisitor>::VisitWeakCell(
 // ===========================================================================
 
 template <typename ConcreteVisitor>
-size_t MarkingVisitorBase<ConcreteVisitor>::VisitDescriptorArrayStrongly(
+size_t MarkingVisitorBase<ConcreteVisitor>::VisitDescriptorArray(
     Tagged<Map> map, Tagged<DescriptorArray> array, MaybeObjectSize) {
   this->template VisitMapPointerIfNeeded<VisitorId::kVisitDescriptorArray>(
       array);
@@ -829,121 +839,8 @@ size_t MarkingVisitorBase<ConcreteVisitor>::VisitDescriptorArrayStrongly(
 }
 
 template <typename ConcreteVisitor>
-size_t MarkingVisitorBase<ConcreteVisitor>::VisitDescriptorArray(
-    Tagged<Map> map, Tagged<DescriptorArray> array,
-    MaybeObjectSize maybe_object_size) {
-  if (!v8_flags.trim_descriptor_arrays_in_gc ||
-      !v8_flags.trim_descriptor_arrays_in_gc_with_stack ||
-      !concrete_visitor()->CanUpdateValuesInHeap()) {
-    // If we cannot update the values in the heap, or we might not be able to
-    // trim the DescriptorArray during GC, we just treat the array strongly.
-    return VisitDescriptorArrayStrongly(map, array, maybe_object_size);
-  }
-
-  // The markbit is not used anymore. This is different from a checked
-  // transition in that the array is re-added to the worklist and thus there's
-  // many invocations of this transition. All cases (roots, marking via map,
-  // write barrier) are handled here as they all update the state accordingly.
-  const auto [start, end] =
-      DescriptorArrayMarkingState::AcquireDescriptorRangeToMark(
-          mark_compact_epoch_, array);
-  if (start != end) {
-    DCHECK_LT(start, end);
-    VisitPointers(array, MaybeObjectSlot(array->GetDescriptorSlot(start)),
-                  MaybeObjectSlot(array->GetDescriptorSlot(end)));
-    if (start == 0) {
-      // We are processing the object the first time. Visit the header and
-      // return a size for accounting.
-      size_t size = DescriptorArray::BodyDescriptor::SizeOf(map, array);
-      VisitPointers(array, array->GetFirstPointerSlot(),
-                    array->GetDescriptorSlot(0));
-      concrete_visitor()
-          ->template VisitMapPointerIfNeeded<VisitorId::kVisitDescriptorArray>(
-              array);
-      return size;
-    }
-  }
-  return 0;
-}
-
-template <typename ConcreteVisitor>
-void MarkingVisitorBase<ConcreteVisitor>::VisitDescriptorsForMap(
-    Tagged<Map> map) {
-  if (!concrete_visitor()->CanUpdateValuesInHeap() || !map->CanTransition()) {
-    return;
-  }
-
-  // Maps that can transition share their descriptor arrays and require
-  // special visiting logic to avoid memory leaks.
-  // Since descriptor arrays are potentially shared, ensure that only the
-  // descriptors that belong to this map are marked. The first time a
-  // non-empty descriptor array is marked, its header is also visited. The
-  // slot holding the descriptor array will be implicitly recorded when the
-  // pointer fields of this map are visited.
-  Tagged<Object> maybe_descriptors =
-      TaggedField<Object, offsetof(Map, instance_descriptors_)>::Acquire_Load(
-          map);
-
-  // If the descriptors are a Smi, then this Map is in the process of being
-  // deserialized, and doesn't yet have an initialized descriptor field.
-  Tagged<HeapObject> descriptors_as_heap_object;
-  if (!maybe_descriptors.GetHeapObjectIfStrong(&descriptors_as_heap_object)) {
-    DCHECK_EQ(maybe_descriptors, Smi::uninitialized_deserialization_value());
-    return;
-  }
-  // We cannot cast to the DescriptorArray here because the cast would check
-  // that we are indeed dealing with a trusted object. See
-  // `ProcessStrongHeapObject()` for synchronization details.
-  SynchronizePageAccess(descriptors_as_heap_object);
-  const auto maybe_worklist =
-      MarkingHelper::ShouldMarkObject(heap_, descriptors_as_heap_object);
-  if (!maybe_worklist.has_value()) {
-    DCHECK(!HeapLayout::InWritableSharedSpace(descriptors_as_heap_object));
-    return;
-  }
-
-  Tagged<DescriptorArray> descriptors =
-      Cast<DescriptorArray>(descriptors_as_heap_object);
-
-  if (IsStrongDescriptorArray(descriptors)) {
-    return;
-  }
-
-  // At this point we know that we are dealing with a regular weak descriptor
-  // array that has been properly synchronized.
-
-  const int number_of_own_descriptors = map->NumberOfOwnDescriptors();
-  if (number_of_own_descriptors) {
-    // It is possible that the concurrent marker observes the
-    // number_of_own_descriptors out of sync with the descriptors. In that
-    // case the marking write barrier for the descriptor array will ensure
-    // that all required descriptors are marked. The concurrent marker
-    // just should avoid crashing in that case. That's why we need the
-    // std::min<int>() below.
-    const auto descriptors_to_mark = std::min<int>(
-        number_of_own_descriptors, descriptors->number_of_descriptors());
-    concrete_visitor()->marking_state()->TryMark(descriptors);
-    if (DescriptorArrayMarkingState::TryUpdateIndicesToMark(
-            mark_compact_epoch_, descriptors, descriptors_to_mark)) {
-#ifdef DEBUG
-      const auto target_worklist =
-          MarkingHelper::ShouldMarkObject(heap_, descriptors);
-      DCHECK(target_worklist);
-      DCHECK_EQ(target_worklist.value(),
-                MarkingHelper::WorklistTarget::kRegular);
-#endif  // DEBUG
-      local_marking_worklists_->Push(descriptors);
-    }
-  }
-}
-
-template <typename ConcreteVisitor>
 size_t MarkingVisitorBase<ConcreteVisitor>::VisitMap(
     Tagged<Map> meta_map, Tagged<Map> map, MaybeObjectSize maybe_object_size) {
-  if (v8_flags.trim_descriptor_arrays_in_gc &&
-      v8_flags.trim_descriptor_arrays_in_gc_with_stack) {
-    VisitDescriptorsForMap(map);
-  }
   // Mark the pointer fields of the Map. If there is a transitions array, it has
   // been marked already, so it is fine that one of these fields contains a
   // pointer to it.
@@ -970,23 +867,15 @@ void FullMarkingVisitorBase<ConcreteVisitor>::MarkPointerTableEntry(
   // otherwise fail to mark the table entry as alive.
   DCHECK_NE(handle, kNullIndirectPointerHandle);
 
-  if (tag_range == kCodeIndirectPointerTag) {
-    CodePointerTable* table = IsolateGroup::current()->code_pointer_table();
-    CodePointerTable::Space* space = this->heap_->code_pointer_space();
-    table->Mark(space, handle);
-  } else {
-    DCHECK(!tag_range.Contains(kCodeIndirectPointerTag));
-    bool use_shared_table = IsSharedTrustedPointerType(tag_range);
-    DCHECK_EQ(use_shared_table, HeapLayout::InWritableSharedSpace(host));
-    TrustedPointerTable* table = use_shared_table
-                                     ? this->shared_trusted_pointer_table_
-                                     : this->trusted_pointer_table_;
-    TrustedPointerTable::Space* space =
-        use_shared_table
-            ? this->heap_->isolate()->shared_trusted_pointer_space()
-            : this->heap_->trusted_pointer_space();
-    table->Mark(space, handle);
-  }
+  const bool use_shared_table = IsSharedTrustedPointerType(tag_range);
+  DCHECK_EQ(use_shared_table, HeapLayout::InWritableSharedSpace(host));
+  TrustedPointerTable* table = use_shared_table
+                                   ? this->shared_trusted_pointer_table_
+                                   : this->trusted_pointer_table_;
+  TrustedPointerTable::Space* space =
+      use_shared_table ? this->heap_->isolate()->shared_trusted_pointer_space()
+                       : this->heap_->trusted_pointer_space();
+  table->Mark(space, handle);
 #else
   UNREACHABLE();
 #endif

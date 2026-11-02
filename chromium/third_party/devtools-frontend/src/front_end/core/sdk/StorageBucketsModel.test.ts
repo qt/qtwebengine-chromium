@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Protocol from '../../generated/protocol.js';
-import {createTarget} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {createTarget, describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
 import type * as Common from '../common/common.js';
 
 import * as SDK from './sdk.js';
@@ -56,7 +56,7 @@ class StorageBucketModelListener {
   }
 }
 
-describeWithMockConnection('StorageBucketsModel', () => {
+describeWithEnvironment('StorageBucketsModel', () => {
   let storageKeyManager: SDK.StorageKeyManager.StorageKeyManager;
   let storageBucketsModel: SDK.StorageBucketsModel.StorageBucketsModel;
   let target: SDK.Target.Target;

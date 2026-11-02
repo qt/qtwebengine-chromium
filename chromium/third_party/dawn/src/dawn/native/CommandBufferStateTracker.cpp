@@ -36,7 +36,6 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/inlined_vector.h"
-#include "src/dawn/common/Assert.h"
 #include "src/dawn/common/Math.h"
 #include "src/dawn/native/BindGroup.h"
 #include "src/dawn/native/ComputePassEncoder.h"
@@ -44,7 +43,9 @@
 #include "src/dawn/native/Forward.h"
 #include "src/dawn/native/PipelineLayout.h"
 #include "src/dawn/native/RenderPipeline.h"
+#include "src/utils/assert.h"
 #include "src/utils/compiler.h"
+#include "src/utils/numeric.h"
 
 // TODO(dawn:563): None of the error messages in this file include the buffer objects they are
 // validating against. It would be nice to improve that, but difficult to do without incurring
@@ -101,9 +102,10 @@ struct TextureAliasing {
 using WritableBindingAliasingResult = std::variant<std::monostate, BufferAliasing, TextureAliasing>;
 
 template <typename Return>
-Return FindStorageBufferBindingAliasing(const PipelineLayoutBase* pipelineLayout,
-                                        const PerBindGroup<BindGroupBase*>& bindGroups,
-                                        const PerBindGroup<std::vector<uint32_t>>& dynamicOffsets) {
+Return FindStorageBufferBindingAliasing(
+    const PipelineLayoutBase* pipelineLayout,
+    const PerBindGroup<BindGroupBase*>& bindGroups,
+    const PerBindGroup<ityp::vector<BindingIndex, uint32_t>>& dynamicOffsets) {
     // If true, returns detailed validation error info. Otherwise simply returns if any binding
     // aliasing is found.
     constexpr bool kProduceDetails = std::is_same_v<Return, WritableBindingAliasingResult>;
@@ -145,7 +147,7 @@ Return FindStorageBufferBindingAliasing(const PipelineLayoutBase* pipelineLayout
             // Apply dynamic offset if any.
             if (layout.hasDynamicOffset) {
                 // SetBindGroup validation already guarantees offsets and sizes don't overflow.
-                adjustedOffset += dynamicOffsets[groupIndex][static_cast<uint32_t>(bindingIndex)];
+                adjustedOffset += dynamicOffsets[groupIndex][bindingIndex];
             }
 
             storageBufferBindingsToCheck.push_back(BufferBinding{
@@ -373,7 +375,7 @@ MaybeError CommandBufferStateTracker::ValidateNoDifferentTextureViewsOnSameTextu
         BindGroupBase* bindGroup = mBindgroups[groupIndex];
         BindGroupLayoutInternalBase* bgl = bindGroup->GetLayout();
 
-        for (BindingIndex bindingIndex{0}; bindingIndex < bgl->GetBindingCount(); ++bindingIndex) {
+        for (BindingIndex bindingIndex{0u}; bindingIndex < bgl->GetBindingCount(); ++bindingIndex) {
             const BindingInfo& bindingInfo = bgl->GetBindingInfo(bindingIndex);
             if (!std::holds_alternative<TextureBindingInfo>(bindingInfo.bindingLayout) &&
                 !std::holds_alternative<StorageTextureBindingInfo>(bindingInfo.bindingLayout)) {
@@ -394,7 +396,7 @@ MaybeError CommandBufferStateTracker::ValidateNoDifferentTextureViewsOnSameTextu
             !TextureViewsAllMatch(views),
             "In compatibility mode, %s must not have different views in a single draw/dispatch "
             "command. texture views: %s",
-            texture, ityp::span<size_t, const TextureViewBase* const>(views.data(), views.size()));
+            texture, ityp::span<size_t, const TextureViewBase* const>(views));
     }
 
     return {};
@@ -641,8 +643,7 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
             GetRenderPipeline()->GetVertexBuffersUsed() & ~mVertexBuffersUsed;
         DAWN_CHECK(missingVertexBuffers.any());
 
-        VertexBufferSlot firstMissing = ityp::Sub(GetHighestBitIndexPlusOne(missingVertexBuffers),
-                                                  VertexBufferSlot(uint8_t(1)));
+        VertexBufferSlot firstMissing = GetHighestBitIndexPlusOne(missingVertexBuffers).MinusOne();
         return DAWN_VALIDATION_ERROR("Vertex buffer slot %u required by %s was not set.",
                                      uint8_t(firstMissing), GetRenderPipeline());
     }
@@ -651,7 +652,8 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
         ImmediateMask requiredMask = mLastPipeline->GetUserImmediateSlots();
         if (!IsSubset(requiredMask, mImmediateDataMask)) {
             ImmediateMask missing = requiredMask & ~mImmediateDataMask;
-            size_t firstMissing = std::countr_zero(static_cast<uint64_t>(missing.to_ullong()));
+            size_t firstMissing =
+                sign_dcast(std::countr_zero(static_cast<uint64_t>(missing.to_ullong())));
             return DAWN_VALIDATION_ERROR("Required immediate data at offset %u was not set.",
                                          firstMissing * kImmediateElementByteSize);
         }
@@ -787,13 +789,12 @@ void CommandBufferStateTracker::UnsetBindGroup(BindGroupIndex index) {
     mBindgroups[index] = nullptr;
     mAspects.reset(VALIDATION_ASPECT_BIND_GROUPS);
 }
-void CommandBufferStateTracker::SetBindGroup(BindGroupIndex index,
-                                             BindGroupBase* bindgroup,
-                                             uint32_t dynamicOffsetCount,
-                                             const uint32_t* dynamicOffsets) {
+void CommandBufferStateTracker::SetBindGroup(
+    BindGroupIndex index,
+    BindGroupBase* bindgroup,
+    ityp::span<BindingIndex, const uint32_t> dynamicOffsets) {
     mBindgroups[index] = bindgroup;
-    mDynamicOffsets[index].assign(dynamicOffsets,
-                                  DAWN_UNSAFE_TODO(dynamicOffsets + dynamicOffsetCount));
+    mDynamicOffsets[index].assign(dynamicOffsets.begin(), dynamicOffsets.end());
     mAspects.reset(VALIDATION_ASPECT_BIND_GROUPS);
 }
 
@@ -824,10 +825,14 @@ void CommandBufferStateTracker::SetVertexBuffer(VertexBufferSlot slot, uint64_t 
     mVertexBufferSizes[slot] = size;
 }
 
-void CommandBufferStateTracker::SetImmediateData(uint32_t offset, uint32_t size) {
+void CommandBufferStateTracker::SetImmediateData(uint32_t offset, size_t size) {
+    // Both offset and size should be small numbers that fit in a uint32_t.
+    DAWN_ASSERT(offset <= kMaxImmediateDataBytes);
+    DAWN_ASSERT(size <= kMaxImmediateDataBytes);
+
     static_assert(ImmediateMask{}.size() <= 64);
-    uint64_t startSlot = offset / kImmediateElementByteSize;
-    uint64_t slotCount = size / kImmediateElementByteSize;
+    uint32_t startSlot = offset / kImmediateElementByteSize;
+    uint32_t slotCount = size / kImmediateElementByteSize;
 
     mImmediateDataMask |= ImmediateMask(((1u << slotCount) - 1u) << startSlot);
 }
@@ -851,7 +856,7 @@ ResourceTableBase* CommandBufferStateTracker::GetResourceTable() const {
     return mResourceTable;
 }
 
-const std::vector<uint32_t>& CommandBufferStateTracker::GetDynamicOffsets(
+ityp::span<BindingIndex, const uint32_t> CommandBufferStateTracker::GetDynamicOffsets(
     BindGroupIndex index) const {
     return mDynamicOffsets[index];
 }

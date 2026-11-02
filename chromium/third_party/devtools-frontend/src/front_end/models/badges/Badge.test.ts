@@ -2,7 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import sinon from 'sinon';
+
 import * as Common from '../../core/common/common.js';
+import {createSettingsForTest} from '../../testing/SettingsHelpers.js';
 
 import * as Badges from './badges.js';
 
@@ -33,6 +36,7 @@ describe('Badge', () => {
     testBadge = new TestBadge({
       onTriggerBadge: onTriggerBadgeStub,
       badgeActionEventTarget,
+      settings: createSettingsForTest(),
     });
   });
 

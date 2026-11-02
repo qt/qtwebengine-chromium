@@ -32,10 +32,8 @@
 #include "dawn/native/ValidationUtils_autogen.h"
 #include "dawn/platform/DawnPlatform.h"
 #include "partition_alloc/pointers/raw_ptr.h"
-#include "src/dawn/common/Assert.h"
 #include "src/dawn/common/FutureUtils.h"
 #include "src/dawn/common/GPUInfo.h"
-#include "src/dawn/common/Log.h"
 #include "src/dawn/common/StringViewUtils.h"
 #include "src/dawn/common/SystemUtils.h"
 #include "src/dawn/common/WGSLFeatureMapping.h"
@@ -45,7 +43,10 @@
 #include "src/dawn/native/ErrorData.h"
 #include "src/dawn/native/Surface.h"
 #include "src/dawn/native/Toggles.h"
+#include "src/utils/assert.h"
 #include "src/utils/compiler.h"
+#include "src/utils/heap_array.h"
+#include "src/utils/log.h"
 
 // For SwiftShader fallback
 #if defined(DAWN_ENABLE_BACKEND_VULKAN)
@@ -208,8 +209,7 @@ bool APIHasInstanceFeature(wgpu::InstanceFeatureName feature) {
 }
 
 void APIGetInstanceFeatures(SupportedInstanceFeatures* features) {
-    features->featureCount = kSupportedFeatures.size();
-    features->features = kSupportedFeatures.data();
+    features->features = kSupportedFeatures;
 }
 
 void APISupportedInstanceFeaturesFreeMembers(WGPUSupportedInstanceFeatures) {
@@ -324,10 +324,7 @@ MaybeError InstanceBase::Initialize(const UnpackedPtr<InstanceDescriptor>& descr
     }
     mRuntimeSearchPaths.push_back("");
 
-    if (descriptor->requiredFeatureCount > 0) {
-        auto features = std::span(descriptor->requiredFeatures, descriptor->requiredFeatureCount);
-        mInstanceFeatures = {features.begin(), features.end()};
-    }
+    mInstanceFeatures = {descriptor->requiredFeatures.begin(), descriptor->requiredFeatures.end()};
 
     if (descriptor->requiredLimits != nullptr) {
         mLimits = ReifyDefaultLimits(*(descriptor->requiredLimits));
@@ -666,27 +663,24 @@ void InstanceBase::APIProcessEvents() {
     ProcessEvents();
 }
 
-wgpu::WaitStatus InstanceBase::APIWaitAny(size_t count,
-                                          FutureWaitInfo* futures,
-                                          uint64_t timeoutNS) {
+wgpu::WaitStatus InstanceBase::APIWaitAny(Span<FutureWaitInfo> futures, uint64_t timeoutNS) {
     if (timeoutNS > 0) {
         if (!HasFeature(wgpu::InstanceFeatureName::TimedWaitAny)) {
             EmitLog(WGPULoggingType_Error,
                     "Timeout waits are either not enabled or not supported.");
             return wgpu::WaitStatus::Error;
         }
-        if (count > mLimits.timedWaitAnyMaxCount) {
+        if (futures.size() > mLimits.timedWaitAnyMaxCount) {
             EmitLog(WGPULoggingType_Error,
                     absl::StrFormat("Number of futures to wait on (%d) exceeds maximum (%d).",
-                                    count, mLimits.timedWaitAnyMaxCount));
+                                    futures.size(), mLimits.timedWaitAnyMaxCount));
             return wgpu::WaitStatus::Error;
         }
     }
-    if (count == 0) {
+    if (futures.empty()) {
         return wgpu::WaitStatus::Success;
     }
-    auto waitInfos = std::span(futures, count);
-    return mEventManager.WaitAny(waitInfos, Nanoseconds(timeoutNS));
+    return mEventManager.WaitAny(futures, Nanoseconds(timeoutNS));
 }
 
 const std::vector<std::string>& InstanceBase::GetRuntimeSearchPaths() const {
@@ -780,15 +774,17 @@ void InstanceBase::GatherWGSLFeatures(const DawnWGSLBlocklist* wgslBlocklist) {
 
     // Remove blocklisted features.
     if (wgslBlocklist != nullptr) {
-        for (size_t i = 0; i < wgslBlocklist->blocklistedFeatureCount; i++) {
-            const char* name = DAWN_UNSAFE_TODO(wgslBlocklist->blocklistedFeatures[i]);
-            tint::wgsl::LanguageFeature tintFeature = tint::wgsl::ParseLanguageFeature(name);
+        for (const char* featureName : wgslBlocklist->blocklistedFeatures) {
+            tint::wgsl::LanguageFeature tintFeature = tint::wgsl::ParseLanguageFeature(featureName);
             if (tintFeature == tint::wgsl::LanguageFeature::kUndefined) {
                 // Ignore unknown features in the blocklist.
                 continue;
             }
-            mTintLanguageFeatures.erase(tintFeature);
-            mWGSLFeatures.erase(ToWGPUWGSLLanguageFeature(tintFeature));
+            if (tint::wgsl::GetLanguageFeatureStatus(tintFeature) !=
+                tint::wgsl::FeatureStatus::kShipped) {
+                mTintLanguageFeatures.erase(tintFeature);
+                mWGSLFeatures.erase(ToWGPUWGSLLanguageFeature(tintFeature));
+            }
         }
     }
 }
@@ -800,16 +796,7 @@ bool InstanceBase::APIHasWGSLLanguageFeature(wgpu::WGSLLanguageFeatureName featu
 void InstanceBase::APIGetWGSLLanguageFeatures(SupportedWGSLLanguageFeatures* features) const {
     DAWN_ASSERT(features != nullptr);
 
-    size_t featureCount = mWGSLFeatures.size();
-    wgpu::WGSLLanguageFeatureName* wgslFeatures = new wgpu::WGSLLanguageFeatureName[featureCount];
-    uint32_t index = 0;
-    for (wgpu::WGSLLanguageFeatureName feature : mWGSLFeatures) {
-        DAWN_UNSAFE_TODO(wgslFeatures[index++]) = feature;
-    }
-    DAWN_CHECK(index == featureCount);
-
-    features->featureCount = featureCount;
-    features->features = wgslFeatures;
+    features->features = HeapArrayFrom(mWGSLFeatures).MoveToSpan();
 }
 
 void APISupportedWGSLLanguageFeaturesFreeMembers(

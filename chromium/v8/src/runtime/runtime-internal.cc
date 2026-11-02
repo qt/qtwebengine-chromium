@@ -4,8 +4,6 @@
 
 #include <memory>
 
-#include "src/api/api-inl.h"
-#include "src/api/api.h"
 #include "src/builtins/builtins-utils.h"
 #include "src/builtins/builtins.h"
 #include "src/builtins/superspread.h"
@@ -15,6 +13,7 @@
 #include "src/execution/messages.h"
 #include "src/execution/protectors-inl.h"
 #include "src/execution/tiering-manager.h"
+#include "src/handles/handle-scope-implementer-inl.h"
 #include "src/handles/maybe-handles.h"
 #include "src/logging/counters.h"
 #include "src/numbers/conversions.h"
@@ -97,17 +96,39 @@ RUNTIME_FUNCTION(Runtime_VarargStackOverflow) {
         args.at<JSAny>(nargs - SuperSpreadArgs::kReceiverOffsetFromEnd);
     auto maybe_target =
         args.at<JSAny>(nargs - SuperSpreadArgs::kTargetOffsetFromEnd);
+    auto maybe_arglist =
+        args.at<Object>(nargs - SuperSpreadArgs::kArglistOffsetFromEnd);
+    int args_length =
+        args.smi_value_at(nargs - SuperSpreadArgs::kArglistLengthOffsetFromEnd);
 
     if (v8_flags.superspreading) {
-      if (Handle<JSFunction> target; TryCast(maybe_target, &target)) {
-        if (Handle<JSReceiver> receiver; TryCast(maybe_receiver, &receiver)) {
+      Handle<JSFunction> target;
+      Handle<FixedArray> arglist;
+      if (TryCast(maybe_target, &target) && Is<JSReceiver>(maybe_receiver) &&
+          TryCast(maybe_arglist, &arglist)) {
+        Handle<JSReceiver> receiver = Cast<JSReceiver>(maybe_receiver);
+        auto GetMergedArglist = [&]() {
+          int stack_arg_count = nargs - SuperSpreadArgs::kNumExtraArgs;
+          int total_args = stack_arg_count + args_length;
+          if (stack_arg_count == 0) {
+            return isolate->factory()->CopyFixedArrayUpTo(arglist, args_length);
+          }
+          Handle<FixedArray> merged =
+              isolate->factory()->NewFixedArray(total_args);
+          for (int i = 0; i < stack_arg_count; ++i) {
+            merged->set(i, *args.at(stack_arg_count - i - 1));
+          }
+          merged->CopyElements(isolate, stack_arg_count, *arglist, 0,
+                               args_length, UPDATE_WRITE_BARRIER);
+          return merged;
+        };
+
 #define CASE(Name, Handler)                                      \
   if (target->code(isolate)->builtin_id() == Builtin::k##Name) { \
-    return Handler(isolate, args);                               \
+    return Handler(isolate, receiver, GetMergedArglist());       \
   }
-      SUPERSPREAD_BUILTINS(CASE)
+        SUPERSPREAD_BUILTINS(CASE)
 #undef CASE
-        }
       }
     }
   }

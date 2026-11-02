@@ -38,7 +38,6 @@
 #include "net/socket/socket_tag.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "net/url_request/url_request.h"
-#include "services/network/ad_auction/event_record_request_helper.h"
 #include "services/network/devtools_durable_msg.h"
 #include "services/network/keepalive_statistics_recorder.h"
 #include "services/network/local_network_access_url_loader_interceptor.h"
@@ -442,8 +441,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
   void OnDoneFinalizingTrustTokenOperation(net::Error error);
 
   // Continuation of `OnResponseStarted` after possibly asynchronously
-  // concluding the request's Trust Tokens, Attribution, and/or Shared Storage
-  // operations.
+  // concluding the request's Trust Tokens, and/or Shared Storage operations.
   void ContinueOnResponseStarted();
 
   void ScheduleStart();
@@ -480,7 +478,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
   void OnBeforeSendHeadersComplete(
       net::NetworkDelegate::OnBeforeStartTransactionCallback callback,
       int result,
-      const std::optional<net::HttpRequestHeaders>& headers);
+      const std::optional<net::HttpRequestHeaders>& headers,
+      std::optional<base::DictValue> extended_net_log_events);
   void OnHeadersReceivedComplete(
       net::CompletionOnceCallback callback,
       scoped_refptr<net::HttpResponseHeaders>* out_headers,
@@ -713,11 +712,6 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
   // Request helper responsible for processing Shared Storage headers
   // (https://github.com/WICG/shared-storage#from-response-headers).
   std::unique_ptr<SharedStorageRequestHelper> shared_storage_request_helper_;
-
-  // Request helper responsible for processing Ad Auction record event
-  // headers.
-  // (https://github.com/WICG/turtledove/pull/1279)
-  AdAuctionEventRecordRequestHelper ad_auction_event_record_request_helper_;
 
   // Indicates |url_request_| is fetch upload request and that has streaming
   // body.

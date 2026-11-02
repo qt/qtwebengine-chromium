@@ -5,6 +5,8 @@
 #ifndef COMPONENTS_FACILITATED_PAYMENTS_CORE_BROWSER_PIX_ACCOUNT_LINKING_MANAGER_TEST_API_H_
 #define COMPONENTS_FACILITATED_PAYMENTS_CORE_BROWSER_PIX_ACCOUNT_LINKING_MANAGER_TEST_API_H_
 
+#include <vector>
+
 #include "base/check_deref.h"
 #include "base/memory/raw_ref.h"
 #include "components/facilitated_payments/core/browser/pix_account_linking_manager.h"
@@ -29,14 +31,34 @@ class PixAccountLinkingManagerTestApi {
   void OnUiScreenEvent(UiEvent ui_event_type) {
     manager_->OnUiScreenEvent(ui_event_type);
   }
-  void OnGetDetailsForCreatePaymentInstrumentResponseReceived(
-      base::TimeTicks start_time,
-      autofill::payments::PaymentsAutofillClient::PaymentsRpcResult result,
-      bool is_eligible_for_pix_account_linking) {
-    manager_->OnGetDetailsForCreatePaymentInstrumentResponseReceived(
-        start_time, result, is_eligible_for_pix_account_linking);
+
+  // Network and backend response handlers.
+
+  std::optional<AccountLinkingParams> CreateAccountLinkingParams() {
+    return manager_->CreateAccountLinkingParams();
+  }
+
+  void DoOnClientTokenReceived(const std::vector<uint8_t>& client_token) {
+    manager_->DoOnClientTokenReceived(client_token);
+  }
+  void DoOnAccountLinkingResult(AccountLinkingResult result) {
+    manager_->DoOnAccountLinkingResult(result);
+  }
+  void DoOnGetDetailsForCreatePaymentInstrumentResponse(bool is_eligible) {
+    manager_->DoOnGetDetailsForCreatePaymentInstrumentResponse(is_eligible);
   }
   void Reset() { manager_->Reset(); }
+
+  // Getters and inspection accessors.
+  std::string_view GetHistogramSuffix() const {
+    return manager_->GetHistogramSuffix();
+  }
+  base::DictValue GetPayloadForGetDetailsForCreatePaymentInstrument() {
+    return manager_->GetPayloadForGetDetailsForCreatePaymentInstrument();
+  }
+  const std::vector<uint8_t>& client_token() const {
+    return manager_->client_token_;
+  }
 
  private:
   const raw_ref<PixAccountLinkingManager> manager_;

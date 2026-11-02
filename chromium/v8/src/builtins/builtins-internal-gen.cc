@@ -6,6 +6,7 @@
 #include <optional>
 
 #include "src/api/api.h"
+#include "src/base/strong-alias.h"
 #include "src/baseline/baseline.h"
 #include "src/builtins/builtins-inl.h"
 #include "src/builtins/builtins-utils-gen.h"
@@ -1125,7 +1126,7 @@ class SetOrCopyDataPropertiesAssembler : public CodeStubAssembler {
                       BranchIfSameValue(key, property, &skip, &continue_label);
                       Bind(&continue_label);
                     },
-                    1, LoopUnrollingMode::kNo, IndexAdvanceMode::kPost);
+                    1, kNoLoopUnrolling, IndexAdvanceMode::kPost);
               }
 
               CallBuiltin(Builtin::kCreateDataProperty, context, target, key,
@@ -1689,49 +1690,6 @@ TF_BUILTIN(CreateDataProperty, CodeStubAssembler) {
                                                  key, value);
 }
 
-TF_BUILTIN(InstantiateAsmJs, JSTrampolineAssembler) {
-  Label tailcall_to_function(this);
-  auto function = Parameter<JSFunction>(Descriptor::kTarget);
-  auto context = Parameter<Context>(Descriptor::kContext);
-  auto arg_count =
-      UncheckedParameter<Int32T>(Descriptor::kActualArgumentsCount);
-#ifdef V8_JS_LINKAGE_INCLUDES_DISPATCH_HANDLE
-  auto dispatch_handle =
-      UncheckedParameter<JSDispatchHandleT>(Descriptor::kDispatchHandle);
-#else
-  TNode<JSDispatchHandleT> dispatch_handle = ReinterpretCast<JSDispatchHandleT>(
-      LoadJSFunctionDispatchHandle(function));
-#endif
-
-  // This builtin is used on functions with different parameter counts.
-  SetSupportsDynamicParameterCount(function, dispatch_handle);
-
-  // Retrieve arguments from caller (stdlib, foreign, heap).
-  CodeStubArguments args(this, arg_count);
-
-  TNode<Object> stdlib = args.GetOptionalArgumentValue(0);
-  TNode<Object> foreign = args.GetOptionalArgumentValue(1);
-  TNode<Object> heap = args.GetOptionalArgumentValue(2);
-
-  // Call runtime, on success just pass the result to the caller and pop all
-  // arguments. A smi 0 is returned on failure, an object on success.
-  TNode<JSAny> maybe_result_or_smi_zero = CallRuntime<JSAny>(
-      Runtime::kInstantiateAsmJs, context, function, stdlib, foreign, heap);
-  GotoIf(TaggedIsSmi(maybe_result_or_smi_zero), &tailcall_to_function);
-  args.PopAndReturn(maybe_result_or_smi_zero);
-
-  BIND(&tailcall_to_function);
-  // On failure, tail call back to regular JavaScript by re-calling the given
-  // function which has been reset to the compile lazy builtin.
-  // Make sure that the dispatch table entry is still intact; calling out to JS
-  // might have free'd and re-allocated it (https://crbug.com/462217236).
-  CSA_SBXCHECK(
-      this,
-      Word32Equal(DynamicJSParameterCount(),
-                  LoadParameterCountFromJSDispatchTable(dispatch_handle)));
-  TailCallJSFunction(function);
-}
-
 TF_BUILTIN(FindNonDefaultConstructorOrConstruct, CodeStubAssembler) {
   auto this_function = Parameter<JSFunction>(Descriptor::kThisFunction);
   auto new_target = Parameter<Object>(Descriptor::kNewTarget);
@@ -1788,8 +1746,8 @@ TF_BUILTIN(CheckMaglevType, CodeStubAssembler) {
   TNode<Int32T> expected_type = SmiToInt32(expected_type_smi);
 
   Label is_smi(this), is_heap_number(this), is_string(this), is_symbol(this),
-      is_oddball(this), is_context(this), is_js_receiver(this),
-      is_other_heap_object(this), done(this);
+      is_big_int(this), is_oddball(this), is_context(this),
+      is_js_receiver(this), is_other_heap_object(this), done(this);
 
   GotoIf(TaggedIsSmi(object), &is_smi);
 
@@ -1803,6 +1761,7 @@ TF_BUILTIN(CheckMaglevType, CodeStubAssembler) {
   GotoIf(Int32LessThan(instance_type, Int32Constant(FIRST_NONSTRING_TYPE)),
          &is_string);
   GotoIf(Word32Equal(instance_type, Int32Constant(SYMBOL_TYPE)), &is_symbol);
+  GotoIf(Word32Equal(instance_type, Int32Constant(BIGINT_TYPE)), &is_big_int);
   GotoIf(Word32Equal(instance_type, Int32Constant(ODDBALL_TYPE)), &is_oddball);
 
   GotoIf(IsInRange(instance_type, FIRST_CONTEXT_TYPE, LAST_CONTEXT_TYPE),
@@ -1842,6 +1801,9 @@ TF_BUILTIN(CheckMaglevType, CodeStubAssembler) {
   BIND(&is_symbol);
   CheckType(maglev::NodeType::kSymbol);
 
+  BIND(&is_big_int);
+  CheckType(maglev::NodeType::kBigInt);
+
   BIND(&is_oddball);
   {
     Label is_null(this), is_undefined(this);
@@ -1862,7 +1824,8 @@ TF_BUILTIN(CheckMaglevType, CodeStubAssembler) {
   BIND(&is_js_receiver);
   {
     Label is_js_array(this), is_js_data_view(this), is_primitive_wrapper(this),
-        is_js_function(this), is_string_wrapper(this), is_other_callable(this);
+        is_js_function(this), is_string_wrapper(this), is_other_callable(this),
+        is_js_generator_object(this);
 
     GotoIf(Word32Equal(instance_type, Int32Constant(JS_ARRAY_TYPE)),
            &is_js_array);
@@ -1870,6 +1833,8 @@ TF_BUILTIN(CheckMaglevType, CodeStubAssembler) {
            &is_js_data_view);
     GotoIf(Word32Equal(instance_type, Int32Constant(JS_PRIMITIVE_WRAPPER_TYPE)),
            &is_primitive_wrapper);
+    GotoIf(Word32Equal(instance_type, Int32Constant(JS_GENERATOR_OBJECT_TYPE)),
+           &is_js_generator_object);
     GotoIf(
         IsInRange(instance_type, FIRST_JS_FUNCTION_TYPE, LAST_JS_FUNCTION_TYPE),
         &is_js_function);
@@ -1903,6 +1868,9 @@ TF_BUILTIN(CheckMaglevType, CodeStubAssembler) {
 
     BIND(&is_string_wrapper);
     CheckType(maglev::NodeType::kStringWrapper);
+
+    BIND(&is_js_generator_object);
+    CheckType(maglev::NodeType::kJSGeneratorObject);
 
     BIND(&is_other_callable);
     CheckType(maglev::NodeType::kOtherCallable);

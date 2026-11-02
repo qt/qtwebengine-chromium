@@ -18,7 +18,7 @@ namespace fxcodec {
 
 // static
 std::unique_ptr<ProgressiveDecoderContext> BmpDecoder::StartDecode(
-    Delegate* pDelegate) {
+    BmpDecoderDelegate* pDelegate) {
   return std::make_unique<CFX_BmpContext>(pDelegate);
 }
 
@@ -50,7 +50,7 @@ BmpDecoder::Status BmpDecoder::ReadHeader(ProgressiveDecoderContext* context,
 }
 
 // static
-BmpDecoder::Status BmpDecoder::LoadImage(ProgressiveDecoderContext* context) {
+BmpDecoder::Status BmpDecoder::DecodeImage(ProgressiveDecoderContext* context) {
   return static_cast<CFX_BmpContext*>(context)->bmp_.DecodeImage();
 }
 

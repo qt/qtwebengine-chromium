@@ -24,6 +24,7 @@
 #include "components/gwp_asan/client/guarded_page_allocator.h"
 #include "components/gwp_asan/client/gwp_asan.h"
 #include "components/gwp_asan/common/crash_key_name.h"
+#include "partition_alloc/buildflags.h"
 #include "partition_alloc/partition_alloc.h"
 #include "partition_alloc/partition_root.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -31,7 +32,7 @@
 
 // PartitionAlloc (and hence hooking) are disabled with sanitizers that replace
 // allocation routines.
-#if !defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
+#if !PA_BUILDFLAG(MEMORY_TOOL_REPLACES_ALLOCATOR)
 
 // These tests install global PartitionAlloc hooks so they are not safe to run
 // in multi-threaded contexts. Instead they're implemented as multi-process
@@ -228,9 +229,32 @@ TEST_F(SamplingPartitionAllocShimsTest, SamplingRange) {
   runTest("SamplingRange");
 }
 
+MULTIPROCESS_TEST_MAIN_WITH_SETUP(
+    AlignedAlloc,
+    SamplingPartitionAllocShimsTest::multiprocessTestSetup) {
+  partition_alloc::PartitionAllocator allocator;
+  allocator.init(kAllocatorOptions);
+
+  for (size_t i = 0; i < kLoopIterations; i++) {
+    // This used to die on an assertion due to misaligned return value when GWP
+    // asan sampled the allocation. See crbug.com/506860289.
+    void* ptr = allocator.root()->AlignedAlloc(512, 32);
+    if (!ptr) {
+      continue;
+    }
+    allocator.root()->Free(ptr);
+  }
+
+  return kSuccess;
+}
+
+TEST_F(SamplingPartitionAllocShimsTest, AlignedAlloc) {
+  runTest("AlignedAlloc");
+}
+
 }  // namespace
 
 }  // namespace internal
 }  // namespace gwp_asan
 
-#endif  // !defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
+#endif  // !PA_BUILDFLAG(MEMORY_TOOL_REPLACES_ALLOCATOR)

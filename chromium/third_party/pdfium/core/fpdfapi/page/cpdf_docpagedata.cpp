@@ -42,7 +42,7 @@
 #include "core/fxcrt/span.h"
 #include "core/fxge/cfx_charmap_resolver.h"
 #include "core/fxge/cfx_font.h"
-#include "core/fxge/cfx_fontmapper.h"
+#include "core/fxge/cfx_standardfont.h"
 #include "core/fxge/cfx_substfont.h"
 #include "core/fxge/fx_font.h"
 
@@ -533,13 +533,13 @@ std::unique_ptr<CPDF_Font::FormIface> CPDF_DocPageData::CreateForm(
 RetainPtr<CPDF_Font> CPDF_DocPageData::AddStandardFont(
     const ByteString& fontName,
     const CPDF_FontEncoding* pEncoding) {
-  ByteString mutable_name(fontName);
-  std::optional<CFX_FontMapper::StandardFont> font_id =
-      CFX_FontMapper::GetStandardFontName(&mutable_name);
+  std::optional<CFX_StandardFont::Index> font_id =
+      CFX_StandardFont::GetStandardFontIndex(fontName);
   if (!font_id.has_value()) {
     return nullptr;
   }
-  return GetStandardFont(mutable_name, pEncoding);
+  return GetStandardFont(
+      CFX_StandardFont::GetCanonicalFontName(font_id.value()), pEncoding);
 }
 
 RetainPtr<CPDF_Font> CPDF_DocPageData::AddFont(std::unique_ptr<CFX_Font> font,
@@ -561,7 +561,7 @@ RetainPtr<CPDF_Font> CPDF_DocPageData::AddFont(std::unique_ptr<CFX_Font> font,
   auto charmap_resolver = CFX_CharmapResolver::CreateUnicode(font.get());
   RetainPtr<CPDF_Dictionary> font_dict = pBaseDict;
   if (!bCJK) {
-    auto pWidths = pdfium::MakeRetain<CPDF_Array>();
+    auto pWidths = GetDocument()->New<CPDF_Array>();
     for (int charcode = 32; charcode < 128; charcode++) {
       int glyph_index = charmap_resolver->GlyphFromCharCode(charcode);
       int char_width = font->GetGlyphWidth(glyph_index);
@@ -601,14 +601,14 @@ RetainPtr<CPDF_Font> CPDF_DocPageData::AddFont(std::unique_ptr<CFX_Font> font,
   }
   int italicangle = font->GetSubstFontItalicAngle();
   FX_RECT bbox = font->GetBBox().value_or(FX_RECT());
-  auto pBBox = pdfium::MakeRetain<CPDF_Array>();
+  auto pBBox = GetDocument()->New<CPDF_Array>();
   pBBox->AppendNew<CPDF_Number>(bbox.left);
   pBBox->AppendNew<CPDF_Number>(bbox.bottom);
   pBBox->AppendNew<CPDF_Number>(bbox.right);
   pBBox->AppendNew<CPDF_Number>(bbox.top);
   int32_t nStemV = 0;
   if (font->GetSubstFont()) {
-    nStemV = font->GetSubstFont()->weight_ / 5;
+    nStemV = font->GetSubstFont()->GetEstimatedStemV();
   } else {
     static constexpr char kStemChars[] = {'i', 'I', '!', '1'};
     static constexpr pdfium::span<const char> kStemSpan{kStemChars};
@@ -689,7 +689,7 @@ RetainPtr<CPDF_Font> CPDF_DocPageData::AddWindowsFont(LOGFONTA* pLogFont) {
     }
     std::array<int, 224> char_widths;
     GetCharWidth(hDC, 32, 255, char_widths.data());
-    auto pWidths = pdfium::MakeRetain<CPDF_Array>();
+    auto pWidths = GetDocument()->New<CPDF_Array>();
     for (const auto char_width : char_widths) {
       pWidths->AppendNew<CPDF_Number>(char_width);
     }
@@ -702,7 +702,7 @@ RetainPtr<CPDF_Font> CPDF_DocPageData::AddWindowsFont(LOGFONTA* pLogFont) {
                       InsertWidthArray(hDC, start, end, widthArr);
                     });
   }
-  auto pBBox = pdfium::MakeRetain<CPDF_Array>();
+  auto pBBox = GetDocument()->New<CPDF_Array>();
   for (const auto bound : bbox) {
     pBBox->AppendNew<CPDF_Number>(bound);
   }

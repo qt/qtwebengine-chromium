@@ -155,7 +155,7 @@ void SetCompositeClipPathStatus(Node* node, CompositedPaintStatus status) {
 
 bool AdjustClipPathStatusForCompositingFailureReasons(
     const LayoutObject& layout_object,
-    const Animation& animation,
+    Animation& animation,
     bool for_painting) {
   CompositorAnimations::FailureReasons failure_reasons =
       animation.CheckCanStartAnimationOnCompositor(
@@ -184,6 +184,7 @@ void PaintWorkletBasedClip(GraphicsContext& context,
   DCHECK(ClipPathClipper::HasCompositeClipPathAnimation(
       clip_path_owner,
       ClipPathClipper::CompositedStateResolutionType::kReadCache));
+  DCHECK(!dst_rect.IsEmpty());
 
   ClipPathPaintImageGenerator* generator =
       clip_path_owner.GetFrame()->GetClipPathPaintImageGenerator();
@@ -401,8 +402,10 @@ gfx::RectF ClipPathClipper::LocalReferenceBox(const LayoutObject& object) {
 
 std::optional<gfx::RectF> ClipPathClipper::LocalClipPathBoundingBox(
     const LayoutObject& object) {
-  if (object.IsText() || !object.StyleRef().HasClipPath())
+  if (object.IsText() || !object.StyleRef().HasClipPath() ||
+      (!object.IsSVGChild() && !object.HasLayer())) {
     return std::nullopt;
+  }
 
   gfx::RectF reference_box = LocalReferenceBox(object);
   ClipPathOperation& clip_path = *object.StyleRef().ClipPath();

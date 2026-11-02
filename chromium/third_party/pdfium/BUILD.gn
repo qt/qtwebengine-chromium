@@ -47,6 +47,10 @@ config("pdfium_common_config") {
     defines += [ "PDF_ENABLE_SKIA_TYPEFACE_CHECKS" ]
   }
 
+  if (pdf_use_skia && pdf_enable_rust_bmp) {
+    defines += [ "PDF_ENABLE_RUST_BMP" ]
+  }
+
   if (pdf_use_skia && pdf_enable_rust_png) {
     defines += [ "PDF_ENABLE_RUST_PNG" ]
   }
@@ -61,18 +65,16 @@ config("pdfium_common_config") {
   }
 
   if (is_clang) {
-    # Override -Wno-c++11-narrowing.
-    cflags += [ "-Wc++11-narrowing" ]
-
     # May flag some issues when converting int to size_t.
     cflags += [ "-Wtautological-unsigned-zero-compare" ]
+
+    # Enforce style guide decision regarding CTAD usage:
+    # https://google.github.io/styleguide/cppguide.html#CTAD
+    cflags += [ "-Wctad-maybe-unsupported" ]
   }
 
   if (!is_win && !is_clang) {
     cflags += [
-      # Override -Wno-narrowing for GCC.
-      "-Wnarrowing",
-
       # GCC assumes that control can get past an exhaustive switch and then
       # warns if there's no return there.
       "-Wno-return-type",
@@ -138,6 +140,10 @@ config("pdfium_implementation_config") {
 config("pdfium_public_config") {
   defines = []
 
+  if (pdf_enable_brotli) {
+    defines += [ "PDF_ENABLE_BROTLI" ]
+  }
+
   if (pdf_enable_v8) {
     defines += [ "PDF_ENABLE_V8" ]
 
@@ -175,7 +181,10 @@ config("pdfium_core_config") {
   ]
   defines = []
   if (is_clang) {
-    cflags += [ "-Wcovered-switch-default" ]
+    cflags += [
+      "-Wcovered-switch-default",
+      "-Wlifetime-safety-permissive",
+    ]
   }
 }
 

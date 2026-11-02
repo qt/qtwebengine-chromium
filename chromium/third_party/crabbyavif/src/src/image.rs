@@ -151,7 +151,12 @@ impl Image {
     }
 
     pub(crate) fn is_supported_depth(depth: u8) -> bool {
-        matches!(depth, 8 | 10 | 12 | 16)
+        match depth {
+            8 | 10 | 12 | 16 => true,
+            #[cfg(feature = "satofloat")]
+            32 => true,
+            _ => false,
+        }
     }
 
     pub(crate) fn depth_valid(&self) -> bool {
@@ -557,3 +562,6 @@ impl Image {
         }
     }
 }
+
+#[cfg(feature = "satofloat")]
+pub type FloatPlanes = [Option<Vec<f32>>; MAX_PLANE_COUNT];

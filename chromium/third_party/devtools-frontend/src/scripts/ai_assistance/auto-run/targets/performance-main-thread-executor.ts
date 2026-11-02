@@ -10,7 +10,7 @@ import {
   extractCommentMetadata,
   loadPerformanceTrace,
   openAiAssistancePanelFromMenu,
-  stripCommentsFromPage
+  stripCommentsFromPage,
 } from '../shared/puppeteer-helpers.ts';
 import type {TraceDownloader} from '../trace-downloader.ts';
 

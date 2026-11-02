@@ -131,6 +131,12 @@ typedef void (*xnn_qd8_f16_qb4w_gemm_ukernel_fn)(
     const struct xnn_f16_qb4w_minmax_params* params,
     const struct xnn_qd8_quantization_params* quantization_params);
 
+typedef void (*xnn_qd8_bf16_qb4w_gemm_ukernel_fn)(
+    size_t mr, size_t nr, size_t k, const int8_t* a, size_t a_stride,
+    const void* w, xnn_bfloat16* c, size_t cm_stride, size_t cn_stride,
+    const struct xnn_bf16_qb4w_minmax_params* params,
+    const struct xnn_qd8_quantization_params* quantization_params);
+
 typedef void (*xnn_qd8_f32_qc2w_gemm_ukernel_fn)(
     size_t mr, size_t nr, size_t k, const int8_t* a, size_t a_stride,
     const void* w, float* c, size_t cm_stride, size_t cn_stride,
@@ -663,6 +669,11 @@ typedef void (*xnn_x16_x32_packw_gemm_goi_ukernel_fn)(
 typedef void (*xnn_x16_x32_packw_gemm_gio_ukernel_fn)(
     size_t g, size_t nc, size_t kc, size_t nr, size_t kr, size_t sr,
     size_t k_stride, const uint16_t* k, const uint32_t* b, const void* scale,
+    uint16_t* packed_weights, size_t extra_bytes, const void* params);
+
+typedef void (*xnn_x16_packw_gemm_gio_ukernel_fn)(
+    size_t g, size_t nc, size_t kc, size_t nr, size_t kr, size_t sr,
+    size_t k_stride, const uint16_t* k, const uint16_t* b, const void* scale,
     uint16_t* packed_weights, size_t extra_bytes, const void* params);
 
 typedef void (*xnn_x32_packw_gemm_goi_ukernel_fn)(
@@ -1239,6 +1250,10 @@ typedef size_t (*xnn_init_f32_qc4w_minmax_params_fn)(
 
 typedef size_t (*xnn_init_f32_qb4w_minmax_params_fn)(
     struct xnn_f32_qb4w_minmax_params* params, float min, float max,
+    uint8_t kernel_zero_point, size_t blocksize);
+
+typedef size_t (*xnn_init_bf16_qb4w_minmax_params_fn)(
+    struct xnn_bf16_qb4w_minmax_params* params, float min, float max,
     uint8_t kernel_zero_point, size_t blocksize);
 
 typedef size_t (*xnn_init_s8_minmax_params_fn)(

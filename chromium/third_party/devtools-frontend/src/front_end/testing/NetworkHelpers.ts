@@ -33,6 +33,7 @@ export async function createNetworkPanelForMockConnection(): Promise<Network.Net
     globalStorage: dummyStorage,
     localStorage: dummyStorage,
     settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
+    console: Common.Console.Console.instance(),
   });
   const networkPanel = Network.NetworkPanel.NetworkPanel.instance({forceNew: true, displayScreenshotDelay: 0});
   renderElementIntoDOM(networkPanel, {allowMultipleChildren: true});

@@ -97,7 +97,7 @@ EditingStyleUtilities::CreateWrappingStyleForAnnotatedSerialization(
   // has applied. This helps us get the color of content pasted into
   // blockquotes right.
   wrapping_style->RemoveStyleAddedByElement(To<HTMLElement>(EnclosingNodeOfType(
-      FirstPositionInOrBeforeNode(*context), IsMailHTMLBlockquoteElement,
+      FirstPositionInOrBeforeNode(*context), IsMailHtmlBlockquoteElement,
       kCanCrossEditingBoundary)));
 
   // Call collapseTextDecorationProperties first or otherwise it'll copy the
@@ -118,7 +118,7 @@ EditingStyle* EditingStyleUtilities::CreateWrappingStyleForSerialization(
   for (Node& node : NodeTraversal::InclusiveAncestorsOf(*context)) {
     if (node.IsDocumentNode())
       break;
-    if (node.IsStyledElement() && !IsMailHTMLBlockquoteElement(&node)) {
+    if (node.IsStyledElement() && !IsMailHtmlBlockquoteElement(&node)) {
       wrapping_style->MergeInlineAndImplicitStyleOfElement(
           To<Element>(&node), EditingStyle::kDoNotOverrideValues,
           EditingStyle::kEditingPropertiesInEffect);
@@ -157,9 +157,9 @@ EditingStyle* EditingStyleUtilities::CreateStyleAtSelectionStart(
   // <b>hello</b>world should give you font-weight: bold.
   auto* position_node = DynamicTo<Text>(position.ComputeContainerNode());
   if (selection.IsRange() && position_node &&
-      position.ComputeOffsetInContainerNode() ==
-          static_cast<int>(position_node->length()))
+      position.ComputeOffsetInContainerNode() == position_node->length()) {
     position = NextVisuallyDistinctCandidate(position);
+  }
 
   Element* element = AssociatedElementOf(position);
   if (!element)

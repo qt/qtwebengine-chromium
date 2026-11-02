@@ -30,7 +30,9 @@ SOURCE_FILES = (
     "ko-nanumfonts-3.20.tar.bz2",
 )
 SOURCES = [URL_TEMPLATE % source for source in SOURCE_FILES]
-SOURCES += ["https://github.com/googlefonts/roboto-flex/releases/download/3.100/roboto-flex-fonts.zip"]
+SOURCES += [
+    "https://github.com/googlefonts/roboto-flex/releases/download/3.100/roboto-flex-fonts.zip"
+]
 
 CONTAINER_DOWNLOAD_DIR = "/testfonts"
 
@@ -75,7 +77,9 @@ def extract_archive(filepath, target_dir):
     filename = os.path.basename(filepath)
     logger.info(f"Extracting {filepath} to {target_dir}")
     if filename.endswith((".tar.bz2", ".tar.gz", ".tar.xz")):
-        subprocess.run(["tar", "xf", filepath, "-C", target_dir], check=True)
+        subprocess.run(
+            ["tar", "xf", filepath, "-C", target_dir, "--no-same-owner"], check=True
+        )
     elif filename.endswith(".zip"):
         shutil.unpack_archive(filepath, target_dir)
     else:

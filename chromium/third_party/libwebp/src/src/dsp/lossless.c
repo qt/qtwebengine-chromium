@@ -365,19 +365,47 @@ STATIC_DECL void FUNC_NAME(const VP8LTransform* const transform,               \
   const uint32_t* const color_map = transform->data;                           \
   if (bits_per_pixel < 8) {                                                    \
     const int pixels_per_byte = 1 << transform->bits;                          \
-    const int count_mask = pixels_per_byte - 1;                                \
     const uint32_t bit_mask = (1 << bits_per_pixel) - 1;                       \
     for (y = y_start; y < y_end; ++y) {                                        \
-      uint32_t packed_pixels = 0;                                              \
       int x;                                                                   \
-      for (x = 0; x < width; ++x) {                                            \
-        /* We need to load fresh 'packed_pixels' once every                */  \
-        /* 'pixels_per_byte' increments of x. Fortunately, pixels_per_byte */  \
-        /* is a power of 2, so can just use a mask for that, instead of    */  \
-        /* decrementing a counter.                                         */  \
-        if ((x & count_mask) == 0) packed_pixels = GET_INDEX(*src++);          \
-        *dst++ = GET_VALUE(color_map[packed_pixels & bit_mask]);               \
-        packed_pixels >>= bits_per_pixel;                                      \
+      for (x = 0; x + pixels_per_byte <= width; x += pixels_per_byte) {        \
+        uint32_t packed = GET_INDEX(*src++);                                   \
+        if (bits_per_pixel == 1) {                                             \
+          *dst++ = GET_VALUE(color_map[packed & 1]);                           \
+          packed >>= 1;                                                        \
+          *dst++ = GET_VALUE(color_map[packed & 1]);                           \
+          packed >>= 1;                                                        \
+          *dst++ = GET_VALUE(color_map[packed & 1]);                           \
+          packed >>= 1;                                                        \
+          *dst++ = GET_VALUE(color_map[packed & 1]);                           \
+          packed >>= 1;                                                        \
+          *dst++ = GET_VALUE(color_map[packed & 1]);                           \
+          packed >>= 1;                                                        \
+          *dst++ = GET_VALUE(color_map[packed & 1]);                           \
+          packed >>= 1;                                                        \
+          *dst++ = GET_VALUE(color_map[packed & 1]);                           \
+          packed >>= 1;                                                        \
+          *dst++ = GET_VALUE(color_map[packed & 1]);                           \
+        } else if (bits_per_pixel == 2) {                                      \
+          *dst++ = GET_VALUE(color_map[packed & 3]);                           \
+          packed >>= 2;                                                        \
+          *dst++ = GET_VALUE(color_map[packed & 3]);                           \
+          packed >>= 2;                                                        \
+          *dst++ = GET_VALUE(color_map[packed & 3]);                           \
+          packed >>= 2;                                                        \
+          *dst++ = GET_VALUE(color_map[packed & 3]);                           \
+        } else {                                                               \
+          *dst++ = GET_VALUE(color_map[packed & 15]);                          \
+          packed >>= 4;                                                        \
+          *dst++ = GET_VALUE(color_map[packed & 15]);                          \
+        }                                                                      \
+      }                                                                        \
+      if (x < width) {                                                         \
+        uint32_t packed = GET_INDEX(*src++);                                   \
+        for (; x < width; ++x) {                                               \
+          *dst++ = GET_VALUE(color_map[packed & bit_mask]);                    \
+          packed >>= bits_per_pixel;                                           \
+        }                                                                      \
       }                                                                        \
     }                                                                          \
   } else {                                                                     \

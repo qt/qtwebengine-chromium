@@ -237,6 +237,10 @@ class PLATFORM_EXPORT ResourceResponse final {
     from_synthetic_response_ = value;
   }
 
+  // See network.mojom.URLResponseHead.intercepted_by_plugin.
+  bool InterceptedByPlugin() const { return intercepted_by_plugin_; }
+  void SetInterceptedByPlugin(bool value) { intercepted_by_plugin_ = value; }
+
   network::mojom::FetchResponseSource GetServiceWorkerResponseSource() const {
     return service_worker_response_source_;
   }
@@ -366,7 +370,7 @@ class PLATFORM_EXPORT ResourceResponse final {
   int64_t EncodedDataLength() const { return encoded_data_length_; }
   void SetEncodedDataLength(int64_t value);
 
-  int64_t EncodedBodyLength() const { return encoded_body_length_; }
+  uint64_t EncodedBodyLength() const { return encoded_body_length_; }
   void SetEncodedBodyLength(uint64_t value);
 
   int64_t DecodedBodyLength() const { return decoded_body_length_; }
@@ -543,6 +547,10 @@ class PLATFORM_EXPORT ResourceResponse final {
 
   // True if the response is created with the synthetic response.
   bool from_synthetic_response_ : 1;
+
+  // True if a plugin or MIME handler intercepted the response, replacing its
+  // body with a browser-generated document that embeds the handler.
+  bool intercepted_by_plugin_ : 1;
 
   // True if service worker navigation preload was performed due to
   // the request for this resource.

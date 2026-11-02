@@ -7,27 +7,20 @@ import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 
-let autofillManagerInstance: AutofillManager;
-
 export class AutofillManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
+  #targetManager: SDK.TargetManager.TargetManager;
   #address = '';
   #filledFields: Protocol.Autofill.FilledField[] = [];
   #matches: Match[] = [];
   #autofillModel: SDK.AutofillModel.AutofillModel|null = null;
+  #frameManager: SDK.FrameManager.FrameManager;
 
-  private constructor() {
+  constructor(targetManager: SDK.TargetManager.TargetManager, frameManager: SDK.FrameManager.FrameManager) {
     super();
-    SDK.TargetManager.TargetManager.instance().addModelListener(
-        SDK.AutofillModel.AutofillModel, SDK.AutofillModel.Events.ADDRESS_FORM_FILLED, this.#addressFormFilled, this,
-        {scoped: true});
-  }
-
-  static instance(opts: {forceNew: boolean|null} = {forceNew: null}): AutofillManager {
-    const {forceNew} = opts;
-    if (!autofillManagerInstance || forceNew) {
-      autofillManagerInstance = new AutofillManager();
-    }
-    return autofillManagerInstance;
+    this.#targetManager = targetManager;
+    this.#frameManager = frameManager;
+    targetManager.addModelListener(SDK.AutofillModel.AutofillModel, SDK.AutofillModel.Events.ADDRESS_FORM_FILLED,
+                                   this.#addressFormFilled, this, {scoped: true});
   }
 
   async #addressFormFilled({data}: Common.EventTarget.EventTargetEvent<
@@ -56,7 +49,7 @@ export class AutofillManager extends Common.ObjectWrapper.ObjectWrapper<EventTyp
 
   highlightFilledField(filledField: Protocol.Autofill.FilledField): void {
     const backendNodeId = filledField.fieldId;
-    const target = SDK.FrameManager.FrameManager.instance().getFrame(filledField.frameId)?.resourceTreeModel().target();
+    const target = this.#frameManager.getFrame(filledField.frameId)?.resourceTreeModel().target();
     if (target) {
       const deferredNode = new SDK.DOMModel.DeferredDOMNode(target, backendNodeId);
       const domModel = target.model(SDK.DOMModel.DOMModel);
@@ -67,7 +60,7 @@ export class AutofillManager extends Common.ObjectWrapper.ObjectWrapper<EventTyp
   }
 
   clearHighlightedFilledFields(): void {
-    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight(this.#targetManager);
   }
 
   #processAddressFormFilledData({addressUi, filledFields}: Protocol.Autofill.AddressFormFilledEvent): void {

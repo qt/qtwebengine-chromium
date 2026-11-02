@@ -35,13 +35,16 @@
 #include <optional>
 #include <utility>
 
+#include "base/check.h"
 #include "base/debug/alias.h"
+#include "base/feature_list.h"
 #include "build/build_config.h"
 #include "cc/animation/animation_host.h"
 #include "cc/animation/animation_timeline.h"
 #include "cc/layers/picture_layer.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/paint_holding_reason.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/page/page_zoom.h"
 #include "third_party/blink/public/common/widget/constants.h"
 #include "third_party/blink/public/mojom/input/focus_type.mojom-blink.h"
@@ -227,6 +230,7 @@ void ChromeClientImpl::ChromeDestroyed() {
 
 void ChromeClientImpl::SetWindowRect(const gfx::Rect& requested_rect,
                                      LocalFrame& frame) {
+  CHECK(!base::FeatureList::IsEnabled(features::kMoveResizeWindowToIPCs));
   DCHECK(web_view_);
   DCHECK_EQ(&frame, web_view_->MainFrameImpl()->GetFrame());
 
@@ -248,6 +252,27 @@ void ChromeClientImpl::SetWindowRect(const gfx::Rect& requested_rect,
   // store unadjusted pending window rects if that will not break many sites.
   web_view_->MainFrameViewWidget()->SetWindowRect(rect_adjusted_for_minimum,
                                                   adjusted_rect);
+}
+
+void ChromeClientImpl::MoveWindowTo(const gfx::Point& origin,
+                                    LocalFrame& frame) {
+  CHECK(base::FeatureList::IsEnabled(features::kMoveResizeWindowToIPCs));
+  DCHECK(web_view_);
+  DCHECK_EQ(&frame, web_view_->MainFrameImpl()->GetFrame());
+  web_view_->MainFrameViewWidget()->MoveWindowTo(origin);
+}
+
+void ChromeClientImpl::ResizeWindowTo(const gfx::Size& requested_size,
+                                      LocalFrame& frame) {
+  CHECK(base::FeatureList::IsEnabled(features::kMoveResizeWindowToIPCs));
+  DCHECK(web_view_);
+  DCHECK_EQ(&frame, web_view_->MainFrameImpl()->GetFrame());
+  const int minimum_size = DisplayModeIsUnframed(frame)
+                               ? blink::kMinimumUnframedWindowSize
+                               : blink::kMinimumWindowSize;
+  gfx::Size size(std::max(minimum_size, requested_size.width()),
+                 std::max(minimum_size, requested_size.height()));
+  web_view_->MainFrameViewWidget()->ResizeWindowTo(size);
 }
 
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
@@ -409,8 +434,7 @@ Page* ChromeClientImpl::CreateWindowDelegate(
           requested_screen_rect,
           static_cast<WebNavigationPolicy>(r.GetNavigationPolicy()),
           sandbox_flags, session_storage_namespace_id, consumed_user_gesture,
-          r.Impression(), r.GetPictureInPictureWindowOptions(),
-          r.GetRequestorBaseURL()));
+          r.GetPictureInPictureWindowOptions(), r.GetRequestorBaseURL()));
   if (!new_view) {
     return nullptr;
   }
@@ -1179,18 +1203,6 @@ void ChromeClientImpl::StopDeferringCommits(LocalFrame& main_frame) {
       ->StopDeferringCommits();
 }
 
-void ChromeClientImpl::SetShouldThrottleFrameRate(bool flag,
-                                                  LocalFrame& main_frame) {
-  DCHECK(main_frame.IsLocalRoot());
-  WebLocalFrameImpl* web_frame = WebLocalFrameImpl::FromFrame(main_frame);
-  WebFrameWidgetImpl* widget = web_frame->LocalRootFrameWidget();
-  // The widget can be null for web frames that are being replaced.
-  if (!widget) {
-    return;
-  }
-
-  widget->SetShouldThrottleFrameRate(flag);
-}
 
 void ChromeClientImpl::RequestMainFrameOnCompositorAnimation(
     LocalFrame& frame,
@@ -1285,7 +1297,7 @@ void ChromeClientImpl::ShowVirtualKeyboardOnElementFocus(LocalFrame& frame) {
       ->ShowVirtualKeyboardOnElementFocus();
 }
 
-void ChromeClientImpl::OnMouseDown(Node& mouse_down_node) {
+void ChromeClientImpl::DidDispatchMouseDown(Node& mouse_down_node) {
   LocalFrame* frame = mouse_down_node.GetDocument().GetFrame();
   if (auto* fill_client = AutofillClientFromFrame(frame)) {
     fill_client->DidReceiveLeftMouseDownOrGestureTapInNode(
@@ -1297,14 +1309,21 @@ void ChromeClientImpl::OnMouseDown(Node& mouse_down_node) {
   }
 }
 
-void ChromeClientImpl::HandleKeyboardEventOnTextField(
-    HTMLInputElement& input_element,
+void ChromeClientImpl::WillDispatchPointerDown(LocalFrame& frame) {
+  if (auto* fill_client = AutofillClientFromFrame(&frame)) {
+    fill_client->DidReceiveLeftPointerDownBeforeDispatch();
+  }
+}
+
+bool ChromeClientImpl::HandleKeyboardEventOnEditableElement(
+    HTMLElement& element,
     KeyboardEvent& event) {
   if (auto* fill_client =
-          AutofillClientFromFrame(input_element.GetDocument().GetFrame())) {
-    fill_client->TextFieldDidReceiveKeyDown(WebInputElement(&input_element),
-                                            WebKeyboardEventBuilder(event));
+          AutofillClientFromFrame(element.GetDocument().GetFrame())) {
+    return fill_client->DidReceiveKeyDown(WebElement(&element),
+                                          WebKeyboardEventBuilder(event));
   }
+  return false;
 }
 
 void ChromeClientImpl::DidChangeValueInTextField(
@@ -1403,13 +1422,14 @@ void ChromeClientImpl::AjaxSucceeded(LocalFrame* frame) {
     fill_client->AjaxSucceeded();
 }
 
-void ChromeClientImpl::JavaScriptChangedValue(HTMLFormControlElement& element,
-                                              const String& old_value,
-                                              bool was_autofilled) {
+void ChromeClientImpl::JavaScriptSetValue(HTMLFormControlElement& element,
+                                          const String& old_value,
+                                          bool was_autofilled,
+                                          bool value_changed) {
   Document& doc = element.GetDocument();
   if (auto* fill_client = AutofillClientFromFrame(doc.GetFrame())) {
-    fill_client->JavaScriptChangedValue(WebFormControlElement(&element),
-                                        old_value, was_autofilled);
+    fill_client->JavaScriptSetValue(WebFormControlElement(&element), old_value,
+                                    was_autofilled, value_changed);
   }
 }
 
@@ -1468,7 +1488,7 @@ WebAutofillClient* ChromeClientImpl::AutofillClientFromFrame(
     LocalFrame* frame) {
   if (!frame) {
     // It is possible to pass nullptr to this method. For instance the call from
-    // OnMouseDown might be nullptr. See https://crbug.com/739199.
+    // DidDispatchMouseDown might be nullptr. See https://crbug.com/739199.
     return nullptr;
   }
 
@@ -1566,8 +1586,14 @@ gfx::Rect ChromeClientImpl::AdjustWindowRectForDisplay(
   return window;
 }
 
-void ChromeClientImpl::OnFirstContentfulPaint(const base::TimeDelta& duration) {
-  web_view_->OnFirstContentfulPaint(duration);
+void ChromeClientImpl::OnFirstContentfulPaint(
+    const base::TimeTicks& presentation_time) {
+  web_view_->OnFirstContentfulPaint(presentation_time);
+}
+
+void ChromeClientImpl::OnLargestContentfulPaint(
+    const base::TimeTicks& presentation_time) {
+  web_view_->OnLargestContentfulPaint(presentation_time);
 }
 
 }  // namespace blink

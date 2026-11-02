@@ -70,26 +70,22 @@ consoles.console_view(
 )
 
 def coverage_builder(**kwargs):
+    kwargs.setdefault("triggered_by", ["code-coverage-gitiles-trigger"])
+    kwargs.setdefault("triggering_policy", scheduler.greedy_batching(
+        max_concurrent_invocations = 2,
+    ))
     return ci.builder(
         schedule = "triggered",
-        triggered_by = ["code-coverage-gitiles-trigger"],
-        # This should allow one to be pending should code coverage
-        # builds take longer.
-        triggering_policy = scheduler.greedy_batching(
-            max_concurrent_invocations = 2,
-        ),
         **kwargs
     )
 
 def coverage_webview_builder(**kwargs):
+    kwargs.setdefault("triggered_by", ["code-coverage-webview-gitiles-trigger"])
+    kwargs.setdefault("triggering_policy", scheduler.greedy_batching(
+        max_concurrent_invocations = 2,
+    ))
     return ci.builder(
         schedule = "triggered",
-        triggered_by = ["code-coverage-webview-gitiles-trigger"],
-        # This should allow one to be pending should code coverage
-        # builds take longer.
-        triggering_policy = scheduler.greedy_batching(
-            max_concurrent_invocations = 2,
-        ),
         **kwargs
     )
 
@@ -282,7 +278,6 @@ coverage_builder(
             "emulator-4-cores",
             "linux-jammy",
             "x86-64",
-            "retry_only_failed_tests",
         ],
         per_test_modifications = {
             # Keep this same as android-10-x86-rel
@@ -305,9 +300,6 @@ coverage_builder(
 
             # Keep this same as android-10-x86-rel
             "chrome_public_test_apk": targets.mixin(
-                args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_10.chrome_public_test_apk.filter",
-                ],
                 swarming = targets.swarming(
                     dimensions = {
                         # use 8-core to shorten runtime
@@ -942,6 +934,7 @@ coverage_builder(
                 "mac_toolchain",
             ],
             build_config = builder_config.build_config.DEBUG,
+            target_arch = builder_config.target_arch.ARM,
             target_bits = 64,
             target_platform = builder_config.target_platform.IOS,
         ),
@@ -1171,6 +1164,10 @@ coverage_builder(
 coverage_builder(
     name = "linux-fuzz-coverage",
     executable = "recipe:chromium/fuzz",
+    triggered_by = ["chromium-gitiles-trigger"],
+    triggering_policy = scheduler.greedy_batching(
+        max_concurrent_invocations = 1,
+    ),
     builder_spec = builder_config.builder_spec(
         gclient_config = builder_config.gclient_config(
             config = "chromium",
@@ -1227,6 +1224,10 @@ coverage_builder(
     name = "linux-centipede-fuzz-coverage",
     description_html = "This builder collects code coverage for centipede.",
     executable = "recipe:chromium/fuzz",
+    triggered_by = ["chromium-gitiles-trigger"],
+    triggering_policy = scheduler.greedy_batching(
+        max_concurrent_invocations = 1,
+    ),
     builder_spec = builder_config.builder_spec(
         gclient_config = builder_config.gclient_config(
             config = "chromium",
@@ -1260,6 +1261,7 @@ coverage_builder(
     ),
     builderless = True,
     os = os.LINUX_DEFAULT,
+    free_space = builders.free_space.high,
     console_view_entry = [
         consoles.console_view_entry(
             category = "linux-fuzz",
@@ -1492,6 +1494,7 @@ coverage_builder(
             config = "chromium",
             apply_configs = ["mb"],
             build_config = builder_config.build_config.RELEASE,
+            target_arch = builder_config.target_arch.ARM,
             target_bits = 64,
             target_platform = builder_config.target_platform.MAC,
         ),
@@ -1505,7 +1508,7 @@ coverage_builder(
             "no_symbols",
             "chrome_with_codecs",
             "mac",
-            "x64",
+            "arm64",
         ],
     ),
     targets = targets.bundle(
@@ -1517,7 +1520,7 @@ coverage_builder(
         ],
         mixins = [
             "isolate_profile_data",
-            "mac_default_x64",
+            "mac_default_arm64",
         ],
         per_test_modifications = {
             "browser_tests": targets.remove(

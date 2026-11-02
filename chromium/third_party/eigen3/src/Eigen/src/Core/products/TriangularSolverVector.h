@@ -67,7 +67,9 @@ struct triangular_solve_vector<LhsScalar, RhsScalar, Index, OnTheLeft, Mode, Con
                          Map<const Matrix<RhsScalar, Dynamic, 1> >(rhs + s, k)))
                         .sum();
 
-        if ((!(Mode & UnitDiag)) && !is_identically_zero(rhs[i])) rhs[i] /= cjLhs(i, i);
+        EIGEN_IF_CONSTEXPR (!(Mode & UnitDiag)) {
+          if (!is_identically_zero(rhs[i])) rhs[i] /= cjLhs(i, i);
+        }
       }
     }
   }
@@ -95,7 +97,7 @@ struct triangular_solve_vector<LhsScalar, RhsScalar, Index, OnTheLeft, Mode, Con
       for (Index k = 0; k < actualPanelWidth; ++k) {
         Index i = IsLower ? pi + k : pi - k - 1;
         if (!is_identically_zero(rhs[i])) {
-          if (!(Mode & UnitDiag)) rhs[i] /= cjLhs.coeff(i, i);
+          EIGEN_IF_CONSTEXPR (!(Mode & UnitDiag)) rhs[i] /= cjLhs.coeff(i, i);
 
           Index r = actualPanelWidth - k - 1;  // remaining size
           Index s = IsLower ? i + 1 : i - r;

@@ -132,6 +132,14 @@ struct xnn_f32_qb4w_minmax_params {
   } scalar;
 };
 
+struct xnn_bf16_qb4w_minmax_params {
+  struct {
+    float min;
+    float max;
+    size_t blocksize;
+  } scalar;
+};
+
 struct xnn_s8_minmax_params {
   struct {
     int32_t min;
@@ -455,6 +463,13 @@ struct xnn_bf16_qs8_cvt_params {
   } scalar;
 };
 
+struct xnn_bf16_qu8_cvt_params {
+  struct {
+    xnn_bfloat16 scale;
+    int16_t output_zero_point;
+  } scalar;
+};
+
 struct xnn_f16_qs8_cvt_params {
   struct {
     xnn_float16 scale;
@@ -609,6 +624,7 @@ struct xnn_unary_reference_params {
 
 union xnn_unary_uparams {
   struct xnn_bf16_qs8_cvt_params bf16_qs8_cvt;
+  struct xnn_bf16_qu8_cvt_params bf16_qu8_cvt;
   struct xnn_f32_qs8_cvt_params f32_qs8_cvt;
   struct xnn_f32_qu8_cvt_params f32_qu8_cvt;
   struct xnn_f16_qs8_cvt_params f16_qs8_cvt;

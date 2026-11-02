@@ -101,6 +101,17 @@ GetCardBenefitsOptimizationTypesForCard(
         optimization_guide::proto::BMO_CREDIT_CARD_TRAVEL_BENEFITS);
     optimization_types.push_back(
         optimization_guide::proto::BMO_CREDIT_CARD_WHOLESALE_CLUB_BENEFITS);
+  } else if (
+      card.benefit_source() == kCurinosCardBenefitSource &&
+      base::FeatureList::IsEnabled(
+          features::
+              kAutofillEnableTravelCategoryAndMerchantBenefitsFromCurinos)) {
+    optimization_types.push_back(
+        optimization_guide::proto::CURINOS_CREDIT_CARD_FLIGHT_BENEFITS);
+    optimization_types.push_back(
+        optimization_guide::proto::CURINOS_CREDIT_CARD_HOTEL_BENEFITS);
+    optimization_types.push_back(
+        optimization_guide::proto::CURINOS_CREDIT_CARD_CAR_RENTAL_BENEFITS);
   }
   if (payments_data_manager
           .GetFlatRateBenefitByInstrumentId(
@@ -174,6 +185,7 @@ GetBenefitCategoryForOptimizationType(
   switch (optimization_type) {
     case optimization_guide::proto::
         AMERICAN_EXPRESS_CREDIT_CARD_FLIGHT_BENEFITS:
+    case optimization_guide::proto::CURINOS_CREDIT_CARD_FLIGHT_BENEFITS:
       return CreditCardCategoryBenefit::BenefitCategory::kFlights;
     case optimization_guide::proto::
         AMERICAN_EXPRESS_CREDIT_CARD_SUBSCRIPTION_BENEFITS:
@@ -206,6 +218,10 @@ GetBenefitCategoryForOptimizationType(
       return CreditCardCategoryBenefit::BenefitCategory::kEntertainment;
     case optimization_guide::proto::CAPITAL_ONE_CREDIT_CARD_STREAMING_BENEFITS:
       return CreditCardCategoryBenefit::BenefitCategory::kStreaming;
+    case optimization_guide::proto::CURINOS_CREDIT_CARD_HOTEL_BENEFITS:
+      return CreditCardCategoryBenefit::BenefitCategory::kHotels;
+    case optimization_guide::proto::CURINOS_CREDIT_CARD_CAR_RENTAL_BENEFITS:
+      return CreditCardCategoryBenefit::BenefitCategory::kCarRentals;
     default:
       NOTREACHED();
   }
@@ -299,6 +315,11 @@ void AutofillOptimizationGuideDecider::OnPaymentsDataLoaded(
         optimization_guide::proto::OMNIBOX_AUTOFILL_IFRAME_ALLOWLIST);
   }
 
+  if (base::FeatureList::IsEnabled(features::kAutofillAtMemory)) {
+    optimization_types.insert(
+        optimization_guide::proto::AUTOFILL_AT_MEMORY_BLOCKED);
+  }
+
   // If we do not have any optimization types to register, do not do anything.
   if (!optimization_types.empty()) {
     decider_->RegisterOptimizationTypes(
@@ -383,6 +404,17 @@ AutofillOptimizationGuideDecider::AttemptToGetEligibleCreditCardBenefitCategory(
         optimization_guide::proto::BMO_CREDIT_CARD_TRAVEL_BENEFITS);
     issuer_optimization_types.push_back(
         optimization_guide::proto::BMO_CREDIT_CARD_WHOLESALE_CLUB_BENEFITS);
+  } else if (
+      benefit_source == kCurinosCardBenefitSource &&
+      base::FeatureList::IsEnabled(
+          features::
+              kAutofillEnableTravelCategoryAndMerchantBenefitsFromCurinos)) {
+    issuer_optimization_types.push_back(
+        optimization_guide::proto::CURINOS_CREDIT_CARD_FLIGHT_BENEFITS);
+    issuer_optimization_types.push_back(
+        optimization_guide::proto::CURINOS_CREDIT_CARD_HOTEL_BENEFITS);
+    issuer_optimization_types.push_back(
+        optimization_guide::proto::CURINOS_CREDIT_CARD_CAR_RENTAL_BENEFITS);
   }
 
   for (auto& optimization_type : issuer_optimization_types) {
@@ -487,7 +519,7 @@ bool AutofillOptimizationGuideDecider::IsUrlEligibleForBnplIssuer(
     BnplIssuer::IssuerId issuer_id,
     const GURL& url) const {
   if (base::FeatureList::IsEnabled(
-          ::autofill::features::kAutofillEnableAmountExtractionTesting)) {
+          features::kAutofillEnableAmountExtractionTesting)) {
     return true;
   }
 
@@ -566,6 +598,19 @@ bool AutofillOptimizationGuideDecider::IsUrlEligibleForOmniboxAutofill(
              url, optimization_guide::proto::OMNIBOX_AUTOFILL_IFRAME_ALLOWLIST,
              /*optimization_metadata=*/nullptr) ==
              optimization_guide::OptimizationGuideDecision::kTrue;
+}
+
+bool AutofillOptimizationGuideDecider::ShouldBlockAtMemory(
+    const GURL& url) const {
+  // Since the optimization guide decider integration corresponding to
+  // `AUTOFILL_AT_MEMORY_BLOCKED` lists are blocklists for the question "Can
+  // this site be optimized?", a match on the blocklist answers the question
+  // with "no". Therefore, `kFalse` indicates that `url` is blocked from the
+  // AtMemory feature.
+  return decider_->CanApplyOptimization(
+             url, optimization_guide::proto::AUTOFILL_AT_MEMORY_BLOCKED,
+             /*optimization_metadata=*/nullptr) ==
+         optimization_guide::OptimizationGuideDecision::kFalse;
 }
 
 }  // namespace autofill

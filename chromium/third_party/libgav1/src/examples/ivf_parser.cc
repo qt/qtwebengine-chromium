@@ -14,6 +14,7 @@
 
 #include "examples/ivf_parser.h"
 
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 

@@ -111,6 +111,8 @@ static_library("shelf") {
     "//chrome/browser/prefs:util",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/sync",
+    "//chrome/browser/ui:browser_tab_strip_tracker",
+    "//chrome/browser/ui:chrome_pages",
     "//chrome/browser/ui/apps",
     "//chrome/browser/ui/ash/app_icon_color_cache",
     "//chrome/browser/ui/ash/keyboard",
@@ -120,6 +122,7 @@ static_library("shelf") {
     "//chrome/browser/ui/extensions",
     "//chrome/browser/ui/tabs:tab_enums",
     "//chrome/browser/ui/web_applications",
+    "//chrome/browser/ui/window_metadata",
     "//chrome/browser/web_applications",
     "//chrome/common",
     "//chromeos/ash/components/browser_context_helper",
@@ -303,6 +306,7 @@ source_set("browser_tests") {
     "//chrome/browser/apps/app_service:test_support",
     "//chrome/browser/apps/browser_instance",
     "//chrome/browser/apps/platform_apps",
+    "//chrome/browser/apps/platform_apps:browser_test_support",
     "//chrome/browser/ash/accessibility",
     "//chrome/browser/ash/accessibility:test_support",
     "//chrome/browser/ash/app_list",
@@ -327,6 +331,7 @@ source_set("browser_tests") {
     "//chrome/browser/ui/extensions",
     "//chrome/browser/ui/test:app_window",
     "//chrome/browser/ui/web_applications",
+    "//chrome/browser/ui/window_metadata",
     "//chrome/browser/web_applications",
     "//chrome/browser/web_applications:web_applications_test_support",
     "//chrome/common",
@@ -365,6 +370,7 @@ if (is_chromeos_device) {
       "//chrome/browser/web_applications",
       "//chrome/test:ash_integration_test_support",
       "//chrome/test:test_support",
+      "//chrome/test/base/chromeos/crosier:test_support",
       "//chromeos/ash/components/file_manager:constants",
       "//components/app_constants",
       "//content/test:test_support",
@@ -372,4 +378,17 @@ if (is_chromeos_device) {
       "//ui/compositor",
     ]
   }
+}
+
+source_set("chrome_shelf_metrics_provider") {
+  public = [ "chrome_shelf_metrics_provider.h" ]
+  sources = [ "chrome_shelf_metrics_provider.cc" ]
+  public_deps = [ "//components/metrics" ]
+  deps = [
+    ":shelf",
+    "//ash/public/cpp",
+    "//base",
+    "//chrome/browser/apps/app_service",
+    "//chrome/browser/profiles:profile",
+  ]
 }

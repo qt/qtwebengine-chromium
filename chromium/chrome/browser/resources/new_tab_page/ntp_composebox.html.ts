@@ -67,15 +67,16 @@ export function getHtml(this: NtpComposeboxElement) {
     : ''}
     <div id="composebox" part="composebox" ?inert="${!!this.errorMessage}"
         @keydown="${this.onKeydown}"
-        @dragenter="${this.dragAndDropHandler_.handleDragEnter}"
-        @dragover="${this.dragAndDropHandler_.handleDragOver}"
-        @dragleave="${this.dragAndDropHandler_.handleDragLeave}"
-        @drop="${this.dragAndDropHandler_.handleDrop}"
+        @dragenter="${this.dragAndDropHandler.handleDragEnter}"
+        @dragover="${this.dragAndDropHandler.handleDragOver}"
+        @dragleave="${this.dragAndDropHandler.handleDragLeave}"
+        @drop="${this.dragAndDropHandler.handleDrop}"
         @paste="${this.onPaste}">
       <div id="inputContainer" part="input-container">
         <cr-composebox-input id="composeboxInput"
             class="${this.hasTabs() ? 'has-tabs' : ''}"
             exportparts="text-container, icon-container, mirror, input, smart-compose, cancel, action-icon, cancel-icon"
+            .composeboxSkillsEnabled="${this.composeboxSkillsEnabled}"
             .disableCaretColorAnimation="${this.disableCaretColorAnimation}"
             .showDropdown="${this.showDropdown}"
             .inputPlaceholder="${this.inputPlaceholder}"
@@ -88,6 +89,14 @@ export function getHtml(this: NtpComposeboxElement) {
             @input-focusin="${this.onInputFocusin}"
             @cancel-click="${this.onCancelClick}"
             @clear-smart-compose="${this.onClearSmartCompose}">
+          ${this.shouldShowVoiceSearch() ? html`
+            <cr-icon-button id="voiceSearchButton" class="voice-icon"
+                slot="action-buttons"
+                part="voice-icon" iron-icon="cr:mic"
+                @click="${this.onVoiceSearchButtonClick}"
+                title="${this.i18n('voiceSearchButtonLabel')}">
+            </cr-icon-button>
+          ` : ''}
         </cr-composebox-input>
         <div id="context" part="context-entrypoint">
           <cr-composebox-file-inputs id="fileInputs"

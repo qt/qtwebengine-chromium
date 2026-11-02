@@ -167,6 +167,14 @@ static enum xnn_status reshape_convert_operator(
       break;
     }
     case xnn_operator_type_convert_nc_f32_qp8: {
+      if (num_input_dims < 2) {
+        xnn_log_error(
+          "failed to reshape %s operator with input ID #%" PRIu32
+          ": number of dimensions (%zu) must be at least 2",
+          xnn_node_type_to_string(xnn_node_type_convert), input_id,
+          num_input_dims);
+        return xnn_status_invalid_parameter;
+      }
       size_t num_groups = xnn_shape_multiply_batch_dims(&input_value->shape, 2);
       size_t batch_size = input_value->shape.dim[num_input_dims - 2];
       const size_t channels = input_value->shape.dim[num_input_dims - 1];
@@ -184,12 +192,14 @@ static enum xnn_status reshape_convert_operator(
       const size_t channel_dimension =
           output->quantization.channel_dimension;
       const size_t num_channels =
-          output->shape.num_dims > channel_dimension
-              ? output->shape.dim[channel_dimension] : 0;
-      if (num_channels > 0 && dq_batch_size > 0) {
+          input_value->shape.num_dims > channel_dimension
+              ? input_value->shape.dim[channel_dimension] : 0;
+
+      if (num_channels > 0 && ((num_nonbatch_dims == 0 && batch_size > 0) ||
+                               (num_nonbatch_dims > 0 && dq_batch_size > 0))) {
         xnn_operator_t op = opdata->operator_objects[0];
-        const size_t bytes_needed =
-            num_channels * dq_batch_size * sizeof(float);
+        const size_t bytes_needed = num_channels * sizeof(float) *
+            (num_nonbatch_dims > 0 ? dq_batch_size : batch_size);
         if (op->channelwise_quantization_buffer_capacity < bytes_needed) {
           xnn_release_memory(op->channelwise_quantization_buffer);
           op->channelwise_quantization_buffer = xnn_allocate_memory(bytes_needed);
@@ -200,8 +210,11 @@ static enum xnn_status reshape_convert_operator(
           op->channelwise_quantization_buffer_capacity = bytes_needed;
         }
         float* channelwise_scale = (float*)op->channelwise_quantization_buffer;
-        for (size_t c = 0; c < num_channels; c++) {
-          channelwise_scale[c] = input_value->quantization.scale;
+        for (size_t b = 0; b < (num_nonbatch_dims > 0 ? dq_batch_size
+                                                      : batch_size); b++) {
+          for (size_t c = 0; c < num_channels; c++) {
+            channelwise_scale[b * num_channels + c] = input_value->quantization.scale;
+          }
         }
         output->quantization.channelwise_scale = channelwise_scale;
         output->quantization.channelwise_zero_point = NULL;

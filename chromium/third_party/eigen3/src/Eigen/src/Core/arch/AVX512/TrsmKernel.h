@@ -13,6 +13,7 @@
 
 // IWYU pragma: private
 #include "../../InternalHeaderCheck.h"
+#include <utility>
 
 #if !defined(EIGEN_USE_AVX512_TRSM_KERNELS)
 #define EIGEN_USE_AVX512_TRSM_KERNELS 1
@@ -67,7 +68,7 @@ typedef Packet4d vecHalfDouble;
  * For smaller problem sizes, and certain compilers, using the optimized kernels trsmKernelL/R directly
  * is faster than the packed versions in TriangularSolverMatrix.h.
  *
- * The current heuristic is based on having having all arrays used in the largest gemm-update
+ * The current heuristic is based on having all arrays used in the largest gemm-update
  * in triSolve fit in roughly L2Cap (percentage) of the L2 cache. These cutoffs are a bit conservative and could be
  * larger for some trsm cases.
  * The formula:
@@ -136,23 +137,22 @@ EIGEN_ALWAYS_INLINE void transStoreC(PacketBlock<vec, EIGEN_ARCH_DEFAULT_NUMBER_
   static_assert(unrollM == EIGEN_AVX_MAX_NUM_ROW, "unrollM should be equal to EIGEN_AVX_MAX_NUM_ROW");
 
   urolls::template transpose<unrollN, 0>(zmm);
-  EIGEN_IF_CONSTEXPR(unrollN > U2) urolls::template transpose<unrollN, 2>(zmm);
-  EIGEN_IF_CONSTEXPR(unrollN > U1) urolls::template transpose<unrollN, 1>(zmm);
+  EIGEN_IF_CONSTEXPR (unrollN > U2) urolls::template transpose<unrollN, 2>(zmm);
+  EIGEN_IF_CONSTEXPR (unrollN > U1) urolls::template transpose<unrollN, 1>(zmm);
 
   static_assert((remN && unrollN == U1) || !remN, "When handling N remainder set unrollN=U1");
-  EIGEN_IF_CONSTEXPR(!remN) {
+  EIGEN_IF_CONSTEXPR (!remN) {
     urolls::template storeC<std::min(unrollN, U1), unrollN, 0, remM>(C_arr, LDC, zmm, remM_);
-    EIGEN_IF_CONSTEXPR(unrollN > U1) {
+    EIGEN_IF_CONSTEXPR (unrollN > U1) {
       constexpr int64_t unrollN_ = std::min(unrollN - U1, U1);
       urolls::template storeC<unrollN_, unrollN, 1, remM>(C_arr + U1 * LDC, LDC, zmm, remM_);
     }
-    EIGEN_IF_CONSTEXPR(unrollN > U2) {
+    EIGEN_IF_CONSTEXPR (unrollN > U2) {
       constexpr int64_t unrollN_ = std::min(unrollN - U2, U1);
       urolls::template storeC<unrollN_, unrollN, 2, remM>(C_arr + U2 * LDC, LDC, zmm, remM_);
     }
-  }
-  else {
-    EIGEN_IF_CONSTEXPR((std::is_same<Scalar, float>::value)) {
+  } else {
+    EIGEN_IF_CONSTEXPR ((std::is_same<Scalar, float>::value)) {
       // Note: without "if constexpr" this section of code will also be
       // parsed by the compiler so each of the storeC will still be instantiated.
       // We use enable_if in aux_storeC to set it to an empty function for
@@ -187,8 +187,7 @@ EIGEN_ALWAYS_INLINE void transStoreC(PacketBlock<vec, EIGEN_ARCH_DEFAULT_NUMBER_
         urolls::template storeC<2, unrollN, 0, remM>(C_arr, LDC, zmm, remM_);
       else if (remN_ == 1)
         urolls::template storeC<1, unrollN, 0, remM>(C_arr, LDC, zmm, remM_);
-    }
-    else {
+    } else {
       if (remN_ == 7)
         urolls::template storeC<7, unrollN, 0, remM>(C_arr, LDC, zmm, remM_);
       else if (remN_ == 6)
@@ -244,23 +243,26 @@ void gemmKernel(Scalar* A_arr, Scalar* B_arr, Scalar* C_arr, int64_t M, int64_t 
         urolls::template microKernel<isARowMajor, 3, EIGEN_AVX_MAX_NUM_ROW, EIGEN_AVX_MAX_K_UNROL, EIGEN_AVX_MAX_B_LOAD,
                                      EIGEN_AVX_MAX_A_BCAST>(B_t, A_t, LDB, LDA, zmm);
         B_t += EIGEN_AVX_MAX_K_UNROL * LDB;
-        EIGEN_IF_CONSTEXPR(isARowMajor) A_t += EIGEN_AVX_MAX_K_UNROL;
-        else A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
+        EIGEN_IF_CONSTEXPR (isARowMajor)
+          A_t += EIGEN_AVX_MAX_K_UNROL;
+        else
+          A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
       }
-      EIGEN_IF_CONSTEXPR(handleKRem) {
+      EIGEN_IF_CONSTEXPR (handleKRem) {
         for (int64_t k = K_; k < K; k++) {
           urolls::template microKernel<isARowMajor, 3, EIGEN_AVX_MAX_NUM_ROW, 1, EIGEN_AVX_B_LOAD_SETS * 3,
                                        EIGEN_AVX_MAX_A_BCAST>(B_t, A_t, LDB, LDA, zmm);
           B_t += LDB;
-          EIGEN_IF_CONSTEXPR(isARowMajor) A_t++;
-          else A_t += LDA;
+          EIGEN_IF_CONSTEXPR (isARowMajor)
+            A_t++;
+          else
+            A_t += LDA;
         }
       }
-      EIGEN_IF_CONSTEXPR(isCRowMajor) {
+      EIGEN_IF_CONSTEXPR (isCRowMajor) {
         urolls::template updateC<3, EIGEN_AVX_MAX_NUM_ROW>(&C_arr[i * LDC + j], LDC, zmm);
         urolls::template storeC<3, EIGEN_AVX_MAX_NUM_ROW>(&C_arr[i * LDC + j], LDC, zmm);
-      }
-      else {
+      } else {
         transStoreC<Scalar, vec, EIGEN_AVX_MAX_NUM_ROW, U3, false, false>(zmm, &C_arr[i + j * LDC], LDC);
       }
     }
@@ -273,23 +275,26 @@ void gemmKernel(Scalar* A_arr, Scalar* B_arr, Scalar* C_arr, int64_t M, int64_t 
         urolls::template microKernel<isARowMajor, 3, 4, EIGEN_AVX_MAX_K_UNROL, EIGEN_AVX_B_LOAD_SETS * 3,
                                      EIGEN_AVX_MAX_A_BCAST>(B_t, A_t, LDB, LDA, zmm);
         B_t += EIGEN_AVX_MAX_K_UNROL * LDB;
-        EIGEN_IF_CONSTEXPR(isARowMajor) A_t += EIGEN_AVX_MAX_K_UNROL;
-        else A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
+        EIGEN_IF_CONSTEXPR (isARowMajor)
+          A_t += EIGEN_AVX_MAX_K_UNROL;
+        else
+          A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
       }
-      EIGEN_IF_CONSTEXPR(handleKRem) {
+      EIGEN_IF_CONSTEXPR (handleKRem) {
         for (int64_t k = K_; k < K; k++) {
           urolls::template microKernel<isARowMajor, 3, 4, 1, EIGEN_AVX_B_LOAD_SETS * 3, EIGEN_AVX_MAX_A_BCAST>(
               B_t, A_t, LDB, LDA, zmm);
           B_t += LDB;
-          EIGEN_IF_CONSTEXPR(isARowMajor) A_t++;
-          else A_t += LDA;
+          EIGEN_IF_CONSTEXPR (isARowMajor)
+            A_t++;
+          else
+            A_t += LDA;
         }
       }
-      EIGEN_IF_CONSTEXPR(isCRowMajor) {
+      EIGEN_IF_CONSTEXPR (isCRowMajor) {
         urolls::template updateC<3, 4>(&C_arr[i * LDC + j], LDC, zmm);
         urolls::template storeC<3, 4>(&C_arr[i * LDC + j], LDC, zmm);
-      }
-      else {
+      } else {
         transStoreC<Scalar, vec, EIGEN_AVX_MAX_NUM_ROW, U3, true, false>(zmm, &C_arr[i + j * LDC], LDC, 4);
       }
       i += 4;
@@ -303,23 +308,26 @@ void gemmKernel(Scalar* A_arr, Scalar* B_arr, Scalar* C_arr, int64_t M, int64_t 
         urolls::template microKernel<isARowMajor, 3, 2, EIGEN_AVX_MAX_K_UNROL, EIGEN_AVX_B_LOAD_SETS * 3,
                                      EIGEN_AVX_MAX_A_BCAST>(B_t, A_t, LDB, LDA, zmm);
         B_t += EIGEN_AVX_MAX_K_UNROL * LDB;
-        EIGEN_IF_CONSTEXPR(isARowMajor) A_t += EIGEN_AVX_MAX_K_UNROL;
-        else A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
+        EIGEN_IF_CONSTEXPR (isARowMajor)
+          A_t += EIGEN_AVX_MAX_K_UNROL;
+        else
+          A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
       }
-      EIGEN_IF_CONSTEXPR(handleKRem) {
+      EIGEN_IF_CONSTEXPR (handleKRem) {
         for (int64_t k = K_; k < K; k++) {
           urolls::template microKernel<isARowMajor, 3, 2, 1, EIGEN_AVX_B_LOAD_SETS * 3, EIGEN_AVX_MAX_A_BCAST>(
               B_t, A_t, LDB, LDA, zmm);
           B_t += LDB;
-          EIGEN_IF_CONSTEXPR(isARowMajor) A_t++;
-          else A_t += LDA;
+          EIGEN_IF_CONSTEXPR (isARowMajor)
+            A_t++;
+          else
+            A_t += LDA;
         }
       }
-      EIGEN_IF_CONSTEXPR(isCRowMajor) {
+      EIGEN_IF_CONSTEXPR (isCRowMajor) {
         urolls::template updateC<3, 2>(&C_arr[i * LDC + j], LDC, zmm);
         urolls::template storeC<3, 2>(&C_arr[i * LDC + j], LDC, zmm);
-      }
-      else {
+      } else {
         transStoreC<Scalar, vec, EIGEN_AVX_MAX_NUM_ROW, U3, true, false>(zmm, &C_arr[i + j * LDC], LDC, 2);
       }
       i += 2;
@@ -334,22 +342,25 @@ void gemmKernel(Scalar* A_arr, Scalar* B_arr, Scalar* C_arr, int64_t M, int64_t 
           urolls::template microKernel<isARowMajor, 3, 1, EIGEN_AVX_MAX_K_UNROL, EIGEN_AVX_B_LOAD_SETS * 3, 1>(
               B_t, A_t, LDB, LDA, zmm);
           B_t += EIGEN_AVX_MAX_K_UNROL * LDB;
-          EIGEN_IF_CONSTEXPR(isARowMajor) A_t += EIGEN_AVX_MAX_K_UNROL;
-          else A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
+          EIGEN_IF_CONSTEXPR (isARowMajor)
+            A_t += EIGEN_AVX_MAX_K_UNROL;
+          else
+            A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
         }
-        EIGEN_IF_CONSTEXPR(handleKRem) {
+        EIGEN_IF_CONSTEXPR (handleKRem) {
           for (int64_t k = K_; k < K; k++) {
             urolls::template microKernel<isARowMajor, 3, 1, 1, EIGEN_AVX_B_LOAD_SETS * 3, 1>(B_t, A_t, LDB, LDA, zmm);
             B_t += LDB;
-            EIGEN_IF_CONSTEXPR(isARowMajor) A_t++;
-            else A_t += LDA;
+            EIGEN_IF_CONSTEXPR (isARowMajor)
+              A_t++;
+            else
+              A_t += LDA;
           }
         }
-        EIGEN_IF_CONSTEXPR(isCRowMajor) {
+        EIGEN_IF_CONSTEXPR (isCRowMajor) {
           urolls::template updateC<3, 1>(&C_arr[i * LDC + j], LDC, zmm);
           urolls::template storeC<3, 1>(&C_arr[i * LDC + j], LDC, zmm);
-        }
-        else {
+        } else {
           transStoreC<Scalar, vec, EIGEN_AVX_MAX_NUM_ROW, U3, true, false>(zmm, &C_arr[i + j * LDC], LDC, 1);
         }
       }
@@ -360,30 +371,33 @@ void gemmKernel(Scalar* A_arr, Scalar* B_arr, Scalar* C_arr, int64_t M, int64_t 
     int64_t i = 0;
     for (; i < M_; i += EIGEN_AVX_MAX_NUM_ROW) {
       Scalar *A_t = &A_arr[idA<isARowMajor>(i, 0, LDA)], *B_t = &B_arr[0 * LDB + j];
-      EIGEN_IF_CONSTEXPR(isCRowMajor) B_t = &B_arr[0 * LDB + j];
+      EIGEN_IF_CONSTEXPR (isCRowMajor) B_t = &B_arr[0 * LDB + j];
       PacketBlock<vec, EIGEN_ARCH_DEFAULT_NUMBER_OF_REGISTERS> zmm;
       urolls::template setzero<2, EIGEN_AVX_MAX_NUM_ROW>(zmm);
       for (int64_t k = 0; k < K_; k += EIGEN_AVX_MAX_K_UNROL) {
         urolls::template microKernel<isARowMajor, 2, EIGEN_AVX_MAX_NUM_ROW, EIGEN_AVX_MAX_K_UNROL, EIGEN_AVX_MAX_B_LOAD,
                                      EIGEN_AVX_MAX_A_BCAST>(B_t, A_t, LDB, LDA, zmm);
         B_t += EIGEN_AVX_MAX_K_UNROL * LDB;
-        EIGEN_IF_CONSTEXPR(isARowMajor) A_t += EIGEN_AVX_MAX_K_UNROL;
-        else A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
+        EIGEN_IF_CONSTEXPR (isARowMajor)
+          A_t += EIGEN_AVX_MAX_K_UNROL;
+        else
+          A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
       }
-      EIGEN_IF_CONSTEXPR(handleKRem) {
+      EIGEN_IF_CONSTEXPR (handleKRem) {
         for (int64_t k = K_; k < K; k++) {
           urolls::template microKernel<isARowMajor, 2, EIGEN_AVX_MAX_NUM_ROW, 1, EIGEN_AVX_MAX_B_LOAD,
                                        EIGEN_AVX_MAX_A_BCAST>(B_t, A_t, LDB, LDA, zmm);
           B_t += LDB;
-          EIGEN_IF_CONSTEXPR(isARowMajor) A_t++;
-          else A_t += LDA;
+          EIGEN_IF_CONSTEXPR (isARowMajor)
+            A_t++;
+          else
+            A_t += LDA;
         }
       }
-      EIGEN_IF_CONSTEXPR(isCRowMajor) {
+      EIGEN_IF_CONSTEXPR (isCRowMajor) {
         urolls::template updateC<2, EIGEN_AVX_MAX_NUM_ROW>(&C_arr[i * LDC + j], LDC, zmm);
         urolls::template storeC<2, EIGEN_AVX_MAX_NUM_ROW>(&C_arr[i * LDC + j], LDC, zmm);
-      }
-      else {
+      } else {
         transStoreC<Scalar, vec, EIGEN_AVX_MAX_NUM_ROW, U2, false, false>(zmm, &C_arr[i + j * LDC], LDC);
       }
     }
@@ -396,23 +410,26 @@ void gemmKernel(Scalar* A_arr, Scalar* B_arr, Scalar* C_arr, int64_t M, int64_t 
         urolls::template microKernel<isARowMajor, 2, 4, EIGEN_AVX_MAX_K_UNROL, EIGEN_AVX_MAX_B_LOAD,
                                      EIGEN_AVX_MAX_A_BCAST>(B_t, A_t, LDB, LDA, zmm);
         B_t += EIGEN_AVX_MAX_K_UNROL * LDB;
-        EIGEN_IF_CONSTEXPR(isARowMajor) A_t += EIGEN_AVX_MAX_K_UNROL;
-        else A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
+        EIGEN_IF_CONSTEXPR (isARowMajor)
+          A_t += EIGEN_AVX_MAX_K_UNROL;
+        else
+          A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
       }
-      EIGEN_IF_CONSTEXPR(handleKRem) {
+      EIGEN_IF_CONSTEXPR (handleKRem) {
         for (int64_t k = K_; k < K; k++) {
           urolls::template microKernel<isARowMajor, 2, 4, 1, EIGEN_AVX_MAX_B_LOAD, EIGEN_AVX_MAX_A_BCAST>(B_t, A_t, LDB,
                                                                                                           LDA, zmm);
           B_t += LDB;
-          EIGEN_IF_CONSTEXPR(isARowMajor) A_t++;
-          else A_t += LDA;
+          EIGEN_IF_CONSTEXPR (isARowMajor)
+            A_t++;
+          else
+            A_t += LDA;
         }
       }
-      EIGEN_IF_CONSTEXPR(isCRowMajor) {
+      EIGEN_IF_CONSTEXPR (isCRowMajor) {
         urolls::template updateC<2, 4>(&C_arr[i * LDC + j], LDC, zmm);
         urolls::template storeC<2, 4>(&C_arr[i * LDC + j], LDC, zmm);
-      }
-      else {
+      } else {
         transStoreC<Scalar, vec, EIGEN_AVX_MAX_NUM_ROW, U2, true, false>(zmm, &C_arr[i + j * LDC], LDC, 4);
       }
       i += 4;
@@ -426,23 +443,26 @@ void gemmKernel(Scalar* A_arr, Scalar* B_arr, Scalar* C_arr, int64_t M, int64_t 
         urolls::template microKernel<isARowMajor, 2, 2, EIGEN_AVX_MAX_K_UNROL, EIGEN_AVX_MAX_B_LOAD,
                                      EIGEN_AVX_MAX_A_BCAST>(B_t, A_t, LDB, LDA, zmm);
         B_t += EIGEN_AVX_MAX_K_UNROL * LDB;
-        EIGEN_IF_CONSTEXPR(isARowMajor) A_t += EIGEN_AVX_MAX_K_UNROL;
-        else A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
+        EIGEN_IF_CONSTEXPR (isARowMajor)
+          A_t += EIGEN_AVX_MAX_K_UNROL;
+        else
+          A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
       }
-      EIGEN_IF_CONSTEXPR(handleKRem) {
+      EIGEN_IF_CONSTEXPR (handleKRem) {
         for (int64_t k = K_; k < K; k++) {
           urolls::template microKernel<isARowMajor, 2, 2, 1, EIGEN_AVX_MAX_B_LOAD, EIGEN_AVX_MAX_A_BCAST>(B_t, A_t, LDB,
                                                                                                           LDA, zmm);
           B_t += LDB;
-          EIGEN_IF_CONSTEXPR(isARowMajor) A_t++;
-          else A_t += LDA;
+          EIGEN_IF_CONSTEXPR (isARowMajor)
+            A_t++;
+          else
+            A_t += LDA;
         }
       }
-      EIGEN_IF_CONSTEXPR(isCRowMajor) {
+      EIGEN_IF_CONSTEXPR (isCRowMajor) {
         urolls::template updateC<2, 2>(&C_arr[i * LDC + j], LDC, zmm);
         urolls::template storeC<2, 2>(&C_arr[i * LDC + j], LDC, zmm);
-      }
-      else {
+      } else {
         transStoreC<Scalar, vec, EIGEN_AVX_MAX_NUM_ROW, U2, true, false>(zmm, &C_arr[i + j * LDC], LDC, 2);
       }
       i += 2;
@@ -456,22 +476,25 @@ void gemmKernel(Scalar* A_arr, Scalar* B_arr, Scalar* C_arr, int64_t M, int64_t 
         urolls::template microKernel<isARowMajor, 2, 1, EIGEN_AVX_MAX_K_UNROL, EIGEN_AVX_MAX_B_LOAD, 1>(B_t, A_t, LDB,
                                                                                                         LDA, zmm);
         B_t += EIGEN_AVX_MAX_K_UNROL * LDB;
-        EIGEN_IF_CONSTEXPR(isARowMajor) A_t += EIGEN_AVX_MAX_K_UNROL;
-        else A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
+        EIGEN_IF_CONSTEXPR (isARowMajor)
+          A_t += EIGEN_AVX_MAX_K_UNROL;
+        else
+          A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
       }
-      EIGEN_IF_CONSTEXPR(handleKRem) {
+      EIGEN_IF_CONSTEXPR (handleKRem) {
         for (int64_t k = K_; k < K; k++) {
           urolls::template microKernel<isARowMajor, 2, 1, 1, EIGEN_AVX_MAX_B_LOAD, 1>(B_t, A_t, LDB, LDA, zmm);
           B_t += LDB;
-          EIGEN_IF_CONSTEXPR(isARowMajor) A_t++;
-          else A_t += LDA;
+          EIGEN_IF_CONSTEXPR (isARowMajor)
+            A_t++;
+          else
+            A_t += LDA;
         }
       }
-      EIGEN_IF_CONSTEXPR(isCRowMajor) {
+      EIGEN_IF_CONSTEXPR (isCRowMajor) {
         urolls::template updateC<2, 1>(&C_arr[i * LDC + j], LDC, zmm);
         urolls::template storeC<2, 1>(&C_arr[i * LDC + j], LDC, zmm);
-      }
-      else {
+      } else {
         transStoreC<Scalar, vec, EIGEN_AVX_MAX_NUM_ROW, U2, true, false>(zmm, &C_arr[i + j * LDC], LDC, 1);
       }
     }
@@ -488,23 +511,26 @@ void gemmKernel(Scalar* A_arr, Scalar* B_arr, Scalar* C_arr, int64_t M, int64_t 
         urolls::template microKernel<isARowMajor, 1, EIGEN_AVX_MAX_NUM_ROW, EIGEN_AVX_MAX_K_UNROL, EIGEN_AVX_MAX_B_LOAD,
                                      EIGEN_AVX_MAX_A_BCAST>(B_t, A_t, LDB, LDA, zmm);
         B_t += EIGEN_AVX_MAX_K_UNROL * LDB;
-        EIGEN_IF_CONSTEXPR(isARowMajor) A_t += EIGEN_AVX_MAX_K_UNROL;
-        else A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
+        EIGEN_IF_CONSTEXPR (isARowMajor)
+          A_t += EIGEN_AVX_MAX_K_UNROL;
+        else
+          A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
       }
-      EIGEN_IF_CONSTEXPR(handleKRem) {
+      EIGEN_IF_CONSTEXPR (handleKRem) {
         for (int64_t k = K_; k < K; k++) {
           urolls::template microKernel<isARowMajor, 1, EIGEN_AVX_MAX_NUM_ROW, 1, EIGEN_AVX_B_LOAD_SETS * 1,
                                        EIGEN_AVX_MAX_A_BCAST>(B_t, A_t, LDB, LDA, zmm);
           B_t += LDB;
-          EIGEN_IF_CONSTEXPR(isARowMajor) A_t++;
-          else A_t += LDA;
+          EIGEN_IF_CONSTEXPR (isARowMajor)
+            A_t++;
+          else
+            A_t += LDA;
         }
       }
-      EIGEN_IF_CONSTEXPR(isCRowMajor) {
+      EIGEN_IF_CONSTEXPR (isCRowMajor) {
         urolls::template updateC<1, EIGEN_AVX_MAX_NUM_ROW>(&C_arr[i * LDC + j], LDC, zmm);
         urolls::template storeC<1, EIGEN_AVX_MAX_NUM_ROW>(&C_arr[i * LDC + j], LDC, zmm);
-      }
-      else {
+      } else {
         transStoreC<Scalar, vec, EIGEN_AVX_MAX_NUM_ROW, U1, false, false>(zmm, &C_arr[i + j * LDC], LDC);
       }
     }
@@ -517,23 +543,26 @@ void gemmKernel(Scalar* A_arr, Scalar* B_arr, Scalar* C_arr, int64_t M, int64_t 
         urolls::template microKernel<isARowMajor, 1, 4, EIGEN_AVX_MAX_K_UNROL, EIGEN_AVX_MAX_B_LOAD,
                                      EIGEN_AVX_MAX_A_BCAST>(B_t, A_t, LDB, LDA, zmm);
         B_t += EIGEN_AVX_MAX_K_UNROL * LDB;
-        EIGEN_IF_CONSTEXPR(isARowMajor) A_t += EIGEN_AVX_MAX_K_UNROL;
-        else A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
+        EIGEN_IF_CONSTEXPR (isARowMajor)
+          A_t += EIGEN_AVX_MAX_K_UNROL;
+        else
+          A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
       }
-      EIGEN_IF_CONSTEXPR(handleKRem) {
+      EIGEN_IF_CONSTEXPR (handleKRem) {
         for (int64_t k = K_; k < K; k++) {
           urolls::template microKernel<isARowMajor, 1, 4, 1, EIGEN_AVX_MAX_B_LOAD, EIGEN_AVX_MAX_A_BCAST>(B_t, A_t, LDB,
                                                                                                           LDA, zmm);
           B_t += LDB;
-          EIGEN_IF_CONSTEXPR(isARowMajor) A_t++;
-          else A_t += LDA;
+          EIGEN_IF_CONSTEXPR (isARowMajor)
+            A_t++;
+          else
+            A_t += LDA;
         }
       }
-      EIGEN_IF_CONSTEXPR(isCRowMajor) {
+      EIGEN_IF_CONSTEXPR (isCRowMajor) {
         urolls::template updateC<1, 4>(&C_arr[i * LDC + j], LDC, zmm);
         urolls::template storeC<1, 4>(&C_arr[i * LDC + j], LDC, zmm);
-      }
-      else {
+      } else {
         transStoreC<Scalar, vec, EIGEN_AVX_MAX_NUM_ROW, U1, true, false>(zmm, &C_arr[i + j * LDC], LDC, 4);
       }
       i += 4;
@@ -547,23 +576,26 @@ void gemmKernel(Scalar* A_arr, Scalar* B_arr, Scalar* C_arr, int64_t M, int64_t 
         urolls::template microKernel<isARowMajor, 1, 2, EIGEN_AVX_MAX_K_UNROL, EIGEN_AVX_MAX_B_LOAD,
                                      EIGEN_AVX_MAX_A_BCAST>(B_t, A_t, LDB, LDA, zmm);
         B_t += EIGEN_AVX_MAX_K_UNROL * LDB;
-        EIGEN_IF_CONSTEXPR(isARowMajor) A_t += EIGEN_AVX_MAX_K_UNROL;
-        else A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
+        EIGEN_IF_CONSTEXPR (isARowMajor)
+          A_t += EIGEN_AVX_MAX_K_UNROL;
+        else
+          A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
       }
-      EIGEN_IF_CONSTEXPR(handleKRem) {
+      EIGEN_IF_CONSTEXPR (handleKRem) {
         for (int64_t k = K_; k < K; k++) {
           urolls::template microKernel<isARowMajor, 1, 2, 1, EIGEN_AVX_MAX_B_LOAD, EIGEN_AVX_MAX_A_BCAST>(B_t, A_t, LDB,
                                                                                                           LDA, zmm);
           B_t += LDB;
-          EIGEN_IF_CONSTEXPR(isARowMajor) A_t++;
-          else A_t += LDA;
+          EIGEN_IF_CONSTEXPR (isARowMajor)
+            A_t++;
+          else
+            A_t += LDA;
         }
       }
-      EIGEN_IF_CONSTEXPR(isCRowMajor) {
+      EIGEN_IF_CONSTEXPR (isCRowMajor) {
         urolls::template updateC<1, 2>(&C_arr[i * LDC + j], LDC, zmm);
         urolls::template storeC<1, 2>(&C_arr[i * LDC + j], LDC, zmm);
-      }
-      else {
+      } else {
         transStoreC<Scalar, vec, EIGEN_AVX_MAX_NUM_ROW, U1, true, false>(zmm, &C_arr[i + j * LDC], LDC, 2);
       }
       i += 2;
@@ -578,22 +610,25 @@ void gemmKernel(Scalar* A_arr, Scalar* B_arr, Scalar* C_arr, int64_t M, int64_t 
           urolls::template microKernel<isARowMajor, 1, 1, EIGEN_AVX_MAX_K_UNROL, EIGEN_AVX_MAX_B_LOAD, 1>(B_t, A_t, LDB,
                                                                                                           LDA, zmm);
           B_t += EIGEN_AVX_MAX_K_UNROL * LDB;
-          EIGEN_IF_CONSTEXPR(isARowMajor) A_t += EIGEN_AVX_MAX_K_UNROL;
-          else A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
+          EIGEN_IF_CONSTEXPR (isARowMajor)
+            A_t += EIGEN_AVX_MAX_K_UNROL;
+          else
+            A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
         }
-        EIGEN_IF_CONSTEXPR(handleKRem) {
+        EIGEN_IF_CONSTEXPR (handleKRem) {
           for (int64_t k = K_; k < K; k++) {
             urolls::template microKernel<isARowMajor, 1, 1, 1, EIGEN_AVX_B_LOAD_SETS * 1, 1>(B_t, A_t, LDB, LDA, zmm);
             B_t += LDB;
-            EIGEN_IF_CONSTEXPR(isARowMajor) A_t++;
-            else A_t += LDA;
+            EIGEN_IF_CONSTEXPR (isARowMajor)
+              A_t++;
+            else
+              A_t += LDA;
           }
         }
-        EIGEN_IF_CONSTEXPR(isCRowMajor) {
+        EIGEN_IF_CONSTEXPR (isCRowMajor) {
           urolls::template updateC<1, 1>(&C_arr[i * LDC + j], LDC, zmm);
           urolls::template storeC<1, 1>(&C_arr[i * LDC + j], LDC, zmm);
-        }
-        else {
+        } else {
           transStoreC<Scalar, vec, EIGEN_AVX_MAX_NUM_ROW, U1, true, false>(zmm, &C_arr[i + j * LDC], LDC, 1);
         }
       }
@@ -612,23 +647,26 @@ void gemmKernel(Scalar* A_arr, Scalar* B_arr, Scalar* C_arr, int64_t M, int64_t 
         urolls::template microKernel<isARowMajor, 1, EIGEN_AVX_MAX_NUM_ROW, EIGEN_AVX_MAX_K_UNROL, EIGEN_AVX_MAX_B_LOAD,
                                      EIGEN_AVX_MAX_A_BCAST, true>(B_t, A_t, LDB, LDA, zmm, N - j);
         B_t += EIGEN_AVX_MAX_K_UNROL * LDB;
-        EIGEN_IF_CONSTEXPR(isARowMajor) A_t += EIGEN_AVX_MAX_K_UNROL;
-        else A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
+        EIGEN_IF_CONSTEXPR (isARowMajor)
+          A_t += EIGEN_AVX_MAX_K_UNROL;
+        else
+          A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
       }
-      EIGEN_IF_CONSTEXPR(handleKRem) {
+      EIGEN_IF_CONSTEXPR (handleKRem) {
         for (int64_t k = K_; k < K; k++) {
           urolls::template microKernel<isARowMajor, 1, EIGEN_AVX_MAX_NUM_ROW, 1, EIGEN_AVX_MAX_B_LOAD,
                                        EIGEN_AVX_MAX_A_BCAST, true>(B_t, A_t, LDB, LDA, zmm, N - j);
           B_t += LDB;
-          EIGEN_IF_CONSTEXPR(isARowMajor) A_t++;
-          else A_t += LDA;
+          EIGEN_IF_CONSTEXPR (isARowMajor)
+            A_t++;
+          else
+            A_t += LDA;
         }
       }
-      EIGEN_IF_CONSTEXPR(isCRowMajor) {
+      EIGEN_IF_CONSTEXPR (isCRowMajor) {
         urolls::template updateC<1, EIGEN_AVX_MAX_NUM_ROW, true>(&C_arr[i * LDC + j], LDC, zmm, N - j);
         urolls::template storeC<1, EIGEN_AVX_MAX_NUM_ROW, true>(&C_arr[i * LDC + j], LDC, zmm, N - j);
-      }
-      else {
+      } else {
         transStoreC<Scalar, vec, EIGEN_AVX_MAX_NUM_ROW, U1, false, true>(zmm, &C_arr[i + j * LDC], LDC, 0, N - j);
       }
     }
@@ -641,23 +679,26 @@ void gemmKernel(Scalar* A_arr, Scalar* B_arr, Scalar* C_arr, int64_t M, int64_t 
         urolls::template microKernel<isARowMajor, 1, 4, EIGEN_AVX_MAX_K_UNROL, EIGEN_AVX_MAX_B_LOAD,
                                      EIGEN_AVX_MAX_A_BCAST, true>(B_t, A_t, LDB, LDA, zmm, N - j);
         B_t += EIGEN_AVX_MAX_K_UNROL * LDB;
-        EIGEN_IF_CONSTEXPR(isARowMajor) A_t += EIGEN_AVX_MAX_K_UNROL;
-        else A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
+        EIGEN_IF_CONSTEXPR (isARowMajor)
+          A_t += EIGEN_AVX_MAX_K_UNROL;
+        else
+          A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
       }
-      EIGEN_IF_CONSTEXPR(handleKRem) {
+      EIGEN_IF_CONSTEXPR (handleKRem) {
         for (int64_t k = K_; k < K; k++) {
           urolls::template microKernel<isARowMajor, 1, 4, 1, EIGEN_AVX_MAX_B_LOAD, EIGEN_AVX_MAX_A_BCAST, true>(
               B_t, A_t, LDB, LDA, zmm, N - j);
           B_t += LDB;
-          EIGEN_IF_CONSTEXPR(isARowMajor) A_t++;
-          else A_t += LDA;
+          EIGEN_IF_CONSTEXPR (isARowMajor)
+            A_t++;
+          else
+            A_t += LDA;
         }
       }
-      EIGEN_IF_CONSTEXPR(isCRowMajor) {
+      EIGEN_IF_CONSTEXPR (isCRowMajor) {
         urolls::template updateC<1, 4, true>(&C_arr[i * LDC + j], LDC, zmm, N - j);
         urolls::template storeC<1, 4, true>(&C_arr[i * LDC + j], LDC, zmm, N - j);
-      }
-      else {
+      } else {
         transStoreC<Scalar, vec, EIGEN_AVX_MAX_NUM_ROW, U1, true, true>(zmm, &C_arr[i + j * LDC], LDC, 4, N - j);
       }
       i += 4;
@@ -671,23 +712,26 @@ void gemmKernel(Scalar* A_arr, Scalar* B_arr, Scalar* C_arr, int64_t M, int64_t 
         urolls::template microKernel<isARowMajor, 1, 2, EIGEN_AVX_MAX_K_UNROL, EIGEN_AVX_MAX_B_LOAD,
                                      EIGEN_AVX_MAX_A_BCAST, true>(B_t, A_t, LDB, LDA, zmm, N - j);
         B_t += EIGEN_AVX_MAX_K_UNROL * LDB;
-        EIGEN_IF_CONSTEXPR(isARowMajor) A_t += EIGEN_AVX_MAX_K_UNROL;
-        else A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
+        EIGEN_IF_CONSTEXPR (isARowMajor)
+          A_t += EIGEN_AVX_MAX_K_UNROL;
+        else
+          A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
       }
-      EIGEN_IF_CONSTEXPR(handleKRem) {
+      EIGEN_IF_CONSTEXPR (handleKRem) {
         for (int64_t k = K_; k < K; k++) {
           urolls::template microKernel<isARowMajor, 1, 2, 1, EIGEN_AVX_MAX_B_LOAD, EIGEN_AVX_MAX_A_BCAST, true>(
               B_t, A_t, LDB, LDA, zmm, N - j);
           B_t += LDB;
-          EIGEN_IF_CONSTEXPR(isARowMajor) A_t++;
-          else A_t += LDA;
+          EIGEN_IF_CONSTEXPR (isARowMajor)
+            A_t++;
+          else
+            A_t += LDA;
         }
       }
-      EIGEN_IF_CONSTEXPR(isCRowMajor) {
+      EIGEN_IF_CONSTEXPR (isCRowMajor) {
         urolls::template updateC<1, 2, true>(&C_arr[i * LDC + j], LDC, zmm, N - j);
         urolls::template storeC<1, 2, true>(&C_arr[i * LDC + j], LDC, zmm, N - j);
-      }
-      else {
+      } else {
         transStoreC<Scalar, vec, EIGEN_AVX_MAX_NUM_ROW, U1, true, true>(zmm, &C_arr[i + j * LDC], LDC, 2, N - j);
       }
       i += 2;
@@ -701,23 +745,26 @@ void gemmKernel(Scalar* A_arr, Scalar* B_arr, Scalar* C_arr, int64_t M, int64_t 
         urolls::template microKernel<isARowMajor, 1, 1, EIGEN_AVX_MAX_K_UNROL, EIGEN_AVX_MAX_B_LOAD, 1, true>(
             B_t, A_t, LDB, LDA, zmm, N - j);
         B_t += EIGEN_AVX_MAX_K_UNROL * LDB;
-        EIGEN_IF_CONSTEXPR(isARowMajor) A_t += EIGEN_AVX_MAX_K_UNROL;
-        else A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
+        EIGEN_IF_CONSTEXPR (isARowMajor)
+          A_t += EIGEN_AVX_MAX_K_UNROL;
+        else
+          A_t += EIGEN_AVX_MAX_K_UNROL * LDA;
       }
-      EIGEN_IF_CONSTEXPR(handleKRem) {
+      EIGEN_IF_CONSTEXPR (handleKRem) {
         for (int64_t k = K_; k < K; k++) {
           urolls::template microKernel<isARowMajor, 1, 1, 1, EIGEN_AVX_MAX_B_LOAD, 1, true>(B_t, A_t, LDB, LDA, zmm,
                                                                                             N - j);
           B_t += LDB;
-          EIGEN_IF_CONSTEXPR(isARowMajor) A_t++;
-          else A_t += LDA;
+          EIGEN_IF_CONSTEXPR (isARowMajor)
+            A_t++;
+          else
+            A_t += LDA;
         }
       }
-      EIGEN_IF_CONSTEXPR(isCRowMajor) {
+      EIGEN_IF_CONSTEXPR (isCRowMajor) {
         urolls::template updateC<1, 1, true>(&C_arr[i * LDC + j], LDC, zmm, N - j);
         urolls::template storeC<1, 1, true>(&C_arr[i * LDC + j], LDC, zmm, N - j);
-      }
-      else {
+      } else {
         transStoreC<Scalar, vec, EIGEN_AVX_MAX_NUM_ROW, U1, true, true>(zmm, &C_arr[i + j * LDC], LDC, 1, N - j);
       }
     }
@@ -840,7 +887,7 @@ EIGEN_ALWAYS_INLINE void copyBToRowMajor(Scalar* B_arr, int64_t LDB, int64_t K, 
     B_temp += U1;
     k += U1;
   }
-  EIGEN_IF_CONSTEXPR(U1 > 8) {
+  EIGEN_IF_CONSTEXPR (U1 > 8) {
     // Note: without "if constexpr" this section of code will also be
     // parsed by the compiler so there is an additional check in {load/store}BBlock
     // to make sure the counter is not non-negative.
@@ -850,7 +897,7 @@ EIGEN_ALWAYS_INLINE void copyBToRowMajor(Scalar* B_arr, int64_t LDB, int64_t K, 
       k += 8;
     }
   }
-  EIGEN_IF_CONSTEXPR(U1 > 4) {
+  EIGEN_IF_CONSTEXPR (U1 > 4) {
     // Note: without "if constexpr" this section of code will also be
     // parsed by the compiler so there is an additional check in {load/store}BBlock
     // to make sure the counter is not non-negative.
@@ -921,7 +968,7 @@ void triSolve(Scalar* A_arr, Scalar* B_arr, int64_t M, int64_t numRHS, int64_t L
 
   int64_t sizeBTemp = 0;
   Scalar* B_temp = NULL;
-  EIGEN_IF_CONSTEXPR(!isBRowMajor) {
+  EIGEN_IF_CONSTEXPR (!isBRowMajor) {
     /**
      * If B is col-major, we copy it to a fixed-size temporary array of size at most ~numM*kB and
      * transpose it to row-major. Call the solve routine, and copy+transpose it back to the original array.
@@ -930,7 +977,7 @@ void triSolve(Scalar* A_arr, Scalar* B_arr, int64_t M, int64_t numRHS, int64_t L
     sizeBTemp = (((std::min(kB, numRHS) + psize - 1) / psize + 4) * psize) * numM;
   }
 
-  EIGEN_IF_CONSTEXPR(!isBRowMajor) B_temp = (Scalar*)handmade_aligned_malloc(sizeof(Scalar) * sizeBTemp, 64);
+  EIGEN_IF_CONSTEXPR (!isBRowMajor) B_temp = (Scalar*)handmade_aligned_malloc(sizeof(Scalar) * sizeBTemp, 64);
 
   for (int64_t k = 0; k < numRHS; k += kB) {
     int64_t bK = numRHS - k > kB ? kB : numRHS - k;
@@ -944,7 +991,7 @@ void triSolve(Scalar* A_arr, Scalar* B_arr, int64_t M, int64_t numRHS, int64_t L
     int64_t LDT = ((bkL + (numScalarPerCache - 1)) / numScalarPerCache) * numScalarPerCache;
     int64_t offsetBTemp = 0;
     for (int64_t i = 0; i < M_; i += EIGEN_AVX_MAX_NUM_ROW) {
-      EIGEN_IF_CONSTEXPR(!isBRowMajor) {
+      EIGEN_IF_CONSTEXPR (!isBRowMajor) {
         int64_t indA_i = isFWDSolve ? i : M - 1 - i;
         int64_t indB_i = isFWDSolve ? i : M - (i + EIGEN_AVX_MAX_NUM_ROW);
         int64_t offB_1 = isFWDSolve ? offsetBTemp : sizeBTemp - EIGEN_AVX_MAX_NUM_ROW * LDT - offsetBTemp;
@@ -958,8 +1005,7 @@ void triSolve(Scalar* A_arr, Scalar* B_arr, int64_t M, int64_t numRHS, int64_t L
         copyBToRowMajor<Scalar, false, false>(B_arr + indB_i + k * LDB, LDB, bK, B_temp + offB_1, LDT);
 
         offsetBTemp += EIGEN_AVX_MAX_NUM_ROW * LDT;
-      }
-      else {
+      } else {
         int64_t ind = isFWDSolve ? i : M - 1 - i;
         triSolveKernelLxK<Scalar, isARowMajor, isFWDSolve, isUnitDiag>(
             &A_arr[idA<isARowMajor>(ind, ind, LDA)], B_arr + k + ind * LDB, EIGEN_AVX_MAX_NUM_ROW, bK, LDA, LDB);
@@ -977,7 +1023,7 @@ void triSolve(Scalar* A_arr, Scalar* B_arr, int64_t M, int64_t numRHS, int64_t L
          *    |__|__|__|__     |__|
          *    |********|__|    |**|
          */
-        EIGEN_IF_CONSTEXPR(isBRowMajor) {
+        EIGEN_IF_CONSTEXPR (isBRowMajor) {
           int64_t indA_i = isFWDSolve ? i + EIGEN_AVX_MAX_NUM_ROW : M - (i + 2 * EIGEN_AVX_MAX_NUM_ROW);
           int64_t indA_j = isFWDSolve ? 0 : M - (i + EIGEN_AVX_MAX_NUM_ROW);
           int64_t indB_i = isFWDSolve ? 0 : M - (i + EIGEN_AVX_MAX_NUM_ROW);
@@ -985,8 +1031,7 @@ void triSolve(Scalar* A_arr, Scalar* B_arr, int64_t M, int64_t numRHS, int64_t L
           gemmKernel<Scalar, isARowMajor, isBRowMajor, false, false>(
               &A_arr[idA<isARowMajor>(indA_i, indA_j, LDA)], B_arr + k + indB_i * LDB, B_arr + k + indB_i2 * LDB,
               EIGEN_AVX_MAX_NUM_ROW, bK, i + EIGEN_AVX_MAX_NUM_ROW, LDA, LDB, LDB);
-        }
-        else {
+        } else {
           if (offsetBTemp + EIGEN_AVX_MAX_NUM_ROW * LDT > sizeBTemp) {
             /**
              * Similar idea as mentioned above, but here we are limited by the number of updated values of B
@@ -1024,7 +1069,7 @@ void triSolve(Scalar* A_arr, Scalar* B_arr, int64_t M, int64_t numRHS, int64_t L
     int64_t bM = M - M_;
     if (bM > 0) {
       if (M_ > 0) {
-        EIGEN_IF_CONSTEXPR(isBRowMajor) {
+        EIGEN_IF_CONSTEXPR (isBRowMajor) {
           int64_t indA_i = isFWDSolve ? M_ : 0;
           int64_t indA_j = isFWDSolve ? 0 : bM;
           int64_t indB_i = isFWDSolve ? 0 : bM;
@@ -1032,8 +1077,7 @@ void triSolve(Scalar* A_arr, Scalar* B_arr, int64_t M, int64_t numRHS, int64_t L
           gemmKernel<Scalar, isARowMajor, isBRowMajor, false, false>(
               &A_arr[idA<isARowMajor>(indA_i, indA_j, LDA)], B_arr + k + indB_i * LDB, B_arr + k + indB_i2 * LDB, bM,
               bK, M_, LDA, LDB, LDB);
-        }
-        else {
+        } else {
           int64_t indA_i = isFWDSolve ? M_ : 0;
           int64_t indA_j = isFWDSolve ? gemmOff : bM;
           int64_t indB_i = isFWDSolve ? M_ : 0;
@@ -1043,7 +1087,7 @@ void triSolve(Scalar* A_arr, Scalar* B_arr, int64_t M, int64_t numRHS, int64_t L
                                                                      M_ - gemmOff, LDA, LDT, LDB);
         }
       }
-      EIGEN_IF_CONSTEXPR(!isBRowMajor) {
+      EIGEN_IF_CONSTEXPR (!isBRowMajor) {
         int64_t indA_i = isFWDSolve ? M_ : M - 1 - M_;
         int64_t indB_i = isFWDSolve ? M_ : 0;
         int64_t offB_1 = isFWDSolve ? 0 : (bM - 1) * bkL;
@@ -1051,8 +1095,7 @@ void triSolve(Scalar* A_arr, Scalar* B_arr, int64_t M, int64_t numRHS, int64_t L
         triSolveKernelLxK<Scalar, isARowMajor, isFWDSolve, isUnitDiag>(&A_arr[idA<isARowMajor>(indA_i, indA_i, LDA)],
                                                                        B_temp + offB_1, bM, bkL, LDA, bkL);
         copyBToRowMajor<Scalar, false, true>(B_arr + indB_i + k * LDB, LDB, bK, B_temp, bkL, bM);
-      }
-      else {
+      } else {
         int64_t ind = isFWDSolve ? M_ : M - 1 - M_;
         triSolveKernelLxK<Scalar, isARowMajor, isFWDSolve, isUnitDiag>(&A_arr[idA<isARowMajor>(ind, ind, LDA)],
                                                                        B_arr + k + ind * LDB, bM, bK, LDA, LDB);
@@ -1060,7 +1103,7 @@ void triSolve(Scalar* A_arr, Scalar* B_arr, int64_t M, int64_t numRHS, int64_t L
     }
   }
 
-  EIGEN_IF_CONSTEXPR(!isBRowMajor) handmade_aligned_free(B_temp);
+  EIGEN_IF_CONSTEXPR (!isBRowMajor) handmade_aligned_free(B_temp);
 }
 
 // Template specializations of trsmKernelL/R for float/double and inner strides of 1.

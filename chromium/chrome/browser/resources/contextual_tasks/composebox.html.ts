@@ -50,6 +50,7 @@ export function getHtml(this: ContextualTasksComposeboxElement) {
       ${this.useFork_ ? html`
         <contextual-tasks-inner-composebox
           id="composebox"
+          .inputState="${this.inputState_}"
           .isSidePanel="${this.isSidePanel}"
           .autofocus="${false}"
           carousel-on-top_
@@ -67,9 +68,11 @@ export function getHtml(this: ContextualTasksComposeboxElement) {
           .enableFileHint="${this.enableFileHint_}"
           .isCanvasQuerySubmitted="${this.isCanvasQuerySubmitted()}"
           .clearAllInputsWhenSubmittingQuery="${true}"
+          .queryZpsOnLoad="${false}"
           .showVoiceSearch="${true}"
           .usePecApi="${this.usePecApi_}"
           .smartTabSharingVisible="${this.smartTabSharingVisible_}"
+          .contextManagementInComposeboxEnabled="${this.contextManagementInComposeboxEnabled_}"
           .energyEffectAnimationEnabled="${this.energyEffectAnimationEnabled_}"
           .energyEffectEnabled="${this.energyEffectAnimationEnabled_}"
           .glifAnimationState="${this.glifAnimationState_}"
@@ -85,6 +88,7 @@ export function getHtml(this: ContextualTasksComposeboxElement) {
     ` : html`
       <cr-composebox
           id="composebox"
+          .inputState="${this.inputState_}"
           .isSidePanel="${this.isSidePanel}"
           .autofocus="${false}"
           carousel-on-top_
@@ -102,9 +106,11 @@ export function getHtml(this: ContextualTasksComposeboxElement) {
           .enableFileHint="${this.enableFileHint_}"
           .isCanvasQuerySubmitted="${this.isCanvasQuerySubmitted()}"
           .clearAllInputsWhenSubmittingQuery="${true}"
+          .queryZpsOnLoad="${false}"
           .showVoiceSearch="${true}"
           .usePecApi="${this.usePecApi_}"
           .smartTabSharingVisible="${this.smartTabSharingVisible_}"
+          .contextManagementInComposeboxEnabled="${this.contextManagementInComposeboxEnabled_}"
           .energyEffectAnimationEnabled="${this.energyEffectAnimationEnabled_}"
           .energyEffectEnabled="${this.energyEffectAnimationEnabled_}"
           .glifAnimationState="${this.glifAnimationState_}"

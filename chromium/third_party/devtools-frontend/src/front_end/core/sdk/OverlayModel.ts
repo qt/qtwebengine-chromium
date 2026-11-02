@@ -15,11 +15,11 @@ import {OverlayPersistentHighlighter} from './OverlayPersistentHighlighter.js';
 import type {RemoteObject} from './RemoteObject.js';
 import {SDKModel} from './SDKModel.js';
 import {Capability, type Target} from './Target.js';
-import {TargetManager} from './TargetManager.js';
+import type {TargetManager} from './TargetManager.js';
 
 const UIStrings = {
   /**
-   * @description Text in Overlay Model
+   * @description Overlay message indicating that execution is paused in the debugger.
    */
   pausedInDebugger: 'Paused in debugger',
 } as const;
@@ -49,6 +49,19 @@ export interface Hinge {
   contentColor: HighlightColor;
   outlineColor: HighlightColor;
 }
+export interface BaseDisplayCutout {
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+  shape: Protocol.Overlay.DisplayCutoutShape;
+  contentColor?: HighlightColor;
+}
+export type DisplayCutout =
+    BaseDisplayCutout&({shape: Protocol.Overlay.DisplayCutoutShape.Rectangle}|
+                       {shape: Protocol.Overlay.DisplayCutoutShape.Pill, borderRadius: number}|
+                       {shape: Protocol.Overlay.DisplayCutoutShape.Notch, upperRadius: number, lowerRadius: number}|
+                       {shape: Protocol.Overlay.DisplayCutoutShape.Circle, cx: number, cy: number, radius: number});
 
 export const enum EmulatedOSType {
   WINDOWS = 'Windows',
@@ -73,7 +86,7 @@ export class OverlayModel extends SDKModel<EventTypes> implements ProtocolProxyA
   overlayAgent: ProtocolProxyApi.OverlayApi;
   readonly #debuggerModel: DebuggerModel|null;
   #inspectModeEnabled = false;
-  #hideHighlightTimeout: number|null = null;
+  #hideHighlightTimeout?: ReturnType<typeof setTimeout>;
   #defaultHighlighter: Highlighter;
   #highlighter: Highlighter;
   #showPaintRectsSetting: Common.Settings.Setting<boolean>;
@@ -178,27 +191,27 @@ export class OverlayModel extends SDKModel<EventTypes> implements ProtocolProxyA
     }
   }
 
-  static hideDOMNodeHighlight(targetManager: TargetManager = TargetManager.instance()): void {
+  static hideDOMNodeHighlight(targetManager: TargetManager): void {
     for (const overlayModel of targetManager.models(OverlayModel)) {
       overlayModel.delayedHideHighlight(0);
     }
   }
 
-  static async muteHighlight(targetManager: TargetManager = TargetManager.instance()): Promise<void[]> {
+  static async muteHighlight(targetManager: TargetManager): Promise<void[]> {
     return await Promise.all(targetManager.models(OverlayModel).map(model => model.suspendModel()));
   }
 
-  static async unmuteHighlight(targetManager: TargetManager = TargetManager.instance()): Promise<void[]> {
+  static async unmuteHighlight(targetManager: TargetManager): Promise<void[]> {
     return await Promise.all(targetManager.models(OverlayModel).map(model => model.resumeModel()));
   }
 
-  static highlightRect(rect: HighlightRect, targetManager: TargetManager = TargetManager.instance()): void {
+  static highlightRect(rect: HighlightRect, targetManager: TargetManager): void {
     for (const overlayModel of targetManager.models(OverlayModel)) {
       void overlayModel.highlightRect(rect);
     }
   }
 
-  static clearHighlight(targetManager: TargetManager = TargetManager.instance()): void {
+  static clearHighlight(targetManager: TargetManager): void {
     for (const overlayModel of targetManager.models(OverlayModel)) {
       void overlayModel.clearHighlight();
     }
@@ -318,14 +331,13 @@ export class OverlayModel extends SDKModel<EventTypes> implements ProtocolProxyA
       // overlay, so that it is not cleared by the highlight
       return;
     }
-    if (this.#hideHighlightTimeout) {
       clearTimeout(this.#hideHighlightTimeout);
-      this.#hideHighlightTimeout = null;
-    }
-    const highlightConfig = this.buildHighlightConfig(mode);
-    if (typeof showInfo !== 'undefined') {
-      highlightConfig.showInfo = showInfo;
-    }
+      this.#hideHighlightTimeout = undefined;
+
+      const highlightConfig = this.buildHighlightConfig(mode);
+      if (typeof showInfo !== 'undefined') {
+        highlightConfig.showInfo = showInfo;
+      }
     this.#highlighter.highlightInOverlay(data, highlightConfig);
   }
 
@@ -473,17 +485,19 @@ export class OverlayModel extends SDKModel<EventTypes> implements ProtocolProxyA
   }
 
   private delayedHideHighlight(delay: number): void {
-    if (this.#hideHighlightTimeout === null) {
-      this.#hideHighlightTimeout = window.setTimeout(() => this.highlightInOverlay({clear: true}), delay);
+    if (this.#hideHighlightTimeout === undefined) {
+      this.#hideHighlightTimeout = globalThis.setTimeout(
+          () => this.highlightInOverlay({clear: true}),
+          delay,
+      );
     }
   }
 
   highlightFrame(frameId: Protocol.Page.FrameId): void {
-    if (this.#hideHighlightTimeout) {
       clearTimeout(this.#hideHighlightTimeout);
-      this.#hideHighlightTimeout = null;
-    }
-    this.#highlighter.highlightFrame(frameId);
+      this.#hideHighlightTimeout = undefined;
+
+      this.#highlighter.highlightFrame(frameId);
   }
 
   showHingeForDualScreen(hinge: Hinge|null): void {
@@ -494,6 +508,32 @@ export class OverlayModel extends SDKModel<EventTypes> implements ProtocolProxyA
       });
     } else {
       void this.overlayAgent.invoke_setShowHinge({});
+    }
+  }
+
+  showDisplayCutout(cutout: DisplayCutout|null): void {
+    if (cutout) {
+      const {x, y, width, height, shape, contentColor} = cutout;
+      const displayCutoutConfig: Protocol.Overlay.DisplayCutoutConfig = {
+        rect: {x, y, width, height},
+        shape,
+        contentColor,
+      };
+      if (shape === Protocol.Overlay.DisplayCutoutShape.Pill) {
+        displayCutoutConfig.borderRadius = cutout.borderRadius;
+      } else if (shape === Protocol.Overlay.DisplayCutoutShape.Notch) {
+        displayCutoutConfig.upperRadius = cutout.upperRadius;
+        displayCutoutConfig.lowerRadius = cutout.lowerRadius;
+      } else if (shape === Protocol.Overlay.DisplayCutoutShape.Circle) {
+        displayCutoutConfig.cx = cutout.cx;
+        displayCutoutConfig.cy = cutout.cy;
+        displayCutoutConfig.radius = cutout.radius;
+      }
+      void this.overlayAgent.invoke_setShowDisplayCutout({
+        displayCutoutConfig,
+      });
+    } else {
+      void this.overlayAgent.invoke_setShowDisplayCutout({});
     }
   }
 

@@ -32,7 +32,6 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "build/build_config.h"
-#include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/process_lock.h"
 #include "content/browser/renderer_host/frame_tree_node.h"
 #include "content/browser/renderer_host/navigation_entry_restore_context_impl.h"
@@ -42,6 +41,7 @@
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/spare_render_process_host_manager_impl.h"
+#include "content/browser/security/cpsp/child_process_security_policy_impl.h"
 #include "content/browser/site_info.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -4817,15 +4817,15 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
                             .root();
   FrameTreeNode* child1 = root->child_at(0);
   FrameTreeNode* child2 = root->child_at(1);
-  std::string a_site_host = root->current_frame_host()
-                                ->GetSiteInstance()
-                                ->GetSecurityPrincipal()
-                                .GetHost();
+  std::string_view a_site_host = root->current_frame_host()
+                                     ->GetSiteInstance()
+                                     ->GetSecurityPrincipal()
+                                     .GetHost();
   EXPECT_EQ("a.com", a_site_host);
-  std::string b_site_host = child2->current_frame_host()
-                                ->GetSiteInstance()
-                                ->GetSecurityPrincipal()
-                                .GetHost();
+  std::string_view b_site_host = child2->current_frame_host()
+                                     ->GetSiteInstance()
+                                     ->GetSecurityPrincipal()
+                                     .GetHost();
   EXPECT_EQ("b.com", b_site_host);
 
   // Navigate the subframe to a cross-site URL, while blocking the request with
@@ -4888,11 +4888,11 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
     SiteInstanceImpl* child1_site_instance =
         child1->current_frame_host()->GetSiteInstance();
 
-    std::string c_site_host =
+    std::string_view c_site_host =
         child1_site_instance->GetSecurityPrincipal().GetHost();
     if (AreAllSitesIsolatedForTesting()) {
       EXPECT_EQ("c.com", c_site_host);
-      EXPECT_EQ(test_url.GetHost(), c_site_host);
+      EXPECT_EQ(test_url.host(), c_site_host);
     } else if (ShouldUseDefaultSiteInstanceGroup()) {
       EXPECT_EQ(
           child1_site_instance->group(),
@@ -6218,10 +6218,9 @@ IN_PROC_BROWSER_TEST_P(
   // At this time, there should be at least one RenderProcessHost. Capture them
   // for testing expectations later.
   auto& spare_manager = SpareRenderProcessHostManagerImpl::Get();
-  EXPECT_THAT(
-      spare_manager.GetSpares(),
-      testing::Each(testing::Property(&RenderProcessHost::GetPriority,
-                                      base::Process::Priority::kBestEffort)));
+  for (content::RenderProcessHost* host : spare_manager.GetSpares()) {
+    EXPECT_EQ(host->GetPriority(), base::Process::Priority::kBestEffort);
+  }
   std::vector<ChildProcessId> spare_rph_ids = spare_manager.GetSpareIds();
   ASSERT_FALSE(spare_rph_ids.empty());
 

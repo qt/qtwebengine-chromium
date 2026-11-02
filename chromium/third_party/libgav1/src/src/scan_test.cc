@@ -19,7 +19,6 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "src/utils/common.h"
 #include "src/utils/constants.h"
 
 namespace libgav1 {

@@ -22,6 +22,8 @@
 #include <string>
 #include <utility>
 
+#include "absl/status/status.h"
+#include "absl/status/status_macros.h"
 #include "absl/synchronization/mutex.h"
 #include "fcp/base/monitoring.h"
 #include "fcp/secagg/server/secagg_server_completed_state.h"
@@ -53,7 +55,7 @@ absl::Status SecAggServerPrngRunningState::HandleMessage(
     AbortClient(client_id, "Non-abort message sent during PrngUnmasking step.",
                 ClientDropReason::UNEXPECTED_MESSAGE_TYPE);
   }
-  return FCP_STATUS(OK);
+  return absl::OkStatus();
 }
 
 void SecAggServerPrngRunningState::HandleAbort() {
@@ -66,8 +68,8 @@ absl::StatusOr<SecAggServerProtocolImpl::PrngWorkItems>
 SecAggServerPrngRunningState::Initialize() {
   // Shamir reconstruction part of PRNG
   absl::Time reconstruction_start = absl::Now();
-  FCP_ASSIGN_OR_RETURN(auto shamir_reconstruction_result,
-                       impl()->HandleShamirReconstruction());
+  ABSL_ASSIGN_OR_RETURN(auto shamir_reconstruction_result,
+                        impl()->HandleShamirReconstruction());
   auto elapsed_millis =
       absl::ToInt64Milliseconds(absl::Now() - reconstruction_start);
   if (metrics()) {
@@ -147,7 +149,7 @@ SecAggServerPrngRunningState::ProceedToNextRound() {
   absl::MutexLock lock(mutex_);
 
   if (!completion_status_.has_value()) {
-    return FCP_STATUS(UNAVAILABLE);
+    return absl::UnavailableError("");
   }
 
   // Don't send any messages; every client either got an "early success"

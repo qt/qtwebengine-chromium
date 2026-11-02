@@ -6,6 +6,7 @@
 
 #include "base/files/file_util.h"
 #include "base/functional/function_ref.h"
+#include "base/logging.h"
 #include "base/path_service.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
@@ -26,6 +27,7 @@
 
 #if BUILDFLAG(IS_ANDROID)
 #include "base/android/android_info.h"
+#include "base/android/device_info.h"
 #endif
 
 // TODO(crbug.com/40625383): Move the baselines to skia gold for easier
@@ -115,6 +117,7 @@ class FormControlsBrowserTest : public ContentBrowserTest {
       golden_filepath = golden_filepath_platform;
     }
 
+    LOG(INFO) << "Loading golden file: " << golden_filepath;
     ASSERT_TRUE(
         NavigateToURL(shell()->web_contents(),
                       GURL("data:text/html,<!DOCTYPE html>" + body_html)));
@@ -285,7 +288,10 @@ IN_PROC_BROWSER_TEST_F(FormControlsBrowserTest, MAYBE_Textarea) {
   std::string screenshot_filename = "form_controls_browsertest_textarea";
 #if BUILDFLAG(IS_ANDROID)
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          blink::switches::kEnableDesktopAndroidScrollbars)) {
+          blink::switches::kEnableDesktopAndroidScrollbars) &&
+      // This feature is not ready for non-desktop devices. See
+      // crbug.com/522529331.
+      base::android::device_info::is_desktop()) {
     // Desktop style scrollbars have large thickness than mobile scrollbars
     // which affects the size of the textarea resizer.
     screenshot_filename += "_with_desktop_scrollbars";

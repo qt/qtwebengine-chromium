@@ -37,8 +37,9 @@ CFWL_ComboBox::CFWL_ComboBox(CFWL_App* app)
       list_box_(cppgc::MakeGarbageCollected<CFWL_ComboList>(
           app->GetHeap()->GetAllocationHandle(),
           app,
-          Properties{FWL_STYLE_WGT_Border | FWL_STYLE_WGT_VScroll, 0,
-                     FWL_STATE_WGT_Invisible},
+          Properties{{WidgetStyle::kBorder, WidgetStyle::kVScroll},
+                     0,
+                     WidgetState::kInvisible},
           this)) {}
 
 CFWL_ComboBox::~CFWL_ComboBox() = default;
@@ -154,24 +155,24 @@ void CFWL_ComboBox::SetCurSel(int32_t iSel) {
   cur_sel_ = bClearSel ? -1 : iSel;
 }
 
-void CFWL_ComboBox::SetStates(uint32_t dwStates) {
+void CFWL_ComboBox::SetStates(Mask<WidgetState> states) {
   if (IsDropDownStyle() && edit_) {
-    edit_->SetStates(dwStates);
+    edit_->SetStates(states);
   }
   if (list_box_) {
-    list_box_->SetStates(dwStates);
+    list_box_->SetStates(states);
   }
-  CFWL_Widget::SetStates(dwStates);
+  CFWL_Widget::SetStates(states);
 }
 
-void CFWL_ComboBox::RemoveStates(uint32_t dwStates) {
+void CFWL_ComboBox::ClearStates(Mask<WidgetState> states) {
   if (IsDropDownStyle() && edit_) {
-    edit_->RemoveStates(dwStates);
+    edit_->ClearStates(states);
   }
   if (list_box_) {
-    list_box_->RemoveStates(dwStates);
+    list_box_->ClearStates(states);
   }
-  CFWL_Widget::RemoveStates(dwStates);
+  CFWL_Widget::ClearStates(states);
 }
 
 void CFWL_ComboBox::SetEditText(const WideString& wsText) {
@@ -246,7 +247,7 @@ void CFWL_ComboBox::ShowDropDownList() {
   GetPopupPos(fPopupMin, fPopupMax, widget_rect_, &rtList);
   list_box_->SetWidgetRect(rtList);
   list_box_->Update();
-  list_box_->RemoveStates(FWL_STATE_WGT_Invisible);
+  list_box_->ClearStates(WidgetState::kInvisible);
 
   CFWL_Event postEvent(CFWL_Event::Type::PostDropDown, this);
   DispatchEvent(&postEvent);
@@ -258,7 +259,7 @@ void CFWL_ComboBox::HideDropDownList() {
     return;
   }
 
-  list_box_->SetStates(FWL_STATE_WGT_Invisible);
+  list_box_->SetStates(WidgetState::kInvisible);
   RepaintInflatedListBoxRect();
 }
 
@@ -501,15 +502,15 @@ void CFWL_ComboBox::OnLButtonDown(CFWL_MessageMouse* pMsg) {
 }
 
 void CFWL_ComboBox::OnFocusGained() {
-  properties_.states_ |= FWL_STATE_WGT_Focused;
-  if ((edit_->GetStates() & FWL_STATE_WGT_Focused) == 0) {
+  properties_.states_ |= WidgetState::kFocused;
+  if (!(edit_->GetStates() & WidgetState::kFocused)) {
     CFWL_MessageSetFocus msg(edit_);
     edit_->GetDelegate()->OnProcessMessage(&msg);
   }
 }
 
 void CFWL_ComboBox::OnFocusLost() {
-  properties_.states_ &= ~FWL_STATE_WGT_Focused;
+  properties_.states_.Clear(WidgetState::kFocused);
   HideDropDownList();
   CFWL_MessageKillFocus msg(nullptr);
   edit_->GetDelegate()->OnProcessMessage(&msg);

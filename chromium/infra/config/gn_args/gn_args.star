@@ -80,7 +80,6 @@ gn_args.config(
         "android",
         "debug",
         "minimal_symbols",
-        "shared",
         "x64",
     ],
 )
@@ -411,6 +410,7 @@ gn_args.config(
     },
     configs = [
         "clang",
+        "enable_rust_clippy",
     ],
 )
 
@@ -510,7 +510,6 @@ gn_args.config(
     name = "debug_builder",
     configs = [
         "debug",
-        "shared",
         "minimal_symbols",
     ],
 )
@@ -543,7 +542,6 @@ gn_args.config(
     configs = [
         "debug",
         "full_symbols",
-        "shared",
     ],
 )
 
@@ -821,6 +819,7 @@ gn_args.config(
     name = "ios_catalyst",
     args = {
         "target_environment": "catalyst",
+        "use_lld": False,
     },
     configs = [
         "ios",

@@ -5,6 +5,7 @@
 import {assert} from 'chai';
 
 import {setupLocaleHooks} from '../../testing/LocaleHelpers.js';
+import type * as Common from '../common/common.js';
 
 import * as SDK from './sdk.js';
 
@@ -354,27 +355,26 @@ describe('SDK.ServerTiming.ServerTiming.createFromHeaderValue', () => {
   });
 
   it('triggers warnings when needed', () => {
-    // TODO: These tests require mocking `Common.console.warn`.
-    // For now, we override `SDK.ServerTiming.ServerTiming.showWarning` to throw an
-    // exception instead of logging it.
-    SDK.ServerTiming.ServerTiming.showWarning = message => {
-      throw new Error(message);
-    };
+    const mockConsole = {
+      warn: (message: string) => {
+        throw new Error(message);
+      },
+    } as unknown as Common.Console.Console;
 
     assert.throws(() => {
-      SDK.ServerTiming.ServerTiming.createFromHeaderValue('lb=42; "Load balancer"');
+      SDK.ServerTiming.ServerTiming.createFromHeaderValue('lb=42; "Load balancer"', mockConsole);
     }, /Deprecated syntax found/, 'legacy header syntax should trigger a warning');
     assert.throws(() => {
-      SDK.ServerTiming.ServerTiming.createFromHeaderValue('sql;desc="MySQL";dur=100;dur=200');
+      SDK.ServerTiming.ServerTiming.createFromHeaderValue('sql;desc="MySQL";dur=100;dur=200', mockConsole);
     }, /Duplicate parameter/, 'duplicate parameters should trigger a warning');
     assert.throws(() => {
-      SDK.ServerTiming.ServerTiming.createFromHeaderValue('sql;desc;dur=100');
+      SDK.ServerTiming.ServerTiming.createFromHeaderValue('sql;desc;dur=100', mockConsole);
     }, /No value found for parameter/, 'parameters without a value should trigger a warning');
     assert.throws(() => {
-      SDK.ServerTiming.ServerTiming.createFromHeaderValue('sql;desc="MySQL";dur=abc');
+      SDK.ServerTiming.ServerTiming.createFromHeaderValue('sql;desc="MySQL";dur=abc', mockConsole);
     }, /Unable to parse/, 'duration values that cannot be converted to floats should trigger a warning');
     assert.throws(() => {
-      SDK.ServerTiming.ServerTiming.createFromHeaderValue('sql;desc="MySQL";dur=100;invalid=lol');
+      SDK.ServerTiming.ServerTiming.createFromHeaderValue('sql;desc="MySQL";dur=100;invalid=lol', mockConsole);
     }, /Unrecognized parameter/, 'invalid parameters should trigger a warning');
   });
 });

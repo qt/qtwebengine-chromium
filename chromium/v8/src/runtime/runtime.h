@@ -124,23 +124,24 @@ constexpr bool CanTriggerGC(T... properties) {
 #define FOR_EACH_INTRINSIC_COMPILER_DUMPLING(F, I)
 #endif  // V8_DUMPLING
 
-#define FOR_EACH_INTRINSIC_COMPILER_GENERIC(F, I) \
-  F(CompileOptimizedOSR, 0, 1)                    \
-  F(CompileOptimizedOSRFromMaglev, 1, 1)          \
-  F(CompileOptimizedOSRFromMaglevInlined, 2, 1)   \
-  F(LogOrTraceOptimizedOSREntry, 0, 1)            \
-  F(CompileLazy, 1, 1)                            \
-  F(CompileBaseline, 1, 1)                        \
-  F(InstallBaselineCode, 1, 1)                    \
-  F(InstallSFICode, 1, 1)                         \
-  F(InstantiateAsmJs, 4, 1)                       \
-  F(NotifyDeoptimized, 0, 1)                      \
-  F(ObserveNode, 1, 1)                            \
-  F(ResolvePossiblyDirectEval, 6, 1)              \
-  F(VerifyType, 1, 1)                             \
-  F(CheckTurboshaftTypeOf, 2, 1)                  \
-  IF_SPARKPLUG_PLUS(F, PatchBaselineCode, 4, 1)   \
-  IF_SPARKPLUG_PLUS(F, PatchBaselineCodeAndThrow, 4, 1)
+#define FOR_EACH_INTRINSIC_COMPILER_GENERIC(F, I)                \
+  F(CompileOptimizedOSR, 0, 1)                                   \
+  F(CompileOptimizedOSRFromMaglev, 1, 1)                         \
+  F(CompileOptimizedOSRFromMaglevInlined, 2, 1)                  \
+  F(LogOrTraceOptimizedOSREntry, 0, 1)                           \
+  F(CompileLazy, 1, 1)                                           \
+  F(CompileBaseline, 1, 1)                                       \
+  F(InstallBaselineCode, 1, 1)                                   \
+  F(InstallSFICode, 1, 1)                                        \
+  F(NotifyDeoptimized, 0, 1)                                     \
+  F(ObserveNode, 1, 1)                                           \
+  F(ResolvePossiblyDirectEval, 6, 1)                             \
+  F(VerifyType, 1, 1)                                            \
+  F(CheckTurboshaftTypeOf, 2, 1)                                 \
+  IF_SPARKPLUG_PLUS(F, PatchCompareOpBaselineCode, 4, 1)         \
+  IF_SPARKPLUG_PLUS(F, PatchCompareOpBaselineCodeAndThrow, 4, 1) \
+  IF_SPARKPLUG_PLUS(F, PatchBinopBaselineCode, 4, 1)             \
+  IF_SPARKPLUG_PLUS(F, PatchBinopBaselineCodeAndThrow, 4, 1)
 
 // TODO(olivf): Unify the Maglev/TF variants into one runtime function and pass
 // the optimization tier as an argument.
@@ -353,6 +354,8 @@ constexpr bool CanTriggerGC(T... properties) {
   I(CopyDataPropertiesWithExcludedPropertiesOnStack, -1 /* >= 1 */, 1) \
   I(CreateDataProperty, 3, 1)                                          \
   I(CreateIterResultObject, 2, 1)                                      \
+  F(IterableToListWithInterceptor, 1, 1)                               \
+  F(CheckFastIterableToListPrototype, 1, 1)                            \
   F(CreatePrivateAccessors, 2, 1)                                      \
   F(DefineAccessorPropertyUnchecked, 5, 1)                             \
   F(DefineKeyedOwnPropertyInLiteral, 6, 1)                             \
@@ -360,6 +363,7 @@ constexpr bool CanTriggerGC(T... properties) {
   F(DefineSetterPropertyUnchecked, 4, 1)                               \
   F(DeleteProperty, 3, 1)                                              \
   F(DisposeDisposableStack, 5, 1)                                      \
+  I(GeneratorYieldResult, 2, 1)                                        \
   F(GetDerivedMap, 2, 1)                                               \
   F(GetFunctionName, 1, 1)                                             \
   F(GetOwnPropertyDescriptorObject, 2, 1)                              \
@@ -443,8 +447,6 @@ constexpr bool CanTriggerGC(T... properties) {
   F(PromiseRevokeReject, 1, 1)           \
   F(RejectPromise, 3, 1)                 \
   F(ResolvePromise, 2, 1)                \
-  F(PromiseRejectAfterResolved, 2, 1)    \
-  F(PromiseResolveAfterResolved, 2, 1)   \
   F(ConstructSuppressedError, 3, 1)      \
   F(ConstructAggregateErrorHelper, 4, 1) \
   F(ConstructInternalAggregateErrorHelper, -1 /* <= 5*/, 1)
@@ -552,9 +554,12 @@ constexpr bool CanTriggerGC(T... properties) {
   F(ArrayBufferDetachForceWasm, 1, 1)                                    \
   F(ArrayIteratorProtector, 0, 1)                                        \
   F(ArraySpeciesProtector, 0, 1)                                         \
+  F(AssertNotPeeled, 0, 1)                                               \
+  F(AssertPeeled, 0, 1)                                                  \
   F(BaselineOsr, -1, 1)                                                  \
   F(BenchMaglev, 2, 1)                                                   \
   F(BenchTurbofan, 2, 1)                                                 \
+  F(BlockAt, 2, 1)                                                       \
   F(VerifyGetJSBuiltinState, 1, 1)                                       \
   F(ClearFunctionFeedback, 1, 1)                                         \
   F(ClearMegamorphicStubCache, 0, 1)                                     \
@@ -665,6 +670,7 @@ constexpr bool CanTriggerGC(T... properties) {
   F(RegexpHasNativeCode, 2, 1)                                           \
   F(RegexpIsUnmodified, 1, 1)                                            \
   F(RegexpTypeTag, 1, 1)                                                 \
+  F(Resume, 1, 1)                                                        \
   F(RunningInSimulator, 0, 1)                                            \
   F(RuntimeEvaluateREPL, 1, 1)                                           \
   F(ScheduleGCInStackCheck, 0, 1)                                        \
@@ -684,8 +690,10 @@ constexpr bool CanTriggerGC(T... properties) {
   F(TraceEnter, 0, 1)                                                    \
   F(TraceExit, 1, 1)                                                     \
   F(TurbofanStaticAssert, 1, 1)                                          \
+  F(AssertEscapeAnalysisElided, 1, 1)                                    \
   F(TypedArraySpeciesProtector, 0, 1)                                    \
   F(WaitForBackgroundOptimization, 0, 1)                                 \
+  F(WaitUntilBlocked, 2, 1)                                              \
   I(DeoptimizeNow, 0, 1)                                                 \
   F(LeakHole, 0, 1)                                                      \
   F(GetHoleNaNLower, 0, 1)                                               \
@@ -752,11 +760,11 @@ constexpr bool CanTriggerGC(T... properties) {
   F(WasmArrayNewSegment, 5, 1)                                   \
   F(WasmArrayInitSegment, 6, 1)                                  \
   F(WasmAllocateSuspender, 0, 1)                                 \
+  F(WasmSuspended, 2, 1)                                         \
   F(WasmAllocateContinuation, 3, 1)                              \
-  F(WasmAllocateBoundContinuation, 3, 1)                         \
   F(ClearWasmSuspenderResumeField, 1, 1)                         \
   F(WasmCastToSpecialPrimitiveArray, 2, 1)                       \
-  F(WasmStringAdd_CheckNone_Shared, 2, 1)                        \
+  F(WasmStringAdd_NoMapCheck_Shared, 2, 1)                       \
   F(WasmStringNewSegmentWtf8, 5, 1)                              \
   F(WasmStringNewWtf8, 5, 1)                                     \
   F(WasmStringNewWtf8Array, 5, 1)                                \
@@ -794,7 +802,6 @@ constexpr bool CanTriggerGC(T... properties) {
   F(GetWasmExceptionValues, 1, 1)                               \
   F(GetWasmRecoveredTrapCount, 0, 1)                            \
   F(HasUnoptimizedWasmToJSWrapper, 1, 1)                        \
-  F(IsAsmWasmCode, 1, 1)                                        \
   F(IsLiftoffFunction, 1, 1)                                    \
   F(IsTurboFanFunction, 1, 1)                                   \
   F(IsUncompiledWasmFunction, 1, 1)                             \

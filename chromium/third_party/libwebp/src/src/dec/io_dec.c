@@ -27,6 +27,8 @@
 #include "src/webp/decode.h"
 #include "src/webp/types.h"
 
+WEBP_ASSUME_UNSAFE_INDEXABLE_ABI
+
 //------------------------------------------------------------------------------
 // Main YUV<->RGB conversion functions
 
@@ -100,9 +102,9 @@ static int EmitFancyRGB(const VP8Io* const io, WebPDecParams* const p) {
   cur_y += io->y_stride;
   if (io->crop_top + y_end < io->crop_bottom) {
     // Save the unfinished samples for next call (as we're not done yet).
-    memcpy(p->tmp_y, cur_y, mb_w * sizeof(*p->tmp_y));
-    memcpy(p->tmp_u, cur_u, uv_w * sizeof(*p->tmp_u));
-    memcpy(p->tmp_v, cur_v, uv_w * sizeof(*p->tmp_v));
+    WEBP_UNSAFE_MEMCPY(p->tmp_y, cur_y, mb_w * sizeof(*p->tmp_y));
+    WEBP_UNSAFE_MEMCPY(p->tmp_u, cur_u, uv_w * sizeof(*p->tmp_u));
+    WEBP_UNSAFE_MEMCPY(p->tmp_v, cur_v, uv_w * sizeof(*p->tmp_v));
     // The fancy upsampler leaves a row unfinished behind
     // (except for the very last row)
     num_lines_out--;
@@ -123,7 +125,7 @@ static int EmitFancyRGB(const VP8Io* const io, WebPDecParams* const p) {
 static void FillAlphaPlane(uint8_t* dst, int w, int h, int stride) {
   int j;
   for (j = 0; j < h; ++j) {
-    memset(dst, 0xff, w * sizeof(*dst));
+    WEBP_UNSAFE_MEMSET(dst, 0xff, w * sizeof(*dst));
     dst += stride;
   }
 }
@@ -140,7 +142,7 @@ static int EmitAlphaYUV(const VP8Io* const io, WebPDecParams* const p,
   assert(expected_num_lines_out == mb_h);
   if (alpha != NULL) {
     for (j = 0; j < mb_h; ++j) {
-      memcpy(dst, alpha, mb_w * sizeof(*dst));
+      WEBP_UNSAFE_MEMCPY(dst, alpha, mb_w * sizeof(*dst));
       alpha += io->width;
       dst += buf->a_stride;
     }
@@ -309,7 +311,7 @@ static int InitYUVRescaler(const VP8Io* const io, WebPDecParams* const p) {
   const size_t uv_work_size = 2 * uv_out_width;  // and for each u/v ones
   uint64_t total_size;
   size_t rescaler_size;
-  rescaler_t* work;
+  rescaler_t* WEBP_BIDI_INDEXABLE work;
   WebPRescaler* scalers;
   const int num_rescalers = has_alpha ? 4 : 3;
 
@@ -323,11 +325,11 @@ static int InitYUVRescaler(const VP8Io* const io, WebPDecParams* const p) {
     return 0;
   }
 
-  p->memory = WebPSafeMalloc(1ULL, (size_t)total_size);
-  if (p->memory == NULL) {
+  work = (rescaler_t*)WebPSafeMalloc(1ULL, (size_t)total_size);
+  if (work == NULL) {
     return 0;  // memory error
   }
-  work = (rescaler_t*)p->memory;
+  p->memory = work;
 
   scalers = (WebPRescaler*)WEBP_ALIGN((const uint8_t*)work + total_size -
                                       rescaler_size);
@@ -497,8 +499,9 @@ static int InitRGBRescaler(const VP8Io* const io, WebPDecParams* const p) {
   const int uv_in_height = (io->mb_h + 1) >> 1;
   // scratch memory for one rescaler
   const size_t work_size = 2 * (size_t)out_width;
-  rescaler_t* work;  // rescalers work area
-  uint8_t* tmp;  // tmp storage for scaled YUV444 samples before RGB conversion
+  rescaler_t* WEBP_BIDI_INDEXABLE work;  // rescalers work area
+  uint8_t* WEBP_BIDI_INDEXABLE
+      tmp;  // tmp storage for scaled YUV444 samples before RGB conversion
   uint64_t tmp_size1, tmp_size2, total_size;
   size_t rescaler_size;
   WebPRescaler* scalers;
@@ -513,11 +516,11 @@ static int InitRGBRescaler(const VP8Io* const io, WebPDecParams* const p) {
     return 0;
   }
 
-  p->memory = WebPSafeMalloc(1ULL, (size_t)total_size);
-  if (p->memory == NULL) {
+  work = (rescaler_t*)WebPSafeMalloc(1ULL, (size_t)total_size);
+  if (work == NULL) {
     return 0;  // memory error
   }
-  work = (rescaler_t*)p->memory;
+  p->memory = work;
   tmp = (uint8_t*)(work + tmp_size1);
 
   scalers = (WebPRescaler*)WEBP_ALIGN((const uint8_t*)work + total_size -
@@ -572,7 +575,9 @@ static int CustomSetup(VP8Io* io) {
   p->emit = NULL;
   p->emit_alpha = NULL;
   p->emit_alpha_row = NULL;
-  if (!WebPIoInitFromOptions(p->options, io, is_alpha ? MODE_YUV : MODE_YUVA)) {
+  // Note: WebPIoInitFromOptions() does not distinguish between MODE_YUV and
+  // MODE_YUVA, only RGB vs YUV.
+  if (!WebPIoInitFromOptions(p->options, io, /*src_colorspace=*/MODE_YUV)) {
     return 0;
   }
   if (is_alpha && WebPIsPremultipliedMode(colorspace)) {

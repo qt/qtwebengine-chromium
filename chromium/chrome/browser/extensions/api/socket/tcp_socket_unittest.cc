@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "base/containers/span.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/notimplemented.h"
 #include "base/test/bind.h"
@@ -503,17 +504,23 @@ class TestSocketFactory : public net::ClientSocketFactory {
 
   std::unique_ptr<net::DatagramClientSocket> CreateDatagramClientSocket(
       net::DatagramSocket::BindType,
+      net::handles::NetworkHandle target_network,
       net::NetLog*,
       const net::NetLogSource&) override {
+    // This is used only for testing in scenarios that do not involve multiple
+    // networks. With that in mind, it's safe to ignore `target_network`.
     NOTIMPLEMENTED();
     return nullptr;
   }
   std::unique_ptr<net::TransportClientSocket> CreateTransportClientSocket(
       const net::AddressList&,
+      net::handles::NetworkHandle target_network,
       std::unique_ptr<net::SocketPerformanceWatcher>,
       net::NetworkQualityEstimator* network_quality_estimator,
       net::NetLog*,
       const net::NetLogSource&) override {
+    // This is used only for testing in scenarios that do not involve multiple
+    // networks. With that in mind, it's safe to ignore `target_network`.
     providers_.push_back(std::make_unique<net::StaticSocketDataProvider>(
         kMockReads, base::span<net::MockWrite>()));
     return std::make_unique<ExtensionsMockClientSocket>(providers_.back().get(),

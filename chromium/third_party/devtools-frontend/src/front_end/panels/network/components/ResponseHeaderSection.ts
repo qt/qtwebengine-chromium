@@ -9,10 +9,10 @@ import * as i18n from '../../../core/i18n/i18n.js';
 import * as Platform from '../../../core/platform/platform.js';
 import type {NameValue} from '../../../core/sdk/NetworkRequest.js';
 import type * as SDK from '../../../core/sdk/sdk.js';
+import * as TextUtils from '../../../core/text_utils/text_utils.js';
 import * as Protocol from '../../../generated/protocol.js';
 import * as IssuesManager from '../../../models/issues_manager/issues_manager.js';
 import * as Persistence from '../../../models/persistence/persistence.js';
-import * as TextUtils from '../../../models/text_utils/text_utils.js';
 import type * as Workspace from '../../../models/workspace/workspace.js';
 import * as NetworkForward from '../../../panels/network/forward/forward.js';
 import * as Sources from '../../../panels/sources/sources.js';
@@ -170,12 +170,14 @@ export class ResponseHeaderSection extends ResponseHeaderSectionBase {
           BlockedReasonDetails.get((this.#request.blockedReason() as Protocol.Network.BlockedReason));
       if (headerWithIssues) {
         if (IssuesManager.RelatedIssue.hasIssueOfCategory(
-                this.#request, IssuesManager.Issue.IssueCategory.CROSS_ORIGIN_EMBEDDER_POLICY)) {
+                this.#request, IssuesManager.Issue.IssueCategory.CROSS_ORIGIN_EMBEDDER_POLICY,
+                IssuesManager.IssuesManager.IssuesManager.instance())) {
           const followLink = (): void => {
             Host.userMetrics.issuesPanelOpenedFrom(Host.UserMetrics.IssueOpener.LEARN_MORE_LINK_COEP);
             if (this.#request) {
-              void IssuesManager.RelatedIssue.reveal(
-                  this.#request, IssuesManager.Issue.IssueCategory.CROSS_ORIGIN_EMBEDDER_POLICY);
+              void IssuesManager.RelatedIssue.reveal(this.#request,
+                                                     IssuesManager.IssuesManager.IssuesManager.instance(),
+                                                     IssuesManager.Issue.IssueCategory.CROSS_ORIGIN_EMBEDDER_POLICY);
             }
           };
           if (headerWithIssues.blockedDetails) {
@@ -568,7 +570,7 @@ export class ResponseHeaderSection extends ResponseHeaderSectionBase {
       await networkPersistenceManager.getOrCreateHeadersUISourceCodeFromUrl(requestUrl);
     } else {  // If folder for local overrides has not been provided yet
       UI.InspectorView.InspectorView.instance().displaySelectOverrideFolderInfobar(async () => {
-        await Sources.SourcesNavigator.OverridesNavigatorView.instance().setupNewWorkspace();
+        await Sources.SourcesNavigator.OverridesNavigatorView.setupNewWorkspace();
         await networkPersistenceManager.getOrCreateHeadersUISourceCodeFromUrl(requestUrl);
       });
     }

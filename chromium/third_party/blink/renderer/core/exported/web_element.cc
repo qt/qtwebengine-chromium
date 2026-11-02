@@ -30,6 +30,11 @@
 
 #include "third_party/blink/public/web/web_element.h"
 
+#include <optional>
+
+#include "base/functional/callback_helpers.h"
+#include "third_party/blink/public/common/metrics/document_update_reason.h"
+#include "third_party/blink/public/mojom/input/focus_type.mojom-blink.h"
 #include "third_party/blink/public/mojom/scroll/scroll_into_view_params.mojom-blink.h"
 #include "third_party/blink/public/web/web_label_element.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_element.h"
@@ -41,7 +46,9 @@
 #include "third_party/blink/renderer/core/css/css_computed_style_declaration.h"
 #include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element.h"
+#include "third_party/blink/renderer/core/dom/events/simulated_click_options.h"
 #include "third_party/blink/renderer/core/dom/focus_params.h"
 #include "third_party/blink/renderer/core/editing/editing_utilities.h"
 #include "third_party/blink/renderer/core/editing/frame_selection.h"
@@ -52,29 +59,87 @@
 #include "third_party/blink/renderer/core/events/text_event.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
+#include "third_party/blink/renderer/core/frame/local_frame_ukm_aggregator.h"
 #include "third_party/blink/renderer/core/frame/visual_viewport.h"
 #include "third_party/blink/renderer/core/geometry/dom_rect_list.h"
 #include "third_party/blink/renderer/core/html/custom/custom_element.h"
+#include "third_party/blink/renderer/core/html/forms/html_form_control_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_label_element.h"
 #include "third_party/blink/renderer/core/html/forms/text_control_element.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
 #include "third_party/blink/renderer/core/html_names.h"
+#include "third_party/blink/renderer/core/intersection_observer/intersection_observer.h"
+#include "third_party/blink/renderer/core/intersection_observer/intersection_observer_entry.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/scroll/scroll_into_view_util.h"
+#include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/core/svg/graphics/svg_image.h"
 #include "third_party/blink/renderer/core/svg/graphics/svg_image_for_container.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/graphics/image.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+#include "third_party/blink/renderer/platform/timer.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/geometry/vector2d_f.h"
 
 namespace blink {
+namespace {
+
+String AriaAttr(const Element& element, const QualifiedName& attribute) {
+  // Authors sometimes add stray whitespace around ARIA-like attribute values.
+  // Normalize that here while keeping role matching intentionally exact.
+  return String(element.FastGetAttribute(attribute)).StripWhiteSpace();
+}
+
+bool AriaBoolAttr(const Element& element,
+                  const QualifiedName& attribute,
+                  bool default_value = false) {
+  const String value = AriaAttr(element, attribute);
+  if (EqualIgnoringAsciiCase(value, keywords::kTrue)) {
+    return true;
+  }
+  if (EqualIgnoringAsciiCase(value, keywords::kFalse)) {
+    return false;
+  }
+  return default_value;
+}
+
+bool HasPresentationalRole(const Element& element) {
+  const String role = AriaAttr(element, html_names::kRoleAttr);
+
+  // Trim whitespace, but intentionally do not split multiple ARIA roles.
+  // Fallback roles are not used in practice or supported industry-wide. Exact
+  // matching keeps this actor-facing helper simple.
+  return EqualIgnoringAsciiCase(role, keywords::kNone) ||
+         EqualIgnoringAsciiCase(role, keywords::kPresentation);
+}
+
+std::optional<WebElementInteractionDisallowedReason>
+GetAriaInteractionDisallowedReason(const Element& element) {
+  for (const Node* node = &element; node;
+       node = node->ParentOrShadowHostNode()) {
+    const Element* ancestor = DynamicTo<Element>(node);
+    if (!ancestor) {
+      continue;
+    }
+    if (AriaBoolAttr(*ancestor, html_names::kAriaDisabledAttr)) {
+      return WebElementInteractionDisallowedReason::kAriaDisabled;
+    }
+    if (AriaBoolAttr(*ancestor, html_names::kAriaHiddenAttr)) {
+      return WebElementInteractionDisallowedReason::kAriaHidden;
+    }
+  }
+
+  return std::nullopt;
+}
+
+}  // namespace
 
 WebElement WebElement::FromV8Value(v8::Isolate* isolate,
                                    v8::Local<v8::Value> value) {
@@ -110,6 +175,9 @@ WebString WebElement::TagName() const {
 
 WebString WebElement::GetIdAttribute() const {
   return ConstUnwrap<Element>()->GetIdAttribute();
+}
+WebString WebElement::Nonce() const {
+  return ConstUnwrap<Element>()->nonce();
 }
 
 bool WebElement::HasHTMLTagName(const WebString& tag_name) const {
@@ -216,7 +284,7 @@ void WebElement::SelectText(bool select_all) {
       base = extent;
     }
     frame->Selection().SetSelection(
-        SelectionInDOMTree::Builder().SetBaseAndExtent(base, extent).Build(),
+        SelectionInDomTree::Builder().SetBaseAndExtent(base, extent).Build(),
         SetSelectionOptions());
   }
 }
@@ -224,6 +292,110 @@ void WebElement::SelectText(bool select_all) {
 void WebElement::Click() {
   auto* element = Unwrap<Element>();
   element->DispatchSimulatedClick(nullptr);
+}
+
+std::optional<WebElementInteractionDisallowedReason>
+WebElement::InteractionDisallowedReason(bool check_aria) const {
+  // Querying can update lifecycle state, but it never retargets this wrapper.
+  Element* element = const_cast<Element*>(ConstUnwrap<Element>());
+  if (const auto* form_control =
+          blink::DynamicTo<HTMLFormControlElement>(element)) {
+    if (form_control->IsDisabledFormControl()) {
+      return WebElementInteractionDisallowedReason::kDisabled;
+    }
+  }
+
+  // Interaction-disallowed state depends on computed style, including
+  // inherited inert state from native modal dialogs and pointer event handling,
+  // so refresh the style tree before reading it.
+  element->GetDocument().UpdateStyleAndLayoutTree();
+  if (!element->GetLayoutObject()) {
+    return WebElementInteractionDisallowedReason::kNoLayoutObject;
+  }
+
+  if (const ComputedStyle* style = element->GetComputedStyle()) {
+    if (style->IsInert()) {
+      return WebElementInteractionDisallowedReason::kInert;
+    }
+    if (style->UsedPointerEvents() == EPointerEvents::kNone) {
+      return WebElementInteractionDisallowedReason::kPointerEventsNone;
+    }
+  }
+
+  if (!check_aria) {
+    return std::nullopt;
+  }
+
+  // Note: this helper does not currently scan for ARIA modal dialogs.
+  // Enforcing that here would require scanning the whole document for all
+  // elements with role=dialog or role=alertdialog and aria-modal=true, then
+  // rejecting targets outside any visible dialog's flat-tree subtree.
+  // Clicking outside native modal dialogs is already handled by checking for
+  // inertness. See https://crrev.com/c/8007486 for a prototype implementation.
+  if (std::optional<WebElementInteractionDisallowedReason> aria_reason =
+          GetAriaInteractionDisallowedReason(*element)) {
+    return aria_reason;
+  }
+
+  if (HasPresentationalRole(*element)) {
+    return WebElementInteractionDisallowedReason::kRolePresentationOrNone;
+  }
+
+  return std::nullopt;
+}
+
+bool WebElement::SimulateAccessibilityClick() {
+  auto* element = Unwrap<Element>();
+  Document& document = element->GetDocument();
+
+  LocalFrame* frame = document.GetFrame();
+  if (!frame) {
+    return false;
+  }
+
+  if (!element->isConnected()) {
+    return false;
+  }
+
+  if (InteractionDisallowedReason(/*check_aria=*/true).has_value()) {
+    return false;
+  }
+
+  // This is a target-scoped lifecycle update. The interaction-disallowed
+  // preflight above only needs current style-tree state, but content-visibility
+  // and display locks can still leave this element without current layout data.
+  // Accessibility-style activation needs current target layout before it sends
+  // trusted simulated input events.
+  document.UpdateStyleAndLayoutTreeForElement(element,
+                                              DocumentUpdateReason::kInput);
+
+  if (!element->isConnected() || element->GetDocument().GetFrame() != frame) {
+    // Lifecycle updates can detach or move the element. Accessibility-style
+    // activation is only supported while the original frame still owns the
+    // target.
+    return false;
+  }
+
+  // Do not call LocalFrame::NotifyUserActivation() here. Blink uses the
+  // "transient user activation" term for the short-lived state that means "a
+  // real user gesture happened recently", which unlocks privileged page APIs
+  // such as popup, media, clipboard, and file-picker flows. This helper
+  // dispatches a trusted click sequence, but that click should not also unlock
+  // gesture-gated APIs. If a future caller needs that behavior, consider an
+  // explicit option or a separately named helper whose call site says that it
+  // grants a user gesture.
+
+  // Match Blink's accessibility activation behavior for sequential focus
+  // navigation. This changes where the next Tab search starts, not
+  // activeElement.
+  document.SetSequentialFocusNavigationStartingPoint(element);
+
+  // This sends pointerdown, mousedown, pointerup, mouseup, and click. It also
+  // avoids AccessKeyAction(), which focuses some controls as part of access-key
+  // activation. Simulated accessibility clicks must not change activeElement.
+  element->DispatchSimulatedClick(
+      nullptr, SimulatedClickCreationScope::kFromAccessibility);
+  return true;
 }
 
 void WebElement::PasteText(const WebString& text, bool replace_all) {
@@ -253,7 +425,7 @@ void WebElement::PasteText(const WebString& text, bool replace_all) {
   // clipboard but instead pastes `text`. This block is a stripped-down version
   // of ClipboardCommands::Paste() that's limited to pasting plain text.
   Element* target = FindEventTargetFrom(
-      *frame, frame->Selection().ComputeVisibleSelectionInDOMTree());
+      *frame, frame->Selection().ComputeVisibleSelectionInDomTree());
   auto create_data_transfer = [](const WebString& text) {
     return DataTransfer::Create(DataTransfer::kCopyAndPaste,
                                 DataTransferAccessPolicy::kReadable,
@@ -556,6 +728,113 @@ LayoutBox* WebElement::GetScrollingBox() const {
   }
 
   return blink::DynamicTo<LayoutBox>(element->GetLayoutObject());
+}
+
+namespace {
+
+class VisibilityObserver final : public GarbageCollected<VisibilityObserver> {
+ public:
+  VisibilityObserver(Element* element,
+                     base::TimeDelta minimum_visible_duration,
+                     base::OnceClosure callback)
+      : element_(element),
+        minimum_visible_duration_(minimum_visible_duration),
+        callback_(std::move(callback)),
+        visibility_timer_(
+            element->GetDocument().GetTaskRunner(TaskType::kInternalDefault),
+            this,
+            &VisibilityObserver::VisibilityTimerFired) {
+    IntersectionObserver::Params params = {
+        .root = nullptr,
+        // Require 100% of the element to be intersecting the viewport.
+        .thresholds = {1.0f},
+        // Add a delay of 100ms between observer notifications.
+        .delay = base::Milliseconds(100),
+        // Enable visibility tracking; otherwise `isVisible()` in entries will
+        // always be false.
+        .track_visibility = true,
+    };
+    observer_ = IntersectionObserver::Create(
+        element_->GetDocument(),
+        BindRepeating(&VisibilityObserver::Deliver, WrapWeakPersistent(this)),
+        LocalFrameUkmAggregator::kIntersectionObservationInternalCount,
+        std::move(params));
+  }
+
+  void Deliver(const HeapVector<Member<IntersectionObserverEntry>>& entries) {
+    CHECK_EQ(entries.size(), 1u);
+    if (entries[0]->isVisible()) {
+      if (!visibility_timer_.IsActive()) {
+        visibility_timer_.StartOneShot(minimum_visible_duration_, FROM_HERE);
+      }
+    } else {
+      visibility_timer_.Stop();
+    }
+  }
+
+  void Trace(Visitor* visitor) const {
+    visitor->Trace(element_);
+    visitor->Trace(observer_);
+    visitor->Trace(visibility_timer_);
+  }
+
+  void Start() { observer_->observe(element_); }
+
+  void Disconnect() {
+    visibility_timer_.Stop();
+    callback_.Reset();
+    if (observer_) {
+      observer_->disconnect();
+      observer_ = nullptr;
+    }
+  }
+
+ private:
+  // Fired when the visibility timer expires (i.e., the element has been
+  // visible for `minimum_visible_duration_`). It invokes `callback_`.
+  void VisibilityTimerFired(TimerBase*) {
+    DeliverResult();
+    if (observer_) {
+      observer_->disconnect();
+      observer_ = nullptr;
+    }
+  }
+
+  void DeliverResult() {
+    if (callback_) {
+      std::move(callback_).Run();
+    }
+    visibility_timer_.Stop();
+  }
+
+  Member<Element> element_;
+  // The minimum continuous duration a element must remain visible in the
+  // viewport before `callback_` is triggered.
+  base::TimeDelta minimum_visible_duration_;
+  // Callback to be invoked when the monitored element meets the visibility
+  // criteria.
+  base::OnceClosure callback_;
+  // Timer used to track how long an element has been continuously visible.
+  HeapTaskRunnerTimer<VisibilityObserver> visibility_timer_;
+  // `IntersectionObserver` used to monitor the visibility of a form control.
+  Member<IntersectionObserver> observer_;
+};
+
+}  // namespace
+
+base::ScopedClosureRunner WebElement::MonitorVisibility(
+    base::TimeDelta minimum_visible_duration,
+    base::OnceClosure callback) {
+  CHECK(callback);
+  CHECK(!IsNull());
+
+  auto* observer = MakeGarbageCollected<VisibilityObserver>(
+      const_cast<Element*>(ConstUnwrap<Element>()), minimum_visible_duration,
+      std::move(callback));
+  observer->Start();
+
+  return base::ScopedClosureRunner(
+      BindOnce(&VisibilityObserver::Disconnect, WrapPersistent(observer)));
 }
 
 }  // namespace blink

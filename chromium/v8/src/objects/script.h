@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "include/v8-script.h"
+#include "src/base/bit-field.h"
 #include "src/base/export-template.h"
 #include "src/heap/factory-base.h"
 #include "src/heap/factory.h"
@@ -17,7 +18,6 @@
 #include "src/objects/objects.h"
 #include "src/objects/string.h"
 #include "src/objects/struct.h"
-#include "torque-generated/bit-fields.h"
 
 // Has to be the last include (doesn't have include guards):
 #include "src/objects/object-macros.h"
@@ -32,8 +32,6 @@ class StructBodyDescriptor;
 namespace wasm {
 class NativeModule;
 }  // namespace wasm
-
-#include "torque-generated/src/objects/script-tq.inc"
 
 // Script describes a script which has been added to the VM.
 V8_OBJECT class Script : public Struct {
@@ -102,10 +100,9 @@ V8_OBJECT class Script : public Struct {
 
   // [eval_from_shared]: for eval scripts the shared function info for the
   // function from which eval was called.
-  inline Tagged<SharedFunctionInfo> eval_from_shared() const;
-  inline void set_eval_from_shared(
-      Tagged<SharedFunctionInfo> shared,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+  Tagged<SharedFunctionInfo> eval_from_shared() const;
+  void set_eval_from_shared(Tagged<SharedFunctionInfo> shared,
+                            WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
 
   // [wrapped_arguments]: for the list of arguments in a wrapped script.
   inline Tagged<FixedArray> wrapped_arguments() const;
@@ -169,9 +166,6 @@ V8_OBJECT class Script : public Struct {
   // this wasm module.
   inline bool break_on_entry() const;
   inline void set_break_on_entry(bool value);
-
-  // Check if the script contains any Asm modules.
-  bool ContainsAsmModule();
 #endif  // V8_ENABLE_WEBASSEMBLY
 
   // Read/write the raw 'flags' field. This uses relaxed atomic loads/stores
@@ -262,7 +256,7 @@ V8_OBJECT class Script : public Struct {
   // Retrieve source position from where eval was called.
   static int GetEvalPosition(Isolate* isolate, DirectHandle<Script> script);
 
-  Tagged<Script> inline GetEvalOrigin();
+  Tagged<Script> GetEvalOrigin();
 
   // Initialize line_ends array with source code positions of line ends if
   // it doesn't exist yet.
@@ -396,9 +390,18 @@ V8_OBJECT class Script : public Struct {
   friend Factory;
   friend FactoryBase<Factory>;
   friend FactoryBase<LocalFactory>;
+  friend class TorqueGeneratedBitFieldAsserts;
 
   // Bit positions in the flags field.
-  DEFINE_TORQUE_GENERATED_SCRIPT_FLAGS()
+  using CompilationTypeBit =
+      base::BitField<Script::CompilationType, 0, 1, uint32_t>;
+  using CompilationStateBit =
+      CompilationTypeBit::Next<Script::CompilationState, 1>;
+  using IsReplModeBit = CompilationStateBit::Next<bool, 1>;
+  using OriginOptionsBits = IsReplModeBit::Next<int32_t, 4>;
+  using BreakOnEntryBit = OriginOptionsBits::Next<bool, 1>;
+  using ProduceCompileHintsBit = BreakOnEntryBit::Next<bool, 1>;
+  using DeserializedBit = ProduceCompileHintsBit::Next<bool, 1>;
 
   template <typename IsolateT>
   EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE)
@@ -407,6 +410,8 @@ V8_OBJECT class Script : public Struct {
 } V8_OBJECT_END;
 
 V8_EXPORT_PRIVATE const char* ToString(Script::Type type);
+V8_EXPORT_PRIVATE const char* ToString(Script::CompilationType type);
+V8_EXPORT_PRIVATE const char* ToString(Script::CompilationState type);
 
 }  // namespace internal
 }  // namespace v8

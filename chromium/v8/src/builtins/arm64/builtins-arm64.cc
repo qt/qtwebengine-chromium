@@ -3473,7 +3473,10 @@ void Builtins::Generate_WasmCompileLazy(MacroAssembler* masm) {
   __ Jump(x17);
 }
 
-void Builtins::Generate_WasmDebugBreak(MacroAssembler* masm) {
+namespace {
+enum class DebugBreakKind { kBreak, kTrap };
+
+void Generate_WasmDebugBreakOrTrap(MacroAssembler* masm, DebugBreakKind kind) {
   HardAbortScope hard_abort(masm);  // Avoid calls to Abort.
   {
     FrameScope scope(masm, StackFrame::WASM_DEBUG_BREAK);
@@ -3483,16 +3486,43 @@ void Builtins::Generate_WasmDebugBreak(MacroAssembler* masm) {
     __ PushXRegList(WasmDebugBreakFrameConstants::kPushedGpRegs);
     __ PushQRegList(WasmDebugBreakFrameConstants::kPushedFpRegs);
 
-    // Initialize the JavaScript context with 0. CEntry will use it to
-    // set the current context on the isolate.
-    __ Move(cp, Smi::zero());
-    __ CallRuntime(Runtime::kWasmDebugBreak, 0);
+    // Load instance data from the caller's frame.
+    __ Ldr(x1, MemOperand(fp, 0));
+    __ Ldr(kWasmImplicitArgRegister,
+           MemOperand(x1, WasmFrameConstants::kWasmInstanceDataOffset));
+    __ LoadTaggedField(
+        cp, FieldMemOperand(kWasmImplicitArgRegister,
+                            WasmTrustedInstanceData::kNativeContextOffset));
 
-    // Restore registers.
-    __ PopQRegList(WasmDebugBreakFrameConstants::kPushedFpRegs);
-    __ PopXRegList(WasmDebugBreakFrameConstants::kPushedGpRegs);
+    if (kind == DebugBreakKind::kTrap) {
+      // The reason was pushed before the frame.
+      // Standard arm64 frame: [fp+8]=saved lr, [fp+0]=saved fp.
+      // But EnterFrame(WASM_DEBUG_BREAK) pushes lr, fp, type, fourth.
+      // So [fp+8]=saved lr, [fp+0]=saved fp, [fp-8]=type, [fp-16]=instance.
+      // Our Push(reason, xzr) was BEFORE EnterFrame.
+      // So [fp+24]=reason, [fp+16]=xzr.
+      __ Ldr(x0, MemOperand(fp, 3 * kSystemPointerSize));
+      __ PushArgument(x0);
+      __ CallRuntime(Runtime::kThrowWasmError, 1);
+      __ Unreachable();
+    } else {
+      __ CallRuntime(Runtime::kWasmDebugBreak, 0);
+
+      // Restore registers.
+      __ PopQRegList(WasmDebugBreakFrameConstants::kPushedFpRegs);
+      __ PopXRegList(WasmDebugBreakFrameConstants::kPushedGpRegs);
+    }
   }
-  __ Ret();
+  if (kind == DebugBreakKind::kBreak) __ Ret();
+}
+}  // namespace
+
+void Builtins::Generate_WasmDebugBreak(MacroAssembler* masm) {
+  Generate_WasmDebugBreakOrTrap(masm, DebugBreakKind::kBreak);
+}
+
+void Builtins::Generate_WasmDebugTrap(MacroAssembler* masm) {
+  Generate_WasmDebugBreakOrTrap(masm, DebugBreakKind::kTrap);
 }
 
 namespace {
@@ -3910,6 +3940,7 @@ void Generate_WasmResumeHelper(MacroAssembler* masm, wasm::OnResume on_resume) {
   }
   __ Trap();
   __ Bind(&suspend, BranchTargetIdentifier::kBtiJump);
+  __ LoadRoot(kReturnRegister0, RootIndex::kUndefinedValue);
   __ LeaveFrame(StackFrame::WASM_JSPI);
   // Pop receiver + parameter.
   __ DropArguments(2);
@@ -5723,12 +5754,22 @@ void Builtins::Generate_RestartFrameTrampoline(MacroAssembler* masm) {
   __ Ldr(x1, MemOperand(fp, StandardFrameConstants::kFunctionOffset));
   __ ldr(x0, MemOperand(fp, StandardFrameConstants::kArgCOffset));
 
+  // If the actual argument count for the previous invocation is smaller than
+  // the formal parameter count then use the latter as the actual argument
+  // count for the next invocation instead of the former.
+  // This approach avoids dropping adapted parameters for simplicity while
+  // keeping the caller stack balanced after the call.
+  __ Ldr(x10, MemOperand(fp, InterpreterFrameConstants::kBytecodeArrayFromFp));
+  __ Ldrh(x10.W(),
+          FieldMemOperand(x10, offsetof(BytecodeArray, parameter_size_)));
+  __ Cmp(x0, x10);
+  __ Csel(x0, x10, x0, kLessThan);
+
   __ LeaveFrame(StackFrame::INTERPRETED);
 
-  // The arguments are already in the stack (including any necessary padding),
-  // we should not try to massage the arguments again.
-  __ InvokeFunction(x1, x0, InvokeType::kJump,
-                    ArgumentAdaptionMode::kDontAdapt);
+  // The arguments are already in the stack, but we might need to adapt them
+  // if the function signature changed (e.g. via LiveEdit).
+  __ InvokeFunction(x1, x0, InvokeType::kJump, ArgumentAdaptionMode::kAdapt);
 }
 
 #undef __

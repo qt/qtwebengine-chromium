@@ -61,7 +61,7 @@ export interface AiCodeCompletionConfig {
 
 export const DELAY_BEFORE_SHOWING_RESPONSE_MS = 500;
 export const AIDA_REQUEST_DEBOUNCE_TIMEOUT_MS = 200;
-const MAX_PREFIX_SUFFIX_LENGTH = 20_000;
+export const MAX_PREFIX_SUFFIX_LENGTH = 20_000;
 
 export class AiCodeCompletionProvider {
   #aidaClient: Host.AidaClient.AidaClient = new Host.AidaClient.AidaClient();
@@ -78,7 +78,16 @@ export class AiCodeCompletionProvider {
   #aiCodeGenerationConfig?: AiCodeGenerationConfig;
   #aiCodeGenerationProvider?: AiCodeGenerationProvider;
 
-  #boundOnUpdateAiCodeCompletionState = this.#updateAiCodeCompletionState.bind(this);
+  #boundOnAidaAvailabilityChange =
+      (ev: Common.EventTarget.EventTargetEvent<Host.AidaClient.AidaAccessPreconditions>): void => {
+        this.#updateAiCodeCompletionStateWithAvailability(ev.data);
+      };
+  #boundOnSettingChange = (): void => {
+    const aidaAvailability = Host.AidaClient.HostConfigTracker.instance().aidaAvailability;
+    if (aidaAvailability !== undefined) {
+      this.#updateAiCodeCompletionStateWithAvailability(aidaAvailability);
+    }
+  };
 
   private constructor(aiCodeCompletionConfig: AiCodeCompletionConfig) {
     if (!AiCodeCompletion.AiCodeCompletion.AiCodeCompletion.isAiCodeCompletionAvailable()) {
@@ -122,9 +131,9 @@ export class AiCodeCompletionProvider {
   dispose(): void {
     this.#detachTeaser();
     this.#teaser = undefined;
-    this.#aiCodeCompletionSetting.removeChangeListener(this.#boundOnUpdateAiCodeCompletionState);
-    Host.AidaClient.HostConfigTracker.instance().removeEventListener(
-        Host.AidaClient.Events.AIDA_AVAILABILITY_CHANGED, this.#boundOnUpdateAiCodeCompletionState);
+    this.#aiCodeCompletionSetting.removeChangeListener(this.#boundOnSettingChange);
+    Host.AidaClient.HostConfigTracker.instance().removeEventListener(Host.AidaClient.Events.AIDA_AVAILABILITY_CHANGED,
+                                                                     this.#boundOnAidaAvailabilityChange);
     this.#cleanupAiCodeCompletion();
     this.#aiCodeGenerationProvider?.dispose();
   }
@@ -139,10 +148,13 @@ export class AiCodeCompletionProvider {
       this.#editor.editor.dispatch(
           {effects: this.#teaserCompartment.reconfigure([aiCodeCompletionTeaserExtension(this.#teaser)])});
     }
-    Host.AidaClient.HostConfigTracker.instance().addEventListener(
-        Host.AidaClient.Events.AIDA_AVAILABILITY_CHANGED, this.#boundOnUpdateAiCodeCompletionState);
-    this.#aiCodeCompletionSetting.addChangeListener(this.#boundOnUpdateAiCodeCompletionState);
-    void this.#updateAiCodeCompletionState();
+    Host.AidaClient.HostConfigTracker.instance().addEventListener(Host.AidaClient.Events.AIDA_AVAILABILITY_CHANGED,
+                                                                  this.#boundOnAidaAvailabilityChange);
+    this.#aiCodeCompletionSetting.addChangeListener(this.#boundOnSettingChange);
+    const initialAvailability = Host.AidaClient.HostConfigTracker.instance().aidaAvailability;
+    if (initialAvailability !== undefined) {
+      this.#updateAiCodeCompletionStateWithAvailability(initialAvailability);
+    }
     this.#aiCodeGenerationProvider?.editorInitialized(editor);
   }
 
@@ -183,8 +195,7 @@ export class AiCodeCompletionProvider {
     this.#aiCodeCompletionConfig?.onFeatureDisabled();
   }
 
-  async #updateAiCodeCompletionState(): Promise<void> {
-    const aidaAvailability = await Host.AidaClient.AidaClient.checkAccessPreconditions();
+  #updateAiCodeCompletionStateWithAvailability(aidaAvailability: Host.AidaClient.AidaAccessPreconditions): void {
     const isAvailable = aidaAvailability === Host.AidaClient.AidaAccessPreconditions.AVAILABLE;
     const devtoolsLocale = i18n.DevToolsLocale.DevToolsLocale.instance().locale;
     const aiCodeCompletionEnabled =
@@ -374,7 +385,7 @@ export class AiCodeCompletionProvider {
               clearCachedRequest: this.clearCache.bind(this),
               onImpression: this.#aiCodeCompletion?.registerUserImpression.bind(this.#aiCodeCompletion),
               source: AiSuggestionSource.COMPLETION,
-            })
+            }),
           });
         }
         if (fromCache) {
@@ -580,7 +591,7 @@ function aiCodeCompletionTeaserExtension(teaser: PanelCommon.AiCodeCompletionTea
           return true;
         }
         return false;
-      }
+      },
     },
   });
 }

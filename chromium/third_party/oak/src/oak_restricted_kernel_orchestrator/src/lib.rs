@@ -27,9 +27,9 @@ use oak_channel::basic_framed::receive_raw;
 use oak_channel::basic_framed::send_raw;
 use oak_dice::evidence::Stage0DiceData;
 use oak_proto_rust::oak::{
+    RawDigest,
     attestation::v1::{ApplicationLayerData, EventLog},
     restricted_kernel::InitialData,
-    RawDigest,
 };
 use oak_restricted_kernel_interface::initial_data::{
     INITIAL_DATA_HEADER_SIZE, INITIAL_DATA_V1_HEADER,
@@ -62,6 +62,8 @@ impl AttestedApp {
             config: Some(RawDigest { ..Default::default() }),
         };
 
+        // TODO: b/527437181 - Build equal number of layers and event log entries.
+        // At the moment we build 1 layer and 2 events (this is the second event).
         let event = oak_proto_rust::oak::attestation::v1::Event {
             tag: "oak_restricted_kernel_orchestrator".to_string(),
             event: Some(prost_types::Any {

@@ -10,6 +10,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/test/test_future.h"
 #include "base/time/time.h"
 #include "chrome/renderer/accessibility/read_anything/read_aloud_traversal_utils.h"
 #include "chrome/test/base/chrome_render_view_test.h"
@@ -430,10 +431,17 @@ TEST_F(
 TEST_F(
     ReadAnythingReadAloudAppModelV8SegmentationTest,
     GetHighlightForCurrentSegmentIndex_PhrasesEnabled_ValidModel_SentenceSpansMultipleNodes_ReturnsCorrectNodes) {
-  model().GetDependencyParserModel().UpdateWithFile(test::GetValidModelFile());
-  DependencyParserModel& phrase_model = model().GetDependencyParserModel();
+  model()
+      .GetDependencyParserModel()
+      .AsyncCall(&DependencyParserModel::UpdateWithFile)
+      .WithArgs(test::GetValidModelFile());
 
-  EXPECT_TRUE(phrase_model.IsAvailable());
+  base::test::TestFuture<bool> future;
+  model()
+      .GetDependencyParserModel()
+      .AsyncCall(&DependencyParserModel::IsAvailable)
+      .Then(future.GetCallback());
+  EXPECT_TRUE(future.Get());
 
   // Text indices:             0123456789012345678901234567890
   std::u16string sentence1 = u"Never feel heavy or ";
@@ -1235,4 +1243,29 @@ TEST_F(ReadAnythingReadAloudAppModelTest, ResetAndLogSingleSampleMetrics) {
                                      /*expected_count=*/2);
   histogram_tester.ExpectBucketCount(nextButtonCountName, /*sample=*/0,
                                      /*expected_count=*/2);
+}
+
+TEST_F(ReadAnythingReadAloudAppModelTest, LogPlaybackContext) {
+  base::HistogramTester histograms;
+  const char* histogram_name =
+      "Accessibility.ReadAnything.ReadAloud.PlaybackContext";
+
+  // Test Side Panel
+  model_->LogPlaybackContext(
+      ReadAloudAppModel::ReadAnythingPlaybackContext::kSidePanel);
+  EXPECT_EQ(model_->current_session_context_for_testing(),
+            ReadAloudAppModel::ReadAnythingPlaybackContext::kSidePanel);
+  histograms.ExpectUniqueSample(
+      histogram_name,
+      ReadAloudAppModel::ReadAnythingPlaybackContext::kSidePanel, 1);
+
+  // Test Immersive
+  model_->LogPlaybackContext(
+      ReadAloudAppModel::ReadAnythingPlaybackContext::kImmersive);
+  EXPECT_EQ(model_->current_session_context_for_testing(),
+            ReadAloudAppModel::ReadAnythingPlaybackContext::kImmersive);
+  histograms.ExpectBucketCount(
+      histogram_name,
+      ReadAloudAppModel::ReadAnythingPlaybackContext::kImmersive, 1);
+  histograms.ExpectTotalCount(histogram_name, 2);
 }

@@ -15,7 +15,7 @@
 
 #include "include/experimental.h"
 #include "include/xnnpack.h"
-#include "src/subgraph/rewrites/fp16_to_fp32.h"
+#include "src/subgraph/rewrites/cvt_to_fp32.h"
 #include "src/xnnpack/allocation-type.h"
 #include "src/xnnpack/allocator.h"
 #include "src/xnnpack/common.h"
@@ -195,7 +195,8 @@ enum xnn_status xnn_subgraph_add_internal_values(xnn_subgraph_t subgraph,
   XNN_RETURN_IF_ERROR(xnn_subgraph_reserve_values(subgraph, num_values));
   struct xnn_value* new_values = subgraph->values + subgraph->num_values;
   for (size_t i = 0; i < num_values; i++) {
-    xnn_value_clear(&new_values[i]);
+    assert(new_values + i != NULL);
+    memset(new_values + i, 0, sizeof(struct xnn_value));
     new_values[i].id = subgraph->num_values + i;
   }
   subgraph->num_values += num_values;
@@ -210,6 +211,12 @@ void xnn_node_clear(struct xnn_node* node) {
 
 void xnn_value_clear(struct xnn_value* value) {
   assert(value != NULL);
+  if ((value->flags & XNN_VALUE_FLAG_NEEDS_CLEANUP) && value->data != NULL) {
+    XNN_PRAGMA_CLANG("clang diagnostic push")
+    XNN_PRAGMA_CLANG("clang diagnostic ignored \"-Wcast-qual\"")
+    xnn_release_memory((void*)value->data);
+    XNN_PRAGMA_CLANG("clang diagnostic pop")
+  }
   memset(value, 0, sizeof(struct xnn_value));
 }
 
@@ -334,6 +341,7 @@ void xnn_subgraph_analyze_consumers_and_producers(xnn_subgraph_t subgraph) {
         continue;
       }
       const uint32_t input_id = node->inputs[i];
+      assert(input_id != XNN_INVALID_VALUE_ID);
       assert(input_id < subgraph->num_values);
 
       if (subgraph->values[input_id].num_consumers++ == 0) {
@@ -375,14 +383,18 @@ void xnn_subgraph_analyze_consumers_and_producers(xnn_subgraph_t subgraph) {
 static bool all_values_fp(xnn_subgraph_t subgraph,
                           const struct xnn_node* node) {
   for (uint32_t i = 0; i < node->num_inputs; i++) {
-    if (subgraph->values[node->inputs[i]].datatype != xnn_datatype_fp16 &&
-        subgraph->values[node->inputs[i]].datatype != xnn_datatype_fp32) {
+    const uint32_t input_id = node->inputs[i];
+    assert(input_id != XNN_INVALID_VALUE_ID);
+    if (subgraph->values[input_id].datatype != xnn_datatype_fp16 &&
+        subgraph->values[input_id].datatype != xnn_datatype_fp32) {
       return false;
     }
   }
   for (uint32_t i = 0; i < node->num_outputs; i++) {
-    if (subgraph->values[node->outputs[i]].datatype != xnn_datatype_fp16 &&
-        subgraph->values[node->outputs[i]].datatype != xnn_datatype_fp32) {
+    const uint32_t output_id = node->outputs[i];
+    assert(output_id != XNN_INVALID_VALUE_ID);
+    if (subgraph->values[output_id].datatype != xnn_datatype_fp16 &&
+        subgraph->values[output_id].datatype != xnn_datatype_fp32) {
       return false;
     }
   }
@@ -704,7 +716,9 @@ void xnn_subgraph_rewrite_for_nchw(xnn_subgraph_t subgraph) {
     node->cluster_leader = n;
     if (node->layout_flags & XNN_LAYOUT_FLAG_COMPATIBLE_NCHW2NHWC) {
       for (uint32_t i = 0; i < node->num_inputs; i++) {
-        const struct xnn_value* value = &subgraph->values[node->inputs[i]];
+        const uint32_t input_id = node->inputs[i];
+        assert(input_id != XNN_INVALID_VALUE_ID);
+        const struct xnn_value* value = &subgraph->values[input_id];
         if (value->data != NULL) {
           // Static data, skip this input value. Compatibility of this static
           // input with NCHW layout was validated during the initial NCHW
@@ -758,7 +772,9 @@ void xnn_subgraph_rewrite_for_nchw(xnn_subgraph_t subgraph) {
       }
 
       for (uint32_t i = 0; i < node->num_inputs; i++) {
-        const struct xnn_value* value = &subgraph->values[node->inputs[i]];
+        const uint32_t input_id = node->inputs[i];
+        assert(input_id != XNN_INVALID_VALUE_ID);
+        const struct xnn_value* value = &subgraph->values[input_id];
         if (value->data != NULL) {
           // Static data, skip this input value. Compatibility of this static
           // input with NCHW layout was validated during the initial NCHW
@@ -813,7 +829,9 @@ void xnn_subgraph_rewrite_for_nchw(xnn_subgraph_t subgraph) {
     }
 
     for (uint32_t i = 0; i < node->num_inputs; i++) {
-      struct xnn_value* value = &subgraph->values[node->inputs[i]];
+      const uint32_t input_id = node->inputs[i];
+      assert(input_id != XNN_INVALID_VALUE_ID);
+      struct xnn_value* value = &subgraph->values[input_id];
       if (value->data != NULL) {
         // Static data, skip this input value because it doesn't have a producer
         // Node.
@@ -836,7 +854,9 @@ void xnn_subgraph_rewrite_for_nchw(xnn_subgraph_t subgraph) {
     }
 
     for (uint32_t i = 0; i < node->num_inputs; i++) {
-      const struct xnn_value* value = &subgraph->values[node->inputs[i]];
+      const uint32_t input_id = node->inputs[i];
+      assert(input_id != XNN_INVALID_VALUE_ID);
+      const struct xnn_value* value = &subgraph->values[input_id];
       if (value->data != NULL) {
         // Static data, skip this input value because it doesn't have a producer
         // Node.
@@ -923,7 +943,9 @@ void xnn_subgraph_rewrite_for_nchw(xnn_subgraph_t subgraph) {
     }
 
     for (uint32_t i = 0; i < node->num_inputs; i++) {
-      struct xnn_value* value = &subgraph->values[node->inputs[i]];
+      const uint32_t input_id = node->inputs[i];
+      assert(input_id != XNN_INVALID_VALUE_ID);
+      struct xnn_value* value = &subgraph->values[input_id];
       if (value->data != NULL) {
         // Static data, skip this input value because it doesn't have a producer
         // Node.
@@ -947,12 +969,16 @@ void xnn_subgraph_rewrite_for_nchw(xnn_subgraph_t subgraph) {
 static bool any_values_fp32(xnn_subgraph_t subgraph,
                             const struct xnn_node* node) {
   for (uint32_t i = 0; i < node->num_inputs; i++) {
-    if (subgraph->values[node->inputs[i]].datatype == xnn_datatype_fp32) {
+    const uint32_t input_id = node->inputs[i];
+    assert(input_id != XNN_INVALID_VALUE_ID);
+    if (subgraph->values[input_id].datatype == xnn_datatype_fp32) {
       return true;
     }
   }
   for (uint32_t i = 0; i < node->num_outputs; i++) {
-    if (subgraph->values[node->outputs[i]].datatype == xnn_datatype_fp32) {
+    const uint32_t output_id = node->outputs[i];
+    assert(output_id != XNN_INVALID_VALUE_ID);
+    if (subgraph->values[output_id].datatype == xnn_datatype_fp32) {
       return true;
     }
   }
@@ -962,14 +988,18 @@ static bool any_values_fp32(xnn_subgraph_t subgraph,
 static bool all_values_fp32_or_pfp32(xnn_subgraph_t subgraph,
                                      const struct xnn_node* node) {
   for (uint32_t i = 0; i < node->num_inputs; i++) {
-    if (subgraph->values[node->inputs[i]].datatype != xnn_datatype_fp32 &&
-        subgraph->values[node->inputs[i]].datatype != xnn_datatype_pfp32) {
+    const uint32_t input_id = node->inputs[i];
+    assert(input_id != XNN_INVALID_VALUE_ID);
+    if (subgraph->values[input_id].datatype != xnn_datatype_fp32 &&
+        subgraph->values[input_id].datatype != xnn_datatype_pfp32) {
       return false;
     }
   }
   for (uint32_t i = 0; i < node->num_outputs; i++) {
-    if (subgraph->values[node->outputs[i]].datatype != xnn_datatype_fp32 &&
-        subgraph->values[node->outputs[i]].datatype != xnn_datatype_pfp32) {
+    const uint32_t output_id = node->outputs[i];
+    assert(output_id != XNN_INVALID_VALUE_ID);
+    if (subgraph->values[output_id].datatype != xnn_datatype_fp32 &&
+        subgraph->values[output_id].datatype != xnn_datatype_pfp32) {
       return false;
     }
   }
@@ -1101,9 +1131,11 @@ bool xnn_subgraph_rewrite_for_fp16(xnn_subgraph_t subgraph) {
           if (subgraph->values[node->inputs[1]].datatype == xnn_datatype_fp32) {
             subgraph->values[node->inputs[1]].fp16_rewrite.fp16_compatible = true;
           }
-          if (node->num_inputs > 2 &&
-              subgraph->values[node->inputs[2]].datatype == xnn_datatype_fp32) {
-            subgraph->values[node->inputs[2]].fp16_rewrite.fp16_compatible = true;
+          if (node->num_inputs > 2) {
+            assert(node->inputs[2] != XNN_INVALID_VALUE_ID);
+            if (subgraph->values[node->inputs[2]].datatype == xnn_datatype_fp32) {
+              subgraph->values[node->inputs[2]].fp16_rewrite.fp16_compatible = true;
+            }
           }
         } else if (all_values_fp32_or_pfp32(subgraph, node)) {
           subgraph->values[node->inputs[0]].fp16_rewrite.fp16_compatible = true;
@@ -1137,10 +1169,12 @@ bool xnn_subgraph_rewrite_for_fp16(xnn_subgraph_t subgraph) {
         break;
       default:
         for (uint32_t i = 0; i < node->num_inputs; i++) {
-          switch (subgraph->values[node->inputs[i]].datatype) {
+          const uint32_t input_id = node->inputs[i];
+          assert(input_id != XNN_INVALID_VALUE_ID);
+          switch (subgraph->values[input_id].datatype) {
             case xnn_datatype_fp32:
             case xnn_datatype_pfp32:
-              subgraph->values[node->inputs[i]].fp16_rewrite.fp16_compatible = true;
+              subgraph->values[input_id].fp16_rewrite.fp16_compatible = true;
               break;
             default:
               break;
@@ -1228,7 +1262,9 @@ bool xnn_subgraph_rewrite_for_fp16(xnn_subgraph_t subgraph) {
       if (is_repeated_input(node, i)) {
         continue;
       }
-      const struct xnn_value* value = &subgraph->values[node->inputs[i]];
+      const uint32_t input_id = node->inputs[i];
+      assert(input_id != XNN_INVALID_VALUE_ID);
+      const struct xnn_value* value = &subgraph->values[input_id];
       if (value->fp16_rewrite.fp16_id != XNN_INVALID_VALUE_ID &&
           value->first_consumer == n) {
         assert(value->data == NULL);
@@ -1366,7 +1402,9 @@ bool xnn_subgraph_rewrite_for_fp16(xnn_subgraph_t subgraph) {
     }
 
     for (uint32_t i = 0; i < node->num_inputs; i++) {
-      const uint32_t fp16_id = subgraph->values[node->inputs[i]].fp16_rewrite.fp16_id;
+      const uint32_t input_id = node->inputs[i];
+      assert(input_id != XNN_INVALID_VALUE_ID);
+      const uint32_t fp16_id = subgraph->values[input_id].fp16_rewrite.fp16_id;
       if (fp16_id != XNN_INVALID_VALUE_ID) {
         struct xnn_value* fp16_value = &subgraph->values[fp16_id];
         assert(fp16_value->fp16_rewrite.fp32_id == node->inputs[i]);
@@ -1752,6 +1790,15 @@ static uint32_t is_pure_unary_elementwise(xnn_subgraph_t subgraph,
                                           uint32_t num_unary_values) {
   switch (node->type) {
     case xnn_node_type_unary_elementwise:
+      // A pure unary elementwise function takes exactly one tensor input and
+      // must have a valid operator. A node already fused into a LUT by this
+      // same pass (see `xnn_define_unary_elementwise_lut_in_place`) has 2
+      // inputs (the tensor and the LUT table) and
+      // `unary_operator == xnn_unary_invalid`; it isn't safe to treat that as
+      // a plain unary function and fuse it into another LUT.
+      if (node->num_inputs != 1 || node->unary_operator == xnn_unary_invalid) {
+        return XNN_INVALID_VALUE_ID;
+      }
       assert(node->num_inputs >= 1);
       return node->inputs[0];
     case xnn_node_type_binary_elementwise: {
@@ -1902,11 +1949,11 @@ fail:
   return status;
 }
 
-static bool replace_node_with_lut(xnn_subgraph_t subgraph,
-                                  struct xnn_node* node, uint32_t input_id,
-                                  uint32_t unary_input_id,
-                                  xnn_subgraph_t unary_subgraph) {
-  XNN_RETURN_IF_ERROR(xnn_subgraph_reserve_nodes(subgraph, 1));
+static enum xnn_status replace_node_with_lut(xnn_subgraph_t subgraph,
+                                             struct xnn_node* node,
+                                             uint32_t input_id,
+                                             uint32_t unary_input_id,
+                                             xnn_subgraph_t unary_subgraph) {
   XNN_RETURN_IF_ERROR(xnn_subgraph_reserve_values(subgraph, 1));
 
   const uint32_t unary_output_id =
@@ -1924,19 +1971,23 @@ static bool replace_node_with_lut(xnn_subgraph_t subgraph,
   uint8_t* lut = xnn_allocate_memory(256 * sizeof(uint8_t));
   if (lut == NULL) {
     xnn_log_error("failed to allocate LUT");
-    return false;
+    return xnn_status_out_of_memory;
   }
   enum xnn_status status = run_subgraph_to_make_lut(
       unary_subgraph, unary_input_id, unary_output_id, lut);
   if (status != xnn_status_success) {
     // Failed to generate the LUT, abandon this fusion.
     xnn_release_memory(lut);
-    return false;
+    return status;
   }
 
   // We don't have any other way to store a dynamic allocation in a subgraph
   // except in a value.
   struct xnn_value* lut_value = xnn_subgraph_new_internal_value(subgraph);
+  if (lut_value == NULL) {
+    xnn_release_memory(lut);
+    return xnn_status_out_of_memory;
+  }
   lut_value->flags |= XNN_VALUE_FLAG_NEEDS_CLEANUP;
   lut_value->data = lut;
   lut_value->datatype = xnn_datatype_quint8;
@@ -1953,9 +2004,8 @@ static bool replace_node_with_lut(xnn_subgraph_t subgraph,
     }
   }
 
-  xnn_define_unary_elementwise_lut_in_place(node, input_id, node->outputs[0],
-                                            lut_value->id);
-  return true;
+  return xnn_define_unary_elementwise_lut_in_place(
+      node, input_id, node->outputs[0], lut_value->id);
 }
 
 void reshape_for_lut(struct xnn_value* value) {
@@ -2067,7 +2117,7 @@ void xnn_subgraph_fuse_unary_quantized_into_lut(xnn_subgraph_t subgraph) {
       const uint32_t unary_input_id = map_value_id(value_map, input_id, NULL);
       reshape_for_lut(&unary_subgraph.values[unary_input_id]);
       if (replace_node_with_lut(subgraph, node, input_id, unary_input_id,
-                                &unary_subgraph)) {
+                                &unary_subgraph) == xnn_status_success) {
         // We replaced this subgraph with a LUT, clear out the old values and
         // nodes.
         for (uint32_t i = 0; i + 1 < unary_subgraph.num_nodes; i++) {
@@ -2172,6 +2222,7 @@ void xnn_subgraph_clean_up(xnn_subgraph_t subgraph) {
   uint32_t left = 0;
   uint32_t num_invalid_nodes = 0;
   while (left + num_invalid_nodes < subgraph->num_nodes) {
+    const uint32_t old_left = left;
     num_invalid_nodes = 0;
     for (uint32_t i = left; i < subgraph->num_nodes; i++) {
       struct xnn_node* node = &subgraph->nodes[i];
@@ -2185,7 +2236,10 @@ void xnn_subgraph_clean_up(xnn_subgraph_t subgraph) {
       // Check whether all inputs to this node have been produced.
       bool all_values_avail = true;
       for (uint32_t j = 0; all_values_avail && j < node->num_inputs; j++) {
-        all_values_avail = values_ready[node->inputs[j]];
+        uint32_t input_id = node->inputs[j];
+        assert(input_id != XNN_INVALID_VALUE_ID);
+        assert(input_id < subgraph->num_values);
+        all_values_avail = values_ready[input_id];
       }
 
       // If so, bubble this node down to the left end of the list of nodes.
@@ -2208,6 +2262,10 @@ void xnn_subgraph_clean_up(xnn_subgraph_t subgraph) {
         }
         left++;
       }
+    }
+    if (left == old_left) {
+      xnn_log_error("Failed to schedule all nodes in subgraph (possible cycle).");
+      break;
     }
   }
 
@@ -2285,15 +2343,18 @@ static bool convert_gemm_to_qduint8(
       }
     }
   }
-
   // If the `qduint8` config is better than the `qdint8` config, use it
   // instead.
   bool convert_to_qu8 = false;
-  if (original_config && unsigned_config) {
-    enum xnn_arch_flags qdu8_arch = unsigned_config->arch;
-    enum xnn_arch_flags qd8_arch = original_config->arch;
-    if (qdu8_arch > qd8_arch) {
+  if (unsigned_config) {
+    if (original_config == NULL) {
       convert_to_qu8 = true;
+    } else {
+      enum xnn_arch_flags qdu8_arch = unsigned_config->arch;
+      enum xnn_arch_flags qd8_arch = original_config->arch;
+      if (qdu8_arch > qd8_arch) {
+        convert_to_qu8 = true;
+      }
     }
   }
   return convert_to_qu8;
@@ -2685,7 +2746,8 @@ static enum xnn_status optimize_common_subgraphs_broadcast(
 
     // Create a static right-hand side value filled with zeros.
     void* data = xnn_allocate_zero_memory(
-        num_elements * xnn_datatype_size_bytes(input_value->datatype));
+        num_elements * xnn_datatype_size_bytes(input_value->datatype) +
+        XNN_EXTRA_BYTES);
     uint32_t new_value_id;
     XNN_RETURN_IF_ERROR(
         xnn_datatype_is_quantized(input_value->datatype)
@@ -4180,11 +4242,11 @@ static bool is_qs8_to_f32_dequant(const struct xnn_subgraph* subgraph,
 }
 
 static bool rewrite_dequant_bmm_at(xnn_subgraph_t subgraph, uint32_t node_id) {
-  // Reserve space upfront (we'll add 2 values + 2 nodes) so the later
+  // Reserve space upfront (we'll add 1 value + 1 node) so the later
   // `xnn_subgraph_new_internal_value` / `xnn_subgraph_new_node` calls do not
   // each trigger an additional reallocation or invalidate pointers.
-  if (xnn_subgraph_reserve_values(subgraph, 2) != xnn_status_success ||
-      xnn_subgraph_reserve_nodes(subgraph, 2) != xnn_status_success) {
+  if (xnn_subgraph_reserve_values(subgraph, 1) != xnn_status_success ||
+      xnn_subgraph_reserve_nodes(subgraph, 1) != xnn_status_success) {
     return false;
   }
 
@@ -4251,7 +4313,6 @@ static bool rewrite_dequant_bmm_at(xnn_subgraph_t subgraph, uint32_t node_id) {
   }
 
   const struct xnn_shape b_shape = b_qint8_value->shape;
-  const struct xnn_shape a_shape = a_value->shape;
 
   // Create new internal value: b in qcint8. Channelwise scale array is left
   // null here; `convert(qint8 -> qcint8)` populates it at reshape.
@@ -4270,23 +4331,6 @@ static bool rewrite_dequant_bmm_at(xnn_subgraph_t subgraph, uint32_t node_id) {
   b_qcint8_value->allocation_type = xnn_allocation_type_workspace;
   const uint32_t b_qcint8_id = b_qcint8_value->id;
 
-  // Create new internal value: a in qdint8.
-  struct xnn_value* a_qdint8_value = xnn_subgraph_new_internal_value(subgraph);
-  if (a_qdint8_value == NULL) {
-    return false;
-  }
-  a_qdint8_value->type = xnn_value_type_dense_tensor;
-  a_qdint8_value->datatype = xnn_datatype_qdint8;
-  a_qdint8_value->quantization.num_nonbatch_dims = 2;
-  a_qdint8_value->shape = a_shape;
-  a_qdint8_value->size = xnn_tensor_get_size(a_qdint8_value);
-  a_qdint8_value->quantization.dynamic_params_size =
-      xnn_tensor_get_dynamic_quant_param_size(
-          a_qdint8_value->datatype, &a_qdint8_value->shape,
-          a_qdint8_value->quantization.num_nonbatch_dims);
-  a_qdint8_value->allocation_type = xnn_allocation_type_workspace;
-  const uint32_t a_qdint8_id = a_qdint8_value->id;
-
   struct xnn_node* qs8_to_qc8_node = xnn_subgraph_new_node(subgraph);
 
   if (qs8_to_qc8_node == NULL) {
@@ -4296,24 +4340,12 @@ static bool rewrite_dequant_bmm_at(xnn_subgraph_t subgraph, uint32_t node_id) {
   xnn_init_convert_node(qs8_to_qc8_node, b_qint8_id, b_qcint8_id,
                         /*flags=*/0);
 
-  struct xnn_node* f32_to_qd8_node = xnn_subgraph_new_node(subgraph);
-
-  if (f32_to_qd8_node == NULL) {
-    return false;
-  }
-
-  xnn_init_convert_node(f32_to_qd8_node, input_a_id, a_qdint8_id,
-                        /*flags=*/0);
-
   node = &subgraph->nodes[node_id];
-  node->inputs[0] = a_qdint8_id;
   node->inputs[1] = b_qcint8_id;
 
-  xnn_log_info(
-      "Rewrote bmm Node #%" PRIu32
-      ": dequant(qint8 #%" PRIu32 ") -> qcint8 #%" PRIu32
-      ", a:f32 #%" PRIu32 " -> qdint8 #%" PRIu32,
-      node_id, b_qint8_id, b_qcint8_id, input_a_id, a_qdint8_id);
+  xnn_log_info("Rewrote bmm Node #%" PRIu32 ": dequant(qint8 #%" PRIu32
+               ") -> qcint8 #%" PRIu32,
+               node_id, b_qint8_id, b_qcint8_id);
   return true;
 }
 
@@ -4527,6 +4559,61 @@ void xnn_subgraph_rewrite_ssa(xnn_subgraph_t subgraph) {
   xnn_release_memory(values_written);
 }
 
+enum xnn_status xnn_subgraph_pack_static_values_to_fp16(
+    xnn_subgraph_t subgraph) {
+  for (uint32_t n = 0; n < subgraph->num_values; n++) {
+    struct xnn_value* value = &subgraph->values[n];
+    if (xnn_value_is_static(value->allocation_type) &&
+        (value->flags & XNN_VALUE_FLAG_PACK_TO_FP16)) {
+      if (value->datatype == xnn_datatype_fp16) {
+        continue;
+      }
+      if (value->datatype != xnn_datatype_fp32) {
+        xnn_log_error(
+            "failed to pack value #%" PRIu32 " to FP16: unsupported datatype %s"
+             " (expected FP32)", n, xnn_datatype_to_string(value->datatype));
+        return xnn_status_invalid_parameter;
+      }
+
+      const size_t fp16_size = xnn_tensor_get_size(value) / 2 + XNN_EXTRA_BYTES;
+      void* fp16_data = xnn_allocate_zero_memory(fp16_size);
+      if (fp16_data == NULL) {
+        xnn_log_error(
+            "failed to allocate %zu bytes for packed fp16 tensor data",
+            fp16_size);
+        return xnn_status_out_of_memory;
+      }
+
+      const size_t num_elements = xnn_shape_multiply_all_dims(&value->shape);
+      enum xnn_status status = xnn_run_unary_elementwise_nc(
+          xnn_unary_convert, xnn_datatype_fp32, xnn_datatype_fp16,
+          /*params=*/NULL, /*input_quantization=*/NULL,
+          /*output_quantization=*/NULL, 0, num_elements, 1, 1, 1, NULL,
+          value->data, fp16_data);
+
+      if (status != xnn_status_success) {
+        xnn_release_memory(fp16_data);
+        xnn_log_error("failed to convert value #%" PRIu32 " data to FP16", n);
+        return status;
+      }
+
+      if (value->flags & XNN_VALUE_FLAG_NEEDS_CLEANUP) {
+        XNN_PRAGMA_CLANG("clang diagnostic push")
+        XNN_PRAGMA_CLANG("clang diagnostic ignored \"-Wcast-qual\"")
+        xnn_release_memory((void*)value->data);
+        XNN_PRAGMA_CLANG("clang diagnostic pop")
+      }
+
+      value->data = fp16_data;
+      value->datatype = xnn_datatype_fp16;
+      value->flags |= XNN_VALUE_FLAG_NEEDS_CLEANUP;
+
+      xnn_log_debug("packed value #%" PRIu32 " to FP16", n);
+    }
+  }
+  return xnn_status_success;
+}
+
 enum xnn_status xnn_subgraph_optimize(xnn_subgraph_t subgraph,
                                       uint32_t optimization_flags) {
   // If the subgraph has no nodes, then there is nothing for us to do here, but
@@ -4535,6 +4622,8 @@ enum xnn_status xnn_subgraph_optimize(xnn_subgraph_t subgraph,
     xnn_log_info("Trying to optimize subgraph with zero nodes, skipping.");
     return xnn_status_success;
   }
+
+  XNN_RETURN_IF_ERROR(xnn_subgraph_pack_static_values_to_fp16(subgraph));
 
   // Start with a clean and ordered subgraph.
   xnn_subgraph_clean_up(subgraph);
@@ -4588,12 +4677,19 @@ enum xnn_status xnn_subgraph_optimize(xnn_subgraph_t subgraph,
   }
 #endif
 
+  XNN_RETURN_IF_ERROR(xnn_subgraph_rewrite_dequant_bmm(subgraph));
+
   XNN_RETURN_IF_ERROR(
       xnn_subgraph_optimize_packed_lhs(subgraph, optimization_flags));
 
-  if (!xnn_is_f16_supported_natively(hardware_config) && !force_fp16) {
+  if (!force_fp16) {
     XNN_RETURN_IF_ERROR(xnn_subgraph_fallback_from_fp16_to_fp32(subgraph, optimization_flags));
   }
+
+  // bf16 values are independent of the fp16 force flag, so this always runs to
+  // lower any bf16 ops that lack a native kernel to fp32.
+  XNN_RETURN_IF_ERROR(
+      xnn_subgraph_fallback_from_bf16_to_fp32(subgraph, optimization_flags));
 
   return xnn_status_success;
 }
@@ -4632,7 +4728,9 @@ enum xnn_status xnn_delete_subgraph(xnn_subgraph_t subgraph) {
       // subgraph still has ownership of them.
       for (uint32_t i = 0; i < subgraph->num_values; i++) {
         struct xnn_value* value = &subgraph->values[i];
-        if (value->fp16_rewrite.fp16_compatible && value->data != NULL) {
+        if ((value->fp16_rewrite.fp16_compatible ||
+             (value->flags & XNN_VALUE_FLAG_NEEDS_CLEANUP)) &&
+            value->data != NULL) {
           XNN_PRAGMA_CLANG("clang diagnostic push")
           XNN_PRAGMA_CLANG("clang diagnostic ignored \"-Wcast-qual\"")
           xnn_release_memory((void*)value->data);

@@ -21,7 +21,6 @@
 
 #include <float.h>
 
-#include "encode.h"
 #include "enc.h"
 #include "pvq.h"
 #include "enc_psy.h"
@@ -32,9 +31,11 @@
 #include "libavutil/mem.h"
 #include "libavutil/mem_internal.h"
 #include "libavutil/opt.h"
-#include "bytestream.h"
-#include "audio_frame_queue.h"
-#include "codec_internal.h"
+
+#include "libavcodec/audio_frame_queue.h"
+#include "libavcodec/bytestream.h"
+#include "libavcodec/codec_internal.h"
+#include "libavcodec/encode.h"
 
 typedef struct OpusEncContext {
     AVClass *av_class;
@@ -130,9 +131,20 @@ static void celt_frame_setup_input(OpusEncContext *s, CeltFrame *f)
 
     for (int ch = 0; ch < f->channels; ch++) {
         CeltBlock *b = &f->block[ch];
-        const void *input = cur->extended_data[ch];
+        const char *input = cur->extended_data[ch];
         size_t bps = av_get_bytes_per_sample(cur->format);
-        memcpy(b->overlap, input, bps*cur->nb_samples);
+        /* The MDCT overlap is the trailing CELT_OVERLAP samples of the
+         * previous packet's last frame. Because the encoder advertises
+         * AV_CODEC_CAP_SMALL_LAST_FRAME, that frame can be shorter than
+         * CELT_OVERLAP; in that case, zero-pad the leading part of the
+         * overlap buffer and copy only what's available. */
+        int n = FFMIN(cur->nb_samples, CELT_OVERLAP);
+        if (n < CELT_OVERLAP) {
+            memset(b->overlap, 0, (CELT_OVERLAP - n) * bps);
+        }
+        memcpy((char *)b->overlap + (CELT_OVERLAP - n) * bps,
+               input + (cur->nb_samples - n) * bps,
+               n * bps);
     }
 
     av_frame_free(&cur);
@@ -599,7 +611,9 @@ static int opus_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     ff_opus_psy_postencode_update(&s->psyctx, s->frame);
 
     /* Remove samples from queue and skip if needed */
-    ff_af_queue_remove(&s->afq, s->packet.frames*frame_size, &avpkt->pts, &avpkt->duration);
+    ret = ff_af_queue_remove(&s->afq, s->packet.frames*frame_size, avpkt);
+    if (ret < 0)
+        return ret;
 
     discard_padding = s->packet.frames*frame_size - ff_samples_from_time_base(avctx, avpkt->duration);
     if (discard_padding > 0) {

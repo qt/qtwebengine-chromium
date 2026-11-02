@@ -32,7 +32,6 @@
 #include "content/browser/back_forward_cache/back_forward_cache_can_store_document_result.h"
 #include "content/browser/back_forward_cache/back_forward_cache_disable.h"
 #include "content/browser/back_forward_cache/back_forward_cache_metrics.h"
-#include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/devtools/devtools_agent_host_impl.h"
 #include "content/browser/devtools/devtools_session.h"
 #include "content/browser/devtools/protocol/browser_handler.h"
@@ -760,7 +759,7 @@ Response PageHandler::AddScriptToEvaluateOnNewDocumentInternal(
     std::optional<bool> include_command_line_api,
     std::string* identifier) {
   blink::mojom::BrowserOriginatingSessionState* state =
-      session()->browser_agent_state();
+      session()->browser_originating_session_state();
 
   // Generate identifier. This currently uses an id that is 1 higher than the
   // largest existent id, but is subject to change in the future. The clients
@@ -787,7 +786,7 @@ Response PageHandler::AddScriptToEvaluateOnNewDocumentInternal(
 Response PageHandler::RemoveScriptToEvaluateOnNewDocument(
     const std::string& identifier) {
   blink::mojom::BrowserOriginatingSessionState* state =
-      session()->browser_agent_state();
+      session()->browser_originating_session_state();
 
   auto it = state->scripts_to_evaluate_on_new_document.find(identifier);
   if (it == state->scripts_to_evaluate_on_new_document.end()) {
@@ -980,6 +979,18 @@ void PageHandler::Navigate(const std::string& url,
     callback->sendFailure(Response::ServerError(
         "Navigating to a URL with a privileged scheme is not allowed"));
     return;
+  }
+
+  if (!session()->GetClient()->MayAttachToURL(gurl,
+                                              host_->web_ui() != nullptr)) {
+    url::Origin origin = url::Origin::Create(gurl);
+    if (!origin.scheme().empty() &&
+        origin.scheme() != content::kChromeUIScheme &&
+        origin.scheme() != content::kChromeUIUntrustedScheme &&
+        origin.scheme() != content::kChromeDevToolsScheme) {
+      callback->sendFailure(Response::ServerError("Not allowed"));
+      return;
+    }
   }
 
   ui::PageTransition type;

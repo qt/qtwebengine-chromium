@@ -50,7 +50,7 @@ unsigned int GetFullFrameDepth(content::RenderFrameHost* rfh) {
 }  // namespace
 
 FrameTreeData::FrameTreeData(content::FrameTreeNodeId root_frame_tree_node_id,
-                             base::ByteCount heavy_ad_network_threshold_noise)
+                             base::ByteSize heavy_ad_network_threshold_noise)
     : root_frame_tree_node_id_(root_frame_tree_node_id),
       heavy_ad_network_threshold_noise_(heavy_ad_network_threshold_noise) {}
 
@@ -211,10 +211,10 @@ HeavyAdStatus FrameTreeData::ComputeHeavyAdStatus(
 
   if (policy == HeavyAdUnloadPolicy::kNetworkOnly ||
       policy == HeavyAdUnloadPolicy::kAll) {
-    base::ByteCount network_threshold =
+    base::ByteSize network_threshold =
         heavy_ad_thresholds::kMaxNetworkBytes +
         (use_network_threshold_noise ? heavy_ad_network_threshold_noise_
-                                     : base::ByteCount(0));
+                                     : base::ByteSize(0));
 
     // Check if the frame meets the network threshold, possible including noise.
     if (resource_data().network_bytes() >= network_threshold)
@@ -253,11 +253,14 @@ void FrameTreeData::UpdateForNavigation(
     SetFrameSize(*(render_frame_host->GetFrameSize()));
 
   // For frames triggered on render, their origin is their parent's origin.
+  initial_origin_ = render_frame_host->GetLastCommittedOrigin();
   origin_status_ =
       AdsPageLoadMetricsObserver::IsFrameSameOriginToOutermostMainFrame(
           render_frame_host)
           ? OriginStatus::kSame
           : OriginStatus::kCross;
+
+  devtools_frame_token_ = render_frame_host->GetDevToolsFrameToken();
 
   root_frame_depth_ = GetFullFrameDepth(render_frame_host);
 }
@@ -273,7 +276,7 @@ void FrameTreeData::ProcessResourceLoadInFrame(
   resource_data_.ProcessResourceLoad(resource);
 }
 
-void FrameTreeData::AdjustAdBytes(base::ByteCount unaccounted_ad_bytes,
+void FrameTreeData::AdjustAdBytes(base::ByteSize unaccounted_ad_bytes,
                                   ResourceMimeType mime_type) {
   resource_data_.AdjustAdBytes(unaccounted_ad_bytes, mime_type);
 }

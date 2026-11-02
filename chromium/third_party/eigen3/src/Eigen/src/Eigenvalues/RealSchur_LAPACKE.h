@@ -79,6 +79,8 @@ EIGEN_LAPACKE_SCHUR_REAL(float, float, s, S, ColMajor, LAPACK_COL_MAJOR)
 EIGEN_LAPACKE_SCHUR_REAL(double, double, d, D, RowMajor, LAPACK_ROW_MAJOR)
 EIGEN_LAPACKE_SCHUR_REAL(float, float, s, S, RowMajor, LAPACK_ROW_MAJOR)
 
+#undef EIGEN_LAPACKE_SCHUR_REAL
+
 }  // end namespace Eigen
 
 #endif  // EIGEN_REAL_SCHUR_LAPACKE_H

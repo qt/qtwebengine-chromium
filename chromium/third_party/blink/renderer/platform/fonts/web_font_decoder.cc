@@ -68,7 +68,6 @@ class BlinkOTSContext final : public ots::OTSContext {
   void AppendErrorMessage(const String& new_error_string);
 
   StringBuilder accumulated_error_string_;
-  bool stopped_accepting_messages_ = false;
 };
 
 void BlinkOTSContext::Message(int level, const char* format, ...) {
@@ -101,24 +100,16 @@ void BlinkOTSContext::Message(int level, const char* format, ...) {
 
 void BlinkOTSContext::AppendErrorMessage(const String& new_error_string) {
   // OTS can emit a large number of warnings for malformed fonts. Keep enough
-  // text for diagnostics, but avoid unbounded string growth. Once a message
-  // would push the accumulated string past the budget, stop accepting further
-  // messages entirely rather than truncating individual ones.
+  // text for diagnostics, but avoid unbounded string growth. Once the
+  // accumulated string reaches the budget, stop accepting further messages
+  // entirely rather than truncating individual ones.
   static constexpr unsigned kMaxAccumulatedErrorStringLength = 4096;
 
-  if (stopped_accepting_messages_) {
+  if (accumulated_error_string_.length() >= kMaxAccumulatedErrorStringLength) {
     return;
   }
 
-  const unsigned separator_length = accumulated_error_string_.empty() ? 0u : 1u;
-  if (accumulated_error_string_.length() + separator_length +
-          new_error_string.length() >
-      kMaxAccumulatedErrorStringLength) {
-    stopped_accepting_messages_ = true;
-    return;
-  }
-
-  if (separator_length) {
+  if (!accumulated_error_string_.empty()) {
     accumulated_error_string_.Append('\n');
   }
   accumulated_error_string_.Append(new_error_string);
@@ -186,19 +177,18 @@ ots::TableAction BlinkOTSContext::GetTableAction(uint32_t tag) {
 
 }  // namespace
 
-sk_sp<SkTypeface> WebFontDecoder::Decode(SegmentedBuffer* buffer) {
+base::expected<DecodedWebFont, String> DecodedWebFont::Create(
+    SegmentedBuffer* buffer) {
   if (!buffer) {
-    SetErrorString("Empty Buffer");
-    return nullptr;
+    return base::unexpected("Empty Buffer");
   }
 
   // This is the largest web font size which we'll try to transcode.
   static const size_t kMaxDecompressedSize =
       kMaxDecompressedSizeMb * 1024 * 1024;
   if (buffer->size() > kMaxDecompressedSize) {
-    SetErrorString(String::Format("Web font size more than %zuMB",
-                                  kMaxDecompressedSizeMb));
-    return nullptr;
+    return base::unexpected(String::Format("Web font size more than %zuMB",
+                                           kMaxDecompressedSizeMb));
   }
 
   // Most web fonts are compressed, so the result can be much larger than
@@ -209,36 +199,34 @@ sk_sp<SkTypeface> WebFontDecoder::Decode(SegmentedBuffer* buffer) {
   BlinkOTSContext ots_context;
   SegmentedBuffer::DeprecatedFlatData flattened_buffer(buffer);
 
-  TRACE_EVENT_BEGIN0("blink", "DecodeFont");
-  bool ok = ots_context.Process(
-      output.get(), reinterpret_cast<const uint8_t*>(flattened_buffer.data()),
-      buffer->size());
-  TRACE_EVENT_END0("blink", "DecodeFont");
+  bool ok;
+  {
+    TRACE_EVENT("blink", "DecodeFont");
+    ok = ots_context.Process(
+        output.get(), reinterpret_cast<const uint8_t*>(flattened_buffer.data()),
+        buffer->size());
+  }
 
   if (!ok) {
-    SetErrorString(ots_context.GetErrorString());
-    return nullptr;
+    return base::unexpected(ots_context.GetErrorString());
   }
 
   const void* decoded_data = output->get();
-  const size_t decoded_length = base::checked_cast<size_t>(output->Tell());
+  DecodedWebFont result{
+      .decoded_size = base::checked_cast<size_t>(output->Tell()),
+  };
   sk_sp<SkData> sk_data = SkData::MakeWithProc(
-      decoded_data, decoded_length,
+      decoded_data, result.decoded_size,
       [](const void*, void* output) {
         delete static_cast<const ots::ExpandingMemoryStream*>(output);
       },
       output.release());
 
-  sk_sp<SkTypeface> new_typeface;
-
-  if (!WebFontTypefaceFactory::CreateTypeface(sk_data, new_typeface)) {
-    SetErrorString("Unable to instantiate font face from font data.");
-    return nullptr;
+  if (!WebFontTypefaceFactory::CreateTypeface(sk_data, result.sk_typeface)) {
+    return base::unexpected("Unable to instantiate font face from font data.");
   }
 
-  decoded_size_ = decoded_length;
-
-  return new_typeface;
+  return result;
 }
 
 }  // namespace blink

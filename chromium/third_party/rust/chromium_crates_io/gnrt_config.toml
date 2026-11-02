@@ -75,17 +75,22 @@
 #   README.chromium. It defaults to true if the crate is not in the 'test'
 #   group.
 #
-# extra_kv: A dictionary with arbitrary data (i.e. that doesn't come from
-#   `gnrt`).  The following enries are currently supported/used by
-#   `BUILD.gn.hbs`:
+# extra_kv: A dictionary with arbitrary data (i.e. data doesn't come from, nor
+#   is consumed by `gnrt`).  The following entries are currently supported/used
+#   by `BUILD.gn.hbs`:
 #
 #     allow_unsafe: If true, then the crate is allowed to use `unsafe` Rust.
 #
 #     allow_unstable_features: A list of unstable feature names to allow
 #       in a given crate.  (This should be used sparingly - please see
-#       tools/rust/unstable_rust_feature_usage.md for more details.)
+#       docs/rust/unstable_rust_feature_usage.md for more details.)
 #
 #     configs_to_remove / configs_to_add: A list of GN config labels.
+#
+#     cpp_api_from_rust: Either a boolean (e.g. `cpp_api_from_rust = true`) or
+#       a sub-table (e.g. `cpp_api_from_rust = { deps = ["png/v0_18"] }`) that
+#       asks for Crubit-based C++ bindings to be generated for the given crate.
+#       See `//docs/rust/crubit.md` for more details.
 #
 #     extra_deps: A list of dependencies to be added to the crate.
 #
@@ -186,7 +191,6 @@ extra_kv = { allow_unsafe = false }
 
 [crate.bitflags.extra_kv]
 allow_unsafe = false
-multiversion_cleanup_bug = "https://crbug.com/428224817"
 
 [crate.bytemuck.extra_kv]
 allow_unsafe = true
@@ -504,6 +508,9 @@ allow_unsafe = true
 extra_input_roots = ['../README.md']
 extra_kv = { allow_unsafe = true }
 
+[crate.incremental-font-transfer]
+extra_kv = { allow_unsafe = false }
+
 [crate.indexmap.extra_kv]
 allow_unsafe = true
 
@@ -515,6 +522,9 @@ allow_unsafe = true
 
 [crate.ixdtf.extra_kv]
 allow_unsafe = false
+
+[crate.jpeg-encoder]
+extra_kv = { allow_unsafe = true }
 
 [crate.jxl.extra_kv]
 allow_unsafe = true
@@ -718,6 +728,7 @@ extra_kv = { allow_unsafe = true }
 
 [crate.qr_code.extra_kv]
 allow_unsafe = false
+cpp_api_from_rust = true
 
 [crate.quote.extra_kv]
 allow_unsafe = false
@@ -727,6 +738,13 @@ extra_kv = { allow_unsafe = false }
 
 [crate.read-fonts]
 extra_input_roots = ['../generated', '../data/generated']
+extra_kv = { allow_unsafe = false }
+
+[crate.ref-cast]
+build_script_outputs = [ "private.rs" ]
+extra_kv = { allow_unsafe = true }
+
+[crate.ref-cast-impl]
 extra_kv = { allow_unsafe = false }
 
 [crate.regex]
@@ -769,18 +787,7 @@ group = 'test'
 allow_first_party_usage = false
 extra_kv = { allow_unsafe = true }
 
-[crate.scc]
-group = 'test'
-allow_first_party_usage = false
-extra_input_roots = ["../README.md"]
-extra_kv = { allow_unsafe = true }
-
 [crate.scopeguard]
-extra_kv = { allow_unsafe = true }
-
-[crate.sdd]
-allow_first_party_usage = false
-extra_input_roots = ["../README.md"]
 extra_kv = { allow_unsafe = true }
 
 [crate.serde]
@@ -806,6 +813,9 @@ extra_kv = { allow_unsafe = false }
 [crate.serial_test_derive]
 extra_kv = { allow_unsafe = false }
 
+[crate.sfv]
+extra_kv = { allow_unsafe = false }
+
 [crate.shared-brotli-patch-decoder]
 extra_kv = { allow_unsafe = true, extra_deps = ["//third_party/brotli:dec"] }
 remove_build_rs = true
@@ -820,6 +830,9 @@ group = 'test'
 allow_first_party_usage = false
 extra_input_roots = ["../README.md"]
 extra_kv = { allow_unsafe = true }
+
+[crate.skera]
+extra_kv = { allow_unsafe = false }
 
 [crate.skrifa]
 extra_input_roots = ['../generated']
@@ -850,14 +863,15 @@ allow_unsafe = false
 
 [crate.strum.extra_kv]
 allow_unsafe = false
-multiversion_cleanup_bug = "https://crbug.com/491518606"
 
 [crate.strum_macros.extra_kv]
 allow_unsafe = false
-multiversion_cleanup_bug = "https://crbug.com/491518606"
 
 [crate.subtle.extra_kv]
-allow_unsafe = false
+# subtle contains a reviewed unconditional `unsafe` (repr(i8) Ordering cast in
+# `ConditionallySelectable for cmp::Ordering`). Required by the first consumer
+# (third_party/anonymous_tokens:athm).
+allow_unsafe = true
 
 [crate.symphonia.extra_kv]
 allow_unsafe = false
@@ -1015,6 +1029,10 @@ extra_kv = { allow_unsafe = false }
 native_libs_roots = ['../lib/**/*.lib']
 extra_kv = { allow_unsafe = false }
 
+[crate.write-fonts]
+extra_input_roots = ['../generated']
+extra_kv = { allow_unsafe = false }
+
 [crate.writeable.extra_kv]
 allow_unsafe = true
 
@@ -1046,6 +1064,12 @@ allow_unsafe = false
 [crate.zerofrom-derive.extra_kv]
 allow_unsafe = false
 
+[crate.zeroize]
+extra_kv = { allow_unsafe = true }
+
+[crate.zeroize_derive]
+extra_kv = { allow_unsafe = false }
+
 [crate.zerotrie.extra_kv]
 allow_unsafe = true
 
@@ -1064,4 +1088,10 @@ extra_kv = { allow_unsafe = true }
 
 [crate.zoneinfo64]
 extra_input_roots = ["data/zoneinfo64.res"]
+extra_kv = { allow_unsafe = true }
+
+[crate.zune-core]
+extra_kv = { allow_unsafe = false }
+
+[crate.zune-jpeg]
 extra_kv = { allow_unsafe = true }

@@ -19,6 +19,7 @@ namespace content::features {
 CONTENT_EXPORT BASE_DECLARE_FEATURE(
     kFileSystemAccessDirectoryIterationBlocklistCheck);
 CONTENT_EXPORT BASE_DECLARE_FEATURE(kFileSystemAccessObserverQuotaLimit);
+CONTENT_EXPORT BASE_DECLARE_FEATURE(kFileSystemAccessCheckHidden);
 CONTENT_EXPORT BASE_DECLARE_FEATURE_PARAM(
     size_t,
     kFileSystemObserverQuotaLimitLinuxBucketSize);
@@ -33,7 +34,9 @@ CONTENT_EXPORT BASE_DECLARE_FEATURE_PARAM(
     kFileSystemObserverQuotaLimitMacPercent);
 CONTENT_EXPORT BASE_DECLARE_FEATURE_PARAM(size_t,
                                           kFileSystemObserverQuotaLimitWindows);
-
+CONTENT_EXPORT BASE_DECLARE_FEATURE(
+    kFileSystemAccessRenameRequiresParentWritePermission);
+CONTENT_EXPORT BASE_DECLARE_FEATURE_PARAM(bool, kOnlyInHomedir);
 }  // namespace content::features
 
 #endif  // CONTENT_BROWSER_FILE_SYSTEM_ACCESS_FEATURES_H_

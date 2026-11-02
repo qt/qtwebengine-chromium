@@ -2,8 +2,8 @@ Name: py_vulcanize
 URL: http://www.chromium.org
 Date: 2017-10-04
 Update Mechanism: Static (https://crbug.com/422058487)
-License: N/A
-License File: N/A
+License: BSD-3-Clause
+License File: //LICENSE
 Security Critical: no
 Shipped: yes
 

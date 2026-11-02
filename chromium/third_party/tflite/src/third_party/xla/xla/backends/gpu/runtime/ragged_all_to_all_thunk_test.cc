@@ -25,6 +25,7 @@ limitations under the License.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/base/casts.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_format.h"
@@ -43,7 +44,6 @@ limitations under the License.
 #include "xla/backends/gpu/runtime/command_executor.h"
 #include "xla/backends/gpu/runtime/command_state.h"
 #include "xla/backends/gpu/runtime/execution_stream_id.h"
-#include "xla/backends/gpu/runtime/scratch_memory_requests.h"
 #include "xla/backends/gpu/runtime/thunk.h"
 #include "xla/backends/gpu/runtime/thunk.pb.h"
 #include "xla/backends/gpu/runtime/thunk_executor.h"
@@ -75,7 +75,7 @@ limitations under the License.
 #include "xla/stream_executor/stream_executor.h"
 #include "xla/stream_executor/stream_executor_address_allocator.h"
 #include "xla/stream_executor/sycl/sycl_platform_id.h"
-#include "xla/tests/hlo_test_base_legacy.h"
+#include "xla/tests/restricted/hlo_test_base_legacy.h"
 #include "xla/tsl/platform/test.h"
 #include "xla/tsl/util/proto/parse_text_proto.h"
 #include "xla/tsl/util/proto/proto_matchers.h"
@@ -295,10 +295,9 @@ TEST(RaggedAllToAllThunkTest, RecordCommandBufferCreateAndUpdate) {
                                  allocator.get());
   CollectiveCliqueRequests clique_requests;
   CollectiveMemoryRequests memory_requests(allocations1);
-  ScratchMemoryRequests scratch_requests;
   Thunk::PrepareParams prepare_params{&collective_params, &clique_requests,
-                                      &memory_requests,   &scratch_requests,
-                                      executor,           &allocations1};
+                                      &memory_requests, executor,
+                                      &allocations1};
   ASSERT_OK(thunk.Prepare(prepare_params));
   ASSERT_OK_AND_ASSIGN(
       CollectiveCliques collective_cliques,
@@ -527,7 +526,7 @@ TEST_F(GpuRaggedAllToAllTest, TestCommandBufferThunkContainsCorrectThunks) {
   // The collective is sync (single device), so no AsyncStart/Done wrapping.
   EXPECT_THAT(kinds, ElementsAre(Kind::kCustomKernel, Kind::kCustomKernel,
                                  Kind::kCustomKernel, Kind::kCustomKernel,
-                                 Kind::kRaggedAllToAll));
+                                 Kind::kRaggedAllToAll, Kind::kCopy));
 }
 
 TEST(CollectiveThunkTest, ProtoRoundTrip) {

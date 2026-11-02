@@ -44,14 +44,13 @@
 #include "include/gpu/ganesh/GrRecordingContext.h"
 #include "include/gpu/ganesh/GrTypes.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
-#include "include/private/base/SingleOwner.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkTArray.h"
-#include "include/private/base/SkTo.h"
+#include "include/private/SingleOwner.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkTArray.h"
+#include "include/private/SkTo.h"
 #include "include/private/chromium/Slug.h"  // IWYU pragma: keep
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/base/SkTLazy.h"
 #include "src/core/SkColorData.h"
 #include "src/core/SkDevice.h"
 #include "src/core/SkDraw.h"
@@ -62,6 +61,7 @@
 #include "src/core/SkRasterClip.h"
 #include "src/core/SkSpecialImage.h"
 #include "src/core/SkStrikeCache.h"
+#include "src/core/SkTLazy.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/core/SkVerticesPriv.h"
 #include "src/gpu/SkBackingFit.h"
@@ -1274,15 +1274,16 @@ void Device::asyncRescaleAndReadPixels(const SkImageInfo& info,
                                        RescaleGamma rescaleGamma,
                                        RescaleMode rescaleMode,
                                        ReadPixelsCallback callback,
-                                       ReadPixelsContext context) {
+                                       ReadPixelsContext callbackContext) {
     auto* sdc = fSurfaceDrawContext.get();
     // Context TODO: Elevate direct context requirement to public API.
     auto dContext = sdc->recordingContext()->asDirectContext();
     if (!dContext) {
+        callback(callbackContext, nullptr);
         return;
     }
     sdc->asyncRescaleAndReadPixels(dContext, info, srcRect, rescaleGamma, rescaleMode, callback,
-                                   context);
+                                   callbackContext);
 }
 
 void Device::asyncRescaleAndReadPixelsYUV420(SkYUVColorSpace yuvColorSpace,
@@ -1293,11 +1294,12 @@ void Device::asyncRescaleAndReadPixelsYUV420(SkYUVColorSpace yuvColorSpace,
                                              RescaleGamma rescaleGamma,
                                              RescaleMode rescaleMode,
                                              ReadPixelsCallback callback,
-                                             ReadPixelsContext context) {
+                                             ReadPixelsContext callbackContext) {
     auto* sdc = fSurfaceDrawContext.get();
     // Context TODO: Elevate direct context requirement to public API.
     auto dContext = sdc->recordingContext()->asDirectContext();
     if (!dContext) {
+        callback(callbackContext, nullptr);
         return;
     }
     sdc->asyncRescaleAndReadPixelsYUV420(dContext,
@@ -1309,7 +1311,7 @@ void Device::asyncRescaleAndReadPixelsYUV420(SkYUVColorSpace yuvColorSpace,
                                          rescaleGamma,
                                          rescaleMode,
                                          callback,
-                                         context);
+                                         callbackContext);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

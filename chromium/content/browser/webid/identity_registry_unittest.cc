@@ -12,9 +12,9 @@
 #include "url/gurl.h"
 #include "url/origin.h"
 
-using ::testing::NiceMock;
+namespace content::webid {
 
-namespace content {
+using ::testing::NiceMock;
 
 namespace {
 
@@ -83,4 +83,4 @@ TEST_F(IdentityRegistryTest, NotifierAndRegistryCrossOrigin) {
   EXPECT_FALSE(test_delegate_->closed_);
 }
 
-}  // namespace content
+}  // namespace content::webid

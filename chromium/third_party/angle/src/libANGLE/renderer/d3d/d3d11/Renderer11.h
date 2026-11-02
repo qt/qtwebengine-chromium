@@ -133,7 +133,6 @@ class Renderer11 : public RendererD3D
 
     int getMajorShaderModel() const override;
     int getMinorShaderModel() const override;
-    std::string getShaderModelSuffix() const override;
 
     // Pixel operations
     angle::Result copyImage2D(const gl::Context *context,
@@ -251,13 +250,11 @@ class Renderer11 : public RendererD3D
                                            GLsizei width,
                                            GLsizei height,
                                            int levels,
-                                           const std::string &label,
-                                           bool hintLevelZeroOnly) override;
+                                           const std::string &label) override;
     TextureStorage *createTextureStorageCube(GLenum internalformat,
                                              BindFlags bindFlags,
                                              int size,
                                              int levels,
-                                             bool hintLevelZeroOnly,
                                              const std::string &label) override;
     TextureStorage *createTextureStorage3D(GLenum internalformat,
                                            BindFlags bindFlags,

@@ -25,15 +25,7 @@ void CPDF_FormObject::Transform(const CFX_Matrix& matrix) {
   SetDirty(true);
 }
 
-bool CPDF_FormObject::IsForm() const {
-  return true;
-}
-
 CPDF_FormObject* CPDF_FormObject::AsForm() {
-  return this;
-}
-
-const CPDF_FormObject* CPDF_FormObject::AsForm() const {
   return this;
 }
 

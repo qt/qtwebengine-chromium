@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Google LLC
+// Copyright 2024 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@
 #include "ink/geometry/internal/jni/vec_native.h"
 #include "ink/geometry/point.h"
 #include "ink/geometry/vec.h"
+#include "ink/strokes/internal/jni/in_progress_stroke_native.h"
 
 namespace ink::jni {
 
@@ -59,6 +60,8 @@ void FillJMutableVecOrThrow(JNIEnv* env, const ParallelogramNative_Vec& vec,
 void FillJMutableVecOrThrow(JNIEnv* env, const MeshNative_Vec& vec,
                             jobject mutable_vec);
 void FillJMutableVecOrThrow(JNIEnv* env, const PartitionedMeshNative_Vec& vec,
+                            jobject mutable_vec);
+void FillJMutableVecOrThrow(JNIEnv* env, const InProgressStrokeNative_Vec& vec,
                             jobject mutable_vec);
 
 }  // namespace ink::jni

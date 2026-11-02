@@ -44,6 +44,8 @@ const uint kMaxErrorsPerCmd = 6;
 // (Basically our own implementaiton of Specialization Constant)
 const uint kLinkShaderId = 0x0DEAD001;
 const uint kInstErrorBufferLengthId = 0x0DEAD002;
+// Set by VK_LAYER_DESCRIPTOR_HASHING_TOTAL_DESCRIPTORS
+const uint kDescriptorHashingCapacity = 0x0DEAD003;
 
 // This is just a placeholder, honestly could be anything, will be replaced when linking to the runtime descriptor set choosen
 const int kInstDefaultDescriptorSet = 7;
@@ -57,13 +59,15 @@ const int kBindingInstErrorBuffer = 1;
 const int kBindingInstPostProcess = 2;
 // Each check that requires additional input to be sent must reserve its own binding slot
 const int kBindingInstDescriptorIndexingOOB = 3;
-const int kBindingInstBufferDeviceAddress = 4;
-const int kBindingInstActionIndex = 5;
-const int kBindingInstCmdResourceIndex = 6;
-const int kBindingInstCmdErrorsCount = 7;
-const int kBindingInstVertexAttributeFetchLimits = 8;
-const int kBindingInstDebugDescriptor = 9;
-const int kTotalBindings = 10;
+// TODO - We could just combine kBindingInstDescriptorIndexingOOB and kBindingInstDescriptorHeap and kBindingInstDescriptorBuffer
+const int kBindingInstDescriptorBuffer = 4;
+const int kBindingInstDescriptorHeap = 5;
+const int kBindingInstBufferDeviceAddress = 6;
+const int kBindingInstActionIndex = 7;
+const int kBindingInstCmdResourceIndex = 8;
+const int kBindingInstCmdErrorsCount = 9;
+const int kBindingInstVertexAttributeFetchLimits = 10;
+const int kTotalBindings = 11;
 
 // Validation pipelines
 // ---

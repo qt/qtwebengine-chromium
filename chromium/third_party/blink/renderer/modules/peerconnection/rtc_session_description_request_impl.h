@@ -34,7 +34,6 @@
 #include "third_party/blink/renderer/bindings/modules/v8/v8_rtc_peer_connection_error_callback.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_rtc_session_description_callback.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
-#include "third_party/blink/renderer/modules/peerconnection/rtc_session_description_enums.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/peerconnection/rtc_session_description_request.h"
 
@@ -54,12 +53,14 @@ class RTCSessionDescriptionRequestImpl final
       ExecutionContext*,
       RTCPeerConnection*,
       V8RTCSessionDescriptionCallback*,
-      V8RTCPeerConnectionErrorCallback*);
+      V8RTCPeerConnectionErrorCallback*,
+      bool is_offer);
 
   RTCSessionDescriptionRequestImpl(ExecutionContext*,
                                    RTCPeerConnection*,
                                    V8RTCSessionDescriptionCallback*,
-                                   V8RTCPeerConnectionErrorCallback*);
+                                   V8RTCPeerConnectionErrorCallback*,
+                                   bool is_offer);
   ~RTCSessionDescriptionRequestImpl() override;
 
   void RequestSucceeded(RTCSessionDescriptionPlatform*) override;
@@ -77,6 +78,7 @@ class RTCSessionDescriptionRequestImpl final
   Member<V8RTCPeerConnectionErrorCallback> error_callback_;
 
   Member<RTCPeerConnection> requester_;
+  const bool is_offer_;
 };
 
 }  // namespace blink

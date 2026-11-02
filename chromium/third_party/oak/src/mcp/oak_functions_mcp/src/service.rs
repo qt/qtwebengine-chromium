@@ -1,0 +1,218 @@
+//
+// Copyright 2025 The Project Oak Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+
+use std::{
+    result,
+    sync::{Arc, OnceLock},
+};
+
+use anyhow::{Context, Result};
+use futures::future::BoxFuture;
+use log::info;
+use oak_functions_service::{Handler, instance::OakFunctionsInstance};
+use oak_proto_rust::oak::functions::{
+    ExtendNextLookupDataRequest, FinishNextLookupDataRequest, InitializeRequest, LookupDataChunk,
+    ReserveRequest, extend_next_lookup_data_request::Data,
+};
+use rmcp::{
+    ErrorData, RoleServer, ServerHandler,
+    handler::server::{
+        router::tool::{ToolRoute, ToolRouter},
+        tool::ToolCallContext,
+    },
+    model::{
+        CallToolResult, ContentBlock, InitializeRequestParams, InitializeResult, JsonObject, Tool,
+    },
+    service::RequestContext,
+    tool_handler,
+};
+use serde_json::Value;
+
+/// Configuration for the dynamically created MCP tool.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct ToolConfig {
+    /// Tool name shown to MCP clients.
+    pub name: String,
+    /// Description of the tool shown to MCP clients.
+    pub description: String,
+    /// JSON Schema defining the expected input parameters.
+    pub input_schema: Value,
+}
+
+impl Default for ToolConfig {
+    fn default() -> Self {
+        Self {
+            name: "key_value_lookup".to_string(),
+            description: "Invoke Oak Functions with a key to look up a value".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "description": "The lookup key. Must be a string containing only an integer value between 1 and 1000 (inclusive)."
+                    }
+                },
+                "required": ["key"]
+            }),
+        }
+    }
+}
+
+pub struct OakFunctionsMcpService<H: Handler> {
+    tool_router: ToolRouter<Self>,
+    handler_config: H::HandlerConfig,
+    oak_functions_instance: Arc<OnceLock<OakFunctionsInstance<H>>>,
+}
+
+impl<H: Handler + 'static> OakFunctionsMcpService<H>
+where
+    H::HandlerType: Send + Sync,
+{
+    /// Creates a new service with the default tool configuration.
+    pub fn new(handler_config: H::HandlerConfig) -> Self {
+        Self::new_with_config(handler_config, ToolConfig::default())
+    }
+
+    /// Creates a new service with a custom tool configuration.
+    pub fn new_with_config(handler_config: H::HandlerConfig, tool_config: ToolConfig) -> Self {
+        let oak_functions_instance = Arc::new(OnceLock::new());
+        let tool_router =
+            Self::create_tool_router(tool_config, Arc::clone(&oak_functions_instance));
+        Self { tool_router, handler_config, oak_functions_instance }
+    }
+
+    /// Creates the tool router with dynamically configured tool.
+    fn create_tool_router(
+        tool_config: ToolConfig,
+        instance: Arc<OnceLock<OakFunctionsInstance<H>>>,
+    ) -> ToolRouter<Self> {
+        // Convert the input schema Value to JsonObject
+        let input_schema: JsonObject = serde_json::from_value(tool_config.input_schema)
+            .expect("input_schema must be a valid JSON object");
+
+        // Create the Tool with dynamic description and schema
+        let tool = Tool::new(tool_config.name, tool_config.description, Arc::new(input_schema));
+
+        // Create a dynamic route with a closure that handles tool calls
+        let route = ToolRoute::<Self>::new_dyn(tool, move |ctx: ToolCallContext<'_, Self>| {
+            let instance = Arc::clone(&instance);
+            Box::pin(async move { Self::handle_invoke(ctx, instance).await })
+                as BoxFuture<'_, result::Result<CallToolResult, ErrorData>>
+        });
+
+        let mut router = ToolRouter::new();
+        router.add_route(route);
+        router
+    }
+
+    /// Handles the invoke tool call.
+    async fn handle_invoke(
+        ctx: ToolCallContext<'_, Self>,
+        instance: Arc<OnceLock<OakFunctionsInstance<H>>>,
+    ) -> result::Result<CallToolResult, ErrorData> {
+        info!("Invoking Oak Functions");
+
+        // Extract the key from the request arguments
+        let request_args = ctx
+            .arguments
+            .as_ref()
+            .ok_or_else(|| ErrorData::invalid_params("Missing Invoke request", None))?;
+        let wasm_request = serde_json::to_vec(request_args).map_err(|e| {
+            ErrorData::internal_error(format!("Failed to serialize request arguments: {e}"), None)
+        })?;
+
+        let guard = instance.get();
+        if let Some(oak_instance) = guard.as_ref() {
+            let response_bytes = oak_instance.handle_user_request(wasm_request).map_err(|e| {
+                ErrorData::internal_error(
+                    format!("Invoke failed with microRpc status: {e:?}"),
+                    None,
+                )
+            })?;
+            let response_str = String::from_utf8(response_bytes).map_err(|e| {
+                ErrorData::internal_error(format!("Response is not valid UTF-8: {e}"), None)
+            })?;
+            let result: Value = serde_json::from_str(&response_str).map_err(|e| {
+                ErrorData::internal_error(format!("Failed to parse response as JSON: {e}"), None)
+            })?;
+            let content = ContentBlock::json(result).map_err(|e| {
+                ErrorData::internal_error(format!("JSON serialization failed: {e}"), None)
+            })?;
+            Ok(CallToolResult::success(vec![content]))
+        } else {
+            Err(ErrorData::internal_error("instance is not initialized".to_string(), None))
+        }
+    }
+
+    /// Initializes the Oak Functions instance. This can only be done once; all
+    /// subsequent calls will fail.
+    pub fn initialize(&self, initialize_request: InitializeRequest) -> Result<()> {
+        info!("Initializing Oak Functions instance");
+        if self.oak_functions_instance.get().is_some() {
+            anyhow::bail!("instance already initialized");
+        }
+        let instance =
+            OakFunctionsInstance::new(&initialize_request, None, self.handler_config.clone())
+                .context("initializing Oak Function MCP server")?;
+        self.oak_functions_instance
+            .set(instance)
+            .map_err(|_| anyhow::anyhow!("instance already initialized"))?;
+        Ok(())
+    }
+
+    /// Loads lookup data into the initialized Oak Functions instance.
+    /// Subsequent calls to this function will overwrite any prior lookup
+    /// data in the Oak Functions instance.
+    pub fn load_lookup_data(&self, lookup_data: LookupDataChunk) -> Result<()> {
+        info!("Loading lookup data");
+        let guard = self.oak_functions_instance.get();
+        if let Some(instance) = guard.as_ref() {
+            let entry_count = lookup_data.items.len() as u64;
+            let lookup_data_request =
+                ExtendNextLookupDataRequest { data: Some(Data::Chunk(lookup_data)) };
+            instance
+                .reserve(ReserveRequest { additional_entries: entry_count })
+                .context("failed to reserve lookup data entries")?;
+            instance
+                .extend_next_lookup_data(lookup_data_request)
+                .context("failed to extend next lookup data")?;
+            instance
+                .finish_next_lookup_data(FinishNextLookupDataRequest {})
+                .context("failed to finish loading lookup data")?;
+        } else {
+            anyhow::bail!("instance not initialized");
+        }
+        Ok(())
+    }
+}
+
+#[tool_handler(
+    router = self.tool_router,
+    instructions = "An Oak Functions MCP server that provides sandboxing for arbitrary stateless logic that can be invoked via a tool call."
+)]
+impl<H> ServerHandler for OakFunctionsMcpService<H>
+where
+    H: Handler + 'static,
+    H::HandlerType: Send + Sync,
+{
+    async fn initialize(
+        &self,
+        _request: InitializeRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<InitializeResult, ErrorData> {
+        Ok(self.get_info())
+    }
+}

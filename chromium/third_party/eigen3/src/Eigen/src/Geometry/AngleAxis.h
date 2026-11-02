@@ -307,7 +307,7 @@ typename AngleAxis<Scalar>::Matrix3 EIGEN_DEVICE_FUNC AngleAxis<Scalar>::toRotat
   res.coeffRef(1, 2) = tmp - sin_axis.x();
   res.coeffRef(2, 1) = tmp + sin_axis.x();
 
-  res.diagonal() = (cos1_axis.cwiseProduct(m_axis)).array() + c;
+  res.diagonal() = cos1_axis.cwiseProduct(m_axis).array() + c;
 
   return res;
 }

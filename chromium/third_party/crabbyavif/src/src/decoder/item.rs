@@ -33,7 +33,7 @@ pub struct Item {
     pub extents: Vec<Extent>,
     pub thumbnail_for_id: u32,
     pub aux_for_id: u32,
-    pub desc_for_id: u32,
+    pub desc_for_id: Vec<u32>,
     pub dimg_for_id: u32,
     pub dimg_index: u32,
     pub prem_by_id: u32,
@@ -432,7 +432,7 @@ impl Item {
     fn is_metadata(&self, item_type: &str, color_id: Option<u32>) -> bool {
         self.size != 0
             && !self.has_unsupported_essential_property
-            && (color_id.is_none() || self.desc_for_id == color_id.unwrap())
+            && (color_id.is_none() || self.desc_for_id.contains(&color_id.unwrap()))
             && self.item_type == *item_type
     }
 
@@ -621,7 +621,10 @@ fn insert_item_if_not_exists(id: u32, items: &mut Items) {
     );
 }
 
-pub(crate) fn construct_items(meta: &MetaBox) -> AvifResult<Items> {
+pub(crate) fn construct_items(
+    meta: &MetaBox,
+    multiple_iloc_entries_for_same_item_disallowed: bool,
+) -> AvifResult<Items> {
     let mut items: Items = BTreeMap::new();
     for iinf in &meta.iinf {
         items.insert(
@@ -637,12 +640,33 @@ pub(crate) fn construct_items(meta: &MetaBox) -> AvifResult<Items> {
     for iloc in &meta.iloc.items {
         insert_item_if_not_exists(iloc.item_id, &mut items);
         let item = items.get_mut(&iloc.item_id).unwrap();
-        if !item.extents.is_empty() {
+
+        if !item.extents.is_empty() && multiple_iloc_entries_for_same_item_disallowed {
             return AvifError::bmff_parse_failed("item already has extents");
         }
+
         if iloc.construction_method == 1 {
-            item.idat.clone_from(&meta.idat);
+            if item.extents.is_empty() {
+                item.idat.clone_from(&meta.idat);
+            } else {
+                // This is not the first iloc entry for this item. Make sure that the earlier
+                // entry's extent is also from idat.
+                if item.idat.is_empty() {
+                    return AvifError::bmff_parse_failed(
+                        "multiple iloc entries with different construction_method is not supported",
+                    );
+                }
+            }
+        } else if !item.extents.is_empty() {
+            // This is not the first iloc entry for this item. Make sure that the earlier entry's
+            // extent is also not from idat.
+            if !item.idat.is_empty() {
+                return AvifError::bmff_parse_failed(
+                    "multiple iloc entries with different construction_method is not supported",
+                );
+            }
         }
+
         for extent in &iloc.extents {
             item.extents.push(Extent {
                 offset: checked_add!(iloc.base_offset, extent.offset)?,
@@ -713,7 +737,7 @@ pub(crate) fn construct_items(meta: &MetaBox) -> AvifResult<Items> {
         match reference.reference_type.as_str() {
             "thmb" => item.thumbnail_for_id = reference.to_item_id,
             "auxl" => item.aux_for_id = reference.to_item_id,
-            "cdsc" => item.desc_for_id = reference.to_item_id,
+            "cdsc" => item.desc_for_id.push(reference.to_item_id),
             "prem" => item.prem_by_id = reference.to_item_id,
             "dimg" => {
                 // derived images refer in the opposite direction.

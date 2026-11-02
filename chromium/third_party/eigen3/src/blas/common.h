@@ -22,6 +22,17 @@
 
 #include "blas.h"
 
+namespace Eigen {
+namespace internal {
+// Optionally wraps an expression in a conjugation, used by the product kernels
+// below. This alias used to live in Eigen's core products headers but was
+// removed there as dead code; the BLAS kernels are its only remaining users.
+template <bool Cond, typename T>
+using conj_expr_if =
+    std::conditional_t<!Cond, const T&, CwiseUnaryOp<scalar_conjugate_op<typename traits<T>::Scalar>, T>>;
+}  // namespace internal
+}  // namespace Eigen
+
 #include "BandTriangularSolver.h"
 #include "GeneralRank1Update.h"
 #include "PackedSelfadjointProduct.h"

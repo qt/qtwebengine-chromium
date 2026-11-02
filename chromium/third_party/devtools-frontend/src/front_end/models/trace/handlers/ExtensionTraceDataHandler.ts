@@ -135,7 +135,7 @@ export function extractConsoleAPIExtensionEntries(): void {
       ph: Types.Events.Phase.COMPLETE,
       ts: entryStartTime,
       dur: Types.Timing.Micro(entryEndTime - entryStartTime),
-      rawSourceEvent: currentTimeStamp
+      rawSourceEvent: currentTimeStamp,
     };
     const syntheticTimeStamp =
         Helpers.SyntheticEvents.SyntheticEventsManager.registerSyntheticEvent<Types.Events.SyntheticConsoleTimeStamp>(

@@ -118,6 +118,8 @@ component("fido") {
         "cable/fido_tunnel_device.h",
         "cable/v2_discovery.cc",
         "cable/v2_discovery.h",
+        "cmtg_key_response.cc",
+        "cmtg_key_response.h",
         "credential_management.cc",
         "credential_management.h",
         "credential_management_handler.cc",
@@ -223,6 +225,7 @@ component("fido") {
         "//services/device/public/cpp/usb",
         "//services/device/public/mojom",
         "//services/device/public/mojom:usb",
+        "//services/network/public/cpp",
         "//services/network/public/mojom",
       ]
     }
@@ -330,6 +333,7 @@ if (use_blink) {
       ":fido",
       "//components/cbor",
       "//components/device_event_log",
+      "//services/network/public/cpp",
       "//services/network/public/mojom",
       "//third_party/blink/public/mojom:authenticator_mojo_bindings",
     ]

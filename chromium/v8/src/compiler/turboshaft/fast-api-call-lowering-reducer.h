@@ -103,7 +103,7 @@ class FastApiCallLoweringReducer : public Next {
               __ graph_zone(), builder.Get(),
               frame_state.valid() ? CallDescriptor::kNeedsFrameState
                                   : CallDescriptor::kNoFlags),
-          CanThrow::kYes, LazyDeoptOnThrow::kNo, __ graph_zone());
+          CanThrow{true}, LazyDeoptOnThrow{false}, __ graph_zone());
       OpIndex c_call_result = WrapFastCall(call_descriptor, callee, frame_state,
                                            context, base::VectorOf(args));
 
@@ -124,7 +124,7 @@ class FastApiCallLoweringReducer : public Next {
       BIND(trigger_exception);
       if (frame_state.valid()) {
         __ template CallRuntime<typename runtime::PropagateException>(
-            frame_state, context, {}, LazyDeoptOnThrow::kNo);
+            frame_state, context, {}, LazyDeoptOnThrow{false});
       } else {
 #if V8_ENABLE_WEBASSEMBLY
         using Desc = deprecated::BuiltinCallDescriptor::WasmPropagateException;
@@ -200,9 +200,25 @@ class FastApiCallLoweringReducer : public Next {
           // Only JavaScript needs a truncation here.
           if (__ Get(argument).outputs_rep()[0] ==
               RegisterRepresentation::Float32()) {
+            if (flags &
+                static_cast<uint8_t>(CTypeInfo::Flags::kIsRestrictedBit)) {
+              GOTO_IF_NOT(__ Float32IsFinite(argument), handle_error);
+            }
             return argument;
           }
-          return __ TruncateFloat64ToFloat32(argument);
+          V<Float32> result = __ TruncateFloat64ToFloat32(argument);
+          if (flags &
+              static_cast<uint8_t>(CTypeInfo::Flags::kIsRestrictedBit)) {
+            GOTO_IF_NOT(__ Float32IsFinite(result), handle_error);
+          }
+          return result;
+        }
+        case CTypeInfo::Type::kFloat64: {
+          if (flags &
+              static_cast<uint8_t>(CTypeInfo::Flags::kIsRestrictedBit)) {
+            GOTO_IF_NOT(__ Float64IsFinite(argument), handle_error);
+          }
+          return argument;
         }
         case CTypeInfo::Type::kPointer: {
           // Check that the value is a HeapObject.
@@ -430,8 +446,8 @@ class FastApiCallLoweringReducer : public Next {
     OpIndex handle = __ Call(
         allocate_and_initialize_young_external_pointer_table_entry,
         {isolate_ptr, pointer},
-        TSCallDescriptor::Create(call_descriptor, CanThrow::kNo,
-                                 LazyDeoptOnThrow::kNo, __ graph_zone()));
+        TSCallDescriptor::Create(call_descriptor, CanThrow{false},
+                                 LazyDeoptOnThrow{false}, __ graph_zone()));
     __ InitializeField(
         external, AccessBuilder::ForJSExternalObjectPointerHandle(), handle);
 #else

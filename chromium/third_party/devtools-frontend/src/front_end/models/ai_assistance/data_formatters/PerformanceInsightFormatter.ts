@@ -149,16 +149,16 @@ export class PerformanceInsightFormatter {
       case 'DuplicatedJavaScript':
         return [
           {title: 'How do I deduplicate the identified scripts in my bundle?'},
-          {title: 'Which duplicated JavaScript modules are the most problematic?'}
+          {title: 'Which duplicated JavaScript modules are the most problematic?'},
         ];
       case 'FontDisplay':
         return [
-          {title: 'How can I update my CSS to avoid layout shifts caused by incorrect `font-display` properties?'}
+          {title: 'How can I update my CSS to avoid layout shifts caused by incorrect `font-display` properties?'},
         ];
       case 'ForcedReflow':
         return [
           {title: 'How can I avoid forced reflows and layout thrashing?'},
-          {title: 'What is forced reflow and why is it problematic?'}
+          {title: 'What is forced reflow and why is it problematic?'},
         ];
       case 'ImageDelivery':
         return [
@@ -167,25 +167,28 @@ export class PerformanceInsightFormatter {
         ];
       case 'INPBreakdown':
         return [
-          {title: 'Suggest fixes for my longest interaction'}, {title: 'Why is a large INP score problematic?'},
-          {title: 'What\'s the biggest contributor to my longest interaction?'}
+          {title: 'Suggest fixes for my longest interaction'},
+          {title: 'Why is a large INP score problematic?'},
+          {title: 'What\'s the biggest contributor to my longest interaction?'},
         ];
       case 'LCPDiscovery':
         return [
-          {title: 'Suggest fixes to reduce my LCP'}, {title: 'What can I do to reduce my LCP discovery time?'},
-          {title: 'Why is LCP discovery time important?'}
+          {title: 'Suggest fixes to reduce my LCP'},
+          {title: 'What can I do to reduce my LCP discovery time?'},
+          {title: 'Why is LCP discovery time important?'},
         ];
       case 'LCPBreakdown':
         return [
-          {title: 'Help me optimize my LCP score'}, {title: 'Which LCP phase was most problematic?'},
-          {title: 'What can I do to reduce the LCP time for this page load?'}
+          {title: 'Help me optimize my LCP score'},
+          {title: 'Which LCP subpart was most problematic?'},
+          {title: 'What can I do to reduce the LCP time for this page load?'},
         ];
       case 'NetworkDependencyTree':
         return [{title: 'How do I optimize my network dependency tree?'}];
       case 'RenderBlocking':
         return [
           {title: 'Show me the most impactful render-blocking requests that I should focus on'},
-          {title: 'How can I reduce the number of render-blocking requests?'}
+          {title: 'How can I reduce the number of render-blocking requests?'},
         ];
       case 'SlowCSSSelector':
         return [{title: 'How can I optimize my CSS to increase the performance of CSS selectors?'}];
@@ -355,7 +358,7 @@ ${shiftsFormatted.join('\n')}`;
 
 ${this.#traceFormatter.formatNetworkRequests([documentRequest], {
       verbose: true,
-      customTitle: 'Document network request'
+      customTitle: 'Document network request',
     })}
 
 The result of the checks for this insight are:
@@ -575,7 +578,7 @@ The following images could be optimized:\n\n${imageDetails}`;
 
     const inpInfoForEvent =
         `The longest interaction on the page was a \`${event.type}\` which had a total duration of \`${
-            this.#formatMicro(event.dur)}\`. The timings of each of the three phases were:
+            this.#formatMicro(event.dur)}\`. The timings of each of the three subparts were:
 
 1. Input delay: ${this.#formatMicro(event.inputDelay)}
 2. Processing duration: ${this.#formatMicro(event.mainThreadHandling)}
@@ -600,20 +603,21 @@ The following images could be optimized:\n\n${imageDetails}`;
     // Note that we expect every trace + LCP to have TTFB + Render delay, but
     // very old traces are missing the data, so we have to code defensively
     // in case the subparts are not present.
-    const phaseBulletPoints: Array<{name: string, value: string, percentage: string}> = [];
+    const subpartBulletPoints: Array<{name: string, value: string, percentage: string}> = [];
 
     Object.values(subparts).forEach((subpart: Trace.Insights.Models.LCPBreakdown.Subpart) => {
-      const phaseMilli = Trace.Helpers.Timing.microToMilli(subpart.range);
-      const percentage = (phaseMilli / lcpMs * 100).toFixed(1);
-      phaseBulletPoints.push({name: subpart.label, value: this.#formatMilli(phaseMilli), percentage});
+      const subpartMilli = Trace.Helpers.Timing.microToMilli(subpart.range);
+      const percentage = (subpartMilli / lcpMs * 100).toFixed(1);
+      subpartBulletPoints.push({name: subpart.label, value: this.#formatMilli(subpartMilli), percentage});
     });
 
     return `${this.#lcpMetricSharedContext()}
 
-We can break this time down into the ${phaseBulletPoints.length} phases that combine to make the LCP time:
+We can break this time down into the ${subpartBulletPoints.length} subparts that combine to make the LCP time:
 
 ${
-        phaseBulletPoints.map(phase => `- ${phase.name}: ${phase.value} (${phase.percentage}% of total LCP time)`)
+        subpartBulletPoints
+            .map(subpart => `- ${subpart.name}: ${subpart.value} (${subpart.percentage}% of total LCP time)`)
             .join('\n')}`;
   }
 
@@ -1139,12 +1143,12 @@ ${this.#links()}`;
 - Needs improvement: more than 200 milliseconds and 500 milliseconds or less.
 - Bad: over 500 milliseconds.
 
-For a given slow interaction, we can break it down into 3 phases:
+For a given slow interaction, we can break it down into 3 subparts:
 1. Input delay: starts when the user initiates an interaction with the page, and ends when the event callbacks for the interaction begin to run.
 2. Processing duration: the time it takes for the event callbacks to run to completion.
 3. Presentation delay: the time it takes for the browser to present the next frame which contains the visual result of the interaction.
 
-The sum of these three phases is the total latency. It is important to optimize each of these phases to ensure interactions take as little time as possible. Focusing on the phase that has the largest score is a good way to start optimizing.`;
+The sum of these three subparts is the total latency. It is important to optimize each of these subparts to ensure interactions take as little time as possible. Focusing on the subpart that has the largest score is a good way to start optimizing.`;
       case 'LCPDiscovery':
         return `This insight analyzes the time taken to discover the LCP resource and request it on the network. It only applies if the LCP element was a resource like an image that has to be fetched over the network. There are 3 checks this insight makes:
 1. Did the resource have \`fetchpriority=high\` applied?
@@ -1153,7 +1157,7 @@ The sum of these three phases is the total latency. It is important to optimize 
 
 It is important that all of these checks pass to minimize the delay between the initial page load and the LCP resource being loaded.`;
       case 'LCPBreakdown':
-        return 'This insight is used to analyze the time spent that contributed to the final LCP time and identify which of the 4 phases (or 2 if there was no LCP resource) are contributing most to the delay in rendering the LCP element.';
+        return 'This insight is used to analyze the time spent that contributed to the final LCP time and identify which of the 4 subparts (or 2 if there was no LCP resource) are contributing most to the delay in rendering the LCP element.';
       case 'NetworkDependencyTree':
         return `This insight analyzes the network dependency tree to identify:
 - The maximum critical path latency (the longest chain of network requests that the browser must download before it can render the page).

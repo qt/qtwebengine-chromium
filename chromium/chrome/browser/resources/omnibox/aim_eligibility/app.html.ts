@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {html} from '//resources/lit/v3_0/lit.rollup.js';
+import {html} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 
 import type {AimEligibilityAppElement} from './app.js';
 
@@ -23,6 +23,14 @@ export function getHtml(this: AimEligibilityAppElement) {
             this.getCheckClass_(
                 this.eligibilityState_.isEligibleByPolicy)}">
           ${this.getPolicyEligibilityText_()}
+        </span>
+      </div>
+      <div class="check-label">ThirdPartyAiChatSettings Policy:</div>
+      <div class="check-item">
+        <span class="check-value ${
+            this.getCheckClass_(
+                this.eligibilityState_.isThirdPartyEligibleByPolicy)}">
+          ${this.getThirdPartyPolicyEligibilityText_()}
         </span>
       </div>
       <div class="check-label">Default Search Engine:</div>
@@ -132,6 +140,14 @@ export function getHtml(this: AimEligibilityAppElement) {
           </span>
         </div>
 
+        <div class="check-label">Disclaimer Feature Flag (kComposeboxDriveContextMenuOptionDisclaimer):</div>
+        <div class="check-item">
+          <span class="check-value ${
+              this.getCheckClass_(this.eligibilityState_.driveStatus.isDisclaimerFlagEnabled)}">
+            ${this.getDisclaimerFlagText_()}
+          </span>
+        </div>
+
         <div class="check-label">Search Content Sharing Policy:</div>
         <div class="check-item">
           <span class="check-value ${
@@ -152,9 +168,11 @@ export function getHtml(this: AimEligibilityAppElement) {
         </div>
       `}
     </div>
-    <div class="footer">
-      Last updated: ${this.getLastUpdatedTimestamp_()}
-    </div>
+    ${this.showFooter_ ? html`
+      <div class="footer">
+        Last updated: ${this.getLastUpdatedTimestamp_()}
+      </div>
+    ` : ''}
   `;
   // clang-format on
 }

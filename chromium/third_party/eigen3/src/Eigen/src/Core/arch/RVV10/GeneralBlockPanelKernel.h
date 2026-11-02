@@ -392,16 +392,16 @@ struct gebp_traits<std::complex<RealScalar>, std::complex<RealScalar>, ConjLhs_,
                                ResPacketType& r) const {
     // assemble c
     ResPacketType tmp;
-    if ((!ConjLhs) && (!ConjRhs)) {
+    EIGEN_IF_CONSTEXPR ((!ConjLhs) && (!ConjRhs)) {
       tmp = pcplxflip(pconj(ResPacketType(c.second)));
       tmp = padd(ResPacketType(c.first), tmp);
-    } else if ((!ConjLhs) && (ConjRhs)) {
+    } else EIGEN_IF_CONSTEXPR ((!ConjLhs) && (ConjRhs)) {
       tmp = pconj(pcplxflip(ResPacketType(c.second)));
       tmp = padd(ResPacketType(c.first), tmp);
-    } else if ((ConjLhs) && (!ConjRhs)) {
+    } else EIGEN_IF_CONSTEXPR ((ConjLhs) && (!ConjRhs)) {
       tmp = pcplxflip(ResPacketType(c.second));
       tmp = padd(pconj(ResPacketType(c.first)), tmp);
-    } else if ((ConjLhs) && (ConjRhs)) {
+    } else EIGEN_IF_CONSTEXPR ((ConjLhs) && (ConjRhs)) {
       tmp = pcplxflip(ResPacketType(c.second));
       tmp = psub(pconj(ResPacketType(c.first)), tmp);
     }

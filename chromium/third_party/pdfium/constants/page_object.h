@@ -8,7 +8,7 @@
 namespace pdfium {
 namespace page_object {
 
-// PDF 1.7 spec, table 3.27.
+// ISO 32000-1:2008 spec, table 30.
 // Entries in a page object.
 const char kType[] = "Type";
 const char kParent[] = "Parent";

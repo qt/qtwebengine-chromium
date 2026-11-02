@@ -57,12 +57,18 @@
 namespace blink {
 
 namespace {
-
-// Controls whether CanvasResource::WaitSyncToken(const SyncToken&) should
-// defer wait (when enabled) or wait immediately (when disabled).
-BASE_FEATURE(kCanvasResourceDefersWaitSyncToken,
+// Controls whether ExternalCanvasResource::WaitSyncToken() should store the
+// SyncToken and pass it to the release callback to wait at destruction time
+// (when enabled), or wait on the SyncToken immediately (when disabled). This
+// feature is part of the effort of reducing WaitSyncTokenCHROMIUM usage in
+// favor of the automatic SyncToken management in ClientSharedImage.
+BASE_FEATURE(kDeferWaitSyncTokenInExternalCanvasResource,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+// We don't need to verify SyncTokens unless we send them cross process via ipc
+// channel that is different from the ones they were created on. Kill-switch for
+// safery.
+BASE_FEATURE(kDontVerifySyncTokenOnTransfer, base::FEATURE_ENABLED_BY_DEFAULT);
 }  // namespace
 
 CanvasResource::CanvasResource(
@@ -151,9 +157,7 @@ bool CanvasResource::PrepareTransferableResource(
   *out_resource = viz::TransferableResource::Make(
       client_shared_image, GetTransferableResourceSource(), sync_token());
 
-  out_resource->hdr_metadata = GetHDRMetadata();
-  out_resource->is_low_latency_rendering = client_shared_image->usage().Has(
-      gpu::SHARED_IMAGE_USAGE_CONCURRENT_READ_WRITE);
+  out_resource->hdr_metadata = GetHdrMetadata();
 
   // When the compositor returns an accelerated resource, it provides a sync
   // token to allow subsequent accelerated raster operations to properly
@@ -183,13 +187,15 @@ CanvasResourceSharedImage::CanvasResourceSharedImage(
 void CanvasResourceSharedImage::InitializeSoftware(
     base::WeakPtr<Client> client,
     base::WeakPtr<WebGraphicsSharedImageInterfaceProvider>
-        shared_image_interface_provider) {
+        shared_image_interface_provider,
+    const gfx::HDRMetadata& hdr_metadata) {
   DCHECK(GetSharedImage());
   DCHECK(!is_initialized_);
   DCHECK(shared_image_interface_provider);
 
   client_ = std::move(client);
   is_accelerated_ = false;
+  hdr_metadata_ = hdr_metadata;
 
   // This class doesn't currently have a way of verifying the sync token for
   // software SharedImages at the time of vending it in VerifySyncToken(),
@@ -197,7 +203,8 @@ void CanvasResourceSharedImage::InitializeSoftware(
   auto* shared_image_interface =
       shared_image_interface_provider->SharedImageInterface();
   DCHECK(shared_image_interface);
-  gpu::SyncToken sync_token = shared_image_interface->GenVerifiedSyncToken();
+  gpu::SyncToken sync_token = GetSharedImage()->creation_sync_token();
+  shared_image_interface->VerifySyncToken(sync_token);
   SetReleaseSyncToken(sync_token);
   GetSharedImage()->UpdateDestructionSyncToken(sync_token);
 
@@ -207,6 +214,7 @@ void CanvasResourceSharedImage::InitializeSoftware(
 void CanvasResourceSharedImage::Initialize(
     base::WeakPtr<Client> client,
     base::WeakPtr<WebGraphicsContext3DProviderWrapper> context_provider_wrapper,
+    const gfx::HDRMetadata& hdr_metadata,
     bool is_accelerated) {
   DCHECK(GetSharedImage());
   DCHECK(!is_initialized_);
@@ -216,6 +224,7 @@ void CanvasResourceSharedImage::Initialize(
   client_ = std::move(client);
   context_provider_wrapper_ = std::move(context_provider_wrapper);
   is_accelerated_ = is_accelerated;
+  hdr_metadata_ = hdr_metadata;
 
   // Wait for the mailbox to be ready to be used.
   WaitSyncToken(GetSharedImage()->creation_sync_token());
@@ -250,10 +259,10 @@ CanvasResourceSharedImage::CreateForTesting(
   if (is_software) {
     DCHECK(!is_accelerated);
     canvas_resource->InitializeSoftware(
-        client, std::move(shared_image_interface_provider));
+        client, std::move(shared_image_interface_provider), gfx::HDRMetadata());
   } else {
     canvas_resource->Initialize(client, context_provider_wrapper,
-                                is_accelerated);
+                                gfx::HDRMetadata(), is_accelerated);
   }
   return canvas_resource;
 }
@@ -306,10 +315,12 @@ void CanvasResourceSharedImage::Transfer() {
   if (is_cross_thread() || !ContextProviderWrapper())
     return;
 
-  // TODO(khushalsagar): This is for consistency with MailboxTextureHolder
-  // transfer path. It's unclear why the verification can not be deferred until
-  // the resource needs to be transferred cross-process.
-  VerifySyncToken();
+  if (!base::FeatureList::IsEnabled(kDontVerifySyncTokenOnTransfer)) {
+    // TODO(khushalsagar): This is for consistency with MailboxTextureHolder
+    // transfer path. It's unclear why the verification can not be deferred
+    // until the resource needs to be transferred cross-process.
+    VerifySyncToken();
+  }
 }
 
 scoped_refptr<StaticBitmapImage> CanvasResourceSharedImage::Bitmap() {
@@ -354,7 +365,7 @@ scoped_refptr<StaticBitmapImage> CanvasResourceSharedImage::Bitmap() {
 
   // If its cross thread, then the sync token was already verified.
   image = AcceleratedStaticBitmapImage::CreateFromCanvasSharedImage(
-      client_shared_image, sync_token(), GetAlphaType(), GetHDRMetadata(),
+      client_shared_image, sync_token(), alpha_type_, hdr_metadata_,
       context_provider_wrapper_, owning_thread_ref_, owning_thread_task_runner_,
       std::move(release_callback));
 
@@ -416,12 +427,6 @@ void CanvasResourceSharedImage::WaitSyncToken(
   if (sync_token.HasData()) {
     acquire_sync_token_ = sync_token;
     GetSharedImage()->UpdateDestructionSyncToken(acquire_sync_token_);
-    if (!base::FeatureList::IsEnabled(kCanvasResourceDefersWaitSyncToken)) {
-      if (auto* interface_base = InterfaceBase()) {
-        interface_base->WaitSyncTokenCHROMIUM(
-            acquire_sync_token_.GetConstData());
-      }
-    }
   }
 }
 
@@ -488,13 +493,6 @@ void CanvasResourceSharedImage::OnMemoryDump(
       static_cast<int>(gpu::TracingImportance::kClientOwner));
 }
 
-void CanvasResourceSharedImage::PrepareForWebGPUDummyMailbox() {
-  DCHECK(!is_cross_thread());
-  // In the dummy WebGPU mailbox case, we skip write operation to CanvasResource
-  // and therefore did not wait on `acquire_sync_token_`. Instead, the consumer
-  // needs to do it.
-  SetReleaseSyncToken(acquire_sync_token_);
-}
 
 // ExternalCanvasResource
 //==============================================================================
@@ -502,7 +500,7 @@ scoped_refptr<ExternalCanvasResource> ExternalCanvasResource::Create(
     scoped_refptr<gpu::ClientSharedImage> client_si,
     const gpu::SyncToken& sync_token,
     viz::TransferableResource::ResourceSource resource_source,
-    gfx::HDRMetadata hdr_metadata,
+    const gfx::HDRMetadata& hdr_metadata,
     viz::ReleaseCallback release_callback,
     base::WeakPtr<WebGraphicsContext3DProviderWrapper>
         context_provider_wrapper) {
@@ -524,8 +522,13 @@ ExternalCanvasResource::~ExternalCanvasResource() {
   }
 
   if (release_callback_) {
-    ProduceSyncToken();
-    std::move(release_callback_).Run(sync_token(), resource_is_lost_);
+    if (base::FeatureList::IsEnabled(
+            kDeferWaitSyncTokenInExternalCanvasResource)) {
+      std::move(release_callback_)
+          .Run(destruction_sync_token_, resource_is_lost_);
+    } else {
+      std::move(release_callback_).Run(sync_token(), resource_is_lost_);
+    }
   }
 }
 
@@ -553,10 +556,9 @@ scoped_refptr<StaticBitmapImage> ExternalCanvasResource::Bitmap() {
       },
       base::RetainedRef(this));
 
-  ProduceSyncToken();
   scoped_refptr<StaticBitmapImage> image =
       AcceleratedStaticBitmapImage::CreateFromCanvasSharedImage(
-          GetSharedImage(), sync_token(), GetAlphaType(), GetHDRMetadata(),
+          GetSharedImage(), sync_token(), alpha_type_, hdr_metadata_,
           context_provider_wrapper_, owning_thread_ref_,
           owning_thread_task_runner_, std::move(release_callback));
   return image;
@@ -564,23 +566,14 @@ scoped_refptr<StaticBitmapImage> ExternalCanvasResource::Bitmap() {
 
 void ExternalCanvasResource::WaitSyncToken(const gpu::SyncToken& sync_token) {
   if (sync_token.HasData()) {
-    if (auto* interface_base = InterfaceBase()) {
-      interface_base->WaitSyncTokenCHROMIUM(sync_token.GetConstData());
+    if (base::FeatureList::IsEnabled(
+            kDeferWaitSyncTokenInExternalCanvasResource)) {
+      destruction_sync_token_ = sync_token;
+    } else {
+      if (auto* interface_base = InterfaceBase()) {
+        interface_base->WaitSyncTokenCHROMIUM(sync_token.GetConstData());
+      }
     }
-  }
-}
-
-void ExternalCanvasResource::ProduceSyncToken() {
-  // This method is expected to be used both in WebGL and WebGPU, that's why it
-  // uses InterfaceBase.
-  auto sync_token = GetSyncToken();
-  if (!GetSyncToken().HasData()) {
-    auto* interface = InterfaceBase();
-    if (interface)
-      interface->GenSyncTokenCHROMIUM(sync_token.GetData());
-    SetReleaseSyncToken(sync_token);
-  } else {
-    VerifySyncToken();
   }
 }
 
@@ -611,7 +604,7 @@ ExternalCanvasResource::ExternalCanvasResource(
     scoped_refptr<gpu::ClientSharedImage> client_si,
     const gpu::SyncToken& sync_token,
     viz::TransferableResource::ResourceSource resource_source,
-    gfx::HDRMetadata hdr_metadata,
+    const gfx::HDRMetadata& hdr_metadata,
     viz::ReleaseCallback out_callback,
     base::WeakPtr<WebGraphicsContext3DProviderWrapper> context_provider_wrapper)
     : CanvasResource(std::move(client_si)),

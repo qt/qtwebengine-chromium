@@ -360,7 +360,7 @@ class QueueInterface {
 
   // This function returns the nearest power of 2
   // if roundup is true returns result>=wgsize
-  // else it return result <= wgsize
+  // else it returns result <= wgsize
   EIGEN_STRONG_INLINE size_t getPowerOfTwo(size_t wGSize, bool roundUp) const {
     if (roundUp) --wGSize;
     wGSize |= (wGSize >> 1);

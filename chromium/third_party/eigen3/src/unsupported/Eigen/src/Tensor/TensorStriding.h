@@ -65,7 +65,7 @@ class TensorStridingOp : public TensorBase<TensorStridingOp<Strides, XprType> > 
 
   EIGEN_DEVICE_FUNC const internal::remove_all_t<typename XprType::Nested>& expression() const { return m_xpr; }
 
-  EIGEN_TENSOR_INHERIT_ASSIGNMENT_OPERATORS(TensorStridingOp)
+  EIGEN_INHERIT_ASSIGNMENT_OPERATORS(TensorStridingOp)
 
  protected:
   typename XprType::Nested m_xpr;
@@ -107,7 +107,7 @@ struct TensorEvaluator<const TensorStridingOp<Strides, ArgType>, Device> {
     }
 
     const typename TensorEvaluator<ArgType, Device>::Dimensions& input_dims = m_impl.dimensions();
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       m_outputStrides[0] = 1;
       m_inputStrides[0] = 1;
       for (int i = 1; i < NumDims; ++i) {
@@ -116,8 +116,7 @@ struct TensorEvaluator<const TensorStridingOp<Strides, ArgType>, Device> {
         m_inputStrides[i - 1] *= op.strides()[i - 1];
       }
       m_inputStrides[NumDims - 1] *= op.strides()[NumDims - 1];
-    }
-    else {  // RowMajor
+    } else {  // RowMajor
       m_outputStrides[NumDims - 1] = 1;
       m_inputStrides[NumDims - 1] = 1;
       for (int i = NumDims - 2; i >= 0; --i) {
@@ -148,7 +147,7 @@ struct TensorEvaluator<const TensorStridingOp<Strides, ArgType>, Device> {
 
     Index inputIndices[] = {0, 0};
     Index indices[] = {index, index + PacketSize - 1};
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       EIGEN_UNROLL_LOOP
       for (int i = NumDims - 1; i > 0; --i) {
         const Index idx0 = indices[0] / m_outputStrides[i];
@@ -160,8 +159,7 @@ struct TensorEvaluator<const TensorStridingOp<Strides, ArgType>, Device> {
       }
       inputIndices[0] += indices[0] * m_inputStrides[0];
       inputIndices[1] += indices[1] * m_inputStrides[0];
-    }
-    else {  // RowMajor
+    } else {  // RowMajor
       EIGEN_UNROLL_LOOP
       for (int i = 0; i < NumDims - 1; ++i) {
         const Index idx0 = indices[0] / m_outputStrides[i];
@@ -208,7 +206,7 @@ struct TensorEvaluator<const TensorStridingOp<Strides, ArgType>, Device> {
  protected:
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index srcCoeff(Index index) const {
     Index inputIndex = 0;
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       EIGEN_UNROLL_LOOP
       for (int i = NumDims - 1; i > 0; --i) {
         const Index idx = index / m_outputStrides[i];
@@ -216,8 +214,7 @@ struct TensorEvaluator<const TensorStridingOp<Strides, ArgType>, Device> {
         index -= idx * m_outputStrides[i];
       }
       inputIndex += index * m_inputStrides[0];
-    }
-    else {  // RowMajor
+    } else {  // RowMajor
       EIGEN_UNROLL_LOOP
       for (int i = 0; i < NumDims - 1; ++i) {
         const Index idx = index / m_outputStrides[i];
@@ -271,7 +268,7 @@ struct TensorEvaluator<TensorStridingOp<Strides, ArgType>, Device>
 
     Index inputIndices[] = {0, 0};
     Index indices[] = {index, index + PacketSize - 1};
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       EIGEN_UNROLL_LOOP
       for (int i = NumDims - 1; i > 0; --i) {
         const Index idx0 = indices[0] / this->m_outputStrides[i];
@@ -283,8 +280,7 @@ struct TensorEvaluator<TensorStridingOp<Strides, ArgType>, Device>
       }
       inputIndices[0] += indices[0] * this->m_inputStrides[0];
       inputIndices[1] += indices[1] * this->m_inputStrides[0];
-    }
-    else {  // RowMajor
+    } else {  // RowMajor
       EIGEN_UNROLL_LOOP
       for (int i = 0; i < NumDims - 1; ++i) {
         const Index idx0 = indices[0] / this->m_outputStrides[i];

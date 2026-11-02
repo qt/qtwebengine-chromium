@@ -20,52 +20,51 @@ const {bindToAction} = UI.UIUtils;
 
 const UIStrings = {
   /**
-   * @description Text in Web Audio View if there is nothing to show.
+   * @description Text displayed in the WebAudio tool when no audio context is active.
    * Web Audio API is an API for controlling audio on the web.
    */
   noWebAudio: 'No Web Audio API usage detected',
   /**
-   * @description Text in Web Audio View
+   * @description Instructions displayed in the WebAudio tool when no audio context is active.
    */
   openAPageThatUsesWebAudioApiTo: 'Open a page that uses Web Audio API to start monitoring.',
   /**
-   * @description Text that shows there is no recording
+   * @description Text shown in the audio context selector when no recordings exist.
    */
   noRecordings: '(no recordings)',
   /**
-   * @description Label prefix for an audio context selection
+   * @description Label prefix for an audio context selection.
    * @example {realtime (1e03ec)} PH1
    */
   audioContextS: 'Audio context: {PH1}',
   /**
-   * @description The current state of an item
+   * @description Label for the current state of an audio context.
    */
   state: 'State',
   /**
-   * @description Text in Web Audio View
+   * @description Label for the sample rate of an audio context.
    */
-  sampleRate: 'Sample Rate',
+  sampleRate: 'Sample rate',
   /**
-   * @description Text in Web Audio View
+   * @description Label for the callback buffer size of an audio context.
    */
-  callbackBufferSize: 'Callback Buffer Size',
+  callbackBufferSize: 'Callback buffer size',
   /**
-   * @description Label in the Web Audio View for the maximum number of output channels
-   * that this Audio Context has.
+   * @description Label in the WebAudio tool for the maximum number of output channels of an audio context.
    */
-  maxOutputChannels: 'Max Output Channels',
+  maxOutputChannels: 'Max output channels',
   /**
-   * @description Text in Web Audio View
+   * @description Label for the current time in the audio context summary bar.
    */
-  currentTime: 'Current Time',
+  currentTime: 'Current time',
   /**
-   * @description Text in Web Audio View
+   * @description Label for the callback interval statistics in the audio context summary bar.
    */
-  callbackInterval: 'Callback Interval',
+  callbackInterval: 'Callback interval',
   /**
-   * @description Text in Web Audio View
+   * @description Label for the render capacity percentage in the audio context summary bar.
    */
-  renderCapacity: 'Render Capacity',
+  renderCapacity: 'Render capacity',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/web_audio/WebAudioView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);

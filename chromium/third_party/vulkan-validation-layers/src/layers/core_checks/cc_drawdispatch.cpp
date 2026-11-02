@@ -23,6 +23,7 @@
 #include <vulkan/vulkan_core.h>
 #include <cstdint>
 #include <string>
+#include "containers/limits.h"
 #include "core_checks/cc_buffer_address.h"
 #include "core_checks/cc_state_tracker.h"
 #include "core_checks/cc_vuid_maps.h"
@@ -34,6 +35,7 @@
 #include "generated/error_location_helper.h"
 #include "generated/spirv_grammar_helper.h"
 #include "generated/vk_extension_helper.h"
+#include "generated/dispatch_functions.h"
 #include "state_tracker/buffer_state.h"
 #include "state_tracker/descriptor_mode.h"
 #include "state_tracker/image_state.h"
@@ -50,6 +52,7 @@
 #include "utils/image_utils.h"
 #include "containers/container_utils.h"
 #include "utils/vk_api_utils.h"
+#include "utils/descriptor_utils.h"
 
 bool CoreChecks::ValidateGraphicsIndexedCmd(const LastBound& last_bound, const Location& loc) const {
     bool skip = false;
@@ -59,13 +62,13 @@ bool CoreChecks::ValidateGraphicsIndexedCmd(const LastBound& last_bound, const L
     if (!cb_state.index_buffer_binding.bound) {
         const char* extra =
             enabled_features.maintenance6
-                ? "Even with maintenance6, you need to set the buffer in vkCmdBindIndexBuffer to be VK_NULL_HANDLE, not "
+                ? "\nEven with maintenance6, you need to set the buffer in vkCmdBindIndexBuffer to be VK_NULL_HANDLE, not "
                   "calling vkCmdBindIndexBuffer still has the buffer as undeclared."
-                : "With maintenance6, you are allowed to set the buffer in vkCmdBindIndexBuffer to be VK_NULL_HANDLE.";
+                : "\nWith maintenance6, you are allowed to set the buffer in vkCmdBindIndexBuffer to be VK_NULL_HANDLE.";
         skip |= LogError(
             CreateActionVuid(loc.function, vvl::ActionVUID::INDEX_BINDING_07312),
             cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
-            "no vkCmdBindIndexBuffer call has bound an index buffer to this command buffer prior to this indexed draw. %s", extra);
+            "no vkCmdBindIndexBuffer call has bound an index buffer to this command buffer prior to this indexed draw.%s", extra);
     }
 
     // only used for GL emulation, so skip check otherwise
@@ -1673,7 +1676,9 @@ bool CoreChecks::ValidateActionState(const LastBound& last_bound_state, const Lo
         skip |= ValidateActionStateProtectedMemory(last_bound_state, bind_point, pipeline, loc);
     }
 
-    skip |= ValidateActionStateTileShading(last_bound_state, loc);
+    if (enabled_features.tileShading) {
+        skip |= ValidateActionStateTileShading(last_bound_state, loc);
+    }
 
     return skip;
 }
@@ -1681,13 +1686,34 @@ bool CoreChecks::ValidateActionState(const LastBound& last_bound_state, const Lo
 bool CoreChecks::ValidateActionStateTileShading(const LastBound& last_bound_state, const Location& loc) const {
     bool skip = false;
     const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
-    const vvl::Pipeline* pipeline = last_bound_state.pipeline_state;
     const VkPipelineBindPoint bind_point = last_bound_state.bind_point;
+    const LogObjectList objlist = cb_state.GetObjectList(bind_point);
+    const bool in_tile_shading_rp = cb_state.active_render_pass && cb_state.active_render_pass->has_tile_shading_enabled;
+    std::vector<uint32_t> tile_size_depths{};
+
+    // Note: Only query VkTilePropertiesQCOM when enabled tileProperties feature
+    if (enabled_features.tileProperties && cb_state.active_render_pass && cb_state.active_render_pass->has_tile_shading_enabled) {
+        if (cb_state.active_render_pass->use_dynamic_rendering) {
+            VkTilePropertiesQCOM queried_tile_props = vku::InitStructHelper();
+            DispatchGetDynamicRenderingTilePropertiesQCOM(device, cb_state.active_render_pass->dynamic_rendering_begin_rendering_info.ptr(),
+                                                          &queried_tile_props);
+            tile_size_depths.emplace_back(queried_tile_props.tileSize.depth);
+        } else {
+            std::vector<VkTilePropertiesQCOM> queried_tile_props{};
+            uint32_t tile_props_size = 0;
+            DispatchGetFramebufferTilePropertiesQCOM(device, cb_state.active_framebuffer->VkHandle(), &tile_props_size, nullptr);
+            queried_tile_props.resize(tile_props_size, vku::InitStructHelper());
+            DispatchGetFramebufferTilePropertiesQCOM(device, cb_state.active_framebuffer->VkHandle(), &tile_props_size, queried_tile_props.data());
+            for (uint32_t index = 0; index < tile_props_size; ++index) {
+                tile_size_depths.emplace_back(queried_tile_props[index].tileSize.depth);
+            }
+        }
+    }
 
     if (cb_state.per_tile_execution_model_enabled) {
         if (bind_point == VK_PIPELINE_BIND_POINT_GRAPHICS && !enabled_features.tileShadingPerTileDraw) {
             skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::PER_TILE_DRAW_ENABLED_10677),
-                             cb_state.GetObjectList(bind_point), loc,
+                             objlist, loc,
                              "the per-tile execution model is enabled in this command buffer, but "
                              "VkPhysicalDeviceTileShadingFeaturesQCOM::tileShadingPerTileDraw feature isn't enabled.");
         } else if (bind_point == VK_PIPELINE_BIND_POINT_COMPUTE && !enabled_features.tileShadingPerTileDispatch) {
@@ -1698,25 +1724,66 @@ bool CoreChecks::ValidateActionStateTileShading(const LastBound& last_bound_stat
         }
     }
 
-    if (cb_state.active_render_pass && cb_state.active_render_pass->has_tile_shading_enabled) {
-        const VkShaderStageFlags allowed_shader_stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT |
-                                                         VK_SHADER_STAGE_COMPUTE_BIT;
-        VkShaderStageFlags active_stages = 0;
-        if (pipeline) {
-            active_stages = pipeline->active_shaders;
-        } else {
-            for (const auto& shader_object : last_bound_state.shader_object_states) {
-                if (shader_object) {
-                    active_stages |= shader_object->create_info.stage;
-                }
-            }
-        }
+    if (in_tile_shading_rp) {
+        constexpr VkShaderStageFlags allowed_shader_stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT |
+                                                             VK_SHADER_STAGE_COMPUTE_BIT;
+        const VkShaderStageFlags active_stages = last_bound_state.GetAllActiveBoundStages();
         if ((active_stages & ~allowed_shader_stages) != 0) {
             skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::TILE_SHADING_SHADER_STAGE_10678),
-                             cb_state.GetObjectList(bind_point), loc,
+                             objlist, loc,
                              "shader stages (%s) include stages not allowed "
                              "inside a tile shading render pass scope.",
                              string_VkShaderStageFlags(active_stages).c_str());
+        }
+    }
+
+    for (const auto* shader_stage : last_bound_state.GetStages()) {
+        if (!shader_stage->HasSpirv() ||
+            !shader_stage->spirv_state->HasCapability(spv::CapabilityTileShadingQCOM)) {
+            continue;
+        }
+
+        if (!in_tile_shading_rp) {
+            skip |= LogError("VUID-RuntimeSpirv-TileShadingQCOM-10700", objlist, loc,
+                             "shader %s has OpCapability TileShadingQCOM, but was invoked outside "
+                             "a tile shading render pass. "
+                             "(Can be enabled by using VkRenderPassTileShadingCreateInfoQCOM)",
+                             shader_stage->entrypoint->Describe().c_str());
+        }
+
+        if (!cb_state.per_tile_execution_model_enabled && shader_stage->GetStage() == VK_SHADER_STAGE_COMPUTE_BIT) {
+            skip |= LogError("VUID-RuntimeSpirv-TileShadingQCOM-10701", objlist, loc,
+                             "shader %s has OpCapability TileShadingQCOM, but the per-tile execution "
+                             "model is not enabled in the current render pass. "
+                             "(Did you forget to call vkCmdBeginPerTileExecutionQCOM)",
+                             shader_stage->entrypoint->Describe().c_str());
+        }
+
+        if (shader_stage->entrypoint->stage != VK_SHADER_STAGE_COMPUTE_BIT ||
+            !shader_stage->entrypoint->execution_mode.Has(spirv::ExecutionModeSet::tile_shading_rate_bit)) {
+            continue;
+        }
+
+        const uint32_t tile_shading_rate_z = shader_stage->entrypoint->execution_mode.local_size.z;
+        for (uint32_t index = 0; index < tile_size_depths.size(); ++index) {
+            if (tile_shading_rate_z > tile_size_depths[index]) {
+                skip |= LogError("VUID-RuntimeSpirv-z-10704", objlist, loc,
+                                 "shader %s has OpExecutionMode TileShadingRateQCOM with z = %" PRIu32
+                                 ", which exceeds VkTilePropertiesQCOM::tileSize.depth (%" PRIu32 ").",
+                                 shader_stage->entrypoint->Describe().c_str(),
+                                 tile_shading_rate_z, tile_size_depths[index]);
+
+            }
+            if (tile_shading_rate_z != 0 &&
+                (tile_size_depths[index] % tile_shading_rate_z) != 0) {
+                skip |= LogError("VUID-RuntimeSpirv-tileSize-10705", objlist, loc,
+                                 "shader %s has OpExecutionMode TileShadingRateQCOM, but "
+                                 "VkTilePropertiesQCOM::tileSize.depth (%" PRIu32 ") is not divisible by "
+                                 "TileShadingRateQCOM::z (%" PRIu32 ").",
+                                 shader_stage->entrypoint->Describe().c_str(),
+                                 tile_size_depths[index], tile_shading_rate_z);
+
+            }
         }
     }
 
@@ -1782,13 +1849,20 @@ bool CoreChecks::ValidateActionStateDescriptorsPipeline(const LastBound& last_bo
                 break;
             }
         } else if (ds_slot.descriptor_buffer_binding.has_value()) {
+            std::ostringstream ss;
+            ss << "pipeline bound to " << string_VkPipelineBindPoint(bind_point)
+               << " requires a VkDescriptorSet (because it was not created with "
+                  "VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT), but has a bound descriptor buffer ";
+            if (ds_slot.descriptor_buffer_binding->embedded != vvl::kNoIndex32) {
+                ss << "(vkCmdBindDescriptorBufferEmbeddedSamplersEXT for set " << ds_slot.descriptor_buffer_binding->embedded
+                   << ")";
+            } else {
+                ss << "(index = " << ds_slot.descriptor_buffer_binding->index
+                   << ", offset = " << ds_slot.descriptor_buffer_binding->offset << ")";
+            }
+            ss << last_bound_state.DescribeInvalidDescriptorMode();
             skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::DESCRIPTOR_BUFFER_BIT_08117),
-                             cb_state.GetObjectList(bind_point), loc,
-                             "pipeline bound to %s requires a VkDescriptorSet (because it was not created with "
-                             "VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT), but has a bound descriptor buffer"
-                             " (index=%" PRIu32 " offset=%" PRIu64 ")%s",
-                             string_VkPipelineBindPoint(bind_point), ds_slot.descriptor_buffer_binding->index,
-                             ds_slot.descriptor_buffer_binding->offset, last_bound_state.DescribeInvalidDescriptorMode().c_str());
+                             cb_state.GetObjectList(bind_point), loc, "%s", ss.str().c_str());
             break;
         }
     }
@@ -1900,11 +1974,9 @@ bool CoreChecks::ValidateActionStateDescriptorHeap(const LastBound& last_bound_s
 
     const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
 
-    // If both heaps are bound, no point to look at the variables
-    if (cb_state.IsPrimary() && cb_state.descriptor_heap.sampler_bound && cb_state.descriptor_heap.resource_bound) {
-        return skip;
-    } else if (cb_state.IsSecondary() && cb_state.inheritance_descriptor_heap_info.pSamplerHeapBindInfo &&
-               cb_state.inheritance_descriptor_heap_info.pResourceHeapBindInfo) {
+    // These checks are for when people forgot to bind any resource/sampler heap.
+    // If both heaps are already bound, no need to loop the variables to check which type they are.
+    if (cb_state.descriptor_heap.sampler_bound && cb_state.descriptor_heap.resource_bound) {
         return skip;
     }
 
@@ -1932,17 +2004,25 @@ bool CoreChecks::ValidateActionStateDescriptorHeap(const LastBound& last_bound_s
 
     // TODO - Currently at this level we don't know if the sampler is embedded or not
     // If there is only embedded samplers, the sampler heap isn't required to be bound
-    if (stage_state.uses_sampler_heap && !has_embedded_samplers) {
-        if (cb_state.IsPrimary()) {
-            if (!cb_state.descriptor_heap.sampler_bound) {
-                skip |= LogError(
-                    CreateActionVuid(loc.function, vvl::ActionVUID::DESCRIPTOR_HEAP_11308),
-                    cb_state.GetObjectList(last_bound_state.bind_point), loc,
-                    "The shader %s uses sampler descriptors, but a sampler heap was not bound with vkCmdBindSamplerHeapEXT.%s%s",
-                    entry_point.Describe().c_str(), last_bound_state.DescribeInvalidDescriptorMode().c_str(),
-                    print_used_variables(true).c_str());
-            }
-        } else if (!cb_state.inheritance_descriptor_heap_info.pSamplerHeapBindInfo) {
+    if (stage_state.heap.uses_sampler_heap && !has_embedded_samplers && !cb_state.descriptor_heap.sampler_bound) {
+        if (cb_state.descriptor_heap.is_sampler_invalidated) {
+            skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::DESCRIPTOR_HEAP_11308),
+                             cb_state.GetObjectList(last_bound_state.bind_point), loc,
+                             "The shader %s uses sampler descriptors, but there is not currently a valid sampler heap "
+                             "bound.\nWhile there was a previous call to vkCmdBindSamplerHeapEXT, a previous call to "
+                             "vkCmdExecuteCommands had a secondary command buffer that bound its own sampler heap, instead of "
+                             "using VkCommandBufferInheritanceDescriptorHeapInfoEXT::pSamplerHeapBindInfo, therefore making this "
+                             "command buffer sampler heap invalid.%s%s",
+                             entry_point.Describe().c_str(), last_bound_state.DescribeInvalidDescriptorMode().c_str(),
+                             print_used_variables(true).c_str());
+        } else if (cb_state.IsPrimary()) {
+            skip |= LogError(
+                CreateActionVuid(loc.function, vvl::ActionVUID::DESCRIPTOR_HEAP_11308),
+                cb_state.GetObjectList(last_bound_state.bind_point), loc,
+                "The shader %s uses sampler descriptors, but a sampler heap was not bound with vkCmdBindSamplerHeapEXT.%s%s",
+                entry_point.Describe().c_str(), last_bound_state.DescribeInvalidDescriptorMode().c_str(),
+                print_used_variables(true).c_str());
+        } else {
             skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::DESCRIPTOR_HEAP_11308),
                              cb_state.GetObjectList(last_bound_state.bind_point), loc,
                              "The shader %s uses sampler descriptors, but "
@@ -1950,17 +2030,25 @@ bool CoreChecks::ValidateActionStateDescriptorHeap(const LastBound& last_bound_s
                              entry_point.Describe().c_str(), print_used_variables(true).c_str());
         }
     }
-    if (stage_state.uses_resource_heap) {
-        if (cb_state.IsPrimary()) {
-            if (!cb_state.descriptor_heap.resource_bound) {
-                skip |= LogError(
-                    CreateActionVuid(loc.function, vvl::ActionVUID::DESCRIPTOR_HEAP_11308),
-                    cb_state.GetObjectList(last_bound_state.bind_point), loc,
-                    "The shader %s uses resource descriptors, but a resource heap was not bound with vkCmdBindResourceHeapEXT.%s%s",
-                    entry_point.Describe().c_str(), last_bound_state.DescribeInvalidDescriptorMode().c_str(),
-                    print_used_variables(false).c_str());
-            }
-        } else if (!cb_state.inheritance_descriptor_heap_info.pResourceHeapBindInfo) {
+    if (stage_state.heap.uses_resource_heap && !cb_state.descriptor_heap.resource_bound) {
+        if (cb_state.descriptor_heap.is_resource_invalidated) {
+            skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::DESCRIPTOR_HEAP_11308),
+                             cb_state.GetObjectList(last_bound_state.bind_point), loc,
+                             "The shader %s uses resource descriptors, but there is not currently a valid resource heap "
+                             "bound.\nWhile there was a previous call to vkCmdBindResourceHeapEXT, a previous call to "
+                             "vkCmdExecuteCommands had a secondary command buffer that bound its own resource heap, instead of "
+                             "using VkCommandBufferInheritanceDescriptorHeapInfoEXT::pResourceHeapBindInfo, therefore making this "
+                             "command buffer resource heap invalid.%s%s",
+                             entry_point.Describe().c_str(), last_bound_state.DescribeInvalidDescriptorMode().c_str(),
+                             print_used_variables(true).c_str());
+        } else if (cb_state.IsPrimary()) {
+            skip |= LogError(
+                CreateActionVuid(loc.function, vvl::ActionVUID::DESCRIPTOR_HEAP_11308),
+                cb_state.GetObjectList(last_bound_state.bind_point), loc,
+                "The shader %s uses resource descriptors, but a resource heap was not bound with vkCmdBindResourceHeapEXT.%s%s",
+                entry_point.Describe().c_str(), last_bound_state.DescribeInvalidDescriptorMode().c_str(),
+                print_used_variables(false).c_str());
+        } else {
             skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::DESCRIPTOR_HEAP_11308),
                              cb_state.GetObjectList(last_bound_state.bind_point), loc,
                              "The shader %s uses resource descriptors, but "
@@ -2001,9 +2089,11 @@ bool CoreChecks::ValidateActionStateDescriptorHeapSamplers(const vvl::CommandBuf
         for (const spirv::ResourceInterfaceVariable& resource_variable : entry_point.resource_interface_variables) {
             const uint32_t descriptor_set = resource_variable.decorations.set;
             const uint32_t descriptor_binding = resource_variable.decorations.binding;
+            // bindingCount could be UINT32_MAX
+            const uint64_t last_binding = mapping.firstBinding + uint64_t(mapping.bindingCount);
 
             if (mapping.descriptorSet != descriptor_set || descriptor_binding < mapping.firstBinding ||
-                descriptor_binding >= mapping.firstBinding + uint64_t(mapping.bindingCount)) {
+                descriptor_binding >= last_binding) {
                 continue;
             }
 
@@ -2144,50 +2234,71 @@ bool CoreChecks::ValidateActionStateDescriptorsShaderObject(const LastBound& las
 }
 
 bool CoreChecks::ValidateActionStatePushConstantDescriptorHeap(const vvl::CommandBuffer& cb_state,
-                                                               const spirv::EntryPoint* entry_point,
+                                                               const ShaderStageState& stage_state,
                                                                const VkPipelineBindPoint bind_point, const Location& loc) const {
     bool skip = false;
-    if (!entry_point || !entry_point->push_constant_variable) {
+    if (!stage_state.entrypoint || !stage_state.entrypoint->push_constant_variable) {
+        return skip;  // no static push constant in shader
+    }
+
+    const auto& pc_variable = *stage_state.entrypoint->push_constant_variable;
+    if (pc_variable.size == 0) {
         return skip;
     }
 
-    const auto& pc_variable = *entry_point->push_constant_variable;
-    if (pc_variable.size > 0) {
-        const auto& cb_sub_state = core::SubState(cb_state);
+    if (!cb_state.push_data_dword_mask.empty()) {
+        const uint32_t begin_byte = pc_variable.offset;
+        const uint32_t end_byte = pc_variable.offset + pc_variable.size;  // Exclusive end for easier range math
+        const uint32_t size_dword = static_cast<uint32_t>(cb_state.push_data_dword_mask.size());
 
-        const uint32_t begin = pc_variable.offset;
-        const uint32_t end = begin + pc_variable.size - 1;
+        const uint32_t begin_dword = begin_byte / 4;
+        const uint32_t end_dword = (end_byte + 3) / 4;  // Round up to cover the partial last dword
 
-        if (!cb_sub_state.push_data_mask.empty()) {
-            const uint32_t size = static_cast<uint32_t>(cb_sub_state.push_data_mask.size());
-            // Find the first range of bytes which were not set
-            uint32_t unset_start = size;
-            uint32_t unset_end = end;
-            for (uint32_t i = begin; i <= end; i++) {
-                if (i >= size || !cb_sub_state.push_data_mask[i]) {
-                    if (unset_start == size) {
-                        unset_start = i;
+        uint32_t unset_start = spirv::kInvalidValue;
+        uint32_t unset_end = spirv::kInvalidValue;
+
+        bool found_error = false;
+        for (uint32_t i = begin_dword; i < end_dword; ++i) {
+            const bool is_not_set = (i >= size_dword) || !cb_state.push_data_dword_mask[i];
+
+            if (is_not_set) {
+                const uint32_t dword_start_byte = i * 4;
+                const uint32_t dword_end_byte = dword_start_byte + 4;
+
+                // Find the overlapping byte range between this unmasked DWORD and the variable
+                const uint32_t overlap_start = std::max(begin_byte, dword_start_byte);
+                const uint32_t overlap_end = std::min(end_byte, dword_end_byte);
+
+                // guard if the user does something like offset = 3, size = 1
+                if (overlap_start < overlap_end) {
+                    if (!found_error) {
+                        // first bad dword
+                        unset_start = overlap_start;
+                        found_error = true;
                     }
-                } else if (unset_start != size) {
-                    unset_end = i - 1;
-                    break;
+                    unset_end = overlap_end;
                 }
+            } else if (found_error) {
+                break;  // found unset_end
             }
-            if (unset_start != size) {
-                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::DESCRIPTOR_HEAP_11376),
-                                 cb_state.GetObjectList(bind_point), loc,
-                                 "shader %s uses push-constant statically at range [%" PRIu32 ", %" PRIu32
-                                 "), but vkCmdPushDataEXT was never called for range [%" PRIu32 ", %" PRIu32 ").",
-                                 entry_point->Describe().c_str(), pc_variable.offset, pc_variable.offset + pc_variable.size,
-                                 unset_start, unset_end);
-            }
-        } else {
+        }
+        if (found_error) {
             skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::DESCRIPTOR_HEAP_11376),
                              cb_state.GetObjectList(bind_point), loc,
                              "shader %s uses push-constant statically at range [%" PRIu32 ", %" PRIu32
-                             "), while there was no call to vkCmdPushDataEXT.",
-                             entry_point->Describe().c_str(), pc_variable.offset, pc_variable.offset + pc_variable.size);
+                             "), but vkCmdPushDataEXT was never called for range [%" PRIu32 ", %" PRIu32
+                             ").\nIf the variables are not used in shader, and just declared, this is a known limitation of VVL "
+                             "being worked on https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/12747",
+                             stage_state.entrypoint->Describe().c_str(), pc_variable.offset, pc_variable.offset + pc_variable.size,
+                             unset_start, unset_end);
         }
+    } else {
+        skip |= LogError(
+            CreateActionVuid(loc.function, vvl::ActionVUID::DESCRIPTOR_HEAP_11376), cb_state.GetObjectList(bind_point), loc,
+            "shader %s uses push-constant statically at range [%" PRIu32 ", %" PRIu32
+            "), while there was no call to vkCmdPushDataEXT.\nIf the variables are not used in shader, and just declared, this is "
+            "a known limitation of VVL being worked on https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/12747",
+            stage_state.entrypoint->Describe().c_str(), pc_variable.offset, pc_variable.offset + pc_variable.size);
     }
 
     return skip;
@@ -2210,48 +2321,43 @@ bool CoreChecks::ValidateActionStatePushConstant(const LastBound& last_bound_sta
     if (pipeline) {
         if (pipeline->descriptor_heap_mode) {
             for (const auto& stage_state : pipeline->stage_states) {
-                skip |= ValidateActionStatePushConstantDescriptorHeap(cb_state, stage_state.entrypoint.get(),
-                                                                      last_bound_state.bind_point, loc);
+                skip |= ValidateActionStatePushConstantDescriptorHeap(cb_state, stage_state, last_bound_state.bind_point, loc);
             }
-        }
-        auto const& pipeline_layout = pipeline->PipelineLayoutState();
-        if (pipeline_layout) {
+        } else if (const auto pipeline_layout = pipeline->PipelineLayoutState()) {
             if (!cb_state.push_constant_ranges_layout ||
                 (pipeline_layout->push_constant_ranges_layout == cb_state.push_constant_ranges_layout)) {
-                for (const auto& stage : pipeline->stage_states) {
-                    if (!stage.entrypoint || !stage.entrypoint->push_constant_variable) {
+                for (const auto& stage_state : pipeline->stage_states) {
+                    if (!stage_state.entrypoint || !stage_state.entrypoint->push_constant_variable) {
                         continue;  // no static push constant in shader
                     }
 
                     // Edge case where if the shader is using push constants statically and there never was a vkCmdPushConstants
                     if (!cb_state.push_constant_ranges_layout && !enabled_features.maintenance4) {
                         const LogObjectList objlist(cb_state.Handle(), pipeline_layout->Handle(), pipeline->Handle());
-                        skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::PUSH_CONSTANT_08601), objlist, loc,
-                                         "shader %s uses push-constant statically but vkCmdPushConstants was not called yet for "
-                                         "%s bound by vkCmdBindPipeline.",
-                                         stage.entrypoint->Describe().c_str(), FormatHandle(pipeline_layout->Handle()).c_str());
+                        skip |=
+                            LogError(CreateActionVuid(loc.function, vvl::ActionVUID::PUSH_CONSTANT_08601), objlist, loc,
+                                     "shader %s uses push-constant statically but vkCmdPushConstants was not called yet for "
+                                     "%s bound by vkCmdBindPipeline.",
+                                     stage_state.entrypoint->Describe().c_str(), FormatHandle(pipeline_layout->Handle()).c_str());
                     }
                 }
             }
         }
-    } else {
-        if (!cb_state.push_constant_ranges_layout) {
-            for (const auto& shader_object : last_bound_state.shader_object_states) {
-                if (!shader_object || !shader_object->stage.entrypoint ||
-                    !shader_object->stage.entrypoint->push_constant_variable) {
-                    continue;
-                }
-                if (shader_object->descriptor_heap_mode) {
-                    skip |= ValidateActionStatePushConstantDescriptorHeap(cb_state, shader_object->stage.entrypoint.get(),
-                                                                          last_bound_state.bind_point, loc);
-                } else {
-                    // Edge case where if the shader is using push constants statically and there never was a vkCmdPushConstants
-                    if (!cb_state.push_constant_ranges_layout && !enabled_features.maintenance4) {
-                        const LogObjectList objlist(cb_state.Handle(), shader_object->Handle());
-                        skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::PUSH_CONSTANT_08601), objlist, loc,
-                                         "shader %s uses push-constant statically but vkCmdPushConstants was not called yet.",
-                                         shader_object->stage.entrypoint->Describe().c_str());
-                    }
+    } else if (!cb_state.push_constant_ranges_layout) {
+        for (const auto& shader_object : last_bound_state.shader_object_states) {
+            if (!shader_object || !shader_object->stage.entrypoint || !shader_object->stage.entrypoint->push_constant_variable) {
+                continue;  // no static push constant in shader
+            }
+            if (shader_object->descriptor_heap_mode) {
+                skip |=
+                    ValidateActionStatePushConstantDescriptorHeap(cb_state, shader_object->stage, last_bound_state.bind_point, loc);
+            } else {
+                // Edge case where if the shader is using push constants statically and there never was a vkCmdPushConstants
+                if (!cb_state.push_constant_ranges_layout && !enabled_features.maintenance4) {
+                    const LogObjectList objlist(cb_state.Handle(), shader_object->Handle());
+                    skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::PUSH_CONSTANT_08601), objlist, loc,
+                                     "shader %s uses push-constant statically but vkCmdPushConstants was not called yet.",
+                                     shader_object->stage.entrypoint->Describe().c_str());
                 }
             }
         }

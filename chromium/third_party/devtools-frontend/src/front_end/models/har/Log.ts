@@ -9,7 +9,7 @@
 // See https://bugs.webkit.org/show_bug.cgi?id=58127 for details.
 
 import * as Common from '../../core/common/common.js';
-import type * as Platform from '../../core/platform/platform.js';
+import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 
@@ -33,7 +33,8 @@ export class Log {
   }
 
   private creator(): Creator {
-    const webKitVersion = /AppleWebKit\/([^ ]+)/.exec(window.navigator.userAgent);
+    const userAgent = Platform.HostRuntime.HOST_RUNTIME.getUserAgent();
+    const webKitVersion = /AppleWebKit\/([^ ]+)/.exec(userAgent);
 
     return {name: 'WebInspector', version: webKitVersion ? webKitVersion[1] : 'n/a'};
   }

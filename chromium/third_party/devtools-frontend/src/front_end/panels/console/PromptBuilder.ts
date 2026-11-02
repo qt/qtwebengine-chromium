@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as AiAssistanceModel from '../../models/ai_assistance/ai_assistance.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as Formatter from '../../models/formatter/formatter.js';
 import * as Logs from '../../models/logs/logs.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
@@ -68,8 +68,9 @@ export class PromptBuilder {
     const firstNewline = text.indexOf('\n');
     if (text.length > MAX_CODE_SIZE && (firstNewline < 0 || firstNewline > MAX_CODE_SIZE)) {
       // Use formatter
+      const settings = runtimeModel.target().targetManager().settings;
       const {formattedContent, formattedMapping} = await Formatter.ScriptFormatter.formatScriptContent(
-          mappedLocation?.uiSourceCode.mimeType() ?? 'text/javascript', text);
+          settings, mappedLocation?.uiSourceCode.mimeType() ?? 'text/javascript', text);
       const [lineNumber, columnNumber] =
           formattedMapping.originalToFormatted(mappedLocation?.lineNumber ?? 0, mappedLocation?.columnNumber ?? 0);
       return {text: formattedContent, columnNumber, lineNumber};

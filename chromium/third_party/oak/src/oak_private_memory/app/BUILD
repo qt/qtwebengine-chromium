@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-load("@rules_rust//rust:defs.bzl", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -35,6 +35,7 @@ rust_library(
     proc_macro_deps = [
         "@oak_crates_index//:async-trait",
     ],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//:encryption",
         "//:external_db_client",
@@ -45,18 +46,26 @@ rust_library(
         "//proto/grpc:sealed_memory_grpc_proto",
         "@oak//oak_proto_rust",
         "@oak//oak_session",
+        "@oak//oak_session/tls/rust:oak_session_tls",
         "@oak_crates_index//:anyhow",
         "@oak_crates_index//:async-stream",
         "@oak_crates_index//:futures",
         "@oak_crates_index//:opentelemetry",
         "@oak_crates_index//:prost",
         "@oak_crates_index//:prost-types",
-        "@oak_crates_index//:rand",
         "@oak_crates_index//:serde",
         "@oak_crates_index//:serde_json",
-        "@oak_crates_index//:tempfile",
         "@oak_crates_index//:tokio",
         "@oak_crates_index//:tokio-stream",
         "@oak_crates_index//:tonic",
+        "@pm_crates//:rand",
+    ],
+)
+
+rust_test(
+    name = "app_test",
+    crate = ":app",
+    deps = [
+        "//:private_memory_test_database_server_lib",
     ],
 )

@@ -6,6 +6,8 @@
 
 #include <sys/prctl.h>
 
+#include <algorithm>
+#include <array>
 #include <cassert>
 #include <type_traits>
 
@@ -14,11 +16,6 @@
 #include "third_party/jni_zero/jni_zero_internal.h"
 #include "third_party/jni_zero/logging.h"
 #include "third_party/jni_zero/system_jni_unchecked_exceptions/ClassLoader_jni.h"
-
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/393091624): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #if defined(JNI_ZERO_MULTIPLEXING_ENABLED)
 extern const int64_t kJniZeroHashWhole;
@@ -44,7 +41,6 @@ static_assert(std::is_same<JArray<bool>, jbooleanArray>::value);
 namespace jni_zero {
 namespace {
 
-const size_t kMaxClassNameLen = 256;
 
 // Until we fully migrate base's jni_android, we will maintain a copy of this
 // global here and will have base set this variable when it sets its own.
@@ -60,28 +56,6 @@ jclass DefaultClassResolver(JNIEnv* env, const char* class_name) {
   JNI_ZERO_DCHECK(g_class_loader);
   auto j_class_name = jni_zero::AdoptRef(env, env->NewStringUTF(class_name));
   return g_class_loader->loadClass(env, j_class_name).Release();
-}
-
-jclass GetClassInternal(JNIEnv* env, const char* class_name) {
-  if (g_class_resolver != nullptr) {
-    return g_class_resolver(env, class_name);
-  }
-
-  // This code should be hit only before (or during) InitVM().
-  size_t bufsize = strlen(class_name) + 1;
-  if (bufsize > kMaxClassNameLen) {
-    JNI_ZERO_FLOG("Class name too long: %s", class_name);
-  }
-
-  char slash_name[kMaxClassNameLen];
-  for (size_t i = 0; i < bufsize; ++i) {
-    char c = class_name[i];
-    if (c == '.') {
-      c = '/';
-    }
-    slash_name[i] = c;
-  }
-  return env->FindClass(slash_name);
 }
 
 jclass GetClassGlobalRef(JNIEnv* env, jobject obj) {
@@ -113,13 +87,13 @@ JNIEnv* AttachCurrentThread() {
     args.group = nullptr;
 
     // 16 is the maximum size for thread names on Android.
-    char thread_name[16];
-    int err = prctl(PR_GET_NAME, thread_name);
+    std::array<char, 16> thread_name;
+    int err = prctl(PR_GET_NAME, thread_name.data());
     if (err < 0) {
       JNI_ZERO_ELOG("prctl(PR_GET_NAME)");
       args.name = nullptr;
     } else {
-      args.name = thread_name;
+      args.name = thread_name.data();
     }
 
 #if defined(JNI_ZERO_IS_ROBOLECTRIC)
@@ -247,7 +221,8 @@ void SetClassLoader(JNIEnv* env, const JavaRef<jobject>& class_loader) {
 }
 
 ScopedJavaLocalRef<jclass> GetClass(JNIEnv* env, const char* class_name) {
-  return jni_zero::AdoptRef(env, GetClassInternal(env, class_name));
+  return jni_zero::AdoptRef(
+      env, jni_zero::internal::GetClassInternal(env, class_name));
 }
 
 template <MethodID::Type type>
@@ -368,6 +343,17 @@ template jfieldID FieldID::LazyGet<FieldID::TYPE_INSTANCE>(
     const char* field_name,
     const char* jni_signature,
     std::atomic<jfieldID>* atomic_field_id);
+
+jclass GetClassInternal(JNIEnv* env, const char* class_name) {
+  if (g_class_resolver != nullptr) {
+    return g_class_resolver(env, class_name);
+  }
+
+  // This code should be hit only before (or during) InitVM().
+  std::string slash_name(class_name);
+  std::replace(slash_name.begin(), slash_name.end(), '.', '/');
+  return env->FindClass(slash_name.c_str());
+}
 
 jclass LazyGetClass(JNIEnv* env,
                     const char* class_name,

@@ -82,7 +82,7 @@ export class LegacyJavaScript extends BaseInsightComponent<LegacyJavaScriptInsig
                     () => this.#revealLocation(
                         script, match)} title=${`${script.url}:${match.line}:${match.column}`}>${match.name}</span>`],
               };
-            })
+            }),
           };
         });
 

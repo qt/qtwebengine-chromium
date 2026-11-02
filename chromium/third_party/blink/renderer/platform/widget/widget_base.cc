@@ -668,6 +668,11 @@ void WidgetBase::UpdateCompositorScrollState(
   client_->UpdateCompositorScrollState(commit_data);
 }
 
+void WidgetBase::UpdateAnimatedImageState(
+    const cc::CompositorCommitData& commit_data) {
+  client_->UpdateAnimatedImageState(commit_data);
+}
+
 void WidgetBase::OnDeferMainFrameUpdatesChanged(bool defer) {
   // LayerTreeHost::CreateThreaded() will defer main frame updates immediately
   // until it gets a LocalSurfaceId. That's before the
@@ -697,7 +702,11 @@ void WidgetBase::OnCommitRequested() {
 }
 
 void WidgetBase::DidBeginMainFrame() {
+  base::WeakPtr<WidgetBase> weak_this = weak_ptr_factory_.GetWeakPtr();
   UpdateTextInputState();
+  if (!weak_this) {
+    return;
+  }
   client_->DidBeginMainFrame();
 }
 
@@ -796,19 +805,6 @@ void WidgetBase::RequestNewLayerTreeFrameSink(
   // internal begin frame source is started.
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
-  if (base::FeatureList::IsEnabled(
-          ::features::kInternalBeginFrameSourceOnManyDidNotProduceFrame) &&
-      !params.embedder_params->synthetic_begin_frame_source &&
-      !settings.single_thread_proxy_scheduler &&
-      !settings.using_synchronous_renderer_compositor &&
-      !command_line.HasSwitch(switches::kAllowPreCommitInput)) {
-    static const uint64_t num_did_not_produce_frame = static_cast<uint64_t>(
-        ::features::kNumDidNotProduceFrameBeforeInternalBeginFrameSource.Get());
-    params.embedder_params
-        ->num_did_not_produce_frame_before_internal_begin_frame_source =
-        num_did_not_produce_frame;
-    params.embedder_params->auto_needs_begin_frame = true;
-  }
 
   if (base::FeatureList::IsEnabled(::features::kManualBeginFrame) &&
       !command_line.HasSwitch(switches::kAllowPreCommitInput)) {
@@ -977,6 +973,72 @@ void WidgetBase::FinishRequestNewLayerTreeFrameSink(
                gpu_channel_host->CreateClientSharedImageInterface(),
                params.embedder_params.get()),
            std::move(params.render_frame_metadata_observer));
+}
+
+std::unique_ptr<cc::LayerTreeFrameSink> WidgetBase::CreateUnboundedFrameSink(
+    CrossVariantMojoRemote<viz::mojom::blink::CompositorFrameSinkInterfaceBase>
+        unbounded_sink_remote,
+    CrossVariantMojoReceiver<
+        viz::mojom::blink::CompositorFrameSinkClientInterfaceBase>
+        unbounded_client_receiver) {
+  scoped_refptr<gpu::GpuChannelHost> gpu_channel_host =
+      Platform::Current()->EstablishGpuChannelSync();
+  if (!gpu_channel_host) {
+    return nullptr;
+  }
+
+  auto embedder_params = std::make_unique<
+      cc::mojo_embedder::AsyncLayerTreeFrameSink::InitParams>();
+  embedder_params->compositor_task_runner =
+      Platform::Current()->CompositorThreadTaskRunner();
+  if (!embedder_params->compositor_task_runner) {
+    embedder_params->compositor_task_runner =
+        main_thread_compositor_task_runner_;
+  }
+  embedder_params->io_thread_id = Platform::Current()->GetIOThreadId();
+  if (base::FeatureList::IsEnabled(::features::kEnableADPFRendererMain)) {
+    embedder_params->main_thread_id = main_thread_id_;
+  }
+  embedder_params->wants_animate_only_begin_frames = true;
+  embedder_params->no_compositor_frame_acks =
+      base::FeatureList::IsEnabled(::features::kNoCompositorFrameAcks);
+
+  embedder_params->pipes.compositor_frame_sink_remote =
+      mojo::PendingRemote<viz::mojom::CompositorFrameSink>(
+          std::move(unbounded_sink_remote));
+  embedder_params->pipes.client_receiver =
+      mojo::PendingReceiver<viz::mojom::CompositorFrameSinkClient>(
+          std::move(unbounded_client_receiver));
+
+  if (Platform::Current()->IsGpuCompositingDisabled()) {
+    return std::make_unique<cc::mojo_embedder::AsyncLayerTreeFrameSink>(
+        /*context_provider=*/nullptr,
+        /*worker_context_provider=*/nullptr,
+        gpu_channel_host->CreateClientSharedImageInterface(),
+        embedder_params.get());
+  }
+
+  scoped_refptr<viz::RasterContextProvider> worker_context_provider =
+      Platform::Current()->SharedCompositorWorkerContextProvider(
+          &RasterDarkModeFilterImpl::Instance());
+  if (!worker_context_provider) {
+    return nullptr;
+  }
+
+  gpu::SharedMemoryLimits limits = gpu::SharedMemoryLimits::ForMailboxContext();
+  auto context_provider = viz::ContextProviderCommandBuffer::CreateForRaster(
+      gpu_channel_host, kGpuStreamIdDefault, kGpuStreamPriorityDefault,
+      GURL("chrome://gpu/WidgetBase::CreateUnboundedFrameSink"),
+      /*automatic_flushes=*/false, /*support_locking=*/false, limits,
+      viz::command_buffer_metrics::ContextType::RENDERER_COMPOSITOR);
+  if (!context_provider) {
+    return nullptr;
+  }
+
+  return std::make_unique<cc::mojo_embedder::AsyncLayerTreeFrameSink>(
+      std::move(context_provider), std::move(worker_context_provider),
+      gpu_channel_host->CreateClientSharedImageInterface(),
+      embedder_params.get());
 }
 
 void WidgetBase::DidCommitAndDrawCompositorFrame() {
@@ -1200,7 +1262,11 @@ void WidgetBase::UpdateTextInputStateInternal(bool show_virtual_keyboard,
       ime_event_guard_->set_show_virtual_keyboard(true);
     return;
   }
+  base::WeakPtr<WidgetBase> weak_this = weak_ptr_factory_.GetWeakPtr();
   ui::TextInputType new_type = GetTextInputType();
+  if (!weak_this) {
+    return;
+  }
   if (IsDateTimeInput(new_type))
     return;  // Not considered as a text input field in WebKit/Chromium.
 
@@ -1213,6 +1279,9 @@ void WidgetBase::UpdateTextInputStateInternal(bool show_virtual_keyboard,
   std::optional<gfx::Rect> selection_bounds;
   if (frame_widget) {
     new_info = frame_widget->TextInputInfo();
+    if (!weak_this) {
+      return;
+    }
     // This will be used to decide whether or not to show VK when VK policy is
     // manual.
     last_vk_visibility_request =
@@ -1332,6 +1401,7 @@ void WidgetBase::ClearTextInputState() {
 }
 
 void WidgetBase::ShowVirtualKeyboardOnElementFocus() {
+  base::WeakPtr<WidgetBase> weak_this = weak_ptr_factory_.GetWeakPtr();
 #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_IOS_TVOS)
   // On ChromeOS, virtual keyboard is triggered only when users leave the
   // mouse button or the finger and a text input element is focused at that
@@ -1343,6 +1413,9 @@ void WidgetBase::ShowVirtualKeyboardOnElementFocus() {
 #else
   ShowVirtualKeyboard();
 #endif
+  if (!weak_this) {
+    return;
+  }
 
 // TODO(rouslan): Fix ChromeOS and Windows 8 behavior of autofill popup with
 // virtual keyboard.
@@ -1387,12 +1460,24 @@ void WidgetBase::UpdateCompositionInfo(bool immediate_request) {
   gfx::Range range;
   Vector<gfx::Rect> character_bounds;
 
-  if (GetTextInputType() == ui::TextInputType::TEXT_INPUT_TYPE_NONE) {
+  base::WeakPtr<WidgetBase> weak_this = weak_ptr_factory_.GetWeakPtr();
+  ui::TextInputType text_input_type = GetTextInputType();
+  if (!weak_this) {
+    return;
+  }
+
+  if (text_input_type == ui::TextInputType::TEXT_INPUT_TYPE_NONE) {
     // Composition information is only available on editable node.
     range = gfx::Range::InvalidRange();
   } else {
     GetCompositionRange(&range);
+    if (!weak_this) {
+      return;
+    }
     GetCompositionCharacterBounds(&character_bounds);
+    if (!weak_this) {
+      return;
+    }
   }
 
   if (!immediate_request &&
@@ -1408,8 +1493,7 @@ void WidgetBase::UpdateCompositionInfo(bool immediate_request) {
     frame_widget->UpdateCursorAnchorInfo(/*update_requested=*/true);
     return;
   }
-  if (mojom::blink::WidgetInputHandlerHost* host =
-          widget_input_handler_manager_->GetWidgetInputHandlerHost()) {
+  if (auto host = widget_input_handler_manager_->GetWidgetInputHandlerHost()) {
     host->ImeCompositionRangeChanged(composition_range_,
                                      composition_character_bounds_);
   }
@@ -1417,7 +1501,11 @@ void WidgetBase::UpdateCompositionInfo(bool immediate_request) {
 
 void WidgetBase::ForceTextInputStateUpdate() {
 #if BUILDFLAG(IS_ANDROID)
+  base::WeakPtr<WidgetBase> weak_this = weak_ptr_factory_.GetWeakPtr();
   UpdateSelectionBounds();
+  if (!weak_this) {
+    return;
+  }
   UpdateTextInputStateInternal(false, true /* reply_to_request */);
 #endif
 }
@@ -1485,10 +1573,6 @@ void WidgetBase::SetHidden(bool hidden) {
     FlushInputProcessedCallback();
 
   SetCompositorVisible(!is_hidden_);
-
-  if (widget_input_handler_manager_) {
-    widget_input_handler_manager_->SetHidden(is_hidden_);
-  }
 }
 
 ui::TextInputType WidgetBase::GetTextInputType() {
@@ -1558,9 +1642,13 @@ void WidgetBase::ImeSetComposition(
     const gfx::Range& replacement_range,
     int selection_start,
     int selection_end,
-    mojom::blink::ImeState ime_state) {
-  if (!ShouldHandleImeEvents())
+    mojom::blink::ImeState ime_state,
+    DOMNodeIdType target_dom_node_id) {
+  // If the browser is setting a targeted composition, ignore normal IME focus
+  // requirements.
+  if (target_dom_node_id.is_null() && !ShouldHandleImeEvents()) {
     return;
+  }
 
   FrameWidget* frame_widget = client_->FrameWidget();
   if (!frame_widget)
@@ -1573,9 +1661,9 @@ void WidgetBase::ImeSetComposition(
   }
 
   ImeEventGuard guard(weak_ptr_factory_.GetWeakPtr());
-  bool success =
-      frame_widget->SetComposition(text, ime_text_spans, replacement_range,
-                                   selection_start, selection_end, ime_state);
+  bool success = frame_widget->SetComposition(
+      text, ime_text_spans, replacement_range, selection_start, selection_end,
+      ime_state, target_dom_node_id);
   if (!guard.IsValid()) {
     return;
   }
@@ -1583,7 +1671,7 @@ void WidgetBase::ImeSetComposition(
     // If we failed to set the composition text, then we need to let the browser
     // process to cancel the input method's ongoing composition session, to make
     // sure we are in a consistent state.
-    if (mojom::blink::WidgetInputHandlerHost* host =
+    if (auto host =
             widget_input_handler_manager_->GetWidgetInputHandlerHost()) {
       host->ImeCancelComposition();
     }
@@ -1594,9 +1682,13 @@ void WidgetBase::ImeSetComposition(
 void WidgetBase::ImeCommitText(const String& text,
                                const Vector<ui::ImeTextSpan>& ime_text_spans,
                                const gfx::Range& replacement_range,
-                               int relative_cursor_pos) {
-  if (!ShouldHandleImeEvents())
+                               int relative_cursor_pos,
+                               DOMNodeIdType target_dom_node_id) {
+  // If the browser is setting a targeted composition, ignore normal IME focus
+  // requirements.
+  if (target_dom_node_id.is_null() && !ShouldHandleImeEvents()) {
     return;
+  }
 
   FrameWidget* frame_widget = client_->FrameWidget();
   if (!frame_widget)
@@ -1610,12 +1702,21 @@ void WidgetBase::ImeCommitText(const String& text,
   ImeEventGuard guard(weak_ptr_factory_.GetWeakPtr());
   input_handler_.set_handling_input_event(true);
   frame_widget->CommitText(text, ime_text_spans, replacement_range,
-                           relative_cursor_pos);
+                           relative_cursor_pos, target_dom_node_id);
   if (!guard.IsValid()) {
     return;
   }
   input_handler_.set_handling_input_event(false);
   UpdateCompositionInfo(false /* not an immediate request */);
+}
+
+void WidgetBase::PasteIntoNode(const String& text,
+                               DOMNodeIdType target_dom_node_id) {
+  FrameWidget* frame_widget = client_->FrameWidget();
+  if (!frame_widget) {
+    return;
+  }
+  frame_widget->PasteIntoNode(text, target_dom_node_id);
 }
 
 void WidgetBase::ImeFinishComposingText(bool keep_selection) {
@@ -1683,7 +1784,7 @@ void WidgetBase::FlushInputProcessedCallback() {
 }
 
 void WidgetBase::CancelComposition() {
-  if (mojom::blink::WidgetInputHandlerHost* host =
+  if (auto host =
           widget_input_handler_manager_->GetWidgetInputHandlerHost()) {
     host->ImeCancelComposition();
   }
@@ -1707,10 +1808,14 @@ void WidgetBase::OnImeEventGuardFinish(ImeEventGuard* guard) {
   // ime event.
   UpdateSelectionBounds();
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
-  if (guard->show_virtual_keyboard())
+  if (!guard->IsValid()) {
+    return;
+  }
+  if (guard->show_virtual_keyboard()) {
     ShowVirtualKeyboard();
-  else
+  } else {
     UpdateTextInputState();
+  }
 #endif
 }
 
@@ -1743,7 +1848,8 @@ void WidgetBase::RequestAnimationAfterDelayTimerFired(TimerBase*) {
   bool urgent_for_input =
       input_handler_.handling_input_event() &&
       base::FeatureList::IsEnabled(features::kUrgentMainFrameForInput);
-  client_->ScheduleAnimation(/*urgent=*/urgent_for_input);
+  client_->ScheduleAnimation(cc::BeginMainFrameReason::kDelayedTimerFired,
+                             /*urgent=*/urgent_for_input);
 }
 
 float WidgetBase::GetOriginalDeviceScaleFactor() const {

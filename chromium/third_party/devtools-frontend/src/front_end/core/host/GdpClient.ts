@@ -98,21 +98,24 @@ async function makeHttpRequest<R>(request: DispatchHttpRequestRequest): Promise<
 }
 
 const SERVICE_NAME = 'gdpService';
-let gdpClientInstance: GdpClient|null = null;
 export class GdpClient {
   #cachedProfilePromise?: Promise<Profile>;
   #cachedEligibilityPromise?: Promise<CheckElibigilityResponse>;
 
-  private constructor() {
-  }
-
   static instance({forceNew}: {
     forceNew: boolean,
   } = {forceNew: false}): GdpClient {
-    if (!gdpClientInstance || forceNew) {
-      gdpClientInstance = new GdpClient();
+    if (!Root.DevToolsContext.globalInstance().has(GdpClient) || forceNew) {
+      Root.DevToolsContext.globalInstance().set(
+          GdpClient,
+          new GdpClient(),
+      );
     }
-    return gdpClientInstance;
+    return Root.DevToolsContext.globalInstance().get(GdpClient);
+  }
+
+  static removeInstance(): void {
+    Root.DevToolsContext.globalInstance().delete(GdpClient);
   }
 
   /**
@@ -190,7 +193,7 @@ export class GdpClient {
         queryParams: {
           allowMissing: 'true',
           names,
-        }
+        },
       });
 
       return new Set(response.awards?.map(award => normalizeBadgeName(award.name)) ?? []);
@@ -211,7 +214,7 @@ export class GdpClient {
           newsletter_email: emailPreference,
           creation_origin: {
             origin_application: ORIGIN_APPLICATION_NAME,
-          }
+          },
         }),
       });
       this.#clearCache();
@@ -235,7 +238,7 @@ export class GdpClient {
         body: JSON.stringify({
           awardingUri: 'devtools://devtools',
           name,
-        })
+        }),
       });
       return response;
     } catch {

@@ -9,11 +9,11 @@
 #include <string>
 
 #include "base/values.h"
-#include "third_party/blink/public/mojom/webid/federated_auth_request.mojom-forward.h"
+#include "third_party/blink/public/mojom/webid/federated_request.mojom-forward.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
-namespace content {
+namespace content::webid {
 
 // Delegate to control FedCM's popupd. An example of a use case is if a user is
 // signed-in according to the FedCM IDP Sign-in Status API but we find that the
@@ -47,6 +47,6 @@ class IdentityRegistryDelegate {
                                 const url::Origin& actual) {}
 };
 
-}  // namespace content
+}  // namespace content::webid
 
 #endif  // CONTENT_BROWSER_WEBID_IDENTITY_REGISTRY_DELEGATE_H_

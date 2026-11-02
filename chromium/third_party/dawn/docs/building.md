@@ -6,6 +6,9 @@ is Dawn's primary build environment. However, Dawn can be built as a
 standalone C++ project, often with alternative build generators and C++
 compilers, as described below.
 
+If you are developing Dawn itself, see also
+[development-tips.md](development-tips.md).
+
 ## System requirements
 
  * Git
@@ -49,7 +52,7 @@ compilers, as described below.
   - CPU:
     - x86-64 (also known as amd64)
     - arm64 support is experimental
-  - Windows SDK 10.0.22621.x or a later version.
+  - Windows SDK 10.0.26100.x or a later version.
   - C++20 compiler:
     - Clang, as provided by GN. This is the primary supported compiler.
     - MSVC 19.41, or Visual Studio 2022 v17.11 or later.
@@ -94,6 +97,7 @@ Contrary to `depot_tools`, this scripts does not figure out option-dependent req
 
 The following packages are needed to build Dawn. (Package names are the Ubuntu names).
 
+* `libfuse2`
 * `libxrandr-dev`
 * `libxinerama-dev`
 * `libxcursor-dev`
@@ -104,7 +108,7 @@ The following packages are needed to build Dawn. (Package names are the Ubuntu n
 * `npm`
 
 ```sh
-sudo apt-get install libxrandr-dev libxinerama-dev libxcursor-dev mesa-common-dev libx11-xcb-dev pkg-config nodejs npm
+sudo apt-get install libfuse2 libxrandr-dev libxinerama-dev libxcursor-dev mesa-common-dev libx11-xcb-dev pkg-config nodejs npm
 ```
 
 Note, `nodejs` and `npm` are only needed if building `dawn.node`.
@@ -113,6 +117,7 @@ Note, `nodejs` and `npm` are only needed if building `dawn.node`.
 ## Build Dawn
 
 ### Compiling using CMake + Ninja
+
 ```sh
 mkdir -p out/Debug
 cd out/Debug
@@ -121,6 +126,7 @@ ninja # or autoninja
 ```
 
 ### Compiling using CMake + make
+
 ```sh
 mkdir -p out/Debug
 cd out/Debug
@@ -129,6 +135,7 @@ make # -j N for N-way parallel build
 ```
 
 ### Compiling using gn + ninja
+
 ```sh
 mkdir -p out/Debug
 gn gen out/Debug
@@ -150,30 +157,42 @@ and use `find_package(Dawn)` in your CMake project to discover Dawn and link wit
 the `dawn::webgpu_dawn` target. Please see [Quickstart with CMake](./quickstart-cmake.md)
 for step-by-step instructions.
 
-### Cross-compiling for Android targets (Linux hosts)
+### Cross-Compilation
 
-Compiling Dawn binaries for Android is not supported in a Dawn standalone
-checkout; it must be checked out as a submodule of `chromium/src` (on a Linux
-host). If Chromium is configured to build for Android, then Dawn targets (like
-`dawn_unittests` will also be buildable.
+Cross-compilation is provided on a best-effort basis, primarily for the purpose
+of compilation checks during local Dawn development. It only supports Clang.
+It may not always work, and the resulting binaries are not guaranteed to work.
 
-### Cross-compiling for Windows targets (Linux/Mac hosts)
+1.  Add your target OS to the `target_os` array in `.gclient`. Or, use
+    `standalone-maximal.gclient` and follow the instructions in it.
+    This will enable downloading toolchains and any target-specific Dawn DEPS.
+    - Windows: ~16GB.
+    - Mac: ~4GB.
+    - Android: ~2.5GB.
+1.  `gclient sync`.
+1.  Create a new `out/*` directory for each target build with the relevant GN
+    args. The following configurations have been tested:
 
-Cross-compilation for Windows targets on Mac/Linux hosts is provided on a
-best-effort basis, primarily for the purpose of compilation checks during local
-Dawn development.
+    - `target_os = "mac"` `target_cpu = "arm64"`/`"x64"` on Linux hosts
+    - `target_os = "win"` `target_cpu = "x64"` on Linux and Mac hosts
+        - On Mac hosts, many Windows files can't build using Siso remote builds.
+          Use `autoninja --offline` (or `autoninja -k=0 ; autoninja --offline`
+          to first compile everything possible with Siso, then compile the rest
+          locally). See <https://crbug.com/446124900>.
+    - `target_os = "android` `target_cpu = "arm64"` on Linux hosts (note below)
 
-Following [this guide](https://chromium.googlesource.com/chromium/src/+/main/docs/win_cross.md):
+For background, see also
+[this guide](https://chromium.googlesource.com/chromium/src/+/main/docs/win_cross.md).
 
-- Add `target_os = ['win']` to the top level of `.gclient`
-- `gclient sync`
-- Create a new `out/` directory with GN args:
-  ```
-  target_os = "win"
-  target_cpu = "x64"
-  ```
+#### For Android targets (Linux hosts)
+
+**Cross-compilation for Android as described above works to compile targets, but
+the resulting binaries have not been tested.** If you want to run them you *may*
+need to set up an Android Chromium build (which contains Dawn) and build Dawn
+targets (like `dawn_unittests`, `dawn_end2end_tests`) in the Chromium build.
 
 ### Using ccache for CMake builds
+
 There is a substantial number of source files that are needed to be
 built for Dawn and its dependencies (~thousands), which can lead to
 long compile times on resource bound machines (i.e. laptops),
@@ -212,6 +231,7 @@ flags will all cause misses, since entries in the cache are based on
 flags + contents of the source file.
 
 ### Weird CMake build breaks on Linux
+
 If you see errors like this:
 ```
 error: satisfaction of constraint 'is_constructible_v<_Tp, _Up>' depends on itself
@@ -254,6 +274,7 @@ change if you run this in an existing build directory, so it is
 recommended that you setup a new build directory to use this.
 
 ### Fuzzers on MacOS
+
 As of Late Oct 2025, fuzzing on a dev Mac is not in a good state.
 
 The old workaround for fuzzing with XCode 16.X should still work, but that is
@@ -275,6 +296,7 @@ SDK does not include the standard support libraries for fuzzing.
 The workaround for this depends on which version of XCode you are trying to use.
 
 #### Using XCode 16.X
+
 The workaround for 16.X has been to install a fully featured version llvm onto
 your system, for example via Homebrew, `brew install llvm`, (you might have to
 use `llvm@XX` where `XX` is the major version of llvm in the XCode SDK). And
@@ -285,6 +307,7 @@ toolchain using some elements of the XCode SDK and the llvm SDK, because there
 is some Apple specific framework stuff that isn't in mainstream llvm.
 
 #### Using XCode 26.X
+
 As mentioned above, the 16.X workaround appears to no longer work due to drift
 between Apple's llvm and the mainline version. Trying to create a hybrid
 toolchain will lead to compiling issues from the XCode standard headers using
@@ -310,6 +333,7 @@ Apple's patches, so may be incompatible in subtle ways if these libraries do get
 used somehow.
 
 #### Using hermetic builds
+
 It should be possible to use the same hermetic toolchain that the bots
 use for dev builds of the fuzzers, since the bots build and run the fuzzer fine.
 
@@ -319,11 +343,12 @@ system framework stuff that comes from XCode, and that is where the build issues
 come in from, when trying to build/run the fuzzers.
 
 There is some support for getting a truly hermetic build on a dev machine,
-https://source.chromium.org/chromium/chromium/src/+/main:third_party/dawn/src/cmake/HermeticXcode/,
+<https://source.chromium.org/chromium/chromium/src/+/main:third_party/dawn/src/cmake/HermeticXcode/>,
 but that has not been tested with building the fuzzers, and probably needs work
 to be a drop-in solution here.
 
 ### Reproducing bot specific environments on Windows + CMake
+
 When investigating build issues being seen by CI/CQ it is sometimes necessary
 to replicate the exact environment from a builder/bot for local debugging.
 

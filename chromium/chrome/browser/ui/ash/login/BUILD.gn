@@ -86,9 +86,9 @@ static_library("login") {
 
   deps = [
     "//ash/constants",
+    "//ash/login/resources:login_strings",
     "//ash/webui/settings/public/constants:mojom",
     "//base:i18n",
-    "//chrome/app:command_ids",
     "//chrome/app:generated_resources",
     "//chrome/app/theme:theme_resources",
     "//chrome/browser:browser_process",
@@ -125,12 +125,14 @@ static_library("login") {
     "//chrome/browser/media/webrtc",
     "//chrome/browser/password_manager",
     "//chrome/browser/safe_browsing",
+    "//chrome/browser/sessions",
     "//chrome/browser/themes",
-    "//chrome/browser/ui/content_settings",
+    "//chrome/browser/ui:chrome_web_modal_dialog_manager_delegate",
     "//chrome/browser/ui/dialogs:browser_dialogs",
-    "//chrome/browser/ui/views/toolbar",
+    "//chrome/browser/ui/webui:chrome_web_contents_handler",
     "//chrome/browser/ui/webui/ash/diagnostics_dialog",
     "//chrome/browser/ui/webui/ash/internet",
+    "//chrome/browser/ui/webui/feedback",
     "//chrome/common",
     "//chrome/common:constants",
     "//chrome/common:non_code_constants",
@@ -261,7 +263,7 @@ source_set("browser_tests") {
     "//chrome/browser/ash/policy/core:test_support",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/ui",
-    "//chrome/browser/ui/login",
+    "//chrome/browser/ui:chrome_pages",
     "//chrome/browser/ui/webui/ash/os_feedback_dialog",
     "//chrome/browser/ui/webui/ash/system_web_dialog",
     "//chrome/common:constants",
@@ -276,6 +278,7 @@ source_set("browser_tests") {
     "//components/prefs:test_support",
     "//components/session_manager/core",
     "//components/user_manager",
+    "//components/web_modal",
     "//content/public/browser",
     "//content/test:test_support",
     "//net:test_support",
@@ -290,11 +293,19 @@ source_set("browser_tests") {
 source_set("unit_tests") {
   testonly = true
 
-  sources = [ "oobe_dialog_size_utils_unittest.cc" ]
+  sources = [
+    "oobe_dialog_size_utils_unittest.cc",
+    "oobe_ui_dialog_delegate_unittest.cc",
+  ]
 
   deps = [
     ":login",
+    "//ash:test_support",
     "//base/test:test_support",
+    "//chrome/browser/ui/webui/ash/login",
+    "//chrome/test:test_support",
+    "//chromeos/ash/components/network:test_support",
+    "//content/test:test_support",
     "//testing/gtest",
     "//ui/gfx/geometry",
   ]

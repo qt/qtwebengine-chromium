@@ -26,9 +26,10 @@
 #include "src/objects/descriptor-array.h"
 #include "src/objects/dictionary.h"
 #include "src/objects/foreign.h"
+#include "src/objects/hash-seed-wrapper.h"
 #include "src/objects/heap-number.h"
+#include "src/objects/heap-object-set-map-inl.h"
 #include "src/objects/instance-type-inl.h"
-#include "src/objects/instance-type.h"
 #include "src/objects/js-atomics-synchronization.h"
 #include "src/objects/js-generator.h"
 #include "src/objects/js-shared-array.h"
@@ -36,6 +37,7 @@
 #include "src/objects/literal-objects-inl.h"
 #include "src/objects/lookup-cache.h"
 #include "src/objects/map.h"
+#include "src/objects/megadom-handler.h"
 #include "src/objects/microtask.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/oddball-inl.h"
@@ -51,7 +53,6 @@
 #include "src/objects/synthetic-module.h"
 #include "src/objects/template-objects-inl.h"
 #include "src/objects/templates.h"
-#include "src/objects/torque-defined-classes-inl.h"
 #include "src/objects/turbofan-types.h"
 #include "src/objects/turboshaft-types.h"
 #include "src/regexp/regexp.h"
@@ -73,6 +74,7 @@ DirectHandle<SharedFunctionInfo> CreateSharedFunctionInfo(
   DirectHandle<SharedFunctionInfo> shared =
       isolate->factory()->NewSharedFunctionInfoForBuiltin(
           isolate->factory()->empty_string(), builtin, len, kAdapt, kind);
+  shared->set_language_mode(LanguageMode::kStrict);
   return shared;
 }
 
@@ -585,8 +587,7 @@ bool Heap::CreateEarlyReadOnlyMapsAndObjects() {
     obj->set_map_after_allocation(isolate(), roots.descriptor_array_map(),
                                   SKIP_WRITE_BARRIER);
     Tagged<DescriptorArray> array = Cast<DescriptorArray>(obj);
-    array->Initialize(roots.empty_enum_cache(), roots.undefined_value(), 0, 0,
-                      DescriptorArrayMarkingState::kInitialGCState);
+    array->Initialize(roots.empty_enum_cache(), roots.undefined_value(), 0, 0);
     array->set_fast_iterable(DescriptorArray::FastIterableState::kJsonFast);
   }
   set_empty_descriptor_array(Cast<DescriptorArray>(obj));
@@ -653,6 +654,8 @@ bool Heap::CreateEarlyReadOnlyMapsAndObjects() {
 
     ALLOCATE_MAP(FOREIGN_TYPE, sizeof(Foreign), foreign)
     ALLOCATE_MAP(TRUSTED_FOREIGN_TYPE, sizeof(TrustedForeign), trusted_foreign)
+    ALLOCATE_MAP(HASH_SEED_WRAPPER_TYPE, sizeof(HashSeedWrapper),
+                 hash_seed_wrapper)
     ALLOCATE_MAP(MEGA_DOM_HANDLER_TYPE, sizeof(MegaDomHandler),
                  mega_dom_handler)
 
@@ -734,7 +737,6 @@ bool Heap::CreateLateReadOnlyNonJSReceiverMaps() {
     }
 
     // The DescriptorArray map is pre-allocated and initialized above.
-    ALLOCATE_VARSIZE_MAP(STRONG_DESCRIPTOR_ARRAY_TYPE, strong_descriptor_array)
     ALLOCATE_VARSIZE_MAP(TURBOSHAFT_WORD32_SET_TYPE_TYPE,
                          turboshaft_word32set_type)
     ALLOCATE_VARSIZE_MAP(TURBOSHAFT_WORD64_SET_TYPE_TYPE,
@@ -811,8 +813,7 @@ bool Heap::CreateLateReadOnlyNonJSReceiverMaps() {
 
     IF_WASM(ALLOCATE_MAP, WASM_IMPORT_DATA_TYPE, WasmImportData::kSize,
             wasm_import_data)
-    IF_WASM(ALLOCATE_MAP, ASM_WASM_DATA_TYPE, sizeof(AsmWasmData),
-            asm_wasm_data)
+
     IF_WASM(ALLOCATE_MAP, WASM_CAPI_FUNCTION_DATA_TYPE,
             WasmCapiFunctionData::kSize, wasm_capi_function_data)
     IF_WASM(ALLOCATE_MAP, WASM_EXPORTED_FUNCTION_DATA_TYPE,
@@ -847,6 +848,7 @@ bool Heap::CreateLateReadOnlyNonJSReceiverMaps() {
                  object_template_info)
     ALLOCATE_MAP(INTERPRETER_DATA_TYPE, sizeof(InterpreterData),
                  interpreter_data)
+    ALLOCATE_MAP(DEBUG_INFO_TYPE, sizeof(DebugInfo), debug_info)
 
     ALLOCATE_MAP(UNCOMPILED_DATA_WITHOUT_PREPARSE_DATA_TYPE,
                  sizeof(UncompiledDataWithoutPreparseData),
@@ -957,7 +959,7 @@ void Heap::StaticRootsEnsureAllocatedSize(DirectHandle<HeapObject> obj,
             filler_size, AllocationType::kReadOnly, AllocationOrigin::kRuntime,
             AllocationAlignment::kTaggedAligned);
     CreateFillerObjectAt(filler.address(), filler_size,
-                         ClearFreedMemoryMode::kClearFreedMemory);
+                         ClearFreedMemoryMode{true});
 
     CHECK_EQ(filler.address(), obj->address() + obj_size);
     CHECK_EQ(filler.address() + filler->Size(), obj->address() + required);
@@ -973,9 +975,7 @@ bool Heap::CreateImportantReadOnlyObjects() {
   // Hash seed for strings
 
   Factory* factory = isolate()->factory();
-  set_hash_seed(*factory->NewByteArray(HashSeed::kTotalSize,
-                                       AllocationType::kReadOnly,
-                                       AllocationAlignment::kDoubleAligned));
+  set_hash_seed(*factory->NewHashSeedWrapper());
   HashSeed::InitializeRoots(isolate());
 
   // Important strings and symbols
@@ -1445,7 +1445,7 @@ void Heap::CreateReadOnlyApiObjects() {
   // Make sure read only heap layout does not depend on the size of
   // ExternalPointer fields.
   constexpr int kMaxPossibleInterceptorInfoSize =
-      3 * kTaggedSize + 8 * kSystemPointerSize;
+      3 * kTaggedSize + 9 * kSystemPointerSize;
 
   auto info = isolate()->factory()->NewInterceptorInfo(
       InterceptorKind::kNamed, AllocationType::kReadOnly);
@@ -1773,8 +1773,8 @@ void Heap::CreateInitialMutableObjects() {
     set_empty_protected_weak_fixed_array(
         *ProtectedWeakFixedArray::New(isolate_, 0));
 #ifdef V8_ENABLE_WEBASSEMBLY
-    set_empty_wasm_dispatch_table(*isolate_->factory()->NewWasmDispatchTable(
-        0, wasm::kWasmFuncRef, SharedFlag::kNo));
+    set_empty_wasm_dispatch_table(
+        *isolate_->factory()->NewWasmDispatchTable(0, wasm::kWasmFuncRef));
 #endif
   }
 }

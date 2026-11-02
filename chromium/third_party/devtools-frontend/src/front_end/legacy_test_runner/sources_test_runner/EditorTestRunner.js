@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import * as TextUtils from '../../models/text_utils/text_utils.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import {TestRunner} from '../test_runner/test_runner.js';
 
@@ -108,7 +108,7 @@ const eventCodes = {
   ArrowLeft: 37,
   ArrowUp: 38,
   ArrowRight: 39,
-  ArrowDown: 40
+  ArrowDown: 40,
 };
 
 function createCodeMirrorFakeEvent(editor, eventType, code, charCode, modifiers) {
@@ -123,7 +123,7 @@ function createCodeMirrorFakeEvent(editor, eventType, code, charCode, modifiers)
     charCode,
     preventDefault: eventPreventDefault,
     stopPropagation: function() {},
-    target: editor.codeMirror().display.input.textarea
+    target: editor.codeMirror().display.input.textarea,
   };
 
   if (modifiers) {

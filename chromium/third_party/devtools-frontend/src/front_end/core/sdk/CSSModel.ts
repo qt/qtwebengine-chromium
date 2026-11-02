@@ -4,11 +4,11 @@
 
 import type * as ProtocolProxyApi from '../../generated/protocol-proxy-api.js';
 import type * as Protocol from '../../generated/protocol.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Common from '../common/common.js';
 import * as Host from '../host/host.js';
 import * as Platform from '../platform/platform.js';
 import * as Root from '../root/root.js';
+import * as TextUtils from '../text_utils/text_utils.js';
 
 import {CSSFontFace} from './CSSFontFace.js';
 import {CSSMatchedStyles} from './CSSMatchedStyles.js';
@@ -25,6 +25,7 @@ import {
   ResourceTreeModel,
 } from './ResourceTreeModel.js';
 import {SDKModel} from './SDKModel.js';
+import {cssSourceMapsEnabledSettingDescriptor} from './SDKSettings.js';
 import {SourceMapManager} from './SourceMapManager.js';
 import {Capability, type Target} from './Target.js';
 
@@ -38,6 +39,7 @@ export interface LayoutProperties {
   isGrid: boolean;
   isSubgrid: boolean;
   isGridLanes: boolean;
+  isContents?: boolean;
   containerType?: string;
   hasScroll: boolean;
 }
@@ -80,8 +82,8 @@ export class CSSModel extends SDKModel<EventTypes> {
     }
 
     const settings = this.target().targetManager().settings;
-    this.#sourceMapManager.setEnabled(settings.moduleSetting<boolean>('css-source-maps-enabled').get());
-    settings.moduleSetting<boolean>('css-source-maps-enabled')
+    this.#sourceMapManager.setEnabled(settings.resolve(cssSourceMapsEnabledSettingDescriptor).get());
+    settings.resolve(cssSourceMapsEnabledSettingDescriptor)
         .addChangeListener(event => this.#sourceMapManager.setEnabled(event.data));
   }
 
@@ -392,6 +394,7 @@ export class CSSModel extends SDKModel<EventTypes> {
     }
 
     const display = styles.get('display');
+    const isContents = display === 'contents';
     const isFlex = display === 'flex' || display === 'inline-flex';
     const isGrid = display === 'grid' || display === 'inline-grid';
     const isSubgrid = (isGrid &&
@@ -408,6 +411,7 @@ export class CSSModel extends SDKModel<EventTypes> {
       isGrid,
       isSubgrid,
       isGridLanes,
+      isContents,
       containerType: isContainer ? containerType : undefined,
       hasScroll,
     };

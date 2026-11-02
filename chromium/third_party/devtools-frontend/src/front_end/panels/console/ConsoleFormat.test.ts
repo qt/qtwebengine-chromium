@@ -354,6 +354,10 @@ describe('ConsoleFormat', () => {
       Console.ConsoleFormat.updateStyle(styles, 'font-family:serif');
       assert.deepEqual(styles.get('font-family'), {value: 'serif', priority: ''});
 
+      Console.ConsoleFormat.updateStyle(styles, 'font: 1em Helvetica');
+      assert.isTrue(styles.has('font-size'));
+      assert.isTrue(styles.has('font-family'));
+
       Console.ConsoleFormat.updateStyle(styles, 'line-height:100%');
       assert.deepEqual(styles.get('line-height'), {value: '100%', priority: ''});
 
@@ -365,6 +369,9 @@ describe('ConsoleFormat', () => {
 
       Console.ConsoleFormat.updateStyle(styles, 'text-align : center');
       assert.deepEqual(styles.get('text-align'), {value: 'center', priority: ''});
+
+      Console.ConsoleFormat.updateStyle(styles, 'text-decoration: none');
+      assert.isTrue(styles.has('text-decoration-line') || styles.has('text-decoration'));
     });
 
     it('handles multiple styles', () => {
@@ -373,6 +380,11 @@ describe('ConsoleFormat', () => {
       Console.ConsoleFormat.updateStyle(styles, 'font-size:14px; color:red');
       assert.deepEqual(styles.get('color'), {value: 'red', priority: ''});
       assert.deepEqual(styles.get('font-size'), {value: '14px', priority: ''});
+
+      Console.ConsoleFormat.updateStyle(styles, 'border: 1px solid red; margin: 20px; padding: 10px;');
+      assert.isTrue(styles.has('border-top-color'));
+      assert.isTrue(styles.has('margin-top'));
+      assert.isTrue(styles.has('padding-top'));
     });
 
     it('resets styles', () => {
@@ -394,6 +406,12 @@ describe('ConsoleFormat', () => {
 
       Console.ConsoleFormat.updateStyle(styles, 'box-sizing:border-box');
       assert.isFalse(styles.has('box-sizing'));
+
+      Console.ConsoleFormat.updateStyle(styles, 'display:none');
+      assert.isFalse(styles.has('display'));
+
+      Console.ConsoleFormat.updateStyle(styles, 'position:absolute');
+      assert.isFalse(styles.has('position'));
     });
 
     it('blocks block-listed url schemes in values', () => {

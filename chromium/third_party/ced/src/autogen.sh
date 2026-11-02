@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env sh
 #
 # Copyright 2016 Google Inc.
 #
@@ -21,6 +21,7 @@
 # are automatically generated.
 
 set -e
+gtest_release='release-1.12.1'
 
 if [ ! -z "$@" ]; then
   for argument in "$@"; do
@@ -51,10 +52,10 @@ if test ! -e gtest; then
   fi
 
   echo "Google Test not present.  Fetching from the web..."
-  curl $curlopts -L -O https://github.com/google/googletest/archive/master.zip
-  unzip -q master.zip
-  rm master.zip
-  mv googletest-master gtest
+  curl $curlopts -L -o main.zip https://codeload.github.com/google/googletest/zip/$gtest_release
+  unzip -q main.zip
+  rm main.zip
+  mv googletest-$gtest_release gtest
 fi
 
 if test -z $(which cmake); then

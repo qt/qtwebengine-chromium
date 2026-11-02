@@ -19,27 +19,31 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
+use oak_hal::PageAssignment;
 use oak_linux_boot_params::{BootE820Entry, E820EntryType};
 use oak_sev_guest::{
-    instructions::{pvalidate, InstructionError, PageSize as SevPageSize, Validation},
-    msr::{change_snp_page_state, PageAssignment, SevStatus, SnpPageStateChangeRequest},
+    instructions::{InstructionError, PageSize as SevPageSize, Validation, pvalidate},
+    msr::{
+        PageAssignment as MsrPageAssignment, SevStatus, SnpPageStateChangeRequest,
+        change_snp_page_state,
+    },
 };
 use oak_stage0::paging::{
+    PageTable,
     page_table_level::{Leaf, PD, PT},
-    PageEncryption, PageTable,
 };
 use x86_64::{
+    PhysAddr, VirtAddr,
     instructions::tlb,
     structures::paging::{
+        Page, PageSize, PageTableFlags, PhysFrame, Size1GiB, Size2MiB, Size4KiB,
         frame::PhysFrameRange,
         page::{AddressNotAligned, NotGiantPageSize},
-        Page, PageSize, PageTableFlags, PhysFrame, Size1GiB, Size2MiB, Size4KiB,
     },
-    PhysAddr, VirtAddr,
 };
 use zeroize::Zeroize;
 
-use crate::platform::{sev_status, Sev, GHCB_WRAPPER};
+use crate::platform::{GHCB_WRAPPER, IntoMsrPageAssignment, Sev, sev_status};
 
 //
 // Page tables come in three sizes: for 1 GiB, 2 MiB and 4 KiB pages. However,
@@ -67,6 +71,23 @@ trait Validate<S: PageSize> {
 impl<S: PageSize + ValidatablePageSize> Validate<S> for Page<S> {
     fn pvalidate(&self, counter: &AtomicUsize) -> Result<(), InstructionError> {
         pvalidate(self.start_address().as_u64() as usize, S::SEV_PAGE_SIZE, Validation::Validated)?;
+        let start = Page::from_start_address(self.start_address()).unwrap();
+        let end = Page::from_start_address(VirtAddr::new(self.start_address().as_u64() + S::SIZE))
+            .unwrap();
+        // non-inclusive end
+        let range = Page::<Size4KiB>::range(start, end);
+
+        // Read the first and last byte of each 4K page validated to evict cache
+        // (CVE-2025-38560)
+        range.for_each(|page| {
+            let _val = unsafe { page.start_address().as_ptr::<u8>().read_volatile() };
+            // Due to the nature of CVE-2025-38560, we have to force a flush
+            // for each 4K page even if these are huge pages
+            let _val2 = unsafe {
+                page.start_address().as_ptr::<u8>().add(Size4KiB::SIZE as usize - 1).read_volatile()
+            };
+        });
+
         counter.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
@@ -124,7 +145,7 @@ where
             entry.set_address::<Sev>(
                 frame.start_address(),
                 PageTableFlags::PRESENT | flags,
-                PageEncryption::Encrypted,
+                PageAssignment::Private,
             )
         })
         .count()
@@ -181,14 +202,20 @@ trait Validatable4KiB {
 
 impl Validatable4KiB for PhysFrameRange<Size4KiB> {
     fn pvalidate(&self, pt: &mut MappedPage<PT>) -> Result<(), InstructionError> {
-        pvalidate_range(self, pt, PageTableFlags::empty(), &counters::VALIDATED_4K, |_addr, err| {
+        pvalidate_range(self, pt, PageTableFlags::empty(), &counters::VALIDATED_4K, |addr, err| {
             match err {
                 InstructionError::ValidationStatusNotUpdated => {
-                    // We don't treat this as an error. It only happens if SEV-SNP is not enabled,
-                    // or it is already validated. See the PVALIDATE instruction in
-                    // <https://www.amd.com/system/files/TechDocs/24594.pdf> for more details.
-                    counters::ERROR_VALIDATION_STATUS_NOT_UPDATED.fetch_add(1, Ordering::SeqCst);
-                    Ok(())
+                    // SECURITY: CF=1 during first-touch acceptance means the RMP entry for
+                    // this GPA was already Validated=1. Under SNP this indicates a
+                    // double-validation / page-aliasing attack by the hypervisor (the
+                    // hypervisor can RMPUPDATE a second SPA to the same GPA and have us
+                    // PVALIDATE it). AMD 56421 and the Linux/OVMF reference
+                    // implementations require this to be fatal.
+                    panic!(
+                        "PVALIDATE CF=1 (double-validation) at GPA {:#x}; possible \
+                         hypervisor page-aliasing attack",
+                        addr.as_u64()
+                    );
                 }
                 other => Err(other),
             }
@@ -234,11 +261,14 @@ impl Validatable2MiB for PhysFrameRange<Size2MiB> {
                     range.pvalidate(pt)
                 }
                 InstructionError::ValidationStatusNotUpdated => {
-                    // We don't treat this as an error. It only happens if SEV-SNP is not enabled,
-                    // or it is already validated. See the PVALIDATE instruction in
-                    // <https://www.amd.com/system/files/TechDocs/24594.pdf> for more details.
-                    counters::ERROR_VALIDATION_STATUS_NOT_UPDATED.fetch_add(1, Ordering::SeqCst);
-                    Ok(())
+                    // SECURITY: CF=1 during first-touch acceptance indicates a
+                    // double-validation / page-aliasing attack by the hypervisor. See the
+                    // 4 KiB path above for details. This must be fatal.
+                    panic!(
+                        "PVALIDATE CF=1 (double-validation) at GPA {:#x}; possible \
+                         hypervisor page-aliasing attack",
+                        addr.as_u64()
+                    );
                 }
                 other => Err(other),
             },
@@ -247,11 +277,11 @@ impl Validatable2MiB for PhysFrameRange<Size2MiB> {
 }
 
 trait PageStateChange {
-    fn page_state_change(&self, assignment: PageAssignment) -> Result<(), &'static str>;
+    fn page_state_change(&self, assignment: MsrPageAssignment) -> Result<(), &'static str>;
 }
 
 impl<S: NotGiantPageSize> PageStateChange for PhysFrameRange<S> {
-    fn page_state_change(&self, assignment: PageAssignment) -> Result<(), &'static str> {
+    fn page_state_change(&self, assignment: MsrPageAssignment) -> Result<(), &'static str> {
         // Future optimization: do this operation in batches of 253 frames (that's how
         // many can fit in one PageStateChange request) instead of one at a time.
         for frame in *self {
@@ -299,14 +329,54 @@ pub fn validate_memory(e820_table: &[BootE820Entry]) {
     // the RMP for the fw_cfg DMA buffer.
     let min_addr = 0xA0000;
 
+    // SECURITY: The stage0 firmware ROM is mapped just below 4 GiB and was
+    // launched as PAGE_TYPE_NORMAL (RMP.Validated=1) by SNP_LAUNCH_UPDATE. A
+    // malicious hypervisor must not be able to make us issue PSC+PVALIDATE over
+    // those GPAs, or it can create validated page aliases for our own .text/.rodata
+    // (SNP double-validation attack). The PCI hole means no legitimate RAM lives
+    // here on a PC platform; we conservatively forbid the top 16 MiB below 4 GiB.
+    const ROM_GUARD_START: usize = 0xFF00_0000; // 4 GiB - 16 MiB
+    const ROM_GUARD_END: usize = 0x1_0000_0000; // 4 GiB
+
     for entry in e820_table {
         if entry.entry_type() != Some(E820EntryType::RAM) || entry.addr() < min_addr {
             continue;
         }
 
-        let start_address = PhysAddr::new(entry.addr() as u64).align_up(Size4KiB::SIZE);
-        let limit_address =
-            PhysAddr::new((entry.addr() + entry.size()) as u64).align_down(Size4KiB::SIZE);
+        // addr and size come straight from the hypervisor-supplied E820 table, so
+        // the end of the range can overflow usize and either bound can exceed the
+        // valid physical address width. Reject such an entry here instead of
+        // panicking in the arithmetic below, mirroring the checked_add already used
+        // for the host-supplied length in the TD HOB walk.
+        let Some(end) = entry.addr().checked_add(entry.size()) else {
+            log::error!(
+                "nonsensical entry in E820 table: [{:#x}, +{:#x})",
+                entry.addr(),
+                entry.size()
+            );
+            continue;
+        };
+
+        // Defense-in-depth: refuse to accept memory that overlaps the firmware ROM
+        // window. The CF=1 panic above is the primary mitigation; this check makes
+        // the attack fail before any PSC is even issued.
+        if entry.addr() < ROM_GUARD_END && end > ROM_GUARD_START {
+            panic!(
+                "hypervisor-supplied E820 RAM entry [{:#x}, {:#x}) overlaps firmware ROM \
+                 window; refusing to PVALIDATE",
+                entry.addr(),
+                end
+            );
+        }
+
+        let (Ok(start), Ok(limit)) =
+            (PhysAddr::try_new(entry.addr() as u64), PhysAddr::try_new(end as u64))
+        else {
+            log::error!("nonsensical entry in E820 table: [{:#x}, {:#x})", entry.addr(), end);
+            continue;
+        };
+        let start_address = start.align_up(Size4KiB::SIZE);
+        let limit_address = limit.align_down(Size4KiB::SIZE);
 
         if start_address > limit_address {
             log::error!(
@@ -333,7 +403,7 @@ pub fn validate_memory(e820_table: &[BootE820Entry]) {
                 PhysFrame::from_start_address(start_address).unwrap(),
                 PhysFrame::from_start_address(limit).unwrap(),
             );
-            range.page_state_change(PageAssignment::Private).unwrap();
+            range.page_state_change(MsrPageAssignment::Private).unwrap();
             range.pvalidate(&mut validation_pt).expect("failed to validate memory");
         }
 
@@ -346,7 +416,7 @@ pub fn validate_memory(e820_table: &[BootE820Entry]) {
                 PhysFrame::from_start_address(hugepage_start).unwrap(),
                 PhysFrame::from_start_address(hugepage_limit).unwrap(),
             );
-            range.page_state_change(PageAssignment::Private).unwrap();
+            range.page_state_change(MsrPageAssignment::Private).unwrap();
             range
                 .pvalidate(&mut validation_pd, &mut validation_pt)
                 .expect("failed to validate memory");
@@ -361,7 +431,7 @@ pub fn validate_memory(e820_table: &[BootE820Entry]) {
                 PhysFrame::from_start_address(start).unwrap(),
                 PhysFrame::from_start_address(limit_address).unwrap(),
             );
-            range.page_state_change(PageAssignment::Private).unwrap();
+            range.page_state_change(MsrPageAssignment::Private).unwrap();
             range.pvalidate(&mut validation_pt).expect("failed to validate memory");
         }
     }
@@ -415,10 +485,16 @@ pub fn validate_memory(e820_table: &[BootE820Entry]) {
     );
 }
 
-pub fn change_page_state(page: Page<Size4KiB>, state: PageAssignment) -> Result<(), &'static str> {
+pub fn change_frame_state(
+    frame: PhysFrame<Size4KiB>,
+    state: PageAssignment,
+) -> Result<(), &'static str> {
     if sev_status().contains(SevStatus::SNP_ACTIVE) {
-        let request = SnpPageStateChangeRequest::new(page.start_address().as_u64() as usize, state)
-            .expect("invalid address for page location");
+        let request = SnpPageStateChangeRequest::new(
+            frame.start_address().as_u64() as usize,
+            state.into_msr(),
+        )
+        .expect("invalid address for page location");
         change_snp_page_state(request)?;
     }
     Ok(())
@@ -427,10 +503,11 @@ pub fn change_page_state(page: Page<Size4KiB>, state: PageAssignment) -> Result<
 pub fn revalidate_page(page: Page<Size4KiB>) -> Result<(), &'static str> {
     if sev_status().contains(SevStatus::SEV_ENABLED) {
         let counter = AtomicUsize::new(0);
-        if let Err(err) = page.pvalidate(&counter) {
-            if err != InstructionError::ValidationStatusNotUpdated {
+        match page.pvalidate(&counter) {
+            Err(err) if err != InstructionError::ValidationStatusNotUpdated => {
                 return Err("shared page revalidation failed");
             }
+            _ => {}
         }
     }
     Ok(())

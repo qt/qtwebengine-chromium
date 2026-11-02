@@ -37,7 +37,17 @@ struct ObservedToolTarget {
 // Corresponds to ClickAction.ClickType
 enum ClickType {
   kLeft = 1,
+
   kRight = 2,
+
+  // Left click on an element expected to be occluded by a modeless panel,
+  // such as a cookie banner or popup. This bypasses occluding elements on top
+  // of the target and directly activates the target element.
+  //
+  // Only use this with an ActionTarget that identifies a content_node_id, not
+  // a coordinate target. The action fails if the target is not actually
+  // occluded by an eligible modeless panel at execution time.
+  kLeftOnOccludedTarget = 3,
 };
 
 // Corresponds to ClickAction.ClickCount
@@ -241,6 +251,9 @@ struct ActionResult {
   bool requires_page_stabilization;
 
   // If the code is not kOk, an English language message describing the error.
+  // If the code is kOk, an optional English language message providing details
+  // on the execution. This is only forwarded to the model for operations that
+  // have an extra_information attribute in the result data structure.
   string message;
 
   // If the action is a script tool, provides the result of that execution. This

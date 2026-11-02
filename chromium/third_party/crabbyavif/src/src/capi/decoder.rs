@@ -201,12 +201,20 @@ impl From<&avifDecoder> for Settings {
             if (decoder.strictFlags & AVIF_STRICT_ALPHA_ISPE_REQUIRED) != 0 {
                 flags.push(StrictnessFlag::AlphaIspeRequired);
             }
+            if (decoder.strictFlags & AVIF_STRICT_MULTIPLE_ILOC_ENTRIES_FOR_SAME_ITEM_DISALLOWED)
+                != 0
+            {
+                flags.push(StrictnessFlag::MultipleIlocEntriesForSameItemDisallowed);
+            }
             Strictness::SpecificInclude(flags)
         };
         let image_content_to_decode_flags: ImageContentType = match decoder.imageContentToDecode {
             AVIF_IMAGE_CONTENT_ALL => ImageContentType::All,
             AVIF_IMAGE_CONTENT_COLOR_AND_ALPHA => ImageContentType::ColorAndAlpha,
+            AVIF_IMAGE_CONTENT_COLOR_AND_GAIN_MAP => ImageContentType::ColorAndGainMap,
+            AVIF_IMAGE_CONTENT_COLOR => ImageContentType::Color,
             AVIF_IMAGE_CONTENT_GAIN_MAP => ImageContentType::GainMap,
+            // Alpha only is not currently supported and is mapped to ImageContentType::None.
             _ => ImageContentType::None,
         };
         Self {
@@ -294,22 +302,8 @@ pub unsafe extern "C" fn crabby_avifDecoderNextImage(decoder: *mut avifDecoder) 
     let rust_decoder = rust_decoder(decoder);
     rust_decoder.settings = deref_const!(decoder).into();
 
-    let previous_decoded_row_count = rust_decoder.decoded_row_count();
-
     let res = rust_decoder.next_image();
     deref_mut!(decoder).diag.set_from_result(&res);
-    let mut early_return = false;
-    if res.is_err() {
-        early_return = true;
-        if rust_decoder.settings.allow_incremental
-            && matches!(res.as_ref().err().unwrap(), AvifError::WaitingOnIo)
-        {
-            early_return = previous_decoded_row_count == rust_decoder.decoded_row_count();
-        }
-    }
-    if early_return {
-        return res.into();
-    }
     rust_decoder_to_avifDecoder(rust_decoder, deref_mut!(decoder));
     res.into()
 }
@@ -326,27 +320,8 @@ pub unsafe extern "C" fn crabby_avifDecoderNthImage(
     let rust_decoder = rust_decoder(decoder);
     rust_decoder.settings = deref_const!(decoder).into();
 
-    let previous_decoded_row_count = rust_decoder.decoded_row_count();
-    let image_index = (rust_decoder.image_index() + 1) as u32;
-
     let res = rust_decoder.nth_image(frameIndex);
     deref_mut!(decoder).diag.set_from_result(&res);
-    let mut early_return = false;
-    if res.is_err() {
-        early_return = true;
-        if rust_decoder.settings.allow_incremental
-            && matches!(res.as_ref().err().unwrap(), AvifError::WaitingOnIo)
-        {
-            if image_index != frameIndex {
-                early_return = false;
-            } else {
-                early_return = previous_decoded_row_count == rust_decoder.decoded_row_count();
-            }
-        }
-    }
-    if early_return {
-        return res.into();
-    }
     rust_decoder_to_avifDecoder(rust_decoder, deref_mut!(decoder));
     res.into()
 }
@@ -384,6 +359,8 @@ pub unsafe extern "C" fn crabby_avifDecoderDestroy(decoder: *mut avifDecoder) {
 /// Used by the C API with the following pre-conditions:
 /// - if decoder is not null, it has to point to a valid avifDecoder object.
 /// - if image is not null, it has to point to a valid avifImage object.
+///
+/// This function does not support decoding gainmaps.
 #[no_mangle]
 pub unsafe extern "C" fn crabby_avifDecoderRead(
     decoder: *mut avifDecoder,
@@ -403,6 +380,9 @@ pub unsafe extern "C" fn crabby_avifDecoderRead(
         return res.into();
     }
     rust_decoder_to_avifDecoder(rust_decoder, deref_mut!(decoder));
+    if !deref_mut!(decoder).image_object.gainMap.is_null() {
+        return avifResult::NotImplemented;
+    }
     *deref_mut!(image) = deref_mut!(decoder).image_object.clone();
     avifResult::Ok
 }
@@ -412,6 +392,8 @@ pub unsafe extern "C" fn crabby_avifDecoderRead(
 /// - if decoder is not null, it has to point to a valid avifDecoder object.
 /// - if image is not null, it has to point to a valid avifImage object.
 /// - if data is not null, it has to be a valid buffer of size bytes.
+///
+/// This function does not support decoding gainmaps.
 #[no_mangle]
 pub unsafe extern "C" fn crabby_avifDecoderReadMemory(
     decoder: *mut avifDecoder,
@@ -433,6 +415,8 @@ pub unsafe extern "C" fn crabby_avifDecoderReadMemory(
 /// - if decoder is not null, it has to point to a valid avifDecoder object.
 /// - if image is not null, it has to point to a valid avifImage object.
 /// - if filename is not null, it has to point to a valid C-style string.
+///
+/// This function does not support decoding gainmaps.
 #[no_mangle]
 pub unsafe extern "C" fn crabby_avifDecoderReadFile(
     decoder: *mut avifDecoder,

@@ -90,7 +90,7 @@ export class DuplicatedJavaScript extends BaseInsightComponent<DuplicatedJavaScr
                 ],
                 overlays,
               };
-            })
+            }),
           };
         });
 
@@ -99,7 +99,7 @@ export class DuplicatedJavaScript extends BaseInsightComponent<DuplicatedJavaScr
       treemapButton = html`<devtools-button
         .variant=${Buttons.Button.Variant.OUTLINED}
         jslog=${VisualLogging.action(`timeline.treemap.${this.internalName}-insight`).track({
-        click: true
+        click: true,
       })}
         @click=${this.#openTreemap.bind(this)}
       >View Treemap</devtools-button>`;

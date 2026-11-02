@@ -47,6 +47,9 @@
 #include "url/scheme_host_port.h"
 
 namespace net {
+
+class NetworkAnonymizationKey;
+
 namespace {
 
 constexpr auto kMalformedResponseHeader = std::to_array<uint8_t>({
@@ -86,7 +89,11 @@ class MockAddressSorter : public AddressSorter {
  public:
   ~MockAddressSorter() override = default;
   void Sort(const std::vector<IPEndPoint>& endpoints,
+            const NetworkAnonymizationKey& anonymization_key,
+            handles::NetworkHandle target_network,
             CallbackType callback) const override {
+    // This is used only for testing in scenarios that do not involve multiple
+    // networks. With that in mind, it's safe to ignore `target_network`.
     // Do nothing.
     std::move(callback).Run(true, endpoints);
   }
@@ -736,6 +743,7 @@ std::unique_ptr<DnsTransaction> MockDnsTransactionFactory::CreateTransaction(
     const NetLogWithSource&,
     AttemptMode attempt_mode,
     SecureDnsMode secure_dns_mode,
+    handles::NetworkHandle target_network,
     ResolveContext* resolve_context,
     bool fast_timeout) {
   std::unique_ptr<MockTransaction> transaction =
@@ -798,7 +806,8 @@ bool MockDnsClient::CanUseSecureDnsTransactions() const {
 
 bool MockDnsClient::CanUseInsecureDnsTransactions() const {
   const DnsConfig* config = GetEffectiveConfig();
-  return config && config->IsValid() && insecure_enabled_ &&
+  return config && config->IsValid() &&
+         insecure_dns_mode_ != InsecureDnsMode::kDisabled &&
          !config->dns_over_tls_active;
 }
 
@@ -807,10 +816,14 @@ bool MockDnsClient::CanQueryAdditionalTypesViaInsecureDns() const {
   return additional_types_enabled_;
 }
 
-void MockDnsClient::SetInsecureEnabled(bool enabled,
+void MockDnsClient::SetInsecureEnabled(InsecureDnsMode mode,
                                        bool additional_types_enabled) {
-  insecure_enabled_ = enabled;
+  insecure_dns_mode_ = mode;
   additional_types_enabled_ = additional_types_enabled;
+}
+
+InsecureDnsMode MockDnsClient::GetInsecureDnsMode() const {
+  return insecure_dns_mode_;
 }
 
 bool MockDnsClient::FallbackFromSecureTransactionPreferred(
@@ -1049,6 +1062,19 @@ int MockHostResolverProc::Resolve(const std::string& hostname,
   }
   *addrlist = rules_[key];
   return OK;
+}
+
+int MockHostResolverProc::Resolve(const std::string& hostname,
+                                  AddressFamily address_family,
+                                  HostResolverFlags host_resolver_flags,
+                                  AddressList* addrlist,
+                                  int* os_error,
+                                  handles::NetworkHandle network) {
+  // TODO(crbug.com/517817412): Stop ignoring `network` once
+  // MockHostResolverProc supports it. It is currently okay to ignore because
+  // no test requires specific behavior based on the target network yet.
+  return Resolve(hostname, address_family, host_resolver_flags, addrlist,
+                 os_error);
 }
 
 MockHostResolverProc::CaptureList MockHostResolverProc::GetCaptureList() const {

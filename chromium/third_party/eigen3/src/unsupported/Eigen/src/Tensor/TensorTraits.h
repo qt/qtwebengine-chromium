@@ -91,9 +91,7 @@ struct traits<TensorMap<PlainObjectType, Options_, MakePointer_> > : public trai
   enum { Options = Options_, Flags = BaseTraits::Flags };
   template <class T>
   struct MakePointer {
-    // Intermediate typedef to workaround MSVC issue.
-    typedef MakePointer_<T> MakePointerT;
-    typedef typename MakePointerT::Type Type;
+    typedef typename MakePointer_<T>::Type Type;
   };
   typedef typename MakePointer<Scalar>::Type PointerType;
 };
@@ -219,7 +217,7 @@ struct nested<const TensorRef<PlainObjectType> > {
 // needed.  The number of padded rows and columns are computed as:
 //   Pr = ((R' - 1) * S + K - R) / 2
 //   Pc = ((C' - 1) * S + K - C) / 2
-// when the stride is 1, we have the simplified case R'=R, C'=C, Pr=Pc=(K-1)/2.
+// When the stride is 1, we have the simplified case R'=R, C'=C, Pr=Pc=(K-1)/2.
 // This is where SAME comes from - the output has the same size as the input has.
 // When Padding = VALID: the output size is computed as
 //   R' = ceil(float(R - K + 1) / float(S))

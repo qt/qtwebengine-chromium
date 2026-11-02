@@ -165,6 +165,9 @@ class MODULES_EXPORT AXNodeObject : public AXObject {
   float FontSize() const final;
   float FontWeight() const final;
   bool CanvasHasFallbackContent() const final;
+  String CanvasAnnotation() const final;
+  bool HasRequestedOCR() const final;
+  void ClearHasRequestedOCR() final;
   int HeadingLevel() const final;
   unsigned HierarchicalLevel() const final;
   void SerializeMarkerAttributes(ui::AXNodeData* node_data) const override;

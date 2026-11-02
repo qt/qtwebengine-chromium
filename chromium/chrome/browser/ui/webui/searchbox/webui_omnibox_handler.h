@@ -25,6 +25,8 @@
 class MetricsReporter;
 class OmniboxController;
 
+struct AiModeButtonUiConfig;
+
 namespace content {
 class WebUI;
 }  // namespace content
@@ -55,18 +57,33 @@ class WebuiOmniboxHandler : public ContextualSearchboxHandler,
   void OpenLensSearch() override;
   void AddTabContext(int32_t tab_id,
                      bool delay_upload,
+                     searchbox::mojom::TabAttachmentSource source,
                      AddTabContextCallback) override;
+  void QueryAutocomplete(int32_t query_id,
+                         const std::u16string& input,
+                         bool prevent_inline_autocomplete,
+                         uint32_t cursor_position,
+                         omnibox::SuggestInventory suggest_inventory,
+                         bool is_on_focus,
+                         const std::string& keyword,
+                         searchbox::mojom::InputMethod input_method) override;
 
   void StepSelection(OmniboxPopupSelection::Direction direction,
                      OmniboxPopupSelection::Step step);
   void OpenCurrentSelection(WindowOpenDisposition disposition);
-  void SetAimButtonVisible(bool visible);
+  void SetAimButtonVisible(bool visible) override;
 
   // SearchboxHandler:
+  WindowOpenDisposition ComputeWindowOpenDisposition(
+      uint8_t mouse_button,
+      bool alt_key,
+      bool ctrl_key,
+      bool meta_key,
+      bool shift_key,
+      bool via_keyboard) override;
   std::optional<searchbox::mojom::AutocompleteMatchPtr> CreateAutocompleteMatch(
       const AutocompleteMatch& match,
       size_t line,
-      const OmniboxEditModel* edit_model,
       bookmarks::BookmarkModel* bookmark_model,
       const omnibox::GroupConfigMap& suggestion_groups_map,
       const TemplateURLService* turl_service) const override;
@@ -81,11 +98,9 @@ class WebuiOmniboxHandler : public ContextualSearchboxHandler,
   // OmniboxEditModel::Observer:
   void OnSelectionChanged(OmniboxPopupSelection old_selection,
                           OmniboxPopupSelection selection) override;
-  void OnKeywordStateChanged(bool is_keyword_selected) override;
   void OnCharTyped(base::TimeTicks timestamp) override;
   void OnMatchIconUpdated(size_t index) override {}
   void OnContentsChanged() override {}
-  void StopAutocomplete(bool clear_result) override;
 
   // TabListInterfaceObserver:
   void OnActiveTabChanged(TabListInterface& tab_list,
@@ -120,6 +135,7 @@ class WebuiOmniboxHandler : public ContextualSearchboxHandler,
 
   void OnContentSharingPolicyChanged();
   void OnAimPopupEligibilityChanged();
+  void OnAiModeButtonConfigChanged(const AiModeButtonUiConfig* config);
   void OnNavigationFinished(content::NavigationHandle* navigation_handle);
 
   WebContentsObserver web_contents_observer_;
@@ -130,6 +146,7 @@ class WebuiOmniboxHandler : public ContextualSearchboxHandler,
 
   PrefChangeRegistrar pref_change_registrar_;
   base::CallbackListSubscription aim_eligibility_subscription_;
+  base::CallbackListSubscription ai_mode_config_subscription_;
   base::CallbackListSubscription tab_will_detach_subscription_;
   base::CallbackListSubscription tab_did_insert_subscription_;
 

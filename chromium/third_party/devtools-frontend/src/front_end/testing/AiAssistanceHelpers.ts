@@ -3,12 +3,14 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../core/common/common.js';
 import * as Host from '../core/host/host.js';
 import * as Platform from '../core/platform/platform.js';
 import * as SDK from '../core/sdk/sdk.js';
 import type * as Protocol from '../generated/protocol.js';
+import type * as AiAssistance from '../models/ai_assistance/ai_assistance.js';
 import * as Bindings from '../models/bindings/bindings.js';
 import * as Breakpoints from '../models/breakpoints/breakpoints.js';
 import * as Logs from '../models/logs/logs.js';
@@ -42,8 +44,17 @@ export const MockAidaFetchError = {
   fetchError: true,
 } as const;
 
-export type MockAidaResponse = Omit<Host.AidaClient.DoConversationResponse, 'completed'|'metadata'>&
-    {metadata?: Host.AidaClient.ResponseMetadata}|typeof MockAidaAbortError|typeof MockAidaFetchError;
+export const MockAidaQuotaError = {
+  quotaError: true,
+} as const;
+
+export const MockAidaPayloadLimitError = {
+  payloadLimitError: true,
+} as const;
+
+export type MockAidaResponse =
+    Omit<Host.AidaClient.DoConversationResponse, 'completed'|'metadata'>&{metadata?: Host.AidaClient.ResponseMetadata}|
+    typeof MockAidaAbortError|typeof MockAidaFetchError|typeof MockAidaQuotaError|typeof MockAidaPayloadLimitError;
 
 /**
  * Creates a mock AIDA client that responds using `data`.
@@ -66,6 +77,12 @@ export function mockAidaClient(data: Array<[MockAidaResponse, ...MockAidaRespons
       }
       if ('fetchError' in chunk) {
         throw new Error('Fetch error');
+      }
+      if ('quotaError' in chunk) {
+        throw new Host.AidaClient.AidaQuotaError();
+      }
+      if ('payloadLimitError' in chunk) {
+        throw new Host.AidaClient.AidaPayloadTooLargeError('payload size exceeds the limit');
       }
       const metadata = chunk.metadata ?? {};
       if (metadata?.attributionMetadata?.attributionAction === Host.AidaClient.RecitationAction.BLOCK) {
@@ -220,7 +237,7 @@ export async function createAiAssistancePanel(options?: {
 }
 
 export const setupAutomaticFileSystem = (options: {hasFileSystem: boolean} = {
-  hasFileSystem: false
+  hasFileSystem: false,
 }): void => {
   const root = '/path/to/my-automatic-file-system';
   const uuid = '549bbf9b-48b2-4af7-aebd-d3ba68993094';
@@ -237,45 +254,6 @@ export const setupAutomaticFileSystem = (options: {hasFileSystem: boolean} = {
   });
   sinon.stub(manager, 'connectAutomaticFileSystem').resolves(true);
 };
-
-let patchWidgets: AiAssistancePanel.PatchWidget.PatchWidget[] = [];
-/**
- * Creates and shows an AiAssistancePanel instance returning the view
- * stubs and the initial view input caused by Widget.show().
- */
-export async function createPatchWidget(options?: {
-  aidaClient?: Host.AidaClient.AidaClient,
-}) {
-  const view = createViewFunctionStub(AiAssistancePanel.PatchWidget.PatchWidget);
-  const aidaClient = options?.aidaClient ?? mockAidaClient();
-  const widget = new AiAssistancePanel.PatchWidget.PatchWidget(undefined, view, {
-    aidaClient,
-  });
-  patchWidgets.push(widget);
-
-  widget.markAsRoot();
-  renderElementIntoDOM(widget);
-  await view.nextInput;
-
-  return {
-    widget,
-    view,
-    aidaClient,
-  };
-}
-
-export async function createPatchWidgetWithDiffView(options?: {
-  aidaClient?: Host.AidaClient.AidaClient,
-}) {
-  const aidaClient = options?.aidaClient ?? mockAidaClient([[{explanation: 'patch applied'}]]);
-  const {view, widget} = await createPatchWidget({aidaClient});
-  widget.changeSummary = 'body { background-color: red; }';
-  view.input.onApplyToWorkspace();
-  assert.strictEqual(
-      (await view.nextInput).patchSuggestionState, AiAssistancePanel.PatchWidget.PatchSuggestionState.SUCCESS);
-
-  return {widget, view, aidaClient};
-}
 
 export function initializePersistenceImplForTests(): void {
   const workspace = Workspace.Workspace.WorkspaceImpl.instance({forceNew: true});
@@ -295,6 +273,7 @@ export function initializePersistenceImplForTests(): void {
     settings: Common.Settings.Settings.instance(),
   });
   Persistence.Persistence.PersistenceImpl.instance({forceNew: true, workspace, breakpointManager});
+  Persistence.NetworkPersistenceManager.NetworkPersistenceManager.instance({forceNew: true, workspace});
   WorkspaceDiff.WorkspaceDiff.workspaceDiff({forceNew: true});
 }
 
@@ -303,10 +282,6 @@ export function cleanup() {
     panel.detach();
   }
   panels = [];
-  for (const widget of patchWidgets) {
-    widget.detach();
-  }
-  patchWidgets = [];
 }
 
 /**
@@ -361,4 +336,47 @@ export function createTestFilesystem(fileSystemPath: string, files?: Array<{
   }
 
   return {project, uiSourceCode};
+}
+
+export function assertIsError<T>(response: AiAssistance.AiAgent.FunctionCallHandlerResult<T>):
+    asserts response is {error: string} {
+  if (!('error' in response)) {
+    assert.fail(`Expected error response, but got: ${JSON.stringify(response)}`);
+  }
+}
+
+export function assertIsResult<T>(response: AiAssistance.AiAgent.FunctionCallHandlerResult<T>):
+    asserts response is {result: T, widgets?: AiAssistance.AiAgent.AiWidget[]} {
+  if (!('result' in response)) {
+    assert.fail(`Expected success result response, but got: ${JSON.stringify(response)}`);
+  }
+}
+
+export function assertRequiresApproval<T>(response: AiAssistance.AiAgent.FunctionCallHandlerResult<T>):
+    asserts response is {requiresApproval: true, description: string | null} {
+  if (!('requiresApproval' in response)) {
+    assert.fail(`Expected response requiring approval, but got: ${JSON.stringify(response)}`);
+  }
+}
+
+/**
+ * Creates a dummy File object containing a solid red image with the given dimensions.
+ *
+ * @param width Width of the dummy image in pixels (px).
+ * @param height Height of the dummy image in pixels (px).
+ */
+export async function createDummyImageFile(width: number, height: number): Promise<File> {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    ctx.fillStyle = 'red';
+    ctx.fillRect(0, 0, width, height);
+  }
+  const blob = await new Promise<Blob|null>(resolve => canvas.toBlob(resolve, 'image/jpeg'));
+  if (!blob) {
+    throw new Error('Failed to create blob');
+  }
+  return new File([blob], 'dummy.jpg', {type: 'image/jpeg'});
 }

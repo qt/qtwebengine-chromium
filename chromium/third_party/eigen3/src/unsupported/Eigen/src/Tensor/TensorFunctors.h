@@ -106,7 +106,7 @@ struct reducer_traits<SumReducer<T>, Device> {
 
 template <typename T>
 struct MeanReducer {
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE MeanReducer() : scalarCount_(0), packetCount_(0) {}
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE MeanReducer() = default;
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void reduce(const T t, T* accum) {
     internal::scalar_sum_op<T> sum_op;
@@ -143,8 +143,8 @@ struct MeanReducer {
   }
 
  protected:
-  DenseIndex scalarCount_;
-  DenseIndex packetCount_;
+  DenseIndex scalarCount_ = 0;
+  DenseIndex packetCount_ = 0;
 };
 
 template <typename T, typename Device>

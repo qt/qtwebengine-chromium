@@ -4,9 +4,8 @@
 /* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as i18n from '../../../../core/i18n/i18n.js';
-import * as Platform from '../../../../core/platform/platform.js';
 import * as SDK from '../../../../core/sdk/sdk.js';
-import * as Highlighting from '../../../components/highlighting/highlighting.js';
+import {html, render} from '../../../lit/lit.js';
 import * as VisualLogging from '../../../visual_logging/visual_logging.js';
 import * as UI from '../../legacy.js';
 import * as ObjectUI from '../object_ui/object_ui.js';
@@ -22,26 +21,48 @@ const UIStrings = {
 const str_ = i18n.i18n.registerUIStrings('ui/legacy/components/source_frame/JSONView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
+export interface ViewInput {
+  objectTree: ObjectUI.ObjectPropertiesSection.ObjectTree;
+  parsedJSON: ParsedJSON;
+}
+
+export type ViewOutput = undefined;
+
+const DEFAULT_VIEW = (input: ViewInput, _output: ViewOutput, target: HTMLElement): void => {
+  const obj = SDK.RemoteObject.RemoteObject.fromLocalObject(input.parsedJSON.data);
+  const titleText = input.parsedJSON.prefix + obj.description + input.parsedJSON.suffix;
+  const title = html`<span>${titleText}</span>`;
+  render(html`
+    <style>${jsonViewStyles}</style>
+    ${ObjectUI.ObjectPropertiesSection.renderObjectPropertiesSection(input.objectTree, title)}
+  `,
+         target, {
+
+           container: {
+             classes: ['json-view'],
+             attributes: {
+               jslog: VisualLogging.section('json-view'),
+             },
+           },
+         });
+};
+
+type View = typeof DEFAULT_VIEW;
+
 export class JSONView extends UI.Widget.VBox implements UI.SearchableView.Searchable {
-  private initialized: boolean;
-  private readonly parsedJSON: ParsedJSON;
-  private startCollapsed: boolean;
-  private searchableView!: UI.SearchableView.SearchableView|null;
-  private treeOutline!: ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection;
-  private currentSearchFocusIndex: number;
-  private currentSearchTreeElements: ObjectUI.ObjectPropertiesSection.ObjectPropertyTreeElement[];
-  private searchRegex: RegExp|null;
-  constructor(parsedJSON: ParsedJSON, startCollapsed?: boolean) {
-    super();
-    this.initialized = false;
-    this.registerRequiredCSS(jsonViewStyles);
-    this.parsedJSON = parsedJSON;
+  #parsedJSON: ParsedJSON;
+  private readonly startCollapsed: boolean;
+  private searchableView: UI.SearchableView.SearchableView|null = null;
+  private objectTree: ObjectUI.ObjectPropertiesSection.ObjectTree|null = null;
+  private readonly search: UI.TreeOutline.TreeSearch<ObjectUI.ObjectPropertiesSection.ObjectTreeNodeBase>;
+  private readonly view: View;
+
+  constructor(parsedJSON: ParsedJSON, startCollapsed?: boolean, element?: HTMLElement, view: View = DEFAULT_VIEW) {
+    super(element);
+    this.#parsedJSON = parsedJSON;
     this.startCollapsed = Boolean(startCollapsed);
-    this.element.classList.add('json-view');
-    this.element.setAttribute('jslog', `${VisualLogging.section('json-view')}`);
-    this.currentSearchFocusIndex = 0;
-    this.currentSearchTreeElements = [];
-    this.searchRegex = null;
+    this.search = new UI.TreeOutline.TreeSearch();
+    this.view = view;
   }
 
   static async createView(content: string): Promise<UI.SearchableView.SearchableView|null> {
@@ -67,6 +88,17 @@ export class JSONView extends UI.Widget.VBox implements UI.SearchableView.Search
     jsonView.show(searchableView.element);
     jsonView.element.tabIndex = 0;
     return searchableView;
+  }
+
+  set parsedJSON(parsedJSON: ParsedJSON) {
+    if (this.objectTree) {
+      this.objectTree.removeEventListener(ObjectUI.ObjectPropertiesSection.ObjectTreeNodeBase.Events.CHILDREN_CHANGED,
+                                          this.#onChildrenChanged, this);
+    }
+    this.#parsedJSON = parsedJSON;
+    this.objectTree = null;
+    this.onSearchCanceled();
+    this.requestUpdate();
   }
 
   setSearchableView(searchableView: UI.SearchableView.SearchableView): void {
@@ -137,129 +169,89 @@ export class JSONView extends UI.Widget.VBox implements UI.SearchableView.Search
   override wasShown(): void {
     super.wasShown();
     this.initialize();
+    this.requestUpdate();
   }
 
   private initialize(): void {
-    if (this.initialized) {
+    if (this.objectTree) {
       return;
     }
-    this.initialized = true;
-
-    const obj = SDK.RemoteObject.RemoteObject.fromLocalObject(this.parsedJSON.data);
-    const title = this.parsedJSON.prefix + obj.description + this.parsedJSON.suffix;
-    this.treeOutline = new ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection(
-        obj, title, undefined, true /* showOverflow */, false /* editable */);
-    this.treeOutline.enableContextMenu();
+    const obj = SDK.RemoteObject.RemoteObject.fromLocalObject(this.#parsedJSON.data);
+    this.objectTree = new ObjectUI.ObjectPropertiesSection.ObjectTree(obj, {
+      readOnly: true,
+      propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED,
+      search: this.search,
+    });
     if (!this.startCollapsed) {
-      this.treeOutline.expand();
+      this.objectTree.expanded = true;
     }
-    this.element.appendChild(this.treeOutline.element);
-    const firstChild = this.treeOutline.firstChild();
-    if (firstChild) {
-      firstChild.select(true /* omitFocus */, false /* selectedByUser */);
-    }
+    this.objectTree.addEventListener(ObjectUI.ObjectPropertiesSection.ObjectTreeNodeBase.Events.CHILDREN_CHANGED,
+                                     this.#onChildrenChanged, this);
   }
 
-  private jumpToMatch(index: number): void {
-    if (!this.searchRegex) {
-      return;
-    }
-    const previousFocusElement = this.currentSearchTreeElements[this.currentSearchFocusIndex];
-    if (previousFocusElement) {
-      previousFocusElement.setSearchRegex(this.searchRegex);
-    }
-
-    const newFocusElement = this.currentSearchTreeElements[index];
-    if (newFocusElement) {
-      this.updateSearchIndex(index);
-      newFocusElement.setSearchRegex(this.searchRegex, Highlighting.highlightedCurrentSearchResultClassName);
-      newFocusElement.reveal();
-    } else {
-      this.updateSearchIndex(0);
-    }
+  #onChildrenChanged(): void {
+    this.requestUpdate();
   }
 
-  private updateSearchCount(count: number): void {
-    if (!this.searchableView) {
+  override performUpdate(): void {
+    this.initialize();
+    if (!this.objectTree) {
       return;
     }
-    this.searchableView.updateSearchMatchesCount(count);
+    this.view({objectTree: this.objectTree, parsedJSON: this.#parsedJSON}, undefined, this.contentElement);
   }
 
-  private updateSearchIndex(index: number): void {
-    this.currentSearchFocusIndex = index;
-    if (!this.searchableView) {
-      return;
+  private jumpToMatch(): void {
+    if (this.searchableView) {
+      this.search.updateSearchableView(this.searchableView);
     }
-    this.searchableView.updateCurrentMatchIndex(index);
+    const currentMatch = this.search.currentMatch();
+    if (currentMatch) {
+      let current = currentMatch.node.parent;
+      while (current) {
+        current.expanded = true;
+        current = current.parent;
+      }
+    }
   }
 
   onSearchCanceled(): void {
-    this.searchRegex = null;
-    this.currentSearchTreeElements = [];
-
-    let element: UI.TreeOutline.TreeElement|null;
-    for (element = this.treeOutline.rootElement(); element; element = element.traverseNextTreeElement(false)) {
-      if (!(element instanceof ObjectUI.ObjectPropertiesSection.ObjectPropertyTreeElement)) {
-        continue;
-      }
-      element.revertHighlightChanges();
+    this.search.reset();
+    if (this.searchableView) {
+      this.search.updateSearchableView(this.searchableView);
     }
-    this.updateSearchCount(0);
-    this.updateSearchIndex(0);
   }
 
-  performSearch(searchConfig: UI.SearchableView.SearchConfig, _shouldJump: boolean, jumpBackwards?: boolean): void {
-    let newIndex: number = this.currentSearchFocusIndex;
-    const previousSearchFocusElement = this.currentSearchTreeElements[newIndex];
+  performSearch(searchConfig: UI.SearchableView.SearchConfig, shouldJump: boolean, jumpBackwards?: boolean): void {
+    this.initialize();
     this.onSearchCanceled();
-    this.searchRegex = searchConfig.toSearchRegex(true).regex;
-
-    let element: UI.TreeOutline.TreeElement|null;
-    for (element = this.treeOutline.rootElement(); element; element = element.traverseNextTreeElement(false)) {
-      if (!(element instanceof ObjectUI.ObjectPropertiesSection.ObjectPropertyTreeElement)) {
-        continue;
-      }
-      const hasMatch = element.setSearchRegex(this.searchRegex);
-      if (hasMatch) {
-        this.currentSearchTreeElements.push(element);
-      }
-      if (previousSearchFocusElement === element) {
-        const currentIndex = this.currentSearchTreeElements.length - 1;
-        if (hasMatch || jumpBackwards) {
-          newIndex = currentIndex;
-        } else {
-          newIndex = currentIndex + 1;
-        }
-      }
-    }
-    this.updateSearchCount(this.currentSearchTreeElements.length);
-
-    if (!this.currentSearchTreeElements.length) {
-      this.updateSearchIndex(-1);
+    const searchRegex = searchConfig.toSearchRegex(true).regex;
+    if (!this.objectTree) {
       return;
     }
-    newIndex = Platform.NumberUtilities.mod(newIndex, this.currentSearchTreeElements.length);
 
-    this.jumpToMatch(newIndex);
+    this.search.search(this.objectTree, jumpBackwards ?? false, (node, closeTag) => {
+      if (closeTag || !searchRegex) {
+        return [];
+      }
+      return node.match(searchRegex);
+    });
+
+    if (shouldJump) {
+      this.jumpToMatch();
+    } else if (this.searchableView) {
+      this.search.updateSearchableView(this.searchableView);
+    }
   }
 
   jumpToNextSearchResult(): void {
-    if (!this.currentSearchTreeElements.length) {
-      return;
-    }
-    const newIndex =
-        Platform.NumberUtilities.mod(this.currentSearchFocusIndex + 1, this.currentSearchTreeElements.length);
-    this.jumpToMatch(newIndex);
+    this.search.next();
+    this.jumpToMatch();
   }
 
   jumpToPreviousSearchResult(): void {
-    if (!this.currentSearchTreeElements.length) {
-      return;
-    }
-    const newIndex =
-        Platform.NumberUtilities.mod(this.currentSearchFocusIndex - 1, this.currentSearchTreeElements.length);
-    this.jumpToMatch(newIndex);
+    this.search.prev();
+    this.jumpToMatch();
   }
 
   supportsCaseSensitiveSearch(): boolean {
@@ -301,11 +293,9 @@ export class SearchableJsonView extends UI.SearchableView.SearchableView {
   }
 
   set jsonObject(obj: Object|null|undefined) {
-    const jsonView = new JSONView(new ParsedJSON(obj, '', ''));
-    this.#jsonView.detach();
-    this.#jsonView = jsonView;
-    this.searchProvider = jsonView;
-    jsonView.show(this.element);
+    this.#jsonView.parsedJSON = new ParsedJSON(obj, '', '');
+    this.searchProvider = this.#jsonView;
+    this.#jsonView.show(this.element);
     this.requestUpdate();
   }
 }

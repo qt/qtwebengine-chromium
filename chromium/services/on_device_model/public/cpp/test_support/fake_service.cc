@@ -10,6 +10,7 @@
 #include "base/check.h"
 #include "base/containers/span.h"
 #include "base/files/memory_mapped_file.h"
+#include "base/json/json_writer.h"
 #include "base/no_destructor.h"
 #include "base/notimplemented.h"
 #include "base/strings/strcat.h"
@@ -58,39 +59,53 @@ std::string Placeholder(ml::Token token) {
 std::string OnDeviceInputToString(const mojom::Input& input,
                                   const Capabilities& capabilities) {
   std::string result;
+  using Tag = mojom::InputPiece::Tag;
   for (const auto& piece : input.pieces) {
-    if (std::holds_alternative<ml::Token>(piece)) {
-      result += Placeholder(std::get<ml::Token>(piece));
-    } else if (std::holds_alternative<std::string>(piece)) {
-      result += std::get<std::string>(piece);
-    } else if (std::holds_alternative<SkBitmap>(piece)) {
-      if (capabilities.Has(CapabilityFlags::kImageInput)) {
-        result += "<image>";
-      } else {
-        result += "<unsupported>";
+    switch (piece->which()) {
+      case Tag::kToken:
+        result += Placeholder(piece->get_token());
+        break;
+      case Tag::kText:
+        result += piece->get_text();
+        break;
+      case Tag::kBitmap:
+        if (capabilities.Has(CapabilityFlags::kImageInput)) {
+          result += "<image>";
+        } else {
+          result += "<unsupported>";
+        }
+        break;
+      case Tag::kAudio:
+        if (capabilities.Has(CapabilityFlags::kAudioInput)) {
+          result += "<audio>";
+        } else {
+          result += "<unsupported>";
+        }
+        break;
+      case Tag::kToolResponse: {
+        const auto& response = piece->get_tool_response();
+        base::StrAppend(&result, {"<tool-response id=", response->call_id,
+                                  " name=", response->name});
+        if (response->result) {
+          std::string result_json;
+          base::JSONWriter::Write(*response->result, &result_json);
+          base::StrAppend(&result, {" result=", result_json});
+        }
+        if (response->error_message) {
+          base::StrAppend(&result,
+                          {" error=\"", *response->error_message, "\""});
+        }
+        result += ">";
+        break;
       }
-    } else if (std::holds_alternative<ml::AudioBuffer>(piece)) {
-      if (capabilities.Has(CapabilityFlags::kAudioInput)) {
-        result += "<audio>";
-      } else {
-        result += "<unsupported>";
+      case Tag::kToolDeclaration: {
+        const auto& decl = piece->get_tool_declaration();
+        base::StrAppend(&result, {"<tool name=", decl->name, ">"});
+        break;
       }
-    } else if (std::holds_alternative<ml::ToolResponse>(piece)) {
-      const auto& response = std::get<ml::ToolResponse>(piece);
-      base::StrAppend(&result, {"<tool-response id=", response.call_id,
-                                " name=", response.name});
-      if (!response.result_json.empty()) {
-        base::StrAppend(&result, {" result=", response.result_json});
-      }
-      if (!response.error_message.empty()) {
-        base::StrAppend(&result, {" error=\"", response.error_message, "\""});
-      }
-      result += ">";
-    } else if (std::holds_alternative<ml::ToolDeclaration>(piece)) {
-      const auto& decl = std::get<ml::ToolDeclaration>(piece);
-      base::StrAppend(&result, {"<tool name=", decl.name, ">"});
-    } else {
-      result += "<unknown>";
+      case Tag::kUnknownType:
+        result += "<unknown>";
+        break;
     }
   }
   return result;
@@ -461,38 +476,31 @@ void FakeOnDeviceModel::LoadAdaptation(
   std::move(callback).Run(mojom::LoadModelResult::kSuccess);
 }
 
-FakeTsModel::FakeTsModel(
+FakeTextSafetyModel::FakeTextSafetyModel(
     on_device_model::mojom::TextSafetyModelParamsPtr params) {
-  if (params->safety_assets) {
-    if (params->safety_assets->is_bs_assets()) {
-      CHECK_EQ(ReadFile(params->safety_assets->get_bs_assets()->model),
-               FakeTsData());
-    } else {
-      CHECK_EQ(ReadFile(params->safety_assets->get_ts_assets()->data),
-               FakeTsData());
-      CHECK_EQ(ReadFile(params->safety_assets->get_ts_assets()->sp_model),
-               FakeTsSpModel());
-    }
+  if (params->safety_model.IsValid()) {
+    CHECK_EQ(ReadFile(params->safety_model), FakeTsData());
     has_safety_model_ = true;
   }
-  if (params->language_assets) {
-    CHECK_EQ(ReadFile(params->language_assets->model), FakeLanguageModel());
+  if (params->language_model.IsValid()) {
+    CHECK_EQ(ReadFile(params->language_model), FakeLanguageModel());
     has_language_model_ = true;
   }
 }
-FakeTsModel::~FakeTsModel() {
-  TRACE_EVENT("optimization_guide", "FakeTsModel::~FakeTsModel",
+FakeTextSafetyModel::~FakeTextSafetyModel() {
+  TRACE_EVENT("optimization_guide", "FakeTextSafetyModel::~FakeTextSafetyModel",
               perfetto::TerminatingFlow::FromPointer(this));
 }
 
-void FakeTsModel::StartSession(
+void FakeTextSafetyModel::StartSession(
     mojo::PendingReceiver<mojom::TextSafetySession> session) {
   sessions_.Add(this, std::move(session));
 }
 
-void FakeTsModel::ClassifyTextSafety(const std::string& text,
-                                     ClassifyTextSafetyCallback callback) {
-  TRACE_EVENT("optimization_guide", "FakeTsModel::ClassifyTextSafety",
+void FakeTextSafetyModel::ClassifyTextSafety(
+    const std::string& text,
+    ClassifyTextSafetyCallback callback) {
+  TRACE_EVENT("optimization_guide", "FakeTextSafetyModel::ClassifyTextSafety",
               perfetto::Flow::FromPointer(this), "text", text);
   CHECK(has_safety_model_);
   auto safety_info = mojom::SafetyInfo::New();
@@ -509,30 +517,29 @@ void FakeTsModel::ClassifyTextSafety(const std::string& text,
   std::move(callback).Run(std::move(safety_info));
 }
 
-void FakeTsModel::DetectLanguage(const std::string& text,
-                                 DetectLanguageCallback callback) {
-  TRACE_EVENT("optimization_guide", "FakeTsModel::DetectLanguage",
+void FakeTextSafetyModel::DetectLanguage(const std::string& text,
+                                         DetectLanguageCallback callback) {
+  TRACE_EVENT("optimization_guide", "FakeTextSafetyModel::DetectLanguage",
               perfetto::Flow::FromPointer(this), "text", text);
   CHECK(has_language_model_);
   std::move(callback).Run(DummyDetectLanguage(text));
 }
 
-void FakeTsModel::Clone(
+void FakeTextSafetyModel::Clone(
     mojo::PendingReceiver<mojom::TextSafetySession> session) {
-  TRACE_EVENT("optimization_guide", "FakeTsModel::Clone",
+  TRACE_EVENT("optimization_guide", "FakeTextSafetyModel::Clone",
               perfetto::Flow::FromPointer(this));
   StartSession(std::move(session));
 }
 
-FakeTsHolder::FakeTsHolder() = default;
-FakeTsHolder::~FakeTsHolder() = default;
+FakeSafetyModelHolder::FakeSafetyModelHolder() = default;
+FakeSafetyModelHolder::~FakeSafetyModelHolder() = default;
 
-void FakeTsHolder::Reset(
-    on_device_model::mojom::TextSafetyModelParamsPtr params,
-    mojo::PendingReceiver<on_device_model::mojom::TextSafetyModel>
-        model_receiver) {
+void FakeSafetyModelHolder::Reset(
+    mojom::TextSafetyModelParamsPtr params,
+    mojo::PendingReceiver<mojom::TextSafetyModel> model_receiver) {
   model_.Clear();
-  model_.Add(std::make_unique<FakeTsModel>(std::move(params)),
+  model_.Add(std::make_unique<FakeTextSafetyModel>(std::move(params)),
              std::move(model_receiver));
 }
 
@@ -601,10 +608,12 @@ void FakeOnDeviceModelService::GetCapabilities(
 void FakeOnDeviceModelService::LoadTextSafetyModel(
     mojom::TextSafetyModelParamsPtr params,
     mojo::PendingReceiver<mojom::TextSafetyModel> model) {
+#if !BUILDFLAG(IS_FUCHSIA)
   TRACE_EVENT("optimization_guide",
               "FakeOnDeviceModelService::LoadTextSafetyModel",
               perfetto::Flow::FromPointer(this));
-  ts_holder_.Reset(std::move(params), std::move(model));
+  safety_model_holder_.Reset(std::move(params), std::move(model));
+#endif
 }
 
 void FakeOnDeviceModelService::GetDeviceAndPerformanceInfo(

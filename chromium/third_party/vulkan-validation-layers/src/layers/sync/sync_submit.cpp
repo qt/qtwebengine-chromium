@@ -216,9 +216,10 @@ class ApplyAcquireNextSemaphoreAction {
     // and initialization of globals between compilation units is undefined. Instead they get initialized
     // on the first use (it's important to ensure this first use is also not initialization of some global!).
     static const SyncExecScope& getPresentSrcScope() {
-        static const SyncExecScope kPresentSrcScope{VK_PIPELINE_STAGE_2_PRESENT_ENGINE_BIT_SYNCVAL,  // mask_param (unused)
+        static const SyncExecScope kPresentSrcScope{VK_PIPELINE_STAGE_2_PRESENT_ENGINE_BIT_SYNCVAL,  // stage_mask (unused)
                                                     VK_PIPELINE_STAGE_2_PRESENT_ENGINE_BIT_SYNCVAL,  // exec_scope
-                                                    getPresentValidAccesses()};                      // valid_accesses
+                                                    getPresentValidAccesses(),                       // stage_mask_accesses
+                                                    getPresentValidAccesses()};                      // exec_scope_accesses
         return kPresentSrcScope;
     }
     static const SyncAccessFlags& getPresentValidAccesses() {
@@ -295,7 +296,7 @@ void QueueBatchContext::Trim() {
 }
 
 void QueueBatchContext::ResolveSubmittedCommandBuffer(const AccessContext& recorded_context, ResourceUsageTag offset) {
-    GetCurrentAccessContext()->ResolveFromContext(QueueTagOffsetBarrierAction(GetQueueId(), offset), recorded_context);
+    GetCurrentAccessContext().ResolveFromContext(QueueTagOffsetBarrierAction(GetQueueId(), offset), recorded_context);
 }
 
 VulkanTypedHandle QueueBatchContext::Handle() const { return queue_state_->GetQueue()->Handle(); }
@@ -416,6 +417,16 @@ void QueueBatchContext::EndRenderPassReplayCleanup(ReplayState& replay) {
     replay.ReplayStateRenderPassEnd(access_context_);
     current_access_context_ = &access_context_;
 }
+
+// Batch barrier ops don't modify in place, and thus don't need to hold pending state, and also are *never* layout transitions.
+struct BatchBarrierOp {
+    SyncBarrier barrier;
+    BarrierScope barrier_scope;
+
+    BatchBarrierOp(QueueId queue_id, const SyncBarrier& barrier) : barrier(barrier), barrier_scope(barrier, queue_id) {}
+
+    void operator()(AccessState* access_state) const { access_state->ApplyBarrier(barrier_scope, barrier); }
+};
 
 void QueueBatchContext::ResolvePresentSemaphoreWait(const SignalInfo& signal_info, const PresentedImages& presented_images) {
     assert(signal_info.batch);
@@ -737,7 +748,7 @@ bool QueueBatchContext::ValidateSubmit(const std::vector<CommandBufferConstPtr>&
             skip |= ReplayState(*this, access_context, error_obj, uint32_t(index), batch.base_tag).ValidateFirstUse();
             // The barriers have already been applied in ValidatFirstUse
             batch_log_.Import(batch, access_context, current_label_stack);
-            ResolveSubmittedCommandBuffer(*access_context.GetCurrentAccessContext(), batch.base_tag);
+            ResolveSubmittedCommandBuffer(access_context.GetCurrentAccessContext(), batch.base_tag);
             batch.base_tag += access_context.GetTagCount();
         }
         // Apply debug label commands

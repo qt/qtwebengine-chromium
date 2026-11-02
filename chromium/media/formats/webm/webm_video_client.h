@@ -54,10 +54,10 @@ class MEDIA_EXPORT WebMVideoClient : public WebMParserClient {
   WebMParserClient* OnListStart(int id) override;
   bool OnListEnd(int id) override;
   bool OnUInt(int id, int64_t val) override;
-  bool OnBinary(int id, const uint8_t* data, int size) override;
+  bool OnBinary(int id, base::span<const uint8_t> data) override;
   bool OnFloat(int id, double val) override;
 
-  raw_ptr<MediaLog> media_log_;
+  const std::unique_ptr<MediaLog> media_log_;
   int64_t pixel_width_;
   int64_t pixel_height_;
   int64_t crop_bottom_;

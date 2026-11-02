@@ -153,7 +153,7 @@ class BufferBase : public SharedResource, public WeakRefSupport<BufferBase> {
     bool NeedsInitialization() const;
     void MarkUsedInPendingCommands();
     void MarkUsedInPendingCommands(ExecutionSerial pendingSerial);
-    virtual MaybeError UploadData(uint64_t bufferOffset, const void* data, size_t size);
+    virtual MaybeError UploadData(uint64_t bufferOffset, Span<const std::byte> data);
 
     // SharedResource impl.
     ExecutionSerial OnEndAccess() override;
@@ -163,7 +163,17 @@ class BufferBase : public SharedResource, public WeakRefSupport<BufferBase> {
     void SetInitialized(bool initialized) override;
     bool IsInitialized() const override;
 
-    void* GetMappedPointer();
+    struct CurrentMapping {
+        // The region of valid memory that is mapped. Empty if not mapped.
+        Span<std::byte> mappedSpan;
+        // Offset from the base pointer of the whole buffer to the beginning of mValidSpan.
+        size_t offsetFromBufferStartToMappedSpan = 0;
+
+        Span<std::byte> GetMappedSubspan(size_t offsetFromBufferStartToSubrange,
+                                         size_t subrangeSize) const;
+    };
+    CurrentMapping GetCurrentMapping();
+
     void* GetMappedRange(size_t offset, size_t size, bool writable = true);
 
     // Internal non-reentrant version of Unmap. This is used in workarounds or additional copies.
@@ -180,8 +190,8 @@ class BufferBase : public SharedResource, public WeakRefSupport<BufferBase> {
                        const WGPUBufferMapCallbackInfo& callbackInfo);
     void* APIGetMappedRange(size_t offset, size_t size);
     const void* APIGetConstMappedRange(size_t offset, size_t size);
-    wgpu::Status APIWriteMappedRange(size_t offset, void const* data, size_t size);
-    wgpu::Status APIReadMappedRange(size_t offset, void* data, size_t size);
+    wgpu::Status APIWriteMappedRange(size_t offset, Span<const std::byte> data);
+    wgpu::Status APIReadMappedRange(size_t offset, Span<std::byte> data);
     void APIUnmap();
     void APIDestroy();
     wgpu::BufferUsage APIGetUsage() const;
@@ -193,6 +203,8 @@ class BufferBase : public SharedResource, public WeakRefSupport<BufferBase> {
     TexelBufferViewBase* APICreateTexelView(const TexelBufferViewDescriptor* descriptor);
 
     ApiObjectList* GetTexelBufferViewTrackingList();
+
+    BufferState GetState() const;
 
   protected:
     BufferBase(DeviceBase* device, const UnpackedPtr<BufferDescriptor>& descriptor);
@@ -206,7 +218,6 @@ class BufferBase : public SharedResource, public WeakRefSupport<BufferBase> {
     // creation. Otherwise, returns false indicating that backend specific mapping was used instead.
     ResultOrError<bool> MapAtCreationInternal();
 
-    BufferState GetState() const;
     wgpu::MapMode MapMode() const;
     size_t MapOffset() const;
     size_t MapSize() const;
@@ -256,7 +267,7 @@ class BufferBase : public SharedResource, public WeakRefSupport<BufferBase> {
     const bool mIsHostMapped = false;
     bool mIsDataInitialized = false;
 
-    Atomic<ExecutionSerial, std::memory_order_relaxed> mLastUsageSerial{ExecutionSerial(0)};
+    Atomic<ExecutionSerial, std::memory_order_relaxed> mLastUsageSerial{ExecutionSerial(0u)};
 
     // Once MapAsync() returns a future there is a possible race between MapAsyncEvent completing
     // and the buffer being unmapped as they can happen on different threads. `mPendingMapMutex`
@@ -306,11 +317,25 @@ class BufferBase : public SharedResource, public WeakRefSupport<BufferBase> {
     // staging buffer recursively.
     Ref<BufferBase> mStagingBuffer = nullptr;
 
+    // Tracks whether the buffer was mapped at creation and hasn't been unmapped yet.
+    // Used by OnBeginAccess() to restore the correct state for SharedBufferMemory buffers.
+    bool mIsMappedAtCreation = false;
+
     // Mapping specific states.
     wgpu::MapMode mMapMode = wgpu::MapMode::None;
+    // Offset from the start of the buffer to the start of the mapped region. In other words,
+    // (mMappedPointer + mMapOffset) gives the first valid address of the mapping region.
     size_t mMapOffset = 0;
+    // Map size we expose to the API.
     size_t mMapSize = 0;
-    // TODO(crbug.com/485825675): Investigate this dangling pointers.
+    // Size of the actually accessible region of memory.
+    size_t mAllocatedMapSize = 0;
+    // Pointer to the beginning of the buffer resource (or where the beginning of the buffer
+    // resource *would* be), if it's mapped. This pointer MUST be offset before being accessed, as
+    // the beginning of the pointed region might not exist at all. GetCurrentMapping() returns this
+    // in a structure that handles this offsetting.
+    // TODO(https://crbug.com/501491697): Spanify this pointer.
+    // TODO(https://crbug.com/485825675): Investigate this dangling pointer.
     raw_ptr<void, DanglingUntriaged> mMappedPointer = nullptr;
 };
 

@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
+import * as i18n from '../../../../core/i18n/i18n.js';
 import {renderElementIntoDOM} from '../../../../testing/DOMHelpers.js';
 import {describeWithEnvironment} from '../../../../testing/EnvironmentHelpers.js';
 
@@ -21,7 +23,7 @@ describeWithEnvironment('DataGrid', () => {
   it('tests long text in datagrid', () => {
     const columns = [
       {id: 'key', title: 'Key column', editable: true, longText: false, sortable: false},
-      {id: 'value', title: 'Value column', editable: true, longText: true, sortable: false}
+      {id: 'value', title: 'Value column', editable: true, longText: true, sortable: false},
     ] as DataGrid.DataGrid.ColumnDescriptor[];
 
     const dataGrid = new DataGrid.DataGrid.DataGridImpl({displayName: 'Test', columns});
@@ -130,5 +132,39 @@ describeWithEnvironment('DataGrid', () => {
     assert.include(visibleIds, 'a3');
     assert.include(visibleIds, 'a5');
     assert.lengthOf(visibleIds, 15);
+  });
+
+  it('triggers tableContextMenuCallback when context menu is triggered on a row', () => {
+    const columns: DataGrid.DataGrid.ColumnDescriptor[] =
+        [{id: 'key', title: i18n.i18n.lockedString('Key'), sortable: false}];
+    const dataGrid = new DataGrid.DataGrid.DataGridImpl({displayName: 'Test', columns});
+    const node = new DataGrid.DataGrid.DataGridNode({key: 'value'});
+    dataGrid.rootNode().appendChild(node);
+    container.appendChild(dataGrid.element);
+
+    const tableContextMenuCallback = sinon.stub();
+    dataGrid.setTableContextMenuCallback(tableContextMenuCallback);
+
+    const rowElement = node.existingElement();
+    assert.exists(rowElement);
+
+    rowElement.dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, button: 2}));
+    sinon.assert.calledOnce(tableContextMenuCallback);
+  });
+
+  it('triggers tableContextMenuCallback when context menu is triggered on the header', () => {
+    const columns: DataGrid.DataGrid.ColumnDescriptor[] =
+        [{id: 'key', title: i18n.i18n.lockedString('Key'), sortable: false}];
+    const dataGrid = new DataGrid.DataGrid.DataGridImpl({displayName: 'Test', columns});
+    container.appendChild(dataGrid.element);
+
+    const tableContextMenuCallback = sinon.stub();
+    dataGrid.setTableContextMenuCallback(tableContextMenuCallback);
+
+    const headerElement = dataGrid.element.querySelector('th');
+    assert.exists(headerElement);
+
+    headerElement.dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, button: 2}));
+    sinon.assert.calledOnce(tableContextMenuCallback);
   });
 });

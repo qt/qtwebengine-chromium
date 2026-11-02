@@ -56,8 +56,12 @@ Linear.
     --8<-- "examples/operator_literal_json.output"
     ```
 
+## See also
+
+- [Creating JSON values](../features/creating_values.md) - the article on creating JSON values
+
 ## Version history
 
 - Added in version 1.0.0.
 - Moved to namespace `nlohmann::literals::json_literals` in 3.11.0.
-- Added `char8_t*` overload in 3.12.1.
+- Added `char8_t*` overload in 3.13.0.

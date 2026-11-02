@@ -95,7 +95,7 @@ void LiftoffAssembler::CheckTierUp(int declared_func_index, int budget_used,
 }
 
 Register LiftoffAssembler::LoadOldFramePointer() {
-  if (!v8_flags.experimental_wasm_growable_stacks) {
+  if (!v8_flags.wasm_growable_stacks) {
     return fp;
   }
   LiftoffRegister old_fp = GetUnusedRegister(RegClass::kGpReg, {});
@@ -159,11 +159,18 @@ void LiftoffAssembler::PatchPrepareStackFrame(
   // assembler to try to grow the buffer.
   constexpr int kAvailableSpace = 256;
   MacroAssembler patching_assembler(
-      zone(), AssemblerOptions{}, CodeObjectRequired::kNo,
+      zone(), AssemblerOptions{}, CodeObjectRequired{false},
       ExternalAssemblerBuffer(buffer_start_ + offset, kAvailableSpace));
   Assembler::BlockPoolsScope block_pools_patch(&patching_assembler);
 
-  if (V8_LIKELY(frame_size < 4 * KB)) {
+  int max_stack_space =
+      frame_size + max_pushed_argument_slots_ * kSystemPointerSize;
+
+  // The threshold here must match the DCHECK in {Isolate::StackOverflow}:
+  // we could use up this limit once for parameters in a caller, once for the
+  // fixed frame size in its callee, plus we must leave some space for the
+  // runtime call that leads to the DCHECK.
+  if (V8_LIKELY(max_stack_space < 3 * KB)) {
     // This is the standard case for small frames: just subtract from SP and be
     // done with it. This generates more than one instruction, when the negated
     // frame size doesn't fit in a signed 12-bit integer.
@@ -196,14 +203,14 @@ void LiftoffAssembler::PatchPrepareStackFrame(
   // check in the condition code.
   RecordComment("OOL: stack check for large frame");
   Label continuation;
-  if (frame_size < v8_flags.stack_size * 1024) {
+  if (max_stack_space < v8_flags.stack_size * 1024) {
     Register stack_limit = kScratchReg;
     LoadStackLimit(stack_limit, StackLimitKind::kRealStackLimit);
-    AddWord(stack_limit, stack_limit, Operand(frame_size));
+    AddWord(stack_limit, stack_limit, Operand(max_stack_space));
     Branch(&continuation, uge, sp, Operand(stack_limit));
   }
 
-  if (v8_flags.experimental_wasm_growable_stacks) {
+  if (v8_flags.wasm_growable_stacks) {
     LiftoffRegList regs_to_save;
     regs_to_save.set(WasmHandleStackOverflowDescriptor::GapRegister());
     regs_to_save.set(WasmHandleStackOverflowDescriptor::FrameBaseRegister());
@@ -211,7 +218,7 @@ void LiftoffAssembler::PatchPrepareStackFrame(
     for (auto reg : kFpParamRegisters) regs_to_save.set(reg);
     for (auto reg : kSimd128ParamRegisters) regs_to_save.set(reg);
     PushRegisters(regs_to_save);
-    li(WasmHandleStackOverflowDescriptor::GapRegister(), frame_size);
+    li(WasmHandleStackOverflowDescriptor::GapRegister(), max_stack_space);
     AddWord(WasmHandleStackOverflowDescriptor::FrameBaseRegister(), fp,
             Operand(stack_param_slots * kSystemPointerSize +
                     CommonFrameConstants::kFixedFrameSizeAboveFp));
@@ -2495,8 +2502,7 @@ void LiftoffAssembler::TailCallNativeWasmCode(Address addr) {
   Jump(addr, RelocInfo::WASM_CALL);
 }
 
-void LiftoffAssembler::CallIndirect(const ValueKindSig* sig,
-                                    compiler::CallDescriptor* call_descriptor,
+void LiftoffAssembler::CallIndirect(compiler::CallDescriptor* call_descriptor,
                                     Register target) {
   DCHECK(target.is_valid());
   CallWasmCodePointer(target, call_descriptor->signature_hash());
@@ -2524,7 +2530,6 @@ void LiftoffAssembler::DeallocateStackSlot(uint32_t size) {
   AddWord(sp, sp, Operand(static_cast<int64_t>(size)));
 }
 
-void LiftoffAssembler::MaybeOSR() {}
 
 void LiftoffAssembler::CallFrameSetupStub(int declared_function_index) {
 // The standard library used by gcc tryjobs does not consider `std::find` to be
@@ -2547,140 +2552,308 @@ void LiftoffAssembler::CallFrameSetupStub(int declared_function_index) {
 
 bool LiftoffAssembler::emit_f16x8_splat(LiftoffRegister dst,
                                         LiftoffRegister src) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH) || !CpuFeatures::IsSupported(ZFH))
+    return false;
+  VU.SetSimd128(E16);
+  fcvt_h_s(kScratchDoubleReg, src.fp());
+  vfmv_vf(dst.simd128(), kScratchDoubleReg);
+  return true;
 }
 bool LiftoffAssembler::emit_f16x8_extract_lane(LiftoffRegister dst,
                                                LiftoffRegister lhs,
                                                uint8_t imm_lane_idx) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH) || !CpuFeatures::IsSupported(ZFH))
+    return false;
+  VU.SetSimd128(E16);
+  vslidedown_vi(kSimd128ScratchReg, lhs.simd128(), imm_lane_idx);
+  vfmv_fs(kScratchDoubleReg, kSimd128ScratchReg);
+  fcvt_s_h(dst.fp(), kScratchDoubleReg);
+  return true;
 }
 bool LiftoffAssembler::emit_f16x8_replace_lane(LiftoffRegister dst,
                                                LiftoffRegister src1,
                                                LiftoffRegister src2,
                                                uint8_t imm_lane_idx) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH) || !CpuFeatures::IsSupported(ZFH))
+    return false;
+  VU.SetSimd128(E16);
+  li(kScratchReg, 0x1 << imm_lane_idx);
+  vmv_sx(v0, kScratchReg);
+  fcvt_h_s(kScratchDoubleReg, src2.fp());
+  fmv_x_h(kScratchReg, kScratchDoubleReg);
+  vmerge_vx(dst.simd128(), kScratchReg, src1.simd128());
+  return true;
 }
 
 bool LiftoffAssembler::emit_f16x8_eq(LiftoffRegister dst, LiftoffRegister lhs,
                                      LiftoffRegister rhs) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  vmfeq_vv(v0, rhs.simd128(), lhs.simd128());
+  vmv_vx(dst.simd128(), zero_reg);
+  vmerge_vi(dst.simd128(), -1, dst.simd128());
+  return true;
 }
 bool LiftoffAssembler::emit_f16x8_ne(LiftoffRegister dst, LiftoffRegister lhs,
                                      LiftoffRegister rhs) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  vmfne_vv(v0, rhs.simd128(), lhs.simd128());
+  vmv_vx(dst.simd128(), zero_reg);
+  vmerge_vi(dst.simd128(), -1, dst.simd128());
+  return true;
 }
 bool LiftoffAssembler::emit_f16x8_lt(LiftoffRegister dst, LiftoffRegister lhs,
                                      LiftoffRegister rhs) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  vmflt_vv(v0, lhs.simd128(), rhs.simd128());
+  vmv_vx(dst.simd128(), zero_reg);
+  vmerge_vi(dst.simd128(), -1, dst.simd128());
+  return true;
 }
 bool LiftoffAssembler::emit_f16x8_le(LiftoffRegister dst, LiftoffRegister lhs,
                                      LiftoffRegister rhs) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  vmfle_vv(v0, lhs.simd128(), rhs.simd128());
+  vmv_vx(dst.simd128(), zero_reg);
+  vmerge_vi(dst.simd128(), -1, dst.simd128());
+  return true;
 }
 
 bool LiftoffAssembler::emit_f16x8_abs(LiftoffRegister dst,
                                       LiftoffRegister src) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  vfabs_vv(dst.simd128(), src.simd128());
+  return true;
 }
 bool LiftoffAssembler::emit_f16x8_neg(LiftoffRegister dst,
                                       LiftoffRegister src) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  vfneg_vv(dst.simd128(), src.simd128());
+  return true;
 }
 bool LiftoffAssembler::emit_f16x8_sqrt(LiftoffRegister dst,
                                        LiftoffRegister src) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  vfsqrt_v(dst.simd128(), src.simd128());
+  return true;
 }
 bool LiftoffAssembler::emit_f16x8_ceil(LiftoffRegister dst,
                                        LiftoffRegister src) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  Ceil(dst.simd128(), src.simd128(), kScratchReg, kSimd128ScratchReg);
+  return true;
 }
 bool LiftoffAssembler::emit_f16x8_floor(LiftoffRegister dst,
                                         LiftoffRegister src) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  Floor(dst.simd128(), src.simd128(), kScratchReg, kSimd128ScratchReg);
+  return true;
 }
 bool LiftoffAssembler::emit_f16x8_trunc(LiftoffRegister dst,
                                         LiftoffRegister src) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  Trunc(dst.simd128(), src.simd128(), kScratchReg, kSimd128ScratchReg);
+  return true;
 }
 bool LiftoffAssembler::emit_f16x8_nearest_int(LiftoffRegister dst,
                                               LiftoffRegister src) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  Round(dst.simd128(), src.simd128(), kScratchReg, kSimd128ScratchReg);
+  return true;
 }
 
 bool LiftoffAssembler::emit_f16x8_add(LiftoffRegister dst, LiftoffRegister lhs,
                                       LiftoffRegister rhs) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  vfadd_vv(dst.simd128(), lhs.simd128(), rhs.simd128());
+  return true;
 }
 bool LiftoffAssembler::emit_f16x8_sub(LiftoffRegister dst, LiftoffRegister lhs,
                                       LiftoffRegister rhs) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  vfsub_vv(dst.simd128(), lhs.simd128(), rhs.simd128());
+  return true;
 }
 bool LiftoffAssembler::emit_f16x8_mul(LiftoffRegister dst, LiftoffRegister lhs,
                                       LiftoffRegister rhs) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  vfmul_vv(dst.simd128(), lhs.simd128(), rhs.simd128());
+  return true;
 }
 bool LiftoffAssembler::emit_f16x8_div(LiftoffRegister dst, LiftoffRegister lhs,
                                       LiftoffRegister rhs) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  vfdiv_vv(dst.simd128(), lhs.simd128(), rhs.simd128());
+  return true;
 }
 bool LiftoffAssembler::emit_f16x8_min(LiftoffRegister dst, LiftoffRegister lhs,
                                       LiftoffRegister rhs) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  vmfeq_vv(v0, lhs.simd128(), lhs.simd128());
+  vmfeq_vv(kSimd128ScratchReg, rhs.simd128(), rhs.simd128());
+  vand_vv(v0, v0, kSimd128ScratchReg);
+  li(kScratchReg, kFP32DefaultNaN);
+  vmv_vx(kSimd128ScratchReg, kScratchReg);
+  vfmin_vv(kSimd128ScratchReg, rhs.simd128(), lhs.simd128(), Mask);
+  vmv_vv(dst.simd128(), kSimd128ScratchReg);
+  return true;
 }
 bool LiftoffAssembler::emit_f16x8_max(LiftoffRegister dst, LiftoffRegister lhs,
                                       LiftoffRegister rhs) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  vmfeq_vv(v0, lhs.simd128(), lhs.simd128());
+  vmfeq_vv(kSimd128ScratchReg, rhs.simd128(), rhs.simd128());
+  vand_vv(v0, v0, kSimd128ScratchReg);
+  li(kScratchReg, 0x7E00);
+  vmv_vx(kSimd128ScratchReg, kScratchReg);
+  vfmax_vv(kSimd128ScratchReg, rhs.simd128(), lhs.simd128(), Mask);
+  vmv_vv(dst.simd128(), kSimd128ScratchReg);
+  return true;
 }
+
 bool LiftoffAssembler::emit_f16x8_pmin(LiftoffRegister dst, LiftoffRegister lhs,
                                        LiftoffRegister rhs) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  // b < a ? b : a
+  vmflt_vv(v0, rhs.simd128(), lhs.simd128());
+  vmerge_vv(dst.simd128(), rhs.simd128(), lhs.simd128());
+  return true;
 }
 bool LiftoffAssembler::emit_f16x8_pmax(LiftoffRegister dst, LiftoffRegister lhs,
                                        LiftoffRegister rhs) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  // a < b ? b : a
+  vmflt_vv(v0, lhs.simd128(), rhs.simd128());
+  vmerge_vv(dst.simd128(), rhs.simd128(), lhs.simd128());
+  return true;
 }
 
 bool LiftoffAssembler::emit_i16x8_sconvert_f16x8(LiftoffRegister dst,
                                                  LiftoffRegister src) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  VU.set(FPURoundingMode::RTZ);
+  vmfeq_vv(v0, src.simd128(), src.simd128());
+  vmv_vv(kSimd128ScratchReg, src.simd128());
+  vmv_vx(dst.simd128(), zero_reg);
+  vfcvt_x_f_v(dst.simd128(), kSimd128ScratchReg, MaskType::Mask);
+  VU.set(FPURoundingMode::RNE);
+  return true;
 }
 bool LiftoffAssembler::emit_i16x8_uconvert_f16x8(LiftoffRegister dst,
                                                  LiftoffRegister src) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  VU.set(FPURoundingMode::RTZ);
+  vmfeq_vv(v0, src.simd128(), src.simd128());
+  vmv_vv(kSimd128ScratchReg, src.simd128());
+  vmv_vx(dst.simd128(), zero_reg);
+  vfcvt_xu_f_v(dst.simd128(), kSimd128ScratchReg, MaskType::Mask);
+  VU.set(FPURoundingMode::RNE);
+  return true;
 }
 bool LiftoffAssembler::emit_f16x8_sconvert_i16x8(LiftoffRegister dst,
                                                  LiftoffRegister src) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  vfcvt_f_x_v(dst.simd128(), src.simd128());
+  return true;
 }
 bool LiftoffAssembler::emit_f16x8_uconvert_i16x8(LiftoffRegister dst,
                                                  LiftoffRegister src) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  vfcvt_f_xu_v(dst.simd128(), src.simd128());
+  return true;
 }
 bool LiftoffAssembler::emit_f16x8_demote_f32x4_zero(LiftoffRegister dst,
                                                     LiftoffRegister src) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128Half(E16);
+  vfncvt_f_f_w(dst.simd128(), src.simd128());
+  VU.SetSimd128(E16);
+  li(kScratchReg, 0b11110000);
+  vmv_sx(v0, kScratchReg);
+  vmerge_vx(dst.simd128(), zero_reg, dst.simd128());
+  return true;
 }
 bool LiftoffAssembler::emit_f16x8_demote_f64x2_zero(LiftoffRegister dst,
                                                     LiftoffRegister src) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH) || !CpuFeatures::IsSupported(ZFH)) {
+    return false;
+  }
+  VU.SetSimd128(E64);
+  vfmv_fs(kScratchDoubleReg, src.simd128());
+  fcvt_h_d(kScratchDoubleReg, kScratchDoubleReg);
+  fmv_x_h(kScratchReg, kScratchDoubleReg);
+  VU.SetSimd128(E16, tu);
+  vmv_vx(kSimd128ScratchReg3, zero_reg);
+  vmv_sx(kSimd128ScratchReg3, kScratchReg);
+  VU.SetSimd128(E64);
+  vslidedown_vi(kSimd128ScratchReg, src.simd128(), 1);
+  vfmv_fs(kScratchDoubleReg, kSimd128ScratchReg);
+  fcvt_h_d(kScratchDoubleReg, kScratchDoubleReg);
+  fmv_x_h(kScratchReg2, kScratchDoubleReg);
+  VU.SetSimd128(E16);
+  li(kScratchReg, 0b10);
+  vmv_sx(v0, kScratchReg);
+  vmerge_vx(dst.simd128(), kScratchReg2, kSimd128ScratchReg3);
+  return true;
 }
 bool LiftoffAssembler::emit_f32x4_promote_low_f16x8(LiftoffRegister dst,
                                                     LiftoffRegister src) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128Half(E16);
+  if (dst.simd128() != src.simd128()) {
+    vfwcvt_f_f_v(dst.simd128(), src.simd128());
+  } else {
+    vfwcvt_f_f_v(kSimd128ScratchReg3, src.simd128());
+    VU.SetSimd128(E16);
+    vmv_vv(dst.simd128(), kSimd128ScratchReg3);
+  }
+  return true;
 }
 
 bool LiftoffAssembler::emit_f16x8_qfma(LiftoffRegister dst,
                                        LiftoffRegister src1,
                                        LiftoffRegister src2,
                                        LiftoffRegister src3) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  vmv_vv(kSimd128ScratchReg, src1.simd128());
+  vfmadd_vv(kSimd128ScratchReg, src2.simd128(), src3.simd128());
+  vmv_vv(dst.simd128(), kSimd128ScratchReg);
+  return true;
 }
 
 bool LiftoffAssembler::emit_f16x8_qfms(LiftoffRegister dst,
                                        LiftoffRegister src1,
                                        LiftoffRegister src2,
                                        LiftoffRegister src3) {
-  return false;
+  if (!CpuFeatures::IsSupported(ZVFH)) return false;
+  VU.SetSimd128(E16);
+  vmv_vv(kSimd128ScratchReg, src1.simd128());
+  vfnmsub_vv(kSimd128ScratchReg, src2.simd128(), src3.simd128());
+  vmv_vv(dst.simd128(), kSimd128ScratchReg);
+  return true;
 }
 
 void LiftoffAssembler::DecrementMaxSteps(int32_t* max_steps_ptr,
@@ -2724,7 +2897,7 @@ void LiftoffAssembler::emit_inc_i32_at(Address address) {
   StoreWord(value, MemOperand(counter_addr, 0));
 }
 
-void LiftoffAssembler::AtomicFence() { sync(); }
+void LiftoffAssembler::AtomicFence(AtomicMemoryOrder /*order*/) { sync(); }
 void LiftoffAssembler::Pause() { sync(); }
 
 }  // namespace v8::internal::wasm

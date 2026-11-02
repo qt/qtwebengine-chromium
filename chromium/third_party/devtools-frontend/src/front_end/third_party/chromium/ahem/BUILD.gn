@@ -1,0 +1,6 @@
+import("../../../../scripts/build/typescript/typescript.gni")
+
+ts_library("ahem") {
+  testonly = true
+  sources = [ "ahem.js" ]
+}

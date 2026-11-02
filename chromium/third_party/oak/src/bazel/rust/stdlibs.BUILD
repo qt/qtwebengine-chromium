@@ -3,7 +3,10 @@
 load("@oak//bazel/rust:defs.bzl", "STDLIBS_DEPS_VERSIONS")
 load("@rules_rust//rust:defs.bzl", "rust_library")
 
-package(default_visibility = ["//visibility:public"])
+package(
+    default_visibility = ["//visibility:public"],
+    licenses = ["notice"],
+)
 
 exports_files(["bin/*"])
 
@@ -36,7 +39,7 @@ rust_library(
     compile_data = glob(["library/alloc/src/**/*.md"]),
     crate_features = ["no_std"],
     crate_name = "alloc",
-    edition = "2021",
+    edition = "2024",
     rustc_env = {
         "RUSTC_BOOTSTRAP": "1",
     },
@@ -54,10 +57,10 @@ rust_library(
     name = "compiler_builtins",
     # There are multiple versions available in the nightly tarball, we choose the newest.
     srcs = glob([
-        "vendor/compiler_builtins-" + STDLIBS_DEPS_VERSIONS["compiler_builtins"] + "/src/**/*.rs",
-        "vendor/compiler_builtins-" + STDLIBS_DEPS_VERSIONS["compiler_builtins"] + "/libm/**/*.rs",
+        "library/compiler-builtins/compiler-builtins/src/**/*.rs",
+        "library/compiler-builtins/libm/**/*.rs",
     ]),
-    compile_data = glob(["vendor/compiler_builtins-0.1.123/src/**/*.md"]),
+    compile_data = glob(["library/compiler-builtins/compiler-builtins/src/**/*.md"]),
     crate_features = [
         "compiler-builtins",
         "force-soft-floats",
@@ -67,7 +70,10 @@ rust_library(
         "unstable",
     ],
     crate_name = "compiler_builtins",
-    edition = "2021",
+    # Explicit crate root is required because both libm/ and compiler-builtins/
+    # contain a src/lib.rs, and rules_rust would otherwise pick the wrong one.
+    crate_root = "library/compiler-builtins/compiler-builtins/src/lib.rs",
+    edition = "2024",
     rustc_env = {
         "RUSTC_BOOTSTRAP": "1",
     },
@@ -95,7 +101,7 @@ rust_library(
         "no_std",
     ],
     crate_name = "core",
-    edition = "2021",
+    edition = "2024",
     rustc_env = {
         "RUSTC_BOOTSTRAP": "1",
     },
@@ -118,6 +124,7 @@ rust_library(
         "no_std",
     ],
     crate_name = "cfg_if",
+    edition = "2024",
     rustc_env = {
         "RUSTC_BOOTSTRAP": "1",
     },
@@ -139,6 +146,7 @@ rust_library(
         "no_std",
     ],
     crate_name = "panic_abort",
+    edition = "2024",
     rustc_env = {
         "RUSTC_BOOTSTRAP": "1",
     },
@@ -167,7 +175,7 @@ rust_library(
         "align",
     ],
     crate_name = "libc",
-    edition = "2021",
+    edition = "2024",
     rustc_env = {
         "RUSTC_BOOTSTRAP": "1",
     },
@@ -195,6 +203,7 @@ rust_library(
         "llvm-libunwind",
     ],
     crate_name = "unwind",
+    edition = "2024",
     rustc_env = {
         "RUSTC_BOOTSTRAP": "1",
     },
@@ -213,14 +222,15 @@ rust_library(
 
 rust_library(
     name = "rustc_demangle",
-    srcs = glob(["vendor/rustc-demangle-0.1.24/src/**/*.rs"]),
-    compile_data = glob(["vendor/rustc-demangle-0.1.24/src/**/*.md"]),
+    srcs = glob(["vendor/rustc-demangle-" + STDLIBS_DEPS_VERSIONS["rustc-demangle"] + "/src/**/*.rs"]),
+    compile_data = glob(["vendor/rustc-demangle-" + STDLIBS_DEPS_VERSIONS["rustc-demangle"] + "/src/**/*.md"]),
     crate_features = [
         "core",
         "compiler_builtins",
         "no_std",
     ],
     crate_name = "rustc_demangle",
+    edition = "2024",
     rustc_env = {
         "RUSTC_BOOTSTRAP": "1",
     },
@@ -242,6 +252,7 @@ rust_library(
         "no_std",
     ],
     crate_name = "panic_unwind",
+    edition = "2024",
     rustc_env = {
         "RUSTC_BOOTSTRAP": "1",
     },

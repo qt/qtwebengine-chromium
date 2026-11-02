@@ -165,8 +165,7 @@ static AccessContext* CreateStoreResolveProxyContext(const AccessContext& contex
 // Layout transitions are handled as if the were occuring in the beginning of the next subpass
 bool RenderPassAccessContext::ValidateLayoutTransitions(const CommandBufferAccessContext& cb_context,
                                                         const AccessContext& access_context, const vvl::RenderPass& rp_state,
-                                                        const VkRect2D& render_area, uint32_t render_pass_instance_id,
-                                                        uint32_t subpass, uint32_t view_mask,
+                                                        uint32_t render_pass_instance_id, uint32_t subpass, uint32_t view_mask,
                                                         const AttachmentViewGenVector& attachment_views, vvl::Func command) {
     bool skip = false;
     // As validation methods are const and precede the record/update phase, for any tranistions from the immediately
@@ -232,9 +231,8 @@ bool RenderPassAccessContext::ValidateLayoutTransitions(const CommandBufferAcces
 
 bool RenderPassAccessContext::ValidateLoadOperation(const CommandBufferAccessContext& cb_context,
                                                     const AccessContext& access_context, const vvl::RenderPass& rp_state,
-                                                    const VkRect2D& render_area, uint32_t render_pass_instance_id, uint32_t subpass,
-                                                    uint32_t view_mask, const AttachmentViewGenVector& attachment_views,
-                                                    vvl::Func command) {
+                                                    uint32_t render_pass_instance_id, uint32_t subpass, uint32_t view_mask,
+                                                    const AttachmentViewGenVector& attachment_views, vvl::Func command) {
     bool skip = false;
 
     AttachmentAccess attachment_access;
@@ -568,6 +566,11 @@ void RenderPassAccessContext::RecordLayoutTransitions(const vvl::RenderPass& rp_
     }
 }
 
+static uint32_t GetSubpassDepthStencilAttachmentIndex(const vku::safe_VkPipelineDepthStencilStateCreateInfo* pipe_ds_ci,
+                                                      const vku::safe_VkAttachmentReference2* depth_stencil_ref) {
+    return (pipe_ds_ci && depth_stencil_ref) ? depth_stencil_ref->attachment : VK_ATTACHMENT_UNUSED;
+}
+
 bool RenderPassAccessContext::ValidateDrawSubpassAttachment(const CommandBufferAccessContext& cb_context, vvl::Func command) const {
     bool skip = false;
     const vvl::CommandBuffer& cmd_buffer = cb_context.GetCBState();
@@ -738,7 +741,7 @@ bool RenderPassAccessContext::ValidateNextSubpass(const CommandBufferAccessConte
     }
     const uint32_t next_subpass_view_mask = rp_state_->create_info.pSubpasses[next_subpass].viewMask;
     const auto& next_context = subpass_contexts_[next_subpass];
-    skip |= ValidateLayoutTransitions(cb_context, next_context, *rp_state_, render_area_, render_pass_instance_id_, next_subpass,
+    skip |= ValidateLayoutTransitions(cb_context, next_context, *rp_state_, render_pass_instance_id_, next_subpass,
                                       next_subpass_view_mask, attachment_views_, command);
     if (!skip) {
         // To avoid complex (and buggy) duplication of the affect of layout transitions on load operations, we'll record them
@@ -747,7 +750,7 @@ bool RenderPassAccessContext::ValidateNextSubpass(const CommandBufferAccessConte
         AccessContext temp_context(cb_context.GetSyncState());
         temp_context.InitFrom(next_context);
         RecordLayoutTransitions(*rp_state_, next_subpass, attachment_views_, kInvalidTag, temp_context);
-        skip |= ValidateLoadOperation(cb_context, temp_context, *rp_state_, render_area_, render_pass_instance_id_, next_subpass,
+        skip |= ValidateLoadOperation(cb_context, temp_context, *rp_state_, render_pass_instance_id_, next_subpass,
                                       next_subpass_view_mask, attachment_views_, command);
     }
     return skip;
@@ -776,24 +779,33 @@ bool RenderPassAccessContext::ValidateFinalSubpassLayoutTransitions(const Comman
     // to apply and only copy then, if this proves a hot spot.
     std::unique_ptr<AccessContext> proxy_for_current;
 
+    const AccessContext* context = nullptr;
+
     // Validate the "finalLayout" transitions to external
     // Get them from where there we're hidding in the extra entry.
     const auto& final_transitions = rp_state_->subpass_transitions.back();
     for (const auto& transition : final_transitions) {
+        SyncBarrier merged_barrier;
         const auto& view_gen = attachment_views_[transition.attachment];
-        const SubpassBarrier& subpass_barrier = subpass_contexts_[transition.src_subpass].GetDstExternalSubpassBarrier();
-        const AccessContext* context = subpass_barrier.src_subpass_context;
-
-        if (transition.src_subpass == current_subpass_) {
-            if (!proxy_for_current) {
-                // We haven't recorded resolve ofor the current_subpass, so we need to copy current and update it *as if*
-                proxy_for_current.reset(CreateStoreResolveProxy());
+        if (transition.src_subpass != VK_SUBPASS_EXTERNAL) {
+            const SubpassBarrier& subpass_barrier = subpass_contexts_[transition.src_subpass].GetDstExternalSubpassBarrier();
+            merged_barrier = SyncBarrier(subpass_barrier.barriers);
+            if (transition.src_subpass != current_subpass_) {
+                context = subpass_barrier.src_subpass_context;
+            } else {
+                if (!proxy_for_current) {
+                    // We haven't recorded resolve ofor the current_subpass, so we need to copy current and update it *as if*
+                    proxy_for_current.reset(CreateStoreResolveProxy());
+                }
+                context = proxy_for_current.get();
             }
-            context = proxy_for_current.get();
+        } else {
+            context = external_context_;
+            // NOTE: Unused attachments still transition from initialLayout to finalLayout, but no
+            // subpass uses them, so there is no external subpass dependency barrier to merge.
         }
 
         // Use the merged barrier for the hazard check (safe since it just considers the src (first) scope.
-        const SyncBarrier merged_barrier(subpass_barrier.barriers);
         auto hazard = context->DetectImageBarrierHazard(view_gen, merged_barrier, AccessContext::DetectOptions::kDetectPrevious);
         if (hazard.IsHazard()) {
             const SyncValidator& sync_state = cb_context.GetSyncState();
@@ -881,24 +893,24 @@ void RenderPassAccessContext::RecordLoadOperations(const ResourceUsageTag tag) {
 }
 
 AttachmentViewGenVector RenderPassAccessContext::CreateAttachmentViewGen(
-    const VkRect2D& render_area, const std::vector<const vvl::ImageView*>& attachment_views) {
+    const VkRect2D& render_area, const std::vector<std::shared_ptr<const vvl::ImageView>>& attachment_views) {
     AttachmentViewGenVector view_gens;
     VkExtent3D extent = CastTo3D(render_area.extent);
     VkOffset3D offset = CastTo3D(render_area.offset);
     view_gens.reserve(attachment_views.size());
-    for (const auto* view : attachment_views) {
-        view_gens.emplace_back(view, offset, extent);
+    for (const auto& view : attachment_views) {
+        view_gens.emplace_back(view.get(), offset, extent);
     }
     return view_gens;
 }
 
 RenderPassAccessContext::RenderPassAccessContext(const vvl::RenderPass& rp_state, const VkRect2D& render_area,
                                                  VkQueueFlags queue_flags,
-                                                 const std::vector<const vvl::ImageView*>& attachment_views,
+                                                 const std::vector<std::shared_ptr<const vvl::ImageView>>& attachment_views,
                                                  const AccessContext& external_context, uint32_t render_pass_instance_id)
     : rp_state_(&rp_state),
-      render_area_(render_area),
       attachment_views_(CreateAttachmentViewGen(render_area, attachment_views)),
+      external_context_(&external_context),
       subpass_contexts_(InitSubpassContexts(queue_flags, rp_state, external_context)),
       render_pass_instance_id_(render_pass_instance_id),
       current_subpass_(0) {}
@@ -956,9 +968,6 @@ void RenderPassAccessContext::RecordEndRenderPass(AccessContext* external_contex
     const auto& final_transitions = rp_state_->subpass_transitions.back();
     for (const auto& transition : final_transitions) {
         const AttachmentViewGen& view_gen = attachment_views_[transition.attachment];
-        const SubpassBarrier& dst_external_barrier = subpass_contexts_[transition.src_subpass].GetDstExternalSubpassBarrier();
-        assert(&subpass_contexts_[transition.src_subpass] == dst_external_barrier.src_subpass_context);
-
         ImageRangeGen range_gen = view_gen.GetRangeGen(AttachmentViewGen::Gen::kViewSubresource);
 
         ImageRangeGen markup_range_gen = range_gen;  // second copy, preserve range_gen to use later
@@ -966,10 +975,21 @@ void RenderPassAccessContext::RecordEndRenderPass(AccessContext* external_contex
         external_context->UpdateMemoryAccessState(markup_action, markup_range_gen);
 
         PendingBarriers pending_barriers;
-        for (const auto& barrier : dst_external_barrier.barriers) {
-            const BarrierScope barrier_scope(barrier);
-            CollectBarriersFunctor collect_barriers(*external_context, barrier_scope, barrier, true, vvl::kNoIndex32,
-                                                    pending_barriers);
+        if (transition.src_subpass != VK_SUBPASS_EXTERNAL) {
+            const SubpassBarrier& dst_external_barrier = subpass_contexts_[transition.src_subpass].GetDstExternalSubpassBarrier();
+            assert(&subpass_contexts_[transition.src_subpass] == dst_external_barrier.src_subpass_context);
+            for (const auto& barrier : dst_external_barrier.barriers) {
+                const BarrierScope barrier_scope(barrier);
+                CollectBarriersFunctor collect_barriers(*external_context, barrier_scope, barrier, true, vvl::kNoIndex32,
+                                                        pending_barriers);
+                external_context->UpdateMemoryAccessState(collect_barriers, range_gen);
+            }
+        } else {
+            // Unused attachments still transition from initialLayout to finalLayout, but no subpass
+            // uses them, so record the transition without applying a subpass dependency barrier.
+            const SyncBarrier empty_barrier;
+            CollectBarriersFunctor collect_barriers(*external_context, BarrierScope(empty_barrier), empty_barrier, true,
+                                                    vvl::kNoIndex32, pending_barriers);
             external_context->UpdateMemoryAccessState(collect_barriers, range_gen);
         }
         pending_barriers.Apply(transition_tag);

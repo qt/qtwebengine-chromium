@@ -120,7 +120,7 @@ export default createRule({
             messageId: 'genericMessage',
             data: {
               message: `Expected: (${expectedResultType} ${op} ${expectedResultType}) -> ${
-                  expectedResultType}, but got: (${leftType} ${op} ${rightType}) -> ${expectedResultType}`
+                  expectedResultType}, but got: (${leftType} ${op} ${rightType}) -> ${expectedResultType}`,
             },
           });
         }
@@ -247,7 +247,7 @@ export default createRule({
             messageId: 'genericMessage',
             data: {
               message: `Type mismatch: expected ${expectedResultType}, got ${inferredTimingTypes[0]} from Math.${
-                  fnName} function`
+                  fnName} function`,
             },
           });
         }
@@ -262,7 +262,7 @@ export default createRule({
           messageId: 'genericMessage',
           data: {
             message: `Type mismatch: the parameters of Math.${fnName} do not all match in type. Got: ${
-                inferredTimingTypes.join(', ')}`
+                inferredTimingTypes.join(', ')}`,
           },
         });
       }
@@ -324,7 +324,7 @@ export default createRule({
       },
       CallExpression(node) {
         validateMinMaxCall(node, null);
-      }
+      },
     };
   },
 });

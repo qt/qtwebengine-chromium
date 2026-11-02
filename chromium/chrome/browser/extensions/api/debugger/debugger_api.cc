@@ -26,7 +26,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/types/optional_util.h"
 #include "base/values.h"
-#include "chrome/browser/extensions/api/debugger/extension_dev_tools_infobar_delegate.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/lifetime/termination_notification.h"
@@ -54,9 +53,16 @@
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/permissions/permissions_data.h"
+#include "extensions/common/switches.h"
 #include "pdf/buildflags.h"
 #include "url/origin.h"
 #include "url/url_constants.h"
+
+#if BUILDFLAG(IS_ANDROID)
+#include "chrome/browser/extensions/api/debugger/extension_dev_tools_message_delegate.h"
+#else
+#include "chrome/browser/extensions/api/debugger/extension_dev_tools_infobar_delegate.h"
+#endif
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "chrome/browser/devtools/chrome_devtools_manager_delegate.h"
@@ -79,6 +85,12 @@ namespace OnDetach = extensions::api::debugger::OnDetach;
 namespace OnEvent = extensions::api::debugger::OnEvent;
 namespace SendCommand = extensions::api::debugger::SendCommand;
 
+#if BUILDFLAG(IS_ANDROID)
+namespace ui {
+class WindowAndroid;
+}
+#endif  // BUILDFLAG(IS_ANDROID)
+
 namespace extensions {
 class ExtensionRegistry;
 class ExtensionDevToolsClientHost;
@@ -97,6 +109,8 @@ constexpr char kProtocolVersionNotSupportedError[] =
 constexpr char kRestrictedError[] = "Cannot attach to this target.";
 constexpr char kDetachedWhileHandlingError[] =
     "Detached while handling command.";
+constexpr char kFileUrlsRequireFileAccess[] =
+    "Cannot navigate to a file URL without local file access.";
 
 constexpr char kTabTargetType[] = "tab";
 constexpr char kBackgroundPageTargetType[] = "background page";
@@ -133,6 +147,12 @@ bool IsPdfExtensionUrl(const GURL& url) {
   return url.GetScheme() == kExtensionScheme &&
          url.GetHost() == extension_misc::kPdfExtensionId;
 }
+
+// Returns whether `principal` is for the built-in PDF extension.
+bool IsPdfExtensionPrincipal(const content::SecurityPrincipal& principal) {
+  return principal.SchemeIs(kExtensionScheme) &&
+         principal.GetHost() == extension_misc::kPdfExtensionId;
+}
 #endif  // BUILDFLAG(ENABLE_PDF)
 
 bool ExtensionMayAttachToTargetProfile(Profile* extension_profile,
@@ -156,7 +176,7 @@ bool ExtensionMayAttachToURL(const Extension& extension,
                              const GURL& url,
                              std::string* error) {
   // Allow the extension to attach to about:blank and empty URLs.
-  if (url.is_empty() || url == "about:") {
+  if (url.is_empty() || url == "about:" || url.IsAboutBlank()) {
     return true;
   }
 
@@ -172,6 +192,22 @@ bool ExtensionMayAttachToURL(const Extension& extension,
   // See https://crbug.com/40285404.
   const GURL& url_for_restriction_check =
       url.SchemeIsBlob() ? url::Origin::Create(url).GetURL() : url;
+
+  bool allow_on_extension_urls =
+      ::extensions::switches::AreExtensionsOnExtensionURLsAllowed();
+  if (url_for_restriction_check.SchemeIs(extensions::kExtensionScheme) &&
+      url_for_restriction_check.host() != extension.id() &&
+      !allow_on_extension_urls) {
+    *error = manifest_errors::kCannotAccessExtensionUrl;
+    return false;
+  }
+
+  if (url_for_restriction_check.SchemeIsFile() &&
+      !util::AllowFileAccess(extension.id(), extension_profile)) {
+    *error = kFileUrlsRequireFileAccess;
+    return false;
+  }
+
   if (extension.permissions_data()->IsRestrictedUrl(url_for_restriction_check,
                                                     error)) {
     return false;
@@ -181,12 +217,6 @@ bool ExtensionMayAttachToURL(const Extension& extension,
   if (extension.permissions_data()->IsPolicyBlockedHost(url) ||
       extension.permissions_data()->IsPolicyBlockedHost(
           url_for_restriction_check)) {
-    *error = kRestrictedError;
-    return false;
-  }
-
-  if (url.SchemeIsFile() &&
-      !util::AllowFileAccess(extension.id(), extension_profile)) {
     *error = kRestrictedError;
     return false;
   }
@@ -233,7 +263,7 @@ bool ExtensionIsTrusted(const Extension& extension) {
   }
   return !Manifest::IsUnpackedLocation(extension.location()) ||
          base::CommandLine::ForCurrentProcess()->HasSwitch(
-             switches::kAllowUnpackedPerfettoExtension);
+             ::switches::kAllowUnpackedPerfettoExtension);
 }
 
 bool ExtensionMayAttachToRenderFrameHost(
@@ -266,15 +296,14 @@ bool ExtensionMayAttachToRenderFrameHost(
         if (chrome_pdf::features::IsOopifPdfEnabled() &&
             (IsPdfExtensionOrigin(
                  render_frame_host->GetLastCommittedOrigin()) ||
-             IsPdfExtensionUrl(render_frame_host->GetSiteInstance()
-                                   ->GetSecurityPrincipal()
-                                   .GetDeprecatedSiteURL()))) {
+             IsPdfExtensionPrincipal(render_frame_host->GetSiteInstance()
+                                         ->GetSecurityPrincipal()))) {
           return content::RenderFrameHost::FrameIterationAction::kContinue;
         }
 #endif  // BUILDFLAG(ENABLE_PDF)
 
         if (render_frame_host->GetWebUI()) {
-          *error = kRestrictedError;
+          *error = manifest_errors::kCannotAccessChromeUrl;
           result = false;
           return content::RenderFrameHost::FrameIterationAction::kStop;
         }
@@ -346,8 +375,48 @@ bool ExtensionMayAttachToAgentHost(const Extension& extension,
                                            error);
   }
 
-  return ExtensionMayAttachToURL(extension, extension_profile,
-                                 agent_host.GetURL(), error);
+  const GURL& url = agent_host.GetURL();
+  if (!ExtensionMayAttachToURL(extension, extension_profile, url, error)) {
+    return false;
+  }
+
+  // For worker targets, always check the parent's URL to prevent security
+  // bypass if the worker was spawned by a restricted page.
+  std::string type = agent_host.GetType();
+  if (type == DevToolsAgentHost::kTypeDedicatedWorker ||
+      type == DevToolsAgentHost::kTypeSharedWorker ||
+      type == DevToolsAgentHost::kTypeOther) {
+    std::string parent_id = agent_host.GetParentId();
+    if (parent_id.empty()) {
+      parent_id = agent_host.GetParentFrameId();
+    }
+
+    bool verified_parent = false;
+    if (!parent_id.empty()) {
+      scoped_refptr<DevToolsAgentHost> parent_host =
+          DevToolsAgentHost::GetForId(parent_id);
+      if (parent_host) {
+        verified_parent = true;
+        if (!ExtensionMayAttachToAgentHost(extension, allow_incognito_access,
+                                           extension_profile, *parent_host,
+                                           error)) {
+          return false;
+        }
+      }
+    }
+
+    if (!verified_parent && url.is_empty()) {
+      // If we couldn't verify the parent (either no ID or stale ID), and the
+      // URL is empty, we can't determine access. For known worker types, we
+      // block it.
+      if (type != DevToolsAgentHost::kTypeOther) {
+        *error = kRestrictedError;
+        return false;
+      }
+    }
+  }
+
+  return true;
 }
 
 }  // namespace
@@ -380,6 +449,15 @@ class ExtensionDevToolsClientHost : public content::DevToolsAgentHostClient,
   std::string GetTypeForMetrics() override { return "Extension"; }
 
   bool Attach();
+#if BUILDFLAG(IS_ANDROID)
+  // Creates the "Foo started debugging this browser" warning. Android uses
+  // the messages API for this.
+  void CreateWarningMessage();
+#else
+  // Creates the "Foo started debugging this browser" warning.
+  // Win/Mac/Linux/Chrome OS use the infobar API for this.
+  void CreateWarningInfobar();
+#endif
   const ExtensionId& extension_id() { return extension_->id(); }
   DevToolsAgentHost* agent_host() { return agent_host_.get(); }
   void RespondDetachedToPendingRequests();
@@ -390,7 +468,7 @@ class ExtensionDevToolsClientHost : public content::DevToolsAgentHostClient,
                             std::optional<std::string> session_id);
 
   // Closes connection as terminated by the user.
-  void InfoBarDestroyed();
+  void WarningUiDestroyed();
 
   // DevToolsAgentHostClient interface.
   void AgentHostClosed(DevToolsAgentHost* agent_host) override;
@@ -431,7 +509,13 @@ class ExtensionDevToolsClientHost : public content::DevToolsAgentHostClient,
   base::CallbackListSubscription on_app_terminating_subscription_;
   int last_request_id_ = 0;
   PendingRequests pending_requests_;
-  base::CallbackListSubscription subscription_;
+#if BUILDFLAG(IS_ANDROID)
+  // Android uses the messages API for warnings.
+  std::unique_ptr<ExtensionDevToolsMessageDelegate> warning_message_;
+#else
+  // Win/Mac/Linux/Chrome OS use the infobar API for warnings.
+  base::CallbackListSubscription warning_infobar_subscription_;
+#endif
   api::debugger::DetachReason detach_reason_ =
       api::debugger::DetachReason::kTargetClosed;
 
@@ -482,16 +566,17 @@ bool ExtensionDevToolsClientHost::Attach() {
 
   // We allow policy-installed extensions to circumvent the normal
   // infobar warning. See crbug.com/41302695.
-  const bool suppress_infobar =
+  const bool suppress_warning =
       base::CommandLine::ForCurrentProcess()->HasSwitch(
           ::switches::kSilentDebuggerExtensionAPI) ||
       Manifest::IsPolicyLocation(extension_->location());
 
-  if (!suppress_infobar) {
-    subscription_ = ExtensionDevToolsInfoBarDelegate::Create(
-        extension_id(), extension_->name(),
-        base::BindOnce(&ExtensionDevToolsClientHost::InfoBarDestroyed,
-                       base::Unretained(this)));
+  if (!suppress_warning) {
+#if BUILDFLAG(IS_ANDROID)
+    CreateWarningMessage();
+#else
+    CreateWarningInfobar();
+#endif
   }
 
   if (extension_service_worker_id_) {
@@ -508,6 +593,37 @@ bool ExtensionDevToolsClientHost::Attach() {
 
   return true;
 }
+
+#if BUILDFLAG(IS_ANDROID)
+// Android uses the messages API for the warning message.
+void ExtensionDevToolsClientHost::CreateWarningMessage() {
+  if (warning_message_) {
+    // Already open.
+    return;
+  }
+  WebContents* web_contents = agent_host_->GetWebContents();
+  if (!web_contents) {
+    return;
+  }
+  ui::WindowAndroid* window = web_contents->GetTopLevelNativeWindow();
+  if (!window) {
+    return;
+  }
+  warning_message_ = std::make_unique<ExtensionDevToolsMessageDelegate>(
+      extension_->name(),
+      base::BindOnce(&ExtensionDevToolsClientHost::WarningUiDestroyed,
+                     base::Unretained(this)));
+  warning_message_->Show(window);
+}
+#else
+// Win/Mac/Linux/Chrome OS use the infobar API for the warning message.
+void ExtensionDevToolsClientHost::CreateWarningInfobar() {
+  warning_infobar_subscription_ = ExtensionDevToolsInfoBarDelegate::Create(
+      extension_id(), extension_->name(),
+      base::BindOnce(&ExtensionDevToolsClientHost::WarningUiDestroyed,
+                     base::Unretained(this)));
+}
+#endif  // BUILDFLAG(IS_ANDROID)
 
 ExtensionDevToolsClientHost::~ExtensionDevToolsClientHost() {
   GetAttachedClientHosts().erase(this);
@@ -563,7 +679,7 @@ void ExtensionDevToolsClientHost::SendMessageToBackend(
   agent_host_->DispatchProtocolMessage(this, base::as_byte_span(json));
 }
 
-void ExtensionDevToolsClientHost::InfoBarDestroyed() {
+void ExtensionDevToolsClientHost::WarningUiDestroyed() {
   detach_reason_ = api::debugger::DetachReason::kCanceledByUser;
   RespondDetachedToPendingRequests();
   SendDetachedEvent();

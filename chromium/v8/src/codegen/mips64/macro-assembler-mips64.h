@@ -118,6 +118,7 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void InitializeRootRegister() {
     ExternalReference isolate_root = ExternalReference::isolate_root(isolate());
     li(kRootRegister, Operand(isolate_root));
+    dmtc1(zero_reg, kDoubleRegZero);
   }
 
   // Jump unconditionally to given label.
@@ -420,6 +421,7 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void MultiPush(RegList regs);
   void MultiPushFPU(DoubleRegList regs);
   void MultiPushMSA(DoubleRegList regs);
+  void MultiPushFPUWideStride(DoubleRegList regs);
 
   // Calculate how much stack space (in bytes) are required to store caller
   // registers excluding those specified in the arguments.
@@ -477,6 +479,7 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void MultiPop(RegList regs);
   void MultiPopFPU(DoubleRegList regs);
   void MultiPopMSA(DoubleRegList regs);
+  void MultiPopFPUWideStride(DoubleRegList regs);
 
 #define DEFINE_INSTRUCTION(instr)                          \
   void instr(Register rd, Register rs, const Operand& rt); \
@@ -763,8 +766,6 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void Float32MinOutOfLine(FPURegister dst, FPURegister src1, FPURegister src2);
   void Float64MaxOutOfLine(FPURegister dst, FPURegister src1, FPURegister src2);
   void Float64MinOutOfLine(FPURegister dst, FPURegister src1, FPURegister src2);
-
-  bool IsDoubleZeroRegSet() { return has_double_zero_reg_set_; }
 
   // TODO(ishell): rename to LoadAddress to make semantics cleaner.
   void LoadIsolateField(Register dst, IsolateFieldId id);
@@ -1275,7 +1276,6 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   inline int32_t GetOffset(int32_t offset, Label* L, OffsetSize bits);
 
  private:
-  bool has_double_zero_reg_set_ = false;
 
   // Helper functions for generating invokes.
   void InvokePrologue(Register expected_parameter_count,

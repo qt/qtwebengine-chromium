@@ -9,16 +9,16 @@
  *
  * @internal
  */
-export function normalizeHeaderValue(header) {
-    if (!header.includes('\n')) {
-        return header;
+export function normalizeHeaderValue(name, value) {
+    if (!value.includes('\n')) {
+        return value;
     }
-    return header
+    return value
         .split('\n')
         .map(v => {
         return v.trim();
     })
         .filter(Boolean)
-        .join(', ');
+        .join(name === 'set-cookie' ? '\n ' : ', ');
 }
 //# sourceMappingURL=httpUtils.js.map

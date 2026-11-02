@@ -16,11 +16,16 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <new>
 
 #include "src/frame_buffer_utils.h"
+#include "src/gav1/decoder_buffer.h"
+#include "src/gav1/frame_buffer.h"
+#include "src/gav1/status_code.h"
 #include "src/utils/common.h"
 #include "src/utils/compiler_attributes.h"
+#include "src/utils/constants.h"
 #include "src/utils/logging.h"
 
 namespace libgav1 {

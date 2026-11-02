@@ -153,19 +153,18 @@ struct TensorEvaluator<const TensorTraceOp<Dims, ArgType>, Device> {
       }
     }
 
-    if (NumReducedDims != 0) {
+    EIGEN_IF_CONSTEXPR (NumReducedDims != 0) {
       m_traceDim = m_reducedDims[0];
     }
 
     // Compute the output strides
-    if (NumOutputDims > 0) {
-      EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (NumOutputDims > 0) {
+      EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
         m_outputStrides[0] = 1;
         for (int i = 1; i < NumOutputDims; ++i) {
           m_outputStrides[i] = m_outputStrides[i - 1] * m_dimensions[i - 1];
         }
-      }
-      else {
+      } else {
         m_outputStrides.back() = 1;
         for (int i = NumOutputDims - 2; i >= 0; --i) {
           m_outputStrides[i] = m_outputStrides[i + 1] * m_dimensions[i + 1];
@@ -174,15 +173,14 @@ struct TensorEvaluator<const TensorTraceOp<Dims, ArgType>, Device> {
     }
 
     // Compute the input strides
-    if (NumInputDims > 0) {
+    EIGEN_IF_CONSTEXPR (NumInputDims > 0) {
       array<Index, NumInputDims> input_strides;
-      EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+      EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
         input_strides[0] = 1;
         for (int i = 1; i < NumInputDims; ++i) {
           input_strides[i] = input_strides[i - 1] * input_dims[i - 1];
         }
-      }
-      else {
+      } else {
         input_strides.back() = 1;
         for (int i = NumInputDims - 2; i >= 0; --i) {
           input_strides[i] = input_strides[i + 1] * input_dims[i + 1];
@@ -224,7 +222,9 @@ struct TensorEvaluator<const TensorTraceOp<Dims, ArgType>, Device> {
 
     // If trace is requested along all dimensions, starting index would be 0
     Index cur_index = 0;
-    if (NumOutputDims != 0) cur_index = firstInput(index);
+    EIGEN_IF_CONSTEXPR (NumOutputDims != 0) {
+      cur_index = firstInput(index);
+    }
     for (Index i = 0; i < m_traceDim; ++i) {
       result += m_impl.coeff(cur_index);
       cur_index += index_stride;
@@ -247,23 +247,30 @@ struct TensorEvaluator<const TensorTraceOp<Dims, ArgType>, Device> {
 
  protected:
   // Given the output index, finds the first index in the input tensor used to compute the trace
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index firstInput(Index index) const {
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index firstInput(Index index) const { return firstInputImpl(index); }
+
+  template <int ND = NumOutputDims>
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE std::enable_if_t<ND == 0, Index> firstInputImpl(Index /*index*/) const {
+    return 0;
+  }
+
+  template <int ND = NumOutputDims>
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE std::enable_if_t<(ND > 0), Index> firstInputImpl(Index index) const {
     Index startInput = 0;
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
-      for (int i = NumOutputDims - 1; i > 0; --i) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+      for (int i = ND - 1; i > 0; --i) {
         const Index idx = index / m_outputStrides[i];
         startInput += idx * m_preservedStrides[i];
         index -= idx * m_outputStrides[i];
       }
       startInput += index * m_preservedStrides[0];
-    }
-    else {
-      for (int i = 0; i < NumOutputDims - 1; ++i) {
+    } else {
+      for (int i = 0; i < ND - 1; ++i) {
         const Index idx = index / m_outputStrides[i];
         startInput += idx * m_preservedStrides[i];
         index -= idx * m_outputStrides[i];
       }
-      startInput += index * m_preservedStrides[NumOutputDims - 1];
+      startInput += index * m_preservedStrides[ND - 1];
     }
     return startInput;
   }

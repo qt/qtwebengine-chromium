@@ -6,14 +6,14 @@
  */
 #include "src/gpu/ganesh/ops/OpsTask.h"
 
+#include "include/core/SkPoint.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/ganesh/GrRecordingContext.h"
-#include "include/private/base/SkPoint_impl.h"
-#include "src/base/SkArenaAlloc.h"
-#include "src/base/SkScopeExit.h"
+#include "src/core/SkArenaAlloc.h"
 #include "src/core/SkRectPriv.h"
+#include "src/core/SkScopeExit.h"
 #include "src/core/SkStringUtils.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/ganesh/GrAppliedClip.h"
@@ -555,14 +555,14 @@ void OpsTask::onPrepare(GrOpFlushState* flushState) {
 // TODO: this is where GrOp::renderTarget is used (which is fine since it
 // is at flush time). However, we need to store the RenderTargetProxy in the
 // Ops and instantiate them here.
-bool OpsTask::onExecute(GrOpFlushState* flushState) {
+GrRenderTask::ExecutionResult OpsTask::onExecute(GrOpFlushState* flushState) {
     SkASSERT(this->numTargets() == 1);
     GrRenderTargetProxy* proxy = this->target(0)->asRenderTargetProxy();
     SkASSERT(proxy);
     SK_AT_SCOPE_EXIT(proxy->clearArenas());
 
     if (this->isColorNoOp() || fClippedContentBounds.isEmpty()) {
-        return false;
+        return ExecutionResult::RanAndSucceeded();
     }
     TRACE_EVENT0_ALWAYS("skia.gpu", TRACE_FUNC);
 
@@ -580,7 +580,7 @@ bool OpsTask::onExecute(GrOpFlushState* flushState) {
         if (!flushState->resourceProvider()->attachStencilAttachment(renderTarget,
                                                                      fUsesMSAASurface)) {
             SkDebugf("WARNING: failed to attach a stencil buffer. Rendering will be skipped.\n");
-            return false;
+            return ExecutionResult::RanButFailed();
         }
         stencil = renderTarget->getStencilAttachment(fUsesMSAASurface);
     }
@@ -589,6 +589,19 @@ bool OpsTask::onExecute(GrOpFlushState* flushState) {
     // Determine whether the stencil attachment's cleared area should be updated.
     bool updateClearedStencilArea = false;
     SkIRect boundsRequiredByStencil = fClippedContentBounds;
+    // fClearedArea on the shared stencil GrAttachment must be tracked in native space, not
+    // surface-origin space. The stencil attachment is shared across render targets by a UniqueKey
+    // that does not include GrSurfaceOrigin, so a kTopLeft RT and a kBottomLeft RT with equal
+    // logical bounds map to disjoint native regions after the possible Y-flip in backends.
+    // Without this conversion, hasAreaBeenCleared() can return true for a native region that was
+    // never LOAD_OP_CLEAR'd, exposing uninitialised gpu memory to the stencil-then-cover pass.
+    // GrNativeRect::MakeIRectRelativeTo is self-inverse for a fixed (origin,height) pair, so it
+    // also serves as native->surface below.
+    const int rtHeight = renderTarget->dimensions().height();
+    auto toNative = [&](SkIRect r) {
+        return GrNativeRect::MakeIRectRelativeTo(fTargetOrigin, rtHeight, r);
+    };
+    SkIRect nativeBoundsRequiredByStencil = toNative(boundsRequiredByStencil);
     switch (fInitialStencilContent) {
         case StencilContent::kDontCare:
             if (!stencil || caps.performStencilClearsAsDraws()) {
@@ -624,35 +637,41 @@ bool OpsTask::onExecute(GrOpFlushState* flushState) {
                 stencilLoadOp = GrLoadOp::kClear;
                 break;
             }
-
+            [[fallthrough]];
+        case StencilContent::kPreserved:
+            SkASSERT(stencil);
             // If the area of the stencil attachment corresponding to this renderpass's
             // boundsRequiredByStencil has not already been cleared, calculate new, expanded
             // renderpass bounds by joining boundsRequiredByStencil with the cleared stencil area.
             // Using this joint area simplifies tracking of cleared areas on the stencil attachment.
-            if (!stencil->hasAreaBeenCleared(boundsRequiredByStencil)) {
+            //
+            // This also applies to kPreserved: this task's content bounds may extend beyond the
+            // region cleared by the predecessor task on this surface, so we must clear rather than
+            // load in that case. Re-clearing the previously-cleared portion is a no-op because
+            // SurfaceDrawContexts leave the user stencil bits in a cleared state between ops. When
+            // performStencilClearsAsDraws() is true, an explicit full-surface clear draw was
+            // recorded into the predecessor task instead, so kLoad is correct.
+            if (!caps.performStencilClearsAsDraws() &&
+                !stencil->hasAreaBeenCleared(nativeBoundsRequiredByStencil)) {
                 stencilLoadOp = GrLoadOp::kClear;
                 if (!stencil->clearedArea().isEmpty()) {
-                    boundsRequiredByStencil.join(stencil->clearedArea());
+                    // Join in native space (fClearedArea is native-space).
+                    nativeBoundsRequiredByStencil.join(stencil->clearedArea());
                     // We need to also intersect the bounds with the color attachment's bounds since
                     // the stencil may be bigger. This could mean that we end up "forgetting" we
                     // cleared the user bits in the portion of the stencil that doesn't overlap with
                     // the color attachment - but that shouldn't have a large performance impact if
                     // we later on need to reclear that area.
-                    boundsRequiredByStencil.intersect(
+                    nativeBoundsRequiredByStencil.intersect(
                         SkIRect::MakeSize(renderTarget->dimensions()));
+                    // Convert back to surface-origin space for create_render_pass()
+                    // (self-inverse transform).
+                    boundsRequiredByStencil = toNative(nativeBoundsRequiredByStencil);
                 }
                 // We should update the stencil's cleared area if renderpass creation succeeds.
                 updateClearedStencilArea = true;
                 break;
             }
-
-            // SurfaceDrawContexts are required to leave the user stencil bits in a cleared state
-            // once finished, meaning the stencil values will always remain cleared after the
-            // initial clear. Just fall through to reloading the existing (cleared) stencil values
-            // from memory.
-            [[fallthrough]];
-        case StencilContent::kPreserved:
-            SkASSERT(stencil);
             stencilLoadOp = GrLoadOp::kLoad;
             break;
         default:
@@ -666,6 +685,7 @@ bool OpsTask::onExecute(GrOpFlushState* flushState) {
     // their store op might be "discard", and we currently make the assumption that a discard will
     // not invalidate what's already in main memory. This is probably ok for now, but certainly
     // something we want to address soon.
+    // b/160958008 forces discardStencilValuesAfterRenderPass to always return false.
     GrStoreOp stencilStoreOp = (caps.discardStencilValuesAfterRenderPass() && !fMustPreserveStencil)
             ? GrStoreOp::kDiscard
             : GrStoreOp::kStore;
@@ -684,11 +704,29 @@ bool OpsTask::onExecute(GrOpFlushState* flushState) {
                                                      fRenderPassXferBarriers);
 
     if (!renderPass) {
-        return false;
+        return ExecutionResult::RanButFailed();
     }
     if (updateClearedStencilArea) {
-        stencil->markAreaCleared(boundsRequiredByStencil);
+        stencil->markAreaCleared(nativeBoundsRequiredByStencil);
     }
+
+#if defined(SK_DEBUG)
+    if (stencilLoadOp == GrLoadOp::kDiscard) {
+        // The only time we should have a stencil discard load-op is when either:
+        //    there is no stencil buffer
+        //    or stencil clears are being performed by draws
+        SkASSERT(!stencil || caps.performStencilClearsAsDraws());
+    }
+    if (stencilLoadOp == GrLoadOp::kLoad) {
+        // We should only load stencil values from a region that has already been cleared. When
+        // performStencilClearsAsDraws() is true, an explicit full-surface clear op was recorded
+        // into the predecessor task instead, and cleared-area tracking is not maintained.
+        SkASSERT(stencil);
+        SkASSERT(caps.performStencilClearsAsDraws() ||
+                 stencil->hasAreaBeenCleared(nativeBoundsRequiredByStencil));
+    }
+#endif
+
     flushState->setOpsRenderPass(renderPass);
     renderPass->begin();
 
@@ -717,7 +755,7 @@ bool OpsTask::onExecute(GrOpFlushState* flushState) {
     flushState->gpu()->submit(renderPass);
     flushState->setOpsRenderPass(nullptr);
 
-    return true;
+    return ExecutionResult::RanAndSucceeded();
 }
 
 void OpsTask::setColorLoadOp(GrLoadOp op, std::array<float, 4> color) {
@@ -778,10 +816,10 @@ int OpsTask::mergeFrom(SkSpan<const sk_sp<GrRenderTask>> tasks) {
         fTotalBounds.join(toMerge->fTotalBounds);
         fRenderPassXferBarriers |= toMerge->fRenderPassXferBarriers;
         if (fInitialStencilContent == StencilContent::kDontCare) {
-            // Propogate the first stencil content that isn't kDontCare.
+            // Propagate the first stencil content that isn't kDontCare.
             //
             // Once the stencil has any kind of initial content that isn't kDontCare, then the
-            // inital contents of subsequent opsTasks that get merged in don't matter.
+            // initial contents of subsequent opsTasks that get merged in don't matter.
             //
             // (This works because the opsTask all target the same render target and are in
             // painter's order. kPreserved obviously happens automatically with a merge, and kClear

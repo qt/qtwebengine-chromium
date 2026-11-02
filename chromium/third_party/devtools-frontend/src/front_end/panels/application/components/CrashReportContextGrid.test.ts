@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Host from '../../../core/host/host.js';
 import {describeWithEnvironment} from '../../../testing/EnvironmentHelpers.js';
@@ -26,7 +27,7 @@ describeWithEnvironment('CrashReportContextGrid', () => {
       entries: [
         {key: 'key1', value: 'value1'},
         {key: 'key2', value: 'value2'},
-      ]
+      ],
     };
 
     const input = await inputPromise;

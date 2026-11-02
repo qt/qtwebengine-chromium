@@ -17,7 +17,7 @@
 
 #include "state_tracker/event_state.h"
 
-bool EventSignalingState::HasKnownEffect(const EventSignalingState* prior_state) const {
+bool EventSignalState::HasKnownEffect(const EventSignalState* prior_state) const {
     // After a reset, later signal/reset commands define the event state
     if (was_reset) {
         return true;
@@ -28,9 +28,39 @@ bool EventSignalingState::HasKnownEffect(const EventSignalingState* prior_state)
     return is_prior_unsignaled;
 }
 
-void UpdateEventSignalingStates(EventSignalingStateMap& accumulated_states, const EventSignalingStateMap& recorded_states) {
+const EventSignalState* ResolveSecondarySignal(const EventSignalState* prior_state, const EventSignalState* secondary_state) {
+    if (secondary_state && secondary_state->HasKnownEffect(prior_state)) {
+        return secondary_state;
+    }
+    if (prior_state && prior_state->HasKnownEffect()) {
+        return prior_state;
+    }
+    return nullptr;
+}
+
+EventSignalState ResolveEventSignal(const vvl::Event& event_state, const EventSignalState* local_signal_state,
+                                    const EventSignalState* cb_signal_state) {
+    EventSignalState state;
+    state.signaled = event_state.signaled;
+    state.was_reset = true;  // the global event state is known (so HasKnownEffect works as expected)
+    state.signal_src_stage_mask = event_state.signal_src_stage_mask;
+    state.signal_dependency_info = event_state.signal_dependency_info;
+    state.last_signaling_command = event_state.last_signaling_command;
+
+    const EventSignalState* prior_state = &state;
+    if (local_signal_state && local_signal_state->HasKnownEffect(prior_state)) {
+        state = *local_signal_state;
+    }
+    prior_state = local_signal_state ? local_signal_state : prior_state;
+    if (cb_signal_state && cb_signal_state->HasKnownEffect(prior_state)) {
+        state = *cb_signal_state;
+    }
+    return state;
+}
+
+void UpdateEventSignalStates(EventSignalStateMap& accumulated_states, const EventSignalStateMap& recorded_states) {
     for (const auto& [event, recorded_state] : recorded_states) {
-        EventSignalingState& accumulated_state = accumulated_states[event];
+        EventSignalState& accumulated_state = accumulated_states[event];
 
         const bool keep_accumulated_state = accumulated_state.signaled && !recorded_state.was_reset;
         if (keep_accumulated_state) {

@@ -4,7 +4,7 @@
 /* eslint-disable @devtools/no-imperative-dom-api */
 
 import type * as Common from '../../../../core/common/common.js';
-import * as TextUtils from '../../../../models/text_utils/text_utils.js';
+import * as TextUtils from '../../../../core/text_utils/text_utils.js';
 import * as LinearMemoryInspectorComponents from '../../../../panels/linear_memory_inspector/components/components.js';
 import * as UI from '../../legacy.js';
 

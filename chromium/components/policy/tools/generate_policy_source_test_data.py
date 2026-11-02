@@ -893,40 +893,41 @@ EXPECTED_POLICY_CONSTANTS_SOURCE = '''\
 namespace policy {
 
 [[maybe_unused]] const PolicyDetails kChromePolicyDetails[] = {
-// is_deprecated is_future scope source_restriction id max_external_data_size,
+// is_deprecated, is_future, supports_dynamic_refresh, scope source_restriction id,
+// max_external_data_size,
 // risk tags, uses_local_state_and_profile_prefs
   // ExampleStringPolicy
-  { false,        false,    kBrowser,        kSourceRestrictionNone,          1,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,          1,                     0, {  }, false },
   // ExampleBoolPolicy
-  { false,        false,    kBrowser,        kSourceRestrictionNone,          2,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,          2,                     0, {  }, false },
   // ExampleBoolMergeMetapolicy
-  { false,        false,    kBrowser,        kSourceRestrictionNone,          3,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,          3,                     0, {  }, false },
   // ExampleBoolPrecedenceMetapolicy
-  { false,        false,    kBrowser,        kSourceRestrictionNone,          4,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,          4,                     0, {  }, false },
   // CloudOnlyPolicy
-  { false,        false,    kBrowser,        kSourceRestrictionCloudOnly,     5,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionCloudOnly,     5,                     0, {  }, false },
   // CloudManagementEnrollmentToken
-  { false,        false,    kBrowser,        kSourceRestrictionNone,          6,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,          6,                     0, {  }, false },
   // ExampleConflictingPolicy
-  { false,        false,    kBrowser,        kSourceRestrictionNone,         10,                     0, {  }, true },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,         10,                     0, {  }, true },
   // ChunkZeroLastFieldBooleanPolicy
-  { false,        false,    kBrowser,        kSourceRestrictionNone,       1040,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,       1040,                     0, {  }, false },
   // ChunkOneFirstFieldBooleanPolicy
-  { false,        false,    kBrowser,        kSourceRestrictionNone,       1041,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,       1041,                     0, {  }, false },
   // ChunkOneLastFieldBooleanPolicy
-  { false,        false,    kBrowser,        kSourceRestrictionNone,       1840,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,       1840,                     0, {  }, false },
   // ChunkTwoFirstFieldStringPolicy
-  { false,        false,    kBrowser,        kSourceRestrictionNone,       1841,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,       1841,                     0, {  }, false },
   // ChunkTwoLastFieldStringPolicy
-  { false,        false,    kBrowser,        kSourceRestrictionNone,       2640,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,       2640,                     0, {  }, false },
   // SensitivePolicyForMultiplePlatforms
-  { false,        false,    kBrowser,        kSourceRestrictionNone,       2643,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,       2643,                     0, {  }, false },
   // SensitivePolicyForChromeOSOnly
-  { false,        false,    kBrowser,        kSourceRestrictionNone,       2644,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,       2644,                     0, {  }, false },
   // SensitivePolicyForChromeOSFuture
-  { false,        true,     kBrowser,        kSourceRestrictionNone,       2646,                     0, {  }, false },
+  { false,        true,     true,            kBrowser,        kSourceRestrictionNone,       2646,                     0, {  }, false },
   // SensitivePolicyForChromeOSDeprecated
-  { true,         false,    kBrowser,        kSourceRestrictionNone,       2647,                     0, {  }, false },
+  { true,         false,    true,            kBrowser,        kSourceRestrictionNone,       2647,                     0, {  }, false },
 };
 
 const char* const kSensitivePolicies[] = {
@@ -968,8 +969,27 @@ const internal::PropertyNode kPropertyNodes[] = {
 };
 
 const internal::PropertiesNode kProperties[] = {
-//  Begin    End  PatternEnd  RequiredBegin  RequiredEnd  Additional Properties
-  {     0,    16,    16,     0,          0,    -1 },  // root node
+//  Begin    End  PatternEnd  RequiredBegin  RequiredEnd  Additional CaseInsensitiveLookupBegin CaseInsensitiveLookupEnd
+  {     0,    16,    16,     0,          0,    -1,     0,    16 },  // root node
+};
+
+const int16_t kCaseInsensitiveLookup[] = {
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
 };
 
 const internal::SchemaData* GetChromeSchemaData() {
@@ -981,6 +1001,7 @@ const internal::SchemaData* GetChromeSchemaData() {
   nullptr,
   nullptr,
   nullptr,
+    kCaseInsensitiveLookup,
     -1,  // validation_schema root index
   };
 
@@ -1295,40 +1316,41 @@ namespace policy::test {
 namespace internal = ::policy::internal;
 
 [[maybe_unused]] const PolicyDetails kChromePolicyDetails[] = {
-// is_deprecated is_future scope source_restriction id max_external_data_size,
+// is_deprecated, is_future, supports_dynamic_refresh, scope source_restriction id,
+// max_external_data_size,
 // risk tags, uses_local_state_and_profile_prefs
   // ExampleStringPolicy
-  { false,        false,    kBrowser,        kSourceRestrictionNone,          1,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,          1,                     0, {  }, false },
   // ExampleBoolPolicy
-  { false,        false,    kBrowser,        kSourceRestrictionNone,          2,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,          2,                     0, {  }, false },
   // ExampleBoolMergeMetapolicy
-  { false,        false,    kBrowser,        kSourceRestrictionNone,          3,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,          3,                     0, {  }, false },
   // ExampleBoolPrecedenceMetapolicy
-  { false,        false,    kBrowser,        kSourceRestrictionNone,          4,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,          4,                     0, {  }, false },
   // CloudOnlyPolicy
-  { false,        false,    kBrowser,        kSourceRestrictionCloudOnly,     5,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionCloudOnly,     5,                     0, {  }, false },
   // CloudManagementEnrollmentToken
-  { false,        false,    kBrowser,        kSourceRestrictionNone,          6,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,          6,                     0, {  }, false },
   // ExampleConflictingPolicy
-  { false,        false,    kBrowser,        kSourceRestrictionNone,         10,                     0, {  }, true },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,         10,                     0, {  }, true },
   // ChunkZeroLastFieldBooleanPolicy
-  { false,        false,    kBrowser,        kSourceRestrictionNone,       1040,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,       1040,                     0, {  }, false },
   // ChunkOneFirstFieldBooleanPolicy
-  { false,        false,    kBrowser,        kSourceRestrictionNone,       1041,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,       1041,                     0, {  }, false },
   // ChunkOneLastFieldBooleanPolicy
-  { false,        false,    kBrowser,        kSourceRestrictionNone,       1840,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,       1840,                     0, {  }, false },
   // ChunkTwoFirstFieldStringPolicy
-  { false,        false,    kBrowser,        kSourceRestrictionNone,       1841,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,       1841,                     0, {  }, false },
   // ChunkTwoLastFieldStringPolicy
-  { false,        false,    kBrowser,        kSourceRestrictionNone,       2640,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,       2640,                     0, {  }, false },
   // SensitivePolicyForMultiplePlatforms
-  { false,        false,    kBrowser,        kSourceRestrictionNone,       2643,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,       2643,                     0, {  }, false },
   // SensitivePolicyForChromeOSOnly
-  { false,        false,    kBrowser,        kSourceRestrictionNone,       2644,                     0, {  }, false },
+  { false,        false,    true,            kBrowser,        kSourceRestrictionNone,       2644,                     0, {  }, false },
   // SensitivePolicyForChromeOSFuture
-  { false,        true,     kBrowser,        kSourceRestrictionNone,       2646,                     0, {  }, false },
+  { false,        true,     true,            kBrowser,        kSourceRestrictionNone,       2646,                     0, {  }, false },
   // SensitivePolicyForChromeOSDeprecated
-  { true,         false,    kBrowser,        kSourceRestrictionNone,       2647,                     0, {  }, false },
+  { true,         false,    true,            kBrowser,        kSourceRestrictionNone,       2647,                     0, {  }, false },
 };
 
 const char* const kSensitivePolicies[] = {
@@ -1370,8 +1392,27 @@ const internal::PropertyNode kPropertyNodes[] = {
 };
 
 const internal::PropertiesNode kProperties[] = {
-//  Begin    End  PatternEnd  RequiredBegin  RequiredEnd  Additional Properties
-  {     0,    16,    16,     0,          0,    -1 },  // root node
+//  Begin    End  PatternEnd  RequiredBegin  RequiredEnd  Additional CaseInsensitiveLookupBegin CaseInsensitiveLookupEnd
+  {     0,    16,    16,     0,          0,    -1,     0,    16 },  // root node
+};
+
+const int16_t kCaseInsensitiveLookup[] = {
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
 };
 
 const internal::SchemaData* GetChromeSchemaData() {
@@ -1383,6 +1424,7 @@ const internal::SchemaData* GetChromeSchemaData() {
   nullptr,
   nullptr,
   nullptr,
+    kCaseInsensitiveLookup,
     -1,  // validation_schema root index
   };
 

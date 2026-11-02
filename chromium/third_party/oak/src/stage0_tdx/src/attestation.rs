@@ -18,10 +18,15 @@ use alloc::vec::Vec;
 
 use oak_attestation_types::{
     attester::Attester,
-    util::{encode_length_delimited_proto, Serializable},
+    transparent_attester::TransparentAttester,
+    util::{Serializable, encode_length_delimited_proto},
 };
-use oak_proto_rust::oak::attestation::v1::{DiceData, EventLog, Evidence};
-use oak_tdx_guest::tdcall::{extend_rtmr, ExtensionBuffer, RtmrIndex};
+use oak_proto_rust::oak::attestation::v1::{
+    DiceData, EventLog, Evidence, RootLayerEvidence, TeePlatform,
+};
+use oak_tdx_guest::tdcall::{
+    ExtensionBuffer, ExtraDataBuffer, RtmrIndex, TdReportBuffer, extend_rtmr, get_report,
+};
 use sha2::{Digest, Sha384};
 
 pub struct RtmrAttester {
@@ -31,8 +36,12 @@ pub struct RtmrAttester {
 impl Default for RtmrAttester {
     fn default() -> Self {
         let event_log = Some(EventLog::default());
+        let root_layer = Some(RootLayerEvidence {
+            platform: TeePlatform::IntelTdx as i32,
+            ..Default::default()
+        });
 
-        let evidence = Evidence { event_log, ..Default::default() };
+        let evidence = Evidence { event_log, root_layer, ..Default::default() };
 
         Self { evidence }
     }
@@ -47,13 +56,32 @@ impl Attester for RtmrAttester {
             .push(encoded_event.to_vec());
 
         let digest = Sha384::digest(encoded_event);
+        log::debug!("Event digest: sha2-384:{}", hex::encode(digest.as_slice()));
         // We always extend RTMR2 for all event log entries.
-        extend_rtmr(RtmrIndex::Rtmr2, ExtensionBuffer { data: digest.into() })
-            .map_err(anyhow::Error::msg)
+        extend_rtmr(RtmrIndex::Rtmr2, &ExtensionBuffer { data: digest.into() })
+            .map_err(anyhow::Error::msg)?;
+
+        let mut report_buffer = TdReportBuffer::new();
+        let extra_data = ExtraDataBuffer { data: [0u8; 64] };
+        get_report(&extra_data, &mut report_buffer).map_err(anyhow::Error::msg)?;
+        log::debug!("RTMR 2: {}", hex::encode(report_buffer.get_rtmr(RtmrIndex::Rtmr2)));
+        Ok(())
     }
 
     fn quote(&self) -> anyhow::Result<Evidence> {
         anyhow::bail!("Not implemented");
+    }
+}
+
+impl TransparentAttester for RtmrAttester {
+    // TODO: b/452735395 - Update the extend method to populate the transparency
+    // log.
+    fn extend_transparent(
+        &mut self,
+        original_encoded_event: &[u8],
+        _transparent_encoded_event: &[u8],
+    ) -> anyhow::Result<()> {
+        Attester::extend(self, original_encoded_event)
     }
 }
 

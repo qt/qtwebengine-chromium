@@ -10,6 +10,7 @@ ts_e2e_library("console") {
     "command-line-api.test.ts",
     "console-accessors.test.ts",
     "console-autocomplete.test.ts",
+    "console-bind-fake.test.ts",
     "console-clear.test.ts",
     "console-context-menu.test.ts",
     "console-context-selector.test.ts",

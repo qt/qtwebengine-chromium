@@ -31,19 +31,21 @@
 
 #include <memory>
 #include <utility>
+#include <vector>
 
-#include "src/dawn/common/Assert.h"
 #include "src/dawn/native/CreatePipelineAsyncEvent.h"
 #include "src/dawn/native/Instance.h"
 #include "src/dawn/native/d3d/BlobD3D.h"
 #include "src/dawn/native/d3d/D3DError.h"
 #include "src/dawn/native/d3d12/DeviceD3D12.h"
+#include "src/dawn/native/d3d12/ImmediatesLayoutD3D12.h"
 #include "src/dawn/native/d3d12/PipelineLayoutD3D12.h"
 #include "src/dawn/native/d3d12/PlatformFunctionsD3D12.h"
 #include "src/dawn/native/d3d12/ShaderModuleD3D12.h"
 #include "src/dawn/native/d3d12/TextureD3D12.h"
 #include "src/dawn/native/d3d12/UtilsD3D12.h"
 #include "src/dawn/platform/metrics/HistogramMacros.h"
+#include "src/utils/assert.h"
 #include "src/utils/compiler.h"
 
 namespace dawn::native::d3d12 {
@@ -316,6 +318,16 @@ Ref<RenderPipeline> RenderPipeline::CreateUninitialized(
 }
 
 MaybeError RenderPipeline::InitializeImpl() {
+    if (UsesVertexIndex() || UsesInstanceIndex()) {
+        // firstVertex and firstInstance are allocated together.
+        mImmediateMask |= GetImmediateBlockBits(offsetof(RenderImmediates, firstIndexOffset),
+                                                sizeof(FirstIndexOffset));
+    }
+
+    // Create PipelineLayoutHandle after setup internal immediates.
+    DAWN_TRY_ASSIGN(mPipelineLayoutHandle,
+                    ToBackend(GetLayout())->GetOrCreatePipelineLayoutHandle(GetImmediateMask()));
+
     Device* device = ToBackend(GetDevice());
     uint32_t compileFlags = 0;
 
@@ -349,7 +361,6 @@ MaybeError RenderPipeline::InitializeImpl() {
     shaders[SingleShaderStage::Fragment] = &descriptorD3D12.PS;
 
     PerStage<d3d::CompiledShader> compiledShader;
-
     std::optional<dawn::native::d3d::InterStageShaderVariablesMask> usedInterstageVariables;
     dawn::native::EntryPointMetadata fragmentEntryPoint;
     if (GetStageMask() & wgpu::ShaderStage::Fragment) {
@@ -367,27 +378,26 @@ MaybeError RenderPipeline::InitializeImpl() {
                 !device->IsToggleEnabled(Toggle::D3DDisableIEEEStrictness))) {
             additionalCompileFlags |= D3DCOMPILE_IEEE_STRICTNESS;
         }
-
-        // This must be accurate in determining when Sample Shading is active.
-        // It cannot be conservatively correct because the polyfill changes behavior.
-        bool applySampleMaskPolyfill = (stage == SingleShaderStage::Fragment) &&
-                                       UsesSampleMaskInput() && UseSampleRateShading();
-
-        DAWN_TRY_ASSIGN(compiledShader[stage],
-                        ToBackend(programmableStage.module)
-                            ->Compile(programmableStage, stage, ToBackend(GetLayout()),
-                                      compileFlags | additionalCompileFlags,
-                                      applySampleMaskPolyfill, usedInterstageVariables));
+        std::vector<uint32_t> snorm10_10_10_2_locations;
+        if (stage == SingleShaderStage::Vertex) {
+            for (VertexAttributeLocation location : GetAttributeLocationsUsed()) {
+                if (GetAttribute(location).format == wgpu::VertexFormat::Snorm10_10_10_2) {
+                    snorm10_10_10_2_locations.push_back(
+                        static_cast<uint32_t>(static_cast<uint8_t>(location)));
+                }
+            }
+        }
+        DAWN_TRY_ASSIGN(
+            compiledShader[stage],
+            ToBackend(programmableStage.module)
+                ->Compile(programmableStage, stage, ToBackend(GetLayout()),
+                          compileFlags | additionalCompileFlags, GetImmediateMask(),
+                          usedInterstageVariables, std::move(snorm10_10_10_2_locations)));
         *shaders[stage] = {compiledShader[stage].shaderBlob.DataPtr(),
                            compiledShader[stage].shaderBlob.Size()};
     }
 
-    mUsesVertexOrInstanceIndex = compiledShader[SingleShaderStage::Vertex].usesVertexIndex ||
-                                 compiledShader[SingleShaderStage::Vertex].usesInstanceIndex;
-
-    PipelineLayout* layout = ToBackend(GetLayout());
-
-    descriptorD3D12.pRootSignature = layout->GetRootSignature();
+    descriptorD3D12.pRootSignature = mPipelineLayoutHandle->GetRootSignature();
 
     // D3D12 logs warnings if any empty input state is used
     std::array<D3D12_INPUT_ELEMENT_DESC, kMaxVertexAttributes> inputElementDescriptors;
@@ -417,19 +427,21 @@ MaybeError RenderPipeline::InitializeImpl() {
 
     static_assert(kMaxColorAttachments == 8);
     auto highestColorAttachmentIndexPlusOne = GetHighestBitIndexPlusOne(GetColorAttachmentsMask());
+
+    Span<DXGI_FORMAT> descRTVFormats{descriptorD3D12.RTVFormats};
+    Span<D3D12_RENDER_TARGET_BLEND_DESC> descBlendTargets{descriptorD3D12.BlendState.RenderTarget};
     for (uint8_t i = 0; i < kMaxColorAttachments; i++) {
         if (i < static_cast<uint8_t>(highestColorAttachmentIndexPlusOne)) {
-            DAWN_UNSAFE_TODO(descriptorD3D12.RTVFormats[i]) =
-                GetNullRTVDXGIFormatForD3D12RenderPass();
+            descRTVFormats[i] = GetNullRTVDXGIFormatForD3D12RenderPass();
         } else {
-            DAWN_UNSAFE_TODO(descriptorD3D12.RTVFormats[i]) = DXGI_FORMAT_UNKNOWN;
+            descRTVFormats[i] = DXGI_FORMAT_UNKNOWN;
         }
-        DAWN_UNSAFE_TODO(descriptorD3D12.BlendState.RenderTarget[i]).LogicOp = D3D12_LOGIC_OP_NOOP;
+        descBlendTargets[i].LogicOp = D3D12_LOGIC_OP_NOOP;
     }
     for (auto i : GetColorAttachmentsMask()) {
-        DAWN_UNSAFE_TODO(descriptorD3D12.RTVFormats[static_cast<uint8_t>(i)]) =
+        descRTVFormats[static_cast<uint8_t>(i)] =
             d3d::DXGITextureFormat(device, GetColorAttachmentFormat(i));
-        DAWN_UNSAFE_TODO(descriptorD3D12.BlendState.RenderTarget[static_cast<uint8_t>(i)]) =
+        descBlendTargets[static_cast<uint8_t>(i)] =
             ComputeColorDesc(device, GetColorTargetState(i));
     }
     DAWN_ASSERT(highestColorAttachmentIndexPlusOne <= kMaxColorAttachmentsTyped);
@@ -447,7 +459,7 @@ MaybeError RenderPipeline::InitializeImpl() {
 
     mD3d12PrimitiveTopology = D3D12PrimitiveTopology(GetPrimitiveTopology());
 
-    StreamIn(&mCacheKey, descriptorD3D12, *layout->GetRootSignatureBlob());
+    StreamIn(&mCacheKey, descriptorD3D12, *mPipelineLayoutHandle->GetRootSignatureBlob());
 
     // Try to see if we have anything in the blob cache.
     Blob blob = device->LoadCachedBlob(GetCacheKey());
@@ -498,6 +510,7 @@ RenderPipeline::~RenderPipeline() = default;
 void RenderPipeline::DestroyImpl(DestroyReason reason) {
     RenderPipelineBase::DestroyImpl(reason);
     ToBackend(GetDevice())->ReferenceUntilUnused(mPipelineState);
+    mPipelineLayoutHandle = nullptr;
 }
 
 D3D12_PRIMITIVE_TOPOLOGY RenderPipeline::GetD3D12PrimitiveTopology() const {
@@ -508,8 +521,8 @@ ID3D12PipelineState* RenderPipeline::GetPipelineState() const {
     return mPipelineState.Get();
 }
 
-bool RenderPipeline::UsesVertexOrInstanceIndex() const {
-    return mUsesVertexOrInstanceIndex;
+PipelineLayoutHandle* RenderPipeline::GetPipelineLayoutHandle() const {
+    return mPipelineLayoutHandle.Get();
 }
 
 void RenderPipeline::SetLabelImpl() {
@@ -517,16 +530,16 @@ void RenderPipeline::SetLabelImpl() {
 }
 
 ComPtr<ID3D12CommandSignature> RenderPipeline::GetDrawIndirectCommandSignature() {
-    if (mUsesVertexOrInstanceIndex) {
-        return ToBackend(GetLayout())->GetDrawIndirectCommandSignatureWithInstanceVertexOffsets();
+    if (UsesVertexIndex() || UsesInstanceIndex()) {
+        return mPipelineLayoutHandle->GetDrawIndirectCommandSignatureWithInstanceVertexOffsets();
     }
 
     return ToBackend(GetDevice())->GetDrawIndirectSignature();
 }
 
 ComPtr<ID3D12CommandSignature> RenderPipeline::GetDrawIndexedIndirectCommandSignature() {
-    if (mUsesVertexOrInstanceIndex) {
-        return ToBackend(GetLayout())
+    if (UsesVertexIndex() || UsesInstanceIndex()) {
+        return mPipelineLayoutHandle
             ->GetDrawIndexedIndirectCommandSignatureWithInstanceVertexOffsets();
     }
 

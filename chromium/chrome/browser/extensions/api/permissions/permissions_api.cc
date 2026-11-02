@@ -27,7 +27,6 @@
 #include "extensions/browser/permissions_manager.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
-#include "extensions/common/extension_features.h"
 #include "extensions/common/manifest_handlers/permissions_parser.h"
 #include "extensions/common/permissions/permission_message_provider.h"
 #include "extensions/common/permissions/permissions_data.h"
@@ -65,6 +64,10 @@ constexpr char kExtensionHasNoHostPermissionsForPatternError[] =
     "any of its host permissions.";
 constexpr char kExtensionRequestCannotBeRemovedError[] =
     "Extension cannot remove a host access request that doesn't exist.";
+constexpr char kExtensionRequestRateLimitError[] =
+    "Extension cannot remove a host access request due to rate limiting.";
+constexpr char kExtensionAddRequestRateLimitError[] =
+    "Extension cannot add a host access request due to rate limiting.";
 constexpr char kAddRequestInvalidPatternError[] =
     "Extension cannot add a request with an invalid value for 'pattern'.";
 constexpr char kRemoveRequestInvalidPatternError[] =
@@ -468,13 +471,12 @@ ExtensionFunction::ResponseAction PermissionsRequestFunction::Run() {
   }
 
   install_ui_ = std::make_unique<ExtensionInstallPrompt>(
-      Profile::FromBrowserContext(browser_context()), native_window);
+      Profile::FromBrowserContext(browser_context()), native_window,
+      std::make_unique<InstallPromptData>(
+          InstallPromptData::PERMISSIONS_PROMPT));
   install_ui_->ShowDialog(
       base::BindOnce(&PermissionsRequestFunction::OnInstallPromptDone, this),
-      extension(), nullptr,
-      std::make_unique<ExtensionInstallPrompt::Prompt>(
-          ExtensionInstallPrompt::PERMISSIONS_PROMPT),
-      std::move(total_new_permissions),
+      extension(), nullptr, std::move(total_new_permissions),
       ExtensionInstallPrompt::GetDefaultShowDialogCallback());
 
   // ExtensionInstallPrompt::ShowDialog() can call the response synchronously.
@@ -544,8 +546,6 @@ PermissionsRequestFunction::TakePromptedPermissionsForTesting() {
 
 ExtensionFunction::ResponseAction
 PermissionsAddHostAccessRequestFunction::Run() {
-  CHECK(base::FeatureList::IsEnabled(
-      extensions_features::kApiPermissionsHostAccessRequests));
   std::optional<api::permissions::AddHostAccessRequest::Params> params =
       api::permissions::AddHostAccessRequest::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -631,15 +631,17 @@ PermissionsAddHostAccessRequestFunction::Run() {
     }
   }
 
-  permissions_manager->AddHostAccessRequest(web_contents, tab_id, *extension(),
-                                            pattern);
+  PermissionsManager::AddRequestResult result =
+      permissions_manager->AddHostAccessRequest(web_contents, tab_id,
+                                                *extension(), pattern);
+  if (result == PermissionsManager::AddRequestResult::kThrottled) {
+    return RespondNow(Error(kExtensionAddRequestRateLimitError));
+  }
   return RespondNow(NoArguments());
 }
 
 ExtensionFunction::ResponseAction
 PermissionsRemoveHostAccessRequestFunction::Run() {
-  CHECK(base::FeatureList::IsEnabled(
-      extensions_features::kApiPermissionsHostAccessRequests));
   std::optional<api::permissions::RemoveHostAccessRequest::Params> params =
       api::permissions::RemoveHostAccessRequest::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -693,14 +695,17 @@ PermissionsRemoveHostAccessRequestFunction::Run() {
   DCHECK(web_contents);
   DCHECK_NE(tab_id, -1);
 
-  bool is_removed =
+  PermissionsManager::RemoveRequestResult result =
       PermissionsManager::Get(browser_context())
           ->RemoveHostAccessRequest(tab_id, extension()->id(), pattern);
-  if (!is_removed) {
-    return RespondNow(Error(kExtensionRequestCannotBeRemovedError));
+  switch (result) {
+    case PermissionsManager::RemoveRequestResult::kSuccess:
+      return RespondNow(NoArguments());
+    case PermissionsManager::RemoveRequestResult::kNotFound:
+      return RespondNow(Error(kExtensionRequestCannotBeRemovedError));
+    case PermissionsManager::RemoveRequestResult::kThrottled:
+      return RespondNow(Error(kExtensionRequestRateLimitError));
   }
-
-  return RespondNow(NoArguments());
 }
 
 }  // namespace extensions

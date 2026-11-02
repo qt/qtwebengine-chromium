@@ -215,7 +215,8 @@ void OnDeviceTranslationServiceController::CreateTranslator(
       *best_fit_target_language);
 
   LanguagePackRequirements language_pack_requirements =
-      GetLanguagePackRequirements(source_lang, target_lang);
+      GetLanguagePackRequirements(*best_fit_source_language,
+                                  *best_fit_target_language);
   std::vector<LanguagePackKey> to_be_registered_packs =
       language_pack_requirements.to_be_registered_packs;
   if (!to_be_registered_packs.empty()) {
@@ -402,8 +403,13 @@ bool OnDeviceTranslationServiceController::MaybeStartService() {
     return true;
   }
 
-  service_remote_.Bind(
-      launcher_->Launch(service_display_name_suffix_, installer_));
+  mojo::PendingRemote<mojom::OnDeviceTranslationService> pending_remote =
+      launcher_->Launch(service_display_name_suffix_, installer_);
+  if (!pending_remote.is_valid()) {
+    return false;
+  }
+
+  service_remote_.Bind(std::move(pending_remote));
   service_remote_.reset_on_disconnect();
   service_remote_.set_idle_handler(
       service_idle_timeout_,

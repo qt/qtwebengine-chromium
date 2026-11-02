@@ -52,10 +52,10 @@ export default createRule({
             messageId: 'unexpectedAssertDeepStrictEqual',
             fix(fixer) {
               return fixer.replaceText(callee.property, 'deepEqual');
-            }
+            },
           });
         }
-      }
+      },
     };
   },
 });

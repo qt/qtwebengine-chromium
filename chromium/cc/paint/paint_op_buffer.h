@@ -14,6 +14,8 @@
 #include "base/bits.h"
 #include "base/check_op.h"
 #include "base/compiler_specific.h"
+#include "base/containers/flat_map.h"
+#include "base/containers/span.h"
 #include "base/functional/callback.h"
 #include "base/memory/aligned_memory.h"
 #include "base/memory/stack_allocated.h"
@@ -143,6 +145,7 @@ class CC_PAINT_EXPORT PaintOpBuffer : public SkRefCnt {
     bool context_supports_distance_field_text = true;
     int max_texture_size = 0;
     const ScrollOffsetMap* raster_inducing_scroll_offsets = nullptr;
+    PlaybackCallbacks::CustomDataRasterCallback custom_callback;
   };
 
   struct CC_PAINT_EXPORT DeserializeOptions {
@@ -250,8 +253,12 @@ class CC_PAINT_EXPORT PaintOpBuffer : public SkRefCnt {
   // retains the original data buffer for future use.
   PaintRecord ReleaseAsRecord();
   PaintRecord DeepCopyAsRecord() const;
+  PaintRecord ReplaceCustomData(
+      const base::flat_map<uint32_t, PaintRecord>& replacements) const;
 
   PaintOpBuffer& operator+=(const PaintOpBuffer& other);
+  void Append(const PaintOpBuffer& other,
+              const base::flat_map<uint32_t, PaintRecord>* replacements);
 
   bool EqualsForTesting(const PaintOpBuffer& other) const;
 
@@ -266,9 +273,8 @@ class CC_PAINT_EXPORT PaintOpBuffer : public SkRefCnt {
     static_assert(std::is_base_of<PaintOp, T>::value, "T not a PaintOp.");
     static_assert(alignof(T) <= kPaintOpAlign, "");
     uint16_t aligned_size = ComputeOpAlignedSize<T>();
-    T* op = reinterpret_cast<T*>(AllocatePaintOp(aligned_size));
-
-    new (op) T{std::forward<Args>(args)...};
+    base::span<uint8_t> storage = AllocatePaintOp(aligned_size);
+    T* op = new (storage.data()) T{std::forward<Args>(args)...};
     DCHECK_EQ(op->type, static_cast<uint8_t>(T::kType));
     DCHECK_EQ(aligned_size, op->AlignedSize());
     AnalyzeAddedOp(op);
@@ -356,19 +362,19 @@ class CC_PAINT_EXPORT PaintOpBuffer : public SkRefCnt {
   // allocated a new buffer, or nullptr.
   BufferData ReallocIfNeededToFit();
 
-  // Returns the allocated op.
-  void* AllocatePaintOp(uint16_t aligned_size) {
+  // Returns a span of `aligned_size` bytes for the allocated op.
+  base::span<uint8_t> AllocatePaintOp(uint16_t aligned_size) {
     DCHECK(is_mutable());
     if (used_ + aligned_size > data_.size()) {
       return AllocatePaintOpSlowPath(aligned_size);
     } else {
-      void* op = &data_[used_];
+      base::span<uint8_t> result = data_.subspan(used_, aligned_size);
       used_ += aligned_size;
       op_count_++;
-      return op;
+      return result;
     }
   }
-  void* AllocatePaintOpSlowPath(uint16_t aligned_size);
+  base::span<uint8_t> AllocatePaintOpSlowPath(uint16_t aligned_size);
 
   void ResetRetainingBuffer();
 

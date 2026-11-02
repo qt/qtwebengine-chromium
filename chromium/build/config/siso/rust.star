@@ -159,8 +159,7 @@ def __step_config(ctx, step_config):
 
     remote = config.get(ctx, "googlechrome")
 
-    # TODO(crbug.com/434857701): fix link for target_arch="x86"
-    remote_link = False
+    remote_link = remote
     clang_inputs = [
         "third_party/llvm-build/Release+Asserts:rustlink",
     ]
@@ -180,6 +179,10 @@ def __step_config(ctx, step_config):
             else:
                 remote = False
         else:
+            if gn_args.get("target_cpu", "x64").strip('"') != "x64":
+                # TODO(crbug.com/434857701): fix link for non-x64 targets.
+                remote_link = False
+
             # TODO(crbug.com/434857701): fix sysroot for target_arch="x86"
             clang_inputs.append(
                 "build/linux/debian_bullseye_amd64-sysroot:rustlink",
@@ -289,7 +292,7 @@ def __step_config(ctx, step_config):
                 "third_party/rust-toolchain:toolchain",
             ],
             "handler": "rust_build_handler",
-            "remote": remote and config.get(ctx, "cog"),
+            "remote": (remote and config.get(ctx, "cog")) or config.get(ctx, "default-remote"),
             "timeout": "2m",
         },
         {
@@ -298,7 +301,7 @@ def __step_config(ctx, step_config):
             "inputs": [
                 "third_party/rust-toolchain:toolchain",
             ],
-            "remote": remote and config.get(ctx, "cog"),
+            "remote": (remote and config.get(ctx, "cog")) or config.get(ctx, "default-remote"),
             "timeout": "2m",
         },
         {
@@ -317,6 +320,23 @@ def __step_config(ctx, step_config):
             "command_prefix": "python3 ../../build/rust/gni_impl/run_bindgen.py",
             "inputs": rust_toolchain + clang_inputs,
             "remote": False,
+            "timeout": "2m",
+        },
+        {
+            "name": "rust/rustc_print_cfg",
+            "command_prefix": "python3 ../../build/rust/gni_impl/rustc_print_cfg.py",
+            "inputs": [
+                "third_party/rust-toolchain:toolchain",
+            ],
+            "remote": remote,
+            "timeout": "2m",
+        },
+        {
+            "name": "rust/cpp_api_from_rust",
+            "command_prefix": "python3 ../../build/rust/gni_impl/cpp_api_from_rust_wrapper.py",
+            "inputs": rust_toolchain + clang_inputs,
+            "indirect_inputs": rust_compile_indirect_inputs,
+            "remote": remote,
             "timeout": "2m",
         },
     ])

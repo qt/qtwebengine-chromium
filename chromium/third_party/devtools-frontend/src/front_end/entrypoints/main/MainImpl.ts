@@ -43,16 +43,9 @@ import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Foundation from '../../foundation/foundation.js';
 import * as AiAssistanceModel from '../../models/ai_assistance/ai_assistance.js';
-import * as AutofillManager from '../../models/autofill_manager/autofill_manager.js';
 import * as Badges from '../../models/badges/badges.js';
-import * as Bindings from '../../models/bindings/bindings.js';
-import * as Breakpoints from '../../models/breakpoints/breakpoints.js';
 import * as CrUXManager from '../../models/crux-manager/crux-manager.js';
-import * as IssuesManager from '../../models/issues_manager/issues_manager.js';
-import * as LiveMetrics from '../../models/live-metrics/live-metrics.js';
-import * as Logs from '../../models/logs/logs.js';
 import * as Persistence from '../../models/persistence/persistence.js';
-import * as ProjectSettings from '../../models/project_settings/project_settings.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as PanelCommon from '../../panels/common/common.js';
 import * as Snippets from '../../panels/snippets/snippets.js';
@@ -69,56 +62,56 @@ import {ExecutionContextSelector} from './ExecutionContextSelector.js';
 
 const UIStrings = {
   /**
-   * @description Title of item in main
+   * @description Title of the menu item in the main toolbar to customize and control DevTools.
    */
   customizeAndControlDevtools: 'Customize and control DevTools',
   /**
-   * @description Title element text content in Main
+   * @description Label for the dock side menu options in the customize and control menu.
    */
   dockSide: 'Dock side',
   /**
-   * @description Title element title in Main
+   * @description Tooltip for the dock side menu options explaining how to restore the last dock position.
    * @example {Ctrl+Shift+D} PH1
    */
   placementOfDevtoolsRelativeToThe: 'Placement of DevTools relative to the page. ({PH1} to restore last position)',
   /**
-   * @description Text to undock the DevTools
+   * @description Tooltip and label for the button to undock DevTools into a separate window.
    */
   undockIntoSeparateWindow: 'Undock into separate window',
   /**
-   * @description Text to dock the DevTools to the bottom of the browser tab
+   * @description Tooltip and label for the button to dock DevTools to the bottom of the browser window.
    */
   dockToBottom: 'Dock to bottom',
   /**
-   * @description Text to dock the DevTools to the right of the browser tab
+   * @description Tooltip and label for the button to dock DevTools to the right of the browser window.
    */
   dockToRight: 'Dock to right',
   /**
-   * @description Text to dock the DevTools to the left of the browser tab
+   * @description Tooltip and label for the button to dock DevTools to the left of the browser window.
    */
   dockToLeft: 'Dock to left',
   /**
-   * @description Text in Main
+   * @description Action item in the customize and control menu to focus the page being debugged.
    */
   focusDebuggee: 'Focus page',
   /**
-   * @description Text in Main
+   * @description Action item in the customize and control menu to hide the Console drawer.
    */
-  hideConsoleDrawer: 'Hide console drawer',
+  hideConsoleDrawer: 'Hide Console drawer',
   /**
-   * @description Text in Main
+   * @description Action item in the customize and control menu to show the Console drawer.
    */
-  showConsoleDrawer: 'Show console drawer',
+  showConsoleDrawer: 'Show Console drawer',
   /**
-   * @description A context menu item in the Main
+   * @description Submenu item in the customize and control menu to open additional tools and panels.
    */
   moreTools: 'More tools',
   /**
-   * @description Text for the viewing the help options
+   * @description Submenu item in the customize and control menu to view help and documentation options.
    */
   help: 'Help',
   /**
-   * @description Text describing how to navigate the dock side menu
+   * @description Screen reader announcement explaining how to navigate the dock side options using arrow keys.
    */
   dockSideNavigation: 'Use left and right arrow keys to navigate the options',
   /**
@@ -126,9 +119,9 @@ const UIStrings = {
    */
   aiModelDownloaded: 'AI model downloaded',
   /**
-   * @description A title of the menu item in the main menu leading to https://github.com/ChromeDevTools/chrome-devtools-mcp.
+   * @description Title of the menu item in the customize and control menu leading to the DevTools MCP repository.
    */
-  getDevToolsMcp: 'Get `DevTools MCP`'
+  getDevToolsMcp: 'Get `DevTools MCP`',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('entrypoints/main/MainImpl.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -162,9 +155,11 @@ export class MainImpl {
   #readyForTestPromise = Promise.withResolvers<void>();
   #veStartPromise!: Promise<void>;
   #universe!: Foundation.Universe.Universe;
+  #supportsEmulation = false;
 
-  constructor() {
+  constructor(opts?: {supportsEmulation: boolean}) {
     MainImpl.instanceForTest = this;
+    this.#supportsEmulation = opts?.supportsEmulation ?? false;
     void this.#loaded();
   }
 
@@ -180,6 +175,13 @@ export class MainImpl {
       return;
     }
     console.timeEnd(label);
+  }
+
+  static get universeForTest(): Foundation.Universe.Universe {
+    if (!MainImpl.instanceForTest) {
+      throw new Error('MainImpl not initialized yet!');
+    }
+    return MainImpl.instanceForTest.#universe;
   }
 
   async #loaded(): Promise<void> {
@@ -204,9 +206,17 @@ export class MainImpl {
         logSettingAccess: VisualLogging.logSettingAccess,
         runSettingsMigration: !Host.InspectorFrontendHost.isUnderTest(),
       },
+      hostConfig: Root.Runtime.hostConfig,
+      inspectorFrontendHost: Host.InspectorFrontendHost.InspectorFrontendHostInstance,
+      supportsEmulation: this.#supportsEmulation,
     };
     this.#universe = new Foundation.Universe.Universe(creationOptions);
     Root.DevToolsContext.setGlobalInstance(this.#universe.context as Root.DevToolsContext.WritableDevToolsContext);
+
+    // Mark 'cache-disabled' as requiring user interaction when multiple CDP clients are attached.
+    if (Root.Runtime.Runtime.queryParam('hasOtherClients')) {
+      this.#universe.settings.moduleSetting('cache-disabled').setRequiresUserAction(true);
+    }
 
     Root.Runtime.experiments.cleanUpStaleExperiments();
 
@@ -363,10 +373,15 @@ export class MainImpl {
         Root.ExperimentNames.ExperimentName.PROTOCOL_MONITOR, protocolMonitorExperiment);
 
     // Debugging
-    Root.Runtime.experiments.register(
-        Root.ExperimentNames.ExperimentName.INSTRUMENTATION_BREAKPOINTS, 'Instrumentation breakpoints');
-    Root.Runtime.experiments.register(
-        Root.ExperimentNames.ExperimentName.USE_SOURCE_MAP_SCOPES, 'Use scope information from source maps');
+    const instrumentationBreakpointsExperiment = Root.Runtime.experiments.registerHostExperiment({
+      name: Root.ExperimentNames.ExperimentName.INSTRUMENTATION_BREAKPOINTS,
+      title: 'Instrumentation breakpoints',
+      aboutFlag: 'devtools-instrumentation-breakpoints',
+      isEnabled: Root.Runtime.hostConfig.devToolsInstrumentationBreakpoints?.enabled ?? false,
+      requiresChromeRestart: false,
+    });
+    this.#migrateValueFromLegacyToHostExperiment(Root.ExperimentNames.ExperimentName.INSTRUMENTATION_BREAKPOINTS,
+                                                 instrumentationBreakpointsExperiment);
 
     Root.Runtime.experiments.registerHostExperiment({
       name: Root.ExperimentNames.ExperimentName.DURABLE_MESSAGES,
@@ -392,10 +407,6 @@ export class MainImpl {
       requiresChromeRestart: false,
     });
 
-    Root.Runtime.experiments.enableExperimentsByDefault([
-      Root.ExperimentNames.ExperimentName.USE_SOURCE_MAP_SCOPES,
-    ]);
-
     const enabledExperiments = Root.Runtime.Runtime.queryParam('enabledExperiments');
     if (enabledExperiments) {
       Root.Runtime.experiments.setServerEnabledExperiments(enabledExperiments.split(';'));
@@ -414,7 +425,7 @@ export class MainImpl {
     MainImpl.time('Main._createAppUI');
 
     // Request filesystems early, we won't create connections until callback is fired. Things will happen in parallel.
-    const isolatedFileSystemManager = Persistence.IsolatedFileSystemManager.IsolatedFileSystemManager.instance();
+    const isolatedFileSystemManager = this.#universe.isolatedFileSystemManager;
     isolatedFileSystemManager.addEventListener(
         Persistence.IsolatedFileSystemManager.Events.FileSystemError,
         event => Snackbar.Snackbar.Snackbar.show({message: event.data}));
@@ -440,88 +451,40 @@ export class MainImpl {
     UI.ContextMenu.ContextMenu.installHandler(document);
     UI.ViewManager.ViewManager.instance({forceNew: true, universe: this.#universe});
 
-    // These instances need to be created early so they don't miss any events about requests/issues/etc.
-    Logs.NetworkLog.NetworkLog.instance();
-    Logs.LogManager.LogManager.instance();
-    IssuesManager.IssuesManager.IssuesManager.instance({
-      forceNew: true,
-      ensureFirst: true,
-      showThirdPartyIssuesSetting: IssuesManager.Issue.getShowThirdPartyIssuesSetting(),
-      hideIssueSetting: IssuesManager.IssuesManager.getHideIssueByCodeSetting(),
-    });
-
     UI.DockController.DockController.instance({forceNew: true, canDock});
-    SDK.DOMDebuggerModel.DOMDebuggerManager.instance({forceNew: true});
     const targetManager = SDK.TargetManager.TargetManager.instance();
     targetManager.addEventListener(
         SDK.TargetManager.Events.SUSPEND_STATE_CHANGED, this.#onSuspendStateChanged.bind(this));
 
-    Workspace.FileManager.FileManager.instance({forceNew: true});
-
-    Bindings.NetworkProject.NetworkProjectManager.instance();
-    new Bindings.PresentationConsoleMessageHelper.PresentationConsoleMessageManager();
     targetManager.setScopeTarget(targetManager.primaryPageTarget());
     UI.Context.Context.instance().addFlavorChangeListener(SDK.Target.Target, ({data}) => {
       const outermostTarget = data?.outermostTarget();
       targetManager.setScopeTarget(outermostTarget);
     });
-    Breakpoints.BreakpointManager.BreakpointManager.instance({
-      forceNew: true,
-      workspace: Workspace.Workspace.WorkspaceImpl.instance(),
-      targetManager,
-      debuggerWorkspaceBinding: Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance(),
-      settings: Common.Settings.Settings.instance(),
-    });
     // @ts-expect-error e2e test global
     self.Extensions.extensionServer = PanelCommon.ExtensionServer.ExtensionServer.instance({forceNew: true});
 
-    new Persistence.FileSystemWorkspaceBinding.FileSystemWorkspaceBinding(
-        isolatedFileSystemManager, Workspace.Workspace.WorkspaceImpl.instance());
     isolatedFileSystemManager.addPlatformFileSystem(
         'snippet://' as Platform.DevToolsPath.UrlString, new Snippets.ScriptSnippetFileSystem.SnippetFileSystem());
 
-    const persistenceImpl = Persistence.Persistence.PersistenceImpl.instance({
-      forceNew: true,
-      workspace: Workspace.Workspace.WorkspaceImpl.instance(),
-      breakpointManager: Breakpoints.BreakpointManager.BreakpointManager.instance(),
-    });
-    const linkDecorator = new PanelCommon.PersistenceUtils.LinkDecorator(persistenceImpl);
+    const linkDecorator = new PanelCommon.PersistenceUtils.LinkDecorator(this.#universe.persistence);
     Components.Linkifier.Linkifier.setLinkDecorator(linkDecorator);
-    Persistence.NetworkPersistenceManager.NetworkPersistenceManager.instance(
-        {forceNew: true, workspace: Workspace.Workspace.WorkspaceImpl.instance()});
 
     new ExecutionContextSelector(targetManager, UI.Context.Context.instance());
 
-    const projectSettingsModel = ProjectSettings.ProjectSettingsModel.ProjectSettingsModel.instance({
-      forceNew: true,
-      hostConfig: Root.Runtime.hostConfig,
-      pageResourceLoader: SDK.PageResourceLoader.PageResourceLoader.instance(),
-      targetManager,
-    });
-
-    const automaticFileSystemManager = Persistence.AutomaticFileSystemManager.AutomaticFileSystemManager.instance({
-      forceNew: true,
-      inspectorFrontendHost: Host.InspectorFrontendHost.InspectorFrontendHostInstance,
-      projectSettingsModel,
-    });
-    Persistence.AutomaticFileSystemWorkspaceBinding.AutomaticFileSystemWorkspaceBinding.instance({
-      forceNew: true,
-      automaticFileSystemManager,
-      isolatedFileSystemManager,
-      workspace: Workspace.Workspace.WorkspaceImpl.instance(),
-    });
-
-    AutofillManager.AutofillManager.AutofillManager.instance();
-
-    LiveMetrics.LiveMetrics.instance();
+    this.#universe.domDebuggerManager.initialize();
+    this.#universe.cpuThrottlingManager.initialize();
+    this.#universe.presentationConsoleMessageManager.enable();
+    void this.#universe.liveMetrics.enable();
     CrUXManager.CrUXManager.instance();
 
-    const builtInAi = AiAssistanceModel.BuiltInAi.BuiltInAi.instance();
+    const builtInAi = this.#universe.builtInAi;
     builtInAi.addEventListener(
         AiAssistanceModel.BuiltInAi.Events.DOWNLOADED_AND_SESSION_CREATED,
         () => Snackbar.Snackbar.Snackbar.show({message: i18nString(UIStrings.aiModelDownloaded)}));
 
     new PauseListener();
+    new ConsoleProfileFinishedListener();
 
     const actionRegistryInstance = UI.ActionRegistry.ActionRegistry.instance({forceNew: true});
     // Required for legacy a11y layout tests
@@ -542,8 +505,8 @@ export class MainImpl {
                                            'no-profile-and-not-eligible';
         void VisualLogging.logFunctionCall('gdp-client-initialize', contextString);
       });
-      void Badges.UserBadges.instance().initialize();
-      Badges.UserBadges.instance().addEventListener(Badges.Events.BADGE_TRIGGERED, async ev => {
+      void this.#universe.userBadges.initialize();
+      this.#universe.userBadges.addEventListener(Badges.Events.BADGE_TRIGGERED, async ev => {
         loadedPanelCommonModule ??= await import('../../panels/common/common.js') as typeof PanelCommon;
         const badgeNotification = new loadedPanelCommonModule.BadgeNotification();
         const {badge, reason} = ev.data;
@@ -566,7 +529,7 @@ export class MainImpl {
 
   async #showAppUI(appProvider: Object): Promise<void> {
     MainImpl.time('Main._showAppUI');
-    const app = (appProvider as UI.AppProvider.AppProvider).createApp();
+    const app = (appProvider as UI.AppProvider.AppProvider).createApp(this.#universe);
     // It is important to kick controller lifetime after apps are instantiated.
     UI.DockController.DockController.instance().initialize();
     ThemeSupport.ThemeSupport.instance().fetchColorsAndApplyHostTheme();
@@ -585,7 +548,7 @@ export class MainImpl {
         Host.InspectorFrontendHostAPI.Events.RevealSourceLine, this.#revealSourceLine, this);
 
     const inspectorView = UI.InspectorView.InspectorView.instance();
-    Persistence.NetworkPersistenceManager.NetworkPersistenceManager.instance().addEventListener(
+    this.#universe.networkPersistenceManager.addEventListener(
         Persistence.NetworkPersistenceManager.Events.LOCAL_OVERRIDES_REQUESTED, event => {
           inspectorView.displaySelectOverrideFolderInfobar(event.data);
         });
@@ -797,8 +760,6 @@ export class SearchActionDelegate implements UI.ActionRegistration.ActionDelegat
     return false;
   }
 }
-let mainMenuItemInstance: MainMenuItem;
-
 export class MainMenuItem implements UI.Toolbar.Provider {
   readonly #item: UI.Toolbar.ToolbarMenuButton;
   constructor() {
@@ -807,17 +768,6 @@ export class MainMenuItem implements UI.Toolbar.Provider {
         /* useSoftMenu */ true, 'main-menu', 'dots-vertical');
     this.#item.element.classList.add('main-menu');
     this.#item.setTitle(i18nString(UIStrings.customizeAndControlDevtools));
-  }
-
-  static instance(opts: {
-    forceNew: boolean|null,
-  } = {forceNew: null}): MainMenuItem {
-    const {forceNew} = opts;
-    if (!mainMenuItemInstance || forceNew) {
-      mainMenuItemInstance = new MainMenuItem();
-    }
-
-    return mainMenuItemInstance;
   }
 
   item(): UI.Toolbar.ToolbarItem|null {
@@ -913,7 +863,10 @@ export class MainMenuItem implements UI.Toolbar.Provider {
     const button = this.#item.element;
 
     function setDockSide(side: UI.DockController.DockState): void {
-      void dockController.once(UI.DockController.Events.AFTER_DOCK_SIDE_CHANGED).then(() => button.focus());
+      if (dockController.dockSide() !== UI.DockController.DockState.UNDOCKED &&
+          side !== UI.DockController.DockState.UNDOCKED) {
+        void dockController.once(UI.DockController.Events.AFTER_DOCK_SIDE_CHANGED).then(() => button.focus());
+      }
       dockController.setDockSide(side);
       contextMenu.discard();
     }
@@ -981,23 +934,10 @@ export class MainMenuItem implements UI.Toolbar.Provider {
   }
 }
 
-let settingsButtonProviderInstance: SettingsButtonProvider;
-
 export class SettingsButtonProvider implements UI.Toolbar.Provider {
   readonly #settingsButton: UI.Toolbar.ToolbarButton;
-  private constructor() {
+  constructor() {
     this.#settingsButton = UI.Toolbar.Toolbar.createActionButton('settings.show');
-  }
-
-  static instance(opts: {
-    forceNew: boolean|null,
-  } = {forceNew: null}): SettingsButtonProvider {
-    const {forceNew} = opts;
-    if (!settingsButtonProviderInstance || forceNew) {
-      settingsButtonProviderInstance = new SettingsButtonProvider();
-    }
-
-    return settingsButtonProviderInstance;
   }
 
   item(): UI.Toolbar.ToolbarItem|null {
@@ -1018,6 +958,18 @@ export class PauseListener {
     const debuggerPausedDetails = debuggerModel.debuggerPausedDetails();
     UI.Context.Context.instance().setFlavor(SDK.Target.Target, debuggerModel.target());
     void Common.Revealer.reveal(debuggerPausedDetails);
+  }
+}
+
+export class ConsoleProfileFinishedListener {
+  constructor() {
+    SDK.TargetManager.TargetManager.instance().addModelListener(SDK.CPUProfilerModel.CPUProfilerModel,
+                                                                SDK.CPUProfilerModel.Events.CONSOLE_PROFILE_FINISHED,
+                                                                this.#consoleProfileFinished, this);
+  }
+
+  #consoleProfileFinished(event: Common.EventTarget.EventTargetEvent<SDK.CPUProfilerModel.ProfileFinishedData>): void {
+    void Common.Revealer.reveal(event.data);
   }
 }
 

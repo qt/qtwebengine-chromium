@@ -21,7 +21,6 @@ class CBC_ReedSolomonGF256 {
   ~CBC_ReedSolomonGF256();
 
   CBC_ReedSolomonGF256Poly* GetZero() const { return zero_.get(); }
-  CBC_ReedSolomonGF256Poly* GetOne() const { return one_.get(); }
 
   std::unique_ptr<CBC_ReedSolomonGF256Poly> BuildMonomial(int32_t degree,
                                                           int32_t coefficient);
@@ -33,7 +32,6 @@ class CBC_ReedSolomonGF256 {
 
  private:
   std::unique_ptr<CBC_ReedSolomonGF256Poly> zero_;
-  std::unique_ptr<CBC_ReedSolomonGF256Poly> one_;
   std::array<int32_t, 256> exp_table_;
   std::array<int32_t, 256> log_table_;
 };

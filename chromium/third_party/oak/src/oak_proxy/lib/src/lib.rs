@@ -16,4 +16,6 @@
 
 pub mod config;
 pub mod proxy;
+#[cfg(test)]
+pub mod tests;
 pub mod websocket;

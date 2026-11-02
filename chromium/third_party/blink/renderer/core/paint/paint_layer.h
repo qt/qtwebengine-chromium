@@ -66,7 +66,6 @@ namespace blink {
 
 class CompositorFilterOperations;
 class ComputedStyle;
-class FilterEffect;
 class FilterOperations;
 class HitTestResult;
 class HitTestingTransformState;
@@ -222,13 +221,6 @@ class CORE_EXPORT PaintLayer : public GarbageCollected<PaintLayer>,
       curr = curr->Parent();
     return curr;
   }
-
-  // This is the scroll offset that's actually used to display to the screen.
-  // It should only be used in paint/compositing type use cases (includes hit
-  // testing, intersection observer). Most other cases should use the unsnapped
-  // offset from LayoutBox (for layout) or the source offset from the
-  // ScrollableArea.
-  gfx::Vector2d PixelSnappedScrolledContentOffset() const;
 
   bool IsRootLayer() const { return is_root_layer_; }
 

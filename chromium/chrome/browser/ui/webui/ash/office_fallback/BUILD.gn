@@ -43,6 +43,7 @@ static_library("office_fallback") {
     "//chrome/browser/ash/file_manager",
     "//chrome/browser/chromeos/upload_office_to_cloud",
     "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui/webui:theme_source",
     "//chrome/browser/ui/webui/ash/cloud_upload",
     "//chromeos/constants",
     "//ui/base",
@@ -65,6 +66,7 @@ source_set("browser_tests") {
 
   deps = [
     ":office_fallback",
+    "//ash/constants",
     "//base/test:test_support",
     "//chrome/app:generated_resources",
     "//chrome/browser/ash/file_manager",

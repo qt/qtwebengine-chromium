@@ -3,40 +3,37 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Platform from '../../core/platform/platform.js';
-import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
-import {createTarget} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
-import {MockProtocolBackend} from '../../testing/MockScopeChain.js';
+import {MockDebuggerBackend} from '../../testing/MockScopeChain.js';
+import {setupRuntimeHooks} from '../../testing/RuntimeHelpers.js';
+import {setupSettingsHooks} from '../../testing/SettingsHelpers.js';
 import {encodeVlqList} from '../../testing/SourceMapEncoder.js';
 import {createContentProviderUISourceCode} from '../../testing/UISourceCodeHelpers.js';
 import * as Bindings from '../bindings/bindings.js';
 import * as SourceMapScopes from '../source_map_scopes/source_map_scopes.js';
-import * as Workspace from '../workspace/workspace.js';
 
 const {urlString} = Platform.DevToolsPath;
 
-describeWithMockConnection('NameResolver', () => {
+describe('NameResolver', () => {
+  setupRuntimeHooks();
+  setupSettingsHooks();
+
   const URL = urlString`file:///tmp/example.js`;
   let target: SDK.Target.Target;
-  let backend: MockProtocolBackend;
+  let backend: MockDebuggerBackend;
 
   beforeEach(() => {
-    const workspace = Workspace.Workspace.WorkspaceImpl.instance();
-    const targetManager = SDK.TargetManager.TargetManager.instance();
-    const resourceMapping = new Bindings.ResourceMapping.ResourceMapping(targetManager, workspace);
-    const ignoreListManager = Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
-    Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
-      forceNew: true,
-      resourceMapping,
-      targetManager,
-      ignoreListManager,
-      workspace,
-    });
-    backend = new MockProtocolBackend();
-    target = createTarget();
+    backend = new MockDebuggerBackend();
+    target = backend.createTarget();
+    sinon.stub(Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding, 'instance')
+        .returns(backend.universe.debuggerWorkspaceBinding);
+  });
+
+  afterEach(() => {
+    sinon.restore();
   });
 
   // Given a function scope <fn-start>,<fn-end> and a nested scope <start>,<end>,
@@ -220,7 +217,8 @@ describeWithMockConnection('NameResolver', () => {
     const callFrame = await backend.createCallFrame(
         target, {url: URL, content: source}, scopes, {url: sourceMapUrl, content: sourceMapContent}, [scopeObject]);
 
-    const resolvedScopeObject = await SourceMapScopes.NamesResolver.resolveScopeInObject(callFrame.scopeChain()[0]);
+    const resolvedScopeObject = await SourceMapScopes.NamesResolver.resolveScopeInObject(
+        callFrame.scopeChain()[0], backend.universe.debuggerWorkspaceBinding);
     const properties = await resolvedScopeObject.getAllProperties(false, false);
     const namesAndValues = properties.properties?.map(p => ({name: p.name, value: p.value?.value})) ?? [];
 
@@ -245,7 +243,8 @@ describeWithMockConnection('NameResolver', () => {
     const callFrame = await backend.createCallFrame(
         target, {url: URL, content: source}, scopes, {url: sourceMapUrl, content: sourceMapContent}, [scopeObject]);
 
-    const resolvedScopeObject = await SourceMapScopes.NamesResolver.resolveScopeInObject(callFrame.scopeChain()[0]);
+    const resolvedScopeObject = await SourceMapScopes.NamesResolver.resolveScopeInObject(
+        callFrame.scopeChain()[0], backend.universe.debuggerWorkspaceBinding);
     const properties = await resolvedScopeObject.getAllProperties(false, false);
     const namesAndValues = properties.properties?.map(p => ({name: p.name, value: p.value?.value})) ?? [];
 
@@ -270,7 +269,8 @@ describeWithMockConnection('NameResolver', () => {
     const callFrame = await backend.createCallFrame(
         target, {url: URL, content: source}, scopes, {url: sourceMapUrl, content: sourceMapContent}, [scopeObject]);
 
-    const resolvedScopeObject = await SourceMapScopes.NamesResolver.resolveScopeInObject(callFrame.scopeChain()[0]);
+    const resolvedScopeObject = await SourceMapScopes.NamesResolver.resolveScopeInObject(
+        callFrame.scopeChain()[0], backend.universe.debuggerWorkspaceBinding);
     const properties = await resolvedScopeObject.getAllProperties(false, false);
     const namesAndValues = properties.properties?.map(p => ({name: p.name, value: p.value?.value})) ?? [];
 
@@ -294,7 +294,8 @@ describeWithMockConnection('NameResolver', () => {
     const callFrame = await backend.createCallFrame(
         target, {url: URL, content: source}, scopes, {url: sourceMapUrl, content: sourceMapContent}, [scopeObject]);
 
-    const resolvedScopeObject = await SourceMapScopes.NamesResolver.resolveScopeInObject(callFrame.scopeChain()[0]);
+    const resolvedScopeObject = await SourceMapScopes.NamesResolver.resolveScopeInObject(
+        callFrame.scopeChain()[0], backend.universe.debuggerWorkspaceBinding);
     const properties = await resolvedScopeObject.getAllProperties(false, false);
     const namesAndValues = properties.properties?.map(p => ({name: p.name, value: p.value?.value})) ?? [];
 
@@ -321,7 +322,8 @@ describeWithMockConnection('NameResolver', () => {
     const callFrame = await backend.createCallFrame(
         target, {url: URL, content: source}, scopes, {url: sourceMapUrl, content: sourceMapContent}, [scopeObject]);
 
-    const resolvedScopeObject = await SourceMapScopes.NamesResolver.resolveScopeInObject(callFrame.scopeChain()[0]);
+    const resolvedScopeObject = await SourceMapScopes.NamesResolver.resolveScopeInObject(
+        callFrame.scopeChain()[0], backend.universe.debuggerWorkspaceBinding);
     const properties = await resolvedScopeObject.getAllProperties(false, false);
     const namesAndValues = properties.properties?.map(p => ({name: p.name, value: p.value?.value})) ?? [];
 
@@ -374,7 +376,8 @@ describeWithMockConnection('NameResolver', () => {
         target, {url: URL, content: source.join('\n')}, scopes.join('\n'),
         {url: sourceMapUrl, content: sourceMapContent}, [scopeObject]);
 
-    const resolvedScopeObject = await SourceMapScopes.NamesResolver.resolveScopeInObject(callFrame.scopeChain()[0]);
+    const resolvedScopeObject = await SourceMapScopes.NamesResolver.resolveScopeInObject(
+        callFrame.scopeChain()[0], backend.universe.debuggerWorkspaceBinding);
     const properties = await resolvedScopeObject.getAllProperties(false, false);
     const namesAndValues = properties.properties?.map(p => ({name: p.name, value: p.value?.value})) ?? [];
 
@@ -417,15 +420,13 @@ describeWithMockConnection('NameResolver', () => {
       const {lineNumber, columnNumber} = scopeLocation;
       await script?.requestContentData();
       const functionName = await SourceMapScopes.NamesResolver.resolveProfileFrameFunctionName(
-          {scriptId, columnNumber, lineNumber}, target);
+          {scriptId, columnNumber, lineNumber}, target, backend.universe.debuggerWorkspaceBinding);
       assert.strictEqual(functionName, 'unminified');
     });
   });
 
   describe('Function name resolving from scopes', () => {
     it('resolves function scope name at scope start for a debugger frame', async () => {
-      Root.Runtime.experiments.enableForTest(Root.ExperimentNames.ExperimentName.USE_SOURCE_MAP_SCOPES);
-
       const sourceMapUrl = 'file:///tmp/example.js.min.map';
       const sourceMapContent = JSON.stringify({
         version: 3,
@@ -457,7 +458,6 @@ describeWithMockConnection('NameResolver', () => {
 
       const functionName = await SourceMapScopes.NamesResolver.resolveDebuggerFrameFunctionName(callFrame);
       assert.strictEqual(functionName, 'main');
-      Root.Runtime.experiments.disableForTest(Root.ExperimentNames.ExperimentName.USE_SOURCE_MAP_SCOPES);
     });
   });
 
@@ -519,7 +519,8 @@ function mulWithOffset(param1, param2, offset) {
       const location = script.rawLocation(0, 30);  // Beginning of function scope.
       assert.exists(location);
 
-      const mapping = await SourceMapScopes.NamesResolver.allVariablesAtPosition(location);
+      const mapping = await SourceMapScopes.NamesResolver.allVariablesAtPosition(
+          location, backend.universe.debuggerWorkspaceBinding);
 
       assert.strictEqual(mapping.get('param1'), 'n');
       assert.strictEqual(mapping.get('param2'), 't');
@@ -532,7 +533,8 @@ function mulWithOffset(param1, param2, offset) {
       const location = script.rawLocation(0, 70);  // Beginning of block scope.
       assert.exists(location);
 
-      const mapping = await SourceMapScopes.NamesResolver.allVariablesAtPosition(location);
+      const mapping = await SourceMapScopes.NamesResolver.allVariablesAtPosition(
+          location, backend.universe.debuggerWorkspaceBinding);
 
       // Block scope {intermediate} shadows function scope {intermediate}.
       assert.strictEqual(mapping.get('intermediate'), 'n');
@@ -542,7 +544,8 @@ function mulWithOffset(param1, param2, offset) {
       const location = script.rawLocation(0, 70);  // Beginning of block scope.
       assert.exists(location);
 
-      const mapping = await SourceMapScopes.NamesResolver.allVariablesAtPosition(location);
+      const mapping = await SourceMapScopes.NamesResolver.allVariablesAtPosition(
+          location, backend.universe.debuggerWorkspaceBinding);
 
       assert.isNull(mapping.get('param1'));
     });

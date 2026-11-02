@@ -28,6 +28,7 @@ class CGdiDeviceDriver : public RenderDeviceDriverIface {
   int GetPixelWidth() const override;
   int GetPixelHeight() const override;
   int GetBitsPerPixel() const override;
+  void Clear(uint32_t color) override;
   void SaveState() override;
   void RestoreState(bool bKeepSaved) override;
   void SetBaseClip(const FX_RECT& rect) override;

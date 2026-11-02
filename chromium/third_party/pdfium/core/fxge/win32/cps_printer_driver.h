@@ -11,7 +11,7 @@
 
 #include <memory>
 
-#include "core/fxge/cfx_windowsrenderdevice.h"
+#include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/renderdevicedriver_iface.h"
 #include "core/fxge/win32/cfx_psrenderer.h"
 
@@ -33,6 +33,7 @@ class CPSPrinterDriver final : public RenderDeviceDriverIface {
   int GetBitsPerPixel() const override;
   int GetHorzSize() const override;
   int GetVertSize() const override;
+  void Clear(uint32_t color) override;
   void SaveState() override;
   void RestoreState(bool bKeepSaved) override;
   bool SetClip_PathFill(const CFX_Path& paath,

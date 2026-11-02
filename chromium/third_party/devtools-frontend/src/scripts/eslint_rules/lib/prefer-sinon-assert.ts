@@ -84,7 +84,7 @@ export default createRule<unknown[], MessageIds>({
             fixer.replaceText(node.arguments[0], firstArgText),
             fixer.replaceText(node.callee, `sinon.assert.${methodName}`),
           ];
-        }
+        },
       });
     }
 
@@ -145,7 +145,7 @@ export default createRule<unknown[], MessageIds>({
             }
           }
         }
-      }
+      },
     };
   },
 });

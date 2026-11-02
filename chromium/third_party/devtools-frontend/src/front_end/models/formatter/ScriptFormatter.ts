@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import * as Common from '../../core/common/common.js';
+import type * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 import type * as FormatterActions from '../../entrypoints/formatter_worker/FormatterActions.js';
 
@@ -30,28 +30,25 @@ export interface FormattedContent {
   formattedMapping: FormatterSourceMapping;
 }
 
-export async function format(
-    contentType: Common.ResourceType.ResourceType, mimeType: string, content: string,
-    indent: string =
-        Common.Settings.Settings.instance().moduleSetting('text-editor-indent').get()): Promise<FormattedContent> {
+export async function format(settings: Common.Settings.Settings, contentType: Common.ResourceType.ResourceType,
+                             mimeType: string, content: string, indent?: string): Promise<FormattedContent> {
   if (contentType.isDocumentOrScriptOrStyleSheet()) {
-    return await formatScriptContent(mimeType, content, indent);
+    return await formatScriptContent(settings, mimeType, content, indent);
   }
 
   return {formattedContent: content, formattedMapping: new IdentityFormatterSourceMapping()};
 }
 
-export async function formatScriptContent(
-    mimeType: string, content: string,
-    indent: string =
-        Common.Settings.Settings.instance().moduleSetting('text-editor-indent').get()): Promise<FormattedContent> {
+export async function formatScriptContent(settings: Common.Settings.Settings, mimeType: string, content: string,
+                                          indent?: string): Promise<FormattedContent> {
+  const indentString = indent ?? settings.moduleSetting('text-editor-indent').get();
   const originalContent = content.replace(/\r\n?|[\n\u2028\u2029]/g, '\n').replace(/^\uFEFF/, '');
 
   const pool = formatterWorkerPool();
 
   let formatResult: FormatterActions.FormatResult = {content: originalContent, mapping: {original: [], formatted: []}};
   try {
-    formatResult = await pool.format(mimeType, originalContent, indent);
+    formatResult = await pool.format(mimeType, originalContent, indentString);
   } catch {
   }
   const originalContentLineEndings = Platform.StringUtilities.findLineEndingIndexes(originalContent);

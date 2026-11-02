@@ -30,6 +30,9 @@ BASE_FEATURE(kUseCECFlagInPolicyData, base::FEATURE_ENABLED_BY_DEFAULT);
 #if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kInitializePoliciesForSignedInUserInNewEntryPoints,
              base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kAndroidUseAdminsForEnterpriseInfo,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
 // Enables a configurable delay for policy registration.
@@ -66,15 +69,34 @@ BASE_FEATURE(kEnableExtensionInstallPolicyFetching,
 BASE_FEATURE(kUseManagementServiceForSensitivePolicies,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+BASE_FEATURE(kFilterSensitivePoliciesOnWorkplaceJoinedDevices,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 // Modifies behavior of policies utilizing URLBlocklistManager.
 // When enabled, bypasses the wildcard "*" in the blocklist for internal
 // chrome:// URLs such as chrome://ntp, chrome://bookmarks, etc.
 BASE_FEATURE(kBypassURLBlocklistWildcardForInternalChromeUrls,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+// Modifies behavior of policies utilizing URLBlocklistManager.
+// When enabled, downgrades the match level to neutral if the URL is allowed by
+// the wildcard '*' in the allowlist.
+BASE_FEATURE(kDowngradeURLAllowlistWildcardToNeutral,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 BASE_FEATURE(kPolicyPageMojoMigration, base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kDeviceSignalsBackfillDisclaimer,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+const base::FeatureParam<bool> kClearDeviceSignalsPermissionOnStartup{
+    &kDeviceSignalsBackfillDisclaimer,
+    "clear_device_signals_permission_on_startup", false};
+
+BASE_FEATURE(kURLBlocklistOverridesIncognitoAllowlist,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kExportPlatformPoliciesJson,
+             "ExportPlatformPoliciesJson",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 }  // namespace policy::features

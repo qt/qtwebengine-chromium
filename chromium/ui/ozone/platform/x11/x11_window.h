@@ -518,7 +518,7 @@ class X11Window : public PlatformWindow,
 
   base::CancelableOnceCallback<void(x11::Cursor)> on_cursor_loaded_;
 
-  mutable base::WeakPtrFactory<X11Window> weak_ptr_factory_{this};
+  base::WeakPtrFactory<X11Window> weak_ptr_factory_{this};
 };
 
 }  // namespace ui

@@ -126,9 +126,16 @@ class BnplManager : public AutofillManager::Observer {
   // cancel any ongoing requests if its false.
   std::vector<Suggestion> GetBnplSuggestions(bool is_card_number_field_empty);
 
+  // Sets whether the card number field is empty.
+  void SetIsCardNumberFieldEmpty(bool is_empty) {
+    is_card_number_field_empty_ = is_empty;
+  }
+
   // Cancels in-progress requests to `PaymentsNetworkInterface` and invalidates
   // `BnplManager` weak pointers from the factory.
   virtual void CancelOngoingRequests();
+
+  base::WeakPtr<BnplManager> GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
 
   // AutofillManager::Observer:
   void OnSuggestionsHidden(AutofillManager& manager,
@@ -318,7 +325,7 @@ class BnplManager : public AutofillManager::Observer {
   // Updates the existing suggestions list based on the amount extraction
   // response.
   void ReplaceLoadingThrobberWithIssuerSuggestions(
-      const std::vector<payments::BnplIssuerContext>& issuer_contexts);
+      const std::vector<BnplIssuerContext>& issuer_contexts);
 
   // Replace the existing BNPL suggestions on the Pay Later tab of the
   // suggestion dropdown with a loading throbber.

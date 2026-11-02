@@ -1,0 +1,15 @@
+Name: beautifulsoup4
+URL: http://www.crummy.com/software/BeautifulSoup/bs4/
+Version: 4.9.3
+License: MIT
+License File: LICENSE
+Security Critical: no
+Shipped: no
+Update Mechanism: Manual
+
+Description:
+Beautiful Soup is a library that makes it easy to scrape information
+from web pages.
+
+Local Modifications:
+None

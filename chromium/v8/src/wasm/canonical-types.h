@@ -180,7 +180,7 @@ class TypeCanonicalizer {
     CanonicalTypeIndex describes{kNoType};
     Kind kind = kFunction;
     bool is_final = false;
-    SharedFlag is_shared = SharedFlag::kNo;
+    SharedFlag is_shared = SharedFlag{false};
     // 1 unused byte in the struct.
 
     constexpr CanonicalType(const CanonicalSig* sig,
@@ -258,7 +258,7 @@ class TypeCanonicalizer {
       uint32_t supertype_index = MakeGroupRelative(type.supertype);
       static_assert(kMaxCanonicalTypes <= kMaxUInt32 >> 3);
       uint32_t metadata = (supertype_index << 2) |
-                          ((type.is_shared == SharedFlag::kYes) << 1) |
+                          ((type.is_shared.value()) << 1) |
                           (type.is_final << 0);
       hasher.Add(metadata);
       switch (type.kind) {
@@ -334,7 +334,11 @@ class TypeCanonicalizer {
 #if V8_HASHES_COLLIDE
       if (v8_flags.hashes_collide) return base::kCollidingHash;
 #endif  // V8_HASHES_COLLIDE
-      return hasher.hash();
+      size_t h = hasher.hash();
+      if constexpr (V8_LOWER_LIMITS_MODE_BOOL) {
+        h &= 0xf;
+      }
+      return h;
     }
   };
 

@@ -105,8 +105,16 @@ ukm::SourceId UkmRecorder::GetSourceIdForChromeOSWebsiteURL(
 }
 
 // static
+ukm::SourceId UkmRecorder::GetSourceIdForIwaUrl(
+    base::PassKey<IwaSourceUrlRecorder>,
+    const GURL& iwa_url) {
+  return UkmRecorder::GetSourceIdFromScopeImpl(iwa_url,
+                                               SourceIdType::IWA_BUNDLE_ID);
+}
+
+// static
 ukm::SourceId UkmRecorder::GetSourceIdForExtensionUrl(
-    base::PassKey<extensions::ManifestV2ExperimentManager>,
+    base::PassKey<extensions::ManifestV2Handler>,
     const GURL& extension_url) {
   // UkmRecorderImpl will verify the extension URL (and the corresponding
   // extension) prior to emitting the record.

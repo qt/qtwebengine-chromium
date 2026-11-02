@@ -14,6 +14,7 @@
 
 #include "src/dsp/dsp.h"
 
+#include <cstdint>
 #include <mutex>  // NOLINT (unapproved c++11 header)
 
 #include "src/dsp/average_blend.h"

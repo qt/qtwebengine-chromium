@@ -32,7 +32,10 @@ openscreen_add_configs = [ openscreen_path_prefix + ":features" ]
 
 # Any component that depends on Open Screen likely includes its headers, which
 # need to be able to refer to each other.
-openscreen_add_public_configs = [ openscreen_path_prefix + ":include_dirs" ]
+openscreen_add_public_configs = [
+  openscreen_path_prefix + ":include_dirs",
+  openscreen_path_prefix + ":public_features",
+]
 
 if (is_debug) {
   openscreen_remove_configs +=

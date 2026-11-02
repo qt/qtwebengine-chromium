@@ -110,7 +110,7 @@ main (int argc, char **argv)
 {
     int          do_config = 0, do_default = 0;
     FcChar8     *format = NULL;
-    int          i;
+    int          i, err = 0;
     FcObjectSet *os = 0;
     FcPattern   *pat;
 #if HAVE_GETOPT_LONG || HAVE_GETOPT
@@ -165,6 +165,7 @@ main (int argc, char **argv)
     if (!pat)
 	return 1;
 
+    FcConfigSetWarningFlags (NULL, -1, FcTrue);
     if (do_config)
 	FcConfigSubstitute (0, pat, FcMatchPattern);
     if (do_default)
@@ -184,6 +185,8 @@ main (int argc, char **argv)
 	if (s) {
 	    printf ("%s", s);
 	    FcStrFree (s);
+	} else {
+	    err = 1;
 	}
     } else {
 	FcPatternPrint (pat);
@@ -196,5 +199,5 @@ main (int argc, char **argv)
 
     FcFini();
 
-    return 0;
+    return err;
 }

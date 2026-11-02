@@ -29,8 +29,8 @@ class SkCanvas;
 class SkPaint;
 class SkPath;
 class SkSurface;
-class TextCharPos;
 struct CFX_TextRenderOptions;
+struct TextCharPos;
 
 // Assumes Skia is not going to add non-data members to its fundamental types.
 FX_DATA_PARTITION_EXCEPTION(SkColor4f);
@@ -61,6 +61,7 @@ class CFX_SkiaDeviceDriver final : public RenderDeviceDriverIface {
   int GetPixelWidth() const override;
   int GetPixelHeight() const override;
   int GetBitsPerPixel() const override;
+  void Clear(uint32_t color) override;
   void SaveState() override;
   void RestoreState(bool bKeepSaved) override;
   bool SetClip_PathFill(const CFX_Path& path,
@@ -130,7 +131,6 @@ class CFX_SkiaDeviceDriver final : public RenderDeviceDriverIface {
   bool MultiplyAlpha(float alpha) override;
   bool MultiplyAlphaMask(RetainPtr<const CFX_DIBitmap> mask) override;
 
-  void Clear(uint32_t color);
   void Dump() const;
 
  private:

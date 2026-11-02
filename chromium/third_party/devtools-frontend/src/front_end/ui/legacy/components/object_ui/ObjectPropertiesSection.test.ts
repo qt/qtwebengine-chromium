@@ -3,14 +3,18 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../../../core/common/common.js';
 import * as Host from '../../../../core/host/host.js';
 import * as SDK from '../../../../core/sdk/sdk.js';
 import * as Protocol from '../../../../generated/protocol.js';
-import {assertScreenshot, dispatchClickEvent, renderElementIntoDOM} from '../../../../testing/DOMHelpers.js';
+import {assertScreenshot, dispatchClickEvent, raf, renderElementIntoDOM} from '../../../../testing/DOMHelpers.js';
 import {createTarget, describeWithEnvironment} from '../../../../testing/EnvironmentHelpers.js';
 import {expectCall} from '../../../../testing/ExpectStubCall.js';
+import {setupLocaleHooks} from '../../../../testing/LocaleHelpers.js';
+import {setupSettingsHooks} from '../../../../testing/SettingsHelpers.js';
+import {render} from '../../../lit/lit.js';
 import * as UI from '../../legacy.js';
 
 import * as ObjectUI from './object_ui.js';
@@ -107,6 +111,20 @@ export function createDeepRemoteObjectMock(
 
 describe('ObjectPropertiesSection', () => {
   describeWithEnvironment('ObjectPropertiesSection', () => {
+    const expandedPropertyNames =
+        async(value: unknown, options?: {sortPropertiesAlphabetically?: boolean}): Promise<string[]> => {
+      const object = SDK.RemoteObject.RemoteObject.fromLocalObject(value);
+      const tree = new ObjectUI.ObjectPropertiesSection.ObjectTree(object, {
+        readOnly: true,
+        propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED,
+      });
+      if (options?.sortPropertiesAlphabetically !== undefined) {
+        tree.sortPropertiesAlphabetically = options.sortPropertiesAlphabetically;
+      }
+      const children = await tree.populateChildrenIfNeeded();
+      return (children.properties ?? []).map(p => p.name);
+    };
+
     it('properties with null and undefined values are shown by default', async () => {
       const object = SDK.RemoteObject.RemoteObject.fromLocalObject({
         s: 'string',
@@ -151,7 +169,63 @@ describe('ObjectPropertiesSection', () => {
       assert.isTrue(u.hidden);
     });
 
-    it('shows "Show all" in context menu', () => {
+    it('sorts expanded properties alphabetically by default', async () => {
+      const propertyNames = await expandedPropertyNames({
+        _a: 1,
+        beta: 2,
+        _z: 3,
+        alpha: 4,
+      },
+                                                        {sortPropertiesAlphabetically: true});
+      assert.deepEqual(propertyNames, ['alpha', 'beta', '_a', '_z']);
+    });
+
+    it('preserves insertion order when the setting is disabled', async () => {
+      const propertyNames = await expandedPropertyNames({
+        _a: 1,
+        beta: 2,
+        _z: 3,
+        alpha: 4,
+      },
+                                                        {sortPropertiesAlphabetically: false});
+      assert.deepEqual(propertyNames, ['_a', 'beta', '_z', 'alpha']);
+    });
+
+    it('compareProperties sorts enumerable properties before non-enumerable in alphabetical mode', () => {
+      const properties = [
+        new SDK.RemoteObject.RemoteObjectProperty('hiddenA', SDK.RemoteObject.RemoteObject.fromLocalObject(1), false,
+                                                  true, true),
+        new SDK.RemoteObject.RemoteObjectProperty('visibleA', SDK.RemoteObject.RemoteObject.fromLocalObject(2), true,
+                                                  true, true),
+        new SDK.RemoteObject.RemoteObjectProperty('hiddenB', SDK.RemoteObject.RemoteObject.fromLocalObject(3), false,
+                                                  true, true),
+        new SDK.RemoteObject.RemoteObjectProperty('visibleB', SDK.RemoteObject.RemoteObject.fromLocalObject(4), true,
+                                                  true, true),
+      ];
+
+      properties.sort(ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection.compareProperties);
+      assert.deepEqual(properties.map(property => property.name), ['visibleA', 'visibleB', 'hiddenA', 'hiddenB']);
+    });
+
+    it('compareProperties preserves insertion order within enumerable buckets when alphabetical sorting is disabled',
+       () => {
+         const properties = [
+           new SDK.RemoteObject.RemoteObjectProperty('hiddenB', SDK.RemoteObject.RemoteObject.fromLocalObject(1), false,
+                                                     true, true),
+           new SDK.RemoteObject.RemoteObjectProperty('visibleB', SDK.RemoteObject.RemoteObject.fromLocalObject(2), true,
+                                                     true, true),
+           new SDK.RemoteObject.RemoteObjectProperty('hiddenA', SDK.RemoteObject.RemoteObject.fromLocalObject(3), false,
+                                                     true, true),
+           new SDK.RemoteObject.RemoteObjectProperty('visibleA', SDK.RemoteObject.RemoteObject.fromLocalObject(4), true,
+                                                     true, true),
+         ];
+
+         properties.sort((a, b) =>
+                             ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection.compareProperties(a, b, false));
+         assert.deepEqual(properties.map(property => property.name), ['visibleB', 'visibleA', 'hiddenB', 'hiddenA']);
+       });
+
+    it('shows sorting and "Show all" toggles in context menu', () => {
       const object = SDK.RemoteObject.RemoteObject.fromLocalObject({});
       const section = new ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection(object, 'title');
       const rootElement = section.objectTreeElement();
@@ -163,6 +237,10 @@ describe('ObjectPropertiesSection', () => {
       rootElement.listItemElement.dispatchEvent(event);
 
       sinon.assert.called(appendCheckboxItemSpy);
+      const sortPropertiesItem = appendCheckboxItemSpy.args.find(args => args[0] === 'Sort properties alphabetically');
+      assert.exists(sortPropertiesItem);
+      assert.strictEqual(sortPropertiesItem[2]?.checked, section.root.sortPropertiesAlphabetically);
+
       const showAllItem = appendCheckboxItemSpy.args.find(args => args[0] === 'Show all');
       assert.exists(showAllItem);
       assert.isTrue(showAllItem[2]?.checked);
@@ -210,6 +288,282 @@ describe('ObjectPropertiesSection', () => {
         sinon.assert.calledOnceWithMatch(reveal, sinon.match({object, expression}), false);
       });
     });
+
+    describe('ArrayGrouping', () => {
+      let previousBucketThreshold: number;
+      before(() => {
+        previousBucketThreshold = ObjectUI.ObjectPropertiesSection.ArrayGroupingTreeElement.bucketThreshold;
+        ObjectUI.ObjectPropertiesSection.ArrayGroupingTreeElement.bucketThreshold = 20;
+      });
+
+      after(() => {
+        ObjectUI.ObjectPropertiesSection.ArrayGroupingTreeElement.bucketThreshold = previousBucketThreshold;
+      });
+
+      function createLocalArrayRemoteObject(array: unknown[]|Uint8Array): SDK.RemoteObject.RemoteObject {
+        const remoteObject = SDK.RemoteObject.RemoteObject.fromLocalObject(array);
+        sinon.stub(remoteObject, 'arrayLength').returns(array.length);
+        const isTypedArray = ArrayBuffer.isView(array);
+        if (isTypedArray) {
+          sinon.stub(remoteObject, 'subtype').get(() => 'typedarray');
+        } else {
+          sinon.stub(remoteObject, 'subtype').get(() => 'array');
+        }
+
+        const originalGetOwnProperties = remoteObject.getOwnProperties;
+        sinon.stub(remoteObject, 'getOwnProperties').callsFake(async (generatePreview, nonIndexedPropertiesOnly) => {
+          let properties: SDK.RemoteObject.RemoteObjectProperty[] = [];
+
+          if (isTypedArray && array.length > 1000) {
+            // For large typed arrays, avoid Object.entries which is very slow.
+          } else {
+            const result = await originalGetOwnProperties.call(remoteObject, generatePreview, nonIndexedPropertiesOnly);
+            properties = result.properties ? [...result.properties] : [];
+          }
+
+          if (!properties.some(p => p.name === 'length')) {
+            const lengthObject = SDK.RemoteObject.RemoteObject.fromLocalObject(array.length);
+            properties.push(new SDK.RemoteObject.RemoteObjectProperty('length', lengthObject, false, false, false));
+          }
+          return {properties, internalProperties: null};
+        });
+        return remoteObject;
+      }
+
+      it('formats sparse array with custom grouping threshold', async () => {
+        const array = [];
+        for (let i = 0; i < 42; ++i) {
+          array[i] = i;
+        }
+        array[100] = 100;
+        const object = createLocalArrayRemoteObject(array);
+        const section = new ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection(object, 'title');
+        const rootElement = section.objectTreeElement();
+        await rootElement.onpopulate();
+        await raf();
+
+        const children = rootElement.children();
+        const childTexts = children.map(c => c.listItemElement.textContent || '');
+
+        assert.deepEqual(childTexts, [
+          '[0 … 19]',
+          '[20 … 39]',
+          '[40 … 100]',
+          'length: 101',
+        ]);
+
+        const group1 = children[0];
+        await group1.onpopulate();
+        await raf();
+        const group1Children = group1.children().map(c => c.listItemElement.textContent || '');
+        assert.lengthOf(group1Children, 20);
+        assert.strictEqual(group1Children[0], '0: 0');
+        assert.strictEqual(group1Children[19], '19: 19');
+
+        const group3 = children[2];
+        await group3.onpopulate();
+        await raf();
+        const group3Children = group3.children().map(c => c.listItemElement.textContent || '');
+        assert.deepEqual(group3Children, [
+          '40: 40',
+          '41: 41',
+          '100: 100',
+        ]);
+      });
+
+      it('does not group arrays smaller than threshold', async () => {
+        const array = [];
+        for (let i = 0; i < 10; ++i) {
+          array[i] = undefined;
+        }
+        const object = createLocalArrayRemoteObject(array);
+        const section = new ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection(object, 'title');
+        const rootElement = section.objectTreeElement();
+        await rootElement.onpopulate();
+        await raf();
+
+        const children = rootElement.children();
+        const childTexts = children.map(c => c.listItemElement.textContent || '');
+
+        assert.deepEqual(childTexts, [
+          '0: undefined',
+          '1: undefined',
+          '2: undefined',
+          '3: undefined',
+          '4: undefined',
+          '5: undefined',
+          '6: undefined',
+          '7: undefined',
+          '8: undefined',
+          '9: undefined',
+          'length: 10',
+        ]);
+      });
+
+      it('does not group sparse arrays if total element count is below threshold', async () => {
+        const array = [];
+        for (let i = 0; i < 10; ++i) {
+          array[i] = i;
+        }
+        array[100] = 100;
+        const object = createLocalArrayRemoteObject(array);
+        const section = new ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection(object, 'title');
+        const rootElement = section.objectTreeElement();
+        await rootElement.onpopulate();
+        await raf();
+
+        const children = rootElement.children();
+        const childTexts = children.map(c => c.listItemElement.textContent || '');
+
+        assert.deepEqual(childTexts, [
+          '0: 0',
+          '1: 1',
+          '2: 2',
+          '3: 3',
+          '4: 4',
+          '5: 5',
+          '6: 6',
+          '7: 7',
+          '8: 8',
+          '9: 9',
+          '100: 100',
+          'length: 101',
+        ]);
+      });
+
+      it('formats large dense arrays with multi-level grouping', async () => {
+        const array = [];
+        for (let i = 0; i < 405; ++i) {
+          array[i] = i;
+        }
+        const object = createLocalArrayRemoteObject(array);
+        const section = new ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection(object, 'title');
+        const rootElement = section.objectTreeElement();
+        await rootElement.onpopulate();
+        await raf();
+
+        const children = rootElement.children();
+        const childTexts = children.map(c => c.listItemElement.textContent || '');
+
+        assert.deepEqual(childTexts, [
+          '[0 … 399]',
+          '[400 … 404]',
+          'length: 405',
+        ]);
+
+        const group1 = children[0];
+        await group1.onpopulate();
+        await raf();
+        const group1Children = group1.children().map(c => c.listItemElement.textContent || '');
+        assert.lengthOf(group1Children, 20);
+        assert.strictEqual(group1Children[0], '[0 … 19]');
+        assert.strictEqual(group1Children[19], '[380 … 399]');
+
+        const group2 = children[1];
+        await group2.onpopulate();
+        await raf();
+        const group2Children = group2.children().map(c => c.listItemElement.textContent || '');
+        assert.deepEqual(group2Children, [
+          '400: 400',
+          '401: 401',
+          '402: 402',
+          '403: 403',
+          '404: 404',
+        ]);
+      });
+
+      it('formats arrays with non-index properties', async () => {
+        const array = [];
+        for (let i = 0; i < 10; ++i) {
+          array[i] = i;
+        }
+        array[123] = 123;
+        const arrayObj = array as unknown as Record<string, unknown>;
+        arrayObj['-123'] = -123;
+        arrayObj['3.14'] = 3.14;
+        arrayObj['4294967295'] = 4294967295;
+        arrayObj['4294967296'] = 4294967296;
+        arrayObj['Infinity'] = Infinity;
+        arrayObj['-Infinity'] = -Infinity;
+        arrayObj['NaN'] = NaN;
+
+        const object = createLocalArrayRemoteObject(array);
+        const section = new ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection(object, 'title');
+        const rootElement = section.objectTreeElement();
+        await rootElement.onpopulate();
+        await raf();
+
+        const children = rootElement.children();
+        const childTexts = children.map(c => c.listItemElement.textContent || '');
+
+        assert.include(childTexts, '0: 0');
+        assert.include(childTexts, '9: 9');
+        assert.include(childTexts, '123: 123');
+        assert.include(childTexts, '-123: -123');
+        assert.include(childTexts, '3.14: 3.14');
+        assert.include(childTexts, '4294967295: 4294967295');
+        assert.include(childTexts, '4294967296: 4294967296');
+        assert.include(childTexts, 'Infinity: Infinity');
+        assert.include(childTexts, '-Infinity: -Infinity');
+        assert.include(childTexts, 'NaN: NaN');
+        assert.include(childTexts, 'length: 124');
+      });
+
+      it('formats very large sparse arrays', async () => {
+        const array: unknown[] = [];
+        const arrayObj = array as unknown as Record<string, unknown>;
+        array[4294967294] = 4294967294;
+        for (let i = 20; i >= 0; i -= 2) {
+          array[i] = i;
+        }
+        for (let i = 2, n = 33; n--; i *= 2) {
+          if (i <= 4294967294) {
+            array[i] = i;
+          } else {
+            arrayObj[String(i)] = i;
+          }
+        }
+        for (let i = 1; i < 20; i += 2) {
+          array[i] = i;
+        }
+
+        const object = createLocalArrayRemoteObject(array);
+        const section = new ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection(object, 'title');
+        const rootElement = section.objectTreeElement();
+        await rootElement.onpopulate();
+        await raf();
+
+        const children = rootElement.children();
+        const childTexts = children.map(c => c.listItemElement.textContent || '');
+
+        assert.deepEqual(childTexts, [
+          '[0 … 19]',
+          '[20 … 8388608]',
+          '[16777216 … 4294967294]',
+          '4294967296: 4294967296',
+          '8589934592: 8589934592',
+          'length: 4294967295',
+        ]);
+      });
+
+      it('formats large typed arrays with consecutive range grouping', async () => {
+        const array = new Uint8Array(64160003);
+        const object = createLocalArrayRemoteObject(array);
+        const section = new ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection(object, 'title');
+        const rootElement = section.objectTreeElement();
+        await rootElement.onpopulate();
+        await raf();
+
+        const children = rootElement.children();
+        const childTexts = children.map(c => c.listItemElement.textContent || '');
+
+        assert.deepEqual(childTexts, [
+          '[0 … 63999999]',
+          '[64000000 … 64160002]',
+          'length: 64160003',
+        ]);
+      });
+    });
   });
 });
 
@@ -219,14 +573,14 @@ describeWithEnvironment('ObjectPropertyTreeElement', () => {
     const parentProperty = new SDK.RemoteObject.RemoteObjectProperty('parentNode', parentObject);
     const parentNode = new ObjectUI.ObjectPropertiesSection.ObjectTreeNode(parentProperty, undefined, {
       readOnly: false,
-      propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED
+      propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED,
     });
 
     const childObject = SDK.RemoteObject.RemoteObject.fromLocalObject('bar');
     const childProperty = new SDK.RemoteObject.RemoteObjectProperty('foo', childObject);
     const childNode = new ObjectUI.ObjectPropertiesSection.ObjectTreeNode(childProperty, parentNode, {
       readOnly: false,
-      propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED
+      propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED,
     });
 
     const treeElement = new ObjectUI.ObjectPropertiesSection.ObjectPropertyTreeElement(childNode);
@@ -241,6 +595,23 @@ describeWithEnvironment('ObjectPropertyTreeElement', () => {
     const copyText = sinon.stub(Host.InspectorFrontendHost.InspectorFrontendHostInstance, 'copyText');
     contextMenu.invokeHandler(copyValueItem.id());
     sinon.assert.calledWith(copyText, 'bar');
+  });
+
+  it('expands and collapses when the underlying node is expanded and collapsed', async () => {
+    const property = new SDK.RemoteObject.RemoteObjectProperty(
+        'name', SDK.RemoteObject.RemoteObject.fromLocalObject({foo: 'bar'}), true, true);
+    const node = new ObjectUI.ObjectPropertiesSection.ObjectTreeNode(property, undefined, {
+      readOnly: false,
+      propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED,
+    });
+
+    const treeElement = new ObjectUI.ObjectPropertiesSection.ObjectPropertyTreeElement(node);
+
+    node.expanded = true;
+    assert.isTrue(treeElement.expanded);
+
+    node.expanded = false;
+    assert.isFalse(treeElement.expanded);
   });
 
   it('does not edit readonly values', async () => {
@@ -261,7 +632,7 @@ describeWithEnvironment('ObjectPropertyTreeElement', () => {
       editingCommitted: sinon.spy(),
       node: new ObjectUI.ObjectPropertiesSection.ObjectTreeNode(property, undefined, {
         readOnly: false,
-        propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED
+        propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED,
       }),
     };
     const output = {valueElement: undefined, nameElement: undefined};
@@ -294,7 +665,7 @@ describeWithEnvironment('ObjectPropertyTreeElement', () => {
       editingCommitted: sinon.spy(),
       node: new ObjectUI.ObjectPropertiesSection.ObjectTreeNode(property, undefined, {
         readOnly: false,
-        propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED
+        propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED,
       }),
     };
     const output = {valueElement: undefined, nameElement: undefined};
@@ -312,7 +683,7 @@ describeWithEnvironment('ObjectPropertyTreeElement', () => {
     const section = new ObjectUI.ObjectPropertiesSection.ObjectPropertyWidget(undefined, viewFunction);
     section.property = new ObjectUI.ObjectPropertiesSection.ObjectTreeNode(property, undefined, {
       readOnly: false,
-      propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED
+      propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED,
     });
 
     renderElementIntoDOM(section);
@@ -350,6 +721,289 @@ describeWithEnvironment('ObjectPropertyTreeElement', () => {
     expandButton.click();
     await assertScreenshot('object_ui/expanded_strings.png');
     assert.strictEqual(value.textContent, `"${longString}"`);
+  });
+
+  it('escapes bidi characters in string titles', () => {
+    const object = SDK.RemoteObject.RemoteObject.fromLocalObject({});
+    const section = new ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection(object, 'title_with_\u202Ebidi');
+
+    assert.strictEqual(section.titleElement.textContent, 'title_with_\\u202Ebidi');
+  });
+
+  it('escapes bidi characters in standalone string values', () => {
+    const object = SDK.RemoteObject.RemoteObject.fromLocalObject('\u202Ereversed_string');
+    const value = ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection.createPropertyValue(object, false, false);
+
+    renderElementIntoDOM(value, {
+      includeCommonStyles: true,
+      extraStyles: [ObjectUI.ObjectPropertiesSection.objectValueStyles],
+    });
+
+    assert.strictEqual(value.textContent, '"\\u202Ereversed_string"');
+  });
+
+  it('escapes bidi characters in object descriptions when hasPreview is false', () => {
+    const target = createTarget();
+    const runtimeModel = target.model(SDK.RuntimeModel.RuntimeModel)!;
+    const object = createDeepRemoteObjectMock(runtimeModel, {});
+    sinon.stub(object, 'description').get(() => 'description_with_\u202Ebidi');
+    // Ensure preview is undefined so hasPreview is false
+    sinon.stub(object, 'preview').get(() => undefined);
+
+    const value = ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection.createPropertyValue(object, false, true);
+
+    renderElementIntoDOM(value, {
+      includeCommonStyles: true,
+      extraStyles: [ObjectUI.ObjectPropertiesSection.objectValueStyles],
+    });
+
+    assert.strictEqual(value.textContent, 'description_with_\\u202Ebidi');
+  });
+
+  it('escapes bidi characters in DOM node previews', () => {
+    const nodeTitle = 'div#\u202Ereversed_id.\u202Ereversed_class';
+    const result = ObjectUI.RemoteObjectPreviewFormatter.renderNodeTitle(nodeTitle);
+    assert.exists(result);
+
+    const container = document.createElement('div');
+    render(result, container);
+
+    const tagSpan = container.querySelector('.webkit-html-tag-name');
+    assert.exists(tagSpan);
+    assert.strictEqual(tagSpan.textContent, 'div');
+
+    const valueSpan = container.querySelector('.webkit-html-attribute-value');
+    assert.exists(valueSpan);
+    assert.strictEqual(valueSpan.textContent, '#\\u202Ereversed_id');
+
+    const nameSpan = container.querySelector('.webkit-html-attribute-name');
+    assert.exists(nameSpan);
+    assert.strictEqual(nameSpan.textContent, '.\\u202Ereversed_class');
+  });
+
+  it('escapes bidi characters in OBJECT_PROPERTY_DEFAULT_VIEW for expanded values', () => {
+    const target = createTarget();
+    const runtimeModel = target.model(SDK.RuntimeModel.RuntimeModel)!;
+    const propertyValue = createDeepRemoteObjectMock(runtimeModel, {});
+    sinon.stub(propertyValue, 'hasChildren').get(() => true);
+    sinon.stub(propertyValue, 'description').get(() => 'Object_with_\u202Ebidi');
+    sinon.stub(propertyValue, 'type').get(() => 'object');
+    sinon.stub(propertyValue, 'subtype').get(() => undefined);
+
+    const property = new SDK.RemoteObject.RemoteObjectProperty('\u202Ereversed_name', propertyValue, true, true);
+    const container = document.createElement('div');
+    const input: ObjectUI.ObjectPropertiesSection.ObjectPropertyViewInput = {
+      editable: false,
+      startEditing: sinon.spy(),
+      invokeGetter: sinon.spy(),
+      onAutoComplete: sinon.spy(),
+      linkifier: undefined,
+      completions: [],
+      expanded: true,
+      editing: false,
+      editingEnded: sinon.spy(),
+      editingCommitted: sinon.spy(),
+      node: new ObjectUI.ObjectPropertiesSection.ObjectTreeNode(property, undefined, {
+        readOnly: false,
+        propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED,
+      }),
+    };
+    const output = {valueElement: undefined, nameElement: undefined};
+    ObjectUI.ObjectPropertiesSection.OBJECT_PROPERTY_DEFAULT_VIEW(input, output, container);
+
+    const nameElement = container.querySelector('.name');
+    assert.exists(nameElement);
+    assert.strictEqual(nameElement.textContent, '\\u202Ereversed_name');
+
+    const valueElement = container.querySelector('.value');
+    assert.exists(valueElement);
+    assert.strictEqual(valueElement.textContent, 'Object_with_\\u202Ebidi');
+  });
+
+  it('escapes bidi characters in names created via createNameElement', () => {
+    const name = '\u202Ereversed_name';
+    const element = ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection.createNameElement(name);
+    assert.strictEqual(element.textContent, '\\u202Ereversed_name');
+  });
+
+  it('escapes bidi characters in names with whitespace created via createNameElement', () => {
+    const name = ' \u202Ereversed_name ';
+    const element = ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection.createNameElement(name);
+    assert.strictEqual(element.textContent, '" \\u202Ereversed_name "');
+  });
+
+  it('escapes bidi characters in private names created via createNameElement', () => {
+    const name = '#\u202Ereversed_name';
+    const element = ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection.createNameElement(name, true);
+    assert.strictEqual(element.textContent, '#\\u202Ereversed_name');
+  });
+
+  it('escapes unpaired surrogates in object property names and values', () => {
+    const target = createTarget();
+    const runtimeModel = target.model(SDK.RuntimeModel.RuntimeModel)!;
+    const object = createDeepRemoteObjectMock(runtimeModel, {});
+    const brokenSurrogate = '  \uD835\uDC14\uD835\uDC0D\uD835\uDC08\uD835\uDC02\uD835\uDC0E\uD835\uDC03\uD835';
+
+    sinon.stub(object, 'preview').get(() => ({
+                                        type: Protocol.Runtime.ObjectPreviewType.Object,
+                                        overflow: false,
+                                        properties: [
+                                          {
+                                            name: 'foo',
+                                            type: Protocol.Runtime.PropertyPreviewType.String,
+                                            value: brokenSurrogate,
+                                          },
+                                          {
+                                            name: brokenSurrogate,
+                                            type: Protocol.Runtime.PropertyPreviewType.String,
+                                            value: 'foo',
+                                          },
+                                        ],
+                                      }));
+
+    const value = ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection.createPropertyValue(object, false, true);
+
+    renderElementIntoDOM(value, {
+      includeCommonStyles: true,
+      extraStyles: [ObjectUI.ObjectPropertiesSection.objectValueStyles],
+    });
+
+    const nameElements = value.querySelectorAll('.name');
+    const valueElements = value.querySelectorAll('.object-value-string');
+
+    assert.lengthOf(nameElements, 2);
+    assert.lengthOf(valueElements, 2);
+
+    assert.strictEqual(nameElements[0].textContent, 'foo');
+    assert.strictEqual(valueElements[0].textContent,
+                       '\'  \uD835\uDC14\uD835\uDC0D\uD835\uDC08\uD835\uDC02\uD835\uDC0E\uD835\uDC03\\uD835\'');
+
+    assert.strictEqual(nameElements[1].textContent,
+                       '"  \uD835\uDC14\uD835\uDC0D\uD835\uDC08\uD835\uDC02\uD835\uDC0E\uD835\uDC03\\uD835"');
+    assert.strictEqual(valueElements[1].textContent, '\'foo\'');
+  });
+});
+
+describeWithEnvironment('ArrayGroupingTreeElement', () => {
+  let target: SDK.Target.Target;
+  let runtimeModel: SDK.RuntimeModel.RuntimeModel;
+
+  beforeEach(() => {
+    target = createTarget();
+    runtimeModel = target.model(SDK.RuntimeModel.RuntimeModel)!;
+  });
+
+  it('expands and collapses when the underlying node is expanded and collapsed', async () => {
+    const rootObj = createDeepRemoteObjectMock(runtimeModel, {});
+
+    // Inject array behavior into rootObj to get arrayRanges
+    sinon.stub(rootObj, 'subtype').get(() => Protocol.Runtime.RemoteObjectSubtype.Array);
+    sinon.stub(rootObj, 'arrayLength').returns(1000);
+    sinon.stub(rootObj, 'callFunctionJSON').resolves({ranges: [[0, 10, 11]]});
+
+    const root = new ObjectUI.ObjectPropertiesSection.ObjectTree(rootObj, {
+      readOnly: false,
+      propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED,
+    });
+
+    const rootChildren = await root.populateChildrenIfNeeded();
+    const node = rootChildren.arrayRanges?.[0]!;
+    const treeElement = new ObjectUI.ObjectPropertiesSection.ArrayGroupingTreeElement(node);
+
+    node.expanded = true;
+    assert.isTrue(treeElement.expanded);
+
+    node.expanded = false;
+    assert.isFalse(treeElement.expanded);
+  });
+});
+
+describeWithEnvironment('ObjectTreeNode', () => {
+  it('prevents recursive expansion for [[Prototype]]', () => {
+    const property = new SDK.RemoteObject.RemoteObjectProperty(
+        '[[Prototype]]', SDK.RemoteObject.RemoteObject.fromLocalObject({}), true, true);
+    const node = new ObjectUI.ObjectPropertiesSection.ObjectTreeNode(property, undefined, {
+      readOnly: false,
+      propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED,
+    });
+
+    assert.isFalse(node.canExpandRecursively);
+  });
+
+  it('allows recursive expansion for regular properties', () => {
+    const property =
+        new SDK.RemoteObject.RemoteObjectProperty('foo', SDK.RemoteObject.RemoteObject.fromLocalObject({}), true, true);
+    const node = new ObjectUI.ObjectPropertiesSection.ObjectTreeNode(property, undefined, {
+      readOnly: false,
+      propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED,
+    });
+
+    assert.isTrue(node.canExpandRecursively);
+  });
+
+  it('only matches string and number property values, cutting off long strings to 50 chars', () => {
+    const hugeString = 'findme' +
+        'a'.repeat(10000) + 'findme_end';
+    const stringProperty = new SDK.RemoteObject.RemoteObjectProperty(
+        'str', SDK.RemoteObject.RemoteObject.fromLocalObject(hugeString), true, true);
+    const stringNode = new ObjectUI.ObjectPropertiesSection.ObjectTreeNode(stringProperty, undefined, {
+      readOnly: true,
+      propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED,
+    });
+
+    const startMatches = stringNode.match(/findme/);
+    assert.lengthOf(startMatches, 1);
+    assert.strictEqual(startMatches[0].range.offset, 1);
+
+    const endMatches = stringNode.match(/findme_end/);
+    assert.lengthOf(endMatches, 0);
+
+    const funcProperty = new SDK.RemoteObject.RemoteObjectProperty(
+        'fn', SDK.RemoteObject.RemoteObject.fromLocalObject(function myFunc() {}), true, true);
+    const funcNode = new ObjectUI.ObjectPropertiesSection.ObjectTreeNode(funcProperty, undefined, {
+      readOnly: true,
+      propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED,
+    });
+    assert.lengthOf(funcNode.match(/myFunc/), 0);
+  });
+});
+
+describe('ObjectTree with TreeSearch', () => {
+  setupLocaleHooks();
+  setupSettingsHooks();
+  const cleanHighlights = () => {
+    CSS.highlights.get('highlighted-search-result')?.clear();
+    CSS.highlights.get('current-search-result')?.clear();
+  };
+  beforeEach(cleanHighlights);
+  afterEach(cleanHighlights);
+
+  it('highlights search results in rendered section cleanly within cropped string when unexpanded', async () => {
+    const hugeString = 'findme' +
+        'a'.repeat(10000);
+    const object = SDK.RemoteObject.RemoteObject.fromLocalObject({
+      str: hugeString,
+    });
+    const search = new UI.TreeOutline.TreeSearch<ObjectUI.ObjectPropertiesSection.ObjectTreeNodeBase>();
+    const section = new ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection(
+        object, /* title */ null, /* linkifier */ undefined, /* showOverflow */ true, /* editable */ false, search);
+    await section.root.populateChildrenIfNeeded();
+
+    const div = document.createElement('div');
+    renderElementIntoDOM(div);
+    div.appendChild(section.element);
+    await section.objectTreeElement().onpopulate();
+    await raf();
+
+    const regex = /findme/;
+    search.search(section.root, false,
+                  (node, isPostOrder) => isPostOrder ?
+                      [] :
+                      (node.match(regex) as ObjectUI.ObjectPropertiesSection.ObjectPropertySearchResult[]));
+    await raf();
+
+    const highlights = (section.element.shadowRoot || section.element).querySelectorAll('devtools-highlight');
+    assert.isAbove(highlights.length, 0);
   });
 });
 
@@ -508,7 +1162,7 @@ describeWithEnvironment('ObjectTreeExpansionTracker', () => {
           myArray: [
             {foo: {bar: 'baz'}},
           ],
-        }
+        },
       });
 
       const root = new ObjectUI.ObjectPropertiesSection.ObjectTree(rootObj, {
@@ -590,5 +1244,63 @@ describeWithEnvironment('ObjectTreeExpansionTracker', () => {
     await tracker.apply(freshRoot);
 
     assert.isFalse(freshRoot.expanded);
+  });
+
+  it('expands properties recursively', async () => {
+    const object = SDK.RemoteObject.RemoteObject.fromLocalObject({
+      foo: {
+        bar: {
+          baz: {
+            quux: {
+              corge: 'plugh',
+            },
+          },
+        },
+        quuz: {
+          garply: 'xyzzy',
+          thud: {
+            wibble: 'wobble',
+          },
+        },
+      },
+    });
+
+    const section = new ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection(object, 'JSON');
+    const rootElement = section.objectTreeElement();
+    await rootElement.expandRecursively(10);
+
+    await new Promise(requestAnimationFrame);
+
+    assert.strictEqual(rootElement.childCount(), 1);
+    const foo = rootElement.childAt(0)!;
+    assert.isTrue(foo.expanded);
+
+    assert.strictEqual(foo.childCount(), 2);
+    const bar = foo.childAt(0)!;
+    const quuz = foo.childAt(1)!;
+    assert.isTrue(bar.expanded);
+    assert.isTrue(quuz.expanded);
+
+    assert.strictEqual(bar.childCount(), 1);
+    const baz = bar.childAt(0)!;
+    assert.isTrue(baz.expanded);
+
+    assert.strictEqual(baz.childCount(), 1);
+    const quux = baz.childAt(0)!;
+    assert.isTrue(quux.expanded);
+
+    assert.strictEqual(quux.childCount(), 1);
+    const corge = quux.childAt(0)!;
+    assert.isFalse(corge.expanded);
+
+    assert.strictEqual(quuz.childCount(), 2);
+    const garply = quuz.childAt(0)!;
+    const thud = quuz.childAt(1)!;
+    assert.isFalse(garply.expanded);
+    assert.isTrue(thud.expanded);
+
+    assert.strictEqual(thud.childCount(), 1);
+    const wibble = thud.childAt(0)!;
+    assert.isFalse(wibble.expanded);
   });
 });

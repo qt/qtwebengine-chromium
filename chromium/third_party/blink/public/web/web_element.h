@@ -31,8 +31,11 @@
 #ifndef THIRD_PARTY_BLINK_PUBLIC_WEB_WEB_ELEMENT_H_
 #define THIRD_PARTY_BLINK_PUBLIC_WEB_WEB_ELEMENT_H_
 
+#include <optional>
 #include <vector>
 
+#include "base/functional/callback_forward.h"
+#include "base/time/time.h"
 #include "third_party/blink/public/platform/web_common.h"
 #include "third_party/blink/public/web/web_node.h"
 #include "ui/gfx/geometry/vector2d_f.h"
@@ -51,6 +54,16 @@ class Element;
 class Image;
 class LayoutBox;
 class WebLabelElement;
+
+enum class WebElementInteractionDisallowedReason {
+  kDisabled,
+  kNoLayoutObject,
+  kInert,
+  kPointerEventsNone,
+  kAriaDisabled,
+  kAriaHidden,
+  kRolePresentationOrNone,
+};
 
 // Provides access to some properties of a DOM element node.
 class BLINK_EXPORT WebElement : public WebNode {
@@ -77,6 +90,8 @@ class BLINK_EXPORT WebElement : public WebNode {
   WebString TagName() const;
   // Returns the id attribute.
   WebString GetIdAttribute() const;
+  // Returns the cryptographic nonce.
+  WebString Nonce() const;
   // Check if this element has the specified local tag name, and the HTML
   // namespace. Tag name matching is case-insensitive.
   bool HasHTMLTagName(const WebString&) const;
@@ -110,6 +125,30 @@ class BLINK_EXPORT WebElement : public WebNode {
 
   // Simulates a click on `this` element.
   void Click();
+
+  // Returns the reason actor-style interaction should treat this element as
+  // disallowed, or nullopt when it may still try the action.
+  //
+  // This always covers native disabled form controls, computed inertness,
+  // pointer-events:none, and missing layout. When `check_aria` is true, this
+  // also treats aria-disabled, aria-hidden, and role=none/presentation as
+  // disallowed. Use `check_aria=true` for accessibility-style activation paths.
+  std::optional<WebElementInteractionDisallowedReason>
+  InteractionDisallowedReason(bool check_aria) const;
+
+  // Simulates the accessibility-style click activation sequence on this
+  // element. This uses the same event-dispatch semantics as Blink accessibility
+  // activation, but it does not require accessibility to be enabled.
+  //
+  // This updates style/layout for this element, then dispatches the simulated
+  // pointerdown/mousedown/pointerup/mouseup/click sequence. It does not create
+  // an accessibility action, grant a user gesture, or explicitly move focus;
+  // activeElement keeps its usual meaning.
+  //
+  // Returns false if the element cannot safely be activated, for example
+  // because it is disconnected, its frame went away, or disabled/inert author
+  // state blocks activation.
+  bool SimulateAccessibilityClick();
 
   // Simulates a paste of `text` event into `this` element.
   //
@@ -215,6 +254,17 @@ class BLINK_EXPORT WebElement : public WebNode {
   // strings directly to WebElement and enable public component usage through
   // /public/web interfaces.
   WebString GetComputedValue(const WebString& property_name);
+
+  // Observes the visibility of this element.
+  //
+  // Invokes `callback` once this element has been visible for at least
+  // `minimum_visible_duration`. If the observer is disconnected via the
+  // returned closure runner before the threshold is met, `callback` is dropped.
+  //
+  // The returned closure runner removes the observer.
+  base::ScopedClosureRunner MonitorVisibility(
+      base::TimeDelta minimum_visible_duration,
+      base::OnceClosure callback);
 
 #if INSIDE_BLINK
   WebElement(Element*);

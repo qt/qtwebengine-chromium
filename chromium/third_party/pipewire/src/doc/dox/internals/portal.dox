@@ -1,0 +1,215 @@
+/** \page page_portal Portal Access Control
+
+This document explains how clients from the portal are handled.
+
+The portal is a DBus service that exposes interfaces to
+request access to the PipeWire daemon to perform a certain set of
+functions. The PipeWire daemon runs outside the sandbox, the portal is a way
+for clients inside the sandbox to connect to and use PipeWire.
+
+The PipeWire socket is not exposed in the sandbox. Instead, The portal
+connects to PipeWire on behalf of the client, informing PipeWire that this
+client is a portal-managed client. PipeWire can detect and enforce
+extra permission checks on the portal managed clients.
+
+Once such portal is the [camera
+portal](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Camera.html)
+that provides a PipeWire session to stream video from a camera.
+
+
+# Use Cases
+
+## New Portal Managed Clients Need Device Permissions Configured
+
+When a new client is detected, the available objects need to be
+scanned and permissions configured for each of them.
+
+Only the devices belonging to the media_roles given by the
+portal are considered.
+
+## New Devices Need To Be Made Visible To Portal Managed Clients
+
+Newly created objects are made visible to a client when the client
+is allowed to interact with it.
+
+Only the devices belonging to the media_roles given by the
+portal are considered.
+
+## Permissions For A Device Need To Be Revoked
+
+The session manager listens to changes in the permissions of devices
+and will remove the client permissions accordingly.
+
+Usually this is implemented by listening to the permission store
+DBus object. The desktop environment might provide a configuration panel
+where these permissions can be managed.
+
+
+# Design
+
+## The Portal
+
+A sandboxed client cannot connect to PipeWire directly. Instead, it connects
+to the sandbox side of the portal which then connects the PipeWire daemon to
+configure the session. The portal then hands the file descriptor of the
+PipeWire connection to the client and the client can use this file descriptor
+to interface with the PipeWire session directly.
+
+When the portal connects, it will set the following properties on the
+client object:
+
+- `"pipewire.access.portal.is_portal" = true` for the connection of the
+  portal itself (as opposed to a client managed by the portal).
+- `"pipewire.access.portal.app_id"` the [application ID](https://docs.flatpak.org/en/latest/conventions.html#application-ids) of the client.
+- `"pipewire.access.portal.media_roles"` media roles of the client.
+  Currently only `"Camera"` is defined.
+
+Before returning the connection to a client, the portal configures
+minimal permissions on the client. No objects are initially visible. It is
+the task of the \ref page_session_manager to make the objects in the graph
+visible, depending on the client's `media_roles` (see also \ref
+PW_KEY_MEDIA_ROLE).
+
+## The PipeWire Portal Module
+
+The PipeWire daemon uses the \ref page_module_portal to find the PID of the
+processes that owns the DBus name `org.freedesktop.portal.Desktop`
+(see the [XDG Desktop Portal](https://github.com/flatpak/xdg-desktop-portal)).
+
+Client connections from this PID are tagged as \ref PW_KEY_ACCESS
+`"portal"` (see \ref page_module_access). It will also set ALL permissions for
+this client so that it can resume.
+
+\dot
+digraph pw {
+  compound=true;
+  node [shape="box"];
+  rankdir="TB";
+
+  dbus [label="org.freedesktop.portal.Desktop"];
+
+  portal_access [label="PipeWire (mod: Portal Access)"];
+  portal [label="xdg-desktop-portal"];
+
+  dbus -> portal_access [arrowhead="dot"];
+  dbus -> portal [arrowhead="dot"];
+
+  portal_access -> portal [label="pipewire.access = portal"];
+
+  { rank="same"; portal_access; portal}
+}
+\enddot
+
+## The Client
+
+A client can ask the portal for a connection to the PipeWire daemon.
+
+\dot
+digraph pw {
+  compound=true;
+  node [shape="box"];
+  rankdir="LR";
+
+  pw [label="PipeWire"];
+  portal [label="xdg-desktop-portal"];
+  client [label="client"];
+
+  client -> portal;
+  portal -> pw [label="portal.is_portal=true", arrowhead="none"]
+
+  {rank="min"; pw};
+  {rank="max"; client};
+}
+\enddot
+
+The portal maintains an (unrestricted) connection to the PipeWire daemon with
+`"pipewire.access.portal.is_portal" = true` to identify the nodes the client
+needs access to. It then creates a new restricted connection for the client,
+tagged with additional information.
+
+\dot
+digraph pw {
+  compound=true;
+  node [shape="box"];
+  rankdir="LR";
+
+  pw [label="PipeWire"];
+  portal [label="xdg-desktop-portal"];
+  client [label="client"];
+
+  client -> portal [arrowhead="none"];
+  portal -> pw [label="portal.is_portal=true", arrowhead="none"]
+  portal -> pw [label="portal.app_id = $appid"]
+
+  {rank="min"; pw};
+  {rank="max"; client};
+}
+\enddot
+
+The file descriptor for this restricted connection is passed back to the
+client which can now make use of the resources it has been permitted to
+access.
+
+\dot
+digraph pw {
+  compound=true;
+  node [shape="box"];
+  rankdir="LR";
+
+  pw [label="PipeWire"];
+  portal [label="xdg-desktop-portal"];
+  client [label="client"];
+
+  portal -> pw [label="portal.is_portal=true", arrowhead="none"]
+
+  pw->client [label="restricted connection"];
+
+  {rank="min"; pw};
+  {rank="max"; client};
+}
+\enddot
+
+## The Session Manager
+
+The session manager listens for new clients to appear. It will use the
+\ref PW_KEY_ACCESS property to find portal connections. For client connections
+from the portal the session manager checks the requested `media_roles` and
+enables or disables access to the respective PipeWire objects.
+It might have to consult a database to decide what is allowed, for example the
+[org.freedesktop.impl.portal.PermissionStore](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.impl.portal.PermissionStore.html).
+
+\dot
+strict digraph pw {
+  compound=true;
+  node [shape="box"];
+  rankdir="LR";
+
+  portal [label="xdg-desktop-portal"];
+  client [label="client"];
+
+
+  subgraph {
+	  rankdir="TB";
+	  permissions [label="PermissionStore"];
+
+	  sm->permissions;
+
+	  sm [label="Session Manager"];
+	  pw [label="PipeWire"];
+	  sm -> pw [headlabel="allow $media.roles"];
+	  pw -> sm;
+	  portal -> pw [label="portal.app_id = $appid"];
+  }
+
+  client -> portal [arrowhead="none"];
+
+  {rank="min"; sm, pw};
+  {rank="max"; client};
+}
+\enddot
+
+In the case of the [XDG Desktop
+Portal](https://github.com/flatpak/xdg-desktop-portal), the portal itself
+queries the PermissionStore directly.
+
+*/

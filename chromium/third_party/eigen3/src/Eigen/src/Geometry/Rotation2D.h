@@ -117,7 +117,7 @@ class Rotation2D : public RotationBase<Rotation2D<Scalar_>, 2> {
   EIGEN_DEVICE_FUNC Matrix2 toRotationMatrix() const;
 
   /** Set \c *this from a 2x2 rotation matrix \a mat.
-   * In other words, this function extract the rotation angle from the rotation matrix.
+   * In other words, this function extracts the rotation angle from the rotation matrix.
    *
    * This method is an alias for fromRotationMatrix()
    *
@@ -173,7 +173,7 @@ typedef Rotation2D<float> Rotation2Df;
 typedef Rotation2D<double> Rotation2Dd;
 
 /** Set \c *this from a 2x2 rotation matrix \a mat.
- * In other words, this function extract the rotation angle
+ * In other words, this function extracts the rotation angle
  * from the rotation matrix.
  */
 template <typename Scalar>

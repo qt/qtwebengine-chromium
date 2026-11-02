@@ -48,7 +48,7 @@ class RotationBase {
   EIGEN_DEVICE_FUNC inline RotationMatrixType toRotationMatrix() const { return derived().toRotationMatrix(); }
 
   /** \returns an equivalent rotation matrix
-   * This function is added to be conform with the Transform class' naming scheme.
+   * This function is added to conform with the Transform class' naming scheme.
    */
   EIGEN_DEVICE_FUNC inline RotationMatrixType matrix() const { return derived().toRotationMatrix(); }
 
@@ -169,7 +169,7 @@ namespace internal {
 
 /** \internal
  *
- * Helper function to return an arbitrary rotation object to a rotation matrix.
+ * Helper function to convert an arbitrary rotation object to a rotation matrix.
  *
  * \tparam Scalar the numeric type of the matrix coefficients
  * \tparam Dim the dimension of the current space

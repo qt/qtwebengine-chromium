@@ -6,11 +6,8 @@
 
 // X11Window.cpp: Implementation of OSWindow for X11
 
-#ifdef UNSAFE_BUFFERS_BUILD
-#    pragma allow_unsafe_buffers
-#endif
-
 #include "util/linux/x11/X11Window.h"
+#include "common/unsafe_buffers.h"
 
 #include "common/debug.h"
 #include "util/Timer.h"
@@ -290,6 +287,7 @@ class ANGLE_UTIL_EXPORT X11Window : public OSWindow
     EGLNativeWindowType getNativeWindow() const override;
     void *getPlatformExtension() override;
     EGLNativeDisplayType getNativeDisplay() const override;
+    EGLenum getNativeDisplayPlatformType() const override;
 
     void messageLoop() override;
 
@@ -354,12 +352,12 @@ bool X11Window::initializeImpl(const std::string &name, int width, int height)
 
     {
         int screen  = DefaultScreen(mDisplay);
-        Window root = RootWindow(mDisplay, screen);
+        Window root = ANGLE_UNSAFE_TODO(RootWindow(mDisplay, screen));
 
         Visual *visual;
         if (mRequestedVisualId == -1)
         {
-            visual = DefaultVisual(mDisplay, screen);
+            visual = ANGLE_UNSAFE_TODO(DefaultVisual(mDisplay, screen));
         }
         else
         {
@@ -379,7 +377,7 @@ bool X11Window::initializeImpl(const std::string &name, int width, int height)
             XFree(visuals);
         }
 
-        int depth         = DefaultDepth(mDisplay, screen);
+        int depth         = ANGLE_UNSAFE_TODO(DefaultDepth(mDisplay, screen));
         Colormap colormap = XCreateColormap(mDisplay, root, visual, AllocNone);
 
         XSetWindowAttributes attributes;
@@ -481,6 +479,11 @@ void *X11Window::getPlatformExtension()
 EGLNativeDisplayType X11Window::getNativeDisplay() const
 {
     return reinterpret_cast<EGLNativeDisplayType>(mDisplay);
+}
+
+EGLenum X11Window::getNativeDisplayPlatformType() const
+{
+    return EGL_PLATFORM_X11_EXT;
 }
 
 void X11Window::messageLoop()
@@ -756,7 +759,7 @@ void X11Window::processEvent(const XEvent &xEvent)
                 // the new parent and not what the user wants to know. Use
                 // XTranslateCoordinates to get the coordinates on the screen.
                 int screen  = DefaultScreen(mDisplay);
-                Window root = RootWindow(mDisplay, screen);
+                Window root = ANGLE_UNSAFE_TODO(RootWindow(mDisplay, screen));
 
                 int x, y;
                 Window child;

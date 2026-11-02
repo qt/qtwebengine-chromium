@@ -156,7 +156,7 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Tgt bit_cast(const Src& src) {
  *     this means, just use \a T here.
  * \li An enum value \c IsComplex. It is equal to 1 if \a T is a \c std::complex type, and to 0 otherwise.
  * \li An enum value \c IsInteger. It is equal to \c 1 if \a T is an integer type such as \c int, and to \c 0 otherwise.
- * \li Enum values \c ReadCost, \c AddCost and \c MulCost representing a rough estimate of the number of CPU cycles needed to by
+ * \li Enum values \c ReadCost, \c AddCost and \c MulCost representing a rough estimate of the number of CPU cycles needed by
  *     move / add / mul instructions respectively, assuming the data is already stored in CPU registers. Stay vague here.
  *     No need to do architecture-specific stuff. If you don't know what this means, just use \c Eigen::HugeCost.
  * \li An enum value \c IsSigned. It is equal to \c 1 if \a T is a signed type and to 0 if \a T is unsigned.

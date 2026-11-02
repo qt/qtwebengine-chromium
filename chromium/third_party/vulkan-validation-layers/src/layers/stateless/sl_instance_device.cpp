@@ -52,12 +52,34 @@ bool Instance::ValidateExtensionReqs(const ExtensionState& extensions, bool is_i
         return skip;  // Unknown extensions cannot be checked so report OK
     }
 
-    // Check against the required list in the info
-    std::vector<const char*> missing;
-    for (const auto& req : info.requirements) {
-        if (!IsExtEnabled(extensions.*(req.enabled))) {
-            missing.push_back(req.name);
+    // Each entry in info.requirements is an "OR group" of required extensions:
+    // In each group only one extension needs to be enabled for the group to be satisfied,
+    // but all groups need to satisfied.
+    // In practice as of writing, almost all groups have one element.
+    std::vector<std::string> missing;
+    for (const auto& or_group : info.requirements) {
+        const bool is_any_required_ext_enabled = std::any_of(
+            or_group.begin(), or_group.end(), [&extensions](const auto& req) { return IsExtEnabled(extensions.*(req.enabled)); });
+
+        if (is_any_required_ext_enabled) {
+            continue;
         }
+
+        // Group not satisfied, log it in error message
+        std::ostringstream group_ss;
+        for (uint32_t i = 0; i < or_group.size(); i++) {
+            if (i > 0) {
+                group_ss << " or ";
+            }
+            group_ss << or_group[i].name;
+            if (!is_instance) {
+                vvl::Extension missing_extension = GetExtension(or_group[i].name);
+                if (IsInstanceExtension(missing_extension)) {
+                    group_ss << " (instance extension, which needs to be added to VkInstanceCreateInfo::ppEnabledExtensionNames)";
+                }
+            }
+        }
+        missing.push_back(group_ss.str());
     }
 
     if (missing.empty()) {
@@ -69,7 +91,7 @@ bool Instance::ValidateExtensionReqs(const ExtensionState& extensions, bool is_i
         std::ostringstream ss;
         ss << "Missing extension" << ((missing.size() > 1) ? "s" : "") << " required to enable instance extension "
            << String(extension) << ":\n";
-        for (auto missing_name : missing) {
+        for (const auto& missing_name : missing) {
             ss << " - " << missing_name << "\n";
         }
         skip |= LogError("VUID-vkCreateInstance-ppEnabledExtensionNames-01388", instance, extension_loc, "%s", ss.str().c_str());
@@ -78,13 +100,8 @@ bool Instance::ValidateExtensionReqs(const ExtensionState& extensions, bool is_i
         std::ostringstream ss;
         ss << "Missing extension" << ((missing.size() > 1) ? "s" : "") << " required to enable device extension "
            << String(extension) << ":\n";
-        for (auto missing_name : missing) {
-            ss << " - " << missing_name;
-            vvl::Extension missing_extension = GetExtension(missing_name);
-            if (IsInstanceExtension(missing_extension)) {
-                ss << " (instance extension, which needs to be added to VkInstanceCreateInfo::ppEnabledExtensionNames)";
-            }
-            ss << '\n';
+        for (const auto& missing_name : missing) {
+            ss << " - " << missing_name << "\n";
         }
         skip |= LogError("VUID-vkCreateDevice-ppEnabledExtensionNames-01387", instance, extension_loc, "%s", ss.str().c_str());
     }
@@ -881,16 +898,30 @@ bool Instance::manual_PreCallValidateGetPhysicalDeviceImageFormatProperties2(
 
     if (pImageFormatInfo != nullptr) {
         const Location format_info_loc = error_obj.location.dot(Field::pImageFormatInfo);
+
+        const auto has_stencil_usage =
+            vku::FindStructInPNextChain<VkImageStencilUsageCreateInfo>(pImageFormatInfo->pNext) != nullptr;
+        const auto has_stencil_usage_2 =
+            vku::FindStructInPNextChain<VkImageStencilUsage2CreateInfoKHR>(pImageFormatInfo->pNext) != nullptr;
+        if (has_stencil_usage && has_stencil_usage_2) {
+            skip |= LogError("VUID-VkImageCreateInfo-pNext-12442", physicalDevice, format_info_loc.dot(Field::pNext),
+                             "contains both VkImageStencilUsageCreateInfo and VkImageStencilUsage2CreateInfoKHR.");
+        }
         const auto stencil_usage = GetImageStencilUsageFlags(pImageFormatInfo->pNext);
         if (stencil_usage.has_value()) {
             if ((stencil_usage.value() & VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT) != 0) {
-                VkImageUsageFlags legal_flags = (VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT);
+                VkImageUsageFlags2KHR legal_flags =
+                    (VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT);
                 // No flags other than the legal attachment bits may be set
                 legal_flags |= VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
                 if ((stencil_usage.value() & ~legal_flags) != 0) {
-                    skip |= LogError("VUID-VkImageStencilUsageCreateInfo-stencilUsage-02539", physicalDevice,
-                                     format_info_loc.pNext(Struct::VkImageStencilUsageCreateInfo, Field::stencilUsage), "is %s.",
-                                     string_VkImageUsageFlags(stencil_usage.value()).c_str());
+                    const char* vuid = has_stencil_usage_2 ? "VUID-VkImageStencilUsage2CreateInfoKHR-stencilUsage-12443"
+                                                           : "VUID-VkImageStencilUsageCreateInfo-stencilUsage-02539";
+                    Location stencil_usage_loc =
+                        has_stencil_usage_2 ? format_info_loc.pNext(Struct::VkImageStencilUsage2CreateInfoKHR, Field::stencilUsage)
+                                            : format_info_loc.pNext(Struct::VkImageStencilUsageCreateInfo, Field::stencilUsage);
+                    skip |= LogError(vuid, physicalDevice, stencil_usage_loc, "is %s.",
+                                     string_VkImageUsageFlags2KHR(stencil_usage.value()).c_str());
                 }
             }
         }

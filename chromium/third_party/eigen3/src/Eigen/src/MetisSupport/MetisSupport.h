@@ -118,7 +118,7 @@ class MetisOrdering {
   }
 
  protected:
-  IndexVector m_indexPtr;      // Pointer to the adjacenccy list of each row/column
+  IndexVector m_indexPtr;      // Pointer to the adjacency list of each row/column
   IndexVector m_innerIndices;  // Adjacency list
 };
 

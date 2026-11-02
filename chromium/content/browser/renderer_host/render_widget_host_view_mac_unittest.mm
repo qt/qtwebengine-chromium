@@ -33,7 +33,10 @@
 #include "content/browser/compositor/image_transport_factory.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/renderer_host/frame_token_message_queue.h"
+#include "content/browser/renderer_host/frame_tree.h"
+#include "content/browser/renderer_host/input/motion_event_web.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
+#include "content/browser/renderer_host/text_input_client_mac.h"
 #include "content/browser/renderer_host/text_input_manager.h"
 #include "content/browser/site_instance_group.h"
 #include "content/common/features.h"
@@ -51,15 +54,19 @@
 #include "content/test/stub_render_widget_host_owner_delegate.h"
 #include "content/test/test_render_view_host.h"
 #include "content/test/test_render_widget_host.h"
+#include "content/test/test_web_contents.h"
 #include "gpu/ipc/service/image_transport_surface.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/gtest_mac.h"
+#include "third_party/blink/public/common/input/synthetic_web_input_event_builders.h"
 #import "third_party/ocmock/OCMock/OCMock.h"
 #import "third_party/ocmock/ocmock_extensions.h"
 #include "ui/base/cocoa/secure_password_input.h"
 #include "ui/base/ime/mojom/text_input_state.mojom.h"
+#include "ui/base/ime/text_input_flags.h"
+#include "ui/base/ime/text_input_type.h"
 #import "ui/base/test/cocoa_helper.h"
 #import "ui/base/test/scoped_fake_nswindow_focus.h"
 #include "ui/base/ui_base_features.h"
@@ -422,9 +429,10 @@ class MockRenderWidgetHostImpl : public RenderWidgetHostImpl {
   MockRenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
                            base::SafeRef<SiteInstanceGroup> site_instance_group,
                            int32_t routing_id,
-                           bool for_frame_widget)
+                           bool for_frame_widget,
+                           FrameTree* frame_tree = nullptr)
       : RenderWidgetHostImpl(
-            /*frame_tree=*/nullptr,
+            frame_tree,
             /*self_owned=*/false,
             DefaultFrameSinkId(*site_instance_group, routing_id),
             delegate,
@@ -528,7 +536,7 @@ class RenderWidgetHostViewMacTest : public RenderViewHostImplTestHarness {
     host_ = std::make_unique<MockRenderWidgetHostImpl>(
         &delegate_, site_instance_group_->GetSafeRef(),
         process_host_->GetNextRoutingID(),
-        /*for_frame_widget=*/true);
+        /*for_frame_widget=*/true, &contents()->GetPrimaryFrameTree());
     host_->set_owner_delegate(&mock_owner_delegate_);
     delegate_.set_focused_widget(host_.get());
     rwhv_mac_ = new RenderWidgetHostViewMac(host_.get());
@@ -1136,6 +1144,66 @@ TEST_F(RenderWidgetHostViewMacTest, CompositionEventAfterDestroy) {
   EXPECT_EQ(gfx::Range(), gfx::Range(actual_range));
 }
 
+namespace {
+
+// Destroys the supplied RenderWidgetHostViewMac the first time a gesture event
+// is observed on the associated RenderWidgetHost.
+class ViewDestroyingInputEventObserver
+    : public RenderWidgetHost::InputEventObserver {
+ public:
+  explicit ViewDestroyingInputEventObserver(RenderWidgetHostViewMac* view)
+      : view_(view) {}
+
+  void OnInputEvent(const RenderWidgetHost& host,
+                    const blink::WebInputEvent& event,
+                    InputEventSource source) override {
+    if (view_ && blink::WebInputEvent::IsGestureEventType(event.GetType())) {
+      gesture_event_seen_ = true;
+      view_.ExtractAsDangling()->Destroy();
+    }
+  }
+
+  bool gesture_event_seen() const { return gesture_event_seen_; }
+
+ private:
+  raw_ptr<RenderWidgetHostViewMac> view_;
+  bool gesture_event_seen_ = false;
+};
+
+}  // namespace
+
+// Tests that ProcessAckedTouchEvent does not access |this| after the view has
+// been synchronously destroyed during gesture dispatch from OnTouchEventAck.
+TEST_F(RenderWidgetHostViewMacTest,
+       ProcessAckedTouchEventAfterViewDestroyedDuringGestureDispatch) {
+  blink::SyntheticWebTouchEvent touch_event;
+  touch_event.PressPoint(10, 10);
+  ASSERT_TRUE(rwhv_mac_->GetFilteredGestureProviderForTesting()
+                  ->OnTouchEvent(MotionEventWeb(touch_event))
+                  .succeeded);
+
+  input::TouchEventWithLatencyInfo touch_start_with_latency(touch_event);
+  rwhv_mac_->ProcessAckedTouchEvent(
+      touch_start_with_latency,
+      blink::mojom::InputEventResultState::kNotConsumed);
+
+  touch_event.MovePoint(0, 80, 80);
+  ASSERT_TRUE(rwhv_mac_->GetFilteredGestureProviderForTesting()
+                  ->OnTouchEvent(MotionEventWeb(touch_event))
+                  .succeeded);
+
+  ViewDestroyingInputEventObserver observer(rwhv_mac_);
+  host_->AddInputEventObserver(&observer);
+
+  input::TouchEventWithLatencyInfo touch_move_with_latency(touch_event);
+  touch_move_with_latency.event.touch_start_or_first_touch_move = true;
+  rwhv_mac_->ProcessAckedTouchEvent(
+      touch_move_with_latency, blink::mojom::InputEventResultState::kConsumed);
+
+  EXPECT_TRUE(observer.gesture_event_seen());
+  host_->RemoveInputEventObserver(&observer);
+}
+
 // Verify that |SetActive()| calls |RenderWidgetHostImpl::LostFocus()| and
 // |RenderWidgetHostImp::GotFocus()|.
 TEST_F(RenderWidgetHostViewMacTest, LostFocusAndGotFocusOnSetActive) {
@@ -1442,6 +1510,29 @@ TEST_F(RenderWidgetHostViewMacTest, TimerBasedPhaseInfo) {
   ASSERT_TRUE(static_cast<const blink::WebGestureEvent&>(
                   events[1]->ToEvent()->Event()->Event())
                   .data.scroll_end.synthetic);
+}
+
+TEST_F(RenderWidgetHostViewMacTest,
+       GestureScrollUpdateAckUpdatesLatchingState) {
+  // Initially it should be kNotArrived.
+  EXPECT_EQ(FirstScrollUpdateAckState::kNotArrived,
+            rwhv_mac_->mouse_wheel_phase_handler_
+                .first_scroll_update_ack_state_for_testing());
+
+  // Send a GSU event that was not consumed.
+  blink::WebGestureEvent gesture_event(
+      blink::WebInputEvent::Type::kGestureScrollUpdate,
+      blink::WebInputEvent::kNoModifiers, ui::EventTimeForNow(),
+      blink::WebGestureDevice::kTouchpad);
+
+  rwhv_mac_->GestureEventAck(
+      gesture_event, blink::mojom::InputEventResultSource::kCompositorThread,
+      blink::mojom::InputEventResultState::kNotConsumed);
+
+  // The state should now be updated to kNotConsumed.
+  EXPECT_EQ(FirstScrollUpdateAckState::kNotConsumed,
+            rwhv_mac_->mouse_wheel_phase_handler_
+                .first_scroll_update_ack_state_for_testing());
 }
 
 // With wheel scroll latching wheel end events are not sent immediately, instead
@@ -1824,9 +1915,11 @@ class InputMethodMacTest : public RenderWidgetHostViewMacTest {
   }
 
   void SetTextInputType(RenderWidgetHostViewBase* view,
-                        ui::TextInputType type) {
+                        ui::TextInputType type,
+                        ui::TextInputFlags flags = ui::TEXT_INPUT_FLAG_NONE) {
     ui::mojom::TextInputState state;
     state.type = type;
+    state.flags = flags;
     view->TextInputStateChanged(state);
   }
 
@@ -2080,6 +2173,66 @@ TEST_F(InputMethodMacTest, SecurePasswordInput) {
   ASSERT_EQ(child_widget_.get(), text_input_manager()->GetActiveWidget());
   ASSERT_EQ(text_input_manager(), tab_view()->GetTextInputManager());
   ASSERT_EQ(ui::TEXT_INPUT_TYPE_PASSWORD, tab_view()->GetTextInputType());
+
+  // Single matched calls immediately update IsPasswordInputEnabled().
+  tab_view()->SetActive(true);
+  EXPECT_TRUE(ui::ScopedPasswordInputEnabler::IsPasswordInputEnabled());
+
+  tab_view()->SetActive(false);
+  EXPECT_FALSE(ui::ScopedPasswordInputEnabler::IsPasswordInputEnabled());
+}
+
+TEST_F(InputMethodMacTest, SecureHasBeenAPasswordInput) {
+  ASSERT_FALSE(ui::ScopedPasswordInputEnabler::IsPasswordInputEnabled());
+  ASSERT_EQ(text_input_manager(), tab_view()->GetTextInputManager());
+
+  // RenderWidgetHostViewMacTest.LostFocusAndGotFocusOnSetActive checks the
+  // GotFocus()/LostFocus() rules, just silence the warnings here.
+  EXPECT_CALL(*host_, Focus()).Times(::testing::AnyNumber());
+  EXPECT_CALL(*host_, Blur()).Times(::testing::AnyNumber());
+
+  [window_ makeFirstResponder:tab_view()->GetInProcessNSView()];
+
+  // Shouldn't enable secure input if it's not a "has been a password"
+  // textfield.
+  tab_view()->SetActive(true);
+  EXPECT_FALSE(ui::ScopedPasswordInputEnabler::IsPasswordInputEnabled());
+
+  SetTextInputType(child_view_, ui::TEXT_INPUT_TYPE_TEXT,
+                   ui::TEXT_INPUT_FLAG_HAS_BEEN_PASSWORD);
+  ASSERT_EQ(child_widget_.get(), text_input_manager()->GetActiveWidget());
+  ASSERT_EQ(text_input_manager(), tab_view()->GetTextInputManager());
+  ASSERT_EQ(ui::TEXT_INPUT_TYPE_TEXT, tab_view()->GetTextInputType());
+
+  // Single matched calls immediately update IsPasswordInputEnabled().
+  tab_view()->SetActive(true);
+  EXPECT_TRUE(ui::ScopedPasswordInputEnabler::IsPasswordInputEnabled());
+
+  tab_view()->SetActive(false);
+  EXPECT_FALSE(ui::ScopedPasswordInputEnabler::IsPasswordInputEnabled());
+}
+
+TEST_F(InputMethodMacTest, SecureHasBeenACustomPasswordInput) {
+  ASSERT_FALSE(ui::ScopedPasswordInputEnabler::IsPasswordInputEnabled());
+  ASSERT_EQ(text_input_manager(), tab_view()->GetTextInputManager());
+
+  // RenderWidgetHostViewMacTest.LostFocusAndGotFocusOnSetActive checks the
+  // GotFocus()/LostFocus() rules, just silence the warnings here.
+  EXPECT_CALL(*host_, Focus()).Times(::testing::AnyNumber());
+  EXPECT_CALL(*host_, Blur()).Times(::testing::AnyNumber());
+
+  [window_ makeFirstResponder:tab_view()->GetInProcessNSView()];
+
+  // Shouldn't enable secure input if it's not a "has been a custom password"
+  // textfield.
+  tab_view()->SetActive(true);
+  EXPECT_FALSE(ui::ScopedPasswordInputEnabler::IsPasswordInputEnabled());
+
+  SetTextInputType(child_view_, ui::TEXT_INPUT_TYPE_TEXT,
+                   ui::TEXT_INPUT_FLAG_HAS_BEEN_CUSTOM_PASSWORD);
+  ASSERT_EQ(child_widget_.get(), text_input_manager()->GetActiveWidget());
+  ASSERT_EQ(text_input_manager(), tab_view()->GetTextInputManager());
+  ASSERT_EQ(ui::TEXT_INPUT_TYPE_TEXT, tab_view()->GetTextInputType());
 
   // Single matched calls immediately update IsPasswordInputEnabled().
   tab_view()->SetActive(true);
@@ -2392,10 +2545,8 @@ TEST_F(RenderWidgetHostViewMacTest, TransformToRootWithParentLayer) {
   std::unique_ptr<ui::RecyclableCompositorMac> compositor =
       std::make_unique<ui::RecyclableCompositorMac>(
           ImageTransportFactory::GetInstance()->GetContextFactory());
-  std::unique_ptr<ui::Layer> root_surface_layer =
-      std::make_unique<ui::Layer>(ui::LAYER_SOLID_COLOR);
-  std::unique_ptr<ui::Layer> parent_layer =
-      std::make_unique<ui::Layer>(ui::LAYER_SOLID_COLOR);
+  auto root_surface_layer = std::make_unique<ui::LayerSolidColor>();
+  auto parent_layer = std::make_unique<ui::LayerSolidColor>();
 
   compositor->compositor()->SetRootLayer(root_surface_layer.get());
   root_surface_layer->SetBounds(gfx::Rect(-5, -10, 1000, 2000));
@@ -2431,6 +2582,80 @@ TEST_F(RenderWidgetHostViewMacTest, AccessibilityParentTest) {
 
   rwhv_mac_->SetParentAccessibilityElement(nil);
   EXPECT_NSEQ([view accessibilityParent], parent_view);
+}
+
+class FakeTextInputClientMacDelegate
+    : public TextInputClientMac::AsyncRequestDelegate {
+ public:
+  FakeTextInputClientMacDelegate() = default;
+  ~FakeTextInputClientMacDelegate() override = default;
+
+  void SetResponseRect(const gfx::Rect& rect) { response_rect_ = rect; }
+
+  void GetCharacterIndexAtPoint(
+      RenderFrameHost* rfh,
+      const TextInputClientMac::RequestToken& request_token,
+      const gfx::Point& point) override {
+    FAIL() << "Unexpected call to GetCharacterIndexAtPoint";
+  }
+
+  void GetFirstRectForRange(
+      RenderFrameHost* rfh,
+      const TextInputClientMac::RequestToken& request_token,
+      const gfx::Range& range) override {
+    TextInputClientMac::GetInstance()->SetFirstRectWhileLockedForTesting(
+        request_token, response_rect_);
+  }
+
+ private:
+  gfx::Rect response_rect_;
+};
+
+TEST_F(RenderWidgetHostViewMacTest, SyncGetFirstRectForRange_Clamped) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitWithFeatures(
+      /*enabled_features=*/{},
+      /*disabled_features=*/{
+          features::kCachedFirstRectAllowRangeOutsideSelection,
+          features::kCachedFirstRectAllowInvalidSelection});
+
+  // Focus the root frame tree node so GetFocusedRenderFrameHostImpl succeeds.
+  contents()->GetPrimaryFrameTree().SetFocusedFrame(
+      contents()->GetPrimaryFrameTree().root(), nullptr);
+
+  // Set the view bounds to a known size.
+  rwhv_mac_->SetBounds(gfx::Rect(0, 0, 800, 600));
+
+  // Create a fake delegate that returns an out-of-bounds rect.
+  // Forged rect: x=-100, y=-200, w=10, h=20 (in physical pixels).
+  float dsf = rwhv_mac_->GetDeviceScaleFactor();
+  gfx::Rect forged_rect_in_pixels(-100, -200, 10, 20);
+
+  auto fake_delegate = std::make_unique<FakeTextInputClientMacDelegate>();
+  fake_delegate->SetResponseRect(forged_rect_in_pixels);
+
+  TextInputClientMac::GetInstance()->SetAsyncRequestDelegateForTesting(
+      std::move(fake_delegate));
+
+  gfx::Rect rect;
+  gfx::Range actual_range;
+  bool success = false;
+
+  // Call the method under test.
+  rwhv_mac_->SyncGetFirstRectForRange(gfx::Range(1, 2), &rect, &actual_range,
+                                      &success);
+
+  EXPECT_TRUE(success);
+
+  // Expected clamped rect (in DIPs).
+  // Clamped to viewport (0, 0, 800, 600):
+  // X should be clamped to 0.
+  // Y should be clamped to 0.
+  gfx::Rect expected_rect(0, 0, 10 / dsf, 20 / dsf);
+  EXPECT_EQ(rect, expected_rect);
+
+  // Restore default delegate.
+  TextInputClientMac::GetInstance()->SetAsyncRequestDelegateForTesting(nullptr);
 }
 
 }  // namespace content

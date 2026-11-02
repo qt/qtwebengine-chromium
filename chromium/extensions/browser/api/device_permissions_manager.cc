@@ -18,7 +18,6 @@
 #include "base/values.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "content/public/browser/browser_thread.h"
-#include "extensions/browser/api/hid/hid_device_manager.h"
 #include "extensions/browser/api/usb/usb_device_manager.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_prefs.h"
@@ -267,15 +266,6 @@ DevicePermissionEntry::DevicePermissionEntry(
 }
 
 DevicePermissionEntry::DevicePermissionEntry(
-    const device::mojom::HidDeviceInfo& device)
-    : device_guid_(device.guid),
-      type_(Type::HID),
-      vendor_id_(device.vendor_id),
-      product_id_(device.product_id),
-      serial_number_(base::UTF8ToUTF16(device.serial_number)),
-      product_string_(base::UTF8ToUTF16(device.product_name)) {}
-
-DevicePermissionEntry::DevicePermissionEntry(
     Type type,
     uint16_t vendor_id,
     uint16_t product_id,
@@ -396,21 +386,17 @@ std::u16string DevicePermissionsManager::GetPermissionMessage(
     const std::u16string& product_string,
     const std::u16string& serial_number,
     bool always_include_manufacturer) {
+  device::UsbIdNames names =
+      device::UsbIds::GetVendorAndProductName(vendor_id, product_id);
+
   std::u16string product = product_string;
-  if (product.empty()) {
-    const char* product_name =
-        device::UsbIds::GetProductName(vendor_id, product_id);
-    if (product_name) {
-      product = base::UTF8ToUTF16(product_name);
-    }
+  if (product.empty() && names.product_name) {
+    product = base::UTF8ToUTF16(names.product_name);
   }
 
   std::u16string manufacturer = manufacturer_string;
-  if (manufacturer_string.empty()) {
-    const char* vendor_name = device::UsbIds::GetVendorName(vendor_id);
-    if (vendor_name) {
-      manufacturer = base::UTF8ToUTF16(vendor_name);
-    }
+  if (manufacturer_string.empty() && names.vendor_name) {
+    manufacturer = base::UTF8ToUTF16(names.vendor_name);
   }
 
   if (serial_number.empty()) {
@@ -537,42 +523,6 @@ void DevicePermissionsManager::AllowUsbDevice(
     UsbDeviceManager* device_manager = UsbDeviceManager::Get(context_);
     DCHECK(device_manager);
     device_manager->EnsureConnectionWithDeviceManager();
-  }
-}
-
-void DevicePermissionsManager::AllowHidDevice(
-    const ExtensionId& extension_id,
-    const device::mojom::HidDeviceInfo& device) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  DevicePermissions* device_permissions = GetForExtension(extension_id);
-
-  auto device_entry = base::MakeRefCounted<DevicePermissionEntry>(device);
-
-  if (device_entry->IsPersistent()) {
-    for (const auto& entry : device_permissions->entries()) {
-      if (entry->vendor_id() == device_entry->vendor_id() &&
-          entry->product_id() == device_entry->product_id() &&
-          entry->serial_number() == device_entry->serial_number()) {
-        return;
-      }
-    }
-
-    device_permissions->entries_.insert(device_entry);
-    SaveDevicePermissionEntry(context_, extension_id, device_entry);
-  } else if (!device_permissions->ephemeral_hid_devices_.contains(
-                 device.guid)) {
-    // Non-persistent devices cannot be reliably identified when they are
-    // reconnected so such devices are only remembered until disconnect.
-    // Register an observer here so that this set doesn't grow undefinitely.
-    device_permissions->entries_.insert(device_entry);
-    device_permissions->ephemeral_hid_devices_[device.guid] = device_entry;
-
-    // Make sure the HidDeviceManager is active. HidDeviceManager is
-    // responsible for removing the permission entry for an ephemeral hid
-    // device. Only do this when an ephemeral device has been added.
-    HidDeviceManager* device_manager = HidDeviceManager::Get(context_);
-    DCHECK(device_manager);
-    device_manager->LazyInitialize();
   }
 }
 

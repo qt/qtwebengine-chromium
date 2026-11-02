@@ -17,25 +17,25 @@ import domBreakpointsSidebarPaneStyles from './domBreakpointsSidebarPane.css.js'
 
 const UIStrings = {
   /**
-   * @description Header text to indicate there are no breakpoints
+   * @description Header text to indicate there are no DOM breakpoints.
    */
   noBreakpoints: 'No DOM breakpoints',
   /**
-   * @description DOM breakpoints description that shows if no DOM breakpoints are set
+   * @description Description shown when no DOM breakpoints are set.
    */
   domBreakpointsDescription: 'DOM breakpoints pause on the code that changes a DOM node or its children.',
   /**
-   * @description Accessibility label for the DOM breakpoints list in the Sources panel
+   * @description Accessibility label for the DOM breakpoints list in the Sources panel.
    */
-  domBreakpointsList: 'DOM Breakpoints list',
+  domBreakpointsList: 'DOM breakpoints list',
   /**
-   * @description Text with two placeholders separated by a colon
+   * @description Text with two placeholders separated by a colon.
    * @example {Node removed} PH1
    * @example {div#id1} PH2
    */
   sS: '{PH1}: {PH2}',
   /**
-   * @description Text with three placeholders separated by a colon and a comma
+   * @description Text with three placeholders separated by a colon and a comma.
    * @example {Node removed} PH1
    * @example {div#id1} PH2
    * @example {checked} PH3
@@ -55,7 +55,7 @@ const UIStrings = {
    */
   sBreakpointHit: '{PH1} breakpoint hit',
   /**
-   * @description Screen reader description of a hit breakpoint in the Sources panel
+   * @description Screen reader description of a hit breakpoint in the Sources panel.
    */
   breakpointHit: 'breakpoint hit',
   /**
@@ -63,30 +63,30 @@ const UIStrings = {
    */
   revealDomNodeInElementsPanel: 'Reveal DOM node in Elements panel',
   /**
-   * @description Text to remove a breakpoint
+   * @description Context menu item to remove a breakpoint.
    */
   removeBreakpoint: 'Remove breakpoint',
   /**
-   * @description A context menu item in the DOMBreakpoints Sidebar Pane of the JavaScript Debugging pane in the Sources panel or the DOM Breakpoints pane in the Elements panel
+   * @description Context menu item in the DOM Breakpoints sidebar of the Sources panel or the Elements panel to remove all DOM breakpoints.
    */
   removeAllDomBreakpoints: 'Remove all DOM breakpoints',
   /**
-   * @description Text in DOMBreakpoints Sidebar Pane of the JavaScript Debugging pane in the Sources panel or the DOM Breakpoints pane in the Elements panel
+   * @description Label for subtree modified DOM breakpoint type.
    */
   subtreeModified: 'Subtree modified',
   /**
-   * @description Text in DOMBreakpoints Sidebar Pane of the JavaScript Debugging pane in the Sources panel or the DOM Breakpoints pane in the Elements panel
+   * @description Label for attribute modified DOM breakpoint type.
    */
   attributeModified: 'Attribute modified',
   /**
-   * @description Text in DOMBreakpoints Sidebar Pane of the JavaScript Debugging pane in the Sources panel or the DOM Breakpoints pane in the Elements panel
+   * @description Label for node removed DOM breakpoint type.
    */
   nodeRemoved: 'Node removed',
   /**
-   * @description Entry in context menu of the elements pane, allowing developers to select a DOM
+   * @description Entry in context menu of the Elements panel, allowing developers to select a DOM
    * breakpoint for the element that they have right-clicked on. Short for the action 'set a
-   * breakpoint on this DOM Element'. A breakpoint pauses the website when the code reaches a
-   * specified line, or when a specific action happen (in this case, when the DOM Element is
+   * breakpoint on this DOM element'. A breakpoint pauses the website when the code reaches a
+   * specified line, or when a specific action happens (in this case, when the DOM element is
    * modified).
    */
   breakOn: 'Break on',
@@ -179,7 +179,7 @@ export const DEFAULT_VIEW: View = (input, _output, target) => {
           </div>`}
       </div>
     `,
-    target
+    target,
   );
           // clang-format on
 };

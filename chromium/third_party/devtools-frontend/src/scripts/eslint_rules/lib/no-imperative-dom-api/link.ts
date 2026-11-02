@@ -47,7 +47,7 @@ export const Link: RuleCreator = {
             });
           }
         }
-      }
+      },
     };
-  }
+  },
 };

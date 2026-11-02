@@ -90,7 +90,7 @@ RegExpMacroAssemblerRISCV::RegExpMacroAssemblerRISCV(Isolate* isolate,
                                                      int registers_to_save)
     : NativeRegExpMacroAssembler(isolate, zone, mode),
       masm_(std::make_unique<MacroAssembler>(
-          isolate, CodeObjectRequired::kYes,
+          isolate, CodeObjectRequired{true},
           NewAssemblerBuffer(kInitialBufferSize))),
       no_root_array_scope_(masm_.get()),
       num_registers_(registers_to_save),
@@ -504,8 +504,8 @@ void RegExpMacroAssemblerRISCV::CheckBitInTable(Handle<ByteArray> table,
 
 void RegExpMacroAssemblerRISCV::SkipUntilBitInTable(
     int cp_offset, Handle<ByteArray> table,
-    Handle<ByteArray> nibble_table_array, int advance_by, Label* on_match,
-    Label* on_no_match) {
+    Handle<ByteArray> nibble_table_array, int advance_by,
+    int bounds_check_offset, Label* on_match, Label* on_no_match) {
   const bool use_simd = SkipUntilBitInTableUseSimd(advance_by);
   if (use_simd) {
     DCHECK(!nibble_table_array.is_null());
@@ -518,7 +518,7 @@ void RegExpMacroAssemblerRISCV::SkipUntilBitInTable(
     // We subtract 1 because CheckPosition assumes we are reading 1 character
     // plus cp_offset. So the -1 is the character that is assumed to be
     // read by default.
-    CheckPosition(cp_offset + kCharsPerVector - 1, &scalar);
+    CheckPosition(bounds_check_offset + kCharsPerVector - 1, &scalar);
 
     __ VU.SetSimd128(E8);
 
@@ -584,7 +584,7 @@ void RegExpMacroAssemblerRISCV::SkipUntilBitInTable(
     // The maximum lookahead for boyer moore is less than vector size, so we can
     // ignore advance_by in the vectorized version.
     AdvanceCurrentPosition(kCharsPerVector);
-    CheckPosition(cp_offset + kCharsPerVector - 1, &scalar);
+    CheckPosition(bounds_check_offset + kCharsPerVector - 1, &scalar);
     __ Branch(&simd_repeat);
 
     Bind(&found);
@@ -606,7 +606,7 @@ void RegExpMacroAssemblerRISCV::SkipUntilBitInTable(
 
   Label scalar_repeat;
   Bind(&scalar_repeat);
-  CheckPosition(cp_offset, on_no_match);
+  CheckPosition(bounds_check_offset, on_no_match);
   LoadCurrentCharacterUnchecked(cp_offset, 1);
 
   // We use `a1` as a temporary for the table lookup.
@@ -855,7 +855,16 @@ DirectHandle<HeapObject> RegExpMacroAssemblerRISCV::GetCode(
   // memory when returning from this irregexp code object.
   PushRegExpBasePointer(backtrack_stackpointer(), a1);
 
-  {
+  // Skip the JS stack guard check for patterns whose register file fits within
+  // the stack limit's guaranteed slack: allocating it then can never push the
+  // stack past the point the check would catch, so the check is pure overhead
+  // on every match. This is the same slack that lets optimized JS elide the
+  // entry stack check for small leaf frames (see the static_assert and
+  // CodeGenerator::ShouldApplyOffsetToStackCheck).
+  static constexpr int kMaxRegistersWithoutStackCheck = 32;
+  static_assert(kMaxRegistersWithoutStackCheck * kSystemPointerSize <=
+                kStackLimitSlackForDeoptimizationInBytes);
+  if (num_registers_ > kMaxRegistersWithoutStackCheck) {
     // Check if we have space on the stack for registers.
     Label stack_limit_hit, stack_ok;
 

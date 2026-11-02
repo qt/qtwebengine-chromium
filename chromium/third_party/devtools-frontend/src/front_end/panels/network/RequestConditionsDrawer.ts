@@ -1,20 +1,18 @@
 // Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable @devtools/no-lit-render-outside-of-view */
-/* eslint-disable @devtools/no-imperative-dom-api */
 
-import '../../ui/legacy/legacy.js';
+import '../../ui/components/lists/lists.js';
 import '../../ui/components/tooltips/tooltips.js';
+import '../../ui/legacy/legacy.js';
 
-import type * as Common from '../../core/common/common.js';
+import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Logs from '../../models/logs/logs.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as uiI18n from '../../ui/i18n/i18n.js';
-import {Link} from '../../ui/kit/kit.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import {Directives, html, type LitTemplate, nothing, render} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
@@ -23,7 +21,7 @@ import * as PanelUtils from '../utils/utils.js';
 
 import requestConditionsDrawerStyles from './requestConditionsDrawer.css.js';
 
-const {ref, live} = Directives;
+const {ref, live, ifDefined} = Directives;
 const {widget} = UI.Widget;
 
 const UIStrings = {
@@ -48,7 +46,7 @@ const UIStrings = {
    * @example {Learn more} PH1
    */
   noThrottlingOrBlockingPattern:
-      `To throttle or block a network request, add a rule here manually or via the network panel's context menu. {PH1}`,
+      `To throttle or block a network request, add a rule here manually or via the network panel’s context menu. {PH1}`,
   /**
    * @description Text in Blocked URLs Pane of the Network panel
    * @example {4} PH1
@@ -88,10 +86,6 @@ const UIStrings = {
    */
   learnMore: 'Learn more',
   /**
-   * @description Accessibility label on a `Learn more` link
-   */
-  learnMoreLabel: 'Learn more about URL pattern syntax',
-  /**
    * @description Tooltip on a button moving an entry up
    * @example {*://example.com} PH1
    */
@@ -118,38 +112,42 @@ const UIStrings = {
    * @description Aria announcemenet when a pattern was moved down
    */
   patternMovedDown: 'URL pattern was moved down',
-  /**
-   * @description Text on a button to start editing text
-   * @example {*://example.com} PH1
-   */
-  editPattern: 'Edit {PH1}',
-  /**
-   * @description Label for an item to remove something
-   * @example {*://example.com} PH1
-   */
-  removePattern: 'Remove {PH1}',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/network/RequestConditionsDrawer.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 const NETWORK_REQUEST_BLOCKING_EXPLANATION_URL =
     'https://developer.chrome.com/docs/devtools/network-request-blocking' as Platform.DevToolsPath.UrlString;
-const PATTERN_API_DOCS_URL =
-    'https://developer.mozilla.org/en-US/docs/Web/API/URL_Pattern_API' as Platform.DevToolsPath.UrlString;
 
 const {bindToAction} = UI.UIUtils;
 
 interface ViewInput {
-  list: UI.ListWidget.ListWidget<SDK.NetworkManager.RequestCondition>;
+  conditions: SDK.NetworkManager.RequestCondition[];
+  editingCondition?: SDK.NetworkManager.RequestCondition;
   enabled: boolean;
   toggleEnabled: () => void;
   addPattern: () => void;
+  onToggle: (condition: SDK.NetworkManager.RequestCondition) => void;
+  onConditionsChanged: (condition: SDK.NetworkManager.RequestCondition,
+                        conditions: SDK.NetworkManager.ThrottlingConditions) => void;
+  onIncreasePriority: (condition: SDK.NetworkManager.RequestCondition) => void;
+  onDecreasePriority: (condition: SDK.NetworkManager.RequestCondition) => void;
+  onCommit: (condition: SDK.NetworkManager.RequestCondition, value: string) => void;
+  onCancel: (condition: SDK.NetworkManager.RequestCondition) => void;
+  onBeginEdit: (condition: SDK.NetworkManager.RequestCondition) => void;
+  onRemove: (condition: SDK.NetworkManager.RequestCondition) => void;
+  validator: (condition: SDK.NetworkManager.RequestCondition, value: string) => Common.UIString.LocalizedString | null;
+  lookUpRequestCount: (condition: SDK.NetworkManager.RequestCondition) => number;
 }
-type View = (input: ViewInput, output: object, target: HTMLElement) => void;
+interface ViewOutput {
+  itemRefs: Map<SDK.NetworkManager.RequestCondition, HTMLElement|undefined>;
+}
+type View = (input: ViewInput, output: ViewOutput, target: HTMLElement) => void;
 export const DEFAULT_VIEW: View = (input, output, target) => {
   render(
       // clang-format off
     html`
+    <style>${requestConditionsDrawerStyles}</style>
     <devtools-toolbar jslog=${VisualLogging.toolbar()}>
       <devtools-checkbox
         ?checked=${input.enabled}
@@ -161,7 +159,9 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
       <devtools-button ${bindToAction('network.add-network-request-blocking-pattern')}></devtools-button>
       <devtools-button ${bindToAction('network.remove-all-network-request-blocking-patterns')}></devtools-button>
     </devtools-toolbar>
-    <div class=empty-state ${ref(e => input.list.setEmptyPlaceholder(e ?? null))}>
+    ${input.conditions.length === 0 ? html`
+    <div class="list">
+      <div class=empty-state>
       <span class=empty-state-header>${i18nString(UIStrings.noPattern)}</span>
       <div class=empty-state-description>
         ${uiI18n.getFormatLocalizedStringTemplate(str_, UIStrings.noThrottlingOrBlockingPattern, {PH1: learnMore()})}
@@ -175,22 +175,71 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
           ${i18nString(UIStrings.addRule)}
       </devtools-button>
     </div>
-    <devtools-widget ${widget(UI.Widget.VBox)}>
-      ${input.list.element}
-    </devtools-widget>
+    </div>
+    ` : html`
+    <devtools-list
+        class="blocked-urls list square-corners"
+        ?deletable=${input.enabled}
+        @edit=${(e: CustomEvent<{index: number}>) => input.onBeginEdit(input.conditions[e.detail.index])}
+        @delete=${(e: CustomEvent<{index: number}>) => input.onRemove(input.conditions[e.detail.index])}>
+      ${input.conditions.map((condition, index) => html`
+        <div class="blocked-url" ${ref(e => {
+            output.itemRefs.set(condition, e as HTMLElement | undefined);
+        })}>
+          ${renderItem({
+             condition,
+             editing: input.editingCondition === condition,
+             editable: input.enabled,
+             index,
+             onToggle: input.onToggle,
+             onConditionsChanged: input.onConditionsChanged,
+             onIncreasePriority: input.onIncreasePriority,
+             onDecreasePriority: input.onDecreasePriority,
+             onCommit: input.onCommit,
+             onCancel: input.onCancel,
+             onBeginEdit: input.onBeginEdit,
+             validator: val => input.validator(condition, val),
+             lookUpRequestCount: input.lookUpRequestCount,
+          })}
+        </div>
+      `)}
+    </devtools-list>
+    `}
     `,
       // clang-format on
-      target);
+      target, {container: {classes: (!input.enabled && input.conditions.length > 0) ? ['blocking-disabled'] : []}});
 };
 
-function renderItem(
-    condition: SDK.NetworkManager.RequestCondition, editable: boolean, index: number,
-    onToggle: (condition: SDK.NetworkManager.RequestCondition) => void,
-    onConditionsChanged: (
-        condition: SDK.NetworkManager.RequestCondition, conditions: SDK.NetworkManager.ThrottlingConditions) => void,
-    onIncreasePriority: (condition: SDK.NetworkManager.RequestCondition) => void,
-    onDecreasePriority: (condition: SDK.NetworkManager.RequestCondition) => void,
-    lookUpRequestCount: (condition: SDK.NetworkManager.RequestCondition) => number): LitTemplate {
+function renderItem({
+  condition,
+  editing,
+  editable,
+  index,
+  onToggle,
+  onConditionsChanged,
+  onIncreasePriority,
+  onDecreasePriority,
+  onCommit,
+  onCancel,
+  onBeginEdit,
+  validator,
+  lookUpRequestCount,
+}: {
+  condition: SDK.NetworkManager.RequestCondition,
+  editing: boolean,
+  editable: boolean,
+  index: number,
+  onToggle: (condition: SDK.NetworkManager.RequestCondition) => void,
+  onConditionsChanged:
+      (condition: SDK.NetworkManager.RequestCondition, conditions: SDK.NetworkManager.ThrottlingConditions) => void,
+  onIncreasePriority: (condition: SDK.NetworkManager.RequestCondition) => void,
+  onDecreasePriority: (condition: SDK.NetworkManager.RequestCondition) => void,
+  onCommit: (condition: SDK.NetworkManager.RequestCondition, value: string) => void,
+  onCancel: (condition: SDK.NetworkManager.RequestCondition) => void,
+  onBeginEdit: (condition: SDK.NetworkManager.RequestCondition) => void,
+  validator: (value: string) => Common.UIString.LocalizedString | null,
+  lookUpRequestCount: (condition: SDK.NetworkManager.RequestCondition) => number,
+}): LitTemplate {
   const {enabled, originalOrUpgradedURLPattern, constructorStringOrWildcardURL, wildcardURL} = condition;
   const toggle = (e: Event): void => {
     e.consume(true);
@@ -205,6 +254,25 @@ function renderItem(
   const moveDown = (e: Event): void => {
     e.consume(true);
     onDecreasePriority(condition);
+  };
+
+  const onPromptActivate = (e: Event): void => {
+    if (!editable || editing) {
+      return;
+    }
+    onBeginEdit(condition);
+    e.consume(true);
+  };
+
+  const promptKeyDown = (e: Event): void => {
+    if (!editable || editing) {
+      return;
+    }
+    const keyboardEvent = e as KeyboardEvent;
+    if (keyboardEvent.key === 'Enter') {
+      onBeginEdit(condition);
+      e.consume(true);
+    }
   };
 
   // clang-format off
@@ -231,7 +299,7 @@ function renderItem(
       .jslogContext=${'increase-priority'}
       ?disabled=${!editable || !originalOrUpgradedURLPattern}
       @click=${moveDown}></devtools-button>
-    ${originalOrUpgradedURLPattern ? html`
+    ${!editing && originalOrUpgradedURLPattern ? html`
       <devtools-tooltip variant=rich jslogcontext=url-pattern id=url-pattern-${index}>
         <div>hash: ${originalOrUpgradedURLPattern.hash}</div>
         <div>hostname: ${originalOrUpgradedURLPattern.hostname}</div>
@@ -244,14 +312,14 @@ function renderItem(
         <hr />
         ${learnMore()}
       </devtools-tooltip>` : nothing}
-    ${wildcardURL ? html`
+    ${!editing && wildcardURL ? html`
       <devtools-icon name=warning-filled class="small warning" aria-details=url-pattern-warning-${index}>
       </devtools-icon>
       <devtools-tooltip variant=rich jslogcontext=url-pattern-warning id=url-pattern-warning-${index}>
         ${i18nString(UIStrings.patternWasUpgraded, {PH1: wildcardURL})}
       </devtools-tooltip>
       `: nothing}
-    ${!originalOrUpgradedURLPattern ? html`
+    ${!editing && !originalOrUpgradedURLPattern ? html`
       <devtools-icon name=cross-circle-filled class=small aria-details=url-pattern-error-${index}>
       </devtools-icon>
       <devtools-tooltip variant=rich jslogcontext=url-pattern-warning id=url-pattern-error-${index}>
@@ -261,13 +329,22 @@ function renderItem(
             : i18nString(UIStrings.patternFailedToParse)}
         ${learnMore()}
       </devtools-tooltip>`: nothing}
-    <div
-      @click=${toggle}
-      ?disabled=${!editable || !originalOrUpgradedURLPattern}
+    <devtools-prompt
+      @click=${onPromptActivate}
+      @keydown=${promptKeyDown}
+      @focus=${onPromptActivate}
+      tabindex=${ifDefined(editing ? undefined : 0)}
+      @commit=${(e: UI.TextPrompt.TextPromptElement.CommitEvent) => onCommit(condition, e.detail)}
+      @cancel=${() => onCancel(condition)}
+      ?disabled=${!editable}
+      placeholder=${i18nString(UIStrings.textEditPattern)}
+      value=${constructorStringOrWildcardURL}
+      ?editing=${editable && editing}
+      .validator=${validator}
       class=blocked-url-label
       aria-details=url-pattern-${index}>
         ${constructorStringOrWildcardURL}
-    </div>
+    </devtools-prompt>
     <select
        class=conditions-selector
        title=${i18nString(UIStrings.requestConditionsLabel)}
@@ -293,9 +370,8 @@ interface AffectedCountViewInput {
 }
 type AffectedCountView = (input: AffectedCountViewInput, output: object, target: HTMLElement) => void;
 export const AFFECTED_COUNT_DEFAULT_VIEW: AffectedCountView = (input, output, target) => {
-  render(
-      html`${i18nString(UIStrings.dAffected, {PH1: input.count})}`, target,
-      {container: {classes: ['blocked-url-count']}});
+  render(html`${i18nString(UIStrings.dAffected, {PH1: input.count})}`, target,
+         {container: {classes: ['blocked-url-count']}});
 };
 
 function matchesUrl(conditions: SDK.NetworkManager.RequestCondition, url: string): boolean {
@@ -338,9 +414,9 @@ export class AffectedCountWidget extends UI.Widget.Widget {
   }
 
   override wasShown(): void {
-    SDK.TargetManager.TargetManager.instance().addModelListener(
-        SDK.NetworkManager.NetworkManager, SDK.NetworkManager.Events.RequestFinished, this.#onRequestFinished, this,
-        {scoped: true});
+    SDK.TargetManager.TargetManager.instance().addModelListener(SDK.NetworkManager.NetworkManager,
+                                                                SDK.NetworkManager.Events.RequestFinished,
+                                                                this.#onRequestFinished, this, {scoped: true});
     Logs.NetworkLog.NetworkLog.instance().addEventListener(Logs.NetworkLog.Events.Reset, this.requestUpdate, this);
     super.wasShown();
   }
@@ -375,15 +451,13 @@ function learnMore(): LitTemplate {
       </devtools-link>`;
 }
 
-export class RequestConditionsDrawer extends UI.Widget.VBox implements
-    UI.ListWidget.Delegate<SDK.NetworkManager.RequestCondition> {
+export class RequestConditionsDrawer extends UI.Widget.VBox {
   private manager: SDK.NetworkManager.MultitargetNetworkManager;
-  private readonly list: UI.ListWidget.ListWidget<SDK.NetworkManager.RequestCondition>;
-  private editor: UI.ListWidget.Editor<SDK.NetworkManager.RequestCondition>|null;
   private blockedCountForUrl: Map<Platform.DevToolsPath.UrlString, number>;
   #throttledCount = new Map<string, number>();
   #view: View;
-  #listElements = new WeakMap<SDK.NetworkManager.RequestCondition, HTMLElement>();
+  #viewOutput: ViewOutput = {itemRefs: new Map()};
+  #editingCondition?: SDK.NetworkManager.RequestCondition;
 
   constructor(target?: HTMLElement, view = DEFAULT_VIEW) {
     super(target, {
@@ -393,187 +467,147 @@ export class RequestConditionsDrawer extends UI.Widget.VBox implements
     this.#view = view;
 
     this.manager = SDK.NetworkManager.MultitargetNetworkManager.instance();
-    this.manager.addEventListener(
-        SDK.NetworkManager.MultitargetNetworkManager.Events.BLOCKED_PATTERNS_CHANGED, this.update, this);
-
-    this.list = new UI.ListWidget.ListWidget(this);
-    this.list.registerRequiredCSS(requestConditionsDrawerStyles);
-    this.list.element.classList.add('blocked-urls');
-
-    this.editor = null;
+    this.manager.addEventListener(SDK.NetworkManager.MultitargetNetworkManager.Events.BLOCKED_PATTERNS_CHANGED,
+                                  this.requestUpdate, this);
 
     this.blockedCountForUrl = new Map();
-    SDK.TargetManager.TargetManager.instance().addModelListener(
-        SDK.NetworkManager.NetworkManager, SDK.NetworkManager.Events.RequestFinished, this.onRequestFinished, this,
-        {scoped: true});
+    SDK.TargetManager.TargetManager.instance().addModelListener(SDK.NetworkManager.NetworkManager,
+                                                                SDK.NetworkManager.Events.RequestFinished,
+                                                                this.onRequestFinished, this, {scoped: true});
 
-    this.update();
+    this.requestUpdate();
     Logs.NetworkLog.NetworkLog.instance().addEventListener(Logs.NetworkLog.Events.Reset, this.onNetworkLogReset, this);
   }
 
   override performUpdate(): void {
+    this.#viewOutput.itemRefs.clear();
     const enabled = this.manager.requestConditions.conditionsEnabled;
-    this.list.element.classList.toggle('blocking-disabled', !enabled && Boolean(this.manager.requestConditions.count));
+    const conditions = Array.from(this.manager.requestConditions.conditions);
+    if (this.#editingCondition && !conditions.includes(this.#editingCondition)) {
+      conditions.unshift(this.#editingCondition);
+    }
 
     const input: ViewInput = {
       addPattern: this.addPattern.bind(this),
       toggleEnabled: this.toggleEnabled.bind(this),
       enabled,
-      list: this.list,
+      conditions,
+      editingCondition: this.#editingCondition,
+      onToggle: (condition: SDK.NetworkManager.RequestCondition) => {
+        if (enabled) {
+          condition.enabled = !condition.enabled;
+        }
+      },
+      onConditionsChanged:
+          (condition: SDK.NetworkManager.RequestCondition, conditions: SDK.NetworkManager.ThrottlingConditions) => {
+            if (enabled) {
+              condition.conditions = conditions;
+            }
+          },
+      onIncreasePriority: (condition: SDK.NetworkManager.RequestCondition) => {
+        if (enabled) {
+          UI.ARIAUtils.LiveAnnouncer.status(i18nString(UIStrings.patternMovedUp));
+          this.manager.requestConditions.increasePriority(condition);
+        }
+      },
+      onDecreasePriority: (condition: SDK.NetworkManager.RequestCondition) => {
+        if (enabled) {
+          UI.ARIAUtils.LiveAnnouncer.status(i18nString(UIStrings.patternMovedDown));
+          this.manager.requestConditions.decreasePriority(condition);
+        }
+      },
+      onBeginEdit: (condition: SDK.NetworkManager.RequestCondition) => {
+        if (this.#editingCondition) {
+          this.#cancelEdit(this.#editingCondition);
+        }
+        this.#editingCondition = condition;
+        this.requestUpdate();
+      },
+      onRemove: (condition: SDK.NetworkManager.RequestCondition) => {
+        this.manager.requestConditions.delete(condition);
+        UI.ARIAUtils.LiveAnnouncer.alert(UIStrings.itemDeleted);
+      },
+      onCommit: this.#commitEdit.bind(this),
+      onCancel: this.#cancelEdit.bind(this),
+      validator: this.#validator.bind(this),
+      lookUpRequestCount: this.#getRequestCount.bind(this),
     };
-    this.#view(input, {}, this.contentElement);
+    this.#view(input, this.#viewOutput, this.contentElement);
   }
 
   addPattern(): void {
     this.manager.requestConditions.conditionsEnabled = true;
-    this.list.addNewItem(
-        0,
-        SDK.NetworkManager.RequestCondition.createFromSetting(
-            {url: Platform.DevToolsPath.EmptyUrlString, enabled: true}));
+    if (this.#editingCondition) {
+      this.#cancelEdit(this.#editingCondition);
+    }
+    const condition = SDK.NetworkManager.RequestCondition.createFromSetting(
+        {url: Platform.DevToolsPath.EmptyUrlString, enabled: true}, Common.Settings.Settings.instance());
+    this.#editingCondition = condition;
+    this.requestUpdate();
   }
 
   removeAllPatterns(): void {
     this.manager.requestConditions.clear();
   }
 
-  renderItem(condition: SDK.NetworkManager.RequestCondition, editable: boolean, index: number): Element {
-    const element = document.createElement('div');
-    this.#listElements.set(condition, element);
-    element.classList.add('blocked-url');
-    this.updateItem(element, condition, editable, index);
-    return element;
-  }
-
-  updateItem(element: HTMLElement, condition: SDK.NetworkManager.RequestCondition, editable: boolean, index: number):
-      void {
-    const onToggle = (condition: {enabled: boolean}): void => {
-      if (editable) {
-        condition.enabled = !condition.enabled;
-      }
-    };
-
-    const onConditionsChanged =
-        (condition: {conditions: SDK.NetworkManager.ThrottlingConditions},
-         conditions: SDK.NetworkManager.ThrottlingConditions): void => {
-          if (editable) {
-            condition.conditions = conditions;
-          }
-        };
-
-    const onIncreasePriority = (condition: SDK.NetworkManager.RequestCondition): void => {
-      if (this.manager.requestConditions.conditionsEnabled) {
-        UI.ARIAUtils.LiveAnnouncer.status(i18nString(UIStrings.patternMovedUp));
-        this.manager.requestConditions.increasePriority(condition);
-      }
-    };
-
-    const onDecreasePriority = (condition: SDK.NetworkManager.RequestCondition): void => {
-      if (this.manager.requestConditions.conditionsEnabled) {
-        UI.ARIAUtils.LiveAnnouncer.status(i18nString(UIStrings.patternMovedDown));
-        this.manager.requestConditions.decreasePriority(condition);
-      }
-    };
-
-    render(
-        renderItem(
-            condition, editable, index, onToggle, onConditionsChanged, onIncreasePriority, onDecreasePriority,
-            this.#getRequestCount.bind(this)),
-        element);
+  #validator(condition: SDK.NetworkManager.RequestCondition, value: string): Common.UIString.LocalizedString|null {
+    if (!value) {
+      return i18nString(UIStrings.patternInputCannotBeEmpty);
+    }
+    const parsedPattern =
+        SDK.NetworkManager.RequestURLPattern.create(value as SDK.NetworkManager.URLPatternConstructorString);
+    const stringToCheck = parsedPattern ? parsedPattern.constructorString : value;
+    const existingCondition = this.manager.requestConditions.findCondition(stringToCheck);
+    if (existingCondition && existingCondition !== condition) {
+      return i18nString(UIStrings.patternAlreadyExists);
+    }
+    const isValid = SDK.NetworkManager.RequestURLPattern.isValidPattern(value);
+    switch (isValid) {
+      case SDK.NetworkManager.RequestURLPatternValidity.FAILED_TO_PARSE:
+        return i18nString(UIStrings.patternFailedToParse);
+      case SDK.NetworkManager.RequestURLPatternValidity.HAS_REGEXP_GROUPS:
+        return i18nString(UIStrings.patternFailedWithRegExpGroups);
+    }
+    return null;
   }
 
   private toggleEnabled(): void {
     this.manager.requestConditions.conditionsEnabled = !this.manager.requestConditions.conditionsEnabled;
-    this.update();
+    this.requestUpdate();
   }
 
-  removeItemRequested(condition: SDK.NetworkManager.RequestCondition): void {
-    this.manager.requestConditions.delete(condition);
-    UI.ARIAUtils.LiveAnnouncer.alert(UIStrings.itemDeleted);
-  }
+  #commitEdit(condition: SDK.NetworkManager.RequestCondition, value: string): void {
+    if (this.#editingCondition !== condition) {
+      return;
+    }
 
-  beginEdit(pattern: SDK.NetworkManager.RequestCondition): UI.ListWidget.Editor<SDK.NetworkManager.RequestCondition> {
-    this.editor = this.createEditor();
-    this.editor.control('url').value = pattern.constructorStringOrWildcardURL;
-    return this.editor;
-  }
-
-  commitEdit(
-      item: SDK.NetworkManager.RequestCondition, editor: UI.ListWidget.Editor<SDK.NetworkManager.RequestCondition>,
-      isNew: boolean): void {
-    const constructorString = editor.control('url').value as SDK.NetworkManager.URLPatternConstructorString;
+    if (condition.constructorStringOrWildcardURL === value &&
+        Array.from(this.manager.requestConditions.conditions).includes(condition)) {
+      this.#editingCondition = undefined;
+      this.requestUpdate();
+      return;
+    }
+    const constructorString = value as SDK.NetworkManager.URLPatternConstructorString;
     const pattern = SDK.NetworkManager.RequestURLPattern.create(constructorString);
     if (!pattern) {
-      throw new Error('Failed to parse pattern');
+      return;
     }
-    item.pattern = pattern;
-    if (isNew) {
-      this.manager.requestConditions.add(item);
-    }
-  }
+    condition.pattern = pattern;
 
-  private createEditor(): UI.ListWidget.Editor<SDK.NetworkManager.RequestCondition> {
-    if (this.editor) {
-      return this.editor;
+    // If it's a new item, it isn't in the manager yet. Add it.
+    if (!Array.from(this.manager.requestConditions.conditions).includes(condition)) {
+      this.manager.requestConditions.add(condition);
     }
 
-    const editor = new UI.ListWidget.Editor<SDK.NetworkManager.RequestCondition>();
-    const content = editor.contentElement();
-    const titles = content.createChild('div', 'blocked-url-edit-row');
-    const label = titles.createChild('label');
-    const learnMore = Link.create(PATTERN_API_DOCS_URL, i18nString(UIStrings.learnMore), undefined, 'learn-more');
-    learnMore.title = i18nString(UIStrings.learnMoreLabel);
-    titles.append('\xA0', learnMore);
-    label.textContent = i18nString(UIStrings.textEditPattern);
-    const fields = content.createChild('div', 'blocked-url-edit-row');
-    const validator =
-        (_item: SDK.NetworkManager.RequestCondition, _index: number, input: UI.ListWidget.EditorControl): {
-          valid: boolean,
-          errorMessage?: Common.UIString.LocalizedString,
-        } => {
-          if (!input.value) {
-            return {errorMessage: i18nString(UIStrings.patternInputCannotBeEmpty), valid: false};
-          }
-          if (this.manager.requestConditions.has(input.value)) {
-            return {errorMessage: i18nString(UIStrings.patternAlreadyExists), valid: false};
-          }
-          const isValid = SDK.NetworkManager.RequestURLPattern.isValidPattern(input.value);
-          switch (isValid) {
-            case SDK.NetworkManager.RequestURLPatternValidity.FAILED_TO_PARSE:
-              return {errorMessage: i18nString(UIStrings.patternFailedToParse), valid: false};
-            case SDK.NetworkManager.RequestURLPatternValidity.HAS_REGEXP_GROUPS:
-              return {errorMessage: i18nString(UIStrings.patternFailedWithRegExpGroups), valid: false};
-          }
-          return {valid: true};
-        };
-    const urlInput = editor.createInput('url', 'text', '', validator);
-    label.htmlFor = urlInput.id = 'editor-url-input';
-    fields.createChild('div', 'blocked-url-edit-value').appendChild(urlInput);
-    return editor;
-  }
-
-  update(): void {
-    const enabled = this.manager.requestConditions.conditionsEnabled;
-    const newItems = Array.from(this.manager.requestConditions.conditions);
-
-    let oldIndex = 0;
-    for (; oldIndex < newItems.length; ++oldIndex) {
-      const pattern = newItems[oldIndex];
-      this.list.updateItem(
-          oldIndex,
-          pattern,
-          enabled,
-          /* focusable=*/ false,
-          {
-            edit: i18nString(UIStrings.editPattern, {PH1: pattern.constructorStringOrWildcardURL}),
-            delete: i18nString(UIStrings.removePattern, {PH1: pattern.constructorStringOrWildcardURL})
-          },
-      );
-    }
-
-    while (oldIndex < this.list.items.length) {
-      this.list.removeItem(oldIndex);
-    }
+    this.#editingCondition = undefined;
     this.requestUpdate();
+  }
+
+  #cancelEdit(condition: SDK.NetworkManager.RequestCondition): void {
+    if (this.#editingCondition === condition) {
+      this.#editingCondition = undefined;
+      this.requestUpdate();
+    }
   }
 
   #getRequestCount(condition: SDK.NetworkManager.RequestCondition): number {
@@ -628,11 +662,15 @@ export class RequestConditionsDrawer extends UI.Widget.VBox implements
       console.assert(!!drawer, 'Drawer not initialized');
       return;
     }
-    const conditions = drawer.manager.requestConditions.conditions.find(
+    const condition = drawer.manager.requestConditions.conditions.find(
         condition => condition.ruleIds.has(appliedConditions.appliedNetworkConditionsId) &&
             condition.constructorString && condition.constructorString === appliedConditions.urlPattern);
-    const element = (conditions && drawer.#listElements.get(conditions));
-    element && PanelUtils.PanelUtils.highlightElement(element);
+    if (condition) {
+      const element = drawer.#viewOutput.itemRefs.get(condition);
+      if (element) {
+        PanelUtils.PanelUtils.highlightElement(element);
+      }
+    }
   }
 }
 

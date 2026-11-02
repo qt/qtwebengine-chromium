@@ -36,7 +36,6 @@
 #include "components/download/public/common/download_file_factory.h"
 #include "components/download/public/common/download_file_impl.h"
 #include "components/download/public/common/download_task_runner.h"
-#include "components/services/storage/shared_storage/shared_storage_manager.h"
 #include "content/browser/devtools/devtools_agent_host_impl.h"
 #include "content/browser/devtools/devtools_session.h"
 #include "content/browser/devtools/protocol/browser_handler.h"
@@ -53,6 +52,7 @@
 #include "content/browser/screen_orientation/screen_orientation_provider.h"
 #include "content/browser/service_worker/embedded_worker_test_helper.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/common/features.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/javascript_dialog_manager.h"
@@ -135,8 +135,6 @@ using testing::Pointee;
 namespace content {
 
 namespace {
-
-const int kBudgetAllowed = 12;
 
 class TestJavaScriptDialogManager : public JavaScriptDialogManager,
                                     public WebContentsDelegate {
@@ -4841,6 +4839,73 @@ IN_PROC_BROWSER_TEST_F(PrerenderDevToolsProtocolTest,
   EXPECT_THAT(old_host->GetTitle(), testing::Eq(""));
 }
 
+IN_PROC_BROWSER_TEST_F(PrerenderDevToolsProtocolTest,
+                       RenderFrameDevToolsAgentHostPrerenderSwapSubframeCrash) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+  const GURL kInitialUrl = GetUrl("/empty.html");
+  const GURL kPrerenderingUrl = GetUrl("/empty.html?prerender");
+  WebContentsImpl* web_contents_impl =
+      static_cast<WebContentsImpl*>(web_contents());
+
+  ASSERT_TRUE(NavigateToURL(shell(), kInitialUrl));
+
+  // Attaching a session via a "tab" target is required to opt-in into
+  // FTN swapping mode during prerender activation.
+  AttachToTabTarget(web_contents_impl);
+  base::DictValue command_params;
+  command_params.Set("autoAttach", true);
+  command_params.Set("waitForDebuggerOnStart", false);
+  command_params.Set("flatten", true);
+  SendCommandSync("Target.setAutoAttach", std::move(command_params));
+
+  // Wait for the tab target to auto-attach to the page target.
+  std::string page_session_id;
+  while (true) {
+    base::DictValue notification =
+        WaitForNotification("Target.attachedToTarget", true);
+    if (*notification.FindStringByDottedPath("targetInfo.type") == "page") {
+      page_session_id = *notification.FindString("sessionId");
+      break;
+    }
+  }
+  ASSERT_FALSE(page_session_id.empty());
+
+  // Enable auto-attach recursively on the page target to attach to child frame
+  // OOPIFs.
+  base::DictValue subframe_auto_attach_params;
+  subframe_auto_attach_params.Set("autoAttach", true);
+  subframe_auto_attach_params.Set("waitForDebuggerOnStart", false);
+  subframe_auto_attach_params.Set("flatten", true);
+  SendSessionCommand("Target.setAutoAttach",
+                     std::move(subframe_auto_attach_params), page_session_id,
+                     true);
+
+  // Call setDiscoverTargets on the page target session. This registers it as
+  // a DevToolsAgentHostObserver, so that when the subframe attaches or detaches
+  // it triggers target info building (GetParentId()), reproducing the crash.
+  base::DictValue discover_opts;
+  discover_opts.Set("discover", true);
+  SendSessionCommand("Target.setDiscoverTargets", std::move(discover_opts),
+                     page_session_id, true);
+
+  // Create a cross-site iframe to ensure a subframe DevToolsAgentHost
+  // target is created and auto-attached.
+  GURL iframe_url = embedded_test_server()->GetURL("b.test", "/empty.html");
+  EXPECT_TRUE(content::ExecJs(
+      web_contents_impl->GetPrimaryMainFrame(),
+      JsReplace("const iframe = document.createElement('iframe');"
+                "iframe.src = $1;"
+                "document.body.appendChild(iframe);",
+                iframe_url)));
+  EXPECT_TRUE(content::WaitForLoadStop(web_contents_impl));
+
+  // Activating a prerender should cause FTN swapping on the RFH,
+  // which detaches the old page, auto-detaching the subframe inside it,
+  // and trigger the bug/crash if parent recreation is attempted.
+  AddPrerender(kPrerenderingUrl);
+  NavigatePrimaryPage(kPrerenderingUrl);
+}
+
 IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, ResponseAfterReload) {
   ASSERT_TRUE(embedded_test_server()->Start());
   GURL url = embedded_test_server()->GetURL("a.test", "/title1.html");
@@ -4872,101 +4937,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, ResponseAfterReload) {
   SendCommandSync("Network.enable");
 }
 
-class SharedStorageDevToolsProtocolTest : public DevToolsProtocolTest {
- public:
-  SharedStorageDevToolsProtocolTest() {
-    feature_list_
-        .InitWithFeaturesAndParameters(/*enabled_features=*/
-                                       {{network::features::kSharedStorageAPI,
-                                         {{"SharedStorageBitBudget",
-                                           base::NumberToString(
-                                               kBudgetAllowed)}}},
-                                        {features::
-                                             kPrivacySandboxAdsAPIsOverride,
-                                         {}}},
-                                       /*disabled_features=*/{});
-  }
 
-  void MakeBudgetWithdrawal(const GURL& url, double bits) {
-    auto* manager = shell()
-                        ->web_contents()
-                        ->GetBrowserContext()
-                        ->GetDefaultStoragePartition()
-                        ->GetSharedStorageManager();
-    ASSERT_TRUE(manager);
-    base::test::TestFuture<storage::SharedStorageManager::OperationResult>
-        future;
-    manager->MakeBudgetWithdrawal(net::SchemefulSite(url), bits,
-                                  future.GetCallback());
-    EXPECT_EQ(storage::SharedStorageManager::OperationResult::kSuccess,
-              future.Get());
-  }
-
- private:
-  base::test::ScopedFeatureList feature_list_;
-};
-
-IN_PROC_BROWSER_TEST_F(SharedStorageDevToolsProtocolTest,
-                       ResetSharedStorageBudget) {
-  ASSERT_TRUE(embedded_test_server()->Start());
-  GURL url = embedded_test_server()->GetURL("a.test", "/title1.html");
-  NavigateToURLBlockUntilNavigationsComplete(shell(), url, 1);
-  Attach();
-
-  base::DictValue command_params;
-  command_params.Set("enable", true);
-  SendCommandSync("Storage.setSharedStorageTracking",
-                  std::move(command_params));
-  ASSERT_FALSE(error());
-
-  // Set an entry in order to initialize shared storage database for
-  // `origin_str`.
-  command_params = base::DictValue();
-  std::string origin_str = url.GetWithEmptyPath().spec();
-  command_params.Set("ownerOrigin", origin_str);
-  command_params.Set("key", "key1");
-  command_params.Set("value", "value1");
-  SendCommandSync("Storage.setSharedStorageEntry", std::move(command_params));
-  ASSERT_FALSE(error());
-
-  // "remainingBudget" should currently be at its max, `kBudgetAllowed`.
-  command_params = base::DictValue();
-  command_params.Set("ownerOrigin", origin_str);
-  SendCommandSync("Storage.getSharedStorageMetadata",
-                  std::move(command_params));
-  ASSERT_TRUE(result());
-  EXPECT_THAT(result()->FindDoubleByDottedPath("metadata.remainingBudget"),
-              testing::Optional(kBudgetAllowed));
-
-  // Make some withdrawals.
-  MakeBudgetWithdrawal(url, 1.0);
-  MakeBudgetWithdrawal(url, 2.5);
-
-  // "remainingBudget" should have decreased the appropriate amount.
-  command_params = base::DictValue();
-  command_params.Set("ownerOrigin", origin_str);
-  SendCommandSync("Storage.getSharedStorageMetadata",
-                  std::move(command_params));
-  ASSERT_TRUE(result());
-  EXPECT_THAT(result()->FindDoubleByDottedPath("metadata.remainingBudget"),
-              testing::Optional(kBudgetAllowed - 1.0 - 2.5));
-
-  // Reset the budget.
-  command_params = base::DictValue();
-  command_params.Set("ownerOrigin", origin_str);
-  SendCommandSync("Storage.resetSharedStorageBudget",
-                  std::move(command_params));
-  ASSERT_FALSE(error());
-
-  // "remainingBudget" should be back at its max, `kBudgetAllowed`.
-  command_params = base::DictValue();
-  command_params.Set("ownerOrigin", origin_str);
-  SendCommandSync("Storage.getSharedStorageMetadata",
-                  std::move(command_params));
-  ASSERT_TRUE(result());
-  EXPECT_THAT(result()->FindDoubleByDottedPath("metadata.remainingBudget"),
-              testing::Optional(kBudgetAllowed));
-}
 
 IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, TestRawHeadersWithRedirects) {
   net::EmbeddedTestServer& https_test_server = embedded_https_test_server();
@@ -5213,6 +5184,196 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, CompressedRequestBodyRetrieval) {
 
   // Verify the decompressed content matches the original JSON payload.
   EXPECT_EQ(decompressed, R"({"test":"data"})");
+}
+
+class PrefetchActivationBeaconDevToolsProtocolTest
+    : public DevToolsProtocolTest {
+ public:
+  PrefetchActivationBeaconDevToolsProtocolTest() {
+    feature_list_.InitAndEnableFeature(features::kPrefetchActivationBeacon);
+  }
+
+ private:
+  base::test::ScopedFeatureList feature_list_;
+};
+
+IN_PROC_BROWSER_TEST_F(PrefetchActivationBeaconDevToolsProtocolTest,
+                       ActivationBeaconNetworkPanel) {
+  base::RunLoop beacon_run_loop;
+  bool beacon_seen = false;
+
+  embedded_test_server()->RegisterRequestHandler(base::BindLambdaForTesting(
+      [&](const net::test_server::HttpRequest& request)
+          -> std::unique_ptr<net::test_server::HttpResponse> {
+        if (request.relative_url == "/prefetch.html") {
+          auto response =
+              std::make_unique<net::test_server::BasicHttpResponse>();
+          response->set_code(net::HTTP_OK);
+          response->set_content_type("text/html");
+          response->AddCustomHeader("on-prefetch-activation", "/beacon");
+          response->set_content("<html><body>Prefetched Page</body></html>");
+          return response;
+        }
+        if (request.relative_url == "/beacon") {
+          auto response =
+              std::make_unique<net::test_server::BasicHttpResponse>();
+          response->set_code(net::HTTP_MOVED_PERMANENTLY);
+          response->AddCustomHeader("Location", "/beacon-redirected");
+          return response;
+        }
+        if (request.relative_url == "/beacon-redirected") {
+          beacon_seen = true;
+          beacon_run_loop.Quit();
+          auto response =
+              std::make_unique<net::test_server::BasicHttpResponse>();
+          response->set_code(net::HTTP_OK);
+          return response;
+        }
+        return nullptr;
+      }));
+
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  GURL initial_url = embedded_test_server()->GetURL("/title1.html");
+  NavigateToURLBlockUntilNavigationsComplete(shell(), initial_url, 1);
+
+  Attach();
+  SendCommandSync("Network.enable");
+
+  GURL prefetch_url = embedded_test_server()->GetURL("/prefetch.html");
+  std::string speculation_rule_script = base::StringPrintf(
+      "const script = document.createElement('script');"
+      "script.type = 'speculationrules';"
+      "script.textContent = JSON.stringify({"
+      "  prefetch: [{"
+      "    source: 'list',"
+      "    urls: ['%s']"
+      "  }]"
+      "});"
+      "document.head.appendChild(script);",
+      prefetch_url.spec().c_str());
+
+  EXPECT_TRUE(ExecJs(shell()->web_contents()->GetPrimaryMainFrame(),
+                     speculation_rule_script));
+
+  {
+    bool prefetch_request_seen = false;
+    std::string prefetch_request_id;
+    while (!prefetch_request_seen) {
+      base::DictValue notification =
+          WaitForNotification("Network.requestWillBeSent", true);
+      const std::string* url =
+          notification.FindStringByDottedPath("request.url");
+      if (url && *url == prefetch_url.spec()) {
+        const std::string* type = notification.FindString("type");
+        EXPECT_EQ(*type, "Prefetch");
+        const std::string* req_id = notification.FindString("requestId");
+        ASSERT_TRUE(req_id);
+        prefetch_request_id = *req_id;
+        prefetch_request_seen = true;
+      }
+    }
+
+    bool prefetch_loading_finished = false;
+    while (!prefetch_loading_finished) {
+      base::DictValue notification =
+          WaitForNotification("Network.loadingFinished", true);
+      const std::string* req_id = notification.FindString("requestId");
+      if (req_id && *req_id == prefetch_request_id) {
+        prefetch_loading_finished = true;
+      }
+    }
+  }
+
+  EXPECT_TRUE(ExecJs(shell()->web_contents()->GetPrimaryMainFrame(),
+                     base::StringPrintf("location.href = '%s';",
+                                        prefetch_url.spec().c_str())));
+
+  {
+    bool beacon_request_seen = false;
+    std::string beacon_request_id;
+    while (!beacon_request_seen) {
+      base::DictValue notification =
+          WaitForNotification("Network.requestWillBeSent", true);
+      const std::string* url =
+          notification.FindStringByDottedPath("request.url");
+      GURL expected_beacon_url = embedded_test_server()->GetURL("/beacon");
+      if (url && *url == expected_beacon_url.spec()) {
+        const std::string* type = notification.FindString("type");
+        EXPECT_EQ(*type, "Ping");
+        EXPECT_EQ(notification.FindDict("redirectResponse"), nullptr);
+        const std::string* req_id = notification.FindString("requestId");
+        ASSERT_TRUE(req_id);
+        beacon_request_id = *req_id;
+        beacon_request_seen = true;
+      }
+    }
+
+    bool redirected_beacon_request_seen = false;
+    while (!redirected_beacon_request_seen) {
+      base::DictValue notification =
+          WaitForNotification("Network.requestWillBeSent", true);
+      const std::string* url =
+          notification.FindStringByDottedPath("request.url");
+      GURL expected_redirected_url =
+          embedded_test_server()->GetURL("/beacon-redirected");
+      if (url && *url == expected_redirected_url.spec()) {
+        const std::string* type = notification.FindString("type");
+        EXPECT_EQ(*type, "Ping");
+        EXPECT_EQ(notification.FindIntByDottedPath("redirectResponse.status"),
+                  301);
+        const std::string* req_id = notification.FindString("requestId");
+        ASSERT_TRUE(req_id);
+        EXPECT_EQ(*req_id, beacon_request_id);
+        redirected_beacon_request_seen = true;
+      }
+    }
+
+    bool response_received_seen = false;
+    while (!response_received_seen) {
+      base::DictValue notification =
+          WaitForNotification("Network.responseReceived", true);
+      const std::string* req_id = notification.FindString("requestId");
+      if (req_id && *req_id == beacon_request_id) {
+        const std::string* type = notification.FindString("type");
+        EXPECT_EQ(*type, "Ping");
+        response_received_seen = true;
+      }
+    }
+
+    bool loading_finished_seen = false;
+    while (!loading_finished_seen) {
+      base::DictValue notification =
+          WaitForNotification("Network.loadingFinished", true);
+      const std::string* req_id = notification.FindString("requestId");
+      if (req_id && *req_id == beacon_request_id) {
+        loading_finished_seen = true;
+      }
+    }
+  }
+
+  beacon_run_loop.Run();
+  EXPECT_TRUE(beacon_seen);
+}
+
+// Regression test for crbug.com/466134219. This test
+// For Browser targets or detached workers, storage_partition_ is null.
+// Ensures that storage commands safely return an error instead of crashing.
+IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest,
+                       StorageBucketTrackingWithoutPartition) {
+  AttachToBrowserTarget();
+
+  base::DictValue params;
+  params.Set("storageKey", "storageKey");
+  params.Set("enable", true);
+  const base::DictValue* result =
+      SendCommandSync("Storage.setStorageBucketTracking", std::move(params));
+
+  EXPECT_FALSE(result);
+  EXPECT_TRUE(error());
+  const std::string* error_message = error()->FindString("message");
+  ASSERT_TRUE(error_message);
+  EXPECT_EQ("Internal error", *error_message);
 }
 
 }  // namespace content

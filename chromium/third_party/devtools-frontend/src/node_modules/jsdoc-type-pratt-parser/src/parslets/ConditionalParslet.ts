@@ -2,7 +2,6 @@ import { composeParslet } from './Parslet.js'
 import { Precedence } from '../Precedence.js'
 // import { UnexpectedTypeError } from '../errors.js'
 import { assertRootResult } from '../assertTypes.js'
-import type { RootResult, NullableResult } from '../result/RootResult.js'
 
 export const conditionalParslet = composeParslet({
   name: 'conditionalParslet',
@@ -11,11 +10,9 @@ export const conditionalParslet = composeParslet({
   parseInfix: (parser, left) => {
     parser.consume('extends')
 
-    const extendsType = (
-      parser.parseType(Precedence.KEY_OF_TYPE_OF
-      ) as NullableResult<RootResult>).element
+    const extendsType = assertRootResult(parser.parseType(Precedence.KEY_OF_TYPE_OF))
 
-    // parser.consume('?')
+    parser.consume('?')
 
     const trueType = parser.parseType(Precedence.INFIX)
 

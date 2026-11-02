@@ -24,6 +24,7 @@
 #include "absl/functional/overload.h"
 #include "absl/log/absl_check.h"
 #include "absl/status/statusor.h"
+#include "absl/time/time.h"
 #include "absl/types/span.h"
 #include "ink/brush/brush_coat.h"
 #include "ink/brush/brush_family.h"
@@ -79,7 +80,8 @@ int64_t BrushFamilyNative_create(
     void* jni_env_pass_through, const int64_t* coat_native_pointers,
     int num_coats, int64_t input_model_pointer,
     const char* client_brush_family_id, const char* developer_comment,
-    void (*throw_from_status_callback)(void*, int, const char*)) {
+    void (*throw_from_status_callback)(void* jni_env, int status_code,
+                                       const char* status_str)) {
   std::vector<BrushCoat> coats;
   coats.reserve(num_coats);
   ABSL_CHECK(coat_native_pointers != nullptr);
@@ -97,7 +99,7 @@ int64_t BrushFamilyNative_create(
   if (!brush_family.ok()) {
     throw_from_status_callback(jni_env_pass_through,
                                static_cast<int>(brush_family.status().code()),
-                               brush_family.status().message().data());
+                               brush_family.status().ToString().c_str());
     return 0;
   }
 
@@ -116,6 +118,13 @@ const char* BrushFamilyNative_getClientBrushFamilyId(int64_t native_pointer) {
 const char* BrushFamilyNative_getDeveloperComment(int64_t native_pointer) {
   const BrushFamily& brush_family = CastToBrushFamily(native_pointer);
   return brush_family.GetMetadata().developer_comment.c_str();
+}
+
+int64_t BrushFamilyNative_getTextureAnimationLoopDurationMillis(
+    int64_t native_pointer) {
+  const BrushFamily& brush_family = CastToBrushFamily(native_pointer);
+  return absl::ToInt64Milliseconds(
+      brush_family.GetTextureAnimationLoopDuration());
 }
 
 int64_t BrushFamilyNative_getBrushCoatCount(int64_t native_pointer) {

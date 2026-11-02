@@ -63,7 +63,7 @@ static enum xnn_status create_even_split_operator(
   int operator_index = 0;
   const int32_t axis = node->params.even_split.axis;
   opdata->axis = axis;
-  enum xnn_status status;
+  enum xnn_status status = xnn_status_success;
   for (size_t i = 0; i < num_splits; ++i) {
     if (values[opdata->outputs[i]].type == xnn_value_type_invalid) continue;
     assert(operator_index < XNN_MAX_OPERATOR_OBJECTS);

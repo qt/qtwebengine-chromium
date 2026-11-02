@@ -26,7 +26,6 @@
 #include "third_party/blink/public/common/fenced_frame/redacted_fenced_frame_config.h"
 #include "third_party/blink/public/common/frame/frame_policy.h"
 #include "third_party/blink/public/common/frame/view_transition_state.h"
-#include "third_party/blink/public/common/navigation/impression.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "third_party/blink/public/mojom/blob/blob_url_store.mojom-shared.h"
@@ -70,6 +69,17 @@ struct BLINK_EXPORT WebEarlyHintsPreloadInfo {
       network::mojom::LinkAsAttribute::kUnspecified;
   network::mojom::CrossOriginAttribute cross_origin =
       network::mojom::CrossOriginAttribute::kUnspecified;
+};
+
+// Information about an origin preconnected to during a navigation, either via a
+// 103 Early Hints response (early_hint=true) or a `Link: rel=preconnect` header
+// on the final response (early_hint=false). Used by the SpeculationMeasurement
+// API.
+struct BLINK_EXPORT WebPreconnectInfo {
+  WebURL url;
+  network::mojom::CrossOriginAttribute cross_origin =
+      network::mojom::CrossOriginAttribute::kUnspecified;
+  bool early_hint = false;
 };
 
 class WebDocumentLoader;
@@ -201,11 +211,6 @@ struct BLINK_EXPORT WebNavigationInfo {
   // The value of hrefTranslate attribute of a link, if this navigation was
   // inititated by clicking a link.
   WebString href_translate;
-
-  // Optional impression associated with this navigation. This is attached when
-  // a navigation results from a click on an anchor tag that has conversion
-  // measurement attributes.
-  std::optional<Impression> impression;
 
   // The frame policy specified by the frame owner element.
   // For top-level window with no opener, this is the default lax FramePolicy.
@@ -538,6 +543,10 @@ struct BLINK_EXPORT WebNavigationParams {
   // "crossorigin").
   std::vector<WebEarlyHintsPreloadInfo> early_hints_preloaded_resources;
 
+  // Origins preconnected to during the navigation (Early Hints and final-
+  // response Link headers).
+  std::vector<WebPreconnectInfo> preconnects;
+
   // If this is a navigation to fenced frame from an interest group auction,
   // contains URNs mapped to the ad components returned by the winning bid.
   // Null, otherwise.
@@ -639,6 +648,12 @@ struct BLINK_EXPORT WebNavigationParams {
   // The string should contain only the selector value (the part after
   // "text=" in a URL directive), not the "text=" prefix itself.
   std::optional<WebString> internal_scroll_to_text_fragment;
+
+  // Browser-authoritative per-frame secure-context-root bit. Sourced from
+  // `ContentBrowserClient::IsSecureContextRoot()` at navigation commit via
+  // CommitNavigationParams. Same-process descendants'
+  // HasInsecureContextInAncestors() stops at frames with this bit set.
+  bool is_secure_context_root = false;
 };
 
 }  // namespace blink

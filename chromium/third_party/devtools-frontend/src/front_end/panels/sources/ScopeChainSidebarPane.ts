@@ -32,6 +32,7 @@ import type * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import type * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
+import * as Bindings from '../../models/bindings/bindings.js';
 import * as SourceMapScopes from '../../models/source_map_scopes/source_map_scopes.js';
 import * as StackTrace from '../../models/stack_trace/stack_trace.js';
 import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
@@ -76,40 +77,55 @@ interface ViewInput {
     scope: SDK.DebuggerModel.ScopeChainEntry,
     objectTree: ObjectUI.ObjectPropertiesSection.ObjectTree,
   }>|null;
+  onToggle: (objectTree: ObjectUI.ObjectPropertiesSection.ObjectTree, expanded: boolean) => void;
+  onContextMenu: (
+      objectTree: ObjectUI.ObjectPropertiesSection.ObjectTree,
+      contextMenu: UI.ContextMenu.ContextMenu,
+      ) => void;
 }
 type View = (input: ViewInput, output: object, target: HTMLElement) => void;
 export const DEFAULT_VIEW: View = (input, output, target) => {
-  const createScopeSectionTreeElement =
-      (scope: SDK.DebuggerModel.ScopeChainEntry,
-       objectTree: ObjectUI.ObjectPropertiesSection.ObjectTree): TemplateResult => {
-        let emptyPlaceholder: Common.UIString.LocalizedString|null = null;
-        if (scope.type() === Protocol.Debugger.ScopeType.Local ||
-            scope.type() === Protocol.Debugger.ScopeType.Closure) {
-          emptyPlaceholder = i18nString(UIStrings.noVariables);
-        }
-        const icon = scope.icon();
-        const {title, subtitle} = scopeTitle(scope);
-        const section = new ObjectUI.ObjectPropertiesSection.RootElement(objectTree, input.linkifier, emptyPlaceholder);
-        section.listItemElement.classList.add('scope-chain-sidebar-pane-section');
-        section.listItemElement.setAttribute('aria-label', title);
+  const createScopeSection = ({scope, objectTree}: {
+    scope: SDK.DebuggerModel.ScopeChainEntry,
+    objectTree: ObjectUI.ObjectPropertiesSection.ObjectTree,
+  }): TemplateResult => {
+    let emptyPlaceholder: Common.UIString.LocalizedString|null = null;
+    if (scope.type() === Protocol.Debugger.ScopeType.Local || scope.type() === Protocol.Debugger.ScopeType.Closure) {
+      emptyPlaceholder = i18nString(UIStrings.noVariables);
+    }
+    const icon = scope.icon();
+    const {title, subtitle} = scopeTitle(scope);
 
-        const titleNode = document.createDocumentFragment();
-        // eslint-disable-next-line @devtools/no-lit-render-outside-of-view
-        render(
-            html`<div class='scope-chain-sidebar-pane-section-header tree-element-title'>${
-                icon ? html`<img class=scope-chain-sidebar-pane-section-icon src=${icon}>` : nothing}
-                   <div class=scope-chain-sidebar-pane-section-subtitle>${subtitle}</div>
-                   <div class=scope-chain-sidebar-pane-section-title>${title}</div>
-                 </div>`,
-            titleNode);
-        section.title = titleNode;
+    // clang-format off
+    return html`
+          <li role="treeitem"
+              class="scope-chain-sidebar-pane-section"
+              aria-label=${title}
+              ?open=${objectTree.expanded}
+              @expand=${(e: Event) => {
+                const customEvent = e as UI.TreeOutline.TreeViewElement.ExpandEvent;
+                input.onToggle(objectTree, customEvent.detail.expanded);
+              }}
+              @contextmenu=${(e: Event) => {
+                const contextMenu = new UI.ContextMenu.ContextMenu(e);
+                input.onContextMenu(objectTree, contextMenu);
+                void contextMenu.show();
+              }}>
+            <div class="scope-chain-sidebar-pane-section-header"
+                 @click=${() => {
+                   input.onToggle(objectTree, !objectTree.expanded);
+                 }}>
+              ${icon ? html`<img class="scope-chain-sidebar-pane-section-icon" src=${icon}>` : nothing}
+              <div class="scope-chain-sidebar-pane-section-title">${title}</div>
+              <div class="scope-chain-sidebar-pane-section-subtitle">${subtitle}</div>
+            </div>
 
-        if (scope === input.scopeChain?.[0]?.scope) {
-          section.select(/* omitFocus */ true);
-        }
-
-        return html`<devtools-tree-wrapper .treeElement=${section}></devtools-tree-wrapper>`;
-      };
+            ${objectTree.expanded
+              ?  ObjectUI.ObjectPropertiesSection.renderObjectTree(objectTree, input.linkifier, emptyPlaceholder)
+              : html`<ul role="group"></ul>`}
+          </li>`;
+    // clang-format on
+  };
 
   render(
       // clang-format off
@@ -121,7 +137,7 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
           <style>${ObjectUI.ObjectPropertiesSection.objectValueStyles}</style>
           <style>${ObjectUI.ObjectPropertiesSection.objectPropertiesSectionStyles}</style>
           <style>${scopeChainSidebarPaneStyles}</style>
-          ${input.scopeChain?.map(({scope, objectTree}) => createScopeSectionTreeElement(scope, objectTree)) ?? nothing}
+          ${input.scopeChain?.map(item => createScopeSection(item)) ?? nothing}
         </ul>`}>
       </devtools-tree>` : html`
       <div class=gray-info-message tabindex=-1>${
@@ -191,18 +207,6 @@ export class ScopeChainSidebarPane extends UI.Widget.VBox implements UI.ContextF
     return scopeChainSidebarPaneInstance;
   }
 
-  /**
-   * @deprecated Required for legacy web tests via DebuggerTestRunner.js
-   */
-  get treeOutline(): ObjectUI.ObjectPropertiesSection.ObjectPropertiesSectionsTreeOutline|null {
-    const devtoolsTree = this.contentElement.querySelector('devtools-tree');
-    if (devtoolsTree) {
-      return (devtoolsTree as UI.TreeOutline.TreeViewElement).getInternalTreeOutlineForTest() as
-          ObjectUI.ObjectPropertiesSection.ObjectPropertiesSectionsTreeOutline;
-    }
-    return null;
-  }
-
   flavorChanged(callFrame: StackTrace.StackTrace.DebuggableFrameFlavor|null): void {
     this.#scopeChainModel?.dispose();
     this.#scopeChainModel = null;
@@ -211,7 +215,8 @@ export class ScopeChainSidebarPane extends UI.Widget.VBox implements UI.ContextF
     this.#linkifier.reset();
 
     if (callFrame) {
-      const scopeChainModel = new SourceMapScopes.ScopeChainModel.ScopeChainModel(callFrame.sdkFrame);
+      const scopeChainModel = new SourceMapScopes.ScopeChainModel.ScopeChainModel(
+          callFrame.sdkFrame, Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance());
       this.#scopeChainModel = scopeChainModel;
       this.#scopeChainModel.addEventListener(SourceMapScopes.ScopeChainModel.Events.SCOPE_CHAIN_UPDATED, event => {
         if (this.#scopeChainModel === scopeChainModel) {
@@ -224,13 +229,41 @@ export class ScopeChainSidebarPane extends UI.Widget.VBox implements UI.ContextF
   }
 
   override performUpdate(): void {
-    this.#view(
-        {
-          linkifier: this.#linkifier,
-          isPaused: Boolean(this.#scopeChainModel),
-          scopeChain: this.#scopeChain,
-        },
-        {}, this.contentElement);
+    this.#view({
+      linkifier: this.#linkifier,
+      isPaused: Boolean(this.#scopeChainModel),
+      scopeChain: this.#scopeChain,
+      onToggle: (objectTree: ObjectUI.ObjectPropertiesSection.ObjectTree, expanded: boolean) => {
+        objectTree.expanded = expanded;
+        this.requestUpdate();
+      },
+      onContextMenu: (
+          objectTree: ObjectUI.ObjectPropertiesSection.ObjectTree,
+          contextMenu: UI.ContextMenu.ContextMenu,
+          ) => {
+        ObjectUI.ObjectPropertiesSection.populateObjectTreeContextMenu(
+            contextMenu,
+            objectTree,
+            async () => {
+              await objectTree.expandRecursively(ObjectUI.ObjectPropertiesSection.EXPANDABLE_MAX_DEPTH);
+              this.requestUpdate();
+            },
+            () => {
+              objectTree.collapseRecursively();
+              this.requestUpdate();
+            },
+            () => {
+              objectTree.sortPropertiesAlphabetically = !objectTree.sortPropertiesAlphabetically;
+              this.requestUpdate();
+            },
+            () => {
+              objectTree.includeNullOrUndefinedValues = !objectTree.includeNullOrUndefinedValues;
+              this.requestUpdate();
+            },
+        );
+      },
+    },
+               {}, this.contentElement);
   }
 
   #buildScopeChain({scopeChain}: SourceMapScopes.ScopeChainModel.ScopeChain): void {
@@ -251,6 +284,9 @@ export class ScopeChainSidebarPane extends UI.Widget.VBox implements UI.ContextF
         propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.ALL,
         readOnly: false,
         expansionTracker,
+      });
+      objectTree.addEventListener(ObjectUI.ObjectPropertiesSection.ObjectTreeNodeBase.Events.CHILDREN_CHANGED, () => {
+        this.requestUpdate();
       });
       void expansionTracker.apply(objectTree);
       objectTree.addExtraProperties(...scope.extraProperties());

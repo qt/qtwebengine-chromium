@@ -1,0 +1,77 @@
+PROJECT_NAME           = PipeWire
+PROJECT_NUMBER         = @PACKAGE_VERSION@
+OUTPUT_DIRECTORY       = "@output_directory@"
+FULL_PATH_NAMES        = YES
+JAVADOC_AUTOBRIEF      = YES
+TAB_SIZE               = 8
+OPTIMIZE_OUTPUT_FOR_C  = YES
+EXTRACT_ALL            = YES
+EXTRACT_STATIC         = YES
+STRIP_FROM_PATH        = @path_prefixes@
+STRIP_FROM_INC_PATH    = @path_prefixes@
+SHOW_FILES             = NO
+SHOW_INCLUDE_FILES     = NO
+GENERATE_TODOLIST      = NO
+GENERATE_TESTLIST      = NO
+GENERATE_BUGLIST       = NO
+GENERATE_DEPRECATEDLIST= NO
+QUIET                  = YES
+WARN_NO_PARAMDOC       = YES
+HAVE_DOT               = @HAVE_DOT@
+INPUT                  = @inputs@
+FILTER_PATTERNS        = "*.c=@c_input_filter@" "*.h=@h_input_filter@" "*.md=@md_input_filter@"
+FILE_PATTERNS          = "*.h" "*.c"
+RECURSIVE              = YES
+EXAMPLE_PATH           = "@top_srcdir@/src/examples" \
+                         "@top_srcdir@/spa/examples" \
+                         "@top_srcdir@/doc/examples" \
+                         "@top_srcdir@/doc/dox"
+EXAMPLE_PATTERNS       = "*.c" "*.inc"
+
+GENERATE_MAN           = YES
+MAN_EXTENSION          = 3
+
+REFERENCED_BY_RELATION = NO
+REFERENCES_RELATION    = NO
+IGNORE_PREFIX          = pw_ \
+                         PW_ \
+                         spa_ \
+                         SPA_
+GENERATE_TREEVIEW      = YES
+DISABLE_INDEX          = NO
+SEARCHENGINE           = YES
+GENERATE_LATEX         = NO
+
+TOC_INCLUDE_HEADINGS   = 0
+LAYOUT_FILE            = @layout@
+
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = YES
+PREDEFINED             = PA_C_DECL_BEGIN= \
+                         PA_C_DECL_END= \
+			 __USE_ISOC11 \
+			 SPA_EXPORT \
+			 SPA_PRINTF_FUNC \
+			 SPA_DEPRECATED \
+			 SPA_SENTINEL \
+			 SPA_UNUSED \
+			 SPA_NORETURN \
+			 SPA_RESTRICT
+HTML_EXTRA_STYLESHEET  = @cssfiles@
+
+MAX_INITIALIZER_LINES  = 1
+SORT_MEMBER_DOCS       = NO
+
+CALL_GRAPH             = NO
+CALLER_GRAPH           = NO
+CLASS_GRAPH            = NO
+COLLABORATION_GRAPH    = NO
+GROUP_GRAPHS           = NO
+INCLUDED_BY_GRAPH      = NO
+INCLUDE_GRAPH          = NO
+GRAPHICAL_HIERARCHY    = NO
+DIRECTORY_GRAPH        = NO
+TEMPLATE_RELATIONS     = NO
+
+# Fix up some apparent Doxygen mis-parsing
+EXCLUDE_SYMBOLS        = "desc" "methods" "msgid_plural" "n" "name" "props" "utils" "start"

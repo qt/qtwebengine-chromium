@@ -23,7 +23,7 @@ namespace Eigen {
  * \brief Represents a translation transformation
  *
  * \tparam Scalar_ the scalar type, i.e., the type of the coefficients.
- * \tparam Dim_ the  dimension of the space, can be a compile time value or Dynamic
+ * \tparam Dim_ the dimension of the space, can be a compile time value or Dynamic
  *
  * \note This class is not aimed to be used to store a translation transformation,
  * but rather to make easier the constructions and updates of Transform objects.
@@ -89,7 +89,7 @@ class Translation {
   EIGEN_DEVICE_FUNC const VectorType& translation() const { return m_coeffs; }
   EIGEN_DEVICE_FUNC VectorType& translation() { return m_coeffs; }
 
-  /** Concatenates two translation */
+  /** Concatenates two translations */
   EIGEN_DEVICE_FUNC inline Translation operator*(const Translation& other) const {
     return Translation(m_coeffs + other.m_coeffs);
   }
@@ -108,7 +108,7 @@ class Translation {
   }
 
   /** \returns the concatenation of a linear transformation \a l with the translation \a t */
-  // its a nightmare to define a templated friend function outside its declaration
+  // it's a nightmare to define a templated friend function outside its declaration
   template <typename OtherDerived>
   friend EIGEN_DEVICE_FUNC inline AffineTransformType operator*(const EigenBase<OtherDerived>& linear,
                                                                 const Translation& t) {

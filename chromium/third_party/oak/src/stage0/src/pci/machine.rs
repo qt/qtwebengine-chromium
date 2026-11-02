@@ -19,7 +19,8 @@ use core::{ffi::CStr, ops::Range};
 use x86_64::align_down;
 use zerocopy::IntoBytes;
 
-use crate::{fw_cfg::Firmware, Platform, ZeroPage};
+use super::{config_access::ConfigAccess, device::Bdf};
+use crate::{Platform, ZeroPage, fw_cfg::Firmware};
 
 const PCI_MMIO32_HOLE_BASE_FILE_NAME: &CStr = c"etc/pci-mmio32-hole-base";
 const MMCFG_MEM_RESERVATION_FILE: &CStr = c"etc/mmcfg_mem_reservation";
@@ -52,11 +53,86 @@ pub trait Machine {
         firmware: &mut dyn Firmware,
         zero_page: &ZeroPage,
     ) -> Result<Range<u64>, &'static str>;
+
+    fn init_acpi_io(_access: &mut dyn ConfigAccess) -> Result<(), &'static str> {
+        Ok(())
+    }
 }
 
-// How much memory to reserve for the 64-bit PCI hole. This is a fairly
-// conservative 32 GiB.
-const MMIO64_HOLE_SIZE: usize = 0x8_0000_0000;
+// How much memory to reserve for the 64-bit PCI hole. When GPUs come into play,
+// they want fairly large BARs -- 128 GB -- so we go for a whopping 512 GB for
+// the hole. In the future we may want to make it dynamic and start the MMIO
+// hole just past the end of physical memory.
+const MMIO64_HOLE_SIZE: usize = 0x80_0000_0000;
+
+fn mmio64_hole_helper(
+    firmware: &mut dyn Firmware,
+    zero_page: &ZeroPage,
+    addr_size: u8,
+) -> Result<Range<u64>, &'static str> {
+    // It is possible for the host to provide PCI bridge address information in a
+    // fw_cfg file, `etc/hardware-info`. EDK2 supports that mechanism, but I don't
+    // see that mechanism being used in any the VMMs that immediately interest us.
+    // Thus, let's kick that particular can down the road until we encounter a VMM
+    // that requires us to support that mechanism.
+    // But we should still print a warning if that file exists so that it wouldn't
+    // come as a complete surprise.
+    if firmware.find(c"etc/hardware-info").is_some() {
+        log::warn!(
+            "your VMM exposes `etc/hardware-info`; stage0 currently does not support parsing that file and will ignore it!"
+        );
+    }
+
+    // EDK2 places the 64-bit hole at (2^(physmem_bits-3)..2^physmem_bits) (unless
+    // otherwise instructed):
+    //
+    // https://github.com/tianocore/edk2/blob/d46aa46c8361194521391aa581593e556c707c6e/OvmfPkg/Library/PlatformInitLib/MemDetect.c#L796
+    //
+    // After which it moves it down if there is a conflict:
+    //
+    // https://github.com/tianocore/edk2/blob/d46aa46c8361194521391aa581593e556c707c6e/OvmfPkg/Library/PlatformInitLib/MemDetect.c#L809
+    //
+    // This is known as the "dynamic MMIO window".
+    //
+    // Otherwise, the window size is at least 32 GB (look for `PcdPciMmio64Size` in
+    // the dsc files), the "classic MMIO window".
+    //
+    // SeaBIOS prefers to place the window somewhere around 512 GiB..1024 GiB mark:
+    // BUILD_PCIMEM64_START = 0x80_0000_0000 (512 GB mark)
+    // BUILD_PCIMEM64_END = 0x100_0000_0000 (1024 GB mark)
+    // These are the build time defaults. But also see:
+    // https://github.com/coreboot/seabios/blob/b686f4600792c504f01929f761be473e298de33d/src/fw/pciinit.c#L1138
+    // https://github.com/coreboot/seabios/blob/b686f4600792c504f01929f761be473e298de33d/src/fw/pciinit.c#L1157
+    //
+    // Let's make some simplifying assumptions and try to fit a 32 GiB window
+    // somewhere at the top of the available physical memory. You'd hope we can just
+    // assume (at least) 48 bits available, but no.
+
+    let top_of_memory: u64 = 1 << addr_size;
+
+    // The hole should be aligned to 1G addresses. With enough bits, that should be
+    // vacuously true, but just in case let's ensure that the top_of_memory is a
+    // multiple of the hole size.
+    let top_of_memory = align_down(top_of_memory, MMIO64_HOLE_SIZE as u64) as usize;
+
+    // Let's start by sticking it at the very end of the address space.
+    let mut mmio64_hole = top_of_memory - MMIO64_HOLE_SIZE..top_of_memory;
+
+    // Keep scaling down until we find a hole or run out of memory.
+    // In theory we could scale down by 1G chunks until we get to the 4G boundary,
+    // but there should be enough address space available to use bigger, hole-sized
+    // chunks.
+    while !zero_page.check_e820_gap(mmio64_hole.clone()) && mmio64_hole.start >= MMIO64_HOLE_SIZE {
+        mmio64_hole.start -= MMIO64_HOLE_SIZE;
+        mmio64_hole.end -= MMIO64_HOLE_SIZE;
+    }
+
+    if mmio64_hole.start < MMIO64_HOLE_SIZE {
+        Err("could not find memory region for 64-bit PCI MMIO hole")
+    } else {
+        Ok(mmio64_hole.start as u64..mmio64_hole.end as u64)
+    }
+}
 
 pub struct I440fx {}
 
@@ -68,7 +144,7 @@ impl Machine for I440fx {
         firmware: &mut dyn Firmware,
         zero_page: &ZeroPage,
     ) -> Result<Range<u32>, &'static str> {
-        let mut mmio32_hole_base = firmware
+        let mut mmio32_hole_base: u32 = firmware
             .find(PCI_MMIO32_HOLE_BASE_FILE_NAME)
             .and_then(|file| {
                 // The VMM is providing us the start of the hole.
@@ -113,8 +189,10 @@ impl Machine for I440fx {
             let mut should_reserve: u64 = 0;
             firmware.read_file(&file, should_reserve.as_mut_bytes())?;
             if should_reserve == 1 {
-                // Bump the base by 256 MoB
-                mmio32_hole_base += 0x10000000;
+                // Bump the base by 256 MiB
+                mmio32_hole_base = mmio32_hole_base
+                    .checked_add(0x10000000)
+                    .ok_or("not enough space to move the 32-bit PCI MMIO hole")?;
             }
         }
 
@@ -125,6 +203,12 @@ impl Machine for I440fx {
         // For now we choose the lower of the two.
         let mmio32_hole_end = 0xFC00_0000;
 
+        if mmio32_hole_base >= mmio32_hole_end
+            || !zero_page.check_e820_gap(mmio32_hole_base as usize..mmio32_hole_end as usize)
+        {
+            return Err("could not find memory region for 32-bit PCI MMIO hole");
+        }
+
         Ok(mmio32_hole_base..mmio32_hole_end)
     }
 
@@ -132,42 +216,6 @@ impl Machine for I440fx {
         firmware: &mut dyn Firmware,
         zero_page: &ZeroPage,
     ) -> Result<Range<u64>, &'static str> {
-        // It is possible for the host to provide PCI bridge address information in a
-        // fw_cfg file, `etc/hardware-info`. EDK2 supports that mechanism, but I don't
-        // see that mechanism being used in any the VMMs that immediately interest us.
-        // Thus, let's kick that particular can down the road until we encounter a VMM
-        // that requires us to support that mechanism.
-        // But we should still print a warning if that file exists so that it wouldn't
-        // come as a complete surprise.
-        if firmware.find(c"etc/hardware-info").is_some() {
-            log::warn!("your VMM exposes `etc/hardware-info`; stage0 currently does not support parsing that file and will ignore it!");
-        }
-
-        // EDK2 places the 64-bit hole at (2^(physmem_bits-3)..2^physmem_bits) (unless
-        // otherwise instructed):
-        //
-        // https://github.com/tianocore/edk2/blob/d46aa46c8361194521391aa581593e556c707c6e/OvmfPkg/Library/PlatformInitLib/MemDetect.c#L796
-        //
-        // After which it moves it down if there is a conflict:
-        //
-        // https://github.com/tianocore/edk2/blob/d46aa46c8361194521391aa581593e556c707c6e/OvmfPkg/Library/PlatformInitLib/MemDetect.c#L809
-        //
-        // This is known as the "dynamic MMIO window".
-        //
-        // Otherwise, the window size is at least 32 GB (look for `PcdPciMmio64Size` in
-        // the dsc files), the "classic MMIO window".
-        //
-        // SeaBIOS prefers to place the window somewhere around 512 GiB..1024 GiB mark:
-        // BUILD_PCIMEM64_START = 0x80_0000_0000 (512 GB mark)
-        // BUILD_PCIMEM64_END = 0x100_0000_0000 (1024 GB mark)
-        // These are the build time defaults. But also see:
-        // https://github.com/coreboot/seabios/blob/b686f4600792c504f01929f761be473e298de33d/src/fw/pciinit.c#L1138
-        // https://github.com/coreboot/seabios/blob/b686f4600792c504f01929f761be473e298de33d/src/fw/pciinit.c#L1157
-        //
-        // Let's make some simplifying assumptions and try to fit a 32 GiB window
-        // somewhere at the top of the available physical memory. You'd hope we can just
-        // assume (at least) 48 bits available, but no.
-
         // We've now run into a VM where CPUID reports 48 bits of physical address
         // space, but the VMM is only backing it with 41.6 bits of address space, and we
         // place the MMIO range outside of what the VMM supports.
@@ -175,38 +223,9 @@ impl Machine for I440fx {
         // Oops.
         //
         // We'll have to come back to this and figure out how to see through the VMM's
-        // lies, but for now, let's lie and say 40 bits. This will break if the VM has
-        // more than ~800 GiB of memory.
-        let addr_size = 40;
-        //let addr_size = P::guest_phys_addr_size();
-        let top_of_memory: u64 = 1 << addr_size;
-        // We'll also be relatively conservative and try to get away with just reserving
-        // 32 GiB for the hole.
-
-        // The hole should be aligned to 1G addresses. With enough bits, that should be
-        // vacuously true, but just in case let's ensure that the top_of_memory is a
-        // multiple of the hole size.
-        let top_of_memory = align_down(top_of_memory, MMIO64_HOLE_SIZE as u64) as usize;
-
-        // Let's start by sticking it at the very end of the address space.
-        let mut mmio64_hole = top_of_memory - MMIO64_HOLE_SIZE..top_of_memory;
-
-        // Keep scaling down until we find a hole or run out of memory.
-        // In theory we could scale down by 1G chunks until we get to the 4G boundary,
-        // but there should be enough address space available to use bigger, hole-sized
-        // chunks.
-        while !zero_page.check_e820_gap(mmio64_hole.clone())
-            && mmio64_hole.start >= MMIO64_HOLE_SIZE
-        {
-            mmio64_hole.start -= MMIO64_HOLE_SIZE;
-            mmio64_hole.end -= MMIO64_HOLE_SIZE;
-        }
-
-        if mmio64_hole.start < MMIO64_HOLE_SIZE {
-            Err("could not find memory region for 64-bit PCI MMIO hole")
-        } else {
-            Ok(mmio64_hole.start as u64..mmio64_hole.end as u64)
-        }
+        // lies, but for now, let's lie and say 41 bits. As 40 bits is 1 TiB, we can fit
+        // a fairly large MMIO range in the upper TiB.
+        mmio64_hole_helper(firmware, zero_page, 41)
     }
 }
 
@@ -261,6 +280,52 @@ impl Machine for Q35 {
     ) -> Result<Range<u64>, &'static str> {
         // No special treatment here.
         I440fx::mmio64_hole::<P>(firmware, zero_page)
+    }
+
+    fn init_acpi_io(access: &mut dyn ConfigAccess) -> Result<(), &'static str> {
+        // Program the ICH9 LPC (D31:F0) PMBASE register so that ACPI I/O
+        // decoding is enabled before we build ACPI tables. Without this the
+        // guest kernel cannot reach the PM1a control block and `shutdown -h`
+        // (or ACPI S5) silently fails.
+        let lpc = Bdf::new(0, 0x1f, 0)?;
+        // offset 0x40 (PMBASE): set I/O base to 0x600, mark as I/O space
+        access.write(lpc, 0x10, 0x601)?;
+        // offset 0x44 (ACPI_CNTL): set ACPI_EN bit
+        access.write(lpc, 0x11, 0x80)?;
+        Ok(())
+    }
+}
+
+// VMMs like cloud hypervisor and firecracker use this machine type often,
+// but we provide the reference implementation for Cloud Hypervisor here
+pub struct IntelVirtPcieHost {}
+
+impl Machine for IntelVirtPcieHost {
+    // See references from
+    // https://github.com/cloud-hypervisor/cloud-hypervisor/blob/1b479e40eaa31ed26aa6dc065ed0ba07eeabee7b/pci/src/bus.rs#L23-L24
+    // https://github.com/search?q=0x0d57+pcie&type=code
+    const PCI_VENDOR_ID: u16 = 0x8086;
+    const PCI_DEVICE_ID: u16 = 0x0d57;
+
+    fn mmio32_hole(
+        _firmware: &mut dyn Firmware,
+        _zero_page: &ZeroPage,
+    ) -> Result<Range<u32>, &'static str> {
+        // https://github.com/cloud-hypervisor/cloud-hypervisor/blob/main/arch/src/x86_64/layout.rs#L86-L87
+        // Cloud Hypervisor reserves 0xC000_0000..0xE800_0000 for 32-bit PCI MMIO
+        Ok(0xC000_0000..0xE800_0000)
+    }
+
+    fn mmio64_hole<P: Platform>(
+        firmware: &mut dyn Firmware,
+        zero_page: &ZeroPage,
+    ) -> Result<Range<u64>, &'static str> {
+        // The start is at 4GiB, with a variable length. Re-using the gap finding
+        // trick for I440fx should be okay, but since CH respects the CPUID phys
+        // address, we can use the max page size
+        // https://github.com/cloud-hypervisor/cloud-hypervisor/blob/main/arch/src/x86_64/layout.rs#L124-L125
+        // So, no need for anything special here.
+        mmio64_hole_helper(firmware, zero_page, P::guest_phys_addr_size())
     }
 }
 
@@ -332,8 +397,19 @@ mod tests {
     }
 
     #[googletest::test]
+    fn intel_virt_pcie_host_hole() {
+        // Not much to test, besides there being a hole.
+        let mut firmware = TestFirmware::default();
+        let zero_page = ZeroPage::new();
+        assert_that!(
+            IntelVirtPcieHost::mmio32_hole(&mut firmware, &zero_page),
+            ok(all!(field!(&Range.start, eq(0xC000_0000)), field!(&Range.end, eq(0xE800_0000))))
+        )
+    }
+
+    #[googletest::test]
     fn mmio64_hole() {
-        let gpa_bits = 40;
+        let gpa_bits = 41;
 
         // This sets global state for MockPlatform, so beware! However, I don't think
         // we'll ever need different values in other tests.
@@ -404,5 +480,61 @@ mod tests {
                 field!(&Range.end, eq((MMIO64_HOLE_SIZE + MMIO64_HOLE_SIZE) as u64))
             ))
         );
+    }
+
+    #[googletest::test]
+    fn pc_hole_mmcfg_reservation_overflow() {
+        // If the base is close enough to u32::MAX that adding 256 MiB would
+        // overflow, the checked_add should catch it and return an error.
+        let mut firmware = TestFirmware::default();
+        let zero_page = ZeroPage::new();
+
+        // Place the base at 0xF800_0000 (just 128 MiB below the 4 GiB mark).
+        firmware.files.insert(
+            PCI_MMIO32_HOLE_BASE_FILE_NAME.to_owned(),
+            Box::new(0xF800_0000u64.to_le_bytes()),
+        );
+        // Request the 256 MiB MMCFG reservation, which would push the base to
+        // 0x1_0800_0000 — past u32::MAX.
+        firmware.files.insert(MMCFG_MEM_RESERVATION_FILE.to_owned(), Box::new(1u64.to_le_bytes()));
+
+        assert_that!(I440fx::mmio32_hole(&mut firmware, &zero_page), err(anything()));
+    }
+
+    #[googletest::test]
+    fn pc_hole_base_past_end() {
+        // If the base is at or past the fixed end (0xFC00_0000), the hole is
+        // invalid.
+        let mut firmware = TestFirmware::default();
+        let zero_page = ZeroPage::new();
+
+        firmware.files.insert(
+            PCI_MMIO32_HOLE_BASE_FILE_NAME.to_owned(),
+            Box::new(0xFC00_0000u64.to_le_bytes()),
+        );
+
+        assert_that!(I440fx::mmio32_hole(&mut firmware, &zero_page), err(anything()));
+    }
+
+    #[googletest::test]
+    fn pc_hole_overlaps_ram() {
+        // If RAM is mapped inside the proposed hole range, the hole is rejected.
+        let mut firmware = TestFirmware::default();
+        let mut zero_page = ZeroPage::new();
+
+        // Place the base at the 2 GiB mark via fwcfg.
+        firmware.files.insert(
+            PCI_MMIO32_HOLE_BASE_FILE_NAME.to_owned(),
+            Box::new(0x8000_0000u64.to_le_bytes()),
+        );
+
+        // Map RAM that overlaps the proposed hole [0x8000_0000, 0xFC00_0000).
+        zero_page.insert_e820_entry(BootE820Entry::new(
+            0x9000_0000,
+            0x1000_0000,
+            E820EntryType::RAM,
+        ));
+
+        assert_that!(I440fx::mmio32_hole(&mut firmware, &zero_page), err(anything()));
     }
 }

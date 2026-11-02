@@ -41,7 +41,9 @@
 
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "common/path_helper.h"
@@ -56,13 +58,18 @@
 
 namespace {
 
+enum class OutputFormat {
+  HUMAN,    // Human readable text output.
+  MACHINE,  // Pipe-delimited machine readable output.
+};
+
 struct Options {
-  bool machine_readable;
-  bool output_stack_contents;
-  bool output_requesting_thread_only;
-  bool brief;
-  int output_thread_index;
-  bool dump_stack_pointers;
+  OutputFormat output_format = OutputFormat::HUMAN;
+  bool output_stack_contents = false;
+  bool output_requesting_thread_only = false;
+  bool brief = false;
+  int output_thread_index = -1;
+  bool dump_stack_pointers = false;
 
   std::string minidump_file;
   std::vector<std::string> symbol_paths;
@@ -75,6 +82,17 @@ using google_breakpad::MinidumpThreadList;
 using google_breakpad::MinidumpProcessor;
 using google_breakpad::ProcessState;
 using google_breakpad::SimpleSymbolSupplier;
+
+// Returns the OutputFormat described by the |input| string.
+std::optional<OutputFormat> ParseOutputFormatString(std::string_view s) {
+  if (s == "human") {
+    return OutputFormat::HUMAN;
+  }
+  if (s == "machine") {
+    return OutputFormat::MACHINE;
+  }
+  return std::nullopt;
+}
 
 // Processes |options.minidump_file| using MinidumpProcessor.
 // |options.symbol_path|, if non-empty, is the base directory of a
@@ -113,15 +131,20 @@ bool PrintMinidumpProcess(const Options& options) {
     return false;
   }
 
-  if (options.machine_readable) {
-    PrintProcessStateMachineReadable(process_state);
-  } else if (options.brief) {
-    PrintRequestingThreadBrief(process_state);
-  } else {
-    PrintProcessState(process_state, options.output_stack_contents,
-                      options.dump_stack_pointers,
-                      options.output_requesting_thread_only,
-                      options.output_thread_index, &resolver);
+  switch (options.output_format) {
+    case OutputFormat::HUMAN:
+      if (options.brief) {
+        PrintRequestingThreadBrief(process_state);
+      } else {
+        PrintProcessState(process_state, options.output_stack_contents,
+                          options.dump_stack_pointers,
+                          options.output_requesting_thread_only,
+                          options.output_thread_index, &resolver);
+      }
+      break;
+    case OutputFormat::MACHINE:
+      PrintProcessStateMachineReadable(process_state);
+      break;
   }
 
   return true;
@@ -137,7 +160,12 @@ static void Usage(int argc, const char *argv[], bool error) {
           "\n"
           "Options:\n"
           "\n"
-          "  -m         Output in machine-readable format\n"
+          "  -f FORMAT  Output format (default: human)\n"
+          "             Possible FORMAT values:\n"
+          "               human    Human-readable text output\n"
+          "               machine  Pipe-delimited machine-readable output\n"
+          "  -m         Output in machine-readable format"
+          " (deprecated, use -f machine)\n"
           "  -s         Output stack contents\n"
           "  -c         Output thread that causes crash or dump only\n"
           "  -t <index> Output thread with given index only\n"
@@ -149,14 +177,7 @@ static void Usage(int argc, const char *argv[], bool error) {
 static void SetupOptions(int argc, const char *argv[], Options* options) {
   int ch;
 
-  options->machine_readable = false;
-  options->output_stack_contents = false;
-  options->output_requesting_thread_only = false;
-  options->brief = false;
-  options->output_thread_index = -1;
-  options->dump_stack_pointers = false;
-
-  while ((ch = getopt(argc, (char* const*)argv, "bcdhmst:")) != -1) {
+  while ((ch = getopt(argc, (char* const*)argv, "bcdf:hmst:")) != -1) {
     switch (ch) {
       case 'h':
         Usage(argc, argv, false);
@@ -177,8 +198,18 @@ static void SetupOptions(int argc, const char *argv[], Options* options) {
       case 'd':
         options->dump_stack_pointers = true;
         break;
+      case 'f': {
+        std::optional<OutputFormat> format = ParseOutputFormatString(optarg);
+        if (!format.has_value()) {
+          fprintf(stderr, "%s: Unknown output format '%s'\n", argv[0], optarg);
+          Usage(argc, argv, true);
+          exit(1);
+        }
+        options->output_format = format.value();
+        break;
+      }
       case 'm':
-        options->machine_readable = true;
+        options->output_format = OutputFormat::MACHINE;
         break;
       case 's':
         options->output_stack_contents = true;

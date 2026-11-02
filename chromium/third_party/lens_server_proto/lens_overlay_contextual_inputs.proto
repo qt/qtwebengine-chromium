@@ -31,13 +31,12 @@ enum LensOverlayContextualInputUploadType {
   // contextual searchbox.
   CONTEXTUAL_INPUT_UPLOAD_TYPE_CONTEXTUAL_SEARCHBOX_INITIAL_QUERY = 5;
 }
-
 // A container for lens inputs sent into search. Each LensOverlayContextualInput
 // represents one input file, such as an image or pdf.
 message LensOverlayContextualInputs {
   repeated LensOverlayContextualInput inputs = 1;
 
-  // Next ID: 4
+  // Next ID: 5
   message LensOverlayContextualInput {
     LensOverlayRequestId request_id = 1;
 
@@ -45,5 +44,8 @@ message LensOverlayContextualInputs {
 
     // The upload type associated with the contextual input.
     LensOverlayContextualInputUploadType upload_type = 3;
+
+    // Optional. The drive id of the file.
+    string drive_id = 4;
   }
 }

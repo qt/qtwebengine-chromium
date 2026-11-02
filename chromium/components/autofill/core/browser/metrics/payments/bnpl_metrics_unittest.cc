@@ -8,8 +8,10 @@
 #include "base/test/metrics/histogram_tester.h"
 #include "base/time/time.h"
 #include "components/autofill/core/browser/data_model/payments/bnpl_issuer.h"
+#include "components/autofill/core/browser/foundations/browser_autofill_manager_test_api.h"
 #include "components/autofill/core/browser/metrics/autofill_metrics_test_base.h"
 #include "components/autofill/core/browser/metrics/ukm_metrics_test_utils.h"
+#include "components/autofill/core/browser/payments/amount_extraction_manager.h"
 #include "components/autofill/core/browser/payments/bnpl_manager.h"
 #include "components/autofill/core/browser/payments/constants.h"
 #include "components/autofill/core/common/autofill_payments_features.h"
@@ -21,7 +23,7 @@
 namespace autofill::autofill_metrics {
 
 using ::testing::Each;
-using IssuerId = autofill::BnplIssuer::IssuerId;
+using IssuerId = ::autofill::BnplIssuer::IssuerId;
 using UkmPayLaterTabShownType = ukm::builders::Autofill_PayLaterTabShown;
 using UkmPayLaterTabSelectedType = ukm::builders::Autofill_PayLaterTabSelected;
 using UkmPayLaterTabSuggestionAcceptedType =
@@ -50,22 +52,20 @@ class BnplMetricsTest : public AutofillMetricsBaseTest,
 TEST_F(BnplMetricsTest, LogBnplPrefToggled) {
   base::HistogramTester histogram_tester;
 
-  ASSERT_TRUE(autofill_client().GetPrefs()->GetBoolean(
-      autofill::prefs::kAutofillBnplEnabled));
+  ASSERT_TRUE(
+      autofill_client().GetPrefs()->GetBoolean(prefs::kAutofillBnplEnabled));
   histogram_tester.ExpectBucketCount("Autofill.SettingsPage.BnplToggled", true,
                                      0);
   histogram_tester.ExpectBucketCount("Autofill.SettingsPage.BnplToggled", false,
                                      0);
 
-  autofill_client().GetPrefs()->SetBoolean(
-      autofill::prefs::kAutofillBnplEnabled, false);
+  autofill_client().GetPrefs()->SetBoolean(prefs::kAutofillBnplEnabled, false);
   histogram_tester.ExpectBucketCount("Autofill.SettingsPage.BnplToggled", true,
                                      0);
   histogram_tester.ExpectBucketCount("Autofill.SettingsPage.BnplToggled", false,
                                      1);
 
-  autofill_client().GetPrefs()->SetBoolean(
-      autofill::prefs::kAutofillBnplEnabled, true);
+  autofill_client().GetPrefs()->SetBoolean(prefs::kAutofillBnplEnabled, true);
   histogram_tester.ExpectBucketCount("Autofill.SettingsPage.BnplToggled", true,
                                      1);
   histogram_tester.ExpectBucketCount("Autofill.SettingsPage.BnplToggled", false,
@@ -345,7 +345,7 @@ TEST_F(BnplMetricsTest, LogBnplSelectionDialogShown) {
 }
 
 TEST_P(BnplMetricsTest, FormFilledOnce_PayLaterTabsDisabled) {
-  BnplIssuer::IssuerId issuer_id = GetIssuerId();
+  IssuerId issuer_id = GetIssuerId();
   base::HistogramTester histogram_tester;
 
   base::test::ScopedFeatureList scoped_feature_list;
@@ -356,16 +356,16 @@ TEST_P(BnplMetricsTest, FormFilledOnce_PayLaterTabsDisabled) {
 
   BnplFormEvent expected_event;
   switch (issuer_id) {
-    case BnplIssuer::IssuerId::kBnplAffirm:
+    case IssuerId::kBnplAffirm:
       expected_event = BnplFormEvent::kFormFilledWithAffirm;
       break;
-    case BnplIssuer::IssuerId::kBnplZip:
+    case IssuerId::kBnplZip:
       expected_event = BnplFormEvent::kFormFilledWithZip;
       break;
-    case BnplIssuer::IssuerId::kBnplAfterpay:
+    case IssuerId::kBnplAfterpay:
       expected_event = BnplFormEvent::kFormFilledWithAfterpay;
       break;
-    case BnplIssuer::IssuerId::kBnplKlarna:
+    case IssuerId::kBnplKlarna:
       expected_event = BnplFormEvent::kFormFilledWithKlarna;
       break;
   }
@@ -377,7 +377,7 @@ TEST_P(BnplMetricsTest, FormFilledOnce_PayLaterTabsDisabled) {
 }
 
 TEST_P(BnplMetricsTest, FormFilledOnce_PayLaterTabsEnabled) {
-  BnplIssuer::IssuerId issuer_id = GetIssuerId();
+  IssuerId issuer_id = GetIssuerId();
   base::HistogramTester histogram_tester;
 
   base::test::ScopedFeatureList scoped_feature_list{
@@ -387,16 +387,16 @@ TEST_P(BnplMetricsTest, FormFilledOnce_PayLaterTabsEnabled) {
 
   PayLaterTabsFormEvent expected_event;
   switch (issuer_id) {
-    case BnplIssuer::IssuerId::kBnplAffirm:
+    case IssuerId::kBnplAffirm:
       expected_event = PayLaterTabsFormEvent::kFormFilledWithAffirm;
       break;
-    case BnplIssuer::IssuerId::kBnplZip:
+    case IssuerId::kBnplZip:
       expected_event = PayLaterTabsFormEvent::kFormFilledWithZip;
       break;
-    case BnplIssuer::IssuerId::kBnplAfterpay:
+    case IssuerId::kBnplAfterpay:
       expected_event = PayLaterTabsFormEvent::kFormFilledWithAfterpay;
       break;
-    case BnplIssuer::IssuerId::kBnplKlarna:
+    case IssuerId::kBnplKlarna:
       expected_event = PayLaterTabsFormEvent::kFormFilledWithKlarna;
       break;
   }
@@ -407,7 +407,7 @@ TEST_P(BnplMetricsTest, FormFilledOnce_PayLaterTabsEnabled) {
 }
 
 TEST_P(BnplMetricsTest, FormSubmittedOnce_PayLaterTabsDisabled) {
-  BnplIssuer::IssuerId issuer_id = GetIssuerId();
+  IssuerId issuer_id = GetIssuerId();
   base::HistogramTester histogram_tester;
 
   base::test::ScopedFeatureList scoped_feature_list;
@@ -418,16 +418,16 @@ TEST_P(BnplMetricsTest, FormSubmittedOnce_PayLaterTabsDisabled) {
 
   BnplFormEvent expected_event;
   switch (issuer_id) {
-    case BnplIssuer::IssuerId::kBnplAffirm:
+    case IssuerId::kBnplAffirm:
       expected_event = BnplFormEvent::kFormSubmittedWithAffirm;
       break;
-    case BnplIssuer::IssuerId::kBnplZip:
+    case IssuerId::kBnplZip:
       expected_event = BnplFormEvent::kFormSubmittedWithZip;
       break;
-    case BnplIssuer::IssuerId::kBnplAfterpay:
+    case IssuerId::kBnplAfterpay:
       expected_event = BnplFormEvent::kFormSubmittedWithAfterpay;
       break;
-    case BnplIssuer::IssuerId::kBnplKlarna:
+    case IssuerId::kBnplKlarna:
       expected_event = BnplFormEvent::kFormSubmittedWithKlarna;
       break;
   }
@@ -439,7 +439,7 @@ TEST_P(BnplMetricsTest, FormSubmittedOnce_PayLaterTabsDisabled) {
 }
 
 TEST_P(BnplMetricsTest, FormSubmittedOnce_PayLaterTabsEnabled) {
-  BnplIssuer::IssuerId issuer_id = GetIssuerId();
+  IssuerId issuer_id = GetIssuerId();
   base::HistogramTester histogram_tester;
 
   base::test::ScopedFeatureList scoped_feature_list{
@@ -449,16 +449,16 @@ TEST_P(BnplMetricsTest, FormSubmittedOnce_PayLaterTabsEnabled) {
 
   PayLaterTabsFormEvent expected_event;
   switch (issuer_id) {
-    case BnplIssuer::IssuerId::kBnplAffirm:
+    case IssuerId::kBnplAffirm:
       expected_event = PayLaterTabsFormEvent::kFormSubmittedWithAffirm;
       break;
-    case BnplIssuer::IssuerId::kBnplZip:
+    case IssuerId::kBnplZip:
       expected_event = PayLaterTabsFormEvent::kFormSubmittedWithZip;
       break;
-    case BnplIssuer::IssuerId::kBnplAfterpay:
+    case IssuerId::kBnplAfterpay:
       expected_event = PayLaterTabsFormEvent::kFormSubmittedWithAfterpay;
       break;
-    case BnplIssuer::IssuerId::kBnplKlarna:
+    case IssuerId::kBnplKlarna:
       expected_event = PayLaterTabsFormEvent::kFormSubmittedWithKlarna;
       break;
   }
@@ -475,6 +475,18 @@ INSTANTIATE_TEST_SUITE_P(,
                                          IssuerId::kBnplAfterpay,
                                          IssuerId::kBnplKlarna));
 
+class MockAmountExtractionManager : public payments::AmountExtractionManager {
+ public:
+  explicit MockAmountExtractionManager(BrowserAutofillManager* autofill_manager)
+      : payments::AmountExtractionManager(autofill_manager) {}
+
+  MOCK_METHOD(void,
+              TriggerCheckoutAmountExtractionWithAi,
+              (AiAmountExtractionCallback),
+              (override));
+  MOCK_METHOD(void, Reset, (), (override));
+};
+
 class BnplFormEventsMetricsTest : public AutofillMetricsBaseTest,
                                   public testing::Test {
  public:
@@ -484,6 +496,11 @@ class BnplFormEventsMetricsTest : public AutofillMetricsBaseTest,
 
   void SetUp() override {
     SetUpHelper();
+
+    test_api(autofill_manager())
+        .set_amount_extraction_manager(
+            std::make_unique<testing::NiceMock<MockAmountExtractionManager>>(
+                &autofill_manager()));
 
     form_ =
         GetAndAddSeenForm({.description_for_logging = "Bnpl",
@@ -510,7 +527,7 @@ class BnplFormEventsMetricsTest : public AutofillMetricsBaseTest,
     TearDownHelper();
   }
 
-  void ShowSuggestonsAndSelectBnplIssuer(BnplIssuer::IssuerId issuer_id) {
+  void ShowSuggestonsAndSelectBnplIssuer(IssuerId issuer_id) {
     autofill_manager().OnAskForValuesToFillTest(
         form(), form().fields().back().global_id());
     bnpl_manager()->OnCreditCardSuggestionsShown(
@@ -811,14 +828,14 @@ TEST_F(BnplFormEventsMetricsTest, AffirmSelectedFromPayLaterTab) {
 
   test_paydm().AddServerCreditCard(test::GetMaskedServerCardVisa());
 
-  ShowSuggestonsAndSelectBnplIssuer(BnplIssuer::IssuerId::kBnplAffirm);
+  ShowSuggestonsAndSelectBnplIssuer(IssuerId::kBnplAffirm);
 
   histogram_tester.ExpectBucketCount(
       "Autofill.FormEvents.CreditCard.Bnpl.PayLaterTab",
       autofill_metrics::PayLaterTabsFormEvent::kAffirmAccepted, 1);
 
   // To ensure the metrics logs only once per page.
-  ShowSuggestonsAndSelectBnplIssuer(BnplIssuer::IssuerId::kBnplAffirm);
+  ShowSuggestonsAndSelectBnplIssuer(IssuerId::kBnplAffirm);
 
   histogram_tester.ExpectBucketCount(
       "Autofill.FormEvents.CreditCard.Bnpl.PayLaterTab",
@@ -844,14 +861,14 @@ TEST_F(BnplFormEventsMetricsTest, ZipSelectedFromPayLaterTab) {
 
   test_paydm().AddServerCreditCard(test::GetMaskedServerCardVisa());
 
-  ShowSuggestonsAndSelectBnplIssuer(BnplIssuer::IssuerId::kBnplZip);
+  ShowSuggestonsAndSelectBnplIssuer(IssuerId::kBnplZip);
 
   histogram_tester.ExpectBucketCount(
       "Autofill.FormEvents.CreditCard.Bnpl.PayLaterTab",
       autofill_metrics::PayLaterTabsFormEvent::kZipAccepted, 1);
 
   // To ensure the metrics logs only once per page.
-  ShowSuggestonsAndSelectBnplIssuer(BnplIssuer::IssuerId::kBnplZip);
+  ShowSuggestonsAndSelectBnplIssuer(IssuerId::kBnplZip);
 
   histogram_tester.ExpectBucketCount(
       "Autofill.FormEvents.CreditCard.Bnpl.PayLaterTab",
@@ -877,14 +894,14 @@ TEST_F(BnplFormEventsMetricsTest, KlarnaSelectedFromPayLaterTab) {
 
   test_paydm().AddServerCreditCard(test::GetMaskedServerCardVisa());
 
-  ShowSuggestonsAndSelectBnplIssuer(BnplIssuer::IssuerId::kBnplKlarna);
+  ShowSuggestonsAndSelectBnplIssuer(IssuerId::kBnplKlarna);
 
   histogram_tester.ExpectBucketCount(
       "Autofill.FormEvents.CreditCard.Bnpl.PayLaterTab",
       autofill_metrics::PayLaterTabsFormEvent::kKlarnaAccepted, 1);
 
   // To ensure the metrics logs only once per page.
-  ShowSuggestonsAndSelectBnplIssuer(BnplIssuer::IssuerId::kBnplKlarna);
+  ShowSuggestonsAndSelectBnplIssuer(IssuerId::kBnplKlarna);
 
   histogram_tester.ExpectBucketCount(
       "Autofill.FormEvents.CreditCard.Bnpl.PayLaterTab",
@@ -910,14 +927,14 @@ TEST_F(BnplFormEventsMetricsTest, AfterpaySelectedFromPayLaterTab) {
 
   test_paydm().AddServerCreditCard(test::GetMaskedServerCardVisa());
 
-  ShowSuggestonsAndSelectBnplIssuer(BnplIssuer::IssuerId::kBnplAfterpay);
+  ShowSuggestonsAndSelectBnplIssuer(IssuerId::kBnplAfterpay);
 
   histogram_tester.ExpectBucketCount(
       "Autofill.FormEvents.CreditCard.Bnpl.PayLaterTab",
       autofill_metrics::PayLaterTabsFormEvent::kAfterpayAccepted, 1);
 
   // To ensure the metrics logs only once per page.
-  ShowSuggestonsAndSelectBnplIssuer(BnplIssuer::IssuerId::kBnplAfterpay);
+  ShowSuggestonsAndSelectBnplIssuer(IssuerId::kBnplAfterpay);
 
   histogram_tester.ExpectBucketCount(
       "Autofill.FormEvents.CreditCard.Bnpl.PayLaterTab",

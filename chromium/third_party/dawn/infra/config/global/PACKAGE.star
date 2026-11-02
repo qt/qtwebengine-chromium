@@ -45,7 +45,7 @@ pkg.depend(
         repo = "infra/chromium",
         ref = "refs/heads/main",
         path = "starlark-libs/chromium-luci",
-        revision = "b5db180b6ca4f82f62669c0acbbcc34655698d6a",
+        revision = "d381c78e626229ce32debabaf2af7666b3e85a4a",
     ),
 )
 
@@ -56,10 +56,12 @@ pkg.depend(
         repo = "chromium/src",
         ref = "refs/heads/main",
         path = "infra/config/targets",
-        revision = "e22e82d4f48c5f9078556154b9df5d56c5096d56",
+        revision = "79a429660d99b215efd636bff4511b61f17c3250",
     ),
 )
 
 pkg.resources([
+    "luci-bisection.cfg",
+    "luci-bisection-dev.cfg",
     "milestones.json",
 ])

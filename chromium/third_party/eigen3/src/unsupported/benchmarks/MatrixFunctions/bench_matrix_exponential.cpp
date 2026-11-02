@@ -17,10 +17,12 @@ typedef SCALAR Scalar;
 
 static void BM_MatrixExp(benchmark::State& state) {
   int n = state.range(0);
+  Scalar scale = Scalar(state.range(1));
   typedef Matrix<Scalar, Dynamic, Dynamic> MatrixType;
 
-  // Generate a random matrix with reasonable spectral radius.
-  MatrixType A = MatrixType::Random(n, n) / Scalar(n);
+  // The larger scale exercises the scale-and-square path, including the
+  // coefficient-wise exact power-of-two scale-down.
+  MatrixType A = scale * MatrixType::Random(n, n) / Scalar(n);
   MatrixType result(n, n);
 
   for (auto _ : state) {
@@ -45,8 +47,9 @@ static void BM_MatrixExp_Fixed(benchmark::State& state) {
   }
 }
 
-// Dynamic sizes: Lie groups (2,3,4) plus larger.
-BENCHMARK(BM_MatrixExp)->Arg(2)->Arg(3)->Arg(4)->Arg(8)->Arg(16)->Arg(32)->Arg(64)->Arg(128);
+// Dynamic sizes: Lie groups (2,3,4) plus larger, both well-scaled and through
+// the scale-and-square path.
+BENCHMARK(BM_MatrixExp)->ArgsProduct({{2, 3, 4, 8, 16, 32, 64, 128}, {1, 64}});
 
 // Fixed-size Lie group dimensions.
 BENCHMARK(BM_MatrixExp_Fixed<2>);

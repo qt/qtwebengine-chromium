@@ -28,7 +28,6 @@
 #ifndef SRC_TINT_LANG_CORE_IR_TRANSFORM_BUILTIN_SCALARIZE_H_
 #define SRC_TINT_LANG_CORE_IR_TRANSFORM_BUILTIN_SCALARIZE_H_
 
-#include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/utils/reflection/reflection.h"
 #include "src/tint/utils/result.h"
 
@@ -38,23 +37,6 @@ class Module;
 }
 
 namespace tint::core::ir::transform {
-
-/// The capabilities that the transform can support.
-const Capabilities kBuiltinScalarizeCapabilities{
-    core::ir::Capability::kAllowDuplicateBindings,
-    core::ir::Capability::kAllow8BitIntegers,
-    core::ir::Capability::kAllow16BitIntegers,
-    core::ir::Capability::kAllow64BitIntegers,
-    core::ir::Capability::kAllowPointSizeBuiltin,
-    core::ir::Capability::kAllowVectorElementPointer,
-    core::ir::Capability::kAllowHandleVarsWithoutBindings,
-    core::ir::Capability::kAllowClipDistancesOnF32ScalarAndVector,
-    core::ir::Capability::kAllowAnyLetType,
-    core::ir::Capability::kMslAllowEntryPointInterface,
-    core::ir::Capability::kAllowModuleScopeLets,
-    core::ir::Capability::kAllowAnyInputAttachmentIndexType,
-    core::ir::Capability::kAllowNonCoreTypes,
-};
 
 /// The scalarizer configuration options
 struct BuiltinScalarizeConfig {

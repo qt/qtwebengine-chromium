@@ -21,6 +21,7 @@
 #include "base/allocator/partition_alloc_support.h"
 #include "base/at_exit.h"
 #include "base/base_switches.h"
+#include "base/byte_size.h"
 #include "base/command_line.h"
 #include "base/debug/debugger.h"
 #include "base/debug/leak_annotations.h"
@@ -390,7 +391,7 @@ void PreSandboxInit() {
 
   // May use sysinfo(), sched_getaffinity(), and open various /sys/ and /proc/
   // files.
-  base::SysInfo::AmountOfPhysicalMemory();
+  base::SysInfo::AmountOfTotalPhysicalMemory();
   base::SysInfo::NumberOfProcessors();
   base::SysInfo::NumberOfEfficientProcessors();
 
@@ -492,13 +493,20 @@ void CreateChildThreadPool(const std::string& process_type) {
   // Thread pool should only be initialized once.
   DCHECK(!base::ThreadPoolInstance::Get());
   std::string_view thread_pool_name;
-  if (process_type == switches::kGpuProcess)
+  base::ThreadPoolInstance::RecordLockContention record_lock_contention =
+      base::ThreadPoolInstance::RecordLockContention::kDisabled;
+  if (process_type == switches::kGpuProcess) {
     thread_pool_name = "GPU";
-  else if (process_type == switches::kRendererProcess)
+    record_lock_contention =
+        base::ThreadPoolInstance::RecordLockContention::kEnabled;
+  } else if (process_type == switches::kRendererProcess) {
     thread_pool_name = "Renderer";
-  else
+    record_lock_contention =
+        base::ThreadPoolInstance::RecordLockContention::kEnabled;
+  } else {
     thread_pool_name = "ContentChild";
-  base::ThreadPoolInstance::Create(thread_pool_name);
+  }
+  base::ThreadPoolInstance::Create(thread_pool_name, record_lock_contention);
 }
 
 }  // namespace

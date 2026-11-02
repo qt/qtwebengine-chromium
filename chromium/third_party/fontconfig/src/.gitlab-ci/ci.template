@@ -12,10 +12,10 @@
 # and run ci-fairy generate-template. For details, see
 # https://freedesktop.pages.freedesktop.org/ci-templates/ci-fairy.html#templating-gitlab-ci-yml
 
-.templates_sha: &template_sha aec7a6ce7bb38902c70641526f6611e27141784a
+.templates_sha: &template_sha baa94a8f673dd1f11f81377106310752936d3672
 
 include:
-  {% for distro in distributions|sort(attribute="name")|unique(attribute="name") %}
+  {% for distro in distributions|sort(attribute="name")|unique(attribute="name") if distro.name != "msys2" %}
   # {{ distro.name.capitalize() }} container builder template
   - project: 'freedesktop/ci-templates'
     ref: *template_sha
@@ -24,6 +24,7 @@ include:
   - project: 'freedesktop/ci-templates'
     ref: *template_sha
     file: '/templates/ci-fairy.yml'
+  - local: '.gitlab-ci/msys2.yml'
   - local: '.gitlab-ci/other.yml'
 
 stages:
@@ -114,7 +115,7 @@ check-ci-script:
   variables:
     GIT_STRATEGY: none
     FDO_DISTRIBUTION_VERSION: '{{version}}'
-    FDO_DISTRIBUTION_PACKAGES: '{{' '.join(packages[distro.name].needed)}}'
+    FDO_DISTRIBUTION_PACKAGES: '{{' '.join(packages[distro.name].needed)}}{{' ' + ' '.join(packages[distro.name].needed_for[version]) if 'needed_for' in packages[distro.name] and version in packages[distro.name].needed_for else ''}}'
     FDO_DISTRIBUTION_TAG: ${{distro.name.upper()}}_TAG
     FDO_DISTRIBUTION_EXEC: ${{distro.name.upper()}}_EXEC
 {% endfor %}
@@ -202,21 +203,22 @@ check-ci-script:
         buildopt+=(-d $bo)
       done
       [ -n "$FC_BUILD_ARCH" ] && buildopt+=(-a $FC_BUILD_ARCH)
+      [ $FC_BUILD_NO_VENV -eq 1 ] && buildopt+=(-V)
       [ $FC_BUILD_DISTCHECK -eq 1 ] && buildopt+=(-c)
       [ $FC_BUILD_NO_INSTALL -eq 1 ] && buildopt+=(-I)
       [ $FC_BUILD_NO_CHECK -eq 1 ] && buildopt+=(-C)
       buildopt+=(-s $FC_BUILDSYS)
       buildopt+=(-t $FC_BUILD_TYPE)
       buildopt+=(-X $FC_XML_BACKEND)
+      buildopt+=(-O g)
       export buildopt
     - "scp -r $(pwd) vm:"
     - echo "CI_JOB_ID=\"$CI_JOB_ID\"" > fcenv
     - echo "CI_JOB_NAME=\"$CI_JOB_NAME\"" >> fcenv
     - echo "BUILD_ID=\"$BUILD_ID\"" >> fcenv
     - echo "MAKEFLAGS=\"$MAKEFLAGS\"" >> fcenv
-    - echo "MAKE=\"$MAKE\"" >> fcenv
     - "scp fcenv vm:~/$CI_PROJECT_NAME/.gitlab-ci/fcenv"
-    - /app/vmctl exec "cd $CI_PROJECT_NAME ; bash .gitlab-ci/build.sh ${buildopt[@]}" && touch .success || true
+    - /app/vmctl exec "cd $CI_PROJECT_NAME ; python3 .gitlab-ci/build.py ${buildopt[@]}" && touch .success || true
     - scp -r vm:$CI_PROJECT_NAME/build $BUILDDIR
 
     - *check_tainted
@@ -233,9 +235,11 @@ check-ci-script:
     FC_BUILD_DISTCHECK: 0
     FC_BUILD_NO_INSTALL: 0
     FC_BUILD_NO_CHECK: 0
+    FC_BUILD_NO_VENV: 0
 
 .build@template:
   script:
+    - set -e
     - export BUILD_ID="fontconfig-$CI_JOB_NAME_$CI_COMMIT_SHA-$CI_JOB_ID"
     - export PREFIX="$(pwd)/prefix-$BUILD_ID"
     - export BUILDDIR="$(pwd)/build-$BUILD_ID"
@@ -249,6 +253,7 @@ check-ci-script:
         buildopt+=(-d $bo)
       done
       [ -n "$FC_BUILD_ARCH" ] && buildopt+=(-a $FC_BUILD_ARCH)
+      [ $FC_BUILD_NO_VENV -eq 1 ] && buildopt+=(-V)
       [ $FC_BUILD_DISTCHECK -eq 1 ] && buildopt+=(-c)
       [ $FC_BUILD_NO_INSTALL -eq 1 ] && buildopt+=(-I)
       [ $FC_BUILD_NO_CHECK -eq 1 ] && buildopt+=(-C)
@@ -257,7 +262,31 @@ check-ci-script:
       buildopt+=(-s $FC_BUILDSYS)
       buildopt+=(-t $FC_BUILD_TYPE)
       buildopt+=(-X $FC_XML_BACKEND)
-      bash .gitlab-ci/build.sh ${buildopt[@]}
+      buildopt+=(-O g)
+      export buildopt
+    - echo "CI_JOB_ID=\"$CI_JOB_ID\"" > fcenv
+    - echo "CI_JOB_NAME=\"$CI_JOB_NAME\"" >> fcenv
+    - echo "BUILD_ID=\"$BUILD_ID\"" >> fcenv
+    - echo "MAKEFLAGS=\"$MAKEFLAGS\"" >> fcenv
+    - cp fcenv .gitlab-ci/fcenv
+    - |
+      if [ -n "$FC_BUILD_SH" ]; then
+        echo "FC_BUILD_SH: ${FC_BUILD_SH[@]}"
+        echo "MSYSTEM: $MSYSTEM"
+        echo "CI_PROJECT_DIR: $CI_PROJECT_DIR"
+        fc_parent_builddir=$(dirname $CI_PROJECT_DIR)
+        # Expects the target is MSYS2 so far.
+        mkdir -p ~/.wine/drive_c/msys64/$fc_parent_builddir
+        CWD=$(pwd)
+        mv $CI_PROJECT_DIR ~/.wine/drive_c/msys64/$fc_parent_builddir/
+        echo "${FC_BUILD_SH[@]} 'cd \$1; shift; python3 .gitlab-ci/build.py \"\$@\"' -- \"$CWD\" \"${buildopt[@]}\""
+        ${FC_BUILD_SH[@]} 'cd $1; shift; python3 .gitlab-ci/build.py "$@"' -- "$CWD" "${buildopt[@]}"
+        mv ~/.wine/drive_c/msys64/$CI_PROJECT_DIR $fc_parent_builddir/
+        cd $CWD
+      else
+        echo python3 .gitlab-ci/build.py ${buildopt[@]}
+        python3 .gitlab-ci/build.py ${buildopt[@]}
+      fi
   variables:
     FC_BUILDSYS: autotools
     FC_XML_BACKEND: expat
@@ -266,6 +295,7 @@ check-ci-script:
     FC_BUILD_NO_INSTALL: 0
     FC_BUILD_NO_CHECK: 0
     FC_BUILD_SUBPROJECT: 0
+    FC_BUILD_NO_VENV: 0
 
 .fc_artifacts:
   artifacts:
@@ -282,6 +312,9 @@ check-ci-script:
       - build*/fontconfig*/_build
       - build*/meson-logs/*
       - build*/meson-dist/*
+      - build*/fontconfig/fontconfig.h
+      - build*/libfontconfig.so*
+      - build*/src/.libs/libfontconfig.so*
       - prefix*
     reports:
       junit: build*/meson-logs/testlog.junit.xml
@@ -389,6 +422,54 @@ clang-format:
     {% endif %}
 {% endfor %}
 
+abicheck:
+  stage: test
+  extends:
+    - .fdo.distribution-image@fedora
+    - .fc_artifacts
+  variables:
+    FC_DISTRO_NAME: fedora
+    FDO_DISTRIBUTION_VERSION: rawhide
+    FDO_DISTRIBUTION_TAG: $FEDORA_TAG
+  needs:
+    - fedora:rawhide@container-prep
+    - build-meson shared libxml2
+  script:
+    - |
+      pip install junit_xml
+      export builddir=($(pwd)/build-fontconfig-*)
+      sh .gitlab-ci/abicheck.sh "${builddir[0]}"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+  artifacts:
+    reports:
+      junit: build*/abidiff.xml
+
+
+apicheck:
+  stage: test
+  extends:
+    - .fdo.distribution-image@fedora
+    - .fc_artifacts
+  variables:
+    FC_DISTRO_NAME: fedora
+    FDO_DISTRIBUTION_VERSION: rawhide
+    FDO_DISTRIBUTION_TAG: $FEDORA_TAG
+  needs:
+    - fedora:rawhide@container-prep
+    - build-meson shared libxml2
+  script:
+    - pip install junit_xml
+    - |
+      export builddir=($(pwd)/build-fontconfig-*)
+      python3 .gitlab-ci/apicheck.py -f .gitlab-ci/symbol.list -o "${builddir[0]}/apicheck.xml" "${builddir[0]}/libfontconfig.so" src/fcint.h "${builddir[0]}/fontconfig/fontconfig.h" fontconfig/fcfontations.h fontconfig/fcfreetype.h
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+  artifacts:
+    reports:
+      junit: build*/apicheck.xml
+
+
 #######################################
 #                                     #
 #            distro stage             #
@@ -492,7 +573,7 @@ make-release:
   variables:
     PACKAGE_REGISTRY_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/fontconfig/${CI_COMMIT_TAG}"
   script:
-    - glab auth login -h ${CI_SERVER_HOST} -j ${CI_JOB_TOKEN}
+    - glab auth login --hostname ${CI_SERVER_HOST} --job-token ${CI_JOB_TOKEN}
     - |
       glab changelog generate -v ${CI_COMMIT_TAG} > changelog-${CI_COMMIT_TAG}.md
       glab release create ${CI_COMMIT_TAG} --name "Release ${CI_COMMIT_TAG}" -F changelog-${CI_COMMIT_TAG}.md -a "[{\"name\": \"fontconfig-${CI_COMMIT_TAG}.tar.xz\", \"url\": \"${PACKAGE_REGISTRY_URL}/fontconfig-${CI_COMMIT_TAG}.tar.xz\"}, {\"name\": \"fontconfig-${CI_COMMIT_TAG}.tar.xz (sha256sum)\", \"url\": \"${PACKAGE_REGISTRY_URL}/fontconfig-${CI_COMMIT_TAG}.tar.xz.sha256sum\"}]"

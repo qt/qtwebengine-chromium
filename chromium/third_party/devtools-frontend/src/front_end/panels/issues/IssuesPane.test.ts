@@ -3,13 +3,23 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
+import * as Bindings from '../../models/bindings/bindings.js';
 import * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
+import {TestUniverse} from '../../testing/TestUniverse.js';
 
 import * as Issues from './issues.js';
 
 describeWithEnvironment('IssuesPane', () => {
+  beforeEach(() => {
+    const universe = new TestUniverse();
+    sinon.stub(Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding, 'instance')
+        .returns(universe.debuggerWorkspaceBinding);
+    sinon.stub(Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding, 'instance').returns(universe.cssWorkspaceBinding);
+  });
+
   it('shows placeholder if only non-relevant issues have appeared', () => {
     const issuesManager = IssuesManager.IssuesManager.IssuesManager.instance();
     sinon.stub(issuesManager, 'numberOfAllStoredIssues').returns(10);

@@ -10,6 +10,7 @@
 #include "third_party/blink/renderer/core/animation/element_animations.h"
 #include "third_party/blink/renderer/core/css/background_color_paint_image_generator.h"
 #include "third_party/blink/renderer/core/dom/document.h"
+#include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/layout/layout_progress.h"
@@ -25,7 +26,6 @@
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/paint/rounded_inner_rect_clipper.h"
 #include "third_party/blink/renderer/core/paint/svg_mask_painter.h"
-#include "third_party/blink/renderer/core/paint/timing/image_element_timing.h"
 #include "third_party/blink/renderer/core/paint/timing/paint_timing_detector.h"
 #include "third_party/blink/renderer/core/paint/timing/paint_timing_utils.h"
 #include "third_party/blink/renderer/core/style/border_edge.h"
@@ -811,15 +811,16 @@ PhysicalRect GetSubsetDestRectForImage(const BackgroundImageGeometry& geometry,
 // The tile_size is the total image size. The mapping from this size
 //   to the unsnapped_dest_rect size defines the scaling of the image for
 //   sprite computation.
-void DrawTiledBackground(LocalFrame* frame,
-                         GraphicsContext& context,
-                         const ComputedStyle& style,
-                         Image& image,
-                         const BackgroundImageGeometry& geometry,
-                         SkBlendMode op,
-                         RespectImageOrientationEnum respect_orientation,
-                         ImagePaintTimingInfo paint_timing_info,
-                         ImageNodeAnimationInfo image_node_animation_info) {
+void DrawTiledBackground(
+    LocalFrame* frame,
+    GraphicsContext& context,
+    const ComputedStyle& style,
+    Image& image,
+    const BackgroundImageGeometry& geometry,
+    SkBlendMode op,
+    RespectImageOrientationEnum respect_orientation,
+    ImagePaintTimingInfo paint_timing_info,
+    const ImageNodeAnimationInfo* image_node_animation_info) {
   DCHECK(!geometry.TileSize().IsEmpty());
 
   const PhysicalRect& snapped_dest = geometry.SnappedDestRect();
@@ -954,9 +955,7 @@ bool PaintBGColorWithPaintWorklet(const Document& document,
           /* image_may_be_lcp_candidate */ false,
           /* report_paint_timing */ false),
       dest_rect, src_rect, SkBlendMode::kSrcOver, kRespectImageOrientation,
-      Image::kClampImageToSourceRect,
-      ImageNodeAnimationInfo(node ? node->GetDomNodeId() : kInvalidDOMNodeId,
-                             style.ImageAnimation()));
+      Image::kClampImageToSourceRect);
   animation->OnPaintWorkletImageCreated();
   return true;
 }
@@ -982,12 +981,6 @@ bool NotifyImageTimingOnWillDrawImage(
       PaintTimingDetector::NotifyBackgroundImagePaint(
           *generating_node, image, style_image, current_paint_chunk_properties,
           enclosing_rect);
-
-  LocalDOMWindow* window = node->GetDocument().domWindow();
-  DCHECK(window);
-  ImageElementTiming::From(*window).NotifyBackgroundImagePainted(
-      *generating_node, style_image, current_paint_chunk_properties,
-      enclosing_rect);
   return image_may_be_lcp_candidate;
 }
 
@@ -1149,14 +1142,17 @@ inline bool PaintFastBottomLayer(const Document& document,
 
   // Since there is no way for the developer to specify decode behavior, use
   // kSync by default
+  ImageNodeAnimationInfo image_animation =
+      CSSImageAnimations::CreateImageNodeAnimationInfo(
+          node, info.image ? info.image->CachedImage() : nullptr,
+          style.ImageAnimation());
+
   context.DrawImageRRect(
       *image, Image::kSyncDecode, image_auto_dark_mode,
       ComputeImagePaintTimingInfo(node, *image, *info.image, context,
                                   image_border.Rect()),
       image_border, src_rect, composite_op, info.respect_image_orientation,
-      clamping_mode,
-      ImageNodeAnimationInfo(node ? node->GetDomNodeId() : kInvalidDOMNodeId,
-                             style.ImageAnimation()));
+      clamping_mode, &image_animation);
   return true;
 }
 
@@ -1281,13 +1277,17 @@ void PaintFillLayerBackground(const Document& document,
         TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "PaintImage",
         inspector_paint_image_event::Data, node, *info.image,
         gfx::RectF(image->Rect()), gfx::RectF(scrolled_paint_rect));
+
+    ImageNodeAnimationInfo image_animation =
+        CSSImageAnimations::CreateImageNodeAnimationInfo(
+            node, info.image ? info.image->CachedImage() : nullptr,
+            style.ImageAnimation());
     DrawTiledBackground(
         document.GetFrame(), context, style, *image, geometry, composite_op,
         info.respect_image_orientation,
         ComputeImagePaintTimingInfo(node, *image, *info.image, context,
                                     gfx::RectF(geometry.SnappedDestRect())),
-        ImageNodeAnimationInfo(node ? node->GetDomNodeId() : kInvalidDOMNodeId,
-                               style.ImageAnimation()));
+        &image_animation);
   }
 }
 

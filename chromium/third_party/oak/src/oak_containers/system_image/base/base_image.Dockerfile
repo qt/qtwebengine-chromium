@@ -1,7 +1,11 @@
 # System Image for Oak Containers. Contains base Debian plus binaries and
 # configs to run Oak. This MUST be based on a stable Debian image.
-# debian:stable-20240612 - https://hub.docker.com/_/debian/tags
-ARG debian_snapshot=sha256:26878d0d3aa5e1980d6f8060b4af32fc48b8edeb1fc4d2d074a13a04b17c95f2
+# debian:stable-20260610-slim - https://hub.docker.com/_/debian/tags
+#
+# Note; if you change this version, you should change the sysroot version in
+# oak_containers/sysroot/sysroot.yaml and the app_base version  in
+# oak_containers/app_base/app_base.yaml to match.
+ARG debian_snapshot=sha256:34363c20bd149e41365fc77b086da067ed13ab2dff4cd0612788e12e6d52c44c
 FROM debian@${debian_snapshot}
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]

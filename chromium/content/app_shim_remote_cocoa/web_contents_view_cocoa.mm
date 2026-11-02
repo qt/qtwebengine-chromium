@@ -23,6 +23,7 @@
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/platform_event.h"
+#include "ui/gfx/geometry/clamp_float_geometry.h"
 #include "ui/gfx/image/image.h"
 #include "ui/resources/grit/ui_resources.h"
 
@@ -98,6 +99,15 @@ STATIC_ASSERT_ENUM(NSDragOperationCopy, ui::DragDropTypes::DRAG_COPY);
 STATIC_ASSERT_ENUM(NSDragOperationLink, ui::DragDropTypes::DRAG_LINK);
 STATIC_ASSERT_ENUM(NSDragOperationMove, ui::DragDropTypes::DRAG_MOVE);
 
+namespace {
+
+gfx::PointF GetSanitizedFlippedPoint(NSPoint point, CGFloat height) {
+  return gfx::PointF(gfx::ClampFloatGeometry(point.x),
+                     gfx::ClampFloatGeometry(height - point.y));
+}
+
+}  // namespace
+
 ////////////////////////////////////////////////////////////////////////////////
 // WebContentsViewCocoa
 
@@ -166,12 +176,12 @@ STATIC_ASSERT_ENUM(NSDragOperationMove, ui::DragDropTypes::DRAG_MOVE);
   NSPoint viewPoint = [self convertPoint:windowPoint fromView:nil];
   NSRect viewFrame = [self frame];
   info->location_in_view =
-      gfx::PointF(viewPoint.x, viewFrame.size.height - viewPoint.y);
+      GetSanitizedFlippedPoint(viewPoint, viewFrame.size.height);
 
   NSPoint screenPoint = [self.window convertPointToScreen:windowPoint];
   NSRect screenFrame = self.window.screen.frame;
   info->location_in_screen =
-      gfx::PointF(screenPoint.x, screenFrame.size.height - screenPoint.y);
+      GetSanitizedFlippedPoint(screenPoint, screenFrame.size.height);
 
   NSPasteboard* pboard = [nsInfo draggingPasteboard];
   NSArray<URLAndTitle*>* urls_and_titles =
@@ -271,10 +281,39 @@ STATIC_ASSERT_ENUM(NSDragOperationMove, ui::DragDropTypes::DRAG_MOVE);
   imageRect.origin.y -= image.size.height - offset.y;
   [draggingItem setDraggingFrame:imageRect contents:image];
 
+  // Expose each URL as its own dragging item so native apps can read every URL
+  // from a multi-URL drag. The primary dragging item (a WebDragSource) exposes
+  // the first URL and any other drag data present in DropData, including the
+  // full WebKit-compatible URL/title list. The remaining URLs are represented
+  // by URL-only NSPasteboardItems that expose only the standard URL and title
+  // types.
+  NSMutableArray<NSDraggingItem*>* draggingItems =
+      [NSMutableArray arrayWithObject:draggingItem];
+  for (size_t i = 1; i < dropData.url_infos.size(); ++i) {
+    const auto& url_info = dropData.url_infos[i];
+    NSPasteboardItem* pasteboardItem = [[NSPasteboardItem alloc] init];
+    [pasteboardItem setString:base::SysUTF8ToNSString(url_info.url.spec())
+                      forType:NSPasteboardTypeURL];
+    if (!url_info.title.empty()) {
+      [pasteboardItem setString:base::SysUTF16ToNSString(url_info.title)
+                        forType:ui::kUTTypeUrlName];
+    }
+    NSDraggingItem* urlItem =
+        [[NSDraggingItem alloc] initWithPasteboardWriter:pasteboardItem];
+    [urlItem setDraggingFrame:imageRect contents:image];
+    [draggingItems addObject:urlItem];
+  }
+
   _dragOperation = operationMask;
 
-  // Run the drag operation.
-  [self beginDraggingSessionWithItems:@[ draggingItem ]
+  // Start the drag session. This hands control to AppKit, which queries each
+  // item's pasteboard writer (the primary WebDragSource and the URL-only
+  // NSPasteboardItems) via the NSPasteboardWriting protocol. AppKit calls
+  // -writableTypesForPasteboard: to learn the declared types, then calls
+  // -pasteboardPropertyListForType: to pull the actual data, lazily when
+  // needed. See web_drag_source_mac.mm for WebDragSource's implementation of
+  // those methods.
+  [self beginDraggingSessionWithItems:draggingItems
                                 event:dragEvent
                                source:self];
 }
@@ -303,10 +342,14 @@ STATIC_ASSERT_ENUM(NSDragOperationMove, ui::DragDropTypes::DRAG_MOVE);
   // Flip the two points as per Cocoa's coordinate system.
   NSRect viewFrame = self.frame;
   NSRect screenFrame = self.window.screen.frame;
-  _host->EndDrag(
-      operation,
-      gfx::PointF(localPoint.x, viewFrame.size.height - localPoint.y),
-      gfx::PointF(screenPoint.x, screenFrame.size.height - screenPoint.y));
+
+  gfx::PointF local_point_f =
+      GetSanitizedFlippedPoint(localPoint, viewFrame.size.height);
+
+  gfx::PointF screen_point_f =
+      GetSanitizedFlippedPoint(screenPoint, screenFrame.size.height);
+
+  _host->EndDrag(operation, local_point_f, screen_point_f);
 
   // The drag is complete. Disconnect the drag source.
   [_dragSource webContentsIsGone];

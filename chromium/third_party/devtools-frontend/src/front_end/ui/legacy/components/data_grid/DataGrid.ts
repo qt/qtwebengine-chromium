@@ -36,6 +36,8 @@ import * as UI from '../../legacy.js';
 import dataGridStyles from './dataGrid.css.js';
 import type {DataGridInternalToken} from './DataGridElement.js';
 
+export {dataGridStyles};
+
 const UIStrings = {
   /**
    * @description Accessible text label for expandible nodes in datagrids
@@ -162,6 +164,7 @@ export class DataGridImpl<T> extends Common.ObjectWrapper.ObjectWrapper<EventTyp
   private resizeMethod: ResizeMethod;
   private headerContextMenuCallback: ((arg0: UI.ContextMenu.SubMenu) => void)|null;
   private rowContextMenuCallback: ((arg0: UI.ContextMenu.ContextMenu, arg1: DataGridNode<T>) => void)|null;
+  private tableContextMenuCallback: ((arg0: UI.ContextMenu.ContextMenu) => void)|null;
   elementToDataGridNode: WeakMap<Node, DataGridNode<T>>;
   disclosureColumnId?: string;
   private sortColumnCell?: Element;
@@ -246,6 +249,7 @@ export class DataGridImpl<T> extends Common.ObjectWrapper.ObjectWrapper<EventTyp
 
     this.headerContextMenuCallback = null;
     this.rowContextMenuCallback = null;
+    this.tableContextMenuCallback = null;
 
     this.elementToDataGridNode = new WeakMap();
   }
@@ -1407,6 +1411,10 @@ export class DataGridImpl<T> extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     }
   }
 
+  setTableContextMenuCallback(callback: ((arg0: UI.ContextMenu.ContextMenu) => void)|null): void {
+    this.tableContextMenuCallback = callback;
+  }
+
   setHeaderContextMenuCallback(callback: ((arg0: UI.ContextMenu.SubMenu) => void)|null): void {
     this.headerContextMenuCallback = callback;
   }
@@ -1420,6 +1428,9 @@ export class DataGridImpl<T> extends Common.ObjectWrapper.ObjectWrapper<EventTyp
       return;
     }
     const contextMenu = new UI.ContextMenu.ContextMenu(event);
+    if (this.tableContextMenuCallback) {
+      this.tableContextMenuCallback(contextMenu);
+    }
     const target = (event.target as Node);
 
     const sortableVisibleColumns = this.visibleColumnsArray.filter(column => {
@@ -1768,7 +1779,7 @@ export class DataGridNode<T> {
     this.elementInternal = document.createElement('tr');
     this.elementInternal.setAttribute('jslog', `${VisualLogging.tableRow().track({
                                         resize: true,
-                                        keydown: 'ArrowUp|ArrowDown|ArrowLeft|ArrowRight|Enter|Space'
+                                        keydown: 'ArrowUp|ArrowDown|ArrowLeft|ArrowRight|Enter|Space',
                                       })}`);
     this.elementInternal.classList.add('data-grid-data-grid-node');
     if (this.dataGrid) {

@@ -77,7 +77,7 @@ float KalmanFilter(KalmanInfo* info, float measuredValue) {
 
     // Correct filter value
     info->filterValue =
-        info->kalmanGain * measuredValue + (1.0 - info->kalmanGain) * info->filterValue;
+        info->kalmanGain * measuredValue + (1.0f - info->kalmanGain) * info->filterValue;
     // Update estimate covariance
     info->P = (1.0f - info->kalmanGain) * info->P;
     return info->filterValue;
@@ -184,6 +184,8 @@ MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
             [*mMtlDevice sampleTimestamps:&mCpuTimestamp gpuTimestamp:&mGpuTimestamp];
         }
     }
+
+    mCounterSampleBufferAllocator = std::make_unique<CounterSampleBufferAllocator>(this);
 
     return DeviceBase::Initialize(descriptor, std::move(queue));
 }
@@ -380,6 +382,7 @@ void Device::DestroyImpl(DestroyReason reason) {
     // - It may be called when the last ref to the device is dropped and the device
     //   is implicitly destroyed. This case is thread-safe because there are no
     //   other threads using the device since there are no other live refs.
+    mCounterSampleBufferAllocator = nullptr;
     mMtlDevice = nullptr;
     mMockBlitMtlBuffer = nullptr;
 }
@@ -419,6 +422,10 @@ id<MTLBuffer> Device::GetMockBlitMtlBuffer() {
     }
 
     return mMockBlitMtlBuffer.Get();
+}
+
+CounterSampleBufferAllocator* Device::GetCounterSampleBufferAllocator() const {
+    return mCounterSampleBufferAllocator.get();
 }
 
 void Device::StartTrace() {

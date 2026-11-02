@@ -51,7 +51,7 @@ enum ExtEnabled : unsigned char {
 // Map of promoted extension information per version (a separate map exists for instance and device extensions).
 // The map is keyed by the version number (e.g. VK_API_VERSION_1_1) and each value is a pair consisting of the
 // version string (e.g. "VK_VERSION_1_1") and the set of name of the promoted extensions.
-typedef vvl::unordered_map<uint32_t, std::pair<const char*, vvl::unordered_set<vvl::Extension>>> PromotedExtensionInfoMap;
+using PromotedExtensionInfoMap = vvl::unordered_map<uint32_t, std::pair<const char*, vvl::unordered_set<vvl::Extension>>>;
 const PromotedExtensionInfoMap& GetInstancePromotionInfoMap();
 const PromotedExtensionInfoMap& GetDevicePromotionInfoMap();
 
@@ -138,7 +138,9 @@ struct InstanceExtensions {
         const ExtEnabled InstanceExtensions::* enabled;
         const char* name;
     };
-    typedef std::vector<Requirement> RequirementVec;
+    // Only one requirement needs to be satisfied
+    using RequirementOrGroup = small_vector<Requirement, 1>;
+    using RequirementVec = std::vector<RequirementOrGroup>;
     struct Info {
         Info(ExtEnabled InstanceExtensions::* state_, const RequirementVec requirements_)
             : state(state_), requirements(requirements_) {}
@@ -278,12 +280,14 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_khr_shader_fma{kNotSupported};
     ExtEnabled vk_khr_maintenance9{kNotSupported};
     ExtEnabled vk_khr_video_maintenance2{kNotSupported};
+    ExtEnabled vk_khr_video_encode_feedback2{kNotSupported};
     ExtEnabled vk_khr_depth_clamp_zero_one{kNotSupported};
     ExtEnabled vk_khr_robustness2{kNotSupported};
     ExtEnabled vk_khr_present_mode_fifo_latest_ready{kNotSupported};
     ExtEnabled vk_khr_opacity_micromap{kNotSupported};
     ExtEnabled vk_khr_maintenance10{kNotSupported};
     ExtEnabled vk_khr_maintenance11{kNotSupported};
+    ExtEnabled vk_khr_extended_flags{kNotSupported};
     ExtEnabled vk_nv_glsl_shader{kNotSupported};
     ExtEnabled vk_ext_depth_range_unrestricted{kNotSupported};
     ExtEnabled vk_img_filter_cubic{kNotSupported};
@@ -540,6 +544,7 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_nv_command_buffer_inheritance{kNotSupported};
     ExtEnabled vk_nv_shader_atomic_float16_vector{kNotSupported};
     ExtEnabled vk_ext_shader_replicated_composites{kNotSupported};
+    ExtEnabled vk_arm_tensor_controls{kNotSupported};
     ExtEnabled vk_ext_shader_float8{kNotSupported};
     ExtEnabled vk_nv_ray_tracing_validation{kNotSupported};
     ExtEnabled vk_nv_cluster_acceleration_structure{kNotSupported};
@@ -552,6 +557,7 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_huawei_hdr_vivid{kNotSupported};
     ExtEnabled vk_nv_cooperative_matrix2{kNotSupported};
     ExtEnabled vk_arm_pipeline_opacity_micromap{kNotSupported};
+    ExtEnabled vk_img_filter_linear_2d{kNotSupported};
     ExtEnabled vk_ext_external_memory_metal{kNotSupported};
     ExtEnabled vk_arm_performance_counters_by_region{kNotSupported};
     ExtEnabled vk_arm_shader_instrumentation{kNotSupported};
@@ -559,6 +565,7 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_arm_format_pack{kNotSupported};
     ExtEnabled vk_valve_fragment_density_map_layered{kNotSupported};
     ExtEnabled vk_nv_present_metering{kNotSupported};
+    ExtEnabled vk_ext_multisampled_render_to_swapchain{kNotSupported};
     ExtEnabled vk_ext_fragment_density_map_offset{kNotSupported};
     ExtEnabled vk_ext_zero_initialize_device_memory{kNotSupported};
     ExtEnabled vk_ext_shader_64bit_indexing{kNotSupported};
@@ -570,6 +577,7 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_ext_shader_uniform_buffer_unsized_array{kNotSupported};
     ExtEnabled vk_nv_compute_occupancy_priority{kNotSupported};
     ExtEnabled vk_ext_shader_subgroup_partitioned{kNotSupported};
+    ExtEnabled vk_ext_shader_ocp_microscaling_types{kNotSupported};
     ExtEnabled vk_valve_shader_mixed_float_dot_product{kNotSupported};
     ExtEnabled vk_sec_throttle_hint{kNotSupported};
     ExtEnabled vk_arm_data_graph_neural_accelerator_statistics{kNotSupported};
@@ -584,7 +592,9 @@ struct DeviceExtensions : public InstanceExtensions {
         const ExtEnabled DeviceExtensions::* enabled;
         const char* name;
     };
-    typedef std::vector<Requirement> RequirementVec;
+    // Only one requirement needs to be satisfied
+    using RequirementOrGroup = std::vector<Requirement>;
+    using RequirementVec = std::vector<RequirementOrGroup>;
     struct Info {
         Info(ExtEnabled DeviceExtensions::* state_, const RequirementVec requirements_)
             : state(state_), requirements(requirements_) {}
@@ -780,12 +790,14 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_KHR_shader_fma:
         case vvl::Extension::_VK_KHR_maintenance9:
         case vvl::Extension::_VK_KHR_video_maintenance2:
+        case vvl::Extension::_VK_KHR_video_encode_feedback2:
         case vvl::Extension::_VK_KHR_depth_clamp_zero_one:
         case vvl::Extension::_VK_KHR_robustness2:
         case vvl::Extension::_VK_KHR_present_mode_fifo_latest_ready:
         case vvl::Extension::_VK_KHR_opacity_micromap:
         case vvl::Extension::_VK_KHR_maintenance10:
         case vvl::Extension::_VK_KHR_maintenance11:
+        case vvl::Extension::_VK_KHR_extended_flags:
         case vvl::Extension::_VK_NV_glsl_shader:
         case vvl::Extension::_VK_EXT_depth_range_unrestricted:
         case vvl::Extension::_VK_IMG_filter_cubic:
@@ -1042,6 +1054,7 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_NV_command_buffer_inheritance:
         case vvl::Extension::_VK_NV_shader_atomic_float16_vector:
         case vvl::Extension::_VK_EXT_shader_replicated_composites:
+        case vvl::Extension::_VK_ARM_tensor_controls:
         case vvl::Extension::_VK_EXT_shader_float8:
         case vvl::Extension::_VK_NV_ray_tracing_validation:
         case vvl::Extension::_VK_NV_cluster_acceleration_structure:
@@ -1054,6 +1067,7 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_HUAWEI_hdr_vivid:
         case vvl::Extension::_VK_NV_cooperative_matrix2:
         case vvl::Extension::_VK_ARM_pipeline_opacity_micromap:
+        case vvl::Extension::_VK_IMG_filter_linear_2d:
         case vvl::Extension::_VK_EXT_external_memory_metal:
         case vvl::Extension::_VK_ARM_performance_counters_by_region:
         case vvl::Extension::_VK_ARM_shader_instrumentation:
@@ -1061,6 +1075,7 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_ARM_format_pack:
         case vvl::Extension::_VK_VALVE_fragment_density_map_layered:
         case vvl::Extension::_VK_NV_present_metering:
+        case vvl::Extension::_VK_EXT_multisampled_render_to_swapchain:
         case vvl::Extension::_VK_EXT_fragment_density_map_offset:
         case vvl::Extension::_VK_EXT_zero_initialize_device_memory:
         case vvl::Extension::_VK_EXT_shader_64bit_indexing:
@@ -1072,6 +1087,7 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_EXT_shader_uniform_buffer_unsized_array:
         case vvl::Extension::_VK_NV_compute_occupancy_priority:
         case vvl::Extension::_VK_EXT_shader_subgroup_partitioned:
+        case vvl::Extension::_VK_EXT_shader_ocp_microscaling_types:
         case vvl::Extension::_VK_VALVE_shader_mixed_float_dot_product:
         case vvl::Extension::_VK_SEC_throttle_hint:
         case vvl::Extension::_VK_ARM_data_graph_neural_accelerator_statistics:

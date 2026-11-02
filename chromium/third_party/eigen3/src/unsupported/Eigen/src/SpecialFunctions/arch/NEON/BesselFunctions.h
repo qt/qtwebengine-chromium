@@ -7,7 +7,7 @@
 namespace Eigen {
 namespace internal {
 
-#if EIGEN_HAS_ARM64_FP16_VECTOR_ARITHMETIC
+#if EIGEN_ARCH_ARM64 && EIGEN_HAS_ARM64_FP16
 
 #define NEON_HALF_TO_FLOAT_FUNCTIONS(METHOD)                                              \
   template <>                                                                             \
@@ -36,7 +36,7 @@ NEON_HALF_TO_FLOAT_FUNCTIONS(pbessel_y0)
 NEON_HALF_TO_FLOAT_FUNCTIONS(pbessel_y1)
 
 #undef NEON_HALF_TO_FLOAT_FUNCTIONS
-#endif
+#endif  // EIGEN_ARCH_ARM64 && EIGEN_HAS_ARM64_FP16
 
 EIGEN_INSTANTIATE_BESSEL_FUNCS_BF16(Packet4f, Packet4bf)
 

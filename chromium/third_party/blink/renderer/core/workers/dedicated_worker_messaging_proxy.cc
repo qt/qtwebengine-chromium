@@ -14,6 +14,7 @@
 #include "third_party/blink/public/mojom/v8_cache_options.mojom-blink.h"
 #include "third_party/blink/public/mojom/worker/dedicated_worker_host.mojom-blink-forward.h"
 #include "third_party/blink/public/platform/task_type.h"
+#include "third_party/blink/public/platform/web_policy_container.h"
 #include "third_party/blink/renderer/bindings/core/v8/sanitize_script_errors.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_worker_options.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -88,7 +89,8 @@ void DedicatedWorkerMessagingProxy::StartWorkerGlobalScope(
     mojo::PendingRemote<mojom::blink::DedicatedWorkerHost>
         dedicated_worker_host,
     mojo::PendingRemote<mojom::blink::BackForwardCacheControllerHost>
-        back_forward_cache_controller_host) {
+        back_forward_cache_controller_host,
+    std::unique_ptr<WebPolicyContainer> web_policy_container) {
   DCHECK(IsParentContextThread());
   if (AskedToTerminate()) {
     virtual_time_pauser_.UnpauseVirtualTime();
@@ -114,6 +116,11 @@ void DedicatedWorkerMessagingProxy::StartWorkerGlobalScope(
     return;
   }
 
+  if (pending_freeze_is_in_back_forward_cache_.has_value()) {
+    GetWorkerThread()->Freeze(*pending_freeze_is_in_back_forward_cache_);
+    pending_freeze_is_in_back_forward_cache_.reset();
+  }
+
   // Step 13: "Obtain script by switching on the value of options's type
   // member:"
   if (options->type() == V8WorkerType::Enum::kClassic) {
@@ -124,10 +131,9 @@ void DedicatedWorkerMessagingProxy::StartWorkerGlobalScope(
     auto* resource_timing_notifier =
         WorkerResourceTimingNotifierImpl::CreateForOutsideResourceFetcher(
             *GetExecutionContext());
-    // TODO(crbug.com/1177199): pass a proper policy container
     GetWorkerThread()->FetchAndRunClassicScript(
         script_url, std::move(worker_main_script_load_params),
-        /*policy_container=*/nullptr, outside_settings_object.CopyData(),
+        std::move(web_policy_container), outside_settings_object.CopyData(),
         resource_timing_notifier, stack_id);
   } else if (options->type() == V8WorkerType::Enum::kModule) {
     // "module: Fetch a module worker script graph given url, outside settings,
@@ -142,10 +148,9 @@ void DedicatedWorkerMessagingProxy::StartWorkerGlobalScope(
     auto* resource_timing_notifier =
         WorkerResourceTimingNotifierImpl::CreateForOutsideResourceFetcher(
             *GetExecutionContext());
-    // TODO(crbug.com/1177199): pass a proper policy container
     GetWorkerThread()->FetchAndRunModuleScript(
         script_url, std::move(worker_main_script_load_params),
-        /*policy_container=*/nullptr, outside_settings_object.CopyData(),
+        std::move(web_policy_container), outside_settings_object.CopyData(),
         resource_timing_notifier, credentials_mode);
   } else {
     NOTREACHED();
@@ -216,16 +221,26 @@ void DedicatedWorkerMessagingProxy::DidFailToFetchScript() {
 void DedicatedWorkerMessagingProxy::Freeze(bool is_in_back_forward_cache) {
   DCHECK(IsParentContextThread());
   auto* worker_thread = GetWorkerThread();
-  if (AskedToTerminate() || !worker_thread)
+  if (AskedToTerminate()) {
     return;
+  }
+  if (!worker_thread) {
+    pending_freeze_is_in_back_forward_cache_ = is_in_back_forward_cache;
+    return;
+  }
   worker_thread->Freeze(is_in_back_forward_cache);
 }
 
 void DedicatedWorkerMessagingProxy::Resume() {
   DCHECK(IsParentContextThread());
   auto* worker_thread = GetWorkerThread();
-  if (AskedToTerminate() || !worker_thread)
+  if (AskedToTerminate()) {
     return;
+  }
+  if (!worker_thread) {
+    pending_freeze_is_in_back_forward_cache_.reset();
+    return;
+  }
   worker_thread->Resume();
 }
 

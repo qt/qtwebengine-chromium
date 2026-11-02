@@ -15,7 +15,7 @@
 #
 
 load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
-load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -76,9 +76,11 @@ cc_library(
     includes = [
         ".",  # For includes relative to the library's root (like CMAKE_CURRENT_SOURCE_DIR)
     ],
+    copts = ["-std=c++23"],
     deps = [
         ":icing_cc_proto",
         "@bazel_tools//tools/jdk:jni",
+        "@eigen",
         "@icu//:common",
     ],
 )

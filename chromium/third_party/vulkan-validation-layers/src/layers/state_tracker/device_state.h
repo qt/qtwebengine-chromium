@@ -58,6 +58,40 @@ class PhysicalDevice : public StateObject {
     // Surfaceless Query extension needs 'global' surface_state data
     SurfacelessQueryState surfaceless_query_state{};
 
+    // VK_ARM_data_graph
+    struct DataGraph {
+        // helper struct used to index properties and formats for data graph engine/queue pairs
+        struct QueueAndEngine {
+            uint32_t queue_index{};
+            VkPhysicalDeviceDataGraphProcessingEngineARM engine{VK_PHYSICAL_DEVICE_DATA_GRAPH_PROCESSING_ENGINE_TYPE_DEFAULT_ARM,
+                                                                false};
+
+            bool operator==(const QueueAndEngine& other) const {
+                return queue_index == other.queue_index && engine.type == other.engine.type &&
+                       engine.isForeign == other.engine.isForeign;
+            };
+            struct hash {
+                size_t operator()(const QueueAndEngine& value) const {
+                    hash_util::HashCombiner hc;
+                    hc << value.queue_index << value.engine.type << value.engine.isForeign;
+                    return hc.Value();
+                }
+            };
+        };
+
+        template <typename T>
+        using QueueAndEngineMap = vvl::unordered_map<QueueAndEngine, T, QueueAndEngine::hash>;
+
+        vvl::unordered_map<uint32_t, std::vector<VkQueueFamilyDataGraphPropertiesARM>> queue_family_properties;
+        QueueAndEngineMap<VkQueueFamilyDataGraphOpticalFlowPropertiesARM> optical_flow_properties;
+        QueueAndEngineMap<VkQueueFamilyDataGraphTOSAPropertiesARM> tosa_properties;
+        struct OpticalFlowFormats {
+            QueueAndEngineMap<vvl::unordered_set<VkFormat>> input;   // VK_DATA_GRAPH_OPTICAL_FLOW_IMAGE_USAGE_INPUT_BIT_ARM
+            QueueAndEngineMap<vvl::unordered_set<VkFormat>> output;  // VK_DATA_GRAPH_OPTICAL_FLOW_IMAGE_USAGE_OUTPUT_BIT_ARM
+            QueueAndEngineMap<vvl::unordered_set<VkFormat>> cost;    // VK_DATA_GRAPH_OPTICAL_FLOW_IMAGE_USAGE_COST_BIT_ARM
+        } optical_flow_formats;
+    } data_graph;
+
     PhysicalDevice(VkPhysicalDevice handle);
 
     VkPhysicalDevice VkHandle() const { return handle_.Cast<VkPhysicalDevice>(); }

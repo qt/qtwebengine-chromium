@@ -8,12 +8,12 @@
 
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkMatrix.h"
+#include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkSize.h"
 #include "include/gpu/ganesh/GrRecordingContext.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkPoint_impl.h"
+#include "include/private/SkDebug.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkIPoint16.h"
 #include "src/gpu/ganesh/GrGpu.h"
@@ -204,9 +204,10 @@ void AtlasRenderTask::addAtlasDrawOp(GrOp::Owner op, const GrCaps& caps) {
     this->recordOp(std::move(op), true/*usesMSAA*/, processorAnalysis, nullptr, nullptr, caps);
 }
 
-bool AtlasRenderTask::onExecute(GrOpFlushState* flushState) {
-    if (!this->OpsTask::onExecute(flushState)) {
-        return false;
+GrRenderTask::ExecutionResult AtlasRenderTask::onExecute(GrOpFlushState* flushState) {
+    ExecutionResult result = this->OpsTask::onExecute(flushState);
+    if (!result.fAllTasksSuccessful) {
+        return result;
     }
     if (this->target(0)->requiresManualMSAAResolve()) {
         // Since atlases don't get closed until they are done being built, the drawingManager
@@ -216,8 +217,9 @@ bool AtlasRenderTask::onExecute(GrOpFlushState* flushState) {
                 this->target(0)->backingStoreDimensions().height(),
                 SkIRect::MakeSize(fDynamicAtlas->drawBounds()));
         flushState->gpu()->resolveRenderTarget(this->target(0)->peekRenderTarget(), nativeRect);
+        result.accum(ExecutionResult::RanAndSucceeded());
     }
-    return true;
+    return result;
 }
 
 }  // namespace skgpu::ganesh

@@ -11,16 +11,16 @@ import * as i18n from '../../../core/i18n/i18n.js';
 import * as Platform from '../../../core/platform/platform.js';
 import * as Root from '../../../core/root/root.js';
 import * as SDK from '../../../core/sdk/sdk.js';
+import * as TextUtils from '../../../core/text_utils/text_utils.js';
 import type * as Protocol from '../../../generated/protocol.js';
 import type {
   AiWidget, BottomUpTreeAiWidget, ComputedStyleAiWidget, CoreVitalsAiWidget, DomTreeAiWidget, LighthouseReportAiWidget,
-  NetworkRequestGeneralHeadersAiWidget, PerfInsightAiWidget, PerformanceTraceAiWidget, SourceCodeAiWidget,
-  SourceFileAiWidget, StylePropertiesAiWidget, TimelineEventSummaryAiWidget,
-  TimelineRangeSummaryAiWidget} from '../../../models/ai_assistance/agents/AiAgent.js';
+  NetworkRequestGeneralHeadersAiWidget, NetworkRequestsListAiWidget, NetworkTrackAiWidget, PerfInsightAiWidget,
+  PerformanceTraceAiWidget, SourceCodeAiWidget, SourceFileAiWidget, SourceFilesListAiWidget, StylePropertiesAiWidget,
+  TimelineEventSummaryAiWidget, TimelineRangeSummaryAiWidget} from '../../../models/ai_assistance/agents/AiAgent.js';
 import * as AiAssistanceModel from '../../../models/ai_assistance/ai_assistance.js';
 import * as ComputedStyle from '../../../models/computed_style/computed_style.js';
 import * as Formatter from '../../../models/formatter/formatter.js';
-import * as TextUtils from '../../../models/text_utils/text_utils.js';
 import * as Trace from '../../../models/trace/trace.js';
 import * as Workspace from '../../../models/workspace/workspace.js';
 import * as PanelsCommon from '../../../panels/common/common.js';
@@ -30,6 +30,7 @@ import * as Buttons from '../../../ui/components/buttons/buttons.js';
 import * as Input from '../../../ui/components/input/input.js';
 import type * as MarkdownView from '../../../ui/components/markdown_view/markdown_view.js';
 import type {MarkdownLitRenderer} from '../../../ui/components/markdown_view/MarkdownView.js';
+import * as Snackbars from '../../../ui/components/snackbars/snackbars.js';
 import * as UIHelpers from '../../../ui/helpers/helpers.js';
 import * as UI from '../../../ui/legacy/legacy.js';
 import * as Lit from '../../../ui/lit/lit.js';
@@ -55,7 +56,6 @@ const {widget} = UI.Widget;
 
 const REPORT_URL = 'https://crbug.com/508304827' as Platform.DevToolsPath.UrlString;
 const SCROLL_ROUNDING_OFFSET = 1;
-const MAX_NUM_LINES_IN_CODEBLOCK = 11;
 
 /*
 * Strings that don't need to be translated at this time.
@@ -115,6 +115,10 @@ const UIStringsNotTranslate = {
   systemError:
       'Something unforeseen happened and I can no longer continue. Try your request again and see if that resolves the issue. If this keeps happening, update Chrome to the latest version.',
   /**
+   * @description The error message when the user is out of quota or rate limited.
+   */
+  quotaError: 'You reached your limit for AI assistance requests. Try again later.',
+  /**
    * @description The error message when the LLM gets stuck in a loop (max steps reached).
    */
   maxStepsError: 'Seems like I am stuck with the investigation. It would be better if you start over.',
@@ -122,6 +126,10 @@ const UIStringsNotTranslate = {
    * @description The error message when the LLM selects context from a different origin.
    */
   crossOriginError: 'I have selected the new context but you will have to start a new chat.',
+  /**
+   * @description The error message when the request payload is too large.
+   */
+  payloadTooLargeError: 'The request payload is too large. Please try a smaller image or a screenshot.',
   /**
    * @description Displayed when the user stop the response
    */
@@ -223,13 +231,13 @@ const UIStringsNotTranslate = {
    */
   revealRenderBlockingBreakdown: 'Reveal render-blocking requests',
   /**
-   * @description Accessible label for the reveal button in the LCP element widget.
-   */
-  revealLcpElement: 'Reveal LCP element',
-  /**
    * @description Accessible label for the reveal button in the performance summary widget.
    */
   revealPerformanceSummary: 'Reveal performance summary',
+  /**
+   * @description Accessible label for the reveal button in the network track widget.
+   */
+  revealNetworkActivity: 'Reveal network activity',
   /**
    * @description Accessible label for the reveal button in the bottom up thread activity widget.
    */
@@ -287,13 +295,13 @@ const UIStringsNotTranslate = {
    */
   thirdParties: '3rd parties',
   /**
-   * @description Title for the LCP element widget.
-   */
-  lcpElement: 'LCP element',
-  /**
    * @description Title for the performance summary widget.
    */
   performanceSummary: 'Performance summary',
+  /**
+   * @description Title for the network activity summary widget.
+   */
+  networkActivitySummary: 'Network activity',
   /**
    * @description The title of the button that allows exporting the conversation for agents.
    */
@@ -414,6 +422,18 @@ const UIStringsNotTranslate = {
    * @description Title for the character set declaration widget.
    */
   characterSet: 'Character set declaration',
+  /**
+   * @description Title for the network requests list widget.
+   */
+  networkRequests: 'Network requests',
+  /**
+   * @description Accessible label for the reveal button in the network requests list widget.
+   */
+  revealFirstNetworkRequest: 'Reveal first network request in Network panel',
+  /**
+   * @description Title for the source files list widget.
+   */
+  inspectedFileNames: 'Inspected file names',
 } as const;
 
 export interface Step {
@@ -524,14 +544,12 @@ export interface MessageInput {
   isLastMessage: boolean;
   isFirstMessage: boolean;
   prompt: string;
-  shouldShowCSSChangeSummary: boolean;
   canShowFeedbackForm: boolean;
   markdownRenderer: MarkdownLitRenderer;
   onSuggestionClick: (suggestion: string) => void;
   onFeedbackSubmit: (rpcId: Host.AidaClient.RpcGlobalId, rate: Host.AidaClient.Rating, feedback?: string) => void;
   onCopyResponseClick: (message: ModelChatMessage) => void;
   onExportClick?: () => void;
-  changeSummary?: string;
   walkthrough: {
     onOpen: (message: ModelChatMessage) => void,
     isExpanded: boolean,
@@ -562,7 +580,7 @@ export const DEFAULT_VIEW = (input: ChatMessageViewInput, output: ViewOutput, ta
     const userQueryWrapperClasses = Lit.Directives.classMap({
       // Don't need to style at all unless we are on the V2 flag.
       // Once we ship this can be removed entirely.
-      'user-query-wrapper': hasAiV2
+      'user-query-wrapper': hasAiV2,
     });
     // clang-format off
     Lit.render(html`
@@ -626,15 +644,6 @@ export const DEFAULT_VIEW = (input: ChatMessageViewInput, output: ViewOutput, ta
           },
         )}
         ${renderError(message)}
-        ${input.shouldShowCSSChangeSummary && hasAiV2 && input.changeSummary ? html`
-          <devtools-code-block
-            .code=${input.changeSummary}
-            .codeLang=${'css'}
-            .displayLimit=${MAX_NUM_LINES_IN_CODEBLOCK}
-            .displayNotice=${true}
-            class="ai-css-change"
-          ></devtools-code-block>
-        ` : Lit.nothing}
         ${input.showActions ? renderActions(input, output) : Lit.nothing}
       </div>
       ${hasAiV2 ? renderSideEffectStepsUI(input, steps) : Lit.nothing}
@@ -888,7 +897,7 @@ function renderSideEffectStepsUI(input: ChatMessageViewInput, steps: Step[]): Li
            step,
            isLoading: input.isLoading,
            markdownRenderer: input.markdownRenderer,
-           isLast: true
+           isLast: true,
         })}
       </div> `)}
   `;
@@ -966,7 +975,7 @@ interface WidgetMakerResponse {
   // Can be null if the widget is only used to add the Reveal CTA.
   title: Lit.LitTemplate|Platform.UIString.LocalizedString|null;
   jslogContext?: string;
-  accessibleRevealLabel: string;
+  accessibleRevealLabel: Platform.UIString.LocalizedString;
 }
 
 const nodeCache = new Map<Protocol.DOM.BackendNodeId, SDK.DOMModel.DOMNode>();
@@ -1296,7 +1305,12 @@ function renderWidgetResponse(response: WidgetMakerResponse|null): Lit.LitTempla
     if (response === null) {
       return;
     }
-    void Common.Revealer.reveal(response?.revealable);
+    Common.Revealer.reveal(response?.revealable).catch((error: Error) => {
+      if (!error.message) {
+        return;
+      }
+      Snackbars.Snackbar.Snackbar.show({message: error.message});
+    });
   }
 
   const classes = Lit.Directives.classMap({
@@ -1387,7 +1401,8 @@ async function makeSourceCodeWidget(widgetData: SourceCodeAiWidget): Promise<Wid
   let code = widgetData.data.code;
   if (TextUtils.TextUtils.isMinified(code)) {
     const canonicalMimeType = uiSourceCode?.contentType().canonicalMimeType() || 'text/javascript';
-    const formatted = await Formatter.ScriptFormatter.formatScriptContent(canonicalMimeType, code, '  ');
+    const formatted = await Formatter.ScriptFormatter.formatScriptContent(Common.Settings.Settings.instance(),
+                                                                          canonicalMimeType, code, '  ');
     code = formatted.formattedContent;
   }
 
@@ -1397,7 +1412,7 @@ async function makeSourceCodeWidget(widgetData: SourceCodeAiWidget): Promise<Wid
       .displayLimit=${20}
       .code=${code}
       .codeLang=${fileExtension}
-      .header=${' '}
+      .displayToolbar=${false}
       .displayNotice=${false}
     ></devtools-code-block>
   `;
@@ -1408,6 +1423,130 @@ async function makeSourceCodeWidget(widgetData: SourceCodeAiWidget): Promise<Wid
     revealable: uiSourceCode,
     accessibleRevealLabel: i18n.i18n.lockedString(`Show ${filename} in Sources`),
     jslogContext: 'source-code-widget',
+  };
+}
+
+function renderFileRevealButton(
+    file: Workspace.UISourceCode.UISourceCode,
+    collapsed: boolean,
+    ): Lit.TemplateResult {
+  const onReveal = (): void => {
+    void Common.Revealer.reveal(file);
+  };
+  const accessibleLabel = i18n.i18n.lockedString(`Show ${file.fullDisplayName()}`);
+  const className = `widget-reveal-button ${collapsed ? 'collapsed-file' : 'visible-file'}`;
+  return html`
+    <devtools-button class=${className}
+      .variant=${Buttons.Button.Variant.TEXT}
+      .accessibleLabel=${accessibleLabel}
+      .jslogContext=${'reveal'}
+      @click=${onReveal}>
+      ${file.fullDisplayName()}
+      <devtools-icon name='tab-move'></devtools-icon>
+    </devtools-button>
+  `;
+}
+
+async function makeSourceFilesListWidget(widgetData: SourceFilesListAiWidget): Promise<WidgetMakerResponse|null> {
+  const files = widgetData.data.uiSourceCodes;
+  if (files.length === 0) {
+    return null;
+  }
+
+  // If there are more than 10 files, only show the first 10, and hide the rest unless "Show all" is clicked.
+  // clang-format off
+  const renderedWidget = html`
+    <div class="source-files-widget">
+      ${files.slice(0, 10).map(file => renderFileRevealButton(file, /* collapsed */ false))}
+      ${files.length > 10 ? html`
+        <details class="source-files-details">
+          <summary class="show-more-summary">${i18n.i18n.lockedString(`Show all ${files.length} files`)}</summary>
+          ${files.slice(10).map(file => renderFileRevealButton(file, /* collapsed */ true))}
+        </details> ` : Lit.nothing}
+    </div>`;
+  // clang-format on
+
+  const title = lockedString(UIStringsNotTranslate.inspectedFileNames);
+
+  return {
+    renderedWidget,
+    title,
+    revealable: files[0],
+    accessibleRevealLabel: i18n.i18n.lockedString('Reveal first file in Sources panel'),
+    jslogContext: 'source-files-list-widget',
+  };
+}
+
+const expandedNetworkRequestsWidgets = new WeakSet<NetworkRequestsListAiWidget>();
+
+// A widget with a table of the list of network requests sent to the agent.
+// Only show 15 requests maximum in collapsed version. The rest of the requests
+// will be hidden unless the user clicks "Show all".
+async function makeNetworkRequestsListWidget(widgetData: NetworkRequestsListAiWidget):
+    Promise<WidgetMakerResponse|null> {
+  const requests = widgetData.data.requests;
+  if (requests.length === 0) {
+    return null;
+  }
+
+  const isExpanded = expandedNetworkRequestsWidgets.has(widgetData);
+  // We only want just expanded widget to be expanded, if the user closed and reopened the walkthrought, the widget should be collapsed again.
+  // Therefore, after rendering the widget, we remove the widget from the set of expanded widgets so that it is collapsed on next render.
+  if (isExpanded) {
+    expandedNetworkRequestsWidgets.delete(widgetData);
+  }
+  const displayedRequests = isExpanded ? requests : requests.slice(0, 15);
+
+  // The table contains same fields as the ones sent to the agent.
+  // clang-format off
+  const renderedWidget = html`
+    <div class="network-requests-widget">
+      <devtools-data-grid striped inline>
+        <table>
+          <tr>
+            <th id="name" weight="4">${i18n.i18n.lockedString('Name')}</th>
+            <th id="status" weight="1">${i18n.i18n.lockedString('Status')}</th>
+            <th id="size" weight="1">${i18n.i18n.lockedString('Size')}</th>
+            <th id="time" weight="1">${i18n.i18n.lockedString('Time')}</th>
+          </tr>
+          ${displayedRequests.map(request => html`
+            <tr>
+              <td>${request.name()}</td>
+              <td>${request.statusCode}</td>
+              <td>${i18n.ByteUtilities.formatBytesToKb(request.transferSize)}</td>
+              <td>${i18n.TimeUtilities.secondsToString(request.duration)}</td>
+            </tr>
+          `)}
+        </table>
+      </devtools-data-grid>
+      ${!isExpanded && requests.length > 15 ? html`
+        <div class="show-all-container">
+          <button class="show-all-widget-requests-button text-button"
+            jslog=${VisualLogging.action('show-all-widget-requests-button').track({click: true})}
+            @click=${(e: Event) => {
+              expandedNetworkRequestsWidgets.add(widgetData);
+              const widgetEl = (e.target as HTMLElement).closest('.widget');
+              if (widgetEl) {
+                const widget = UI.Widget.Widget.get(widgetEl) as ChatMessage;
+                if (widget && widget.performUpdate) {
+                  void widget.performUpdate();
+                }
+              }
+            }}>
+            ${i18n.i18n.lockedString(`Show all ${requests.length} network requests`)}
+          </button>
+        </div>
+      ` : Lit.nothing}
+    </div>
+  `;
+  // clang-format on
+
+  return {
+    renderedWidget,
+    title: lockedString(UIStringsNotTranslate.networkRequests),
+    revealable: requests[0],
+    accessibleRevealLabel: lockedString(UIStringsNotTranslate.revealFirstNetworkRequest),
+    jslogContext: 'network-requests-list-widget',
   };
 }
 
@@ -1470,8 +1609,8 @@ async function makeDomTreeWidget(widgetData: DomTreeAiWidget): Promise<WidgetMak
   return {
     renderedWidget,
     revealable: new SDK.DOMModel.DeferredDOMNode(root.domModel().target(), root.backendNodeId()),
-    accessibleRevealLabel: lockedString(UIStringsNotTranslate.revealLcpElement),
-    title: lockedString(UIStringsNotTranslate.lcpElement),
+    accessibleRevealLabel: widgetData.data.accessibleRevealLabel,
+    title: widgetData.data.title,
     jslogContext: 'dom-snapshot',
   };
 }
@@ -1516,8 +1655,12 @@ export function getWidgetSignature(widget: AiWidget): string {
       return `${widget.name}:${widget.data.track}:${widget.data.bounds.min}-${widget.data.bounds.max}`;
     case 'BOTTOM_UP_TREE':
       return `${widget.name}:${widget.data.bounds.min}-${widget.data.bounds.max}`;
+    case 'NETWORK_TRACK':
+      return `${widget.name}:${widget.data.bounds.min}-${widget.data.bounds.max}`;
     case 'SOURCE_FILE':
       return `${widget.name}:${widget.data.uiSourceCode.url()}`;
+    case 'SOURCE_FILES_LIST':
+      return `${widget.name}:${widget.data.uiSourceCodes.map(f => f.url()).join(',')}`;
     case 'LIGHTHOUSE_REPORT':
       return `${widget.name}:${widget.data.report.fetchTime}`;
     case 'TIMELINE_EVENT_SUMMARY':
@@ -1526,6 +1669,8 @@ export function getWidgetSignature(widget: AiWidget): string {
       return `${widget.name}:${widget.data.request.requestId()}`;
     case 'SOURCE_CODE':
       return `${widget.name}:${widget.data.url}:${widget.data.line ?? ''}:${widget.data.column ?? ''}`;
+    case 'NETWORK_REQUESTS_LIST':
+      return `${widget.name}:${widget.data.requests.map(r => r.requestId()).join(',')}`;
     default:
       Platform.assertNever(widget, 'Unknown AiWidget name');
   }
@@ -1609,8 +1754,17 @@ async function renderWidgets(
       case 'BOTTOM_UP_TREE':
         response = await makeBottomUpTimelineTreeWidget(widgetData);
         break;
+      case 'NETWORK_TRACK':
+        response = await makeNetworkTrackWidget(widgetData);
+        break;
       case 'SOURCE_FILE':
         response = await makeSourceFileWidget(widgetData);
+        break;
+      case 'SOURCE_FILES_LIST':
+        response = await makeSourceFilesListWidget(widgetData);
+        break;
+      case 'NETWORK_REQUESTS_LIST':
+        response = await makeNetworkRequestsListWidget(widgetData);
         break;
       case 'LIGHTHOUSE_REPORT':
         response = await makeLighthouseReportWidget(widgetData);
@@ -1685,11 +1839,17 @@ function renderError(message: ModelChatMessage): Lit.LitTemplate {
       case AiAssistanceModel.AiAgent.ErrorType.BLOCK:
         errorMessage = UIStringsNotTranslate.systemError;
         break;
+      case AiAssistanceModel.AiAgent.ErrorType.QUOTA:
+        errorMessage = UIStringsNotTranslate.quotaError;
+        break;
       case AiAssistanceModel.AiAgent.ErrorType.MAX_STEPS:
         errorMessage = UIStringsNotTranslate.maxStepsError;
         break;
       case AiAssistanceModel.AiAgent.ErrorType.CROSS_ORIGIN:
         errorMessage = UIStringsNotTranslate.crossOriginError;
+        break;
+      case AiAssistanceModel.AiAgent.ErrorType.PAYLOAD_TOO_LARGE:
+        errorMessage = UIStringsNotTranslate.payloadTooLargeError;
         break;
       case AiAssistanceModel.AiAgent.ErrorType.ABORT:
         return html`<p class="aborted" jslog=${VisualLogging.section('aborted')}>${
@@ -1901,14 +2061,12 @@ export class ChatMessage extends UI.Widget.Widget {
   canShowFeedbackForm = false;
   isLastMessage = false;
   isFirstMessage = false;
-  shouldShowCSSChangeSummary = false;
   markdownRenderer!: MarkdownLitRenderer;
   onSuggestionClick: (suggestion: string) => void = () => {};
   onFeedbackSubmit:
       (rpcId: Host.AidaClient.RpcGlobalId, rate: Host.AidaClient.Rating, feedback?: string) => void = () => {};
   onCopyResponseClick: (message: ModelChatMessage) => void = () => {};
   onExportClick: () => void = () => {};
-  changeSummary?: string;
   walkthrough: MessageInput['walkthrough'] = {
     onOpen: () => {},
     onToggle: () => {},
@@ -1955,7 +2113,6 @@ export class ChatMessage extends UI.Widget.Widget {
           isLastMessage: this.isLastMessage,
           isFirstMessage: this.isFirstMessage,
           prompt: this.prompt,
-          shouldShowCSSChangeSummary: this.shouldShowCSSChangeSummary,
           onSuggestionClick: this.onSuggestionClick,
           onRatingClick: this.#handleRateClick.bind(this),
           onReportClick: () => UIHelpers.openInNewTab(REPORT_URL),
@@ -1981,7 +2138,6 @@ export class ChatMessage extends UI.Widget.Widget {
           currentRating: this.#currentRating,
           isShowingFeedbackForm: this.#isShowingFeedbackForm,
           onFeedbackSubmit: this.onFeedbackSubmit,
-          changeSummary: this.changeSummary,
           walkthrough: this.walkthrough,
         },
         this.#viewOutput, this.contentElement);
@@ -2161,6 +2317,30 @@ async function makeTimelineRangeSummaryWidget(widgetData: TimelineRangeSummaryAi
     accessibleRevealLabel: lockedString(UIStringsNotTranslate.revealPerformanceSummary),
     title: lockedString(UIStringsNotTranslate.performanceSummary),
     jslogContext: 'timeline-range-summary',
+  };
+}
+
+async function makeNetworkTrackWidget(widgetData: NetworkTrackAiWidget): Promise<WidgetMakerResponse|null> {
+  const {parsedTrace, bounds} = widgetData.data;
+  const dataProvider = new Timeline.TimelineFlameChartNetworkDataProvider.TimelineFlameChartNetworkDataProvider();
+
+  // clang-format off
+  const template = html`
+    <devtools-performance-agent-network-track
+      .data=${{
+        parsedTrace,
+        bounds,
+        dataProvider,
+      } as TimelineComponents.NetworkTrackWidget.NetworkTrackWidgetData}
+    ></devtools-performance-agent-network-track>`;
+  // clang-format on
+
+  return {
+    renderedWidget: template,
+    revealable: new TimelineUtils.Helpers.RevealableTimeRange(bounds),
+    accessibleRevealLabel: lockedString(UIStringsNotTranslate.revealNetworkActivity),
+    title: lockedString(UIStringsNotTranslate.networkActivitySummary),
+    jslogContext: 'network-track-widget',
   };
 }
 

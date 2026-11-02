@@ -20,6 +20,7 @@
 #include "ui/android/window_android.h"
 #include "ui/android/window_android_compositor.h"
 #include "ui/base/l10n/l10n_util_android.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/events/android/motion_event_android.h"
@@ -51,6 +52,10 @@ std::unique_ptr<EdgeEffect> CreateGlowEdgeEffect(
 std::unique_ptr<OverscrollGlow> CreateGlowEffect(OverscrollGlowClient* client) {
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableOverscrollEdgeEffect)) {
+    return nullptr;
+  }
+
+  if (base::FeatureList::IsEnabled(features::kSuppressOverscrollGlow)) {
     return nullptr;
   }
 
@@ -138,6 +143,7 @@ void OverscrollControllerAndroid::OnGestureEvent(
       if (event.SourceDevice() == blink::WebGestureDevice::kTouchpad) {
         gfx::Vector2dF scroll_delta(event.data.scroll_update.delta_x,
                                     event.data.scroll_update.delta_y);
+        scroll_delta.Scale(dpi_scale_);
         refresh_effect_->WillHandleScrollUpdate(scroll_delta);
       }
     } break;
@@ -253,6 +259,7 @@ bool OverscrollControllerAndroid::Animate(base::TimeTicks current_time,
 }
 
 void OverscrollControllerAndroid::OnFrameMetadataUpdated(
+    float view_width_px,
     float page_scale_factor,
     float device_scale_factor,
     const gfx::SizeF& scrollable_viewport_size,
@@ -272,8 +279,9 @@ void OverscrollControllerAndroid::OnFrameMetadataUpdated(
       gfx::ScalePoint(root_scroll_offset, scale_factor);
 
   if (refresh_effect_) {
-    refresh_effect_->OnFrameUpdated(viewport_size, content_scroll_offset,
-                                    content_size, root_overflow_y_hidden);
+    refresh_effect_->OnFrameUpdated(view_width_px, viewport_size.height(),
+                                    content_scroll_offset, content_size,
+                                    root_overflow_y_hidden);
   }
 
   if (glow_effect_) {
@@ -302,6 +310,13 @@ void OverscrollControllerAndroid::SetTouchpadOverscrollHistoryNavigation(
     bool enabled) {
   if (refresh_effect_) {
     refresh_effect_->SetTouchpadOverscrollHistoryNavigation(enabled);
+  }
+}
+
+void OverscrollControllerAndroid::SetIsGestureNavigationMode(
+    bool is_gesture_navigation_mode) {
+  if (refresh_effect_) {
+    refresh_effect_->SetIsGestureNavigationMode(is_gesture_navigation_mode);
   }
 }
 

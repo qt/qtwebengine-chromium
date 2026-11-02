@@ -1152,8 +1152,9 @@ own<Frame> CreateFrameFromInternal(i::DirectHandle<i::FixedArray> frames,
                                                   isolate);
   uint32_t func_index = frame->GetWasmFunctionIndex();
   size_t module_offset = i::CallSiteInfo::GetSourcePosition(frame);
-  size_t func_offset = module_offset - i::wasm::GetWasmFunctionOffset(
-                                           instance->module(), func_index);
+  const i::wasm::WasmModule* module = instance->trusted_data(isolate)->module();
+  size_t func_offset =
+      module_offset - i::wasm::GetWasmFunctionOffset(module, func_index);
   return own<Frame>(seal<Frame>(new (std::nothrow) FrameImpl(
       GetInstance(store, instance), func_index, func_offset, module_offset)));
 }
@@ -2316,7 +2317,7 @@ WASM_EXPORT auto Memory::make(Store* store_abs, const MemoryType* type)
     if (maximum > i::wasm::kSpecMaxMemory32Pages) return nullptr;
   }
   // TODO(wasm+): Support shared memory and memory64.
-  i::SharedFlag shared = i::SharedFlag::kNo;
+  i::SharedFlag shared = i::SharedFlag{false};
   i::wasm::AddressType address_type = i::wasm::AddressType::kI32;
   i::DirectHandle<i::WasmMemoryObject> memory_obj;
   if (!i::WasmMemoryObject::New(isolate, minimum, maximum, shared, address_type)
@@ -2419,8 +2420,7 @@ WASM_EXPORT own<Instance> Instance::make(Store* store_abs,
   i::wasm::ErrorThrower thrower(isolate, "instantiation");
   i::MaybeDirectHandle<i::WasmInstanceObject> instance_obj =
       i::wasm::GetWasmEngine()->SyncInstantiate(
-          isolate, &thrower, module->v8_object(), imports_obj,
-          i::MaybeDirectHandle<i::JSArrayBuffer>());
+          isolate, &thrower, module->v8_object(), imports_obj);
   if (trap) {
     if (thrower.error()) {
       *trap = implement<Trap>::type::make(

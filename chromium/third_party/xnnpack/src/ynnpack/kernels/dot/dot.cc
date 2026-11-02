@@ -101,6 +101,52 @@ void dot_1x128x2_1x1x2(size_t M, size_t N, size_t K3, size_t K2, size_t K1,
   }
 }
 
+template <typename AT, typename BT, typename CT>
+void dot_1x128x4_1x1x4(size_t M, size_t N, size_t K3, size_t K2, size_t K1,
+                       size_t A_stride_m, size_t A_stride_k3,
+                       size_t A_stride_k2, const AT* A, size_t B_stride_k3,
+                       size_t B_stride_k2, size_t B_stride_k1, const BT* B,
+                       size_t C_in_stride_m, const CT* C_in,
+                       size_t C_out_stride_m, CT* C_out) {
+  using B_info = type_info<BT>;
+  assert(M == 1);
+  assert(K1 % 4 == 0);
+  CT* acc = YNN_ALLOCA(CT, N);
+  std::fill_n(acc, N, 0);
+  for (size_t k3 = 0; k3 < K3; ++k3) {
+    const BT* B_k3 = offset_bytes(B, k3 * B_stride_k3);
+    const AT* A_k3 = offset_bytes(A, k3 * A_stride_k3);
+    for (size_t k2 = 0; k2 < K2; ++k2) {
+      const BT* B_k2 = offset_bytes(B_k3, k2 * B_stride_k2);
+      const AT* A_k2 = offset_bytes(A_k3, k2 * A_stride_k2);
+      for (size_t k1 = 0; k1 < K1; k1 += 4) {
+        const BT* B_k1 = offset_bytes(B_k2, k1 * B_stride_k1);
+        const AT A_k1_0 = A_k2[k1 + 0];
+        const AT A_k1_1 = A_k2[k1 + 1];
+        const AT A_k1_2 = A_k2[k1 + 2];
+        const AT A_k1_3 = A_k2[k1 + 3];
+        for (size_t j = 0; j < N; ++j) {
+          const auto B_k1_0 = B_info::get(B_k1, 4 * j + 0);
+          const auto B_k1_1 = B_info::get(B_k1, 4 * j + 1);
+          const auto B_k1_2 = B_info::get(B_k1, 4 * j + 2);
+          const auto B_k1_3 = B_info::get(B_k1, 4 * j + 3);
+          acc[j] += static_cast<CT>(A_k1_0) * static_cast<CT>(B_k1_0);
+          acc[j] += static_cast<CT>(A_k1_1) * static_cast<CT>(B_k1_1);
+          acc[j] += static_cast<CT>(A_k1_2) * static_cast<CT>(B_k1_2);
+          acc[j] += static_cast<CT>(A_k1_3) * static_cast<CT>(B_k1_3);
+        }
+      }
+    }
+  }
+  if (C_in) {
+    for (size_t j = 0; j < N; ++j) {
+      C_out[j] = acc[j] + C_in[j];
+    }
+  } else {
+    std::copy_n(acc, N, C_out);
+  }
+}
+
 }  // namespace
 
 void dot_fp32_1x128x1_1x1x1(size_t m, size_t n, size_t k3, size_t k2, size_t k1,
@@ -191,9 +237,21 @@ void dot_int8_int4_int32_1x128x2_1x1x2(
                     static_cast<int32_t*>(c_out));
 }
 
+void dot_int8_int2_int32_1x128x4_1x1x4(
+    size_t m, size_t n, size_t k3, size_t k2, size_t k1, size_t a_stride_m,
+    size_t a_stride_k3, size_t a_stride_k2, const void* a, size_t b_stride_k3,
+    size_t b_stride_k2, size_t b_stride_k1, const void* b, size_t c_in_stride_m,
+    const void* c_in, size_t c_out_stride_m, void* c_out) {
+  dot_1x128x4_1x1x4(m, n, k3, k2, k1, a_stride_m, a_stride_k3, a_stride_k2,
+                    static_cast<const int8_t*>(a), b_stride_k3, b_stride_k2,
+                    b_stride_k1, static_cast<const int2x4*>(b), c_in_stride_m,
+                    static_cast<const int32_t*>(c_in), c_out_stride_m,
+                    static_cast<int32_t*>(c_out));
+}
+
 float estimate_dot_cost(size_t m, size_t n, size_t k, size_t block_m,
                         size_t block_n, size_t block_k, size_t tile_m,
-                        size_t tile_n, size_t tile_k) {
+                        size_t tile_n, size_t tile_k, int b_elem_count) {
   const float blocks_m = ceil_div(m, block_m);
   const float blocks_n = ceil_div(n, block_n);
   const float blocks_k = ceil_div(k, block_k);
@@ -216,7 +274,9 @@ float estimate_dot_cost(size_t m, size_t n, size_t k, size_t block_m,
   // tile size.
   const size_t tile_cost = tile_m * tile_n * tile_k;
 
-  const float block_cost = loads_a * 5 + loads_b * 11 + 9 + tile_cost * 1e-4f;
+  // We assume that loads from b are more expensive as b_elem_count grows.
+  const float block_cost =
+      loads_a * 5 + loads_b * 11 * b_elem_count + 9 + tile_cost * 1e-4f;
 
   return blocks_m * blocks_n * blocks_k * block_cost;
 }
@@ -279,9 +339,10 @@ struct optimizer {
       // not.
       return;
     }
+    constexpr int b_elem_count = type_info<B>::element_count();
     const float dot_cost_k =
         estimate_dot_cost(m, n, k, block_m, block_n, block_k, tile_m, tile_n,
-                          tile_k) *
+                          tile_k, b_elem_count) *
         dot_arch_cost_factor(arch);
     if (!required_tile_k && !required_block_n) {
       char selected = dot_cost_k < result.cost ? '*' : ' ';
@@ -374,13 +435,33 @@ dot_kernel get_dot_kernel(const dot_type& type, const dot_shape& shape,
              type.c == ynn_type_int32) {
     return get_dot_kernel<int8_t, int8_t, int32_t>(
         shape, packed_shape, required_flags, transpose_a, arch_flags);
+  } else if (type.a == ynn_type_int8 && type.b == ynn_type_int2 &&
+             type.c == ynn_type_int32) {
+    return get_dot_kernel<int8_t, int2x4, int32_t>(
+        shape, packed_shape, required_flags, transpose_a, arch_flags);
+  } else if (type.a == ynn_type_uint8 && type.b == ynn_type_int2 &&
+             type.c == ynn_type_int32) {
+    return get_dot_kernel<uint8_t, int2x4, int32_t>(
+        shape, packed_shape, required_flags, transpose_a, arch_flags);
   } else if (type.a == ynn_type_int8 && type.b == ynn_type_int4 &&
              type.c == ynn_type_int32) {
     return get_dot_kernel<int8_t, int4x2, int32_t>(
         shape, packed_shape, required_flags, transpose_a, arch_flags);
+  } else if (type.a == ynn_type_uint8 && type.b == ynn_type_int4 &&
+             type.c == ynn_type_int32) {
+    return get_dot_kernel<uint8_t, int4x2, int32_t>(
+        shape, packed_shape, required_flags, transpose_a, arch_flags);
   } else if (type.a == ynn_type_uint8 && type.b == ynn_type_int8 &&
              type.c == ynn_type_int32) {
     return get_dot_kernel<uint8_t, int8_t, int32_t>(
+        shape, packed_shape, required_flags, transpose_a, arch_flags);
+  } else if (type.a == ynn_type_fp8_e5m2 && type.b == ynn_type_fp8_e5m2 &&
+             type.c == ynn_type_fp32) {
+    return get_dot_kernel<fp8_e5m2, fp8_e5m2, float>(
+        shape, packed_shape, required_flags, transpose_a, arch_flags);
+  } else if (type.a == ynn_type_fp8_e4m3 && type.b == ynn_type_fp8_e4m3 &&
+             type.c == ynn_type_fp32) {
+    return get_dot_kernel<fp8_e4m3, fp8_e4m3, float>(
         shape, packed_shape, required_flags, transpose_a, arch_flags);
   } else {
     YNN_LOG_ERROR() << "Unsupported dot type " << type.a << "_" << type.b << "_"

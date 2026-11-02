@@ -32,8 +32,8 @@
 
 #include "absl/strings/str_format.h"
 #include "dawn/native/ValidationUtils_autogen.h"
-#include "src/dawn/common/Assert.h"
 #include "src/dawn/common/Constants.h"
+#include "src/dawn/common/Enumerator.h"
 #include "src/dawn/common/HashUtils.h"
 #include "src/dawn/common/Math.h"
 #include "src/dawn/native/Adapter.h"
@@ -45,6 +45,7 @@
 #include "src/dawn/native/EnumMaskIterator.h"
 #include "src/dawn/native/ResourceTable.h"
 #include "src/dawn/native/SharedTextureMemory.h"
+#include "src/utils/assert.h"
 #include "src/utils/compiler.h"
 
 namespace dawn::native {
@@ -383,8 +384,10 @@ MaybeError ValidateTextureSize(const DeviceBase* device,
         }
     }
 
-    if (format->isCompressed) {
+    if (format->isCompressed && !device->HasFeature(Feature::TextureCompressionUnaligned)) {
         const TexelBlockInfo& blockInfo = format->GetAspectInfo(wgpu::TextureAspect::All).block;
+        // TODO(https://crbug.com/528245806): Once shipping TextureCompressionUnaligned, mention it
+        // in the error message below.
         DAWN_INVALID_IF(
             descriptor->size.width % blockInfo.width != 0 ||
                 descriptor->size.height % blockInfo.height != 0,
@@ -800,10 +803,9 @@ MaybeError ValidateTextureDescriptor(
         }
     }
 
-    for (uint32_t i = 0; i < descriptor->viewFormatCount; ++i) {
-        DAWN_UNSAFE_TODO(DAWN_TRY_CONTEXT(
-            ValidateTextureViewFormatCompatibility(device, *format, descriptor->viewFormats[i]),
-            "validating viewFormats[%u]", i));
+    for (auto [i, viewFormat] : Enumerate(descriptor->viewFormats)) {
+        DAWN_TRY_CONTEXT(ValidateTextureViewFormatCompatibility(device, *format, viewFormat),
+                         "validating viewFormats[%u]", i);
     }
 
     DAWN_INVALID_IF(descriptor->usage == wgpu::TextureUsage::None,
@@ -816,7 +818,7 @@ MaybeError ValidateTextureDescriptor(
             (descriptor->size.depthOrArrayLayers != 1 || descriptor->mipLevelCount != 1),
             "Transient textures must have depthOrArrayLayers (%u) = 1 and mipLevelCount (%u) = 1.",
             descriptor->size.depthOrArrayLayers, descriptor->mipLevelCount);
-        DAWN_INVALID_IF(descriptor->viewFormatCount > 0,
+        DAWN_INVALID_IF(!descriptor->viewFormats.empty(),
                         "Transient textures must not have any viewFormats");
     }
 
@@ -873,6 +875,15 @@ MaybeError ValidateTextureDescriptor(
                         (format->aspects & (Aspect::Depth | Aspect::Stencil)),
                     "The dimension (%s) of a texture with a depth/stencil format (%s) is not 2D.",
                     descriptor->dimension, format->format);
+    if (device->IsToggleEnabled(Toggle::VulkanDisallowNPOTDepthStencilMipmaps)) {
+        DAWN_INVALID_IF(
+            (format->aspects & (Aspect::Depth | Aspect::Stencil)) &&
+                descriptor->mipLevelCount > 1 &&
+                (!IsPowerOfTwo(descriptor->size.width) || !IsPowerOfTwo(descriptor->size.height)),
+            "Non-power-of-two depth/stencil texture (%s) with mipLevelCount (%u) > 1 is "
+            "disallowed on this device due to a driver bug.",
+            descriptor->size, descriptor->mipLevelCount);
+    }
 
     DAWN_TRY(ValidateTextureSize(device, *descriptor, format));
     return {};
@@ -1075,14 +1086,13 @@ TextureBase::TextureBase(DeviceBase* device, const UnpackedPtr<TextureDescriptor
         mMipLevelCount * GetArrayLayers() * GetAspectCount(mFormat->aspects);
     mIsSubresourceContentInitializedAtIndex = std::vector<bool>(subresourceCount, false);
 
-    for (uint32_t i = 0; i < descriptor->viewFormatCount; ++i) {
-        if (DAWN_UNSAFE_TODO(descriptor->viewFormats[i]) == descriptor->format) {
+    for (wgpu::TextureFormat viewFormat : descriptor->viewFormats) {
+        if (viewFormat == descriptor->format) {
             // Skip our own format, so the backends don't allocate the texture for
             // reinterpretation if it's not needed.
             continue;
         }
-        mViewFormats[device->GetValidInternalFormat(DAWN_UNSAFE_TODO(descriptor->viewFormats[i]))] =
-            true;
+        mViewFormats[device->GetValidInternalFormat(viewFormat)] = true;
     }
 
     if (auto* internalUsageDesc = descriptor.Get<DawnTextureInternalUsageDescriptor>()) {
@@ -1136,9 +1146,8 @@ void TextureBase::DestroyImpl(DestroyReason reason) {
     //   is implicitly destroyed. This case is thread-safe because there are no
     //   other threads using the texture since there are no other live refs.
 
-    // Destroying the texture implicitly unpins it so it can no longer be used via a resource table
-    // array.
-    Unpin();
+    // Destroying the texture implicitly hides it in resource tables.
+    MarkDestroyedInResourceTables();
 
     mState.destroyed = true;
 
@@ -1318,16 +1327,7 @@ wgpu::TextureUsage TextureBase::GetInternalUsage() const {
     return mInternalUsage;
 }
 
-bool TextureBase::HasPinnedUsage() const {
-    DAWN_CHECK(!IsError());
-    return mPinnedUsage != wgpu::TextureUsage::None;
-}
 
-wgpu::TextureUsage TextureBase::GetPinnedUsage() const {
-    DAWN_CHECK(!IsError());
-    DAWN_ASSERT(HasPinnedUsage());
-    return mPinnedUsage;
-}
 
 void TextureBase::AddInternalUsage(wgpu::TextureUsage usage) {
     DAWN_CHECK(!IsError());
@@ -1348,12 +1348,11 @@ void TextureBase::SetInitialized(bool initialized) {
 }
 
 ExecutionSerial TextureBase::OnEndAccess() {
-    // Ending access on the texture implicitly unpins it such that before it can be used in a
-    // resource table again, it must be re-pinned (which requires the access to have been restarted
-    // as well).
-    Unpin();
-
     mState.hasAccess = false;
+
+    // EndAccess on the texture implicitly hides it in resource tables.
+    MarkDirtyInResourceTables();
+
     ExecutionSerial lastUsageSerial = mLastSharedTextureMemoryUsageSerial;
     mLastSharedTextureMemoryUsageSerial = kBeginningOfGPUTime;
     return lastUsageSerial;
@@ -1361,6 +1360,8 @@ ExecutionSerial TextureBase::OnEndAccess() {
 
 void TextureBase::OnBeginAccess() {
     mState.hasAccess = true;
+    // BeginAccess on the texture implicitly unhides it in resource tables.
+    MarkDirtyInResourceTables();
 }
 
 bool TextureBase::HasAccess() const {
@@ -1406,6 +1407,13 @@ void TextureBase::SetIsSubresourceContentInitialized(bool isInitialized,
                 mIsSubresourceContentInitializedAtIndex[subresourceIndex] = isInitialized;
             }
         }
+    }
+
+    // If the texture is being marked as uninitialized, notify all bound resource tables so that
+    // they can perform lazy initialization when used next.
+    // TODO(crbug.com/530976638): Also notify when any subresource performs a memory barrier.
+    if (!isInitialized) {
+        MarkDirtyInResourceTables();
     }
 }
 
@@ -1483,10 +1491,9 @@ Extent3D TextureBase::GetMipLevelSingleSubresourcePhysicalSize(uint32_t level,
 
     // Compressed Textures will have paddings if their width or height is not a multiple of
     // 4 at non-zero mipmap levels.
-    if (mFormat->isCompressed && level != 0) {
-        // If |level| is non-zero, then each dimension of |extent| is at most half of
-        // the max texture dimension. Computations here which add the block width/height
-        // to the extent cannot overflow.
+    if (mFormat->isCompressed) {
+        // Each dimension of extent is a number lower than maxTextureSize so adding a block size to
+        // it cannot overflow.
         const TexelBlockInfo& blockInfo = mFormat->GetAspectInfo(wgpu::TextureAspect::All).block;
         extent.width = (extent.width + blockInfo.width - 1) / blockInfo.width * blockInfo.width;
         extent.height =
@@ -1603,8 +1610,8 @@ uint64_t TextureBase::ComputeEstimatedByteSize() const {
         const AspectInfo& info = mFormat->GetAspectInfo(aspect);
         for (uint32_t i = 0; i < mMipLevelCount; i++) {
             Extent3D mipSize = GetMipLevelSingleSubresourcePhysicalSize(i, aspect);
-            byteSize += (mipSize.width / info.block.width) * (mipSize.height / info.block.height) *
-                        info.block.byteSize * mSampleCount;
+            byteSize += static_cast<uint64_t>(mipSize.width / info.block.width) *
+                        (mipSize.height / info.block.height) * info.block.byteSize * mSampleCount;
         }
     }
     if (mDimension == wgpu::TextureDimension::e2D) {
@@ -1673,149 +1680,33 @@ wgpu::TextureViewDimension TextureBase::APIGetTextureBindingViewDimension() cons
     return mCompatibilityTextureBindingViewDimension;
 }
 
-void TextureBase::APIPin(wgpu::TextureUsage usage) {
-    // There is no status to return so we don't need to handle the case where an error has been
-    // consumed.
-    [[maybe_unused]] bool hadError = GetDevice()->ConsumedError(
-        [&]() -> MaybeError {
-            if (GetDevice()->IsValidationEnabled()) {
-                DAWN_TRY(ValidatePin(usage));
-            }
-            return Pin(usage);
-        }(),
-        "calling %s.Pin(%u)", this, usage);
-}
-
-MaybeError TextureBase::Pin(wgpu::TextureUsage usage) {
-    // Ensure backends only see useful and balanced Pin/Unpin pairs.
-    if (mPinnedUsage == usage) {
-        return {};
-    }
-    if (HasPinnedUsage()) {
-        Unpin();
-    }
-    DAWN_CHECK(!HasPinnedUsage());
-
-    DAWN_TRY(PinImpl(usage));
-
-    // Update the frontend state.
-    mPinnedUsage = usage;
-
-    // Call OnPinned for each of the slots. We would like to prune the entries to now destroyed
-    // ResourceTables using the `it = set.erase(it)` std:: idiom, but that's not possible with
-    // absl::flat_hash_set. Instead track a list of entries to prune and do it in a second pass.
-    std::vector<ResourceTableSlotUse> slotsToPrune;
-    for (const auto& slot : mResourceTableSlotUses) {
-        if (Ref<ResourceTableBase> table = slot.table.Promote()) {
-            table->OnPinned(slot.slot, this);
-        } else {
-            slotsToPrune.push_back(slot);
-        }
-    }
-    for (const auto& slot : slotsToPrune) {
-        mResourceTableSlotUses.erase(slot);
-    }
-
-    return {};
-}
-
-MaybeError TextureBase::PinImpl(wgpu::TextureUsage usage) {
-    DAWN_UNREACHABLE();
-}
-
-void TextureBase::APIUnpin() {
-    if (GetDevice()->IsValidationEnabled() &&
-        GetDevice()->ConsumedError(ValidateUnpin(), "calling %s.Unpin()", this)) {
-        return;
-    }
-
-    Unpin();
-}
-
-void TextureBase::Unpin() {
-    // Ensure backends only see useful and balanced Pin/Unpin pairs.
-    if (!HasPinnedUsage()) {
-        return;
-    }
-
-    UnpinImpl();
-
-    // Update the frontend state.
-    mPinnedUsage = wgpu::TextureUsage::None;
-
-    // Call OnUnpinned for each of the slots. We would like to prune the entries to now destroyed
-    // ResourceTableBase using the `it = set.erase(it)` std:: idiom, but that's not possible with
-    // absl::flat_hash_set. Instead track a list of entries to prune and do it in a second pass.
-    std::vector<ResourceTableSlotUse> slotsToPrune;
-    for (const auto& slot : mResourceTableSlotUses) {
-        if (Ref<ResourceTableBase> table = slot.table.Promote()) {
-            table->OnUnpinned(slot.slot, this);
-        } else {
-            slotsToPrune.push_back(slot);
-        }
-    }
-    for (const auto& slot : slotsToPrune) {
-        mResourceTableSlotUses.erase(slot);
-    }
-}
-
-void TextureBase::AddResourceTableSlotUse(ResourceTableBase* table, ResourceTableSlot slot) {
+void TextureBase::AddResourceTableUse(ResourceTableBase* table) {
     DAWN_CHECK(!IsError());
-    auto [_, inserted] = mResourceTableSlotUses.insert({table, slot});
+    auto [_, inserted] = mResourceTableUses.insert(table);
     DAWN_CHECK(inserted);
 }
 
-void TextureBase::RemoveResourceTableSlotUse(ResourceTableBase* table, ResourceTableSlot slot) {
+void TextureBase::RemoveResourceTableUse(ResourceTableBase* table) {
     DAWN_CHECK(!IsError());
-    bool removed = mResourceTableSlotUses.erase({table, slot});
+    bool removed = mResourceTableUses.erase(table);
     DAWN_CHECK(removed);
 }
 
-size_t TextureBase::ResourceTableSlotUse::HashFuncs::operator()(
-    const ResourceTableSlotUse& query) const {
-    size_t hash = 0;
-    HashCombine(&hash, query.table, query.slot);
-    return hash;
+void TextureBase::MarkDirtyInResourceTables() {
+    for (const auto& use : mResourceTableUses) {
+        if (Ref<ResourceTableBase> table = use.Promote()) {
+            table->OnTextureStateChange(this);
+        }
+    }
 }
 
-bool TextureBase::ResourceTableSlotUse::HashFuncs::operator()(const ResourceTableSlotUse& a,
-                                                              const ResourceTableSlotUse& b) const {
-    return std::tie(a.table, a.slot) == std::tie(b.table, b.slot);
-}
-
-void TextureBase::UnpinImpl() {
-    DAWN_UNREACHABLE();
-}
-
-MaybeError TextureBase::ValidatePin(wgpu::TextureUsage usage) const {
-    DAWN_INVALID_IF(!GetDevice()->HasFeature(Feature::ChromiumExperimentalSamplingResourceTable),
-                    "Texture pinning used without %s enabled.",
-                    wgpu::FeatureName::ChromiumExperimentalSamplingResourceTable);
-
-    DAWN_INVALID_IF(mState.destroyed || !mState.hasAccess,
-                    "Texture is destroyed or without access.");
-
-    DAWN_TRY(ValidateTextureUsage(usage));
-    DAWN_INVALID_IF(!IsSubset(usage, mUsage),
-                    "Pinned usages %s are not a subset of %s's usages (%u).", usage, this, mUsage);
-    DAWN_INVALID_IF(!IsSubset(usage, kShaderTextureUsages),
-                    "Pinned usages %s contain non-shader usages.", usage);
-
-    // TODO(https://issues.chromium.org/473459218): Support pinning for readonly storage and
-    // storage as well. This might require adding readonly storage in the API so it can be
-    // specified.
-    DAWN_INVALID_IF(
-        usage != wgpu::TextureUsage::TextureBinding,
-        "Pinned usages %s is not %s (which is required in the current bindless prototype).", usage,
-        wgpu::TextureUsage::TextureBinding);
-    return {};
-}
-
-MaybeError TextureBase::ValidateUnpin() const {
-    DAWN_INVALID_IF(!GetDevice()->HasFeature(Feature::ChromiumExperimentalSamplingResourceTable),
-                    "Texture unpinning used without %s enabled.",
-                    wgpu::FeatureName::ChromiumExperimentalSamplingResourceTable);
-    return {};
+void TextureBase::MarkDestroyedInResourceTables() {
+    for (const auto& use : mResourceTableUses) {
+        if (Ref<ResourceTableBase> table = use.Promote()) {
+            table->OnTextureDestroyed(this);
+        }
+    }
+    mResourceTableUses.clear();
 }
 
 void TextureBase::APISetOwnershipForMemoryDump(uint64_t ownerGuid) {

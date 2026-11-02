@@ -4,18 +4,18 @@
 
 #include "chrome/browser/extensions/api/identity/launch_web_auth_flow_delegate_ash.h"
 
+#include "ash/constants/ash_extension_constants.h"
 #include "base/test/bind.h"
 #include "base/test/test_future.h"
 #include "base/threading/thread_restrictions.h"
+#include "chrome/browser/ash/browser_delegate/browser_delegate.h"
 #include "chrome/browser/ash/file_manager/file_manager_test_util.h"
 #include "chrome/browser/ash/file_manager/fileapi_util.h"
 #include "chrome/browser/ash/file_manager/open_util.h"
 #include "chrome/browser/ash/system_web_apps/system_web_app_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/ash/system_web_apps/system_web_app_ui_utils.h"
-#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/test/browser_test.h"
@@ -43,7 +43,7 @@ class LaunchWebAuthFlowDelegateAshBrowserTest : public InProcessBrowserTest {
   }
 
  protected:
-  Browser* OpenFilesAppWindow() {
+  ash::BrowserDelegate* OpenFilesAppWindow() {
     ui_test_utils::BrowserCreatedObserver browser_created_observer;
     base::RunLoop run_loop;
     file_manager::util::ShowItemInFolder(
@@ -57,8 +57,9 @@ class LaunchWebAuthFlowDelegateAshBrowserTest : public InProcessBrowserTest {
     run_loop.Run();
     browser_created_observer.Wait();
 
-    Browser* files_browser = FindSystemWebAppBrowser(
-        GetProfile(), ash::SystemWebAppType::FILE_MANAGER);
+    ash::BrowserDelegate* files_browser = FindSystemWebAppBrowser(
+        GetProfile(), ash::SystemWebAppType::FILE_MANAGER,
+        ash::BrowserType::kApp);
     EXPECT_NE(files_browser, nullptr);
     return files_browser;
   }
@@ -105,8 +106,8 @@ IN_PROC_BROWSER_TEST_F(LaunchWebAuthFlowDelegateAshBrowserTest,
                        OdfsFilesAppSmallWindow) {
   LaunchWebAuthFlowDelegateAsh delegate;
 
-  Browser* files_app_browser = OpenFilesAppWindow();
-  files_app_browser->window()->SetBounds(gfx::Rect(200, 200, 600, 600));
+  ash::BrowserDelegate* files_app_browser = OpenFilesAppWindow();
+  files_app_browser->GetWindow()->SetBounds(gfx::Rect(200, 200, 600, 600));
 
   base::test::TestFuture<std::optional<gfx::Rect>> future;
   delegate.GetOptionalWindowBounds(
@@ -120,8 +121,8 @@ IN_PROC_BROWSER_TEST_F(LaunchWebAuthFlowDelegateAshBrowserTest,
                        OdfsFilesAppLargeWindow) {
   LaunchWebAuthFlowDelegateAsh delegate;
 
-  Browser* files_app_browser = OpenFilesAppWindow();
-  files_app_browser->window()->SetBounds(gfx::Rect(200, 200, 700, 700));
+  ash::BrowserDelegate* files_app_browser = OpenFilesAppWindow();
+  files_app_browser->GetWindow()->SetBounds(gfx::Rect(200, 200, 700, 700));
 
   base::test::TestFuture<std::optional<gfx::Rect>> future;
   delegate.GetOptionalWindowBounds(
@@ -135,8 +136,8 @@ IN_PROC_BROWSER_TEST_F(LaunchWebAuthFlowDelegateAshBrowserTest,
                        OdfsFilesAppOffscreenWindow) {
   LaunchWebAuthFlowDelegateAsh delegate;
 
-  Browser* files_app_browser = OpenFilesAppWindow();
-  files_app_browser->window()->SetBounds(gfx::Rect(-50, -80, 600, 600));
+  ash::BrowserDelegate* files_app_browser = OpenFilesAppWindow();
+  files_app_browser->GetWindow()->SetBounds(gfx::Rect(-50, -80, 600, 600));
 
   base::test::TestFuture<std::optional<gfx::Rect>> future;
   delegate.GetOptionalWindowBounds(

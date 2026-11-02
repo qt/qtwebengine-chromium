@@ -90,7 +90,7 @@ export class ScreenCaptureModel extends SDKModel<void> implements ProtocolProxyA
       callbacks: {
         onScreencastFrame: onFrame,
         onScreencastVisibilityChanged: onVisibilityChanged,
-      }
+      },
     };
     this.#screencastOperations.push(operation);
     void this.#agent.invoke_startScreencast({format, quality, maxWidth, maxHeight, everyNthFrame});
@@ -145,9 +145,9 @@ export class ScreenCaptureModel extends SDKModel<void> implements ProtocolProxyA
         throw new Error('Unexpected or unspecified screnshotMode');
     }
 
-    await OverlayModel.muteHighlight();
+    await OverlayModel.muteHighlight(this.target().targetManager());
     const result = await this.#agent.invoke_captureScreenshot(properties);
-    await OverlayModel.unmuteHighlight();
+    await OverlayModel.unmuteHighlight(this.target().targetManager());
     return result.data;
   }
 

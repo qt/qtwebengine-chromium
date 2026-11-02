@@ -76,7 +76,7 @@ template <typename Device, typename CoeffReturnType>
 struct non_integral_type_placement_new {
   template <typename StorageType>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool operator()(Index numValues, StorageType m_buffer) const {
-    if (NumTraits<CoeffReturnType>::RequireInitialization) {
+    EIGEN_IF_CONSTEXPR (NumTraits<CoeffReturnType>::RequireInitialization) {
       default_construct_elements_of_array(m_buffer, numValues);
       return true;
     }

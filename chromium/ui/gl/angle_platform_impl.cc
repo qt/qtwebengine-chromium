@@ -2,12 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "ui/gl/angle_platform_impl.h"
+
+#include <atomic>
+#include <string>
 
 #include "base/base64.h"
 #include "base/compiler_specific.h"
@@ -21,11 +19,14 @@
 #include "base/task/thread_pool/thread_pool_instance.h"
 #include "base/trace_event/trace_event.h"
 #include "third_party/angle/include/platform/PlatformMethods.h"
+#include "third_party/perfetto/include/perfetto/tracing/track.h"
 #include "ui/gl/gl_bindings.h"
 
 namespace angle {
 
 namespace {
+
+std::atomic<bool> g_post_task_failed_for_testing{false};
 
 double ANGLEPlatformImpl_currentTime(PlatformMethods* platform) {
   return base::Time::Now().InSecondsFSinceUnixEpoch();
@@ -65,12 +66,40 @@ TraceEventHandle ANGLEPlatformImpl_addTraceEvent(
     const unsigned long long* arg_values,
     unsigned char flags) {
   base::TimeTicks timestamp_tt = base::TimeTicks() + base::Seconds(timestamp);
+
+  if (phase == 'C') {
+    // SAFETY: This callback is invoked by ANGLE with `arg_values` and
+    // `arg_names` arrays containing `num_args` elements. We verify `num_args`
+    // before indexing into these arrays, ensuring all accesses are within
+    // bounds.
+    UNSAFE_BUFFERS({
+      if (num_args == 1) {
+        int value = static_cast<int>(arg_values[0]);
+        TRACE_COUNTER("gpu",
+                      perfetto::CounterTrack(perfetto::StaticString(name)),
+                      timestamp_tt, value);
+      } else if (num_args == 2) {
+        int value1 = static_cast<int>(arg_values[0]);
+        int value2 = static_cast<int>(arg_values[1]);
+        std::string track1_name = std::string(name) + "." + arg_names[0];
+        std::string track2_name = std::string(name) + "." + arg_names[1];
+        TRACE_COUNTER(
+            "gpu", perfetto::CounterTrack(perfetto::DynamicString(track1_name)),
+            timestamp_tt, value1);
+        TRACE_COUNTER(
+            "gpu", perfetto::CounterTrack(perfetto::DynamicString(track2_name)),
+            timestamp_tt, value2);
+      }
+    });
+    return 0;
+  }
+
   base::trace_event::TraceArguments args(num_args, arg_names, arg_types,
                                          arg_values);
-      TRACE_EVENT_API_ADD_TRACE_EVENT_WITH_THREAD_ID_AND_TIMESTAMP(
-          phase, category_group_enabled, name, id,
-          base::PlatformThread::CurrentId(), timestamp_tt, &args, flags);
-      return 0;
+  TRACE_EVENT_API_ADD_TRACE_EVENT_WITH_THREAD_ID_AND_TIMESTAMP(
+      phase, category_group_enabled, name, id,
+      base::PlatformThread::CurrentId(), timestamp_tt, &args, flags);
+  return 0;
 }
 
 void ANGLEPlatformImpl_updateTraceEventDuration(
@@ -125,20 +154,32 @@ void AnglePlatformImpl_runWorkerTask(PostWorkerTaskCallback callback, void* user
   callback(user_data);
 }
 
-void ANGLEPlatformImpl_postWorkerTask(PlatformMethods* platform,
-                                      PostWorkerTaskCallback callback,
-                                      void* user_data) {
-  base::ThreadPool::PostTask(
-      FROM_HERE, {base::TaskPriority::USER_BLOCKING},
-      base::BindOnce(&AnglePlatformImpl_runWorkerTask, callback, user_data));
-}
-
 void ANGLEPlatformImpl_recordShaderCacheUse(bool in_cache) {
   // Metrics were no longer required, we can remove once Angle no longer
   // requires the method.
 }
 
 }  // anonymous namespace
+
+void SetPostTaskFailedForTesting(bool failed) {
+  g_post_task_failed_for_testing.store(failed);
+}
+
+void ANGLEPlatformImpl_postWorkerTask(PlatformMethods* platform,
+                                      PostWorkerTaskCallback callback,
+                                      void* user_data) {
+  bool success = false;
+  if (!g_post_task_failed_for_testing.load()) {
+    success = base::ThreadPool::PostTask(
+        FROM_HERE, {base::TaskPriority::USER_BLOCKING},
+        base::BindOnce(&AnglePlatformImpl_runWorkerTask, callback, user_data));
+  }
+  if (!success) {
+    // Run the task synchronously if posting failed (e.g. during shutdown) to
+    // avoid GPU hangs. See https://crbug.com/539435331
+    AnglePlatformImpl_runWorkerTask(callback, user_data);
+  }
+}
 
 NO_SANITIZE("cfi-icall")
 bool InitializePlatform(EGLDisplay display,

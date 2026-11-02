@@ -27,6 +27,7 @@
 #include "components/autofill/core/browser/foundations/test_autofill_client.h"
 #include "components/autofill/core/browser/foundations/test_autofill_driver.h"
 #include "components/autofill/core/browser/metrics/form_events/credit_card_form_event_logger.h"
+#include "components/autofill/core/browser/metrics/form_events/credit_card_form_event_logger_test_api.h"
 #include "components/autofill/core/browser/metrics/payments/better_auth_metrics.h"
 #include "components/autofill/core/browser/metrics/payments/card_unmask_authentication_metrics.h"
 #include "components/autofill/core/browser/metrics/payments/card_unmask_flow_metrics.h"
@@ -206,7 +207,24 @@ TEST_F(CreditCardAccessManagerTest, CallsObserverOnDestruction) {
     credit_card_access_manager().RemoveObserver(&observer);
   });
   credit_card_access_manager().AddObserver(&observer);
-  autofill_manager().Reset();
+  test_api(autofill_manager()).Reset();
+}
+
+// Tests that UpdateCreditCardFormEventLogger() correctly logs the number of
+// local and server cards.
+TEST_F(CreditCardAccessManagerTest, UpdateCreditCardFormEventLogger) {
+  CreateLocalCard(kTestGUID, kTestNumber);
+  personal_data().test_payments_data_manager().AddServerCreditCard(
+      test::GetMaskedServerCardEnrolledIntoVirtualCardNumber());
+
+  credit_card_access_manager().UpdateCreditCardFormEventLogger();
+
+  EXPECT_EQ(1u, autofill_metrics::test_api(
+                    autofill_manager().GetCreditCardFormEventLogger())
+                    .local_record_type_count());
+  EXPECT_EQ(1u, autofill_metrics::test_api(
+                    autofill_manager().GetCreditCardFormEventLogger())
+                    .server_record_type_count());
 }
 
 // Ensures that FetchCreditCard() returns the full PAN upon a successful
@@ -308,7 +326,7 @@ TEST_P(CreditCardAccessManagerAuthFlowTest, ResetsOnDestruction) {
   PrepareToFetchCreditCardAndWaitForCallbacks();
   FetchCreditCardAndCompleteRiskBasedAuthIfAvailable(card);
 
-  autofill_manager().Reset();
+  test_api(autofill_manager()).Reset();
 }
 
 // Ensures that a "try again" response from payments does not end the flow.
@@ -515,7 +533,7 @@ TEST_P(CreditCardAccessManagerAuthFlowTest,
   TestCreditCardFidoAuthenticator::GetAssertion(GetFIDOAuthenticator(),
                                                 /*did_succeed=*/true);
   EXPECT_TRUE(GetRealPanForFIDOAuth(PaymentsRpcResult::kSuccess, kTestNumber));
-  EXPECT_EQ(u"", accessor().cvc());
+  EXPECT_EQ(accessor().cvc(), u"");
 }
 
 // Ensures that FetchCreditCard() returns the full PAN upon a successful
@@ -1282,7 +1300,7 @@ TEST_P(CreditCardAccessManagerAuthFlowTest,
   EXPECT_EQ(kTestChallenge,
             BytesToBase64(GetFIDOAuthenticator()->GetChallenge()));
   EXPECT_TRUE(GetFIDOAuthenticator()->IsUserOptedIn());
-  EXPECT_EQ(0, GetStrikes());
+  EXPECT_EQ(GetStrikes(), 0);
   histogram_tester.ExpectUniqueSample(
       webauthn_result_histogram_name,
       autofill_metrics::WebauthnResultMetric::kSuccess, 1);
@@ -1325,8 +1343,8 @@ TEST_P(CreditCardAccessManagerAuthFlowTest,
   EXPECT_TRUE(GetRealPanForCVCAuth(PaymentsRpcResult::kSuccess, kTestNumber));
   AcceptWebauthnOfferDialog(/*did_accept=*/false);
   EXPECT_EQ(
-      FidoAuthenticationStrikeDatabase::kStrikesToAddWhenOptInOfferDeclined,
-      GetStrikes());
+      GetStrikes(),
+      FidoAuthenticationStrikeDatabase::kStrikesToAddWhenOptInOfferDeclined);
   histogram_tester.ExpectTotalCount(promo_shown_histogram_name, 1);
   histogram_tester.ExpectUniqueSample(
       promo_user_decision_histogram_name,
@@ -1362,8 +1380,8 @@ TEST_P(CreditCardAccessManagerAuthFlowTest,
   AcceptWebauthnOfferDialog(/*did_accept=*/true);
   AcceptWebauthnOfferDialog(/*did_accept=*/false);
   EXPECT_EQ(
-      FidoAuthenticationStrikeDatabase::kStrikesToAddWhenOptInOfferDeclined,
-      GetStrikes());
+      GetStrikes(),
+      FidoAuthenticationStrikeDatabase::kStrikesToAddWhenOptInOfferDeclined);
   histogram_tester.ExpectTotalCount(promo_shown_histogram_name, 1);
   histogram_tester.ExpectUniqueSample(
       promo_user_decision_histogram_name,
@@ -1774,7 +1792,7 @@ TEST_F(CreditCardAccessManagerTest, FetchCreditCardUsesUnmaskedCardCache) {
 
 TEST_F(CreditCardAccessManagerTest, GetCachedUnmaskedCards) {
   // Assert that there are no cards cached initially.
-  EXPECT_EQ(0U, credit_card_access_manager().GetCachedUnmaskedCards().size());
+  EXPECT_EQ(credit_card_access_manager().GetCachedUnmaskedCards().size(), 0U);
 
   CreditCard unmasked_card = AsFullServerCard(
       *CreateServerCard(kTestGUID, kTestNumber, kTestServerId));
@@ -1783,7 +1801,7 @@ TEST_F(CreditCardAccessManagerTest, GetCachedUnmaskedCards) {
   credit_card_access_manager().CacheUnmaskedCardInfo(unmasked_card, kTestCvc16);
 
   // Verify that only the card added to the cache is returned.
-  ASSERT_EQ(1U, credit_card_access_manager().GetCachedUnmaskedCards().size());
+  ASSERT_EQ(credit_card_access_manager().GetCachedUnmaskedCards().size(), 1U);
   EXPECT_EQ(unmasked_card,
             credit_card_access_manager().GetCachedUnmaskedCards()[0]->card);
 }
@@ -2018,16 +2036,13 @@ TEST_F(CreditCardAccessManagerTest, CardInfoRetrievalEnrolledCardUnmasking) {
             AutofillProgressUiType::kCardInfoRetrievalEnrolledUnmaskProgressUi);
 }
 
-// Ensures the `kCardInfoRetrievalEnrolledUnmaskProgressUi` is not set, even
-// if `kAutofillEnableCardInfoRuntimeRetrieval` is enabled, but
+// Ensures the `kCardInfoRetrievalEnrolledUnmaskProgressUi` is not set if
 // `card_info_retrieval_enrollment_state` is not enrolled.
 TEST_F(CreditCardAccessManagerTest,
        CardInfoRetrievalEnrolledCardUnmaskingDisabled) {
   base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitWithFeatures(
-      /*enabled_features=*/{features::kAutofillEnableCardInfoRuntimeRetrieval},
-      /*disabled_features=*/{
-          features::kAutofillEnableFpanRiskBasedAuthentication});
+  scoped_feature_list.InitAndDisableFeature(
+      features::kAutofillEnableFpanRiskBasedAuthentication);
 
   base::HistogramTester histogram_tester;
   CreditCard server_card = test::GetMaskedServerCard();
@@ -2289,7 +2304,7 @@ TEST_F(CreditCardAccessManagerTest,
       .OnFIDOAuthenticationComplete(fido_response);
 
   // Expect accessor to successfully retrieve the virtual card CVC.
-  EXPECT_EQ(u"234", accessor().cvc());
+  EXPECT_EQ(accessor().cvc(), u"234");
 
   // Expect the metrics are logged correctly.
   histogram_tester.ExpectUniqueSample(

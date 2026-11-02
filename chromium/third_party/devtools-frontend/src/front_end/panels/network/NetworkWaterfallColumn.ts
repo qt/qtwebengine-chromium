@@ -112,9 +112,7 @@ export class NetworkWaterfallColumn extends UI.Widget.VBox {
     styleMap.set(
         NetworkTimeCalculator.RequestTimeRangeNames.PROXY,
         {fillStyle: RequestTimeRangeNameToColor[NetworkTimeCalculator.RequestTimeRangeNames.PROXY]});
-    styleMap.set(
-        NetworkTimeCalculator.RequestTimeRangeNames.BLOCKING,
-        {fillStyle: RequestTimeRangeNameToColor[NetworkTimeCalculator.RequestTimeRangeNames.BLOCKING]});
+    styleMap.set(NetworkTimeCalculator.RequestTimeRangeNames.BLOCKING, {fillStyle: '--network-waterfall-blocking'});
     styleMap.set(
         NetworkTimeCalculator.RequestTimeRangeNames.PUSH,
         {fillStyle: RequestTimeRangeNameToColor[NetworkTimeCalculator.RequestTimeRangeNames.PUSH]});
@@ -139,7 +137,7 @@ export class NetworkWaterfallColumn extends UI.Widget.VBox {
         NetworkTimeCalculator.RequestTimeRangeNames.SERVICE_WORKER,
         {fillStyle: RequestTimeRangeNameToColor[NetworkTimeCalculator.RequestTimeRangeNames.SERVICE_WORKER]});
     styleMap.set(NetworkTimeCalculator.RequestTimeRangeNames.SERVICE_WORKER_PREPARATION, {
-      fillStyle: RequestTimeRangeNameToColor[NetworkTimeCalculator.RequestTimeRangeNames.SERVICE_WORKER_PREPARATION]
+      fillStyle: RequestTimeRangeNameToColor[NetworkTimeCalculator.RequestTimeRangeNames.SERVICE_WORKER_PREPARATION],
     });
     styleMap.set(NetworkTimeCalculator.RequestTimeRangeNames.SERVICE_WORKER_RESPOND_WITH, {
       fillStyle: RequestTimeRangeNameToColor[NetworkTimeCalculator.RequestTimeRangeNames.SERVICE_WORKER_RESPOND_WITH],

@@ -19,10 +19,12 @@
 #include "src/ic/call-optimization.h"
 #include "src/ic/handler-configuration-inl.h"
 #include "src/objects/cell-inl.h"
+#include "src/objects/dictionary-inl.h"
 #include "src/objects/elements-kind.h"
 #include "src/objects/field-index-inl.h"
 #include "src/objects/field-type.h"
 #include "src/objects/instance-type-inl.h"
+#include "src/objects/module-inl.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/property-details.h"
 #include "src/objects/struct-inl.h"
@@ -774,13 +776,26 @@ PropertyAccessInfo AccessorAccessInfoHelper(
     const AccessInfoFactory* ai_factory, MapRef receiver_map, NameRef name,
     MapRef holder_map, OptionalJSObjectRef holder, AccessMode access_mode,
     AccessorsObjectGetter get_accessors) {
-  if (holder_map.instance_type() == JS_MODULE_NAMESPACE_TYPE) {
+  InstanceType holder_instance_type = holder_map.instance_type();
+  if (holder_instance_type == JS_MODULE_NAMESPACE_TYPE ||
+      holder_instance_type == JS_DEFERRED_MODULE_NAMESPACE_TYPE) {
     DCHECK(holder_map.object()->is_prototype_map());
     DirectHandle<PrototypeInfo> proto_info = broker->CanonicalPersistentHandle(
         Cast<PrototypeInfo>(holder_map.object()->prototype_info()));
     DirectHandle<JSModuleNamespace> module_namespace =
         broker->CanonicalPersistentHandle(
             Cast<JSModuleNamespace>(proto_info->module_namespace()));
+    // A deferred module namespace triggers synchronous evaluation of its
+    // module on the first non-symbol property access. We can only fold the
+    // access into a direct cell load once that module is already evaluated;
+    // before then, the load must go through the slow path that triggers
+    // evaluation. The evaluated state is monotonic (a module never leaves
+    // kEvaluated), so this remains valid for the lifetime of the optimized
+    // code without an extra compilation dependency.
+    if (holder_instance_type == JS_DEFERRED_MODULE_NAMESPACE_TYPE &&
+        module_namespace->module()->status() != Module::kEvaluated) {
+      return PropertyAccessInfo::Invalid(zone);
+    }
     Handle<Cell> cell = broker->CanonicalPersistentHandle(
         Cast<Cell>(module_namespace->module()->exports()->Lookup(
             name.object(), Smi::ToInt(Object::GetHash(*name.object())))));
@@ -979,6 +994,43 @@ bool AccessInfoFactory::TryLoadPropertyDetails(
   return true;
 }
 
+namespace {
+
+PropertyAccessInfo TryComputeDictionaryDataFieldAccessInfo(
+    Zone* zone, MapRef map, NameRef name, OptionalObjectRef handler) {
+  if constexpr (V8_ENABLE_SWISS_NAME_DICTIONARY_BOOL) {
+    return PropertyAccessInfo::Invalid(zone);
+  }
+  if (!handler.has_value() || !handler->IsSmi()) {
+    return PropertyAccessInfo::Invalid(zone);
+  }
+
+  // Receiver map must be a standard JSObject without access checks or
+  // interceptors.
+  if (!map.is_dictionary_map() || !map.IsJSObjectMap() ||
+      IsJSGlobalObjectMap(*map.object()) || map.is_access_check_needed() ||
+      map.has_named_interceptor()) {
+    return PropertyAccessInfo::Invalid(zone);
+  }
+
+  const auto smi_handler = Cast<Smi>(*handler->object());
+  const int smi_value = smi_handler.value();
+  if (LoadHandler::GetHandlerKind(smi_handler) != LoadHandler::Kind::kNormal ||
+      !LoadHandler::IsDataPropertyBits::decode(smi_value)) {
+    return PropertyAccessInfo::Invalid(zone);
+  }
+
+  uint32_t index = LoadHandler::DictionaryIndexBits::decode(smi_value);
+  if (index == LoadHandler::DictionaryIndexBits::kMax) {
+    return PropertyAccessInfo::Invalid(zone);
+  }
+
+  return PropertyAccessInfo::DictionaryDataField(
+      zone, map, OptionalJSObjectRef(), InternalIndex(index), name);
+}
+
+}  // namespace
+
 PropertyAccessInfo AccessInfoFactory::ComputePropertyAccessInfo(
     MapRef map, NameRef name, AccessMode access_mode,
     OptionalObjectRef handler) const {
@@ -989,22 +1041,11 @@ PropertyAccessInfo AccessInfoFactory::ComputePropertyAccessInfo(
 
   JSHeapBroker::MapUpdaterGuardIfNeeded mumd_scope(broker());
 
-  if (map.is_dictionary_map() && access_mode == AccessMode::kLoad &&
-      handler.has_value() && handler->IsSmi()) {
-    if constexpr (V8_ENABLE_SWISS_NAME_DICTIONARY_BOOL) {
-      return Invalid();
-    }
-    auto smi_handler = Cast<Smi>(*handler->object());
-    if (LoadHandler::GetHandlerKind(smi_handler) ==
-        LoadHandler::Kind::kNormal) {
-      if (LoadHandler::IsDataPropertyBits::decode(smi_handler.value())) {
-        uint32_t index =
-            LoadHandler::DictionaryIndexBits::decode(smi_handler.value());
-        if (index != LoadHandler::DictionaryIndexBits::kMax) {
-          return PropertyAccessInfo::DictionaryDataField(
-              zone(), map, OptionalJSObjectRef(), InternalIndex(index), name);
-        }
-      }
+  if (access_mode == AccessMode::kLoad) {
+    PropertyAccessInfo access_info =
+        TryComputeDictionaryDataFieldAccessInfo(zone(), map, name, handler);
+    if (!access_info.IsInvalid()) {
+      return access_info;
     }
   }
 

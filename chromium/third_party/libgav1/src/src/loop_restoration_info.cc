@@ -17,13 +17,15 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
-#include <cstddef>
 #include <cstdint>
-#include <memory>
-#include <new>
 
+#include "src/dsp/common.h"
+#include "src/symbol_decoder_context.h"
 #include "src/utils/common.h"
+#include "src/utils/constants.h"
+#include "src/utils/entropy_decoder.h"
 #include "src/utils/logging.h"
+#include "src/utils/types.h"
 
 namespace libgav1 {
 namespace {

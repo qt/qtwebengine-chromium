@@ -145,6 +145,8 @@ GLenum VertexFormatType(wgpu::VertexFormat format) {
             return GL_INT;
         case wgpu::VertexFormat::Unorm10_10_10_2:
             return GL_UNSIGNED_INT_2_10_10_10_REV;
+        case wgpu::VertexFormat::Snorm10_10_10_2:
+            return GL_INT_2_10_10_10_REV;
         default:
             DAWN_UNREACHABLE();
     }
@@ -166,6 +168,7 @@ GLboolean VertexFormatIsNormalized(wgpu::VertexFormat format) {
         case wgpu::VertexFormat::Snorm16x2:
         case wgpu::VertexFormat::Snorm16x4:
         case wgpu::VertexFormat::Unorm10_10_10_2:
+        case wgpu::VertexFormat::Snorm10_10_10_2:
             return GL_TRUE;
         default:
             return GL_FALSE;
@@ -197,6 +200,19 @@ bool VertexFormatIsInt(wgpu::VertexFormat format) {
             return true;
         default:
             return false;
+    }
+}
+
+GLenum DepthStencilAttachmentPoint(const Format& format) {
+    if (format.aspects == (Aspect::Depth | Aspect::Stencil)) {
+        return GL_DEPTH_STENCIL_ATTACHMENT;
+    } else if (format.aspects == Aspect::Depth) {
+        return GL_DEPTH_ATTACHMENT;
+    } else if (format.aspects == Aspect::Stencil) {
+        return GL_STENCIL_ATTACHMENT;
+    } else {
+        DAWN_UNREACHABLE();
+        return 0;
     }
 }
 
@@ -298,7 +314,7 @@ class VertexStateBufferBindingTracker {
 };
 
 // Tracking dirty byte range of a vector that needs to call bufferSubData
-// to update to the internal uniform buffer of mPipeline. Range it represents: [begin, end)
+// to update to the internal uniform buffer of mPipelineGL. Range it represents: [begin, end)
 struct VectorDirtyRangeInfo {
     size_t begin;
     size_t end;
@@ -308,13 +324,13 @@ class BindGroupTracker : public BindGroupTrackerBase<false> {
   public:
     void OnSetPipeline(RenderPipeline* pipeline) {
         BindGroupTrackerBase::OnSetPipeline(pipeline);
-        mPipeline = pipeline;
+        mPipelineGL = pipeline;
         ResetInternalUniformDataBindgroupAndDirtyRange();
     }
 
     void OnSetPipeline(ComputePipeline* pipeline) {
         BindGroupTrackerBase::OnSetPipeline(pipeline);
-        mPipeline = pipeline;
+        mPipelineGL = pipeline;
         ResetInternalUniformDataBindgroupAndDirtyRange();
     }
 
@@ -335,7 +351,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false> {
                                   FlatBindingIndex samplerIndex) {
         Sampler* sampler = ToBackend(s);
 
-        for (TextureUnit unit : mPipeline->GetTextureUnitsForSampler(samplerIndex)) {
+        for (TextureUnit unit : mPipelineGL->GetTextureUnitsForSampler(samplerIndex)) {
             DAWN_GL_TRY(gl, BindSampler(uint32_t(unit), sampler->GetHandle()));
         }
 
@@ -346,7 +362,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false> {
                               BindGroupIndex groupIndex,
                               BindGroupBase* group,
                               const ityp::span<BindingIndex, uint32_t>& dynamicOffsets) {
-        const auto& indices = ToBackend(mPipelineLayout)->GetBindingIndexInfo()[groupIndex];
+        const auto& indices = ToBackend(mPipeline->GetLayout())->GetBindingIndexInfo()[groupIndex];
 
         for (BindingIndex bindingIndex : Range(group->GetLayout()->GetBindingCount())) {
             const BindingInfo& bindingInfo = group->GetLayout()->GetBindingInfo(bindingIndex);
@@ -402,11 +418,11 @@ class BindGroupTracker : public BindGroupTrackerBase<false> {
                 },
                 [&](const TextureBindingInfo&) -> MaybeError {
                     TextureView* view = ToBackend(group->GetBindingAsTextureView(bindingIndex));
-                    GLuint handle = view->GetHandle();
+                    GLuint handle = view->GetTextureHandle();
                     GLenum target = view->GetGLTarget();
                     FlatBindingIndex viewIndex = indices[bindingIndex];
 
-                    for (auto unit : mPipeline->GetTextureUnitsForTextureView(viewIndex)) {
+                    for (auto unit : mPipelineGL->GetTextureUnitsForTextureView(viewIndex)) {
                         DAWN_GL_TRY(gl, ActiveTexture(GL_TEXTURE0 + GLuint(unit)));
                         DAWN_GL_TRY(gl, BindTexture(target, handle));
                         if (ToBackend(view->GetTexture())->GetGLFormat().format ==
@@ -439,7 +455,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false> {
                             gl, TexParameteri(target, GL_TEXTURE_MAX_LEVEL,
                                               view->GetBaseMipLevel() + view->GetLevelCount() - 1));
                         PhysicalDeviceBase* device =
-                            ToBackend(mPipelineLayout->GetDevice())->GetPhysicalDevice();
+                            ToBackend(mPipeline->GetLayout()->GetDevice())->GetPhysicalDevice();
                         if (ToBackend(device)->SupportTextureComponentSwizzle()) {
                             wgpu::TextureComponentSwizzle swizzle = view->GetSwizzle();
                             if (view->GetTexture()->GetFormat().HasDepthOrStencil()) {
@@ -464,7 +480,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false> {
                 [&](const StorageTextureBindingInfo& layout) -> MaybeError {
                     TextureView* view = ToBackend(group->GetBindingAsTextureView(bindingIndex));
                     Texture* texture = ToBackend(view->GetTexture());
-                    GLuint handle = texture->GetHandle();
+                    GLuint handle = texture->GetTextureHandle();
                     FlatBindingIndex imageIndex = indices[bindingIndex];
 
                     GLenum access;
@@ -516,7 +532,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false> {
     void UpdateTextureBuiltinsUniformData(const OpenGLFunctions& gl,
                                           const TextureView* view,
                                           FlatBindingIndex textureIndex) {
-        const auto& builtinInfo = mPipeline->GetEmulatedTextureBuiltinInfo();
+        const auto& builtinInfo = mPipelineGL->GetEmulatedTextureBuiltinInfo();
         auto iter = builtinInfo.find(textureIndex);
         if (iter == builtinInfo.end()) {
             return;
@@ -550,7 +566,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false> {
     }
 
     MaybeError ApplyInternalUniforms(const OpenGLFunctions& gl) {
-        if (!mPipeline->NeedsTextureBuiltinUniformBuffer()) {
+        if (!mPipelineGL->NeedsTextureBuiltinUniformBuffer()) {
             return {};
         }
 
@@ -559,16 +575,15 @@ class BindGroupTracker : public BindGroupTrackerBase<false> {
             return {};
         }
 
-        const Buffer* internalUniformBuffer =
-            ToBackend(mPipelineLayout->GetDevice())->GetInternalTextureBuiltinsUniformBuffer();
+        const Buffer* internalUniformBuffer = ToBackend(mPipeline->GetLayout()->GetDevice())
+                                                  ->GetInternalTextureBuiltinsUniformBuffer();
         DAWN_ASSERT(internalUniformBuffer);
 
         GLuint internalUniformBufferHandle = internalUniformBuffer->GetHandle();
-        DAWN_GL_TRY(
-            gl, BindBufferBase(
-                    GL_UNIFORM_BUFFER,
-                    GLuint(ToBackend(mPipelineLayout)->GetInternalTextureBuiltinsUniformBinding()),
-                    internalUniformBufferHandle));
+        DAWN_GL_TRY(gl, BindBufferBase(GL_UNIFORM_BUFFER,
+                                       GLuint(ToBackend(mPipeline->GetLayout())
+                                                  ->GetInternalTextureBuiltinsUniformBinding()),
+                                       internalUniformBufferHandle));
 
         DAWN_GL_TRY(gl, BindBuffer(GL_UNIFORM_BUFFER, internalUniformBufferHandle));
         DAWN_UNSAFE_TODO(DAWN_GL_TRY(
@@ -583,7 +598,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false> {
     }
 
     MaybeError ApplyInternalArrayLengthUniforms(const OpenGLFunctions& gl) {
-        if (!mPipeline->NeedsSSBOLengthUniformBuffer()) {
+        if (!mPipelineGL->NeedsSSBOLengthUniformBuffer()) {
             return {};
         }
 
@@ -593,15 +608,16 @@ class BindGroupTracker : public BindGroupTrackerBase<false> {
         }
 
         const Buffer* internalUniformBuffer =
-            ToBackend(mPipelineLayout->GetDevice())->GetInternalArrayLengthUniformBuffer();
+            ToBackend(mPipeline->GetLayout()->GetDevice())->GetInternalArrayLengthUniformBuffer();
         DAWN_ASSERT(internalUniformBuffer);
 
         GLuint internalUniformBufferHandle = internalUniformBuffer->GetHandle();
-        DAWN_GL_TRY(gl,
-                    BindBufferBase(
-                        GL_UNIFORM_BUFFER,
-                        GLuint(ToBackend(mPipelineLayout)->GetInternalArrayLengthUniformBinding()),
-                        internalUniformBufferHandle));
+        DAWN_GL_TRY(
+            gl,
+            BindBufferBase(
+                GL_UNIFORM_BUFFER,
+                GLuint(ToBackend(mPipeline->GetLayout())->GetInternalArrayLengthUniformBinding()),
+                internalUniformBufferHandle));
 
         DAWN_GL_TRY(gl, BindBuffer(GL_UNIFORM_BUFFER, internalUniformBufferHandle));
         DAWN_UNSAFE_TODO(DAWN_GL_TRY(
@@ -620,15 +636,15 @@ class BindGroupTracker : public BindGroupTrackerBase<false> {
                                      uint64_t size,
                                      BindGroupIndex groupIndex,
                                      BindingIndex bindingIndex) {
-        if (!mPipeline->NeedsSSBOLengthUniformBuffer()) {
+        if (!mPipelineGL->NeedsSSBOLengthUniformBuffer()) {
             return;
         }
 
-        const auto& bindingIndexInfo = ToBackend(mPipelineLayout)->GetBindingIndexInfo();
+        const auto& bindingIndexInfo = ToBackend(mPipeline->GetLayout())->GetBindingIndexInfo();
         FlatBindingIndex ssboIndex = bindingIndexInfo[groupIndex][bindingIndex];
 
         if (ssboIndex >= mInternalArrayLengthBufferData.size()) {
-            mInternalArrayLengthBufferData.resize(ssboIndex + FlatBindingIndex(4));
+            mInternalArrayLengthBufferData.resize(ssboIndex + FlatBindingIndex(4u));
         }
         mInternalArrayLengthBufferData[ssboIndex] = static_cast<uint32_t>(size);
 
@@ -647,7 +663,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false> {
         // TODO(crbug.com/408065421): This forces bindgroups with metadata to be completely set
         // again each pipeline change. In the future we will want to optimize that to only recompute
         // the metadata as needed, not force a rebind of all resources.
-        const auto& builtinInfo = mPipeline->GetEmulatedTextureBuiltinInfo();
+        const auto& builtinInfo = mPipelineGL->GetEmulatedTextureBuiltinInfo();
         for (const auto& entry : builtinInfo) {
             mDirtyBindGroupsObjectChangedOrIsDynamic.set(BindGroupIndex(entry.second.group));
         }
@@ -655,20 +671,20 @@ class BindGroupTracker : public BindGroupTrackerBase<false> {
         ResetInternalUniformDataDirtyRangeArrayLength();
     }
 
-    raw_ptr<PipelineGL> mPipeline = nullptr;
+    raw_ptr<PipelineGL> mPipelineGL = nullptr;
 
-    // The data used for mPipeline's internal uniform buffer from current bind group.
+    // The data used for mPipelineGL's internal uniform buffer from current bind group.
     // Expecting no more than 4 texture bindings called as textureNumLevels/textureNumSamples
     // argument in a pipeline. Initialize the vector to this size to avoid frequent resizing.
     std::vector<uint8_t> mInternalUniformBufferData = std::vector<uint8_t>(4 * sizeof(uint32_t));
     // Tracking dirty byte range of the mInternalUniformBufferData that needs to call bufferSubData
-    // to update to the internal uniform buffer of mPipeline.
+    // to update to the internal uniform buffer of mPipelineGL.
     VectorDirtyRangeInfo mDirtyRange;
 
-    // The data used for mPipeline's internal uniform buffer to store ssbo buffer sizes.
+    // The data used for mPipelineGL's internal uniform buffer to store ssbo buffer sizes.
     ityp::vector<FlatBindingIndex, uint32_t> mInternalArrayLengthBufferData;
     // Tracking dirty byte range of the mInternalArrayLengthBufferData that needs to call
-    // bufferSubData to update to the internal uniform buffer of mPipeline.
+    // bufferSubData to update to the internal uniform buffer of mPipelineGL.
     VectorDirtyRangeInfo mDirtyRangeArrayLength;
 };
 
@@ -699,6 +715,8 @@ MaybeError ResolveMultisampledRenderTargets(const OpenGLFunctions& gl,
                 ToBackend(renderPass->colorAttachments[i].resolveTarget.Get());
             DAWN_GL_TRY(gl, BindFramebuffer(GL_DRAW_FRAMEBUFFER, writeFbo));
             DAWN_TRY(resolveView->BindToFramebuffer(gl, GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0));
+            DAWN_TRY(CheckFramebufferComplete(gl, GL_READ_FRAMEBUFFER));
+            DAWN_TRY(CheckFramebufferComplete(gl, GL_DRAW_FRAMEBUFFER));
             DAWN_GL_TRY(gl, BlitFramebuffer(0, 0, renderPass->width, renderPass->height, 0, 0,
                                             renderPass->width, renderPass->height,
                                             GL_COLOR_BUFFER_BIT, GL_NEAREST));
@@ -813,8 +831,8 @@ MaybeError CommandBuffer::Execute(const OpenGLFunctions& gl) {
         return {};
     };
 
-    PassIndex nextComputePassNumber{0};
-    PassIndex nextRenderPassNumber{0};
+    PassIndex nextComputePassNumber{0u};
+    PassIndex nextRenderPassNumber{0u};
 
     Command type;
     while (mCommands.NextCommandId(&type)) {
@@ -911,7 +929,7 @@ MaybeError CommandBuffer::Execute(const OpenGLFunctions& gl) {
                 TexelCopyBufferLayout dataLayout;
                 dataLayout.offset = 0;
                 dataLayout.bytesPerRow = blockInfo.ToBytes(src.blocksPerRow);
-                dataLayout.rowsPerImage = static_cast<uint32_t>(src.rowsPerImage);
+                dataLayout.rowsPerImage = dchecked_cast<uint32_t>(src.rowsPerImage);
 
                 DAWN_TRY(DoTexSubImage(gl, dst, reinterpret_cast<void*>(src.offset), dataLayout,
                                        copy->copySize.ToExtent3D()));
@@ -948,7 +966,7 @@ MaybeError CommandBuffer::Execute(const OpenGLFunctions& gl) {
                 DAWN_TRY(texture->EnsureSubresourceContentInitialized(gl, subresources));
                 // The only way to move data from a texture to a buffer in GL is via
                 // glReadPixels with a pack buffer. Create a temporary FBO for the copy.
-                DAWN_GL_TRY(gl, BindTexture(target, texture->GetHandle()));
+                DAWN_GL_TRY(gl, BindTexture(target, texture->GetTextureHandle()));
 
                 GLuint readFBO = 0;
                 DAWN_GL_TRY(gl, GenFramebuffers(1, &readFBO));
@@ -959,7 +977,7 @@ MaybeError CommandBuffer::Execute(const OpenGLFunctions& gl) {
                 DAWN_GL_TRY(gl, BindBuffer(GL_PIXEL_PACK_BUFFER, buffer->GetHandle()));
                 DAWN_GL_TRY(gl, PixelStorei(GL_PACK_ALIGNMENT, std::min(8u, blockInfo.byteSize)));
                 DAWN_GL_TRY(
-                    gl, PixelStorei(GL_PACK_ROW_LENGTH, static_cast<uint32_t>(dst.blocksPerRow)));
+                    gl, PixelStorei(GL_PACK_ROW_LENGTH, dchecked_cast<uint32_t>(dst.blocksPerRow)));
 
                 GLenum glAttachment;
                 GLenum glFormat;
@@ -997,30 +1015,32 @@ MaybeError CommandBuffer::Execute(const OpenGLFunctions& gl) {
                     case wgpu::TextureDimension::e2D: {
                         if (target == GL_TEXTURE_2D) {
                             DAWN_ASSERT(texture->GetArrayLayers() == 1);
-                            DAWN_GL_TRY(
-                                gl, FramebufferTexture2D(GL_READ_FRAMEBUFFER, glAttachment, target,
-                                                         texture->GetHandle(), src.mipLevel));
-                            DAWN_GL_TRY(gl, ReadPixels(static_cast<uint32_t>(src.origin.x),
-                                                       static_cast<uint32_t>(src.origin.y),
-                                                       static_cast<uint32_t>(copySize.width),
-                                                       static_cast<uint32_t>(copySize.height),
+                            DAWN_GL_TRY(gl, FramebufferTexture2D(
+                                                GL_READ_FRAMEBUFFER, glAttachment, target,
+                                                texture->GetTextureHandle(), src.mipLevel));
+                            DAWN_TRY(CheckFramebufferComplete(gl, GL_READ_FRAMEBUFFER));
+                            DAWN_GL_TRY(gl, ReadPixels(dchecked_cast<uint32_t>(src.origin.x),
+                                                       dchecked_cast<uint32_t>(src.origin.y),
+                                                       dchecked_cast<uint32_t>(copySize.width),
+                                                       dchecked_cast<uint32_t>(copySize.height),
                                                        glFormat, glType, offset));
                             break;
                         } else if (target == GL_TEXTURE_CUBE_MAP) {
                             DAWN_ASSERT(texture->GetArrayLayers() == 6);
                             const uint64_t bytesPerImage =
                                 blockInfo.ToBytes(dst.blocksPerRow * dst.rowsPerImage);
-                            for (TexelCount z{0}; z < copySize.depthOrArrayLayers; ++z) {
+                            for (TexelCount z{0u}; z < copySize.depthOrArrayLayers; ++z) {
                                 GLenum cubeMapTarget = GL_TEXTURE_CUBE_MAP_POSITIVE_X +
-                                                       static_cast<uint32_t>(z + src.origin.z);
-                                DAWN_GL_TRY(
-                                    gl, FramebufferTexture2D(GL_READ_FRAMEBUFFER, glAttachment,
-                                                             cubeMapTarget, texture->GetHandle(),
-                                                             src.mipLevel));
-                                DAWN_GL_TRY(gl, ReadPixels(static_cast<uint32_t>(src.origin.x),
-                                                           static_cast<uint32_t>(src.origin.y),
-                                                           static_cast<uint32_t>(copySize.width),
-                                                           static_cast<uint32_t>(copySize.height),
+                                                       dchecked_cast<uint32_t>(z + src.origin.z);
+                                DAWN_GL_TRY(gl, FramebufferTexture2D(GL_READ_FRAMEBUFFER,
+                                                                     glAttachment, cubeMapTarget,
+                                                                     texture->GetTextureHandle(),
+                                                                     src.mipLevel));
+                                DAWN_TRY(CheckFramebufferComplete(gl, GL_READ_FRAMEBUFFER));
+                                DAWN_GL_TRY(gl, ReadPixels(dchecked_cast<uint32_t>(src.origin.x),
+                                                           dchecked_cast<uint32_t>(src.origin.y),
+                                                           dchecked_cast<uint32_t>(copySize.width),
+                                                           dchecked_cast<uint32_t>(copySize.height),
                                                            glFormat, glType, offset));
                                 DAWN_UNSAFE_TODO(offset += bytesPerImage);
                             }
@@ -1033,15 +1053,16 @@ MaybeError CommandBuffer::Execute(const OpenGLFunctions& gl) {
                     case wgpu::TextureDimension::e3D: {
                         const uint64_t bytesPerImage =
                             blockInfo.ToBytes(dst.blocksPerRow * dst.rowsPerImage);
-                        for (TexelCount z{0}; z < copySize.depthOrArrayLayers; ++z) {
-                            DAWN_GL_TRY(gl,
-                                        FramebufferTextureLayer(
-                                            GL_READ_FRAMEBUFFER, glAttachment, texture->GetHandle(),
-                                            src.mipLevel, static_cast<uint32_t>(src.origin.z + z)));
-                            DAWN_GL_TRY(gl, ReadPixels(static_cast<uint32_t>(src.origin.x),
-                                                       static_cast<uint32_t>(src.origin.y),
-                                                       static_cast<uint32_t>(copySize.width),
-                                                       static_cast<uint32_t>(copySize.height),
+                        for (TexelCount z{0u}; z < copySize.depthOrArrayLayers; ++z) {
+                            DAWN_GL_TRY(gl, FramebufferTextureLayer(
+                                                GL_READ_FRAMEBUFFER, glAttachment,
+                                                texture->GetTextureHandle(), src.mipLevel,
+                                                dchecked_cast<uint32_t>(src.origin.z + z)));
+                            DAWN_TRY(CheckFramebufferComplete(gl, GL_READ_FRAMEBUFFER));
+                            DAWN_GL_TRY(gl, ReadPixels(dchecked_cast<uint32_t>(src.origin.x),
+                                                       dchecked_cast<uint32_t>(src.origin.y),
+                                                       dchecked_cast<uint32_t>(copySize.width),
+                                                       dchecked_cast<uint32_t>(copySize.height),
                                                        glFormat, glType, offset));
 
                             DAWN_UNSAFE_TODO(offset += bytesPerImage);
@@ -1091,9 +1112,9 @@ MaybeError CommandBuffer::Execute(const OpenGLFunctions& gl) {
                 } else {
                     DAWN_TRY(dstTexture->EnsureSubresourceContentInitialized(gl, dstRange));
                 }
-                DAWN_TRY(CopyImageSubData(gl, src.aspect, srcTexture->GetHandle(),
+                DAWN_TRY(CopyImageSubData(gl, src.aspect, srcTexture->GetTextureHandle(),
                                           srcTexture->GetGLTarget(), src.mipLevel,
-                                          src.origin.ToOrigin3D(), dstTexture->GetHandle(),
+                                          src.origin.ToOrigin3D(), dstTexture->GetTextureHandle(),
                                           dstTexture->GetGLTarget(), dst.mipLevel,
                                           dst.origin.ToOrigin3D(), copySize.ToExtent3D()));
                 break;
@@ -1168,18 +1189,17 @@ MaybeError CommandBuffer::Execute(const OpenGLFunctions& gl) {
             case Command::WriteBuffer: {
                 WriteBufferCmd* write = mCommands.NextCommand<WriteBufferCmd>();
                 uint64_t offset = write->offset;
-                uint64_t size = write->size;
-                uint8_t* data = mCommands.NextData<uint8_t>(size);
+                Span<const uint8_t> data = mCommands.NextData<uint8_t>(write->size);
 
-                if (size == 0) {
+                if (data.empty()) {
                     continue;
                 }
 
                 Buffer* dstBuffer = ToBackend(write->buffer.Get());
-                DAWN_TRY(dstBuffer->EnsureDataInitializedAsDestination(offset, size));
+                DAWN_TRY(dstBuffer->EnsureDataInitializedAsDestination(offset, data.size()));
 
                 DAWN_GL_TRY(gl, BindBuffer(GL_ARRAY_BUFFER, dstBuffer->GetHandle()));
-                DAWN_GL_TRY(gl, BufferSubData(GL_ARRAY_BUFFER, offset, size, data));
+                DAWN_GL_TRY(gl, BufferSubData(GL_ARRAY_BUFFER, offset, data.size(), data.data()));
 
                 dstBuffer->TrackUsage();
                 break;
@@ -1246,12 +1266,12 @@ MaybeError CommandBuffer::ExecuteComputePass(const OpenGLFunctions& gl) {
 
             case Command::SetBindGroup: {
                 SetBindGroupCmd* cmd = mCommands.NextCommand<SetBindGroupCmd>();
-                uint32_t* dynamicOffsets = nullptr;
-                if (cmd->dynamicOffsetCount > 0) {
+                ityp::span<BindingIndex, const uint32_t> dynamicOffsets;
+                if (cmd->dynamicOffsetCount != BindingIndex{0u}) {
                     dynamicOffsets = mCommands.NextData<uint32_t>(cmd->dynamicOffsetCount);
                 }
-                bindGroupTracker.OnSetBindGroup(cmd->index, cmd->group.Get(),
-                                                cmd->dynamicOffsetCount, dynamicOffsets);
+
+                bindGroupTracker.OnSetBindGroup(cmd->index, cmd->group.Get(), dynamicOffsets);
                 break;
             }
 
@@ -1270,8 +1290,9 @@ MaybeError CommandBuffer::ExecuteComputePass(const OpenGLFunctions& gl) {
 
             case Command::SetImmediates: {
                 SetImmediatesCmd* cmd = mCommands.NextCommand<SetImmediatesCmd>();
-                uint8_t* values = mCommands.NextData<uint8_t>(cmd->size);
-                immediates.SetImmediates(cmd->offset, values, cmd->size);
+                Span<const uint8_t> data = mCommands.NextData<uint8_t>(cmd->size);
+                // TODO(https://crbug.com/532946455): Spanify ImmediateTracker.
+                immediates.SetImmediates(cmd->offset, data.data(), data.size());
                 break;
             }
 
@@ -1290,7 +1311,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
     GLuint fbo = 0;
 
     const IndirectDrawMetadata& metadata = GetIndirectDrawMetadata()[renderPassIndex];
-    IndirectDrawIndex indirectDrawIndex{0};
+    IndirectDrawIndex indirectDrawIndex{0u};
 
     // Create the framebuffer used for this render pass and calls the correct glDrawBuffers
     {
@@ -1320,7 +1341,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
             DAWN_TRY(textureView->BindToFramebuffer(gl, GL_DRAW_FRAMEBUFFER, glAttachment,
                                                     renderPass->colorAttachments[i].depthSlice));
             drawBuffers[i] = glAttachment;
-            attachmentCount = ityp::PlusOne(i);
+            attachmentCount = i.PlusOne();
         }
         DAWN_GL_TRY(gl, DrawBuffers(static_cast<uint8_t>(attachmentCount), drawBuffers.data()));
 
@@ -1329,22 +1350,12 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
             const Format& format = textureView->GetTexture()->GetFormat();
 
             // Attach depth/stencil buffer.
-            GLenum glAttachment = 0;
-            if (format.aspects == (Aspect::Depth | Aspect::Stencil)) {
-                glAttachment = GL_DEPTH_STENCIL_ATTACHMENT;
-            } else if (format.aspects == Aspect::Depth) {
-                glAttachment = GL_DEPTH_ATTACHMENT;
-            } else if (format.aspects == Aspect::Stencil) {
-                glAttachment = GL_STENCIL_ATTACHMENT;
-            } else {
-                DAWN_UNREACHABLE();
-            }
-
+            GLenum glAttachment = DepthStencilAttachmentPoint(format);
             DAWN_TRY(textureView->BindToFramebuffer(gl, GL_DRAW_FRAMEBUFFER, glAttachment));
         }
     }
 
-    DAWN_ASSERT(gl.CheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+    DAWN_TRY(CheckFramebufferComplete(gl, GL_DRAW_FRAMEBUFFER));
 
     // Set defaults for dynamic state before executing clears and commands.
     PersistentPipelineState persistentPipelineState;
@@ -1389,10 +1400,6 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
                         break;
                     }
                 }
-            }
-
-            if (attachmentInfo->storeOp == wgpu::StoreOp::Discard) {
-                // TODO(natlee@microsoft.com): call glDiscard to do optimization
             }
         }
 
@@ -1469,8 +1476,9 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
                 DAWN_TRY(immediates.Apply(gl));
                 DAWN_GL_TRY(gl, DrawElementsInstanced(
                                     topology, draw->indexCount, indexBufferFormat,
-                                    reinterpret_cast<void*>(draw->firstIndex * indexFormatSize +
-                                                            indexBufferBaseOffset),
+                                    reinterpret_cast<void*>(
+                                        static_cast<uint64_t>(draw->firstIndex) * indexFormatSize +
+                                        indexBufferBaseOffset),
                                     draw->instanceCount));
                 break;
             }
@@ -1550,12 +1558,12 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
 
             case Command::SetBindGroup: {
                 SetBindGroupCmd* cmd = iter->NextCommand<SetBindGroupCmd>();
-                uint32_t* dynamicOffsets = nullptr;
-                if (cmd->dynamicOffsetCount > 0) {
+                ityp::span<BindingIndex, const uint32_t> dynamicOffsets;
+                if (cmd->dynamicOffsetCount != BindingIndex{0u}) {
                     dynamicOffsets = iter->NextData<uint32_t>(cmd->dynamicOffsetCount);
                 }
-                bindGroupTracker.OnSetBindGroup(cmd->index, cmd->group.Get(),
-                                                cmd->dynamicOffsetCount, dynamicOffsets);
+
+                bindGroupTracker.OnSetBindGroup(cmd->index, cmd->group.Get(), dynamicOffsets);
                 break;
             }
 
@@ -1580,8 +1588,9 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
 
             case Command::SetImmediates: {
                 SetImmediatesCmd* cmd = iter->NextCommand<SetImmediatesCmd>();
-                uint8_t* values = iter->NextData<uint8_t>(cmd->size);
-                immediates.SetImmediates(cmd->offset, values, cmd->size);
+                Span<const uint8_t> data = iter->NextData<uint8_t>(cmd->size);
+                // TODO(https://crbug.com/532946455): Spanify ImmediateTracker.
+                immediates.SetImmediates(cmd->offset, data.data(), data.size());
                 break;
             }
             default:
@@ -1600,6 +1609,38 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
 
                 if (renderPass->attachmentState->GetSampleCount() > 1) {
                     DAWN_TRY(ResolveMultisampledRenderTargets(gl, renderPass));
+                }
+
+                std::vector<GLenum> attachmentsToDiscard;
+
+                for (auto index : renderPass->attachmentState->GetColorAttachmentsMask()) {
+                    auto* attachmentInfo = &renderPass->colorAttachments[index];
+                    if (attachmentInfo->storeOp == wgpu::StoreOp::Discard) {
+                        GLenum glAttachment = GL_COLOR_ATTACHMENT0 + static_cast<uint8_t>(index);
+                        attachmentsToDiscard.push_back(glAttachment);
+                    }
+                }
+
+                if (renderPass->attachmentState->HasDepthStencilAttachment()) {
+                    auto* attachment = &renderPass->depthStencilAttachment;
+                    const Format& format = attachment->view->GetTexture()->GetFormat();
+
+                    // TODO(crbug.com/530087586): figure out why glInvalidateFramebuffer() with
+                    // GL_STENCIL_ATTACHMENT crashes on Pixel 6, and enable for !format.HasDepth()
+                    // case as well
+                    if (attachment->depthStoreOp == wgpu::StoreOp::Discard &&
+                        (!format.HasStencil() ||
+                         attachment->stencilStoreOp == wgpu::StoreOp::Discard)) {
+                        GLenum glAttachment = DepthStencilAttachmentPoint(format);
+                        attachmentsToDiscard.push_back(glAttachment);
+                    }
+                }
+
+                if (!attachmentsToDiscard.empty()) {
+                    DAWN_GL_TRY(gl, BindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo));
+                    DAWN_GL_TRY(
+                        gl, InvalidateFramebuffer(GL_DRAW_FRAMEBUFFER, attachmentsToDiscard.size(),
+                                                  attachmentsToDiscard.data()));
                 }
                 DAWN_GL_TRY(gl, DeleteFramebuffers(1, &fbo));
                 return {};
@@ -1648,8 +1689,8 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
                 ExecuteBundlesCmd* cmd = mCommands.NextCommand<ExecuteBundlesCmd>();
                 auto bundles = mCommands.NextData<Ref<RenderBundleBase>>(cmd->count);
 
-                for (uint32_t i = 0; i < cmd->count; ++i) {
-                    CommandIterator* iter = DAWN_UNSAFE_TODO(bundles[i])->GetCommands();
+                for (const auto& bundle : bundles) {
+                    CommandIterator* iter = bundle->GetCommands();
                     iter->Reset();
                     while (iter->NextCommandId(&type)) {
                         DAWN_TRY(DoRenderBundleCommand(iter, type));
@@ -1697,10 +1738,11 @@ MaybeError DoTexSubImage(const OpenGLFunctions& gl,
     GLenum target = texture->GetGLTarget();
     data = DAWN_UNSAFE_TODO(static_cast<const uint8_t*>(data) + dataLayout.offset);
     DAWN_GL_TRY(gl, ActiveTexture(GL_TEXTURE0));
-    DAWN_GL_TRY(gl, BindTexture(target, texture->GetHandle()));
+    DAWN_GL_TRY(gl, BindTexture(target, texture->GetTextureHandle()));
     const TypedTexelBlockInfo& blockInfo = GetBlockInfo(destination);
     const BlockExtent3D blockCopySize = blockInfo.ToBlock(copySize);
-    const uint64_t bytesPerImage = dataLayout.rowsPerImage * dataLayout.bytesPerRow;
+    const uint64_t bytesPerImage =
+        static_cast<uint64_t>(dataLayout.rowsPerImage) * dataLayout.bytesPerRow;
     const BlockCount rowsPerImage{dataLayout.rowsPerImage};
     // Note: bytesPerRow is not necessarily a multiple of block size because WriteTexture is
     // directly implemented by the GL backend and doesn't have alignment constraints for
@@ -1733,43 +1775,45 @@ MaybeError DoTexSubImage(const OpenGLFunctions& gl,
 
             DAWN_GL_TRY(gl,
                         PixelStorei(GL_UNPACK_ROW_LENGTH,
-                                    static_cast<uint32_t>(blockInfo.ToTexelWidth(blocksPerRow))));
+                                    dchecked_cast<uint32_t>(blockInfo.ToTexelWidth(blocksPerRow))));
             DAWN_GL_TRY(gl, PixelStorei(GL_UNPACK_COMPRESSED_BLOCK_SIZE, blockInfo.byteSize));
             DAWN_GL_TRY(gl, PixelStorei(GL_UNPACK_COMPRESSED_BLOCK_WIDTH,
-                                        static_cast<uint32_t>(blockInfo.width)));
+                                        dchecked_cast<uint32_t>(blockInfo.width)));
             DAWN_GL_TRY(gl, PixelStorei(GL_UNPACK_COMPRESSED_BLOCK_HEIGHT,
-                                        static_cast<uint32_t>(blockInfo.height)));
+                                        dchecked_cast<uint32_t>(blockInfo.height)));
             DAWN_GL_TRY(gl, PixelStorei(GL_UNPACK_COMPRESSED_BLOCK_DEPTH, 1));
 
             if (target == GL_TEXTURE_2D) {
-                DAWN_GL_TRY(
-                    gl, CompressedTexSubImage2D(
-                            target, destination.mipLevel, static_cast<uint32_t>(x),
-                            static_cast<uint32_t>(y), static_cast<uint32_t>(width),
-                            static_cast<uint32_t>(height), format.internalFormat, imageSize, data));
+                DAWN_GL_TRY(gl, CompressedTexSubImage2D(
+                                    target, destination.mipLevel, dchecked_cast<uint32_t>(x),
+                                    dchecked_cast<uint32_t>(y), dchecked_cast<uint32_t>(width),
+                                    dchecked_cast<uint32_t>(height), format.internalFormat,
+                                    imageSize, data));
             } else if (target == GL_TEXTURE_CUBE_MAP) {
                 DAWN_ASSERT(texture->GetArrayLayers() == 6);
                 const uint8_t* pointer = static_cast<const uint8_t*>(data);
                 TexelCount baseLayer = destination.origin.z;
-                for (TexelCount l{0}; l < copySize.depthOrArrayLayers; ++l) {
+                for (TexelCount l{0u}; l < copySize.depthOrArrayLayers; ++l) {
                     GLenum cubeMapTarget =
-                        GL_TEXTURE_CUBE_MAP_POSITIVE_X + static_cast<uint32_t>(baseLayer + l);
-                    DAWN_GL_TRY(gl, CompressedTexSubImage2D(
-                                        cubeMapTarget, destination.mipLevel,
-                                        static_cast<uint32_t>(x), static_cast<uint32_t>(y),
-                                        static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-                                        format.internalFormat, imageSize, pointer));
+                        GL_TEXTURE_CUBE_MAP_POSITIVE_X + dchecked_cast<uint32_t>(baseLayer + l);
+                    DAWN_GL_TRY(
+                        gl, CompressedTexSubImage2D(
+                                cubeMapTarget, destination.mipLevel, dchecked_cast<uint32_t>(x),
+                                dchecked_cast<uint32_t>(y), dchecked_cast<uint32_t>(width),
+                                dchecked_cast<uint32_t>(height), format.internalFormat, imageSize,
+                                pointer));
                     DAWN_UNSAFE_TODO(pointer += bytesPerImage);
                 }
             } else {
                 DAWN_GL_TRY(
-                    gl, PixelStorei(GL_UNPACK_IMAGE_HEIGHT,
-                                    static_cast<uint32_t>(blockInfo.ToTexelHeight(rowsPerImage))));
+                    gl,
+                    PixelStorei(GL_UNPACK_IMAGE_HEIGHT,
+                                dchecked_cast<uint32_t>(blockInfo.ToTexelHeight(rowsPerImage))));
                 DAWN_GL_TRY(gl, CompressedTexSubImage3D(
-                                    target, destination.mipLevel, static_cast<uint32_t>(x),
-                                    static_cast<uint32_t>(y), static_cast<uint32_t>(z),
-                                    static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-                                    static_cast<uint32_t>(copySize.depthOrArrayLayers),
+                                    target, destination.mipLevel, dchecked_cast<uint32_t>(x),
+                                    dchecked_cast<uint32_t>(y), dchecked_cast<uint32_t>(z),
+                                    dchecked_cast<uint32_t>(width), dchecked_cast<uint32_t>(height),
+                                    dchecked_cast<uint32_t>(copySize.depthOrArrayLayers),
                                     format.internalFormat, imageSize, data));
                 DAWN_GL_TRY(gl, PixelStorei(GL_UNPACK_IMAGE_HEIGHT, 0));
             }
@@ -1785,30 +1829,30 @@ MaybeError DoTexSubImage(const OpenGLFunctions& gl,
 
                 for (; y < destination.origin.y + copySize.height; y += blockInfo.height) {
                     TexelCount height = std::min(blockInfo.height, virtSize.height - y);
-                    DAWN_GL_TRY(
-                        gl, CompressedTexSubImage2D(
-                                target, destination.mipLevel, static_cast<uint32_t>(x),
-                                static_cast<uint32_t>(y), static_cast<uint32_t>(width),
-                                static_cast<uint32_t>(height), format.internalFormat, rowSize, d));
+                    DAWN_GL_TRY(gl, CompressedTexSubImage2D(
+                                        target, destination.mipLevel, dchecked_cast<uint32_t>(x),
+                                        dchecked_cast<uint32_t>(y), dchecked_cast<uint32_t>(width),
+                                        dchecked_cast<uint32_t>(height), format.internalFormat,
+                                        rowSize, d));
                     DAWN_UNSAFE_TODO(d += bytesPerRow);
                 }
             } else if (target == GL_TEXTURE_CUBE_MAP) {
                 DAWN_ASSERT(texture->GetArrayLayers() == 6);
                 const uint8_t* pointer = static_cast<const uint8_t*>(data);
                 TexelCount baseLayer = destination.origin.z;
-                for (TexelCount l{0}; l < copySize.depthOrArrayLayers; ++l) {
+                for (TexelCount l{0u}; l < copySize.depthOrArrayLayers; ++l) {
                     const uint8_t* d =
-                        DAWN_UNSAFE_TODO(pointer + static_cast<uint32_t>(l)) * bytesPerImage;
+                        DAWN_UNSAFE_TODO(pointer + dchecked_cast<uint32_t>(l)) * bytesPerImage;
                     GLenum cubeMapTarget =
-                        GL_TEXTURE_CUBE_MAP_POSITIVE_X + static_cast<uint32_t>(baseLayer + l);
+                        GL_TEXTURE_CUBE_MAP_POSITIVE_X + dchecked_cast<uint32_t>(baseLayer + l);
                     for (y = destination.origin.y; y < destination.origin.y + copySize.height;
                          y += blockInfo.height) {
                         TexelCount height = std::min(blockInfo.height, virtSize.height - y);
                         DAWN_GL_TRY(gl, CompressedTexSubImage2D(cubeMapTarget, destination.mipLevel,
-                                                                static_cast<uint32_t>(x),
-                                                                static_cast<uint32_t>(y),
-                                                                static_cast<uint32_t>(width),
-                                                                static_cast<uint32_t>(height),
+                                                                dchecked_cast<uint32_t>(x),
+                                                                dchecked_cast<uint32_t>(y),
+                                                                dchecked_cast<uint32_t>(width),
+                                                                dchecked_cast<uint32_t>(height),
                                                                 format.internalFormat, rowSize, d));
                         DAWN_UNSAFE_TODO(d += bytesPerRow);
                     }
@@ -1826,10 +1870,10 @@ MaybeError DoTexSubImage(const OpenGLFunctions& gl,
                         TexelCount height = std::min(blockInfo.height, virtSize.height - y);
                         DAWN_GL_TRY(
                             gl, CompressedTexSubImage3D(
-                                    target, destination.mipLevel, static_cast<uint32_t>(x),
-                                    static_cast<uint32_t>(y), static_cast<uint32_t>(z),
-                                    static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1,
-                                    format.internalFormat, rowSize, d));
+                                    target, destination.mipLevel, dchecked_cast<uint32_t>(x),
+                                    dchecked_cast<uint32_t>(y), dchecked_cast<uint32_t>(z),
+                                    dchecked_cast<uint32_t>(width), dchecked_cast<uint32_t>(height),
+                                    1, format.internalFormat, rowSize, d));
                         DAWN_UNSAFE_TODO(d += bytesPerRow);
                     }
 
@@ -1853,39 +1897,41 @@ MaybeError DoTexSubImage(const OpenGLFunctions& gl,
             DAWN_GL_TRY(gl, PixelStorei(GL_UNPACK_ALIGNMENT, std::min(8u, blockInfo.byteSize)));
             DAWN_GL_TRY(gl,
                         PixelStorei(GL_UNPACK_ROW_LENGTH,
-                                    static_cast<uint32_t>(blockInfo.ToTexelWidth(blocksPerRow))));
+                                    dchecked_cast<uint32_t>(blockInfo.ToTexelWidth(blocksPerRow))));
             if (target == GL_TEXTURE_2D) {
                 DAWN_GL_TRY(
-                    gl, TexSubImage2D(target, destination.mipLevel, static_cast<uint32_t>(x),
-                                      static_cast<uint32_t>(y), static_cast<uint32_t>(width),
-                                      static_cast<uint32_t>(height), adjustedFormat, format.type,
+                    gl, TexSubImage2D(target, destination.mipLevel, dchecked_cast<uint32_t>(x),
+                                      dchecked_cast<uint32_t>(y), dchecked_cast<uint32_t>(width),
+                                      dchecked_cast<uint32_t>(height), adjustedFormat, format.type,
                                       data));
             } else if (target == GL_TEXTURE_CUBE_MAP) {
                 DAWN_ASSERT(texture->GetArrayLayers() == 6);
                 const uint8_t* pointer = static_cast<const uint8_t*>(data);
                 TexelCount baseLayer = destination.origin.z;
-                for (TexelCount l{0}; l < copySize.depthOrArrayLayers; ++l) {
+                for (TexelCount l{0u}; l < copySize.depthOrArrayLayers; ++l) {
                     GLenum cubeMapTarget =
-                        GL_TEXTURE_CUBE_MAP_POSITIVE_X + static_cast<uint32_t>(baseLayer + l);
-                    DAWN_GL_TRY(gl, TexSubImage2D(
-                                        cubeMapTarget, destination.mipLevel,
-                                        static_cast<uint32_t>(x), static_cast<uint32_t>(y),
-                                        static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-                                        adjustedFormat, format.type, pointer));
+                        GL_TEXTURE_CUBE_MAP_POSITIVE_X + dchecked_cast<uint32_t>(baseLayer + l);
+                    DAWN_GL_TRY(
+                        gl, TexSubImage2D(cubeMapTarget, destination.mipLevel,
+                                          dchecked_cast<uint32_t>(x), dchecked_cast<uint32_t>(y),
+                                          dchecked_cast<uint32_t>(width),
+                                          dchecked_cast<uint32_t>(height), adjustedFormat,
+                                          format.type, pointer));
                     DAWN_UNSAFE_TODO(pointer += bytesPerImage);
                 }
             } else {
                 DAWN_ASSERT(target == GL_TEXTURE_3D || target == GL_TEXTURE_2D_ARRAY ||
                             target == GL_TEXTURE_CUBE_MAP_ARRAY);
                 DAWN_GL_TRY(
-                    gl, PixelStorei(GL_UNPACK_IMAGE_HEIGHT,
-                                    static_cast<uint32_t>(blockInfo.ToTexelHeight(rowsPerImage))));
-                DAWN_GL_TRY(
-                    gl, TexSubImage3D(target, destination.mipLevel, static_cast<uint32_t>(x),
-                                      static_cast<uint32_t>(y), static_cast<uint32_t>(z),
-                                      static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-                                      static_cast<uint32_t>(copySize.depthOrArrayLayers),
-                                      adjustedFormat, format.type, data));
+                    gl,
+                    PixelStorei(GL_UNPACK_IMAGE_HEIGHT,
+                                dchecked_cast<uint32_t>(blockInfo.ToTexelHeight(rowsPerImage))));
+                DAWN_GL_TRY(gl, TexSubImage3D(
+                                    target, destination.mipLevel, dchecked_cast<uint32_t>(x),
+                                    dchecked_cast<uint32_t>(y), dchecked_cast<uint32_t>(z),
+                                    dchecked_cast<uint32_t>(width), dchecked_cast<uint32_t>(height),
+                                    dchecked_cast<uint32_t>(copySize.depthOrArrayLayers),
+                                    adjustedFormat, format.type, data));
                 DAWN_GL_TRY(gl, PixelStorei(GL_UNPACK_IMAGE_HEIGHT, 0));
             }
             DAWN_GL_TRY(gl, PixelStorei(GL_UNPACK_ROW_LENGTH, 0));
@@ -1894,26 +1940,26 @@ MaybeError DoTexSubImage(const OpenGLFunctions& gl,
             if (target == GL_TEXTURE_2D) {
                 const uint8_t* d = static_cast<const uint8_t*>(data);
                 for (; y < destination.origin.y + height; ++y) {
-                    DAWN_GL_TRY(
-                        gl, TexSubImage2D(target, destination.mipLevel, static_cast<uint32_t>(x),
-                                          static_cast<uint32_t>(y), static_cast<uint32_t>(width), 1,
-                                          adjustedFormat, format.type, d));
+                    DAWN_GL_TRY(gl, TexSubImage2D(
+                                        target, destination.mipLevel, dchecked_cast<uint32_t>(x),
+                                        dchecked_cast<uint32_t>(y), dchecked_cast<uint32_t>(width),
+                                        1, adjustedFormat, format.type, d));
                     DAWN_UNSAFE_TODO(d += bytesPerRow);
                 }
             } else if (target == GL_TEXTURE_CUBE_MAP) {
                 DAWN_ASSERT(texture->GetArrayLayers() == 6);
                 const uint8_t* pointer = static_cast<const uint8_t*>(data);
                 TexelCount baseLayer = destination.origin.z;
-                for (TexelCount l{0}; l < copySize.depthOrArrayLayers; ++l) {
+                for (TexelCount l{0u}; l < copySize.depthOrArrayLayers; ++l) {
                     const uint8_t* d = pointer;
                     GLenum cubeMapTarget =
-                        GL_TEXTURE_CUBE_MAP_POSITIVE_X + static_cast<uint32_t>(baseLayer + l);
+                        GL_TEXTURE_CUBE_MAP_POSITIVE_X + dchecked_cast<uint32_t>(baseLayer + l);
                     for (y = destination.origin.y; y < destination.origin.y + height; ++y) {
-                        DAWN_GL_TRY(
-                            gl, TexSubImage2D(cubeMapTarget, destination.mipLevel,
-                                              static_cast<uint32_t>(x), static_cast<uint32_t>(y),
-                                              static_cast<uint32_t>(width), 1, adjustedFormat,
-                                              format.type, d));
+                        DAWN_GL_TRY(gl, TexSubImage2D(cubeMapTarget, destination.mipLevel,
+                                                      dchecked_cast<uint32_t>(x),
+                                                      dchecked_cast<uint32_t>(y),
+                                                      dchecked_cast<uint32_t>(width), 1,
+                                                      adjustedFormat, format.type, d));
                         DAWN_UNSAFE_TODO(d += bytesPerRow);
                     }
                     DAWN_UNSAFE_TODO(pointer += bytesPerImage);
@@ -1925,11 +1971,12 @@ MaybeError DoTexSubImage(const OpenGLFunctions& gl,
                 for (; z < destination.origin.z + copySize.depthOrArrayLayers; ++z) {
                     const uint8_t* d = slice;
                     for (y = destination.origin.y; y < destination.origin.y + height; ++y) {
-                        DAWN_GL_TRY(gl, TexSubImage3D(
-                                            target, destination.mipLevel, static_cast<uint32_t>(x),
-                                            static_cast<uint32_t>(y), static_cast<uint32_t>(z),
-                                            static_cast<uint32_t>(width), 1, 1, adjustedFormat,
-                                            format.type, d));
+                        DAWN_GL_TRY(
+                            gl,
+                            TexSubImage3D(target, destination.mipLevel, dchecked_cast<uint32_t>(x),
+                                          dchecked_cast<uint32_t>(y), dchecked_cast<uint32_t>(z),
+                                          dchecked_cast<uint32_t>(width), 1, 1, adjustedFormat,
+                                          format.type, d));
                         DAWN_UNSAFE_TODO(d += bytesPerRow);
                     }
                     DAWN_UNSAFE_TODO(slice += bytesPerImage);

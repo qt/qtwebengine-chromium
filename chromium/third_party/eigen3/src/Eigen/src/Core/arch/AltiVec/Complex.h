@@ -19,6 +19,8 @@ namespace Eigen {
 
 namespace internal {
 
+EIGEN_GCC_FAST_MATH_COMPLEX_VECTORIZE_WORKAROUND_PUSH
+
 inline Packet4ui p4ui_CONJ_XOR() {
   return vec_mergeh((Packet4ui)p4i_ZERO, (Packet4ui)p4f_MZERO);  //{ 0x00000000, 0x80000000, 0x00000000, 0x80000000 };
 }
@@ -612,6 +614,8 @@ EIGEN_STRONG_INLINE Packet1cd pcmp_eq(const Packet1cd& a, const Packet1cd& b) {
 EIGEN_INSTANTIATE_COMPLEX_MATH_FUNCS_NO_EXP(Packet1cd)
 
 #endif  // __VSX__
+
+EIGEN_GCC_FAST_MATH_COMPLEX_VECTORIZE_WORKAROUND_POP
 }  // end namespace internal
 
 }  // end namespace Eigen

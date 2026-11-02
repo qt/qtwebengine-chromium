@@ -274,7 +274,7 @@ struct dense_assignment_loop_with_device<Kernel, CoreThreadPoolDevice, SliceVect
     device.template parallelFor<PacketAssignmentFunctor, PacketSize>(0, outerSize, 0, packetAccessSize, packetFunctor,
                                                                      packetCost);
     device.template parallelFor<ScalarAssignmentFunctor, 1>(0, outerSize, scalarFunctor, scalarCost);
-  };
+  }
 };
 
 template <typename Kernel>

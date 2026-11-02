@@ -43,7 +43,7 @@ class ThreadPoolInterface {
   // from one of the threads in the pool. Returns -1 otherwise.
   virtual int CurrentThreadId() const = 0;
 
-  virtual ~ThreadPoolInterface() {}
+  virtual ~ThreadPoolInterface() = default;
 };
 
 }  // namespace Eigen

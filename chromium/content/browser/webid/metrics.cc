@@ -16,13 +16,15 @@
 #include "net/http/http_response_headers.h"
 #include "net/http/http_status_code.h"
 #include "services/metrics/public/cpp/metrics_utils.h"
-#include "third_party/blink/public/mojom/webid/federated_auth_request.mojom.h"
+#include "third_party/blink/public/mojom/webid/federated_request.mojom.h"
 #include "ui/gfx/geometry/point.h"
 #include "url/gurl.h"
 
 namespace content {
 
 namespace webid {
+
+using RpMode = blink::mojom::RpMode;
 
 namespace {
 
@@ -89,7 +91,7 @@ ukm::builders::Blink_FedCmIdp* Metrics::GetOrCreateFedCmIdpBuilder(
 }
 
 void Metrics::RecordShowAccountsDialogTime(
-    const std::vector<IdentityProviderDataPtr>& providers,
+    const std::vector<scoped_refptr<IdentityProviderData>>& providers,
     base::TimeDelta duration) {
   auto SetUkm = [&](auto ukm_builder) {
     ukm_builder->SetTiming_ShowAccountsDialog(
@@ -169,7 +171,7 @@ void Metrics::RecordContinueOnPopupTime(const GURL& provider,
 }
 
 void Metrics::RecordCancelOnDialogTime(
-    const std::vector<IdentityProviderDataPtr>& providers,
+    const std::vector<scoped_refptr<IdentityProviderData>>& providers,
     base::TimeDelta duration) {
   auto SetUkm = [&](auto ukm_builder) {
     ukm_builder->SetTiming_CancelOnDialog(
@@ -185,7 +187,7 @@ void Metrics::RecordCancelOnDialogTime(
 }
 
 void Metrics::RecordAccountsDialogShownDuration(
-    const std::vector<IdentityProviderDataPtr>& providers,
+    const std::vector<scoped_refptr<IdentityProviderData>>& providers,
     base::TimeDelta duration) {
   auto SetUkm = [&](auto ukm_builder) {
     ukm_builder->SetTiming_AccountsDialogShownDuration(
@@ -214,7 +216,7 @@ void Metrics::RecordAccountsDialogShownDuration(
 }
 
 void Metrics::RecordMismatchDialogShownDuration(
-    const std::vector<IdentityProviderDataPtr>& providers,
+    const std::vector<scoped_refptr<IdentityProviderData>>& providers,
     base::TimeDelta duration) {
   auto SetUkm = [&](auto ukm_builder) {
     ukm_builder->SetTiming_MismatchDialogShownDuration(
@@ -309,11 +311,11 @@ void Metrics::RecordWellKnownInvalidDueToClientMetadata(const GURL& provider) {
 
 void Metrics::RecordRequestTokenStatus(
     RequestIdTokenStatus status,
-    MediationRequirement requirement,
+    ::password_manager::CredentialMediationRequirement requirement,
     const std::vector<GURL>& requested_providers,
     int num_idps_mismatch,
     const std::optional<GURL>& selected_idp_config_url,
-    const RpMode& rp_mode,
+    const blink::mojom::RpMode& rp_mode,
     std::optional<UseOtherAccountResult> use_other_account_result,
     std::optional<VerifyingDialogResult> verifying_dialog_result,
     ThirdPartyCookiesStatus tpc_status,
@@ -324,9 +326,8 @@ void Metrics::RecordRequestTokenStatus(
   // 1. The request has failed but we have not yet rejected the promise, e.g.
   // when the API is disabled. We record a metric immediately but only post a
   // task to later reject the callback.
-  // 2. The page is unloaded. This invokes the RequestService
-  // destructor. We record a metric with unhandled status since the callback is
-  // still present.
+  // 2. The page is unloaded. This invokes the Request destructor. We record a
+  // metric with unhandled status since the callback is still present.
   if (has_recorded_request_token_status_) {
     return;
   }
@@ -534,7 +535,7 @@ void Metrics::RecordAutoReauthnMetrics(
 }
 
 void Metrics::RecordAccountsDialogShown(
-    const std::vector<IdentityProviderDataPtr>& providers) {
+    const std::vector<scoped_refptr<IdentityProviderData>>& providers) {
   auto SetUkm = [&](auto ukm_builder, int accounts_dialog_shown) {
     ukm_builder->SetAccountsDialogShown2(accounts_dialog_shown);
   };
@@ -872,7 +873,7 @@ void Metrics::RecordReadyToShowAccountsSize(int size) {
 }
 
 void RecordAccountFieldsType(
-    const std::vector<IdentityRequestAccountPtr>& accounts) {
+    const std::vector<scoped_refptr<IdentityRequestAccount>>& accounts) {
   bool has_name = false;
   bool has_email = false;
   bool has_phone_or_username = false;

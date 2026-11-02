@@ -271,8 +271,8 @@ class SenderSession final {
   Configuration config_;
 
   // The session messenger, which uses the message port for sending control
-  // messages. For message formats, see
-  // cast/protocol/castv2/streaming_schema.json.
+  // messages. For message formats, see the OFFER/ANSWER message definitions in
+  // cast/streaming/public/offer_messages.h and answer_messages.h.
   SenderSessionMessenger messenger_;
 
   // The RPC messenger, which uses the session messenger for sending RPC

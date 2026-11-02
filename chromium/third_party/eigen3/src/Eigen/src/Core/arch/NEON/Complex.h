@@ -19,6 +19,8 @@ namespace Eigen {
 
 namespace internal {
 
+EIGEN_GCC_FAST_MATH_COMPLEX_VECTORIZE_WORKAROUND_PUSH
+
 inline uint32x4_t p4ui_CONJ_XOR() {
 // See bug 1325, clang fails to call vld1q_u64.
 #if EIGEN_COMP_CLANG || EIGEN_COMP_CASTXML
@@ -420,7 +422,7 @@ EIGEN_STRONG_INLINE std::complex<float> predux_mul<Packet2cf>(const Packet2cf& a
   a2 = vget_high_f32(a.v);
   // Get the real values of a | a1_re | a1_re | a2_re | a2_re |
   v1 = vdup_lane_f32(a1, 0);
-  // Get the real values of a | a1_im | a1_im | a2_im | a2_im |
+  // Get the imag values of a | a1_im | a1_im | a2_im | a2_im |
   v2 = vdup_lane_f32(a1, 1);
   // Multiply the real a with b
   v1 = vmul_f32(v1, a2);
@@ -691,6 +693,8 @@ EIGEN_STRONG_INLINE void ptranspose(PacketBlock<Packet1cd, 2>& kernel) {
 EIGEN_INSTANTIATE_COMPLEX_MATH_FUNCS(Packet1cd)
 
 #endif  // EIGEN_ARCH_ARM64
+
+EIGEN_GCC_FAST_MATH_COMPLEX_VECTORIZE_WORKAROUND_POP
 
 }  // end namespace internal
 

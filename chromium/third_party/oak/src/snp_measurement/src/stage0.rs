@@ -22,8 +22,8 @@ use sha2::{Digest, Sha256};
 use stage0_parsing::Stage0Info;
 use strum::FromRepr;
 use x86_64::{
-    structures::paging::{PageSize, Size4KiB},
     PhysAddr,
+    structures::paging::{PageSize, Size4KiB},
 };
 use zerocopy::IntoBytes;
 
@@ -181,6 +181,7 @@ enum SevMetadataPageType {
     Unmeasured = 1,
     Secrets = 2,
     Cpuid = 3,
+    KernelHashes = 0x10,
 }
 
 impl From<SevMetadataPageType> for PageType {
@@ -190,6 +191,7 @@ impl From<SevMetadataPageType> for PageType {
             SevMetadataPageType::Cpuid => PageType::Cpuid,
             SevMetadataPageType::Secrets => PageType::Secrets,
             SevMetadataPageType::Unmeasured => PageType::Unmeasured,
+            SevMetadataPageType::KernelHashes => PageType::Normal,
         }
     }
 }

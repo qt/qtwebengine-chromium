@@ -24,10 +24,9 @@
 #include "base/tracing/protos/chrome_track_event.pbzero.h"
 #include "build/build_config.h"
 #include "components/metrics/metrics_data_validation.h"
-#include "components/page_load_metrics/browser/features.h"
+#include "components/page_load_metrics/browser/navigation_scenario.h"
 #include "components/page_load_metrics/browser/observers/core/largest_contentful_paint_handler.h"
 #include "components/page_load_metrics/browser/page_load_metrics_util.h"
-#include "components/startup_metric_utils/browser/startup_metric_utils.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/preloading_data.h"
 #include "content/public/browser/tracing_support.h"
@@ -95,6 +94,22 @@ std::optional<base::TimeDelta> CalculateActualNavigationOffset(
     }
   }
   return std::nullopt;
+}
+
+// Returns the histogram suffix corresponding to the given NavigationScenario.
+// Should not be called with kUnknown.
+std::string GetNavigationTypeSuffix(
+    page_load_metrics::NavigationScenario scenario) {
+  switch (scenario) {
+    case page_load_metrics::NavigationScenario::kStartup:
+      return ".Startup";
+    case page_load_metrics::NavigationScenario::kNewWindow:
+      return ".NewWindow";
+    case page_load_metrics::NavigationScenario::kSameWindow:
+      return ".SameWindow";
+    case page_load_metrics::NavigationScenario::kUnknown:
+      NOTREACHED();
+  }
 }
 
 }  // namespace
@@ -610,6 +625,7 @@ void UmaPageLoadMetricsObserver::OnFirstImagePaintInPage(
 void UmaPageLoadMetricsObserver::OnFirstContentfulPaintInPage(
     const page_load_metrics::mojom::PageLoadTiming& timing) {
   DCHECK(timing.paint_timing->first_contentful_paint);
+
   if (timing.parse_timing && timing.parse_timing->parse_start &&
       !timing.parse_timing->parse_start->is_negative()) {
     auto parse_fcp_track =
@@ -625,13 +641,16 @@ void UmaPageLoadMetricsObserver::OnFirstContentfulPaintInPage(
     PAGE_LOAD_HISTOGRAM(internal::kHistogramFirstContentfulPaint,
                         timing.paint_timing->first_contentful_paint.value());
 
-#if !BUILDFLAG(IS_ANDROID)
-    startup_metric_utils::GetBrowser()
-        .RecordFirstWebContentsFirstContentfulPaint(
-            GetDelegate().GetNavigationStart(),
-            GetDelegate().GetNavigationStart() +
-                timing.paint_timing->first_contentful_paint.value());
-#endif
+    // Record scenario metric slice strictly for foreground loads to prevent tab
+    // activation delay noise from corrupting background timing metrics.
+    const page_load_metrics::NavigationScenario nav_scenario =
+        GetDelegate().GetNavigationScenario();
+    if (nav_scenario != page_load_metrics::NavigationScenario::kUnknown) {
+      PAGE_LOAD_HISTOGRAM(
+          base::StrCat({internal::kHistogramFirstContentfulPaint,
+                        GetNavigationTypeSuffix(nav_scenario)}),
+          timing.paint_timing->first_contentful_paint.value());
+    }
 
     PAGE_LOAD_HISTOGRAM(internal::kHistogramParseStartToFirstContentfulPaint,
                         timing.paint_timing->first_contentful_paint.value() -
@@ -1156,12 +1175,16 @@ void UmaPageLoadMetricsObserver::RecordTimingHistograms(
             all_frames_largest_contentful_paint.Time(), GetDelegate())) {
       PAGE_LOAD_HISTOGRAM(internal::kHistogramLargestContentfulPaint, lcp_time);
 
-#if !BUILDFLAG(IS_ANDROID)
-      startup_metric_utils::GetBrowser()
-          .RecordFirstWebContentsLargestContentfulPaint(
-              GetDelegate().GetNavigationStart(),
-              GetDelegate().GetNavigationStart() + lcp_time);
-#endif
+      // Record scenario metric slice strictly for foreground loads to prevent
+      // tab activation delay noise from corrupting background timing metrics.
+      const page_load_metrics::NavigationScenario nav_scenario =
+          GetDelegate().GetNavigationScenario();
+      if (nav_scenario != page_load_metrics::NavigationScenario::kUnknown) {
+        PAGE_LOAD_HISTOGRAM(
+            base::StrCat({internal::kHistogramLargestContentfulPaint,
+                          GetNavigationTypeSuffix(nav_scenario)}),
+            lcp_time);
+      }
 
       if (std::optional<base::TimeDelta> actual_navigation_offset =
               CalculateActualNavigationOffset(GetDelegate(),
@@ -1299,8 +1322,6 @@ void UmaPageLoadMetricsObserver::OnCpuTimingUpdate(
 
 void UmaPageLoadMetricsObserver::RecordByteAndResourceHistograms(
     const page_load_metrics::mojom::PageLoadTiming& timing) {
-  DCHECK(!network_bytes_.is_negative());
-  DCHECK(!cache_bytes_.is_negative());
   click_tracker_.RecordClickBurst(GetDelegate().GetPageUkmSourceId());
 }
 

@@ -25,7 +25,6 @@
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/sync/sync_service_factory.h"
 #include "chrome/browser/ui/browser_actions.h"
-#include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/profiles/profile_view_utils.h"
@@ -215,24 +214,28 @@ mojom::QueryResultPtr QueryClustersResultToMojom(
 
 HistoryClustersHandler::HistoryClustersHandler(
     mojo::PendingReceiver<mojom::PageHandler> pending_page_handler,
+    mojo::PendingRemote<mojom::Page> pending_page,
     Profile* profile,
     content::WebContents* web_contents,
     BrowserWindowInterface* browser_window_interface)
     : profile_(profile),
       web_contents_(web_contents),
       interface_(browser_window_interface),
+      page_(std::move(pending_page)),
       page_handler_(this, std::move(pending_page_handler)) {
   CommonInit();
 }
 
 HistoryClustersHandler::HistoryClustersHandler(
     mojo::PendingReceiver<mojom::PageHandler> pending_page_handler,
+    mojo::PendingRemote<mojom::Page> pending_page,
     Profile* profile,
     content::WebContents* web_contents,
     tabs::TabInterface* tab_interface)
     : profile_(profile),
       web_contents_(web_contents),
       interface_(tab_interface),
+      page_(std::move(pending_page)),
       page_handler_(this, std::move(pending_page_handler)) {
   CommonInit();
 }
@@ -291,11 +294,6 @@ void HistoryClustersHandler::OpenHistoryUrl(
   GetBrowserWindowInterface(interface_)
       ->OpenURL(params,
                 /*navigation_handle_callback=*/{});
-}
-
-void HistoryClustersHandler::SetPage(
-    mojo::PendingRemote<mojom::Page> pending_page) {
-  page_.Bind(std::move(pending_page));
 }
 
 void HistoryClustersHandler::ShowSidePanelUI() {

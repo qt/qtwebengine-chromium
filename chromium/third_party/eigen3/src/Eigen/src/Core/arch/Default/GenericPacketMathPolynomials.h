@@ -59,19 +59,20 @@ namespace internal {
  */
 template <typename Packet, int N>
 struct ppolevl {
-  static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Packet run(const Packet& x,
-                                                          const typename unpacket_traits<Packet>::type coeff[]) {
-    EIGEN_STATIC_ASSERT((N > 0), YOU_MADE_A_PROGRAMMING_MISTAKE);
-    return pmadd(ppolevl<Packet, N - 1>::run(x, coeff), x, pset1<Packet>(coeff[N]));
+  template <int... Indices>
+  static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Packet run_impl(const Packet& x,
+                                                               const typename unpacket_traits<Packet>::type coeff[],
+                                                               std::integer_sequence<int, Indices...>) {
+    Packet result = pset1<Packet>(coeff[0]);
+    int unused[] = {0, (result = pmadd(result, x, pset1<Packet>(coeff[Indices + 1])), 0)...};
+    EIGEN_UNUSED_VARIABLE(unused);
+    return result;
   }
-};
 
-template <typename Packet>
-struct ppolevl<Packet, 0> {
   static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Packet run(const Packet& x,
                                                           const typename unpacket_traits<Packet>::type coeff[]) {
-    EIGEN_UNUSED_VARIABLE(x);
-    return pset1<Packet>(coeff[0]);
+    EIGEN_STATIC_ASSERT((N >= 0), YOU_MADE_A_PROGRAMMING_MISTAKE);
+    return run_impl(x, coeff, std::make_integer_sequence<int, (N > 0 ? N : 0)>{});
   }
 };
 

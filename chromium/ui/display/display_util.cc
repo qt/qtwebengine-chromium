@@ -19,6 +19,7 @@ void DisplayUtil::DisplayToScreenInfo(ScreenInfo* screen_info,
   // TODO(husky): Remove any Android system controls from availableRect.
   screen_info->available_rect = display.work_area();
   screen_info->device_scale_factor = display.device_scale_factor();
+  screen_info->text_scale_multiplier = display.text_scale_multiplier();
   screen_info->display_color_spaces = display.GetColorSpaces();
   screen_info->depth = display.color_depth();
   screen_info->depth_per_component = display.depth_per_component();
@@ -63,6 +64,50 @@ void DisplayUtil::DisplayToScreenInfo(ScreenInfo* screen_info,
 // static
 void DisplayUtil::GetDefaultScreenInfo(ScreenInfo* screen_info) {
   return GetNativeViewScreenInfo(screen_info, gfx::NativeView());
+}
+
+// static
+void DisplayUtil::DisableHdrAndHighBitDepth(ScreenInfo* screen_info) {
+  gfx::DisplayColorSpaces& color_spaces = screen_info->display_color_spaces;
+
+  for (bool needs_alpha : {false, true}) {
+    // If WCG content causes use of an HDR output color space, replace that
+    // space with sRGB's color space.
+    if (color_spaces
+            .GetOutputColorSpace(gfx::ContentColorUsage::kWideColorGamut,
+                                 needs_alpha)
+            .IsHDR()) {
+      color_spaces.SetOutputColorSpaceAndFormat(
+          gfx::ContentColorUsage::kWideColorGamut, needs_alpha,
+          color_spaces.GetOutputColorSpace(gfx::ContentColorUsage::kSRGB,
+                                           needs_alpha),
+          color_spaces.GetOutputFormat(gfx::ContentColorUsage::kSRGB,
+                                       needs_alpha));
+    }
+
+    // If HDR content causes use of an HDR output color space, replace that
+    // space with WCG's color space.
+    if (color_spaces
+            .GetOutputColorSpace(gfx::ContentColorUsage::kHDR, needs_alpha)
+            .IsHDR()) {
+      color_spaces.SetOutputColorSpaceAndFormat(
+          gfx::ContentColorUsage::kHDR, needs_alpha,
+          color_spaces.GetOutputColorSpace(
+              gfx::ContentColorUsage::kWideColorGamut, needs_alpha),
+          color_spaces.GetOutputFormat(gfx::ContentColorUsage::kWideColorGamut,
+                                       needs_alpha));
+    }
+  }
+
+  // The CSS OM spec is clear that color depth should exclude the alpha
+  // channel, but several tests set it to 32 inappropriately. Work around
+  // this by only changing color depth if depth per component indicates
+  // high bit depth.
+  if (screen_info->depth_per_component > Display::kDefaultBitsPerComponent) {
+    screen_info->depth = Display::kDefaultBitsPerPixel;
+    screen_info->depth_per_component = Display::kDefaultBitsPerComponent;
+  }
+  color_spaces.SetHDRMaxLuminanceRelative(1.0f);
 }
 
 // static

@@ -21,8 +21,6 @@ the stream `i`
 ## Exceptions
 
 - Throws [`parse_error.101`](../home/exceptions.md#jsonexceptionparse_error101) in case of an unexpected token.
-- Throws [`parse_error.102`](../home/exceptions.md#jsonexceptionparse_error102) if `to_unicode` fails or surrogate error.
-- Throws [`parse_error.103`](../home/exceptions.md#jsonexceptionparse_error103) if `to_unicode` fails.
 
 ## Complexity
 
@@ -31,6 +29,21 @@ Linear in the length of the input. The parser is a predictive LL(1) parser.
 ## Notes
 
 A UTF-8 byte order mark is silently ignored.
+
+Invalid Unicode escapes and unpaired surrogates in the input are reported as
+[`parse_error.101`](../home/exceptions.md#jsonexceptionparse_error101) with a detailed message.
+
+`operator>>` parses exactly one JSON value and leaves the stream positioned right after it, so it can be called
+repeatedly to read a sequence of concatenated JSON values from the same stream:
+
+```cpp
+json j1, j2;
+input >> j1;  // parses the first value, stream now positioned right after it
+input >> j2;  // parses the next value
+```
+
+Note this does **not** work for [JSON Lines](../features/parsing/json_lines.md) (newline-delimited JSON) input --
+see that page for why and for the recommended alternative.
 
 !!! warning "Deprecation"
 
@@ -61,4 +74,4 @@ A UTF-8 byte order mark is silently ignored.
 
 ## Version history
 
-- Added in version 1.0.0. Deprecated in version 3.0.0.
+- Added in version 1.0.0.

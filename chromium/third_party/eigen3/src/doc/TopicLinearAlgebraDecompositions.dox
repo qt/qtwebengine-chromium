@@ -57,8 +57,8 @@ To get an overview of the true relative speed of the different decompositions, c
         <td>Fast</td>
         <td>Depends on condition number</td>
         <td>-</td>
-        <td>Orthogonalization</td>
-        <td>Yes</td>
+        <td>Orthogonalization, least squares for overdetermined systems</td>
+        <td>Yes (and does least squares)</td>
         <td>Excellent</td>
         <td>Blocking</td>
     </tr>
@@ -69,8 +69,8 @@ To get an overview of the true relative speed of the different decompositions, c
         <td>Fast</td>
         <td>Good</td>
         <td>Yes</td>
-        <td>Orthogonalization</td>
-        <td>Yes</td>
+        <td>Orthogonalization, least squares for overdetermined systems</td>
+        <td>Yes (and does least squares)</td>
         <td>Excellent</td>
         <td><em>-</em></td>
     </tr>
@@ -81,8 +81,8 @@ To get an overview of the true relative speed of the different decompositions, c
         <td>Slow (no blocking)</td>
         <td>Proven</td>
         <td>Yes</td>
-        <td>Orthogonalization</td>
-        <td>Yes</td>
+        <td>Orthogonalization, least squares for overdetermined systems</td>
+        <td>Yes (and does least squares)</td>
         <td>Average</td>
         <td>-</td>
     </tr>
@@ -93,8 +93,8 @@ To get an overview of the true relative speed of the different decompositions, c
         <td>Fast</td>
         <td>Good</td>
         <td>Yes</td>
-        <td>Orthogonalization</td>
-        <td>Yes</td>
+        <td>Orthogonalization, least squares for overdetermined systems</td>
+        <td>Yes (and does least squares)</td>
         <td>Excellent</td>
         <td><em>-</em></td>
     </tr>
@@ -154,7 +154,7 @@ To get an overview of the true relative speed of the different decompositions, c
         <td>Self-adjoint</td>
         <td>Fast-average<sup><a href="#note2">2</a></sup></td>
         <td>Good</td>
-        <td>Yes</td>
+        <td>-</td>
         <td>Eigenvalues/vectors</td>
         <td>-</td>
         <td>Excellent</td>
@@ -166,7 +166,7 @@ To get an overview of the true relative speed of the different decompositions, c
         <td>Square</td>
         <td>Slow-very slow<sup><a href="#note2">2</a></sup></td>
         <td>Depends on condition number</td>
-        <td>Yes</td>
+        <td>-</td>
         <td>Eigenvalues/vectors</td>
         <td>-</td>
         <td>Average</td>
@@ -178,7 +178,7 @@ To get an overview of the true relative speed of the different decompositions, c
         <td>Square and real</td>
         <td>Average-slow<sup><a href="#note2">2</a></sup></td>
         <td>Depends on condition number</td>
-        <td>Yes</td>
+        <td>-</td>
         <td>Eigenvalues/vectors</td>
         <td>-</td>
         <td>Average</td>
@@ -204,7 +204,7 @@ To get an overview of the true relative speed of the different decompositions, c
         <td>Square and real</td>
         <td>Average-slow<sup><a href="#note2">2</a></sup></td>
         <td>Depends on condition number</td>
-        <td>Yes</td>
+        <td>-</td>
         <td>-</td>
         <td>-</td>
         <td>Average</td>
@@ -216,7 +216,7 @@ To get an overview of the true relative speed of the different decompositions, c
         <td>Square</td>
         <td>Slow-very slow<sup><a href="#note2">2</a></sup></td>
         <td>Depends on condition number</td>
-        <td>Yes</td>
+        <td>-</td>
         <td>-</td>
         <td>-</td>
         <td>Average</td>

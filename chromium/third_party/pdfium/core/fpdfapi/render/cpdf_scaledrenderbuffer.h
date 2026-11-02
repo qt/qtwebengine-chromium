@@ -12,7 +12,6 @@
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/unowned_ptr.h"
 
-class CFX_DefaultRenderDevice;
 class CFX_RenderDevice;
 class CPDF_PageObject;
 class CPDF_RenderContext;
@@ -28,13 +27,13 @@ class CPDF_ScaledRenderBuffer {
                   const CPDF_RenderOptions& options,
                   int max_dpi);
 
-  CFX_DefaultRenderDevice* GetDevice();
+  CFX_RenderDevice* GetDevice();
   const CFX_Matrix& GetMatrix() const { return matrix_; }
   void OutputToDevice();
 
  private:
   UnownedPtr<CFX_RenderDevice> const device_;
-  std::unique_ptr<CFX_DefaultRenderDevice> const bitmap_device_;
+  std::unique_ptr<CFX_RenderDevice> bitmap_device_;
   const FX_RECT rect_;
   CFX_Matrix matrix_;
 };

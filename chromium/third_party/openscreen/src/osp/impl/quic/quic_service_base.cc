@@ -112,7 +112,7 @@ QuicStream::Delegate& QuicServiceBase::GetStreamDelegate(uint64_t instance_id) {
 
 void QuicServiceBase::OnClientCertificates(
     std::string_view instance_name,
-    const std::vector<std::string>& certs) {
+    const std::vector<std::string_view>& certs) {
   OSP_NOTREACHED();
 }
 

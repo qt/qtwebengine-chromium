@@ -12,6 +12,7 @@
 #include "src/base/logging.h"
 #include "src/base/platform/mutex.h"
 #include "src/base/string-format.h"
+#include "src/base/strong-alias.h"
 #include "src/builtins/builtins.h"
 #include "src/codegen/bailout-reason.h"
 #include "src/codegen/machine-type.h"
@@ -183,20 +184,6 @@ std::ostream& operator<<(std::ostream& os, GenericUnopOp::Kind kind) {
     return os << #Name;
     GENERIC_UNOP_LIST(PRINT_KIND)
 #undef PRINT_KIND
-  }
-  UNREACHABLE();
-}
-
-std::ostream& operator<<(std::ostream& os, TypeHintOp::Type type) {
-  switch (type) {
-    case TypeHintOp::Type::kInt32:
-      return os << "Int32";
-    case TypeHintOp::Type::kUint32:
-      return os << "Uint32";
-    case TypeHintOp::Type::kFloat64:
-      return os << "Float64";
-    case TypeHintOp::Type::kHoleyFloat64:
-      return os << "HoleyFloat64";
   }
   UNREACHABLE();
 }
@@ -631,6 +618,9 @@ void ConstantOp::PrintOptions(std::ostream& os) const {
     case Kind::kRelocatableWasmIndirectCallTarget:
       os << "relocatable wasm indirect call target: "
          << static_cast<uint32_t>(storage.integral);
+      break;
+    case Kind::kRelocatableWasmCodePointer:
+      os << "relocatable self wasm code pointer";
       break;
   }
   os << ']';
@@ -1587,16 +1577,6 @@ std::ostream& operator<<(
   UNREACHABLE();
 }
 
-std::ostream& operator<<(
-    std::ostream& os,
-    TruncateJSPrimitiveToUntaggedOrDeoptOp::UntaggedKind kind) {
-  switch (kind) {
-    case TruncateJSPrimitiveToUntaggedOrDeoptOp::UntaggedKind::kInt32:
-      return os << "Int32";
-  }
-  UNREACHABLE();
-}
-
 std::ostream& operator<<(std::ostream& os, NewArrayOp::Kind kind) {
   switch (kind) {
     case NewArrayOp::Kind::kDouble:
@@ -2192,9 +2172,7 @@ std::ostream& operator<<(std::ostream& os, Simd256UnpackOp::Kind kind) {
 #if V8_ENABLE_WEBASSEMBLY
 
 void WasmAllocateArrayOp::PrintOptions(std::ostream& os) const {
-  os << '[' << array_type->element_type()
-     << ", is_shared: " << (is_shared == SharedFlag::kYes ? "true" : "false")
-     << "]";
+  os << '[' << array_type->element_type() << ", " << is_shared << ']';
 }
 
 void WasmAllocateStructOp::PrintOptions(std::ostream& os) const {
@@ -2225,7 +2203,8 @@ void StructSetOp::PrintOptions(std::ostream& os) const {
   } else {
     os << "non-atomic";
   }
-  os << ", " << write_barrier << ']';
+  os << ", " << write_barrier << ", "
+     << (kind == Kind::kInitialize ? "initialize" : "assign") << ']';
 }
 
 void ArrayGetOp::PrintOptions(std::ostream& os) const {
@@ -2247,7 +2226,8 @@ void ArraySetOp::PrintOptions(std::ostream& os) const {
   } else {
     os << "non-atomic";
   }
-  os << ", " << write_barrier << ']';
+  os << ", " << write_barrier << ", "
+     << (kind == Kind::kInitialize ? "initialize" : "assign") << ']';
 }
 
 #endif  // V8_ENABLE_WEBASSEBMLY
@@ -2270,7 +2250,8 @@ void SupportedOperations::Initialize() {
   MachineOperatorBuilder::Flags supported =
       InstructionSelector::SupportedMachineOperatorFlags();
 #define SET_SUPPORTED(name, machine_name) \
-  instance_.name##_ = supported & MachineOperatorBuilder::Flag::k##machine_name;
+  instance_.name##_ =                     \
+      supported.contains(MachineOperatorBuilder::Flag::k##machine_name);
 
   SUPPORTED_OPERATIONS_LIST(SET_SUPPORTED)
 #undef SET_SUPPORTED

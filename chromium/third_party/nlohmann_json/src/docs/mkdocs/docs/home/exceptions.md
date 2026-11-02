@@ -326,6 +326,9 @@ An unexpected byte was read in a [binary format](../features/binary_formats/inde
     ```
     [json.exception.parse_error.112] parse error at byte 15: syntax error while parsing BSON binary: byte array length cannot be negative, is -1
     ```
+    ```
+    [json.exception.parse_error.112] parse error at byte 9: syntax error while parsing CBOR value: negative integer overflow
+    ```
 
 ### json.exception.parse_error.113
 
@@ -868,6 +871,33 @@ Key identifiers to be serialized to BSON cannot contain code point U+0000, since
     BSON key cannot contain code point U+0000 (at byte 2)
     ```
 
+### json.exception.out_of_range.410
+
+This exception is thrown when an undefined value is used with
+[`NLOHMANN_JSON_SERIALIZE_ENUM_STRICT`](../api/macros/nlohmann_json_serialize_enum_strict.md), or when an array index in
+a JSON pointer exceeds the range of `size_type` (e.g., on 32-bit platforms).
+
+!!! failure "Example message"
+
+    ```
+    enum value out of range
+    array index 18446744073709551616 exceeds size_type
+    ```
+
+### json.exception.out_of_range.411
+
+A JSON Patch `add` operation cannot be applied because the target location's parent is neither an object nor an array. Per [RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902), an `add` target must reference a member of an existing object or an element of an existing array; a primitive value (string, number, boolean, etc.) cannot receive a new member or element.
+
+!!! failure "Example message"
+
+    ```
+    cannot add value: the JSON Patch 'add' target's parent is of type string, but must be an object or array
+    ```
+
+!!! note
+
+    This exception was added in version 3.13.0. Before that, this situation hit an internal assertion (aborting the program in debug builds) or was silently ignored when assertions were disabled.
+
 ## Further exceptions
 
 This exception is thrown in case of errors that cannot be classified with the
@@ -899,14 +929,4 @@ A JSON Patch operation 'test' failed. The unsuccessful operation is also printed
 
     ```
     [json.exception.other_error.501] unsuccessful: {"op":"test","path":"/baz","value":"bar"}
-    ```
-
-### json.exception.other_error.502
-
-This exception is thrown when a null pointer is passed as SAX event listener to the [sax_parse](../api/basic_json/sax_parse.md) function.
-
-!!! failure "Example message"
-
-    ```
-    [json.exception.other_error.502] SAX handler must not be null
     ```

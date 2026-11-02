@@ -35,6 +35,7 @@
 #include "libavcodec/internal.h"
 #include "libavcodec/mathops.h"
 #include "libavcodec/vorbis_data.h"
+
 #include "opus.h"
 #include "parse.h"
 #include "tab.h"

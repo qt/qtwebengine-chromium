@@ -1,9 +1,9 @@
 Name: LibTIFF
 URL: https://gitlab.com/libtiff/libtiff
-Version: 4.7.1
-Revision: 5fe20d0e9aba49a6a350ed533459d1505203838f
+Version: 4.7.2
+Revision: d01a94be176f5f6a87f7ee1c0b32e65416aa2b4d
 Update Mechanism: Manual
-CPEPrefix: cpe:/a:libtiff:libtiff:4.7.1
+CPEPrefix: cpe:/a:libtiff:libtiff:4.7.2
 Security Critical: yes
 Shipped: yes
 License: libtiff
@@ -19,5 +19,3 @@ Local Modifications:
 0028-nstrips-OOM.patch: return error for excess number of tiles/strips.
 0031-safe_size_ingtStripContig.patch: return error if the size to read overflow from int32.
 0033-avail-out-overflow.patch: signed comparison in PixarLogDecode().
-0034-tiff-jpeg-overflow.patch: reject mismatched JPEG data precision.
-0035-ycbcr-tile-overflow.patch: prevent integer overflows in YCbCr tile decoding functions

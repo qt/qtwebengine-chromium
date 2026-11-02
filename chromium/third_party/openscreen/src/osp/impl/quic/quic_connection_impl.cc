@@ -129,7 +129,7 @@ void QuicConnectionImpl::OnIncomingStream(QuicStream* stream) {
 }
 
 void QuicConnectionImpl::OnClientCertificates(
-    const std::vector<std::string>& certs) {
+    const std::vector<std::string_view>& certs) {
   TRACE_SCOPED(TraceCategory::kQuic,
                "QuicConnectionImpl::OnClientCertificates");
   delegate_.OnClientCertificates(instance_name_, certs);

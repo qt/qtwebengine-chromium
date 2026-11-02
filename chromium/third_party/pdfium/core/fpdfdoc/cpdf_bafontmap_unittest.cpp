@@ -8,6 +8,7 @@
 
 #include "build/build_config.h"
 #include "constants/annotation_common.h"
+#include "constants/catalog.h"
 #include "core/fpdfapi/font/cpdf_font.h"
 #include "core/fpdfapi/page/test_with_page_module.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
@@ -39,7 +40,8 @@ TEST_F(BAFontMapTest, DefaultFont) {
 TEST_F(BAFontMapTest, Bug853238) {
   CPDF_TestDocument doc;
   auto root_dict = pdfium::MakeRetain<CPDF_Dictionary>();
-  auto acroform_dict = root_dict->SetNewFor<CPDF_Dictionary>("AcroForm");
+  auto acroform_dict =
+      root_dict->SetNewFor<CPDF_Dictionary>(pdfium::catalog::kAcroForm);
   auto annot_dr_dict = acroform_dict->SetNewFor<CPDF_Dictionary>("DR");
   auto annot_font_dict = annot_dr_dict->SetNewFor<CPDF_Dictionary>("Font");
   auto annot_font_f1_dict = annot_font_dict->SetNewFor<CPDF_Dictionary>("F1");

@@ -34,6 +34,12 @@
 
 namespace media {
 
+namespace {
+perfetto::NamedTrack GetTracingTrack(const RendererImpl* renderer) {
+  return perfetto::NamedTrack::FromPointer("media::RendererImpl", renderer);
+}
+}  // namespace
+
 class RendererImpl::RendererClientInternal final : public RendererClient {
  public:
   RendererClientInternal(DemuxerStream::Type type,
@@ -143,8 +149,7 @@ void RendererImpl::Initialize(MediaResource* media_resource,
   DCHECK_EQ(state_, STATE_UNINITIALIZED);
   DCHECK(init_cb);
   DCHECK(client);
-  TRACE_EVENT_BEGIN("media", "RendererImpl::Initialize",
-                    perfetto::Track::FromPointer(this));
+  TRACE_EVENT_BEGIN("media", "RendererImpl::Initialize", GetTracingTrack(this));
 
   client_ = client;
   media_resource_ = media_resource;
@@ -229,8 +234,7 @@ void RendererImpl::Flush(base::OnceClosure flush_cb) {
   DCHECK(task_runner_->RunsTasksInCurrentSequence());
   DCHECK(!flush_cb_);
   DCHECK(!(pending_audio_track_change_ || pending_video_track_change_));
-  TRACE_EVENT_BEGIN("media", "RendererImpl::Flush",
-                    perfetto::Track::FromPointer(this));
+  TRACE_EVENT_BEGIN("media", "RendererImpl::Flush", GetTracingTrack(this));
 
   if (state_ == STATE_FLUSHED) {
     flush_cb_ = base::BindPostTaskToCurrentDefault(std::move(flush_cb));
@@ -362,7 +366,7 @@ bool RendererImpl::GetWallClockTimes(
 }
 
 bool RendererImpl::HasEncryptedStream() {
-  std::vector<DemuxerStream*> demuxer_streams =
+  std::vector<raw_ptr<DemuxerStream>> demuxer_streams =
       media_resource_->GetAllStreams();
 
   for (media::DemuxerStream* stream : demuxer_streams) {
@@ -379,15 +383,14 @@ bool RendererImpl::HasEncryptedStream() {
 
 void RendererImpl::FinishInitialization(PipelineStatus status) {
   DCHECK(init_cb_);
-  TRACE_EVENT_END("media", perfetto::Track::FromPointer(this), "status",
+  TRACE_EVENT_END("media", GetTracingTrack(this), "status",
                   PipelineStatusToString(status));
   std::move(init_cb_).Run(status);
 }
 
 void RendererImpl::FinishFlush() {
   DCHECK(flush_cb_);
-  TRACE_EVENT_END("media", /*"RendererImpl::Flush"*/
-                  perfetto::Track::FromPointer(this));
+  TRACE_EVENT_END("media", /*"RendererImpl::Flush"*/ GetTracingTrack(this));
   std::move(flush_cb_).Run();
 }
 
@@ -1000,6 +1003,23 @@ void RendererImpl::CleanUpTrackChange(base::OnceClosure on_finished,
   std::move(on_finished).Run();
 }
 
+void RendererImpl::HandleInBandTrackChange(
+    DemuxerStream::Type type,
+    base::OnceClosure change_completed_cb) {
+  if (type == DemuxerStream::AUDIO) {
+    {
+      base::AutoLock lock(restarting_audio_lock_);
+      pending_audio_track_change_ = false;
+    }
+    CleanUpTrackChange(std::move(change_completed_cb), &audio_ended_,
+                       &audio_playing_);
+  } else if (type == DemuxerStream::VIDEO) {
+    pending_video_track_change_ = false;
+    CleanUpTrackChange(std::move(change_completed_cb), &video_ended_,
+                       &video_playing_);
+  }
+}
+
 void RendererImpl::OnTracksChanged(DemuxerStream::Type track_type,
                                    DemuxerStream* stream,
                                    base::OnceClosure change_completed_cb) {
@@ -1016,6 +1036,10 @@ void RendererImpl::OnTracksChanged(DemuxerStream::Type track_type,
         return;
       }
 
+      if (stream && stream->ManagesTrackSwitchesInternally()) {
+        HandleInBandTrackChange(track_type, std::move(change_completed_cb));
+        return;
+      }
       if (stream && stream != current_audio_stream_) {
         fix_stream_cb = base::BindOnce(&RendererImpl::ReinitializeAudioRenderer,
                                        weak_this_, stream, GetMediaTime(),
@@ -1045,6 +1069,11 @@ void RendererImpl::OnTracksChanged(DemuxerStream::Type track_type,
     case DemuxerStream::VIDEO: {
       if (!stream && !video_playing_) {
         std::move(change_completed_cb).Run();
+        return;
+      }
+
+      if (stream && stream->ManagesTrackSwitchesInternally()) {
+        HandleInBandTrackChange(track_type, std::move(change_completed_cb));
         return;
       }
 

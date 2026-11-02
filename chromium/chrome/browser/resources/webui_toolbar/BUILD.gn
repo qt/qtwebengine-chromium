@@ -11,95 +11,43 @@ build_webui("build") {
   grd_prefix = "webui_toolbar"
 
   static_files = [
-    "browser_controls_icons/home_20.svg",
-    "browser_controls_icons/home_24.svg",
-
-    "rhs_icons/ads_chrome_refresh.svg",
-    "rhs_icons/ads_off_chrome_refresh.svg",
-    "rhs_icons/code_chrome_refresh.svg",
-    "rhs_icons/code_off_chrome_refresh.svg",
-    "rhs_icons/content_paste_off.svg",
-    "rhs_icons/content_paste.svg",
-    "rhs_icons/database_off.svg",
-    "rhs_icons/database.svg",
-    "rhs_icons/eye_crossed_refresh.svg",
-    "rhs_icons/eye_refresh.svg",
-    "rhs_icons/file_download_chrome_refresh.svg",
-    "rhs_icons/file_download_off_chrome_refresh.svg",
-    "rhs_icons/iframe_off.svg",
-    "rhs_icons/iframe.svg",
-    "rhs_icons/insert_drive_file_outline.svg",
-    "rhs_icons/location_off_chrome_refresh.svg",
-    "rhs_icons/location_on_chrome_refresh.svg",
-    "rhs_icons/mic_chrome_refresh.svg",
-    "rhs_icons/mic_off_chrome_refresh.svg",
-    "rhs_icons/midi_chrome_refresh.svg",
-    "rhs_icons/midi_off_chrome_refresh.svg",
-    "rhs_icons/notifications_chrome_refresh.svg",
-    "rhs_icons/notifications_off_chrome_refresh.svg",
-    "rhs_icons/not_secure_warning_chrome_refresh.svg",
-    "rhs_icons/not_secure_warning_off_chrome_refresh.svg",
-    "rhs_icons/open_in_new_chrome_refresh.svg",
-    "rhs_icons/open_in_new_off_chrome_refresh.svg",
-    "rhs_icons/password_manager_off.svg",
-    "rhs_icons/password_manager.svg",
-    "rhs_icons/performance_speedometer.svg",
-    "rhs_icons/photo_chrome_refresh.svg",
-    "rhs_icons/photo_off_chrome_refresh.svg",
-    "rhs_icons/play_arrow.svg",
-    "rhs_icons/protocol_handler_chrome_refresh.svg",
-    "rhs_icons/protocol_handler_off_chrome_refresh.svg",
-    "rhs_icons/screen_record.svg",
-    "rhs_icons/sensors_chrome_refresh.svg",
-    "rhs_icons/sensors_off_chrome_refresh.svg",
-    "rhs_icons/smart_card_reader_off.svg",
-    "rhs_icons/smart_card_reader.svg",
-    "rhs_icons/star_active_chrome_refresh.svg",
-    "rhs_icons/star_chrome_refresh.svg",
-    "rhs_icons/stop_circle.svg",
-    "rhs_icons/storage_access_off.svg",
-    "rhs_icons/storage_access.svg",
-    "rhs_icons/sync_saved_locally_off.svg",
-    "rhs_icons/sync_saved_locally.svg",
-    "rhs_icons/translate.svg",
-    "rhs_icons/videocam_chrome_refresh.svg",
-    "rhs_icons/videocam_off_chrome_refresh.svg",
-    "rhs_icons/volume_off_chrome_refresh.svg",
-    "rhs_icons/volume_up_chrome_refresh.svg",
-    "rhs_icons/zoom_minus_chrome_refresh.svg",
-    "rhs_icons/zoom_plus_chrome_refresh.svg",
-
     "webui_toolbar.html",
     "webui_toolbar.css",
   ]
 
   ts_files = [
     "app.html.ts",
+    "app_menu_button.html.ts",
+    "app_menu_button.ts",
     "app.ts",
     "avatar_button.html.ts",
     "avatar_button.ts",
     "back_forward_button.html.ts",
     "back_forward_button.ts",
+    "battery_saver_button.html.ts",
+    "battery_saver_button.ts",
     "browser_proxy.ts",
     "content_setting_icon.html.ts",
     "content_setting_icon.ts",
     "content_settings_icons.html.ts",
     "content_settings_icons.ts",
+    "cr_lazy_iconset.ts",
+    "extension.html.ts",
+    "extension.ts",
+    "extensions.html.ts",
+    "extensions.ts",
+    "page_action_icon.html.ts",
+    "page_action_icon.ts",
+    "page_action_icons.html.ts",
+    "page_action_icons.ts",
     "home_button.html.ts",
     "home_button.ts",
-    "icon_from_table.ts",
-    "icon_from_table.html.ts",
-    "icon_table.ts",
-    "icons.html.ts",
+    "icons.ts",
     "location_bar.ts",
     "location_bar.html.ts",
     "location_icon.ts",
     "location_icon.html.ts",
     "metrics_recorder.ts",
-    "permission_chip.html.ts",
-    "permission_chip.ts",
-    "permission_dashboard.html.ts",
-    "permission_dashboard.ts",
     "pinned_toolbar_action.html.ts",
     "pinned_toolbar_action.ts",
     "pinned_toolbar_actions.html.ts",
@@ -113,36 +61,38 @@ build_webui("build") {
     "selected_keyword.html.ts",
     "split_tabs_button.html.ts",
     "split_tabs_button.ts",
-    "split_tabs_button_icons.html.ts",
     "timer_helper.ts",
+    "toolbar_action_mixin.ts",
+    "toolbar_action_container_mixin.ts",
     "toolbar_button.ts",
+    "toolbar_chip_button.html.ts",
+    "toolbar_chip_button.ts",
     "toolbar_divider.html.ts",
     "toolbar_divider.ts",
   ]
 
   if (is_chrome_branded) {
-    ts_files += [ "internal/icons.html.ts" ]
+    ts_files += [ "internal/icons.ts" ]
   }
 
   css_files = [
     "app.css",
+    "app_menu_button.css",
     "avatar_button.css",
-    "back_forward_button.css",
     "content_setting_icon.css",
     "content_settings_icons.css",
+    "extensions.css",
+    "page_action_icon.css",
+    "page_action_icons.css",
     "home_button.css",
-    "icon_from_table.css",
     "location_bar.css",
     "location_icon.css",
-    "permission_chip.css",
-    "permission_dashboard.css",
-    "pinned_toolbar_action.css",
     "pinned_toolbar_actions.css",
     "readonly_omnibox.css",
     "reload_button.css",
     "selected_keyword.css",
-    "split_tabs_button.css",
     "toolbar_button.css",
+    "toolbar_chip_button.css",
     "toolbar_divider.css",
   ]
 
@@ -153,15 +103,16 @@ build_webui("build") {
   generate_code_cache = enable_webui_generate_code_cache
   if (optimize) {
     optimize_webui_host = "webui-toolbar.top-chrome"
-    optimize_webui_in_files = [
-      "app.js",
-      "reload_button.js",
-    ]
-    optimize_webui_external_paths =
-        [ "chrome://webui-toolbar.top-chrome|" +
+    optimize_webui_in_files = [ "app.js" ]
+    optimize_webui_external_paths = [
+      "chrome://webui-toolbar.top-chrome|" +
           rebase_path(
               "$root_gen_dir/chrome/browser/resources/webui_toolbar/tsc",
-              root_build_dir) ]
+              root_build_dir),
+      "/shared|" + rebase_path(
+              "$root_gen_dir/chrome/browser/resources/webui_toolbar_shared/tsc",
+              root_build_dir),
+    ]
   }
 
   ts_definitions = [
@@ -173,6 +124,7 @@ build_webui("build") {
   ]
 
   ts_deps = [
+    "../webui_toolbar_shared:build_ts",
     "//third_party/lit/v3_0:build_ts",
     "//ui/webui/resources/cr_components/color_change_listener:build_ts",
     "//ui/webui/resources/cr_components/help_bubble:build_ts",
@@ -182,20 +134,17 @@ build_webui("build") {
   ]
 
   mojo_files_deps = [
-    "//components/browser_apis/browser_controls:mojom_data_model_ts__generator",
-    "//components/browser_apis/browser_controls:mojom_ts__generator",
-    "//components/browser_apis/ui_controllers/toolbar:mojom_data_model_ts__generator",
-    "//components/browser_apis/ui_controllers/toolbar:mojom_ts__generator",
     "//components/content_settings/core/common:content_settings_types_ts__generator",
     "//ui/base/dragdrop/mojom:mojom_ts__generator",
   ]
 
   mojo_files = [
-    "$root_gen_dir/components/browser_apis/browser_controls/browser_controls_api.mojom-webui.ts",
-    "$root_gen_dir/components/browser_apis/browser_controls/browser_controls_api_data_model.mojom-webui.ts",
-    "$root_gen_dir/components/browser_apis/ui_controllers/toolbar/toolbar_ui_api.mojom-webui.ts",
-    "$root_gen_dir/components/browser_apis/ui_controllers/toolbar/toolbar_ui_api_data_model.mojom-webui.ts",
     "$root_gen_dir/components/content_settings/core/common/content_settings_types.mojom-webui.ts",
     "$root_gen_dir/ui/base/dragdrop/mojom/drag_drop_types.mojom-webui.ts",
   ]
+
+  ts_path_mappings =
+      [ "/shared/*|" + rebase_path(
+            "$root_gen_dir/chrome/browser/resources/webui_toolbar_shared/tsc/*",
+            target_gen_dir) ]
 }

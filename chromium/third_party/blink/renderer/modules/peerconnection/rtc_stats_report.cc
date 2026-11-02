@@ -417,8 +417,6 @@ RTCAudioPlayoutStats* ToV8Stat(
     v8_stat->setSynthesizedSamplesEvents(base::saturated_cast<uint32_t>(
         *webrtc_stat.synthesized_samples_events));
   }
-  SET_STAT(webrtc_stat.synthesized_samples_events,
-           v8_stat->setSynthesizedSamplesEvents);
   SET_STAT(webrtc_stat.total_samples_duration,
            v8_stat->setTotalSamplesDuration);
   SET_STAT(webrtc_stat.total_playout_delay, v8_stat->setTotalPlayoutDelay);

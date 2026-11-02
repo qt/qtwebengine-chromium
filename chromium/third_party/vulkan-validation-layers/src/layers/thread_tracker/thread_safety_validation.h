@@ -19,7 +19,6 @@
 #pragma once
 
 #include <atomic>
-#include <chrono>
 #include <shared_mutex>
 #include <string>
 #include <thread>
@@ -28,12 +27,15 @@
 namespace threadsafety {
 
 VK_DEFINE_NON_DISPATCHABLE_HANDLE(DISTINCT_NONDISPATCHABLE_PHONY_HANDLE)
-// The following line must match the vulkan_core.h condition guarding VK_DEFINE_NON_DISPATCHABLE_HANDLE
+
+// The following line must match the vulkan_core.h condition guarding VK_USE_64_BIT_PTR_DEFINES
 #if defined(__LP64__) || defined(_WIN64) || (defined(__x86_64__) && !defined(__ILP32__)) || defined(_M_X64) || defined(__ia64) || \
-    defined(_M_IA64) || defined(__aarch64__) || defined(__powerpc64__)
+    defined(_M_IA64) || defined(__aarch64__) || defined(__powerpc64__) || (defined(__riscv) && __riscv_xlen == 64)
+
 // If pointers are 64-bit, then there can be separate counters for each
 // NONDISPATCHABLE_HANDLE type.  Otherwise they are all typedef uint64_t.
 #define DISTINCT_NONDISPATCHABLE_HANDLES
+
 // Make sure we catch any disagreement between us and the vulkan definition
 static_assert(std::is_pointer<DISTINCT_NONDISPATCHABLE_PHONY_HANDLE>::value,
               "Mismatched non-dispatchable handle handle, expected pointer type.");
@@ -43,71 +45,77 @@ static_assert(std::is_same<uint64_t, DISTINCT_NONDISPATCHABLE_PHONY_HANDLE>::val
               "Mismatched non-dispatchable handle handle, expected uint64_t.");
 #endif
 
-// Modern CPUs have 64 or 128-byte cache line sizes (Apple M1 has 128-byte cache line size).
-// Use alignment of 64 bytes (instead of 128) to prioritize using less memory and decrease
-// cache pressure.
-inline constexpr size_t kObjectUserDataAlignment = 64;
-static_assert(vku::concurrent::get_hardware_destructive_interference_size() % kObjectUserDataAlignment ==
-              0);  // sanity check on the build machine
+struct ThreadInfo {
+    std::thread::id tid;
+    std::string thread_name;
+};
 
-class alignas(kObjectUserDataAlignment) ObjectUseData {
+// Alternative to std::thread::id that is guaranteed to be uint32_t.
+// Internally implemented as atomic counter.
+// We combine this 32-bit value and vvl::Func to get 64-bit value for atomic operations
+uint32_t GetCurrentInternalThreadId();
+
+// Map internal id to std::thread::id
+ThreadInfo GetThreadInfo(uint32_t internal_thread_id);
+
+// Return OS name of the calling thread or an empty string if the thread is unnamed
+// or the name cannot be retrieved
+std::string GetCurrentThreadName();
+
+// Align ObjectUseData to a cache line to avoid false sharing of its atomics.
+// Some CPUs (e.g. Apple M1) have 128-byte lines. We still use 64 to save memory,
+// accepting possible false sharing there.
+inline constexpr size_t kObjectUseDataAlignment = 64;
+
+// Sanity check on the build machine
+static_assert(vku::concurrent::get_hardware_destructive_interference_size() % kObjectUseDataAlignment == 0);
+
+class alignas(kObjectUseDataAlignment) ObjectUseData {
   public:
-    class WriteReadCount {
-      public:
-        explicit WriteReadCount(int64_t v) : count(v) {}
-
-        int32_t GetReadCount() const { return static_cast<int32_t>(count & 0xFFFFFFFF); }
-        int32_t GetWriteCount() const { return static_cast<int32_t>(count >> 32); }
-
-      private:
-        int64_t count{};
+    struct UseStatus {
+        explicit UseStatus(uint64_t v) : has_read((v & 0xFFFFFFFF) != 0), has_write((v >> 32) != 0) {}
+        bool has_read;
+        bool has_write;
     };
 
-    WriteReadCount AddWriter() {
-        int64_t prev = writer_reader_count.fetch_add(1ULL << 32);
-        return WriteReadCount(prev);
+    UseStatus AddWriter() {
+        const uint64_t prev = writer_reader_count.fetch_add(uint64_t(1) << 32);
+        return UseStatus(prev);
     }
-    WriteReadCount AddReader() {
-        int64_t prev = writer_reader_count.fetch_add(1ULL);
-        return WriteReadCount(prev);
+    UseStatus AddReader() {
+        const uint64_t prev = writer_reader_count.fetch_add(uint64_t(1));
+        return UseStatus(prev);
     }
-    WriteReadCount RemoveWriter() {
-        int64_t prev = writer_reader_count.fetch_add(-(1LL << 32));
-        assert(prev > 0);
-        return WriteReadCount(prev);
+    void RemoveWriter() {
+        [[maybe_unused]] const uint64_t prev = writer_reader_count.fetch_sub(uint64_t(1) << 32);
+        assert((prev >> 32) != 0);
     }
-    WriteReadCount RemoveReader() {
-        int64_t prev = writer_reader_count.fetch_add(-1LL);
-        assert(prev > 0);
-        return WriteReadCount(prev);
-    }
-    WriteReadCount GetCount() { return WriteReadCount(writer_reader_count); }
-
-    void WaitForObjectIdle(bool is_writer) {
-        // Wait for thread-safe access to object instead of skipping call.
-        while (GetCount().GetReadCount() > (int)(!is_writer) || GetCount().GetWriteCount() > (int)is_writer) {
-            std::this_thread::sleep_for(std::chrono::microseconds(1));
-        }
+    void RemoveReader() {
+        [[maybe_unused]] const uint64_t prev = writer_reader_count.fetch_sub(uint64_t(1));
+        assert((prev & 0xFFFFFFFF) != 0);
     }
 
-    std::atomic<std::thread::id> thread{};
+    void UpdateThreadAndFunc(uint32_t internal_tid, vvl::Func func) {
+        const uint64_t value = static_cast<uint64_t>(func) << 32 | internal_tid;
+        thread_and_func.store(value);
+    }
+
+    uint32_t GetStoredInternalThreadId() const { return thread_and_func.load() & 0xffffffff; }
+
+    // 32-bit internal thread id and vvl::Func
+    std::atomic<uint64_t> thread_and_func{};
 
   private:
     // Need to update write and read counts atomically. Writer in high 32 bits, reader in low 32 bits.
-    std::atomic<int64_t> writer_reader_count{};
+    std::atomic<uint64_t> writer_reader_count{};
 };
 
 template <typename T>
 class Counter {
   public:
-    VulkanObjectType object_type{};
-    Logger *logger{};
-
-    vvl::concurrent_unordered_map<T, std::shared_ptr<ObjectUseData>, 6> object_table;
-
-    void Init(VulkanObjectType type, Logger *val_obj) {
+    void Init(VulkanObjectType type, Logger* logger) {
         object_type = type;
-        logger = val_obj;
+        this->logger = logger;
     }
 
     void CreateObject(T object) { object_table.insert(object, std::make_shared<ObjectUseData>()); }
@@ -118,6 +126,70 @@ class Counter {
         }
     }
 
+    void StartWrite(T object, const Location& loc) {
+        if (object == VK_NULL_HANDLE) {
+            return;
+        }
+        auto use_data = FindObject(object, loc);
+        if (!use_data) {
+            return;
+        }
+        const uint32_t current_internal_tid = GetCurrentInternalThreadId();
+        const auto [prev_read, prev_write] = use_data->AddWriter();
+
+        if (!prev_read && !prev_write) {
+            // There is no current use of the object. Record writer thread
+            use_data->UpdateThreadAndFunc(current_internal_tid, loc.function);
+        } else if (use_data->GetStoredInternalThreadId() != current_internal_tid) {
+            // Write collided with existing write or read
+            ReportError("UNASSIGNED-Threading-MultipleThreads-Write", use_data, object, loc);
+        } else {
+            // We have other uses in the same call which is safe
+        }
+    }
+
+    void FinishWrite(T object, const Location& loc) {
+        if (object == VK_NULL_HANDLE) {
+            return;
+        }
+        if (auto use_data = FindObject(object, loc)) {
+            use_data->RemoveWriter();
+        }
+    }
+
+    void StartRead(T object, const Location& loc) {
+        if (object == VK_NULL_HANDLE) {
+            return;
+        }
+        auto use_data = FindObject(object, loc);
+        if (!use_data) {
+            return;
+        }
+        const uint32_t current_internal_tid = GetCurrentInternalThreadId();
+        const auto [prev_read, prev_write] = use_data->AddReader();
+
+        if (!prev_read && !prev_write) {
+            // There is no current use of the object. Record reader thread
+            use_data->UpdateThreadAndFunc(current_internal_tid, loc.function);
+        } else if (prev_write && use_data->GetStoredInternalThreadId() != current_internal_tid) {
+            // Read collided with existing write
+            ReportError("UNASSIGNED-Threading-MultipleThreads-Read", use_data, object, loc);
+        } else {
+            // There are other readers of the object or we have other uses in the
+            // same call and this is safe
+        }
+    }
+
+    void FinishRead(T object, const Location& loc) {
+        if (object == VK_NULL_HANDLE) {
+            return;
+        }
+        if (auto use_data = FindObject(object, loc)) {
+            use_data->RemoveReader();
+        }
+    }
+
+  private:
     std::shared_ptr<ObjectUseData> FindObject(T object, const Location& loc) {
         assert(object_table.contains(object));
         auto iter = object_table.find(object);
@@ -132,124 +204,43 @@ class Counter {
         }
     }
 
-    void StartWrite(T object, const Location& loc) {
-        if (object == VK_NULL_HANDLE) {
-            return;
-        }
-        auto use_data = FindObject(object, loc);
-        if (!use_data) {
-            return;
-        }
+    void ReportError(const char* vuid, const std::shared_ptr<ObjectUseData>& use_data, T object, const Location& loc) {
+        const uint64_t value = use_data->thread_and_func.load();
+        const uint32_t other_internal_tid = value & 0xffffffff;
+        const vvl::Func other_func = static_cast<vvl::Func>(value >> 32);
 
-        const std::thread::id tid = std::this_thread::get_id();
-        const ObjectUseData::WriteReadCount prev_count = use_data->AddWriter();
-        const bool prev_read = prev_count.GetReadCount() != 0;
-        const bool prev_write = prev_count.GetWriteCount() != 0;
+        const std::thread::id current_tid = std::this_thread::get_id();
+        const std::string current_name = GetCurrentThreadName();
 
-        if (!prev_read && !prev_write) {
-            // There is no current use of the object. Record writer thread.
-            use_data->thread = tid;
-        } else if (!prev_read) {
-            assert(prev_write);
-            // There are no other readers but there is another writer. Two writers just collided.
-            if (use_data->thread != tid) {
-                HandleErrorOnWrite(use_data, object, loc);
-            } else {
-                // This is either safe multiple use in one call, or recursive use.
-                // There is no way to make recursion safe. Just forge ahead.
+        std::ostringstream ss;
+        ss << "THREADING ERROR : object of type " << string_VulkanObjectType(object_type)
+           << " is simultaneously used in current thread " << current_tid;
+        if (!current_name.empty()) {
+            ss << " \"" << current_name << "\"";
+        }
+        ss << " (" << vvl::String(loc.function) << ") and ";
+
+        if (other_internal_tid != 0) {  // common case
+            const ThreadInfo other_info = GetThreadInfo(other_internal_tid);
+            ss << "thread " << other_info.tid;
+            if (!other_info.thread_name.empty()) {
+                ss << " \"" << other_info.thread_name << "\"";
             }
-        } else {
-            assert(prev_read);
-            // There are other readers. This writer collided with them.
-            if (use_data->thread != tid) {
-                HandleErrorOnWrite(use_data, object, loc);
-            } else {
-                // This is either safe multiple use in one call, or recursive use.
-                // There is no way to make recursion safe. Just forge ahead.
-            }
-        }
-    }
-
-    void FinishWrite(T object, const Location& loc) {
-        if (object == VK_NULL_HANDLE) {
-            return;
-        }
-        auto use_data = FindObject(object, loc);
-        if (!use_data) {
-            return;
-        }
-        use_data->RemoveWriter();
-    }
-
-    void StartRead(T object, const Location& loc) {
-        if (object == VK_NULL_HANDLE) {
-            return;
-        }
-        auto use_data = FindObject(object, loc);
-        if (!use_data) {
-            return;
+            ss << " (" << vvl::String(other_func) << ")";
+        } else {  // rare case
+            // The object was just created and two racing threads access it for the first time.
+            // The other side of the race is not recorded yet (other_internal_tid == 0).
+            // Report only this side.
+            ss << "another thread";
         }
 
-        const std::thread::id tid = std::this_thread::get_id();
-        const ObjectUseData::WriteReadCount prev_count = use_data->AddReader();
-        const bool prev_read = prev_count.GetReadCount() != 0;
-        const bool prev_write = prev_count.GetWriteCount() != 0;
-
-        if (!prev_read && !prev_write) {
-            // There is no current use of the object. Record reader thread.
-            use_data->thread = tid;
-        } else if (prev_write && use_data->thread != tid) {
-            HandleErrorOnRead(use_data, object, loc);
-        } else {
-            // There are other readers of the object.
-        }
-    }
-
-    void FinishRead(T object, const Location& loc) {
-        if (object == VK_NULL_HANDLE) {
-            return;
-        }
-        auto use_data = FindObject(object, loc);
-        if (!use_data) {
-            return;
-        }
-        use_data->RemoveReader();
+        logger->LogError(vuid, object, loc, "%s", ss.str().c_str());
     }
 
   private:
-    std::string GetErrorMessage(std::thread::id tid, std::thread::id other_tid) const {
-        std::ostringstream err_str;
-        err_str << "THREADING ERROR : object of type " << string_VulkanObjectType(object_type)
-                << " is simultaneously used in current thread " << tid << " and thread " << other_tid;
-        return err_str.str();
-    }
-
-    void HandleErrorOnWrite(const std::shared_ptr<ObjectUseData> &use_data, T object, const Location& loc) {
-        const std::thread::id tid = std::this_thread::get_id();
-        const std::string error_message = GetErrorMessage(tid, use_data->thread.load(std::memory_order_relaxed));
-        const bool skip = logger->LogError("UNASSIGNED-Threading-MultipleThreads-Write", object, loc, "%s", error_message.c_str());
-        if (skip) {
-            // Wait for thread-safe access to object instead of skipping call.
-            use_data->WaitForObjectIdle(true);
-            // There is now no current use of the object. Record writer thread.
-            use_data->thread = tid;
-        } else {
-            // There is now no current use of the object. Record writer thread.
-            use_data->thread = tid;
-        }
-    }
-
-    void HandleErrorOnRead(const std::shared_ptr<ObjectUseData> &use_data, T object, const Location& loc) {
-        const std::thread::id tid = std::this_thread::get_id();
-        // There is a writer of the object.
-        const auto error_message = GetErrorMessage(tid, use_data->thread.load(std::memory_order_relaxed));
-        const bool skip = logger->LogError("UNASSIGNED-Threading-MultipleThreads-Read", object, loc, "%s", error_message.c_str());
-        if (skip) {
-            // Wait for thread-safe access to object instead of skipping call.
-            use_data->WaitForObjectIdle(false);
-            use_data->thread = tid;
-        }
-    }
+    VulkanObjectType object_type{};
+    Logger* logger{};
+    vvl::concurrent_unordered_map<T, std::shared_ptr<ObjectUseData>, 6> object_table;
 };
 
 #define WRAPPER(type)                                                                               \

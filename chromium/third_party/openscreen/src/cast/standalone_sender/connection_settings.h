@@ -5,6 +5,7 @@
 #ifndef CAST_STANDALONE_SENDER_CONNECTION_SETTINGS_H_
 #define CAST_STANDALONE_SENDER_CONNECTION_SETTINGS_H_
 
+#include <optional>
 #include <string>
 
 #include "cast/streaming/public/constants.h"
@@ -29,6 +30,9 @@ struct ConnectionSettings {
   // Whether the stream should include video, or just be audio only.
   bool should_include_video = true;
 
+  // Whether the stream should include audio (video-only if false).
+  bool should_include_audio = true;
+
   // Whether we should use the hacky RTP stream IDs for legacy android
   // receivers, or if we should use the proper values. For more information,
   // see issuetracker.google.com/184438154.
@@ -49,6 +53,16 @@ struct ConnectionSettings {
 
   // Whether input event API should be enabled for this session.
   bool enable_input_events = false;
+
+  // Configuration details for when the media application has been pre-launched
+  // on the receiver prior to initiating the streaming session. Thus, the
+  // external caller is strictly responsible for managing and stopping the
+  // pre-launched receiver session upon completion.
+  struct PreconfiguredSessionInfo {
+    std::string remote_transport_id;
+    std::string app_session_id;
+  };
+  std::optional<PreconfiguredSessionInfo> preconfigured_session_info;
 };
 
 }  // namespace openscreen::cast

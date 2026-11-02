@@ -74,6 +74,7 @@ devtools_module("sdk") {
     "ResourceTreeModel.ts",
     "RuntimeModel.ts",
     "SDKModel.ts",
+    "SDKSettings.ts",
     "ScopeTreeCache.ts",
     "ScreenCaptureModel.ts",
     "Script.ts",
@@ -104,10 +105,10 @@ devtools_module("sdk") {
     "../../core/platform:bundle",
     "../../core/protocol_client:bundle",
     "../../core/root:bundle",
+    "../../core/text_utils:bundle",
     "../../generated",
     "../../generated:protocol",
     "../../models/formatter:bundle",
-    "../../models/text_utils:bundle",
     "../../third_party/codemirror.next:bundle",
     "../../third_party/source-map-scopes-codec:bundle",
   ]
@@ -135,6 +136,7 @@ devtools_entrypoint("meta") {
 
   visibility = [
     "../../../mcp/*",
+    "../../../test/api/*",
     "../../entrypoints/*",
   ]
 }
@@ -144,6 +146,7 @@ ts_library("unittests") {
 
   sources = [
     "CSSMatchedStyles.test.ts",
+    "CSSMetadata.test.ts",
     "CSSModel.test.ts",
     "CSSProperty.test.ts",
     "CSSPropertyParser.test.ts",
@@ -160,14 +163,13 @@ ts_library("unittests") {
     "DOMStorageModel.test.ts",
     "EmulationModel.test.ts",
     "EnhancedTracesParser.test.ts",
-    "FrameManager.test.ts",
     "NetworkRequest.test.ts",
     "OverlayColorGenerator.test.ts",
     "OverlayModel.test.ts",
-    "OverlayPersistentHighlighter.test.ts",
     "PreloadingModel.test.ts",
     "RehydratingConnection.test.ts",
     "RemoteObject.test.ts",
+    "Resource.test.ts",
     "ResourceTreeModel.test.ts",
     "ScopeTreeCache.test.ts",
     "ScreenCaptureModel.test.ts",
@@ -192,7 +194,6 @@ ts_library("unittests") {
     "../../generated",
     "../../generated:protocol",
     "../../models/formatter:bundle",
-    "../../models/text_utils:bundle",
     "../../models/trace:bundle",
     "../../testing",
     "../../third_party/codemirror.next:bundle",
@@ -201,6 +202,7 @@ ts_library("unittests") {
     "../platform:bundle",
     "../protocol_client:bundle",
     "../root:bundle",
+    "../text_utils:bundle",
   ]
 }
 
@@ -214,7 +216,9 @@ devtools_foundation_module("foundation_unittests") {
     "CPUThrottlingManager.test.ts",
     "CSSContainerQuery.test.ts",
     "DebuggerModel.test.ts",
+    "FrameManager.test.ts",
     "NetworkManager.test.ts",
+    "OverlayPersistentHighlighter.test.ts",
     "PageResourceLoader.test.ts",
     "RuntimeModel.test.ts",
     "ServerSentEventsProtocol.test.ts",
@@ -227,7 +231,6 @@ devtools_foundation_module("foundation_unittests") {
     "../../generated",
     "../../models/bindings:bundle",
     "../../models/persistence:bundle",
-    "../../models/text_utils:bundle",
     "../../models/workspace:bundle",
     "../../testing",
     "../common:bundle",
@@ -235,5 +238,18 @@ devtools_foundation_module("foundation_unittests") {
     "../platform:bundle",
     "../protocol_client:bundle",
     "../root:bundle",
+    "../text_utils:bundle",
+  ]
+}
+
+devtools_api_test_module("api_tests") {
+  sources = [
+    "CSSModel.test.api.ts",
+    "DOMModel.test.api.ts",
+  ]
+
+  deps = [
+    ":bundle",
+    "../../testing",
   ]
 }

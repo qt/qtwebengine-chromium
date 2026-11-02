@@ -6,10 +6,13 @@
 
 #include "base/check.h"
 #include "base/containers/span.h"
+#include "base/i18n/icubridge/date_time_formatter.h"
+#include "base/i18n/icubridge/icu_bridge.h"
 #include "base/i18n/time_formatting.h"
 #include "base/json/json_writer.h"
 #include "base/notimplemented.h"
 #include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/enterprise/client_certificates/certificate_provisioning_service_factory.h"
@@ -74,15 +77,20 @@ std::string ConvertPolicyLevelToString(DTCPolicyLevel level) {
 }
 #endif  // !BUILDFLAG(IS_ANDROID)
 
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
-    BUILDFLAG(IS_ANDROID)
 std::string GetStringFromTimestamp(base::Time timestamp) {
-  return (timestamp == base::Time()) ? std::string()
-                                     : base::UnlocalizedTimeFormatWithPattern(
-                                           timestamp, "yyyy-LL-dd HH:mm zzz");
+  using base::i18n::DateTimeFormatterOptions;
+  using base::i18n::GetKnownLanguageTag;
+  using base::i18n::IcuBridge;
+  using base::i18n::datetime_options::YMDT;
+
+  return (timestamp == base::Time())
+             ? std::string()
+             : base::UTF16ToUTF8(
+                   IcuBridge::GetInstance().date_time_formatter().Format(
+                       timestamp, GetKnownLanguageTag("en-US"),
+                       YMDT::Short().with_time_precision(
+                           DateTimeFormatterOptions::TimePrecision::kMinute)));
 }
-#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
-        // BUILDFLAG(IS_ANDROID)
 
 }  // namespace
 
@@ -148,10 +156,16 @@ void ConnectorsInternalsPageHandler::GetClientCertificateState(
   auto* profile_certificate_provisioning_service =
       client_certificates::CertificateProvisioningServiceFactory::GetForProfile(
           profile_);
-  auto* browser_certificate_provisioning_service =
+  client_certificates::CertificateProvisioningService*
+      browser_certificate_provisioning_service = nullptr;
+#if !BUILDFLAG(IS_CHROMEOS)
+  // Browser-level (machine) certificate provisioning is driven by the Chrome
+  // Browser Cloud Management controller, which does not exist on ChromeOS.
+  browser_certificate_provisioning_service =
       g_browser_process->browser_policy_connector()
           ->chrome_browser_cloud_management_controller()
           ->GetCertificateProvisioningService();
+#endif  // !BUILDFLAG(IS_CHROMEOS)
   if (!profile_certificate_provisioning_service &&
       !browser_certificate_provisioning_service) {
     std::move(callback).Run(
@@ -189,8 +203,6 @@ void ConnectorsInternalsPageHandler::GetClientCertificateState(
 
 void ConnectorsInternalsPageHandler::GetSignalsReportingState(
     GetSignalsReportingStateCallback callback) {
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
-    BUILDFLAG(IS_ANDROID)
   auto* profile_prefs = profile_->GetPrefs();
 
   std::string last_upload_attempt_time_string =
@@ -280,18 +292,6 @@ void ConnectorsInternalsPageHandler::GetSignalsReportingState(
       base::BindOnce(&ConnectorsInternalsPageHandler::OnReportGenerated,
                      weak_ptr_factory_.GetWeakPtr(), std::move(callback),
                      std::move(state)));
-#else
-  std::move(callback).Run(
-      connectors_internals::mojom::SignalsReportingState::New(
-          /*error_info=*/"User signals reporting is unsupported on the current "
-                         "platform",
-          /*status_report_enabled=*/false, /*signals_report_enabled=*/false,
-          /*last_upload_attempt_timestamp=*/std::string(),
-          /*last_upload_success_timestamp=*/std::string(),
-          /*last_signals_upload_config=*/std::string(),
-          /*can_collect_all_fields=*/false, /*signals_json=*/std::nullopt));
-#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
-        // BUILDFLAG(IS_ANDROID)
 }
 
 #if !BUILDFLAG(IS_ANDROID)
@@ -330,8 +330,6 @@ void ConnectorsInternalsPageHandler::OnSignalsCollected(
 }
 #endif  // !BUILDFLAG(IS_ANDROID)
 
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
-    BUILDFLAG(IS_ANDROID)
 void ConnectorsInternalsPageHandler::OnReportGenerated(
     GetSignalsReportingStateCallback callback,
     connectors_internals::mojom::SignalsReportingStatePtr state,
@@ -361,6 +359,5 @@ void ConnectorsInternalsPageHandler::OnReportGenerated(
   std::move(callback).Run(std::move(state));
   request_generator_.reset();
 }
-#endif
 
 }  // namespace enterprise_connectors

@@ -19,14 +19,15 @@
 
 use alloc::boxed::Box;
 
-use anyhow::{anyhow, Context, Error};
-use oak_attestation_verification::results::get_session_binding_public_key;
+use anyhow::{Context, Error, anyhow};
+use oak_attestation_verification_results::unique_session_binding_public_key;
 use oak_crypto::verifier::Verifier;
 use oak_proto_rust::oak::attestation::v1::AttestationResults;
 use p256::ecdsa::VerifyingKey;
 
 /// Trait that allows extracting a verifying key (e.g., a session binding key)
 /// from the supplied and verified evidence.
+/// Deprecated: use endorsed_evidence_assertion_verifier::KeyExtractor instead.
 pub trait KeyExtractor: Send + Sync {
     /// Extracts the verifying key from the attestation results returned by
     /// [`AttestationVerifier`]. Only results of a successful verification are
@@ -39,6 +40,8 @@ pub trait KeyExtractor: Send + Sync {
 
 /// Key extractor that takes the key from the top level signing_public_key field
 /// in [`AttestationResults`]
+/// Deprecated: use
+/// endorsed_evidence_assertion_verifier::DefaultSigningKeyExtractor instead.
 pub struct DefaultSigningKeyExtractor;
 
 impl KeyExtractor for DefaultSigningKeyExtractor {
@@ -59,9 +62,10 @@ impl KeyExtractor for DefaultSigningKeyExtractor {
     }
 }
 
-/// Key extractor that takes the binding key from the artifacts contained in
-/// [`AttestationResults`] using a predefined artifact ID
-/// ([`SESSION_BINDING_PUBLIC_KEY_ID`]).
+/// Key extractor that retrieves the binding key from the artifacts contained
+/// in [`AttestationResults`].
+/// Deprecated: use
+/// endorsed_evidence_assertion_verifier::DefaultBindingKeyExtractor instead.
 pub struct DefaultBindingKeyExtractor;
 
 impl KeyExtractor for DefaultBindingKeyExtractor {
@@ -69,8 +73,9 @@ impl KeyExtractor for DefaultBindingKeyExtractor {
         &self,
         attestation_results: &AttestationResults,
     ) -> Result<Box<dyn Verifier>, Error> {
-        let session_binding_public_key = get_session_binding_public_key(attestation_results)
-            .context("getting session binding public key")?;
+        let session_binding_public_key = unique_session_binding_public_key(attestation_results)
+            .map_err(|msg| anyhow::anyhow!(msg))
+            .context("getting unique session binding public key")?;
         Ok(Box::new(VerifyingKey::from_sec1_bytes(session_binding_public_key.as_slice()).map_err(|err| {
             anyhow!("couldn't create a verifying key from the session binding public key in the evidence: {}", err)
         })?))

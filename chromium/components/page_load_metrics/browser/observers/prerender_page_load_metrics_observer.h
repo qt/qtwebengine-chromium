@@ -20,9 +20,6 @@ extern const char kHistogramPrerenderActivationToLargestContentfulPaint2[];
 extern const char kHistogramPrerenderFirstInputDelay4[];
 extern const char kHistogramPrerenderCumulativeShiftScore[];
 extern const char kHistogramPrerenderCumulativeShiftScoreMainFrame[];
-extern const char
-    kHistogramPrerenderMaxCumulativeShiftScoreSessionWindowGap1000msMax5000ms2
-        [];
 
 // Responsiveness metrics.
 extern const char
@@ -87,6 +84,13 @@ class PrerenderPageLoadMetricsObserver
       const page_load_metrics::mojom::PageLoadTiming& main_frame_timing);
   // Records Interaction to Next Paint (INP) to UMA and UKM.
   void RecordNormalizedResponsivenessMetrics();
+
+  // Records LCP before the first soft navigation arrives.
+  void RecordLargestContentfulPaintBeforeSoftNavigation();
+  // Records INP before the first soft navigation arrives.
+  void RecordResponsivenessMetricsBeforeSoftNavigation();
+  // Records CLS before the first soft navigation arrives.
+  void RecordLayoutShiftBeforeSoftNavigation();
 
   // Records loading status for an activated and loaded page.
   void MaybeRecordMainResourceLoadStatus();

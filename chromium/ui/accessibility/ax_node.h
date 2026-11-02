@@ -36,7 +36,6 @@ class AXSelection;
 class AXTableInfo;
 class AXTreeManager;
 
-struct AXLanguageInfo;
 class AXTree;
 
 // This class is used to represent a node in an accessibility tree (`AXTree`).
@@ -309,6 +308,10 @@ class AX_EXPORT AXNode final {
   // this node.
   bool HasVisibleCaretOrSelection() const;
 
+  // Returns true if the focus of the current selection is this node or one of
+  // its descendants, regardless of whether that selection is visible.
+  bool HasSelectionFocusInSubtree() const;
+
   // Gets the current selection from the accessibility tree.
   AXSelection GetSelection() const;
 
@@ -352,6 +355,10 @@ class AX_EXPORT AXNode final {
   // computed value in this case.
   //
   ax::mojom::Role GetRole() const { return data().role; }
+
+  // Returns kAriaValueText if present/non-empty, otherwise falls back to
+  // kValue. Returns std::nullopt if both attributes are empty
+  std::optional<std::string> GetAriaValueTextOrValue() const;
 
   bool HasBoolAttribute(ax::mojom::BoolAttribute attribute) const {
     return data().HasBoolAttribute(attribute);
@@ -620,21 +627,6 @@ class AX_EXPORT AXNode final {
   // or treegrid.
   bool IsCellOrHeaderOfAriaGrid() const;
 
-  // Return an object containing information about the languages detected on
-  // this node.
-  // Callers should not retain this pointer, instead they should request it
-  // every time it is needed.
-  //
-  // Returns nullptr if the node has no language info.
-  AXLanguageInfo* GetLanguageInfo() const;
-
-  // This should only be called by LabelLanguageForSubtree and is used as part
-  // of the language detection feature.
-  void SetLanguageInfo(std::unique_ptr<AXLanguageInfo> lang_info);
-
-  // Destroy the language info for this node.
-  void ClearLanguageInfo();
-
   // Get a reference to the cached information stored for this node.
   const AXComputedNodeData& GetComputedNodeData() const;
 
@@ -809,9 +801,6 @@ class AX_EXPORT AXNode final {
   // Stores information about this node that can be computed on demand and
   // cached.
   mutable std::unique_ptr<AXComputedNodeData> computed_node_data_;
-
-  // Stores the detected language computed from the node's text.
-  std::unique_ptr<AXLanguageInfo> language_info_;
 };
 
 AX_EXPORT std::ostream& operator<<(std::ostream& stream, const AXNode& node);

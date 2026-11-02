@@ -370,5 +370,83 @@ describeWithEnvironment('SamplesIntegrator', function() {
               c.nodeId === gcNode.id);
       assert.lengthOf(filteredNodes, 0);
     });
+
+    it('corrects stack integration for instant events with stack traces when no JS parent exists', () => {
+      // Profile samples:
+      // ts: 100   200   300   400
+      //     |a|   |a|   |a|   |b| (node 3, parent 2 'a')
+      //
+      // Trace events:
+      // ts:        250
+      //            | SchedulePostMessage (instant, traceId: 99 -> node 4 'postMessage') |
+      //
+      // Expected integrated calls:
+      // ts: 100       250   300   400
+      //     |---- a ----|   |--a--|
+      //                 |-p-| (postMessage, dur: 50)
+      const testProfile: CPUProfile.CPUProfileDataModel.ExtendedProfile = {
+        startTime: 0,
+        endTime: 3000,
+        nodes: [
+          {
+            id: 1,
+            hitCount: 0,
+            callFrame: {functionName: '(root)', scriptId, url, lineNumber, columnNumber},
+            children: [2, 4],
+          },
+          {
+            id: 2,
+            callFrame: {functionName: 'a', scriptId, url, lineNumber, columnNumber},
+            children: [3],
+          },
+          {
+            id: 3,
+            callFrame: {functionName: 'b', scriptId, url, lineNumber, columnNumber},
+          },
+          {
+            id: 4,
+            callFrame: {functionName: 'postMessage', scriptId, url, lineNumber, columnNumber},
+          },
+        ],
+        samples: [2, 2, 2, 3],
+        timeDeltas: [100, 100, 100, 100],
+        traceIds: {
+          99: 4,
+        },
+      };
+
+      const parsedProfile = new CPUProfile.CPUProfileDataModel.CPUProfileDataModel(testProfile);
+      const integrator = new Trace.Helpers.SamplesIntegrator.SamplesIntegrator(parsedProfile, PROFILE_ID, pid, tid);
+
+      const postMessageEvent: Trace.Types.Events.SchedulePostMessage = {
+        cat: 'devtools.timeline',
+        name: Trace.Types.Events.Name.SCHEDULE_POST_MESSAGE,
+        ph: Trace.Types.Events.Phase.INSTANT,
+        ts: Trace.Types.Timing.Micro(250),
+        args: {
+          data: {
+            traceId: 'fake-trace-id',
+            sampleTraceId: 99,
+          },
+        },
+        pid,
+        tid,
+        s: Trace.Types.Events.Scope.THREAD,
+      };
+
+      const traceEvents = [postMessageEvent];
+      const constructedCalls = integrator.buildProfileCalls(traceEvents);
+
+      const postMessageCall = constructedCalls.find(c => c.callFrame.functionName === 'postMessage');
+      assert.isDefined(postMessageCall);
+      assert.strictEqual(postMessageCall.ts, 250);
+      assert.strictEqual(postMessageCall.dur, 50);
+
+      const sampleAt300 = constructedCalls.find(c => c.callFrame.functionName === 'a' && c.ts === 300);
+      // Ensure the sample at 300 is not ignored (which would happen if fakeJS mode
+      // was lost) and is correctly extended to 400 by the subsequent sample.
+      assert.isDefined(sampleAt300);
+      assert.strictEqual(sampleAt300.dur, 100);
+    });
   });
 });

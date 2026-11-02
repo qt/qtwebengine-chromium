@@ -91,14 +91,12 @@ WorkerInspectorController::WorkerInspectorController(
   worker_devtools_token_ = devtools_params->devtools_worker_token;
   parent_devtools_token_ = thread->GlobalScope()->GetParentDevToolsToken();
   url_ = url;
-  scoped_refptr<base::SingleThreadTaskRunner> io_task_runner =
-      Platform::Current()->GetIOTaskRunner();
-  if (!parent_devtools_token_.is_empty() && io_task_runner) {
-    // There may be no io task runner in unit tests.
+  if (!parent_devtools_token_.is_empty()) {
     wait_for_debugger_ = devtools_params->wait_for_debugger;
     agent_ = MakeGarbageCollected<DevToolsAgent>(
         this, inspected_frames_.Get(), probe_sink_.Get(),
-        std::move(inspector_task_runner), std::move(io_task_runner));
+        std::move(inspector_task_runner),
+        Platform::Current()->GetIOTaskRunner());
     agent_->BindReceiverForWorker(
         std::move(devtools_params->agent_host_remote),
         std::move(devtools_params->agent_receiver),
@@ -120,17 +118,15 @@ void WorkerInspectorController::AttachSession(DevToolsSession* session,
   session->ConnectToV8(debugger_->GetV8Inspector(),
                        debugger_->ContextGroupId(thread_));
   session->CreateAndAppend<InspectorLogAgent>(
-      thread_->GetConsoleMessageStorage(), nullptr, session->V8Session());
-  session->CreateAndAppend<InspectorEventBreakpointsAgent>(
-      session->V8Session());
+      thread_->GetConsoleMessageStorage(), nullptr);
+  session->CreateAndAppend<InspectorEventBreakpointsAgent>();
 
   WorkerOrWorkletGlobalScope* worker_or_worklet_global_scope =
       thread_->GlobalScope();
   CHECK(worker_or_worklet_global_scope);
 
   auto* network_agent = session->CreateAndAppend<InspectorNetworkAgent>(
-      inspected_frames_.Get(), worker_or_worklet_global_scope,
-      session->V8Session());
+      inspected_frames_.Get(), worker_or_worklet_global_scope);
   session->CreateAndAppend<InspectorAuditsAgent>(
       network_agent, thread_->GetInspectorIssueStorage(),
       /*inspected_frames=*/nullptr, /*web_autofill_client=*/nullptr);

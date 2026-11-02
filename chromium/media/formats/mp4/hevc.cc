@@ -13,6 +13,7 @@
 #include "base/containers/span.h"
 #include "base/containers/span_writer.h"
 #include "base/logging.h"
+#include "media/base/agtm.h"
 #include "media/base/decrypt_config.h"
 #include "media/base/media_util.h"
 #include "media/base/video_decoder_config.h"
@@ -22,6 +23,7 @@
 #include "third_party/abseil-cpp/absl/functional/overload.h"
 #if BUILDFLAG(ENABLE_HEVC_PARSER_AND_HW_DECODER)
 #include "media/parsers/h265_parser.h"
+#include "media/parsers/h26x_parser.h"
 #else
 #include "media/parsers/h265_nalu_parser.h"
 #endif  // BUILDFLAG(ENABLE_HEVC_PARSER_AND_HW_DECODER)
@@ -151,7 +153,7 @@ bool HEVCDecoderConfigurationRecord::Serialize(
 }
 
 bool HEVCDecoderConfigurationRecord::Parse(base::span<const uint8_t> data) {
-  BufferReader reader(data.data(), data.size());
+  BufferReader reader(data);
   // TODO(wolenetz): Questionable MediaLog usage, http://crbug.com/712310
   NullMediaLog media_log;
   return ParseInternal(&reader, &media_log);
@@ -281,11 +283,15 @@ bool HEVCDecoderConfigurationRecord::ParseInternal(BufferReader* reader,
         for (const auto& sei_msg : sei.msgs) {
           std::visit(absl::Overload{
                          [](const H265SEIAlphaChannelInfo& info) {},
-                         [&](const H265SEIContentLightLevelInfo& info) {
+                         [&](const H26xSEIContentLightLevelInfo& info) {
                            hdr_metadata.SetCLLI(info.ToSkHdr());
                          },
-                         [&](const H265SEIMasteringDisplayInfo& info) {
+                         [&](const H26xSEIMasteringDisplayInfo& info) {
                            hdr_metadata.SetMDCV(info.ToSkHdr());
+                         },
+                         [&](const H26xSEIUserDataRegisteredT35& info) {
+                           SetAgtmFromT35WithCountryCode(
+                               hdr_metadata, info.country_code, info.payload);
                          },
                          [](std::monostate) {},
                      },
@@ -465,13 +471,13 @@ BitstreamConverter::AnalysisResult HEVC::AnalyzeAnnexB(
 
     if (order_state == kNoMoreDataAllowed) {
       DVLOG(1) << "No more data is allowed after EOB_NUT.";
-      return result;
+      had_unexpected_nalu = true;
     }
 
     if (order_state == kEOBitstreamAllowed &&
         nalu.nal_unit_type != H265NALU::EOB_NUT) {
       DVLOG(1) << "Only EOB_NUT is allowed after EOS_NUT.";
-      return result;
+      had_unexpected_nalu = true;
     }
 
     switch (nalu.nal_unit_type) {
@@ -481,9 +487,11 @@ BitstreamConverter::AnalysisResult HEVC::AnalyzeAnnexB(
       case H265NALU::AUD_NUT:
         if (order_state > kAUDAllowed) {
           DVLOG(1) << "Unexpected AUD in order_state " << order_state;
-          return result;
+          had_unexpected_nalu = true;
         }
-        order_state = kBeforeFirstVCL;
+        if (order_state < kBeforeFirstVCL) {
+          order_state = kBeforeFirstVCL;
+        }
         break;
 
       // When any VPS NAL units, SPS NAL units, PPS NAL units, prefix SEI NAL
@@ -510,9 +518,11 @@ BitstreamConverter::AnalysisResult HEVC::AnalyzeAnnexB(
         if (order_state > kBeforeFirstVCL) {
           DVLOG(1) << "Unexpected NALU type " << nalu.nal_unit_type
                    << " in order_state " << order_state;
-          return result;
+          had_unexpected_nalu = true;
         }
-        order_state = kBeforeFirstVCL;
+        if (order_state < kBeforeFirstVCL) {
+          order_state = kBeforeFirstVCL;
+        }
         break;
 
       // NAL units having nal_unit_type equal to FD_NUT or SUFFIX_SEI_NUT or in
@@ -544,9 +554,11 @@ BitstreamConverter::AnalysisResult HEVC::AnalyzeAnnexB(
       case H265NALU::EOS_NUT:
         if (order_state != kAfterFirstVCL) {
           DVLOG(1) << "Unexpected EOS in order_state " << order_state;
-          return result;
+          had_unexpected_nalu = true;
         }
-        order_state = kEOBitstreamAllowed;
+        if (order_state < kEOBitstreamAllowed) {
+          order_state = kEOBitstreamAllowed;
+        }
         break;
 
       // When an end of bitstream NAL unit is present, it shall be the last NAL
@@ -554,9 +566,11 @@ BitstreamConverter::AnalysisResult HEVC::AnalyzeAnnexB(
       case H265NALU::EOB_NUT:
         if (order_state < kAfterFirstVCL) {
           DVLOG(1) << "Unexpected EOB in order_state " << order_state;
-          return result;
+          had_unexpected_nalu = true;
         }
-        order_state = kNoMoreDataAllowed;
+        if (order_state < kNoMoreDataAllowed) {
+          order_state = kNoMoreDataAllowed;
+        }
         break;
 
       // VCL, non-IRAP
@@ -586,13 +600,15 @@ BitstreamConverter::AnalysisResult HEVC::AnalyzeAnnexB(
       case H265NALU::RSV_VCL31:
         if (order_state > kAfterFirstVCL) {
           DVLOG(1) << "Unexpected VCL in order_state " << order_state;
-          return result;
+          had_unexpected_nalu = true;
         }
 
         if (!result.is_keyframe.has_value())
           result.is_keyframe = false;
 
-        order_state = kAfterFirstVCL;
+        if (order_state < kAfterFirstVCL) {
+          order_state = kAfterFirstVCL;
+        }
         break;
 
       // VCL, IRAP
@@ -606,13 +622,15 @@ BitstreamConverter::AnalysisResult HEVC::AnalyzeAnnexB(
       case H265NALU::RSV_IRAP_VCL23:
         if (order_state > kAfterFirstVCL) {
           DVLOG(1) << "Unexpected VCL in order_state " << order_state;
-          return result;
+          had_unexpected_nalu = true;
         }
 
         if (!result.is_keyframe.has_value())
           result.is_keyframe = true;
 
-        order_state = kAfterFirstVCL;
+        if (order_state < kAfterFirstVCL) {
+          order_state = kAfterFirstVCL;
+        }
         break;
 
       default:
@@ -620,11 +638,11 @@ BitstreamConverter::AnalysisResult HEVC::AnalyzeAnnexB(
     }
   }
 
-  if (order_state < kAfterFirstVCL)
+  if (!result.is_keyframe.has_value()) {
     return result;
+  }
 
   result.is_conformant = !had_unexpected_nalu;
-  DCHECK(result.is_keyframe.has_value());
   return result;
 }
 

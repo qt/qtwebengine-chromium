@@ -11,10 +11,10 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkTArray.h"
-#include "include/private/base/SkTo.h"
-#include "include/private/base/SkTypeTraits.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkTArray.h"
+#include "include/private/SkTo.h"
+#include "include/private/SkTypeTraits.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/ganesh/GrDstProxyView.h"
@@ -65,11 +65,10 @@ public:
 
     void onPrePrepare(GrRecordingContext*) override;
     /**
-     * Together these two functions flush all queued up draws to GrCommandBuffer. The return value
-     * of onExecute() indicates whether any commands were actually issued to the GPU.
+     * Together these two functions flush all queued up draws to GrCommandBuffer.
      */
     void onPrepare(GrOpFlushState* flushState) override;
-    bool onExecute(GrOpFlushState* flushState) override;
+    ExecutionResult onExecute(GrOpFlushState* flushState) override;
 
     void addSampledTexture(GrSurfaceProxy* proxy) {
         // This function takes a GrSurfaceProxy because all subsequent uses of the proxy do not

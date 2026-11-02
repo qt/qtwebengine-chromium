@@ -22,7 +22,7 @@ if (!is_android) {
     deps = [
       "//base",
       "//base/test:test_support",
-      "//chrome/test:in_process_browser_test_mixin",
+      "//chrome/test/base:in_process_browser_test_mixin",
       "//content/public/common",
       "//testing/gtest",
       "//ui/base",
@@ -107,6 +107,7 @@ if (!is_android) {
     deps = [
       "//base",
       "//chrome/browser/ui",
+      "//chrome/browser/ui:confirm_bubble_model",
       "//ui/base",
     ]
   }

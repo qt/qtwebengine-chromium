@@ -2,7 +2,9 @@
 
 Eigen is written and maintained by volunteers. Contributions — code, documentation, bug triage, tests on uncommon platforms, design feedback — are all welcome.
 
-This document is the human-facing on-ramp. For the deeper "how this codebase actually works" reference (architecture, expression templates, SIMD layer, GPU stories, pitfalls), see [`AGENTS.md`](AGENTS.md); it's written for AI coding agents but is also the most up-to-date single-file overview of the repo.
+This document is the human-facing on-ramp. [`AGENTS.md`](AGENTS.md) is the AI-facing repository contract and routes
+readers to focused guides for testing, numerical work, performance, SIMD/GPU, Tensor/ThreadPool, and CI. Those guides
+are also useful to human contributors working in the corresponding areas.
 
 ## Where Eigen lives
 
@@ -10,7 +12,8 @@ This document is the human-facing on-ramp. For the deeper "how this codebase act
 - **Issue tracker:** <https://gitlab.com/libeigen/eigen/-/issues>
 - **CI pipelines:** <https://gitlab.com/libeigen/eigen/-/pipelines>
 - **API documentation (nightly):** <https://libeigen.gitlab.io/eigen/docs-nightly>
-- **Project site:** <https://libeigen.gitlab.io> (note: some pages predate current practice — when in doubt, prefer `AGENTS.md` and this file)
+- **Project site:** <https://libeigen.gitlab.io> (note: some pages predate current practice — when in doubt, prefer
+  this file and the guide map in `AGENTS.md`)
 - **Chat:** [Discord](https://discord.com/channels/777904510169382942/777904791136370758) — the primary support and discussion channel.
 
 ## Ways to contribute
@@ -59,7 +62,9 @@ ctest --test-dir build --parallel --output-on-failure
 
 Other useful targets: `BuildOfficial` (just `test/`), `BuildUnsupported` (just `unsupported/test/`), `buildtests_gpu`, `check_gpu`. Once configured, the build dir also exposes `./buildtests.sh <regex>` and `./check.sh <regex>` for narrowing by test-name regex.
 
-Full reference for CMake options (per-ISA test flags, GPU/SYCL toggles, external BLAS/LAPACK, etc.), the test-split mechanism, and the `VERIFY_*` macro family lives in [`AGENTS.md`](AGENTS.md) § "Build / test".
+For focused build recipes, test registration, split-test mechanics, and assertion guidance, see
+[`.agents/testing.md`](.agents/testing.md). Packet and accelerator validation is covered by
+[`.agents/simd-gpu.md`](.agents/simd-gpu.md). The checked-out CMake files remain authoritative for current options.
 
 > **In-flight migration:** [MR 2159](https://gitlab.com/libeigen/eigen/-/merge_requests/2159) is migrating the test framework from Eigen's own `EIGEN_DECLARE_TEST` / `CALL_SUBTEST_N` macros to Google Test. Until it lands, write new tests with the existing framework (`test/main.h`, `VERIFY_*`, `EIGEN_DECLARE_TEST`, `ei_add_test` in the matching `CMakeLists.txt`).
 >
@@ -75,7 +80,8 @@ Full reference for CMake options (per-ISA test flags, GPU/SYCL toggles, external
 
 ## Coding standards
 
-Eigen has a few hard rules that catch contributors most often. The full discussion is in [`AGENTS.md`](AGENTS.md) § "Agent guidelines (read first)"; the short version:
+Eigen has a few hard rules that catch contributors most often. The repository-wide rules are in
+[`AGENTS.md`](AGENTS.md#non-negotiable-rules), which also routes to task-specific guidance. The short version:
 
 1. **Header-only contract.** Never `#include` anything under `Eigen/src/...` or `unsupported/Eigen/src/...` — `InternalHeaderCheck.h` makes that a hard compile error. User code reaches implementation only through the umbrella headers (`Eigen/Core`, `Eigen/Dense`, `Eigen/SVD`, …).
 2. **Preserve `EIGEN_DEVICE_FUNC`** on coefficient-level methods. Dropping it silently breaks CUDA / HIP / SYCL builds and rarely shows up in local testing.
@@ -180,7 +186,11 @@ Some "unsupported" modules carry stability guarantees beyond what the name sugge
 
 ## Further reading
 
-- [`AGENTS.md`](AGENTS.md) — deep dive on architecture, expression templates, evaluators, the SIMD packet layer, CUDA / HIP / SYCL, multi-threading, common pitfalls, and CI structure.
+- [`AGENTS.md`](AGENTS.md) — repository-wide agent contract, standard workflow, essential Eigen hazards, and the map
+  to task-specific guidance.
+- Task guides: [testing](.agents/testing.md), [numerical code](.agents/numerics.md),
+  [benchmarking](.agents/benchmarking.md), [SIMD/GPU](.agents/simd-gpu.md),
+  [Tensor/ThreadPool](.agents/tensor-threadpool.md), and [formatting/CI](.agents/ci.md).
 - [`README.md`](README.md) — high-level project description and pointers to the websites.
 - [`CHANGELOG.md`](CHANGELOG.md) — release-by-release notes.
 - API reference (nightly): <https://libeigen.gitlab.io/eigen/docs-nightly>.

@@ -8,7 +8,7 @@ import type * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../bindings/bindings.js';
 import * as SourceMapScopes from '../source_map_scopes/source_map_scopes.js';
 import * as Trace from '../trace/trace.js';
-import * as Workspace from '../workspace/workspace.js';
+import type * as Workspace from '../workspace/workspace.js';
 
 interface ResolvedCodeLocationData {
   name: string|null;
@@ -26,6 +26,9 @@ export class SourceMappingsUpdated extends Event {
 export const resolvedCodeLocationDataNames = new Map<string, ResolvedCodeLocationData|null>();
 
 export class SourceMapsResolver extends EventTarget {
+  readonly #debuggerWorkspaceBinding: Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding;
+  readonly #targetManager: SDK.TargetManager.TargetManager;
+
   private executionContextNamesByOrigin = new Map<Platform.DevToolsPath.UrlString, string>();
   #parsedTrace: Trace.TraceModel.ParsedTrace;
   #entityMapper: Trace.EntityMapper.EntityMapper|null = null;
@@ -39,10 +42,18 @@ export class SourceMapsResolver extends EventTarget {
   // those workers too.
   #debuggerModelsToListen = new Set<SDK.DebuggerModel.DebuggerModel>();
 
-  constructor(parsedTrace: Trace.TraceModel.ParsedTrace, entityMapper?: Trace.EntityMapper.EntityMapper) {
+  constructor(
+      parsedTrace: Trace.TraceModel.ParsedTrace,
+      entityMapper?: Trace.EntityMapper.EntityMapper,
+      debuggerWorkspaceBinding: Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding =
+          Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance(),
+      targetManager: SDK.TargetManager.TargetManager = SDK.TargetManager.TargetManager.instance(),
+  ) {
     super();
     this.#parsedTrace = parsedTrace;
     this.#entityMapper = entityMapper ?? null;
+    this.#debuggerWorkspaceBinding = debuggerWorkspaceBinding;
+    this.#targetManager = targetManager;
   }
 
   static clearResolvedNodeNames(): void {
@@ -85,8 +96,11 @@ export class SourceMapsResolver extends EventTarget {
     return SourceMapsResolver.resolvedCodeLocationForCallFrame(callFrame as Protocol.Runtime.CallFrame);
   }
 
-  static resolvedURLForEntry(parsedTrace: Trace.TraceModel.ParsedTrace, entry: Trace.Types.Events.Event):
-      Platform.DevToolsPath.UrlString|null {
+  static resolvedURLForEntry(
+      parsedTrace: Trace.TraceModel.ParsedTrace,
+      entry: Trace.Types.Events.Event,
+      workspace: Workspace.Workspace.WorkspaceImpl,
+      ): Platform.DevToolsPath.UrlString|null {
     const resolvedCallFrameURL =
         SourceMapsResolver.resolvedCodeLocationForEntry(entry)?.devtoolsLocation?.uiSourceCode.url();
     if (resolvedCallFrameURL) {
@@ -97,13 +111,16 @@ export class SourceMapsResolver extends EventTarget {
     // to the URL value contained in the event itself, if any.
     const url = Trace.Handlers.Helpers.getNonResolvedURL(entry, parsedTrace.data);
     if (url) {
-      return Workspace.Workspace.WorkspaceImpl.instance().uiSourceCodeForURL(url)?.url() ?? url;
+      return workspace.uiSourceCodeForURL(url)?.url() ?? url;
     }
     return null;
   }
 
-  static codeLocationForEntry(parsedTrace: Trace.TraceModel.ParsedTrace, entry: Trace.Types.Events.Event):
-      {url: Platform.DevToolsPath.UrlString, line?: number, column?: number}|null {
+  static codeLocationForEntry(
+      parsedTrace: Trace.TraceModel.ParsedTrace,
+      entry: Trace.Types.Events.Event,
+      workspace: Workspace.Workspace.WorkspaceImpl,
+      ): {url: Platform.DevToolsPath.UrlString, line?: number, column?: number}|null {
     const uiLocation = SourceMapsResolver.resolvedCodeLocationForEntry(entry)?.devtoolsLocation;
     if (uiLocation) {
       return {url: uiLocation.uiSourceCode.url(), line: uiLocation.lineNumber, column: uiLocation.columnNumber};
@@ -121,7 +138,7 @@ export class SourceMapsResolver extends EventTarget {
     // Lastly, look for just a url.
     let url = Trace.Handlers.Helpers.getNonResolvedURL(entry, parsedTrace.data);
     if (url) {
-      url = Workspace.Workspace.WorkspaceImpl.instance().uiSourceCodeForURL(url)?.url() ?? url;
+      url = workspace.uiSourceCodeForURL(url)?.url() ?? url;
     }
     if (url) {
       return {url};
@@ -199,8 +216,8 @@ export class SourceMapsResolver extends EventTarget {
           continue;
         }
         for (const node of nodes) {
-          const resolvedFunctionName =
-              await SourceMapScopes.NamesResolver.resolveProfileFrameFunctionName(node.callFrame, target);
+          const resolvedFunctionName = await SourceMapScopes.NamesResolver.resolveProfileFrameFunctionName(
+              node.callFrame, target, this.#debuggerWorkspaceBinding);
           updatedMappings ||= Boolean(resolvedFunctionName);
           node.setOriginalFunctionName(resolvedFunctionName);
 
@@ -209,9 +226,7 @@ export class SourceMapsResolver extends EventTarget {
           const location = debuggerModel &&
               new SDK.DebuggerModel.Location(
                   debuggerModel, node.callFrame.scriptId, node.callFrame.lineNumber, node.callFrame.columnNumber);
-          const uiLocation = location &&
-              await Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().rawLocationToUILocation(
-                  location);
+          const uiLocation = location && await this.#debuggerWorkspaceBinding.rawLocationToUILocation(location);
           updatedMappings ||= Boolean(uiLocation);
           if (uiLocation?.uiSourceCode.url() && this.#entityMapper) {
             // Update mappings for the related events of the entity.
@@ -253,13 +268,13 @@ export class SourceMapsResolver extends EventTarget {
   #targetForThread(tid: Trace.Types.Events.ThreadID): SDK.Target.Target|null {
     const maybeWorkerId = this.#parsedTrace.data.Workers.workerIdByThread.get(tid);
     if (maybeWorkerId) {
-      return SDK.TargetManager.TargetManager.instance().targetById(maybeWorkerId);
+      return this.#targetManager.targetById(maybeWorkerId);
     }
-    return SDK.TargetManager.TargetManager.instance().primaryPageTarget();
+    return this.#targetManager.primaryPageTarget();
   }
 
   #updateExtensionNames(): void {
-    for (const runtimeModel of SDK.TargetManager.TargetManager.instance().models(SDK.RuntimeModel.RuntimeModel)) {
+    for (const runtimeModel of this.#targetManager.models(SDK.RuntimeModel.RuntimeModel)) {
       for (const context of runtimeModel.executionContexts()) {
         this.executionContextNamesByOrigin.set(context.origin, context.name);
       }

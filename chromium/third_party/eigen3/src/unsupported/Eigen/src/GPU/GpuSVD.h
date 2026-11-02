@@ -160,10 +160,6 @@ class SVD {
   Index rows() const { return transposed_ ? n_ : m_; }
   Index cols() const { return transposed_ ? m_ : n_; }
 
-  // TODO: Add device-side accessors (deviceU(), deviceVT(), deviceSingularValues())
-  // returning DeviceMatrix views of the internal buffers, so users can chain
-  // GPU operations without round-tripping through host memory.
-
   /** Singular values (always available). Downloads from device on each call. */
   RealVector singularValues() const {
     solver_ctx_.sync_info();

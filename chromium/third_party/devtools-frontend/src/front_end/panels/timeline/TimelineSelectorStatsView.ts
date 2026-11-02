@@ -38,7 +38,7 @@ const UIStrings = {
    * @description Tooltip description '% of slow-path non-matches'
    */
   slowPathNonMatchesExplanation:
-      'The percentage of non-matching nodes (Match Attempts - Match Count) that couldn\'t be quickly ruled out by the bloom filter due to high selector complexity. Lower is better.',
+      'The percentage of non-matching nodes (Match Attempts - Match Count) that couldn’t be quickly ruled out by the bloom filter due to high selector complexity. Lower is better.',
   /**
    * @description Column name for count of elements that the engine attempted to match against a style rule
    */
@@ -71,7 +71,7 @@ const UIStrings = {
    * @description Tooltip description 'Style Sheet'
    */
   styleSheetIdExplanation:
-      'Links to the selector rule definition in the style sheets. Note that a selector rule could be defined in multiple places in a style sheet or defined in multiple style sheets. Selector rules from browser user-agent style sheet or dynamic style sheets don\'t have a link.',
+      'Links to the selector rule definition in the style sheets. Note that a selector rule could be defined in multiple places in a style sheet or defined in multiple style sheets. Selector rules from browser user-agent style sheet or dynamic style sheets don’t have a link.',
   /**
    * @description A context menu item in data grids to copy entire table to clipboard
    */
@@ -227,8 +227,12 @@ export class TimelineSelectorStatsView extends UI.Widget.VBox {
     menu.defaultSection().appendItem(i18nString(UIStrings.copyTable), () => {
       const tableData = [];
       const columnName = [
-        i18nString(UIStrings.elapsed), i18nString(UIStrings.matchAttempts), i18nString(UIStrings.matchCount),
-        i18nString(UIStrings.slowPathNonMatches), i18nString(UIStrings.selector), i18nString(UIStrings.styleSheetId)
+        i18nString(UIStrings.elapsed),
+        i18nString(UIStrings.matchAttempts),
+        i18nString(UIStrings.matchCount),
+        i18nString(UIStrings.slowPathNonMatches),
+        i18nString(UIStrings.selector),
+        i18nString(UIStrings.styleSheetId),
       ];
       tableData.push(columnName.join('\t'));
       for (const timing of this.#timings) {
@@ -321,7 +325,10 @@ export class TimelineSelectorStatsView extends UI.Widget.VBox {
       // aggregate invalidated nodes per (Selector + Recalc timestamp + Frame)
       for (const selector of invalidatedNode.selectorList) {
         const key = [
-          selector.selector, selector.styleSheetId, invalidatedNode.frame, invalidatedNode.lastRecalcStyleEventTs
+          selector.selector,
+          selector.styleSheetId,
+          invalidatedNode.frame,
+          invalidatedNode.lastRecalcStyleEventTs,
         ].join('-');
         if (invalidatedNodeMap.has(key)) {
           const nodes = invalidatedNodeMap.get(key);

@@ -76,7 +76,7 @@ const argv = yargs(hideBin(process.argv))
     alias: 'w',
     type: 'boolean',
     default: true,
-    description: 'Enable watch mode to auto rebuild'
+    description: 'Enable watch mode to auto rebuild',
   })
   .option('unstable-features', {
     alias: 'u',

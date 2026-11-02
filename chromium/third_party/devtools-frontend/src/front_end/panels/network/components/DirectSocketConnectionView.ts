@@ -290,7 +290,7 @@ export class DirectSocketConnectionView extends UI.Widget.Widget<ShadowRoot> {
       },
       onCopyRow: () => {
         Host.userMetrics.actionTaken(Host.UserMetrics.Action.NetworkPanelCopyValue);
-      }
+      },
     };
     this.#view(viewInput, undefined, this.contentElement);
   }

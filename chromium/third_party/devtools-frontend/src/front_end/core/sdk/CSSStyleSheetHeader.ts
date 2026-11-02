@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 import type * as Protocol from '../../generated/protocol.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Common from '../common/common.js';
 import * as i18n from '../i18n/i18n.js';
 import * as Platform from '../platform/platform.js';
+import * as TextUtils from '../text_utils/text_utils.js';
 
 import type {CSSModel} from './CSSModel.js';
 import {DeferredDOMNode} from './DOMModel.js';
@@ -17,13 +17,13 @@ import type {DebugId} from './SourceMap.js';
 
 const UIStrings = {
   /**
-   * @description Error message for when a CSS file can't be loaded
+   * @description Error message for when a CSS file can't be loaded.
    */
   couldNotFindTheOriginalStyle: 'Could not find the original style sheet.',
   /**
    * @description Error message to display when a source CSS file could not be retrieved.
    */
-  thereWasAnErrorRetrievingThe: 'There was an error retrieving the source styles.',
+  couldNotRetrieveSourceStyles: 'Could not retrieve source styles.',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('core/sdk/CSSStyleSheetHeader.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -167,7 +167,7 @@ export class CSSStyleSheetHeader implements TextUtils.ContentProvider.ContentPro
   async requestContentData(): Promise<TextUtils.ContentData.ContentDataOrError> {
     const cssText = await this.#cssModel.getStyleSheetText(this.id);
     if (cssText === null) {
-      return {error: i18nString(UIStrings.thereWasAnErrorRetrievingThe)};
+      return {error: i18nString(UIStrings.couldNotRetrieveSourceStyles)};
     }
     return new TextUtils.ContentData.ContentData(cssText, /* isBase64=*/ false, 'text/css');
   }

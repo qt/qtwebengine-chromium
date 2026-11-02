@@ -240,7 +240,7 @@ const typename IncompleteLUT<Scalar, StorageIndex>::FactorType IncompleteLUT<Sca
 
 /**
  * get U-Factor
- * \return L-Factor is a matrix containing the upper triangular part of the sparse matrix. All elements of the matrix
+ * \return U-Factor is a matrix containing the upper triangular part of the sparse matrix. All elements of the matrix
  * below the main diagonal are zero.
  **/
 template <typename Scalar, typename StorageIndex>

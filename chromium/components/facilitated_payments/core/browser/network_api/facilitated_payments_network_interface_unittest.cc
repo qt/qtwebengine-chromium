@@ -8,6 +8,7 @@
 #include <memory>
 #include <vector>
 
+#include "base/base64.h"
 #include "base/memory/weak_ptr.h"
 #include "components/autofill/core/browser/payments/payments_autofill_client.h"
 #include "components/autofill/core/browser/payments/payments_network_interface_test_base.h"
@@ -59,9 +60,10 @@ class FacilitatedPaymentsNetworkInterfaceTest
         "language-LOCALE");
   }
 
-  void SendGetDetailsForCreatePaymentInstrumentRequest() {
+  void SendGetDetailsForCreatePaymentInstrumentRequest(
+      std::vector<uint8_t> client_token = {}) {
     id_ = payments_network_interface_->GetDetailsForCreatePaymentInstrument(
-        123,
+        123, client_token,
         base::BindOnce(
             &FacilitatedPaymentsNetworkInterfaceTest::
                 OnGetDetailsForCreatePaymentInstrumentResponseReceived,
@@ -86,6 +88,7 @@ class FacilitatedPaymentsNetworkInterfaceTest
   std::unique_ptr<FacilitatedPaymentsNetworkInterface>
       payments_network_interface_;
   bool is_eligible_for_pix_account_linking_ = false;
+  std::vector<uint8_t> action_token_;
 
  private:
   void OnInitiatePaymentResponseReceived(
@@ -98,9 +101,11 @@ class FacilitatedPaymentsNetworkInterfaceTest
 
   void OnGetDetailsForCreatePaymentInstrumentResponseReceived(
       autofill::payments::PaymentsAutofillClient::PaymentsRpcResult result,
-      bool is_eligible_for_pix_account_linking) {
+      bool is_eligible_for_pix_account_linking,
+      const std::vector<uint8_t>& action_token) {
     result_ = result;
     is_eligible_for_pix_account_linking_ = is_eligible_for_pix_account_linking;
+    action_token_ = action_token;
   }
 
   FacilitatedPaymentsNetworkInterface::RequestId id_;
@@ -158,17 +163,34 @@ TEST_F(FacilitatedPaymentsNetworkInterfaceTest,
 }
 
 TEST_F(FacilitatedPaymentsNetworkInterfaceTest,
-       GetDetailsForCreatePaymentInstrument_Success) {
+       GetDetailsForCreatePaymentInstrument_SuccessWithoutActionToken_AccountLinkingEligibilitySetToFalse) {
   SendGetDetailsForCreatePaymentInstrumentRequest();
   IssueOAuthToken();
   ReturnResponse(net::HTTP_OK, "{\"pix_account_linking_details\":{}}");
 
-  // Verify that a success result was received because the response contained
-  // the pix_account_linking_details.
+  // Verify that a success result was received, but eligibility is false
+  // because the response contained no action token.
+  EXPECT_EQ(
+      autofill::payments::PaymentsAutofillClient::PaymentsRpcResult::kSuccess,
+      result_);
+  EXPECT_FALSE(is_eligible_for_pix_account_linking_);
+  EXPECT_TRUE(action_token_.empty());
+}
+
+TEST_F(FacilitatedPaymentsNetworkInterfaceTest,
+       GetDetailsForCreatePaymentInstrument_SuccessWithActionToken) {
+  SendGetDetailsForCreatePaymentInstrumentRequest();
+  IssueOAuthToken();
+  ReturnResponse(
+      net::HTTP_OK,
+      "{\"pix_account_linking_details\":{\"action_token\":\"YWJj\"}}");
+
   EXPECT_EQ(
       autofill::payments::PaymentsAutofillClient::PaymentsRpcResult::kSuccess,
       result_);
   EXPECT_TRUE(is_eligible_for_pix_account_linking_);
+  std::vector<uint8_t> expected_action_token = {'a', 'b', 'c'};
+  EXPECT_EQ(expected_action_token, action_token_);
 }
 
 TEST_F(FacilitatedPaymentsNetworkInterfaceTest,
@@ -183,6 +205,19 @@ TEST_F(FacilitatedPaymentsNetworkInterfaceTest,
                 kPermanentFailure,
             result_);
   EXPECT_FALSE(is_eligible_for_pix_account_linking_);
+}
+
+TEST_F(FacilitatedPaymentsNetworkInterfaceTest,
+       GetDetailsForCreatePaymentInstrument_ClientToken) {
+  std::vector<uint8_t> client_token = {'a', 'b', 'c'};
+  SendGetDetailsForCreatePaymentInstrumentRequest(client_token);
+  IssueOAuthToken();
+  ReturnResponse(net::HTTP_OK, "{\"pix_account_linking_details\":{}}");
+
+  // Verify that the upload data contains the base64 encoded client token.
+  EXPECT_TRUE(GetUploadData().find("client_token") != std::string::npos);
+  EXPECT_TRUE(GetUploadData().find(base::Base64Encode(client_token)) !=
+              std::string::npos);
 }
 
 }  // namespace payments::facilitated

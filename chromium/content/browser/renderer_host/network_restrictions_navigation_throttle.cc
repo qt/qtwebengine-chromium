@@ -23,11 +23,18 @@ void NetworkRestrictionsNavigationThrottle::MaybeCreateAndAdd(
   NavigationRequest* navigation_request =
       static_cast<NavigationRequest*>(&registry.GetNavigationHandle());
 
-  if (!base::FeatureList::IsEnabled(network::features::kConnectionAllowlists)) {
+  if (navigation_request->IsSameDocument()) {
+    navigation_request->set_network_restrictions_id(
+        navigation_request->frame_tree_node()
+            ->current_frame_host()
+            ->GetNetworkRestrictionsID());
     return;
   }
 
-  if (navigation_request->IsSameDocument()) {
+  navigation_request->set_network_restrictions_id(
+      base::UnguessableToken::Create());
+
+  if (!base::FeatureList::IsEnabled(network::features::kConnectionAllowlists)) {
     return;
   }
 
@@ -37,9 +44,6 @@ void NetworkRestrictionsNavigationThrottle::MaybeCreateAndAdd(
   if (navigation_request->frame_tree_node()->IsInFencedFrameTree()) {
     return;
   }
-
-  navigation_request->set_network_restrictions_id(
-      base::UnguessableToken::Create());
 
   registry.AddThrottle(
       std::make_unique<NetworkRestrictionsNavigationThrottle>(registry));
@@ -51,7 +55,7 @@ NetworkRestrictionsNavigationThrottle::MaybeApplyNetworkRestrictions(
     NavigationRequest& navigation_request,
     base::OnceClosure on_complete) {
   auto network_restrictions_id = navigation_request.network_restrictions_id();
-  CHECK(network_restrictions_id.has_value());
+  CHECK(!network_restrictions_id.is_empty());
 
   const auto& policy_container_policies =
       navigation_request.GetPolicyContainerPolicies();
@@ -65,14 +69,10 @@ NetworkRestrictionsNavigationThrottle::MaybeApplyNetworkRestrictions(
         network::ConnectionAllowlistType::kReportOnly);
   }
 
-  // The origin trial status is tied to the existence of allowlists in policy
-  // container. If there does not exist an enforced allowlist in policies, it
-  // means either:
-  // 1. the trial was not active for that context.
-  // 2. or the parsed enforced allowlist is null. For example, the
-  // "Connection-Allowlist" header has an empty field value.
-  //
-  // The network restriction id is not applied in either case.
+  // If there does not exist an enforced allowlist or a report-only allowlist
+  // in policies, the network restriction id is not applied.
+  // For example, this happens when the allowlist headers have empty field
+  // values.
   if (!policy_container_policies.connection_allowlists.enforced &&
       !policy_container_policies.connection_allowlists.report_only) {
     return NetworkRestrictionsResult::kProceed;
@@ -96,7 +96,7 @@ NetworkRestrictionsNavigationThrottle::MaybeApplyNetworkRestrictions(
   navigation_request.GetRenderFrameHost()
       ->GetStoragePartition()
       ->RestrictNetworkForIdsInNetworkContext(
-          {{*network_restrictions_id, std::move(allowlists)}},
+          {{network_restrictions_id, std::move(allowlists)}},
           std::move(on_complete));
 
   return NetworkRestrictionsResult::kDefer;

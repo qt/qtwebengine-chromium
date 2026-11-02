@@ -579,6 +579,11 @@ def AddInstrumentationTestOptions(parser):
       dest='additional_locales',
       help='Specify locales in addition to the device locale to install splits '
       'for when --apk-under-test is an Android App Bundle.')
+  parser.add_argument('--device-data-filter',
+                      action='append',
+                      dest='device_data_filters',
+                      default=[],
+                      help='Device data filter (e.g. +//chrome/test/data/*)')
   parser.add_argument(
       '--coverage-dir',
       type=os.path.realpath,
@@ -1409,8 +1414,16 @@ def RunTestsInPlatformMode(args, result_sink_client=None):
       data_deps = test_run.GetDataDepsForListing()
 
     print('There are {} data files:'.format(len(data_deps)))
-    for d in data_deps:
-      print(d)
+    total_bytes = 0
+    for h, d in data_deps:
+      size = 0
+      try:
+        size = os.path.getsize(h)
+        total_bytes += size
+      except OSError as e:
+        sys.stderr.write(f'Warning: could not get size for {h}: {e}\n')
+      print(f'{size} {d} <- {os.path.relpath(h)}')
+    print('Total: {} files, {} bytes'.format(len(data_deps), total_bytes))
     return 0
 
   ### Run.

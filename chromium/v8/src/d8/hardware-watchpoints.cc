@@ -4,13 +4,17 @@
 
 #include "src/d8/hardware-watchpoints.h"
 
+#include "src/d8/memory-access-information.h"
+
 #ifdef V8_ENABLE_HARDWARE_WATCHPOINT_SUPPORT
 
 #include <sys/mman.h>
 #undef MAP_TYPE  // Conflicts with MAP_TYPE in Torque-generated instance-types.h
+#include <linux/elf.h>
 #include <pthread.h>
 #include <sys/prctl.h>
 #include <sys/ptrace.h>
+#include <sys/uio.h>
 #include <sys/user.h>
 #include <sys/wait.h>
 
@@ -122,22 +126,123 @@ void SetNewWatchpoints() {
                      offsetof(struct user, u_debugreg[7]), dr7));
 }
 
-using reg_value_type = unsigned long long;  // NOLINT(runtime/int)
+uint64_t MutateValue(uint64_t val, int width) {
+  // TODO(clemensb): Add API for specifying how to manipulate the value.
+  // TODO(clemensb): Look into strategies used by AFL:
+  // https://lcamtuf.blogspot.com/2014/08/binary-fuzzing-strategies-what-works.html.
+  // TODO(clemensb): Unify with strategies used by Samuel's trap-based fuzzer
+  // (https://crbug.com/361277236).
+  uint64_t new_value = val;
+  int bit_width = width * 8;
+  switch (g_support.rng.NextInt(4)) {
+    case 0:
+      new_value += 10;
+      break;
+    case 1:
+      new_value -= 10;
+      break;
+    case 2:
+      // Random bit flip within the accessed width.
+      new_value ^= uint64_t{1} << g_support.rng.NextInt(bit_width);
+      break;
+    case 3:
+      new_value = g_support.rng.NextInt64();
+      break;
+  }
+  uint64_t mask =
+      (bit_width == 64) ? ~uint64_t{0} : ((uint64_t{1} << bit_width) - 1);
+  return (val & ~mask) | (new_value & mask);
+}
 
-// The result of `DisassemblePreviousInstruction`, describing the kind of memory
-// access observed.
-struct MemoryAccessInformation {
-  enum Kind { kRead, kWrite, kCmp };
+void MutateRegister(reg_value_type* reg_ptr,
+                    const MemoryAccessInformation& access_info) {
+  uint64_t read_value = static_cast<uint64_t>(*reg_ptr);
+  // This function only handles general-purpose registers, which are at most 8
+  // bytes on x64. Wider vector registers are handled in a separate code path.
+  CHECK_LE(access_info.access_width, 8);
 
-  Kind kind;
+  uint64_t mutated_val = MutateValue(read_value, access_info.access_width);
 
-  // For kRead kind, one of the two following fields will be set.
+  int bit_width = access_info.access_width * 8;
+  uint64_t mask =
+      (bit_width == 64) ? ~uint64_t{0} : ((uint64_t{1} << bit_width) - 1);
+  uint64_t mutated_bits = mutated_val & mask;
+  uint64_t new_value = mutated_val;
 
-  // Pointer into the `user_regs_struct`.
-  reg_value_type* result_reg = nullptr;
-  // Index of the XMM register (0-15) if it's an XMM register.
-  int xmm_reg_index = -1;
-};
+  if (access_info.extension == MemoryAccessInformation::kSignExtend) {
+    // Sign-extend the source value up to the destination register width, then
+    // zero the bits above it: a movsx into a 32-bit register (movsxbl/movsxwl)
+    // sign-extends within 32 bits and zero-extends the upper half.
+    int dest_bit_width = access_info.dest_width * 8;
+    uint64_t dest_mask = (dest_bit_width == 64)
+                             ? ~uint64_t{0}
+                             : ((uint64_t{1} << dest_bit_width) - 1);
+    uint64_t sign_bit = uint64_t{1} << (bit_width - 1);
+    if ((mutated_bits & sign_bit) != 0) {
+      mutated_bits |= (~mask & dest_mask);
+    }
+    new_value = mutated_bits & dest_mask;
+  } else if (access_info.extension == MemoryAccessInformation::kZeroExtend) {
+    new_value = mutated_bits;
+  }
+
+  TRACE("[debugger] Changing value in result register from %" PRIu64 "/%" PRIx64
+        " to %" PRIu64 "/%" PRIx64 ".\n",
+        read_value, read_value, new_value, new_value);
+  *reg_ptr = static_cast<reg_value_type>(new_value);
+}
+
+void MutateRepMovsDestination(struct user_regs_struct& regs,
+                              const MemoryAccessInformation& access_info) {
+  // rep movs copied a value of size `access_info.access_width` from `[rsi]` to
+  // `[rdi]`. Because watchpoints are traps, the iteration has already
+  // completed. The registers rsi, rdi and rcx have been updated: rsi and rdi
+  // have been incremented (or decremented) by `access_info.access_width`.
+  // Therefore, the destination address of the completed write is:
+  // - regs.rdi - access_info.access_width (if DF is clear, i.e., incrementing)
+  // - regs.rdi + access_info.access_width (if DF is set, i.e., decrementing)
+
+  bool df = (regs.eflags & (1 << 10)) != 0;
+  uint64_t dest_addr = df ? (regs.rdi + access_info.access_width)
+                          : (regs.rdi - access_info.access_width);
+
+  // Align dest_addr to 8 bytes (sizeof(long)) for ptrace read-modify-write.
+  uintptr_t aligned_addr = dest_addr & ~7;
+  size_t offset = dest_addr & 7;
+  bool cross_boundary = (offset + access_info.access_width) > 8;
+
+  uint64_t data[2] = {0, 0};
+  errno = 0;
+  data[0] = ptrace(PTRACE_PEEKTEXT, g_support.d8_pid, aligned_addr, 0);
+  CHECK_EQ(0, errno);
+  if (cross_boundary) {
+    errno = 0;
+    data[1] = ptrace(PTRACE_PEEKTEXT, g_support.d8_pid, aligned_addr + 8, 0);
+    CHECK_EQ(0, errno);
+  }
+
+  // Extract the bytes that we actually want to mutate.
+  uint64_t original_val = 0;
+  memcpy(&original_val, reinterpret_cast<char*>(data) + offset,
+         access_info.access_width);
+
+  // Mutate/fuzz the original_val using the shared MutateValue helper.
+  uint64_t mutated_val = MutateValue(original_val, access_info.access_width);
+
+  // Write the mutated bytes back into the 64-bit word(s).
+  memcpy(reinterpret_cast<char*>(data) + offset, &mutated_val,
+         access_info.access_width);
+
+  CHECK_EQ(0, ptrace(PTRACE_POKETEXT, g_support.d8_pid, aligned_addr, data[0]));
+  if (cross_boundary) {
+    CHECK_EQ(0, ptrace(PTRACE_POKETEXT, g_support.d8_pid, aligned_addr + 8,
+                       data[1]));
+  }
+  TRACE(
+      "[debugger] Mutated rep movs destination memory at 0x%lx (width %d) from "
+      "0x%lx to 0x%lx\n",
+      dest_addr, access_info.access_width, original_val, mutated_val);
+}
 
 void DisassemblePreviousInstruction(struct user_regs_struct& regs,
                                     base::Vector<char> buffer) {
@@ -163,6 +268,39 @@ void DisassemblePreviousInstruction(struct user_regs_struct& regs,
     memcpy(bytes_around_rip + offset, &data, i::kSystemPointerSize);
   }
 
+  if (g_support.tracing_enabled) {
+    constexpr size_t kHexDumpSize = sizeof(bytes_around_rip) * 3 + 1;
+    char hex_dump[kHexDumpSize];
+    int outp = 0;
+    for (uint8_t b : bytes_around_rip) {
+      CHECK_EQ(3,
+               snprintf(hex_dump + outp, sizeof(hex_dump) - outp, " %02x", b));
+      outp += 3;
+    }
+    TRACE("[debugger] Bytes around rip (offset %zu):%s\n", rip_offset,
+          hex_dump);
+  }
+
+  // Watchpoints on repeating string instructions ('rep/repne') are
+  // reported as traps, but the saved RIP points to the repeating
+  // instruction itself to allow resumption.
+  // Although a watchpoint on an immediately preceding memory
+  // instruction would also leave RIP pointing here, in practice
+  // (e.g. glibc memcpy) 'rep' is always preceded by non-memory setup/
+  // alignment instructions (lea, sub, and, etc.). Thus, RIP pointing
+  // to 'rep' is guaranteed to be a trigger by the 'rep' itself.
+  // Check if RIP points to a repeating string instruction.
+  uint8_t prefix = bytes_around_rip[rip_offset];
+  uint8_t opcode = bytes_around_rip[rip_offset + 1];
+  if ((prefix == 0xf3 || prefix == 0xf2) &&
+      ((opcode >= 0xa4 && opcode <= 0xa7) ||
+       (opcode >= 0xaa && opcode <= 0xaf))) {
+    disasm.InstructionDecode(buffer, bytes_around_rip + rip_offset);
+    TRACE("[debugger] Executed instruction (repeating string) was: %s\n",
+          buffer.data());
+    return;
+  }
+
   // Try disassembling at increasing offsets. Eventually this should synchronize
   // with the instruction stream and find the instruction ending at `rip`.
   for (size_t start_offset = 0; start_offset < rip_offset; ++start_offset) {
@@ -178,66 +316,34 @@ void DisassemblePreviousInstruction(struct user_regs_struct& regs,
     return;
   }
 
-  FATAL("Failed to disassemble instruction before 0x%llx", regs.rip);
+  FATAL("Failed to disassemble instruction before 0x%" PRIx64,
+        static_cast<uint64_t>(regs.rip));
 }
 
 char* SkipToInstruction(char* disas) {
   while (isxdigit(*disas)) ++disas;
   // Skip over spaces.
   while (*disas == ' ') ++disas;
-  // Skip over REX prefix.
-  if (memcmp(disas, "REX.W ", 6) == 0) disas += 6;
+  // Skip over prefixes.
+  while (true) {
+    if (memcmp(disas, "REX.W ", 6) == 0) {
+      disas += 6;
+    } else if (memcmp(disas, "lock ", 5) == 0) {
+      disas += 5;
+    } else {
+      break;
+    }
+  }
   return disas;
 }
 
-// Returns a pointer to the field in `regs` which was read before `regs.rip`.
-// This is used when a watchpoint is hit to figure out if it was a read or
-// write, and where the result of the read was stored.
-// On a write, this returns `nullptr`.
 MemoryAccessInformation GetMemoryAccessInformationFromPreviousInstruction(
     struct user_regs_struct& regs) {
   // Buffer for disassembled instruction.
   char buffer[64];
   DisassemblePreviousInstruction(regs, base::VectorOf(buffer));
   char* insn_pos = SkipToInstruction(buffer);
-
-  if (memcmp(insn_pos, "cmp", 3) == 0) {
-    return {.kind = MemoryAccessInformation::kCmp};
-  }
-  // TODO(clemensb): Implement more instructions if necessary.
-  if (memcmp(insn_pos, "mov", 3) != 0 && memcmp(insn_pos, "sub", 3) != 0 &&
-      memcmp(insn_pos, "add", 3) != 0) {
-    FATAL("Not a mov/sub/add: %s\n", buffer);
-  }
-
-  // Find the position of the comma to figure out if the memory operand is
-  // on the LHS (read) or RHS (write).
-  char* space_pos = strchr(insn_pos + 3, ' ');
-  CHECK_NOT_NULL(space_pos);
-  char* comma_pos = strchr(space_pos + 1, ',');
-  CHECK_NOT_NULL(comma_pos);
-  bool mem_op_on_lhs = space_pos[1] == '[';
-  bool mem_op_on_rhs = comma_pos[1] == '[';
-  // Be extra careful to interpret the disassembly correctly.
-  CHECK_EQ(mem_op_on_lhs, comma_pos[-1] == ']');
-  CHECK_EQ(mem_op_on_rhs, space_pos[strlen(space_pos) - 1] == ']');
-  CHECK_EQ(mem_op_on_lhs, !mem_op_on_rhs);
-  if (mem_op_on_lhs) return {.kind = MemoryAccessInformation::kWrite};
-#define FIND_REG_NAME(name)                                                    \
-  if (memcmp(space_pos + 1, #name, strlen(#name)) == 0) {                      \
-    return {.kind = MemoryAccessInformation::kRead, .result_reg = &regs.name}; \
-  }
-  GENERAL_REGISTERS(FIND_REG_NAME)
-#undef FIND_REG_NAME
-
-  if (memcmp(space_pos + 1, "xmm", 3) == 0) {
-    int reg_num = atoi(space_pos + 4);
-    CHECK_LE(0, reg_num);
-    CHECK_LE(reg_num, 15);
-    return {.kind = MemoryAccessInformation::kRead, .xmm_reg_index = reg_num};
-  }
-
-  FATAL("Could not read register name: %s", buffer);
+  return ParseMemoryAccessInformationFromInstruction(insn_pos, regs);
 }
 
 void MutateReadValue(struct user_regs_struct& regs,
@@ -245,86 +351,117 @@ void MutateReadValue(struct user_regs_struct& regs,
   DCHECK_EQ(MemoryAccessInformation::kRead, access_info.kind);
 
   const bool is_xmm = access_info.xmm_reg_index >= 0;
+  const bool is_k_reg = access_info.k_reg_index >= 0;
 
-  if (is_xmm) {
-    // Floating point values are much less interesting to mutate, but for
-    // completeness we support mutating them as well.
-    struct user_fpregs_struct fpregs;
-    CHECK_EQ(0, ptrace(PTRACE_GETFPREGS, g_support.d8_pid,
-                       /* unused addr = */ 0, &fpregs));
-    uint64_t* target_val_ptr = reinterpret_cast<uint64_t*>(
-        &fpregs.xmm_space[access_info.xmm_reg_index * 4]);
-    uint64_t read_value_u64 = *target_val_ptr;
-    double read_value_double = base::bit_cast<double>(read_value_u64);
+  if (is_xmm || is_k_reg) {
+    // Floating point and mask register values are much less interesting to
+    // mutate, but for completeness we support mutating them as well. They are
+    // part of the extended state (AVX/YMM/AVX-512). We use the newer
+    // PTRACE_GETREGSET API to support both. Newer CPUs like Intel Sapphire
+    // Rapids (or Emerald Rapids) with AMX enabled require more than 8KB for the
+    // XSAVE state. AMX matrix tile registers (TMM0-TMM7) alone add 8KB of
+    // state. For such CPUs, `cpuid leaf 0xD` currently reports a required size
+    // of 11008 bytes. We allocate a 16KB buffer to provide some headroom for
+    // future extensions. If future CPUs require even more space, this buffer
+    // size can be increased accordingly.
+    alignas(64) uint8_t xsave_buffer[16384];
+    struct iovec iov;
+    iov.iov_base = xsave_buffer;
+    iov.iov_len = sizeof(xsave_buffer);
 
-    // TODO(clemensb): Same TODOs as below apply here.
-    // TODO(clemensb): In particular we could / should generate special values
-    // like different NaNs, denormals, +/-0, +/- inf.
-    uint64_t new_value;
-    double new_value_double;
-    switch (g_support.rng.NextInt(4)) {
-      case 0:
-        new_value_double = read_value_double + 10.;
-        new_value = base::bit_cast<uint64_t>(new_value_double);
-        break;
-      case 1:
-        new_value_double = read_value_double - 10.;
-        new_value = base::bit_cast<uint64_t>(new_value_double);
-        break;
-      case 2:
-        // Random bit flip.
-        new_value = read_value_u64 ^ (uint64_t{1} << g_support.rng.NextInt(64));
-        new_value_double = base::bit_cast<double>(new_value);
-        break;
-      case 3:
-        new_value = g_support.rng.NextInt64();
-        new_value_double = base::bit_cast<double>(new_value);
-        break;
+    int cpu_info[4];
+    // CPUID leaf 0xD, sub-leaf 0 returns the maximum size (in bytes) required
+    // by the XSAVE state for all currently enabled features in the XCR0
+    // register. The size is returned in the EBX register (cpu_info[1]).
+    __asm__ volatile("cpuid \n\t"
+                     : "=a"(cpu_info[0]), "=b"(cpu_info[1]), "=c"(cpu_info[2]),
+                       "=d"(cpu_info[3])
+                     : "a"(0xD), "c"(0));
+    size_t required_size = static_cast<size_t>(cpu_info[1]);
+    CHECK_GE(sizeof(xsave_buffer), required_size);
+
+    CHECK_EQ(0, ptrace(PTRACE_GETREGSET, g_support.d8_pid,
+                       reinterpret_cast<void*>(NT_X86_XSTATE), &iov));
+
+    uint64_t* target_val_ptr = nullptr;
+
+    if (is_xmm) {
+      static constexpr size_t kXmmRegistersOffset =
+          offsetof(struct user_fpregs_struct, xmm_space);
+      size_t reg_offset = access_info.xmm_reg_index * i::kSimd128Size;
+      // Note: We currently only mutate the lower 64 bits of the YMM/XMM
+      // register. This is sufficient to trigger a value change that can be
+      // detected in JavaScript, but does not provide full 256-bit mutation.
+      // TODO(clemensb): Mutate all bits and respect access_info.access_width.
+      target_val_ptr = reinterpret_cast<uint64_t*>(
+          xsave_buffer + kXmmRegistersOffset + reg_offset);
+    } else {
+      DCHECK(is_k_reg);
+      // CPUID leaf 0xD, sub-leaf 5 returns the size and offset of the AVX-512
+      // opmask state component. Offset is returned in EBX (cpu_info[1]).
+      __asm__ volatile("cpuid \n\t"
+                       : "=a"(cpu_info[0]), "=b"(cpu_info[1]),
+                         "=c"(cpu_info[2]), "=d"(cpu_info[3])
+                       : "a"(0xD), "c"(5));
+      size_t k_registers_offset = static_cast<size_t>(cpu_info[1]);
+      CHECK_NE(0, k_registers_offset);
+      target_val_ptr = reinterpret_cast<uint64_t*>(
+          xsave_buffer + k_registers_offset + access_info.k_reg_index * 8);
     }
-    TRACE(
-        "[debugger] Changing value in result register from "
-        "%" PRIu64 "/%" PRIx64 "/%.16g to %" PRIu64 "/%" PRIx64 "/%.16g.\n",
-        read_value_u64, read_value_u64, read_value_double, new_value, new_value,
-        new_value_double);
+
+    uint64_t read_value_u64 = *target_val_ptr;
+    uint64_t new_value;
+
+    if (is_xmm) {
+      double read_value_double = base::bit_cast<double>(read_value_u64);
+      double new_value_double;
+      // TODO(clemensb): Same TODOs as below apply here.
+      // TODO(clemensb): In particular we could / should generate special values
+      // like different NaNs, denormals, +/-0, +/- inf.
+      switch (g_support.rng.NextInt(4)) {
+        case 0:
+          new_value_double = read_value_double + 10.;
+          new_value = base::bit_cast<uint64_t>(new_value_double);
+          break;
+        case 1:
+          new_value_double = read_value_double - 10.;
+          new_value = base::bit_cast<uint64_t>(new_value_double);
+          break;
+        case 2:
+          // Random bit flip.
+          new_value =
+              read_value_u64 ^ (uint64_t{1} << g_support.rng.NextInt(64));
+          new_value_double = base::bit_cast<double>(new_value);
+          break;
+        case 3:
+          new_value = g_support.rng.NextInt64();
+          new_value_double = base::bit_cast<double>(new_value);
+          break;
+      }
+      TRACE(
+          "[debugger] Changing value in result register from "
+          "%" PRIu64 "/%" PRIx64 "/%.16g to %" PRIu64 "/%" PRIx64 "/%.16g.\n",
+          read_value_u64, read_value_u64, read_value_double, new_value,
+          new_value, new_value_double);
+    } else {
+      // Basic mutation: Flip a random bit in the lower 16 bits of the mask.
+      new_value = read_value_u64 ^ (uint64_t{1} << g_support.rng.NextInt(16));
+      TRACE(
+          "[debugger] Changing value in mask register k%d from "
+          "%" PRIu64 "/%" PRIx64 " to %" PRIu64 "/%" PRIx64 ".\n",
+          access_info.k_reg_index, read_value_u64, read_value_u64, new_value,
+          new_value);
+    }
 
     *target_val_ptr = new_value;
 
-    CHECK_EQ(0, ptrace(PTRACE_SETFPREGS, g_support.d8_pid,
-                       /* unused addr = */ 0, &fpregs));
+    CHECK_EQ(0, ptrace(PTRACE_SETREGSET, g_support.d8_pid,
+                       reinterpret_cast<void*>(NT_X86_XSTATE), &iov));
     return;
   }
 
   CHECK_NOT_NULL(access_info.result_reg);
-  uint64_t read_value = *access_info.result_reg;
-
-  // TODO(clemensb): Add API for specifying how to manipulate the value.
-  // TODO(clemensb): Make sure to only produce values that the specific
-  // instruction would have produced.
-  // TODO(clemensb): Look into strategies used by AFL:
-  // https://lcamtuf.blogspot.com/2014/08/binary-fuzzing-strategies-what-works.html.
-  // TODO(clemensb): Unify with strategies used by Samuel's trap-based fuzzer
-  // (https://crbug.com/361277236).
-  uint64_t new_value = read_value;
-  switch (g_support.rng.NextInt(4)) {
-    case 0:
-      new_value += 10;
-      break;
-    case 1:
-      new_value -= 10;
-      break;
-    case 2:
-      // Random bit flip.
-      new_value ^= uint64_t{1} << g_support.rng.NextInt(64);
-      break;
-    case 3:
-      new_value = g_support.rng.NextInt64();
-      break;
-  }
-  new_value = new_value & 0xffffffffu;
-  TRACE("[debugger] Changing value in result register from %" PRIu64 "/%" PRIx64
-        " to %" PRIu64 "/%" PRIx64 ".\n",
-        read_value, read_value, new_value, new_value);
-  *access_info.result_reg = new_value;
+  MutateRegister(access_info.result_reg, access_info);
 
   CHECK_EQ(0, ptrace(PTRACE_SETREGS, g_support.d8_pid, /* unused addr = */ 0,
                      &regs));
@@ -389,6 +526,67 @@ void MutateFlagsAfterCmp(struct user_regs_struct& regs) {
                      &regs));
 }
 
+void MutateCmpxchgOutcome(struct user_regs_struct& regs,
+                          const MemoryAccessInformation& access_info) {
+  // `cmpxchg` is an atomic compare-and-swap instruction.
+  // - If [mem] == rax: ZF = 1, [mem] = src.
+  // - If [mem] != rax: ZF = 0, rax = [mem].
+
+  // We can fuzz the outcome of this instruction by simulating that it had the
+  // opposite result of what actually happened, or by mutating the returned
+  // register on failure while keeping the failure outcome.
+
+  constexpr uint32_t kZF = 1 << 6;
+  bool success = (regs.eflags & kZF) != 0;
+
+  // We randomly choose one of the following:
+  // - Do nothing (treat as a write or an unmodified atomic operation).
+  // - Simulate the opposite outcome.
+  // - On failure (ZF=0), keep ZF=0 but mutate rax.
+  int strategy = g_support.rng.NextInt(3);
+  if (strategy == 0) {
+    TRACE("[debugger] cmpxchg: No mutation (hardware reported %s).\n",
+          success ? "success" : "failure");
+    return;
+  }
+
+  if (success) {
+    // Hardware reported success (ZF=1), so the memory was updated.
+    // We simulate a failure by flipping ZF to 0 and mutating `rax`.
+    // In a real failure, `rax` would have been loaded with the current memory
+    // value. By mutating it, we simulate that a different value was read.
+    TRACE("[debugger] cmpxchg: Simulating failure (was success).\n");
+    regs.eflags &= ~kZF;
+    MutateRegister(&regs.rax, access_info);
+  } else {
+    if (strategy == 1) {
+      // Hardware reported failure (ZF=0), so `rax` was loaded with the current
+      // memory value.
+      // We simulate a success by flipping ZF to 1.
+      // This simulates that the comparison succeeded even though the memory
+      // contained a different value.
+      // Note that the memory was not actually updated by the hardware, and the
+      // original `rax` value (the one we compared against) is lost because the
+      // hardware already overrode it with the value from memory.
+      // This can lead to unexpected crashes or failures in the calling code.
+      // If this ever happens we have to revisit this mutation strategy.
+      TRACE("[debugger] cmpxchg: Simulating success (was failure).\n");
+      regs.eflags |= kZF;
+    } else {
+      // Hardware reported failure (ZF=0), so `rax` was loaded with the current
+      // memory value.
+      // We keep ZF=0 (failure) but mutate `rax`.
+      // This simulates that the comparison failed and loaded a
+      // mutated/corrupted value into `rax` from memory.
+      TRACE("[debugger] cmpxchg: Mutating rax on failure (keeping ZF=0).\n");
+      MutateRegister(&regs.rax, access_info);
+    }
+  }
+
+  CHECK_EQ(0, ptrace(PTRACE_SETREGS, g_support.d8_pid, /* unused addr = */ 0,
+                     &regs));
+}
+
 // Executed in the "debugger" process: Check if a watchpoint was hit and handle
 // it.
 // Return true if a watchpoint was hit, false otherwise.
@@ -424,8 +622,16 @@ bool HandleWatchpoint(struct user_regs_struct& regs) {
       TRACE("[debugger] Ignoring write.\n");
       break;
 
+    case MemoryAccessInformation::kRepMovs:
+      MutateRepMovsDestination(regs, access_info);
+      break;
+
     case MemoryAccessInformation::kCmp:
       MutateFlagsAfterCmp(regs);
+      break;
+
+    case MemoryAccessInformation::kCmpxchg:
+      MutateCmpxchgOutcome(regs, access_info);
       break;
   }
 
@@ -469,8 +675,8 @@ HowToContinueAfterWatchpoint WaitForD8ToStopThenReact() {
   struct user_regs_struct regs;
   CHECK_EQ(0, ptrace(PTRACE_GETREGS, g_support.d8_pid, /* unused addr = */ 0,
                      &regs));
-  TRACE("[debugger] d8 stopped at 0x%llx (sig %d, %s).\n", regs.rip, signal,
-        strsignal(signal));
+  TRACE("[debugger] d8 stopped at 0x%" PRIx64 " (sig %d, %s).\n",
+        static_cast<uint64_t>(regs.rip), signal, strsignal(signal));
 
   switch (signal) {
     case SIGSTOP:

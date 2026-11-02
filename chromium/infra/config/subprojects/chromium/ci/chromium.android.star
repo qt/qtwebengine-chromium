@@ -37,8 +37,10 @@ ci.defaults.set(
     health_spec = health_spec.default(),
     service_account = ci_constants.DEFAULT_SERVICE_ACCOUNT,
     shadow_service_account = ci_constants.DEFAULT_SHADOW_SERVICE_ACCOUNT,
+    siso_output_local_strategy = "greedy",
     siso_project = siso.project.DEFAULT_TRUSTED,
     siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CI,
+    siso_remote_linking = True,
 )
 
 targets.builder_defaults.set(
@@ -167,6 +169,7 @@ ci.builder(
     targets = targets.bundle(
         additional_compile_targets = "android_lint",
     ),
+    ssd = None,
     # The 'All' version of this builder below provides the same build coverage
     # but cycles much faster due to beefier machine resources. So any regression
     # that this bot would close the tree on would always be caught by the 'All'
@@ -317,6 +320,7 @@ ci.builder(
             "all",
         ],
     ),
+    ssd = None,
     free_space = builders.free_space.high,
     console_view_entry = consoles.console_view_entry(
         category = "builder|x86",
@@ -325,13 +329,6 @@ ci.builder(
     cq_mirrors_console_view = "mirrors",
     contact_team_email = "clank-engprod@google.com",
     execution_timeout = 7 * time.hour,
-    # prevent from bot died by OOM. https://crbug.com/425441534
-    siso_experiments = [
-        "oom-score-adj",
-    ],
-    # enable remote link to mitigate bot died https://crbug.com/418817397
-    siso_output_local_strategy = "greedy",
-    siso_remote_linking = True,
 )
 
 ci.builder(
@@ -415,6 +412,7 @@ ci.builder(
             "webview_shell",
         ],
     ),
+    ssd = None,
     tree_closing = True,
     console_view_entry = consoles.console_view_entry(
         category = "builder|x86",
@@ -463,6 +461,7 @@ ci.thin_tester(
     targets_settings = targets.settings(
         os_type = targets.os_type.ANDROID,
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "tester|x86",
         short_name = "10",
@@ -517,6 +516,7 @@ ci.builder(
             "has_native_resultdb_integration",
         ],
     ),
+    ssd = None,
     tree_closing = True,
     console_view_entry = consoles.console_view_entry(
         category = "cast",
@@ -574,6 +574,7 @@ ci.builder(
             "has_native_resultdb_integration",
         ],
     ),
+    ssd = None,
     tree_closing = True,
     console_view_entry = consoles.console_view_entry(
         category = "cast",
@@ -630,6 +631,7 @@ ci.builder(
             "has_native_resultdb_integration",
         ],
     ),
+    ssd = None,
     tree_closing = True,
     console_view_entry = consoles.console_view_entry(
         category = "cast",
@@ -687,6 +689,7 @@ ci.builder(
             "has_native_resultdb_integration",
         ],
     ),
+    ssd = None,
     tree_closing = True,
     console_view_entry = consoles.console_view_entry(
         category = "cast",
@@ -719,6 +722,9 @@ ci.builder(
     contact_team_email = "clank-engprod@google.com",
     execution_timeout = 7 * time.hour,
     notifies = ["Deterministic Android"],
+    # crbug.com/528174631: Deterministic builder needs to download all remote
+    # outputs to compare them.
+    siso_output_local_strategy = "full",
 )
 
 ci.builder(
@@ -744,6 +750,9 @@ ci.builder(
     contact_team_email = "clank-engprod@google.com",
     execution_timeout = 6 * time.hour,
     notifies = ["Deterministic Android"],
+    # crbug.com/528174631: Deterministic builder needs to download all remote
+    # outputs to compare them.
+    siso_output_local_strategy = "full",
     siso_remote_jobs = siso.remote_jobs.DEFAULT,
 )
 
@@ -797,9 +806,9 @@ ci.builder(
             "has_native_resultdb_integration",
             "walleye",
             "10_fleet",
-            "retry_only_failed_tests",
         ],
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "builder_tester|arm64",
         short_name = "10",
@@ -844,7 +853,6 @@ ci.builder(
             "has_native_resultdb_integration",
             "linux-jammy",
             "x86-64",
-            "retry_only_failed_tests",
         ],
         per_test_modifications = {
             "android_browsertests": targets.mixin(
@@ -932,6 +940,7 @@ ci.builder(
     targets_settings = targets.settings(
         os_type = targets.os_type.ANDROID,
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "tester|tablet",
         short_name = "12L",
@@ -997,6 +1006,7 @@ ci.builder(
     targets_settings = targets.settings(
         os_type = targets.os_type.ANDROID,
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "tester|tablet",
         short_name = "12L-L",
@@ -1018,10 +1028,10 @@ ci.builder(
             "emulator-8-cores",
             "has_native_resultdb_integration",
             "linux-jammy",
-            "retry_only_failed_tests",
             "x86-64",
         ],
     ),
+    ssd = None,
     tree_closing = True,
     console_view_entry = consoles.console_view_entry(
         category = "on_cq|x64",
@@ -1115,6 +1125,7 @@ ci.builder(
             ),
         },
     ),
+    ssd = None,
     gardener_rotations = args.ignore_default(None),
     console_view_entry = consoles.console_view_entry(
         category = "builder_tester|arm64",
@@ -1188,6 +1199,7 @@ ci.builder(
             ),
         },
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "bfcache",
         short_name = "bfc",
@@ -1221,6 +1233,7 @@ ci.builder(
         short_name = "size",
     ),
     contact_team_email = "clank-engprod@google.com",
+    siso_output_local_strategy = "full",
     siso_remote_jobs = siso.remote_jobs.DEFAULT,
 )
 
@@ -1265,6 +1278,7 @@ ci.builder(
             "cronet_dbg_isolated_scripts",
         ],
     ),
+    ssd = None,
     gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
     console_view_entry = consoles.console_view_entry(
         category = "cronet|arm",
@@ -1319,6 +1333,7 @@ ci.builder(
             "cronet_package",
         ],
     ),
+    ssd = None,
     gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
     console_view_entry = consoles.console_view_entry(
         category = "cronet|arm",
@@ -1368,6 +1383,7 @@ ci.builder(
             "cronet_package_ci",
         ],
     ),
+    ssd = None,
     gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
     console_view_entry = consoles.console_view_entry(
         category = "cronet|arm64",
@@ -1417,6 +1433,7 @@ ci.builder(
             "cronet_package_ci",
         ],
     ),
+    ssd = None,
     gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
     console_view_entry = consoles.console_view_entry(
         category = "cronet|arm64",
@@ -1463,6 +1480,7 @@ ci.builder(
             "cronet_dbg_isolated_scripts",
         ],
     ),
+    ssd = None,
     gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
     console_view_entry = consoles.console_view_entry(
         category = "cronet|riscv64",
@@ -1510,6 +1528,7 @@ ci.builder(
             "cronet_rel_isolated_scripts",
         ],
     ),
+    ssd = None,
     gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
     console_view_entry = consoles.console_view_entry(
         category = "cronet|riscv64",
@@ -1570,6 +1589,7 @@ ci.builder(
             ),
         },
     ),
+    ssd = None,
     gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
     console_view_entry = consoles.console_view_entry(
         category = "cronet|x86",
@@ -1630,6 +1650,7 @@ ci.builder(
             ),
         },
     ),
+    ssd = None,
     gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
     console_view_entry = consoles.console_view_entry(
         category = "cronet|x64",
@@ -1677,6 +1698,7 @@ ci.thin_tester(
             "x86-64",
         ],
     ),
+    ssd = None,
     gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
     console_view_entry = consoles.console_view_entry(
         category = "cronet|test",
@@ -1724,6 +1746,7 @@ ci.thin_tester(
             "x86-64",
         ],
     ),
+    ssd = None,
     gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
     console_view_entry = consoles.console_view_entry(
         category = "cronet|test",
@@ -1773,6 +1796,7 @@ ci.thin_tester(
             "x86-64",
         ],
     ),
+    ssd = None,
     gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
     console_view_entry = consoles.console_view_entry(
         category = "cronet|test",
@@ -1822,6 +1846,7 @@ ci.thin_tester(
             "x86-64",
         ],
     ),
+    ssd = None,
     gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
     console_view_entry = consoles.console_view_entry(
         category = "cronet|test",
@@ -1871,6 +1896,7 @@ ci.thin_tester(
             "x86-64",
         ],
     ),
+    ssd = None,
     gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
     console_view_entry = consoles.console_view_entry(
         category = "cronet|test",
@@ -1965,6 +1991,7 @@ ci.thin_tester(
             "x86-64",
         ],
     ),
+    ssd = None,
     gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
     console_view_entry = consoles.console_view_entry(
         category = "cronet|test",
@@ -2019,6 +2046,7 @@ ci.thin_tester(
             ),
         },
     ),
+    ssd = None,
     gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
     console_view_entry = consoles.console_view_entry(
         category = "cronet|test",
@@ -2074,6 +2102,7 @@ ci.thin_tester(
             ),
         },
     ),
+    ssd = None,
     gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
     console_view_entry = consoles.console_view_entry(
         category = "cronet|test",
@@ -2129,6 +2158,7 @@ ci.thin_tester(
             ),
         },
     ),
+    ssd = None,
     gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
     console_view_entry = consoles.console_view_entry(
         category = "cronet|test",
@@ -2176,6 +2206,7 @@ ci.thin_tester(
             "x86-64",
         ],
     ),
+    ssd = None,
     gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
     console_view_entry = consoles.console_view_entry(
         category = "cronet|test",
@@ -2226,6 +2257,7 @@ ci.builder(
             "cronet_smoketests_apk",
         ],
     ),
+    ssd = None,
     gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
     console_view_entry = consoles.console_view_entry(
         category = "cronet|x86",
@@ -2275,6 +2307,7 @@ ci.builder(
             "cronet_smoketests_apk",
         ],
     ),
+    ssd = None,
     gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
     console_view_entry = consoles.console_view_entry(
         category = "cronet|x64",
@@ -2343,7 +2376,6 @@ ci.builder(
             "emulator-4-cores",
             "linux-jammy",
             "x86-64",
-            "retry_only_failed_tests",
         ],
         per_test_modifications = {
             "base_unittests_android_death_tests": targets.mixin(
@@ -2481,6 +2513,7 @@ ci.builder(
     targets_settings = targets.settings(
         os_type = targets.os_type.ANDROID,
     ),
+    ssd = None,
     tree_closing = True,
     console_view_entry = consoles.console_view_entry(
         category = "on_cq|x86",
@@ -2547,7 +2580,6 @@ ci.builder(
             "emulator-4-cores",
             "linux-jammy",
             "x86-64",
-            "retry_only_failed_tests",
         ],
         per_test_modifications = {
             "android_browsertests": targets.mixin(
@@ -2689,6 +2721,7 @@ ci.builder(
     targets_settings = targets.settings(
         os_type = targets.os_type.ANDROID,
     ),
+    ssd = None,
     tree_closing = True,
     console_view_entry = consoles.console_view_entry(
         category = "builder_tester|x86",
@@ -2823,6 +2856,7 @@ ci.builder(
     targets_settings = targets.settings(
         os_type = targets.os_type.ANDROID,
     ),
+    ssd = None,
     tree_closing = True,
     console_view_entry = consoles.console_view_entry(
         category = "builder_tester|x86",
@@ -2991,6 +3025,7 @@ ci.builder(
             ),
         },
     ),
+    ssd = None,
     tree_closing = True,
     console_view_entry = consoles.console_view_entry(
         category = "builder_tester|x64",
@@ -3050,10 +3085,6 @@ ci.builder(
         ],
         per_test_modifications = {
             "android_browsertests": targets.mixin(
-                args = [
-                    # https://crbug.com/1414886
-                    "--gtest_filter=-OfferNotificationControllerAndroidBrowserTestForMessagesUi.MessageShown",
-                ],
                 swarming = targets.swarming(
                     shards = 12,
                 ),
@@ -3132,6 +3163,7 @@ ci.builder(
             ),
         },
     ),
+    ssd = None,
     tree_closing = True,
     console_view_entry = consoles.console_view_entry(
         category = "builder_tester|x64",
@@ -3187,7 +3219,6 @@ ci.builder(
             "has_native_resultdb_integration",
             "isolate_profile_data",
             "panther_on_14",
-            "retry_only_failed_tests",
         ],
         per_test_modifications = {
             "android_browsertests": targets.mixin(
@@ -3225,6 +3256,7 @@ ci.builder(
     targets_settings = targets.settings(
         os_type = targets.os_type.ANDROID,
     ),
+    ssd = None,
     tree_closing = True,
     console_view_entry = consoles.console_view_entry(
         category = "on_cq",
@@ -3396,6 +3428,7 @@ ci.builder(
     targets_settings = targets.settings(
         os_type = targets.os_type.ANDROID,
     ),
+    ssd = None,
     tree_closing = True,
     console_view_entry = consoles.console_view_entry(
         category = "builder_tester|x64",
@@ -3467,6 +3500,7 @@ ci.builder(
     targets_settings = targets.settings(
         os_type = targets.os_type.ANDROID,
     ),
+    ssd = None,
     gardener_rotations = args.ignore_default(None),
     #tree_closing = True,
     console_view_entry = consoles.console_view_entry(
@@ -3584,17 +3618,13 @@ ci.builder(
     targets_settings = targets.settings(
         os_type = targets.os_type.ANDROID,
     ),
+    ssd = None,
     tree_closing = True,
     console_view_entry = consoles.console_view_entry(
         category = "builder_tester|arm64",
         short_name = "14T-L",
     ),
     contact_team_email = "clank-engprod@google.com",
-    # crbug.com/372192123 - downloading with "minimum" strategy doesn't work
-    # well for Android builds because some steps have additional inputs/outputs
-    # they are not configured in the build graph.
-    siso_output_local_strategy = "greedy",
-    siso_remote_linking = True,
 )
 
 ci.builder(
@@ -3646,7 +3676,6 @@ ci.builder(
             "has_native_resultdb_integration",
             "linux-jammy",
             "x86-64",
-            "retry_only_failed_tests",
         ],
         per_test_modifications = {
             "android_browsertests": targets.mixin(
@@ -3745,6 +3774,7 @@ ci.builder(
     targets_settings = targets.settings(
         os_type = targets.os_type.ANDROID,
     ),
+    ssd = None,
     tree_closing = True,
     console_view_entry = consoles.console_view_entry(
         category = "on_cq|x64",
@@ -3817,6 +3847,7 @@ ci.builder(
     targets_settings = targets.settings(
         os_type = targets.os_type.ANDROID,
     ),
+    ssd = None,
     tree_closing = True,
     console_view_entry = consoles.console_view_entry(
         category = "builder_tester|x64",
@@ -3943,6 +3974,7 @@ ci.builder(
     targets_settings = targets.settings(
         os_type = targets.os_type.ANDROID,
     ),
+    ssd = None,
     tree_closing = True,
     console_view_entry = consoles.console_view_entry(
         category = "builder_tester|x64",
@@ -4059,6 +4091,7 @@ ci.builder(
     targets_settings = targets.settings(
         os_type = targets.os_type.ANDROID,
     ),
+    ssd = None,
     tree_closing = True,
     console_view_entry = consoles.console_view_entry(
         category = "tester|x64",
@@ -4226,12 +4259,76 @@ ci.builder(
     targets_settings = targets.settings(
         os_type = targets.os_type.ANDROID,
     ),
+    ssd = None,
     tree_closing = True,
     console_view_entry = consoles.console_view_entry(
         category = "emulator|x64|rel",
         short_name = "16",
     ),
     contact_team_email = "clank-engprod@google.com",
+)
+
+ci.builder(
+    name = "android-16-x64-leakcanary-rel",
+    description_html = "Runs Java instrumentation tests with LeakCanary enabled.",
+    builder_spec = builder_config.builder_spec(
+        gclient_config = builder_config.gclient_config(
+            config = "chromium",
+            apply_configs = [
+                "android",
+            ],
+        ),
+        chromium_config = builder_config.chromium_config(
+            config = "main_builder",
+            apply_configs = ["mb"],
+            build_config = builder_config.build_config.RELEASE,
+            target_arch = builder_config.target_arch.INTEL,
+            target_bits = 64,
+            target_platform = builder_config.target_platform.ANDROID,
+        ),
+        android_config = builder_config.android_config(
+            config = "base_config",
+        ),
+    ),
+    gn_args = gn_args.config(
+        configs = [
+            "android_builder",
+            "release_builder",
+            "remoteexec",
+            "minimal_symbols",
+            "x64",
+            "android_fastbuild",
+            "webview_trichrome",
+            "webview_shell",
+        ],
+    ),
+    targets = targets.bundle(
+        targets = [
+            "android_leakcanary_tests",
+        ],
+        mixins = [
+            "16-x64-emulator",
+            "emulator-8-cores",
+            "has_native_resultdb_integration",
+            "linux-jammy",
+            "x86-64",
+        ],
+        per_test_modifications = {
+            "chrome_public_test_apk": targets.mixin(
+                args = [
+                    "--skia-gold-consider-unsupported",
+                ],
+            ),
+        },
+    ),
+    ssd = None,
+    tree_closing = True,
+    console_view_entry = consoles.console_view_entry(
+        category = "emulator|x64|rel",
+        short_name = "leak",
+    ),
+    contact_team_email = "clank-engprod@google.com",
+    execution_timeout = 4 * time.hour,
 )
 
 ci.builder(
@@ -4281,7 +4378,6 @@ ci.builder(
             "has_native_resultdb_integration",
             "linux-jammy",
             "x86-64",
-            "retry_only_failed_tests",
         ],
         per_test_modifications = {
             "webview_64_cts_hostside_tests full_mode": targets.mixin(
@@ -4291,6 +4387,7 @@ ci.builder(
             ),
         },
     ),
+    ssd = None,
     tree_closing = True,
     console_view_entry = consoles.console_view_entry(
         category = "on_cq|x64",
@@ -4386,6 +4483,7 @@ ci.builder(
     targets_settings = targets.settings(
         os_type = targets.os_type.ANDROID,
     ),
+    ssd = None,
     # TODO(crbug.com/40268661): Enable gardening once tests are stable
     gardener_rotations = args.ignore_default(None),
     console_view_entry = consoles.console_view_entry(

@@ -4,6 +4,12 @@
 
 #include "mojo/core/ipcz_driver/envelope.h"
 
+#if BUILDFLAG(MOJO_USE_APPLE_CHANNEL)
+#include <utility>
+
+#include "base/trace_event/typed_macros.h"
+#endif
+
 namespace mojo::core::ipcz_driver {
 
 Envelope::Envelope() = default;
@@ -17,6 +23,7 @@ Envelope::~Envelope() = default;
 
 void Envelope::Close() {
 #if BUILDFLAG(MOJO_USE_APPLE_CHANNEL)
+  TRACE_EVENT("ipc", "Release QoS Voucher");
   voucher_.reset();
 #endif
 }

@@ -26,7 +26,7 @@
 
  ********************************************************************************
  *   Content : Eigen bindings to BLAS F77
- *   Triangular matrix * matrix product functionality based on ?TRMM.
+ *   Triangular matrix-matrix solve functionality based on ?TRSM.
  ********************************************************************************
 */
 // SPDX-License-Identifier: BSD-3-Clause
@@ -67,13 +67,15 @@ namespace internal {
       transa = (TriStorageOrder == RowMajor) ? ((Conjugate) ? 'C' : 'T') : 'N';                                     \
       /* Set uplo */                                                                                                \
       uplo = IsLower ? 'L' : 'U';                                                                                   \
-      if (TriStorageOrder == RowMajor) uplo = (uplo == 'L') ? 'U' : 'L';                                            \
+      EIGEN_IF_CONSTEXPR (TriStorageOrder == RowMajor) {                                                            \
+        uplo = (uplo == 'L') ? 'U' : 'L';                                                                           \
+      }                                                                                                             \
       /* Set a, lda */                                                                                              \
       typedef Matrix<EIGTYPE, Dynamic, Dynamic, TriStorageOrder> MatrixTri;                                         \
       Map<const MatrixTri, 0, OuterStride<> > tri(_tri, size, size, OuterStride<>(triStride));                      \
       MatrixTri a_tmp;                                                                                              \
                                                                                                                     \
-      if (conjA) {                                                                                                  \
+      EIGEN_IF_CONSTEXPR (conjA) {                                                                                  \
         a_tmp = tri.conjugate();                                                                                    \
         a = a_tmp.data();                                                                                           \
         lda = convert_index<BlasIndex>(a_tmp.outerStride());                                                        \
@@ -81,7 +83,9 @@ namespace internal {
         a = _tri;                                                                                                   \
         lda = convert_index<BlasIndex>(triStride);                                                                  \
       }                                                                                                             \
-      if (IsUnitDiag) diag = 'U';                                                                                   \
+      EIGEN_IF_CONSTEXPR (IsUnitDiag) {                                                                             \
+        diag = 'U';                                                                                                 \
+      }                                                                                                             \
       /* call ?trsm*/                                                                                               \
       BLASFUNC(&side, &uplo, &transa, &diag, &m, &n, (const BLASTYPE*)&numext::real_ref(alpha), (const BLASTYPE*)a, \
                &lda, (BLASTYPE*)_other, &ldb);                                                                      \
@@ -126,13 +130,15 @@ EIGEN_BLAS_TRSM_L(scomplex, float, ctrsm_)
       transa = (TriStorageOrder == RowMajor) ? ((Conjugate) ? 'C' : 'T') : 'N';                                     \
       /* Set uplo */                                                                                                \
       uplo = IsLower ? 'L' : 'U';                                                                                   \
-      if (TriStorageOrder == RowMajor) uplo = (uplo == 'L') ? 'U' : 'L';                                            \
+      EIGEN_IF_CONSTEXPR (TriStorageOrder == RowMajor) {                                                            \
+        uplo = (uplo == 'L') ? 'U' : 'L';                                                                           \
+      }                                                                                                             \
       /* Set a, lda */                                                                                              \
       typedef Matrix<EIGTYPE, Dynamic, Dynamic, TriStorageOrder> MatrixTri;                                         \
       Map<const MatrixTri, 0, OuterStride<> > tri(_tri, size, size, OuterStride<>(triStride));                      \
       MatrixTri a_tmp;                                                                                              \
                                                                                                                     \
-      if (conjA) {                                                                                                  \
+      EIGEN_IF_CONSTEXPR (conjA) {                                                                                  \
         a_tmp = tri.conjugate();                                                                                    \
         a = a_tmp.data();                                                                                           \
         lda = convert_index<BlasIndex>(a_tmp.outerStride());                                                        \
@@ -140,7 +146,9 @@ EIGEN_BLAS_TRSM_L(scomplex, float, ctrsm_)
         a = _tri;                                                                                                   \
         lda = convert_index<BlasIndex>(triStride);                                                                  \
       }                                                                                                             \
-      if (IsUnitDiag) diag = 'U';                                                                                   \
+      EIGEN_IF_CONSTEXPR (IsUnitDiag) {                                                                             \
+        diag = 'U';                                                                                                 \
+      }                                                                                                             \
       /* call ?trsm*/                                                                                               \
       BLASFUNC(&side, &uplo, &transa, &diag, &m, &n, (const BLASTYPE*)&numext::real_ref(alpha), (const BLASTYPE*)a, \
                &lda, (BLASTYPE*)_other, &ldb);                                                                      \

@@ -16,9 +16,11 @@
 #include "module.h"
 #include <cassert>
 #include <spirv/unified1/spirv.hpp>
+#include "containers/container_utils.h"
 #include "containers/custom_containers.h"
 #include "containers/limits.h"
 #include "function_basic_block.h"
+#include "generated/device_features.h"
 #include "generated/spirv_grammar_helper.h"
 #include "gpuav/shaders/gpuav_shaders_constants.h"
 #include "error_message/logging.h"
@@ -27,7 +29,6 @@
 
 #include <iostream>
 
-#include "generated/device_features.h"
 #include "utils/vk_api_utils.h"
 
 namespace gpuav {
@@ -38,13 +39,13 @@ static constexpr uint32_t kLinkedInstruction = vvl::kNoIndex32;
 // This constructor is really our "parse incoming SPIR-V" logic for GPU-AV
 // It will build up the Module object which will be modified, and when done, dumpped back out to SPIR-V
 Module::Module(vvl::span<const uint32_t> words, DebugReport* debug_report, const DeviceSettings& settings,
-               const InstrumentationInterface& interface, const DeviceFeatures& enabled_features)
+               const InstrumentationInterface& interface, spirv::InstrumentationStatus& out_status)
     : type_manager_(*this),
       settings_(settings),
       interface_(interface),
-      enabled_features_(enabled_features),
       has_bindless_descriptors_(interface.instrumentation_dsl.has_bindless_descriptors),
-      debug_report_(debug_report) {
+      debug_report_(debug_report),
+      out_status(out_status) {
     spirv_iterator it = words.begin();
     header_.magic_number = *it++;
     header_.version = *it++;
@@ -115,6 +116,7 @@ Module::Module(vvl::span<const uint32_t> words, DebugReport* debug_report, const
                 types_values_constants_.emplace_back(std::move(new_inst));
                 break;
             case spv::OpMemberDecorate:
+            case spv::OpMemberDecorateIdEXT:
             case spv::OpDecorationGroup:
             case spv::OpGroupDecorate:
             case spv::OpGroupMemberDecorate:
@@ -155,7 +157,8 @@ Module::Module(vvl::span<const uint32_t> words, DebugReport* debug_report, const
             case spv::OpSpecConstantComposite:
             case spv::OpConstant:
             case spv::OpConstantNull:
-            case spv::OpConstantComposite: {
+            case spv::OpConstantComposite:
+            case spv::OpConstantSizeOfEXT: {
                 const Type* type = type_manager_.FindTypeById(new_inst->TypeId());
                 if (opcode == spv::OpSpecConstant || opcode == spv::OpSpecConstantComposite) {
                     SetSpecConstantValue(new_inst.get(), *type, id_to_spec_id);
@@ -163,7 +166,8 @@ Module::Module(vvl::span<const uint32_t> words, DebugReport* debug_report, const
                 type_manager_.AddConstant(std::move(new_inst), *type);
                 break;
             }
-            case spv::OpVariable: {
+            case spv::OpVariable:
+            case spv::OpUntypedVariableKHR: {
                 const Type* type = type_manager_.FindTypeById(new_inst->TypeId());
                 const Variable& new_var = type_manager_.AddVariable(std::move(new_inst), *type);
 
@@ -171,8 +175,9 @@ Module::Module(vvl::span<const uint32_t> words, DebugReport* debug_report, const
                 spv::StorageClass storage_class = new_var.StorageClass();
                 // These are the only storage classes that interface with a descriptor
                 // see vkspec.html#interfaces-resources-descset
-                if (storage_class == spv::StorageClassUniform || storage_class == spv::StorageClassUniformConstant ||
-                    storage_class == spv::StorageClassStorageBuffer) {
+                if (opcode == spv::OpVariable &&
+                    IsValueIn(storage_class,
+                              {spv::StorageClassUniform, spv::StorageClassUniformConstant, spv::StorageClassStorageBuffer})) {
                     const Type* ptr_type = new_var.PointerType(type_manager_);
                     // The shader will also have OpCapability RuntimeDescriptorArray
                     if (ptr_type->spv_type_ == SpvType::kRuntimeArray) {
@@ -183,17 +188,11 @@ Module::Module(vvl::span<const uint32_t> words, DebugReport* debug_report, const
 
                 break;
             }
-            case spv::OpUntypedVariableKHR: {
-                type_manager_.AddUntypedVariable(new_inst->ResultId());
-                types_values_constants_.emplace_back(std::move(new_inst));
-                break;
-            }
             case spv::OpSpecConstantOp: {
                 const Type* type = type_manager_.FindTypeById(new_inst->TypeId());
                 // If folded, we drop the |new_inst| as we will add it inside the function
                 const bool folded = ConstantFold(new_inst.get(), *type);
                 if (!folded) {
-                    assert(false);
                     // Even if we can't fold, we need to keep the instruction in the constant section to maintain being valid
                     types_values_constants_.emplace_back(std::move(new_inst));
                 }
@@ -212,6 +211,28 @@ Module::Module(vvl::span<const uint32_t> words, DebugReport* debug_report, const
         }
 
         it += length;
+    }
+
+    // If multiple entrypoints, need to resolve which is the real push constant for it
+    if (!type_manager_.FindPushConstantVariable() && entry_points_.size() > 1) {
+        const uint32_t spirv_version_1_4 = 0x00010400;
+        if (header_.version < spirv_version_1_4) {
+            // will just use the 2nd one found to not blow up
+            InternalWarning("Module",
+                            "Found 2 different OpVariable, can't determine which entrypoint, can be fixed updating SPIR-V to 1.4+");
+        } else {
+            const Instruction* entry_point = GetTargetEntryPoint();
+            uint32_t word = entry_point->GetEntryPointInterfaceStart();
+            const uint32_t total_words = entry_point->Length();
+            for (; word < total_words; word++) {
+                const uint32_t interface_id = entry_point->Word(word);
+                const Variable* variable = type_manager_.FindVariableById(interface_id);
+                if (variable && variable->StorageClass() == spv::StorageClassPushConstant) {
+                    type_manager_.OverridePushConstantVariable(variable);
+                    break;
+                }
+            }
+        }
     }
 
     // From a dump of 400k production shaders found
@@ -711,6 +732,8 @@ void Module::LinkFunctions(const LinkInfo& info) {
                     new_op_constant[3] = interface_.unique_shader_id;
                 } else if (value == glsl::kInstErrorBufferLengthId) {
                     new_op_constant[3] = settings_.error_buffer_data_length;
+                } else if (value == glsl::kDescriptorHashingCapacity) {
+                    new_op_constant[3] = settings_.descriptor_hashing_total_descriptors;
                 }
                 new_inst.reset(new Instruction(new_op_constant, kLinkedInstruction));
             } else if (opcode == spv::OpSpecConstantOp) {
@@ -882,6 +905,10 @@ void Module::LinkFunctions(const LinkInfo& info) {
                     // Found on NVIDIA there are nasty bugs/behavior using this in RTX stages
                     // (clearly no CTS is written to use it)
                     new_inst->UpdateWord(3, spv::FunctionControlMaskNone);
+                } else if (settings_.disable_dontinline) {
+                    // We have found on some drivers (RTX 5090 with 610.62 driver) will crash on some shaders
+                    // This is here to provide a way to turn off DontInline if needed for unblocking people
+                    new_inst->UpdateWord(3, spv::FunctionControlMaskNone);
                 } else {
                     new_inst->UpdateWord(3, spv::FunctionControlDontInlineMask);
                 }
@@ -944,6 +971,10 @@ void Module::LinkFunctions(const LinkInfo& info) {
                 continue;
             } else if (decoration->Word(2) == spv::DecorationLinkageAttributes) {
                 continue;  // remove linkage info
+            } else if (decoration->Word(2) == spv::DecorationAliasedPointer) {
+                // The way descriptor_heap.comp has to choose between the heap/sampler causes these to be generated, while we know
+                // they are not going to be aliased and the 'restrict' keyword seems to not be working as desired
+                continue;
             } else if (decoration->Word(2) == spv::DecorationDescriptorSet) {
                 // only should be one DescriptorSet to update
                 decoration->UpdateWord(3, settings_.output_buffer_descriptor_set);
@@ -999,7 +1030,7 @@ void Module::PostProcess() {
     // Found that QueueFamily was added to mostly solve this, if a device doesn't support Device scope we could use QueueFamily, the
     // issue is that the GLSL we have is static and if we use QueueFamily then we "need" the MemoryModel enabled
     if (HasCapability(spv::CapabilityVulkanMemoryModel)) {
-        if (!enabled_features_.vulkanMemoryModelDeviceScope) {
+        if (!settings_.enabled_features->vulkanMemoryModelDeviceScope) {
             InternalError(
                 "GPU-SHADER-INSTRUMENT-SUPPORT",
                 "vulkanMemoryModelDeviceScope feature is not supported, but need to let us call atomicAdd to the output buffer");

@@ -26,6 +26,7 @@
 
 #include "third_party/blink/renderer/core/editing/position_units.h"
 
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/text.h"
 #include "third_party/blink/renderer/core/editing/position.h"
 #include "third_party/blink/renderer/core/editing/testing/editing_test_base.h"
@@ -254,7 +255,7 @@ TEST_F(PositionUnitsTest, StartOfDocumentBasic) {
             result);
 }
 
-TEST_F(PositionUnitsTest, StartOfDocumentWithShadowDOM) {
+TEST_F(PositionUnitsTest, StartOfDocumentWithShadowDom) {
   const char* body_content =
       "<span id=host><b slot='#one' id=one>1</b><b slot='#two' "
       "id=two>22</b></span>";
@@ -294,7 +295,7 @@ TEST_F(PositionUnitsTest, EndOfDocumentBasic) {
             result);
 }
 
-TEST_F(PositionUnitsTest, EndOfDocumentWithShadowDOM) {
+TEST_F(PositionUnitsTest, EndOfDocumentWithShadowDom) {
   const char* body_content =
       "<span id=host><b slot='#one' id=one>1</b><b slot='#two' "
       "id=two>22</b></span>";

@@ -59,18 +59,20 @@ class AutocompleteHistoryManager : public KeyedService {
       SingleFieldFillRouter::OnSuggestionsReturnedCallback
           on_suggestions_returned);
 
-  // Saves the `fields` that are eligible to be saved as new or updated
-  // Autocomplete entries, which can then be served in the future as
+  // Saves the `fields` of `form` that are eligible to be saved as new or
+  // updated Autocomplete entries, which can then be served in the future as
   // suggestions. This update is dependent on whether we are running in
   // incognito and if Autocomplete is enabled or not. `fields` may be empty.
   virtual void OnWillSubmitFormWithFields(
       const std::vector<FormFieldData>& fields,
+      const FormStructure* form,
       bool is_autocomplete_enabled);
 
   virtual void CancelPendingQuery();
 
   virtual void OnRemoveCurrentSingleFieldSuggestion(
       const std::u16string& field_name,
+      const std::u16string& field_label,
       const std::u16string& value,
       SuggestionType type);
 
@@ -104,10 +106,6 @@ class AutocompleteHistoryManager : public KeyedService {
 
  private:
   friend class AutocompleteHistoryManagerTest;
-
-  // Returns true if the given |field| and its value are valid to be saved as a
-  // new or updated Autocomplete entry.
-  bool IsFieldValueSaveable(const FormFieldData& field);
 
   // Must outlive this object.
   scoped_refptr<AutofillWebDataService> profile_database_;

@@ -37,9 +37,17 @@ UI_ANDROID_EXPORT BASE_DECLARE_FEATURE(kAndroidWindowOcclusion);
 // Guard changes to block mouse events on views.
 UI_ANDROID_EXPORT BASE_DECLARE_FEATURE(kBlockMouseEventsOnView);
 
+// Guard the caching of WindowMetrics for gesture navigation detection.
+UI_ANDROID_EXPORT BASE_DECLARE_FEATURE(kCachedGestureNavMetrics);
+
 // When launching an intent, check whether the caller has the permission to
 // access a URI before returning the result.
 UI_ANDROID_EXPORT BASE_DECLARE_FEATURE(kCheckIntentCallerPermission);
+
+// Controls defense against Confused Deputy clipboard URI exfiltration.
+UI_ANDROID_EXPORT BASE_DECLARE_FEATURE(kClipboardConfusedDeputyDefenseText);
+UI_ANDROID_EXPORT BASE_DECLARE_FEATURE(kClipboardConfusedDeputyDefenseImages);
+UI_ANDROID_EXPORT BASE_DECLARE_FEATURE(kClipboardConfusedDeputyDefenseFiles);
 
 // Use the old-style opening of an External Picker when uploading files.
 UI_ANDROID_EXPORT BASE_DECLARE_FEATURE(kDeprecatedExternalPickerFunction);

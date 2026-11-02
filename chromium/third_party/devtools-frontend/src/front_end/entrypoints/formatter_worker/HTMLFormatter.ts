@@ -107,10 +107,16 @@ export class HTMLFormatter {
   }
 
   #formatToken(element: FormatterElement, token: Token): void {
-    if (Platform.StringUtilities.isWhitespace(token.value)) {
+    const isBodyToken =
+        Boolean(element.openTag && !element.openTag.selfClosingTag && element.closeTag &&
+                element.openTag.endOffset <= token.startOffset && token.startOffset < element.closeTag.startOffset);
+    if (Platform.StringUtilities.isWhitespace(token.value) &&
+        (!isBodyToken || element.children.length > 0 ||
+         (!element.hasContent && !element.hasComments && /[\r\n]/.test(token.value)))) {
       return;
     }
-    if (hasTokenInSet(token.type, 'comment') || hasTokenInSet(token.type, 'meta')) {
+    if ((hasTokenInSet(token.type, 'comment') || hasTokenInSet(token.type, 'meta')) &&
+        (!isBodyToken || element.children.length > 0)) {
       this.#builder.addNewLine();
       this.#builder.addToken(token.value.trim(), token.startOffset);
       this.#builder.addNewLine();
@@ -121,8 +127,6 @@ export class HTMLFormatter {
       return;
     }
 
-    const isBodyToken =
-        element.openTag.endOffset <= token.startOffset && token.startOffset < element.closeTag.startOffset;
     if (isBodyToken && element.name === 'style') {
       this.#builder.addNewLine();
       this.#builder.increaseNestingLevel();
@@ -149,7 +153,15 @@ export class HTMLFormatter {
       this.#builder.addSoftSpace();
     }
 
+    // When adding tag brackets and tag names (<, </, /, div, >), disable word space enforcement so
+    // that FormattedContentBuilder does not insert unwanted spaces (e.g. splitting </title> into </ title>).
+    const restore = !isBodyToken && !hasTokenInSet(token.type, 'attribute') ?
+        this.#builder.setEnforceSpaceBetweenWords(false) :
+        false;
     this.#builder.addToken(token.value, token.startOffset);
+    if (!isBodyToken && !hasTokenInSet(token.type, 'attribute')) {
+      this.#builder.setEnforceSpaceBetweenWords(restore);
+    }
   }
 }
 
@@ -252,7 +264,7 @@ export class HTMLModel {
 
   #build(text: string): void {
     const tokenizer = createTokenizer('text/html');
-    let baseOffset = 0, lastOffset = 0;
+    let lastOffset = 0;
     let pendingToken: Token|null = null;
 
     const pushToken = (token: Token): Object|undefined => {
@@ -260,6 +272,14 @@ export class HTMLModel {
       this.#updateDOM(token);
 
       const element = this.#stack[this.#stack.length - 1];
+      if (element && (hasTokenInSet(token.type, 'comment') || hasTokenInSet(token.type, 'meta'))) {
+        element.hasComments = true;
+      }
+      if (element && !Platform.StringUtilities.isWhitespace(token.value) && !hasTokenInSet(token.type, 'tag') &&
+          !hasTokenInSet(token.type, 'attribute') && !hasTokenInSet(token.type, 'bracket') &&
+          !hasTokenInSet(token.type, 'comment') && !hasTokenInSet(token.type, 'meta')) {
+        element.hasContent = true;
+      }
       if (element && (element.name === 'script' || element.name === 'style') &&
           element.openTag?.endOffset === lastOffset) {
         return AbortTokenization;
@@ -274,8 +294,6 @@ export class HTMLModel {
         tokenStart: number,
         tokenEnd: number,
         ): Object|undefined => {
-      tokenStart += baseOffset;
-      tokenEnd += baseOffset;
       lastOffset = tokenEnd;
 
       const tokenType = type ? new Set<string>(type.split(' ')) : new Set<string>();
@@ -321,8 +339,7 @@ export class HTMLModel {
     };
 
     while (true) {
-      baseOffset = lastOffset;
-      tokenizer(text.substring(lastOffset), processToken);
+      tokenizer(text, processToken, lastOffset);
       if (pendingToken) {
         pushToken(pendingToken);
         pendingToken = null;
@@ -341,7 +358,11 @@ export class HTMLModel {
           lastOffset = text.length;
           break;
         }
-        if (text.substring(lastOffset + 2).toLowerCase().startsWith(element.name)) {
+        // Check if the tag at lastOffset matches the current element name (e.g. </script>).
+        // Slice only the length of the tag name to avoid allocating a large substring
+        // of the remainder of the document.
+        const sliced = text.slice(lastOffset + 2, lastOffset + 2 + element.name.length);
+        if (sliced.toLowerCase() === element.name) {
           break;
         }
         lastOffset += 2;
@@ -584,6 +605,8 @@ class FormatterElement {
   parent: FormatterElement|null = null;
   openTag: Tag|null = null;
   closeTag: Tag|null = null;
+  hasComments = false;
+  hasContent = false;
 
   constructor(name: string) {
     this.name = name;

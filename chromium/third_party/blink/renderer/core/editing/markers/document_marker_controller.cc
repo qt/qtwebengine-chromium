@@ -31,6 +31,7 @@
 #include <algorithm>
 
 #include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
+#include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/frame_request_callback_collection.h"
 #include "third_party/blink/renderer/core/dom/node.h"
 #include "third_party/blink/renderer/core/dom/node_traversal.h"
@@ -342,13 +343,25 @@ void DocumentMarkerController::AddTextFragmentMarker(
 void DocumentMarkerController::AddCustomHighlightMarker(
     const EphemeralRange& range,
     const String& highlight_name,
-    const Member<Highlight> highlight) {
+    const Member<Highlight> highlight,
+    base::FunctionRef<void(const Element&)>* on_element_node) {
   DCHECK(!document_->NeedsLayoutTreeUpdate());
+  // When the caller wants to observe non-Text nodes the range crosses (e.g.
+  // to track replaced elements like <img>), emit an object replacement
+  // character for each replaced element so this single TextIterator pass
+  // surfaces them.
+  const TextIteratorBehavior behavior =
+      on_element_node ? TextIteratorBehavior::Builder()
+                            .SetEmitsObjectReplacementCharacter(true)
+                            .Build()
+                      : TextIteratorBehavior();
   AddMarkerInternal(
-      range, [highlight_name, highlight](int start_offset, int end_offset) {
+      range,
+      [highlight_name, highlight](int start_offset, int end_offset) {
         return MakeGarbageCollected<CustomHighlightMarker>(
             start_offset, end_offset, highlight_name, highlight);
-      });
+      },
+      behavior, on_element_node);
 }
 
 void DocumentMarkerController::AddGlicMarker(const EphemeralRange& range) {
@@ -398,7 +411,8 @@ void DocumentMarkerController::RemoveMarkersInRange(
 void DocumentMarkerController::AddMarkerInternal(
     const EphemeralRange& range,
     base::FunctionRef<DocumentMarker*(int, int)> create_marker_from_offsets,
-    const TextIteratorBehavior& iterator_behavior) {
+    const TextIteratorBehavior& iterator_behavior,
+    base::FunctionRef<void(const Element&)>* on_element_node) {
   DocumentMarkerGroup* new_marker_group =
       MakeGarbageCollected<DocumentMarkerGroup>();
   for (TextIterator marked_text(range.StartPosition(), range.EndPosition(),
@@ -423,6 +437,17 @@ void DocumentMarkerController::AddMarkerInternal(
     // newlines)
     const auto* text_node = DynamicTo<Text>(marked_text.CurrentContainer());
     if (!text_node) {
+      // With object replacement characters enabled, the iterator surfaces
+      // replaced elements here: the current container is the parent (so it is
+      // not a Text), while GetNode() resolves to the child at the current
+      // offset (the replaced element itself, e.g. an <img>). Report that
+      // element so callers (e.g. the highlight registry) can track replaced
+      // elements covered by the range without a second tree walk.
+      if (on_element_node) {
+        if (const auto* element = DynamicTo<Element>(marked_text.GetNode())) {
+          (*on_element_node)(*element);
+        }
+      }
       continue;
     }
 
@@ -538,10 +563,10 @@ void DocumentMarkerController::DidRemoveNodeFromMap(
 
 void DocumentMarkerController::RemoveMarkersInternal(
     const Text& text,
-    unsigned start_offset,
-    int length,
+    wtf_size_t start_offset,
+    wtf_size_t length,
     DocumentMarker::MarkerType marker_type) {
-  if (length <= 0) {
+  if (length == 0) {
     return;
   }
 
@@ -557,7 +582,7 @@ void DocumentMarkerController::RemoveMarkersInternal(
     return;
   }
 
-  const unsigned end_offset = start_offset + length;
+  const wtf_size_t end_offset = start_offset + length;
   for (const Member<DocumentMarker>& marker : list->GetMarkers()) {
     if (marker->EndOffset() > start_offset &&
         marker->StartOffset() < end_offset) {
@@ -614,9 +639,9 @@ DocumentMarker* DocumentMarkerController::FirstMarkerAroundPosition(
   }
 
   const Node* const start_node = start.ComputeContainerNode();
-  const unsigned start_offset = start.ComputeOffsetInContainerNode();
+  const wtf_size_t start_offset = start.ComputeOffsetInContainerNode();
   const Node* const end_node = end.ComputeContainerNode();
-  const unsigned end_offset = end.ComputeOffsetInContainerNode();
+  const wtf_size_t end_offset = end.ComputeOffsetInContainerNode();
 
   for (const Node& node : EphemeralRangeInFlatTree(start, end).Nodes()) {
     auto* text_node = DynamicTo<Text>(node);
@@ -624,8 +649,8 @@ DocumentMarker* DocumentMarkerController::FirstMarkerAroundPosition(
       continue;
     }
 
-    const unsigned start_range_offset = node == start_node ? start_offset : 0;
-    const unsigned end_range_offset =
+    const wtf_size_t start_range_offset = node == start_node ? start_offset : 0;
+    const wtf_size_t end_range_offset =
         node == end_node ? end_offset : text_node->length();
 
     DocumentMarker* const found_marker = FirstMarkerIntersectingOffsetRange(
@@ -659,9 +684,9 @@ DocumentMarker* DocumentMarkerController::FirstMarkerIntersectingEphemeralRange(
     return nullptr;
   }
 
-  const unsigned start_offset =
+  const wtf_size_t start_offset =
       range.StartPosition().ComputeOffsetInContainerNode();
-  const unsigned end_offset =
+  const wtf_size_t end_offset =
       start_container == end_container
           ? range.EndPosition().ComputeOffsetInContainerNode()
           : text_node->length();
@@ -672,8 +697,8 @@ DocumentMarker* DocumentMarkerController::FirstMarkerIntersectingEphemeralRange(
 
 DocumentMarker* DocumentMarkerController::FirstMarkerIntersectingOffsetRange(
     const Text& node,
-    unsigned start_offset,
-    unsigned end_offset,
+    wtf_size_t start_offset,
+    wtf_size_t end_offset,
     DocumentMarker::MarkerTypes types) {
   if (!PossiblyHasMarkers(types)) {
     return nullptr;
@@ -684,7 +709,7 @@ DocumentMarker* DocumentMarkerController::FirstMarkerIntersectingOffsetRange(
   if (start_offset == 0 && end_offset == 0) {
     return nullptr;
   }
-  const unsigned node_length = node.length();
+  const wtf_size_t node_length = node.length();
   if (start_offset == node_length && end_offset == node_length) {
     return nullptr;
   }
@@ -754,9 +779,9 @@ DocumentMarkerController::MarkersAroundPosition(
   }
 
   const Node* const start_node = start.ComputeContainerNode();
-  const unsigned start_offset = start.ComputeOffsetInContainerNode();
+  const wtf_size_t start_offset = start.ComputeOffsetInContainerNode();
   const Node* const end_node = end.ComputeContainerNode();
-  const unsigned end_offset = end.ComputeOffsetInContainerNode();
+  const wtf_size_t end_offset = end.ComputeOffsetInContainerNode();
 
   for (const Node& node : EphemeralRangeInFlatTree(start, end).Nodes()) {
     auto* text_node = DynamicTo<Text>(node);
@@ -764,15 +789,15 @@ DocumentMarkerController::MarkersAroundPosition(
       continue;
     }
 
-    const unsigned start_range_offset = node == start_node ? start_offset : 0;
-    const unsigned end_range_offset =
+    const wtf_size_t start_range_offset = node == start_node ? start_offset : 0;
+    const wtf_size_t end_range_offset =
         node == end_node ? end_offset : text_node->length();
 
     // Minor optimization: if we have an empty range at a node boundary, it
     // doesn't fall in the interior of any marker.
     if (start_range_offset == 0 && end_range_offset == 0)
       continue;
-    const unsigned node_length = To<CharacterData>(node).length();
+    const wtf_size_t node_length = To<CharacterData>(node).length();
     if (start_range_offset == node_length && end_range_offset == node_length)
       continue;
 
@@ -804,11 +829,11 @@ DocumentMarkerController::MarkersIntersectingRange(
 
   const Node* const range_start_container =
       range.StartPosition().ComputeContainerNode();
-  const unsigned range_start_offset =
+  const wtf_size_t range_start_offset =
       range.StartPosition().ComputeOffsetInContainerNode();
   const Node* const range_end_container =
       range.EndPosition().ComputeContainerNode();
-  const unsigned range_end_offset =
+  const wtf_size_t range_end_offset =
       range.EndPosition().ComputeOffsetInContainerNode();
 
   for (Node& node : range.Nodes()) {
@@ -816,10 +841,10 @@ DocumentMarkerController::MarkersIntersectingRange(
     if (!text_node)
       continue;
 
-    const unsigned start_offset =
+    const wtf_size_t start_offset =
         node == range_start_container ? range_start_offset : 0;
-    const unsigned max_character_offset = To<CharacterData>(node).length();
-    const unsigned end_offset =
+    const wtf_size_t max_character_offset = To<CharacterData>(node).length();
+    const wtf_size_t end_offset =
         node == range_end_container ? range_end_offset : max_character_offset;
 
     // Minor optimization: if we have an empty offset range at the boundary
@@ -884,8 +909,8 @@ DocumentMarkerVector DocumentMarkerController::MarkersFor(
 DocumentMarkerVector DocumentMarkerController::MarkersFor(
     const Text& text,
     DocumentMarker::MarkerType marker_type,
-    unsigned start_offset,
-    unsigned end_offset) const {
+    wtf_size_t start_offset,
+    wtf_size_t end_offset) const {
   DocumentMarkerVector result;
   DocumentMarkerList* const list = FindMarkersForType(marker_type, &text);
   return list ? list->MarkersIntersectingRange(start_offset, end_offset)
@@ -970,8 +995,8 @@ DocumentMarkerVector DocumentMarkerController::ComputeMarkersToPaint(
                      DocumentMarker::kPreviewStylusGesture)
                      .Subtract(excluded_highlight_pseudos));
 
-  Vector<unsigned> suggestion_starts;
-  Vector<unsigned> suggestion_ends;
+  Vector<wtf_size_t> suggestion_starts;
+  Vector<wtf_size_t> suggestion_ends;
   for (const DocumentMarker* suggestion_marker : suggestion_markers) {
     suggestion_starts.push_back(suggestion_marker->StartOffset());
     suggestion_ends.push_back(suggestion_marker->EndOffset());
@@ -980,9 +1005,9 @@ DocumentMarkerVector DocumentMarkerController::ComputeMarkersToPaint(
   // StartOffsets are already sorted.
   std::sort(suggestion_ends.begin(), suggestion_ends.end());
 
-  unsigned suggestion_starts_index = 0;
-  unsigned suggestion_ends_index = 0;
-  unsigned number_suggestions_currently_inside = 0;
+  wtf_size_t suggestion_starts_index = 0;
+  wtf_size_t suggestion_ends_index = 0;
+  wtf_size_t number_suggestions_currently_inside = 0;
 
   for (DocumentMarker* marker : markers_overridden_by_suggestion_markers) {
     while (suggestion_starts_index < suggestion_starts.size() &&
@@ -1307,9 +1332,9 @@ bool DocumentMarkerController::SetTextMatchMarkersActive(
   const Node* const end_container = range.EndPosition().ComputeContainerNode();
   DCHECK(end_container);
 
-  const unsigned container_start_offset =
+  const wtf_size_t container_start_offset =
       range.StartPosition().ComputeOffsetInContainerNode();
-  const unsigned container_end_offset =
+  const wtf_size_t container_end_offset =
       range.EndPosition().ComputeOffsetInContainerNode();
 
   bool marker_found = false;
@@ -1318,18 +1343,21 @@ bool DocumentMarkerController::SetTextMatchMarkersActive(
     if (!text_node) {
       continue;
     }
-    int start_offset = node == start_container ? container_start_offset : 0;
-    int end_offset = node == end_container ? container_end_offset : INT_MAX;
+    wtf_size_t start_offset =
+        node == start_container ? container_start_offset : 0;
+    wtf_size_t end_offset =
+        node == end_container ? container_end_offset : INT_MAX;
     marker_found |=
         SetTextMatchMarkersActive(*text_node, start_offset, end_offset, active);
   }
   return marker_found;
 }
 
-bool DocumentMarkerController::SetTextMatchMarkersActive(const Text& text,
-                                                         unsigned start_offset,
-                                                         unsigned end_offset,
-                                                         bool active) {
+bool DocumentMarkerController::SetTextMatchMarkersActive(
+    const Text& text,
+    wtf_size_t start_offset,
+    wtf_size_t end_offset,
+    bool active) {
   DocumentMarkerList* const list =
       FindMarkersForType(DocumentMarker::kTextMatch, &text);
   if (!list) {
@@ -1378,9 +1406,9 @@ void DocumentMarkerController::ShowMarkers() const {
 #endif
 
 void DocumentMarkerController::DidUpdateCharacterData(CharacterData* node,
-                                                      unsigned offset,
-                                                      unsigned old_length,
-                                                      unsigned new_length) {
+                                                      wtf_size_t offset,
+                                                      wtf_size_t old_length,
+                                                      wtf_size_t new_length) {
   if (!PossiblyHasMarkers(DocumentMarker::MarkerTypes::All()))
     return;
 
@@ -1436,7 +1464,7 @@ void DocumentMarkerController::StartGlicMarkerAnimationIfNeeded() {
   glic_marker_animation_start_ = std::nullopt;
   glic_animation_state_ = GlicAnimationState::kRunning;
   auto* callback = MakeGarbageCollected<RequestAnimationFrameCallback>(this);
-  document_->RequestAnimationFrame(callback);
+  document_->RequestAnimationFrame(callback, FrameCallbackType::kInternal);
 }
 
 void DocumentMarkerController::ContinueGlicMarkerAnimation(
@@ -1467,7 +1495,7 @@ void DocumentMarkerController::ContinueGlicMarkerAnimation(
   }
 
   auto* callback = MakeGarbageCollected<RequestAnimationFrameCallback>(this);
-  document_->RequestAnimationFrame(callback);
+  document_->RequestAnimationFrame(callback, FrameCallbackType::kInternal);
 }
 
 bool DocumentMarkerController::UpdateGlicMarkerOpacity(

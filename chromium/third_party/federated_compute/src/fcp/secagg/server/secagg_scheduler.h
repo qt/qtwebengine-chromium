@@ -23,26 +23,12 @@
 #include <utility>
 
 #include "absl/synchronization/mutex.h"
-#include "absl/time/time.h"
-#include "fcp/base/clock.h"
 #include "fcp/base/monitoring.h"
 #include "fcp/base/reentrancy_guard.h"
 #include "fcp/base/scheduler.h"
 
 namespace fcp {
 namespace secagg {
-
-// Simple callback waiter that runs the function on Wakeup.
-class CallbackWaiter : public Clock::Waiter {
- public:
-  explicit CallbackWaiter(std::function<void()> callback)
-      : callback_(std::move(callback)) {}
-
-  void WakeUp() override { callback_(); }
-
- private:
-  std::function<void()> callback_;
-};
 
 // Provides async worker abstraction for SecAggScheduler.
 class AsyncWorker {
@@ -73,15 +59,13 @@ class Accumulator : public AsyncWorker,
   Accumulator(
       std::unique_ptr<T> initial_value,
       std::function<std::unique_ptr<T>(const T&, const T&)> accumulator_func,
-      Scheduler* parallel_scheduler, Scheduler* sequential_scheduler,
-      Clock* clock)
+      Scheduler* parallel_scheduler, Scheduler* sequential_scheduler)
       : parallel_scheduler_(parallel_scheduler),
         sequential_scheduler_(sequential_scheduler),
         accumulated_value_(std::move(initial_value)),
-        accumulator_func_(accumulator_func),
-        clock_(clock) {}
+        accumulator_func_(accumulator_func) {}
 
-  inline static std::function<void()> GetParallelScheduleFunc(
+  static std::function<void()> GetParallelScheduleFunc(
       std::shared_ptr<Accumulator<T>> accumulator,
       std::function<std::unique_ptr<T>()> generator) {
     return [accumulator, generator] {
@@ -126,23 +110,6 @@ class Accumulator : public AsyncWorker,
             }
           });
     };
-  }
-
-  // Schedule a parallel generator that includes a delay. The result of the
-  // generator is fed to the accumulator_func
-  void Schedule(std::function<std::unique_ptr<T>()> generator,
-                absl::Duration delay) {
-    // IncrementRemainingCount() keeps track of the number of async tasks
-    // scheduled, and sets a flag when the count goes from 0 to 1, corresponding
-    // to a starting batch of unobserved work.
-    auto shared_this = this->shared_from_this();
-    shared_this->IncrementRemainingCount();
-    clock_->WakeupWithDeadline(
-        clock_->Now() + delay,
-        std::make_shared<CallbackWaiter>([shared_this, generator] {
-          shared_this->RunParallel(
-              Accumulator<T>::GetParallelScheduleFunc(shared_this, generator));
-        }));
   }
 
   // Schedule a parallel generator. The result of the generator is fed to the
@@ -196,7 +163,7 @@ class Accumulator : public AsyncWorker,
 
   // Updates the active and remaining task counts, and returns the callback to
   // be executed, or nullptr if there's pending async work.
-  inline std::function<void()> UpdateCountsAndGetCallback() {
+  std::function<void()> UpdateCountsAndGetCallback() {
     absl::MutexLock lock(mutex_);
     if (--active_count_ == 0 && is_cancelled_) {
       inactive_cv_.SignalAll();
@@ -262,11 +229,11 @@ class Accumulator : public AsyncWorker,
 
   std::atomic<bool>* in_sequential_call() { return &in_sequential_call_; }
 
-  void inline RunParallel(std::function<void()> function) {
+  void RunParallel(std::function<void()> function) {
     parallel_scheduler_->Schedule(function);
   }
 
-  void inline RunSequential(std::function<void()> function) {
+  void RunSequential(std::function<void()> function) {
     sequential_scheduler_->Schedule(function);
   }
 
@@ -284,8 +251,6 @@ class Accumulator : public AsyncWorker,
   std::unique_ptr<T> accumulated_value_;
   // Accumulation function - accessed by sequential tasks only.
   std::function<std::unique_ptr<T>(const T&, const T&)> accumulator_func_;
-  // Clock used for scheduling delays in parallel tasks
-  Clock* clock_;
   // Remaining number of sequential tasks to be executed - accessed by
   // sequential tasks only.
   size_t remaining_sequential_tasks_count_ ABSL_GUARDED_BY(mutex_) = 0;
@@ -311,11 +276,9 @@ class Accumulator : public AsyncWorker,
 class SecAggScheduler {
  public:
   SecAggScheduler(Scheduler* parallel_scheduler,
-                  Scheduler* sequential_scheduler,
-                  Clock* clock = Clock::RealClock())
+                  Scheduler* sequential_scheduler)
       : parallel_scheduler_(parallel_scheduler),
-        sequential_scheduler_(sequential_scheduler),
-        clock_(clock) {}
+        sequential_scheduler_(sequential_scheduler) {}
 
   // SecAggScheduler is neither copyable nor movable.
   SecAggScheduler(const SecAggScheduler&) = delete;
@@ -324,7 +287,7 @@ class SecAggScheduler {
   virtual ~SecAggScheduler() = default;
 
   // Schedule a callback to be invoked on the sequential scheduler.
-  inline void ScheduleCallback(std::function<void()> callback) {
+  void ScheduleCallback(std::function<void()> callback) {
     RunSequential(callback);
   }
 
@@ -334,7 +297,7 @@ class SecAggScheduler {
       std::function<std::unique_ptr<T>(const T&, const T&)> accumulator_func) {
     return std::make_shared<Accumulator<T>>(
         std::move(initial_value), accumulator_func, parallel_scheduler_,
-        sequential_scheduler_, clock_);
+        sequential_scheduler_);
   }
 
   void WaitUntilIdle();
@@ -346,7 +309,6 @@ class SecAggScheduler {
  private:
   Scheduler* parallel_scheduler_;
   Scheduler* sequential_scheduler_;
-  Clock* clock_;
 };
 
 }  // namespace secagg

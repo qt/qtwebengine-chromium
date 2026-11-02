@@ -55,8 +55,9 @@ class QuicServiceBase : public QuicConnection::Delegate,
   void OnIncomingStream(uint64_t instance_id, QuicStream* stream) override;
   void OnConnectionClosed(std::string_view instance_name) override;
   QuicStream::Delegate& GetStreamDelegate(uint64_t instance_id) override;
-  void OnClientCertificates(std::string_view instance_name,
-                            const std::vector<std::string>& certs) override;
+  void OnClientCertificates(
+      std::string_view instance_name,
+      const std::vector<std::string_view>& certs) override;
 
   // QuicStreamManager::Delegate overrides.
   void OnDataReceived(uint64_t instance_id,

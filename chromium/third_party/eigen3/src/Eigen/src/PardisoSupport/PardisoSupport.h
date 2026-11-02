@@ -310,7 +310,6 @@ void PardisoImpl<Derived>::_solve_impl(const MatrixBase<BDerived>& b, MatrixBase
     return;
   }
 
-  // Index n = m_matrix.rows();
   Index nrhs = Index(b.cols());
   eigen_assert(m_size == b.rows());
   eigen_assert(((MatrixBase<BDerived>::Flags & RowMajorBit) == 0 || nrhs == 1) &&
@@ -397,7 +396,7 @@ class PardisoLU : public PardisoImpl<PardisoLU<MatrixType> > {
  * \brief A sparse direct Cholesky (LLT) factorization and solver based on the PARDISO library
  *
  * This class allows to solve for A.X = B sparse linear problems via a LL^T Cholesky factorization
- * using the Intel MKL PARDISO library. The sparse matrix A must be selfajoint and positive definite.
+ * using the Intel MKL PARDISO library. The sparse matrix A must be selfadjoint and positive definite.
  * The vectors or matrices X and B can be either dense or sparse.
  *
  * By default, it runs in in-core mode. To enable PARDISO's out-of-core feature, set:
@@ -448,7 +447,7 @@ class PardisoLLT : public PardisoImpl<PardisoLLT<MatrixType, UpLo_> > {
  * \brief A sparse direct Cholesky (LDLT) factorization and solver based on the PARDISO library
  *
  * This class allows to solve for A.X = B sparse linear problems via a LDL^T Cholesky factorization
- * using the Intel MKL PARDISO library. The sparse matrix A is assumed to be selfajoint and positive definite.
+ * using the Intel MKL PARDISO library. The sparse matrix A is assumed to be selfadjoint and positive definite.
  * For complex matrices, A can also be symmetric only, see the \a Options template parameter.
  * The vectors or matrices X and B can be either dense or sparse.
  *

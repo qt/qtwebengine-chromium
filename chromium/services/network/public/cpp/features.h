@@ -84,6 +84,9 @@ COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kIgnoreCorsPreflightPolicy);
 
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kRestrictFrameDestinationsToNavigate);
+
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kReduceAcceptLanguage);
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kReduceAcceptLanguageHTTP);
@@ -159,16 +162,6 @@ BASE_DECLARE_FEATURE(kNetworkContextPrefetchUseMatches);
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kCloneDevToolsConnectionOnlyIfRequested);
 
-// Should Sec-Ad-Auction-Event-Recording-Eligible be sent on requests made
-// with attributionsrc, and should Ad-Auction-Register-Event responses on
-// those requests be processed?
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE(kAdAuctionEventRegistration);
-
-// Runtime flag that changes default Permissions Policy for features
-// join-ad-interest-group and run-ad-auction to a more restricted EnableForSelf.
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE(kAdInterestGroupAPIRestrictedPolicyByDefault);
 
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kDeprecateUnload);
@@ -263,20 +256,6 @@ BASE_DECLARE_FEATURE_PARAM(bool,
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kSharedStorageTransactionalBatchUpdate);
 
-// Backend storage + kill switch for Interest Group API origin trials.
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE(kInterestGroupStorage);
-// Backend storage + kill switch for Interest Group API origin trials.
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE_PARAM(int, kInterestGroupStorageMaxOwners);
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE_PARAM(int, kInterestGroupStorageMaxStoragePerOwner);
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE_PARAM(int, kInterestGroupStorageMaxGroupsPerOwner);
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE_PARAM(int, kInterestGroupStorageMaxNegativeGroupsPerOwner);
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE_PARAM(int, kInterestGroupStorageMaxOpsBeforeMaintenance);
 
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kIncreaseCookieAccessCacheSize);
@@ -423,6 +402,11 @@ BASE_DECLARE_FEATURE(kNetworkContextDirectReceiver);
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 bool ShouldBindNetworkContextDirectReceiver();
 
+// When enabled, creates the NetworkContext on a background thread pool to avoid
+// being blocked by the busy main thread.
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kCreateNetworkContextNonBlocking);
+
 // Delays the initial DoH probe. When enabled, the delay is determined by
 // kDelayInitialDohProbeTimeoutParam. When disabled, the probe is activated
 // immediately.
@@ -433,14 +417,13 @@ BASE_DECLARE_FEATURE_PARAM(base::TimeDelta, kDelayInitialDohProbeTimeoutParam);
 
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kRestrictForbiddenSecurityHeaders);
-
-// Enables the Declarative Performance Observer feature.
-// When enabled, the network service will parse the `Performance-Observer`
-// HTTP response header to extract the telemetry policy for the document.
-// https://github.com/explainers-by-googlers/declarative-performance-observer
-// for more details.
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE(kDeclarativePerformanceObserver);
+BASE_DECLARE_FEATURE_PARAM(bool, kRestrictForbiddenSecurityHeadersDump);
+
+// When enabled, sending to a multicast address via Direct Sockets requires the
+// 'direct-sockets-multicast' Permissions Policy.
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kDirectSocketsUdpSendRequireMulticastPermissionPolicy);
 
 // Enables validating browser-initiated file upload requests from the network
 // service.

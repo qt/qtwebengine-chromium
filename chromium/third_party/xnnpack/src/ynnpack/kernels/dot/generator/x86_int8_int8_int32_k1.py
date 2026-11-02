@@ -15,7 +15,8 @@ from ynnpack.kernels.dot.generator.x86 import x86_avx512
 
 
 class x86_int8_int8_int32_k1(x86):
-  def b_alignment_required(self):
+
+  def b_alignment_bytes(self):
     # This kernel loads half-vectors at a time from b.
     return self.tile_shape[1] * self.tile_shape[2] // 4
 

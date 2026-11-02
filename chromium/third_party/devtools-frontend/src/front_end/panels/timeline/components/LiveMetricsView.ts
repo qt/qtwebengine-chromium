@@ -17,6 +17,7 @@ import * as SDK from '../../../core/sdk/sdk.js';
 import * as CrUXManager from '../../../models/crux-manager/crux-manager.js';
 import * as EmulationModel from '../../../models/emulation/emulation.js';
 import * as LiveMetrics from '../../../models/live-metrics/live-metrics.js';
+import type * as Spec from '../../../models/live-metrics/web-vitals-injected/spec/spec.js';
 import * as Trace from '../../../models/trace/trace.js';
 import * as Buttons from '../../../ui/components/buttons/buttons.js';
 import type * as Menus from '../../../ui/components/menus/menus.js';
@@ -44,6 +45,10 @@ const DEVICE_OPTION_LIST: DeviceOption[] = ['AUTO', ...CrUXManager.DEVICE_SCOPE_
 const RTT_MINIMUM = 60;
 
 const UIStrings = {
+  /**
+   * @description Label of a badge/pill indicating that the metrics are for a soft navigation.
+   */
+  softNavigationPillText: 'SOFT NAV',
   /**
    * @description Title of a view that shows performance metrics from the local environment and field metrics collected from real users. "field metrics" should be interpreted as "real user metrics".
    */
@@ -236,31 +241,31 @@ const UIStrings = {
    */
   clearCurrentLog: 'Clear the current log',
   /**
-   * @description Title for a page load phase that measures the time between when the page load starts and the time when the first byte of the initial document is downloaded.
+   * @description Title for a page load subpart that measures the time between when the page load starts and the time when the first byte of the initial document is downloaded.
    */
   timeToFirstByte: 'Time to first byte',
   /**
-   * @description Title for a page load phase that measures the time between when the first byte of the initial document is downloaded and when the request for the largest image content starts.
+   * @description Title for a page load subpart that measures the time between when the first byte of the initial document is downloaded and when the request for the largest image content starts.
    */
   resourceLoadDelay: 'Resource load delay',
   /**
-   * @description Title for a page load phase that measures the time between when the request for the largest image content starts and when it finishes.
+   * @description Title for a page load subpart that measures the time between when the request for the largest image content starts and when it finishes.
    */
   resourceLoadDuration: 'Resource load duration',
   /**
-   * @description Title for a page load phase that measures the time between when the request for the largest image content finishes and when the largest image element is rendered on the page.
+   * @description Title for a page load subpart that measures the time between when the request for the largest image content finishes and when the largest image element is rendered on the page.
    */
   elementRenderDelay: 'Element render delay',
   /**
-   * @description Title for a phase during a user interaction that measures the time between when the interaction starts and when the browser starts running interaction handlers.
+   * @description Title for a subpart during a user interaction that measures the time between when the interaction starts and when the browser starts running interaction handlers.
    */
   inputDelay: 'Input delay',
   /**
-   * @description Title for a phase during a user interaction that measures the time between when the browser starts running interaction handlers and when the browser finishes running interaction handlers.
+   * @description Title for a subpart during a user interaction that measures the time between when the browser starts running interaction handlers and when the browser finishes running interaction handlers.
    */
   processingDuration: 'Processing duration',
   /**
-   * @description Title for a phase during a user interaction that measures the time between when the browser finishes running interaction handlers and when the browser renders the next visual frame that shows the result of the interaction.
+   * @description Title for a subpart during a user interaction that measures the time between when the browser finishes running interaction handlers and when the browser renders the next visual frame that shows the result of the interaction.
    */
   presentationDelay: 'Presentation delay',
   /**
@@ -276,11 +281,11 @@ const UIStrings = {
    */
   showClsCluster: 'Go to worst layout shift cluster.',
   /**
-   * @description Column header for table cell values representing the phase/component/stage/section of a larger duration.
+   * @description Column header for table cell values representing the subpart/component/stage/section of a larger duration.
    */
-  phase: 'Phase',
+  subpart: 'Subpart',
   /**
-   * @description Column header for table cell values representing a phase duration (in milliseconds) that was measured in the developers local environment.
+   * @description Column header for table cell values representing a subpart duration (in milliseconds) that was measured in the developers local environment.
    */
   duration: 'Local duration (ms)',
   /**
@@ -317,6 +322,7 @@ export interface ViewInput {
   logExtraInteractionDetails: (interaction: LiveMetrics.Interaction) => void;
   highlightedInteractionId?: string;
   highlightedLayoutShiftClusterIds?: Set<string>;
+  navigationType?: Spec.NavigationType;
 }
 
 export interface ViewOutput {
@@ -328,7 +334,7 @@ export interface ViewOutput {
 
 export type View = (input: ViewInput, output: ViewOutput, target: HTMLElement|DocumentFragment) => void;
 
-function getLcpFieldPhases(cruxManager: CrUXManager.CrUXManager): LiveMetrics.LcpValue['phases']|null {
+function getLcpFieldSubparts(cruxManager: CrUXManager.CrUXManager): LiveMetrics.LcpValue['subparts']|null {
   const ttfb =
       cruxManager.getSelectedFieldMetricData('largest_contentful_paint_image_time_to_first_byte')?.percentiles?.p75;
   const loadDelay =
@@ -484,9 +490,9 @@ function renderLcpCard(input: ViewInput): Lit.LitTemplate {
   const fieldData = input.cruxManager.getSelectedFieldMetricData('largest_contentful_paint');
   const nodeLink =
       input.lcpValue?.nodeRef && PanelsCommon.DOMLinkifier.Linkifier.instance().linkify(input.lcpValue?.nodeRef);
-  const phases = input.lcpValue?.phases;
+  const subparts = input.lcpValue?.subparts;
 
-  const fieldPhases = getLcpFieldPhases(input.cruxManager);
+  const fieldSubparts = getLcpFieldSubparts(input.cruxManager);
 
   // clang-format off
   return html`
@@ -496,11 +502,11 @@ function renderLcpCard(input: ViewInput): Lit.LitTemplate {
       fieldValue: fieldData?.percentiles?.p75,
       histogram: fieldData?.histogram,
       warnings: input.lcpValue?.warnings,
-      phases: phases && [
-        [i18nString(UIStrings.timeToFirstByte), phases.timeToFirstByte, fieldPhases?.timeToFirstByte],
-        [i18nString(UIStrings.resourceLoadDelay), phases.resourceLoadDelay, fieldPhases?.resourceLoadDelay],
-        [i18nString(UIStrings.resourceLoadDuration), phases.resourceLoadTime, fieldPhases?.resourceLoadTime],
-        [i18nString(UIStrings.elementRenderDelay), phases.elementRenderDelay, fieldPhases?.elementRenderDelay],
+      subparts: subparts && [
+        [i18nString(UIStrings.timeToFirstByte), subparts.timeToFirstByte, fieldSubparts?.timeToFirstByte],
+        [i18nString(UIStrings.resourceLoadDelay), subparts.resourceLoadDelay, fieldSubparts?.resourceLoadDelay],
+        [i18nString(UIStrings.resourceLoadDuration), subparts.resourceLoadTime, fieldSubparts?.resourceLoadTime],
+        [i18nString(UIStrings.elementRenderDelay), subparts.elementRenderDelay, fieldSubparts?.elementRenderDelay],
       ],
     })}>
       ${nodeLink ? html`
@@ -551,7 +557,7 @@ function renderClsCard(input: ViewInput): Lit.LitTemplate {
 
 function renderInpCard(input: ViewInput): Lit.LitTemplate {
   const fieldData = input.cruxManager.getSelectedFieldMetricData('interaction_to_next_paint');
-  const phases = input.inpValue?.phases;
+  const subparts = input.inpValue?.subparts;
   const interaction = input.inpValue && input.interactions.get(input.inpValue.interactionId);
 
   // clang-format off
@@ -562,10 +568,10 @@ function renderInpCard(input: ViewInput): Lit.LitTemplate {
       fieldValue: fieldData?.percentiles?.p75,
       histogram: fieldData?.histogram,
       warnings: input.inpValue?.warnings,
-      phases: phases && [
-        [i18nString(UIStrings.inputDelay), phases.inputDelay],
-        [i18nString(UIStrings.processingDuration), phases.processingDuration],
-        [i18nString(UIStrings.presentationDelay), phases.presentationDelay],
+      subparts: subparts && [
+        [i18nString(UIStrings.inputDelay), subparts.inputDelay],
+        [i18nString(UIStrings.processingDuration), subparts.processingDuration],
+        [i18nString(UIStrings.presentationDelay), subparts.presentationDelay],
       ],
     })}>
       ${interaction ? html`
@@ -873,30 +879,30 @@ function renderInteractionsLog(input: ViewInput, output: ViewOutput): Lit.LitTem
                 ></devtools-icon>` : nothing}
                 <span class="interaction-duration">${metricValue}</span>
               </summary>
-              <div class="phase-table" role="table">
-                <div class="phase-table-row phase-table-header-row" role="row">
-                  <div role="columnheader">${i18nString(UIStrings.phase)}</div>
+              <div class="subpart-table" role="table">
+                <div class="subpart-table-row subpart-table-header-row" role="row">
+                  <div role="columnheader">${i18nString(UIStrings.subpart)}</div>
                   <div role="columnheader">
                     ${interaction.longAnimationFrameTimings.length ? html`
-                      <button
-                        class="log-extra-details-button"
-                        title=${i18nString(UIStrings.logToConsole)}
-                        @click=${() => input.logExtraInteractionDetails(interaction)}
-                      >${i18nString(UIStrings.duration)}</button>
-                    ` : i18nString(UIStrings.duration)}
+                       <button
+                         class="log-extra-details-button"
+                         title=${i18nString(UIStrings.logToConsole)}
+                         @click=${() => input.logExtraInteractionDetails(interaction)}
+                       >${i18nString(UIStrings.duration)}</button>
+                     ` : i18nString(UIStrings.duration)}
                   </div>
                 </div>
-                <div class="phase-table-row" role="row">
+                <div class="subpart-table-row" role="row">
                   <div role="cell">${i18nString(UIStrings.inputDelay)}</div>
-                  <div role="cell">${Math.round(interaction.phases.inputDelay)}</div>
+                  <div role="cell">${Math.round(interaction.subparts.inputDelay)}</div>
                 </div>
-                <div class="phase-table-row" role="row">
+                <div class="subpart-table-row" role="row">
                   <div role="cell">${i18nString(UIStrings.processingDuration)}</div>
-                  <div role="cell">${Math.round(interaction.phases.processingDuration)}</div>
+                  <div role="cell">${Math.round(interaction.subparts.processingDuration)}</div>
                 </div>
-                <div class="phase-table-row" role="row">
+                <div class="subpart-table-row" role="row">
                   <div role="cell">${i18nString(UIStrings.presentationDelay)}</div>
-                  <div role="cell">${Math.round(interaction.phases.presentationDelay)}</div>
+                  <div role="cell">${Math.round(interaction.subparts.presentationDelay)}</div>
                 </div>
               </div>
             </details>
@@ -1010,7 +1016,10 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
     <div class="container">
       <div class="live-metrics-view">
         <main class="live-metrics">
-          <h2 class="section-title">${liveMetricsTitle}</h2>
+          <div class="section-header">
+            <h2 class="section-title">${liveMetricsTitle}</h2>
+            ${input.navigationType === 'soft-navigation' ? html`<span class="badge">${i18nString(UIStrings.softNavigationPillText)}</span>` : nothing}
+          </div>
           <div class="metric-cards">
             <div id="lcp">
               ${renderLcpCard(input)}
@@ -1098,6 +1107,7 @@ export class LiveMetricsView extends UI.Widget.Widget {
   #lcpValue?: LiveMetrics.LcpValue;
   #clsValue?: LiveMetrics.ClsValue;
   #inpValue?: LiveMetrics.InpValue;
+  #navigationType?: Spec.NavigationType;
   #interactions: LiveMetrics.InteractionMap = new Map();
   #layoutShifts: LiveMetrics.LayoutShift[] = [];
 
@@ -1125,6 +1135,7 @@ export class LiveMetricsView extends UI.Widget.Widget {
     this.#lcpValue = event.data.lcp;
     this.#clsValue = event.data.cls;
     this.#inpValue = event.data.inp;
+    this.#navigationType = event.data.navigationType;
 
     const hasNewLS = this.#layoutShifts.length < event.data.layoutShifts.length;
     this.#layoutShifts = [...event.data.layoutShifts];
@@ -1182,6 +1193,7 @@ export class LiveMetricsView extends UI.Widget.Widget {
     this.#inpValue = liveMetrics.inpValue;
     this.#interactions = liveMetrics.interactions;
     this.#layoutShifts = liveMetrics.layoutShifts;
+    this.#navigationType = liveMetrics.navigationType;
     this.requestUpdate();
   }
 
@@ -1249,6 +1261,7 @@ export class LiveMetricsView extends UI.Widget.Widget {
       logExtraInteractionDetails: this.#logExtraInteractionDetails.bind(this),
       highlightedInteractionId: this.#highlightedInteractionId,
       highlightedLayoutShiftClusterIds: this.#highlightedLayoutShiftClusterIds,
+      navigationType: this.#navigationType,
     };
 
     this.#view(viewInput, this.#viewOutput, this.contentElement);

@@ -283,6 +283,29 @@ Clears the set of application-specific fonts.
 If <parameter>config</parameter> is NULL, the current configuration is used.
 @@
 
+@RET@           void
+@FUNC@          FcConfigSetWarningFlags
+@TYPE1@         FcConfig *                      @ARG1@          config
+@TYPE2@         int%                            @ARG2@          warn
+@TYPE3@         FcBool%                         @ARG3@          flag
+@PURPOSE@       Enable or disable specific warning types
+@DESC@
+Turn on or off warning types specified by <parameter>warn</parameter>.
+Each bit corresponds to a different warning type defined by FC_WARN_* macros.
+If <parameter>config</parameter> is NULL, the current configuration is modified.
+@@
+
+@RET@           int
+@FUNC@          FcConfigGetWarningFlags
+@TYPE1@         FcConfig *                      @ARG1@          config
+@PURPOSE@       Retrieve the enabled warning flags
+@DESC@
+Returns a bitmask of the currently enabled warning flags. Each bit in the returned
+integer correeesponds to a different warning type defined by FC_WARN_* macros.
+If <parameter>config</parameter> is NULL, the warning flags for the current
+configuration are returned.
+@@
+
 @RET@           FcBool
 @FUNC@          FcConfigSubstituteWithPat
 @TYPE1@         FcConfig *                      @ARG1@          config

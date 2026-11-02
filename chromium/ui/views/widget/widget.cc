@@ -12,6 +12,7 @@
 #include "base/auto_reset.h"
 #include "base/check_op.h"
 #include "base/containers/adapters.h"
+#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/i18n/rtl.h"
 #include "base/notreached.h"
@@ -53,7 +54,10 @@
 #include "ui/views/focus/focus_manager_factory.h"
 #include "ui/views/focus/native_view_focus_manager.h"
 #include "ui/views/input_protection/occluded_widget_input_protector.h"
+#include "ui/views/input_protection/occlusion_aware_input_protection_policy.h"
+#include "ui/views/input_protection/window_activation_input_protection_policy.h"
 #include "ui/views/views_delegate.h"
+#include "ui/views/views_features.h"
 #include "ui/views/widget/any_widget_observer_singleton.h"
 #include "ui/views/widget/native_widget_private.h"
 #include "ui/views/widget/root_view.h"
@@ -64,6 +68,7 @@
 #include "ui/views/widget/widget_enumerator.h"
 #include "ui/views/widget/widget_observer.h"
 #include "ui/views/widget/widget_removals_observer.h"
+#include "ui/views/widget/widget_utils.h"
 #include "ui/views/window/dialog_delegate.h"
 #include "ui/wm/core/window_properties.h"
 
@@ -301,16 +306,23 @@ Widget::~Widget() {
       native_widget_->ClientDestroyedWidget();
     }
 
-    HandleWidgetDestroying();
+    if (!widget_destroying_handled_) {
+      HandleWidgetDestroying();
+    }
     if (native_widget_) {
       native_widget_->Close();
     }
 
-    HandleWidgetDestroyed();
+    if (!native_widget_destroyed_) {
+      HandleWidgetDestroyed();
+    }
     if (widget_delegate_) {
       widget_delegate_->WidgetDestroying();
     }
   }
+
+  CHECK(widget_destroying_handled_);
+  CHECK(native_widget_destroyed_);
 
   RemoveObserver(&root_view_->GetViewAccessibility());
   // Destroy RootView after the native widget, so in case the WidgetDelegate is
@@ -912,6 +924,10 @@ bool Widget::IsMoveLoopSupported() const {
   return native_widget_ ? native_widget_->IsMoveLoopSupported() : false;
 }
 
+bool Widget::IsMouseButtonDown() const {
+  return native_widget_ ? native_widget_->IsMouseButtonDown() : false;
+}
+
 Widget::MoveLoopResult Widget::RunMoveLoop(
     const gfx::Vector2d& drag_offset,
     MoveLoopSource source,
@@ -1065,6 +1081,7 @@ void Widget::Show() {
   ui::mojom::WindowShowState preferred_show_state =
       CanActivate() ? ui::mojom::WindowShowState::kNormal
                     : ui::mojom::WindowShowState::kInactive;
+  auto weak_this = GetWeakPtr();
   if (non_client_view_) {
     // While initializing, the kiosk mode will go to full screen before the
     // widget gets shown. In that case we stay in full screen mode, regardless
@@ -1076,12 +1093,14 @@ void Widget::Show() {
     } else {
       native_widget_->Show(saved_show_state_, gfx::Rect());
     }
+    CHECK(weak_this);
     // |saved_show_state_| only applies the first time the window is shown.
     // If we don't reset the value the window may be shown maximized every time
     // it is subsequently shown after being hidden.
     saved_show_state_ = preferred_show_state;
   } else {
     native_widget_->Show(preferred_show_state, gfx::Rect());
+    CHECK(weak_this);
   }
 
   HandleShowRequested();
@@ -1091,7 +1110,9 @@ void Widget::Hide() {
   if (!native_widget_) {
     return;
   }
+  auto weak_this = GetWeakPtr();
   native_widget_->Hide();
+  CHECK(weak_this);
   internal::AnyWidgetObserverSingleton::GetInstance()->OnAnyWidgetHidden(this);
 }
 
@@ -1099,6 +1120,7 @@ void Widget::ShowInactive() {
   if (!native_widget_) {
     return;
   }
+  auto weak_this = GetWeakPtr();
   // If this gets called with saved_show_state_ ==
   // ui::mojom::WindowShowState::kMaximized, call SetBounds()with the restored
   // bounds to set the correct size. This normally should not happen, but if it
@@ -1106,9 +1128,11 @@ void Widget::ShowInactive() {
   if (saved_show_state_ == ui::mojom::WindowShowState::kMaximized &&
       !initial_restored_bounds_.IsEmpty()) {
     SetBounds(initial_restored_bounds_);
+    CHECK(weak_this);
     saved_show_state_ = ui::mojom::WindowShowState::kNormal;
   }
   native_widget_->Show(ui::mojom::WindowShowState::kInactive, gfx::Rect());
+  CHECK(weak_this);
 
   HandleShowRequested();
 }
@@ -1308,6 +1332,47 @@ bool Widget::IsVisible() const {
 
 bool Widget::IsVisibleOnScreen() const {
   return native_widget_ ? native_widget_->IsVisibleOnScreen() : false;
+}
+
+void Widget::EnableInputEventActivationProtection(
+    std::unique_ptr<InputEventActivationProtector> custom_protector) {
+  if (!base::FeatureList::IsEnabled(features::kEnableInputProtection)) {
+    return;
+  }
+
+  if (input_event_activation_protection_enabled_) {
+    return;
+  }
+
+  input_event_activation_protection_enabled_ = true;
+  if (custom_protector) {
+    input_protector_ = std::move(custom_protector);
+    return;
+  }
+
+  input_protector_ = std::make_unique<InputEventActivationProtector>();
+  // TODO(crbug.com/467460499): `DefaultInputProtectionPolicy` is installed by
+  // default (inside `InputEventActivationProtector`), but it won't work fully
+  // because visibility changes are not yet forwarded from the Widget.
+  // This will be addressed in a follow-up CL.
+  input_protector_->AddPolicy(
+      std::make_unique<OcclusionAwareInputProtectionPolicy>());
+  input_protector_->AddPolicy(
+      std::make_unique<WindowActivationInputProtectionPolicy>(this));
+}
+
+bool Widget::IsInputEventActivationProtectionEnabled() const {
+  return input_event_activation_protection_enabled_;
+}
+
+bool Widget::IsPossiblyUnintendedInteraction(const ui::Event& event,
+                                             const View* target) {
+  if (!IsInputEventActivationProtectionEnabled()) {
+    return false;
+  }
+
+  return input_protector_->IsPossiblyUnintendedInteraction(
+      event, /*allow_key_events=*/false, target);
 }
 
 const ui::ThemeProvider* Widget::GetThemeProvider() const {
@@ -1697,8 +1762,6 @@ void Widget::OnWindowModalVisibilityChanged(bool visible) {
   //   NativeWidgetMacNSWindowHost::OnSheetModalShown/Closed.
   // - Others: initiated by child Widget, i.e.,
   //   Widget::OnNativeWidgetVisibilityChanged.
-  // - all platforms: initiated by a CLIENT_OWNS_WIDGET child Widget when the
-  //   client destroys it.
   // TODO(crbug.com/450705434): on Windows and Linux the file select dialog is
   // also non-views dialog. Send the notification on showing and closing such
   // dialogs too.
@@ -1983,6 +2046,7 @@ void Widget::OnNativeWidgetVisibilityChanged(bool visible) {
   if (root) {
     root->PropagateVisibilityNotifications(nullptr, visible);
   }
+  ScopedCallStackLock on_stack(this);
   observers_.Notify(&WidgetObserver::OnWidgetVisibilityChanged, this, visible);
   if (GetCompositor() && root && root->layer()) {
     root->layer()->SetVisible(visible);
@@ -2385,6 +2449,66 @@ bool Widget::ShouldDescendIntoChildForEventHandling(
     return false;
   }
 
+  if (!base::FeatureList::IsEnabled(
+          views::features::kNativeViewHostManagesLayers)) {
+    return ShouldDescendIntoChildForEventHandlingDeprecated(
+        root_layer, child, child_layer, location);
+  }
+
+  if (!child_layer) {
+    return true;
+  }
+
+  ui::Layer* target_layer = nullptr;
+  View* target_view = GetRootView()->GetEventHandlerForPoint(location);
+  while (target_view && !target_layer) {
+    target_layer = target_view->layer();
+    if (!target_layer) {
+      target_view = target_view->parent();
+    }
+  }
+
+  if (target_layer == root_layer) {
+    return true;
+  }
+
+  CHECK_NE(child_layer, target_layer);
+
+  LayerRelation relation = GetLayerRelation(target_layer, child_layer);
+
+  switch (relation.type) {
+    case LayerRelation::Type::kFirstIsChildOfSecond:
+      // target_layer is child of child_layer (inclusive).
+      // Views are inside child window. Views are on top.
+      return false;
+
+    case LayerRelation::Type::kSecondIsChildOfFirst:
+      // child_layer is child of target_layer (exclusive).
+      // Child window is inside views container. Child is on top.
+      return true;
+
+    case LayerRelation::Type::kSiblings: {
+      for (const auto& sibling_layer : relation.common_parent->children()) {
+        if (sibling_layer == relation.ancestor_of_first) {
+          return true;
+        }
+        if (sibling_layer == relation.ancestor_of_second) {
+          return false;
+        }
+      }
+      NOTREACHED();
+    }
+
+    case LayerRelation::Type::kDisjoint:
+      return true;
+  }
+}
+
+bool Widget::ShouldDescendIntoChildForEventHandlingDeprecated(
+    ui::Layer* root_layer,
+    gfx::NativeView child,
+    ui::Layer* child_layer,
+    const gfx::Point& location) {
   const View::Views& views_with_layers = GetViewsWithLayersInZOrder();
   if (views_with_layers.empty()) {
     return true;
@@ -2839,9 +2963,9 @@ void Widget::HandleShowRequested() {
 }
 
 void Widget::HandleWidgetDestroying() {
-  if (native_widget_destroyed_) {
-    return;
-  }
+  CHECK(!native_widget_destroyed_);
+  CHECK(!widget_destroying_handled_);
+  widget_destroying_handled_ = true;
   ClearFocusManagerFromWidget();
   if (parent_) {
     parent_->OnChildRemoved(this);
@@ -2856,15 +2980,9 @@ void Widget::HandleWidgetDestroying() {
 }
 
 void Widget::HandleWidgetDestroyed() {
+  CHECK(widget_destroying_handled_);
   if (native_widget_destroyed_) {
     return;
-  }
-
-  // The widget can still be visible. This happens on macOS when
-  // the client destroys a CLIENT_OWNS_WIDGET widget. The OS has no
-  // chance to send us a visibility change event.
-  if (IsVisible()) {
-    MaybeNotifyParentAboutWindowModalVisibilityChanged(false);
   }
 
   ax_mode_observation_.Reset();

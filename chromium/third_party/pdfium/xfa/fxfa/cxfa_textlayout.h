@@ -35,7 +35,7 @@ class CXFA_Node;
 class CXFA_TextParser;
 class CXFA_TextProvider;
 class CXFA_TextTabstopsContext;
-class TextCharPos;
+struct TextCharPos;
 
 class CXFA_TextLayout final : public cppgc::GarbageCollected<CXFA_TextLayout> {
  public:

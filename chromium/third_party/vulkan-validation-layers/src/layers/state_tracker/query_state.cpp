@@ -139,6 +139,13 @@ uint32_t QueryPool::GetQuerySize(VkQueryResultFlags flags) const {
             query_size = query_size_in_bytes * (query_items + query_avail_data);
             break;
 
+        case VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT:
+        case VK_QUERY_TYPE_MESH_PRIMITIVES_GENERATED_EXT:
+            // Primitive generated queries write one integer.
+            query_items = 1;
+            query_size = query_size_in_bytes * (query_items + query_avail_data);
+            break;
+
         case VK_QUERY_TYPE_VIDEO_ENCODE_FEEDBACK_KHR:
             // Video encode feedback queries write one integer value for each bit that is enabled in
             // VkQueryPoolVideoEncodeFeedbackCreateInfoKHR::encodeFeedbackFlags when the pool is created
@@ -152,11 +159,17 @@ uint32_t QueryPool::GetQuerySize(VkQueryResultFlags flags) const {
             query_size = sizeof(VkPerformanceCounterResultKHR) * query_items;
             break;
 
-        // These cases intentionally fall through to the default
-        case VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR:  // VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_NV
+        // These are zero only because no one has spent time to decide what they should return
+        case VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR:
+        case VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_NV:
         case VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SERIALIZATION_SIZE_KHR:
+        case VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SERIALIZATION_BOTTOM_LEVEL_POINTERS_KHR:
+        case VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SIZE_KHR:
+        case VK_QUERY_TYPE_MICROMAP_SERIALIZATION_SIZE_EXT:
+        case VK_QUERY_TYPE_MICROMAP_COMPACTED_SIZE_EXT:
         case VK_QUERY_TYPE_PERFORMANCE_QUERY_INTEL:
-        default:
+        case VK_QUERY_TYPE_TIME_ELAPSED_QCOM:
+        case VK_QUERY_TYPE_MAX_ENUM:
             query_size = 0;
             break;
     }

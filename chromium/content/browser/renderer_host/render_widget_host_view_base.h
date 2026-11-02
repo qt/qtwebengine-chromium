@@ -17,6 +17,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/i18n/rtl.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/process/kill.h"
 #include "base/time/time.h"
@@ -41,6 +42,7 @@
 #include "third_party/blink/public/mojom/frame/fullscreen.mojom.h"
 #include "third_party/blink/public/mojom/frame/intrinsic_sizing_info.mojom-forward.h"
 #include "third_party/blink/public/mojom/input/input_event_result.mojom-shared.h"
+#include "third_party/blink/public/mojom/unbounded_element/unbounded_element.mojom-forward.h"
 #include "third_party/skia/include/core/SkImageInfo.h"
 #include "ui/accessibility/ax_action_handler_registry.h"
 #include "ui/base/ime/mojom/text_input_state.mojom-forward.h"
@@ -71,11 +73,24 @@ class LatencyInfo;
 enum class DomCode : uint32_t;
 }  // namespace ui
 
+namespace mojo {
+template <typename T>
+class PendingReceiver;
+template <typename T>
+class PendingRemote;
+}  // namespace mojo
+
+namespace viz::mojom {
+class CompositorFrameSink;
+class CompositorFrameSinkClient;
+}  // namespace viz::mojom
+
 namespace content {
 
 class DevicePosturePlatformProvider;
 class MouseWheelPhaseHandler;
 class RenderWidgetHostImpl;
+class UnboundedSurfaceWindow;
 class ScopedViewTransitionResources;
 class TextInputManager;
 class TouchSelectionControllerClientManager;
@@ -292,8 +307,6 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   virtual gfx::Size GetRequestedRendererSize();
   virtual gfx::Size GetRequestedRendererSizeDevicePx();
 
-  // Returns the current capture sequence number.
-  virtual uint32_t GetCaptureSequenceNumber() const;
 
   // The size of the view's backing surface in non-DPI-adjusted pixels.
   virtual gfx::Size GetCompositorViewportPixelSize();
@@ -416,6 +429,31 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // Tells the View to destroy itself.
   virtual void Destroy();
 
+  // Unbounded element API methods.
+  virtual void CreateUnboundedSurface(
+      mojo::PendingAssociatedReceiver<blink::mojom::UnboundedSurfaceHost> host,
+      mojo::PendingAssociatedRemote<blink::mojom::UnboundedSurfaceClient>
+          client,
+      const gfx::Rect& bounds_in_dips,
+      base::WeakPtr<RenderWidgetHostViewBase> subframe_view);
+  virtual void UpdateUnboundedSurfaceBoundsInSubframeContext(
+      const gfx::Rect& bounds_in_dips,
+      RenderWidgetHostViewBase* subframe_view);
+  gfx::Rect ConvertSubframeBoundsToScreen(
+      const gfx::Rect& bounds_in_dips,
+      RenderWidgetHostViewBase* subframe_view);
+  virtual void UpdateUnboundedSurfaceBounds(const gfx::Rect& bounds_in_screen);
+  virtual void DismissUnboundedSurface();
+  virtual void DestroyUnboundedSurface(
+      base::WeakPtr<UnboundedSurfaceWindow> window);
+  virtual bool HasActiveUnboundedSurface() const;
+  virtual viz::FrameSinkId GetUnboundedSurfaceFrameSinkId() const;
+  virtual viz::LocalSurfaceId GetUnboundedSurfaceLocalSurfaceId() const;
+  virtual void GetUnboundedSurfaceCompositorFrameSink(
+      mojo::PendingReceiver<viz::mojom::CompositorFrameSink> sink,
+      mojo::PendingRemote<viz::mojom::CompositorFrameSinkClient> client);
+  virtual UnboundedSurfaceWindow* GetUnboundedSurfaceWindow() const;
+
   // Updates the tooltip text and its position and displays the requested
   // tooltip on the screen. The |bounds| parameter corresponds to the bounds of
   // the renderer-side element (in widget-relative DIPS) on which the tooltip
@@ -428,7 +466,15 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   virtual void ClearKeyboardTriggeredTooltip() {}
 
   // Gets the bounds of the top-level window, in screen coordinates.
-  virtual gfx::Rect GetBoundsInRootWindow() = 0;
+  virtual gfx::Rect GetBoundsInScreen() = 0;
+
+  // Gets the bounds of the top-level window, in screen coordinates, ignoring
+  // any transforms that might be applied.
+  virtual gfx::Rect GetBoundsInScreenWithoutTransform();
+
+  // Gets the bounds of the View, in screen coordinates, ignoring any transforms
+  // that might be applied.
+  virtual gfx::Rect GetViewBoundsWithoutTransform();
 
   // Increments the LocalSurfaceId associated with this view when a commit IPC
   // is being sent to change the Document for the root RenderFrameHost rendering
@@ -480,6 +526,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // of context menu. The view can then perform platform specific tasks and
   // changes.
   virtual void SetShowingContextMenu(bool showing) {}
+
+  void SetSupportsAutoFill(bool supports) override {}
 
   // Gets the DisplayFeature whose offset and mask_length are expressed in DIPs
   // relative to the view. See display_feature.h for more details.
@@ -568,13 +616,13 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   virtual viz::SurfaceId GetFallbackSurfaceIdForTesting() const;
 
 #if BUILDFLAG(IS_WIN)
-  // Called by child frame views before delegating OnStartStylusWriting to the
-  // root view, so the root view uses the provided callback for the TSF
-  // FocusHandwritingTarget response instead of its own.
   using OnFocusHandwritingTargetCallback =
       base::RepeatingCallback<void(const gfx::Rect& /*rect_in_screen*/,
                                    const gfx::Size& /*distance_threshold*/)>;
-  virtual void SetStylusHandwritingFocusCallback(
+  // Called by a child host view to start a handwriting session on the root
+  // view on its behalf. Only implemented by the root (Aura) view.
+  virtual void StartStylusWritingFromChildHostView(
+      RenderWidgetHostViewBase* view,
       OnFocusHandwritingTargetCallback callback) {}
 #endif  // BUILDFLAG(IS_WIN)
 
@@ -645,6 +693,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // The model object. Access is protected to allow access to
   // RenderWidgetHostViewChildFrame.
   raw_ptr<RenderWidgetHostImpl, DanglingUntriaged> host_;
+
+  std::unique_ptr<UnboundedSurfaceWindow> unbounded_surface_window_;
 
   // Whether this view is a frame or a popup.
   WidgetType widget_type_ = WidgetType::kFrame;

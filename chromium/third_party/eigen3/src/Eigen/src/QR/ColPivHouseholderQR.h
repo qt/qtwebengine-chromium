@@ -465,7 +465,7 @@ void ColPivHouseholderQR<MatrixType, PermutationIndex>::computeInPlace() {
   }
 
   m_colsPermutation.setIdentity(cols);
-  for (Index k = 0; k < size /*m_nonzero_pivots*/; ++k)
+  for (Index k = 0; k < size; ++k)
     m_colsPermutation.applyTranspositionOnTheRight(k, static_cast<Index>(m_colsTranspositions.coeff(k)));
 
   m_det_p = (number_of_transpositions % 2) ? -1 : 1;

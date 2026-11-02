@@ -44,8 +44,6 @@ CBC_ReedSolomonGF256::CBC_ReedSolomonGF256(int32_t primitive) {
 void CBC_ReedSolomonGF256::Init() {
   zero_ =
       std::make_unique<CBC_ReedSolomonGF256Poly>(this, std::vector<int32_t>{0});
-  one_ =
-      std::make_unique<CBC_ReedSolomonGF256Poly>(this, std::vector<int32_t>{1});
 }
 
 CBC_ReedSolomonGF256::~CBC_ReedSolomonGF256() = default;

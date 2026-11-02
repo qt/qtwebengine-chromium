@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import 'dart:math' as math;
 import 'package:collection/collection.dart' show ListEquality;
 
-import 'package:material_color_utilities/hct/hct.dart';
+import '../hct/hct.dart';
 
 /// A convenience class for retrieving colors that are constant in hue and
 /// chroma, but vary in tone.
@@ -46,31 +45,32 @@ class TonalPalette {
 
   static final commonSize = commonTones.length;
 
-  final Hct? _keyColor;
-  Hct get keyColor => _keyColor ?? Hct.from(0.0, 0.0, 0.0);
-  final double? _hue;
-  double get hue => _hue ?? 0.0;
-  final double? _chroma;
-  double get chroma => _chroma ?? 0.0;
+  final double hue;
+  final double chroma;
+  final Hct keyColor;
+
+  /// A cache containing keys-value pairs where:
+  /// - keys are integers that represent tones, and
+  /// - values are colors in ARGB format.
   final Map<int, int> _cache;
+  final bool _isFromCache;
 
   TonalPalette._fromHct(Hct hct)
-      : _cache = {},
-        _hue = hct.hue,
-        _chroma = hct.chroma,
-        _keyColor = hct;
+    : _cache = {},
+      hue = hct.hue,
+      chroma = hct.chroma,
+      keyColor = hct,
+      _isFromCache = false;
 
-  TonalPalette._fromHueAndChroma(double hue, double chroma)
-      : _cache = {},
-        _hue = hue,
-        _chroma = chroma,
-        _keyColor = createKeyColor(hue, chroma);
+  TonalPalette._fromHueAndChroma(this.hue, this.chroma)
+    : _cache = {},
+      keyColor = KeyColor(hue, chroma).create(),
+      _isFromCache = false;
 
-  TonalPalette._fromCache(Map<int, int> cache)
-      : _cache = cache,
-        _hue = null,
-        _chroma = null,
-        _keyColor = null;
+  TonalPalette._fromCache(Map<int, int> cache, this.hue, this.chroma)
+    : _cache = cache,
+      keyColor = KeyColor(hue, chroma).create(),
+      _isFromCache = true;
 
   /// Create colors using [hue] and [chroma].
   static TonalPalette of(double hue, double chroma) {
@@ -89,104 +89,78 @@ class TonalPalette {
     assert(colors.length == commonSize);
     var cache = <int, int>{};
     commonTones.asMap().forEach(
-        (int index, int toneValue) => cache[toneValue] = colors[index]);
-    return TonalPalette._fromCache(cache);
-  }
+      (int index, int toneValue) => cache[toneValue] = colors[index],
+    );
 
-  /// Creates a key color from a [hue] and a [chroma].
-  /// The key color is the first tone, starting from T50, matching the given hue and chroma.
-  /// Key color [Hct]
-  static Hct createKeyColor(double hue, double chroma) {
-    double startTone = 50.0;
-    Hct smallestDeltaHct = Hct.from(hue, chroma, startTone);
-    double smallestDelta = (smallestDeltaHct.chroma - chroma).abs();
-    // Starting from T50, check T+/-delta to see if they match the requested
-    // chroma.
-    //
-    // Starts from T50 because T50 has the most chroma available, on
-    // average. Thus it is most likely to have a direct answer and minimize
-    // iteration.
-    for (double delta = 1.0; delta < 50.0; delta += 1.0) {
-      // Termination condition rounding instead of minimizing delta to avoid
-      // case where requested chroma is 16.51, and the closest chroma is 16.49.
-      // Error is minimized, but when rounded and displayed, requested chroma
-      // is 17, key color's chroma is 16.
-      if (chroma.round() == smallestDeltaHct.chroma.round()) {
-        return smallestDeltaHct;
-      }
+    // Approximately deduces the original hue and chroma that generated this
+    // list of colors.
+    // Uses the hue and chroma of the provided color with the highest chroma.
 
-      final Hct hctAdd = Hct.from(hue, chroma, startTone + delta);
-      final double hctAddDelta = (hctAdd.chroma - chroma).abs();
-      if (hctAddDelta < smallestDelta) {
-        smallestDelta = hctAddDelta;
-        smallestDeltaHct = hctAdd;
-      }
+    var bestHue = 0.0, bestChroma = 0.0;
+    for (final argb in colors) {
+      final hct = Hct.fromInt(argb);
 
-      final Hct hctSubtract = Hct.from(hue, chroma, startTone - delta);
-      final double hctSubtractDelta = (hctSubtract.chroma - chroma).abs();
-      if (hctSubtractDelta < smallestDelta) {
-        smallestDelta = hctSubtractDelta;
-        smallestDeltaHct = hctSubtract;
+      // If the color is too close to white, its chroma may have been
+      // affected by a known issue, so we ignore it.
+      // https://github.com/material-foundation/material-color-utilities/issues/140
+
+      if (hct.tone > 98.0) continue;
+
+      if (hct.chroma > bestChroma) {
+        bestHue = hct.hue;
+        bestChroma = hct.chroma;
       }
     }
 
-    return smallestDeltaHct;
+    return TonalPalette._fromCache(cache, bestHue, bestChroma);
   }
 
   /// Returns a fixed-size list of ARGB color ints for common tone values.
   ///
   /// Inverse of [fromList].
-  List<int> get asList => commonTones.map((int tone) => get(tone)).toList();
+  List<int> get asList => commonTones.map(get).toList();
 
-  /// Returns the ARGB representation of an HCT color.
+  /// Returns the ARGB representation of an HCT color at the given [tone].
   ///
-  /// If the class was instantiated from [_hue] and [_chroma], will return the
-  /// color with corresponding [tone].
-  /// If the class was instantiated from a fixed-size list of color ints, [tone]
-  /// must be in [commonTones].
+  /// If the palette is constructed from a list of colors
+  /// (i.e. using [fromList]), the color provided at construction is returned
+  /// if possible; otherwise the result is generated from the deduced
+  /// [hue] and [chroma].
+  ///
+  /// If the palette is constructed from a hue and chroma (i.e. using [of] or
+  /// [fromHct]), the result is generated from the given [hue] and [chroma].
   int get(int tone) {
-    if (_hue == null || _chroma == null) {
-      if (!_cache.containsKey(tone)) {
-        throw (ArgumentError.value(
-          tone,
-          'tone',
-          'When a TonalPalette is created with fromList, tone must be one of '
-              '$commonTones',
-        ));
-      } else {
-        return _cache[tone]!;
-      }
-    }
-    final chroma = (tone >= 90.0) ? math.min(_chroma!, 40.0) : _chroma!;
     return _cache.putIfAbsent(
-        tone, () => Hct.from(_hue!, chroma, tone.toDouble()).toInt());
+      tone,
+      () => Hct.from(hue, chroma, tone.toDouble()).toInt(),
+    );
   }
 
+  /// Returns the HCT color at the given [tone].
+  ///
+  /// If the palette is constructed from a list of colors
+  /// (i.e. using [fromList]), the color provided at construction is returned
+  /// if possible; otherwise the result is generated from the deduced
+  /// [hue] and [chroma].
+  ///
+  /// If the palette is constructed from a hue and chroma (i.e. using [of] or
+  /// [fromHct]), the result is generated from the given [hue] and [chroma].
   Hct getHct(double tone) {
-    if (_hue == null || _chroma == null) {
-      if (!_cache.containsKey(tone)) {
-        throw (ArgumentError.value(
-          tone,
-          'tone',
-          'When a TonalPalette is created with fromList, tone must be one of '
-              '$commonTones',
-        ));
-      }
+    if (_cache.containsKey(tone)) {
+      return Hct.fromInt(_cache[tone]!);
+    } else {
+      return Hct.from(hue, chroma, tone);
     }
-    return Hct.from(_hue!, _chroma!, tone);
   }
 
   @override
   bool operator ==(Object other) {
     if (other is TonalPalette) {
-      if (_hue != null &&
-          _chroma != null &&
-          other._hue != null &&
-          other._chroma != null) {
+      if (!_isFromCache && !other._isFromCache) {
         // Both created with .of or .fromHct
-        return _hue == other._hue && _chroma == other._chroma;
+        return hue == other.hue && chroma == other.chroma;
       } else {
-        return ListEquality().equals(asList, other.asList);
+        return const ListEquality<int>().equals(asList, other.asList);
       }
     }
     return false;
@@ -194,8 +168,8 @@ class TonalPalette {
 
   @override
   int get hashCode {
-    if (_hue != null && _chroma != null) {
-      return Object.hash(_hue, _chroma);
+    if (!_isFromCache) {
+      return Object.hash(hue, chroma);
     } else {
       return Object.hashAll(asList);
     }
@@ -203,10 +177,79 @@ class TonalPalette {
 
   @override
   String toString() {
-    if (_hue != null && _chroma != null) {
-      return 'TonalPalette.of($_hue, $_chroma)';
+    if (!_isFromCache) {
+      return 'TonalPalette.of($hue, $chroma)';
     } else {
-      return 'TonalPalette.fromList($_cache)';
+      return 'TonalPalette.fromList($asList)';
     }
+  }
+}
+
+/// Key color is a color that represents the hue and chroma of a tonal palette.
+class KeyColor {
+  final double hue;
+  final double requestedChroma;
+
+  /// Cache that maps (hue, tone) to max chroma to avoid duplicated HCT
+  /// calculation.
+  final Map<int, double> _chromaCache = {};
+  final double _maxChromaValue = 200.0;
+
+  KeyColor(this.hue, this.requestedChroma);
+
+  /// Creates a key color from a [hue] and a [requestedChroma].
+  /// The key color is the first tone, starting from T50, matching the given hue
+  /// and chroma.
+  ///
+  /// @return Key color [Hct]
+  Hct create() {
+    // Pivot around T50 because T50 has the most chroma available, on
+    // average. Thus it is most likely to have a direct answer.
+    const pivotTone = 50;
+    const toneStepSize = 1;
+    // Epsilon to accept values slightly higher than the requested chroma.
+    const epsilon = 0.01;
+
+    // Binary search to find the tone that can provide a chroma that is closest
+    // to the requested chroma.
+    var lowerTone = 0;
+    var upperTone = 100;
+    while (lowerTone < upperTone) {
+      final midTone = (lowerTone + upperTone) ~/ 2;
+      final isAscending =
+          _maxChroma(midTone) < _maxChroma(midTone + toneStepSize);
+      final sufficientChroma = _maxChroma(midTone) >= requestedChroma - epsilon;
+
+      if (sufficientChroma) {
+        // Either range [lowerTone, midTone] or [midTone, upperTone] has
+        // the answer, so search in the range that is closer the pivot tone.
+        if ((lowerTone - pivotTone).abs() < (upperTone - pivotTone).abs()) {
+          upperTone = midTone;
+        } else {
+          if (lowerTone == midTone) {
+            return Hct.from(hue, requestedChroma, lowerTone.toDouble());
+          }
+          lowerTone = midTone;
+        }
+      } else {
+        // As there is no sufficient chroma in the midTone, follow the direction
+        // to the chroma peak.
+        if (isAscending) {
+          lowerTone = midTone + toneStepSize;
+        } else {
+          // Keep midTone for potential chroma peak.
+          upperTone = midTone;
+        }
+      }
+    }
+
+    return Hct.from(hue, requestedChroma, lowerTone.toDouble());
+  }
+
+  // Find the maximum chroma for a given tone
+  double _maxChroma(int tone) {
+    return _chromaCache.putIfAbsent(tone, () {
+      return Hct.from(hue, _maxChromaValue, tone.toDouble()).chroma;
+    });
   }
 }

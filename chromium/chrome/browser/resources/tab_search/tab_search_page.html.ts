@@ -15,7 +15,10 @@ export function getHtml(this: TabSearchPageElement) {
 <div id="tabSearchPage">
   <div id="searchField" @keydown="${this.onSearchKeydown_}"
       clear-label="$i18n{clearSearch}">
-    <cr-icon id="searchIcon" icon="tab-search:search"></cr-icon>
+    <cr-icon id="searchIcon"
+        icon="${this.webuiRoundedIconsEnabled_
+            ? 'tab-search:search'
+            : 'tab-search:search-old'}"></cr-icon>
     <div id="searchWrapper">
       <label id="searchLabel" for="searchInput" aria-hidden="true">
         <span>$i18n{searchTabs}</span>
@@ -28,7 +31,7 @@ export function getHtml(this: TabSearchPageElement) {
           @search="${this.onSearchTermSearch}"
           @input="${this.onSearchTermInput}"
           type="search" spellcheck="false" role="combobox"
-          aria-activedescendant="${this.activeSelectionId_ || nothing}"
+          aria-activedescendant="${this.getAriaActivedescendant_() || nothing}"
           aria-controls="tabsList" aria-owns="tabsList">
     </div>
   </div>
@@ -59,8 +62,8 @@ export function getHtml(this: TabSearchPageElement) {
                   aria-label="$i18n{recentlyClosedExpandA11yLabel}"
                   data-title="${item.title}"
                   data-index="${index}"
-                  expand-icon="cr:arrow-drop-down"
-                  collapse-icon="cr:arrow-drop-up"
+                  expand-icon="cr:expand-more"
+                  collapse-icon="cr:expand-less"
                   ?expanded="${item.expanded}"
                   expand-title="$i18n{expandRecentlyClosed}"
                   collapse-title="$i18n{collapseRecentlyClosed}"
@@ -78,6 +81,8 @@ export function getHtml(this: TabSearchPageElement) {
             @close="${this.onItemClose_}"
             @focus="${this.onItemFocus_}"
             @keydown="${this.onItemKeydown_}"
+            aria-setsize="${this.selectableItemCount_()}"
+            aria-posinset="${this.itemIndexToTabIndex_(index) + 1}"
             role="option"
             tabindex="0">
         </tab-search-item>`;
@@ -92,6 +97,8 @@ export function getHtml(this: TabSearchPageElement) {
             @click="${this.onItemClick_}"
             @focus="${this.onItemFocus_}"
             @keydown="${this.onItemKeydown_}"
+            aria-setsize="${this.selectableItemCount_()}"
+            aria-posinset="${this.itemIndexToTabIndex_(index) + 1}"
             role="option" tabindex="0">
         </tab-search-group-item>`;
        case 'SplitViewData':
@@ -106,6 +113,8 @@ export function getHtml(this: TabSearchPageElement) {
             @close="${this.onItemClose_}"
             @focus="${this.onItemFocus_}"
             @keydown="${this.onItemKeydown_}"
+            aria-setsize="${this.selectableItemCount_()}"
+            aria-posinset="${this.itemIndexToTabIndex_(index) + 1}"
             role="option" tabindex="0">
         </tab-search-split-item>`;
        default:

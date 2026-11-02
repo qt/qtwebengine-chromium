@@ -18,9 +18,8 @@
 #include "base/test/bind.h"
 #include "base/test/mock_callback.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/test/test_future.h"
 #include "build/build_config.h"
-#include "content/browser/attribution_reporting/test/mock_attribution_data_host_manager.h"
-#include "content/browser/attribution_reporting/test/mock_attribution_manager.h"
 #include "content/browser/back_forward_cache_test_util.h"
 #include "content/browser/loader/keep_alive_request_browsertest_util.h"
 #include "content/browser/loader/keep_alive_url_loader.h"
@@ -978,83 +977,6 @@ IN_PROC_BROWSER_TEST_P(FetchKeepAlivePreMigrationBrowserTest,
       ExpectedFailedRequests(/*browser=*/0));
 }
 
-class KeepAliveURLAttributionReportingBrowserTest
-    : public FetchKeepAliveCommonTestBase,
-      public ::testing::WithParamInterface<std::string> {
- protected:
-  void SetUp() override {
-    // Attribution Reporting API only supports HTTPS requests.
-    SetUseHttps();
-    FetchKeepAliveCommonTestBase::SetUp();
-  }
-
-  void SetUpOnMainThread() override {
-    auto mock_manager = std::make_unique<MockAttributionManager>();
-    auto mock_data_host_manager =
-        std::make_unique<MockAttributionDataHostManager>();
-    mock_manager->SetDataHostManager(std::move(mock_data_host_manager));
-    static_cast<StoragePartitionImpl*>(
-        web_contents()->GetBrowserContext()->GetDefaultStoragePartition())
-        ->OverrideAttributionManagerForTesting(std::move(mock_manager));
-
-    FetchKeepAliveCommonTestBase::SetUpOnMainThread();
-  }
-
-  const FeaturesType& GetEnabledFeatures() override {
-    static const FeaturesType enabled_features =
-        GetDefaultEnabledBackForwardCacheFeaturesForTesting(
-            {{blink::features::kKeepAliveInBrowserMigration, {}}});
-    return enabled_features;
-  }
-};
-
-INSTANTIATE_TEST_SUITE_P(
-    All,
-    KeepAliveURLAttributionReportingBrowserTest,
-    ::testing::Values(net::HttpRequestHeaders::kGetMethod,
-                      net::HttpRequestHeaders::kPostMethod),
-    [](const testing::TestParamInfo<
-        KeepAliveURLAttributionReportingBrowserTest::ParamType>& info) {
-      return info.param;
-    });
-
-IN_PROC_BROWSER_TEST_P(KeepAliveURLAttributionReportingBrowserTest,
-                       ReceiveViolatingCSPRedirect_NotForwarded) {
-  const std::string method = GetParam();
-  const char violating_csp_redirect_target[] =
-      "http://b.test/beacon-redirected";
-  auto request_handler =
-      std::move(RegisterRequestHandlers({kKeepAliveEndpoint})[0]);
-  ASSERT_TRUE(server()->Start());
-  const GURL allowed_csp_url = server()->GetURL(kAllowedCspHost, "/");
-
-  auto* data_host_manager = static_cast<MockAttributionDataHostManager*>(
-      AttributionManager::FromWebContents(web_contents())
-          ->GetDataHostManager());
-  EXPECT_CALL(*data_host_manager, NotifyBackgroundRegistrationStarted).Times(1);
-  EXPECT_CALL(*data_host_manager, NotifyBackgroundRegistrationData).Times(0);
-  EXPECT_CALL(*data_host_manager, NotifyBackgroundRegistrationCompleted)
-      .Times(1);
-
-  // Set up redirects according to the following redirect chain:
-  // fetch("http://a.test:<port>/beacon", keepalive: true)
-  // --> http://b.test/beacon-redirected
-  ASSERT_NO_FATAL_FAILURE(
-      LoadPageWithKeepAliveRequestAndSendResponseAfterUnload(
-          GetKeepAlivePageURL(
-              method, /*num_requests=*/1,
-              GetConnectSrcCSPHeader(url::Origin::Create(allowed_csp_url))),
-          request_handler.get(),
-          base::StringPrintf(k301Response, violating_csp_redirect_target)));
-
-  // The redirect doesn't match CSP source from the 1st page, so the loader is
-  // terminated.
-  // While the 1st page is unloaded, the disconnection may not propagate to
-  // browser process in time, such that calling
-  // `WaitforTotalCompleteProcessed()` here might be flaky.
-  loaders_observer().WaitForTotalOnComplete({net::ERR_BLOCKED_BY_CSP});
-}
-
 class KeepAliveFetchRetryBrowserTest
     : public FetchKeepAliveCommonTestBase,
       public ::testing::WithParamInterface<std::string> {
@@ -1481,7 +1403,7 @@ IN_PROC_BROWSER_TEST_P(KeepAliveFetchRetryBrowserTest, RetryOptionsSet) {
                                                    beacon_url)));
 }
 
-// TODO(crbug.com/417930271): test unload, redirects, timeout, attribution.
+// TODO(crbug.com/417930271): test unload, redirects, timeout.
 
 // Regression test for crbug.com/489744805: when the renderer is disconnected
 // (page unloaded), the browser-side EndReceiveRedirect() must strip the

@@ -57,7 +57,6 @@ bool bicgstab(const MatrixType& mat, const Rhs& rhs, Dest& x, const Precondition
 
   VectorType v = VectorType::Zero(n), p = VectorType::Zero(n);
   VectorType y(n), z(n);
-  VectorType kt(n), ks(n);
 
   VectorType s(n), t(n);
 
@@ -153,7 +152,7 @@ struct traits<BiCGSTAB<MatrixType_, Preconditioner_> > {
  *
  * The tolerance corresponds to the relative residual error: |Ax-b|/|b|
  *
- * \b Performance: when using sparse matrices, best performance is achied for a row-major sparse matrix format.
+ * \b Performance: when using sparse matrices, best performance is achieved for a row-major sparse matrix format.
  * Moreover, in this case multi-threading can be exploited if the user code is compiled with OpenMP enabled.
  * See \ref TopicMultiThreading for details.
  *
@@ -200,8 +199,6 @@ class BiCGSTAB : public IterativeSolverBase<BiCGSTAB<MatrixType_, Preconditioner
   template <typename MatrixDerived>
   explicit BiCGSTAB(const EigenBase<MatrixDerived>& A) : Base(A.derived()) {}
 
-  ~BiCGSTAB() {}
-
   /** \internal */
   template <typename Rhs, typename Dest>
   void _solve_vector_with_guess_impl(const Rhs& b, Dest& x) const {
@@ -212,8 +209,6 @@ class BiCGSTAB : public IterativeSolverBase<BiCGSTAB<MatrixType_, Preconditioner
 
     m_info = (!ret) ? NumericalIssue : m_error <= Base::m_tolerance ? Success : NoConvergence;
   }
-
- protected:
 };
 
 }  // end namespace Eigen

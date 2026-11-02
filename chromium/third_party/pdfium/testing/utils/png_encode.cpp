@@ -5,6 +5,7 @@
 #include "testing/utils/png_encode.h"
 
 #include "core/fxcrt/check.h"
+#include "core/fxcrt/compiler_specific.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/notreached.h"
 #include "public/fpdfview.h"
@@ -88,9 +89,9 @@ std::vector<uint8_t> EncodePng(FPDF_BITMAP bitmap) {
   CHECK(height >= 0);
   FX_SAFE_FILESIZE size = stride;
   size *= height;
-  auto input =
+  auto input = UNSAFE_TODO(
       pdfium::span(static_cast<const uint8_t*>(FPDFBitmap_GetBuffer(bitmap)),
-                   pdfium::ValueOrDieForType<size_t>(size));
+                   pdfium::ValueOrDieForType<size_t>(size)));
 
   return EncodePng(input, width, height, stride, FPDFBitmap_GetFormat(bitmap));
 }

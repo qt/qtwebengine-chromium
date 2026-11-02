@@ -45,8 +45,8 @@ std::unique_ptr<ChunkedFileDataPipeProducer> CreateChunkedProducer(
     return nullptr;
   }
 
+  std::optional<enterprise_obfuscation::ObfuscatedFileReader> obfuscated_reader;
   int64_t file_size = 0;
-  std::optional<enterprise_obfuscation::HeaderData> header_data;
 
   if (is_obfuscated) {
     auto parsed_header =
@@ -54,18 +54,18 @@ std::unique_ptr<ChunkedFileDataPipeProducer> CreateChunkedProducer(
     if (!parsed_header.has_value()) {
       return nullptr;
     }
-    header_data = std::move(parsed_header.value());
 
     base::File file_clone = file.Duplicate();
     if (!file_clone.IsValid()) {
       return nullptr;
     }
     auto reader = enterprise_obfuscation::ObfuscatedFileReader::Create(
-        header_data.value(), std::move(file_clone));
+        parsed_header.value(), std::move(file_clone));
     if (!reader.has_value()) {
       return nullptr;
     }
     file_size = reader->GetSize();
+    obfuscated_reader = std::move(reader.value());
   } else {
     file_size = file.GetLength();
     if (file_size < 0) {
@@ -74,7 +74,7 @@ std::unique_ptr<ChunkedFileDataPipeProducer> CreateChunkedProducer(
   }
 
   return std::make_unique<ChunkedFileDataPipeProducer>(
-      std::move(file), is_obfuscated, file_size, std::move(header_data));
+      std::move(file), file_size, std::move(obfuscated_reader));
 }
 #endif  // BUILDFLAG(IS_CHROMEOS)
 

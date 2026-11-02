@@ -35,6 +35,7 @@
 #include "gpuav/core/gpuav_settings.h"
 #include "sync/sync_settings.h"
 #include "gpu_dump/gpu_dump_settings.h"
+#include "legacy/legacy_settings.h"
 #include "generated/device_features.h"
 #include "generated/vk_api_version.h"
 #include "generated/vk_extension_helper.h"
@@ -110,6 +111,7 @@ struct DeviceExtensionProperties {
     VkPhysicalDeviceMaintenance10PropertiesKHR maintenance10_props;
     VkPhysicalDeviceTensorPropertiesARM tensor_properties;
     VkPhysicalDeviceCopyMemoryIndirectPropertiesKHR copy_memory_indirect_props;
+    VkPhysicalDeviceOpacityMicromapPropertiesKHR micromap_props;
     VkPhysicalDeviceTileMemoryHeapPropertiesQCOM tile_memory_heap_props;
     VkPhysicalDeviceDescriptorHeapPropertiesEXT descriptor_heap_props;
     VkPhysicalDeviceDescriptorHeapTensorPropertiesARM descriptor_heap_tensor_props;
@@ -121,6 +123,7 @@ struct DeviceExtensionProperties {
     VkPhysicalDeviceRayTracingInvocationReorderPropertiesEXT ray_tracing_invocation_reorder_props;
     VkPhysicalDeviceShaderLongVectorPropertiesEXT shader_long_vector_props;
     VkPhysicalDeviceTileShadingPropertiesQCOM tile_shading_props;
+    VkPhysicalDeviceImageProcessing2PropertiesQCOM image_processing2_props;
 };
 
 // This object holds all static state for the device (device properties, enabled extensions/features, etc.)
@@ -179,6 +182,7 @@ struct Settings {
     GpuAVSettings gpuav_settings = {};
     SyncValSettings syncval_settings = {};
     GpuDumpSettings gpu_dump_settings = {};
+    LegacyDetectionSettings legacy_detection_settings = {};
 
     ValidationDisabled disabled = {};
     ValidationEnabled enabled = {};
@@ -231,7 +235,20 @@ class HandleWrapper : public Logger {
         }
     }
 
+    // Replaces the "driver handle" in the "wrapped handle" to "driver handle" mapping.
+    // Returns the old "driver handle" if found.
+    template <typename HandleType>
+    HandleType Replace(HandleType wrapped_handle, HandleType new_driver_handle) {
+        const HandleType old_driver_handle = Find(wrapped_handle);
+        const uint64_t wrapped_handle_id = CastToUint64(wrapped_handle);
+        assert(wrapped_handle_id != 0);  // can't be 0, otherwise unwrap will apply special rule for VK_NULL_HANDLE
+        unique_id_mapping.insert_or_assign(wrapped_handle_id, CastToUint64(new_driver_handle));
+        return old_driver_handle;
+    }
+
     void UnwrapPnextChainHandles(const void* pNext);
+    void UnwrapComputePipelineCreateInfoHandles(vku::safe_VkComputePipelineCreateInfo& safe_ci);
+    void UnwrapGraphicsPipelineCreateInfoHandles(vku::safe_VkGraphicsPipelineCreateInfo& safe_ci);
 
     static std::atomic<uint64_t> global_unique_id;
     static vvl::concurrent_unordered_map<uint64_t, uint64_t, 4, HashedUint64> unique_id_mapping;

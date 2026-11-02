@@ -37,6 +37,7 @@ devtools_ui_module("network") {
   sources = [
     "BinaryResourceView.ts",
     "EventSourceMessagesView.ts",
+    "LinkPreloadGenerator.ts",
     "NetworkConfigView.ts",
     "NetworkDataGridNode.ts",
     "NetworkFrameGrouper.ts",
@@ -71,16 +72,15 @@ devtools_ui_module("network") {
     "../../core/i18n:bundle",
     "../../core/platform:bundle",
     "../../core/sdk:bundle",
+    "../../core/text_utils:bundle",
     "../../generated",
     "../../models/ai_assistance:bundle",
-    "../../models/annotations:bundle",
     "../../models/bindings:bundle",
     "../../models/har:bundle",
     "../../models/logs:bundle",
     "../../models/network_time_calculator:bundle",
     "../../models/persistence:bundle",
     "../../models/stack_trace:bundle",
-    "../../models/text_utils:bundle",
     "../../models/trace:bundle",
     "../../models/workspace:bundle",
     "../../panels/common:bundle",
@@ -93,6 +93,7 @@ devtools_ui_module("network") {
     "../../ui/components/adorners:bundle",
     "../../ui/components/buttons:bundle",
     "../../ui/components/input:bundle",
+    "../../ui/components/lists:bundle",
     "../../ui/components/render_coordinator:bundle",
     "../../ui/components/tooltips:bundle",
     "../../ui/i18n:bundle",
@@ -120,6 +121,7 @@ devtools_entrypoint("bundle") {
   deps = [
     ":css_files",
     ":network",
+    "../../ui/legacy/components/data_grid:css_files",
     "../../ui/legacy/components/object_ui:css_files",
   ]
 
@@ -160,6 +162,7 @@ devtools_ui_module("unittests") {
   testonly = true
 
   sources = [
+    "LinkPreloadGenerator.test.ts",
     "NetworkConfigView.test.ts",
     "NetworkDataGridNode.test.ts",
     "NetworkItemView.test.ts",
@@ -189,12 +192,12 @@ devtools_ui_module("unittests") {
     "../../core/i18n:bundle",
     "../../core/platform:bundle",
     "../../core/sdk:bundle",
+    "../../core/text_utils:bundle",
     "../../generated",
     "../../models/har:bundle",
     "../../models/logs:bundle",
     "../../models/network_time_calculator:bundle",
     "../../models/persistence:bundle",
-    "../../models/text_utils:bundle",
     "../../models/workspace:bundle",
     "../../services/tracing:bundle",
     "../../testing",

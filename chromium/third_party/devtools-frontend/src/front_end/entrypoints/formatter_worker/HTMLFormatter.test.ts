@@ -338,9 +338,65 @@ describe('HTMLFormatter', () => {
         formatHTML('<link href=http://www.example.com/index.html?a&b/>'),
         `<link href=http://www.example.com/index.html?a&b/>
 `);
-    assert.strictEqual(
-        formatHTML('<link href=http://www.example.com/index.html?a&b/ rel=canonical>'),
-        `<link href=http://www.example.com/index.html?a&b/ rel=canonical>
+    assert.strictEqual(formatHTML('<link href=http://www.example.com/index.html?a&b/ rel=canonical>'),
+                       `<link href=http://www.example.com/index.html?a&b/ rel=canonical>
+`);
+  });
+
+  it('preserves whitespace inside tags', () => {
+    const input = `<!DOCTYPE html>
+<html>
+    <head>
+        <title>   Whitespace Example   </title>
+    </head>
+    <body>
+        <h1>   Hello, World!   </h1>
+        <p>
+            This paragraph has extra whitespace
+            inside the tags to demonstrate
+            how browsers handle it.
+        </p>
+    </body>
+</html>`;
+    const formatted = formatHTML(input);
+    assert.strictEqual(formatted, `<!DOCTYPE html>
+<html>
+  <head>
+    <title>   Whitespace Example   </title>
+  </head>
+  <body>
+    <h1>   Hello, World!   </h1>
+    <p>
+            This paragraph has extra whitespace
+            inside the tags to demonstrate
+            how browsers handle it.
+        </p>
+  </body>
+</html>
+`);
+  });
+
+  it('collapses empty elements with newlines', () => {
+    assert.strictEqual(formatHTML(`<p>
+</p>`),
+                       `<p></p>
+`);
+  });
+
+  it('preserves spaces inside empty elements', () => {
+    assert.strictEqual(formatHTML('<p> </p>'), `<p> </p>
+`);
+  });
+
+  it('formats elements with comments and text content without extra empty lines', () => {
+    const input = `<div>
+        <!-- comment -->
+        text
+    </div>`;
+    assert.strictEqual(formatHTML(input), `<div>
+        <!-- comment -->
+        text
+    </div>
 `);
   });
 });

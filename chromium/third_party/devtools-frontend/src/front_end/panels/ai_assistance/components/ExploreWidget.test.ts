@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import {assertScreenshot, renderElementIntoDOM} from '../../../testing/DOMHelpers.js';
 import {updateHostConfig} from '../../../testing/EnvironmentHelpers.js';
@@ -101,19 +102,18 @@ describe('ExploreWidget', () => {
   describe('view', () => {
     it('looks fine', async () => {
       const target = document.createElement('div');
-      renderElementIntoDOM(target);
-      AiAssistance.ExploreWidget.DEFAULT_VIEW(
-          {
-            featureCards: [{
-              icon: 'brush-2',
-              heading: 'CSS styles',
-              jslogContext: 'open-elements-panel',
-              onClick: () => {},
-              panelName: 'Elements',
-              text: 'to ask about CSS styles'
-            }]
-          },
-          {}, target);
+      renderElementIntoDOM(target, {includeCommonStyles: true});
+      AiAssistance.ExploreWidget.DEFAULT_VIEW({
+        featureCards: [{
+          icon: 'brush-2',
+          heading: 'CSS styles',
+          jslogContext: 'open-elements-panel',
+          onClick: () => {},
+          panelName: 'Elements',
+          text: 'to ask about CSS styles',
+        }],
+      },
+                                              {}, target);
       await assertScreenshot('ai_assistance/explore-default.png');
     });
   });

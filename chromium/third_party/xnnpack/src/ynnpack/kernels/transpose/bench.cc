@@ -42,6 +42,10 @@ void bench_impl(benchmark::State& state, uint64_t arch_flags,
   for (auto _ : state) {
     kernel(m, n, n_bytes_a, a_stride, a.base(), x_stride, x.base());
   }
+
+  const size_t bytes = a.size_bytes() + x.size_bytes();
+  state.counters["Bytes"] = benchmark::Counter(
+      state.iterations() * bytes, benchmark::Counter::kIsRate);
 }
 
 void bench(benchmark::State& state, uint64_t arch_flags,
@@ -72,6 +76,12 @@ void bench_impl(benchmark::State& state, uint64_t arch_flags,
   while (state.KeepRunningBatch(m * n)) {
     kernel(factor, m, n, a_stride, a.base(), x.data());
   }
+
+  constexpr size_t element_count = type_info<T>::element_count();
+  const size_t bytes =
+      a.size_bytes() + ceil_div(factor * n, element_count) * sizeof(T);
+  state.counters["Bytes"] = benchmark::Counter(
+      state.iterations() * bytes / (m * n), benchmark::Counter::kIsRate);
 }
 
 void bench(benchmark::State& state, uint64_t arch_flags,

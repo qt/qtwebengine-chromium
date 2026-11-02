@@ -122,7 +122,7 @@ class DynamicSGroup {
   }
 
   template <typename Index>
-  inline std::vector<Index> h_permute(std::size_t which, std::vector<Index> idx) const {
+  inline std::vector<Index> h_permute(std::size_t which, const std::vector<Index>& idx) const {
     std::vector<Index> result;
     result.reserve(idx.size());
     for (auto k : m_elements[which].representation) result.push_back(idx[k]);
@@ -167,7 +167,7 @@ template <typename... Gen>
 class DynamicSGroupFromTemplateArgs : public DynamicSGroup {
  public:
   inline DynamicSGroupFromTemplateArgs() : DynamicSGroup() { add_all(internal::type_list<Gen...>()); }
-  inline DynamicSGroupFromTemplateArgs(DynamicSGroupFromTemplateArgs const& other) : DynamicSGroup(other) {}
+  inline DynamicSGroupFromTemplateArgs(DynamicSGroupFromTemplateArgs const& other) = default;
   inline DynamicSGroupFromTemplateArgs(DynamicSGroupFromTemplateArgs&& other) : DynamicSGroup(other) {}
   inline DynamicSGroupFromTemplateArgs<Gen...>& operator=(const DynamicSGroupFromTemplateArgs<Gen...>& o) {
     DynamicSGroup::operator=(o);
@@ -269,15 +269,15 @@ inline void DynamicSGroup::updateGlobalFlags(int flagDiffOfSameGenerator) {
       // nothing happened
       break;
     case NegationFlag:
-      // every element is it's own negative => whole tensor is zero
+      // every element is its own negative => whole tensor is zero
       m_globalFlags |= GlobalZeroFlag;
       break;
     case ConjugationFlag:
-      // every element is it's own conjugate => whole tensor is real
+      // every element is its own conjugate => whole tensor is real
       m_globalFlags |= GlobalRealFlag;
       break;
     case (NegationFlag | ConjugationFlag):
-      // every element is it's own negative conjugate => whole tensor is imaginary
+      // every element is its own negative conjugate => whole tensor is imaginary
       m_globalFlags |= GlobalImagFlag;
       break;
       /* NOTE:

@@ -113,7 +113,13 @@ void bdcsvd_impl<RealScalar_>::allocate(Index diagSize, bool compU, bool compV) 
 
   if (m_compV) m_naiveV = MatrixXr::Zero(diagSize, diagSize);
 
-  m_workspace.resize((diagSize + 1) * (diagSize + 1) * 3);
+  // Vector updates need the three matrix-sized packing buffers used by
+  // structured_update(). Values-only decompositions only need five vectors:
+  // diag, shifts, mus, zhat, and diagShifted.
+  if (m_compU || m_compV)
+    m_workspace.resize((diagSize + 1) * (diagSize + 1) * 3);
+  else
+    m_workspace.resize(5 * diagSize);
   m_workspaceI.resize(3 * diagSize);
 }
 
@@ -193,8 +199,6 @@ void bdcsvd_impl<RealScalar_>::computeBaseCase(SVDType& svd, Index n, Index firs
 template <typename RealScalar_>
 void bdcsvd_impl<RealScalar_>::divide(Index firstCol, Index lastCol, Index firstRowW, Index firstColW, Index shift) {
   // requires rows = cols + 1;
-  using std::abs;
-  using std::sqrt;
   const Index n = lastCol - firstCol + 1;
   const Index k = n / 2;
   const RealScalar considerZero = (std::numeric_limits<RealScalar>::min)();
@@ -202,7 +206,6 @@ void bdcsvd_impl<RealScalar_>::divide(Index firstCol, Index lastCol, Index first
   RealScalar betaK;
   RealScalar r0;
   RealScalar lambda, phi, c0, s0;
-  VectorType l, f;
   // We use the other algorithm which is more efficient for small
   // matrices.
   if (n < m_algoswap) {
@@ -231,14 +234,10 @@ void bdcsvd_impl<RealScalar_>::divide(Index firstCol, Index lastCol, Index first
     lambda = m_naiveU(1, firstCol + k);
     phi = m_naiveU(0, lastCol + 1);
   }
-  r0 = sqrt((abs(alphaK * lambda) * abs(alphaK * lambda)) + abs(betaK * phi) * abs(betaK * phi));
-  if (m_compU) {
-    l = m_naiveU.row(firstCol + k).segment(firstCol, k);
-    f = m_naiveU.row(firstCol + k + 1).segment(firstCol + k + 1, n - k - 1);
-  } else {
-    l = m_naiveU.row(1).segment(firstCol, k);
-    f = m_naiveU.row(0).segment(firstCol + k + 1, n - k - 1);
-  }
+  // LAPACK's xLASD2 likewise uses xLAPY2 for this merge coupling. The
+  // scaled hypotenuse avoids destructive underflow when both products are
+  // below sqrt(min()).
+  r0 = numext::hypot(alphaK * lambda, betaK * phi);
   if (m_compV) m_naiveV(firstRowW + k, firstColW) = Literal(1);
   if (r0 < considerZero) {
     c0 = Literal(1);
@@ -248,9 +247,23 @@ void bdcsvd_impl<RealScalar_>::divide(Index firstCol, Index lastCol, Index first
     s0 = betaK * phi / r0;
   }
 
+  m_computed(firstCol + shift, firstCol + shift) = r0;
   if (m_compU) {
-    MatrixXr q1(m_naiveU.col(firstCol + k).segment(firstCol, k + 1));
-    // we shiftW Q1 to the right
+    m_computed.col(firstCol + shift).segment(firstCol + shift + 1, k) =
+        alphaK * m_naiveU.row(firstCol + k).segment(firstCol, k).transpose();
+    m_computed.col(firstCol + shift).segment(firstCol + shift + k + 1, n - k - 1) =
+        betaK * m_naiveU.row(firstCol + k + 1).segment(firstCol + k + 1, n - k - 1).transpose();
+  } else {
+    m_computed.col(firstCol + shift).segment(firstCol + shift + 1, k) =
+        alphaK * m_naiveU.row(1).segment(firstCol, k).transpose();
+    m_computed.col(firstCol + shift).segment(firstCol + shift + k + 1, n - k - 1) =
+        betaK * m_naiveU.row(0).segment(firstCol + k + 1, n - k - 1).transpose();
+  }
+
+  if (m_compU) {
+    Map<VectorType, Aligned> q1(m_workspace.data(), k + 1);
+    q1 = m_naiveU.col(firstCol + k).segment(firstCol, k + 1);
+    // we shift Q1 to the right
     for (Index i = firstCol + k - 1; i >= firstCol; i--)
       m_naiveU.col(i + 1).segment(firstCol, k + 1) = m_naiveU.col(i).segment(firstCol, k + 1);
     // we shift q1 at the left with a factor c0
@@ -278,10 +291,6 @@ void bdcsvd_impl<RealScalar_>::divide(Index firstCol, Index lastCol, Index first
     m_naiveU.row(0).segment(firstCol + k + 1, n - k - 1).setZero();
   }
 
-  m_computed(firstCol + shift, firstCol + shift) = r0;
-  m_computed.col(firstCol + shift).segment(firstCol + shift + 1, k) = alphaK * l.transpose();
-  m_computed.col(firstCol + shift).segment(firstCol + shift + k + 1, n - k - 1) = betaK * f.transpose();
-
   // Second part: try to deflate singular values in combined matrix
   deflation(firstCol, lastCol, k, firstRowW, firstColW, shift);
 
@@ -300,8 +309,10 @@ void bdcsvd_impl<RealScalar_>::divide(Index firstCol, Index lastCol, Index first
 
   if (m_compV) structured_update(m_naiveV.block(firstRowW, firstColW, n, n), VofSVD, (n + 1) / 2);
 
-  m_computed.block(firstCol + shift, firstCol + shift, n, n).setZero();
-  m_computed.block(firstCol + shift, firstCol + shift, n, n).diagonal() = singVals;
+  // Recursive children leave this block diagonal; this merge only adds its
+  // first column. Clear that column instead of rewriting the full n-by-n block.
+  m_computed.col(firstCol + shift).segment(firstCol + shift, n).setZero();
+  m_computed.diagonal().segment(firstCol + shift, n) = singVals;
 }  // end divide
 
 // Compute SVD of m_computed.block(firstCol, firstCol, n + 1, n); this block only has non-zeros in
@@ -385,8 +396,10 @@ typename bdcsvd_impl<RealScalar_>::RealScalar bdcsvd_impl<RealScalar_>::secularE
 template <typename RealScalar_>
 void bdcsvd_impl<RealScalar_>::computeSingVals(const ArrayRef& col0, const ArrayRef& diag, const IndicesRef& perm,
                                                VectorType& singVals, ArrayRef shifts, ArrayRef mus) {
+  // See Ren-Cang Li, "Solving Secular Equations Stably and Efficiently",
+  // LAPACK Working Note 89 (1994), and LAPACK's xLASD4/xLASD5 for the
+  // stability rationale behind pole-relative shifts and safeguarded steps.
   using std::abs;
-  using std::sqrt;
   using std::swap;
 
   Index n = col0.size();
@@ -499,9 +512,9 @@ void bdcsvd_impl<RealScalar_>::computeSingVals(const ArrayRef& col0, const Array
       if (numext::equal_strict(shift, left)) {
         // to avoid overflow, we must have mu > max(real_min, |z(k)|/sqrt(real_max)),
         // the factor 2 is to be more conservative
-        leftShifted =
-            numext::maxi<RealScalar>((std::numeric_limits<RealScalar>::min)(),
-                                     Literal(2) * abs(col0(k)) / sqrt((std::numeric_limits<RealScalar>::max)()));
+        leftShifted = numext::maxi<RealScalar>(
+            (std::numeric_limits<RealScalar>::min)(),
+            Literal(2) * abs(col0(k)) / numext::sqrt((std::numeric_limits<RealScalar>::max)()));
 
         // check that we did it right:
         eigen_internal_assert(
@@ -512,8 +525,9 @@ void bdcsvd_impl<RealScalar_>::computeSingVals(const ArrayRef& col0, const Array
       } else {
         leftShifted = -(right - left) * RealScalar(0.51);
         if (k + 1 < n)
-          rightShifted = -numext::maxi<RealScalar>((std::numeric_limits<RealScalar>::min)(),
-                                                   abs(col0(k + 1)) / sqrt((std::numeric_limits<RealScalar>::max)()));
+          rightShifted =
+              -numext::maxi<RealScalar>((std::numeric_limits<RealScalar>::min)(),
+                                        abs(col0(k + 1)) / numext::sqrt((std::numeric_limits<RealScalar>::max)()));
         else
           rightShifted = -(std::numeric_limits<RealScalar>::min)();
       }
@@ -538,7 +552,7 @@ void bdcsvd_impl<RealScalar_>::computeSingVals(const ArrayRef& col0, const Array
       } else {
         // We have a problem as shifting on the left or right give either a positive or negative value
         // at the middle of [left,right]...
-        // Instead of abbording or entering an infinite loop,
+        // Instead of aborting or entering an infinite loop,
         // let's just use the middle as the estimated zero-crossing:
         muCur = (right - left) * RealScalar(0.5);
         // we can test exact equality here, because shift comes from `... ? left : right`
@@ -557,7 +571,7 @@ template <typename RealScalar_>
 void bdcsvd_impl<RealScalar_>::perturbCol0(const ArrayRef& col0, const ArrayRef& diag, const IndicesRef& perm,
                                            const VectorType& singVals, const ArrayRef& shifts, const ArrayRef& mus,
                                            ArrayRef zhat) {
-  using std::sqrt;
+  using std::abs;
   Index n = col0.size();
   Index m = perm.size();
   if (m == 0) {
@@ -572,7 +586,12 @@ void bdcsvd_impl<RealScalar_>::perturbCol0(const ArrayRef& col0, const ArrayRef&
     else {
       // see equation (3.6)
       RealScalar dk = diag(k);
-      RealScalar prod = (singVals(lastIdx) + dk) * (mus(lastIdx) + (shifts(lastIdx) - dk));
+      // Materialize the close subtraction before adding the small correction.
+      // Unsafe FP reassociation may otherwise turn `mus + (shift - dk)` into
+      // `(mus + shift) - dk`, losing `mus` when `shift` and `dk` cancel.
+      RealScalar diff = shifts(lastIdx) - dk;
+      EIGEN_OPTIMIZATION_BARRIER(diff)
+      RealScalar prod = (singVals(lastIdx) + dk) * (mus(lastIdx) + diff);
 
       for (Index l = 0; l < m; ++l) {
         Index i = perm(l);
@@ -585,10 +604,14 @@ void bdcsvd_impl<RealScalar_>::perturbCol0(const ArrayRef& col0, const ArrayRef&
             break;
           }
           Index j = i < k ? i : perm(l - 1);
-          prod *= ((singVals(j) + dk) / ((diag(i) + dk))) * ((mus(j) + (shifts(j) - dk)) / ((diag(i) - dk)));
+          diff = shifts(j) - dk;
+          EIGEN_OPTIMIZATION_BARRIER(diff)
+          prod *= ((singVals(j) + dk) / ((diag(i) + dk))) * ((mus(j) + diff) / ((diag(i) - dk)));
         }
       }
-      RealScalar tmp = sqrt(prod);
+      // This product is non-negative in exact arithmetic. As in LAPACK's
+      // xLASD8, take abs before sqrt to tolerate a negative rounding residue.
+      RealScalar tmp = numext::sqrt(abs(prod));
       zhat(k) = col0(k) > Literal(0) ? RealScalar(tmp) : RealScalar(-tmp);
     }
   }
@@ -608,21 +631,26 @@ void bdcsvd_impl<RealScalar_>::computeSingVecs(const ArrayRef& zhat, const Array
       if (m_compV) V.col(k) = VectorType::Unit(n, k);
     } else {
       U.col(k).setZero();
+      if (m_compV) V.col(k).setZero();
       for (Index l = 0; l < m; ++l) {
         Index i = perm(l);
-        U(i, k) = zhat(i) / (((diag(i) - shifts(k)) - mus(k))) / ((diag(i) + singVals[k]));
+        RealScalar diff = diag(i) - shifts(k);
+        EIGEN_OPTIMIZATION_BARRIER(diff)
+        diff -= mus(k);
+        EIGEN_OPTIMIZATION_BARRIER(diff)
+        U(i, k) = zhat(i) / diff / ((diag(i) + singVals[k]));
+        if (m_compV && l > 0) V(i, k) = diag(i) * zhat(i) / diff / ((diag(i) + singVals[k]));
       }
       U(n, k) = Literal(0);
-      U.col(k).normalize();
+      // LAPACK's xLASD3 normalizes these vectors with xNRM2. Use the scaled
+      // normalization unconditionally: under -ffast-math, compilers may
+      // assume that the overflowing result of norm() is finite and discard
+      // an isfinite-based fallback.
+      U.col(k).stableNormalize();
 
       if (m_compV) {
-        V.col(k).setZero();
-        for (Index l = 1; l < m; ++l) {
-          Index i = perm(l);
-          V(i, k) = diag(i) * zhat(i) / (((diag(i) - shifts(k)) - mus(k))) / ((diag(i) + singVals[k]));
-        }
         V(0, k) = Literal(-1);
-        V.col(k).normalize();
+        V.col(k).stableNormalize();
       }
     }
   }
@@ -634,8 +662,6 @@ void bdcsvd_impl<RealScalar_>::computeSingVecs(const ArrayRef& zhat, const Array
 // We use a rotation to zero out zi applied to the left of M, and set di = 0.
 template <typename RealScalar_>
 void bdcsvd_impl<RealScalar_>::deflation43(Index firstCol, Index shift, Index i, Index size) {
-  using std::abs;
-  using std::sqrt;
   Index start = firstCol + shift;
   RealScalar c = m_computed(start, start);
   RealScalar s = m_computed(start + i, start);
@@ -661,9 +687,6 @@ void bdcsvd_impl<RealScalar_>::deflation43(Index firstCol, Index shift, Index i,
 template <typename RealScalar_>
 void bdcsvd_impl<RealScalar_>::deflation44(Index firstColu, Index firstColm, Index firstRowW, Index firstColW, Index i,
                                            Index j, Index size) {
-  using std::abs;
-  using std::sqrt;
-
   RealScalar s = m_computed(firstColm + i, firstColm);
   RealScalar c = m_computed(firstColm + j, firstColm);
   RealScalar r = numext::hypot(c, s);
@@ -690,7 +713,6 @@ template <typename RealScalar_>
 void bdcsvd_impl<RealScalar_>::deflation(Index firstCol, Index lastCol, Index k, Index firstRowW, Index firstColW,
                                          Index shift) {
   using std::abs;
-  using std::sqrt;
   const Index length = lastCol + 1 - firstCol;
 
   Block<MatrixXr, Dynamic, 1> col0(m_computed, firstCol + shift, firstCol + shift, length, 1);

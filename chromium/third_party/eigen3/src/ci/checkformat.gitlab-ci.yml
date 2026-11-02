@@ -30,7 +30,9 @@ checkformat:reuse:
     - merge_requests
   before_script:
     - apk add --no-cache py3-pip
-    - pip install --break-system-packages reuse
+    # reuse >= 6.x needs an encoding-detection backend at import time; the Alpine image
+    # ships neither libmagic nor charset-normalizer, so pull in the latter explicitly.
+    - pip install --break-system-packages 'reuse[charset-normalizer]'
   script:
     - reuse lint
 

@@ -17,10 +17,15 @@
 #include "services/webnn/host/weights_file_provider.h"
 #include "services/webnn/webnn_context_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/origin.h"
 
 #if BUILDFLAG(WEBNN_USE_TFLITE) || BUILDFLAG(WEBNN_USE_LITERT)
 #include "services/webnn/host/weights_file_creator_impl.h"
-#include "services/webnn/public/cpp/in_process_context_provider.h"
+#include "services/webnn/public/cpp/in_process_context_provider.h"  // nogncheck
+#endif
+
+#if BUILDFLAG(IS_WIN)
+#include "services/webnn/public/cpp/ep_device_info.h"
 #endif
 
 namespace webnn::test {
@@ -89,7 +94,8 @@ class InProcessFallbackContextProvider : public mojom::WebNNContextProvider {
     }
     mojo::PendingRemote<mojom::WebNNWeightsFileCreator> weights_file_creator;
     WeightsFileCreatorImpl::Create(
-        weights_file_creator.InitWithNewPipeAndPassReceiver(), is_incognito_);
+        weights_file_creator.InitWithNewPipeAndPassReceiver(), url::Origin(),
+        is_incognito_);
     mojo::ScopedMessagePipeHandle in_process_pipe =
         webnn::CreateInProcessContextProvider(weights_file_creator.PassPipe(),
                                               task_runner_);
@@ -170,9 +176,11 @@ void FakeGpuHostForTesting::EnsureWebNNExecutionProvidersReady(
 void FakeGpuHostForTesting::RequestWebNNCompilerContext(
     webnn::mojom::CreateContextOptionsPtr context_options,
     const webnn::ContextProperties& context_properties,
-    base::flat_map<std::string, webnn::mojom::EpPackageInfoPtr> ep_package_info,
-    RequestWebNNCompilerContextCallback callback) {
-  std::move(callback).Run(mojo::NullRemote(), mojo::NullReceiver());
+    const webnn::EpDeviceInfo& target_device,
+    mojo::PendingReceiver<webnn::mojom::WebNNCompilerContext>
+        compiler_context_receiver,
+    mojo::PendingRemote<webnn::mojom::WebNNModelLoader> model_loader_remote) {
+  // No-op for testing; drop the endpoints so the peer endpoints disconnect.
 }
 #endif
 

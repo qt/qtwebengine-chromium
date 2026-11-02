@@ -1358,6 +1358,11 @@ void MaglevAssembler::Float64SilenceNan(DoubleRegister value) {
   FPUCanonicalizeNaN(value, value);
 }
 
+void MaglevAssembler::Float64ExtractHighWord32(Register dst,
+                                               DoubleRegister src) {
+  movfrh2gr_s(dst, src);
+}
+
 #ifdef V8_ENABLE_UNDEFINED_DOUBLE
 void MaglevAssembler::JumpIfUndefinedNan(DoubleRegister value, Register scratch,
                                          Label* target,
@@ -1608,6 +1613,21 @@ inline void MaglevAssembler::CompareSmiAndJumpIf(Register r1, Tagged<Smi> value,
                                                  Label::Distance distance) {
   AssertSmi(r1);
   CompareTaggedAndBranch(target, cond, r1, Operand(value) /*, distance*/);
+}
+
+inline void MaglevAssembler::CompareSmiAndAssert(Register r1, Tagged<Smi> value,
+                                                 Condition cond,
+                                                 AbortReason reason) {
+  if (!v8_flags.debug_code) return;
+  AssertSmi(r1);
+  if (COMPRESS_POINTERS_BOOL) {
+    Label L;
+    CompareTaggedAndBranch(&L, cond, r1, Operand(value));
+    Abort(reason);
+    bind(&L);
+  } else {
+    MacroAssembler::Assert(cond, reason, r1, Operand(value));
+  }
 }
 
 inline void MaglevAssembler::CompareByteAndJumpIf(MemOperand left, int8_t right,

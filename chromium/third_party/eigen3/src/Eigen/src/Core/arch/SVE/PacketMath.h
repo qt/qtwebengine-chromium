@@ -230,7 +230,7 @@ EIGEN_STRONG_INLINE void pstoreu<numext::int32_t>(numext::int32_t* to, const Pac
 
 template <>
 EIGEN_DEVICE_FUNC inline PacketXi pgather<numext::int32_t, PacketXi>(const numext::int32_t* from, Index stride) {
-  // Indice format: {base=0, base+stride, base+stride*2, base+stride*3, ...}
+  // Index format: {base=0, base+stride, base+stride*2, base+stride*3, ...}
   svint32_t indices = svindex_s32(0, stride);
   return svld1_gather_s32index_s32(svptrue_b32(), from, indices);
 }
@@ -238,7 +238,7 @@ EIGEN_DEVICE_FUNC inline PacketXi pgather<numext::int32_t, PacketXi>(const numex
 template <>
 EIGEN_DEVICE_FUNC inline void pscatter<numext::int32_t, PacketXi>(numext::int32_t* to, const PacketXi& from,
                                                                   Index stride) {
-  // Indice format: {base=0, base+stride, base+stride*2, base+stride*3, ...}
+  // Index format: {base=0, base+stride, base+stride*2, base+stride*3, ...}
   svint32_t indices = svindex_s32(0, stride);
   svst1_scatter_s32index_s32(svptrue_b32(), to, indices, from);
 }
@@ -273,19 +273,19 @@ EIGEN_STRONG_INLINE numext::int32_t predux_mul<PacketXi>(const PacketXi& a) {
   svint32_t half_prod;
 
   // Extract the high half of the vector. Depending on the VL more reductions need to be done
-  if (EIGEN_ARM64_SVE_VL >= 2048) {
+  EIGEN_IF_CONSTEXPR (EIGEN_ARM64_SVE_VL >= 2048) {
     half_prod = svtbl_s32(prod, svindex_u32(32, 1));
     prod = svmul_s32_x(svptrue_b32(), prod, half_prod);
   }
-  if (EIGEN_ARM64_SVE_VL >= 1024) {
+  EIGEN_IF_CONSTEXPR (EIGEN_ARM64_SVE_VL >= 1024) {
     half_prod = svtbl_s32(prod, svindex_u32(16, 1));
     prod = svmul_s32_x(svptrue_b32(), prod, half_prod);
   }
-  if (EIGEN_ARM64_SVE_VL >= 512) {
+  EIGEN_IF_CONSTEXPR (EIGEN_ARM64_SVE_VL >= 512) {
     half_prod = svtbl_s32(prod, svindex_u32(8, 1));
     prod = svmul_s32_x(svptrue_b32(), prod, half_prod);
   }
-  if (EIGEN_ARM64_SVE_VL >= 256) {
+  EIGEN_IF_CONSTEXPR (EIGEN_ARM64_SVE_VL >= 256) {
     half_prod = svtbl_s32(prod, svindex_u32(4, 1));
     prod = svmul_s32_x(svptrue_b32(), prod, half_prod);
   }
@@ -517,7 +517,9 @@ EIGEN_STRONG_INLINE PacketXf pround<PacketXf>(const PacketXf& a) {
 
 template <>
 EIGEN_STRONG_INLINE PacketXf ptrue<PacketXf>(const PacketXf& /*a*/) {
-  return svreinterpret_f32_u32(svdup_n_u32_x(svptrue_b32(), 0xffffffffu));
+  PacketXf r = svreinterpret_f32_u32(svdup_n_u32_x(svptrue_b32(), 0xffffffffu));
+  EIGEN_FAST_MATH_CONSTANT_BARRIER(r);
+  return r;
 }
 
 // Logical Operations are not supported for float, so reinterpret casts
@@ -578,14 +580,14 @@ EIGEN_STRONG_INLINE void pstoreu<float>(float* to, const PacketXf& from) {
 
 template <>
 EIGEN_DEVICE_FUNC inline PacketXf pgather<float, PacketXf>(const float* from, Index stride) {
-  // Indice format: {base=0, base+stride, base+stride*2, base+stride*3, ...}
+  // Index format: {base=0, base+stride, base+stride*2, base+stride*3, ...}
   svint32_t indices = svindex_s32(0, stride);
   return svld1_gather_s32index_f32(svptrue_b32(), from, indices);
 }
 
 template <>
 EIGEN_DEVICE_FUNC inline void pscatter<float, PacketXf>(float* to, const PacketXf& from, Index stride) {
-  // Indice format: {base=0, base+stride, base+stride*2, base+stride*3, ...}
+  // Index format: {base=0, base+stride, base+stride*2, base+stride*3, ...}
   svint32_t indices = svindex_s32(0, stride);
   svst1_scatter_s32index_f32(svptrue_b32(), to, indices, from);
 }
@@ -629,19 +631,19 @@ EIGEN_STRONG_INLINE float predux_mul<PacketXf>(const PacketXf& a) {
   svfloat32_t half_prod;
 
   // Extract the high half of the vector. Depending on the VL more reductions need to be done
-  if (EIGEN_ARM64_SVE_VL >= 2048) {
+  EIGEN_IF_CONSTEXPR (EIGEN_ARM64_SVE_VL >= 2048) {
     half_prod = svtbl_f32(prod, svindex_u32(32, 1));
     prod = svmul_f32_x(svptrue_b32(), prod, half_prod);
   }
-  if (EIGEN_ARM64_SVE_VL >= 1024) {
+  EIGEN_IF_CONSTEXPR (EIGEN_ARM64_SVE_VL >= 1024) {
     half_prod = svtbl_f32(prod, svindex_u32(16, 1));
     prod = svmul_f32_x(svptrue_b32(), prod, half_prod);
   }
-  if (EIGEN_ARM64_SVE_VL >= 512) {
+  EIGEN_IF_CONSTEXPR (EIGEN_ARM64_SVE_VL >= 512) {
     half_prod = svtbl_f32(prod, svindex_u32(8, 1));
     prod = svmul_f32_x(svptrue_b32(), prod, half_prod);
   }
-  if (EIGEN_ARM64_SVE_VL >= 256) {
+  EIGEN_IF_CONSTEXPR (EIGEN_ARM64_SVE_VL >= 256) {
     half_prod = svtbl_f32(prod, svindex_u32(4, 1));
     prod = svmul_f32_x(svptrue_b32(), prod, half_prod);
   }

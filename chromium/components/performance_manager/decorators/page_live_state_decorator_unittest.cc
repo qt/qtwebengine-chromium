@@ -482,8 +482,10 @@ TEST_F(PageLiveStateDecoratorTest, UpdateTitleInBackground) {
 
 TEST_F(PageLiveStateDecoratorTest, UpdateFaviconInBackground) {
   base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitAndEnableFeature(
-      features::kUseLoadingStateToDetectBackgroundTitleOrFaviconUpdate);
+  scoped_feature_list.InitWithFeatures(
+      {features::kUseLoadingStateToDetectBackgroundTitleOrFaviconUpdate,
+       features::kIgnoreMediaQueryFaviconUpdates},
+      {});
 
   base::WeakPtr<PageNode> node =
       PerformanceManager::GetPrimaryPageNodeForWebContents(web_contents());
@@ -494,9 +496,11 @@ TEST_F(PageLiveStateDecoratorTest, UpdateFaviconInBackground) {
   EXPECT_FALSE(PageLiveStateDecorator::UpdatedTitleOrFaviconInBackground(
       web_contents()));
 
+  using FaviconUpdateReason = blink::mojom::FaviconUpdateReason;
+
   // Updating the favicon while the node is visible does nothing.
   node_impl->SetIsVisible(true);
-  node_impl->OnFaviconUpdated();
+  node_impl->OnFaviconUpdated(FaviconUpdateReason::kLinkElementChange);
   EXPECT_FALSE(data->UpdatedTitleOrFaviconInBackground());
   EXPECT_FALSE(PageLiveStateDecorator::UpdatedTitleOrFaviconInBackground(
       web_contents()));
@@ -505,17 +509,53 @@ TEST_F(PageLiveStateDecoratorTest, UpdateFaviconInBackground) {
   // fully loaded and quiescent.
   node_impl->SetIsVisible(false);
   node_impl->SetLoadingState(PageNode::LoadingState::kLoadingNotStarted);
-  node_impl->OnFaviconUpdated();
+  node_impl->OnFaviconUpdated(FaviconUpdateReason::kLinkElementChange);
   EXPECT_FALSE(data->UpdatedTitleOrFaviconInBackground());
 
+  // Media query changes (e.g. dark mode toggle) should never set the flag.
   node_impl->SetLoadingState(PageNode::LoadingState::kLoadedIdle);
-  node_impl->OnFaviconUpdated();
+  node_impl->OnFaviconUpdated(FaviconUpdateReason::kMediaQueryChange);
+  EXPECT_FALSE(data->UpdatedTitleOrFaviconInBackground());
+  EXPECT_FALSE(PageLiveStateDecorator::UpdatedTitleOrFaviconInBackground(
+      web_contents()));
+
+  // Page load favicon updates set the flag.
+  node_impl->OnFaviconUpdated(FaviconUpdateReason::kPageLoad);
+  EXPECT_TRUE(data->UpdatedTitleOrFaviconInBackground());
+  EXPECT_TRUE(PageLiveStateDecorator::UpdatedTitleOrFaviconInBackground(
+      web_contents()));
+
+  // Link element changes also set the flag.
+  data->SetUpdatedTitleOrFaviconInBackgroundForTesting(false);
+  node_impl->OnFaviconUpdated(FaviconUpdateReason::kLinkElementChange);
   EXPECT_TRUE(data->UpdatedTitleOrFaviconInBackground());
   EXPECT_TRUE(PageLiveStateDecorator::UpdatedTitleOrFaviconInBackground(
       web_contents()));
 
   // The flag is not cleared when the page becomes visible again.
   node_impl->SetIsVisible(true);
+  EXPECT_TRUE(data->UpdatedTitleOrFaviconInBackground());
+  EXPECT_TRUE(PageLiveStateDecorator::UpdatedTitleOrFaviconInBackground(
+      web_contents()));
+}
+
+TEST_F(PageLiveStateDecoratorTest,
+       MediaQueryFaviconUpdatesRecordedWhenFeatureDisabled) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndDisableFeature(
+      features::kIgnoreMediaQueryFaviconUpdates);
+
+  base::WeakPtr<PageNode> node =
+      PerformanceManager::GetPrimaryPageNodeForWebContents(web_contents());
+  ASSERT_TRUE(node);
+  auto* node_impl = PageNodeImpl::FromNode(node.get());
+  auto* data = PageLiveStateDecorator::Data::GetOrCreateForPageNode(node.get());
+
+  node_impl->SetIsVisible(false);
+  node_impl->SetLoadingState(PageNode::LoadingState::kLoadedIdle);
+
+  node_impl->OnFaviconUpdated(
+      blink::mojom::FaviconUpdateReason::kMediaQueryChange);
   EXPECT_TRUE(data->UpdatedTitleOrFaviconInBackground());
   EXPECT_TRUE(PageLiveStateDecorator::UpdatedTitleOrFaviconInBackground(
       web_contents()));

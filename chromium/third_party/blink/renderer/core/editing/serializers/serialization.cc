@@ -151,21 +151,30 @@ class EmptyLocalFrameClientWithFailingLoaderFactory final
   }
 };
 
-}  // namespace
-
-static void CompleteURLs(DocumentFragment& fragment, const String& base_url) {
+void CompleteUrls(DocumentFragment& fragment, const String& base_url) {
   HeapVector<AttributeChange> changes;
 
   KURL parsed_base_url(base_url);
+
+  if (parsed_base_url.ProtocolIsJavaScript()) {
+    return;
+  }
 
   for (Element& element : ElementTraversal::DescendantsOf(fragment)) {
     AttributeCollection attributes = element.Attributes();
     // AttributeCollection::iterator end = attributes.end();
     for (const auto& attribute : attributes) {
-      if (element.IsURLAttribute(attribute) && !attribute.Value().empty())
-        changes.push_back(AttributeChange(
-            &element, attribute.GetName(),
-            KURL(parsed_base_url, attribute.Value()).GetString()));
+      if (element.IsURLAttribute(attribute) && !attribute.Value().empty()) {
+        // Defense-in-depth: never resolve a URL attribute into a
+        // "javascript:" URL. Not reachable from current callers, since the
+        // parser strips such attributes when scripting content is disallowed.
+        KURL completed_url(parsed_base_url, attribute.Value());
+        if (completed_url.ProtocolIsJavaScript()) {
+          continue;
+        }
+        changes.push_back(AttributeChange(&element, attribute.GetName(),
+                                          completed_url.GetString()));
+      }
     }
   }
 
@@ -173,14 +182,14 @@ static void CompleteURLs(DocumentFragment& fragment, const String& base_url) {
     change.Apply();
 }
 
-static bool IsHTMLBlockElement(const Node* node) {
+bool IsHtmlBlockElement(const Node* node) {
   DCHECK(node);
   return IsA<HTMLTableCellElement>(*node) ||
-         IsNonTableCellHTMLBlockElement(node);
+         IsNonTableCellHtmlBlockElement(node);
 }
 
 // Helper function to check if a node is a MathML math element
-static bool IsMathMLMathElement(const Node* node) {
+bool IsMathmlMathElement(const Node* node) {
   const auto* element = DynamicTo<MathMLElement>(node);
   if (!element) {
     return false;
@@ -188,7 +197,7 @@ static bool IsMathMLMathElement(const Node* node) {
   return element->HasTagName(mathml_names::kMathTag);
 }
 
-static HTMLElement* AncestorToRetainStructureAndAppearanceForBlock(
+HTMLElement* AncestorToRetainStructureAndAppearanceForBlock(
     Element* common_ancestor_block) {
   if (!common_ancestor_block)
     return nullptr;
@@ -197,41 +206,28 @@ static HTMLElement* AncestorToRetainStructureAndAppearanceForBlock(
       IsA<HTMLTableRowElement>(*common_ancestor_block))
     return Traversal<HTMLTableElement>::FirstAncestor(*common_ancestor_block);
 
-  if (IsNonTableCellHTMLBlockElement(common_ancestor_block))
+  if (IsNonTableCellHtmlBlockElement(common_ancestor_block)) {
     return To<HTMLElement>(common_ancestor_block);
+  }
 
   return nullptr;
 }
 
-static inline HTMLElement* AncestorToRetainStructureAndAppearance(
+inline HTMLElement* AncestorToRetainStructureAndAppearance(
     Node* common_ancestor) {
   return AncestorToRetainStructureAndAppearanceForBlock(
       EnclosingBlock(common_ancestor));
 }
 
-static inline HTMLElement*
-AncestorToRetainStructureAndAppearanceWithNoLayoutObject(
+inline HTMLElement* AncestorToRetainStructureAndAppearanceWithNoLayoutObject(
     const Node& common_ancestor) {
   auto* common_ancestor_block = To<HTMLElement>(EnclosingNodeOfType(
-      FirstPositionInOrBeforeNode(common_ancestor), IsHTMLBlockElement));
+      FirstPositionInOrBeforeNode(common_ancestor), IsHtmlBlockElement));
   return AncestorToRetainStructureAndAppearanceForBlock(common_ancestor_block);
 }
 
-bool PropertyMissingOrEqualToNone(CSSPropertyValueSet* style,
-                                  CSSPropertyID property_id) {
-  if (!style)
-    return false;
-  const CSSValue* value = style->GetPropertyCSSValue(property_id);
-  if (!value)
-    return true;
-  auto* identifier_value = DynamicTo<CSSIdentifierValue>(value);
-  if (!identifier_value)
-    return false;
-  return identifier_value->GetValueID() == CSSValueID::kNone;
-}
-
 template <typename Strategy>
-static Element* HighestAncestorToWrapMarkup(
+Element* HighestAncestorToWrapMarkup(
     const PositionTemplate<Strategy>& start_position,
     const PositionTemplate<Strategy>& end_position,
     const CreateMarkupOptions& options) {
@@ -255,8 +251,9 @@ static Element* HighestAncestorToWrapMarkup(
               EnclosingNodeOfType(first_node_position, IsListItem)) {
         if (AreSameRanges(parent_list_node, start_position, end_position)) {
           ContainerNode* ancestor = parent_list_node->parentNode();
-          while (ancestor && !IsHTMLListElement(ancestor))
+          while (ancestor && !IsHtmlListElement(ancestor)) {
             ancestor = ancestor->parentNode();
+          }
           special_common_ancestor = To<Element>(ancestor);
         }
       }
@@ -265,7 +262,7 @@ static Element* HighestAncestorToWrapMarkup(
       // quotes.
       if (auto* highest_mail_blockquote =
               To<HTMLQuoteElement>(HighestEnclosingNodeOfType(
-                  first_node_position, IsMailHTMLBlockquoteElement,
+                  first_node_position, IsMailHtmlBlockquoteElement,
                   kCanCrossEditingBoundary))) {
         special_common_ancestor = highest_mail_blockquote;
       }
@@ -276,7 +273,7 @@ static Element* HighestAncestorToWrapMarkup(
       if (RuntimeEnabledFeatures::MathMLSerializationOnCopyEnabled()) {
         if (auto* highest_math_element =
                 To<MathMLElement>(HighestEnclosingNodeOfType(
-                    first_node_position, IsMathMLMathElement,
+                    first_node_position, IsMathmlMathElement,
                     kCanCrossEditingBoundary))) {
           special_common_ancestor = highest_math_element;
         }
@@ -299,22 +296,23 @@ static Element* HighestAncestorToWrapMarkup(
             : EnclosingBlock(check_ancestor);
     auto* new_special_common_ancestor = To<Element>(HighestEnclosingNodeOfType(
         Position::FirstPositionInNode(*check_ancestor),
-        &IsPresentationalHTMLElement, kCanCrossEditingBoundary,
+        &IsPresentationalHtmlElement, kCanCrossEditingBoundary,
         constraining_ancestor));
-    if (new_special_common_ancestor)
+    if (new_special_common_ancestor) {
       special_common_ancestor = new_special_common_ancestor;
+    }
   }
 
   // If a single tab is selected, commonAncestor will be a text node inside a
   // tab span. If two or more tabs are selected, commonAncestor will be the tab
   // span. In either case, if there is a specialCommonAncestor already, it will
   // necessarily be above any tab span that needs to be included.
-  if (!special_common_ancestor &&
-      IsTabHTMLSpanElementTextNode(common_ancestor)) {
+  if (!special_common_ancestor && IsTabSpanElementTextNode(common_ancestor)) {
     special_common_ancestor = To<Element>(Strategy::Parent(*common_ancestor));
   }
-  if (!special_common_ancestor && IsTabHTMLSpanElement(common_ancestor))
+  if (!special_common_ancestor && IsTabSpanElement(common_ancestor)) {
     special_common_ancestor = To<Element>(common_ancestor);
+  }
 
   if (auto* enclosing_anchor = To<Element>(EnclosingElementWithTag(
           Position::FirstPositionInNode(special_common_ancestor
@@ -325,6 +323,24 @@ static Element* HighestAncestorToWrapMarkup(
   }
 
   return special_common_ancestor;
+}
+
+}  // namespace
+
+bool PropertyMissingOrEqualToNone(CSSPropertyValueSet* style,
+                                  CSSPropertyID property_id) {
+  if (!style) {
+    return false;
+  }
+  const CSSValue* value = style->GetPropertyCSSValue(property_id);
+  if (!value) {
+    return true;
+  }
+  auto* identifier_value = DynamicTo<CSSIdentifierValue>(value);
+  if (!identifier_value) {
+    return false;
+  }
+  return identifier_value->GetValueID() == CSSValueID::kNone;
 }
 
 template <typename Strategy>
@@ -401,7 +417,7 @@ DocumentFragment* CreateFragmentFromMarkup(
 
   if (!base_url.empty() && base_url != BlankUrl() &&
       base_url != document.BaseURL()) {
-    CompleteURLs(*fragment, base_url);
+    CompleteUrls(*fragment, base_url);
   }
 
   return fragment;
@@ -464,10 +480,10 @@ DocumentFragment* CreateFragmentFromMarkupWithContext(
 
   StringBuilder tagged_markup;
   tagged_markup.Append(markup.subview(0, fragment_start));
-  MarkupFormatter::AppendComment(tagged_markup, kFragmentMarkerTag);
+  MarkupFormatter::AppendComment(kFragmentMarkerTag, tagged_markup);
   tagged_markup.Append(markup.DeprecatedSubstring(
       fragment_start, fragment_end - fragment_start));
-  MarkupFormatter::AppendComment(tagged_markup, kFragmentMarkerTag);
+  MarkupFormatter::AppendComment(kFragmentMarkerTag, tagged_markup);
   tagged_markup.Append(markup.DeprecatedSubstring(fragment_end));
 
   DocumentFragment* tagged_fragment = CreateFragmentFromMarkup(
@@ -515,15 +531,15 @@ DocumentFragment* CreateFragmentFromMarkupWithContext(
 
 String CreateMarkup(const Node* node,
                     ChildrenOnly children_only,
-                    AbsoluteURLs should_resolve_urls,
+                    ResolveUrls should_resolve_urls,
                     const ShadowRootInclusion& shadow_root_inclusion) {
   if (!node)
     return "";
 
   MarkupAccumulator accumulator(should_resolve_urls,
                                 IsA<HTMLDocument>(node->GetDocument())
-                                    ? SerializationType::kHTML
-                                    : SerializationType::kXML,
+                                    ? SerializationType::kHtml
+                                    : SerializationType::kXml,
                                 shadow_root_inclusion);
   return accumulator.SerializeNodes<EditingStrategy>(*node, children_only);
 }
@@ -585,7 +601,7 @@ bool IsPlainTextMarkup(Node* node) {
   }
 
   return element->HasChildCount(2) &&
-         IsTabHTMLSpanElementTextNode(element->firstChild()->firstChild()) &&
+         IsTabSpanElementTextNode(element->firstChild()->firstChild()) &&
          element->lastChild()->IsTextNode();
 }
 
@@ -819,7 +835,7 @@ static bool ContainsStyleElements(const DocumentFragment& fragment) {
 }
 
 // Returns true if any svg <use> element is removed.
-static bool StripSVGUseNonLocalHrefs(Node& node) {
+static bool StripSvgUseNonLocalHrefs(Node& node) {
   if (auto* use = DynamicTo<SVGUseElement>(node)) {
     SVGURLReferenceResolver resolver(use->HrefString(), use->GetDocument());
     if (!resolver.IsLocal() || resolver.AbsoluteUrl().ProtocolIsData()) {
@@ -830,7 +846,7 @@ static bool StripSVGUseNonLocalHrefs(Node& node) {
   bool stripped = false;
   for (Node* child = node.firstChild(); child;) {
     Node* next = child->nextSibling();
-    if (StripSVGUseNonLocalHrefs(*child)) {
+    if (StripSvgUseNonLocalHrefs(*child)) {
       stripped = true;
     }
     child = next;
@@ -851,7 +867,7 @@ String CreateStrictlyProcessedMarkupWithContext(
     unsigned fragment_end,
     const String& base_url,
     ChildrenOnly children_only,
-    AbsoluteURLs should_resolve_urls,
+    ResolveUrls should_resolve_urls,
     const ShadowRootInclusion& shadow_root_inclusion) {
   if (raw_markup.empty())
     return String();
@@ -879,7 +895,7 @@ String CreateStrictlyProcessedMarkupWithContext(
     bool needs_sanitization = false;
     if (ContainsStyleElements(*fragment))
       needs_sanitization = true;
-    if (StripSVGUseNonLocalHrefs(*fragment)) {
+    if (StripSvgUseNonLocalHrefs(*fragment)) {
       needs_sanitization = true;
     }
 

@@ -19,7 +19,7 @@ import {assert} from '//resources/js/assert.js';
 import {EventTracker} from '//resources/js/event_tracker.js';
 import {loadTimeData} from '//resources/js/load_time_data.js';
 import type {AutocompleteMatch, AutocompleteResult, PageCallbackRouter as SearchboxPageCallbackRouter, PageHandlerRemote as SearchboxPageHandlerRemote} from '//resources/mojo/components/omnibox/browser/searchbox.mojom-webui.js';
-import type {InputState} from '//resources/mojo/components/omnibox/composebox/composebox_query.mojom-webui.js';
+import type {InputState, ModelMode} from '//resources/mojo/components/omnibox/composebox/composebox_query.mojom-webui.js';
 import {InputType, ToolMode} from '//resources/mojo/components/omnibox/composebox/composebox_query.mojom-webui.js';
 import type {UnguessableToken} from '//resources/mojo/mojo/public/mojom/base/unguessable_token.mojom-webui.js';
 import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
@@ -153,6 +153,7 @@ export class ContextualTasksComposeboxElement extends I18nMixinLit
       usePecApi_: {type: Boolean},
       useFork_: {type: Boolean},
       smartTabSharingVisible_: {type: Boolean},
+      contextManagementInComposeboxEnabled_: {type: Boolean},
       energyEffectEnabled_: {type: Boolean, reflect: true},
       energyEffectAnimationEnabled_: {type: Boolean, reflect: true},
       glifAnimationState_: {type: String},
@@ -170,6 +171,7 @@ export class ContextualTasksComposeboxElement extends I18nMixinLit
   private focusAnimationFrameId_: number|null = null;
 
   protected accessor zeroStateSuggestions_: AutocompleteResult = {
+    queryId: -1,
     input: '',
     suggestionGroupsMap: {},
     matches: Array(5).fill(null).map(() => createGhostMatch()),
@@ -186,7 +188,8 @@ export class ContextualTasksComposeboxElement extends I18nMixinLit
   protected accessor showContextMenu_: boolean =
       loadTimeData.getBoolean('composeboxShowContextMenu');
   protected accessor voiceSearchCoherenceEnabled_: boolean =
-      loadTimeData.getBoolean('voiceSearchCoherenceComposeboxesEnabled');
+      loadTimeData.getBoolean(
+          'voiceSearchCoherenceCobrowsingComposeboxEnabled');
   protected accessor inputState_: InputState|null = null;
   protected accessor showSuggestionsActivityLink_: boolean = false;
   protected accessor inVoiceSearchMode_: boolean = false;
@@ -219,6 +222,8 @@ export class ContextualTasksComposeboxElement extends I18nMixinLit
       loadTimeData.getBoolean('useContextualTasksComposeboxFork');
   protected accessor smartTabSharingVisible_: boolean =
       loadTimeData.getBoolean('composeboxSmartTabSharingVisible');
+  protected accessor contextManagementInComposeboxEnabled_: boolean =
+      loadTimeData.getBoolean('contextManagementInComposeboxEnabled');
   protected accessor energyEffectEnabled_: boolean =
       loadTimeData.getBoolean('energyEffectEnabled');
   // The use of energyEffectEnabled to set energyEffectAnimationEnabled_ is
@@ -472,7 +477,7 @@ export class ContextualTasksComposeboxElement extends I18nMixinLit
   // Handle keyboard events on the suggestions dropdown.
   protected onDropdownKeydown_(e: KeyboardEvent) {
     if (e.key === 'Enter') {
-      this.navigateToMatch_(this.selectedMatchIndex_);
+      this.navigateToMatch_(this.selectedMatchIndex_, /*viaKeyboard=*/ true);
       e.preventDefault();
       e.stopPropagation();
     }
@@ -489,7 +494,7 @@ export class ContextualTasksComposeboxElement extends I18nMixinLit
     this.selectedMatchIndex_ = e.detail.index;
   }
 
-  private navigateToMatch_(index: number) {
+  private navigateToMatch_(index: number, viaKeyboard: boolean) {
     const match = this.zeroStateSuggestions_?.matches[index];
 
     if (match) {
@@ -497,11 +502,13 @@ export class ContextualTasksComposeboxElement extends I18nMixinLit
           /*line=*/ index,
           /*url=*/ match.destinationUrl,
           /*areMatchesShowing=*/ true,
-          /*mouseButton=*/ 0,
-          /*altKey=*/ false,
-          /*ctrlKey=*/ false,
-          /*metaKey=*/ false,
-          /*shiftKey=*/ false);
+          /*mouseButton=*/ 0, {
+            altKey: false,
+            ctrlKey: false,
+            metaKey: false,
+            shiftKey: false,
+          },
+          /*viaKeyboard=*/ viaKeyboard);
     }
     this.clearInputAndFocus(/* querySubmitted= */ true);
     this.selectedMatchIndex_ = -1;
@@ -596,10 +603,39 @@ export class ContextualTasksComposeboxElement extends I18nMixinLit
         (this.inputState?.isCanvasQuerySubmitted ?? false);
   }
 
+  onInputStateUpdate(
+      toolMode?: ToolMode|number, modelMode?: ModelMode|number,
+      _data?: Record<string, unknown>) {
+    // If tool or model are defined, update them and update related states.
+    if (toolMode !== undefined && toolMode !== null) {
+      if (this.inputState_) {
+        this.inputState_ = {
+          ...this.inputState_,
+          activeTool: toolMode as ToolMode,
+        };
+      }
+
+      this.inToolMode_ =
+          (this.inputState_?.activeTool ?? toolMode) !== ToolMode.kUnspecified;
+
+      this.searchboxHandler_.setActiveToolMode(
+          toolMode as ToolMode, /*isSetByServer=*/ true);
+    }
+
+    if (modelMode !== undefined && modelMode !== null) {
+      if (this.inputState_) {
+        this.inputState_ = {
+          ...this.inputState_,
+          activeModel: modelMode as ModelMode,
+        };
+      }
+      this.searchboxHandler_.setActiveModelMode(modelMode as ModelMode);
+    }
+  }
+
   getComposebox() {
     return this.$.composebox;
   }
-
 
   get isComposeboxFocusedForTesting() {
     return this.isComposeboxFocused_;
@@ -619,6 +655,10 @@ export class ContextualTasksComposeboxElement extends I18nMixinLit
 
   get resizeObserverForTesting() {
     return this.resizeObserver_;
+  }
+
+  get inToolModeForTesting() {
+    return this.inToolMode_;
   }
 
   tryFocus() {

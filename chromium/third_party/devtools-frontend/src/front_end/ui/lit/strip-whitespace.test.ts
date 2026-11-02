@@ -4,7 +4,7 @@
 
 import {assert} from 'chai';
 
-import {html} from './lit.js';
+import {Directives, html} from './lit.js';
 
 describe('html', () => {
   it('should return the same string if there are no newlines', () => {
@@ -108,5 +108,43 @@ describe('html', () => {
       </div>
     `;
     assert.deepEqual(result.strings as unknown as string[], ['<div class=', ' id="foo">', '</div>']);
+  });
+
+  it('escapes bidi and formatting characters in interpolated string values', () => {
+    const value = 'Hello \u202E World';
+    const result = html`<div>${value}</div>`;
+    assert.deepEqual(result.values, ['Hello \\u202E World']);
+  });
+
+  it('leaves non-string interpolated values untouched', () => {
+    const obj = {name: 'World'};
+    const num = 42;
+    const result = html`<div>${obj} ${num}</div>`;
+    assert.deepEqual(result.values, [obj, num]);
+  });
+
+  it('escapes bidi and formatting characters in interpolated array of string values', () => {
+    const values = ['Hello \u202E World', 42, ['Nested \u202E Value']];
+    const result = html`<div>${values}</div>`;
+    assert.deepEqual(result.values, [['Hello \\u202E World', 42, ['Nested \\u202E Value']]]);
+  });
+
+  it('escapes bidi and formatting characters in strings inside Lit directives', () => {
+    const value = 'Hello \u202E World';
+    const result = html`<input .value=${Directives.live(value)} />`;
+    const directiveResult = result.values[0] as {values: unknown[]};
+    assert.strictEqual(directiveResult.values[0], 'Hello \\u202E World');
+  });
+
+  it('escapes bidi and formatting characters in strings wrapped with ifDefined', () => {
+    const value = 'Hello \u202E World';
+    const result = html`<div title=${Directives.ifDefined(value)}></div>`;
+    assert.strictEqual(result.values[0], 'Hello \\u202E World');
+  });
+
+  it('does not escape safe zero-width characters in interpolated values', () => {
+    const value = 'Hello \u200B \u200C \u200D World';
+    const result = html`<div>${value}</div>`;
+    assert.deepEqual(result.values, ['Hello \u200B \u200C \u200D World']);
   });
 });

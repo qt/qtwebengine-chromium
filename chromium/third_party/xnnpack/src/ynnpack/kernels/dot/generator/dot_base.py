@@ -55,6 +55,8 @@ class dot_base:
     self.a_type = ""
     self.b_type = ""
     self.c_type = ""
+    self.a_load_type = None
+    self.b_load_type = None
     self.b_chunk_n = 1
     self.min_tiles = 4
     self.flags = []
@@ -65,6 +67,8 @@ class dot_base:
 #include <cstdint>
 #include <cstddef>
 #include <cstring>
+
+#include "ynnpack/base/arithmetic.h"
 
 #if !defined(__has_attribute)
 #define YNN_COMPILER_HAS_ATTRIBUTE(x) 0
@@ -92,23 +96,8 @@ namespace ynn {
 
 namespace {
 
-template <typename T>
-YNN_INTRINSIC T* offset_bytes(T* ptr, std::ptrdiff_t offset) {
-  return reinterpret_cast<T*>(reinterpret_cast<uint8_t*>(ptr) + offset);
-}
-
-template <typename T>
-YNN_INTRINSIC const T* offset_bytes(const T* ptr, std::ptrdiff_t offset) {
-  return reinterpret_cast<const T*>(reinterpret_cast<const uint8_t*>(ptr) +
-                                    offset);
-}
-
 YNN_INTRINSIC std::size_t min(std::size_t a, std::size_t b) {
   return a < b ? a : b;
-}
-
-YNN_INTRINSIC std::size_t sub_sat(std::size_t a, std::size_t b) {
-  return a > b ? a - b : 0;
 }
 
 }  // namespace
@@ -117,8 +106,18 @@ YNN_INTRINSIC std::size_t sub_sat(std::size_t a, std::size_t b) {
   def footer(self):
     return "}  // namespace ynn\n"
 
-  def b_alignment_required(self):
-    return self.tile_shape[1] * self.tile_shape[2]
+  def b_tile_size_bytes(self):
+    sizeof_b = f"sizeof({self.b_type})"
+    return f"({self.tile_shape[1]} * {self.tile_shape[2]} * {sizeof_b})"
+
+  def b_alignment_bytes(self):
+    return self.b_tile_size_bytes()
+
+  def b_tile_stride_k(self):
+    return f"({self.b_tile_size_bytes()} / {self.tile_shape[2]})"
+
+  def b_tile_stride_n(self):
+    return f"({self.b_tile_size_bytes()} / {self.tile_shape[1]})"
 
   def begin_func(self, func_name):
     result = f"""
@@ -134,11 +133,19 @@ void {func_name}(
   assert(K1 > 0);
   assert(M <= {self.block_shape[0]});
 """
+    if self.tile_shape[1] > 1:
+      result += f"""
+  static_assert({self.b_tile_size_bytes()} % {self.tile_shape[1]} == 0, "");
+"""
+    if self.tile_shape[2] > 1:
+      result += f"""
+  static_assert({self.b_tile_size_bytes()} % {self.tile_shape[2]} == 0, "");
+"""
 
     if "dot_flag::unaligned_b" not in self.flags:
       result += f"""\
-  assert(reinterpret_cast<uintptr_t>(B) % ({self.b_alignment_required()} * sizeof({self.b_type})) == 0);
-  assert(B_stride_k1 % ({self.tile_shape[1]} * sizeof({self.b_type})) == 0 || K1 == 1);
+  assert(reinterpret_cast<uintptr_t>(B) % {self.b_alignment_bytes()} == 0);
+  assert(B_stride_k1 % {self.b_tile_stride_k()} == 0 || K1 == 1);
 """
 
     if self.tile_shape[2] > 1:
@@ -151,7 +158,7 @@ void {func_name}(
 
   def a_ptr(self, i, k1, ty=None):
     """Get pointers to a(i, k1) within the current block."""
-    ty = ty or self.a_type
+    ty = ty or self.a_load_type or self.a_type
     # When we clamp, we need to align down to the nearest tile.
     i = f"min({i}, (M - 1) & ~{self.tile_shape[0] - 1})" if i != 0 else i
     if "dot_flag::transpose_a" in self.flags:
@@ -162,14 +169,14 @@ void {func_name}(
 
   def b_ptr(self, k1, j, ty=None):
     """Get pointers to b(k1, j) within the current block."""
-    ty = ty or self.b_type
+    ty = ty or self.b_load_type or self.b_type
     # Split j into `jo` and `ji`, where `jo` is which B pointer we use, and `ji`
     # is the offset from that B pointer we want.
     jo = (j // self.b_chunk_n) * self.b_chunk_n
     ji = j - jo
     return (
         f"reinterpret_cast<const {ty}*>(offset_bytes(B_k1_{jo}, ({k1} *"
-        f" B_stride_k1) + ({ji * self.tile_shape[2]} * sizeof({self.b_type}))))"
+        f" B_stride_k1) + ({ji} * {self.b_tile_stride_n()})))"
     )
 
   def c_in_ptr(self, i, j, ty=None):
@@ -263,28 +270,28 @@ void {func_name}(
     """
     return ""
 
-  def generate_block(self, nk):
+  def generate_block(self):
     """Generate the loads and products to implement a `block_shape` of the dot product."""
     result = ""
     for i in range(0, self.block_shape[0], self.tile_shape[0]):
-      for k in range(0, nk, self.tile_shape[2]):
-        result += self.load_a_tile_k_tail(i, k, nk)
+      for k in range(0, self.block_shape[2], self.tile_shape[2]):
+        result += self.load_a_tile_k_tail(i, k, self.block_shape[2])
     result += "\n"
 
     # TODO: This is a hack, find a better way to decide this loop ordering.
     if "neon" in self.arch:
       for j in range(0, self.block_shape[1], self.tile_shape[1]):
-        for k in range(0, nk, self.tile_shape[2]):
+        for k in range(0, self.block_shape[2], self.tile_shape[2]):
           result += self.load_b_tile(k, j)
         for i in range(0, self.block_shape[0], self.tile_shape[0]):
-          for k in range(0, nk, self.tile_shape[2]):
+          for k in range(0, self.block_shape[2], self.tile_shape[2]):
             result += self.product(i, j, k)
     else:
-      for k in range(0, nk, self.tile_shape[2]):
+      for k in range(0, self.block_shape[2], self.tile_shape[2]):
         for j in range(0, self.block_shape[1], self.tile_shape[1]):
           result += self.load_b_tile(k, j)
 
-      for k in range(0, nk, self.tile_shape[2]):
+      for k in range(0, self.block_shape[2], self.tile_shape[2]):
         for i in range(0, self.block_shape[0], self.tile_shape[0]):
           for j in range(0, self.block_shape[1], self.tile_shape[1]):
             result += self.product(i, j, k)
@@ -350,20 +357,20 @@ void {func_name}(
 
   def add_c(self, handle_tail):
     block = self.add_c_block()
+    block_n = self.block_shape[1]
     block += "\n"
-    block += f"N -= {self.block_shape[1]};\n"
-    block += f"B = offset_bytes(B, {self.block_shape[1] * self.tile_shape[2]} * sizeof({self.b_type}));\n"
+    block += f"N -= {block_n};\n"
+    block += f"B = offset_bytes(B, {self.b_tile_stride_n()} * {block_n});\n"
     block += (
-        f"C_in = C_in ? offset_bytes(C_in, {self.block_shape[1]} *"
+        f"C_in = C_in ? offset_bytes(C_in, {block_n} *"
         f" sizeof({self.c_type})) : nullptr;\n"
     )
     block += (
-        f"C_out = offset_bytes(C_out, {self.block_shape[1]} *"
-        f" sizeof({self.c_type}));\n"
+        f"C_out = offset_bytes(C_out, {block_n} * sizeof({self.c_type}));\n"
     )
 
     if handle_tail:
-      result = f"if (N >= {self.block_shape[1]}) {{\n"
+      result = f"if (N >= {block_n}) {{\n"
       result += indent(block  , "  ")
       result += "\n} else {\n"
       block = self.add_c_block_tail()
@@ -380,8 +387,15 @@ void {func_name}(
     result += """const void* A_k1 = A_k2;
 std::ptrdiff_t k1 = K1;
 """
-    block_body = self.generate_block(self.block_shape[2])
-    tile_body = self.generate_block(self.tile_shape[2])
+    block_body = self.generate_block()
+    block_shape = self.block_shape
+    self.block_shape = (
+        self.block_shape[0],
+        self.block_shape[1],
+        self.tile_shape[2],
+    )
+    tile_body = self.generate_block()
+    self.block_shape = block_shape
 
     a_step = (
         "A_stride_m"
@@ -460,7 +474,7 @@ do {
       # as it doesn't fault.
       result += (
           f"const void* B_k3_{j} = offset_bytes(B, N <= {j} ? 0 :"
-          f" {j * self.tile_shape[2]} * sizeof({self.b_type}));\n"
+          f" {j} * {self.b_tile_stride_n()});\n"
       )
     result += """const void *A_k3 = A;
 std::size_t k3 = K3;

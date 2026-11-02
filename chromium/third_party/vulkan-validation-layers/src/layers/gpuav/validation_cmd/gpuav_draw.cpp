@@ -120,6 +120,10 @@ void FirstInstance(Validator& gpuav, CommandBufferSubState& cb_state, const Loca
     if (!gpuav.gpuav_settings.validate_indirect_draws_buffers) {
         return;
     }
+    // TODO https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/12657
+    if (last_bound.GetDescriptorMode() == vvl::DescriptorModeBuffer || last_bound.GetDescriptorMode() == vvl::DescriptorModeHeap) {
+        return;
+    }
 
     const char* vuid = vuid_selector(gpuav, last_bound);
     if (!vuid) {
@@ -303,29 +307,30 @@ static FirstInstanceValidationVuidSelector GetFirstInstanceValidationVuidSelecto
 template <>
 void FirstInstance<VkDrawIndirectCommand>(Validator& gpuav, CommandBufferSubState& cb_state, const Location& loc,
                                           const LastBound& last_bound, VkBuffer buffer, VkDeviceSize offset, uint32_t draw_count,
-                                          VkBuffer count_buffer, VkDeviceSize count_buffer_offset) {
+                                          uint32_t stride, VkBuffer count_buffer, VkDeviceSize count_buffer_offset) {
     FirstInstanceVUIDs vuids;
     vuids.vuid_09461 = "VUID-VkDrawIndirectCommand-pNext-09461";
     vuids.vuid_09462 = "VUID-VkDrawIndirectCommand-None-09462";
     vuids.vuid_00501_00554 = "VUID-VkDrawIndirectCommand-firstInstance-00501";
 
     FirstInstanceValidationVuidSelector vuid_selector = GetFirstInstanceValidationVuidSelector(vuids);
-    FirstInstance(gpuav, cb_state, loc, last_bound, buffer, offset, sizeof(VkDrawIndirectCommand),
-                  vvl::Struct::VkDrawIndirectCommand, 3, draw_count, count_buffer, count_buffer_offset, vuid_selector);
+    FirstInstance(gpuav, cb_state, loc, last_bound, buffer, offset, stride, vvl::Struct::VkDrawIndirectCommand, 3, draw_count,
+                  count_buffer, count_buffer_offset, vuid_selector);
 }
 
 template <>
 void FirstInstance<VkDrawIndexedIndirectCommand>(Validator& gpuav, CommandBufferSubState& cb_state, const Location& loc,
                                                  const LastBound& last_bound, VkBuffer buffer, VkDeviceSize offset,
-                                                 uint32_t draw_count, VkBuffer count_buffer, VkDeviceSize count_buffer_offset) {
+                                                 uint32_t draw_count, uint32_t stride, VkBuffer count_buffer,
+                                                 VkDeviceSize count_buffer_offset) {
     FirstInstanceVUIDs vuids;
     vuids.vuid_09461 = "VUID-VkDrawIndexedIndirectCommand-pNext-09461";
     vuids.vuid_09462 = "VUID-VkDrawIndexedIndirectCommand-None-09462";
     vuids.vuid_00501_00554 = "VUID-VkDrawIndexedIndirectCommand-firstInstance-00554";
 
     FirstInstanceValidationVuidSelector vuid_selector = GetFirstInstanceValidationVuidSelector(vuids);
-    FirstInstance(gpuav, cb_state, loc, last_bound, buffer, offset, sizeof(VkDrawIndexedIndirectCommand),
-                  vvl::Struct::VkDrawIndexedIndirectCommand, 4, draw_count, count_buffer, count_buffer_offset, vuid_selector);
+    FirstInstance(gpuav, cb_state, loc, last_bound, buffer, offset, stride, vvl::Struct::VkDrawIndexedIndirectCommand, 4,
+                  draw_count, count_buffer, count_buffer_offset, vuid_selector);
 }
 
 struct CountBufferValidationShader {
@@ -357,6 +362,10 @@ void CountBuffer(Validator& gpuav, CommandBufferSubState& cb_state, const Locati
                  VkBuffer api_buffer, VkDeviceSize api_offset, uint32_t api_struct_size_byte, vvl::Struct api_struct_name,
                  uint32_t api_stride, VkBuffer api_count_buffer, VkDeviceSize api_count_buffer_offset, const char* vuid) {
     if (!gpuav.gpuav_settings.validate_indirect_draws_buffers) {
+        return;
+    }
+    // TODO https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/12657
+    if (last_bound.GetDescriptorMode() == vvl::DescriptorModeBuffer || last_bound.GetDescriptorMode() == vvl::DescriptorModeHeap) {
         return;
     }
 
@@ -511,6 +520,10 @@ void DrawMeshIndirect(Validator& gpuav, CommandBufferSubState& cb_state, const L
                       VkBuffer api_buffer, VkDeviceSize api_offset, uint32_t api_stride, VkBuffer api_count_buffer,
                       VkDeviceSize api_count_buffer_offset, uint32_t api_draw_count) {
     if (!gpuav.gpuav_settings.validate_indirect_draws_buffers) {
+        return;
+    }
+    // TODO https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/12657
+    if (last_bound.GetDescriptorMode() == vvl::DescriptorModeBuffer || last_bound.GetDescriptorMode() == vvl::DescriptorModeHeap) {
         return;
     }
 
@@ -799,6 +812,10 @@ void DrawIndexedIndirectIndexBuffer(Validator& gpuav, CommandBufferSubState& cb_
         if (robustness_ci && robustness_ci->vertexInputs) {
             return;
         }
+    }
+    // TODO https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/12657
+    if (last_bound.GetDescriptorMode() == vvl::DescriptorModeBuffer || last_bound.GetDescriptorMode() == vvl::DescriptorModeHeap) {
+        return;
     }
 
     if (!cb_state.base.IsPrimary()) {

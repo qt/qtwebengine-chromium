@@ -40,10 +40,7 @@
 #include "dawn/native/ValidationUtils_autogen.h"
 #include "dawn/platform/DawnPlatform.h"
 #include "partition_alloc/pointers/raw_ptr.h"
-#include "src/dawn/common/Alloc.h"
-#include "src/dawn/common/Assert.h"
 #include "src/dawn/common/Constants.h"
-#include "src/dawn/common/Log.h"
 #include "src/dawn/common/StringViewUtils.h"
 #include "src/dawn/native/Adapter.h"
 #include "src/dawn/native/CallbackTaskManager.h"
@@ -60,7 +57,10 @@
 #include "src/dawn/native/SystemEvent.h"
 #include "src/dawn/native/TexelBufferView.h"
 #include "src/dawn/platform/tracing/TraceEvent.h"
+#include "src/utils/assert.h"
 #include "src/utils/compiler.h"
+#include "src/utils/heap_array.h"
+#include "src/utils/log.h"
 
 namespace dawn::native {
 
@@ -81,19 +81,16 @@ class ErrorBuffer final : public BufferBase {
     bool IsCPUWritableAtCreation() const override { return true; }
 
     MaybeError MapAtCreationImpl() override {
-        DAWN_CHECK(mFakeMappedData == nullptr);
+        DAWN_CHECK(!mFakeMappedData);
 
-        // Check that the size can be used to allocate mFakeMappedData. A malloc(0)
-        // is invalid, and on 32bit systems we should avoid a narrowing conversion that
-        // would make size = 1 << 32 + 1 allocate one byte.
         uint64_t size = GetSize();
-        bool isValidSize = size != 0 && size < uint64_t(std::numeric_limits<size_t>::max());
-
-        if (isValidSize) {
-            mFakeMappedData = std::unique_ptr<uint8_t[]>(AllocNoThrow<uint8_t>(size));
+        if (size < uint64_t(std::numeric_limits<size_t>::max())) {
+            mFakeMappedData =
+                // SAFETY: Frontend is responsible for initializing MapAtCreation memory.
+                DAWN_UNSAFE_BUFFERS(HeapArray<std::byte>::Uninit(size, std::nothrow));
         }
 
-        if (mFakeMappedData == nullptr) {
+        if (!mFakeMappedData) {
             return DAWN_OUT_OF_MEMORY_ERROR(
                 "Failed to allocate memory to map ErrorBuffer at creation.");
         }
@@ -107,11 +104,11 @@ class ErrorBuffer final : public BufferBase {
         DAWN_UNREACHABLE();
     }
 
-    void* GetMappedPointerImpl() override { return mFakeMappedData.get(); }
+    void* GetMappedPointerImpl() override { return mFakeMappedData.data(); }
 
-    void UnmapImpl(BufferState oldState, BufferState newState) override { mFakeMappedData.reset(); }
+    void UnmapImpl(BufferState oldState, BufferState newState) override { mFakeMappedData = {}; }
 
-    std::unique_ptr<uint8_t[]> mFakeMappedData = nullptr;
+    HeapArray<std::byte> mFakeMappedData;
 };
 
 // GetMappedRange on a zero-sized buffer returns a pointer to this value.
@@ -593,21 +590,28 @@ MaybeError BufferBase::MapAtCreation() {
     if (GetSize() == 0) {
         return {};
     }
-    size_t size = GetAllocatedSize();
-    void* ptr = GetMappedPointer();
+    auto mapping = GetCurrentMapping();
+    DAWN_ASSERT(mapping.offsetFromBufferStartToMappedSpan == 0);
+    DAWN_CHECK(mapping.mappedSpan.size() == GetAllocatedSize());
 
     DeviceBase* device = GetDevice();
+    // Don't zero-initialize buffers created from shared buffer memory at creation time.
+    // They will be initialized in `BeginAccess()` based on the `initialized` flag in
+    // `wgpu::SharedBufferMemoryBeginAccessDescriptor`.
+    if (mSharedResourceMemoryContents != nullptr) {
+        return {};
+    }
     if (device->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse) &&
         !device->IsToggleEnabled(Toggle::DisableLazyClearForMappedAtCreationBuffer)) {
         // The staging buffer is created with `MappedAtCreation == true` and the main buffer will
         // actually get initialized when the staging data is copied in. (But we mark the main buffer
         // as initialized now.)
         if (!usingStagingBuffer) {
-            DAWN_UNSAFE_TODO(memset(ptr, uint8_t(0u), size));
+            std::ranges::fill(mapping.mappedSpan, std::byte{0});
             device->IncrementLazyClearCountForTesting();
         }
     } else if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
-        DAWN_UNSAFE_TODO(memset(ptr, uint8_t(1u), size));
+        std::ranges::fill(mapping.mappedSpan, std::byte{1});
     }
     // Mark the buffer as initialized since we don't want to later clear it using the GPU since that
     // would overwrite what the client wrote using the CPU.
@@ -649,7 +653,9 @@ ResultOrError<bool> BufferBase::MapAtCreationInternal() {
     mMapMode = wgpu::MapMode::Write;
     mMapOffset = 0;
     mMapSize = mSize;
+    mAllocatedMapSize = GetAllocatedSize();
     mStagingBuffer = std::move(stagingBuffer);
+    mIsMappedAtCreation = true;
     DAWN_TRY(FinalizeMap(BufferState::MappedAtCreation));
     return mStagingBuffer != nullptr;
 }
@@ -761,6 +767,7 @@ Future BufferBase::APIMapAsync(wgpu::MapMode mode,
             mMapMode = mode;
             mMapOffset = offset;
             mMapSize = size;
+            mAllocatedMapSize = size;
 
             event =
                 AcquireRef(new MapAsyncEvent(GetDevice(), this, callbackInfo, mLastUsageSerial));
@@ -777,46 +784,64 @@ Future BufferBase::APIMapAsync(wgpu::MapMode mode,
 }
 
 void* BufferBase::APIGetMappedRange(size_t offset, size_t size) {
-    return GetMappedRange(offset, size, true);
+    return GetMappedRange(offset, size == wgpu::kWholeMapSize ? mSize - offset : size, true);
 }
 
 const void* BufferBase::APIGetConstMappedRange(size_t offset, size_t size) {
-    return GetMappedRange(offset, size, false);
+    return GetMappedRange(offset, size == wgpu::kWholeMapSize ? mSize - offset : size, false);
 }
 
-wgpu::Status BufferBase::APIWriteMappedRange(size_t offset, void const* data, size_t size) {
-    void* range = APIGetMappedRange(offset, size);
+wgpu::Status BufferBase::APIWriteMappedRange(size_t offset, Span<const std::byte> data) {
+    // TODO(https://crbug.com/501491697) Use a GetMappedRange that returns a span.
+    void* range = APIGetMappedRange(offset, data.size());
     if (range == nullptr) {
         return wgpu::Status::Error;
     }
 
-    DAWN_UNSAFE_TODO(memcpy(range, data, size));
+    // // TODO(https://crbug.com/524406299): Use Span::CopyFrom.
+    DAWN_UNSAFE_TODO(memcpy(range, data.data(), data.size()));
     return wgpu::Status::Success;
 }
 
-wgpu::Status BufferBase::APIReadMappedRange(size_t offset, void* data, size_t size) {
-    const void* range = APIGetConstMappedRange(offset, size);
+wgpu::Status BufferBase::APIReadMappedRange(size_t offset, Span<std::byte> data) {
+    // TODO(https://crbug.com/501491697) Use a GetConstMappedRange that returns a span.
+    const void* range = APIGetConstMappedRange(offset, data.size());
     if (range == nullptr) {
         return wgpu::Status::Error;
     }
 
-    DAWN_UNSAFE_TODO(memcpy(data, range, size));
+    // // TODO(https://crbug.com/524406299): Use Span::CopyFrom.
+    DAWN_UNSAFE_TODO(memcpy(data.data(), range, data.size()));
     return wgpu::Status::Success;
 }
 
-void* BufferBase::GetMappedPointer() {
+Span<std::byte> BufferBase::CurrentMapping::GetMappedSubspan(size_t offsetFromBufferStartToSubrange,
+                                                             size_t subrangeSize) const {
+    DAWN_CHECK(offsetFromBufferStartToSubrange >= offsetFromBufferStartToMappedSpan);
+    size_t rangeOffsetFromMappedSpan =
+        offsetFromBufferStartToSubrange - offsetFromBufferStartToMappedSpan;
+
+    return mappedSpan.subspan(rangeOffsetFromMappedSpan, subrangeSize);
+}
+
+BufferBase::CurrentMapping BufferBase::GetCurrentMapping() {
     if (!IsMappedState(mState.load(std::memory_order::acquire))) {
-        return nullptr;
+        return {};
     }
-    return mMappedPointer.get();
+
+    auto span = DAWN_UNSAFE_TODO(Span<std::byte>{
+        static_cast<std::byte*>(mMappedPointer.get()) + mMapOffset, mAllocatedMapSize});
+    return {span, mMapOffset};
 }
 
+// TODO(https://crbug.com/501491697): Return a span here for internal use, only APIGetMappedRange
+// should be unsafe.
 void* BufferBase::GetMappedRange(size_t offset, size_t size, bool writable) {
+    DAWN_ASSERT(size != wgpu::kWholeMapSize);
     if (!CanGetMappedRange(writable, offset, size)) {
         return nullptr;
     }
-    uint8_t* start = static_cast<uint8_t*>(GetMappedPointer());
-    return start == nullptr ? nullptr : DAWN_UNSAFE_TODO(start + offset);
+    return GetCurrentMapping().GetMappedSubspan(offset, size).data();
 }
 
 void BufferBase::APIDestroy() {
@@ -862,6 +887,7 @@ MaybeError BufferBase::Unmap(bool forDestroy) {
             break;
         case BufferState::MappedAtCreation:
             DAWN_TRY(TransitionState(BufferState::MappedAtCreation, BufferState::InUse));
+            mIsMappedAtCreation = false;
             if (mStagingBuffer != nullptr) {
                 if (forDestroy) {
                     // No need to upload staging contents if the buffer is being destroyed.
@@ -1022,14 +1048,15 @@ bool BufferBase::CanGetMappedRange(bool writable, size_t offset, size_t size) co
         return false;
     }
 
-    size_t rangeSize = size == WGPU_WHOLE_MAP_SIZE ? mSize - offset : size;
+    // Defaulting should have already been done. If not we'll fail the map on the next line.
+    DAWN_ASSERT(size != wgpu::kWholeMapSize);
 
-    if (rangeSize % 4 != 0 || rangeSize > mMapSize) {
+    if (size % 4 != 0 || size > mMapSize) {
         return false;
     }
 
     size_t offsetInMappedRange = offset - mMapOffset;
-    if (offsetInMappedRange > mMapSize - rangeSize) {
+    if (offsetInMappedRange > mMapSize - size) {
         return false;
     }
 
@@ -1063,16 +1090,19 @@ ExecutionSerial BufferBase::GetLastUsageSerial() const {
     return mLastUsageSerial;
 }
 
-MaybeError BufferBase::UploadData(uint64_t bufferOffset, const void* data, size_t size) {
-    if (size == 0) {
+MaybeError BufferBase::UploadData(uint64_t bufferOffset, Span<const std::byte> data) {
+    if (data.empty()) {
         return {};
     }
 
     return GetDevice()->GetDynamicUploader()->WithUploadReservation(
-        size, kCopyBufferToBufferOffsetAlignment, [&](UploadReservation reservation) -> MaybeError {
-            DAWN_UNSAFE_TODO(memcpy(reservation.mappedPointer, data, size));
-            return GetDevice()->CopyFromStagingToBuffer(
-                reservation.buffer.Get(), reservation.offsetInBuffer, this, bufferOffset, size);
+        data.size(), kCopyBufferToBufferOffsetAlignment,
+        [&](UploadReservation reservation) -> MaybeError {
+            // TODO(https://crbug.com/524406299): Use Span::CopyFrom.
+            DAWN_UNSAFE_TODO(memcpy(reservation.mappedPointer, data.data(), data.size()));
+            return GetDevice()->CopyFromStagingToBuffer(reservation.buffer.Get(),
+                                                        reservation.offsetInBuffer, this,
+                                                        bufferOffset, data.size());
         });
 }
 
@@ -1084,7 +1114,11 @@ ExecutionSerial BufferBase::OnEndAccess() {
 }
 
 void BufferBase::OnBeginAccess() {
-    mState.store(BufferState::Unmapped, std::memory_order::release);
+    if (mIsMappedAtCreation) {
+        mState.store(BufferState::MappedAtCreation, std::memory_order::release);
+    } else {
+        mState.store(BufferState::Unmapped, std::memory_order::release);
+    }
 }
 
 bool BufferBase::HasAccess() const {

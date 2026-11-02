@@ -36,6 +36,7 @@ typedef struct QuircContext {
     const AVClass *class;
 
     struct quirc *quirc;
+    int width, height;
 } QuircContext;
 
 static av_cold int init(AVFilterContext *ctx)
@@ -67,6 +68,8 @@ static int config_input(AVFilterLink *inlink)
     if (err == -1) {
         return AVERROR(ENOMEM);
     }
+    quirc->width  = inlink->w;
+    quirc->height = inlink->h;
 
     return 0;
 }
@@ -80,6 +83,15 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
     int codes_count;
     uint8_t *image;
 
+    if (quirc->width != inlink->w || quirc->height != inlink->h) {
+        if (quirc_resize(quirc->quirc, inlink->w, inlink->h) < 0) {
+            av_frame_free(&frame);
+            return AVERROR(ENOMEM);
+        }
+        quirc->width  = inlink->w;
+        quirc->height = inlink->h;
+    }
+
     /* copy input image to quirc buffer */
     image = quirc_begin(quirc->quirc, NULL, NULL);
     av_image_copy_plane(image, inlink->w,
@@ -89,7 +101,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
 
     codes_count = quirc_count(quirc->quirc);
     av_log(ctx, AV_LOG_VERBOSE,
-           "Found count %d codes in image #%ld\n", codes_count, inl->frame_count_out);
+           "Found count %d codes in image #%" PRId64 "\n", codes_count, inl->frame_count_out);
 
     if (codes_count) {
         int i, j;

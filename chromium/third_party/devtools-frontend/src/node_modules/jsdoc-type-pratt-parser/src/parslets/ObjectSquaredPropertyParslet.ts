@@ -32,10 +32,9 @@ export const objectSquaredPropertyParslet = composeParslet({
     let result: ObjectFieldResult
 
     if (
-      innerBracketType !== undefined &&
       // Looks like an object field because of `key: value`, but is
       //  shaping to be an index signature
-      innerBracketType.type === 'JsdocTypeObjectField' &&
+      innerBracketType?.type === 'JsdocTypeObjectField' &&
       typeof innerBracketType.key === 'string' &&
       !innerBracketType.optional &&
       !innerBracketType.readonly &&
@@ -69,15 +68,15 @@ export const objectSquaredPropertyParslet = composeParslet({
 
       parser.acceptLexerState(parentParser)
     } else if (
-      innerBracketType !== undefined &&
       // Looks like a name, but is shaping to be a mapped type clause
-      innerBracketType.type === 'JsdocTypeName' &&
+      innerBracketType?.type === 'JsdocTypeName' &&
       parser.consume('in')
     ) {
       const parentParser = parser.baseParser
       parentParser.acceptLexerState(parser)
 
-      const mappedTypeRight = parentParser.parseType(Precedence.ARRAY_BRACKETS)
+      // Allow unions and other infix types within the mapped `in` clause
+      const mappedTypeRight = parentParser.parseType(Precedence.INDEX_BRACKETS)
 
       if (!parentParser.consume(']')) {
         throw new Error('Unterminated square brackets')

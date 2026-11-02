@@ -60,6 +60,7 @@
 #include "quiche/quic/core/quic_connection_id.h"
 #include "quiche/quic/core/quic_connection_stats.h"
 #include "quiche/quic/core/quic_constants.h"
+#include "quiche/quic/core/quic_crypto_client_stream.h"
 #include "quiche/quic/core/quic_default_clock.h"
 #include "quiche/quic/core/quic_dispatcher.h"
 #include "quiche/quic/core/quic_dispatcher_stats.h"
@@ -344,6 +345,13 @@ class EndToEndTest : public QuicTestWithParam<TestParams> {
     if (enable_mlkem_in_client_) {
       std::vector<uint16_t> client_supported_groups = {
           SSL_GROUP_X25519_MLKEM768, SSL_GROUP_X25519};
+      client->SetPreferredGroups(client_supported_groups);
+    } else {
+      // Pre-PQC BoringSSL default.
+      // TODO(b/504987865): make most tests use MLKEM by default, and make this
+      // case the exception instead.
+      std::vector<uint16_t> client_supported_groups = {
+          SSL_GROUP_X25519, SSL_GROUP_SECP256R1, SSL_GROUP_SECP384R1};
       client->SetPreferredGroups(client_supported_groups);
     }
     client->UseWriter(writer);
@@ -7723,6 +7731,41 @@ TEST_P(EndToEndTest, TlsResumptionDisabledOnTheFly) {
   ADD_FAILURE() << "Client should not have 10 resumption tickets.";
 }
 
+TEST_P(EndToEndTest, TlsSessionTicketCreationTime) {
+  QuicWallTime start_time = QuicDefaultClock::Get()->WallNow();
+  SetQuicFlag(quic_disable_server_tls_resumption, false);
+  ASSERT_TRUE(Initialize());
+
+  if (!version_.IsIetfQuic()) {
+    // This test is TLS specific.
+    return;
+  }
+
+  // Send the first request and then disconnect. The client receives a
+  // resumption ticket.
+  SendSynchronousFooRequestAndCheckResponse();
+  QuicSpdyClientSession* client_session = GetClientSession();
+  ASSERT_TRUE(client_session);
+  EXPECT_FALSE(client_session->EarlyDataAccepted());
+  EXPECT_FALSE(client_session->GetCryptoStream()
+                   ->GetSessionTicketCreationTime()
+                   .has_value());
+  client_->Disconnect();
+
+  // Send the second request in 0RTT / Resumption.
+  client_->Connect();
+  SendSynchronousFooRequestAndCheckResponse();
+
+  client_session = GetClientSession();
+  ASSERT_TRUE(client_session);
+  EXPECT_TRUE(client_session->EarlyDataAccepted());
+  std::optional<QuicWallTime> ticket_time =
+      client_session->GetCryptoStream()->GetSessionTicketCreationTime();
+  ASSERT_TRUE(ticket_time.has_value());
+  EXPECT_GE(ticket_time->ToUNIXSeconds(), start_time.ToUNIXSeconds());
+  client_->Disconnect();
+}
+
 TEST_P(EndToEndTest, BlockServerUntilSettingsReceived) {
   SetQuicReloadableFlag(quic_block_until_settings_received_copt, true);
   // Force loss to test data stream being blocked when SETTINGS are missing.
@@ -9016,6 +9059,82 @@ TEST_P(EndToEndTest, ChangeFlowLabelOnRTO) {
         return server_connection->GetStats().num_flow_label_changes > 0;
       },
       QuicTime::Delta::FromSeconds(5)));
+
+  client_->Disconnect();
+}
+
+TEST_P(EndToEndTest, ServerPaddingRequestedServerDisabled) {
+  if (!version_.IsIetfQuic()) {
+    ASSERT_TRUE(Initialize());
+    return;
+  }
+
+  SetQuicRestartFlag(tls_server_padding_support, false);
+  connect_to_server_on_initialize_ = false;
+  ASSERT_TRUE(Initialize());
+
+  client_.reset(CreateQuicClient(client_writer_, /*connect=*/false));
+  client_->client()->Initialize();
+
+  client_->client()->crypto_config()->ssl_config().server_padding_to_request =
+      128;
+
+  client_->Connect();
+  ASSERT_TRUE(client_->client()->connected());
+  SendSynchronousFooRequestAndCheckResponse();
+
+  const QuicCryptoClientStream* client_crypto_stream =
+      static_cast<const QuicCryptoClientStream*>(
+          GetClientSession()->GetCryptoStream());
+  EXPECT_FALSE(client_crypto_stream->ServerPaddingSentForTesting());
+
+  client_->Disconnect();
+}
+
+TEST_P(EndToEndTest, ServerPaddingRequestedServerEnabled) {
+  if (!version_.IsIetfQuic()) {
+    ASSERT_TRUE(Initialize());
+    return;
+  }
+
+  SetQuicRestartFlag(tls_server_padding_support, true);
+  connect_to_server_on_initialize_ = false;
+  ASSERT_TRUE(Initialize());
+
+  client_.reset(CreateQuicClient(client_writer_, /*connect=*/false));
+  client_->client()->Initialize();
+
+  client_->client()->crypto_config()->ssl_config().server_padding_to_request =
+      128;
+
+  client_->Connect();
+  ASSERT_TRUE(client_->client()->connected());
+  SendSynchronousFooRequestAndCheckResponse();
+
+  const QuicCryptoClientStream* client_crypto_stream =
+      static_cast<const QuicCryptoClientStream*>(
+          GetClientSession()->GetCryptoStream());
+
+#if BORINGSSL_API_VERSION >= 41
+  EXPECT_TRUE(client_crypto_stream->ServerPaddingSentForTesting());
+#endif
+
+  client_->Disconnect();
+}
+
+TEST_P(EndToEndTest, ServerPaddingNotRequestedServerEnabled) {
+  SetQuicRestartFlag(tls_server_padding_support, true);
+  ASSERT_TRUE(Initialize());
+  if (!version_.IsIetfQuic()) {
+    return;
+  }
+
+  SendSynchronousFooRequestAndCheckResponse();
+
+  const QuicCryptoClientStream* client_crypto_stream =
+      static_cast<const QuicCryptoClientStream*>(
+          GetClientSession()->GetCryptoStream());
+  EXPECT_FALSE(client_crypto_stream->ServerPaddingSentForTesting());
 
   client_->Disconnect();
 }

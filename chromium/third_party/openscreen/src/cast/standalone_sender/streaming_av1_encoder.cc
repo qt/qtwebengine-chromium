@@ -114,6 +114,7 @@ void StreamingAv1Encoder::EncodeAndSend(
     const VideoFrame& frame,
     Clock::time_point reference_time,
     std::function<void(Stats)> stats_callback) {
+  OSP_DCHECK(main_task_runner_.IsRunningOnTaskRunner());
   WorkUnit work_unit;
   work_unit.capture_begin_time = frame.capture_begin_time;
   work_unit.capture_end_time = frame.capture_end_time;
@@ -175,8 +176,7 @@ void StreamingAv1Encoder::EncodeAndSend(
 }
 
 void StreamingAv1Encoder::DestroyEncoder() {
-  OSP_CHECK_EQ(std::this_thread::get_id(), encode_thread_.get_id());
-
+  OSP_DCHECK_EQ(std::this_thread::get_id(), encode_thread_.get_id());
   if (is_encoder_initialized()) {
     aom_codec_destroy(&encoder_);
     // Flag that the encoder is not initialized. See header comments for
@@ -186,8 +186,6 @@ void StreamingAv1Encoder::DestroyEncoder() {
 }
 
 void StreamingAv1Encoder::ProcessWorkUnitsUntilTimeToQuit() {
-  OSP_CHECK_EQ(std::this_thread::get_id(), encode_thread_.get_id());
-
   for (;;) {
     WorkUnitWithResults work_unit{};
     bool force_key_frame;
@@ -220,10 +218,12 @@ void StreamingAv1Encoder::ProcessWorkUnitsUntilTimeToQuit() {
                             work_unit);
     UpdateSpeedSettingForNextFrame(work_unit.stats);
 
-    main_task_runner_.PostTask(
-        [this, results = std::move(work_unit)]() mutable {
-          SendEncodedFrame(std::move(results));
-        });
+    main_task_runner_.PostTask([weak_this = weak_factory_.GetWeakPtr(),
+                                results = std::move(work_unit)]() mutable {
+      if (weak_this) {
+        weak_this->SendEncodedFrame(std::move(results));
+      }
+    });
   }
 
   DestroyEncoder();
@@ -232,8 +232,7 @@ void StreamingAv1Encoder::ProcessWorkUnitsUntilTimeToQuit() {
 void StreamingAv1Encoder::PrepareEncoder(int width,
                                          int height,
                                          int target_bitrate) {
-  OSP_CHECK_EQ(std::this_thread::get_id(), encode_thread_.get_id());
-
+  OSP_DCHECK_EQ(std::this_thread::get_id(), encode_thread_.get_id());
   const int target_kbps = target_bitrate / kBytesPerKilobyte;
 
   // Translate the `ideal_speed_setting_` into the AOME_SET_CPUUSED setting and

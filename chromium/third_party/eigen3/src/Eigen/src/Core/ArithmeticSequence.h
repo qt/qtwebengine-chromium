@@ -91,9 +91,7 @@ class ArithmeticSequence {
   IncrType m_incr;
 
  public:
-  constexpr auto reverse() const -> decltype(Eigen::seqN(m_first + (m_size + fix<-1>()) * m_incr, m_size, -m_incr)) {
-    return seqN(m_first + (m_size + fix<-1>()) * m_incr, m_size, -m_incr);
-  }
+  constexpr auto reverse() const { return seqN(m_first + (m_size + fix<-1>()) * m_incr, m_size, -m_incr); }
 };
 
 /** \returns an ArithmeticSequence starting at \a first, of length \a size, and increment \a incr
@@ -150,23 +148,14 @@ auto seq(FirstType f, LastType l);
 #else  // EIGEN_PARSED_BY_DOXYGEN
 
 template <typename FirstType, typename LastType>
-auto seq(FirstType f, LastType l)
-    -> decltype(seqN(typename internal::cleanup_index_type<FirstType>::type(f),
-                     (typename internal::cleanup_index_type<LastType>::type(l) -
-                      typename internal::cleanup_index_type<FirstType>::type(f) + fix<1>()))) {
+auto seq(FirstType f, LastType l) {
   return seqN(typename internal::cleanup_index_type<FirstType>::type(f),
               (typename internal::cleanup_index_type<LastType>::type(l) -
                typename internal::cleanup_index_type<FirstType>::type(f) + fix<1>()));
 }
 
 template <typename FirstType, typename LastType, typename IncrType>
-auto seq(FirstType f, LastType l, IncrType incr)
-    -> decltype(seqN(typename internal::cleanup_index_type<FirstType>::type(f),
-                     (typename internal::cleanup_index_type<LastType>::type(l) -
-                      typename internal::cleanup_index_type<FirstType>::type(f) +
-                      typename internal::cleanup_seq_incr<IncrType>::type(incr)) /
-                         typename internal::cleanup_seq_incr<IncrType>::type(incr),
-                     typename internal::cleanup_seq_incr<IncrType>::type(incr))) {
+auto seq(FirstType f, LastType l, IncrType incr) {
   typedef typename internal::cleanup_seq_incr<IncrType>::type CleanedIncrType;
   return seqN(typename internal::cleanup_index_type<FirstType>::type(f),
               (typename internal::cleanup_index_type<LastType>::type(l) -
@@ -185,8 +174,7 @@ namespace placeholders {
  * \anchor Eigen_placeholders_lastN
  * \sa lastN(SizeType), seqN(FirstType,SizeType), seq(FirstType,LastType,IncrType) */
 template <typename SizeType, typename IncrType>
-auto lastN(SizeType size, IncrType incr)
-    -> decltype(seqN(Eigen::placeholders::last - (size - fix<1>()) * incr, size, incr)) {
+auto lastN(SizeType size, IncrType incr) {
   return seqN(Eigen::placeholders::last - (size - fix<1>()) * incr, size, incr);
 }
 
@@ -194,9 +182,9 @@ auto lastN(SizeType size, IncrType incr)
  *
  *  It is a shortcut for: \code seq(last+fix<1>-size, last) \endcode
  *
- * \sa lastN(SizeType,IncrType, seqN(FirstType,SizeType), seq(FirstType,LastType) */
+ * \sa lastN(SizeType,IncrType), seqN(FirstType,SizeType), seq(FirstType,LastType) */
 template <typename SizeType>
-auto lastN(SizeType size) -> decltype(seqN(Eigen::placeholders::last + fix<1>() - size, size)) {
+auto lastN(SizeType size) {
   return seqN(Eigen::placeholders::last + fix<1>() - size, size);
 }
 

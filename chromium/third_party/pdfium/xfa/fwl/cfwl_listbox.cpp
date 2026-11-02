@@ -112,7 +112,7 @@ void CFWL_ListBox::DrawWidget(CFGAS_GEGraphics* pGraphics,
   }
 
   pGraphics->SetClipRect(matrix.TransformRect(rtClip));
-  if ((properties_.styles_ & FWL_STYLE_WGT_NoBackground) == 0) {
+  if (!(properties_.styles_ & WidgetStyle::kNoBackground)) {
     DrawBkground(pGraphics, matrix);
   }
 
@@ -411,13 +411,13 @@ void CFWL_ListBox::DrawItem(CFGAS_GEGraphics* pGraphics,
                             const CFX_RectF& rtItem,
                             const CFX_Matrix& mtMatrix) {
   Mask<CFWL_PartState> dwPartStates = CFWL_PartState::kNormal;
-  if (properties_.states_ & FWL_STATE_WGT_Disabled) {
+  if (properties_.states_ & WidgetState::kDisabled) {
     dwPartStates = CFWL_PartState::kDisabled;
   } else if (pItem && pItem->IsSelected()) {
     dwPartStates = CFWL_PartState::kSelected;
   }
 
-  if ((properties_.states_ & FWL_STATE_WGT_Focused) && pItem &&
+  if ((properties_.states_ & WidgetState::kFocused) && pItem &&
       pItem->IsFocused()) {
     dwPartStates |= CFWL_PartState::kFocused;
   }
@@ -490,7 +490,7 @@ CFX_SizeF CFWL_ListBox::CalcSize() {
   float iHeight = client_rect_.height;
   bool bShowVertScr = false;
   bool bShowHorzScr = false;
-  if (!bShowVertScr && (properties_.styles_ & FWL_STYLE_WGT_VScroll)) {
+  if (!bShowVertScr && (properties_.styles_ & WidgetStyle::kVScroll)) {
     bShowVertScr = (fs.height > iHeight);
   }
 
@@ -518,14 +518,14 @@ CFX_SizeF CFWL_ListBox::CalcSize() {
     vert_scroll_bar_->SetPos(fPos);
     vert_scroll_bar_->SetTrackPos(fPos);
     if ((properties_.style_exts_ & FWL_STYLEEXT_LTB_ShowScrollBarFocus) == 0 ||
-        (properties_.states_ & FWL_STATE_WGT_Focused)) {
-      vert_scroll_bar_->RemoveStates(FWL_STATE_WGT_Invisible);
+        (properties_.states_ & WidgetState::kFocused)) {
+      vert_scroll_bar_->ClearStates(WidgetState::kInvisible);
     }
     vert_scroll_bar_->Update();
   } else if (vert_scroll_bar_) {
     vert_scroll_bar_->SetPos(0);
     vert_scroll_bar_->SetTrackPos(0);
-    vert_scroll_bar_->SetStates(FWL_STATE_WGT_Invisible);
+    vert_scroll_bar_->SetStates(WidgetState::kInvisible);
   }
   if (bShowHorzScr) {
     if (!horz_scroll_bar_) {
@@ -549,14 +549,14 @@ CFX_SizeF CFWL_ListBox::CalcSize() {
     horz_scroll_bar_->SetPos(fPos);
     horz_scroll_bar_->SetTrackPos(fPos);
     if ((properties_.style_exts_ & FWL_STYLEEXT_LTB_ShowScrollBarFocus) == 0 ||
-        (properties_.states_ & FWL_STATE_WGT_Focused)) {
-      horz_scroll_bar_->RemoveStates(FWL_STATE_WGT_Invisible);
+        (properties_.states_ & WidgetState::kFocused)) {
+      horz_scroll_bar_->ClearStates(WidgetState::kInvisible);
     }
     horz_scroll_bar_->Update();
   } else if (horz_scroll_bar_) {
     horz_scroll_bar_->SetPos(0);
     horz_scroll_bar_->SetTrackPos(0);
-    horz_scroll_bar_->SetStates(FWL_STATE_WGT_Invisible);
+    horz_scroll_bar_->SetStates(WidgetState::kInvisible);
   }
   if (bShowVertScr && bShowHorzScr) {
     static_rect_ = CFX_RectF(client_rect_.right() - scorll_bar_width_,
@@ -609,7 +609,7 @@ void CFWL_ListBox::InitVerticalScrollBar() {
 
   vert_scroll_bar_ = cppgc::MakeGarbageCollected<CFWL_ScrollBar>(
       GetFWLApp()->GetHeap()->GetAllocationHandle(), GetFWLApp(),
-      Properties{0, FWL_STYLEEXT_SCB_Vert, FWL_STATE_WGT_Invisible}, this);
+      Properties{{}, FWL_STYLEEXT_SCB_Vert, WidgetState::kInvisible}, this);
 }
 
 void CFWL_ListBox::InitHorizontalScrollBar() {
@@ -619,7 +619,7 @@ void CFWL_ListBox::InitHorizontalScrollBar() {
 
   horz_scroll_bar_ = cppgc::MakeGarbageCollected<CFWL_ScrollBar>(
       GetFWLApp()->GetHeap()->GetAllocationHandle(), GetFWLApp(),
-      Properties{0, FWL_STYLEEXT_SCB_Horz, FWL_STATE_WGT_Invisible}, this);
+      Properties{{}, FWL_STYLEEXT_SCB_Horz, WidgetState::kInvisible}, this);
 }
 
 bool CFWL_ListBox::IsShowVertScrollBar() const {
@@ -634,7 +634,7 @@ bool CFWL_ListBox::IsShowHorzScrollBar() const {
 
 bool CFWL_ListBox::ScrollBarPropertiesPresent() const {
   return !(properties_.style_exts_ & FWL_STYLEEXT_LTB_ShowScrollBarFocus) ||
-         (properties_.states_ & FWL_STATE_WGT_Focused);
+         (properties_.states_ & WidgetState::kFocused);
 }
 
 void CFWL_ListBox::OnProcessMessage(CFWL_Message* pMessage) {
@@ -705,26 +705,26 @@ void CFWL_ListBox::OnDrawWidget(CFGAS_GEGraphics* pGraphics,
 void CFWL_ListBox::OnFocusGained() {
   if (GetStyleExts() & FWL_STYLEEXT_LTB_ShowScrollBarFocus) {
     if (vert_scroll_bar_) {
-      vert_scroll_bar_->RemoveStates(FWL_STATE_WGT_Invisible);
+      vert_scroll_bar_->ClearStates(WidgetState::kInvisible);
     }
     if (horz_scroll_bar_) {
-      horz_scroll_bar_->RemoveStates(FWL_STATE_WGT_Invisible);
+      horz_scroll_bar_->ClearStates(WidgetState::kInvisible);
     }
   }
-  properties_.states_ |= FWL_STATE_WGT_Focused;
+  properties_.states_ |= WidgetState::kFocused;
   RepaintRect(client_rect_);
 }
 
 void CFWL_ListBox::OnFocusLost() {
   if (GetStyleExts() & FWL_STYLEEXT_LTB_ShowScrollBarFocus) {
     if (vert_scroll_bar_) {
-      vert_scroll_bar_->SetStates(FWL_STATE_WGT_Invisible);
+      vert_scroll_bar_->SetStates(WidgetState::kInvisible);
     }
     if (horz_scroll_bar_) {
-      horz_scroll_bar_->SetStates(FWL_STATE_WGT_Invisible);
+      horz_scroll_bar_->SetStates(WidgetState::kInvisible);
     }
   }
-  properties_.states_ &= ~FWL_STATE_WGT_Focused;
+  properties_.states_.Clear(WidgetState::kFocused);
   RepaintRect(client_rect_);
 }
 

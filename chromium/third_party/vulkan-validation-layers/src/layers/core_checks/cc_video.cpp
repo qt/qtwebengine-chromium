@@ -50,7 +50,7 @@ bool CoreChecks::OutsideVideoCodingScope(const vvl::CommandBuffer& cb_state, con
     return outside;
 }
 
-std::vector<VkVideoFormatPropertiesKHR> CoreChecks::GetVideoFormatProperties(VkImageUsageFlags image_usage,
+std::vector<VkVideoFormatPropertiesKHR> CoreChecks::GetVideoFormatProperties(VkImageUsageFlags2KHR image_usage,
                                                                              const VkVideoProfileListInfoKHR* profile_list) const {
     // NOTE: We have to mask out any usage that is not video related
     const VkImageUsageFlags video_usage_mask = VK_IMAGE_USAGE_VIDEO_DECODE_SRC_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR |
@@ -71,7 +71,7 @@ std::vector<VkVideoFormatPropertiesKHR> CoreChecks::GetVideoFormatProperties(VkI
     return format_props;
 }
 
-std::vector<VkVideoFormatPropertiesKHR> CoreChecks::GetVideoFormatProperties(VkImageUsageFlags image_usage,
+std::vector<VkVideoFormatPropertiesKHR> CoreChecks::GetVideoFormatProperties(VkImageUsageFlags2KHR image_usage,
                                                                              const VkVideoProfileInfoKHR* profile) const {
     VkVideoProfileListInfoKHR profile_list = vku::InitStructHelper();
     profile_list.profileCount = 1;
@@ -80,8 +80,9 @@ std::vector<VkVideoFormatPropertiesKHR> CoreChecks::GetVideoFormatProperties(VkI
     return GetVideoFormatProperties(image_usage, &profile_list);
 }
 
-bool CoreChecks::IsSupportedVideoFormat(VkImageCreateFlags flags, VkImageUsageFlags usage, VkImageType imageType, VkFormat format,
-                                        VkImageTiling tiling, const VkVideoProfileListInfoKHR* profile_list) const {
+bool CoreChecks::IsSupportedVideoFormat(VkImageCreateFlags2KHR flags, VkImageUsageFlags2KHR usage, VkImageType imageType,
+                                        VkFormat format, VkImageTiling tiling,
+                                        const VkVideoProfileListInfoKHR* profile_list) const {
     auto format_props_list = GetVideoFormatProperties(usage, profile_list);
 
     for (auto& format_props : format_props_list) {
@@ -97,8 +98,8 @@ bool CoreChecks::IsSupportedVideoFormat(VkImageCreateFlags flags, VkImageUsageFl
     return false;
 }
 
-bool CoreChecks::IsSupportedVideoFormat(VkImageCreateFlags flags, VkImageUsageFlags usage, VkImageType imageType, VkFormat format,
-                                        VkImageTiling tiling, const VkVideoProfileInfoKHR* profile) const {
+bool CoreChecks::IsSupportedVideoFormat(VkImageCreateFlags2KHR flags, VkImageUsageFlags2KHR usage, VkImageType imageType,
+                                        VkFormat format, VkImageTiling tiling, const VkVideoProfileInfoKHR* profile) const {
     VkVideoProfileListInfoKHR profile_list = vku::InitStructHelper();
     profile_list.profileCount = 1;
     profile_list.pProfiles = profile;
@@ -106,7 +107,7 @@ bool CoreChecks::IsSupportedVideoFormat(VkImageCreateFlags flags, VkImageUsageFl
     return IsSupportedVideoFormat(flags, usage, imageType, format, tiling, &profile_list);
 }
 
-bool CoreChecks::IsVideoFormatSupported(VkFormat format, VkImageUsageFlags image_usage,
+bool CoreChecks::IsVideoFormatSupported(VkFormat format, VkImageUsageFlags2KHR image_usage,
                                         const VkVideoProfileInfoKHR* profile) const {
     auto format_props_list = GetVideoFormatProperties(image_usage, profile);
     for (const auto& format_props : format_props_list) {
@@ -4525,7 +4526,7 @@ bool CoreChecks::PreCallValidateCreateVideoSessionParametersKHR(VkDevice device,
         if (template_state != nullptr && encode_quality_level != template_state->GetEncodeQualityLevel()) {
             const LogObjectList objlist(device, pCreateInfo->videoSessionParametersTemplate, pCreateInfo->videoSession);
             skip |=
-                LogError("VUID-VkVideoSessionParametersCreateInfoKHR-videoSessionParametersTemplate-08310)", objlist,
+                LogError("VUID-VkVideoSessionParametersCreateInfoKHR-videoSessionParametersTemplate-08310", objlist,
                          create_info_loc.pNext(Struct::VkVideoEncodeQualityLevelInfoKHR, Field::qualityLevel),
                          "(%" PRIu32 ") does not match the video encode quality level (%" PRIu32 ") template %s was created with.",
                          encode_quality_level, template_state->GetEncodeQualityLevel(),
@@ -5046,13 +5047,13 @@ bool CoreChecks::PreCallValidateCmdBeginVideoCodingKHR(VkCommandBuffer commandBu
 
     const Location begin_info_loc = error_obj.location.dot(Field::pBeginInfo);
 
-    if (vs_state->create_info.queueFamilyIndex != cb_state->command_pool->queueFamilyIndex) {
-        const LogObjectList objlist(commandBuffer, pBeginInfo->videoSession, cb_state->command_pool->Handle());
+    if (vs_state->create_info.queueFamilyIndex != cb_state->command_pool.queueFamilyIndex) {
+        const LogObjectList objlist(commandBuffer, pBeginInfo->videoSession, cb_state->command_pool.Handle());
         skip |= LogError("VUID-vkCmdBeginVideoCodingKHR-commandBuffer-11760", objlist, begin_info_loc.dot(Field::videoSession),
                          "%s (queue family index %" PRIu32 ") and %s (queue family index %" PRIu32
                          ") are not created with the same queue family index.",
                          FormatHandle(pBeginInfo->videoSession).c_str(), vs_state->create_info.queueFamilyIndex,
-                         FormatHandle(cb_state->command_pool->Handle()).c_str(), cb_state->command_pool->queueFamilyIndex);
+                         FormatHandle(cb_state->command_pool.Handle()).c_str(), cb_state->command_pool.queueFamilyIndex);
     }
 
     if (vs_state->GetUnboundMemoryBindingCount() > 0) {
@@ -5770,14 +5771,14 @@ bool CoreChecks::PreCallValidateCmdDecodeVideoKHR(VkCommandBuffer commandBuffer,
                     }
                 }
 
-                const auto& qf_ext_props = device_state->queue_family_ext_props[cb_state->command_pool->queueFamilyIndex];
+                const auto& qf_ext_props = device_state->queue_family_ext_props[cb_state->command_pool.queueFamilyIndex];
                 if (!qf_ext_props.query_result_status_props.queryResultStatusSupport) {
                     const LogObjectList objlist(commandBuffer, inline_query_info->queryPool);
                     skip |= LogError("VUID-vkCmdDecodeVideoKHR-queryType-08369", objlist, error_obj.location,
                                      "the command pool's queue family (index %" PRIu32
                                      ") the command "
                                      "buffer %s was allocated from does not support result status queries.",
-                                     cb_state->command_pool->queueFamilyIndex, FormatHandle(*cb_state).c_str());
+                                     cb_state->command_pool.queueFamilyIndex, FormatHandle(*cb_state).c_str());
                 }
             }
         }
@@ -6240,7 +6241,7 @@ bool CoreChecks::PreCallValidateCmdEncodeVideoKHR(VkCommandBuffer commandBuffer,
                     }
                 }
 
-                const auto& qf_ext_props = device_state->queue_family_ext_props[cb_state->command_pool->queueFamilyIndex];
+                const auto& qf_ext_props = device_state->queue_family_ext_props[cb_state->command_pool.queueFamilyIndex];
                 if (query_pool_state->create_info.queryType == VK_QUERY_TYPE_RESULT_STATUS_ONLY_KHR &&
                     !qf_ext_props.query_result_status_props.queryResultStatusSupport) {
                     const LogObjectList objlist(commandBuffer, inline_query_info->queryPool);
@@ -6248,7 +6249,7 @@ bool CoreChecks::PreCallValidateCmdEncodeVideoKHR(VkCommandBuffer commandBuffer,
                                      "the command pool's queue family (index %" PRIu32
                                      ") the command "
                                      "buffer %s was allocated from does not support result status queries.",
-                                     cb_state->command_pool->queueFamilyIndex, FormatHandle(*cb_state).c_str());
+                                     cb_state->command_pool.queueFamilyIndex, FormatHandle(*cb_state).c_str());
                 }
             }
         }

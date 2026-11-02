@@ -379,7 +379,7 @@ void householder_qr_inplace_unblocked(MatrixQR& mat, HCoeffs& hCoeffs, typename 
     mat.col(k).tail(remainingRows).makeHouseholderInPlace(hCoeffs.coeffRef(k), beta);
     mat.coeffRef(k, k) = beta;
 
-    // apply H to remaining part of m_qr from the left
+    // apply H to remaining part of mat from the left
     mat.bottomRightCorner(remainingRows, remainingCols)
         .applyHouseholderOnTheLeft(mat.col(k).tail(remainingRows - 1), hCoeffs.coeffRef(k), tempData + k + 1);
   }
@@ -460,7 +460,7 @@ struct householder_qr_inplace_blocked {
       //        A20 | A21 | A22
       // and performs the qr dec of [A11^T A12^T]^T
       // and update [A21^T A22^T]^T using level 3 operations.
-      // Finally, the algorithm continue on A22
+      // Finally, the algorithm continues on A22
 
       BlockType A11_21 = mat.block(k, k, brows, bs);
       Block<HCoeffs, Dynamic, 1> hCoeffsSegment = hCoeffs.segment(k, bs);

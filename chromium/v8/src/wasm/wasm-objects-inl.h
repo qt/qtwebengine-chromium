@@ -20,16 +20,21 @@
 #include "src/heap/heap-write-barrier-inl.h"
 #include "src/objects/casting.h"
 #include "src/objects/fixed-array-inl.h"
+#include "src/objects/fixed-primitive-array-inl.h"
 #include "src/objects/foreign.h"
 #include "src/objects/heap-number-inl.h"
+#include "src/objects/heap-object-field-inl.h"
 #include "src/objects/heap-object.h"
 #include "src/objects/managed.h"
 #include "src/objects/object-predicates-inl.h"
+#include "src/objects/pod-array-inl.h"
 #include "src/objects/slots-inl.h"
 #include "src/objects/tagged-field-inl.h"
 #include "src/objects/trusted-object-inl.h"
 #include "src/objects/trusted-pointer-inl.h"
 #include "src/roots/roots.h"
+#include "src/sandbox/check.h"
+#include "src/sandbox/isolate-inl.h"
 #include "src/wasm/wasm-code-manager.h"
 #include "src/wasm/wasm-module.h"
 #include "third_party/fp16/src/include/fp16.h"
@@ -42,8 +47,6 @@
 #include "src/objects/object-macros.h"
 
 namespace v8::internal {
-
-#include "torque-generated/src/wasm/wasm-objects-tq-inl.inc"
 
 #define OPTIONAL_ACCESSORS(holder, name, type, offset)                         \
   DEF_GETTER(holder, has_##name, bool) {                                       \
@@ -78,28 +81,6 @@ void WasmModuleObject::set_script(Tagged<Script> value, WriteBarrierMode mode) {
 Managed<wasm::NativeModule>::Ptr WasmModuleObject::native_module() {
   return managed_native_module()->ptr();
 }
-
-// WasmMemoryMapDescriptor
-Tagged<Weak<HeapObject>> WasmMemoryMapDescriptor::memory() const {
-  return memory_.load();
-}
-void WasmMemoryMapDescriptor::set_memory(Tagged<Weak<HeapObject>> value,
-                                         WriteBarrierMode mode) {
-  memory_.store(this, value, mode);
-}
-
-int32_t WasmMemoryMapDescriptor::file_descriptor() const {
-  return file_descriptor_;
-}
-void WasmMemoryMapDescriptor::set_file_descriptor(int32_t value) {
-  file_descriptor_ = value;
-}
-
-uint32_t WasmMemoryMapDescriptor::offset() const { return offset_; }
-void WasmMemoryMapDescriptor::set_offset(uint32_t value) { offset_ = value; }
-
-uint32_t WasmMemoryMapDescriptor::size() const { return size_; }
-void WasmMemoryMapDescriptor::set_size(uint32_t value) { size_ = value; }
 
 // WasmMemoryObject
 Tagged<UnionOf<JSArrayBuffer, Undefined>> WasmMemoryObject::array_buffer()
@@ -388,12 +369,6 @@ WTI_TAGGED_ACCESSORS(untagged_globals_buffer, Tagged<ByteArray>,
 WTI_TAGGED_ACCESSORS(tagged_globals_buffer, Tagged<FixedArray>,
                      kTaggedGlobalsBufferOffset)
 WTI_TAGGED_ACCESSORS(tables, Tagged<FixedArray>, kTablesOffset)
-#if V8_ENABLE_DRUMBRAKE
-WTI_OPTIONAL_TAGGED_ACCESSORS(interpreter_object, Tagged<Tuple2>,
-                              kInterpreterObjectOffset)
-#endif  // V8_ENABLE_DRUMBRAKE
-WTI_PROTECTED_POINTER_ACCESSORS(shared_part, WasmTrustedInstanceData,
-                                kProtectedSharedPartOffset)
 WTI_PROTECTED_POINTER_ACCESSORS(dispatch_table0, WasmDispatchTable,
                                 kProtectedDispatchTable0Offset)
 WTI_PROTECTED_POINTER_ACCESSORS(dispatch_tables, ProtectedFixedArray,
@@ -401,8 +376,14 @@ WTI_PROTECTED_POINTER_ACCESSORS(dispatch_tables, ProtectedFixedArray,
 WTI_PROTECTED_POINTER_ACCESSORS(dispatch_table_for_imports,
                                 WasmDispatchTableForImports,
                                 kProtectedDispatchTableForImportsOffset)
+WTI_PROTECTED_POINTER_ACCESSORS(tags_table, TrustedFixedArray,
+                                kProtectedTagsTableOffset)
+#if V8_ENABLE_DRUMBRAKE
+WTI_PROTECTED_POINTER_ACCESSORS(interpreter_handle,
+                                TrustedManaged<wasm::InterpreterHandle>,
+                                kProtectedInterpreterHandleOffset)
+#endif  // V8_ENABLE_DRUMBRAKE
 #undef WTI_PROTECTED_POINTER_ACCESSORS
-WTI_OPTIONAL_TAGGED_ACCESSORS(tags_table, Tagged<FixedArray>, kTagsTableOffset)
 WTI_TAGGED_ACCESSORS(func_refs, Tagged<FixedArray>, kFuncRefsOffset)
 WTI_TAGGED_ACCESSORS(managed_object_maps, Tagged<FixedArray>,
                      kManagedObjectMapsOffset)
@@ -427,6 +408,10 @@ Tagged<WasmMemoryObject> WasmTrustedInstanceData::memory_object(
 }
 
 uint8_t* WasmTrustedInstanceData::memory_base(uint32_t memory_index) const {
+  const uint32_t bases_and_sizes_length =
+      memory_bases_and_sizes()->length().value();
+  SBXCHECK_EQ(bases_and_sizes_length % 2u, 0u);
+  SBXCHECK_LT(memory_index, bases_and_sizes_length / 2u);
   DCHECK_EQ(memory0_start(),
             reinterpret_cast<uint8_t*>(memory_bases_and_sizes()->get(0)));
   return reinterpret_cast<uint8_t*>(
@@ -434,6 +419,10 @@ uint8_t* WasmTrustedInstanceData::memory_base(uint32_t memory_index) const {
 }
 
 size_t WasmTrustedInstanceData::memory_size(uint32_t memory_index) const {
+  const uint32_t bases_and_sizes_length =
+      memory_bases_and_sizes()->length().value();
+  SBXCHECK_EQ(bases_and_sizes_length % 2u, 0u);
+  SBXCHECK_LT(memory_index, bases_and_sizes_length / 2u);
   DCHECK_EQ(memory0_size(), memory_bases_and_sizes()->get(1));
   return memory_bases_and_sizes()->get(2 * memory_index + 1);
 }
@@ -513,13 +502,6 @@ Tagged<JSObject> WasmInstanceObject::exports_object() const {
 void WasmInstanceObject::set_exports_object(Tagged<JSObject> value,
                                             WriteBarrierMode mode) {
   exports_object_.store(this, value, mode);
-}
-
-// Note: in case of existing in-sandbox corruption, this could return an
-// incorrect WasmModule! For security-relevant code, prefer reading
-// {native_module()} from a {WasmTrustedInstanceData}.
-const wasm::WasmModule* WasmInstanceObject::module() const {
-  return module_object()->native_module()->module();
 }
 
 ImportedFunctionEntry::ImportedFunctionEntry(
@@ -1513,29 +1495,6 @@ int WasmExceptionTag::index() const { return index_.load().value(); }
 void WasmExceptionTag::set_index(int value) {
   index_.store(this, Smi::FromInt(value));
 }
-
-// AsmWasmData
-Tagged<TrustedManaged<wasm::NativeModule>> AsmWasmData::managed_native_module()
-    const {
-  DCHECK(has_managed_native_module());
-  return managed_native_module_.load();
-}
-void AsmWasmData::set_managed_native_module(
-    Tagged<TrustedManaged<wasm::NativeModule>> value, WriteBarrierMode mode) {
-  managed_native_module_.store(this, value, mode);
-}
-bool AsmWasmData::has_managed_native_module() const {
-  return !managed_native_module_.load().is_null();
-}
-void AsmWasmData::clear_managed_native_module() {
-  managed_native_module_.store(this, {}, SKIP_WRITE_BARRIER);
-}
-
-uint64_t AsmWasmData::uses_bitset() const { return uses_bitset_.value(); }
-void AsmWasmData::set_uses_bitset(uint64_t value) {
-  uses_bitset_.set_value(value);
-}
-
 Tagged<JSReceiver> WasmSuspendingObject::callable() const {
   return callable_.load();
 }

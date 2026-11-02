@@ -71,8 +71,6 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
     std::optional<uint32_t> subgroup_size_index;
     std::optional<uint32_t> num_subgroups_index;
     std::optional<uint32_t> num_workgroups_index;
-    std::optional<uint32_t> sample_mask_index;
-    std::optional<uint32_t> sample_index_index;
     std::optional<uint32_t> local_invocation_index_index;
     std::optional<uint32_t> first_clip_distance_index;
     std::optional<uint32_t> second_clip_distance_index;
@@ -264,11 +262,6 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
             RequireBuiltinInput(core::BuiltinValue::kGlobalInvocationId, ty.vec3u(),
                                 "global_invocation_id");
         }
-        if (config.polyfill_sample_mask &&
-            func->Stage() == core::ir::Function::PipelineStage::kFragment &&
-            HasBuiltinInput(core::BuiltinValue::kSampleMask)) {
-            RequireBuiltinInput(core::BuiltinValue::kSampleIndex, ty.u32(), "sample_index");
-        }
 
         Vector<MemberInfo, 4> input_data;
         bool has_vertex_or_instance_index = false;
@@ -287,10 +280,6 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
                     num_subgroups_index = i;
                 } else if (*builtin == core::BuiltinValue::kNumWorkgroups) {
                     num_workgroups_index = i;
-                } else if (*builtin == core::BuiltinValue::kSampleMask) {
-                    sample_mask_index = i;
-                } else if (*builtin == core::BuiltinValue::kSampleIndex) {
-                    sample_index_index = i;
                 } else if (*builtin == core::BuiltinValue::kLocalInvocationIndex) {
                     local_invocation_index_index = i;
                 } else if (*builtin == core::BuiltinValue::kVertexIndex) {
@@ -387,6 +376,7 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
         // is translated to SV_ClipDistanceN in the printer.
         for (uint32_t i = 0; i < outputs.Length(); ++i) {
             if (outputs[i].attributes.builtin == core::BuiltinValue::kClipDistances) {
+                ir.properties.Add(core::ir::Property::kAllowClipDistancesOnF32ScalarAndVector);
                 auto* const type = outputs[i].type;
                 auto const name = outputs[i].name;
                 auto const attributes = outputs[i].attributes;
@@ -520,7 +510,7 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
         //
         //   @compute @workgroup_size(...)
         //   fn main(...) {
-        //     // Initialize the counter to zero.
+        //     // Initializer the counter to zero.
         //     atomicStore(&tint_subgroup_id_counter, 0u);
         //     workgroupBarrier();
         //
@@ -626,25 +616,28 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
                 auto* immediate_data = config.immediate_data_layout.var;
                 auto num_workgroup_idx = u32(config.immediate_data_layout.IndexOf(
                     config.num_workgroups_start_offset.value()));
-                auto* load = builder.Load(
-                    builder.Access<ptr<immediate, vec3<u32>>>(immediate_data, num_workgroup_idx));
-                return load->Result();
+                // num_workgroups is stored as a struct of three u32 members (4-byte aligned); load
+                // each member and reconstruct the vec3<u32> value the builtin expects.
+                auto* immediate_struct = config.immediate_data_layout.var->Result()
+                                             ->Type()
+                                             ->As<core::type::Pointer>()
+                                             ->StoreType()
+                                             ->As<core::type::Struct>();
+                auto* num_workgroups_type = immediate_struct->Members()[num_workgroup_idx]->Type();
+                auto* str = builder.Access(ty.ptr(immediate, num_workgroups_type), immediate_data,
+                                           num_workgroup_idx);
+                auto* e0 = builder.Load(builder.Access<ptr<immediate, u32>>(str, 0_u));
+                auto* e1 = builder.Load(builder.Access<ptr<immediate, u32>>(str, 1_u));
+                auto* e2 = builder.Load(builder.Access<ptr<immediate, u32>>(str, 2_u));
+                return builder.Construct(ty.vec3u(), e0->Result(), e1->Result(), e2->Result())
+                    ->Result();
             }
             return GetInputForNumWorkgroups(builder);
         }
 
         auto index = input_indices[idx];
-        auto* v = builder.Access(inputs[idx].type, input_param, u32(index))->Result();
 
-        if (config.polyfill_sample_mask && sample_mask_index == idx) {
-            // In Sample Shading mode only the sample for the fragment should be set in the sample
-            // mask. The behavior of HLSL is to include the full raster sample mask. This is not in
-            // line with WGSL spec and so we remove this additional information via a bitwise and.
-            TINT_IR_ASSERT(ir, sample_index_index.has_value());
-            auto* sample_index = GetInput(builder, sample_index_index.value());
-            auto* mask = builder.ShiftLeft(1_u, sample_index);
-            return builder.And(v, mask)->Result();
-        }
+        core::ir::Value* v = builder.Access(inputs[idx].type, input_param, u32(index))->Result();
 
         if (inputs[idx].attributes.builtin == core::BuiltinValue::kPosition) {
             // If this is an input position builtin we need to invert the 'w' component of the
@@ -652,45 +645,37 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
             auto* w = builder.Access(ty.f32(), v, 3_u);
             auto* div = builder.Divide(1.0_f, w);
             auto* swizzle = builder.Swizzle(ty.vec3f(), v, {0, 1, 2});
-            return builder.Construct(ty.vec4f(), swizzle, div)->Result();
-        }
-
-        if (config.first_index_offset_binding.has_value() &&
-            inputs[idx].attributes.builtin == core::BuiltinValue::kVertexIndex) {
+            v = builder.Construct(ty.vec4f(), swizzle, div)->Result();
+        } else if (config.first_index_offset_binding.has_value() &&
+                   inputs[idx].attributes.builtin == core::BuiltinValue::kVertexIndex) {
             // Apply vertex_index offset
             TINT_IR_ASSERT(ir, tint_first_index_offset);
             auto* vertex_index_offset =
                 builder.Access(ty.ptr<uniform, u32>(), tint_first_index_offset, 0_u);
-            return builder.Add(v, builder.Load(vertex_index_offset))->Result();
-        }
-
-        if (config.first_index_offset_binding.has_value() &&
-            inputs[idx].attributes.builtin == core::BuiltinValue::kInstanceIndex) {
+            v = builder.Add(v, builder.Load(vertex_index_offset))->Result();
+        } else if (config.first_index_offset_binding.has_value() &&
+                   inputs[idx].attributes.builtin == core::BuiltinValue::kInstanceIndex) {
             // Apply instance_index offset
             TINT_IR_ASSERT(ir, tint_first_index_offset);
             auto* instance_index_offset =
                 builder.Access(ty.ptr<uniform, u32>(), tint_first_index_offset, 1_u);
-            return builder.Add(v, builder.Load(instance_index_offset))->Result();
-        }
-
-        if (config.first_index_offset.has_value() &&
-            inputs[idx].attributes.builtin == core::BuiltinValue::kVertexIndex) {
+            v = builder.Add(v, builder.Load(instance_index_offset))->Result();
+        } else if (config.first_index_offset.has_value() &&
+                   inputs[idx].attributes.builtin == core::BuiltinValue::kVertexIndex) {
             auto* immediate_data = config.immediate_data_layout.var;
             auto first_index_offset_idx =
                 u32(config.immediate_data_layout.IndexOf(config.first_index_offset.value()));
             auto first_index_offset =
                 builder.Access<ptr<immediate, u32>>(immediate_data, first_index_offset_idx);
-            return builder.Add(v, builder.Load(first_index_offset))->Result();
-        }
-
-        if (config.first_instance_offset.has_value() &&
-            inputs[idx].attributes.builtin == core::BuiltinValue::kInstanceIndex) {
+            v = builder.Add(v, builder.Load(first_index_offset))->Result();
+        } else if (config.first_instance_offset.has_value() &&
+                   inputs[idx].attributes.builtin == core::BuiltinValue::kInstanceIndex) {
             auto* immediate_data = config.immediate_data_layout.var;
             auto first_instance_offset_idx =
                 u32(config.immediate_data_layout.IndexOf(config.first_instance_offset.value()));
             auto first_instance_offset =
                 builder.Access<ptr<immediate, u32>>(immediate_data, first_instance_offset_idx);
-            return builder.Add(v, builder.Load(first_instance_offset))->Result();
+            v = builder.Add(v, builder.Load(first_instance_offset))->Result();
         }
 
         return v;
@@ -762,11 +747,7 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
 }  // namespace
 
 Result<SuccessType> ShaderIO(core::ir::Module& ir, const ShaderIOConfig& config) {
-    core::ir::AssertValid(ir,
-                          core::ir::Capabilities{core::ir::Capability::kAllowDuplicateBindings,
-                                                 core::ir::Capability::kAllow8BitIntegers,
-                                                 core::ir::Capability::kAllow16BitIntegers},
-                          "before hlsl.ShaderIO");
+    core::ir::AssertValid(ir, "before hlsl.ShaderIO");
 
     TINT_CHECK_RESULT(core::ir::transform::RunShaderIOBase(
         ir, [&](core::ir::Module& mod, core::ir::Function* func) {

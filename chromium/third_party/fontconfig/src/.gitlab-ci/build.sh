@@ -3,8 +3,9 @@
 set -ex
 set -o pipefail
 
-cidir=$(dirname $0)
-[ -f ${cidir}/fcenv ] && . ${cidir}/fcenv
+cidir=$(dirname "$0")
+# shellcheck source=/dev/null
+[ -f "${cidir}/fcenv" ] && . "${cidir}/fcenv"
 
 case "$OSTYPE" in
     msys) MyPWD=$(pwd -W) ;;
@@ -26,19 +27,20 @@ arch=""
 buildopt=()
 optimization=""
 sanitize=""
-SRCDIR=$MyPWD
+SRCDIR="$MyPWD"
 export MAKE=${MAKE:-make}
 export BUILD_ID=${BUILD_ID:-fontconfig-$$}
 export PREFIX=${PREFIX:-$MyPWD/prefix}
 export BUILDDIR=${BUILDDIR:-$MyPWD/build}
+export BUILDLOG=${BUILDLOG:-${BUILDDIR}/fc-build.log}
 export CI_MERGE_REQUEST_PROJECT_URL=${CI_MERGE_REQUEST_PROJECT_URL:-https://gitlab.freedesktop.org/fontconfig/fontconfig}
 export CI_COMMIT_REF_NAME=${CI_COMMIT_REF_NAME:-main}
 
-if [ "x$FC_DISTRO_NAME" = "x" ]; then
+if [ -z "$FC_DISTRO_NAME" ]; then
     . /etc/os-release || :
     FC_DISTRO_NAME=$ID
 fi
-if [ "x$FC_DISTRO_NAME" = "x" ]; then
+if [ -z "$FC_DISTRO_NAME" ]; then
     echo "***"
     echo "*** Unable to detect OS. cross-compiling may not work. Please consider setting FC_DISTRO_NAME"
     echo "***"
@@ -52,8 +54,8 @@ do
         'A') sanitize=$OPTARG ; optimization="g" ;;
         'c') distcheck=1 ;;
         'C') disable_check=1 ;;
-        'e') enable+=($OPTARG) ;;
-        'd') disable+=($OPTARG) ;;
+        'e') enable+=("$OPTARG") ;;
+        'd') disable+=("$OPTARG") ;;
         'I') enable_install=0 ;;
         'N') clean_build=0 ;;
         'O') optimization=$OPTARG ;;
@@ -61,7 +63,7 @@ do
         'S') subproject=1 ;;
         't') type=$OPTARG ;;
         'X') backend=$OPTARG ;;
-        'h')
+        'h'|'*')
             set +x
             echo "Usage: $0 [-a ARCH] [-A SANITIZER] [-c] [-C] [-e OPT] [-d OPT] [-h] [-I] [-N] [-O N] [-s BUILDSYS] [-S] [-t BUILDTYPE] [-X XMLBACKEND]"
             echo "Options:"
@@ -71,7 +73,7 @@ do
             echo "  -C             Do not run unit tests"
             echo "  -e OPT         Enable OPT feature to build"
             echo "  -d OPT         Disable OPT feature to build"
-            echo "  -I             Run install"
+            echo "  -I             Do not run install process"
             echo "  -N             Do not clean build directory"
             echo "  -O N           Optimization level to build"
             echo "  -s BUILDSYS    Use BUILDSYS to build (default: $buildsys)"
@@ -92,32 +94,34 @@ esac
 
 env
 
+# shellcheck disable=SC2329
 clean_exit() {
     rc=$?
     trap - INT TERM ABRT EXIT
-    if [ "x$TASK" != "x" ]; then
+    if [ -n "$TASK" ]; then
         echo "Aborting from \"$TASK\" with the exit code $rc"
     fi
-    mv /tmp/fc-build.log . || :
-    exit $rc
+    mv /tmp/fc-build.log "${BUILDLOG}" || :
+    exit "$rc"
 }
 
 trap clean_exit INT TERM ABRT EXIT
 
-if [ -f .gitlab-ci/${FC_DISTRO_NAME}-setup.sh ]; then
-    . .gitlab-ci/${FC_DISTRO_NAME}-setup.sh
+if [ -f "${SRCDIR}/.gitlab-ci/${FC_DISTRO_NAME}-setup.sh" ]; then
+    # shellcheck source=/dev/null
+    . "${SRCDIR}/.gitlab-ci/${FC_DISTRO_NAME}-setup.sh"
 fi
 
-if [ x"$buildsys" == "xautotools" ]; then
+if [ "$buildsys" == "autotools" ]; then
     if [ $subproject -eq 1 ]; then
         echo "Subproject build not supported in autotools"
         exit 1
     fi
     for i in "${enable[@]}"; do
-        buildopt+=(--enable-$i)
+        buildopt+=("--enable-$i")
     done
     for i in "${disable[@]}"; do
-        buildopt+=(--disable-$i)
+        buildopt+=("--disable-$i")
     done
     case x"$backend" in
         'xexpat')
@@ -136,18 +140,19 @@ if [ x"$buildsys" == "xautotools" ]; then
             buildopt+=(--disable-shared)
             buildopt+=(--enable-static)
             ;;
-        'both')
+        'xboth')
             buildopt+=(--enable-shared)
             buildopt+=(--enable-static)
             ;;
     esac
-    if [ $cross -eq 1 -a -n "$arch" ]; then
-        buildopt+=(--host=$arch)
-        if [ ! -f .gitlab-ci/${FC_DISTRO_NAME}-cross.sh ]; then
+    if [ $cross -eq 1 ] && [ -n "$arch" ]; then
+        buildopt+=("--host=$arch")
+        if [ ! -f ".gitlab-ci/${FC_DISTRO_NAME}-cross.sh" ]; then
             echo "No ${FC_DISTRO_NAME}-cross.sh available"
             exit 1
         fi
-        . .gitlab-ci/${FC_DISTRO_NAME}-cross.sh
+        # shellcheck source=/dev/null
+        . ".gitlab-ci/${FC_DISTRO_NAME}-cross.sh"
     fi
     if [ $clean_build -eq 1 ]; then
         rm -rf "$BUILDDIR" "$PREFIX" || :
@@ -155,7 +160,7 @@ if [ x"$buildsys" == "xautotools" ]; then
     fi
     cd "$BUILDDIR"
     TASK="autogen.sh"
-    ../autogen.sh --prefix="$PREFIX" --disable-cache-build ${buildopt[*]} 2>&1 | tee /tmp/fc-build.log
+    ../autogen.sh --prefix="$PREFIX" --disable-cache-build "${buildopt[@]}" 2>&1 | tee /tmp/fc-build.log
     TASK="make"
     $MAKE V=1 2>&1 | tee -a /tmp/fc-build.log
     if [ $enable_install -eq 1 ]; then
@@ -170,16 +175,17 @@ if [ x"$buildsys" == "xautotools" ]; then
         TASK="make distcheck"
         $MAKE distcheck V=1 2>&1 | tee -a /tmp/fc-build.log
     fi
-elif [ x"$buildsys" == "xmeson" ]; then
+elif [ "$buildsys" == "meson" ]; then
     TASK="pip install"
     python3 -m venv .venv
+    # shellcheck source=/dev/null
     . .venv/bin/activate
-    pip install "meson>=1.6.1"
+    pip install "meson>=1.11.0"
 #   tomli not required for Python >= 3.11
     pip install tomli
     pip install pytest pytest-tap requests
     for i in "${enable[@]}"; do
-        buildopt+=(-D$i=enabled)
+        buildopt+=("-D$i=enabled")
 
         # Update bindgen on Fontations builds to improve support for constants in fcint.h
         if [[ "$i" == "fontations" ]]; then
@@ -203,11 +209,11 @@ elif [ x"$buildsys" == "xmeson" ]; then
         git clone https://gitlab.freedesktop.org/fontconfig/fontconfig-ci/fc-ci-meson-subproject.git
         cd fc-ci-meson-subproject
         pushd subprojects
-        git clone ${CI_MERGE_REQUEST_PROJECT_URL}.git
+        git clone "${CI_MERGE_REQUEST_PROJECT_URL}.git"
         if [ -n "$CI_MERGE_REQUEST_IID" ]; then
             pushd fontconfig
-            git fetch origin merge-requests/$CI_MERGE_REQUEST_IID/head:$CI_COMMIT_REF_NAME
-            git switch $CI_COMMIT_REF_NAME
+            git fetch origin "merge-requests/$CI_MERGE_REQUEST_IID/head:mr-$CI_MERGE_REQUEST_IID"
+            git switch "mr-$CI_MERGE_REQUEST_IID"
             popd
         else
             # use main branch instead
@@ -218,35 +224,37 @@ elif [ x"$buildsys" == "xmeson" ]; then
     fi
     TASK=
     if [ -n "$optimization" ]; then
-        buildopt+=(--optimization=$optimization)
+        buildopt+=("--optimization=$optimization")
     fi
     for i in "${disable[@]}"; do
-        buildopt+=(-D${subprojectname}$i=disabled)
+        buildopt+=("-D${subprojectname}$i=disabled")
     done
     case x"$backend" in
         'xexpat')
-            buildopt+=(-D${subprojectname}xml-backend=expat)
+            buildopt+=("-D${subprojectname}xml-backend=expat")
             ;;
         'xlibxml2')
-            buildopt+=(-D${subprojectname}xml-backend=libxml2)
+            buildopt+=("-D${subprojectname}xml-backend=libxml2")
             ;;
     esac
-    if [ $cross -eq 1 -a -n "$arch" ]; then
+    if [ $cross -eq 1 ] && [ -n "$arch" ]; then
         buildopt+=(--cross-file)
-        buildopt+=(.gitlab-ci/$arch.txt)
-        if [ ! -f .gitlab-ci/$FC_DISTRO_NAME-cross.sh ]; then
+        buildopt+=(".gitlab-ci/$arch.txt")
+        if [ ! -f ".gitlab-ci/$FC_DISTRO_NAME-cross.sh" ]; then
             echo "No $FC_DISTRO_NAME-cross.sh available"
             exit 1
         fi
         if [ $subproject -eq 1 ]; then
-            . subprojects/fontconfig/.gitlab-ci/$FC_DISTRO_NAME-cross.sh
+            # shellcheck source=/dev/null
+            . "subprojects/fontconfig/.gitlab-ci/$FC_DISTRO_NAME-cross.sh"
         else
-            . .gitlab-ci/$FC_DISTRO_NAME-cross.sh
+            # shellcheck source=/dev/null
+            . ".gitlab-ci/$FC_DISTRO_NAME-cross.sh"
         fi
     fi
-    buildopt+=(--default-library=$type)
+    buildopt+=("--default-library=$type")
     if [ -n "$sanitize" ]; then
-        buildopt+=(-Db_sanitize=$sanitize)
+        buildopt+=("-Db_sanitize=$sanitize")
         # for memory sanitizer
         buildopt+=(-Db_lundef=false)
     fi
@@ -254,7 +262,7 @@ elif [ x"$buildsys" == "xmeson" ]; then
         rm -rf "$BUILDDIR" "$PREFIX" || :
     fi
     TASK="meson setup"
-    meson setup --prefix="$PREFIX" -D${subprojectname}nls=enabled -D${subprojectname}cache-build=disabled -D${subprojectname}iconv=enabled ${buildopt[*]} "$BUILDDIR" 2>&1 | tee /tmp/fc-build.log
+    meson setup --prefix="$PREFIX" -D${subprojectname}nls=enabled -D${subprojectname}cache-build=disabled -D${subprojectname}iconv=enabled "${buildopt[@]}" "$BUILDDIR" 2>&1 | tee /tmp/fc-build.log
     TASK="meson compile"
     meson compile -v -C "$BUILDDIR" 2>&1 | tee -a /tmp/fc-build.log
     if [ $enable_install -eq 1 ]; then

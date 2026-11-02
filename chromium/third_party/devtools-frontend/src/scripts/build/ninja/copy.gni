@@ -25,6 +25,9 @@ template("copy_to_gen") {
       string_join(",", sources),
     ]
 
+    # Expose ts files to dependent targets.
+    public_inputs = filter_include(sources, [ "*.ts" ])
+
     outputs = []
     foreach(_input, sources) {
       outputs += [ "$target_gen_dir/$_input" ]

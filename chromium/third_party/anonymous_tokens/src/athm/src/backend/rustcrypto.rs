@@ -106,11 +106,11 @@ impl AthmBackend for RustCryptoBackend {
         (RustCryptoPoint::from_bytes((&input[..POINT_SIZE]).into()), &input[POINT_SIZE..])
     }
 
-    fn random_scalar<R: rand_core::CryptoRngCore>(rng: &mut R) -> Self::Scalar {
-        RustCryptoScalar::random(rng)
+    fn random_scalar() -> Self::Scalar {
+        RustCryptoScalar::random(&mut rand::thread_rng())
     }
 
-    fn random_non_zero_scalar<R: rand_core::CryptoRngCore>(rng: &mut R) -> Self::Scalar {
-        *NonZeroScalar::random(rng).as_ref()
+    fn random_non_zero_scalar() -> Self::Scalar {
+        *NonZeroScalar::random(&mut rand::thread_rng()).as_ref()
     }
 }

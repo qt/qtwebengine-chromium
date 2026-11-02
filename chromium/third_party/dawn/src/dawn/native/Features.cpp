@@ -30,9 +30,10 @@
 #include <array>
 #include <utility>
 
-#include "src/dawn/common/Assert.h"
 #include "src/dawn/common/ityp_array.h"
+#include "src/utils/assert.h"
 #include "src/utils/compiler.h"
+#include "src/utils/heap_array.h"
 
 namespace dawn::native {
 namespace {
@@ -48,7 +49,7 @@ struct FeatureEnumAndInfo {
     ManualFeatureInfo info;
 };
 
-static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
+static constexpr auto kFeatureInfo = std::to_array<FeatureEnumAndInfo>({
     {Feature::TextureCompressionBC,
      {"Support Block Compressed (BC) texture formats",
       "https://gpuweb.github.io/gpuweb/#texture-compression-bc",
@@ -428,7 +429,7 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
       "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
       "adapter_properties.md",
       FeatureInfo::FeatureState::Experimental}},
-    {Feature::SharedBufferMemoryD3D12SharedMemoryFileMappingHandle,
+    {Feature::SharedBufferMemoryFromWindowsHandle,
      {"Supports importing a shared memory file mapping handle as shared buffer memory.",
       "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/shared_buffer.md",
       FeatureInfo::FeatureState::Experimental}},
@@ -444,7 +445,7 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
      {"Support the \"enable subgroup_size_control;\" directive in WGSL.",
       "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/tint/extensions/"
       "subgroup_size_control.md",
-      FeatureInfo::FeatureState::Experimental}},
+      FeatureInfo::FeatureState::Stable}},
     {Feature::AtomicVec2uMinMax,
      {"Support the \"enable atomic_vec2u_min_max;\" directive for 64-bit atomics via vec2<u32> "
       "types",
@@ -473,9 +474,19 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
       "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
       "render_pass_render_area.md",
       FeatureInfo::FeatureState::Experimental}},
+    {Feature::TextureCompressionUnaligned,
+     {"Supports creating compressed texture with partial blocks in level 0",
+      // TODO(https://crbug.com/528245806): point at the WebGPU spec once landed.
+      "https://crbug.com/528245806", FeatureInfo::FeatureState::Experimental}},
+    {Feature::DawnAllowUndefinedLoadStoreOp,
+     {"Allow wgpu::LoadOp::Undefined and wgpu::StoreOp::Undefined to be used for render pass "
+      "attachments.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
+      "dawn_allow_undefined_load_store_op.md",
+      FeatureInfo::FeatureState::Stable}},
 
     // Comment to separate the } so it is clearer what to copy-paste to add a feature.
-};
+});
 
 }  // anonymous namespace
 
@@ -504,21 +515,21 @@ void FeaturesSet::ToSupportedFeatures(SupportedFeatures* supportedFeatures) cons
     }
 
     const size_t count = featuresBitSet.count();
-    supportedFeatures->featureCount = count;
-    supportedFeatures->features = nullptr;
 
     if (count == 0) {
+        supportedFeatures->features = {};
         return;
     }
 
     // This will be freed by wgpuSupportedFeaturesFreeMembers.
-    wgpu::FeatureName* features = new wgpu::FeatureName[count];
+    auto features = HeapArray<wgpu::FeatureName>(count);
     uint32_t index = 0;
     for (Feature f : featuresBitSet) {
-        DAWN_UNSAFE_TODO(features[index++]) = ToAPI(f);
+        features[index++] = ToAPI(f);
     }
     DAWN_ASSERT(index == count);
-    supportedFeatures->features = features;
+
+    supportedFeatures->features = std::move(features).MoveToSpan();
 }
 
 }  // namespace dawn::native

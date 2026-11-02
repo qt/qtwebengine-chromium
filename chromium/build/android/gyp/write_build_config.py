@@ -187,7 +187,8 @@ class _TransitiveValuesBuilder:
 
     self._ret.proguard_configs.update(params.get('proguard_configs', []))
     self._ret.proguard_configs.update(
-        all_deps.collect('proguard_configs', flatten=True))
+        (direct_deps if params.get('direct_deps_only') else all_deps).collect(
+            'proguard_configs', flatten=True))
 
     if params.is_bundle_module() and self._remove_parent_module_overlap:
       self._RemoveParentModuleOverlap()
@@ -355,7 +356,6 @@ class _TransitiveValuesBuilder:
         _TransitiveValuesBuilder(apk_under_test_params).Build(),
         retain_processed_jars=self._params.get('proguard_enabled'),
         retain_unprocessed_jars=True,
-        retain_resource_zips=True,
         retain_android_manifests=True)
 
 
@@ -498,7 +498,7 @@ def _DoPlatformChecks(params):
                               for d in deps_not_support_android))
 
 
-def _SuffixAssets(config, target_config):
+def _SuffixAssets(config, target_config, suffix_string=None):
   """Adds a suffix to asset paths to avoid collisions."""
 
   def helper(suffix_names, suffix, assets):
@@ -511,9 +511,15 @@ def _SuffixAssets(config, target_config):
     return new_assets
 
   all_assets = target_config['assets'] + target_config['uncompressed_assets']
-  suffix = '+' + target_config['package_name'] + '+'
+  # target_config may already have suffixed its assets. Strip its suffix to find
+  # the base asset names that need to be suffixed in the current target.
+  target_suffix = target_config.get(
+      'apk_assets_suffix', f"+{target_config['package_name']}+"
+  )
+  suffix_string = suffix_string or target_config['package_name']
+  suffix = f'+{suffix_string}+'
   suffix_names = {
-      x.split(':', 1)[1].replace(suffix, '')
+      x.split(':', 1)[1].replace(target_suffix, '')
       for x in all_assets if 'pinlist.meta' not in x
   }
   config['assets'] = helper(suffix_names, suffix, config['assets'])
@@ -902,8 +908,11 @@ def main():
         target_config = main_config
       else:
         target_config = params_json_util.get_build_config(path)
-      _SuffixAssets(main_config, target_config)
-
+      _SuffixAssets(
+          main_config,
+          target_config,
+          params.get('suffix_apk_assets_string'),
+      )
   if params.get('enable_bytecode_checks'):
     jar_to_target = {}
     all_params = params.deps() + [params]

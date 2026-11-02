@@ -14,6 +14,11 @@
 
 #include "src/utils/segmentation.h"
 
+#include <cstdint>
+
+#include "src/utils/constants.h"
+#include "src/utils/types.h"
+
 namespace libgav1 {
 
 const int8_t kSegmentationFeatureBits[kSegmentFeatureMax] = {8, 6, 6, 6,

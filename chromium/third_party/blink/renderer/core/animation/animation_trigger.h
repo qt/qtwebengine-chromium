@@ -20,7 +20,6 @@
 namespace blink {
 
 class Animation;
-class Element;
 class ExceptionState;
 
 class CORE_EXPORT AnimationTrigger : public ScriptWrappable,
@@ -41,7 +40,8 @@ class CORE_EXPORT AnimationTrigger : public ScriptWrappable,
   // animation trigger's point of view. In other words, for reasons not in this
   // whitelist, we should not even bother running the check function.
   static const CompositorAnimations::FailureReasons kRecheckCompositingReasons =
-      CompositorAnimations::kInvalidAnimationOrEffect;
+      CompositorAnimations::kInvalidAnimationOrEffect |
+      CompositorAnimations::kUnchecked;
 
   void addAnimation(Animation* animation,
                     V8AnimationTriggerBehavior activate_behavior,
@@ -78,8 +78,6 @@ class CORE_EXPORT AnimationTrigger : public ScriptWrappable,
 
   void Trace(Visitor* visitor) const override;
 
-  Element* OwningElement() { return owning_element_.Get(); }
-
  protected:
   FRIEND_TEST_ALL_PREFIXES(ScriptedTimelineTriggerTest,
                            ForbidScriptDuringActivation);
@@ -112,8 +110,6 @@ class CORE_EXPORT AnimationTrigger : public ScriptWrappable,
   // The (main thread) cc::AnimationTrigger corresponding to |this|. The impl
   // thread version is cloned from this.
   scoped_refptr<cc::AnimationTrigger> compositor_trigger_;
-
-  WeakMember<Element> owning_element_;
 
   // Set to true during PerformActivate and PerformDeactivate to prevent
   // mutations of the behavior map.

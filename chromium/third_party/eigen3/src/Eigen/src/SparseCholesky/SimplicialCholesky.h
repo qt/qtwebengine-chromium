@@ -111,8 +111,6 @@ class SimplicialCholeskyBase : public SparseSolverBase<Derived> {
     derived().compute(matrix);
   }
 
-  ~SimplicialCholeskyBase() {}
-
   Derived& derived() { return *static_cast<Derived*>(this); }
   const Derived& derived() const { return *static_cast<const Derived*>(this); }
 
@@ -122,7 +120,7 @@ class SimplicialCholeskyBase : public SparseSolverBase<Derived> {
   /** \brief Reports whether previous computation was successful.
    *
    * \returns \c Success if computation was successful,
-   *          \c NumericalIssue if the matrix.appears to be negative.
+   *          \c NumericalIssue if the matrix appears to be negative.
    */
   ComputationInfo info() const {
     eigen_assert(m_isInitialized && "Decomposition is not initialized.");
@@ -830,7 +828,7 @@ class SimplicialCholesky : public SimplicialCholeskyBase<SimplicialCholesky<Matr
 
     if (Base::m_diag.size() > 0) dest = Base::m_diag.real().asDiagonal().inverse() * dest;
 
-    if (Base::m_matrix.nonZeros() > 0)  // otherwise I==I
+    if (Base::m_matrix.nonZeros() > 0)  // otherwise U==I
     {
       if (m_LDLT)
         LDLTTraits::getU(Base::m_matrix).solveInPlace(dest);
@@ -867,7 +865,7 @@ void SimplicialCholeskyBase<Derived>::ordering(const MatrixType& a, ConstCholMat
   const Index size = a.rows();
   pmat = &ap;
   // Note that ordering methods compute the inverse permutation
-  EIGEN_IF_CONSTEXPR((!std::is_same<OrderingType, NaturalOrdering<StorageIndex> >::value)) {
+  EIGEN_IF_CONSTEXPR ((!std::is_same<OrderingType, NaturalOrdering<StorageIndex> >::value)) {
     {
       CholMatrixType C;
       constexpr bool kUseAMDFastPath = std::is_same<OrderingType, AMDOrdering<StorageIndex> >::value;
@@ -882,16 +880,15 @@ void SimplicialCholeskyBase<Derived>::ordering(const MatrixType& a, ConstCholMat
 
     ap.resize(size, size);
     internal::permute_symm_to_symm<UpLo, Upper, NonHermitian>(a, ap, m_P.indices().data());
-  }
-  else {
+  } else {
     m_Pinv.resize(0);
     m_P.resize(0);
-    EIGEN_IF_CONSTEXPR(int(UpLo) == int(Lower) || MatrixType::IsRowMajor) {
-      // we have to transpose the lower part to to the upper one
+    EIGEN_IF_CONSTEXPR (int(UpLo) == int(Lower) || MatrixType::IsRowMajor) {
+      // we have to transpose the lower part to the upper one
       ap.resize(size, size);
       internal::permute_symm_to_symm<UpLo, Upper, NonHermitian>(a, ap, NULL);
-    }
-    else internal::simplicial_cholesky_grab_input<CholMatrixType, MatrixType>::run(a, pmat, ap);
+    } else
+      internal::simplicial_cholesky_grab_input<CholMatrixType, MatrixType>::run(a, pmat, ap);
   }
 }
 

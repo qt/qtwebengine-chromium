@@ -10,53 +10,52 @@ import type * as InspectorMain from './inspector_main.js';
 
 const UIStrings = {
   /**
-   * @description Title of the Rendering tool. The rendering tool is a collection of settings that
+   * @description Title of the Rendering panel. The Rendering panel is a collection of settings that
    * lets the user debug the rendering (i.e. how the website is drawn onto the screen) of the
-   * website.
-   * https://developer.chrome.com/docs/devtools/evaluate-performance/reference#rendering
+   * website (https://developer.chrome.com/docs/devtools/evaluate-performance/reference#rendering).
    */
   rendering: 'Rendering',
   /**
-   * @description Command for showing the 'Rendering' tool
+   * @description Command for showing the Rendering panel.
    */
   showRendering: 'Show Rendering',
   /**
-   * @description Command Menu search query that points to the Rendering tool. This refers to the
+   * @description Command Menu search query that points to the Rendering panel. This refers to the
    * process of drawing pixels onto the screen (called painting).
    */
   paint: 'paint',
   /**
-   * @description Command Menu search query that points to the Rendering tool. Layout is a phase of
+   * @description Command Menu search query that points to the Rendering panel. Layout is a phase of
    * rendering a website where the browser calculates where different elements in the website will go
    * on the screen.
    */
   layout: 'layout',
   /**
-   * @description Command Menu search query that points to the Rendering tool. 'fps' is an acronym
+   * @description Command Menu search query that points to the Rendering panel. 'fps' is an acronym
    * for 'Frames per second'. It is in lowercase here because the search box the user will type this
    * into is case-insensitive. If there is an equivalent acronym/shortening in the target language
    * then a translation would be appropriate, otherwise it can be left in English.
    */
   fps: 'fps',
   /**
-   * @description Command Menu search query that points to the Rendering tool.
-   * https://developer.mozilla.org/en-US/docs/Web/CSS/@media#media_types. This is something the user
+   * @description Command Menu search query that points to the Rendering panel
+   * (https://developer.mozilla.org/en-US/docs/Web/CSS/@media#media_types). This is something the user
    * might type in to search for the setting to change the CSS media type.
    */
   cssMediaType: 'CSS media type',
   /**
-   * @description Command Menu search query that points to the Rendering tool.
-   * https://developer.mozilla.org/en-US/docs/Web/CSS/@media#media_features This is something the
+   * @description Command Menu search query that points to the Rendering panel
+   * (https://developer.mozilla.org/en-US/docs/Web/CSS/@media#media_features). This is something the
    * user might type in to search for the setting to change the value of various CSS media features.
    */
   cssMediaFeature: 'CSS media feature',
   /**
-   * @description Command Menu search query that points to the Rendering tool. Possible search term
+   * @description Command Menu search query that points to the Rendering panel. Possible search term
    * when the user wants to find settings related to visual impairment e.g. blurry vision, blindness.
    */
   visionDeficiency: 'vision deficiency',
   /**
-   * @description Command Menu search query that points to the Rendering tool. Possible search term
+   * @description Command Menu search query that points to the Rendering panel. Possible search term
    * when the user wants to find settings related to color vision deficiency/color blindness.
    */
   colorVisionDeficiency: 'color vision deficiency',
@@ -65,7 +64,7 @@ const UIStrings = {
    */
   reloadPage: 'Reload page',
   /**
-   * @description Title of an action that 'hard' reloads the inspected page. A hard reload also
+   * @description Title of an action that hard reloads the inspected page. A hard reload also
    * clears the browser's cache, forcing it to reload the most recent version of the page.
    */
   hardReloadPage: 'Hard reload page',
@@ -93,17 +92,9 @@ const UIStrings = {
    */
   doNotAutoOpen: 'Do not auto-open DevTools for popups',
   /**
-   * @description Title of a setting under the Appearance category in Settings. When the webpage is
-   * paused by devtools, an overlay is shown on top of the page to indicate that it is paused. The
-   * overlay is a pause/unpause button and some text, which appears on top of the paused page. This
-   * setting turns off this overlay.
+   * @description Title of an action that toggles the "forces CSS prefers-color-scheme" media feature.
    */
-  disablePaused: 'Disable paused state overlay',
-  /**
-   * @description Title of an action that toggle
-   * "forces CSS prefers-color-scheme" color
-   */
-  toggleCssPrefersColorSchemeMedia: 'Toggle CSS media feature prefers-color-scheme',
+  toggleCssPrefersColorSchemeMedia: 'Toggle CSS media feature `prefers-color-scheme`',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('entrypoints/inspector_main/inspector_main-meta.ts', UIStrings);
 const i18nLazyString = i18n.i18n.getLazilyComputedLocalizedString.bind(undefined, str_);
@@ -245,29 +236,20 @@ Common.Settings.registerSettingExtension({
   ],
 });
 
-Common.Settings.registerSettingExtension({
-  category: Common.Settings.SettingCategory.APPEARANCE,
-  storageType: Common.Settings.SettingStorageType.SYNCED,
-  title: i18nLazyString(UIStrings.disablePaused),
-  settingName: 'disable-paused-state-overlay',
-  settingType: Common.Settings.SettingType.BOOLEAN,
-  defaultValue: false,
-});
-
 UI.Toolbar.registerToolbarItem({
   async loadItem() {
     const InspectorMain = await loadInspectorMainModule();
-    return InspectorMain.InspectorMain.NodeIndicatorProvider.instance();
+    return new InspectorMain.InspectorMain.NodeIndicatorProvider();
   },
   order: 2,
   location: UI.Toolbar.ToolbarItemLocation.MAIN_TOOLBAR_LEFT,
 });
 
 UI.Toolbar.registerToolbarItem({
-  async loadItem() {
+  loadItem: Common.Lazy.lazy(async () => {
     const InspectorMain = await loadInspectorMainModule();
-    return InspectorMain.OutermostTargetSelector.OutermostTargetSelector.instance();
-  },
+    return new InspectorMain.OutermostTargetSelector.OutermostTargetSelector();
+  }) as () => Promise<UI.Toolbar.Provider>,
   order: 97,
   location: UI.Toolbar.ToolbarItemLocation.MAIN_TOOLBAR_RIGHT,
 });

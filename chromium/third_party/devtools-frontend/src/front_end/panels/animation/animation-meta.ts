@@ -13,11 +13,11 @@ let loadedAnimationModule: (typeof Animation|undefined);
 
 const UIStrings = {
   /**
-   * @description Title for the 'Animations' tool in the bottom drawer
+   * @description Title for the 'Animations' tool in the bottom drawer.
    */
   animations: 'Animations',
   /**
-   * @description Command for showing the 'Animations' tool in the bottom drawer
+   * @description Command for showing the 'Animations' tool in the bottom drawer.
    */
   showAnimations: 'Show Animations',
 } as const;

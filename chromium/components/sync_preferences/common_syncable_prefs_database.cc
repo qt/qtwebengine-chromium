@@ -158,7 +158,7 @@ enum {
   kCrossDeviceTipsHomeModuleEnabled = 107,
   kCrossDeviceMagicStackHomeModuleEnabled = 108,
   kShowAiModeOmniboxButton = 109,
-  kAutofillAiSyncedOptInStatus = 110,
+  // kAutofillAiSyncedOptInStatus = 110, (deprecated)
   kIOSPromoReminder = 111,
   kAutofillAiReauthBeforeViewingSensitiveData = 112,
   // kDriveDisclaimerAccepted = 113,  // (deprecated)
@@ -166,7 +166,11 @@ enum {
   kPrefTranslateRecentTargets = 115,
   kBookmarkBarVisibilityState = 116,
   kSyncableAccountScopedPrefForTesting = 117,  // For tests.
+  kAutofillAtMemoryTriggerInfo = 118,
+  kAutofillGmailOtpFillingEnabled = 119,
+  kAutofillGmailOtpFillingActivationDismissalTimestamp = 120,
   kDriveConsentState = 121,
+  kAutofillAiPrivateInferenceOptInStatus = 122,
   // New entries should be added above this line.
   kSubscriptionEligibilityAiSubscriptionTier =
       100338,  // (different ID as it's a move from //chrome)
@@ -210,9 +214,6 @@ constexpr auto kCommonSyncablePrefsAllowlist =
          {syncable_prefs_ids::kAutofillAiReauthBeforeViewingSensitiveData,
           syncer::PREFERENCES, PrefSensitivity::kNone, MergeBehavior::kNone}},
 #endif
-        {autofill::prefs::kAutofillAiSyncedOptInStatus,
-         {syncable_prefs_ids::kAutofillAiSyncedOptInStatus, syncer::PREFERENCES,
-          PrefSensitivity::kNone, MergeBehavior::kNone}},
         {autofill::prefs::kAutofillProfileEnabled,
          {syncable_prefs_ids::kAutofillProfileEnabled, syncer::PREFERENCES,
           PrefSensitivity::kNone, MergeBehavior::kNone}},
@@ -491,6 +492,19 @@ constexpr auto kCommonSyncablePrefsAllowlist =
           sync_preferences::PrefSensitivity::
               kExemptFromUserControlWhileSignedIn,
           sync_preferences::MergeBehavior::kNone}},
+        {autofill::prefs::kAutofillAtMemoryTriggerInfo,
+         {syncable_prefs_ids::kAutofillAtMemoryTriggerInfo, syncer::PREFERENCES,
+          PrefSensitivity::kNone, MergeBehavior::kNone}},
+        {autofill::prefs::kAutofillGmailOtpFillingEnabled,
+         {syncable_prefs_ids::kAutofillGmailOtpFillingEnabled,
+          syncer::PREFERENCES, PrefSensitivity::kNone, MergeBehavior::kNone}},
+        {autofill::prefs::kAutofillGmailOtpFillingActivationDismissalTimestamp,
+         {syncable_prefs_ids::
+              kAutofillGmailOtpFillingActivationDismissalTimestamp,
+          syncer::PREFERENCES, PrefSensitivity::kNone, MergeBehavior::kNone}},
+        {autofill::prefs::kAutofillAiPrivateInferenceOptInStatus,
+         {syncable_prefs_ids::kAutofillAiPrivateInferenceOptInStatus,
+          syncer::PREFERENCES, PrefSensitivity::kNone, MergeBehavior::kNone}},
     });
 
 }  // namespace

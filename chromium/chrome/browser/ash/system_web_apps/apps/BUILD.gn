@@ -147,6 +147,7 @@ static_library("apps") {
     "//chrome/browser/resources/ash/settings:resources",
     "//chrome/browser/ui/tabs:tab_strip",
     "//chrome/browser/ui/webui:plural_string_handler",
+    "//chrome/browser/ui/webui:theme_source",
     "//chrome/browser/ui/webui/ash/diagnostics_dialog",
     "//chrome/browser/web_applications/mojom:mojom_web_apps_enum",
     "//chrome/common:constants",
@@ -308,10 +309,7 @@ source_set("browser_tests") {
 source_set("unit_tests") {
   testonly = true
 
-  sources = [
-    "boca_web_app_info_unittest.cc",
-    "os_settings_web_app_info_unittest.cc",
-  ]
+  sources = [ "boca_web_app_info_unittest.cc" ]
 
   deps = [
     ":apps",

@@ -17,7 +17,9 @@
 #include <string>
 #include <vector>
 
+#include "core/fxcrt/compiler_specific.h"
 #include "core/fxcrt/numerics/safe_conversions.h"
+#include "core/fxcrt/span_io.h"
 #include "testing/image_diff/image_diff_png.h"
 #include "testing/utils/path_service.h"
 #include "testing/utils/pixel_diff_util.h"
@@ -90,9 +92,12 @@ class Image {
     std::vector<uint8_t> compressed;
     const size_t kBufSize = 1024;
     uint8_t buf[kBufSize];
-    size_t num_read = 0;
-    while ((num_read = fread(buf, 1, kBufSize, f)) > 0) {
-      compressed.insert(compressed.end(), buf, buf + num_read);
+    while (true) {
+      auto read_span = fxcrt::spanread(buf, f);
+      if (read_span.empty()) {
+        break;
+      }
+      compressed.insert(compressed.end(), read_span.begin(), read_span.end());
     }
 
     fclose(f);
@@ -260,8 +265,8 @@ int CompareImages(const std::string& binary_name,
     float percent =
         CalculateDifferencePercentage(actual_image, pixels_different);
     const char* passed = percent > 0.0 ? "failed" : "passed";
-    printf("histogram diff: %01.2f%% %s (%d pixels differ)\n", percent, passed,
-           pixels_different);
+    UNSAFE_TODO(printf("histogram diff: %01.2f%% %s (%d pixels differ)\n",
+                       percent, passed, pixels_different));
   }
 
   const char* const diff_name = compare_histograms ? "exact diff" : "diff";
@@ -269,8 +274,8 @@ int CompareImages(const std::string& binary_name,
                                          max_pixel_per_channel_delta);
   float percent = CalculateDifferencePercentage(actual_image, pixels_different);
   const char* const passed = percent > 0.0 ? "failed" : "passed";
-  printf("%s: %01.2f%% %s (%d pixels differ)\n", diff_name, percent, passed,
-         pixels_different);
+  UNSAFE_TODO(printf("%s: %01.2f%% %s (%d pixels differ)\n", diff_name, percent,
+                     passed, pixels_different));
 
   if (percent > 0.0) {
     // failure: The WebKit version also writes the difference image to
@@ -389,9 +394,7 @@ int DiffImages(const std::string& binary_name,
     return kStatusError;
   }
 
-  size_t size = png_encoding.size();
-  char* ptr = reinterpret_cast<char*>(&png_encoding.front());
-  if (fwrite(ptr, 1, size, f) != size) {
+  if (fxcrt::spanwrite(png_encoding, f) != png_encoding.size()) {
     return kStatusError;
   }
 
@@ -409,35 +412,36 @@ int main(int argc, const char* argv[]) {
   std::string diff_filename;
 
   // Strip the path from the first arg
-  const char* last_separator = strrchr(argv[0], PATH_SEPARATOR);
-  std::string binary_name = last_separator ? last_separator + 1 : argv[0];
+  const char* last_separator = UNSAFE_TODO(strrchr(argv[0], PATH_SEPARATOR));
+  std::string binary_name =
+      last_separator ? UNSAFE_TODO(last_separator + 1) : argv[0];
 
   int i;
   for (i = 1; i < argc; ++i) {
-    const char* arg = argv[i];
-    if (strstr(arg, "--") != arg) {
+    const char* arg = UNSAFE_TODO(argv[i]);
+    if (UNSAFE_TODO(strstr(arg, "--")) != arg) {
       break;
     }
-    if (strcmp(arg, "--histogram") == 0) {
+    if (UNSAFE_TODO(strcmp(arg, "--histogram")) == 0) {
       histograms = true;
-    } else if (strcmp(arg, "--diff") == 0) {
+    } else if (UNSAFE_TODO(strcmp(arg, "--diff")) == 0) {
       produce_diff_image = true;
-    } else if (strcmp(arg, "--subtract") == 0) {
+    } else if (UNSAFE_TODO(strcmp(arg, "--subtract")) == 0) {
       produce_image_subtraction = true;
-    } else if (strcmp(arg, "--reverse-byte-order") == 0) {
+    } else if (UNSAFE_TODO(strcmp(arg, "--reverse-byte-order")) == 0) {
       reverse_byte_order = true;
-    } else if (strcmp(arg, "--fuzzy") == 0) {
+    } else if (UNSAFE_TODO(strcmp(arg, "--fuzzy")) == 0) {
       max_pixel_per_channel_delta = 1;
     }
   }
   if (i < argc) {
-    filename1 = argv[i++];
+    filename1 = UNSAFE_TODO(argv[i++]);
   }
   if (i < argc) {
-    filename2 = argv[i++];
+    filename2 = UNSAFE_TODO(argv[i++]);
   }
   if (i < argc) {
-    diff_filename = argv[i++];
+    diff_filename = UNSAFE_TODO(argv[i++]);
   }
 
   if (produce_diff_image || produce_image_subtraction) {

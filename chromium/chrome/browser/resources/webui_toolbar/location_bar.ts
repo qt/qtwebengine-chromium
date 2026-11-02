@@ -5,17 +5,20 @@
 import './readonly_omnibox.js';
 import './location_icon.js';
 import './content_settings_icons.js';
-import './permission_dashboard.js';
+import './page_action_icons.js';
 import './selected_keyword.js';
+import '/shared/permission_dashboard.js';
 
 import {TrackedElementManager} from '//resources/js/tracked_element/tracked_element_manager.js';
 import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
 import type {PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
+import type {LocationBarState} from '/shared/toolbar_ui_api_data_model.mojom-webui.js';
 
+import {BrowserProxyImpl} from './browser_proxy.js';
+import type {BrowserProxy} from './browser_proxy.js';
 import {getCss} from './location_bar.css.js';
 import {getHtml} from './location_bar.html.js';
 import type {ReadonlyOmniboxElement} from './readonly_omnibox.js';
-import type {LocationBarState} from './toolbar_ui_api_data_model.mojom-webui.js';
 
 export interface LocationBarElement {
   $: {
@@ -46,10 +49,14 @@ export class LocationBarElement extends CrLitElement {
     omniboxViewState: {
       browserVersion: 0,
       uiVersion: 0,
+      formattedFullUrl: '',
       textPieces: [],
+      placeholder: null,
       inlineAutocompletion: '',
+      additionalText: '',
       selection: null,
       textIsUrl: false,
+      userInputInProgress: false,
     },
     locationBarFlags: {
       userInputInProgress: false,
@@ -73,9 +80,12 @@ export class LocationBarElement extends CrLitElement {
       permissionDashboard: null,
     },
     contentSettingImageStates: [],
+    pageActionStates: [],
   };
 
   private trackedElementManager_: TrackedElementManager;
+  private browserProxy_: BrowserProxy = BrowserProxyImpl.getInstance();
+  private focusState_: boolean = false;
 
   constructor() {
     super();
@@ -86,6 +96,12 @@ export class LocationBarElement extends CrLitElement {
     super.connectedCallback();
     this.trackedElementManager_.startTracking(
         this.$.omnibox, 'kOmniboxElementId');
+    // Need to use focusin/focusout and not focus/blur here since we
+    // specifically want the events from child elements.
+    this.addEventListener('focusin', this.onFocusin_.bind(this));
+    this.addEventListener('focusout', this.onFocusout_.bind(this));
+    // We also need blur for document losing focus.
+    this.addEventListener('blur', this.onBlur_.bind(this));
   }
 
   override disconnectedCallback() {
@@ -114,6 +130,28 @@ export class LocationBarElement extends CrLitElement {
 
   protected onChipPointercancel_() {
     this.onChipPointerleave_();
+  }
+
+  private onFocusin_() {
+    this.updateFocusWithin_();
+  }
+
+  private onFocusout_() {
+    this.updateFocusWithin_();
+  }
+
+  private onBlur_() {
+    this.updateFocusWithin_();
+  }
+
+  private updateFocusWithin_() {
+    const hasFocus =
+        document.hasFocus() && (this.shadowRoot.activeElement !== null);
+    if (hasFocus !== this.focusState_) {
+      this.focusState_ = hasFocus;
+      this.browserProxy_.toolbarUIHandler.onLocationBarFocusWithinChanged(
+          hasFocus);
+    }
   }
 }
 

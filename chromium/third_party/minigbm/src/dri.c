@@ -22,6 +22,24 @@
 #include "drv_priv.h"
 #include "util.h"
 
+// Avoid transitively including a bunch of unnecessary headers.
+#define GL_GLEXT_LEGACY
+#include "GL/internal/dri_interface.h"
+#undef GL_GLEXT_LEGACY
+
+struct dri_driver {
+	int fd;
+	void *driver_handle;
+	__DRIscreen *device;
+	__DRIcontext *context; /* Needed for map/unmap operations. */
+	const __DRIextension **extensions;
+	const __DRIcoreExtension *core_extension;
+	const __DRIdri2Extension *dri2_extension;
+	const __DRIimageExtension *image_extension;
+	const __DRI2flushExtension *flush_extension;
+	const __DRIconfig **configs;
+};
+
 static const struct {
 	uint32_t drm_format;
 	int dri_image_format;
@@ -68,28 +86,14 @@ static bool lookup_extension(const __DRIextension *const *extensions, const char
 }
 
 /*
- * Close Gem Handle
- */
-static void close_gem_handle(uint32_t handle, int fd)
-{
-	struct drm_gem_close gem_close = { 0 };
-	int ret = 0;
-
-	gem_close.handle = handle;
-	ret = drmIoctl(fd, DRM_IOCTL_GEM_CLOSE, &gem_close);
-	if (ret)
-		drv_loge("DRM_IOCTL_GEM_CLOSE failed (handle=%x) error %d\n", handle, ret);
-}
-
-/*
  * The DRI GEM namespace may be different from the minigbm's driver GEM namespace. We have
  * to import into minigbm.
  */
 static int import_into_minigbm(struct dri_driver *dri, struct bo *bo)
 {
-	uint32_t handle;
-	int ret, modifier_upper, modifier_lower, num_planes, i, j;
-	off_t dmabuf_sizes[DRV_MAX_PLANES];
+	uint32_t handle = 0;
+	int ret, modifier_upper, modifier_lower, num_planes, prime_fd;
+	off_t dmabuf_size;
 	__DRIimage *plane_image = NULL;
 
 	if (dri->image_extension->queryImage(bo->priv, __DRI_IMAGE_ATTRIB_MODIFIER_UPPER,
@@ -105,8 +109,30 @@ static int import_into_minigbm(struct dri_driver *dri, struct bo *bo)
 		return -errno;
 
 	bo->meta.num_planes = num_planes;
-	for (i = 0; i < num_planes; ++i) {
-		int prime_fd, stride, offset;
+
+	if (!dri->image_extension->queryImage(bo->priv, __DRI_IMAGE_ATTRIB_FD, &prime_fd))
+		return -errno;
+
+	dmabuf_size = lseek(prime_fd, 0, SEEK_END);
+	if (dmabuf_size == (off_t)-1) {
+		close(prime_fd);
+		return -errno;
+	}
+
+	lseek(prime_fd, 0, SEEK_SET);
+
+	ret = drmPrimeFDToHandle(bo->drv->fd, prime_fd, &handle);
+
+	close(prime_fd);
+
+	if (ret) {
+		drv_loge("drmPrimeFDToHandle failed with %s\n", strerror(errno));
+		return ret;
+	}
+
+	bo->handle.u32 = handle;
+	for (int i = 0; i < num_planes; ++i) {
+		int stride, offset;
 		plane_image = dri->image_extension->fromPlanar(bo->priv, i, NULL);
 		__DRIimage *image = plane_image ? plane_image : bo->priv;
 
@@ -116,101 +142,65 @@ static int import_into_minigbm(struct dri_driver *dri, struct bo *bo)
 			goto cleanup;
 		}
 
-		if (!dri->image_extension->queryImage(image, __DRI_IMAGE_ATTRIB_FD, &prime_fd)) {
-			ret = -errno;
-			goto cleanup;
-		}
-
-		dmabuf_sizes[i] = lseek(prime_fd, 0, SEEK_END);
-		if (dmabuf_sizes[i] == (off_t)-1) {
-			ret = -errno;
-			close(prime_fd);
-			goto cleanup;
-		}
-
-		lseek(prime_fd, 0, SEEK_SET);
-
-		ret = drmPrimeFDToHandle(bo->drv->fd, prime_fd, &handle);
-
-		close(prime_fd);
-
-		if (ret) {
-			drv_loge("drmPrimeFDToHandle failed with %s\n", strerror(errno));
-			goto cleanup;
-		}
-
-		bo->handles[i].u32 = handle;
-
 		bo->meta.strides[i] = stride;
 		bo->meta.offsets[i] = offset;
 
 		if (plane_image)
 			dri->image_extension->destroyImage(plane_image);
+
+		if (i > 0)
+			bo->meta.sizes[i - 1] = bo->meta.offsets[i] - bo->meta.offsets[i - 1];
 	}
 
-	for (i = 0; i < num_planes; ++i) {
-		off_t next_plane = dmabuf_sizes[i];
-		for (j = 0; j < num_planes; ++j) {
-			if (bo->meta.offsets[j] < next_plane &&
-			    bo->meta.offsets[j] > bo->meta.offsets[i] &&
-			    bo->handles[j].u32 == bo->handles[i].u32)
-				next_plane = bo->meta.offsets[j];
-		}
-
-		bo->meta.sizes[i] = next_plane - bo->meta.offsets[i];
-
-		/* This is kind of misleading if different planes use
-		   different dmabufs. */
-		bo->meta.total_size += bo->meta.sizes[i];
-	}
+	bo->meta.sizes[num_planes - 1] = dmabuf_size - bo->meta.offsets[num_planes - 1];
+	bo->meta.total_size = dmabuf_size;
 
 	return 0;
 
 cleanup:
 	if (plane_image)
 		dri->image_extension->destroyImage(plane_image);
-	while (--i >= 0) {
-		for (j = 0; j <= i; ++j)
-			if (bo->handles[j].u32 == bo->handles[i].u32)
-				break;
 
-		/* Multiple equivalent handles) */
-		if (i == j)
-			break;
+	if (handle != 0)
+		drv_gem_close(bo->drv, handle);
 
-		/* This kind of goes horribly wrong when we already imported
-		 * the same handles earlier, as we should really reference
-		 * count handles. */
-		close_gem_handle(bo->handles[i].u32, bo->drv->fd);
-	}
 	return ret;
 }
 
 const __DRIuseInvalidateExtension use_invalidate = {
-   .base = { __DRI_USE_INVALIDATE, 1 }
+	.base = { __DRI_USE_INVALIDATE, 1 },
 };
 
-/*
- * The caller is responsible for setting drv->priv to a structure that derives from dri_driver.
- */
-int dri_init(struct driver *drv, const char *dri_so_path, const char *driver_suffix)
+void *dri_dlopen(const char *dri_so_path)
+{
+	return dlopen(dri_so_path, RTLD_NOW | RTLD_GLOBAL);
+}
+
+void dri_dlclose(void *dri_so_handle)
+{
+	dlclose(dri_so_handle);
+}
+
+struct dri_driver *dri_init(struct driver *drv, const char *dri_so_path, const char *driver_suffix)
 {
 	char fname[128];
 	const __DRIextension **(*get_extensions)();
-	const __DRIextension *loader_extensions[] = { &use_invalidate.base, 
-		                                      NULL };
+	const __DRIextension *loader_extensions[] = { &use_invalidate.base, NULL };
 
-	struct dri_driver *dri = drv->priv;
+	struct dri_driver *dri = calloc(1, sizeof(*dri));
+	if (!dri)
+		return NULL;
+
 	char *node_name = drmGetRenderDeviceNameFromFd(drv_get_fd(drv));
 	if (!node_name)
-		return -ENODEV;
+		goto free_dri;
 
 	dri->fd = open(node_name, O_RDWR);
 	free(node_name);
 	if (dri->fd < 0)
-		return -ENODEV;
+		goto free_dri;
 
-	dri->driver_handle = dlopen(dri_so_path, RTLD_NOW | RTLD_GLOBAL);
+	dri->driver_handle = dri_dlopen(dri_so_path);
 	if (!dri->driver_handle)
 		goto close_dri_fd;
 
@@ -251,40 +241,37 @@ int dri_init(struct driver *drv, const char *dri_so_path, const char *driver_suf
 			      (const __DRIextension **)&dri->flush_extension))
 		goto free_context;
 
-	return 0;
+	return dri;
 
 free_context:
 	dri->core_extension->destroyContext(dri->context);
 free_screen:
 	dri->core_extension->destroyScreen(dri->device);
 free_handle:
-	dlclose(dri->driver_handle);
+	dri_dlclose(dri->driver_handle);
 	dri->driver_handle = NULL;
 close_dri_fd:
 	close(dri->fd);
-	return -ENODEV;
+free_dri:
+	free(dri);
+	return NULL;
 }
 
-/*
- * The caller is responsible for freeing drv->priv.
- */
-void dri_close(struct driver *drv)
+void dri_close(struct dri_driver *dri)
 {
-	struct dri_driver *dri = drv->priv;
-
 	dri->core_extension->destroyContext(dri->context);
 	dri->core_extension->destroyScreen(dri->device);
-	dlclose(dri->driver_handle);
+	dri_dlclose(dri->driver_handle);
 	dri->driver_handle = NULL;
 	close(dri->fd);
+	free(dri);
 }
 
-int dri_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint32_t format,
-		  uint64_t use_flags)
+int dri_bo_create(struct dri_driver *dri, struct bo *bo, uint32_t width, uint32_t height,
+		  uint32_t format, uint64_t use_flags)
 {
 	unsigned int dri_use;
 	int ret, dri_format;
-	struct dri_driver *dri = bo->drv->priv;
 
 	dri_format = drm_format_to_dri_format(format);
 
@@ -315,11 +302,11 @@ free_image:
 	return ret;
 }
 
-int dri_bo_create_with_modifiers(struct bo *bo, uint32_t width, uint32_t height, uint32_t format,
+int dri_bo_create_with_modifiers(struct dri_driver *dri, struct bo *bo, uint32_t width,
+				 uint32_t height, uint32_t format, uint64_t use_flags,
 				 const uint64_t *modifiers, uint32_t modifier_count)
 {
 	int ret, dri_format;
-	struct dri_driver *dri = bo->drv->priv;
 
 	if (!dri->image_extension->createImageWithModifiers)
 		return -ENOENT;
@@ -344,10 +331,9 @@ free_image:
 	return ret;
 }
 
-int dri_bo_import(struct bo *bo, struct drv_import_fd_data *data)
+int dri_bo_import(struct dri_driver *dri, struct bo *bo, struct drv_import_fd_data *data)
 {
 	int ret;
-	struct dri_driver *dri = bo->drv->priv;
 
 	if (data->format_modifier != DRM_FORMAT_MOD_INVALID) {
 		unsigned error;
@@ -394,20 +380,18 @@ int dri_bo_import(struct bo *bo, struct drv_import_fd_data *data)
 	return 0;
 }
 
-int dri_bo_release(struct bo *bo)
+int dri_bo_release(struct dri_driver *dri, struct bo *bo)
 {
-	struct dri_driver *dri = bo->drv->priv;
-
 	assert(bo->priv);
 	dri->image_extension->destroyImage(bo->priv);
 	/* Not clearing bo->priv as we still use it to determine which destroy to call. */
 	return 0;
 }
 
-int dri_bo_destroy(struct bo *bo)
+int dri_bo_destroy(struct dri_driver *dri, struct bo *bo)
 {
 	assert(bo->priv);
-	close_gem_handle(bo->handles[0].u32, bo->drv->fd);
+	drv_gem_close(bo->drv, bo->handle.u32);
 	bo->priv = NULL;
 	return 0;
 }
@@ -421,10 +405,9 @@ int dri_bo_destroy(struct bo *bo)
  * This function itself is not thread-safe; we rely on the fact that the caller
  * locks a per-driver mutex.
  */
-void *dri_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint32_t map_flags)
+void *dri_bo_map(struct dri_driver *dri, struct bo *bo, struct vma *vma, size_t plane,
+		 uint32_t map_flags)
 {
-	struct dri_driver *dri = bo->drv->priv;
-
 	/* GBM flags and DRI flags are the same. */
 	vma->addr = dri->image_extension->mapImage(dri->context, bo->priv, 0, 0, bo->meta.width,
 						   bo->meta.height, map_flags,
@@ -435,10 +418,8 @@ void *dri_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint32_t map_flag
 	return vma->addr;
 }
 
-int dri_bo_unmap(struct bo *bo, struct vma *vma)
+int dri_bo_unmap(struct dri_driver *dri, struct bo *bo, struct vma *vma)
 {
-	struct dri_driver *dri = bo->drv->priv;
-
 	assert(vma->priv);
 	dri->image_extension->unmapImage(dri->context, bo->priv, vma->priv);
 
@@ -454,9 +435,8 @@ int dri_bo_unmap(struct bo *bo, struct vma *vma)
 	return 0;
 }
 
-size_t dri_num_planes_from_modifier(struct driver *drv, uint32_t format, uint64_t modifier)
+size_t dri_num_planes_from_modifier(struct dri_driver *dri, uint32_t format, uint64_t modifier)
 {
-	struct dri_driver *dri = drv->priv;
 	uint64_t planes = 0;
 
 	/* We do not do any modifier checks here. The create will fail later if the modifier is not
@@ -471,10 +451,9 @@ size_t dri_num_planes_from_modifier(struct driver *drv, uint32_t format, uint64_
 	return drv_num_planes_from_format(format);
 }
 
-bool dri_query_modifiers(struct driver *drv, uint32_t format, int max, uint64_t *modifiers,
+bool dri_query_modifiers(struct dri_driver *dri, uint32_t format, int max, uint64_t *modifiers,
 			 int *count)
 {
-	struct dri_driver *dri = drv->priv;
 	if (!dri->image_extension->queryDmaBufModifiers)
 		return false;
 

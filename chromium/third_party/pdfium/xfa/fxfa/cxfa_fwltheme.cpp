@@ -102,8 +102,8 @@ void CXFA_FWLTheme::DrawText(const CFWL_ThemeText& pParams) {
     text_out_->SetStyles(pParams.tto_styles_);
     text_out_->SetAlignment(pParams.tto_align_);
     text_out_->SetFont(calendar_font_);
-    text_out_->SetFontSize(FWLTHEME_CAPACITY_FontSize);
-    text_out_->SetTextColor(FWLTHEME_CAPACITY_TextColor);
+    text_out_->SetFontSize(kFwlThemeFontSize);
+    text_out_->SetTextColor(kFwlThemeTextColor);
     if ((pParams.GetPart() == CFWL_ThemePart::Part::kDatesIn) &&
         !(pParams.states_ & CFWL_PartState::kFlagged) &&
         (pParams.states_ & Mask<CFWL_PartState>{CFWL_PartState::kHovered,
@@ -190,7 +190,7 @@ float CXFA_FWLTheme::GetFontSize(const CFWL_ThemePart& pThemePart) const {
   if (CXFA_FFWidget* pWidget = GetOutmostFFWidget(pThemePart.GetWidget())) {
     return pWidget->GetNode()->GetFontSize();
   }
-  return FWLTHEME_CAPACITY_FontSize;
+  return kFwlThemeFontSize;
 }
 
 RetainPtr<CFGAS_GEFont> CXFA_FWLTheme::GetFont(
@@ -226,7 +226,7 @@ FX_COLORREF CXFA_FWLTheme::GetTextColor(
   if (CXFA_FFWidget* pWidget = GetOutmostFFWidget(pThemePart.GetWidget())) {
     return pWidget->GetNode()->GetTextColor();
   }
-  return FWLTHEME_CAPACITY_TextColor;
+  return kFwlThemeTextColor;
 }
 
 CFX_SizeF CXFA_FWLTheme::GetSpaceAboveBelow(
@@ -251,8 +251,8 @@ void CXFA_FWLTheme::CalcTextRect(const CFWL_ThemeText& pParams,
 
   if (pParams.GetWidget()->GetClassID() == FWL_Type::MonthCalendar) {
     text_out_->SetFont(calendar_font_);
-    text_out_->SetFontSize(FWLTHEME_CAPACITY_FontSize);
-    text_out_->SetTextColor(FWLTHEME_CAPACITY_TextColor);
+    text_out_->SetFontSize(kFwlThemeFontSize);
+    text_out_->SetTextColor(kFwlThemeTextColor);
     text_out_->SetAlignment(pParams.tto_align_);
     text_out_->SetStyles(pParams.tto_styles_);
     text_out_->CalcLogicSize(pParams.text_.AsStringView(), pRect);

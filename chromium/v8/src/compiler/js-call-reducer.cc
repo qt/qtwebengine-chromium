@@ -7,6 +7,7 @@
 #include <functional>
 #include <optional>
 
+#include "src/api/api.h"
 #include "src/base/container-utils.h"
 #include "src/base/small-vector.h"
 #include "src/builtins/builtins-promise.h"
@@ -2886,10 +2887,8 @@ TNode<Object> PromiseBuiltinReducerAssembler::ReducePromiseConstructor(
   // Allocate a promise context for the closures below.
   TNode<Context> promise_context = CreateFunctionContext(
       native_context, context, PromiseBuiltins::kPromiseContextLength);
-  StoreContextNoCellSlot(promise_context, PromiseBuiltins::kPromiseSlot,
-                         promise);
-  StoreContextNoCellSlot(promise_context, PromiseBuiltins::kAlreadyResolvedSlot,
-                         FalseConstant());
+  StoreContextNoCellSlot(promise_context,
+                         PromiseBuiltins::kPromiseIfNotResolvedSlot, promise);
   StoreContextNoCellSlot(promise_context, PromiseBuiltins::kDebugEventSlot,
                          TrueConstant());
 
@@ -4069,6 +4068,10 @@ class IteratingArrayBuiltinHelper {
       return;
     }
 
+    all_elements_kinds_equal_ = std::all_of(
+        receiver_maps.begin(), receiver_maps.end(),
+        [&](MapRef map) { return map.elements_kind() == elements_kind_; });
+
     // TODO(jgruber): May only be needed for holey elements kinds.
     if (!dependencies->DependOnNoElementsProtector()) return;
 
@@ -4084,10 +4087,13 @@ class IteratingArrayBuiltinHelper {
   Control control() const { return control_; }
   MapInference* inference() { return &inference_; }
   ElementsKind elements_kind() const { return elements_kind_; }
+  // False when elements_kind() is a union over differing receiver kinds.
+  bool all_elements_kinds_equal() const { return all_elements_kinds_equal_; }
 
  private:
   bool can_reduce_ = false;
   bool has_stability_dependency_ = false;
+  bool all_elements_kinds_equal_ = false;
   Node* receiver_;
   Effect effect_;
   Control control_;
@@ -4126,6 +4132,11 @@ Reduction JSCallReducer::ReduceArraySort(Node* node,
 
   IteratingArrayBuiltinHelper h(node, broker(), jsgraph(), dependencies());
   if (!h.can_reduce()) return h.inference()->NoChange();
+
+  // The union kind is only an upper bound on each receiver's own kind. Loads
+  // through it widen and are sound; stores narrow and are not. Unlike the
+  // iterating builtins, sort writes its snapshot back into the receiver.
+  if (!h.all_elements_kinds_equal()) return h.inference()->NoChange();
 
   // Only non-holey, non-double PACKED kinds are supported.  Holey arrays need
   // hole handling; double arrays need a FixedDoubleArray temp copy.
@@ -6410,6 +6421,9 @@ Reduction JSCallReducer::ReduceJSConstructForwardAllArgs(Node* node) {
   if (outer_info.type() == FrameStateType::kInlinedExtraArguments) {
     frame_state = outer_state;
   }
+  if (frame_state.parameters()->opcode() == IrOpcode::kDeadValue) {
+    return NoChange();
+  }
 
   int argc = 0;
   StateValuesAccess parameters_access(frame_state.parameters());
@@ -7132,6 +7146,8 @@ Reduction JSCallReducer::ReduceArrayIterator(Node* node,
   }
 
   if (array_kind == ArrayIteratorKind::kTypedArray) {
+    DCHECK(!inference.AnyOfInstanceTypesAre(
+        InstanceType::JS_DETACHED_TYPED_ARRAY_TYPE));
     // Make sure we deopt when the JSArrayBuffer is detached.
     if (!dependencies()->DependOnArrayBufferDetachingProtector()) {
       CallParameters const& p = CallParametersOf(node->op());
@@ -7417,6 +7433,9 @@ Reduction JSCallReducer::ReduceArrayIteratorPrototypeNext(Node* node) {
       return inference.NoChange();
     }
     for (MapRef iterated_object_map : iterated_object_maps) {
+      if (iterated_object_map.instance_type() == JS_DETACHED_TYPED_ARRAY_TYPE) {
+        return inference.NoChange();
+      }
       if (iterated_object_map.elements_kind() != elements_kind) {
         return inference.NoChange();
       }

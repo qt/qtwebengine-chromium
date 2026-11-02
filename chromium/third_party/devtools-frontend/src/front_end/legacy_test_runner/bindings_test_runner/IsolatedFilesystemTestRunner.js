@@ -94,7 +94,7 @@ TestFileSystem.prototype = {
     }
 
     return file;
-  }
+  },
 };
 
 TestFileSystem.Entry = function(fileSystem, name, isDirectory, parent) {
@@ -248,7 +248,7 @@ TestFileSystem.Entry.prototype = {
 
   getParent: function(callback, errorCallback) {
     callback(this.parent);
-  }
+  },
 };
 
 TestFileSystem.Reader = function(children) {
@@ -260,7 +260,7 @@ TestFileSystem.Reader.prototype = {
     const children = this.children;
     this.children = [];
     callback(children);
-  }
+  },
 };
 
 TestFileSystem.Writer = function(entry) {
@@ -285,5 +285,5 @@ TestFileSystem.Writer.prototype = {
     if (this.onwriteend) {
       this.onwriteend();
     }
-  }
+  },
 };

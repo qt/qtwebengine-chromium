@@ -60,7 +60,7 @@ template <typename T>
 auto make_iota_impl(iota_kernel_fn kernel, const iota_params& params) {
   return
       [=](slinky::buffer<const T, 0> begin, slinky::buffer<const T, 1> stride,
-          slinky::buffer<T, YNN_MAX_TENSOR_RANK> output) -> slinky::index_t {
+          slinky::buffer<T, max_tensor_rank> output) -> slinky::index_t {
         // Copy the params to the type of the iota.
         T scale = params.scale;
         T offset = params.offset;
@@ -69,11 +69,11 @@ auto make_iota_impl(iota_kernel_fn kernel, const iota_params& params) {
 
         assert(is_contiguous(stride.dim(0), sizeof(T)));
         assert(!stride.dim(0).is_folded());
-        assert(output.rank <= YNN_MAX_TENSOR_RANK);
+        assert(output.rank <= max_tensor_rank);
         // Rather than try to handle broadcasting in iota_impl above, just
         // copy the strides here. We initialize it to 0, so we avoid possible
         // ubsan complaints when output.rank = 0.
-        T stride_broadcast[YNN_MAX_TENSOR_RANK] = {0, };
+        T stride_broadcast[max_tensor_rank] = {0, };
         for (int i = 0; i < output.rank; ++i) {
           stride_broadcast[i] = stride(i) * scale;
         }
@@ -96,8 +96,7 @@ ynn_status ynn_define_iota(ynn_subgraph_t subgraph, ynn_type type, size_t rank,
 
   uint32_t scalar_zero_id = YNN_INVALID_VALUE_ID;
   if (begin_id == YNN_INVALID_VALUE_ID || stride_id == YNN_INVALID_VALUE_ID) {
-    scalar_zero_id = subgraph->get_scalar_value_id(type, YNN_INVALID_VALUE_ID,
-                                                   YNN_INVALID_VALUE_ID, 0.0f);
+    scalar_zero_id = subgraph->get_scalar_value_id(type, 0.0f);
     if (begin_id == YNN_INVALID_VALUE_ID) begin_id = scalar_zero_id;
     if (stride_id == YNN_INVALID_VALUE_ID) stride_id = scalar_zero_id;
   }

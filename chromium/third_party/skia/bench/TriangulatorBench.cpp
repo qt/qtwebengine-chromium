@@ -6,9 +6,9 @@
  */
 
 #include "bench/Benchmark.h"
-#include "bench/Tiger.h"
+#include "bench/BenchmarkDataset.h"
 #include "include/core/SkPath.h"
-#include "src/base/SkArenaAlloc.h"
+#include "src/core/SkArenaAlloc.h"
 #include "src/gpu/ganesh/GrEagerVertexAllocator.h"
 #include "src/gpu/ganesh/geometry/GrInnerFanTriangulator.h"
 #include "src/gpu/ganesh/geometry/GrTriangulator.h"
@@ -31,7 +31,8 @@ public:
 
 protected:
     void onDelayedSetup() override {
-        fPaths = Tiger::GetTigerPaths();
+        fPaths = skgpu::graphite::BenchmarkDatasetInfo<
+                skgpu::graphite::BenchmarkDataset::kTiger>::GetPaths();
     }
 
     void onDraw(int loops, SkCanvas*) final {

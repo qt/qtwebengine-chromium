@@ -81,6 +81,33 @@ void LoopingFileCastAgent::OnConnected(SenderSocketFactory* factory,
   message_port_.SetSocket(socket->GetWeakPtr());
   router_.TakeSocket(this, std::move(socket));
 
+  // If the session was pre-configured by an external host, directly
+  // establish a messaging session to the provided transportId.
+  const bool is_preconfigured =
+      connection_settings_ &&
+      connection_settings_->preconfigured_session_info.has_value();
+
+  if (is_preconfigured) {
+    const auto& preconfig =
+        connection_settings_->preconfigured_session_info.value();
+    app_session_id_ = preconfig.app_session_id;
+    has_launched_ = true;
+
+    remote_connection_.emplace(VirtualConnection{
+        MakeUniqueSessionId("streaming_sender"), preconfig.remote_transport_id,
+        message_port_.GetSocketId()});
+    OSP_LOG_INFO
+        << "Session was pre-configured by an external host. Bypassing "
+           "receiver LAUNCH and directly establishing messaging session to "
+           "transportId: "
+        << preconfig.remote_transport_id << " (sessionId=" << app_session_id_
+        << ")...";
+    connection_handler_.OpenRemoteConnection(
+        *remote_connection_,
+        [this](bool success) { OnRemoteMessagingOpened(success); });
+    return;
+  }
+
   OSP_LOG_INFO << "Launching Mirroring App on the Cast Receiver...";
   // First, CONNECT to the platform receiver.
   platform_remote_connection_.emplace(VirtualConnection{
@@ -312,7 +339,9 @@ void LoopingFileCastAgent::CreateAndStartSession() {
       .codec = connection_settings_->codec,
       // The video config is allowed to use whatever is left over after audio.
       .max_bit_rate =
-          connection_settings_->max_bitrate - audio_config.bit_rate};
+          connection_settings_->max_bitrate -
+          (connection_settings_->should_include_audio ? audio_config.bit_rate
+                                                      : 0)};
   // Use default display resolution of 1080P.
   video_config.resolutions.emplace_back(Resolution{1920, 1080});
 
@@ -328,8 +357,12 @@ void LoopingFileCastAgent::CreateAndStartSession() {
         current_session_->NegotiateRemoting(audio_config, video_config);
   } else {
     cast_mode_ = CastMode::kMirroring;
-    negotiation_error =
-        current_session_->Negotiate({audio_config}, {video_config});
+    if (connection_settings_->should_include_audio) {
+      negotiation_error =
+          current_session_->Negotiate({audio_config}, {video_config});
+    } else {
+      negotiation_error = current_session_->Negotiate({}, {video_config});
+    }
   }
   if (!negotiation_error.ok()) {
     OSP_LOG_ERROR << "Failed to negotiate a session: " << negotiation_error;
@@ -340,8 +373,10 @@ void LoopingFileCastAgent::OnNegotiated(
     const SenderSession* session,
     SenderSession::ConfiguredSenders senders,
     capture_recommendations::Recommendations capture_recommendations) {
-  if (senders.audio_sender == nullptr || senders.video_sender == nullptr) {
-    OSP_LOG_ERROR << "Missing both audio and video, so exiting...";
+  if (senders.video_sender == nullptr ||
+      (connection_settings_->should_include_audio &&
+       senders.audio_sender == nullptr)) {
+    OSP_LOG_ERROR << "Missing required senders, so exiting...";
     return;
   }
 
@@ -455,16 +490,24 @@ void LoopingFileCastAgent::Shutdown() {
   }
 
   if (!app_session_id_.empty()) {
-    OSP_LOG_INFO << "Stopping the Cast Receiver's Mirroring App...";
-    static constexpr char kStopMessageTemplate[] =
-        R"({{"type":"STOP", "requestId":{}, "sessionId":"{}"}})";
-    std::string stop_json = StringFormat(
-        kStopMessageTemplate, next_request_id_++, app_session_id_.c_str());
-    router_.Send(
-        VirtualConnection{kPlatformSenderId, kPlatformReceiverId,
-                          message_port_.GetSocketId()},
-        MakeSimpleUTF8Message(kReceiverNamespace, std::move(stop_json)));
-    app_session_id_.clear();
+    if (connection_settings_ &&
+        connection_settings_->preconfigured_session_info.has_value()) {
+      // The session was preconfigured/prelaunched by an external caller (such
+      // as a Python test host). The external caller is strictly responsible for
+      // terminating the session on the receiver upon completion or shutdown.
+      app_session_id_.clear();
+    } else {
+      OSP_LOG_INFO << "Stopping the Cast Receiver's Mirroring App...";
+      static constexpr char kStopMessageTemplate[] =
+          R"({{"type":"STOP", "requestId":{}, "sessionId":"{}"}})";
+      std::string stop_json = StringFormat(
+          kStopMessageTemplate, next_request_id_++, app_session_id_.c_str());
+      router_.Send(
+          VirtualConnection{kPlatformSenderId, kPlatformReceiverId,
+                            message_port_.GetSocketId()},
+          MakeSimpleUTF8Message(kReceiverNamespace, std::move(stop_json)));
+      app_session_id_.clear();
+    }
   }
 
   if (message_port_.GetSocketId() != ToCastSocketId(nullptr)) {

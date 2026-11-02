@@ -153,6 +153,16 @@ export function lowerBound<S, T, A extends S[]>(
 }
 
 /**
+ * Inserts a value into a sorted array in O(n) time (O(log n) search using the provided comparator and O(n) insertion).
+ * Returns the index at which the value was inserted.
+ */
+export function insertWithComparator<T>(array: T[], value: T, comparator: (a: T, b: T) => number): number {
+  const index = lowerBound(array, value, comparator);
+  array.splice(index, 0, value);
+  return index;
+}
+
+/**
  * Returns the index of the element closest to the needle that is greater than
  * it. Assumes that the provided array is sorted.
  *

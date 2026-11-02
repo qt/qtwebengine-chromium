@@ -20,7 +20,7 @@ mojom("test_api_mojom") {
 build_webui_tests("build") {
   cc_test_files = [
     "os_settings_browsertest.cc",
-    "os_settings_focus_test.cc",
+    "os_settings_focus_interactive_uitest.cc",
   ]
 
   files = [
@@ -38,6 +38,7 @@ build_webui_tests("build") {
     "fake_user_action_recorder.ts",
     "fake_users_private.ts",
     "lock_screen_subpage_test.ts",
+    "lock_state_mixin_test.ts",
     "onc_mojo_test.ts",
     "os_page_availability_test.ts",
     "os_settings_routes_test.ts",
@@ -228,12 +229,10 @@ build_webui_tests("build") {
     "os_apps_page/app_management_page/main_view_test.ts",
     "os_apps_page/app_management_page/permission_item_test.ts",
     "os_apps_page/app_management_page/pin_to_shelf_item_test.ts",
-    "os_apps_page/app_management_page/plugin_vm_detail_view_test.ts",
     "os_apps_page/app_management_page/pwa_detail_view_test.ts",
     "os_apps_page/app_management_page/reducers_test.ts",
     "os_apps_page/app_management_page/resize_lock_item_test.ts",
     "os_apps_page/app_management_page/supported_links_item_test.ts",
-    "os_apps_page/app_management_page/test_plugin_vm_browser_proxy.ts",
     "os_apps_page/app_management_page/uninstall_button_test.ts",
     "os_apps_page/app_notifications_page/app_notification_row_test.ts",
     "os_apps_page/app_notifications_page/app_notifications_manager_subpage_test.ts",

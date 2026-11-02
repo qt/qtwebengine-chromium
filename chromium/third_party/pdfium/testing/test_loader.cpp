@@ -7,6 +7,7 @@
 #include <stddef.h>
 
 #include "core/fxcrt/check_op.h"
+#include "core/fxcrt/compiler_specific.h"
 #include "core/fxcrt/fx_memcpy_wrappers.h"
 #include "core/fxcrt/numerics/checked_math.h"
 
@@ -22,6 +23,6 @@ int TestLoader::GetBlock(void* param,
   end += size;
   CHECK_LE(end.ValueOrDie(), pLoader->span_.size());
 
-  FXSYS_memcpy(pBuf, &pLoader->span_[pos], size);
+  UNSAFE_TODO(FXSYS_memcpy(pBuf, &pLoader->span_[pos], size));
   return 1;
 }

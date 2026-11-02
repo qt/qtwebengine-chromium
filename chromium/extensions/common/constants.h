@@ -24,6 +24,16 @@ inline constexpr char kExtensionScheme[] = "chrome-extension";
 inline constexpr char kExtensionInvalidRequestURL[] =
     "chrome-extension://invalid/";
 
+// The path of the ES module containing dynamic strings in component extensions.
+inline constexpr char kDynamicStringsJsPath[] = "/strings.m.js";
+
+// The template used to generate the ES module containing dynamic strings.
+inline constexpr char kDynamicStringsModuleTemplate[] =
+    "import {loadTimeData} from "
+    "'chrome://resources/js/load_time_data.js';\n"
+    "loadTimeData.data = %s;\n"
+    "export {loadTimeData};\n";
+
 // The name of the manifest inside an extension.
 inline constexpr base::FilePath::CharType kManifestFilename[] =
     FILE_PATH_LITERAL("manifest.json");
@@ -310,6 +320,10 @@ inline constexpr char kChromeResourcesTestExtensionId[] =
 // The extension id of the component extension used to render Indigo's image
 // replacement.
 inline constexpr char kIndigoExtensionId[] = "gcgachbpjjonjloecffgdajegokngglh";
+
+// The extension id of the AIM Eligibility component extension.
+inline constexpr char kAimEligibilityExtensionId[] =
+    "kgjeljgkbckpoekmgjfplammhcggiiaf";
 
 // The extension id of the Files Manager application.
 inline constexpr char kFilesManagerAppId[] = "hhaomjibdihmijegdhdafkllkbggdgoj";

@@ -77,6 +77,7 @@
 #include "media/capture/capture_switches.h"
 #include "services/audio/public/mojom/audio_service.mojom.h"
 #include "services/network/public/mojom/network_service.mojom.h"
+#include "services/webnn/public/mojom/webnn_compiler_service.mojom.h"
 #include "services/webnn/webnn_switches.h"
 #endif
 
@@ -221,6 +222,13 @@ UtilityProcessHost::Options::WithExtraCommandLineSwitches(
   return *this;
 }
 
+UtilityProcessHost::Options&
+UtilityProcessHost::Options::WithExtraCommandLineSwitchKeyValues(
+    std::vector<std::pair<std::string, std::string>> switch_key_values) {
+  extra_switch_key_values_ = std::move(switch_key_values);
+  return *this;
+}
+
 #if BUILDFLAG(IS_WIN)
 UtilityProcessHost::Options& UtilityProcessHost::Options::WithPreloadLibraries(
     const std::vector<base::FilePath>& preloads) {
@@ -278,6 +286,12 @@ UtilityProcessHost::Options::WithBoundServiceInterfaceOnChildProcess(
   CHECK(!service_interface_to_bind_.has_value())
       << "Can only bind one service interface.";
   service_interface_to_bind_.emplace(std::move(receiver));
+  return *this;
+}
+
+UtilityProcessHost::Options& UtilityProcessHost::Options::WithPriority(
+    base::Process::Priority priority) {
+  priority_ = priority;
   return *this;
 }
 
@@ -454,6 +468,7 @@ bool UtilityProcessHost::StartProcess() {
 #endif
 #if BUILDFLAG(ENABLE_VR)
       device::switches::kWebXrHandAnonymizationStrategy,
+      device::switches::kWebXrMaxFramebufferScale,
 #endif
 #if BUILDFLAG(IS_CHROMEOS)
       switches::kSchedulerBoostUrgent,
@@ -471,8 +486,10 @@ bool UtilityProcessHost::StartProcess() {
   };
   cmd_line->CopySwitchesFrom(browser_command_line, kSwitchNames);
 #if BUILDFLAG(IS_WIN)
-  if (options_.sandbox_type_ ==
-      sandbox::mojom::Sandbox::kWebNNModelCompilation) {
+  // Propagate WebNN-specific switches to the compiler process regardless of
+  // sandbox type, since sandbox may be overridden by
+  // --disable-webnn-compiler-sandbox.
+  if (options_.metrics_name_ == webnn::mojom::WebNNCompilerService::Name_) {
     cmd_line->CopySwitchesFrom(
         browser_command_line,
         switches::GetWebNNSwitchesCopiedFromGpuProcessHost());
@@ -503,6 +520,10 @@ bool UtilityProcessHost::StartProcess() {
 
   for (const auto& extra_switch : options_.extra_switches_) {
     cmd_line->AppendSwitch(extra_switch);
+  }
+
+  for (const auto& [key, value] : options_.extra_switch_key_values_) {
+    cmd_line->AppendSwitchASCII(key, value);
   }
 
 #if BUILDFLAG(IS_WIN)
@@ -582,6 +603,11 @@ bool UtilityProcessHost::StartProcess() {
 
 void UtilityProcessHost::OnProcessLaunched() {
   launch_state_ = LaunchState::kLaunchComplete;
+#if !BUILDFLAG(IS_ANDROID)
+  if (options_.priority_.has_value()) {
+    process_->SetProcessPriority(options_.priority_.value());
+  }
+#endif
   if (client_) {
     client_->OnProcessLaunched(process_->GetProcess());
   }

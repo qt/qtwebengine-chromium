@@ -44,31 +44,31 @@ FeatureStatus GetLanguageFeatureStatus(LanguageFeature f) {
             return FeatureStatus::kUnsafeExperimental;
 
             ////////////////////////////////////////////////////////////////////
-            // Shipped with killswitch features
-            ///////////////////////////////////////////////////////////////////
-        case LanguageFeature::kImmediateAddressSpace:
-            return FeatureStatus::kShippedWithKillswitch;
-
-            ////////////////////////////////////////////////////////////////////
             // Chromium developer features
             ///////////////////////////////////////////////////////////////////
         case LanguageFeature::kChromiumPrint:
             return FeatureStatus::kUnsafeExperimental;
 
             ////////////////////////////////////////////////////////////////////
-            // Enabled features
-            ////////////////////////////////////////////////////////////////////
-        case LanguageFeature::kPacked4X8IntegerDotProduct:
-        case LanguageFeature::kPointerCompositeAccess:
-        case LanguageFeature::kUnrestrictedPointerParameters:
-        case LanguageFeature::kReadonlyAndReadwriteStorageTextures:
+            // Shipped with killswitch features
+            ///////////////////////////////////////////////////////////////////
         case LanguageFeature::kUniformBufferStandardLayout:
         case LanguageFeature::kSubgroupId:
         case LanguageFeature::kSubgroupUniformity:
         case LanguageFeature::kTextureAndSamplerLet:
         case LanguageFeature::kTextureFormatsTier1:
         case LanguageFeature::kLinearIndexing:
+        case LanguageFeature::kImmediateAddressSpace:
             return FeatureStatus::kShippedWithKillswitch;
+
+            ////////////////////////////////////////////////////////////////////
+            // Shipped features
+            ////////////////////////////////////////////////////////////////////
+        case LanguageFeature::kPacked4X8IntegerDotProduct:
+        case LanguageFeature::kPointerCompositeAccess:
+        case LanguageFeature::kReadonlyAndReadwriteStorageTextures:
+        case LanguageFeature::kUnrestrictedPointerParameters:
+            return FeatureStatus::kShipped;
 
             ////////////////////////////////////////////////////////////////////
             // Testing / special cases

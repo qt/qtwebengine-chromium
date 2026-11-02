@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import * as TextUtils from '../../models/text_utils/text_utils.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import {TestRunner} from '../test_runner/test_runner.js';
 
 import {dumpTextWithSelection} from './EditorTestRunner.js';

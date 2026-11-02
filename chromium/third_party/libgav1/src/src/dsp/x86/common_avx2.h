@@ -17,7 +17,6 @@
 #ifndef LIBGAV1_SRC_DSP_X86_COMMON_AVX2_H_
 #define LIBGAV1_SRC_DSP_X86_COMMON_AVX2_H_
 
-#include "src/utils/compiler_attributes.h"
 #include "src/utils/cpu.h"
 
 #if LIBGAV1_TARGETING_AVX2
@@ -28,6 +27,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+
+#include "src/utils/compiler_attributes.h"
 
 namespace libgav1 {
 namespace dsp {

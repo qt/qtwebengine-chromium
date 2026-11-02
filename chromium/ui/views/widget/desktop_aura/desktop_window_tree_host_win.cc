@@ -130,7 +130,8 @@ DesktopWindowTreeHostWin::DesktopWindowTreeHostWin(
       drag_drop_client_(nullptr),
       should_animate_window_close_(false),
       pending_close_(false),
-      has_non_client_view_(false) {}
+      has_non_client_view_(false),
+      is_modal_(native_widget_delegate_->IsModal()) {}
 
 DesktopWindowTreeHostWin::~DesktopWindowTreeHostWin() {
   ClearBackgroundPaintBrush();
@@ -141,6 +142,10 @@ DesktopWindowTreeHostWin::~DesktopWindowTreeHostWin() {
   // DestroyCompositor() is called from both places.
   DestroyCompositor();
   DestroyDispatcher();
+
+  if (HWNDMessageHandler* raw_handler = message_handler_.release()) {
+    raw_handler->DestroyHandler();
+  }
 }
 
 // static
@@ -177,7 +182,8 @@ void DesktopWindowTreeHostWin::FinishTouchDrag(gfx::Point screen_point) {
 }
 
 bool DesktopWindowTreeHostWin::IsInNativeMoveResizeLoop() const {
-  return message_handler_ && message_handler_->IsInNativeMoveResizeLoop();
+  return message_handler_ && (message_handler_->IsInNativeMoveResizeLoop() ||
+                              message_handler_->IsInNativeMenuLoop());
 }
 
 // DesktopWindowTreeHostWin, DesktopWindowTreeHost implementation:
@@ -945,7 +951,7 @@ bool DesktopWindowTreeHostWin::WidgetSizeIsClientSize() const {
 }
 
 bool DesktopWindowTreeHostWin::IsModal() const {
-  return native_widget_delegate_ ? native_widget_delegate_->IsModal() : false;
+  return is_modal_;
 }
 
 int DesktopWindowTreeHostWin::GetInitialShowState() const {
@@ -1414,22 +1420,6 @@ bool DesktopWindowTreeHostWin::HandleGestureEvent(ui::GestureEvent* event) {
   return event->handled();
 }
 
-void DesktopWindowTreeHostWin::HandleWindowSizeChanging() {
-  if (compositor()) {
-    compositor()->DisableSwapUntilResize();
-  }
-}
-
-void DesktopWindowTreeHostWin::HandleWindowSizeUnchanged() {
-  // A resize may not have occurred if the window size happened not to have
-  // changed (can occur on Windows 10 when snapping a window to the side of
-  // the screen). In that case do a resize to the current size to reenable
-  // swaps.
-  if (compositor()) {
-    compositor()->ReenableSwap();
-  }
-}
-
 void DesktopWindowTreeHostWin::HandleWindowScaleFactorChanged(
     float window_scale_factor) {
   // TODO(ccameron): This will violate surface invariants, and is insane.
@@ -1599,7 +1589,7 @@ aura::Window* DesktopWindowTreeHostWin::content_window() {
 
 void DesktopWindowTreeHostWin::UpdateDisplayAffinity() {
   DWORD affinity = WDA_NONE;
-  if (exclude_from_capture_) {
+  if (exclude_from_capture_ && IsCaptureExclusionAllowed()) {
     // `exclude_from_capture_` is used to exclude the window completely from
     // screen capture. On Windows 10 20H1 and newer, we use
     // WDA_EXCLUDEFROMCAPTURE which hides the window from capture while keeping
@@ -1619,6 +1609,17 @@ void DesktopWindowTreeHostWin::UpdateDisplayAffinity() {
   }
 
   SetWindowDisplayAffinity(GetHWND(), affinity);
+}
+
+bool DesktopWindowTreeHostWin::IsCaptureExclusionAllowed() const {
+  const bool is_remote_session = remote_session_for_testing_.value_or(
+      ::GetSystemMetrics(SM_REMOTESESSION) != 0);
+
+  // We allow exclusion if it's a local session, OR if the feature flag
+  // overrides the remote session restriction.
+  return !is_remote_session ||
+         base::FeatureList::IsEnabled(
+             views::features::kAllowWindowCaptureExclusionInRemoteSessions);
 }
 
 void DesktopWindowTreeHostWin::UpdateBackdropColorMode() {

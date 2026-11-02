@@ -42,12 +42,13 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as AIAssistance from '../../models/ai_assistance/ai_assistance.js';
 import * as Badges from '../../models/badges/badges.js';
+import * as Bindings from '../../models/bindings/bindings.js';
 import type * as Elements from '../../models/elements/elements.js';
 import type * as IssuesManager from '../../models/issues_manager/issues_manager.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as CodeMirror from '../../third_party/codemirror.next/codemirror.next.js';
 import type * as Adorners from '../../ui/components/adorners/adorners.js';
@@ -121,6 +122,10 @@ const UIStrings = {
    */
   scrollIntoView: 'Scroll into view',
   /**
+   * @description A context menu item in the Elements panel to switch to Accessibility tree
+   */
+  switchToAccessibilityTree: 'Switch to accessibility tree',
+  /**
    * @description A context menu item in the Elements Tree Element of the Elements panel
    */
   editText: 'Edit text',
@@ -144,6 +149,11 @@ const UIStrings = {
    * @description Text to paste an element, paste should be used as a verb
    */
   paste: 'Paste',
+  /**
+   * @description Context menu item in the Edit as HTML editor that selects the editor's entire
+   * contents. "Select all" should be used as a verb.
+   */
+  selectAll: 'Select all',
   /**
    * @description Text in Elements Tree Element of the Elements panel, copy should be used as a verb
    */
@@ -303,6 +313,11 @@ const UIStrings = {
    */
   viewSourceCode: 'View source code',
   /**
+   * @description Label of an adorner in the Elements panel. When clicked, it reveals
+   * the definition of the custom element in the Sources panel.
+   */
+  showCustomElementDefinition: 'Show custom element definition',
+  /**
    * @description Context menu item in Elements panel to assess visibility of an element via AI.
    */
   assessVisibility: 'Assess visibility',
@@ -444,6 +459,8 @@ export interface ViewInput {
   onViewSourceAdornerClick: () => void;
   onSlotAdornerClick: (e: Event) => void;
   showSlotAdorner: boolean;
+  showCustomElementAdorner: boolean;
+  onCustomElementAdornerClick: (e: Event) => void;
   slotName?: string;
   showStartingStyleAdorner: boolean;
   startingStyleAdornerActive: boolean;
@@ -451,6 +468,7 @@ export interface ViewInput {
 
   isHovered: boolean;
   isSelected: boolean;
+  canInspect: boolean;
   showAiButton: boolean;
   aiButtonTitle?: string;
   onAiButtonClick: (e: Event) => void;
@@ -608,7 +626,7 @@ function renderTitle(
       });
       return html`"<span class="webkit-html-text-node" jslog=${VisualLogging.value('text-node').track({
         change: true,
-        dblclick: true
+        dblclick: true,
       })} ${animateOn(Boolean(updateRecord?.isCharDataModified()), DOM_UPDATE_ANIMATION_CLASS_NAME)} ${
           renderTextNode}></span>"`;
     }
@@ -644,7 +662,6 @@ function renderTitle(
         text,
         preventClick: true,
         showColumnNumber: false,
-        inlineFrameIndex: 0,
       })}</span>)</span>`;
     }
 
@@ -733,12 +750,14 @@ function renderLinkifiedValue(value: string, node: SDK.DOMModel.DOMNode): Lit.Te
     text: value,
     preventClick: true,
     showColumnNumber: false,
-    inlineFrameIndex: 0,
     onRef: link => {
       ImagePreviewPopover.setImageUrl(link, rewrittenHref);
-    }
+    },
   });
 }
+
+const relationPromisesCache = new WeakMap<SDK.DOMModel.DOMNode, Map<string, Promise<string|Lit.LitTemplate>>>();
+const relatedElementsCache = new WeakMap<SDK.DOMModel.DOMNode, Map<string, SDK.DOMModel.DOMNode|null>>();
 
 function renderAttribute(
     attr: {name: string, value?: string}, updateRecord: Elements.ElementUpdateRecord.ElementUpdateRecord|null,
@@ -746,59 +765,77 @@ function renderAttribute(
   const name = attr.name;
   const value = attr.value || '';
   const forceValue = isDiff;
+  const isRelation = name === 'popovertarget' || name === 'interesttarget' || name === 'commandfor';
   const hasText = (forceValue || value.length > 0);
-  const jslog = VisualLogging.value(name === 'style' ? 'style-attribute' : 'attribute').track({
-    change: true,
-    dblclick: true,
-  });
+  const linkifyName = isRelation && value.length === 0;
+  const linkifyValue = isRelation && value.length > 0;
 
-  const relationRef =
-      (relation: Protocol.DOM.GetElementByRelationRequestRelation, tooltip: string): ReturnType<typeof ref> =>
-          ref((el): void => {
-            if (!el) {
-              return;
-            }
-            void (async(): Promise<void> => {
-              const relatedElementId = await node.domModel().getElementByRelation(node.id, relation);
-              const relatedElement = node.domModel().nodeForId(relatedElementId);
-              if (!relatedElement) {
-                return;
-              }
-              const link = PanelsCommon.DOMLinkifier.Linkifier.instance().linkify(relatedElement, {
-                preventKeyboardFocus: true,
-                tooltip,
-                textContent: el.textContent || undefined,
-                isDynamicLink: true,
-              });
-              render(link, el as HTMLElement);
-            })();
-          });
-
-  let relationRefDirective: ReturnType<typeof relationRef> = ref(() => {});
-  if (!value) {
+  let relation: Protocol.DOM.GetElementByRelationRequestRelation|undefined = undefined;
+  let tooltip = '';
+  if (isRelation) {
     if (name === 'popovertarget') {
-      relationRefDirective = relationRef(
-          Protocol.DOM.GetElementByRelationRequestRelation.PopoverTarget, i18nString(UIStrings.showPopoverTarget));
+      relation = Protocol.DOM.GetElementByRelationRequestRelation.PopoverTarget;
+      tooltip = i18nString(UIStrings.showPopoverTarget);
     } else if (name === 'interesttarget') {
-      relationRefDirective = relationRef(
-          Protocol.DOM.GetElementByRelationRequestRelation.InterestTarget, i18nString(UIStrings.showInterestTarget));
+      relation = Protocol.DOM.GetElementByRelationRequestRelation.InterestTarget;
+      tooltip = i18nString(UIStrings.showInterestTarget);
     } else if (name === 'commandfor') {
-      relationRefDirective = relationRef(
-          Protocol.DOM.GetElementByRelationRequestRelation.CommandFor, i18nString(UIStrings.showCommandForTarget));
+      relation = Protocol.DOM.GetElementByRelationRequestRelation.CommandFor;
+      tooltip = i18nString(UIStrings.showCommandForTarget);
     }
   }
 
-  let valueRelationRefDirective: ReturnType<typeof relationRef> = ref(() => {});
-  if (value) {
-    if (name === 'popovertarget') {
-      valueRelationRefDirective = relationRef(
-          Protocol.DOM.GetElementByRelationRequestRelation.PopoverTarget, i18nString(UIStrings.showPopoverTarget));
-    } else if (name === 'interesttarget') {
-      valueRelationRefDirective = relationRef(
-          Protocol.DOM.GetElementByRelationRequestRelation.InterestTarget, i18nString(UIStrings.showInterestTarget));
-    } else if (name === 'commandfor') {
-      valueRelationRefDirective = relationRef(
-          Protocol.DOM.GetElementByRelationRequestRelation.CommandFor, i18nString(UIStrings.showCommandForTarget));
+  let relationPromise: Promise<string|Lit.LitTemplate>|undefined = undefined;
+  if (isRelation && relation) {
+    let nodeCache = relationPromisesCache.get(node);
+    if (!nodeCache) {
+      nodeCache = new Map();
+      relationPromisesCache.set(node, nodeCache);
+    }
+    const cacheKey = `${relation}:${value}`;
+    relationPromise = nodeCache.get(cacheKey);
+    const relationType = relation;
+    if (!relationPromise) {
+      relationPromise = (async () => {
+        try {
+          const relatedElementId = await node.domModel().getElementByRelation(node.id, relationType);
+          const relatedElement = node.domModel().nodeForId(relatedElementId);
+
+          let elemCache = relatedElementsCache.get(node);
+          if (!elemCache) {
+            elemCache = new Map();
+            relatedElementsCache.set(node, elemCache);
+          }
+          elemCache.set(`${name}:${value}`, relatedElement || null);
+
+          const isNameLinking = value.length === 0;
+          const fallback = isNameLinking ? name : value;
+
+          if (!relatedElement) {
+            return fallback;
+          }
+
+          const linkOptions: PanelsCommon.DOMLinkifier.Options = {
+            preventKeyboardFocus: true,
+            tooltip,
+            isDynamicLink: true,
+          };
+
+          if (isNameLinking) {
+            linkOptions.textContent = name;
+          } else {
+            const targetId = relatedElement.getAttribute('id');
+            if (targetId) {
+              linkOptions.textContent = targetId;
+            }
+          }
+
+          return PanelsCommon.DOMLinkifier.Linkifier.instance().linkify(relatedElement, linkOptions);
+        } catch {
+          return value.length === 0 ? name : value;
+        }
+      })();
+      nodeCache.set(cacheKey, relationPromise);
     }
   }
 
@@ -817,23 +854,31 @@ function renderAttribute(
     valueType = ValueType.SRCSET;
   }
 
-  const withEntitiesRef = valueType === ValueType.UNKNOWN ? ref(el => {
+  const withEntitiesRef = (valueType === ValueType.UNKNOWN && !isRelation) ? ref(el => {
     if (el) {
       setValueWithEntities(el, value);
     }
   }) :
-                                                            nothing;
+                                                                             nothing;
 
-  // clang-format off
+  const jslog = VisualLogging.value(name === 'style' ? 'style-attribute' : 'attribute').track({
+    change: true,
+    dblclick: true,
+  });
+
   return html`<span class="webkit-html-attribute" jslog=${jslog}><span class="webkit-html-attribute-name"
-      ${animateOn(Boolean(updateRecord?.isAttributeModified(name) && !hasText), DOM_UPDATE_ANIMATION_CLASS_NAME)} ${relationRefDirective}>${name}</span>${hasText ? html`=\u200B"<span class="webkit-html-attribute-value" ${animateOn(
-    Boolean(updateRecord?.isAttributeModified(name) && hasText),
-    DOM_UPDATE_ANIMATION_CLASS_NAME)} ${valueRelationRefDirective} ${withEntitiesRef}>
+      ${animateOn(Boolean(updateRecord?.isAttributeModified(name) && !hasText), DOM_UPDATE_ANIMATION_CLASS_NAME)}>${
+      linkifyName && relationPromise ? Lit.Directives.until(relationPromise, name) : name}</span>${
+      hasText ?
+          html`=\u200B"<span class="webkit-html-attribute-value" ${
+              animateOn(Boolean(updateRecord?.isAttributeModified(name) && hasText),
+                        DOM_UPDATE_ANIMATION_CLASS_NAME)} ${withEntitiesRef}>
                         ${valueType === ValueType.SRC ? renderLinkifiedValue(value, node) : nothing}
-                        ${valueType === ValueType.SRCSET ? renderLinkifiedSrcset(Common.Srcset.parseSrcset(value), node) : nothing}
+                        ${
+              valueType === ValueType.SRCSET ? renderLinkifiedSrcset(Common.Srcset.parseSrcset(value), node) : nothing}
+                        ${linkifyValue && relationPromise ? Lit.Directives.until(relationPromise, value) : nothing}
                 </span>"` :
-      nothing}</span>`;
-  // clang-format on
+          nothing}</span>`;
 }
 
 function renderTag(
@@ -934,7 +979,8 @@ export const DEFAULT_VIEW = (input: ViewInput, output: ViewOutput, target: HTMLE
   const hasAdorners = !!input.adProvenance || input.showContainerAdorner || input.showFlexAdorner ||
       input.showGridAdorner || input.showGridLanesAdorner || input.showMediaAdorner || input.showPopoverAdorner ||
       input.showTopLayerAdorner || input.showViewSourceAdorner || input.showScrollAdorner ||
-      input.showScrollSnapAdorner || input.showSlotAdorner || input.showStartingStyleAdorner;
+      input.showScrollSnapAdorner || input.showSlotAdorner || input.showStartingStyleAdorner ||
+      input.showCustomElementAdorner;
   const gutterContainerClasses = {
     'has-decorations': input.decorations.length || input.descendantDecorations.length,
     'gutter-container': true,
@@ -976,6 +1022,18 @@ export const DEFAULT_VIEW = (input: ViewInput, output: ViewOutput, target: HTMLE
           @click=${input.onViewSourceAdornerClick}
           ${adornerRef()}>
           <span>${ElementsComponents.AdornerManager.RegisteredAdorners.VIEW_SOURCE}</span>
+        </devtools-adorner>` : nothing}
+        ${input.showCustomElementAdorner ? html`<devtools-adorner
+          class="custom-element clickable"
+          role=button
+          tabindex=0
+          .name=${ElementsComponents.AdornerManager.RegisteredAdorners.CUSTOM_ELEMENT}
+          jslog=${VisualLogging.adorner(ElementsComponents.AdornerManager.RegisteredAdorners.CUSTOM_ELEMENT).track({ click: true })}
+          aria-label=${i18nString(UIStrings.showCustomElementDefinition)}
+          @click=${input.onCustomElementAdornerClick}
+          @keydown=${handleAdornerKeydown(input.onCustomElementAdornerClick)}
+          ${adornerRef()}>
+          <span>${ElementsComponents.AdornerManager.RegisteredAdorners.CUSTOM_ELEMENT}</span>
         </devtools-adorner>` : nothing}
         ${input.showContainerAdorner ? html`<devtools-adorner
           class=clickable
@@ -1125,7 +1183,7 @@ export const DEFAULT_VIEW = (input: ViewInput, output: ViewOutput, target: HTMLE
           <span>${ElementsComponents.AdornerManager.RegisteredAdorners.SCROLL_SNAP}</span>
         </devtools-adorner>` : nothing}
       </div>`: nothing}
-      ${input.isSelected ? html`
+      ${input.isSelected && input.canInspect ? html`
         <span class="selected-hint ${input.editorState ? 'hidden' : ''}" title=${i18nString(UIStrings.useSInTheConsoleToReferToThis, { PH1: '$0' })} aria-hidden="true"></span>
       ` : nothing}
       ${input.showAiButton ? html`
@@ -1164,6 +1222,9 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
   #hovered: boolean;
   private editing: EditorHandles|null;
   #editorRef?: TextEditor.TextEditor.TextEditor;
+  // True while the Edit as HTML editor's own context menu is open, so that the
+  // focusout caused by the menu taking focus does not commit the edit.
+  #editAsHtmlMenuOpen = false;
   #editorState: CodeMirror.EditorState|null = null;
   #editorWidth: number|null = null;
   expandAllButtonElement: UI.TreeOutline.TreeElement|null;
@@ -1232,7 +1293,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
 
     if (this.nodeInternal.retained && !this.isClosingTag()) {
       this.setLeadingIcons([
-        html`<devtools-icon class="extra-small" name="small-status-dot" style="color:var(--icon-error); vertical-align:middle"></devtools-icon>`
+        html`<devtools-icon class="extra-small" name="small-status-dot" style="color:var(--icon-error); vertical-align:middle"></devtools-icon>`,
       ]);
       this.listItemNode.classList.add('detached-elements-detached-node');
       this.listItemNode.style.setProperty('display', '-webkit-box');
@@ -1306,50 +1367,53 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
       return;
     }
     const output: ViewOutput = {};
-    DEFAULT_VIEW(
-        {
-          node: !clearNode ? this.nodeInternal : null,
-          isClosingTag: this.isClosingTag(),
-          expanded: this.expanded,
-          isExpandable: this.isExpandable(),
-          isXMLMimeType: Boolean(this.treeOutline?.isXMLMimeType),
-          updateRecord: this.#updateRecord,
-          onHighlightSearchResults: () => this.#highlightSearchResults(),
-          onExpand: () => this.expand(),
+    DEFAULT_VIEW({
+      node: !clearNode ? this.nodeInternal : null,
+      isClosingTag: this.isClosingTag(),
+      expanded: this.expanded,
+      isExpandable: this.isExpandable(),
+      isXMLMimeType: Boolean(this.treeOutline?.isXMLMimeType),
+      updateRecord: this.#updateRecord,
+      onHighlightSearchResults: () => this.#highlightSearchResults(),
+      onExpand: () => this.expand(),
 
-          containerAdornerActive: this.#containerAdornerActive,
-          adProvenance: this.nodeInternal.adProvenance(),
-          adTooltipId: this.#adTooltipId,
-          target: this.nodeInternal.domModel().target(),
-          showContainerAdorner: Boolean(this.#layout?.containerType) && !this.isClosingTag(),
-          containerType: this.#layout?.containerType,
-          showFlexAdorner: Boolean(this.#layout?.isFlex) && !this.isClosingTag(),
-          flexAdornerActive: this.#flexAdornerActive,
-          showGridAdorner: Boolean(this.#layout?.isGrid) && !this.isClosingTag(),
-          showGridLanesAdorner: Boolean(this.#layout?.isGridLanes) && !this.isClosingTag(),
-          showMediaAdorner: this.node().isMediaNode() && !this.isClosingTag(),
-          showPopoverAdorner: Boolean(Root.Runtime.hostConfig.devToolsAllowPopoverForcing?.enabled) &&
-              Boolean(this.node().attributes().find(attr => attr.name === 'popover')) && !this.isClosingTag(),
-          showTopLayerAdorner: this.node().topLayerIndex() !== -1 && !this.isClosingTag(),
-          gridAdornerActive: this.#gridAdornerActive,
-          popoverAdornerActive: this.#popoverAdornerActive,
-          isSubgrid: Boolean(this.#layout?.isSubgrid),
-          showViewSourceAdorner: this.nodeInternal.isRootNode() && isOpeningTag(this.tagTypeContext),
-          showScrollAdorner: ((this.node().nodeName() === 'HTML' && this.node().ownerDocument?.isScrollable()) ||
-                              (this.node().nodeName() !== '#document' && this.node().isScrollable())) &&
-              !this.isClosingTag(),
-          decorations: this.#decorations,
-          descendantDecorations: this.expanded ? [] : this.#descendantDecorations,
-          decorationsTooltip: this.#decorationsTooltip,
-          indent: this.computeLeftIndent(),
-          showScrollSnapAdorner: Boolean(this.#layout?.hasScroll) && !this.isClosingTag(),
-          scrollSnapAdornerActive: this.#scrollSnapAdornerActive,
-          showSlotAdorner: Boolean(this.nodeInternal.assignedSlot) && !this.isClosingTag(),
-          showStartingStyleAdorner: this.nodeInternal.affectedByStartingStyles() && !this.isClosingTag(),
-          startingStyleAdornerActive: this.#startingStyleAdornerActive,
-          onStartingStyleAdornerClick:
-              this.treeOutline?.disableEdits ? () => {} : (event: Event) => this.#onStartingStyleAdornerClick(event),
-          onSlotAdornerClick: () => {
+      containerAdornerActive: this.#containerAdornerActive,
+      adProvenance: this.nodeInternal.adProvenance(),
+      adTooltipId: this.#adTooltipId,
+      target: this.nodeInternal.domModel().target(),
+      showContainerAdorner: Boolean(this.#layout?.containerType) && !this.isClosingTag(),
+      containerType: this.#layout?.containerType,
+      showFlexAdorner: Boolean(this.#layout?.isFlex) && !this.isClosingTag(),
+      flexAdornerActive: this.#flexAdornerActive,
+      showGridAdorner: Boolean(this.#layout?.isGrid) && !this.isClosingTag(),
+      showGridLanesAdorner: Boolean(this.#layout?.isGridLanes) && !this.isClosingTag(),
+      showMediaAdorner: this.node().isMediaNode() && !this.isClosingTag(),
+      showPopoverAdorner: Boolean(Root.Runtime.hostConfig.devToolsAllowPopoverForcing?.enabled) &&
+          Boolean(this.node().attributes().find(attr => attr.name === 'popover')) && !this.isClosingTag(),
+      showTopLayerAdorner: this.node().topLayerIndex() !== -1 && !this.isClosingTag(),
+      gridAdornerActive: this.#gridAdornerActive,
+      popoverAdornerActive: this.#popoverAdornerActive,
+      isSubgrid: Boolean(this.#layout?.isSubgrid),
+      showViewSourceAdorner: this.nodeInternal.isRootNode() && isOpeningTag(this.tagTypeContext),
+      showScrollAdorner: ((this.node().nodeName() === 'HTML' && this.node().ownerDocument?.isScrollable()) ||
+                          (this.node().nodeName() !== '#document' && this.node().isScrollable())) &&
+          !this.isClosingTag(),
+      decorations: this.#decorations,
+      descendantDecorations: this.expanded ? [] : this.#descendantDecorations,
+      decorationsTooltip: this.#decorationsTooltip,
+      indent: this.computeLeftIndent(),
+      showScrollSnapAdorner: Boolean(this.#layout?.hasScroll) && !this.isClosingTag(),
+      scrollSnapAdornerActive: this.#scrollSnapAdornerActive,
+      showSlotAdorner: Boolean(this.nodeInternal.assignedSlot) && !this.isClosingTag(),
+      showCustomElementAdorner: this.node().isCustomElement() && !this.isClosingTag(),
+      onCustomElementAdornerClick:
+          this.treeOutline?.disableEdits ? () => {} : (event: Event) => void this.#onCustomElementAdornerClick(event),
+      showStartingStyleAdorner: this.nodeInternal.affectedByStartingStyles() && !this.isClosingTag(),
+      startingStyleAdornerActive: this.#startingStyleAdornerActive,
+      onStartingStyleAdornerClick:
+          this.treeOutline?.disableEdits ? () => {} : (event: Event) => this.#onStartingStyleAdornerClick(event),
+      onSlotAdornerClick:
+          () => {
             if (this.nodeInternal.assignedSlot) {
               const deferredNode = this.nodeInternal.assignedSlot.deferredNode;
               deferredNode.resolve(node => {
@@ -1357,47 +1421,46 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
               });
             }
           },
-          topLayerIndex: this.node().topLayerIndex(),
-          onViewSourceAdornerClick: this.treeOutline?.disableEdits ? () => {} : this.revealHTMLInSources.bind(this),
-          onGutterClick: this.showContextMenu.bind(this),
-          onContainerAdornerClick:
-              this.treeOutline?.disableEdits ? () => {} : (event: Event) => this.#onContainerAdornerClick(event),
-          onFlexAdornerClick: this.treeOutline?.disableEdits ? () => {} :
-                                                               (event: Event) => this.#onFlexAdornerClick(event),
-          onGridAdornerClick: this.treeOutline?.disableEdits ? () => {} :
-                                                               (event: Event) => this.#onGridAdornerClick(event),
-          onMediaAdornerClick: this.treeOutline?.disableEdits ? () => {} :
-                                                                (event: Event) => this.#onMediaAdornerClick(event),
-          onPopoverAdornerClick: this.treeOutline?.disableEdits ? () => {} :
-                                                                  (event: Event) => this.#onPopoverAdornerClick(event),
-          onScrollSnapAdornerClick:
-              this.treeOutline?.disableEdits ? () => {} : (event: Event) => this.#onScrollSnapAdornerClick(event),
-          onTopLayerAdornerClick: this.treeOutline?.disableEdits ? () => {} :
-                                                                   () => {
-                                                                     if (!this.treeOutline) {
-                                                                       return;
-                                                                     }
-                                                                     this.treeOutline.revealInTopLayer(this.node());
-                                                                   },
-          isHovered: this.#hovered,
-          isSelected: this.selected,
-          showAiButton: Boolean(this.#hovered || this.selected) && this.node().nodeType() === Node.ELEMENT_NODE &&
-              this.isAiButtonEnabled() && (this.treeOutline as ElementsTreeOutline)?.showAIButton,
-          aiButtonTitle: this.isAiButtonEnabled() ?
-              UI.ActionRegistry.ActionRegistry.instance().getAction('freestyler.elements-floating-button').title() :
-              undefined,
-          onAiButtonClick: (ev: Event) => {
-            ev.stopPropagation();
-            this.select(true, false);
-            const action = UI.ActionRegistry.ActionRegistry.instance().getAction('freestyler.elements-floating-button');
-            if (action) {
-              void action.execute();
-            }
-          },
-          editorState: this.#editorState,
-          editorWidth: this.#editorWidth,
-        },
-        output, this.listItemElement);
+      topLayerIndex: this.node().topLayerIndex(),
+      onViewSourceAdornerClick: this.treeOutline?.disableEdits ? () => {} : this.revealHTMLInSources.bind(this),
+      onGutterClick: this.showContextMenu.bind(this),
+      onContainerAdornerClick: this.treeOutline?.disableEdits ? () => {} :
+                                                                (event: Event) => this.#onContainerAdornerClick(event),
+      onFlexAdornerClick: this.treeOutline?.disableEdits ? () => {} : (event: Event) => this.#onFlexAdornerClick(event),
+      onGridAdornerClick: this.treeOutline?.disableEdits ? () => {} : (event: Event) => this.#onGridAdornerClick(event),
+      onMediaAdornerClick: this.treeOutline?.disableEdits ? () => {} :
+                                                            (event: Event) => this.#onMediaAdornerClick(event),
+      onPopoverAdornerClick: this.treeOutline?.disableEdits ? () => {} :
+                                                              (event: Event) => this.#onPopoverAdornerClick(event),
+      onScrollSnapAdornerClick:
+          this.treeOutline?.disableEdits ? () => {} : (event: Event) => this.#onScrollSnapAdornerClick(event),
+      onTopLayerAdornerClick: this.treeOutline?.disableEdits ? () => {} :
+                                                               () => {
+                                                                 if (!this.treeOutline) {
+                                                                   return;
+                                                                 }
+                                                                 this.treeOutline.revealInTopLayer(this.node());
+                                                               },
+      isHovered: this.#hovered,
+      isSelected: this.selected,
+      canInspect: this.node().canInspectNode(),
+      showAiButton: Boolean(this.#hovered || this.selected) && this.node().nodeType() === Node.ELEMENT_NODE &&
+          this.isAiButtonEnabled() && (this.treeOutline as ElementsTreeOutline)?.showAIButton,
+      aiButtonTitle: this.isAiButtonEnabled() ?
+          UI.ActionRegistry.ActionRegistry.instance().getAction('freestyler.elements-floating-button').title() :
+          undefined,
+      onAiButtonClick: (ev: Event) => {
+        ev.stopPropagation();
+        this.select(true, false);
+        const action = UI.ActionRegistry.ActionRegistry.instance().getAction('freestyler.elements-floating-button');
+        if (action) {
+          void action.execute();
+        }
+      },
+      editorState: this.#editorState,
+      editorWidth: this.#editorWidth,
+    },
+                 output, this.listItemElement);
 
     this.#contentElement = output.contentElement;
     this.#editorRef = output.editorRef;
@@ -1498,6 +1561,10 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
 
   isClosingTag(): boolean {
     return !isOpeningTag(this.tagTypeContext);
+  }
+
+  isDisplayContents(): boolean {
+    return Boolean(this.#layout?.isContents);
   }
 
   node(): SDK.DOMModel.DOMNode {
@@ -1705,63 +1772,65 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     // ElementsPanel.
     // We do not change the ElementsTreeElement state in case the
     // element is bound again.
-    DEFAULT_VIEW(
-        {
-          node: null,
-          isClosingTag: false,
-          expanded: false,
-          isExpandable: false,
-          isXMLMimeType: false,
-          updateRecord: null,
-          onHighlightSearchResults: () => {},
-          onExpand: () => {},
-          containerAdornerActive: false,
-          adProvenance: undefined,
-          target: undefined,
-          adTooltipId: '',
-          showContainerAdorner: false,
-          containerType: this.#layout?.containerType,
-          showFlexAdorner: false,
-          flexAdornerActive: false,
-          showGridAdorner: false,
-          showGridLanesAdorner: false,
-          showMediaAdorner: false,
-          showPopoverAdorner: false,
-          showTopLayerAdorner: false,
-          gridAdornerActive: false,
-          popoverAdornerActive: false,
-          isSubgrid: false,
-          showViewSourceAdorner: false,
-          showScrollAdorner: false,
-          showScrollSnapAdorner: false,
-          scrollSnapAdornerActive: false,
-          showSlotAdorner: false,
-          showStartingStyleAdorner: false,
-          startingStyleAdornerActive: false,
-          onStartingStyleAdornerClick: () => {},
-          onSlotAdornerClick: () => {},
-          topLayerIndex: -1,
-          onViewSourceAdornerClick: () => {},
-          onGutterClick: () => {},
-          onContainerAdornerClick: () => {},
-          onFlexAdornerClick: () => {},
-          onGridAdornerClick: () => {},
-          onMediaAdornerClick: () => {},
-          onPopoverAdornerClick: () => {},
-          onScrollSnapAdornerClick: () => {},
-          onTopLayerAdornerClick: () => {},
-          isHovered: false,
-          isSelected: false,
-          showAiButton: false,
-          onAiButtonClick: () => {},
-          decorations: [],
-          descendantDecorations: [],
-          decorationsTooltip: '',
-          indent: 0,
-          editorState: null,
-          editorWidth: null,
-        },
-        {}, this.listItemElement);
+    DEFAULT_VIEW({
+      node: null,
+      isClosingTag: false,
+      expanded: false,
+      isExpandable: false,
+      isXMLMimeType: false,
+      updateRecord: null,
+      onHighlightSearchResults: () => {},
+      onExpand: () => {},
+      containerAdornerActive: false,
+      adProvenance: undefined,
+      target: undefined,
+      adTooltipId: '',
+      showContainerAdorner: false,
+      containerType: this.#layout?.containerType,
+      showFlexAdorner: false,
+      flexAdornerActive: false,
+      showGridAdorner: false,
+      showGridLanesAdorner: false,
+      showMediaAdorner: false,
+      showPopoverAdorner: false,
+      showTopLayerAdorner: false,
+      gridAdornerActive: false,
+      popoverAdornerActive: false,
+      isSubgrid: false,
+      showViewSourceAdorner: false,
+      showScrollAdorner: false,
+      showScrollSnapAdorner: false,
+      scrollSnapAdornerActive: false,
+      showSlotAdorner: false,
+      showCustomElementAdorner: false,
+      showStartingStyleAdorner: false,
+      startingStyleAdornerActive: false,
+      onStartingStyleAdornerClick: () => {},
+      onSlotAdornerClick: () => {},
+      onCustomElementAdornerClick: () => {},
+      topLayerIndex: -1,
+      onViewSourceAdornerClick: () => {},
+      onGutterClick: () => {},
+      onContainerAdornerClick: () => {},
+      onFlexAdornerClick: () => {},
+      onGridAdornerClick: () => {},
+      onMediaAdornerClick: () => {},
+      onPopoverAdornerClick: () => {},
+      onScrollSnapAdornerClick: () => {},
+      onTopLayerAdornerClick: () => {},
+      isHovered: false,
+      isSelected: false,
+      canInspect: false,
+      showAiButton: false,
+      onAiButtonClick: () => {},
+      decorations: [],
+      descendantDecorations: [],
+      decorationsTooltip: '',
+      indent: 0,
+      editorState: null,
+      editorWidth: null,
+    },
+                 {}, this.listItemElement);
   }
 
   override onunbind(): void {
@@ -2296,8 +2365,11 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     }
 
     this.populateExpandRecursively(contextMenu);
-    contextMenu.viewSection().appendItem(
-        i18nString(UIStrings.collapseChildren), this.collapseChildren.bind(this), {jslogContext: 'collapse-children'});
+    contextMenu.viewSection().appendItem(i18nString(UIStrings.collapseChildren), this.collapseChildren.bind(this),
+                                         {jslogContext: 'collapse-children'});
+    contextMenu.viewSection().appendItem(i18nString(UIStrings.switchToAccessibilityTree),
+                                         () => ElementsPanel.instance().toggleAccessibilityTree(),
+                                         {jslogContext: 'switch-to-accessibility-tree'});
     const deviceModeWrapperAction = new Emulation.DeviceModeWrapper.ActionDelegate();
     contextMenu.viewSection().appendItem(
         i18nString(UIStrings.captureNodeScreenshot),
@@ -2442,9 +2514,20 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
       }
     }
 
-    const attributeValue = attributeName && attributeValueElement ?
+    let attributeValue = attributeName && attributeValueElement ?
         this.nodeInternal.getAttribute(attributeName)?.replaceAll('"', '&quot;') :
         undefined;
+
+    const isRelation =
+        attributeName === 'popovertarget' || attributeName === 'interesttarget' || attributeName === 'commandfor';
+    if (isRelation && attributeName && attributeValueElement) {
+      const rawValue = this.nodeInternal.getAttribute(attributeName) || '';
+      const relatedElement = relatedElementsCache.get(this.nodeInternal)?.get(`${attributeName}:${rawValue}`);
+      if (relatedElement) {
+        attributeValue = relatedElement.getAttribute('id') || '';
+      }
+    }
+
     if (attributeValue !== undefined) {
       attributeValueElement.setTextContentTruncatedIfNeeded(
           attributeValue, i18nString(UIStrings.valueIsTooLargeToEdit));
@@ -2626,7 +2709,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
         }),
         CodeMirror.EditorView.domEventHandlers({
           focusout: event => {
-            if (!this.#editorRef) {
+            if (!this.#editorRef || this.#editAsHtmlMenuOpen) {
               return;
             }
             // The relatedTarget is null when no element gains focus, e.g. switching windows.
@@ -2634,6 +2717,42 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
             if (relatedTarget && !relatedTarget.isSelfOrDescendant(this.#editorRef)) {
               this.editing?.commit();
             }
+          },
+          contextmenu: (event, view) => {
+            // The editor virtualizes its content, so the browser's native
+            // "Select all" only reaches the rendered lines. Show a menu whose
+            // "Select all" spans the whole document, like Ctrl/Cmd+A.
+            event.consume(true);
+            const {from, to, empty} = view.state.selection.main;
+            const copy = (): void =>
+                Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(view.state.sliceDoc(from, to));
+            const contextMenu = new UI.ContextMenu.ContextMenu(event, {
+              onSoftMenuClosed: () => {
+                this.#editAsHtmlMenuOpen = false;
+              },
+            });
+            contextMenu.clipboardSection().appendItem(i18nString(UIStrings.cut), () => {
+              copy();
+              view.dispatch({changes: {from, to, insert: ''}});
+              view.focus();
+            }, {disabled: empty, jslogContext: 'cut'});
+            contextMenu.clipboardSection().appendItem(i18nString(UIStrings.copy), () => {
+              copy();
+              view.focus();
+            }, {disabled: empty, jslogContext: 'copy'});
+            contextMenu.clipboardSection().appendItem(i18nString(UIStrings.paste), () => {
+              void navigator.clipboard.readText().then(text => {
+                view.dispatch(view.state.replaceSelection(text));
+                view.focus();
+              });
+            }, {jslogContext: 'paste'});
+            contextMenu.editSection().appendItem(i18nString(UIStrings.selectAll), () => {
+              view.dispatch({selection: {anchor: 0, head: view.state.doc.length}});
+              view.focus();
+            }, {jslogContext: 'select-all'});
+            this.#editAsHtmlMenuOpen = true;
+            void contextMenu.show();
+            return true;
           },
         }),
       ],
@@ -3172,6 +3291,44 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     }
     this.#startingStyleAdornerActive = !this.#startingStyleAdornerActive;
     this.performUpdate();
+  }
+
+  async #onCustomElementAdornerClick(event: Event): Promise<void> {
+    event.stopPropagation();
+    const node = this.node();
+    const object = await node.resolveToObject('');
+    if (!object) {
+      return;
+    }
+    let constructorObject: SDK.RemoteObject.RemoteObject|null = null;
+    try {
+      const result = await object.callFunction(function(this: Element): unknown {
+        const selector = this.getAttribute('is') || this.tagName.toLowerCase();
+        return (typeof customElements !== 'undefined' && customElements.get(selector)) || this.constructor;
+      });
+      constructorObject = result.object;
+    } finally {
+      object.release();
+    }
+    if (!constructorObject) {
+      return;
+    }
+    try {
+      if (constructorObject.type === 'function') {
+        const functionDetails =
+            await SDK.RemoteObject.RemoteFunction.objectAsFunction(constructorObject).targetFunctionDetails();
+        if (functionDetails?.location) {
+          const uiLocation =
+              await Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().rawLocationToUILocation(
+                  functionDetails.location);
+          if (uiLocation) {
+            void Common.Revealer.reveal(uiLocation);
+          }
+        }
+      }
+    } finally {
+      constructorObject.release();
+    }
   }
 }
 

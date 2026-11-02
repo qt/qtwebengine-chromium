@@ -2908,41 +2908,59 @@ void Builtins::Generate_WasmCompileLazy(MacroAssembler* masm) {
   __ Jump(r8);
 }
 
-void Builtins::Generate_WasmDebugBreak(MacroAssembler* masm) {
+namespace {
+enum class DebugBreakKind { kBreak, kTrap };
+
+void Generate_WasmDebugBreakOrTrap(MacroAssembler* masm, DebugBreakKind kind) {
   HardAbortScope hard_abort(masm);  // Avoid calls to Abort.
   {
     FrameAndConstantPoolScope scope(masm, StackFrame::WASM_DEBUG_BREAK);
 
-    static_assert(DwVfpRegister::kNumRegisters == 32);
-    constexpr DwVfpRegister last =
-        WasmDebugBreakFrameConstants::kPushedFpRegs.last();
-    constexpr DwVfpRegister first =
-        WasmDebugBreakFrameConstants::kPushedFpRegs.first();
-    static_assert(
-        WasmDebugBreakFrameConstants::kPushedFpRegs.Count() ==
-            last.code() - first.code() + 1,
-        "All registers in the range from first to last have to be set");
-
     // Save all parameter registers. They might hold live values, we restore
     // them after the runtime call.
-    constexpr DwVfpRegister lowest_fp_reg = first;
-    constexpr DwVfpRegister highest_fp_reg = last;
-
-    // Store gp parameter registers.
+    constexpr DwVfpRegister first =
+        WasmDebugBreakFrameConstants::kPushedFpRegs.first();
+    constexpr DwVfpRegister last =
+        WasmDebugBreakFrameConstants::kPushedFpRegs.last();
+    // Store general purpose parameter registers.
     __ stm(db_w, sp, WasmDebugBreakFrameConstants::kPushedGpRegs);
-    // Store fp parameter registers.
-    __ vstm(db_w, sp, lowest_fp_reg, highest_fp_reg);
+    // Store floating point parameter registers.
+    __ vstm(db_w, sp, first, last);
 
-    // Initialize the JavaScript context with 0. CEntry will use it to
-    // set the current context on the isolate.
-    __ Move(cp, Smi::zero());
-    __ CallRuntime(Runtime::kWasmDebugBreak, 0);
+    // Load instance data.
+    __ ldr(r1, MemOperand(fp, 0));
+    __ ldr(kWasmImplicitArgRegister,
+           MemOperand(r1, WasmFrameConstants::kWasmInstanceDataOffset));
+    __ LoadTaggedField(
+        cp, FieldMemOperand(kWasmImplicitArgRegister,
+                            WasmTrustedInstanceData::kNativeContextOffset));
 
-    // Restore registers.
-    __ vldm(ia_w, sp, lowest_fp_reg, highest_fp_reg);
-    __ ldm(ia_w, sp, WasmDebugBreakFrameConstants::kPushedGpRegs);
+    if (kind == DebugBreakKind::kTrap) {
+      // Reason was pushed before the frame.
+      // [fp+4]=saved lr, [fp+0]=saved fp, [fp+8]=reason.
+      __ ldr(r0, MemOperand(fp, 2 * kSystemPointerSize));
+      __ Push(r0);
+      __ CallRuntime(Runtime::kThrowWasmError, 1);
+      __ stop();
+    } else {
+      DCHECK_EQ(DebugBreakKind::kBreak, kind);
+      __ CallRuntime(Runtime::kWasmDebugBreak, 0);
+
+      // Restore registers.
+      __ vldm(ia_w, sp, first, last);
+      __ ldm(ia_w, sp, WasmDebugBreakFrameConstants::kPushedGpRegs);
+    }
   }
-  __ Ret();
+  if (kind == DebugBreakKind::kBreak) __ Ret();
+}
+}  // namespace
+
+void Builtins::Generate_WasmDebugBreak(MacroAssembler* masm) {
+  Generate_WasmDebugBreakOrTrap(masm, DebugBreakKind::kBreak);
+}
+
+void Builtins::Generate_WasmDebugTrap(MacroAssembler* masm) {
+  Generate_WasmDebugBreakOrTrap(masm, DebugBreakKind::kTrap);
 }
 
 namespace {
@@ -3339,6 +3357,7 @@ void Generate_WasmResumeHelper(MacroAssembler* masm, wasm::OnResume on_resume) {
     __ Trap();
   }
   __ bind(&suspend);
+  __ LoadRoot(kReturnRegister0, RootIndex::kUndefinedValue);
   __ LeaveFrame(StackFrame::WASM_JSPI);
   // Pop receiver + parameter.
   __ add(sp, sp, Operand(2 * kSystemPointerSize));
@@ -5038,11 +5057,29 @@ void Builtins::Generate_RestartFrameTrampoline(MacroAssembler* masm) {
 
   __ ldr(r1, MemOperand(fp, StandardFrameConstants::kFunctionOffset));
   __ ldr(r0, MemOperand(fp, StandardFrameConstants::kArgCOffset));
+
+  // If the actual argument count for the previous invocation is smaller than
+  // the formal parameter count then use the latter as the actual argument
+  // count for the next invocation instead of the former.
+  // This approach avoids dropping adapted parameters for simplicity while
+  // keeping the caller stack balanced after the call.
+  __ ldr(r2, MemOperand(fp, InterpreterFrameConstants::kBytecodeArrayFromFp));
+  __ ldrh(r2, FieldMemOperand(r2, offsetof(BytecodeArray, parameter_size_)));
+  {
+    Label cont;
+    __ cmp(r2, r0);
+    __ b(&cont, kLessThan);
+    __ Move(r0, r2);
+    __ bind(&cont);
+  }
+
   __ LeaveFrame(StackFrame::INTERNAL);
 
-  // The arguments are already in the stack (including any necessary padding),
-  // we should not try to massage the arguments again.
-  __ mov(r2, Operand(kDontAdaptArgumentsSentinel));
+  // The arguments are already in the stack, but we might need to adapt them
+  // if the function signature changed (e.g. via LiveEdit).
+  __ ldr(r2, FieldMemOperand(r1, offsetof(JSFunction, shared_function_info_)));
+  __ ldrh(r2, FieldMemOperand(
+                  r2, offsetof(SharedFunctionInfo, formal_parameter_count_)));
   __ InvokeFunction(r1, r2, r0, InvokeType::kJump);
 }
 

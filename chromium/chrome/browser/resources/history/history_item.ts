@@ -25,7 +25,7 @@ import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 import type {PropertyValues} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 
-import {BrowserServiceImpl} from './browser_service.js';
+import {BrowserProxyImpl} from './browser_proxy.js';
 import {getCss} from './history_item.css.js';
 import {getHtml} from './history_item.html.js';
 
@@ -232,8 +232,22 @@ export class HistoryItemElement extends HistoryItemElementBase {
         'title-and-domain';
   }
 
-  protected shouldShowActorTooltip_() {
-    return this.item?.isActorVisit;
+  protected shouldShowActorTooltip_(): boolean {
+    if (this.isCriticalActionsEnabled_()) {
+      return false;
+    }
+    return !!this.item?.isActorVisit;
+  }
+
+  protected shouldShowActorIconNextToFavicon_(): boolean {
+    if (!this.isCriticalActionsEnabled_()) {
+      return false;
+    }
+    return !!this.item?.isActorVisit;
+  }
+
+  private isCriticalActionsEnabled_(): boolean {
+    return loadTimeData.getBoolean('isCriticalActionsEnabled');
   }
 
   /**
@@ -249,9 +263,9 @@ export class HistoryItemElement extends HistoryItemElementBase {
       focusWithoutInk(this.$.menuButton);
     }
 
-    const browserService = BrowserServiceImpl.getInstance();
-    browserService.handler.removeBookmark(this.item.url);
-    browserService.recordAction('BookmarkStarClicked');
+    const browserProxy = BrowserProxyImpl.getInstance();
+    browserProxy.handler.removeBookmark(this.item.url);
+    browserProxy.recordAction('BookmarkStarClicked');
 
     this.fire('remove-bookmark-stars', this.item.url);
   }
@@ -286,11 +300,11 @@ export class HistoryItemElement extends HistoryItemElementBase {
    * Record metrics when a result is clicked.
    */
   protected onLinkClick_() {
-    const browserService = BrowserServiceImpl.getInstance();
-    browserService.recordAction('EntryLinkClick');
+    const browserProxy = BrowserProxyImpl.getInstance();
+    browserProxy.recordAction('EntryLinkClick');
 
     if (this.searchTerm) {
-      browserService.recordAction('SearchResultClick');
+      browserProxy.recordAction('SearchResultClick');
     }
 
     this.fire('record-history-link-click', {
@@ -304,7 +318,7 @@ export class HistoryItemElement extends HistoryItemElementBase {
   }
 
   protected onLinkContextmenu_() {
-    BrowserServiceImpl.getInstance().recordAction('EntryLinkRightClick');
+    BrowserProxyImpl.getInstance().recordAction('EntryLinkRightClick');
   }
 
   /**
@@ -346,7 +360,9 @@ export class HistoryItemElement extends HistoryItemElementBase {
     return 'history-internal:arrow-selector-spark';
     // </if>
     // <if expr="not _google_chrome">
-    return 'history20:arrow-selector-tool';
+    return loadTimeData.getBoolean('webuiRoundedIconsEnabled') ?
+        'history20:arrow-selector-tool' :
+        'history20:arrow-selector-tool-old';
     // </if>
   }
 }

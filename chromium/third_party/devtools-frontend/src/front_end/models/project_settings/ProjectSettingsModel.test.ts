@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
@@ -13,9 +14,11 @@ const {urlString} = Platform.DevToolsPath;
 
 describe('ProjectSettingsModel', () => {
   const {ProjectSettingsModel} = ProjectSettings.ProjectSettingsModel;
+  let projectSettingsModel: ProjectSettings.ProjectSettingsModel.ProjectSettingsModel|null = null;
 
   afterEach(() => {
-    ProjectSettingsModel.removeInstance();
+    projectSettingsModel?.disposeForTest();
+    projectSettingsModel = null;
   });
 
   it('yields an empty configuration initially', () => {
@@ -23,12 +26,7 @@ describe('ProjectSettingsModel', () => {
     const pageResourceLoader = sinon.createStubInstance(SDK.PageResourceLoader.PageResourceLoader);
     const targetManager = sinon.createStubInstance(SDK.TargetManager.TargetManager);
 
-    const projectSettingsModel = ProjectSettingsModel.instance({
-      forceNew: true,
-      hostConfig,
-      pageResourceLoader,
-      targetManager,
-    });
+    projectSettingsModel = new ProjectSettingsModel(hostConfig, pageResourceLoader, targetManager);
 
     assert.deepEqual(projectSettingsModel.projectSettings, {});
   });
@@ -38,12 +36,7 @@ describe('ProjectSettingsModel', () => {
     const pageResourceLoader = sinon.createStubInstance(SDK.PageResourceLoader.PageResourceLoader);
     const targetManager = sinon.createStubInstance(SDK.TargetManager.TargetManager);
 
-    const projectSettingsModel = ProjectSettingsModel.instance({
-      forceNew: true,
-      hostConfig,
-      pageResourceLoader,
-      targetManager,
-    });
+    projectSettingsModel = new ProjectSettingsModel(hostConfig, pageResourceLoader, targetManager);
 
     assert.deepEqual(projectSettingsModel.projectSettings, {});
   });
@@ -64,12 +57,7 @@ describe('ProjectSettingsModel', () => {
     sinon.stub(frame, 'securityOriginDetails').get(() => ({isLocalhost: false}));
     sinon.stub(frame, 'url').get(() => urlString`http://www.example.com/`);
 
-    const projectSettingsModel = ProjectSettingsModel.instance({
-      forceNew: true,
-      hostConfig,
-      pageResourceLoader,
-      targetManager,
-    });
+    projectSettingsModel = new ProjectSettingsModel(hostConfig, pageResourceLoader, targetManager);
 
     const projectSettings = await projectSettingsModel.projectSettingsPromise;
     assert.deepEqual(projectSettings, {});
@@ -99,19 +87,14 @@ describe('ProjectSettingsModel', () => {
     pageResourceLoader.loadResource.withArgs(url, sinon.match({target, frameId, initiatorUrl}))
         .returns(Promise.resolve({content}));
 
-    const projectSettingsModel = ProjectSettingsModel.instance({
-      forceNew: true,
-      hostConfig,
-      pageResourceLoader,
-      targetManager,
-    });
+    projectSettingsModel = new ProjectSettingsModel(hostConfig, pageResourceLoader, targetManager);
 
     const projectSettings = await projectSettingsModel.projectSettingsPromise;
     assert.deepEqual(projectSettings, {
       workspace: {
         root: '/home/foo' as Platform.DevToolsPath.RawPathString,
         uuid: '8f7b028c-0323-485f-bcb9-b404edc0f186',
-      }
+      },
     });
   });
 
@@ -130,12 +113,7 @@ describe('ProjectSettingsModel', () => {
     resourceTreeModel.mainFrame = frame;
     sinon.stub(frame, 'url').get(() => urlString`devtools://devtools/bundled/devtools_app.html`);
 
-    const projectSettingsModel = ProjectSettingsModel.instance({
-      forceNew: true,
-      hostConfig,
-      pageResourceLoader,
-      targetManager,
-    });
+    projectSettingsModel = new ProjectSettingsModel(hostConfig, pageResourceLoader, targetManager);
 
     const projectSettings = await projectSettingsModel.projectSettingsPromise;
     assert.deepEqual(projectSettings, {});
@@ -164,19 +142,14 @@ describe('ProjectSettingsModel', () => {
     pageResourceLoader.loadResource.withArgs(url, sinon.match({target, frameId, initiatorUrl}))
         .returns(Promise.resolve({content}));
 
-    const projectSettingsModel = ProjectSettingsModel.instance({
-      forceNew: true,
-      hostConfig,
-      pageResourceLoader,
-      targetManager,
-    });
+    projectSettingsModel = new ProjectSettingsModel(hostConfig, pageResourceLoader, targetManager);
 
     const projectSettings = await projectSettingsModel.projectSettingsPromise;
     assert.deepEqual(projectSettings, {
       workspace: {
         root: '/path/to/front_end' as Platform.DevToolsPath.RawPathString,
         uuid: '5a509b03-1da9-460d-bc38-0c8166ba0c41',
-      }
+      },
     });
   });
 
@@ -185,12 +158,7 @@ describe('ProjectSettingsModel', () => {
     const pageResourceLoader = sinon.createStubInstance(SDK.PageResourceLoader.PageResourceLoader);
     const targetManager = sinon.createStubInstance(SDK.TargetManager.TargetManager);
 
-    ProjectSettingsModel.instance({
-      forceNew: true,
-      hostConfig,
-      pageResourceLoader,
-      targetManager,
-    });
+    projectSettingsModel = new ProjectSettingsModel(hostConfig, pageResourceLoader, targetManager);
 
     assert.isTrue(targetManager.addEventListener.calledOnceWith(SDK.TargetManager.Events.INSPECTED_URL_CHANGED));
   });
@@ -200,12 +168,7 @@ describe('ProjectSettingsModel', () => {
     const pageResourceLoader = sinon.createStubInstance(SDK.PageResourceLoader.PageResourceLoader);
     const targetManager = sinon.createStubInstance(SDK.TargetManager.TargetManager);
 
-    ProjectSettingsModel.instance({
-      forceNew: true,
-      hostConfig,
-      pageResourceLoader,
-      targetManager,
-    });
+    projectSettingsModel = new ProjectSettingsModel(hostConfig, pageResourceLoader, targetManager);
 
     sinon.assert.notCalled(targetManager.addEventListener);
   });
@@ -215,12 +178,7 @@ describe('ProjectSettingsModel', () => {
     const pageResourceLoader = sinon.createStubInstance(SDK.PageResourceLoader.PageResourceLoader);
     const targetManager = sinon.createStubInstance(SDK.TargetManager.TargetManager);
 
-    const projectSettingsModel = ProjectSettingsModel.instance({
-      forceNew: true,
-      hostConfig,
-      pageResourceLoader,
-      targetManager,
-    });
+    projectSettingsModel = new ProjectSettingsModel(hostConfig, pageResourceLoader, targetManager);
 
     assert.strictEqual(projectSettingsModel.availability, 'unavailable');
   });
@@ -249,12 +207,7 @@ describe('ProjectSettingsModel', () => {
     pageResourceLoader.loadResource.withArgs(url, sinon.match({target, frameId, initiatorUrl}))
         .returns(Promise.resolve({content}));
 
-    const projectSettingsModel = ProjectSettingsModel.instance({
-      forceNew: true,
-      hostConfig,
-      pageResourceLoader,
-      targetManager,
-    });
+    projectSettingsModel = new ProjectSettingsModel(hostConfig, pageResourceLoader, targetManager);
     await projectSettingsModel.projectSettingsPromise;
 
     assert.strictEqual(projectSettingsModel.availability, 'available');

@@ -113,7 +113,7 @@ export function convertRawOutputToEval(opts: RawToEvalOptions): EvalFileOutput {
                       args: call.args,
                     };
                   }),
-                }
+                },
               };
               processed.queries.push(query);
             }
@@ -139,7 +139,7 @@ if (import.meta.main) {
             type: 'boolean',
             demandOption: false,
             default: false,
-            description: 'Output formatted JSON rather than minified.'
+            description: 'Output formatted JSON rather than minified.',
           })
           .parseSync();
 

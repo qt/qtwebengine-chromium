@@ -10,7 +10,9 @@
 #include "base/android/jni_string.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/feature_list.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "base/trace_event/named_trigger.h"
 #include "base/trace_event/trace_event.h"
 #include "content/browser/android/navigation_handle_proxy.h"
@@ -99,9 +101,6 @@ void WebContentsObserverProxy::PrimaryMainFrameRenderProcessGone(
 void WebContentsObserverProxy::DidStartLoading() {
   TRACE_EVENT("browser", "WebContentsObserverProxy::DidStartLoading");
   JNIEnv* env = AttachCurrentThread();
-  if (auto* entry = web_contents()->GetController().GetPendingEntry()) {
-    base_url_of_last_started_data_url_ = entry->GetBaseURLForDataURL();
-  }
   Java_WebContentsObserverProxy_didStartLoading(
       env, GetJavaObjectChecked(env),
       url::GURLAndroid::FromNativeGURL(env, web_contents()->GetVisibleURL()));
@@ -111,8 +110,6 @@ void WebContentsObserverProxy::DidStopLoading() {
   JNIEnv* env = AttachCurrentThread();
   GURL url = web_contents()->GetLastCommittedURL();
   bool assume_valid = SetToBaseURLForDataURLIfNeeded(&url);
-  // DidStopLoading is the last event we should get.
-  base_url_of_last_started_data_url_ = GURL();
   Java_WebContentsObserverProxy_didStopLoading(
       env, GetJavaObjectChecked(env),
       url::GURLAndroid::FromNativeGURL(env, url), assume_valid);
@@ -173,9 +170,13 @@ void WebContentsObserverProxy::DidFinishNavigation(
   if (navigation_handle->IsInPrimaryMainFrame()) {
     base::trace_event::EmitNamedTrigger("did-finish-navigation-in-pmf");
     JNIEnv* env = AttachCurrentThread();
+    base::TimeTicks start_time = base::TimeTicks::Now();
     Java_WebContentsObserverProxy_didFinishNavigationInPrimaryMainFrame(
         env, GetJavaObjectChecked(env),
         navigation_handle->GetJavaNavigationHandle());
+    base::UmaHistogramTimes(
+        "Android.Navigation.JavaObserverDuration.DidFinishNavigation",
+        base::TimeTicks::Now() - start_time);
   }
 }
 
@@ -317,12 +318,6 @@ bool WebContentsObserverProxy::SetToBaseURLForDataURLIfNeeded(GURL* url) {
   // ones? This may break apps.
   if (entry && !entry->GetBaseURLForDataURL().is_empty()) {
     *url = entry->GetBaseURLForDataURL();
-    return false;
-  } else if (!base_url_of_last_started_data_url_.is_empty()) {
-    // NavigationController can lose the pending entry and recreate it without
-    // a base URL if there has been a loadUrl("javascript:...") after
-    // loadDataWithBaseUrl.
-    *url = base_url_of_last_started_data_url_;
     return false;
   }
   return true;

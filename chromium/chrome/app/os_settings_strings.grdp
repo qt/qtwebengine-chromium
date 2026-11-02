@@ -3611,6 +3611,9 @@ Press an assigned switch or key to remove assignment.
   <message name="IDS_SETTINGS_AUDIO_INPUT_ALLOW_AGC_TITLE" desc="In Device Settings, the title of the allowance of AGC toggle under the input section in audio settings subpage." translateable="false">
     Allow apps to automatically adjust mic volume
   </message>
+  <message name="IDS_SETTINGS_AUDIO_FOCUS_ENFORCEMENT_TITLE" desc="In Device Settings, the title of the audio focus enforcement (audio ducking) toggle under the audio settings subpage.">
+    Reduce background audio for notifications and alerts
+  </message>
   <message name="IDS_SETTINGS_AUDIO_HFP_MIC_SR_TITLE" desc="In Device Settings, the title of the super resolution toggle under the input section in audio settings subpage.">
     Bluetooth Super Resolution
   </message>
@@ -5387,6 +5390,21 @@ Press an assigned switch or key to remove assignment.
   <message name="IDS_SETTINGS_PEOPLE_LOCK_SCREEN_PIN_OR_PASSWORD" desc="The account password or a custom PIN can be used to unlock the device.">
     PIN or password
   </message>
+  <message name="IDS_SETTINGS_PEOPLE_LOCK_SCREEN_PIN_ONLY" desc="The PIN can be used to unlock the device.">
+    PIN only
+  </message>
+  <message name="IDS_SETTINGS_PEOPLE_LOCK_SCREEN_PASSWORD_OR_FINGERPRINT" desc="The account password or a fingerprint can be used to unlock the device.">
+    Password or fingerprint
+  </message>
+  <message name="IDS_SETTINGS_PEOPLE_LOCK_SCREEN_PIN_OR_FINGERPRINT" desc="The PIN or a fingerprint can be used to unlock the device.">
+    PIN or fingerprint
+  </message>
+  <message name="IDS_SETTINGS_PEOPLE_LOCK_SCREEN_PASSWORD_OR_PIN_OR_FINGERPRINT" desc="The account password, PIN or a fingerprint can be used to unlock the device.">
+    Password, PIN or fingerprint
+  </message>
+  <message name="IDS_SETTINGS_PEOPLE_LOCK_SCREEN_NO_AUTH" desc="The account has no authentication factor.">
+    No authentication
+  </message>
   <message name="IDS_SETTINGS_PEOPLE_LOCK_SCREEN_PIN_AUTOSUBMIT" desc="Option to enable PIN auto-submit">
     Unlock automatically once PIN is entered
   </message>
@@ -6375,9 +6393,6 @@ Press an assigned switch or key to remove assignment.
   <message name="IDS_SETTINGS_KEYBOARD_SHOW_SHORTCUT_VIEWER" desc="The link to open the keyboard shortut viewer.">
     View keyboard shortcuts
   </message>
-  <message name="IDS_SETTINGS_KEYBOARD_SHOW_LANGUAGE_AND_INPUT" desc="The link to navigate to the language and input method settings.">
-    Change language and input settings
-  </message>
   <message name="IDS_OS_SETTINGS_KEYBOARD_SHOW_INPUT_SETTINGS" desc="The link to navigate to input method settings.">
     Input settings
   </message>
@@ -6584,31 +6599,6 @@ Press &amp; hold keyboard keys to see accent marks and special characters. This 
   </message>
   <message name="IDS_SETTINGS_APPS_BOREALIS_APP_PERMISSION_TEXT" desc="Description on settings page for apps that are managed by Steam (name of app). Link to Steam app settings page where permissions can be changed.">
     Permissions for games and apps installed via Steam can be managed in the <ph name="LINK_BEGIN">&lt;a&gt;</ph>Steam app settings<ph name="LINK_END">&lt;/a&gt;</ph>.
-  </message>
-
-  <!-- Apps > Manage your apps > Parallels -->
-  <message name="IDS_SETTINGS_APPS_PLUGIN_VM_PERMISSION_DIALOG_CAMERA_LABEL" desc="Label for the Parallels permissions dialog when camera permissions are being adjusted">
-    The change in camera setting requires Parallels Desktop to relaunch. Relaunch Parallels Desktop to proceed.
-  </message>
-  <message name="IDS_SETTINGS_APPS_PLUGIN_VM_PERMISSION_DIALOG_MICROPHONE_LABEL" desc="Label for the Parallels permissions dialog when microphone permissions are being adjusted">
-    The change in microphone setting requires Parallels Desktop to relaunch. Relaunch Parallels Desktop to proceed.
-  </message>
-  <message name="IDS_SETTINGS_APPS_PLUGIN_VM_PERMISSION_DIALOG_RELAUNCH_BUTTON" desc="Label for the relaunch button in the Plugin Vm permissions dialog">
-    Relaunch
-  </message>
-
-  <!-- Apps > Manage your apps > Parallels > Shared folders -->
-  <message name="IDS_SETTINGS_APPS_PLUGIN_VM_SHARED_PATHS_INSTRUCTIONS_LOCATE" desc="Instructions for how to locate shared folders in Parallels.">
-      Shared folders are available in Windows at <ph name="BASE_DIR">$1<ex>Network › ChromeOS</ex></ph>.
-  </message>
-  <message name="IDS_SETTINGS_APPS_PLUGIN_VM_SHARED_PATHS_INSTRUCTIONS_ADD" desc="Instructions for how to add shared folders in Parallels.">
-    To share, right-click on a folder in Files app, then select "Share with Parallels Desktop".
-  </message>
-  <message name="IDS_SETTINGS_APPS_PLUGIN_VM_SHARED_PATHS_REMOVE_FAILURE_DIALOG_MESSAGE" desc="Message to show user when unsharing a Parallels shared folder fails. Do not translate 'Parallels Desktop'">
-    Couldn't unshare because an application is using this folder. The folder will be unshared when Parallels Desktop is next shut down.
-  </message>
-  <message name="IDS_SETTINGS_APPS_PLUGIN_VM_SHARED_USB_DEVICES_DESCRIPTION" desc="Description for managing shared USB devices. Do not translate 'Parallels Desktop'.">
-    Give Parallels Desktop control over USB devices.
   </message>
 
   <!-- Storage -->
@@ -7096,6 +7086,24 @@ Press &amp; hold keyboard keys to see accent marks and special characters. This 
   </message>
   <message name="IDS_APP_MANAGEMENT_APP_DETAILS_VERSION" desc="Text for application version">
     Version: <ph name="APP_VERSION">$1<ex>17.2</ex></ph>
+  </message>
+  <message name="IDS_APP_MANAGEMENT_APPLY_UPDATE" desc="Button label to apply a downloaded update for an app">
+    Apply update
+  </message>
+  <message name="IDS_APP_MANAGEMENT_CHECKING" desc="Button label while checking for updates">
+    Checking...
+  </message>
+  <message name="IDS_APP_MANAGEMENT_APP_IS_UP_TO_DATE" desc="Status text indicating the app is running the latest version">
+    App is up to date.
+  </message>
+  <message name="IDS_APP_MANAGEMENT_UPDATE_FOUND_DIALOG_TITLE" desc="Title for the dialog indicating that an update has been found for an isolated web app.">
+    Update found
+  </message>
+  <message name="IDS_APP_MANAGEMENT_UPDATE_FOUND_DIALOG_DESCRIPTION" desc="Description for the dialog warning that an update has been found and asking if they want to apply it.">
+    A new version (<ph name="VERSION">$1<ex>1.2.0</ex></ph>) of <ph name="APP_NAME">$2<ex>Kitchen Sink IWA</ex></ph> is available. Would you like to apply it now?
+  </message>
+  <message name="IDS_APP_MANAGEMENT_UPDATE_FOUND_WARNING_DIALOG_DESCRIPTION" desc="Description for the dialog warning that an update has been found, app windows will close, and asking if they want to apply it.">
+    A new version (<ph name="VERSION">$1<ex>1.2.0</ex></ph>) of <ph name="APP_NAME">$2<ex>Kitchen Sink IWA</ex></ph> is available. All open windows will be closed to apply the update. Unsaved data may be lost.
   </message>
   <message name="IDS_APP_MANAGEMENT_APP_DETAILS_STORAGE_TITLE" desc="Text for title of storage section for storage related to the app and its associated files">
     Storage

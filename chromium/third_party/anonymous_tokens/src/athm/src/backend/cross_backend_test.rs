@@ -427,12 +427,11 @@ mod cross_backend_tests {
         };
 
         const N_BUCKETS: u8 = 4;
-        let mut rng = rand::thread_rng();
 
         // --- Server (backend S): Generate keys ---
         let server_params =
             GenericParams::<S>::new_generic(N_BUCKETS, b"cross_backend_test".to_vec()).unwrap();
-        let (sk, pk, proof) = key_gen_generic::<S, _>(&server_params, &mut rng);
+        let (sk, pk, proof) = key_gen_generic::<S>(&server_params);
 
         // Serialize server outputs.
         let mut params_bytes = Vec::new();
@@ -455,8 +454,7 @@ mod cross_backend_tests {
         assert_eq!(params_bytes, client_params_bytes, "Params re-encode mismatch");
 
         let (ctx, req) =
-            token_request_generic::<C, _>(&client_pk, &client_proof, &client_params, &mut rng)
-                .unwrap();
+            token_request_generic::<C>(&client_pk, &client_proof, &client_params).unwrap();
 
         // Serialize client outputs.
         let mut ctx_bytes = Vec::new();
@@ -469,15 +467,8 @@ mod cross_backend_tests {
 
         // Test token issuance and verification for each of the N_BUCKETS possible metadata values.
         for metadata in 0..N_BUCKETS {
-            let resp = token_response_generic::<S, _>(
-                &sk,
-                &pk,
-                &server_req,
-                metadata,
-                &server_params,
-                &mut rng,
-            )
-            .unwrap();
+            let resp = token_response_generic::<S>(&sk, &pk, &server_req, metadata, &server_params)
+                .unwrap();
 
             // Serialize server response.
             let mut resp_bytes = Vec::new();
@@ -495,15 +486,9 @@ mod cross_backend_tests {
                 "TokenResponse re-encode mismatch for metadata {metadata}"
             );
 
-            let token = finalize_token_generic::<C, _>(
-                &ctx,
-                &client_pk,
-                &req,
-                &client_resp,
-                &client_params,
-                &mut rng,
-            )
-            .unwrap();
+            let token =
+                finalize_token_generic::<C>(&ctx, &client_pk, &req, &client_resp, &client_params)
+                    .unwrap();
 
             // Serialize the token.
             let mut token_bytes = Vec::new();

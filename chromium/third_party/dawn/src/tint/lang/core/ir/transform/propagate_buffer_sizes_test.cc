@@ -35,7 +35,9 @@ namespace {
 using namespace tint::core::fluent_types;     // NOLINT
 using namespace tint::core::number_suffixes;  // NOLINT
 
-using IR_PropagateBufferSizesTest = TransformTest;
+struct IR_PropagateBufferSizesTest : public TransformTest {
+    void SetUp() override { mod.properties.Add(Property::kAllowBufferTypes); }
+};
 
 TEST_F(IR_PropagateBufferSizesTest, BufferLength_GlobalVariable_Noop) {
     auto* gv = b.Var("gv", ty.ptr(storage, ty.unsized_buffer(), read_write));
@@ -79,7 +81,7 @@ TEST_F(IR_PropagateBufferSizesTest, BufferArrayView_GlobalVariable_Direct) {
     b.Append(func->Block(), [&] {
         auto* call =
             b.CallExplicit(ty.ptr(storage, ty.runtime_array(ty.u32())), BuiltinFn::kBufferArrayView,
-                           Vector{ty.runtime_array(ty.u32())}, gv, 0_u, 32_u);
+                           Vector<TemplateParameter, 1>{ty.runtime_array(ty.u32())}, gv, 0_u, 32_u);
         b.Let("a", call);
         b.Return(func);
     });
@@ -186,7 +188,7 @@ TEST_F(IR_PropagateBufferSizesTest, BufferView_Variable_Indirect) {
     foo->SetParams({foo_p});
     b.Append(foo->Block(), [&] {
         auto* call = b.CallExplicit(ty.ptr(storage, ty.u32()), BuiltinFn::kBufferView,
-                                    Vector{ty.u32()}, foo_p, 0_u);
+                                    Vector<TemplateParameter, 1>{ty.u32()}, foo_p, 0_u);
         b.Let("a", call);
         b.Return(foo);
     });
@@ -254,7 +256,7 @@ TEST_F(IR_PropagateBufferSizesTest, BufferView_Variable_IndirectMultiPath) {
     foo->SetParams({foo_p});
     b.Append(foo->Block(), [&] {
         auto* call = b.CallExplicit(ty.ptr(storage, ty.u32()), BuiltinFn::kBufferView,
-                                    Vector{ty.u32()}, foo_p, 0_u);
+                                    Vector<TemplateParameter, 1>{ty.u32()}, foo_p, 0_u);
         b.Let("a", call);
         b.Return(foo);
     });
@@ -423,7 +425,7 @@ TEST_F(IR_PropagateBufferSizesTest, BufferView_Variable_MultiSource_LongChain) {
     foo1->SetParams({foo1_p});
     b.Append(foo1->Block(), [&] {
         auto* call = b.CallExplicit(ty.ptr(storage, ty.u32()), BuiltinFn::kBufferView,
-                                    Vector{ty.u32()}, foo1_p, 0_u);
+                                    Vector<TemplateParameter, 1>{ty.u32()}, foo1_p, 0_u);
         b.Let("a", call);
         b.Return(foo1);
     });
@@ -559,7 +561,7 @@ TEST_F(IR_PropagateBufferSizesTest, BufferView_Variable_MultiSource) {
     foo->SetParams({foo_p});
     b.Append(foo->Block(), [&] {
         auto* call = b.CallExplicit(ty.ptr(storage, ty.u32()), BuiltinFn::kBufferView,
-                                    Vector{ty.u32()}, foo_p, 0_u);
+                                    Vector<TemplateParameter, 1>{ty.u32()}, foo_p, 0_u);
         b.Let("a", call);
         b.Return(foo);
     });
@@ -655,7 +657,7 @@ TEST_F(IR_PropagateBufferSizesTest, LetChain) {
         auto* l1 = b.Let("l1", foo_p);
         auto* l2 = b.Let("l2", l1);
         auto* call = b.CallExplicit(ty.ptr(storage, ty.u32()), BuiltinFn::kBufferView,
-                                    Vector{ty.u32()}, l2, 0_u);
+                                    Vector<TemplateParameter, 1>{ty.u32()}, l2, 0_u);
         b.Let("a", call);
         b.Return(foo);
     });
@@ -755,7 +757,8 @@ TEST_F(IR_PropagateBufferSizesTest, BufferView_AdjustOffset_Const) {
 
     auto* foo = b.Function("foo", ty.void_());
     b.Append(foo->Block(), [&] {
-        b.CallExplicit(ty.ptr(storage, ty.u32()), BuiltinFn::kBufferView, Vector{ty.u32()}, v, 5_u);
+        b.CallExplicit(ty.ptr(storage, ty.u32()), BuiltinFn::kBufferView,
+                       Vector<TemplateParameter, 1>{ty.u32()}, v, 5_u);
         b.Return(foo);
     });
 
@@ -800,8 +803,8 @@ TEST_F(IR_PropagateBufferSizesTest, BufferView_AdjustOffset_NonConst) {
     auto* offset = b.FunctionParam("offset", ty.i32());
     foo->SetParams({offset});
     b.Append(foo->Block(), [&] {
-        b.CallExplicit(ty.ptr(storage, ty.vec4u()), BuiltinFn::kBufferView, Vector{ty.vec4u()}, v,
-                       offset);
+        b.CallExplicit(ty.ptr(storage, ty.vec4u()), BuiltinFn::kBufferView,
+                       Vector<TemplateParameter, 1>{ty.vec4u()}, v, offset);
         b.Return(foo);
     });
 
@@ -847,7 +850,7 @@ TEST_F(IR_PropagateBufferSizesTest, BufferArrayView_AdjustOffset_Const) {
     auto* foo = b.Function("foo", ty.void_());
     b.Append(foo->Block(), [&] {
         b.CallExplicit(ty.ptr(storage, ty.runtime_array(ty.u32())), BuiltinFn::kBufferArrayView,
-                       Vector{ty.runtime_array(ty.u32())}, v, 5_u, 16_u);
+                       Vector<TemplateParameter, 1>{ty.runtime_array(ty.u32())}, v, 5_u, 16_u);
         b.Return(foo);
     });
 
@@ -893,7 +896,7 @@ TEST_F(IR_PropagateBufferSizesTest, BufferArrayView_AdjustOffset_NonConst) {
     foo->SetParams({offset});
     b.Append(foo->Block(), [&] {
         b.CallExplicit(ty.ptr(storage, ty.runtime_array(ty.vec4u())), BuiltinFn::kBufferArrayView,
-                       Vector{ty.runtime_array(ty.vec4u())}, v, offset, 16_u);
+                       Vector<TemplateParameter, 1>{ty.runtime_array(ty.vec4u())}, v, offset, 16_u);
         b.Return(foo);
     });
 
@@ -943,7 +946,8 @@ TEST_F(IR_PropagateBufferSizesTest, BufferArrayView_AdjustSize_Const) {
 
     auto* foo = b.Function("foo", ty.void_());
     b.Append(foo->Block(), [&] {
-        b.CallExplicit(ty.ptr(storage, S), BuiltinFn::kBufferArrayView, Vector{S}, v, 0_u, 11_u);
+        b.CallExplicit(ty.ptr(storage, S), BuiltinFn::kBufferArrayView,
+                       Vector<TemplateParameter, 1>{S}, v, 0_u, 11_u);
         b.Return(foo);
     });
 
@@ -1003,7 +1007,8 @@ TEST_F(IR_PropagateBufferSizesTest, BufferArrayView_AdjustSize_NonConst) {
     auto* size = b.FunctionParam("size", ty.i32());
     foo->SetParams({size});
     b.Append(foo->Block(), [&] {
-        b.CallExplicit(ty.ptr(storage, S), BuiltinFn::kBufferArrayView, Vector{S}, v, 0_u, size);
+        b.CallExplicit(ty.ptr(storage, S), BuiltinFn::kBufferArrayView,
+                       Vector<TemplateParameter, 1>{S}, v, 0_u, size);
         b.Return(foo);
     });
 

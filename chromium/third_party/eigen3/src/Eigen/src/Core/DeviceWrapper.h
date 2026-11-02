@@ -70,7 +70,7 @@ struct AssignmentWithDevice<DstXprType, Product<Lhs, Rhs, Options>, Functor, Dev
   }
 };
 
-// specialization for coeffcient-wise assignment
+// specialization for coefficient-wise assignment
 template <typename DstXprType, typename SrcXprType, typename Functor, typename Device, typename Weak>
 struct AssignmentWithDevice<DstXprType, SrcXprType, Functor, Device, Dense2Dense, Weak> {
   static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void run(DstXprType& dst, const SrcXprType& src, const Functor& func,
@@ -108,7 +108,7 @@ EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE constexpr void call_assignment_no_alias(De
   // TODO: check whether this is the right place to perform these checks:
   EIGEN_STATIC_ASSERT_LVALUE(Dst)
   EIGEN_STATIC_ASSERT_SAME_MATRIX_SIZE(ActualDstTypeCleaned, Src)
-  EIGEN_CHECK_BINARY_COMPATIBILIY(Func, typename ActualDstTypeCleaned::Scalar, typename Src::Scalar);
+  EIGEN_CHECK_BINARY_COMPATIBILITY(Func, typename ActualDstTypeCleaned::Scalar, typename Src::Scalar);
 
   // this provides a mechanism for specializing simple assignments, matrix products, etc
   AssignmentWithDevice<ActualDstTypeCleaned, Src, Func, Device>::run(actualDst, src, func, dst.device());

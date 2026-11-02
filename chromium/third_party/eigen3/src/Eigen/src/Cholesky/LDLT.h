@@ -332,8 +332,8 @@ struct ldlt_inplace<Lower> {
           mat.coeffRef(i, k) = numext::conj(mat.coeffRef(index_of_biggest_in_corner, i));
           mat.coeffRef(index_of_biggest_in_corner, i) = numext::conj(tmp);
         }
-        EIGEN_IF_CONSTEXPR(NumTraits<Scalar>::IsComplex)
-        mat.coeffRef(index_of_biggest_in_corner, k) = numext::conj(mat.coeff(index_of_biggest_in_corner, k));
+        EIGEN_IF_CONSTEXPR (NumTraits<Scalar>::IsComplex)
+          mat.coeffRef(index_of_biggest_in_corner, k) = numext::conj(mat.coeff(index_of_biggest_in_corner, k));
       }
 
       // partition the matrix:

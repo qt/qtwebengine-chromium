@@ -273,17 +273,6 @@ template <typename TransferBarrier>
 using GlobalQFOTransferBarrierMap =
     vvl::concurrent_unordered_map<typename TransferBarrier::HandleType, QFOTransferBarrierSet<TransferBarrier>>;
 
-// Submit queue uses the Scoreboard to track all release/acquire operations in a batch.
-template <typename TransferBarrier>
-using QFOTransferCBScoreboard =
-    vvl::unordered_map<TransferBarrier, const vvl::CommandBuffer*, QFOTransferBarrierHash<TransferBarrier>>;
-
-template <typename TransferBarrier>
-struct QFOTransferCBScoreboards {
-    QFOTransferCBScoreboard<TransferBarrier> acquire;
-    QFOTransferCBScoreboard<TransferBarrier> release;
-};
-
 namespace sync_utils {
 VkPipelineStageFlags2 DisabledPipelineStages(const DeviceFeatures& features, const DeviceExtensions& device_extensions);
 VkAccessFlags2 DisabledAccesses(const DeviceExtensions& device_extensions);
@@ -294,6 +283,9 @@ std::string StringPipelineStageFlags(VkPipelineStageFlags2 mask, bool sync1 = fa
 // and ALL_GRAPHICS_BIT will be limited to what is supported.
 VkPipelineStageFlags2 ExpandPipelineStages(VkPipelineStageFlags2 stage_mask, VkQueueFlags queue_flags,
                                            const VkPipelineStageFlags2 disabled_feature_mask = 0);
+
+VkPipelineStageFlags2 AddEarlierPipelineStages(VkPipelineStageFlags2 stage_mask);
+VkPipelineStageFlags2 AddLaterPipelineStages(VkPipelineStageFlags2 stage_mask);
 
 VkAccessFlags2 CompatibleAccessMask(VkPipelineStageFlags2 stage_mask);
 

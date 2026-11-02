@@ -121,7 +121,9 @@ class OpenXrRenderLoop : public XRThread,
   void CleanUp() override;
 
   void ClearPendingFrame();
-  void StartPendingFrame();
+  // Returns false if the session ended synchronously while starting the frame
+  // (see the .cc); callers should bail without touching `pending_frame_`.
+  bool StartPendingFrame();
 
   void StartRuntimeFinish(
       base::RepeatingCallback<void(mojom::XRVisibilityState)>
@@ -150,13 +152,15 @@ class OpenXrRenderLoop : public XRThread,
                                     mojo::PlatformHandle texture_handle,
                                     const gpu::SyncToken& sync_token) override;
 #endif
-  void SubmitFrameMissing(int16_t frame_index, const gpu::SyncToken&) override;
+  void SubmitFrameMissing(
+      int16_t frame_index,
+      gpu::SharedImageExportResult camera_export_multi_result) override;
   void SubmitFrame(int16_t frame_index,
                    base::TimeDelta time_waited) final;
   void SubmitFrameDrawnIntoTexture(
       int16_t frame_index,
       std::vector<device::mojom::XRLayerUpdatePtr> layer_updates,
-      const std::vector<gpu::SyncToken>& camera_sync_tokens,
+      gpu::SharedImageExportResult camera_export_multi_result,
       base::TimeDelta time_waited) override;
   void UpdateLayerBounds(int16_t frame_id,
                          const gfx::RectF& left_bounds,
@@ -275,7 +279,6 @@ class OpenXrRenderLoop : public XRThread,
 
   void OnWebXrTokenSignaled(int16_t frame_index,
                             std::vector<LayerId> updated_layers,
-                            GLuint id,
                             std::unique_ptr<gfx::GpuFence> gpu_fence);
 
   void MaybeRejectSessionCallback();

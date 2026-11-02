@@ -71,7 +71,7 @@ void dogleg(const Matrix<Scalar, Dynamic, Dynamic> &qrfac, const Matrix<Scalar, 
   /* calculate the point along the scaled gradient */
   /* at which the quadratic is minimized. */
   wa1.array() /= (diag * gnorm).array();
-  // TODO : once unit tests cover this part,:
+  // TODO : once unit tests cover this part:
   // wa2 = qrfac.template triangularView<Upper>() * wa1;
   for (j = 0; j < n; ++j) {
     sum = 0.;

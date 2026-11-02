@@ -1,7 +1,9 @@
 // Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable @devtools/no-imperative-dom-api */
+
+import '../../ui/components/report_view/report_view.js';
+import '../../ui/kit/kit.js';
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -10,9 +12,9 @@ import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as NetworkForward from '../../panels/network/forward/forward.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
-import {Link} from '../../ui/kit/kit.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
+import {Directives, html, type LitTemplate, nothing, render} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 import * as MobileThrottling from '../mobile_throttling/mobile_throttling.js';
 
@@ -179,6 +181,120 @@ const UIStrings = {
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/application/ServiceWorkersView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
+const {until} = Directives;
+const {widget} = UI.Widget;
+const {bindToSetting} = UI.UIUtils;
+
+export interface SectionData {
+  manager: SDK.ServiceWorkerManager.ServiceWorkerManager;
+  registration: SDK.ServiceWorkerManager.ServiceWorkerRegistration;
+}
+
+export interface ServiceWorkersViewInput {
+  canManageServiceWorkers: boolean;
+  sections: SectionData[];
+}
+
+function renderToolbar(): LitTemplate {
+  const updateOnReloadSetting =
+      Common.Settings.Settings.instance().createSetting('service-worker-update-on-reload', false);
+  const bypassServiceWorkerSetting = Common.Settings.Settings.instance().createSetting('bypass-service-worker', false);
+  // clang-format off
+  return html`<devtools-toolbar class="service-worker-toolbar">
+    ${MobileThrottling.ThrottlingManager.throttlingManager().createOfflineToolbarCheckbox().element}
+    <devtools-checkbox title=${i18nString(UIStrings.onPageReloadForceTheService)}
+                       ${bindToSetting(updateOnReloadSetting)}>
+      ${i18nString(UIStrings.updateOnReload)}
+    </devtools-checkbox>
+    <devtools-checkbox title=${i18nString(UIStrings.bypassTheServiceWorkerAndLoad)}
+                       ${bindToSetting(bypassServiceWorkerSetting)}>
+      ${i18nString(UIStrings.bypassForNetwork)}
+     </devtools-checkbox>
+  </devtools-toolbar>`;
+  // clang-format on
+}
+
+function renderOthersOriginView(): LitTemplate {
+  // clang-format off
+  return html`<div class="service-workers-other-origin"
+                   jslog=${VisualLogging.section('other-origin')}>
+    <devtools-report>
+      <devtools-report-section-header>
+         ${i18nString(UIStrings.serviceWorkersFromOtherOrigins)}
+      </devtools-report-section-header>
+      <div class="service-worker-section">
+         <devtools-link href="chrome://serviceworker-internals"
+                        jslogcontext="view-all"
+                        .allowPrivileged=${true}>
+           ${i18nString(UIStrings.seeAllRegistrations)}
+         </devtools-link>
+      </div>
+    </devtools-report>
+  </div>`;
+  // clang-format on
+}
+
+function getTimeStamp(registration: SDK.ServiceWorkerManager.ServiceWorkerRegistration): number {
+  const versions = registration.versionsByMode();
+  let timestamp: number|undefined = 0;
+  const active = versions.get(SDK.ServiceWorkerManager.ServiceWorkerVersion.Modes.ACTIVE);
+  const installing = versions.get(SDK.ServiceWorkerManager.ServiceWorkerVersion.Modes.INSTALLING);
+  const waiting = versions.get(SDK.ServiceWorkerManager.ServiceWorkerVersion.Modes.WAITING);
+  const redundant = versions.get(SDK.ServiceWorkerManager.ServiceWorkerVersion.Modes.REDUNDANT);
+
+  if (active) {
+    timestamp = active.scriptResponseTime;
+  } else if (waiting) {
+    timestamp = waiting.scriptResponseTime;
+  } else if (installing) {
+    timestamp = installing.scriptResponseTime;
+  } else if (redundant) {
+    timestamp = redundant.scriptResponseTime;
+  }
+
+  return timestamp || 0;
+}
+
+function renderOriginReport(input: ServiceWorkersViewInput): LitTemplate {
+  if (!input.canManageServiceWorkers) {
+    return nothing;
+  }
+
+  const sortedSections = [...input.sections];
+  sortedSections.sort((a, b) => {
+    const aTimestamp = getTimeStamp(a.registration);
+    const bTimestamp = getTimeStamp(b.registration);
+    return bTimestamp - aTimestamp;
+  });
+
+  // clang-format off
+  return html`<div class="service-workers-this-origin" jslog=${VisualLogging.section('this-origin')}>
+    <devtools-report .data=${{reportTitle: i18n.i18n.lockedString('Service workers')}}>
+      <div class="service-worker-toolbar" slot="toolbar">${renderToolbar()}</div>
+      ${sortedSections.map(section => html`<devtools-widget class="service-worker-section-container" ${widget(Section, {section})}></devtools-widget>`)}
+    </devtools-report>
+  </div>`;
+  // clang-format on
+}
+
+type View = (input: ServiceWorkersViewInput, output: undefined, target: HTMLElement) => void;
+export const DEFAULT_VIEW: View = (input, _output, target): void => {
+  // clang-format off
+  render(html`
+    <!-- This Origin Report -->
+    ${renderOriginReport(input)}
+    ${renderOthersOriginView()}`,
+         target, {
+           container: {
+             classes: [
+               'service-worker-list',
+               (input.sections.length > 0 ? 'service-worker-has-current' : 'service-worker-list-empty'),
+             ],
+           },
+         });
+  // clang-format on
+};
+
 let throttleDisabledForDebugging = false;
 export const setThrottleDisabledForDebugging = (enable: boolean): void => {
   throttleDisabledForDebugging = enable;
@@ -186,70 +302,55 @@ export const setThrottleDisabledForDebugging = (enable: boolean): void => {
 
 export class ServiceWorkersView extends UI.Widget.VBox implements
     SDK.TargetManager.SDKModelObserver<SDK.ServiceWorkerManager.ServiceWorkerManager> {
-  currentWorkersView: UI.ReportView.ReportView;
-  private readonly toolbar: UI.Toolbar.Toolbar;
-  private readonly sections: Map<SDK.ServiceWorkerManager.ServiceWorkerRegistration, Section>;
+  private readonly sections: Map<SDK.ServiceWorkerManager.ServiceWorkerRegistration, SectionData>;
   private manager: SDK.ServiceWorkerManager.ServiceWorkerManager|null;
   private securityOriginManager: SDK.SecurityOriginManager.SecurityOriginManager|null;
-  private readonly sectionToRegistration:
-      WeakMap<UI.ReportView.Section, SDK.ServiceWorkerManager.ServiceWorkerRegistration>;
   private readonly eventListeners:
       Map<SDK.ServiceWorkerManager.ServiceWorkerManager, Common.EventTarget.EventDescriptor[]>;
+  readonly #output = undefined;
 
-  constructor() {
+  #view: (input: ServiceWorkersViewInput, output: undefined, target: HTMLElement) => void;
+
+  constructor(view: View = DEFAULT_VIEW) {
     super({
       jslog: `${VisualLogging.pane('service-workers')}`,
       useShadowDom: true,
     });
+    this.#view = view;
     this.registerRequiredCSS(serviceWorkersViewStyles);
-
-    // TODO(crbug.com/1156978): Replace UI.ReportView.ReportView with ReportView.ts web component.
-    this.currentWorkersView = new UI.ReportView.ReportView(i18n.i18n.lockedString('Service workers'));
-    this.currentWorkersView.setBodyScrollable(false);
-    this.contentElement.classList.add('service-worker-list');
-    this.currentWorkersView.show(this.contentElement);
-    this.currentWorkersView.element.classList.add('service-workers-this-origin');
-    this.currentWorkersView.element.setAttribute('jslog', `${VisualLogging.section('this-origin')}`);
-
-    this.toolbar = this.currentWorkersView.createToolbar();
 
     this.sections = new Map();
 
     this.manager = null;
     this.securityOriginManager = null;
 
-    this.sectionToRegistration = new WeakMap();
-
-    const othersDiv = this.contentElement.createChild('div', 'service-workers-other-origin');
-    othersDiv.setAttribute('jslog', `${VisualLogging.section('other-origin')}`);
-    // TODO(crbug.com/1156978): Replace UI.ReportView.ReportView with ReportView.ts web component.
-    const othersView = new UI.ReportView.ReportView();
-    othersView.setHeaderVisible(false);
-    othersView.show(othersDiv);
-    const othersSection = othersView.appendSection(i18nString(UIStrings.serviceWorkersFromOtherOrigins));
-    const othersSectionRow = othersSection.appendRow();
-    const seeOthers = Link.create(
-        'chrome://serviceworker-internals', i18nString(UIStrings.seeAllRegistrations), undefined, 'view-all');
-    othersSectionRow.appendChild(seeOthers);
-
-    this.toolbar.appendToolbarItem(
-        MobileThrottling.ThrottlingManager.throttlingManager().createOfflineToolbarCheckbox());
-    const updateOnReloadSetting =
-        Common.Settings.Settings.instance().createSetting('service-worker-update-on-reload', false);
-    updateOnReloadSetting.setTitle(i18nString(UIStrings.updateOnReload));
-    const forceUpdate =
-        new UI.Toolbar.ToolbarSettingCheckbox(updateOnReloadSetting, i18nString(UIStrings.onPageReloadForceTheService));
-    this.toolbar.appendToolbarItem(forceUpdate);
-    const bypassServiceWorkerSetting =
-        Common.Settings.Settings.instance().createSetting('bypass-service-worker', false);
-    bypassServiceWorkerSetting.setTitle(i18nString(UIStrings.bypassForNetwork));
-    const fallbackToNetwork = new UI.Toolbar.ToolbarSettingCheckbox(
-        bypassServiceWorkerSetting, i18nString(UIStrings.bypassTheServiceWorkerAndLoad));
-    this.toolbar.appendToolbarItem(fallbackToNetwork);
-
     this.eventListeners = new Map();
     SDK.TargetManager.TargetManager.instance().observeModels(SDK.ServiceWorkerManager.ServiceWorkerManager, this);
-    this.updateListVisibility();
+  }
+
+  override wasShown(): void {
+    super.wasShown();
+    this.requestUpdate();
+  }
+
+  override async performUpdate(): Promise<void> {
+    if (this.manager) {
+      for (const registration of this.manager.registrations().values()) {
+        const isCurrent = this.isOriginCurrent(registration.securityOrigin);
+        if (isCurrent && !this.sections.has(registration)) {
+          this.sections.set(registration, {manager: this.manager, registration});
+        } else if (!isCurrent && this.sections.has(registration)) {
+          this.sections.delete(registration);
+        }
+      }
+    }
+
+    const input: ServiceWorkersViewInput = {
+      canManageServiceWorkers: this.manager !== null,
+      sections: Array.from(this.sections.values()).map(data => ({...data})),
+    };
+
+    this.#view(input, this.#output, this.contentElement);
   }
 
   modelAdded(serviceWorkerManager: SDK.ServiceWorkerManager.ServiceWorkerManager): void {
@@ -266,14 +367,14 @@ export class ServiceWorkersView extends UI.Widget.VBox implements
     }
 
     this.eventListeners.set(serviceWorkerManager, [
-      this.manager.addEventListener(
-          SDK.ServiceWorkerManager.Events.REGISTRATION_UPDATED, this.registrationUpdated, this),
-      this.manager.addEventListener(
-          SDK.ServiceWorkerManager.Events.REGISTRATION_DELETED, this.registrationDeleted, this),
-      this.securityOriginManager.addEventListener(
-          SDK.SecurityOriginManager.Events.SecurityOriginAdded, this.updateSectionVisibility, this),
-      this.securityOriginManager.addEventListener(
-          SDK.SecurityOriginManager.Events.SecurityOriginRemoved, this.updateSectionVisibility, this),
+      this.manager.addEventListener(SDK.ServiceWorkerManager.Events.REGISTRATION_UPDATED, this.registrationUpdated,
+                                    this),
+      this.manager.addEventListener(SDK.ServiceWorkerManager.Events.REGISTRATION_DELETED, this.registrationDeleted,
+                                    this),
+      this.securityOriginManager.addEventListener(SDK.SecurityOriginManager.Events.SecurityOriginAdded,
+                                                  this.requestUpdate, this),
+      this.securityOriginManager.addEventListener(SDK.SecurityOriginManager.Events.SecurityOriginRemoved,
+                                                  this.requestUpdate, this),
     ]);
   }
 
@@ -286,67 +387,6 @@ export class ServiceWorkersView extends UI.Widget.VBox implements
     this.eventListeners.delete(serviceWorkerManager);
     this.manager = null;
     this.securityOriginManager = null;
-  }
-
-  private getTimeStamp(registration: SDK.ServiceWorkerManager.ServiceWorkerRegistration): number {
-    const versions = registration.versionsByMode();
-
-    let timestamp: number|undefined = 0;
-
-    const active = versions.get(SDK.ServiceWorkerManager.ServiceWorkerVersion.Modes.ACTIVE);
-    const installing = versions.get(SDK.ServiceWorkerManager.ServiceWorkerVersion.Modes.INSTALLING);
-    const waiting = versions.get(SDK.ServiceWorkerManager.ServiceWorkerVersion.Modes.WAITING);
-    const redundant = versions.get(SDK.ServiceWorkerManager.ServiceWorkerVersion.Modes.REDUNDANT);
-
-    if (active) {
-      timestamp = active.scriptResponseTime;
-    } else if (waiting) {
-      timestamp = waiting.scriptResponseTime;
-    } else if (installing) {
-      timestamp = installing.scriptResponseTime;
-    } else if (redundant) {
-      timestamp = redundant.scriptResponseTime;
-    }
-
-    return timestamp || 0;
-  }
-
-  private updateSectionVisibility(): void {
-    let hasThis = false;
-    const movedSections = [];
-    for (const section of this.sections.values()) {
-      const expectedView = this.getReportViewForOrigin(section.registration.securityOrigin);
-      hasThis = hasThis || expectedView === this.currentWorkersView;
-      if (section.section.parentWidget() !== expectedView) {
-        movedSections.push(section);
-      }
-    }
-
-    for (const section of movedSections) {
-      const registration = section.registration;
-      this.removeRegistrationFromList(registration);
-      this.updateRegistration(registration, true);
-    }
-
-    this.currentWorkersView.sortSections((aSection, bSection) => {
-      const aRegistration = this.sectionToRegistration.get(aSection);
-      const bRegistration = this.sectionToRegistration.get(bSection);
-      const aTimestamp = aRegistration ? this.getTimeStamp(aRegistration) : 0;
-      const bTimestamp = bRegistration ? this.getTimeStamp(bRegistration) : 0;
-      // the newest (largest timestamp value) should be the first
-      return bTimestamp - aTimestamp;
-    });
-
-    for (const section of this.sections.values()) {
-      if (section.section.parentWidget() === this.currentWorkersView ||
-          this.isRegistrationVisible(section.registration)) {
-        section.section.showWidget();
-      } else {
-        section.section.hideWidget();
-      }
-    }
-    this.contentElement.classList.toggle('service-worker-has-current', Boolean(hasThis));
-    this.updateListVisibility();
   }
 
   private registrationUpdated(
@@ -383,35 +423,32 @@ export class ServiceWorkersView extends UI.Widget.VBox implements
     }
   }
 
-  private getReportViewForOrigin(origin: string): UI.ReportView.ReportView|null {
+  private isOriginCurrent(origin: string): boolean {
     if (this.securityOriginManager &&
         (this.securityOriginManager.securityOrigins().includes(origin) ||
          this.securityOriginManager.unreachableMainSecurityOrigin() === origin)) {
-      return this.currentWorkersView;
+      return true;
     }
-    return null;
+    return false;
   }
 
-  private updateRegistration(registration: SDK.ServiceWorkerManager.ServiceWorkerRegistration, skipUpdate?: boolean):
-      void {
-    let section = this.sections.get(registration);
-    if (!section) {
-      const title = registration.scopeURL;
-      const reportView = this.getReportViewForOrigin(registration.securityOrigin);
-      if (!reportView) {
+  private updateRegistration(registration: SDK.ServiceWorkerManager.ServiceWorkerRegistration,
+                             skipUpdate?: boolean): void {
+    if (!this.manager) {
+      return;
+    }
+    let sectionData = this.sections.get(registration);
+    if (!sectionData) {
+      if (!this.isOriginCurrent(registration.securityOrigin)) {
         return;
       }
-      const uiSection = reportView.appendSection(title);
-      uiSection.setUiGroupTitle(i18nString(UIStrings.serviceWorkerForS, {PH1: title}));
-      this.sectionToRegistration.set(uiSection, registration);
-      section = new Section((this.manager as SDK.ServiceWorkerManager.ServiceWorkerManager), uiSection, registration);
-      this.sections.set(registration, section);
+      sectionData = {manager: this.manager, registration};
+      this.sections.set(registration, sectionData);
     }
     if (skipUpdate) {
       return;
     }
-    this.updateSectionVisibility();
-    section.scheduleUpdate();
+    this.requestUpdate();
   }
 
   private registrationDeleted(
@@ -419,13 +456,12 @@ export class ServiceWorkersView extends UI.Widget.VBox implements
     this.removeRegistrationFromList(event.data);
   }
 
-  private removeRegistrationFromList(registration: SDK.ServiceWorkerManager.ServiceWorkerRegistration): void {
-    const section = this.sections.get(registration);
-    if (section) {
-      section.section.detach();
-    }
+  private removeRegistrationFromList(registration: SDK.ServiceWorkerManager.ServiceWorkerRegistration,
+                                     skipVisibilityUpdate = false): void {
     this.sections.delete(registration);
-    this.updateSectionVisibility();
+    if (!skipVisibilityUpdate) {
+      this.requestUpdate();
+    }
   }
 
   private isRegistrationVisible(registration: SDK.ServiceWorkerManager.ServiceWorkerRegistration): boolean {
@@ -434,248 +470,392 @@ export class ServiceWorkersView extends UI.Widget.VBox implements
     }
     return false;
   }
-
-  private updateListVisibility(): void {
-    this.contentElement.classList.toggle('service-worker-list-empty', this.sections.size === 0);
-  }
 }
 
-export class Section {
-  private manager: SDK.ServiceWorkerManager.ServiceWorkerManager;
-  section: UI.ReportView.Section;
-  registration: SDK.ServiceWorkerManager.ServiceWorkerRegistration;
-  private fingerprint: symbol|null;
-  private readonly pushNotificationDataSetting: Common.Settings.Setting<string>;
-  private readonly syncTagNameSetting: Common.Settings.Setting<string>;
-  private readonly periodicSyncTagNameSetting: Common.Settings.Setting<string>;
-  private readonly updateCycleView: ServiceWorkerUpdateCycleView;
-  private readonly routerView: ApplicationComponents.ServiceWorkerRouterView.ServiceWorkerRouterView;
-  private readonly networkRequests: Buttons.Button.Button;
-  private readonly updateButton: Buttons.Button.Button;
-  private readonly deleteButton: Buttons.Button.Button;
-  private sourceField: Element;
-  private readonly statusField: Element;
-  private readonly clientsField: Element;
-  private readonly clientInfoCache: Map<string, Protocol.Target.TargetInfo>;
-  private readonly throttler: Common.Throttler.Throttler;
-  private updateCycleField?: Element;
-  private routerField?: Element;
+export interface SectionViewInput {
+  title: string;
+  isDeleted: boolean;
+  errorsLength: number;
+  pushData: string;
+  syncTag: string;
+  periodicSyncTag: string;
+  updateCycleTable: HTMLElement;
+  activeVersion?: SDK.ServiceWorkerManager.ServiceWorkerVersion;
+  waitingVersion?: SDK.ServiceWorkerManager.ServiceWorkerVersion;
+  installingVersion?: SDK.ServiceWorkerManager.ServiceWorkerVersion;
+  redundantVersion?: SDK.ServiceWorkerManager.ServiceWorkerVersion;
+  renderClientInfo: (clientId: Protocol.Target.TargetID) => Promise<LitTemplate|typeof nothing>;
+  onNetworkRequests: () => void;
+  onUpdate: () => void;
+  onUnregister: () => void;
+  onPush: (data: string) => void;
+  onSync: (tag: string) => void;
+  onPeriodicSync: (tag: string) => void;
+  onStop: (versionId: string) => void;
+  onStart: () => void;
+  onSkipWaiting: () => void;
+}
 
-  constructor(
-      manager: SDK.ServiceWorkerManager.ServiceWorkerManager, section: UI.ReportView.Section,
-      registration: SDK.ServiceWorkerManager.ServiceWorkerRegistration) {
-    this.manager = manager;
-    this.section = section;
-    this.registration = registration;
-    this.fingerprint = null;
-    this.pushNotificationDataSetting = Common.Settings.Settings.instance().createLocalSetting(
-        'push-data', i18nString(UIStrings.testPushMessageFromDevtools));
-    this.syncTagNameSetting =
-        Common.Settings.Settings.instance().createLocalSetting('sync-tag-name', 'test-tag-from-devtools');
-    this.periodicSyncTagNameSetting =
-        Common.Settings.Settings.instance().createLocalSetting('periodic-sync-tag-name', 'test-tag-from-devtools');
-
-    this.updateCycleView = new ServiceWorkerUpdateCycleView(registration);
-    this.routerView = new ApplicationComponents.ServiceWorkerRouterView.ServiceWorkerRouterView();
-    this.networkRequests = new Buttons.Button.Button();
-    this.networkRequests.data = {
-      variant: Buttons.Button.Variant.TEXT,
-      title: i18nString(UIStrings.networkRequests),
-      jslogContext: 'show-network-requests',
-    };
-    this.networkRequests.textContent = i18nString(UIStrings.networkRequests);
-    this.networkRequests.addEventListener('click', this.networkRequestsClicked.bind(this));
-    this.section.appendButtonToHeader(this.networkRequests);
-    this.updateButton = UI.UIUtils.createTextButton(
-        i18nString(UIStrings.update), this.updateButtonClicked.bind(this),
-        {variant: Buttons.Button.Variant.TEXT, title: i18nString(UIStrings.update), jslogContext: 'update'});
-    this.section.appendButtonToHeader(this.updateButton);
-    this.deleteButton =
-        UI.UIUtils.createTextButton(i18nString(UIStrings.unregister), this.unregisterButtonClicked.bind(this), {
+function renderHeaderButtons(input: SectionViewInput): LitTemplate {
+  // clang-format off
+  return html`
+    <devtools-button .data=${{
+          variant: Buttons.Button.Variant.TEXT,
+          title: i18nString(UIStrings.networkRequests),
+          jslogContext: 'show-network-requests',
+        } as Buttons.Button.ButtonData}
+        .disabled=${input.isDeleted}
+        @click=${input.onNetworkRequests}>
+      ${i18nString(UIStrings.networkRequests)}
+    </devtools-button>
+    <devtools-button .data=${{
+          variant: Buttons.Button.Variant.TEXT,
+          title: i18nString(UIStrings.update),
+          jslogContext: 'update',
+        } as Buttons.Button.ButtonData}
+        .disabled=${input.isDeleted}
+        @click=${input.onUpdate}>
+      ${i18nString(UIStrings.update)}
+    </devtools-button>
+    <devtools-button .data=${{
           variant: Buttons.Button.Variant.TEXT,
           title: i18nString(UIStrings.unregisterServiceWorker),
           jslogContext: 'unregister',
-        });
-    this.section.appendButtonToHeader(this.deleteButton);
+        } as Buttons.Button.ButtonData}
+        .disabled=${input.isDeleted}
+        @click=${input.onUnregister}>
+      ${i18nString(UIStrings.unregister)}
+    </devtools-button>`;
+  // clang-format on
+}
 
-    // Preserve the order.
-    this.sourceField = this.wrapWidget(this.section.appendField(i18nString(UIStrings.source)));
-    this.statusField = this.wrapWidget(this.section.appendField(i18nString(UIStrings.status)));
-    this.clientsField = this.wrapWidget(this.section.appendField(i18nString(UIStrings.clients)));
-    this.createSyncNotificationField(
-        i18nString(UIStrings.pushString), this.pushNotificationDataSetting.get(), i18nString(UIStrings.pushData),
-        this.push.bind(this), 'push-message');
-    this.createSyncNotificationField(
-        i18nString(UIStrings.syncString), this.syncTagNameSetting.get(), i18nString(UIStrings.syncTag),
-        this.sync.bind(this), 'sync-tag');
-    this.createSyncNotificationField(
-        i18nString(UIStrings.periodicSync), this.periodicSyncTagNameSetting.get(),
-        i18nString(UIStrings.periodicSyncTag), tag => this.periodicSync(tag), 'periodic-sync-tag');
-    this.createUpdateCycleField();
-    this.maybeCreateRouterField();
+function renderSyncNotificationField(label: string, initialValue: string, placeholder: string,
+                                     callback: (arg0: string) => void, jslogContext: string): LitTemplate {
+  // clang-format off
+  return html`
+    <div class="report-field">
+    <div class="report-field-name">${label}</div>
+      <div class="report-field-value">
+      <form class="service-worker-editor-with-button" @submit=${(e: Event) => {
+        const {editor} = e.target as HTMLFormElement;
+        callback(editor.value || '');
+        e.consume(true);
+      }}>
+        <input name="editor" class="source-code service-worker-notification-editor harmony-input" type="text"
+          .value=${initialValue}
+          placeholder=${placeholder}
+          aria-label=${label}
+          .spellcheck=${false}
+          jslog=${VisualLogging.textField().track({change: true}).context(jslogContext)}
+        >
+        <devtools-button .data=${{
+            type: 'submit',
+            variant: Buttons.Button.Variant.OUTLINED,
+            jslogContext} as Buttons.Button.ButtonData}>
+          ${label}
+        </devtools-button>
+      </form>
+      </div>
+    </div>`;
+  // clang-format on
+}
 
+function renderVersion(icon: string, label: string, content: LitTemplate = nothing): LitTemplate {
+  // clang-format off
+  return html`
+    <div class="service-worker-version">
+      <div class=${icon}></div>
+      <span class="service-worker-version-string" role="alert" aria-live="polite">
+        ${label}
+      </span>
+      ${content}
+    </div>`;
+  // clang-format on
+}
+
+function renderClientsField(input: SectionViewInput,
+                            version?: SDK.ServiceWorkerManager.ServiceWorkerVersion): LitTemplate {
+  if (!version?.controlledClients?.length) {
+    return html`<div class="report-field">
+      <div class="report-field-name">${i18nString(UIStrings.clients)}</div>
+      <div class="report-field-value"></div>
+    </div>`;
+  }
+  // clang-format off
+  return html`<div class="report-field">
+      <div class="report-field-name">${i18nString(UIStrings.clients)}</div>
+      <div class="report-field-value">
+      ${version.controlledClients.map(client => html`
+        <div class="service-worker-client">
+          ${until(input.renderClientInfo(client))}
+       </div>`)}
+    </div>
+  </div>`;
+  // clang-format on
+}
+
+function renderSourceField(input: SectionViewInput,
+                           version?: SDK.ServiceWorkerManager.ServiceWorkerVersion): LitTemplate {
+  if (!version) {
+    return html`<div class="report-field">
+      <div class="report-field-name">${i18nString(UIStrings.source)}</div>
+      <div class="report-field-value"></div>
+    </div>`;
+  }
+  const fileName = Common.ParsedURL.ParsedURL.extractName(version.scriptURL);
+  // clang-format off
+
+  return html`<div class="report-field">
+    <div class="report-field-name">${i18nString(UIStrings.source)}</div>
+    <div class="report-field-value">
+      <div class="report-field-value-filename">
+        ${Components.Linkifier.Linkifier.renderLinkifiedUrl(version.scriptURL, {
+          text: fileName, tabStop: true, jslogContext: 'source-location'})}
+        ${input.errorsLength ? html`
+          <button
+              class="devtools-link link"
+              tabindex="0"
+              aria-label=${i18nString(UIStrings.sRegistrationErrors, {PH1: input.errorsLength})}
+              @click=${() => Common.Console.Console.instance().show()}>
+            <devtools-icon name="cross-circle-filled" class="error-icon">
+            </devtools-icon>
+            ${input.errorsLength}
+          </button>` : nothing}
+      </div>
+      ${version.scriptResponseTime !== undefined ? html`
+        <div class="report-field-value-subtitle">
+          ${i18nString(UIStrings.receivedS, {PH1: new Date(version.scriptResponseTime * 1000).toLocaleString()})}
+        </div>
+      ` : nothing}
+    </div>
+  </div>`;
+  // clang-format on
+}
+
+function renderStatusField(input: SectionViewInput, active?: SDK.ServiceWorkerManager.ServiceWorkerVersion,
+                           waiting?: SDK.ServiceWorkerManager.ServiceWorkerVersion,
+                           installing?: SDK.ServiceWorkerManager.ServiceWorkerVersion,
+                           redundant?: SDK.ServiceWorkerManager.ServiceWorkerVersion): LitTemplate {
+  // clang-format off
+
+  return html`<div class="report-field">
+    <div class="report-field-name">${i18nString(UIStrings.status)}</div>
+    <div class="report-field-value">
+      <div class="service-worker-version-stack">
+        <div class="service-worker-version-stack-bar"></div>
+        ${active ? renderVersion(
+            'service-worker-active-circle',
+            i18nString(UIStrings.sActivatedAndIsS, {
+              PH1: active.id,
+              PH2: SDK.ServiceWorkerManager.ServiceWorkerVersion.RunningStatus[active.currentState.runningStatus](),
+            }),
+            active.isRunning() || active.isStarting() ? html`
+              <devtools-button .data=${{jslogContext: 'stop', variant: Buttons.Button.Variant.OUTLINED} as Buttons.Button.ButtonData}
+                              @click=${() => input.onStop(active.id)}>
+                  ${i18nString(UIStrings.stopString)}
+              </devtools-button>`
+            : active.isStartable() ? html`
+              <devtools-button .data=${{jslogContext: 'start', variant: Buttons.Button.Variant.OUTLINED} as Buttons.Button.ButtonData}
+                              @click=${input.onStart}>
+                  ${i18nString(UIStrings.startString)}
+              </devtools-button>`
+            : nothing)
+        : redundant ? renderVersion(
+            'service-worker-redundant-circle',
+            i18nString(UIStrings.sIsRedundant, {PH1: redundant.id}))
+        : nothing}
+        ${waiting ? renderVersion(
+            'service-worker-waiting-circle',
+            i18nString(UIStrings.sWaitingToActivate, {PH1: waiting.id}), html`
+              <devtools-button .data=${{
+                    jslogContext: 'skip-waiting',
+                    title: i18n.i18n.lockedString('skipWaiting'),
+                    variant: Buttons.Button.Variant.OUTLINED} as Buttons.Button.ButtonData}
+                  @click=${input.onSkipWaiting}>
+                ${i18n.i18n.lockedString('skipWaiting')}
+              </devtools-button>
+              ${waiting.scriptResponseTime !== undefined ? html`
+                <div class="service-worker-subtitle">
+                  ${i18nString(UIStrings.receivedS, {PH1: new Date(waiting.scriptResponseTime * 1000).toLocaleString()})}
+                </div>
+              ` : nothing}
+          `,
+        ) : nothing}
+        ${installing ? renderVersion(
+          'service-worker-installing-circle',
+          i18nString(UIStrings.sTryingToInstall, {PH1: installing.id}),
+          installing.scriptResponseTime !== undefined ? html`
+            <div class="service-worker-subtitle">
+              ${i18nString(UIStrings.receivedS, {PH1: new Date(installing.scriptResponseTime * 1000).toLocaleString()})}
+            </div>` : nothing) : nothing}
+      </div>
+    </div>
+  </div>`;
+  // clang-format on
+}
+
+function renderUpdateCycleField(input: SectionViewInput): LitTemplate {
+  return html`
+    <div class="report-field">
+      <div class="report-field-name">${i18nString(UIStrings.updateCycle)}</div>
+      <div class="report-field-value">
+        ${input.updateCycleTable}
+      </div>
+    </div>`;
+}
+
+function renderRouterField(input: SectionViewInput): LitTemplate {
+  const active = input.activeVersion;
+  const title = i18nString(UIStrings.routers);
+  if (active?.routerRules && active.routerRules.length > 0) {
+    // If there is at least one registered rule in the active version, append the router filed.
+    // clang-format off
+    return html`
+      <div class="report-field">
+        <div class="report-field-name">${title}</div>
+        <div class="report-field-value">
+          ${widget(ApplicationComponents.ServiceWorkerRouterView.ServiceWorkerRouterView, { rules: active.routerRules })}
+        </div>
+      </div>`;
+    // clang-format on
+  }
+  return nothing;
+}
+
+type SectionView = (input: SectionViewInput, _output: undefined, target: HTMLElement) => void;
+
+export const DEFAULT_SECTION_VIEW: SectionView =
+    (input: SectionViewInput, _output: undefined, target: HTMLElement): void => {
+      // clang-format off
+  render(html`
+      <style>${serviceWorkersViewStyles}</style>
+      <style>${serviceWorkerUpdateCycleViewStyles}</style>
+      <devtools-report-section-header role="heading" aria-level="2"
+              aria-label=${i18nString(UIStrings.serviceWorkerForS, { PH1: input.title })}>
+        <span style="flex: 1 1 auto">${input.title}</span>
+        ${renderHeaderButtons(input)}
+      </devtools-report-section-header>
+      <div class="service-worker-section">
+         ${renderSourceField(input, input.activeVersion ?? input.redundantVersion)}
+         ${renderStatusField(input, input.activeVersion, input.waitingVersion, input.installingVersion, input.redundantVersion)}
+         ${renderClientsField(input, input.activeVersion ?? input.redundantVersion)}
+         ${renderSyncNotificationField(i18nString(UIStrings.pushString), input.pushData,
+                                   i18nString(UIStrings.pushData), input.onPush, 'push-message')}
+         ${renderSyncNotificationField(i18nString(UIStrings.syncString), input.syncTag,
+                                   i18nString(UIStrings.syncTag), input.onSync, 'sync-tag')}
+         ${renderSyncNotificationField(i18nString(UIStrings.periodicSync), input.periodicSyncTag,
+                                   i18nString(UIStrings.periodicSyncTag), input.onPeriodicSync,
+                                   'periodic-sync-tag')}
+         ${renderUpdateCycleField(input)}
+         ${renderRouterField(input)}
+      </div>
+  `, target);
+      // clang-format on
+    };
+
+export class Section extends UI.Widget.VBox {
+  private manager!: SDK.ServiceWorkerManager.ServiceWorkerManager;
+  registration!: SDK.ServiceWorkerManager.ServiceWorkerRegistration;
+  private sectionInternal!: SectionData;
+  private fingerprint: symbol|null;
+  private pushNotificationDataSetting!: Common.Settings.Setting<string>;
+  private syncTagNameSetting!: Common.Settings.Setting<string>;
+  private periodicSyncTagNameSetting!: Common.Settings.Setting<string>;
+  private updateCycleView!: ServiceWorkerUpdateCycleView;
+  private readonly clientInfoCache: Map<string, Protocol.Target.TargetInfo>;
+  private readonly throttler: Common.Throttler.Throttler;
+  #view: SectionView;
+
+  constructor(element: HTMLElement, view = DEFAULT_SECTION_VIEW) {
+    super(element);
+    this.fingerprint = null;
     this.clientInfoCache = new Map();
     this.throttler = new Common.Throttler.Throttler(500);
+    this.#view = view;
   }
 
-  private createSyncNotificationField(
-      label: string, initialValue: string, placeholder: string, callback: (arg0: string) => void,
-      jslogContext: string): void {
-    const form =
-        this.wrapWidget(this.section.appendField(label)).createChild('form', 'service-worker-editor-with-button');
-    const editor = UI.UIUtils.createInput('source-code service-worker-notification-editor');
-    editor.setAttribute('jslog', `${VisualLogging.textField().track({change: true}).context(jslogContext)}`);
-    form.appendChild(editor);
-    const button = UI.UIUtils.createTextButton(label, undefined, {jslogContext});
-    button.type = 'submit';
-    form.appendChild(button);
+  set section(data: SectionData) {
+    const registrationChanged = !this.registration || this.registration !== data.registration;
+    this.sectionInternal = data;
+    this.manager = data.manager;
+    this.registration = data.registration;
 
-    editor.value = initialValue;
-    editor.placeholder = placeholder;
-    UI.ARIAUtils.setLabel(editor, label);
+    if (!this.pushNotificationDataSetting) {
+      this.pushNotificationDataSetting = Common.Settings.Settings.instance().createLocalSetting(
+          'push-data', i18nString(UIStrings.testPushMessageFromDevtools));
+      this.syncTagNameSetting =
+          Common.Settings.Settings.instance().createLocalSetting('sync-tag-name', 'test-tag-from-devtools');
+      this.periodicSyncTagNameSetting =
+          Common.Settings.Settings.instance().createLocalSetting('periodic-sync-tag-name', 'test-tag-from-devtools');
+    }
 
-    form.addEventListener('submit', (e: Event) => {
-      callback(editor.value || '');
-      e.consume(true);
+    if (registrationChanged) {
+      this.updateCycleView = new ServiceWorkerUpdateCycleView(this.registration);
+      this.clientInfoCache.clear();
+    }
+  }
+
+  get section(): SectionData {
+    return this.sectionInternal;
+  }
+
+  getTitle(): string {
+    const scopeURL = this.registration.scopeURL;
+    return this.registration.isDeleted ? i18nString(UIStrings.sDeleted, {PH1: scopeURL}) : scopeURL;
+  }
+
+  override requestUpdate(): void {
+    if (throttleDisabledForDebugging) {
+      super.requestUpdate();
+      return;
+    }
+    void this.throttler.schedule(() => {
+      super.requestUpdate();
+      return Promise.resolve();
     });
   }
 
-  scheduleUpdate(): void {
-    if (throttleDisabledForDebugging) {
-      void this.update();
-      return;
-    }
-    void this.throttler.schedule(this.update.bind(this));
-  }
-
-  private addVersion(versionsStack: Element, icon: string, label: string): Element {
-    const installingEntry = versionsStack.createChild('div', 'service-worker-version');
-    installingEntry.createChild('div', icon);
-    const statusString = installingEntry.createChild('span', 'service-worker-version-string');
-    statusString.textContent = label;
-    UI.ARIAUtils.markAsAlert(statusString);
-    return installingEntry;
-  }
-
-  private updateClientsField(version: SDK.ServiceWorkerManager.ServiceWorkerVersion): void {
-    this.clientsField.removeChildren();
-    this.section.setFieldVisible(i18nString(UIStrings.clients), Boolean(version.controlledClients.length));
-    for (const client of version.controlledClients) {
-      const clientLabelText = this.clientsField.createChild('div', 'service-worker-client');
-      const info = this.clientInfoCache.get(client);
-      if (info) {
-        this.updateClientInfo(clientLabelText, info);
-      }
-      void this.manager.target()
-          .targetAgent()
-          .invoke_getTargetInfo({targetId: client})
-          .then(this.onClientInfo.bind(this, clientLabelText));
-    }
-  }
-
-  private updateSourceField(version: SDK.ServiceWorkerManager.ServiceWorkerVersion): void {
-    this.sourceField.removeChildren();
-    const fileName = Common.ParsedURL.ParsedURL.extractName(version.scriptURL);
-    const name = this.sourceField.createChild('div', 'report-field-value-filename');
-    const link = Components.Linkifier.Linkifier.linkifyURL(
-        version.scriptURL, ({text: fileName} as Components.Linkifier.LinkifyURLOptions));
-    link.tabIndex = 0;
-    link.setAttribute('jslog', `${VisualLogging.link('source-location').track({click: true})}`);
-    name.appendChild(link);
-    if (this.registration.errors.length) {
-      const errorsLabel = UI.UIUtils.createIconLabel({
-        title: String(this.registration.errors.length),
-        iconName: 'cross-circle-filled',
-        color: 'var(--icon-error)',
-      });
-      errorsLabel.classList.add('devtools-link', 'link');
-      errorsLabel.tabIndex = 0;
-      UI.ARIAUtils.setLabel(
-          errorsLabel, i18nString(UIStrings.sRegistrationErrors, {PH1: this.registration.errors.length}));
-      self.onInvokeElement(errorsLabel, () => Common.Console.Console.instance().show());
-      name.appendChild(errorsLabel);
-    }
-    if (version.scriptResponseTime !== undefined) {
-      this.sourceField.createChild('div', 'report-field-value-subtitle').textContent =
-          i18nString(UIStrings.receivedS, {PH1: new Date(version.scriptResponseTime * 1000).toLocaleString()});
-    }
-  }
-
-  private update(): Promise<void> {
+  override performUpdate(): Promise<void> {
     const fingerprint = this.registration.fingerprint();
     if (fingerprint === this.fingerprint) {
       return Promise.resolve();
     }
     this.fingerprint = fingerprint;
 
-    this.section.setHeaderButtonsState(this.registration.isDeleted);
-
     const versions = this.registration.versionsByMode();
-    const scopeURL = this.registration.scopeURL;
-    const title = this.registration.isDeleted ? i18nString(UIStrings.sDeleted, {PH1: scopeURL}) : scopeURL;
-    this.section.setTitle(title);
 
     const active = versions.get(SDK.ServiceWorkerManager.ServiceWorkerVersion.Modes.ACTIVE);
     const waiting = versions.get(SDK.ServiceWorkerManager.ServiceWorkerVersion.Modes.WAITING);
     const installing = versions.get(SDK.ServiceWorkerManager.ServiceWorkerVersion.Modes.INSTALLING);
     const redundant = versions.get(SDK.ServiceWorkerManager.ServiceWorkerVersion.Modes.REDUNDANT);
 
-    this.statusField.removeChildren();
-    const versionsStack = this.statusField.createChild('div', 'service-worker-version-stack');
-    versionsStack.createChild('div', 'service-worker-version-stack-bar');
+    const title = this.getTitle();
 
-    if (active) {
-      this.updateSourceField(active);
-      const localizedRunningStatus =
-          SDK.ServiceWorkerManager.ServiceWorkerVersion.RunningStatus[active.currentState.runningStatus]();
-      // TODO(l10n): Don't concatenate strings here.
-      const activeEntry = this.addVersion(
-          versionsStack, 'service-worker-active-circle',
-          i18nString(UIStrings.sActivatedAndIsS, {PH1: active.id, PH2: localizedRunningStatus}));
+    const input: SectionViewInput = {
+      title,
+      isDeleted: this.registration.isDeleted,
+      errorsLength: this.registration.errors?.length ?? 0,
+      pushData: this.pushNotificationDataSetting.get(),
+      syncTag: this.syncTagNameSetting.get(),
+      periodicSyncTag: this.periodicSyncTagNameSetting.get(),
+      updateCycleTable: this.updateCycleView.tableElement,
+      activeVersion: active,
+      waitingVersion: waiting,
+      installingVersion: installing,
+      redundantVersion: redundant,
+      renderClientInfo: this.renderClientInfo.bind(this),
+      onNetworkRequests: this.networkRequestsClicked.bind(this),
+      onUpdate: this.updateButtonClicked.bind(this),
+      onUnregister: this.unregisterButtonClicked.bind(this),
+      onPush: this.push.bind(this),
+      onSync: this.sync.bind(this),
+      onPeriodicSync: this.periodicSync.bind(this),
+      onStop: this.stopButtonClicked.bind(this),
+      onStart: this.startButtonClicked.bind(this),
+      onSkipWaiting: this.skipButtonClicked.bind(this),
+    };
 
-      if (active.isRunning() || active.isStarting()) {
-        const stopButton = UI.UIUtils.createTextButton(
-            i18nString(UIStrings.stopString), this.stopButtonClicked.bind(this, active.id), {jslogContext: 'stop'});
-        activeEntry.appendChild(stopButton);
-      } else if (active.isStartable()) {
-        const startButton = UI.UIUtils.createTextButton(
-            i18nString(UIStrings.startString), this.startButtonClicked.bind(this), {jslogContext: 'start'});
-        activeEntry.appendChild(startButton);
-      }
-      this.updateClientsField(active);
-      this.maybeCreateRouterField();
-    } else if (redundant) {
-      this.updateSourceField(redundant);
-      this.addVersion(
-          versionsStack, 'service-worker-redundant-circle', i18nString(UIStrings.sIsRedundant, {PH1: redundant.id}));
-      this.updateClientsField(redundant);
-    }
-
-    if (waiting) {
-      const waitingEntry = this.addVersion(
-          versionsStack, 'service-worker-waiting-circle', i18nString(UIStrings.sWaitingToActivate, {PH1: waiting.id}));
-      const skipWaitingButton =
-          UI.UIUtils.createTextButton(i18n.i18n.lockedString('skipWaiting'), this.skipButtonClicked.bind(this), {
-            title: i18n.i18n.lockedString('skipWaiting'),
-            jslogContext: 'skip-waiting',
-          });
-      waitingEntry.appendChild(skipWaitingButton);
-      if (waiting.scriptResponseTime !== undefined) {
-        waitingEntry.createChild('div', 'service-worker-subtitle').textContent =
-            i18nString(UIStrings.receivedS, {PH1: new Date(waiting.scriptResponseTime * 1000).toLocaleString()});
-      }
-    }
-    if (installing) {
-      const installingEntry = this.addVersion(
-          versionsStack, 'service-worker-installing-circle',
-          i18nString(UIStrings.sTryingToInstall, {PH1: installing.id}));
-      if (installing.scriptResponseTime !== undefined) {
-        installingEntry.createChild('div', 'service-worker-subtitle').textContent = i18nString(UIStrings.receivedS, {
-          PH1: new Date(installing.scriptResponseTime * 1000).toLocaleString(),
-        });
-      }
-    }
-
+    this.#view(input, undefined, this.contentElement);
     this.updateCycleView.refresh();
 
     return Promise.resolve();
@@ -683,31 +863,6 @@ export class Section {
 
   private unregisterButtonClicked(): void {
     this.manager.deleteRegistration(this.registration.id);
-  }
-
-  private createUpdateCycleField(): void {
-    this.updateCycleField = this.wrapWidget(this.section.appendField(i18nString(UIStrings.updateCycle)));
-    this.updateCycleField.appendChild(this.updateCycleView.tableElement);
-  }
-
-  private maybeCreateRouterField(): void {
-    const versions = this.registration.versionsByMode();
-    const active = versions.get(SDK.ServiceWorkerManager.ServiceWorkerVersion.Modes.ACTIVE);
-    const title = i18nString(UIStrings.routers);
-    if (active?.routerRules && active.routerRules.length > 0) {
-      // If there is at least one registered rule in the active version, append the router filed.
-      if (!this.routerField) {
-        this.routerField = this.wrapWidget(this.section.appendField(title));
-      }
-      if (!this.routerField.lastElementChild) {
-        this.routerView.show(this.routerField);
-      }
-      this.routerView.rules = active.routerRules;
-    } else {
-      // If no active worker or no registered rules, remove the field.
-      this.section.removeField(title);
-      this.routerField = undefined;
-    }
   }
 
   private updateButtonClicked(): void {
@@ -740,36 +895,40 @@ export class Section {
     void this.manager.dispatchPeriodicSyncEvent(this.registration.id, tag);
   }
 
-  private onClientInfo(element: Element, targetInfoResponse: Protocol.Target.GetTargetInfoResponse): void {
-    const targetInfo = targetInfoResponse.targetInfo;
+  private async renderClientInfo(clientId: Protocol.Target.TargetID): Promise<LitTemplate|typeof nothing> {
+    let targetInfo = this.clientInfoCache.get(clientId);
     if (!targetInfo) {
-      return;
+      const response = await this.manager.target().targetAgent().invoke_getTargetInfo({targetId: clientId});
+      if (!response.targetInfo) {
+        return nothing;
+      }
+      targetInfo = response.targetInfo;
+      this.clientInfoCache.set(clientId, targetInfo);
     }
-    this.clientInfoCache.set(targetInfo.targetId, targetInfo);
-    this.updateClientInfo(element, targetInfo);
-  }
 
-  private updateClientInfo(element: Element, targetInfo: Protocol.Target.TargetInfo): void {
-    if (targetInfo.type !== 'page' && targetInfo.type === 'iframe') {
-      const clientString = element.createChild('span', 'service-worker-client-string');
-      UI.UIUtils.createTextChild(clientString, i18nString(UIStrings.workerS, {PH1: targetInfo.url}));
-      return;
+    if (targetInfo.type !== 'page' && targetInfo.type !== 'iframe') {
+      // clang-format off
+      return html`<span class="service-worker-client-string">
+        ${i18nString(UIStrings.workerS, {PH1: targetInfo.url})}
+      </span>`;
+      // clang-format on
     }
-    element.removeChildren();
-    const clientString = element.createChild('span', 'service-worker-client-string');
-    UI.UIUtils.createTextChild(clientString, targetInfo.url);
 
-    const focusButton = new Buttons.Button.Button();
-    focusButton.data = {
-      iconName: 'select-element',
-      variant: Buttons.Button.Variant.ICON,
-      size: Buttons.Button.Size.SMALL,
-      title: i18nString(UIStrings.focus),
-      jslogContext: 'client-focus',
-    };
-    focusButton.className = 'service-worker-client-focus-link';
-    focusButton.addEventListener('click', this.activateTarget.bind(this, targetInfo.targetId));
-    element.appendChild(focusButton);
+    // clang-format off
+    return html`
+      <span class="service-worker-client-string">${targetInfo.url}</span>
+      <devtools-button
+        .data=${{
+          iconName: 'select-element',
+          variant: Buttons.Button.Variant.ICON,
+          size: Buttons.Button.Size.SMALL,
+          title: i18nString(UIStrings.focus),
+          jslogContext: 'client-focus',
+        } as Buttons.Button.ButtonData}
+        class="service-worker-client-focus-link"
+        @click=${this.activateTarget.bind(this, targetInfo.targetId)}
+      ></devtools-button>`;
+    // clang-format on
   }
 
   private activateTarget(targetId: Protocol.Target.TargetID): void {
@@ -786,19 +945,5 @@ export class Section {
 
   private stopButtonClicked(versionId: string): void {
     void this.manager.stopWorker(versionId);
-  }
-
-  private wrapWidget(container: Element): Element {
-    const shadowRoot = UI.UIUtils.createShadowRootWithCoreStyles(container, {
-      cssFile: [
-        serviceWorkersViewStyles,
-        /* These styles are for the timing table in serviceWorkerUpdateCycleView but this is the widget that it is rendered
-           * inside so we are registering the files here. */
-        serviceWorkerUpdateCycleViewStyles,
-      ],
-    });
-    const contentElement = document.createElement('div');
-    shadowRoot.appendChild(contentElement);
-    return contentElement;
   }
 }

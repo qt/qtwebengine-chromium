@@ -94,8 +94,6 @@ class TranspositionsBase {
 
   /** \returns the transpose transformation */
   inline Transpose<TranspositionsBase> transpose() const { return Transpose<TranspositionsBase>(derived()); }
-
- protected:
 };
 
 namespace internal {

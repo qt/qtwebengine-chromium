@@ -20,6 +20,13 @@ BASE_DECLARE_FEATURE_PARAM(bool,
                            kSendEmptyGestureScrollUpdateFilterOutEmptyUpdates);
 COMPONENT_EXPORT(UI_BASE_FEATURES)
 BASE_DECLARE_FEATURE(kExperimentalFlingAnimation);
+#if BUILDFLAG(IS_ANDROID)
+COMPONENT_EXPORT(UI_BASE_FEATURES)
+BASE_DECLARE_FEATURE(kDesktopFlingCurveOnAndroid);
+COMPONENT_EXPORT(UI_BASE_FEATURES)
+BASE_DECLARE_FEATURE(kSuppressOverscrollGlow);
+#endif
+
 COMPONENT_EXPORT(UI_BASE_FEATURES) BASE_DECLARE_FEATURE(kFocusFollowsCursor);
 COMPONENT_EXPORT(UI_BASE_FEATURES)
 BASE_DECLARE_FEATURE(kDragDropOnlySynthesizeHttpOrHttpsUrlsFromText);
@@ -62,6 +69,9 @@ COMPONENT_EXPORT(UI_BASE_FEATURES)
 extern const char kApplyNativeOcclusionToCompositorTypeThrottle[];
 COMPONENT_EXPORT(UI_BASE_FEATURES)
 extern const char kApplyNativeOcclusionToCompositorTypeThrottleAndRelease[];
+
+COMPONENT_EXPORT(UI_BASE_FEATURES)
+BASE_DECLARE_FEATURE(kHideCursorWhileTyping);
 #endif  // BUILDFLAG(IS_WIN)
 
 #if BUILDFLAG(IS_MAC)
@@ -289,10 +299,6 @@ BASE_DECLARE_FEATURE(kTSFHonorAutocorrectOff);
 COMPONENT_EXPORT(UI_BASE_FEATURES)
 bool IsTSFHonorAutocorrectOffEnabled();
 
-// Controls whether the default system accent colors should be used.
-COMPONENT_EXPORT(UI_BASE_FEATURES)
-BASE_DECLARE_FEATURE(kUseSystemDefaultAccentColors);
-
 COMPONENT_EXPORT(UI_BASE_FEATURES)
 BASE_DECLARE_FEATURE(kStringWidthCache);
 
@@ -334,12 +340,28 @@ BASE_DECLARE_FEATURE(kDesktopGlowUp);
 COMPONENT_EXPORT(UI_BASE_FEATURES)
 BASE_DECLARE_FEATURE(kGlassFrame);
 COMPONENT_EXPORT(UI_BASE_FEATURES)
+BASE_DECLARE_FEATURE_PARAM(double, kGlassTintOpacityForLightMode);
+COMPONENT_EXPORT(UI_BASE_FEATURES)
+BASE_DECLARE_FEATURE_PARAM(double, kGlassTintOpacityForDarkMode);
+COMPONENT_EXPORT(UI_BASE_FEATURES)
+BASE_DECLARE_FEATURE_PARAM(double, kGlassExpandOnHoverOpacity);
+COMPONENT_EXPORT(UI_BASE_FEATURES)
+BASE_DECLARE_FEATURE_PARAM(double, kGlassExpandOnHoverBlurRadius);
+COMPONENT_EXPORT(UI_BASE_FEATURES)
 BASE_DECLARE_FEATURE(kRoundedIcons);
+COMPONENT_EXPORT(UI_BASE_FEATURES)
+BASE_DECLARE_FEATURE(kWebUIRoundedIcons);
+
+// Updates the default dark neutrals for the theme palette.
+COMPONENT_EXPORT(UI_BASE_FEATURES)
+BASE_DECLARE_FEATURE(kChromeDarkNeutrals26);
 
 COMPONENT_EXPORT(UI_BASE_FEATURES)
 bool IsGlassFrameEnabled();
 COMPONENT_EXPORT(UI_BASE_FEATURES)
 bool IsRoundedIconsEnabled();
+COMPONENT_EXPORT(UI_BASE_FEATURES)
+bool IsWebUIRoundedIconsEnabled();
 
 }  // namespace features
 

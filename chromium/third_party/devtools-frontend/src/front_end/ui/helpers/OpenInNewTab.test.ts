@@ -3,12 +3,12 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Host from '../../core/host/host.js';
 import * as Platform from '../../core/platform/platform.js';
 import type * as Root from '../../core/root/root.js';
-import {createTarget, updateHostConfig} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {createTarget, describeWithEnvironment, updateHostConfig} from '../../testing/EnvironmentHelpers.js';
 
 import * as UIHelpers from './helpers.js';
 
@@ -81,6 +81,41 @@ describe('openInNewTab', () => {
     }
   });
 
+  it('adds `utm_source` and `utm_medium` search parameters to MDN documentation set links', () => {
+    const URLs = [
+      'https://developer.mozilla.org/en-US/docs/Web/CSS/display',
+      'https://developer.mozilla.org/docs/Web/API/StorageAccessHandle/createObjectURL',
+    ];
+    for (const url of URLs) {
+      const stub = sinon.stub(InspectorFrontendHostInstance, 'openInNewTab');
+
+      openInNewTab(url);
+
+      sinon.assert.calledOnce(stub);
+      const resultingUrl = new URL(stub.args[0][0]);
+      assert.strictEqual(resultingUrl.searchParams.get('utm_source'), 'chrome-devtools');
+      assert.strictEqual(resultingUrl.searchParams.get('utm_medium'), 'referral');
+      stub.restore();
+    }
+  });
+
+  it('doesn\'t override or add UTM parameters to MDN links if either `utm_source` or `utm_medium` is already set',
+     () => {
+       const URLs = [
+         'https://developer.mozilla.org/en-US/docs/Web/CSS/display?utm_source=custom-source',
+         'https://developer.mozilla.org/docs/Web/API/StorageAccessHandle/createObjectURL?utm_medium=custom-medium',
+         'https://developer.mozilla.org/docs/Web/HTTP/Headers?utm_source=custom-source&utm_medium=custom-medium',
+       ];
+       for (const url of URLs) {
+         const stub = sinon.stub(InspectorFrontendHostInstance, 'openInNewTab');
+
+         openInNewTab(url);
+
+         sinon.assert.calledOnceWithExactly(stub, urlString`${url}`);
+         stub.restore();
+       }
+     });
+
   it('adds `utm_campaign` search parameter to Google documentation set links', () => {
     const CHANNELS: Array<typeof Root.Runtime.hostConfig.channel> = [
       'stable',
@@ -146,15 +181,28 @@ describe('openInNewTab', () => {
     sinon.assert.callCount(stub, 0);
   });
 
-  describeWithMockConnection('chrome:// link', () => {
-    it('call the correct API for chrome:// links', async () => {
+  describeWithEnvironment('chrome:// link', () => {
+    it('calls invoke_createTarget for chrome:// links when privileged navigation is allowed', async () => {
       const target = createTarget();
       const spy = sinon.spy(target.targetAgent(), 'invoke_createTarget');
 
-      openInNewTab('chrome://settings');
+      openInNewTab('chrome://settings', /* allowPrivileged=*/ true);
 
       sinon.assert.calledOnce(spy);
       assert.deepEqual(spy.firstCall.firstArg, {url: 'chrome://settings/'});
     });
+
+    it('falls back to InspectorFrontendHost for chrome:// links when privileged navigation is not allowed',
+       async () => {
+         const target = createTarget();
+         const spy = sinon.spy(target.targetAgent(), 'invoke_createTarget');
+         const stub = sinon.stub(InspectorFrontendHostInstance, 'openInNewTab');
+
+         openInNewTab('chrome://settings');
+
+         sinon.assert.notCalled(spy);
+         sinon.assert.calledOnce(stub);
+         assert.strictEqual(stub.args[0][0], 'chrome://settings/');
+       });
   });
 });

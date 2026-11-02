@@ -15,5 +15,6 @@
 #define DIV_ROUND_UP(n, d) (((n) + (d)-1) / (d))
 #define STRINGIZE_NO_EXPANSION(x) #x
 #define STRINGIZE(x) STRINGIZE_NO_EXPANSION(x)
+#define BITFIELD_BIT(b) (1u << (b))
 
 #endif

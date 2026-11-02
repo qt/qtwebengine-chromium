@@ -101,6 +101,10 @@ void RecordPermissionRequestedToBeShown(
     bool shown,
     LensOverlayInvocationSource invocation_source);
 
+// Recorded when first run permission is requested to be shown. Both sliced and
+// unsliced.
+void RecordFirstRunPermissionNoticeToBeShown();
+
 // Recorded when non-blocking privacy notice is requested to be shown.
 void RecordNonBlockingPrivacyNoticeToBeShown(
     LensOverlayInvocationSource invocation_source);
@@ -114,6 +118,11 @@ void RecordNonBlockingPrivacyNoticeAccepted(
 // Records user action in lens permission. Both sliced and unsliced.
 void RecordPermissionUserAction(LensPermissionUserAction user_action,
                                 LensOverlayInvocationSource invocation_source);
+
+// Records user action in lens first run permission notice. Both sliced and
+// unsliced.
+void RecordFirstRunPermissionNoticeUserAction(
+    LensPermissionUserAction user_action);
 
 // Records lens overlay invocation.
 void RecordInvocation(LensOverlayInvocationSource invocation_source,
@@ -253,6 +262,21 @@ void RecordTimeToGetPageContext(base::TimeDelta duration);
 
 // Records the time it takes for the page to bind
 void RecordTimeToWebuiBound(base::TimeDelta duration);
+
+// LINT.IfChange(LensContextualTasksQueryEligibility)
+enum class LensContextualTasksQueryEligibility {
+  kEligible = 0,
+  kAimIneligible = 1,
+  kCobrowseIneligible = 2,
+  kMaxValue = kCobrowseIneligible,
+};
+// LINT.ThenChange(//tools/metrics/histograms/metadata/lens/enums.xml:LensContextualTasksQueryEligibility)
+
+// Records the Lens query eligibility state when Contextual Tasks is enabled,
+// split by invocation source.
+void RecordContextualTasksQueryEligibility(
+    LensContextualTasksQueryEligibility eligibility,
+    std::optional<LensOverlayInvocationSource> invocation_source);
 
 }  // namespace lens
 

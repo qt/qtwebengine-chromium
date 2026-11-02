@@ -86,6 +86,8 @@ class CONTENT_EXPORT WebContentsAccessibilityAndroid
   // WebContentsAccessibilityAndroid it should talk to.
   void UpdateBrowserAccessibilityManager();
 
+  void OnTooltipCleared();
+
   // --------------------------------------------------------------------------
   // Methods called from Java via JNI
   // --------------------------------------------------------------------------
@@ -194,11 +196,23 @@ class CONTENT_EXPORT WebContentsAccessibilityAndroid
                             int32_t id,
                             int32_t start_node_id,
                             int32_t start_node_offset,
+                            int32_t start_offset_type,
                             int32_t end_node_id,
-                            int32_t end_node_offset);
+                            int32_t end_node_offset,
+                            int32_t end_offset_type);
   void ClearExtendedSelection(JNIEnv* env, int32_t id);
   bool AdjustSlider(JNIEnv* env, int32_t id, bool increment);
   void ShowContextMenu(JNIEnv* env, int32_t id);
+
+  // Programmatically show tooltip for the AXNode with the given ID; return true
+  // if request is passed on to browser accessibility manager, false if node is
+  // not found.
+  bool ShowTooltip(JNIEnv* env, int32_t id);
+
+  // Programmatically hide tooltip for the AXNode with the given ID; return true
+  // if request is passed on to browser accessibility manager, false if node is
+  // not found.
+  bool HideTooltip(JNIEnv* env, int32_t id);
 
   // Return the id of the next node in tree order in the direction given by
   // |forwards|, starting with |start_id|, that matches |element_type|,
@@ -313,7 +327,8 @@ class CONTENT_EXPORT WebContentsAccessibilityAndroid
 
   void UpdateFrameInfo(float page_scale);
 
-  bool IsNodeLikelyKnownByAndroidFrameworkForExperiment(int32_t unique_id);
+  virtual bool IsNodeLikelyKnownByAndroidFrameworkForExperiment(
+      int32_t unique_id);
 
   // Set a new max for TYPE_WINDOW_CONTENT_CHANGED events to fire.
   void SetMaxContentChangedEventsToFireForTesting(JNIEnv* env,
@@ -410,7 +425,7 @@ class CONTENT_EXPORT WebContentsAccessibilityAndroid
   void HandleCheckStateChanged(int32_t unique_id);
   void HandleClicked(int32_t unique_id);
   void HandleMenuOpened(int32_t unique_id);
-  void HandleWindowContentChange(int32_t unique_id, int32_t subType);
+  virtual void HandleWindowContentChange(int32_t unique_id, int32_t subType);
   void HandleScrollPositionChanged(int32_t unique_id);
   void HandleSortDirectionChanged(int32_t unique_id);
   void HandleScrolledToAnchor(int32_t unique_id);
@@ -426,6 +441,11 @@ class CONTENT_EXPORT WebContentsAccessibilityAndroid
   void HandleEditableTextChanged(int32_t unique_id, int32_t subType);
   void HandleSliderChanged(int32_t unique_id);
   void SendDelayedWindowContentChangedEvent();
+  // Handles value changes triggered by increment/decrement spinbutton
+  // intents. Note: These intents are only generated for native
+  // spinbuttons (e.g. via arrow up/down), forcing full text
+  // announcement for them.
+  void HandleSpinButtonStepIntent(int32_t unique_id);
   bool OnHoverEvent(const ui::MotionEventAndroid& event);
   void HandleHover(int32_t unique_id);
   void HandleNavigate(int32_t root_id);
@@ -547,6 +567,12 @@ class CONTENT_EXPORT WebContentsAccessibilityAndroid
       const base::android::ScopedJavaLocalRef<jobject>& obj,
       BrowserAccessibilityAndroid* node);
 
+  void PopulateAccessibilityNodeInfoMathAttributes(
+      JNIEnv* env,
+      const base::android::JavaRef<jobject>& info,
+      const base::android::ScopedJavaLocalRef<jobject>& obj,
+      BrowserAccessibilityAndroid* node);
+
   void UpdateAccessibilityNodeInfoBoundsRect(
       JNIEnv* env,
       const base::android::ScopedJavaLocalRef<jobject>& obj,
@@ -613,6 +639,10 @@ class CONTENT_EXPORT WebContentsAccessibilityAndroid
   std::unique_ptr<BrowserAccessibilityManagerAndroid> snapshot_root_manager_;
 
   std::unique_ptr<ScopedAccessibilityMode> scoped_accessibility_mode_;
+
+  int32_t tooltip_showing_node_id_ = 0;
+
+  bool should_announce_full_text_ = false;
 
   base::WeakPtrFactory<WebContentsAccessibilityAndroid> weak_ptr_factory_{this};
 };

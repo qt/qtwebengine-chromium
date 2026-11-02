@@ -53,6 +53,18 @@ const byteFormatters = {
     ...defaultByteFormatterOptions,
     unit: 'kilobyte',
   }),
+  kilobytesDecimal: new Intl.NumberFormat('en-US', {
+    ...defaultByteFormatterOptions,
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+    unit: 'kilobyte',
+  }),
+  kilobytesInteger: new Intl.NumberFormat('en-US', {
+    ...defaultByteFormatterOptions,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+    unit: 'kilobyte',
+  }),
   megabytes: new Intl.NumberFormat('en-US', {
     ...defaultByteFormatterOptions,
     unit: 'megabyte',
@@ -117,6 +129,14 @@ export function bytes(x: number): string {
 
   const megabytes = kilobytes / 1_000;
   return formatAndEnsureSpace(byteFormatters.megabytes, megabytes);
+}
+
+export function formatBytesToKb(x: number): string {
+  const kilobytes = x / 1_000;
+  if (kilobytes < 100) {
+    return formatAndEnsureSpace(byteFormatters.kilobytesDecimal, kilobytes);
+  }
+  return formatAndEnsureSpace(byteFormatters.kilobytesInteger, kilobytes);
 }
 
 /**

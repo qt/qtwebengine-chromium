@@ -12,7 +12,7 @@ const UIStrings = {
   /**
    * @description Warning message indicating that the user will see real user data for a URL which is different from the URL they are currently looking at.
    */
-  fieldOverrideWarning: 'Field metrics are configured for a different URL than the current page.',
+  fieldOverrideWarning: 'Field metrics are for a different URL than the current page.',
 } as const;
 
 const str_ = i18n.i18n.registerUIStrings('models/crux-manager/CrUXManager.ts', UIStrings);
@@ -102,8 +102,6 @@ export interface ConfigSetting {
   originMappings?: OriginMapping[];
 }
 
-let cruxManagerInstance: CrUXManager;
-
 /** TODO: Potentially support `TABLET`. Tablet field data will always be `null` until then. **/
 export const DEVICE_SCOPE_LIST: DeviceScope[] = ['ALL', 'DESKTOP', 'PHONE'];
 
@@ -128,11 +126,13 @@ export class CrUXManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
   #configSetting: Common.Settings.Setting<ConfigSetting>;
   #endpoint = DEFAULT_ENDPOINT;
   #pageResult?: PageResult;
+  readonly #targetManager: SDK.TargetManager.TargetManager;
   fieldDeviceOption: DeviceOption = 'AUTO';
   fieldPageScope: PageScope = 'url';
 
-  private constructor() {
+  constructor(targetManager: SDK.TargetManager.TargetManager, settings: Common.Settings.Settings) {
     super();
+    this.#targetManager = targetManager;
 
     /**
      * In an incognito or guest window - which is called an "OffTheRecord"
@@ -149,7 +149,7 @@ export class CrUXManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
     const storageTypeForConsent =
         useSessionStorage ? Common.Settings.SettingStorageType.SESSION : Common.Settings.SettingStorageType.GLOBAL;
 
-    this.#configSetting = Common.Settings.Settings.instance().createSetting<ConfigSetting>(
+    this.#configSetting = settings.createSetting<ConfigSetting>(
         'field-data', {enabled: false, override: '', originMappings: [], overrideEnabled: false},
         storageTypeForConsent);
 
@@ -157,18 +157,23 @@ export class CrUXManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
       void this.refresh();
     });
 
-    SDK.TargetManager.TargetManager.instance().addModelListener(
-        SDK.ResourceTreeModel.ResourceTreeModel, SDK.ResourceTreeModel.Events.FrameNavigated, this.#onFrameNavigated,
-        this);
+    this.#targetManager.addModelListener(SDK.ResourceTreeModel.ResourceTreeModel,
+                                         SDK.ResourceTreeModel.Events.FrameNavigated, this.#onFrameNavigated, this);
   }
 
   static instance(opts: {forceNew: boolean|null} = {forceNew: null}): CrUXManager {
     const {forceNew} = opts;
-    if (!cruxManagerInstance || forceNew) {
-      cruxManagerInstance = new CrUXManager();
+    if (!Root.DevToolsContext.globalInstance().has(CrUXManager) || forceNew) {
+      Root.DevToolsContext.globalInstance().set(
+          CrUXManager,
+          new CrUXManager(SDK.TargetManager.TargetManager.instance(), Common.Settings.Settings.instance()));
     }
 
-    return cruxManagerInstance;
+    return Root.DevToolsContext.globalInstance().get(CrUXManager);
+  }
+
+  static removeInstance(): void {
+    Root.DevToolsContext.globalInstance().delete(CrUXManager);
   }
 
   /** The most recent page result from the CrUX service. */
@@ -264,7 +269,7 @@ export class CrUXManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
   }
 
   async #getInspectedURL(): Promise<string> {
-    const targetManager = SDK.TargetManager.TargetManager.instance();
+    const targetManager = this.#targetManager;
     let inspectedURL = targetManager.inspectedURL();
     if (!inspectedURL) {
       inspectedURL = await new Promise(resolve => {
@@ -304,6 +309,10 @@ export class CrUXManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
 
     this.#pageResult = await this.#getFieldDataForCurrentPage();
     this.dispatchEventToListeners(Events.FIELD_DATA_CHANGED, this.#pageResult);
+  }
+
+  setMainDocumentURL(url: string): void {
+    this.#mainDocumentUrl = url;
   }
 
   #normalizeUrl(inputUrl: string): URL {

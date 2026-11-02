@@ -41,6 +41,7 @@
 #include "google_apis/gaia/gaia_urls.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "third_party/abseil-cpp/absl/cleanup/cleanup.h"
+#include "ui/base/device_form_factor.h"
 
 namespace em = enterprise_management;
 
@@ -477,7 +478,6 @@ void CloudPolicyClient::SetupRegistration(
   dm_token_ = dm_token;
   client_id_ = client_id;
   request_jobs_.clear();
-  app_install_report_request_job_ = nullptr;
   extension_install_report_request_job_ = nullptr;
   unique_request_job_.reset();
   last_policy_fetch_responses_.clear();
@@ -795,6 +795,8 @@ em::PolicyFetchRequest* CloudPolicyClient::AddPolicyFetchRequest(
 
   fetch_request->set_verification_key_hash(kPolicyVerificationKeyHash);
 
+  fetch_request->mutable_device_info()->set_form_factor(GetFormFactor());
+
   // These fields are included only in requests for chrome policy.
   if (IsChromePolicy(type_to_fetch.policy_type())) {
     if (!device_dm_token_.empty()) {
@@ -949,6 +951,28 @@ void CloudPolicyClient::DeterminePromotionEligibility(
   config->request()->mutable_determine_promotion_eligibility_request();
 
   // Execute job
+  request_jobs_.push_back(service_->CreateJob(std::move(config)));
+}
+
+void CloudPolicyClient::GenerateChromeProfileChallenge(
+    GenerateChromeProfileChallengeCallback callback) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  CHECK(service_);
+  CHECK(is_registered());
+
+  auto params = DMServerJobConfiguration::CreateParams::WithClient(
+      DeviceManagementService::JobConfiguration::
+          TYPE_GENERATE_CHROME_PROFILE_CHALLENGE,
+      this);
+  params.auth_data = DMAuth::FromDMToken(dm_token_);
+  params.profile_id = profile_id_;
+  params.callback = base::BindOnce(
+      &CloudPolicyClient::OnGenerateChromeProfileChallengeCompleted,
+      weak_ptr_factory_.GetWeakPtr(), std::move(callback));
+  auto config = std::make_unique<DMServerJobConfiguration>(std::move(params));
+
+  config->request()->mutable_generate_chrome_profile_challenge_request();
+
   request_jobs_.push_back(service_->CreateJob(std::move(config)));
 }
 
@@ -1196,7 +1220,7 @@ void CloudPolicyClient::UploadSecurityEvent(
 
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  if (!is_registered()) {
+  if (!is_registered() || !service() || !service()->configuration()) {
     std::move(callback).Run(CloudPolicyClient::Result(NotRegistered()));
     return;
   }
@@ -1214,7 +1238,7 @@ void CloudPolicyClient::UploadSecurityEventReport(bool include_device_info,
                                                   ResultCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  if (!is_registered()) {
+  if (!is_registered() || !service() || !service()->configuration()) {
     std::move(callback).Run(CloudPolicyClient::Result(NotRegistered()));
     return;
   }
@@ -1225,31 +1249,6 @@ void CloudPolicyClient::UploadSecurityEventReport(bool include_device_info,
       include_device_info, std::move(callback));
 }
 
-void CloudPolicyClient::UploadAppInstallReport(base::DictValue report,
-                                               ResultCallback callback) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-
-  if (!is_registered()) {
-    std::move(callback).Run(CloudPolicyClient::Result(NotRegistered()));
-    return;
-  }
-
-  CancelAppInstallReportUpload();
-  app_install_report_request_job_ = CreateNewRealtimeReportingJobDeprecated(
-      std::move(report),
-      service()->configuration()->GetRealtimeReportingServerUrl(),
-      /* include_device_info */ true, std::move(callback));
-  DCHECK(app_install_report_request_job_);
-}
-
-void CloudPolicyClient::CancelAppInstallReportUpload() {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-
-  if (app_install_report_request_job_) {
-    RemoveJob(app_install_report_request_job_);
-    DCHECK_EQ(app_install_report_request_job_, nullptr);
-  }
-}
 
 void CloudPolicyClient::FetchRemoteCommands(
     std::unique_ptr<RemoteCommandJob::UniqueIDType> last_command_id,
@@ -1924,9 +1923,7 @@ void CloudPolicyClient::OnDeviceAttributeUpdated(
 }
 
 void CloudPolicyClient::RemoveJob(const DeviceManagementService::Job* job) {
-  if (app_install_report_request_job_ == job) {
-    app_install_report_request_job_ = nullptr;
-  } else if (extension_install_report_request_job_ == job) {
+  if (extension_install_report_request_job_ == job) {
     extension_install_report_request_job_ = nullptr;
   }
   for (auto it = request_jobs_.begin(); it != request_jobs_.end(); ++it) {
@@ -2025,6 +2022,29 @@ void CloudPolicyClient::OnPromotionEligibilityDetermined(
       result.response.get_user_eligible_promotions_response());
 }
 
+void CloudPolicyClient::OnGenerateChromeProfileChallengeCompleted(
+    GenerateChromeProfileChallengeCallback callback,
+    DMServerJobResult result) {
+  if (result.dm_status == DM_STATUS_SUCCESS &&
+      !result.response.has_generate_chrome_profile_challenge_response()) {
+    result.dm_status = DM_STATUS_RESPONSE_DECODING_ERROR;
+  }
+
+  base::UmaHistogramSparse("Enterprise.GenerateChromeProfileChallenge.Status",
+                           result.dm_status);
+
+  last_dm_status_ = result.dm_status;
+  if (last_dm_status_ != DM_STATUS_SUCCESS) {
+    NotifyClientError();
+  }
+
+  RemoveJob(result.job);
+
+  std::move(callback).Run(
+      last_dm_status_,
+      result.response.generate_chrome_profile_challenge_response());
+}
+
 void CloudPolicyClient::NotifyPolicyFetched() {
   for (auto& observer : observers_) {
     observer.OnPolicyFetched(this);
@@ -2115,11 +2135,29 @@ void CloudPolicyClient::CreateDeviceRegisterRequest(
   if (!params.oidc_state.empty()) {
     request->set_oidc_profile_enrollment_state(params.oidc_state);
   }
+  request->mutable_device_info()->set_form_factor(GetFormFactor());
 }
 
 void CloudPolicyClient::CreateUniqueRequestJob(
     std::unique_ptr<RegistrationJobConfiguration> config) {
   unique_request_job_ = service_->CreateJob(std::move(config));
+}
+
+em::FormFactor GetFormFactor() {
+  switch (ui::GetDeviceFormFactor()) {
+    case ui::DEVICE_FORM_FACTOR_DESKTOP:
+      return em::FORM_FACTOR_DESKTOP;
+    case ui::DEVICE_FORM_FACTOR_PHONE:
+      return em::FORM_FACTOR_PHONE;
+    case ui::DEVICE_FORM_FACTOR_TABLET:
+      return em::FORM_FACTOR_TABLET;
+    case ui::DEVICE_FORM_FACTOR_TV:
+      return em::FORM_FACTOR_TV;
+    case ui::DEVICE_FORM_FACTOR_AUTOMOTIVE:
+      return em::FORM_FACTOR_AUTOMOTIVE;
+    default:
+      return em::FORM_FACTOR_UNSPECIFIED;
+  }
 }
 
 }  // namespace policy

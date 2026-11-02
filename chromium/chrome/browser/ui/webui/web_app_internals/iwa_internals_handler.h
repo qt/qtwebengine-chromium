@@ -24,6 +24,7 @@ namespace web_app {
 
 class IwaSourceDevModeWithFileOp;
 class WebAppInternalsIwaInstallationBrowserTest;
+class WebAppProvider;
 struct InstallIsolatedWebAppCommandSuccess;
 
 // Handles API requests from chrome://web-app-internals related to IWAs.
@@ -67,9 +68,6 @@ class IwaInternalsHandler {
   void UpdateDevProxyIsolatedWebApp(
       const webapps::AppId& app_id,
       Handler::UpdateDevProxyIsolatedWebAppCallback callback);
-
-  void RotateKey(const std::string& web_bundle_id,
-                 const std::vector<uint8_t>& public_key);
 
   void UpdateManifestInstalledIsolatedWebApp(
       const webapps::AppId& app_id,
@@ -132,13 +130,12 @@ class IwaInternalsHandler {
 
   const raw_ref<content::WebUI> web_ui_;
   const raw_ref<Profile> profile_;
+  const raw_ref<WebAppProvider> provider_;
 
   base::flat_map<webapps::AppId, IwaVersion> pinned_versions_;
   base::flat_set<webapps::AppId> app_ids_allowing_downgrades_;
 
   // Runs updates for manifest-installed dev-mode apps.
-  // Will be nullptr if WebAppProvider is not available for the current
-  // `profile_`.
   std::unique_ptr<IwaManifestInstallUpdateHandler> update_handler_;
 
   base::WeakPtrFactory<IwaInternalsHandler> weak_ptr_factory_{this};

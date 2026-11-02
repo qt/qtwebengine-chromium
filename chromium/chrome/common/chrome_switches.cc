@@ -173,6 +173,18 @@ const char kDebugPackedApps[] = "debug-packed-apps";
 // Passes command line parameters to the DevTools front-end.
 const char kDevToolsFlags[] = "devtools-flags";
 
+// Specifies a stringified JSON dictionary defining allowlist and blocklist
+// pattern rules for DevTools-controlled navigations.
+// If an allowlist is provided (even if empty), all top-level navigations to
+// non-matching URLs are blocked. If both allowlist and blocklist match a URL,
+// the more specific pattern determines the outcome.
+// Example: '{ \
+//             "allowlist": ["[*.]foo.com"], \
+//             "blocklist": ["[*.]bar.com"] \
+//           }'
+const char kDevToolsNavigationGatingRules[] =
+    "devtools-navigation-gating-rules";
+
 // Triggers a plethora of diagnostic modes.
 const char kDiagnostics[] = "diagnostics";
 
@@ -280,9 +292,6 @@ const char kEnableDevToolsPwaHandler[] = "enable-devtools-pwa-handler";
 
 // Enables Domain Reliability Monitoring.
 const char kEnableDomainReliability[] = "enable-domain-reliability";
-
-// Enables the experimental GreenDev UI in DevTools.
-const char kEnableDevToolsGreenDevUi[] = "devtools-greendev-ui";
 
 // Enables logging for extension activity.
 const char kEnableExtensionActivityLogging[] =
@@ -472,6 +481,9 @@ const char kNoProxyServer[] = "no-proxy-server";
 // Does not automatically open a browser window on startup (used when
 // launching Chrome for the purpose of hosting background apps).
 const char kNoStartupWindow[] = "no-startup-window";
+
+// Overrides the default URL for the Notebook Home WebUI.
+const char kNotebookHomeURL[] = "notebook-home-url";
 
 // Calculate the hash of an MHTML file as it is being saved.
 // The browser process will write the serialized MHTML contents to a file and
@@ -748,10 +760,6 @@ const char kAuthAndroidNegotiateAccountType[] = "auth-spnego-account-type";
 // Disable the default browser promo.
 const char kDisableDefaultBrowserPromo[] = "disable-default-browser-promo";
 
-// Forces the device to report being owned by an enterprise. This mimics the
-// presence of an app signaling device ownership.
-const char kForceDeviceOwnership[] = "force-device-ownership";
-
 // Forces the night mode to be enabled.
 const char kForceEnableNightMode[] = "force-enable-night-mode";
 
@@ -769,9 +777,6 @@ const char kMarketUrlForTesting[] = "market-url-for-testing";
 
 // Force enable user agent overrides to request desktop sites in Clank.
 const char kRequestDesktopSites[] = "request-desktop-sites";
-
-// Use WebUI New Tab Page instead of native NTP on Android.
-const char kUseWebUiNtp[] = "use-webui-ntp";
 #endif  // BUILDFLAG(IS_ANDROID)
 
 #if !BUILDFLAG(IS_ANDROID) || BUILDFLAG(ENABLE_DESKTOP_ANDROID_EXTENSIONS)
@@ -924,6 +929,11 @@ const char kIsolated[] = "isolated";
 // method, as older PWA launchers still using this switch will rely on Chrome to
 // update them to use the new method.
 const char kPwaLauncherVersion[] = "pwa-launcher-version";
+
+// Passes the Win32 HANDLE value (as an integer) of the parent process
+// to wait for during relaunch.
+const char kWaitForParentHandle[] = "wait-for-parent-handle";
+
 #endif  // BUILDFLAG(IS_WIN)
 
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW) && !defined(OFFICIAL_BUILD)
@@ -946,7 +956,6 @@ const char kGlicGeminiEnterpriseSettingsOverride[] =
     "glic-gemini-enterprise-settings-override";
 const char kGlicAlwaysOpenFre[] = "glic-always-open-fre";
 const char kGlicAlwaysSkipFre[] = "glic-always-skip-fre";
-const char kGlicFreURL[] = "glic-fre-url";
 const char kGlicExperimentalFreURL[] = "glic-experimental-fre-url";
 const char kGlicShortcutsLearnMoreURL[] = "glic-shortcuts-learn-more-url";
 // Use --glic-open-on-startup=attached or --glic-open-on-startup=detached.

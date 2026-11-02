@@ -57,6 +57,7 @@
 #include "src/dawn/native/d3d12/StagingDescriptorAllocatorD3D12.h"
 #include "src/dawn/native/d3d12/UtilsD3D12.h"
 #include "src/utils/compiler.h"
+#include "src/utils/numeric.h"
 
 namespace dawn::native::d3d12 {
 
@@ -147,20 +148,6 @@ void RecordResolveQuerySetCmd(ID3D12GraphicsCommandList* commandList,
                 querySet->GetQueryHeap(), D3D12QueryType(querySet->GetQueryType()), uint32_t{start},
                 uint32_t{count}, destination->GetD3D12Resource(), resolveBufferOffset);
         });
-}
-
-void RecordFirstIndexOffset(ID3D12GraphicsCommandList* commandList,
-                            RenderPipeline* pipeline,
-                            uint32_t firstVertex,
-                            uint32_t firstInstance) {
-    if (!pipeline->UsesVertexOrInstanceIndex()) {
-        return;
-    }
-    std::array<uint32_t, 2> offsets{firstVertex, firstInstance};
-    PipelineLayout* layout = ToBackend(pipeline->GetLayout());
-    commandList->SetGraphicsRoot32BitConstants(layout->GetFirstIndexOffsetParameterIndex(),
-                                               static_cast<uint32_t>(offsets.size()),
-                                               offsets.data(), 0);
 }
 
 bool ShouldCopyUsingTemporaryBuffer(DeviceBase* device,
@@ -322,18 +309,6 @@ MaybeError RecordBufferTextureCopyWithTemporaryBuffer(CommandRecordingContext* r
     return {};
 }
 
-void RecordNumWorkgroupsForDispatch(ID3D12GraphicsCommandList* commandList,
-                                    ComputePipeline* pipeline,
-                                    DispatchCmd* dispatch) {
-    if (!pipeline->UsesNumWorkgroups()) {
-        return;
-    }
-
-    PipelineLayout* layout = ToBackend(pipeline->GetLayout());
-    commandList->SetComputeRoot32BitConstants(layout->GetNumWorkgroupsParameterIndex(), 3, dispatch,
-                                              0);
-}
-
 // Records the necessary barriers for a synchronization scope using the resource usage data
 // pre-computed in the frontend. Also performs lazy initialization if required. Returns whether any
 // UAV are used in the synchronization scope if `passHasUAV` is passed and no errors are hit.
@@ -342,8 +317,13 @@ MaybeError TransitionAndClearForSyncScope(CommandRecordingContext* commandContex
                                           bool* passHasUAV = nullptr) {
     // Apply pending updates to all resource tables used in usages scope.
     // This has to be done before transitioning resources.
-    for (auto& resourceTable : usages.usedResourceTables) {
-        DAWN_TRY(ToBackend(resourceTable)->ApplyPendingUpdates(commandContext));
+    // TODO(crbug.com/529883743): Consider folding the logic in GatherWritableTextures into the
+    // scope.textures loop below
+    if (!usages.usedResourceTables.empty()) {
+        auto writables = GatherWritableTextures(usages);
+        for (auto& resourceTable : usages.usedResourceTables) {
+            DAWN_TRY(ToBackend(resourceTable)->ApplyPendingUpdates(commandContext, writables));
+        }
     }
 
     std::vector<D3D12_RESOURCE_BARRIER> barriers;
@@ -408,6 +388,22 @@ class ImmediateTracker : public T {
   public:
     ImmediateTracker() = default;
 
+    void SetFirstVertexAndInstanceIndex(uint32_t firstVertexIndex, uint32_t firstInstanceIndex) {
+        FirstIndexOffset firstIndexOffset;
+        firstIndexOffset.firstVertex = firstVertexIndex;
+        firstIndexOffset.firstInstance = firstInstanceIndex;
+        this->UpdateImmediates(offsetof(RenderImmediates, firstIndexOffset), firstIndexOffset);
+    }
+
+    void SetNumWorkgroups(uint32_t numWorkgroupX, uint32_t numWorkgroupY, uint32_t numWorkgroupZ) {
+        NumWorkgroupsDimensions numWorkgroupsDimensions;
+        numWorkgroupsDimensions.numWorkgroupsX = numWorkgroupX;
+        numWorkgroupsDimensions.numWorkgroupsY = numWorkgroupY;
+        numWorkgroupsDimensions.numWorkgroupsZ = numWorkgroupZ;
+
+        this->UpdateImmediates(offsetof(ComputeImmediates, numWorkgroups), numWorkgroupsDimensions);
+    }
+
     // Calling this after BindGroupTrackerBase::Apply() to update root signature.
     void Apply(CommandRecordingContext* commandContext) {
         DAWN_ASSERT(this->mLastPipeline != nullptr);
@@ -420,11 +416,11 @@ class ImmediateTracker : public T {
                 static_cast<uint32_t>(offset) * kImmediateElementByteSize;
             uint32_t immediateRangeStartOffset =
                 GetImmediateIndexInPipeline(static_cast<uint32_t>(offset), pipelineMask);
-            SetRootConstant(commandContext->GetCommandList(),
-                            ToBackend(lastPipeline->GetLayout())->GetImmediatesParameterIndex(),
-                            size,
-                            this->mContent.template Get<uint32_t>(immediateContentStartOffset),
-                            immediateRangeStartOffset);
+            SetRootConstant(
+                commandContext->GetCommandList(),
+                ToBackend(lastPipeline)->GetPipelineLayoutHandle()->GetImmediatesParameterIndex(),
+                size, this->mContent.template Get<uint32_t>(immediateContentStartOffset),
+                immediateRangeStartOffset);
         }
 
         // Reset all dirty bits after uploading.
@@ -457,11 +453,21 @@ class DescriptorHeapState;
 
 template <typename PipelineType>
 class BindGroupStateTracker : public BindGroupTrackerBase<false> {
-    using Base = BindGroupTrackerBase;
+    using Base = BindGroupTrackerBase<false>;
 
   public:
     BindGroupStateTracker(Device* device, DescriptorHeapState* heapState)
-        : BindGroupTrackerBase(), mDevice(device), mHeapState(heapState) {}
+        : Base(), mDevice(device), mHeapState(heapState) {}
+
+    // A WebGPU pipeline layout can map to multiple D3D12 root signatures (PipelineLayoutHandles)
+    // when pipelines enable different internal immediates. A different root signature invalidates
+    // all bound descriptor tables and root constants, so the bindings cannot be inherited and must
+    // be re-applied. Comparing handles is sufficient: equal handles imply the same pipeline layout.
+    bool AreLayoutsCompatible() override {
+        return mLastAppliedPipeline != nullptr &&
+               LastAppliedPipeline()->GetPipelineLayoutHandle() ==
+                   CurrentPipeline()->GetPipelineLayoutHandle();
+    }
 
     MaybeError Apply(CommandRecordingContext* commandContext) {
         BeforeApply();
@@ -469,7 +475,8 @@ class BindGroupStateTracker : public BindGroupTrackerBase<false> {
         ID3D12GraphicsCommandList* commandList = commandContext->GetCommandList();
         UpdateRootSignatureIfNecessary(commandList);
 
-        const bool usesResourceTable = mPipelineLayout->UsesResourceTable();
+        PipelineLayout* pipelineLayout = ToBackend(mPipeline->GetLayout());
+        const bool usesResourceTable = pipelineLayout->UsesResourceTable();
         auto* viewAllocator = mDevice->GetViewShaderVisibleDescriptorAllocator();
         auto* samplerAllocator = mDevice->GetSamplerShaderVisibleDescriptorAllocator();
 
@@ -550,14 +557,13 @@ class BindGroupStateTracker : public BindGroupTrackerBase<false> {
 
         for (BindGroupIndex index : mDirtyBindGroupsObjectChangedOrIsDynamic) {
             BindGroup* group = ToBackend(mBindGroups[index]);
-            ApplyBindGroup(commandList, ToBackend(mPipelineLayout), index, group,
-                           GetDynamicOffsets(index));
+            ApplyBindGroup(commandList, pipelineLayout, index, group, GetDynamicOffsets(index));
         }
 
         if (usesResourceTable) {
             // TODO(crbug.com/473354062): Only call apply if GPU sub-alloc changed to avoid setting
             // the same root descriptor table.
-            ApplyResourceTable(commandList, ToBackend(mPipelineLayout));
+            ApplyResourceTable(commandList, pipelineLayout);
         }
 
         AfterApply();
@@ -584,12 +590,22 @@ class BindGroupStateTracker : public BindGroupTrackerBase<false> {
     static constexpr bool kIsRenderPipeline = std::is_same_v<PipelineType, RenderPipeline>;
     static constexpr bool kIsComputePipeline = std::is_same_v<PipelineType, ComputePipeline>;
 
-    void SetRootSignature(ID3D12GraphicsCommandList* commandList, PipelineLayoutBase* layout) {
+    // The base tracks the pipeline as a PipelineBase*; recover the backend pipeline type. The
+    // dynamic type is always PipelineType because OnSetPipeline is only ever called with one.
+    PipelineType* CurrentPipeline() const { return static_cast<PipelineType*>(mPipeline); }
+    PipelineType* LastAppliedPipeline() const {
+        return static_cast<PipelineType*>(mLastAppliedPipeline);
+    }
+
+    void SetRootSignature(ID3D12GraphicsCommandList* commandList) {
+        DAWN_ASSERT(mPipeline != nullptr);
+        ID3D12RootSignature* rootSignature =
+            CurrentPipeline()->GetPipelineLayoutHandle()->GetRootSignature();
         if constexpr (kIsRenderPipeline) {
-            commandList->SetGraphicsRootSignature(ToBackend(layout)->GetRootSignature());
+            commandList->SetGraphicsRootSignature(rootSignature);
         } else {
             static_assert(kIsComputePipeline);
-            commandList->SetComputeRootSignature(ToBackend(layout)->GetRootSignature());
+            commandList->SetComputeRootSignature(rootSignature);
         }
     }
 
@@ -658,7 +674,7 @@ class BindGroupStateTracker : public BindGroupTrackerBase<false> {
 
     void UpdateRootSignatureIfNecessary(ID3D12GraphicsCommandList* commandList) {
         if (!AreLayoutsCompatible()) {
-            SetRootSignature(commandList, mPipelineLayout);
+            SetRootSignature(commandList);
             // Invalidate the root sampler tables previously set in the root signature.
             ResetRootSamplerTables();
         }
@@ -666,7 +682,7 @@ class BindGroupStateTracker : public BindGroupTrackerBase<false> {
 
     void ApplyResourceTable(ID3D12GraphicsCommandList* commandList,
                             const PipelineLayout* pipelineLayout) {
-        DAWN_ASSERT(mPipelineLayout->UsesResourceTable() && mResourceTable);
+        DAWN_ASSERT(pipelineLayout->UsesResourceTable() && mResourceTable);
 
         // Set the root descriptor table that contains both the metadata buffer and textures/buffers
         {
@@ -696,7 +712,7 @@ class BindGroupStateTracker : public BindGroupTrackerBase<false> {
         // so always try to apply dynamic offsets even if the offsets stay the same.
         BindGroupLayout* bgl = ToBackend(group->GetLayout());
         std::vector<uint32_t> storageBufferDynamicOffsets;
-        for (BindingIndex bindingIndex{0}; bindingIndex < dynamicOffsets.size(); ++bindingIndex) {
+        for (BindingIndex bindingIndex{0u}; bindingIndex < dynamicOffsets.size(); ++bindingIndex) {
             // Note that the order of indices in dynamicOffsets corresponds to the order of
             // dynamic resource bindings in the BGL by binding number. Because the BGL packs
             // (uniform and storage) dynamic buffers at the front, and are sorted by binding
@@ -849,7 +865,7 @@ class VertexBufferTracker {
   public:
     void OnSetVertexBuffer(VertexBufferSlot slot, Buffer* buffer, uint64_t offset, uint64_t size) {
         mStartSlot = std::min(mStartSlot, slot);
-        mEndSlot = std::max(mEndSlot, ityp::PlusOne(slot));
+        mEndSlot = std::max(mEndSlot, slot.PlusOne());
 
         auto* d3d12BufferView = &mD3D12BufferViews[slot];
         d3d12BufferView->BufferLocation = buffer->GetVA() + offset;
@@ -871,7 +887,7 @@ class VertexBufferTracker {
 
             for (VertexBufferSlot slot : renderPipeline->GetVertexBuffersUsed()) {
                 startSlot = std::min(startSlot, slot);
-                endSlot = std::max(endSlot, ityp::PlusOne(slot));
+                endSlot = std::max(endSlot, slot.PlusOne());
                 mD3D12BufferViews[slot].StrideInBytes =
                     static_cast<uint32_t>(renderPipeline->GetVertexBuffer(slot).arrayStride);
             }
@@ -886,7 +902,7 @@ class VertexBufferTracker {
         // and end of the dirty range. When Apply is called,
         // we will at worst set non-dirty vertex buffers in duplicate.
         commandList->IASetVertexBuffers(static_cast<uint8_t>(startSlot),
-                                        static_cast<uint8_t>(ityp::Sub(endSlot, startSlot)),
+                                        static_cast<uint8_t>(endSlot - startSlot),
                                         &mD3D12BufferViews[startSlot]);
 
         mStartSlot = kMaxVertexBuffersTyped;
@@ -994,8 +1010,8 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
     ID3D12GraphicsCommandList* commandList = commandContext->GetCommandList();
     descriptorHeapState.SetID3D12DescriptorHeaps(commandList);
 
-    PassIndex nextComputePassNumber{0};
-    PassIndex nextRenderPassNumber{0};
+    PassIndex nextComputePassNumber{0u};
+    PassIndex nextRenderPassNumber{0u};
 
     Command type;
     while (mCommands.NextCommandId(&type)) {
@@ -1205,27 +1221,28 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
                             ComputeD3D12BoxFromOffsetAndSize(copy->source.origin, copy->copySize);
 
                         commandList->CopyTextureRegion(
-                            &dstLocation, static_cast<uint32_t>(copy->destination.origin.x),
-                            static_cast<uint32_t>(copy->destination.origin.y),
-                            static_cast<uint32_t>(copy->destination.origin.z), &srcLocation,
+                            &dstLocation, dchecked_cast<uint32_t>(copy->destination.origin.x),
+                            dchecked_cast<uint32_t>(copy->destination.origin.y),
+                            dchecked_cast<uint32_t>(copy->destination.origin.z), &srcLocation,
                             &sourceRegion);
                     }
                 } else {
-                    const TexelExtent3D copyExtentOneSlice = {copy->copySize.width,
-                                                              copy->copySize.height, TexelCount{1}};
+                    const TexelExtent3D copyExtentOneSlice = {
+                        copy->copySize.width, copy->copySize.height, TexelCount{1u}};
 
                     for (Aspect aspect : IterateEnumMask(srcRange.aspects)) {
-                        for (TexelCount z{0}; z < copy->copySize.depthOrArrayLayers; ++z) {
+                        for (TexelCount z{0u}; z < copy->copySize.depthOrArrayLayers; ++z) {
                             uint32_t sourceLayer = 0;
-                            TexelCount sourceZ{0};
+                            TexelCount sourceZ{0u};
                             switch (source->GetDimension()) {
                                 case wgpu::TextureDimension::Undefined:
                                     DAWN_UNREACHABLE();
                                 case wgpu::TextureDimension::e1D:
-                                    DAWN_ASSERT(copy->source.origin.z == TexelCount{0});
+                                    DAWN_ASSERT(copy->source.origin.z == TexelCount{0u});
                                     break;
                                 case wgpu::TextureDimension::e2D:
-                                    sourceLayer = static_cast<uint32_t>(copy->source.origin.z + z);
+                                    sourceLayer =
+                                        dchecked_cast<uint32_t>(copy->source.origin.z + z);
                                     break;
                                 case wgpu::TextureDimension::e3D:
                                     sourceZ = copy->source.origin.z + z;
@@ -1233,16 +1250,16 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
                             }
 
                             uint32_t destinationLayer = 0;
-                            TexelCount destinationZ{0};
+                            TexelCount destinationZ{0u};
                             switch (destination->GetDimension()) {
                                 case wgpu::TextureDimension::Undefined:
                                     DAWN_UNREACHABLE();
                                 case wgpu::TextureDimension::e1D:
-                                    DAWN_ASSERT(copy->destination.origin.z == TexelCount{0});
+                                    DAWN_ASSERT(copy->destination.origin.z == TexelCount{0u});
                                     break;
                                 case wgpu::TextureDimension::e2D:
                                     destinationLayer =
-                                        static_cast<uint32_t>(copy->destination.origin.z + z);
+                                        dchecked_cast<uint32_t>(copy->destination.origin.z + z);
                                     break;
                                 case wgpu::TextureDimension::e3D:
                                     destinationZ = copy->destination.origin.z + z;
@@ -1263,9 +1280,9 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
                                 sourceOriginInSubresource, copyExtentOneSlice);
 
                             commandList->CopyTextureRegion(
-                                &dstLocation, static_cast<uint32_t>(copy->destination.origin.x),
-                                static_cast<uint32_t>(copy->destination.origin.y),
-                                static_cast<uint32_t>(destinationZ), &srcLocation, &sourceRegion);
+                                &dstLocation, dchecked_cast<uint32_t>(copy->destination.origin.x),
+                                dchecked_cast<uint32_t>(copy->destination.origin.y),
+                                dchecked_cast<uint32_t>(destinationZ), &srcLocation, &sourceRegion);
                         }
                     }
                 }
@@ -1340,14 +1357,15 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
 
             case Command::InsertDebugMarker: {
                 InsertDebugMarkerCmd* cmd = mCommands.NextCommand<InsertDebugMarkerCmd>();
-                const char* label = mCommands.NextData<char>(cmd->length + 1);
+                std::string_view label = NextNullTerminatedString(&mCommands, cmd->length);
 
                 if (ToBackend(GetDevice())->GetFunctions()->IsPIXEventRuntimeLoaded()) {
                     // PIX color is 1 byte per channel in ARGB format
+                    // TODO(https://crbug.com/526533386): Prevent format string injection in PIX.
                     constexpr uint64_t kPIXBlackColor = 0xff000000;
                     ToBackend(GetDevice())
                         ->GetFunctions()
-                        ->pixSetMarkerOnCommandList(commandList, kPIXBlackColor, label);
+                        ->pixSetMarkerOnCommandList(commandList, kPIXBlackColor, label.data());
                 }
                 break;
             }
@@ -1363,14 +1381,15 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
 
             case Command::PushDebugGroup: {
                 PushDebugGroupCmd* cmd = mCommands.NextCommand<PushDebugGroupCmd>();
-                const char* label = mCommands.NextData<char>(cmd->length + 1);
+                std::string_view label = NextNullTerminatedString(&mCommands, cmd->length);
 
                 if (ToBackend(GetDevice())->GetFunctions()->IsPIXEventRuntimeLoaded()) {
                     // PIX color is 1 byte per channel in ARGB format
+                    // TODO(https://crbug.com/526533386): Prevent format string injection in PIX.
                     constexpr uint64_t kPIXBlackColor = 0xff000000;
                     ToBackend(GetDevice())
                         ->GetFunctions()
-                        ->pixBeginEventOnCommandList(commandList, kPIXBlackColor, label);
+                        ->pixBeginEventOnCommandList(commandList, kPIXBlackColor, label.data());
                 }
                 break;
             }
@@ -1378,29 +1397,30 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
             case Command::WriteBuffer: {
                 WriteBufferCmd* write = mCommands.NextCommand<WriteBufferCmd>();
                 const uint64_t offset = write->offset;
-                const uint64_t size = write->size;
-                uint8_t* data = mCommands.NextData<uint8_t>(size);
+                Span<const uint8_t> data = mCommands.NextData<uint8_t>(write->size);
 
-                if (size == 0) {
+                if (data.empty()) {
                     continue;
                 }
 
                 Buffer* dstBuffer = ToBackend(write->buffer.Get());
 
+                // TODO(https://crbug.com/534203108): Spanify WithUploadReservation.
                 DAWN_TRY(device->GetDynamicUploader()->WithUploadReservation(
-                    size, kCopyBufferToBufferOffsetAlignment,
+                    data.size(), kCopyBufferToBufferOffsetAlignment,
                     [&](UploadReservation reservation) -> MaybeError {
-                        DAWN_UNSAFE_TODO(memcpy(reservation.mappedPointer, data, size));
+                        DAWN_UNSAFE_TODO(
+                            memcpy(reservation.mappedPointer, data.data(), data.size()));
                         [[maybe_unused]] bool cleared;
                         DAWN_TRY_ASSIGN(cleared, dstBuffer->EnsureDataInitializedAsDestination(
-                                                     commandContext, offset, size));
+                                                     commandContext, offset, data.size()));
 
                         dstBuffer->TrackUsageAndTransitionNow(commandContext,
                                                               wgpu::BufferUsage::CopyDst);
                         commandList->CopyBufferRegion(
                             dstBuffer->GetD3D12Resource(), offset,
                             ToBackend(reservation.buffer.Get())->GetD3D12Resource(),
-                            reservation.offsetInBuffer, size);
+                            reservation.offsetInBuffer, data.size());
                         return {};
                     }));
                 break;
@@ -1446,9 +1466,9 @@ MaybeError CommandBuffer::RecordComputePass(CommandRecordingContext* commandCont
 
                 DAWN_TRY(TransitionAndClearForSyncScope(commandContext, scope));
                 DAWN_TRY(bindingTracker->Apply(commandContext));
+                immediates.SetNumWorkgroups(dispatch->x, dispatch->y, dispatch->z);
                 immediates.Apply(commandContext);
 
-                RecordNumWorkgroupsForDispatch(commandList, lastPipeline, dispatch);
                 commandList->Dispatch(dispatch->x, dispatch->y, dispatch->z);
                 break;
             }
@@ -1502,35 +1522,35 @@ MaybeError CommandBuffer::RecordComputePass(CommandRecordingContext* commandCont
             case Command::SetBindGroup: {
                 SetBindGroupCmd* cmd = mCommands.NextCommand<SetBindGroupCmd>();
                 BindGroup* group = ToBackend(cmd->group.Get());
-                uint32_t* dynamicOffsets = nullptr;
-
-                if (cmd->dynamicOffsetCount > 0) {
+                ityp::span<BindingIndex, const uint32_t> dynamicOffsets;
+                if (cmd->dynamicOffsetCount != BindingIndex{0u}) {
                     dynamicOffsets = mCommands.NextData<uint32_t>(cmd->dynamicOffsetCount);
                 }
 
-                bindingTracker->OnSetBindGroup(cmd->index, group, cmd->dynamicOffsetCount,
-                                               dynamicOffsets);
+                bindingTracker->OnSetBindGroup(cmd->index, group, dynamicOffsets);
                 break;
             }
 
             case Command::SetImmediates: {
                 SetImmediatesCmd* cmd = mCommands.NextCommand<SetImmediatesCmd>();
                 DAWN_ASSERT(cmd->size > 0);
-                uint8_t* value = mCommands.NextData<uint8_t>(cmd->size);
-                immediates.SetImmediates(cmd->offset, value, cmd->size);
+                Span<const uint8_t> data = mCommands.NextData<uint8_t>(cmd->size);
+                // TODO(https://crbug.com/532946455): Spanify ImmediateTracker.
+                immediates.SetImmediates(cmd->offset, data.data(), data.size());
                 break;
             }
 
             case Command::InsertDebugMarker: {
                 InsertDebugMarkerCmd* cmd = mCommands.NextCommand<InsertDebugMarkerCmd>();
-                const char* label = mCommands.NextData<char>(cmd->length + 1);
+                std::string_view label = NextNullTerminatedString(&mCommands, cmd->length);
 
                 if (ToBackend(GetDevice())->GetFunctions()->IsPIXEventRuntimeLoaded()) {
                     // PIX color is 1 byte per channel in ARGB format
+                    // TODO(https://crbug.com/526533386): Prevent format string injection in PIX.
                     constexpr uint64_t kPIXBlackColor = 0xff000000;
                     ToBackend(GetDevice())
                         ->GetFunctions()
-                        ->pixSetMarkerOnCommandList(commandList, kPIXBlackColor, label);
+                        ->pixSetMarkerOnCommandList(commandList, kPIXBlackColor, label.data());
                 }
                 break;
             }
@@ -1546,14 +1566,15 @@ MaybeError CommandBuffer::RecordComputePass(CommandRecordingContext* commandCont
 
             case Command::PushDebugGroup: {
                 PushDebugGroupCmd* cmd = mCommands.NextCommand<PushDebugGroupCmd>();
-                const char* label = mCommands.NextData<char>(cmd->length + 1);
+                std::string_view label = NextNullTerminatedString(&mCommands, cmd->length);
 
                 if (ToBackend(GetDevice())->GetFunctions()->IsPIXEventRuntimeLoaded()) {
                     // PIX color is 1 byte per channel in ARGB format
+                    // TODO(https://crbug.com/526533386): Prevent format string injection in PIX.
                     constexpr uint64_t kPIXBlackColor = 0xff000000;
                     ToBackend(GetDevice())
                         ->GetFunctions()
-                        ->pixBeginEventOnCommandList(commandList, kPIXBlackColor, label);
+                        ->pixBeginEventOnCommandList(commandList, kPIXBlackColor, label.data());
                 }
                 break;
             }
@@ -1747,7 +1768,7 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* commandConte
     const bool useRenderPass = device->IsToggleEnabled(Toggle::UseD3D12RenderPass);
 
     const IndirectDrawMetadata& metadata = GetIndirectDrawMetadata()[renderPassIndex];
-    IndirectDrawIndex indirectDrawIndex{0};
+    IndirectDrawIndex indirectDrawIndex{0u};
 
     // renderPassBuilder must be scoped to RecordRenderPass because any underlying
     // D3D12_RENDER_PASS_ENDING_ACCESS_RESOLVE_SUBRESOURCE_PARAMETERS structs must remain
@@ -1805,8 +1826,7 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* commandConte
 
                 DAWN_TRY(bindingTracker->Apply(commandContext));
                 vertexBufferTracker.Apply(commandList, lastPipeline);
-                RecordFirstIndexOffset(commandList, lastPipeline, draw->firstVertex,
-                                       draw->firstInstance);
+                immediates.SetFirstVertexAndInstanceIndex(draw->firstVertex, draw->firstInstance);
                 immediates.Apply(commandContext);
                 commandList->DrawInstanced(draw->vertexCount, draw->instanceCount,
                                            draw->firstVertex, draw->firstInstance);
@@ -1818,8 +1838,8 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* commandConte
 
                 DAWN_TRY(bindingTracker->Apply(commandContext));
                 vertexBufferTracker.Apply(commandList, lastPipeline);
-                RecordFirstIndexOffset(commandList, lastPipeline, draw->baseVertex,
-                                       draw->firstInstance);
+                immediates.SetFirstVertexAndInstanceIndex(static_cast<uint32_t>(draw->baseVertex),
+                                                          draw->firstInstance);
                 immediates.Apply(commandContext);
                 commandList->DrawIndexedInstanced(draw->indexCount, draw->instanceCount,
                                                   draw->firstIndex, draw->baseVertex,
@@ -1921,14 +1941,15 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* commandConte
 
             case Command::InsertDebugMarker: {
                 InsertDebugMarkerCmd* cmd = iter->NextCommand<InsertDebugMarkerCmd>();
-                const char* label = iter->NextData<char>(cmd->length + 1);
+                std::string_view label = NextNullTerminatedString(iter, cmd->length);
 
                 if (ToBackend(GetDevice())->GetFunctions()->IsPIXEventRuntimeLoaded()) {
                     // PIX color is 1 byte per channel in ARGB format
+                    // TODO(https://crbug.com/526533386): Prevent format string injection in PIX.
                     constexpr uint64_t kPIXBlackColor = 0xff000000;
                     ToBackend(GetDevice())
                         ->GetFunctions()
-                        ->pixSetMarkerOnCommandList(commandList, kPIXBlackColor, label);
+                        ->pixSetMarkerOnCommandList(commandList, kPIXBlackColor, label.data());
                 }
                 break;
             }
@@ -1944,14 +1965,15 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* commandConte
 
             case Command::PushDebugGroup: {
                 PushDebugGroupCmd* cmd = iter->NextCommand<PushDebugGroupCmd>();
-                const char* label = iter->NextData<char>(cmd->length + 1);
+                std::string_view label = NextNullTerminatedString(iter, cmd->length);
 
                 if (ToBackend(GetDevice())->GetFunctions()->IsPIXEventRuntimeLoaded()) {
                     // PIX color is 1 byte per channel in ARGB format
+                    // TODO(https://crbug.com/526533386): Prevent format string injection in PIX.
                     constexpr uint64_t kPIXBlackColor = 0xff000000;
                     ToBackend(GetDevice())
                         ->GetFunctions()
-                        ->pixBeginEventOnCommandList(commandList, kPIXBlackColor, label);
+                        ->pixBeginEventOnCommandList(commandList, kPIXBlackColor, label.data());
                 }
                 break;
             }
@@ -1973,22 +1995,21 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* commandConte
             case Command::SetBindGroup: {
                 SetBindGroupCmd* cmd = iter->NextCommand<SetBindGroupCmd>();
                 BindGroup* group = ToBackend(cmd->group.Get());
-                uint32_t* dynamicOffsets = nullptr;
-
-                if (cmd->dynamicOffsetCount > 0) {
+                ityp::span<BindingIndex, const uint32_t> dynamicOffsets;
+                if (cmd->dynamicOffsetCount != BindingIndex{0u}) {
                     dynamicOffsets = iter->NextData<uint32_t>(cmd->dynamicOffsetCount);
                 }
 
-                bindingTracker->OnSetBindGroup(cmd->index, group, cmd->dynamicOffsetCount,
-                                               dynamicOffsets);
+                bindingTracker->OnSetBindGroup(cmd->index, group, dynamicOffsets);
                 break;
             }
 
             case Command::SetImmediates: {
                 SetImmediatesCmd* cmd = iter->NextCommand<SetImmediatesCmd>();
                 DAWN_ASSERT(cmd->size > 0);
-                uint8_t* value = iter->NextData<uint8_t>(cmd->size);
-                immediates.SetImmediates(cmd->offset, value, cmd->size);
+                Span<const uint8_t> data = iter->NextData<uint8_t>(cmd->size);
+                // TODO(https://crbug.com/532946455): Spanify ImmediateTracker.
+                immediates.SetImmediates(cmd->offset, data.data(), data.size());
                 break;
             }
 
@@ -2083,10 +2104,10 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* commandConte
             case Command::SetScissorRect: {
                 SetScissorRectCmd* cmd = mCommands.NextCommand<SetScissorRectCmd>();
                 D3D12_RECT rect;
-                rect.left = cmd->x;
-                rect.top = cmd->y;
-                rect.right = cmd->x + cmd->width;
-                rect.bottom = cmd->y + cmd->height;
+                rect.left = sign_cast(cmd->x);
+                rect.top = sign_cast(cmd->y);
+                rect.right = sign_cast(cmd->x + cmd->width);
+                rect.bottom = sign_cast(cmd->y + cmd->height);
 
                 commandList->RSSetScissorRects(1, &rect);
                 break;
@@ -2103,8 +2124,8 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* commandConte
                 ExecuteBundlesCmd* cmd = mCommands.NextCommand<ExecuteBundlesCmd>();
                 auto bundles = mCommands.NextData<Ref<RenderBundleBase>>(cmd->count);
 
-                for (uint32_t i = 0; i < cmd->count; ++i) {
-                    CommandIterator* iter = DAWN_UNSAFE_TODO(bundles[i])->GetCommands();
+                for (const auto& bundle : bundles) {
+                    CommandIterator* iter = bundle->GetCommands();
                     iter->Reset();
                     while (iter->NextCommandId(&type)) {
                         DAWN_TRY(EncodeRenderBundleCommand(iter, type));

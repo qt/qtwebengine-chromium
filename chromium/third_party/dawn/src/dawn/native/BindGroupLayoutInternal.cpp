@@ -299,8 +299,8 @@ MaybeError ValidateStaticSamplersWithTextureBindings(
     // Map of texture binding number to static sampler binding number.
     std::map<BindingNumber, BindingNumber> textureToStaticSamplerBindingMap;
 
-    for (uint32_t i = 0; i < descriptor->entryCount; ++i) {
-        UnpackedPtr<BindGroupLayoutEntry> entry = Unpack(&DAWN_UNSAFE_TODO(descriptor->entries[i]));
+    for (const BindGroupLayoutEntry& entryChain : descriptor->entries) {
+        UnpackedPtr<BindGroupLayoutEntry> entry = Unpack(&entryChain);
         auto* staticSamplerLayout = entry.Get<StaticSamplerBindingLayout>();
         if (!staticSamplerLayout ||
             staticSamplerLayout->sampledTextureBinding == WGPU_LIMIT_U32_UNDEFINED) {
@@ -323,8 +323,7 @@ MaybeError ValidateStaticSamplersWithTextureBindings(
                         "valid binding number.",
                         samplerBinding, sampledTextureBinding);
 
-        auto& textureEntry = DAWN_UNSAFE_TODO(
-            descriptor->entries[bindingNumberToIndexMap.at(sampledTextureBinding)]);
+        auto& textureEntry = descriptor->entries[bindingNumberToIndexMap.at(sampledTextureBinding)];
         DAWN_INVALID_IF(textureEntry.texture.sampleType == wgpu::TextureSampleType::BindingNotUsed,
                         "For static sampler binding (%u) the sampled texture binding (%u) is not a "
                         "texture binding.",
@@ -349,9 +348,9 @@ ResultOrError<UnpackedPtr<BindGroupLayoutDescriptor>> ValidateBindGroupLayoutDes
     // Map of binding number to entry index.
     std::map<BindingNumber, uint32_t> bindingMap;
 
-    for (uint32_t i = 0; i < descriptor->entryCount; ++i) {
+    for (auto [i, entryChain] : Enumerate(descriptorChain->entries)) {
         UnpackedPtr<BindGroupLayoutEntry> entry;
-        DAWN_UNSAFE_TODO(DAWN_TRY_ASSIGN(entry, ValidateAndUnpack(&descriptor->entries[i])));
+        DAWN_TRY_ASSIGN(entry, ValidateAndUnpack(&entryChain));
 
         BindingNumber bindingNumber = BindingNumber(entry->binding);
         DAWN_INVALID_IF(
@@ -359,7 +358,7 @@ ResultOrError<UnpackedPtr<BindGroupLayoutDescriptor>> ValidateBindGroupLayoutDes
             "On entries[%u]: binding number (%u) exceeds the maxBindingsPerBindGroup limit (%u).",
             i, bindingNumber, kMaxBindingsPerBindGroup);
 
-        BindingNumber arraySize{1};
+        BindingNumber arraySize{1u};
         if (entry->bindingArraySize > 1) {
             arraySize = BindingNumber(entry->bindingArraySize);
 
@@ -548,8 +547,8 @@ ExpandedBindingInfo ConvertAndExpandBGLEntries(
     // StaticSamplerBindingInfo::sampledTextureIndex to the BindingIndex post reordering.
     absl::flat_hash_map<BindingNumber, BindingNumber> staticSamplerToSingleTextureBinding;
 
-    for (uint32_t i = 0; i < descriptor->entryCount; i++) {
-        UnpackedPtr<BindGroupLayoutEntry> entry = Unpack(&DAWN_UNSAFE_TODO(descriptor->entries[i]));
+    for (const BindGroupLayoutEntry& entryChain : descriptor->entries) {
+        UnpackedPtr<BindGroupLayoutEntry> entry = Unpack(&entryChain);
 
         // External textures are expanded with additional bindings:
         //  - Two sampled texture bindings and one uniform buffer
@@ -668,7 +667,7 @@ ExpandedBindingInfo ConvertAndExpandBGLEntries(
 // This is a utility function to help DAWN_ASSERT that the BGL-binding comparator places buffers
 // first.
 bool CheckBufferBindingsFirst(ityp::span<BindingIndex, const BindingInfo> bindings) {
-    BindingIndex lastBufferIndex{0};
+    BindingIndex lastBufferIndex{0u};
     BindingIndex firstNonBufferIndex = std::numeric_limits<BindingIndex>::max();
     for (auto [i, binding] : Enumerate(bindings)) {
         if (std::holds_alternative<BufferBindingInfo>(binding.bindingLayout)) {
@@ -696,7 +695,7 @@ BindGroupLayoutInternalBase::BindGroupLayoutInternalBase(
     mBindingInfo = std::move(unpackedBindings.entries);
     mBindingMap = std::move(unpackedBindings.apiBindingMap);
 
-    DAWN_CHECK(CheckBufferBindingsFirst({mBindingInfo.data(), mBindingInfo.size()}));
+    DAWN_CHECK(CheckBufferBindingsFirst(mBindingInfo));
 
     // Compute various counts of expanded bindings and other metadata.
     std::array<BindingIndex, BindingTypeOrder_Count + 1> counts{};
@@ -750,7 +749,7 @@ BindGroupLayoutInternalBase::BindGroupLayoutInternalBase(
     }
 
     // Do a prefix sum to store the start offset of each binding type.
-    BindingIndex sum{0};
+    BindingIndex sum{0u};
     for (auto [type, count] : Enumerate(counts)) {
         mBindingTypeStart[type] = sum;
         sum += count;
@@ -758,8 +757,8 @@ BindGroupLayoutInternalBase::BindGroupLayoutInternalBase(
 
     // Recompute the number of bindings of each type from the descriptor since that is used for
     // validation of the pipeline layout.
-    for (uint32_t i = 0; i < descriptor->entryCount; i++) {
-        UnpackedPtr<BindGroupLayoutEntry> entry = Unpack(&DAWN_UNSAFE_TODO(descriptor->entries[i]));
+    for (const BindGroupLayoutEntry& entryChain : descriptor->entries) {
+        UnpackedPtr<BindGroupLayoutEntry> entry = Unpack(&entryChain);
         IncrementBindingCounts(&mValidationBindingCounts, entry);
     }
 }
@@ -888,7 +887,7 @@ bool BindGroupLayoutInternalBase::EqualityFunc::operator()(
     if (a->GetBindingCount() != b->GetBindingCount()) {
         return false;
     }
-    for (BindingIndex i{0}; i < a->GetBindingCount(); ++i) {
+    for (BindingIndex i{0u}; i < a->GetBindingCount(); ++i) {
         if (a->mBindingInfo[i] != b->mBindingInfo[i]) {
             return false;
         }

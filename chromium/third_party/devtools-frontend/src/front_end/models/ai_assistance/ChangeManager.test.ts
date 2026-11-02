@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
@@ -117,7 +118,7 @@ describeWithEnvironment('ChangeManager', () => {
     assert.deepEqual(cssModel.setStyleSheetText.lastCall.args, [
       '1',
       '.ai-style-change-1 {\n  div& {\n    color: blue;\n  }\n}\n.ai-style-change-2 {\n  div& {\n    color: green;\n  }\n}',
-      true
+      true,
     ]);
   });
 
@@ -185,216 +186,34 @@ describeWithEnvironment('ChangeManager', () => {
     );
   });
 
-  describe('format changes', () => {
-    it('returns empty string when there are no changes from the given agent', async () => {
-      const changeManager = new AiAssistanceModel.ChangeManager.ChangeManager();
-
-      assert.strictEqual(changeManager.formatChangesForPatching(agentId), '');
+  it('disposes targetManager and cssModel listeners on dispose', async () => {
+    const targetManager = SDK.TargetManager.TargetManager.instance();
+    const removeModelListenerSpy = sinon.spy(targetManager, 'removeModelListener');
+    const changeManager = new AiAssistanceModel.ChangeManager.ChangeManager(targetManager);
+    const cssModel = createModel();
+    await changeManager.addChange(cssModel, frameId, {
+      groupId: agentId,
+      selector: 'div',
+      className: 'ai-style-change-1',
+      styles: {
+        color: 'blue',
+      },
     });
 
-    it('returns formatted changes for an agent without `.ai-style-change` classes', async () => {
-      const changeManager = new AiAssistanceModel.ChangeManager.ChangeManager();
-      const cssModel = createModel();
+    changeManager.dispose();
 
-      await changeManager.addChange(cssModel, frameId, {
-        groupId: agentId,
-        selector: 'div',
-        className: 'ai-style-change-1',
-        styles: {color: 'blue', 'background-color': 'green'},
-      });
-
-      assert.strictEqual(changeManager.formatChangesForPatching(agentId), `div {
-  color: blue;
-  background-color: green;
-}`);
-    });
-
-    it('formats source location', async () => {
-      const changeManager = new AiAssistanceModel.ChangeManager.ChangeManager();
-      const cssModel = createModel();
-      await changeManager.addChange(cssModel, frameId, {
-        groupId: agentId,
-        sourceLocation: 'button.scss:1:1',
-        selector: 'div',
-        className: 'ai-style-change-1',
-        styles: {color: 'blue', 'background-color': 'green'},
-      });
-
-      assert.strictEqual(
-          changeManager.formatChangesForPatching(agentId, /* includeMetadata=*/ true),
-          `/* related resource: button.scss:1:1 */
-div {
-  color: blue;
-  background-color: green;
-}`);
-    });
-
-    it('formats a simpleSelector', async () => {
-      const changeManager = new AiAssistanceModel.ChangeManager.ChangeManager();
-      const cssModel = createModel();
-      await changeManager.addChange(cssModel, frameId, {
-        groupId: agentId,
-        selector: '.bg-color-blue',
-        simpleSelector: 'div#test',
-        className: 'ai-style-change-1',
-        styles: {color: 'blue', 'background-color': 'green'},
-      });
-
-      assert.strictEqual(
-          changeManager.formatChangesForPatching(agentId, /* includeMetadata=*/ true),
-          `.bg-color-blue { /* the element was div#test */
-  color: blue;
-  background-color: green;
-}`);
-    });
-
-    it('omits source location and simple selector when includeMetadata is false', async () => {
-      const changeManager = new AiAssistanceModel.ChangeManager.ChangeManager();
-      const cssModel = createModel();
-
-      await changeManager.addChange(cssModel, frameId, {
-        groupId: agentId,
-        sourceLocation: 'button.scss:1:1',
-        selector: '.bg-color-blue',
-        simpleSelector: 'div#test',
-        className: 'ai-style-change-1',
-        styles: {color: 'blue'},
-      });
-
-      assert.strictEqual(changeManager.formatChangesForPatching(agentId, /* includeMetadata=*/ false), `.bg-color-blue {
-  color: blue;
-}`);
-    });
-  });
-
-  describe('stashes', () => {
-    it('can stash changes', async () => {
-      const changeManager = new AiAssistanceModel.ChangeManager.ChangeManager();
-      const cssModel = createModel();
-      await changeManager.addChange(cssModel, frameId, {
-        groupId: agentId,
-        selector: 'div',
-        className: 'ai-style-change-1',
-        styles: {
-          color: 'blue',
-        },
-      });
-      sinon.assert.calledOnce(cssModel.setStyleSheetText);
-      assert.deepEqual(
-          cssModel.setStyleSheetText.lastCall.args,
-          ['1', '.ai-style-change-1 {\n  div& {\n    color: blue;\n  }\n}', true],
-      );
-      await changeManager.stashChanges();
-      sinon.assert.calledTwice(cssModel.setStyleSheetText);
-      assert.deepEqual(
-          cssModel.setStyleSheetText.lastCall.args,
-          ['1', '', true],
-      );
-    });
-
-    it('can restore changes', async () => {
-      const changeManager = new AiAssistanceModel.ChangeManager.ChangeManager();
-      const cssModel = createModel();
-      await changeManager.addChange(cssModel, frameId, {
-        groupId: agentId,
-        selector: 'div',
-        className: 'ai-style-change-1',
-        styles: {
-          color: 'blue',
-        },
-      });
-      sinon.assert.calledOnce(cssModel.setStyleSheetText);
-      assert.deepEqual(
-          cssModel.setStyleSheetText.lastCall.args,
-          ['1', '.ai-style-change-1 {\n  div& {\n    color: blue;\n  }\n}', true],
-      );
-      await changeManager.stashChanges();
-      sinon.assert.calledTwice(cssModel.setStyleSheetText);
-      assert.deepEqual(
-          cssModel.setStyleSheetText.lastCall.args,
-          ['1', '', true],
-      );
-      await changeManager.popStashedChanges();
-      sinon.assert.calledThrice(cssModel.setStyleSheetText);
-      assert.deepEqual(
-          cssModel.setStyleSheetText.lastCall.args,
-          ['1', '.ai-style-change-1 {\n  div& {\n    color: blue;\n  }\n}', true],
-      );
-    });
-
-    it('can discard changes', async () => {
-      const changeManager = new AiAssistanceModel.ChangeManager.ChangeManager();
-      const cssModel = createModel();
-      await changeManager.addChange(cssModel, frameId, {
-        groupId: agentId,
-        selector: 'div',
-        className: 'ai-style-change-1',
-        styles: {
-          color: 'blue',
-        },
-      });
-      sinon.assert.calledOnce(cssModel.setStyleSheetText);
-      assert.deepEqual(
-          cssModel.setStyleSheetText.lastCall.args,
-          ['1', '.ai-style-change-1 {\n  div& {\n    color: blue;\n  }\n}', true],
-      );
-      await changeManager.stashChanges();
-      sinon.assert.calledTwice(cssModel.setStyleSheetText);
-      assert.deepEqual(
-          cssModel.setStyleSheetText.lastCall.args,
-          ['1', '', true],
-      );
-      await changeManager.dropStashedChanges();
-      sinon.assert.calledTwice(cssModel.setStyleSheetText);
-    });
-  });
-
-  describe('turn tracking', () => {
-    it('tracks changes by numeric turnId', async () => {
-      const changeManager = new AiAssistanceModel.ChangeManager.ChangeManager();
-      const cssModel = createModel();
-      const backendNodeId = 1 as Protocol.DOM.BackendNodeId;
-
-      await changeManager.addChange(cssModel, frameId, {
-        groupId: agentId,
-        turnId: 1,
-        selector: 'div',
-        className: 'ai-style-change-1',
-        styles: {color: 'blue'},
-        backendNodeId,
-      });
-
-      assert.deepEqual(changeManager.getChangedNodesForGroupId(agentId, 1), [backendNodeId]);
-      assert.deepEqual(changeManager.getChangedNodesForGroupId(agentId, 2), []);
-    });
-
-    it('updates turnId when an element is re-modified in a later turn', async () => {
-      const changeManager = new AiAssistanceModel.ChangeManager.ChangeManager();
-      const cssModel = createModel();
-      const backendNodeId = 1 as Protocol.DOM.BackendNodeId;
-
-      // Turn 1
-      await changeManager.addChange(cssModel, frameId, {
-        groupId: agentId,
-        turnId: 1,
-        selector: 'div',
-        className: 'ai-style-change-1',
-        styles: {color: 'blue'},
-        backendNodeId,
-      });
-
-      // Turn 2
-      await changeManager.addChange(cssModel, frameId, {
-        groupId: agentId,
-        turnId: 2,
-        selector: 'div',
-        className: 'ai-style-change-1',
-        styles: {color: 'red'},
-        backendNodeId,
-      });
-
-      assert.deepEqual(changeManager.getChangedNodesForGroupId(agentId, 2), [backendNodeId]);
-      assert.deepEqual(changeManager.getChangedNodesForGroupId(agentId, 1), []);
-    });
+    sinon.assert.calledWith(
+        removeModelListenerSpy,
+        SDK.ResourceTreeModel.ResourceTreeModel,
+        sinon.match(SDK.ResourceTreeModel.Events.PrimaryPageChanged),
+        changeManager.clear,
+        changeManager,
+    );
+    sinon.assert.calledWith(
+        cssModel.removeEventListener,
+        SDK.CSSModel.Events.ModelDisposed,
+        sinon.match.func,
+        changeManager,
+    );
   });
 });

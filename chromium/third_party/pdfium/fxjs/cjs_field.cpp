@@ -177,21 +177,21 @@ CFX_Color GetFormControlColor(CPDF_FormControl* pFormControl,
                               ByteStringView entry) {
   switch (pFormControl->GetColorARGB(entry).color_type) {
     case CFX_Color::Type::kTransparent:
-      return CFX_Color(CFX_Color::Type::kTransparent);
+      return CFX_Color::MakeTransparent();
     case CFX_Color::Type::kGray:
-      return CFX_Color(CFX_Color::Type::kGray,
-                       pFormControl->GetOriginalColorComponent(0, entry));
+      return CFX_Color::MakeGray(
+          pFormControl->GetOriginalColorComponent(0, entry));
     case CFX_Color::Type::kRGB:
-      return CFX_Color(CFX_Color::Type::kRGB,
-                       pFormControl->GetOriginalColorComponent(0, entry),
-                       pFormControl->GetOriginalColorComponent(1, entry),
-                       pFormControl->GetOriginalColorComponent(2, entry));
+      return CFX_Color::MakeRGB(
+          pFormControl->GetOriginalColorComponent(0, entry),
+          pFormControl->GetOriginalColorComponent(1, entry),
+          pFormControl->GetOriginalColorComponent(2, entry));
     case CFX_Color::Type::kCMYK:
-      return CFX_Color(CFX_Color::Type::kCMYK,
-                       pFormControl->GetOriginalColorComponent(0, entry),
-                       pFormControl->GetOriginalColorComponent(1, entry),
-                       pFormControl->GetOriginalColorComponent(2, entry),
-                       pFormControl->GetOriginalColorComponent(3, entry));
+      return CFX_Color::MakeCMYK(
+          pFormControl->GetOriginalColorComponent(0, entry),
+          pFormControl->GetOriginalColorComponent(1, entry),
+          pFormControl->GetOriginalColorComponent(2, entry),
+          pFormControl->GetOriginalColorComponent(3, entry));
   }
 }
 
@@ -2123,8 +2123,7 @@ CJS_Result CJS_Field::get_text_color(CJS_Runtime* pRuntime) {
           CFX_Color::Type::kTransparent) {
     FX_BGR_STRUCT<uint8_t> bgr =
         ArgbToBGRStruct(maybe_type_argb_pair.value().argb);
-    crRet = CFX_Color(CFX_Color::Type::kRGB, bgr.red / 255.0f,
-                      bgr.green / 255.0f, bgr.blue / 255.0f);
+    crRet = CFX_Color::MakeRGBBytes(bgr.red, bgr.green, bgr.blue);
   }
 
   v8::Local<v8::Value> array =

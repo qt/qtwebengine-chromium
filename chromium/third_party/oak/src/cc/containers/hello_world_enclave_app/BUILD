@@ -17,9 +17,7 @@
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("@rules_oci//oci:defs.bzl", "oci_image")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//bazel:defs.bzl", "oci_runtime_bundle")
+load("//oak_containers/app_base:defs.bzl", "app_bundle")
 
 package(licenses = ["notice"])
 
@@ -27,6 +25,7 @@ cc_library(
     name = "app_service",
     srcs = ["app_service.cc"],
     hdrs = ["app_service.h"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//cc/containers/sdk:orchestrator_client",
         "//cc/crypto:common",
@@ -43,6 +42,7 @@ cc_library(
 cc_binary(
     name = "main",
     srcs = ["main.cc"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":app_service",
         "//cc/containers/sdk:orchestrator_client",
@@ -58,9 +58,9 @@ cc_binary(
 cc_test(
     name = "standalone_test",
     srcs = ["standalone_test.cc"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":app_service",
-        "//cc/containers/sdk/standalone:oak_standalone",
         "//cc/oak_session:client_session",
         "//oak_containers/examples/hello_world/proto:hello_world_cc_grpc",
         "@com_google_absl//absl/log:check",
@@ -74,10 +74,10 @@ cc_binary(
     name = "standalone_benchmark",
     testonly = True,
     srcs = ["standalone_benchmark.cc"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":app_service",
         "//cc/attestation/verification:insecure_attestation_verifier",
-        "//cc/containers/sdk/standalone:oak_standalone",
         "//cc/oak_session:client_session",
         "//oak_containers/examples/hello_world/proto:hello_world_cc_grpc",
         "@com_github_google_benchmark//:benchmark",
@@ -87,22 +87,10 @@ cc_binary(
     ],
 )
 
-pkg_tar(
-    name = "tar",
-    srcs = [":main"],
-    package_dir = "/usr/local/bin",
-)
-
-oci_image(
-    name = "image",
-    base = "@distroless_cc_debian12",
-    entrypoint = ["/usr/local/bin/main"],
-    tars = [":tar"],
-)
-
-oci_runtime_bundle(
+app_bundle(
     name = "bundle",
-    image = ":image",
+    binary = ":main",
+    target_compatible_with = ["@platforms//os:linux"],
     visibility = [
         "//oak_containers/examples/hello_world/host_app:__subpackages__",
     ],

@@ -36,9 +36,9 @@ devtools_ui_module("profiler") {
     "ProfileLauncherView.ts",
     "ProfileSidebarTreeElement.ts",
     "ProfileTypeRegistry.ts",
-    "ProfileView.ts",
     "ProfilesPanel.ts",
     "TopDownProfileDataGrid.ts",
+    "WritableProfileHeader.ts",
   ]
 
   deps = [
@@ -97,4 +97,18 @@ devtools_entrypoint("meta") {
   ]
 
   visibility = [ "../../entrypoints/*" ]
+}
+
+devtools_ui_module("unittests") {
+  testonly = true
+
+  sources = [ "HeapProfileView.test.ts" ]
+
+  deps = [
+    ":bundle",
+    "../../core/common:bundle",
+    "../../core/sdk:bundle",
+    "../../generated:protocol",
+    "../../testing",
+  ]
 }

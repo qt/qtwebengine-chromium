@@ -142,6 +142,7 @@ class Parser::MultiTokenSource {
 
     /// @returns the Source that returns the combined source from start to the current last token's
     /// source.
+    // NOLINTNEXTLINE(google-explicit-constructor)
     operator tint::Source() const {
         auto end = parser_->last_source().End();
         if (end < start_) {
@@ -1316,7 +1317,7 @@ Maybe<const ast::Statement*> Parser::statement() {
 
 // non_block_statement (continued)
 //   : return_statement SEMICOLON
-//   | func_call_statement SEMICOLON
+//   | func_call_statement SEMICOLON (merged into variable_updating statement)
 //   | variable_statement SEMICOLON
 //   | break_statement SEMICOLON
 //   | continue_statement SEMICOLON
@@ -1331,14 +1332,6 @@ Maybe<const ast::Statement*> Parser::non_block_statement() {
         }
         if (ret_stmt.matched) {
             return ret_stmt.value;
-        }
-
-        auto func = func_call_statement();
-        if (func.errored) {
-            return Failure::kErrored;
-        }
-        if (func.matched) {
-            return func.value;
         }
 
         auto var = variable_statement();
@@ -1773,16 +1766,12 @@ ForHeader::ForHeader(const ast::Statement* init,
 
 ForHeader::~ForHeader() = default;
 
-// (variable_statement | variable_updating_statement | func_call_statement)?
+// for_header_initializer
+//   : variable_statement
+//   | variable_updating_statement
+//   | func_call_statement (merged into variable_updating_statement)
+//   |
 Maybe<const ast::Statement*> Parser::for_header_initializer() {
-    auto call = func_call_statement();
-    if (call.errored) {
-        return Failure::kErrored;
-    }
-    if (call.matched) {
-        return call.value;
-    }
-
     auto var = variable_statement();
     if (var.errored) {
         return Failure::kErrored;
@@ -1802,16 +1791,11 @@ Maybe<const ast::Statement*> Parser::for_header_initializer() {
     return Failure::kNoMatch;
 }
 
-// (variable_updating_statement | func_call_statement)?
+// for_header_continuing
+//   : variable_updating_statement
+//   | func_call_statement (merged into variable_updating_statement)
+//   |
 Maybe<const ast::Statement*> Parser::for_header_continuing() {
-    auto call_stmt = func_call_statement();
-    if (call_stmt.errored) {
-        return Failure::kErrored;
-    }
-    if (call_stmt.matched) {
-        return call_stmt.value;
-    }
-
     auto assign = variable_updating_statement();
     if (assign.errored) {
         return Failure::kErrored;
@@ -1898,27 +1882,6 @@ Maybe<const ast::WhileStatement*> Parser::while_statement(AttributeList& attrs) 
 
     TINT_DEFER(attrs.Clear());
     return create<ast::WhileStatement>(source, condition.value, body.value, std::move(attrs));
-}
-
-// func_call_statement
-//    : IDENT argument_expression_list
-Maybe<const ast::CallStatement*> Parser::func_call_statement() {
-    auto& t = peek();
-    auto& t2 = peek(1);
-    if (!t.IsIdentifier() || !t2.Is(Token::Type::kParenLeft)) {
-        return Failure::kNoMatch;
-    }
-
-    next();  // Consume the first peek
-
-    auto params = expect_argument_expression_list("function call");
-    if (params.errored) {
-        return Failure::kErrored;
-    }
-
-    return builder_.CallStmt(
-        t.source(),
-        builder_.Call(t.source(), builder_.Expr(t.source(), t.to_str()), std::move(params.value)));
 }
 
 // break_statement
@@ -2733,26 +2696,30 @@ Maybe<const ast::Expression*> Parser::core_lhs_expression() {
         MultiTokenSource source(this);
         next();
 
-        const ast::Identifier* ident = nullptr;
         if (peek_is(Token::Type::kTemplateArgsLeft)) {
             auto tmpl_args = expect_template_arg_block("template arguments", [&] {
                 return expect_expression_list("template argument list",
                                               Token::Type::kTemplateArgsRight);
             });
-            ident = builder_.Ident(source(), t.to_str(), std::move(tmpl_args.value));
-        }
-
-        if (peek_is(Token::Type::kParenLeft)) {
-            if (!ident) {
-                ident = builder_.Ident(source(), t.to_str());
-            }
+            const auto* ident = builder_.Ident(t.source(), t.to_str(), std::move(tmpl_args.value));
 
             auto params = expect_argument_expression_list("function call");
             if (params.errored) {
                 return Failure::kErrored;
             }
 
-            return builder_.Call(source(), ident, std::move(params.value));
+            return builder_.Call(t.source(), ident, std::move(params.value));
+        }
+
+        if (peek_is(Token::Type::kParenLeft)) {
+            const auto* ident = builder_.Ident(t.source(), t.to_str());
+
+            auto params = expect_argument_expression_list("function call");
+            if (params.errored) {
+                return Failure::kErrored;
+            }
+
+            return builder_.Call(t.source(), ident, std::move(params.value));
         }
 
         return builder_.Expr(t.source(), t.to_str());
@@ -2778,7 +2745,6 @@ Maybe<const ast::Expression*> Parser::core_lhs_expression() {
 //   : core_lhs_expression component_or_swizzle_specifier ?
 //   | AND lhs_expression
 //   | STAR lhs_expression
-//   | call_expression
 Maybe<const ast::Expression*> Parser::lhs_expression() {
     // Gather up all the `*`, `&` and `&&` tokens into a list and create all of the unary ops at
     // once instead of recursing. This handles the case where the fuzzer decides >8k `*`s would be
@@ -2900,7 +2866,12 @@ Maybe<const ast::Statement*> Parser::variable_updating_statement() {
         if (compound_op_result.matched) {
             compound_op = compound_op_result.value;
         } else {
-            if (!expect("assignment", Token::Type::kEqual)) {
+            // Is this actually a func_call_statement?
+            if (t.IsIdentifier() && lhs->Is<ast::CallExpression>() &&
+                !peek_is(Token::Type::kEqual)) {
+                auto* call_expr = lhs->As<ast::CallExpression>();
+                return builder_.CallStmt(call_expr->target->source, call_expr);
+            } else if (!expect("assignment", Token::Type::kEqual)) {
                 return Failure::kErrored;
             }
         }

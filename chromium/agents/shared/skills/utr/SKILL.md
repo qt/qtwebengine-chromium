@@ -11,7 +11,7 @@ description: >-
 
 The UTR tool is located at `tools/utr/run.py`. Always run it with `vpython3`.
 
-When operating in remote or non-interactive workspace environments (like Cider G),
+When operating in remote or non-interactive workspace environments like Cider G,
 ensure `depot_tools` is in your `PATH` and authenticate before invoking UTR:
 
 ```sh
@@ -20,6 +20,7 @@ vpython3 tools/utr/run.py -B <bucket> -b <builder> -t <test_suite> <action>
 ```
 
 ### Actions
+
 - `compile`: Only compile the targets.
 - `test`: Only run the tests (assumes already compiled).
 - `compile-and-test`: Compile and then run tests.
@@ -29,6 +30,7 @@ and wait for all distributed Swarming shards to complete execution on the bot
 farm and output the final aggregated results URL before exiting.*
 
 ### Common Flags
+
 - `-B <bucket>`: The bucket name (e.g., `ci` or `try`).
 - `-b <builder>`: The builder name (e.g., `Linux Tests`, `Win10 Tests x64`).
 - `-t <test_suite>`: The test suite to run (e.g., `viz_unittests`, `url_unittests`).
@@ -58,34 +60,65 @@ BeyondCorp / Context Aware Access (CAA) authentication blockers, missing remote
 `.cipd_bin/` packages, `.gclient` toolchain mismatches, or RBE CAS syncing
 issues:
 
-1. **Explicit Re-authentication:**
-   If fetching binaries or updating datasets stalls or raises an authentication
-   failure, explicitly generate a fresh Context Aware Access token in the
-   terminal:
+1. **Explicit Re-authentication:** If fetching binaries or updating datasets
+   stalls or raises an authentication failure, explicitly generate a fresh
+   Context Aware Access token in the terminal:
    ```sh
    luci-auth login -scopes https://www.googleapis.com/auth/userinfo.email
    ```
-2. **Forcing Narrow Execution Scope:**
-   Avoid broad isolation failures by always supplying specific test targets and
-   the force flag:
+2. **Forcing Narrow Execution Scope:** Avoid broad isolation failures by always
+   supplying specific test targets and the force flag:
    ```sh
    vpython3 tools/utr/run.py --force -t <test_suite> -p chromium -B try -b <builder> compile
    ```
-3. **Missing Target OS Toolchains (e.g., Android/iOS):**
-   If GN generation fails with `Missing native Android toolchain support` (or
-   similar `target_os` assertions), ensure your workspace's `.gclient`
-   configuration includes the necessary platform in `target_os` and run
-   `gclient sync`:
+3. **Missing Target OS Toolchains (e.g., Android/iOS):** If GN generation fails
+   with `Missing native Android toolchain support` (or similar `target_os`
+   assertions), ensure your workspace's `.gclient` configuration includes the
+   necessary platform in `target_os` and run `gclient sync`:
    ```python
    solutions = [
      ...
    ]
    target_os = ["linux", "android"]
    ```
-4. **Missing CAS Inputs on Remote Workers (RBE Failures):**
-   If remote compilation fails because RBE cloud workers cannot find local Cog
-   virtual files (e.g., `build/util/LASTCHANGE.dummy`), pass `--no-rbe` to force
-   local execution where the files are successfully present:
+4. **Missing CAS Inputs on Remote Workers (RBE Failures):** If remote
+   compilation fails because RBE cloud workers cannot find local Cog virtual
+   files (e.g., `build/util/LASTCHANGE.dummy`), pass `--no-rbe` to force local
+   execution where the files are successfully present:
    ```sh
    vpython3 tools/utr/run.py --no-rbe --force -p chromium -B ci -b <builder> -t <test> compile-and-test
    ```
+
+## Guidelines for AI Agents (User Interaction & Prompts)
+
+When invoking UTR as an AI agent, you must follow these guidelines to ensure a
+safe and smooth user experience:
+
+### 1. Present Warnings Before Prompts
+
+If UTR stops and prompts for input (e.g., expecting `y` to continue or `i` to
+ignore), **DO NOT** simply ask the user "Should I proceed?".
+
+1. Read the UTR command logs to identify the specific warning messages (e.g.,
+   `.gclient configuration mismatches (missing target_os = ["win"])` or
+   cross-compilation warnings).
+2. Present these warnings clearly to the user in the chat.
+3. Ask the user for their decision **after** they have seen the warnings, so
+   they know exactly what they are agreeing to.
+
+### 2. Smart Use of the `--force` Flag
+
+The `--force` (or `-f`) flag bypasses all prompts. To avoid annoying the user
+with repeated prompts while also ensuring they see important warnings:
+
+- **First Run:** **NEVER** use the `--force` flag on the initial UTR run unless
+  the user has already explicitly authorized it. Run UTR normally so that any
+  configuration mismatches or warnings are caught and prompted.
+- **Subsequent Runs:** If you need to run UTR multiple times (e.g., during
+  iterative debugging or multiple test runs) and the user **has already accepted
+  all the warnings** in a previous run, you **SHOULD** append the `--force` flag
+  to all subsequent UTR runs. This prevents the user from having to approve the
+  same warnings repeatedly.
+- **Safety Constraint:** **ONLY** use `--force` if the user has already seen and
+  accepted *all* the warnings. Never use it to preemptively override warnings
+  that the user has not yet approved at least once.

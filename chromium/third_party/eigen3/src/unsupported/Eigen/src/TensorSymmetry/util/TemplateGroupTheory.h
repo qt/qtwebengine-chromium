@@ -89,7 +89,7 @@ namespace group_theory {
  * in the flags value and if two different ways to reach a group
  * element lead to two different flags, this poses a constraint on
  * the allowed values of the resulting tensor. For example, if a
- * group element is reach both with and without the conjugation
+ * group element is reached both with and without the conjugation
  * flags, it is clear that the resulting tensor has to be real.
  *
  * Note that this flag mechanism is quite generic and may have other
@@ -182,7 +182,7 @@ struct dimino_first_step_elements_helper<Multiply, Equality, id, g, current_elem
  *
  * This template takes the first non-identity generator and generates the initial
  * list of elements which consists of all powers of that generator. For a group
- * with just one generated, it would be enumerated after this.
+ * with just one generator, it would be enumerated after this.
  *
  * \sa enumerate_group_elements
  */

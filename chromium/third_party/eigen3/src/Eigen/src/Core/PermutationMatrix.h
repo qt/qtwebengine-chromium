@@ -249,8 +249,6 @@ class PermutationBase : public EigenBase<Derived> {
     }
     return res;
   }
-
- protected:
 };
 
 namespace internal {
@@ -420,8 +418,6 @@ class Map<PermutationMatrix<SizeAtCompileTime, MaxSizeAtCompileTime, StorageInde
   IndicesType m_indices;
 };
 
-template <typename IndicesType_>
-class TranspositionsWrapper;
 namespace internal {
 template <typename IndicesType_>
 struct traits<PermutationWrapper<IndicesType_> > {
@@ -491,7 +487,7 @@ class InverseImpl<PermutationType, PermutationStorage> : public EigenBase<Invers
   typedef internal::traits<PermutationType> PermTraits;
 
  protected:
-  InverseImpl() {}
+  InverseImpl() = default;
 
  public:
   typedef Inverse<PermutationType> InverseType;

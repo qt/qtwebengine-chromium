@@ -45,6 +45,16 @@ macro IsContext(o: HeapObject): bool {
 }
 
 @export
+macro IsExtendedMap(o: HeapObject): bool {
+  return Is<ExtendedMap>(o);
+}
+
+@export
+macro IsJSInterceptorMap(o: HeapObject): bool {
+  return Is<JSInterceptorMap>(o);
+}
+
+@export
 macro IsCoverageInfo(o: HeapObject): bool {
   return Is<CoverageInfo>(o);
 }
@@ -77,6 +87,11 @@ macro IsHeapNumber(o: HeapObject): bool {
 @export
 macro IsJSModuleNamespace(o: Object): bool {
   return Is<JSModuleNamespace>(o);
+}
+
+@export
+macro IsJSPrototype(o: HeapObject): bool {
+  return Is<JSPrototype>(o);
 }
 
 @export
@@ -122,6 +137,11 @@ macro IsSharedFunctionInfo(o: HeapObject): bool {
 @export
 macro IsSymbol(o: HeapObject): bool {
   return Is<Symbol>(o);
+}
+
+@export
+macro IsTuple2(o: HeapObject): bool {
+  return Is<Tuple2>(o);
 }
 
 extern macro TaggedToHeapObject(Object): HeapObject
@@ -478,6 +498,20 @@ Cast<JSRegExpResult>(implicit context: Context)(o: HeapObject): JSRegExpResult
     labels CastError {
   if (regexp::IsRegExpResult(o)) return %RawDownCast<JSRegExpResult>(o);
   goto CastError;
+}
+
+Cast<ExtendedMap>(o: HeapObject): ExtendedMap labels CastError {
+  const map = Cast<Map>(o) otherwise CastError;
+  if (!map.bit_field.is_extended_map) goto CastError;
+  return %RawDownCast<ExtendedMap>(map);
+}
+
+Cast<JSInterceptorMap>(o: HeapObject): JSInterceptorMap labels CastError {
+  const map = Cast<ExtendedMap>(o) otherwise CastError;
+  if (map.bit_field_ex.map_kind != ExtendedMapKind::kJSInterceptorMap) {
+    goto CastError;
+  }
+  return %RawDownCast<JSInterceptorMap>(map);
 }
 
 Cast<JSSloppyArgumentsObject>(

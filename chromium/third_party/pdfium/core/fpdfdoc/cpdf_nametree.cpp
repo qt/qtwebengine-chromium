@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "constants/catalog.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
@@ -31,14 +32,20 @@ struct NodeToInsert {
 };
 
 std::pair<WideString, WideString> GetNodeLimits(CPDF_Array* limits) {
-  WideString left = limits->GetUnicodeTextAt(0);
-  WideString right = limits->GetUnicodeTextAt(1);
+  while (limits->size() < 2) {
+    limits->AppendNew<CPDF_String>("");
+  }
+
+  RetainPtr<CPDF_Object> obj0 = limits->GetMutableObjectAt(0);
+  RetainPtr<CPDF_Object> obj1 = limits->GetMutableObjectAt(1);
+  WideString left = obj0->GetUnicodeText();
+  WideString right = obj1->GetUnicodeText();
 
   // If the lower limit is greater than the upper limit, swap them.
   if (left.Compare(right) > 0) {
     std::swap(left, right);
-    limits->SetNewAt<CPDF_String>(0, left.AsStringView());
-    limits->SetNewAt<CPDF_String>(1, right.AsStringView());
+    limits->SetAt(0, std::move(obj1));
+    limits->SetAt(1, std::move(obj0));
   }
 
   return {std::move(left), std::move(right)};
@@ -453,7 +460,8 @@ RetainPtr<const CPDF_Array> GetNamedDestFromObject(
 
 RetainPtr<const CPDF_Array> LookupOldStyleNamedDest(CPDF_Document* doc,
                                                     const ByteString& name) {
-  RetainPtr<const CPDF_Dictionary> pDests = doc->GetRoot()->GetDictFor("Dests");
+  RetainPtr<const CPDF_Dictionary> pDests =
+      doc->GetRoot()->GetDictFor(pdfium::catalog::kDests);
   if (!pDests) {
     return nullptr;
   }
@@ -478,7 +486,8 @@ std::unique_ptr<CPDF_NameTree> CPDF_NameTree::Create(CPDF_Document* doc,
     return nullptr;
   }
 
-  RetainPtr<CPDF_Dictionary> pNames = pRoot->GetMutableDictFor("Names");
+  RetainPtr<CPDF_Dictionary> pNames =
+      pRoot->GetMutableDictFor(pdfium::catalog::kNames);
   if (!pNames) {
     return nullptr;
   }
@@ -502,10 +511,12 @@ std::unique_ptr<CPDF_NameTree> CPDF_NameTree::CreateWithRootNameArray(
   }
 
   // Retrieve the document's Names dictionary; create it if missing.
-  RetainPtr<CPDF_Dictionary> pNames = pRoot->GetMutableDictFor("Names");
+  RetainPtr<CPDF_Dictionary> pNames =
+      pRoot->GetMutableDictFor(pdfium::catalog::kNames);
   if (!pNames) {
     pNames = doc->NewIndirect<CPDF_Dictionary>();
-    pRoot->SetNewFor<CPDF_Reference>("Names", doc, pNames->GetObjNum());
+    pRoot->SetNewFor<CPDF_Reference>(pdfium::catalog::kNames, doc,
+                                     pNames->GetObjNum());
   }
 
   // Create the |category| dictionary if missing.
@@ -552,7 +563,8 @@ bool CPDF_NameTree::AddValueAndName(RetainPtr<CPDF_Object> pObj,
   NodeToInsert node_to_insert;
   // Handle the corner case where the root node is empty. i.e. No kids and no
   // names. In which case, just insert into it and skip all the searches.
-  RetainPtr<CPDF_Array> pNames = root_->GetMutableArrayFor("Names");
+  RetainPtr<CPDF_Array> pNames =
+      root_->GetMutableArrayFor(pdfium::catalog::kNames);
   if (pNames && pNames->IsEmpty() && !root_->GetArrayFor("Kids")) {
     node_to_insert.names = pNames;
   }

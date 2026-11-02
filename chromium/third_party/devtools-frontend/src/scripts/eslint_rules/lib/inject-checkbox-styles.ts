@@ -42,7 +42,7 @@ export default createRule<[], MessageIds>({
       missingCheckboxStylesAdoption:
           'When rendering a checkbox, ensure the common checkbox styles are adopted into the component shadow root or included in the template.',
     },
-    schema: []
+    schema: [],
   },
   defaultOptions: [],
   create: function(context) {
@@ -156,7 +156,7 @@ export default createRule<[], MessageIds>({
             messageId: 'missingCheckboxStylesAdoption',
           });
         }
-      }
+      },
     };
 
     function isCheckboxStylesReference(elem: Node|null): boolean {
@@ -182,5 +182,5 @@ export default createRule<[], MessageIds>({
 
       return true;
     }
-  }
+  },
 });

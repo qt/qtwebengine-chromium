@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-#include "base/byte_count.h"
+#include "base/byte_size.h"
 #include "base/containers/flat_map.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -276,7 +276,7 @@ ManifestAssetManager::DiskSpaceStatus::DiskSpaceStatus() = default;
 ManifestAssetManager::DiskSpaceStatus::~DiskSpaceStatus() = default;
 
 void ManifestAssetManager::DiskSpaceStatus::Update(
-    std::optional<base::ByteCount> free_space) {
+    std::optional<base::ByteSize> free_space) {
   free_space_ = free_space;
   last_evaluated_ = base::Time::Now();
 }
@@ -313,7 +313,8 @@ ManifestAssetManager::ManifestAssetManager(
     Delegate& delegate,
     component_updater::ComponentUpdateService* component_update_service,
     std::unique_ptr<ManifestSolutionFactory> factory)
-    : usage_tracker_(usage_tracker),
+    : local_state_(local_state),
+      usage_tracker_(usage_tracker),
       delegate_(delegate),
       component_update_service_(component_update_service),
       ledger_(local_state) {
@@ -379,6 +380,10 @@ void ManifestAssetManager::UpdateSolutionFactory(
   // TODO(holte): Potentially defer stopping the old factory from providing new
   // solutions until we actually download assets for the new factory.
   factory_ = std::move(factory);
+  if (std::optional<base::ByteSize> free_space =
+          disk_space_status_.GetFreeSpace()) {
+    factory_->UpdateFreeDiskSpace(free_space);
+  }
 
   // Mark the manifest asset as ready. This is deferred until now let the
   // AssetManager decide when the factory can start providing solutions.
@@ -411,6 +416,37 @@ void ManifestAssetManager::RefreshSolutions() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (factory_) {
     factory_->UpdateSolutions();
+  }
+}
+
+void ManifestAssetManager::UninstallModels() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  model_execution::prefs::ClearAllUseCaseUsages(&*local_state_);
+  active_assets_by_id_.clear();
+  background_download_assets_by_id_.clear();
+
+  std::vector<std::string> keys_to_save;
+  for (auto& [public_key, context] : ledger_.GetMutableContexts()) {
+    if (context.state() == ComponentState::kRegistering ||
+        context.state() == ComponentState::kUninstalling) {
+      // Can't do anything right now during
+      // registering/uninstalling, wait for callbacks.
+      continue;
+    }
+    if (context.NeedsCleanup()) {
+      context.SetUninstalling();
+      keys_to_save.push_back(public_key);
+      // Uninstall the component which will delete the model files, after a
+      // short delay to give time for the consumers to unload the model.
+      base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
+          FROM_HERE,
+          base::BindOnce(&ManifestAssetManager::UninstallComponent,
+                         weak_ptr_factory_.GetWeakPtr(), public_key),
+          kUninstallDelay);
+    }
+  }
+  if (!keys_to_save.empty()) {
+    ledger_.SaveContexts(keys_to_save);
   }
 }
 
@@ -449,12 +485,13 @@ void ManifestAssetManager::UpdateActiveAssets() {
 }
 
 void ManifestAssetManager::OnDiskSpaceEvaluated(
-    std::optional<base::ByteCount> free_space) {
+    std::optional<base::ByteSize> free_space) {
   TRACE_EVENT("optimization_guide",
               "ManifestAssetManager::OnDiskSpaceEvaluated",
               perfetto::Flow::FromPointer(this));
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   disk_space_status_.Update(free_space);
+  factory_->UpdateFreeDiskSpace(free_space);
   UpdateRegistrations();
 }
 
@@ -471,7 +508,7 @@ bool ManifestAssetManager::ShouldInstall(
     return true;
   }
   if (!disk_space_status_.CanSupportOnDemandInstall()) {
-    std::optional<base::ByteCount> free_space =
+    std::optional<base::ByteSize> free_space =
         disk_space_status_.GetFreeSpace();
     if (free_space) {
       base::UmaHistogramCounts100(
@@ -691,8 +728,8 @@ std::vector<mojom::BrokerAssetInfoPtr> ManifestAssetManager::GetBrokerAssets()
   return assets;
 }
 
-std::vector<mojom::BrokerModelInfoPtr> ManifestAssetManager::GetBrokerModels()
-    const {
+std::vector<std::pair<mojom::BrokerModelInfoPtr, base::FilePath>>
+ManifestAssetManager::GetBrokerModels() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   return factory_->GetBrokerModels();
 }

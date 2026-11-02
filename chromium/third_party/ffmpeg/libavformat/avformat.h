@@ -386,6 +386,7 @@ struct AVFrame;
  creation_time-- date when the file was created, preferably in ISO 8601.
  date         -- date when the work was created, preferably in ISO 8601.
  disc         -- number of a subset, e.g. disc in a multi-disc collection.
+ disc_subtitle-- title of a subset, e.g. disc subtitle in a multi-disc collection.
  encoder      -- name/settings of the software/hardware that produced the file.
  encoded_by   -- person/group who created the file.
  filename     -- original name of the file.
@@ -1064,19 +1065,32 @@ typedef struct AVStreamGroupTileGrid {
 } AVStreamGroupTileGrid;
 
 /**
- * AVStreamGroupLCEVC is meant to define the relation between video streams
- * and a data stream containing LCEVC enhancement layer NALUs.
+ * AVStreamGroupLayeredVideo is meant to define the relation between a base
+ * layer video stream and a separate enhancement layer stream that together
+ * form a single layered video presentation (for example a video stream and a
+ * data stream containing LCEVC enhancement layer NALUs, or Dolby Vision
+ * Profile 7 dual-layer encoding).
  *
- * No more than one stream of
- * @ref AVCodecParameters.codec_id "codec_id" AV_CODEC_ID_LCEVC shall be present.
+ * The enhancement layer stream is identified by @ref el_index.
  */
-typedef struct AVStreamGroupLCEVC {
+typedef struct AVStreamGroupLayeredVideo {
     const AVClass *av_class;
 
     /**
-     * Index of the LCEVC data stream in AVStreamGroup.
+     * Index of the enhancement layer stream in AVStreamGroup.
      */
-    unsigned int lcevc_index;
+#if FF_API_LCEVC_STRUCT
+    union {
+#endif
+        unsigned int el_index;
+#if FF_API_LCEVC_STRUCT
+        /**
+         * Alias for @ref el_index, kept for backward compatibility.
+         */
+        attribute_deprecated
+        unsigned int lcevc_index;
+    };
+#endif
     /**
      * Width of the final stream for presentation.
      */
@@ -1085,7 +1099,16 @@ typedef struct AVStreamGroupLCEVC {
      * Height of the final image for presentation.
      */
     int height;
-} AVStreamGroupLCEVC;
+} AVStreamGroupLayeredVideo;
+
+#if FF_API_LCEVC_STRUCT
+/**
+ * Alias kept for backward compatibility.
+ *
+ * AVStreamGroupLCEVC was renamed to @ref AVStreamGroupLayeredVideo.
+ */
+#define AVStreamGroupLCEVC AVStreamGroupLayeredVideo
+#endif
 
 /**
  * AVStreamGroupTREF is meant to define the relation between video, audio,
@@ -1110,6 +1133,7 @@ enum AVStreamGroupParamsType {
     AV_STREAM_GROUP_PARAMS_TILE_GRID,
     AV_STREAM_GROUP_PARAMS_LCEVC,
     AV_STREAM_GROUP_PARAMS_TREF,
+    AV_STREAM_GROUP_PARAMS_DOLBY_VISION,
 };
 
 struct AVIAMFAudioElement;
@@ -1151,7 +1175,14 @@ typedef struct AVStreamGroup {
         struct AVIAMFAudioElement *iamf_audio_element;
         struct AVIAMFMixPresentation *iamf_mix_presentation;
         struct AVStreamGroupTileGrid *tile_grid;
+        struct AVStreamGroupLayeredVideo *layered_video;
+#if FF_API_LCEVC_STRUCT
+        /**
+         * deprecated, use layered_video.
+         */
+        attribute_deprecated
         struct AVStreamGroupLCEVC *lcevc;
+#endif
         struct AVStreamGroupTREF *tref;
     } params;
 
@@ -1567,8 +1598,12 @@ typedef struct AVFormatContext {
      * Flags to enable debugging.
      */
     int debug;
-#define FF_FDEBUG_TS        0x0001
-#define FF_FDEBUG_ID3V2     0x0002
+#define AV_FDEBUG_TS        0x0001
+#define AV_FDEBUG_ID3V2     0x0002
+
+#if FF_API_FDEBUG_TS
+#define FF_FDEBUG_TS AV_FDEBUG_TS
+#endif
 
     /**
      * The maximum number of streams.
@@ -1918,6 +1953,15 @@ typedef struct AVFormatContext {
      * Name of this format context, only used for logging purposes.
      */
     char *name;
+
+    /**
+     * Depth recursion limit,
+     *
+     * The maximum recursion depth that a Demuxer can open a Demuxer within itself.
+     *
+     * - demuxing: Set by user
+     */
+    int recursion_limit;
 } AVFormatContext;
 
 /**
@@ -3158,32 +3202,6 @@ int avformat_match_stream_specifier(AVFormatContext *s, AVStream *st,
                                     const char *spec);
 
 int avformat_queue_attached_pictures(AVFormatContext *s);
-
-#if FF_API_INTERNAL_TIMING
-enum AVTimebaseSource {
-    AVFMT_TBCF_AUTO = -1,
-    AVFMT_TBCF_DECODER,
-    AVFMT_TBCF_DEMUXER,
-#if FF_API_R_FRAME_RATE
-    AVFMT_TBCF_R_FRAMERATE,
-#endif
-};
-
-/**
- * @deprecated do not call this function
- */
-attribute_deprecated
-int avformat_transfer_internal_stream_timing_info(const AVOutputFormat *ofmt,
-                                                  AVStream *ost, const AVStream *ist,
-                                                  enum AVTimebaseSource copy_tb);
-
-/**
- * @deprecated do not call this function
- */
-attribute_deprecated
-AVRational av_stream_get_codec_timebase(const AVStream *st);
-#endif
-
 
 /**
  * @}

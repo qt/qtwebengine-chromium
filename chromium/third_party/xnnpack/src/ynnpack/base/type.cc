@@ -13,6 +13,7 @@
 #include "ynnpack/base/arithmetic.h"
 #include "ynnpack/base/base.h"
 #include "ynnpack/base/bfloat16.h"
+#include "ynnpack/base/fp8.h"
 #include "ynnpack/base/half.h"
 #include "ynnpack/include/ynnpack.h"
 
@@ -32,7 +33,8 @@ bool type_is_integral(ynn_type t) {
     case ynn_type_fp32:
     case ynn_type_fp16:
     case ynn_type_bf16:
-    case ynn_type_opaque:
+    case ynn_type_fp8_e5m2:
+    case ynn_type_fp8_e4m3:
     case ynn_type_invalid:
       return false;
   }
@@ -46,6 +48,8 @@ bool type_is_floating_point(ynn_type t) {
     case ynn_type_fp32:
     case ynn_type_fp16:
     case ynn_type_bf16:
+    case ynn_type_fp8_e5m2:
+    case ynn_type_fp8_e4m3:
       return true;
     case ynn_type_int2:
     case ynn_type_uint2:
@@ -54,7 +58,6 @@ bool type_is_floating_point(ynn_type t) {
     case ynn_type_int8:
     case ynn_type_uint8:
     case ynn_type_int32:
-    case ynn_type_opaque:
     case ynn_type_invalid:
       return false;
   }
@@ -72,6 +75,8 @@ size_t type_size_bits(ynn_type t) {
       return 4;
     case ynn_type_int8:
     case ynn_type_uint8:
+    case ynn_type_fp8_e5m2:
+    case ynn_type_fp8_e4m3:
       return 8;
     case ynn_type_fp16:
     case ynn_type_bf16:
@@ -81,8 +86,6 @@ size_t type_size_bits(ynn_type t) {
       return 32;
     case ynn_type_fp64:
       return 64;
-    case ynn_type_opaque:
-      return 0;
     case ynn_type_invalid:
       break;
   }
@@ -94,6 +97,10 @@ size_t type_size_bytes(ynn_type t) { return (type_size_bits(t) + 7) / 8; }
 
 size_t type_mantissa_bits(ynn_type t) {
   switch (t) {
+    case ynn_type_fp8_e5m2:
+      return 3;
+    case ynn_type_fp8_e4m3:
+      return 4;
     case ynn_type_fp16:
       return 11;
     case ynn_type_bf16:
@@ -110,6 +117,9 @@ size_t type_mantissa_bits(ynn_type t) {
 
 size_t type_exponent_bits(ynn_type t) {
   switch (t) {
+    case ynn_type_fp8_e4m3:
+      return 4;
+    case ynn_type_fp8_e5m2:
     case ynn_type_fp16:
       return 5;
     case ynn_type_bf16:
@@ -132,8 +142,6 @@ const char* to_string(ynn_type type) {
   switch (type) {
     case ynn_type_invalid:
       return "invalid";
-    case ynn_type_opaque:
-      return "opaque";
     case ynn_type_int2:
       return "int2";
     case ynn_type_uint2:
@@ -156,6 +164,10 @@ const char* to_string(ynn_type type) {
       return "fp16";
     case ynn_type_bf16:
       return "bf16";
+    case ynn_type_fp8_e5m2:
+      return "fp8_e5m2";
+    case ynn_type_fp8_e4m3:
+      return "fp8_e4m3";
   }
   YNN_UNREACHABLE;
   return "unknown";
@@ -175,39 +187,44 @@ void convert_to_int(const float* src, size_t n, T* dst) {
 void convert_n(const float* src, size_t n, ynn_type type, void* dst) {
   switch (type) {
     case ynn_type_fp64:
-      std::copy_n(src, n, (double*)dst);
+      std::copy_n(src, n, static_cast<double*>(dst));
       return;
     case ynn_type_fp32:
-      std::copy_n(src, n, (float*)dst);
+      std::copy_n(src, n, static_cast<float*>(dst));
       return;
     case ynn_type_fp16:
-      std::copy_n(src, n, (half*)dst);
+      std::copy_n(src, n, static_cast<half*>(dst));
       return;
     case ynn_type_bf16:
-      std::copy_n(src, n, (bfloat16*)dst);
+      std::copy_n(src, n, static_cast<bfloat16*>(dst));
+      return;
+    case ynn_type_fp8_e5m2:
+      std::copy_n(src, n, static_cast<fp8_e5m2*>(dst));
+      return;
+    case ynn_type_fp8_e4m3:
+      std::copy_n(src, n, static_cast<fp8_e4m3*>(dst));
       return;
     case ynn_type_int2:
-      convert_to_int<int2x4>(src, n, (int2x4*)dst);
+      convert_to_int(src, n, static_cast<int2x4*>(dst));
       return;
     case ynn_type_uint2:
-      convert_to_int<uint2x4>(src, n, (uint2x4*)dst);
+      convert_to_int(src, n, static_cast<uint2x4*>(dst));
       return;
     case ynn_type_int4:
-      convert_to_int<int4x2>(src, n, (int4x2*)dst);
+      convert_to_int(src, n, static_cast<int4x2*>(dst));
       return;
     case ynn_type_uint4:
-      convert_to_int<uint4x2>(src, n, (uint4x2*)dst);
+      convert_to_int(src, n, static_cast<uint4x2*>(dst));
       return;
     case ynn_type_int8:
-      convert_to_int<int8_t>(src, n, (int8_t*)dst);
+      convert_to_int(src, n, static_cast<int8_t*>(dst));
       return;
     case ynn_type_uint8:
-      convert_to_int<uint8_t>(src, n, (uint8_t*)dst);
+      convert_to_int(src, n, static_cast<uint8_t*>(dst));
       return;
     case ynn_type_int32:
-      convert_to_int<int32_t>(src, n, (int32_t*)dst);
+      convert_to_int(src, n, static_cast<int32_t*>(dst));
       return;
-    case ynn_type_opaque:
     case ynn_type_invalid:
       break;
   }

@@ -1090,11 +1090,12 @@ void VisitStoreCommon(InstructionSelector* selector,
     } else {
       // Release and non-atomic stores emit MOV.
       // https://www.cl.cam.ac.uk/~pes20/cpp/cpp0xmappings.html
+      DCHECK(!atomic_order || atomic_order == AtomicMemoryOrder::kAcqRel);
       InstructionOperand val;
       if (g.CanBeImmediate(value)) {
         val = g.UseImmediate(value);
-      } else if (!atomic_order && (rep == MachineRepresentation::kWord8 ||
-                                   rep == MachineRepresentation::kBit)) {
+      } else if (rep == MachineRepresentation::kWord8 ||
+                 rep == MachineRepresentation::kBit) {
         val = g.UseByteRegister(value);
       } else {
         val = g.UseUniqueRegister(value);
@@ -1277,11 +1278,11 @@ void InstructionSelector::VisitStackPointerGreaterThan(
     // are only applied to the first stack check. If applying an offset, we must
     // ensure the input and temp registers do not alias, thus kUniqueRegister.
     InstructionOperand temps[] = {g.TempRegister()};
-    const int temp_count =
-        (op.kind == StackCheckKind::kJSFunctionEntry) ? 1 : 0;
-    const auto register_mode = (op.kind == StackCheckKind::kJSFunctionEntry)
-                                   ? OperandGenerator::kUniqueRegister
-                                   : OperandGenerator::kRegister;
+    const bool has_offset = op.kind == StackCheckKind::kJSFunctionEntry ||
+                            op.kind == StackCheckKind::kWasm;
+    const int temp_count = has_offset ? 1 : 0;
+    const auto register_mode = has_offset ? OperandGenerator::kUniqueRegister
+                                          : OperandGenerator::kRegister;
 
     OpIndex value = op.stack_limit();
     if (g.CanBeMemoryOperand(kIA32Cmp, node, value, effect_level)) {

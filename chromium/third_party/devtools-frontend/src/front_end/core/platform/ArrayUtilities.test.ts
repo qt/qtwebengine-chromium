@@ -213,6 +213,28 @@ describe('ArrayUtilities', () => {
     });
   });
 
+  describe('insertWithComparator', () => {
+    it('inserts elements into a sorted array and returns the insertion index', () => {
+      const array = [1, 3, 5];
+      const index = Platform.ArrayUtilities.insertWithComparator(array, 2, Platform.ArrayUtilities.DEFAULT_COMPARATOR);
+      assert.strictEqual(index, 1);
+      assert.deepEqual(array, [1, 2, 3, 5]);
+    });
+
+    it('inserts duplicate elements cleanly next to existing matches', () => {
+      const array = ['alpha', 'gamma'];
+      const index1 =
+          Platform.ArrayUtilities.insertWithComparator(array, 'beta', Platform.ArrayUtilities.DEFAULT_COMPARATOR);
+      assert.strictEqual(index1, 1);
+      assert.deepEqual(array, ['alpha', 'beta', 'gamma']);
+
+      const index2 =
+          Platform.ArrayUtilities.insertWithComparator(array, 'beta', Platform.ArrayUtilities.DEFAULT_COMPARATOR);
+      assert.strictEqual(index2, 1);
+      assert.deepEqual(array, ['alpha', 'beta', 'beta', 'gamma']);
+    });
+  });
+
   describe('Nearest', () => {
     describe('Finding the last item where predicate is true', () => {
       it('works with an even number of entries', () => {

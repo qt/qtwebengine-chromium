@@ -60,7 +60,7 @@
 #include "chrome/browser/android/tab_android.h"
 #include "chrome/browser/ui/android/tab_model/android_live_tab_context.h"
 #include "chrome/browser/ui/android/tab_model/tab_model.h"
-#include "chrome/browser/ui/android/tab_model/tab_model_list.h"
+#include "chrome/browser/ui/android/tab_model/tab_model_jni_bridge.h"
 #include "chrome/browser/ui/browser_window/public/create_browser_window.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/navigation_controller.h"
@@ -437,7 +437,8 @@ void SessionsGetRecentlyClosedFunction::OnGetRecentlyClosedWindow(
   }
 
   // Look up the C++ side TabModel.
-  TabModel* model = TabModelList::FindNativeTabModelForJavaObject(j_tab_model);
+  TabModel* model = jni_zero::FromJniType<TabModel*>(
+      base::android::AttachCurrentThread(), j_tab_model);
   if (!model) {
     Respond(ArgumentList(GetRecentlyClosed::Results::Create(result_)));
     return;
@@ -745,7 +746,9 @@ SessionsRestoreFunction::RestoreMostRecentlyClosed(
   }
   std::vector<sessions::LiveTab*> restored_tabs =
       tab_restore_service->RestoreMostRecentEntry(context);
-  DCHECK(restored_tabs.size());
+  if (restored_tabs.empty()) {
+    return RespondNow(Error(kNoActiveTabError));
+  }
 
   sessions::ContentLiveTab* first_tab =
       static_cast<sessions::ContentLiveTab*>(restored_tabs[0]);
@@ -798,8 +801,8 @@ void SessionsRestoreFunction::OnGetRecentlyClosedWindow(
   }
 
   // Look up the C++ side TabModel.
-  TabModel* saved_tab_model =
-      TabModelList::FindNativeTabModelForJavaObject(j_tab_model);
+  TabModel* saved_tab_model = jni_zero::FromJniType<TabModel*>(
+      base::android::AttachCurrentThread(), j_tab_model);
   if (!saved_tab_model) {
     // No tab model, so no window to restore.
     Respond(Error(kNoRecentlyClosedSessionsError));
@@ -834,8 +837,8 @@ void SessionsRestoreFunction::OnBrowserWindowCreated(
   CHECK(new_tab_list);
 
   // Look up the C++ side TabModel again.
-  TabModel* saved_tab_model =
-      TabModelList::FindNativeTabModelForJavaObject(global_ref_tab_model_);
+  TabModel* saved_tab_model = jni_zero::FromJniType<TabModel*>(
+      base::android::AttachCurrentThread(), global_ref_tab_model_);
   if (!saved_tab_model) {
     Respond(Error(kNoRecentlyClosedSessionsError));
     return;
@@ -922,17 +925,19 @@ ExtensionFunction::ResponseAction SessionsRestoreFunction::RestoreLocalSession(
   if (!context) {
     return RespondNow(Error(kNoLiveTabContextError));
   }
-  std::vector<sessions::LiveTab*> restored_tabs =
+  std::optional<std::vector<sessions::LiveTab*>> restored_tabs =
       tab_restore_service->RestoreEntryById(
           context, SessionID::FromSerializedValue(session_id.id()),
           WindowOpenDisposition::UNKNOWN);
-  // If the ID is invalid, restored_tabs will be empty.
-  if (restored_tabs.empty()) {
+  if (!restored_tabs.has_value()) {
     return RespondNow(Error(kInvalidSessionIdError, session_id.ToString()));
+  }
+  if (restored_tabs->empty()) {
+    return RespondNow(Error(kNoActiveTabError));
   }
 
   sessions::ContentLiveTab* first_tab =
-      static_cast<sessions::ContentLiveTab*>(restored_tabs[0]);
+      static_cast<sessions::ContentLiveTab*>((*restored_tabs)[0]);
 
   // Retrieve the window through any of the tabs in restored_tabs.
   if (is_window) {

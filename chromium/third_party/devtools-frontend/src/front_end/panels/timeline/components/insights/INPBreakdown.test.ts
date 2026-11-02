@@ -24,7 +24,7 @@ describeWithEnvironment('INP breakdown component', () => {
       },
       devToolsAiAssistancePerformanceAgent: {
         enabled: true,
-      }
+      },
     });
   });
 

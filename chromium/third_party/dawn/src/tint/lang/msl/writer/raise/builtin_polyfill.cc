@@ -169,6 +169,12 @@ struct State {
                     case core::BuiltinFn::kDot:
                         call_worklist.push_back([this, builtin] { Dot(builtin); });
                         break;
+                    case core::BuiltinFn::kFirstLeadingBit:
+                        call_worklist.push_back([this, builtin] { FirstLeadingBit(builtin); });
+                        break;
+                    case core::BuiltinFn::kFirstTrailingBit:
+                        call_worklist.push_back([this, builtin] { FirstTrailingBit(builtin); });
+                        break;
                     case core::BuiltinFn::kFrexp:
                         call_worklist.push_back([this, builtin] { Frexp(builtin); });
                         break;
@@ -258,6 +264,9 @@ struct State {
                         break;
 
                     // Pack/unpack builtins.
+                    case core::BuiltinFn::kInsertBits:
+                        call_worklist.push_back([this, builtin] { InsertBits(builtin); });
+                        break;
                     case core::BuiltinFn::kPack2X16Float:
                         call_worklist.push_back([this, builtin] { Pack2x16Float(builtin); });
                         break;
@@ -351,7 +360,7 @@ struct State {
         b.InsertBefore(construct, [&] {
             b.CallExplicitWithResult<msl::ir::BuiltinCall>(
                 construct->DetachResult(), msl::BuiltinFn::kMakeFilledSimdgroupMatrix,
-                Vector{sm_ty}, value);
+                Vector<core::ir::TemplateParameter, 1>{sm_ty}, value);
         });
         construct->Destroy();
     }
@@ -407,6 +416,20 @@ struct State {
         auto* call = b.CallWithResult(builtin->DetachResult(), polyfill, std::move(args));
         call->InsertBefore(builtin);
         builtin->Destroy();
+    }
+
+    /// Clamp the offset argument of insertBits to 31 to work around crbug.com/506180954. This is
+    /// safe because offset can only be greater than 31 if count is 0 due to the clamping already
+    /// done in the IR builtin polyfill, which means this will be a no-op. If offset is <= 31, then
+    /// this polyfill has no effect on behavior.
+    /// @param builtin the builtin call instruction
+    void InsertBits(core::ir::CoreBuiltinCall* builtin) {
+        b.InsertBefore(builtin, [&] {
+            auto* offset = builtin->Args()[2];
+            auto* clamped = b.Min(offset, 31_u);
+            builtin->SetOperand(core::ir::CoreBuiltinCall::kArgsOperandOffset + 2,
+                                clamped->Result());
+        });
     }
 
     /// Polyfill a distance call if necessary.
@@ -560,6 +583,7 @@ struct State {
     /// @param builtin the builtin call instruction
     void Pack2x16Float(core::ir::CoreBuiltinCall* builtin) {
         // Replace the call with `as_type<uint>(half2(value))`.
+        ir.properties.Add(core::ir::Property::kAllow16BitFloats);
         b.InsertBefore(builtin, [&] {
             auto* convert = b.Convert<vec2<f16>>(builtin->Args()[0]);
             auto* bitcast = b.Bitcast(ty.u32(), convert);
@@ -574,6 +598,7 @@ struct State {
         auto* arg = builtin->Args()[0];
 
         // Convert the argument to f16 and then back again.
+        ir.properties.Add(core::ir::Property::kAllow16BitFloats);
         b.InsertBefore(builtin, [&] {
             b.ConvertWithResult(builtin->DetachResult(),
                                 b.Convert(ty.MatchWidth(ty.f16(), arg->Type()), arg));
@@ -1029,6 +1054,7 @@ struct State {
     /// @param builtin the builtin call instruction
     void Unpack2x16Float(core::ir::CoreBuiltinCall* builtin) {
         // Replace the call with `float2(as_type<half2>(value))`.
+        ir.properties.Add(core::ir::Property::kAllow16BitFloats);
         b.InsertBefore(builtin, [&] {
             auto* bitcast = b.Bitcast<vec2<f16>>(builtin->Args()[0]);
             b.ConvertWithResult(builtin->DetachResult(), bitcast);
@@ -1081,10 +1107,22 @@ struct State {
     /// @param builtin the builtin call instruction
     void SubgroupMatrixLoad(core::ir::CoreBuiltinCall* builtin) {
         b.InsertBefore(builtin, [&] {
+            const bool majorness_template = builtin->ExplicitTemplateParams().Length() == 2;
             auto* p = builtin->Args()[0];
             auto* offset = builtin->Args()[1];
-            auto* col_major = builtin->Args()[2];
-            auto* stride = builtin->Args()[3];
+            auto* stride =
+                b.InsertBitcastIfNeeded(ty.u32(), builtin->Args()[majorness_template ? 2 : 3]);
+
+            core::ir::Value* col_major = nullptr;
+            if (majorness_template) {
+                TINT_IR_ASSERT(ir, std::holds_alternative<core::Majorness>(
+                                       builtin->ExplicitTemplateParams()[1]));
+                col_major =
+                    b.Constant(std::get<core::Majorness>(builtin->ExplicitTemplateParams()[1]) ==
+                               core::Majorness::kColMajor);
+            } else {
+                col_major = builtin->Args()[2];
+            }
 
             auto* ptr = p->Type()->As<core::type::Pointer>();
             auto* arr = ptr->StoreType()->As<core::type::Array>();
@@ -1097,6 +1135,7 @@ struct State {
             auto* matrix_origin = b.Zero<vec2<u64>>();
 
             // Convert the u32 stride to the ulong that MSL expects.
+            ir.properties.Add(core::ir::Property::kAllow64BitIntegers);
             auto* elements_per_row =
                 b.Call<msl::ir::BuiltinCall>(ty.u64(), msl::BuiltinFn::kConvert, stride);
 
@@ -1118,11 +1157,23 @@ struct State {
     /// @param builtin the builtin call instruction
     void SubgroupMatrixStore(core::ir::CoreBuiltinCall* builtin) {
         b.InsertBefore(builtin, [&] {
+            const bool majorness_template = builtin->ExplicitTemplateParams().Length() == 1;
             auto* p = builtin->Args()[0];
             auto* offset = builtin->Args()[1];
             auto* value = builtin->Args()[2];
-            auto* col_major = builtin->Args()[3];
-            auto* stride = builtin->Args()[4];
+            auto* stride =
+                b.InsertBitcastIfNeeded(ty.u32(), builtin->Args()[majorness_template ? 3 : 4]);
+
+            core::ir::Value* col_major = nullptr;
+            if (majorness_template) {
+                TINT_IR_ASSERT(ir, std::holds_alternative<core::Majorness>(
+                                       builtin->ExplicitTemplateParams()[0]));
+                col_major =
+                    b.Constant(std::get<core::Majorness>(builtin->ExplicitTemplateParams()[0]) ==
+                               core::Majorness::kColMajor);
+            } else {
+                col_major = builtin->Args()[3];
+            }
 
             auto* ptr = p->Type()->As<core::type::Pointer>();
             auto* arr = ptr->StoreType()->As<core::type::Array>();
@@ -1132,6 +1183,7 @@ struct State {
             auto* dst = b.Access(elem_ptr, p, offset);
 
             // Convert the u32 stride to the ulong that MSL expects.
+            ir.properties.Add(core::ir::Property::kAllow64BitIntegers);
             auto* elements_per_row =
                 b.Call<msl::ir::BuiltinCall>(ty.u64(), msl::BuiltinFn::kConvert, stride);
 
@@ -1191,7 +1243,8 @@ struct State {
                                             sm_ty->Columns(), sm_ty->Rows());
         return b
             .CallExplicit<msl::ir::BuiltinCall>(
-                right_ty, msl::BuiltinFn::kMakeDiagonalSimdgroupMatrix, Vector{right_ty}, scalar)
+                right_ty, msl::BuiltinFn::kMakeDiagonalSimdgroupMatrix,
+                Vector<core::ir::TemplateParameter, 1>{right_ty}, scalar)
             ->Result();
     }
 
@@ -1199,7 +1252,8 @@ struct State {
                                                    core::ir::Value* scalar) {
         return b
             .CallExplicit<msl::ir::BuiltinCall>(
-                result_ty, msl::BuiltinFn::kMakeFilledSimdgroupMatrix, Vector{result_ty}, scalar)
+                result_ty, msl::BuiltinFn::kMakeFilledSimdgroupMatrix,
+                Vector<core::ir::TemplateParameter, 1>{result_ty}, scalar)
             ->Result();
     }
 
@@ -1208,7 +1262,8 @@ struct State {
         auto* left_ty = ty.subgroup_matrix(core::SubgroupMatrixKind::kLeft, sm_ty->Type(),
                                            sm_ty->Columns(), sm_ty->Rows());
         return b
-            .CallExplicit<msl::ir::BuiltinCall>(left_ty, msl::BuiltinFn::kConvert, Vector{left_ty},
+            .CallExplicit<msl::ir::BuiltinCall>(left_ty, msl::BuiltinFn::kConvert,
+                                                Vector<core::ir::TemplateParameter, 1>{left_ty},
                                                 mat)
             ->Result();
     }
@@ -1245,7 +1300,8 @@ struct State {
             auto* ld = b.Load(tmp);
 
             b.CallExplicitWithResult<msl::ir::BuiltinCall>(
-                builtin->DetachResult(), msl::BuiltinFn::kConvert, Vector{sm_ty}, ld);
+                builtin->DetachResult(), msl::BuiltinFn::kConvert,
+                Vector<core::ir::TemplateParameter, 1>{sm_ty}, ld);
         });
         builtin->Destroy();
     }
@@ -1278,7 +1334,8 @@ struct State {
             auto* ld = b.Load(tmp);
 
             b.CallExplicitWithResult<msl::ir::BuiltinCall>(
-                builtin->DetachResult(), msl::BuiltinFn::kConvert, Vector{sm_ty}, ld);
+                builtin->DetachResult(), msl::BuiltinFn::kConvert,
+                Vector<core::ir::TemplateParameter, 1>{sm_ty}, ld);
         });
         builtin->Destroy();
     }
@@ -1310,7 +1367,60 @@ struct State {
             auto* ld = b.Load(tmp);
 
             b.CallExplicitWithResult<msl::ir::BuiltinCall>(
-                builtin->DetachResult(), msl::BuiltinFn::kConvert, Vector{sm_ty}, ld);
+                builtin->DetachResult(), msl::BuiltinFn::kConvert,
+                Vector<core::ir::TemplateParameter, 1>{sm_ty}, ld);
+        });
+        builtin->Destroy();
+    }
+
+    // Replace firstLeadingBit builtin
+    // @param builtin the builtin call instruction
+    void FirstLeadingBit(core::ir::CoreBuiltinCall* builtin) {
+        b.InsertBefore(builtin, [&] {
+            // %x = %input;
+            // if (%input is signed) {
+            //   %x = select(~u32(%x), u32(%x), u32(%x) , 0x80000000);
+            // }
+            // %clz = countLeadingZeros(%x)
+            // %result = 31 - %clz
+
+            auto* arg = builtin->Args()[0];
+            auto* u32_ty = ty.MatchWidth(ty.u32(), arg->Type());
+            core::ir::Constant* c31 = b.MatchWidth(u32(31), arg->Type());
+            auto* use_arg = b.InsertBitcastIfNeeded(u32_ty, arg);
+            if (arg->Type()->IsSignedIntegerScalarOrVector()) {
+                auto* flip = b.Complement(use_arg);
+                use_arg = b.Call(u32_ty, core::BuiltinFn::kSelect, flip, use_arg,
+                                 b.LessThan(use_arg, b.MatchWidth(u32(0x80000000), arg->Type())))
+                              ->Result();
+            }
+            auto* clz = b.Call(u32_ty, core::BuiltinFn::kCountLeadingZeros, use_arg);
+            core::ir::Instruction* result = b.Subtract(c31, clz);
+            if (arg->Type()->IsSignedIntegerScalarOrVector()) {
+                result = b.Bitcast(arg->Type(), result);
+            }
+            result->SetResult(builtin->DetachResult());
+        });
+        builtin->Destroy();
+    }
+
+    // Replace firstTrailingBit builtin
+    // @param builtin the builtin call instruction
+    void FirstTrailingBit(core::ir::CoreBuiltinCall* builtin) {
+        b.InsertBefore(builtin, [&] {
+            // %ctz = countTrailingZeros(%input)
+            // %result = select(%ctz, -1, %input == 0)
+            auto* arg = builtin->Args()[0];
+            auto* ctz =
+                b.Call(builtin->Result()->Type(), core::BuiltinFn::kCountTrailingZeros, arg);
+            core::ir::Constant* n1 = nullptr;
+            if (arg->Type()->IsUnsignedIntegerScalarOrVector()) {
+                n1 = b.MatchWidth(u32(-1), arg->Type());
+            } else {
+                n1 = b.MatchWidth(i32(-1), arg->Type());
+            }
+            auto* eq = b.Equal(arg, b.Zero(arg->Type()));
+            b.CallWithResult(builtin->DetachResult(), core::BuiltinFn::kSelect, ctz, n1, eq);
         });
         builtin->Destroy();
     }
@@ -1319,17 +1429,11 @@ struct State {
 }  // namespace
 
 Result<SuccessType> BuiltinPolyfill(core::ir::Module& ir, const BuiltinPolyfillConfig& config) {
-    AssertValid(ir,
-                core::ir::Capabilities{
-                    core::ir::Capability::kAllow8BitIntegers,
-                    core::ir::Capability::kAllowPointSizeBuiltin,
-                    core::ir::Capability::kAllowAnyLetType,
-                    core::ir::Capability::kAllowNonCoreTypes,
-                    core::ir::Capability::kMslAllowEntryPointInterface,
-                },
-                "before msl.BuiltinPolyfill");
+    AssertValid(ir, "before msl.BuiltinPolyfill");
 
     State{ir, config}.Process();
+
+    ir.properties.Add(core::ir::Property::kAllowNonCoreTypes);
 
     return Success;
 }

@@ -251,7 +251,7 @@ PseudoElement* GetPseudoElementForCSSPseudoElement(
   // E.g. for ::before::marker, first get ::before from the element, then (after
   // cycle) get ::marker from that ::before pseudo-element.
   Element* current_owner = base_element;
-  for (size_t i = pseudo_chain.size(); i > 0; --i) {
+  for (wtf_size_t i = pseudo_chain.size(); i > 0; --i) {
     PseudoId id = pseudo_chain[i - 1];
     PseudoElement* next_pseudo = current_owner->GetPseudoElement(id);
     if (!next_pseudo) {
@@ -277,6 +277,11 @@ LayoutObject* CSSPseudoElement::GetLayoutObject() const {
     return nullptr;
   }
   return pseudo_element->GetLayoutObject();
+}
+
+PseudoElement* CSSPseudoElement::GetPseudoElement() const {
+  return GetPseudoElementForCSSPseudoElement(parent_, pseudo_id_,
+                                              pseudo_argument_);
 }
 
 HeapVector<Member<DOMQuad>> CSSPseudoElement::getBoxQuads(
@@ -336,10 +341,8 @@ void CSSPseudoElementsCacheData::CacheCSSPseudoElement(
     const AtomicString& pseudo_argument,
     CSSPseudoElement& pseudo_element) {
   PseudoElementCacheKey key(pseudo_id, pseudo_argument);
-  auto it = pseudo_elements_map_.find(key);
-  if (it != pseudo_elements_map_.end()) {
-    return;
-  }
+  // insert() keeps any existing entry, so the first cached pseudo-element for
+  // a key stays cached.
   pseudo_elements_map_.insert(key, &pseudo_element);
 }
 
@@ -356,7 +359,7 @@ CSSPseudoElement* CSSPseudoElementsCacheData::GetCSSPseudoElement(
 
 void CSSPseudoElementsCacheData::Trace(Visitor* v) const {
   v->Trace(pseudo_elements_map_);
-  ElementRareDataField::Trace(v);
+  NodeRareDataField::Trace(v);
 }
 
 }  // namespace blink

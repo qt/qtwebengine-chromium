@@ -15,6 +15,7 @@
 #include "src/utils/segmentation_map.h"
 
 #include <cassert>
+#include <cstdint>
 #include <cstring>
 #include <new>
 

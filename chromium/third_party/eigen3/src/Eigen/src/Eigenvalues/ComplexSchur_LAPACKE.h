@@ -91,6 +91,8 @@ EIGEN_LAPACKE_SCHUR_COMPLEX(scomplex, lapack_complex_float, c, C, ColMajor, LAPA
 EIGEN_LAPACKE_SCHUR_COMPLEX(dcomplex, lapack_complex_double, z, Z, RowMajor, LAPACK_ROW_MAJOR)
 EIGEN_LAPACKE_SCHUR_COMPLEX(scomplex, lapack_complex_float, c, C, RowMajor, LAPACK_ROW_MAJOR)
 
+#undef EIGEN_LAPACKE_SCHUR_COMPLEX
+
 }  // end namespace Eigen
 
 #endif  // EIGEN_COMPLEX_SCHUR_LAPACKE_H

@@ -33,6 +33,9 @@ POLICY_EXPORT BASE_DECLARE_FEATURE(kUseCECFlagInPolicyData);
 // Enables policy initialization for signed-in users in new entry points.
 POLICY_EXPORT BASE_DECLARE_FEATURE(
     kInitializePoliciesForSignedInUserInNewEntryPoints);
+
+// Controls whether to use active admins to calculate the enterprise info.
+POLICY_EXPORT BASE_DECLARE_FEATURE(kAndroidUseAdminsForEnterpriseInfo);
 #endif
 
 // Enables a configurable delay for policy registration.
@@ -61,6 +64,14 @@ POLICY_EXPORT BASE_DECLARE_FEATURE(kEnableExtensionInstallPolicyFetching);
 // performs platform-specific checks.
 POLICY_EXPORT BASE_DECLARE_FEATURE(kUseManagementServiceForSensitivePolicies);
 
+// When enabled, AzureActiveDirectoryDeviceStatusProvider only returns
+// CLOUD_DOMAIN for device-joined Azure AD accounts. When disabled (kill
+// switch), it falls back to the behavior of AzureActiveDirectoryStatusProvider,
+// returning CLOUD_DOMAIN for all Azure AD joined accounts (including
+// workplace-joined).
+POLICY_EXPORT BASE_DECLARE_FEATURE(
+    kFilterSensitivePoliciesOnWorkplaceJoinedDevices);
+
 // Modifies behavior of policies utilizing URLBlocklistManager.
 // When enabled, bypasses the wildcard "*" in the blocklist for internal
 // chrome:// URLs such as chrome://ntp, chrome://bookmarks, etc.
@@ -69,12 +80,26 @@ POLICY_EXPORT BASE_DECLARE_FEATURE(kUseManagementServiceForSensitivePolicies);
 POLICY_EXPORT BASE_DECLARE_FEATURE(
     kBypassURLBlocklistWildcardForInternalChromeUrls);
 
+// Modifies behavior of policies utilizing URLBlocklistManager.
+// When enabled, downgrades the match level to neutral if the URL is allowed by
+// the wildcard '*' in the allowlist.
+POLICY_EXPORT BASE_DECLARE_FEATURE(kDowngradeURLAllowlistWildcardToNeutral);
+
 // Enables the mojo version of the page handler for chrome://policy.
 POLICY_EXPORT BASE_DECLARE_FEATURE(kPolicyPageMojoMigration);
 
 // If enabled, device signals collection disclaimer will be shown during signin
 // for profiles created before the profile flow with disclaimer was released.
 POLICY_EXPORT BASE_DECLARE_FEATURE(kDeviceSignalsBackfillDisclaimer);
+POLICY_EXPORT extern const base::FeatureParam<bool>
+    kClearDeviceSignalsPermissionOnStartup;
+
+// When enabled, URLs in the general blocklist are still blocked in incognito
+// even if they are in the incognito allowlist.
+POLICY_EXPORT BASE_DECLARE_FEATURE(kURLBlocklistOverridesIncognitoAllowlist);
+
+// Enables the export of platform policies as JSON on the chrome://policy page.
+POLICY_EXPORT BASE_DECLARE_FEATURE(kExportPlatformPoliciesJson);
 
 }  // namespace policy::features
 

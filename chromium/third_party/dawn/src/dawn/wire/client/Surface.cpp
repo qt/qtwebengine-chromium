@@ -31,11 +31,11 @@
 #include <utility>
 
 #include "dawn/wire/client/webgpu.h"
-#include "src/dawn/common/Log.h"
 #include "src/dawn/wire/client/Client.h"
 #include "src/dawn/wire/client/Device.h"
 #include "src/dawn/wire/client/Texture.h"
 #include "src/utils/compiler.h"
+#include "src/utils/log.h"
 #include "src/utils/platform.h"
 
 namespace dawn::wire::client {
@@ -80,10 +80,10 @@ void Surface::APIConfigure(const WGPUSurfaceConfiguration* config) {
     GetClient()->SerializeCommand(cmd);
 }
 
-WGPUStatus Surface::APIPresent() {
+wgpu::Status Surface::APIPresent() {
     if (mConfiguredDevice == nullptr) {
         dawn::ErrorLog() << "Surface::Present on an unconfigured Surface.";
-        return WGPUStatus_Error;
+        return wgpu::Status::Error;
     }
 
     SurfacePresentCmd cmd;
@@ -92,7 +92,7 @@ WGPUStatus Surface::APIPresent() {
 
     // The only synchronous error is if the surface isn't configured.
     // Otherwise, we let the server report errors via the device.
-    return WGPUStatus_Success;
+    return wgpu::Status::Success;
 }
 
 void Surface::APIUnconfigure() {
@@ -115,20 +115,13 @@ WGPUStatus Surface::APIGetCapabilities(WGPUAdapter adapter,
     capabilities->nextInChain = nullptr;
     capabilities->usages = mSupportedUsages;
 
-    capabilities->presentModeCount = mSupportedPresentModes.size();
-    WGPUPresentMode* presentModes = new WGPUPresentMode[capabilities->presentModeCount];
-    std::copy(mSupportedPresentModes.begin(), mSupportedPresentModes.end(), presentModes);
-    capabilities->presentModes = presentModes;
-
-    capabilities->formatCount = mSupportedFormats.size();
-    WGPUTextureFormat* formats = new WGPUTextureFormat[capabilities->formatCount];
-    std::copy(mSupportedFormats.begin(), mSupportedFormats.end(), formats);
-    capabilities->formats = formats;
-
-    capabilities->alphaModeCount = mSupportedAlphaModes.size();
-    WGPUCompositeAlphaMode* alphaModes = new WGPUCompositeAlphaMode[capabilities->alphaModeCount];
-    std::copy(mSupportedAlphaModes.begin(), mSupportedAlphaModes.end(), alphaModes);
-    capabilities->alphaModes = alphaModes;
+    // These will be freed by APIFreeMembers.
+    std::tie(capabilities->presentModeCount, capabilities->presentModes) =
+        HeapArrayFrom(mSupportedPresentModes).MoveToRawPointer();
+    std::tie(capabilities->formatCount, capabilities->formats) =
+        HeapArrayFrom(mSupportedFormats).MoveToRawPointer();
+    std::tie(capabilities->alphaModeCount, capabilities->alphaModes) =
+        HeapArrayFrom(mSupportedAlphaModes).MoveToRawPointer();
 
     return WGPUStatus_Success;
 }
@@ -139,13 +132,6 @@ void Surface::APIGetCurrentTexture(WGPUSurfaceTexture* surfaceTexture) {
 
     surfaceTexture->status = WGPUSurfaceGetCurrentTextureStatus_Error;
     if (mConfiguredDevice == nullptr) {
-        return;
-    }
-
-    if (!mConfiguredDevice->IsAlive()) {
-        surfaceTexture->status = WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal;
-        surfaceTexture->texture =
-            Texture::CreateError(mConfiguredDevice.Get(), &mTextureDescriptor);
         return;
     }
 

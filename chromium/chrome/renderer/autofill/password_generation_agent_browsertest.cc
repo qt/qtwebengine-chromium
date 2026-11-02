@@ -47,18 +47,18 @@
 #include "third_party/blink/public/web/web_view.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
-using autofill::mojom::FocusedFieldType;
-using base::ASCIIToUTF16;
-using blink::WebDocument;
-using blink::WebElement;
-using blink::WebInputElement;
-using blink::WebNode;
-using blink::WebString;
-using testing::_;
-using testing::AnyNumber;
-using testing::AtLeast;
-using testing::AtMost;
-using testing::Eq;
+using ::autofill::mojom::FocusedFieldType;
+using ::base::ASCIIToUTF16;
+using ::blink::WebDocument;
+using ::blink::WebElement;
+using ::blink::WebInputElement;
+using ::blink::WebNode;
+using ::blink::WebString;
+using ::testing::_;
+using ::testing::AnyNumber;
+using ::testing::AtLeast;
+using ::testing::AtMost;
+using ::testing::Eq;
 
 namespace autofill {
 namespace {
@@ -139,10 +139,18 @@ class FakeContentAutofillDriver : public mojom::AutofillDriver {
 
   void DidEndTextFieldEditing() override {}
 
-  void SelectFieldOptionsDidChange(const autofill::FormData& form,
+  void SelectFieldOptionsDidChange(const FormData& form,
                                    FieldRendererId field_id) override {}
 
-  void OnEmailVerificationTokenShared(FieldRendererId field_id) override {}
+  void FormWithEmailVerificationTokenSubmitted(
+      const FormData& form,
+      FieldRendererId field_id) override {}
+
+  void DidDetectJavaScriptAutofill(
+      const FormData& form,
+      FieldRendererId trigger_field_id,
+      std::vector<mojom::JavaScriptFieldModificationPtr> field_modifications)
+      override {}
 
   std::unique_ptr<base::RunLoop> forms_seen_run_loop_;
 
@@ -284,18 +292,19 @@ class PasswordGenerationAgentTest : public ChromeRenderViewTest {
   void BindPasswordManagerClient(mojo::ScopedInterfaceEndpointHandle handle);
 
   // Callback for TriggeredGeneratePassword.
-  MOCK_METHOD1(TriggeredGeneratePasswordReply,
-               void(const std::optional<
-                    autofill::password_generation::PasswordGenerationUIData>&));
+  MOCK_METHOD1(
+      TriggeredGeneratePasswordReply,
+      void(
+          const std::optional<password_generation::PasswordGenerationUIData>&));
 
   FakeContentAutofillDriver fake_autofill_driver_;
   testing::NiceMock<FakeMojoPasswordManagerDriver> fake_driver_;
   testing::StrictMock<FakePasswordGenerationDriver> fake_pw_client_;
 
   int called_inform_about_user_input_count_ = 0;
-  std::optional<autofill::FormData> form_data_maybe_submitted_;
-  autofill::mojom::FocusedFieldType last_focused_field_type_ =
-      autofill::mojom::FocusedFieldType::kUnknown;
+  std::optional<FormData> form_data_maybe_submitted_;
+  mojom::FocusedFieldType last_focused_field_type_ =
+      mojom::FocusedFieldType::kUnknown;
 };
 
 void PasswordGenerationAgentTest::RegisterMainFrameRemoteInterfaces() {
@@ -319,17 +328,16 @@ void PasswordGenerationAgentTest::RegisterMainFrameRemoteInterfaces() {
           base::Unretained(this)));
 
   ON_CALL(fake_driver_, InformAboutUserInput)
-      .WillByDefault([this](const autofill::FormData& form_data) {
+      .WillByDefault([this](const FormData& form_data) {
         called_inform_about_user_input_count_++;
         form_data_maybe_submitted_ = form_data;
       });
 
   ON_CALL(fake_driver_, FocusedInputChanged)
-      .WillByDefault(
-          [this](autofill::FieldRendererId focused_field_id,
-                 autofill::mojom::FocusedFieldType focused_field_type) {
-            last_focused_field_type_ = focused_field_type;
-          });
+      .WillByDefault([this](FieldRendererId focused_field_id,
+                            mojom::FocusedFieldType focused_field_type) {
+        last_focused_field_type_ = focused_field_type;
+      });
 }
 
 void PasswordGenerationAgentTest::SetUp() {
@@ -338,7 +346,7 @@ void PasswordGenerationAgentTest::SetUp() {
 
   // TODO(crbug.com/41401202): Remove workaround preventing non-test classes to
   // bind fake_driver_ or fake_pw_client_.
-  password_autofill_agent_->GetPasswordManagerDriver();
+  password_autofill_agent_->unsafe_driver();
   password_generation_->RequestPasswordManagerClientForTesting();
   base::RunLoop().RunUntilIdle();  // Executes binding the interfaces.
   // Reject all requests to bind driver/client to anything but the test class:
@@ -659,9 +667,9 @@ TEST_F(PasswordGenerationAgentTest, EditingTest) {
   ExpectEditingPopupOnFieldFocus("first_password");
   EXPECT_CALL(fake_pw_client_,
               PresaveGeneratedPassword(_, Eq(edited_password)));
-  SimulateUserTypingASCIICharacter(ui::VKEY_END, /*flush_message_loop=*/false);
+  SimulateUserTypingKeyCode(ui::VKEY_END, /*flush_message_loop=*/false);
   for (size_t i = 0; i < appended_chars.size(); i++) {
-    SimulateUserTypingASCIICharacter(appended_chars[i],
+    SimulateUserTypingAsciiCharacter(appended_chars[i],
                                      /*flush_message_loop=*/false);
   }
   base::RunLoop().RunUntilIdle();
@@ -713,7 +721,7 @@ TEST_F(PasswordGenerationAgentTest, EditingEventsTest) {
   // Start removing characters one by one and observe the events sent to the
   // browser.
   ExpectEditingPopupOnFieldFocus("first_password");
-  SimulateUserTypingASCIICharacter(ui::VKEY_END, true);
+  SimulateUserTypingKeyCode(ui::VKEY_END, true);
   fake_pw_client_.Flush();
   testing::Mock::VerifyAndClearExpectations(&fake_pw_client_);
   size_t max_chars_to_delete_before_editing =
@@ -722,7 +730,7 @@ TEST_F(PasswordGenerationAgentTest, EditingEventsTest) {
   for (size_t i = 0; i < max_chars_to_delete_before_editing; ++i) {
     password.erase(password.end() - 1);
     EXPECT_CALL(fake_pw_client_, PresaveGeneratedPassword(_, Eq(password)));
-    SimulateUserTypingASCIICharacter(ui::VKEY_BACK, true);
+    SimulateUserTypingKeyCode(ui::VKEY_BACK, true);
     fake_pw_client_.Flush();
     fake_driver_.Flush();
     EXPECT_EQ(FocusedFieldType::kFillablePasswordField,
@@ -733,7 +741,7 @@ TEST_F(PasswordGenerationAgentTest, EditingEventsTest) {
   // Delete one more character and move back to the generation state.
   EXPECT_CALL(fake_pw_client_, PasswordNoLongerGenerated);
   EXPECT_CALL(fake_pw_client_, AutomaticGenerationAvailable);
-  SimulateUserTypingASCIICharacter(ui::VKEY_BACK, true);
+  SimulateUserTypingKeyCode(ui::VKEY_BACK, true);
   fake_pw_client_.Flush();
   // Last focused element shouldn't change while editing.
   fake_driver_.Flush();
@@ -786,7 +794,7 @@ TEST_F(PasswordGenerationAgentTest, MaximumCharsForGenerationOffer) {
   // Simulate the user deleting a character. The generation popup should be
   // shown again.
   EXPECT_CALL(fake_pw_client_, AutomaticGenerationAvailable);
-  SimulateUserTypingASCIICharacter(ui::VKEY_BACK, true);
+  SimulateUserTypingKeyCode(ui::VKEY_BACK, true);
   fake_pw_client_.Flush();
   testing::Mock::VerifyAndClearExpectations(&fake_pw_client_);
 
@@ -809,8 +817,8 @@ TEST_F(PasswordGenerationAgentTest, MaximumCharsForGenerationOffer) {
   fake_pw_client_.Flush();
 
   histogram_tester.ExpectBucketCount(
-      "PasswordGeneration.Event",
-      autofill::password_generation::GENERATION_POPUP_SHOWN, 1);
+      "PasswordGeneration.Event", password_generation::GENERATION_POPUP_SHOWN,
+      1);
 }
 
 TEST_F(PasswordGenerationAgentTest, MinimumLengthForEditedPassword) {
@@ -832,21 +840,21 @@ TEST_F(PasswordGenerationAgentTest, MinimumLengthForEditedPassword) {
 
   // Delete most of the password.
   EXPECT_CALL(fake_pw_client_, AutomaticGenerationAvailable).Times(0);
-  SimulateUserTypingASCIICharacter(ui::VKEY_END, false);
+  SimulateUserTypingKeyCode(ui::VKEY_END, false);
   size_t max_chars_to_delete =
       password.length() -
       PasswordGenerationAgent::kMinimumLengthForEditedPassword;
   EXPECT_CALL(fake_pw_client_, PresaveGeneratedPassword)
       .Times(testing::AtLeast(1));
   for (size_t i = 0; i < max_chars_to_delete; ++i)
-    SimulateUserTypingASCIICharacter(ui::VKEY_BACK, false);
+    SimulateUserTypingKeyCode(ui::VKEY_BACK, false);
   fake_pw_client_.Flush();
   testing::Mock::VerifyAndClearExpectations(&fake_pw_client_);
 
   // Delete one more character. The state should move to offering generation.
   EXPECT_CALL(fake_pw_client_, AutomaticGenerationAvailable);
   EXPECT_CALL(fake_pw_client_, PasswordNoLongerGenerated(testing::_));
-  SimulateUserTypingASCIICharacter(ui::VKEY_BACK, true);
+  SimulateUserTypingKeyCode(ui::VKEY_BACK, true);
   fake_pw_client_.Flush();
   testing::Mock::VerifyAndClearExpectations(&fake_pw_client_);
 
@@ -1072,26 +1080,26 @@ TEST_F(PasswordGenerationAgentTest, PresavingGeneratedPassword) {
 
     ExpectEditingPopupOnFieldFocus(test_case.generation_element);
     EXPECT_CALL(fake_pw_client_, PresaveGeneratedPassword);
-    SimulateUserTypingASCIICharacter('a', true);
+    SimulateUserTypingAsciiCharacter('a', true);
     base::RunLoop().RunUntilIdle();
 
     ExpectGenerationElementLostFocus("username");
     EXPECT_CALL(fake_pw_client_, PresaveGeneratedPassword);
-    SimulateUserTypingASCIICharacter('X', true);
+    SimulateUserTypingAsciiCharacter('X', true);
     base::RunLoop().RunUntilIdle();
     testing::Mock::VerifyAndClearExpectations(&fake_pw_client_);
 
     ExpectEditingPopupOnFieldFocus(test_case.generation_element);
-    SimulateUserTypingASCIICharacter(ui::VKEY_END, false);
+    SimulateUserTypingKeyCode(ui::VKEY_END, false);
     EXPECT_CALL(fake_pw_client_, PasswordNoLongerGenerated(testing::_));
     for (size_t i = 0; i < password.length(); ++i)
-      SimulateUserTypingASCIICharacter(ui::VKEY_BACK, false);
-    SimulateUserTypingASCIICharacter(ui::VKEY_BACK, true);
+      SimulateUserTypingKeyCode(ui::VKEY_BACK, false);
+    SimulateUserTypingKeyCode(ui::VKEY_BACK, true);
     base::RunLoop().RunUntilIdle();
 
     EXPECT_CALL(fake_pw_client_, PresaveGeneratedPassword).Times(0);
     ExpectGenerationElementLostFocus("username");
-    SimulateUserTypingASCIICharacter('Y', true);
+    SimulateUserTypingAsciiCharacter('Y', true);
     base::RunLoop().RunUntilIdle();
     testing::Mock::VerifyAndClearExpectations(&fake_pw_client_);
   }
@@ -1241,7 +1249,7 @@ TEST_F(PasswordGenerationAgentTest, JavascriptClearedThePassword_TypeUsername) {
   ExecuteJavaScriptForTests(
       "document.getElementById('first_password').value = '';");
   FocusField("username");
-  SimulateUserTypingASCIICharacter('a', true);
+  SimulateUserTypingAsciiCharacter('a', true);
 }
 
 TEST_F(PasswordGenerationAgentTest, GenerationFallback_NoFocusedElement) {
@@ -1293,14 +1301,14 @@ TEST_F(PasswordGenerationAgentTest, PasswordUnmaskedUntilCompleteDeletion) {
   // Delete characters of the generated password until only
   // `kMinimumLengthForEditedPassword` - 1 chars remain.
   ExpectEditingPopupOnFieldFocus(kGenerationElementId);
-  SimulateUserTypingASCIICharacter(ui::VKEY_END, false);
+  SimulateUserTypingKeyCode(ui::VKEY_END, false);
   EXPECT_CALL(fake_pw_client_, PasswordNoLongerGenerated(testing::_));
   EXPECT_CALL(fake_pw_client_, AutomaticGenerationAvailable);
   size_t max_chars_to_delete =
       password.length() -
       PasswordGenerationAgent::kMinimumLengthForEditedPassword + 1;
   for (size_t i = 0; i < max_chars_to_delete; ++i)
-    SimulateUserTypingASCIICharacter(ui::VKEY_BACK, false);
+    SimulateUserTypingKeyCode(ui::VKEY_BACK, false);
   base::RunLoop().RunUntilIdle();
   fake_pw_client_.Flush();
   // The remaining characters no longer count as a generated password, so
@@ -1317,7 +1325,7 @@ TEST_F(PasswordGenerationAgentTest, PasswordUnmaskedUntilCompleteDeletion) {
   EXPECT_CALL(fake_pw_client_, AutomaticGenerationAvailable).Times(AnyNumber());
   for (size_t i = 0;
        i < PasswordGenerationAgent::kMinimumLengthForEditedPassword; ++i)
-    SimulateUserTypingASCIICharacter(ui::VKEY_BACK, false);
+    SimulateUserTypingKeyCode(ui::VKEY_BACK, false);
   base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(input.ShouldRevealPassword());
 }
@@ -1347,7 +1355,7 @@ TEST_F(PasswordGenerationAgentTest, ShortPasswordMaskedAfterChangingFocus) {
       PasswordGenerationAgent::kMinimumLengthForEditedPassword + 1;
   EXPECT_CALL(fake_pw_client_, AutomaticGenerationAvailable);
   for (size_t i = 0; i < max_chars_to_delete; ++i)
-    SimulateUserTypingASCIICharacter(ui::VKEY_BACK, false);
+    SimulateUserTypingKeyCode(ui::VKEY_BACK, false);
   // The remaining characters no longer count as a generated password, so
   // generation should be offered again.
   base::RunLoop().RunUntilIdle();
@@ -1388,7 +1396,7 @@ TEST_F(PasswordGenerationAgentTest, GenerationAvailableByRendererIds) {
   // Check that generation is available only on new password field of this form.
   PasswordFormGenerationData generation_data;
   generation_data.new_password_renderer_id =
-      autofill::form_util::GetFieldRendererId(password_elements[0]);
+      form_util::GetFieldRendererId(password_elements[0]);
 
   password_generation_->FoundFormEligibleForGeneration(generation_data);
   ExpectAutomaticGenerationAvailable(kPasswordElementsIds[0], kAvailable);
@@ -1398,7 +1406,7 @@ TEST_F(PasswordGenerationAgentTest, GenerationAvailableByRendererIds) {
   // Simulate that the browser informs about the second eligible for generation
   // form. Check that generation is available on both forms.
   generation_data.new_password_renderer_id =
-      autofill::form_util::GetFieldRendererId(password_elements[2]);
+      form_util::GetFieldRendererId(password_elements[2]);
   password_generation_->FoundFormEligibleForGeneration(generation_data);
   ExpectAutomaticGenerationAvailable(kPasswordElementsIds[0], kAvailable);
   ExpectGenerationElementLostFocus(kPasswordElementsIds[1]);
@@ -1518,7 +1526,7 @@ TEST_F(PasswordGenerationAgentTest,
   EXPECT_CALL(fake_pw_client_, PasswordGenerationRejectedByTyping);
 #endif  // !BUILDFLAG(IS_ANDROID)
   EXPECT_CALL(fake_pw_client_, PasswordNoLongerGenerated);
-  SimulateUserTypingASCIICharacter('X', /*flush_message_loop=*/true);
+  SimulateUserTypingAsciiCharacter('X', /*flush_message_loop=*/true);
 
   // First field should contain the typed letter, second field should be empty
   // since the password is no longer generated. Both fields should be masked.
@@ -1542,7 +1550,7 @@ TEST_F(PasswordGenerationAgentTest,
 #if !BUILDFLAG(IS_ANDROID)
   EXPECT_CALL(fake_pw_client_, PasswordGenerationRejectedByTyping);
 #endif  // !BUILDFLAG(IS_ANDROID)
-  SimulateUserTypingASCIICharacter('X', /*flush_message_loop=*/true);
+  SimulateUserTypingAsciiCharacter('X', /*flush_message_loop=*/true);
 
   // First field should contain the typed letter, second field should be empty.
   // Both fields should be masked.

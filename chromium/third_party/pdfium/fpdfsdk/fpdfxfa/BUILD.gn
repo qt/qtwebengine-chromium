@@ -24,6 +24,7 @@ source_set("fpdfxfa") {
   ]
   deps = [
     "../../:pdfium_public_headers",
+    "../../constants",
     "../../core/fpdfapi/page",
     "../../core/fpdfapi/parser",
     "../../core/fpdfapi/render",

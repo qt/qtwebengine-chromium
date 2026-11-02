@@ -69,6 +69,7 @@ ci.builder(
     ),
     builderless = True,
     os = os.LINUX_DEFAULT,
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "debug|linux",
         short_name = "bld",
@@ -104,6 +105,7 @@ ci.builder(
     ),
     builderless = True,
     os = os.LINUX_DEFAULT,
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "release|linux",
         short_name = "bld",
@@ -139,6 +141,7 @@ ci.thin_tester(
             "x86-64",
         ],
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "debug|linux",
         short_name = "test",
@@ -174,6 +177,7 @@ ci.thin_tester(
             "x86-64",
         ],
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "release|linux",
         short_name = "test",
@@ -393,8 +397,8 @@ ci.builder(
 )
 
 ci.thin_tester(
-    name = "mac12-arm64-enterprise-companion-tester-rel",
-    description_html = linkify("https://source.chromium.org/chromium/chromium/src/+/main:chrome/enterprise_companion/README.md", "Chrome Enterprise Companion App") + " MacOS 12 ARM64 Release Tester.",
+    name = "mac14-arm64-enterprise-companion-tester-rel",
+    description_html = linkify("https://source.chromium.org/chromium/chromium/src/+/main:chrome/enterprise_companion/README.md", "Chrome Enterprise Companion App") + " MacOS 14 ARM64 Release Tester.",
     parent = "mac-enterprise-companion-builder-arm64-rel",
     builder_spec = builder_config.builder_spec(
         execution_mode = builder_config.execution_mode.TEST,
@@ -416,19 +420,20 @@ ci.thin_tester(
             "enterprise_companion_gtests_mac",
         ],
         mixins = [
-            "mac_12_arm64",
+            "mac_14_arm64",
         ],
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "release|mac",
-        short_name = "12 arm64",
+        short_name = "14 arm64",
     ),
     contact_team_email = "omaha-client-dev@google.com",
 )
 
 ci.thin_tester(
-    name = "mac12-x64-enterprise-companion-tester-asan-dbg",
-    description_html = linkify("https://source.chromium.org/chromium/chromium/src/+/main:chrome/enterprise_companion/README.md", "Chrome Enterprise Companion App") + " MacOS 12 x64 ASAN Debug Tester.",
+    name = "mac14-x64-enterprise-companion-tester-asan-dbg",
+    description_html = linkify("https://source.chromium.org/chromium/chromium/src/+/main:chrome/enterprise_companion/README.md", "Chrome Enterprise Companion App") + " MacOS 14 x64 ASAN Debug Tester.",
     parent = "mac-enterprise-companion-builder-asan-dbg",
     builder_spec = builder_config.builder_spec(
         execution_mode = builder_config.execution_mode.TEST,
@@ -450,12 +455,13 @@ ci.thin_tester(
             "enterprise_companion_gtests_mac",
         ],
         mixins = [
-            "mac_12_x64",
+            "mac_14_x64",
         ],
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "debug|mac",
-        short_name = "12 asan",
+        short_name = "14 asan",
     ),
     contact_team_email = "omaha-client-dev@google.com",
 )
@@ -487,6 +493,7 @@ ci.thin_tester(
             "mac_13_arm64",
         ],
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "debug|mac",
         short_name = "13 arm64",
@@ -521,6 +528,7 @@ ci.thin_tester(
             "mac_13_x64",
         ],
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "release|mac",
         short_name = "13",
@@ -635,6 +643,7 @@ ci.builder(
             "enterprise_companion",
             "release_builder",
             "remoteexec",
+            "minimal_symbols",
             "win",
             "x64",
         ],
@@ -676,6 +685,7 @@ ci.builder(
             "enterprise_companion",
             "release_builder",
             "remoteexec",
+            "minimal_symbols",
             "win",
             "x86",
         ],
@@ -723,6 +733,7 @@ ci.thin_tester(
             "x86-64",
         ],
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "debug|win (64)",
         short_name = "10",
@@ -758,6 +769,7 @@ ci.thin_tester(
             "x86-64",
         ],
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "debug|win (32)",
         short_name = "10 (x64)",
@@ -793,6 +805,7 @@ ci.thin_tester(
             "x86-64",
         ],
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "release|win (32)",
         short_name = "10 (x64)",
@@ -828,6 +841,7 @@ ci.thin_tester(
             "x86-64",
         ],
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "release|win (64)",
         short_name = "10",
@@ -863,6 +877,7 @@ ci.thin_tester(
             "x86-64",
         ],
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "release|win (64)",
         short_name = "11",

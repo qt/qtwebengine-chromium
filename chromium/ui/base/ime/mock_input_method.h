@@ -21,7 +21,7 @@ class TextInputClient;
 
 // A mock ui::InputMethod implementation for testing. You can get the instance
 // of this class as the global input method with calling
-// SetUpInputMethodFactoryForTesting() which is declared in
+// SetUpInputMethodForTesting() which is declared in
 // ui/base/ime/init/input_method_factory.h
 class COMPONENT_EXPORT(UI_BASE_IME) MockInputMethod : public InputMethod {
  public:
@@ -64,7 +64,7 @@ class COMPONENT_EXPORT(UI_BASE_IME) MockInputMethod : public InputMethod {
 
  private:
   raw_ptr<TextInputClient, DanglingUntriaged> text_input_client_ = nullptr;
-  base::ObserverList<InputMethodObserver>::Unchecked observer_list_;
+  base::ObserverList<InputMethodObserver> observer_list_;
   raw_ptr<ImeKeyEventDispatcher> ime_key_event_dispatcher_;
 
   VirtualKeyboardControllerStub keyboard_controller_;

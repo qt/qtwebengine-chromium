@@ -29,7 +29,7 @@ template <typename T>
 struct traits<const T> : traits<T> {};
 
 template <typename Derived>
-struct has_direct_access : std::integral_constant<bool, (traits<Derived>::Flags & DirectAccessBit) != 0> {};
+struct has_direct_access : bool_constant<(traits<Derived>::Flags & DirectAccessBit) != 0> {};
 
 template <typename Derived>
 struct accessors_level {
@@ -73,8 +73,6 @@ class MatrixBase;
 template <typename Derived>
 class ArrayBase;
 
-template <typename ExpressionType, unsigned int Added, unsigned int Removed>
-class Flagged;
 template <typename ExpressionType, template <typename> class StorageBase>
 class NoAlias;
 template <typename ExpressionType>
@@ -217,9 +215,6 @@ class BandMatrix;
 namespace internal {
 template <typename Lhs, typename Rhs>
 struct product_type;
-
-template <bool>
-struct EnableIf;
 
 /** \internal
  * \class product_evaluator
@@ -420,10 +415,6 @@ template <typename MatrixType, typename PermutationIndex = DefaultPermutationInd
 class FullPivLU;
 template <typename MatrixType, typename PermutationIndex = DefaultPermutationIndex>
 class PartialPivLU;
-namespace internal {
-template <typename MatrixType>
-struct inverse_impl;
-}
 template <typename MatrixType>
 class HouseholderQR;
 template <typename MatrixType, typename PermutationIndex = DefaultPermutationIndex>
@@ -450,6 +441,8 @@ template <typename MatrixType, int UpLo = Lower>
 class LLT;
 template <typename MatrixType, int UpLo = Lower>
 class LDLT;
+template <typename MatrixType, int UpLo = Lower>
+class BunchKaufman;
 template <typename VectorsType, typename CoeffsType, int Side = OnTheLeft>
 class HouseholderSequence;
 template <typename Scalar>

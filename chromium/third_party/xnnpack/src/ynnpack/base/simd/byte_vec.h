@@ -46,13 +46,15 @@ struct vec<uint8_t, 8> {
   explicit vec(uint64_t v) : v(v) {}
   vec(u8x4 x0, u8x4 x1) : v((static_cast<uint64_t>(x1.v) << 32) | x0.v) {}
 
-  u8x4 lo() const { return u8x4{static_cast<uint32_t>(v)}; }
-  u8x4 hi() const { return u8x4{static_cast<uint32_t>(v >> 32)}; }
-
   uint64_t v;
 };
 
 using u8x8 = vec<uint8_t, 8>;
+
+YNN_ALWAYS_INLINE u8x4 lo(u8x8 x) { return u8x4{static_cast<uint32_t>(x.v)}; }
+YNN_ALWAYS_INLINE u8x4 hi(u8x8 x) {
+  return u8x4{static_cast<uint32_t>(x.v >> 32)};
+}
 
 YNN_ALWAYS_INLINE u8x4 load_aligned(const uint8_t* ptr, decltype(u8x4::N),
                                     u8x4 = {}) {
@@ -141,63 +143,72 @@ YNN_ALWAYS_INLINE std::tuple<u8x4, u8x4> interleave(
 }
 YNN_ALWAYS_INLINE std::tuple<u8x4, u8x4> interleave(
     std::integral_constant<size_t, 8>, u8x4 x0, u8x4 x1) {
-  constexpr uint32_t m0 = 0x00FF00FF;
-  constexpr uint32_t m1 = 0xFF00FF00;
-  u8x4 t0{(x0.v & m0) | ((x1.v & m0) << 8)};
-  u8x4 t1{((x0.v & m1) >> 8) | (x1.v & m1)};
+  constexpr uint32_t m = 0x00FF00FF;
+  uint32_t check = ((x0.v >> 8) ^ x1.v) & m;
+  u8x4 t0{x0.v ^ (check << 8)};
+  u8x4 t1{x1.v ^ check};
   return interleave(std::integral_constant<size_t, 16>{}, t0, t1);
 }
 YNN_ALWAYS_INLINE std::tuple<u8x4, u8x4> interleave(
     std::integral_constant<size_t, 4>, u8x4 x0, u8x4 x1) {
-  constexpr uint32_t m0 = 0x0F0F0F0F;
-  constexpr uint32_t m1 = 0xF0F0F0F0;
-  u8x4 t0{(x0.v & m0) | ((x1.v & m0) << 4)};
-  u8x4 t1{((x0.v & m1) >> 4) | (x1.v & m1)};
+  constexpr uint32_t m = 0x0F0F0F0F;
+  uint32_t check = ((x0.v >> 4) ^ x1.v) & m;
+  u8x4 t0{x0.v ^ (check << 4)};
+  u8x4 t1{x1.v ^ check};
   return interleave(std::integral_constant<size_t, 8>{}, t0, t1);
 }
 YNN_ALWAYS_INLINE std::tuple<u8x4, u8x4> interleave(
     std::integral_constant<size_t, 2>, u8x4 x0, u8x4 x1) {
-  constexpr uint32_t m0 = 0x33333333;
-  constexpr uint32_t m1 = 0xCCCCCCCC;
-  u8x4 t0{(x0.v & m0) | ((x1.v & m0) << 2)};
-  u8x4 t1{((x0.v & m1) >> 2) | (x1.v & m1)};
+  constexpr uint32_t m = 0x33333333;
+  uint32_t check = ((x0.v >> 2) ^ x1.v) & m;
+  u8x4 t0{x0.v ^ (check << 2)};
+  u8x4 t1{x1.v ^ check};
   return interleave(std::integral_constant<size_t, 4>{}, t0, t1);
 }
 
 YNN_ALWAYS_INLINE std::tuple<u8x8, u8x8> interleave(
     std::integral_constant<size_t, 32>, u8x8 x0, u8x8 x1) {
-  return {u8x8{(x0.v & 0xFFFFFFFF) | (x1.v << 32)},
-          u8x8{(x0.v >> 32) | (x1.v & 0xFFFFFFFF00000000)}};
+  constexpr uint64_t m = 0xFFFFFFFF;
+  uint64_t check = ((x0.v >> 32) ^ x1.v) & m;
+  return {u8x8{x0.v ^ (check << 32)}, u8x8{x1.v ^ check}};
 }
 YNN_ALWAYS_INLINE std::tuple<u8x8, u8x8> interleave(
     std::integral_constant<size_t, 16>, u8x8 x0, u8x8 x1) {
-  constexpr uint64_t m0 = 0x0000FFFF0000FFFF;
-  constexpr uint64_t m1 = 0xFFFF0000FFFF0000;
-  u8x8 t0{(x0.v & m0) | ((x1.v & m0) << 8)};
-  u8x8 t1{((x0.v & m1) >> 8) | (x1.v & m1)};
+  constexpr uint64_t m = 0x0000FFFF0000FFFF;
+  uint64_t check = ((x0.v >> 16) ^ x1.v) & m;
+  u8x8 t0{x0.v ^ (check << 16)};
+  u8x8 t1{x1.v ^ check};
   return interleave(std::integral_constant<size_t, 32>{}, t0, t1);
 }
 YNN_ALWAYS_INLINE std::tuple<u8x8, u8x8> interleave(
     std::integral_constant<size_t, 8>, u8x8 x0, u8x8 x1) {
-  constexpr uint64_t m0 = 0x00FF00FF00FF00FF;
-  constexpr uint64_t m1 = 0xFF00FF00FF00FF00;
-  u8x8 t0{(x0.v & m0) | ((x1.v & m0) << 4)};
-  u8x8 t1{((x0.v & m1) >> 4) | (x1.v & m1)};
+  constexpr uint64_t m = 0x00FF00FF00FF00FF;
+  uint64_t check = ((x0.v >> 8) ^ x1.v) & m;
+  u8x8 t0{x0.v ^ (check << 8)};
+  u8x8 t1{x1.v ^ check};
   return interleave(std::integral_constant<size_t, 16>{}, t0, t1);
 }
 YNN_ALWAYS_INLINE std::tuple<u8x8, u8x8> interleave(
     std::integral_constant<size_t, 4>, u8x8 x0, u8x8 x1) {
-  constexpr uint64_t m0 = 0x0F0F0F0F0F0F0F0F;
-  constexpr uint64_t m1 = 0xF0F0F0F0F0F0F0F0;
-  u8x8 t0{(x0.v & m0) | ((x1.v & m0) << 2)};
-  u8x8 t1{((x0.v & m1) >> 2) | (x1.v & m1)};
+  constexpr uint64_t m = 0x0F0F0F0F0F0F0F0F;
+  uint64_t check = ((x0.v >> 4) ^ x1.v) & m;
+  u8x8 t0{x0.v ^ (check << 4)};
+  u8x8 t1{x1.v ^ check};
   return interleave(std::integral_constant<size_t, 8>{}, t0, t1);
+}
+YNN_ALWAYS_INLINE std::tuple<u8x8, u8x8> interleave(
+    std::integral_constant<size_t, 2>, u8x8 x0, u8x8 x1) {
+  constexpr uint64_t m = 0x3333333333333333;
+  uint64_t check = ((x0.v >> 2) ^ x1.v) & m;
+  u8x8 t0{x0.v ^ (check << 2)};
+  u8x8 t1{x1.v ^ check};
+  return interleave(std::integral_constant<size_t, 4>{}, t0, t1);
 }
 
 }  // namespace simd
 
 }  // namespace ynn
 
-#include "ynnpack/base/simd/generic.inc"  // IWYU pragma: export
+#include "ynnpack/base/simd/extend_vec.inc"  // IWYU pragma: export
 
 #endif  // XNNPACK_YNNPACK_BASE_SIMD_BYTE_VEC_H_

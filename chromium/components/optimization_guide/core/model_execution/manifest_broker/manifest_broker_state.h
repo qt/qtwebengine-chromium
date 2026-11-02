@@ -15,12 +15,12 @@
 #include "components/optimization_guide/core/model_execution/manifest_broker/manifest_validation.h"
 #include "components/optimization_guide/core/model_execution/on_device_capability.h"
 #include "components/optimization_guide/core/model_execution/on_device_model_access_controller.h"
-#include "components/optimization_guide/core/model_execution/on_device_model_classifier_controller.h"
 #include "components/optimization_guide/core/model_execution/on_device_model_download_progress_manager.h"
 #include "components/optimization_guide/core/model_execution/on_device_model_service_controller.h"
 #include "components/optimization_guide/core/model_execution/performance_class.h"
 #include "components/optimization_guide/core/model_execution/usage_tracker.h"
 #include "components/optimization_guide/public/mojom/model_broker.mojom.h"
+#include "mojo/public/cpp/bindings/remote_set.h"
 
 class PrefService;
 
@@ -67,6 +67,9 @@ class ManifestBrokerState final : public OnDeviceCapability,
   void SetUseCaseRequested(const std::string& use_case,
                            bool requested) override;
   void UninstallModels() override;
+  void ResetModelCrashCount() override;
+  void AddObserver(
+      mojo::PendingRemote<mojom::ModelBrokerDebugObserver> observer) override;
 
   PerformanceClassifier& performance_classifier() {
     return performance_classifier_;
@@ -98,6 +101,9 @@ class ManifestBrokerState final : public OnDeviceCapability,
       const std::string& use_case,
       mojo::PendingRemote<on_device_model::mojom::DownloadObserver> observer);
 
+  // Notify `debug_observers_` of changes to the broker's internal state.
+  void NotifyObserversOfBrokerStateChange();
+
   raw_ref<PrefService> local_state_;
   std::unique_ptr<ManifestAssetManager::Delegate> delegate_;
   on_device_model::ServiceClient service_client_;
@@ -112,6 +118,7 @@ class ManifestBrokerState final : public OnDeviceCapability,
   ManifestValidator manifest_validator_;
   std::unique_ptr<ManifestAssetManager> asset_manager_;
   mojo::ReceiverSet<ModelBrokerDebug> receivers_;
+  mojo::RemoteSet<mojom::ModelBrokerDebugObserver> debug_observers_;
   base::WeakPtrFactory<ManifestBrokerState> weak_ptr_factory_{this};
 };
 

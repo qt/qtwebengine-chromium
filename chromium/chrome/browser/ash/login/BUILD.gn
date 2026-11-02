@@ -134,6 +134,7 @@ static_library("login") {
   deps = [
     "//ash",
     "//ash/constants",
+    "//ash/login/resources:login_strings",
     "//ash/strings",
     "//ash/webui/help_app_ui:help_app_ui_pref",
     "//build:branding_buildflags",
@@ -179,6 +180,7 @@ static_library("login") {
     "//chrome/browser/sync",
     "//chrome/browser/ui/ash/input_method",
     "//chrome/browser/ui/aura/accessibility",
+    "//chrome/browser/ui/webui/help",
     "//chrome/common",
     "//chrome/common:chrome_features",
     "//chrome/common:constants",
@@ -283,6 +285,7 @@ static_library("login") {
     "//chrome/browser/ash/policy/handlers",
     "//chrome/browser/ash/system",
     "//chrome/browser/sync",
+    "//chrome/browser/ui/webui/help",
   ]
 }
 
@@ -345,6 +348,7 @@ if (is_chromeos_device) {
       "//chrome/test:ash_integration_test_support",
       "//chrome/test:test_support",
       "//chrome/test/base/ash/interactive:test_support",
+      "//chrome/test/base/chromeos/crosier:test_support",
 
       # Gather tests from subdirectories:
       "lock:integration_tests",
@@ -388,7 +392,7 @@ source_set("browser_tests") {
     "oobe_interactive_ui_test.cc",
     "oobe_localization_browsertest.cc",
     "oobe_metrics_browsertest.cc",
-    "oobe_pre_consent_metrics_browsertest.cc",
+    "oobe_pre_choice_metrics_browsertest.cc",
     "password_change_browsertest.cc",
     "payments_autofill_authentication_browsertest.cc",
     "post_login_deferred_task_browsertest.cc",
@@ -408,6 +412,7 @@ source_set("browser_tests") {
     ":test_support",
     "//ash",
     "//ash:test_support",
+    "//ash/login/resources:login_strings",
     "//ash/public/cpp",
     "//chrome/browser",
     "//chrome/browser:browser_process",
@@ -465,8 +470,10 @@ source_set("browser_tests") {
     "//chrome/browser/extensions",
     "//chrome/browser/lifetime:termination_notification",
     "//chrome/browser/metrics/structured:test_support",
+    "//chrome/browser/policy:extension_force_install_mixin",
     "//chrome/browser/sync",
     "//chrome/browser/ui",
+    "//chrome/browser/ui:view_ids",
     "//chrome/browser/ui/ash/keyboard",
     "//chrome/browser/ui/ash/login",
     "//chrome/browser/ui/ash/login:test_support",

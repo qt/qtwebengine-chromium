@@ -20,7 +20,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/sequence_checker.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
-#include "components/autofill/core/browser/data_quality/addresses/profile_requirement_utils.h"
+#include "components/autofill/core/browser/data_quality/addresses/address_import_requirement_utils.h"
 #include "components/autofill/core/browser/webdata/addresses/address_autofill_table.h"
 #include "components/autofill/core/browser/webdata/addresses/contact_info_sync_util.h"
 #include "components/autofill/core/browser/webdata/autofill_change.h"
@@ -64,9 +64,7 @@ DenseSet<AutofillProfile::RecordType> kAccountRecordTypes = {
 // addresses that fail to meet the requirements after an update need to be
 // removed from local storage.
 bool IsIncompleteHomeAndWorkAddress(const AutofillProfile& profile) {
-  if (!profile.IsHomeAndWorkProfile() ||
-      !base::FeatureList::IsEnabled(
-          features::kAutofillEnableSupportForHomeAndWork)) {
+  if (!profile.IsHomeAndWorkProfile()) {
     return false;
   }
   const bool is_incomplete = !IsMinimumAddress(profile);

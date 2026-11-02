@@ -17,6 +17,7 @@
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 
+#include "gbm.h"
 #include "minigbm_helpers.h"
 #include "util.h"
 
@@ -210,7 +211,7 @@ done:
 	return 0;
 }
 
-PUBLIC int gbm_get_default_device_fd(void)
+static int gbm_get_default_device_fd(void)
 {
 	DIR *dir;
 	int ret, fd, dfd = -1;
@@ -311,4 +312,64 @@ PUBLIC int gbm_detect_device_info_path(unsigned int detect_flags, const char *de
 	ret = detect_device_info(detect_flags, fd, info);
 	close(fd);
 	return ret;
+}
+
+static struct gbm_device *try_drm_devices(drmDevicePtr *devs, int dev_count, int type, int *out_fd)
+{
+	int i;
+
+	for (i = 0; i < dev_count; i++) {
+		drmDevicePtr dev = devs[i];
+		int fd;
+
+		if (!(dev->available_nodes & (1 << type)))
+			continue;
+
+		fd = open(dev->nodes[type], O_RDWR | O_CLOEXEC);
+		if (fd >= 0) {
+			struct gbm_device *gbm = gbm_create_device(fd);
+			if (gbm) {
+				// DRM master might be taken by accident on a primary node even
+				// if master is not needed for GBM. Drop it so that programs
+				// that actually need DRM master (e.g. Chrome) won't be blocked.
+				if (type == DRM_NODE_PRIMARY && drmIsMaster(fd))
+					drmDropMaster(fd);
+				*out_fd = fd;
+				return gbm;
+			}
+			close(fd);
+		}
+	}
+
+	return NULL;
+}
+
+PUBLIC struct gbm_device *minigbm_create_default_device(int *out_fd)
+{
+	struct gbm_device *gbm;
+	drmDevicePtr devs[64];
+	int dev_count;
+	int fd;
+
+	/* try gbm_get_default_device_fd first */
+	fd = gbm_get_default_device_fd();
+	if (fd >= 0) {
+		gbm = gbm_create_device(fd);
+		if (gbm) {
+			*out_fd = fd;
+			return gbm;
+		}
+		close(fd);
+	}
+
+	dev_count = drmGetDevices2(0, devs, sizeof(devs) / sizeof(devs[0]));
+
+	/* try render nodes and then primary nodes */
+	gbm = try_drm_devices(devs, dev_count, DRM_NODE_RENDER, out_fd);
+	if (!gbm)
+		gbm = try_drm_devices(devs, dev_count, DRM_NODE_PRIMARY, out_fd);
+
+	drmFreeDevices(devs, dev_count);
+
+	return gbm;
 }

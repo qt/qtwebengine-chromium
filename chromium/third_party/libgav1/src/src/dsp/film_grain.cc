@@ -20,12 +20,10 @@
 #include <cstdint>
 #include <cstring>
 
-#include "src/dsp/constants.h"
 #include "src/dsp/dsp.h"
 #include "src/dsp/film_grain_common.h"
 #include "src/utils/array_2d.h"
 #include "src/utils/common.h"
-#include "src/utils/compiler_attributes.h"
 #include "src/utils/constants.h"
 #include "src/utils/memory.h"
 #include "src/utils/types.h"

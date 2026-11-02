@@ -32,6 +32,8 @@ impl Recipe {
             | Recipe::BitDepthExtension8b8b
             | Recipe::BitDepthExtension12b4b
             | Recipe::BitDepthExtension12b8bOverlap4b => self,
+            #[cfg(feature = "satofloat")]
+            Recipe::Float32b => self,
         }
     }
 }
@@ -171,6 +173,8 @@ fn recipe_to_expression(recipe: Recipe) -> Result<SampleTransform, AvifError> {
                 ],
             )
         }
+        #[cfg(feature = "satofloat")]
+        Recipe::Float32b => SampleTransform::from_float32b_recipe(),
     }
 }
 
@@ -187,10 +191,24 @@ fn write_sato(recipe: Recipe) -> AvifResult<Vec<u8>> {
     for token in &expression.tokens {
         stream.write_u8(token.to_type())?; // unsigned int(8) token;
         if let SampleTransformToken::Constant(constant) = token {
-            let constant = i32::try_from(*constant).unwrap();
-            let bytes = &constant.to_be_bytes();
-            assert_eq!(bytes.len() * 8, bit_depth.to_bits().into());
-            stream.write_slice(bytes)?; // signed int(1<<(bit_depth+3)) constant;
+            let mut write_constant = |be_bytes: &[u8]| -> AvifResult<()> {
+                assert_eq!(be_bytes.len() * 8, bit_depth.to_bits().into());
+                stream.write_slice(be_bytes) // signed int(1<<(bit_depth+3)) constant;
+            };
+            match bit_depth {
+                // No Recipe uses fewer than signed 32 bits of precision.
+                SampleTransformBitDepth::Signed8bits => unreachable!(),
+                SampleTransformBitDepth::Signed16bits => unreachable!(),
+
+                SampleTransformBitDepth::Signed32bits => {
+                    write_constant(&i32::try_from(*constant).unwrap().to_be_bytes())?
+                }
+
+                #[cfg(not(feature = "satofloat"))]
+                SampleTransformBitDepth::Signed64bits => unreachable!(),
+                #[cfg(feature = "satofloat")]
+                SampleTransformBitDepth::Signed64bits => write_constant(&constant.to_be_bytes())?,
+            }
         }
     }
     Ok(stream.data)
@@ -481,6 +499,133 @@ impl Encoder {
             .apply_to_planes(item.category, &[full_depth_image], &mut msb)?;
             Ok(msb)
         }
+    }
+
+    // Adds three image items (sign bit and 7 most significant bits of the exponent, least
+    // significant bit of the exponent and 11 most significant bits of the mantissa, and 12 least
+    // significant bits of the mantissa). The first item is used as the primary item, in the same
+    // 'altr' entity group as the Sample Transform derived image item reconstructing the three items
+    // into 32-bit floats (IEEE 754 binary32).
+    #[cfg(feature = "satofloat")]
+    pub(crate) fn create_float_32b_items(&mut self, grid: &Grid) -> AvifResult<()> {
+        let sato_item = Item {
+            id: u16_from_usize(self.items.len() + 1)?,
+            item_type: "sato".into(),
+            category: Category::Color,
+            metadata_payload: write_sato(self.final_recipe.unwrap())?,
+            hidden_image: false,
+            ..Default::default()
+        };
+        let sato_item_id = sato_item.id;
+        self.items.push(sato_item);
+
+        // 'altr' group
+        if !self.alternative_item_ids.is_empty() {
+            return AvifError::not_implemented();
+        }
+        self.alternative_item_ids.push(sato_item_id);
+        self.alternative_item_ids.push(self.primary_item_id);
+
+        let sign_exponent_msb_item_id = self.primary_item_id;
+        let exponent_msb_mantissa_msb_item_id =
+            self.add_items(grid, Category::Color, /*hidden=*/ true)?;
+        let mantissa_lsb_item_id = self.add_items(grid, Category::Color, /*hidden=*/ true)?;
+        // Set the sign, exponent and mantissa items' dimgFromID value to point to the sample
+        // transform item. The sign+exponent item shall be first, and the mantissa item last.
+        // avifEncoderFinish() writes the dimg item references in item id order, so as long as
+        // exponentItemID < mantissaMsbItemId < mantissaLsbItemId, the order will be correct.
+        assert!(sign_exponent_msb_item_id < exponent_msb_mantissa_msb_item_id);
+        assert!(exponent_msb_mantissa_msb_item_id < mantissa_lsb_item_id);
+        {
+            let sign_exponent_msb_item = &mut self.items[sign_exponent_msb_item_id as usize - 1];
+            if sign_exponent_msb_item.dimg_from_id.is_some() {
+                // The internal API only allows one dimg value per item.
+                return AvifError::not_implemented();
+            }
+            sign_exponent_msb_item.dimg_from_id = Some(sato_item_id);
+        }
+        {
+            let mantissa_msb_item = &mut self.items[exponent_msb_mantissa_msb_item_id as usize - 1];
+            mantissa_msb_item.dimg_from_id = Some(sato_item_id);
+            mantissa_msb_item.is_sato_least_significant_input = false;
+        }
+        {
+            let mantissa_lsb_item = &mut self.items[mantissa_lsb_item_id as usize - 1];
+            mantissa_lsb_item.dimg_from_id = Some(sato_item_id);
+            mantissa_lsb_item.is_sato_least_significant_input = true;
+        }
+
+        if self.alpha_present {
+            return AvifError::not_implemented();
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "satofloat")]
+    pub(crate) fn create_float_32b_images(
+        image_metadata: &Image,
+        float_planes: [Option<&[f32]>; MAX_PLANE_COUNT],
+    ) -> AvifResult<(Image, Image, Image)> {
+        // image_metadata is expected to be empty. The samples are only provided in float_planes.
+        // An alternative would be to allow the user to specify a regular integer image entirely
+        // independent from the float values to be used as the primary image item in the same 'altr'
+        // group as the 'sato' derived image item, instead of forcing the primary item to contain
+        // some arbitrary part of float IEEE 754 binary32 representation, unlikely to be worth
+        // visualizing as integer samples. The latter is the only implementation for API simplicity.
+        if image_metadata.depth != 8 || image_metadata.planes.iter().any(|p| p.is_some()) {
+            return AvifError::invalid_argument();
+        }
+        // Only support 4:4:4 for now.
+        if image_metadata.yuv_format != PixelFormat::Yuv444 {
+            return AvifError::not_implemented();
+        }
+        if image_metadata.alpha_present != float_planes[Plane::A.as_usize()].is_some() {
+            return AvifError::invalid_argument();
+        }
+
+        let mut sign_exponent_msb = image_metadata.try_deep_clone()?;
+        let mut exponent_lsb_mantissa_msb = image_metadata.try_deep_clone()?;
+        let mut mantissa_lsb = image_metadata.try_deep_clone()?;
+        assert_eq!(sign_exponent_msb.depth, 8);
+        exponent_lsb_mantissa_msb.depth = 12;
+        mantissa_lsb.depth = 12;
+        for image in [
+            &mut sign_exponent_msb,
+            &mut exponent_lsb_mantissa_msb,
+            &mut mantissa_lsb,
+        ] {
+            image.allocate_planes(Category::Color)?;
+            if image_metadata.alpha_present {
+                image.allocate_planes(Category::Alpha)?;
+            }
+        }
+
+        for plane in ALL_PLANES {
+            if !sign_exponent_msb.has_plane(plane) {
+                continue;
+            }
+            let float_plane = float_planes[plane.as_usize()].ok_or(AvifError::NoContent)?;
+            let width = sign_exponent_msb.width(plane);
+            let height = sign_exponent_msb.height(plane);
+            if float_plane.len() != width.checked_mul(height).unwrap() as usize {
+                return AvifError::invalid_argument();
+            }
+            for y in 0..height as u32 {
+                let sign_exponent_msb_row = sign_exponent_msb.row_mut(plane, y)?;
+                let exponent_lsb_mantissa_msb_row =
+                    exponent_lsb_mantissa_msb.row16_mut(plane, y)?;
+                let mantissa_lsb_row = mantissa_lsb.row16_mut(plane, y)?;
+                for x in 0..width {
+                    let f = float_plane[y as usize * width + x];
+                    let f = if f.is_normal() || f.is_subnormal() { f } else { 0.0 };
+                    let bits = f.to_bits();
+                    sign_exponent_msb_row[x] = (bits >> 24) as u8;
+                    exponent_lsb_mantissa_msb_row[x] = ((bits >> 12) & 0xFFF) as u16;
+                    mantissa_lsb_row[x] = (bits & 0xFFF) as u16;
+                }
+            }
+        }
+        Ok((sign_exponent_msb, exponent_lsb_mantissa_msb, mantissa_lsb))
     }
 }
 

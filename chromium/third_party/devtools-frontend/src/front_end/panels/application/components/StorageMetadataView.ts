@@ -244,7 +244,7 @@ export class StorageMetadataView extends LegacyWrapper.LegacyWrapper.WrappableCo
         @click=${revealBucket}
         title=${name}
         jslog=${VisualLogging.action('storage-bucket').track({
-        click: true
+        click: true,
       })}
       >${name}</devtools-link>`;
     };
@@ -254,6 +254,9 @@ export class StorageMetadataView extends LegacyWrapper.LegacyWrapper.WrappableCo
         ${this.key(i18nString(UIStrings.bucketName))}
         ${this.value(renderBucketName())}`;
     }
+    // If quota is 0, it means no custom quota limit has been set on the bucket.
+    // We do not render it here to avoid confusing the user (who might interpret
+    // a 0 quota as a full bucket/0 capacity rather than sharing the default origin limit).
     // clang-format off
     return html`
       ${this.key(i18nString(UIStrings.bucketName))}
@@ -262,8 +265,10 @@ export class StorageMetadataView extends LegacyWrapper.LegacyWrapper.WrappableCo
       ${this.value(persistent ? i18nString(UIStrings.yes) : i18nString(UIStrings.no))}
       ${this.key(i18nString(UIStrings.durability))}
       ${this.value(durability)}
-      ${this.key(i18nString(UIStrings.quota))}
-      ${this.value(i18n.ByteUtilities.bytesToString(quota))}
+      ${quota !== 0 ? html`
+        ${this.key(i18nString(UIStrings.quota))}
+        ${this.value(i18n.ByteUtilities.bytesToString(quota))}
+      ` : nothing}
       ${this.key(i18nString(UIStrings.expiration))}
       ${this.value(this.#getExpirationString())}`;
   }

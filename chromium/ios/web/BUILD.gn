@@ -73,6 +73,7 @@ source_set("web") {
     "browser_state_utils.mm",
     "browser_url_rewriter_impl.h",
     "browser_url_rewriter_impl.mm",
+    "content_type_util.cc",
     "network_context_owner.cc",
     "web_client.mm",
   ]
@@ -149,7 +150,6 @@ source_set("run_all_unittests") {
     "//base/test:test_support",
     "//ios/web/public/test",
     "//ios/web/public/test:test_fixture",
-    "//ios/web/public/test/http_server",
     "//mojo/core/embedder",
   ]
 }
@@ -238,6 +238,7 @@ source_set("ios_web_general_unittests") {
 
   sources = [
     "browser_state_unittest.mm",
+    "content_type_util_unittest.cc",
     "history_state_util_unittest.mm",
     "network_context_owner_unittest.cc",
     "test/web_test_unittest.mm",
@@ -492,6 +493,7 @@ source_set("ios_web_webui_unittests") {
     "//components/url_formatter",
     "//ios/net",
     "//ios/testing:ocmock_support",
+    "//ios/web/js_messaging",
     "//ios/web/public/test",
     "//ios/web/public/test:test_fixture",
     "//ios/web/public/test/fakes",
@@ -550,7 +552,6 @@ test("ios_web_inttests") {
     "//ios/web/public/test",
     "//ios/web/public/test:element_selector",
     "//ios/web/public/test:test_fixture",
-    "//ios/web/public/test/http_server",
     "//ios/web/public/webui",
     "//ios/web/security",
     "//ios/web/test:mojo_bindings",
@@ -584,7 +585,6 @@ test("ios_web_inttests") {
     "navigation/meta_tag_inttest.mm",
     "navigation/navigation_manager_impl_inttest.mm",
     "navigation/window_location_inttest.mm",
-    "public/test/http_server_inttest.mm",
     "test/run_all_unittests.cc",
     "url_loader_inttest.mm",
     "web_state/bad_ssl_response_inttest.mm",

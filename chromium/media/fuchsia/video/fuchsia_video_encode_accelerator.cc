@@ -44,6 +44,7 @@
 #include "media/base/video_types.h"
 #include "media/fuchsia/common/stream_processor_helper.h"
 #include "media/fuchsia/common/vmo_buffer.h"
+#include "media/fuchsia/video/video_frame_writer_queue.h"
 #include "media/video/video_encode_accelerator.h"
 #include "third_party/libyuv/include/libyuv/convert.h"
 #include "ui/gfx/geometry/size.h"
@@ -91,71 +92,7 @@ fuchsia::sysmem::PixelFormatType GetPixelFormatType(
 
 }  // namespace
 
-// Stores a queue of VideoFrames to be copied to VmoBuffers. VideoFrames can be
-// queued before VmoBuffers are available. Queue will not start processing
-// before Initialize() is called.
-class FuchsiaVideoEncodeAccelerator::VideoFrameWriterQueue {
- public:
-  using ProcessCB =
-      base::RepeatingCallback<void(StreamProcessorHelper::IoPacket)>;
 
-  VideoFrameWriterQueue() = default;
-
-  VideoFrameWriterQueue(const VideoFrameWriterQueue&) = delete;
-  VideoFrameWriterQueue& operator=(const VideoFrameWriterQueue&) = delete;
-
-  // Enqueues a VideoFrame. Can be called before `Start()`. Immediately
-  // processes `frame` if a VmoBuffer is available.
-  void Enqueue(scoped_refptr<VideoFrame> frame, bool force_keyframe);
-
-  // Initialize the queue and starts processing if possible. `process_cb` is
-  // called after each VideoFrame is copied.
-  void Initialize(std::vector<VmoBuffer> buffers,
-                  fuchsia::sysmem2::SingleBufferSettings buffer_settings,
-                  fuchsia::media::FormatDetails initial_format_details,
-                  gfx::Size coded_size,
-                  ProcessCB process_cb);
-
- private:
-  struct Item {
-    Item(scoped_refptr<VideoFrame> frame, bool force_keyframe)
-        : frame(std::move(frame)), force_keyframe(force_keyframe) {
-      DCHECK(this->frame);
-    }
-
-    // Item is move-constructible for popping from the queue.
-    Item(const Item&) = delete;
-    Item& operator=(const Item&) = delete;
-
-    Item(Item&&) = default;
-    Item& operator=(Item&&) = delete;
-
-    scoped_refptr<VideoFrame> frame;
-    const bool force_keyframe;
-  };
-
-  void ProcessQueue();
-
-  // Marks the VmoBuffer at `buffer_index` to be available for copying.
-  void ReleaseBuffer(size_t buffer_index);
-
-  // Copies a VideoFrame from `item` to VmoBuffer at `buffer_index`.
-  void CopyFrameToBuffer(const Item& item, size_t buffer_index);
-
-  base::queue<Item> queue_;
-  std::vector<VmoBuffer> buffers_;
-  base::queue<size_t> free_buffer_indices_;
-  fuchsia::media::FormatDetails format_details_;
-  ProcessCB process_cb_;
-
-  gfx::Size coded_size_;
-  uint32_t dst_y_stride_ = 0;
-  uint32_t dst_uv_stride_ = 0;
-  uint32_t dst_y_plane_size_ = 0;
-  size_t dst_size_ = 0;
-
-  base::WeakPtrFactory<VideoFrameWriterQueue> weak_factory_{this};
-};
 
 // Stores a queue of IoPackets, whose data will be written to BitstreamBuffers.
 // Packets can be queued before VmoBuffers are available and before any
@@ -206,108 +143,7 @@ class FuchsiaVideoEncodeAccelerator::OutputPacketsQueue {
   ErrorCB error_cb_;
 };
 
-void FuchsiaVideoEncodeAccelerator::VideoFrameWriterQueue::Enqueue(
-    scoped_refptr<VideoFrame> frame,
-    bool force_keyframe) {
-  queue_.emplace(std::move(frame), force_keyframe);
 
-  if (!buffers_.empty()) {
-    ProcessQueue();
-  }
-}
-
-void FuchsiaVideoEncodeAccelerator::VideoFrameWriterQueue::Initialize(
-    std::vector<VmoBuffer> buffers,
-    fuchsia::sysmem2::SingleBufferSettings buffer_settings,
-    fuchsia::media::FormatDetails initial_format_details,
-    gfx::Size coded_size,
-    ProcessCB process_cb) {
-  DCHECK(buffers_.empty());
-  DCHECK(!buffers.empty());
-
-  buffers_ = std::move(buffers);
-  format_details_ = std::move(initial_format_details);
-  coded_size_ = coded_size;
-  process_cb_ = std::move(process_cb);
-
-  // Calculate the stride and size of each frame based on `buffer_settings`.
-  // Frames must fit within the buffer.
-  const auto& image_constraints = buffer_settings.image_format_constraints();
-  dst_y_stride_ =
-      base::bits::AlignUp(std::max(image_constraints.min_bytes_per_row(),
-                                   static_cast<uint32_t>(coded_size_.width())),
-                          image_constraints.bytes_per_row_divisor());
-  dst_uv_stride_ = (dst_y_stride_ + 1) / 2;
-  dst_y_plane_size_ = coded_size_.height() * dst_y_stride_;
-  dst_size_ = dst_y_plane_size_ + dst_y_plane_size_ / 2;
-
-  // Initialially, all buffers are free to use.
-  for (size_t i = 0; i < buffers_.size(); i++) {
-    free_buffer_indices_.push(i);
-  }
-
-  ProcessQueue();
-}
-
-void FuchsiaVideoEncodeAccelerator::VideoFrameWriterQueue::ProcessQueue() {
-  DCHECK(!buffers_.empty());
-
-  while (!queue_.empty() && !free_buffer_indices_.empty()) {
-    Item item = std::move(queue_.front());
-    queue_.pop();
-    size_t buffer_index = std::move(free_buffer_indices_.front());
-    free_buffer_indices_.pop();
-
-    CopyFrameToBuffer(item, buffer_index);
-
-    auto packet = StreamProcessorHelper::IoPacket(
-        buffer_index, /*offset=*/0, dst_size_, item.frame->timestamp(),
-        /*unit_end=*/false, /*key_frame=*/false,
-        base::BindOnce(&VideoFrameWriterQueue::ReleaseBuffer,
-                       weak_factory_.GetWeakPtr(), buffer_index));
-    if (item.force_keyframe) {
-      fuchsia::media::FormatDetails format_details;
-      zx_status_t status = format_details_.Clone(&format_details);
-      ZX_DCHECK(status == ZX_OK, status) << "Clone FormatDetails";
-
-      format_details.mutable_encoder_settings()->h264().set_force_key_frame(
-          true);
-      packet.set_format(std::move(format_details));
-    }
-
-    process_cb_.Run(std::move(packet));
-  }
-}
-
-void FuchsiaVideoEncodeAccelerator::VideoFrameWriterQueue::ReleaseBuffer(
-    size_t free_buffer_index) {
-  DCHECK(!buffers_.empty());
-
-  free_buffer_indices_.push(free_buffer_index);
-  ProcessQueue();
-}
-
-void FuchsiaVideoEncodeAccelerator::VideoFrameWriterQueue::CopyFrameToBuffer(
-    const Item& item,
-    size_t buffer_index) {
-  DCHECK_LE(dst_size_, buffers_[buffer_index].size());
-
-  uint8_t* dst_y = buffers_[buffer_index].GetWritableMemory().data();
-  uint8_t* dst_u = UNSAFE_TODO(dst_y + dst_y_plane_size_);
-  uint8_t* dst_v = UNSAFE_TODO(dst_u + dst_y_plane_size_ / 4);
-
-  auto& frame = item.frame;
-  CHECK_LE(frame->coded_size().width(), coded_size_.width());
-  CHECK_LE(frame->coded_size().height(), coded_size_.height());
-
-  int result = libyuv::I420Copy(
-      frame->data(VideoFrame::Plane::kY), frame->stride(VideoFrame::Plane::kY),
-      frame->data(VideoFrame::Plane::kU), frame->stride(VideoFrame::Plane::kU),
-      frame->data(VideoFrame::Plane::kV), frame->stride(VideoFrame::Plane::kV),
-      dst_y, dst_y_stride_, dst_u, dst_uv_stride_, dst_v, dst_uv_stride_,
-      frame->coded_size().width(), frame->coded_size().height());
-  DCHECK_EQ(result, 0);
-}
 
 void FuchsiaVideoEncodeAccelerator::OutputPacketsQueue::Enqueue(
     StreamProcessorHelper::IoPacket packet) {
@@ -484,12 +320,22 @@ void FuchsiaVideoEncodeAccelerator::UseOutputBitstreamBuffer(
     BitstreamBuffer buffer) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
+  if (!output_queue_) {
+    VLOG(1) << "UseOutputBitstreamBuffer called after output queue destroyed.";
+    return;
+  }
+
   output_queue_->UseBitstreamBuffer(std::move(buffer));
 }
 
 void FuchsiaVideoEncodeAccelerator::Encode(scoped_refptr<VideoFrame> frame,
                                            bool force_keyframe) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  if (!input_queue_) {
+    VLOG(1) << "Encode called after input queue destroyed.";
+    return;
+  }
   DCHECK(config_);
   DCHECK_EQ(frame->format(), PIXEL_FORMAT_I420);
   DCHECK(!frame->coded_size().IsEmpty());
@@ -512,7 +358,9 @@ void FuchsiaVideoEncodeAccelerator::Encode(scoped_refptr<VideoFrame> frame,
     return;
   }
 
-  input_queue_->Enqueue(std::move(frame), force_keyframe);
+  if (!input_queue_->Enqueue(std::move(frame), force_keyframe)) {
+    OnError({EncoderStatus::Codes::kInvalidInputFrame, "Invalid input frame"});
+  }
 }
 
 void FuchsiaVideoEncodeAccelerator::RequestEncodingParametersChange(
@@ -571,16 +419,20 @@ void FuchsiaVideoEncodeAccelerator::OnInputBuffersAcquired(
                                    image_constraints.required_max_size().width),
                           image_constraints.size_alignment().width);
   int coded_height = base::bits::AlignUp(
-      std::max(image_constraints.min_size().height, image_constraints.required_max_size().height),
+      std::max(image_constraints.min_size().height,
+               image_constraints.required_max_size().height),
       image_constraints.size_alignment().height);
   CHECK_GE(coded_width, config_->input_visible_size.width());
   CHECK_GE(coded_height, config_->input_visible_size.height());
 
-  input_queue_->Initialize(
+  EncoderStatus status = input_queue_->Initialize(
       std::move(buffers), fidl::Clone(buffer_settings),
       CreateFormatDetails(*config_), gfx::Size(coded_width, coded_height),
       base::BindRepeating(&StreamProcessorHelper::Process,
                           base::Unretained(encoder_.get())));
+  if (!status.is_ok()) {
+    OnError(status);
+  }
 }
 
 void FuchsiaVideoEncodeAccelerator::OnStreamProcessorAllocateOutputBuffers(
@@ -697,6 +549,8 @@ FuchsiaVideoEncodeAccelerator::CreateFormatDetails(
                                                        config.input_format)},
       .coded_width = width,
       .coded_height = height,
+      // TODO(crbug.com/518074543): We may want to revise the use of a fixed row
+      // alignment.
       .bytes_per_row = base::bits::AlignUp(width, kBytesPerRowAlignment),
       .display_width = width,
       .display_height = height,

@@ -2395,6 +2395,40 @@ tr.b.unittest.testSuite(function() {
     checkParsedAndStreamInput(events, checkModel, false);
   });
 
+  test('importInstantObjects', function() {
+    function checkModel(m) {
+      const p1 = m.processes[1];
+
+      const iA = p1.objects.getObjectInstanceAt(
+          new ScopedId(tr.model.OBJECT_DEFAULT_SCOPE, '0x1000'), 10);
+      assert.isDefined(iA);
+      assert.strictEqual(iA.name, 'FrameLoader');
+      assert.strictEqual(iA.creationTs, 10);
+
+      const frameLoaderInstances = p1.objects.instancesByTypeName_.FrameLoader;
+      assert.strictEqual(frameLoaderInstances.length, 1);
+
+      assert.strictEqual(iA.snapshots.length, 2);
+      const s15 = iA.snapshots[0];
+      assert.strictEqual(s15.ts, 15);
+      assert.strictEqual(s15.args.val, 15);
+
+      const s20 = iA.snapshots[1];
+      assert.strictEqual(s20.ts, 20);
+      assert.strictEqual(s20.args.val, 20);
+
+      assert.strictEqual(iA.deletionTs, 50);
+    }
+
+    const events = [
+      {ts: 10000, pid: 1, tid: 1, ph: 'i', cat: 'loading', bind_id: '0x1000', name: 'FrameLoader:created', args: {}}, // @suppress longLineCheck
+      {ts: 15000, pid: 1, tid: 1, ph: 'i', cat: 'loading', bind_id: '0x1000', name: 'FrameLoader:state_snapshot', args: {snapshot: {val: 15}}}, // @suppress longLineCheck
+      {ts: 20000, pid: 1, tid: 1, ph: 'i', cat: 'loading', bind_id: '0x1000', name: 'FrameLoader:snapshot', args: {snapshot: {val: 20}}}, // @suppress longLineCheck
+      {ts: 50000, pid: 1, tid: 1, ph: 'i', cat: 'loading', bind_id: '0x1000', name: 'FrameLoader:deleted', args: {}} // @suppress longLineCheck
+    ];
+    checkParsedAndStreamInput(events, checkModel, false);
+  });
+
   test('importImplicitObjects', function() {
     function checkModel(m) {
       const p1 = m.processes[1];

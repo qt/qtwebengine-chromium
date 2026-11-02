@@ -7,62 +7,69 @@ import {assert} from 'chai';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import type * as Trace from '../../models/trace/trace.js';
-import {createTarget} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {MockCDPConnection} from '../../testing/MockCDPConnection.js';
+import {mockResourceTree} from '../../testing/ResourceTreeHelpers.js';
+import {setupSettingsHooks} from '../../testing/SettingsHelpers.js';
+import {TestUniverse} from '../../testing/TestUniverse.js';
 
 import * as LiveMetrics from './live-metrics.js';
 import * as Spec from './web-vitals-injected/spec/spec.js';
 
 type Milli = Trace.Types.Timing.Milli;
 
-describeWithMockConnection('LiveMetrics', () => {
+describe('LiveMetrics', () => {
+  setupSettingsHooks();
+
   let liveMetrics: LiveMetrics.LiveMetrics;
   let primaryTarget: SDK.Target.Target;
-  let tabTarget: SDK.Target.Target;
 
-  beforeEach(() => {
-    tabTarget = createTarget({type: SDK.Target.Type.TAB});
-    primaryTarget = createTarget({
+  beforeEach(async () => {
+    const universe = new TestUniverse();
+    const connection = new MockCDPConnection([]);
+    mockResourceTree(connection);
+    const tabTarget = universe.createTarget({type: SDK.Target.Type.TAB, connection});
+    primaryTarget = universe.createTarget({
       parentTarget: tabTarget,
       type: SDK.Target.Type.FRAME,
     });
-    liveMetrics = LiveMetrics.LiveMetrics.instance({forceNew: true});
+    liveMetrics = universe.liveMetrics;
+    await liveMetrics.enable();
   });
 
   describe('prerender navigation', () => {
-    it('handles target removal gracefully', async () => {
-      await liveMetrics.targetRemoved(primaryTarget);
-
-      assert.strictEqual(liveMetrics.interactions.size, 0);
-      assert.lengthOf(liveMetrics.layoutShifts, 0);
-    });
-
-    it('re-enables on a new target after target removal', async () => {
-      await liveMetrics.targetRemoved(primaryTarget);
-
-      const newPrimaryTarget = createTarget({
-        parentTarget: tabTarget,
-        type: SDK.Target.Type.FRAME,
+    it('resets metrics on prerender activation', async () => {
+      liveMetrics.setStatusForTesting({
+        lcp: {
+          value: 100 as Milli,
+          subparts: {
+            timeToFirstByte: 0 as Milli,
+            resourceLoadDelay: 0 as Milli,
+            resourceLoadTime: 0 as Milli,
+            elementRenderDelay: 0 as Milli,
+          },
+        },
+        cls: {value: 0.1, clusterShiftIds: []},
+        inp: {
+          value: 50 as Milli,
+          subparts: {inputDelay: 0 as Milli, processingDuration: 0 as Milli, presentationDelay: 0 as Milli},
+          interactionId: 'interaction-1-1',
+        },
+        interactions:
+            new Map([['interaction-1-1', {interactionId: 'interaction-1-1'} as unknown as LiveMetrics.Interaction]]),
+        layoutShifts: [{score: 0.1} as unknown as LiveMetrics.LayoutShift],
       });
 
-      await liveMetrics.targetAdded(newPrimaryTarget);
+      const resourceTreeModel = primaryTarget.model(SDK.ResourceTreeModel.ResourceTreeModel);
+      assert.exists(resourceTreeModel?.mainFrame);
+
+      resourceTreeModel.dispatchEventToListeners(SDK.ResourceTreeModel.Events.PrimaryPageChanged, {
+        frame: resourceTreeModel.mainFrame,
+        type: SDK.ResourceTreeModel.PrimaryPageChangeType.ACTIVATION,
+      });
 
       assert.isUndefined(liveMetrics.lcpValue);
       assert.isUndefined(liveMetrics.clsValue);
       assert.isUndefined(liveMetrics.inpValue);
-    });
-
-    it('handles rapid target swap during prerender activation', async () => {
-      const removePromise = liveMetrics.targetRemoved(primaryTarget);
-
-      const prerenderTarget = createTarget({
-        parentTarget: tabTarget,
-        type: SDK.Target.Type.FRAME,
-      });
-
-      await removePromise;
-      await liveMetrics.targetAdded(prerenderTarget);
-
       assert.strictEqual(liveMetrics.interactions.size, 0);
       assert.lengthOf(liveMetrics.layoutShifts, 0);
     });
@@ -112,7 +119,7 @@ describeWithMockConnection('LiveMetrics', () => {
     const lcpEvent = (value: number): Spec.LcpChangeEvent => ({
       name: 'LCP',
       value: value as Milli,
-      phases: {
+      subparts: {
         timeToFirstByte: 0 as Milli,
         resourceLoadDelay: 0 as Milli,
         resourceLoadTime: 0 as Milli,
@@ -160,6 +167,23 @@ describeWithMockConnection('LiveMetrics', () => {
       assert.isTrue(statusReceived);
     });
 
+    it('dispatches status events with navigationType', () => {
+      let statusEvent: LiveMetrics.StatusEvent|null = null;
+      liveMetrics.addEventListener(LiveMetrics.Events.STATUS, event => {
+        statusEvent = event.data;
+      });
+
+      liveMetrics.setStatusForTesting({
+        interactions: new Map(),
+        layoutShifts: [],
+        navigationType: 'soft-navigation',
+      });
+
+      assert.exists(statusEvent);
+      assert.strictEqual((statusEvent as LiveMetrics.StatusEvent).navigationType, 'soft-navigation');
+      assert.strictEqual(liveMetrics.navigationType, 'soft-navigation');
+    });
+
     it('clears interactions via clearInteractions', () => {
       const interactionId = 'interaction-1-1' as LiveMetrics.InteractionId;
       const interaction: LiveMetrics.Interaction = {
@@ -169,7 +193,7 @@ describeWithMockConnection('LiveMetrics', () => {
         duration: 100,
         startTime: 0,
         nextPaintTime: 100,
-        phases: {inputDelay: 10 as Milli, processingDuration: 80 as Milli, presentationDelay: 10 as Milli},
+        subparts: {inputDelay: 10 as Milli, processingDuration: 80 as Milli, presentationDelay: 10 as Milli},
         longAnimationFrameTimings: [],
       };
 

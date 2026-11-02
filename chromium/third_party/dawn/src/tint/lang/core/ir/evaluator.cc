@@ -155,8 +155,8 @@ Evaluator::EvalResult Evaluator::EvalConstruct(core::ir::Construct* c) {
 
     auto mat_vec = [&](const core::type::Type* type,
                        core::intrinsic::CtorConv intrinsic) -> constant::Eval::Result {
-        auto op =
-            table.Lookup(intrinsic, Vector{type}, arg_types, core::EvaluationStage::kOverride);
+        auto op = table.Lookup(intrinsic, Vector<TemplateParameter, 1>{type}, arg_types,
+                               core::EvaluationStage::kOverride);
         if (op != Success) {
             AddError(SourceOf(c)) << "unable to find intrinsic for construct: " << op.Failure();
             return Failure();

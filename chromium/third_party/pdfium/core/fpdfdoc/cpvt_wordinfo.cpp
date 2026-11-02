@@ -8,14 +8,6 @@
 
 #include "core/fxcrt/fx_codepage.h"
 
-CPVT_WordInfo::CPVT_WordInfo()
-    : Word(0),
-      nCharset(FX_Charset::kANSI),
-      fWordX(0.0f),
-      fWordY(0.0f),
-      fWordTail(0.0f),
-      nFontIndex(-1) {}
-
 CPVT_WordInfo::CPVT_WordInfo(uint16_t word,
                              FX_Charset charset,
                              int32_t fontIndex)
@@ -24,30 +16,11 @@ CPVT_WordInfo::CPVT_WordInfo(uint16_t word,
       fWordX(0.0f),
       fWordY(0.0f),
       fWordTail(0.0f),
-      nFontIndex(fontIndex) {}
+      nFontIndex(fontIndex),
+      is_rtl(false) {}
 
-CPVT_WordInfo::CPVT_WordInfo(const CPVT_WordInfo& word)
-    : Word(0),
-      nCharset(FX_Charset::kANSI),
-      fWordX(0.0f),
-      fWordY(0.0f),
-      fWordTail(0.0f),
-      nFontIndex(-1) {
-  operator=(word);
-}
+CPVT_WordInfo::CPVT_WordInfo(const CPVT_WordInfo& word) = default;
 
 CPVT_WordInfo::~CPVT_WordInfo() = default;
 
-CPVT_WordInfo& CPVT_WordInfo::operator=(const CPVT_WordInfo& word) {
-  if (this == &word) {
-    return *this;
-  }
-
-  Word = word.Word;
-  nCharset = word.nCharset;
-  nFontIndex = word.nFontIndex;
-  fWordX = word.fWordX;
-  fWordY = word.fWordY;
-  fWordTail = word.fWordTail;
-  return *this;
-}
+CPVT_WordInfo& CPVT_WordInfo::operator=(const CPVT_WordInfo& word) = default;

@@ -595,9 +595,9 @@ TEST(P2PSocketTcpWithPseudoTlsTest, Hostname) {
   net::HostResolver::ResolveHostParameters params;
   params.source = net::HostResolverSource::LOCAL_ONLY;
   std::unique_ptr<net::HostResolver::ResolveHostRequest> request1 =
-      context->host_resolver()->CreateRequest(kHostPortPair,
-                                              network_anonymization_key,
-                                              net::NetLogWithSource(), params);
+      context->host_resolver()->CreateRequest(
+          kHostPortPair, network_anonymization_key,
+          net::handles::kInvalidNetworkHandle, net::NetLogWithSource(), params);
   net::TestCompletionCallback callback1;
   int result = request1->Start(callback1.callback());
   EXPECT_EQ(net::OK, callback1.GetResult(result));
@@ -613,7 +613,8 @@ TEST(P2PSocketTcpWithPseudoTlsTest, Hostname) {
   for (const auto& other_nak : kOtherNaks) {
     std::unique_ptr<net::HostResolver::ResolveHostRequest> request2 =
         context->host_resolver()->CreateRequest(
-            kHostPortPair, other_nak, net::NetLogWithSource(), params);
+            kHostPortPair, other_nak, net::handles::kInvalidNetworkHandle,
+            net::NetLogWithSource(), params);
     net::TestCompletionCallback callback2;
     result = request2->Start(callback2.callback());
     EXPECT_EQ(net::ERR_NAME_NOT_RESOLVED, callback2.GetResult(result));
@@ -759,6 +760,40 @@ TEST_F(P2PSocketTcpTest, SendBatchWithBrokenFirstPacket) {
   socket_ = nullptr;
   socket_impl_ptr->SendBatch(std::move(packet_batch));
   // process any queued callbacks.
+  base::RunLoop().RunUntilIdle();
+}
+
+TEST_F(P2PSocketTcpTest, InitRejectsRestrictedPort) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(kEnforceP2PSocketPortRestrictions);
+  mojo::PendingRemote<mojom::P2PSocketClient> socket_client;
+  mojo::PendingRemote<mojom::P2PSocket> socket;
+  mojo::PendingReceiver<mojom::P2PSocket> socket_receiver =
+      socket.InitWithNewPipeAndPassReceiver();
+
+  FakeSocketClient fake_client(std::move(socket),
+                               socket_client.InitWithNewPipeAndPassReceiver());
+
+  net::MockClientSocketFactory mock_socket_factory;
+  std::unique_ptr<net::URLRequestContextBuilder> context_builder =
+      net::CreateTestURLRequestContextBuilder();
+  context_builder->set_client_socket_factory_for_testing(&mock_socket_factory);
+  std::unique_ptr<net::URLRequestContext> context = context_builder->Build();
+  ProxyResolvingClientSocketFactory factory(context.get());
+
+  FakeP2PSocketDelegate socket_delegate;
+  auto host = std::make_unique<P2PSocketTcp>(
+      &socket_delegate, std::move(socket_client), std::move(socket_receiver),
+      P2P_SOCKET_TCP_CLIENT, TRAFFIC_ANNOTATION_FOR_TESTS, &factory);
+
+  P2PSocketTcp* host_ptr = host.get();
+  socket_delegate.ExpectDestruction(std::move(host));
+
+  P2PHostAndIPEndPoint dest;
+  dest.ip_address = ParseAddress(kTestIpAddress1, 25);
+  host_ptr->Init(net::IPEndPoint(net::IPAddress::IPv4Localhost(), 0), 0, 0,
+                 dest, net::NetworkAnonymizationKey());
+
   base::RunLoop().RunUntilIdle();
 }
 

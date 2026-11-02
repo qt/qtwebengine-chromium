@@ -1,0 +1,418 @@
+/** \page page_dma_buf DMA-BUF Sharing
+
+PipeWire supports sharing Direct Memory Access buffers (DMA-BUFs) between
+clients via the \ref SPA_DATA_DmaBuf data type. However properly negotiating
+DMA-BUF support on both the producer and the consumer side require following
+a specific procedure. This page describes said procedure by using events and
+methods from the filter or stream API.
+
+Note: This article focuses mostly on DMA-BUF sharing from arbitrary devices,
+like discrete GPUs. For using DMA-BUFs created by v4l2 please refer to the
+corresponding paragraph.
+
+# Capability Negotiations
+
+The capability negotiation for DMA-BUFs is complicated by the fact that a
+usable and preferred optimal modifier for a given format can only be
+determined by the allocator. This allocator has to be invoked with the intersection
+of all supported modifiers for every client. As a result, the fixation of the
+modifier is delegated from PipeWire to the node responsible for
+allocating the buffers.
+
+## pw_stream_connect
+
+The stream parameters should contain two \ref SPA_PARAM_EnumFormat objects for
+each format: one for DMA-BUFs, one for shared memory buffers as a fallback.
+
+Query the list of all supported modifiers from your graphics API of choice.
+Add a \ref SPA_FORMAT_VIDEO_modifier property to the first stream parameter with
+the flags `SPA_POD_PROP_FLAG_MANDATORY | SPA_POD_PROP_FLAG_DONT_FIXATE`. The
+value of the property should be set to a \ref SPA_CHOICE_Enum containing one
+`long` choice per supported modifier, plus `DRM_FORMAT_MOD_INVALID` if the
+graphics API supports modifier-less buffers.
+
+Note: When a producer is only supporting modifier-less buffers it can omit
+the \ref SPA_POD_PROP_FLAG_DONT_FIXATE (see param_changed hook, For producers).
+
+The second stream parameter should not contain any \ref SPA_FORMAT_VIDEO_modifier
+property.
+
+To prioritise DMA-BUFs place those \ref SPA_PARAM_EnumFormat containing modifiers
+first, when emitting them to PipeWire.
+
+## param_changed Hook
+
+When the `param_changed` hook is called for a \ref SPA_PARAM_Format the client
+has to parse the `spa_pod` directly. Use
+`spa_pod_find_prop(param, NULL, SPA_FORMAT_VIDEO_modifier)` to check
+whether modifiers were negotiated. If they were negotiated, set the
+\ref SPA_PARAM_BUFFERS_dataType property to `1 << SPA_DATA_DmaBuf`. If they were
+not negotiated, fall back to shared memory by setting the
+\ref SPA_PARAM_BUFFERS_dataType property to `1 << SPA_DATA_MemFd`,
+`1 << SPA_DATA_MemPtr`, or both.
+
+While consumers only have to parse the resulting \ref SPA_PARAM_Format for any
+format related information, it's up to the producer to fixate onto a single
+format modifier pair. The producer is also responsible to check if all clients
+announce sufficient capabilities or fallback to shared memory buffers when
+possible.
+
+### For Consumers
+
+Use \ref spa_format_video_raw_parse to get the format and modifier.
+
+### For Producers
+
+Producers have to handle two cases when it comes to modifiers wrt. to the
+previous announced capabilities: Using only the modifier-less API, only the
+modifier-aware one, or supporting both.
+
+- modifier-less:
+  In this case only the modifier `DRM_FORMAT_MOD_INVALID` was announced with
+  the format.
+  It is sufficient to check if the \ref SPA_PARAM_Format contains the modifier
+  property as described above. If that is the case, use DMA-BUFs for screen-sharing,
+  else fall back to SHM, if possible.
+- modifier-aware:
+  In this case a list with all supported modifiers will be returned in the format.
+  (using `DRM_FORMAT_MOD_INVALID` as the token for the modifier-less API).
+  On the `param_changed` event check if the modifier key is present and has the flag
+  \ref SPA_POD_PROP_FLAG_DONT_FIXATE attached to it. In this case, extract all modifiers
+  from the list and do a test allocation with your allocator to choose the preferred
+  modifier. Fixate on that \ref EnumFormat by announcing a \ref SPA_PARAM_EnumFormat with
+  only one modifier in the \ref SPA_CHOICE_Enum and without the
+  \ref SPA_POD_PROP_FLAG_DONT_FIXATE flag, followed by the previous announced
+  \ref EnumFormat. This will retrigger the `param_changed` event with an
+  \ref SPA_PARAM_Format as described below.
+  If the \ref SPA_PARAM_Format contains a modifier key, without the flag
+  \ref SPA_POD_PROP_FLAG_DONT_FIXATE, it should only contain one value in the
+  \ref SPA_CHOICE_Enum. In this case announce the \ref SPA_PARAM_Buffers accordingly
+  to the selected format and modifier. It is important to query the plane count
+  of the used format modifier pair and set `SPA_PARAM_BUFFERS_blocks` accordingly.
+  You might also want to add the option of adding explicit sync support to the
+  buffers, as explained below.
+
+Note: When test allocating a buffer, collect all possible modifiers, while omitting
+`DRM_FORMAT_MOD_INVALID` from the \ref SPA_FORMAT_VIDEO_modifier property and
+pass them all to the graphics API. If the allocation fails and the list of
+possible modifiers contains `DRM_FORMAT_MOD_INVALID`, fall back to allocating
+without an explicit modifier if the graphics API allows it.
+
+## add_buffer Hook
+
+This is relevant for producers.
+
+Allocate a DMA-BUF only using the negotiated format and modifier.
+
+## on_event Hook
+
+This is relevant for consumers.
+
+Check the type of the dequeued buffer. If its \ref SPA_DATA_MemFd or
+\ref SPA_DATA_MemPtr use the fallback SHM import mechanism.
+If it's \ref SPA_DATA_DmaBuf
+get the DMA-BUF FDs (the plane count is encoded in the `n_datas` variable of the
+`spa_buffer` struct) and import them with the graphics API. Note: that the n_datas
+might also contain extra fds for things like sync_timelime metadata, you need
+to take this into account when persing the planes.
+
+Note: Some graphics APIs have separated functions for the modifier-less case
+(`DRM_FORMAT_MOD_INVALID`) or are omitting the modifier, since it might be used
+for error handling.
+
+## Example Programs
+
+- \ref video-src-fixate.c "": \snippet{doc} video-src-fixate.c title
+- \ref video-play-fixate.c "": \snippet{doc} video-play-fixate.c title
+
+# DMA-BUF Mapping Warning
+
+It's important to make sure all consumers of the PipeWire stream are prepared
+to deal with DMA-BUFs. Most DMA-BUFs cannot be treated like shared memory in general
+because of the following issues:
+
+- DMA-BUFs can use hardware-specific tiling and compression as described by
+  modifiers. Thus, a `mmap(3)` on the DMA-BUF FD will not give a linear view of
+  the buffer contents.
+- DMA-BUFs need to be properly synchronized with the asynchronous reads and
+  writes of the hardware. A `mmap(3)` call is not enough to guarantee proper
+  synchronization. (Maybe add link to linux syscall doc??)
+- Blindly accessing the DMA-BUFs via `mmap(3)` can be extremely slow if the
+  buffer has been allocated on discrete hardware. Consumers are better off
+  using a proper graphics API (such as EGL, Vulkan or VA-API) to process the
+  DMA-BUFs.
+
+# Size of DMA-BUFs
+
+When importing a DMA-BUF with a proper graphics API the size of a single buffer plane
+is no relevant property since it will be derived by the driver from the other properties.
+Therefore consumers should ignore the field `maxsize` of a `spa_data` and the field
+`size` of a `spa_chunk` struct. Producers are allowed to set both to 0.
+In cases where mapping a single plane is required the size should be obtained locally
+via the filedescriptor.
+
+# SPA param video format helpers
+
+SPA offers helper functions to parse and build a spa_pod object to/from the spa_video_info_*
+struct. The flags \ref SPA_VIDEO_FLAG_MODIFIER and \ref SPA_VIDEO_FLAG_MODIFIER_FIXATION_REQUIRED
+are used to indicate modifier usage with the format. `SPA_VIDEO_FLAG_MODIFIER` declares the
+parsed/provided spa_video_info_* struct contains valid modifier information. For legacy
+reasons `spa_format_video_*_build` will announce any modifier != 0 even when this flag is
+unused. `SPA_VIDEO_FLAG_MODIFIER_FIXATION_REQUIRED` is exclusive to the parse helpers and
+declares that the parsed spa_pod contains modifier information which needs to be fixated as
+described above. The list of available modifiers has to be parsed manually from the spa_pod
+object.
+
+- \ref spa_video_info_raw, \ref spa_format_video_raw_parse, \ref spa_format_video_raw_build
+- \ref spa_video_info_dsp, \ref spa_format_video_dsp_parse, \ref spa_format_video_dsp_build
+
+# v4l2
+
+Another use case for streaming via DMA-BUFs are exporting a camera feed from v4l2
+as DMA-BUFs. Those are located in the main memory where it is possible to mmap them.
+This should be done as follows: Neither producer nor consumer should announce a
+modifier, but both should include `1 << SPA_DATA_DmaBuf` in the
+`SPA_PARAM_BUFFERS_dataType` property. It's the the responsibility of the producer
+while the `add_buffer` event to choose DMA-BUF as the used buffer type even though
+no modifier is present, if it can guarantee, that the used buffer is mmapable.
+
+Note: For now v4l2 uses planar buffers without modifiers. This is the reason for
+this special case.
+
+# Explicit sync
+
+In addition to DMABUF, a set of synchronization primitives (a SyncObjTimeline) and
+associated metadata can be negotiated on the buffers.
+
+The explicit sync step is performed *after* the Format has been negotiated.
+
+## Query support for explicit sync in the driver.
+
+You might first want to check that the drm render you are using is capable of explicit
+sync by checking support for DRM_CAP_SYNCOBJ and DRM_CAP_SYNCOBJ_TIMELINE before
+attempting to negotiate explicit sync.
+
+## Provide space in the buffer for explicit sync
+
+Explicit sync requires two extra fds in the buffers and an extra
+\ref SPA_META_SyncTimeline metadata structure.
+
+The metadata structure will only be allocated when both sides support explicit
+sync. We can use this to make a fallback \ref SPA_PARAM_Buffers so that we can
+support both explicit sync and a fallback to implicit sync.
+
+So, first announce support for \ref SPA_META_SyncTimeline by adding the
+\ref SPA_TYPE_OBJECT_ParamMeta object to the stream:
+
+```
+  params[n_params++] = spa_pod_builder_add_object(&b,
+			SPA_TYPE_OBJECT_ParamMeta, SPA_PARAM_Meta,
+			SPA_PARAM_META_type, SPA_POD_Id(SPA_META_SyncTimeline),
+			SPA_PARAM_META_size, SPA_POD_Int(sizeof(struct spa_meta_sync_timeline)));
+```
+
+Next make a \ref SPA_PARAM_Buffers that depends on the negotiation of the SyncTimelime metadata:
+
+```
+    spa_pod_builder_push_object(&b, &f, SPA_TYPE_OBJECT_ParamBuffers, SPA_PARAM_Buffers);
+    spa_pod_builder_add(&b,
+			SPA_PARAM_BUFFERS_buffers, SPA_POD_CHOICE_RANGE_Int(8, 2, MAX_BUFFERS),
+			SPA_PARAM_BUFFERS_blocks,  SPA_POD_Int(3),
+			SPA_PARAM_BUFFERS_size,    SPA_POD_Int(size),
+			SPA_PARAM_BUFFERS_stride,  SPA_POD_Int(data->stride),
+			SPA_PARAM_BUFFERS_dataType, SPA_POD_CHOICE_FLAGS_Int((1<<SPA_DATA_DmaBuf)),
+			0);
+    spa_pod_builder_prop(&b, SPA_PARAM_BUFFERS_metaType, SPA_POD_PROP_FLAG_MANDATORY);
+    spa_pod_builder_int(&b, 1<<SPA_META_SyncTimeline);
+    params[n_params++] = spa_pod_builder_pop(&b, &f);
+```
+
+Note the mandatory \ref SPA_PARAM_BUFFERS_metaType with the \ref SPA_META_SyncTimeline
+bit set. This forces this buffer layout to be used when SyncTimeline metadata was
+negotiated. Also note the \ref SPA_PARAM_BUFFERS_blocks that is now set to the number
+of DMABUF planes + 2. In this case we have 1 plane/fd for the DMABUF and 2 fds for the
+SyncObjTimelines.
+
+You can also add a fallback \ref SPA_PARAM_Buffers when the \ref SPA_META_SyncTimeline
+was not negotiated:
+
+```
+    params[n_params++] = spa_pod_builder_add_object(&b,
+		SPA_TYPE_OBJECT_ParamBuffers, SPA_PARAM_Buffers,
+		SPA_PARAM_BUFFERS_buffers, SPA_POD_CHOICE_RANGE_Int(8, 2, MAX_BUFFERS),
+		SPA_PARAM_BUFFERS_blocks,  SPA_POD_Int(1),
+		SPA_PARAM_BUFFERS_size,    SPA_POD_Int(size),
+		SPA_PARAM_BUFFERS_stride,  SPA_POD_Int(data->stride),
+		SPA_PARAM_BUFFERS_dataType, SPA_POD_CHOICE_FLAGS_Int((1<<SPA_DATA_DmaBuf)));
+```
+
+This one has just 1 data block with the DMABUF fd and plane info.
+
+## Check if SPA_META_SyncTimeline was negotiated
+
+After sending the \ref SPA_PARAM_Buffers, the buffer will be allocated by the PipeWire
+server.
+
+In the pw-stream::add_buffer event, check if the \ref SPA_META_SyncTimeline is available
+on the buffer:
+
+```
+    struct spa_meta_sync_timeline *stl;
+    stl = spa_buffer_find_meta_data(buf, SPA_META_SyncTimeline, sizeof(*stl));
+```
+
+When the metadata is available, the SyncObj fds are in the last 2 data planes
+of the buffer, the acquire and release syncobj respectively. You can keep a ref to the
+\ref struct spa_meta_sync_timeline because we will need this later when processing
+the buffers.
+
+If the producer is allocating buffers, when the stream has the \ref PW_STREAM_FLAG_ALLOC_BUFFERS
+flag, it should allocate the DMABUF and syncobj now and place them in the buffer data.
+First the plane fds and then the 2 syncobj fds.
+
+The consumer can directly use the fds. The SyncObj fds can be converted to a handle,
+for example, to make things easier later:
+
+```
+  uint32_t acquire_handle, release_handle;
+  drmSyncobjFDToHandle(drm_fd, buf->datas[buf->n_datas - 2].fd, &acquire_handle);
+  drmSyncobjFDToHandle(drm_fd, buf->datas[buf->n_datas - 1].fd, &release_handle);
+```
+
+## Use the SPA_META_SyncTimeline when processing buffers
+
+The \ref struct spa_meta_sync_timeline contains 2 fields: the acquire_point and
+release_point.
+
+Producers will start a render operation on the DMABUF of the buffer and place
+the acquire_point in the \ref struct spa_meta_sync_timeline. When the rendering is
+complete, the producer should signal the acquire_point on the acquire SyncObjTimeline.
+
+Producers will also add a release_point on the release SyncObjTimeline. They are
+only allowed to reuse the buffer when the release_point has been signaled.
+
+Consumers use the acquire_point to wait for rendering to complete before processing
+the buffer. This can be offloaded to the hardware when submitting the rendering
+operation or it can be done explicitly with drmSyncobjTimelineWait() on the acquire
+SyncObjTimeline handle and the acquire_point of the metadata.
+
+Consumers should then also signal the release_point on the release SyncObjTimeline when
+they complete processing the buffer. This can be done in the hardware as part of
+the render pipeline or explicitly with drmSyncobjTimelineSignal() on the release
+handle and the release_point of the metadata.
+
+# Device ID negotation
+
+The DRM device used for accessing or allocating DMA-BUFs by default undefined. To
+negotiate what DRM device should be used, and to advertise what DRM device is associated
+with what combination of format and list of modifiers, device ID negotiation can be
+performed.
+
+## Capability discovery
+
+Device ID negotiation needs explicit support by both end points of a stream, thus, the
+first step of negotiation is discovering whether other peer has support for it. This is
+done by advertising a \ref SPA_PARAM_Capability with the key \ref
+PW_CAPABILITY_DEVICE_ID_NEGOTIATION and value `1` which corresponds to the
+current negotiation API version.
+
+```
+	spa_param_dict_build_dict(&b, SPA_PARAM_Capability,
+		&SPA_DICT_ITEMS(
+			SPA_DICT_ITEM(PW_CAPABILITY_DEVICE_ID_NEGOTIATION, "1")));
+```
+
+To do this, when connecting to the stream, the \ref PW_STREAM_FLAG_INACTIVE flag must be
+passed, and a bare minimum video format parameter must be sent. A bare minimum video
+format parameter must contain a \ref SPA_FORMAT_mediaType with \ref SPA_MEDIA_TYPE_video;
+\ref SPA_FORMAT_mediaSubtype with \ref SPA_MEDIA_SUBTYPE_raw, \ref SPA_FORMAT_VIDEO_format
+with something appropriate, and a \ref SPA_FORMAT_VIDEO_size with a rectangle or range of
+rectangles. For example
+
+```
+	spa_pod_builder_push_object(&b, &f, SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat);
+	spa_pod_builder_add(&b, SPA_FORMAT_mediaType,
+		SPA_POD_Id (SPA_MEDIA_TYPE_video),
+		0);
+	spa_pod_builder_add(&b, SPA_FORMAT_mediaSubtype,
+		SPA_POD_Id (SPA_MEDIA_SUBTYPE_raw),
+		0);
+	spa_pod_builder_add(&b, SPA_FORMAT_VIDEO_format,
+		SPA_POD_Id(SPA_VIDEO_FORMAT_RGBA),
+		0);
+	spa_pod_builder_add(&b, SPA_FORMAT_VIDEO_size,
+		SPA_POD_CHOICE_RANGE_Rectangle(
+			&SPA_RECTANGLE(320, 240),
+			&SPA_RECTANGLE(1,1),
+			&SPA_RECTANGLE(8192, 8192)),
+		0);
+	params[n_params++] = spa_pod_builder_pop(&b, &f);
+```
+
+After having received the first \ref SPA_PARAM_PeerCapability param, if it contained the
+\ref PW_CAPABILITY_DEVICE_ID_NEGOTIATION set to a supported API version number, the full
+set of formats can be sent using \ref pw_stream_update_params following by activating the
+stream usina supported API version numberstream_set_active(stream, true)`.
+
+Note that the first \ref SPA_PARAM_Format received may be the result of the initial format
+negotian with bare minimum parameters, and will be superseded by the result of the format
+negotiation of the later provided format parameters.
+
+## Device subset capability
+
+A producer can advertise what devices it's capable of performing device ID negotiation
+with. This can be used to reduce the amount of devices that are queried for format
+metadata, which can be a time consuming task, if devices needs to be woken up.
+
+To achieve this, the consumer adds another \ref SPA_PARAM_PeerCapability item with the key
+\ref PW_CAPABILITY_DEVICE_IDS set to a JSON object describing what device IDs are supported.
+
+This JSON object as of version 1 contains a single key "available-devices" that contain
+a list of hexadecimal encoded `dev_t` device IDs.
+
+```
+	char *device_ids = "{\"available-devices\": [\"6464000000000000\",\"c8c8000000000000\"]}";
+	&SPA_DICT_ITEMS(
+		SPA_DICT_ITEM(PW_CAPABILITY_DEVICE_ID_NEGOTIATION, "1"),
+		SPA_DICT_ITEM(PW_CAPABILITY_DEVICE_IDS, device_ids)));
+```
+
+## Device ID aware formats
+
+When both the source and the sink advertises support for device ID negotation, format
+entries must have a device ID set.
+
+A device ID is represented as a byte array containing a `dev_t` (see `man 3type dev_t`)
+device identifier.
+
+Each format with an associated DRM device (i.e. including all but not only formats with
+modifiers) must have a \ref SPA_FORMAT_VIDEO_deviceId entry with the \ref
+SPA_POD_PROP_FLAG_MANDATORY set. E.g.
+
+```
+	dev_t device_id;
+
+	...
+
+	spa_pod_builder_prop(&b, SPA_FORMAT_VIDEO_deviceId,
+		SPA_POD_PROP_FLAG_MANDATORY);
+	spa_pod_builder_bytes(&b, &device_id, sizeof device_id);
+```
+
+## Negotiated device ID
+
+Once a format is finally negotiated, the resulting device ID is exposed as a \ref
+SPA_FORMAT_VIDEO_deviceId and may be retrieved by e.g.
+
+```
+	device_prop = spa_pod_find_prop(format, NULL, SPA_FORMAT_VIDEO_deviceId);
+	spa_pod_parse_object(format,
+		SPA_TYPE_OBJECT_Format, NULL,
+		SPA_FORMAT_VIDEO_deviceId,
+		SPA_POD_OPT_Bytes(&bytes, &size));
+```
+
+This device should be used for accessing the associated DMA-BUFs, by e.g. creating a
+`EGLDisplay` using `EGL_PLATFORM_DEVICE_EXT`.
+
+*/

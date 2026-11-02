@@ -54,7 +54,8 @@ class TaskOrderObserver {
 
  public:
   base::RepeatingClosure CreateTask(int id) {
-    return BindRepeating(&TaskOrderObserver::RunTask, Unretained(this), id);
+    return BindRepeating(&TaskOrderObserver::RunTask,
+                         blink::subtle::UnretainedException(this), id);
   }
   const Vector<int>& Order() const { return order_; }
 
@@ -107,8 +108,9 @@ TEST_F(ScriptedAnimationControllerTest, EnqueueWithinTask) {
   TaskOrderObserver observer;
 
   Controller().EnqueueTask(observer.CreateTask(1));
-  Controller().EnqueueTask(BindOnce(&EnqueueTask, WrapPersistent(&Controller()),
-                                    Unretained(&observer), 2));
+  Controller().EnqueueTask(
+      BindOnce(&EnqueueTask, WrapPersistent(&Controller()),
+               blink::subtle::UnretainedException(&observer), 2));
   Controller().EnqueueTask(observer.CreateTask(3));
   EXPECT_EQ(0u, observer.Order().size());
 
@@ -182,7 +184,8 @@ TEST_F(ScriptedAnimationControllerTest, RegisterCallbackAndEnqueueTask) {
   event->SetTarget(&GetDocument());
 
   Controller().RegisterFrameCallback(
-      MakeGarbageCollected<RunTaskCallback>(observer.CreateTask(1)));
+      MakeGarbageCollected<RunTaskCallback>(observer.CreateTask(1)),
+      FrameCallbackType::kWebExposed);
   Controller().EnqueueTask(observer.CreateTask(2));
   EXPECT_EQ(0u, observer.Order().size());
 
@@ -197,19 +200,22 @@ TEST_F(ScriptedAnimationControllerTest, TestHasCallback) {
   TaskOrderObserver observer;
 
   Controller().RegisterFrameCallback(
-      MakeGarbageCollected<RunTaskCallback>(observer.CreateTask(1)));
+      MakeGarbageCollected<RunTaskCallback>(observer.CreateTask(1)),
+      FrameCallbackType::kWebExposed);
   EXPECT_TRUE(Controller().HasFrameCallback());
 
-  Controller().CancelFrameCallback(1);
+  Controller().CancelFrameCallback(1, FrameCallbackType::kWebExposed);
   EXPECT_FALSE(Controller().HasFrameCallback());
 
   Controller().RegisterFrameCallback(
-      MakeGarbageCollected<RunTaskCallback>(observer.CreateTask(1)));
+      MakeGarbageCollected<RunTaskCallback>(observer.CreateTask(1)),
+      FrameCallbackType::kWebExposed);
   Controller().RegisterFrameCallback(
-      MakeGarbageCollected<RunTaskCallback>(observer.CreateTask(2)));
+      MakeGarbageCollected<RunTaskCallback>(observer.CreateTask(2)),
+      FrameCallbackType::kWebExposed);
   EXPECT_TRUE(Controller().HasFrameCallback());
 
-  Controller().CancelFrameCallback(1);
+  Controller().CancelFrameCallback(1, FrameCallbackType::kWebExposed);
   EXPECT_TRUE(Controller().HasFrameCallback());
 
   // Servicing the scripted animations should call the remaining callback and
@@ -230,13 +236,63 @@ TEST_F(ScriptedAnimationControllerTest, TestIsInRequestAnimationFrame) {
                 controller->GetExecutionContext()->IsInRequestAnimationFrame());
             *ran_callback = true;
           },
-          WrapPersistent(&Controller()), Unretained(&ran_callback))));
+          WrapPersistent(&Controller()),
+          blink::subtle::UnretainedException(&ran_callback))),
+      FrameCallbackType::kWebExposed);
 
   PageAnimator::ServiceScriptedAnimations(base::TimeTicks(),
                                           {{Controller(), false}});
   EXPECT_TRUE(ran_callback);
 
   EXPECT_FALSE(Controller().GetExecutionContext()->IsInRequestAnimationFrame());
+}
+
+TEST_F(ScriptedAnimationControllerTest, TestInternalCallbackIsolation) {
+  TaskOrderObserver observer;
+
+  // Web-exposed callback registration gets ID 1 in web pool.
+  int web_id = Controller().RegisterFrameCallback(
+      MakeGarbageCollected<RunTaskCallback>(observer.CreateTask(1)),
+      FrameCallbackType::kWebExposed);
+  EXPECT_EQ(1, web_id);
+
+  // Internal callback registration gets independent ID 1 in internal pool.
+  int internal_id = Controller().RegisterFrameCallback(
+      MakeGarbageCollected<RunTaskCallback>(observer.CreateTask(2)),
+      FrameCallbackType::kInternal);
+  EXPECT_EQ(1, internal_id);
+
+  // Canceling internal callback with FrameCallbackType::kInternal should cancel
+  // internal without affecting web callback.
+  Controller().CancelFrameCallback(internal_id, FrameCallbackType::kInternal);
+
+  // Servicing scripted animations should run only the web callback.
+  PageAnimator::ServiceScriptedAnimations(base::TimeTicks(),
+                                          {{Controller(), false}});
+  EXPECT_EQ(1u, observer.Order().size());
+  EXPECT_EQ(1, observer.Order()[0]);
+}
+
+TEST_F(ScriptedAnimationControllerTest,
+       TestCancelWebCallbackDoesNotCancelInternalCallback) {
+  TaskOrderObserver observer;
+
+  int web_id = Controller().RegisterFrameCallback(
+      MakeGarbageCollected<RunTaskCallback>(observer.CreateTask(1)),
+      FrameCallbackType::kWebExposed);
+  Controller().RegisterFrameCallback(
+      MakeGarbageCollected<RunTaskCallback>(observer.CreateTask(2)),
+      FrameCallbackType::kInternal);
+
+  // CancelFrameCallback with kWebExposed cancels web callback without
+  // affecting internal callback.
+  Controller().CancelFrameCallback(web_id, FrameCallbackType::kWebExposed);
+
+  // Servicing scripted animations should run only the internal callback.
+  PageAnimator::ServiceScriptedAnimations(base::TimeTicks(),
+                                          {{Controller(), false}});
+  EXPECT_EQ(1u, observer.Order().size());
+  EXPECT_EQ(2, observer.Order()[0]);
 }
 
 }  // namespace blink

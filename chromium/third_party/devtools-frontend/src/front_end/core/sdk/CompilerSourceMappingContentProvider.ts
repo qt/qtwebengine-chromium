@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import type * as Common from '../common/common.js';
 import * as i18n from '../i18n/i18n.js';
 import type * as Platform from '../platform/platform.js';
+import * as TextUtils from '../text_utils/text_utils.js';
 
-import {PageResourceLoader, type PageResourceLoadInitiator} from './PageResourceLoader.js';
+import type {PageResourceLoader, PageResourceLoadInitiator} from './PageResourceLoader.js';
 
 const UIStrings = {
   /**
-   * @description Error message when failing to fetch a resource referenced in a source map
+   * @description Error message when failing to fetch a resource referenced in a source map.
    * @example {https://example.com/sourcemap.map} PH1
    * @example {An error occurred} PH2
    */
@@ -25,13 +25,14 @@ export class CompilerSourceMappingContentProvider implements TextUtils.ContentPr
   readonly #sourceURL: Platform.DevToolsPath.UrlString;
   readonly #contentType: Common.ResourceType.ResourceType;
   readonly #initiator: PageResourceLoadInitiator;
+  readonly #pageResourceLoader: PageResourceLoader;
 
-  constructor(
-      sourceURL: Platform.DevToolsPath.UrlString, contentType: Common.ResourceType.ResourceType,
-      initiator: PageResourceLoadInitiator) {
+  constructor(sourceURL: Platform.DevToolsPath.UrlString, contentType: Common.ResourceType.ResourceType,
+              initiator: PageResourceLoadInitiator, pageResourceLoader: PageResourceLoader) {
     this.#sourceURL = sourceURL;
     this.#contentType = contentType;
     this.#initiator = initiator;
+    this.#pageResourceLoader = pageResourceLoader;
   }
 
   contentURL(): Platform.DevToolsPath.UrlString {
@@ -44,7 +45,7 @@ export class CompilerSourceMappingContentProvider implements TextUtils.ContentPr
 
   async requestContentData(): Promise<TextUtils.ContentData.ContentDataOrError> {
     try {
-      const {content} = await PageResourceLoader.instance().loadResource(this.#sourceURL, this.#initiator);
+      const {content} = await this.#pageResourceLoader.loadResource(this.#sourceURL, this.#initiator);
       return new TextUtils.ContentData.ContentData(
           content, /* isBase64=*/ false, this.#contentType.canonicalMimeType());
     } catch (e) {

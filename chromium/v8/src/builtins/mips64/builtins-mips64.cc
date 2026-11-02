@@ -551,7 +551,7 @@ void Generate_JSEntryVariant(MacroAssembler* masm, StackFrame::Type type,
     // Save callee-saved FPU registers.
     __ MultiPushFPU(kCalleeSavedFPU);
     // Set up the reserved register for 0.0.
-    __ Move(kDoubleRegZero, 0.0);
+    __ dmtc1(zero_reg, kDoubleRegZero);
 
     // Initialize the root register.
     // C calling convention. The first argument is passed in a0.
@@ -2343,6 +2343,10 @@ void Builtins::Generate_CallOrConstructVarargs(MacroAssembler* masm,
   Label stack_overflow;
   __ StackOverflowCheck(len, kScratchReg, a5, &stack_overflow);
 
+  // Skip argument setup if we don't need to push any varargs.
+  Label done;
+  __ Branch(&done, eq, len, Operand(zero_reg), PROTECT);
+
   // Move the arguments already in the stack,
   // including the receiver and the return address.
   // a4: Number of arguments to make room for.
@@ -2352,12 +2356,11 @@ void Builtins::Generate_CallOrConstructVarargs(MacroAssembler* masm,
 
   // Push arguments onto the stack (thisArgument is already on the stack).
   {
-    Label done, push, loop;
+    Label push, loop;
     Register src = a6;
     Register scratch = t0;
 
     __ daddiu(src, args, OFFSET_OF_DATA_START(FixedArray) - kHeapObjectTag);
-    __ Branch(&done, eq, len, Operand(zero_reg), i::USE_DELAY_SLOT);
     __ dsll(scratch, len, kSystemPointerSizeLog2);
     __ Dsubu(scratch, sp, Operand(scratch));
     __ LoadRoot(t1, RootIndex::kTheHoleValue);
@@ -2371,8 +2374,8 @@ void Builtins::Generate_CallOrConstructVarargs(MacroAssembler* masm,
     __ Daddu(a7, a7, Operand(kSystemPointerSize));
     __ Daddu(scratch, scratch, Operand(kSystemPointerSize));
     __ Branch(&loop, ne, scratch, Operand(sp));
-    __ bind(&done);
   }
+  __ bind(&done);
 
   // Tail-call to the actual Call or Construct builtin.
   __ TailCallBuiltin(target_builtin);
@@ -3023,26 +3026,97 @@ void Builtins::Generate_WasmCompileLazy(MacroAssembler* masm) {
   __ Jump(t8);
 }
 
-void Builtins::Generate_WasmDebugBreak(MacroAssembler* masm) {
+namespace {
+enum class DebugBreakKind { kBreak, kTrap };
+
+void Generate_WasmDebugBreakOrTrap(MacroAssembler* masm, DebugBreakKind kind) {
   HardAbortScope hard_abort(masm);  // Avoid calls to Abort.
   {
     FrameScope scope(masm, StackFrame::WASM_DEBUG_BREAK);
+    UseScratchRegisterScope temps(masm);
+    Register scratch = temps.Acquire();
 
     // Save all parameter registers. They might hold live values, we restore
     // them after the runtime call.
     __ MultiPush(WasmDebugBreakFrameConstants::kPushedGpRegs);
-    __ MultiPushFPU(WasmDebugBreakFrameConstants::kPushedFpRegs);
+    {
+      // Check if machine has simd enabled, if so push vector registers. If not
+      // then only push double registers.
+      Label push_doubles, simd_pushed;
 
-    // Initialize the JavaScript context with 0. CEntry will use it to
-    // set the current context on the isolate.
-    __ Move(cp, Smi::zero());
-    __ CallRuntime(Runtime::kWasmDebugBreak, 0);
+      __ li(scratch, ExternalReference::supports_simd_128_address());
+      // If == 0 then simd is unavailable.
+      __ Lbu(scratch, MemOperand(scratch));
+      __ Branch(&push_doubles, eq, scratch, Operand(zero_reg));
+      // Save vector registers.
+      {
+        CpuFeatureScope msa_scope(
+            masm, MIPS_SIMD, CpuFeatureScope::CheckPolicy::kDontCheckSupported);
+        __ MultiPushMSA(WasmDebugBreakFrameConstants::kPushedFpRegs);
+      }
+      __ Branch(&simd_pushed);
+      __ bind(&push_doubles);
+      // Each FPU register is allocated a 128-bit spill slot because the offsets
+      // in GetPushedFpRegisterOffset are calculated based on a 128-bit size.
+      __ MultiPushFPUWideStride(WasmDebugBreakFrameConstants::kPushedFpRegs);
+      __ bind(&simd_pushed);
+    }
 
-    // Restore registers.
-    __ MultiPopFPU(WasmDebugBreakFrameConstants::kPushedFpRegs);
-    __ MultiPop(WasmDebugBreakFrameConstants::kPushedGpRegs);
+    // Load instance data from the caller's frame.
+    {
+      __ Ld(scratch, MemOperand(fp, 0));
+      __ Ld(kWasmImplicitArgRegister,
+            MemOperand(scratch, WasmFrameConstants::kWasmInstanceDataOffset));
+      __ Ld(cp, FieldMemOperand(kWasmImplicitArgRegister,
+                                WasmTrustedInstanceData::kNativeContextOffset));
+    }
+
+    if (kind == DebugBreakKind::kTrap) {
+      // The reason was pushed before the frame.
+      // EnterFrame(WASM_DEBUG_BREAK) pushes ra, fp, type.
+      // So [fp+8]=saved ra, [fp+0]=saved fp, [fp-8]=type,
+      // [fp+16]=reason.
+      __ Ld(scratch, MemOperand(fp, 2 * kSystemPointerSize));
+      __ Push(scratch);
+      __ CallRuntime(Runtime::kThrowWasmError, 1);
+      __ break_(0xCC);
+    } else {
+      __ CallRuntime(Runtime::kWasmDebugBreak, 0);
+
+      // Restore registers.
+      {
+        Label pop_doubles, simd_popped;
+
+        __ li(scratch, ExternalReference::supports_simd_128_address());
+        // If == 0 then simd is unavailable.
+        __ Lbu(scratch, MemOperand(scratch));
+        __ Branch(&pop_doubles, eq, scratch, Operand(zero_reg));
+        // Pop vector registers.
+        {
+          CpuFeatureScope msa_scope(
+              masm, MIPS_SIMD,
+              CpuFeatureScope::CheckPolicy::kDontCheckSupported);
+          __ MultiPopMSA(WasmDebugBreakFrameConstants::kPushedFpRegs);
+        }
+        __ Branch(&simd_popped);
+        __ bind(&pop_doubles);
+        __ MultiPopFPUWideStride(WasmDebugBreakFrameConstants::kPushedFpRegs);
+        __ bind(&simd_popped);
+      }
+
+      __ MultiPop(WasmDebugBreakFrameConstants::kPushedGpRegs);
+    }
   }
-  __ Ret();
+  if (kind == DebugBreakKind::kBreak) __ Ret();
+}
+}  // namespace
+
+void Builtins::Generate_WasmDebugBreak(MacroAssembler* masm) {
+  Generate_WasmDebugBreakOrTrap(masm, DebugBreakKind::kBreak);
+}
+
+void Builtins::Generate_WasmDebugTrap(MacroAssembler* masm) {
+  Generate_WasmDebugBreakOrTrap(masm, DebugBreakKind::kTrap);
 }
 
 void Builtins::Generate_WasmReturnPromiseOnSuspendAsm(MacroAssembler* masm) {
@@ -4129,10 +4203,28 @@ void Builtins::Generate_RestartFrameTrampoline(MacroAssembler* masm) {
   __ Ld(a1, MemOperand(fp, StandardFrameConstants::kFunctionOffset));
   __ Ld(a0, MemOperand(fp, StandardFrameConstants::kArgCOffset));
 
-  // Pop return address and frame.
+  // If the actual argument count for the previous invocation is smaller than
+  // the formal parameter count then use the latter as the actual argument
+  // count for the next invocation instead of the former.
+  // This approach avoids dropping adapted parameters for simplicity while
+  // keeping the caller stack balanced after the call.
+  UseScratchRegisterScope temps(masm);
+  Register scratch = temps.Acquire();
+  __ Ld(scratch,
+        MemOperand(fp, InterpreterFrameConstants::kBytecodeArrayFromFp));
+  __ Lhu(scratch,
+         FieldMemOperand(scratch, offsetof(BytecodeArray, parameter_size_)));
+
+  Label skip;
+  __ Branch(&skip, ge, a0, Operand(scratch));
+  __ Move(a0, scratch);
+  __ bind(&skip);
+
   __ LeaveFrame(StackFrame::INTERPRETED);
-  __ InvokeFunction(a1, a0, InvokeType::kJump,
-                    ArgumentAdaptionMode::kDontAdapt);
+
+  // The arguments are already in the stack, but we might need to adapt them
+  // if the function signature changed (e.g. via LiveEdit).
+  __ InvokeFunction(a1, a0, InvokeType::kJump, ArgumentAdaptionMode::kAdapt);
 }
 
 #undef __

@@ -12,16 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/utils/cpu.h"
-
 #if defined(__linux__)
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstring>
+
+#if defined(__arm__) || defined(__aarch64__)
 #include <climits>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
+#endif
 #endif  // defined(__linux__)
 
 #include "gtest/gtest.h"

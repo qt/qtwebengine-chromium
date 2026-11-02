@@ -26,48 +26,50 @@ SkCanvas* SkCaptureManager::makeCaptureCanvas(SkCanvas* canvas) {
     return rawCanvasPtr;
 }
 
-SkContentID SkCaptureManager::processCanvasContent(SkCaptureCanvas* canvas) {
+void SkCaptureManager::processCanvasContent(SkCaptureCanvas* canvas) {
     auto picture = canvas->snapPicture();
     if (picture) {
-        uint32_t surfaceID = asSB(canvas->getBaseCanvasSurface())->getPixelStorageID();
-        SkContentID contentID = fSurfaceContentCounters[surfaceID];
-        contentID++;
-        fPictures.emplace_back(picture);
-        return contentID;
+        if (auto surfacePixelStorage = asSB(canvas->getBaseCanvasSurface())->getPixelStorage()) {
+            surfacePixelStorage->incrementContentId();
+        }
+        if (fActiveCapture) {
+            fActiveCapture->addPicture(std::move(picture));
+        }
     }
-    return SkContentID();
 }
 
 void SkCaptureManager::snapPictures() {
     for (auto& canvas : fTrackedCanvases) {
         if (canvas) {
-            processCanvasContent(canvas.get());
+            this->processCanvasContent(canvas.get());
         }
     }
 }
 
 // TODO: make thread safe by using exchange() and a mutex.
 void SkCaptureManager::toggleCapture(bool capturing) {
-    if (capturing != fIsCurrentlyCapturing && !capturing) {
-        // on capture stop, save the capture and reset
-        this->snapPictures();
-        fLastCapture = SkCapture::MakeFromPictures(fPictures);
-        fPictures.clear();
-        fSurfaceContentCounters.clear();
+    if (capturing != fIsCurrentlyCapturing) {
+        if (capturing) {
+            fActiveCapture = SkCapture::MakeEmpty();
+        } else {
+            // on capture stop, save the capture and reset
+            this->snapPictures();
+            fLastCapture = std::move(fActiveCapture);
+        }
     }
     fIsCurrentlyCapturing = capturing;
 }
 
-SkContentID SkCaptureManager::snapPicture(SkSurface* surface) {
+void SkCaptureManager::snapPicture(SkSurface* surface) {
     for (auto& canvas : fTrackedCanvases) {
         if (canvas) {
             if (canvas->getBaseCanvasSurface() == surface) {
-                return processCanvasContent(canvas.get());
+                this->processCanvasContent(canvas.get());
             }
         }
     }
-    return SkContentID();
 }
+
 
 sk_sp<SkCapture> SkCaptureManager::getLastCapture() const {
    return fLastCapture;

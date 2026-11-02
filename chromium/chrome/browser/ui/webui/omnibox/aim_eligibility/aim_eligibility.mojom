@@ -31,6 +31,8 @@ struct DriveStatus {
   bool is_search_content_sharing_enabled;
   // The status of the Drive disclaimer.
   DisclaimerState disclaimer_state;
+  // Whether the kComposeboxDriveContextMenuOptionDisclaimer feature flag is enabled.
+  bool is_disclaimer_flag_enabled;
 };
 
 // The AIM eligibility state.
@@ -39,6 +41,8 @@ struct EligibilityState {
   bool is_eligible;
   // Whether AIM is eligible by enterprise policy.
   bool is_eligible_by_policy;
+  // Whether 3rd party AI Chat is eligible by enterprise policy.
+  bool is_third_party_eligible_by_policy;
   // Whether AIM is eligible by DSE, i.e., Google is the default search engine.
   bool is_eligible_by_dse;
   // Whether AIM is eligible by server response. Only populated if server

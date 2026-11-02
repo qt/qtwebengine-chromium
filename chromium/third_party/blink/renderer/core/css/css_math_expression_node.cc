@@ -209,8 +209,28 @@ static bool HasDoubleValue(CSSPrimitiveValue::UnitType type) {
     case CSSPrimitiveValue::UnitType::kKilohertz:
     case CSSPrimitiveValue::UnitType::kViewportWidth:
     case CSSPrimitiveValue::UnitType::kViewportHeight:
+    case CSSPrimitiveValue::UnitType::kViewportInlineSize:
+    case CSSPrimitiveValue::UnitType::kViewportBlockSize:
     case CSSPrimitiveValue::UnitType::kViewportMin:
     case CSSPrimitiveValue::UnitType::kViewportMax:
+    case CSSPrimitiveValue::UnitType::kSmallViewportWidth:
+    case CSSPrimitiveValue::UnitType::kSmallViewportHeight:
+    case CSSPrimitiveValue::UnitType::kSmallViewportInlineSize:
+    case CSSPrimitiveValue::UnitType::kSmallViewportBlockSize:
+    case CSSPrimitiveValue::UnitType::kSmallViewportMin:
+    case CSSPrimitiveValue::UnitType::kSmallViewportMax:
+    case CSSPrimitiveValue::UnitType::kLargeViewportWidth:
+    case CSSPrimitiveValue::UnitType::kLargeViewportHeight:
+    case CSSPrimitiveValue::UnitType::kLargeViewportInlineSize:
+    case CSSPrimitiveValue::UnitType::kLargeViewportBlockSize:
+    case CSSPrimitiveValue::UnitType::kLargeViewportMin:
+    case CSSPrimitiveValue::UnitType::kLargeViewportMax:
+    case CSSPrimitiveValue::UnitType::kDynamicViewportWidth:
+    case CSSPrimitiveValue::UnitType::kDynamicViewportHeight:
+    case CSSPrimitiveValue::UnitType::kDynamicViewportInlineSize:
+    case CSSPrimitiveValue::UnitType::kDynamicViewportBlockSize:
+    case CSSPrimitiveValue::UnitType::kDynamicViewportMin:
+    case CSSPrimitiveValue::UnitType::kDynamicViewportMax:
     case CSSPrimitiveValue::UnitType::kContainerWidth:
     case CSSPrimitiveValue::UnitType::kContainerHeight:
     case CSSPrimitiveValue::UnitType::kContainerInlineSize:
@@ -224,7 +244,9 @@ static bool HasDoubleValue(CSSPrimitiveValue::UnitType type) {
     case CSSPrimitiveValue::UnitType::kFlex:
     case CSSPrimitiveValue::UnitType::kInteger:
       return true;
-    default:
+    case CSSPrimitiveValue::UnitType::kUnknown:
+    case CSSPrimitiveValue::UnitType::kIdent:
+    case CSSPrimitiveValue::UnitType::kQuirkyEms:
       return false;
   }
 }
@@ -847,7 +869,8 @@ CSSMathExpressionNodeWithOperator MaybeReplaceNodeWithCombined(
     const CSSMathExpressionNode* node,
     CSSMathOperator op,
     const UnitsHashMap& units_map,
-    bool is_multiply) {
+    bool is_multiply,
+    double& multiplicative_factor) {
   if (!node->IsNumericLiteral()) {
     return {op, node};
   }
@@ -857,7 +880,10 @@ CSSMathExpressionNodeWithOperator MaybeReplaceNodeWithCombined(
   if (it != units_map.end()) {
     double value = it->value;
     CSSMathOperator new_op = op;
-    if (!is_multiply) {
+    if (is_multiply) {
+      value *= multiplicative_factor;
+      multiplicative_factor = 1.0;
+    } else {
       new_op =
           value < 0.0f ? CSSMathOperator::kSubtract : CSSMathOperator::kAdd;
       value = std::abs(value);
@@ -1100,26 +1126,39 @@ CSSMathExpressionNode* MaybeSimplifySumOrProductNode(
   CombineNumericChildrenFromNode(
       root, is_multiply ? CSSMathOperator::kMultiply : CSSMathOperator::kAdd,
       numeric_children, all_children);
+
+  // Pick up all multiplicative constants (we'll distribute them onto
+  // the first non-unitless factor that we see). This also means that
+  // we will effectively skip factors of unity, unless they are the only node.
+  double multiplicative_factor = 1.0;
+  if (is_multiply) {
+    auto it = numeric_children.find(CSSPrimitiveValue::UnitType::kNumber);
+    if (it != numeric_children.end()) {
+      multiplicative_factor = it->value;
+    }
+  }
+
   // Form the final node.
   HashSet<CSSPrimitiveValue::UnitType> used_units;
   CSSMathExpressionNode* final_node = nullptr;
   for (const auto& child : all_children) {
-    auto [op, node] = MaybeReplaceNodeWithCombined(
-        child.node, child.op, numeric_children, is_multiply);
+    if (is_multiply && IsNumericNodeWithDoubleValue(child.node) &&
+        child.node->ResolvedUnitTypeForSimplification() ==
+            CSSPrimitiveValue::UnitType::kNumber) {
+      // We collected these into multiplicative_factor already,
+      // and will try to distribute that value onto the first other node
+      // that we see.
+      continue;
+    }
 
+    auto [op, node] =
+        MaybeReplaceNodeWithCombined(child.node, child.op, numeric_children,
+                                     is_multiply, multiplicative_factor);
     if (IsNumericNodeWithDoubleValue(node)) {
       CSSPrimitiveValue::UnitType unit_type =
           node->ResolvedUnitTypeForSimplification();
       // Skip already used unit types, as they have been already combined.
-      if (used_units.Contains(unit_type)) {
-        continue;
-      }
-      used_units.insert(unit_type);
-
-      // Skip a constant factor of unity, unless it is the only factor.
-      if (is_multiply && unit_type == CSSPrimitiveValue::UnitType::kNumber &&
-          node->DoubleValue() == 1.0 &&
-          (numeric_children.size() + all_children.size()) > 1) {
+      if (!used_units.insert(unit_type).is_new_entry) {
         continue;
       }
     }
@@ -1132,6 +1171,26 @@ CSSMathExpressionNode* MaybeSimplifySumOrProductNode(
     final_node =
         CSSMathExpressionOperation::CreateArithmeticOperationSimplified(
             final_node, node, op);
+  }
+
+  if (is_multiply) {
+    if (!final_node) {
+      // If we only have constant factors and no other nodes,
+      // our result is simply that constant factor, even if it is unity.
+      final_node = CSSMathExpressionNumericLiteral::Create(
+          multiplicative_factor, CSSPrimitiveValue::UnitType::kNumber);
+    } else if (multiplicative_factor != 1.0) {
+      // We have a multiplicative factor that we couldn't distribute
+      // onto any non-unitless nodes. (E.g., we can simplify 2 * 2px,
+      // and indeed that would usually happen already in parsing,
+      // but we cannot simplify 2 * sibling-index() and would need to
+      // put back that 2 node here.)
+      auto* node = CSSMathExpressionNumericLiteral::Create(
+          multiplicative_factor, CSSPrimitiveValue::UnitType::kNumber);
+      final_node =
+          CSSMathExpressionOperation::CreateArithmeticOperationSimplified(
+              final_node, node, CSSMathOperator::kMultiply);
+    }
   }
 
   // Due to simplification, we could be left with only a single term
@@ -2834,18 +2893,6 @@ CSSMathExpressionOperation::CSSMathExpressionOperation(
   }
 }
 
-CSSMathExpressionOperation::CSSMathExpressionOperation(
-    CalculationResultCategory category,
-    CSSMathOperator op,
-    CSSMathType type)
-    : CSSMathExpressionNode(category), operator_(op), type_(std::move(type)) {
-  DCHECK_NE(CSSMathOperator::kDivide, op);
-  if (IsComparison(operator_)) {
-    value_feature_flags_ = kHasComparisons;
-  }
-  has_nested_intermediate_result_ = type_.IsIntermediateResult();
-}
-
 std::optional<PixelsAndPercent> CSSMathExpressionOperation::ToPixelsAndPercent(
     const CSSLengthResolver& length_resolver) const {
   std::optional<PixelsAndPercent> result;
@@ -2883,11 +2930,7 @@ std::optional<PixelsAndPercent> CSSMathExpressionOperation::ToPixelsAndPercent(
       if (!result) {
         return std::nullopt;
       }
-      float number = number_side->DoubleValue();
-      if (operator_ == CSSMathOperator::kDivide) {
-        number = 1.0 / number;
-      }
-      result.value() *= number;
+      result.value() *= number_side->DoubleValue();
       break;
     }
     case CSSMathOperator::kInvert:
@@ -3078,6 +3121,7 @@ CSSMathExpressionOperation::ToCalculationExpression(
         }
         break;
       case kCalcLength:
+      case kCalcAngle:
         if (!HasPercentage()) {
           if (std::optional<double> value =
                   ComputeValueInCanonicalUnit(length_resolver)) {
@@ -3373,6 +3417,17 @@ String CSSMathExpressionOperation::CustomCSSText() const {
       for (wtf_size_t i = 1; i < terms.size(); ++i) {
         CSSMathOperator op = terms[i].op;
         const CSSMathExpressionNode* node = terms[i].node;
+
+        // In a product, an inverted operand (1 / x) is serialized as "/ x"
+        // rather than "* (1 / x)", per #serialize-a-calculation-tree.
+        if (op == CSSMathOperator::kMultiply) {
+          if (const auto* invert = DynamicTo<CSSMathExpressionOperation>(node);
+              invert && invert->IsInvert()) {
+            result.Append(" / ");
+            result.Append(invert->GetOperands().front()->CustomCSSText());
+            continue;
+          }
+        }
 
         // For negative literals in sums, we flip the operator instead of
         // outputting the sign (e.g., a + -b => a - b).
@@ -4077,7 +4132,7 @@ std::optional<LayoutUnit> CSSMathExpressionAnchorQuery::EvaluateQuery(
   if (AnchorEvaluator* anchor_evaluator =
           length_resolver.GetAnchorEvaluator()) {
     return anchor_evaluator->Evaluate(query,
-                                      length_resolver.GetPositionAnchor(),
+                                      length_resolver.GetDefaultAnchorData(),
                                       length_resolver.GetPositionAreaOffsets());
   }
   return std::nullopt;
@@ -5438,7 +5493,7 @@ CSSMathExpressionNode* CSSMathExpressionNode::Create(
       CSSMathExpressionOperation::Operands operands;
       operands.push_back(Create(*children.front()));
       operands.push_back(Create(*children.back()));
-      return CSSMathExpressionOperation::CreateSignRelatedFunction(
+      return CSSMathExpressionOperation::CreateExponentialFunction(
           std::move(operands), CSSValueID::kPow);
     }
     case CalculationOperator::kSin:
@@ -5460,7 +5515,7 @@ CSSMathExpressionNode* CSSMathExpressionNode::Create(
       CSSMathExpressionOperation::Operands operands;
       operands.push_back(Create(*children.front()));
       operands.push_back(Create(*children.back()));
-      return CSSMathExpressionOperation::CreateSignRelatedFunction(
+      return CSSMathExpressionOperation::CreateTrigonometricFunction(
           std::move(operands), CSSValueID::kAtan2);
     }
     case CalculationOperator::kRandom: {
@@ -5524,7 +5579,7 @@ double CSSMathExpressionSiblingFunction::ComputeDouble(
   const Element* element = length_resolver.GetElement();
   if (const TreeScope* value_scope = function_->GetTreeScope()) {
     if (!element->GetTreeScope().IsInclusiveAncestorTreeScopeOf(*value_scope)) {
-      return 0;
+      return 1;
     }
   }
   NthIndexCache* nth_index_cache = element->ownerDocument()->GetNthIndexCache();

@@ -42,6 +42,7 @@
 #include "src/dawn/native/d3d11/PlatformFunctionsD3D11.h"
 #include "src/dawn/native/d3d11/UtilsD3D11.h"
 #include "src/utils/compiler.h"
+#include "src/utils/heap_array.h"
 
 namespace dawn::native::d3d11 {
 
@@ -314,6 +315,10 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
 FeatureValidationResult PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(
     wgpu::FeatureName feature,
     const TogglesState& toggles) const {
+    if (feature == wgpu::FeatureName::PrimitiveIndex && gpu_info::IsIntel(GetVendorId())) {
+        return FeatureValidationResult(
+            "Feature primitive-index is not supported on Intel GPUs for D3D11.");
+    }
     return {};
 }
 
@@ -403,27 +408,27 @@ void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info,
         // the properties of D3D12 Default/Upload/Readback heaps. The assumption is that these are
         // roughly how D3D11 allocates memory has well.
         if (mDeviceInfo.isUMA) {
-            auto* heapInfo = new MemoryHeapInfo[1];
-            memoryHeapProperties->heapCount = 1;
-            memoryHeapProperties->heapInfo = heapInfo;
+            auto heapInfo = HeapArray<MemoryHeapInfo>(1);
 
             heapInfo[0].size =
                 std::max(mDeviceInfo.dedicatedVideoMemory, mDeviceInfo.sharedSystemMemory);
             heapInfo[0].properties =
                 wgpu::HeapProperty::DeviceLocal | wgpu::HeapProperty::HostVisible |
                 wgpu::HeapProperty::HostUncached | wgpu::HeapProperty::HostCached;
+
+            memoryHeapProperties->heapInfo = std::move(heapInfo).MoveToSpan();
         } else {
-            auto* heapInfo = new MemoryHeapInfo[2];
-            memoryHeapProperties->heapCount = 2;
-            memoryHeapProperties->heapInfo = heapInfo;
+            auto heapInfo = HeapArray<MemoryHeapInfo>(2);
 
             heapInfo[0].size = mDeviceInfo.dedicatedVideoMemory;
             heapInfo[0].properties = wgpu::HeapProperty::DeviceLocal;
 
-            DAWN_UNSAFE_TODO(heapInfo[1]).size = mDeviceInfo.sharedSystemMemory;
-            DAWN_UNSAFE_TODO(heapInfo[1]).properties =
+            heapInfo[1].size = mDeviceInfo.sharedSystemMemory;
+            heapInfo[1].properties =
                 wgpu::HeapProperty::HostVisible | wgpu::HeapProperty::HostCoherent |
                 wgpu::HeapProperty::HostUncached | wgpu::HeapProperty::HostCached;
+
+            memoryHeapProperties->heapInfo = std::move(heapInfo).MoveToSpan();
         }
     }
     if (auto* d3dProperties = info.Get<AdapterPropertiesD3D>()) {

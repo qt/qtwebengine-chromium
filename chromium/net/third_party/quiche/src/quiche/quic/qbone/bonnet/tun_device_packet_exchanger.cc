@@ -6,6 +6,7 @@
 
 #include <netinet/icmp6.h>
 #include <netinet/ip6.h>
+#include <sys/uio.h>
 
 #include <algorithm>
 #include <memory>
@@ -31,11 +32,7 @@ TunDevicePacketExchanger::TunDevicePacketExchanger(
       netlink_(netlink),
       ifname_(ifname),
       is_tap_(is_tap),
-      stats_(stats) {
-  if (is_tap_) {
-    mtu_ += ETH_HLEN;
-  }
-}
+      stats_(stats) {}
 
 bool TunDevicePacketExchanger::WritePacket(const char* packet, size_t size,
                                            std::string* error) {
@@ -46,13 +43,17 @@ bool TunDevicePacketExchanger::WritePacket(const char* packet, size_t size,
     return false;
   }
 
-  auto buffer = std::make_unique<QuicData>(packet, size);
-  if (is_tap_) {
-    buffer = ApplyL2Headers(*buffer);
+  if (is_tap_ && !eth_hdr_initialized_) {
+    InitializeEthHdr();
   }
+  struct iovec iov[2];
+  iov[0].iov_base = is_tap_ ? &eth_hdr_ : nullptr;
+  iov[0].iov_len = is_tap_ ? ETH_HLEN : 0;
+  iov[1].iov_base = const_cast<char*>(packet);
+  iov[1].iov_len = size;
 
   absl::Time start = absl::Now();
-  int result = kernel_->write(write_fd_, buffer->data(), buffer->length());
+  int result = kernel_->writev(write_fd_, iov, 2);
   absl::Duration latency = std::max(absl::Now() - start, absl::ZeroDuration());
 
   if (result == -1) {
@@ -85,8 +86,18 @@ std::unique_ptr<QuicData> TunDevicePacketExchanger::ReadPacket(
   // Reading on a TUN device returns a packet at a time. If the packet is longer
   // than the buffer, it's truncated.
   auto read_buffer = std::make_unique<char[]>(mtu_);
+
+  int result = 0;
+  ethhdr eth_header;
+  struct iovec iov[2];
+
+  iov[0].iov_base = is_tap_ ? &eth_header : nullptr;
+  iov[0].iov_len = is_tap_ ? ETH_HLEN : 0;
+  iov[1].iov_base = read_buffer.get();
+  iov[1].iov_len = mtu_;
   absl::Time start = absl::Now();
-  int result = kernel_->read(read_fd_, read_buffer.get(), mtu_);
+  result = kernel_->readv(read_fd_, iov, 2);
+
   absl::Duration latency = std::max(absl::Now() - start, absl::ZeroDuration());
 
   // Note that 0 means end of file, but we're talking about a TUN device - there
@@ -101,13 +112,20 @@ std::unique_ptr<QuicData> TunDevicePacketExchanger::ReadPacket(
     return nullptr;
   }
 
-  auto buffer = std::make_unique<QuicData>(read_buffer.release(), result, true);
-  if (is_tap_) {
-    buffer = ConsumeL2Headers(*buffer);
+  if (is_tap_ && result < ETH_HLEN) {
+    *error = "Read packet too short for ethernet header.";
+    stats_->OnReadError(*error);
+    return nullptr;
   }
-  if (buffer) {
-    stats_->OnPacketRead(buffer->length(), latency);
+
+  size_t l3_packet_size = is_tap_ ? result - ETH_HLEN : result;
+  auto buffer =
+      std::make_unique<QuicData>(read_buffer.release(), l3_packet_size, true);
+  if (is_tap_ && !ValidateL2Headers(eth_header, *buffer)) {
+    return nullptr;
   }
+
+  stats_->OnPacketRead(buffer->length(), latency);
   return buffer;
 }
 
@@ -123,77 +141,63 @@ TunDevicePacketExchanger::stats_interface() const {
   return stats_;
 }
 
-std::unique_ptr<QuicData> TunDevicePacketExchanger::ApplyL2Headers(
-    const QuicData& l3_packet) {
-  if (is_tap_ && !mac_initialized_) {
+void TunDevicePacketExchanger::InitializeEthHdr() {
+  if (!eth_hdr_initialized_) {
     NetlinkInterface::LinkInfo link_info{};
     if (netlink_->GetLinkInfo(ifname_, &link_info)) {
-      memcpy(tap_mac_, link_info.hardware_address, ETH_ALEN);
-      mac_initialized_ = true;
+      // Set src & dst to my own address
+      memcpy(&eth_hdr_.h_dest, link_info.hardware_address, ETH_ALEN);
+      memcpy(&eth_hdr_.h_source, link_info.hardware_address, ETH_ALEN);
+      // Assume ipv6 for now
+      // TODO(b/195113643): Support additional protocols.
+      eth_hdr_.h_proto = absl::ghtons(ETH_P_IPV6);
+      eth_hdr_initialized_ = true;
     } else {
       QUIC_LOG_EVERY_N_SEC(ERROR, 30)
           << "Unable to get link info for: " << ifname_;
     }
   }
-
-  const auto l2_packet_size = l3_packet.length() + ETH_HLEN;
-  auto l2_buffer = std::make_unique<char[]>(l2_packet_size);
-
-  // Populate the Ethernet header
-  auto* hdr = reinterpret_cast<ethhdr*>(l2_buffer.get());
-  // Set src & dst to my own address
-  memcpy(hdr->h_dest, tap_mac_, ETH_ALEN);
-  memcpy(hdr->h_source, tap_mac_, ETH_ALEN);
-  // Assume ipv6 for now
-  // TODO(b/195113643): Support additional protocols.
-  hdr->h_proto = absl::ghtons(ETH_P_IPV6);
-
-  // Copy the l3 packet into buffer, just after the ethernet header.
-  memcpy(l2_buffer.get() + ETH_HLEN, l3_packet.data(), l3_packet.length());
-
-  return std::make_unique<QuicData>(l2_buffer.release(), l2_packet_size, true);
 }
 
-std::unique_ptr<QuicData> TunDevicePacketExchanger::ConsumeL2Headers(
-    const QuicData& l2_packet) {
-  if (l2_packet.length() < ETH_HLEN) {
-    // Packet is too short for ethernet headers. Drop it.
-    return nullptr;
+bool TunDevicePacketExchanger::ValidateL2Headers(const ethhdr& eth_header,
+                                                 const QuicData& packet) {
+  if (eth_header.h_proto != absl::ghtons(ETH_P_IPV6)) {
+    return false;
   }
-  auto* hdr = reinterpret_cast<const ethhdr*>(l2_packet.data());
-  if (hdr->h_proto != absl::ghtons(ETH_P_IPV6)) {
-    return nullptr;
-  }
-  constexpr auto kIp6PrefixLen = ETH_HLEN + sizeof(ip6_hdr);
+  constexpr auto kIp6PrefixLen = sizeof(ip6_hdr);
   constexpr auto kIcmp6PrefixLen = kIp6PrefixLen + sizeof(icmp6_hdr);
-  if (l2_packet.length() < kIp6PrefixLen) {
+  if (packet.length() < kIp6PrefixLen) {
     // Packet is too short to be ipv6. Drop it.
-    return nullptr;
+    return false;
   }
-  auto* ip_hdr = reinterpret_cast<const ip6_hdr*>(l2_packet.data() + ETH_HLEN);
+  auto* ip_hdr = reinterpret_cast<const ip6_hdr*>(packet.data());
   const bool is_icmp = ip_hdr->ip6_ctlun.ip6_un1.ip6_un1_nxt == IPPROTO_ICMPV6;
 
   bool is_neighbor_solicit = false;
   if (is_icmp) {
-    if (l2_packet.length() < kIcmp6PrefixLen) {
+    if (packet.length() < kIcmp6PrefixLen) {
       // Packet is too short to be icmp6. Drop it.
-      return nullptr;
+      return false;
     }
     is_neighbor_solicit =
-        reinterpret_cast<const icmp6_hdr*>(l2_packet.data() + kIp6PrefixLen)
+        reinterpret_cast<const icmp6_hdr*>(packet.data() + kIp6PrefixLen)
             ->icmp6_type == ND_NEIGHBOR_SOLICIT;
   }
 
   if (is_neighbor_solicit) {
+    // We need the local interface MAC address to respond.
+    if (!eth_hdr_initialized_) {
+      InitializeEthHdr();
+    }
     // If we've received a neighbor solicitation, craft an advertisement to
     // respond with and write it back to the local interface.
-    auto* icmp6_payload = l2_packet.data() + kIcmp6PrefixLen;
+    auto* icmp6_payload = packet.data() + kIcmp6PrefixLen;
 
     QuicIpAddress target_address(
         *reinterpret_cast<const in6_addr*>(icmp6_payload));
     if (target_address != *QboneConstants::GatewayAddress()) {
       // Only respond to solicitations for our gateway address
-      return nullptr;
+      return false;
     }
 
     // Neighbor Advertisement crafted per:
@@ -215,7 +219,8 @@ std::unique_ptr<QuicData> TunDevicePacketExchanger::ConsumeL2Headers(
     int pos = sizeof(in6_addr);
     payload[pos++] = ND_OPT_TARGET_LINKADDR;    // Type
     payload[pos++] = 1;                         // Length in units of 8 octets
-    memcpy(&payload[pos], tap_mac_, ETH_ALEN);  // This interfaces' MAC address
+    memcpy(&payload[pos], eth_hdr_.h_source,
+           ETH_ALEN);  // This interfaces' MAC address
 
     // Populate the ICMPv6 header
     icmp6_hdr response_hdr{};
@@ -233,17 +238,10 @@ std::unique_ptr<QuicData> TunDevicePacketExchanger::ConsumeL2Headers(
                      });
     // Do not forward the neighbor solicitation through the tunnel since it's
     // link-local.
-    return nullptr;
+    return false;
   }
 
-  // If this isn't a Neighbor Solicitation, remove the L2 headers and forward
-  // it as though it were an L3 packet.
-  const auto l3_packet_size = l2_packet.length() - ETH_HLEN;
-  auto shift_buffer = std::make_unique<char[]>(l3_packet_size);
-  memcpy(shift_buffer.get(), l2_packet.data() + ETH_HLEN, l3_packet_size);
-
-  return std::make_unique<QuicData>(shift_buffer.release(), l3_packet_size,
-                                    true);
+  return true;
 }
 
 }  // namespace quic

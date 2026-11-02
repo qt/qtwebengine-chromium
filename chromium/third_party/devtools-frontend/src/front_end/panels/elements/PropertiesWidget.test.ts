@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import type * as Common from '../../core/common/common.js';
 import type * as Platform from '../../core/platform/platform.js';
@@ -10,10 +11,7 @@ import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import {assertScreenshot, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {createTarget, describeWithEnvironment, stubNoopSettings} from '../../testing/EnvironmentHelpers.js';
-import {
-  describeWithMockConnection,
-  setMockConnectionResponseHandler,
-} from '../../testing/MockConnection.js';
+import {MockCDPConnection} from '../../testing/MockCDPConnection.js';
 import {createViewFunctionStub} from '../../testing/ViewFunctionHelpers.js';
 import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -22,15 +20,21 @@ import * as Elements from './elements.js';
 
 const NODE_ID = 1 as Protocol.DOM.NodeId;
 
-describeWithMockConnection('PropertiesWidget', () => {
+describeWithEnvironment('PropertiesWidget', () => {
   let target: SDK.Target.Target;
+  let connection: MockCDPConnection;
 
   beforeEach(() => {
     stubNoopSettings();
-    target = createTarget();
-    setMockConnectionResponseHandler(
-        'DOM.getDocument', () => ({root: {nodeId: NODE_ID}} as Protocol.DOM.GetDocumentResponse));
-    setMockConnectionResponseHandler('DOM.getNodesForSubtreeByStyle', () => ({nodeIds: []}));
+    connection = new MockCDPConnection();
+    target = createTarget({connection});
+    connection.setSuccessHandler('DOM.getDocument',
+                                 () => ({root: {nodeId: NODE_ID}} as Protocol.DOM.GetDocumentResponse));
+    connection.setSuccessHandler('DOM.getNodesForSubtreeByStyle', () => ({nodeIds: []}));
+  });
+
+  afterEach(() => {
+    UI.Context.Context.instance().setFlavor(SDK.DOMModel.DOMNode, null);
   });
 
   const updatesUiOnEvent = <T extends keyof SDK.DOMModel.EventTypes>(
@@ -85,22 +89,22 @@ describeWithMockConnection('PropertiesWidget', () => {
       objectId: '1' as Protocol.Runtime.RemoteObjectId,
     });
 
-    setMockConnectionResponseHandler('Runtime.getProperties', () => ({
-                                                                result: [
-                                                                  {
-                                                                    name: 'myGetter',
-                                                                    isOwn: true,
-                                                                    enumerable: true,
-                                                                    configurable: true,
-                                                                    get: {
-                                                                      type: Protocol.Runtime.RemoteObjectType.Function,
-                                                                      objectId: '2' as Protocol.Runtime.RemoteObjectId,
-                                                                      className: 'Function',
-                                                                      description: 'get myGetter()',
-                                                                    },
-                                                                  },
-                                                                ],
-                                                              }));
+    connection.setSuccessHandler('Runtime.getProperties', () => ({
+                                                            result: [
+                                                              {
+                                                                name: 'myGetter',
+                                                                isOwn: true,
+                                                                enumerable: true,
+                                                                configurable: true,
+                                                                get: {
+                                                                  type: Protocol.Runtime.RemoteObjectType.Function,
+                                                                  objectId: '2' as Protocol.Runtime.RemoteObjectId,
+                                                                  className: 'Function',
+                                                                  description: 'get myGetter()',
+                                                                },
+                                                              },
+                                                            ],
+                                                          }));
     const callFunctionOn = sinon.stub().resolves({
       result: {
         type: Protocol.Runtime.RemoteObjectType.Object,
@@ -108,7 +112,7 @@ describeWithMockConnection('PropertiesWidget', () => {
         value: null,
       },
     });
-    setMockConnectionResponseHandler('Runtime.callFunctionOn', callFunctionOn);
+    connection.setHandler('Runtime.callFunctionOn', callFunctionOn);
 
     sinon.stub(node, 'resolveToObject').withArgs('properties-sidebar-pane').resolves(object);
     const viewFunction = createViewFunctionStub(Elements.PropertiesWidget.PropertiesWidget);
@@ -284,17 +288,16 @@ describeWithEnvironment('PropertiesWidget DEFAULT_VIEW', () => {
   it('creates a read-only tree outline', async () => {
     const {container, objectTree} = await setUpView();
 
-    Elements.PropertiesWidget.DEFAULT_VIEW(
-        {
-          onFilterChanged: () => {},
-          objectTree,
-          allChildrenFiltered: false,
-          onRegexToggled: function(): void {
-            throw new Error('Function not implemented.');
-          },
-          isRegex: false
-        },
-        {}, container);
+    Elements.PropertiesWidget.DEFAULT_VIEW({
+      onFilterChanged: () => {},
+      objectTree,
+      allChildrenFiltered: false,
+      onRegexToggled: function(): void {
+        throw new Error('Function not implemented.');
+      },
+      isRegex: false,
+    },
+                                           {}, container);
 
     await UI.Widget.Widget.allUpdatesComplete;
     const tree = container.querySelector('devtools-tree') as UI.TreeOutline.TreeViewElement;
@@ -308,34 +311,32 @@ describeWithEnvironment('PropertiesWidget DEFAULT_VIEW', () => {
   it('renders the view without filter', async () => {
     const {container, objectTree} = await setUpView();
 
-    Elements.PropertiesWidget.DEFAULT_VIEW(
-        {
-          onFilterChanged: () => {},
-          objectTree,
-          allChildrenFiltered: false,
-          onRegexToggled: function(): void {
-            throw new Error('Function not implemented.');
-          },
-          isRegex: false
-        },
-        {}, container);
+    Elements.PropertiesWidget.DEFAULT_VIEW({
+      onFilterChanged: () => {},
+      objectTree,
+      allChildrenFiltered: false,
+      onRegexToggled: function(): void {
+        throw new Error('Function not implemented.');
+      },
+      isRegex: false,
+    },
+                                           {}, container);
     await assertScreenshot('elements/properties_widget_no_filter.png');
   });
 
   it('renders a selected element', async () => {
     const {container, objectTree} = await setUpView();
 
-    Elements.PropertiesWidget.DEFAULT_VIEW(
-        {
-          onFilterChanged: () => {},
-          objectTree,
-          allChildrenFiltered: false,
-          onRegexToggled: function(): void {
-            throw new Error('Function not implemented.');
-          },
-          isRegex: false
-        },
-        {}, container);
+    Elements.PropertiesWidget.DEFAULT_VIEW({
+      onFilterChanged: () => {},
+      objectTree,
+      allChildrenFiltered: false,
+      onRegexToggled: function(): void {
+        throw new Error('Function not implemented.');
+      },
+      isRegex: false,
+    },
+                                           {}, container);
     await UI.Widget.Widget.allUpdatesComplete;
 
     const tree = container.querySelector('devtools-tree') as UI.TreeOutline.TreeViewElement;
@@ -351,34 +352,32 @@ describeWithEnvironment('PropertiesWidget DEFAULT_VIEW', () => {
   it('renders the view with a partial filter match', async () => {
     const {container, objectTree} = await setUpView('first');
 
-    Elements.PropertiesWidget.DEFAULT_VIEW(
-        {
-          onFilterChanged: () => {},
-          objectTree,
-          allChildrenFiltered: false,
-          onRegexToggled: function(): void {
-            throw new Error('Function not implemented.');
-          },
-          isRegex: false
-        },
-        {}, container);
+    Elements.PropertiesWidget.DEFAULT_VIEW({
+      onFilterChanged: () => {},
+      objectTree,
+      allChildrenFiltered: false,
+      onRegexToggled: function(): void {
+        throw new Error('Function not implemented.');
+      },
+      isRegex: false,
+    },
+                                           {}, container);
     await assertScreenshot('elements/properties_widget_partial_filter.png');
   });
 
   it('renders the view with no filter matches', async () => {
     const {container, objectTree} = await setUpView('third');
 
-    Elements.PropertiesWidget.DEFAULT_VIEW(
-        {
-          onFilterChanged: () => {},
-          objectTree,
-          allChildrenFiltered: true,
-          onRegexToggled: function(): void {
-            throw new Error('Function not implemented.');
-          },
-          isRegex: false
-        },
-        {}, container);
+    Elements.PropertiesWidget.DEFAULT_VIEW({
+      onFilterChanged: () => {},
+      objectTree,
+      allChildrenFiltered: true,
+      onRegexToggled: function(): void {
+        throw new Error('Function not implemented.');
+      },
+      isRegex: false,
+    },
+                                           {}, container);
     await assertScreenshot('elements/properties_widget_no_matches.png');
   });
 });

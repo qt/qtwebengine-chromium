@@ -39,6 +39,16 @@ AndroidBnplStrategy::GetBeforeViewSwitchAction() {
   return BeforeSwitchingViewAction::kDoNothing;
 }
 
+BnplStrategy::BnplAiBasedAmountExtractionReturnedNextAction
+AndroidBnplStrategy::GetNextActionOnAiBasedAmountExtractionReturned() {
+  return BnplAiBasedAmountExtractionReturnedNextAction::
+      kSwitchToIssuerSelectionScreenOnAndroid;
+}
+
+BnplStrategy::UiDismissalAction AndroidBnplStrategy::GetUiDismissalAction() {
+  return UiDismissalAction::kRemoveBnplUi;
+}
+
 bool AndroidBnplStrategy::ShouldRemoveExistingUiOnServerReturn(
     PaymentsAutofillClient::PaymentsRpcResult result) {
   return result == PaymentsAutofillClient::PaymentsRpcResult::kSuccess;

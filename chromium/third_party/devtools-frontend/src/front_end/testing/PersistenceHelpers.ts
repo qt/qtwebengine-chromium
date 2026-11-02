@@ -5,6 +5,7 @@
 import * as Common from '../core/common/common.js';
 import type * as Platform from '../core/platform/platform.js';
 import type * as SDK from '../core/sdk/sdk.js';
+import type * as Foundation from '../foundation/foundation.js';
 import * as Protocol from '../generated/protocol.js';
 import type * as Persistence from '../models/persistence/persistence.js';
 import * as Workspace from '../models/workspace/workspace.js';
@@ -20,13 +21,14 @@ import {createFileSystemUISourceCode} from './UISourceCodeHelpers.js';
  * Persistence testing. As soon as a script is added that has the given `networkScriptUrl` and the `content`,
  * PersistenceImpl will try to bind the network uiSourceCode with this file system uiSourceCode.
  **/
-export function createFileSystemFileForPersistenceTests(
-    fileSystemScript: {
-      fileSystemFileUrl: Platform.DevToolsPath.UrlString,
-      fileSystemPath: Platform.DevToolsPath.UrlString,
-      type?: Persistence.PlatformFileSystem.PlatformFileSystemType,
-    },
-    networkScriptUrl: Platform.DevToolsPath.UrlString, content: string, target: SDK.Target.Target):
+export function createFileSystemFileForPersistenceTests(fileSystemScript: {
+  fileSystemFileUrl: Platform.DevToolsPath.UrlString,
+  fileSystemPath: Platform.DevToolsPath.UrlString,
+  type?: Persistence.PlatformFileSystem.PlatformFileSystemType,
+},
+                                                        networkScriptUrl: Platform.DevToolsPath.UrlString,
+                                                        content: string, target: SDK.Target.Target,
+                                                        universe?: Foundation.Universe.Universe):
     {uiSourceCode: Workspace.UISourceCode.UISourceCode, project: Persistence.FileSystemWorkspaceBinding.FileSystem} {
   // First, set up a network resource that is described by the networkScriptUrl. This resource
   // file is required for a binding to be created.
@@ -46,6 +48,7 @@ export function createFileSystemFileForPersistenceTests(
     metadata,
     autoMapping: true,
     type: fileSystemScript.type,
+    universe,
   });
 }
 

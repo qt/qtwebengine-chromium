@@ -118,7 +118,6 @@ static int rockchip_bo_create_with_modifiers(struct bo *bo, uint32_t width, uint
 					     uint32_t count)
 {
 	int ret;
-	size_t plane;
 	struct drm_rockchip_gem_create gem_create = { 0 };
 	uint64_t afbc_modifier;
 
@@ -136,7 +135,7 @@ static int rockchip_bo_create_with_modifiers(struct bo *bo, uint32_t width, uint
 		uint32_t aligned_width = w_mbs * 16;
 		uint32_t aligned_height = h_mbs * 16;
 
-		drv_bo_from_format(bo, aligned_width, aligned_height, format);
+		drv_bo_from_format(bo, aligned_width, 1, aligned_height, format);
 		/*
 		 * drv_bo_from_format updates total_size. Add an extra data space for rockchip video
 		 * driver to store motion vectors.
@@ -166,7 +165,7 @@ static int rockchip_bo_create_with_modifiers(struct bo *bo, uint32_t width, uint
 		else
 			stride = ALIGN(stride, 64);
 
-		drv_bo_from_format(bo, stride, height, format);
+		drv_bo_from_format(bo, stride, 1, height, format);
 	}
 
 	gem_create.size = bo->meta.total_size;
@@ -178,8 +177,7 @@ static int rockchip_bo_create_with_modifiers(struct bo *bo, uint32_t width, uint
 		return -errno;
 	}
 
-	for (plane = 0; plane < bo->meta.num_planes; plane++)
-		bo->handles[plane].u32 = gem_create.handle;
+	bo->handle.u32 = gem_create.handle;
 
 	return 0;
 }
@@ -192,7 +190,7 @@ static int rockchip_bo_create(struct bo *bo, uint32_t width, uint32_t height, ui
 						 ARRAY_SIZE(modifiers));
 }
 
-static void *rockchip_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint32_t map_flags)
+static void *rockchip_bo_map(struct bo *bo, struct vma *vma, uint32_t map_flags)
 {
 	int ret;
 	struct rockchip_private_map_data *priv;
@@ -205,7 +203,7 @@ static void *rockchip_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint3
 	    bo->meta.format_modifier == DRM_FORMAT_MOD_ROCKCHIP_AFBC)
 		return MAP_FAILED;
 
-	gem_map.handle = bo->handles[0].u32;
+	gem_map.handle = bo->handle.u32;
 	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_ROCKCHIP_GEM_MAP_OFFSET, &gem_map);
 	if (ret) {
 		drv_loge("DRM_IOCTL_ROCKCHIP_GEM_MAP_OFFSET failed\n");
@@ -281,6 +279,7 @@ const struct backend backend_rockchip = {
 	.bo_create_with_modifiers = rockchip_bo_create_with_modifiers,
 	.bo_destroy = drv_gem_bo_destroy,
 	.bo_import = drv_prime_bo_import,
+	.bo_export = drv_prime_bo_export,
 	.bo_map = rockchip_bo_map,
 	.bo_unmap = rockchip_bo_unmap,
 	.bo_invalidate = rockchip_bo_invalidate,

@@ -7,6 +7,7 @@
 #include <memory>
 #include <vector>
 
+#include "constants/catalog.h"
 #include "core/fpdfapi/page/test_with_page_module.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
@@ -73,7 +74,7 @@ TEST_F(PDFDocTest, FindBookmark) {
   }
   {
     // Empty bookmark tree.
-    root_obj_->SetNewFor<CPDF_Dictionary>("Outlines");
+    root_obj_->SetNewFor<CPDF_Dictionary>(pdfium::catalog::kOutlines);
     ScopedFPDFWideString title = GetFPDFWideString(L"");
     EXPECT_FALSE(FPDFBookmark_Find(doc_.get(), title.get()));
 
@@ -103,8 +104,8 @@ TEST_F(PDFDocTest, FindBookmark) {
     bookmarks[0].obj->SetNewFor<CPDF_Reference>("Last", indirect_objs_,
                                                 bookmarks[2].num);
 
-    root_obj_->SetNewFor<CPDF_Reference>("Outlines", indirect_objs_,
-                                         bookmarks[0].num);
+    root_obj_->SetNewFor<CPDF_Reference>(pdfium::catalog::kOutlines,
+                                         indirect_objs_, bookmarks[0].num);
 
     // Title with no match.
     ScopedFPDFWideString title = GetFPDFWideString(L"Chapter 3");
@@ -147,8 +148,8 @@ TEST_F(PDFDocTest, FindBookmark) {
     bookmarks[0].obj->SetNewFor<CPDF_Reference>("Last", indirect_objs_,
                                                 bookmarks[2].num);
 
-    root_obj_->SetNewFor<CPDF_Reference>("Outlines", indirect_objs_,
-                                         bookmarks[0].num);
+    root_obj_->SetNewFor<CPDF_Reference>(pdfium::catalog::kOutlines,
+                                         indirect_objs_, bookmarks[0].num);
 
     // Title with no match.
     ScopedFPDFWideString title = GetFPDFWideString(L"Chapter 3");
@@ -188,8 +189,8 @@ TEST_F(PDFDocTest, FindBookmark) {
     bookmarks[0].obj->SetNewFor<CPDF_Reference>("Last", indirect_objs_,
                                                 bookmarks[2].num);
 
-    root_obj_->SetNewFor<CPDF_Reference>("Outlines", indirect_objs_,
-                                         bookmarks[0].num);
+    root_obj_->SetNewFor<CPDF_Reference>(pdfium::catalog::kOutlines,
+                                         indirect_objs_, bookmarks[0].num);
 
     // Title with no match.
     ScopedFPDFWideString title = GetFPDFWideString(L"Chapter 8");

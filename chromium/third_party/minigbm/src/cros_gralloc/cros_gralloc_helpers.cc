@@ -78,6 +78,16 @@ uint32_t cros_gralloc_convert_format(int format)
 	case HAL_PIXEL_FORMAT_YCBCR_P010:
 		return DRM_FORMAT_P010;
 #endif
+	case HAL_PIXEL_FORMAT_DEPTH_16:
+		return DRM_FORMAT_DEPTH16;
+	case HAL_PIXEL_FORMAT_DEPTH_24:
+		return DRM_FORMAT_DEPTH24;
+	case HAL_PIXEL_FORMAT_DEPTH_24_STENCIL_8:
+		return DRM_FORMAT_DEPTH24_STENCIL8;
+	case HAL_PIXEL_FORMAT_DEPTH_32F:
+		return DRM_FORMAT_DEPTH32;
+	case HAL_PIXEL_FORMAT_DEPTH_32F_STENCIL_8:
+		return DRM_FORMAT_DEPTH32_STENCIL8;
 	}
 
 	return DRM_FORMAT_NONE;
@@ -86,7 +96,7 @@ uint32_t cros_gralloc_convert_format(int format)
 static inline void handle_usage(uint64_t *gralloc_usage, uint64_t gralloc_mask,
 				uint64_t *bo_use_flags, uint64_t bo_mask)
 {
-	if ((*gralloc_usage) & gralloc_mask) {
+	if (((*gralloc_usage) & gralloc_mask) == gralloc_mask) {
 		(*gralloc_usage) &= ~gralloc_mask;
 		(*bo_use_flags) |= bo_mask;
 	}
@@ -110,15 +120,25 @@ uint64_t cros_gralloc_convert_usage(uint64_t usage)
 	/* HWC wants to use display hardware, but can defer to OpenGL. */
 	handle_usage(&usage, GRALLOC_USAGE_HW_COMPOSER, &use_flags,
 		     BO_USE_SCANOUT | BO_USE_TEXTURE);
+#ifdef DRMHWC_ON_VIRTGPU
+	handle_usage(&usage, GRALLOC_USAGE_HW_FB, &use_flags, BO_USE_LINEAR);
+#else
 	handle_usage(&usage, GRALLOC_USAGE_HW_FB, &use_flags, BO_USE_NONE);
+#endif
 	/*
 	 * This flag potentially covers external display for the normal drivers (i915/rockchip) and
 	 * usb monitors (evdi/udl). It's complicated so ignore it.
 	 */
 	handle_usage(&usage, GRALLOC_USAGE_EXTERNAL_DISP, &use_flags, BO_USE_NONE);
-	/* Map PROTECTED to linear until real HW protection is available on Android. */
+
+#if ANDROID_API_LEVEL >= 35
+	handle_usage(&usage, GRALLOC_USAGE_PROTECTED, &use_flags, BO_USE_PROTECTED);
+	handle_usage(&usage, GRALLOC_USAGE_CURSOR, &use_flags, BO_USE_CURSOR);
+#else
+	/* Legacy behavior to maintain backwards compatibility. */
 	handle_usage(&usage, GRALLOC_USAGE_PROTECTED, &use_flags, BO_USE_LINEAR);
 	handle_usage(&usage, GRALLOC_USAGE_CURSOR, &use_flags, BO_USE_NONE);
+#endif
 	/* HACK: See b/30054495 for BO_USE_SW_READ_OFTEN. */
 	handle_usage(&usage, GRALLOC_USAGE_HW_VIDEO_ENCODER, &use_flags,
 		     BO_USE_HW_VIDEO_ENCODER | BO_USE_SW_READ_OFTEN);
@@ -129,7 +149,9 @@ uint64_t cros_gralloc_convert_usage(uint64_t usage)
 	handle_usage(&usage, BUFFER_USAGE_SENSOR_DIRECT_DATA, &use_flags,
 		     BO_USE_SENSOR_DIRECT_DATA);
 	handle_usage(&usage, BUFFER_USAGE_GPU_DATA_BUFFER, &use_flags, BO_USE_GPU_DATA_BUFFER);
-	handle_usage(&usage, BUFFER_USAGE_FRONT_RENDERING_MASK, &use_flags, BO_USE_FRONT_RENDERING);
+	handle_usage(&usage, BUFFER_USAGE_FRONT_RENDERING, &use_flags, BO_USE_FRONT_RENDERING);
+	handle_usage(&usage, BUFFER_USAGE_FRONT_RENDERING_PRIVATE, &use_flags,
+		     BO_USE_FRONT_RENDERING);
 
 	if (usage) {
 		ALOGE("Unhandled gralloc usage: %llx", (unsigned long long)usage);
@@ -153,8 +175,17 @@ uint32_t cros_gralloc_convert_map_usage(uint64_t usage)
 
 cros_gralloc_handle_t cros_gralloc_convert_handle(buffer_handle_t handle)
 {
+	if (sizeof(native_handle_t) + (sizeof(int) * (handle->numFds + handle->numInts)) !=
+	    sizeof(struct cros_gralloc_handle))
+		return nullptr;
+
 	auto hnd = reinterpret_cast<cros_gralloc_handle_t>(handle);
 	if (!hnd || hnd->magic != cros_gralloc_magic)
+		return nullptr;
+
+	// if hnd->reserved_region_size == 0, handle->numFds is hnd->num_planes
+	// if hnd->reserved_region_size > 0, handle->numFds is hnd->num_planes + 1
+	if ((uint32_t)handle->numFds != hnd->num_planes + (hnd->reserved_region_size > 0))
 		return nullptr;
 
 	return hnd;

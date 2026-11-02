@@ -28,8 +28,8 @@ export class HeapTimelineOverview extends Common.ObjectWrapper.eventMixin<EventT
   updateGridTimerId?: number;
   updateTimerId?: number|null;
   windowWidthRatio?: number;
-  constructor() {
-    super({jslog: `${VisualLogging.section('heap-tracking-overview')}`});
+  constructor(element?: HTMLElement) {
+    super(element, {jslog: `${VisualLogging.section('heap-tracking-overview')}`});
     this.element.id = 'heap-recording-view';
     this.element.classList.add('heap-tracking-overview');
 
@@ -217,6 +217,9 @@ export class HeapTimelineOverview extends Common.ObjectWrapper.eventMixin<EventT
     this.windowLeftRatio = this.overviewGrid.windowLeftRatio();
     this.windowRightRatio = this.overviewGrid.windowRightRatio();
     this.windowWidthRatio = this.windowRightRatio - this.windowLeftRatio;
+  }
+  override performUpdate(): void {
+    this.update();
   }
 
   update(): void {

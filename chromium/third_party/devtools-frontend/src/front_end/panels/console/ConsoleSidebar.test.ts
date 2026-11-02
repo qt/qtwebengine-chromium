@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
@@ -10,7 +11,7 @@ import * as Protocol from '../../generated/protocol.js';
 import * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 import * as Logs from '../../models/logs/logs.js';
 import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {deinitializeGlobalVars, initializeGlobalVars} from '../../testing/EnvironmentHelpers.js';
 import {createViewFunctionStub, type ViewFunctionStub} from '../../testing/ViewFunctionHelpers.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -40,14 +41,22 @@ function addMessage(
 async function getGroups(view: ViewFunctionStub<typeof Console.ConsoleSidebar.ConsoleSidebar>):
     Promise<Record<string, {count: number, urls?: Record<string, number>}>> {
   const input = await view.nextInput;
-  return Object.fromEntries(
-      input.groups.map(group => [group.name, {
-                         count: group.messageCount,
-                         urls: Object.fromEntries(group.urlGroups.entries().map(([title, {count}]) => ([title, count])))
-                       }]));
+  return Object.fromEntries(input.groups.map(
+      group => [group.name, {
+        count: group.messageCount,
+        urls: Object.fromEntries(group.urlGroups.entries().map(([title, {count}]) => ([title, count]))),
+      }]));
 }
 
-describeWithMockConnection('ConsoleSidebar', () => {
+describe('ConsoleSidebar', () => {
+  before(async () => {
+    await initializeGlobalVars();
+  });
+
+  after(async () => {
+    await deinitializeGlobalVars();
+  });
+
   it('groups logs by URL', async () => {
     const view = createViewFunctionStub(Console.ConsoleSidebar.ConsoleSidebar);
     const sidebar = new Console.ConsoleSidebar.ConsoleSidebar(undefined, view);
@@ -61,14 +70,14 @@ describeWithMockConnection('ConsoleSidebar', () => {
         urls: {
           'https://www.example.com/a.html': 2,
           'https://www.example.com/b.html': 1,
-        }
+        },
       },
       message: {
         count: 3,
         urls: {
           'https://www.example.com/a.html': 2,
           'https://www.example.com/b.html': 1,
-        }
+        },
       },
       'user message': {count: 0, urls: {}},
       verbose: {count: 0, urls: {}},
@@ -88,7 +97,7 @@ describeWithMockConnection('ConsoleSidebar', () => {
       message: {count: 3, urls: {'https://www.example.com/a.html': 2, 'https://www.example.com/b.html': 1}},
       'user message': {count: 0, urls: {}},
       verbose: {count: 1, urls: {'https://www.example.com/a.html': 1}},
-      warning: {count: 0, urls: {}}
+      warning: {count: 0, urls: {}},
     });
   });
 
@@ -168,7 +177,7 @@ describeWithMockConnection('ConsoleSidebar', () => {
       message: {count: 1, urls: {'https://www.example.com/a.html': 1}},
       'user message': {count: 0, urls: {}},
       verbose: {count: 1, urls: {'https://www.example.com/a.html': 1}},
-      warning: {count: 0, urls: {}}
+      warning: {count: 0, urls: {}},
     });
 
     sidebar.clear();
@@ -178,7 +187,7 @@ describeWithMockConnection('ConsoleSidebar', () => {
       message: {count: 0, urls: {}},
       'user message': {count: 0, urls: {}},
       verbose: {count: 0, urls: {}},
-      warning: {count: 0, urls: {}}
+      warning: {count: 0, urls: {}},
     });
   });
 });

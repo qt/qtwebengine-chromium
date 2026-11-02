@@ -63,6 +63,14 @@ std::string InvocationSourceToString(
       return "ContextualTasksComposebox";
     case LensOverlayInvocationSource::kCobrowseToolbarButton:
       return "CobrowseToolbarButton";
+    case LensOverlayInvocationSource::kCobrowsePinnedToolbarButton:
+      return "CobrowsePinnedToolbarButton";
+    case LensOverlayInvocationSource::kNtpActionChips:
+      return "NtpActionChips";
+    case LensOverlayInvocationSource::kAppBarAimButton:
+      return "AppBarAimButton";
+    case LensOverlayInvocationSource::kOmniboxEverywhereComposebox:
+      return "OmniboxEverywhereComposebox";
   }
 }
 
@@ -115,6 +123,11 @@ void RecordPermissionRequestedToBeShown(
   base::UmaHistogramBoolean(histogram_name, shown);
 }
 
+void RecordFirstRunPermissionNoticeToBeShown() {
+  base::UmaHistogramBoolean("Lens.Overlay.FirstRunPermissionNotice.Shown",
+                            true);
+}
+
 void RecordPermissionUserAction(LensPermissionUserAction user_action,
                                 LensOverlayInvocationSource invocation_source) {
   base::UmaHistogramEnumeration("Lens.Overlay.PermissionBubble.UserAction",
@@ -123,6 +136,12 @@ void RecordPermissionUserAction(LensPermissionUserAction user_action,
       "Lens.Overlay.PermissionBubble.ByInvocationSource." +
       InvocationSourceToString(invocation_source) + ".UserAction";
   base::UmaHistogramEnumeration(histogram_name, user_action);
+}
+
+void RecordFirstRunPermissionNoticeUserAction(
+    LensPermissionUserAction user_action) {
+  base::UmaHistogramEnumeration(
+      "Lens.Overlay.FirstRunPermissionNotice.UserAction", user_action);
 }
 
 void RecordNonBlockingPrivacyNoticeToBeShown(
@@ -488,12 +507,16 @@ void RecordTimeToFirstInteraction(
       // first interaction in this case is essentially zero.
       break;
     case lens::LensOverlayInvocationSource::kNtpContextualQuery:
+    case lens::LensOverlayInvocationSource::kNtpActionChips:
     case lens::LensOverlayInvocationSource::kOmniboxContextualQuery:
     case lens::LensOverlayInvocationSource::kCobrowseToolbarButton:
+    case lens::LensOverlayInvocationSource::kCobrowsePinnedToolbarButton:
+    case lens::LensOverlayInvocationSource::kAppBarAimButton:
       // Not recorded since the ntp and omnibox contextual query flows and the
       // cobrowse toolbar button flow do not use the Lens Overlay Controller.
       break;
     case LensOverlayInvocationSource::kContextualTasksComposebox:
+    case LensOverlayInvocationSource::kOmniboxEverywhereComposebox:
       // TODO(crbug.com/469460311): Add metrics for Contextual Tasks lens
       // button.
       break;
@@ -701,6 +724,22 @@ void RecordTimeToWebuiBound(base::TimeDelta duration) {
   base::UmaHistogramCustomTimes("Lens.Overlay.TimeToWebuiBound", duration,
                                 /*min=*/base::Milliseconds(1),
                                 /*max=*/base::Minutes(10), /*buckets=*/50);
+}
+
+void RecordContextualTasksQueryEligibility(
+    LensContextualTasksQueryEligibility eligibility,
+    std::optional<LensOverlayInvocationSource> invocation_source) {
+  base::UmaHistogramEnumeration("Lens.Overlay.ContextualTasks.QueryEligibility",
+                                eligibility);
+
+  std::string invocation_source_string =
+      invocation_source.has_value()
+          ? InvocationSourceToString(*invocation_source)
+          : "Unknown";
+  base::UmaHistogramEnumeration(
+      "Lens.Overlay.ContextualTasks.QueryEligibility.ByInvocationSource." +
+          invocation_source_string,
+      eligibility);
 }
 
 }  // namespace lens

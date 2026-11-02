@@ -21,7 +21,12 @@ include_rules = [
   "+chrome/browser/ui/dialogs/browser_dialogs.h",
   "+chrome/browser/ui/views/chrome_web_dialog_view.h",
   "+chrome/browser/ui/webui/ash/system_web_dialog",
-  "+chrome/common",
   "+chrome/grit",
   "+chrome/test",
 ]
+
+specific_include_rules = {
+  "add_supervision_ui\\.cc": [
+    "+chrome/browser/ui/webui/theme_source.h",
+  ],
+}

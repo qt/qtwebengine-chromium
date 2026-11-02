@@ -29,6 +29,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/html/forms/html_label_element.h"
+#include "third_party/blink/renderer/core/html/forms/html_select_element.h"
 #include "third_party/blink/renderer/core/html/html_dialog_element.h"
 #include "third_party/blink/renderer/core/html/html_image_element.h"
 #include "third_party/blink/renderer/core/input/event_handler.h"
@@ -565,7 +566,7 @@ WebInputEventResult MouseEventManager::HandleMouseFocus(
   // TODO(editing-dev): The use of VisibleSelection should be audited. See
   // crbug.com/657237 for details.
   if (element &&
-      frame_->Selection().ComputeVisibleSelectionInDOMTree().IsRange()) {
+      frame_->Selection().ComputeVisibleSelectionInDomTree().IsRange()) {
     // Don't check for scroll controls pseudo-elements, since they can't
     // be in selection, until we support selecting their content.
     // Just clear the selection, since it won't be cleared otherwise.
@@ -574,7 +575,7 @@ WebInputEventResult MouseEventManager::HandleMouseFocus(
       frame_->Selection().Clear();
     } else {
       const EphemeralRange& range = frame_->Selection()
-                                        .ComputeVisibleSelectionInDOMTree()
+                                        .ComputeVisibleSelectionInDomTree()
                                         .ToNormalizedEphemeralRange();
       if (IsNodeFullyContained(range, *element) &&
           element->IsDescendantOf(frame_->GetDocument()->FocusedElement())) {
@@ -869,8 +870,14 @@ WebInputEventResult MouseEventManager::HandleMouseDraggedEvent(
       return WebInputEventResult::kNotHandled;
 
     layout_object = parent->GetLayoutObject();
-    if (!layout_object || !layout_object->IsListBox()) {
+    if (!layout_object) {
       return WebInputEventResult::kNotHandled;
+    }
+
+    if (const auto* select = DynamicTo<HTMLSelectElement>(parent)) {
+      if (select->UsesMenuList()) {
+        return WebInputEventResult::kNotHandled;
+      }
     }
   }
 
@@ -895,7 +902,7 @@ WebInputEventResult MouseEventManager::HandleMouseDraggedEvent(
 
   if (layout_object && mouse_down_may_start_autoscroll_ &&
       !scroll_manager_->MiddleClickAutoscrollInProgress() &&
-      !frame_->Selection().SelectedHTMLForClipboard().empty()) {
+      !frame_->Selection().SelectedHtmlForClipboard().empty()) {
     if (AutoscrollController* controller =
             scroll_manager_->GetAutoscrollController()) {
       // Avoid updating the lifecycle unless it's possible to autoscroll.
@@ -1026,8 +1033,11 @@ bool MouseEventManager::TryStartDrag(
   GetDragState().drag_data_transfer_ = CreateDraggingDataTransfer();
 
   DragController& drag_controller = frame_->GetPage()->GetDragController();
-  if (!drag_controller.PopulateDragDataTransfer(frame_, GetDragState(),
-                                                mouse_down_pos_)) {
+  if (!frame_->View() ||
+      !drag_controller.PopulateDragDataTransfer(
+          frame_, GetDragState(), mouse_down_pos_,
+          frame_->View()->ConvertFromRootFrame(
+              gfx::ToFlooredPoint(event.Event().PositionInRootFrame())))) {
     return false;
   }
 
@@ -1056,7 +1066,7 @@ bool MouseEventManager::TryStartDrag(
   frame_->GetDocument()->UpdateStyleAndLayout(DocumentUpdateReason::kInput);
   if (GetDragState().drag_type_ == kDragSourceActionSelection &&
       IsInPasswordField(
-          frame_->Selection().ComputeVisibleSelectionInDOMTree().Start())) {
+          frame_->Selection().ComputeVisibleSelectionInDomTree().Start())) {
     return false;
   }
 
@@ -1126,14 +1136,12 @@ WebInputEventResult MouseEventManager::DispatchDragEvent(
   initializer->setView(frame_->GetDocument()->domWindow());
   initializer->setComposed(true);
   // Per the DnD spec, these events have a default `dropEffect`.
-  if (RuntimeEnabledFeatures::SetDefaultDropEffectEnabled()) {
-    if (event_type == event_type_names::kDragenter ||
-        event_type == event_type_names::kDragover) {
-      data_transfer->SetDestinationOperationFromEffectAllowed();
-    } else if (event_type == event_type_names::kDragleave) {
-      data_transfer->SetDestinationOperation(
-          ui::mojom::blink::DragOperation::kNone);
-    }
+  if (event_type == event_type_names::kDragenter ||
+      event_type == event_type_names::kDragover) {
+    data_transfer->SetDestinationOperationFromEffectAllowed();
+  } else if (event_type == event_type_names::kDragleave) {
+    data_transfer->SetDestinationOperation(
+        ui::mojom::blink::DragOperation::kNone);
   }
   initializer->setDataTransfer(data_transfer);
   initializer->setSourceCapabilities(
@@ -1157,8 +1165,7 @@ WebInputEventResult MouseEventManager::DispatchDragEvent(
   // an uninitialized state. In cases where a drag leaves a target, having
   // dropEffect explicitly set to none would be incorrect and may
   // cause unintended behavior when the dataTransfer object is reused.
-  if (RuntimeEnabledFeatures::SetDefaultDropEffectEnabled() &&
-      event_type == event_type_names::kDragleave) {
+  if (event_type == event_type_names::kDragleave) {
     data_transfer->resetDropEffect();
   }
   return event_result;

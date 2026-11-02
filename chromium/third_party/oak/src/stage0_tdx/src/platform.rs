@@ -16,23 +16,17 @@
 
 extern crate alloc;
 
-use alloc::boxed::Box;
-use core::{
-    mem::size_of,
-    ops::{DerefMut, Index, IndexMut},
-    pin::pin,
-    ptr::addr_of,
-    sync::atomic::Ordering,
-};
+use alloc::{alloc::Allocator, boxed::Box};
+use core::{mem::size_of, pin::pin, ptr::addr_of, sync::atomic::Ordering};
 
 use log::info;
+use oak_hal::{MsrAccess, PageAssignment, Platform};
 use oak_linux_boot_params::{BootE820Entry, E820EntryType};
 use oak_stage0::{
-    hal::PortFactory,
+    AcpiTable, AcpiTables, BOOT_ALLOC, HIGH_MEMORY_ALLOCATOR, Madt, MultiprocessorWakeup,
+    hal::{FirmwarePlatform, PortFactory},
     mailbox::{FirmwareMailbox, OsMailbox},
-    paging,
-    paging::PageTableRefs,
-    Madt, Rsdp, RsdtEntryPairMut, BOOT_ALLOC,
+    paging::{self, PageTableRefs},
 };
 use oak_tdx_guest::{
     tdcall::get_td_info,
@@ -40,19 +34,18 @@ use oak_tdx_guest::{
 };
 use serial::Debug;
 use x86_64::{
-    instructions::tlb,
-    registers::control::Cr3,
-    structures::paging::{
-        OffsetPageTable, Page, PageSize, PageTable, PageTableFlags, PageTableIndex, PhysFrame,
-        Size1GiB, Size2MiB, Size4KiB,
-    },
     PhysAddr, VirtAddr,
+    instructions::tlb,
+    structures::{
+        mem_encrypt::{MemoryEncryptionConfiguration, enable_memory_encryption},
+        paging::{PageSize, PageTableFlags, PhysFrame, Size4KiB},
+    },
 };
 use zerocopy::{FromBytes, IntoBytes};
 use zeroize::Zeroize;
 
 use crate::{
-    accept_memory::{accept_memory_range, counters, TdAcceptPage},
+    accept_memory::{TdAcceptPage, accept_memory_range, counters},
     hob::{self, ResourceDescription},
     mmio::Mmio,
     serial,
@@ -66,59 +59,20 @@ use crate::{
 /// In order to hand APs off to the OS, the BSP needs to create a second
 /// mailbox (OS mailbox). It uses the firmware mailbox to tell APs where the
 /// OS mailbox is.
-#[link_section = ".tdx.td_mailbox"]
+#[unsafe(link_section = ".tdx.td_mailbox")]
 static mut TD_MAILBOX: FirmwareMailbox = FirmwareMailbox::new();
 const TD_MAILBOX_LOCATION: u64 = 0x102000; // Keep in sync with layout.ld.
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 static mut GPAW: u32 = 0;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 static mut AP_IN_64BIT_COUNT: i32 = 0;
 
 static HELLO_OAK: &str = "Hello from stage0_bin_tdx!";
 
 fn get_tdx_shared_bit() -> usize {
     unsafe { GPAW as usize - 1 }
-}
-// Inspired by TD-shim and credits to TD-shim
-fn offset_pt() -> OffsetPageTable<'static> {
-    let cr3 = Cr3::read().0.start_address().as_u64();
-    unsafe { OffsetPageTable::new(&mut *(cr3 as *mut _), VirtAddr::new(0)) }
-}
-
-fn pt_entry_set_shared_bit(page_table: &mut PageTable, index: PageTableIndex, shared: bool) {
-    let entry = page_table.index(index);
-    let shared_bit = 1 << get_tdx_shared_bit();
-
-    let addr = if shared {
-        entry.addr().as_u64() | shared_bit
-    } else {
-        entry.addr().as_u64() & !shared_bit
-    };
-    let flags = entry.flags();
-
-    page_table.index_mut(index).set_addr(PhysAddr::new(addr), flags);
-}
-
-// TODO: b/360129756 - simplify this function. consider merging it into stage0
-fn pt_set_shared_bit(pt: &mut OffsetPageTable, page: &Page, shared: bool) {
-    let p4 = pt.level_4_table();
-    let p3 = unsafe { &mut *(p4.index(page.p4_index()).addr().as_u64() as *mut PageTable) };
-
-    if page.size() == Size1GiB::SIZE {
-        pt_entry_set_shared_bit(p3, page.p3_index(), shared);
-    }
-
-    let p2 = unsafe { &mut *(p3.index(page.p3_index()).addr().as_u64() as *mut PageTable) };
-    if page.size() == Size2MiB::SIZE {
-        pt_entry_set_shared_bit(p2, page.p2_index(), shared);
-    }
-
-    let p1 = unsafe { &mut *(p2.index(page.p2_index()).addr().as_u64() as *mut PageTable) };
-    if page.size() == Size4KiB::SIZE {
-        pt_entry_set_shared_bit(p1, page.p1_index(), shared);
-    }
 }
 
 /// Prints debug messages of the raw contents of the memory where
@@ -206,9 +160,26 @@ fn accept_tdx_memory(e820_table: &[oak_linux_boot_params::BootE820Entry]) {
             continue;
         }
 
-        let start_address = PhysAddr::new(entry.addr() as u64).align_up(Size4KiB::SIZE);
-        let limit_address =
-            PhysAddr::new((entry.addr() + entry.size()) as u64).align_down(Size4KiB::SIZE);
+        // addr and size come straight from the hypervisor-supplied E820 table, so
+        // the end of the range can overflow usize and either bound can exceed the
+        // valid physical address width. Reject such an entry here instead of
+        // panicking in the arithmetic below.
+        let Some(end) = entry.addr().checked_add(entry.size()) else {
+            log::error!(
+                "nonsensical entry in E820 table: [{:#x}, +{:#x})",
+                entry.addr(),
+                entry.size()
+            );
+            continue;
+        };
+        let (Ok(start), Ok(limit)) =
+            (PhysAddr::try_new(entry.addr() as u64), PhysAddr::try_new(end as u64))
+        else {
+            log::error!("nonsensical entry in E820 table: [{:#x}, {:#x})", entry.addr(), end);
+            continue;
+        };
+        let start_address = start.align_up(Size4KiB::SIZE);
+        let limit_address = limit.align_down(Size4KiB::SIZE);
 
         if start_address > limit_address {
             log::error!(
@@ -269,20 +240,47 @@ fn handle_legacy_smbios(e820_table: &[oak_linux_boot_params::BootE820Entry]) {
     legacy_smbios_range_bytes.zeroize();
 }
 
+/// If a MultiprocessorWakeupStructure exsists in this MADT, updates its
+/// mailbox_address. Otherwise, relocates this MADT to somewhere free in
+/// EBDA and appends to it a new MultiprocessorWakeupStructure with the
+/// given os_mailbox_address. Returns a ref to the new MADT, if it was
+/// created.
+pub fn set_or_append_mp_wakeup(
+    madt: &mut Madt,
+    os_mailbox_address: u64,
+) -> Result<Option<&mut Madt>, &'static str> {
+    set_or_append_mp_wakeup_in(madt, os_mailbox_address, &HIGH_MEMORY_ALLOCATOR)
+}
+
+pub fn set_or_append_mp_wakeup_in<A: Allocator + Clone + 'static>(
+    madt: &mut Madt,
+    os_mailbox_address: u64,
+    alloc: A,
+) -> Result<Option<&mut Madt>, &'static str> {
+    if let Some(preexisting_mpw) = madt.get_controller_structure_mut::<MultiprocessorWakeup>() {
+        log::info!("A MultiprocessorWakeup structure already exists in MADT, updating.");
+
+        preexisting_mpw.mailbox_address = os_mailbox_address;
+        madt.update_checksum();
+        return Ok(None);
+    }
+
+    log::info!("Relocating MADT and appending a new MultiprocessorWakeup to it.");
+    let new_madt = madt.new_push_back_in(&MultiprocessorWakeup::new(os_mailbox_address), alloc);
+    log::info!("New MADT loaded, at {:p}", new_madt.as_bytes().as_ptr());
+    Ok(Some(Box::leak(new_madt)))
+}
+
 pub struct Tdx {}
 
-impl oak_stage0::Platform for Tdx {
-    type Mmio<S: x86_64::structures::paging::page::PageSize> = Mmio;
-    type Attester = crate::attestation::RtmrAttester;
+impl Platform for Tdx {
+    type Mmio = Mmio;
 
     fn cpuid(leaf: u32) -> core::arch::x86_64::CpuidResult {
         call_cpuid(leaf, 0).unwrap()
     }
 
-    unsafe fn mmio<S>(_: x86_64::addr::PhysAddr) -> <Self as oak_stage0::Platform>::Mmio<S>
-    where
-        S: x86_64::structures::paging::page::PageSize,
-    {
+    unsafe fn mmio(_: x86_64::addr::PhysAddr, _size: usize) -> <Self as Platform>::Mmio {
         todo!()
     }
 
@@ -295,11 +293,55 @@ impl oak_stage0::Platform for Tdx {
         serial::debug!("early_initialize_platform completed");
     }
 
+    fn change_frame_state(_: PhysFrame<Size4KiB>, _: PageAssignment) {}
+
+    fn revalidate_page(_: x86_64::structures::paging::Page) {
+        // TODO: b/360488924 - impl revalidate_page
+    }
+
+    fn wbvind() {
+        tdvmcall_wbinvd().unwrap()
+    }
+
+    fn init_memory_encryption() -> bool {
+        // Safety: we use the correct shared bit location that was set by the bootstrap
+        // assembly. All the relevant pages tables are updated after this is set.
+        unsafe {
+            enable_memory_encryption(MemoryEncryptionConfiguration::SharedBit(
+                get_tdx_shared_bit() as u8,
+            ));
+        }
+        true
+    }
+
+    fn is_memory_encryption_enabled() -> bool {
+        true
+    }
+}
+
+impl FirmwarePlatform for Tdx {
+    type Attester = crate::attestation::RtmrAttester;
+
+    fn initialize_platform(e820_table: &[oak_linux_boot_params::BootE820Entry]) {
+        // logger is initialized starting from here
+        info!("initialize platform");
+        info!("{:?}", e820_table);
+
+        setup_mailbox();
+        accept_tdx_memory(e820_table);
+        handle_legacy_smbios(e820_table);
+
+        info!("initialize platform completed");
+    }
+
     #[allow(clippy::if_same_then_else)]
     fn prefill_e820_table<T: IntoBytes + FromBytes>(dest: &mut T) -> Result<usize, &'static str> {
         serial::debug!("Prefill e820 table from TDHOB");
 
         let hit = hob::get_hit()?;
+        // The number of resource descriptors comes from the host-provided TD HoB and
+        // is otherwise unbounded, so writes must stay within the destination table.
+        let dest_len = dest.as_mut_bytes().len();
         let mut index = 0;
 
         for curr_ptr in hit.into_iter() {
@@ -317,6 +359,10 @@ impl oak_stage0::Platform for Tdx {
                 serial::debug!("Resource attribute: ", curr_src.resource_attribute);
                 serial::debug!("Physical start: ", curr_src.physical_start);
                 serial::debug!("Resource length: ", curr_src.resource_length);
+
+                if index + size_of::<BootE820Entry>() > dest_len {
+                    return Err("too many resource descriptors in TD HoB");
+                }
 
                 // Figure out the location of the next E820 entry
                 let new_entry_ptr: *mut BootE820Entry = unsafe {
@@ -351,26 +397,10 @@ impl oak_stage0::Platform for Tdx {
                 return Err("Unknown resource type found in TD HoB");
             }
         }
-        if index == 0 {
-            Err("no valid TD HoB found")
-        } else {
-            Ok(index)
-        }
+        if index == 0 { Err("no valid TD HoB found") } else { Ok(index) }
     }
 
-    fn initialize_platform(e820_table: &[oak_linux_boot_params::BootE820Entry]) {
-        // logger is initialized starting from here
-        info!("initialize platform");
-        info!("{:?}", e820_table);
-
-        setup_mailbox();
-        accept_tdx_memory(e820_table);
-        handle_legacy_smbios(e820_table);
-
-        info!("initialize platform completed");
-    }
-
-    fn finalize_acpi_tables(rsdp: &mut Rsdp) -> Result<(), &'static str> {
+    fn finalize_acpi_tables(tables: &mut AcpiTables) -> Result<(), &'static str> {
         // In TDX, we need add a MultiprocessorWakeupStructure (ACPI specification table
         // 5.43) entry with the OS Mailbox Address to the MADT table. If
         // the MADT is not the last structure, then we need to move it down so
@@ -384,102 +414,86 @@ impl oak_stage0::Platform for Tdx {
                 .expect("Expected TD_MAILBOX to contain OS Mailbox address")
         };
 
-        // # Safety: only one ref to RSDT is created.
-        if let Some(rsdt) = unsafe { rsdp.rsdt_mut() } {
-            let rsdt = rsdt?;
-            info!("Finalize ACPI: Found an RSDT, checking for MADT.");
-            let maybe_madt_entry: Option<RsdtEntryPairMut> =
-                rsdt.get_entry_pair_mut(Madt::SIGNATURE)?;
+        let mut new_madt_buf = None;
+        if let Some(madt) = tables.try_find_table_mut::<Madt>()? {
+            info!("Finalize ACPI: Found a MADT in RSDT/XSDT.");
+            // Safety: The header is in the ACPI memory range, guaranteed by `AcpiTables`,
+            // so it's safe to attempt this transmute.
+            let old_madt_addr = VirtAddr::from_ptr(madt.as_bytes().as_ptr());
+            info!("Finalize ACPI: Found a MADT at {:?}", madt.as_bytes().as_ptr_range());
+            let new_madt = set_or_append_mp_wakeup(madt, os_mailbox_address)?;
 
-            if let Some((madt_entry_addr, madt_header)) = maybe_madt_entry {
-                info!("Finalize ACPI: Found a MADT in RSDT.");
-                let madt: &mut Madt = Madt::from_header_mut(madt_header)?;
-                info!("Finalize ACPI: Found a MADT at {:?}", madt.as_byte_slice()?.as_ptr_range());
-                let new_madt = madt.set_or_append_mp_wakeup(os_mailbox_address)?;
+            if let Some(new_madt) = new_madt {
+                // MADT was relocated
+                //
+                // Safety: This is bit of a hack. Ideally we'd use something like
+                // `IntoBytes::as_mut_bytes()` for this, but `Madt` is not `FromBytes` (it's
+                // `TryFromBytes`, because of the header). Zerocopy insists on `FromBytes`, as
+                // that's a way to guarantee that even if you change something in the raw byte
+                // buffer, the `Madt` stays valid.
+                //
+                // Our situation here is different: we won't treat `new_madt` as a `Madt` after
+                // this, so changing the buffer is okay.
+                new_madt_buf = Some((old_madt_addr, unsafe {
+                    core::slice::from_raw_parts_mut(
+                        new_madt as *mut _ as *mut u8,
+                        size_of_val(new_madt),
+                    )
+                }));
+            }
+        } else {
+            return Err(
+                "Could not find a MADT where to update or add a Multiprocessor Wakeup structure.",
+            );
+        }
 
-                *madt_entry_addr = new_madt as *const _ as u32;
-                rsdt.update_checksum();
+        if let Some((old_madt_addr, new_madt)) = new_madt_buf {
+            let new_madt_addr = VirtAddr::from_ptr(new_madt);
+            tables.add_buffer(new_madt);
+            tables.replace_table_ref(old_madt_addr, new_madt_addr)?;
+        }
 
-                return Ok(());
-            } // else: there is an RSDT but it has no MADT.
-        } // else: there is no RSDT.
-
-        // # Safety: only one ref to XSDT is created.
-        if let Some(xsdt) = unsafe { rsdp.xsdt_mut() } {
-            let xsdt = xsdt?;
-            info!("Finalize ACPI: Found an XSDT, checking for MADT.");
-            let maybe_madt_entry = xsdt.get_entry_mut(Madt::SIGNATURE)?;
-
-            if let Some(madt_entry) = maybe_madt_entry {
-                info!("Finalize ACPI: Found a MADT in XSDT.");
-                let madt: &mut Madt = Madt::from_header_mut(madt_entry.deref_mut())?;
-                info!("Finalize ACPI: Found a MADT at {:?}", madt.as_byte_slice()?.as_ptr_range());
-                let new_madt = madt.set_or_append_mp_wakeup(os_mailbox_address)?;
-                madt_entry.set_addr(new_madt as *const _ as u64);
-                //xsdt.entries_mut()[1].set_addr(new_madt as *const _ as u64);
-                xsdt.update_checksum();
-
-                return Ok(());
-            } // else: there is an XSDT but it has no MADT.
-        } // else: there is no XSDT.
-
-        Err("Could not find a MADT where to update or add a Multiprocessor Wakeup structure.")
+        Ok(())
     }
 
     fn deinit_platform() {
         //TODO: b/360488922 - impl deinit_platform
     }
+
     fn populate_zero_page(_: &mut oak_stage0::ZeroPage) {
         info!("populate_zero_page start");
         info!("populate_zero_page completed");
     }
+
     fn get_attester() -> Result<Self::Attester, &'static str> {
         Ok(crate::attestation::RtmrAttester::default())
     }
+
     fn get_derived_key() -> Result<[u8; 32], &'static str> {
         // TODO: b/360488668 - impl get_derived_key
         Ok([0; 32])
     }
-    fn change_page_state(
-        page: x86_64::structures::paging::Page,
-        attr: oak_stage0::hal::PageAssignment,
-    ) {
-        let shared: bool = match attr {
-            oak_stage0::hal::PageAssignment::Shared => true,
-            oak_stage0::hal::PageAssignment::Private => false,
-        };
-        let mut pt = offset_pt();
-        pt_set_shared_bit(&mut pt, &page, shared);
-    }
-    fn revalidate_page(_: x86_64::structures::paging::Page) {
-        // TODO: b/360488924 - impl revalidate_page
-    }
-    fn page_table_mask(enc: oak_stage0::paging::PageEncryption) -> u64 {
-        // a. When 4-level EPT is active, the SHARED bit position would
-        // always be bit 47.
-        // b. When 5-level EPT is active, the SHARED bit position would
-        // be bit 47 if GPAW is 0. Otherwise, else it would be bit 51.
-        match enc {
-            oak_stage0::paging::PageEncryption::Unset => 0,
-            oak_stage0::paging::PageEncryption::Encrypted => 0,
-            oak_stage0::paging::PageEncryption::Unencrypted => 1 << get_tdx_shared_bit(),
-        }
-    }
-    fn encrypted() -> u64 {
-        // stage0_bin_tdx does not support regular VM
-        1 << get_tdx_shared_bit()
-    }
+
     fn tee_platform() -> oak_dice::evidence::TeePlatform {
         oak_dice::evidence::TeePlatform::IntelTdx
     }
+
+    fn validate_measured_boot(
+        _cmdline: &[u8],
+        _initrd_digest: &[u8],
+        _kernel_setup_data: &[u8],
+        _kernel_bytes: &[u8],
+    ) -> bool {
+        log::debug!("Empty implementation for measured boot");
+        true
+    }
+}
+
+impl MsrAccess for Tdx {
     unsafe fn read_msr(msr: u32) -> u64 {
         msr_read(msr).unwrap()
     }
     unsafe fn write_msr(msr: u32, value: u64) {
-        msr_write(msr, value).unwrap()
-    }
-
-    fn wbvind() {
-        tdvmcall_wbinvd().unwrap()
+        unsafe { msr_write(msr, value).unwrap() }
     }
 }

@@ -36,6 +36,12 @@ struct LinkedUniform;
 class Program;
 class Shader;
 
+enum class TexImageDimension
+{
+    _2D,
+    _3D,
+};
+
 #define ANGLE_VALIDATION_ERROR(errorCode, message) \
     context->getMutableErrorSetForValidation()->validationError(entryPoint, errorCode, message)
 #define ANGLE_VALIDATION_ERRORF(errorCode, ...)                                     \
@@ -59,23 +65,14 @@ bool ValidImageSizeParameters(const Context *context,
                               GLsizei height,
                               GLsizei depth,
                               bool isSubImage);
+bool ValidCompressedFormatForTexture2DArray(GLenum format, const Extensions &extensions);
+bool ValidCompressedFormatForTexture3D(GLenum format, const Extensions &extensions);
 bool ValidCompressedImageSize(const Context *context,
                               GLenum internalFormat,
                               GLint level,
                               GLsizei width,
                               GLsizei height,
                               GLsizei depth);
-bool ValidCompressedSubImageSize(const Context *context,
-                                 GLenum internalFormat,
-                                 GLint xoffset,
-                                 GLint yoffset,
-                                 GLint zoffset,
-                                 GLsizei width,
-                                 GLsizei height,
-                                 GLsizei depth,
-                                 size_t textureWidth,
-                                 size_t textureHeight,
-                                 size_t textureDepth);
 bool ValidImageDataSize(const Context *context,
                         angle::EntryPoint entryPoint,
                         TextureType texType,
@@ -156,7 +153,7 @@ bool ValidateBindRenderbufferBase(const Context *context,
 bool ValidateFramebufferParameteriBase(const Context *context,
                                        angle::EntryPoint entryPoint,
                                        GLenum target,
-                                       GLenum pname,
+                                       FramebufferParameter pnamePacked,
                                        GLint param);
 bool ValidateFramebufferRenderbufferBase(const Context *context,
                                          angle::EntryPoint entryPoint,
@@ -510,7 +507,7 @@ bool ValidateGetFramebufferAttachmentParameterivBase(const Context *context,
 bool ValidateGetFramebufferParameterivBase(const Context *context,
                                            angle::EntryPoint entryPoint,
                                            GLenum target,
-                                           GLenum pname,
+                                           FramebufferParameter pnamePacked,
                                            const GLint *params);
 
 bool ValidateGetBufferParameterBase(const Context *context,
@@ -640,14 +637,11 @@ ANGLE_INLINE bool ValidateColorMasksForSharedExponentColorBuffers(const BlendSta
 {
     // Get a mask of draw buffers that have color writemasks
     // incompatible with shared exponent color buffers.
-    // The compatible writemasks are RGBA, RGB0, 000A, 0000.
-    const BlendStateExt::ColorMaskStorage::Type rgbEnabledBits =
-        blendState.expandColorMaskValue(true, true, true, false);
-    const BlendStateExt::ColorMaskStorage::Type colorMaskNoAlphaBits =
-        blendState.getColorMaskBits() & rgbEnabledBits;
+    // The compatible writemasks are RGBA and 0000.
     const DrawBufferMask incompatibleDiffMask =
-        BlendStateExt::ColorMaskStorage::GetDiffMask(colorMaskNoAlphaBits, 0) &
-        BlendStateExt::ColorMaskStorage::GetDiffMask(colorMaskNoAlphaBits, rgbEnabledBits);
+        BlendStateExt::ColorMaskStorage::GetDiffMask(blendState.getColorMaskBits(), 0) &
+        BlendStateExt::ColorMaskStorage::GetDiffMask(blendState.getColorMaskBits(),
+                                                     blendState.getAllColorMaskBits());
 
     const DrawBufferMask sharedExponentBufferMask =
         framebuffer->getActiveSharedExponentColorAttachmentDrawBufferMask();
@@ -703,6 +697,16 @@ bool ValidateTransformFeedbackPrimitiveMode(const Context *context,
                                             PrimitiveMode transformFeedbackPrimitiveMode,
                                             PrimitiveMode renderPrimitiveMode);
 
+bool ValidateTexStorage(const Context *context,
+                        angle::EntryPoint entryPoint,
+                        TextureType targetPacked,
+                        GLsizei levels,
+                        GLenum internalformat,
+                        GLsizei width,
+                        GLsizei height,
+                        GLsizei depth,
+                        TexImageDimension texImageDimension);
+
 // Common validation for 2D and 3D variants of TexStorage*Multisample.
 bool ValidateTexStorageMultisample(const Context *context,
                                    angle::EntryPoint entryPoint,
@@ -751,7 +755,6 @@ bool ValidateES3TexImage2DParameters(const Context *context,
                                      TextureTarget target,
                                      GLint level,
                                      GLenum internalformat,
-                                     bool isCompressed,
                                      bool isSubImage,
                                      GLint xoffset,
                                      GLint yoffset,
@@ -778,30 +781,6 @@ bool ValidateES3CopyTexImage2DParameters(const Context *context,
                                          GLsizei width,
                                          GLsizei height,
                                          GLint border);
-bool ValidateES3TexStorageParametersBase(const Context *context,
-                                         angle::EntryPoint entryPoint,
-                                         TextureType target,
-                                         GLsizei levels,
-                                         GLenum internalformat,
-                                         GLsizei width,
-                                         GLsizei height,
-                                         GLsizei depth);
-bool ValidateES3TexStorage2DParameters(const Context *context,
-                                       angle::EntryPoint entryPoint,
-                                       TextureType target,
-                                       GLsizei levels,
-                                       GLenum internalformat,
-                                       GLsizei width,
-                                       GLsizei height,
-                                       GLsizei depth);
-bool ValidateES3TexStorage3DParameters(const Context *context,
-                                       angle::EntryPoint entryPoint,
-                                       TextureType target,
-                                       GLsizei levels,
-                                       GLenum internalformat,
-                                       GLsizei width,
-                                       GLsizei height,
-                                       GLsizei depth);
 
 bool ValidateGetMultisamplefvBase(const Context *context,
                                   angle::EntryPoint entryPoint,
@@ -956,6 +935,23 @@ ANGLE_INLINE bool ValidateDrawInstancedAttribs(const Context *context,
             RecordDrawAttribsError(context, entryPoint);
             return false;
         }
+    }
+
+    return true;
+}
+
+ANGLE_INLINE bool ValidateDrawInstancedCounts(const Context *context,
+                                              angle::EntryPoint entryPoint,
+                                              GLsizei primcount,
+                                              GLuint baseinstance)
+{
+    angle::CheckedNumeric<GLuint> checkedSum = baseinstance;
+    checkedSum += primcount - 1;
+
+    if (ANGLE_UNLIKELY(!checkedSum.IsValid()))
+    {
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, err::kInstanceIdOverflow);
+        return false;
     }
 
     return true;
@@ -1216,6 +1212,13 @@ bool ValidateLogicOpCommon(const PrivateState &state,
                            ErrorSet *errors,
                            angle::EntryPoint entryPoint,
                            LogicalOperation opcodePacked);
+
+bool ValidateNoActivePLSConflict(const Context *context,
+                                 angle::EntryPoint entryPoint,
+                                 TextureID textureId);
+bool ValidateNoActivePLSConflict(const Context *context,
+                                 angle::EntryPoint entryPoint,
+                                 RenderbufferID renderbufferId);
 }  // namespace gl
 
 #endif  // LIBANGLE_VALIDATION_ES_H_

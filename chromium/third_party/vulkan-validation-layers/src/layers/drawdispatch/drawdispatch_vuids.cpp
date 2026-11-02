@@ -581,6 +581,29 @@ std::string CreateActionVuid(Func function, const ActionVUID id) {
         // ### VUID-vkCmdDraw-None-10679
         case ActionVUID::PER_TILE_MODEL_FEEDBACK_LOOP_IMAGE_ACCESS_10679: suffix = "None-10679"; break;
 
+        // ### VUID-vkCmdDraw-OpImageSampleWeightedQCOM-06971
+        case ActionVUID::IMAGE_SAMPLE_WEIGHTED_QCOM_06971: suffix = "OpImageSampleWeightedQCOM-06971"; break;
+        // ### VUID-vkCmdDraw-OpImageSampleWeightedQCOM-06972
+        case ActionVUID::IMAGE_SAMPLE_WEIGHTED_QCOM_06972: suffix = "OpImageSampleWeightedQCOM-06972"; break;
+        // ### VUID-vkCmdDraw-OpImageBoxFilterQCOM-06973
+        case ActionVUID::IMAGE_BOX_FILTER_QCOM_06973: suffix = "OpImageBoxFilterQCOM-06973"; break;
+        // ### VUID-vkCmdDraw-OpImageBlockMatchSSDQCOM-06974
+        case ActionVUID::IMAGE_BLOCK_MATCH_SSD_QCOM_06974: suffix = "OpImageBlockMatchSSDQCOM-06974"; break;
+        // ### VUID-vkCmdDraw-OpImageSampleWeightedQCOM-06977
+        case ActionVUID::IMAGE_PROCESSING_SAMPLE_QCOM_06977: suffix = "OpImageSampleWeightedQCOM-06977"; break;
+        // ### VUID-vkCmdDraw-OpImageSampleWeightedQCOM-06978
+        case ActionVUID::IMAGE_PROCESSING_SAMPLE_QCOM_06978: suffix = "OpImageSampleWeightedQCOM-06978"; break;
+        // ### VUID-vkCmdDraw-OpImageBlockMatchWindow-09215
+        case ActionVUID::IMAGE_BLOCK_MATCH_WINDOW_QCOM_09215: suffix = "OpImageBlockMatchWindow-09215"; break;
+        // ### VUID-vkCmdDraw-OpImageBlockMatchWindow-09216
+        case ActionVUID::IMAGE_BLOCK_MATCH_WINDOW_QCOM_09216: suffix = "OpImageBlockMatchWindow-09216"; break;
+        // ### VUID-vkCmdDraw-OpImageBlockMatchSADQCOM-12420
+        case ActionVUID::IMAGE_BLOCK_MATCH_SAD_QCOM_12420: suffix = "OpImageBlockMatchSADQCOM-12420"; break;
+        // ### VUID-vkCmdDraw-OpImageBlockMatchWindow-12421
+        case ActionVUID::IMAGE_BLOCK_MATCH_WINDOW_QCOM_12421: suffix = "OpImageBlockMatchWindow-12421"; break;
+        // ### VUID-vkCmdDraw-addressModeU-12422
+        case ActionVUID::IMAGE_BLOCK_MATCH_WINDOW_QCOM_12422: suffix = "addressModeU-12422"; break;
+
         // ### VUID-vkCmdDraw-viewMask-06178
         case ActionVUID::DYNAMIC_RENDERING_VIEW_MASK_06178: suffix = "viewMask-06178"; break;
         // ### VUID-vkCmdDraw-colorAttachmentCount-06179
@@ -678,6 +701,34 @@ std::string CreateActionVuid(Func function, const ActionVUID id) {
         case ActionVUID::INVALID_DESCRIPTOR_08114: suffix = "None-08114"; break;
         // ### VUID-vkCmdDraw-None-10068
         case ActionVUID::DESCRIPTOR_INDEX_OOB_10068: suffix = "None-10068"; break;
+        // ### VUID-vkCmdDraw-None-08116
+        case ActionVUID::DESCRIPTOR_BUFFER_08116: suffix = "None-08116"; break;
+        // ### VUID-vkCmdDraw-None-11309
+        case ActionVUID::DESCRIPTOR_HEAP_OOB_11309: suffix = "None-11309"; break;
+        // ### VUID-vkCmdDraw-None-11297
+        case ActionVUID::DESCRIPTOR_HEAP_ALIGNMENT_11297: suffix = "None-11297"; break;
+        // ### VUID-vkCmdDraw-None-11298
+        case ActionVUID::DESCRIPTOR_HEAP_ALIGNMENT_11298: suffix = "None-11298"; break;
+        // ### VUID-vkCmdDraw-None-11299
+        case ActionVUID::DESCRIPTOR_HEAP_ALIGNMENT_11299: suffix = "None-11299"; break;
+        // ### VUID-vkCmdDraw-None-11300
+        case ActionVUID::DESCRIPTOR_HEAP_INDIRECT_INDEX_PUSH_11300: suffix = "None-11300"; break;
+        // ### VUID-vkCmdDraw-None-11304
+        case ActionVUID::DESCRIPTOR_HEAP_INDIRECT_ADDRESS_PUSH_11304: suffix = "None-11304"; break;
+        // ### VUID-vkCmdDraw-None-11441
+        case ActionVUID::DESCRIPTOR_HEAP_ADDRESS_BUFFER_ALIGNMENT_11441: suffix = "None-11441"; break;
+        // ### VUID-vkCmdDraw-None-11442
+        case ActionVUID::DESCRIPTOR_HEAP_ADDRESS_BUFFER_ALIGNMENT_11442: suffix = "None-11442"; break;
+        // ### VUID-vkCmdDraw-None-11301
+        case ActionVUID::DESCRIPTOR_HEAP_INVALID_ADDRESS_11301: suffix = "None-11301"; break;
+        // ### VUID-vkCmdDraw-None-11302
+        case ActionVUID::DESCRIPTOR_HEAP_INVALID_ADDRESS_11302: suffix = "None-11302"; break;
+        // ### VUID-vkCmdDraw-None-11305
+        case ActionVUID::DESCRIPTOR_HEAP_INVALID_ADDRESS_11305: suffix = "None-11305"; break;
+        // ### VUID-vkCmdDraw-None-11306
+        case ActionVUID::DESCRIPTOR_HEAP_INVALID_ADDRESS_11306: suffix = "None-11306"; break;
+        // ### VUID-vkCmdDraw-None-12472
+        case ActionVUID::DESCRIPTOR_HEAP_HASHING_12472: suffix = "None-12472"; break;
         // ### VUID-vkCmdDrawIndirectCount-countBuffer-02717
         case ActionVUID::INDIRECT_COUNT_LIMIT: suffix = "countBuffer-02717"; break;
     }

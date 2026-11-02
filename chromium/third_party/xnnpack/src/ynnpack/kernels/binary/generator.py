@@ -20,6 +20,10 @@ def main(argv: Sequence[str]) -> None:
   target = argv[3]
 
   kernels = {
+      "hexagon_hvx": [
+          (add_fp32, (32, 1)),
+          (subtract_fp32, (32, 1)),
+      ],
       "x86_sse2": [
           (add_fp32, (8, 1)),
           (add_fp64, (4, 1)),

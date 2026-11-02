@@ -72,8 +72,6 @@ export type ProjectSettingsAvailability = 'available'|'unavailable';
 const EMPTY_PROJECT_SETTINGS: ProjectSettings = Object.freeze({});
 const IDLE_PROMISE: Promise<void> = Promise.resolve();
 
-let projectSettingsModelInstance: ProjectSettingsModel|undefined;
-
 export class ProjectSettingsModel extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
   readonly #pageResourceLoader: SDK.PageResourceLoader.PageResourceLoader;
   readonly #targetManager: SDK.TargetManager.TargetManager;
@@ -108,7 +106,7 @@ export class ProjectSettingsModel extends Common.ObjectWrapper.ObjectWrapper<Eve
     return this.#promise.then(() => this.#projectSettings);
   }
 
-  private constructor(
+  constructor(
       hostConfig: Root.Runtime.HostConfig,
       pageResourceLoader: SDK.PageResourceLoader.PageResourceLoader,
       targetManager: SDK.TargetManager.TargetManager,
@@ -129,39 +127,7 @@ export class ProjectSettingsModel extends Common.ObjectWrapper.ObjectWrapper<Eve
     }
   }
 
-  /**
-   * Yields the `ProjectSettingsModel` singleton.
-   *
-   * @returns the singleton.
-   */
-  static instance({forceNew, hostConfig, pageResourceLoader, targetManager}: {
-    forceNew: boolean|null,
-    hostConfig: Root.Runtime.HostConfig|null,
-    pageResourceLoader: SDK.PageResourceLoader.PageResourceLoader|null,
-    targetManager: SDK.TargetManager.TargetManager|null,
-  }): ProjectSettingsModel {
-    if (!projectSettingsModelInstance || forceNew) {
-      if (!hostConfig || !pageResourceLoader || !targetManager) {
-        throw new Error(
-            'Unable to create ProjectSettingsModel: ' +
-            'hostConfig, pageResourceLoader, and targetManager must be provided');
-      }
-      projectSettingsModelInstance = new ProjectSettingsModel(hostConfig, pageResourceLoader, targetManager);
-    }
-    return projectSettingsModelInstance;
-  }
-
-  /**
-   * Clears the `ProjectSettingsModel` singleton (if any).
-   */
-  static removeInstance(): void {
-    if (projectSettingsModelInstance) {
-      projectSettingsModelInstance.#dispose();
-      projectSettingsModelInstance = undefined;
-    }
-  }
-
-  #dispose(): void {
+  disposeForTest(): void {
     this.#targetManager.removeEventListener(
         SDK.TargetManager.Events.INSPECTED_URL_CHANGED,
         this.#inspectedURLChanged,

@@ -263,10 +263,7 @@ class DeclarativeNetRequestBrowserTest
   DeclarativeNetRequestBrowserTest() {
     feature_list_.InitWithFeatures(
         /*enabled_features=*/
-        {network::features::kInterestGroupStorage,
-         blink::features::kAdInterestGroupAPI, blink::features::kFledge,
-         blink::features::kFledgeBiddingAndAuctionServer,
-         blink::features::kFencedFrames,
+        {blink::features::kFencedFrames,
          blink::features::kFencedFramesAPIChanges,
          blink::features::kFencedFramesDefaultMode,
          features::kPrivacySandboxAdsAPIsOverride},
@@ -6614,6 +6611,36 @@ class DeclarativeNetRequestGlobalRulesBrowserTest
 using DeclarativeNetRequestGlobalRulesBrowserTest_Packed =
     DeclarativeNetRequestGlobalRulesBrowserTest;
 
+// Test that session-scoped rules do not count towards the extension's static
+// rule budget.
+IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestGlobalRulesBrowserTest_Packed,
+                       SessionRulesDoNotConsumeStaticBudget) {
+  // Load the extension with a background page so we can call APIs.
+  set_config_flags(ConfigFlag::kConfig_HasBackgroundScript);
+
+  std::vector<TestRulesetInfo> rulesets;
+  // Start with an extension that has 2 rules in a static ruleset.
+  rulesets.emplace_back(
+      "ruleset_1", ToListValue({CreateGenericRule(1), CreateGenericRule(2)}));
+
+  ASSERT_NO_FATAL_FAILURE(
+      LoadExtensionWithRulesets(rulesets, "test_extension", /*hosts=*/{}));
+
+  // The static rule limit for this test is 3 (1 guaranteed minimum + 2 global).
+  // We have enabled 2 static rules.
+  // So available static rules should be 3 - 2 = 1.
+  EXPECT_EQ("1", GetAvailableStaticRuleCount(last_loaded_extension_id()));
+
+  // Now add 2 session rules.
+  ASSERT_NO_FATAL_FAILURE(UpdateSessionRules(
+      last_loaded_extension_id(), /*rule_ids_to_remove=*/{},
+      /*rules_to_add=*/{CreateGenericRule(3), CreateGenericRule(4)}));
+
+  // The available static rule count should NOT change because session rules
+  // should not consume the static budget.
+  EXPECT_EQ("1", GetAvailableStaticRuleCount(last_loaded_extension_id()));
+}
+
 // Test that extensions with allocated global rules keep their allocations after
 // the browser restarts.
 IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestGlobalRulesBrowserTest_Packed,
@@ -7119,324 +7146,7 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestWebTransportTest, BlockRequests) {
                                 kOpenWebTransportScript,
                                 webtransport_server_.server_address().port())));
 }
-#endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 
-// Tests that Protected Audience requests can have their headers modified by the
-// declarativeNetRequest API.
-IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest,
-                       ProtectedAudienceNetworkRequestsModifyHeaders) {
-  privacy_sandbox::ScopedPrivacySandboxAttestations scoped_attestations(
-      privacy_sandbox::PrivacySandboxAttestations::CreateForTesting());
-  // Mark all Privacy Sandbox APIs as attested since the test case is testing
-  // behaviors not related to attestations.
-  privacy_sandbox::PrivacySandboxAttestations::GetInstance()
-      ->SetAllPrivacySandboxAttestedForTesting(true);
-
-  static constexpr char kAddedHeaderName[] = "Header-Name";
-  static constexpr char kAddedHeaderValue[] = "Header-Value";
-
-  ASSERT_TRUE(https_server()->Start());
-
-  PrivacySandboxSettingsFactory::GetForProfile(profile())
-      ->SetAllPrivacySandboxAllowedForTesting();
-
-  NavigateToURL(https_server()->GetURL("/interest_group/fenced_frame.html"));
-
-  GURL bidding_logic_url =
-      https_server()->GetURL("/interest_group/bidding_logic.js");
-  GURL bidding_signals_url =
-      https_server()->GetURL("/interest_group/bidding_signals.cbor");
-  GURL decision_logic_url =
-      https_server()->GetURL("/interest_group/decision_logic.js");
-  GURL scoring_signals_url =
-      https_server()->GetURL("/interest_group/scoring_signals.cbor");
-  GURL bidder_report_url = https_server()->GetURL("/echo?bidder_report");
-  GURL decision_report_url = https_server()->GetURL("/echo?decision_report");
-
-  // Set up a coordinator and server key for the Origin shared by the bidding
-  // and scoring signals URLs, so can use it as a trusted scoring signals URL.
-  // This test does not set up decoding the encrypted request or sending an
-  // encrypted response to it, since all it checks is that headers can be added
-  // to the request it makes.
-  const url::Origin kCoordinatorOrigin =
-      url::Origin::Create(GURL("https://coordinator.test"));
-  ConfigureTestPrivacySandboxCoordinatorKeys(
-      GetActiveWebContents()
-          ->GetBrowserContext()
-          ->GetDefaultStoragePartition()
-          ->GetInterestGroupManager(),
-      content::InterestGroupManager::TrustedServerAPIType::kTrustedKeyValue,
-      kCoordinatorOrigin, {https_server()->GetOrigin()});
-
-  // URL of the winning ad. Isn't actually tested anywhere in this test, but a
-  // fenced frame is navigated to it, so best to use a URL with known behavior.
-  // A random hostname will end up trying to connect to localhost, which could
-  // end up talking to some other server running locally.
-  GURL ad_url = https_server()->GetURL("/echo");
-
-  // Add an interest group.
-  EXPECT_EQ("done", content::EvalJs(GetActiveWebContents(),
-                                    content::JsReplace(
-                                        R"(
-                              (function() {
-                                navigator.joinAdInterestGroup({
-                                  name: 'cars',
-                                  owner: $1,
-                                  biddingLogicURL: $2,
-                                  trustedBiddingSignalsURL: $3,
-                                  trustedBiddingSignalsCoordinator: $4,
-                                  userBiddingSignals: [],
-                                  ads: [{
-                                    renderURL: 'https://example.com/render',
-                                    metadata: {ad: 'metadata', here: [1, 2, 3]}
-                                  }]
-                                }, /*joinDurationSec=*/ 300);
-                                return 'done';
-                              })();
-                            )",
-                                        url::Origin::Create(bidding_logic_url),
-                                        bidding_logic_url, bidding_signals_url,
-                                        kCoordinatorOrigin)));
-
-  // Create an extension to add a header to all requests.
-  TestRule custom_response_header_rule = CreateModifyHeadersRule(
-      1 /* id */, 1 /* priority */, "*",
-      // request_headers
-      std::vector<TestHeaderInfo>(
-          {TestHeaderInfo(kAddedHeaderName, "set", kAddedHeaderValue)}),
-      std::nullopt);
-  // CreateModifyHeadersRule() applies to subframes only by default, so clear
-  // that.
-  custom_response_header_rule.condition->resource_types = std::nullopt;
-
-  ASSERT_NO_FATAL_FAILURE(
-      LoadExtensionWithRules({custom_response_header_rule}, "test_extension",
-                             {URLPattern::kAllUrlsPattern}));
-
-  std::string run_auction_command = content::JsReplace(
-      R"(
-         (async function() {
-           let config = await navigator.runAdAuction({
-             seller: $1,
-             decisionLogicURL: $2,
-             interestGroupBuyers: [$1],
-             trustedScoringSignalsURL: $3,
-             trustedScoringSignalsCoordinator: $4,
-           });
-           document.querySelector('fencedframe').config =
-              new FencedFrameConfig(config);
-           return config;
-         })()
-      )",
-      url::Origin::Create(decision_logic_url), decision_logic_url,
-      scoring_signals_url, kCoordinatorOrigin);
-
-  // The auction should return a unique URN URL.
-  GURL ad_urn(content::EvalJs(GetActiveWebContents(), run_auction_command)
-                  .ExtractString());
-  EXPECT_TRUE(ad_urn.SchemeIs(url::kUrnScheme));
-
-  // Wait to see both the report request of both worklets.
-  WaitForRequest(bidder_report_url);
-  WaitForRequest(decision_report_url);
-  // Clear observed URLs.
-  std::map<GURL, net::test_server::HttpRequest> requests =
-      GetAndResetRequestsToServer();
-
-  // Make sure the add headers rule was applied to all requests related to the
-  // auction.
-  for (const GURL& expected_url :
-       {bidding_logic_url, bidding_signals_url, decision_logic_url,
-        scoring_signals_url, bidder_report_url, decision_report_url}) {
-    auto request = requests.find(expected_url);
-    ASSERT_NE(request, requests.end());
-    auto added_header = request->second.headers.find(kAddedHeaderName);
-    ASSERT_NE(added_header, request->second.headers.end());
-    EXPECT_EQ(kAddedHeaderValue, added_header->second);
-  }
-}
-
-// Tests that Protected Audience requests can be blocked by the
-// declarativeNetRequest API.
-IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest,
-                       ProtectedAudienceNetworkRequestsBlockRequests) {
-  privacy_sandbox::ScopedPrivacySandboxAttestations scoped_attestations(
-      privacy_sandbox::PrivacySandboxAttestations::CreateForTesting());
-  // Mark all Privacy Sandbox APIs as attested since the test case is testing
-  // behaviors not related to attestations.
-  privacy_sandbox::PrivacySandboxAttestations::GetInstance()
-      ->SetAllPrivacySandboxAttestedForTesting(true);
-
-  ASSERT_TRUE(https_server()->Start());
-
-  PrivacySandboxSettingsFactory::GetForProfile(profile())
-      ->SetAllPrivacySandboxAllowedForTesting();
-
-  NavigateToURL(https_server()->GetURL("/interest_group/fenced_frame.html"));
-
-  GURL bidding_logic_url =
-      https_server()->GetURL("/interest_group/bidding_logic.js");
-  GURL decision_logic_url =
-      https_server()->GetURL("/interest_group/decision_logic.js");
-  GURL bidder_report_url = https_server()->GetURL("/echo?bidder_report");
-  GURL decision_report_url = https_server()->GetURL("/echo?decision_report");
-
-  // URL of the winning ad. Isn't actually tested anywhere in this test, but a
-  // fenced frame is navigated to it, so best to use a URL with known behavior.
-  // A random hostname will end up trying to connect to localhost, which could
-  // end up talking to some other server running locally.
-  GURL ad_url = https_server()->GetURL("/echo");
-
-  // Add an interest group.
-  EXPECT_EQ("done", content::EvalJs(
-                        GetActiveWebContents(),
-                        content::JsReplace(
-                            R"(
-                              (function() {
-                                navigator.joinAdInterestGroup({
-                                  name: 'cars',
-                                  owner: $1,
-                                  biddingLogicURL: $2,
-                                  userBiddingSignals: [],
-                                  ads: [{
-                                    renderURL: 'https://example.com/render',
-                                    metadata: {ad: 'metadata', here: [1, 2, 3]}
-                                  }]
-                                }, /*joinDurationSec=*/ 300);
-                                return 'done';
-                              })();
-                            )",
-                            url::Origin::Create(bidding_logic_url).Serialize(),
-                            bidding_logic_url)));
-
-  std::string run_auction_command = content::JsReplace(
-      R"(
-         (async function() {
-           let config = await navigator.runAdAuction({
-             seller: $1,
-             decisionLogicURL: $2,
-             interestGroupBuyers: [$1],
-           });
-           document.querySelector('fencedframe').config =
-              new FencedFrameConfig(config);
-           return config;
-         })()
-      )",
-      url::Origin::Create(decision_logic_url).Serialize(),
-      decision_logic_url.spec());
-
-  // Add a rule to block the bidder's report URL.
-  TestRule block_report_rule = CreateGenericRule();
-  block_report_rule.condition->url_filter = bidder_report_url.spec() + "^";
-  block_report_rule.id = 1;
-  ASSERT_NO_FATAL_FAILURE(LoadExtensionWithRules(
-      {block_report_rule}, "test_extension2", {URLPattern::kAllUrlsPattern}));
-
-  // Run the auction.
-  GURL ad_urn =
-      GURL(content::EvalJs(GetActiveWebContents(), run_auction_command)
-               .ExtractString());
-  EXPECT_TRUE(ad_urn.SchemeIs(url::kUrnScheme));
-
-  // Wait for the decision script's report URL to be requested.
-  WaitForRequest(decision_report_url);
-  // The bidder script should be blocked. Unfortunately, there's no way to wait
-  // for the bidder script to not be requested. Instead, just wait for an
-  // addition "tiny timeout" delay, and make sure it was not requested.
-  base::RunLoop run_loop;
-  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
-      FROM_HERE, run_loop.QuitClosure(), TestTimeouts::tiny_timeout());
-  run_loop.Run();
-  EXPECT_EQ(0u, GetAndResetRequestsToServer().count(bidder_report_url));
-}
-
-// Tests that if the declarativeNetRequest API tries to redirect Protected
-// Audience requests, the request is blocked by the Protected Audience logic,
-// which doesn't allow redirects, instead of being redirected.
-IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest,
-                       ProtectedAudienceNetworkRequestsBlockRedirect) {
-  privacy_sandbox::ScopedPrivacySandboxAttestations scoped_attestations(
-      privacy_sandbox::PrivacySandboxAttestations::CreateForTesting());
-  // Mark all Privacy Sandbox APIs as attested since the test case is testing
-  // behaviors not related to attestations.
-  privacy_sandbox::PrivacySandboxAttestations::GetInstance()
-      ->SetAllPrivacySandboxAttestedForTesting(true);
-
-  ASSERT_TRUE(https_server()->Start());
-
-  PrivacySandboxSettingsFactory::GetForProfile(profile())
-      ->SetAllPrivacySandboxAllowedForTesting();
-
-  NavigateToURL(https_server()->GetURL("/interest_group/fenced_frame.html"));
-
-  GURL bidding_logic_url =
-      https_server()->GetURL("/interest_group/bidding_logic.js");
-  GURL decision_logic_url =
-      https_server()->GetURL("/interest_group/decision_logic.js");
-  GURL bidder_report_url = https_server()->GetURL("/echo?bidder_report");
-  GURL decision_report_url = https_server()->GetURL("/echo?decision_report");
-
-  // Add an interest group.
-  EXPECT_EQ("done", content::EvalJs(
-                        GetActiveWebContents(),
-                        content::JsReplace(
-                            R"(
-          (function() {
-            navigator.joinAdInterestGroup({
-              name: 'cars',
-              owner: $1,
-              biddingLogicURL: $2,
-              userBiddingSignals: [],
-              ads: [{
-                renderURL: 'https://example.com/render',
-                metadata: {ad: 'metadata', here: [1, 2, 3]}
-              }]
-            }, /*joinDurationSec=*/ 300);
-            return 'done';
-          })();
-        )",
-                            url::Origin::Create(bidding_logic_url).Serialize(),
-                            bidding_logic_url)));
-
-  std::string run_auction_command = content::JsReplace(
-      R"(
-             (async function() {
-               let config = await navigator.runAdAuction({
-                 seller: $1,
-                 decisionLogicURL: $2,
-                 interestGroupBuyers: [$1],
-               });
-               document.querySelector('fencedframe').config =
-                  new FencedFrameConfig(config);
-               return config;
-             })()
-          )",
-      url::Origin::Create(decision_logic_url).Serialize(),
-      decision_logic_url.spec());
-
-  // Add an extension which redirects requests for the bidding script to a URL
-  // that serves an identical bidding script.
-  TestRule redirect_bidding_logic_rule = CreateGenericRule();
-  redirect_bidding_logic_rule.condition->url_filter =
-      bidding_logic_url.spec() + "^";
-  redirect_bidding_logic_rule.id = 2;
-  redirect_bidding_logic_rule.action->type = "redirect";
-  redirect_bidding_logic_rule.action->redirect.emplace();
-  redirect_bidding_logic_rule.action->redirect->url =
-      https_server()->GetURL("/interest_group/bidding_logic2.js").spec();
-
-  ASSERT_NO_FATAL_FAILURE(
-      LoadExtensionWithRules({redirect_bidding_logic_rule}, "test_extension3",
-                             {URLPattern::kAllUrlsPattern}));
-
-  // Redirecting a bidder script, even to another bidder script, should cause
-  // the request to fail, which causes the entire auction to fail, since there's
-  // only one bidder script.
-  EXPECT_EQ(base::Value(),
-            content::EvalJs(GetActiveWebContents(), run_auction_command));
-}
-
-#if BUILDFLAG(ENABLE_EXTENSIONS)
 // TODO(crbug.com/393191910): Port to desktop Android. These tests fail with
 // no logging and no stack.
 class DeclarativeNetRequestBackForwardCacheBrowserTest

@@ -9,6 +9,7 @@ import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as SourceFrame from '../../ui/legacy/components/source_frame/source_frame.js';
 import * as UI from '../../ui/legacy/legacy.js';
+import {render} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
 import {ApplicationPanelSidebar, StorageCategoryView} from './ApplicationPanelSidebar.js';
@@ -135,8 +136,14 @@ export class ResourcesPanel extends UI.Panel.PanelWithSidebar {
     this.storageViewToolbar.classList.toggle('hidden', true);
     if (view instanceof UI.View.SimpleView) {
       void view.toolbarItems().then(items => {
-        items.map(item => this.storageViewToolbar.appendToolbarItem(item));
-        this.storageViewToolbar.classList.toggle('hidden', !items.length);
+        if (Array.isArray(items)) {
+          items.map(item => this.storageViewToolbar.appendToolbarItem(item));
+          this.storageViewToolbar.classList.toggle('hidden', !items.length);
+        } else {
+          // eslint-disable-next-line @devtools/no-lit-render-outside-of-view
+          render(items, this.storageViewToolbar);
+          this.storageViewToolbar.classList.toggle('hidden', false);
+        }
       });
     }
   }

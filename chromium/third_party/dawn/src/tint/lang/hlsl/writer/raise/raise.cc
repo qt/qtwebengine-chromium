@@ -66,6 +66,7 @@
 #include "src/tint/lang/hlsl/writer/raise/array_offset_from_uniform.h"
 #include "src/tint/lang/hlsl/writer/raise/binary_polyfill.h"
 #include "src/tint/lang/hlsl/writer/raise/builtin_polyfill.h"
+#include "src/tint/lang/hlsl/writer/raise/decompose_snorm10_10_10_2.h"
 #include "src/tint/lang/hlsl/writer/raise/decompose_storage_access.h"
 #include "src/tint/lang/hlsl/writer/raise/extract_ternary_values.h"
 #include "src/tint/lang/hlsl/writer/raise/localize_struct_array_assignment.h"
@@ -117,9 +118,20 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
     }
 
     if (options.num_workgroups_start_offset) {
+        // Store num_workgroups as a struct of three u32 members rather than a vec3<u32> so it only
+        // requires 4-byte alignment. A vec3<u32> requires 16-byte alignment, which cannot be
+        // guaranteed when the internal immediate follows a user immediate block whose size is not a
+        // multiple of 16.
+        auto* num_workgroups_type = module.Types().Struct(
+            module.symbols.New("tint_num_workgroups_struct"),
+            {
+                {module.symbols.New("num_workgroups_x"), module.Types().u32()},
+                {module.symbols.New("num_workgroups_y"), module.Types().u32()},
+                {module.symbols.New("num_workgroups_z"), module.Types().u32()},
+            });
         TINT_CHECK_RESULT(immediate_data_config.AddInternalImmediateData(
             options.num_workgroups_start_offset.value(),
-            module.symbols.New("tint_num_workgroups_start_offset"), module.Types().vec3u()));
+            module.symbols.New("tint_num_workgroups_start_offset"), num_workgroups_type));
     }
 
     if (array_length_from_uniform_options.buffer_sizes_offset) {
@@ -285,10 +297,12 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
             .first_index_offset = options.first_index_offset,
             .first_instance_offset = options.first_instance_offset,
             .num_workgroups_start_offset = options.num_workgroups_start_offset,
-            .polyfill_sample_mask = options.polyfill_sample_mask};
+        };
 
         TINT_CHECK_RESULT(raise::ShaderIO(module, config));
     }
+
+    TINT_CHECK_RESULT(raise::DecomposeSnorm10_10_10_2(module, options.snorm10_10_10_2_locations));
 
     // DemoteToHelper must come before any transform that introduces non-core instructions.
     // Run after ShaderIO to ensure the discards are added to the entry point it introduces.
@@ -402,7 +416,7 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
         TINT_CHECK_RESULT(core::ir::transform::ValueToLet(module, cfg));
     }
 
-    // Anything which runs after this needs to handle `Capabilities::kAllowModuleScopedLets`
+    // Anything which runs after this needs to handle `Property::kAllowModuleScopedLets`
     TINT_CHECK_RESULT(raise::PromoteInitializers(module));
 
     return Success;

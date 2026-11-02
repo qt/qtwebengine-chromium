@@ -3,14 +3,13 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Protocol from '../../generated/protocol.js';
 import {MockCDPConnection} from '../../testing/MockCDPConnection.js';
 import {setupRuntimeHooks} from '../../testing/RuntimeHelpers.js';
 import {setupSettingsHooks} from '../../testing/SettingsHelpers.js';
 import {TestUniverse} from '../../testing/TestUniverse.js';
-
-import * as SDK from './sdk.js';
 
 describe('CPUThrottlingManager', () => {
   setupSettingsHooks();  // For the MultitargetNetworkManager.
@@ -25,7 +24,7 @@ describe('CPUThrottlingManager', () => {
     });
     universe.createTarget({connection});
 
-    const manager = new SDK.CPUThrottlingManager.CPUThrottlingManager(universe.settings, universe.targetManager);
+    const manager = universe.cpuThrottlingManager;
     const concurrency = await manager.getHardwareConcurrency();
     assert.strictEqual(concurrency, 42);
   });
@@ -35,7 +34,7 @@ describe('CPUThrottlingManager', () => {
     const cdpStub =
         sinon.stub(universe.createTarget().emulationAgent(), 'invoke_setHardwareConcurrencyOverride').resolves();
 
-    const manager = new SDK.CPUThrottlingManager.CPUThrottlingManager(universe.settings, universe.targetManager);
+    const manager = universe.cpuThrottlingManager;
     manager.setHardwareConcurrency(5);
 
     sinon.assert.calledOnce(cdpStub);
@@ -47,7 +46,7 @@ describe('CPUThrottlingManager', () => {
     const cdpStub =
         sinon.stub(universe.createTarget().emulationAgent(), 'invoke_setHardwareConcurrencyOverride').resolves();
 
-    const manager = new SDK.CPUThrottlingManager.CPUThrottlingManager(universe.settings, universe.targetManager);
+    const manager = universe.cpuThrottlingManager;
     manager.setHardwareConcurrency(0);
     sinon.assert.notCalled(cdpStub);
 

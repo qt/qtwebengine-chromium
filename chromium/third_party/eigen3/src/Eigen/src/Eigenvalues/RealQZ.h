@@ -27,9 +27,9 @@ namespace Eigen {
  * real QZ decomposition; this is expected to be an instantiation of the
  * Matrix class template.
  *
- * Given a real square matrices A and B, this class computes the real QZ
+ * Given real square matrices A and B, this class computes the real QZ
  * decomposition: \f$ A = Q S Z \f$, \f$ B = Q T Z \f$ where Q and Z are
- * real orthogonal matrixes, T is upper-triangular matrix, and S is upper
+ * real orthogonal matrices, T is upper-triangular matrix, and S is upper
  * quasi-triangular matrix. An orthogonal matrix is a matrix whose
  * inverse is equal to its transpose, \f$ U^{-1} = U^T \f$. A quasi-triangular
  * matrix is a block-triangular matrix whose diagonal consists of 1-by-1
@@ -41,7 +41,7 @@ namespace Eigen {
  *
  * Call the function compute() to compute the real QZ decomposition of a
  * given pair of matrices. Alternatively, you can use the
- * RealQZ(const MatrixType& B, const MatrixType& B, bool computeQZ)
+ * RealQZ(const MatrixType& A, const MatrixType& B, bool computeQZ)
  * constructor which computes the real QZ decomposition at construction
  * time. Once the decomposition is computed, you can use the matrixS(),
  * matrixT(), matrixQ() and matrixZ() functions to retrieve the matrices
@@ -101,7 +101,7 @@ class RealQZ {
    *
    * \param[in]  A          Matrix A.
    * \param[in]  B          Matrix B.
-   * \param[in]  computeQZ  If false, A and Z are not computed.
+   * \param[in]  computeQZ  If false, Q and Z are not computed.
    *
    * This constructor calls compute() to compute the QZ decomposition.
    */
@@ -159,7 +159,7 @@ class RealQZ {
    *
    * \param[in]  A          Matrix A.
    * \param[in]  B          Matrix B.
-   * \param[in]  computeQZ  If false, A and Z are not computed.
+   * \param[in]  computeQZ  If false, Q and Z are not computed.
    * \returns    Reference to \c *this
    */
   RealQZ& compute(const MatrixType& A, const MatrixType& B, bool computeQZ = true);
@@ -541,8 +541,8 @@ RealQZ<MatrixType>& RealQZ<MatrixType>::compute(const MatrixType& A_in, const Ma
         // zero found
         pushDownZero(z, f, l);
       } else {
-        // We are sure now that S.block(f,f, l-f+1,l-f+1) is underuced upper-Hessenberg
-        // and T.block(f,f, l-f+1,l-f+1) is invertible uper-triangular, which allows to
+        // We are sure now that S.block(f,f, l-f+1,l-f+1) is unreduced upper-Hessenberg
+        // and T.block(f,f, l-f+1,l-f+1) is invertible upper-triangular, which allows to
         // apply a QR-like iteration to rows and columns f..l.
         step(f, l, local_iter);
         // count QR-like steps

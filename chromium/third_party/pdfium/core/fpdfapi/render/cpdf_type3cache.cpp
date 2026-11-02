@@ -80,8 +80,9 @@ CPDF_Type3Cache::CPDF_Type3Cache(CPDF_Type3Font* font) : font_(font) {}
 
 CPDF_Type3Cache::~CPDF_Type3Cache() = default;
 
-const CFX_GlyphBitmap* CPDF_Type3Cache::LoadGlyph(uint32_t charcode,
-                                                  const CFX_Matrix& mtMatrix) {
+const CFX_GlyphBitmap* CPDF_Type3Cache::LoadGlyphBitmap(
+    uint32_t charcode,
+    const CFX_Matrix& mtMatrix) {
   SizeKey keygen = {
       FXSYS_roundf(mtMatrix.a * 10000),
       FXSYS_roundf(mtMatrix.b * 10000),

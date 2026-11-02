@@ -40,7 +40,7 @@ namespace dawn {
 //   }
 //   return (B + exp((v - C) / A)) / F
 constexpr TransferFunction kEOTF_HLG = {
-    .g = -1,  // Mode HLG see XXX
+    .g = -1,  // Mode HLG see src/dawn/native/ExternalTexture.cpp
     .a = 0.17883277,
     .b = 0.28466892,
     .c = 0.55991073,
@@ -57,7 +57,7 @@ constexpr TransferFunction kEOTF_HLG = {
 //   v = max(v - C, 0) / (D - E * v)
 //   return pow(v, 1.0 / A)
 constexpr TransferFunction kEOTF_PQ = {
-    .g = -2,  // Mode HLG see XXX
+    .g = -2,  // Mode PQ see src/dawn/native/ExternalTexture.cpp
     .a = (2610.0 / 16384.0),
     .b = (2523.0 / 4096.0) * 128.0,
     .c = (3424.0 / 4096.0),
@@ -70,6 +70,13 @@ wgpu::Status ComputeExternalTextureParams(const wgpu::ColorSpaceDawn& srcColorSp
                                           wgpu::PredefinedColorSpace dstColorSpace,
                                           ExternalTextureColorSpaceParams* out) {
     if (srcColorSpace.nextInChain != nullptr) {
+        return wgpu::Status::Error;
+    }
+
+    // Specifying the hdrReferenceWhiteLuminance is only allowed for HDR color spaces.
+    if (srcColorSpace.hdrReferenceWhiteLuminance != 0 &&
+        srcColorSpace.transfer != wgpu::ColorSpaceTransferDawn::PQ &&
+        srcColorSpace.transfer != wgpu::ColorSpaceTransferDawn::HLG) {
         return wgpu::Status::Error;
     }
 
@@ -126,7 +133,7 @@ wgpu::Status ComputeExternalTextureParams(const wgpu::ColorSpaceDawn& srcColorSp
     }
 
     TransferFunction srcEOTF;
-    float srcLuminanceOf1 = kSDRLuminanceOf1;
+    float srcLuminanceOf1 = kDefaultHDRReferenceWhiteLuminance;
     switch (srcColorSpace.transfer) {
         case wgpu::ColorSpaceTransferDawn::Identity:
             srcEOTF = kEOTF_Identity;
@@ -154,7 +161,6 @@ wgpu::Status ComputeExternalTextureParams(const wgpu::ColorSpaceDawn& srcColorSp
 
     math::Mat3x3f dstXYZToRGB;
     TransferFunction dstOETF;
-    float dstLuminanceOf1 = kSDRLuminanceOf1;
     switch (dstColorSpace) {
         case wgpu::PredefinedColorSpace::SRGB:
             dstXYZToRGB = kXYZToRGB_sRGB;
@@ -172,6 +178,10 @@ wgpu::Status ComputeExternalTextureParams(const wgpu::ColorSpaceDawn& srcColorSp
             dstXYZToRGB = kXYZToRGB_DisplayP3;
             dstOETF = kEOTF_Identity;
             break;
+        case wgpu::PredefinedColorSpace::Rec2020Linear:
+            dstXYZToRGB = kXYZToRGB_Rec2020;
+            dstOETF = kEOTF_Identity;
+            break;
         default:
             return wgpu::Status::Error;
     }
@@ -185,7 +195,12 @@ wgpu::Status ComputeExternalTextureParams(const wgpu::ColorSpaceDawn& srcColorSp
     }
 
     // The gamut matrix is passed column-major.
-    float luminanceAdjustment = srcLuminanceOf1 / dstLuminanceOf1;
+    float hdrReferenceWhiteLuminance = kDefaultHDRReferenceWhiteLuminance;
+    if (srcColorSpace.hdrReferenceWhiteLuminance != 0) {
+        hdrReferenceWhiteLuminance = srcColorSpace.hdrReferenceWhiteLuminance;
+    }
+
+    float luminanceAdjustment = srcLuminanceOf1 / hdrReferenceWhiteLuminance;
     math::Mat3x3f gamutConversionMatrix = math::Mul(dstXYZToRGB, srcRGBToXYZ) * luminanceAdjustment;
 
     for (size_t x = 0; x < 3; x++) {

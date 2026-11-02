@@ -30,6 +30,8 @@
 
 namespace {
 
+constexpr int kMinSegmentSize = 11;
+
 size_t GetHuffContextSize(uint8_t val) {
   return val == 0 ? 65536 : val == 1 ? 8192 : 1024;
 }
@@ -90,7 +92,7 @@ JBig2_Result CJBig2_Context::DecodeSequential(PauseIndicatorIface* pPause) {
     return JBig2_Result::kEndReached;
   }
 
-  while (stream_->getByteLeft() >= JBIG2_MIN_SEGMENT_SIZE) {
+  while (stream_->getByteLeft() >= kMinSegmentSize) {
     JBig2_Result nRet;
     if (!segment_) {
       segment_ = std::make_unique<CJBig2_Segment>();

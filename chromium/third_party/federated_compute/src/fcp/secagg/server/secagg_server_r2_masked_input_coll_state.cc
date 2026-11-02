@@ -22,7 +22,7 @@
 #include <string>
 #include <utility>
 
-#include "fcp/base/monitoring.h"
+#include "absl/status/status.h"
 #include "fcp/secagg/server/secagg_server_r3_unmasking_state.h"
 
 namespace fcp {
@@ -46,8 +46,8 @@ SecAggServerR2MaskedInputCollState::~SecAggServerR2MaskedInputCollState() =
 
 absl::Status SecAggServerR2MaskedInputCollState::HandleMessage(
     uint32_t client_id, const ClientToServerWrapperMessage& message) {
-  return FCP_STATUS(FAILED_PRECONDITION)
-         << "Call to deprecated HandleMessage method.";
+  return absl::FailedPreconditionError(
+      "Call to deprecated HandleMessage method.");
 }
 
 absl::Status SecAggServerR2MaskedInputCollState::HandleMessage(
@@ -56,7 +56,7 @@ absl::Status SecAggServerR2MaskedInputCollState::HandleMessage(
     MessageReceived(*message, false);
     AbortClient(client_id, "", ClientDropReason::SENT_ABORT_MESSAGE,
                 /*notify=*/false);
-    return FCP_STATUS(OK);
+    return absl::OkStatus();
   }
   // If the client has aborted already, ignore its messages.
   if (client_status(client_id) != ClientStatus::SHARE_KEYS_RECEIVED) {
@@ -66,14 +66,14 @@ absl::Status SecAggServerR2MaskedInputCollState::HandleMessage(
                 "client - either the client already aborted or one such "
                 "message was already received.",
                 ClientDropReason::MASKED_INPUT_UNEXPECTED);
-    return FCP_STATUS(OK);
+    return absl::OkStatus();
   }
   if (!message->has_masked_input_response()) {
     MessageReceived(*message, false);
     AbortClient(client_id,
                 "Message type received is different from what was expected.",
                 ClientDropReason::UNEXPECTED_MESSAGE_TYPE);
-    return FCP_STATUS(OK);
+    return absl::OkStatus();
   }
   MessageReceived(*message, true);
 
@@ -84,12 +84,12 @@ absl::Status SecAggServerR2MaskedInputCollState::HandleMessage(
   if (!check_and_accumulate_status.ok()) {
     AbortClient(client_id, std::string(check_and_accumulate_status.message()),
                 ClientDropReason::INVALID_MASKED_INPUT);
-    return FCP_STATUS(OK);
+    return absl::OkStatus();
   }
   set_client_status(client_id, ClientStatus::MASKED_INPUT_RESPONSE_RECEIVED);
   number_of_messages_received_in_this_round_++;
   number_of_clients_ready_for_next_round_++;
-  return FCP_STATUS(OK);
+  return absl::OkStatus();
 }
 
 bool SecAggServerR2MaskedInputCollState::IsNumberOfIncludedInputsCommitted()
@@ -138,7 +138,7 @@ void SecAggServerR2MaskedInputCollState::HandleAbort() {
 absl::StatusOr<std::unique_ptr<SecAggServerState>>
 SecAggServerR2MaskedInputCollState::ProceedToNextRound() {
   if (!ReadyForNextRound()) {
-    return FCP_STATUS(UNAVAILABLE);
+    return absl::UnavailableError("");
   }
   if (needs_to_abort_) {
     std::string error_string = "Too many clients aborted.";

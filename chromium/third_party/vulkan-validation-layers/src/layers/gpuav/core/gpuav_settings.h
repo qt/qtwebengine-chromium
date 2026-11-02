@@ -46,6 +46,7 @@ struct GpuAVSettings {
     bool debug_dump_instrumented_shaders = false;
     uint32_t debug_max_instrumentations_count = 0;  // zero is same as "unlimited"
     bool debug_print_instrumentation_info = false;
+    bool debug_disable_dontinline = false;
 
     // We create a buffer of N slots as [0, N-1],
     // but N-1 is used to signal the app everything after is garbage.
@@ -78,6 +79,7 @@ struct GpuAVSettings {
     void SetBufferValidationEnabled(bool enabled);
 
     void SetShaderSelectionRegexes(std::vector<std::string> &&shader_selection_regexes);
+    void LoadCDLDump(std::string&& path, std::vector<std::string>& setting_warnings);
     bool MatchesAnyShaderSelectionRegex(const std::string &debug_name);
 
     // For people who are using VkValidationFeatureEnableEXT to set only DebugPrintf (and want the rest of GPU-AV off)
@@ -88,9 +90,6 @@ struct GpuAVSettings {
     bool debug_printf_to_stdout = false;
     bool debug_printf_verbose = false;
     uint32_t debug_printf_buffer_size = 1024;
-
-    bool debug_descriptor_enabled = false;
-    bool debug_descriptor_to_stdout = false;
 
     void TracyLogSettings() const;
 };

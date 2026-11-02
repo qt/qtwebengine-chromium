@@ -14,7 +14,7 @@
 # limitations under the License.
 #
 
-load("@rules_rust//rust:defs.bzl", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -24,7 +24,21 @@ package(
 rust_library(
     name = "oak_grpc_utils",
     srcs = glob(["src/**"]),
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
-        "@oak_crates_index//:tonic-build",
+        "@oak_crates_index//:tonic-prost-build",
+    ],
+)
+
+rust_binary(
+    name = "generator",
+    srcs = glob(["*.rs"]),
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        "//bazel/rust/proto:proto_gen",
+        "//oak_grpc_utils",
+        "@oak_crates_index//:anyhow",
+        "@oak_crates_index//:clap",
+        "@oak_crates_index//:serde_json",
     ],
 )

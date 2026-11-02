@@ -27,19 +27,21 @@
 #include "net/http/http_status_code.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/public/mojom/webid/federated_auth_request.mojom.h"
+#include "third_party/blink/public/mojom/webid/federated_request.mojom.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
-using ApiPermissionStatus =
-    content::FederatedIdentityApiPermissionContextDelegate::PermissionStatus;
-using LoginState = content::IdentityRequestAccount::LoginState;
-using blink::mojom::RequestUserInfoStatus;
+namespace content::webid {
+
 using ::testing::_;
 using ::testing::NiceMock;
 using ::testing::Return;
+using ApiPermissionStatus =
+    FederatedIdentityApiPermissionContextDelegate::PermissionStatus;
+using LoginState = IdentityRequestAccount::LoginState;
+using UserInfoRequestResult = UserInfoRequest::UserInfoRequestResult;
+using blink::mojom::RequestUserInfoStatus;
 
-namespace content::webid {
 namespace {
 
 constexpr char kRpUrl[] = "https://rp.example";
@@ -92,7 +94,7 @@ class UserInfoCallbackHelper {
   UserInfoCallbackHelper& operator=(const UserInfoCallbackHelper&) = delete;
 
   // This can only be called once per lifetime of this object.
-  blink::mojom::FederatedAuthRequest::RequestUserInfoCallback callback() {
+  blink::mojom::FederatedRequestService::RequestUserInfoCallback callback() {
     return base::BindOnce(&UserInfoCallbackHelper::Complete,
                           base::Unretained(this));
   }
@@ -110,12 +112,16 @@ class UserInfoCallbackHelper {
   std::optional<std::vector<blink::mojom::IdentityUserInfoPtr>> user_info_;
 
  private:
-  void Complete(
-      RequestUserInfoStatus user_info_status,
-      std::optional<std::vector<blink::mojom::IdentityUserInfoPtr>> user_info) {
+  void Complete(blink::mojom::RequestUserInfoResultPtr result) {
     CHECK(!was_called_);
-    user_info_status_ = user_info_status;
-    user_info_ = std::move(user_info);
+    if (result->is_status()) {
+      user_info_status_ = result->get_status();
+      user_info_ = std::nullopt;
+    } else {
+      CHECK(result->is_user_info());
+      user_info_status_ = RequestUserInfoStatus::kSuccess;
+      user_info_ = std::move(result->get_user_info());
+    }
     was_called_ = true;
     wait_for_callback_loop_.Quit();
   }
@@ -163,7 +169,6 @@ class TestIdpNetworkRequestManager : public MockIdpNetworkRequestManager {
 
   bool SendAccountsRequest(const url::Origin& idp_origin,
                            const GURL& accounts_url,
-                           const std::string& client_id,
                            AccountsRequestCallback callback) override {
     has_fetched_accounts_endpoint_ = true;
 
@@ -288,8 +293,7 @@ class UserInfoRequestTest : public RenderViewHostImplTestHarness {
 
     // Add a subframe that navigates to kPersonalizedButtonFrameUrl.
     TestRenderFrameHost* subframe = static_cast<TestRenderFrameHost*>(
-        content::RenderFrameHostTester::For(main_rfh())
-            ->AppendChild("subframe"));
+        RenderFrameHostTester::For(main_rfh())->AppendChild("subframe"));
     iframe_render_frame_host_ = static_cast<TestRenderFrameHost*>(
         NavigationSimulator::NavigateAndCommitFromDocument(
             GURL(kPersonalizedButtonFrameUrl), subframe));
@@ -316,7 +320,7 @@ class UserInfoRequestTest : public RenderViewHostImplTestHarness {
     idp_ptr->client_id = kClientId;
 
     UserInfoCallbackHelper callback_helper;
-    request_ = UserInfoRequest::Create(
+    request_ = std::make_unique<UserInfoRequest>(
         std::move(network_manager), permission_delegate_.get(),
         api_permission_delegate_.get(), iframe_render_frame_host_,
         std::move(idp_ptr));
@@ -354,14 +358,12 @@ class UserInfoRequestTest : public RenderViewHostImplTestHarness {
   }
 
   void ExpectUniqueIssue(UserInfoRequestResult result) {
-    EXPECT_EQ(
-        iframe_render_frame_host_->GetFederatedAuthUserInfoRequestIssueCount(
-            result),
-        1);
-    EXPECT_EQ(
-        iframe_render_frame_host_->GetFederatedAuthUserInfoRequestIssueCount(
-            std::nullopt),
-        1);
+    EXPECT_EQ(iframe_render_frame_host_->GetFederatedUserInfoRequestIssueCount(
+                  result),
+              1);
+    EXPECT_EQ(iframe_render_frame_host_->GetFederatedUserInfoRequestIssueCount(
+                  std::nullopt),
+              1);
   }
 
  protected:

@@ -12,6 +12,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ref.h"
 #include "base/types/optional_ref.h"
+#include "base/types/pass_key.h"
 #include "components/autofill/content/browser/content_autofill_client.h"
 #include "components/autofill/content/common/mojom/autofill_agent.mojom.h"
 #include "components/autofill/content/common/mojom/autofill_driver.mojom.h"
@@ -24,9 +25,18 @@
 #include "mojo/public/cpp/bindings/associated_receiver.h"
 #include "mojo/public/cpp/bindings/associated_remote.h"
 #include "mojo/public/cpp/bindings/pending_associated_receiver.h"
+#include "mojo/public/cpp/bindings/pending_remote.h"
 #include "third_party/abseil-cpp/absl/container/flat_hash_map.h"
 
+namespace password_manager {
+class ContentPasswordManagerDriver;
+}
+
 namespace autofill {
+
+namespace mojom {
+class AutofillVisibilityObserver;
+}  // namespace mojom
 
 class ContentAutofillDriverFactory;
 class AutofillDriverRouter;
@@ -154,8 +164,13 @@ class ContentAutofillDriver : public AutofillDriver,
   mojom::AutofillDriver& renderer_events() { return *this; }
 
   void BindPendingReceiver(
-      mojo::PendingAssociatedReceiver<mojom::AutofillDriver> pending_receiver);
-  const mojo::AssociatedRemote<mojom::AutofillAgent>& GetAutofillAgent();
+      mojo::PendingAssociatedReceiver<mojom::AutofillDriver> pending_receiver,
+      base::PassKey<ContentAutofillDriverFactory> pass_key);
+
+  const mojo::AssociatedRemote<mojom::AutofillAgent>& GetAutofillAgent(
+      base::PassKey<password_manager::ContentPasswordManagerDriver> pass_key) {
+    return GetAutofillAgent();
+  }
 
   // autofill::AutofillDriver:
   // These are the non-event functions from autofill::AutofillDriver. The events
@@ -175,6 +190,7 @@ class ContentAutofillDriver : public AutofillDriver,
 
  private:
   friend class ContentAutofillDriverTestApi;
+  friend struct ContentAutofillDriverAttorney;
 
   // Communication falls into two groups:
   //
@@ -227,6 +243,9 @@ class ContentAutofillDriver : public AutofillDriver,
                                   const std::string& email,
                                   FieldGlobalId token_field_id,
                                   const std::string& token) override;
+  void UpdateEmailVerificationState(
+      const FieldGlobalId& email_field_id,
+      mojom::EmailVerificationState state) override;
   void ExtractFormWithField(FieldGlobalId field_id,
                             BrowserFormHandler final_handler) override;
   void RendererShouldAcceptDataListSuggestion(
@@ -240,6 +259,9 @@ class ContentAutofillDriver : public AutofillDriver,
       AutofillSuggestionTriggerSource trigger_source) override;
   void SendTypePredictionsToRenderer(const FormStructure& form) override;
   void ScrollFieldIntoView(FieldGlobalId field_id) override;
+  void ObserveFieldVisibility(
+      const FieldGlobalId& field_id,
+      mojo::PendingRemote<mojom::AutofillVisibilityObserver> observer) override;
 
   // Group (1c): browser -> renderer events, directed to this driver's main
   // frame's agent (see comment above).
@@ -301,13 +323,37 @@ class ContentAutofillDriver : public AutofillDriver,
                              base::TimeTicks timestamp) override;
   void TextFieldDidScroll(const FormData& form,
                           FieldRendererId field_id) override;
-  void OnEmailVerificationTokenShared(FieldRendererId field_id) override;
+  void FormWithEmailVerificationTokenSubmitted(
+      const FormData& form,
+      FieldRendererId field_id) override;
+  void DidDetectJavaScriptAutofill(
+      const FormData& form,
+      FieldRendererId trigger_field_id,
+      std::vector<mojom::JavaScriptFieldModificationPtr> field_modifications)
+      override;
 
-  void LiftForTest(FormData& form);
+  // The functions below this line do not cross the IPC boundary.
+  bool IsSafeToFill(const FormFieldData& field,
+                    FieldType filled_type,
+                    const url::Origin& main_origin,
+                    const url::Origin& trigger_origin) const override;
 
   // The router must only route among ContentAutofillDrivers because
   // ContentAutofillDriver casts AutofillDrivers to ContentAutofillDrivers.
-  AutofillDriverRouter& router();
+  AutofillDriverRouter& router() { return owner_->router(); }
+  const AutofillDriverRouter& router() const { return owner_->router(); }
+
+  const mojo::AssociatedRemote<mojom::AutofillAgent>& GetAutofillAgent();
+
+  // This only exists so that ContentAutofillDriverAttorney can make the pass
+  // key available to the helper functions in the anonymous namespace.
+  static AutofillManager::RendererEventPassKey autofill_manager_pass_key() {
+    return {};
+  }
+
+  // This only exists so that ContentAutofillDriverTestApi can make Lift()
+  // available to tests.
+  void LiftForTest(FormData& form);
 
   // The frame/document to which this driver is associated. Outlives `this`.
   // RFH is corresponds to neither a frame nor a document: it may survive

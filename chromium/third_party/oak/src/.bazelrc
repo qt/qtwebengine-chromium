@@ -3,6 +3,8 @@
 # Build C++ targets using C++20.
 # <https://stackoverflow.com/questions/40260242/how-to-set-c-standard-version-when-build-with-bazel>
 common --cxxopt=-std=c++20
+# Prevents BUILD files in third_party from triggering errors.
+common --incompatible_disallow_empty_glob=false
 
 # Fix Abseil "C++ versions less than C++14 are not supported".
 # <https://github.com/protocolbuffers/protobuf/issues/12393#issuecomment-1504349780>
@@ -19,8 +21,8 @@ common --@rules_rust//rust/toolchain/channel=nightly
 # In the Nix shell, this path is exposed for convenience as the environment variable `ICONV_PATH`.
 # Environment variables are not supported in the bazelrc file, so we hardcode the path here.
 # Note the `/lib` suffix added to the base path.
-common --@rules_rust//:extra_rustc_flags=-L/nix/store/fhza62gkyw0mp1h2zls6pl1832zjjf26-libiconv-109/lib
-common --@rules_rust//:extra_exec_rustc_flags=-L/nix/store/fhza62gkyw0mp1h2zls6pl1832zjjf26-libiconv-109/lib
+common --@rules_rust//:extra_rustc_flags=-L/nix/store/6nmmi317rg2bnybndbgc944dpg5cnl5a-libiconv-109.100.2/lib
+common --@rules_rust//:extra_exec_rustc_flags=-L/nix/store/6nmmi317rg2bnybndbgc944dpg5cnl5a-libiconv-109.100.2/lib
 
 # Use a custom workspace status command so that the git revision is included in
 # stamped binaries.
@@ -43,10 +45,18 @@ common --@rules_rust//rust/settings:toolchain_generated_sysroot=True
 # control. (See: https://github.com/bazelbuild/rules_rust/pull/3120)
 common --@rules_rust//rust/settings:lto=manual
 
+# Newer versions of rustc performs internal symbol mangling.
+# We need to set this flag to link to allocator libraries in FFI code.
+# See https://github.com/bazelbuild/rules_rust/pull/3403
+common --@rules_rust//rust/settings:experimental_use_allocator_libraries_with_mangled_symbols
+
 # Required to enable building the openssl Rust crate. See
 # https://nixos.wiki/wiki/Rust#Building_Rust_crates_that_require_external_system_libraries
 # for more information.
 build --action_env=PKG_CONFIG_PATH
+# Also pass PKG_CONFIG_PATH to tools that are run during the build (e.g. in
+# genrules), as they are built in the "exec" configuration.
+build --host_action_env=PKG_CONFIG_PATH
 
 # Setup clippy aspect to run clippy automatically on all rust targets
 # See: https://bazelbuild.github.io/rules_rust/rust_clippy.html

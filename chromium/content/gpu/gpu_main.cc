@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "base/allocator/partition_alloc_support.h"
+#include "base/byte_size.h"
 #include "base/check.h"
 #include "base/command_line.h"
 #include "base/feature_list.h"
@@ -18,6 +19,7 @@
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/message_loop/message_pump_type.h"
+#include "base/message_loop/message_pump_wakeup_counter.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/numerics/clamped_math.h"
 #include "base/process/current_process.h"
@@ -25,6 +27,7 @@
 #include "base/rand_util.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/synchronization/lock_metrics_recorder.h"
 #include "base/system/sys_info.h"
 #include "base/task/current_thread.h"
 #include "base/task/single_thread_task_executor.h"
@@ -94,7 +97,7 @@
 #include "base/posix/eintr_wrapper.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "components/tracing/common/graphics_memory_dump_provider_android.h"
-#include "sandbox/linux/services/thread_helpers.h" // nogncheck
+#include "sandbox/linux/services/thread_helpers.h"  // nogncheck
 #include "sandbox/policy/features.h"
 #include "sandbox/policy/linux/landlock_gpu_policy_android.h"
 #include "sandbox/policy/sandbox_type.h"
@@ -107,6 +110,10 @@
 #include "media/base/win/mf_initializer.h"
 #include "sandbox/policy/win/sandbox_warmup.h"
 #include "sandbox/win/src/sandbox.h"
+#endif
+
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)
+#include "services/webnn/public/cpp/webnn_sandbox_init.h"
 #endif
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
@@ -187,10 +194,13 @@ class ContentSandboxHelper : public gpu::GpuSandboxHelper {
 #if BUILDFLAG(IS_WIN)
     media::PreSandboxMediaFoundationInitialization();
 #endif
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)
+    webnn::PreSandboxWebNNInitialization();
+#endif
 
     // On Linux, reading system memory doesn't work through the GPU sandbox.
     // This value is cached, so access it here to populate the cache.
-    base::SysInfo::AmountOfPhysicalMemory();
+    base::SysInfo::AmountOfTotalPhysicalMemory();
   }
 
   bool EnsureSandboxInitialized(gpu::GpuWatchdogThread* watchdog_thread,
@@ -337,6 +347,8 @@ int GpuMain(MainFunctionParams parameters) {
 
   base::PlatformThread::SetName("CrGpuMain");
   mojo::InterfaceEndpointClient::SetThreadNameSuffixForMetrics("GpuMain");
+  base::MessagePumpWakeupCounter::InitializeForCurrentThread("GpuMain");
+  base::LockMetricsRecorder::EnableRecordingOnCurrentThread("CrGpuMain");
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
   // Thread type delegate of the process should be registered before
@@ -348,7 +360,7 @@ int GpuMain(MainFunctionParams parameters) {
   SandboxedProcessThreadTypeHandler::Create();
 #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 
-  base::PlatformThread::SetCurrentThreadType(base::ThreadType::kPresentation);
+  base::PlatformThread::SetDefaultThreadType(base::ThreadType::kPresentation);
 
   auto gpu_init = std::make_unique<gpu::GpuInit>();
   ContentSandboxHelper sandbox_helper;

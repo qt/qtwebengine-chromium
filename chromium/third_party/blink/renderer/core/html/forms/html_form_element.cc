@@ -29,7 +29,6 @@
 #include <limits>
 
 #include "base/auto_reset.h"
-#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/security_context/insecure_request_policy.h"
 #include "third_party/blink/public/mojom/devtools/inspector_issue.mojom-blink.h"
 #include "third_party/blink/public/mojom/security_context/insecure_request_policy.mojom-blink.h"
@@ -214,10 +213,8 @@ void HTMLFormElement::HTMLFormMcpTool::ExecuteTool(
     // Without `toolautosubmit`, we focus the submit button, tell the agent to
     // allow user input, and wait for the user to submit it.
     submit_button->Focus();
-    if (auto* context =
-            ModelContextSupplement::modelContext(form_->GetDocument())) {
-      context->PauseExecution();
-    }
+    auto* context = ModelContextSupplement::modelContext(form_->GetDocument());
+    context->PauseExecution();
   } else {
     // With the `toolautosubmit` attribute, we immediately submit the form.
     form_->PrepareForSubmission(/*event*/ nullptr, submit_button);
@@ -371,15 +368,13 @@ void HTMLFormElement::ScheduleDeclarativeWebMCPToolRegistration() {
 
     ModelContext* model_context =
         ModelContextSupplement::modelContext(GetDocument());
-    if (model_context) {
-      if (!active_webmcp_tool_->IsHandlingSubmit()) {
-        active_webmcp_tool_->CallDoneCallback(base::unexpected(
-            ScriptToolError(ScriptToolErrorCode::kToolCancelled,
-                            "Tool execution cancelled, since tool definition "
-                            "was updated")));
-      }
-      model_context->UnregisterTool(active_webmcp_tool_->ToolName());
+    if (!active_webmcp_tool_->IsHandlingSubmit()) {
+      active_webmcp_tool_->CallDoneCallback(base::unexpected(
+          ScriptToolError(ScriptToolErrorCode::kToolCancelled,
+                          "Tool execution cancelled, since tool definition "
+                          "was updated")));
     }
+    model_context->UnregisterTool(active_webmcp_tool_->ToolName());
 
     active_webmcp_tool_ = nullptr;
     return;
@@ -399,6 +394,8 @@ void HTMLFormElement::RegisterDeclarativeWebMCPTool() {
   String name = FastGetAttribute(html_names::kToolnameAttr);
   String description = FastGetAttribute(html_names::kTooldescriptionAttr);
   String title = FastGetAttribute(html_names::kTooltitleAttr);
+  const bool has_toolautosubmit =
+      FastHasAttribute(html_names::kToolautosubmitAttr);
   // We check that `this` is "still" a valid declarative WebMCP form because
   // last we checked when this method was queued, it was, but that could've
   // changed.
@@ -410,9 +407,6 @@ void HTMLFormElement::RegisterDeclarativeWebMCPTool() {
 
   ModelContext* model_context =
       ModelContextSupplement::modelContext(GetDocument());
-  if (!model_context) {
-    return;
-  }
 
   if (active_webmcp_tool_) {
     String new_schema = active_webmcp_tool_->ComputeInputSchema();
@@ -420,8 +414,8 @@ void HTMLFormElement::RegisterDeclarativeWebMCPTool() {
     bool tool_attributes_changed =
         active_webmcp_tool_->ToolName() != name ||
         active_webmcp_tool_->ToolDescription() != description ||
-        active_webmcp_tool_->ToolTitle() != title;
-
+        active_webmcp_tool_->ToolTitle() != title ||
+        active_webmcp_tool_->HasToolautosubmit() != has_toolautosubmit;
     bool schema_changed =
         active_webmcp_tool_->LastComputedSchema() != new_schema;
 
@@ -441,8 +435,8 @@ void HTMLFormElement::RegisterDeclarativeWebMCPTool() {
     active_webmcp_tool_ = nullptr;
   }
 
-  active_webmcp_tool_ =
-      MakeGarbageCollected<HTMLFormMcpTool>(*this, name, description, title);
+  active_webmcp_tool_ = MakeGarbageCollected<HTMLFormMcpTool>(
+      *this, name, description, title, has_toolautosubmit);
   active_webmcp_tool_->SetLastComputedSchema(
       active_webmcp_tool_->ComputeInputSchema());
 
@@ -750,6 +744,9 @@ void HTMLFormElement::PrepareForSubmission(const Event* event,
       submit_event_init->setBubbles(true);
       submit_event_init->setCancelable(true);
       submit_event_init->setSubmitter(DynamicTo<HTMLElement>(submitter));
+      submit_event_init->setComposed(
+          submitter && RuntimeEnabledFeatures::ShadowRootReferenceTargetEnabled(
+                           submitter->GetExecutionContext()));
       if (declarative_webmcp_call) {
         CHECK(RuntimeEnabledFeatures::WebMCPEnabled(GetExecutionContext()));
         submit_event_init->setAgentInvoked(true);
@@ -1113,7 +1110,8 @@ void HTMLFormElement::AttributeChanged(
   HTMLElement::AttributeChanged(params);
   if ((name == html_names::kToolnameAttr ||
        name == html_names::kTooldescriptionAttr ||
-       name == html_names::kTooltitleAttr) &&
+       name == html_names::kTooltitleAttr ||
+       name == html_names::kToolautosubmitAttr) &&
       (params.old_value != params.new_value)) {
     ScheduleDeclarativeWebMCPToolRegistration();
   }
@@ -1175,6 +1173,14 @@ void HTMLFormElement::Associate(ListedElement& e) {
   if (e.ToHTMLElement().FastHasAttribute(html_names::kFormAttr))
     has_elements_associated_by_form_attribute_ = true;
   ScheduleWebMCPSchemaUpdateIfActive();
+  if (RuntimeEnabledFeatures::EmailVerificationStatusIndicatorEnabled(
+          GetExecutionContext())) {
+    if (auto* input_element = DynamicTo<HTMLInputElement>(e.ToHTMLElement())) {
+      if (input_element->IsEmailVerificationTokenField()) {
+        NotifyEmailVerificationTokenFieldChanged();
+      }
+    }
+  }
 }
 
 void HTMLFormElement::Disassociate(ListedElement& e) {
@@ -1184,6 +1190,14 @@ void HTMLFormElement::Disassociate(ListedElement& e) {
   listed_elements_for_autofill_.clear();
   RemoveFromPastNamesMap(e.ToHTMLElement());
   ScheduleWebMCPSchemaUpdateIfActive();
+  if (RuntimeEnabledFeatures::EmailVerificationStatusIndicatorEnabled(
+          GetExecutionContext())) {
+    if (auto* input_element = DynamicTo<HTMLInputElement>(e.ToHTMLElement())) {
+      if (input_element->IsEmailVerificationTokenField()) {
+        NotifyEmailVerificationTokenFieldChanged();
+      }
+    }
+  }
 }
 
 bool HTMLFormElement::IsURLAttribute(const Attribute& attribute) const {
@@ -1291,10 +1305,7 @@ void HTMLFormElement::CollectListedElements(
   const bool nested_forms_have_form_associated_elements =
       std::ranges::any_of(nested_forms, [](const auto& form) {
         return form->has_elements_associated_by_form_attribute_ ||
-               (form->has_elements_associated_by_parser_ &&
-                base::FeatureList::IsEnabled(
-                    features::
-                        kAutofillFixFieldsAssociatedWithNestedFormsByParser));
+               form->has_elements_associated_by_parser_;
       });
   if (nested_forms_have_form_associated_elements && isConnected()) {
     root = &GetTreeScope().RootNode();
@@ -1663,6 +1674,13 @@ void HTMLFormElement::InvalidateListedElementsForAutofill() {
   listed_elements_for_autofill_are_dirty_ = true;
 }
 
+void HTMLFormElement::InvalidateListedElements() {
+  listed_elements_are_dirty_ = true;
+  listed_elements_.clear();
+  listed_elements_for_autofill_are_dirty_ = true;
+  listed_elements_for_autofill_.clear();
+}
+
 void HTMLFormElement::UseCountPropertyAccess(
     v8::Local<v8::Name>& v8_property_name,
     const v8::PropertyCallbackInfo<v8::Value>& info) {
@@ -1687,6 +1705,17 @@ void HTMLFormElement::ScheduleWebMCPSchemaUpdateIfActive() {
     return;
   }
   ScheduleDeclarativeWebMCPToolRegistration();
+}
+
+void HTMLFormElement::NotifyEmailVerificationTokenFieldChanged() {
+  for (ListedElement* listed_element : ListedElements()) {
+    HTMLElement& html_element = listed_element->ToHTMLElement();
+    if (auto* input_element = DynamicTo<HTMLInputElement>(html_element)) {
+      if (input_element->type() == input_type_names::kEmail) {
+        input_element->UpdateEmailVerificationIndicator();
+      }
+    }
+  }
 }
 
 }  // namespace blink

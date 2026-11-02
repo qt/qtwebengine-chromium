@@ -24,6 +24,7 @@
 #include "platform/api/task_runner.h"
 #include "platform/api/time.h"
 #include "util/thread_annotations.h"
+#include "util/weak_ptr.h"
 
 namespace openscreen {
 
@@ -163,6 +164,8 @@ class StreamingAv1Encoder : public StreamingVideoEncoder {
 
   // libaom AV1 encoder instance. Only the encode thread accesses this.
   aom_codec_ctx_t encoder_;
+
+  WeakPtrFactory<StreamingAv1Encoder> weak_factory_{this};
 };
 
 }  // namespace cast

@@ -30,7 +30,7 @@ class CFX_FileAccess_Posix final : public FileAccessIface {
   FX_FILESIZE GetPosition() const override;
   FX_FILESIZE SetPosition(FX_FILESIZE pos) override;
   size_t Read(pdfium::span<uint8_t> buffer) override;
-  size_t Write(pdfium::span<const uint8_t> buffer) override;
+  bool Write(pdfium::span<const uint8_t> buffer) override;
   size_t ReadPos(pdfium::span<uint8_t> buffer, FX_FILESIZE pos) override;
   bool Flush() override;
   bool Truncate(FX_FILESIZE szFile) override;

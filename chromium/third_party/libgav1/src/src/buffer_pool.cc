@@ -20,9 +20,15 @@
 #include <mutex>  // NOLINT (unapproved c++11 header)
 #include <new>
 
+#include "src/gav1/decoder_buffer.h"
+#include "src/gav1/frame_buffer.h"
+#include "src/gav1/status_code.h"
+#include "src/internal_frame_buffer_list.h"
+#include "src/symbol_decoder_context.h"
 #include "src/utils/common.h"
 #include "src/utils/constants.h"
 #include "src/utils/logging.h"
+#include "src/utils/types.h"
 
 namespace libgav1 {
 

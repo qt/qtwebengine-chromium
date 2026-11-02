@@ -8,7 +8,6 @@
 #include <string>
 #include <vector>
 
-#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/child_process_id.h"
 #include "extensions/buildflags/buildflags.h"
@@ -114,7 +113,7 @@ bool CanWithholdPermissionsFromExtension(
     const mojom::ManifestLocation location);
 
 // Returns a unique int id for each context. Prefer using
-// `BrowserContext::UniqueId()` directly.
+// `BrowserContext::UniqueToken()` directly.
 // TODO(crbug.com/40267637):  Migrate callers to use the `context` unique id
 // directly. For that we need to update all data keyed by integer context ids to
 // be keyed by strings instead.
@@ -184,6 +183,16 @@ bool AnyCurrentlyInstalledExtensionIsFromWebstore(
 // Returns true if this is an extension download. This also considers user
 // scripts to be extension downloads, since we convert those automatically.
 bool IsExtensionDownload(const download::DownloadItem& download_item);
+
+// Returns the last committed `GURL` of `rfh` for extension permission and
+// authorization checks. Returns an empty `GURL` if:
+// - `rfh` is null,
+// - `rfh` has an empty committed `GURL`, or
+// - `rfh` is displaying an error document.
+//
+// For tab-level or `content::WebContents`-level checks, pass the primary main
+// frame (e.g. `web_contents->GetPrimaryMainFrame()`).
+const GURL& GetURLForExtensionPermissionCheck(content::RenderFrameHost* rfh);
 
 }  // namespace util
 }  // namespace extensions

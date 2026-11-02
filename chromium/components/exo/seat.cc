@@ -21,6 +21,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "components/exo/data_exchange_delegate.h"
+#include "components/exo/data_exchange_utils.h"
 #include "components/exo/data_source.h"
 #include "components/exo/drag_drop_operation.h"
 #include "components/exo/mime_utils.h"
@@ -133,6 +134,10 @@ Seat::Seat() : Seat(nullptr) {}
 
 Seat::~Seat() {
   Shutdown();
+}
+
+base::WeakPtr<Seat> Seat::GetWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
 }
 
 void Seat::Shutdown() {
@@ -336,18 +341,9 @@ void Seat::OnWebCustomDataRead(
     base::OnceClosure callback,
     const std::string& mime_type,
     const std::vector<uint8_t>& data) {
-  // |data| comes from a guest VM. Re-serialize and drop FilesApp-internal
-  // `fs/*` keys so a guest cannot forge fs/tag + fs/sources and drive
-  // FilesApp / HoldingSpace into operating on host paths it was never shared.
-  if (auto map = ui::ReadCustomDataIntoMap(data)) {
-    std::erase_if(*map,
-                  [](const auto& kv) { return kv.first.starts_with(u"fs/"); });
-    if (!map->empty()) {
-      base::Pickle pickle;
-      ui::WriteCustomDataToPickle(*map, &pickle);
-      writer->WritePickledData(
-          pickle, ui::ClipboardFormatType::DataTransferCustomType());
-    }
+  if (std::optional<base::Pickle> pickle = FilterCustomData(data)) {
+    writer->WritePickledData(*pickle,
+                             ui::ClipboardFormatType::DataTransferCustomType());
   }
   std::move(callback).Run();
 }

@@ -3,8 +3,6 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#include "ynnpack/base/simd/arm_neon.h"
-
 #include <arm_neon.h>
 
 #include <array>
@@ -12,6 +10,7 @@
 #include <cstring>
 
 #include "ynnpack/base/arithmetic.h"
+#include "ynnpack/base/simd/arm_vec128.h"
 #include "ynnpack/kernels/transpose/interleave.h"
 #include "ynnpack/kernels/transpose/transpose.h"
 
@@ -144,6 +143,19 @@ void interleave4_x32_neon(size_t factor, size_t m, size_t n, size_t stride_a,
   assert(factor == 4);
   interleave<std::array<u8x16, 4>>(m, n, stride_a, a, x,
                                    std::integral_constant<size_t, 32>{});
+}
+
+void interleave8_x2_neon(size_t factor, size_t m, size_t n, size_t stride_a,
+                         const void* a, void* x) {
+  assert(factor == 8);
+  interleave<std::array<u8x16, 8>>(m, n, stride_a, a, x,
+                                   std::integral_constant<size_t, 2>{});
+}
+void interleave8_x4_neon(size_t factor, size_t m, size_t n, size_t stride_a,
+                         const void* a, void* x) {
+  assert(factor == 8);
+  interleave<std::array<u8x16, 8>>(m, n, stride_a, a, x,
+                                   std::integral_constant<size_t, 4>{});
 }
 
 }  // namespace ynn

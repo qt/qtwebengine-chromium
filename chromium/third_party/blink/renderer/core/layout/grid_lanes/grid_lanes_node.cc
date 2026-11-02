@@ -69,8 +69,13 @@ GridLanesItemGroups GridLanesNode::CollectItemGroups(
     // Keep a running sum of unplaced item spans to determine where to
     // place auto placed virtual items per the auto-fit grid-lanes heuristic.
     //
+    // Subgridded items belong to their subgrid, which is itself a grid item of
+    // this container; the subgrid's own span already represents them here.
+    // Thus, skip them to avoid overcounting their spans.
+    //
     // https://drafts.csswg.org/css-grid-3/#repeat-auto-fit
-    if (item_span.IsIndefinite()) {
+    if (item_span.IsIndefinite() &&
+        !grid_lanes_item->is_subgridded_to_parent_grid) {
       unplaced_item_span_count += item_span.SpanSize();
     }
 
@@ -122,11 +127,22 @@ GridLanesItemGroups GridLanesNode::CollectItemGroups(
 GridItems* GridLanesNode::ConstructGridItems(
     const GridLineResolver& line_resolver,
     bool* must_invalidate_placement_cache,
+    bool parent_is_auto_placed,
     HeapVector<Member<LayoutBox>>* opt_oof_children,
     bool* opt_has_nested_subgrid) const {
   const ComputedStyle& style = Style();
   const GridTrackSizingDirection grid_axis_direction =
       style.GridLanesTrackSizingDirection();
+
+  // Unlike grid, a grid-lanes container does not cache the placement of its own
+  // items (placement happens after track sizing). However, a regular-grid
+  // subgrid child *does* cache its placement, keyed on its own line resolver,
+  // which by design does not encode this container's named-line positions. If
+  // this container's placement-affecting style changed, that subgrid cache
+  // would otherwise go stale. Propagate the invalidation down the subtree.
+  CHECK(must_invalidate_placement_cache);
+  *must_invalidate_placement_cache =
+      To<LayoutGridLanes>(box_.Get())->IsGridPlacementDirty();
 
   // For grid-lanes, we only consider subgridding in the grid axis.
   const bool must_consider_for_columns = (grid_axis_direction == kForColumns);
@@ -137,6 +153,21 @@ GridItems* GridLanesNode::ConstructGridItems(
   }
 
   GridItems* grid_lanes_items = MakeGarbageCollected<GridItems>();
+
+  // Check if the container has alignment in the stacking axis set for its
+  // items. The initial value of `align-items` is `kNormal`, but the initial
+  // value of `justify-items` is `kLegacy` (per CSS Box Alignment spec:
+  // https://drafts.csswg.org/css-align-3/#justify-items-property, to enable
+  // legacy keyword inheritance). Both behave as `normal` when not explicitly
+  // set, so we exclude them from triggering stacking axis alignment.
+  const bool is_for_columns = (grid_axis_direction == kForColumns);
+  const auto& container_alignment =
+      is_for_columns ? style.AlignItems() : style.JustifyItems();
+  if (container_alignment.GetPosition() != ItemPosition::kNormal &&
+      container_alignment.GetPosition() != ItemPosition::kLegacy) {
+    grid_lanes_items->SetHasStackingAxisAlignment();
+  }
+
   {
     bool should_sort_grid_lanes_items_by_order_property = false;
     const int initial_order = ComputedStyleInitialValues::InitialOrder();
@@ -164,7 +195,32 @@ GridItems* GridLanesNode::ConstructGridItems(
         *opt_has_nested_subgrid |= grid_lanes_item->IsSubgrid();
       }
 
+      // Check each item for an explicit self-alignment in the stacking axis.
+      // Items with `auto` (the default) fall back to the container's
+      // alignment property.
+      if (!grid_lanes_items->HasStackingAxisAlignment()) {
+        const auto& self_alignment = is_for_columns
+                                         ? child.Style().AlignSelf()
+                                         : child.Style().JustifySelf();
+        if (self_alignment.GetPosition() != ItemPosition::kAuto &&
+            self_alignment.GetPosition() != ItemPosition::kNormal) {
+          grid_lanes_items->SetHasStackingAxisAlignment();
+        }
+      }
+
       AdjustGridItemSpan(*grid_lanes_item, line_resolver, grid_axis_direction);
+
+      // If this grid-lanes container is itself an auto-placed subgrid (e.g.
+      // inside a grid-lanes ancestor whose placement happens after track
+      // sizing), then any child's final position in the grid-lanes ancestor's
+      // tracks is unknown — even children with explicit placement, because
+      // their explicit placement is only relative to this subgrid and this
+      // subgrid's own position is unresolved. Mark these child items as
+      // auto-placed as a result.
+      if (parent_is_auto_placed) {
+        grid_lanes_item->is_auto_placed = true;
+      }
+
       grid_lanes_items->Append(grid_lanes_item);
     }
 
@@ -218,12 +274,9 @@ void GridLanesNode::ComputeSetIndicesForSubgrid(
   // In grid lanes, placement happens after sizing, so the placement of subgrid
   // items may not be known at this point. Translate definite spans using the
   // `start_offset` cached by BuildSizingCollection. For items without a known
-  // position, assume they start at the beginning of the explicit grid.
-  //
-  // TODO(almaher): We may need to do an additional pass for row grid-lanes
-  // containers, or if items depend on the block size constraint in column
-  // grid-lanes, to ensure we get the correct position for these subgrids, as
-  // that can impact subgridded item contributions and thus track sizing.
+  // position, assume they start at the beginning of the explicit grid. This
+  // will be updated to the correct position later before the subgrid itself is
+  // laid out.
   const auto grid_axis = Style().GridLanesTrackSizingDirection();
   const wtf_size_t start_offset = CachedPlacementData().StartOffset(grid_axis);
 

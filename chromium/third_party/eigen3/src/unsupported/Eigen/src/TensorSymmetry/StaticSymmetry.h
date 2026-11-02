@@ -18,19 +18,6 @@ namespace Eigen {
 
 namespace internal {
 
-template <typename list>
-struct tensor_static_symgroup_permutate;
-
-template <int... nn>
-struct tensor_static_symgroup_permutate<std::integer_sequence<int, nn...>> {
-  constexpr static std::size_t N = sizeof...(nn);
-
-  template <typename T>
-  constexpr static std::array<T, N> run(const std::array<T, N>& indices) {
-    return {{indices[nn]...}};
-  }
-};
-
 template <typename indices_, int flags_>
 struct tensor_static_symgroup_element {
   typedef indices_ indices;
@@ -115,14 +102,14 @@ struct tensor_static_symgroup {
 };
 
 template <typename Index, std::size_t N, int... ii, int... jj>
-constexpr static std::array<Index, N> tensor_static_symgroup_index_permute(std::array<Index, N> idx,
+constexpr static std::array<Index, N> tensor_static_symgroup_index_permute(const std::array<Index, N>& idx,
                                                                            std::integer_sequence<int, ii...>,
                                                                            std::integer_sequence<int, jj...>) {
   return {{idx[ii]..., idx[sizeof...(ii) + jj]...}};
 }
 
 template <typename Index, int... ii>
-static inline std::vector<Index> tensor_static_symgroup_index_permute(std::vector<Index> idx,
+static inline std::vector<Index> tensor_static_symgroup_index_permute(const std::vector<Index>& idx,
                                                                       std::integer_sequence<int, ii...>) {
   std::vector<Index> result{{idx[ii]...}};
   std::size_t target_size = idx.size();
@@ -187,9 +174,9 @@ class StaticSGroup {
   typedef typename group_elements::type ge;
 
  public:
-  constexpr StaticSGroup() {}
-  constexpr StaticSGroup(const StaticSGroup<Gen...>&) {}
-  constexpr StaticSGroup(StaticSGroup<Gen...>&&) {}
+  constexpr StaticSGroup() = default;
+  constexpr StaticSGroup(const StaticSGroup<Gen...>&) = default;
+  constexpr StaticSGroup(StaticSGroup<Gen...>&&) = default;
 
   template <typename Op, typename RV, typename Index, std::size_t N, typename... Args>
   static inline RV apply(const std::array<Index, N>& idx, RV initial, Args&&... args) {

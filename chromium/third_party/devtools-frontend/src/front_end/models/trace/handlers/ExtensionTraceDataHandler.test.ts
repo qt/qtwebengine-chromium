@@ -635,7 +635,7 @@ describe('ExtensionTraceDataHandler', function() {
           name: 'Measure 7',
           start: 350,
           ts: 400,
-        }
+        },
       ];
       return createTraceExtensionDataFromConsoleAPITestInput(extensionData);
     }
@@ -649,10 +649,11 @@ describe('ExtensionTraceDataHandler', function() {
         const expectedData: Record<string, Array<{name: string, ts: number, dur: number}>> = {
           'Custom track 3': [{name: 'Measure 3', ts: 100, dur: 200}, {name: 'Measure 4', ts: 100, dur: 100}],
           'Custom track 1': [
-            {name: 'Measure 1', ts: 100, dur: 100}, {name: 'Measure 6', ts: 300, dur: 100},
-            {name: 'Measure 7', ts: 350, dur: 50}
+            {name: 'Measure 1', ts: 100, dur: 100},
+            {name: 'Measure 6', ts: 300, dur: 100},
+            {name: 'Measure 7', ts: 350, dur: 50},
           ],
-          'Custom track 2': [{name: 'Measure 2', ts: 100, dur: 100}]
+          'Custom track 2': [{name: 'Measure 2', ts: 100, dur: 100}],
         };
         for (let i = 0; i < extensionHandlerOutput.extensionTrackData.length; i++) {
           const track = extensionHandlerOutput.extensionTrackData[i];

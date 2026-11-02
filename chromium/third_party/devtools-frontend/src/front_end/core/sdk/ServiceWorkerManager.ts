@@ -8,53 +8,54 @@ import * as Common from '../common/common.js';
 import * as i18n from '../i18n/i18n.js';
 import type * as Platform from '../platform/platform.js';
 
+import {MultitargetNetworkManager} from './NetworkManager.js';
 import {Events as RuntimeModelEvents, type ExecutionContext, RuntimeModel} from './RuntimeModel.js';
 import {SDKModel} from './SDKModel.js';
 import {Capability, type Target, Type} from './Target.js';
 
 const UIStrings = {
   /**
-   * @description Service worker running status displayed in the Service Workers view in the Application panel
+   * @description Service worker running status displayed in the Service Workers view in the Application panel.
    */
   running: 'running',
   /**
-   * @description Service worker running status displayed in the Service Workers view in the Application panel
+   * @description Service worker running status displayed in the Service Workers view in the Application panel.
    */
   starting: 'starting',
   /**
-   * @description Service worker running status displayed in the Service Workers view in the Application panel
+   * @description Service worker running status displayed in the Service Workers view in the Application panel.
    */
   stopped: 'stopped',
   /**
-   * @description Service worker running status displayed in the Service Workers view in the Application panel
+   * @description Service worker running status displayed in the Service Workers view in the Application panel.
    */
   stopping: 'stopping',
   /**
-   * @description Service worker version status displayed in the Threads view of the Debugging side pane in the Sources panel
+   * @description Service worker version status displayed in the Threads view of the Debugging sidebar in the Sources panel.
    */
   activated: 'activated',
   /**
-   * @description Service worker version status displayed in the Threads view of the Debugging side pane in the Sources panel
+   * @description Service worker version status displayed in the Threads view of the Debugging sidebar in the Sources panel.
    */
   activating: 'activating',
   /**
-   * @description Service worker version status displayed in the Threads view of the Debugging side pane in the Sources panel
+   * @description Service worker version status displayed in the Threads view of the Debugging sidebar in the Sources panel.
    */
   installed: 'installed',
   /**
-   * @description Service worker version status displayed in the Threads view of the Debugging side pane in the Sources panel
+   * @description Service worker version status displayed in the Threads view of the Debugging sidebar in the Sources panel.
    */
   installing: 'installing',
   /**
-   * @description Service worker version status displayed in the Threads view of the Debugging side pane in the Sources panel
+   * @description Service worker version status displayed in the Threads view of the Debugging sidebar in the Sources panel.
    */
   new: 'new',
   /**
-   * @description Service worker version status displayed in the Threads view of the Debugging side pane in the Sources panel
+   * @description Service worker version status displayed in the Threads view of the Debugging sidebar in the Sources panel.
    */
   redundant: 'redundant',
   /**
-   * @description Service worker version status displayed in the Threads view of the Debugging side pane in the Sources panel
+   * @description Service worker version status displayed in the Threads view of the Debugging sidebar in the Sources panel.
    * @example {sw.js} PH1
    * @example {117} PH2
    * @example {activated} PH3
@@ -70,21 +71,34 @@ export class ServiceWorkerManager extends SDKModel<EventTypes> {
   readonly #registrations = new Map<string, ServiceWorkerRegistration>();
   #enabled = false;
   readonly #forceUpdateSetting: Common.Settings.Setting<boolean>;
+  readonly #networkManager: MultitargetNetworkManager;
 
   constructor(target: Target) {
     super(target);
+    this.#networkManager = target.targetManager().getNetworkManager();
     target.registerServiceWorkerDispatcher(new ServiceWorkerDispatcher(this));
     this.#agent = target.serviceWorkerAgent();
     void this.enable();
-    this.#forceUpdateSetting = this.target()
-                                   .targetManager()
-                                   .context.get(Common.Settings.Settings)
-                                   .createSetting('service-worker-update-on-reload', false);
+    this.#forceUpdateSetting = target.targetManager().settings.createSetting('service-worker-update-on-reload', false);
     if (this.#forceUpdateSetting.get()) {
       this.forceUpdateSettingChanged();
     }
     this.#forceUpdateSetting.addChangeListener(this.forceUpdateSettingChanged, this);
+    this.#networkManager.addEventListener(
+        MultitargetNetworkManager.Events.CONDITIONS_CHANGED,
+        this.forceUpdateSettingChanged,
+        this,
+    );
     new ServiceWorkerContextNamer(target, this);
+  }
+
+  override dispose(): void {
+    this.#networkManager.removeEventListener(
+        MultitargetNetworkManager.Events.CONDITIONS_CHANGED,
+        this.forceUpdateSettingChanged,
+        this,
+    );
+    super.dispose();
   }
 
   async enable(): Promise<void> {
@@ -237,7 +251,7 @@ export class ServiceWorkerManager extends SDKModel<EventTypes> {
   }
 
   private forceUpdateSettingChanged(): void {
-    const forceUpdateOnPageLoad = this.#forceUpdateSetting.get();
+    const forceUpdateOnPageLoad = this.#forceUpdateSetting.get() && !this.#networkManager.isOffline();
     void this.#agent.invoke_setForceUpdateOnPageLoad({forceUpdateOnPageLoad});
   }
 }

@@ -16,6 +16,7 @@
 #include <spirv/unified1/spirv.hpp>
 #include <sstream>
 #include "state_tracker/shader_instruction.h"
+#include <vulkan/vulkan_core.h>
 #include "generated/spirv_grammar_helper.h"
 #include "state_tracker/shader_module.h"
 
@@ -196,13 +197,59 @@ bool Instruction::IsVector() const { return (Opcode() == spv::OpTypeVector || Op
 
 bool Instruction::IsNonPtrAccessChain() const {
     const uint32_t opcode = Opcode();
-    return opcode == spv::OpAccessChain || opcode == spv::OpInBoundsAccessChain;
+    return opcode == spv::OpAccessChain || opcode == spv::OpInBoundsAccessChain || opcode == spv::OpUntypedAccessChainKHR ||
+           opcode == spv::OpUntypedInBoundsAccessChainKHR;
 }
 
 bool Instruction::IsAccessChain() const {
     const uint32_t opcode = Opcode();
-    return opcode == spv::OpAccessChain || opcode == spv::OpPtrAccessChain || opcode == spv::OpInBoundsAccessChain ||
-           opcode == spv::OpInBoundsPtrAccessChain;
+    return IsNonPtrAccessChain() || opcode == spv::OpPtrAccessChain || opcode == spv::OpInBoundsPtrAccessChain ||
+           opcode == spv::OpUntypedPtrAccessChainKHR || opcode == spv::OpUntypedInBoundsPtrAccessChainKHR;
+}
+
+bool Instruction::IsUntypedAccessChain() const {
+    const uint32_t opcode = Opcode();
+    return opcode == spv::OpUntypedAccessChainKHR || opcode == spv::OpUntypedInBoundsAccessChainKHR ||
+           opcode == spv::OpUntypedPtrAccessChainKHR || opcode == spv::OpUntypedInBoundsPtrAccessChainKHR;
+}
+
+// These are all things known that do a memory access
+bool Instruction::IsMemoryAccess() const {
+    const uint32_t opcode = Opcode();
+    if (opcode == spv::OpImageTexelPointer || opcode == spv::OpImage) {
+        // OpImageTexelPointer is for image atomics handled at the atomic instruction
+        // OpImage is describing an action, rather than the input to or the output from an action.
+        return false;
+    }
+
+    return opcode == spv::OpLoad || opcode == spv::OpStore || opcode == spv::OpCooperativeMatrixLoadKHR ||
+           opcode == spv::OpCooperativeMatrixStoreKHR || AtomicOperation(opcode) || (OpcodeImageAccessPosition(opcode) != 0);
+}
+
+// As defined in https://github.khronos.org/SPIRV-Registry/extensions/EXT/SPV_EXT_descriptor_heap.html
+bool Instruction::IsDescriptorType() const {
+    const uint32_t opcode = Opcode();
+    return opcode == spv::OpTypeSampler || opcode == spv::OpTypeImage || opcode == spv::OpTypeBufferEXT ||
+           opcode == spv::OpTypeAccelerationStructureKHR || opcode == spv::OpTypeTensorARM;
+}
+
+VkDescriptorType Instruction::GetImageType() const {
+    assert(Opcode() == spv::OpTypeImage);
+    const bool is_sampled_without_sampler = Word(7) == 2;
+    spv::Dim image_dim = spv::Dim(Word(3));
+    if (is_sampled_without_sampler) {
+        if (image_dim == spv::DimSubpassData) {
+            return VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        } else if (image_dim == spv::DimBuffer) {
+            return VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER;
+        } else {
+            return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        }
+    } else if (image_dim == spv::DimBuffer) {
+        return VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
+    } else {
+        return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    }
 }
 
 bool Instruction::IsTensor() const { return (Opcode() == spv::OpTypeTensorARM); }
@@ -248,6 +295,7 @@ spv::StorageClass Instruction::StorageClass() const {
         case spv::OpTypePointer:
         case spv::OpTypeForwardPointer:
         case spv::OpTypeUntypedPointerKHR:
+        case spv::OpTypeBufferEXT:
             storage_class = static_cast<spv::StorageClass>(Word(2));
             break;
         case spv::OpVariable:
@@ -577,6 +625,50 @@ ImageInstruction::ImageInstruction(const uint32_t* words) {
         case spv::OpImageQueryLod:
         case spv::OpFragmentFetchAMD:
         case spv::OpFragmentMaskFetchAMD:
+        case spv::OpAtomicLoad:
+        case spv::OpAtomicStore:
+        case spv::OpAtomicExchange:
+        case spv::OpAtomicCompareExchange:
+        case spv::OpAtomicCompareExchangeWeak:
+        case spv::OpAtomicIIncrement:
+        case spv::OpAtomicIDecrement:
+        case spv::OpAtomicIAdd:
+        case spv::OpAtomicISub:
+        case spv::OpAtomicSMin:
+        case spv::OpAtomicUMin:
+        case spv::OpAtomicSMax:
+        case spv::OpAtomicUMax:
+        case spv::OpAtomicAnd:
+        case spv::OpAtomicOr:
+        case spv::OpAtomicXor:
+        case spv::OpAtomicFMinEXT:
+        case spv::OpAtomicFMaxEXT:
+        case spv::OpAtomicFAddEXT:
+            break;
+
+        case spv::OpImageSampleWeightedQCOM:
+            image_proc_usage_mask |= ImageProcUsageBit::kSampleWeighted;
+            break;
+        case spv::OpImageBoxFilterQCOM:
+            image_proc_usage_mask |= ImageProcUsageBit::kBoxFilter;
+            break;
+        case spv::OpImageBlockMatchSADQCOM:
+            image_proc_usage_mask |= ImageProcUsageBit::kBlockMatchSad;
+            break;
+        case spv::OpImageBlockMatchSSDQCOM:
+            image_proc_usage_mask |= ImageProcUsageBit::kBlockMatchSsd;
+            break;
+        case spv::OpImageBlockMatchGatherSADQCOM:
+            image_proc_usage_mask |= ImageProcUsageBit::kBlockMatchGatherSad;
+            break;
+        case spv::OpImageBlockMatchGatherSSDQCOM:
+            image_proc_usage_mask |= ImageProcUsageBit::kBlockMatchGatherSsd;
+            break;
+        case spv::OpImageBlockMatchWindowSADQCOM:
+            image_proc_usage_mask |= ImageProcUsageBit::kBlockMatchWindowSad;
+            break;
+        case spv::OpImageBlockMatchWindowSSDQCOM:
+            image_proc_usage_mask |= ImageProcUsageBit::kBlockMatchWindowSsd;
             break;
 
         case spv::OpImageSparseTexelsResident:
@@ -591,7 +683,7 @@ ImageInstruction::ImageInstruction(const uint32_t* words) {
     // Find any optional Image Operands
     const uint32_t image_operand_position = OpcodeImageOperandsPosition(image_opcode);
     const uint32_t length = words[0] >> 16;
-    if (length > image_operand_position) {
+    if (image_operand_position != 0 && length > image_operand_position) {
         const uint32_t image_operand_word = words[image_operand_position];
 
         if (is_sampler_sampled) {

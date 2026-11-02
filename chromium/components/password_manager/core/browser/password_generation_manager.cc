@@ -11,6 +11,7 @@
 
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
+#include "components/password_manager/core/browser/browser_save_password_progress_logger.h"
 #include "components/password_manager/core/browser/form_saver.h"
 #include "components/password_manager/core/browser/password_feature_manager.h"
 #include "components/password_manager/core/browser/password_form.h"
@@ -66,6 +67,7 @@ class PasswordDataForUI : public PasswordFormManagerForUI {
   bool IsFetchCompleted() const override;
   bool IsMovableToAccountStore() const override;
   void Save() override;
+  bool IsPasswordUpdate() const override;
   bool IsUpdateAffectingPasswordsStoredInTheGoogleAccount() const override;
   void OnUpdateUsernameFromPrompt(const std::u16string& new_username) override;
   void OnUpdatePasswordFromPrompt(const std::u16string& new_password) override;
@@ -162,6 +164,12 @@ bool PasswordDataForUI::IsMovableToAccountStore() const {
 
 void PasswordDataForUI::Save() {
   bubble_interaction_cb_.Run(true, pending_form_);
+}
+
+bool PasswordDataForUI::IsPasswordUpdate() const {
+  // A generated password can cause a password update, but that is handled in a
+  // different UI.
+  return false;
 }
 
 bool PasswordDataForUI::IsUpdateAffectingPasswordsStoredInTheGoogleAccount()
@@ -383,6 +391,10 @@ void PasswordGenerationManager::PresaveGeneratedPassword(
     PasswordForm generated,
     const std::vector<raw_ptr<const PasswordForm, VectorExperimental>>& matches,
     FormSaver* form_saver) {
+  if (auto logger = password_manager_util::GetLoggerIfAvailable(client_)) {
+    logger->LogMessage(
+        autofill::SavePasswordProgressLogger::STRING_GENERATION_STORE_PRE_SAVE);
+  }
   CHECK(!generated.password_value.empty());
   // Clear the username value if there are already saved credentials with
   // the same username in order to prevent overwriting.
@@ -412,6 +424,10 @@ void PasswordGenerationManager::PresaveGeneratedPassword(
 
 void PasswordGenerationManager::PasswordNoLongerGenerated(
     FormSaver* form_saver) {
+  if (auto logger = password_manager_util::GetLoggerIfAvailable(client_)) {
+    logger->LogMessage(
+        autofill::SavePasswordProgressLogger::STRING_GENERATION_STORE_ROLLBACK);
+  }
   DCHECK(presaved_);
   form_saver->Remove(*presaved_);
   presaved_.reset();
@@ -425,6 +441,10 @@ void PasswordGenerationManager::CommitGeneratedPassword(
     PasswordForm::Store store_to_save,
     FormSaver* profile_store_form_saver,
     FormSaver* account_store_form_saver) {
+  if (auto logger = password_manager_util::GetLoggerIfAvailable(client_)) {
+    logger->LogMessage(
+        autofill::SavePasswordProgressLogger::STRING_GENERATION_STORE_COMMIT);
+  }
   DCHECK(presaved_);
   generated.date_last_used = base::Time::Now();
   generated.date_created = base::Time::Now();

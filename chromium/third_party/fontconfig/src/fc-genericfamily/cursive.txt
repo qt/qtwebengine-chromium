@@ -1,0 +1,17 @@
+# Font families for cursive generic family
+Comic Sans MS
+IranNastaliq
+ITC Zapf Chancery Std
+Nafees Nastaleeq
+Zapfino
+UnGungseo
+UnPen
+UnPenheulim
+UnPilgia
+Dancing Script
+Great Vibes
+Écolier Court
+Noto Kufi Arabic
+Noto Nastaliq Urdu
+Petaluma Script
+TeX Gyre Chorus

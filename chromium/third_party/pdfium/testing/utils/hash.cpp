@@ -5,13 +5,14 @@
 #include "testing/utils/hash.h"
 
 #include "core/fdrm/fx_crypt.h"
+#include "core/fxcrt/compiler_specific.h"
 
 std::string CryptToBase16(const uint8_t* digest) {
   static char const zEncode[] = "0123456789abcdef";
   std::string ret;
   ret.resize(32);
   for (int i = 0, j = 0; i < 16; i++, j += 2) {
-    uint8_t a = digest[i];
+    uint8_t a = UNSAFE_TODO(digest[i]);
     ret[j] = zEncode[(a >> 4) & 0xf];
     ret[j + 1] = zEncode[a & 0xf];
   }

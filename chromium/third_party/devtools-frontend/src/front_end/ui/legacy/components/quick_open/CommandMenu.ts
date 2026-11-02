@@ -11,6 +11,7 @@ import * as i18n from '../../../../core/i18n/i18n.js';
 import * as Platform from '../../../../core/platform/platform.js';
 import * as Diff from '../../../../third_party/diff/diff.js';
 import {html, nothing, type TemplateResult} from '../../../lit/lit.js';
+import * as SettingsUI from '../../../settings/settings.js';
 import * as UI from '../../legacy.js';
 
 import {FilteredListWidget, Provider, registerProvider} from './FilteredListWidget.js';
@@ -93,14 +94,15 @@ export class CommandMenu {
         featurePromotionId);
   }
 
-  static createSettingCommand<V>(setting: Common.Settings.Setting<V>, title: Common.UIString.LocalizedString, value: V):
-      Command {
-    const category = setting.category();
+  static createSettingCommand<V>(setting: Common.Settings.Setting<V>, title: Common.UIString.LocalizedString, value: V,
+                                 settingUIDescriptor?: SettingsUI.SettingUIRegistration.SettingUIDescriptor): Command {
+    const uiDescriptor = settingUIDescriptor ?? SettingsUI.SettingUIRegistration.maybeResolve(setting.descriptor());
+    const category = uiDescriptor?.category ?? setting.category();
     if (!category) {
       throw new Error(`Creating '${title}' setting command failed. Setting has no category.`);
     }
-    const tags = setting.tags() || '';
-    const reloadRequired = Boolean(setting.reloadRequired());
+    const tags = uiDescriptor?.tags?.map(tag => tag()).join('\0') ?? setting.tags() ?? '';
+    const reloadRequired = Boolean(uiDescriptor?.reloadRequired ?? setting.reloadRequired());
 
     return CommandMenu.createCommand({
       category: Common.Settings.getLocalizedSettingsCategory(category),
@@ -220,15 +222,16 @@ export class CommandMenu {
       this.#commands.push(CommandMenu.createRevealViewCommand(options));
     }
     // Populate allowlisted settings.
-    const settingsRegistrations = Common.Settings.Settings.instance().getRegisteredSettings();
-    for (const settingRegistration of settingsRegistrations) {
-      const options = settingRegistration.options;
-      if (!options || !settingRegistration.category) {
+    const settingsRegistrations = SettingsUI.SettingUIRegistration.getRegisteredSettings();
+    for (const registeredSettingUI of settingsRegistrations) {
+      const options = registeredSettingUI.uiDescriptor.options;
+      if (!options || !registeredSettingUI.uiDescriptor.category) {
         continue;
       }
+      const setting = Common.Settings.Settings.instance().resolve(registeredSettingUI.descriptor);
       for (const pair of options) {
-        const setting = Common.Settings.Settings.instance().moduleSetting(settingRegistration.settingName);
-        this.#commands.push(CommandMenu.createSettingCommand(setting, pair.title(), pair.value));
+        this.#commands.push(
+            CommandMenu.createSettingCommand(setting, pair.title(), pair.value, registeredSettingUI.uiDescriptor));
       }
     }
   }

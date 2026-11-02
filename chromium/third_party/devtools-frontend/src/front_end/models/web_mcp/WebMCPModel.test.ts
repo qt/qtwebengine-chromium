@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
@@ -142,5 +143,22 @@ describeWithEnvironment('WebMCPModel', () => {
     const invokeCancelStub = sinon.stub(target.webMCPAgent(), 'invoke_cancelInvocation');
     call.cancel();
     sinon.assert.calledOnceWithExactly(invokeCancelStub, {invocationId: 'cancelable-invocation'});
+  });
+
+  it('extracts and sorts annotation flags correctly', () => {
+    const protocolTool: Protocol.WebMCP.Tool = {
+      name: 'test-tool',
+      description: 'description',
+      inputSchema: {},
+      frameId: 'frame-1' as Protocol.Page.FrameId,
+      annotations: {
+        untrustedContent: true,
+        readOnly: true,
+        autosubmit: false,
+      },
+    };
+    webMCPModel.toolsAdded({tools: [protocolTool]});
+    const tool = [...webMCPModel.tools][0];
+    assert.deepEqual(tool.flags, ['readOnly', 'untrustedContent']);
   });
 });

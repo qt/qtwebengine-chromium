@@ -54,7 +54,7 @@ namespace Colamd {
 /* Ensure that debugging is turned off: */
 #ifndef COLAMD_NDEBUG
 #define COLAMD_NDEBUG
-#endif /* NDEBUG */
+#endif /* COLAMD_NDEBUG */
 
 /* ========================================================================== */
 /* === Knob and statistics definitions ====================================== */
@@ -256,7 +256,7 @@ static inline IndexType clear_mark(IndexType n_row, RowStructure<IndexType> Row[
  * Returns recommended value of Alen for use by colamd.
  * Returns -1 if any input argument is negative.
  * The use of this routine or macro is optional.
- * Note that the macro uses its arguments   more than once,
+ * Note that the macro uses its arguments more than once,
  * so be careful for side effects, if you pass expressions as arguments to COLAMD_RECOMMENDED.
  *
  * \param nnz nonzeros in A

@@ -13,13 +13,16 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/time/time.h"
 #include "chrome/common/chrome_isolated_world_ids.h"
 #include "chrome/test/base/chrome_render_view_test.h"
 #include "components/language_detection/core/constants.h"
 #include "components/translate/content/common/translate.mojom.h"
+#include "components/translate/core/common/translate_features.h"
 #include "components/translate/core/common/translate_util.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/renderer/render_frame.h"
@@ -29,6 +32,8 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
+#include "third_party/blink/public/platform/web_url_response.h"
+#include "third_party/blink/public/web/web_document_loader.h"
 #include "third_party/blink/public/web/web_local_frame.h"
 
 using testing::_;
@@ -595,3 +600,135 @@ TEST_F(TranslateAgentBrowserTest, UnsupportedTranslateSchemes) {
   EXPECT_FALSE(fake_translate_driver_.page_level_translation_criteria_met_);
   EXPECT_TRUE(fake_translate_driver_.details_->adopted_language.empty());
 }
+
+// Tests that the agent gracefully handles being deleted while it is injecting
+// the translate library script (e.g. when script execution spins a nested run
+// loop that tears down the owning frame).
+TEST_F(TranslateAgentBrowserTest, AgentDeletedDuringScriptInjection) {
+  // Take raw ownership so the agent can be deleted from inside a mock action.
+  TestTranslateAgent* agent = translate_agent_.release();
+
+  EXPECT_CALL(*agent, IsTranslateLibAvailable()).WillOnce(Return(false));
+  EXPECT_CALL(*agent, ExecuteScript(_)).WillOnce([agent](const std::string&) {
+    delete agent;
+  });
+
+  agent->TranslateFrame(std::string(), "en", "fr", base::DoNothing());
+}
+
+// Tests that the agent gracefully handles being deleted while it is starting
+// the translation.
+TEST_F(TranslateAgentBrowserTest, AgentDeletedDuringStartTranslation) {
+  TestTranslateAgent* agent = translate_agent_.release();
+
+  EXPECT_CALL(*agent, IsTranslateLibAvailable()).WillOnce(Return(true));
+  EXPECT_CALL(*agent, IsTranslateLibReady()).WillOnce(Return(true));
+  EXPECT_CALL(*agent, ExecuteScriptAndGetDoubleResult(_))
+      .WillRepeatedly(Return(0.0));
+  EXPECT_CALL(*agent, StartTranslation()).WillOnce([agent]() {
+    delete agent;
+    return false;
+  });
+
+  agent->TranslateFrame(std::string(), "en", "fr", base::DoNothing());
+}
+
+// Tests that the agent gracefully handles being deleted while it is checking
+// the translation status.
+TEST_F(TranslateAgentBrowserTest, AgentDeletedDuringCheckTranslateStatus) {
+  TestTranslateAgent* agent = translate_agent_.release();
+
+  base::RunLoop run_loop;
+  EXPECT_CALL(*agent, IsTranslateLibAvailable()).WillOnce(Return(true));
+  EXPECT_CALL(*agent, IsTranslateLibReady()).WillOnce(Return(true));
+  EXPECT_CALL(*agent, ExecuteScriptAndGetDoubleResult(_))
+      .WillRepeatedly(Return(0.0));
+  EXPECT_CALL(*agent, StartTranslation()).WillOnce(Return(true));
+  EXPECT_CALL(*agent, HasTranslationFailed()).WillOnce([agent, &run_loop]() {
+    delete agent;
+    run_loop.Quit();
+    return false;
+  });
+
+  agent->TranslateFrame(std::string(), "en", "fr", base::DoNothing());
+  run_loop.Run();
+}
+
+#if BUILDFLAG(ENABLE_PDF)
+TEST_F(TranslateAgentBrowserTest, PdfPageCaptured) {
+  GURL url("https://example.com");
+  translate_agent_->PdfPageCaptured(u"A random page with random content.", "fr",
+                                    url);
+  base::RunLoop().RunUntilIdle();
+
+  ASSERT_TRUE(fake_translate_driver_.called_new_page_);
+  EXPECT_TRUE(fake_translate_driver_.page_level_translation_criteria_met_);
+  EXPECT_EQ("fr", fake_translate_driver_.details_->content_language);
+  EXPECT_EQ("fr", fake_translate_driver_.details_->html_root_language);
+  EXPECT_FALSE(fake_translate_driver_.details_->has_notranslate);
+}
+
+TEST_F(TranslateAgentBrowserTest, PdfUnsupportedTranslateSchemes) {
+  GURL url("chrome://foo.com");
+  translate_agent_->PdfPageCaptured(u"pdf content", "en", url);
+  base::RunLoop().RunUntilIdle();
+
+  ASSERT_FALSE(fake_translate_driver_.called_new_page_);
+}
+
+TEST_F(TranslateAgentBrowserTest, PageCapturedPdfIgnoredWhenFeatureEnabled) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(translate::kEnableTranslatePdf);
+
+  LoadHTML("<html><body>A random page with random content.</body></html>");
+  base::RunLoop().RunUntilIdle();
+
+  fake_translate_driver_.ResetNewPageValues();
+
+  // Manually override the MIME type to application/pdf.
+  auto* main_frame = GetMainFrame();
+  auto* doc_loader = main_frame->GetDocumentLoader();
+  ASSERT_TRUE(doc_loader);
+  const_cast<blink::WebURLResponse&>(doc_loader->GetWebResponse())
+      .SetMimeType(blink::WebString::FromUtf8("application/pdf"));
+
+  // Call PageCaptured directly.
+  scoped_refptr<const base::RefCountedString16> contents =
+      base::MakeRefCounted<const base::RefCountedString16>(
+          u"A random page with random content.");
+  translate_agent_->PageCaptured(contents);
+  base::RunLoop().RunUntilIdle();
+
+  // With kEnableTranslatePdf enabled, PageCaptured should return early and not
+  // register page.
+  EXPECT_FALSE(fake_translate_driver_.called_new_page_);
+}
+
+TEST_F(TranslateAgentBrowserTest, PageCapturedPdfNotIgnoredWhenFeatureDisabled) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndDisableFeature(translate::kEnableTranslatePdf);
+
+  LoadHTML("<html><body>A random page with random content.</body></html>");
+  base::RunLoop().RunUntilIdle();
+
+  fake_translate_driver_.ResetNewPageValues();
+
+  // Manually override the MIME type to application/pdf.
+  auto* main_frame = GetMainFrame();
+  auto* doc_loader = main_frame->GetDocumentLoader();
+  ASSERT_TRUE(doc_loader);
+  const_cast<blink::WebURLResponse&>(doc_loader->GetWebResponse())
+      .SetMimeType(blink::WebString::FromUtf8("application/pdf"));
+
+  // Call PageCaptured directly.
+  scoped_refptr<const base::RefCountedString16> contents =
+      base::MakeRefCounted<const base::RefCountedString16>(
+          u"A random page with random content.");
+  translate_agent_->PageCaptured(contents);
+  base::RunLoop().RunUntilIdle();
+
+  // With kEnableTranslatePdf disabled (default), PageCaptured should NOT return
+  // early, allowing language detection and page registration.
+  EXPECT_TRUE(fake_translate_driver_.called_new_page_);
+}
+#endif

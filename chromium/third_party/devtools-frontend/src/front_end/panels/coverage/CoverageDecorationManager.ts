@@ -4,8 +4,8 @@
 
 import type * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import type * as Bindings from '../../models/bindings/bindings.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 
 import type {CoverageInfo, CoverageModel} from './CoverageModel.js';
@@ -54,7 +54,15 @@ export class CoverageDecorationManager {
   update(updatedEntries: CoverageInfo[]): void {
     for (const entry of updatedEntries) {
       for (const uiSourceCode of this.uiSourceCodeByContentProvider.get(entry.getContentProvider())) {
+        const alreadyDecorated = uiSourceCode.getDecorationData(decoratorType) === this;
         uiSourceCode.setDecorationData(decoratorType, this);
+        // We set the decoration data to `this` (the manager itself), which acts as a singleton.
+        // If the file was already decorated with `this`, `setDecorationData` performs an identity
+        // check and will skip dispatching the `DecorationChanged` event. Since the manager's internal
+        // coverage data has updated, we must manually dispatch the event to force the editor to redraw.
+        if (alreadyDecorated) {
+          uiSourceCode.dispatchEventToListeners(Workspace.UISourceCode.Events.DecorationChanged, decoratorType);
+        }
       }
     }
   }

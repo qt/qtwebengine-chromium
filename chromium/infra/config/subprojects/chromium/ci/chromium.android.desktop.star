@@ -286,7 +286,6 @@ ci.thin_tester(
         ],
         mixins = [
             "isolate_profile_data",
-            "retry_only_failed_tests",
         ],
         per_test_modifications = {
             "android_browsertests": targets.mixin(
@@ -326,7 +325,9 @@ ci.thin_tester(
     targets_settings = targets.settings(
         os_type = targets.os_type.ANDROID,
     ),
+    builderless = True,
     cores = 8,
+    ssd = None,
     gardener_rotations = gardener_rotations.ANDROID,
     console_view_entry = consoles.console_view_entry(
         category = "tester|x64",

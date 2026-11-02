@@ -11,7 +11,7 @@ import {
   debugLog,
   type DoConversationRequest,
   type GenerateCodeRequest,
-  type GenerateCodeResponse
+  type GenerateCodeResponse,
 } from './AidaClientTypes.js';
 import {
   aidaCompletionRequestToGcaRequest,
@@ -19,7 +19,7 @@ import {
   aidaEventToGcaTelemetryRequest,
   aidaGenerateCodeRequestToGcaRequest,
   gcaResponseToAidaCompletionResponse,
-  gcaResponseToAidaGenerateCodeResponse
+  gcaResponseToAidaGenerateCodeResponse,
 } from './AidaGcaTranslation.js';
 import * as DispatchHttpRequestClient from './DispatchHttpRequestClient.js';
 import type {GenerateContentRequest, GenerateContentResponse} from './GcaTypes.js';
@@ -91,8 +91,8 @@ export class GcaClient {
     return result ? gcaResponseToAidaGenerateCodeResponse(result) : null;
   }
 
-  async #requestContent(request: GenerateContentRequest, options?: {signal?: AbortSignal}):
-      Promise<GenerateContentResponse|null> {
+  async #requestContent(request: GenerateContentRequest,
+                        options?: {signal?: AbortSignal}): Promise<GenerateContentResponse> {
     try {
       const response = await DispatchHttpRequestClient.makeHttpRequest<GenerateContentResponse>(
           {
@@ -106,7 +106,7 @@ export class GcaClient {
       return response;
     } catch (err) {
       debugLog('GCA request failed:', JSON.stringify(request), err);
-      return null;
+      throw err;
     }
   }
 }

@@ -4,6 +4,7 @@
 
 #include "components/send_tab_to_self/fake_send_tab_to_self_model.h"
 
+#include <algorithm>
 #include <map>
 #include <memory>
 #include <string>
@@ -11,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/auto_reset.h"
 #include "base/containers/to_vector.h"
 #include "base/time/time.h"
 #include "base/uuid.h"
@@ -34,10 +36,17 @@ std::vector<std::string> FakeSendTabToSelfModel::GetAllGuids() const {
 }
 
 const SendTabToSelfEntry* FakeSendTabToSelfModel::GetEntryByGUID(
-    const std::string& guid) const {
-  std::map<std::string, std::unique_ptr<SendTabToSelfEntry>>::const_iterator
-      it = entries_.find(guid);
-  return it != entries_.end() ? it->second.get() : nullptr;
+    std::string_view guid) const {
+  auto it = entries_.find(guid);
+  if (it != entries_.end()) {
+    return it->second.get();
+  }
+  for (const auto& entry : remote_entries_pending_model_ready_) {
+    if (entry->GetGUID() == guid) {
+      return entry.get();
+    }
+  }
+  return nullptr;
 }
 
 std::vector<const SendTabToSelfEntry*>
@@ -49,7 +58,20 @@ FakeSendTabToSelfModel::GetUnopenedEntriesTargetedToLocalDevice() const {
       unopened_entries.push_back(entry.get());
     }
   }
+  std::ranges::sort(unopened_entries, {}, &SendTabToSelfEntry::GetSharedTime);
   return unopened_entries;
+}
+
+std::vector<const SendTabToSelfEntry*>
+FakeSendTabToSelfModel::GetOpenedEntriesTargetedToLocalDevice() const {
+  std::vector<const SendTabToSelfEntry*> opened_entries;
+  for (const auto& [guid, entry] : entries_) {
+    if (entry->GetTargetDeviceSyncCacheGuid() == local_cache_guid_ &&
+        entry->IsOpened()) {
+      opened_entries.push_back(entry.get());
+    }
+  }
+  return opened_entries;
 }
 
 const SendTabToSelfEntry* FakeSendTabToSelfModel::SendEntry(
@@ -58,7 +80,8 @@ const SendTabToSelfEntry* FakeSendTabToSelfModel::SendEntry(
     const std::string& target_device_cache_guid,
     const PageContext& context,
     NavigationHistory navigation_history,
-    base::OnceCallback<void(SendTabToSelfResult)> commit_confirmation) {
+    base::OnceCallback<void(SendTabToSelfResult)> commit_confirmation,
+    ShareEntryPoint entry_point) {
   if (!IsReady()) {
     if (commit_confirmation) {
       std::move(commit_confirmation)
@@ -91,24 +114,31 @@ const SendTabToSelfEntry* FakeSendTabToSelfModel::SendEntry(
   return result;
 }
 
-void FakeSendTabToSelfModel::DismissEntry(const std::string& guid) {
-  last_dismissed_guid_ = guid;
-  std::map<std::string, std::unique_ptr<SendTabToSelfEntry>>::iterator it =
-      entries_.find(guid);
+void FakeSendTabToSelfModel::DismissEntry(std::string_view guid) {
+  last_dismissed_guid_ = std::string(guid);
+  auto it = entries_.find(guid);
   if (it != entries_.end()) {
     it->second->SetNotificationDismissed(true);
   }
 }
 
-void FakeSendTabToSelfModel::MarkEntryOpened(const std::string& guid) {
-  last_opened_guid_ = guid;
-  std::map<std::string, std::unique_ptr<SendTabToSelfEntry>>::iterator it =
-      entries_.find(guid);
+void FakeSendTabToSelfModel::MarkEntryOpened(std::string_view guid) {
+  last_opened_guid_ = std::string(guid);
+  auto it = entries_.find(guid);
   if (it != entries_.end()) {
     it->second->MarkOpened(base::Time::Now());
-    for (auto& observer : observers_) {
-      observer.OnEntriesOpenedRemotely({it->second.get()});
-    }
+  }
+}
+
+void FakeSendTabToSelfModel::MarkEntryActivated(
+    std::string_view guid,
+    ShareActivatedEntryPoint entry_point) {
+  last_activated_guid_ = std::string(guid);
+  last_activated_entry_point_ = entry_point;
+  ++activated_call_count_;
+  auto it = entries_.find(guid);
+  if (it != entries_.end()) {
+    it->second->MarkActivated(base::Time::Now());
   }
 }
 
@@ -125,9 +155,24 @@ FakeSendTabToSelfModel::GetTargetDeviceInfoSortedList() {
   return devices_;
 }
 
+std::optional<TargetDeviceInfo> FakeSendTabToSelfModel::GetTargetDeviceInfo(
+    std::string_view cache_guid) {
+  auto it =
+      std::ranges::find(devices_, cache_guid, &TargetDeviceInfo::cache_guid);
+  return it != devices_.end() ? std::make_optional(*it) : std::nullopt;
+}
+
 void FakeSendTabToSelfModel::SetIsReady(bool is_ready) {
   is_ready_ = is_ready;
   if (is_ready_) {
+    if (!remote_entries_pending_model_ready_.empty()) {
+      for (auto& entry : remote_entries_pending_model_ready_) {
+        const std::string& guid = entry->GetGUID();
+        entries_[guid] = std::move(entry);
+      }
+      remote_entries_pending_model_ready_.clear();
+    }
+
     for (auto& observer : observers_) {
       observer.OnModelReady();
     }
@@ -170,20 +215,55 @@ const SendTabToSelfEntry* FakeSendTabToSelfModel::AddEntryRemotely(
     const std::string& target_device_cache_guid,
     const PageContext& context,
     NavigationHistory navigation_history) {
-  std::string guid = base::Uuid::GenerateRandomV4().AsLowercaseString();
-  std::unique_ptr<SendTabToSelfEntry> entry =
-      std::make_unique<SendTabToSelfEntry>(
-          guid, url, title, base::Time::Now(), "remote_device",
-          target_device_cache_guid, context, std::move(navigation_history));
+  std::vector<RemoteEntryParams> entries_params;
+  entries_params.push_back(
+      {.url = url,
+       .title = title,
+       .target_device_cache_guid = target_device_cache_guid,
+       .context = context,
+       .navigation_history = std::move(navigation_history)});
+  auto results = AddEntriesRemotely(std::move(entries_params));
+  return results.front();
+}
 
-  const SendTabToSelfEntry* result = entry.get();
-  entries_[guid] = std::move(entry);
-
-  for (auto& observer : observers_) {
-    observer.OnEntriesAddedRemotely({result});
+std::vector<const SendTabToSelfEntry*>
+FakeSendTabToSelfModel::AddEntriesRemotely(
+    std::vector<RemoteEntryParams> entries_params) {
+  std::vector<const SendTabToSelfEntry*> results;
+  for (auto& params : entries_params) {
+    std::string guid = base::Uuid::GenerateRandomV4().AsLowercaseString();
+    base::Time entry_time =
+        params.shared_time.is_null() ? base::Time::Now() : params.shared_time;
+    std::unique_ptr<SendTabToSelfEntry> entry =
+        std::make_unique<SendTabToSelfEntry>(
+            guid, params.url, params.title, entry_time, "remote_device",
+            params.target_device_cache_guid, params.context,
+            std::move(params.navigation_history));
+    results.push_back(entry.get());
+    if (is_ready_) {
+      entries_[guid] = std::move(entry);
+    } else {
+      remote_entries_pending_model_ready_.push_back(std::move(entry));
+    }
   }
 
-  return result;
+  if (is_ready_) {
+    for (auto& observer : observers_) {
+      observer.OnEntriesAddedRemotely(results);
+    }
+  }
+
+  return results;
+}
+
+void FakeSendTabToSelfModel::RemoveEntryRemotely(const std::string& guid) {
+  auto it = entries_.find(guid);
+  if (it != entries_.end()) {
+    for (auto& observer : observers_) {
+      observer.OnEntriesRemovedRemotely({guid});
+    }
+    entries_.erase(it);
+  }
 }
 
 }  // namespace send_tab_to_self

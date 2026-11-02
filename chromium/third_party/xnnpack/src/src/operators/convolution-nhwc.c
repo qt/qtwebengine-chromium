@@ -1092,7 +1092,7 @@ static enum xnn_status init_packing_params_fxx_qc8w(
   return xnn_status_success;
 }
 
-static enum xnn_status init_gemm_params_qu8(
+static XNN_NO_SANITIZE_FUNCTION enum xnn_status init_gemm_params_qu8(
     const struct convolution2d_nhwc_variant* variant,
     struct convolution2d_nhwc_context* context) {
   if (context->output_max > UINT8_MAX) {
@@ -1112,7 +1112,7 @@ static enum xnn_status init_gemm_params_qu8(
   return xnn_status_success;
 }
 
-static enum xnn_status init_gemm_params_qs8_qc8w(
+static XNN_NO_SANITIZE_FUNCTION enum xnn_status init_gemm_params_qs8_qc8w(
     const struct convolution2d_nhwc_variant* variant,
     struct convolution2d_nhwc_context* context) {
   if (context->output_max > INT8_MAX) {
@@ -1131,7 +1131,7 @@ static enum xnn_status init_gemm_params_qs8_qc8w(
   return xnn_status_success;
 }
 
-static enum xnn_status init_gemm_params_f16(
+static XNN_NO_SANITIZE_FUNCTION enum xnn_status init_gemm_params_f16(
     const struct convolution2d_nhwc_variant* variant,
     struct convolution2d_nhwc_context* context) {
   if XNN_LIKELY (context->gemm_config->init.f16 != NULL) {
@@ -1144,7 +1144,7 @@ static enum xnn_status init_gemm_params_f16(
   return xnn_status_success;
 }
 
-static enum xnn_status init_gemm_params_f32(
+static XNN_NO_SANITIZE_FUNCTION enum xnn_status init_gemm_params_f32(
     const struct convolution2d_nhwc_variant* variant,
     struct convolution2d_nhwc_context* context) {
   if XNN_LIKELY (context->gemm_config->init.f32 != NULL) {
@@ -1156,7 +1156,7 @@ static enum xnn_status init_gemm_params_f32(
   return xnn_status_success;
 }
 
-static enum xnn_status init_dwconv_params_qu8(
+static XNN_NO_SANITIZE_FUNCTION enum xnn_status init_dwconv_params_qu8(
     const struct convolution2d_nhwc_variant* variant,
     struct convolution2d_nhwc_context* context) {
   const struct xnn_dwconv_config* dwconv_config = xnn_init_qu8_dwconv_config();
@@ -1181,7 +1181,7 @@ static enum xnn_status init_dwconv_params_qu8(
   return xnn_status_success;
 }
 
-static enum xnn_status init_dwconv_params_qs8_qc8w(
+static XNN_NO_SANITIZE_FUNCTION enum xnn_status init_dwconv_params_qs8_qc8w(
     const struct convolution2d_nhwc_variant* variant,
     struct convolution2d_nhwc_context* context) {
   const struct xnn_dwconv_config* dwconv_config =
@@ -1206,7 +1206,7 @@ static enum xnn_status init_dwconv_params_qs8_qc8w(
   return xnn_status_success;
 }
 
-static enum xnn_status init_dwconv_params_f16(
+static XNN_NO_SANITIZE_FUNCTION enum xnn_status init_dwconv_params_f16(
     const struct convolution2d_nhwc_variant* variant,
     struct convolution2d_nhwc_context* context) {
   const struct xnn_dwconv_config* dwconv_config = xnn_init_f16_dwconv_config();
@@ -1229,7 +1229,7 @@ static enum xnn_status init_dwconv_params_f16(
   return xnn_status_success;
 }
 
-static enum xnn_status init_dwconv_params_f32(
+static XNN_NO_SANITIZE_FUNCTION enum xnn_status init_dwconv_params_f32(
     const struct convolution2d_nhwc_variant* variant,
     struct convolution2d_nhwc_context* context) {
   const struct xnn_dwconv_config* dwconv_config = xnn_init_f32_dwconv_config();
@@ -1251,7 +1251,7 @@ static enum xnn_status init_dwconv_params_f32(
   return xnn_status_success;
 }
 
-static enum xnn_status init_vmuladdc_params_f16(
+static XNN_NO_SANITIZE_FUNCTION enum xnn_status init_vmuladdc_params_f16(
     const struct convolution2d_nhwc_variant* variant,
     struct convolution2d_nhwc_context* context) {
   const struct xnn_vmulcaddc_config* vmulcaddc_config =
@@ -1273,7 +1273,7 @@ static enum xnn_status init_vmuladdc_params_f16(
   return xnn_status_success;
 }
 
-static enum xnn_status init_vmuladdc_params_f32(
+static XNN_NO_SANITIZE_FUNCTION enum xnn_status init_vmuladdc_params_f32(
     const struct convolution2d_nhwc_variant* variant,
     struct convolution2d_nhwc_context* context) {
   const struct xnn_vmulcaddc_config* vmulcaddc_config =
@@ -2266,6 +2266,23 @@ enum xnn_status xnn_create_convolution2d_nhwc_f16(
     size_t output_channel_stride, const void* kernel, const void* bias,
     float output_min, float output_max, uint32_t flags,
     xnn_weights_cache_t weights_cache, xnn_operator_t* convolution_op_out) {
+  const void* bias_to_use = bias;
+  void* allocated_bias = NULL;
+  if (bias != NULL && (flags & XNN_FLAG_FP32_STATIC_BIASES)) {
+    const size_t bias_size = groups * group_output_channels;
+    allocated_bias = xnn_allocate_memory(bias_size * sizeof(xnn_float16));
+    if (allocated_bias == NULL) {
+      return xnn_status_out_of_memory;
+    }
+    const float* f32_bias = (const float*)bias;
+    xnn_float16* f16_bias = (xnn_float16*)allocated_bias;
+    for (size_t i = 0; i < bias_size; ++i) {
+      f16_bias[i] = xnn_float16_from_float(f32_bias[i]);
+    }
+    bias_to_use = allocated_bias;
+    flags &= ~XNN_FLAG_FP32_STATIC_BIASES;
+  }
+
   struct convolution2d_nhwc_context context = {
       .input_padding_top = input_padding_top,
       .input_padding_right = input_padding_right,
@@ -2283,16 +2300,21 @@ enum xnn_status xnn_create_convolution2d_nhwc_f16(
       .input_channel_stride = input_channel_stride,
       .output_channel_stride = output_channel_stride,
       .kernel = kernel,
-      .bias = bias,
+      .bias = bias_to_use,
       .output_min = output_min,
       .output_max = output_max,
       .flags = flags,
       .weights_cache = weights_cache,
       .operator_type = xnn_operator_type_convolution_nhwc_f16,
   };
-  return create_convolution2d_nhwc_helper(&f16_variant, &context,
-                                          convolution_op_out);
+  enum xnn_status status = create_convolution2d_nhwc_helper(
+      &f16_variant, &context, convolution_op_out);
+  if (allocated_bias != NULL) {
+    xnn_release_memory(allocated_bias);
+  }
+  return status;
 }
+
 
 enum xnn_status xnn_create_convolution2d_nhwc_f32(
     uint32_t input_padding_top, uint32_t input_padding_right,
@@ -2343,6 +2365,23 @@ enum xnn_status xnn_create_convolution2d_nhwc_pf16(
     float output_min, float output_max, uint32_t flags,
     xnn_weights_cache_t weights_cache,
     xnn_operator_t* convolution_op_out) {
+  const void* bias_to_use = bias;
+  void* allocated_bias = NULL;
+  if (bias != NULL && (flags & XNN_FLAG_FP32_STATIC_BIASES)) {
+    const size_t bias_size = groups * group_output_channels;
+    allocated_bias = xnn_allocate_memory(bias_size * sizeof(xnn_float16));
+    if (allocated_bias == NULL) {
+      return xnn_status_out_of_memory;
+    }
+    const float* f32_bias = (const float*)bias;
+    xnn_float16* f16_bias = (xnn_float16*)allocated_bias;
+    for (size_t i = 0; i < bias_size; ++i) {
+      f16_bias[i] = xnn_float16_from_float(f32_bias[i]);
+    }
+    bias_to_use = allocated_bias;
+    flags &= ~XNN_FLAG_FP32_STATIC_BIASES;
+  }
+
   struct convolution2d_nhwc_context context = {
       .input_padding_top = input_padding_top,
       .input_padding_right = input_padding_right,
@@ -2360,16 +2399,21 @@ enum xnn_status xnn_create_convolution2d_nhwc_pf16(
       .input_channel_stride = input_channel_stride,
       .output_channel_stride = output_channel_stride,
       .kernel = kernel,
-      .bias = bias,
+      .bias = bias_to_use,
       .output_min = output_min,
       .output_max = output_max,
       .flags = flags,
       .weights_cache = weights_cache,
       .operator_type = xnn_operator_type_convolution_nhwc_pf16,
   };
-  return create_convolution2d_nhwc_helper(&f16_variant, &context,
-                                          convolution_op_out);
+  enum xnn_status status = create_convolution2d_nhwc_helper(
+      &f16_variant, &context, convolution_op_out);
+  if (allocated_bias != NULL) {
+    xnn_release_memory(allocated_bias);
+  }
+  return status;
 }
+
 
 enum xnn_status xnn_create_convolution2d_nhwc_pf32(
     uint32_t input_padding_top, uint32_t input_padding_right,
@@ -2499,6 +2543,14 @@ enum xnn_status xnn_create_convolution2d_nhwc_pf32_f16(
     size_t output_channel_stride, const void* kernel, const void* bias,
     float output_min, float output_max, uint32_t flags,
     xnn_weights_cache_t weights_cache, xnn_operator_t* convolution_op_out) {
+  const struct xnn_gemm_config* gemm_config = xnn_init_pf32_gemm_config();
+  if (gemm_config == NULL) {
+    xnn_log_error(
+        "failed to create %s operator: unsupported hardware configuration",
+        xnn_operator_type_to_string(xnn_operator_type_convolution_nhwc_pf32));
+    return xnn_status_unsupported_hardware;
+  }
+
   // Convert the `f16` kernel and bias to `f32` in temporary buffers.
   const size_t num_kernel_entries = groups * group_input_channels *
                                     group_output_channels * kernel_width *
@@ -2521,14 +2573,6 @@ enum xnn_status xnn_create_convolution2d_nhwc_pf32_f16(
     }
   } else {
     bias_buffer = bias;
-  }
-
-  const struct xnn_gemm_config* gemm_config = xnn_init_pf32_gemm_config();
-  if (gemm_config == NULL) {
-    xnn_log_error(
-        "failed to create %s operator: unsupported hardware configuration",
-        xnn_operator_type_to_string(xnn_operator_type_convolution_nhwc_pf32));
-    return xnn_status_unsupported_hardware;
   }
 
   // Delegate creation to the `pf32` operator.
@@ -2621,8 +2665,17 @@ static enum xnn_status reshape_igemm(
   struct xnn_hmp_igemm_ukernel igemm_ukernel = igemm_cases[mr - 1];
 
   const size_t tiled_output_size = round_up(output_size, mr);
-  const size_t indirection_buffer_size =
-      sizeof(void*) * kernel_size * tiled_output_size;
+  size_t indirection_buffer_size = 0;
+  if (!xnn_safe_mul(kernel_size, tiled_output_size, &indirection_buffer_size) ||
+      !xnn_safe_mul(indirection_buffer_size, sizeof(void*),
+                    &indirection_buffer_size)) {
+    xnn_log_error(
+        "failed to reshape %s operator: indirection buffer size overflows for "
+        "kernel size %zu and tiled output size %zu",
+        xnn_operator_type_to_string_v2(convolution_op), kernel_size,
+        tiled_output_size);
+    return xnn_status_out_of_memory;
+  }
   struct compute_parameters* igemm_compute = &convolution_op->compute[0];
 
   if (convolution_op->flags & XNN_FLAG_TRANSIENT_INDIRECTION_BUFFER) {
@@ -2901,8 +2954,15 @@ static enum xnn_status reshape_dwconv(
       convolution_op->convolution_op->dilation_width == 1
           ? min(convolution_op->convolution_op->stride_width, kernel_width)
           : kernel_width;
-  const size_t step_height =
-      kernel_size + (output_width - 1) * step_width * kernel_height;
+  size_t step_height_increment = 0;
+  size_t step_height = 0;
+  if (!xnn_safe_mul(output_width - 1, step_width, &step_height_increment) ||
+      !xnn_safe_mul(step_height_increment, kernel_height, &step_height_increment) ||
+      !xnn_safe_add(kernel_size, step_height_increment, &step_height)) {
+    xnn_log_error("failed to reshape %s operator: step_height overflows size_t",
+                  xnn_operator_type_to_string_v2(convolution_op));
+    return xnn_status_out_of_memory;
+  }
   const struct xnn_ukernel_dwconv dwconv_ukernel =
       convolution_op->ukernel.dwconv;
   const size_t primary_tile = dwconv_ukernel.primary_tile;
@@ -2910,10 +2970,19 @@ static enum xnn_status reshape_dwconv(
 
   // Micro-kernel will read (tile_size - kernel_size) elements after the end of
   // indirection buffer.
+  size_t indirection_buffer_elements = 0;
+  size_t indirection_buffer_size_raw = 0;
+  if (!xnn_safe_mul(output_height, step_height, &indirection_buffer_elements) ||
+      !xnn_safe_add(primary_tile - kernel_size, indirection_buffer_elements,
+                    &indirection_buffer_elements) ||
+      !xnn_safe_mul(indirection_buffer_elements, sizeof(void*),
+                    &indirection_buffer_size_raw)) {
+    xnn_log_error("failed to reshape %s operator: indirection buffer size overflows size_t",
+                  xnn_operator_type_to_string_v2(convolution_op));
+    return xnn_status_out_of_memory;
+  }
   const size_t indirection_buffer_size =
-      round_up_po2(sizeof(void*) * (primary_tile - kernel_size +
-                                    output_height * step_height),
-                   XNN_ALLOCATION_ALIGNMENT);
+      round_up_po2(indirection_buffer_size_raw, XNN_ALLOCATION_ALIGNMENT);
 
   size_t dwconv_compute_index;
   const bool is_transient_indirection_buffer =
@@ -3177,13 +3246,15 @@ static enum xnn_status reshape_convolution2d_nhwc(
             convolution_op->convolution_op->dilation_width +
         1;
     const size_t total_padding_height =
-        (convolution_op->convolution_op->output_height - 1) *
-            convolution_op->convolution_op->stride_height +
-        effective_kernel_height - input_height;
+        doz((convolution_op->convolution_op->output_height - 1) *
+                    convolution_op->convolution_op->stride_height +
+                effective_kernel_height,
+            input_height);
     const size_t total_padding_width =
-        (convolution_op->convolution_op->output_width - 1) *
-            convolution_op->convolution_op->stride_width +
-        effective_kernel_width - input_width;
+        doz((convolution_op->convolution_op->output_width - 1) *
+                    convolution_op->convolution_op->stride_width +
+                effective_kernel_width,
+            input_width);
     convolution_op->convolution_op->padding_top = total_padding_height / 2;
     convolution_op->convolution_op->padding_left = total_padding_width / 2;
     convolution_op->convolution_op->padding_bottom =
@@ -3191,17 +3262,40 @@ static enum xnn_status reshape_convolution2d_nhwc(
     convolution_op->convolution_op->padding_right =
         total_padding_width - convolution_op->convolution_op->padding_left;
   } else {
+    // The (dilated) kernel must fit inside the padded input. Otherwise
+    // xnn_compute_convolution_output_dimension() clamps the spilled dimension
+    // to 1 via the trailing `+ 1`, producing a phantom output for which no
+    // valid receptive field exists, and the indirection buffer then addresses
+    // input pixels outside the input tensor (out-of-bounds read at run time).
+    const size_t padded_input_height = convolution_op->convolution_op->padding_top +
+        input_height + convolution_op->convolution_op->padding_bottom;
+    const size_t padded_input_width = convolution_op->convolution_op->padding_left +
+        input_width + convolution_op->convolution_op->padding_right;
+    const size_t effective_kernel_height =
+        (convolution_op->convolution_op->kernel_height - 1) *
+            convolution_op->convolution_op->dilation_height + 1;
+    const size_t effective_kernel_width =
+        (convolution_op->convolution_op->kernel_width - 1) *
+            convolution_op->convolution_op->dilation_width + 1;
+    if (padded_input_height < effective_kernel_height ||
+        padded_input_width < effective_kernel_width) {
+      xnn_log_error(
+          "failed to reshape %s operator with %zux%zu input: the padded input "
+          "(%zux%zu) is smaller than the effective kernel (%zux%zu)",
+          xnn_operator_type_to_string_v2(convolution_op), input_width,
+          input_height, padded_input_width, padded_input_height,
+          effective_kernel_width, effective_kernel_height);
+      return xnn_status_invalid_parameter;
+    }
     convolution_op->convolution_op->output_height =
         xnn_compute_convolution_output_dimension(
-            convolution_op->convolution_op->padding_top + input_height +
-                convolution_op->convolution_op->padding_bottom,
+            padded_input_height,
             convolution_op->convolution_op->kernel_height,
             convolution_op->convolution_op->dilation_height,
             convolution_op->convolution_op->stride_height);
     convolution_op->convolution_op->output_width =
         xnn_compute_convolution_output_dimension(
-            convolution_op->convolution_op->padding_left + input_width +
-                convolution_op->convolution_op->padding_right,
+            padded_input_width,
             convolution_op->convolution_op->kernel_width,
             convolution_op->convolution_op->dilation_width,
             convolution_op->convolution_op->stride_width);

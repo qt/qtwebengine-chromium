@@ -10,7 +10,6 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/types/optional_ref.h"
 #include "components/optimization_guide/core/delivery/model_info.h"
-#include "components/optimization_guide/core/optimization_guide_constants.h"
 #include "components/optimization_guide/core/optimization_guide_enums.h"
 #include "components/optimization_guide/core/optimization_guide_util.h"
 #include "components/optimization_guide/proto/model_execution.pb.h"
@@ -39,37 +38,24 @@ class ScopedTextSafetyModelMetadataValidityLogger {
       TextSafetyModelMetadataValidity::kUnknown;
 };
 
-bool HasRequiredSafetyFiles(SafetyModelInfo::SafetyModelType model_type,
-                            const ModelInfo& model_info) {
-  if (model_type == SafetyModelInfo::SafetyModelType::kGeneralizedSafetyModel) {
-    // Generalized safety model does not require any additional file.
-    return true;
-  }
-
-  return model_info.GetAdditionalFileWithBaseName(kTsDataFile) &&
-         model_info.GetAdditionalFileWithBaseName(kTsSpModelFile);
-}
-
 }  // namespace
 
 std::unique_ptr<SafetyModelInfo> SafetyModelInfo::Load(
-    SafetyModelType model_type,
     base::optional_ref<const ModelInfo> opt_model_info) {
-  if (!opt_model_info.has_value() ||
-      !HasRequiredSafetyFiles(model_type, *opt_model_info)) {
+  if (!opt_model_info.has_value()) {
     return nullptr;
   }
   const ModelInfo& model_info = *opt_model_info;
   ScopedTextSafetyModelMetadataValidityLogger logger;
 
-  if (!model_info.GetModelMetadata()) {
+  if (!model_info.model_metadata) {
     logger.set_validity(TextSafetyModelMetadataValidity::kNoMetadata);
     return nullptr;
   }
 
   std::optional<proto::TextSafetyModelMetadata> model_metadata =
       ParsedAnyMetadata<proto::TextSafetyModelMetadata>(
-          *model_info.GetModelMetadata());
+          *model_info.model_metadata);
   if (!model_metadata) {
     logger.set_validity(TextSafetyModelMetadataValidity::kMetadataWrongType);
     return nullptr;
@@ -86,9 +72,9 @@ std::unique_ptr<SafetyModelInfo> SafetyModelInfo::Load(
     feature_configs[feature_config.feature()] = feature_config;
   }
 
-  return base::WrapUnique(new SafetyModelInfo(
-      model_type, model_info, model_metadata->num_output_categories(),
-      std::move(feature_configs)));
+  return base::WrapUnique(
+      new SafetyModelInfo(model_info, model_metadata->num_output_categories(),
+                          std::move(feature_configs)));
 }
 
 std::optional<proto::FeatureTextSafetyConfiguration> SafetyModelInfo::GetConfig(
@@ -101,37 +87,20 @@ std::optional<proto::FeatureTextSafetyConfiguration> SafetyModelInfo::GetConfig(
   return it->second;
 }
 
-SafetyModelInfo::SafetyModelType SafetyModelInfo::GetModelType() const {
-  return model_type_;
-}
-
 base::FilePath SafetyModelInfo::GetDataPath() const {
-  if (model_type_ == SafetyModelType::kTextSafetyModel) {
-    return *model_info_.GetAdditionalFileWithBaseName(kTsDataFile);
-  } else {
-    return model_info_.GetModelFilePath();
-  }
-}
-
-base::FilePath SafetyModelInfo::GetSpModelPath() const {
-  if (model_type_ == SafetyModelType::kGeneralizedSafetyModel) {
-    return base::FilePath();
-  }
-  return *model_info_.GetAdditionalFileWithBaseName(kTsSpModelFile);
+  return model_info_.model_file_path;
 }
 
 int64_t SafetyModelInfo::GetVersion() const {
-  return model_info_.GetVersion();
+  return model_info_.version;
 }
 
 SafetyModelInfo::SafetyModelInfo(
-    SafetyModelType model_type,
     const ModelInfo& model_info,
     uint32_t num_output_categories,
     base::flat_map<proto::ModelExecutionFeature,
                    proto::FeatureTextSafetyConfiguration> feature_configs)
-    : model_type_(model_type),
-      model_info_(model_info),
+    : model_info_(model_info),
       num_output_categories_(num_output_categories),
       feature_configs_(std::move(feature_configs)) {}
 

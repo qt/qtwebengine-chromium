@@ -38,7 +38,7 @@ class RankRevealingBase {
         m_nonzero_pivots(0) {}
 
   /** Allows to prescribe a threshold to be used by certain methods, such as rank(),
-   * who need to determine when pivots are to be considered nonzero. This is not used for the
+   * which need to determine when pivots are to be considered nonzero. This is not used for the
    * decomposition itself.
    *
    * When it needs to get the threshold value, Eigen calls threshold(). By default, this

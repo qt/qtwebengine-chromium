@@ -407,7 +407,7 @@ struct TensorEvaluator<const TensorConversionOp<TargetType, ArgType>, Device> {
     // block-materializing child's prepareStorage (assert in debug, corruption
     // in release). Drop the buffer; the child falls back to scratch and
     // writeBlock still lands the cast values in the LHS.
-    if (!IsSameType) {
+    EIGEN_IF_CONSTEXPR (!IsSameType) {
       desc.DropDestinationBuffer();
     }
     return TensorBlock(m_impl.block(desc, scratch), TensorConversionOpBlockFactory());

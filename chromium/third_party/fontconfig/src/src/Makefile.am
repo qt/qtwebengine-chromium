@@ -44,7 +44,7 @@ else
 install-libtool-import-lib:
 uninstall-libtool-import-lib:
 
-fontconfig_def_dependency = 
+fontconfig_def_dependency =
 
 endif
 
@@ -76,6 +76,7 @@ AM_CPPFLAGS = 						\
 	-I$(top_srcdir)/src				\
 	-I$(top_builddir)/fc-lang			\
 	-I$(top_builddir)/fc-const			\
+	-I$(top_builddir)/fc-genericfamily	\
 	$(FREETYPE_CFLAGS)				\
 	$(ICONV_CFLAGS)					\
 	$(LIBXML2_CFLAGS)				\
@@ -143,6 +144,7 @@ libfontconfig_la_SOURCES = \
 	fcformat.c \
 	fcfreetype.c \
 	fcfs.c \
+	fcgenericalias.c \
 	fcptrlist.c \
 	fchash.c \
 	fcinit.c \

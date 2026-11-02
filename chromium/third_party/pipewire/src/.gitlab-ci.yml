@@ -1,0 +1,695 @@
+# Create merge request pipelines for open merge requests, branch pipelines
+# otherwise. This allows MRs for new users to run CI, and prevents duplicate
+# pipelines for branches with open MRs.
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+
+stages:
+  - container
+  - container_coverity
+  - build
+  - analysis
+  - pages
+
+variables:
+  FDO_UPSTREAM_REPO: 'pipewire/pipewire'
+
+# ci-templates as of Mar 25th 2024
+.templates_sha: &templates_sha ef5e4669b7500834a17ffe9277e15fbb6d977fff
+
+include:
+  - project: 'freedesktop/ci-templates'
+    ref: *templates_sha
+    file: '/templates/fedora.yml'
+  - project: 'freedesktop/ci-templates'
+    ref: *templates_sha
+    file: '/templates/ubuntu.yml'
+  - project: 'freedesktop/ci-templates'
+    ref: *templates_sha
+    file: '/templates/alpine.yml'
+  - project: 'freedesktop/ci-templates'
+    ref: *templates_sha
+    file: '/templates/debian.yml'
+
+.fedora:
+  variables:
+    # Update this tag when you want to trigger a rebuild
+    FDO_DISTRIBUTION_TAG: '2025-10-22.0'
+    FDO_DISTRIBUTION_VERSION: '42'
+    FDO_DISTRIBUTION_PACKAGES: >-
+      alsa-lib-devel
+      avahi-devel
+      bluez-libs-devel
+      clang
+      dbus-devel
+      doxygen
+      fdk-aac-free-devel
+      file
+      findutils
+      gcc
+      gcc-c++
+      git
+      glib-devel
+      graphviz
+      gstreamer1-devel
+      gstreamer1-plugins-base-devel
+      jack-audio-connection-kit-devel
+      libasan
+      liblc3-devel
+      libcanberra-devel
+      libebur128-devel
+      libffado-devel
+      libldac-devel
+      libmysofa-devel
+      libsndfile-devel
+      libubsan
+      libusb1-devel
+      lilv-devel
+      libva-devel
+      libX11-devel
+      ModemManager-devel
+      meson
+      openssl-devel
+      pulseaudio-libs-devel
+      python3-docutils
+      python3-pip
+      sbc-devel
+      ShellCheck
+      SDL2-devel
+      spandsp-devel
+      systemd-devel
+      vulkan-loader-devel
+      webrtc-audio-processing-devel
+      which
+      valgrind
+      ninja-build
+      pkgconf
+      pulseaudio-utils
+      openal-soft
+      readline-devel
+      pandoc
+      fftw-libs-single
+      fftw-devel
+      onnxruntime-devel
+# Uncommenting the following two lines and disabling the meson entry above
+# will re-enable use of Meson via pip but please consider using a newer distro
+# image first or making the build system compatible instead! This is because
+# using pip or another 3rd party repo defeats the point testing the particular
+# distro for regressions.
+# NOTE: If you do end up using pip3 for meson, be sure to also update the
+# build_meson_prerelease and build_meson_exact_release build instructions
+# to uninstall the pip3 version again and probably to not call dnf remove
+#    FDO_DISTRIBUTION_EXEC: >-
+#      pip3 install meson
+
+.ubuntu:
+  variables:
+    # Update this tag when you want to trigger a rebuild
+    FDO_DISTRIBUTION_TAG: '2025-05-10.0'
+    FDO_DISTRIBUTION_VERSION: '22.04'
+    FDO_DISTRIBUTION_PACKAGES: >-
+      debhelper-compat
+      findutils
+      git
+      libapparmor-dev
+      libasound2-dev
+      libavcodec-dev
+      libavfilter-dev
+      libavformat-dev
+      libdbus-1-dev
+      libbluetooth-dev
+      libglib2.0-dev
+      libgstreamer1.0-dev
+      libgstreamer-plugins-base1.0-dev
+      libsbc-dev
+      libsdl2-dev
+      libsnapd-glib-dev
+      libudev-dev
+      libva-dev
+      libx11-dev
+      meson
+      ninja-build
+      pkg-config
+      python3-docutils
+      systemd
+# Uncommenting the following three lines and disabling the meson entry above
+# will re-enable use of Meson via pip but please consider using a newer distro
+# image first or making the build system compatible instead! This is because
+# using pip or another 3rd party repo defeats the point testing the particular
+# distro for regressions.
+#      python3-pip
+#    FDO_DISTRIBUTION_EXEC: >-
+#      pip3 install meson
+
+.debian:
+  variables:
+     # Update this tag when you want to trigger a rebuild
+    BASE_TAG: '2025-08-10.0'
+    FDO_DISTRIBUTION_VERSION: 'trixie'
+    FDO_DISTRIBUTION_PACKAGES: >-
+      build-essential
+      dpkg-dev
+      findutils
+      git
+      meson
+
+.debian-archictectures:
+  parallel:
+    matrix:
+      - ARCH:
+        - amd64
+        - arm64
+        - armhf
+        - i386
+        - ppc64el
+        - riscv64
+        - s390x
+
+.alpine:
+  variables:
+    # Update this tag when you want to trigger a rebuild
+    FDO_DISTRIBUTION_TAG: '2025-03-25.0'
+    FDO_DISTRIBUTION_VERSION: '3.20'
+    FDO_DISTRIBUTION_PACKAGES: >-
+      alsa-lib-dev
+      avahi-dev
+      bash
+      bluez-dev
+      gcc
+      g++
+      dbus-dev
+      doxygen
+      elogind-dev
+      eudev-dev
+      fdk-aac-dev
+      git
+      glib-dev
+      graphviz
+      gst-plugins-base-dev
+      gstreamer-dev
+      jack-dev
+      libfreeaptx-dev
+      libusb-dev
+      libx11-dev
+      meson
+      modemmanager-dev
+      ncurses-dev
+      pulseaudio-dev
+      readline-dev
+      sbc-dev
+      vulkan-loader-dev
+      xmltoman
+
+.coverity:
+  variables:
+    FDO_REPO_SUFFIX: 'coverity'
+    FDO_BASE_IMAGE: registry.freedesktop.org/$FDO_UPSTREAM_REPO/fedora/$FDO_DISTRIBUTION_VERSION:$FDO_DISTRIBUTION_TAG
+    FDO_DISTRIBUTION_PACKAGES: >-
+      curl
+    FDO_DISTRIBUTION_EXEC: >-
+      mkdir -p /opt ;
+      cd /opt ;
+      curl -o /tmp/cov-analysis-linux64.tgz https://scan.coverity.com/download/cxx/linux64
+      --form project=$COVERITY_SCAN_PROJECT_NAME --form token=$COVERITY_SCAN_TOKEN ;
+      tar xf /tmp/cov-analysis-linux64.tgz ;
+      mv cov-analysis-linux64-* coverity ;
+      rm /tmp/cov-analysis-linux64.tgz
+  rules:
+    - if: $COVERITY != null
+
+.not_coverity:
+  rules:
+    - if: $COVERITY == null
+
+.build:
+  before_script:
+    # setup the environment
+    - export BUILD_ID="$CI_JOB_ID"
+    - export PREFIX="$PWD/prefix-$BUILD_ID"
+    - export BUILD_DIR="$PWD/build-$BUILD_ID"
+    - export XDG_RUNTIME_DIR="$(mktemp -p $PWD -d xdg-runtime-XXXXXX)"
+    - |
+      if [ -n "$FDO_CI_CONCURRENT" ]; then
+         COMPILE_ARGS="-j$FDO_CI_CONCURRENT"
+         export COMPILE_ARGS
+      fi
+  script:
+    - echo "Building with meson options $MESON_OPTIONS"
+    - meson setup "$BUILD_DIR" --prefix="$PREFIX" $MESON_OPTIONS
+    - meson compile -C "$BUILD_DIR" $COMPILE_ARGS
+    - echo "Running tests with meson options $MESON_TEST_OPTIONS"
+    - meson test -C "$BUILD_DIR" --no-rebuild $MESON_TEST_OPTIONS
+    - meson install -C "$BUILD_DIR" --no-rebuild
+  artifacts:
+    name: pipewire-$CI_COMMIT_SHA
+    when: always
+    paths:
+      - build-*/meson-logs
+
+container_ubuntu:
+  extends:
+    - .ubuntu
+    - .fdo.container-build@ubuntu
+  stage: container
+  variables:
+    GIT_STRATEGY: none # no need to pull the whole tree for rebuilding the image
+
+container_debian:
+  extends:
+    - .debian
+    - .debian-archictectures
+    - .fdo.container-build@debian
+  stage: container
+  variables:
+    GIT_STRATEGY: none # no need to pull the whole tree for rebuilding the image
+    FDO_DISTRIBUTION_TAG: "$BASE_TAG-$ARCH"
+    FDO_DISTRIBUTION_EXEC: >-
+      ./.gitlab/ci/setup-debian-cross-container.sh "$ARCH"
+
+container_fedora:
+  extends:
+    - .fedora
+    - .fdo.container-build@fedora
+  stage: container
+  variables:
+    GIT_STRATEGY: none # no need to pull the whole tree for rebuilding the image
+
+container_alpine:
+  extends:
+    - .alpine
+    - .fdo.container-build@alpine
+  stage: container
+  variables:
+    GIT_STRATEGY: none # no need to pull the whole tree for rebuilding the image
+
+container_coverity:
+  extends:
+    - .fedora
+    - .coverity
+    - .fdo.container-build@fedora
+  stage: container_coverity
+  variables:
+    GIT_STRATEGY: none
+
+build_on_ubuntu:
+  extends:
+    - .ubuntu
+    - .not_coverity
+    - .fdo.distribution-image@ubuntu
+    - .build
+  stage: build
+  needs:
+    - job: container_ubuntu
+      artifacts: false
+  variables:
+    MESON_OPTIONS: "-Dsession-managers=[] -Dsnap=enabled"
+
+build_on_debian:
+  extends:
+    - .debian
+    - .debian-archictectures
+    - .not_coverity
+    - .fdo.distribution-image@debian
+    - .build
+  stage: build
+  needs:
+    - job: container_debian
+      artifacts: false
+      # ideally
+      # parallel:
+      #   matrix:
+      #     - ARCH: "$ARCH"
+      # however https://gitlab.com/gitlab-org/gitlab/-/issues/423553
+      #         ("Expand variables in `needs:parallel:matrix`")
+  variables:
+    FDO_DISTRIBUTION_TAG: "$BASE_TAG-$ARCH"
+    # see /.gitlab/ci/setup-debian-cross-container.sh for installed packages
+    MESON_OPTIONS: >-
+      --cross-file /opt/meson-$ARCH.cross
+      -D c_args=['-UFASTPATH']
+      -D cpp_args=['-UFASTPATH']
+      -D auto_features=enabled
+      -D session-managers=[]
+      -D bluez5-backend-native-mm=enabled
+      -D bluez5-codec-lc3plus=disabled
+      -D bluez5-codec-ldac=disabled
+      -D bluez5-codec-ldac-dec=disabled
+      -D libcamera=disabled
+      -D roc=disabled
+      -D snap=disabled
+      -D systemd-user-service=disabled
+      -D systemd-system-service=disabled
+      -D onnxruntime=disabled
+      -D vulkan=enabled
+      -D ffmpeg=enabled
+      -D pw-cat-ffmpeg=enabled
+    MESON_TEST_OPTIONS: >-
+      --timeout-multiplier=2
+
+.build_on_fedora:
+  extends:
+    - .fedora
+    - .not_coverity
+    - .fdo.distribution-image@fedora
+    - .build
+  stage: build
+  needs:
+    - job: container_fedora
+      artifacts: false
+
+build_on_fedora:
+  extends:
+    - .build_on_fedora
+  variables:
+    MESON_OPTIONS: >-
+        -Ddocs=enabled
+        -Dman=enabled
+        -Ddoc-prefix-value=/usr
+        -Ddoc-sysconfdir-value=/etc
+        -Dinstalled_tests=enabled
+        -Dsystemd-system-service=enabled
+        -Dbluez5-backend-hsphfpd=enabled
+        -Daudiotestsrc=enabled
+        -Dtest=enabled
+        -Dvideotestsrc=enabled
+        -Dvolume=enabled
+        -Dvulkan=enabled
+        -Dsdl2=enabled
+        -Dsndfile=enabled
+        -Dsession-managers=[]
+        -Dsnap=disabled
+  artifacts:
+    name: pipewire-$CI_COMMIT_SHA
+    when: always
+    paths:
+      - build-*/meson-logs
+      - prefix-*
+
+build_on_fedora_html_docs:
+  extends:
+    - .build_on_fedora
+  variables:
+    MESON_OPTIONS: >-
+        -Ddocs=enabled
+        -Dman=enabled
+        -Ddoc-prefix-value=/usr
+        -Ddoc-sysconfdir-value=/etc
+        -Dinstalled_tests=enabled
+        -Dsystemd-system-service=enabled
+        -Dbluez5-backend-hsphfpd=enabled
+        -Daudiotestsrc=enabled
+        -Dtest=enabled
+        -Dvideotestsrc=enabled
+        -Dvolume=enabled
+        -Dvulkan=enabled
+        -Dsdl2=enabled
+        -Dsndfile=enabled
+        -Dsession-managers=[]
+  before_script:
+    - git fetch origin 1.0 1.2 1.4 master
+    - git branch -f 1.0 origin/1.0
+    - git clone -b 1.0 . branch-1.0
+    - git branch -f 1.2 origin/1.2
+    - git clone -b 1.2 . branch-1.2
+    - git branch -f 1.4 origin/1.4
+    - git clone -b 1.4 . branch-1.4
+    - git branch -f master origin/master
+    - git clone -b master . branch-master
+    - !reference [.build, before_script]
+  script:
+    - cd branch-1.0
+    - meson setup builddir $MESON_OPTIONS
+    - meson compile -C builddir doc/pipewire-docs
+    - cd ..
+    - cd branch-1.2
+    - meson setup builddir $MESON_OPTIONS
+    - meson compile -C builddir doc/pipewire-docs
+    - cd ..
+    - cd branch-1.4
+    - meson setup builddir $MESON_OPTIONS
+    - meson compile -C builddir doc/pipewire-docs
+    - cd ..
+    - cd branch-master
+    - meson setup builddir $MESON_OPTIONS
+    - meson compile -C builddir doc/pipewire-docs
+  artifacts:
+    name: pipewire-$CI_COMMIT_SHA
+    when: always
+    paths:
+      - branch-*/builddir/meson-logs
+      - branch-*/builddir/doc/html
+  rules:
+    - !reference [pages, rules]
+
+build_on_alpine:
+  extends:
+    - .alpine
+    - .not_coverity
+    - .fdo.distribution-image@alpine
+    - .build
+  stage: build
+  needs:
+    - job: container_alpine
+      artifacts: false
+  variables:
+    MESON_OPTIONS: "-Dsession-managers=[] -Dsnap=disabled -Dlogind=enabled -Dlogind-provider=libelogind"
+
+# build with all auto() options enabled
+build_all:
+  extends:
+    - .build_on_fedora
+  variables:
+    # Fedora doesn't have libfreeaptx, lc3plus, or roc
+    # libcamera has no stable API, so let's not chase that target
+    MESON_OPTIONS: >-
+        -Dauto_features=enabled
+        -Dbluez5-codec-aptx=disabled
+        -Dbluez5-codec-lc3plus=disabled
+        -Dbluez5-codec-ldac-dec=disabled
+        -Droc=disabled
+        -Dlibcamera=disabled
+        -Dsession-managers=[]
+        -Dc_args=['-UFASTPATH']
+        -Dcpp_args=['-UFASTPATH']
+        -Dsnap=disabled
+  parallel:
+    matrix:
+      - CC: [gcc, clang]
+
+# build with all options on auto() or their default values
+build_with_no_commandline_options:
+  extends:
+    - .build_on_fedora
+  variables:
+    MESON_OPTIONS: "-Dsession-managers=[] -Dsnap=disabled"
+  parallel:
+    matrix:
+      - CC: [gcc, clang]
+
+# build with a set of options enabled or disabled
+build_with_custom_options:
+  extends:
+    - .build_on_fedora
+  parallel:
+    matrix:
+      - MESON_OPTION: [docs, installed_tests, systemd-system-service, bluez5-backend-hsphfpd,
+                       audiotestsrc, test, videotestsrc, volume, vulkan, sdl2, sndfile]
+        MESON_OPTION_VALUE: [enabled, disabled]
+  script:
+    - echo "Building with -D$MESON_OPTION=$MESON_OPTION_VALUE"
+    - meson setup "$BUILD_DIR" --prefix="$PREFIX" "-D$MESON_OPTION=$MESON_OPTION_VALUE" -Dsession-managers=[]
+    - meson compile -C "$BUILD_DIR" $COMPILE_ARGS
+    - meson test -C "$BUILD_DIR" --no-rebuild
+
+build_with_asan_ubsan:
+  extends:
+    - .build_on_fedora
+  script:
+    - echo "Building with ASan and UBSan"
+    - meson setup "$BUILD_DIR" --prefix="$PREFIX" -D debug=true -D optimization=g -D b_sanitize=address,undefined -D session-managers=[]
+    - meson compile -C "$BUILD_DIR" $COMPILE_ARGS
+    - env UBSAN_OPTIONS=halt_on_error=1:abort_on_error=1:print_summary=1:print_stacktrace=1 ASAN_OPTIONS=halt_on_error=1:abort_on_error=1:print_summary=1 meson test -C "$BUILD_DIR" --no-rebuild
+
+# A release build with NDEBUG, all options on auto() but tests explicitly
+# enabled. This should show issues with tests failing due to different
+# optimization or relying on assert.
+build_release:
+  extends:
+    - .build_on_fedora
+  variables:
+    MESON_OPTIONS: "-Dtest=enabled -Dbuildtype=release -Db_ndebug=true -Dsession-managers=[] -Dsnap=disabled"
+  parallel:
+    matrix:
+      - CC: [gcc, clang]
+
+build_session_managers:
+  extends:
+    - .build_on_fedora
+  script:
+    - echo "Building with meson options $MESON_OPTIONS"
+    - meson setup "$BUILD_DIR" --prefix="$PREFIX" $MESON_OPTIONS
+    - meson compile -C "$BUILD_DIR" $COMPILE_ARGS
+    - meson install -C "$BUILD_DIR" --no-rebuild
+  variables:
+    MESON_OPTIONS: "-Dsession-managers=$SESSION_MANAGERS -Dsnap=disabled"
+  parallel:
+    matrix:
+      - SESSION_MANAGERS: ["[]", "wireplumber", "media-session", "media-session,wireplumber", "wireplumber,media-session" ]
+  allow_failure: true
+
+build_meson_prerelease:
+  extends:
+    - .build_on_fedora
+  script:
+    - dnf remove --assumeyes meson
+    - pip3 install --upgrade --pre meson
+    - echo "Building with meson options $MESON_OPTIONS"
+    - meson setup "$BUILD_DIR" --prefix="$PREFIX" $MESON_OPTIONS
+    - meson compile -C "$BUILD_DIR" $COMPILE_ARGS
+    - meson install -C "$BUILD_DIR" --no-rebuild
+  variables:
+    MESON_OPTIONS: "-Dsession-managers=wireplumber,media-session -Dsnap=disabled"
+  allow_failure: true
+
+build_meson_exact_release:
+  extends:
+    - .build_on_fedora
+  script:
+    - meson_version=$(head -n 5 meson.build | grep 'meson_version' | sed -e 's/.*\([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/')
+    - echo "Requiring meson version $meson_version"
+    - test -n "$meson_version" || (echo "Meson version parser failed" && exit 1)
+    - dnf remove --assumeyes meson
+#    - pip3 uninstall --yes meson
+    - pip3 install "meson==$meson_version"
+    - echo "Building with meson options $MESON_OPTIONS"
+    - meson setup "$BUILD_DIR" --prefix="$PREFIX" $MESON_OPTIONS
+    - meson compile -C "$BUILD_DIR" $COMPILE_ARGS
+    - meson install -C "$BUILD_DIR" --no-rebuild
+  variables:
+    MESON_OPTIONS: "-Dsession-managers=[] -Dsnap=disabled"
+
+valgrind:
+  extends:
+    - .build_on_fedora
+  script:
+    - echo "Building with meson options $MESON_OPTIONS"
+    - meson setup "$BUILD_DIR" --prefix="$PREFIX" $MESON_OPTIONS
+    - meson test -C "$BUILD_DIR" --setup=valgrind
+  variables:
+    MESON_OPTIONS: "-Dsession-managers=[]"
+
+build_with_coverity:
+  extends:
+    - .fedora
+    - .coverity
+    - .fdo.suffixed-image@fedora
+    - .build
+  stage: analysis
+  needs:
+    - job: container_coverity
+      artifacts: false
+  script:
+    - export PATH=/opt/coverity/bin:$PATH
+    - meson setup "$BUILD_DIR" --prefix="$PREFIX"
+        -Ddocs=disabled
+        -Dbluez5-backend-hsphfpd=enabled
+        -Daudiotestsrc=enabled
+        -Dtest=enabled
+        -Dvideotestsrc=enabled
+        -Dvolume=enabled
+        -Dvulkan=enabled
+        -Dsdl2=enabled
+        -Dsndfile=enabled
+        -Dsession-managers=[]
+    - cov-configure --config coverity_conf.xml
+        --comptype gcc --compiler cc --template
+        --xml-option=append_arg@C:--ppp_translator
+        --xml-option=append_arg@C:"replace/_sd_deprecated_\s+=/ ="
+        --xml-option=append_arg@C:--ppp_translator
+        --xml-option=append_arg@C:"replace/GLIB_(DEPRECATED|AVAILABLE)_ENUMERATOR_IN_\d_\d\d(_FOR\(\w+\)|)\s+=/ ="
+        --xml-option=append_arg@C:--ppp_translator
+        --xml-option=append_arg@C:"replace/(__has_builtin|_GLIBCXX_HAS_BUILTIN)\(\w+\)/1"
+    - cov-build --dir cov-int --config coverity_conf.xml meson compile -C "$BUILD_DIR" $COMPILE_ARGS
+    - tar czf cov-int.tar.gz cov-int
+    - curl https://scan.coverity.com/builds?project=$COVERITY_SCAN_PROJECT_NAME
+        --form token=$COVERITY_SCAN_TOKEN --form email=$GITLAB_USER_EMAIL
+        --form file=@cov-int.tar.gz --form version="`git describe --tags`"
+        --form description="`git describe --tags` / $CI_COMMIT_TITLE / $CI_COMMIT_REF_NAME:$CI_PIPELINE_ID "
+  artifacts:
+    name: pipewire-coverity-$CI_COMMIT_SHA
+    when: always
+    paths:
+      - build-*/meson-logs
+      - cov-int/build-log.txt
+
+shellcheck:
+  extends:
+    - .build_on_fedora
+  stage: analysis
+  variables:
+    MESON_OPTIONS: >-
+        -Dpipewire-v4l2=enabled
+        -Dpipewire-jack=enabled
+  script:
+    - echo "Configuring with meson options $MESON_OPTIONS"
+    - meson setup "$BUILD_DIR" --prefix="$PREFIX" $MESON_OPTIONS
+    - shellcheck $(git ls-files '*.sh')
+    - shellcheck $(grep -rl "#\!/.*bin/.*sh" "$BUILD_DIR")
+
+spellcheck:
+  extends:
+    - .build_on_fedora
+  stage: analysis
+  script:
+    - git ls-files | grep -v .gitlab-ci.yml | xargs -d '\n' sed -i 's/Pipewire/PipeWire/g'
+    - git diff --exit-code || (echo "Please fix the above spelling mistakes" && exit 1)
+
+doccheck:
+  extends:
+    - .build_on_fedora
+  stage: analysis
+  script:
+    # Check that each pipewire module has a \subpage entry
+    - git grep -h -o -e "\\\page page_module_\w\+" | cut -f2 -d ' ' > pipewire_module_pages
+    - cat pipewire_module_pages
+    - |
+      for page in $(cat pipewire_module_pages); do
+          git grep -q -e "\\\subpage $page" || (echo "\\page $page is missing \\subpage entry in doc/pipewire-modules.dox" && false)
+      done
+
+check_missing_headers:
+  extends:
+    - .fedora
+    - .not_coverity
+    - .fdo.distribution-image@fedora
+  stage: analysis
+  needs:
+    - job: build_on_fedora
+      artifacts: true
+  script:
+    - export PREFIX=`find -name prefix-*`
+    - ./.gitlab/ci/check_missing_headers.sh
+
+pages:
+  extends:
+    - .not_coverity
+  stage: pages
+  needs:
+    - job: build_on_fedora_html_docs
+      artifacts: true
+  script:
+    - mkdir public public/1.0 public/1.2 public/1.4 public/devel
+    - cp -R branch-1.0/builddir/doc/html/* public/1.0/
+    - cp -R branch-1.2/builddir/doc/html/* public/1.2/
+    - cp -R branch-1.4/builddir/doc/html/* public/1.4/
+    - cp -R branch-master/builddir/doc/html/* public/devel/
+    - (cd public && ln -s 1.4/* .)
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: $CI_COMMIT_BRANCH == 'master'

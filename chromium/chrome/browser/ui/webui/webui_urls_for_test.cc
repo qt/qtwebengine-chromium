@@ -34,7 +34,6 @@ base::span<const std::string_view> GetChromeUrlsForTest() {
 #endif
       "chrome://actor-internals",
       "chrome://actor-overlay",
-      "chrome://attribution-internals",
       "chrome://autofill-ml-internals",
       "chrome://autofill-internals",
 
@@ -54,6 +53,7 @@ base::span<const std::string_view> GetChromeUrlsForTest() {
       "chrome://connectors-internals",
 #if !BUILDFLAG(IS_ANDROID)
       "chrome://content-annotator-internals",
+      "chrome://contextual-cueing-internals",
 #endif
       "chrome://context-hub",
       "chrome://crashes",
@@ -82,7 +82,7 @@ base::span<const std::string_view> GetChromeUrlsForTest() {
       "chrome://extensions-zero-state",
       "chrome://family-link-user-internals",
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
-      "chrome://feature-showcase/?steps=example",
+      "chrome://feature-showcase/?steps=password-manager",
 #endif
       "chrome://flags",
       "chrome://gcm-internals",
@@ -98,6 +98,9 @@ base::span<const std::string_view> GetChromeUrlsForTest() {
       "chrome://indigo-internals",
 #endif
       "chrome://inspect",
+#if !BUILDFLAG(IS_ANDROID)
+      "chrome://iwa-dev",
+#endif
       "chrome://internals/session-service",
       "chrome://interstitials",
       "chrome://interstitials/ssl",
@@ -119,6 +122,7 @@ base::span<const std::string_view> GetChromeUrlsForTest() {
       "chrome://newtab-footer",
       "chrome://new-tab-page-third-party",
       "chrome://newtab",
+      "chrome://notebooks-internals",
       "chrome://ntp-tiles-internals",
       "chrome://omnibox",
       "chrome://on-device-internals",
@@ -134,13 +138,11 @@ base::span<const std::string_view> GetChromeUrlsForTest() {
       "chrome://policy",
       "chrome://predictors",
 
-  // TODO(crbug.com/511254271): Flaky on some Linux builders.
-#if !BUILDFLAG(IS_LINUX)
+  // TODO(crbug.com/511254271): Flaky on some Linux and ChromeOS builders.
+#if !BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CHROMEOS)
       "chrome://prefs-internals",
 #endif
 
-      "chrome://privacy-sandbox-internals",
-      "chrome://private-aggregation-internals",
       "chrome://private-ai-internals",
       "chrome://process-internals",
       "chrome://profile-internals",
@@ -166,7 +168,6 @@ base::span<const std::string_view> GetChromeUrlsForTest() {
       "chrome://tab-strip-internals",
       "chrome://tabs-from-other-devices.top-chrome",
       "chrome://terms",
-      "chrome://topics-internals",
       "chrome://traces",
       "chrome://traces-internals",
       "chrome://tracing",
@@ -297,6 +298,9 @@ base::span<const std::string_view> GetUntestedChromeUrlsForTest() {
       // TODO(crbug.com/487113801): Investigate why tests are flaky on dbg bots.
       "chrome://accessibility",
 #endif
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+      "chrome://cross-device-signin-qr-bubble",
+#endif
       "chrome://app-settings",
       "chrome://constrained-test",
       "chrome://contextual-tasks",
@@ -319,6 +323,7 @@ base::span<const std::string_view> GetUntestedChromeUrlsForTest() {
       "chrome://managed-user-profile-notice",
       // TODO(crbug.com/40185163): DCHECK failure
       "chrome://memory-internals",
+      "chrome://omnibox-everywhere.top-chrome",
       "chrome://omnibox-popup.top-chrome",
       "chrome://profile-customization",
       "chrome://signin-dice-web-intercept.top-chrome",
@@ -391,7 +396,6 @@ base::span<const std::string_view> GetUntestedChromeUrlsForTest() {
       // for confirm password change UI.
       "chrome://confirm-password-change",
       "chrome://crostini-credits",
-      "chrome://device-emulator",
       "chrome://dlp-internals",
       "chrome://eche-app",
       "chrome://enterprise-reporting",

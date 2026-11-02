@@ -7,16 +7,12 @@
 //   OpenGL-specific functionality associated with a GL Context.
 //
 
-#ifdef UNSAFE_BUFFERS_BUILD
-#    pragma allow_unsafe_buffers
-#endif
-
 #include "libANGLE/renderer/gl/ContextGL.h"
+#include "common/unsafe_buffers.h"
 
 #include "libANGLE/Context.h"
 #include "libANGLE/Context.inl.h"
 #include "libANGLE/PixelLocalStorage.h"
-#include "libANGLE/renderer/OverlayImpl.h"
 #include "libANGLE/renderer/gl/BufferGL.h"
 #include "libANGLE/renderer/gl/CompilerGL.h"
 #include "libANGLE/renderer/gl/FenceNVGL.h"
@@ -60,11 +56,49 @@ GLsizei GetInstancedDrawAdjustedInstanceCount(const gl::ProgramExecutable *execu
 }
 }  // anonymous namespace
 
+ContextGL::PixelBufferGL::PixelBufferGL(const FunctionsGL *functions_)
+    : functions(functions_), bufferID(0), size(0), lifetimeCounter(0)
+{
+    functions->genBuffers(1, &bufferID);
+}
+ContextGL::PixelBufferGL::~PixelBufferGL()
+{
+    if (functions && bufferID != 0)
+    {
+        functions->deleteBuffers(1, &bufferID);
+    }
+}
+ContextGL::PixelBufferGL::PixelBufferGL(PixelBufferGL &&other)
+{
+    *this = std::move(other);
+}
+ContextGL::PixelBufferGL &ContextGL::PixelBufferGL::operator=(PixelBufferGL &&other)
+{
+    if (this != &other)
+    {
+        if (functions && bufferID != 0)
+        {
+            functions->deleteBuffers(1, &bufferID);
+        }
+        functions       = other.functions;
+        bufferID        = other.bufferID;
+        size            = other.size;
+        lifetimeCounter = other.lifetimeCounter;
+
+        other.bufferID = 0;
+        other.size     = 0;
+    }
+    return *this;
+}
+
 ContextGL::ContextGL(const gl::State &state,
                      gl::ErrorSet *errorSet,
                      const std::shared_ptr<RendererGL> &renderer,
                      RobustnessVideoMemoryPurgeStatus robustnessVideoMemoryPurgeStatus)
     : ContextImpl(state, errorSet),
+      // Maximum 3 cached depth initialization PBOs stored for now; can be changed in the future if
+      // needed.
+      mDepthInitPBOs(/*max=*/3),
       mRenderer(renderer),
       mRobustnessVideoMemoryPurgeStatus(robustnessVideoMemoryPurgeStatus)
 {}
@@ -109,7 +143,7 @@ FramebufferImpl *ContextGL::createFramebuffer(const gl::FramebufferState &data)
         funcs->genFramebuffers(1, &fbo);
     }
 
-    return new FramebufferGL(data, fbo, false);
+    return new FramebufferGL(data, fbo, false, funcs, getStateManager());
 }
 
 TextureImpl *ContextGL::createTexture(const gl::TextureState &state)
@@ -193,14 +227,9 @@ FenceNVImpl *ContextGL::createFenceNV()
     }
 }
 
-SyncImpl *ContextGL::createSync(const gl::Context *context)
+SyncImpl *ContextGL::createSync()
 {
-    SyncImpl *sync = new SyncGL(getFunctions());
-    if (context)
-    {
-        static_cast<void>(applyRecreateFboWorkaroundIfNeeded(context));
-    }
-    return sync;
+    return new SyncGL(mRenderer);
 }
 
 TransformFeedbackImpl *ContextGL::createTransformFeedback(const gl::TransformFeedbackState &state)
@@ -238,87 +267,14 @@ SemaphoreImpl *ContextGL::createSemaphore()
     return new SemaphoreGL(semaphore);
 }
 
-OverlayImpl *ContextGL::createOverlay(const gl::OverlayState &state)
-{
-    // Not implemented.
-    return new OverlayImpl(state);
-}
-
-angle::Result ContextGL::applyRecreateFboWorkaroundIfNeeded(const gl::Context *context)
-{
-    if (!getFeaturesGL().recreateFboUponFlush.enabled)
-    {
-        return angle::Result::Continue;
-    }
-
-    gl::Framebuffer *drawFbo = context->getState().getDrawFramebuffer();
-    if (!drawFbo || drawFbo->isDefault())
-    {
-        return angle::Result::Continue;
-    }
-
-    FramebufferGL *drawFboGL = GetImplAs<FramebufferGL>(drawFbo);
-
-    bool needWorkaround = false;
-
-    // The workaround is needed when the draw framebuffer has a depth or stencil
-    // attachment with either of the following criteria:
-    //
-    // 1) The attachment is a renderbuffer.
-    //
-    // 2) The attachment is an immutable texture, and the attached level of the
-    // texture was never initialized via glTexSubImage2D.
-
-    const gl::FramebufferAttachment *depthAtt   = drawFbo->getDepthAttachment();
-    const gl::FramebufferAttachment *stencilAtt = drawFbo->getStencilAttachment();
-
-    const gl::FramebufferAttachment *attachments[] = {depthAtt, stencilAtt};
-    for (const gl::FramebufferAttachment *att : attachments)
-    {
-        if (!att)
-        {
-            continue;
-        }
-
-        if (att->type() == GL_RENDERBUFFER)
-        {
-            needWorkaround = true;
-            break;
-        }
-        else if (att->type() == GL_TEXTURE)
-        {
-            const gl::Texture *texture = att->getTexture();
-            if (texture->getImmutableFormat())
-            {
-                const gl::ImageIndex &index = att->getTextureImageIndex();
-                const gl::ImageDesc &desc   = texture->getState().getImageDesc(index);
-                if (desc.initState == gl::InitState::MayNeedInit)
-                {
-                    needWorkaround = true;
-                    break;
-                }
-            }
-        }
-    }
-
-    if (needWorkaround)
-    {
-        ANGLE_TRY(drawFboGL->recreateFbo(context));
-    }
-
-    return angle::Result::Continue;
-}
-
 angle::Result ContextGL::flush(const gl::Context *context)
 {
-    ANGLE_TRY(mRenderer->flush());
-    return applyRecreateFboWorkaroundIfNeeded(context);
+    return mRenderer->flush();
 }
 
 angle::Result ContextGL::finish(const gl::Context *context)
 {
-    ANGLE_TRY(mRenderer->finish());
-    return applyRecreateFboWorkaroundIfNeeded(context);
+    return mRenderer->finish();
 }
 
 ANGLE_INLINE angle::Result ContextGL::setDrawArraysState(const gl::Context *context,
@@ -474,7 +430,7 @@ gl::AttributesMask ContextGL::updateAttributesForBaseInstance(GLuint baseInstanc
                 attribToUpdateMask.set(attribIndex);
                 const char *p             = static_cast<const char *>(attrib.pointer);
                 const size_t sourceStride = gl::ComputeVertexAttributeStride(attrib, binding);
-                const void *newPointer    = p + sourceStride * baseInstance;
+                const void *newPointer    = ANGLE_UNSAFE_TODO(p + sourceStride * baseInstance);
                 const BufferGL *buffer    = GetImplAs<BufferGL>(
                     mState.getVertexArray()->getVertexArrayBuffer(attrib.bindingIndex));
                 // We often stream data from scratch buffers when client side data is being used
@@ -992,6 +948,7 @@ angle::Result ContextGL::onUnMakeCurrent(const gl::Context *context)
     {
         mRenderer->getStateManager()->bindFramebuffer(GL_FRAMEBUFFER, 0);
     }
+    tickGC();
     return ContextImpl::onUnMakeCurrent(context);
 }
 
@@ -1089,11 +1046,6 @@ void ContextGL::setMaxShaderCompilerThreads(GLuint count)
     mRenderer->setMaxShaderCompilerThreads(count);
 }
 
-void ContextGL::invalidateTexture(gl::TextureType target)
-{
-    mRenderer->getStateManager()->invalidateTexture(target);
-}
-
 void ContextGL::validateState() const
 {
     const StateManagerGL *stateManager = mRenderer->getStateManager();
@@ -1118,6 +1070,69 @@ void ContextGL::markWorkSubmitted()
 bool ContextGL::hasNativeParallelCompile()
 {
     return mRenderer->hasNativeParallelCompile();
+}
+
+angle::Result ContextGL::getDepthInitPBO(const gl::Context *context,
+                                         size_t requestedSize,
+                                         GLenum type,
+                                         GLuint *pboIdOut)
+{
+    const FunctionsGL *functions = mRenderer->getFunctions();
+    StateManagerGL *stateManager = mRenderer->getStateManager();
+
+    auto iter = mDepthInitPBOs.Get(type);
+    if (iter == mDepthInitPBOs.end())
+    {
+        iter = mDepthInitPBOs.Put(type, PixelBufferGL(functions));
+    }
+
+    PixelBufferGL &pbo = iter->second;
+
+    // We only reset the counter if the requested size is equal to or larger than the cached PBO's
+    // size. If the app keeps asking for smaller buffers, do not reset the counter. This allows the
+    // oversized PBO to be garbage-collected gradually and eventually re-allocated at the correct
+    // smaller size.
+    if (requestedSize >= pbo.size)
+    {
+        pbo.lifetimeCounter = 100;
+    }
+
+    if (requestedSize > pbo.size)
+    {
+        stateManager->bindBuffer(gl::BufferBinding::PixelUnpack, pbo.bufferID);
+
+        functions->bufferData(GL_PIXEL_UNPACK_BUFFER, requestedSize, nullptr, GL_STATIC_DRAW);
+        GLubyte *mapPointer = static_cast<GLubyte *>(
+            functions->mapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, requestedSize,
+                                      GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT));
+        if (mapPointer)
+        {
+            ANGLE_UNSAFE_TODO(FillDepthOneMemory(type, {mapPointer, requestedSize}));
+            functions->unmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+        }
+        pbo.size = requestedSize;
+    }
+
+    *pboIdOut = pbo.bufferID;
+    return angle::Result::Continue;
+}
+
+void ContextGL::tickGC()
+{
+    for (auto iter = mDepthInitPBOs.begin(); iter != mDepthInitPBOs.end();)
+    {
+        PixelBufferGL &pbo = iter->second;
+        if (pbo.lifetimeCounter > 0)
+        {
+            --pbo.lifetimeCounter;
+            if (pbo.lifetimeCounter == 0)
+            {
+                iter = mDepthInitPBOs.Erase(iter);
+                continue;
+            }
+        }
+        ++iter;
+    }
 }
 
 }  // namespace rx

@@ -254,7 +254,7 @@ EIGEN_STRONG_INLINE Packet2cd pconj<Packet2cd>(const Packet2cd& a) {
 #undef DELEGATE_UNARY_TO_REAL_OP
 #undef EIGEN_CLANG_COMPLEX_UNARY_CWISE_OPS
 
-// Flip real and imaginary parts, i.e.  {re(a), im(a)} -> {im(a), re(a)}.
+// Flip real and imaginary parts, i.e. {re(a), im(a)} -> {im(a), re(a)}.
 #if EIGEN_GENERIC_VECTOR_SIZE_BYTES == 16
 
 template <>

@@ -14,6 +14,10 @@
 #include "core/fxcrt/compiler_specific.h"
 #include "core/fxcrt/span.h"
 
+#if defined(PDF_USE_SKIA)
+enum class SkBlendMode;
+#endif
+
 namespace fxge {
 
 // Encoding:
@@ -117,8 +121,8 @@ struct FXDIB_ResampleOptions {
   bool bLossy = false;
 };
 
-// See PDF 1.7 spec, table 7.2 and 7.3. The enum values need to be in the same
-// order as listed in the spec.
+// See ISO 32000-1:2008 spec, table 136 and 137. The enum values need to be in
+// the same order as listed in the spec.
 enum class BlendMode {
   kNormal = 0,
   kMultiply,
@@ -237,6 +241,8 @@ UNSAFE_BUFFER_USAGE inline void ReverseCopy3Bytes(uint8_t* dest,
 }
 
 #if defined(PDF_USE_SKIA)
+SkBlendMode GetSkiaBlendMode(BlendMode blend_type);
+
 template <typename T>
 T PreMultiplyColor(const T& input) {
   if (input.alpha == 255) {
@@ -304,6 +310,7 @@ using fxge::FXSYS_GetUnsignedAlpha;
 using fxge::ReverseCopy3Bytes;
 
 #if defined(PDF_USE_SKIA)
+using fxge::GetSkiaBlendMode;
 using fxge::PreMultiplyColor;
 using fxge::UnPreMultiplyColor;
 #endif

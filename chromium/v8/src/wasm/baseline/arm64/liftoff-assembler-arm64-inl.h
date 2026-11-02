@@ -352,7 +352,14 @@ void LiftoffAssembler::PatchPrepareStackFrame(
   PatchingAssembler patching_assembler(zone(), AssemblerOptions{},
                                        buffer_start_ + offset, 1);
 
-  if (V8_LIKELY(frame_size < 4 * KB)) {
+  int max_stack_space =
+      frame_size + max_pushed_argument_slots_ * kSystemPointerSize;
+
+  // The threshold here must match the DCHECK in {Isolate::StackOverflow}:
+  // we could use up this limit once for parameters in a caller, once for the
+  // fixed frame size in its callee, plus we must leave some space for the
+  // runtime call that leads to the DCHECK.
+  if (V8_LIKELY(max_stack_space < 3 * KB)) {
     // This is the standard case for small frames: just subtract from SP and be
     // done with it.
     DCHECK(IsImmAddSub(frame_size));
@@ -382,23 +389,23 @@ void LiftoffAssembler::PatchPrepareStackFrame(
   // check in the condition code.
   RecordComment("OOL: stack check for large frame");
   Label continuation;
-  if (frame_size < v8_flags.stack_size * 1024) {
+  if (max_stack_space < v8_flags.stack_size * 1024) {
     UseScratchRegisterScope temps(this);
     Register stack_limit = temps.AcquireX();
     LoadStackLimit(stack_limit, StackLimitKind::kRealStackLimit);
-    Add(stack_limit, stack_limit, Operand(frame_size));
+    Add(stack_limit, stack_limit, Operand(max_stack_space));
     Cmp(sp, stack_limit);
     B(hs /* higher or same */, &continuation);
   }
 
-  if (v8_flags.experimental_wasm_growable_stacks) {
+  if (v8_flags.wasm_growable_stacks) {
     LiftoffRegList regs_to_save;
     regs_to_save.set(WasmHandleStackOverflowDescriptor::GapRegister());
     regs_to_save.set(WasmHandleStackOverflowDescriptor::FrameBaseRegister());
     for (auto reg : kGpParamRegisters) regs_to_save.set(reg);
     for (auto reg : kFpParamRegisters) regs_to_save.set(reg);
     PushRegisters(regs_to_save);
-    Mov(WasmHandleStackOverflowDescriptor::GapRegister(), frame_size);
+    Mov(WasmHandleStackOverflowDescriptor::GapRegister(), max_stack_space);
     Add(WasmHandleStackOverflowDescriptor::FrameBaseRegister(), fp,
         Operand(stack_param_slots * kSystemPointerSize +
                 CommonFrameConstants::kFixedFrameSizeAboveFp));
@@ -491,7 +498,7 @@ void LiftoffAssembler::CheckTierUp(int declared_func_index, int budget_used,
 }
 
 Register LiftoffAssembler::LoadOldFramePointer() {
-  if (!v8_flags.experimental_wasm_growable_stacks) {
+  if (!v8_flags.wasm_growable_stacks) {
     return fp;
   }
   LiftoffRegister old_fp = GetUnusedRegister(RegClass::kGpReg, {});
@@ -564,6 +571,13 @@ void LiftoffAssembler::LoadConstant(LiftoffRegister reg, WasmValue value) {
     default:
       UNREACHABLE();
   }
+}
+
+void LiftoffAssembler::PrepareDebugTrap(MessageTemplate message) {
+  UseScratchRegisterScope temps(this);
+  Register scratch = temps.AcquireX();
+  Mov(scratch, Operand(Smi::FromInt(static_cast<int>(message))));
+  Push(scratch, xzr);
 }
 
 void LiftoffAssembler::LoadInstanceDataFromFrame(Register dst) {
@@ -745,6 +759,14 @@ void LiftoffAssembler::Load(LiftoffRegister dst, Register src_addr,
   MemOperand src_op = liftoff::GetMemOp(this, &temps, src_addr, offset_reg,
                                         offset_imm, i64_offset, shift_amount);
   DCHECK(!src_op.IsPostIndex());  // See MacroAssembler::LoadStoreMacroComplex.
+  if (type.value() == LoadType::kF32LoadF16) {
+    constexpr uint8_t kConversionInstruction = 1;
+    GetTrappingInstruction<LoadOrStore::kLoad, kConversionInstruction>
+        collect_trapping_load(this, trapping_load_pc);
+    Ldr(dst.fp().H(), src_op);
+    Fcvt(dst.fp().S(), dst.fp().H());
+    return;
+  }
   GetTrappingInstruction<LoadOrStore::kLoad> collect_trapping_load(
       this, trapping_load_pc);
   switch (type.value()) {
@@ -781,16 +803,14 @@ void LiftoffAssembler::Load(LiftoffRegister dst, Register src_addr,
     case LoadType::kF32Load:
       Ldr(dst.fp().S(), src_op);
       break;
-    case LoadType::kF32LoadF16: {
-      Ldr(dst.fp().H(), src_op);
-      Fcvt(dst.fp().S(), dst.fp().H());
-      break;
-    }
     case LoadType::kF64Load:
       Ldr(dst.fp().D(), src_op);
       break;
     case LoadType::kS128Load:
       Ldr(dst.fp().Q(), src_op);
+      break;
+    default:
+      UNREACHABLE();
       break;
   }
 }
@@ -823,8 +843,12 @@ void LiftoffAssembler::Store(Register dst_addr, Register offset_reg,
       Str(src.gp().X(), dst_op);
       break;
     case StoreType::kF32StoreF16: {
-      Fcvt(src.fp().H(), src.fp().S());
-      Str(src.fp().H(), dst_op);
+      UseScratchRegisterScope temps(this);
+      VRegister temp_h = temps.AcquireH();
+      // We collect the last instruction as the trap so it's safe to emit
+      // multiple instructions as long as the store is last.
+      Fcvt(temp_h, src.fp().S());
+      Str(temp_h, dst_op);
       break;
     }
     case StoreType::kF32Store:
@@ -1475,7 +1499,9 @@ void LiftoffAssembler::AtomicCompareExchangeTaggedPointer(
   }
 }
 
-void LiftoffAssembler::AtomicFence() { Dmb(InnerShareable, BarrierAll); }
+void LiftoffAssembler::AtomicFence(AtomicMemoryOrder /*order*/) {
+  Dmb(InnerShareable, BarrierAll);
+}
 
 void LiftoffAssembler::Pause() { Isb(); }
 
@@ -1819,6 +1845,27 @@ void LiftoffAssembler::emit_i64_shl(LiftoffRegister dst, LiftoffRegister src,
 void LiftoffAssembler::emit_i64_shli(LiftoffRegister dst, LiftoffRegister src,
                                      int32_t amount) {
   Lsl(dst.gp().X(), src.gp().X(), amount & 63);
+}
+
+void LiftoffAssembler::emit_i64_rol(LiftoffRegister dst, LiftoffRegister src,
+                                    Register amount) {
+  UseScratchRegisterScope temps(this);
+  Register scratch = temps.AcquireX();
+  Neg(scratch, amount.X());
+  Ror(dst.gp().X(), src.gp().X(), scratch);
+}
+void LiftoffAssembler::emit_i64_roli(LiftoffRegister dst, LiftoffRegister src,
+                                     int32_t amount) {
+  Ror(dst.gp().X(), src.gp().X(), (64 - amount) & 63);
+}
+
+void LiftoffAssembler::emit_i64_ror(LiftoffRegister dst, LiftoffRegister src,
+                                    Register amount) {
+  Ror(dst.gp().X(), src.gp().X(), amount.X());
+}
+void LiftoffAssembler::emit_i64_rori(LiftoffRegister dst, LiftoffRegister src,
+                                     int32_t amount) {
+  Ror(dst.gp().X(), src.gp().X(), amount & 63);
 }
 
 void LiftoffAssembler::emit_i64_sar(LiftoffRegister dst, LiftoffRegister src,
@@ -4585,11 +4632,8 @@ void LiftoffAssembler::TailCallNativeWasmCode(Address addr) {
   Jump(addr, RelocInfo::WASM_CALL);
 }
 
-void LiftoffAssembler::CallIndirect(const ValueKindSig* sig,
-                                    compiler::CallDescriptor* call_descriptor,
+void LiftoffAssembler::CallIndirect(compiler::CallDescriptor* call_descriptor,
                                     Register target) {
-  // For Arm64, we have more cache registers than wasm parameters. That means
-  // that target will always be in a register.
   DCHECK(target.is_valid());
   CallWasmCodePointer(target, call_descriptor->signature_hash());
 }
@@ -4626,7 +4670,6 @@ void LiftoffAssembler::DeallocateStackSlot(uint32_t size) {
   Drop(size, 1);
 }
 
-void LiftoffAssembler::MaybeOSR() {}
 
 void LiftoffStackSlots::Construct(int param_slots) {
   DCHECK_LT(0, slots_.size());

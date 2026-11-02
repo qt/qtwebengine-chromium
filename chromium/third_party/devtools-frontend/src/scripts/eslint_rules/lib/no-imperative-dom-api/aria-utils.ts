@@ -58,9 +58,22 @@ export const ariaUtils: RuleCreator = {
           domFragment.attributes.push({key: 'aria-live', value: 'polite'});
           domFragment.attributes.push({key: 'aria-atomic', value: secondArg});
         } else if (isIdentifier(func, [
-                     'setAutocomplete', 'setChecked', 'setDescription', 'setDisabled', 'setExpanded', 'setHasPopup',
-                     'setHidden', 'setInvalid', 'setLabel', 'setLevel', 'setPlaceholder', 'setPressed', 'setSelected',
-                     'setSetSize', 'setValueNow', 'setValueText'
+                     'setAutocomplete',
+                     'setChecked',
+                     'setDescription',
+                     'setDisabled',
+                     'setExpanded',
+                     'setHasPopup',
+                     'setHidden',
+                     'setInvalid',
+                     'setLabel',
+                     'setLevel',
+                     'setPlaceholder',
+                     'setPressed',
+                     'setSelected',
+                     'setSetSize',
+                     'setValueNow',
+                     'setValueText',
                    ])) {
           domFragment.attributes.push({
             key: `aria-${(func as Identifier).name.substr('set'.length).toLowerCase()}`,
@@ -105,5 +118,5 @@ export const ariaUtils: RuleCreator = {
         return true;
       },
     };
-  }
+  },
 };

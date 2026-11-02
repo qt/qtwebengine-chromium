@@ -3,20 +3,6 @@
 # pylint: disable=undefined-variable
 # pylint: disable=missing-function-docstring
 from ynnpack.kernels.elementwise.compiler import *  # pylint: disable=wildcard-import
-from ynnpack.kernels.unary.util import *  # pylint: disable=wildcard-import
-
-
-def qd_round_f32(a):
-  # If `x` is an floating point value in the range `[2^-22, 2^22)`, then
-  # `(x + magic) - magic`` will generate the floating point value corresponding
-  # to `round(x)`.
-  vmagic = 1.5*(2**23)
-  return (vmagic + a) - vmagic
-
-
-def qd_round_f64(a):
-  vmagic = 1.5*(2**52)
-  return (vmagic + a) - vmagic
 
 
 @const_buffer("a", Float(32))
@@ -26,43 +12,8 @@ def qd_round_f64(a):
     Scalar("input_multiplier", Float(32)),
 )
 @operator_name("exp")
-def exp_fp32(a, x, output_multiplier, input_multiplier):
-  # Polynomial coefficients
-  p = [
-      2.7769648004e-03 * output_multiplier,
-      4.8084631562e-02 * output_multiplier,
-      3.4672188759e-01 * output_multiplier,
-      1.0000000000e00 * output_multiplier,
-  ]
-  q = [
-      -2.7651260607e-03,
-      4.7981843352e-02,
-      -3.4642529488e-01,
-      1.0000000000e00,
-  ]
-
-  va = load(a) * input_multiplier
-  # Clamp `vz_prime = x * log2(e)` to the maximum exponents [-127, 128].
-  vz_prime = min(max(va, -127.0), 128.0)
-
-  # Decompose x * log2e into `z` (integer part) and `r` (remainder).
-  vz = qd_round_f32(vz_prime)
-  vr = vz_prime - vz
-
-  # Compute 2^z.
-  v2z = exp2_round(vz)
-  v2z = copynan(v2z, va)
-
-  vp = eval_polynomial(vr, p)
-  vq = eval_polynomial(vr, q)
-
-  # Divide the numerator by the denominator, obtaining 2^r.
-  v2r = vp / vq
-
-  # Compute 2^z * 2^r.
-  vx = v2z * v2r
-
-  return store(vx, x)
+def exp_fp32(a_buf, x_buf, output_multiplier, input_multiplier):
+  return store(exp(load(a_buf) * input_multiplier) * output_multiplier, x_buf)
 
 
 @const_buffer("a", Float(64))
@@ -73,44 +24,28 @@ def exp_fp32(a, x, output_multiplier, input_multiplier):
     Scalar("input_multiplier", Float(64)),
 )
 @operator_name("exp")
-def exp_fp64(a, x, output_multiplier, input_multiplier):
-  # Polynomial coefficients
-  p = [
-      f64(3.430671987749682348e-06) * output_multiplier,
-      f64(1.754214714900316551e-04) * output_multiplier,
-      f64(3.930681642138933278e-03) * output_multiplier,
-      f64(4.871246780757146344e-02) * output_multiplier,
-      f64(3.331084219217221309e-01) * output_multiplier,
-      f64(9.999999999999998890e-01) * output_multiplier,
-  ]
-  q = [
-      f64(-7.126417699553038831e-06),
-      f64(2.821496207245147419e-04),
-      f64(-5.316864104706260294e-03),
-      f64(5.804581129084830649e-02),
-      f64(-3.600387586382234328e-01),
-      f64(1.000000000000000000e00),
-  ]
+def exp_fp64(a_buf, x_buf, output_multiplier, input_multiplier):
+  return store(exp(load(a_buf) * input_multiplier) * output_multiplier, x_buf)
 
-  va = load(a) * input_multiplier
-  # Clamp `vz_prime = x * log2(e)` to the maximum exponents [-1023, 1024].
-  vz_prime = min(max(va, -1023.0), 1024.0)
 
-  # Decompose x * log2e into `z` (integer part) and `r` (remainder).
-  vz = qd_round_f64(vz_prime)
-  vr = vz_prime - vz
+@const_buffer("a", Float(32))
+@buffer("x", Float(32))
+@params(
+    Scalar("output_multiplier", Float(32)),
+    Scalar("input_multiplier", Float(32)),
+)
+@operator_name("expm1")
+def expm1_fp32(a_buf, x_buf, output_multiplier, input_multiplier):
+  return store(expm1(load(a_buf) * input_multiplier) * output_multiplier, x_buf)
 
-  # Compute 2^z.
-  v2z = exp2_round(vz)
-  v2z = copynan(v2z, va)
 
-  vp = eval_polynomial(vr, p)
-  vq = eval_polynomial(vr, q)
-
-  # Divide the numerator by the denominator, obtaining 2^r.
-  v2r = vp / vq
-
-  # Compute 2^z * 2^r.
-  vx = v2z * v2r
-
-  return store(vx, x)
+@const_buffer("a", Float(64))
+@buffer("x", Float(64))
+@params(
+    # These are actually fp32, but we convert them to fp64 when loading them.
+    Scalar("output_multiplier", Float(64)),
+    Scalar("input_multiplier", Float(64)),
+)
+@operator_name("expm1")
+def expm1_fp64(a_buf, x_buf, output_multiplier, input_multiplier):
+  return store(expm1(load(a_buf) * input_multiplier) * output_multiplier, x_buf)

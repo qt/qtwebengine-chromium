@@ -58,7 +58,7 @@ class HeadlessPrintManager
   void ShowScriptedPrintPreview() override;
   void RequestPrintPreview(
       printing::mojom::RequestPrintPreviewParamsPtr params) override;
-  void CheckForCancel(int32_t preview_ui_id,
+  void CheckForCancel(const base::UnguessableToken& preview_ui_id,
                       int32_t request_id,
                       CheckForCancelCallback callback) override;
   void SetAccessibilityTree(
@@ -66,6 +66,8 @@ class HeadlessPrintManager
       const ui::AXTreeUpdate& accessibility_tree) override;
 #endif
 #if BUILDFLAG(IS_ANDROID)
+  void SetupScriptedPrintAndroid(
+      SetupScriptedPrintAndroidCallback callback) override;
   void PdfWritingDone(int page_count) override;
 #endif
 

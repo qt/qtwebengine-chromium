@@ -5,9 +5,13 @@
 #include "components/autofill/content/renderer/form_tracker.h"
 
 #include <optional>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "base/containers/to_vector.h"
 #include "base/feature_list.h"
+#include "base/run_loop.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
@@ -35,12 +39,6 @@ using ::testing::ElementsAre;
 using ::testing::Eq;
 using ::testing::Ne;
 using ::testing::Property;
-
-constexpr CallTimerState kCallTimerStateDummy = {
-    .call_site = CallTimerState::CallSite::kUpdateFormCache,
-    .last_autofill_agent_reset = {},
-    .last_dom_content_loaded = {},
-};
 
 template <typename... Args>
 auto FieldsAre(Args&&... matchers) {
@@ -70,10 +68,8 @@ class MockFormTracker : public FormTracker {
       : FormTracker(render_frame, autofill_agent, password_autofill_agent) {
     ON_CALL(*this, FireFormSubmission)
         .WillByDefault([this](mojom::SubmissionSource source,
-                              std::optional<blink::WebFormElement> form,
-                              bool reset_last_interacted_elements) {
-          test_api(*this).FireFormSubmission(source, form,
-                                             reset_last_interacted_elements);
+                              std::optional<blink::WebFormElement> form) {
+          test_api(*this).FireFormSubmission(source, form);
         });
     ON_CALL(*this, ElementDisappeared)
         .WillByDefault([this](const blink::WebElement& element) {
@@ -82,9 +78,7 @@ class MockFormTracker : public FormTracker {
   }
   MOCK_METHOD((void),
               FireFormSubmission,
-              (mojom::SubmissionSource,
-               std::optional<blink::WebFormElement>,
-               bool),
+              (mojom::SubmissionSource, std::optional<blink::WebFormElement>),
               (override));
   MOCK_METHOD(void,
               ElementDisappeared,
@@ -96,10 +90,8 @@ class FormTrackerTest : public test::AutofillRendererTest,
                         public testing::WithParamInterface<int> {
  public:
   FormTrackerTest() {
-    EXPECT_LE(GetParam(), 3);
+    EXPECT_LE(GetParam(), 1);
     std::vector<base::test::FeatureRef> features = {
-        features::kAutofillFixFormTracking,
-        features::kAutofillReplaceCachedWebElementsByRendererIds,
         features::kAutofillReplaceFormElementObserver};
 
     std::vector<base::test::FeatureRef> enabled_features(
@@ -136,40 +128,12 @@ class FormTrackerTest : public test::AutofillRendererTest,
     });
   }
 
-  void SimulateFillForm(std::string_view fname_id = "fname",
-                        std::string_view lname_id = "lname") {
-    blink::WebFormControlElement fname_element =
-        GetFormControlElementById(fname_id);
-    ASSERT_TRUE(fname_element);
-    SimulateElementClickAndWait(std::string(fname_id));
-
-    blink::WebFormElement form_element =
-        fname_element.GetOwningFormForAutofill();
-    FormData form;
-    if (!form_element.IsNull()) {
-      form = *form_util::ExtractFormData(
-          form_element.GetDocument(), form_element,
-          *base::MakeRefCounted<FieldDataManager>(), kCallTimerStateDummy,
-          /*button_titles_cache=*/nullptr);
+  bool SimulateFillForm() {
+    if (std::optional<FormData> data = ExtractFormData("myForm")) {
+      return AutofillRendererTest::SimulateFillForm(
+          *data, "fname", {{u"fname", u"John"}, {u"lname", u"Smith"}});
     }
-
-    for (FormFieldData& field : test_api(form).fields()) {
-      if (field.renderer_id() == form_util::GetFieldRendererId(fname_element)) {
-        field.set_value(u"John");
-        field.set_is_autofilled_according_to_renderer(true);
-      } else if (lname_id != "" &&
-                 field.renderer_id() ==
-                     form_util::GetFieldRendererId(
-                         GetFormControlElementById(lname_id))) {
-        field.set_value(u"Smith");
-        field.set_is_autofilled_according_to_renderer(true);
-      }
-    }
-
-    autofill_agent().ApplyFieldsAction(
-        mojom::FormActionType::kFill, mojom::ActionPersistence::kFill,
-        GetFillData(form.fields()), FillId::Create(),
-        /*supports_refill=*/false);
+    return false;
   }
 
  protected:
@@ -178,7 +142,7 @@ class FormTrackerTest : public test::AutofillRendererTest,
 
 INSTANTIATE_TEST_SUITE_P(AutofillSubmissionTest,
                          FormTrackerTest,
-                         ::testing::Values(0, 1, 2, 3));
+                         ::testing::Values(0, 1));
 
 // Check that submission is detected on a page with no <form> when in sequence:
 // 1) User types into a field.
@@ -203,7 +167,7 @@ TEST_P(FormTrackerTest, FormlessXHRThenHide) {
 
   // FormTracker should detect a submission after the <input>s are hidden.
   EXPECT_CALL(form_tracker(),
-              FireFormSubmission(mojom::SubmissionSource::XHR_SUCCEEDED, _, _))
+              FireFormSubmission(mojom::SubmissionSource::XHR_SUCCEEDED, _))
       .Times(1);
   ExecuteJavaScriptForTests(
       R"(document.getElementById('input1').style.display = 'none';
@@ -236,7 +200,7 @@ TEST_P(FormTrackerTest, FormlessHideThenXhr) {
 
   // FormTracker should detect a submission when the XHR succeeds.
   EXPECT_CALL(form_tracker(),
-              FireFormSubmission(mojom::SubmissionSource::XHR_SUCCEEDED, _, _))
+              FireFormSubmission(mojom::SubmissionSource::XHR_SUCCEEDED, _))
       .Times(1);
   form_tracker().AjaxSucceeded();
   task_environment_.RunUntilIdle();
@@ -282,9 +246,9 @@ TEST_P(FormTrackerTest, ProbablyFormSubmitted) {
   form_tracker().TextFieldValueChanged(input1);
   task_environment_.RunUntilIdle();
 
-  EXPECT_CALL(form_tracker(),
-              FireFormSubmission(
-                  mojom::SubmissionSource::PROBABLY_FORM_SUBMITTED, _, _))
+  EXPECT_CALL(
+      form_tracker(),
+      FireFormSubmission(mojom::SubmissionSource::PROBABLY_FORM_SUBMITTED, _))
       .Times(1);
 
   test_api(form_tracker())
@@ -317,19 +281,15 @@ TEST_P(FormTrackerTest, ProbablyFormSubmitted_IgnoreUninterestingNavigations) {
 
   EXPECT_CALL(form_tracker(), FireFormSubmission).Times(0);
 
-  if (base::FeatureList::IsEnabled(features::kAutofillFixFormTracking)) {
-    for (const blink::WebNavigationType navigation_type :
-         kUninterestingNavigationTypes) {
-      test_api(form_tracker()).DidStartNavigation(navigation_type);
-    }
-  } else {
-    test_api(form_tracker()).DidStartNavigation(kWebNavigationTypeLinkClicked);
+  for (const blink::WebNavigationType navigation_type :
+       kUninterestingNavigationTypes) {
+    test_api(form_tracker()).DidStartNavigation(navigation_type);
   }
 }
 
-// Tests that AutofillAgent::JavaScriptChangedValue updates the last interacted
+// Tests that AutofillAgent::JavaScriptSetValue() updates the last interacted
 // saved state.
-TEST_P(FormTrackerTest, JavaScriptChangedValueUpdatesLastInteractedSavedState) {
+TEST_P(FormTrackerTest, JavaScriptSetValueUpdatesLastInteractedSavedState) {
   if (!base::FeatureList::IsEnabled(
           features::kAutofillReplaceFormElementObserver)) {
     GTEST_SKIP();
@@ -428,19 +388,17 @@ TEST_P(FormTrackerTest, FormApplyFormActionUpdatesLastInteractedSavedState) {
   ASSERT_TRUE(field);
   ASSERT_EQ("text_id", field.GetIdAttribute().Ascii());
 
-  FormData form = *form_util::ExtractFormData(
-      form_element.GetDocument(), form_element,
-      *base::MakeRefCounted<FieldDataManager>(), kCallTimerStateDummy,
-      /*button_titles_cache=*/nullptr);
+  std::optional<FormData> form = ExtractFormData(form_element);
+  ASSERT_TRUE(form);
 
-  ASSERT_EQ(1u, form.fields().size());
-  test_api(form).field(0).set_value(u"autofilled");
-  test_api(form).field(0).set_is_autofilled_according_to_renderer(true);
+  ASSERT_EQ(1u, form->fields().size());
+  test_api(*form).field(0).set_value(u"autofilled");
+  test_api(*form).field(0).set_is_autofilled_according_to_renderer(true);
 
   ASSERT_EQ(field.GetAutofillState(), blink::WebAutofillState::kNotFilled);
   autofill_agent().ApplyFieldsAction(
       mojom::FormActionType::kFill, mojom::ActionPersistence::kFill,
-      GetFillData(form.fields()), FillId::Create(),
+      GetFillData(form->fields()), FillId::Create(),
       /*supports_refill=*/false);
   ASSERT_EQ(field.GetAutofillState(), blink::WebAutofillState::kAutofilled);
 
@@ -639,10 +597,8 @@ TEST_P(FormTrackerTest,
   blink::WebFormElement form_element =
       GetWebElementById("form").DynamicTo<blink::WebFormElement>();
   ASSERT_TRUE(form_element);
-  std::optional<FormData> form = form_util::ExtractFormData(
-      GetDocument(), form_element, autofill_agent().field_data_manager(),
-      kCallTimerStateDummy, /*button_titles_cache=*/nullptr);
-  ASSERT_TRUE(form.has_value());
+  std::optional<FormData> form = ExtractFormData(form_element);
+  ASSERT_TRUE(form);
 
   std::vector<blink::WebFormControlElement> field_elements =
       form_util::GetOwnedFormControlsForTesting(form_element.GetDocument(),
@@ -742,7 +698,7 @@ TEST_P(FormTrackerTest, DomMutationAfterAutofill) {
           <input name='lname' id='lname'/>
         </form>
       </html>)");
-  SimulateFillForm();
+  EXPECT_TRUE(SimulateFillForm());
 
   base::RunLoop run_loop;
   EXPECT_CALL(
@@ -949,7 +905,7 @@ TEST_P(FormTrackerTest, AjaxSucceeded_FilledFormIsInvisible) {
           <input name='lname' id='lname'/>
         </form>
       </html>)");
-  SimulateFillForm();
+  EXPECT_TRUE(SimulateFillForm());
   SimulateUserInputChangeForElementById("fname", "Rick");
 
   ExecuteJavaScriptForTests(
@@ -979,7 +935,7 @@ TEST_P(FormTrackerTest, AjaxSucceeded_FilledFormStillVisible) {
           <input name='lname' id='lname' value='Deckard'/>
         </form>
       </html>)");
-  SimulateFillForm();
+  EXPECT_TRUE(SimulateFillForm());
 
   EXPECT_CALL(autofill_driver(), FormSubmitted).Times(0);
   base::RunLoop run_loop;

@@ -8,6 +8,7 @@
 #include "src/debug/debug-wasm-objects.h"
 // Include the non-inl header before the rest of the headers.
 
+#include "src/objects/heap-object-field-inl.h"
 #include "src/objects/js-objects-inl.h"
 
 // Has to be the last include (doesn't have include guards):
@@ -15,8 +16,6 @@
 
 namespace v8 {
 namespace internal {
-
-#include "torque-generated/src/debug/debug-wasm-objects-tq-inl.inc"
 
 ACCESSORS(WasmValueObject, type, Tagged<String>, kTypeOffset)
 ACCESSORS(WasmValueObject, value, Tagged<Object>, kValueOffset)

@@ -118,7 +118,7 @@ class ReportScheduler {
 
   void OnDMTokenUpdated();
 
-  void UploadFullReport(base::OnceClosure on_report_uploaded);
+  void UploadReport(base::OnceClosure on_report_uploaded);
 
  private:
   // Observes CloudReportingEnabled policy.
@@ -128,6 +128,10 @@ class ReportScheduler {
   // kUserSecuritySignalsReporting, including the first policy value check
   // during startup.
   void OnReportEnabledPrefChanged();
+
+  // Returns the security signals mode for the given report type and trigger.
+  SecuritySignalsMode GetSecurityMode(ReportType report_type,
+                                      ReportTrigger trigger) const;
 
   // Stops the periodic timer and the update observer.
   void Stop();
@@ -146,6 +150,25 @@ class ReportScheduler {
   // Starts report generation in response to |trigger|.
   void GenerateAndUploadReport(ReportTrigger trigger);
 
+  // Returns true if we need to fetch a challenge before generating the report.
+  bool NeedChallenge(ReportTrigger trigger,
+                     SecuritySignalsMode signals_mode) const;
+
+  // Callback for GenerateChromeProfileChallenge.
+  void OnChallengeGenerated(
+      ReportTrigger trigger,
+      SecuritySignalsMode signals_mode,
+      policy::DeviceManagementStatus status,
+      const enterprise_management::GenerateChromeProfileChallengeResponse&
+          response);
+
+  // Continues report generation after challenge fetch (or if no challenge is
+  // needed).
+  void ContinueGenerateAndUploadReport(
+      ReportTrigger trigger,
+      SecuritySignalsMode signals_mode,
+      const std::optional<std::string>& challenge);
+
   // Continues processing a report (contained in the |result| collection) by
   // sending it to the uploader.
   void OnReportGenerated(
@@ -163,6 +186,7 @@ class ReportScheduler {
   void RecordUploadTrigger();
 
   ReportType TriggerToReportType(ReportTrigger trigger);
+  bool IsTriggerEnabled(ReportTrigger trigger) const;
 
   policy::DMToken GetDMToken();
 
@@ -187,6 +211,9 @@ class ReportScheduler {
   ReportGenerationConfig active_report_generation_config_ =
       ReportGenerationConfig(ReportTrigger::kTriggerNone);
 
+  // The start time of the active report generation/upload process.
+  base::TimeTicks report_generation_start_time_;
+
   // The set of triggers that have fired while processing a report (a bitfield
   // of ReportTrigger values). They will be handled following completion of the
   // in-process report.
@@ -198,7 +225,7 @@ class ReportScheduler {
   // pref is true.
   bool require_policy_fetch_with_profile_id_;
 
-  ReportType full_report_type_;
+  ReportType status_report_type_;
 
   std::vector<std::unique_ptr<ReportUploader>> report_uploaders_for_test_;
 

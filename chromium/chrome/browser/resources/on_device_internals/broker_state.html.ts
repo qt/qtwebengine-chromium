@@ -11,7 +11,40 @@ export function getHtml(this: OnDeviceInternalsBrokerStateElement) {
     <div class="card">
       <h2>Broker Properties</h2>
       <table>
-        ${this.state_.properties.map(property => html`
+        ${this.otherProperties.map(property => html`
+          <tr>
+            <td class="property-name">${property.description}</td>
+            <td>${property.value}</td>
+          </tr>
+        `)}
+      </table>
+    </div>
+
+    ${
+      this.state_.modelCrashCount !== null &&
+              this.state_.maxModelCrashCount !== null ?
+          html`
+    <div class="card">
+      <div class="cr-row first">
+        <div class="cr-padded-text">
+          Model crash count (current/maximum):
+          ${this.state_.modelCrashCount}/${this.state_.maxModelCrashCount}
+        </div>
+        <cr-button class="cr-button-gap"
+            @click="${this.onResetCrashCountClick_}">Reset</cr-button>
+      </div>
+      <div class="cr-row continuation">
+        <div class="cr-padded-text">
+          <a href="chrome://crashes">
+              View global crash reports (chrome://crashes)</a>
+        </div>
+      </div>
+    </div>` :
+          ''}
+    <div class="card">
+      <h2>Manifest Criteria</h2>
+      <table>
+        ${this.manifestCriteria.map(property => html`
           <tr>
             <td class="property-name">${property.description}</td>
             <td>${property.value}</td>
@@ -80,14 +113,23 @@ export function getHtml(this: OnDeviceInternalsBrokerStateElement) {
         <thead>
           <tr>
             <th>Name</th>
+            <th>Folder Size</th>
             <th>Weights Path</th>
+            <th>Backend Type</th>
           </tr>
         </thead>
         <tbody>
-          ${this.state_.models.map(model => html`
+          ${
+      this.state_.models.map(
+          model => html`
             <tr>
               <td>${model.name}</td>
+              <td>${
+              (Number(model.folderSize) / 1024 / 1024).toLocaleString('en-US', {
+                maximumFractionDigits: 2,
+              })} MiB</td>
               <td class="path">${model.weightsPath}</td>
+              <td>${model.backendType}</td>
             </tr>
           `)}
         </tbody>
@@ -95,7 +137,8 @@ export function getHtml(this: OnDeviceInternalsBrokerStateElement) {
     </div>
 
     <div class="card">
-      <cr-button @click="${this.onUninstallModelsClick_}">
+      <cr-button @click="${this.onUninstallModelsClick_}"
+          ?disabled="${!this.state_.isAssetManagerInitialized}">
         Uninstall Models
       </cr-button>
     </div>

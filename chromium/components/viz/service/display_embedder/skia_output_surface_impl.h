@@ -105,7 +105,6 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurfaceImpl : public SkiaOutputSurface {
   void SetUpdateVSyncParametersCallback(
       UpdateVSyncParametersCallback callback) override;
   void SetVSyncDisplayID(int64_t display_id, bool force_update) override;
-  void RefreshRateChangedOnSameDisplay() override;
   void SetDisplayTransformHint(gfx::OverlayTransform transform) override;
   gfx::OverlayTransform GetDisplayTransform() override;
   void SwapBuffers(OutputSurfaceFrame frame) override;
@@ -220,8 +219,12 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurfaceImpl : public SkiaOutputSurface {
  private:
   friend class SkiaOutputSurfaceSharedImageInterface;
 
+  struct InitializeOnGpuThreadResult;
   bool Initialize();
-  void InitializeOnGpuThread(bool* result);
+  // Sets `out_result` to null on failure.
+  void InitializeOnGpuThread(
+      std::optional<InitializeOnGpuThreadResult>* out_result);
+
   GrSurfaceCharacterization CreateGrSurfaceCharacterizationRenderPass(
       const gfx::Size& surface_size,
       SkColorType color_type,

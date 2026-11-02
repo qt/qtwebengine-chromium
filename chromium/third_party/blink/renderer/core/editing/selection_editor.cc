@@ -25,6 +25,8 @@
 
 #include "third_party/blink/renderer/core/editing/selection_editor.h"
 
+#include "third_party/blink/public/platform/task_type.h"
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/node_with_index.h"
 #include "third_party/blink/renderer/core/dom/text.h"
 #include "third_party/blink/renderer/core/editing/editing_behavior.h"
@@ -42,6 +44,7 @@
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 
 namespace blink {
 
@@ -60,7 +63,7 @@ void SelectionEditor::AssertSelectionValid() const {
 }
 
 void SelectionEditor::ClearVisibleSelection() {
-  selection_ = SelectionInDOMTree();
+  selection_ = SelectionInDomTree();
   cached_visible_selection_in_dom_tree_ = VisibleSelection();
   cached_visible_selection_in_flat_tree_ = VisibleSelectionInFlatTree();
   cached_visible_selection_in_dom_tree_is_dirty_ = true;
@@ -77,7 +80,7 @@ Document& SelectionEditor::GetDocument() const {
   return *document_;
 }
 
-VisibleSelection SelectionEditor::ComputeVisibleSelectionInDOMTree() const {
+VisibleSelection SelectionEditor::ComputeVisibleSelectionInDomTree() const {
   DCHECK_EQ(GetFrame()->GetDocument(), GetDocument());
   DCHECK_EQ(GetFrame(), GetDocument().GetFrame());
   UpdateCachedVisibleSelectionIfNeeded();
@@ -112,7 +115,7 @@ bool SelectionEditor::ComputeAbsoluteBounds(gfx::Rect& anchor,
   return has_selection_bounds_;
 }
 
-const SelectionInDOMTree& SelectionEditor::GetSelectionInDOMTree() const {
+const SelectionInDomTree& SelectionEditor::GetSelectionInDomTree() const {
   AssertSelectionValid();
   return selection_;
 }
@@ -135,11 +138,11 @@ void SelectionEditor::MarkCacheDirty() {
 }
 
 void SelectionEditor::SetSelectionAndEndTyping(
-    const SelectionInDOMTree& new_selection) {
+    const SelectionInDomTree& new_selection) {
   new_selection.AssertValidFor(GetDocument());
   DCHECK_NE(selection_, new_selection);
 
-  const SelectionInDOMTree old_selection = selection_;
+  const SelectionInDomTree old_selection = selection_;
 
   ClearDocumentCachedRange();
   MarkCacheDirty();
@@ -152,8 +155,10 @@ void SelectionEditor::SetSelectionAndEndTyping(
         old_focus && old_focus->GetLayoutObject()
             ? old_focus->GetLayoutObject()->ContainingBlockForTextOverflow()
             : nullptr;
+    // Editable-only: non-editable content keeps its ellipsis
+    // (crbug.com/526471153).
     LayoutObject* new_style_owner =
-        new_focus && new_focus->GetLayoutObject()
+        new_focus && new_focus->GetLayoutObject() && IsEditable(*new_focus)
             ? new_focus->GetLayoutObject()->ContainingBlockForTextOverflow()
             : nullptr;
 
@@ -173,9 +178,30 @@ void SelectionEditor::SetContainsSelectionFocusFlag(LayoutObject* style_owner,
 
   style_owner->SetContainsSelectionFocus(value);
 
-  // ShouldTruncateOverflowingText() is evaluated during each child block's
-  // inline layout. LayoutNG caches child results, so children must be
-  // explicitly marked dirty to re-evaluate truncation.
+  // Children must be marked dirty so LayoutNG re-evaluates truncation (results
+  // are cached per child). Defer via a task: this runs during
+  // selection/input/focus handling, where dirtying layout synchronously would
+  // trip hit-test DCHECKs (crbug.com/406853131).
+  Node* style_node = style_owner->GetNode();
+  if (!style_node) {
+    return;
+  }
+  style_node->GetDocument()
+      .GetTaskRunner(TaskType::kInternalDefault)
+      ->PostTask(FROM_HERE,
+                 BindOnce(&SelectionEditor::InvalidateTextOverflowLayoutForNode,
+                          WrapWeakPersistent(style_node)));
+}
+
+void SelectionEditor::InvalidateTextOverflowLayoutForNode(
+    Node* style_owner_node) {
+  if (!style_owner_node) {
+    return;
+  }
+  LayoutObject* style_owner = style_owner_node->GetLayoutObject();
+  if (!style_owner) {
+    return;
+  }
   style_owner->SetNeedsLayout(layout_invalidation_reason::kStyleChange);
   for (LayoutObject* child = style_owner->SlowFirstChild(); child;
        child = child->NextSibling()) {
@@ -194,13 +220,13 @@ void SelectionEditor::DidChangeChildren(
   }
   selection_.ResetDirectionCache();
   MarkCacheDirty();
-  DidFinishDOMMutation();
+  DidFinishDomMutation();
 }
 
 void SelectionEditor::DidFinishTextChange(const Position& new_anchor,
                                           const Position& new_focus) {
   if (new_anchor == selection_.anchor_ && new_focus == selection_.focus_) {
-    DidFinishDOMMutation();
+    DidFinishDomMutation();
     return;
   }
   selection_.anchor_ = new_anchor;
@@ -209,7 +235,7 @@ void SelectionEditor::DidFinishTextChange(const Position& new_anchor,
 
   // See: https://w3c.github.io/selection-api/#selectionchange-event
   TextControlElement* text_control =
-      EnclosingTextControl(GetSelectionInDOMTree().Anchor());
+      EnclosingTextControl(GetSelectionInDomTree().Anchor());
   if (text_control && !text_control->IsInShadowTree()) {
     text_control->ScheduleSelectionchangeEvent();
   } else {
@@ -217,10 +243,10 @@ void SelectionEditor::DidFinishTextChange(const Position& new_anchor,
   }
 
   MarkCacheDirty();
-  DidFinishDOMMutation();
+  DidFinishDomMutation();
 }
 
-void SelectionEditor::DidFinishDOMMutation() {
+void SelectionEditor::DidFinishDomMutation() {
   AssertSelectionValid();
 }
 
@@ -255,7 +281,7 @@ void SelectionEditor::DidInsertNode(const Node& node) {
   if (new_anchor == old_anchor && new_focus == old_focus) {
     return;
   }
-  selection_ = SelectionInDOMTree::Builder()
+  selection_ = SelectionInDomTree::Builder()
                    .SetBaseAndExtent(new_anchor, new_focus)
                    .Build();
 }
@@ -278,7 +304,7 @@ void SelectionEditor::ContextDestroyed() {
   style_version_for_flat_tree_ = static_cast<uint64_t>(-1);
   style_version_for_absolute_bounds_ = static_cast<uint64_t>(-1);
 #endif
-  selection_ = SelectionInDOMTree();
+  selection_ = SelectionInDomTree();
   cached_visible_selection_in_dom_tree_ = VisibleSelection();
   cached_visible_selection_in_flat_tree_ = VisibleSelectionInFlatTree();
   cached_visible_selection_in_dom_tree_is_dirty_ = true;
@@ -326,7 +352,7 @@ void SelectionEditor::NodeChildrenWillBeRemoved(ContainerNode& container) {
   if (new_anchor == old_anchor && new_focus == old_focus) {
     return;
   }
-  selection_ = SelectionInDOMTree::Builder()
+  selection_ = SelectionInDomTree::Builder()
                    .SetBaseAndExtent(new_anchor, new_focus)
                    .Build();
   MarkCacheDirty();
@@ -354,7 +380,7 @@ void SelectionEditor::NodeWillBeRemoved(Node& node_to_be_removed) {
     return;
   }
 
-  selection_ = SelectionInDOMTree::Builder()
+  selection_ = SelectionInDomTree::Builder()
                    .SetBaseAndExtent(new_anchor, new_focus)
                    .Build();
   MarkCacheDirty();
@@ -380,9 +406,7 @@ static Position UpdatePositionAfterAdoptingTextReplacement(
 
   // See:
   // http://www.w3.org/TR/DOM-Level-2-Traversal-Range/ranges.html#Level-2-Range-Mutation
-  DCHECK_GE(position.OffsetInContainerNode(), 0);
-  unsigned position_offset =
-      static_cast<unsigned>(position.OffsetInContainerNode());
+  wtf_size_t position_offset = position.OffsetInContainerNode();
   // Replacing text can be viewed as a deletion followed by insertion.
   if (position_offset >= offset && position_offset <= offset + old_length)
     position_offset = offset;
@@ -410,7 +434,7 @@ void SelectionEditor::DidUpdateCharacterData(CharacterData* node,
   // The fragment check is a performance optimization. See
   // http://trac.webkit.org/changeset/30062.
   if (selection_.IsNone() || !node || !node->isConnected()) {
-    DidFinishDOMMutation();
+    DidFinishDomMutation();
     return;
   }
   const Position& new_anchor = UpdatePositionAfterAdoptingTextReplacement(
@@ -459,7 +483,7 @@ void SelectionEditor::DidMergeTextNodes(
     const NodeWithIndex& node_to_be_removed_with_index,
     unsigned old_length) {
   if (selection_.IsNone()) {
-    DidFinishDOMMutation();
+    DidFinishDomMutation();
     return;
   }
   const Position& new_anchor = UpdatePostionAfterAdoptingTextNodesMerged(
@@ -479,9 +503,7 @@ static Position UpdatePostionAfterAdoptingTextNodeSplit(
     return position;
   // See:
   // http://www.w3.org/TR/DOM-Level-2-Traversal-Range/ranges.html#Level-2-Range-Mutation
-  DCHECK_GE(position.OffsetInContainerNode(), 0);
-  unsigned position_offset =
-      static_cast<unsigned>(position.OffsetInContainerNode());
+  wtf_size_t position_offset = position.OffsetInContainerNode();
   unsigned old_length = old_node.length();
   if (position_offset <= old_length)
     return position;
@@ -491,7 +513,7 @@ static Position UpdatePostionAfterAdoptingTextNodeSplit(
 
 void SelectionEditor::DidSplitTextNode(const Text& old_node) {
   if (selection_.IsNone() || !old_node.isConnected()) {
-    DidFinishDOMMutation();
+    DidFinishDomMutation();
     return;
   }
   const Position& new_anchor =
@@ -600,7 +622,7 @@ void SelectionEditor::UpdateCachedAbsoluteBoundsIfNeeded() const {
 #endif
   cached_absolute_bounds_are_dirty_ = false;
 
-  const VisibleSelection selection = ComputeVisibleSelectionInDOMTree();
+  const VisibleSelection selection = ComputeVisibleSelectionInDomTree();
 
   if (selection.IsCaret()) {
     DCHECK(selection.IsValidFor(*frame_->GetDocument()));

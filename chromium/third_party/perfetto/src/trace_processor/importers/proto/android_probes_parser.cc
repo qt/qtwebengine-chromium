@@ -56,13 +56,13 @@
 #include "protos/perfetto/trace/android/android_game_intervention_list.pbzero.h"
 #include "protos/perfetto/trace/android/android_log.pbzero.h"
 #include "protos/perfetto/trace/android/android_system_property.pbzero.h"
-#include "protos/perfetto/trace/android/bluetooth_trace.pbzero.h"
 #include "protos/perfetto/trace/android/initial_display_state.pbzero.h"
 #include "protos/perfetto/trace/power/android_energy_estimation_breakdown.pbzero.h"
 #include "protos/perfetto/trace/power/android_entity_state_residency.pbzero.h"
 #include "protos/perfetto/trace/power/battery_counters.pbzero.h"
 #include "protos/perfetto/trace/power/power_rails.pbzero.h"
 #include "protos/perfetto/trace/trace_packet.pbzero.h"
+#include "protos/third_party/android/packages/modules/bluetooth/tracing/bluetooth_trace.pbzero.h"
 
 namespace perfetto::trace_processor {
 namespace {
@@ -309,7 +309,6 @@ void AndroidProbesParser::ParsePowerRails(int64_t ts,
       power_rails_args_tracker_->AddArgsTo(*maybe_counter_id)
           .AddArg(rail_packet_timestamp_id_,
                   Variadic::UnsignedInteger(trace_packet_ts));
-      power_rails_args_tracker_->Flush();
     }
   } else {
     context_->stats_tracker->IncrementStats(stats::power_rail_unknown_index);
@@ -673,7 +672,7 @@ void AndroidProbesParser::ParseAndroidSystemProperty(int64_t ts,
 }
 
 void AndroidProbesParser::ParseBtTraceEvent(int64_t ts, ConstBytes blob) {
-  protos::pbzero::BluetoothTraceEvent::Decoder evt(blob);
+  bluetooth::tracing::pbzero::BluetoothTraceEvent::Decoder evt(blob);
 
   static constexpr auto kBluetoothTraceEventBlueprint = tracks::SliceBlueprint(
       "bluetooth_trace_event", tracks::DimensionBlueprints(),
@@ -687,9 +686,9 @@ void AndroidProbesParser::ParseBtTraceEvent(int64_t ts, ConstBytes blob) {
       [&evt, this](ArgsTracker::BoundInserter* inserter) {
         if (evt.has_packet_type()) {
           StringId packet_type_str = context_->storage->InternString(
-              protos::pbzero::BluetoothTracePacketType_Name(
+              bluetooth::tracing::pbzero::BluetoothTracePacketType_Name(
                   static_cast<
-                      ::perfetto::protos::pbzero::BluetoothTracePacketType>(
+                      ::bluetooth::tracing::pbzero::BluetoothTracePacketType>(
                       evt.packet_type())));
           inserter->AddArg(bt_packet_type_id_,
                            Variadic::String(packet_type_str));
@@ -776,7 +775,7 @@ StringId AndroidProbesParser::ToFlagTypeId(int32_t type) {
 void AndroidProbesParser::ParseAndroidAflags(int64_t ts, ConstBytes blob) {
   protos::pbzero::AndroidAflags::Decoder decoder(blob.data, blob.size);
   if (decoder.has_error()) {
-    context_->import_logs_tracker->RecordCollectionError(
+    context_->import_logs_tracker->RecordCollectionLog(
         stats::android_aflags_errors, ts,
         [&](ArgsTracker::BoundInserter& inserter) {
           inserter.AddArg(context_->storage->InternString("error"),

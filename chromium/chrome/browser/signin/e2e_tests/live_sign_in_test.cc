@@ -457,7 +457,7 @@ IN_PROC_BROWSER_TEST_F(LiveSignInTestFullSync,
   Browser* new_browser = ui_test_utils::WaitForBrowserToOpen();
   EXPECT_EQ(profile_manager->GetNumberOfProfiles(), 2U);
   EXPECT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 2U);
-  EXPECT_NE(browser()->profile(), new_browser->profile());
+  EXPECT_NE(browser()->GetProfile(), new_browser->GetProfile());
 
   // Confirm sync in the new browser window.
   SignInTestObserver new_browser_observer(
@@ -639,7 +639,7 @@ IN_PROC_BROWSER_TEST_P(LiveSignInTest,
         identity_manager()->FindExtendedAccountInfoByAccountId(
             core_account_info.account_id);
     EXPECT_EQ(
-        account_info.capabilities
+        account_info.GetAccountCapabilities()
             .can_show_history_sync_opt_ins_without_minor_mode_restrictions(),
         Tribool::kTrue);
   }
@@ -664,7 +664,7 @@ IN_PROC_BROWSER_TEST_P(LiveSignInTest,
         identity_manager()->FindExtendedAccountInfoByAccountId(
             core_account_info.account_id);
     EXPECT_EQ(
-        account_info.capabilities
+        account_info.GetAccountCapabilities()
             .can_show_history_sync_opt_ins_without_minor_mode_restrictions(),
         Tribool::kFalse);
   }
@@ -699,7 +699,7 @@ IN_PROC_BROWSER_TEST_F(LiveSignInTestFullSync, MANUAL_CreateSignedInProfile) {
   Profile* new_profile =
       Profile::FromBrowserContext(picker_contents->GetBrowserContext());
   EXPECT_EQ(profile_manager->GetNumberOfProfiles(), 2U);
-  EXPECT_NE(browser()->profile(), new_profile);
+  EXPECT_NE(browser()->GetProfile(), new_profile);
   sign_in_functions.SignInFromCurrentPage(picker_contents, *test_account,
                                           /*previously_signed_in_accounts=*/0);
 
@@ -723,7 +723,7 @@ IN_PROC_BROWSER_TEST_F(LiveSignInTestFullSync, MANUAL_CreateSignedInProfile) {
   // Wait for browser to open.
   profiles::testing::WaitForPickerClosed();
   Browser* new_browser = browser_created_observer.Wait();
-  EXPECT_EQ(new_browser->profile(), new_profile);
+  EXPECT_EQ(new_browser->GetProfile(), new_profile);
   EXPECT_EQ(GetPrimaryAccountConsentLevel(identity_manager),
             signin::ConsentLevel::kSync);
 
@@ -893,7 +893,7 @@ class DeviceBoundSessionsLiveSignInTest : public LiveSignInTestBase {
   void SetUpOnMainThread() override {
     LiveSignInTestBase::SetUpOnMainThread();
     session_manager_ =
-        ChromeSigninClientFactory::GetForProfile(browser()->profile())
+        ChromeSigninClientFactory::GetForProfile(browser()->GetProfile())
             ->GetDeviceBoundSessionManager();
     ASSERT_TRUE(session_manager_);
     observer_.emplace(session_manager_, "sidts_session");
@@ -914,7 +914,7 @@ class DeviceBoundSessionsLiveSignInTest : public LiveSignInTestBase {
   std::string GetCookies(const GURL& url) {
     network::mojom::CookieManager* cookie_manager =
         browser()
-            ->profile()
+            ->GetProfile()
             ->GetDefaultStoragePartition()
             ->GetCookieManagerForBrowserProcess();
     net::CookieOptions options;
@@ -933,7 +933,7 @@ class DeviceBoundSessionsLiveSignInTest : public LiveSignInTestBase {
   void DeleteCookie(const std::string& cookie_name, const std::string& domain) {
     network::mojom::CookieManager* cookie_manager =
         browser()
-            ->profile()
+            ->GetProfile()
             ->GetDefaultStoragePartition()
             ->GetCookieManagerForBrowserProcess();
 
@@ -1021,7 +1021,7 @@ IN_PROC_BROWSER_TEST_F(DeviceBoundSessionsLiveSignInTest,
 
   // Delete all browsing data on google.com.
   content::BrowsingDataRemover* remover =
-      browser()->profile()->GetBrowsingDataRemover();
+      browser()->GetProfile()->GetBrowsingDataRemover();
   content::BrowsingDataRemoverCompletionObserver completion_observer(remover);
 
   auto filter_builder = content::BrowsingDataFilterBuilder::Create(
@@ -1049,6 +1049,22 @@ IN_PROC_BROWSER_TEST_F(DeviceBoundSessionsLiveSignInTest,
   // Verify that a new bound session is created.
   EXPECT_THAT(GetAllSessions(),
               HasBoundSession("sidts_session", GURL("https://google.com")));
+
+  // Delete the bound __Secure-1PSIDRTS cookie.
+  DeleteCookie("__Secure-1PSIDRTS", "google.com");
+
+  std::string cookies_after_delete = GetCookies(GURL("https://google.com"));
+  EXPECT_THAT(cookies_after_delete, Not(HasSubstr("__Secure-1PSIDRTS")));
+
+  // Navigate to google.com to trigger cookie refresh.
+  ASSERT_TRUE(
+      ui_test_utils::NavigateToURL(browser(), GURL("https://google.com")));
+
+  // Wait for the bound session to be refreshed.
+  observer().WaitForRefresh();
+
+  std::string cookies_after_refresh = GetCookies(GURL("https://google.com"));
+  EXPECT_THAT(cookies_after_refresh, HasSubstr("__Secure-1PSIDRTS"));
 }
 
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)

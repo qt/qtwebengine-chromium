@@ -14,14 +14,21 @@
 namespace contextual_tasks {
 
 BASE_DECLARE_FEATURE(kContextualTasks);
+BASE_DECLARE_FEATURE(kContextualTasksPrivateApiNoAnimation);
+BASE_DECLARE_FEATURE(kContextualTasksSidePanel);
+BASE_DECLARE_FEATURE(kContextualTasksEphemeralBrandedEntryPoint);
 BASE_DECLARE_FEATURE(kContextualTasksExtraOauthScopes);
 BASE_DECLARE_FEATURE(kEnableContextualTasksPinButtonInToolbar);
 BASE_DECLARE_FEATURE(kContextualTasksContext);
+BASE_DECLARE_FEATURE(kContextualTasksSearchQuery);
 BASE_DECLARE_FEATURE(
     kContextualTasksContextSmartTabSharingDefaultOnAvailability);
 BASE_DECLARE_FEATURE(kContextualTasksContextLibrary);
 BASE_DECLARE_FEATURE(kContextualTasksContextLogging);
 BASE_DECLARE_FEATURE(kContextualTasksShowOnboardingTooltip);
+
+// Bypasses the dismissed cap for contextual tasks tooltips.
+BASE_DECLARE_FEATURE(kContextualTasksBypassDismissedCap);
 
 // Enables prefetching of cookies for contextual tasks.
 BASE_DECLARE_FEATURE(kContextualTasksCookiePrefetch);
@@ -81,6 +88,9 @@ BASE_DECLARE_FEATURE(kContextualTasksRoundedClipPath);
 // panel. The menu is still shown for lens flows.
 BASE_DECLARE_FEATURE(kContextualTasksHideMenuOnAiPage);
 
+// Enables painting dropdown menus outside WebUI boundaries.
+BASE_DECLARE_FEATURE(kContextualTasksUnboundedMenu);
+
 // Enables hiding the close button when in vertical tabs or immersive mode.
 BASE_DECLARE_FEATURE(kContextualTasksHideCloseButtonInVerticalTabs);
 
@@ -94,6 +104,9 @@ BASE_DECLARE_FEATURE(kContextualTasksPdfCitations);
 
 // When enabled, the back button can expand the side panel.
 BASE_DECLARE_FEATURE(kContextualTasksBackButtonExpandsSidePanel);
+
+// When enabled, close tab actions can expand the side panel.
+BASE_DECLARE_FEATURE(kContextualTasksCloseTabExpandsSidePanel);
 
 // Enables lazy fetching of cluster info for multimodal queries.
 BASE_DECLARE_FEATURE(kContextualTasksLazyFetchClusterInfo);
@@ -119,13 +132,54 @@ BASE_DECLARE_FEATURE(kContextualTasksWindowTracking);
 // Enables upload chunking for Contextual Tasks.
 BASE_DECLARE_FEATURE(kContextualTasksUploadChunking);
 
+// Enables composebox embedded in AIM main frame, new auth, and
+// new side panel and ghost loader for contextual tasks.
+BASE_DECLARE_FEATURE(kContextualTasksRearchitecture);
+
+// Enables the side panel changes as part of the rearchitecture.
+BASE_DECLARE_FEATURE(kContextualTasksSidePanelRearchitecture);
+
+// Enables sticky conversation UI that follows the user around.
+BASE_DECLARE_FEATURE(kContextualTasksEnableStickyConversation);
+
+BASE_DECLARE_FEATURE(kContextualTasksEnableSpatialModelToolbarLayout);
+
+enum class OverflowMenuItems {
+  kAllItems,
+  kAllWithoutNewThread,
+};
+
+extern const base::FeatureParam<OverflowMenuItems>
+    kContextualTasksSpatialModelToolbarLayoutOverflowItems;
+
 bool GetIsContextualTasksPdfCitationsEnabled();
+bool ShouldContextualTasksPrivateApiUseNoAnimation();
+bool GetIsContextualTasksSearchQueryEnabled();
 
 bool GetIsContextualTasksLazyFetchClusterInfoEnabled();
 
 bool GetIsContextualTasksWindowTrackingEnabled();
 
 bool GetIsContextualTasksUploadChunkingEnabled();
+
+bool GetContextualTasksSpatialModelToolbarLayoutEnabled();
+
+bool GetContextualTasksSpatialModelToolbarLayoutNewThreadInOverflow();
+
+// Returns whether the Contextual Tasks side panel container, coordinator,
+// and supporting response services should be initialized.
+// Returns true if either full Contextual Tasks (`kContextualTasks`) or
+// infrastructure-only mode (`kContextualTasksSidePanel`) is enabled.
+bool IsContextualTasksUIEnabled();
+
+bool IsStickyConversationEnabled();
+
+// Test utility for overriding conditions for sticky conversation.
+class ScopedStickyConversationEnabledForTesting {
+ public:
+  explicit ScopedStickyConversationEnabledForTesting(bool enabled);
+  ~ScopedStickyConversationEnabledForTesting();
+};
 
 // Enum denoting which entry point can show when enabled.
 enum class EntryPointOption {
@@ -197,6 +251,10 @@ extern const base::FeatureParam<std::string> kQueryEmbeddingTask;
 extern const base::FeatureParam<double>
     kContextualTasksContextLoggingSampleRate;
 
+// The minimum number of words required in a query for contextual tasks context
+// tab relevancy selection.
+extern const base::FeatureParam<int> kMinQueryWords;
+
 // Controls whether we set the upload type in CreateSearchUrl.
 extern const base::FeatureParam<bool> kSendContextualInputUploadTypeInSearchUrl;
 
@@ -224,6 +282,10 @@ extern const base::FeatureParam<std::string>
 // The maximum size of a file that can be attached to a Nextbox.
 extern const base::FeatureParam<int> kContextualTasksNextboxMaxFileSize;
 
+// The number of sessions after onboarding before triggering the pinning IPH.
+extern const base::FeatureParam<int>
+    kContextualTasksNumSessionsBeforeRequestPinPromo;
+
 // The user agent suffix to use for requests from the contextual tasks UI.
 extern const base::FeatureParam<std::string> kContextualTasksUserAgentSuffix;
 
@@ -237,6 +299,10 @@ extern const base::FeatureParam<std::string> kContextualTasksHelpUrl;
 extern const base::FeatureParam<std::string>
     kContextualTasksOnboardingTooltipHelpUrl;
 
+// The URL for the help center article linked from the overflow menu.
+extern const base::FeatureParam<std::string>
+    kContextualTasksOverflowMenuHelpUrl;
+
 // Enables suggestions rendered on contextual tasks side, instead of from AIM
 // webpage.
 extern const base::FeatureParam<bool>
@@ -249,6 +315,22 @@ extern int GetContextualTasksShowOnboardingTooltipSessionImpressionCap();
 // The maximum number of times the onboarding tooltip can be dismissed by the
 // user before it no longer shows up.
 extern int GetContextualTasksOnboardingTooltipDismissedCap();
+
+// The maximum number of times the lens search tooltip can be dismissed by the
+// user before it no longer shows up.
+extern int GetContextualTasksLensSearchTooltipDismissedCap();
+
+// The maximum number of times the lens search tooltip can be shown to the user
+// in a single session before it no longer shows up.
+extern int GetContextualTasksLensSearchTooltipSessionImpressionCap();
+
+// The maximum number of times the AskG tooltip can be dismissed by the
+// user before it no longer shows up.
+extern int GetContextualTasksAskGTooltipDismissedCap();
+
+// The maximum number of times the AskG tooltip can be shown to the user
+// in a single session before it no longer shows up.
+extern int GetContextualTasksAskGTooltipSessionImpressionCap();
 
 // The delay in milliseconds before the onboarding tooltip is considered shown.
 extern int GetContextualTasksOnboardingTooltipImpressionDelay();
@@ -341,6 +423,9 @@ extern std::string GetContextualTasksOnboardingTooltipHelpUrl();
 // Returns the help URL for the help center article from the toolbar.
 extern std::string GetContextualTasksHelpUrl();
 
+// Returns the help URL for the overflow menu help center article.
+extern std::string GetContextualTasksOverflowMenuHelpUrl();
+
 // Returns whether smart compose is enabled for Contextual Tasks.
 extern bool GetEnableContextualTasksSmartCompose();
 
@@ -384,28 +469,57 @@ extern bool IsRoundedClipPathEnabled();
 // Returns whether the pin button in toolbar is enabled.
 extern bool IsContextualTasksPinButtonInToolbarEnabled();
 
+// Returns the number of sessions after onboarding before triggering the pinning
+// IPH.
+extern int GetContextualTasksNumSessionsBeforeRequestPinPromo();
+
 // Returns whether the webpage APC comparison is enabled.
 extern bool GetIsWebpageApcComparisonEnabled();
 
+extern bool IsContextualTasksRearchitectureEnabled();
+extern bool IsContextualTasksSidePanelRearchitectureEnabled();
+
 namespace flag_descriptions {
 
+extern const char kContextualTasksPrivateApiNoAnimationName[];
+extern const char kContextualTasksPrivateApiNoAnimationDescription[];
 extern const char kContextualTasksName[];
 extern const char kContextualTasksDescription[];
+extern const char kContextualTasksSidePanelName[];
+extern const char kContextualTasksSidePanelDescription[];
 extern const char kContextualTasksContextLibraryName[];
 extern const char kContextualTasksContextLibraryDescription[];
 extern const char kContextualTasksContextName[];
 extern const char kContextualTasksContextDescription[];
+extern const char kContextualTasksSearchQueryName[];
+extern const char kContextualTasksSearchQueryDescription[];
 extern const char kContextualTasksSuggestionsEnabledName[];
 extern const char kContextualTasksSuggestionsEnabledDescription[];
 extern const char kContextualTasksJavaFuseboxName[];
 extern const char kContextualTasksJavaFuseboxDescription[];
 extern const char kContextualTasksBackButtonExpandsSidePanelName[];
 extern const char kContextualTasksBackButtonExpandsSidePanelDescription[];
+extern const char kContextualTasksCloseTabExpandsSidePanelName[];
+extern const char kContextualTasksCloseTabExpandsSidePanelDescription[];
 extern const char kContextualTasksOverrideShowBottomSheetOnLargeScreenName[];
 extern const char
     kContextualTasksOverrideShowBottomSheetOnLargeScreenDescription[];
 extern const char kContextualTasksCookiePrefetchName[];
 extern const char kContextualTasksCookiePrefetchDescription[];
+extern const char kEnableContextualTasksPinButtonInToolbarName[];
+extern const char kEnableContextualTasksPinButtonInToolbarDescription[];
+extern const char kContextualTasksHideMenuOnAiPageName[];
+extern const char kContextualTasksHideMenuOnAiPageDescription[];
+extern const char kContextualTasksEnableSpatialModelToolbarLayoutName[];
+extern const char kContextualTasksEnableSpatialModelToolbarLayoutDescription[];
+extern const char kContextualTasksRearchitectureName[];
+extern const char kContextualTasksRearchitectureDescription[];
+extern const char kContextualTasksEphemeralBrandedEntryPointName[];
+extern const char kContextualTasksEphemeralBrandedEntryPointDescription[];
+extern const char kContextualTasksSidePanelRearchitectureName[];
+extern const char kContextualTasksSidePanelRearchitectureDescription[];
+extern const char kContextualTasksBypassDismissedCapName[];
+extern const char kContextualTasksBypassDismissedCapDescription[];
 
 }  // namespace flag_descriptions
 

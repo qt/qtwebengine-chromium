@@ -46,6 +46,7 @@ devtools_module("main") {
     "../../ui/legacy/components/utils:bundle",
     "../../ui/legacy/theme_support:bundle",
     "../../ui/lit:bundle",
+    "../../ui/settings:bundle",
     "../../ui/visual_logging:bundle",
   ]
 }
@@ -66,7 +67,6 @@ devtools_entrypoint("bundle") {
     ":*",
     "../../testing/*",
     "../devtools_app:*",
-    "../greendev_floaty:*",
     "../js_app:*",
     "../ndb_app:*",
     "../node_app:*",
@@ -93,8 +93,6 @@ devtools_entrypoint("meta") {
   ]
 
   visibility = [
-    "../../panels/greendev/*",
-    "../greendev_floaty/*",
     "../shell/*",
     "../trace_app:*",
   ]

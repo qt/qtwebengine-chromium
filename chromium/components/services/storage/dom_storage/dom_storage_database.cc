@@ -4,15 +4,23 @@
 
 #include "components/services/storage/dom_storage/dom_storage_database.h"
 
-#include "base/debug/leak_annotations.h"
+#include "base/byte_size.h"
 #include "base/feature_list.h"
+#include "base/files/file.h"
+#include "base/files/file_error_or.h"
 #include "base/functional/bind.h"
+#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/no_destructor.h"
+#include "base/numerics/safe_conversions.h"
+#include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/task/bind_post_task.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
+#include "base/timer/elapsed_timer.h"
 #include "base/trace_event/memory_allocator_dump.h"
 #include "base/trace_event/process_memory_dump.h"
 #include "base/types/expected_macros.h"
@@ -24,29 +32,91 @@
 #include "components/services/storage/dom_storage/sqlite/local_storage_sqlite.h"
 #include "components/services/storage/dom_storage/sqlite/session_storage_sqlite.h"
 #include "components/services/storage/dom_storage/sqlite/sqlite_database_utils.h"
+#include "components/services/storage/filesystem_proxy_factory.h"
 #include "components/services/storage/public/cpp/constants.h"
+#include "components/services/storage/public/cpp/filesystem/filesystem_proxy.h"
 #include "sql/database.h"
 
 namespace storage {
+
 namespace {
 
-// Constructs an absolute path to the session storage database using
-// `storage_partition_dir`.  For LevelDB, the path is a directory:
-//
-// `storage_partition_dir`/Session Storage
-//
-// When the `kDomStorageSqlite` feature flag is enabled, the path is a file:
-//
-// `storage_partition_dir`/SessionStorage
-base::FilePath GetSessionStorageDatabasePath(
-    const base::FilePath& storage_partition_dir) {
-  CHECK(!storage_partition_dir.empty());
-  CHECK(storage_partition_dir.IsAbsolute());
+// Records the on-disk size of the database at `db_path` to the
+// `DatabaseOnDiskSizeKB` histogram for `storage_type` (`.OnDiskExperimental`
+// suffix for `kOnDiskExperimental`, unsuffixed for `kOnDisk`). LevelDB stores
+// its data in a directory, while SQLite stores a single file plus a `-wal` file
+// that may be absent depending on checkpoint state.
+void RecordDatabaseOnDiskSizeKB(StorageType storage_type,
+                                const base::FilePath& db_path,
+                                bool is_sqlite,
+                                DatabaseMetricsType metrics_type) {
+  // The storage service runs in a sandbox, so filesystem access must be
+  // brokered through a `FilesystemProxy`. Raw `base::` calls are blocked by the
+  // sandbox and fail silently, which would record a size of zero.
+  std::unique_ptr<FilesystemProxy> filesystem = CreateFilesystemProxy();
+  auto file_size = [&filesystem](const base::FilePath& path) -> int64_t {
+    std::optional<base::File::Info> info = filesystem->GetFileInfo(path);
+    return info ? info->size : 0;
+  };
 
-  if (base::FeatureList::IsEnabled(kDomStorageSqlite)) {
-    return storage_partition_dir.AppendASCII("SessionStorage");
+  int64_t size_bytes = 0;
+  if (is_sqlite) {
+    size_bytes += file_size(db_path);
+    size_bytes += file_size(sql::Database::WriteAheadLogPath(db_path));
+  } else {
+    // LevelDB stores all its files in a directory at `db_path`. There are no
+    // subdirectories, so a non-recursive enumeration captures the size.
+    base::FileErrorOr<std::vector<base::FilePath>> entries =
+        filesystem->GetDirectoryEntries(
+            db_path, FilesystemProxy::DirectoryEntryType::kFilesOnly);
+    if (entries.has_value()) {
+      for (const base::FilePath& entry : entries.value()) {
+        size_bytes += file_size(entry);
+      }
+    }
   }
-  return storage_partition_dir.AppendASCII("Session Storage");
+  std::string_view name_prefix =
+      storage_type == StorageType::kLocalStorage
+          ? "LocalStorage.DatabaseOnDiskSizeKB"
+          : "Storage.SessionStorage.DatabaseOnDiskSizeKB";
+  base::UmaHistogramMemoryKB(
+      base::StrCat(
+          {name_prefix, MaybeGetOnDiskExperimentalSuffix(metrics_type)}),
+      base::ByteSize(base::checked_cast<uint64_t>(size_bytes)));
+}
+
+// Records all open-time telemetry for a database open attempt:
+//   * `Storage.{LocalStorage,SessionStorage}.OpenDatabase` status.
+//   * `Storage.{LocalStorage,SessionStorage}.Duration.OpenDatabase2` duration.
+//   * The on-disk size histogram, named `LocalStorage.DatabaseOnDiskSizeKB` for
+//     LocalStorage and `Storage.SessionStorage.DatabaseOnDiskSizeKB` for
+//     SessionStorage.
+//
+// The size histogram needs a blocking filesystem read. It is posted to a
+// `base::ThreadPool` sequence to avoid blocking DOMStorage database
+// operations.
+void RecordOpenDatabaseHistograms(StorageType storage_type,
+                                  DatabaseMetricsType metrics_type,
+                                  const base::FilePath& database_path,
+                                  bool is_sqlite,
+                                  base::TimeTicks start_time,
+                                  const DbStatus& status) {
+  const std::string_view prefix = storage_type == StorageType::kLocalStorage
+                                      ? "Storage.LocalStorage"
+                                      : "Storage.SessionStorage";
+  base::UmaHistogramTimes(base::StrCat({prefix, ".Duration.OpenDatabase2",
+                                        GetHistogramSuffix(metrics_type)}),
+                          base::TimeTicks::Now() - start_time);
+  status.Log(base::StrCat({prefix, ".OpenDatabase"}), metrics_type);
+
+  if (!database_path.empty()) {
+    // The brokered `FilesystemProxy` size read is a synchronous call, so the
+    // task must be allowed to block on sync primitives.
+    base::ThreadPool::PostTask(
+        FROM_HERE, {base::MayBlock(), base::WithBaseSyncPrimitives()},
+        base::BindOnce(&RecordDatabaseOnDiskSizeKB, storage_type, database_path,
+                       is_sqlite, metrics_type));
+  }
 }
 
 }  // namespace
@@ -168,94 +238,334 @@ DomStorageDatabase::MapBatchUpdate::MapBatchUpdate(MapBatchUpdate&&) = default;
 DomStorageDatabase::MapBatchUpdate&
 DomStorageDatabase::MapBatchUpdate::operator=(MapBatchUpdate&&) = default;
 
-base::FilePath DomStorageDatabase::GetPath(
+DomStorageDatabaseFactory::OpenResult::OpenResult() = default;
+DomStorageDatabaseFactory::OpenResult::~OpenResult() = default;
+DomStorageDatabaseFactory::OpenResult::OpenResult(OpenResult&&) = default;
+DomStorageDatabaseFactory::OpenResult&
+DomStorageDatabaseFactory::OpenResult::operator=(OpenResult&&) = default;
+
+void DomStorageDatabaseFactory::OpenResult::SetDatabase(
+    scoped_refptr<base::SequencedTaskRunner> task_runner,
+    std::unique_ptr<DomStorageDatabase> database) {
+  CHECK(!database_);
+  // Hold the database with a deleter that destroys it on `task_runner` (its
+  // backend sequence) if this result is dropped before `TakeDatabase()` (e.g.
+  // the open reply is dropped because its owner was torn down). Without this we
+  // leak the opened database, which keeps its file handle open and prevents
+  // Windows from deleting TempDirs created during test runs.
+  //
+  // Unlike a `SequenceBound`, a `std::unique_ptr` with an `OnTaskRunnerDeleter`
+  // relies on `DeleteSoon`, which closes the database's file handle on drop
+  // while fizzling the destruction if posted after thread pool shutdown. See
+  // https://crbug.com/40746642.
+  database_ = std::unique_ptr<DomStorageDatabase, base::OnTaskRunnerDeleter>(
+      database.release(), base::OnTaskRunnerDeleter(std::move(task_runner)));
+}
+
+base::SequenceBound<std::unique_ptr<DomStorageDatabase>>
+DomStorageDatabaseFactory::OpenResult::TakeDatabase() {
+  CHECK(database_);
+  // Re-bind the opened database to its backend sequence for the caller.
+  // Adopting the pointer does not touch the database off-sequence.
+  scoped_refptr<base::SequencedTaskRunner> task_runner =
+      database_.get_deleter().task_runner_;
+  return base::SequenceBound<std::unique_ptr<DomStorageDatabase>>(
+      std::move(task_runner), base::WrapUnique(database_.release()));
+}
+
+// static
+base::FilePath DomStorageDatabase::GetLevelDbPath(
     StorageType storage_type,
     const base::FilePath& storage_partition_dir) {
+  CHECK(!storage_partition_dir.empty());
+  CHECK(storage_partition_dir.IsAbsolute());
   switch (storage_type) {
     case StorageType::kLocalStorage:
-      return GetLocalStorageDatabasePath(storage_partition_dir);
+      return storage_partition_dir.AppendASCII("Local Storage")
+          .AppendASCII("leveldb");
     case StorageType::kSessionStorage:
-      return GetSessionStorageDatabasePath(storage_partition_dir);
+      return storage_partition_dir.AppendASCII("Session Storage");
   }
   NOTREACHED();
 }
 
 // static
-DomStorageDatabaseFactory::CreateCallback&
-DomStorageDatabaseFactory::GetCreateCallback() {
-  static base::NoDestructor<CreateCallback> callback(
-      base::BindRepeating(&DomStorageDatabaseFactory::CreateImpl));
-  return *callback;
-}
-
-// static
-DomStorageDatabaseFactory::DestroyCallback&
-DomStorageDatabaseFactory::GetDestroyCallback() {
-  static base::NoDestructor<DestroyCallback> callback(
-      base::BindRepeating(&DomStorageDatabaseFactory::DestroyImpl));
-  return *callback;
-}
-
-// static
-base::SequenceBound<DomStorageDatabase> DomStorageDatabaseFactory::Create(
+base::FilePath DomStorageDatabase::GetSqlitePath(
     StorageType storage_type,
-    bool is_in_memory,
-    scoped_refptr<base::SequencedTaskRunner> blocking_task_runner) {
-  return GetCreateCallback().Run(storage_type, is_in_memory,
-                                 std::move(blocking_task_runner));
-}
-
-// static
-base::SequenceBound<DomStorageDatabase> DomStorageDatabaseFactory::CreateImpl(
-    StorageType storage_type,
-    bool is_in_memory,
-    scoped_refptr<base::SequencedTaskRunner> blocking_task_runner) {
+    const base::FilePath& storage_partition_dir) {
+  CHECK(!storage_partition_dir.empty());
+  CHECK(storage_partition_dir.IsAbsolute());
   switch (storage_type) {
-    case StorageType::kLocalStorage: {
-      if (ShouldUseSqliteBackend(is_in_memory)) {
-        return base::SequenceBound<LocalStorageSqlite>(
-            std::move(blocking_task_runner), PassKey());
-      }
-      return base::SequenceBound<LocalStorageLevelDB>(
-          std::move(blocking_task_runner), PassKey());
-    }
-    case StorageType::kSessionStorage: {
-      if (ShouldUseSqliteBackend(is_in_memory)) {
-        return base::SequenceBound<SessionStorageSqlite>(
-            std::move(blocking_task_runner), PassKey());
-      }
-      return base::SequenceBound<SessionStorageLevelDB>(
-          std::move(blocking_task_runner), PassKey());
-    }
+    case StorageType::kLocalStorage:
+      return storage_partition_dir.AppendASCII("LocalStorage");
+    case StorageType::kSessionStorage:
+      return storage_partition_dir.AppendASCII("SessionStorage");
   }
   NOTREACHED();
 }
 
 // static
-void DomStorageDatabaseFactory::Destroy(const base::FilePath& database_path,
-                                        StatusCallback callback) {
-  GetDestroyCallback().Run(database_path, std::move(callback));
+void DomStorageDatabaseFactory::InitializeDatabase(
+    StorageType storage_type,
+    std::optional<base::trace_event::MemoryAllocatorDumpGuid> memory_dump_id,
+    OpenResultCallback callback,
+    bool is_sqlite,
+    bool write_exp_tag,
+    DatabaseMetricsType metrics_type,
+    base::FilePath database_path,
+    std::optional<DestroyOutcome> destroy_outcome) {
+  CHECK_EQ(database_path.empty(),
+           metrics_type == DatabaseMetricsType::kInMemory);
+
+  // For on-disk databases hop to the backend's blocking sequence, if needed.
+  if (!database_path.empty()) {
+    scoped_refptr<base::SequencedTaskRunner> runner =
+        GetTaskRunnerForDb(database_path);
+    if (!runner->RunsTasksInCurrentSequence()) {
+      runner->PostTask(
+          FROM_HERE,
+          base::BindOnce(&DomStorageDatabaseFactory::InitializeDatabase,
+                         storage_type, std::move(memory_dump_id),
+                         std::move(callback), is_sqlite, write_exp_tag,
+                         metrics_type, std::move(database_path),
+                         std::move(destroy_outcome)));
+      return;
+    }
+  }
+
+  std::unique_ptr<DomStorageDatabase> db;
+  switch (storage_type) {
+    case StorageType::kLocalStorage:
+      if (is_sqlite) {
+        db = std::make_unique<LocalStorageSqlite>(PassKey());
+      } else {
+        db = std::make_unique<LocalStorageLevelDB>(PassKey(), write_exp_tag);
+      }
+      break;
+    case StorageType::kSessionStorage:
+      if (is_sqlite) {
+        db = std::make_unique<SessionStorageSqlite>(PassKey());
+      } else {
+        db = std::make_unique<SessionStorageLevelDB>(PassKey(), write_exp_tag);
+      }
+      break;
+  }
+  CHECK(db);
+
+  const base::TimeTicks start_time = base::TimeTicks::Now();
+  DbStatus open_status = db->Open(database_path, memory_dump_id);
+  RecordOpenDatabaseHistograms(storage_type, metrics_type, database_path,
+                               is_sqlite, start_time, open_status);
+
+  // We are now on the backend's blocking sequence, so bind the database to it.
+  OpenResult result;
+  result.SetDatabase(base::SequencedTaskRunner::GetCurrentDefault(),
+                     std::move(db));
+  result.database_path = std::move(database_path);
+  result.metrics_type = metrics_type;
+  result.is_sqlite = is_sqlite;
+  result.open_status = std::move(open_status);
+  result.destroy_outcome = std::move(destroy_outcome);
+  std::move(callback).Run(std::move(result));
 }
 
 // static
-void DomStorageDatabaseFactory::DestroyImpl(const base::FilePath& database_path,
-                                            StatusCallback callback) {
-  CHECK(!database_path.empty());
-  CHECK(database_path.IsAbsolute());
+DomStorageDatabaseFactory::OpenCallback&
+DomStorageDatabaseFactory::GetOpenCallback() {
+  static base::NoDestructor<OpenCallback> callback(
+      base::BindRepeating(&DomStorageDatabaseFactory::OpenImpl));
+  return *callback;
+}
 
-  scoped_refptr<base::SequencedTaskRunner> blocking_task_runner =
-      GetTaskRunnerForDb(database_path);
+// static
+void DomStorageDatabaseFactory::Open(
+    StorageType storage_type,
+    const base::FilePath& dir_to_open,
+    const std::optional<base::trace_event::MemoryAllocatorDumpGuid>&
+        memory_dump_id,
+    const base::FilePath& dir_to_destroy,
+    OpenResultCallback callback) {
+  // Always reply on the caller's sequence, regardless of which sequence the
+  // database was initialized on.
+  GetOpenCallback().Run(
+      storage_type, dir_to_open, memory_dump_id, dir_to_destroy,
+      base::BindPostTaskToCurrentDefault(std::move(callback)));
+}
 
-  base::OnceCallback<DbStatus()> destroy_database_callback;
-  if (base::FeatureList::IsEnabled(kDomStorageSqlite)) {
-    destroy_database_callback =
-        base::BindOnce(&sqlite::DestroyDatabase, database_path);
-  } else {
-    destroy_database_callback =
-        base::BindOnce(&DomStorageDatabaseLevelDB::Destroy, database_path);
+// static
+void DomStorageDatabaseFactory::OpenImpl(
+    StorageType storage_type,
+    const base::FilePath& dir_to_open,
+    const std::optional<base::trace_event::MemoryAllocatorDumpGuid>&
+        memory_dump_id,
+    const base::FilePath& dir_to_destroy,
+    OpenResultCallback callback) {
+  // Encapsulate the args the backend-resolution step does not use, so it only
+  // sees what it needs plus this callback to run with the resolved backend.
+  OnBackendResolvedCallback on_resolved_cb =
+      base::BindOnce(&DomStorageDatabaseFactory::InitializeDatabase,
+                     storage_type, memory_dump_id, std::move(callback));
+
+  // With nothing to destroy, resolve the backend and open directly.
+  if (dir_to_destroy.empty()) {
+    ResolveDatabaseBackend(storage_type, dir_to_open, std::move(on_resolved_cb),
+                           /*destroy_outcome=*/std::nullopt);
+    return;
   }
-  blocking_task_runner->PostTaskAndReplyWithResult(
-      FROM_HERE, std::move(destroy_database_callback), std::move(callback));
+
+  // Otherwise destroy the pre-existing on-disk database first, then resolve and
+  // open the new one. Picking the destroy target reads the LevelDB disk state,
+  // which `CheckOnDiskLevelDbState` does on the appropriate sequence.
+  OnDatabaseDestroyedCallback on_destroyed_cb =
+      base::BindOnce(&DomStorageDatabaseFactory::ResolveDatabaseBackend,
+                     storage_type, dir_to_open, std::move(on_resolved_cb));
+  OnDiskStateCheckedCallback on_checked_cb =
+      base::BindOnce(&DomStorageDatabaseFactory::DestroyDatabase, storage_type,
+                     dir_to_destroy, std::move(on_destroyed_cb));
+  CheckOnDiskLevelDbState(storage_type, dir_to_destroy,
+                          std::move(on_checked_cb));
+}
+
+// static
+void DomStorageDatabaseFactory::CheckOnDiskLevelDbState(
+    StorageType storage_type,
+    base::FilePath dir,
+    OnDiskStateCheckedCallback callback) {
+  // Reading the on-disk LevelDB state must happen on that directory's blocking
+  // sequence to stay serialized with other LevelDB operations, so hop there if
+  // needed.
+  scoped_refptr<base::SequencedTaskRunner> runner =
+      GetTaskRunnerForDb(DomStorageDatabase::GetLevelDbPath(storage_type, dir));
+  if (!runner->RunsTasksInCurrentSequence()) {
+    runner->PostTask(
+        FROM_HERE,
+        base::BindOnce(&DomStorageDatabaseFactory::CheckOnDiskLevelDbState,
+                       storage_type, std::move(dir), std::move(callback)));
+    return;
+  }
+  std::move(callback).Run(storage::CheckOnDiskLevelDbState(storage_type, dir));
+}
+
+// static
+void DomStorageDatabaseFactory::DestroyDatabase(
+    StorageType storage_type,
+    base::FilePath dir_to_destroy,
+    OnDatabaseDestroyedCallback callback,
+    LevelDbOnDiskState leveldb_state) {
+  // TODO(crbug.com/377242771): When rolling out the LevelDB-to-SQLite
+  // migration, remove any orphaned databases here.
+  const bool is_sqlite = leveldb_state == LevelDbOnDiskState::kNone;
+  base::FilePath database_path_to_destroy =
+      is_sqlite
+          ? DomStorageDatabase::GetSqlitePath(storage_type, dir_to_destroy)
+          : DomStorageDatabase::GetLevelDbPath(storage_type, dir_to_destroy);
+
+  // Deleting the backend must happen on its blocking sequence.
+  scoped_refptr<base::SequencedTaskRunner> runner =
+      GetTaskRunnerForDb(database_path_to_destroy);
+  if (!runner->RunsTasksInCurrentSequence()) {
+    runner->PostTask(FROM_HERE,
+                     base::BindOnce(&DomStorageDatabaseFactory::DestroyDatabase,
+                                    storage_type, std::move(dir_to_destroy),
+                                    std::move(callback), leveldb_state));
+    return;
+  }
+
+  // Calculate the database's pre-destroy DatabaseMetricsType.
+  const DatabaseMetricsType destroyed_db_metrics_type =
+      GetMetricsType(GetSqliteRolloutStage(/*in_memory=*/false), leveldb_state);
+
+  const std::string_view prefix = storage_type == StorageType::kLocalStorage
+                                      ? "Storage.LocalStorage"
+                                      : "Storage.SessionStorage";
+  const base::ElapsedTimer destroy_timer;
+  DbStatus destroy_status;
+  if (is_sqlite) {
+    destroy_status = sqlite::DestroyDatabase(database_path_to_destroy);
+  } else {
+    destroy_status =
+        DomStorageDatabaseLevelDB::Destroy(database_path_to_destroy);
+  }
+  base::UmaHistogramTimes(
+      base::StrCat({prefix, ".Duration.DestroyDatabase",
+                    GetHistogramSuffix(destroyed_db_metrics_type)}),
+      destroy_timer.Elapsed());
+
+  // TODO(crbug.com/377242771): When possible treat a failed destroy as terminal
+  // and run the open callback with the failure status instead of opening.
+
+  std::move(callback).Run(
+      DestroyOutcome{std::move(destroy_status), destroyed_db_metrics_type});
+}
+
+// static
+void DomStorageDatabaseFactory::ResolveDatabaseBackend(
+    StorageType storage_type,
+    base::FilePath dir_to_open,
+    OnBackendResolvedCallback callback,
+    std::optional<DestroyOutcome> destroy_outcome) {
+  // An empty `dir_to_open` opens an in-memory database. No disk state check is
+  // needed.
+  if (dir_to_open.empty()) {
+    const bool is_sqlite = GetSqliteRolloutStage(/*in_memory=*/true) ==
+                           DomStorageSqliteRolloutStage::kUseSqliteOnly;
+    // `GetTaskRunnerForDb()` returns a fresh sequence on each call for an empty
+    // path, so generate the runner once here and post to it.
+    GetTaskRunnerForDb(base::FilePath())
+        ->PostTask(FROM_HERE, base::BindOnce(std::move(callback), is_sqlite,
+                                             /*write_exp_tag=*/false,
+                                             DatabaseMetricsType::kInMemory,
+                                             /*database_path=*/base::FilePath(),
+                                             std::move(destroy_outcome)));
+    return;
+  }
+
+  const DomStorageSqliteRolloutStage stage =
+      GetSqliteRolloutStage(/*in_memory=*/false);
+
+  // A non-experimental rollout stage has a fixed backend, so no disk state
+  // check is needed.
+  if (!IsExperimentalRolloutStage(stage)) {
+    const bool is_sqlite =
+        stage == DomStorageSqliteRolloutStage::kUseSqliteOnly;
+    base::FilePath path =
+        is_sqlite
+            ? DomStorageDatabase::GetSqlitePath(storage_type, dir_to_open)
+            : DomStorageDatabase::GetLevelDbPath(storage_type, dir_to_open);
+    std::move(callback).Run(is_sqlite, /*write_exp_tag=*/false,
+                            DatabaseMetricsType::kOnDisk, std::move(path),
+                            std::move(destroy_outcome));
+    return;
+  }
+
+  // An experimental rollout stage picks the backend from the on-disk LevelDB
+  // state.
+  OnDiskStateCheckedCallback on_checked_cb = base::BindOnce(
+      &DomStorageDatabaseFactory::ResolveOnDiskExperimentalDatabaseBackend,
+      storage_type, dir_to_open, stage, std::move(callback),
+      std::move(destroy_outcome));
+  CheckOnDiskLevelDbState(storage_type, std::move(dir_to_open),
+                          std::move(on_checked_cb));
+}
+
+// static
+void DomStorageDatabaseFactory::ResolveOnDiskExperimentalDatabaseBackend(
+    StorageType storage_type,
+    base::FilePath dir_to_open,
+    DomStorageSqliteRolloutStage stage,
+    OnBackendResolvedCallback callback,
+    std::optional<DestroyOutcome> destroy_outcome,
+    LevelDbOnDiskState leveldb_state) {
+  CHECK(IsExperimentalRolloutStage(stage));
+  const bool leveldb_exists = leveldb_state != LevelDbOnDiskState::kNone;
+  const bool is_sqlite = ShouldUseSqlite(stage, leveldb_exists);
+  const bool write_exp_tag = ShouldWriteExpTag(stage, leveldb_exists);
+  const DatabaseMetricsType metrics_type = GetMetricsType(stage, leveldb_state);
+  base::FilePath path =
+      is_sqlite ? DomStorageDatabase::GetSqlitePath(storage_type, dir_to_open)
+                : DomStorageDatabase::GetLevelDbPath(storage_type, dir_to_open);
+  std::move(callback).Run(is_sqlite, write_exp_tag, metrics_type,
+                          std::move(path), std::move(destroy_outcome));
 }
 
 base::PassKey<DomStorageDatabaseFactory>
@@ -350,13 +660,6 @@ DbStatus MigrateDatabase(DomStorageDatabase& source,
                          DomStorageDatabase& destination) {
   ASSIGN_OR_RETURN(DomStorageDatabase::Metadata source_metadata,
                    source.ReadAllMetadata());
-
-  // Migrate the `next_map_id` metadata.
-  if (source_metadata.next_map_id) {
-    DomStorageDatabase::Metadata map_id_metadata;
-    map_id_metadata.next_map_id = source_metadata.next_map_id;
-    destination.PutMetadata(std::move(map_id_metadata));
-  }
 
   // Migrate each map in `source_metadata`.
   for (DomStorageDatabase::MapMetadata& source_map :

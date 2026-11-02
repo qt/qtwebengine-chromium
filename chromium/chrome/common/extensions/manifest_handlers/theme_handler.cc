@@ -197,49 +197,10 @@ bool LoadDisplayProperties(const base::DictValue& theme_dict,
   return true;
 }
 
-// Parses the `tab_group_color_palette_dict` dictionary. Validates whether the
-// values are all integers. If they are then it loads the dictionary into
-// `theme_info` and returns true. And if the check fails then it populates the
-// `error` message and returns false.
-bool LoadTabGroupColorPalette(
-    const base::DictValue& theme_dict,
-    // TODO(crbug.com/427972612): Take string by reference instead of taking a
-    // pointer to the string.
-    std::u16string* error,
-    // TODO(crbug.com/427972612): Take object by reference instead of taking a
-    // pointer to the object.
-    ThemeInfo* theme_info) {
-  DCHECK(error);
-  DCHECK(theme_info);
-
-  if (!base::FeatureList::IsEnabled(features::kCustomizeTabGroupColorPalette)) {
-    return true;
-  }
-
-  const base::DictValue* tab_group_color_palette_dict =
-      theme_dict.FindDict(keys::kThemeTabGroupColorPalette);
-  if (!tab_group_color_palette_dict) {
-    return true;
-  }
-
-  for (const auto [key, value] : *tab_group_color_palette_dict) {
-    if (!value.is_int()) {
-      *error = errors::kInvalidThemeTabGroupColorPalette;
-      return false;
-    }
-  }
-
-  theme_info->theme_tab_group_color_palette_ =
-      tab_group_color_palette_dict->Clone();
-  return true;
-}
-
-const ThemeInfo* GetInfo(const Extension* extension) {
-  return static_cast<const ThemeInfo*>(
-      extension->GetManifestData(keys::kTheme));
-}
-
 }  // namespace
+
+// static
+const char* ThemeInfo::kManifestDataKey = keys::kTheme;
 
 ThemeInfo::ThemeInfo() = default;
 
@@ -247,34 +208,27 @@ ThemeInfo::~ThemeInfo() = default;
 
 // static
 const ThemeInfo::ThemeImages* ThemeInfo::GetImages(const Extension* extension) {
-  const ThemeInfo* theme_info = GetInfo(extension);
+  const ThemeInfo* theme_info = extension->GetManifestData<ThemeInfo>();
   return theme_info ? &theme_info->theme_images_ : nullptr;
 }
 
 // static
 const base::DictValue* ThemeInfo::GetColors(const Extension* extension) {
-  const ThemeInfo* theme_info = GetInfo(extension);
+  const ThemeInfo* theme_info = extension->GetManifestData<ThemeInfo>();
   return theme_info ? &theme_info->theme_colors_ : nullptr;
 }
 
 // static
 const base::DictValue* ThemeInfo::GetTints(const Extension* extension) {
-  const ThemeInfo* theme_info = GetInfo(extension);
+  const ThemeInfo* theme_info = extension->GetManifestData<ThemeInfo>();
   return theme_info ? &theme_info->theme_tints_ : nullptr;
 }
 
 // static
 const base::DictValue* ThemeInfo::GetDisplayProperties(
     const Extension* extension) {
-  const ThemeInfo* theme_info = GetInfo(extension);
+  const ThemeInfo* theme_info = extension->GetManifestData<ThemeInfo>();
   return theme_info ? &theme_info->theme_display_properties_ : nullptr;
-}
-
-// static
-const base::DictValue* ThemeInfo::GetTabGroupColorPalette(
-    const Extension* extension) {
-  const ThemeInfo* theme_info = GetInfo(extension);
-  return theme_info ? &theme_info->theme_tab_group_color_palette_ : nullptr;
 }
 
 ThemeHandler::ThemeHandler() = default;
@@ -303,15 +257,12 @@ bool ThemeHandler::Parse(Extension* extension, std::u16string* error) {
   if (!LoadDisplayProperties(*theme_dict, error, theme_info.get())) {
     return false;
   }
-  if (!LoadTabGroupColorPalette(*theme_dict, error, theme_info.get())) {
-    return false;
-  }
 
   for (const auto& warning : image_warnings) {
     extension->AddInstallWarning(InstallWarning(warning, keys::kThemeImages));
   }
 
-  extension->SetManifestData(keys::kTheme, std::move(theme_info));
+  extension->SetManifestData(std::move(theme_info));
   return true;
 }
 

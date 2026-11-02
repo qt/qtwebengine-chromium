@@ -42,11 +42,12 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../../models/bindings/bindings.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Trace from '../../models/trace/trace.js';
 import * as SourceMapsResolver from '../../models/trace_source_maps_resolver/trace_source_maps_resolver.js';
+import * as Workspace from '../../models/workspace/workspace.js';
 import * as TraceBounds from '../../services/trace_bounds/trace_bounds.js';
 import * as Tracing from '../../services/tracing/tracing.js';
 import * as CodeHighlighter from '../../ui/components/code_highlighter/code_highlighter.js';
@@ -76,7 +77,7 @@ const UIStrings = {
    * @description Text that only contain a placeholder
    * @example {100ms (at 200ms)} PH1
    */
-  emptyPlaceholder: '{PH1}',  // eslint-disable-line @devtools/l10n-no-locked-or-placeholder-only-phrase
+  emptyPlaceholder: '{PH1}',  // eslint-disable-line @devtools/l10n-uistrings-text-style
   /**
    * @description Text for timestamps of items
    */
@@ -192,7 +193,7 @@ const UIStrings = {
   /**
    * @description Text to refer to the URL associated with a given event.
    */
-  url: 'Url',
+  url: 'URL',
   /**
    * @description Text to indicate to the user the size of the cache (as a filesize - e.g. 5mb).
    */
@@ -476,6 +477,7 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 /** Look for scheme:// plus text and exclude any punctuation at the end. **/
 export const URL_REGEX = /(?:[a-zA-Z][a-zA-Z0-9+.-]{2,}:\/\/)[^\s"]{2,}[^\s"'\)\}\],:;.!?]/u;
+const ALWAYS_LINKIFIED_SCHEMES = new Set(['http', 'https']);
 
 let eventDispatchDesciptors: EventDispatchTypeDescriptor[];
 
@@ -516,8 +518,8 @@ export class TimelineUIUtils {
     return functionName;
   }
 
-  static testContentMatching(
-      traceEvent: Trace.Types.Events.Event, regExp: RegExp, handlerData?: Trace.Handlers.Types.HandlerData): boolean {
+  static testContentMatching(traceEvent: Trace.Types.Events.Event, regExp: RegExp,
+                             handlerData?: Trace.Handlers.Types.HandlerData): boolean {
     const title = TimelineUIUtils.eventStyle(traceEvent).title;
     const tokens = [title];
 
@@ -640,9 +642,9 @@ export class TimelineUIUtils {
     return frame.scriptId !== '0' && !(frame.url?.startsWith('native '));
   }
 
-  static async buildDetailsNodeForTraceEvent(
-      event: Trace.Types.Events.Event, target: SDK.Target.Target|null, linkifier: LegacyComponents.Linkifier.Linkifier,
-      isFreshOrEnhanced = false, parsedTrace: Trace.TraceModel.ParsedTrace): Promise<Node|null> {
+  static async buildDetailsNodeForTraceEvent(event: Trace.Types.Events.Event, target: SDK.Target.Target|null,
+                                             linkifier: LegacyComponents.Linkifier.Linkifier, isFreshOrEnhanced = false,
+                                             parsedTrace: Trace.TraceModel.ParsedTrace): Promise<Node|null> {
     let details: HTMLElement|HTMLSpanElement|(Element | null)|Text|null = null;
     let detailsText;
     // TODO(40287735): update this code with type-safe data checks.
@@ -668,7 +670,6 @@ export class TimelineUIUtils {
           const options = {
             tabStop: true,
             showColumnNumber: false,
-            inlineFrameIndex: 0,
           };
           details = LegacyComponents.Linkifier.Linkifier.linkifyURL(url, options);
         }
@@ -763,21 +764,20 @@ export class TimelineUIUtils {
       lineNumber,
       columnNumber,
       showColumnNumber: true,
-      inlineFrameIndex: 0,
       className: 'timeline-details',
       tabStop: true,
       omitOrigin,
     };
     if (isFreshOrEnhanced) {
-      return linkifier.linkifyScriptLocation(
-          target, scriptId, url as Platform.DevToolsPath.UrlString, lineNumber, options);
+      return linkifier.linkifyScriptLocation(target, scriptId, url as Platform.DevToolsPath.UrlString, lineNumber,
+                                             options);
     }
     return LegacyComponents.Linkifier.Linkifier.linkifyURL(url as Platform.DevToolsPath.UrlString, options);
   }
 
-  static linkifyTopCallFrame(
-      event: Trace.Types.Events.Event, target: SDK.Target.Target|null, linkifier: LegacyComponents.Linkifier.Linkifier,
-      isFreshOrEnhanced = false, maxLength?: number): Element|null {
+  static linkifyTopCallFrame(event: Trace.Types.Events.Event, target: SDK.Target.Target|null,
+                             linkifier: LegacyComponents.Linkifier.Linkifier, isFreshOrEnhanced = false,
+                             maxLength?: number): Element|null {
     let frame = Trace.Helpers.Trace.getZeroIndexedStackTraceInEventPayload(event)?.[0];
     if (Trace.Types.Events.isProfileCall(event)) {
       frame = event.callFrame;
@@ -788,14 +788,13 @@ export class TimelineUIUtils {
     const options = {
       className: 'timeline-details',
       tabStop: true,
-      inlineFrameIndex: 0,
       showColumnNumber: true,
       columnNumber: frame.columnNumber,
       lineNumber: frame.lineNumber,
       maxLength,
     };
     if (isFreshOrEnhanced) {
-      return linkifier.maybeLinkifyConsoleCallFrame(target, frame, {showColumnNumber: true, inlineFrameIndex: 0});
+      return linkifier.maybeLinkifyConsoleCallFrame(target, frame, {showColumnNumber: true});
     }
     return LegacyComponents.Linkifier.Linkifier.linkifyURL(frame.url as Platform.DevToolsPath.UrlString, options);
   }
@@ -809,16 +808,20 @@ export class TimelineUIUtils {
         name = 'Largest Contentful Paint';
         break;
       case Trace.Types.Events.Name.MARK_LCP_CANDIDATE_FOR_SOFT_NAVIGATION:
-        link = 'https://developer.chrome.com/docs/web-platform/soft-navigations-experiment';
+        link = 'https://developer.chrome.com/docs/web-platform/soft-navigations';
         name = 'Soft Largest Contentful Paint';
         break;
       case Trace.Types.Events.Name.SOFT_NAVIGATION_START:
-        link = 'https://developer.chrome.com/docs/web-platform/soft-navigations-experiment';
+        link = 'https://developer.chrome.com/docs/web-platform/soft-navigations';
         name = 'Soft Navigations';
         break;
       case Trace.Types.Events.Name.MARK_FCP:
         link = 'https://web.dev/first-contentful-paint/';
         name = 'First Contentful Paint';
+        break;
+      case Trace.Types.Events.Name.MARK_SOFT_FCP:
+        link = 'https://developer.chrome.com/docs/web-platform/soft-navigations';
+        name = 'Soft First Contentful Paint';
         break;
       default:
         break;
@@ -830,35 +833,34 @@ export class TimelineUIUtils {
     return div;
   }
 
-  static buildConsumeCacheDetails(
-      eventData: {
-        consumedCacheSize?: number,
-        cacheRejected?: boolean,
-        cacheKind?: string,
-      },
-      contentHelper: TimelineDetailsContentHelper): void {
+  static buildConsumeCacheDetails(eventData: {
+    consumedCacheSize?: number,
+    cacheRejected?: boolean,
+    cacheKind?: string,
+  },
+                                  contentHelper: TimelineDetailsContentHelper): void {
     if (typeof eventData.consumedCacheSize === 'number') {
-      contentHelper.appendTextRow(
-          i18nString(UIStrings.compilationCacheStatus), i18nString(UIStrings.scriptLoadedFromCache));
-      contentHelper.appendTextRow(
-          i18nString(UIStrings.compilationCacheSize), i18n.ByteUtilities.bytesToString(eventData.consumedCacheSize));
+      contentHelper.appendTextRow(i18nString(UIStrings.compilationCacheStatus),
+                                  i18nString(UIStrings.scriptLoadedFromCache));
+      contentHelper.appendTextRow(i18nString(UIStrings.compilationCacheSize),
+                                  i18n.ByteUtilities.bytesToString(eventData.consumedCacheSize));
       const cacheKind = eventData.cacheKind;
       if (cacheKind) {
         contentHelper.appendTextRow(i18nString(UIStrings.compilationCacheKind), cacheKind);
       }
     } else if ('cacheRejected' in eventData && eventData['cacheRejected']) {
       // Version mismatch or similar.
-      contentHelper.appendTextRow(
-          i18nString(UIStrings.compilationCacheStatus), i18nString(UIStrings.failedToLoadScriptFromCache));
+      contentHelper.appendTextRow(i18nString(UIStrings.compilationCacheStatus),
+                                  i18nString(UIStrings.failedToLoadScriptFromCache));
     } else {
-      contentHelper.appendTextRow(
-          i18nString(UIStrings.compilationCacheStatus), i18nString(UIStrings.scriptNotEligibleToBeLoadedFromCache));
+      contentHelper.appendTextRow(i18nString(UIStrings.compilationCacheStatus),
+                                  i18nString(UIStrings.scriptNotEligibleToBeLoadedFromCache));
     }
   }
 
   static maybeCreateLinkElement(url: string): Element|null {
     const parsedURL = new Common.ParsedURL.ParsedURL(url);
-    if (!parsedURL.scheme) {
+    if (!TimelineUIUtils.isLinkifiableScheme(parsedURL.scheme)) {
       return null;
     }
 
@@ -876,6 +878,19 @@ export class TimelineUIUtils {
     };
 
     return LegacyComponents.Linkifier.Linkifier.linkifyURL(rawURL as Platform.DevToolsPath.UrlString, options);
+  }
+
+  /**
+   * Don't linkify URLs to privileged schemes. See https://crbug.com/530450502.
+   */
+  static isLinkifiableScheme(scheme: string): boolean {
+    if (ALWAYS_LINKIFIED_SCHEMES.has(scheme)) {
+      return true;
+    }
+    if (LegacyComponents.Linkifier.Linkifier.isRegisteredLinkHandlerScheme(scheme + ':')) {
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -963,13 +978,13 @@ export class TimelineUIUtils {
 
     // Add timestamp to user timings, including custom extensibility markers
     if (Trace.Helpers.Trace.eventHasCategory(event, Trace.Types.Events.Categories.UserTiming) ||
-        Trace.Types.Extensions.isSyntheticExtensionEntry(event)) {
+        Trace.Types.Extensions.isSyntheticExtensionEntry(event) || Trace.Types.Events.isSoftNavigationStart(event)) {
       const adjustedEventTimeStamp = timeStampForEventAdjustedForClosestNavigationIfPossible(
           event,
           parsedTrace,
       );
-      contentHelper.appendTextRow(
-          i18nString(UIStrings.timestamp), i18n.TimeUtilities.preciseMillisToString(adjustedEventTimeStamp, 1));
+      contentHelper.appendTextRow(i18nString(UIStrings.timestamp),
+                                  i18n.TimeUtilities.preciseMillisToString(adjustedEventTimeStamp, 1));
     }
 
     // Only show total time and self time for events with non-zero durations.
@@ -1004,16 +1019,16 @@ export class TimelineUIUtils {
       if (url) {
         contentHelper.appendElementRow(i18nString(UIStrings.url), LegacyComponents.Linkifier.Linkifier.linkifyURL(url));
       }
-      contentHelper.appendElementRow(
-          i18nString(UIStrings.details), TimelineUIUtils.buildDetailsNodeForMarkerEvents(event));
+      contentHelper.appendElementRow(i18nString(UIStrings.details),
+                                     TimelineUIUtils.buildDetailsNodeForMarkerEvents(event));
     }
 
     if (Trace.Types.Events.isV8Compile(event)) {
       url = event.args.data?.url as Platform.DevToolsPath.UrlString;
       if (url) {
         const {lineNumber, columnNumber} = Trace.Helpers.Trace.getZeroIndexedLineAndColumnForEvent(event);
-        contentHelper.appendLocationRow(
-            i18nString(UIStrings.script), url, lineNumber || 0, columnNumber, undefined, true);
+        contentHelper.appendLocationRow(i18nString(UIStrings.script), url, lineNumber || 0, columnNumber, undefined,
+                                        true);
         const originWithEntity = this.getOriginWithEntity(entityMapper, parsedTrace, event);
         if (originWithEntity) {
           contentHelper.appendElementRow(i18nString(UIStrings.origin), originWithEntity);
@@ -1026,9 +1041,8 @@ export class TimelineUIUtils {
       }
 
       const isStreamed = Boolean(event.args.data?.streamed);
-      contentHelper.appendTextRow(
-          i18nString(UIStrings.streamed),
-          isStreamed + (isStreamed ? '' : `: ${event.args.data?.notStreamedReason || ''}`));
+      contentHelper.appendTextRow(i18nString(UIStrings.streamed),
+                                  isStreamed + (isStreamed ? '' : `: ${event.args.data?.notStreamedReason || ''}`));
       if (event.args.data) {
         TimelineUIUtils.buildConsumeCacheDetails(event.args.data, contentHelper);
       }
@@ -1043,7 +1057,7 @@ export class TimelineUIUtils {
         const hasExclusiveLink = typeof userDetail === 'object' && typeof userDetail.url === 'string' &&
             typeof userDetail.description === 'string';
         if (hasExclusiveLink && Boolean(Root.Runtime.hostConfig.devToolsDeepLinksViaExtensibilityApi?.enabled)) {
-          const linkElement = this.maybeCreateLinkElement(String(userDetail.url));
+          const linkElement = TimelineUIUtils.maybeCreateLinkElement(String(userDetail.url));
           if (linkElement) {
             contentHelper.appendElementRow(String(userDetail.description), linkElement);
             // Now remove so we don't render them in renderObjectJson.
@@ -1068,8 +1082,7 @@ export class TimelineUIUtils {
       }
     }
 
-    const isFreshOrEnhanced =
-        Boolean(parsedTrace && Tracing.FreshRecording.Tracker.instance().recordingIsFreshOrEnhanced(parsedTrace));
+    const isFreshOrEnhanced = Tracing.FreshRecording.Tracker.instance().recordingIsFreshOrEnhanced(parsedTrace);
 
     switch (event.name) {
       case Trace.Types.Events.Name.GC:
@@ -1082,15 +1095,15 @@ export class TimelineUIUtils {
 
       case Trace.Types.Events.Name.PROFILE_CALL: {
         const profileCall = event as Trace.Types.Events.SyntheticProfileCall;
-        const resolvedURL = SourceMapsResolver.SourceMapsResolver.resolvedURLForEntry(parsedTrace, profileCall);
+        const resolvedURL = SourceMapsResolver.SourceMapsResolver.resolvedURLForEntry(
+            parsedTrace, profileCall, Workspace.Workspace.WorkspaceImpl.instance());
         if (!resolvedURL) {
           break;
         }
         const callFrame = profileCall.callFrame;
         // Render the URL with its location content.
-        contentHelper.appendLocationRow(
-            i18nString(UIStrings.source), resolvedURL, callFrame.lineNumber || 0, callFrame.columnNumber, undefined,
-            true);
+        contentHelper.appendLocationRow(i18nString(UIStrings.source), resolvedURL, callFrame.lineNumber || 0,
+                                        callFrame.columnNumber, undefined, true);
         const originWithEntity = this.getOriginWithEntity(entityMapper, parsedTrace, profileCall);
         if (originWithEntity) {
           contentHelper.appendElementRow(i18nString(UIStrings.origin), originWithEntity);
@@ -1118,8 +1131,8 @@ export class TimelineUIUtils {
         contentHelper.appendTextRow(i18nString(UIStrings.timerId), unsafeEventData.timerId);
 
         if (event.name === Trace.Types.Events.Name.TIMER_INSTALL) {
-          contentHelper.appendTextRow(
-              i18nString(UIStrings.timeout), i18n.TimeUtilities.millisToString(unsafeEventData['timeout']));
+          contentHelper.appendTextRow(i18nString(UIStrings.timeout),
+                                      i18n.TimeUtilities.millisToString(unsafeEventData['timeout']));
           contentHelper.appendTextRow(i18nString(UIStrings.repeats), !unsafeEventData['singleShot']);
         }
         break;
@@ -1127,8 +1140,8 @@ export class TimelineUIUtils {
 
       case Trace.Types.Events.Name.SCHEDULE_POST_TASK_CALLBACK:
       case Trace.Types.Events.Name.RUN_POST_TASK_CALLBACK: {
-        contentHelper.appendTextRow(
-            i18nString(UIStrings.delay), i18n.TimeUtilities.millisToString(unsafeEventData['delay']));
+        contentHelper.appendTextRow(i18nString(UIStrings.delay),
+                                    i18n.TimeUtilities.millisToString(unsafeEventData['delay']));
         contentHelper.appendTextRow(i18nString(UIStrings.priority), unsafeEventData['priority']);
         break;
       }
@@ -1149,9 +1162,8 @@ export class TimelineUIUtils {
 
       case Trace.Types.Events.Name.CACHE_MODULE: {
         url = unsafeEventData && unsafeEventData['url'] as Platform.DevToolsPath.UrlString;
-        contentHelper.appendTextRow(
-            i18nString(UIStrings.compilationCacheSize),
-            i18n.ByteUtilities.bytesToString(unsafeEventData['producedCacheSize']));
+        contentHelper.appendTextRow(i18nString(UIStrings.compilationCacheSize),
+                                    i18n.ByteUtilities.bytesToString(unsafeEventData['producedCacheSize']));
         break;
       }
 
@@ -1159,17 +1171,16 @@ export class TimelineUIUtils {
         url = unsafeEventData && unsafeEventData['url'] as Platform.DevToolsPath.UrlString;
         if (url) {
           const {lineNumber, columnNumber} = Trace.Helpers.Trace.getZeroIndexedLineAndColumnForEvent(event);
-          contentHelper.appendLocationRow(
-              i18nString(UIStrings.script), url, lineNumber || 0, columnNumber, undefined, true);
+          contentHelper.appendLocationRow(i18nString(UIStrings.script), url, lineNumber || 0, columnNumber, undefined,
+                                          true);
           const originWithEntity = this.getOriginWithEntity(entityMapper, parsedTrace, event);
           if (originWithEntity) {
             contentHelper.appendElementRow(i18nString(UIStrings.origin), originWithEntity);
           }
           entityAppended = true;
         }
-        contentHelper.appendTextRow(
-            i18nString(UIStrings.compilationCacheSize),
-            i18n.ByteUtilities.bytesToString(unsafeEventData['producedCacheSize']));
+        contentHelper.appendTextRow(i18nString(UIStrings.compilationCacheSize),
+                                    i18n.ByteUtilities.bytesToString(unsafeEventData['producedCacheSize']));
         break;
       }
 
@@ -1177,8 +1188,8 @@ export class TimelineUIUtils {
         url = unsafeEventData && unsafeEventData['url'] as Platform.DevToolsPath.UrlString;
         if (url) {
           const {lineNumber, columnNumber} = Trace.Helpers.Trace.getZeroIndexedLineAndColumnForEvent(event);
-          contentHelper.appendLocationRow(
-              i18nString(UIStrings.script), url, lineNumber || 0, columnNumber, undefined, true);
+          contentHelper.appendLocationRow(i18nString(UIStrings.script), url, lineNumber || 0, columnNumber, undefined,
+                                          true);
           const originWithEntity = this.getOriginWithEntity(entityMapper, parsedTrace, event);
           if (originWithEntity) {
             contentHelper.appendElementRow(i18nString(UIStrings.origin), originWithEntity);
@@ -1228,10 +1239,9 @@ export class TimelineUIUtils {
           const options = {
             tabStop: true,
             showColumnNumber: false,
-            inlineFrameIndex: 0,
           };
-          contentHelper.appendElementRow(
-              i18nString(UIStrings.imageUrl), LegacyComponents.Linkifier.Linkifier.linkifyURL(url, options));
+          contentHelper.appendElementRow(i18nString(UIStrings.imageUrl),
+                                         LegacyComponents.Linkifier.Linkifier.linkifyURL(url, options));
         }
         break;
       }
@@ -1242,10 +1252,9 @@ export class TimelineUIUtils {
           const options = {
             tabStop: true,
             showColumnNumber: false,
-            inlineFrameIndex: 0,
           };
-          contentHelper.appendElementRow(
-              i18nString(UIStrings.stylesheetUrl), LegacyComponents.Linkifier.Linkifier.linkifyURL(url, options));
+          contentHelper.appendElementRow(i18nString(UIStrings.stylesheetUrl),
+                                         LegacyComponents.Linkifier.Linkifier.linkifyURL(url, options));
         }
         break;
       }
@@ -1322,8 +1331,8 @@ export class TimelineUIUtils {
         // The failureReasons can be empty when Blink added a new failure reason that is
         // not supported by DevTools yet
         if (failureReasons.size === 0) {
-          contentHelper.appendElementRow(
-              i18nString(UIStrings.compositingFailed), i18nString(UIStrings.compositingFailedUnknownReason), true);
+          contentHelper.appendElementRow(i18nString(UIStrings.compositingFailed),
+                                         i18nString(UIStrings.compositingFailedUnknownReason), true);
         } else {
           for (const reason of failureReasons) {
             let str;
@@ -1412,9 +1421,8 @@ export class TimelineUIUtils {
 
       // @ts-expect-error Fall-through intended.
       case Trace.Types.Events.Name.FIRE_IDLE_CALLBACK: {
-        contentHelper.appendTextRow(
-            i18nString(UIStrings.allottedTime),
-            i18n.TimeUtilities.millisToString(unsafeEventData['allottedMilliseconds']));
+        contentHelper.appendTextRow(i18nString(UIStrings.allottedTime),
+                                    i18n.TimeUtilities.millisToString(unsafeEventData['allottedMilliseconds']));
         contentHelper.appendTextRow(i18nString(UIStrings.invokedByTimeout), unsafeEventData['timedOut']);
       }
 
@@ -1423,9 +1431,8 @@ export class TimelineUIUtils {
         contentHelper.appendTextRow(i18nString(UIStrings.callbackId), unsafeEventData['id']);
 
         if (Trace.Types.Events.isRequestIdleCallback(event)) {
-          contentHelper.appendTextRow(
-              i18nString(UIStrings.requestIdleCallbackTimeout),
-              i18n.TimeUtilities.preciseMillisToString(event.args.data.timeout));
+          contentHelper.appendTextRow(i18nString(UIStrings.requestIdleCallbackTimeout),
+                                      i18n.TimeUtilities.preciseMillisToString(event.args.data.timeout));
         }
         break;
       }
@@ -1444,6 +1451,7 @@ export class TimelineUIUtils {
 
       case Trace.Types.Events.Name.MARK_FIRST_PAINT:
       case Trace.Types.Events.Name.MARK_FCP:
+      case Trace.Types.Events.Name.MARK_SOFT_FCP:
       case Trace.Types.Events.Name.MARK_LOAD:
       case Trace.Types.Events.Name.MARK_DOM_CONTENT: {
         const adjustedEventTimeStamp = timeStampForEventAdjustedForClosestNavigationIfPossible(
@@ -1451,12 +1459,12 @@ export class TimelineUIUtils {
             parsedTrace,
         );
 
-        contentHelper.appendTextRow(
-            i18nString(UIStrings.timestamp), i18n.TimeUtilities.preciseMillisToString(adjustedEventTimeStamp, 1));
+        contentHelper.appendTextRow(i18nString(UIStrings.timestamp),
+                                    i18n.TimeUtilities.preciseMillisToString(adjustedEventTimeStamp, 1));
 
         if (Trace.Types.Events.isMarkerEvent(event)) {
-          contentHelper.appendElementRow(
-              i18nString(UIStrings.details), TimelineUIUtils.buildDetailsNodeForMarkerEvents(event));
+          contentHelper.appendElementRow(i18nString(UIStrings.details),
+                                         TimelineUIUtils.buildDetailsNodeForMarkerEvents(event));
         }
 
         break;
@@ -1580,15 +1588,14 @@ export class TimelineUIUtils {
     return highlightContainer;
   }
 
-  static stackTraceFromCallFrames(callFrames: Protocol.Runtime.CallFrame[]|Trace.Types.Events.CallFrame[]):
-      Protocol.Runtime.StackTrace {
+  static stackTraceFromCallFrames(callFrames: Protocol.Runtime.CallFrame[]|
+                                  Trace.Types.Events.CallFrame[]): Protocol.Runtime.StackTrace {
     return {callFrames} as Protocol.Runtime.StackTrace;
   }
 
   /** This renders a stack trace... and other cool stuff. */
-  static async generateCauses(
-      event: Trace.Types.Events.Event, contentHelper: TimelineDetailsContentHelper,
-      parsedTrace: Trace.TraceModel.ParsedTrace): Promise<void> {
+  static async generateCauses(event: Trace.Types.Events.Event, contentHelper: TimelineDetailsContentHelper,
+                              parsedTrace: Trace.TraceModel.ParsedTrace): Promise<void> {
     const {startTime} = Trace.Helpers.Timing.eventTimingsMilliSeconds(event);
     let initiatorStackLabel = i18nString(UIStrings.initiatorStackTrace);
     await contentHelper.appendFunctionStackTraceSection(event, parsedTrace);
@@ -1620,8 +1627,9 @@ export class TimelineUIUtils {
       // and the time since the initiator (Pending For).
       const stackTrace = Trace.Helpers.Trace.getZeroIndexedStackTraceInEventPayload(initiator);
       if (stackTrace) {
-        const traceElement =
-            await contentHelper.createChildStackTraceElement(TimelineUIUtils.stackTraceFromCallFrames(stackTrace));
+        const isFreshOrEnhanced = Tracing.FreshRecording.Tracker.instance().recordingIsFreshOrEnhanced(parsedTrace);
+        const traceElement = await contentHelper.createChildStackTraceElement(
+            TimelineUIUtils.stackTraceFromCallFrames(stackTrace), isFreshOrEnhanced);
         contentHelper.appendSectionWithBodyIfExists(initiatorStackLabel, {body: traceElement});
       }
 
@@ -1699,9 +1707,8 @@ export class TimelineUIUtils {
     return link;
   }
 
-  private static async generateInvalidationsList(
-      invalidations: Trace.Types.Events.InvalidationTrackingEvent[],
-      contentHelper: TimelineDetailsContentHelper): Promise<void> {
+  private static async generateInvalidationsList(invalidations: Trace.Types.Events.InvalidationTrackingEvent[],
+                                                 contentHelper: TimelineDetailsContentHelper): Promise<void> {
     const {groupedByReason, backendNodeIds} = TimelineComponents.DetailsView.generateInvalidationsList(invalidations);
 
     let relatedNodesMap: Map<number, SDK.DOMModel.DOMNode|null>|null = null;
@@ -1716,9 +1723,10 @@ export class TimelineUIUtils {
     });
   }
 
-  private static generateInvalidationsForReason(
-      reason: string, invalidations: Trace.Types.Events.InvalidationTrackingEvent[],
-      relatedNodesMap: Map<number, SDK.DOMModel.DOMNode|null>|null, contentHelper: TimelineDetailsContentHelper): void {
+  private static generateInvalidationsForReason(reason: string,
+                                                invalidations: Trace.Types.Events.InvalidationTrackingEvent[],
+                                                relatedNodesMap: Map<number, SDK.DOMModel.DOMNode|null>|null,
+                                                contentHelper: TimelineDetailsContentHelper): void {
     function createLinkForInvalidationNode(invalidation: Trace.Types.Events.InvalidationTrackingEvent):
         HTMLSpanElement {
       const node = (invalidation.args.data.nodeId && relatedNodesMap) ?
@@ -1757,10 +1765,9 @@ export class TimelineUIUtils {
 
       const niceNodeLink = createLinkForInvalidationNode(invalidation);
 
-      const text = scriptLink ?
-          uiI18n.getFormatLocalizedString(
-              str_, UIStrings.invalidationWithCallFrame, {PH1: niceNodeLink, PH2: scriptLink}) as HTMLElement :
-          niceNodeLink;
+      const text = scriptLink ? uiI18n.getFormatLocalizedString(str_, UIStrings.invalidationWithCallFrame,
+                                                                {PH1: niceNodeLink, PH2: scriptLink}) as HTMLElement :
+                                niceNodeLink;
 
       // Sometimes we can get different Invalidation events which cause
       // the same text for the same element for the same reason to be
@@ -1778,9 +1785,8 @@ export class TimelineUIUtils {
   }
 
   /** Populates the passed object then returns true/false if it makes sense to show the pie chart */
-  private static aggregatedStatsForTraceEvent(
-      total: TimeRangeCategoryStats, parsedTrace: Trace.TraceModel.ParsedTrace,
-      event: Trace.Types.Events.Event): boolean {
+  private static aggregatedStatsForTraceEvent(total: TimeRangeCategoryStats, parsedTrace: Trace.TraceModel.ParsedTrace,
+                                              event: Trace.Types.Events.Event): boolean {
     const node = parsedTrace.data.Renderer.entryToNode.get(event);
     if (!node) {
       return false;
@@ -1829,9 +1835,8 @@ export class TimelineUIUtils {
     return true;
   }
 
-  static async buildPicturePreviewContent(
-      parsedTrace: Trace.TraceModel.ParsedTrace, event: Trace.Types.Events.Paint,
-      target: SDK.Target.Target): Promise<Element|null> {
+  static async buildPicturePreviewContent(parsedTrace: Trace.TraceModel.ParsedTrace, event: Trace.Types.Events.Paint,
+                                          target: SDK.Target.Target): Promise<Element|null> {
     const snapshotEvent = parsedTrace.data.LayerTree.paintsToSnapshots.get(event);
     if (!snapshotEvent) {
       return null;
@@ -1888,8 +1893,8 @@ export class TimelineUIUtils {
     const {startTime: eventStartTime} = Trace.Helpers.Timing.eventTimingsMilliSeconds(event);
 
     const startTime = i18n.TimeUtilities.millisToString(eventStartTime - zeroTime);
-    UI.Tooltip.Tooltip.install(
-        eventDivider, i18nString(UIStrings.sAtS, {PH1: TimelineUIUtils.eventTitle(event), PH2: startTime}));
+    UI.Tooltip.Tooltip.install(eventDivider,
+                               i18nString(UIStrings.sAtS, {PH1: TimelineUIUtils.eventTitle(event), PH2: startTime}));
     const style = TimelineUIUtils.markerStyleForEvent(event);
     if (style.tall) {
       eventDivider.style.backgroundColor = style.color;
@@ -1907,9 +1912,8 @@ export class TimelineUIUtils {
     return Trace.Styles.getCategoryStyles();
   }
 
-  static generatePieChart(
-      aggregatedStats: TimeRangeCategoryStats, selfCategory?: Trace.Styles.TimelineCategory,
-      selfTime?: Trace.Types.Timing.Micro): Element {
+  static generatePieChart(aggregatedStats: TimeRangeCategoryStats, selfCategory?: Trace.Styles.TimelineCategory,
+                          selfTime?: Trace.Types.Timing.Micro): Element {
     let total = 0;
     for (const categoryName in aggregatedStats) {
       total += aggregatedStats[categoryName];
@@ -1981,9 +1985,9 @@ export class TimelineUIUtils {
     return element;
   }
 
-  static generateDetailsContentForFrame(
-      frame: Trace.Types.Events.LegacyTimelineFrame, filmStrip: Trace.Extras.FilmStrip.Data|null,
-      filmStripFrame: Trace.Extras.FilmStrip.Frame|null): DocumentFragment {
+  static generateDetailsContentForFrame(frame: Trace.Types.Events.LegacyTimelineFrame,
+                                        filmStrip: Trace.Extras.FilmStrip.Data|null,
+                                        filmStripFrame: Trace.Extras.FilmStrip.Frame|null): DocumentFragment {
     const contentHelper = new TimelineDetailsContentHelper(null, null);
     contentHelper.addSection(i18nString(UIStrings.frame));
 
@@ -2034,10 +2038,10 @@ export class TimelineUIUtils {
     const green = 'hsl(90,100%,40%)';
     const purple = 'hsl(256,100%,75%)';
     eventDispatchDesciptors = [
-      new EventDispatchTypeDescriptor(
-          1, lightOrange, ['mousemove', 'mouseenter', 'mouseleave', 'mouseout', 'mouseover']),
-      new EventDispatchTypeDescriptor(
-          1, lightOrange, ['pointerover', 'pointerout', 'pointerenter', 'pointerleave', 'pointermove']),
+      new EventDispatchTypeDescriptor(1, lightOrange,
+                                      ['mousemove', 'mouseenter', 'mouseleave', 'mouseout', 'mouseover']),
+      new EventDispatchTypeDescriptor(1, lightOrange,
+                                      ['pointerover', 'pointerout', 'pointerenter', 'pointerleave', 'pointermove']),
       new EventDispatchTypeDescriptor(2, green, ['wheel']),
       new EventDispatchTypeDescriptor(3, orange, ['click', 'mousedown', 'mouseup']),
       new EventDispatchTypeDescriptor(3, orange, ['touchstart', 'touchend', 'touchmove', 'touchcancel']),
@@ -2074,7 +2078,7 @@ export class TimelineUIUtils {
         tall = true;
         break;
       case Trace.Types.Events.Name.SOFT_NAVIGATION_START:
-        color = 'var(--sys-color-blue)';
+        color = 'var(--color-text-primary)';
         tall = true;
         break;
       case Trace.Types.Events.Name.FRAME_STARTED_LOADING:
@@ -2094,6 +2098,7 @@ export class TimelineUIUtils {
         tall = true;
         break;
       case Trace.Types.Events.Name.MARK_FCP:
+      case Trace.Types.Events.Name.MARK_SOFT_FCP:
         color = 'var(--sys-color-green-bright)';
         tall = true;
         break;
@@ -2118,17 +2123,16 @@ export class TimelineUIUtils {
 
   static colorForId(id: string): string {
     if (!colorGenerator) {
-      colorGenerator = new Common.Color.Generator(
-          {
-            min: 30,
-            max: 330,
-          },
-          {
-            min: 50,
-            max: 80,
-            count: 3,
-          },
-          85);
+      colorGenerator = new Common.Color.Generator({
+        min: 30,
+        max: 330,
+      },
+                                                  {
+                                                    min: 50,
+                                                    max: 80,
+                                                    count: 3,
+                                                  },
+                                                  85);
       colorGenerator.setColorForID('', '#f2ecdc');
     }
     return colorGenerator.colorForID(id);
@@ -2140,10 +2144,10 @@ export class TimelineUIUtils {
                                                       frame.url.slice(0, trimAt);
   }
 
-  static getOriginWithEntity(
-      entityMapper: Trace.EntityMapper.EntityMapper|null, parsedTrace: Trace.TraceModel.ParsedTrace,
-      event: Trace.Types.Events.Event): string|null {
-    const resolvedURL = SourceMapsResolver.SourceMapsResolver.resolvedURLForEntry(parsedTrace, event);
+  static getOriginWithEntity(entityMapper: Trace.EntityMapper.EntityMapper|null,
+                             parsedTrace: Trace.TraceModel.ParsedTrace, event: Trace.Types.Events.Event): string|null {
+    const resolvedURL = SourceMapsResolver.SourceMapsResolver.resolvedURLForEntry(
+        parsedTrace, event, Workspace.Workspace.WorkspaceImpl.instance());
     if (!resolvedURL) {
       return null;
     }
@@ -2176,6 +2180,26 @@ export class EventDispatchTypeDescriptor {
     this.color = color;
     this.eventTypes = eventTypes;
   }
+}
+
+/**
+ * When loading a trace file (non-fresh recording), the scriptIds in the trace
+ * are from the recorded page and are guaranteed to collide with scriptIds of
+ * the currently active inspected page. We strip them from the stack trace
+ * to force the stack trace rendering machinery to fall back to URL-based resolution
+ * instead of incorrectly matching the active page's script IDs.
+ */
+export function stripScriptIds(stackTrace: Protocol.Runtime.StackTrace): Protocol.Runtime.StackTrace {
+  const callFrames = stackTrace.callFrames.map(frame => ({
+                                                 ...frame,
+                                                 scriptId: '' as Protocol.Runtime.ScriptId,
+                                               }));
+  const parent = stackTrace.parent ? stripScriptIds(stackTrace.parent) : undefined;
+  return {
+    ...stackTrace,
+    callFrames,
+    parent,
+  };
 }
 
 export class TimelineDetailsContentHelper {
@@ -2256,7 +2280,8 @@ export class TimelineDetailsContentHelper {
     if (!stackTraceForEvent) {
       return;
     }
-    const traceElement = await this.createChildStackTraceElement(stackTraceForEvent);
+    const isFreshOrEnhanced = Tracing.FreshRecording.Tracker.instance().recordingIsFreshOrEnhanced(parsedTrace);
+    const traceElement = await this.createChildStackTraceElement(stackTraceForEvent, isFreshOrEnhanced);
     this.appendSectionWithBodyIfExists(i18nString(UIStrings.functionStack), {body: traceElement});
   }
 
@@ -2289,8 +2314,8 @@ export class TimelineDetailsContentHelper {
     }
   }
 
-  appendLocationRow(
-      title: string, url: string, startLine: number, startColumn?: number, text?: string, omitOrigin?: boolean): void {
+  appendLocationRow(title: string, url: string, startLine: number, startColumn?: number, text?: string,
+                    omitOrigin?: boolean): void {
     if (!this.#linkifier) {
       return;
     }
@@ -2299,12 +2324,11 @@ export class TimelineDetailsContentHelper {
       tabStop: true,
       columnNumber: startColumn,
       showColumnNumber: true,
-      inlineFrameIndex: 0,
       text,
       omitOrigin,
     };
-    const link = this.#linkifier.maybeLinkifyScriptLocation(
-        this.target, null, url as Platform.DevToolsPath.UrlString, startLine, options);
+    const link = this.#linkifier.maybeLinkifyScriptLocation(this.target, null, url as Platform.DevToolsPath.UrlString,
+                                                            startLine, options);
     if (!link) {
       return;
     }
@@ -2316,14 +2340,13 @@ export class TimelineDetailsContentHelper {
       return;
     }
     const locationContent = document.createElement('span');
-    const link = this.#linkifier.maybeLinkifyScriptLocation(
-        this.target, null, url, startLine, {tabStop: true, inlineFrameIndex: 0});
+    const link = this.#linkifier.maybeLinkifyScriptLocation(this.target, null, url, startLine, {tabStop: true});
     if (!link) {
       return;
     }
     locationContent.appendChild(link);
-    UI.UIUtils.createTextChild(
-        locationContent, Platform.StringUtilities.sprintf(' [%s…%s]', startLine + 1, (endLine || 0) + 1 || ''));
+    UI.UIUtils.createTextChild(locationContent,
+                               Platform.StringUtilities.sprintf(' [%s…%s]', startLine + 1, (endLine || 0) + 1 || ''));
     this.appendElementRow(title, locationContent);
   }
 
@@ -2331,7 +2354,10 @@ export class TimelineDetailsContentHelper {
    * Creates a stack trace element for the given trace, but checks if it
    * contains any entries, and discards it if it's empty.
    */
-  async createChildStackTraceElement(runtimeStackTrace: Protocol.Runtime.StackTrace): Promise<HTMLElement|null> {
+  async createChildStackTraceElement(
+      runtimeStackTrace: Protocol.Runtime.StackTrace,
+      isFreshOrEnhanced?: boolean,
+      ): Promise<HTMLElement|null> {
     // Fallback to the main page/root target. Maybe the main page has a source map we need.
     // Worst case the stack is identity mapped.
     const targetManager = SDK.TargetManager.TargetManager.instance();
@@ -2340,9 +2366,14 @@ export class TimelineDetailsContentHelper {
       return null;
     }
 
+    // If the trace is non-fresh and not enhanced, this means that any active
+    // sourcemaps are not related to the trace, and therefore we do not want to
+    // use them.
+    const stackTraceToUse = isFreshOrEnhanced ? runtimeStackTrace : stripScriptIds(runtimeStackTrace);
+
     const stackTrace =
         await Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().createStackTraceFromProtocolRuntime(
-            runtimeStackTrace, target);
+            stackTraceToUse, target);
     const callFrameContents = new LegacyComponents.JSPresentationUtils.StackTracePreviewContent();
     callFrameContents.options = {tabStops: true, showColumnNumber: true};
     callFrameContents.stackTrace = stackTrace;
@@ -2407,7 +2438,7 @@ export function isMarkerEvent(parsedTrace: Trace.TraceModel.ParsedTrace, event: 
     return true;
   }
 
-  if (Trace.Types.Events.isFirstContentfulPaint(event) || Trace.Types.Events.isFirstPaint(event)) {
+  if (Trace.Types.Events.isAnyFirstContentfulPaint(event) || Trace.Types.Events.isFirstPaint(event)) {
     return event.args.frame === parsedTrace.data.Meta.mainFrameId;
   }
 
@@ -2431,8 +2462,8 @@ export function isMarkerEvent(parsedTrace: Trace.TraceModel.ParsedTrace, event: 
   return false;
 }
 
-function getEventSelfTime(
-    event: Trace.Types.Events.Event, parsedTrace: Trace.TraceModel.ParsedTrace): Trace.Types.Timing.Micro {
+function getEventSelfTime(event: Trace.Types.Events.Event,
+                          parsedTrace: Trace.TraceModel.ParsedTrace): Trace.Types.Timing.Micro {
   const mapToUse = Trace.Types.Extensions.isSyntheticExtensionEntry(event) ?
       parsedTrace.data.ExtensionTraceData.entryToNode :
       parsedTrace.data.Renderer.entryToNode;

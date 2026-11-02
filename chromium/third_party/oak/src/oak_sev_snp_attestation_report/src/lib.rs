@@ -15,9 +15,9 @@
 
 //! AMD SEV-SNP data structures for attestation reports.
 //!
-//! This is based on revision 1.57 of <https://www.amd.com/system/files/TechDocs/56860.pdf>
+//! This is based on revision 1.58 of <https://www.amd.com/system/files/TechDocs/56860.pdf>
 //! Content-addressed link for the specific revision of the specification:
-//! <https://static.space/sha2-512:f2f8c5c8a41a682968944cc50000e28d189855cf0899205f41fa0073d9d0b4f2c0f83ebe8c7bf2614bfb66ced2ad24548696bf6b34be102d2959fcc11b500079>
+//! <https://static.space/sha2-512:56e501d2fca015ab1d13d2ec8934b16af989373437706d6a3d258c00fb170a833d76e264ae8fd5709bcdcf3d5fcb7a52faf47a6191c7fe1d0940a2f492183ba8>
 
 // TODO(#3703): Remove when fixed.
 #![allow(clippy::extra_unused_type_parameters)]
@@ -29,7 +29,7 @@ use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes, KnownLayout};
 
 /// A signed attestation report.
 ///
-/// See Table 22 of the specification.
+/// See Table 23 of the specification.
 #[repr(C)]
 #[derive(Debug, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct AttestationReport {
@@ -67,7 +67,7 @@ impl AttestationReport {
 /// The number of bytes of custom data that can be included in the attestation
 /// report.
 ///
-/// See Table 22 of the specification.
+/// See Table 23 of the specification.
 pub const REPORT_DATA_SIZE: usize = 64;
 
 /// A byte array which is interpreted depending on the CPU model.
@@ -77,7 +77,7 @@ pub type RawTcbVersion = [u8; 8];
 
 /// The data contained in an attestation report.
 ///
-/// See Table 22 of the specification.
+/// See Table 23 of the specification.
 #[repr(C)]
 #[derive(Debug, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct AttestationReportData {
@@ -174,8 +174,13 @@ pub struct AttestationReportData {
     /// The value of the current TCB version when the guest was launched or
     /// imported.
     pub launch_tcb: RawTcbVersion,
+    /// The value of the verified mitigation vector when the guest was launched.
+    pub launch_mit_vector: u64,
+    /// The value of the current verified mitigation vector.
+    pub current_mit_vector: u64,
+
     /// Reserved.
-    _reserved_3: [u8; 168],
+    _reserved_3: [u8; 152],
 }
 
 static_assertions::assert_eq_size!(AttestationReportData, [u8; 672]);
@@ -203,11 +208,7 @@ impl AttestationReportData {
     /// https://github.com/LIT-Protocol/sev-snp-utils/blob/2db12052f1daa0b240594cb2e24d73c66d3379a5/src/guest/measure/vcpu_types.rs#L71
     pub fn get_product(&self) -> AmdProduct {
         if self.cpuid_fam_id == 0x1a {
-            if self.cpuid_mod_id == 0x02 {
-                AmdProduct::Turin
-            } else {
-                AmdProduct::Unsupported
-            }
+            if self.cpuid_mod_id == 0x02 { AmdProduct::Turin } else { AmdProduct::Unsupported }
         } else if self.cpuid_fam_id == 0x19 {
             if self.cpuid_mod_id == 0x01 {
                 AmdProduct::Milan
@@ -317,7 +318,7 @@ bitflags! {
         const SMT_EN = (1 << 0);
         /// Indicates that transparent secure memory encryption (TSME) is enabled.
         const TSME_EN = (1 << 1);
-        /// Indicates that the plaform is using error correcting codes for memory.
+        /// Indicates that the platform is using error correcting codes for memory.
         const ECC_EN = (1 << 2);
         /// Indicates that the RAPL feature is disabled.
         const RAPL_DIS = (1 << 3);
@@ -326,12 +327,14 @@ bitflags! {
         /// Indicates that alias checking has completed since the last reboot.
         /// Mitigation for CVE-2024-21944.
         const ALIAS_CHECK_COMPLETE = (1 << 5);
+        /// Indicates whether SEV-TIO is enabled.
+        const TIO_EN = (1 << 7);
     }
 }
 
 /// The signing algorithm used for the report signature.
 ///
-/// See Table 133 of the specification.
+/// See Table 139 of the specification.
 #[derive(Debug, FromRepr, PartialEq)]
 #[repr(u32)]
 pub enum SigningAlgorithm {
@@ -343,7 +346,7 @@ pub enum SigningAlgorithm {
 
 /// Key used to sign the attestation report.
 ///
-/// See Table 22 of the specification.
+/// See Table 23 of the specification.
 #[derive(Debug, FromRepr, PartialEq)]
 #[repr(u32)]
 pub enum SigningKey {
@@ -423,12 +426,22 @@ bitflags! {
         const DEBUG = (1 << 3);
         /// The guest can only be activated on a single socket.
         const SINGLE_SOCKET = (1 << 4);
+        /// CXL can be populated with devices or memory.
+        const CXL_ALLOW = (1 << 5);
+        /// AES 256 XTS is required for memory encryption.
+        const MEM_AES_256_XTS = (1 << 6);
+        /// Running Average Power Limit is disabled.
+        const RAPL_DIS = (1 << 7);
+        /// Ciphertext hiding for DRAM must be enabled.
+        const CIPHERTEXT_HIDING_DRAM = (1 << 8);
+        /// Disable Guest support for Page Swap and Page Move commands.
+        const PAGE_SWAP_DISABLE = (1 << 9);
     }
 }
 
 /// An ECDSA signature.
 ///
-/// See Table 135 of the specification.
+/// See Table 141 of the specification.
 #[repr(C)]
 #[derive(Debug, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct EcdsaSignature {

@@ -22,13 +22,11 @@ package(
 
 rust_library(
     name = "intoto",
-    srcs = [
-        "lib.rs",
-        "statement.rs",
-    ],
+    srcs = glob(["**/*.rs"]),
     deps = [
         "//oak_proto_rust",
         "//oak_time",
+        "//util/digest:oak_digest",
         "@oak_crates_index//:anyhow",
         "@oak_crates_index//:hex",
         "@oak_crates_index//:prost-types",
@@ -40,8 +38,8 @@ rust_library(
 rust_test(
     name = "intoto_tests",
     crate = ":intoto",
-    data = ["//oak_attestation_verification/testdata:endorsement"],
     deps = [
+        "//oak_attestation_verification:test_util",
         "//oak_file_utils",
         "@oak_crates_index//:prost-types",
     ],

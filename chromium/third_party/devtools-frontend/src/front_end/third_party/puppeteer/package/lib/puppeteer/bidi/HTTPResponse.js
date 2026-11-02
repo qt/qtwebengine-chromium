@@ -111,7 +111,8 @@ let BidiHTTPResponse = (() => {
                 // TODO: How to handle Binary Headers
                 // https://w3c.github.io/webdriver-bidi/#type-network-Header
                 if (header.value.type === 'string') {
-                    headers[header.name.toLowerCase()] = normalizeHeaderValue(header.value.value);
+                    const headerName = header.name.toLowerCase();
+                    headers[headerName] = normalizeHeaderValue(headerName, header.value.value);
                 }
             }
             return headers;

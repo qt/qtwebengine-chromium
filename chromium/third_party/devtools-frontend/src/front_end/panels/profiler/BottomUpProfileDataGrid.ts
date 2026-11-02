@@ -36,7 +36,7 @@ import * as Platform from '../../core/platform/platform.js';
 import type * as CPUProfile from '../../models/cpu_profile/cpu_profile.js';
 import type * as UI from '../../ui/legacy/legacy.js';
 
-import {type Formatter, ProfileDataGridNode, ProfileDataGridTree} from './ProfileDataGrid.js';
+import {type Formatter, ProfileDataGridTree, ProfileEntry} from './ProfileDataGrid.js';
 import type {TopDownProfileDataGridTree} from './TopDownProfileDataGrid.js';
 
 export interface NodeInfo {
@@ -45,7 +45,7 @@ export interface NodeInfo {
   totalAccountedFor: boolean;
 }
 
-export class BottomUpProfileDataGridNode extends ProfileDataGridNode {
+export class BottomUpProfileEntry extends ProfileEntry {
   remainingNodeInfos: NodeInfo[]|undefined;
 
   constructor(profileNode: CPUProfile.ProfileTreeModel.ProfileNode, owningTree: TopDownProfileDataGridTree) {
@@ -53,7 +53,7 @@ export class BottomUpProfileDataGridNode extends ProfileDataGridNode {
     this.remainingNodeInfos = [];
   }
 
-  static sharedPopulate(container: BottomUpProfileDataGridNode|BottomUpProfileDataGridTree): void {
+  static sharedPopulate(container: BottomUpProfileEntry|BottomUpProfileDataGridTree): void {
     if (container.remainingNodeInfos === undefined) {
       return;
     }
@@ -64,8 +64,7 @@ export class BottomUpProfileDataGridNode extends ProfileDataGridNode {
       const nodeInfo = remainingNodeInfos[index];
       const ancestor = nodeInfo.ancestor;
       const focusNode = nodeInfo.focusNode;
-      let child: BottomUpProfileDataGridNode|(BottomUpProfileDataGridNode | null) =
-          (container.findChild(ancestor) as BottomUpProfileDataGridNode | null);
+      let child: BottomUpProfileEntry|null = (container.findChild(ancestor) as BottomUpProfileEntry | null);
 
       // If we already have this child, then merge the data together.
       if (child) {
@@ -77,7 +76,7 @@ export class BottomUpProfileDataGridNode extends ProfileDataGridNode {
           child.total += focusNode.total;
         }
       } else {
-        child = new BottomUpProfileDataGridNode(ancestor, (container.tree as TopDownProfileDataGridTree));
+        child = new BottomUpProfileEntry(ancestor, (container.tree as TopDownProfileDataGridTree));
 
         if (ancestor !== focusNode) {
           // But the actual statistics from the "root" node (bottom of the callstack).
@@ -101,16 +100,16 @@ export class BottomUpProfileDataGridNode extends ProfileDataGridNode {
     delete container.remainingNodeInfos;
   }
 
-  takePropertiesFromProfileDataGridNode(profileDataGridNode: ProfileDataGridNode): void {
+  takePropertiesFromProfileEntry(profileEntry: ProfileEntry): void {
     this.save();
-    this.self = profileDataGridNode.self;
-    this.total = profileDataGridNode.total;
+    this.self = profileEntry.self;
+    this.total = profileEntry.total;
   }
 
   /**
    * When focusing, we keep just the members of the callstack.
    */
-  keepOnlyChild(child: ProfileDataGridNode): void {
+  keepOnlyChild(child: ProfileEntry): void {
     this.save();
 
     this.removeChildren();
@@ -128,7 +127,7 @@ export class BottomUpProfileDataGridNode extends ProfileDataGridNode {
     let index = this.children.length;
 
     while (index--) {
-      (children[index] as BottomUpProfileDataGridNode).exclude(aCallUID);
+      (children[index] as BottomUpProfileEntry).exclude(aCallUID);
     }
 
     const child = this.childrenByCallUID.get(aCallUID);
@@ -146,13 +145,13 @@ export class BottomUpProfileDataGridNode extends ProfileDataGridNode {
     }
   }
 
-  override merge(child: ProfileDataGridNode, shouldAbsorb: boolean): void {
+  override merge(child: ProfileEntry, shouldAbsorb: boolean): void {
     this.self -= child.self;
     super.merge(child, shouldAbsorb);
   }
 
   override populateChildren(): void {
-    BottomUpProfileDataGridNode.sharedPopulate(this);
+    BottomUpProfileEntry.sharedPopulate(this);
   }
 
   willHaveChildren(profileNode: CPUProfile.ProfileTreeModel.ProfileNode): boolean {
@@ -231,7 +230,7 @@ export class BottomUpProfileDataGridTree extends ProfileDataGridTree {
     }
 
     // Populate the top level nodes.
-    ProfileDataGridNode.populate(this);
+    ProfileEntry.populate(this);
 
     return this;
   }
@@ -239,32 +238,33 @@ export class BottomUpProfileDataGridTree extends ProfileDataGridTree {
   /**
    * When focusing, we keep the entire callstack up to this ancestor.
    */
-  override focus(profileDataGridNode: ProfileDataGridNode): void {
+  override focus(profileDataGridNode: ProfileEntry): void {
     if (!profileDataGridNode) {
       return;
     }
 
     this.save();
 
-    let currentNode: ProfileDataGridNode = profileDataGridNode;
-    let focusNode: (ProfileDataGridNode&BottomUpProfileDataGridNode)|ProfileDataGridNode = profileDataGridNode;
+    let currentNode: ProfileEntry = profileDataGridNode;
+    let focusNode: (ProfileEntry&BottomUpProfileEntry)|ProfileEntry = profileDataGridNode;
 
-    while (currentNode.parent && (currentNode instanceof BottomUpProfileDataGridNode)) {
-      currentNode.takePropertiesFromProfileDataGridNode(profileDataGridNode);
+    while (currentNode instanceof BottomUpProfileEntry && currentNode.parent) {
+      currentNode.takePropertiesFromProfileEntry(profileDataGridNode);
 
       focusNode = currentNode;
-      currentNode = (currentNode.parent as ProfileDataGridNode);
+      currentNode = (currentNode.parent as ProfileEntry);
 
-      if (currentNode instanceof BottomUpProfileDataGridNode) {
+      if (currentNode instanceof BottomUpProfileEntry) {
         currentNode.keepOnlyChild(focusNode);
       }
     }
 
-    this.children = [focusNode];
+    this.removeChildren();
+    this.appendChild(focusNode);
     this.total = profileDataGridNode.total;
   }
 
-  override exclude(profileDataGridNode: ProfileDataGridNode): void {
+  override exclude(profileDataGridNode: ProfileEntry): void {
     if (!profileDataGridNode) {
       return;
     }
@@ -284,15 +284,11 @@ export class BottomUpProfileDataGridTree extends ProfileDataGridTree {
     const count = children.length;
 
     for (let index = 0; index < count; ++index) {
-      (children[index] as BottomUpProfileDataGridNode).exclude(excludedCallUID);
-    }
-
-    if (this.lastComparator) {
-      this.sort(this.lastComparator, true);
+      (children[index] as BottomUpProfileEntry).exclude(excludedCallUID);
     }
   }
 
   override populateChildren(): void {
-    BottomUpProfileDataGridNode.sharedPopulate(this);
+    BottomUpProfileEntry.sharedPopulate(this);
   }
 }

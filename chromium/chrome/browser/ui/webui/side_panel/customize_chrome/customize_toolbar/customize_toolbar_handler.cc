@@ -12,8 +12,6 @@
 #include "chrome/browser/ui/actions/chrome_action_id.h"
 #include "chrome/browser/ui/browser_actions.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
-#include "chrome/browser/ui/tab_search_feature.h"
-#include "chrome/browser/ui/tabs/features.h"
 #include "chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.h"
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
@@ -25,6 +23,7 @@
 #include "chrome/grit/branded_strings.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/contextual_tasks/public/features.h"
+#include "components/feature_engagement/public/feature_constants.h"
 #include "components/prefs/pref_service.h"
 #include "components/strings/grit/components_strings.h"
 #include "components/vector_icons/vector_icons.h"
@@ -341,13 +340,13 @@ void CustomizeToolbarHandler::ListActions(ListActionsCallback callback) {
   add_action(kActionClearBrowsingData,
              side_panel::customize_chrome::mojom::CategoryId::kYourChrome);
 
-  if (!base::FeatureList::IsEnabled(tabs::kHorizontalTabStripComboButton) &&
-      features::HasTabSearchToolbarButton()) {
-    add_action(kActionTabSearch,
-               side_panel::customize_chrome::mojom::CategoryId::kTools);
-  }
   add_action(kActionPrint,
              side_panel::customize_chrome::mojom::CategoryId::kTools);
+  if (base::FeatureList::IsEnabled(
+          contextual_tasks::kEnableContextualTasksPinButtonInToolbar)) {
+    add_action(kActionSidePanelShowContextualTasks,
+               side_panel::customize_chrome::mojom::CategoryId::kTools);
+  }
   add_action(kActionSidePanelShowLensOverlayResults,
              side_panel::customize_chrome::mojom::CategoryId::kTools);
   add_action(kActionSidePanelShowSearchCompanion,

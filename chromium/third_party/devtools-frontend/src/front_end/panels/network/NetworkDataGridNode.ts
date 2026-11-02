@@ -47,6 +47,7 @@ import * as Bindings from '../../models/bindings/bindings.js';
 import type * as HAR from '../../models/har/har.js';
 import * as Logs from '../../models/logs/logs.js';
 import type * as NetworkTimeCalculator from '../../models/network_time_calculator/network_time_calculator.js';
+import * as StackTrace from '../../models/stack_trace/stack_trace.js';
 import * as NetworkForward from '../../panels/network/forward/forward.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import {createIcon} from '../../ui/kit/kit.js';
@@ -107,7 +108,7 @@ const UIStrings = {
   /**
    * @description Reason why a request was blocked shown in the Network panel
    */
-  coopSandboxedIframeCannotNavigateToCoopPage: 'Sandboxed iframe\'s popup cannot navigate to COOP page',
+  coopSandboxedIframeCannotNavigateToCoopPage: 'Sandboxed iframe’s popup cannot navigate to COOP page',
   /**
    * @description Reason why a request was blocked shown in the Network panel
    */
@@ -184,7 +185,7 @@ const UIStrings = {
   /**
    * @description Cell title in Network Data Grid Node of the Network panel
    */
-  earlyHints: 'early-hints',
+  earlyHints: 'Early-hints',
   /**
    * @description Text in Network Data Grid Node of the Network panel
    */
@@ -343,6 +344,16 @@ const UIStrings = {
    * @description Text in Network Data Grid Node of the Network panel. Noun. Refers to a potentially blocking resource.
    */
   potentiallyBlocking: 'Potentially blocking',
+  /**
+   * @description Text indicating a request originated from the DevTools console. Used as a subtitle in the
+   * Initiator column.
+   */
+  console: 'Console',
+  /**
+   * @description Tooltip for the console icon in the Network panel, indicating a request was initiated
+   * from the Console.
+   */
+  requestOriginatedFromConsole: 'Request originated from Console',
 
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/network/NetworkDataGridNode.ts', UIStrings);
@@ -599,6 +610,27 @@ export const _backgroundColors: Record<string, string> = {
   FromFrame: '--network-grid-from-frame-color',
 };
 
+// name/path/url are the primary cells that own the request icon, the Ask AI
+// button and the row click handlers. The first visible one is decorated, which
+// is not necessarily visible index 0 (the pinned request-number column can come
+// first).
+const PRIMARY_COLUMNS = new Set(['name', 'path', 'url']);
+
+function firstPrimaryColumn(dataGrid: DataGrid.DataGrid.DataGridImpl<unknown>|null): DataGrid.DataGrid.ColumnDescriptor|
+    undefined {
+  return dataGrid?.visibleColumnsArray.find(column => PRIMARY_COLUMNS.has(column.id));
+}
+
+function isFirstPrimaryColumn(dataGrid: DataGrid.DataGrid.DataGridImpl<unknown>|null, columnId: string): boolean {
+  const firstPrimary = firstPrimaryColumn(dataGrid);
+  // When the node is not attached to a grid yet there are no visible columns to
+  // inspect, so fall back to treating any primary column as the first one.
+  if (!firstPrimary) {
+    return PRIMARY_COLUMNS.has(columnId);
+  }
+  return firstPrimary.id === columnId;
+}
+
 export class NetworkRequestNode extends NetworkNode {
   private initiatorCell: Element|null;
   private requestInternal: SDK.NetworkRequest.NetworkRequest;
@@ -654,7 +686,7 @@ export class NetworkRequestNode extends NetworkNode {
     const aRequest = a.requestOrFirstKnownChildRequest();
     const bRequest = b.requestOrFirstKnownChildRequest();
     if (!aRequest || !bRequest) {
-      return !aRequest ? -1 : 1;
+      return !aRequest ? !bRequest ? 0 : -1 : 1;
     }
     const aRemoteAddress = aRequest.remoteAddress();
     const bRemoteAddress = bRequest.remoteAddress();
@@ -672,7 +704,7 @@ export class NetworkRequestNode extends NetworkNode {
     const aRequest = a.requestOrFirstKnownChildRequest();
     const bRequest = b.requestOrFirstKnownChildRequest();
     if (!aRequest || !bRequest) {
-      return !aRequest ? -1 : 1;
+      return !aRequest ? !bRequest ? 0 : -1 : 1;
     }
     if (bRequest.cached() && !aRequest.cached()) {
       return 1;
@@ -688,7 +720,7 @@ export class NetworkRequestNode extends NetworkNode {
     const aRequest = a.requestOrFirstKnownChildRequest();
     const bRequest = b.requestOrFirstKnownChildRequest();
     if (!aRequest || !bRequest) {
-      return !aRequest ? -1 : 1;
+      return !aRequest ? !bRequest ? 0 : -1 : 1;
     }
 
     const aRequestNumber = NetworkRequestNode.requestNumber(aRequest);
@@ -701,7 +733,7 @@ export class NetworkRequestNode extends NetworkNode {
     const aRequest = a.requestOrFirstKnownChildRequest();
     const bRequest = b.requestOrFirstKnownChildRequest();
     if (!aRequest || !bRequest) {
-      return !aRequest ? -1 : 1;
+      return !aRequest ? !bRequest ? 0 : -1 : 1;
     }
     const aSimpleType = a.displayType();
     const bSimpleType = b.displayType();
@@ -720,7 +752,7 @@ export class NetworkRequestNode extends NetworkNode {
     const aRequest = a.requestOrFirstKnownChildRequest();
     const bRequest = b.requestOrFirstKnownChildRequest();
     if (!aRequest || !bRequest) {
-      return !aRequest ? -1 : 1;
+      return !aRequest ? !bRequest ? 0 : -1 : 1;
     }
     const aHasInitiatorCell = a instanceof NetworkRequestNode && a.initiatorCell;
     const bHasInitiatorCell = b instanceof NetworkRequestNode && b.initiatorCell;
@@ -744,7 +776,7 @@ export class NetworkRequestNode extends NetworkNode {
     const aRequest = a.requestOrFirstKnownChildRequest();
     const bRequest = b.requestOrFirstKnownChildRequest();
     if (!aRequest || !bRequest) {
-      return !aRequest ? -1 : 1;
+      return !aRequest ? !bRequest ? 0 : -1 : 1;
     }
     const aClientSecurityState = aRequest.clientSecurityState();
     const bClientSecurityState = bRequest.clientSecurityState();
@@ -758,7 +790,7 @@ export class NetworkRequestNode extends NetworkNode {
     const aRequest = a.requestOrFirstKnownChildRequest();
     const bRequest = b.requestOrFirstKnownChildRequest();
     if (!aRequest || !bRequest) {
-      return !aRequest ? -1 : 1;
+      return !aRequest ? !bRequest ? 0 : -1 : 1;
     }
     return aRequest.remoteAddressSpace().localeCompare(bRequest.remoteAddressSpace());
   }
@@ -768,7 +800,7 @@ export class NetworkRequestNode extends NetworkNode {
     const aRequest = a.requestOrFirstKnownChildRequest();
     const bRequest = b.requestOrFirstKnownChildRequest();
     if (!aRequest || !bRequest) {
-      return !aRequest ? -1 : 1;
+      return !aRequest ? !bRequest ? 0 : -1 : 1;
     }
     const aScore = aRequest.includedRequestCookies().length;
     const bScore = bRequest.includedRequestCookies().length;
@@ -781,7 +813,7 @@ export class NetworkRequestNode extends NetworkNode {
     const aRequest = a.requestOrFirstKnownChildRequest();
     const bRequest = b.requestOrFirstKnownChildRequest();
     if (!aRequest || !bRequest) {
-      return !aRequest ? -1 : 1;
+      return !aRequest ? !bRequest ? 0 : -1 : 1;
     }
     const aScore = aRequest.responseCookies ? aRequest.responseCookies.length : 0;
     const bScore = bRequest.responseCookies ? bRequest.responseCookies.length : 0;
@@ -793,7 +825,7 @@ export class NetworkRequestNode extends NetworkNode {
     const aRequest = a.requestOrFirstKnownChildRequest();
     const bRequest = b.requestOrFirstKnownChildRequest();
     if (!aRequest || !bRequest) {
-      return !aRequest ? -1 : 1;
+      return !aRequest ? !bRequest ? 0 : -1 : 1;
     }
     const aPriority = aRequest.priority();
     let aScore: number = aPriority ? PerfUI.NetworkPriorities.networkPriorityWeight(aPriority) : 0;
@@ -810,7 +842,7 @@ export class NetworkRequestNode extends NetworkNode {
     const aRequest = a.requestOrFirstKnownChildRequest();
     const bRequest = b.requestOrFirstKnownChildRequest();
     if (!aRequest || !bRequest) {
-      return !aRequest ? -1 : 1;
+      return !aRequest ? !bRequest ? 0 : -1 : 1;
     }
     const aIsAdRelated = aRequest.isAdRelated();
     const bIsAdRelated = bRequest.isAdRelated();
@@ -823,11 +855,28 @@ export class NetworkRequestNode extends NetworkNode {
     return aRequest.identityCompare(bRequest);
   }
 
+  static IsPreloadedComparator(a: NetworkNode, b: NetworkNode): number {
+    const aRequest = a.requestOrFirstKnownChildRequest();
+    const bRequest = b.requestOrFirstKnownChildRequest();
+    if (!aRequest && !bRequest) {
+      return 0;
+    }
+    if (!aRequest || !bRequest) {
+      return !aRequest ? -1 : 1;
+    }
+    const aIsPreloaded = aRequest.isLinkPreload();
+    const bIsPreloaded = bRequest.isLinkPreload();
+    if (aIsPreloaded === bIsPreloaded) {
+      return aRequest.identityCompare(bRequest);
+    }
+    return aIsPreloaded ? 1 : -1;
+  }
+
   static RenderBlockingComparator(a: NetworkNode, b: NetworkNode): number {
     const aRequest = a.requestOrFirstKnownChildRequest();
     const bRequest = b.requestOrFirstKnownChildRequest();
     if (!aRequest || !bRequest) {
-      return !aRequest ? -1 : 1;
+      return !aRequest ? !bRequest ? 0 : -1 : 1;
     }
     const order = [
       Protocol.Network.RenderBlockingBehavior.InBodyParserBlocking,
@@ -842,6 +891,55 @@ export class NetworkRequestNode extends NetworkNode {
     return aOrder - bOrder;
   }
 
+  static ExecutionContextComparator(a: NetworkNode, b: NetworkNode): number {
+    const aRequest = a.requestOrFirstKnownChildRequest();
+    const bRequest = b.requestOrFirstKnownChildRequest();
+    if (!aRequest || !bRequest) {
+      return !aRequest ? !bRequest ? 0 : -1 : 1;
+    }
+    const aContext = NetworkRequestNode.getExecutionContextDescription(aRequest);
+    const bContext = NetworkRequestNode.getExecutionContextDescription(bRequest);
+    return aContext.localeCompare(bContext);
+  }
+
+  static getExecutionContextDescription(request: SDK.NetworkRequest.NetworkRequest): string {
+    const requestTarget = SDK.NetworkManager.NetworkManager.forRequest(request)?.target();
+
+    if (requestTarget) {
+      const targetType = requestTarget.type();
+      if (targetType === SDK.Target.Type.ServiceWorker || targetType === SDK.Target.Type.Worker ||
+          targetType === SDK.Target.Type.SHARED_WORKER) {
+        const runtimeModel = requestTarget.model(SDK.RuntimeModel.RuntimeModel);
+        if (runtimeModel) {
+          const defaultContextLabel = runtimeModel.executionContexts().find(c => c.isDefault)?.label();
+          if (defaultContextLabel) {
+            return defaultContextLabel;
+          }
+        }
+        return requestTarget.name() || '';
+      }
+    }
+
+    const frame = SDK.ResourceTreeModel.ResourceTreeModel.frameForRequest(request);
+    if (!frame) {
+      return '';
+    }
+
+    if (requestTarget) {
+      const runtimeModel = requestTarget.model(SDK.RuntimeModel.RuntimeModel);
+      if (runtimeModel) {
+        const frameContextLabel = runtimeModel.executionContexts()
+                                      .find(context => context.frameId === request.frameId && context.isDefault)
+                                      ?.label();
+        if (frameContextLabel) {
+          return frameContextLabel;
+        }
+      }
+    }
+
+    return frame.displayName();
+  }
+
   static RequestPropertyComparator(propertyName: string, a: NetworkNode, b: NetworkNode): number {
     // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -850,7 +948,7 @@ export class NetworkRequestNode extends NetworkNode {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const bRequest = (b.requestOrFirstKnownChildRequest() as any);
     if (!aRequest || !bRequest) {
-      return !aRequest ? -1 : 1;
+      return !aRequest ? !bRequest ? 0 : -1 : 1;
     }
     const aValue = aRequest[propertyName];
     const bValue = bRequest[propertyName];
@@ -864,7 +962,7 @@ export class NetworkRequestNode extends NetworkNode {
     const aRequest = a.requestOrFirstKnownChildRequest();
     const bRequest = b.requestOrFirstKnownChildRequest();
     if (!aRequest || !bRequest) {
-      return !aRequest ? -1 : 1;
+      return !aRequest ? !bRequest ? 0 : -1 : 1;
     }
     const aURL = aRequest.url();
     const bURL = bRequest.url();
@@ -880,7 +978,7 @@ export class NetworkRequestNode extends NetworkNode {
     const aRequest = a.requestOrFirstKnownChildRequest();
     const bRequest = b.requestOrFirstKnownChildRequest();
     if (!aRequest || !bRequest) {
-      return !aRequest ? -1 : 1;
+      return !aRequest ? !bRequest ? 0 : -1 : 1;
     }
     // Use the provided callback to get the header value
     const aValue = String(getHeaderValue(aRequest, propertyName) || '');
@@ -903,7 +1001,7 @@ export class NetworkRequestNode extends NetworkNode {
     const aRequest = a.requestOrFirstKnownChildRequest();
     const bRequest = b.requestOrFirstKnownChildRequest();
     if (!aRequest || !bRequest) {
-      return !aRequest ? -1 : 1;
+      return !aRequest ? !bRequest ? 0 : -1 : 1;
     }
     const aRawValue = aRequest.responseHeaderValue(propertyName);
     const aValue = (aRawValue !== undefined) ? parseFloat(aRawValue) : -Infinity;
@@ -920,7 +1018,7 @@ export class NetworkRequestNode extends NetworkNode {
     const aRequest = a.requestOrFirstKnownChildRequest();
     const bRequest = b.requestOrFirstKnownChildRequest();
     if (!aRequest || !bRequest) {
-      return !aRequest ? -1 : 1;
+      return !aRequest ? !bRequest ? 0 : -1 : 1;
     }
     const aHeader = aRequest.responseHeaderValue(propertyName);
     const bHeader = bRequest.responseHeaderValue(propertyName);
@@ -936,14 +1034,34 @@ export class NetworkRequestNode extends NetworkNode {
     const aRequest = a.requestOrFirstKnownChildRequest();
     const bRequest = b.requestOrFirstKnownChildRequest();
     if (!aRequest || !bRequest) {
-      if (!aRequest && !bRequest) {
-        return 0;
-      }
-      return !aRequest ? -1 : 1;
+      return !aRequest ? !bRequest ? 0 : -1 : 1;
     }
     const aValue = aRequest.overrideTypes.join(', ');
     const bValue = bRequest.overrideTypes.join(', ');
     return aValue.localeCompare(bValue) || aRequest.identityCompare(bRequest);
+  }
+
+  static isConsoleOriginated(request: SDK.NetworkRequest.NetworkRequest): boolean {
+    const resourceType = request.resourceType();
+    if (resourceType !== Common.ResourceType.resourceTypes.Fetch &&
+        resourceType !== Common.ResourceType.resourceTypes.XHR) {
+      return false;
+    }
+    const initiator = request.initiator();
+    if (!initiator || initiator.type !== Protocol.Network.InitiatorType.Script) {
+      return false;
+    }
+    if (initiator.url) {
+      return false;
+    }
+    if (!initiator.stack) {
+      return false;
+    }
+    return StackTrace.StackTrace.isConsoleOriginated(initiator.stack);
+  }
+
+  private isConsoleOriginated(): boolean {
+    return NetworkRequestNode.isConsoleOriginated(this.requestInternal);
   }
 
   override showingInitiatorChainChanged(): void {
@@ -1001,10 +1119,6 @@ export class NetworkRequestNode extends NetworkNode {
     const resourceType = this.requestInternal.resourceType();
     let simpleType = resourceType.name();
 
-    if (this.requestInternal.fromEarlyHints()) {
-      return i18nString(UIStrings.earlyHints);
-    }
-
     if (resourceType === Common.ResourceType.resourceTypes.Other ||
         resourceType === Common.ResourceType.resourceTypes.Image) {
       simpleType = mimeType.replace(/^(application|image)\//, '');
@@ -1038,16 +1152,20 @@ export class NetworkRequestNode extends NetworkNode {
     return this.requestInternal.resourceType() === Common.ResourceType.resourceTypes.Prefetch;
   }
 
+  private isPreload(): boolean {
+    return this.requestInternal.isPreloadRequest();
+  }
+
   throttlingConditions(): SDK.NetworkManager.AppliedNetworkConditions|undefined {
     return SDK.NetworkManager.MultitargetNetworkManager.instance().appliedRequestConditions(this.requestInternal);
   }
 
   override isWarning(): boolean {
-    return this.isFailed() && this.isPrefetch();
+    return this.isFailed() && (this.isPrefetch() || this.isPreload());
   }
 
   override isError(): boolean {
-    return this.isFailed() && !this.isPrefetch();
+    return this.isFailed() && !this.isPrefetch() && !this.isPreload();
   }
 
   override createCells(trElement: HTMLElement): void {
@@ -1137,6 +1255,10 @@ export class NetworkRequestNode extends NetworkNode {
         this.setTextAndTitle(cell, this.requestInternal.isAdRelated().toLocaleString());
         break;
       }
+      case 'is-preloaded': {
+        this.setTextAndTitle(cell, this.requestInternal.isLinkPreload().toLocaleString());
+        break;
+      }
       case 'render-blocking': {
         this.renderRenderBlockingCell(cell);
         break;
@@ -1207,6 +1329,10 @@ export class NetworkRequestNode extends NetworkNode {
         this.setTextAndTitle(cell, this.requestInternal.overrideTypes.join(', '));
         break;
       }
+      case 'execution-context': {
+        this.renderExecutionContextCell(cell);
+        break;
+      }
       default: {
         const columnConfig = this.dataGrid?.columns[columnId];
         if (columnConfig) {
@@ -1246,9 +1372,8 @@ export class NetworkRequestNode extends NetworkNode {
   }
 
   private renderPrimaryCell(cell: HTMLElement, columnId: string, text?: string): void {
-    const columnIndex = (this.dataGrid as DataGrid.DataGrid.DataGridImpl<unknown>)?.indexOfVisibleColumn(columnId) | 0;
-    const isFirstCell = (columnIndex === 0);
-    if (isFirstCell) {
+    const dataGrid = this.dataGrid as DataGrid.DataGrid.DataGridImpl<unknown>| null;
+    if (isFirstPrimaryColumn(dataGrid, columnId)) {
       const leftPadding = this.leftPadding ? this.leftPadding + 'px' : '';
       cell.style.setProperty('padding-left', leftPadding);
       cell.tabIndex = -1;
@@ -1268,6 +1393,13 @@ export class NetworkRequestNode extends NetworkNode {
       const iconElement = PanelUtils.getIconForNetworkRequest(this.requestInternal);
       // eslint-disable-next-line @devtools/no-lit-render-outside-of-view
       render(iconElement, cell);
+
+      // render Console icon if this request originated from Console
+      if (this.isConsoleOriginated()) {
+        const consoleIcon = createIcon('terminal', 'network-console-icon');
+        UI.Tooltip.Tooltip.install(consoleIcon, i18nString(UIStrings.requestOriginatedFromConsole));
+        cell.appendChild(consoleIcon);
+      }
 
       // render Ask AI button
       const aiButtonContainer = this.createAiButtonIfAvailable();
@@ -1515,12 +1647,12 @@ export class NetworkRequestNode extends NetworkNode {
           this.linkifiedInitiatorAnchor = linkifier.linkifyStackTraceTopFrame(target, initiator.stack);
         } else {
           this.linkifiedInitiatorAnchor = linkifier.linkifyScriptLocation(
-              target, initiator.scriptId, initiator.url, initiator.lineNumber,
-              {columnNumber: initiator.columnNumber, inlineFrameIndex: 0});
+              target, initiator.scriptId, initiator.url, initiator.lineNumber, {columnNumber: initiator.columnNumber});
         }
         UI.Tooltip.Tooltip.install((this.linkifiedInitiatorAnchor), '');
         cell.appendChild(this.linkifiedInitiatorAnchor);
-        this.appendSubtitle(cell, i18nString(UIStrings.script));
+        this.appendSubtitle(cell,
+                            this.isConsoleOriginated() ? i18nString(UIStrings.console) : i18nString(UIStrings.script));
         cell.classList.add('network-script-initiated');
         break;
       }
@@ -1552,9 +1684,17 @@ export class NetworkRequestNode extends NetworkNode {
       }
 
       default: {
-        UI.Tooltip.Tooltip.install(cell, i18nString(UIStrings.otherC));
+        // Early hints are not technically an InitiatorType in Chromium but
+        // probably should be (it is in Resource Timing). See:
+        // https://chromium-review.googlesource.com/c/chromium/src/+/5348938/comments/7cf39a37_dae12d06
+        // But to developers it IS the initiator and more useful to know than
+        // the default "other" that otherwise shows for early-hint requests.
+        const initiatorText =
+            request.fromEarlyHints() ? i18nString(UIStrings.earlyHints) : i18nString(UIStrings.otherC);
+
+        UI.Tooltip.Tooltip.install(cell, initiatorText);
         cell.classList.add('network-dim-cell');
-        cell.appendChild(document.createTextNode(i18nString(UIStrings.otherC)));
+        cell.appendChild(document.createTextNode(initiatorText));
       }
     }
   }
@@ -1588,18 +1728,22 @@ export class NetworkRequestNode extends NetworkNode {
       }
       UI.Tooltip.Tooltip.install(cell, tooltipText);
       cell.classList.add('network-dim-cell');
+    } else if (this.requestInternal.fetchedViaServiceWorker) {
+      // Checked before the no-matching-route fallback below: a request that
+      // matches no router rule falls back to the fetch handler, so it can
+      // still be fulfilled by the ServiceWorker.
+      UI.UIUtils.createTextChild(cell, i18nString(UIStrings.serviceWorker));
+      UI.Tooltip.Tooltip.install(cell, i18nString(UIStrings.servedFromServiceWorkerResource, {PH1: resourceSize}));
+      cell.classList.add('network-dim-cell');
     } else if (this.requestInternal.serviceWorkerRouterInfo) {
-      // ServiceWorker routers are registered, but the request fallbacks to network
-      // because no matching router rules found.
+      // ServiceWorker routers are registered, but the request fell back to the
+      // network because no matching router rule was found and the fetch
+      // handler did not provide the response.
       const transferSize = i18n.ByteUtilities.formatBytesToKb(this.requestInternal.transferSize);
       UI.UIUtils.createTextChild(cell, transferSize);
       UI.Tooltip.Tooltip.install(
           cell,
           i18nString(UIStrings.servedFromNetworkMissingServiceWorkerRoute, {PH1: transferSize, PH2: resourceSize}));
-    } else if (this.requestInternal.fetchedViaServiceWorker) {
-      UI.UIUtils.createTextChild(cell, i18nString(UIStrings.serviceWorker));
-      UI.Tooltip.Tooltip.install(cell, i18nString(UIStrings.servedFromServiceWorkerResource, {PH1: resourceSize}));
-      cell.classList.add('network-dim-cell');
     } else if (this.requestInternal.redirectSourceSignedExchangeInfoHasNoErrors()) {
       UI.UIUtils.createTextChild(cell, i18n.i18n.lockedString('(signed-exchange)'));
       UI.Tooltip.Tooltip.install(cell, i18nString(UIStrings.servedFromSignedHttpExchange, {PH1: resourceSize}));
@@ -1644,6 +1788,11 @@ export class NetworkRequestNode extends NetworkNode {
     }
   }
 
+  private renderExecutionContextCell(cell: HTMLElement): void {
+    const contextDescription = NetworkRequestNode.getExecutionContextDescription(this.requestInternal);
+    this.setTextAndTitle(cell, contextDescription);
+  }
+
   private appendSubtitle(cellElement: Element, subtitleText: string, alwaysVisible = false, tooltipText = ''): void {
     const subtitleElement = document.createElement('div');
     subtitleElement.classList.add('network-cell-subtitle');
@@ -1685,7 +1834,8 @@ export class NetworkRequestNode extends NetworkNode {
 export class NetworkGroupNode extends NetworkNode {
   override createCells(element: Element): void {
     super.createCells(element);
-    const primaryColumn = (this.dataGrid as DataGrid.DataGrid.DataGridImpl<unknown>).visibleColumnsArray[0];
+    const dataGrid = this.dataGrid as DataGrid.DataGrid.DataGridImpl<unknown>;
+    const primaryColumn = firstPrimaryColumn(dataGrid) ?? dataGrid.visibleColumnsArray[0];
     const localizedTitle = `${primaryColumn.title}`;
     const localizedLevel = i18nString(UIStrings.level);
     this.nodeAccessibleText =
@@ -1693,8 +1843,9 @@ export class NetworkGroupNode extends NetworkNode {
   }
 
   override renderCell(c: Element, columnId: string): void {
-    const columnIndex = (this.dataGrid as DataGrid.DataGrid.DataGridImpl<unknown>).indexOfVisibleColumn(columnId);
-    if (columnIndex === 0) {
+    const dataGrid = this.dataGrid as DataGrid.DataGrid.DataGridImpl<unknown>;
+    const primaryColumn = firstPrimaryColumn(dataGrid) ?? dataGrid.visibleColumnsArray[0];
+    if (primaryColumn.id === columnId) {
       const cell = (c as HTMLElement);
       const leftPadding = this.leftPadding ? this.leftPadding + 'px' : '';
       cell.style.setProperty('padding-left', leftPadding);

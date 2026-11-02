@@ -486,9 +486,16 @@ class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
     // If the server that handled the request is different than the server that
     // delivered the NEL policy (as determined by their IP address), then we
     // have to "downgrade" the NEL report, so that it only includes information
-    // about DNS resolution.
-    if (phase_string != kDnsPhase && details.server_ip.IsValid() &&
-        details.server_ip != policy->received_ip_address) {
+    // about DNS resolution. This also applies if any other address contacted
+    // during the request differs from the policy's address, since the report
+    // would otherwise reflect the behaviour of those addresses too.
+    bool server_ip_changed =
+        (details.server_ip.IsValid() &&
+         details.server_ip != policy->received_ip_address) ||
+        std::ranges::any_of(details.other_server_ips, [&](const auto& ip) {
+          return ip != policy->received_ip_address;
+        });
+    if (phase_string != kDnsPhase && server_ip_changed) {
       phase_string = kDnsPhase;
       type_string = kDnsAddressChangedType;
       details.elapsed_time = base::TimeDelta();
@@ -826,14 +833,18 @@ class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
     body.Set(kElapsedTimeKey,
              static_cast<int>(details.elapsed_time.InMilliseconds()));
 
+    // Strip username, password, and ref fragment from the URLs in the body,
+    // matching what ReportingService::QueueReport() does for the top-level URL.
     base::DictValue sxg_body;
-    sxg_body.Set(kOuterUrlKey, details.outer_url.spec());
-    if (details.inner_url.is_valid())
-      sxg_body.Set(kInnerUrlKey, details.inner_url.spec());
+    sxg_body.Set(kOuterUrlKey, details.outer_url.GetAsReferrer().spec());
+    if (details.inner_url.is_valid()) {
+      sxg_body.Set(kInnerUrlKey, details.inner_url.GetAsReferrer().spec());
+    }
 
     base::ListValue cert_url_list;
-    if (details.cert_url.is_valid())
-      cert_url_list.Append(details.cert_url.spec());
+    if (details.cert_url.is_valid()) {
+      cert_url_list.Append(details.cert_url.GetAsReferrer().spec());
+    }
     sxg_body.Set(kCertUrlKey, std::move(cert_url_list));
     body.Set(kSignedExchangeBodyKey, std::move(sxg_body));
 

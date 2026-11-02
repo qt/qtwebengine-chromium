@@ -20,7 +20,7 @@ TlsServerHandshakerImpl::TlsServerHandshakerImpl(
 TlsServerHandshakerImpl::~TlsServerHandshakerImpl() = default;
 
 quic::QuicAsyncStatus TlsServerHandshakerImpl::VerifyCertChain(
-    const std::vector<std::string>& certs,
+    const std::vector<std::string_view>& certs,
     std::string* /*error_details*/,
     std::unique_ptr<quic::ProofVerifyDetails>* /*details*/,
     uint8_t* /*out_alert*/,

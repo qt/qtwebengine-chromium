@@ -22,6 +22,7 @@
 #include "base/debug/crash_logging.h"
 #include "base/files/file.h"
 #include "base/files/file_util.h"
+#include "base/i18n/bcp47_extensions.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted_memory.h"
@@ -396,10 +397,10 @@ void ResourceBundle::LoadAdditionalLocaleDataWithPakFileRegion(
 
 #if !BUILDFLAG(IS_ANDROID)
 // static
-bool ResourceBundle::LocaleDataPakExists(std::string_view locale,
+bool ResourceBundle::LocaleDataPakExists(const base::i18n::LanguageTag& locale,
                                          Gender gender) {
   // TODO: Support gender translations on non-Android platforms.
-  const auto path = GetLocaleFilePath(locale);
+  const auto path = GetLocaleFilePath(locale.tag_string());
   if (path.empty()) {
     return false;
   }
@@ -729,6 +730,7 @@ bool ResourceBundle::HasDataResource(int resource_id) const {
   if (delegate_ && delegate_->HasDataResource(resource_id)) {
     return true;
   }
+  base::AutoLock lock_scope(*resource_handles_lock_);
   for (const auto& resource_handle : resource_handles_) {
     if (resource_handle->HasResource(static_cast<uint16_t>(resource_id))) {
       return true;
@@ -791,6 +793,8 @@ std::string_view ResourceBundle::GetRawDataResourceForScale(
       return data;
     }
   }
+
+  base::AutoLock lock_scope(*resource_handles_lock_);
 
   if (scale_factor != ui::k100Percent) {
     for (const auto& resource_handle : resource_handles_) {
@@ -1013,6 +1017,7 @@ void ResourceBundle::CheckCanOverrideStringResources() {
 ResourceBundle::ResourceBundle(Delegate* delegate)
     : delegate_(delegate),
       locale_resources_data_lock_(new base::Lock),
+      resource_handles_lock_(new base::Lock),
       max_scale_factor_(k100Percent) {
   mangle_localized_strings_ = base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kMangleLocalizedStrings);
@@ -1104,6 +1109,7 @@ void ResourceBundle::AddDataPackFromPathInternal(
 
 void ResourceBundle::AddResourceHandle(
     std::unique_ptr<ResourceHandle> resource_handle) {
+  base::AutoLock lock_scope(*resource_handles_lock_);
 #if DCHECK_IS_ON()
   resource_handle->CheckForDuplicateResources(resource_handles_);
 #endif
@@ -1137,7 +1143,13 @@ void ResourceBundle::InitDefaultFontList() {
 }
 
 gfx::ImageSkia ResourceBundle::CreateImageSkia(int resource_id) {
-  DCHECK(!resource_handles_.empty()) << "Missing call to SetResourcesDataDLL?";
+#if DCHECK_IS_ON()
+  {
+    base::AutoLock lock_scope(*resource_handles_lock_);
+    DCHECK(!resource_handles_.empty())
+        << "Missing call to SetResourcesDataDLL?";
+  }
+#endif
 
   std::optional<LottieData> data = GetLottieData(resource_id);
   if (data) {
@@ -1196,6 +1208,7 @@ bool ResourceBundle::LoadBitmap(int resource_id,
                                 SkBitmap* bitmap,
                                 bool* fell_back_to_1x) const {
   DCHECK(fell_back_to_1x);
+  base::AutoLock lock_scope(*resource_handles_lock_);
   for (const auto& pack : resource_handles_) {
     if (pack->GetResourceScaleFactor() == ui::kScaleFactorNone &&
         LoadBitmap(*pack, resource_id, bitmap, fell_back_to_1x)) {

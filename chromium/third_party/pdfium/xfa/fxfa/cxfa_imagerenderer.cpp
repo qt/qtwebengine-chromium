@@ -19,7 +19,7 @@ CXFA_ImageRenderer::CXFA_ImageRenderer(CFX_RenderDevice* device,
     : image_matrix_(image_to_device),
       device_(device),
       bitmap_(std::move(bitmap)) {
-  // Assume this always draws into CFX_DefaultRenderDevice.
+  // Assume this always draws into CFX_RenderDevice.
   CHECK(device_);
   CHECK(device_->RenderCapGetBits());
   CHECK(bitmap_);

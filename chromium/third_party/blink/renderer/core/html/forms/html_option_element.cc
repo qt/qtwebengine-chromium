@@ -593,7 +593,9 @@ void HTMLOptionElement::WalkAncestorsAndUpdate() {
   HTMLSelectElement::SelectOptgroupDatalist ancestors =
       HTMLSelectElement::WalkAncestorsForRelatedParts(*this);
   nearest_ancestor_select_ = ancestors.select;
-  nearest_ancestor_select_child_ = ancestors.select_child;
+  if (RuntimeEnabledFeatures::FilterableSelectEnabled()) {
+    nearest_ancestor_select_child_ = ancestors.select_child;
+  }
   nearest_ancestor_optgroup_ = ancestors.optgroup;
   nearest_ancestor_datalist_ = ancestors.datalist;
   SetFiltered(false);
@@ -779,7 +781,8 @@ void HTMLOptionElement::DefaultEventHandlerInternal(Event& event) {
   int ignore_modifiers = WebInputEvent::kShiftKey | tab_ignore_modifiers;
   FocusParams focus_params(FocusTrigger::kUserGesture);
 
-  if (keyboard_event && event.type() == event_type_names::kKeydown) {
+  if (keyboard_event && event.type() == event_type_names::kKeydown &&
+      !keyboard_event->repeat()) {
     const AtomicString key(keyboard_event->key());
     if (!(keyboard_event->GetModifiers() & ignore_modifiers)) {
       if ((key == " " || key == keywords::kCapitalEnter)) {

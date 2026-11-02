@@ -28,6 +28,7 @@
 #include "absl/status/statusor.h"
 #include "absl/types/span.h"
 #include "ink/geometry/affine_transform.h"
+#include "ink/geometry/internal/modulo.h"
 #include "ink/strokes/input/stroke_input.h"
 #include "ink/types/duration.h"
 #include "ink/types/internal/copy_on_write.h"
@@ -74,7 +75,8 @@ class StrokeInputBatch {
 
   // Performs validation on `inputs` and returns the resulting batch or error.
   static absl::StatusOr<StrokeInputBatch> Create(
-      absl::Span<const StrokeInput> inputs, uint32_t noise_seed = 0);
+      absl::Span<const StrokeInput> inputs, uint32_t noise_seed = 0,
+      float base_animation_phase = 0.0f);
 
   StrokeInputBatch() = default;
   StrokeInputBatch(const StrokeInputBatch&) = default;
@@ -86,6 +88,11 @@ class StrokeInputBatch {
   ConstIterator begin() const;
   ConstIterator end() const;
 
+  // Erases all inputs from the batch, and resets both the noise seed and base
+  // animation phase to their default values of zero.
+  //
+  // This is functionally equivalent to `*this = StrokeInputBatch()`, except
+  // that it will reuse existing allocations when possible.
   void Clear();
 
   int Size() const;
@@ -114,7 +121,8 @@ class StrokeInputBatch {
   //
   // In the special case that this will overwrite the only held `StrokeInput`,
   // it is valid for the format of `input` to be different from the currently
-  // held value.
+  // held value. Regardless, in all cases, the noise seed and base animation
+  // phase will not be modified.
   //
   // Returns an error and does not modify the batch if validation fails.
   absl::Status Set(int i, const StrokeInput& input);
@@ -140,9 +148,9 @@ class StrokeInputBatch {
   // Returns an error and does not modify the batch if validation fails.
   absl::Status Append(const StrokeInput& input);
 
-  // Validates and appends a sequence of `inputs`. This batch's per-stroke seed
-  // value is left unchanged, even when appending another batch with a different
-  // seed value.
+  // Validates and appends a sequence of `inputs`. This batch's noise seed and
+  // base animation phase are left unchanged, even when appending another batch
+  // with a different noise seed and/or base animation phase.
   //
   // Returns an error and does not modify the batch if validation fails.
   absl::Status Append(absl::Span<const StrokeInput> inputs);
@@ -158,6 +166,10 @@ class StrokeInputBatch {
   // If `start` + `count` is greater than `Size()`, then all elements from
   // `start` until the end of the input batch are erased. CHECK-fails if `start`
   // is not less than or equal to `Size()`.
+  //
+  // This will not change the noise seed or base animation phase associated with
+  // this input batch, even if all inputs are erased.  If you wish to reset
+  // those values as well, consider using `Clear()`.
   void Erase(int start, int count = std::numeric_limits<int>::max());
 
   // Returns the current input tool type or `StrokeInput::ToolType::kUnknown`
@@ -193,6 +205,24 @@ class StrokeInputBatch {
   // stroke from this input batch.
   void SetNoiseSeed(uint32_t seed);
 
+  // A [0, 1) value that will determine the stroke's overall animation progress
+  // at some arbitrary zero clock state, so that different strokes can be
+  // animated correctly relative to each other.
+  float GetBaseAnimationPhase() const;
+
+  // Sets the [0, 1) animation progress value that the stroke should have at
+  // clock state zero. For newly-drawn strokes, this value should generally be
+  // chosen such that the stroke will be at animation progress 0 at the current
+  // clock state for the first input of the stroke.
+  //
+  // Note that it doesn't especially matter what clock is being used by the
+  // environment creating the stroke, since this value only matters for
+  // capturing the relative animation phases between multiple strokes created in
+  // the same environment: if such strokes are serialized and later loaded in a
+  // different environment with a different clock that uses a different zero
+  // point, they will still maintain the same relative phases.
+  void SetBaseAnimationPhase(float phase);
+
   // Which properties of the stroke should be preserved over transforms.
   enum class TransformInvariant {
     kPreserveDuration = 0,
@@ -215,6 +245,17 @@ class StrokeInputBatch {
   template <typename Sink>
   friend void AbslStringify(Sink& sink, const StrokeInputBatch& batch) {
     sink.Append(batch.ToFormattedString());
+  }
+
+  bool operator==(const StrokeInputBatch& rhs) const = default;
+
+  template <typename H>
+  friend H AbslHashValue(H h, const StrokeInputBatch& batch) {
+    h = H::combine(std::move(h), batch.size_, batch.tool_type_,
+                   batch.stroke_unit_length_, batch.noise_seed_,
+                   batch.base_animation_phase_, batch.has_pressure_,
+                   batch.has_tilt_, batch.has_orientation_, batch.data_);
+    return h;
   }
 
  private:
@@ -240,6 +281,12 @@ class StrokeInputBatch {
   // Transforms the input points in place, applying the `AffineTransform` while
   // keeping the stroke total elapsed time the same.
   void TransformPreservingDuration(const AffineTransform& transform);
+
+  // Erases all inputs from the batch, and clears the inline member variables
+  // that store the "format" of the inputs (i.e. tool type and whether pressure,
+  // tilt, and orientation are present), but does *not* reset either the noise
+  // seed nor the base animation phase.
+  void ClearInputs();
 
   // Updates the inline member variables that store the "format" of the inputs
   // (i.e. tool type and whether pressure, tilt, and orientation are present).
@@ -273,6 +320,7 @@ class StrokeInputBatch {
   StrokeInput::ToolType tool_type_ = StrokeInput::ToolType::kUnknown;
   PhysicalDistance stroke_unit_length_ = StrokeInput::kNoStrokeUnitLength;
   uint32_t noise_seed_ = 0;
+  float base_animation_phase_ = 0.0f;
   bool has_pressure_ = false;
   bool has_tilt_ = false;
   bool has_orientation_ = false;
@@ -367,6 +415,14 @@ inline uint32_t StrokeInputBatch::GetNoiseSeed() const { return noise_seed_; }
 
 inline void StrokeInputBatch::SetNoiseSeed(uint32_t seed) {
   noise_seed_ = seed;
+}
+
+inline float StrokeInputBatch::GetBaseAnimationPhase() const {
+  return base_animation_phase_;
+}
+
+inline void StrokeInputBatch::SetBaseAnimationPhase(float phase) {
+  base_animation_phase_ = geometry_internal::FloatModulo(phase, 1.0f);
 }
 
 inline bool StrokeInputBatch::HasStrokeUnitLength() const {

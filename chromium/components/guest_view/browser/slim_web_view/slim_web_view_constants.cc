@@ -17,20 +17,24 @@ const char kEventNewWindow[] = "newwindow";
 const char kEventPermission[] = "permission";
 const char kEventSizeChanged[] = "sizechanged";
 const char kEventUnresponsive[] = "unresponsive";
+const char kEventZoomChange[] = "zoomchange";
 
 // Parameters on events.
 const char kInitialHeight[] = "initialHeight";
 const char kInitialWidth[] = "initialWidth";
 const char kNewHeight[] = "newHeight";
 const char kNewWidth[] = "newWidth";
+const char kNewZoomFactor[] = "newZoomFactor";
 const char kOldHeight[] = "oldHeight";
 const char kOldWidth[] = "oldWidth";
+const char kOldZoomFactor[] = "oldZoomFactor";
 const char kPermission[] = "permission";
 const char kProcessId[] = "processId";
 const char kReason[] = "reason";
 const char kRequestId[] = "requestId";
 const char kRequestInfo[] = "requestInfo";
 const char kTargetURL[] = "targetUrl";
+const char kUserAgentOverride[] = "userAgentOverride";
 const char kWindowOpenDisposition[] = "windowOpenDisposition";
 
 }  // namespace guest_view::slim_web_view

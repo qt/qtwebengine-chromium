@@ -15,7 +15,7 @@ include_rules = [
   "+chrome/browser/ash/smb_client",
   "+chrome/browser/profiles/profile.h",
   "+chrome/browser/ui/webui/ash/system_web_dialog",
-  "+chrome/common",
+  "+chrome/browser/ui/webui/theme_source.h",
   "+chrome/grit",
   "+chrome/test/base",
 ]

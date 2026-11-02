@@ -86,9 +86,17 @@ void SetCrashKeyThreadSafe(crash_reporter::CrashKeyString<KeySize>& crash_key,
   crash_key.Set(message);
 }
 
-void SetDawnErrorCrashKey(std::string_view message) {
+void AppendDawnErrorCrashKey(std::string_view message) {
+  static base::NoDestructor<base::Lock> lock;
+  static base::NoDestructor<std::string> error_msg;
   static crash_reporter::CrashKeyString<1024> error_key("dawn-error");
-  SetCrashKeyThreadSafe(error_key, message);
+
+  base::AutoLock auto_lock(*lock.get());
+  if (!error_msg->empty()) {
+    error_msg->append("\n");
+  }
+  error_msg->append(message);
+  error_key.Set(*error_msg);
 }
 
 // Different versions of DumpWithoutCrashing for different reasons.
@@ -99,7 +107,7 @@ NOINLINE NOOPT void DumpWithoutCrashingOnDXGIError(wgpu::ErrorType error_type,
                                                    std::string_view message) {
   LOG(ERROR) << "DXGI Error: " << message;
 
-  if (features::kSkiaGraphiteDawnDumpWCOnD3DError.Get()) {
+  if (features::SkiaGraphiteDawnDumpWCOnD3DError()) {
     base::debug::DumpWithoutCrashing();
   }
 }
@@ -108,7 +116,7 @@ NOINLINE NOOPT void DumpWithoutCrashingOnD3D11DebugLayerError(
     wgpu::ErrorType error_type,
     std::string_view message) {
   LOG(ERROR) << message;
-  if (features::kSkiaGraphiteDawnDumpWCOnD3DError.Get()) {
+  if (features::SkiaGraphiteDawnDumpWCOnD3DError()) {
     base::debug::DumpWithoutCrashing();
   }
 }
@@ -123,7 +131,7 @@ NOINLINE NOOPT void DumpWithoutCrashingOnGenericError(
 
 void DumpWithoutCrashingOnError(wgpu::ErrorType error_type,
                                 std::string_view message) {
-  SetDawnErrorCrashKey(message);
+  AppendDawnErrorCrashKey(message);
 #if BUILDFLAG(IS_WIN)
   if (message.find("DXGI_ERROR") != std::string_view::npos) {
     DumpWithoutCrashingOnDXGIError(error_type, message);
@@ -145,7 +153,7 @@ std::vector<const char*> GetDisabledToggles(
     disabled_toggles.push_back(toggle.c_str());
   }
 
-  if (!features::kSkiaGraphiteDawnBackendDebugLabels.Get()) {
+  if (!features::SkiaGraphiteDawnBackendDebugLabels()) {
     // Note: This toggle needs to be explicitly enabled or disabled.
     disabled_toggles.push_back("use_user_defined_labels_in_backend");
   }
@@ -154,7 +162,7 @@ std::vector<const char*> GetDisabledToggles(
   // regressions are investigated.
   disabled_toggles.push_back("vulkan_use_dynamic_rendering");
 
-  if (features::kSkiaGraphiteDawnSkipValidation.Get()) {
+  if (features::SkiaGraphiteDawnSkipValidation()) {
     disabled_toggles.push_back("enable_spirv_validation");
   }
 
@@ -176,16 +184,16 @@ std::vector<const char*> GetEnabledToggles(
 
   // The following toggles are all device-scoped toggles so it's not necessary
   // to pass them when creating the Instance above.
-  if (features::kSkiaGraphiteDawnBackendDebugLabels.Get()) {
+  if (features::SkiaGraphiteDawnBackendDebugLabels()) {
     // Note: This toggle needs to be explicitly enabled or disabled.
     enabled_toggles.push_back("use_user_defined_labels_in_backend");
   }
 
-  if (features::kSkiaGraphiteDawnSkipValidation.Get()) {
+  if (features::SkiaGraphiteDawnSkipValidation()) {
     enabled_toggles.push_back("skip_validation");
   }
 
-  if (features::kSkiaGraphiteDawnEnableAutoMap.Get()) {
+  if (features::SkiaGraphiteDawnEnableAutoMap()) {
     // Tell Dawn to automatically map buffers when they are not in use by the
     // GPU. This allows Skia to access buffer contents on the CPU without
     // blocking, making operations faster.
@@ -202,7 +210,7 @@ std::vector<const char*> GetEnabledToggles(
     // format.
     enabled_toggles.push_back("use_packed_depth24_unorm_stencil8_format");
 
-    if (features::kSkiaGraphiteDawnD3D11DelayFlush.Get()) {
+    if (features::SkiaGraphiteDawnD3D11DelayFlush()) {
       // Tell Dawn to defer sending commands to GPU until swapchain's Present.
       // This will batch the commands better.
       enabled_toggles.push_back("d3d11_delay_flush_to_gpu");
@@ -211,7 +219,7 @@ std::vector<const char*> GetEnabledToggles(
 
   if (backend_type == wgpu::BackendType::D3D11 ||
       backend_type == wgpu::BackendType::D3D12) {
-    if (features::kSkiaGraphiteDawnDisableD3DShaderOptimizations.Get()) {
+    if (features::SkiaGraphiteDawnDisableD3DShaderOptimizations()) {
       enabled_toggles.push_back("d3d_skip_shader_optimizations");
     }
   }
@@ -480,7 +488,8 @@ bool DawnContextProvider::DefaultValidateAdapterFn(wgpu::BackendType,
 // Owns the dawn instance/adapter/device so that it's lifetime is not linked to
 // a specific DawnContextProvider.
 class DawnSharedContext : public base::RefCountedThreadSafe<DawnSharedContext>,
-                          public base::trace_event::MemoryDumpProvider {
+                          public base::trace_event::MemoryDumpProvider,
+                          public GraphiteSharedContext::Delegate {
  public:
   DawnSharedContext(gl::ProgressReporter* progress_reporter,
                     bool thread_safe_graphite_context);
@@ -549,7 +558,7 @@ class DawnSharedContext : public base::RefCountedThreadSafe<DawnSharedContext>,
     }
 
     // This function is meant for delayed flush option.
-    if (!features::kSkiaGraphiteDawnD3D11DelayFlush.Get()) {
+    if (!features::SkiaGraphiteDawnD3D11DelayFlush()) {
       return;
     }
 
@@ -567,8 +576,12 @@ class DawnSharedContext : public base::RefCountedThreadSafe<DawnSharedContext>,
   }
 #endif
 
+  // GraphiteSharedContext::Delegate implementation:
+  void MarkContextLost(error::ContextLostReason reason) override;
+  bool IsContextLost() const override;
+  void FlushBackend() override;
+
   std::optional<error::ContextLostReason> GetResetStatus() const;
-  void MarkContextLost(error::ContextLostReason reason);
 
   std::unique_ptr<GraphiteSharedContext> CreateGraphiteSharedContext(
       const skgpu::graphite::ContextOptions& options,
@@ -591,11 +604,9 @@ class DawnSharedContext : public base::RefCountedThreadSafe<DawnSharedContext>,
 
     return std::make_unique<GraphiteSharedContext>(
         std::move(graphite_context), use_shader_cache_shm_count, is_thread_safe,
-        features::kSkiaGraphiteMaxPendingRecordings.Get(),
-        GetBackendFlushCallback(),
+        features::SkiaGraphiteMaxPendingRecordings(),
         // DawnSharedContext is guaranteed to outlive GraphiteSharedContext.
-        base::BindRepeating(&DawnSharedContext::MarkContextLost,
-                            base::Unretained(this)));
+        this);
   }
 
   bool use_thread_safe_graphite_context() const {
@@ -671,7 +682,7 @@ class DawnSharedContext : public base::RefCountedThreadSafe<DawnSharedContext>,
           // errors reported via instance callback is related to Surface
           // creation. In that case, instead of triggering context loss, we
           // should let the call sites handle them gracefully.
-          SetDawnErrorCrashKey(view);
+          AppendDawnErrorCrashKey(view);
           base::debug::DumpWithoutCrashing();
         }
         break;
@@ -681,15 +692,6 @@ class DawnSharedContext : public base::RefCountedThreadSafe<DawnSharedContext>,
   }
 
   ~DawnSharedContext() override;
-
-  GraphiteSharedContext::FlushCallback GetBackendFlushCallback() {
-#if BUILDFLAG(IS_WIN)
-    return base::BindRepeating(&DawnSharedContext::FlushD3D11CommandsIfDelayed,
-                               base::Unretained(this));
-#else
-    return {};
-#endif
-  }
 
   void OnError(wgpu::ErrorType error_type, wgpu::StringView message);
 
@@ -947,25 +949,26 @@ bool DawnSharedContext::Initialize(
 
   // Start initializing dawn device here.
   wgpu::DawnCacheDeviceDescriptor cache_desc;
-  cache_desc.loadDataFunction = [](const void* key, size_t key_size,
-                                   void* value, size_t value_size,
-                                   void* userdata) -> size_t {
-    if (auto caching_interface =
-            static_cast<DawnSharedContext*>(userdata)->caching_interface_) {
-      return caching_interface->LoadData(key, key_size, value, value_size);
-    }
-    return 0;
-  };
-  cache_desc.storeDataFunction = [](const void* key, size_t key_size,
-                                    const void* value, size_t value_size,
-                                    void* userdata) {
-    if (auto caching_interface =
-            static_cast<DawnSharedContext*>(userdata)->caching_interface_) {
-      caching_interface->StoreData(key, key_size, value, value_size);
-    }
-  };
-  // The dawn device is owned by this so a pointer back here is safe.
-  cache_desc.functionUserdata = this;
+  cache_desc.SetDawnLoadCacheDataCallback(
+      [](std::span<const std::byte> key, std::span<std::byte> value,
+         DawnSharedContext* context) -> size_t {
+        if (auto caching_interface = context->caching_interface_) {
+          if (value.empty()) {
+            return caching_interface->FindKey(key);
+          }
+          return caching_interface->LoadData(key, value);
+        }
+        return 0;
+      },
+      this);
+  cache_desc.SetDawnStoreCacheDataCallback(
+      [](std::span<const std::byte> key, std::span<const std::byte> value,
+         DawnSharedContext* context) {
+        if (auto caching_interface = context->caching_interface_) {
+          caching_interface->StoreData(key, value);
+        }
+      },
+      this);
   cache_desc.nextInChain = &toggles_desc;
 
   wgpu::DawnDeviceAllocatorControl allocator_desc;
@@ -1020,7 +1023,7 @@ bool DawnSharedContext::Initialize(
 
   std::vector<dawn::native::BackendValidationLevel> backend_validation_levels =
       {dawn::native::BackendValidationLevel::Disabled};
-  if (features::kSkiaGraphiteDawnBackendValidation.Get() ||
+  if (features::SkiaGraphiteDawnBackendValidation() ||
       enable_backend_validation) {
     backend_validation_levels.push_back(
         dawn::native::BackendValidationLevel::Partial);
@@ -1103,6 +1106,16 @@ void DawnSharedContext::MarkContextLost(error::ContextLostReason reason) {
   if (!context_lost_reason_.has_value()) {
     context_lost_reason_ = reason;
   }
+}
+
+bool DawnSharedContext::IsContextLost() const {
+  return GetResetStatus().has_value();
+}
+
+void DawnSharedContext::FlushBackend() {
+#if BUILDFLAG(IS_WIN)
+  FlushD3D11CommandsIfDelayed();
+#endif
 }
 
 void DawnSharedContext::OnError(wgpu::ErrorType error_type,

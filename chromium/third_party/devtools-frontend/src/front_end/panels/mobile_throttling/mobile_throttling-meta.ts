@@ -62,9 +62,10 @@ UI.ViewManager.registerViewExtension({
   title: i18nLazyString(UIStrings.throttling),
   commandPrompt: i18nLazyString(UIStrings.showThrottling),
   order: 35,
-  async loadView() {
+  async loadView(universe) {
     const MobileThrottling = await loadMobileThrottlingModule();
-    return new MobileThrottling.ThrottlingSettingsTab.ThrottlingSettingsTab();
+    const {settings} = universe;
+    return new MobileThrottling.ThrottlingSettingsTab.ThrottlingSettingsTab(settings);
   },
   settings: [
     'custom-network-conditions',

@@ -21,6 +21,9 @@ syntax = "proto3";
 
 package oak.private_memory;
 
+import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
+
 // A simple key value pair.
 message DataBlob {
   string id = 1;
@@ -33,6 +36,7 @@ message WriteUnencryptedDataBlobRequest {
 
 message WriteDataBlobRequest {
   DataBlob data_blob = 1;
+  google.protobuf.Timestamp coarsened_expiration_timestamp = 2;
 }
 
 message WriteDataBlobResponse {}
@@ -41,8 +45,6 @@ message WriteUnencryptedDataBlobResponse {}
 
 message ReadDataBlobRequest {
   string id = 1;
-  // Whether to perform a strong read to ensure the latest data is returned.
-  bool strong_read = 2;
 }
 
 message ReadUnencryptedDataBlobRequest {
@@ -59,16 +61,111 @@ message ReadUnencryptedDataBlobResponse {
   DataBlob data_blob = 1;
 }
 
+// A metadata blob containing a version.
+message MetadataBlob {
+  // The data blob containing the metadata info.
+  DataBlob data_blob = 1;
+
+  // An opaque version string representing the version of this metadata blob.
+  // The string should not be parsed or interpreted by the client. It should
+  // only be saved to pass back verbatim to calls to WriteMetadataBlob.
+  string version = 2;
+}
+
+message ReadMetadataBlobRequest {
+  string id = 1;
+  google.protobuf.Timestamp coarsened_expiration_timestamp = 2;
+}
+
+message ReadMetadataBlobResponse {
+  MetadataBlob metadata_blob = 1;
+}
+
+message WriteMetadataBlobRequest {
+  MetadataBlob metadata_blob = 1;
+  google.protobuf.Timestamp coarsened_expiration_timestamp = 2;
+}
+
+message WriteMetadataBlobResponse {
+  // If true, the write was rejected due to a version mismatch (optimistic
+  // concurrency conflict). The caller should re-fetch the current metadata,
+  // re-apply changes, and retry.
+  bool version_conflict = 1;
+}
+
+message ReadMetadataBlobStreamRequest {
+  string id = 1;
+  google.protobuf.Timestamp coarsened_expiration_timestamp = 2;
+}
+
+message ReadMetadataBlobStreamResponse {
+  oneof response {
+    // The initial response containing the metadata. The blob field in the
+    // data_blob can be empty or contain the first chunk.
+    //
+    // This variant should only be sent once, as the first request. Sending it
+    // more than once will result in an error.
+    MetadataBlob metadata_blob = 1;
+
+    // Subsequent chunks of the blob. These will be concatenated in the order
+    // received to construct the final payload. Sending this variant before
+    // sending the metadata_blob will result in an error.
+    bytes chunk = 2;
+  }
+}
+
+message WriteMetadataBlobStreamRequest {
+  oneof request {
+    // The initial request containing the metadata. The blob field in the
+    // data_blob can be empty or contain the first chunk.
+    MetadataBlob metadata_blob = 1;
+
+    // Subsequent chunks of the blob. They can be concatenated in the order
+    // received to construct the final payload. The server will indicate the end
+    // of the file by sending a half-close.
+    bytes chunk = 2;
+  }
+  google.protobuf.Timestamp coarsened_expiration_timestamp = 3;
+}
+
+message WriteMetadataBlobStreamResponse {
+  // If true, the write was rejected due to a version mismatch (optimistic
+  // concurrency conflict). The caller should re-fetch the current metadata,
+  // re-apply changes, and retry.
+  bool version_conflict = 1;
+}
+
 message ResetDatabaseRequest {}
 
 message ResetDatabaseResponse {}
 
-message WriteBlobsRequest {
-  repeated DataBlob encrypted_blobs = 1;
-  repeated DataBlob unencrypted_blobs = 2;
+message DeleteBlobsRequest {
+  repeated string ids = 1;
 }
 
-message WriteBlobsResponse {}
+message DeleteBlobsResponse {}
+
+message ReadDataBlobsRequest {
+  repeated string ids = 1;
+}
+
+message ReadDataBlobsResponse {
+  // The data blobs that were successfully read, keyed by ID.
+  map<string, DataBlob> data_blobs = 1;
+
+  // IDs that failed to read, with their status.
+  map<string, google.rpc.Status> failed_ids = 2;
+}
+
+message WriteDataBlobsRequest {
+  repeated DataBlob data_blobs = 1;
+  google.protobuf.Timestamp coarsened_expiration_timestamp = 2;
+}
+
+message WriteDataBlobsResponse {
+  // IDs that failed to write, with their status.
+  map<string, google.rpc.Status> failed_ids = 1;
+}
 
 // The untrusted database service that the trusted application can connect to.
 service SealedMemoryDatabaseService {
@@ -76,6 +173,47 @@ service SealedMemoryDatabaseService {
   rpc WriteDataBlob(WriteDataBlobRequest) returns (WriteDataBlobResponse) {}
   // Reads a data blob from the database.
   rpc ReadDataBlob(ReadDataBlobRequest) returns (ReadDataBlobResponse) {}
+
+  // Write a metadata blob to the database.
+  //
+  // If the current version of the stored metadata blob does not match the
+  // version provided in the request, the write will be rejected and
+  // `version_conflict` will be set to `true` in the response.
+  //
+  // In this case, you should fetch the latest version using `ReadMetadataBlob`,
+  // apply your changes on the latest version, and re-attempt the write
+  // operation.
+  rpc WriteMetadataBlob(WriteMetadataBlobRequest)
+      returns (WriteMetadataBlobResponse) {}
+
+  // Read a metadatablob from the database.
+  //
+  // The returned metadatablob will include a version string; this version
+  // string should be provided verbatim in the call to WriteMetadataBlob if
+  // changes are to be committed.
+  rpc ReadMetadataBlob(ReadMetadataBlobRequest)
+      returns (ReadMetadataBlobResponse) {}
+
+  // Write a metadata blob to the database using a stream.
+  // The first request message must contain the metadata_blob.
+  // Subsequent request messages should contain chunks of the blob.
+  //
+  // There's no requirement on the chunk szies; they can very from
+  // request-to-request, and be of any size, as llong as it fits in the message
+  // size limit.
+  rpc WriteMetadataBlobStream(stream WriteMetadataBlobStreamRequest)
+      returns (WriteMetadataBlobStreamResponse) {}
+
+  // Read a metadata blob from the database using a stream.
+  // The first response message will contain the metadata_blob.
+  // Subsequent response messages will contain chunks of the blob.
+  //
+  // The returned chunks can be of any size, and the size can vary from
+  // response-to-response. The client should concatenate them in the order
+  // received to construct the final payload.
+  rpc ReadMetadataBlobStream(ReadMetadataBlobStreamRequest)
+      returns (stream ReadMetadataBlobStreamResponse) {}
+
   // Writes an unencrypted data blob to the database.
   rpc WriteUnencryptedDataBlob(WriteUnencryptedDataBlobRequest)
       returns (WriteUnencryptedDataBlobResponse) {}
@@ -86,8 +224,12 @@ service SealedMemoryDatabaseService {
   // Resets the database. This is mainly used for testing.
   rpc ResetDatabase(ResetDatabaseRequest) returns (ResetDatabaseResponse) {}
 
-  // Writes multiple blobs (encrypted or unencrypted) to the database in a
-  // batch. Backend implementation should guarantee that either all blobs are
-  // written or none are written.
-  rpc WriteBlobs(WriteBlobsRequest) returns (WriteBlobsResponse) {}
+  // Deletes multiple blobs from the database.
+  rpc DeleteBlobs(DeleteBlobsRequest) returns (DeleteBlobsResponse) {}
+
+  // Reads multiple data blobs from the database.
+  rpc ReadDataBlobs(ReadDataBlobsRequest) returns (ReadDataBlobsResponse) {}
+
+  // Writes multiple data blobs to the database.
+  rpc WriteDataBlobs(WriteDataBlobsRequest) returns (WriteDataBlobsResponse) {}
 }

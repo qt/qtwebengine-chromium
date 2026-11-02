@@ -193,6 +193,11 @@ struct StructTraits<autofill::mojom::FormFieldDataDataView,
     return r.placeholder();
   }
 
+  static const std::u16string& placeholder_attribute(
+      const autofill::FormFieldData& r) {
+    return r.placeholder_attribute();
+  }
+
   static const std::u16string& css_classes(const autofill::FormFieldData& r) {
     return r.css_classes();
   }
@@ -495,6 +500,11 @@ struct StructTraits<autofill::mojom::FormFieldDataPredictionsDataView,
   static size_t rank_in_host_form_signature_group(
       const autofill::FormFieldDataPredictions& r) {
     return r.rank_in_host_form_signature_group;
+  }
+
+  static bool did_trigger_javascript_autofill(
+      const autofill::FormFieldDataPredictions& r) {
+    return r.did_trigger_javascript_autofill;
   }
 
   static bool Read(autofill::mojom::FormFieldDataPredictionsDataView data,

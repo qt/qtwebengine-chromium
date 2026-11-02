@@ -167,6 +167,10 @@ declare_args() {
   winappsdk_dir = ""
 }
 
+if (!defined(angle_shared_libvulkan_on_mac)) {
+  angle_shared_libvulkan_on_mac = false
+}
+
 declare_args() {
   # By default we enable debug layers when asserts are turned on.
   angle_debug_layers_enabled = is_debug || angle_assert_always_on
@@ -177,8 +181,9 @@ declare_args() {
     ndk_api_level_at_least_26 = android_ndk_api_level >= 26
   }
 
-  # Vulkan loader is statically linked on Mac. http://anglebug.com/40096682
-  angle_shared_libvulkan = !is_mac
+  # Vulkan loader is statically linked on Mac unless the embedder specifies
+  # otherwise. http://anglebug.com/40096682
+  angle_shared_libvulkan = !is_mac || angle_shared_libvulkan_on_mac
 
   # There's no "is_winuwp" helper in BUILDCONFIG.gn, so we define one ourselves
   # Windows App SDK is almost UWP but for Win32, so we want all the same things
@@ -187,10 +192,12 @@ declare_args() {
   angle_is_msvc = is_win && !is_clang
 
   # Default to using "_angle" suffix on Android
-  if (is_android) {
-    angle_libs_suffix = "_angle"
-  } else {
-    angle_libs_suffix = ""
+  if (!defined(angle_libs_suffix)) {
+    if (is_android) {
+      angle_libs_suffix = "_angle"
+    } else {
+      angle_libs_suffix = ""
+    }
   }
 
   # Currently Windows on Arm doesn't support OpenGL or Vulkan.
@@ -215,7 +222,6 @@ declare_args() {
   # True if we are building inside an ANGLE checkout.
   angle_standalone = !build_with_chromium
 
-  angle_enable_d3d9 = is_win && !angle_is_winuwp
   angle_enable_d3d11 = is_win
   angle_enable_gl =
       (ozone_platform_drm || ozone_platform_wayland || !is_linux ||
@@ -243,12 +249,59 @@ declare_args() {
   angle_enable_cl_passthrough = angle_enable_cl
 
   # Disable WGPU backend. Currently disabled on Android, Fuchsia, WinUWP, and
-  # Win MSVC. X11 required on Linux.
+  # Win MSVC. X11 or Wayland required on Linux.
   # anglebug.com/42266968
   angle_enable_wgpu =
       !is_official_build && !(is_android || is_fuchsia || angle_is_winuwp) &&
-      (!is_win || is_clang) && (!is_linux || angle_use_x11) &&
+      (!is_win || is_clang) &&
+      (!is_linux || angle_use_x11 || angle_use_wayland) &&
       defined(angle_dawn_dir) && checkout_angle_dawn_deps
+}
+
+declare_args() {
+  # Enable the ANGLE_explicit_context extension. This duplicates all GL entry
+  # points which increases binary size.
+  # Currently enabled only when the WebGPU backend is enabled because only the
+  # WebGPU backend currently supports this extension.
+  angle_enable_explicit_context = angle_enable_wgpu
+}
+
+declare_args() {
+  # PartitionAlloc is Chrome's memory allocator.
+  #
+  # Enabling it allows ANGLE to use the same allocator as Chrome, which can
+  # provide security benefits by turning most UAFs in Angle's internal
+  # pointers into safe crashes. Additionally, it can help align tests/benchmark
+  # results closer with in-browser behavior, providing more accurate
+  # performance metrics that reflect real-world usage in Chrome.
+  angle_use_partition_alloc =
+      # Only for Angle CQ and local development. Not for arbitrary embedders.
+      angle_standalone &&
+      # Only enable PartitionAlloc in assert-enabled builds to avoid performance
+      # penalties in pure release standalone builds.
+      angle_assert_always_on &&
+      # Angle CQ enables `checkout_angle_partition_alloc` by default so that it
+      # can be used in tests/benchmarks. For local development, you can enable
+      # it by adding
+      # ```
+      #    "custom_vars": {
+      #      "checkout_angle_partition_alloc": True,
+      #    },
+      # ```
+      # to your .gclient config.
+      checkout_angle_partition_alloc &&
+      # While GCC is supported, it still lacks CI coverage to catch regressions.
+      # Therefore, we disable it by default on GCC builds for now.
+      is_clang &&
+      # TODO(b/503180635): Enable PartitionAlloc on Windows standalone builds.
+      # Currently it is disabled because it leads to heap mismatch crashes in
+      # trace tests (DLLs vs EXE).
+      !is_win &&
+      # TODO(b/503180635): Enable PartitionAlloc on Android standalone builds.
+      # Currently it is disabled because it leads to systematic test failures
+      # (likely startup crashes) on 'angle-cq-android-arm64-rel' bot across
+      # almost all test suites (unittests, end2end_tests, deqp, etc.).
+      !is_android
 }
 
 declare_args() {
@@ -288,7 +341,7 @@ declare_args() {
   angle_enable_swiftshader = angle_enable_vulkan && !is_android && is_clang
 
   # Translator backend support:
-  angle_enable_hlsl = angle_enable_d3d9 || angle_enable_d3d11
+  angle_enable_hlsl = angle_enable_d3d11
   angle_enable_essl = angle_enable_gl || use_ozone
   angle_enable_glsl = angle_enable_gl || use_ozone
   angle_enable_msl = angle_enable_metal
@@ -340,10 +393,6 @@ declare_args() {
       "$angle_root/third_party/lunarg-vulkantools/src"
 
   angle_build_vulkan_system_info = angle_has_build && !angle_is_winuwp
-
-  # Enable overlay by default when debug layers are enabled. This is currently
-  # only implemented on Vulkan.
-  angle_enable_overlay = angle_enable_vulkan && angle_debug_layers_enabled
 
   angle_build_mesa = false
 

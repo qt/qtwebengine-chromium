@@ -4,12 +4,14 @@
 
 #include "net/device_bound_sessions/session.h"
 
+#include <optional>
 #include <string_view>
 
 #include "base/test/bind.h"
 #include "base/test/gmock_expected_support.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
+#include "components/unexportable_keys/unexportable_key_id.h"
 #include "net/base/features.h"
 #include "net/cookies/cookie_constants.h"
 #include "net/cookies/cookie_inclusion_status.h"
@@ -23,8 +25,11 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_builder.h"
 #include "net/url_request/url_request_test_util.h"
+#include "testing/gmock/include/gmock/gmock.h"
 
 using base::test::ErrorIs;
+using base::test::ValueIs;
+using ::testing::Optional;
 
 namespace net::device_bound_sessions {
 
@@ -57,18 +62,21 @@ const GURL kRefreshUrl(kRefreshUrlString);
 const GURL kTestUrlForWrongETLD(kUrlStringForWrongETLD);
 
 SessionParams CreateValidParams() {
-  SessionParams::Scope scope;
-  scope.origin = "https://example.test";
-  std::vector<SessionParams::Credential> cookie_credentials(
-      {SessionParams::Credential{"test_cookie",
-                                 "Secure; Domain=example.test"}});
-  return SessionParams{kSessionId,
-                       kTestUrl,
-                       kRefreshUrlString,
-                       std::move(scope),
-                       std::move(cookie_credentials),
-                       unexportable_keys::UnexportableSigningKeyId(),
-                       /*allowed_refresh_initiators=*/{"*"}};
+  return {
+      .session_id = kSessionId,
+      .fetcher_url = kTestUrl,
+      .refresh_url = kRefreshUrlString,
+      .scope = {.origin = "https://example.test"},
+      .credentials =
+          {
+              {
+                  .name = "test_cookie",
+                  .attributes = "Secure; Domain=example.test",
+              },
+          },
+      .key_id = unexportable_keys::UnexportableSigningKeyId(),
+      .allowed_refresh_initiators = {"*"},
+  };
 }
 
 TEST_F(SessionTest, ValidService) {
@@ -239,6 +247,30 @@ TEST_F(SessionTest, CreateWithInvalidCredential) {
       ErrorIs(MatchesErrorType(SessionError::kInvalidCredentialsCookie)));
 }
 
+TEST_F(SessionTest, CreateWithAttestationKey) {
+  SessionParams params = CreateValidParams();
+  params.attestation_key_id = unexportable_keys::UnexportableAttestationKeyId();
+
+  ASSERT_OK_AND_ASSIGN(std::unique_ptr<Session> session,
+                       Session::CreateIfValid(params));
+  ASSERT_TRUE(session);
+
+  EXPECT_THAT(session->maybe_unexportable_attestation_key_id(),
+              ValueIs(Optional(*params.attestation_key_id)));
+}
+
+TEST_F(SessionTest, CreateWithNullAttestationKey) {
+  SessionParams params = CreateValidParams();
+  params.attestation_key_id = std::nullopt;
+
+  ASSERT_OK_AND_ASSIGN(std::unique_ptr<Session> session,
+                       Session::CreateIfValid(params));
+  ASSERT_TRUE(session);
+
+  EXPECT_THAT(session->maybe_unexportable_attestation_key_id(),
+              ValueIs(std::nullopt));
+}
+
 TEST_F(SessionTest, ToFromProto) {
   ASSERT_OK_AND_ASSIGN(std::unique_ptr<Session> session,
                        Session::CreateIfValid(CreateValidParams()));
@@ -257,6 +289,38 @@ TEST_F(SessionTest, ToFromProto) {
   // Simulate unwrapping successfully.
   restored->set_unexportable_key_id(session->unexportable_key_id());
   EXPECT_TRUE(restored->IsEqualForTesting(*session));
+}
+
+TEST_F(SessionTest, CreateFromProtoWithAttestationKey) {
+  ASSERT_OK_AND_ASSIGN(std::unique_ptr<Session> session,
+                       Session::CreateIfValid(CreateValidParams()));
+  ASSERT_TRUE(session);
+
+  // Proto has wrapped_attestation_key -> restored session has key ID as
+  // kKeyNotReady.
+  proto::Session sproto = session->ToProto();
+  sproto.set_wrapped_attestation_key("mock_wrapped_attestation_key");
+
+  std::unique_ptr<Session> restored = Session::CreateFromProto(sproto);
+  ASSERT_TRUE(restored);
+  EXPECT_THAT(restored->maybe_unexportable_attestation_key_id(),
+              ErrorIs(unexportable_keys::ServiceError::kKeyNotReady));
+}
+
+TEST_F(SessionTest, CreateFromProtoWithoutAttestationKey) {
+  ASSERT_OK_AND_ASSIGN(std::unique_ptr<Session> session,
+                       Session::CreateIfValid(CreateValidParams()));
+  ASSERT_TRUE(session);
+
+  // Proto lacks wrapped_attestation_key -> restored session has key ID as
+  // std::nullopt.
+  proto::Session sproto = session->ToProto();
+  sproto.clear_wrapped_attestation_key();
+
+  std::unique_ptr<Session> restored = Session::CreateFromProto(sproto);
+  ASSERT_TRUE(restored);
+  EXPECT_THAT(restored->maybe_unexportable_attestation_key_id(),
+              ValueIs(std::nullopt));
 }
 
 TEST_F(SessionTest, FailCreateFromInvalidProto) {
@@ -368,7 +432,8 @@ TEST_F(SessionTest, DeferredSession) {
   ASSERT_TRUE(session);
   net::TestDelegate delegate;
   std::unique_ptr<URLRequest> request =
-      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation);
+      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation,
+                              net::handles::kInvalidNetworkHandle);
   request->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
 
   DbscRequest dbsc_request(request.get());
@@ -395,7 +460,8 @@ TEST_F(SessionTest, NotDeferredAsExcluded) {
   ASSERT_TRUE(session);
   net::TestDelegate delegate;
   std::unique_ptr<URLRequest> request =
-      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation);
+      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation,
+                              net::handles::kInvalidNetworkHandle);
   request->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
 
   DbscRequest dbsc_request(request.get());
@@ -416,7 +482,8 @@ TEST_F(SessionTest, NotDeferredSubdomain) {
   ASSERT_TRUE(session);
   net::TestDelegate delegate;
   std::unique_ptr<URLRequest> request =
-      context_->CreateRequest(url_subdomain, IDLE, &delegate, kDummyAnnotation);
+      context_->CreateRequest(url_subdomain, IDLE, &delegate, kDummyAnnotation,
+                              net::handles::kInvalidNetworkHandle);
   request->set_site_for_cookies(SiteForCookies::FromUrl(url_subdomain));
 
   DbscRequest dbsc_request(request.get());
@@ -444,7 +511,8 @@ TEST_F(SessionTest, DeferredIncludedSubdomain) {
   ASSERT_TRUE(session);
   net::TestDelegate delegate;
   std::unique_ptr<URLRequest> request =
-      context_->CreateRequest(url_subdomain, IDLE, &delegate, kDummyAnnotation);
+      context_->CreateRequest(url_subdomain, IDLE, &delegate, kDummyAnnotation,
+                              net::handles::kInvalidNetworkHandle);
   request->set_site_for_cookies(SiteForCookies::FromUrl(url_subdomain));
 
   DbscRequest dbsc_request(request.get());
@@ -466,7 +534,8 @@ TEST_F(SessionTest, NotDeferredWithCookieSession) {
   ASSERT_TRUE(session);
   net::TestDelegate delegate;
   std::unique_ptr<URLRequest> request =
-      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation);
+      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation,
+                              net::handles::kInvalidNetworkHandle);
   request->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
 
   DbscRequest dbsc_request(request.get());
@@ -510,7 +579,8 @@ TEST_F(SessionTest, NotDeferredInsecure) {
   ASSERT_TRUE(session);
   net::TestDelegate delegate;
   std::unique_ptr<URLRequest> request = context_->CreateRequest(
-      test_insecure_url, IDLE, &delegate, kDummyAnnotation);
+      test_insecure_url, IDLE, &delegate, kDummyAnnotation,
+      net::handles::kInvalidNetworkHandle);
   request->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
 
   DbscRequest dbsc_request(request.get());
@@ -530,7 +600,8 @@ TEST_F(SessionTest, DeferredEmptyCookieAttributesCredentialsField) {
   ASSERT_TRUE(session);
   net::TestDelegate delegate;
   std::unique_ptr<URLRequest> request =
-      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation);
+      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation,
+                              net::handles::kInvalidNetworkHandle);
   request->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
 
   DbscRequest dbsc_request(request.get());
@@ -554,9 +625,9 @@ TEST_F(SessionTest, DeferredNarrowerScopeOrigin) {
   ASSERT_TRUE(session);
   net::TestDelegate delegate;
   // Create a request matching the scope origin.
-  std::unique_ptr<URLRequest> request =
-      context_->CreateRequest(GURL("https://sub.example.test/index.html"), IDLE,
-                              &delegate, kDummyAnnotation);
+  std::unique_ptr<URLRequest> request = context_->CreateRequest(
+      GURL("https://sub.example.test/index.html"), IDLE, &delegate,
+      kDummyAnnotation, net::handles::kInvalidNetworkHandle);
   request->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
 
   DbscRequest dbsc_request(request.get());
@@ -581,7 +652,8 @@ TEST_F(SessionTest, NotDeferredNarrowerScopeOrigin) {
   net::TestDelegate delegate;
   // Create a request with a broader scope than the scope origin.
   std::unique_ptr<URLRequest> request =
-      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation);
+      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation,
+                              net::handles::kInvalidNetworkHandle);
   request->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
 
   DbscRequest dbsc_request(request.get());
@@ -601,7 +673,8 @@ TEST_F(SessionTest, DeferredMissingScopeOrigin) {
   net::TestDelegate delegate;
   // Create a request matching the fetcher URL.
   std::unique_ptr<URLRequest> request =
-      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation);
+      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation,
+                              net::handles::kInvalidNetworkHandle);
   request->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
 
   DbscRequest dbsc_request(request.get());
@@ -630,7 +703,8 @@ TEST_F(SessionTest, DeferredAllowedRefreshInitiators) {
   net::TestDelegate delegate;
   // Create a request matching the fetcher URL.
   std::unique_ptr<URLRequest> request =
-      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation);
+      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation,
+                              net::handles::kInvalidNetworkHandle);
   request->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
 
   // Browser-initiated requests can always be deferred
@@ -707,15 +781,12 @@ class InsecureDelegate : public CookieAccessDelegate {
       const url::Origin& top_level_origin) const override {
     return true;
   }
-  [[nodiscard]] std::optional<
-      std::pair<FirstPartySetMetadata, FirstPartySetsCacheFilter::MatchInfo>>
-  ComputeFirstPartySetMetadataMaybeAsync(
+  [[nodiscard]]
+  std::pair<FirstPartySetMetadata, FirstPartySetsCacheFilter::MatchInfo>
+  ComputeFirstPartySetMetadata(
       const net::SchemefulSite& site,
-      const net::SchemefulSite* top_frame_site,
-      base::OnceCallback<void(FirstPartySetMetadata,
-                              FirstPartySetsCacheFilter::MatchInfo)> callback)
-      const override {
-    return std::nullopt;
+      const net::SchemefulSite* top_frame_site) const override {
+    return {};
   }
 };
 
@@ -733,7 +804,8 @@ TEST_F(SessionTest, NotDeferredNotSameSiteForCookies) {
   ASSERT_TRUE(session);
   net::TestDelegate delegate;
   std::unique_ptr<URLRequest> request =
-      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation);
+      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation,
+                              net::handles::kInvalidNetworkHandle);
 
   DbscRequest dbsc_request(request.get());
   EXPECT_TRUE(session->IsInScope(dbsc_request));
@@ -756,7 +828,8 @@ TEST_F(SessionTest, DeferredNotSameSiteDelegate) {
   ASSERT_TRUE(session);
   net::TestDelegate delegate;
   std::unique_ptr<URLRequest> request =
-      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation);
+      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation,
+                              net::handles::kInvalidNetworkHandle);
 
   DbscRequest dbsc_request(request.get());
   EXPECT_TRUE(session->IsInScope(dbsc_request));
@@ -782,7 +855,8 @@ TEST_F(SessionTest, DeferredNotSameSiteNetworkDelegate) {
   ASSERT_TRUE(session);
   net::TestDelegate delegate;
   std::unique_ptr<URLRequest> request =
-      context->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation);
+      context->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation,
+                             net::handles::kInvalidNetworkHandle);
 
   DbscRequest dbsc_request(request.get());
   EXPECT_TRUE(session->IsInScope(dbsc_request));
@@ -807,7 +881,8 @@ TEST_F(SessionTest, DeferredHostCookie) {
   ASSERT_TRUE(session);
   net::TestDelegate delegate;
   std::unique_ptr<URLRequest> request =
-      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation);
+      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation,
+                              net::handles::kInvalidNetworkHandle);
   request->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
 
   DbscRequest dbsc_request(request.get());
@@ -843,7 +918,8 @@ TEST_F(SessionTest, NotDeferredIncludedSubdomainHostCraving) {
   ASSERT_TRUE(session);
   net::TestDelegate delegate;
   std::unique_ptr<URLRequest> request =
-      context_->CreateRequest(url_subdomain, IDLE, &delegate, kDummyAnnotation);
+      context_->CreateRequest(url_subdomain, IDLE, &delegate, kDummyAnnotation,
+                              net::handles::kInvalidNetworkHandle);
   request->set_site_for_cookies(SiteForCookies::FromUrl(url_subdomain));
   DbscRequest dbsc_request(request.get());
   EXPECT_TRUE(session->IsInScope(dbsc_request));
@@ -872,7 +948,8 @@ TEST_F(SessionTest, NetLogSessionInfo) {
   ASSERT_TRUE(session);
   net::TestDelegate delegate;
   std::unique_ptr<URLRequest> request =
-      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation);
+      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation,
+                              net::handles::kInvalidNetworkHandle);
   request->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
 
   RecordingNetLogObserver net_log_observer;
@@ -895,7 +972,8 @@ TEST_F(SessionTest, NetLogMissingCookie) {
   ASSERT_TRUE(session);
   net::TestDelegate delegate;
   std::unique_ptr<URLRequest> request =
-      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation);
+      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation,
+                              net::handles::kInvalidNetworkHandle);
   request->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
 
   RecordingNetLogObserver net_log_observer;
@@ -920,7 +998,8 @@ TEST_F(SessionTest, NetLogNoRefresh) {
   ASSERT_TRUE(session);
   net::TestDelegate delegate;
   std::unique_ptr<URLRequest> request =
-      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation);
+      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation,
+                              net::handles::kInvalidNetworkHandle);
   request->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
 
   CookieInclusionStatus status;
@@ -960,7 +1039,8 @@ TEST_F(SessionTest, NetLogWrongInitiator) {
   ASSERT_TRUE(session);
   net::TestDelegate delegate;
   std::unique_ptr<URLRequest> request =
-      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation);
+      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation,
+                              net::handles::kInvalidNetworkHandle);
   request->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
   request->set_initiator(
       url::Origin::Create(GURL("https://not-example.test/")));
@@ -988,7 +1068,8 @@ TEST_F(SessionTest, CanSetBoundCookieWithSameSiteBypassNetworkDelegate) {
   auto can_set_bound_cookie = [&](URLRequestContext& context) {
     net::TestDelegate delegate;
     std::unique_ptr<URLRequest> request =
-        context.CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation);
+        context.CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation,
+                              net::handles::kInvalidNetworkHandle);
     DbscRequest dbsc_request(request.get());
     return session->CanSetBoundCookie(dbsc_request, FirstPartySetMetadata());
   };
@@ -1026,7 +1107,8 @@ TEST_F(SessionTest, Backoff) {
 
   net::TestDelegate delegate;
   std::unique_ptr<URLRequest> request =
-      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation);
+      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation,
+                              net::handles::kInvalidNetworkHandle);
   request->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
 
   struct TestCase {
@@ -1078,7 +1160,8 @@ TEST_F(SessionTest, ProactiveBackoff) {
 
   net::TestDelegate delegate;
   std::unique_ptr<URLRequest> request =
-      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation);
+      context_->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation,
+                              net::handles::kInvalidNetworkHandle);
   request->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
 
   // Proactive refreshes can be followed up with other proactive refreshes

@@ -61,7 +61,6 @@ using fuzztest::Map;
 using fuzztest::NonEmpty;
 using fuzztest::NonNegative;
 using fuzztest::OneOf;
-using fuzztest::OptionalOf;
 using fuzztest::PairOf;
 using fuzztest::Positive;
 using fuzztest::StructOf;
@@ -266,6 +265,20 @@ Domain<BrushBehavior::PolarTarget> ArbitraryBrushBehaviorPolarTarget() {
 
 Domain<ColorFunction::OpacityMultiplier> ValidColorFunctionOpacityMultiplier() {
   return StructOf<ColorFunction::OpacityMultiplier>(FiniteNonNegativeFloat());
+}
+
+Domain<ColorFunction::HueOffset> ValidColorFunctionHueOffset() {
+  return StructOf<ColorFunction::HueOffset>(FiniteAngle());
+}
+
+Domain<ColorFunction::SaturationMultiplier>
+ValidColorFunctionSaturationMultiplier() {
+  return StructOf<ColorFunction::SaturationMultiplier>(
+      FiniteNonNegativeFloat());
+}
+
+Domain<ColorFunction::LuminosityOffset> ValidColorFunctionLuminosityOffset() {
+  return StructOf<ColorFunction::LuminosityOffset>(Finite<float>());
 }
 
 Domain<ColorFunction::ReplaceColor> ValidColorFunctionReplaceColor() {
@@ -637,7 +650,8 @@ Domain<BrushPaint::TilingTexture> ValidBrushPaintTilingTexture() {
 }
 
 Domain<std::vector<BrushPaint::TextureLayer>> ValidBrushPaintTilingTextures() {
-  return VectorOf(BrushPaintTextureLayerOf(ValidBrushPaintTilingTexture()));
+  return VectorOf(BrushPaintTextureLayerOf(ValidBrushPaintTilingTexture()))
+      .WithMaxSize(BrushPaint::MaxTextureLayers());
 }
 
 Domain<BrushPaint::StampingTexture>
@@ -665,13 +679,12 @@ Domain<std::vector<BrushPaint::TextureLayer>> ValidBrushPaintStampingTextures(
   return FlatMap(
       [=](std::tuple<int, int, int> animation_frames_rows_columns,
           absl::Duration animation_duration) {
-        return std::apply(
-            [&](int frames, int rows, int columns) {
-              return VectorOf(BrushPaintTextureLayerOf(
-                  ValidBrushPaintStampingTextureWithAnimationParameters(
-                      frames, rows, columns, animation_duration, variant)));
-            },
-            animation_frames_rows_columns);
+        auto [frames, rows, columns] = animation_frames_rows_columns;
+        return VectorOf(
+                   BrushPaintTextureLayerOf(
+                       ValidBrushPaintStampingTextureWithAnimationParameters(
+                           frames, rows, columns, animation_duration, variant)))
+            .WithMaxSize(BrushPaint::MaxTextureLayers());
       },
       FlatMap(
           [](int rows, int columns) {
@@ -679,8 +692,12 @@ Domain<std::vector<BrushPaint::TextureLayer>> ValidBrushPaintStampingTextures(
                            Just(columns));
           },
           InRange<int>(1, 1 << 12), InRange<int>(1, 1 << 12)),
-      Map([](int64_t ms) { return absl::Milliseconds(ms); },
-          InRange(0, 1 << 24)));
+      // TODO: b/512471476 - Allow for non-power-of-2 values of
+      // `animation_duration`, once we can find a way to avoid generating a
+      // `BrushFamily` with too large an LCM.
+      OneOf(Just(absl::ZeroDuration()),
+            Map([](int power) { return absl::Milliseconds(1 << power); },
+                InRange(0, 24))));
 }
 
 Domain<std::vector<BrushPaint::TextureLayer>> ValidBrushPaintTextureLayers(
@@ -778,7 +795,9 @@ Domain<BrushTip> SerializableBrushTip() {
 
 Domain<ColorFunction> ValidColorFunction() {
   return StructOf<ColorFunction>(VariantOf(
-      ValidColorFunctionOpacityMultiplier(), ValidColorFunctionReplaceColor()));
+      ValidColorFunctionOpacityMultiplier(), ValidColorFunctionHueOffset(),
+      ValidColorFunctionSaturationMultiplier(),
+      ValidColorFunctionLuminosityOffset(), ValidColorFunctionReplaceColor()));
 }
 
 Domain<EasingFunction> ValidEasingFunction() {

@@ -11,6 +11,7 @@
 #include <optional>
 
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
@@ -99,6 +100,8 @@ OnDeviceModelEligibilityReason GetBaseModelError(
       return OnDeviceModelEligibilityReason::kModelNotEligible;
     case OnDeviceModelStatus::kInsufficientDiskSpace:
       return OnDeviceModelEligibilityReason::kInsufficientDiskSpace;
+    case OnDeviceModelStatus::kInsufficientDiskSpaceForCaches:
+      return OnDeviceModelEligibilityReason::kInsufficientDiskSpaceForCaches;
     case OnDeviceModelStatus::kInstallNotComplete:
     case OnDeviceModelStatus::kModelInstallerNotRegisteredForUnknownReason:
     case OnDeviceModelStatus::kModelInstalledTooLate:
@@ -164,7 +167,8 @@ OnDeviceModelServiceController::OnDeviceModelServiceController(
       usage_tracker_(usage_tracker),
       model_broker_impl_(model_broker_impl),
       access_controller_(std::move(access_controller)),
-      safety_client_(service_client.GetWeakPtr()) {
+      safety_client_(service_client.GetWeakPtr()),
+      on_device_component_state_manager_(on_device_component_state_manager) {
   base_model_controller_.emplace(weak_ptr_factory_.GetSafeRef(), nullptr);
   service_client_->set_on_disconnect_fn(base::BindRepeating(
       &OnDeviceModelServiceController::OnServiceDisconnected,
@@ -177,16 +181,35 @@ OnDeviceModelServiceController::OnDeviceModelServiceController(
 
 OnDeviceModelServiceController::~OnDeviceModelServiceController() = default;
 
-std::vector<mojom::BrokerModelInfoPtr>
+std::vector<std::pair<mojom::BrokerModelInfoPtr, base::FilePath>>
 OnDeviceModelServiceController::GetBrokerModels() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  std::vector<mojom::BrokerModelInfoPtr> models;
+  std::vector<std::pair<mojom::BrokerModelInfoPtr, base::FilePath>> models;
   if (base_model_controller_ && base_model_controller_->model_metadata()) {
     auto model_info = mojom::BrokerModelInfo::New();
     model_info->name = "Base Model";
-    model_info->weights_path =
-        base_model_controller_->model_metadata()->model_path().AsUTF8Unsafe();
-    models.push_back(std::move(model_info));
+    base::FilePath path_to_measure =
+        base_model_controller_->model_metadata()->model_path();
+    model_info->weights_path = path_to_measure.AsUTF8Unsafe();
+
+    switch (base_model_controller_->model_metadata()->performance_hint()) {
+      case optimization_guide::proto::OnDeviceModelPerformanceHint::
+          ON_DEVICE_MODEL_PERFORMANCE_HINT_HIGHEST_QUALITY:
+        model_info->backend_type = "GPU (highest quality)";
+        break;
+      case optimization_guide::proto::OnDeviceModelPerformanceHint::
+          ON_DEVICE_MODEL_PERFORMANCE_HINT_FASTEST_INFERENCE:
+        model_info->backend_type = "GPU (fastest inference)";
+        break;
+      case optimization_guide::proto::OnDeviceModelPerformanceHint::
+          ON_DEVICE_MODEL_PERFORMANCE_HINT_CPU:
+        model_info->backend_type = "CPU";
+        break;
+      default:
+        model_info->backend_type = "UNKNOWN";
+    }
+
+    models.emplace_back(std::move(model_info), std::move(path_to_measure));
   }
   return models;
 }
@@ -351,9 +374,6 @@ void OnDeviceModelServiceController::UpdateSolutionProviders() {
 
 void OnDeviceModelServiceController::UpdateSolutionProvider(
     mojom::OnDeviceFeature feature) {
-  if (GetOnDeviceModelType(feature) != kModelType) {
-    return;
-  }
   // Note: This always constructs the Solution, even if the provider was not
   // constructed yet, to update supported_adaptation_ranks_ on the base model.
   model_broker_impl_->GetSolutionProvider(feature).Update(GetSolution(feature));
@@ -493,9 +513,12 @@ OnDeviceModelServiceController::BaseModelController::PopulateModelPaths() {
   const ml::ModelBackendType backend_type =
       GetBackendType(model_metadata_->performance_hint());
 
-  if (backend_type == ml::ModelBackendType::kCpuBackend) {
-    // Weights cache is used for CPU backend (XNNPACK) only and re-built when
-    // it's deemed stale by version compatibility (see crbug.com/400998489).
+  if (backend_type == ml::ModelBackendType::kCpuBackend ||
+      base::FeatureList::IsEnabled(
+          on_device_model::features::kOnDeviceModelGpuWeightCache)) {
+    // Weights cache is used for CPU backend (XNNPACK) only (or enabled
+    // explicitly through feature flag) and re-built when it's deemed stale by
+    // version compatibility (see crbug.com/400998489).
     model_paths.cache = model_metadata_->model_path().Append(kWeightCacheFile);
   }
   model_paths.encoder_cache =
@@ -505,7 +528,7 @@ OnDeviceModelServiceController::BaseModelController::PopulateModelPaths() {
   // TODO(crbug.com/461547475): GPU cache is experimental for now, remove
   // once feature flag is no longer needed.
   if (base::FeatureList::IsEnabled(
-          on_device_model::features::kOnDeviceModelGpuCache) &&
+          on_device_model::features::kOnDeviceModelGpuProgramCache) &&
       backend_type == ml::ModelBackendType::kGpuBackend) {
     // Program cache will be used for GPU backend only.
     model_paths.program_cache =
@@ -525,6 +548,11 @@ void OnDeviceModelServiceController::BaseModelController::OnModelAssetsLoaded(
   params->assets = std::move(assets);
   params->max_tokens = kOnDeviceModelMaxTokens;
   params->adaptation_ranks = supported_adaptation_ranks_;
+  if (controller_->on_device_component_state_manager_) {
+    params->vram_mb = controller_->on_device_component_state_manager_
+                          ->performance_classifier()
+                          ->GetDeviceVramMb();
+  }
 
   proto::OnDeviceModelPerformanceHint hint =
       model_metadata_->performance_hint();

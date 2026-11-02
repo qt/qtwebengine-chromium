@@ -9,21 +9,21 @@ import * as Protocol from '../../generated/protocol.js';
 
 const UIStrings = {
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Summary text displayed in the overview of the Security panel when the page's security state is unknown.
    */
   theSecurityOfThisPageIsUnknown: 'The security of this page is unknown.',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Summary text displayed in the overview of the Security panel when the page isn't secure.
    */
-  thisPageIsNotSecure: 'This page is not secure.',
+  thisPageIsNotSecure: 'This page isn’t secure.',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Summary text displayed in the overview of the Security panel when the page is secure with valid HTTPS.
    */
   thisPageIsSecureValidHttps: 'This page is secure (valid HTTPS).',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Summary text displayed in the overview of the Security panel when the page isn't secure due to broken HTTPS.
    */
-  thisPageIsNotSecureBrokenHttps: 'This page is not secure (broken HTTPS).',
+  thisPageIsNotSecureBrokenHttps: 'This page isn’t secure (broken HTTPS).',
   /**
    * @description Description of an SSL cipher that contains a separate (bulk) cipher and MAC.
    * @example {AES_256_CBC} PH1
@@ -31,7 +31,7 @@ const UIStrings = {
    */
   cipherWithMAC: '{PH1} with {PH2}',
   /**
-   * @description Description of an SSL Key and its Key Exchange Group.
+   * @description Description of an SSL key and its key exchange group.
    * @example {ECDHE_RSA} PH1
    * @example {X25519} PH2
    */

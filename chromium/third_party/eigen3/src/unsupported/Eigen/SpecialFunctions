@@ -88,7 +88,7 @@ namespace Eigen {
 #elif defined EIGEN_VECTORIZE_AVX
 #include "src/SpecialFunctions/arch/AVX/BesselFunctions.h"
 #include "src/SpecialFunctions/arch/AVX/SpecialFunctions.h"
-#elif defined EIGEN_VECTORIZE_NEON
+#elif defined EIGEN_VECTORIZE_NEON || defined EIGEN_VECTORIZE_SME
 #include "src/SpecialFunctions/arch/NEON/BesselFunctions.h"
 #include "src/SpecialFunctions/arch/NEON/SpecialFunctions.h"
 #endif

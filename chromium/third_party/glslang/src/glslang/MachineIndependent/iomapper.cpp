@@ -61,83 +61,53 @@
 
 namespace glslang {
 
-struct TVarEntryInfo {
-    long long id;
-    TIntermSymbol* symbol;
-    bool live;
-    TLayoutPacking upgradedToPushConstantPacking; // ElpNone means it hasn't been upgraded
-    int newBinding;
-    int newSet;
-    int newLocation;
-    int newComponent;
-    int newIndex;
-    EShLanguage stage;
+static int getLayoutSetLimit(bool relaxSetBindingLimits)
+{
+    return relaxSetBindingLimits ? INT_MAX : int(TQualifier::layoutSetEnd);
+}
 
-    void clearNewAssignments() {
-        upgradedToPushConstantPacking = ElpNone;
-        newBinding = -1;
-        newSet = -1;
-        newLocation = -1;
-        newComponent = -1;
-        newIndex = -1;
-    }
+static int getLayoutBindingLimit(bool relaxSetBindingLimits)
+{
+    return relaxSetBindingLimits ? INT_MAX : int(TQualifier::layoutBindingEnd);
+}
 
-    struct TOrderById {
-        inline bool operator()(const TVarEntryInfo& l, const TVarEntryInfo& r) { return l.id < r.id; }
-    };
+bool TVarEntryInfo::TOrderByPriority::operator()(const TVarEntryInfo& l, const TVarEntryInfo& r)
+{
+    const TQualifier& lq = l.symbol->getQualifier();
+    const TQualifier& rq = r.symbol->getQualifier();
 
-    struct TOrderByPriority {
-        // ordering:
-        // 1) has both binding and set
-        // 2) has binding but no set
-        // 3) has no binding but set
-        // 4) has no binding and no set
-        inline bool operator()(const TVarEntryInfo& l, const TVarEntryInfo& r) {
-            const TQualifier& lq = l.symbol->getQualifier();
-            const TQualifier& rq = r.symbol->getQualifier();
+    // simple rules:
+    // has binding gives 2 points
+    // has set gives 1 point
+    // who has the most points is more important.
+    int lPoints = (lq.hasBinding() ? 2 : 0) + (lq.hasSet() ? 1 : 0);
+    int rPoints = (rq.hasBinding() ? 2 : 0) + (rq.hasSet() ? 1 : 0);
 
-            // simple rules:
-            // has binding gives 2 points
-            // has set gives 1 point
-            // who has the most points is more important.
-            int lPoints = (lq.hasBinding() ? 2 : 0) + (lq.hasSet() ? 1 : 0);
-            int rPoints = (rq.hasBinding() ? 2 : 0) + (rq.hasSet() ? 1 : 0);
+    if (lPoints == rPoints)
+        return l.id < r.id;
+    return lPoints > rPoints;
+}
 
-            if (lPoints == rPoints)
-                return l.id < r.id;
-            return lPoints > rPoints;
-        }
-    };
+bool TVarEntryInfo::TOrderByPriorityAndLive::operator()(const TVarEntryInfo& l, const TVarEntryInfo& r)
+{
+    const TQualifier& lq = l.symbol->getQualifier();
+    const TQualifier& rq = r.symbol->getQualifier();
 
-    struct TOrderByPriorityAndLive {
-        // ordering:
-        // 1) do live variables first
-        // 2) has both binding and set
-        // 3) has binding but no set
-        // 4) has no binding but set
-        // 5) has no binding and no set
-        inline bool operator()(const TVarEntryInfo& l, const TVarEntryInfo& r) {
+    // simple rules:
+    // has binding gives 2 points
+    // has set gives 1 point
+    // who has the most points is more important.
+    int lPoints = (lq.hasBinding() ? 2 : 0) + (lq.hasSet() ? 1 : 0);
+    int rPoints = (rq.hasBinding() ? 2 : 0) + (rq.hasSet() ? 1 : 0);
 
-            const TQualifier& lq = l.symbol->getQualifier();
-            const TQualifier& rq = r.symbol->getQualifier();
+    if (l.live != r.live)
+        return l.live > r.live;
 
-            // simple rules:
-            // has binding gives 2 points
-            // has set gives 1 point
-            // who has the most points is more important.
-            int lPoints = (lq.hasBinding() ? 2 : 0) + (lq.hasSet() ? 1 : 0);
-            int rPoints = (rq.hasBinding() ? 2 : 0) + (rq.hasSet() ? 1 : 0);
+    if (lPoints != rPoints)
+        return lPoints > rPoints;
 
-            if (l.live != r.live)
-                return l.live > r.live;
-
-            if (lPoints != rPoints)
-                return lPoints > rPoints;
-
-            return l.id < r.id;
-        }
-    };
-};
+    return l.id < r.id;
+}
 
 // override function "operator=", if a vector<const _Kty, _Ty> being sort,
 // when use vc++, the sort function will call :
@@ -298,11 +268,13 @@ private:
 };
 
 struct TResolverUniformAdaptor {
-    TResolverUniformAdaptor(EShLanguage s, TIoMapResolver& r, TVarLiveMap* uniform[EShLangCount], TInfoSink& i, bool& e)
+    TResolverUniformAdaptor(EShLanguage s, TIoMapResolver& r, TVarLiveMap* uniform[EShLangCount], TInfoSink& i,
+                            bool& e, bool relaxSetBindingLimits)
       : stage(s)
       , resolver(r)
       , infoSink(i)
       , error(e)
+      , relaxSetBindingLimits(relaxSetBindingLimits)
     {
         memcpy(uniformVarMap, uniform, EShLangCount * (sizeof(TVarLiveMap*)));
     }
@@ -317,7 +289,7 @@ struct TResolverUniformAdaptor {
             resolver.resolveUniformLocation(ent.stage, ent);
 
             if (ent.newBinding != -1) {
-                if (ent.newBinding >= int(TQualifier::layoutBindingEnd)) {
+                if (ent.newBinding < 0 || ent.newBinding >= getLayoutBindingLimit(relaxSetBindingLimits)) {
                     TString err = "mapped binding out of range: " + entKey.first;
 
                     infoSink.info.message(EPrefixInternalError, err.c_str());
@@ -336,7 +308,7 @@ struct TResolverUniformAdaptor {
                 }
             }
             if (ent.newSet != -1) {
-                if (ent.newSet >= int(TQualifier::layoutSetEnd)) {
+                if (ent.newSet < 0 || ent.newSet >= getLayoutSetLimit(relaxSetBindingLimits)) {
                     TString err = "mapped set out of range: " + entKey.first;
 
                     infoSink.info.message(EPrefixInternalError, err.c_str());
@@ -366,6 +338,7 @@ struct TResolverUniformAdaptor {
     TIoMapResolver& resolver;
     TInfoSink&      infoSink;
     bool&           error;
+    bool            relaxSetBindingLimits;
     TVarLiveMap*    uniformVarMap[EShLangCount];
 private:
     TResolverUniformAdaptor& operator=(TResolverUniformAdaptor&) = delete;
@@ -674,7 +647,7 @@ struct TSymbolValidater
         } else if (base->getQualifier().isUniformOrBuffer() && !base->getQualifier().isPushConstant()) {
             // validate uniform type;
             for (int i = 0; i < EShLangCount; i++) {
-                if (i != currentStage && outVarMaps[i] != nullptr) {
+                if (i != currentStage && uniformVarMap[i] != nullptr) {
                     auto ent2 = uniformVarMap[i]->find(name);
                     if (ent2 != uniformVarMap[i]->end()) {
                         ent2->second.symbol->getType().appendMangledName(mangleName2);
@@ -1594,7 +1567,8 @@ bool TIoMapper::addStage(EShLanguage stage, TIntermediate& intermediate, TInfoSi
     TVarLiveMap* dummyUniformVarMap[EShLangCount] = {};
     TNotifyInOutAdaptor inOutNotify(stage, *resolver);
     TNotifyUniformAdaptor uniformNotify(stage, *resolver);
-    TResolverUniformAdaptor uniformResolve(stage, *resolver, dummyUniformVarMap, infoSink, hadError);
+    TResolverUniformAdaptor uniformResolve(stage, *resolver, dummyUniformVarMap, infoSink, hadError,
+                                           intermediate.getRelaxSetBindingLimits());
     TResolverInOutAdaptor inOutResolve(stage, *resolver, infoSink, hadError);
     resolver->beginNotifications(stage);
     std::for_each(inVector.begin(), inVector.end(), inOutNotify);
@@ -1670,6 +1644,7 @@ bool TGlslIoMapper::addStage(EShLanguage stage, TIntermediate& intermediate, TIn
     // Profile and version are use for symbol validate.
     profile = intermediate.getProfile();
     version = intermediate.getVersion();
+    relaxSetBindingLimits |= intermediate.getRelaxSetBindingLimits();
 
     // Restrict the stricter condition to further check 'somethingToDo' only if 'somethingToDo' has not been set, reduce
     // unnecessary or insignificant for-loop operation after 'somethingToDo' have been true.
@@ -1741,7 +1716,8 @@ bool TGlslIoMapper::doMap(TIoMapResolver* resolver, TInfoSink& infoSink) {
     resolver->endResolve(EShLangCount);
     if (!hadError) {
         //Resolve uniform location, ubo/ssbo/opaque bindings across stages
-        TResolverUniformAdaptor uniformResolve(EShLangCount, *resolver, uniformVarMap, infoSink, hadError);
+        TResolverUniformAdaptor uniformResolve(EShLangCount, *resolver, uniformVarMap, infoSink, hadError,
+                                               relaxSetBindingLimits);
         TResolverInOutAdaptor inOutResolve(EShLangCount, *resolver, infoSink, hadError);
         TSymbolValidater symbolValidater(*resolver, infoSink, inVarMaps,
                                          outVarMaps, uniformVarMap, hadError, profile, version);
@@ -1824,7 +1800,7 @@ bool TGlslIoMapper::doMap(TIoMapResolver* resolver, TInfoSink& infoSink) {
                         qualifier.setBlockStorage(EbsPushConstant);
                         qualifier.layoutPacking = autoPushConstantBlockPacking;
                         // Push constants don't have set/binding etc. decorations, remove those.
-                        qualifier.layoutSet = TQualifier::layoutSetEnd;
+                        qualifier.layoutSet = TQualifier::layoutNotSet;
                         at->second.clearNewAssignments();
 
                         upgraded = true;
@@ -1839,7 +1815,7 @@ bool TGlslIoMapper::doMap(TIoMapResolver* resolver, TInfoSink& infoSink) {
                                        [this](TVarLivePair& p) {
                 if (p.first == autoPushConstantBlockName) {
                         p.second.upgradedToPushConstantPacking = autoPushConstantBlockPacking;
-                        p.second.newSet = TQualifier::layoutSetEnd;
+                        p.second.newSet = TQualifier::layoutNotSet;
                     }
                 });
             }

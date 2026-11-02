@@ -155,27 +155,12 @@ GetAlternativeNameFieldValueCharacterSet(
 // Records the character set of the submitted value for each alternative name
 // field in the form.
 void LogSubmittedAlternativeNameCharacterSetValues(const FormStructure& form) {
-  if (!base::FeatureList::IsEnabled(
-          features::kAutofillSupportPhoneticNameForJP)) {
-    return;
-  }
   for (const std::unique_ptr<AutofillField>& field : form) {
     if (IsAlternativeNameType(field->Type().GetAddressType()) &&
         !field->value().empty()) {
       base::UmaHistogramEnumeration(
           "Autofill.SubmittedAlternativeNameFieldValueCharacterSet",
           GetAlternativeNameFieldValueCharacterSet(field->value()));
-    }
-  }
-}
-
-void LogExtractionMetrics(const FormStructure& form) {
-  for (const std::unique_ptr<AutofillField>& field : form) {
-    CHECK(!field->possible_types().empty());
-    if (FieldHasMeaningfulPossibleFieldTypes(*field)) {
-      base::UmaHistogramEnumeration(
-          "Autofill.LabelInference.InferredLabelSource.AtSubmission2",
-          field->label_source());
     }
   }
 }
@@ -199,7 +184,6 @@ void LogPredictionMetrics(
                                        form, *field, metric_type, now);
     LogEmailFieldPredictionMetrics(*field);
     LogFieldPredictionOverlapMetrics(*field);
-    LogPhoneNumberDetectionExperimentMetrics(*field);
   }
 }
 
@@ -261,7 +245,6 @@ void LogQualityMetrics(
     // TODO(crbug.com/359768803): Remove this metric once the feature is
     // launched.
     LogSubmittedAlternativeNameCharacterSetValues(form_structure);
-    LogExtractionMetrics(form_structure);
     LogDurationMetrics(form_structure, load_time, interaction_time,
                        submission_time, ac_unrecognized_behavior);
   }

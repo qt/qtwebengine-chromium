@@ -8,8 +8,8 @@
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 // SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_SELFADJOINTRANK2UPTADE_H
-#define EIGEN_SELFADJOINTRANK2UPTADE_H
+#ifndef EIGEN_SELFADJOINTRANK2UPDATE_H
+#define EIGEN_SELFADJOINTRANK2UPDATE_H
 
 // IWYU pragma: private
 #include "../InternalHeaderCheck.h"
@@ -27,7 +27,8 @@ struct selfadjoint_rank2_update_selector;
 
 template <typename Scalar, typename Index>
 struct selfadjoint_rank2_update_selector<Scalar, Index, Lower> {
-  static void run(Index size, Scalar* mat, Index stride, const Scalar* u, const Scalar* v, const Scalar& alpha) {
+  EIGEN_DEVICE_FUNC static void run(Index size, Scalar* mat, Index stride, const Scalar* u, const Scalar* v,
+                                    const Scalar& alpha) {
     typedef typename packet_traits<Scalar>::type Packet;
     const Index PacketSize = unpacket_traits<Packet>::size;
     const Scalar cAlpha = numext::conj(alpha);
@@ -112,7 +113,8 @@ struct selfadjoint_rank2_update_selector<Scalar, Index, Lower> {
 
 template <typename Scalar, typename Index>
 struct selfadjoint_rank2_update_selector<Scalar, Index, Upper> {
-  static void run(Index size, Scalar* mat, Index stride, const Scalar* u, const Scalar* v, const Scalar& alpha) {
+  EIGEN_DEVICE_FUNC static void run(Index size, Scalar* mat, Index stride, const Scalar* u, const Scalar* v,
+                                    const Scalar& alpha) {
     typedef typename packet_traits<Scalar>::type Packet;
     const Index PacketSize = unpacket_traits<Packet>::size;
     const Scalar cAlpha = numext::conj(alpha);
@@ -187,10 +189,6 @@ struct selfadjoint_rank2_update_selector<Scalar, Index, Upper> {
   }
 };
 
-template <bool Cond, typename T>
-using conj_expr_if =
-    std::conditional_t<!Cond, const T&, CwiseUnaryOp<scalar_conjugate_op<typename traits<T>::Scalar>, T>>;
-
 }  // end namespace internal
 
 template <typename MatrixType, unsigned int UpLo>
@@ -220,7 +218,9 @@ EIGEN_DEVICE_FUNC SelfAdjointView<MatrixType, UpLo>& SelfAdjointView<MatrixType,
 
   Scalar actualAlpha = alpha * UBlasTraits::extractScalarFactor(u.derived()) *
                        numext::conj(VBlasTraits::extractScalarFactor(v.derived()));
-  EIGEN_IF_CONSTEXPR(IsRowMajor) { actualAlpha = numext::conj(actualAlpha); }
+  EIGEN_IF_CONSTEXPR (IsRowMajor) {
+    actualAlpha = numext::conj(actualAlpha);
+  }
 
   const Index size = u.size();
 
@@ -229,9 +229,10 @@ EIGEN_DEVICE_FUNC SelfAdjointView<MatrixType, UpLo>& SelfAdjointView<MatrixType,
       static_u;
   ei_declare_aligned_stack_constructed_variable(Scalar, uPtr, size,
                                                 (UseUDirectly ? const_cast<Scalar*>(actualU.data()) : static_u.data()));
-  EIGEN_IF_CONSTEXPR(!UseUDirectly) {
-    EIGEN_IF_CONSTEXPR(NeedConjU) { Map<typename ActualUType_::PlainObject>(uPtr, size) = actualU.conjugate(); }
-    else {
+  EIGEN_IF_CONSTEXPR (!UseUDirectly) {
+    EIGEN_IF_CONSTEXPR (NeedConjU) {
+      Map<typename ActualUType_::PlainObject>(uPtr, size) = actualU.conjugate();
+    } else {
       Map<typename ActualUType_::PlainObject>(uPtr, size) = actualU;
     }
   }
@@ -241,9 +242,10 @@ EIGEN_DEVICE_FUNC SelfAdjointView<MatrixType, UpLo>& SelfAdjointView<MatrixType,
       static_v;
   ei_declare_aligned_stack_constructed_variable(Scalar, vPtr, size,
                                                 (UseVDirectly ? const_cast<Scalar*>(actualV.data()) : static_v.data()));
-  EIGEN_IF_CONSTEXPR(!UseVDirectly) {
-    EIGEN_IF_CONSTEXPR(NeedConjV) { Map<typename ActualVType_::PlainObject>(vPtr, size) = actualV.conjugate(); }
-    else {
+  EIGEN_IF_CONSTEXPR (!UseVDirectly) {
+    EIGEN_IF_CONSTEXPR (NeedConjV) {
+      Map<typename ActualVType_::PlainObject>(vPtr, size) = actualV.conjugate();
+    } else {
       Map<typename ActualVType_::PlainObject>(vPtr, size) = actualV;
     }
   }
@@ -258,4 +260,4 @@ EIGEN_DEVICE_FUNC SelfAdjointView<MatrixType, UpLo>& SelfAdjointView<MatrixType,
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_SELFADJOINTRANK2UPTADE_H
+#endif  // EIGEN_SELFADJOINTRANK2UPDATE_H

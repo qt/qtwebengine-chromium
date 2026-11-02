@@ -26,6 +26,9 @@ class DesktopBnplStrategy : public BnplStrategy {
   BnplAmountExtractionReturnedNextAction
   GetNextActionOnAmountExtractionReturned() override;
   BeforeSwitchingViewAction GetBeforeViewSwitchAction() override;
+  BnplAiBasedAmountExtractionReturnedNextAction
+  GetNextActionOnAiBasedAmountExtractionReturned() override;
+  UiDismissalAction GetUiDismissalAction() override;
   bool ShouldRemoveExistingUiOnServerReturn(
       PaymentsAutofillClient::PaymentsRpcResult result) override;
 };

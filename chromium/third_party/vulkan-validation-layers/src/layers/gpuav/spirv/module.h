@@ -21,6 +21,7 @@
 #include "interface.h"
 #include "function_basic_block.h"
 #include "type_manager.h"
+#include "gpuav/spirv/instrumentation_status.h"
 
 class DebugReport;
 struct DeviceFeatures;
@@ -43,7 +44,7 @@ struct ModuleHeader {
 class Module {
   public:
     Module(vvl::span<const uint32_t> words, DebugReport* debug_report, const DeviceSettings& settings,
-           const InstrumentationInterface& interface, const DeviceFeatures& enabled_features);
+           const InstrumentationInterface& interface, spirv::InstrumentationStatus& out_status);
 
     // Memory that holds all the actual SPIR-V data, replicate the "Logical Layout of a Module" of SPIR-V.
     // Divided into sections to make easier to modify each part at different times, but still keeps it simple to write out all the
@@ -98,8 +99,6 @@ class Module {
 
     bool use_bda_ = false;
 
-    const DeviceFeatures& enabled_features_;
-
     // We only care about the entrypoint the pipeline shader stage / shader object is targeting
     // This is the ID both found in OpEntryPoint and the result ID of OpFunction
     uint32_t target_entry_point_id_ = 0;
@@ -127,6 +126,8 @@ class Module {
     // Used by SharedMemoryDataRacePass, linked by Module::LinkFunctions
     uint32_t shared_memory_shadow_variable_id_ = 0;
 
+    spirv::InstrumentationStatus& out_status;
+
   private:
     // This is here to emulate the
     //  spirv-opt --set-spec-const-default-value <values> --freeze-spec-const --fold-spec-const-op-composite
@@ -137,6 +138,7 @@ class Module {
     bool ConstantFoldVectorShuffle(Instruction* inst, const Type& type);
     bool ConstantFoldCompositeExtract(Instruction* inst, const Type& type);
     bool ConstantFoldCompositeInsert(Instruction* inst, const Type& type);
+    uint32_t ResolveConstantSizeOf(const Instruction& inst);
 };
 
 }  // namespace spirv

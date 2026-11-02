@@ -35,7 +35,7 @@ class ArpackGeneralizedSelfAdjointEigenSolver {
   /** \brief Real scalar type for \p MatrixType.
    *
    * This is just \c Scalar if #Scalar is real (e.g., \c float or
-   * \c Scalar), and the type of the real part of \c Scalar if #Scalar is
+   * \c double), and the type of the real part of \c Scalar if #Scalar is
    * complex.
    */
   typedef typename NumTraits<Scalar>::Real RealScalar;
@@ -70,7 +70,7 @@ class ArpackGeneralizedSelfAdjointEigenSolver {
    * \param[in] nbrEigenvalues The number of eigenvalues / eigenvectors to compute.
    *    Must be less than the size of the input matrix, or an error is returned.
    * \param[in] eigs_sigma String containing either "LM", "SM", "LA", or "SA", with
-   *    respective meanings to find the largest magnitude , smallest magnitude,
+   *    respective meanings to find the largest magnitude, smallest magnitude,
    *    largest algebraic, or smallest algebraic eigenvalues. Alternatively, this
    *    value can contain floating point value in string form, in which case the
    *    eigenvalues closest to this value will be found.
@@ -103,7 +103,7 @@ class ArpackGeneralizedSelfAdjointEigenSolver {
    * \param[in] nbrEigenvalues The number of eigenvalues / eigenvectors to compute.
    *    Must be less than the size of the input matrix, or an error is returned.
    * \param[in] eigs_sigma String containing either "LM", "SM", "LA", or "SA", with
-   *    respective meanings to find the largest magnitude , smallest magnitude,
+   *    respective meanings to find the largest magnitude, smallest magnitude,
    *    largest algebraic, or smallest algebraic eigenvalues. Alternatively, this
    *    value can contain floating point value in string form, in which case the
    *    eigenvalues closest to this value will be found.
@@ -135,7 +135,7 @@ class ArpackGeneralizedSelfAdjointEigenSolver {
    * \param[in] nbrEigenvalues The number of eigenvalues / eigenvectors to compute.
    *    Must be less than the size of the input matrix, or an error is returned.
    * \param[in] eigs_sigma String containing either "LM", "SM", "LA", or "SA", with
-   *    respective meanings to find the largest magnitude , smallest magnitude,
+   *    respective meanings to find the largest magnitude, smallest magnitude,
    *    largest algebraic, or smallest algebraic eigenvalues. Alternatively, this
    *    value can contain floating point value in string form, in which case the
    *    eigenvalues closest to this value will be found.
@@ -161,7 +161,7 @@ class ArpackGeneralizedSelfAdjointEigenSolver {
    * \param[in] nbrEigenvalues The number of eigenvalues / eigenvectors to compute.
    *    Must be less than the size of the input matrix, or an error is returned.
    * \param[in] eigs_sigma String containing either "LM", "SM", "LA", or "SA", with
-   *    respective meanings to find the largest magnitude , smallest magnitude,
+   *    respective meanings to find the largest magnitude, smallest magnitude,
    *    largest algebraic, or smallest algebraic eigenvalues. Alternatively, this
    *    value can contain floating point value in string form, in which case the
    *    eigenvalues closest to this value will be found.
@@ -391,7 +391,7 @@ ArpackGeneralizedSelfAdjointEigenSolver<MatrixType, MatrixSolver, BisSPD>::compu
 
   // Number of Lanczos vectors, must satisfy nev < ncv <= n
   // Note that this indicates that nev != n, and we cannot compute
-  // all eigenvalues of a mtrix
+  // all eigenvalues of a matrix
   //
   int ncv = std::min(std::max(2 * nev, 20), n);
 
@@ -523,7 +523,7 @@ ArpackGeneralizedSelfAdjointEigenSolver<MatrixType, MatrixSolver, BisSPD>::compu
     //
     int rvec = (options & ComputeEigenvectors) == ComputeEigenvectors;
 
-    // "A" means "All", use "S" to choose specific eigenvalues (not yet supported in ARPACK))
+    // "A" means "All", use "S" to choose specific eigenvalues (not yet supported in ARPACK)
     //
     char howmny[2] = "A";
 

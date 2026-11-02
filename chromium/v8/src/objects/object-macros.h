@@ -125,7 +125,23 @@
 #define DEF_ACQUIRE_GETTER(holder, name, ...) \
   __VA_ARGS__ holder::name(AcquireLoadTag tag) const
 
-#define DEF_HEAP_OBJECT_PREDICATE(holder, name) bool name(Tagged<holder> obj)
+#define DEF_HEAP_OBJECT_PREDICATE(name)               \
+  bool name(Tagged<Object> obj) {                     \
+    Tagged<HeapObject> ho;                            \
+    return TryCast<HeapObject>(obj, &ho) && name(ho); \
+  }                                                   \
+  bool name(Tagged<HeapObject> obj)
+
+#define DEF_CAST_TRAITS(Type, ...)                           \
+  template <>                                                \
+  struct CastTraits<Type> {                                  \
+    static inline bool AllowFrom(Tagged<Object> value) {     \
+      return Is##Type(value);                                \
+    }                                                        \
+    static inline bool AllowFrom(Tagged<HeapObject> value) { \
+      return Is##Type(value);                                \
+    }                                                        \
+  };
 
 #define TQ_FIELD_TYPE(name, tq_type) \
   static constexpr const char* k##name##TqFieldType = tq_type;
@@ -626,6 +642,17 @@
   }                                                                           \
   EXTERNAL_POINTER_ACCESSORS_MAYBE_READ_ONLY_HOST(holder, name, type, offset, \
                                                   tag)
+
+// Host objects in ReadOnlySpace can't define the isolate-less accessor.
+#define DECL_CPP_POINTER_ACCESSORS_MAYBE_READ_ONLY_HOST(name, type) \
+  inline type name(i::IsolateForPointerCompression isolate) const;  \
+  inline void init_##name(i::IsolateForPointerCompression isolate,  \
+                          type initial_value);                      \
+  inline void set_##name(i::IsolateForPointerCompression isolate, type value);
+
+#define DECL_CPP_POINTER_ACCESSORS(name, type) \
+  inline type name() const;                    \
+  DECL_CPP_POINTER_ACCESSORS_MAYBE_READ_ONLY_HOST(name, type)
 
 #define DECL_TRUSTED_POINTER_GETTERS(name, type)                             \
   /* Trusted pointers currently always have release-acquire semantics. */    \

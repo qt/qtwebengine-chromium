@@ -15,13 +15,10 @@
  * limitations under the License.
  */
 
-import {DislikeAnalyzer} from '../dislike/dislike_analyzer.js';
+import {SpecVersion} from '../dynamiccolor/color_spec.js';
+import {DynamicScheme, Platform} from '../dynamiccolor/dynamic_scheme';
+import {Variant} from '../dynamiccolor/variant.js';
 import {Hct} from '../hct/hct.js';
-import {TonalPalette} from '../palettes/tonal_palette.js';
-import {TemperatureCache} from '../temperature/temperature_cache.js';
-
-import {DynamicScheme} from './dynamic_scheme.js';
-import {Variant} from './variant.js';
 
 /**
  * A scheme that places the source color in `Scheme.primaryContainer`.
@@ -33,26 +30,23 @@ import {Variant} from './variant.js';
  * `TemperatureCache`. It also maintains constant appearance.
  */
 export class SchemeContent extends DynamicScheme {
-  constructor(sourceColorHct: Hct, isDark: boolean, contrastLevel: number) {
+  constructor(
+      sourceColorHct: Hct, isDark: boolean, contrastLevel: number,
+      specVersion?: SpecVersion, platform?: Platform);
+  constructor(
+      sourceColorHcts: Hct[], isDark: boolean, contrastLevel: number,
+      specVersion?: SpecVersion, platform?: Platform);
+  constructor(
+      sourceColorOrList: Hct|Hct[], isDark: boolean, contrastLevel: number,
+      specVersion: SpecVersion = DynamicScheme.DEFAULT_SPEC_VERSION,
+      platform: Platform = DynamicScheme.DEFAULT_PLATFORM) {
     super({
-      sourceColorArgb: sourceColorHct.toInt(),
+      sourceColorHcts: Array.isArray(sourceColorOrList) ? sourceColorOrList : [sourceColorOrList],
       variant: Variant.CONTENT,
       contrastLevel,
       isDark,
-      primaryPalette: TonalPalette.fromHueAndChroma(
-          sourceColorHct.hue, sourceColorHct.chroma),
-      secondaryPalette: TonalPalette.fromHueAndChroma(
-          sourceColorHct.hue,
-          Math.max(sourceColorHct.chroma - 32.0, sourceColorHct.chroma * 0.5)),
-      tertiaryPalette: TonalPalette.fromInt(
-          DislikeAnalyzer
-              .fixIfDisliked(
-                  new TemperatureCache(sourceColorHct).analogous(3, 6)[2])
-              .toInt()),
-      neutralPalette: TonalPalette.fromHueAndChroma(
-          sourceColorHct.hue, sourceColorHct.chroma / 8.0),
-      neutralVariantPalette: TonalPalette.fromHueAndChroma(
-          sourceColorHct.hue, sourceColorHct.chroma / 8.0 + 4.0),
+      platform,
+      specVersion,
     });
   }
 }

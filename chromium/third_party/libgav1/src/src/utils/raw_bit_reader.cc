@@ -15,9 +15,10 @@
 #include "src/utils/raw_bit_reader.h"
 
 #include <cassert>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 
-#include "src/utils/common.h"
 #include "src/utils/logging.h"
 
 // Note <cinttypes> is only needed when logging is enabled (for the PRI*

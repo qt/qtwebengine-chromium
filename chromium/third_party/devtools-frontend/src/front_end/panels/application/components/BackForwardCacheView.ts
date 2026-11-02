@@ -49,7 +49,7 @@ const UIStrings = {
    * the back/forward cache was not used and a normal navigation occurred instead.
    */
   normalNavigation:
-      'Not served from back/forward cache: to trigger back/forward cache, use Chrome\'s back/forward buttons, or use the test button below to automatically navigate away and back.',
+      'Not served from back/forward cache: to trigger back/forward cache, use Chrome’s back/forward buttons, or use the test button below to automatically navigate away and back.',
   /**
    * @description Status text for the status of the back/forward cache status indicating that
    * the back/forward cache was used to restore the page instead of reloading it.
@@ -341,7 +341,7 @@ function maybeRenderReasonContext(explanation: Protocol.Page.BackForwardCacheNot
     const link = 'chrome://extensions/?id=' + explanation.context as Platform.DevToolsPath.UrlString;
     // clang-format off
     return html`${i18nString(UIStrings.blockingExtensionId)}
-      <devtools-link .href=${link}>${explanation.context}</devtools-link>`;
+      <devtools-link .href=${link} allow-privileged>${explanation.context}</devtools-link>`;
     // clang-format on
   }
   return nothing;
@@ -362,7 +362,7 @@ function renderFramesPerReason(frames: string[]|undefined): LitTemplate {
     title: i18nString(UIStrings.framesPerIssue, {n: frames.length}),
   } as ExpandableList.ExpandableList.ExpandableListData}
         jslog=${VisualLogging.treeItem().track({
-    resize: true
+    resize: true,
   })}></devtools-expandable-list>
       </div>
     `;
@@ -393,9 +393,8 @@ function maybeRenderJavaScriptDetails(details: Protocol.Page.BackForwardCacheBlo
                              options: {
                                columnNumber: detail.columnNumber,
                                showColumnNumber: true,
-                               inlineFrameIndex: 0,
                                maxLength: maxLengthForDisplayedURLs,
-                             }
+                             },
                            })}`));
   return html`
       <div class="details-list">
@@ -464,11 +463,27 @@ export class BackForwardCacheView extends UI.Widget.Widget {
   constructor(view = DEFAULT_VIEW) {
     super({useShadowDom: true, delegatesFocus: true});
     this.#view = view;
-    this.#getMainResourceTreeModel()?.addEventListener(
-        SDK.ResourceTreeModel.Events.PrimaryPageChanged, this.requestUpdate, this);
-    this.#getMainResourceTreeModel()?.addEventListener(
-        SDK.ResourceTreeModel.Events.BackForwardCacheDetailsUpdated, this.requestUpdate, this);
+  }
+
+  override wasShown(): void {
+    super.wasShown();
+    SDK.TargetManager.TargetManager.instance().addModelListener(SDK.ResourceTreeModel.ResourceTreeModel,
+                                                                SDK.ResourceTreeModel.Events.PrimaryPageChanged,
+                                                                this.requestUpdate, this);
+    SDK.TargetManager.TargetManager.instance().addModelListener(
+        SDK.ResourceTreeModel.ResourceTreeModel, SDK.ResourceTreeModel.Events.BackForwardCacheDetailsUpdated,
+        this.requestUpdate, this);
     this.requestUpdate();
+  }
+
+  override willHide(): void {
+    SDK.TargetManager.TargetManager.instance().removeModelListener(SDK.ResourceTreeModel.ResourceTreeModel,
+                                                                   SDK.ResourceTreeModel.Events.PrimaryPageChanged,
+                                                                   this.requestUpdate, this);
+    SDK.TargetManager.TargetManager.instance().removeModelListener(
+        SDK.ResourceTreeModel.ResourceTreeModel, SDK.ResourceTreeModel.Events.BackForwardCacheDetailsUpdated,
+        this.requestUpdate, this);
+    super.willHide();
   }
 
   #getMainResourceTreeModel(): SDK.ResourceTreeModel.ResourceTreeModel|null {

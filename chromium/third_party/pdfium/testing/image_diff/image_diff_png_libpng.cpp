@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "core/fxcrt/check_op.h"
+#include "core/fxcrt/compiler_specific.h"
 #include "core/fxcrt/fx_memcpy_wrappers.h"
 #include "core/fxcrt/notreached.h"
 
@@ -72,12 +73,14 @@ void ConvertBetweenBGRAandRGBA(const uint8_t* input,
                                uint8_t* output,
                                bool* is_opaque) {
   for (int x = 0; x < pixel_width; x++) {
-    const uint8_t* pixel_in = &input[x * 4];
-    uint8_t* pixel_out = &output[x * 4];
-    pixel_out[0] = pixel_in[2];
-    pixel_out[1] = pixel_in[1];
-    pixel_out[2] = pixel_in[0];
-    pixel_out[3] = pixel_in[3];
+    UNSAFE_TODO({
+      const uint8_t* pixel_in = &input[x * 4];
+      uint8_t* pixel_out = &output[x * 4];
+      pixel_out[0] = pixel_in[2];
+      pixel_out[1] = pixel_in[1];
+      pixel_out[2] = pixel_in[0];
+      pixel_out[3] = pixel_in[3];
+    });
   }
 }
 
@@ -86,11 +89,13 @@ void ConvertBGRtoRGB(const uint8_t* bgr,
                      uint8_t* rgb,
                      bool* is_opaque) {
   for (int x = 0; x < pixel_width; x++) {
-    const uint8_t* pixel_in = &bgr[x * 3];
-    uint8_t* pixel_out = &rgb[x * 3];
-    pixel_out[0] = pixel_in[2];
-    pixel_out[1] = pixel_in[1];
-    pixel_out[2] = pixel_in[0];
+    UNSAFE_TODO({
+      const uint8_t* pixel_in = &bgr[x * 3];
+      uint8_t* pixel_out = &rgb[x * 3];
+      pixel_out[0] = pixel_in[2];
+      pixel_out[1] = pixel_in[1];
+      pixel_out[2] = pixel_in[0];
+    });
   }
 }
 
@@ -101,9 +106,9 @@ void ConvertRGBAtoRGB(const uint8_t* rgba,
   const uint8_t* pixel_in = rgba;
   uint8_t* pixel_out = rgb;
   for (int x = 0; x < pixel_width; x++) {
-    FXSYS_memcpy(pixel_out, pixel_in, 3);
-    pixel_in += 4;
-    pixel_out += 3;
+    UNSAFE_TODO(FXSYS_memcpy(pixel_out, pixel_in, 3));
+    UNSAFE_TODO(pixel_in += 4);
+    UNSAFE_TODO(pixel_out += 3);
   }
 }
 
@@ -157,10 +162,12 @@ void ConvertRGBtoRGBA(const uint8_t* rgb,
   const uint8_t* pixel_in = rgb;
   uint8_t* pixel_out = rgba;
   for (int x = 0; x < pixel_width; x++) {
-    FXSYS_memcpy(pixel_out, pixel_in, 3);
-    pixel_out[3] = 0xff;
-    pixel_in += 3;
-    pixel_out += 4;
+    UNSAFE_TODO({
+      FXSYS_memcpy(pixel_out, pixel_in, 3);
+      pixel_out[3] = 0xff;
+      pixel_in += 3;
+      pixel_out += 4;
+    });
   }
 }
 
@@ -169,12 +176,14 @@ void ConvertRGBtoBGRA(const uint8_t* rgb,
                       uint8_t* bgra,
                       bool* is_opaque) {
   for (int x = 0; x < pixel_width; x++) {
-    const uint8_t* pixel_in = &rgb[x * 3];
-    uint8_t* pixel_out = &bgra[x * 4];
-    pixel_out[0] = pixel_in[2];
-    pixel_out[1] = pixel_in[1];
-    pixel_out[2] = pixel_in[0];
-    pixel_out[3] = 0xff;
+    UNSAFE_TODO({
+      const uint8_t* pixel_in = &rgb[x * 3];
+      uint8_t* pixel_out = &bgra[x * 4];
+      pixel_out[0] = pixel_in[2];
+      pixel_out[1] = pixel_in[1];
+      pixel_out[2] = pixel_in[0];
+      pixel_out[3] = 0xff;
+    });
   }
 }
 
@@ -303,11 +312,13 @@ void DecodeRowCallback(png_struct* png_ptr,
   uint8_t* base = nullptr;
   base = &state->output->front();
 
-  uint8_t* dest = &base[state->width * state->output_channels * row_num];
+  uint8_t* dest =
+      UNSAFE_TODO(&base[state->width * state->output_channels * row_num]);
   if (state->row_converter) {
     state->row_converter(new_row, state->width, dest, &state->is_opaque);
   } else {
-    FXSYS_memcpy(dest, new_row, state->width * state->output_channels);
+    UNSAFE_TODO(
+        FXSYS_memcpy(dest, new_row, state->width * state->output_channels));
   }
 }
 
@@ -414,7 +425,7 @@ void EncoderWriteCallback(png_structp png, png_bytep data, png_size_t size) {
   PngEncoderState* state = static_cast<PngEncoderState*>(png_get_io_ptr(png));
   size_t old_size = state->out->size();
   state->out->resize(old_size + size);
-  FXSYS_memcpy(&(*state->out)[old_size], data, size);
+  UNSAFE_TODO(FXSYS_memcpy(&(*state->out)[old_size], data, size));
 }
 
 void FakeFlushCallback(png_structp png) {
@@ -427,11 +438,13 @@ void ConvertBGRAtoRGB(const uint8_t* bgra,
                       uint8_t* rgb,
                       bool* is_opaque) {
   for (int x = 0; x < pixel_width; x++) {
-    const uint8_t* pixel_in = &bgra[x * 4];
-    uint8_t* pixel_out = &rgb[x * 3];
-    pixel_out[0] = pixel_in[2];
-    pixel_out[1] = pixel_in[1];
-    pixel_out[2] = pixel_in[0];
+    UNSAFE_TODO({
+      const uint8_t* pixel_in = &bgra[x * 4];
+      uint8_t* pixel_out = &rgb[x * 3];
+      pixel_out[0] = pixel_in[2];
+      pixel_out[1] = pixel_in[1];
+      pixel_out[2] = pixel_in[0];
+    });
   }
 }
 
@@ -441,7 +454,7 @@ inline char* strdup(const char* str) {
 #if BUILDFLAG(IS_WIN)
   return _strdup(str);
 #else
-  return ::strdup(str);
+  return UNSAFE_TODO(::strdup(str));
 #endif
 }
 
@@ -456,8 +469,8 @@ class CommentWriter {
 
   ~CommentWriter() {
     for (size_t i = 0; i < comments_.size(); ++i) {
-      free(png_text_[i].key);
-      free(png_text_[i].text);
+      free(UNSAFE_TODO(png_text_[i]).key);
+      free(UNSAFE_TODO(png_text_[i]).text);
     }
     delete[] png_text_;
   }
@@ -470,18 +483,18 @@ class CommentWriter {
 
  private:
   void AddComment(size_t pos, const Comment& comment) {
-    png_text_[pos].compression = PNG_TEXT_COMPRESSION_NONE;
+    UNSAFE_TODO(png_text_[pos]).compression = PNG_TEXT_COMPRESSION_NONE;
     // A PNG comment's key can only be 79 characters long.
     if (comment.key.size() > 79) {
       return;
     }
-    png_text_[pos].key = strdup(comment.key.substr(0, 78).c_str());
-    png_text_[pos].text = strdup(comment.text.c_str());
-    png_text_[pos].text_length = comment.text.size();
+    UNSAFE_TODO(png_text_[pos]).key = strdup(comment.key.substr(0, 78).c_str());
+    UNSAFE_TODO(png_text_[pos]).text = strdup(comment.text.c_str());
+    UNSAFE_TODO(png_text_[pos]).text_length = comment.text.size();
 #ifdef PNG_iTXt_SUPPORTED
-    png_text_[pos].itxt_length = 0;
-    png_text_[pos].lang = 0;
-    png_text_[pos].lang_key = 0;
+    UNSAFE_TODO(png_text_[pos]).itxt_length = 0;
+    UNSAFE_TODO(png_text_[pos]).lang = 0;
+    UNSAFE_TODO(png_text_[pos]).lang_key = 0;
 #endif
   }
 

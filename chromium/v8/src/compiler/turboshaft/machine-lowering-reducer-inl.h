@@ -8,6 +8,7 @@
 #include <optional>
 
 #include "src/base/logging.h"
+#include "src/base/strong-alias.h"
 #include "src/codegen/external-reference.h"
 #include "src/codegen/machine-type.h"
 #include "src/common/globals.h"
@@ -31,13 +32,14 @@
 #include "src/execution/frame-constants.h"
 #include "src/ic/handler-configuration.h"
 #include "src/objects/bigint.h"
+#include "src/objects/descriptor-array.h"
 #include "src/objects/feedback-vector.h"
 #include "src/objects/fixed-array.h"
+#include "src/objects/fixed-primitive-array.h"
 #include "src/objects/heap-number.h"
 #include "src/objects/heap-object.h"
 #include "src/objects/instance-type-checker.h"
 #include "src/objects/instance-type-inl.h"
-#include "src/objects/instance-type.h"
 #ifdef V8_INTL_SUPPORT
 #include "src/objects/intl-objects.h"
 #endif
@@ -68,13 +70,6 @@ class MachineLoweringReducer : public Next {
         return false;
     }
     UNREACHABLE();
-  }
-
-  V<Float64OrWord32> REDUCE(TypeHint)(V<Float64OrWord32> input,
-                                      TypeHintOp::Type) {
-    // As far as Machine operations are concerned, Int32/Uint32 are both Word32,
-    // and Float64/HoleyFloat64 are both Float64.
-    return input;
   }
 
   V<Untagged> REDUCE(ChangeOrDeopt)(V<Untagged> input,
@@ -697,16 +692,30 @@ class MachineLoweringReducer : public Next {
     }
     UNREACHABLE();
   }
+  V<Word32> REDUCE(FloatIs)(V<Float> value, NumericKind kind,
+                            FloatRepresentation rep) {
+    if (rep == FloatRepresentation::Float32()) {
+      switch (kind) {
+        case NumericKind::kFinite: {
+          V<Float32> value_f32 = V<Float32>::Cast(value);
+          V<Float32> diff = __ Float32Sub(value_f32, value_f32);
+          return __ Float32Equal(diff, diff);
+        }
+        default:
+          UNREACHABLE();
+      }
+    }
 
-  V<Word32> REDUCE(Float64Is)(V<Float64> value, NumericKind kind) {
+    DCHECK_EQ(rep, FloatRepresentation::Float64());
+    V<Float64> value_f64 = V<Float64>::Cast(value);
     switch (kind) {
       case NumericKind::kFloat64Hole: {
         Label<Word32> done(this);
         // First check whether {value} is a NaN at all...
-        GOTO_IF(LIKELY(__ Float64Equal(value, value)), done, 0);
+        GOTO_IF(LIKELY(__ Float64Equal(value_f64, value_f64)), done, 0);
         // ...and only if {value} is a NaN, perform the expensive bit
         // check. See http://crbug.com/v8/8264 for details.
-        GOTO(done, __ Word32Equal(__ Float64ExtractHighWord32(value),
+        GOTO(done, __ Word32Equal(__ Float64ExtractHighWord32(value_f64),
                                   kHoleNanUpper32));
         BIND(done, result);
         return result;
@@ -715,10 +724,10 @@ class MachineLoweringReducer : public Next {
       case NumericKind::kFloat64Undefined: {
         Label<Word32> done(this);
         // First check whether {value} is a NaN at all...
-        GOTO_IF(LIKELY(__ Float64Equal(value, value)), done, 0);
+        GOTO_IF(LIKELY(__ Float64Equal(value_f64, value_f64)), done, 0);
         // ...and only if {value} is a NaN, perform the expensive bit
         // check. See http://crbug.com/v8/8264 for details.
-        GOTO(done, __ Word32Equal(__ Float64ExtractHighWord32(value),
+        GOTO(done, __ Word32Equal(__ Float64ExtractHighWord32(value_f64),
                                   kUndefinedNanUpper32));
         BIND(done, result);
         return result;
@@ -726,10 +735,10 @@ class MachineLoweringReducer : public Next {
       case NumericKind::kFloat64UndefinedOrHole: {
         Label<Word32> done(this);
         // First check whether {value} is a NaN at all...
-        GOTO_IF(LIKELY(__ Float64Equal(value, value)), done, 0);
+        GOTO_IF(LIKELY(__ Float64Equal(value_f64, value_f64)), done, 0);
         // ...and only if {value} is a NaN, perform the expensive bit
         // check. See http://crbug.com/v8/8264 for details.
-        V<Word32> hi = __ Float64ExtractHighWord32(value);
+        V<Word32> hi = __ Float64ExtractHighWord32(value_f64);
         GOTO_IF(__ Word32Equal(hi, kUndefinedNanUpper32), done, 1);
         GOTO(done, __ Word32Equal(hi, kHoleNanUpper32));
         BIND(done, result);
@@ -737,18 +746,18 @@ class MachineLoweringReducer : public Next {
       }
 #endif  // V8_ENABLE_UNDEFINED_DOUBLE
       case NumericKind::kFinite: {
-        V<Float64> diff = __ Float64Sub(value, value);
+        V<Float64> diff = __ Float64Sub(value_f64, value_f64);
         return __ Float64Equal(diff, diff);
       }
       case NumericKind::kInteger: {
-        V<Float64> trunc = __ Float64RoundToZero(value);
-        V<Float64> diff = __ Float64Sub(value, trunc);
+        V<Float64> trunc = __ Float64RoundToZero(value_f64);
+        V<Float64> diff = __ Float64Sub(value_f64, trunc);
         return __ Float64Equal(diff, 0.0);
       }
       case NumericKind::kSafeInteger: {
         Label<Word32> done(this);
-        V<Float64> trunc = __ Float64RoundToZero(value);
-        V<Float64> diff = __ Float64Sub(value, trunc);
+        V<Float64> trunc = __ Float64RoundToZero(value_f64);
+        V<Float64> diff = __ Float64Sub(value_f64, trunc);
         GOTO_IF_NOT(__ Float64Equal(diff, 0), done, 0);
         V<Word32> in_range =
             __ Float64LessThanOrEqual(__ Float64Abs(trunc), kMaxSafeInteger);
@@ -759,13 +768,13 @@ class MachineLoweringReducer : public Next {
       }
       case NumericKind::kInt32: {
         Label<Word32> done(this);
-        V<Word32> v32 = __ TruncateFloat64ToInt32OverflowUndefined(value);
-        GOTO_IF_NOT(__ Float64Equal(value, __ ChangeInt32ToFloat64(v32)), done,
-                    0);
+        V<Word32> v32 = __ TruncateFloat64ToInt32OverflowUndefined(value_f64);
+        GOTO_IF_NOT(__ Float64Equal(value_f64, __ ChangeInt32ToFloat64(v32)),
+                    done, 0);
         IF (__ Word32Equal(v32, 0)) {
           // Checking -0.
-          GOTO_IF(__ Int32LessThan(__ Float64ExtractHighWord32(value), 0), done,
-                  0);
+          GOTO_IF(__ Int32LessThan(__ Float64ExtractHighWord32(value_f64), 0),
+                  done, 0);
         }
         GOTO(done, 1);
 
@@ -774,13 +783,13 @@ class MachineLoweringReducer : public Next {
       }
       case NumericKind::kSmi: {
         Label<Word32> done(this);
-        V<Word32> v32 = __ TruncateFloat64ToInt32OverflowUndefined(value);
-        GOTO_IF_NOT(__ Float64Equal(value, __ ChangeInt32ToFloat64(v32)), done,
-                    0);
+        V<Word32> v32 = __ TruncateFloat64ToInt32OverflowUndefined(value_f64);
+        GOTO_IF_NOT(__ Float64Equal(value_f64, __ ChangeInt32ToFloat64(v32)),
+                    done, 0);
         IF (__ Word32Equal(v32, 0)) {
           // Checking -0.
-          GOTO_IF(__ Int32LessThan(__ Float64ExtractHighWord32(value), 0), done,
-                  0);
+          GOTO_IF(__ Int32LessThan(__ Float64ExtractHighWord32(value_f64), 0),
+                  done, 0);
         }
 
         if constexpr (SmiValuesAre32Bits()) {
@@ -797,13 +806,13 @@ class MachineLoweringReducer : public Next {
       }
       case NumericKind::kMinusZero: {
         if (Is64()) {
-          V<Word64> value64 = __ BitcastFloat64ToWord64(value);
+          V<Word64> value64 = __ BitcastFloat64ToWord64(value_f64);
           return __ Word64Equal(value64, kMinusZeroBits);
         } else {
           Label<Word32> done(this);
-          V<Word32> value_lo = __ Float64ExtractLowWord32(value);
+          V<Word32> value_lo = __ Float64ExtractLowWord32(value_f64);
           GOTO_IF_NOT(__ Word32Equal(value_lo, kMinusZeroLoBits), done, 0);
-          V<Word32> value_hi = __ Float64ExtractHighWord32(value);
+          V<Word32> value_hi = __ Float64ExtractHighWord32(value_f64);
           GOTO(done, __ Word32Equal(value_hi, kMinusZeroHiBits));
 
           BIND(done, result);
@@ -811,7 +820,7 @@ class MachineLoweringReducer : public Next {
         }
       }
       case NumericKind::kNaN: {
-        V<Word32> diff = __ Float64Equal(value, value);
+        V<Word32> diff = __ Float64Equal(value_f64, value_f64);
         return __ Word32Equal(diff, 0);
       }
     }
@@ -1632,8 +1641,9 @@ class MachineLoweringReducer : public Next {
             builder.AddParam(MachineType::TaggedPointer());
             auto desc = Linkage::GetSimplifiedCDescriptor(__ graph_zone(),
                                                           builder.Get());
-            auto ts_desc = TSCallDescriptor::Create(
-                desc, CanThrow::kNo, LazyDeoptOnThrow::kNo, __ graph_zone());
+            auto ts_desc = TSCallDescriptor::Create(desc, CanThrow{false},
+                                                    LazyDeoptOnThrow{false},
+                                                    __ graph_zone());
             OpIndex callee = __ ExternalConstant(
                 ExternalReference::string_to_array_index_function());
             // NOTE: String::ToArrayIndex() currently returns int32_t.
@@ -1836,14 +1846,10 @@ class MachineLoweringReducer : public Next {
     UNREACHABLE();
   }
 
-  V<Word> REDUCE(TruncateJSPrimitiveToUntaggedOrDeopt)(
+  V<Word> REDUCE(TruncateJSPrimitiveToWord32OrDeopt)(
       V<JSPrimitive> input, V<EagerFrameState> frame_state,
-      TruncateJSPrimitiveToUntaggedOrDeoptOp::UntaggedKind kind,
-      TruncateJSPrimitiveToUntaggedOrDeoptOp::InputRequirement
-          input_requirement,
+      TruncateJSPrimitiveToWord32OrDeoptOp::InputRequirement input_requirement,
       const FeedbackSource& feedback) {
-    DCHECK_EQ(kind,
-              TruncateJSPrimitiveToUntaggedOrDeoptOp::UntaggedKind::kInt32);
     Label<Word32> done(this);
     // In the Smi case, just convert to int32.
     GOTO_IF(LIKELY(__ ObjectIsSmi(input)), done,
@@ -2191,8 +2197,9 @@ class MachineLoweringReducer : public Next {
   }
 
   V<Object> REDUCE(LoadDictionaryField)(
-      V<JSReceiver> object, V<Context> context, V<LazyFrameState> frame_state,
-      size_t raw_index, compiler::NameRef name, const FeedbackSource& feedback,
+      V<JSReceiver> object, V<Object> receiver, V<Context> context,
+      V<LazyFrameState> frame_state, size_t raw_index, compiler::NameRef name,
+      const FeedbackSource& feedback, bool is_super,
       LazyDeoptOnThrow lazy_deopt_on_throw) {
     static_assert(!V8_ENABLE_SWISS_NAME_DICTIONARY_BOOL);
     InternalIndex index(raw_index);
@@ -2232,13 +2239,25 @@ class MachineLoweringReducer : public Next {
       }
     }
 
-    V<JSAny> fallback_result = __ template CallBuiltin<builtin::LoadIC>(
-        frame_state, context,
-        {.object = object,
-         .name = __ HeapConstant(name.object()),
-         .slot = __ TaggedIndexConstant(feedback.index()),
-         .vector = __ HeapConstant(feedback.vector)},
-        lazy_deopt_on_throw);
+    V<JSAny> fallback_result;
+    if (is_super) {
+      fallback_result = __ template CallBuiltin<builtin::LoadSuperIC>(
+          frame_state, context,
+          {.receiver = receiver,
+           .lookup_start_object = object,
+           .name = __ HeapConstant(name.object()),
+           .slot = __ TaggedIndexConstant(feedback.index()),
+           .vector = __ HeapConstant(feedback.vector)},
+          lazy_deopt_on_throw);
+    } else {
+      fallback_result = __ template CallBuiltin<builtin::LoadIC>(
+          frame_state, context,
+          {.object = object,
+           .name = __ HeapConstant(name.object()),
+           .slot = __ TaggedIndexConstant(feedback.index()),
+           .vector = __ HeapConstant(feedback.vector)},
+          lazy_deopt_on_throw);
+    }
     GOTO(done, fallback_result);
 
     BIND(done, result);
@@ -2524,8 +2543,13 @@ class MachineLoweringReducer : public Next {
         // Check for exception sentinel: Smi 1 is returned to signal
         // TerminationRequested.
         IF (UNLIKELY(__ TaggedEqual(result, __ TagSmi(1)))) {
+          // This FrameState will only be used for stack walking (to print the
+          // stack trace or during interrupts) and we never resume execution
+          // here, so only the Function and Receiver fields matter. It is
+          // therefore safe to cast the EagerFrameState to a LazyFrameState.
+          auto lazy_fs = V<LazyFrameState>::Cast(OpIndex(frame_state));
           __ template CallRuntime<runtime::TerminateExecution>(
-              __ NoContextConstant(), {});
+              lazy_fs, __ NoContextConstant(), {}, LazyDeoptOnThrow{false});
           __ Unreachable();
         }
 
@@ -2740,8 +2764,13 @@ class MachineLoweringReducer : public Next {
               receiver, AccessBuilder::ForSlicedStringOffset());
           receiver = __ template LoadField<String>(
               receiver, AccessBuilder::ForSlicedStringParent());
-          position = __ WordPtrAdd(position,
-                                   __ ChangeInt32ToIntPtr(__ UntagSmi(offset)));
+          // Clamp accumulated offsets using 32-bit wrapping arithmetic to
+          // prevent out-of-sandbox reads under memory corruption (see
+          // b/519768343).
+          V<Word32> position_32 = __ TruncateWordPtrToWord32(position);
+          V<Word32> new_position_32 =
+              __ Word32Add(position_32, __ UntagSmi(offset));
+          position = __ ChangeUint32ToUintPtr(new_position_32);
           GOTO(loop);
         }
 
@@ -2950,7 +2979,7 @@ class MachineLoweringReducer : public Next {
   V<String> REDUCE(StringConcat)(V<Smi> length, V<String> left,
                                  V<String> right) {
     // TODO(nicohartmann@): Port StringBuilder once it is stable.
-    return __ template CallBuiltin<builtin::StringAdd_CheckNone>(
+    return __ template CallBuiltin<builtin::StringAdd_NoMapCheck>(
         __ NoContextConstant(), {.left = left, .right = right});
   }
 
@@ -3057,10 +3086,13 @@ class MachineLoweringReducer : public Next {
       HeapObjectRef ref = MakeRef(broker, c->handle());
       if (!ref.IsString()) return StaticShape::kCantBe;
       StringRef sref = ref.AsString();
-      if (sref.IsSeqString() && sref.IsOneByteRepresentation()) {
-        return StaticShape::kIsSeqOneByte;
+      if (!sref.IsSeqString() || !sref.IsOneByteRepresentation()) {
+        return StaticShape::kCantBe;
       }
-      return StaticShape::kCantBe;
+      // A SeqOneByteString can still be internalized in place after this code
+      // is compiled.
+      if (sref.IsInternalizedString()) return StaticShape::kIsSeqOneByte;
+      return StaticShape::kUnknown;
     };
     StaticShape recv_shape = classify(receiver);
     StaticShape arg_shape = classify(compare_str);
@@ -3977,7 +4009,7 @@ class MachineLoweringReducer : public Next {
           try_string_to_index_or_lookup_existing, {isolate_ptr, value},
           TSCallDescriptor::Create(
               Linkage::GetSimplifiedCDescriptor(__ graph_zone(), builder.Get()),
-              CanThrow::kNo, LazyDeoptOnThrow::kNo, __ graph_zone())));
+              CanThrow{false}, LazyDeoptOnThrow{false}, __ graph_zone())));
 
       // Now see if the results match.
       __ DeoptimizeIfNot(__ TaggedEqual(expected, value_internalized),
@@ -4433,6 +4465,13 @@ class MachineLoweringReducer : public Next {
   }
 #endif  // V8_ENABLE_CONTINUATION_PRESERVED_EMBEDDER_DATA
 
+  V<None> REDUCE(PrepareForLoop)(V<EagerFrameState> frame_state,
+                                 FeedbackSource feedback) {
+    // This has no effect other than holding onto a FrameState for optimizations
+    // earlier in the pipeline.
+    return V<None>::Invalid();
+  }
+
  private:
   V<Word32> BuildUint32Mod(V<Word32> left, V<Word32> right) {
     Label<Word32> done(this);
@@ -4676,7 +4715,7 @@ class MachineLoweringReducer : public Next {
         callable.descriptor().GetStackParameterCount(),
         CallDescriptor::kNoFlags, Operator::kFoldable | Operator::kNoThrow);
     auto ts_descriptor = TSCallDescriptor::Create(
-        descriptor, CanThrow::kNo, LazyDeoptOnThrow::kNo, __ graph_zone());
+        descriptor, CanThrow{false}, LazyDeoptOnThrow{false}, __ graph_zone());
     return __ Call(__ HeapConstant(callable.code()),
                    V<LazyFrameState>::Invalid(), base::VectorOf(args),
                    ts_descriptor);
@@ -4724,16 +4763,34 @@ class MachineLoweringReducer : public Next {
   }
 
   V<Word32> ComputeUnseededHash(V<Word32> value) {
-    // See v8::internal::ComputeUnseededHash()
-    value = __ Word32Add(__ Word32BitwiseXor(value, 0xFFFFFFFF),
-                         __ Word32ShiftLeft(value, 15));
-    value = __ Word32BitwiseXor(value, __ Word32ShiftRightLogical(value, 12));
-    value = __ Word32Add(value, __ Word32ShiftLeft(value, 2));
-    value = __ Word32BitwiseXor(value, __ Word32ShiftRightLogical(value, 4));
-    value = __ Word32Mul(value, 2057);
-    value = __ Word32BitwiseXor(value, __ Word32ShiftRightLogical(value, 16));
-    value = __ Word32BitwiseAnd(value, 0x3FFFFFFF);
-    return value;
+    // Must match v8::base::hash32 followed by the kSmiHashMask mask (i.e. the
+    // body of SmiHash32 in utils.h). We use rapidhash "mum" on 64-bit
+    // targets; on 32-bit targets the Turboshaft ia32 backend has no 64-bit
+    // integer instruction selection, so we keep Wang's 32-bit mixer.
+#if V8_TARGET_ARCH_64_BIT
+    V<Word64> key = __ ChangeUint32ToUint64(value);
+    V<Word64> a =
+        __ Word64BitwiseXor(key, __ Word64Constant(base::kRapidhashSecret1));
+    V<Word64> b =
+        __ Word64BitwiseXor(key, __ Word64Constant(base::kRapidhashSecret2));
+    V<Word64> lo = __ Word64Mul(a, b);
+    V<Word64> hi = __ Uint64MulOverflownBits(a, b);
+    V<Word32> hash = __ TruncateWord64ToWord32(__ Word64BitwiseXor(lo, hi));
+#else
+    V<Word32> hash = value;
+    hash = __ Word32Add(__ Word32BitwiseXor(hash, 0xFFFFFFFF),
+                        __ Word32ShiftLeft(hash, 15));
+    hash = __ Word32BitwiseXor(hash, __ Word32ShiftRightLogical(hash, 12));
+    hash = __ Word32Add(hash, __ Word32ShiftLeft(hash, 2));
+    hash = __ Word32BitwiseXor(hash, __ Word32ShiftRightLogical(hash, 4));
+    hash = __ Word32Mul(hash, 2057);
+    hash = __ Word32BitwiseXor(hash, __ Word32ShiftRightLogical(hash, 16));
+#endif
+#ifdef V8_LOWER_LIMITS_MODE
+    return __ Word32BitwiseAnd(hash, 0xF);
+#else
+    return __ Word32BitwiseAnd(hash, kSmiHashMask);
+#endif
   }
 
   void TransitionElementsTo(V<JSArray> array, ElementsKind from,

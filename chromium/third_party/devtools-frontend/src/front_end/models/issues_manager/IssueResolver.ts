@@ -6,7 +6,7 @@ import * as Common from '../../core/common/common.js';
 import type * as Protocol from '../../generated/protocol.js';
 
 import type {Issue} from './Issue.js';
-import {Events as IssueManagerEvents, type IssueAddedEvent, IssuesManager} from './IssuesManager.js';
+import {Events as IssueManagerEvents, type IssueAddedEvent, type IssuesManager} from './IssuesManager.js';
 
 /**
  * A class that facilitates resolving an issueId to an issue. See `ResolverBase` for more info.
@@ -15,7 +15,7 @@ export class IssueResolver extends Common.ResolverBase.ResolverBase<Protocol.Aud
   #issuesListener: Common.EventTarget.EventDescriptor|null = null;
   #issuesManager: IssuesManager;
 
-  constructor(issuesManager: IssuesManager = IssuesManager.instance()) {
+  constructor(issuesManager: IssuesManager) {
     super();
     this.#issuesManager = issuesManager;
   }

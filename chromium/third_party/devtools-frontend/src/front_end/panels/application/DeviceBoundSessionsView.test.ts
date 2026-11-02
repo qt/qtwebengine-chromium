@@ -3,17 +3,19 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../core/common/common.js';
 import * as Protocol from '../../generated/protocol.js';
-import {assertScreenshot, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {assertScreenshot, raf, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
+import {cleanTestDOM} from '../../testing/DOMHooks.js';
+import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
 import {createViewFunctionStub} from '../../testing/ViewFunctionHelpers.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import * as Application from './application.js';
 
-describeWithMockConnection('DeviceBoundSessionsView', () => {
+describeWithEnvironment('DeviceBoundSessionsView', () => {
   const mockSessionId = 'session-id-123';
   const mockSite = 'https://example.com';
 
@@ -24,8 +26,10 @@ describeWithMockConnection('DeviceBoundSessionsView', () => {
       return original.call(this, 'en-US', {timeZone: 'UTC'});
     });
   });
-  afterEach(() => {
+  afterEach(async () => {
     toLocaleStringStub.restore();
+    cleanTestDOM();
+    await raf();
   });
 
   function createMockSession(): Application.DeviceBoundSessionsModel.SessionAndEvents {
@@ -45,14 +49,14 @@ describeWithMockConnection('DeviceBoundSessionsView', () => {
             {
               ruleType: Protocol.Network.DeviceBoundSessionUrlRuleRuleType.Include,
               hostPattern: '*.example.com',
-              pathPrefix: '/path'
+              pathPrefix: '/path',
             },
             {
               ruleType: Protocol.Network.DeviceBoundSessionUrlRuleRuleType.Exclude,
               hostPattern: 'example.com',
-              pathPrefix: '/untrusted'
+              pathPrefix: '/untrusted',
             },
-          ]
+          ],
         },
         cookieCravings: [
           {
@@ -61,12 +65,12 @@ describeWithMockConnection('DeviceBoundSessionsView', () => {
             path: '/',
             secure: false,
             httpOnly: false,
-            sameSite: Protocol.Network.CookieSameSite.Strict
+            sameSite: Protocol.Network.CookieSameSite.Strict,
           },
           {name: 'session_token2', domain: '.example.com', path: '/path', secure: false, httpOnly: false},
         ],
         cachedChallenge: 'test-challenge',
-      }
+      },
     };
   }
 
@@ -74,8 +78,10 @@ describeWithMockConnection('DeviceBoundSessionsView', () => {
     const sessionAndEvents = createMockSession();
 
     const dates = [
-      new Date('2026-01-01T10:00:00.000Z'), new Date('2026-01-02T10:00:00.000Z'), new Date('2026-01-03T10:00:00.000Z'),
-      new Date('2026-01-04T10:00:00.000Z')
+      new Date('2026-01-01T10:00:00.000Z'),
+      new Date('2026-01-02T10:00:00.000Z'),
+      new Date('2026-01-03T10:00:00.000Z'),
+      new Date('2026-01-04T10:00:00.000Z'),
     ];
 
     sessionAndEvents.eventsById.set('creation-full', {
@@ -91,11 +97,11 @@ describeWithMockConnection('DeviceBoundSessionsView', () => {
             requestUrl: 'https://example.com/creation-fail',
             netError: 'net::ERR_FAILED',
             responseError: 400,
-            responseErrorBody: '{"error": {"message": "Creation failed body", "details": {"inner": "more info"}}}'
-          }
-        }
+            responseErrorBody: '{"error": {"message": "Creation failed body", "details": {"inner": "more info"}}}',
+          },
+        },
       },
-      timestamp: dates[0]
+      timestamp: dates[0],
     });
     sessionAndEvents.eventsById.set('creation-min', {
       event: {
@@ -103,9 +109,9 @@ describeWithMockConnection('DeviceBoundSessionsView', () => {
         site: mockSite,
         sessionId: mockSessionId,
         succeeded: false,
-        creationEventDetails: {fetchResult: Protocol.Network.DeviceBoundSessionFetchResult.KeyError}
+        creationEventDetails: {fetchResult: Protocol.Network.DeviceBoundSessionFetchResult.SigningKeyGenerationError},
       },
-      timestamp: dates[0]
+      timestamp: dates[0],
     });
     sessionAndEvents.eventsById.set('refresh-full', {
       event: {
@@ -122,11 +128,11 @@ describeWithMockConnection('DeviceBoundSessionsView', () => {
             requestUrl: 'https://example.com/refresh-fail',
             netError: 'net::ERR_ABORTED',
             responseError: 500,
-            responseErrorBody: '{"error": {"message": "Refresh failed body", "otherDetails": {"inner": "more info"}}}'
-          }
-        }
+            responseErrorBody: '{"error": {"message": "Refresh failed body", "otherDetails": {"inner": "more info"}}}',
+          },
+        },
       },
-      timestamp: dates[1]
+      timestamp: dates[1],
     });
     sessionAndEvents.eventsById.set('refresh-min', {
       event: {
@@ -136,10 +142,10 @@ describeWithMockConnection('DeviceBoundSessionsView', () => {
         succeeded: false,
         refreshEventDetails: {
           refreshResult: Protocol.Network.RefreshEventDetailsRefreshResult.FatalError,
-          wasFullyProactiveRefresh: true
-        }
+          wasFullyProactiveRefresh: true,
+        },
       },
-      timestamp: dates[1]
+      timestamp: dates[1],
     });
     sessionAndEvents.eventsById.set('challenge', {
       event: {
@@ -148,9 +154,9 @@ describeWithMockConnection('DeviceBoundSessionsView', () => {
         site: mockSite,
         sessionId: mockSessionId,
         challengeEventDetails:
-            {challenge: 'challenge', challengeResult: Protocol.Network.ChallengeEventDetailsChallengeResult.Success}
+            {challenge: 'challenge', challengeResult: Protocol.Network.ChallengeEventDetailsChallengeResult.Success},
       },
-      timestamp: dates[2]
+      timestamp: dates[2],
     });
     sessionAndEvents.eventsById.set('termination', {
       event: {
@@ -158,9 +164,9 @@ describeWithMockConnection('DeviceBoundSessionsView', () => {
         eventId: 'termination' as Protocol.Network.DeviceBoundSessionEventId,
         sessionId: mockSessionId,
         site: mockSite,
-        terminationEventDetails: {deletionReason: Protocol.Network.TerminationEventDetailsDeletionReason.Expired}
+        terminationEventDetails: {deletionReason: Protocol.Network.TerminationEventDetailsDeletionReason.Expired},
       },
-      timestamp: dates[3]
+      timestamp: dates[3],
     });
     sessionAndEvents.eventsById.set('invalid-failed-request-body-invalid-json', {
       event: {
@@ -173,11 +179,11 @@ describeWithMockConnection('DeviceBoundSessionsView', () => {
           wasFullyProactiveRefresh: false,
           failedRequest: {
             requestUrl: 'https://example.com/refresh-body-issue',
-            responseErrorBody: '{"error": {"message": "JSON does not parse", "otherDetails": {"inner": "more info"'
-          }
-        }
+            responseErrorBody: '{"error": {"message": "JSON does not parse", "otherDetails": {"inner": "more info"',
+          },
+        },
       },
-      timestamp: dates[0]
+      timestamp: dates[0],
     });
     sessionAndEvents.eventsById.set('invalid-failed-request-body-string', {
       event: {
@@ -188,10 +194,10 @@ describeWithMockConnection('DeviceBoundSessionsView', () => {
         refreshEventDetails: {
           refreshResult: Protocol.Network.RefreshEventDetailsRefreshResult.FatalError,
           wasFullyProactiveRefresh: false,
-          failedRequest: {requestUrl: 'https://example.com/refresh-body-issue', responseErrorBody: 'justAString'}
-        }
+          failedRequest: {requestUrl: 'https://example.com/refresh-body-issue', responseErrorBody: 'justAString'},
+        },
       },
-      timestamp: dates[0]
+      timestamp: dates[0],
     });
     sessionAndEvents.eventsById.set('invalid-failed-request-body-boolean', {
       event: {
@@ -202,10 +208,10 @@ describeWithMockConnection('DeviceBoundSessionsView', () => {
         refreshEventDetails: {
           refreshResult: Protocol.Network.RefreshEventDetailsRefreshResult.FatalError,
           wasFullyProactiveRefresh: false,
-          failedRequest: {requestUrl: 'https://example.com/refresh-body-issue', responseErrorBody: 'true'}
-        }
+          failedRequest: {requestUrl: 'https://example.com/refresh-body-issue', responseErrorBody: 'true'},
+        },
       },
-      timestamp: dates[0]
+      timestamp: dates[0],
     });
     sessionAndEvents.eventsById.set('invalid-failed-request-body-number', {
       event: {
@@ -216,10 +222,10 @@ describeWithMockConnection('DeviceBoundSessionsView', () => {
         refreshEventDetails: {
           refreshResult: Protocol.Network.RefreshEventDetailsRefreshResult.FatalError,
           wasFullyProactiveRefresh: false,
-          failedRequest: {requestUrl: 'https://example.com/refresh-body-issue', responseErrorBody: '12345'}
-        }
+          failedRequest: {requestUrl: 'https://example.com/refresh-body-issue', responseErrorBody: '12345'},
+        },
       },
-      timestamp: dates[0]
+      timestamp: dates[0],
     });
     sessionAndEvents.eventsById.set('invalid-failed-request-body-null', {
       event: {
@@ -230,10 +236,10 @@ describeWithMockConnection('DeviceBoundSessionsView', () => {
         refreshEventDetails: {
           refreshResult: Protocol.Network.RefreshEventDetailsRefreshResult.FatalError,
           wasFullyProactiveRefresh: false,
-          failedRequest: {requestUrl: 'https://example.com/refresh-body-issue', responseErrorBody: 'null'}
-        }
+          failedRequest: {requestUrl: 'https://example.com/refresh-body-issue', responseErrorBody: 'null'},
+        },
       },
-      timestamp: dates[0]
+      timestamp: dates[0],
     });
     sessionAndEvents.eventsById.set('minimal-failed-request', {
       event: {
@@ -244,10 +250,10 @@ describeWithMockConnection('DeviceBoundSessionsView', () => {
         refreshEventDetails: {
           refreshResult: Protocol.Network.RefreshEventDetailsRefreshResult.FatalError,
           wasFullyProactiveRefresh: false,
-          failedRequest: {requestUrl: 'https://example.com/only-request-url'}
-        }
+          failedRequest: {requestUrl: 'https://example.com/only-request-url'},
+        },
       },
-      timestamp: dates[0]
+      timestamp: dates[0],
     });
     return sessionAndEvents;
   }
@@ -297,7 +303,7 @@ describeWithMockConnection('DeviceBoundSessionsView', () => {
       session: {
         ...mockData.session,
         refreshUrl: 'https://example.com/updatedRefresh',
-      }
+      },
     };
     getSessionStub.returns(newMockData);
     const eventHandler = addEventListenerStub.firstCall.args[1];
@@ -442,7 +448,7 @@ describeWithMockConnection('DeviceBoundSessionsView', () => {
         eventId: 'event-1' as Protocol.Network.DeviceBoundSessionEventId,
         site: mockSite,
       },
-      timestamp: date
+      timestamp: date,
     });
 
     const viewInput = {

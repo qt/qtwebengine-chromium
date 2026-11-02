@@ -567,6 +567,12 @@ if (EIGEN_BUILD_TESTING)
       message(STATUS "Enabling NEON in tests/examples")
     endif()
 
+    option(EIGEN_TEST_SME "Enable/Disable SME in tests/examples" OFF)
+    if(EIGEN_TEST_SME)
+      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DEIGEN_ARM64_USE_SME")
+      message(STATUS "Enabling SME in tests/examples")
+    endif()
+
     option(EIGEN_TEST_Z13 "Enable/Disable S390X(zEC13) ZVECTOR in tests/examples" OFF)
     if(EIGEN_TEST_Z13)
       set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=z13 -mzvector")

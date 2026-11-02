@@ -271,7 +271,7 @@ export function createKeyEvent(key, ctrlKey, altKey, shiftKey, metaKey) {
     ctrlKey: Boolean(ctrlKey),
     altKey: Boolean(altKey),
     shiftKey: Boolean(shiftKey),
-    metaKey: Boolean(metaKey)
+    metaKey: Boolean(metaKey),
   });
 }
 
@@ -540,16 +540,15 @@ export function evaluateFunctionInOverlay(func, callback) {
   const expression = 'internals.evaluateInInspectorOverlay("(" + ' + func + ' + ")()")';
   const mainContext = TestRunner.runtimeModel.executionContexts()[0];
   mainContext
-      .evaluate(
-          {
-            expression,
-            objectGroup: '',
-            includeCommandLineAPI: false,
-            silent: false,
-            returnByValue: true,
-            generatePreview: false
-          },
-          /* userGesture */ false, /* awaitPromise*/ false)
+      .evaluate({
+        expression,
+        objectGroup: '',
+        includeCommandLineAPI: false,
+        silent: false,
+        returnByValue: true,
+        generatePreview: false,
+      },
+                /* userGesture */ false, /* awaitPromise*/ false)
       .then(result => void callback(result.object.value));
 }
 
@@ -697,7 +696,7 @@ export function addScriptForFrame(url, content, frame) {
     objectGroup: 'console',
     includeCommandLineAPI: false,
     silent: false,
-    contextId: executionContext.id
+    contextId: executionContext.id,
   });
 }
 

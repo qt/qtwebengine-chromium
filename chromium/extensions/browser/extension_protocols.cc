@@ -25,6 +25,7 @@
 #include "base/hash/sha1.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/self_deleting.h"
 #include "base/memory/weak_ptr.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
@@ -56,6 +57,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/child_process_id.h"
 #include "content/public/common/content_features.h"
+#include "extensions/browser/component_extension_resource_manager.h"
 #include "extensions/browser/content_verifier/content_verifier.h"
 #include "extensions/browser/content_verifier/content_verify_job.h"
 #include "extensions/browser/extension_navigation_ui_data.h"
@@ -870,7 +872,15 @@ class ExtensionURLLoader : public network::mojom::URLLoader {
 
     const bool is_background_page_url = IsBackgroundPageURL(request_.url);
     const bool is_favicon_url = IsFaviconURL(request_.url);
-    if (is_background_page_url || is_favicon_url) {
+    auto* resource_manager =
+        ExtensionsBrowserClient::Get()->GetComponentExtensionResourceManager();
+    const bool is_dynamic_resource =
+        extension &&
+        mojom::ManifestLocation::kComponent == extension->location() &&
+        resource_manager &&
+        resource_manager->IsDynamicComponentExtensionResource(
+            extension->id(), request_.url.GetPath(), browser_context_);
+    if (is_background_page_url || is_favicon_url || is_dynamic_resource) {
       // Handle background page requests immediately with a simple generated
       // chunk of HTML.
 
@@ -891,6 +901,14 @@ class ExtensionURLLoader : public network::mojom::URLLoader {
             browser_context_, extension.get(), request_.url, tracker_.get(),
             base::BindOnce(&ExtensionURLLoader::OnFaviconRetrieved,
                            weak_ptr_factory_.GetWeakPtr(), std::move(head)));
+      } else if (is_dynamic_resource) {
+        std::string contents = resource_manager->GetDynamicResourceContent(
+            extension->id(), request_.url.GetPath(), browser_context_);
+        head->mime_type = "text/javascript";
+        head->charset = "utf-8";
+        head->headers->SetHeader("Content-Type",
+                                 "text/javascript; charset=utf-8");
+        WriteData(std::move(head), base::as_byte_span(contents));
       }
       return;
     }
@@ -908,7 +926,7 @@ class ExtensionURLLoader : public network::mojom::URLLoader {
     if (!bundle_resource_path.empty()) {
       ExtensionsBrowserClient::Get()->LoadResourceFromResourceBundle(
           request_, loader_.Unbind(), bundle_resource_path, resource_id,
-          std::move(headers), client_.Unbind());
+          std::move(headers), client_.Unbind(), browser_context_);
       DeleteThis();
       return;
     }
@@ -1021,8 +1039,7 @@ class ExtensionURLLoaderFactory : public network::SelfDeletingURLLoaderFactory {
       return pending_remote;
     }
 
-    // Manages its own lifetime.
-    new ExtensionURLLoaderFactory(
+    base::MakeSelfDeleting<ExtensionURLLoaderFactory>(
         browser_context, is_web_view_request, render_process_id,
         std::move(initiator_origin),
         pending_remote.InitWithNewPipeAndPassReceiver());
@@ -1030,11 +1047,6 @@ class ExtensionURLLoaderFactory : public network::SelfDeletingURLLoaderFactory {
     return pending_remote;
   }
 
-  static void EnsureShutdownNotifierFactoryBuilt() {
-    ExtensionProtocolShutdownNotifierFactory::GetInstance();
-  }
-
- private:
   // Constructs ExtensionURLLoaderFactory bound to the |factory_receiver|.
   //
   // The factory is self-owned - it will delete itself once there are no more
@@ -1046,8 +1058,9 @@ class ExtensionURLLoaderFactory : public network::SelfDeletingURLLoaderFactory {
       bool is_web_view_request,
       content::ChildProcessId render_process_id,
       std::optional<url::Origin> initiator_origin,
-      mojo::PendingReceiver<network::mojom::URLLoaderFactory> factory_receiver)
-      : network::SelfDeletingURLLoaderFactory(std::move(factory_receiver)),
+      mojo::PendingReceiver<network::mojom::URLLoaderFactory> factory_receiver,
+      base::SelfDeletingPassKey key)
+      : network::SelfDeletingURLLoaderFactory(std::move(factory_receiver), key),
         browser_context_(browser_context),
         is_web_view_request_(is_web_view_request),
         render_process_id_(render_process_id),
@@ -1065,6 +1078,11 @@ class ExtensionURLLoaderFactory : public network::SelfDeletingURLLoaderFactory {
                 base::Unretained(this)));
   }
 
+  static void EnsureShutdownNotifierFactoryBuilt() {
+    ExtensionProtocolShutdownNotifierFactory::GetInstance();
+  }
+
+ private:
   ~ExtensionURLLoaderFactory() override = default;
 
   // network::mojom::URLLoaderFactory:

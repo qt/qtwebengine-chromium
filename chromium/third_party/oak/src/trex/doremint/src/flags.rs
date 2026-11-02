@@ -18,8 +18,9 @@ use std::{
 };
 
 use anyhow::Context;
-use chrono::{DateTime, Duration, FixedOffset, Utc};
-use p256::{ecdsa::VerifyingKey, pkcs8::DecodePublicKey};
+use clap::Parser;
+use oak_time::{Duration, Instant};
+use oak_time_std::instant::now;
 use serde::Deserialize;
 
 #[derive(Clone, Debug)]
@@ -43,23 +44,29 @@ impl Output {
 
 impl From<&str> for Output {
     fn from(path: &str) -> Self {
-        if path == "-" || path.is_empty() {
-            Output::Stdout
-        } else {
-            Output::File(path.to_string())
-        }
+        if path == "-" || path.is_empty() { Output::Stdout } else { Output::File(path.to_string()) }
     }
 }
 
 #[derive(Default, Debug, Clone, Deserialize)]
-pub struct Claims {
+pub struct ClaimsData {
     pub claims: Vec<String>,
 }
 
-pub(crate) fn parse_claims(path: &str) -> anyhow::Result<Claims> {
+#[derive(Parser, Debug, Clone)]
+#[group(required = true, multiple = false)]
+pub struct Claims {
+    #[arg(long, help = "Path to a file containing claims about an image", value_parser = parse_claims_toml)]
+    pub claims_toml: Option<ClaimsData>,
+
+    #[arg(long, help = "Comma-separated list of claims", value_delimiter = ',')]
+    pub claims: Option<Vec<String>>,
+}
+
+pub(crate) fn parse_claims_toml(path: &str) -> anyhow::Result<ClaimsData> {
     let content =
         fs::read_to_string(path).with_context(|| format!("could not read claims file {path}"))?;
-    let claims: Claims =
+    let claims: ClaimsData =
         toml::from_str(&content).with_context(|| format!("could not parse claims file {path}"))?;
 
     Ok(claims)
@@ -68,28 +75,26 @@ pub(crate) fn parse_claims(path: &str) -> anyhow::Result<Claims> {
 pub(crate) fn parse_duration(valid_for: &str) -> anyhow::Result<Duration> {
     if let Some(hours) = valid_for.strip_suffix('h') {
         let hours = hours.parse::<i64>().context("could not parse number of hours")?;
-        Ok(Duration::hours(hours))
+        Ok(Duration::from_hours(hours))
     } else if let Some(days) = valid_for.strip_suffix('d') {
         let days = days.parse::<i64>().context("could not parse number of days")?;
-        Ok(Duration::days(days))
+        Ok(Duration::from_days(days))
     } else if let Some(weeks) = valid_for.strip_suffix('w') {
         let weeks = weeks.parse::<i64>().context("could not parse number of weeks")?;
-        Ok(Duration::weeks(weeks))
+        Ok(Duration::from_weeks(weeks))
     } else {
         anyhow::bail!("invalid duration format: must end with 'h', 'd', or 'w'");
     }
 }
 
-pub(crate) fn parse_current_time(value: &str) -> anyhow::Result<DateTime<FixedOffset>> {
+pub(crate) fn parse_current_time(value: &str) -> anyhow::Result<Instant> {
     if value.is_empty() {
-        Ok(Utc::now().fixed_offset())
+        Ok(now())
     } else {
-        DateTime::parse_from_rfc3339(value).context("could not parse rfc3339 timestamp")
+        Instant::try_from(value).map_err(|msg| anyhow::anyhow!(msg))
     }
 }
 
-pub(crate) fn verifying_key_parser(key_path: &str) -> anyhow::Result<VerifyingKey, anyhow::Error> {
-    let public_key_pem = fs::read_to_string(key_path)?;
-    VerifyingKey::from_public_key_pem(&public_key_pem)
-        .map_err(|e| anyhow::anyhow!("failed to parse public key: {e}"))
+pub(crate) fn read_pem_file(key_path: &str) -> anyhow::Result<String, anyhow::Error> {
+    Ok(fs::read_to_string(key_path)?)
 }

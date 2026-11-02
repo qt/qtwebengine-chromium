@@ -18,9 +18,9 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
-#include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/devtools/service_worker_devtools_agent_host.h"
 #include "content/browser/devtools/service_worker_devtools_manager.h"
+#include "content/browser/security/cpsp/child_process_security_policy_impl.h"
 #include "content/browser/service_worker/service_worker_client.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
@@ -358,26 +358,32 @@ class ServiceWorkerFetchDispatcher::ResponseCallback
   // Implements blink::mojom::ServiceWorkerFetchResponseCallback.
   void OnResponse(
       blink::mojom::FetchAPIResponsePtr response,
-      blink::mojom::ServiceWorkerFetchEventTimingPtr timing) override {
+      blink::mojom::ServiceWorkerFetchEventTimingPtr timing,
+      blink::mojom::ServiceWorkerFetchHandlerErrorsPtr errors) override {
     HandleResponse(fetch_dispatcher_, version_, fetch_event_id_,
                    std::move(response), nullptr /* body_as_stream */,
-                   FetchEventResult::kGotResponse, std::move(timing));
+                   FetchEventResult::kGotResponse, std::move(timing),
+                   std::move(errors));
   }
   void OnResponseStream(
       blink::mojom::FetchAPIResponsePtr response,
       blink::mojom::ServiceWorkerStreamHandlePtr body_as_stream,
-      blink::mojom::ServiceWorkerFetchEventTimingPtr timing) override {
+      blink::mojom::ServiceWorkerFetchEventTimingPtr timing,
+      blink::mojom::ServiceWorkerFetchHandlerErrorsPtr errors) override {
     HandleResponse(fetch_dispatcher_, version_, fetch_event_id_,
                    std::move(response), std::move(body_as_stream),
-                   FetchEventResult::kGotResponse, std::move(timing));
+                   FetchEventResult::kGotResponse, std::move(timing),
+                   std::move(errors));
   }
   void OnFallback(
       std::optional<network::DataElementChunkedDataPipe> request_body,
-      blink::mojom::ServiceWorkerFetchEventTimingPtr timing) override {
+      blink::mojom::ServiceWorkerFetchEventTimingPtr timing,
+      blink::mojom::ServiceWorkerFetchHandlerErrorsPtr errors) override {
     HandleResponse(fetch_dispatcher_, version_, fetch_event_id_,
                    blink::mojom::FetchAPIResponse::New(),
                    nullptr /* body_as_stream */,
-                   FetchEventResult::kShouldFallback, std::move(timing));
+                   FetchEventResult::kShouldFallback, std::move(timing),
+                   std::move(errors));
   }
 
  private:
@@ -390,7 +396,8 @@ class ServiceWorkerFetchDispatcher::ResponseCallback
       blink::mojom::FetchAPIResponsePtr response,
       blink::mojom::ServiceWorkerStreamHandlePtr body_as_stream,
       FetchEventResult fetch_result,
-      blink::mojom::ServiceWorkerFetchEventTimingPtr timing) {
+      blink::mojom::ServiceWorkerFetchEventTimingPtr timing,
+      blink::mojom::ServiceWorkerFetchHandlerErrorsPtr errors) {
     if (!version->FinishRequest(
             fetch_event_id.value(),
             fetch_result == FetchEventResult::kGotResponse)) {
@@ -401,7 +408,7 @@ class ServiceWorkerFetchDispatcher::ResponseCallback
       return;
     fetch_dispatcher->DidFinish(fetch_event_id.value(), fetch_result,
                                 std::move(response), std::move(body_as_stream),
-                                std::move(timing));
+                                std::move(timing), std::move(errors));
   }
 
   mojo::Receiver<blink::mojom::ServiceWorkerFetchResponseCallback> receiver_;
@@ -648,7 +655,8 @@ void ServiceWorkerFetchDispatcher::DidFail(
               perfetto::Flow::FromPointer(this), "status", status);
   RunCallback(status, FetchEventResult::kShouldFallback,
               blink::mojom::FetchAPIResponse::New(),
-              nullptr /* body_as_stream */, nullptr /* timing */);
+              nullptr /* body_as_stream */, nullptr /* timing */,
+              nullptr /* errors */);
 }
 
 void ServiceWorkerFetchDispatcher::DidFinish(
@@ -656,13 +664,14 @@ void ServiceWorkerFetchDispatcher::DidFinish(
     FetchEventResult fetch_result,
     blink::mojom::FetchAPIResponsePtr response,
     blink::mojom::ServiceWorkerStreamHandlePtr body_as_stream,
-    blink::mojom::ServiceWorkerFetchEventTimingPtr timing) {
+    blink::mojom::ServiceWorkerFetchEventTimingPtr timing,
+    blink::mojom::ServiceWorkerFetchHandlerErrorsPtr errors) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   TRACE_EVENT("ServiceWorker", "ServiceWorkerFetchDispatcher::DidFinish",
               perfetto::Flow::FromPointer(this));
   RunCallback(blink::ServiceWorkerStatusCode::kOk, fetch_result,
-              std::move(response), std::move(body_as_stream),
-              std::move(timing));
+              std::move(response), std::move(body_as_stream), std::move(timing),
+              std::move(errors));
 }
 
 void ServiceWorkerFetchDispatcher::RunCallback(
@@ -670,7 +679,8 @@ void ServiceWorkerFetchDispatcher::RunCallback(
     FetchEventResult fetch_result,
     blink::mojom::FetchAPIResponsePtr response,
     blink::mojom::ServiceWorkerStreamHandlePtr body_as_stream,
-    blink::mojom::ServiceWorkerFetchEventTimingPtr timing) {
+    blink::mojom::ServiceWorkerFetchEventTimingPtr timing,
+    blink::mojom::ServiceWorkerFetchHandlerErrorsPtr errors) {
   // Fetch dispatcher can be completed at this point due to a failure of
   // starting up a worker. In that case, let's simply ignore it.
   if (!fetch_callback_)
@@ -678,7 +688,7 @@ void ServiceWorkerFetchDispatcher::RunCallback(
 
   std::move(fetch_callback_)
       .Run(status, fetch_result, std::move(response), std::move(body_as_stream),
-           std::move(timing), version_);
+           std::move(timing), std::move(errors), version_);
 }
 
 // static
@@ -740,7 +750,8 @@ bool ServiceWorkerFetchDispatcher::MaybeStartNavigationPreload(
       service_worker_client->CreateNetworkURLLoaderFactory(
           ServiceWorkerClient::CreateNetworkURLLoaderFactoryType::
               kNavigationPreload,
-          context_wrapper->storage_partition(), resource_request);
+          context_wrapper->storage_partition(), resource_request,
+          version_->network_restrictions_id());
 
   // Create the DelegatingURLLoaderClient, which becomes the
   // URLLoaderClient for the navigation preload network request.

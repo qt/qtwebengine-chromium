@@ -7,10 +7,64 @@
 
 #include <stdint.h>
 
+#include <memory>
 #include <string>
 #include <vector>
 
+#include "build/build_config.h"
 #include "public/fpdfview.h"
+
+#if BUILDFLAG(IS_WIN)
+#include <windows.h>
+#endif
+
+namespace pdfium {
+
+// Scoper for FILE*.
+struct FileCloser {
+  void operator()(FILE* f) const;
+};
+using ScopedFILE = std::unique_ptr<FILE, FileCloser>;
+
+#if BUILDFLAG(IS_POSIX)
+// Scoper for POSIX file descriptor.
+class ScopedFD {
+ public:
+  ScopedFD();
+  explicit ScopedFD(int fd);
+
+  ScopedFD(const ScopedFD&) = delete;
+  ScopedFD& operator=(const ScopedFD&) = delete;
+
+  ~ScopedFD();
+
+  int get() const { return fd_; }
+
+ private:
+  int fd_ = -1;
+};
+#endif  // BUILDFLAG(IS_POSIX)
+
+#if BUILDFLAG(IS_WIN)
+// Scoper for Windows HANDLE.
+class ScopedHandle {
+ public:
+  ScopedHandle();
+  explicit ScopedHandle(HANDLE handle);
+
+  ScopedHandle(const ScopedHandle&) = delete;
+  ScopedHandle& operator=(const ScopedHandle&) = delete;
+
+  ~ScopedHandle();
+
+  HANDLE get() const { return handle_; }
+
+ private:
+  HANDLE handle_ = INVALID_HANDLE_VALUE;
+};
+#endif  // BUILDFLAG(IS_WIN)
+
+}  // namespace pdfium
 
 // Returns true if the path can be read from.
 bool CanReadFile(const char* filename);

@@ -12,6 +12,7 @@
 #include <variant>
 #include <vector>
 
+#include "base/byte_size.h"
 #include "base/files/file_path.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ref.h"
@@ -23,6 +24,7 @@
 #include "base/types/strong_alias.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_export.h"
+#include "net/disk_cache/backend_cleanup_tracker.h"
 #include "net/disk_cache/buildflags.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/disk_cache/sql/cache_entry_key.h"
@@ -43,6 +45,7 @@ class SequencedTaskRunner;
 
 namespace disk_cache {
 
+class BackendCleanupTracker;
 class SqlEntryImpl;
 
 // Provides a concrete implementation of the disk cache backend that stores
@@ -74,7 +77,8 @@ class NET_EXPORT_PRIVATE SqlBackendImpl final : public Backend {
 
   SqlBackendImpl(const base::FilePath& path,
                  int64_t max_bytes,
-                 net::CacheType cache_type);
+                 net::CacheType cache_type,
+                 scoped_refptr<BackendCleanupTracker> cleanup_tracker);
 
   SqlBackendImpl(const SqlBackendImpl&) = delete;
   SqlBackendImpl& operator=(const SqlBackendImpl&) = delete;
@@ -90,6 +94,8 @@ class NET_EXPORT_PRIVATE SqlBackendImpl final : public Backend {
   int64_t MaxFileSize() const override;
   base::expected<int32_t, net::Error> GetEntryCount(
       GetEntryCountCallback callback) const override;
+  void SetMaxBytes(base::ByteSize max_bytes) override;
+  base::ByteSize GetMaxBytesForTesting() const override;
   EntryResult OpenOrCreateEntry(const std::string& key,
                                 net::RequestPriority priority,
                                 EntryResultCallback callback) override;
@@ -514,6 +520,8 @@ class NET_EXPORT_PRIVATE SqlBackendImpl final : public Backend {
 
   SqlAsyncTaskManager async_task_manager_;
 
+  scoped_refptr<BackendCleanupTracker> cleanup_tracker_;
+
   const base::FilePath path_;
 
   // Task runners for background SQLite operations.
@@ -570,6 +578,9 @@ class NET_EXPORT_PRIVATE SqlBackendImpl final : public Backend {
   // the reservation is effectively transferred to
   // `optimistic_write_buffer_monitor_`.
   SqlWriteBufferMemoryMonitor write_buffer_monitor_;
+
+  // Cached value of `net::features::kSqlDiskCacheReduceUma`.
+  const bool reduce_uma_;
 
   // Weak pointer factory for this class.
   base::WeakPtrFactory<SqlBackendImpl> weak_factory_{this};

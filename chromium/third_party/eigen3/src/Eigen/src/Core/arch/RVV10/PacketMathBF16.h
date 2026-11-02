@@ -93,8 +93,10 @@ EIGEN_STRONG_INLINE Packet1Xbf F32ToBf16(const Packet2Xf& a) {
 
 template <>
 EIGEN_STRONG_INLINE Packet1Xbf ptrue<Packet1Xbf>(const Packet1Xbf& /*a*/) {
-  return __riscv_vreinterpret_bf16m1(
+  Packet1Xbf r = __riscv_vreinterpret_bf16m1(
       __riscv_vmv_v_x_u16m1(static_cast<numext::uint16_t>(0xffffu), unpacket_traits<Packet1Xbf>::size));
+  EIGEN_FAST_MATH_CONSTANT_BARRIER(r);
+  return r;
 }
 
 template <>
@@ -239,24 +241,40 @@ EIGEN_STRONG_INLINE Packet1Xbf pmax<PropagateNumbers, Packet1Xbf>(const Packet1X
   return F32ToBf16(pmax<PropagateNumbers, Packet2Xf>(Bf16ToF32(a), Bf16ToF32(b)));
 }
 
+// Comparisons are performed in float32 and the resulting vbool mask is expanded to all-ones/all-zeros
+// 16-bit lanes with a vmerge.  Narrowing the float32 comparison result with F32ToBf16 instead would go
+// through an arithmetic conversion (vfncvtbf16) that canonicalizes the all-ones (NaN) lanes to 0x7fc0
+// and corrupts the mask.
 template <>
 EIGEN_STRONG_INLINE Packet1Xbf pcmp_le<Packet1Xbf>(const Packet1Xbf& a, const Packet1Xbf& b) {
-  return F32ToBf16(pcmp_le<Packet2Xf>(Bf16ToF32(a), Bf16ToF32(b)));
+  PacketMask16 mask = __riscv_vmfle_vv_f32m2_b16(Bf16ToF32(a), Bf16ToF32(b), unpacket_traits<Packet1Xbf>::size);
+  return __riscv_vreinterpret_v_u16m1_bf16m1(__riscv_vmerge_vvm_u16m1(
+      __riscv_vreinterpret_v_bf16m1_u16m1(pzero<Packet1Xbf>(a)),
+      __riscv_vreinterpret_v_bf16m1_u16m1(ptrue<Packet1Xbf>(a)), mask, unpacket_traits<Packet1Xbf>::size));
 }
 
 template <>
 EIGEN_STRONG_INLINE Packet1Xbf pcmp_lt<Packet1Xbf>(const Packet1Xbf& a, const Packet1Xbf& b) {
-  return F32ToBf16(pcmp_lt<Packet2Xf>(Bf16ToF32(a), Bf16ToF32(b)));
+  PacketMask16 mask = __riscv_vmflt_vv_f32m2_b16(Bf16ToF32(a), Bf16ToF32(b), unpacket_traits<Packet1Xbf>::size);
+  return __riscv_vreinterpret_v_u16m1_bf16m1(__riscv_vmerge_vvm_u16m1(
+      __riscv_vreinterpret_v_bf16m1_u16m1(pzero<Packet1Xbf>(a)),
+      __riscv_vreinterpret_v_bf16m1_u16m1(ptrue<Packet1Xbf>(a)), mask, unpacket_traits<Packet1Xbf>::size));
 }
 
 template <>
 EIGEN_STRONG_INLINE Packet1Xbf pcmp_eq<Packet1Xbf>(const Packet1Xbf& a, const Packet1Xbf& b) {
-  return F32ToBf16(pcmp_eq<Packet2Xf>(Bf16ToF32(a), Bf16ToF32(b)));
+  PacketMask16 mask = __riscv_vmfeq_vv_f32m2_b16(Bf16ToF32(a), Bf16ToF32(b), unpacket_traits<Packet1Xbf>::size);
+  return __riscv_vreinterpret_v_u16m1_bf16m1(__riscv_vmerge_vvm_u16m1(
+      __riscv_vreinterpret_v_bf16m1_u16m1(pzero<Packet1Xbf>(a)),
+      __riscv_vreinterpret_v_bf16m1_u16m1(ptrue<Packet1Xbf>(a)), mask, unpacket_traits<Packet1Xbf>::size));
 }
 
 template <>
 EIGEN_STRONG_INLINE Packet1Xbf pcmp_lt_or_nan<Packet1Xbf>(const Packet1Xbf& a, const Packet1Xbf& b) {
-  return F32ToBf16(pcmp_lt_or_nan<Packet2Xf>(Bf16ToF32(a), Bf16ToF32(b)));
+  PacketMask16 mask = __riscv_vmfge_vv_f32m2_b16(Bf16ToF32(a), Bf16ToF32(b), unpacket_traits<Packet1Xbf>::size);
+  return __riscv_vreinterpret_v_u16m1_bf16m1(
+      __riscv_vmerge_vxm_u16m1(__riscv_vreinterpret_v_bf16m1_u16m1(ptrue<Packet1Xbf>(a)),
+                               static_cast<numext::uint16_t>(0), mask, unpacket_traits<Packet1Xbf>::size));
 }
 
 EIGEN_STRONG_INLINE Packet1Xbf pselect(const PacketMask16& mask, const Packet1Xbf& a, const Packet1Xbf& b) {
@@ -429,8 +447,10 @@ EIGEN_STRONG_INLINE Packet2Xbf F32ToBf16(const Packet4Xf& a) {
 
 template <>
 EIGEN_STRONG_INLINE Packet2Xbf ptrue<Packet2Xbf>(const Packet2Xbf& /*a*/) {
-  return __riscv_vreinterpret_bf16m2(
+  Packet2Xbf r = __riscv_vreinterpret_bf16m2(
       __riscv_vmv_v_x_u16m2(static_cast<numext::uint16_t>(0xffffu), unpacket_traits<Packet2Xbf>::size));
+  EIGEN_FAST_MATH_CONSTANT_BARRIER(r);
+  return r;
 }
 
 template <>
@@ -575,24 +595,39 @@ EIGEN_STRONG_INLINE Packet2Xbf pmax<PropagateNumbers, Packet2Xbf>(const Packet2X
   return F32ToBf16(pmax<PropagateNumbers, Packet4Xf>(Bf16ToF32(a), Bf16ToF32(b)));
 }
 
+// See the Packet1Xbf comparisons above: the vbool mask is expanded with a vmerge because an arithmetic
+// narrowing conversion (vfncvtbf16) would canonicalize the all-ones (NaN) lanes to 0x7fc0 and corrupt
+// the mask.
 template <>
 EIGEN_STRONG_INLINE Packet2Xbf pcmp_le<Packet2Xbf>(const Packet2Xbf& a, const Packet2Xbf& b) {
-  return F32ToBf16(pcmp_le<Packet4Xf>(Bf16ToF32(a), Bf16ToF32(b)));
+  PacketMask8 mask = __riscv_vmfle_vv_f32m4_b8(Bf16ToF32(a), Bf16ToF32(b), unpacket_traits<Packet2Xbf>::size);
+  return __riscv_vreinterpret_v_u16m2_bf16m2(__riscv_vmerge_vvm_u16m2(
+      __riscv_vreinterpret_v_bf16m2_u16m2(pzero<Packet2Xbf>(a)),
+      __riscv_vreinterpret_v_bf16m2_u16m2(ptrue<Packet2Xbf>(a)), mask, unpacket_traits<Packet2Xbf>::size));
 }
 
 template <>
 EIGEN_STRONG_INLINE Packet2Xbf pcmp_lt<Packet2Xbf>(const Packet2Xbf& a, const Packet2Xbf& b) {
-  return F32ToBf16(pcmp_lt<Packet4Xf>(Bf16ToF32(a), Bf16ToF32(b)));
+  PacketMask8 mask = __riscv_vmflt_vv_f32m4_b8(Bf16ToF32(a), Bf16ToF32(b), unpacket_traits<Packet2Xbf>::size);
+  return __riscv_vreinterpret_v_u16m2_bf16m2(__riscv_vmerge_vvm_u16m2(
+      __riscv_vreinterpret_v_bf16m2_u16m2(pzero<Packet2Xbf>(a)),
+      __riscv_vreinterpret_v_bf16m2_u16m2(ptrue<Packet2Xbf>(a)), mask, unpacket_traits<Packet2Xbf>::size));
 }
 
 template <>
 EIGEN_STRONG_INLINE Packet2Xbf pcmp_eq<Packet2Xbf>(const Packet2Xbf& a, const Packet2Xbf& b) {
-  return F32ToBf16(pcmp_eq<Packet4Xf>(Bf16ToF32(a), Bf16ToF32(b)));
+  PacketMask8 mask = __riscv_vmfeq_vv_f32m4_b8(Bf16ToF32(a), Bf16ToF32(b), unpacket_traits<Packet2Xbf>::size);
+  return __riscv_vreinterpret_v_u16m2_bf16m2(__riscv_vmerge_vvm_u16m2(
+      __riscv_vreinterpret_v_bf16m2_u16m2(pzero<Packet2Xbf>(a)),
+      __riscv_vreinterpret_v_bf16m2_u16m2(ptrue<Packet2Xbf>(a)), mask, unpacket_traits<Packet2Xbf>::size));
 }
 
 template <>
 EIGEN_STRONG_INLINE Packet2Xbf pcmp_lt_or_nan<Packet2Xbf>(const Packet2Xbf& a, const Packet2Xbf& b) {
-  return F32ToBf16(pcmp_lt_or_nan<Packet4Xf>(Bf16ToF32(a), Bf16ToF32(b)));
+  PacketMask8 mask = __riscv_vmfge_vv_f32m4_b8(Bf16ToF32(a), Bf16ToF32(b), unpacket_traits<Packet2Xbf>::size);
+  return __riscv_vreinterpret_v_u16m2_bf16m2(
+      __riscv_vmerge_vxm_u16m2(__riscv_vreinterpret_v_bf16m2_u16m2(ptrue<Packet2Xbf>(a)),
+                               static_cast<numext::uint16_t>(0), mask, unpacket_traits<Packet2Xbf>::size));
 }
 
 EIGEN_STRONG_INLINE Packet2Xbf pselect(const PacketMask8& mask, const Packet2Xbf& a, const Packet2Xbf& b) {
@@ -609,7 +644,7 @@ EIGEN_STRONG_INLINE Packet2Xbf pselect(const Packet2Xbf& mask, const Packet2Xbf&
                                                                       unpacket_traits<Packet2Xbf>::size));
 }
 
-// Logical Operations are not supported for bflaot16, so reinterpret casts
+// Logical Operations are not supported for bfloat16, so reinterpret casts
 template <>
 EIGEN_STRONG_INLINE Packet2Xbf pand<Packet2Xbf>(const Packet2Xbf& a, const Packet2Xbf& b) {
   return __riscv_vreinterpret_v_u16m2_bf16m2(__riscv_vand_vv_u16m2(__riscv_vreinterpret_v_bf16m2_u16m2(a),

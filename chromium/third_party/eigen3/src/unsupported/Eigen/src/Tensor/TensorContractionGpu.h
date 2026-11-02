@@ -98,7 +98,7 @@ __device__ EIGEN_STRONG_INLINE void EigenContractionKernelInternal(const LhsMapp
   // k: the horizontal index of the 8x8 block in the grid
   //
   // The k parameter is implicit (it was the loop counter for a loop that went
-  // from 0 to <8, but now that loop is unrolled in the below code.
+  // from 0 to <8, but now that loop is unrolled in the below code).
 
   const Index load_idx_vert = thread_x + 8 * thread_y;
   const Index lhs_vert = base_m + load_idx_vert;
@@ -532,6 +532,30 @@ __launch_bounds__(512)
   }
 }
 
+template <typename Scalar, typename Index, typename LhsMapper, typename RhsMapper, typename OutputMapper>
+__global__ void
+#if defined(EIGEN_HIPCC)
+__launch_bounds__(256, 1)
+#else
+__launch_bounds__(256)
+#endif
+    EigenContractionKernelNaive(const LhsMapper lhs, const RhsMapper rhs, const OutputMapper output, const Index m_size,
+                                const Index n_size, const Index k_size) {
+  const Index row = static_cast<Index>(blockIdx.x) * static_cast<Index>(blockDim.x) + static_cast<Index>(threadIdx.x);
+  const Index col = static_cast<Index>(blockIdx.y) * static_cast<Index>(blockDim.y) + static_cast<Index>(threadIdx.y);
+
+  if (row >= m_size || col >= n_size) {
+    return;
+  }
+
+  internal::scalar_cast_op<int, Scalar> conv;
+  Scalar result = conv(0);
+  for (Index k = 0; k < k_size; ++k) {
+    result += lhs(row, k) * rhs(k, col);
+  }
+  output(row, col) = result;
+}
+
 template <typename Index, typename LhsMapper, typename RhsMapper, typename OutputMapper, bool CHECK_LHS_BOUNDARY,
           bool CHECK_RHS_BOUNDARY>
 __device__ __forceinline__ void EigenFloatContractionKernelInternal16x16(const LhsMapper lhs, const RhsMapper rhs,
@@ -736,14 +760,6 @@ __device__ __forceinline__ void EigenFloatContractionKernelInternal16x16(const L
     }
   } else if (!CHECK_LHS_BOUNDARY) {
     // CHECK RHS
-    /*
-    int ncols_rem = fminf(n_size- horiz_base, 4);
-    for (int i = 0; i < ncols_rem; i++) {
-      output(lhs_vert, horiz_base + i) = results[i].x;
-      output(lhs_vert + 1, horiz_base + i) = results[i].y;
-      output(lhs_vert + 2, horiz_base + i) = results[i].z;
-      output(lhs_vert + 3, horiz_base + i) = results[i].w;
-    }*/
     for (int i = 0; i < 4; i++) {
       if (horiz_base + i < n_size) {
         output(lhs_vert, horiz_base + i) = results[i].x;
@@ -1311,8 +1327,12 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
   }
 
   template <typename LhsScalar, typename RhsScalar, typename Index, typename LhsMapper, typename RhsMapper,
+            typename OutputMapper, bool UseNaiveKernel>
+  struct LaunchKernelsImpl;
+
+  template <typename LhsScalar, typename RhsScalar, typename Index, typename LhsMapper, typename RhsMapper,
             typename OutputMapper>
-  struct LaunchKernels {
+  struct LaunchKernelsImpl<LhsScalar, RhsScalar, Index, LhsMapper, RhsMapper, OutputMapper, false> {
     static void Run(const LhsMapper& lhs, const RhsMapper& rhs, const OutputMapper& output, Index m, Index n, Index k,
                     const GpuDevice& device) {
       const Index m_blocks = (m + 63) / 64;
@@ -1323,6 +1343,25 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
                         block_size, 0, device, lhs, rhs, output, m, n, k);
     }
   };
+
+  template <typename LhsScalar, typename RhsScalar, typename Index, typename LhsMapper, typename RhsMapper,
+            typename OutputMapper>
+  struct LaunchKernelsImpl<LhsScalar, RhsScalar, Index, LhsMapper, RhsMapper, OutputMapper, true> {
+    static void Run(const LhsMapper& lhs, const RhsMapper& rhs, const OutputMapper& output, Index m, Index n, Index k,
+                    const GpuDevice& device) {
+      const dim3 block_size(16, 16, 1);
+      const dim3 num_blocks((m + 15) / 16, (n + 15) / 16, 1);
+      LAUNCH_GPU_KERNEL((EigenContractionKernelNaive<Scalar, Index, LhsMapper, RhsMapper, OutputMapper>), num_blocks,
+                        block_size, 0, device, lhs, rhs, output, m, n, k);
+    }
+  };
+
+  template <typename LhsScalar, typename RhsScalar, typename Index, typename LhsMapper, typename RhsMapper,
+            typename OutputMapper>
+  // The optimized generic kernel reserves two 72x64 shared-memory tiles. With 8-byte scalars that exceeds
+  // the 48KB static shared-memory limit of common CUDA targets, so use a slower no-shared-memory fallback.
+  struct LaunchKernels
+      : LaunchKernelsImpl<LhsScalar, RhsScalar, Index, LhsMapper, RhsMapper, OutputMapper, (sizeof(Scalar) > 4)> {};
 
   template <typename Index, typename LhsMapper, typename RhsMapper, typename OutputMapper>
   struct LaunchKernels<float, float, Index, LhsMapper, RhsMapper, OutputMapper> {

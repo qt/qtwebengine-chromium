@@ -219,12 +219,14 @@ const char* const E_GL_EXT_spirv_intrinsics                 = "GL_EXT_spirv_intr
 const char* const E_GL_EXT_fragment_shader_barycentric      = "GL_EXT_fragment_shader_barycentric";
 const char* const E_GL_EXT_mesh_shader                      = "GL_EXT_mesh_shader";
 const char* const E_GL_EXT_opacity_micromap                 = "GL_EXT_opacity_micromap";
+const char* const E_GL_EXT_opacity_micromap_ray_query_mode  = "GL_EXT_opacity_micromap_ray_query_mode";
 const char* const E_GL_EXT_shader_quad_control              = "GL_EXT_shader_quad_control";
 const char* const E_GL_EXT_draw_instanced                   = "GL_EXT_draw_instanced";
 const char* const E_GL_EXT_texture_array                    = "GL_EXT_texture_array";
 const char* const E_GL_EXT_maximal_reconvergence            = "GL_EXT_maximal_reconvergence";
 const char* const E_GL_EXT_expect_assume                    = "GL_EXT_expect_assume";
 const char* const E_GL_EXT_control_flow_attributes2         = "GL_EXT_control_flow_attributes2";
+const char* const E_GL_EXT_function_control_attributes      = "GL_EXT_function_control_attributes";
 const char* const E_GL_EXT_spec_constant_composites         = "GL_EXT_spec_constant_composites";
 const char* const E_GL_EXT_texture_offset_non_const         = "GL_EXT_texture_offset_non_const";
 const char* const E_GL_EXT_nontemporal_keyword              = "GL_EXT_nontemporal_keyword";
@@ -297,6 +299,7 @@ const char* const E_GL_NV_cooperative_matrix_decode_vector      = "GL_NV_coopera
 const char* const E_GL_NV_cooperative_vector                    = "GL_NV_cooperative_vector";
 const char* const E_GL_NV_cluster_acceleration_structure        = "GL_NV_cluster_acceleration_structure";
 const char* const E_GL_NV_linear_swept_spheres                  = "GL_NV_linear_swept_spheres";
+const char* const E_GL_NV_desktop_lowp_mediump                  = "GL_NV_desktop_lowp_mediump";
 const char* const E_GL_NV_gpu_shader5                           = "GL_NV_gpu_shader5";
 const char* const E_GL_NV_push_constant_bank                    = "GL_NV_push_constant_bank";
 const char* const E_GL_NV_explicit_typecast                     = "GL_NV_explicit_typecast";
@@ -316,8 +319,10 @@ const int Num_viewportEXTs = sizeof(viewportEXTs) / sizeof(viewportEXTs[0]);
 
 const char* const E_GL_QCOM_image_processing                    = "GL_QCOM_image_processing";
 const char* const E_GL_QCOM_image_processing2                   = "GL_QCOM_image_processing2";
+const char* const E_GL_QCOM_image_processing3                   = "GL_QCOM_image_processing3";
 const char* const E_GL_QCOM_tile_shading                        = "GL_QCOM_tile_shading";
 const char* const E_GL_QCOM_cooperative_matrix_conversion       = "GL_QCOM_cooperative_matrix_conversion";
+const char* const E_GL_QCOM_multiple_wait_queues                = "GL_QCOM_multiple_wait_queues";
 
 // AEP
 const char* const E_GL_ANDROID_extension_pack_es31a             = "GL_ANDROID_extension_pack_es31a";
@@ -376,6 +381,11 @@ const char* const E_GL_EXT_integer_dot_product                    = "GL_EXT_inte
 const char* const E_GL_EXT_bfloat16 = "GL_EXT_bfloat16";
 const char* const E_GL_EXT_float_e5m2 = "GL_EXT_float_e5m2";
 const char* const E_GL_EXT_float_e4m3 = "GL_EXT_float_e4m3";
+const char* const E_GL_EXT_float_e2m1 = "GL_EXT_float_e2m1";
+const char* const E_GL_EXT_float_e3m2 = "GL_EXT_float_e3m2";
+const char* const E_GL_EXT_float_e2m3 = "GL_EXT_float_e2m3";
+const char* const E_GL_EXT_float_ue8m0 = "GL_EXT_float_ue8m0";
+const char* const E_GL_EXT_float_mxint8 = "GL_EXT_float_mxint8";
 const char* const E_GL_EXT_long_vector = "GL_EXT_long_vector";
 
 const char* const E_GL_EXT_shader_64bit_indexing = "GL_EXT_shader_64bit_indexing";

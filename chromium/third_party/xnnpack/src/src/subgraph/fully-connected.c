@@ -19,6 +19,8 @@
 #include "src/xnnpack/requantization.h"
 #include "src/xnnpack/subgraph-validation.h"
 #include "src/xnnpack/subgraph.h"
+#include "src/xnnpack/fp16.h"
+#include "src/xnnpack/allocator.h"
 #include <pthreadpool.h>
 
 // Format is input_type, weights type, output type, (dynamic)?
@@ -368,14 +370,19 @@ static enum xnn_status create_fully_connected_operator(
           node->activation.output_min, node->activation.output_max,
           /*flags=*/node->flags, fully_connected_op_ptr);
       break;
-    case fc_type_f16_f16_f16:
+    case fc_type_f16_f16_f16: {
+      uint32_t flags = node->flags;
+      if (bias_value != NULL && bias_value->datatype == xnn_datatype_fp32) {
+        flags |= XNN_FLAG_FP32_STATIC_BIASES;
+      }
       status = xnn_create_fully_connected_nc_f16(
           input_channels, output_channels,
           /*input_stride=*/input_channels,
           /*output_stride=*/output_channels, kernel_data, bias_data,
-          node->activation.output_min, node->activation.output_max, node->flags,
+          node->activation.output_min, node->activation.output_max, flags,
           weights_cache, fully_connected_op_ptr);
       break;
+    }
     case fc_type_f16_f32_f16:
       status = xnn_create_fully_connected_nc_f16(
           input_channels, output_channels,
@@ -468,14 +475,19 @@ static enum xnn_status create_fully_connected_operator(
           node->activation.output_min, node->activation.output_max,
           /*flags=*/node->flags, weights_cache, fully_connected_op_ptr);
       break;
-    case fc_type_pf16_f16_f16:
+    case fc_type_pf16_f16_f16: {
+      uint32_t flags = node->flags;
+      if (bias_value != NULL && bias_value->datatype == xnn_datatype_fp32) {
+        flags |= XNN_FLAG_FP32_STATIC_BIASES;
+      }
       status = xnn_create_fully_connected_nc_pf16(
           input_channels, output_channels,
           /*input_stride=*/input_channels,
           /*output_stride=*/output_channels, kernel_data, bias_data,
           node->activation.output_min, node->activation.output_max,
-          /*flags=*/node->flags, weights_cache, fully_connected_op_ptr);
+          flags, weights_cache, fully_connected_op_ptr);
       break;
+    }
     case fc_type_pf16_f16_f16_dynamic:
       status = xnn_create_dynamic_fully_connected_nc_pf16(
           node->activation.output_min, node->activation.output_max,
@@ -961,12 +973,14 @@ static enum xnn_status reshape_fully_connected_operator(
     return xnn_status_invalid_parameter;
   }
 
-  if (num_input_elements % input_channels != 0) {
+  const size_t input_inner_dim =
+      input_value->shape.dim[input_value->shape.num_dims - 1];
+  if (input_inner_dim != input_channels) {
     xnn_log_error("failed to reshape %s operator with input ID #%" PRIu32
-                  ": number of input elements %zu is not divisible by "
+                  ": innermost input dimension %zu does not match the number of "
                   "input channels %zu",
                   xnn_node_type_to_string(xnn_node_type_fully_connected),
-                  input_id, num_input_elements, input_channels);
+                  input_id, input_inner_dim, input_channels);
     return xnn_status_invalid_parameter;
   }
   const size_t batch_size = num_input_elements / input_channels;
@@ -1487,6 +1501,10 @@ static inline bool validate_datatypes_with_bias(
       if (input_datatype == xnn_datatype_fp16 &&
           bias_datatype == xnn_datatype_fp16 &&
           output_datatype == xnn_datatype_fp16) {
+        return true;
+      } else if (input_datatype == xnn_datatype_fp16 &&
+                 bias_datatype == xnn_datatype_fp32 &&
+                 output_datatype == xnn_datatype_fp16) {
         return true;
       } else if (input_datatype == xnn_datatype_fp32 &&
                  bias_datatype == xnn_datatype_fp16 &&

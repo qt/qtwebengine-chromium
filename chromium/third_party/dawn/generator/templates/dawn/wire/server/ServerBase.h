@@ -44,10 +44,26 @@ namespace dawn::wire::server {
 
     class ServerBase : public ChunkedCommandHandler, public ObjectIdResolver {
       public:
-        ServerBase(const DawnProcTable& procs) : mProcs(std::make_shared<DawnProcTable>(procs)) {}
+        explicit ServerBase(const DawnProcTable& procs) : mProcs(std::make_shared<DawnProcTable>(procs)) {}
         ~ServerBase() override = default;
 
         Mutex::AutoLock GetGuard() { return Mutex::AutoLock(&mMutex); }
+
+        // Implementation of the ObjectIdResolver interface
+        {% for type in by_category["object"] %}
+            {% set cType = as_cType(type.name) %}
+            WireResult GetFromId(ObjectId id, {{cType}}* out) const final {
+                return std::get<KnownObjects<{{cType}}>>(mKnown).GetNativeHandle(id, out);
+            }
+
+            WireResult GetOptionalFromId(ObjectId id, {{cType}}* out) const final {
+                if (id == 0) {
+                    *out = nullptr;
+                    return WireResult::Success;
+                }
+                return GetFromId(id, out);
+            }
+        {% endfor %}
 
       protected:
         // Proc table may be used by children as well.
@@ -129,22 +145,6 @@ namespace dawn::wire::server {
         }
 
       private:
-        // Implementation of the ObjectIdResolver interface
-        {% for type in by_category["object"] %}
-            {% set cType = as_cType(type.name) %}
-            WireResult GetFromId(ObjectId id, {{cType}}* out) const final {
-                return std::get<KnownObjects<{{cType}}>>(mKnown).GetNativeHandle(id, out);
-            }
-
-            WireResult GetOptionalFromId(ObjectId id, {{cType}}* out) const final {
-                if (id == 0) {
-                    *out = nullptr;
-                    return WireResult::Success;
-                }
-                return GetFromId(id, out);
-            }
-        {% endfor %}
-
         // The list of known IDs for each object type.
         // We use an explicit Mutex to protect these lists instead of MutexProtected because:
         //   1) It allows us to return AutoLock objects to hold the lock across function scopes.

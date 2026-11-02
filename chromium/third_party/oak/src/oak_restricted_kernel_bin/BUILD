@@ -27,9 +27,11 @@ rust_binary(
     crate_features = ["virtio_console_channel"],
     linker_script = "//oak_restricted_kernel:layout.ld",
     platform = "//:x86_64-unknown-none",
+    target_compatible_with = ["@platforms//cpu:x86_64"],
     deps = [
         "//oak_linux_boot_params",
         "//oak_restricted_kernel:oak_restricted_kernel_virtio_console_channel",
+        "//oak_restricted_kernel_sev:oak_restricted_kernel_sev_virtio_console_channel",
     ],
 )
 
@@ -39,8 +41,24 @@ rust_binary(
     crate_features = ["simple_io_channel"],
     linker_script = "//oak_restricted_kernel:layout.ld",
     platform = "//:x86_64-unknown-none",
+    target_compatible_with = ["@platforms//cpu:x86_64"],
     deps = [
         "//oak_linux_boot_params",
         "//oak_restricted_kernel:oak_restricted_kernel_simple_io_channel",
+        "//oak_restricted_kernel_sev:oak_restricted_kernel_sev_simple_io_channel",
+    ],
+)
+
+rust_binary(
+    name = "oak_restricted_kernel_bin_serial_channel",
+    srcs = ["src/main.rs"],
+    crate_features = ["serial_channel"],
+    linker_script = "//oak_restricted_kernel:layout.ld",
+    platform = "//:x86_64-unknown-none",
+    target_compatible_with = ["@platforms//cpu:x86_64"],
+    deps = [
+        "//oak_linux_boot_params",
+        "//oak_restricted_kernel:oak_restricted_kernel_serial_channel",
+        "//oak_restricted_kernel_sev:oak_restricted_kernel_sev_serial_channel",
     ],
 )

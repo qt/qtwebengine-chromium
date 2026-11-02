@@ -1,0 +1,13 @@
+# Font families for emoji generic family
+Android Emoji
+Apple Color Emoji
+Emoji One
+Emoji Two
+EmojiOne Mozilla
+JoyPixels
+Noto Color Emoji
+Noto Emoji
+OpenMoji Black
+OpenMoji Color
+Segoe UI Emoji
+Twitter Color Emoji

@@ -1,0 +1,52 @@
+#!/bin/sh
+
+# This file is part of PipeWire.
+# SPDX-FileCopyrightText: Copyright © 2021 Wim Taymans
+# SPDX-License-Identifier: MIT
+
+while getopts 'hr:vs:p:' param ; do
+	case $param in
+		r)
+			PIPEWIRE_REMOTE="$OPTARG"
+			export PIPEWIRE_REMOTE
+			;;
+		v)
+			if [ -z "$PIPEWIRE_DEBUG" ]; then
+				PIPEWIRE_DEBUG=3
+			else
+				PIPEWIRE_DEBUG=$(( PIPEWIRE_DEBUG + 1 ))
+			fi
+			export PIPEWIRE_DEBUG
+			;;
+		*)
+			echo "$0 - run v4l2 applications on PipeWire"
+			echo " "
+			echo "$0 [options] application [arguments]"
+			echo " "
+			echo "options:"
+			echo "	-h                  show brief help"
+			echo "	-r <remote>         remote daemon name"
+			echo "	-v                  verbose debug info"
+			exit 0
+			;;
+	esac
+done
+
+shift $(( OPTIND - 1 ))
+
+if [ "$PW_UNINSTALLED" = 1 ] ; then
+   PW_V4L2_LD_PRELOAD="$PW_BUILDDIR"'/pipewire-v4l2/src/libpw-v4l2.so'
+else
+   # shellcheck disable=SC2016 # ${LIB} is interpreted by ld.so, not the shell
+   PW_V4L2_LD_PRELOAD='@LIBV4L2_PATH@/libpw-v4l2.so'
+fi
+
+if [ "$LD_PRELOAD" = "" ] ; then
+   LD_PRELOAD="$PW_V4L2_LD_PRELOAD"
+else
+   LD_PRELOAD="$LD_PRELOAD $PW_V4L2_LD_PRELOAD"
+fi
+
+export LD_PRELOAD
+
+exec "$@"

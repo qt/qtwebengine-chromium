@@ -14,9 +14,7 @@
 
 #include "src/dsp/motion_vector_search.h"
 
-#include <algorithm>
 #include <cassert>
-#include <cstddef>
 #include <cstdint>
 
 #include "src/dsp/dsp.h"

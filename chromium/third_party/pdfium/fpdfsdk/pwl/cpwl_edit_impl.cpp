@@ -65,7 +65,7 @@ bool CPWL_EditImpl::Iterator::GetWord(CPVT_Word& word) const {
   CHECK(edit_);
 
   if (vt_iterator_->GetWord(word)) {
-    word.ptWord = edit_->VTToEdit(word.ptWord);
+    word.set_location(edit_->VTToEdit(word.location()));
     return true;
   }
   return false;
@@ -91,6 +91,10 @@ void CPWL_EditImpl::Iterator::SetAt(const CPVT_WordPlace& place) {
 
 const CPVT_WordPlace& CPWL_EditImpl::Iterator::GetAt() const {
   return vt_iterator_->GetWordPlace();
+}
+
+float CPWL_EditImpl::Iterator::GetLineCaretX(const CPVT_Line& line) {
+  return vt_iterator_->GetLineCaretX(line);
 }
 
 class CPWL_EditImpl::Provider final : public CPVT_VariableText::Provider {
@@ -650,50 +654,52 @@ void CPWL_EditImpl::DrawEdit(CFX_RenderDevice* pDevice,
         CPVT_Line line;
         pIterator->GetLine(line);
         if (pFillerNotify->IsSelectionImplemented()) {
-          CFX_FloatRect rc(word.ptWord.x, line.ptLine.y + line.fLineDescent,
-                           word.ptWord.x + word.fWidth,
-                           line.ptLine.y + line.fLineAscent);
+          CFX_FloatRect rc(word.location().x, line.ptLine.y + line.fLineDescent,
+                           word.CaretX(), line.ptLine.y + line.fLineAscent);
           rc.Intersect(rcClip);
           pFillerNotify->OutputSelectedRect(pSystemData, rc);
         } else {
           CFX_Path pathSelBK;
-          pathSelBK.AppendRect(word.ptWord.x, line.ptLine.y + line.fLineDescent,
-                               word.ptWord.x + word.fWidth,
+          pathSelBK.AppendRect(word.location().x,
+                               line.ptLine.y + line.fLineDescent, word.CaretX(),
                                line.ptLine.y + line.fLineAscent);
 
           pDevice->DrawPath(pathSelBK, &mtUser2Device, nullptr, crSelBK, 0,
                             CFX_FillRenderOptions::WindingOptions());
         }
       }
-      if (bContinuous) {
-        if (place.LineCmp(oldplace) != 0 || word.nFontIndex != nFontIndex ||
+      int32_t font_index = word.font_index();
+      if (bContinuous && !word.is_rtl()) {
+        if (place.LineCmp(oldplace) != 0 || font_index != nFontIndex ||
             crOldFill != crCurFill) {
           if (!sTextBuf.IsEmpty()) {
-            DrawTextString(pDevice,
-                           CFX_PointF(ptBT.x + ptOffset.x, ptBT.y + ptOffset.y),
+            DrawTextString(pDevice, ptBT + ptOffset,
                            font_map->GetPDFFont(nFontIndex).Get(), fFontSize,
                            mtUser2Device, sTextBuf, crOldFill);
             sTextBuf.clear();
           }
-          nFontIndex = word.nFontIndex;
-          ptBT = word.ptWord;
+          nFontIndex = font_index;
+          ptBT = word.location();
           crOldFill = crCurFill;
         }
-        sTextBuf += GetPDFWordString(word.nFontIndex, word.Word, SubWord);
+        sTextBuf += GetPDFWordString(font_index, word.word(), SubWord);
       } else {
+        if (!sTextBuf.IsEmpty()) {
+          DrawTextString(pDevice, ptBT + ptOffset,
+                         font_map->GetPDFFont(nFontIndex).Get(), fFontSize,
+                         mtUser2Device, sTextBuf, crOldFill);
+          sTextBuf.clear();
+        }
         DrawTextString(
-            pDevice,
-            CFX_PointF(word.ptWord.x + ptOffset.x, word.ptWord.y + ptOffset.y),
-            font_map->GetPDFFont(word.nFontIndex).Get(), fFontSize,
-            mtUser2Device,
-            GetPDFWordString(word.nFontIndex, word.Word, SubWord), crCurFill);
+            pDevice, word.location() + ptOffset,
+            font_map->GetPDFFont(font_index).Get(), fFontSize, mtUser2Device,
+            GetPDFWordString(font_index, word.word(), SubWord), crCurFill);
       }
       oldplace = place;
     }
   }
   if (!sTextBuf.IsEmpty()) {
-    DrawTextString(pDevice,
-                   CFX_PointF(ptBT.x + ptOffset.x, ptBT.y + ptOffset.y),
+    DrawTextString(pDevice, ptBT + ptOffset,
                    font_map->GetPDFFont(nFontIndex).Get(), fFontSize,
                    mtUser2Device, sTextBuf, crOldFill);
   }
@@ -736,7 +742,7 @@ void CPWL_EditImpl::SetPlateRect(const CFX_FloatRect& rect) {
 }
 
 void CPWL_EditImpl::SetAlignmentH(int32_t nFormat) {
-  vt_->SetAlignment(nFormat);
+  vt_->SetAlignment(CPVT_VariableText::ToAlignment(nFormat));
 }
 
 void CPWL_EditImpl::SetAlignmentV(int32_t nFormat) {
@@ -856,7 +862,7 @@ WideString CPWL_EditImpl::GetText() const {
   while (pIterator->NextWord()) {
     CPVT_WordPlace place = pIterator->GetWordPlace();
     if (pIterator->GetWord(wordinfo)) {
-      swRet += wordinfo.Word;
+      swRet += wordinfo.word();
     }
     if (oldplace.nSecIndex != place.nSecIndex) {
       swRet += L"\r\n";
@@ -886,7 +892,7 @@ WideString CPWL_EditImpl::GetRangeText(const CPVT_WordRange& range) const {
       break;
     }
     if (pIterator->GetWord(wordinfo)) {
-      swRet += wordinfo.Word;
+      swRet += wordinfo.word();
     }
     if (oldplace.nSecIndex != place.nSecIndex) {
       swRet += L"\r\n";
@@ -1224,14 +1230,14 @@ void CPWL_EditImpl::ScrollToCaret() {
   CPVT_Word word;
   CPVT_Line line;
   if (pIterator->GetWord(word)) {
-    ptHead.x = word.ptWord.x + word.fWidth;
-    ptHead.y = word.ptWord.y + word.fAscent;
-    ptFoot.x = word.ptWord.x + word.fWidth;
-    ptFoot.y = word.ptWord.y + word.fDescent;
+    ptHead.x = word.CaretX();
+    ptHead.y = word.AscentY();
+    ptFoot.x = ptHead.x;
+    ptFoot.y = word.DescentY();
   } else if (pIterator->GetLine(line)) {
-    ptHead.x = line.ptLine.x;
+    ptHead.x = pIterator->GetLineCaretX(line);
     ptHead.y = line.ptLine.y + line.fLineAscent;
-    ptFoot.x = line.ptLine.x;
+    ptFoot.x = ptHead.x;
     ptFoot.y = line.ptLine.y + line.fLineDescent;
   }
 
@@ -1340,10 +1346,9 @@ void CPWL_EditImpl::RefreshWordRange(const CPVT_WordRange& wr) {
     pIterator->GetLine(lineinfo);
     if (place.LineCmp(wrTemp.BeginPos) == 0 ||
         place.LineCmp(wrTemp.EndPos) == 0) {
-      CFX_FloatRect rcWord(wordinfo.ptWord.x,
-                           lineinfo.ptLine.y + lineinfo.fLineDescent,
-                           wordinfo.ptWord.x + wordinfo.fWidth,
-                           lineinfo.ptLine.y + lineinfo.fLineAscent);
+      CFX_FloatRect rcWord(
+          wordinfo.location().x, lineinfo.ptLine.y + lineinfo.fLineDescent,
+          wordinfo.CaretX(), lineinfo.ptLine.y + lineinfo.fLineAscent);
 
       if (notify_) {
         if (!notify_flag_) {
@@ -1393,14 +1398,14 @@ void CPWL_EditImpl::SetCaretInfo() {
       CPVT_Word word;
       CPVT_Line line;
       if (pIterator->GetWord(word)) {
-        ptHead.x = word.ptWord.x + word.fWidth;
-        ptHead.y = word.ptWord.y + word.fAscent;
-        ptFoot.x = word.ptWord.x + word.fWidth;
-        ptFoot.y = word.ptWord.y + word.fDescent;
+        ptHead.x = word.CaretX();
+        ptHead.y = word.AscentY();
+        ptFoot.x = ptHead.x;
+        ptFoot.y = word.DescentY();
       } else if (pIterator->GetLine(line)) {
-        ptHead.x = line.ptLine.x;
+        ptHead.x = pIterator->GetLineCaretX(line);
         ptHead.y = line.ptLine.y + line.fLineAscent;
-        ptFoot.x = line.ptLine.x;
+        ptFoot.x = ptHead.x;
         ptFoot.y = line.ptLine.y + line.fLineDescent;
       }
 
@@ -1737,7 +1742,7 @@ void CPWL_EditImpl::Backspace(bool bAddUndo) {
 
   if (bAddUndo && enable_undo_) {
     AddEditUndoItem(std::make_unique<UndoBackspace>(
-        this, wp_old_caret_, wp_caret_, word.Word, word.nCharset));
+        this, wp_old_caret_, wp_caret_, word.word(), word.charset()));
   }
   RearrangePart(CPVT_WordRange(wp_caret_, wp_old_caret_));
   ScrollToCaret();
@@ -1763,11 +1768,13 @@ bool CPWL_EditImpl::Delete(bool bAddUndo) {
   sel_state_.Set(wp_caret_, wp_caret_);
   if (bAddUndo && enable_undo_) {
     if (bSecEnd) {
-      AddEditUndoItem(std::make_unique<UndoDelete>(
-          this, wp_old_caret_, wp_caret_, word.Word, word.nCharset, bSecEnd));
+      AddEditUndoItem(std::make_unique<UndoDelete>(this, wp_old_caret_,
+                                                   wp_caret_, word.word(),
+                                                   word.charset(), bSecEnd));
     } else {
-      AddEditUndoItem(std::make_unique<UndoDelete>(
-          this, wp_old_caret_, wp_caret_, word.Word, word.nCharset, bSecEnd));
+      AddEditUndoItem(std::make_unique<UndoDelete>(this, wp_old_caret_,
+                                                   wp_caret_, word.word(),
+                                                   word.charset(), bSecEnd));
     }
   }
   RearrangePart(CPVT_WordRange(wp_old_caret_, wp_caret_));
@@ -1933,8 +1940,8 @@ void CPWL_EditImpl::SetCaretOrigin() {
   CPVT_Word word;
   CPVT_Line line;
   if (pIterator->GetWord(word)) {
-    caret_point_.x = word.ptWord.x + word.fWidth;
-    caret_point_.y = word.ptWord.y;
+    caret_point_.x = word.CaretX();
+    caret_point_.y = word.location().y;
   } else if (pIterator->GetLine(line)) {
     caret_point_.x = line.ptLine.x;
     caret_point_.y = line.ptLine.y;

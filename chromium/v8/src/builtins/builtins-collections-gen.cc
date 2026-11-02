@@ -226,7 +226,7 @@ void BaseCollectionsAssembler::AddConstructorEntriesFromFastJSArray(
     // to the collection does not call user code that could mutate the elements
     // or collection.
     BuildFastLoop<IntPtrT>(var_current_index, IntPtrConstant(0), length,
-                           set_entry, 1, LoopUnrollingMode::kNo,
+                           set_entry, 1, kNoLoopUnrolling,
                            IndexAdvanceMode::kPost);
     Goto(&exit);
   }
@@ -248,7 +248,7 @@ void BaseCollectionsAssembler::AddConstructorEntriesFromFastJSArray(
         AddConstructorEntry(variant, context, collection, add_func, entry);
       };
       BuildFastLoop<IntPtrT>(var_current_index, IntPtrConstant(0), length,
-                             set_entry, 1, LoopUnrollingMode::kNo,
+                             set_entry, 1, kNoLoopUnrolling,
                              IndexAdvanceMode::kPost);
       Goto(&exit);
     }
@@ -574,10 +574,13 @@ TNode<Object> BaseCollectionsAssembler::LoadAndNormalizeFixedDoubleArrayElement(
 
 template <typename CollectionType>
 void CollectionsBuiltinsAssembler::FindOrderedHashTableEntry(
-    const TNode<CollectionType> table, const TNode<Uint32T> hash,
+    const TNode<CollectionType> table, TNode<Uint32T> hash,
     const std::function<void(TNode<Object>, Label*, Label*)>& key_compare,
     TVariable<IntPtrT>* entry_start_position, Label* entry_found,
     Label* not_found) {
+#ifdef V8_LOWER_LIMITS_MODE
+  hash = Word32And(hash, Uint32Constant(0xf));
+#endif
   // Get the index of the bucket.
   const TNode<Uint32T> number_of_buckets =
       PositiveSmiToUint32(CAST(UnsafeLoadFixedArrayElement(
@@ -717,7 +720,7 @@ void CollectionsBuiltinsAssembler::AddConstructorEntriesFromSet(
   // or collection. The iteration is based on the layout of the ordered hash
   // table.
   BuildFastLoop<IntPtrT>(loop_vars, number_of_buckets, loop_bound, set_entry,
-                         OrderedHashSet::kEntrySize, LoopUnrollingMode::kNo,
+                         OrderedHashSet::kEntrySize, kNoLoopUnrolling,
                          IndexAdvanceMode::kPost);
   Goto(&exit);
   BIND(&exit);
@@ -1178,7 +1181,19 @@ TF_BUILTIN(SetOrSetIteratorToList, CollectionsBuiltinsAssembler) {
 
 TNode<Word32T> CollectionsBuiltinsAssembler::ComputeUnseededHash(
     TNode<IntPtrT> key) {
-  // See v8::internal::ComputeUnseededHash()
+  // Must match v8::base::hash32 followed by the kSmiHashMask mask (i.e. the
+  // body of SmiHash32 in utils.h). We use rapidhash "mum" on 64-bit targets;
+  // on 32-bit targets the Turboshaft ia32 backend has no 64-bit integer
+  // instruction selection, so we keep Wang's 32-bit mixer.
+#if V8_TARGET_ARCH_64_BIT
+  TNode<Uint64T> k = ChangeUint32ToUint64(TruncateIntPtrToInt32(key));
+  TNode<Uint64T> a = Word64Xor(k, Uint64Constant(base::kRapidhashSecret1));
+  TNode<Uint64T> b = Word64Xor(k, Uint64Constant(base::kRapidhashSecret2));
+  TNode<Uint64T> lo = Uint64Mul(a, b);
+  TNode<Uint64T> hi = Uint64MulHigh(a, b);
+  TNode<Word32T> hash = TruncateWord64ToWord32(Word64Xor(lo, hi));
+  return Word32And(hash, Int32Constant(static_cast<int32_t>(kSmiHashMask)));
+#else
   TNode<Word32T> hash = TruncateIntPtrToInt32(key);
   hash = Int32Add(Word32Xor(hash, Int32Constant(0xFFFFFFFF)),
                   Word32Shl(hash, Int32Constant(15)));
@@ -1187,7 +1202,8 @@ TNode<Word32T> CollectionsBuiltinsAssembler::ComputeUnseededHash(
   hash = Word32Xor(hash, Word32Shr(hash, Int32Constant(4)));
   hash = Int32Mul(hash, Int32Constant(2057));
   hash = Word32Xor(hash, Word32Shr(hash, Int32Constant(16)));
-  return Word32And(hash, Int32Constant(0x3FFFFFFF));
+  return Word32And(hash, Int32Constant(static_cast<int32_t>(kSmiHashMask)));
+#endif
 }
 
 template <typename CollectionType>
@@ -1859,9 +1875,12 @@ TF_BUILTIN(MapPrototypeGetOrInsertComputed, CollectionsBuiltinsAssembler) {
 
 template <typename CollectionType>
 void CollectionsBuiltinsAssembler::StoreOrderedHashTableNewEntry(
-    const TNode<CollectionType> table, const TNode<IntPtrT> hash,
+    const TNode<CollectionType> table, TNode<IntPtrT> hash,
     const TNode<IntPtrT> number_of_buckets, const TNode<IntPtrT> occupancy,
     const ApplyAtEntry<CollectionType>& store_at_new_entry) {
+#ifdef V8_LOWER_LIMITS_MODE
+  hash = WordAnd(hash, IntPtrConstant(0xf));
+#endif
   const TNode<IntPtrT> bucket =
       WordAnd(hash, IntPtrSub(number_of_buckets, IntPtrConstant(1)));
   TNode<Smi> bucket_entry = CAST(UnsafeLoadFixedArrayElement(

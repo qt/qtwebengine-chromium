@@ -77,6 +77,10 @@ extern const char kProhibitedOrigin[];
 // or kInvalidSslCertificate error.
 extern const char kProhibitedOriginOrInvalidSslExplanation[];
 
+// Mojo call PaymentRequest::UpdateWith() is not allowed for the
+// "secure-payment-confirmation" method once its dialog has been shown.
+extern const char kSecurePaymentConfirmationUpdateWithNotAllowed[];
+
 // The payment handler responded with an invalid shipping address.
 extern const char kShippingAddressInvalid[];
 
@@ -89,10 +93,6 @@ extern const char kShippingOptionIdRequired[];
 // Used when an app is skipped for supporting only part of the requested payment
 // options.
 extern const char kSkipAppForPartialDelegation[];
-
-// Used when rejecting show() with NotSupportedError, because the user did not
-// have all valid autofill data.
-extern const char kStrictBasicCardShowReject[];
 
 // Used when "total": {"label": "Total", "amount": {"currency": "USD", "value":
 // "0.01"}} is required, bot not provided.

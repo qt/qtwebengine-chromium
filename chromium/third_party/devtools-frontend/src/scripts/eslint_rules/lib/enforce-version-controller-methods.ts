@@ -68,7 +68,7 @@ export default createRule({
             data: {
               currentVersion,
               methodCount: updateMethods.length,
-            }
+            },
           });
           // Don't report non-contiguous methods if the count is wrong to avoid spam
           return;
@@ -89,7 +89,7 @@ export default createRule({
               data: {
                 expectedFrom,
                 expectedTo,
-              }
+              },
             });
             break;  // Only report the first missing method
           }

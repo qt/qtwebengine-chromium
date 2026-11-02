@@ -49,7 +49,7 @@ namespace internal {
 template <typename Scalar, typename StorageIndex>
 void SparseLUImpl<Scalar, StorageIndex>::heap_relax_snode(const Index n, IndexVector& et, const Index relax_columns,
                                                           IndexVector& descendants, IndexVector& relax_end) {
-  // The etree may not be postordered, but its heap ordered
+  // The etree may not be postordered, but it's heap ordered
   IndexVector post;
   internal::treePostorder(StorageIndex(n), et, post);  // Post order etree
   IndexVector inv_post(n + 1);

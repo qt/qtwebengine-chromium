@@ -12,8 +12,8 @@ import listStyles from './list.css.js';
 
 const UIStrings = {
   /**
-   * @description Title of the edit button for the list items.
-   */
+   * @description Title of the edit button for the list items.
+   */
   edit: 'Edit',
   /**
    * @description Title of the remove button for the list items.

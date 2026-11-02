@@ -110,7 +110,7 @@ void Module::RecordError(Isolate* isolate, Tagged<Object> error) {
   DCHECK_IMPLIES(isolate->is_catchable_by_javascript(error),
                  IsTheHole(exception()));
   DCHECK(!IsTheHole(error));
-  if (IsSourceTextModule(this)) {
+  if (Is<SourceTextModule>(this)) {
     // Revert to minimal SFI in case we have already been instantiating or
     // evaluating.
     auto self = Cast<SourceTextModule>(this);
@@ -128,6 +128,11 @@ void Module::RecordError(Isolate* isolate, Tagged<Object> error) {
 void Module::ResetGraph(Isolate* isolate, DirectHandle<Module> module) {
   DCHECK_NE(module->status(), kEvaluating);
   if (module->status() != kPreLinking && module->status() != kLinking) {
+#ifdef DEBUG
+    if (IsSourceTextModule(*module)) {
+      Cast<SourceTextModule>(*module)->VerifyRequestedModules();
+    }
+#endif  // DEBUG
     return;
   }
 
@@ -158,11 +163,11 @@ void Module::ResetGraph(Isolate* isolate, DirectHandle<Module> module) {
 void Module::Reset(Isolate* isolate, DirectHandle<Module> module) {
   DCHECK(module->status() == kPreLinking || module->status() == kLinking);
   DCHECK(IsTheHole(module->exception()));
-  // The namespace object cannot exist, because it would have been created
-  // by RunInitializationCode, which is called only after this module's SCC
-  // succeeds instantiation.
-  DCHECK(!IsJSModuleNamespace(module->module_namespace()) &&
-         !IsJSModuleNamespace(module->deferred_module_namespace()));
+  // The namespace cells could have been created during ResolveExport for
+  // 'export * as ns', reset them here.
+  module->set_module_namespace(ReadOnlyRoots(isolate).undefined_value());
+  module->set_deferred_module_namespace(
+      ReadOnlyRoots(isolate).undefined_value());
   const uint32_t export_count =
       IsSourceTextModule(*module)
           ? Cast<SourceTextModule>(*module)
@@ -202,8 +207,8 @@ MaybeHandle<Cell> Module::ResolveExport(Isolate* isolate, Handle<Module> module,
         loc, must_resolve, resolve_set);
   } else {
     return SyntheticModule::ResolveExport(
-        isolate, Cast<SyntheticModule>(module), module_specifier, export_name,
-        loc, must_resolve);
+        isolate, CheckedCast<SyntheticModule>(module), module_specifier,
+        export_name, loc, must_resolve);
   }
 }
 
@@ -593,7 +598,7 @@ bool Module::IsGraphAsync(Isolate* isolate) const {
   DisallowGarbageCollection no_gc;
 
   // Only SourceTextModules may be async.
-  if (!IsSourceTextModule(this)) return false;
+  if (!Is<SourceTextModule>(this)) return false;
   Tagged<SourceTextModule> root = Cast<SourceTextModule>(this);
   DCHECK_GE(root->status(), kLinked);
 

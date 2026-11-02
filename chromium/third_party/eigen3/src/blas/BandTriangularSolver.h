@@ -45,7 +45,7 @@ struct band_solve_triangular_selector<Index, Mode, LhsScalar, ConjLhs, RhsScalar
                                         .cwiseProduct(other.col(col).segment(IsLower ? i - actual_k : i + 1, actual_k))
                                         .sum();
 
-        EIGEN_IF_CONSTEXPR((Mode & UnitDiag) == 0) other.coeffRef(i, col) /= cjLhs(i, IsLower ? k : 0);
+        EIGEN_IF_CONSTEXPR ((Mode & UnitDiag) == 0) other.coeffRef(i, col) /= cjLhs(i, IsLower ? k : 0);
       }
     }
   }
@@ -69,7 +69,7 @@ struct band_solve_triangular_selector<Index, Mode, LhsScalar, ConjLhs, RhsScalar
         int actual_k = (std::min)(k, size - ii - 1);
         int actual_start = IsLower ? 1 : k - actual_k;
 
-        EIGEN_IF_CONSTEXPR((Mode & UnitDiag) == 0) other.coeffRef(i, col) /= cjLhs(IsLower ? 0 : k, i);
+        EIGEN_IF_CONSTEXPR ((Mode & UnitDiag) == 0) other.coeffRef(i, col) /= cjLhs(IsLower ? 0 : k, i);
 
         if (actual_k > 0)
           other.col(col).segment(IsLower ? i + 1 : i - actual_k, actual_k) -=

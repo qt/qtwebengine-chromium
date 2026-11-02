@@ -1,5 +1,7 @@
 load("@rules_foreign_cc//foreign_cc:defs.bzl", "configure_make")
 
+package(licenses = ["notice"])
+
 filegroup(
     name = "all_srcs",
     srcs = glob(["**"]),
@@ -18,6 +20,11 @@ configure_make(
         "--enable-shared=no",
         "--with-jemalloc-prefix=_rjem_",
         "--with-private-namespace=_rjem_",
+        # Hardcode virtual address size to 48 bits (standard for 4-level paging on x86_64).
+        # Otherwise, jemalloc dynamically detects it at build-time using CPUID, which
+        # varies between virtualized build/CI hosts (e.g. Kokoro vs GitHub Actions),
+        # causing non-reproducible binary output due to different internal struct layouts.
+        "--with-lg-vaddr=48",
     ],
     lib_name = "libjemalloc",
     lib_source = ":all_srcs",

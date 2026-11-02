@@ -410,7 +410,7 @@ class V8_EXPORT Object : public Value {
       Local<Value> data = Local<Value>(), PropertyAttribute attributes = None,
       SideEffectType getter_side_effect_type = SideEffectType::kHasSideEffect,
       SideEffectType setter_side_effect_type = SideEffectType::kHasSideEffect);
-  V8_DEPRECATE_SOON("Use AccessorNameSetterCallbackV2 setter instead")
+  V8_DEPRECATED("Use AccessorNameSetterCallbackV2 setter instead")
   V8_WARN_UNUSED_RESULT Maybe<bool> SetNativeDataProperty(
       Local<Context> context, Local<Name> name,
       AccessorNameGetterCallback getter, AccessorNameSetterCallback setter,
@@ -495,7 +495,7 @@ class V8_EXPORT Object : public Value {
    */
   Local<Value> GetPrototype();
   // TODO(http://crbug.com/333672197): deprecate and remove.
-  V8_DEPRECATE_SOON("Use GetPrototype().")
+  V8_DEPRECATED("Use GetPrototype().")
   inline Local<Value> GetPrototypeV2() { return GetPrototype(); }
 
   /**
@@ -505,7 +505,7 @@ class V8_EXPORT Object : public Value {
   V8_WARN_UNUSED_RESULT Maybe<bool> SetPrototype(Local<Context> context,
                                                  Local<Value> prototype);
   // TODO(http://crbug.com/333672197): deprecate and remove.
-  V8_DEPRECATE_SOON("Use SetPrototype().")
+  V8_DEPRECATED("Use SetPrototype().")
   V8_WARN_UNUSED_RESULT Maybe<bool> SetPrototypeV2(Local<Context> context,
                                                    Local<Value> prototype) {
     return SetPrototype(context, prototype);
@@ -1098,6 +1098,8 @@ T* Object::Unwrap(v8::Isolate* isolate,
 template <CppHeapPointerTag tag>
 void Object::Wrap(v8::Isolate* isolate, const v8::Local<v8::Object>& wrapper,
                   v8::Object::Wrappable* wrappable) {
+  static_assert(kObjectWrappableTagRange.Contains(tag),
+                "CppHeapPointerTag must be within kObjectWrappableTagRange");
   auto obj = internal::ValueHelper::ValueAsAddress(*wrapper);
   Wrap(isolate, obj, tag, wrappable);
 }
@@ -1106,6 +1108,8 @@ void Object::Wrap(v8::Isolate* isolate, const v8::Local<v8::Object>& wrapper,
 template <CppHeapPointerTag tag>
 void Object::Wrap(v8::Isolate* isolate, const PersistentBase<Object>& wrapper,
                   v8::Object::Wrappable* wrappable) {
+  static_assert(kObjectWrappableTagRange.Contains(tag),
+                "CppHeapPointerTag must be within kObjectWrappableTagRange");
   auto obj =
       internal::ValueHelper::ValueAsAddress(wrapper.template value<Object>());
   Wrap(isolate, obj, tag, wrappable);
@@ -1116,6 +1120,8 @@ template <CppHeapPointerTag tag>
 void Object::Wrap(v8::Isolate* isolate,
                   const BasicTracedReference<Object>& wrapper,
                   v8::Object::Wrappable* wrappable) {
+  static_assert(kObjectWrappableTagRange.Contains(tag),
+                "CppHeapPointerTag must be within kObjectWrappableTagRange");
   auto obj =
       internal::ValueHelper::ValueAsAddress(wrapper.template value<Object>());
   Wrap(isolate, obj, tag, wrappable);

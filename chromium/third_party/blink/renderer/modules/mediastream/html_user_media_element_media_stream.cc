@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/modules/mediastream/html_user_media_element_media_stream.h"
 
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+#include "third_party/blink/renderer/core/html/html_user_media_element.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream.h"
 
 namespace blink {
@@ -15,10 +16,10 @@ const char HTMLUserMediaElementMediaStream::kSupplementName[] =
 
 // static
 HTMLUserMediaElementMediaStream& HTMLUserMediaElementMediaStream::From(
-    HTMLUserMediaElement& element) {
+    HTMLMediaCaptureElementBase& element) {
   HTMLUserMediaElementMediaStream* supplement =
-      Supplement<HTMLUserMediaElement>::From<HTMLUserMediaElementMediaStream>(
-          element);
+      Supplement<HTMLMediaCaptureElementBase>::From<
+          HTMLUserMediaElementMediaStream>(element);
   if (!supplement) {
     supplement = MakeGarbageCollected<HTMLUserMediaElementMediaStream>(element);
     ProvideTo(element, supplement);
@@ -28,30 +29,22 @@ HTMLUserMediaElementMediaStream& HTMLUserMediaElementMediaStream::From(
 
 // static
 MediaStream* HTMLUserMediaElementMediaStream::stream(
-    HTMLUserMediaElement& element) {
+    HTMLMediaCaptureElementBase& element) {
+  if (auto* user_media = DynamicTo<HTMLUserMediaElement>(element)) {
+    if (user_media->IsLegacyMode()) {
+      return nullptr;
+    }
+  }
   return From(element).GetMediaStream();
 }
 
-// static
-ScriptValue HTMLUserMediaElementMediaStream::error(
-    ScriptState* script_state,
-    HTMLUserMediaElement& element) {
-  const auto& error_ref = From(element).error_;
-  if (error_ref.IsEmpty()) {
-    return ScriptValue::CreateNull(script_state->GetIsolate());
-  }
-  return ScriptValue(script_state->GetIsolate(),
-                     error_ref.GetAcrossWorld(script_state));
-}
-
 HTMLUserMediaElementMediaStream::HTMLUserMediaElementMediaStream(
-    HTMLUserMediaElement& element)
-    : Supplement<HTMLUserMediaElement>(element) {}
+    HTMLMediaCaptureElementBase& element)
+    : Supplement<HTMLMediaCaptureElementBase>(element) {}
 
 void HTMLUserMediaElementMediaStream::Trace(Visitor* visitor) const {
   visitor->Trace(media_stream_);
-  visitor->Trace(error_);
-  Supplement<HTMLUserMediaElement>::Trace(visitor);
+  Supplement<HTMLMediaCaptureElementBase>::Trace(visitor);
 }
 
 }  // namespace blink

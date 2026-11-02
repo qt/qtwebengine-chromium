@@ -3,18 +3,19 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
+import * as Common from '../../core/common/common.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import {dispatchFocusOutEvent} from '../../testing/DOMHelpers.js';
-import {createTarget, expectConsoleLogs} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {createTarget, describeWithEnvironment, expectConsoleLogs} from '../../testing/EnvironmentHelpers.js';
 import {SECURITY_ORIGIN} from '../../testing/ResourceTreeHelpers.js';
 import * as RenderCoordinator from '../../ui/components/render_coordinator/render_coordinator.js';
 
 import * as Resources from './application.js';
 
-describeWithMockConnection('StorageView', () => {
+describeWithEnvironment('StorageView', () => {
   const testKey = 'test-storage-key';
   let target: SDK.Target.Target;
   let domStorageModel: SDK.DOMStorageModel.DOMStorageModel|null;
@@ -68,6 +69,72 @@ describeWithMockConnection('StorageView', () => {
     const subtitle =
         view.element.shadowRoot?.querySelector('div.flex-auto')?.shadowRoot?.querySelector('div.report-subtitle');
     assert.strictEqual(subtitle?.textContent, testKey);
+  });
+
+  it('groups site-data checkboxes into columns and indents third-party cookies under cookies', () => {
+    const view = new Resources.StorageView.StorageView();
+    const container = view.element.shadowRoot?.querySelector('.clear-storage-header') || null;
+    assert.instanceOf(container, HTMLDivElement);
+
+    const checkboxesRow = container.shadowRoot!.querySelector('.clear-site-data-checkboxes-row');
+    assert.instanceOf(checkboxesRow, HTMLDivElement);
+    const columns = checkboxesRow.querySelectorAll('.clear-site-data-checkbox-column');
+    assert.lengthOf(columns, 2);
+
+    const cookiesCheckbox = container.shadowRoot!.querySelector('.cookies-checkbox');
+    assert.instanceOf(cookiesCheckbox, HTMLElement);
+
+    const includeThirdPartyCookiesRow = container.shadowRoot!.querySelector('.include-third-party-cookies-row');
+    assert.instanceOf(includeThirdPartyCookiesRow, HTMLDivElement);
+    assert.strictEqual(cookiesCheckbox.nextElementSibling, includeThirdPartyCookiesRow);
+
+    const clearButton = container.shadowRoot!.querySelector('#storage-view-clear-button');
+    assert.instanceOf(clearButton, HTMLElement);
+    assert.strictEqual(clearButton.textContent, 'Clear selected');
+  });
+
+  it('makes include-third-party-cookies dependent on cookies', async () => {
+    const cookiesSetting = Common.Settings.Settings.instance().createSetting('clear-storage-cookies', true);
+    const includeThirdPartyCookiesSetting =
+        Common.Settings.Settings.instance().createSetting('clear-storage-include-third-party-cookies', false);
+    cookiesSetting.set(true);
+    includeThirdPartyCookiesSetting.set(false);
+
+    const view = new Resources.StorageView.StorageView();
+    const container = view.element.shadowRoot?.querySelector('.clear-storage-header') || null;
+    assert.instanceOf(container, HTMLDivElement);
+
+    const includeThirdPartyCookiesCheckbox =
+        container.shadowRoot!.querySelector('.third-party-cookies-checkbox') as HTMLElement;
+    assert.instanceOf(includeThirdPartyCookiesCheckbox, HTMLElement);
+    const includeThirdPartyCookiesCheckboxInput =
+        includeThirdPartyCookiesCheckbox.shadowRoot!.querySelector('input') as HTMLInputElement;
+    assert.instanceOf(includeThirdPartyCookiesCheckboxInput, HTMLInputElement);
+
+    includeThirdPartyCookiesSetting.set(true);
+    await RenderCoordinator.done();
+    assert.isTrue(cookiesSetting.get());
+    assert.isTrue(includeThirdPartyCookiesSetting.get());
+
+    includeThirdPartyCookiesSetting.set(false);
+    await RenderCoordinator.done();
+    assert.isTrue(cookiesSetting.get());
+    assert.isFalse(includeThirdPartyCookiesSetting.get());
+
+    includeThirdPartyCookiesSetting.set(true);
+    await RenderCoordinator.done();
+    assert.isTrue(includeThirdPartyCookiesSetting.get());
+
+    cookiesSetting.set(false);
+    await RenderCoordinator.done();
+    assert.isFalse(cookiesSetting.get());
+    assert.isFalse(includeThirdPartyCookiesSetting.get());
+    assert.isTrue(includeThirdPartyCookiesCheckboxInput.disabled);
+
+    cookiesSetting.set(true);
+    await RenderCoordinator.done();
+    assert.isTrue(cookiesSetting.get());
+    assert.isFalse(includeThirdPartyCookiesCheckboxInput.disabled);
   });
 
   it('shows a warning message when entering a too big custom quota', async () => {

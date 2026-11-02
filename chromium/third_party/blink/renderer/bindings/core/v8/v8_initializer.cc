@@ -33,7 +33,9 @@
 #include "base/debug/crash_logging.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/system/sys_info.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
 #include "components/crash/core/common/crash_key.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
@@ -76,6 +78,7 @@
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/script/modulator.h"
 #include "third_party/blink/renderer/core/shadow_realm/shadow_realm_global_scope.h"
+#include "third_party/blink/renderer/core/timing/time_clamper.h"
 #include "third_party/blink/renderer/core/trustedtypes/trusted_types_util.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
 #include "third_party/blink/renderer/core/workers/worklet_global_scope.h"
@@ -161,7 +164,8 @@ String ToBlinkString(v8::Local<v8::Context> context,
     return String();
   }
   base::span<UChar> buffer;
-  String result = String::CreateUninitialized(len, buffer);
+  String result =
+      String::CreateUninitialized(base::checked_cast<uint32_t>(len), buffer);
   DCHECK_LE(len, std::numeric_limits<uint32_t>::max());
   source->WriteV2(v8::Isolate::GetCurrent(), 0, static_cast<uint32_t>(len),
                   reinterpret_cast<uint16_t*>(buffer.data()));
@@ -884,6 +888,20 @@ void EmitDevToolsEvent(v8::Isolate* isolate) {
       });
 }
 
+int64_t FineTemporalHostSystemUTCEpochNanosecondsCallback(
+    v8::Local<v8::Context> context) {
+  static TimeClamper clamper;
+  base::TimeDelta delta = base::Time::Now() - base::Time::UnixEpoch();
+  return clamper.ClampTimeResolution(delta, true).InNanoseconds();
+}
+
+int64_t CoarseTemporalHostSystemUTCEpochNanosecondsCallback(
+    v8::Local<v8::Context> context) {
+  static TimeClamper clamper;
+  base::TimeDelta delta = base::Time::Now() - base::Time::UnixEpoch();
+  return clamper.ClampTimeResolution(delta, false).InNanoseconds();
+}
+
 }  // namespace
 
 // static
@@ -920,6 +938,16 @@ void V8Initializer::InitializeV8Common(v8::Isolate* isolate) {
     profiler->SetGetDetachednessCallback(
         V8GCController::DetachednessFromWrapper, nullptr);
   }
+}
+
+// static
+void V8Initializer::InitializeContext(v8::Local<v8::Context> context,
+                                      ExecutionContext* execution_context) {
+  DCHECK(execution_context);
+  context->SetTemporalHostSystemUTCEpochNanosecondsCallback(
+      execution_context->CrossOriginIsolatedCapability()
+          ? FineTemporalHostSystemUTCEpochNanosecondsCallback
+          : CoarseTemporalHostSystemUTCEpochNanosecondsCallback);
 }
 
 // Callback functions called when V8 encounters a fatal or OOM error.
@@ -1004,6 +1032,35 @@ class ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
   size_t max_allocation_;
 };
 
+#ifdef V8_ENABLE_SANDBOX
+
+// The ArrayBuffer partition is placed inside the V8 sandbox and we can just
+// reuse the ArrayBufferContents as allocator that will delegate to
+// PartitionAlloc.
+class InSandboxAllocator final : public v8::Allocator {
+ public:
+  InSandboxAllocator() = default;
+  void* Allocate(size_t size) override {
+    return ArrayBufferContents::AllocateMemoryOrNull(
+        size, ArrayBufferContents::kZeroInitialize);
+  }
+  void* AllocateUninitialized(size_t size) override {
+    return ArrayBufferContents::AllocateMemoryOrNull(
+        size, ArrayBufferContents::kDontInitialize);
+  }
+  void* AllocateUninitializedOrCrash(size_t size) override {
+    void* result = ArrayBufferContents::AllocateMemoryOrNull(
+        size, ArrayBufferContents::kDontInitialize);
+    if (!result) {
+      OOM_CRASH(size);
+    }
+    return result;
+  }
+  void Free(void* data) override { ArrayBufferContents::FreeMemory(data); }
+};
+
+#endif  // V8_ENABLE_SANDBOX
+
 V8PerIsolateData::V8ContextSnapshotMode GetV8ContextSnapshotMode() {
 #if BUILDFLAG(USE_V8_CONTEXT_SNAPSHOT)
   if (Platform::Current()->IsTakingV8ContextSnapshot())
@@ -1027,6 +1084,12 @@ void V8Initializer::InitializeIsolateHolder(
       reference_table, js_command_line_flags,
       Platform::Current()->DisallowV8FeatureFlagOverrides(), ReportV8FatalError,
       ReportV8OOMError);
+}
+
+void V8Initializer::InitializeInSandboxAllocator() {
+#ifdef V8_ENABLE_SANDBOX
+  v8::V8::SetInSandboxAllocator(std::make_shared<InSandboxAllocator>());
+#endif
 }
 
 v8::Isolate* V8Initializer::InitializeMainThread() {

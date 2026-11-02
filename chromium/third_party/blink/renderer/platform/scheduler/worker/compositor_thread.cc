@@ -4,6 +4,8 @@
 
 #include "third_party/blink/renderer/platform/scheduler/worker/compositor_thread.h"
 
+#include "base/message_loop/message_pump_wakeup_counter.h"
+#include "base/synchronization/lock_metrics_recorder.h"
 #include "base/task/sequence_manager/sequence_manager.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/threading/hang_watcher.h"
@@ -29,10 +31,16 @@ void CompositorThread::InitializeHangWatcherAndThreadName() {
         base::HangWatcher::ThreadType::kCompositorThread);
   }
 
-  mojo::InterfaceEndpointClient::SetThreadNameSuffixForMetrics("Compositor");
+  constexpr char kCompositorThreadSuffix[] = "Compositor";
+  mojo::InterfaceEndpointClient::SetThreadNameSuffixForMetrics(
+      kCompositorThreadSuffix);
+  base::MessagePumpWakeupCounter::InitializeForCurrentThread(
+      kCompositorThreadSuffix);
+  base::LockMetricsRecorder::EnableRecordingOnCurrentThread(
+      kCompositorThreadSuffix);
 #if BUILDFLAG(IS_ANDROID)
   base::PlatformThreadPriorityMonitor::Get().RegisterCurrentThread(
-      "Compositor");
+      kCompositorThreadSuffix);
 #endif  // BUILDFLAG(IS_ANDROID)
 }
 

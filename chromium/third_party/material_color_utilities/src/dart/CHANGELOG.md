@@ -1,3 +1,25 @@
+## 0.13.0 - 2025-05-20
+
+- All of the `MaterialDynamicColors` fields are now final.
+- Require Dart 3.5
+
+## 0.12.0 - 2024-06-06
+### Changed
+- Updated `MaterialDynamicColors` to use the expressive on-colors spec.
+
+## 0.11.2 - 2024-04-30
+### Changed
+- Updated `TonalPalette` to use new key color algorithm.
+
+## 0.11.1 - 2024-03-11
+### Fixed
+- Fixed Apache license
+
+## 0.11.0 - 2024-02-20
+### Changed
+- Updated `TonalPalette.fromList` so that it provides colors at any tone, not
+  only at `commonTones`.
+
 ## 0.10.0 - 2023-11-27
 ### Changed
 - Updated `MaterialDynamicColors` to new Contrast Surfaces spec.

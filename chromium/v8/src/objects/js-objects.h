@@ -7,6 +7,7 @@
 
 #include <optional>
 
+#include "src/base/strong-alias.h"
 #include "src/common/globals.h"
 #include "src/handles/handles.h"
 #include "src/objects/embedder-data-slot.h"
@@ -37,8 +38,6 @@ class GlobalDictionary;
 class ElementsAccessor;
 class Undefined;
 class Null;
-
-#include "torque-generated/src/objects/js-objects-tq.inc"
 
 // JSReceiver includes types on which properties can be defined, i.e.,
 // JSObject and JSProxy.
@@ -332,7 +331,7 @@ V8_OBJECT class JSReceiver : public HeapObject {
                                                DirectHandle<Name> name);
   V8_EXPORT_PRIVATE static Handle<Object> GetDataProperty(
       LookupIterator* it,
-      AllowAllocation allow_allocation = AllowAllocation::kYes);
+      AllowAllocation allow_allocation = AllowAllocation{true});
 
   // Retrieves a permanent object identity hash code. The undefined value might
   // be returned in case no hash was created yet.
@@ -1226,6 +1225,8 @@ class JSIteratorResult : public JSObject {
 
 V8_OBJECT class JSGlobalProxy : public JSSpecialObject {
  public:
+  class BodyDescriptor;
+
   inline bool IsDetachedFrom(Tagged<JSGlobalObject> global) const;
   inline bool IsDetached() const;
 
@@ -1262,6 +1263,11 @@ V8_OBJECT class JSGlobalObject : public JSSpecialObject {
 
   static void InvalidatePropertyCell(DirectHandle<JSGlobalObject> object,
                                      DirectHandle<Name> name);
+
+  // https://tc39.es/ecma262/#sec-hasrestrictedglobalproperty
+  static Maybe<bool> HasRestrictedGlobalProperty(
+      Isolate* isolate, DirectHandle<JSGlobalObject> global,
+      DirectHandle<Name> name);
 
   inline bool IsDetached();
   inline Tagged<NativeContext> native_context();
@@ -1644,6 +1650,46 @@ class JSUint8ArraySetFromResult : public JSObject {
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSUint8ArraySetFromResult);
 };
+
+V8_OBJECT class JSInternalPrototypeBase : public JSObject {
+} V8_OBJECT_END;
+V8_OBJECT class JSObjectPrototype : public JSInternalPrototypeBase {
+} V8_OBJECT_END;
+V8_OBJECT class JSRegExpPrototype : public JSInternalPrototypeBase {
+} V8_OBJECT_END;
+V8_OBJECT class JSPromisePrototype : public JSInternalPrototypeBase {
+} V8_OBJECT_END;
+V8_OBJECT class JSTypedArrayPrototype : public JSInternalPrototypeBase {
+} V8_OBJECT_END;
+V8_OBJECT class JSSetPrototype : public JSInternalPrototypeBase {
+} V8_OBJECT_END;
+V8_OBJECT class JSIteratorPrototype : public JSInternalPrototypeBase {
+} V8_OBJECT_END;
+V8_OBJECT class JSArrayIteratorPrototype : public JSInternalPrototypeBase {
+} V8_OBJECT_END;
+V8_OBJECT class JSMapIteratorPrototype : public JSInternalPrototypeBase {
+} V8_OBJECT_END;
+V8_OBJECT class JSSetIteratorPrototype : public JSInternalPrototypeBase {
+} V8_OBJECT_END;
+V8_OBJECT class JSStringIteratorPrototype : public JSInternalPrototypeBase {
+} V8_OBJECT_END;
+
+V8_OBJECT class JSApiObject : public JSAPIObjectWithEmbedderSlots {
+} V8_OBJECT_END;
+// TODO(jgruber): This only exists to widen the JSApiObject instance type into
+// the embedder-reservable range [kFirstJSApiObjectType, kLastJSApiObjectType],
+// by pinning the upper bound at kLastJSApiObjectType. Removing it requires a
+// way to reserve an arbitrary-width instance type range for a childless class
+// in the instance type generator.
+V8_OBJECT class JSLastDummyApiObject : public JSApiObject {
+} V8_OBJECT_END;
+V8_OBJECT class JSSpecialApiObject : public JSSpecialObject {
+} V8_OBJECT_END;
+
+V8_OBJECT class JSContextExtensionObject : public JSObject {
+} V8_OBJECT_END;
+V8_OBJECT class JSError : public JSObject {
+} V8_OBJECT_END;
 
 }  // namespace v8::internal
 

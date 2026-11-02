@@ -18,6 +18,8 @@
 #include "base/json/json_writer.h"
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "base/task/thread_pool/thread_pool_instance.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
@@ -62,6 +64,10 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
+
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+#include "chrome/browser/google/google_update_policy_fetcher.h"
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
 
 #if BUILDFLAG(IS_CHROMEOS)
 #include "chrome/browser/ash/login/test/device_state_mixin.h"
@@ -217,7 +223,7 @@ class PolicyUITestBase : public PlatformBrowserTest {
     provider_.UpdatePolicy(std::move(bundle));
   }
 
-  void VerifyPolicies(const std::vector<std::vector<std::string>>& expected);
+  void VerifyPolicies(std::vector<std::vector<std::string>> expected_policies);
 
   void VerifyReportButton(bool visible);
 
@@ -229,27 +235,50 @@ class PolicyUITestBase : public PlatformBrowserTest {
 };
 
 void PolicyUITestBase::VerifyPolicies(
-    const std::vector<std::vector<std::string>>& expected_policies) {
+    std::vector<std::vector<std::string>> expected_policies) {
   ASSERT_TRUE(
       content::NavigateToURL(web_contents(), GURL(chrome::kChromeUIPolicyURL)));
 
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+  // Google Update policies are fetched asynchronously and always displayed
+  // eventually.
+  for (const auto& key_value : GetGoogleUpdatePolicySchemas()) {
+    expected_policies.push_back(
+        PopulateExpectedPolicy(key_value.first, std::string(), std::string(),
+                               nullptr, false, "updater"));
+  }
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+
   // Retrieve the text contents of the policy table cells for all policies.
+  // Policy rendering is async under Mojo. Poll to avoid race conditions with
+  // DOM rendering. The test fails with a timeout if the condition is never met.
   const std::string javascript =
-      "var entries = getAllPolicyTables();"
-      "var policies = [];"
-      "for (var i = 0; i < entries.length; ++i) {"
-      "  var items = getAllPolicyRows(entries[i]);"
-      "  for (var j = 0; j < items.length; ++j) {"
-      "    var children = getAllPolicyRowDivs(items[j]);"
-      "    var values = [];"
-      "    for(var k = 0; k < children.length - 1; ++k) {"
-      "      values.push(children[k].textContent.trim());"
+      "new Promise(resolve => {"
+      "  const check = () => {"
+      "    var entries = getAllPolicyTables();"
+      "    var policies = [];"
+      "    for (var i = 0; i < entries.length; ++i) {"
+      "      var items = getAllPolicyRows(entries[i]);"
+      "      for (var j = 0; j < items.length; ++j) {"
+      "        var children = getAllPolicyRowDivs(items[j]);"
+      "        var values = [];"
+      "        for(var k = 0; k < children.length - 1; ++k) {"
+      "          values.push(children[k].textContent.trim());"
+      "        }"
+      "        values.push(entries[i].dataModel.id || '');"
+      "        policies.push(values);"
+      "      }"
       "    }"
-      "    values.push(entries[i].dataModel.id || '');"
-      "    policies.push(values);"
-      "  }"
-      "}"
-      "JSON.stringify(policies);";
+      "    if (policies.length === " +
+      base::NumberToString(expected_policies.size()) +
+      ") {"
+      "      resolve(JSON.stringify(policies));"
+      "    } else {"
+      "      setTimeout(check, 50);"
+      "    }"
+      "  };"
+      "  check();"
+      "});";
   std::string json =
       content::EvalJs(web_contents(), javascript).ExtractString();
   std::optional<base::Value> value_ptr =
@@ -276,7 +305,31 @@ void PolicyUITestBase::VerifyPolicies(
 }
 
 void PolicyUITestBase::VerifyReportButton(bool visible) {
-  const std::string kJavaScript = "getReportButtonVisibility();";
+  bool expect_visible = visible;
+#if BUILDFLAG(IS_CHROMEOS)
+  // The report button is never visible on ChromeOS. We force `expect_visible`
+  // to false here to prevent the JS promise from polling indefinitely and
+  // timing out.
+  expect_visible = false;
+#endif  // BUILDFLAG(IS_CHROMEOS)
+
+  // Poll until the report button's visibility matches our expectation.
+  // This cleanly handles asynchronous WebUI updates (on Windows and macOS)
+  // while resolving immediately on other platforms.
+  const std::string kJavaScript = base::StringPrintf(
+      "new Promise(resolve => {"
+      "  const check = () => {"
+      "    var display = getReportButtonVisibility();"
+      "    if ((display === 'none') === %s) {"
+      "      resolve(display);"
+      "    } else {"
+      "      setTimeout(check, 50);"
+      "    }"
+      "  };"
+      "  check();"
+      "});",
+      expect_visible ? "false" : "true");
+
   std::string ret =
       content::EvalJs(web_contents(), kJavaScript).ExtractString();
 
@@ -334,8 +387,10 @@ bool PolicyUIStatusTest::ReadStatusFor(
     (function() {
       function readStatus() {
         // Wait for the status box to appear in case page just loaded.
-        const statusSection = document.getElementById('status-section');
-        if (statusSection.hidden) {
+        const app = document.querySelector('policy-app');
+        const statusSection = app && app.shadowRoot ?
+            app.shadowRoot.querySelector('#status-section') : null;
+        if (!statusSection || statusSection.hidden) {
           return new Promise(resolve => {
             window.requestIdleCallback(resolve);
           }).then(readStatus);
@@ -388,33 +443,14 @@ bool PolicyUIStatusTest::ReloadPolicies() {
 }
 
 bool PolicyUIStatusTest::ReloadPolicies(content::WebContents* contents) {
-  const std::string javascript = R"JS(
-    (function() {
-      const reloadPoliciesBtn = document.getElementById('reload-policies');
-      reloadPoliciesBtn.click();
-      // Wait until reload button becomes enabled again, i.e. policies reloaded.
-      function waitForPoliciesToReload() {
-        if (reloadPoliciesBtn.disabled) {
-          return new Promise(resolve => {
-            window.requestIdleCallback(resolve);
-          }).then(waitForPoliciesToReload);
-        } else {
-          return true;
-        }
-      }
-      return new Promise(resolve => {
-        window.requestIdleCallback(resolve);
-      }).then(waitForPoliciesToReload);
-    })();
-  )JS";
-  return content::ExecJs(contents, javascript);
+  return content::ExecJs(contents, "reloadPolicies()");
 }
 
 #if !BUILDFLAG(IS_ANDROID)
 IN_PROC_BROWSER_TEST_F(PolicyUIStatusTest, CheckPolicyUiInGuestProfile) {
   // Verifies that the page opens in guest session.
   const Browser* policy_browser = OpenURLOffTheRecord(
-      browser()->profile(), GURL(chrome::kChromeUIPolicyURL));
+      browser()->GetProfile(), GURL(chrome::kChromeUIPolicyURL));
   ASSERT_TRUE(policy_browser);
   content::WebContents* contents =
       policy_browser->tab_strip_model()->GetActiveWebContents();
@@ -730,7 +766,7 @@ IN_PROC_BROWSER_TEST_P(PolicyUITest, ReportButtonWithProfileReporting) {
 
 #if !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_ANDROID)
 IN_PROC_BROWSER_TEST_P(PolicyUITest, ReportButtonOTRProfile) {
-  Browser* otr_browser = OpenURLOffTheRecord(browser()->profile(),
+  Browser* otr_browser = OpenURLOffTheRecord(browser()->GetProfile(),
                                              GURL(chrome::kChromeUIPolicyURL));
   ASSERT_TRUE(otr_browser);
   content::WebContents* otr_contents =
@@ -741,7 +777,7 @@ IN_PROC_BROWSER_TEST_P(PolicyUITest, ReportButtonOTRProfile) {
   EXPECT_EQ(
       nullptr,
       enterprise_reporting::CloudProfileReportingServiceFactory::GetForProfile(
-          otr_browser->profile()));
+          otr_browser->GetProfile()));
 
   // Turn on the reporting policy.
   policy::PolicyMap policy_map;
@@ -809,8 +845,17 @@ class PolicyPrecedenceUITest
 
   // Used to retrieve the contents of the policy precedence rows.
   const std::string kJavaScript =
-      "var precedence_row = getPrecedenceRowValue();"
-      "precedence_row.textContent;";
+      "new Promise(resolve => {"
+      "  const check = () => {"
+      "    const precedence_row = getPrecedenceRowValue();"
+      "    if (precedence_row && precedence_row.textContent.trim() !== '') {"
+      "      resolve(precedence_row.textContent.trim());"
+      "    } else {"
+      "      setTimeout(check, 50);"
+      "    }"
+      "  };"
+      "  check();"
+      "});";
 
  private:
   base::test::ScopedFeatureList feature_list_;

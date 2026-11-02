@@ -119,15 +119,15 @@ bool PasswordGenerationFrameHelper::IsGenerationEnabled(
 
   if (!password_manager_util::IsAbleToSavePasswords(client_)) {
     if (logger) {
-      logger->LogMessage(
-          Logger::STRING_GENERATION_DISABLED_NOT_ABLE_TO_SAVE_PASSWORDS);
+      logger->LogMessage(Logger::STRING_GENERATION_DISABLED_STORE_ERROR);
     }
     return false;
   }
 
-  if (!client_->IsSavingAndFillingEnabled(url)) {
+  if (!client_->IsSavingAndFillingEnabled(driver_->GetLastCommittedOrigin(),
+                                          url)) {
     if (logger) {
-      logger->LogMessage(Logger::STRING_GENERATION_DISABLED_SAVING_DISABLED);
+      logger->LogMessage(Logger::STRING_GENERATION_DISABLED_BY_USER_OR_POLICY);
     }
     return false;
   }
@@ -152,7 +152,8 @@ void PasswordGenerationFrameHelper::AddManualGenerationEnabledField(
   generation_enabled_fields_.insert(field_renderer_id);
 }
 
-std::u16string PasswordGenerationFrameHelper::GeneratePassword(
+autofill::PasswordRequirementsSpec
+PasswordGenerationFrameHelper::GetPasswordRequirementsSpec(
     const GURL& last_committed_url,
     PasswordGenerationType generation_type,
     autofill::FormSignature form_signature,
@@ -190,7 +191,18 @@ std::u16string PasswordGenerationFrameHelper::GeneratePassword(
         field_signature, spec);
   }
 
-  return autofill::GeneratePassword(spec);
+  return spec;
+}
+
+std::u16string PasswordGenerationFrameHelper::GeneratePassword(
+    const GURL& last_committed_url,
+    PasswordGenerationType generation_type,
+    autofill::FormSignature form_signature,
+    autofill::FieldSignature field_signature,
+    uint64_t max_length) {
+  return autofill::GeneratePassword(
+      GetPasswordRequirementsSpec(last_committed_url, generation_type,
+                                  form_signature, field_signature, max_length));
 }
 
 }  // namespace password_manager

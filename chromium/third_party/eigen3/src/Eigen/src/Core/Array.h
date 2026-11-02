@@ -135,7 +135,7 @@ class Array : public PlainObjectBase<Array<Scalar_, Rows_, Cols_, Options_, MaxR
     return *this;
   }
 
-  /** \brief Construct a row of column vector with fixed size from an arbitrary number of coefficients.
+  /** \brief Construct a row or column vector with fixed size from an arbitrary number of coefficients.
    *
    * \only_for_vectors
    *
@@ -202,7 +202,7 @@ class Array : public PlainObjectBase<Array<Scalar_, Rows_, Cols_, Options_, MaxR
    */
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE explicit Array(Index dim);
   /** constructs an initialized 1x1 Array with the given coefficient
-   * \sa const Scalar& a0, const Scalar& a1, const Scalar& a2, const Scalar& a3, const ArgTypes&... args */
+   * \sa Array(const Scalar& a0, const Scalar& a1, const Scalar& a2, const Scalar& a3, const ArgTypes&... args) */
   Array(const Scalar& value);
   /** constructs an uninitialized array with \a rows rows and \a cols columns.
    *

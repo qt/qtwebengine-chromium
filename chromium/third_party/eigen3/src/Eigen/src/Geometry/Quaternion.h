@@ -49,7 +49,6 @@ class QuaternionBase : public RotationBase<Derived, 3> {
 
   enum { Flags = Eigen::internal::traits<Derived>::Flags };
 
-  // typedef typename Matrix<Scalar,4,1> Coefficients;
   /** the type of a 3D vector */
   typedef Matrix<Scalar, 3, 1> Vector3;
   /** the equivalent rotation matrix type */
@@ -580,7 +579,7 @@ EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Derived& QuaternionBase<Derived>::operator
  * \remarks If the quaternion is used to rotate several points (>1)
  * then it is much more efficient to first convert it to a 3x3 Matrix.
  * Comparison of the operation cost for n transformations:
- *   - Quaternion2:    30n
+ *   - Quaternion:    30n
  *   - Via a Matrix3: 24 + 15n
  */
 template <class Derived>
@@ -645,10 +644,7 @@ EIGEN_DEVICE_FUNC inline Derived& QuaternionBase<Derived>::operator=(const Matri
 template <class Derived>
 EIGEN_DEVICE_FUNC inline typename QuaternionBase<Derived>::Matrix3 QuaternionBase<Derived>::toRotationMatrix(
     void) const {
-  // NOTE if inlined, then gcc 4.2 and 4.4 get rid of the temporary (not gcc 4.3 !!)
-  // if not inlined then the cost of the return by value is huge ~ +35%,
-  // however, not inlining this function is an order of magnitude slower, so
-  // it has to be inlined, and so the return by value is not an issue
+  // Keep this inline: forcing an out-of-line call is much more expensive than returning Matrix3 by value.
   Matrix3 res;
 
   const Scalar tx = Scalar(2) * this->x();
@@ -899,7 +895,7 @@ struct quat_conj {
  * if the quaternion is normalized.
  * The conjugate of a quaternion represents the opposite rotation.
  *
- * \sa Quaternion2::inverse()
+ * \sa Quaternion::inverse()
  */
 template <class Derived>
 EIGEN_DEVICE_FUNC inline Quaternion<typename internal::traits<Derived>::Scalar> QuaternionBase<Derived>::conjugate()
@@ -948,7 +944,7 @@ EIGEN_DEVICE_FUNC Quaternion<typename internal::traits<Derived>::Scalar> Quatern
     Scalar sinTheta = numext::sqrt(Scalar(1) - absD * absD);
 
     scale0 = sin((Scalar(1) - t) * theta) / sinTheta;
-    scale1 = sin((t * theta)) / sinTheta;
+    scale1 = sin(t * theta) / sinTheta;
   }
   if (d < Scalar(0)) scale1 = -scale1;
 

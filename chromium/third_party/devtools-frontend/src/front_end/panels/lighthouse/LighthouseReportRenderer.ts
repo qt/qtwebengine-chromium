@@ -7,8 +7,8 @@ import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import type * as LighthouseModel from '../../models/lighthouse/lighthouse.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as LighthouseReport from '../../third_party/lighthouse/report/report.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
@@ -198,7 +198,6 @@ export class LighthouseReportRenderer {
         lineNumber: line,
         columnNumber: column,
         showColumnNumber: false,
-        inlineFrameIndex: 0,
         maxLength: MaxLengthForLinks,
       });
       UI.Tooltip.Tooltip.install(origHTMLElement, '');

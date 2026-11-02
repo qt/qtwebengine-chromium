@@ -137,6 +137,7 @@ class WorkerScriptFetcher : public network::mojom::URLLoaderClient {
       blink::mojom::FetchClientSettingsObjectPtr
           outside_fetch_client_settings_object,
       network::mojom::RequestDestination request_destination,
+      bool file_url_support,
       scoped_refptr<ServiceWorkerContextWrapper> service_worker_context,
       ServiceWorkerMainResourceHandle* service_worker_handle,
       scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory,
@@ -148,10 +149,8 @@ class WorkerScriptFetcher : public network::mojom::URLLoaderClient {
       const base::UnguessableToken& devtools_worker_token,
       bool require_cross_site_request_for_cookies,
       net::StorageAccessApiStatus storage_access_api_status,
-      const std::optional<base::UnguessableToken>&
-          worker_network_restrictions_id,
-      const std::optional<base::UnguessableToken>&
-          creator_network_restrictions_id,
+      const base::UnguessableToken& worker_network_restrictions_id,
+      const base::UnguessableToken& creator_network_restrictions_id,
       std::optional<PolicyContainerPolicies> creator_policies,
       CompletionCallback callback);
 
@@ -222,10 +221,8 @@ class WorkerScriptFetcher : public network::mojom::URLLoaderClient {
       DevToolsAgentHostImpl* devtools_agent_host,
       const base::UnguessableToken& devtools_worker_token,
       bool require_cross_site_request_for_cookies,
-      const std::optional<base::UnguessableToken>&
-          worker_network_restrictions_id,
-      const std::optional<base::UnguessableToken>&
-          creator_network_restrictions_id,
+      const base::UnguessableToken& worker_network_restrictions_id,
+      const base::UnguessableToken& creator_network_restrictions_id,
       std::optional<PolicyContainerPolicies> creator_policies,
       WorkerScriptFetcher::CompletionCallback callback);
 

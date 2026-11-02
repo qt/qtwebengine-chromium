@@ -129,8 +129,8 @@ export class RuleSetDetailsView extends UI.Widget.VBox {
 
   async #getSourceText(): Promise<string> {
     if (this.#shouldPrettyPrint && this.#ruleSet?.sourceText !== undefined) {
-      const formattedResult =
-          await Formatter.ScriptFormatter.formatScriptContent('application/json', this.#ruleSet.sourceText);
+      const formattedResult = await Formatter.ScriptFormatter.formatScriptContent(
+          SDK.TargetManager.TargetManager.instance().settings, 'application/json', this.#ruleSet.sourceText);
       return formattedResult.formattedContent;
     }
 

@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import type * as Protocol from '../../generated/protocol.js';
-import {assertScreenshot, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
+import {assertScreenshot, raf, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
 import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -62,7 +64,7 @@ describeWithEnvironment('RequestPayloadView', () => {
         null, null, null);
     const view = new Network.RequestPayloadView.RequestPayloadView();
     view.request = request;
-    renderElementIntoDOM(view);
+    renderElementIntoDOM(view, {includeCommonStyles: true});
     view.wasShown();
 
     await assertScreenshot('network/request-payload-query-params.png');
@@ -77,7 +79,7 @@ describeWithEnvironment('RequestPayloadView', () => {
 
     const view = new Network.RequestPayloadView.RequestPayloadView();
     view.request = request;
-    renderElementIntoDOM(view);
+    renderElementIntoDOM(view, {includeCommonStyles: true});
     view.wasShown();
 
     await view.updateComplete;
@@ -90,7 +92,7 @@ describeWithEnvironment('RequestPayloadView', () => {
         null, null);
     const view = new Network.RequestPayloadView.RequestPayloadView();
     view.request = request;
-    renderElementIntoDOM(view);
+    renderElementIntoDOM(view, {includeCommonStyles: true});
     view.wasShown();
 
     await view.updateComplete;
@@ -125,7 +127,7 @@ describeWithEnvironment('RequestPayloadView', () => {
         null);
     const view = new Network.RequestPayloadView.RequestPayloadView();
     view.request = request;
-    renderElementIntoDOM(view);
+    renderElementIntoDOM(view, {includeCommonStyles: true});
     view.wasShown();
 
     await view.updateComplete;
@@ -178,7 +180,7 @@ describeWithEnvironment('RequestPayloadView', () => {
         null, null);
     const view = new Network.RequestPayloadView.RequestPayloadView();
     view.request = request;
-    renderElementIntoDOM(view);
+    renderElementIntoDOM(view, {includeCommonStyles: true});
     view.wasShown();
 
     await view.updateComplete;
@@ -211,7 +213,7 @@ describeWithEnvironment('RequestPayloadView', () => {
 
     const view = new Network.RequestPayloadView.RequestPayloadView();
     view.request = request;
-    renderElementIntoDOM(view);
+    renderElementIntoDOM(view, {includeCommonStyles: true});
     view.wasShown();
 
     await view.updateComplete;
@@ -263,29 +265,200 @@ describeWithEnvironment('RequestPayloadView', () => {
     request.setRequestHeaders([{name: 'Content-Type', value: 'application/json'}]);
     sinon.stub(request, 'requestFormData').resolves('{"foo": "bar"}');
 
+    const populateSpy =
+        sinon.spy(ObjectUI.ObjectPropertiesSection.ObjectPropertyTreeElement, 'populateChildrenIfNeeded');
+
     const view = new Network.RequestPayloadView.RequestPayloadView();
     view.request = request;
-    renderElementIntoDOM(view);
+    renderElementIntoDOM(view, {includeCommonStyles: true});
     view.wasShown();
 
     await view.updateComplete;
+
+    // Object properties are rendered asynchronously.
+    await populateSpy.returnValues[0];
+    await raf();
+    await UI.Widget.Widget.allUpdatesComplete;
 
     const treeOutline = view.element.querySelector<HTMLElement>('.request-payload-tree');
     assert.exists(treeOutline);
     const shadowRoot = treeOutline.shadowRoot;
     assert.exists(shadowRoot);
 
-    const firstChildNode = shadowRoot.querySelector('li.object-properties-section-root-element');
+    const firstChildNode = shadowRoot.querySelector('li.object-properties-section');
     assert.exists(firstChildNode);
-
     const rootElement = UI.TreeOutline.TreeElement.getTreeElementBylistItemNode(firstChildNode);
     assert.exists(rootElement);
-
-    // Ensure children are populated
-    await rootElement.onpopulate();
-
     const firstProperty = rootElement.childAt(0);
     assert.instanceOf(firstProperty, ObjectUI.ObjectPropertiesSection.ObjectPropertyTreeElement);
     assert.isFalse(firstProperty.editable);
+  });
+
+  it('sets binaryPayloadContentData for base64-encoded request bodies', async () => {
+    const base64Data = 'SGVsbG8gV29ybGQ=';  // "Hello World" in base64
+    const binaryContentData =
+        new TextUtils.ContentData.ContentData(base64Data, /* isBase64= */ true, 'application/octet-stream');
+
+    const request = SDK.NetworkRequest.NetworkRequest.create(
+        'requestId' as Protocol.Network.RequestId, urlString`https://example.com/api`, urlString``, null, null, null);
+    request.setRequestHeaders([
+      {name: 'Content-Type', value: 'application/octet-stream'},
+      {name: 'Content-Encoding', value: 'gzip'},
+    ]);
+
+    sinon.stub(request, 'requestFormData').resolves(base64Data);
+    sinon.stub(request, 'formParameters').resolves(null);
+    sinon.stub(request, 'requestFormDataContentData').resolves(binaryContentData);
+
+    // Use a spy view to capture the input passed to the view function.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let lastInput: any = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const spyView = (input: any, _output: any, _target: any): void => {
+      lastInput = input;
+    };
+
+    const view = new Network.RequestPayloadView.RequestPayloadView(undefined, spyView);
+    view.request = request;
+    renderElementIntoDOM(view);
+    view.wasShown();
+
+    await view.refreshFormDataPromiseForTest;
+    await view.updateComplete;
+
+    assert.exists(lastInput, 'View should have been called');
+    assert.exists(lastInput.binaryPayloadContentData,
+                  'binaryPayloadContentData should be set for base64-encoded request bodies');
+    assert.isTrue(lastInput.binaryPayloadContentData.createdFromBase64, 'ContentData should be created from base64');
+    assert.strictEqual(lastInput.binaryPayloadContentData.base64, base64Data,
+                       'ContentData base64 should match the original encoded data');
+    assert.strictEqual(lastInput.requestUrl, 'https://example.com/api');
+  });
+
+  it('does not set binaryPayloadContentData for text request bodies', async () => {
+    const request = SDK.NetworkRequest.NetworkRequest.create(
+        'requestId' as Protocol.Network.RequestId, urlString`https://example.com/api`, urlString``, null, null, null);
+    request.setRequestHeaders([{name: 'Content-Type', value: 'application/json'}]);
+
+    const textContentData =
+        new TextUtils.ContentData.ContentData('{"foo": "bar"}', /* isBase64= */ false, 'application/json');
+    sinon.stub(request, 'requestFormData').resolves('{"foo": "bar"}');
+    sinon.stub(request, 'formParameters').resolves(null);
+    sinon.stub(request, 'requestFormDataContentData').resolves(textContentData);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let lastInput: any = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const spyView = (input: any, _output: any, _target: any): void => {
+      lastInput = input;
+    };
+
+    const view = new Network.RequestPayloadView.RequestPayloadView(undefined, spyView);
+    view.request = request;
+    renderElementIntoDOM(view);
+    view.wasShown();
+
+    await view.refreshFormDataPromiseForTest;
+    await view.updateComplete;
+
+    assert.exists(lastInput, 'View should have been called');
+    assert.isNull(lastInput.binaryPayloadContentData,
+                  'binaryPayloadContentData should be null for text request bodies');
+  });
+
+  it('decodes query string parameters by default even for POST requests with JSON body', async () => {
+    const request = SDK.NetworkRequest.NetworkRequest.create('requestId' as Protocol.Network.RequestId,
+                                                             urlString`https://example.com/api?foo=bar%20baz`,
+                                                             urlString``, null, null, null);
+    request.setRequestHeaders([{name: 'Content-Type', value: 'application/json'}]);
+    sinon.stub(request, 'requestFormData').resolves('{"jsonKey": "jsonVal"}');
+
+    const view = new Network.RequestPayloadView.RequestPayloadView();
+    view.request = request;
+    renderElementIntoDOM(view, {includeCommonStyles: true});
+    view.wasShown();
+
+    await view.updateComplete;
+
+    const treeOutline = view.element.querySelector<HTMLElement>('.request-payload-tree');
+    assert.isNotNull(treeOutline);
+    const shadowRoot = treeOutline.shadowRoot;
+    assert.isNotNull(shadowRoot);
+
+    const getPayloadValues = () => {
+      return Array.from(shadowRoot.querySelectorAll('.payload-value')).map(el => el.textContent).join(' ');
+    };
+
+    assert.include(getPayloadValues(), 'bar baz');
+  });
+
+  it('toggles query parameters and form data independently', async () => {
+    const request = SDK.NetworkRequest.NetworkRequest.create('requestId' as Protocol.Network.RequestId,
+                                                             urlString`https://example.com/api?qFoo=qBar%20qBaz`,
+                                                             urlString``, null, null, null);
+    request.setRequestHeaders([{name: 'Content-Type', value: 'application/x-www-form-urlencoded'}]);
+    sinon.stub(request, 'requestFormData').resolves('fFoo=fBar%20fBaz');
+
+    const view = new Network.RequestPayloadView.RequestPayloadView();
+    view.request = request;
+    renderElementIntoDOM(view, {includeCommonStyles: true});
+    view.wasShown();
+
+    await view.refreshFormDataPromiseForTest;
+    await view.updateComplete;
+
+    const treeOutline = view.element.querySelector<HTMLElement>('.request-payload-tree');
+    assert.isNotNull(treeOutline);
+    const shadowRoot = treeOutline.shadowRoot;
+    assert.isNotNull(shadowRoot);
+
+    const getPayloadValues = () => {
+      return Array.from(shadowRoot.querySelectorAll('.payload-value')).map(el => el.textContent).join(' ');
+    };
+
+    const getButton = (sectionTitle: string, buttonText: string) => {
+      const lis = shadowRoot.querySelectorAll('li[role="treeitem"]');
+      const section = Array.from(lis).find(li => li.textContent?.includes(sectionTitle));
+      if (!section) {
+        return null;
+      }
+      const buttons = section.querySelectorAll<HTMLElement>('.payload-toggle');
+      return Array.from(buttons).find(b => b.textContent?.includes(buttonText));
+    };
+
+    // Initial state: Both decoded
+    assert.include(getPayloadValues(), 'qBar qBaz');
+    assert.include(getPayloadValues(), 'fBar fBaz');
+
+    // Find the toggle buttons.
+    const getToggles = () => shadowRoot.querySelectorAll<HTMLElement>('.payload-toggle');
+    assert.lengthOf(getToggles(), 5);
+
+    // Toggle query parameters decoding (decoded -> encoded)
+    const viewUrlEncodedQueryBtn = getButton('Query String Parameters', 'View URL-encoded');
+    assert.exists(viewUrlEncodedQueryBtn);
+    viewUrlEncodedQueryBtn?.click();
+    await view.updateComplete;
+
+    // Query param should be encoded, form data should remain decoded
+    assert.include(getPayloadValues(), 'qBar%20qBaz');
+    assert.include(getPayloadValues(), 'fBar fBaz');
+
+    // Toggle query parameters back (encoded -> decoded)
+    const viewDecodedQueryBtn = getButton('Query String Parameters', 'View decoded');
+    assert.exists(viewDecodedQueryBtn);
+    viewDecodedQueryBtn?.click();
+    await view.updateComplete;
+    assert.include(getPayloadValues(), 'qBar qBaz');
+
+    // Toggle form data decoding (decoded -> encoded)
+    const viewUrlEncodedFormBtn = getButton('Form Data', 'View URL-encoded');
+    assert.exists(viewUrlEncodedFormBtn);
+    viewUrlEncodedFormBtn?.click();
+    await view.updateComplete;
+
+    // Form data should be encoded, query param should remain decoded
+    assert.include(getPayloadValues(), 'qBar qBaz');
+    assert.include(getPayloadValues(), 'fBar%20fBaz');
   });
 });

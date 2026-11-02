@@ -14,12 +14,11 @@
 
 //! BoringSSL backend for ATHM using `bssl_sys` FFI bindings.
 //!
-//! This backend is not constant-time in general. However, the code paths needed for the *client*
-//! operations in ATHM are constant-time.
+//! Scalar arithmetic (add, sub, mul, neg, invert) is constant-time. Point operations are
+//! constant-time as long as neither input nor output is the point at infinity.
 
 use super::AthmBackend;
 use core::ptr::{null, null_mut, NonNull};
-use rand_core::CryptoRngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, ConstantTimeLess, CtOption};
 use zeroize::Zeroize;
 
@@ -83,8 +82,7 @@ impl BnWrapper {
 
 impl Drop for BnWrapper {
     fn drop(&mut self) {
-        // SAFETY: self.0 was allocated by BN_new/BN_bin2bn/BN_mod_inverse and
-        // is a valid non-null pointer.
+        // SAFETY: self.0 was allocated by BN_new/BN_bin2bn and is a valid non-null pointer.
         unsafe { bssl_sys::BN_free(self.0.as_ptr()) };
     }
 }
@@ -199,9 +197,39 @@ impl BnCtxWrapper {
 
 impl Drop for BnCtxWrapper {
     fn drop(&mut self) {
-        // SAFETY: self.0 was allocated by BN_CTX_new and is a valid non-null
-        // pointer.
+        // SAFETY: self.0 was allocated by BN_CTX_new and is a valid non-null pointer.
         unsafe { bssl_sys::BN_CTX_free(self.0.as_ptr()) };
+    }
+}
+
+/// Owns a `BN_MONT_CTX` through `NonNull` and frees it on drop via `BN_MONT_CTX_free`.
+struct BnMontCtxWrapper(NonNull<bssl_sys::BN_MONT_CTX>);
+
+impl BnMontCtxWrapper {
+    /// Create a Montgomery context for the given modulus.
+    /// Panics if the context cannot be created.
+    fn new_for_modulus(modulus: *const bssl_sys::BIGNUM) -> Self {
+        // SAFETY: modulus is a valid BIGNUM pointer. Passing null for ctx makes BoringSSL
+        // allocate one internally.
+        let ptr = unsafe { bssl_sys::BN_MONT_CTX_new_for_modulus(modulus, null_mut()) };
+        Self(NonNull::new(ptr).expect("BN_MONT_CTX_new_for_modulus returned null"))
+    }
+
+    fn as_ptr(&self) -> *const bssl_sys::BN_MONT_CTX {
+        self.0.as_ptr()
+    }
+}
+
+// SAFETY: BN_MONT_CTX is a precomputed read-only structure after creation and is safe to share
+// across threads.
+unsafe impl Send for BnMontCtxWrapper {}
+unsafe impl Sync for BnMontCtxWrapper {}
+
+impl Drop for BnMontCtxWrapper {
+    fn drop(&mut self) {
+        // SAFETY: self.0 was allocated by BN_MONT_CTX_new_for_modulus and is a valid non-null
+        // pointer.
+        unsafe { bssl_sys::BN_MONT_CTX_free(self.0.as_ptr()) };
     }
 }
 
@@ -224,6 +252,31 @@ fn p256_order() -> *const bssl_sys::BIGNUM {
     let o = unsafe { bssl_sys::EC_GROUP_get0_order(p256_group()) };
     assert!(!o.is_null());
     o
+}
+
+/// Returns a reference to a lazily-initialized Montgomery context for the P-256 order.
+/// The context is created once and cached for the lifetime of the process.
+fn p256_order_mont_ctx() -> &'static BnMontCtxWrapper {
+    use std::sync::OnceLock;
+    static MONT: OnceLock<BnMontCtxWrapper> = OnceLock::new();
+    MONT.get_or_init(|| BnMontCtxWrapper::new_for_modulus(p256_order()))
+}
+
+/// The P-256 order minus 2, used for Fermat inversion: a^{-1} = a^{order-2} (mod order).
+/// Lazily computed and cached.
+fn p256_order_minus_2() -> &'static [u8; SCALAR_SIZE] {
+    use std::sync::OnceLock;
+    static ORDER_M2: OnceLock<[u8; SCALAR_SIZE]> = OnceLock::new();
+    ORDER_M2.get_or_init(|| {
+        let result = BnWrapper::new();
+        // SAFETY: result.as_mut_ptr() and p256_order() are valid BIGNUM pointers.
+        let rc = unsafe { bssl_sys::BN_copy(result.as_mut_ptr(), p256_order()) };
+        assert!(!rc.is_null());
+        // SAFETY: result.as_mut_ptr() is a valid BIGNUM pointer.
+        let rc = unsafe { bssl_sys::BN_sub_word(result.as_mut_ptr(), 2) };
+        assert_eq!(rc, 1);
+        result.to_bytes32()
+    })
 }
 
 /// Perform (a OP b) mod order using a constant-time "quick" variant.
@@ -257,36 +310,49 @@ unsafe fn bn_mod_op_quick(
     // bn_a, bn_b, bn_r freed automatically on drop.
 }
 
-/// Perform (a OP b) mod order using a BN_mod_* function that requires a BN_CTX.
-/// Used for operations like BN_mod_mul that are not available in _quick form.
+/// Constant-time multiplication of two scalars mod the P-256 order, using Montgomery
+/// multiplication.
 ///
-/// SAFETY: `a` and `b` must be valid big-endian scalar values, and `op` must be a boringssl mod_*
-/// function that takes a BN_CTX.
-unsafe fn bn_mod_op(
-    a: &[u8; SCALAR_SIZE],
-    b: &[u8; SCALAR_SIZE],
-    op: unsafe extern "C" fn(
-        *mut bssl_sys::BIGNUM,
-        *const bssl_sys::BIGNUM,
-        *const bssl_sys::BIGNUM,
-        *const bssl_sys::BIGNUM,
-        *mut bssl_sys::BN_CTX,
-    ) -> i32,
-) -> [u8; SCALAR_SIZE] {
+/// The operands are converted to Montgomery form, multiplied, and the result is converted back.
+/// All operations are constant-time for secret scalar values.
+fn bn_mod_mul_mont(a: &[u8; SCALAR_SIZE], b: &[u8; SCALAR_SIZE]) -> [u8; SCALAR_SIZE] {
     let bn_a = BnWrapper::from_bytes(a);
     let bn_b = BnWrapper::from_bytes(b);
+    let mont_a = BnWrapper::new();
     let bn_r = BnWrapper::new();
     let ctx = BnCtxWrapper::new();
+    let mont = p256_order_mont_ctx();
 
-    // SAFETY: bn_r, bn_a, bn_b, p256_order(), and ctx are all valid pointers. However, this still
-    // assumes that `op` is safe to call on the arguments, which is why this function is unsafe.
+    // Compute a * b = MulMont(ToMont(a), b). This saves two montgomery reductions compared to computing
+    // FromMont(MulMont(ToMont(a), ToMont(b))).
+
+    // Convert a to Montgomery form.
+    // SAFETY: All BIGNUM and MONT_CTX pointers are valid.
     let rc = unsafe {
-        op(bn_r.as_mut_ptr(), bn_a.as_ptr(), bn_b.as_ptr(), p256_order(), ctx.as_mut_ptr())
+        bssl_sys::BN_to_montgomery(
+            mont_a.as_mut_ptr(),
+            bn_a.as_ptr(),
+            mont.as_ptr(),
+            ctx.as_mut_ptr(),
+        )
+    };
+    assert_eq!(rc, 1);
+
+    // Multiply in Montgomery domain (constant-time).
+    // SAFETY: All pointers are valid.
+    let rc = unsafe {
+        bssl_sys::BN_mod_mul_montgomery(
+            bn_r.as_mut_ptr(),
+            mont_a.as_ptr(),
+            bn_b.as_ptr(),
+            mont.as_ptr(),
+            ctx.as_mut_ptr(),
+        )
     };
     assert_eq!(rc, 1);
 
     bn_r.to_bytes32()
-    // bn_a, bn_b, bn_r, ctx freed automatically on drop.
+    // All BnWrappers and BnCtxWrapper freed automatically on drop.
 }
 
 // ---------------------------------------------------------------------------
@@ -304,37 +370,51 @@ impl BsslScalar {
         BsslScalar(b)
     };
 
-    pub fn random<R: CryptoRngCore>(rng: &mut R) -> Self {
-        random_scalar(rng)
+    pub fn random() -> Self {
+        random_scalar()
     }
 
     pub fn is_zero(&self) -> Choice {
         self.ct_eq(&Self::ZERO)
     }
 
-    // Returns a CtOption, but this implementation is actually NOT constant-time.
+    /// Constant-time modular inversion using Fermat's little theorem:
+    /// a^{-1} = a^{order-2} (mod order) for prime order.
+    ///
+    /// Uses `BN_mod_exp_mont`, which treats the base as secret.
+    /// Returns `None` (as a `CtOption`) if `self` is zero.
     pub fn invert(&self) -> CtOption<BsslScalar> {
         // Always perform the inversion to avoid leaking whether self is zero.
         let is_nonzero = !self.is_zero();
-        // Use 1 as a fallback input so BN_mod_inverse always succeeds.
+        // Use 1 as a fallback input so the exponentiation always succeeds.
         let safe_input = BsslScalar::conditional_select(&BsslScalar::ONE, self, is_nonzero);
 
         let bn_a = BnWrapper::from_bytes(&safe_input.0);
+        let bn_exp = BnWrapper::from_bytes(p256_order_minus_2());
+        let bn_r = BnWrapper::new();
         let ctx = BnCtxWrapper::new();
+        let mont = p256_order_mont_ctx();
 
-        // SAFETY: bn_a, p256_order(), and ctx are valid pointers.
-        // Passing null for the first arg makes BN_mod_inverse allocate the result.
-        let r = unsafe {
-            bssl_sys::BN_mod_inverse(null_mut(), bn_a.as_ptr(), p256_order(), ctx.as_mut_ptr())
+        // Compute safe_input^{order-2} mod order.
+        //
+        // SAFETY: All pointers are valid. bn_a is in [0, order) as required by
+        // BN_mod_exp_mont (see https://boringssl.googlesource.com/boringssl/+/8aacd0c97fb1f06c8d10e0a6ab034cd4c4d102b4/include/openssl/bn.h?pli=1#815).
+        // BN_mod_exp_mont treats the base (bn_a) as secret.
+        let rc = unsafe {
+            bssl_sys::BN_mod_exp_mont(
+                bn_r.as_mut_ptr(),
+                bn_a.as_ptr(),
+                bn_exp.as_ptr(),
+                p256_order(),
+                ctx.as_mut_ptr(),
+                mont.as_ptr(),
+            )
         };
-        // The inverse should always succeed on the safe_input (which is nonzero).
-        assert!(!r.is_null());
-        // Wrap the returned BIGNUM so it is freed on drop.
-        let r = BnWrapper(NonNull::new(r).unwrap());
-        let result = r.to_bytes32();
+        assert_eq!(rc, 1);
 
+        let result = bn_r.to_bytes32();
         CtOption::new(BsslScalar(result), is_nonzero)
-        // bn_a, r, ctx freed automatically on drop.
+        // bn_a, bn_exp, bn_r, ctx freed automatically on drop.
     }
 }
 
@@ -372,12 +452,9 @@ impl core::ops::Sub<BsslScalar> for BsslScalar {
 
 impl core::ops::Mul<BsslScalar> for BsslScalar {
     type Output = BsslScalar;
-    // NOT constant-time.
+    // Constant-time via Montgomery multiplication.
     fn mul(self, rhs: BsslScalar) -> BsslScalar {
-        BsslScalar(
-            // SAFETY: calling BN_mod_mul is safe because the arguments are valid bignums.
-            unsafe { bn_mod_op(&self.0, &rhs.0, bssl_sys::BN_mod_mul) },
-        )
+        BsslScalar(bn_mod_mul_mont(&self.0, &rhs.0))
     }
 }
 
@@ -446,10 +523,10 @@ impl BsslPoint {
 
     // Stub: BsslPoint doesn't have a meaningful `random` in the same sense
     // as ProjectivePoint, but tests call it. Generate generator * random_scalar.
-    pub fn random<R: CryptoRngCore>(rng: &mut R) -> BsslPoint {
+    pub fn random() -> BsslPoint {
         // This approach should only be used for actual random point generation, not for hashing to
         // points.
-        point_generator() * random_scalar(rng)
+        point_generator() * random_scalar()
     }
 }
 
@@ -704,14 +781,46 @@ pub fn hash_to_scalar(msgs: &[&[u8]], dsts: &[&[u8]]) -> Result<BsslScalar, &'st
     // bn, bn_r, ctx freed automatically on drop.
 }
 
+struct Sha256(bssl_sys::SHA256_CTX);
+
+impl Sha256 {
+    fn new() -> Self {
+        let mut ctx = core::mem::MaybeUninit::<bssl_sys::SHA256_CTX>::uninit();
+        // SAFETY: `SHA256_Init` fully initializes `ctx` and returns 1
+        let r = unsafe { bssl_sys::SHA256_Init(ctx.as_mut_ptr()) };
+        assert_eq!(r, 1);
+        // SAFETY: `SHA256_Init` initialized every field of `ctx`.
+        Self(unsafe { ctx.assume_init() })
+    }
+
+    fn update(&mut self, data: &[u8]) {
+        // SAFETY: `self.0` is a valid initialized SHA256_CTX.
+        // `data` is a valid (possibly empty) slice of `data.len()` bytes.
+        let r = unsafe {
+            bssl_sys::SHA256_Update(
+                &mut self.0,
+                data.as_ptr().cast::<core::ffi::c_void>(),
+                data.len(),
+            )
+        };
+        assert_eq!(r, 1);
+    }
+
+    fn finalize(mut self) -> [u8; 32] {
+        let mut out = [0u8; 32];
+        // SAFETY: `out` has SHA256_DIGEST_LENGTH (=32) bytes and `self.0` is a valid initialized SHA256_CTX.
+        let r = unsafe { bssl_sys::SHA256_Final(out.as_mut_ptr(), &mut self.0) };
+        assert_eq!(r, 1);
+        out
+    }
+}
+
 /// expand_message_xmd using SHA-256, per RFC 9380 §5.3.1.
 fn expand_message_xmd_sha256(
     msg: &[u8],
     dst: &[u8],
     len_in_bytes: usize,
 ) -> Result<Vec<u8>, &'static str> {
-    use sha2::{Digest, Sha256};
-
     let b_in_bytes = 32usize; // SHA-256 output length
     let s_in_bytes = 64usize; // SHA-256 block length
     let ell = (len_in_bytes + b_in_bytes - 1) / b_in_bytes;
@@ -755,8 +864,8 @@ fn expand_message_xmd_sha256(
     Ok(uniform_bytes)
 }
 
-pub fn random_scalar<R: CryptoRngCore>(_rng: &mut R) -> BsslScalar {
-    // Use BoringSSL's RNG directly (ignores the Rust rng parameter).
+pub fn random_scalar() -> BsslScalar {
+    // Use BoringSSL's built-in CSPRNG.
     let order = p256_order();
     let bn = BnWrapper::new();
     // SAFETY: bn and order are valid pointers.
@@ -766,9 +875,9 @@ pub fn random_scalar<R: CryptoRngCore>(_rng: &mut R) -> BsslScalar {
     // bn freed automatically on drop.
 }
 
-pub fn random_non_zero_scalar<R: CryptoRngCore>(rng: &mut R) -> BsslScalar {
+pub fn random_non_zero_scalar() -> BsslScalar {
     loop {
-        let s = random_scalar(rng);
+        let s = random_scalar();
         if !bool::from(s.is_zero()) {
             return s;
         }
@@ -842,12 +951,12 @@ impl AthmBackend for BoringSslBackend {
         decode_point(input)
     }
 
-    fn random_scalar<R: CryptoRngCore>(rng: &mut R) -> Self::Scalar {
-        random_scalar(rng)
+    fn random_scalar() -> Self::Scalar {
+        random_scalar()
     }
 
-    fn random_non_zero_scalar<R: CryptoRngCore>(rng: &mut R) -> Self::Scalar {
-        random_non_zero_scalar(rng)
+    fn random_non_zero_scalar() -> Self::Scalar {
+        random_non_zero_scalar()
     }
 }
 
@@ -1054,9 +1163,8 @@ mod tests {
 
     #[test]
     fn test_random_scalar() {
-        let mut rng = rand::thread_rng();
-        let s1 = random_scalar(&mut rng);
-        let s2 = random_scalar(&mut rng);
+        let s1 = random_scalar();
+        let s2 = random_scalar();
         assert!(!bool::from(s1.ct_eq(&s2)));
     }
 

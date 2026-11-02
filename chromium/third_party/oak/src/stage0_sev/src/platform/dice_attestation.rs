@@ -18,13 +18,13 @@ use oak_attestation::dice::DiceAttester;
 use oak_sev_guest::{
     crypto::GuestMessageEncryptor,
     guest::{
-        AttestationRequest, AttestationResponse, GuestFieldFlags, GuestMessage, KeyRequest,
-        KeyResponse, Message, ReportStatus,
+        GuestFieldFlags, GuestMessage, Message, ReportStatus,
+        v1::{AttestationRequest, AttestationResponse, KeyRequest, KeyResponse},
     },
     msr::SevStatus,
 };
 use oak_sev_snp_attestation_report::{AttestationReport, REPORT_DATA_SIZE};
-use oak_stage0::{allocator::Shared, hal::Platform};
+use oak_stage0::{allocator::Shared, hal::FirmwarePlatform};
 use oak_stage0_dice::DerivedKey;
 use spinning_top::Spinlock;
 use x86_64::{PhysAddr, VirtAddr};

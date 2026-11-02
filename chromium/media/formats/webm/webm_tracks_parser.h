@@ -38,12 +38,12 @@ class MEDIA_EXPORT WebMTracksParser : public WebMParserClient {
 
   ~WebMTracksParser() override;
 
-  // Parses a WebM Tracks element in |buf|.
+  // Parses a WebM Tracks element in `buf`.
   //
   // Returns -1 if the parse fails.
   // Returns 0 if more data is needed.
   // Returns the number of bytes parsed on success.
-  int Parse(const uint8_t* buf, int size);
+  int Parse(base::span<const uint8_t> buf);
 
   int64_t audio_track_num() const { return audio_track_num_; }
   int64_t video_track_num() const { return video_track_num_; }
@@ -110,7 +110,7 @@ class MEDIA_EXPORT WebMTracksParser : public WebMParserClient {
   bool OnListEnd(int id) override;
   bool OnUInt(int id, int64_t val) override;
   bool OnFloat(int id, double val) override;
-  bool OnBinary(int id, const uint8_t* data, int size) override;
+  bool OnBinary(int id, base::span<const uint8_t> data) override;
   bool OnString(int id, const std::string& str) override;
 
   bool reset_on_next_parse_;
@@ -132,7 +132,7 @@ class MEDIA_EXPORT WebMTracksParser : public WebMParserClient {
   std::set<int64_t> ignored_tracks_;
   std::string audio_encryption_key_id_;
   std::string video_encryption_key_id_;
-  raw_ptr<MediaLog> media_log_;
+  const std::unique_ptr<MediaLog> media_log_;
 
   WebMAudioClient audio_client_;
   AudioDecoderConfig audio_decoder_config_;

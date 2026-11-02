@@ -12,11 +12,11 @@ import type * as LinearMemoryInspector from './linear_memory_inspector.js';
 
 const UIStrings = {
   /**
-   * @description Title of the Linear Memory inspector tool
+   * @description Title of the Memory inspector panel.
    */
   memoryInspector: 'Memory inspector',
   /**
-   * @description Command for showing the 'Memory inspector' tool
+   * @description Command for showing the Memory inspector panel.
    */
   showMemoryInspector: 'Show Memory inspector',
 } as const;

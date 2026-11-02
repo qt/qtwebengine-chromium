@@ -447,6 +447,160 @@ struct generic_product_impl<Lhs, Rhs, DenseShape, DenseShape, GemvProduct>
   }
 };
 
+// Packet-cascade assignment for small fixed-size coefficient-based products
+// (dst = / += / -= lhs * rhs). The generic assignment path types the product's
+// packet via find_best_packet -- the widest packet that *exactly divides* the
+// vectorized extent, leaving no tail. For odd/non-power-of-two extents that
+// overshoots: with no exact divisor it falls back to a narrow packet, or all
+// the way to scalars (e.g. 3x3 double becomes scalar, ~3x slower than it needs
+// to be). find_largest_packet instead picks the widest packet that *fits*
+// (size <= extent) and we emit an explicit cascade -- full packet(s), then the
+// half packet, ... then a scalar tail -- so e.g. 3x3 double does one Packet2d
+// plus one scalar per column, and 6x6 double does one Packet4d plus one Packet2d
+// instead of three Packet2d. See find_largest_packet in XprHelper.h.
+
+// Emit the inner segment [begin, end) for a single outer index, cascading from
+// `Packet` down through its half packets to a scalar tail. `ColMajor` selects
+// whether the contiguous inner index is the row (true) or the column (false).
+// The bool `Terminal` partial specialization stops the recursion at the
+// narrowest packet without requiring C++17 `if constexpr`.
+template <typename Packet, bool ColMajor,
+          bool Terminal = std::is_same<typename unpacket_traits<Packet>::half, Packet>::value>
+struct product_packet_cascade {
+  template <typename Func, typename Dst, typename ProdEval>
+  static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void run(const Func& func, Dst& dst, const ProdEval& prod, Index outer,
+                                                        Index begin, Index end) {
+    constexpr int PacketSize = unpacket_traits<Packet>::size;
+    Index pktEnd = begin + numext::round_down(end - begin, PacketSize);
+    Index i = begin;
+    for (; i < pktEnd; i += PacketSize) {
+      Index r = ColMajor ? i : outer, c = ColMajor ? outer : i;
+      func.template assignPacket<Unaligned, Packet>(&dst.coeffRef(r, c), prod.template packet<Unaligned, Packet>(r, c));
+    }
+    // Fall back to the half packet for the remainder [i, end).
+    product_packet_cascade<typename unpacket_traits<Packet>::half, ColMajor>::run(func, dst, prod, outer, i, end);
+  }
+};
+
+// Narrowest packet in the chain: lay down its full packets, then a scalar tail.
+template <typename Packet, bool ColMajor>
+struct product_packet_cascade<Packet, ColMajor, /*Terminal=*/true> {
+  template <typename Func, typename Dst, typename ProdEval>
+  static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void run(const Func& func, Dst& dst, const ProdEval& prod, Index outer,
+                                                        Index begin, Index end) {
+    constexpr int PacketSize = unpacket_traits<Packet>::size;
+    Index pktEnd = begin + numext::round_down(end - begin, PacketSize);
+    Index i = begin;
+    for (; i < pktEnd; i += PacketSize) {
+      Index r = ColMajor ? i : outer, c = ColMajor ? outer : i;
+      func.template assignPacket<Unaligned, Packet>(&dst.coeffRef(r, c), prod.template packet<Unaligned, Packet>(r, c));
+    }
+    for (; i < end; ++i) {
+      Index r = ColMajor ? i : outer, c = ColMajor ? outer : i;
+      func.assignCoeff(dst.coeffRef(r, c), prod.coeff(r, c));
+    }
+  }
+};
+
+// Largest packet size in the (halving) chain that *exactly divides* Size, or 1
+// if none does. This is what the generic InnerVectorized assignment path can
+// actually use -- unlike find_best_packet, whose stop condition returns the
+// terminal (non-dividing) packet when the chain bottoms out above size 1 (on
+// x86 the chain ends at Packet2d / Packet4f, not a size-1 packet), so e.g.
+// find_best_packet<double,3> reports Packet2d even though 3 % 2 != 0.
+template <typename Packet, int Size,
+          bool Terminal = std::is_same<typename unpacket_traits<Packet>::half, Packet>::value>
+struct largest_exact_divisor_size {  // recurse into the narrower half packet
+  static constexpr int s = unpacket_traits<Packet>::size;
+  static constexpr int value =
+      (Size % s == 0) ? s : largest_exact_divisor_size<typename unpacket_traits<Packet>::half, Size>::value;
+};
+template <typename Packet, int Size>
+struct largest_exact_divisor_size<Packet, Size, /*Terminal=*/true> {  // narrowest packet in the chain
+  static constexpr int s = unpacket_traits<Packet>::size;
+  static constexpr int value = (Size % s == 0) ? s : 1;
+};
+
+// When is the cascade worth diverging from the generic assignment path, and
+// along which axis? Only for fixed-size products where the widest packet that
+// fits the vectorized extent (find_largest_packet) is strictly wider than the
+// widest that exactly divides it -- i.e. the extent is not a clean packet
+// multiple, so the generic path is forced down to a narrower packet or scalars.
+// Exact-fit sizes (2, 4, 8, ...) keep the proven generic path, as do dynamic
+// sizes (GEMM / generic kernels) and extents too small to hold even one packet
+// (e.g. 3-row float). Complex is included: the generic path scalarizes odd
+// extents (find_best<complex<double>,3> == Packet1cd), so the cascade's
+// Packet2cd/Packet4cf tail is a sizeable win there too.
+//
+// The destination must also store the vectorized axis contiguously
+// (InnerStrideAtCompileTime == 1): the cascade writes whole packets with a
+// single contiguous store, so a strided destination such as `m.row(i)` of a
+// column-major matrix would clobber neighbouring coefficients. The generic
+// assignment path makes this same packet-access check on the destination; here
+// we must replicate it since we bypass that path.
+template <typename ProdEval, typename Dst>
+struct product_packet_cascade_traits {
+  using Scalar = typename ProdEval::Scalar;
+  static constexpr int Rows = ProdEval::RowsAtCompileTime;
+  static constexpr int Cols = ProdEval::ColsAtCompileTime;
+  static constexpr bool DstRowMajor = bool(Dst::IsRowMajor);
+  static constexpr bool DstContiguous = int(Dst::InnerStrideAtCompileTime) == 1;
+  // Orientation of the packets the product evaluator natively produces. When a
+  // product can vectorize *both* the lhs (columns) and the rhs (rows), its
+  // packet() returns column packets (EvalToRowMajor == 0). The cascade axis must
+  // match this orientation -- and the destination's storage order must match it
+  // too, so the contiguous packet store lands on contiguous coefficients.
+  static constexpr bool ProdRowMajor = (int(ProdEval::Flags) & RowMajorBit) != 0;
+  static constexpr bool VecLhs =  // column-major product & dst: vectorize down each column
+      bool(ProdEval::CanVectorizeLhs) && !ProdRowMajor && !DstRowMajor && Rows != Dynamic;
+  static constexpr bool VecRhs =  // row-major product & dst: vectorize along each row
+      bool(ProdEval::CanVectorizeRhs) && ProdRowMajor && DstRowMajor && Cols != Dynamic;
+  static constexpr int Extent = VecLhs ? Rows : VecRhs ? Cols : 1;
+  using Packet = typename find_largest_packet<Scalar, Extent>::type;
+  static constexpr int LargestSize = unpacket_traits<Packet>::size;
+  static constexpr int GenericSize = largest_exact_divisor_size<typename packet_traits<Scalar>::type, Extent>::value;
+  // SameType mirrors the product's own PacketAccessBit (SameType && (CanVectorizeLhs ||
+  // CanVectorizeRhs)): CanVectorizeLhs/Rhs alone test only the operand's packet access, so a
+  // mixed-scalar product (e.g. double * complex) would otherwise enable the cascade and try to
+  // read the wrong-width packet out of an operand. Mixed types keep the generic (scalar) path.
+  static constexpr bool Enable = bool(ProdEval::SameType) && (VecLhs || VecRhs) && DstContiguous &&
+                                 (LargestSize <= Extent) && (LargestSize > GenericSize);
+};
+
+// Run the cascade over every outer index of dst. Traits::VecLhs is a compile-time
+// constant, so it folds the bounds away and selects the cascade's ColMajor axis,
+// instantiating only the active orientation (no dead branch on either axis).
+template <typename Traits, typename Func, typename Dst, typename ProdEval>
+EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void product_run_packet_cascade(const Func& func, Dst& dst,
+                                                                      const ProdEval& prod) {
+  using Packet = typename Traits::Packet;
+  Index rows = dst.rows(), cols = dst.cols();
+  Index outerCount = Traits::VecLhs ? cols : rows;
+  Index innerEnd = Traits::VecLhs ? rows : cols;
+  for (Index outer = 0; outer < outerCount; ++outer)
+    product_packet_cascade<Packet, Traits::VecLhs>::run(func, dst, prod, outer, 0, innerEnd);
+}
+
+// Compound product assignment: take the packet cascade when the traits enable
+// it, otherwise the generic assignment path. Dispatch on a bool tag (rather than
+// a plain `if`) so the cascade is only *instantiated* for the vectorizable
+// fixed-size case -- a runtime branch would instantiate it for every product,
+// including scalar types with no packet support.
+template <typename Func, typename Dst, typename Lhs, typename Rhs>
+EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void product_packet_assign(std::true_type, const Func& func, Dst& dst,
+                                                                 const Lhs& lhs, const Rhs& rhs) {
+  using ProdXpr = Product<Lhs, Rhs, LazyProduct>;
+  using ProdEval = product_evaluator<ProdXpr, CoeffBasedProductMode, DenseShape, DenseShape>;
+  using Traits = product_packet_cascade_traits<ProdEval, Dst>;
+  const ProdEval prodEval{ProdXpr(lhs, rhs)};
+  product_run_packet_cascade<Traits>(func, dst, prodEval);
+}
+template <typename Func, typename Dst, typename Lhs, typename Rhs>
+EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void product_packet_assign(std::false_type, const Func& func, Dst& dst,
+                                                                 const Lhs& lhs, const Rhs& rhs) {
+  call_assignment_no_alias(dst, lhs.lazyProduct(rhs), func);
+}
+
 template <typename Lhs, typename Rhs>
 struct generic_product_impl<Lhs, Rhs, DenseShape, DenseShape, CoeffBasedProductMode> {
   using Scalar = typename Product<Lhs, Rhs>::Scalar;
@@ -454,20 +608,32 @@ struct generic_product_impl<Lhs, Rhs, DenseShape, DenseShape, CoeffBasedProductM
   template <typename Dst>
   static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void evalTo(Dst& dst, const Lhs& lhs, const Rhs& rhs) {
     // Same as: dst.noalias() = lhs.lazyProduct(rhs);
-    // but easier on the compiler side
+    // but easier on the compiler side.
+    // NB: unlike addTo/subTo below, plain assignment stays on the generic path.
+    // The packet cascade is a measured win for the compound (+=, -=) case, but
+    // for plain assignment the generic InnerVectorized path is already well
+    // tuned -- the cascade was at best neutral there and could regress float
+    // (whose packet half-chain bottoms out at Packet4f, so odd-size tails fall
+    // to scalars). See product_packet_cascade_traits.
     call_assignment_no_alias(dst, lhs.lazyProduct(rhs), internal::assign_op<typename Dst::Scalar, Scalar>());
   }
 
   template <typename Dst>
   static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void addTo(Dst& dst, const Lhs& lhs, const Rhs& rhs) {
     // dst.noalias() += lhs.lazyProduct(rhs);
-    call_assignment_no_alias(dst, lhs.lazyProduct(rhs), internal::add_assign_op<typename Dst::Scalar, Scalar>());
+    using ProdEval = product_evaluator<Product<Lhs, Rhs, LazyProduct>, CoeffBasedProductMode, DenseShape, DenseShape>;
+    using Traits = product_packet_cascade_traits<ProdEval, Dst>;
+    product_packet_assign(bool_constant<Traits::Enable>(), internal::add_assign_op<typename Dst::Scalar, Scalar>(), dst,
+                          lhs, rhs);
   }
 
   template <typename Dst>
   static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void subTo(Dst& dst, const Lhs& lhs, const Rhs& rhs) {
     // dst.noalias() -= lhs.lazyProduct(rhs);
-    call_assignment_no_alias(dst, lhs.lazyProduct(rhs), internal::sub_assign_op<typename Dst::Scalar, Scalar>());
+    using ProdEval = product_evaluator<Product<Lhs, Rhs, LazyProduct>, CoeffBasedProductMode, DenseShape, DenseShape>;
+    using Traits = product_packet_cascade_traits<ProdEval, Dst>;
+    product_packet_assign(bool_constant<Traits::Enable>(), internal::sub_assign_op<typename Dst::Scalar, Scalar>(), dst,
+                          lhs, rhs);
   }
 
   // This is a special evaluation path called from generic_product_impl<...,GemmProduct> in file GeneralMatrixMatrix.h
@@ -564,6 +730,9 @@ struct product_evaluator<Product<Lhs, Rhs, LazyProduct>, ProductTag, DenseShape,
   using LhsNestedCleaned = internal::remove_all_t<LhsNested>;
   using RhsNestedCleaned = internal::remove_all_t<RhsNested>;
 
+  using LhsScalar = typename LhsNestedCleaned::Scalar;
+  using RhsScalar = typename RhsNestedCleaned::Scalar;
+
   using LhsEtorType = evaluator<LhsNestedCleaned>;
   using RhsEtorType = evaluator<RhsNestedCleaned>;
 
@@ -607,35 +776,19 @@ struct product_evaluator<Product<Lhs, Rhs, LazyProduct>, ProductTag, DenseShape,
   static constexpr bool SameType =
       std::is_same<typename LhsNestedCleaned::Scalar, typename RhsNestedCleaned::Scalar>::value;
 
-#if defined(__FAST_MATH__) && EIGEN_COMP_GNUC_STRICT && EIGEN_GNUC_STRICT_AT_LEAST(7, 0, 0) && \
-    (EIGEN_GNUC_STRICT_LESS_THAN(8, 4, 0) ||                                                   \
-     (EIGEN_GNUC_STRICT_AT_LEAST(9, 0, 0) && EIGEN_GNUC_STRICT_LESS_THAN(9, 3, 0)))
-  // Work around GCC PR tree-optimization/92420, a reversed-access vectorizer miscompile under -ffast-math.
-  // The bug was introduced by GCC r238039, fixed on the GCC 8 branch by
-  // https://gcc.gnu.org/g:785eda9390473e42f0e0b7199c42032a0432de68 and on the GCC 9 branch by
-  // https://gcc.gnu.org/g:2d8ea3a0a6095a56b7c59c50b1068d602cde934a.
-  // See also GitLab issue #1839.
-  static constexpr bool AllowComplexPacketProduct = !NumTraits<Scalar>::IsComplex;
-#else
-  static constexpr bool AllowComplexPacketProduct = true;
-#endif
-
-  static constexpr bool CanVectorizeRhs =
-      AllowComplexPacketProduct && bool(RhsRowMajor) && (RhsFlags & PacketAccessBit) && (ColsAtCompileTime != 1);
-  static constexpr bool CanVectorizeLhs =
-      AllowComplexPacketProduct && (!LhsRowMajor) && (LhsFlags & PacketAccessBit) && (RowsAtCompileTime != 1);
+  static constexpr bool CanVectorizeRhs = bool(RhsRowMajor) && (RhsFlags & PacketAccessBit) && (ColsAtCompileTime != 1);
+  static constexpr bool CanVectorizeLhs = (!LhsRowMajor) && (LhsFlags & PacketAccessBit) && (RowsAtCompileTime != 1);
 
   static constexpr int EvalToRowMajor = (MaxRowsAtCompileTime == 1 && MaxColsAtCompileTime != 1) ? 1
                                         : (MaxColsAtCompileTime == 1 && MaxRowsAtCompileTime != 1)
                                             ? 0
                                             : (bool(RhsRowMajor) && !CanVectorizeLhs);
 
-  static constexpr int Flags =
-      ((int(LhsFlags) | int(RhsFlags)) & HereditaryBits & ~RowMajorBit) |
-      (EvalToRowMajor ? RowMajorBit : 0)
-      // TODO: enable vectorization for mixed types
-      | (SameType && AllowComplexPacketProduct && (CanVectorizeLhs || CanVectorizeRhs) ? PacketAccessBit : 0) |
-      (XprType::IsVectorAtCompileTime ? LinearAccessBit : 0);
+  static constexpr int Flags = ((int(LhsFlags) | int(RhsFlags)) & HereditaryBits & ~RowMajorBit) |
+                               (EvalToRowMajor ? RowMajorBit : 0)
+                               // TODO: enable vectorization for mixed types
+                               | (SameType && (CanVectorizeLhs || CanVectorizeRhs) ? PacketAccessBit : 0) |
+                               (XprType::IsVectorAtCompileTime ? LinearAccessBit : 0);
 
   static constexpr int LhsOuterStrideBytes =
       int(LhsNestedCleaned::OuterStrideAtCompileTime) * int(sizeof(typename LhsNestedCleaned::Scalar));
@@ -658,12 +811,15 @@ struct product_evaluator<Product<Lhs, Rhs, LazyProduct>, ProductTag, DenseShape,
    * loop of the product might be vectorized. This is the meaning of CanVectorizeInner. Since it doesn't affect
    * the Flags, it is safe to make this value depend on ActualPacketAccessBit, that doesn't affect the ABI.
    */
-  static constexpr bool CanVectorizeInner = SameType && AllowComplexPacketProduct && LhsRowMajor && (!RhsRowMajor) &&
+  static constexpr bool CanVectorizeInner = SameType && LhsRowMajor && (!RhsRowMajor) &&
                                             (int(LhsFlags) & int(RhsFlags) & ActualPacketAccessBit) &&
                                             (int(InnerSize) % packet_traits<Scalar>::size == 0);
 
   EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE const CoeffReturnType coeff(Index row, Index col) const {
-    return (m_lhs.row(row).transpose().cwiseProduct(m_rhs.col(col))).sum();
+    // fast_mult_op is cwiseProduct's scalar_product_op with a pmul-based scalar path, so the
+    // reduction (and its precision) is unchanged but complex scalars avoid std::complex::operator*
+    // (the slow libgcc __mul?c3). See fast_mult_op.
+    return m_lhs.row(row).transpose().binaryExpr(m_rhs.col(col), fast_mult_op<LhsScalar, RhsScalar>()).sum();
   }
 
   /* Allow index-based non-packet access. It is impossible though to allow index-based packed access,
@@ -673,7 +829,7 @@ struct product_evaluator<Product<Lhs, Rhs, LazyProduct>, ProductTag, DenseShape,
   EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE const CoeffReturnType coeff(Index index) const {
     const Index row = (RowsAtCompileTime == 1 || MaxRowsAtCompileTime == 1) ? 0 : index;
     const Index col = (RowsAtCompileTime == 1 || MaxRowsAtCompileTime == 1) ? index : 0;
-    return (m_lhs.row(row).transpose().cwiseProduct(m_rhs.col(col))).sum();
+    return m_lhs.row(row).transpose().binaryExpr(m_rhs.col(col), fast_mult_op<LhsScalar, RhsScalar>()).sum();
   }
 
   template <int LoadMode, typename PacketType>
@@ -915,16 +1071,15 @@ struct triangular_diagonal_product_impl {
     const Index rows = matrix.rows();
     const Index cols = matrix.cols();
     for (Index col = 0; col < cols; ++col) {
-      EIGEN_IF_CONSTEXPR((Mode & Upper) == Upper) {
+      EIGEN_IF_CONSTEXPR ((Mode & Upper) == Upper) {
         const Index end = (std::min)(rows, ((Mode & (UnitDiag | ZeroDiag)) ? col : col + 1));
         addStoredSegment(dst, matrix, diagonal, 0, end, col, alpha);
-      }
-      else {
+      } else {
         const Index begin = ((Mode & (UnitDiag | ZeroDiag)) ? col + 1 : col);
         addStoredSegment(dst, matrix, diagonal, begin, rows - begin, col, alpha);
       }
 
-      EIGEN_IF_CONSTEXPR((Mode & UnitDiag) == UnitDiag) {
+      EIGEN_IF_CONSTEXPR ((Mode & UnitDiag) == UnitDiag) {
         if (col < rows) addUnitCoeff(dst, diagonal, col, alpha);
       }
     }
@@ -944,10 +1099,9 @@ struct triangular_diagonal_product_impl {
   template <typename Dest, typename Alpha>
   static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void addUnitCoeff(Dest& dst, const DiagonalType& diagonal, Index index,
                                                                  const Alpha& alpha) {
-    EIGEN_IF_CONSTEXPR(ProductOrder == OnTheLeft) {
+    EIGEN_IF_CONSTEXPR (ProductOrder == OnTheLeft) {
       dst.coeffRef(index, index) += alpha * (diagonal.coeff(index) * MatrixScalar(1));
-    }
-    else {
+    } else {
       dst.coeffRef(index, index) += alpha * (MatrixScalar(1) * diagonal.coeff(index));
     }
   }
@@ -1057,10 +1211,9 @@ struct selfadjoint_diagonal_product_impl {
 
     // Stored half: one column-strided segment per output column.
     for (Index col = 0; col < size; ++col) {
-      EIGEN_IF_CONSTEXPR((Mode & Upper) == Upper) {
+      EIGEN_IF_CONSTEXPR ((Mode & Upper) == Upper) {
         storedSegment<Accumulate>(dst, matrix, diagonal, 0, col + 1, col, alpha);
-      }
-      else {
+      } else {
         storedSegment<Accumulate>(dst, matrix, diagonal, col, size - col, col, alpha);
       }
     }
@@ -1069,7 +1222,7 @@ struct selfadjoint_diagonal_product_impl {
     for (Index ib = 0; ib < size; ib += BlockSize) {
       const Index ib_end = numext::mini(size, ib + BlockSize);
       const Index br = ib_end - ib;
-      EIGEN_IF_CONSTEXPR((Mode & Upper) == Upper) {
+      EIGEN_IF_CONSTEXPR ((Mode & Upper) == Upper) {
         // Off-diagonal: write strict-lower of dst from strict-upper of source.
         for (Index jb = 0; jb < ib; jb += BlockSize) {
           const Index bc = numext::mini(jb + BlockSize, ib) - jb;
@@ -1078,8 +1231,7 @@ struct selfadjoint_diagonal_product_impl {
         // Diagonal tile: in-tile strict-lower mirror.
         for (Index col = ib; col < ib_end; ++col)
           conjugateSegment<Accumulate>(dst, matrix, diagonal, col + 1, ib_end - col - 1, col, alpha);
-      }
-      else {
+      } else {
         // Off-diagonal: write strict-upper of dst from strict-lower of source.
         for (Index jb = ib_end; jb < size; jb += BlockSize) {
           const Index bc = numext::mini(size, jb + BlockSize) - jb;
@@ -1099,10 +1251,9 @@ struct selfadjoint_diagonal_product_impl {
     if (size <= 0) return;
     auto dstSegment = dst.col(col).segment(begin, size);
     auto srcSegment = matrix.col(col).segment(begin, size);
-    EIGEN_IF_CONSTEXPR(Accumulate) {
+    EIGEN_IF_CONSTEXPR (Accumulate) {
       diagonal_product_segment_impl<ProductOrder>::run(dstSegment, srcSegment, diagonal, begin, col, alpha);
-    }
-    else {
+    } else {
       diagonal_product_segment_impl<ProductOrder>::runOverwrite(dstSegment, srcSegment, diagonal, begin, col);
     }
   }
@@ -1114,10 +1265,9 @@ struct selfadjoint_diagonal_product_impl {
     if (size <= 0) return;
     auto dstSegment = dst.col(col).segment(begin, size);
     auto srcSegment = matrix.row(col).segment(begin, size).conjugate().transpose();
-    EIGEN_IF_CONSTEXPR(Accumulate) {
+    EIGEN_IF_CONSTEXPR (Accumulate) {
       diagonal_product_segment_impl<ProductOrder>::run(dstSegment, srcSegment, diagonal, begin, col, alpha);
-    }
-    else {
+    } else {
       diagonal_product_segment_impl<ProductOrder>::runOverwrite(dstSegment, srcSegment, diagonal, begin, col);
     }
   }
@@ -1131,17 +1281,18 @@ struct selfadjoint_diagonal_product_impl {
                                                                 Index br, Index bc, const Alpha& alpha) {
     auto dstBlock = dst.block(ib, jb, br, bc);
     auto srcAdjoint = matrix.block(jb, ib, bc, br).adjoint();
-    EIGEN_IF_CONSTEXPR(ProductOrder == OnTheRight) {
+    EIGEN_IF_CONSTEXPR (ProductOrder == OnTheRight) {
       auto scaled = srcAdjoint * diagonal.segment(jb, bc).asDiagonal();
-      EIGEN_IF_CONSTEXPR(Accumulate) { dstBlock.noalias() += alpha * scaled; }
-      else {
+      EIGEN_IF_CONSTEXPR (Accumulate) {
+        dstBlock.noalias() += alpha * scaled;
+      } else {
         dstBlock.noalias() = scaled;
       }
-    }
-    else {
+    } else {
       auto scaled = diagonal.segment(ib, br).asDiagonal() * srcAdjoint;
-      EIGEN_IF_CONSTEXPR(Accumulate) { dstBlock.noalias() += alpha * scaled; }
-      else {
+      EIGEN_IF_CONSTEXPR (Accumulate) {
+        dstBlock.noalias() += alpha * scaled;
+      } else {
         dstBlock.noalias() = scaled;
       }
     }
@@ -1196,13 +1347,12 @@ struct generic_product_impl<Lhs, Rhs, SelfAdjointShape, DiagonalShape, ProductTa
 
   template <typename Dest>
   static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void evalTo(Dest& dst, const Lhs& lhs, const Rhs& rhs) {
-    EIGEN_IF_CONSTEXPR(LhsBlasTraits::HasScalarFactor) {
+    EIGEN_IF_CONSTEXPR (LhsBlasTraits::HasScalarFactor) {
       // Folded scalar factor present: zero dst then accumulate at the extracted alpha.
       Scalar factor = LhsBlasTraits::extractScalarFactor(lhs.nestedExpression());
       dst.setZero();
       Kernel::run(dst, actualLhsMatrix(lhs.nestedExpression()), rhs.diagonal(), factor);
-    }
-    else {
+    } else {
       // No scalar factor: kernel writes every entry exactly once, skip setZero.
       Kernel::runOverwrite(dst, actualLhsMatrix(lhs.nestedExpression()), rhs.diagonal());
     }
@@ -1235,12 +1385,11 @@ struct generic_product_impl<Lhs, Rhs, DiagonalShape, SelfAdjointShape, ProductTa
 
   template <typename Dest>
   static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void evalTo(Dest& dst, const Lhs& lhs, const Rhs& rhs) {
-    EIGEN_IF_CONSTEXPR(RhsBlasTraits::HasScalarFactor) {
+    EIGEN_IF_CONSTEXPR (RhsBlasTraits::HasScalarFactor) {
       Scalar factor = RhsBlasTraits::extractScalarFactor(rhs.nestedExpression());
       dst.setZero();
       Kernel::run(dst, actualRhsMatrix(rhs.nestedExpression()), lhs.diagonal(), factor);
-    }
-    else {
+    } else {
       Kernel::runOverwrite(dst, actualRhsMatrix(rhs.nestedExpression()), lhs.diagonal());
     }
   }
@@ -1304,7 +1453,7 @@ struct diagonal_product_evaluator_base : evaluator_base<Derived> {
   }
 
   EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE const Scalar coeff(Index idx) const {
-    if (AsScalarProduct)
+    EIGEN_IF_CONSTEXPR (AsScalarProduct)
       return m_diagImpl.coeff(0) * m_matImpl.coeff(idx);
     else
       return m_diagImpl.coeff(idx) * m_matImpl.coeff(idx);
@@ -1369,7 +1518,6 @@ struct product_evaluator<Product<Lhs, Rhs, ProductKind>, ProductTag, DiagonalSha
 
   using XprType = Product<Lhs, Rhs, ProductKind>;
   using PlainObject = typename XprType::PlainObject;
-  using DiagonalType = typename Lhs::DiagonalVectorType;
 
   static constexpr int StorageOrder = Base::StorageOrder_;
   using IsRowMajor_t = bool_constant<StorageOrder == RowMajor>;
@@ -1487,11 +1635,11 @@ struct triangular_diagonal_product_lazy_evaluator_base : evaluator_base<Derived>
     const bool inActive = ((Mode & Upper) == Upper) ? (row <= col) : (row >= col);
     if (!inActive) return Scalar(0);
     if (row == col) {
-      EIGEN_IF_CONSTEXPR((Mode & UnitDiag) == UnitDiag) {
+      EIGEN_IF_CONSTEXPR ((Mode & UnitDiag) == UnitDiag) {
         return ProductOrder == OnTheLeft ? Scalar(m_diagImpl.coeff(row) * MatrixScalar(1))
                                          : Scalar(MatrixScalar(1) * m_diagImpl.coeff(col));
       }
-      EIGEN_IF_CONSTEXPR((Mode & ZeroDiag) == ZeroDiag) return Scalar(0);
+      EIGEN_IF_CONSTEXPR ((Mode & ZeroDiag) == ZeroDiag) return Scalar(0);
     }
     return ProductOrder == OnTheLeft ? Scalar(m_diagImpl.coeff(row) * m_matImpl.coeff(row, col))
                                      : Scalar(m_matImpl.coeff(row, col) * m_diagImpl.coeff(col));
@@ -1698,7 +1846,7 @@ struct generic_product_impl<Lhs, Inverse<Rhs>, MatrixShape, PermutationShape, Pr
 
 /** \internal
  * \class transposition_matrix_product
- * Internal helper class implementing the product between a permutation matrix and a matrix.
+ * Internal helper class implementing the product between a transposition matrix and a matrix.
  */
 template <typename ExpressionType, int Side, bool Transposed, typename ExpressionShape>
 struct transposition_matrix_product {
@@ -1717,8 +1865,9 @@ struct transposition_matrix_product {
 
     for (Index k = (Transposed ? size - 1 : 0); Transposed ? k >= 0 : k < size; Transposed ? --k : ++k)
       if (Index(j = tr.coeff(k)) != k) {
-        EIGEN_IF_CONSTEXPR(Side == OnTheLeft) { dst.row(k).swap(dst.row(j)); }
-        else EIGEN_IF_CONSTEXPR(Side == OnTheRight) {
+        EIGEN_IF_CONSTEXPR (Side == OnTheLeft) {
+          dst.row(k).swap(dst.row(j));
+        } else EIGEN_IF_CONSTEXPR (Side == OnTheRight) {
           dst.col(k).swap(dst.col(j));
         }
       }

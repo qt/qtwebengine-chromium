@@ -191,9 +191,8 @@ static int alloc_picture(H264Context *h, H264Picture *pic)
 
     av_assert0(!pic->f->data[0]);
 
-    if (h->sei.common.lcevc.info) {
-        HEVCSEILCEVC *lcevc = &h->sei.common.lcevc;
-        ret = ff_frame_new_side_data_from_buf(h->avctx, pic->f, AV_FRAME_DATA_LCEVC, &lcevc->info);
+    if (h->sei.common.itut_t35.lcevc) {
+        ret = ff_frame_new_side_data_from_buf(h->avctx, pic->f, AV_FRAME_DATA_LCEVC, &h->sei.common.itut_t35.lcevc);
         if (ret < 0)
             return ret;
     }
@@ -316,8 +315,10 @@ static void color_frame(AVFrame *frame, const int c[4])
         int bytes  = is_chroma ? AV_CEIL_RSHIFT(frame->width,  desc->log2_chroma_w) : frame->width;
         int height = is_chroma ? AV_CEIL_RSHIFT(frame->height, desc->log2_chroma_h) : frame->height;
         if (desc->comp[0].depth >= 9) {
-            ((uint16_t*)dst)[0] = c[p];
-            av_memcpy_backptr(dst + 2, 2, bytes - 2);
+            if (bytes >= 1)
+                ((uint16_t*)dst)[0] = c[p];
+            if (bytes >= 2)
+                av_memcpy_backptr(dst + 2, 2, 2 * (bytes - 1));
             dst += frame->linesize[p];
             for (int y = 1; y < height; y++) {
                 memcpy(dst, frame->data[p], 2*bytes);
@@ -789,6 +790,7 @@ static enum AVPixelFormat get_pixel_format(H264Context *h, int force_callback)
                      (CONFIG_H264_D3D11VA_HWACCEL * 2) + \
                      CONFIG_H264_D3D12VA_HWACCEL + \
                      CONFIG_H264_NVDEC_HWACCEL + \
+                     CONFIG_H264_NVDEC_CUARRAY_HWACCEL + \
                      CONFIG_H264_VAAPI_HWACCEL + \
                      CONFIG_H264_VIDEOTOOLBOX_HWACCEL + \
                      CONFIG_H264_VDPAU_HWACCEL + \
@@ -817,6 +819,9 @@ static enum AVPixelFormat get_pixel_format(H264Context *h, int force_callback)
 #endif
 #if CONFIG_H264_NVDEC_HWACCEL
         *fmt++ = AV_PIX_FMT_CUDA;
+#endif
+#if CONFIG_H264_NVDEC_CUARRAY_HWACCEL
+        *fmt++ = AV_PIX_FMT_CUARRAY;
 #endif
         if (CHROMA444(h)) {
             if (h->avctx->colorspace == AVCOL_SPC_RGB) {
@@ -869,6 +874,9 @@ static enum AVPixelFormat get_pixel_format(H264Context *h, int force_callback)
 #endif
 #if CONFIG_H264_NVDEC_HWACCEL
         *fmt++ = AV_PIX_FMT_CUDA;
+#endif
+#if CONFIG_H264_NVDEC_CUARRAY_HWACCEL
+        *fmt++ = AV_PIX_FMT_CUARRAY;
 #endif
 #if CONFIG_H264_VIDEOTOOLBOX_HWACCEL
         if (h->avctx->colorspace != AVCOL_SPC_RGB)

@@ -8,7 +8,7 @@
 #ifndef GrWaitRenderTask_DEFINED
 #define GrWaitRenderTask_DEFINED
 
-#include "include/private/base/SkDebug.h"
+#include "include/private/SkDebug.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/ganesh/GrRenderTask.h"
 #include "src/gpu/ganesh/GrSemaphore.h"
@@ -43,7 +43,7 @@ private:
         return ExpectedOutcome::kTargetUnchanged;
     }
 
-    bool onExecute(GrOpFlushState*) override;
+    ExecutionResult onExecute(GrOpFlushState*) override;
 
 #if defined(GPU_TEST_UTILS)
     const char* name() const final { return "Wait"; }

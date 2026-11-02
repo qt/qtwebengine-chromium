@@ -194,7 +194,7 @@ struct random_int_impl<Scalar, false, true> {
     Scalar randomBits;
     do {
       randomBits = getRandomBits<Scalar>(numRandomBits);
-      // if the random draw is outside [0, range), try again (rejection sampling)
+      // if the random draw is outside [0, range], try again (rejection sampling)
       // in the worst-case scenario, the probability of rejection is: 1/2 - 1/2^numRandomBits < 50%
     } while (randomBits >= count);
     Scalar result = x + randomBits;
@@ -241,7 +241,7 @@ struct random_impl<bool> {
     if (y <= x) return x;
     return run();
   }
-  static EIGEN_DEVICE_FUNC inline bool run() { return getRandomBits<unsigned>(1) ? true : false; }
+  static EIGEN_DEVICE_FUNC inline bool run() { return getRandomBits<unsigned>(1) != 0; }
 };
 
 template <typename Scalar>

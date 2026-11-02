@@ -17,7 +17,7 @@
 namespace Eigen {
 
 // Class storing the cost of evaluating a tensor expression in terms of the
-// estimated number of operand bytes loads, bytes stored, and compute cycles.
+// estimated number of operand bytes loaded, bytes stored, and compute cycles.
 class TensorOpCost {
  public:
   // TODO(rmlarsen): Fix the scalar op costs in Eigen proper. Even a simple
@@ -44,7 +44,7 @@ class TensorOpCost {
     return internal::functor_traits<internal::scalar_cast_op<SrcType, TargetType> >::Cost;
   }
 
-  constexpr EIGEN_DEVICE_FUNC TensorOpCost() : bytes_loaded_(0), bytes_stored_(0), compute_cycles_(0) {}
+  constexpr EIGEN_DEVICE_FUNC TensorOpCost() = default;
   constexpr EIGEN_DEVICE_FUNC TensorOpCost(double bytes_loaded, double bytes_stored, double compute_cycles)
       : bytes_loaded_(bytes_loaded), bytes_stored_(bytes_stored), compute_cycles_(compute_cycles) {}
 
@@ -123,16 +123,16 @@ class TensorOpCost {
   }
 
  private:
-  double bytes_loaded_;
-  double bytes_stored_;
-  double compute_cycles_;
+  double bytes_loaded_ = 0;
+  double bytes_stored_ = 0;
+  double compute_cycles_ = 0;
 };
 
 /**
  * \ingroup Tensor_Module
  *
  * \brief A cost model used to limit the number of threads used for evaluating
- * tensor expression.
+ * tensor expressions.
  *
  * Uses a roofline model: cost = max(memory_time, compute_time) instead of
  * summing them. This avoids overestimating cost for balanced workloads.

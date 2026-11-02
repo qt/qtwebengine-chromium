@@ -38,8 +38,6 @@ set(private_headers
     "${DAWN_GPU_INFO_AUTOGEN_HEADERS}"
     "Algebra.h"
     "AlignedAlloc.h"
-    "Alloc.h"
-    "Assert.h"
     "Atomic.h"
     "BitSetRangeIterator.h"
     "ColorSpace.h"
@@ -58,11 +56,9 @@ set(private_headers
     "IOKitRef.h"
     "ityp_array.h"
     "ityp_bitset.h"
-    "ityp_span.h"
     "ityp_stack_vec.h"
     "ityp_vector.h"
     "LinkedList.h"
-    "Log.h"
     "LRUCache.h"
     "MatchVariant.h"
     "Math.h"
@@ -89,7 +85,6 @@ set(private_headers
     "SystemUtils.h"
     "ThreadLocal.h"
     "Time.h"
-    "TypedInteger.h"
     "TypeTraits.h"
     "vulkan_platform.h"
     "WeakRef.h"
@@ -101,12 +96,10 @@ set(private_headers
 set(sources
     "${DAWN_GPU_INFO_AUTOGEN_SOURCES}"
     "AlignedAlloc.cpp"
-    "Assert.cpp"
     "Defer.cpp"
     "DynamicLib.cpp"
     "FutureUtils.cpp"
     "GPUInfo.cpp"
-    "Log.cpp"
     "Math.cpp"
     "RefCounted.cpp"
     "Result.cpp"
@@ -176,9 +169,9 @@ dawn_add_library(
     SOURCES
         ${sources}
     DEPENDS
-        dawn::dawn_version
         webgpu_c
         webgpu_cpp
+        dawn::dawn_version
         absl::flat_hash_set
         absl::inlined_vector
         absl::no_destructor

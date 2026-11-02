@@ -16,153 +16,152 @@ import renderingOptionsStyles from './renderingOptions.css.js';
 
 const UIStrings = {
   /**
-   * @description The name of a checkbox setting in the Rendering tool. This setting highlights areas
+   * @description The name of a checkbox setting in the Rendering panel. This setting highlights areas
    * of the webpage that need to be repainted (re-drawn by the browser).
    */
   paintFlashing: 'Paint flashing',
   /**
-   * @description Explanation text for the 'Paint flashing' setting in the Rendering tool.
+   * @description Explanation text for the 'Paint flashing' setting in the Rendering panel.
    */
   highlightsAreasOfThePageGreen:
       'Highlights areas of the page (green) that need to be repainted. May not be suitable for people prone to photosensitive epilepsy.',
   /**
-   * @description The name of a checkbox setting in the Rendering tool. This setting highlights areas
+   * @description The name of a checkbox setting in the Rendering panel. This setting highlights areas
    * (regions) of the page that were shifted (where a 'layout shift' occurred). A layout shift is
    * where elements on the webpage move around and cause other nearby elements to move as well.
    */
   layoutShiftRegions: 'Layout shift regions',
   /**
-   * @description Explanation text for the 'Layout Shift Regions' setting in the Rendering tool.
+   * @description Explanation text for the 'Layout shift regions' setting in the Rendering panel.
    */
   highlightsAreasOfThePageBlueThat:
       'Highlights areas of the page (blue) that were shifted. May not be suitable for people prone to photosensitive epilepsy.',
   /**
-   * @description The name of a checkbox setting in the Rendering tool. This setting shows the
+   * @description The name of a checkbox setting in the Rendering panel. This setting shows the
    * borders of layers on the page. Layer is a noun.
    */
   layerBorders: 'Layer borders',
   /**
-   * @description Explanation text for the 'Layer borders' setting in the Rendering tool.
+   * @description Explanation text for the 'Layer borders' setting in the Rendering panel.
    */
   showsLayerBordersOrangeoliveAnd: 'Shows layer borders (orange/olive) and tiles (cyan).',
   /**
-   * @description The name of a checkbox setting in the Rendering tool. This setting shows the
+   * @description The name of a checkbox setting in the Rendering panel. This setting shows the
    * rendering statistics for frames e.g. frames per second. Frame is a noun.
    */
-  frameRenderingStats: 'Frame Rendering Stats',
+  frameRenderingStats: 'Frame rendering stats',
   /**
-   * @description Explanation text for the 'Frame Rendering Stats' setting in the Rendering tool.
+   * @description Explanation text for the 'Frame rendering stats' setting in the Rendering panel.
    * Plots is a verb. GPU = Graphics Processing Unit.
    */
   plotsFrameThroughputDropped: 'Plots frame throughput, dropped frames distribution, and GPU memory.',
   /**
-   * @description The name of a checkbox setting in the Rendering tool. This setting highlights
+   * @description The name of a checkbox setting in the Rendering panel. This setting highlights
    * elements that can slow down scrolling on the page.
    */
   scrollingPerformanceIssues: 'Scrolling performance issues',
   /**
-   * @description Explanation text for the 'Scrolling performance issues' setting in the Rendering tool.
+   * @description Explanation text for the 'Scrolling performance issues' setting in the Rendering panel.
    */
   highlightsElementsTealThatCan:
       'Highlights elements (teal) that can slow down scrolling, including touch & wheel event handlers and other main-thread scrolling situations.',
   /**
-   * @description The name of a checkbox setting in the Rendering tool. This setting highlights the
+   * @description The name of a checkbox setting in the Rendering panel. This setting highlights the
    * rendering elements for ads that are found on the page.
    */
   highlightAds: 'Highlight ads',
   /**
-   * @description Explanation text for the 'Highlight ads' setting in the Rendering tool.
+   * @description Explanation text for the 'Highlight ads' setting in the Rendering panel.
    */
   highlightsElementsRedDetectedToBe: 'Highlights elements (red) detected to be ads.',
   /**
-   * @description The name of a checkbox setting in the Rendering tool. This setting prevents the
+   * @description The name of a checkbox setting in the Rendering panel. This setting prevents the
    * webpage from loading 'local' fonts. Local fonts are fonts that are installed on the user's
    * computer, and not loaded over the network.
    */
   disableLocalFonts: 'Disable local fonts',
   /**
-   * @description Explanation text for the 'Disable local fonts' setting in the Rendering tool.
+   * @description Explanation text for the 'Disable local fonts' setting in the Rendering panel.
    */
   disablesLocalSourcesInFontface: 'Disables `local()` sources in `@font-face` rules. Requires a page reload to apply.',
   /**
-   * @description The name of a checkbox setting in the Rendering tool. This setting
+   * @description The name of a checkbox setting in the Rendering panel. This setting
    * emulates/pretends that the webpage is focused i.e. that the user interacted with it most
    * recently.
    */
   emulateAFocusedPage: 'Emulate a focused page',
   /**
-   * @description Explanation text for the 'Emulate a focused page' setting in the Rendering tool.
+   * @description Explanation text for the 'Emulate a focused page' setting in the Rendering panel.
    */
   emulatesAFocusedPage: 'Keep page focused. Commonly used for debugging disappearing elements.',
   /**
-   * @description The name of a checkbox setting in the Rendering tool. This setting enables auto dark mode emulation.
+   * @description The name of a checkbox setting in the Rendering panel. This setting enables auto dark mode emulation.
    */
   emulateAutoDarkMode: 'Enable automatic dark mode',
   /**
-   * @description Explanation text for the 'Emulate automatic dark mode' setting in the Rendering tool.
+   * @description Explanation text for the 'Emulate automatic dark mode' setting in the Rendering panel.
    */
   emulatesAutoDarkMode: 'Enables automatic dark mode and sets `prefers-color-scheme` to `dark`.',
   /**
-   * @description Explanation text for the 'Emulate CSS media type' setting in the Rendering tool.
-   * This setting overrides the CSS media type on the page:
-   * https://developer.mozilla.org/en-US/docs/Web/CSS/@media#media_types
+   * @description Explanation text for the 'Emulate CSS media type' setting in the Rendering panel.
+   * This setting overrides the CSS media type on the page (https://developer.mozilla.org/en-US/docs/Web/CSS/@media#media_types).
    */
-  forcesMediaTypeForTestingPrint: 'Forces media type for testing print and screen styles',
+  forcesMediaTypeForTestingPrint: 'Forces media type for testing `print` and `screen` styles',
   /**
-   * @description Explanation text for the 'Forces CSS prefers-color-scheme media' setting in the Rendering tool.
+   * @description Explanation text for the 'Forces CSS prefers-color-scheme media' setting in the Rendering panel.
    */
   forcesCssPreferscolorschemeMedia: 'Forces CSS `prefers-color-scheme` media feature',
   /**
-   * @description Explanation text for the 'Forces CSS prefers-reduced-motion media' setting in the Rendering tool.
+   * @description Explanation text for the 'Forces CSS prefers-reduced-motion media' setting in the Rendering panel.
    */
   forcesCssPrefersreducedmotion: 'Forces CSS `prefers-reduced-motion` media feature',
   /**
-   * @description Explanation text for the 'Forces CSS prefers-contrast media' setting in the Rendering tool.
+   * @description Explanation text for the 'Forces CSS prefers-contrast media' setting in the Rendering panel.
    */
   forcesCssPreferscontrastMedia: 'Forces CSS `prefers-contrast` media feature',
   /**
-   * @description Explanation text for the 'Forces CSS prefers-reduced-data media' setting in the Rendering tool.
+   * @description Explanation text for the 'Forces CSS prefers-reduced-data media' setting in the Rendering panel.
    */
   forcesCssPrefersreduceddataMedia: 'Forces CSS `prefers-reduced-data` media feature',
   /**
-   * @description Explanation text for the 'Forces CSS prefers-reduced-transparency media' setting in the Rendering tool.
+   * @description Explanation text for the 'Forces CSS prefers-reduced-transparency media' setting in the Rendering panel.
    */
   forcesCssPrefersreducedtransparencyMedia: 'Forces CSS `prefers-reduced-transparency` media feature',
   /**
-   * @description Explanation text for the 'Forces CSS color-gamut media' setting in the Rendering tool.
+   * @description Explanation text for the 'Forces CSS color-gamut media' setting in the Rendering panel.
    */
   forcesCssColorgamutMediaFeature: 'Forces CSS `color-gamut` media feature',
   /**
-   * @description Explanation text for the 'Emulate vision deficiencies' setting in the Rendering tool.
+   * @description Explanation text for the 'Emulate vision deficiencies' setting in the Rendering panel.
    */
   forcesVisionDeficiencyEmulation: 'Forces vision deficiency emulation',
   /**
-   * @description Explanation text for the 'Emulate OS text scale' setting in the Rendering tool.
+   * @description Explanation text for the 'Emulate OS text scale' setting in the Rendering panel.
    */
   forcesOsTextScaleEmulation: 'Forces OS text scale emulation',
   /**
-   * @description The name of a checkbox setting in the Rendering tool. This setting disables the
+   * @description The name of a checkbox setting in the Rendering panel. This setting disables the
    * page from loading images with the AVIF format.
    */
   disableAvifImageFormat: 'Disable `AVIF` image format',
   /**
-   * @description Explanation text for the image format disabling settings in the Rendering tool.
+   * @description Explanation text for the image format disabling settings in the Rendering panel.
    */
   requiresAPageReloadToApplyAnd: 'Requires a page reload to apply and disables caching for image requests.',
   /**
-   * @description The name of a checkbox setting in the Rendering tool. This setting disables the
+   * @description The name of a checkbox setting in the Rendering panel. This setting disables the
    * page from loading images with the JPEG XL format.
    */
   disableJpegXlImageFormat: 'Disable `JPEG XL` image format',
   /**
-   * @description The name of a checkbox setting in the Rendering tool. This setting disables the
+   * @description The name of a checkbox setting in the Rendering panel. This setting disables the
    * page from loading images with the WebP format.
    */
   disableWebpImageFormat: 'Disable `WebP` image format',
   /**
-   * @description Explanation text for the 'Forces CSS forced-colors' setting in the Rendering tool.
+   * @description Explanation text for the 'Forces CSS forced-colors' setting in the Rendering panel.
    */
-  forcesCssForcedColors: 'Forces CSS forced-colors media feature',
+  forcesCssForcedColors: 'Forces CSS `forced-colors` media feature',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('entrypoints/inspector_main/RenderingOptions.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -217,9 +216,14 @@ export class RenderingOptionsView extends UI.Widget.VBox {
     this.#appendCheckbox(
         i18nString(UIStrings.scrollingPerformanceIssues), i18nString(UIStrings.highlightsElementsTealThatCan),
         Common.Settings.Settings.instance().moduleSetting('show-scroll-bottleneck-rects'));
-    this.#appendCheckbox(
-        i18nString(UIStrings.highlightAds), i18nString(UIStrings.highlightsElementsRedDetectedToBe),
-        Common.Settings.Settings.instance().moduleSetting('show-ad-highlights'));
+
+    // The 'Highlight ads' setting now lives in the Ads panel under Application.
+    // We display this legacy setting only when the Ads panel isn't enabled.
+    if (!Root.Runtime.hostConfig.devToolsAdsPanel?.enabled) {
+      this.#appendCheckbox(i18nString(UIStrings.highlightAds), i18nString(UIStrings.highlightsElementsRedDetectedToBe),
+                           Common.Settings.Settings.instance().moduleSetting('show-ad-highlights'));
+    }
+
     this.#appendCheckbox(
         i18nString(UIStrings.disableLocalFonts), i18nString(UIStrings.disablesLocalSourcesInFontface),
         Common.Settings.Settings.instance().moduleSetting('local-fonts-disabled'));

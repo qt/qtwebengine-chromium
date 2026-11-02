@@ -5,6 +5,7 @@
 import '../../../ui/kit/kit.js';
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../../core/common/common.js';
 import type * as SDK from '../../../core/sdk/sdk.js';
@@ -152,6 +153,35 @@ describe('StorageMetadataView', () => {
       'Yes',
       'relaxed',
       '4.1 kB',
+      (new Date(42000)).toLocaleString(),
+    ]);
+  });
+
+  it('does not render quota when quota is zero', async () => {
+    const component = await makeView({
+      bucket: {storageKey: 'https://example.com/^31', name: 'My Bucket'},
+      id: 'BUCKET_ID',
+      persistent: true,
+      durability: Protocol.Storage.StorageBucketsDurability.Relaxed,
+      quota: 0,
+      expiration: 42,
+    });
+
+    const report = getElementWithinComponent(component, 'devtools-report', ReportView.ReportView.Report);
+    const {textContent} = report.shadowRoot!.querySelector('.report-title')!;
+    assert.strictEqual(textContent, 'https://example.com');
+
+    assert.isNotNull(component.shadowRoot);
+
+    const keys = getCleanTextContentFromElements(component.shadowRoot, 'devtools-report-key');
+    assert.deepEqual(keys, ['Is third-party', 'Bucket name', 'Is persistent', 'Durability', 'Expiration']);
+
+    const values = getCleanTextContentFromElements(component.shadowRoot, 'devtools-report-value');
+    assert.deepEqual(values, [
+      'Yes, because the ancestry chain contains a third-party origin',
+      'My Bucket',
+      'Yes',
+      'relaxed',
       (new Date(42000)).toLocaleString(),
     ]);
   });

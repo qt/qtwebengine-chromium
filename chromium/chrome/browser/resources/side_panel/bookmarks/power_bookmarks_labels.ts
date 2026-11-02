@@ -11,6 +11,7 @@ import type {BookmarkProductInfo} from '//resources/cr_components/commerce/share
 import {loadTimeData} from '//resources/js/load_time_data.js';
 import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
 import type {PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
+import {assert} from 'chrome://resources/js/assert.js';
 
 import {getHtml} from './power_bookmarks_labels.html.js';
 import type {Label} from './power_bookmarks_service.js';
@@ -58,7 +59,9 @@ export class PowerBookmarksLabelsElement extends CrLitElement {
       labels.push(Object.assign(
           {}, {
             label: loadTimeData.getString('priceTrackingLabel'),
-            icon: 'bookmarks:price-tracking',
+            icon: loadTimeData.getBoolean('webuiRoundedIconsEnabled') ?
+                'bookmarks:notifications-active' :
+                'bookmarks:price-tracking-old',
             active: false,
           },
           {active: currentLabel ? currentLabel.active : false}));
@@ -67,7 +70,10 @@ export class PowerBookmarksLabelsElement extends CrLitElement {
   }
 
   protected getLabelIcon(label: Label): string {
-    return label.active ? 'bookmarks:check' : label.icon;
+    return label.active ? (loadTimeData.getBoolean('webuiRoundedIconsEnabled') ?
+                               'bookmarks:check' :
+                               'bookmarks:check-old') :
+                          label.icon;
   }
 
   protected onLabelClick(event: Event) {
@@ -75,7 +81,8 @@ export class PowerBookmarksLabelsElement extends CrLitElement {
     event.stopPropagation();
     const index = Number((event.currentTarget as HTMLElement).dataset['index']);
     const labels = [...this.labels];
-    labels[index] = {...labels[index], active: !labels[index].active};
+    assert(index >= 0 && index < labels.length);
+    labels[index] = {...labels[index]!, active: !labels[index]!.active};
     this.labels = labels;
   }
 }

@@ -1785,6 +1785,26 @@ static void mkv_write_blockadditionmapping(AVFormatContext *s, const MatroskaMux
 
         end_ebml_master(pb, mapping);
     }
+
+    sd = av_packet_side_data_get(par->coded_side_data, par->nb_coded_side_data,
+                                 AV_PKT_DATA_HEVC_CONF);
+    if (sd) {
+        ebml_master mapping;
+        uint64_t expected_size = (2 + 1 + (sizeof(HVCE_BLOCK_TYPE_NAME) - 1))
+                                + (2 + 1 + 4)
+                                + (2 + ebml_length_size(sd->size) + sd->size);
+
+        mapping = start_ebml_master(pb, MATROSKA_ID_TRACKBLKADDMAPPING, expected_size);
+
+        put_ebml_string(pb, MATROSKA_ID_BLKADDIDNAME, HVCE_BLOCK_TYPE_NAME);
+        put_ebml_uint(pb, MATROSKA_ID_BLKADDIDTYPE, MATROSKA_BLOCK_ADD_ID_TYPE_HVCE);
+        put_ebml_binary(pb, MATROSKA_ID_BLKADDIDEXTRADATA, sd->data, sd->size);
+
+        end_ebml_master(pb, mapping);
+
+        // DV Profile 7 EL uses BlockAddID 1; ensure MaxBlockAdditionID reflects this.
+        track->max_blockaddid = FFMAX(track->max_blockaddid, 1);
+    }
 #endif
 }
 
@@ -2851,6 +2871,7 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
     uint8_t t35_buf[6 + AV_HDR_PLUS_MAX_PAYLOAD_SIZE];
 #define SMPTE_2094_APP5_MAX_SIZE 855
     uint8_t smpte_2094_app5_buf[5 + SMPTE_2094_APP5_MAX_SIZE];
+    uint8_t *lcevc = NULL;
     uint8_t *side_data;
     size_t side_data_size;
     uint64_t additional_id;
@@ -2859,7 +2880,7 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
     // and BlockAdditions with three elements per BlockMore
     // Don't forget to increment the number of BlockMore when adding
     // support for writing a new blockadditional.
-    EBML_WRITER(5 + (1 + 3 * 3));
+    EBML_WRITER(5 + (1 + 4 /* BlockMore */ * 3));
     int ret;
 
     mkv->cur_block.track  = track;
@@ -2967,6 +2988,25 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
             track->max_blockaddid = FFMAX(track->max_blockaddid,
                                           MATROSKA_BLOCK_ADD_ID_ITU_T_T35);
         }
+        side_data = av_packet_get_side_data(pkt, AV_PKT_DATA_LCEVC,
+                                            &side_data_size);
+        if (side_data) {
+            size_t payload_size = side_data_size + 4;
+
+            lcevc = av_malloc(payload_size);
+            if (!lcevc)
+                return AVERROR(ENOMEM);
+
+            AV_WB8 (lcevc + 0, ITU_T_T35_COUNTRY_CODE_UK);
+            AV_WB8 (lcevc + 1, 0); // t35_uk_country_code_second_octet
+            AV_WB16(lcevc + 2, ITU_T_T35_PROVIDER_CODE_VNOVA);
+            memcpy (lcevc + 4, side_data, side_data_size);
+
+            mkv_write_blockadditional(&writer, lcevc, payload_size,
+                                      MATROSKA_BLOCK_ADD_ID_ITU_T_T35);
+            track->max_blockaddid = FFMAX(track->max_blockaddid,
+                                          MATROSKA_BLOCK_ADD_ID_ITU_T_T35);
+        }
     }
 
     ebml_writer_close_or_discard_master(&writer);
@@ -2983,7 +3023,11 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
         ebml_writer_add_sint(&writer, MATROSKA_ID_BLOCKREFERENCE,
                              track->last_timestamp - ts);
 
-    return ebml_writer_write(&writer, pb);
+    ret = ebml_writer_write(&writer, pb);
+
+    av_free(lcevc);
+
+    return ret;
 }
 
 static int mkv_end_cluster(AVFormatContext *s)

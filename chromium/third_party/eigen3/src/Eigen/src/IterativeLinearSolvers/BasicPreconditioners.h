@@ -17,7 +17,7 @@
 namespace Eigen {
 
 /** \ingroup IterativeLinearSolvers_Module
-  * \brief A preconditioner based on the digonal entries
+  * \brief A preconditioner based on the diagonal entries
   *
   * This class allows to approximately solve for A.x = b problems assuming A is a diagonal matrix.
   * In other words, this preconditioner neglects all off diagonal entries and, in Eigen's language, solves for:
@@ -45,7 +45,7 @@ class DiagonalPreconditioner {
   typedef typename Vector::StorageIndex StorageIndex;
   enum { ColsAtCompileTime = Dynamic, MaxColsAtCompileTime = Dynamic };
 
-  DiagonalPreconditioner() : m_isInitialized(false) {}
+  DiagonalPreconditioner() = default;
 
   template <typename MatType>
   explicit DiagonalPreconditioner(const MatType& mat) : m_invdiag(mat.cols()) {
@@ -63,7 +63,7 @@ class DiagonalPreconditioner {
   template <typename MatType>
   DiagonalPreconditioner& factorize(const MatType& mat) {
     m_invdiag.resize(mat.cols());
-    for (int j = 0; j < mat.outerSize(); ++j) {
+    for (Index j = 0; j < mat.outerSize(); ++j) {
       typename MatType::InnerIterator it(mat, j);
       while (it && it.index() != j) ++it;
       if (it && it.index() == j && it.value() != Scalar(0))
@@ -98,7 +98,7 @@ class DiagonalPreconditioner {
 
  protected:
   Vector m_invdiag;
-  bool m_isInitialized;
+  bool m_isInitialized = false;
 };
 
 /** \ingroup IterativeLinearSolvers_Module
@@ -126,7 +126,7 @@ class LeastSquareDiagonalPreconditioner : public DiagonalPreconditioner<Scalar_>
   using Base::m_invdiag;
 
  public:
-  LeastSquareDiagonalPreconditioner() : Base() {}
+  LeastSquareDiagonalPreconditioner() = default;
 
   template <typename MatType>
   explicit LeastSquareDiagonalPreconditioner(const MatType& mat) : Base() {
@@ -142,7 +142,7 @@ class LeastSquareDiagonalPreconditioner : public DiagonalPreconditioner<Scalar_>
   LeastSquareDiagonalPreconditioner& factorize(const MatType& mat) {
     // Compute the inverse squared-norm of each column of mat
     m_invdiag.resize(mat.cols());
-    EIGEN_IF_CONSTEXPR(MatType::IsRowMajor) {
+    EIGEN_IF_CONSTEXPR (MatType::IsRowMajor) {
       m_invdiag.setZero();
       for (Index j = 0; j < mat.outerSize(); ++j) {
         for (typename MatType::InnerIterator it(mat, j); it; ++it) m_invdiag(it.index()) += numext::abs2(it.value());
@@ -151,8 +151,7 @@ class LeastSquareDiagonalPreconditioner : public DiagonalPreconditioner<Scalar_>
         RealScalar sum = numext::real(m_invdiag(j));
         m_invdiag(j) = sum > RealScalar(0) ? RealScalar(1) / sum : RealScalar(1);
       }
-    }
-    else {
+    } else {
       for (Index j = 0; j < mat.outerSize(); ++j) {
         RealScalar sum = mat.col(j).squaredNorm();
         m_invdiag(j) = sum > RealScalar(0) ? RealScalar(1) / sum : RealScalar(1);
@@ -168,8 +167,6 @@ class LeastSquareDiagonalPreconditioner : public DiagonalPreconditioner<Scalar_>
   }
 
   ComputationInfo info() const { return Success; }
-
- protected:
 };
 
 /** \ingroup IterativeLinearSolvers_Module
@@ -181,7 +178,7 @@ class LeastSquareDiagonalPreconditioner : public DiagonalPreconditioner<Scalar_>
  */
 class IdentityPreconditioner {
  public:
-  IdentityPreconditioner() {}
+  IdentityPreconditioner() = default;
 
   template <typename MatrixType>
   explicit IdentityPreconditioner(const MatrixType&) {}

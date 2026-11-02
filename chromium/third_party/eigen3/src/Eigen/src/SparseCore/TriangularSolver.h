@@ -44,8 +44,8 @@ struct sparse_solve_triangular_selector<Lhs, Rhs, Mode, Lower, RowMajor> {
           if (lastIndex == i) break;
           tmp = numext::madd<Scalar>(-lastVal, other.coeff(lastIndex, col), tmp);
         }
-        EIGEN_IF_CONSTEXPR(Mode & UnitDiag)
-        other.coeffRef(i, col) = tmp;
+        EIGEN_IF_CONSTEXPR (Mode & UnitDiag)
+          other.coeffRef(i, col) = tmp;
         else {
           eigen_assert(lastIndex == i);
           other.coeffRef(i, col) = tmp / lastVal;
@@ -69,19 +69,20 @@ struct sparse_solve_triangular_selector<Lhs, Rhs, Mode, Upper, RowMajor> {
         Scalar l_ii(0);
         LhsIterator it(lhsEval, i);
         while (it && it.index() < i) ++it;
-        EIGEN_IF_CONSTEXPR(!(Mode & UnitDiag)) {
+        EIGEN_IF_CONSTEXPR (!(Mode & UnitDiag)) {
           eigen_assert(it && it.index() == i);
           l_ii = it.value();
           ++it;
-        }
-        else if (it && it.index() == i)++ it;
+        } else if (it && it.index() == i)
+          ++it;
         for (; it; ++it) {
           tmp = numext::madd<Scalar>(-it.value(), other.coeff(it.index(), col), tmp);
         }
 
-        EIGEN_IF_CONSTEXPR(Mode & UnitDiag)
-        other.coeffRef(i, col) = tmp;
-        else other.coeffRef(i, col) = tmp / l_ii;
+        EIGEN_IF_CONSTEXPR (Mode & UnitDiag)
+          other.coeffRef(i, col) = tmp;
+        else
+          other.coeffRef(i, col) = tmp / l_ii;
       }
     }
   }
@@ -102,7 +103,7 @@ struct sparse_solve_triangular_selector<Lhs, Rhs, Mode, Lower, ColMajor> {
         {
           LhsIterator it(lhsEval, i);
           while (it && it.index() < i) ++it;
-          EIGEN_IF_CONSTEXPR(!(Mode & UnitDiag)) {
+          EIGEN_IF_CONSTEXPR (!(Mode & UnitDiag)) {
             eigen_assert(it && it.index() == i);
             tmp /= it.value();
           }
@@ -129,7 +130,7 @@ struct sparse_solve_triangular_selector<Lhs, Rhs, Mode, Upper, ColMajor> {
         Scalar& tmp = other.coeffRef(i, col);
         if (!numext::is_exactly_zero(tmp))  // optimization when other is actually sparse
         {
-          EIGEN_IF_CONSTEXPR(!(Mode & UnitDiag)) {
+          EIGEN_IF_CONSTEXPR (!(Mode & UnitDiag)) {
             // TODO: replace this with a binary search. make sure the binary search is safe for partially sorted
             // elements
             LhsIterator it(lhsEval, i);
@@ -178,68 +179,129 @@ template <typename Lhs, typename Rhs, int Mode,
           int UpLo = (Mode & Lower)   ? Lower
                      : (Mode & Upper) ? Upper
                                       : -1,
-          int StorageOrder = int(Lhs::Flags) & (RowMajorBit)>
+          int StorageOrder = int(Lhs::Flags) & RowMajorBit>
 struct sparse_solve_triangular_sparse_selector;
 
-// forward substitution, col-major
+// True when the rhs exposes raw CSC storage with a StorageIndex matching the lhs, so a
+// column's stored index slice can serve as the reach roots directly (no bIdx copy). A
+// SparseVector qualifies too -- it is a single compressed column, handled below via the
+// null-outerIndexPtr guard (its outerIndexPtr() is null since it has no outer array).
+template <typename Lhs, typename Rhs>
+using rhs_matching_slice = std::integral_constant<
+    bool, has_compressed_access<Rhs>::value &&
+              std::is_same<typename traits<Rhs>::StorageIndex, typename traits<Lhs>::StorageIndex>::value>;
+
+// The reach for a column arrives in one of three compile-time-known orders, but the
+// output column must store ascending inner index. reach_reorder encapsulates the
+// per-order fix-up via partial specialization: an unordered reach (Ordered == false,
+// the pointer/DFS path -- Upper irrelevant) is sorted; the iterator reach is already
+// in solve order -- ascending for lower (no-op), descending for upper (reverse).
+template <bool Ordered, bool Upper, typename StorageIndex>
+struct reach_reorder {  // Ordered == false: unordered pointer/DFS reach
+  static void run(StorageIndex* first, StorageIndex* last) { std::sort(first, last); }
+};
+template <typename StorageIndex>
+struct reach_reorder<true, false, StorageIndex> {  // iterator reach, lower: already ascending
+  static void run(StorageIndex* /*first*/, StorageIndex* /*last*/) {}
+};
+template <typename StorageIndex>
+struct reach_reorder<true, true, StorageIndex> {  // iterator reach, upper: descending
+  static void run(StorageIndex* first, StorageIndex* last) { std::reverse(first, last); }
+};
+
+// Common per-column finish: reorder the reach xi[top..n) to ascending inner index,
+// insert reading values from xwork, and clear xwork and mark for the next column.
+// The reach is a structural bound, not a numeric one: a reached coefficient can be
+// exactly zero (a zero rhs entry, or numerical cancellation), so skip exact zeros at
+// insertion. This matches the AmbiVector path, which pruned zeros, and keeps a zero rhs
+// from materializing O(|reach|) stored zeros. xwork and mark are cleared regardless.
+template <bool Ordered, bool Upper, typename Res, typename StorageIndex, typename Scalar>
+void reach_insert_column(Res& res, Index col, StorageIndex* xi, Index top, Index n, Scalar* xwork, uint8_t* mark) {
+  reach_reorder<Ordered, Upper, StorageIndex>::run(xi + top, xi + n);
+  for (Index k = top; k < n; ++k) {
+    StorageIndex j = xi[k];
+    if (!numext::is_exactly_zero(xwork[j])) res.insert(j, col) = xwork[j];
+    xwork[j] = Scalar(0);
+    mark[j] = 0;
+  }
+}
+
+// Column loop, fast path: the rhs matches (see rhs_matching_slice), so each column's
+// stored index slice is the reach root list and the value slice is scattered directly
+// -- no bIdx copy, so iwork is just 2n (xi | pstack).
+template <bool Upper, bool UnitDiag, typename Lhs, typename Rhs, typename Res, typename Scalar,
+          std::enable_if_t<rhs_matching_slice<Lhs, Rhs>::value, int> = 0>
+void reach_solve_columns(const Lhs& lhs, const Rhs& other, Res& res, uint8_t* mark, Scalar* xwork, Index n) {
+  typedef typename traits<Lhs>::StorageIndex StorageIndex;
+  Matrix<StorageIndex, Dynamic, 1> iwork(2 * n);  // xi | pstack
+  StorageIndex* xi = iwork.data();
+  for (Index col = 0; col < other.cols(); ++col) {
+    const StorageIndex* outer = other.outerIndexPtr();  // null for a SparseVector (single column)
+    const StorageIndex* nnz = other.innerNonZeroPtr();  // null when compressed
+    Index p = outer ? outer[col] : 0;
+    Index bCount = outer ? (nnz ? Index(nnz[col]) : Index(outer[col + 1]) - p) : other.nonZeros();
+    const StorageIndex* roots = other.innerIndexPtr() + p;  // the column's stored indices
+    const Scalar* vals = other.valuePtr() + p;
+    // Roots are the rhs slice directly (no bIdx copy, so iwork stays 2n). An exact-zero
+    // stored rhs entry is seeded harmlessly -- it propagates zeros and is dropped at
+    // insertion; filtering it here would cost a compacted root buffer (the 3n path).
+    for (Index r = 0; r < bCount; ++r) xwork[roots[r]] = vals[r];
+    Index top = reach_solve_dense<Upper, UnitDiag>(lhs, roots, bCount, xi, mark, xwork);
+    reach_insert_column<!has_compressed_access<Lhs>::value, Upper>(res, col, xi, top, n, xwork, mark);
+  }
+}
+
+// Column loop, fallback: read each column through the InnerIterator, copying indices
+// into the bIdx third of a 3n iwork. For a rhs without raw storage or with a
+// mismatched index type.
+template <bool Upper, bool UnitDiag, typename Lhs, typename Rhs, typename Res, typename Scalar,
+          std::enable_if_t<!rhs_matching_slice<Lhs, Rhs>::value, int> = 0>
+void reach_solve_columns(const Lhs& lhs, const Rhs& other, Res& res, uint8_t* mark, Scalar* xwork, Index n) {
+  typedef typename traits<Lhs>::StorageIndex StorageIndex;
+  Matrix<StorageIndex, Dynamic, 1> iwork(3 * n);  // xi | pstack | bIdx
+  StorageIndex* xi = iwork.data();
+  StorageIndex* bIdx = iwork.data() + 2 * n;
+  for (Index col = 0; col < other.cols(); ++col) {
+    Index bCount = 0;
+    for (typename Rhs::InnerIterator it(other, col); it; ++it) {
+      if (numext::is_exactly_zero(it.value())) continue;  // a zero root seeds nothing; xwork stays clear there
+      bIdx[bCount] = StorageIndex(it.index());
+      xwork[it.index()] = it.value();
+      ++bCount;
+    }
+    Index top = reach_solve_dense<Upper, UnitDiag>(lhs, bIdx, bCount, xi, mark, xwork);
+    reach_insert_column<!has_compressed_access<Lhs>::value, Upper>(res, col, xi, top, n, xwork, mark);
+  }
+}
+
+// Reach-based (Gilbert-Peierls) sparse triangular solve, col-major, for lower OR
+// upper. Only the columns reachable from each rhs column's pattern are touched, so
+// the cost is O(|reach| + flops) per column instead of a dense O(n)-per-column sweep
+// (which also pays a coeff(i,i) binary search per row in the upper case). It is
+// the sole col-major sparse-sparse selector, dispatching lower/upper via the UpLo
+// template argument. reach_solve_dense leaves the solution values in
+// xwork and the reached indices in iwork[top..n); reach_solve_columns (slice or
+// fallback, selected on the rhs storage) scatters each column and solves, and
+// reach_insert_column reads the values out and restores mark/xwork. Only mark and
+// xwork need zeroing -- iwork is entirely written before read.
+template <bool Upper, typename Lhs, typename Rhs, int Mode>
+void run_sparse_reach_triangular_solve(const Lhs& lhs, Rhs& other) {
+  typedef typename Rhs::Scalar Scalar;
+  Index n = lhs.rows();
+  Matrix<uint8_t, Dynamic, 1> mark = Matrix<uint8_t, Dynamic, 1>::Zero(n);
+  Matrix<Scalar, Dynamic, 1> xwork = Matrix<Scalar, Dynamic, 1>::Zero(n);
+  Rhs res(other.rows(), other.cols());
+  res.reserve(other.nonZeros());
+  reach_solve_columns<Upper, bool(Mode & UnitDiag)>(lhs, other, res, mark.data(), xwork.data(), n);
+  res.finalize();
+  other = res.markAsRValue();
+}
+
+// forward and backward substitution, col-major
 template <typename Lhs, typename Rhs, int Mode, int UpLo>
 struct sparse_solve_triangular_sparse_selector<Lhs, Rhs, Mode, UpLo, ColMajor> {
-  typedef typename Rhs::Scalar Scalar;
-  typedef typename promote_index_type<typename traits<Lhs>::StorageIndex, typename traits<Rhs>::StorageIndex>::type
-      StorageIndex;
   static void run(const Lhs& lhs, Rhs& other) {
-    const bool IsLower = (UpLo == Lower);
-    AmbiVector<Scalar, StorageIndex> tempVector(other.rows() * 2);
-    tempVector.setBounds(0, other.rows());
-
-    Rhs res(other.rows(), other.cols());
-    res.reserve(other.nonZeros());
-
-    for (Index col = 0; col < other.cols(); ++col) {
-      // FIXME: estimate the number of non-zeros per column for better allocation.
-      tempVector.init(.99 /*float(other.col(col).nonZeros())/float(other.rows())*/);
-      tempVector.setZero();
-      tempVector.restart();
-      for (typename Rhs::InnerIterator rhsIt(other, col); rhsIt; ++rhsIt) {
-        tempVector.coeffRef(rhsIt.index()) = rhsIt.value();
-      }
-
-      for (Index i = IsLower ? 0 : lhs.cols() - 1; IsLower ? i < lhs.cols() : i >= 0; i += IsLower ? 1 : -1) {
-        tempVector.restart();
-        Scalar& ci = tempVector.coeffRef(i);
-        if (!numext::is_exactly_zero(ci)) {
-          // find
-          typename Lhs::InnerIterator it(lhs, i);
-          EIGEN_IF_CONSTEXPR(!(Mode & UnitDiag)) {
-            EIGEN_IF_CONSTEXPR(IsLower) {
-              eigen_assert(it.index() == i);
-              ci /= it.value();
-            }
-            else ci /= lhs.coeff(i, i);
-          }
-          tempVector.restart();
-          EIGEN_IF_CONSTEXPR(IsLower) {
-            if (it.index() == i) ++it;
-            for (; it; ++it) {
-              tempVector.coeffRef(it.index()) = numext::madd<Scalar>(-ci, it.value(), tempVector.coeffRef(it.index()));
-            }
-          }
-          else {
-            for (; it && it.index() < i; ++it) {
-              tempVector.coeffRef(it.index()) = numext::madd<Scalar>(-ci, it.value(), tempVector.coeffRef(it.index()));
-            }
-          }
-        }
-      }
-
-      // FIXME: compute a reference value to filter zeros.
-      for (typename AmbiVector<Scalar, StorageIndex>::Iterator it(tempVector /*,1e-12*/); it; ++it) {
-        // FIXME: use insertBack for better performance.
-        res.insert(it.index(), col) = it.value();
-      }
-    }
-    res.finalize();
-    other = res.markAsRValue();
+    run_sparse_reach_triangular_solve<UpLo == Upper, Lhs, Rhs, Mode>(lhs, other);
   }
 };
 

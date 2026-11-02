@@ -35,7 +35,9 @@
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
+import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
 // eslint-disable-next-line @devtools/es-modules-import
@@ -43,9 +45,10 @@ import objectPropertiesSectionStyles from '../../ui/legacy/components/object_ui/
 // eslint-disable-next-line @devtools/es-modules-import
 import objectValueStyles from '../../ui/legacy/components/object_ui/objectValue.css.js';
 import * as UI from '../../ui/legacy/legacy.js';
-import {Directives, html, type LitTemplate, render, type TemplateResult} from '../../ui/lit/lit.js';
+import {Directives, html, type LitTemplate, nothing, render, type TemplateResult} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
+import {BinaryResourceView} from './BinaryResourceView.js';
 import requestPayloadTreeStyles from './requestPayloadTree.css.js';
 import requestPayloadViewStyles from './requestPayloadView.css.js';
 import {ShowMoreDetailsWidget} from './ShowMoreDetailsWidget.js';
@@ -106,8 +109,10 @@ const str_ = i18n.i18n.registerUIStrings('panels/network/RequestPayloadView.ts',
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 interface ViewInput {
-  decodeRequestParameters: boolean;
-  setURLDecoding(value: boolean): void;
+  decodeQueryParameters: boolean;
+  setDecodeQueryParameters(value: boolean): void;
+  decodeFormParameters: boolean;
+  setDecodeFormParameters(value: boolean): void;
   viewQueryParamSource: boolean;
   setViewQueryParamSource(value: boolean): void;
   viewFormParamSource: boolean;
@@ -120,6 +125,10 @@ interface ViewInput {
   formParameters: SDK.NetworkRequest.NameValue[]|undefined;
   queryString: string|null;
   queryParameters: SDK.NetworkRequest.NameValue[]|null;
+
+  /** Raw binary content data for the request body (when base64-encoded by backend). */
+  binaryPayloadContentData: TextUtils.ContentData.ContentData|null;
+  requestUrl: Platform.DevToolsPath.UrlString;
 }
 
 type View = (input: ViewInput, output: object, target: HTMLElement) => void;
@@ -150,15 +159,28 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
         </devtools-widget>
       </li>`;
 
-  const createParsedParams = (params: SDK.NetworkRequest.NameValue[]): TemplateResult[] => params.map(
-      param => html`<li role=treeitem @contextmenu=${
-          copyValueContextmenu(i18nString(UIStrings.copyValue), () => decodeURIComponent(param.value), 'copy-value')}>${
-          param.name !== '' ?
-              html`${RequestPayloadView.formatParameter(param.name, 'payload-name', input.decodeRequestParameters)}${
-                  RequestPayloadView.formatParameter(
-                      param.value, 'payload-value source-code', input.decodeRequestParameters)}` :
-              RequestPayloadView.formatParameter(
-                  i18nString(UIStrings.empty), 'empty-request-payload', input.decodeRequestParameters)}</li>`);
+  const createParsedParams = (params: SDK.NetworkRequest.NameValue[],
+                              decodeParameters: boolean): TemplateResult[] => params.map(param => {
+    // clang-format off
+        return html`
+        <li role=treeitem
+            @contextmenu=${copyValueContextmenu(
+                i18nString(UIStrings.copyValue),
+                () => decodeURIComponent(param.value),
+                'copy-value',
+            )}>
+          ${param.name !== '' ? html`
+            ${RequestPayloadView.formatParameter(param.name, 'payload-name', decodeParameters)}
+            ${RequestPayloadView.formatParameter(param.value, 'payload-value source-code', decodeParameters)}
+          ` : RequestPayloadView.formatParameter(
+              i18nString(UIStrings.empty),
+              'empty-request-payload',
+              decodeParameters,
+          )}
+        </li>
+      `;
+    // clang-format on
+  });
 
   const parsedFormData = (() => {
     if (input.formData && !input.formParameters) {
@@ -166,23 +188,25 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
         return JSON.parse(input.formData);
       } catch {
       }
-      return undefined;
     }
+    return undefined;
   })();
 
-  const createPayload = (parsedFormData: unknown): TemplateResult => {
+  const createPayload = (parsedFormData: unknown): LitTemplate => {
+    if (!parsedFormData) {
+      return nothing;
+    }
     const object = new SDK.RemoteObject.LocalJSONObject(parsedFormData);
-    const section =
-        new ObjectUI.ObjectPropertiesSection.RootElement(new ObjectUI.ObjectPropertiesSection.ObjectTree(object, {
-          readOnly: true,
-          propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED,
-        }));
-    section.title = document.createTextNode(object.description);
-    section.listItemElement.classList.add('source-code', 'object-properties-section');
-    section.childrenListElement.classList.add('source-code', 'object-properties-section');
-    section.expand();
-    return html`<devtools-tree-wrapper
-          .treeElement=${section}></devtools-tree-wrapper>`;
+    const objectTree = new ObjectUI.ObjectPropertiesSection.ObjectTree(object, {
+      readOnly: true,
+      propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED,
+    });
+    return html`
+      <li role=treeitem class="source-code object-properties-section-root-element object-properties-section" open>
+        ${object.description}
+        ${object.hasChildren ? ObjectUI.ObjectPropertiesSection.renderObjectTree(objectTree) : nothing}
+      </li>
+    `;
   };
 
   const queryStringExpandedSetting =
@@ -192,24 +216,23 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
   const requestPayloadExpandedSetting =
       Common.Settings.Settings.instance().createSetting('request-info-request-payload-category-expanded', true);
 
-  const toggleURLDecoding = (e: Event): void => {
-    e.consume();
-    input.setURLDecoding(!input.decodeRequestParameters);
-  };
-
-  const onContextMenu = (viewSource: boolean, callback: (value: boolean) => void, includeURLDecodingOption = true) => (
-      event: Event): void => {
+  const onContextMenu = (
+      viewSource: boolean,
+      setViewSource: (value: boolean) => void,
+      decoding?: {decode: boolean, toggleDecode: () => void},
+      ) => (event: Event): void => {
     const contextMenu = new UI.ContextMenu.ContextMenu(event);
     const section = contextMenu.newSection();
     if (viewSource) {
-      section.appendItem(i18nString(UIStrings.viewParsed), () => callback(!viewSource), {jslogContext: 'view-parsed'});
+      section.appendItem(i18nString(UIStrings.viewParsed), () => setViewSource(!viewSource),
+                         {jslogContext: 'view-parsed'});
     } else {
-      section.appendItem(i18nString(UIStrings.viewSource), () => callback(!viewSource), {jslogContext: 'view-source'});
-      if (includeURLDecodingOption) {
+      section.appendItem(i18nString(UIStrings.viewSource), () => setViewSource(!viewSource),
+                         {jslogContext: 'view-source'});
+      if (decoding) {
         const viewURLEncodedText =
-            input.decodeRequestParameters ? i18nString(UIStrings.viewUrlEncoded) : i18nString(UIStrings.viewDecoded);
-        section.appendItem(
-            viewURLEncodedText, toggleURLDecoding.bind(this, event), {jslogContext: 'toggle-url-decoding'});
+            decoding.decode ? i18nString(UIStrings.viewUrlEncoded) : i18nString(UIStrings.viewDecoded);
+        section.appendItem(viewURLEncodedText, () => decoding.toggleDecode(), {jslogContext: 'toggle-url-decoding'});
       }
     }
     void contextMenu.show();
@@ -226,7 +249,14 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
           role=treeitem
           ?hidden=${!input.queryParameters}
           jslog=${VisualLogging.section().context('query-string')}
-          @contextmenu=${onContextMenu(input.viewQueryParamSource, input.setViewQueryParamSource)}
+          @contextmenu=${onContextMenu(
+              input.viewQueryParamSource,
+              input.setViewQueryParamSource,
+              {
+                decode: input.decodeQueryParameters,
+                toggleDecode: () => input.setDecodeQueryParameters(!input.decodeQueryParameters),
+              },
+          )}
           @expanded=${(e: UI.TreeOutline.TreeViewElement.ExpandEvent) =>
             queryStringExpandedSetting.set(e.detail.expanded)}
           ?open=${queryStringExpandedSetting.get()}
@@ -239,19 +269,26 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
             ?hidden=${input.viewQueryParamSource}
             jslog=${VisualLogging.action().track({click: true}).context('decode-encode')}
             .variant=${Buttons.Button.Variant.OUTLINED}
-            @click=${toggleURLDecoding}>
-          ${input.decodeRequestParameters ? i18nString(UIStrings.viewUrlEncoded) : i18nString(UIStrings.viewDecoded)}
+            @click=${(e: Event) => { e.consume(); input.setDecodeQueryParameters(!input.decodeQueryParameters); }}>
+          ${input.decodeQueryParameters ? i18nString(UIStrings.viewUrlEncoded) : i18nString(UIStrings.viewDecoded)}
         </devtools-button>
         <ul role=group>
           ${ifExpanded(input.viewQueryParamSource ? createSourceText(input.queryString ?? '')
-                                                  : createParsedParams(input.queryParameters ?? []))}
+                                                  : createParsedParams(input.queryParameters ?? [], input.decodeQueryParameters))}
         </ul>
       </li>
       <li
           role=treeitem
           ?hidden=${!input.formData || !input.formParameters}
           jslog=${VisualLogging.section().context('form-data')}
-          @contextmenu=${onContextMenu(input.viewFormParamSource, input.setViewFormParamSource)}
+          @contextmenu=${onContextMenu(
+              input.viewFormParamSource,
+              input.setViewFormParamSource,
+              {
+                decode: input.decodeFormParameters,
+                toggleDecode: () => input.setDecodeFormParameters(!input.decodeFormParameters),
+              },
+          )}
           @expanded=${(e: UI.TreeOutline.TreeViewElement.ExpandEvent) => formDataExpandedSetting.set(e.detail.expanded)}
           ?open=${formDataExpandedSetting.get()}
         >
@@ -263,20 +300,22 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
             ?hidden=${input.viewFormParamSource}
             jslog=${VisualLogging.action().track({click: true}).context('decode-encode')}
             .variant=${Buttons.Button.Variant.OUTLINED}
-            @click=${toggleURLDecoding}>
-          ${input.decodeRequestParameters ? i18nString(UIStrings.viewUrlEncoded) : i18nString(UIStrings.viewDecoded)}
+            @click=${(e: Event) => { e.consume(); input.setDecodeFormParameters(!input.decodeFormParameters); }}>
+          ${input.decodeFormParameters ? i18nString(UIStrings.viewUrlEncoded) : i18nString(UIStrings.viewDecoded)}
         </devtools-button>
         <ul role=group>
           ${ifExpanded(input.viewFormParamSource ? createSourceText(input.formData ?? '')
-                                                 : createParsedParams(input.formParameters ?? []))}
+                                                 : createParsedParams(input.formParameters ?? [], input.decodeFormParameters))}
         </ul>
       </li>
       <li
           role=treeitem
-          ?hidden=${!input.formData || Boolean(input.formParameters)}
+          ?hidden=${!input.formData || Boolean(input.formParameters) || Boolean(input.binaryPayloadContentData)}
           jslog=${VisualLogging.section().context('request-payload')}
-          @contextmenu=${onContextMenu(input.viewJSONPayloadSource, input.setViewJSONPayloadSource,
-                                       /* includeURLDecodingOption*/ false)}
+          @contextmenu=${onContextMenu(
+              input.viewJSONPayloadSource,
+              input.setViewJSONPayloadSource,
+          )}
           @expanded=${(e: UI.TreeOutline.TreeViewElement.ExpandEvent) =>
             requestPayloadExpandedSetting.set(e.detail.expanded)}
           ?open=${requestPayloadExpandedSetting.get()}
@@ -289,7 +328,21 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
         </ul>
       </li>
      </ul>
-     `}></devtools-tree>`, target, {
+     `}></devtools-tree>
+   ${input.binaryPayloadContentData ? html`
+     <div class="raw-payload-section"
+          jslog=${VisualLogging.section().context('binary-request-payload')}>
+       ${widget(element => {
+         const streamingContent = TextUtils.StreamingContentData.StreamingContentData.from(
+             input.binaryPayloadContentData as TextUtils.ContentData.ContentData);
+         return new BinaryResourceView(
+             streamingContent,
+             input.requestUrl,
+             Common.ResourceType.resourceTypes.XHR,
+             element);
+       })}
+     </div>` : nothing}
+   `, target, {
       container: {
         classes: ['request-payload-view'],
         attributes: {
@@ -301,13 +354,16 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
 
 export class RequestPayloadView extends UI.Widget.VBox {
   #request?: SDK.NetworkRequest.NetworkRequest;
-  #decodeRequestParameters = true;
+  #decodeQueryParameters = true;
+  #decodeFormParameters = true;
   #formData?: string;
   #formParameters?: SDK.NetworkRequest.NameValue[];
+  #binaryPayloadContentData: TextUtils.ContentData.ContentData|null = null;
   #view: View;
   #viewJSONPayloadSource = false;
   #viewFormParamSource = false;
   #viewQueryParamSource = false;
+  #refreshFormDataPromiseForTest = Promise.resolve();
 
   constructor(target?: HTMLElement, view = DEFAULT_VIEW) {
     super();
@@ -320,9 +376,11 @@ export class RequestPayloadView extends UI.Widget.VBox {
     }
     this.#request = request;
 
+    this.#decodeQueryParameters = true;
+    this.#decodeFormParameters = true;
     const contentType = request.requestContentType();
     if (contentType) {
-      this.#decodeRequestParameters = Boolean(contentType.match(/^application\/x-www-form-urlencoded\s*(;.*)?$/i));
+      this.#decodeFormParameters = Boolean(contentType.match(/^application\/x-www-form-urlencoded\s*(;.*)?$/i));
     }
 
     if (this.isShowing()) {
@@ -330,18 +388,22 @@ export class RequestPayloadView extends UI.Widget.VBox {
     }
 
     this.requestUpdate();
-    void this.#refreshFormData();
+    this.#refreshFormData();
   }
 
   get request(): SDK.NetworkRequest.NetworkRequest|undefined {
     return this.#request;
   }
 
+  get refreshFormDataPromiseForTest(): Promise<void> {
+    return this.#refreshFormDataPromiseForTest;
+  }
+
   override wasShown(): void {
     super.wasShown();
     this.request?.addEventListener(SDK.NetworkRequest.Events.REQUEST_HEADERS_CHANGED, this.#refreshFormData, this);
 
-    void this.#refreshFormData();
+    this.#refreshFormData();
   }
 
   override willHide(): void {
@@ -373,9 +435,14 @@ export class RequestPayloadView extends UI.Widget.VBox {
       queryParameters: this.request.queryParameters,
       formData: this.#formData,
       formParameters: this.#formParameters,
-      decodeRequestParameters: this.#decodeRequestParameters,
-      setURLDecoding: (value: boolean): void => {
-        this.#decodeRequestParameters = value;
+      decodeQueryParameters: this.#decodeQueryParameters,
+      setDecodeQueryParameters: (value: boolean): void => {
+        this.#decodeQueryParameters = value;
+        this.requestUpdate();
+      },
+      decodeFormParameters: this.#decodeFormParameters,
+      setDecodeFormParameters: (value: boolean): void => {
+        this.#decodeFormParameters = value;
         this.requestUpdate();
       },
       viewQueryParamSource: this.#viewQueryParamSource,
@@ -396,16 +463,35 @@ export class RequestPayloadView extends UI.Widget.VBox {
       copyValue: (value: string): void => {
         Host.userMetrics.actionTaken(Host.UserMetrics.Action.NetworkPanelCopyValue);
         Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(value);
-      }
+      },
+      binaryPayloadContentData: this.#binaryPayloadContentData,
+      requestUrl: this.request?.url() ?? Platform.DevToolsPath.EmptyUrlString,
     };
     this.#view(input, {}, this.element);
   }
 
-  async #refreshFormData(): Promise<void> {
+  #refreshFormData(): void {
+    this.#refreshFormDataPromiseForTest = this.#doRefreshFormData();
+  }
+
+  async #doRefreshFormData(): Promise<void> {
     this.#formData = await this.request?.requestFormData() ?? undefined;
     if (this.#formData) {
       this.#formParameters = await this.request?.formParameters() ?? undefined;
     }
+
+    // Fetch raw binary content data for the request body when the backend
+    // returns base64-encoded data. This enables the binary viewer (hex,
+    // base64, utf-8) in the Payload tab for compressed/binary bodies.
+    this.#binaryPayloadContentData = null;
+    if (this.request && !this.#formParameters) {
+      const contentData = await this.request.requestFormDataContentData();
+      if (!TextUtils.ContentData.ContentData.isError(contentData) && !contentData.isTextContent &&
+          contentData.createdFromBase64) {
+        this.#binaryPayloadContentData = contentData;
+      }
+    }
+
     this.requestUpdate();
   }
 

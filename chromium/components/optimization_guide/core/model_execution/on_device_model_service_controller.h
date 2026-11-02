@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "base/callback_list.h"
@@ -71,9 +72,6 @@ class ModelController {
 // a single instance of this object.
 class OnDeviceModelServiceController final {
  public:
-  // The model type managed by this controller.
-  static constexpr OnDeviceModelType kModelType = OnDeviceModelType::kBaseModel;
-
   OnDeviceModelServiceController(
       on_device_model::ServiceClient& service_client,
       UsageTracker& usage_tracker,
@@ -123,7 +121,8 @@ class OnDeviceModelServiceController final {
     return safety_client_;
   }
 
-  std::vector<mojom::BrokerModelInfoPtr> GetBrokerModels() const;
+  std::vector<std::pair<mojom::BrokerModelInfoPtr, base::FilePath>>
+  GetBrokerModels() const;
 
  private:
   // A set of (references to) compatible, versioned dependencies that implement
@@ -273,6 +272,9 @@ class OnDeviceModelServiceController final {
 
   AdaptationMetadataMap adaptation_metadata_;
   std::optional<OnDeviceModelMetadataLoader> model_metadata_loader_;
+
+  base::WeakPtr<OnDeviceModelComponentStateManager>
+      on_device_component_state_manager_;
 
   std::optional<BaseModelController> base_model_controller_;
   OnDeviceModelStatus base_model_status_ =

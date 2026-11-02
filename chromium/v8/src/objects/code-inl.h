@@ -8,12 +8,15 @@
 #include "src/objects/code.h"
 // Include the non-inl header before the rest of the headers.
 
+#include <algorithm>
+
 #include "src/baseline/bytecode-offset-iterator.h"
 #include "src/codegen/code-desc.h"
 #include "src/deoptimizer/deoptimize-reason.h"
 #include "src/heap/heap-layout-inl.h"
 #include "src/heap/heap-write-barrier-inl.h"
 #include "src/objects/deoptimization-data-inl.h"
+#include "src/objects/heap-object-field-inl.h"
 #include "src/objects/instance-type-inl.h"
 #include "src/objects/instruction-stream-inl.h"
 #include "src/objects/trusted-object-inl.h"
@@ -680,6 +683,7 @@ bool Code::IsWeakObjectInDeoptimizationLiteralArray(Tagged<Object> object) {
 }
 
 void Code::IterateDeoptimizationLiterals(RootVisitor* v) {
+  DisallowGarbageCollection no_gc;
   if (!uses_deoptimization_data()) {
     DCHECK(kind() == CodeKind::BASELINE ||
            !has_deoptimization_data_or_interpreter_data());
@@ -695,8 +699,11 @@ void Code::IterateDeoptimizationLiterals(RootVisitor* v) {
     Tagged<MaybeObject> maybe_literal = literals->get_raw(i);
     Tagged<HeapObject> heap_literal;
     if (maybe_literal.GetHeapObject(&heap_literal)) {
-      v->VisitRootPointer(Root::kStackRoots, "deoptimization literal",
-                          FullObjectSlot(&heap_literal));
+      {
+        DisableGCMole no_gcmole;
+        v->VisitRootPointer(Root::kStackRoots, "deoptimization literal",
+                            FullObjectSlot(&heap_literal));
+      }
     }
   }
 }
@@ -845,11 +852,12 @@ void Code::SetInstructionStartForOffHeapBuiltin(IsolateForSandbox isolate,
 void Code::ClearInstructionStartForSerialization(IsolateForSandbox isolate) {
 #ifdef V8_ENABLE_SANDBOX
   // The instruction start is stored in this object's code pointer table.
-  WriteField<CodePointerHandle>(
+  WriteField<IndirectPointerHandle>(
       offsetof(ExposedTrustedObject, self_indirect_pointer_),
-      kNullCodePointerHandle);
+      kNullIndirectPointerHandle);
 #endif  // V8_ENABLE_SANDBOX
   set_instruction_start(isolate, kNullAddress);
+  ExternalCodeField<Object>::Release_Store(this, Smi::zero());
 }
 
 void Code::UpdateInstructionStart(IsolateForSandbox isolate,
@@ -860,8 +868,8 @@ void Code::UpdateInstructionStart(IsolateForSandbox isolate,
 
 void Code::clear_padding() {
   if (kSize - kUnalignedSize == 0) return;
-  Memset(reinterpret_cast<uint8_t*>(address() + kUnalignedSize), 0,
-         kSize - kUnalignedSize);
+  std::fill_n(reinterpret_cast<uint8_t*>(address() + kUnalignedSize),
+              kSize - kUnalignedSize, 0);
 }
 
 RELAXED_UINT32_ACCESSORS(Code, flags, kFlagsOffset)

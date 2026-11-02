@@ -38,14 +38,6 @@ class Module;
 
 namespace tint::spirv::writer::raise {
 
-// The capabilities that the transform can support.
-const core::ir::Capabilities kPolyfillUnaryCapabilities{
-    core::ir::Capability::kAllowDuplicateBindings,
-    core::ir::Capability::kAllowAnyInputAttachmentIndexType,
-    core::ir::Capability::kAllowNonCoreTypes,
-    core::ir::Capability::kAllow8BitIntegers,
-};
-
 /// Configuration for the UnaryPolyfill transform.
 struct UnaryPolyfillConfig {
     /// If true, polyfill f32 and f16 negation with bit manipulation.

@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Google LLC
+// Copyright 2024 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -150,6 +150,16 @@ class PartitionedMesh {
   PartitionedMesh(PartitionedMesh&&) = default;
   PartitionedMesh& operator=(const PartitionedMesh&) = default;
   PartitionedMesh& operator=(PartitionedMesh&&) = default;
+
+  // Compare by pointer equality, not the contents of the data. Notably for this
+  // class, the default deep equality would take into account the spatial index,
+  // which is not desirable as it is derived state.
+  bool operator==(const PartitionedMesh& other) const = default;
+
+  template <typename H>
+  friend H AbslHashValue(H h, const PartitionedMesh& mesh) {
+    return H::combine(std::move(h), mesh.data_.get());
+  }
 
   // Returns the number of render groups in this modeled shape.
   uint32_t RenderGroupCount() const;

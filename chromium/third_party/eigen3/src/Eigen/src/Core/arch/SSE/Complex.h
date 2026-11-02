@@ -18,6 +18,8 @@ namespace Eigen {
 
 namespace internal {
 
+EIGEN_GCC_FAST_MATH_COMPLEX_VECTORIZE_WORKAROUND_PUSH
+
 //---------- float ----------
 struct Packet2cf {
   EIGEN_STRONG_INLINE Packet2cf() {}
@@ -103,7 +105,7 @@ EIGEN_STRONG_INLINE Packet2cf pmul(const Packet2cf& a, const Packet2cf& b) {
 #ifdef EIGEN_VECTORIZE_SSE3
   __m128 result = _mm_addsub_ps(_mm_mul_ps(tmp2, b.v), tmp1);
 #else
-  const __m128 mask = _mm_setr_ps(-0.0f, 0.0f, -0.0f, 0.0f);
+  const __m128 mask = _mm_castsi128_ps(_mm_setr_epi32(0x80000000, 0x00000000, 0x80000000, 0x00000000));
   __m128 result = _mm_add_ps(_mm_mul_ps(tmp2, b.v), _mm_xor_ps(tmp1, mask));
 #endif
 #endif
@@ -297,7 +299,7 @@ EIGEN_STRONG_INLINE Packet1cd pmul(const Packet1cd& a, const Packet1cd& b) {
 #ifdef EIGEN_VECTORIZE_SSE3
   __m128d result = _mm_addsub_pd(_mm_mul_pd(tmp2, b.v), tmp1);
 #else
-  const __m128d mask = _mm_setr_pd(-0.0, 0.0);
+  const __m128d mask = _mm_castsi128_pd(_mm_set_epi64x(0x0, 0x8000000000000000ull));
   __m128d result = _mm_add_pd(_mm_mul_pd(tmp2, b.v), _mm_xor_pd(tmp1, mask));
 #endif
 #endif
@@ -467,6 +469,8 @@ EIGEN_STRONG_INLINE Packet1cd pnmsub(const Packet1cd& a, const Packet1cd& b, con
   return pnegate(pmadd(a, b, c));
 }
 #endif
+
+EIGEN_GCC_FAST_MATH_COMPLEX_VECTORIZE_WORKAROUND_POP
 }  // end namespace internal
 }  // end namespace Eigen
 

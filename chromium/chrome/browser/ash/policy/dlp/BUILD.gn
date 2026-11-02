@@ -35,6 +35,7 @@ static_library("dlp") {
 
   deps = [
     "//ash",
+    "//ash/constants",
     "//ash/public/cpp",
     "//base",
     "//chrome/app:generated_resources",
@@ -132,6 +133,7 @@ source_set("unit_tests") {
     "//chrome/browser/chromeos/policy/dlp/test:test_support",
     "//chrome/browser/enterprise/data_controls",
     "//chrome/browser/enterprise/data_controls:test_support",
+    "//chrome/browser/policy:test_support",
     "//chrome/browser/ui",
     "//chrome/common:chrome_features",
     "//chrome/test:test_support",
@@ -181,6 +183,7 @@ source_set("browser_tests") {
 
   deps = [
     ":dlp",
+    "//ash/constants",
     "//ash/webui/file_manager:file_manager_ui",
     "//base",
     "//base/test:test_support",
@@ -240,6 +243,7 @@ source_set("browser_tests") {
     "//ui/base/clipboard:clipboard_test_support",
     "//ui/base/clipboard:clipboard_types",
     "//ui/base/data_transfer_policy",
+    "//ui/events:test_support",
     "//ui/gfx/geometry",
     "//ui/message_center/public/cpp",
     "//ui/shell_dialogs:test_support",

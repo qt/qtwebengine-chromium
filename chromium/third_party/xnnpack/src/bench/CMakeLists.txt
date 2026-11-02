@@ -74,6 +74,7 @@ SET(MICROKERNEL_BENCHMARKS
     pf16-gemm-minmax
     pf32-gemm-minmax
     qb4-packw
+    qd8-bf16-qb4w-gemm
     qd8-f16-qb4w-gemm
     qd8-f16-qc4w-gemm
     qd8-f16-qc8w-gemm
@@ -104,7 +105,9 @@ SET(MICROKERNEL_BENCHMARKS
     x8-packw
     vunary
     vbinary
+    indirection
     xN-transposec
+    xx-pad
     xx-transposev)
 FOREACH(BENCH ${MICROKERNEL_BENCHMARKS})
   ADD_EXECUTABLE(${BENCH}-bench ${BENCH}.cc)

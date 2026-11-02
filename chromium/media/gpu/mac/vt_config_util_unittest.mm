@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-
 #include "media/gpu/mac/vt_config_util.h"
 
 #include <CoreMedia/CoreMedia.h>
@@ -209,8 +208,7 @@ TEST(VTConfigUtil, CreateFormatExtensions_VP9Profile0) {
       fmt.get(), kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms,
       base::SysUTF8ToCFStringRef(kVpccKey).get());
   std::unique_ptr<mp4::BoxReader> box_reader(
-      mp4::BoxReader::ReadConcatentatedBoxes(vpcc.data(), vpcc.size(),
-                                             nullptr));
+      mp4::BoxReader::ReadConcatentatedBoxes(vpcc, nullptr));
   mp4::VPCodecConfigurationRecord vpcc_box;
   ASSERT_TRUE(vpcc_box.Parse(box_reader.get()));
   ASSERT_EQ(kTestProfile, vpcc_box.profile);
@@ -232,8 +230,7 @@ TEST(VTConfigUtil, CreateFormatExtensions_VP9Profile2) {
       fmt.get(), kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms,
       base::SysUTF8ToCFStringRef(kVpccKey).get());
   std::unique_ptr<mp4::BoxReader> box_reader(
-      mp4::BoxReader::ReadConcatentatedBoxes(vpcc.data(), vpcc.size(),
-                                             nullptr));
+      mp4::BoxReader::ReadConcatentatedBoxes(vpcc, nullptr));
   mp4::VPCodecConfigurationRecord vpcc_box;
   ASSERT_TRUE(vpcc_box.Parse(box_reader.get()));
   ASSERT_EQ(kTestProfile, vpcc_box.profile);
@@ -262,8 +259,7 @@ TEST(VTConfigUtil, CreateFormatExtensions_AV1) {
       fmt.get(), kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms,
       base::SysUTF8ToCFStringRef("av1C").get());
   std::unique_ptr<mp4::BoxReader> box_reader(
-      mp4::BoxReader::ReadConcatentatedBoxes(av1c.data(), av1c.size(),
-                                             nullptr));
+      mp4::BoxReader::ReadConcatentatedBoxes(av1c, nullptr));
   mp4::AV1CodecConfigurationRecord av1c_box;
   ASSERT_TRUE(av1c_box.Parse(box_reader.get()));
   ASSERT_EQ(kTestProfile, av1c_box.profile);

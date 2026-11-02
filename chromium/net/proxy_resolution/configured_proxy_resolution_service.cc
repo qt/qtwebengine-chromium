@@ -1309,9 +1309,9 @@ int ConfiguredProxyResolutionService::DidFinishResolvingProxy(
     // This can be observed because the service destructor sets
     // `in_destruction_ = true` and synchronously calls
     // QueryComplete(ERR_ABORTED) on each pending request. QueryComplete
-    // synchronously calls QueryDidComplete, which in turn calls
-    // DidFinishResolvingProxy on this service before the request removes itself
-    // from `pending_requests_` and runs the user callback.
+    // removes the request from `pending_requests_` and synchronously calls
+    // QueryDidComplete, which in turn calls DidFinishResolvingProxy on this
+    // service, and then runs the user callback.
     if (resolver_error == ERR_ABORTED && in_destruction_ && !config_) {
       result_code = ERR_MANDATORY_PROXY_CONFIGURATION_FAILED;
       net_log.EndEvent(NetLogEventType::PROXY_RESOLUTION_SERVICE);
@@ -1337,8 +1337,9 @@ int ConfiguredProxyResolutionService::DidFinishResolvingProxy(
 
     if (reset_config) {
       ResetProxyConfig(false);
-      if (pending_requests_.size() > 1)
+      if (!pending_requests_.empty()) {
         ApplyProxyConfigIfAvailable();
+      }
     } else if (enable_pac_runtime_backoff_ &&
                resolver_error == ERR_PAC_SCRIPT_FAILED) {
       HandlePacScriptLoadError();
@@ -1651,6 +1652,7 @@ ConfiguredProxyResolutionService::RequestHostResolution(
     const ProxyConfig::ProxyOverrideRule::DnsProbeCondition& dns_condition,
     base::WeakPtr<ConfiguredProxyResolutionRequest> listener,
     const NetworkAnonymizationKey& network_anonymization_key,
+    handles::NetworkHandle target_network,
     const NetLogWithSource& net_log,
     RequestPriority priority) {
   CHECK(host_resolver_for_override_rules_);
@@ -1664,14 +1666,15 @@ ConfiguredProxyResolutionService::RequestHostResolution(
   std::unique_ptr<HostResolver::ResolveHostRequest> request;
   if (GURL::SchemeIsCryptographic(dns_condition.host.scheme())) {
     request = host_resolver_for_override_rules_->CreateRequest(
-        dns_condition.host, network_anonymization_key, sub_net_log, parameters);
+        dns_condition.host, network_anonymization_key, target_network,
+        sub_net_log, parameters);
   } else {
     // If HTTPS DNS is not specified by the rule, remove the scheme as it may
     // fail if HTTPS DNS turns out to be supported for that domain
     // (crbug.com/469064221).
     request = host_resolver_for_override_rules_->CreateRequest(
         HostPortPair::FromSchemeHostPort(dns_condition.host),
-        network_anonymization_key, sub_net_log, parameters);
+        network_anonymization_key, target_network, sub_net_log, parameters);
   }
 
   // Link the two net log sources together.

@@ -65,6 +65,7 @@ cc_library(
     "//src/tint/utils/reflection",
     "//src/tint/utils/rtti",
     "//src/tint/utils/text",
+    "//third_party/directx-shader-compiler:dxc_headers",
     "//src/utils",
   ],
   copts = COPTS,

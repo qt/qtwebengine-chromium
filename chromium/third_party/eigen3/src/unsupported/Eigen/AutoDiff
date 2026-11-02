@@ -27,6 +27,8 @@ namespace Eigen {
  * \code
  * #include <unsupported/Eigen/AutoDiff>
  * \endcode
+ *
+ * See \ref AutoDiffExamples for introductory examples.
  */
 //@{
 

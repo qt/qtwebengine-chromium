@@ -12,16 +12,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#![feature(negative_impls)]
 
-mod database_with_cache;
+pub mod clock;
+pub mod database;
 pub mod encryption;
 pub mod icing;
-mod memory_cache;
+pub mod memory_blob_store;
 
 pub use crate::{
-    database_with_cache::DatabaseWithCache,
-    icing::{IcingMetaDatabase, PageToken},
+    clock::{Clock, SystemClock, system_time_to_timestamp},
+    database::Database,
+    icing::{
+        IcingMetaDatabase, IcingTempDir, PageToken, PendingLlmViewMetadata, PendingMetadata,
+        calculate_memory_icing_size,
+    },
 };
 
 // The unique id for a memory, responding to `struct Memory`.
@@ -32,3 +36,4 @@ pub use crate::{
 // at `add_memory` requests. Clients then can use this id to get the
 // memory.
 pub type MemoryId = String;
+pub type ViewId = String;

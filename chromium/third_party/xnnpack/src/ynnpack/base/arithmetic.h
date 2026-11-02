@@ -13,6 +13,7 @@
 #include <limits>
 
 #include "ynnpack/base/bfloat16.h"
+#include "ynnpack/base/fp8.h"
 #include "ynnpack/base/half.h"
 #include "ynnpack/base/type.h"
 
@@ -69,19 +70,30 @@ auto cast(bfloat16 x) {
   return cast<To>(static_cast<float>(x));
 }
 
+template <typename To>
+auto cast(fp8_e5m2 x) {
+  return cast<To>(static_cast<half>(x));
+}
+
+template <typename To>
+auto cast(fp8_e4m3 x) {
+  return cast<To>(static_cast<bfloat16>(x));
+}
+
 // std::saturate_cast is C++26
 template <typename T, typename U>
 constexpr T cast(U x) noexcept {
   if constexpr (is_integral<T>::value) {
     if (x > type_info<T>::max()) return type_info<T>::max();
     if (x < type_info<T>::min()) return type_info<T>::min();
+    if (!is_integral<U>::value) return static_cast<T>(std::nearbyint(x));
   }
   return static_cast<T>(x);
 }
 
 template <typename T>
 float dequantize(T x, float scale, float zero_point) {
-  return (static_cast<float>(x) - zero_point) * scale;
+  return (cast<float>(x) - zero_point) * scale;
 }
 inline double dequantize(double x, float scale, float zero_point) {
   return (x - zero_point) * scale;
@@ -261,34 +273,19 @@ T exp2_round(T a) {
   return std::ldexp(static_cast<T>(1.0), static_cast<int>(std::nearbyint(a)));
 }
 
-// Kinda like std::copysign, but copies NaN-ness instead.
-template <typename T>
-T copynan(T x, T nan) {
-  return std::isnan(nan) ? nan : x;
-}
-
-template <typename T>
-void kahan_sum(T a, T& acc, T& error) {
-  T y = a - error;
-  T t = acc + y;
-  error = (t - acc) - y;
-  if (!std::isfinite(error)) {
-    // If the error is infinity or NaN, we don't want to know about it. The
-    // accumulator will be infinity anyways, and we might corrupt the result
-    // to be NaN.
-    error = static_cast<T>(0);
-  }
-  acc = t;
-}
-
-inline void kahan_sum(int a, int& acc, int&) {
-  // Provide a silly integer overload for template code to use.
-  acc += a;
-}
-
 constexpr size_t pow(size_t base, size_t exp) {
   return (exp == 0) ? 1 : base * pow(base, exp - 1);
 }
+
+using std::isfinite;
+using std::isinf;
+using std::isnan;
+
+#ifndef _MSC_VER
+inline bool isinf(int x) { return false; }
+inline bool isnan(int x) { return false; }
+inline bool isfinite(int x) { return true; }
+#endif  // _MSC_VER
 
 }  // namespace ynn
 

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <stdint.h>
+#include <time.h>
 
 #include <array>
 #include <limits>
@@ -27,11 +28,12 @@
 #include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/span.h"
 #include "core/fxcrt/stl_util.h"
-#include "core/fxge/cfx_defaultrenderdevice.h"
+#include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/fx_font.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
 #include "public/cpp/fpdf_scopers.h"
 #include "public/fpdf_annot.h"
+#include "public/fpdf_doc.h"
 #include "public/fpdf_edit.h"
 #include "public/fpdfview.h"
 #include "testing/embedder_test.h"
@@ -43,6 +45,7 @@
 #include "testing/utils/file_util.h"
 #include "testing/utils/hash.h"
 #include "testing/utils/path_service.h"
+#include "testing/utils/scoped_time_overrides.h"
 
 using pdfium::kBlankPage200x200Png;
 using pdfium::kHelloWorldPng;
@@ -70,6 +73,24 @@ constexpr char kEmbeddedImage33Checksum[] = "cb3637934bb3b95a6e4ae1ea9eb9e56e";
 constexpr char kEmbeddedImage33Png[] = "embedded_images_33";
 
 constexpr char kNotoSansScPng[] = "noto_sans_sc";
+
+time_t FakeTime() {
+  return 1587611121;  // 2020-04-23 03:05:21 UTC.
+}
+
+tm* FakeLocaltime(const time_t* time) {
+  static tm fake_local_time = {};
+  if (*time != FakeTime()) {
+    return nullptr;
+  }
+  fake_local_time.tm_year = 2020 - 1900;
+  fake_local_time.tm_mon = 4 - 1;
+  fake_local_time.tm_mday = 23;
+  fake_local_time.tm_hour = 10;
+  fake_local_time.tm_min = 35;
+  fake_local_time.tm_sec = 21;
+  return &fake_local_time;
+}
 
 struct FPDFEditMoveEmbedderTestCase {
   std::vector<int> page_indices;
@@ -269,14 +290,14 @@ const char kExpectedPDF[] =
     "0000000017 00000 n\r\n"
     "0000000066 00000 n\r\n"
     "0000000122 00000 n\r\n"
-    "0000000192 00000 n\r\n"
+    "0000000199 00000 n\r\n"
     "trailer\r\n"
     "<<\r\n"
     "/Root 1 0 R\r\n"
     "/Info 3 0 R\r\n"
     "/Size 5/ID\\[<.*><.*>\\]>>\r\n"
     "startxref\r\n"
-    "285\r\n"
+    "292\r\n"
     "%%EOF\r\n";
 
 }  // namespace
@@ -377,6 +398,17 @@ TEST_F(FPDFEditEmbedderTest, EmptyCreation) {
 
   EXPECT_THAT(GetString(), testing::MatchesRegex(std::string(
                                kExpectedPDF, sizeof(kExpectedPDF))));
+}
+
+TEST_F(FPDFEditEmbedderTest, NewDocumentCreationDateHasTimeZone) {
+  ScopedTimeFunction time_scope(FakeTime);
+  ScopedLocaltimeFunction localtime_scope(FakeLocaltime);
+  ScopedFPDFDocument doc(FPDF_CreateNewDocument());
+  ASSERT_TRUE(doc);
+
+  unsigned short buf[128];
+  ASSERT_EQ(48u, FPDF_GetMetaText(doc.get(), "CreationDate", buf, sizeof(buf)));
+  EXPECT_EQ(L"D:20200423103521+07'30'", GetPlatformWString(buf));
 }
 
 // Regression test for https://crbug.com/667012
@@ -4902,6 +4934,20 @@ TEST_F(FPDFEditEmbedderTest, GetRenderedBitmapHandlesSMask) {
       CompareBitmapWithExpectationSuffix(bitmap.get(), "matte_object_no_smask");
     }
   }
+}
+
+TEST_F(FPDFEditEmbedderTest, GetRenderedBitmapHandlesClipPath) {
+  ASSERT_TRUE(OpenDocument("image_clipped.pdf"));
+  ScopedPage page = LoadScopedPage(0);
+  ASSERT_TRUE(page);
+
+  ASSERT_EQ(1, FPDFPage_CountObjects(page.get()));
+  FPDF_PAGEOBJECT obj = FPDFPage_GetObject(page.get(), 0);
+  ASSERT_EQ(FPDF_PAGEOBJ_IMAGE, FPDFPageObj_GetType(obj));
+
+  ScopedFPDFBitmap bitmap(
+      FPDFImageObj_GetRenderedBitmap(document(), page.get(), obj));
+  CompareBitmap(bitmap.get(), "image_clipped");
 }
 
 TEST_F(FPDFEditEmbedderTest, GetRenderedBitmapBadParams) {

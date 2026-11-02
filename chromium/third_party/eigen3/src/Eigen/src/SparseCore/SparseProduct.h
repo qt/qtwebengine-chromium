@@ -169,7 +169,6 @@ template <typename Scalar, int Options_, typename StorageIndex_>
 template <typename Lhs, typename Rhs>
 SparseMatrix<Scalar, Options_, StorageIndex_>& SparseMatrix<Scalar, Options_, StorageIndex_>::operator=(
     const Product<Lhs, Rhs, AliasFreeProduct>& src) {
-  // std::cout << "in Assignment : " << DstOptions << "\n";
   SparseMatrix dst(src.rows(), src.cols());
   internal::generic_product_impl<Lhs, Rhs>::evalTo(dst, src.lhs(), src.rhs());
   this->swap(dst);

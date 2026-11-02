@@ -117,9 +117,6 @@ struct conservative_sparse_sparse_product_selector;
 
 template <typename Lhs, typename Rhs, typename ResultType>
 struct conservative_sparse_sparse_product_selector<Lhs, Rhs, ResultType, ColMajor, ColMajor, ColMajor> {
-  typedef remove_all_t<Lhs> LhsCleaned;
-  typedef typename LhsCleaned::Scalar Scalar;
-
   static void run(const Lhs& lhs, const Rhs& rhs, ResultType& res) {
     using RowMajorMatrix = WithStorageOrder<ResultType, RowMajor>;
     using ColMajorMatrixAux = WithStorageOrder<ResultType, ColMajor>;
@@ -181,8 +178,6 @@ struct conservative_sparse_sparse_product_selector<Lhs, Rhs, ResultType, RowMajo
 
 template <typename Lhs, typename Rhs, typename ResultType>
 struct conservative_sparse_sparse_product_selector<Lhs, Rhs, ResultType, ColMajor, ColMajor, RowMajor> {
-  typedef typename traits<remove_all_t<Lhs>>::Scalar Scalar;
-
   static void run(const Lhs& lhs, const Rhs& rhs, ResultType& res) {
     using ColMajorRes = WithStorageOrder<ResultType, ColMajor>;
     ColMajorRes resCol(lhs.rows(), rhs.cols());

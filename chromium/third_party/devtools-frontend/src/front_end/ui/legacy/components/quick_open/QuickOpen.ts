@@ -9,7 +9,7 @@ import {
   FilteredListWidget,
   getRegisteredProviders,
   type Provider,
-  type ProviderRegistration
+  type ProviderRegistration,
 } from './FilteredListWidget.js';
 
 const UIStrings = {

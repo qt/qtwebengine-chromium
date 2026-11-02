@@ -40,9 +40,7 @@
 #include "third_party/blink/public/mojom/worker/subresource_loader_updater.mojom.h"
 #include "url/gurl.h"
 
-#if !BUILDFLAG(IS_ANDROID)
 #include "third_party/blink/public/mojom/hid/hid.mojom-forward.h"
-#endif
 
 namespace content {
 
@@ -246,10 +244,8 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
       mojo::PendingReceiver<blink::mojom::CacheStorage> receiver,
       const storage::BucketLocator& bucket_locator);
 
-#if !BUILDFLAG(IS_ANDROID)
   void BindHidService(const url::Origin& origin,
                       mojo::PendingReceiver<blink::mojom::HidService> receiver);
-#endif  // !BUILDFLAG(IS_ANDROID)
 
   void BindUsbService(
       const url::Origin& origin,
@@ -262,6 +258,9 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   //
   // `client_security_state` may be nullptr, in which case a default value is
   // set in the bundle.
+  // `network_restrictions_id`: The unique token identifying this worker's
+  // network restrictions in the network service. Used to restrict subresource
+  // fetches by this worker.
   static std::unique_ptr<blink::PendingURLLoaderFactoryBundle>
   CreateFactoryBundle(
       RenderProcessHost* rph,
@@ -273,7 +272,8 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
       mojo::PendingRemote<network::mojom::DocumentIsolationPolicyReporter>
           dip_reporter,
       ContentBrowserClient::URLLoaderFactoryType factory_type,
-      const std::string& devtools_worker_token);
+      const std::string& devtools_worker_token,
+      const base::UnguessableToken& network_restrictions_id);
 
   mojo::PendingRemote<network::mojom::CrossOriginEmbedderPolicyReporter>
   GetCoepReporter();

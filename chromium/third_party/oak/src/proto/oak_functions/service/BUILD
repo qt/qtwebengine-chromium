@@ -16,7 +16,7 @@
 
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
-load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 
 package(
     default_visibility = ["//:default_visibility"],
@@ -35,6 +35,7 @@ proto_library(
 
 cc_proto_library(
     name = "oak_functions_cc_proto",
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [":oak_functions_proto"],
 )
 

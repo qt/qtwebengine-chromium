@@ -13,6 +13,7 @@
 
 #include <stdint.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <memory>
 #include <span>
@@ -32,6 +33,18 @@ class RtpPacketizer {
     int last_packet_reduction_len = 0;
     // Reduction len for packet that is first & last at the same time.
     int single_packet_reduction_len = 0;
+
+    PayloadSizeLimits Sanitize() const {
+      PayloadSizeLimits result = *this;
+      result.max_payload_len = std::max(0, result.max_payload_len);
+      result.single_packet_reduction_len = std::clamp(
+          result.single_packet_reduction_len, 0, result.max_payload_len);
+      result.first_packet_reduction_len = std::clamp(
+          result.first_packet_reduction_len, 0, result.max_payload_len);
+      result.last_packet_reduction_len = std::clamp(
+          result.last_packet_reduction_len, 0, result.max_payload_len);
+      return result;
+    }
   };
 
   enum class PacketizationFormat {
@@ -60,9 +73,9 @@ class RtpPacketizer {
   // Returns true on success, false otherwise.
   virtual bool NextPacket(RtpPacketToSend* packet) = 0;
 
-  // Split payload_len into sum of integers with respect to `limits`.
+  // Splits `payload_size` into sum of integers with respect to `limits`.
   // Returns empty vector on failure.
-  static std::vector<int> SplitAboutEqually(int payload_len,
+  static std::vector<int> SplitAboutEqually(size_t payload_size,
                                             const PayloadSizeLimits& limits);
 };
 }  // namespace webrtc

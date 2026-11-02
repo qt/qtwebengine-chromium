@@ -368,9 +368,23 @@ chromium-metrics-reviews@google.com.
   <int value="133" label="JS_OPTIMIZATIONS_INFOBAR_DELEGATE"/>
   <int value="134" label="WEB_APP_BLOCKED_MIGRATION_INFOBAR_DELEGATE"/>
   <int value="135" label="OSCRYPTASYNC_AVAILABILITY_INFOBAR_DELEGATE"/>
+  <int value="136" label="AUTOFILL_AI_PRE_FETCH_FAILURE_INFOBAR_DELEGATE_IOS"/>
+  <int value="137" label="SIGNIN_QRCODE_INFOBAR_DELEGATE"/>
+  <int value="138" label="FORMS_AI_PRIVATE_INFERENCE_INFOBAR_DELEGATE_IOS"/>
+  <int value="139" label="PASSWORD_SAVED_INFOBAR_DELEGATE_IOS"/>
 </enum>
 
 <!-- LINT.ThenChange(//components/infobars/core/infobar_delegate.h:InfoBarIdentifier) -->
+
+<enum name="MappedChromeCommandId">
+  <summary>
+    Under-specified enum for browser command IDs recorded by
+    Browser.Shortcuts.TriggeredCommandId. Command IDs correspond to values in
+    chrome/app/chrome_command_ids.h. Unmapped entries will automatically display
+    as raw integers on UMA dashboards.
+  </summary>
+  <int value="0" label="Default"/>
+</enum>
 
 <!-- LINT.IfChange(NoSpareRendererReason) -->
 

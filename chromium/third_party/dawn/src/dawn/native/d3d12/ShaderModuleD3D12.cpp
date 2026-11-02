@@ -27,12 +27,12 @@
 
 #include "src/dawn/native/d3d12/ShaderModuleD3D12.h"
 
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
 
 #include "dawn/platform/DawnPlatform.h"
-#include "src/dawn/common/Assert.h"
 #include "src/dawn/common/MatchVariant.h"
 #include "src/dawn/native/Pipeline.h"
 #include "src/dawn/native/ResourceTableDefaultResources.h"
@@ -42,12 +42,14 @@
 #include "src/dawn/native/d3d12/BackendD3D12.h"
 #include "src/dawn/native/d3d12/BindGroupLayoutD3D12.h"
 #include "src/dawn/native/d3d12/DeviceD3D12.h"
+#include "src/dawn/native/d3d12/ImmediatesLayoutD3D12.h"
 #include "src/dawn/native/d3d12/PhysicalDeviceD3D12.h"
 #include "src/dawn/native/d3d12/PipelineLayoutD3D12.h"
 #include "src/dawn/native/d3d12/PlatformFunctionsD3D12.h"
 #include "src/dawn/native/d3d12/UtilsD3D12.h"
 #include "src/dawn/platform/metrics/HistogramMacros.h"
 #include "src/dawn/platform/tracing/TraceEvent.h"
+#include "src/utils/assert.h"
 #include "tint/tint.h"
 
 namespace dawn::native::d3d12 {
@@ -116,14 +118,12 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     SingleShaderStage stage,
     const PipelineLayout* layout,
     uint32_t compileFlags,
-    bool applySampleMaskPolyfill,
-    const std::optional<dawn::native::d3d::InterStageShaderVariablesMask>&
-        usedInterstageVariables) {
+    const ImmediateMask& pipelineImmediateMask,
+    const std::optional<dawn::native::d3d::InterStageShaderVariablesMask>& usedInterstageVariables,
+    std::vector<uint32_t> snorm10_10_10_2_locations) {
     Device* device = ToBackend(GetDevice());
     TRACE_EVENT0(device->GetPlatform(), General, "ShaderModuleD3D12::Compile");
     DAWN_ASSERT(!IsError());
-
-    const EntryPointMetadata& entryPoint = GetEntryPoint(programmableStage.entryPoint);
 
     d3d::D3DCompilationRequest req = {};
     req.tracePlatform = UnsafeUnserializedValue(device->GetPlatform());
@@ -132,6 +132,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     req.hlsl.disableSymbolRenaming = device->IsToggleEnabled(Toggle::DisableSymbolRenaming);
     req.hlsl.dumpShaders = device->IsToggleEnabled(Toggle::DumpShaders);
     req.hlsl.dumpShadersOnFailure = device->IsToggleEnabled(Toggle::DumpShadersOnFailure);
+    req.hlsl.tintOptions.snorm10_10_10_2_locations = std::move(snorm10_10_10_2_locations);
     req.hlsl.tintOptions.entry_point_name = programmableStage.entryPoint;
     req.hlsl.tintOptions.remapped_entry_point_name = device->GetIsolatedEntryPointName();
 
@@ -302,15 +303,23 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
         req.hlsl.tintOptions.compiler = tint::hlsl::writer::Options::Compiler::kDXC_2021;
     }
 
-    if (entryPoint.usesNumWorkgroups) {
-        DAWN_ASSERT(stage == SingleShaderStage::Compute);
-        req.hlsl.tintOptions.root_constant_binding_point = tint::BindingPoint{
-            layout->GetNumWorkgroupsRegisterSpace(), layout->GetNumWorkgroupsShaderRegister()};
-    } else if (stage == SingleShaderStage::Vertex) {
-        // For vertex shaders, use root constant to add FirstIndexOffset, if needed
-        req.hlsl.tintOptions.root_constant_binding_point =
-            tint::BindingPoint{layout->GetFirstIndexOffsetRegisterSpace(),
-                               layout->GetFirstIndexOffsetShaderRegister()};
+    req.hlsl.tintOptions.immediate_binding_point = tint::BindingPoint{
+        layout->GetImmediatesRegisterSpace(), layout->GetImmediatesShaderRegister()};
+
+    if (stage == SingleShaderStage::Compute) {
+        req.hlsl.tintOptions.num_workgroups_start_offset = GetImmediateByteOffsetInPipelineIfAny(
+            &ComputeImmediates::numWorkgroups, pipelineImmediateMask);
+    } else {
+        // firstVertex and firstInstance are set together, with firstInstance immediately after
+        // firstVertex in the packed immediate layout.
+        std::optional<uint32_t> firstIndexOffset = GetImmediateByteOffsetInPipelineIfAny(
+            &RenderImmediates::firstIndexOffset, pipelineImmediateMask);
+
+        if (firstIndexOffset.has_value()) {
+            req.hlsl.tintOptions.first_index_offset = firstIndexOffset;
+            req.hlsl.tintOptions.first_instance_offset =
+                std::optional<uint32_t>(*firstIndexOffset + kImmediateElementByteSize);
+        }
     }
 
     // TODO(dawn:549): HLSL generation outputs the indices into the
@@ -320,9 +329,6 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     // read by the shader.
     req.hlsl.tintOptions.array_length_from_uniform = std::move(arrayLengthFromUniform);
     req.hlsl.tintOptions.array_offset_from_uniform = std::move(arrayOffsetFromUniform);
-
-    req.hlsl.tintOptions.immediate_binding_point = tint::BindingPoint{
-        layout->GetImmediatesRegisterSpace(), layout->GetImmediatesShaderRegister()};
 
     if (stage == SingleShaderStage::Vertex) {
         // Now that only vertex shader can have interstage outputs.
@@ -348,7 +354,6 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
         device->IsToggleEnabled(Toggle::PolyFillPacked4x8DotProduct);
     req.hlsl.tintOptions.extensions.polyfill_pack_unpack_4x8 =
         device->IsToggleEnabled(Toggle::D3D12PolyFillPackUnpack4x8);
-    req.hlsl.tintOptions.polyfill_sample_mask = applySampleMaskPolyfill;
 
     req.hlsl.limits = LimitsForCompilationRequest::Create(device->GetLimits().v1);
     req.hlsl.adapterSupportedLimits = UnsafeUnserializedValue(
@@ -362,6 +367,8 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
         req.hlsl.waveLaneCountMin = deviceInfo.waveLaneCountMin;
         req.hlsl.waveLaneCountMax = deviceInfo.waveLaneCountMax;
     }
+
+    req.hlsl.usesSubgroupMatrix = programmableStage.metadata->usesSubgroupMatrix;
 
     CacheResult<d3d::CompiledShader> compiledShader;
     DAWN_TRY_LOAD_OR_RUN(compiledShader, device, std::move(req),

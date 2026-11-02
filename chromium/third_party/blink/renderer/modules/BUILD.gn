@@ -10,6 +10,7 @@ import("//testing/libfuzzer/fuzzer_test.gni")
 import("//third_party/blink/renderer/bindings/bindings.gni")
 import("//third_party/blink/renderer/build/scripts/scripts.gni")
 import("//third_party/blink/renderer/modules/modules.gni")
+import("//third_party/blink/renderer/platform/blink_fuzzer_test.gni")
 
 if (is_android) {
   import("//build/config/android/rules.gni")
@@ -91,6 +92,7 @@ component("modules") {
     "//third_party/blink/renderer/modules/document_metadata",
     "//third_party/blink/renderer/modules/document_picture_in_picture",
     "//third_party/blink/renderer/modules/donottrack",
+    "//third_party/blink/renderer/modules/global_privacy_control",
     "//third_party/blink/renderer/modules/encoding",
     "//third_party/blink/renderer/modules/encryptedmedia",
     "//third_party/blink/renderer/modules/eventsource",
@@ -229,8 +231,6 @@ source_set("modules_testing") {
   sources = [
     "accessibility/testing/internals_accessibility.cc",
     "accessibility/testing/internals_accessibility.h",
-    "ad_auction/testing/internals_protected_audience.cc",
-    "ad_auction/testing/internals_protected_audience.h",
     "content_extraction/testing/internals_content_extraction.cc",
     "content_extraction/testing/internals_content_extraction.h",
     "credentialmanagement/testing/internals_fed_cm.cc",
@@ -414,15 +414,18 @@ source_set("unit_tests") {
     "accessibility/testing/accessibility_test.cc",
     "accessibility/testing/accessibility_test.h",
     "ai/ai_utils_test.cc",
+    "ai/availability_test.cc",
     "ai/language_model_test.cc",
     "ai/language_model_tool_types_test.cc",
     "ai/model_execution_responder_test.cc",
     "ai/proofreader_test.cc",
+    "ai/semantic_embedder_test.cc",
     "animationworklet/animation_worklet_global_scope_test.cc",
     "animationworklet/animation_worklet_proxy_client_test.cc",
     "animationworklet/worklet_animation_test.cc",
     "background_fetch/background_fetch_icon_loader_test.cc",
     "background_fetch/background_fetch_manager_test.cc",
+    "bluetooth/bluetooth_unittest.cc",
     "bluetooth/bluetooth_uuid_unittest.cc",
     "broadcastchannel/broadcast_channel_unittest.cc",
     "cache_storage/cache_test.cc",
@@ -451,6 +454,7 @@ source_set("unit_tests") {
     "credentialmanagement/credential_manager_type_converters_unittest.cc",
     "credentialmanagement/digital_identity_credential_protocol_test.cc",
     "credentialmanagement/digital_identity_credential_test.cc",
+    "credentialmanagement/identity_provider_test.cc",
     "credentialmanagement/password_credential_test.cc",
     "credentialmanagement/public_key_credential_unittest.cc",
     "csspaint/document_paint_definition_test.cc",
@@ -464,6 +468,7 @@ source_set("unit_tests") {
     "device_orientation/device_motion_event_pump_unittest.cc",
     "device_orientation/device_orientation_event_pump_unittest.cc",
     "document_metadata/document_metadata_extractor_test.cc",
+    "document_metadata/document_metadata_server_test.cc",
     "document_picture_in_picture/picture_in_picture_controller_test.cc",
     "eventsource/event_source_parser_test.cc",
     "filesystem/dom_file_system_base_test.cc",
@@ -591,6 +596,7 @@ source_set("unit_tests") {
     "peerconnection/rtc_rtp_sender_test.cc",
     "peerconnection/rtc_rtp_transceiver_impl_test.cc",
     "peerconnection/rtc_sctp_transport_test.cc",
+    "peerconnection/rtc_stats_report_test.cc",
     "peerconnection/rtc_transport/rtc_received_packet_test.cc",
     "peerconnection/rtc_transport/rtc_transport_dependencies_test.cc",
     "peerconnection/rtc_transport/rtc_transport_test.cc",
@@ -616,18 +622,18 @@ source_set("unit_tests") {
     "sensor/sensor_test_utils.h",
     "service_worker/service_worker_container_test.cc",
     "service_worker/service_worker_event_queue_test.cc",
+    "service_worker/service_worker_global_scope_test.cc",
     "service_worker/service_worker_installed_scripts_manager_test.cc",
     "service_worker/service_worker_router_type_converter_test.cc",
     "service_worker/thread_safe_script_container_test.cc",
     "service_worker/wait_until_observer_test.cc",
     "service_worker/web_embedded_worker_impl_test.cc",
     "service_worker/web_service_worker_fetch_context_impl_test.cc",
-    "shared_storage/shared_storage_worklet_test.cc",
-    "shared_storage/shared_storage_worklet_unittest.cc",
     "speech/speech_recognition_controller_unittest.cc",
     "speech/speech_recognition_test.cc",
     "video_rvfc/video_frame_callback_requester_impl_test.cc",
     "video_rvfc/video_frame_request_callback_collection_test.cc",
+    "virtualkeyboard/virtual_keyboard_test.cc",
     "wake_lock/wake_lock_manager_test.cc",
     "wake_lock/wake_lock_sentinel_test.cc",
     "wake_lock/wake_lock_test.cc",
@@ -648,6 +654,8 @@ source_set("unit_tests") {
     "webaudio/oscillator_handler_test.cc",
     "webaudio/script_processor_node_test.cc",
     "webaudio/stereo_panner_node_test.cc",
+    "webaudio/testing/fake_audio_thread.cc",
+    "webaudio/testing/fake_audio_thread.h",
     "webaudio/testing/mock_web_audio_device.h",
     "webrtc/rtc_test.cc",
     "webrtc/webrtc_audio_device_impl_test.cc",
@@ -740,7 +748,6 @@ source_set("unit_tests") {
     "//third_party/blink/renderer/core:testing",
     "//third_party/blink/renderer/core:unit_test_support",
     "//third_party/blink/renderer/core:unit_tests",
-    "//third_party/blink/renderer/modules/ad_auction:unit_tests",
     "//third_party/blink/renderer/modules/breakout_box:unit_tests",
     "//third_party/blink/renderer/modules/clipboard:unit_tests",
     "//third_party/blink/renderer/modules/file_system_access:unit_tests",
@@ -811,7 +818,7 @@ group("mediastream_unittests_data") {
   data = [ "//media/test/data/" ]
 }
 
-fuzzer_test("web_app_manifest_fuzzer") {
+blink_fuzzer_test("web_app_manifest_fuzzer") {
   sources = [ "manifest/manifest_fuzzer.cc" ]
 
   dict = "manifest/manifest_fuzzer.dict"
@@ -820,11 +827,10 @@ fuzzer_test("web_app_manifest_fuzzer") {
   deps = [
     ":modules",
     "//testing/libfuzzer:libfuzzer_base_wrappers",
-    "//third_party/blink/renderer/platform:blink_fuzzer_test_support",
   ]
 }
 
-fuzzer_test("media_capabilities_fuzzer") {
+blink_fuzzer_test("media_capabilities_fuzzer") {
   sources = [ "media_capabilities/media_capabilities_fuzzer.cc" ]
 
   seed_corpus = "media_capabilities/fuzzer_seed_corpus"
@@ -833,13 +839,12 @@ fuzzer_test("media_capabilities_fuzzer") {
     ":modules",
     "//third_party/blink/renderer/core:testing",
     "//third_party/blink/renderer/modules/media_capabilities:fuzzer_media_configuration_proto",
-    "//third_party/blink/renderer/platform:blink_fuzzer_test_support",
     "//third_party/libprotobuf-mutator",
     "//third_party/protobuf:protobuf_lite",
   ]
 }
 
-fuzzer_test("webcodecs_video_frame_copy_to_fuzzer") {
+blink_fuzzer_test("webcodecs_video_frame_copy_to_fuzzer") {
   sources = [
     "webcodecs/fuzzer_utils.cc",
     "webcodecs/fuzzer_utils.h",
@@ -852,13 +857,12 @@ fuzzer_test("webcodecs_video_frame_copy_to_fuzzer") {
     ":modules",
     "//third_party/blink/renderer/core:testing",
     "//third_party/blink/renderer/modules/webcodecs:fuzzer_protos",
-    "//third_party/blink/renderer/platform:blink_fuzzer_test_support",
     "//third_party/libprotobuf-mutator",
     "//third_party/protobuf:protobuf_lite",
   ]
 }
 
-fuzzer_test("webcodecs_audio_data_copy_to_fuzzer") {
+blink_fuzzer_test("webcodecs_audio_data_copy_to_fuzzer") {
   sources = [
     "webcodecs/audio_data_copy_to_fuzzer.cc",
     "webcodecs/fuzzer_utils.cc",
@@ -871,13 +875,12 @@ fuzzer_test("webcodecs_audio_data_copy_to_fuzzer") {
     ":modules",
     "//third_party/blink/renderer/core:testing",
     "//third_party/blink/renderer/modules/webcodecs:fuzzer_protos",
-    "//third_party/blink/renderer/platform:blink_fuzzer_test_support",
     "//third_party/libprotobuf-mutator",
     "//third_party/protobuf:protobuf_lite",
   ]
 }
 
-fuzzer_test("webcodecs_video_decoder_fuzzer") {
+blink_fuzzer_test("webcodecs_video_decoder_fuzzer") {
   sources = [
     "webcodecs/fuzzer_utils.cc",
     "webcodecs/fuzzer_utils.h",
@@ -890,7 +893,6 @@ fuzzer_test("webcodecs_video_decoder_fuzzer") {
     ":modules",
     "//third_party/blink/renderer/core:testing",
     "//third_party/blink/renderer/modules/webcodecs:fuzzer_protos",
-    "//third_party/blink/renderer/platform:blink_fuzzer_test_support",
     "//third_party/libprotobuf-mutator",
     "//third_party/protobuf:protobuf_lite",
   ]
@@ -929,7 +931,7 @@ action("generate_image_decoder_fuzzer_corpus") {
   outputs = [ image_decoder_fuzzer_seed_corpus_dir ]
 }
 
-fuzzer_test("webcodecs_image_decoder_fuzzer") {
+blink_fuzzer_test("webcodecs_image_decoder_fuzzer") {
   sources = [
     "webcodecs/fuzzer_utils.cc",
     "webcodecs/fuzzer_utils.h",
@@ -943,13 +945,12 @@ fuzzer_test("webcodecs_image_decoder_fuzzer") {
     ":modules",
     "//third_party/blink/renderer/core:testing",
     "//third_party/blink/renderer/modules/webcodecs:fuzzer_protos",
-    "//third_party/blink/renderer/platform:blink_fuzzer_test_support",
     "//third_party/libprotobuf-mutator",
     "//third_party/protobuf:protobuf_lite",
   ]
 }
 
-fuzzer_test("webcodecs_audio_decoder_fuzzer") {
+blink_fuzzer_test("webcodecs_audio_decoder_fuzzer") {
   sources = [
     "webcodecs/audio_decoder_fuzzer.cc",
     "webcodecs/fuzzer_utils.cc",
@@ -962,13 +963,12 @@ fuzzer_test("webcodecs_audio_decoder_fuzzer") {
     ":modules",
     "//third_party/blink/renderer/core:testing",
     "//third_party/blink/renderer/modules/webcodecs:fuzzer_protos",
-    "//third_party/blink/renderer/platform:blink_fuzzer_test_support",
     "//third_party/libprotobuf-mutator",
     "//third_party/protobuf:protobuf_lite",
   ]
 }
 
-fuzzer_test("webcodecs_video_encoder_fuzzer") {
+blink_fuzzer_test("webcodecs_video_encoder_fuzzer") {
   sources = [
     "webcodecs/fuzzer_utils.cc",
     "webcodecs/fuzzer_utils.h",
@@ -982,13 +982,12 @@ fuzzer_test("webcodecs_video_encoder_fuzzer") {
     "//third_party/blink/renderer/controller:blink_bindings_test_sources",
     "//third_party/blink/renderer/core:testing",
     "//third_party/blink/renderer/modules/webcodecs:fuzzer_protos",
-    "//third_party/blink/renderer/platform:blink_fuzzer_test_support",
     "//third_party/libprotobuf-mutator",
     "//third_party/protobuf:protobuf_lite",
   ]
 }
 
-fuzzer_test("webcodecs_audio_encoder_fuzzer") {
+blink_fuzzer_test("webcodecs_audio_encoder_fuzzer") {
   sources = [
     "webcodecs/audio_encoder_fuzzer.cc",
     "webcodecs/fuzzer_utils.cc",
@@ -1002,7 +1001,6 @@ fuzzer_test("webcodecs_audio_encoder_fuzzer") {
     "//media/mojo/services",
     "//third_party/blink/renderer/core:testing",
     "//third_party/blink/renderer/modules/webcodecs:fuzzer_protos",
-    "//third_party/blink/renderer/platform:blink_fuzzer_test_support",
     "//third_party/libprotobuf-mutator",
     "//third_party/protobuf:protobuf_lite",
   ]

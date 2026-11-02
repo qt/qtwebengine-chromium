@@ -19,37 +19,6 @@ namespace Eigen {
 namespace internal {
 
 /**
- * Evaluating TensorBroadcastingOp via coefficient of packet path is extremely
- * expensive. If expression has at least one broadcast op in it, and it supports
- * block based evaluation, we always prefer it, even for the small tensors. For
- * all other tileable ops, block evaluation overhead for small tensors (fits
- * into L1) is too large, and we fallback on vectorized evaluation.
- */
-
-// TODO(ezhulenev): Add specializations for all other types of Tensor ops.
-
-template <typename Expression>
-struct ExpressionHasTensorBroadcastingOp : std::false_type {};
-
-template <typename LhsXprType, typename RhsXprType>
-struct ExpressionHasTensorBroadcastingOp<const TensorAssignOp<LhsXprType, RhsXprType> >
-    : ExpressionHasTensorBroadcastingOp<RhsXprType> {};
-
-template <typename UnaryOp, typename XprType>
-struct ExpressionHasTensorBroadcastingOp<const TensorCwiseUnaryOp<UnaryOp, XprType> >
-    : ExpressionHasTensorBroadcastingOp<XprType> {};
-
-template <typename BinaryOp, typename LhsXprType, typename RhsXprType>
-struct ExpressionHasTensorBroadcastingOp<const TensorCwiseBinaryOp<BinaryOp, LhsXprType, RhsXprType> >
-    : std::integral_constant<bool, ExpressionHasTensorBroadcastingOp<LhsXprType>::value ||
-                                       ExpressionHasTensorBroadcastingOp<RhsXprType>::value> {};
-
-template <typename Broadcast, typename XprType>
-struct ExpressionHasTensorBroadcastingOp<const TensorBroadcastingOp<Broadcast, XprType> > : std::true_type {};
-
-// -------------------------------------------------------------------------- //
-
-/**
  * \ingroup Tensor_Module
  *
  * \brief The tensor executor class.
@@ -210,7 +179,7 @@ struct TensorExecutorTilingContext {
   size_t aligned_blocksize;        // block size after memory alignment
 };
 
-// Computes a block evaluation parameters, and allocates temporary memory buffer
+// Computes block evaluation parameters, and allocates temporary memory buffer
 // for blocks. See TensorExecutor/TensorAsyncExecutor (Tiling=On) below.
 template <typename Evaluator, typename TensorBlockMapper, bool Vectorizable>
 TensorExecutorTilingContext<TensorBlockMapper> GetTensorExecutorTilingContext(const Evaluator& evaluator) {

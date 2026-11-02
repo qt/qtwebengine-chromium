@@ -1,9 +1,0 @@
-{
-  "seqNum": 820263768,
-  "type": "ANSWER",
-  "result": "error",
-  "error": {
-    "code": 123,
-    "description": "something bad happened"
-  }
-}

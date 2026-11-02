@@ -6,46 +6,19 @@
 
 #include <utility>
 
-#include "base/functional/bind.h"
-#include "base/task/sequenced_task_runner.h"
-#include "components/services/storage/dom_storage/db_status.h"
-
 namespace storage {
 
-namespace {
-
-void DefaultDestroyCallback(
-    const base::FilePath&,
-    DomStorageDatabaseFactory::StatusCallback callback) {
-  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
-      FROM_HERE, base::BindOnce(std::move(callback), DbStatus::OK()));
-}
-
-}  // namespace
-
 ScopedDomStorageDatabaseFactoryForTesting::
-    ScopedDomStorageDatabaseFactoryForTesting(CreateCallback create_callback)
-    : ScopedDomStorageDatabaseFactoryForTesting(
-          std::move(create_callback),
-          base::BindRepeating(&DefaultDestroyCallback)) {}
-
-ScopedDomStorageDatabaseFactoryForTesting::
-    ScopedDomStorageDatabaseFactoryForTesting(CreateCallback create_callback,
-                                              DestroyCallback destroy_callback)
-    : default_create_callback_(
-          std::move(DomStorageDatabaseFactory::GetCreateCallback())),
-      default_destroy_callback_(
-          std::move(DomStorageDatabaseFactory::GetDestroyCallback())) {
-  DomStorageDatabaseFactory::GetCreateCallback() = std::move(create_callback);
-  DomStorageDatabaseFactory::GetDestroyCallback() = std::move(destroy_callback);
+    ScopedDomStorageDatabaseFactoryForTesting(OpenCallback open_callback)
+    : default_open_callback_(
+          std::move(DomStorageDatabaseFactory::GetOpenCallback())) {
+  DomStorageDatabaseFactory::GetOpenCallback() = std::move(open_callback);
 }
 
 ScopedDomStorageDatabaseFactoryForTesting::
     ~ScopedDomStorageDatabaseFactoryForTesting() {
-  DomStorageDatabaseFactory::GetCreateCallback() =
-      std::move(default_create_callback_);
-  DomStorageDatabaseFactory::GetDestroyCallback() =
-      std::move(default_destroy_callback_);
+  DomStorageDatabaseFactory::GetOpenCallback() =
+      std::move(default_open_callback_);
 }
 
 }  // namespace storage

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../../core/common/common.js';
 import type * as Platform from '../../../core/platform/platform.js';
@@ -11,7 +12,7 @@ import type * as Protocol from '../../../generated/protocol.js';
 import type * as Logs from '../../../models/logs/logs.js';
 import * as NetworkForward from '../../../panels/network/forward/forward.js';
 import {renderElementIntoDOM} from '../../../testing/DOMHelpers.js';
-import {describeWithEnvironment} from '../../../testing/EnvironmentHelpers.js';
+import {deinitializeGlobalVars, initializeGlobalVars} from '../../../testing/EnvironmentHelpers.js';
 import {Icon} from '../../kit/kit.js';
 import * as UI from '../../legacy/legacy.js';
 import * as RenderCoordinator from '../render_coordinator/render_coordinator.js';
@@ -91,7 +92,10 @@ class MockRequestResolver {
   }
 }
 
-describeWithEnvironment('RequestLinkIcon', () => {
+describe('RequestLinkIcon', () => {
+  before(async () => await initializeGlobalVars());
+  after(async () => await deinitializeGlobalVars());
+
   const requestId1 = 'r1' as Protocol.Network.RequestId;
   const requestId2 = 'r2' as Protocol.Network.RequestId;
 

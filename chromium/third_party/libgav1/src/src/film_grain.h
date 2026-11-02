@@ -23,15 +23,12 @@
 #include <memory>
 #include <type_traits>
 
-#include "src/dsp/common.h"
 #include "src/dsp/dsp.h"
 #include "src/dsp/film_grain_common.h"
 #include "src/utils/array_2d.h"
 #include "src/utils/constants.h"
-#include "src/utils/cpu.h"
 #include "src/utils/threadpool.h"
 #include "src/utils/types.h"
-#include "src/utils/vector.h"
 
 namespace libgav1 {
 

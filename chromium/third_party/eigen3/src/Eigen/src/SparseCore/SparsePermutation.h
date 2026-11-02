@@ -172,7 +172,7 @@ struct product_promote_storage_type<PermutationStorage, Sparse, ProductTag> {
 };
 
 // TODO, the following two overloads are only needed to define the right temporary type through
-// typename traits<permutation_sparse_matrix_product<Rhs,Lhs,OnTheRight,false> >::ReturnType
+// typename traits<permutation_matrix_product<Rhs,Lhs,OnTheRight,false> >::ReturnType
 // whereas it should be correctly handled by traits<Product<> >::PlainObject
 
 template <typename Lhs, typename Rhs, int ProductTag>

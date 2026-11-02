@@ -14,11 +14,9 @@
 
 #include "src/dsp/intrapred_cfl.h"
 
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <memory>
 #include <ostream>
 
 #include "absl/strings/match.h"
@@ -27,7 +25,6 @@
 #include "gtest/gtest.h"
 #include "src/dsp/constants.h"
 #include "src/dsp/dsp.h"
-#include "src/utils/common.h"
 #include "src/utils/compiler_attributes.h"
 #include "src/utils/constants.h"
 #include "src/utils/cpu.h"

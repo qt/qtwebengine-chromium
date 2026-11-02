@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Host from '../../core/host/host.js';
 import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
-import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
+import {deinitializeGlobalVars, initializeGlobalVars} from '../../testing/EnvironmentHelpers.js';
 import {setupSettingsHooks} from '../../testing/SettingsHelpers.js';
 
 import * as LegacyUI from './legacy.js';
@@ -14,8 +15,11 @@ import * as LegacyUI from './legacy.js';
 const InspectorView = LegacyUI.InspectorView.InspectorView;
 const {DockState} = LegacyUI.DockController;
 
-describeWithEnvironment('InspectorView', () => {
+describe('InspectorView', () => {
   setupSettingsHooks();
+
+  before(async () => await initializeGlobalVars());
+  after(async () => await deinitializeGlobalVars());
 
   function createInspectorViewWithDockState(dockState: LegacyUI.DockController.DockState): {
     inspectorView: LegacyUI.InspectorView.InspectorView,
@@ -137,6 +141,17 @@ describeWithEnvironment('InspectorView', () => {
 
       assert.isTrue(inspectorView.drawerVisible());
       assert.isFalse(inspectorView.isDrawerMinimized());
+    });
+  });
+
+  describe('window layout CSS variables', () => {
+    it('sets --devtools-window-* custom properties on documentElement root', () => {
+      const {inspectorView} = createInspectorViewWithDockState(DockState.BOTTOM);
+      const rootStyle = inspectorView.element.ownerDocument.documentElement.style;
+      assert.isNotEmpty(rootStyle.getPropertyValue('--devtools-window-width'));
+      assert.isNotEmpty(rootStyle.getPropertyValue('--devtools-window-height'));
+      assert.isNotEmpty(rootStyle.getPropertyValue('--devtools-window-left'));
+      assert.isNotEmpty(rootStyle.getPropertyValue('--devtools-window-top'));
     });
   });
 });

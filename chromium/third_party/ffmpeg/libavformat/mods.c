@@ -92,6 +92,7 @@ static int mods_read_header(AVFormatContext *s)
     if (!e)
         return AVERROR_INVALIDDATA;
 
+    avpriv_update_cur_dts(s, st, e->timestamp);
     avio_seek(pb, e->pos, SEEK_SET);
 
     return 0;
@@ -101,6 +102,7 @@ static int mods_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     AVIOContext *pb = s->pb;
     MODSDemuxContext *ctx = s->priv_data;
+    AVStream *st = s->streams[0];
     unsigned size;
     int64_t pos;
     int ret;
@@ -116,12 +118,16 @@ static int mods_read_packet(AVFormatContext *s, AVPacket *pkt)
 
     size = avio_rl32(pb) >> 14;
     ret = av_get_packet(pb, pkt, size);
+    if (ret < 0)
+        return ret;
     pkt->pos = pos;
     pkt->stream_index = 0;
 
-    e = avformat_index_get_entry_from_timestamp(s->streams[0], pos, 0);
-    if (e)
+    e = avformat_index_get_entry_from_timestamp(st, ffstream(st)->cur_dts, 0);
+    if (e && e->pos == pos) {
         pkt->flags |= AV_PKT_FLAG_KEY;
+        pkt->pts = pkt->dts = e->timestamp;
+    }
 
     return ret;
 }

@@ -11,6 +11,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "extensions/common/api/oauth2.h"
 #include "extensions/common/manifest_constants.h"
+#include "extensions/common/utils/extension_utils.h"
 
 namespace extensions {
 
@@ -23,8 +24,11 @@ namespace errors = manifest_errors;
 
 // A wrapper for `OAuth2Info` which inherits from `ManifestData`.
 struct OAuth2ManifestData : Extension::ManifestData {
+  static const char* kManifestDataKey;
   OAuth2Info info;
 };
+
+const char* OAuth2ManifestData::kManifestDataKey = OAuth2ManifestKeys::kOauth2;
 
 }  // namespace
 
@@ -35,8 +39,7 @@ OAuth2ManifestHandler::~OAuth2ManifestHandler() = default;
 const OAuth2Info& OAuth2ManifestHandler::GetOAuth2Info(
     const Extension& extension) {
   static const base::NoDestructor<OAuth2Info> empty_oauth2_info;
-  const OAuth2ManifestData* data = static_cast<const OAuth2ManifestData*>(
-      extension.GetManifestData(OAuth2ManifestKeys::kOauth2));
+  const auto* data = extension.GetManifestData<OAuth2ManifestData>();
   return data ? data->info : *empty_oauth2_info;
 }
 
@@ -50,12 +53,14 @@ bool OAuth2ManifestHandler::Parse(Extension* extension, std::u16string* error) {
   CHECK(manifest_keys.oauth2.has_value());
   OAuth2Info& info = *manifest_keys.oauth2;
 
-  // Allowlisted component apps (where the allowlisting is enforced by the
-  // features files) using `auto_approve` may use Chrome's client ID by omitting
-  // the field.
+  const bool can_use_auto_approve =
+      extension->location() == mojom::ManifestLocation::kComponent ||
+      IsExtensionAllowlistedByCommandLine(*extension);
+
+  // Component extensions using `auto_approve` may use Chrome's client ID by
+  // omitting the field.
   bool can_omit_client_id =
-      extension->location() == mojom::ManifestLocation::kComponent &&
-      info.auto_approve && *info.auto_approve;
+      can_use_auto_approve && info.auto_approve && *info.auto_approve;
 
   if ((!info.client_id || info.client_id->empty()) && !can_omit_client_id) {
     *error = errors::kInvalidOAuth2ClientId;
@@ -64,8 +69,7 @@ bool OAuth2ManifestHandler::Parse(Extension* extension, std::u16string* error) {
 
   auto manifest_data = std::make_unique<OAuth2ManifestData>();
   manifest_data->info = std::move(info);
-  extension->SetManifestData(OAuth2ManifestKeys::kOauth2,
-                             std::move(manifest_data));
+  extension->SetManifestData(std::move(manifest_data));
   return true;
 }
 

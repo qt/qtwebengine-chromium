@@ -9,6 +9,7 @@
 
 #include "base/functional/callback.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/observer_list_types.h"
 #include "extensions/buildflags/buildflags.h"
 
 static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
@@ -41,6 +42,19 @@ class ExtensionInstallPromptClient {
     const std::string justification;
   };
 
+  // Interface for observing events on the prompt.
+  class Observer : public base::CheckedObserver {
+   public:
+    // Called right before the dialog is about to show.
+    virtual void OnDialogOpened() = 0;
+
+    // Called when the user clicks accept on the dialog.
+    virtual void OnDialogAccepted() = 0;
+
+    // Called when the user clicks cancel on the dialog, presses 'x' or escape.
+    virtual void OnDialogCanceled() = 0;
+  };
+
   using DoneCallback = base::OnceCallback<void(DoneCallbackPayload payload)>;
 
   // Installation was successful.
@@ -64,6 +78,13 @@ class ExtensionInstallPromptClient {
   virtual void ConfirmReEnable(DoneCallback install_callback,
                                const Extension* extension,
                                content::BrowserContext* browser_context) = 0;
+
+  // Starts the process to show the install prompt.
+  // `extension` can be null in the case of a bundle install.
+  // If `icon` is null, this will attempt to load the extension's icon.
+  virtual void ShowInstallDialog(DoneCallback install_callback,
+                                 const Extension* extension,
+                                 const SkBitmap* icon) = 0;
 
   virtual ~ExtensionInstallPromptClient() = default;
 };

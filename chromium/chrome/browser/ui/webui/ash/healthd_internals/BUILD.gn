@@ -14,7 +14,6 @@ static_library("healthd_internals") {
 
   public_deps = [
     "//base",
-    "//chrome/common",
     "//chromeos/ash/services/cros_healthd/public/mojom",
     "//content/public/browser",
     "//content/public/common",
@@ -24,7 +23,9 @@ static_library("healthd_internals") {
 
   deps = [
     "//ash/constants",
+    "//chrome/browser/profiles:profile",
     "//chrome/browser/resources/chromeos/healthd_internals:resources",
+    "//chrome/browser/ui/webui:theme_source",
     "//chromeos/ash/services/cros_healthd/public/cpp",
     "//ui/webui",
   ]

@@ -20,6 +20,7 @@
 #include "components/guest_view/browser/slim_web_view/request_utils.h"
 #include "components/guest_view/browser/slim_web_view/slim_web_view_constants.h"
 #include "components/url_pattern/simple_url_pattern_matcher.h"
+#include "components/zoom/zoom_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_process_host.h"
@@ -29,6 +30,8 @@
 #include "content/public/common/content_features.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_util.h"
+#include "third_party/blink/public/common/page/page_zoom.h"
+#include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
 #include "third_party/blink/public/mojom/window_features/window_features.mojom.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -266,7 +269,21 @@ void SlimWebViewGuest::Navigate(const GURL& url) {
   TRACE_EVENT_INSTANT("content", "SlimWebViewGuest::Navigate",
                       perfetto::Flow::FromPointer(this));
   content::NavigationController::LoadURLParams load_url_params(url);
+  if (is_overriding_user_agent_) {
+    load_url_params.override_user_agent =
+        content::NavigationController::UA_OVERRIDE_TRUE;
+  }
   GetController().LoadURLWithParams(load_url_params);
+}
+
+void SlimWebViewGuest::SetUserAgentOverride(
+    const std::string& user_agent_override) {
+  CHECK(!base::FeatureList::IsEnabled(features::kGuestViewMPArch));
+  is_overriding_user_agent_ = !user_agent_override.empty();
+  if (web_contents()) {
+    web_contents()->SetUserAgentOverride(
+        blink::UserAgentOverride::UserAgentOnly(user_agent_override), false);
+  }
 }
 
 bool SlimWebViewGuest::HasAllowedOrigins() const {
@@ -555,6 +572,12 @@ void SlimWebViewGuest::CreateInnerPage(
   SetCreateParams(create_params, stored_params);
   std::unique_ptr<content::WebContents> new_contents =
       content::WebContents::Create(stored_params);
+  if (const std::string* user_agent_override =
+          create_params.FindString(slim_web_view::kUserAgentOverride)) {
+    is_overriding_user_agent_ = !user_agent_override->empty();
+    new_contents->SetUserAgentOverride(
+        blink::UserAgentOverride::UserAgentOnly(*user_agent_override), false);
+  }
   std::move(callback).Run(std::move(owned_this), std::move(new_contents));
 }
 
@@ -575,6 +598,34 @@ void SlimWebViewGuest::LoadAbort(bool is_top_level,
   args.Set(guest_view::kReason, net::ErrorToShortString(error_code));
   DispatchEventToView(std::make_unique<GuestViewEvent>(
       slim_web_view::kEventLoadAbort, std::move(args)));
+}
+
+void SlimWebViewGuest::SetZoom(double zoom_factor) {
+  auto* zoom_controller = GetZoomController();
+  if (zoom_controller) {
+    double zoom_level = blink::ZoomFactorToZoomLevel(zoom_factor);
+    zoom_controller->SetZoomLevel(zoom_level);
+  }
+}
+
+double SlimWebViewGuest::GetZoom() const {
+  auto* zoom_controller = GetZoomController();
+  if (zoom_controller) {
+    double zoom_level = zoom_controller->GetZoomLevel();
+    return blink::ZoomLevelToZoomFactor(zoom_level);
+  }
+  return 1.0;
+}
+
+void SlimWebViewGuest::GuestZoomChanged(double old_zoom_level,
+                                        double new_zoom_level) {
+  double old_zoom_factor = blink::ZoomLevelToZoomFactor(old_zoom_level);
+  double new_zoom_factor = blink::ZoomLevelToZoomFactor(new_zoom_level);
+  base::DictValue args;
+  args.Set(slim_web_view::kOldZoomFactor, old_zoom_factor);
+  args.Set(slim_web_view::kNewZoomFactor, new_zoom_factor);
+  DispatchEventToView(std::make_unique<GuestViewEvent>(
+      slim_web_view::kEventZoomChange, std::move(args)));
 }
 
 }  // namespace guest_view

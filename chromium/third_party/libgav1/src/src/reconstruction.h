@@ -19,11 +19,9 @@
 
 #include <cstdint>
 
-#include "src/dsp/constants.h"
 #include "src/dsp/dsp.h"
 #include "src/utils/array_2d.h"
 #include "src/utils/constants.h"
-#include "src/utils/types.h"
 
 namespace libgav1 {
 

@@ -50,7 +50,6 @@
 #include "third_party/blink/renderer/modules/peerconnection/rtc_peer_connection_controller.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_peer_connection_handler.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_rtp_transceiver.h"
-#include "third_party/blink/renderer/modules/peerconnection/rtc_session_description_enums.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtp_contributing_source_cache.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
@@ -251,6 +250,8 @@ class MODULES_EXPORT RTCPeerConnection final
   // Called in response to CreateOffer / CreateAnswer to update `last_offer_` or
   // `last_answer_`.
   void NoteSdpCreated(const RTCSessionDescriptionInit&);
+  void NoteCreateOfferFailed();
+  void NoteCreateAnswerFailed();
 
   // MediaStreamObserver
   void OnStreamAddTrack(MediaStream*,
@@ -471,6 +472,11 @@ class MODULES_EXPORT RTCPeerConnection final
   // put into the cache so far.
   void DisableBackForwardCache(ExecutionContext* context);
 
+  // Called during construction. If the document's Connection-Allowlist or
+  // Connection-Allowlist-Report-Only headers would disallow WebRTC connections,
+  // sends Reporting API and UMA pings.
+  void MaybeReportConnectionAllowlistViolation(ExecutionContext* context);
+
   Member<RTCSessionDescription> pending_local_description_;
   Member<RTCSessionDescription> current_local_description_;
   Member<RTCSessionDescription> pending_remote_description_;
@@ -479,6 +485,10 @@ class MODULES_EXPORT RTCPeerConnection final
   webrtc::PeerConnectionInterface::IceGatheringState ice_gathering_state_;
   webrtc::PeerConnectionInterface::IceConnectionState ice_connection_state_;
   webrtc::PeerConnectionInterface::PeerConnectionState peer_connection_state_;
+
+  // True once the connection has reached the connected state at least once.
+  // Used to report first-connect usage metrics exactly once per connection.
+  bool was_ever_connected_ = false;
 
   // A map containing any track that is in use by the peer connection. This
   // includes tracks of |rtp_senders_| and |rtp_receivers_|.
@@ -548,11 +558,18 @@ class MODULES_EXPORT RTCPeerConnection final
   // Internal state [[LastOffer]] and [[LastAnswer]]
   String last_offer_;
   String last_answer_;
+  int pending_create_offer_count_ = 0;
+  int pending_create_answer_count_ = 0;
 
   Member<RTCSctpTransport> sctp_transport_;
 
   // Insertable streams.
   bool encoded_insertable_streams_;
+
+  // Set in the constructor if RTC connections are disallowed by policy
+  // globally. See https://w3c.github.io/webappsec-csp/#directive-webrtc
+  // and https://w3c.github.io/webrtc-extensions/#ice-csp-modifications.
+  bool are_ice_candidates_administratively_prohibited_ = false;
 };
 
 }  // namespace blink

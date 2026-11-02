@@ -239,10 +239,6 @@ bool Event::IsPatchEvent() const {
   return false;
 }
 
-bool Event::IsRouteEvent() const {
-  return false;
-}
-
 void Event::preventDefault() {
   if (handling_passive_ != PassiveMode::kNotPassive &&
       handling_passive_ != PassiveMode::kNotPassiveDefault) {
@@ -277,30 +273,6 @@ void Event::SetTarget(EventTarget* target) {
   target_ = target;
   if (target_)
     ReceivedTarget();
-}
-
-void Event::SetRelatedTargetIfExists(EventTarget* related_target) {
-  if (auto* mouse_event = DynamicTo<MouseEvent>(this)) {
-    mouse_event->SetRelatedTarget(related_target);
-  } else if (auto* pointer_event = DynamicTo<PointerEvent>(this)) {
-    // PointerEvent inherits from MouseEvent but overrides Event::IsMouseEvent
-    // so DynamicTo<MouseEvent> sometimes returns null.
-    pointer_event->SetRelatedTarget(related_target);
-  } else if (auto* wheel_event = DynamicTo<WheelEvent>(this)) {
-    // WheelEvent inherits from MouseEvent but overrides Event::IsMouseEvent
-    // so DynamicTo<MouseEvent> returns null.
-    if (RuntimeEnabledFeatures::DontLeakShadowTreesInDragEventsEnabled()) {
-      wheel_event->SetRelatedTarget(related_target);
-    }
-  } else if (auto* drag_event = DynamicTo<DragEvent>(this)) {
-    // DragEvent inherits from MouseEvent but overrides Event::IsMouseEvent so
-    // DynamicTo<MouseEvent> returns null.
-    if (RuntimeEnabledFeatures::DontLeakShadowTreesInDragEventsEnabled()) {
-      drag_event->SetRelatedTarget(related_target);
-    }
-  } else if (auto* focus_event = DynamicTo<FocusEvent>(this)) {
-    focus_event->SetRelatedTarget(related_target);
-  }
 }
 
 void Event::ReceivedTarget() {}
@@ -450,7 +422,7 @@ CSSPseudoElement* Event::pseudoTarget() const {
   if (!RuntimeEnabledFeatures::CSSPseudoElementInterfaceEnabled()) {
     return nullptr;
   }
-  if (!pseudo_element_target_) {
+  if (!pseudo_element_target_ || !current_target_) {
     return nullptr;
   }
 
@@ -470,7 +442,11 @@ CSSPseudoElement* Event::pseudoTarget() const {
     }
   }
 
-  return pseudo_element_target_.Get();
+  Element* originating_element = pseudo_element_target_->element();
+  if (Retarget(originating_element) == originating_element) {
+    return pseudo_element_target_.Get();
+  }
+  return nullptr;
 }
 
 }  // namespace blink

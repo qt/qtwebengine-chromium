@@ -16,6 +16,7 @@
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/child_process_security_policy.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/security_principal.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition.h"
@@ -336,7 +337,7 @@ bool CanWithholdPermissionsFromExtension(const ExtensionId& extension_id,
 }
 
 int GetBrowserContextId(content::BrowserContext* context) {
-  using ContextIdMap = std::map<std::string, int>;
+  using ContextIdMap = std::map<base::UnguessableToken, int>;
 
   static int next_id = 0;
   static base::NoDestructor<ContextIdMap> context_map;
@@ -344,7 +345,7 @@ int GetBrowserContextId(content::BrowserContext* context) {
   // we need to get the original context to make sure we take the right context.
   content::BrowserContext* original_context =
       ExtensionsBrowserClient::Get()->GetOriginalContext(context);
-  const std::string& context_id = original_context->UniqueId();
+  const base::UnguessableToken& context_id = original_context->UniqueToken();
   auto iter = context_map->find(context_id);
   if (iter == context_map->end()) {
     iter = context_map->insert(std::make_pair(context_id, next_id++)).first;
@@ -412,7 +413,7 @@ ExtensionId GetExtensionIdForSiteInstance(
 
   // Navigating to a disabled (or uninstalled or not-yet-installed) extension
   // will set the site URL to chrome-extension://invalid.
-  ExtensionId maybe_extension_id =
+  std::string_view maybe_extension_id =
       site_instance.GetSecurityPrincipal().GetHost();
   if (maybe_extension_id == "invalid") {
     return ExtensionId();
@@ -424,7 +425,7 @@ ExtensionId GetExtensionIdForSiteInstance(
   // known, extension-id-based hostname).
   DCHECK(crx_file::id_util::IdIsValid(maybe_extension_id))
       << "; maybe_extension_id = " << maybe_extension_id;
-  return maybe_extension_id;
+  return ExtensionId(maybe_extension_id);
 }
 
 std::string GetExtensionIdFromFrame(
@@ -435,7 +436,7 @@ std::string GetExtensionIdFromFrame(
     return std::string();
   }
 
-  return site_instance->GetSecurityPrincipal().GetHost();
+  return std::string(site_instance->GetSecurityPrincipal().GetHost());
 }
 
 bool CanRendererHostExtensionOrigin(int render_process_id,
@@ -581,12 +582,23 @@ bool IsExtensionDownload(const download::DownloadItem& download_item) {
     return false;
   }
 
-  if (download_item.GetMimeType() == Extension::kMimeType ||
-      UserScript::IsURLUserScript(download_item.GetURL(),
-                                  download_item.GetMimeType())) {
+  if (download_item.GetMimeType() == Extension::kMimeType) {
     return true;
   }
   return false;
+}
+
+const GURL& GetURLForExtensionPermissionCheck(content::RenderFrameHost* rfh) {
+  // Avoid `CHECK_NE(lifecycle_state(), LifecycleStateImpl::kSpeculative)` in
+  // `content::RenderFrameHost::IsErrorDocument()` by checking for an empty
+  // `GURL` first.
+  if (!rfh || rfh->GetLastCommittedURL().is_empty()) {
+    return GURL::EmptyGURL();
+  }
+  if (rfh->IsErrorDocument()) {
+    return GURL::EmptyGURL();
+  }
+  return rfh->GetLastCommittedURL();
 }
 
 }  // namespace extensions::util

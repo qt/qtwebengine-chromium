@@ -319,6 +319,11 @@ test:linux:cuda-12.6:clang-19:
     EIGEN_CI_CTEST_ARGS: --timeout 2000
     EIGEN_CI_CTEST_PARALLEL: "4"
     EIGEN_CI_CTEST_EXCLUDE: tensor_thread_pool
+    # Each test binary repeats its whole body 10x with fresh seeds by default,
+    # which puts the slowest binaries past any workable per-test timeout under
+    # TCG. The emulated jobs are here for ISA-specific codegen coverage; seed
+    # diversity is already provided by the native jobs at the default repeat.
+    EIGEN_REPEAT: "2"
   tags:
     - saas-linux-large-amd64
 
@@ -361,6 +366,130 @@ test:linux:arm:clang-14:default:unsupported:
   extends: .test:linux:arm:clang-14:default
   variables:
     EIGEN_CI_CTEST_LABEL: Unsupported
+
+##### SME ######################################################################
+
+.test:linux:sme:
+  extends: .test:linux
+  stage: test
+  # QEMU enables SME2 via `-cpu max,sme=on` (there is no separate sme2
+  # property); the multi-vector ops the kernel uses (svld1_f32_x4, the SME2
+  # FMOPA forms) are only emulated from QEMU 10.1 on. Ubuntu 24.04 ships
+  # 8.2.2 (base FEAT_SME only), so run the test stage on 26.04 (QEMU 10.2.x).
+  # The build stage stays on 24.04 -- it only cross-compiles and never invokes
+  # the emulator.
+  image: ubuntu:26.04
+  variables:
+    EIGEN_CI_TARGET_ARCH: aarch64-sme
+    EIGEN_CI_CROSS_TARGET_TRIPLE: aarch64-linux-gnu
+    # Per-test wall time is bound by single-core TCG speed, which swings ~4x
+    # across SaaS hosts; double ctest's default 1500s timeout to absorb it.
+    EIGEN_CI_CTEST_ARGS: --timeout 3000
+    # Cut the default 10x per-binary repeat: like .test:linux:qemu, these jobs
+    # exist for ISA coverage, and 10 repeats under TCG pushes the slowest
+    # binaries (mixingtypes_3, eigensolver_selfadjoint_5, FFT, ...) past even
+    # the raised 3000s timeout. Seed diversity comes from the native jobs.
+    EIGEN_REPEAT: "2"
+  # Inherit the 2xlarge runner from .test:linux (same cost under GitLab's
+  # open-source program). The qemu-user run is single-threaded per subtest,
+  # so this is about cost-neutral consistency, not speed.
+
+.test:linux:sme:gcc-14:default:
+  extends: .test:linux:sme
+  needs: [ build:linux:cross:sme:gcc-14:default ]
+  variables:
+    EIGEN_CI_CXX_COMPILER: aarch64-linux-gnu-g++-14
+    # Test stage only needs the aarch64 runtime (loader + libstdc++/libc under
+    # /usr/aarch64-linux-gnu, used via qemu's -L prefix) and qemu-user; the
+    # default-version cross g++ provides the libs on any release, and newer
+    # libstdc++ is ABI-compatible with the gcc-14-built binaries. On 25.10+
+    # the static qemu binaries are gone (qemu-user-static is now a virtual
+    # package), so install qemu-user and invoke the dynamic qemu-aarch64.
+    EIGEN_CI_CROSS_INSTALL: g++-aarch64-linux-gnu qemu-user
+
+# Each concrete SME test job must set QEMU_CPU explicitly; qemu otherwise
+# silently runs at its own default SME SVL instead of failing.
+.test:linux:sme:gcc-14:default:official:
+  extends: .test:linux:sme:gcc-14:default
+  variables:
+    # product_sme, product_symm, product_trsolve, product_trmm and product_syrk
+    # all drive the SVL-sensitive SME micro-kernel and packers (trmm packs in
+    # PanelMode with per-panel offsets; syrk consumes packed panels in mr-sized
+    # blocks through tribb_kernel), so they run at every SVL below (mixingtypes
+    # is added at one SVL only -- see the sme512 job).
+    EIGEN_CI_CTEST_REGEX: product_sme|product_symm|product_trsolve|product_trmm|product_syrk
+
+# SVL=128: architectural minimum; exercises the most sub-block passes per
+# logical block.
+test:linux:sme128:gcc-14:default:official:
+  extends: .test:linux:sme:gcc-14:default:official
+  variables:
+    QEMU_CPU: max,sme=on,sme128=on,sme256=off,sme512=off,sme1024=off,sme2048=off
+
+# SVL=256: exercises runtime tiling geometry not covered by 512-bit tiles.
+test:linux:sme256:gcc-14:default:official:
+  extends: .test:linux:sme:gcc-14:default:official
+  variables:
+    QEMU_CPU: max,sme=on,sme256=on,sme128=off,sme512=off,sme1024=off,sme2048=off
+
+# SVL=512: block matches the tile grid exactly; exercises the multi-vector-load
+# loop in sme_process. Also adds mixingtypes, whose SME-relevant coverage
+# (pinned mixed-scalar products route to the generic, SVL-independent kernel)
+# needs only one SVL.
+test:linux:sme512:gcc-14:default:official:
+  extends: .test:linux:sme:gcc-14:default:official
+  variables:
+    QEMU_CPU: max,sme=on,sme512=on,sme128=off,sme256=off,sme1024=off,sme2048=off
+    # mixingtypes_[0-9] excludes mixingtypes_generic_32/64 (not built here), which
+    # ctest would otherwise fail to find.
+    EIGEN_CI_CTEST_REGEX: product_sme|product_symm|product_trsolve|product_trmm|product_syrk|mixingtypes_[0-9]
+
+# SVL=2048: architectural maximum; exercises predication down to the logical
+# block.
+test:linux:sme2048:gcc-14:default:official:
+  extends: .test:linux:sme:gcc-14:default:official
+  variables:
+    QEMU_CPU: max,sme=on,sme2048=on,sme128=off,sme256=off,sme512=off,sme1024=off
+
+# Full nightly SME test run: the complete Official + Unsupported ctest suite
+# against the full build above, at a single representative SVL (512: the logical
+# block matches the ZA tile grid exactly, exercising the multi-vector-load fast
+# path in sme_process). Cross-SVL geometry is already covered by the per-SVL
+# product_* subset jobs above, so one SVL is enough for the full run. Extends
+# ...:default (not ...:default:official) so no product_* CTEST_REGEX is
+# inherited -- these select by label instead. Official/Unsupported are split
+# into two jobs, and Official is sharded further below. The 3h job timeout is
+# the GitLab SaaS hosted-runner maximum (a slow host overran 2h). Inherits
+# .rules:libeigen:all-tests, so it runs on the nightly schedule and on
+# all-tests-labelled MRs.
+.test:linux:sme512:gcc-14:full:
+  extends: .test:linux:sme:gcc-14:default
+  needs: [ build:linux:cross:sme:gcc-14:full ]
+  variables:
+    QEMU_CPU: max,sme=on,sme512=on,sme128=off,sme256=off,sme1024=off,sme2048=off
+  timeout: 3h
+
+# -I <index>,,<total> intersects with -L, partitioning Official across the two
+# shards; --rerun-failed overrides -I, so retries stay shard-local.
+test:linux:sme512:gcc-14:full:official:
+  extends: .test:linux:sme512:gcc-14:full
+  parallel: 2
+  variables:
+    EIGEN_CI_CTEST_LABEL: Official
+    # Overriding EIGEN_CI_CTEST_ARGS replaces the whole value; restate --timeout.
+    EIGEN_CI_CTEST_ARGS: --timeout 3000 -I $CI_NODE_INDEX,,$CI_NODE_TOTAL
+
+test:linux:sme512:gcc-14:full:unsupported:
+  extends: .test:linux:sme512:gcc-14:full
+  variables:
+    EIGEN_CI_CTEST_LABEL: Unsupported
+    # tensor_thread_pool: threaded tests are useless under single-threaded TCG
+    # (same exclusion as .test:linux:qemu). FFT: overruns even the raised 3000s
+    # timeout under TCG at EIGEN_REPEAT=2; it is kissfft-based scalar/complex
+    # code with no SVE/SME-specific paths, and every native job covers it.
+    # Raising the timeout past ~3600s is not an option: a single silent test
+    # would trip the runner's 1h no-log-output kill.
+    EIGEN_CI_CTEST_EXCLUDE: tensor_thread_pool|FFT
 
 ##### aarch64 ##################################################################
 
@@ -467,6 +596,70 @@ test:linux:loongarch64:gcc-14:default:unsupported:
   extends: .test:linux:loongarch64:gcc-14:default
   variables:
     EIGEN_CI_CTEST_LABEL: Unsupported
+
+##### riscv64 ##################################################################
+
+.test:linux:riscv64:
+  extends: .test:linux
+  image: ${EIGEN_CI_IMAGE_LINUX_RISCV64_SMOKETEST_RUN}
+  variables:
+    EIGEN_CI_TARGET_ARCH: riscv64
+    EIGEN_CI_SKIP_APT: "true"
+  tags:
+    - riscv
+  allow_failure: true
+
+.test:linux:riscv64:gcc-15:default:
+  extends: .test:linux:riscv64
+  needs: [ build:linux:riscv64:gcc-15:default ]
+  variables:
+    EIGEN_CI_INSTALL: g++-15
+
+test:linux:riscv64:gcc-15:default:official:
+  extends: .test:linux:riscv64:gcc-15:default
+  variables:
+    EIGEN_CI_CTEST_LABEL: Official
+
+test:linux:riscv64:gcc-15:default:unsupported:
+  extends: .test:linux:riscv64:gcc-15:default
+  variables:
+    EIGEN_CI_CTEST_LABEL: Unsupported
+
+.test:linux:riscv64:clang-21:default:
+  extends: .test:linux:riscv64
+  needs: [ build:linux:riscv64:clang-21:default ]
+  variables:
+    EIGEN_CI_INSTALL: clang-21 g++-15
+
+test:linux:riscv64:clang-21:default:official:
+  extends: .test:linux:riscv64:clang-21:default
+  variables:
+    EIGEN_CI_CTEST_LABEL: Official
+
+test:linux:riscv64:clang-21:default:unsupported:
+  extends: .test:linux:riscv64:clang-21:default
+  variables:
+    EIGEN_CI_CTEST_LABEL: Unsupported
+
+test:linux:riscv64:clang-21:default:smoketest:
+  extends: .test:linux:riscv64:clang-21:default
+  image: ${EIGEN_CI_IMAGE_LINUX_RISCV64_SMOKETEST_RUN}
+  needs: [ build:linux:riscv64:clang-21:default:smoketest ]
+  variables:
+    EIGEN_CI_SKIP_APT: "true"
+    EIGEN_CI_CTEST_LABEL: smoketest
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+test:linux:riscv64:gcc-15:default:smoketest:
+  extends: .test:linux:riscv64:gcc-15:default
+  image: ${EIGEN_CI_IMAGE_LINUX_RISCV64_SMOKETEST_RUN}
+  needs: [ build:linux:riscv64:gcc-15:default:smoketest ]
+  variables:
+    EIGEN_CI_SKIP_APT: "true"
+    EIGEN_CI_CTEST_LABEL: smoketest
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
 ##### MR Smoke Tests ###########################################################
 

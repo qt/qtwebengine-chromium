@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+      - name: Rebase onto target branch
+        uses: ./.forgejo/actions/rebase-pr
       - name: Install pre-commit CI
         id: install
         run: |

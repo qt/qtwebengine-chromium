@@ -17,11 +17,13 @@
 #include "base/run_loop.h"
 #include "base/scoped_observation.h"
 #include "base/strings/string_split.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/to_string.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/task/bind_post_task.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/test/bind.h"
+#include "base/test/gmock_expected_support.h"
 #include "base/test/mock_callback.h"
 #include "base/test/run_until.h"
 #include "base/test/test_future.h"
@@ -1279,11 +1281,12 @@ IN_PROC_BROWSER_TEST_P(BoostRenderProcessForLoadingBrowserTest,
 // This test verifies properties of RenderProcessHostImpl *before* Init method
 // is called.
 IN_PROC_BROWSER_TEST_P(RenderProcessHostTest, ConstructedButNotInitializedYet) {
-  RenderProcessHost* process = RenderProcessHostImpl::CreateRenderProcessHost(
-      ShellContentBrowserClient::Get()->browser_context(), nullptr);
+  RenderProcessHost* process =
+      RenderProcessHostImpl::CreateRenderProcessHostForTesting(
+          ShellContentBrowserClient::Get()->browser_context(), nullptr);
 
-  // Just verifying that the arguments of CreateRenderProcessHost got processed
-  // correctly.
+  // Just verifying that the arguments of CreateRenderProcessHostForTesting got
+  // processed correctly.
   EXPECT_EQ(ShellContentBrowserClient::Get()->browser_context(),
             process->GetBrowserContext());
   EXPECT_FALSE(process->IsForGuestsOnly());
@@ -1338,6 +1341,57 @@ IN_PROC_BROWSER_TEST_P(RenderProcessHostTest,
               ChildBindingState::WAIVED);
   }
   process->Cleanup();
+}
+
+IN_PROC_BROWSER_TEST_P(RenderProcessHostTest, PriorityOverrideAndroid) {
+  // Start up a real renderer process.
+  ASSERT_TRUE(embedded_test_server()->Start());
+  GURL test_url = embedded_test_server()->GetURL("/simple_page.html");
+  EXPECT_TRUE(NavigateToURL(shell(), test_url));
+  auto* web_contents = shell()->web_contents();
+  RenderProcessHostImpl* process = static_cast<RenderProcessHostImpl*>(
+      web_contents->GetPrimaryMainFrame()->GetProcess());
+  EXPECT_EQ(web_contents->GetVisibility(), content::Visibility::VISIBLE);
+
+  EXPECT_FALSE(process->HasPriorityOverride());
+
+  // === Case 1: Tab is Active/Visible (Client Importance is IMPORTANT) ===
+  web_contents->SetPrimaryPageImportance(ChildProcessImportance::IMPORTANT,
+                                         ChildProcessImportance::NORMAL);
+
+  // Applying an override lower than the client importance should NOT downgrade
+  // it.
+  process->SetPriorityOverride(base::Process::Priority::kBestEffort);
+  EXPECT_TRUE(process->HasPriorityOverride());
+
+  // Importance and bindings must remain at the maximum level.
+  EXPECT_EQ(process->GetEffectiveImportance(),
+            ChildProcessImportance::IMPORTANT);
+
+  // === Case 2: Simulate tab is Hidden (Client Importance drops to NORMAL) ===
+  web_contents->SetPrimaryPageImportance(ChildProcessImportance::NORMAL,
+                                         ChildProcessImportance::NORMAL);
+
+  // The client importance drops and our priority override is still
+  // kBestEffort. The effective importance should now fall to NORMAL (WAIVED)
+  // since both inputs are NORMAL.
+  EXPECT_EQ(process->GetEffectiveImportance(), ChildProcessImportance::NORMAL);
+
+  // Upgrade to base::Process::Priority::kUserVisible (corresponds to MODERATE).
+  process->SetPriorityOverride(base::Process::Priority::kUserVisible);
+  EXPECT_EQ(process->GetEffectiveImportance(),
+            ChildProcessImportance::MODERATE);
+
+  // Upgrade to base::Process::Priority::kUserBlocking (corresponds to
+  // IMPORTANT).
+  process->SetPriorityOverride(base::Process::Priority::kUserBlocking);
+  EXPECT_EQ(process->GetEffectiveImportance(),
+            ChildProcessImportance::IMPORTANT);
+
+  // Clear override.
+  process->ClearPriorityOverride();
+  EXPECT_FALSE(process->HasPriorityOverride());
+  EXPECT_EQ(process->GetEffectiveImportance(), ChildProcessImportance::NORMAL);
 }
 #endif
 
@@ -1415,8 +1469,9 @@ IN_PROC_BROWSER_TEST_F(DiscardFrameBrowserTest,
 
 // This test verifies that a fast shutdown is possible for a starting process.
 IN_PROC_BROWSER_TEST_P(RenderProcessHostTest, FastShutdownForStartingProcess) {
-  RenderProcessHost* process = RenderProcessHostImpl::CreateRenderProcessHost(
-      ShellContentBrowserClient::Get()->browser_context(), nullptr);
+  RenderProcessHost* process =
+      RenderProcessHostImpl::CreateRenderProcessHostForTesting(
+          ShellContentBrowserClient::Get()->browser_context(), nullptr);
   process->Init();
   EXPECT_TRUE(process->FastShutdownIfPossible());
   process->Cleanup();
@@ -1982,8 +2037,9 @@ IN_PROC_BROWSER_TEST_P(RenderProcessHostTest, ZeroExecutionTimes) {
     return;
   }
   base::HistogramTester histogram_tester;
-  RenderProcessHost* process = RenderProcessHostImpl::CreateRenderProcessHost(
-      ShellContentBrowserClient::Get()->browser_context(), nullptr);
+  RenderProcessHost* process =
+      RenderProcessHostImpl::CreateRenderProcessHostForTesting(
+          ShellContentBrowserClient::Get()->browser_context(), nullptr);
   RenderProcessHostWatcher process_watcher(
       process, RenderProcessHostWatcher::WATCH_FOR_PROCESS_READY);
   process->Init();
@@ -2170,9 +2226,10 @@ IN_PROC_BROWSER_TEST_P(RenderProcessHostTest,
 
 // This test verifies that a renderer process is correctly sandboxed.
 IN_PROC_BROWSER_TEST_F(RenderProcessHostTestBase, IsSandboxed) {
-  RenderProcessHost* rph = RenderProcessHostImpl::CreateRenderProcessHost(
-      ShellContentBrowserClient::Get()->browser_context(),
-      /*site_instance=*/nullptr);
+  RenderProcessHost* rph =
+      RenderProcessHostImpl::CreateRenderProcessHostForTesting(
+          ShellContentBrowserClient::Get()->browser_context(),
+          /*site_instance=*/nullptr);
   ASSERT_TRUE(rph->Init());
 
   mojo::Remote<mojom::TestService> service;
@@ -2204,8 +2261,9 @@ IN_PROC_BROWSER_TEST_P(RenderProcessHostTest, HostCreationObserved) {
   int created_count = 0;
   CreationObserver creation_observer(
       base::BindLambdaForTesting([&created_count]() { ++created_count; }));
-  RenderProcessHost* process = RenderProcessHostImpl::CreateRenderProcessHost(
-      ShellContentBrowserClient::Get()->browser_context(), nullptr);
+  RenderProcessHost* process =
+      RenderProcessHostImpl::CreateRenderProcessHostForTesting(
+          ShellContentBrowserClient::Get()->browser_context(), nullptr);
   RenderProcessHostWatcher process_watcher(
       process, RenderProcessHostWatcher::WATCH_FOR_PROCESS_READY);
   process->Init();
@@ -2236,8 +2294,9 @@ IN_PROC_BROWSER_TEST_P(RenderProcessHostTest,
       }));
   CreationObserver creation_observer2;
 
-  RenderProcessHost* process = RenderProcessHostImpl::CreateRenderProcessHost(
-      ShellContentBrowserClient::Get()->browser_context(), nullptr);
+  RenderProcessHost* process =
+      RenderProcessHostImpl::CreateRenderProcessHostForTesting(
+          ShellContentBrowserClient::Get()->browser_context(), nullptr);
   RenderProcessHostWatcher process_watcher(
       process, RenderProcessHostWatcher::WATCH_FOR_PROCESS_READY);
   process->Init();
@@ -2260,8 +2319,9 @@ IN_PROC_BROWSER_TEST_P(RenderProcessHostTest,
   destroy_second_observer = base::BindLambdaForTesting(
       [&creation_observer2]() { creation_observer2.reset(); });
 
-  RenderProcessHost* process = RenderProcessHostImpl::CreateRenderProcessHost(
-      ShellContentBrowserClient::Get()->browser_context(), nullptr);
+  RenderProcessHost* process =
+      RenderProcessHostImpl::CreateRenderProcessHostForTesting(
+          ShellContentBrowserClient::Get()->browser_context(), nullptr);
   RenderProcessHostWatcher process_watcher(
       process, RenderProcessHostWatcher::WATCH_FOR_PROCESS_READY);
   process->Init();
@@ -2739,7 +2799,7 @@ class RenderProcessHostTestOOPVideoDecoderTest
     }
 #endif  // BUILDFLAG(PLATFORM_HAS_OPTIONAL_HEVC_DECODE_SUPPORT)
 
-    rph_ = RenderProcessHostImpl::CreateRenderProcessHost(
+    rph_ = RenderProcessHostImpl::CreateRenderProcessHostForTesting(
         ShellContentBrowserClient::Get()->browser_context(), nullptr);
     ASSERT_TRUE(rph_->Init());
     rph_initialized_ = true;
@@ -2922,10 +2982,12 @@ IN_PROC_BROWSER_TEST_P(RenderProcessHostTest,
   scoped_refptr<SiteInstanceImpl> site_instance_b =
       SiteInstanceImpl::CreateForTesting(browser_context, url_b);
 
-  RenderProcessHost* process_a = RenderProcessHostImpl::CreateRenderProcessHost(
-      browser_context, site_instance_a.get());
-  RenderProcessHost* process_b = RenderProcessHostImpl::CreateRenderProcessHost(
-      browser_context, site_instance_b.get());
+  RenderProcessHost* process_a =
+      RenderProcessHostImpl::CreateRenderProcessHostForTesting(
+          browser_context, site_instance_a.get());
+  RenderProcessHost* process_b =
+      RenderProcessHostImpl::CreateRenderProcessHostForTesting(
+          browser_context, site_instance_b.get());
   process_a->Init();
   process_b->Init();
 
@@ -2960,10 +3022,12 @@ IN_PROC_BROWSER_TEST_P(RenderProcessHostTest, ForTopChromeWebUIAppliedToHosts) {
   scoped_refptr<SiteInstanceImpl> site_instance_b =
       SiteInstanceImpl::CreateForTesting(browser_context, url_b);
 
-  RenderProcessHost* process_a = RenderProcessHostImpl::CreateRenderProcessHost(
-      browser_context, site_instance_a.get());
-  RenderProcessHost* process_b = RenderProcessHostImpl::CreateRenderProcessHost(
-      browser_context, site_instance_b.get());
+  RenderProcessHost* process_a =
+      RenderProcessHostImpl::CreateRenderProcessHostForTesting(
+          browser_context, site_instance_a.get());
+  RenderProcessHost* process_b =
+      RenderProcessHostImpl::CreateRenderProcessHostForTesting(
+          browser_context, site_instance_b.get());
   process_a->Init();
   process_b->Init();
 
@@ -2990,5 +3054,21 @@ IN_PROC_BROWSER_TEST_P(RenderProcessHostTest, ForTopChromeWebUIAppliedToHosts) {
 #endif  // !BUILDFLAG(IS_ANDROID)
 
 #endif  // BUILDFLAG(ALLOW_OOP_VIDEO_DECODER)
+
+IN_PROC_BROWSER_TEST_P(RenderProcessHostTest, RendererCheckIsTest) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  GURL test_url = embedded_test_server()->GetURL("/simple_page.html");
+  EXPECT_TRUE(NavigateToURL(shell(), test_url));
+  RenderProcessHost* rph =
+      shell()->web_contents()->GetPrimaryMainFrame()->GetProcess();
+
+  mojo::Remote<mojom::TestService> service;
+  rph->BindReceiver(service.BindNewPipeAndPassReceiver());
+
+  base::test::TestFuture<bool> future;
+  service->VerifyCheckIsTest(future.GetCallback());
+  EXPECT_TRUE(future.Get());
+}
 
 }  // namespace content

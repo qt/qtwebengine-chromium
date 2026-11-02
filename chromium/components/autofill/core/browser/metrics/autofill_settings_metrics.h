@@ -72,7 +72,9 @@ enum class AutofillSettingsReferrer {
   kAutofillAndPasswordsPage = 2,
   // Corresponds to the dropdown shown when clicking into a form field.
   kFillingFlowDropdown = 3,
-  kMaxValue = kFillingFlowDropdown,
+  // Corresponds to opening Autofill and Passwords from Settings search.
+  kSettingsSearch = 4,
+  kMaxValue = kSettingsSearch,
 };
 // LINT.ThenChange(/tools/metrics/histograms/metadata/autofill/enums.xml:AutofillSettingsReferrer)
 
@@ -106,8 +108,7 @@ void LogAutofillProfileDisabledReasonAtStartup(const PrefService& pref_service);
 
 // Logs the source that disabled Autofill Profile, on page load for a page
 // containing forms.
-void LogAutofillProfileDisabledReasonAtPageLoad(
-    const PrefService& pref_service);
+void LogAutofillProfileDisabledReasonAtPageLoad(const AutofillClient& client);
 
 // Logs the source that disabled payment method Autofill, on startup. This
 // should be called each time a new chrome profile is launched.
@@ -117,7 +118,7 @@ void LogAutofillPaymentMethodsDisabledReasonAtStartup(
 // Logs the source that disabled payment method Autofill, on page load for a
 // page containing forms.
 void LogAutofillPaymentMethodsDisabledReasonAtPageLoad(
-    const PrefService& pref_service);
+    const AutofillClient& client);
 
 // Logs user action "Autofill_ProfileDisabled" if
 // `prefs::kAutofillProfileEnabled` is disabled and controlled by the user or an

@@ -85,6 +85,12 @@ BASE_DECLARE_FEATURE(kFeedAudioOverviews);
 COMPONENT_EXPORT(COMPONENTS_FEED_FEATURE_LIST)
 BASE_DECLARE_FEATURE(kAndroidOpenIncognitoAsWindow);
 
+// Feature that enables wide screen feed for foldables.
+COMPONENT_EXPORT(COMPONENTS_FEED_FEATURE_LIST)
+BASE_DECLARE_FEATURE(kWideScreenFeedForFoldables);
+
+COMPONENT_EXPORT(COMPONENTS_FEED_FEATURE_LIST)
+BASE_DECLARE_FEATURE_PARAM(base::TimeDelta, kFeedCloseRefreshDelay);
 }  // namespace feed
 
 #endif  // COMPONENTS_FEED_FEED_FEATURE_LIST_H_

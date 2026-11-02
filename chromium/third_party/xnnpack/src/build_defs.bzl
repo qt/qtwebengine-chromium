@@ -28,6 +28,10 @@ def xnnpack_configurable_defines():
         ["XNN_ENABLE_ASSEMBLY=1"],
         ["XNN_ENABLE_ASSEMBLY=0"],
     ) + xnnpack_select_if(
+        "//:rndnu16_enabled",
+        ["XNN_ENABLE_RNDNU16=1"],
+        ["XNN_ENABLE_RNDNU16=0"],
+    ) + xnnpack_select_if(
         "//:arm_fp16_scalar_enabled",
         ["XNN_ENABLE_ARM_FP16_SCALAR=1"],
         ["XNN_ENABLE_ARM_FP16_SCALAR=0"],
@@ -385,6 +389,7 @@ def xnnpack_cc_library(
             "//build_config:windows_x86_64_mingw": gcc_copts,
             "//build_config:windows_x86_64_msys": gcc_copts,
             "//build_config:windows_x86_64": msvc_copts,
+            "//build_config:windows_arm64": msvc_copts,
             "//conditions:default": gcc_copts,
         }) + select({
             "//:optimized_build": optimized_copts,
@@ -455,6 +460,7 @@ def xnnpack_unit_test(name, srcs, copts = [], mingw_copts = [], msys_copts = [],
             "//build_config:windows_x86_64_mingw": ["-Wno-unused-function"],
             "//build_config:windows_x86_64_msys": ["-Wno-unused-function"],
             "//build_config:windows_x86_64": [],
+            "//build_config:windows_arm64": [],
             "//conditions:default": ["-Wno-unused-function"],
         }) + copts,
         linkopts = select({
@@ -523,6 +529,7 @@ def xnnpack_benchmark(name, srcs, copts = [], deps = [], tags = [], defines = []
             "//build_config:windows_x86_64_mingw": ["-Wno-unused-function"],
             "//build_config:windows_x86_64_msys": ["-Wno-unused-function"],
             "//build_config:windows_x86_64": [],
+            "//build_config:windows_arm64": [],
             "//conditions:default": ["-Wno-unused-function"],
         }) + copts,
         linkopts = select({

@@ -994,3 +994,7 @@ static void JNI_PeerConnection_Close(JNIEnv* jni,
 
 }  // namespace jni
 }  // namespace webrtc
+
+DEFINE_JNI(CandidatePairChangeEvent)
+DEFINE_JNI(IceCandidateErrorEvent)
+DEFINE_JNI(PeerConnection)

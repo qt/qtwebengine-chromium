@@ -37,6 +37,7 @@ source_set("initializer") {
 
   deps = [
     "//base",
+    "//chrome/common:constants",
     "//chrome/common:non_code_constants",
     "//content/public/common",
     "//ui/gfx",
@@ -144,6 +145,7 @@ if (!is_android) {
       "//base",
       "//chrome/browser",
       "//chrome/browser/infobars",
+      "//chrome/common:constants",
       "//chrome/test:test_support",
       "//components/headless/clipboard",
       "//content/test:test_support",
@@ -199,5 +201,31 @@ if (!is_android) {
     # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
     # enable the diagnostic by removing this line.
     configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+  }
+}
+
+source_set("interactive_ui_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = []
+  if (is_win) {
+    sources += [ "test/headless_mode_interactive_uitest_win.cc" ]
+  }
+  deps = [
+    ":initializer",
+    "//base",
+    "//chrome/browser",
+    "//chrome/test:test_support",
+    "//content/test:test_support",
+    "//skia",
+    "//testing/gmock",
+    "//testing/gtest",
+    "//ui/gfx",
+  ]
+  if (use_aura && is_win) {
+    deps += [
+      "//ui/aura",
+      "//ui/compositor",
+    ]
   }
 }

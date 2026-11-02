@@ -3,12 +3,13 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
-import {assertScreenshot, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
-import {createTarget} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {assertScreenshot, raf, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
+import {cleanTestDOM} from '../../testing/DOMHooks.js';
+import {createTarget, describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
 import {createViewFunctionStub} from '../../testing/ViewFunctionHelpers.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
@@ -54,7 +55,7 @@ const reports = [
   },
 ];
 
-describeWithMockConnection('ReportingApiView', () => {
+describeWithEnvironment('ReportingApiView', () => {
   const ORIGIN_1 = 'origin1';
   const ENDPOINTS_1 = [{url: 'url1', groupName: 'group1'}];
   const ORIGIN_2 = 'origin2';
@@ -243,8 +244,10 @@ describeWithMockConnection('ReportingApiView', () => {
       target.style.height = '400px';
     });
 
-    afterEach(() => {
+    afterEach(async () => {
       stub.restore();
+      cleanTestDOM();
+      await raf();
     });
 
     it('updates report details', async () => {
@@ -258,6 +261,7 @@ describeWithMockConnection('ReportingApiView', () => {
             onReportSelected: () => {},
           },
           undefined, target);
+      (document.activeElement as HTMLElement)?.blur();
       await assertScreenshot('application/report_details.png');
 
       Application.ReportingApiView.DEFAULT_VIEW(
@@ -270,6 +274,7 @@ describeWithMockConnection('ReportingApiView', () => {
             onReportSelected: () => {},
           },
           undefined, target);
+      (document.activeElement as HTMLElement)?.blur();
       await assertScreenshot('application/report_details_updated.png');
     });
   });

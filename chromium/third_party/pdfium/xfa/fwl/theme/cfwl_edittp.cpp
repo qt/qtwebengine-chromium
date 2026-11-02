@@ -30,7 +30,8 @@ void CFWL_EditTP::DrawBackground(const CFWL_ThemeBackground& pParams) {
       CFGAS_GEGraphics::StateRestorer restorer(pGraphics);
       const CFGAS_GEPath* pParamsPath = pParams.GetPath();
       if (pParamsPath) {
-        pGraphics->SetFillColor(CFGAS_GEColor(FWLTHEME_COLOR_BKSelected));
+        pGraphics->SetFillColor(
+            CFGAS_GEColor(kFwlThemeColorBackgroundSelected));
         pGraphics->FillPath(*pParamsPath,
                             CFX_FillRenderOptions::FillType::kWinding,
                             pParams.matrix_);
@@ -38,10 +39,10 @@ void CFWL_EditTP::DrawBackground(const CFWL_ThemeBackground& pParams) {
         CFGAS_GEPath path;
         path.AddRectangle(pParams.part_rect_.left, pParams.part_rect_.top,
                           pParams.part_rect_.width, pParams.part_rect_.height);
-        CFGAS_GEColor cr(FWLTHEME_COLOR_Background);
+        CFGAS_GEColor cr(kFwlThemeColorBackground);
         if (!pParams.static_background_) {
           if (pParams.states_ & CFWL_PartState::kDisabled) {
-            cr = CFGAS_GEColor(FWLTHEME_COLOR_EDGERB1);
+            cr = CFGAS_GEColor(kFwlThemeColorEdgeRb1);
           } else if (pParams.states_ & CFWL_PartState::kReadOnly) {
             cr = CFGAS_GEColor(ArgbEncode(255, 236, 233, 216));
           } else {

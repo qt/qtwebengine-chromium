@@ -122,6 +122,8 @@ tint::VertexFormat ToTintVertexFormat(wgpu::VertexFormat format) {
             return tint::VertexFormat::kUnorm10_10_10_2;
         case wgpu::VertexFormat::Unorm8x4BGRA:
             return tint::VertexFormat::kUnorm8x4BGRA;
+        case wgpu::VertexFormat::Snorm10_10_10_2:
+            return tint::VertexFormat::kSnorm10_10_10_2;
     }
     DAWN_UNREACHABLE();
 }
@@ -146,7 +148,7 @@ tint::VertexPullingConfig BuildVertexPullingTransformConfig(
     tint::VertexPullingConfig cfg;
     cfg.pulling_group = uint32_t(pullingBufferBindingSet);
 
-    cfg.vertex_state.resize(renderPipeline.GetVertexBufferCount());
+    cfg.vertex_state.resize(uint32_t(renderPipeline.GetVertexBufferCount()));
     for (VertexBufferSlot slot : renderPipeline.GetVertexBuffersUsed()) {
         const VertexBufferInfo& dawnInfo = renderPipeline.GetVertexBuffer(slot);
         tint::VertexBufferLayoutDescriptor* tintInfo =

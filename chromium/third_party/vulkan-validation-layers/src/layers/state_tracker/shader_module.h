@@ -1,5 +1,6 @@
 /* Copyright (c) 2021-2026 The Khronos Group Inc.
  * Copyright (c) 2025 Arm Limited.
+ * Copyright (C) 2026 Qualcomm Technologies, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +21,7 @@
 
 #include <vulkan/vulkan_core.h>
 #include <cassert>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -86,9 +88,14 @@ struct DecorationBase {
     uint32_t component = 0;
     uint32_t index = 0;
 
-    uint32_t offset = kInvalidValue;
-    uint32_t offset_id = kInvalidValue;  // OffsetIdEXT
-    uint32_t GetOffset(const Module& module_state) const;
+    uint32_t offset = kInvalidValue;        // Offset or OffsetIdEXT
+    uint32_t array_stride = kInvalidValue;  // ArrayStride or ArrayStrideIdEXT
+    // instead of storing 2 copies of uint32 (which might only grow as we had more Id based decorations) just store the value and
+    // the caller needs to handle which one it is
+    bool is_offset_id = false;
+    bool is_array_stride_id = false;
+    uint32_t GetOffset(const Module& module_state, const VkPhysicalDeviceDescriptorHeapPropertiesEXT& props) const;
+    uint32_t GetArrayStride(const Module& module_state, const VkPhysicalDeviceDescriptorHeapPropertiesEXT& props) const;
 
     // A given object can only have a single BuiltIn OpDecoration
     spv::BuiltIn built_in = kInvalidBuiltIn;
@@ -174,12 +181,15 @@ struct ExecutionModeSet {
         geometry_input_triangle_adjacency_bit = 1ull << 42,
 
         shader_64bit_indexing = 1ull << 43,
+
+        tile_shading_rate_bit = 1ull << 44,
+        opacity_micromap_khr = 1ull << 45,
     };
 
     // bits to know if things have been set or not by a Decoration
     uint64_t flags = 0;
 
-    // SPIR-V spec says only LocalSize or LocalSizeId can be used, so can share
+    // SPIR-V spec says only LocalSize or LocalSizeId or TileShadingRateQCOM can be used, so can share
     LocalSize local_size = {kInvalidValue, kInvalidValue, kInvalidValue};
 
     uint32_t output_vertices = kInvalidValue;
@@ -443,6 +453,10 @@ struct ResourceInterfaceVariable : public VariableBase {
     // If there is no array, index 0 is marked if the single image is read
     vvl::unordered_set<uint32_t> input_attachment_index_read;
 
+    // For arrayed image variables, the elements the shader statically accesses with a constant index.
+    // Contains kSpecConstant if an unresolved spec constant is used for indexing.
+    vvl::unordered_set<uint32_t> image_array_indices_accessed;
+
     // Type once array/pointer are stripped
     // most likely will be OpTypeImage, OpTypeStruct, OpTypeSampler, OpTypeSampledImage, or OpTypeAccelerationStructureKHR
     const Instruction &base_type;
@@ -451,6 +465,10 @@ struct ResourceInterfaceVariable : public VariableBase {
     // NOTE - This just checks if there is ANY non-costant access
     bool all_constant_integral_expressions{true};
     uint32_t non_constant_id{0};
+
+    // Returns true if the image at array element |index| (0 for non-arrayed images) is statically accessed by the
+    // shader (vkspec.html#shaders-staticuse). Only a false result is certain: the element is provably not accessed.
+    bool IsImageAtIndexStaticallyAccessed(uint32_t index) const;
 
     // All info regarding what will be validated from requirements imposed by the pipeline on a descriptor. These
     // can't be checked at pipeline creation time as they depend on the object bound (Image/Tensor) or its view.
@@ -481,13 +499,15 @@ struct ResourceInterfaceVariable : public VariableBase {
         bool is_read_without_format{false};   // For storage images
         bool is_write_without_format{false};  // For storage images
 
-        // If a variable is used as a function argument, but never actually used, it will be found in EntryPoint::accessible_ids so
+        // If a variable is used as a function argument, but never actually used, it will be found in EntryPoint::accessible so
         // we need to have a dedicated mark if it was accessed.
         // We use this for variable hashing, but the VariableBase has the helper functions to read this value.
         uint32_t access_mask{AccessBit::empty};
     } info;
     // For non descriptor indexing usages, this hash allows use to skip re-validating because a different VkImageView bound will
     // result in the same outcome
+    // Note - this is not related to |descriptor_hashing| setting, this pre-dates VK_EXT_descriptor_buffer/VK_EXT_descriptor_heap
+    // back when people had to call vkUpdateDescriptorSet 10k times a frame and we needed a way to detect nothing changed.
     uint64_t descriptor_hash = 0;
     bool IsImage() const { return base_type.Opcode() == spv::OpTypeImage || base_type.Opcode() == spv::OpTypeSampledImage; }
 
@@ -564,9 +584,18 @@ struct EntryPoint {
     // Values found while gather the Accessible Ids
     bool emit_vertex_geometry;
 
-    // All ids that can be accessed from the entry point
-    // being accessed doesn't guarantee it is statically used
-    const vvl::unordered_set<uint32_t> accessible_ids;
+    // With multiple entry points we want to make sure we only look for instructions found in those entrypoints. These are all the
+    // list of various instructions that have been found looking through all statically reachable functions in the module
+    struct Accessible {
+        vvl::unordered_set<const Instruction*> variables;
+        vvl::unordered_set<const Instruction*> access_chains;
+        // Only is filled when OpCapability UntypedPointersKHR is set (to save lots of memory!)
+        // When there is no more types, we need the root memory access
+        vvl::unordered_set<const Instruction*> memory_accesses;
+        // VK_ARM_data_graph
+        vvl::unordered_set<const Instruction*> graph_constant;
+    };
+    const Accessible accessible;
 
     // only one Push Constant block is allowed per entry point
     // (This assumption is broken with VK_NV_push_constant_bank, but not fully supported)
@@ -575,7 +604,6 @@ struct EntryPoint {
     std::shared_ptr<const TaskPayloadVariable> task_payload_variable;
     const std::vector<ResourceInterfaceVariable> resource_interface_variables;
     const std::vector<StageInterfaceVariable> stage_interface_variables;
-    const std::vector<const Instruction *> datagraph_constants;
 
     bool uses_tosa_1_0{false};
 
@@ -620,13 +648,11 @@ struct EntryPoint {
     std::string Describe() const;
 
   protected:
-    static vvl::unordered_set<uint32_t> GetAccessibleIds(const Module &module_state, EntryPoint &entrypoint);
+    static Accessible GetAccessibleIds(const Module& module_state, EntryPoint& entrypoint);
     static std::vector<StageInterfaceVariable> GetStageInterfaceVariables(const Module &module_state, EntryPoint &entrypoint,
                                                                           const ParsedInfo &parsed);
-    static std::vector<ResourceInterfaceVariable> GetResourceInterfaceVariables(const Module &module_state, EntryPoint &entrypoint,
-                                                                                const ParsedInfo &parsed);
-    static std::vector<const Instruction*> GetDataGraphConstants(const Module& module_state, EntryPoint& entrypoint,
-                                                                 const ParsedInfo& parsed);
+    static std::vector<ResourceInterfaceVariable> GetResourceInterfaceVariables(const Module& module_state, EntryPoint& entrypoint,
+                                                                                const ParsedInfo& parsed);
 
     static bool IsBuiltInWritten(spv::BuiltIn built_in, const Module &module_state, const StageInterfaceVariable &variable,
                                  const ParsedInfo &parsed);
@@ -647,6 +673,7 @@ struct StatelessData {
     std::vector<const Instruction *> transform_feedback_stream_inst;
     std::vector<const Instruction *> fma_inst;
     std::vector<const Instruction *> tensor_inst;
+    std::vector<const Instruction *> image_texel_pointer_inst;
 
     // simpler to just track all OpExecutionModeId and parse things needed later
     std::vector<const Instruction *> execution_mode_id_inst;
@@ -725,6 +752,11 @@ struct Module {
 
         bool has_specialization_constants{false};
         bool uses_interpolate_at_sample{false};
+
+        // GPU Dump will want the |FuncParameterMap| if someone is trying to pass an untyped descriptor
+        // into a function. Instead of tracking the memory for everyone, GPU Dump will just rebuild the info,
+        // but only if it is actually needed
+        bool has_untyped_pointer_function_params{false};
 
         // Will check if there is source debug information
         // Won't save any other info and will retrieve the debug info if requested in a VU error message
@@ -814,6 +846,11 @@ struct Module {
     LocalSize FindLocalSize(const EntryPoint &entrypoint) const;
 
     uint32_t CalculateWorkgroupSharedMemory() const;
+
+    uint32_t ResolveConstantSizeOf(const VkPhysicalDeviceDescriptorHeapPropertiesEXT& props, const spirv::Instruction& inst) const;
+    uint32_t ResolveConstantFoldHeaps(const VkPhysicalDeviceDescriptorHeapPropertiesEXT& props,
+                                      const spirv::Instruction& spec_constant_op) const;
+    uint32_t GetHeapUntypedSize(const VkPhysicalDeviceDescriptorHeapPropertiesEXT& props, const spirv::Instruction& inst) const;
 
     const Instruction *GetAnyConstantDef(uint32_t id) const;
     uint32_t GetConstantValueById(uint32_t id) const;

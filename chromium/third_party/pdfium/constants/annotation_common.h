@@ -8,7 +8,7 @@
 namespace pdfium {
 namespace annotation {
 
-// PDF 1.7 spec, table 8.15.
+// ISO 32000-1:2008 spec, table 164.
 // Entries common to all annotation dictionaries.
 inline constexpr char kType[] = "Type";
 inline constexpr char kSubtype[] = "Subtype";

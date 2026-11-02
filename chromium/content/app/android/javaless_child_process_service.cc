@@ -152,6 +152,9 @@ void ChildProcessService::Run() {
     parent_process = parent_process_;
   }
 
+  std::vector<std::string> command_line_copy = args->commandLine;
+  base::android::CommandLineInit(command_line_copy);
+
   base::android::LibraryProcessType process_type =
       static_cast<base::android::LibraryProcessType>(args->libraryProcessType);
   if (!NativeInitializationHook(process_type)) {
@@ -160,8 +163,6 @@ void ChildProcessService::Run() {
   SetBuildInfo(*args);
   InitChildProcessCommon(args->cpuCount, args->cpuFeatures);
 
-  std::vector<std::string> command_line_copy = args->commandLine;
-  base::android::CommandLineInit(command_line_copy);
   base::android::LibraryLoaded(process_type);
   base::UmaHistogramBoolean("Android.ChildProcess.JavalessStarted", true);
 
@@ -342,4 +343,13 @@ EXPORT_TO_ANDROID void NativeChildProcessService_onCreate(
   ANativeService_setOnUnbindCallback(service, &content::onUnbind);
   ANativeService_setOnRebindCallback(service, &content::onRebind);
   ANativeService_setOnDestroyCallback(service, &content::onDestroy);
+}
+
+// This is a hook for libraries to use who might want something happening very
+// early on process start. Note that JNI_OnLoad does not work with javaless
+// renderers, so often things you might put there should go into a override of
+// this instead.
+__attribute__((weak)) bool NativeInitializationHook(
+    base::android::LibraryProcessType library_process_type) {
+  return false;
 }

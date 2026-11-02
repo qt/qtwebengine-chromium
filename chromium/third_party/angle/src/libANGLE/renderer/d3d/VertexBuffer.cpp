@@ -154,10 +154,15 @@ angle::Result StreamingVertexBufferInterface::reserveSpace(const gl::Context *co
         ANGLE_TRY(setBufferSize(context, std::max(size, 3 * curBufferSize / 2)));
         mWritePosition = 0;
     }
-    else if (mWritePosition + size > curBufferSize)
+    else
     {
-        ANGLE_TRY(discard(context));
-        mWritePosition = 0;
+        angle::CheckedNumeric<unsigned int> checkedEnd(mWritePosition);
+        checkedEnd += size;
+        if (!checkedEnd.IsValid() || checkedEnd.ValueOrDie() > curBufferSize)
+        {
+            ANGLE_TRY(discard(context));
+            mWritePosition = 0;
+        }
     }
 
     mReservedSpace = size;
@@ -183,7 +188,9 @@ angle::Result StreamingVertexBufferInterface::storeDynamicAttribute(
     // Protect against integer overflow
     angle::CheckedNumeric<unsigned int> checkedPosition(mWritePosition);
     checkedPosition += spaceRequired;
-    ANGLE_CHECK_GL_ALLOC(GetImplAs<ContextD3D>(context), checkedPosition.IsValid());
+    ANGLE_CHECK_GL_ALLOC(
+        GetImplAs<ContextD3D>(context),
+        checkedPosition.IsValid() && checkedPosition.ValueOrDie() <= getBufferSize());
 
     mReservedSpace = 0;
 
@@ -249,7 +256,7 @@ bool StaticVertexBufferInterface::AttributeSignature::matchesAttribute(
     }
 
     size_t attribOffset =
-        (static_cast<size_t>(ComputeVertexAttributeOffset(attrib, binding)) % attribStride);
+        static_cast<size_t>(ComputeVertexAttributeOffset(attrib, binding) % attribStride);
     return (offset == attribOffset);
 }
 
@@ -257,9 +264,9 @@ void StaticVertexBufferInterface::AttributeSignature::set(const gl::VertexAttrib
                                                           const gl::VertexBinding &binding)
 {
     formatID = attrib.format->id;
-    offset = stride = static_cast<GLuint>(ComputeVertexAttributeStride(attrib, binding));
-    offset          = static_cast<size_t>(ComputeVertexAttributeOffset(attrib, binding)) %
-             ComputeVertexAttributeStride(attrib, binding);
+    stride   = static_cast<GLuint>(ComputeVertexAttributeStride(attrib, binding));
+    offset   = static_cast<size_t>(ComputeVertexAttributeOffset(attrib, binding) %
+                                   ComputeVertexAttributeStride(attrib, binding));
 }
 
 StaticVertexBufferInterface::StaticVertexBufferInterface(BufferFactoryD3D *factory)

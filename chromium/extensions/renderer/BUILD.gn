@@ -166,8 +166,6 @@ source_set("renderer") {
     "object_backed_native_handler.cc",
     "object_backed_native_handler.h",
     "policy_activity_log_filter.h",
-    "polyfill_util.cc",
-    "polyfill_util.h",
     "process_info_native_handler.cc",
     "process_info_native_handler.h",
     "programmatic_script_injector.cc",
@@ -214,6 +212,8 @@ source_set("renderer") {
     "static_v8_external_one_byte_string_resource.h",
     "storage_area.cc",
     "storage_area.h",
+    "test_api_standardized_behavior_native_handler.cc",
+    "test_api_standardized_behavior_native_handler.h",
     "test_features_native_handler.cc",
     "test_features_native_handler.h",
     "trace_util.h",
@@ -342,8 +342,6 @@ static_library("unit_test_support") {
     "native_extension_bindings_system_test_base.h",
     "string_source_map.cc",
     "string_source_map.h",
-    "test_v8_extension_configuration.cc",
-    "test_v8_extension_configuration.h",
   ]
 
   deps = [
@@ -374,6 +372,7 @@ source_set("unit_tests") {
     "api/messaging/native_renderer_messaging_service_unittest.cc",
     "api/messaging/one_time_message_handler_unittest.cc",
     "api/runtime_hooks_delegate_unittest.cc",
+    "api/web_request_natives_unittest.cc",
     "api_activity_logger_unittest.cc",
     "bindings/api_binding_bridge_unittest.cc",
     "bindings/api_binding_hooks_test_delegate.cc",

@@ -30,7 +30,6 @@
 
 #include "build/build_config.h"
 #include "core/fxge/cfx_charmap_resolver.h"
-#include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_fillrenderoptions.h"
 #include "core/fxge/cfx_font.h"
 #include "core/fxge/cfx_graphstatedata.h"

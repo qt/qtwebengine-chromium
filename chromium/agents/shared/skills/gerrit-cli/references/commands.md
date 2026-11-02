@@ -1,6 +1,7 @@
 # Gerrit CLI Common Commands & Usage (Public)
 
 Run the tool directly using the wrapper script path with the `--help` flag:
+
 - `python3 agents/shared/skills/gerrit-cli/scripts/gerrit_client_wrapper.py --help`
 - `python3 agents/shared/skills/gerrit-cli/scripts/gerrit_client_wrapper.py changes --help`
 
@@ -19,22 +20,32 @@ ______________________________________________________________________
 ### 1. Inspecting and Searching Changes
 
 - **Query active changes:**
+
   ```bash
   python3 agents/shared/skills/gerrit-cli/scripts/gerrit_client_wrapper.py \
     changes \
     --host https://chromium-review.googlesource.com \
-    "owner:self status:open"
+    --query "owner:self status:open"
   ```
+
 - **View the content of a specific file in a change:**
+
+  **Note:** This command does not work with the `--json_file` flag, instead use
+  stdout redirection (`>`).
+
   ```bash
   python3 agents/shared/skills/gerrit-cli/scripts/gerrit_client_wrapper.py \
     content \
     --host https://chromium-review.googlesource.com \
     --project <project> \
-    --json_file output.json \
-    <change_id> <revision> <file_path>
+    --change <change_id> \
+    --revision <revision> \
+    --path <file_path> \
+    > output_file
   ```
+
 - **Get related changes:**
+
   ```bash
   python3 agents/shared/skills/gerrit-cli/scripts/gerrit_client_wrapper.py \
     relatedchanges \

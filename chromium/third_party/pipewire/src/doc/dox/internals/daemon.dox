@@ -1,0 +1,177 @@
+/** \page page_daemon PipeWire Daemon
+
+The PipeWire daemon is the central process that manages data exchange between
+devices and clients.
+
+Typically general, users run one PipeWire daemon that listens for incoming
+connections and manages devices. Clients (including the \ref
+page_session_manager) are separate processes that talk to the daemon using the
+PipeWire socket (default: `$XDG_RUNTIME_DIR/pipewire-0`). This approach
+provides address-space separation between the privileged daemon and
+non-privileged clients.
+
+\dot
+digraph pw {
+  compound=true;
+  node [shape="box"];
+
+  subgraph cluster_pw {
+	rankdir="TB";
+	label="PipeWire daemon";
+	style="dashed";
+
+	subgraph cluster_prot_native {
+		label="pipewire-module-protocol-native";
+		style="solid";
+		socket [label="$XDG_RUNTIME_DIR/pipewire-0"];
+		mod_impl [label="module implementation"];
+
+		socket -> mod_impl;
+	}
+	core [label="PipeWire Core"];
+	alsa [label="PipeWire ALSA support"];
+
+	mod_impl -> core;
+	core -> alsa;
+  }
+
+  kernel
+
+  client1 [ label="Media Player" ];
+  client2 [ label="Audio Software" ];
+  sm [ label="Session Manager", style="dotted" ];
+
+  client1 -> socket;
+  client2 -> socket;
+  sm -> socket;
+  alsa -> kernel;
+}
+\enddot
+
+As shown above, the protocol is handled by the \ref
+page_module_protocol_native. From PipeWire's point-of-view this module is just
+another module.
+
+# Configuration Files
+
+On startup, the daemon reads a configuration file to configure itself.
+It executes a series of commands listed in the config file. The lookup order
+for configuration files are:
+
+- `$XDG_CONFIG_HOME/pipewire/pipewire.conf` (usually `$HOME/.config/pipewire/pipewire.conf`)
+- `$sysconfdir/pipewire/pipewire.conf` (usually `/etc/pipewire/pipewire.conf`)
+- `$datadir/pipewire/pipewire.conf` (usually `/usr/share/pipewire/pipewire.conf`)
+
+The first configuration file found is loaded as the base configuration.
+
+Next, configuration sections (from files ending with a .conf extension) are collected
+in the directories in this order:
+
+- `$datadir/pipewire/pipewire.conf.d/` (usually `/usr/share/pipewire/pipewire.conf.d/`)
+- `$sysconfdir/pipewire/pipewire.conf.d/` (usually `/etc/pipewire/pipewire.conf.d/`)
+- `$XDG_CONFIG_HOME/pipewire/pipewire.conf.d/` (usually `$HOME/.config/pipewire/pipewire.conf.d/`)
+
+They are applied to the global configuration file. Properties are overwritten
+and array elements are appended. This makes it possible to make small custom customizations
+or additions to the main configuration file.
+
+The environment variables `PIPEWIRE_CONFIG_DIR`, `PIPEWIRE_CONFIG_PREFIX`, 
+and `PIPEWIRE_CONFIG_NAME`. Can be used to specify an alternative configuration
+directory, subdirectory, and filename respectively.
+
+## Configuration File Format
+
+PipeWire's configuration file format is JSON. In addition to true JSON 
+PipeWire also understands a more compact JSON representation. Where
+`"` can be omitted around strings, no trailing commas are required and
+`:` or `=` can be used to separate object keys from their values.
+Also, `#` can be used to start a comment until the end of the line.
+
+The configuration file format is grouped into sections.  A section is
+either a dictionary (`{}`) or an array (`[]`). Dictionary and array entries
+are separated by whitespace and may be simple value assignment, an array or
+a dictionary. For example:
+
+```
+# A dictionary section
+context.properties = {
+       # Keys often have a dot notation
+       core.daemon = true
+}
+
+# An array section containing three dictionary objects
+context.modules = [
+    # a dictionary object with one key assigned to a string
+    { name = libpipewire-module-protocol-native }
+    { name = libpipewire-module-profiler }
+
+    # a dictionary object with two keys, one assigned to a string
+    # the other one to an array of strings
+    { name = libpipewire-module-portal
+      flags = [ ifexists nofail ]
+    }
+]
+```
+
+Allowed configuration file sections are:
+
+- **context.properties**  (dictionary):   These   properties  configure  the
+  pipewire instance.
+- **context.spa-libs** (dictionary): Maps plugin features with globs to a
+  spa library.
+- **context.modules** (array): Each entry in the array is a dictionary with
+  the name of the module to load, including optional args and flags. Most
+  modules support being loaded multiple times.
+- **context.objects** (array):  Each entry in the array is a dictionary con‐
+  taining the factory to create an object from and optional  extra  argu‐
+  ments specific to that factory.
+- **context.exec**  (array): Each entry in the array is dictionary containing
+  the path of a program to execute on startup and optional args. This ar‐
+  ray usually contains an entry to start the session manager.
+
+
+# Logging
+
+The `PIPEWIRE_DEBUG` environment variable can be used to enable
+more debugging. This variable supports the following format:
+
+- `PIPEWIRE_DEBUG=[<level>][,<glob1>:<level1>][,<glob2>:<level2>,...]` where the globs are
+  shell globs to match on log topics and the levels are the respective
+  log level to set for that topic. Globs are applied in order and a matching
+  glob overrides an earlier glob for that category. A level without a glob
+  prefix will set the global log level and is a more performant version of
+  `*:<level>`.  For example, `PIPEWIRE_DEBUG=E,mod.*:D,mod.foo:X` enables global error messages,
+  debugging on all modules but no messages on the foo module.
+- `<level>` specifies the log level:
+
+  + `X` or `0`: No logging is enabled.
+  + `E` or `1`: Error logging is enabled.
+  + `W` or `2`: Warnings are enabled.
+  + `I` or `3`: Informational messages are enabled.
+  + `D` or `4`: Debug messages are enabled.
+  + `T` or `5`: Trace messages are enabled. These messages can be logged
+     	from the realtime threads.
+
+PipeWire uses a `category.topic` naming scheme, with the following categories:
+
+- `pw.*`: PipeWire internal topics.
+- `mod.*`: Module topics, for example `mod.foo` would usually refer to the
+  `foo` module.
+- `ms.*`: Media session topics.
+- `ms.mod.*`: Media session modules, for example `ms.foo` would usually refer
+   to the `media-session-foo` module.
+- `conn.*`: Connection specific topics such as printing raw messages sent over
+  a communication socket. These are in a separate namespace as they are
+  usually vastly more verbose than the normal debugging topics.
+  This namespace must be explicitly enabled with a `conn.<glob>` glob.
+
+The behavior of the logging can be further controlled with the following
+environment variables:
+
+- `PIPEWIRE_LOG_SYSTEMD=false`: Disable logging to the systemd journal.
+- `PIPEWIRE_LOG=<filename>`: Redirect the log to the given filename.
+- `PIPEWIRE_LOG_LINE=false`: Don't log filename, function, and source code line.
+- `PIPEWIRE_LOG_COLOR=true/false/force`: Enable/disable color logging, and optionally force
+  colors even when logging to a file.
+
+*/

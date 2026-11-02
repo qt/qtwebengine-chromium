@@ -133,8 +133,6 @@ SK_API void SkLog_FileLine(const char* file,
 
 #define SK_SUPPORT_LEGACY_CONIC_CHOP
 
-#define SK_DISABLE_LEGACY_MOCK_BACKENDSURFACE
-
 #define SK_USE_PADDED_BLUR_UPSCALE
 
 #define SK_LEGACY_INITWITHPREV_LAYER_SIZING
@@ -142,6 +140,10 @@ SK_API void SkLog_FileLine(const char* file,
 #define SK_AVOID_SLOW_RASTER_PIPELINE_BLURS
 
 #define SK_SUPPORT_LEGACY_RRECT_TRANSFORM
+
+#define SK_USE_SAFE_INSET_FOR_TEXTURE_SAMPLING
+
+#define SK_GRAPHITE_USE_LEGACY_RRECT_CLIP_SHADER
 
 ///////////////////////// Imported from BUILD.gn and skia_common.gypi
 

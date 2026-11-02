@@ -36,7 +36,6 @@ devtools_ui_module("settings") {
     "../../core/platform:bundle",
     "../../core/root:bundle",
     "../../models/ai_assistance:bundle",
-    "../../models/greendev:bundle",
     "../../models/persistence:bundle",
     "../../ui/components/buttons:bundle",
     "../../ui/components/input:bundle",
@@ -49,6 +48,7 @@ devtools_ui_module("settings") {
     "../../ui/legacy/components/settings_ui:bundle",
     "../../ui/legacy/components/utils:bundle",
     "../../ui/lit:bundle",
+    "../../ui/settings:bundle",
     "../../ui/visual_logging:bundle",
     "../utils:bundle",
     "./components:bundle",
@@ -93,6 +93,7 @@ devtools_ui_module("unittests") {
   sources = [
     "AISettingsTab.test.ts",
     "EditFileSystemView.test.ts",
+    "FrameworkIgnoreListSettingsTab.test.ts",
     "WorkspaceSettingsTab.test.ts",
   ]
 

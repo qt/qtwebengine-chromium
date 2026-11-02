@@ -21,10 +21,12 @@
 #include "libavutil/mem.h"
 #include "libavutil/opt.h"
 #include "libavutil/channel_layout.h"
+#include "libavutil/downmix_info.h"
 #include "libavutil/thread.h"
 
 #include "codec_internal.h"
 #include "dcadec.h"
+#include "dcadata.h"
 #include "dcahuff.h"
 #include "dca_syncwords.h"
 #include "profiles.h"
@@ -32,38 +34,47 @@
 #define MIN_PACKET_SIZE     16
 #define MAX_PACKET_SIZE     0x104000
 
+
+static const uint8_t dca2wav_norm[28] = {
+     2,  0, 1, 9, 10,  3,  8,  4,  5,  9, 10, 6, 7, 12,
+    13, 14, 3, 6,  7, 11, 12, 14, 16, 15, 17, 8, 4,  5,
+};
+
+static const uint8_t dca2wav_wide[28] = {
+     2,  0, 1, 4,  5,  3,  8,  4,  5,  9, 10, 6, 7, 12,
+    13, 14, 3, 6,  7, 11, 12, 14, 16, 15, 17, 8, 4,  5,
+};
+
 int ff_dca_set_channel_layout(AVCodecContext *avctx, int *ch_remap, int dca_mask)
 {
-    static const uint8_t dca2wav_norm[28] = {
-         2,  0, 1, 9, 10,  3,  8,  4,  5,  9, 10, 6, 7, 12,
-        13, 14, 3, 6,  7, 11, 12, 14, 16, 15, 17, 8, 4,  5,
-    };
-
-    static const uint8_t dca2wav_wide[28] = {
-         2,  0, 1, 4,  5,  3,  8,  4,  5,  9, 10, 6, 7, 12,
-        13, 14, 3, 9, 10, 11, 12, 14, 16, 15, 17, 8, 4,  5,
-    };
-
     DCAContext *s = avctx->priv_data;
 
     int dca_ch, wav_ch, nchannels = 0;
+    const uint8_t *dca2wav;
+
+    if (dca_mask == DCA_SPEAKER_LAYOUT_7POINT0_WIDE ||
+        dca_mask == DCA_SPEAKER_LAYOUT_7POINT1_WIDE)
+        dca2wav = dca2wav_wide;
+    else
+        dca2wav = dca2wav_norm;
 
     av_channel_layout_uninit(&avctx->ch_layout);
     if (s->output_channel_order == CHANNEL_ORDER_CODED) {
+        int ret;
         for (dca_ch = 0; dca_ch < DCA_SPEAKER_COUNT; dca_ch++)
             if (dca_mask & (1U << dca_ch))
                 ch_remap[nchannels++] = dca_ch;
-        avctx->ch_layout.order       = AV_CHANNEL_ORDER_UNSPEC;
-        avctx->ch_layout.nb_channels = nchannels;
+        ret = av_channel_layout_custom_init(&avctx->ch_layout, nchannels);
+        if (ret < 0)
+            return ret;
+
+        nchannels = 0;
+        for (dca_ch = 0; dca_ch < DCA_SPEAKER_COUNT; dca_ch++)
+            if (dca_mask & (1U << dca_ch))
+                avctx->ch_layout.u.map[nchannels++].id = dca2wav[dca_ch];
     } else {
         int wav_mask = 0;
         int wav_map[18];
-        const uint8_t *dca2wav;
-        if (dca_mask == DCA_SPEAKER_LAYOUT_7POINT0_WIDE ||
-            dca_mask == DCA_SPEAKER_LAYOUT_7POINT1_WIDE)
-            dca2wav = dca2wav_wide;
-        else
-            dca2wav = dca2wav_norm;
         for (dca_ch = 0; dca_ch < 28; dca_ch++) {
             if (dca_mask & (1 << dca_ch)) {
                 wav_ch = dca2wav[dca_ch];
@@ -146,6 +157,62 @@ void ff_dca_downmix_to_stereo_float(AVFloatDSPContext *fdsp, float **samples,
         coeff_l++;
         coeff_r++;
     }
+}
+
+int ff_dca_export_downmix_matrix(AVCodecContext *avctx, AVFrame *frame,
+                                 enum DCADownMixType downmix_type,
+                                 int output_mask, const int *coeff_l)
+{
+    enum AVDownmixType dmix_type = (downmix_type == DCA_DMIX_TYPE_LoRo) ?
+                                    AV_DOWNMIX_TYPE_LORO : AV_DOWNMIX_TYPE_LTRT;
+    size_t size;
+    AVDownmixMatrix *dm = av_downmix_matrix_alloc(dmix_type, av_popcount(output_mask), &size);
+    const int *coeff_r = coeff_l + av_popcount(output_mask);
+    const double scale = 1.0 / (1 << 15);
+    AVDownmixCoeff *matrix_l, *matrix_r;
+    const uint8_t *dca2wav;
+
+    if (!dm)
+        return AVERROR(ENOMEM);
+
+    if (output_mask == DCA_SPEAKER_LAYOUT_7POINT0_WIDE ||
+        output_mask == DCA_SPEAKER_LAYOUT_7POINT1_WIDE)
+        dca2wav = dca2wav_wide;
+    else
+        dca2wav = dca2wav_norm;
+
+    matrix_l = av_downmix_matrix_coeff(dm, 0, 0);
+    matrix_r = av_downmix_matrix_coeff(dm, 1, 0);
+
+    for (int i = 0; i <= av_log2(output_mask); i++) {
+        if (!(output_mask & (1U << i)))
+            continue;
+
+        int idx = av_channel_layout_index_from_channel(&avctx->ch_layout, dca2wav[i]);
+        av_assert0(idx >= 0);
+
+        if (*coeff_l)
+            matrix_l[idx] = *coeff_l * scale;
+
+        if (*coeff_r)
+            matrix_r[idx] = *coeff_r * scale;
+
+        coeff_l++;
+        coeff_r++;
+    }
+
+    AVBufferRef *buf = av_buffer_create((uint8_t *)dm, size, NULL, NULL, 0);
+    if (!buf) {
+        av_free(dm);
+        return AVERROR(ENOMEM);
+    }
+
+    if (!av_frame_new_side_data_from_buf(frame, AV_FRAME_DATA_DOWNMIX_MATRIX, buf)) {
+        av_buffer_unref(&buf);
+        return AVERROR(ENOMEM);
+    }
+
+    return 0;
 }
 
 static int dcadec_decode_frame(AVCodecContext *avctx, AVFrame *frame,

@@ -16,7 +16,7 @@
 #include "third_party/blink/renderer/core/frame/frame.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
-#include "third_party/blink/renderer/core/html/html_frame_element_base.h"
+#include "third_party/blink/renderer/core/html/html_frame_owner_element.h"
 #include "third_party/blink/renderer/core/input/event_handling_util.h"
 #include "third_party/blink/renderer/core/layout/hit_test_location.h"
 #include "third_party/blink/renderer/modules/xr/xr_grip_space.h"
@@ -522,21 +522,30 @@ void XRInputSource::ProcessOverlayHitTest(
   // the common base class to cover both. (There's no intention to actively
   // support framesets for DOM Overlay, but this helps prevent them from
   // being used as a mechanism for information leaks.)
-  HTMLFrameElementBase* frame_element =
-      DynamicTo<HTMLFrameElementBase>(hit_element);
+  HTMLFrameOwnerElement* frame_element =
+      DynamicTo<HTMLFrameOwnerElement>(hit_element);
   if (frame_element) {
     Frame* hit_frame = frame_element->ContentFrame();
     if (hit_frame) {
       bool is_cross_origin = false;
-      if (hit_frame->IsRemoteFrame()) {
-        is_cross_origin = true;
-      } else {
-        const SecurityOrigin* hit_origin =
-            hit_frame->GetSecurityContext()->GetSecurityOrigin();
-        const SecurityOrigin* session_origin =
-            session_->GetExecutionContext()->GetSecurityOrigin();
-        if (!hit_origin->IsSameOriginWith(session_origin)) {
+      const SecurityOrigin* session_origin =
+          session_->GetExecutionContext()->GetSecurityOrigin();
+
+      // Ensure that same-origin wrapper iframes cannot be used to bypass input
+      // suppression for nested cross-origin iframes. Walk the entire frame
+      // subtree to check if any descendant frame is cross-origin or remote.
+      for (Frame* node = hit_frame; node != nullptr;
+           node = node->Tree().TraverseNext(hit_frame)) {
+        if (node->IsRemoteFrame()) {
           is_cross_origin = true;
+          break;
+        } else {
+          const SecurityOrigin* hit_origin =
+              node->GetSecurityContext()->GetSecurityOrigin();
+          if (!hit_origin->IsSameOriginWith(session_origin)) {
+            is_cross_origin = true;
+            break;
+          }
         }
       }
 

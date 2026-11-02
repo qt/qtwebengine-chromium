@@ -322,9 +322,7 @@ void Snapshot::ClearReconstructableDataForSerialization(
     for (i::Tagged<i::HeapObject> o = it.Next(); !o.is_null(); o = it.Next()) {
       if (IsJSFunction(o)) {
         i::Tagged<i::JSFunction> fun = i::Cast<i::JSFunction>(o);
-        if (fun->shared()->HasAsmWasmData()) {
-          FATAL("asm.js functions are not supported in snapshots");
-        }
+
         if (fun->shared()->HasWasmExportedFunctionData(isolate)) {
           FATAL(
               "Exported WebAssembly functions are not supported in snapshots");
@@ -890,26 +888,16 @@ SnapshotCreatorImpl::SnapshotCreatorImpl(
 
 SnapshotCreatorImpl::SnapshotCreatorImpl(
     const v8::Isolate::CreateParams& params)
-    : owns_isolate_(true), isolate_(Isolate::New()) {
-  if (auto allocator = params.array_buffer_allocator_shared) {
-    CHECK(params.array_buffer_allocator == nullptr ||
-          params.array_buffer_allocator == allocator.get());
-    isolate_->set_array_buffer_allocator(allocator.get());
-    isolate_->set_array_buffer_allocator_shared(std::move(allocator));
-  } else {
-    CHECK_NOT_NULL(params.array_buffer_allocator);
-    isolate_->set_array_buffer_allocator(params.array_buffer_allocator);
-  }
-  isolate_->set_api_external_references(params.external_references);
-  isolate_->heap()->ConfigureHeap(params.constraints, params.cpp_heap);
-
-  InitInternal(params.snapshot_blob ? params.snapshot_blob
-                                    : Snapshot::DefaultSnapshotBlob());
-}
+    : SnapshotCreatorImpl(Isolate::New(), true, params) {}
 
 SnapshotCreatorImpl::SnapshotCreatorImpl(
     Isolate* isolate, const v8::Isolate::CreateParams& params)
-    : owns_isolate_(false), isolate_(isolate) {
+    : SnapshotCreatorImpl(isolate, false, params) {}
+
+SnapshotCreatorImpl::SnapshotCreatorImpl(
+    Isolate* isolate, bool owns_isolate,
+    const v8::Isolate::CreateParams& params)
+    : owns_isolate_(owns_isolate), isolate_(isolate) {
   if (auto allocator = params.array_buffer_allocator_shared) {
     CHECK(params.array_buffer_allocator == nullptr ||
           params.array_buffer_allocator == allocator.get());
@@ -920,7 +908,13 @@ SnapshotCreatorImpl::SnapshotCreatorImpl(
     isolate_->set_array_buffer_allocator(params.array_buffer_allocator);
   }
   isolate_->set_api_external_references(params.external_references);
-  isolate_->heap()->ConfigureHeap(params.constraints, params.cpp_heap);
+  v8::CppHeap* cpp_heap = params.cpp_heap;
+  if (!cpp_heap) {
+    cpp_heap = v8::CppHeap::Create(i::V8::GetCurrentPlatform(),
+                                   CppHeapCreateParams{{}})
+                   .release();
+  }
+  isolate_->heap()->ConfigureHeap(params.constraints, *cpp_heap);
 
   InitInternal(params.snapshot_blob ? params.snapshot_blob
                                     : Snapshot::DefaultSnapshotBlob());

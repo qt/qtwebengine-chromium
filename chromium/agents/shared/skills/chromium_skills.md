@@ -11,7 +11,9 @@ description of the skill.
 ## Installation
 
 All publicly available skills for Chromium live under the
-[//agents/skills directory](https://source.chromium.org/chromium/chromium/src/+/main:agents/skills/).
+[//agents/skills directory](https://source.chromium.org/chromium/chromium/src/+/main:agents/skills/)
+and
+[//agents/shared/skills directory](https://source.chromium.org/chromium/chromium/src/+/main:agents/shared/skills/).
 For Googlers, any available internal skills live under the same location in the
 src-internal repo. Skills for other repos should also typically be under an
 //agents/skills directory, although whether any exist will be highly dependent
@@ -58,7 +60,7 @@ for the most up-to-date information.
 
 Most of the documentation for skill creation and modification is available as
 part of
-[Chromium’s skill creation skill](https://chromium.googlesource.com/chromium/agents/skills/skill-creation/SKILL.md).
+[Chromium’s skill creation skill](https://source.chromium.org/chromium/chromium/src/+/main:agents/shared/skills/skill-creation/SKILL.md).
 Documentation is largely kept there in order to help prevent multiple copies of
 similar documentation from getting out of sync.
 

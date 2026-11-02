@@ -7,11 +7,8 @@
 // VertexDataManager.cpp: Defines the VertexDataManager, a class that
 // runs the Buffer translation process.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-#    pragma allow_unsafe_buffers
-#endif
-
 #include "libANGLE/renderer/d3d/VertexDataManager.h"
+#include "common/unsafe_buffers.h"
 
 #include "common/bitset_utils.h"
 #include "libANGLE/Buffer.h"
@@ -122,10 +119,10 @@ bool DirectStoragePossible(const gl::Context *context,
         alignment = std::min<size_t>(elementSize, 4);
     }
 
-    GLintptr offset = ComputeVertexAttributeOffset(attrib, binding);
+    uintptr_t offset = ComputeVertexAttributeOffset(attrib, binding);
     // Final alignment check - unaligned data must be converted.
-    return (static_cast<size_t>(ComputeVertexAttributeStride(attrib, binding)) % alignment == 0) &&
-           (static_cast<size_t>(offset) % alignment == 0);
+    return (ComputeVertexAttributeStride(attrib, binding) % alignment == 0) &&
+           (offset % alignment == 0);
 }
 }  // anonymous namespace
 
@@ -370,13 +367,13 @@ angle::Result VertexDataManager::StoreStaticAttrib(const gl::Context *context,
     // Compute source data pointer
     const uint8_t *sourceData = nullptr;
 
-    angle::CheckedNumeric<GLintptr> offset = ComputeVertexAttributeOffset(attrib, binding);
+    angle::CheckedNumeric<uintptr_t> offset = ComputeVertexAttributeOffset(attrib, binding);
 
     ANGLE_TRY(bufferD3D->getData(context, &sourceData));
 
     if (sourceData)
     {
-        sourceData += GLintptr{offset.ValueOrDie()};
+        ANGLE_UNSAFE_TODO(sourceData += uintptr_t{offset.ValueOrDie()});
     }
 
     translated->storage = nullptr;
@@ -445,6 +442,10 @@ angle::Result VertexDataManager::storeDynamicAttribs(
 
     // Will trigger unmapping on return.
     StreamingBufferUnmapper localUnmapper(&mStreamingBuffer);
+
+    // Ensure the reservation accumulator starts fresh, discarding any state left
+    // behind by an earlier call that returned before the store loop consumed it.
+    mStreamingBuffer.clearReservedSpace();
 
     // Reserve the required space for the dynamic buffers.
     for (auto attribIndex : dynamicAttribsMask)
@@ -561,7 +562,7 @@ angle::Result VertexDataManager::storeDynamicAttrib(const gl::Context *context,
     if (buffer)
     {
         ANGLE_TRY(storage->getData(context, &sourceData));
-        sourceData += static_cast<size_t>(ComputeVertexAttributeOffset(attrib, binding));
+        ANGLE_UNSAFE_TODO(sourceData += ComputeVertexAttributeOffset(attrib, binding));
     }
     else
     {

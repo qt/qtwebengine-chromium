@@ -45,6 +45,7 @@
 #include "src/tint/lang/core/ir/type/array_count.h"
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/core/ir/value.h"
+#include "src/tint/utils/math/math.h"
 #include "src/utils/numeric.h"
 
 namespace tint::core::ir::transform {
@@ -226,6 +227,9 @@ struct State {
             auto sgs = func->SubgroupSize();
             if (sgs.has_value()) {
                 TINT_CHECK_RESULT_UNWRAP(new_sg, CalculateOverride(sgs.value()));
+                if (!IsPowerOfTwo(new_sg->Value()->ValueAs<uint32_t>())) {
+                    return diag::Failure("@subgroup_size value must be a power of two");
+                }
                 func->SetSubgroupSize(new_sg);
             }
         }
@@ -325,6 +329,15 @@ struct State {
                                                static_cast<uint32_t>(new_ary_size));
         } else {
             TINT_IR_ASSERT(ir, old_buf_ty);
+            const uint32_t divisor = ir.properties.Contains(Property::kAllow16BitFloats) ||
+                                             ir.properties.Contains(Property::kAllow16BitIntegers)
+                                         ? 2
+                                         : 4;
+            if (num_elements % divisor != 0) {
+                diag::Diagnostic error = MakeError(ir.SourceOf(cnt->value));
+                error << "buffer size must be evenly divisible by " << divisor;
+                return diag::Failure(error);
+            }
             new_ty = ty.Get<core::type::Buffer>(new_cnt);
         }
 
@@ -439,7 +452,7 @@ struct State {
 }  // namespace
 
 Result<SuccessType> SubstituteOverrides(Module& ir, const SubstituteOverridesConfig& cfg) {
-    AssertValid(ir, kSubstituteOverridesCapabilities, "before core.SubstituteOverrides");
+    AssertValid(ir, "before core.SubstituteOverrides");
     {
         auto result = State{ir, cfg}.Process();
         if (result != Success) {

@@ -28,8 +28,10 @@
 #include "src/tint/lang/core/ir/transform/substitute_overrides.h"
 
 #include <limits>
+#include <tuple>
 #include <utility>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/ir/override.h"
@@ -48,7 +50,9 @@ class IR_SubstituteOverridesTest : public TransformTest {
   protected:
     void SetUp() override {
         TransformTest::SetUp();
-        mod.properties.Add(core::ir::Property::kAllowOverrides);
+        mod.properties.Add(core::ir::Property::kAllow16BitFloats,
+                           core::ir::Property::kAllowOverrides,
+                           core::ir::Property::kAllowBufferTypes);
     }
 };
 
@@ -2307,7 +2311,7 @@ TEST_F(IR_SubstituteOverridesTest, OverrideSizedBuffer_BufferView_FixedSize) {
     b.Append(ep->Block(), [&] {
         auto* let = b.Let("l", v);
         b.CallExplicit(ty.ptr(workgroup, ty.array(ty.u32(), 4u)), BuiltinFn::kBufferView,
-                       Vector{ty.array(ty.u32(), 4u)}, let, 0_u);
+                       Vector<TemplateParameter, 1>{ty.array(ty.u32(), 4u)}, let, 0_u);
         b.Return(ep);
     });
 
@@ -2352,7 +2356,7 @@ TEST_F(IR_SubstituteOverridesTest, OverrideSizedBuffer_BufferView_FixedSize_Cons
     b.Append(ep->Block(), [&] {
         auto* let = b.Let("l", v);
         b.CallExplicit(ty.ptr(workgroup, ty.array(ty.u32(), 4u)), BuiltinFn::kBufferView,
-                       Vector{ty.array(ty.u32(), 4u)}, let, 4_u);
+                       Vector<TemplateParameter, 1>{ty.array(ty.u32(), 4u)}, let, 4_u);
         b.Return(ep);
     });
 
@@ -2397,7 +2401,7 @@ TEST_F(IR_SubstituteOverridesTest, OverrideSizedBuffer_BufferView_RuntimeArray) 
     b.Append(ep->Block(), [&] {
         auto* let = b.Let("l", v);
         b.CallExplicit(ty.ptr(workgroup, ty.runtime_array(ty.vec4u())), BuiltinFn::kBufferView,
-                       Vector{ty.runtime_array(ty.vec4u())}, let, 0_u);
+                       Vector<TemplateParameter, 1>{ty.runtime_array(ty.vec4u())}, let, 0_u);
         b.Return(ep);
     });
 
@@ -2442,7 +2446,7 @@ TEST_F(IR_SubstituteOverridesTest, OverrideSizedBuffer_BufferView_RuntimeArray_C
     b.Append(ep->Block(), [&] {
         auto* let = b.Let("l", v);
         b.CallExplicit(ty.ptr(workgroup, ty.runtime_array(ty.vec4u())), BuiltinFn::kBufferView,
-                       Vector{ty.runtime_array(ty.vec4u())}, let, 4_u);
+                       Vector<TemplateParameter, 1>{ty.runtime_array(ty.vec4u())}, let, 4_u);
         b.Return(ep);
     });
 
@@ -2491,7 +2495,8 @@ TEST_F(IR_SubstituteOverridesTest, OverrideSizedBuffer_BufferView_RuntimeStruct)
     auto* ep = b.ComputeFunction("ep", 1_u, 1_u, 1_u);
     b.Append(ep->Block(), [&] {
         auto* let = b.Let("l", v);
-        b.CallExplicit(ty.ptr(workgroup, S), BuiltinFn::kBufferView, Vector{S}, let, 0_u);
+        b.CallExplicit(ty.ptr(workgroup, S), BuiltinFn::kBufferView,
+                       Vector<TemplateParameter, 1>{S}, let, 0_u);
         b.Return(ep);
     });
 
@@ -2545,7 +2550,8 @@ TEST_F(IR_SubstituteOverridesTest, OverrideSizedBuffer_BufferView_RuntimeStruct_
     auto* ep = b.ComputeFunction("ep", 1_u, 1_u, 1_u);
     b.Append(ep->Block(), [&] {
         auto* let = b.Let("l", v);
-        b.CallExplicit(ty.ptr(workgroup, S), BuiltinFn::kBufferView, Vector{S}, let, 4_u);
+        b.CallExplicit(ty.ptr(workgroup, S), BuiltinFn::kBufferView,
+                       Vector<TemplateParameter, 1>{S}, let, 4_u);
         b.Return(ep);
     });
 
@@ -2591,7 +2597,8 @@ TEST_F(IR_SubstituteOverridesTest, BufferView_OverrideSizedOffset) {
 
     auto* ep = b.ComputeFunction("ep", 1_u, 1_u, 1_u);
     b.Append(ep->Block(), [&] {
-        b.CallExplicit(ty.ptr(workgroup, ty.u32()), BuiltinFn::kBufferView, Vector{ty.u32()}, v, o);
+        b.CallExplicit(ty.ptr(workgroup, ty.u32()), BuiltinFn::kBufferView,
+                       Vector<TemplateParameter, 1>{ty.u32()}, v, o);
         b.Return(ep);
     });
 
@@ -2644,7 +2651,8 @@ TEST_F(IR_SubstituteOverridesTest, BufferArrayView_BufferSize) {
 
     auto* ep = b.ComputeFunction("ep", 1_u, 1_u, 1_u);
     b.Append(ep->Block(), [&] {
-        b.CallExplicit(ty.ptr(workgroup, S), BuiltinFn::kBufferArrayView, Vector{S}, v, o, s);
+        b.CallExplicit(ty.ptr(workgroup, S), BuiltinFn::kBufferArrayView,
+                       Vector<TemplateParameter, 1>{S}, v, o, s);
         b.Return(ep);
     });
 
@@ -2706,7 +2714,8 @@ TEST_F(IR_SubstituteOverridesTest, BufferArrayView_Size) {
 
     auto* ep = b.ComputeFunction("ep", 1_u, 1_u, 1_u);
     b.Append(ep->Block(), [&] {
-        b.CallExplicit(ty.ptr(workgroup, S), BuiltinFn::kBufferArrayView, Vector{S}, v, o, s);
+        b.CallExplicit(ty.ptr(workgroup, S), BuiltinFn::kBufferArrayView,
+                       Vector<TemplateParameter, 1>{S}, v, o, s);
         b.Return(ep);
     });
 
@@ -2767,7 +2776,8 @@ TEST_F(IR_SubstituteOverridesTest, BufferArrayView_SizeMultiple) {
 
     auto* ep = b.ComputeFunction("ep", 1_u, 1_u, 1_u);
     b.Append(ep->Block(), [&] {
-        b.CallExplicit(ty.ptr(workgroup, S), BuiltinFn::kBufferArrayView, Vector{S}, v, o, s);
+        b.CallExplicit(ty.ptr(workgroup, S), BuiltinFn::kBufferArrayView,
+                       Vector<TemplateParameter, 1>{S}, v, o, s);
         b.Return(ep);
     });
 
@@ -2820,8 +2830,8 @@ TEST_F(IR_SubstituteOverridesTest, BufferView_ThroughCall_Unsized) {
     auto* p = b.FunctionParam("p", ty.ptr(workgroup, ty.unsized_buffer()));
     foo->SetParams({p});
     b.Append(foo->Block(), [&] {
-        b.CallExplicit(ty.ptr(workgroup, ty.vec4u()), BuiltinFn::kBufferView, Vector{ty.vec4u()}, p,
-                       0_u);
+        b.CallExplicit(ty.ptr(workgroup, ty.vec4u()), BuiltinFn::kBufferView,
+                       Vector<TemplateParameter, 1>{ty.vec4u()}, p, 0_u);
         b.Return(foo);
     });
 
@@ -2876,8 +2886,8 @@ TEST_F(IR_SubstituteOverridesTest, BufferView_ThroughCall_SmallerSize) {
     auto* p = b.FunctionParam("p", ty.ptr(workgroup, ty.buffer(16)));
     foo->SetParams({p});
     b.Append(foo->Block(), [&] {
-        b.CallExplicit(ty.ptr(workgroup, ty.vec4u()), BuiltinFn::kBufferView, Vector{ty.vec4u()}, p,
-                       o);
+        b.CallExplicit(ty.ptr(workgroup, ty.vec4u()), BuiltinFn::kBufferView,
+                       Vector<TemplateParameter, 1>{ty.vec4u()}, p, o);
         b.Return(foo);
     });
 
@@ -2917,6 +2927,746 @@ $B1: {  # root
         result.Failure().reason,
         R"(error: invalid buffer size (16 bytes) when used with bufferView (20 bytes required))");
 }
+
+TEST_F(IR_SubstituteOverridesTest, Buffer_WorkgroupPtr_ThreeBytes) {
+    Override* o = nullptr;
+    core::type::Buffer* buffer_ty = nullptr;
+    b.Append(mod.root_block, [&] {
+        o = b.Override("x", ty.u32());
+        o->SetOverrideId({1});
+        auto* count = ty.Get<core::ir::type::ValueArrayCount>(o->Result());
+        buffer_ty = ty.Get<core::type::Buffer>(count);
+    });
+    auto* foo = b.Function("foo", ty.void_());
+    auto* param = b.FunctionParam("p", ty.ptr(workgroup, buffer_ty));
+    foo->SetParams({param});
+    foo->Block()->Append(b.Return(foo));
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 3;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_EQ(result.Failure().reason, R"(error: buffer size must be evenly divisible by 2)");
+}
+
+TEST_F(IR_SubstituteOverridesTest, Buffer_WorkgroupPtr_TwoBytes_NoF16) {
+    mod.properties.Remove(Property::kAllow16BitFloats);
+    Override* o = nullptr;
+    core::type::Buffer* buffer_ty = nullptr;
+    b.Append(mod.root_block, [&] {
+        o = b.Override("x", ty.u32());
+        o->SetOverrideId({1});
+        auto* count = ty.Get<core::ir::type::ValueArrayCount>(o->Result());
+        buffer_ty = ty.Get<core::type::Buffer>(count);
+    });
+    auto* foo = b.Function("foo", ty.void_());
+    auto* param = b.FunctionParam("p", ty.ptr(workgroup, buffer_ty));
+    foo->SetParams({param});
+    foo->Block()->Append(b.Return(foo));
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 2;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_EQ(result.Failure().reason, R"(error: buffer size must be evenly divisible by 4)");
+}
+
+TEST_F(IR_SubstituteOverridesTest, Buffer_WorkgroupPtr_TwoBytes_F16) {
+    Override* o = nullptr;
+    core::type::Buffer* buffer_ty = nullptr;
+    b.Append(mod.root_block, [&] {
+        o = b.Override("x", ty.u32());
+        o->SetOverrideId({1});
+        auto* count = ty.Get<core::ir::type::ValueArrayCount>(o->Result());
+        buffer_ty = ty.Get<core::type::Buffer>(count);
+    });
+    auto* foo = b.Function("foo", ty.void_());
+    auto* param = b.FunctionParam("p", ty.ptr(workgroup, buffer_ty));
+    foo->SetParams({param});
+    foo->Block()->Append(b.Return(foo));
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 2;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_EQ(result, Success);
+}
+
+TEST_F(IR_SubstituteOverridesTest, SubgroupSize_NotPowerOf2) {
+    Override* o = nullptr;
+    b.Append(mod.root_block, [&] {
+        o = b.Override("o", ty.u32());
+        o->SetOverrideId({1});
+    });
+    auto* foo = b.ComputeFunction("foo", o->Result(), 1_u, 1_u);
+    foo->SetSubgroupSize(o->Result());
+    foo->Block()->Append(b.Return(foo));
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 3;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_EQ(result.Failure().reason, R"(error: @subgroup_size value must be a power of two)");
+}
+
+TEST_F(IR_SubstituteOverridesTest, SubgroupSize_NotPowerOf2_Expr) {
+    Override* o = nullptr;
+    Value* add = nullptr;
+    b.Append(mod.root_block, [&] {
+        o = b.Override("o", ty.u32());
+        o->SetOverrideId({1});
+        add = b.Add(o, 1_u)->Result();
+    });
+    auto* foo = b.ComputeFunction("foo", add, 1_u, 1_u);
+    foo->SetSubgroupSize(add);
+    foo->Block()->Append(b.Return(foo));
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 2;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_EQ(result.Failure().reason, R"(error: @subgroup_size value must be a power of two)");
+}
+
+template <typename T>
+const core::type::Type* TypeBuilder(core::type::Manager& m) {
+    return m.Get<T>();
+}
+
+using TypeBuilderFn = const core::type::Type* (*)(core::type::Manager&);
+
+// Params:
+// - component type
+// - columns
+// - rows
+// - col_major
+// - load/store
+using SubgroupMatrixSizesParam = std::tuple<TypeBuilderFn, uint32_t, uint32_t, bool, bool, bool>;
+
+struct SubgroupMatrixSizes : public TransformTestWithParam<SubgroupMatrixSizesParam> {
+    const core::type::SubgroupMatrix* MatrixType() {
+        auto* type = std::get<0>(GetParam())(ty);
+        const uint32_t cols = std::get<1>(GetParam());
+        const uint32_t rows = std::get<2>(GetParam());
+        return ty.subgroup_matrix_left(type, cols, rows);
+    }
+    const core::type::Type* ScalarType() {
+        auto* type = std::get<0>(GetParam())(ty);
+        if (type->Is<core::type::U8>()) {
+            return ty.u32();
+        }
+        if (type->Is<core::type::I8>()) {
+            return ty.i32();
+        }
+        return type;
+    }
+    uint32_t MajorSize() {
+        const uint32_t cols = std::get<1>(GetParam());
+        const uint32_t rows = std::get<2>(GetParam());
+        const bool col_major = std::get<3>(GetParam());
+        return col_major ? cols : rows;
+    }
+    uint32_t MinorSize() {
+        const uint32_t cols = std::get<1>(GetParam());
+        const uint32_t rows = std::get<2>(GetParam());
+        const bool col_major = std::get<3>(GetParam());
+        return col_major ? rows : cols;
+    }
+    uint32_t MinStride() {
+        auto* type = std::get<0>(GetParam())(ty);
+        return MinorSize() * type->Size();
+    }
+    CoreBuiltinCall* MakeCall(Value* pointer, Value* object, Value* offset, Value* stride) {
+        const bool col_major = std::get<3>(GetParam());
+        const bool load = std::get<4>(GetParam());
+        auto* mat_ty = MatrixType();
+        if (load) {
+            return b.CallExplicit(
+                mat_ty, BuiltinFn::kSubgroupMatrixLoad,
+                Vector<TemplateParameter, 2>{
+                    mat_ty, col_major ? Majorness::kColMajor : Majorness::kRowMajor},
+                pointer, offset, stride);
+        } else {
+            return b.CallExplicit(ty.void_(), BuiltinFn::kSubgroupMatrixStore,
+                                  Vector<TemplateParameter, 1>{col_major ? Majorness::kColMajor
+                                                                         : Majorness::kRowMajor},
+                                  pointer, offset, object, stride);
+        }
+    }
+};
+
+TEST_P(SubgroupMatrixSizes, Stride_TooSmallForType) {
+    auto* mat_ty = MatrixType();
+    auto* scalar_ty = ScalarType();
+
+    Var* v = nullptr;
+    Override* o = nullptr;
+    b.Append(mod.root_block, [&] {
+        o = b.Override("o", ty.u32());
+        o->SetOverrideId({1});
+        v = b.Var("v", ty.ptr(storage, ty.runtime_array(scalar_ty)));
+        v->SetBindingPoint(0, 0);
+    });
+    auto* foo = b.Function("foo", ty.void_());
+    auto* value = b.FunctionParam("mat", mat_ty);
+    foo->SetParams({value});
+    b.Append(foo->Block(), [&] {
+        MakeCall(v->Result(), value, b.Constant(u32(0)), o->Result());
+        b.Return(foo);
+    });
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = (MinStride() / scalar_ty->Size()) - 1;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_THAT(result.Failure().reason,
+                testing::HasSubstr("stride (" + std::to_string(MinStride() - scalar_ty->Size()) +
+                                   " bytes) must be greater or equal to " +
+                                   std::to_string(MinStride()) + " bytes"));
+}
+
+TEST_P(SubgroupMatrixSizes, Stride_TooLarge) {
+    auto* mat_ty = MatrixType();
+    auto* scalar_ty = ScalarType();
+
+    Var* v = nullptr;
+    Override* o = nullptr;
+    b.Append(mod.root_block, [&] {
+        o = b.Override("o", ty.u32());
+        o->SetOverrideId({1});
+        v = b.Var("v", ty.ptr(storage, ty.runtime_array(scalar_ty)));
+        v->SetBindingPoint(0, 0);
+    });
+    auto* foo = b.Function("foo", ty.void_());
+    auto* value = b.FunctionParam("mat", mat_ty);
+    foo->SetParams({value});
+    b.Append(foo->Block(), [&] {
+        MakeCall(v->Result(), value, b.Constant(u32(0)), o->Result());
+        b.Return(foo);
+    });
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 0xfffffffe;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_THAT(result.Failure().reason, testing::HasSubstr("has a stride exceeding 32 bits"));
+}
+
+TEST_P(SubgroupMatrixSizes, Offset_TooLarge) {
+    auto* mat_ty = MatrixType();
+    auto* scalar_ty = ScalarType();
+
+    Var* v = nullptr;
+    Override* o = nullptr;
+    b.Append(mod.root_block, [&] {
+        o = b.Override("o", ty.u32());
+        o->SetOverrideId({1});
+        v = b.Var("v", ty.ptr(storage, ty.runtime_array(scalar_ty)));
+        v->SetBindingPoint(0, 0);
+    });
+    auto* foo = b.Function("foo", ty.void_());
+    auto* value = b.FunctionParam("mat", mat_ty);
+    foo->SetParams({value});
+    b.Append(foo->Block(), [&] {
+        MakeCall(v->Result(), value, o->Result(), b.Constant(u32(MinStride() / scalar_ty->Size())));
+        b.Return(foo);
+    });
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 0xfffffffe;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_THAT(result.Failure().reason, testing::HasSubstr("has an offset exceeding 32 bits"));
+}
+
+TEST_P(SubgroupMatrixSizes, Pointer_TooSmallForType_MinStride) {
+    auto* type = std::get<0>(GetParam())(ty);
+    const bool load = std::get<4>(GetParam());
+    auto* mat_ty = MatrixType();
+    auto* scalar_ty = ScalarType();
+
+    uint32_t min_array_size = MinStride() * (MajorSize() - 1) + MinorSize() * type->Size();
+
+    Var* v = nullptr;
+    Override* o = nullptr;
+    b.Append(mod.root_block, [&] {
+        o = b.Override("o", ty.u32());
+        o->SetOverrideId({1});
+        v = b.Var("v", ty.ptr(storage, ty.array(scalar_ty, min_array_size / scalar_ty->Size())));
+        v->SetBindingPoint(0, 0);
+    });
+    auto* foo = b.Function("foo", ty.void_());
+    auto* value = b.FunctionParam("mat", mat_ty);
+    foo->SetParams({value});
+    b.Append(foo->Block(), [&] {
+        MakeCall(v->Result(), value, o->Result(), b.Constant(u32(MinStride() / scalar_ty->Size())));
+        b.Return(foo);
+    });
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 1;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_THAT(result.Failure().reason,
+                testing::HasSubstr("invalid storage size (" + std::to_string(min_array_size) +
+                                   " bytes) when used with " +
+                                   (load ? "subgroupMatrixLoad" : "subgroupMatrixStore") + " (" +
+                                   std::to_string(min_array_size + scalar_ty->Size()) +
+                                   " bytes required)"));
+}
+
+TEST_P(SubgroupMatrixSizes, Storage_TooSmallForType) {
+    auto* type = std::get<0>(GetParam())(ty);
+    const bool load = std::get<4>(GetParam());
+    auto* mat_ty = MatrixType();
+    auto* scalar_ty = ScalarType();
+
+    uint32_t array_size = MinStride() * 2 * (MajorSize() - 1) + MinorSize() * type->Size();
+
+    Var* v = nullptr;
+    Override* o = nullptr;
+    b.Append(mod.root_block, [&] {
+        o = b.Override("o", ty.u32());
+        o->SetOverrideId({1});
+        v = b.Var("v", ty.ptr(storage, ty.array(scalar_ty, array_size / scalar_ty->Size())));
+        v->SetBindingPoint(0, 0);
+    });
+    auto* foo = b.Function("foo", ty.void_());
+    auto* value = b.FunctionParam("mat", mat_ty);
+    foo->SetParams({value});
+    b.Append(foo->Block(), [&] {
+        MakeCall(v->Result(), value, b.Constant(u32(4)), o->Result());
+        b.Return(foo);
+    });
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = (2 * MinStride()) / scalar_ty->Size();
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_THAT(result.Failure().reason,
+                testing::HasSubstr("invalid storage size (" + std::to_string(array_size) +
+                                   " bytes) when used with " +
+                                   (load ? "subgroupMatrixLoad" : "subgroupMatrixStore") + " (" +
+                                   std::to_string(array_size + 4 * scalar_ty->Size()) +
+                                   " bytes required)"));
+}
+
+TEST_P(SubgroupMatrixSizes, Storage_TooSmallForType_NonConstStride) {
+    auto* type = std::get<0>(GetParam())(ty);
+    const bool load = std::get<4>(GetParam());
+    auto* mat_ty = MatrixType();
+    auto* scalar_ty = ScalarType();
+
+    uint32_t array_size = MinStride() * (MajorSize() - 1) + MinorSize() * type->Size();
+
+    Var* v = nullptr;
+    Override* o = nullptr;
+    b.Append(mod.root_block, [&] {
+        o = b.Override("o", ty.u32());
+        o->SetOverrideId({1});
+        v = b.Var("v", ty.ptr(storage, ty.array(scalar_ty, array_size / scalar_ty->Size())));
+        v->SetBindingPoint(0, 0);
+    });
+    auto* foo = b.Function("foo", ty.void_());
+    auto* value = b.FunctionParam("mat", mat_ty);
+    auto* stride = b.FunctionParam("stride", ty.u32());
+    foo->SetParams({value, stride});
+    b.Append(foo->Block(), [&] {
+        MakeCall(v->Result(), value, o->Result(), stride);
+        b.Return(foo);
+    });
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 4;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_THAT(result.Failure().reason,
+                testing::HasSubstr("invalid storage size (" + std::to_string(array_size) +
+                                   " bytes) when used with " +
+                                   (load ? "subgroupMatrixLoad" : "subgroupMatrixStore") + " (" +
+                                   std::to_string(array_size + 4 * scalar_ty->Size()) +
+                                   " bytes required)"));
+}
+
+TEST_P(SubgroupMatrixSizes, Storage_TooSmall_BufferView) {
+    auto* type = std::get<0>(GetParam())(ty);
+    const bool load = std::get<4>(GetParam());
+    auto* mat_ty = MatrixType();
+    auto* scalar_ty = ScalarType();
+
+    uint32_t array_size = MinStride() * (MajorSize() - 1) + MinorSize() * type->Size();
+
+    Var* v = nullptr;
+    Override* o = nullptr;
+    b.Append(mod.root_block, [&] {
+        o = b.Override("o", ty.u32());
+        o->SetOverrideId({1});
+        v = b.Var("v", ty.ptr(workgroup, ty.buffer(array_size)));
+        v->SetBindingPoint(0, 0);
+    });
+    auto* foo = b.Function("foo", ty.void_());
+    auto* value = b.FunctionParam("mat", mat_ty);
+    foo->SetParams({value});
+    b.Append(foo->Block(), [&] {
+        auto* view = b.CallExplicit(
+            ty.ptr(workgroup, ty.runtime_array(scalar_ty)), BuiltinFn::kBufferView,
+            Vector<TemplateParameter, 1>{ty.runtime_array(scalar_ty)}, v, o->Result());
+        MakeCall(view->Result(), value, b.Constant(u32(0)),
+                 b.Constant(u32(MinStride() / scalar_ty->Size())));
+        b.Return(foo);
+    });
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 4;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_THAT(result.Failure().reason,
+                testing::HasSubstr("invalid storage size (" + std::to_string(array_size) +
+                                   " bytes) when used with " +
+                                   (load ? "subgroupMatrixLoad" : "subgroupMatrixStore") + " (" +
+                                   std::to_string(array_size + 4) + " bytes required)"));
+}
+
+TEST_P(SubgroupMatrixSizes, Storage_TooSmall_BufferView_SizedParam) {
+    auto* type = std::get<0>(GetParam())(ty);
+    const bool load = std::get<4>(GetParam());
+    auto* mat_ty = MatrixType();
+    auto* scalar_ty = ScalarType();
+
+    uint32_t array_size = MinStride() * (MajorSize() - 1) + MinorSize() * type->Size();
+
+    Var* v = nullptr;
+    Override* o = nullptr;
+    b.Append(mod.root_block, [&] {
+        o = b.Override("o", ty.u32());
+        o->SetOverrideId({1});
+        v = b.Var("v", ty.ptr(storage, ty.unsized_buffer()));
+        v->SetBindingPoint(0, 0);
+    });
+    auto* foo = b.Function("foo", ty.void_());
+    auto* value = b.FunctionParam("mat", mat_ty);
+    auto* p = b.FunctionParam("p", ty.buffer(array_size));
+    foo->SetParams({value, p});
+    b.Append(foo->Block(), [&] {
+        auto* view = b.CallExplicit(
+            ty.ptr(workgroup, ty.runtime_array(scalar_ty)), BuiltinFn::kBufferView,
+            Vector<TemplateParameter, 1>{ty.runtime_array(scalar_ty)}, p, o->Result());
+        MakeCall(view->Result(), value, b.Constant(u32(0)),
+                 b.Constant(u32(MinStride() / scalar_ty->Size())));
+        b.Return(foo);
+    });
+    auto* bar = b.Function("bar", ty.void_());
+    auto* value2 = b.FunctionParam("mat", mat_ty);
+    bar->SetParams({value2});
+    b.Append(bar->Block(), [&] {
+        b.Call(ty.void_(), foo, value2, v);
+        b.Return(bar);
+    });
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 4;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_THAT(result.Failure().reason,
+                testing::HasSubstr("invalid storage size (" + std::to_string(array_size) +
+                                   " bytes) when used with " +
+                                   (load ? "subgroupMatrixLoad" : "subgroupMatrixStore") + " (" +
+                                   std::to_string(array_size + 4) + " bytes required)"));
+}
+
+TEST_P(SubgroupMatrixSizes, Pointer_TooSmall_BufferView_Result) {
+    auto* type = std::get<0>(GetParam())(ty);
+    auto* mat_ty = MatrixType();
+    auto* scalar_ty = ScalarType();
+
+    uint32_t array_size = MinStride() * (MajorSize() - 1) + MinorSize() * type->Size();
+
+    Var* v = nullptr;
+    Override* o = nullptr;
+    b.Append(mod.root_block, [&] {
+        o = b.Override("o", ty.u32());
+        o->SetOverrideId({1});
+        v = b.Var("v", ty.ptr(storage, ty.unsized_buffer()));
+        v->SetBindingPoint(0, 0);
+    });
+    auto* foo = b.Function("foo", ty.void_());
+    auto* value = b.FunctionParam("mat", mat_ty);
+    auto* p = b.FunctionParam("p", ty.buffer(2 * array_size));
+    foo->SetParams({value, p});
+    b.Append(foo->Block(), [&] {
+        auto* arr_ty = ty.array(scalar_ty, array_size / scalar_ty->Size() - 1);
+        auto* view = b.CallExplicit(ty.ptr(workgroup, arr_ty), BuiltinFn::kBufferView,
+                                    Vector<TemplateParameter, 1>{arr_ty}, p, o->Result());
+        MakeCall(view->Result(), value, b.Constant(u32(0)),
+                 b.Constant(u32(MinStride() / scalar_ty->Size())));
+        b.Return(foo);
+    });
+    auto* bar = b.Function("bar", ty.void_());
+    auto* value2 = b.FunctionParam("mat", mat_ty);
+    bar->SetParams({value2});
+    b.Append(bar->Block(), [&] {
+        b.Call(ty.void_(), foo, value2, v);
+        b.Return(bar);
+    });
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 0;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_THAT(result.Failure().reason,
+                testing::HasSubstr("requires more memory (" + std::to_string(array_size) +
+                                   " bytes) than pointed to (" +
+                                   std::to_string(array_size - scalar_ty->Size()) + " bytes)"));
+}
+
+TEST_P(SubgroupMatrixSizes, Pointer_TooSmall_BufferArrayView_SizeParam) {
+    auto* type = std::get<0>(GetParam())(ty);
+    auto* mat_ty = MatrixType();
+    auto* scalar_ty = ScalarType();
+
+    uint32_t array_size = MinStride() * (MajorSize() - 1) + MinorSize() * type->Size();
+
+    Var* v = nullptr;
+    Override* o = nullptr;
+    b.Append(mod.root_block, [&] {
+        o = b.Override("o", ty.u32());
+        o->SetOverrideId({1});
+        v = b.Var("v", ty.ptr(workgroup, ty.buffer(2 * array_size)));
+        v->SetBindingPoint(0, 0);
+    });
+    auto* foo = b.Function("foo", ty.void_());
+    auto* value = b.FunctionParam("mat", mat_ty);
+    foo->SetParams({value});
+    b.Append(foo->Block(), [&] {
+        auto* view = b.CallExplicit(
+            ty.ptr(workgroup, ty.runtime_array(scalar_ty)), BuiltinFn::kBufferArrayView,
+            Vector<TemplateParameter, 1>{ty.runtime_array(scalar_ty)}, v, 0_u, o->Result());
+        MakeCall(view->Result(), value, b.Constant(u32(0)),
+                 b.Constant(u32(MinStride() / scalar_ty->Size())));
+        b.Return(foo);
+    });
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = array_size - 4;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_THAT(result.Failure().reason,
+                testing::HasSubstr("requires more memory (" + std::to_string(array_size) +
+                                   " bytes) than pointed to (" + std::to_string(array_size - 4) +
+                                   " bytes)"));
+}
+
+TEST_P(SubgroupMatrixSizes, Pointer_TooSmall_Access_Array) {
+    auto* type = std::get<0>(GetParam())(ty);
+    auto* mat_ty = MatrixType();
+    auto* scalar_ty = ScalarType();
+
+    uint32_t array_size = MinStride() * (MajorSize() - 1) + MinorSize() * type->Size();
+    auto* arr_ty = ty.array(scalar_ty, array_size / scalar_ty->Size() - 1);
+
+    Var* v = nullptr;
+    Override* o = nullptr;
+    b.Append(mod.root_block, [&] {
+        o = b.Override("o", ty.u32());
+        o->SetOverrideId({1});
+        v = b.Var("v", ty.ptr(storage, ty.runtime_array(arr_ty)));
+        v->SetBindingPoint(0, 0);
+    });
+    auto* foo = b.Function("foo", ty.void_());
+    auto* value = b.FunctionParam("mat", mat_ty);
+    foo->SetParams({value});
+    b.Append(foo->Block(), [&] {
+        auto* access = b.Access(ty.ptr(storage, arr_ty), v, o->Result());
+        MakeCall(access->Result(), value, b.Constant(u32(0)),
+                 b.Constant(u32(MinStride() / scalar_ty->Size())));
+        b.Return(foo);
+    });
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 0;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_THAT(result.Failure().reason,
+                testing::HasSubstr("requires more memory (" + std::to_string(array_size) +
+                                   " bytes) than pointed to (" +
+                                   std::to_string(array_size - scalar_ty->Size()) + " bytes)"));
+}
+
+TEST_P(SubgroupMatrixSizes, Pointer_TooSmall_Access_Array_Offset) {
+    auto* type = std::get<0>(GetParam())(ty);
+    auto* mat_ty = MatrixType();
+    auto* scalar_ty = ScalarType();
+
+    uint32_t array_size = MinStride() * (MajorSize() - 1) + MinorSize() * type->Size();
+    auto* arr_ty = ty.array(scalar_ty, array_size / scalar_ty->Size());
+
+    Var* v = nullptr;
+    Override* o = nullptr;
+    b.Append(mod.root_block, [&] {
+        o = b.Override("o", ty.u32());
+        o->SetOverrideId({1});
+        v = b.Var("v", ty.ptr(storage, ty.array(arr_ty, 2)));
+        v->SetBindingPoint(0, 0);
+    });
+    auto* foo = b.Function("foo", ty.void_());
+    auto* value = b.FunctionParam("mat", mat_ty);
+    foo->SetParams({value});
+    b.Append(foo->Block(), [&] {
+        auto* access = b.Access(ty.ptr(storage, arr_ty), v, 1_u);
+        MakeCall(access->Result(), value, o->Result(),
+                 b.Constant(u32(MinStride() / scalar_ty->Size())));
+        b.Return(foo);
+    });
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 1;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_THAT(result.Failure().reason,
+                testing::HasSubstr(
+                    "requires more memory (" + std::to_string(array_size + scalar_ty->Size()) +
+                    " bytes) than pointed to (" + std::to_string(array_size) + " bytes)"));
+}
+
+TEST_P(SubgroupMatrixSizes, Pointer_TooSmall_StructMember) {
+    auto* type = std::get<0>(GetParam())(ty);
+    auto* mat_ty = MatrixType();
+    auto* scalar_ty = ScalarType();
+
+    uint32_t array_size = MinStride() * (MajorSize() - 1) + MinorSize() * type->Size();
+    auto* arr_ty = ty.array(scalar_ty, array_size / scalar_ty->Size() - 1);
+
+    auto* S = ty.Struct(mod.symbols.New("S"), {
+                                                  {mod.symbols.New("a"), ty.vec4u()},
+                                                  {mod.symbols.New("b"), arr_ty},
+                                              });
+
+    Var* v = nullptr;
+    Override* o = nullptr;
+    b.Append(mod.root_block, [&] {
+        o = b.Override("o", ty.u32());
+        o->SetOverrideId({1});
+        v = b.Var("v", ty.ptr(storage, S));
+        v->SetBindingPoint(0, 0);
+    });
+    auto* foo = b.Function("foo", ty.void_());
+    auto* value = b.FunctionParam("mat", mat_ty);
+    foo->SetParams({value});
+    b.Append(foo->Block(), [&] {
+        auto* access = b.Access(ty.ptr(storage, arr_ty), v, 1_u);
+        MakeCall(access->Result(), value, o->Result(),
+                 b.Constant(u32(MinStride() / scalar_ty->Size())));
+        b.Return(foo);
+    });
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 0;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_THAT(result.Failure().reason,
+                testing::HasSubstr("requires more memory (" + std::to_string(array_size) +
+                                   " bytes) than pointed to (" +
+                                   std::to_string(array_size - scalar_ty->Size()) + " bytes)"));
+}
+
+TEST_P(SubgroupMatrixSizes, Storage_TooSmall_BufferView_Access_Array) {
+    auto* type = std::get<0>(GetParam())(ty);
+    const bool load = std::get<4>(GetParam());
+    auto* mat_ty = MatrixType();
+    auto* scalar_ty = ScalarType();
+
+    uint32_t array_size = MinStride() * (MajorSize() - 1) + MinorSize() * type->Size();
+    auto* arr_ty = ty.array(scalar_ty, array_size / scalar_ty->Size());
+
+    Var* v = nullptr;
+    Override* o = nullptr;
+    b.Append(mod.root_block, [&] {
+        o = b.Override("o", ty.u32());
+        o->SetOverrideId({1});
+        v = b.Var("v", ty.ptr(storage, ty.buffer(2 * array_size)));
+        v->SetBindingPoint(0, 0);
+    });
+    auto* foo = b.Function("foo", ty.void_());
+    auto* value = b.FunctionParam("mat", mat_ty);
+    foo->SetParams({value});
+    b.Append(foo->Block(), [&] {
+        auto* view =
+            b.CallExplicit(ty.ptr(storage, ty.runtime_array(arr_ty)), BuiltinFn::kBufferView,
+                           Vector<TemplateParameter, 1>{ty.runtime_array(arr_ty)}, v, o->Result());
+        auto* access = b.Access(ty.ptr(storage, arr_ty), view, 1_u);
+        MakeCall(access->Result(), value, b.Constant(u32(0)),
+                 b.Constant(u32(MinStride() / scalar_ty->Size())));
+        b.Return(foo);
+    });
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = scalar_ty->Size();
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_THAT(result.Failure().reason,
+                testing::HasSubstr("invalid storage size (" + std::to_string(2 * array_size) +
+                                   " bytes) when used with " +
+                                   (load ? "subgroupMatrixLoad" : "subgroupMatrixStore") + " (" +
+                                   std::to_string(2 * array_size + scalar_ty->Size()) +
+                                   " bytes required)"));
+}
+
+TEST_P(SubgroupMatrixSizes, Storage_TooSmall_BufferView_Access_Struct) {
+    auto* type = std::get<0>(GetParam())(ty);
+    const bool load = std::get<4>(GetParam());
+    auto* mat_ty = MatrixType();
+    auto* scalar_ty = ScalarType();
+
+    uint32_t array_size = MinStride() * (MajorSize() - 1) + MinorSize() * type->Size();
+
+    auto* S =
+        ty.Struct(mod.symbols.New("S"), {
+                                            {mod.symbols.New("a"), ty.vec4u()},
+                                            {mod.symbols.New("b"), ty.runtime_array(scalar_ty)},
+                                        });
+
+    Var* v = nullptr;
+    Override* o = nullptr;
+    b.Append(mod.root_block, [&] {
+        o = b.Override("o", ty.u32());
+        o->SetOverrideId({1});
+        v = b.Var("v", ty.ptr(storage, ty.buffer(array_size + 16)));
+        v->SetBindingPoint(0, 0);
+    });
+    auto* foo = b.Function("foo", ty.void_());
+    auto* value = b.FunctionParam("mat", mat_ty);
+    foo->SetParams({value});
+    b.Append(foo->Block(), [&] {
+        auto* view =
+            b.CallExplicit(ty.ptr(storage, S), BuiltinFn::kBufferView,
+                           Vector<TemplateParameter, 1>{ty.runtime_array(scalar_ty)}, v, 0_u);
+        auto* access = b.Access(ty.ptr(storage, ty.runtime_array(scalar_ty)), view, 1_u);
+        MakeCall(access->Result(), value, o->Result(),
+                 b.Constant(u32(MinStride() / scalar_ty->Size())));
+        b.Return(foo);
+    });
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 1;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_THAT(result.Failure().reason,
+                testing::HasSubstr("invalid storage size (" + std::to_string(array_size + 16) +
+                                   " bytes) when used with " +
+                                   (load ? "subgroupMatrixLoad" : "subgroupMatrixStore") + " (" +
+                                   std::to_string(array_size + scalar_ty->Size() + 16) +
+                                   " bytes required)"));
+}
+
+// Only worth testing one type of each size.
+INSTANTIATE_TEST_SUITE_P(
+    IR_SubstituteOverridesTest,
+    SubgroupMatrixSizes,
+    testing::Combine(testing::Values(TypeBuilder<f32>, TypeBuilder<f16>, TypeBuilder<i8>),
+                     testing::Values(8, 16),
+                     testing::Values(8, 16),
+                     testing::Values(true, false),
+                     testing::Values(true, false),
+                     testing::Values(true, false)));
 
 }  // namespace
 }  // namespace tint::core::ir::transform

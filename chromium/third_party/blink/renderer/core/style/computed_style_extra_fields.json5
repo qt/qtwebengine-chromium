@@ -87,7 +87,7 @@
       default_value: "not-inside-link",
       keywords: ["not-inside-link", "inside-unvisited-link", "inside-visited-link"],
       inherited: true,
-      invalidate: ["border-visual", "paint"],
+      invalidate: ["ax-style", "border-visual", "paint"],
       // highlight_style_comes_from_originating_element should nominally
       // be true here, but this propagation happens in a different place
       // from all the other such properties, so we treat it as a separate case.
@@ -194,7 +194,7 @@
       type_name: "unsigned",
     },
     {
-      name: "HasRootFontRelativeUnits",
+      name: "HasRootRelativeUnits",
       field_template: "monotonic_flag",
       default_value: "false",
       custom_compare: true,
@@ -258,7 +258,7 @@
       field_template: "primitive",
       // See the definition of the PseudoId enum for details. This field_size
       // must be updated when public IDs are added or removed.
-      field_size: 25,
+      field_size: 26,
       default_value: "kPseudoIdNone",
       type_name: "unsigned",
       reset_on_new_style: true,
@@ -323,7 +323,7 @@
       type_name: "unsigned",
       default_value: "static_cast<unsigned>(EVerticalAlign::kBaseline)",
       computed_style_custom_functions: ["initial", "getter", "setter"],
-      invalidate: ["layout"],
+      invalidate: ["ax-style", "layout"],
     },
     {
       name: "VerticalAlignLength",
@@ -334,7 +334,7 @@
       field_group: "box",
       getter: "GetVerticalAlignLength",
       computed_style_custom_functions: ["setter"],
-      invalidate: ["layout"],
+      invalidate: ["ax-style", "layout"],
     },
     {
       name: "border-image",
@@ -395,7 +395,7 @@
       inherited: true,
       default_value: "MakeGarbageCollected<Font>()",
       wrapper_pointer_name: "Member",
-      invalidate: ["reshape"],
+      invalidate: ["ax-style", "reshape"],
       highlight_style_comes_from_originating_element: true,
     },
     {
@@ -501,6 +501,7 @@
       field_template: "primitive",
       default_value: "AppearanceValue::kNone",
       type_name: "AppearanceValue",
+      invalidate: ["layout", "paint"],
     },
     {
       name: "TextEmphasisCustomMark",
@@ -1239,6 +1240,13 @@
       invalidate: ["layout"],
     },
     {
+      name: "HasSizeContainmentForViewTransitionScope",
+      field_template: "primitive",
+      type_name: "bool",
+      default_value: "false",
+      invalidate: ["layout"],
+    },
+    {
       // https://html.spec.whatwg.org/multipage/interaction.html#inert
       name: "IsHTMLInert",
       inherited: true,
@@ -1330,6 +1338,14 @@
     {
       // True when @media is used within @function, false otherwise.
       name: "AffectedByFunctionalMedia",
+      field_template: "monotonic_flag",
+      field_group: "*",
+      default_value: "false",
+    },
+    {
+      // True when @navigation is used within if(), or @function, false
+      // otherwise.
+      name: "AffectedByFunctionalNavigation",
       field_template: "monotonic_flag",
       field_group: "*",
       default_value: "false",
@@ -1427,6 +1443,40 @@
       field_group: "*",
       default_value: "false",
       invalidate: ["layout"]
+    },
+    // We store the `continue` and `max-lines` line-clamp longhands in extra
+    // fields so we can use the same storage whether we're exposing the
+    // longhands, or whether we're only exposing line-clamp as a longhand.
+    {
+      name: "Continue",
+      field_group: "*",
+      field_template: "keyword",
+      keywords: ["normal", "collapse", "-webkit-legacy"],
+      default_value: "normal",
+      invalidate: ["layout", "paint"],
+    },
+    {
+      name: "MaxLines",
+      field_group: "*",
+      field_template: "external",
+      include_paths: ["third_party/blink/renderer/core/style/max_lines_data.h"],
+      default_value: "MaxLinesData(0, true)",
+      type_name: "MaxLinesData",
+      keywords: ["auto"],
+      invalidate: ["layout", "paint"],
+    },
+    {
+      // This corresponds to `block-ellipsis`, except it's only used when we're
+      // exposing line-clamp as a longhand. The difference with `continue` and
+      // `max-lines` is that the `block-ellipsis` longhand is inherited, whereas
+      // when setting this field it won't inherit.
+      name: "LineClampInternalBlockEllipsis",
+      field_group: "*",
+      field_template: "keyword",
+      keywords: ["ellipsis", "no-ellipsis"],
+      type_name: "EBlockEllipsis",
+      default_value: "no-ellipsis",
+      invalidate: ["layout", "paint"],
     }
   ],
 }

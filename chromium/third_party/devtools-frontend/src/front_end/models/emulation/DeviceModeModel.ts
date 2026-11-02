@@ -5,11 +5,14 @@
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
+import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as Geometry from '../geometry/geometry.js';
 
 import {
+  type Cutout,
+  CutoutShape,
   type EmulatedDevice,
   Horizontal,
   HorizontalSpanned,
@@ -20,62 +23,62 @@ import {
 
 const UIStrings = {
   /**
-   * @description Error message shown in the Devices settings pane when the user enters an empty
+   * @description Error message shown on the Devices settings tab when the user enters an empty
    * width for a custom device.
    */
-  widthCannotBeEmpty: 'Width cannot be empty.',
+  widthCannotBeEmpty: 'Width can’t be empty.',
   /**
-   * @description Error message shown in the Devices settings pane when the user enters an invalid
+   * @description Error message shown on the Devices settings tab when the user enters an invalid
    * width for a custom device.
    */
   widthMustBeANumber: 'Width must be a number.',
   /**
-   * @description Error message shown in the Devices settings pane when the user has entered a width
+   * @description Error message shown on the Devices settings tab when the user has entered a width
    * for a custom device that is too large.
    * @example {9999} PH1
    */
   widthMustBeLessThanOrEqualToS: 'Width must be less than or equal to {PH1}.',
   /**
-   * @description Error message shown in the Devices settings pane when the user has entered a width
+   * @description Error message shown on the Devices settings tab when the user has entered a width
    * for a custom device that is too small.
    * @example {50} PH1
    */
   widthMustBeGreaterThanOrEqualToS: 'Width must be greater than or equal to {PH1}.',
   /**
-   * @description Error message shown in the Devices settings pane when the user enters an empty
+   * @description Error message shown on the Devices settings tab when the user enters an empty
    * height for a custom device.
    */
-  heightCannotBeEmpty: 'Height cannot be empty.',
+  heightCannotBeEmpty: 'Height can’t be empty.',
   /**
-   * @description Error message shown in the Devices settings pane when the user enters an invalid
+   * @description Error message shown on the Devices settings tab when the user enters an invalid
    * height for a custom device.
    */
   heightMustBeANumber: 'Height must be a number.',
   /**
-   * @description Error message shown in the Devices settings pane when the user has entered a height
+   * @description Error message shown on the Devices settings tab when the user has entered a height
    * for a custom device that is too large.
    * @example {9999} PH1
    */
   heightMustBeLessThanOrEqualToS: 'Height must be less than or equal to {PH1}.',
   /**
-   * @description Error message shown in the Devices settings pane when the user has entered a height
+   * @description Error message shown on the Devices settings tab when the user has entered a height
    * for a custom device that is too small.
    * @example {50} PH1
    */
   heightMustBeGreaterThanOrEqualTo: 'Height must be greater than or equal to {PH1}.',
   /**
-   * @description Error message shown in the Devices settings pane when the user enters an invalid
+   * @description Error message shown on the Devices settings tab when the user enters an invalid
    * device pixel ratio for a custom device.
    */
   devicePixelRatioMustBeANumberOr: 'Device pixel ratio must be a number or blank.',
   /**
-   * @description Error message shown in the Devices settings pane when the user enters a device
+   * @description Error message shown on the Devices settings tab when the user enters a device
    * pixel ratio for a custom device that is too large.
    * @example {10} PH1
    */
   devicePixelRatioMustBeLessThanOr: 'Device pixel ratio must be less than or equal to {PH1}.',
   /**
-   * @description Error message shown in the Devices settings pane when the user enters a device
+   * @description Error message shown on the Devices settings tab when the user enters a device
    * pixel ratio for a custom device that is too small.
    * @example {0} PH1
    */
@@ -84,7 +87,12 @@ const UIStrings = {
 const str_ = i18n.i18n.registerUIStrings('models/emulation/DeviceModeModel.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
-let deviceModeModelInstance: DeviceModeModel|null;
+const CUTOUT_SHAPE_TO_PROTOCOL: Record<CutoutShape, Protocol.Overlay.DisplayCutoutShape> = {
+  [CutoutShape.PILL]: Protocol.Overlay.DisplayCutoutShape.Pill,
+  [CutoutShape.NOTCH]: Protocol.Overlay.DisplayCutoutShape.Notch,
+  [CutoutShape.CIRCLE]: Protocol.Overlay.DisplayCutoutShape.Circle,
+  [CutoutShape.RECTANGLE]: Protocol.Overlay.DisplayCutoutShape.Rectangle,
+};
 
 export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper<EventTypes> implements
     SDK.TargetManager.SDKModelObserver<SDK.EmulationModel.EmulationModel> {
@@ -114,9 +122,19 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper<EventTyp
   #onModelAvailable: (() => void)|null;
   #outlineRect?: Rect;
   #screenOrientationLocked: boolean;
+  readonly #targetManager: SDK.TargetManager.TargetManager;
+  readonly #settings: Common.Settings.Settings;
+  readonly #multitargetNetworkManager: SDK.NetworkManager.MultitargetNetworkManager;
 
-  private constructor() {
+  constructor(
+      targetManager: SDK.TargetManager.TargetManager,
+      settings: Common.Settings.Settings,
+      multitargetNetworkManager: SDK.NetworkManager.MultitargetNetworkManager,
+  ) {
     super();
+    this.#targetManager = targetManager;
+    this.#settings = settings;
+    this.#multitargetNetworkManager = multitargetNetworkManager;
     this.#screenRect = new Rect(0, 0, 1, 1);
     this.#visiblePageRect = new Rect(0, 0, 1, 1);
     this.#availableSize = new Geometry.Size(1, 1);
@@ -126,7 +144,7 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     this.#appliedDeviceScaleFactor = globalThis.devicePixelRatio;
     this.#appliedUserAgentType = UA.DESKTOP;
 
-    this.#scaleSetting = Common.Settings.Settings.instance().createSetting('emulation.device-scale', 1);
+    this.#scaleSetting = this.#settings.createSetting('emulation.device-scale', 1);
     // We've used to allow zero before.
     if (!this.#scaleSetting.get()) {
       this.#scaleSetting.set(1);
@@ -134,7 +152,7 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     this.#scaleSetting.addChangeListener(this.scaleSettingChanged, this);
     this.#scale = 1;
 
-    this.#widthSetting = Common.Settings.Settings.instance().createSetting('emulation.device-width', 400);
+    this.#widthSetting = this.#settings.createSetting('emulation.device-width', 400);
     if (this.#widthSetting.get() < MinDeviceSize) {
       this.#widthSetting.set(MinDeviceSize);
     }
@@ -143,7 +161,7 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     }
     this.#widthSetting.addChangeListener(this.widthSettingChanged, this);
 
-    this.#heightSetting = Common.Settings.Settings.instance().createSetting('emulation.device-height', 0);
+    this.#heightSetting = this.#settings.createSetting('emulation.device-height', 0);
     if (this.#heightSetting.get() && this.#heightSetting.get() < MinDeviceSize) {
       this.#heightSetting.set(MinDeviceSize);
     }
@@ -152,17 +170,16 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     }
     this.#heightSetting.addChangeListener(this.heightSettingChanged, this);
 
-    this.#uaSetting = Common.Settings.Settings.instance().createSetting('emulation.device-ua', UA.MOBILE);
+    this.#uaSetting = this.#settings.createSetting('emulation.device-ua', UA.MOBILE);
     this.#uaSetting.addChangeListener(this.uaSettingChanged, this);
-    this.#deviceScaleFactorSetting =
-        Common.Settings.Settings.instance().createSetting('emulation.device-scale-factor', 0);
+    this.#deviceScaleFactorSetting = this.#settings.createSetting('emulation.device-scale-factor', 0);
     this.#deviceScaleFactorSetting.addChangeListener(this.deviceScaleFactorSettingChanged, this);
 
-    this.#deviceOutlineSetting = Common.Settings.Settings.instance().moduleSetting('emulation.show-device-outline');
+    this.#deviceOutlineSetting = this.#settings.moduleSetting('emulation.show-device-outline');
     this.#deviceOutlineSetting.addChangeListener(this.deviceOutlineSettingChanged, this);
 
-    this.#toolbarControlsEnabledSetting = Common.Settings.Settings.instance().createSetting(
-        'emulation.toolbar-controls-enabled', true, Common.Settings.SettingStorageType.SESSION);
+    this.#toolbarControlsEnabledSetting = this.#settings.createSetting('emulation.toolbar-controls-enabled', true,
+                                                                       Common.Settings.SettingStorageType.SESSION);
 
     this.#type = Type.None;
     this.#device = null;
@@ -174,15 +191,20 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     this.#emulationModel = null;
     this.#onModelAvailable = null;
     this.#screenOrientationLocked = false;
-    SDK.TargetManager.TargetManager.instance().observeModels(SDK.EmulationModel.EmulationModel, this);
+    this.#targetManager.observeModels(SDK.EmulationModel.EmulationModel, this);
   }
 
   static instance(opts?: {forceNew: boolean}): DeviceModeModel {
-    if (!deviceModeModelInstance || opts?.forceNew) {
-      deviceModeModelInstance = new DeviceModeModel();
+    if (!Root.DevToolsContext.globalInstance().has(DeviceModeModel) || opts?.forceNew) {
+      Root.DevToolsContext.globalInstance().set(DeviceModeModel,
+                                                new DeviceModeModel(
+                                                    SDK.TargetManager.TargetManager.instance(),
+                                                    Common.Settings.Settings.instance(),
+                                                    SDK.NetworkManager.MultitargetNetworkManager.instance(),
+                                                    ));
     }
 
-    return deviceModeModelInstance;
+    return Root.DevToolsContext.globalInstance().get(DeviceModeModel);
   }
 
   /**
@@ -200,8 +222,15 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     }
   }
 
+  static removeInstance(): void {
+    if (Root.DevToolsContext.globalInstance().has(DeviceModeModel)) {
+      Root.DevToolsContext.globalInstance().get(DeviceModeModel).dispose();
+    }
+    Root.DevToolsContext.globalInstance().delete(DeviceModeModel);
+  }
+
   dispose(): void {
-    SDK.TargetManager.TargetManager.instance().unobserveModels(SDK.EmulationModel.EmulationModel, this);
+    this.#targetManager.unobserveModels(SDK.EmulationModel.EmulationModel, this);
   }
 
   static widthValidator(value: string): {
@@ -359,6 +388,10 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper<EventTyp
                                                                               '';
   }
 
+  canShowDeviceFrame(): boolean {
+    return Boolean(this.#device && this.#mode && this.#device.outlineImage(this.#mode));
+  }
+
   outlineRect(): Rect|null {
     return this.#outlineRect || null;
   }
@@ -408,7 +441,7 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper<EventTyp
   }
 
   enabledSetting(): Common.Settings.Setting<boolean> {
-    return Common.Settings.Settings.instance().createSetting('emulation.show-device-mode', false);
+    return this.#settings.createSetting('emulation.show-device-mode', false);
   }
 
   scaleSetting(): Common.Settings.Setting<number> {
@@ -440,7 +473,7 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper<EventTyp
   }
 
   modelAdded(emulationModel: SDK.EmulationModel.EmulationModel): void {
-    if (emulationModel.target() === SDK.TargetManager.TargetManager.instance().primaryPageTarget() &&
+    if (emulationModel.target() === this.#targetManager.primaryPageTarget() &&
         emulationModel.supportsDeviceEmulation()) {
       this.#emulationModel = emulationModel;
       if (this.#onModelAvailable) {
@@ -482,7 +515,7 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper<EventTyp
       return;
     }
 
-    this.showHingeIfApplicable(overlayModel);
+    this.showDeviceOverlaysIfApplicable(overlayModel);
   }
 
   private onScreenOrientationLockChanged(
@@ -573,6 +606,28 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     return this.#mode.insets;
   }
 
+  private currentSafeAreaInsets(): Insets|null {
+    if (!Root.Runtime.hostConfig.devToolsMobileSafeAreaEmulation?.enabled) {
+      return null;
+    }
+    if (this.#type !== Type.Device || !this.#mode) {
+      return null;
+    }
+    return this.#mode.safeAreaInsets ?? null;
+  }
+
+  private applySafeAreaInsets(insets: Insets|null): void {
+    if (!this.#emulationModel) {
+      return;
+    }
+    if (insets && Root.Runtime.hostConfig.devToolsMobileSafeAreaEmulation?.enabled) {
+      void this.#emulationModel.setSafeAreaInsets(
+          {top: insets.top, left: insets.left, bottom: insets.bottom, right: insets.right});
+    } else {
+      void this.#emulationModel.setSafeAreaInsets({});
+    }
+  }
+
   private getScreenOrientationType(): Protocol.Emulation.ScreenOrientationType {
     if (!this.#mode) {
       throw new Error('Mode required to get orientation type.');
@@ -595,7 +650,7 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     const mobile = this.isMobile();
     const overlayModel = this.#emulationModel ? this.#emulationModel.overlayModel() : null;
     if (overlayModel) {
-      this.showHingeIfApplicable(overlayModel);
+      this.showDeviceOverlaysIfApplicable(overlayModel);
     }
     if (this.#type === Type.Device && this.#device && this.#mode) {
       const orientation = this.#device.orientationByName(this.#mode.orientation);
@@ -649,6 +704,7 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     if (overlayModel) {
       overlayModel.setShowViewportSizeOnResize(this.#type === Type.None);
     }
+    this.applySafeAreaInsets(this.currentSafeAreaInsets());
     this.dispatchEventToListeners(Events.UPDATED);
   }
 
@@ -689,8 +745,7 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     // When the user agent string is empty (e.g. custom desktop device without
     // a UA override), metadata must also be cleared. The backend rejects
     // setUserAgentOverride calls that provide metadata without a UA string.
-    SDK.NetworkManager.MultitargetNetworkManager.instance().setUserAgentOverride(
-        userAgent, userAgent ? userAgentMetadata : null);
+    this.#multitargetNetworkManager.setUserAgentOverride(userAgent, userAgent ? userAgentMetadata : null);
   }
 
   private applyDeviceMetrics(
@@ -830,19 +885,76 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper<EventTyp
   private applyTouch(touchEnabled: boolean, mobile: boolean): void {
     this.#touchEnabled = touchEnabled;
     this.#touchMobile = mobile;
-    for (const emulationModel of SDK.TargetManager.TargetManager.instance().models(SDK.EmulationModel.EmulationModel)) {
+    for (const emulationModel of this.#targetManager.models(SDK.EmulationModel.EmulationModel)) {
       void emulationModel.emulateTouch(touchEnabled, mobile);
     }
   }
 
-  private showHingeIfApplicable(overlayModel: SDK.OverlayModel.OverlayModel): void {
+  private showDeviceOverlaysIfApplicable(overlayModel: SDK.OverlayModel.OverlayModel): void {
     const orientation = (this.#device && this.#mode) ? this.#device.orientationByName(this.#mode.orientation) : null;
     if (orientation?.hinge) {
       overlayModel.showHingeForDualScreen(orientation.hinge);
-      return;
+    } else {
+      overlayModel.showHingeForDualScreen(null);
     }
 
-    overlayModel.showHingeForDualScreen(null);
+    overlayModel.showDisplayCutout(
+        Root.Runtime.hostConfig.devToolsMobileSafeAreaEmulation?.enabled ? this.currentDisplayCutout() : null);
+  }
+
+  private currentDisplayCutout(): SDK.OverlayModel.DisplayCutout|null {
+    if (!Root.Runtime.hostConfig.devToolsMobileSafeAreaEmulation?.enabled) {
+      return null;
+    }
+    const device = this.#device;
+    const mode = this.#mode;
+    if (!device || !mode || !device.modes.includes(mode)) {
+      return null;
+    }
+
+    const cutout = mode.cutout;
+    if (cutout) {
+      return this.toDisplayCutout(cutout);
+    }
+
+    if (mode.orientation !== Horizontal) {
+      return null;
+    }
+
+    const rotationPartner = device.getRotationPartner(mode);
+    const rotatedCutout = rotationPartner?.cutout;
+    if (rotationPartner?.orientation !== Vertical || !rotatedCutout) {
+      return null;
+    }
+
+    const orientation = device.orientationByName(mode.orientation);
+    if (rotatedCutout.shape === CutoutShape.CIRCLE) {
+      return this.toDisplayCutout({
+        ...rotatedCutout,
+        x: orientation.width - rotatedCutout.y - rotatedCutout.height,
+        y: rotatedCutout.x,
+        width: rotatedCutout.height,
+        height: rotatedCutout.width,
+        cx: orientation.width - rotatedCutout.cy,
+        cy: rotatedCutout.cx,
+      });
+    }
+    return this.toDisplayCutout({
+      ...rotatedCutout,
+      x: orientation.width - rotatedCutout.y - rotatedCutout.height,
+      y: rotatedCutout.x,
+      width: rotatedCutout.height,
+      height: rotatedCutout.width,
+    });
+  }
+
+  private toDisplayCutout(cutout: Cutout): SDK.OverlayModel.DisplayCutout {
+    const {shape, ...rest} = cutout;
+    return {
+      ...rest,
+      shape: CUTOUT_SHAPE_TO_PROTOCOL[shape],
+      contentColor: {r: 0, g: 0, b: 0, a: 1},
+    } as SDK.OverlayModel.DisplayCutout;
   }
 
   private getDisplayFeatureOrientation(): Protocol.Emulation.DisplayFeatureOrientation {

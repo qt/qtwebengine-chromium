@@ -125,7 +125,7 @@ export class ElementsBreadcrumbs extends HTMLElement {
   }
 
   #onCrumbMouseLeave(): void {
-    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight(SDK.TargetManager.TargetManager.instance());
   }
 
   #onCrumbFocus(node: SDK.DOMModel.DOMNode): () => void {
@@ -133,7 +133,7 @@ export class ElementsBreadcrumbs extends HTMLElement {
   }
 
   #onCrumbBlur(): void {
-    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight(SDK.TargetManager.TargetManager.instance());
   }
 
   #engageResizeObserver(): void {

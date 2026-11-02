@@ -62,9 +62,8 @@ void CPDF_FontGlobals::LoadEmbeddedMaps() {
   LoadEmbeddedKorea1CMaps();
 }
 
-RetainPtr<CPDF_Font> CPDF_FontGlobals::Find(
-    CPDF_Document* doc,
-    CFX_FontMapper::StandardFont index) {
+RetainPtr<CPDF_Font> CPDF_FontGlobals::Find(CPDF_Document* doc,
+                                            CFX_StandardFont::Index index) {
   auto it = stock_map_.find(doc);
   if (it == stock_map_.end() || !it->second) {
     return nullptr;
@@ -74,7 +73,7 @@ RetainPtr<CPDF_Font> CPDF_FontGlobals::Find(
 }
 
 void CPDF_FontGlobals::Set(CPDF_Document* doc,
-                           CFX_FontMapper::StandardFont index,
+                           CFX_StandardFont::Index index,
                            RetainPtr<CPDF_Font> font) {
   UnownedPtr<CPDF_Document> pKey(doc);
   if (!pdfium::Contains(stock_map_, pKey)) {

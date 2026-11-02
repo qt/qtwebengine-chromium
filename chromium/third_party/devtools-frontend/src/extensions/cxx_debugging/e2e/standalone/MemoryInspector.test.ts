@@ -7,19 +7,22 @@ import {
   addBreakpointForLine,
   openFileInEditor,
   PAUSE_INDICATOR_SELECTOR,
-} from 'test/e2e/helpers/sources-helpers';
-import {getBrowserAndPagesWrappers} from 'test/shared/non_hosted_wrappers.js';
+} from 'test/e2e/helpers/sources-helpers.js';
 
 import {
+  CXX_DEBUGGING_EXTENSION_PATH,
   openTestSuiteResourceInSourcesPanel,
 } from '../cxx-debugging-extension-helpers.js';
 
 describe('LinearMemoryInspector', () => {
-  it('can show variables', async () => {
-    const {inspectedPage, devToolsPage} = getBrowserAndPagesWrappers();
+  setup({
+    extensions: [CXX_DEBUGGING_EXTENSION_PATH],
+  });
+
+  it('can show variables', async ({inspectedPage, devToolsPage}) => {
     const test =
         'extensions/cxx_debugging/e2e/resources/scope-view-primitives__Scope_view_formats_primitive_types_correctly_0.html';
-    await openTestSuiteResourceInSourcesPanel(test);
+    await openTestSuiteResourceInSourcesPanel(test, inspectedPage, devToolsPage);
     await devToolsPage.installEventListener('DevTools.DebuggerPaused');
 
     const file = 'scope-view-primitives.c';

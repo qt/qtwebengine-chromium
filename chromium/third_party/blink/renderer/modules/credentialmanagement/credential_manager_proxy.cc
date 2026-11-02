@@ -8,6 +8,7 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -17,7 +18,7 @@ CredentialManagerProxy::CredentialManagerProxy(LocalDOMWindow& window)
       credential_manager_(window.GetExecutionContext()),
       webotp_service_(window.GetExecutionContext()),
       spc_service_(window.GetExecutionContext()),
-      federated_auth_request_(window.GetExecutionContext()),
+      federated_request_service_(window.GetExecutionContext()),
       digital_identity_request_(window.GetExecutionContext()) {}
 
 CredentialManagerProxy::~CredentialManagerProxy() = default;
@@ -83,19 +84,18 @@ void CredentialManagerProxy::BindRemoteForFedCm(
   remote.set_disconnect_handler(std::move(disconnect_closure));
 }
 
-mojom::blink::FederatedAuthRequest*
-CredentialManagerProxy::FederatedAuthRequest() {
+mojom::blink::FederatedRequestService*
+CredentialManagerProxy::FederatedRequestService() {
   BindRemoteForFedCm(
-      federated_auth_request_,
-      BindOnce(&CredentialManagerProxy::OnFederatedAuthRequestConnectionError,
-               WrapWeakPersistent(this)));
-  return federated_auth_request_.get();
+      federated_request_service_,
+      BindOnce(
+          &CredentialManagerProxy::OnFederatedRequestServiceConnectionError,
+          WrapWeakPersistent(this)));
+  return federated_request_service_.get();
 }
 
-void CredentialManagerProxy::OnFederatedAuthRequestConnectionError() {
-  federated_auth_request_.reset();
-  // TODO(crbug.com/1275769): Cache the resolver and resolve the promise with an
-  // appropriate error message.
+void CredentialManagerProxy::OnFederatedRequestServiceConnectionError() {
+  federated_request_service_.reset();
 }
 
 mojom::blink::DigitalIdentityRequest*
@@ -151,7 +151,7 @@ void CredentialManagerProxy::Trace(Visitor* visitor) const {
   visitor->Trace(credential_manager_);
   visitor->Trace(webotp_service_);
   visitor->Trace(spc_service_);
-  visitor->Trace(federated_auth_request_);
+  visitor->Trace(federated_request_service_);
   visitor->Trace(digital_identity_request_);
   Supplement<LocalDOMWindow>::Trace(visitor);
 }

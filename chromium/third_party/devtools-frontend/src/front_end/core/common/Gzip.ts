@@ -38,9 +38,13 @@ export async function fileToString(file: File): Promise<string> {
  * Consider using `arrayBufferToString` instead, which can handle both gzipped and plain text buffers.
  */
 export async function decompress(gzippedBuffer: ArrayBufferLike, charset = 'utf-8'): Promise<string> {
-  const buffer = await gzipCodec(gzippedBuffer, new DecompressionStream('gzip'));
+  const buffer = await decompressToBuffer(gzippedBuffer);
   const str = new TextDecoder(charset).decode(buffer);
   return str;
+}
+
+export async function decompressToBuffer(gzippedBuffer: ArrayBufferLike): Promise<ArrayBuffer> {
+  return await gzipCodec(gzippedBuffer, new DecompressionStream('gzip'));
 }
 
 /**
@@ -48,14 +52,17 @@ export async function decompress(gzippedBuffer: ArrayBufferLike, charset = 'utf-
  * Tries 'deflate' (zlib wrapper) first, then falls back to 'deflate-raw'.
  */
 export async function decompressDeflate(buffer: ArrayBufferLike, charset = 'utf-8'): Promise<string> {
-  let decompressedBuffer: ArrayBuffer;
+  const decompressedBuffer = await decompressDeflateToBuffer(buffer);
+  return new TextDecoder(charset).decode(decompressedBuffer);
+}
+
+export async function decompressDeflateToBuffer(buffer: ArrayBufferLike): Promise<ArrayBuffer> {
   try {
-    decompressedBuffer = await gzipCodec(buffer, new DecompressionStream('deflate'));
+    return await gzipCodec(buffer, new DecompressionStream('deflate'));
   } catch {
     // Try deflate-raw format if zlib-wrapped deflate fails.
-    decompressedBuffer = await gzipCodec(buffer, new DecompressionStream('deflate-raw'));
+    return await gzipCodec(buffer, new DecompressionStream('deflate-raw'));
   }
-  return new TextDecoder(charset).decode(decompressedBuffer);
 }
 export async function compress(str: string): Promise<ArrayBuffer> {
   const encoded = new TextEncoder().encode(str);
@@ -71,7 +78,7 @@ async function gzipCodec(
     start(controller) {
       controller.enqueue(buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : buffer);
       controller.close();
-    }
+    },
   });
   const codecReadable = readable.pipeThrough(codecStream);
   // A response is a convenient way to get an ArrayBuffer from a ReadableStream.
@@ -97,7 +104,7 @@ export function createMonitoredStream(stream: ReadableStream, onProgress: (bytes
       bytesRead += chunk.byteLength;
       onProgress(bytesRead);
       controller.enqueue(chunk);
-    }
+    },
   });
 
   return stream.pipeThrough(progressTransformer);

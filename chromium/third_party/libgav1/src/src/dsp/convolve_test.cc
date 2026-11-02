@@ -30,17 +30,14 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "gtest/gtest.h"
-#include "src/dsp/constants.h"
 #include "src/dsp/dsp.h"
 #include "src/utils/common.h"
-#include "src/utils/compiler_attributes.h"
 #include "src/utils/constants.h"
 #include "src/utils/cpu.h"
 #include "src/utils/memory.h"
 #include "tests/block_utils.h"
 #include "tests/third_party/libvpx/acm_random.h"
 #include "tests/third_party/libvpx/md5_helper.h"
-#include "tests/utils.h"
 
 namespace libgav1 {
 namespace dsp {

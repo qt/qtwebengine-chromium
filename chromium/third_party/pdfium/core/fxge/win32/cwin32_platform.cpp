@@ -20,6 +20,7 @@
 #include "core/fxcrt/numerics/safe_conversions.h"
 #include "core/fxcrt/raw_span.h"
 #include "core/fxcrt/span.h"
+#include "core/fxcrt/unowned_ptr.h"
 #include "core/fxcrt/win/scoped_select_object.h"
 #include "core/fxcrt/win/win_util.h"
 #include "core/fxge/cfx_folderfontinfo.h"
@@ -97,7 +98,8 @@ class CFX_Win32FallbackFontInfo final : public CFX_FolderFontInfo {
   ~CFX_Win32FallbackFontInfo() override = default;
 
   // CFX_FolderFontInfo:
-  void* MapFont(int weight,
+  void* MapFont(CFX_FontMapper* mapper,
+                int weight,
                 bool bItalic,
                 FX_Charset charset,
                 int pitch_family,
@@ -111,7 +113,8 @@ class CFX_Win32FontInfo final : public SystemFontInfoIface {
 
   // SystemFontInfoIface:
   void EnumFontList(CFX_FontMapper* pMapper) override;
-  void* MapFont(int weight,
+  void* MapFont(CFX_FontMapper* mapper,
+                int weight,
                 bool bItalic,
                 FX_Charset charset,
                 int pitch_family,
@@ -124,13 +127,19 @@ class CFX_Win32FontInfo final : public SystemFontInfoIface {
   bool GetFontCharset(void* hFont, FX_Charset* charset) override;
   void DeleteFont(void* hFont) override;
 
-  void AddInstalledFont(const LOGFONTA* plf, uint32_t font_type);
+  void AddInstalledFont(CFX_FontMapper* mapper,
+                        ByteString& last_family,
+                        const LOGFONTA* plf,
+                        uint32_t font_type);
 
  private:
   bool IsSupportedFont(const LOGFONTA* plf);
-  void GetGBPreference(ByteString& face, int weight, int pitch_family);
+  void GetGBPreference(CFX_FontMapper* mapper,
+                       ByteString& face,
+                       int weight,
+                       int pitch_family);
   void GetJapanesePreference(ByteString& face, int weight, int pitch_family);
-  ByteString FindFont(const ByteString& name);
+  ByteString FindFont(CFX_FontMapper* mapper, const ByteString& name);
   void* GetFontFromList(int weight,
                         bool italic,
                         FX_Charset charset,
@@ -138,18 +147,23 @@ class CFX_Win32FontInfo final : public SystemFontInfoIface {
                         pdfium::span<const char* const> font_faces);
 
   const HDC dc_handle_;
-  UnownedPtr<CFX_FontMapper> mapper_;
-  ByteString last_family_;
   ByteString kai_ti_;
   ByteString fang_song_;
 };
 
-int CALLBACK FontEnumProc(const LOGFONTA* plf,
-                          const TEXTMETRICA* lpntme,
-                          uint32_t font_type,
-                          LPARAM lParam) {
-  CFX_Win32FontInfo* font_info = reinterpret_cast<CFX_Win32FontInfo*>(lParam);
-  font_info->AddInstalledFont(plf, font_type);
+struct FontEnumCallbackArg {
+  CFX_Win32FontInfo* font_info;
+  CFX_FontMapper* mapper;
+  ByteString last_family;
+};
+
+int CALLBACK FontEnumCallback(const LOGFONTA* plf,
+                              const TEXTMETRICA* lpntme,
+                              uint32_t font_type,
+                              LPARAM lParam) {
+  auto* arg = reinterpret_cast<FontEnumCallbackArg*>(lParam);
+  arg->font_info->AddInstalledFont(arg->mapper, arg->last_family, plf,
+                                   font_type);
   return 1;
 }
 
@@ -180,15 +194,17 @@ bool CFX_Win32FontInfo::IsSupportedFont(const LOGFONTA* plf) {
   return ret;
 }
 
-void CFX_Win32FontInfo::AddInstalledFont(const LOGFONTA* plf,
+void CFX_Win32FontInfo::AddInstalledFont(CFX_FontMapper* mapper,
+                                         ByteString& last_family,
+                                         const LOGFONTA* plf,
                                          uint32_t font_type) {
   ByteString name(plf->lfFaceName);
   if (name.GetLength() > 0 && name[0] == '@') {
     return;
   }
 
-  if (name == last_family_) {
-    mapper_->AddInstalledFont(name, FX_GetCharsetFromInt(plf->lfCharSet));
+  if (name == last_family) {
+    mapper->AddInstalledFont(name, FX_GetCharsetFromInt(plf->lfCharSet));
     return;
   }
   if (!(font_type & TRUETYPE_FONTTYPE)) {
@@ -197,35 +213,36 @@ void CFX_Win32FontInfo::AddInstalledFont(const LOGFONTA* plf,
     }
   }
 
-  mapper_->AddInstalledFont(name, FX_GetCharsetFromInt(plf->lfCharSet));
-  last_family_ = name;
+  mapper->AddInstalledFont(name, FX_GetCharsetFromInt(plf->lfCharSet));
+  last_family = name;
 }
 
 void CFX_Win32FontInfo::EnumFontList(CFX_FontMapper* pMapper) {
-  mapper_ = pMapper;
+  FontEnumCallbackArg arg = {this, pMapper, ByteString()};
   LOGFONTA lf = {};  // Aggregate initialization.
   static_assert(std::is_aggregate_v<decltype(lf)>);
   lf.lfCharSet = static_cast<int>(FX_Charset::kDefault);
   lf.lfFaceName[0] = 0;
   lf.lfPitchAndFamily = 0;
   EnumFontFamiliesExA(dc_handle_, &lf,
-                      reinterpret_cast<FONTENUMPROCA>(FontEnumProc),
-                      reinterpret_cast<uintptr_t>(this), 0);
+                      reinterpret_cast<FONTENUMPROCA>(FontEnumCallback),
+                      reinterpret_cast<LPARAM>(&arg), 0);
 }
 
-ByteString CFX_Win32FontInfo::FindFont(const ByteString& name) {
-  if (!mapper_) {
+ByteString CFX_Win32FontInfo::FindFont(CFX_FontMapper* mapper,
+                                       const ByteString& name) {
+  if (!mapper) {
     return name;
   }
 
   std::optional<ByteString> maybe_installed =
-      mapper_->InstalledFontNameStartingWith(name);
+      mapper->InstalledFontNameStartingWith(name);
   if (maybe_installed.has_value()) {
     return maybe_installed.value();
   }
 
   std::optional<ByteString> maybe_localized =
-      mapper_->LocalizedFontNameStartingWith(name);
+      mapper->LocalizedFontNameStartingWith(name);
   if (maybe_localized.has_value()) {
     return maybe_localized.value();
   }
@@ -254,7 +271,8 @@ void* CFX_Win32FontInfo::GetFontFromList(
   return font;
 }
 
-void* CFX_Win32FallbackFontInfo::MapFont(int weight,
+void* CFX_Win32FallbackFontInfo::MapFont(CFX_FontMapper* mapper,
+                                         int weight,
                                          bool bItalic,
                                          FX_Charset charset,
                                          int pitch_family,
@@ -278,12 +296,13 @@ void* CFX_Win32FallbackFontInfo::MapFont(int weight,
   return FindFont(weight, bItalic, charset, pitch_family, face, !bCJK);
 }
 
-void CFX_Win32FontInfo::GetGBPreference(ByteString& face,
+void CFX_Win32FontInfo::GetGBPreference(CFX_FontMapper* mapper,
+                                        ByteString& face,
                                         int weight,
                                         int pitch_family) {
   if (face.Contains("KaiTi") || face.Contains("\xbf\xac")) {
     if (kai_ti_.IsEmpty()) {
-      kai_ti_ = FindFont("KaiTi");
+      kai_ti_ = FindFont(mapper, "KaiTi");
       if (kai_ti_.IsEmpty()) {
         kai_ti_ = "SimSun";
       }
@@ -291,7 +310,7 @@ void CFX_Win32FontInfo::GetGBPreference(ByteString& face,
     face = kai_ti_;
   } else if (face.Contains("FangSong") || face.Contains("\xb7\xc2\xcb\xce")) {
     if (fang_song_.IsEmpty()) {
-      fang_song_ = FindFont("FangSong");
+      fang_song_ = FindFont(mapper, "FangSong");
       if (fang_song_.IsEmpty()) {
         fang_song_ = "SimSun";
       }
@@ -346,7 +365,8 @@ void CFX_Win32FontInfo::GetJapanesePreference(ByteString& face,
   }
 }
 
-void* CFX_Win32FontInfo::MapFont(int weight,
+void* CFX_Win32FontInfo::MapFont(CFX_FontMapper* mapper,
+                                 int weight,
                                  bool bItalic,
                                  FX_Charset charset,
                                  int pitch_family,
@@ -407,7 +427,7 @@ void* CFX_Win32FontInfo::MapFont(int weight,
       GetJapanesePreference(new_face, weight, pitch_family);
       break;
     case FX_Charset::kChineseSimplified:
-      GetGBPreference(new_face, weight, pitch_family);
+      GetGBPreference(mapper, new_face, weight, pitch_family);
       break;
     case FX_Charset::kHangul:
       new_face = "Gulim";
@@ -481,14 +501,12 @@ void CWin32Platform::Terminate() {}
 
 std::unique_ptr<SystemFontInfoIface>
 CWin32Platform::CreateDefaultSystemFontInfo() {
-  auto** user_paths = CFX_GEModule::Get()->GetUserFontPaths();
-  if (user_paths) {
+  auto user_paths = CFX_GEModule::Get()->GetUserFontPaths();
+  if (user_paths.has_value()) {
     auto font_info = std::make_unique<CFX_Win32FallbackFontInfo>();
-    UNSAFE_TODO({
-      for (; *user_paths; user_paths++) {
-        font_info->AddPath(*user_paths);
-      }
-    });
+    for (const char* path : user_paths.value()) {
+      font_info->AddPath(path);
+    }
     return font_info;
   }
 

@@ -439,8 +439,8 @@ bool Surface::RequestCopyOfOutputOnActiveFrameRenderPassId(
 void Surface::OnActivationDependencyResolved(
     const SurfaceId& activation_dependency,
     SurfaceAllocationGroup* group) {
-  DCHECK(activation_dependencies_.count(activation_dependency));
-  activation_dependencies_.erase(activation_dependency);
+  size_t erased = activation_dependencies_.erase(activation_dependency);
+  CHECK_EQ(erased, 1u);
   blocking_allocation_groups_.erase(group);
   if (!activation_dependencies_.empty() ||
       !view_transition_dependencies_.empty()) {
@@ -620,8 +620,13 @@ void Surface::RecomputeActiveReferencedSurfaces() {
   // notify SurfaceManager of the new references.
   active_referenced_surfaces_.clear();
   std::vector<SurfaceAllocationGroup*> new_referenced_allocation_groups;
-  for (const SurfaceRange& surface_range :
-       active_frame_data_->frame.metadata.referenced_surfaces) {
+  // Iterate over a copy because UpdateLastActiveReferenceAndMaybeActivate()
+  // can synchronously activate a referenced surface, which can resolve a
+  // dependency of this surface's pending frame and replace
+  // |active_frame_data_| while we're iterating over it.
+  const std::vector<SurfaceRange> referenced_surfaces =
+      active_frame_data_->frame.metadata.referenced_surfaces;
+  for (const SurfaceRange& surface_range : referenced_surfaces) {
     // Figure out what surface in the |surface_range| needs to be referenced.
     Surface* surface =
         surface_manager_->GetLatestInFlightSurface(surface_range);
@@ -793,6 +798,22 @@ void Surface::UpdateActivationDependencies(
     return;
   }
 
+  // Update the last pending reference in each allocation group. This
+  // may trigger fallback or deadline inheritance activations in those
+  // allocation groups. This surface isn't registered as a blocked embedder
+  // while this happens to avoid re-entrancy.
+  for (const SurfaceId& surface_id :
+       current_frame.metadata.activation_dependencies) {
+    SurfaceAllocationGroup* group =
+        surface_manager_->GetOrCreateAllocationGroupForSurfaceId(surface_id);
+    if (group) {
+      group->UpdateLastPendingReferenceAndMaybeActivate(surface_id);
+    }
+  }
+
+  // Now that all surface activations have happened, inspect which
+  // dependencies remain unresolved and register as a blocked embedder only for
+  // those.
   base::flat_set<raw_ptr<SurfaceAllocationGroup, CtnExperimental>>
       new_blocking_allocation_groups;
   std::vector<SurfaceId> new_activation_dependencies;
@@ -804,8 +825,7 @@ void Surface::UpdateActivationDependencies(
         surface_manager_->GetOrCreateAllocationGroupForSurfaceId(surface_id);
     if (new_blocking_allocation_groups.contains(group))
       continue;
-    if (group)
-      group->UpdateLastPendingReferenceAndMaybeActivate(surface_id);
+
     Surface* dependency = surface_manager_->GetSurfaceForId(surface_id);
     bool is_active = dependency && dependency->HasActiveFrame();
 

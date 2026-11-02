@@ -3,41 +3,38 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
-import {createTarget} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
-import {MockProtocolBackend} from '../../testing/MockScopeChain.js';
+import type * as Protocol from '../../generated/protocol.js';
+import {MockDebuggerBackend} from '../../testing/MockScopeChain.js';
+import {setupRuntimeHooks} from '../../testing/RuntimeHelpers.js';
+import {setupSettingsHooks} from '../../testing/SettingsHelpers.js';
 import {SnapshotTester} from '../../testing/SnapshotTester.js';
-import * as Bindings from '../bindings/bindings.js';
 import * as Workspace from '../workspace/workspace.js';
 
 import * as SourceMapScopes from './source_map_scopes.js';
 
 const {urlString} = Platform.DevToolsPath;
 
-describeWithMockConnection('FunctionCodeResolver', function() {
+describe('FunctionCodeResolver', function() {
   const snapshotTester = new SnapshotTester(this, import.meta);
+  setupRuntimeHooks();
+  setupSettingsHooks();
 
   const URL = urlString`file:///tmp/example.js`;
   let target: SDK.Target.Target;
-  let backend: MockProtocolBackend;
+  let backend: MockDebuggerBackend;
 
   beforeEach(() => {
-    const workspace = Workspace.Workspace.WorkspaceImpl.instance();
-    const targetManager = SDK.TargetManager.TargetManager.instance();
-    const resourceMapping = new Bindings.ResourceMapping.ResourceMapping(targetManager, workspace);
-    const ignoreListManager = Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
-    Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
-      forceNew: true,
-      resourceMapping,
-      targetManager,
-      ignoreListManager,
-      workspace,
-    });
-    backend = new MockProtocolBackend();
-    target = createTarget();
+    backend = new MockDebuggerBackend();
+    void backend.universe.debuggerWorkspaceBinding;
+    target = backend.createTarget();
+  });
+
+  afterEach(() => {
+    sinon.restore();
   });
 
   // This was minified with 'esbuild --sourcemap=linked --minify' v0.25.9.
@@ -45,7 +42,8 @@ describeWithMockConnection('FunctionCodeResolver', function() {
       `"use strict";function fibonacci(e){return e<=1?1:fibonacci(e-1)+fibonacci(e-2)}const btn=document.querySelector("button"),params=new URLSearchParams(location.search);btn.addEventListener("click",()=>{console.log(fibonacci(Number(params.get("x")))),btn.style.backgroundColor="red"});const input=document.querySelector('input[type="text"]');input.addEventListener("input",()=>{console.log(fibonacci(Number(params.get("x"))))});\n//# sourceMappingURL=file:///tmp/example.js.min.map`;
   const exampleRawPerformanceData = new Map([
     [
-      1, new Map([
+      1,
+      new Map([
         [1, 1],       // "use strict"
         [35, 67],     // starting } of fibonacci
         [43, 23],     // e<=1
@@ -54,18 +52,18 @@ describeWithMockConnection('FunctionCodeResolver', function() {
         [79, 13],     // ending } of fibonacci
         [213, 5000],  // fibonacci(Number(params.get("x")))
         [274, 333],   // btn.style.backgroundColor="red"
-      ])
+      ]),
     ],
   ]);
   const exampleSourceMap = {
     version: 3,
     sources: ['index.js'],
     sourcesContent: [
-      'function fibonacci(num) {\n  if (num <= 1) return 1;\n\n  return fibonacci(num - 1) + fibonacci(num - 2);\n}\n\nconst btn = document.querySelector(\'button\');\nconst params = new URLSearchParams(location.search);\n\nbtn.addEventListener(\'click\', () => {\n  console.log(fibonacci(Number(params.get(\'x\'))));\n  btn.style.backgroundColor = \'red\';\n});\n\nconst input = document.querySelector(\'input[type="text"]\');\ninput.addEventListener(\'input\', () => {\n  console.log(fibonacci(Number(params.get(\'x\'))));\n});\n'
+      'function fibonacci(num) {\n  if (num <= 1) return 1;\n\n  return fibonacci(num - 1) + fibonacci(num - 2);\n}\n\nconst btn = document.querySelector(\'button\');\nconst params = new URLSearchParams(location.search);\n\nbtn.addEventListener(\'click\', () => {\n  console.log(fibonacci(Number(params.get(\'x\'))));\n  btn.style.backgroundColor = \'red\';\n});\n\nconst input = document.querySelector(\'input[type="text"]\');\ninput.addEventListener(\'input\', () => {\n  console.log(fibonacci(Number(params.get(\'x\'))));\n});\n',
     ],
     mappings:
         'aAAA,SAAS,UAAUA,EAAK,CACtB,OAAIA,GAAO,EAAU,EAEd,UAAUA,EAAM,CAAC,EAAI,UAAUA,EAAM,CAAC,CAC/C,CAEA,MAAM,IAAM,SAAS,cAAc,QAAQ,EACrC,OAAS,IAAI,gBAAgB,SAAS,MAAM,EAElD,IAAI,iBAAiB,QAAS,IAAM,CAClC,QAAQ,IAAI,UAAU,OAAO,OAAO,IAAI,GAAG,CAAC,CAAC,CAAC,EAC9C,IAAI,MAAM,gBAAkB,KAC9B,CAAC,EAED,MAAM,MAAQ,SAAS,cAAc,oBAAoB,EACzD,MAAM,iBAAiB,QAAS,IAAM,CACpC,QAAQ,IAAI,UAAU,OAAO,OAAO,IAAI,GAAG,CAAC,CAAC,CAAC,CAChD,CAAC',
-    names: ['num']
+    names: ['num'],
   };
 
   describe('getFunctionCodeFromLocation', () => {
@@ -81,7 +79,7 @@ describeWithMockConnection('FunctionCodeResolver', function() {
         line: 0,
         column: 35,
         sourceMap: null,
-        expectedCode: `(e) {\n\treturn e <= 1 ? 1 : fibonacci(e - 1) + fibonacci(e - 2)\n}\n`
+        expectedCode: `(e) {\n\treturn e <= 1 ? 1 : fibonacci(e - 1) + fibonacci(e - 2)\n}\n`,
       },
       {
         name: '[no source maps] lookup anonymous function',
@@ -90,7 +88,7 @@ describeWithMockConnection('FunctionCodeResolver', function() {
         column: 201,
         sourceMap: null,
         expectedCode:
-            `() => {\n\tconsole.log(fibonacci(Number(params.get(\"x\")))),\n\tbtn.style.backgroundColor = \"red\"\n}\n`
+            `() => {\n\tconsole.log(fibonacci(Number(params.get(\"x\")))),\n\tbtn.style.backgroundColor = \"red\"\n}\n`,
       },
 
       {
@@ -100,7 +98,7 @@ describeWithMockConnection('FunctionCodeResolver', function() {
         column: 35,
         sourceMap: {url: sourceMapUrl, content: sourceMapContent},
         expectedCode:
-            `fibonacci(num) {\n  if (num <= 1) return 1;\n\n  return fibonacci(num - 1) + fibonacci(num - 2);\n}\n\n`
+            `fibonacci(num) {\n  if (num <= 1) return 1;\n\n  return fibonacci(num - 1) + fibonacci(num - 2);\n}\n\n`,
       },
       {
         name: '[source maps] lookup named function with original location',
@@ -109,7 +107,7 @@ describeWithMockConnection('FunctionCodeResolver', function() {
         column: 5,
         sourceMap: {url: sourceMapUrl, content: sourceMapContent},
         expectedCode:
-            `fibonacci(num) {\n  if (num <= 1) return 1;\n\n  return fibonacci(num - 1) + fibonacci(num - 2);\n}\n\n`
+            `fibonacci(num) {\n  if (num <= 1) return 1;\n\n  return fibonacci(num - 1) + fibonacci(num - 2);\n}\n\n`,
       },
 
       {
@@ -119,7 +117,7 @@ describeWithMockConnection('FunctionCodeResolver', function() {
         column: 35,
         sourceMap: {url: sourceMapUrl, content: sourceMapContentButNoSources},
         // TODO: createFromAst does not include function identifiers in the created scope start position.
-        expectedCode: `(e) {\n\treturn e <= 1 ? 1 : fibonacci(e - 1) + fibonacci(e - 2)\n}\n`
+        expectedCode: `(e) {\n\treturn e <= 1 ? 1 : fibonacci(e - 1) + fibonacci(e - 2)\n}\n`,
       },
       {
         name: '[source maps, no source contents] lookup named function with original location',
@@ -127,7 +125,7 @@ describeWithMockConnection('FunctionCodeResolver', function() {
         line: 1,
         column: 5,
         sourceMap: {url: sourceMapUrl, content: sourceMapContentButNoSources},
-        expectedCode: `(e) {\n\treturn e <= 1 ? 1 : fibonacci(e - 1) + fibonacci(e - 2)\n}\n`
+        expectedCode: `(e) {\n\treturn e <= 1 ? 1 : fibonacci(e - 1) + fibonacci(e - 2)\n}\n`,
       },
 
       {
@@ -137,7 +135,7 @@ describeWithMockConnection('FunctionCodeResolver', function() {
         column: 201,
         sourceMap: {url: sourceMapUrl, content: sourceMapContent},
         expectedCode:
-            `() => {\n  console.log(fibonacci(Number(params.get('x'))));\n  btn.style.backgroundColor = 'red';\n}`
+            `() => {\n  console.log(fibonacci(Number(params.get('x'))));\n  btn.style.backgroundColor = 'red';\n}`,
       },
       {
         name: '[source maps] lookup anonymous function with original location',
@@ -146,7 +144,7 @@ describeWithMockConnection('FunctionCodeResolver', function() {
         column: 3,
         sourceMap: {url: sourceMapUrl, content: sourceMapContent},
         expectedCode:
-            `() => {\n  console.log(fibonacci(Number(params.get('x'))));\n  btn.style.backgroundColor = 'red';\n}`
+            `() => {\n  console.log(fibonacci(Number(params.get('x'))));\n  btn.style.backgroundColor = 'red';\n}`,
       },
 
       {
@@ -156,7 +154,7 @@ describeWithMockConnection('FunctionCodeResolver', function() {
         column: 201,
         sourceMap: {url: sourceMapUrl, content: sourceMapContentButNoSources},
         expectedCode:
-            `() => {\n\tconsole.log(fibonacci(Number(params.get(\"x\")))),\n\tbtn.style.backgroundColor = \"red\"\n}\n`
+            `() => {\n\tconsole.log(fibonacci(Number(params.get(\"x\")))),\n\tbtn.style.backgroundColor = \"red\"\n}\n`,
       },
       {
         name: '[source maps, no source contents] lookup anonymous function with original location',
@@ -165,7 +163,7 @@ describeWithMockConnection('FunctionCodeResolver', function() {
         column: 3,
         sourceMap: {url: sourceMapUrl, content: sourceMapContentButNoSources},
         expectedCode:
-            `() => {\n\tconsole.log(fibonacci(Number(params.get(\"x\")))),\n\tbtn.style.backgroundColor = \"red\"\n}\n`
+            `() => {\n\tconsole.log(fibonacci(Number(params.get(\"x\")))),\n\tbtn.style.backgroundColor = \"red\"\n}\n`,
       },
     ];
 
@@ -174,8 +172,7 @@ describeWithMockConnection('FunctionCodeResolver', function() {
         const script = await backend.addScript(target, {url: URL, content: source}, testCase.sourceMap);
 
         // Add raw performance data to script's UISourceCode.
-        const uiSourceCode =
-            Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().uiSourceCodeForScript(script);
+        const uiSourceCode = backend.universe.debuggerWorkspaceBinding.uiSourceCodeForScript(script);
         assert.isOk(uiSourceCode);
         uiSourceCode.setDecorationData(Workspace.UISourceCode.DecoratorType.PERFORMANCE, exampleRawPerformanceData);
 
@@ -187,8 +184,7 @@ describeWithMockConnection('FunctionCodeResolver', function() {
           const url = sourceMap.sourceURLForSourceIndex(0);
           assert.isOk(url);
           const uiSourceCode =
-              Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().uiSourceCodeForSourceMapSourceURL(
-                  debuggerModel, url, false);
+              backend.universe.debuggerWorkspaceBinding.uiSourceCodeForSourceMapSourceURL(debuggerModel, url, false);
           assert.isOk(uiSourceCode);
 
           const mappedPerformanceData =
@@ -204,11 +200,29 @@ describeWithMockConnection('FunctionCodeResolver', function() {
         }
 
         const code = await SourceMapScopes.FunctionCodeResolver.getFunctionCodeFromLocation(
-            target, testCase.url, testCase.line, testCase.column, {contextLength: 30, appendProfileData: true});
+            target, testCase.url, testCase.line, testCase.column, backend.universe.debuggerWorkspaceBinding,
+            {contextLength: 30, appendProfileData: true});
         assert.isOk(code);
         assert.strictEqual(code.code, testCase.expectedCode);
         snapshotTester.assert(this, code.codeWithContext);
       });
     }
+
+    it('only retrieves code from projects associated with the specified target', async () => {
+      const parentTarget = backend.createTarget({type: SDK.Target.Type.BROWSER});
+      const target1 = backend.createTarget({parentTarget, id: 'child1' as Protocol.Target.TargetID});
+      const target2 = backend.createTarget({parentTarget, id: 'child2' as Protocol.Target.TargetID});
+      await backend.addScript(target2, {url: URL, content: exampleSource}, null);
+
+      // Attempt to retrieve code using target1
+      const codeFromTarget1 = await SourceMapScopes.FunctionCodeResolver.getFunctionCodeFromLocation(
+          target1, URL, 0, 35, backend.universe.debuggerWorkspaceBinding);
+      assert.isNull(codeFromTarget1);
+
+      // Retrieve code using target2 (which actually owns the script)
+      const codeFromTarget2 = await SourceMapScopes.FunctionCodeResolver.getFunctionCodeFromLocation(
+          target2, URL, 0, 35, backend.universe.debuggerWorkspaceBinding);
+      assert.isNotNull(codeFromTarget2);
+    });
   });
 });

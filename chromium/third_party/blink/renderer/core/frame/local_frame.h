@@ -38,6 +38,7 @@
 #include "base/time/time.h"
 #include "base/unguessable_token.h"
 #include "build/build_config.h"
+#include "cc/metrics/begin_main_frame_metrics.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "net/storage_access_api/status.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
@@ -51,6 +52,7 @@
 #include "third_party/blink/public/mojom/confidence_level.mojom-blink.h"
 #include "third_party/blink/public/mojom/device_posture/device_posture_provider.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/devtools/devtools_agent.mojom-blink-forward.h"
+#include "third_party/blink/public/mojom/favicon/favicon_url.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/frame/back_forward_cache_controller.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/frame/frame.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/frame/frame_owner_properties.mojom-blink-forward.h"
@@ -118,8 +120,8 @@ class SharedURLLoaderFactory;
 namespace blink {
 
 class AdTracker;
+class ScriptInitiationMonitor;
 class AssociatedInterfaceProvider;
-class AttributionSrcLoader;
 class AuditsIssue;
 class BackgroundColorPaintImageGenerator;
 class BoxShadowPaintImageGenerator;
@@ -132,6 +134,7 @@ class Editor;
 class Element;
 class EventHandler;
 class EventHandlerRegistry;
+class EventTarget;
 class FrameConsole;
 class FrameOverlay;
 class FrameSelection;
@@ -161,22 +164,22 @@ class StyleEnvironmentVariables;
 class SystemClipboard;
 class TextFragmentHandler;
 class TextSuggestionController;
+class URLLoader;
 class VirtualKeyboardOverlayChangedObserver;
 class WebAutofillClient;
 class WebContentSettingsClient;
 class WebInputEventAttribution;
 class WebPluginContainerImpl;
 class WebPrescientNetworking;
-class URLLoader;
+class WindowControlsOverlayChangedDelegate;
+enum class BackForwardCacheAware;
+enum class MediaValueChange;
 struct BlinkTransferableMessage;
 struct WebScriptSource;
-class WindowControlsOverlayChangedDelegate;
 
 namespace v8_compile_hints {
 class V8LocalCompileHintsProducer;
 }  // namespace v8_compile_hints
-
-enum class BackForwardCacheAware;
 
 extern template class CORE_EXTERN_TEMPLATE_EXPORT Supplement<LocalFrame>;
 
@@ -348,7 +351,7 @@ class CORE_EXPORT LocalFrame final
 
   // Returns the transient user activation state of the |LocalFrame|, provided
   // it is non-null.  Otherwise returns |false|.
-  static bool HasTransientUserActivation(LocalFrame*);
+  static bool HasTransientUserActivation(const LocalFrame*);
 
   // Consumes the transient user activation state of the |LocalFrame|, provided
   // the frame pointer is non-null and the state hasn't been consumed since
@@ -479,7 +482,8 @@ class CORE_EXPORT LocalFrame final
   // returned after it.
   FrameScheduler* GetFrameScheduler();
   scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner(TaskType);
-  void ScheduleVisualUpdateUnlessThrottled();
+  void ScheduleVisualUpdateUnlessThrottled(
+      cc::BeginMainFrameReason reason = cc::BeginMainFrameReason::kOther);
 
   bool IsNavigationAllowed() const { return navigation_disable_count_ == 0; }
 
@@ -537,11 +541,10 @@ class CORE_EXPORT LocalFrame final
   }
   IdlenessDetector* GetIdlenessDetector() { return idleness_detector_.Get(); }
   AdTracker* GetAdTracker() { return ad_tracker_.Get(); }
+  ScriptInitiationMonitor* GetScriptInitiationMonitor() const;
+  ScriptInitiationMonitor* GetOrCreateScriptInitiationMonitor();
   void SetAdTrackerForTesting(AdTracker* ad_tracker);
   LCPScriptObserver* GetScriptObserver() { return script_observer_.Get(); }
-  AttributionSrcLoader* GetAttributionSrcLoader() {
-    return attribution_src_loader_.Get();
-  }
 
   enum class LazyLoadImageSetting { kDisabled, kEnabledExplicit };
   // Returns the enabled state of lazyloading of images.
@@ -739,7 +742,7 @@ class CORE_EXPORT LocalFrame final
 
   void FinishedLoading(FrameLoader::NavigationFinishState);
 
-  void UpdateFaviconURL();
+  void UpdateFaviconURL(mojom::blink::FaviconUpdateReason reason);
 
   using IsCapturingMediaCallback = base::RepeatingCallback<bool()>;
   void SetIsCapturingMediaCallback(IsCapturingMediaCallback callback);
@@ -861,9 +864,15 @@ class CORE_EXPORT LocalFrame final
   // to FrameFirstPaint.
   void OnFirstPaint(bool text_painted, bool image_painted);
 
-  // Invoked on first contentful paint on this frame.
-  void OnFirstContentfulPaint(const base::TimeTicks& paint_time,
-                              const base::TimeTicks& navigation_time);
+  // Invoked on first contentful paint on this frame. `presentation_time` is the
+  // renderer-side presentation timestamp of the first contentful paint.
+  void OnFirstContentfulPaint(const base::TimeTicks& presentation_time);
+
+  // Invoked when the outermost main frame's largest contentful paint candidate
+  // changed. May be invoked multiple times as larger elements paint.
+  // `presentation_time` is the renderer-side presentation timestamp of the
+  // current largest contentful paint candidate.
+  void OnLargestContentfulPaint(const base::TimeTicks& presentation_time);
 
   void WriteIntoTrace(perfetto::TracedValue ctx) const;
 
@@ -968,17 +977,12 @@ class CORE_EXPORT LocalFrame final
   bool AllowStorageAccessSyncAndNotify(
       blink::WebContentSettingsClient::StorageType storage_type);
 
-  // TODO(crbug.com/351354996): Remove this after the refactor is completed.
-  void NotifyFrameVisibilityChanged(mojom::blink::FrameVisibility visibility);
+  void AddVisibilityObserver(FrameVisibilityObserver* observer);
+  void RemoveVisibilityObserver(FrameVisibilityObserver* observer);
 
   void OnFrameVisibilityChangedForMediaPlayback(bool is_hidden);
   std::optional<bool> IsHiddenForMediaPlayback() const {
     return is_hidden_for_media_playback_;
-  }
-
-  HeapHashSet<WeakMember<FrameVisibilityObserver>>&
-  GetFrameVisibilityObserverSet() {
-    return frame_visibility_observers_;
   }
 
   bool IsCaretBrowsingOverridden() { return is_caret_browsing_overridden_; }
@@ -1119,9 +1123,9 @@ class CORE_EXPORT LocalFrame final
   Member<PerformanceMonitor> performance_monitor_;
 
   Member<AdTracker> ad_tracker_;
+  Member<ScriptInitiationMonitor> script_initiation_monitor_;
   Member<IdlenessDetector> idleness_detector_;
   base::OnceClosureList network_idle_callbacks_;
-  Member<AttributionSrcLoader> attribution_src_loader_;
   Member<InspectorIssueReporter> inspector_issue_reporter_;
   Member<InspectorTraceEvents> inspector_trace_events_;
   // Access content_capture_manager_ through GetOrResetContentCaptureManager()

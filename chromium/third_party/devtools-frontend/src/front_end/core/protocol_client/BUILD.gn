@@ -21,6 +21,17 @@ devtools_foundation_module("protocol_client") {
   ]
 }
 
+# TODO: We keep PuppeteerDevToolsConnection in a separate target because node
+# types will leak into the rest of DevTools compilation otherwise!
+devtools_foundation_module("puppeteer_devtools_connection") {
+  sources = [ "PuppeteerDevToolsConnection.ts" ]
+
+  deps = [
+    ":protocol_client",
+    "../../third_party/puppeteer:bundle",
+  ]
+}
+
 devtools_entrypoint("bundle") {
   entrypoint = "protocol_client.ts"
 

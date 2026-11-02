@@ -7,8 +7,8 @@
 #include "src/gpu/ganesh/GrTextureResolveRenderTask.h"
 
 #include "include/gpu/GpuTypes.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkMacros.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkMacros.h"
 #include "src/gpu/ganesh/GrDrawingManager.h"
 #include "src/gpu/ganesh/GrGpu.h"
 #include "src/gpu/ganesh/GrOpFlushState.h"
@@ -90,7 +90,7 @@ void GrTextureResolveRenderTask::gatherProxyIntervals(GrResourceAllocator* alloc
     alloc->incOps();
 }
 
-bool GrTextureResolveRenderTask::onExecute(GrOpFlushState* flushState) {
+GrRenderTask::ExecutionResult GrTextureResolveRenderTask::onExecute(GrOpFlushState* flushState) {
     // Resolve all msaa back-to-back, before regenerating mipmaps.
     SkASSERT(fResolves.size() == this->numTargets());
     for (int i = 0; i < fResolves.size(); ++i) {
@@ -112,12 +112,14 @@ bool GrTextureResolveRenderTask::onExecute(GrOpFlushState* flushState) {
             GrTexture* texture = this->target(i)->peekTexture();
             if (texture && (!texture->mipmapsAreDirty() ||
                             flushState->gpu()->regenerateMipMapLevels(texture))) {
+                // If mipmap regeneration fails we do not count it as an error but
+                // will downgrade the sampling later on.
                 resolve.fFlags &= ~GrSurfaceProxy::ResolveFlags::kMipMaps;
             }
         }
     }
 
-    return true;
+    return ExecutionResult::RanAndSucceeded();
 }
 
 void GrTextureResolveRenderTask::endFlush(GrDrawingManager* drawingMgr) {

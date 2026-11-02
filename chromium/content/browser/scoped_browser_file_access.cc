@@ -4,7 +4,7 @@
 
 #include "content/browser/scoped_browser_file_access.h"
 
-#include "content/browser/child_process_security_policy_impl.h"
+#include "content/browser/security/cpsp/child_process_security_policy_impl.h"
 
 namespace content {
 

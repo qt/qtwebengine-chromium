@@ -38,6 +38,7 @@ void MediaSessionController::SetMetadata(
   has_audio_ = has_audio;
   has_video_ = has_video;
   media_content_type_ = media_content_type;
+
   AddOrRemovePlayer();
 }
 
@@ -96,12 +97,22 @@ void MediaSessionController::OnSetVolumeMultiplier(int player_id,
   observer->GetMediaPlayerRemote(id_)->SetVolumeMultiplier(volume_multiplier);
 }
 
-void MediaSessionController::OnEnterPictureInPicture(int player_id) {
+void MediaSessionController::OnEnterPictureInPicture(
+    int player_id,
+    const std::optional<gfx::Size>& min_size) {
   DCHECK_EQ(player_id_, player_id);
 
   web_contents_->media_web_contents_observer()
       ->GetMediaPlayerRemote(id_)
-      ->RequestEnterPictureInPicture();
+      ->RequestEnterPictureInPicture(min_size);
+}
+
+void MediaSessionController::OnSaveVideoFrame(int player_id) {
+  DCHECK_EQ(player_id_, player_id);
+
+  web_contents_->media_web_contents_observer()
+      ->GetMediaPlayerRemote(id_)
+      ->RequestSaveVideoFrame();
 }
 
 void MediaSessionController::OnSetAudioSinkId(
@@ -182,6 +193,11 @@ bool MediaSessionController::IsPictureInPictureAvailable(int player_id) const {
   return is_picture_in_picture_available_;
 }
 
+bool MediaSessionController::IsVideoFrameAvailable(int player_id) const {
+  DCHECK_EQ(player_id_, player_id);
+  return is_video_frame_available_;
+}
+
 bool MediaSessionController::HasSufficientlyVisibleVideo(int player_id) const {
   DCHECK_EQ(player_id_, player_id);
   return has_sufficiently_visible_video_;
@@ -247,6 +263,11 @@ void MediaSessionController::OnVideoVisibilityChanged(
     bool meets_visibility_threshold) {
   has_sufficiently_visible_video_ = meets_visibility_threshold;
   media_session_->OnVideoVisibilityChanged();
+}
+
+void MediaSessionController::OnVideoFrameAvailabilityChanged(bool available) {
+  is_video_frame_available_ = available;
+  media_session_->OnVideoFrameAvailabilityChanged();
 }
 
 bool MediaSessionController::IsMediaSessionNeeded() const {

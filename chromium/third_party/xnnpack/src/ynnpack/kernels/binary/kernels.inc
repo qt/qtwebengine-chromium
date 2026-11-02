@@ -28,3 +28,7 @@
 #ifdef YNN_ARCH_WASM_SIMD128
 #include "ynnpack/kernels/binary/wasm_simd128.inc"
 #endif  // YNN_ARCH_WASM_SIMD128
+
+#ifdef YNN_ARCH_HEXAGON_HVX
+#include "ynnpack/kernels/binary/hexagon_hvx.inc"
+#endif  // YNN_ARCH_HEXAGON_HVX

@@ -90,7 +90,7 @@ class CFX_Font {
 
   const CFX_GlyphBitmap* LoadGlyphBitmap(
       uint32_t glyph_index,
-      bool bFontStyle,
+      bool is_cid_font,
       const CFX_Matrix& matrix,
       int dest_width,
       FontAntiAliasingMode anti_alias,

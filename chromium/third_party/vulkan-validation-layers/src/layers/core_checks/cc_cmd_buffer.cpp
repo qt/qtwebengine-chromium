@@ -72,7 +72,7 @@ bool CoreChecks::ValidateCmd(const vvl::CommandBuffer& cb_state, const Location&
 
     // Validate the command pool from which the command buffer is from that the command is allowed for queue type
     if (!HasRequiredQueueFlags(cb_state, *physical_device_state, info.queue_flags)) {
-        const LogObjectList objlist(cb_state.Handle(), cb_state.command_pool->Handle());
+        const LogObjectList objlist(cb_state.Handle(), cb_state.command_pool.Handle());
         skip |= LogError(info.queue_vuid, objlist, loc, "%s",
                          DescribeRequiredQueueFlag(cb_state, *physical_device_state, info.queue_flags).c_str());
     }
@@ -214,8 +214,7 @@ bool CoreChecks::PreCallValidateBeginCommandBuffer(VkCommandBuffer commandBuffer
                          FormatHandle(commandBuffer).c_str());
     } else if (IsRecorded(cb_state->state)) {
         VkCommandPool cmd_pool = cb_state->allocate_info.commandPool;
-        const auto* pool = cb_state->command_pool;
-        if (!(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT & pool->createFlags)) {
+        if (!(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT & cb_state->command_pool.createFlags)) {
             const LogObjectList objlist(commandBuffer, cmd_pool);
             skip |= LogError("VUID-vkBeginCommandBuffer-commandBuffer-00050", objlist, error_obj.location,
                              "%s attempts to implicitly reset cmdBuffer created from "
@@ -235,13 +234,13 @@ bool CoreChecks::PreCallValidateBeginCommandBuffer(VkCommandBuffer commandBuffer
                                          "VUID-VkDeviceGroupCommandBufferBeginInfo-deviceMask-00107");
     }
     if ((pBeginInfo->flags & VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT) != 0) {
-        if ((cb_state->command_pool->queue_flags & VK_QUEUE_GRAPHICS_BIT) == 0) {
-            const LogObjectList objlist(commandBuffer, cb_state->command_pool->Handle());
+        if ((cb_state->command_pool.queue_flags & VK_QUEUE_GRAPHICS_BIT) == 0) {
+            const LogObjectList objlist(commandBuffer, cb_state->command_pool.Handle());
             skip |= LogError("VUID-VkCommandBufferBeginInfo-flags-09123", objlist, begin_info_loc.dot(Field::flags),
                              "contain VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT, but the command pool (created with "
                              "queueFamilyIndex %" PRIu32 ") the command buffer %s was allocated from only supports %s.",
-                             cb_state->command_pool->queueFamilyIndex, FormatHandle(commandBuffer).c_str(),
-                             string_VkQueueFlags(cb_state->command_pool->queue_flags).c_str());
+                             cb_state->command_pool.queueFamilyIndex, FormatHandle(commandBuffer).c_str(),
+                             string_VkQueueFlags(cb_state->command_pool.queue_flags).c_str());
         }
     }
     return skip;
@@ -583,13 +582,13 @@ bool CoreChecks::PreCallValidateResetCommandBuffer(VkCommandBuffer commandBuffer
     auto cb_state = GetRead<vvl::CommandBuffer>(commandBuffer);
 
     VkCommandPool cmd_pool = cb_state->allocate_info.commandPool;
-    const auto* pool = cb_state->command_pool;
 
-    if (!(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT & pool->createFlags)) {
+    if (!(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT & cb_state->command_pool.createFlags)) {
         const LogObjectList objlist(commandBuffer, cmd_pool);
-        skip |= LogError("VUID-vkResetCommandBuffer-commandBuffer-00046", objlist, error_obj.location,
-                         "%s was created from %s  which was created with %s.", FormatHandle(commandBuffer).c_str(),
-                         FormatHandle(cmd_pool).c_str(), string_VkCommandPoolCreateFlags(pool->createFlags).c_str());
+        skip |=
+            LogError("VUID-vkResetCommandBuffer-commandBuffer-00046", objlist, error_obj.location,
+                     "%s was created from %s  which was created with %s.", FormatHandle(commandBuffer).c_str(),
+                     FormatHandle(cmd_pool).c_str(), string_VkCommandPoolCreateFlags(cb_state->command_pool.createFlags).c_str());
     }
 
     if (cb_state->InUse()) {
@@ -790,11 +789,6 @@ bool CoreChecks::ValidatePrimaryCommandBuffer(const vvl::CommandBuffer& cb_state
     return skip;
 }
 
-static bool CompareBindHeapInfoEXT(const VkBindHeapInfoEXT& a, const VkBindHeapInfoEXT& b) {
-    return (a.heapRange.address == b.heapRange.address) && (a.heapRange.size == b.heapRange.size) &&
-           (a.reservedRangeOffset == b.reservedRangeOffset) && (a.reservedRangeSize == b.reservedRangeSize);
-}
-
 bool CoreChecks::ValidateSecondaryCommandBufferDescriptorHeapInheritance(const vvl::CommandBuffer& cb_state,
                                                                          const vvl::CommandBuffer& secondary_cb_state,
                                                                          const Location& secondary_cb_loc) const {
@@ -803,64 +797,53 @@ bool CoreChecks::ValidateSecondaryCommandBufferDescriptorHeapInheritance(const v
         return skip;
     }
 
-    if (secondary_cb_state.inheritance_descriptor_heap_info.pSamplerHeapBindInfo) {
+    if (secondary_cb_state.descriptor_heap.is_sampler_inherited) {
         if (cb_state.descriptor_heap.sampler_bound) {
-            const auto& sampler_bound = cb_state.descriptor_heap.sampler_range;
-            const auto& sampler_reserved = cb_state.descriptor_heap.sampler_reserved;
-
-            VkBindHeapInfoEXT current = {};
-            current.heapRange.address = sampler_bound.begin;
-            current.heapRange.size = sampler_bound.end - sampler_bound.begin;
-            current.reservedRangeOffset = sampler_reserved.begin - sampler_bound.begin;
-            current.reservedRangeSize = sampler_reserved.end - sampler_reserved.begin;
-
-            const auto& secondary = *secondary_cb_state.inheritance_descriptor_heap_info.pSamplerHeapBindInfo;
-            if (!CompareBindHeapInfoEXT(current, *secondary.ptr())) {
+            const bool same_range = cb_state.descriptor_heap.sampler_range == secondary_cb_state.descriptor_heap.sampler_range;
+            const bool same_reserved =
+                cb_state.descriptor_heap.sampler_reserved == secondary_cb_state.descriptor_heap.sampler_reserved;
+            if (!same_range || !same_reserved) {
                 const LogObjectList objlist(cb_state.Handle(), secondary_cb_state.Handle());
                 skip |= LogError(
                     "VUID-vkCmdExecuteCommands-commandBuffer-11351", objlist, secondary_cb_loc,
                     "was recorded with VkBindHeapInfoEXT, which does not match the currently bound sampler descriptor heap.\n"
                     "Executed VkBindHeapInfoEXT: %s\n"
                     "Current  VkBindHeapInfoEXT: %s",
-                    string_VkBindHeapInfoEXT(*secondary.ptr()).c_str(), string_VkBindHeapInfoEXT(current).c_str());
+                    secondary_cb_state.descriptor_heap.Describe(true).c_str(), cb_state.descriptor_heap.Describe(true).c_str());
             }
         } else if (cb_state.IsPrimary()) {
             const LogObjectList objlist(cb_state.Handle(), secondary_cb_state.Handle());
-            const auto& secondary = *secondary_cb_state.inheritance_descriptor_heap_info.pSamplerHeapBindInfo;
             skip |= LogError("VUID-vkCmdExecuteCommands-commandBuffer-11473", objlist, secondary_cb_loc,
                              "was recorded with VkCommandBufferInheritanceDescriptorHeapInfoEXT::pSamplerHeapBindInfo (%s), but "
-                             "sampler descriptor heap is not bound to the primary command buffer.",
-                             string_VkBindHeapInfoEXT(*secondary.ptr()).c_str());
+                             "sampler descriptor heap is not bound to the primary command buffer.\nHint: You are only allowed to "
+                             "inherit the exact same heap bound in the primary command buffer. Either set pSamplerHeapBindInfo to "
+                             "null or call vkCmdBindSamplerHeapEXT in the primary command buffer before this call.",
+                             secondary_cb_state.descriptor_heap.Describe(true).c_str());
         }
     }
-    if (secondary_cb_state.inheritance_descriptor_heap_info.pResourceHeapBindInfo) {
+    if (secondary_cb_state.descriptor_heap.is_resource_inherited) {
         if (cb_state.descriptor_heap.resource_bound) {
-            const auto& resource_bound = cb_state.descriptor_heap.resource_range;
-            const auto& resource_reserved = cb_state.descriptor_heap.resource_reserved;
+            const bool same_range = cb_state.descriptor_heap.resource_range == secondary_cb_state.descriptor_heap.resource_range;
+            const bool same_reserved =
+                cb_state.descriptor_heap.resource_reserved == secondary_cb_state.descriptor_heap.resource_reserved;
 
-            VkBindHeapInfoEXT current = {};
-            current.heapRange.address = resource_bound.begin;
-            current.heapRange.size = resource_bound.end - resource_bound.begin;
-            current.reservedRangeOffset = resource_reserved.begin - resource_bound.begin;
-            current.reservedRangeSize = resource_reserved.end - resource_reserved.begin;
-
-            const auto& secondary = *secondary_cb_state.inheritance_descriptor_heap_info.pResourceHeapBindInfo;
-            if (!CompareBindHeapInfoEXT(current, *secondary.ptr())) {
+            if (!same_range || !same_reserved) {
                 const LogObjectList objlist(cb_state.Handle(), secondary_cb_state.Handle());
                 skip |= LogError(
                     "VUID-vkCmdExecuteCommands-commandBuffer-11352", objlist, secondary_cb_loc,
                     "was recorded with VkBindHeapInfoEXT, which does not match the currently bound resource descriptor heap.\n"
                     "Executed VkBindHeapInfoEXT: %s\n"
                     "Current  VkBindHeapInfoEXT: %s",
-                    string_VkBindHeapInfoEXT(*secondary.ptr()).c_str(), string_VkBindHeapInfoEXT(current).c_str());
+                    secondary_cb_state.descriptor_heap.Describe(false).c_str(), cb_state.descriptor_heap.Describe(false).c_str());
             }
         } else if (cb_state.IsPrimary()) {
             const LogObjectList objlist(cb_state.Handle(), secondary_cb_state.Handle());
-            const auto& secondary = *secondary_cb_state.inheritance_descriptor_heap_info.pResourceHeapBindInfo;
             skip |= LogError("VUID-vkCmdExecuteCommands-commandBuffer-11474", objlist, secondary_cb_loc,
                              "was recorded with VkCommandBufferInheritanceDescriptorHeapInfoEXT::pResourceHeapBindInfo (%s), but "
-                             "resource descriptor heap is not bound to the primary command buffer.",
-                             string_VkBindHeapInfoEXT(*secondary.ptr()).c_str());
+                             "resource descriptor heap is not bound to the primary command buffer.\nHint: You are only allowed to "
+                             "inherit the exact same heap bound in the primary command buffer. Either set pResourceHeapBindInfo to "
+                             "null or call vkCmdBindResourceHeapEXT in the primary command buffer before this call.",
+                             secondary_cb_state.descriptor_heap.Describe(false).c_str());
         }
     }
 
@@ -914,15 +897,15 @@ bool CoreChecks::ValidateSecondaryCommandBufferState(const vvl::CommandBuffer& c
                                                      const core::CommandBufferSubState& secondary_sub_state,
                                                      const Location& secondary_cb_loc) const {
     bool skip = false;
-    const auto primary_pool = cb_state.command_pool;
-    const auto secondary_pool = secondary_sub_state.base.command_pool;
-    if (primary_pool && secondary_pool && (primary_pool->queueFamilyIndex != secondary_pool->queueFamilyIndex)) {
+    const vvl::CommandPool& primary_pool = cb_state.command_pool;
+    const vvl::CommandPool& secondary_pool = secondary_sub_state.base.command_pool;
+    if (primary_pool.queueFamilyIndex != secondary_pool.queueFamilyIndex) {
         const LogObjectList objlist(cb_state.Handle(), secondary_sub_state.Handle());
         skip |= LogError("VUID-vkCmdExecuteCommands-pCommandBuffers-00094", objlist, secondary_cb_loc,
                          "(%s) was created in queue family %" PRIu32
                          " but the primary command buffer (%s) was created in queue family %" PRIu32 ".",
-                         FormatHandle(secondary_sub_state.base).c_str(), secondary_pool->queueFamilyIndex,
-                         FormatHandle(cb_state).c_str(), primary_pool->queueFamilyIndex);
+                         FormatHandle(secondary_sub_state.base).c_str(), secondary_pool.queueFamilyIndex,
+                         FormatHandle(cb_state).c_str(), primary_pool.queueFamilyIndex);
     }
 
     // All commands buffers involved must be protected or unprotected
@@ -1130,71 +1113,53 @@ bool CoreChecks::ValidateSecondaryCommandBufferLayout(const vvl::CommandBuffer& 
     return skip;
 }
 
-// Return the signal stage mask when it can be identified from recorded state
-static std::optional<VkPipelineStageFlags2> ResolveKnownSignalStageMask(VkEvent event,
-                                                                        const EventSignalingStateMap& prior_signaling_states,
-                                                                        const EventSignalingStateMap& secondary_signaling_states) {
-    const EventSignalingState* prior_state = vvl::Find(prior_signaling_states, event);
-    const EventSignalingState* secondary_state = vvl::Find(secondary_signaling_states, event);
-
-    if (secondary_state && secondary_state->HasKnownEffect(prior_state)) {
-        if (secondary_state->signaled) {
-            return secondary_state->signal_src_stage_mask;
-        }
-        return {};
-    }
-    if (prior_state && prior_state->HasKnownEffect() && prior_state->signaled) {
-        return prior_state->signal_src_stage_mask;
-    }
-    return {};
-}
-
-// Return true when recorded state proves the event is unsignaled at the wait
-static bool IsKnownUnsignaled(VkEvent event, const EventSignalingStateMap& prior_signaling_states,
-                              const EventSignalingStateMap& secondary_signaling_states) {
-    const EventSignalingState* prior_state = vvl::Find(prior_signaling_states, event);
-    const EventSignalingState* secondary_state = vvl::Find(secondary_signaling_states, event);
-
-    if (secondary_state && secondary_state->HasKnownEffect(prior_state)) {
-        return !secondary_state->signaled;
-    }
-    return prior_state && prior_state->HasKnownEffect() && !prior_state->signaled;
-}
-
 bool CoreChecks::ValidateSecondaryCommandBufferWaitEvents(const core::CommandBufferSubState& secondary_cb_sub_state,
                                                           const Location& secondary_cb_loc,
-                                                          EventSignalingStateMap& local_signaling_states) const {
+                                                          EventSignalStateMap& local_signal_states) const {
     bool skip = false;
     for (const WaitEventSubmitInfo& secondary_wait : secondary_cb_sub_state.wait_event_submit_infos) {
         VkPipelineStageFlags signals_src_stage_mask = VK_PIPELINE_STAGE_NONE;
-        bool can_validate = true;
-        bool found_known_signals = false;
+        bool can_validate_stage_mask = true;
+        bool set_wait_version_mismatch = false;
+        bool found_signals = false;
 
         for (VkEvent event : secondary_wait.wait_events) {
-            if (auto stage_mask = ResolveKnownSignalStageMask(event, local_signaling_states, secondary_wait.signaling_states)) {
-                signals_src_stage_mask |= *stage_mask;
-                found_known_signals = true;
-                continue;
+            const EventSignalState* local_state = vvl::Find(local_signal_states, event);
+            const EventSignalState* secondary_state = vvl::Find(secondary_wait.signal_states, event);
+            const EventSignalState* known_state = ResolveSecondarySignal(local_state, secondary_state);
+
+            if (known_state) {
+                // Validate set-wait version mismatch
+                if (IsValueIn(known_state->last_signaling_command, {vvl::Func::vkCmdSetEvent2, vvl::Func::vkCmdSetEvent2KHR})) {
+                    skip |= LogError("VUID-vkCmdWaitEvents-pEvents-03847", event, secondary_cb_loc, "%s: %s was set by %s.",
+                                     vvl::String(secondary_wait.wait_command), FormatHandle(event).c_str(),
+                                     vvl::String(known_state->last_signaling_command));
+                    set_wait_version_mismatch = true;
+                }
+                // Collect source stages from all known signals
+                if (known_state->signaled) {
+                    signals_src_stage_mask |= known_state->signal_src_stage_mask;
+                    found_signals = true;
+                }
+            } else {
+                // Can't validate at secondary command buffer execution time
+                // because the signal's state is not known yet
+                can_validate_stage_mask = false;
             }
-            if (IsKnownUnsignaled(event, local_signaling_states, secondary_wait.signaling_states)) {
-                // Contribute 0 to signals_src_stage_mask
-                continue;
-            }
-            can_validate = false;
-            break;
         }
-        if (can_validate && secondary_wait.wait_src_stage_mask != signals_src_stage_mask) {
+        // Validate state mask
+        if (!set_wait_version_mismatch && can_validate_stage_mask && secondary_wait.wait_src_stage_mask != signals_src_stage_mask) {
             const LogObjectList objlist(secondary_cb_sub_state.Handle());
-            if (found_known_signals) {
+            if (found_signals) {
                 std::ostringstream ss;
-                ss << "(" << FormatHandle(secondary_cb_sub_state.Handle()) << ") contains a vkCmdWaitEvents call with srcStageMask "
+                ss << "(" << FormatHandle(secondary_cb_sub_state.Handle()) << ") contains vkCmdWaitEvents with srcStageMask "
                    << string_VkPipelineStageFlags(secondary_wait.wait_src_stage_mask)
                    << ", but the bitwise OR of stageMask values from the most recent vkCmdSetEvent calls is "
                    << string_VkPipelineStageFlags(signals_src_stage_mask);
                 skip |= LogError("VUID-vkCmdWaitEvents-srcStageMask-01158", objlist, secondary_cb_loc, "%s", ss.str().c_str());
             } else {
                 std::ostringstream ss;
-                ss << "(" << FormatHandle(secondary_cb_sub_state.Handle()) << ") contains a vkCmdWaitEvents call with srcStageMask "
+                ss << "(" << FormatHandle(secondary_cb_sub_state.Handle()) << ") contains vkCmdWaitEvents with srcStageMask "
                    << string_VkPipelineStageFlags(secondary_wait.wait_src_stage_mask)
                    << ", but the waited events are known to be unsignaled at this point. The wait does not have a corresponding "
                       "vkCmdSetEvent signal.";
@@ -1202,7 +1167,41 @@ bool CoreChecks::ValidateSecondaryCommandBufferWaitEvents(const core::CommandBuf
             }
         }
     }
-    UpdateEventSignalingStates(local_signaling_states, secondary_cb_sub_state.event_signaling_states);
+    for (const WaitEvent2SubmitInfo& secondary_wait : secondary_cb_sub_state.wait_event2_submit_infos) {
+        const EventSignalState* local_state = vvl::Find(local_signal_states, secondary_wait.wait_event);
+        const EventSignalState* secondary_state = secondary_wait.signal_state.has_value() ? &*secondary_wait.signal_state : nullptr;
+        const EventSignalState* known_state = ResolveSecondarySignal(local_state, secondary_state);
+
+        if (!known_state) {
+            continue;
+        }
+        if (known_state->last_signaling_command == vvl::Func::vkCmdSetEvent) {
+            skip |= LogError("VUID-vkCmdWaitEvents2-pEvents-03837", secondary_wait.wait_event, secondary_cb_loc,
+                             "%s: %s was set by %s.", vvl::String(secondary_wait.wait_command),
+                             FormatHandle(secondary_wait.wait_event).c_str(), vvl::String(known_state->last_signaling_command));
+        } else {
+            const VkPipelineStageFlags2 union_src_stage_mask =
+                sync_utils::GetExecScopes(*secondary_wait.wait_dependency_info.ptr()).src;
+
+            if ((union_src_stage_mask & VK_PIPELINE_STAGE_2_HOST_BIT) == 0) {
+                if (!IsValueIn(known_state->last_signaling_command, {vvl::Func::vkCmdSetEvent2, vvl::Func::vkCmdSetEvent2KHR})) {
+                    const LogObjectList objlist(secondary_cb_sub_state.Handle(), secondary_wait.wait_event);
+                    skip |= LogError("VUID-vkCmdWaitEvents2-pEvents-03841", objlist, secondary_cb_loc,
+                                     "contains %s but %s was not set by vkCmdSetEvent2.", vvl::String(secondary_wait.wait_command),
+                                     FormatHandle(secondary_wait.wait_event).c_str());
+                }
+            } else if (union_src_stage_mask == VK_PIPELINE_STAGE_2_HOST_BIT) {
+                if (!known_state->signaled) {
+                    const LogObjectList objlist(secondary_cb_sub_state.Handle(), secondary_wait.wait_event);
+                    skip |= LogError("VUID-vkCmdWaitEvents2-pEvents-03840", objlist, secondary_cb_loc,
+                                     "contains %s and the first synchronization scope specified by pDependencyInfos is "
+                                     "VK_PIPELINE_STAGE_2_HOST_BIT but %s is not signaled",
+                                     vvl::String(secondary_wait.wait_command), FormatHandle(secondary_wait.wait_event).c_str());
+                }
+            }
+        }
+    }
+    UpdateEventSignalStates(local_signal_states, secondary_cb_sub_state.event_signal_states);
     return skip;
 }
 
@@ -1483,8 +1482,10 @@ bool CoreChecks::PreCallValidateCmdExecuteCommands(VkCommandBuffer commandBuffer
     }
 
     vvl::unordered_map<VkCommandBuffer, uint32_t> duplicate_secondary_cb;
-    EventSignalingStateMap local_signaling_states = cb_sub_state.event_signaling_states;
-    bool suspended_render_pass_instance = (cb_state.last_suspend_state == vvl::CommandBuffer::SuspendState::Suspended);
+    EventSignalStateMap local_signal_states = cb_sub_state.event_signal_states;
+    bool suspended_render_pass_instance =
+        cb_state.last_suspend_state == vvl::CommandBuffer::SuspendState::Suspended && !cb_state.active_render_pass;
+
     const VkRenderingInfo* last_rendering_info =
         cb_state.last_rendering_info.has_value() ? cb_state.last_rendering_info.value().ptr() : nullptr;
     for (uint32_t i = 0; i < commandBuffersCount; i++) {
@@ -1604,7 +1605,7 @@ bool CoreChecks::PreCallValidateCmdExecuteCommands(VkCommandBuffer commandBuffer
         skip |= ValidateSecondaryCommandBufferState(cb_state, secondary_sub_state, secondary_cb_loc);
         skip |= ValidateSecondaryCommandBufferQuery(cb_state, secondary_cb_state, secondary_cb_loc);
         skip |= ValidateSecondaryCommandBufferLayout(cb_state, secondary_cb_state, secondary_cb_loc);
-        skip |= ValidateSecondaryCommandBufferWaitEvents(secondary_sub_state, secondary_cb_loc, local_signaling_states);
+        skip |= ValidateSecondaryCommandBufferWaitEvents(secondary_sub_state, secondary_cb_loc, local_signal_states);
     }
 
     return skip;

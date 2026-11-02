@@ -49,6 +49,7 @@ class Point;
 namespace ui {
 class Cursor;
 class LatencyInfo;
+struct ImeTextSpan;
 }
 
 namespace viz {
@@ -56,6 +57,7 @@ class FrameSinkId;
 }
 
 namespace content {
+struct GlobalDOMNodeId;
 struct GlobalRenderFrameHostId;
 class RenderProcessHost;
 class RenderWidgetHostIterator;
@@ -351,6 +353,33 @@ class CONTENT_EXPORT RenderWidgetHost {
   virtual void ShowContextMenuAtPoint(
       const gfx::Point& point,
       const ui::mojom::MenuSourceType source_type) {}
+
+  // Sets composition text. This does so as an IME would, but is used by callers
+  // that want to programmatically insert text without simulating an actual IME.
+  // `text` is the composition text.
+  // `ime_text_spans` sets the styling of the composition marker(s).
+  // `target_dom_node_id`, if not a null value, sets the composition on the
+  // identified node. This adjusts focus if necessary, then restores it, in
+  // order to target the node. For comparison, a regular IME would simply
+  // compose in whatever node is focused.
+  // `on_complete` is invoked when the operation completes, if it is not null.
+  virtual void SetExternallySourcedComposition(
+      const std::u16string& text,
+      const std::vector<ui::ImeTextSpan>& ime_text_spans,
+      const GlobalDOMNodeId& target_dom_node_id,
+      base::OnceClosure on_complete) = 0;
+
+  // Commits composition text. See `SetExternallySourcedComposition`.
+  virtual void CommitExternallySourcedComposition(
+      const std::u16string& text,
+      const GlobalDOMNodeId& target_dom_node_id,
+      base::OnceClosure on_complete) = 0;
+
+  // Pastes text into the target node.
+  // Unlike the `*ExternallySourcedComposition` methods above, this does not
+  // temporarily change focus and does not use IME code paths.
+  virtual void PasteIntoNode(const std::u16string& text,
+                             const GlobalDOMNodeId& target_dom_node_id) = 0;
 
   // Roundtrips through the renderer and compositor pipeline to ensure that any
   // changes to the contents resulting from operations executed prior to this

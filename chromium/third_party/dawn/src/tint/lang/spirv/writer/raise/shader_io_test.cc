@@ -41,9 +41,9 @@ using namespace tint::core::number_suffixes;  // NOLINT
 class SpirvWriter_ShaderIOTest : public core::ir::transform::TransformTest {
   public:
     SpirvWriter_ShaderIOTest() {
-        capabilities.Add(
-            core::ir::Capabilities{core::ir::Capability::kLoosenValidationForShaderIO,
-                                   core::ir::Capability::kAllowLocationForNumericElements});
+        mod.properties.Add(core::ir::Property::kAllow16BitFloats);
+        mod.properties.Add(core::ir::Property::kAllowBackendSpecificShaderIO);
+        mod.properties.Add(core::ir::Property::kAllowLocationForNumericComposites);
     }
 };
 
@@ -591,7 +591,7 @@ $B1: {  # root
 }
 
 TEST_F(SpirvWriter_ShaderIOTest, ReturnValue_DualSourceBlending) {
-    capabilities.Add(core::ir::Capability::kLoosenValidationForShaderIO);
+    mod.properties.Add(core::ir::Property::kAllowBackendSpecificShaderIO);
     auto* str_ty = ty.Struct(mod.symbols.New("Output"), {
                                                             {
                                                                 mod.symbols.New("color1"),
@@ -1185,7 +1185,6 @@ $B1: {  # root
     ShaderIOConfig config{immediate_data};
     config.emit_vertex_point_size = true;
 
-    capabilities.Set(core::ir::Capability::kAllowPointSizeBuiltin, true);
     Run(ShaderIO, config);
 
     EXPECT_EQ(expect, str());

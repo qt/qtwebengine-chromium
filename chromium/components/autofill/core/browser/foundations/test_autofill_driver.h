@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/containers/to_vector.h"
 #include "base/functional/callback_forward.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ref.h"
@@ -22,6 +23,7 @@
 #include "components/autofill/core/browser/foundations/autofill_manager.h"
 #include "components/autofill/core/browser/foundations/test_autofill_client.h"
 #include "components/autofill/core/common/mojom/autofill_types.mojom-shared.h"
+#include "mojo/public/cpp/bindings/pending_remote.h"
 #include "third_party/abseil-cpp/absl/container/flat_hash_map.h"
 #include "ui/accessibility/ax_tree_id.h"
 #include "url/origin.h"
@@ -29,6 +31,10 @@
 #if !BUILDFLAG(IS_IOS)
 #include "components/webauthn/core/browser/internal_authenticator.h"
 #endif
+
+namespace autofill::mojom {
+class AutofillVisibilityObserver;
+}  // namespace autofill::mojom
 
 namespace autofill {
 
@@ -106,6 +112,10 @@ class TestAutofillDriverTemplate : public T {
   void ExtractFormWithField(
       FieldGlobalId field_id,
       AutofillDriver::BrowserFormHandler response_handler) override {}
+  void ObserveFieldVisibility(
+      const FieldGlobalId& field_id,
+      mojo::PendingRemote<mojom::AutofillVisibilityObserver> observer)
+      override {}
   void GetFourDigitCombinationsFromDom(
       base::OnceCallback<void(const std::vector<std::string>&)>
           potential_matches) override {}
@@ -119,12 +129,19 @@ class TestAutofillDriverTemplate : public T {
                                   const std::string& email,
                                   FieldGlobalId token_field_id,
                                   const std::string& token) override {}
+  void UpdateEmailVerificationState(
+      const FieldGlobalId& email_field_id,
+      mojom::EmailVerificationState state) override {}
   void ScrollFieldIntoView(FieldGlobalId field_id) override {}
+  bool IsSafeToFill(const FormFieldData& field,
+                    FieldType filled_type,
+                    const url::Origin& main_origin,
+                    const url::Origin& trigger_origin) const override {
+    // Simplified security model which allows to filter (only) fields from the
+    // same origin.
+    return field.origin() == trigger_origin;
+  }
 
-  // The return value contains the FieldGlobalIds of all elements (field_id,
-  // type) of `field_type_map` for which
-  // `field_type_map_filter_.Run(triggered_origin, field, type)` is true and for
-  // which there's a corresponding field in `fields`.
   base::flat_set<FieldGlobalId> ApplyFormAction(
       mojom::FormActionType action_type,
       mojom::ActionPersistence action_persistence,
@@ -134,18 +151,7 @@ class TestAutofillDriverTemplate : public T {
       const url::Origin& triggered_origin,
       const absl::flat_hash_map<FieldGlobalId, FieldType>& field_type_map,
       const Section& section_for_clear_form_on_ios) override {
-    if (action_type == mojom::FormActionType::kUndo) {
-      return {};
-    }
-    std::vector<FieldGlobalId> result;
-    for (const auto& [id, type] : field_type_map) {
-      if ((!field_type_map_filter_ ||
-           field_type_map_filter_.Run(triggered_origin, id, type)) &&
-          std::ranges::contains(fields, id, &FormFieldData::global_id)) {
-        result.push_back(id);
-      }
-    }
-    return result;
+    return base::ToVector(fields, &FormFieldData::global_id);
   }
 
   // Methods unique to TestAutofillDriver that tests can use to specialize
@@ -178,12 +184,6 @@ class TestAutofillDriverTemplate : public T {
     isolation_info_ = isolation_info;
   }
 
-  // The filter that determines the return value of FillOrPreviewForm().
-  void SetFieldTypeMapFilter(
-      base::RepeatingCallback<
-          bool(const url::Origin&, FieldGlobalId, FieldType)> callback) {
-    field_type_map_filter_ = callback;
-  }
 
   void SetSharedURLLoaderFactory(
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory);
@@ -203,8 +203,6 @@ class TestAutofillDriverTemplate : public T {
   bool policy_controlled_feature_autofill_enabled_ = false;
   bool policy_controlled_feature_manual_text_enabled_ = false;
   net::IsolationInfo isolation_info_;
-  base::RepeatingCallback<bool(const url::Origin&, FieldGlobalId, FieldType)>
-      field_type_map_filter_;
 
 #if !BUILDFLAG(IS_IOS)
   std::unique_ptr<webauthn::InternalAuthenticator> test_authenticator_;

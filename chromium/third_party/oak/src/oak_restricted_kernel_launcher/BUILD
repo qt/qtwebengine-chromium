@@ -22,8 +22,9 @@ package(
 )
 
 rust_binary(
-    name = "main",
+    name = "oak_restricted_kernel_launcher",
     srcs = ["src/main.rs"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":lib",
         "//oak_launcher_utils",
@@ -38,6 +39,7 @@ rust_library(
     name = "lib",
     srcs = ["src/lib.rs"],
     crate_name = "oak_restricted_kernel_launcher",
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//oak_launcher_utils",
         "@oak_crates_index//:log",
@@ -50,9 +52,11 @@ rust_test(
     data = [
         "//enclave_apps/oak_echo_enclave_app",
         "//enclave_apps/oak_orchestrator",
+        "//oak_restricted_kernel_wrapper:oak_restricted_kernel_wrapper_serial_channel_bin",
         "//oak_restricted_kernel_wrapper:oak_restricted_kernel_wrapper_virtio_console_channel_bin",
         "//stage0_bin",
     ],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":lib",
         "//micro_rpc",
@@ -60,6 +64,7 @@ rust_test(
         "//oak_launcher_utils",
         "//oak_proto_rust/micro_rpc",
         "//testing/oak_echo_service",
+        "//testing/oak_echo_service/proto:service",
         "@oak_crates_index//:log",
         "@oak_crates_index//:tokio",
         "@oak_crates_index//:ubyte",

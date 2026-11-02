@@ -83,7 +83,7 @@ class TensorChippingOp : public TensorBase<TensorChippingOp<DimId, XprType> > {
 
   EIGEN_DEVICE_FUNC const internal::remove_all_t<typename XprType::Nested>& expression() const { return m_xpr; }
 
-  EIGEN_TENSOR_INHERIT_ASSIGNMENT_OPERATORS(TensorChippingOp)
+  EIGEN_INHERIT_ASSIGNMENT_OPERATORS(TensorChippingOp)
 
  protected:
   typename XprType::Nested m_xpr;
@@ -115,7 +115,7 @@ struct TensorEvaluator<const TensorChippingOp<DimId, ArgType>, Device> {
     PacketAccess = TensorEvaluator<ArgType, Device>::PacketAccess,
     BlockAccess = TensorEvaluator<ArgType, Device>::BlockAccess,
     // Chipping of outer-most dimension is a trivial operation, because we can
-    // read and write directly from the underlying tensor using single offset.
+    // read and write directly from the underlying tensor using a single offset.
     IsOuterChipping = (Layout == ColMajor && DimId == NumInputDims - 1) || (Layout == RowMajor && DimId == 0),
     // Chipping inner-most dimension.
     IsInnerChipping = (Layout == ColMajor && DimId == 0) || (Layout == RowMajor && DimId == NumInputDims - 1),
@@ -156,13 +156,12 @@ struct TensorEvaluator<const TensorChippingOp<DimId, ArgType>, Device> {
 
     m_stride = 1;
     m_inputStride = 1;
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       for (int i = 0; i < m_dim.actualDim(); ++i) {
         m_stride *= input_dims[i];
         m_inputStride *= input_dims[i];
       }
-    }
-    else {
+    } else {
       for (int i = NumInputDims - 1; i > m_dim.actualDim(); --i) {
         m_stride *= input_dims[i];
         m_inputStride *= input_dims[i];
@@ -171,7 +170,7 @@ struct TensorEvaluator<const TensorChippingOp<DimId, ArgType>, Device> {
     m_inputStride *= input_dims[m_dim.actualDim()];
     m_inputOffset = m_stride * op.offset();
 
-    // Check if chipping is effectively inner or outer: products of dimensions
+    // Check if chipping is effectively inner or outer: product of dimensions
     // before or after the chipped dimension is `1`.
     Index after_chipped_dim_product = 1;
     for (int i = static_cast<int>(m_dim.actualDim()) + 1; i < NumInputDims; ++i) {
@@ -183,11 +182,10 @@ struct TensorEvaluator<const TensorChippingOp<DimId, ArgType>, Device> {
       before_chipped_dim_product *= input_dims[i];
     }
 
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       m_isEffectivelyInnerChipping = before_chipped_dim_product == 1;
       m_isEffectivelyOuterChipping = after_chipped_dim_product == 1;
-    }
-    else {
+    } else {
       m_isEffectivelyInnerChipping = after_chipped_dim_product == 1;
       m_isEffectivelyOuterChipping = before_chipped_dim_product == 1;
     }
@@ -217,22 +215,14 @@ struct TensorEvaluator<const TensorChippingOp<DimId, ArgType>, Device> {
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE PacketReturnType packet(Index index) const {
     eigen_assert(index + PacketSize - 1 < dimensions().TotalSize());
 
-    if (isInnerChipping()) {
-      // m_stride is equal to 1, so let's avoid the integer division.
-      eigen_assert(m_stride == 1);
-      Index inputIndex = index * m_inputStride + m_inputOffset;
-      EIGEN_ALIGN_MAX std::remove_const_t<CoeffReturnType> values[PacketSize];
-      EIGEN_UNROLL_LOOP
-      for (int i = 0; i < PacketSize; ++i) {
-        values[i] = m_impl.coeff(inputIndex);
-        inputIndex += m_inputStride;
-      }
-      PacketReturnType rslt = internal::pload<PacketReturnType>(values);
-      return rslt;
-    } else if (isOuterChipping()) {
-      // m_stride is always greater than index, so let's avoid the integer division.
-      eigen_assert(m_stride > index);
-      return m_impl.template packet<LoadMode>(index + m_inputOffset);
+    EIGEN_IF_CONSTEXPR (IsInnerChipping) {
+      return packetInnerChipping<LoadMode>(index);
+    } else EIGEN_IF_CONSTEXPR (IsOuterChipping) {
+      return packetOuterChipping<LoadMode>(index);
+    } else if (m_isEffectivelyInnerChipping) {
+      return packetInnerChipping<LoadMode>(index);
+    } else if (m_isEffectivelyOuterChipping) {
+      return packetOuterChipping<LoadMode>(index);
     } else {
       const Index idx = index / m_stride;
       const Index rem = index - idx * m_stride;
@@ -255,14 +245,24 @@ struct TensorEvaluator<const TensorChippingOp<DimId, ArgType>, Device> {
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorOpCost costPerCoeff(bool vectorized) const {
     double cost = 0;
-    if ((static_cast<int>(Layout) == static_cast<int>(ColMajor) && m_dim.actualDim() == 0) ||
-        (static_cast<int>(Layout) == static_cast<int>(RowMajor) && m_dim.actualDim() == NumInputDims - 1)) {
-      cost += TensorOpCost::MulCost<Index>() + TensorOpCost::AddCost<Index>();
-    } else if ((static_cast<int>(Layout) == static_cast<int>(ColMajor) && m_dim.actualDim() == NumInputDims - 1) ||
-               (static_cast<int>(Layout) == static_cast<int>(RowMajor) && m_dim.actualDim() == 0)) {
-      cost += TensorOpCost::AddCost<Index>();
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+      if (m_dim.actualDim() == 0) {
+        cost += TensorOpCost::MulCost<Index>() + TensorOpCost::AddCost<Index>();
+      } else if (m_dim.actualDim() == NumInputDims - 1) {
+        cost += TensorOpCost::AddCost<Index>();
+      } else {
+        cost +=
+            3 * TensorOpCost::MulCost<Index>() + TensorOpCost::DivCost<Index>() + 3 * TensorOpCost::AddCost<Index>();
+      }
     } else {
-      cost += 3 * TensorOpCost::MulCost<Index>() + TensorOpCost::DivCost<Index>() + 3 * TensorOpCost::AddCost<Index>();
+      if (m_dim.actualDim() == NumInputDims - 1) {
+        cost += TensorOpCost::MulCost<Index>() + TensorOpCost::AddCost<Index>();
+      } else if (m_dim.actualDim() == 0) {
+        cost += TensorOpCost::AddCost<Index>();
+      } else {
+        cost +=
+            3 * TensorOpCost::MulCost<Index>() + TensorOpCost::DivCost<Index>() + 3 * TensorOpCost::AddCost<Index>();
+      }
     }
 
     return m_impl.costPerCoeff(vectorized) + TensorOpCost(0, 0, cost, vectorized, PacketSize);
@@ -334,23 +334,51 @@ struct TensorEvaluator<const TensorChippingOp<DimId, ArgType>, Device> {
 
  protected:
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index srcCoeff(Index index) const {
-    Index inputIndex;
-    if (isInnerChipping()) {
-      // m_stride is equal to 1, so let's avoid the integer division.
-      eigen_assert(m_stride == 1);
-      inputIndex = index * m_inputStride + m_inputOffset;
-    } else if (isOuterChipping()) {
-      // m_stride is always greater than index, so let's avoid the integer
-      // division.
-      eigen_assert(m_stride > index);
-      inputIndex = index + m_inputOffset;
+    EIGEN_IF_CONSTEXPR (IsInnerChipping) {
+      return srcCoeffInnerChipping(index);
+    } else EIGEN_IF_CONSTEXPR (IsOuterChipping) {
+      return srcCoeffOuterChipping(index);
+    } else if (m_isEffectivelyInnerChipping) {
+      return srcCoeffInnerChipping(index);
+    } else if (m_isEffectivelyOuterChipping) {
+      return srcCoeffOuterChipping(index);
     } else {
       const Index idx = index / m_stride;
-      inputIndex = idx * m_inputStride + m_inputOffset;
+      Index inputIndex = idx * m_inputStride + m_inputOffset;
       index -= idx * m_stride;
       inputIndex += index;
+      return inputIndex;
     }
-    return inputIndex;
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index srcCoeffInnerChipping(Index index) const {
+    // m_stride is equal to 1, so let's avoid the integer division.
+    eigen_assert(m_stride == 1);
+    return index * m_inputStride + m_inputOffset;
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index srcCoeffOuterChipping(Index index) const {
+    // m_stride is always greater than index, so let's avoid the integer division.
+    eigen_assert(m_stride > index);
+    return index + m_inputOffset;
+  }
+
+  template <int LoadMode>
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE PacketReturnType packetInnerChipping(Index index) const {
+    EIGEN_ALIGN_MAX std::remove_const_t<CoeffReturnType> values[PacketSize];
+    Index inputIndex = srcCoeffInnerChipping(index);
+    EIGEN_UNROLL_LOOP
+    for (int i = 0; i < PacketSize; ++i) {
+      values[i] = m_impl.coeff(inputIndex);
+      inputIndex += m_inputStride;
+    }
+    PacketReturnType rslt = internal::pload<PacketReturnType>(values);
+    return rslt;
+  }
+
+  template <int LoadMode>
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE PacketReturnType packetOuterChipping(Index index) const {
+    return m_impl.template packet<LoadMode>(srcCoeffOuterChipping(index));
   }
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool isInnerChipping() const {
@@ -411,21 +439,14 @@ struct TensorEvaluator<TensorChippingOp<DimId, ArgType>, Device>
 
   template <int StoreMode>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void writePacket(Index index, const PacketReturnType& x) const {
-    if (this->isInnerChipping()) {
-      // m_stride is equal to 1, so let's avoid the integer division.
-      eigen_assert(this->m_stride == 1);
-      EIGEN_ALIGN_MAX std::remove_const_t<CoeffReturnType> values[PacketSize];
-      internal::pstore<CoeffReturnType, PacketReturnType>(values, x);
-      Index inputIndex = index * this->m_inputStride + this->m_inputOffset;
-      EIGEN_UNROLL_LOOP
-      for (int i = 0; i < PacketSize; ++i) {
-        this->m_impl.coeffRef(inputIndex) = values[i];
-        inputIndex += this->m_inputStride;
-      }
-    } else if (this->isOuterChipping()) {
-      // m_stride is always greater than index, so let's avoid the integer division.
-      eigen_assert(this->m_stride > index);
-      this->m_impl.template writePacket<StoreMode>(index + this->m_inputOffset, x);
+    EIGEN_IF_CONSTEXPR (Base::IsInnerChipping) {
+      writePacketInnerChipping<StoreMode>(index, x);
+    } else EIGEN_IF_CONSTEXPR (Base::IsOuterChipping) {
+      writePacketOuterChipping<StoreMode>(index, x);
+    } else if (this->m_isEffectivelyInnerChipping) {
+      writePacketInnerChipping<StoreMode>(index, x);
+    } else if (this->m_isEffectivelyOuterChipping) {
+      writePacketOuterChipping<StoreMode>(index, x);
     } else {
       const Index idx = index / this->m_stride;
       const Index rem = index - idx * this->m_stride;
@@ -464,6 +485,24 @@ struct TensorEvaluator<TensorChippingOp<DimId, ArgType>, Device>
         TensorBlockAssign::target(input_block_dims, internal::strides<Layout>(this->m_impl.dimensions()),
                                   this->m_impl.data(), this->srcCoeff(desc.offset())),
         block.expr().reshape(input_block_dims));
+  }
+
+ private:
+  template <int StoreMode>
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void writePacketInnerChipping(Index index, const PacketReturnType& x) const {
+    EIGEN_ALIGN_MAX std::remove_const_t<CoeffReturnType> values[PacketSize];
+    internal::pstore<CoeffReturnType, PacketReturnType>(values, x);
+    Index inputIndex = this->srcCoeffInnerChipping(index);
+    EIGEN_UNROLL_LOOP
+    for (int i = 0; i < PacketSize; ++i) {
+      this->m_impl.coeffRef(inputIndex) = values[i];
+      inputIndex += this->m_inputStride;
+    }
+  }
+
+  template <int StoreMode>
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void writePacketOuterChipping(Index index, const PacketReturnType& x) const {
+    this->m_impl.template writePacket<StoreMode>(this->srcCoeffOuterChipping(index), x);
   }
 };
 

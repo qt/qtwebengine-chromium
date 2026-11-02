@@ -39,7 +39,8 @@ import {
   ShadowMatcher,
   StringMatcher,
   URLMatcher,
-  VariableMatcher
+  VariableMatcher,
+  VariableNameMatcher,
 } from './CSSPropertyParserMatchers.js';
 import {
   CSSAtRule,
@@ -51,7 +52,7 @@ import {
   CSSStyleRule,
 } from './CSSRule.js';
 import {CSSStyleDeclaration, Type} from './CSSStyleDeclaration.js';
-import type {DOMNode} from './DOMModel.js';
+import {type DOMNode, NodeType} from './DOMModel.js';
 
 function containsStyle(styles: CSSStyleDeclaration[]|Set<CSSStyleDeclaration>, query: CSSStyleDeclaration): boolean {
   if (!query.styleSheetId || !query.range) {
@@ -196,6 +197,36 @@ function queryMatches(style: CSSStyleDeclaration): boolean {
   return true;
 }
 
+function treeScopeDistance(node: DOMNode, property: CSSProperty): number {
+  if (!property.ownerStyle.parentRule && property.ownerStyle.type !== Type.Inline) {
+    return -1;
+  }
+  const root = node.getTreeRoot();
+  const nodeId = property.ownerStyle.parentRule?.treeScope ?? root?.backendNodeId();
+  if (nodeId === undefined) {
+    return -1;
+  }
+  return distanceToTreeScope(node, nodeId);
+}
+
+/**
+ * Distance from node to parent that is the tree scope. Returns -1 if tree scope is not found.
+ *
+ * @param node The child node to start from.
+ * @param treeScope The tree scope node ID.
+ * @returns The distance to the tree scope node, or -1 if not found.
+ */
+export function distanceToTreeScope(node: DOMNode, treeScope: Protocol.DOM.BackendNodeId): number {
+  let distance = 0;
+  for (let ancestor: DOMNode|null = node; ancestor; ancestor = ancestor.parentNode) {
+    if (ancestor.backendNodeId() === treeScope) {
+      return distance;
+    }
+    distance++;
+  }
+  return -1;
+}
+
 export interface CSSMatchedStylesPayload {
   cssModel: CSSModel;
   node: DOMNode;
@@ -307,7 +338,7 @@ export class CSSMatchedStyles {
   #customHighlightPseudoDOMCascades?: Map<string, DOMInheritanceCascade>;
   #functionRules: CSSFunctionRule[];
   #atRules: CSSAtRule[];
-  #functionRuleMap = new Map<string, CSSFunctionRule>();
+  #functionRuleMap = new Map<string, CSSFunctionRule[]>();
   #environmentVariables: Record<string, string> = {};
 
   static async create(payload: CSSMatchedStylesPayload): Promise<CSSMatchedStyles> {
@@ -381,7 +412,9 @@ export class CSSMatchedStyles {
     }
 
     for (const rule of this.#functionRules) {
-      this.#functionRuleMap.set(rule.functionName().text, rule);
+      const rules = this.#functionRuleMap.get(rule.functionName().text) ?? [];
+      rules.push(rule);
+      this.#functionRuleMap.set(rule.functionName().text, rules);
     }
   }
 
@@ -423,7 +456,7 @@ export class CSSMatchedStyles {
     }
 
     // Inline style takes precedence over regular and inherited rules.
-    if (inlinePayload && this.#node.nodeType() === Node.ELEMENT_NODE) {
+    if (inlinePayload && this.#node.nodeType() === NodeType.ELEMENT_NODE) {
       const style = new CSSStyleDeclaration(this.#cssModel, null, inlinePayload, Type.Inline);
       this.#nodeForStyle.set(style, this.#node);
       nodeStyles.push(style);
@@ -790,9 +823,25 @@ export class CSSMatchedStyles {
     return this.#registeredPropertyMap.get(name);
   }
 
-  getRegisteredFunction(name: string): string|undefined {
-    const functionRule = this.#functionRuleMap.get(name);
-    return functionRule ? functionRule.nameWithParameters() : undefined;
+  getRegisteredFunction(name: string, sourceProperty: CSSProperty):
+      {treeScopeDistance: number, registeredFunction?: string} {
+    const minTreeScopeDistance = treeScopeDistance(this.#node, sourceProperty);
+    const functionRules = this.#functionRuleMap.get(name) ?? [];
+    let result: {treeScopeDistance: number, registeredFunction?: string} = {treeScopeDistance: -1};
+    for (const functionRule of functionRules) {
+      if (!functionRule.treeScope) {
+        continue;
+      }
+      const distance = distanceToTreeScope(this.#node, functionRule.treeScope);
+      if (distance === -1 || distance < minTreeScopeDistance) {
+        continue;
+      }
+
+      if (result.treeScopeDistance === -1 || distance < result.treeScopeDistance) {
+        result = {registeredFunction: functionRule.nameWithParameters(), treeScopeDistance: distance};
+      }
+    }
+    return result;
   }
 
   functionRules(): CSSFunctionRule[] {
@@ -837,6 +886,78 @@ export class CSSMatchedStyles {
     return new Set(this.#customHighlightPseudoDOMCascades.keys());
   }
 
+  /**
+   * Looks for a rule with the same selector chain as a specific parent rule of the current one.
+   * This finds a rule with the same guaranteed specificity, not necessarily THE parent rule,
+   * as the same selector string can be used on multiple rules in the same scope, in the same
+   * or different stylesheet.
+   *
+   * @param rule The (nested) rule whose parent rule selector should be matched
+   * @param nestingIndex Nesting depth of the parent selector to be matched, with 0 meaning direct parent, 1 grandparent rule and so on
+   * @returns A rule with the same selector chain and specificity as selected parent rule, if found. `null` otherwise
+   */
+  findParentRule(rule: CSSStyleRule, nestingIndex: number): CSSStyleRule|null {
+    const selectorText = rule.nestingSelectors?.[nestingIndex];
+    if (!selectorText) {
+      return null;
+    }
+    const nestingSelectors = rule.nestingSelectors?.slice(nestingIndex + 1) ?? [];
+
+    const matchCascade = (cascade: DOMInheritanceCascade): CSSStyleRule|null => {
+      for (const style of cascade.styles()) {
+        const parentRule = style.parentRule;
+        if (!(parentRule instanceof CSSStyleRule)) {
+          continue;
+        }
+        if (parentRule.selectorText() !== selectorText) {
+          continue;
+        }
+        const ruleNestingSelectors = parentRule.nestingSelectors ?? [];
+        if (ruleNestingSelectors.length !== nestingSelectors.length) {
+          continue;
+        }
+        let matchesChain = true;
+        for (let i = 0; i < nestingSelectors.length; i++) {
+          if (ruleNestingSelectors[i] !== nestingSelectors[i]) {
+            matchesChain = false;
+            break;
+          }
+        }
+        if (matchesChain) {
+          return parentRule;
+        }
+      }
+      return null;
+    };
+
+    if (this.#mainDOMCascade) {
+      const match = matchCascade(this.#mainDOMCascade);
+      if (match) {
+        return match;
+      }
+    }
+
+    if (this.#pseudoDOMCascades) {
+      for (const cascade of this.#pseudoDOMCascades.values()) {
+        const match = matchCascade(cascade);
+        if (match) {
+          return match;
+        }
+      }
+    }
+
+    if (this.#customHighlightPseudoDOMCascades) {
+      for (const cascade of this.#customHighlightPseudoDOMCascades.values()) {
+        const match = matchCascade(cascade);
+        if (match) {
+          return match;
+        }
+      }
+    }
+
+    return null;
+  }
+
   nodeForStyle(style: CSSStyleDeclaration): DOMNode|null {
     return this.#addedStyles.get(style) || this.#nodeForStyle.get(style) || null;
   }
@@ -846,7 +967,7 @@ export class CSSMatchedStyles {
     return domCascade ? domCascade.findAvailableCSSVariables(style) : [];
   }
 
-  computeCSSVariable(style: CSSStyleDeclaration, variableName: string): CSSVariableValue|null {
+  computeCSSVariable(style: CSSStyleDeclaration, variableName: string, containerNode?: DOMNode): CSSVariableValue|null {
     if (style.parentRule instanceof CSSKeyframeRule) {
       // The resolution of the variables inside of a CSS keyframe rule depends on where this keyframe rule is used.
       // So, we need to find the style with active CSS property `animation-name` that equals to the keyframe's name.
@@ -865,7 +986,7 @@ export class CSSMatchedStyles {
     }
 
     const domCascade = this.#styleToDOMCascade.get(style);
-    return domCascade ? domCascade.computeCSSVariable(style, variableName) : null;
+    return domCascade ? domCascade.computeCSSVariable(style, variableName, containerNode) : null;
   }
 
   computeAttribute(style: CSSStyleDeclaration, attributeName: string, type: CSSType): string|null {
@@ -931,6 +1052,7 @@ export class CSSMatchedStyles {
   propertyMatchers(style: CSSStyleDeclaration, computedStyles: Map<string, string>|null): Array<Matcher<Match>> {
     return [
       new VariableMatcher(this, style),
+      new VariableNameMatcher(this, style),
       new ColorMatcher(() => computedStyles?.get('color') ?? null),
       new ColorMixMatcher(),
       new ContrastColorMatcher(),
@@ -978,6 +1100,10 @@ class NodeCascade {
     this.styles = styles;
     this.#isInherited = isInherited;
     this.#node = node;
+  }
+
+  node(): DOMNode {
+    return this.#node;
   }
 
   computeActiveProperties(): void {
@@ -1045,26 +1171,6 @@ class NodeCascade {
     }
   }
 
-  #treeScopeDistance(property: CSSProperty): number {
-    if (!property.ownerStyle.parentRule && property.ownerStyle.type !== Type.Inline) {
-      return -1;
-    }
-    const root = this.#node.getTreeRoot();
-    const nodeId = property.ownerStyle.parentRule?.treeScope ?? root?.backendNodeId();
-    if (nodeId === undefined) {
-      return -1;
-    }
-
-    let distance = 0;
-    for (let ancestor: DOMNode|null = this.#node; ancestor; ancestor = ancestor.parentNode) {
-      if (ancestor.backendNodeId() === nodeId) {
-        return distance;
-      }
-      distance++;
-    }
-    return -1;
-  }
-
   #needsCascadeContextStep(): boolean {
     if (!this.#node.isInShadowTree()) {
       return false;
@@ -1084,7 +1190,8 @@ class NodeCascade {
     const activeProperty = this.activeProperties.get(canonicalName);
     if (activeProperty?.important && !propertyWithHigherSpecificity.important ||
         activeProperty && this.#needsCascadeContextStep() &&
-            this.#treeScopeDistance(activeProperty) > this.#treeScopeDistance(propertyWithHigherSpecificity)) {
+            treeScopeDistance(this.#node, activeProperty) >
+                treeScopeDistance(this.#node, propertyWithHigherSpecificity)) {
       this.propertiesState.set(propertyWithHigherSpecificity, PropertyState.OVERLOADED);
       return;
     }
@@ -1343,9 +1450,21 @@ class DOMInheritanceCascade {
     }
   }
 
-  computeCSSVariable(style: CSSStyleDeclaration, variableName: string): CSSVariableValue|null {
+  nodeToNodeCascade(node: DOMNode): NodeCascade|null {
+    for (const nodeCascade of this.#nodeCascades) {
+      if (nodeCascade.node() === node) {
+        return nodeCascade;
+      }
+    }
+    if (this.#fallbackCascade) {
+      return this.#fallbackCascade.nodeToNodeCascade(node);
+    }
+    return null;
+  }
+
+  computeCSSVariable(style: CSSStyleDeclaration, variableName: string, containerNode?: DOMNode): CSSVariableValue|null {
     this.ensureInitialized();
-    const nodeCascade = this.#styleToNodeCascade.get(style);
+    const nodeCascade = containerNode ? this.nodeToNodeCascade(containerNode) : this.#styleToNodeCascade.get(style);
     if (!nodeCascade) {
       return null;
     }
@@ -1501,7 +1620,7 @@ class DOMInheritanceCascade {
               return defaultValueForCSSType(match.type);
             }
             return evaluateFallback(match.fallback, match.matching);
-          })
+          }),
     ]);
     const decl = PropertyParser.ASTUtils.siblings(PropertyParser.ASTUtils.declValue(matching.ast.tree));
     const declText = decl.length > 0 ? matching.getComputedTextRange(decl[0], decl[decl.length - 1]) : '';
@@ -1551,7 +1670,7 @@ class DOMInheritanceCascade {
         // We've seen the variable before, so we can look up the text directly.
         return {
           value: computedCSSVariablesMap.get(innerNodeCascade)?.get(recordName)?.value ?? null,
-          mayFallback: false
+          mayFallback: false,
         };
       }
 

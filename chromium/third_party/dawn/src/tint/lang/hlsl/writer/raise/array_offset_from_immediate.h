@@ -32,7 +32,6 @@
 
 #include "src/tint/api/common/binding_point.h"
 #include "src/tint/lang/core/ir/transform/prepare_immediate_data.h"
-#include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/utils/result.h"
 
 // Forward declarations.
@@ -43,15 +42,6 @@ class Module;
 namespace tint::hlsl::writer::raise {
 
 using ImmediateDataLayout = core::ir::transform::ImmediateDataLayout;
-
-/// The capabilities that the transform can support.
-const core::ir::Capabilities kArrayOffsetFromImmediateCapabilities{
-    core::ir::Capability::kAllow8BitIntegers,
-    core::ir::Capability::kAllow16BitIntegers,
-    core::ir::Capability::kAllowClipDistancesOnF32ScalarAndVector,
-    core::ir::Capability::kAllowDuplicateBindings,
-    core::ir::Capability::kAllowNonCoreTypes,
-};
 
 /// ArrayOffsetFromImmediates is a transform that adds an offset to storage buffer loads and stores
 /// provided via immediate blocks.

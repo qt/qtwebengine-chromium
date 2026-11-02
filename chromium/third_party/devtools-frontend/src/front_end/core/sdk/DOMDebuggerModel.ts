@@ -6,6 +6,7 @@ import type * as ProtocolProxyApi from '../../generated/protocol-proxy-api.js';
 import * as Protocol from '../../generated/protocol.js';
 import type * as Common from '../common/common.js';
 import * as Platform from '../platform/platform.js';
+import * as Root from '../root/root.js';
 
 import {CategorizedBreakpoint, Category} from './CategorizedBreakpoint.js';
 import type {EventListenerPausedDetailsAuxData, Location} from './DebuggerModel.js';
@@ -528,8 +529,6 @@ export class DOMEventListenerBreakpoint extends CategorizedBreakpoint {
   static readonly listener = 'listener:';
 }
 
-let domDebuggerManagerInstance: DOMDebuggerManager;
-
 export class DOMDebuggerManager implements SDKModelObserver<DOMDebuggerModel> {
   readonly #xhrBreakpointsSetting: Common.Settings.Setting<Array<{url: string, enabled: boolean}>>;
   readonly #xhrBreakpoints = new Map<string, boolean>();
@@ -538,6 +537,7 @@ export class DOMDebuggerManager implements SDKModelObserver<DOMDebuggerModel> {
   readonly #eventListenerBreakpoints: DOMEventListenerBreakpoint[] = [];
   readonly #targetManager: TargetManager;
 
+  // eslint-disable-next-line @devtools/no-instance-of-migrated-singletons
   constructor(targetManager: TargetManager = TargetManager.instance()) {
     this.#targetManager = targetManager;
     this.#xhrBreakpointsSetting = this.#targetManager.settings.createLocalSetting('xhr-breakpoints', []);
@@ -662,7 +662,9 @@ export class DOMDebuggerManager implements SDKModelObserver<DOMDebuggerModel> {
     this.createEventListenerBreakpoints(
         Category.XHR, ['readystatechange', 'load', 'loadstart', 'loadend', 'abort', 'error', 'progress', 'timeout'],
         ['xmlhttprequest', 'xmlhttprequestupload']);
+  }
 
+  initialize(): void {
     this.#targetManager.observeModels(DOMDebuggerModel, this);
   }
 
@@ -671,11 +673,21 @@ export class DOMDebuggerManager implements SDKModelObserver<DOMDebuggerModel> {
     targetManager?: TargetManager,
   } = {forceNew: null}): DOMDebuggerManager {
     const {forceNew, targetManager} = opts;
-    if (!domDebuggerManagerInstance || forceNew) {
-      domDebuggerManagerInstance = new DOMDebuggerManager(targetManager);
+    if (!Root.DevToolsContext.globalInstance().has(DOMDebuggerManager) || forceNew) {
+      // eslint-disable-next-line @devtools/no-instance-of-migrated-singletons
+      const manager = new DOMDebuggerManager(targetManager ?? TargetManager.instance());
+      manager.initialize();
+      Root.DevToolsContext.globalInstance().set(
+          DOMDebuggerManager,
+          manager,
+      );
     }
 
-    return domDebuggerManagerInstance;
+    return Root.DevToolsContext.globalInstance().get(DOMDebuggerManager);
+  }
+
+  static removeInstance(): void {
+    Root.DevToolsContext.globalInstance().delete(DOMDebuggerManager);
   }
 
   cspViolationBreakpoints(): CSPViolationBreakpoint[] {

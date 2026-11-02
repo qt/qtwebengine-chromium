@@ -18,6 +18,7 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/unguessable_token.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "components/enterprise/buildflags/buildflags.h"
@@ -34,12 +35,6 @@ namespace base {
 class TimeTicks;
 }  // namespace base
 
-#if BUILDFLAG(IS_CHROMEOS)
-namespace crosapi::mojom {
-class LocalPrinter;
-}
-
-#endif
 
 namespace content {
 class WebContents;
@@ -78,7 +73,8 @@ class PrintPreviewHandler : public content::WebUIMessageHandler {
   void OnInvalidPrinterSettings(int request_id);
 
   // Called when print preview is ready.
-  void OnPrintPreviewReady(int preview_uid, int request_id);
+  void OnPrintPreviewReady(const base::UnguessableToken& preview_uid,
+                           int request_id);
 
   // Called when a print request is cancelled due to its initiator closing.
   void OnPrintRequestCancelled();
@@ -102,7 +98,7 @@ class PrintPreviewHandler : public content::WebUIMessageHandler {
 
   // Notify the WebUI that the page preview is ready.
   void SendPagePreviewReady(int page_index,
-                            int preview_uid,
+                            const base::UnguessableToken& preview_uid,
                             int preview_request_id);
 
   // Notifies PDF Printer Handler that |path| was selected. Used for tests.
@@ -151,7 +147,9 @@ class PrintPreviewHandler : public content::WebUIMessageHandler {
 
   PrintPreviewUI* print_preview_ui();
 
-  const mojom::RequestPrintPreviewParams* GetRequestParams();
+  // Returns whether `this` is printing a PDF or not. Returns std::nullopt if
+  // the associated Print Preview dialog does not exist.
+  std::optional<bool> IsPrintingPdf();
 
   PrefService* GetPrefs();
 
@@ -217,8 +215,8 @@ class PrintPreviewHandler : public content::WebUIMessageHandler {
   // preview is displayed.
   void HandleGetInitialSettings(const base::ListValue& args);
 
-  // Opens printer settings in the Chrome OS Settings App or OS's printer manger
-  // dialog. |args| is unused.
+  // Opens printer settings in the Chrome OS Settings App or OS's printer
+  // manager dialog. |args| is unused.
   void HandleManagePrinters(const base::ListValue& args);
 
   void SendInitialSettings(const std::string& callback_id,
@@ -310,15 +308,6 @@ class PrintPreviewHandler : public content::WebUIMessageHandler {
 
   // Used to transmit mojo interface method calls to the associated receiver.
   mojo::AssociatedRemote<mojom::PrintRenderFrame> print_render_frame_;
-
-#if BUILDFLAG(IS_CHROMEOS)
-  // Used to transmit mojo interface method calls to ash chrome. Null if
-  // CrosapiManager is unavailable. In the post-Lacros world, it still bears the
-  // responsibility of talking to other parts of Ash for printer related
-  // business logic.
-  raw_ptr<crosapi::mojom::LocalPrinter, DanglingUntriaged> local_printer_ =
-      nullptr;
-#endif
 
   base::WeakPtrFactory<PrintPreviewHandler> weak_factory_{this};
 };

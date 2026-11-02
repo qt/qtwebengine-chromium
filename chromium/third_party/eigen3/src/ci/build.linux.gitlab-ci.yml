@@ -367,6 +367,70 @@ build:linux:cross:arm:clang-14:default:
   tags:
     - saas-linux-large-arm64
 
+######## SME ###################################################################
+
+# Emulation via QEMU for SME (Streaming Matrix Extension)
+.build:linux:cross:sme:
+  extends: .build:linux:cross
+  variables:
+    EIGEN_CI_TARGET_ARCH: aarch64-sme
+    EIGEN_CI_CROSS_TARGET_TRIPLE: aarch64-linux-gnu
+    # The emulator baked in here deliberately has no -cpu argument: each test job
+    # selects its streaming SVL via qemu-user's QEMU_CPU environment variable
+    # instead (a command-line -cpu would silently override it).
+    #
+    # EIGEN_CI_ADDITIONAL_ARGS is expanded *unquoted* into the cmake command
+    # line (ci/scripts/build.linux.script.sh), so each -D value must be a single
+    # shell word: multi-token flags use CMake's ';' list separator, with no
+    # spaces or embedded quotes (cf. the arm / generic-vector jobs).
+    EIGEN_CI_ADDITIONAL_ARGS: >-
+      -DEIGEN_TEST_SME=ON
+      -DEIGEN_TEST_CUSTOM_CXX_FLAGS=-march=armv9.2-a+sme2
+      -DCMAKE_CROSSCOMPILING_EMULATOR=qemu-aarch64;-L;/usr/aarch64-linux-gnu
+    # SME ACLE (arm_sme.h, __arm_streaming, +sme2) requires GCC >= 14.
+    # The build stage only cross-compiles and never invokes the emulator, so
+    # no qemu here -- the test stage installs qemu-user.
+    EIGEN_CI_CROSS_INSTALL: g++-14-aarch64-linux-gnu
+    # product_symm/product_trsolve/product_trmm/product_syrk/mixingtypes exercise
+    # the SME packers through their non-dense-GEMM consumers (selfadjoint,
+    # triangular-solve, triangular-product, rank-update, mixed-scalar) that
+    # product_sme can't reach. Explicit list, not `buildtests`: cross-building
+    # every test under the SME flags overruns the runner timeout.
+    EIGEN_CI_BUILD_TARGET: product_sme product_symm product_trsolve product_trmm product_syrk mixingtypes
+  # Inherit the 2xlarge runner from .build:linux:cross: GitLab's open-source
+  # program bills small and large runners the same, so don't downsize.
+
+build:linux:cross:sme:gcc-14:default:
+  extends: .build:linux:cross:sme
+  variables:
+    EIGEN_CI_C_COMPILER: gcc-14
+    EIGEN_CI_CXX_COMPILER: g++-14
+    EIGEN_CI_CROSS_C_COMPILER: aarch64-linux-gnu-gcc-14
+    EIGEN_CI_CROSS_CXX_COMPILER: aarch64-linux-gnu-g++-14
+
+# Full nightly SME coverage: compile the *entire* test suite (buildtests, both
+# Official and Unsupported) under +sme2, not just the SME-relevant targets. This
+# is what treats SME "as any other platform": it catches any compile breakage
+# under the streaming-mode flags across the whole codebase -- e.g. the tensor-
+# contraction packer path that only surfaces once TensorContraction is built
+# with the SME backend active. Runs on the nightly schedule and on all-tests
+# MRs via the inherited .rules:libeigen:all-tests; the per-SVL subset build
+# above stays as the fast, cheap signal. Cross-building every test under the SME
+# flags is slow -- the raised timeout is a starting estimate; tune it once a
+# real run establishes the wall-clock (drop to BuildOfficial/BuildUnsupported
+# split builds if a single job overruns).
+build:linux:cross:sme:gcc-14:full:
+  extends: .build:linux:cross:sme
+  variables:
+    EIGEN_CI_C_COMPILER: gcc-14
+    EIGEN_CI_CXX_COMPILER: g++-14
+    EIGEN_CI_CROSS_C_COMPILER: aarch64-linux-gnu-gcc-14
+    EIGEN_CI_CROSS_CXX_COMPILER: aarch64-linux-gnu-g++-14
+    EIGEN_CI_BUILD_TARGET: buildtests
+  timeout: 2h
+
+
+
 build:linux:cross:aarch64:gcc-10:default:
   extends: .build:linux:cross:aarch64
   variables:
@@ -428,6 +492,73 @@ build:linux:cross:loongarch64:gcc-14:default:
       -DCMAKE_SYSTEM_NAME=Linux
       -DCMAKE_CROSSCOMPILING_EMULATOR=qemu-loongarch64-static;-L;/usr/loongarch64-linux-gnu
       -DEIGEN_TEST_LSX=on
+
+######## riscv64 ###############################################################
+# Builds cross-compile on amd64; tests run natively on the riscv runner
+# (SpacemiT K3, RVA23, RVV 1.0, VLEN=256).  Jobs are allowed to fail while
+# the runner is being brought up.
+
+# Eigen's RVV backend requires a compile-time-fixed vector length, so pin it to
+# the runner's 256-bit VLEN with zvl256b and -mrvv-vector-bits=zvl (gcc-15 rejects
+# a numeric -mrvv-vector-bits=256, accepting only "zvl"/"scalable"; "zvl" takes the
+# length from the Zvl*b march extension).  Zvfh enables half-precision
+# vectorization.  Set here so every riscv64 build below -- full builds and smoke
+# tests, gcc and clang -- is actually vectorized.
+.build:linux:riscv64:
+  extends: .build:linux:cross
+  # Cross-compiles to riscv64 on an amd64 runner using the prebuilt image, which
+  # carries the riscv64 cross toolchain (g++-15-riscv64-linux-gnu / clang-21)
+  # plus cmake/ninja/git -- so apt is skipped entirely.
+  image: ${EIGEN_CI_IMAGE_LINUX_RISCV64_SMOKETEST_BUILD}
+  variables:
+    EIGEN_CI_TARGET_ARCH: riscv64
+    EIGEN_CI_SKIP_APT: "true"
+    EIGEN_CI_CROSS_TARGET_TRIPLE: riscv64-linux-gnu
+    EIGEN_CI_ADDITIONAL_ARGS: >-
+      -DEIGEN_TEST_CUSTOM_CXX_FLAGS=-march=rv64gc_v_zvl256b_zfh_zvfh;-mrvv-vector-bits=zvl;-DEIGEN_RISCV64_USE_RVV10
+  allow_failure: true
+
+build:linux:riscv64:gcc-15:default:
+  extends: .build:linux:riscv64
+  variables:
+    EIGEN_CI_C_COMPILER: gcc-15
+    EIGEN_CI_CXX_COMPILER: g++-15
+    EIGEN_CI_CROSS_INSTALL: g++-15-riscv64-linux-gnu
+    EIGEN_CI_CROSS_C_COMPILER: riscv64-linux-gnu-gcc-15
+    EIGEN_CI_CROSS_CXX_COMPILER: riscv64-linux-gnu-g++-15
+    # Zvfbfmin+Zvfbfwma additionally enable the bfloat16 packets
+    # (PacketMathBF16.h), which are otherwise never compiled by CI.  gcc-only:
+    # clang 21 crashes mangling any function signature containing a
+    # fixed-length (riscv_rvv_vector_bits) RVV bfloat16 vector type; fixed in
+    # clang 22.
+    EIGEN_CI_ADDITIONAL_ARGS: >-
+      -DEIGEN_TEST_CUSTOM_CXX_FLAGS=-march=rv64gc_v_zvl256b_zfh_zvfh_zvfbfmin_zvfbfwma;-mrvv-vector-bits=zvl;-DEIGEN_RISCV64_USE_RVV10
+
+build:linux:riscv64:clang-21:default:
+  extends: .build:linux:riscv64
+  variables:
+    EIGEN_CI_INSTALL: clang-21
+    EIGEN_CI_C_COMPILER: clang-21
+    EIGEN_CI_CXX_COMPILER: clang++-21
+    EIGEN_CI_CROSS_INSTALL: g++-15-riscv64-linux-gnu clang-21
+
+build:linux:riscv64:gcc-15:default:smoketest:
+  extends: build:linux:riscv64:gcc-15:default
+  variables:
+    EIGEN_CI_BUILD_TARGET: buildsmoketests
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  tags:
+    - saas-linux-medium-amd64
+
+build:linux:riscv64:clang-21:default:smoketest:
+  extends: build:linux:riscv64:clang-21:default
+  variables:
+    EIGEN_CI_BUILD_TARGET: buildsmoketests
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  tags:
+    - saas-linux-medium-amd64
 
 ######## MR Smoke Tests ########################################################
 # aarch64 targets are cross-compiled via g++-10-aarch64-linux-gnu / clang-14.

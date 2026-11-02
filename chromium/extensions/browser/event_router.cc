@@ -15,6 +15,7 @@
 
 #include "base/atomic_sequence_num.h"
 #include "base/check_is_test.h"
+#include "base/command_line.h"
 #include "base/debug/crash_logging.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -54,6 +55,7 @@
 #include "extensions/common/mojom/context_type.mojom.h"
 #include "extensions/common/mojom/event_dispatcher.mojom.h"
 #include "extensions/common/permissions/permissions_data.h"
+#include "extensions/common/switches.h"
 #include "extensions/common/utils/extension_utils.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "url/origin.h"
@@ -1110,6 +1112,21 @@ bool EventRouter::HasEventListener(const std::string& event_name) const {
   return listeners_.HasListenerForEvent(event_name);
 }
 
+bool EventRouter::HasEventListenerOutsideProcess(
+    const std::string& event_name,
+    content::ChildProcessId process_id) const {
+  return listeners_.HasListenerForEventOutsideProcess(browser_context_,
+                                                      event_name, process_id);
+}
+
+void EventRouter::AddEventListenerForTesting(  // IN-TEST
+    const std::string& event_name,
+    content::RenderProcessHost* process,
+    const ExtensionId& extension_id) {
+  ObserveProcess(process);
+  AddEventListener(event_name, process, extension_id);
+}
+
 bool EventRouter::ExtensionHasEventListener(
     const ExtensionId& extension_id,
     const std::string& event_name) const {
@@ -1194,7 +1211,8 @@ void EventRouter::RemoveFilterFromEvent(const std::string& event_name,
   ExtensionPrefs::ScopedDictionaryUpdate update(
       extension_prefs_, extension_id,
       is_for_service_worker ? kFilteredServiceWorkerEvents : kFilteredEvents);
-  auto filtered_events = update.Create();
+  // Use Get() instead of Create() so removals do not create the preference.
+  auto filtered_events = update.Get();
   base::ListValue* filter_list = nullptr;
   if (!filtered_events ||
       !filtered_events->GetListWithoutPathExpansion(event_name, &filter_list)) {
@@ -1205,6 +1223,12 @@ void EventRouter::RemoveFilterFromEvent(const std::string& event_name,
   auto it = std::ranges::find(*filter_list, filter, get_dict);
   if (it != filter_list->end()) {
     filter_list->erase(it);
+  }
+  // Erase the entry when its filter list is empty. Avoid path expansion because
+  // event names can contain '.'.
+  if (filter_list->empty()) {
+    filtered_events->RemoveWithoutPathExpansion(event_name,
+                                                /*out_value=*/nullptr);
   }
 }
 
@@ -1218,6 +1242,9 @@ const base::DictValue* EventRouter::GetFilteredEvents(
 }
 
 void EventRouter::BroadcastEvent(std::unique_ptr<Event> event) {
+  for (TestObserver& observer : test_observers_) {
+    observer.OnWillBroadcastEvent(*event);
+  }
   DispatchEventImpl(std::string(), GURL(), std::move(event));
 }
 
@@ -1307,6 +1334,11 @@ void EventRouter::DispatchEventToProcess(const ExtensionId& extension_id,
                                          int worker_thread_id,
                                          std::unique_ptr<Event> event,
                                          bool did_enqueue) {
+  if (!event->exclude_process_id.is_null() &&
+      event->exclude_process_id == process->GetID()) {
+    return;
+  }
+
   BrowserContext* listener_context = process->GetBrowserContext();
   ProcessMap* process_map = ProcessMap::Get(listener_context);
 
@@ -1352,9 +1384,14 @@ void EventRouter::DispatchEventToProcess(const ExtensionId& extension_id,
     const Feature* feature =
         ExtensionAPI::GetSharedInstance()->GetFeatureDependency(
             event->event_name);
-
-    CHECK(feature->RequiresDelegatedAvailabilityCheck() ||
-          is_new_webstore_origin)
+    bool is_test_api_event = base::StartsWith(event->event_name, "test.",
+                                              base::CompareCase::SENSITIVE);
+    CHECK(
+        feature->RequiresDelegatedAvailabilityCheck() ||
+        is_new_webstore_origin ||
+        // The `chrome.test` API can send events to web pages during tests.
+        (is_test_api_event && base::CommandLine::ForCurrentProcess()->HasSwitch(
+                                  switches::kExtensionTestApiOnWebPages)))
         << "Trying to dispatch event " << event->event_name << " to a webpage,"
         << " but this shouldn't be possible";
   }
@@ -1689,8 +1726,7 @@ void EventRouter::AddFilterToEvent(const std::string& event_name,
   filter_list->Append(filter.Clone());
 }
 
-// TODO(crbug.com/474558883): Remove this after webRequest listener persistence
-// is stable for a few milestones.
+// TODO(crbug.com/474558883): Remove this in M157.
 void EventRouter::RemoveOrphanedWebRequestEvents(
     const ExtensionId& extension_id,
     std::set<std::string>& events,
@@ -1898,9 +1934,11 @@ std::unique_ptr<Event> Event::CopySelectively(bool copy_event_args,
       user_gesture, std::move(copied_filter_info),
       lazy_background_active_on_dispatch, dispatch_start_time);
 
+  copy->exclude_process_id = exclude_process_id;
   copy->will_dispatch_callback = will_dispatch_callback;
   copy->did_dispatch_callback = did_dispatch_callback;
   copy->cannot_dispatch_callback = cannot_dispatch_callback;
+  copy->restrict_to_dispatch_target = restrict_to_dispatch_target;
 
   return copy;
 }

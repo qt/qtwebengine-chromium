@@ -7,11 +7,8 @@
 //    Implements the class methods for BufferWgpu.
 //
 
-#ifdef UNSAFE_BUFFERS_BUILD
-#    pragma allow_unsafe_libc_calls
-#endif
-
 #include "libANGLE/renderer/wgpu/BufferWgpu.h"
+#include "common/unsafe_buffers.h"
 
 #include "common/debug.h"
 #include "common/mathutil.h"
@@ -73,13 +70,23 @@ angle::Result BufferWgpu::setData(const gl::Context *context,
                                   const void *data,
                                   size_t size,
                                   gl::BufferUsage usage,
-                                  BufferFeedback *feedback)
+                                  BufferFeedback *feedback,
+                                  gl::ZeroFillRequired zeroFillRequired)
 {
     ContextWgpu *contextWgpu = webgpu::GetImpl(context);
     const DawnProcTable *wgpu   = webgpu::GetProcs(contextWgpu);
     webgpu::DeviceHandle device = webgpu::GetDevice(context);
 
-    bool hasData = data && size > 0;
+    const void *dataForImpl = data;
+    if (zeroFillRequired == gl::ZeroFillRequired::Yes)
+    {
+        const angle::MemoryBuffer *scratchBuffer = nullptr;
+        ANGLE_CHECK_GL_ALLOC(
+            contextWgpu, context->getZeroFilledBuffer(static_cast<size_t>(size), &scratchBuffer));
+        dataForImpl = scratchBuffer->data();
+    }
+
+    bool hasData = dataForImpl && size > 0;
 
     // Allocate a new buffer if the current one is invalid, the size is different, or the current
     // buffer cannot be mapped for writing when data needs to be uploaded.
@@ -102,7 +109,7 @@ angle::Result BufferWgpu::setData(const gl::Context *context,
         }
 
         uint8_t *mappedData = mBuffer.getMapWritePointer(0, size);
-        memcpy(mappedData, data, size);
+        ANGLE_UNSAFE_TODO(memcpy(mappedData, dataForImpl, size));
     }
 
     return angle::Result::Continue;
@@ -126,7 +133,7 @@ angle::Result BufferWgpu::setSubData(const gl::Context *context,
         }
 
         uint8_t *mappedData = mBuffer.getMapWritePointer(offset, size);
-        memcpy(mappedData, data, size);
+        ANGLE_UNSAFE_TODO(memcpy(mappedData, data, size));
     }
     else
     {

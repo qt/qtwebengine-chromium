@@ -6,7 +6,6 @@
 #include "ynnpack/subgraph/reduce.h"
 
 #include <cassert>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -47,19 +46,33 @@ float get_reduce_identity(ynn_reduce_operator op) {
     case ynn_reduce_min:
       return std::numeric_limits<float>::infinity();
     default:
-      return std::nan("");
+      return std::numeric_limits<float>::quiet_NaN();
   }
 }
 
 namespace {
 
+ynn_type get_promoted_type(ynn_type type) {
+  switch (type) {
+    case ynn_type_int2:
+    case ynn_type_int4:
+      return ynn_type_int8;
+    case ynn_type_fp8_e5m2:
+      return ynn_type_fp16;
+    case ynn_type_fp8_e4m3:
+      return ynn_type_bf16;
+    default:
+      return type;
+  }
+}
+
 // The wrapper for the kernel we use when we actually want to run a reduce
 // kernel on some buffers.
 auto make_unary_reduce_impl(const ynn_node::reduce& op, reduce_kernel kernel) {
   return [op, kernel](
-             slinky::buffer<const void, YNN_MAX_TENSOR_RANK> a,
-             slinky::buffer<const void, YNN_MAX_TENSOR_RANK> init_c,
-             slinky::buffer<void, YNN_MAX_TENSOR_RANK> c,
+             slinky::buffer<const void, max_tensor_rank> a,
+             slinky::buffer<const void, max_tensor_rank> init_c,
+             slinky::buffer<void, max_tensor_rank> c,
              const slinky::raw_buffer& reduction_bounds) -> slinky::index_t {
     bool init_output = true;
     if (op.keep_dims) {
@@ -213,7 +226,7 @@ auto make_unary_reduce_impl(const ynn_node::reduce& op, reduce_kernel kernel) {
 
     // The k1 kernel always works.
     reduce_kernel_fn kernel_fn = kernel.k1;
-    if (k1 == 1 && k2 != 1 && (n == 1 || a_stride_n == a.elem_size)) {
+    if (k1 == 1 && (n == 1 || a_stride_n == a.elem_size)) {
       // There is no reduction in the k1 dimension, and the n dimension is
       // contiguous in a, the kn kernel will be much faster.
       kernel_fn = kernel.kn;
@@ -253,9 +266,12 @@ ynn_type get_accumulator_type(ynn_reduce_operator op, ynn_type a_type) {
   }
 }
 
+// Makes an identity for a reduction. For most reductions, this is a simple
+// rank-zero scalar. But for min_max reductions, we need a different reduction
+// identity value for the min and the max.
 slinky::raw_buffer_ptr make_reduce_identity(ynn_type type, int rank,
                                             ynn_reduce_operator op) {
-  slinky::dim dims[YNN_MAX_TENSOR_RANK];
+  slinky::dim dims[max_tensor_rank];
   slinky::raw_buffer value;
   value.rank = 0;
   value.elem_size = ynn::type_size_bytes(type);
@@ -292,45 +308,8 @@ void define_reduce(ynn_subgraph& subgraph, ynn_node& node,
                    std::vector<slinky::expr> split_factors) {
   const ynn_value& a = subgraph.value(input_a_id);
 
-  if (*output_id == YNN_INVALID_VALUE_ID) {
-    // Make the output for this reduction.
-    ynn_type output_type = get_accumulator_type(op, a.type);
-    ynn_value& output = subgraph.new_internal_value(output_type);
-    uint32_t reduce_size_id = YNN_INVALID_VALUE_ID;
-    switch (op) {
-      case ynn_reduce_sum:
-      case ynn_reduce_sum_squared:
-        if (a.zero_point_id != YNN_INVALID_VALUE_ID) {
-          // When computing a sum, the zero point gets multiplied by the number
-          // of elements in the reduction.
-          int32_t axes[YNN_MAX_TENSOR_RANK];
-          int num_axes = 0;
-          for (int i = 0; i < a.rank(); ++i) {
-            if (k_dims[i]) axes[num_axes++] = a.rank() - 1 - i;
-          }
-          ynn_define_get_tensor_shape(&subgraph, num_axes, axes, ynn_type_int32,
-                                      /*rank=*/0, input_a_id, &reduce_size_id,
-                                      /*flags=*/YNN_NODE_FLAG_RESHAPE_1D);
-          ynn_define_binary(&subgraph, ynn_binary_multiply, a.zero_point_id,
-                            reduce_size_id, &output.zero_point_id,
-                            /*flags=*/0);
-        }
-        output.scale_id = a.scale_id;
-        break;
-      case ynn_reduce_max:
-      case ynn_reduce_min:
-      case ynn_reduce_min_max:
-        output.zero_point_id = a.zero_point_id;
-        output.scale_id = a.scale_id;
-        break;
-      default:
-        YNN_UNREACHABLE;
-    }
-
-    *output_id = output.id;
-  }
-
-  ynn_value& output = subgraph.value(*output_id);
+  ynn_type output_type = get_accumulator_type(op, a.type);
+  ynn_value& output = subgraph.get_output_value(output_id, output_type);
 
   auto split_factor = [&](size_t i) {
     return i < split_factors.size() ? split_factors[i] : slinky::expr{};
@@ -366,8 +345,8 @@ void define_reduce(ynn_subgraph& subgraph, ynn_node& node,
       input_b_id = YNN_INVALID_VALUE_ID;
     } else if (b.type != output.type) {
       input_b_id = YNN_INVALID_VALUE_ID;
-      ynn_define_convert(&subgraph, b.id, output.type, output.zero_point_id,
-                         output.scale_id, &input_b_id, /*flags=*/0);
+      ynn_define_convert(&subgraph, b.id, output.type, &input_b_id,
+                         /*flags=*/0);
     }
   }
 
@@ -503,6 +482,23 @@ ynn_status ynn_define_reduce(ynn_subgraph_t subgraph, ynn_reduce_operator op,
   YNN_RETURN_IF_ERROR(
       validate_output_tensor("reduce", subgraph, "output_id", output_id));
 
+  const ynn_value* a_ptr = &subgraph->value(input_a_id);
+  ynn_type target_accumulator_type = get_accumulator_type(op, a_ptr->type);
+  reduce_kernel kernel =
+      get_reduce_kernel(op, a_ptr->type, target_accumulator_type);
+  if (!kernel.k1 || !kernel.kn) {
+    if (type_element_count(a_ptr->type) == 1 ||
+        (op != ynn_reduce_min && op != ynn_reduce_max &&
+         op != ynn_reduce_min_max)) {
+      ynn_type promoted_type = get_promoted_type(a_ptr->type);
+      if (promoted_type != a_ptr->type) {
+        uint32_t promoted_input_id = YNN_INVALID_VALUE_ID;
+        YNN_RETURN_IF_ERROR(ynn_define_convert(
+            subgraph, input_a_id, promoted_type, &promoted_input_id, flags));
+        input_a_id = promoted_input_id;
+      }
+    }
+  }
   const ynn_value& a = subgraph->value(input_a_id);
 
   ynn::axes_set k_dims;

@@ -3,8 +3,6 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#include "ynnpack/base/simd/x86_avx2.h"
-
 #include <immintrin.h>
 
 #include <cstddef>
@@ -14,6 +12,7 @@
 #include "ynnpack/base/bfloat16.h"
 #include "ynnpack/base/half.h"
 #include "ynnpack/base/simd/vec.h"
+#include "ynnpack/base/simd/x86_vec256.h"
 #include "ynnpack/kernels/reduce/generic.h"
 #include "ynnpack/kernels/reduce/min_max.h"
 #include "ynnpack/kernels/reduce/reduce.h"
@@ -30,9 +29,8 @@ static s32x16 reduce_add(
   __m256i b_hi = _mm256_cvtepu8_epi32(_mm_bsrli_si128(b.v, 8));
 
   // madd_epi16 works due to extra zeros from uint8 -> int32 conversion.
-  a[0] += s32x8{_mm256_madd_epi16(b_lo, b_lo)};
-  a[1] += s32x8{_mm256_madd_epi16(b_hi, b_hi)};
-  return a;
+  return a + concat(s32x8{_mm256_madd_epi16(b_lo, b_lo)},
+                    s32x8{_mm256_madd_epi16(b_hi, b_hi)});
 }
 
 static s32x16 reduce_add(s32x16 a, s8x16 b, square map_fn,
@@ -95,16 +93,24 @@ static f32x16 reduce_add(
       reduce_add(extract<0>(a, f32x8::N), extract<0>(b, bf16x16::N), map_fn);
   f32x8 a1 =
       reduce_add(extract<1>(a, f32x8::N), extract<1>(b, bf16x16::N), map_fn);
-  return {a0, a1};
+  return concat(a0, a1);
+}
+
+YNN_ALWAYS_INLINE s8x32 sign_complement(s8x32 x) {
+  __m256i zero = _mm256_setzero_si256();
+  __m256i sign = _mm256_cmpgt_epi8(zero, x.v);
+  __m256i mask = _mm256_set1_epi8(0x7F);
+  __m256i abs_val = _mm256_and_si256(x.v, mask);
+  return s8x32(_mm256_xor_si256(abs_val, sign));
 }
 
 }  // namespace simd
 
-using simd::bf16x8;
 using simd::bf16x16;
+using simd::bf16x8;
 using simd::f16x16;
-using simd::f32x8;
 using simd::f32x16;
+using simd::f32x8;
 using simd::s16x16;
 using simd::s32x16;
 using simd::s32x32;
@@ -114,33 +120,33 @@ using simd::s8x32;
 using simd::u8x16;
 using simd::u8x32;
 
-using f16x16_rvar = float16_wrapper<f16x16, s16x16>;
-using bf16x16_rvar = float16_wrapper<bf16x16, s16x16>;
+using xf16x16 = sign_magnitude<s16x16>;
+using xf8x32 = sign_magnitude<s8x32>;
 
-MIN_MAX_K1_KERNEL(min_max_k1_bf16_avx2, bf16x16_rvar, bf16x16_rvar, bfloat16,
+MIN_MAX_K1_KERNEL(min_max_k1_xf16_avx2, xf16x16, xf16x16, int16_t,
                   16);
-MIN_MAX_KN_KERNEL(min_max_kn_bf16_avx2, bf16x16_rvar, bf16x16_rvar, bfloat16,
+MIN_MAX_KN_KERNEL(min_max_kn_xf16_avx2, xf16x16, xf16x16, int16_t,
                   16);
-MIN_MAX_K1_KERNEL(min_max_k1_fp16_avx2, f16x16_rvar, f16x16_rvar, half, 16);
-MIN_MAX_KN_KERNEL(min_max_kn_fp16_avx2, f16x16_rvar, f16x16_rvar, half, 16);
+MIN_MAX_K1_KERNEL(min_max_k1_xf8_avx2, xf8x32, xf8x32, int8_t, 32);
+MIN_MAX_KN_KERNEL(min_max_kn_xf8_avx2, xf8x32, xf8x32, int8_t, 32);
 MIN_MAX_K1_KERNEL(min_max_k1_uint8_avx2, u8x32, u8x32, uint8_t, 32);
 MIN_MAX_KN_KERNEL(min_max_kn_uint8_avx2, u8x32, u8x32, uint8_t, 32);
 MIN_MAX_K1_KERNEL(min_max_k1_int8_avx2, s8x32, s8x32, int8_t, 32);
 MIN_MAX_KN_KERNEL(min_max_kn_int8_avx2, s8x32, s8x32, int8_t, 32);
 
-MIN_MAX_K1_KERNEL(min_k1_bf16_avx2, bf16x16_rvar, dummy_t, bfloat16, 16);
-MIN_MAX_KN_KERNEL(min_kn_bf16_avx2, bf16x16_rvar, dummy_t, bfloat16, 16);
-MIN_MAX_K1_KERNEL(min_k1_fp16_avx2, f16x16_rvar, dummy_t, half, 16);
-MIN_MAX_KN_KERNEL(min_kn_fp16_avx2, f16x16_rvar, dummy_t, half, 16);
+MIN_MAX_K1_KERNEL(min_k1_xf16_avx2, xf16x16, dummy_t, int16_t, 16);
+MIN_MAX_KN_KERNEL(min_kn_xf16_avx2, xf16x16, dummy_t, int16_t, 16);
+MIN_MAX_K1_KERNEL(min_k1_xf8_avx2, xf8x32, dummy_t, int8_t, 32);
+MIN_MAX_KN_KERNEL(min_kn_xf8_avx2, xf8x32, dummy_t, int8_t, 32);
 MIN_MAX_K1_KERNEL(min_k1_uint8_avx2, u8x32, dummy_t, uint8_t, 32);
 MIN_MAX_KN_KERNEL(min_kn_uint8_avx2, u8x32, dummy_t, uint8_t, 32);
 MIN_MAX_K1_KERNEL(min_k1_int8_avx2, s8x32, dummy_t, int8_t, 32);
 MIN_MAX_KN_KERNEL(min_kn_int8_avx2, s8x32, dummy_t, int8_t, 32);
 
-MIN_MAX_K1_KERNEL(max_k1_bf16_avx2, dummy_t, bf16x16_rvar, bfloat16, 16);
-MIN_MAX_KN_KERNEL(max_kn_bf16_avx2, dummy_t, bf16x16_rvar, bfloat16, 16);
-MIN_MAX_K1_KERNEL(max_k1_fp16_avx2, dummy_t, f16x16_rvar, half, 16);
-MIN_MAX_KN_KERNEL(max_kn_fp16_avx2, dummy_t, f16x16_rvar, half, 16);
+MIN_MAX_K1_KERNEL(max_k1_xf16_avx2, dummy_t, xf16x16, int16_t, 16);
+MIN_MAX_KN_KERNEL(max_kn_xf16_avx2, dummy_t, xf16x16, int16_t, 16);
+MIN_MAX_K1_KERNEL(max_k1_xf8_avx2, dummy_t, xf8x32, int8_t, 32);
+MIN_MAX_KN_KERNEL(max_kn_xf8_avx2, dummy_t, xf8x32, int8_t, 32);
 MIN_MAX_K1_KERNEL(max_k1_uint8_avx2, dummy_t, u8x32, uint8_t, 32);
 MIN_MAX_KN_KERNEL(max_kn_uint8_avx2, dummy_t, u8x32, uint8_t, 32);
 MIN_MAX_K1_KERNEL(max_k1_int8_avx2, dummy_t, s8x32, int8_t, 32);

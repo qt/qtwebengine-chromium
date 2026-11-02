@@ -655,15 +655,21 @@ bool RTPSenderVideo::SendVideo(int payload_type,
 
   RTC_DCHECK_GE(single_packet->headers_size(), middle_packet->headers_size());
   limits.single_packet_reduction_len =
-      single_packet->headers_size() - middle_packet->headers_size();
+      single_packet->headers_size() > middle_packet->headers_size()
+          ? single_packet->headers_size() - middle_packet->headers_size()
+          : 0;
 
   RTC_DCHECK_GE(first_packet->headers_size(), middle_packet->headers_size());
   limits.first_packet_reduction_len =
-      first_packet->headers_size() - middle_packet->headers_size();
+      first_packet->headers_size() > middle_packet->headers_size()
+          ? first_packet->headers_size() - middle_packet->headers_size()
+          : 0;
 
   RTC_DCHECK_GE(last_packet->headers_size(), middle_packet->headers_size());
   limits.last_packet_reduction_len =
-      last_packet->headers_size() - middle_packet->headers_size();
+      last_packet->headers_size() > middle_packet->headers_size()
+          ? last_packet->headers_size() - middle_packet->headers_size()
+          : 0;
 
   bool has_generic_descriptor =
       first_packet->HasExtension<RtpGenericFrameDescriptorExtension00>() ||
@@ -710,8 +716,16 @@ bool RTPSenderVideo::SendVideo(int payload_type,
 
   const size_t num_packets = packetizer->NumPackets();
 
-  if (num_packets == 0)
+  if (num_packets == 0) {
+    Timestamp now = clock_->CurrentTime();
+    if (now >= last_fail_packetize_log_ + TimeDelta::Seconds(10)) {
+      RTC_LOG(LS_WARNING) << "Failed to packetize " << codec_type
+                          << " video frame of size " << payload.size()
+                          << ". Frame is dropped.";
+      last_fail_packetize_log_ = now;
+    }
     return false;
+  }
 
   bool first_frame = first_frame_sent_();
   std::vector<std::unique_ptr<RtpPacketToSend>> rtp_packets;

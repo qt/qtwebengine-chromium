@@ -16,7 +16,6 @@
 
 //! Oak Functions test module.
 
-#![feature(never_type)]
 #![feature(unwrap_infallible)]
 
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -25,10 +24,10 @@ use std::sync::Arc;
 use micro_rpc::Transport;
 use oak_micro_rpc::oak::functions::testing::{TestModule, TestModuleServer};
 use oak_proto_rust::oak::functions::testing::{
-    lookup_request::Mode, EchoAndPanicRequest, EchoAndPanicResponse, LookupRequest, LookupResponse,
+    EchoAndPanicRequest, EchoAndPanicResponse, LookupRequest, LookupResponse, lookup_request::Mode,
 };
 
-#[cfg_attr(not(test), no_mangle)]
+#[cfg_attr(not(test), unsafe(no_mangle))]
 pub extern "C" fn main() {
     let should_panic_afterwards = Arc::new(AtomicBool::new(false));
 

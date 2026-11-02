@@ -8,11 +8,13 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
 #include "base/environment.h"
 #include "base/process/launch.h"
+#include "base/process/process.h"
 #include "build/build_config.h"
 #include "build/chromecast_buildflags.h"
 #include "content/browser/child_process_launcher.h"
@@ -116,6 +118,11 @@ class CONTENT_EXPORT UtilityProcessHost final
     // Provides extra switches to append to the process's command line.
     Options& WithExtraCommandLineSwitches(std::vector<std::string> switches);
 
+    // Provides extra key/value switches to append to the process's command
+    // line.
+    Options& WithExtraCommandLineSwitchKeyValues(
+        std::vector<std::pair<std::string, std::string>> switch_key_values);
+
 #if BUILDFLAG(IS_WIN)
     // Specifies libraries to preload before the sandbox is locked down. Paths
     // should be absolute.
@@ -153,6 +160,9 @@ class CONTENT_EXPORT UtilityProcessHost final
     Options& WithBoundServiceInterfaceOnChildProcess(
         mojo::GenericPendingReceiver receiver);
 
+    // Specifies the process priority of the launched utility process.
+    Options& WithPriority(base::Process::Priority priority);
+
     // Passes the contents of this Options object to a newly returned Options
     // value. This can be called when moving an in-line built Options object
     // directly into a call to `Start`.
@@ -174,6 +184,9 @@ class CONTENT_EXPORT UtilityProcessHost final
 
     // Extra command line switches to append.
     std::vector<std::string> extra_switches_;
+
+    // Extra key/value command line switches to append.
+    std::vector<std::pair<std::string, std::string>> extra_switch_key_values_;
 
 #if BUILDFLAG(IS_WIN)
     // Libraries to load before sandbox lockdown. Only used on Windows.
@@ -200,6 +213,9 @@ class CONTENT_EXPORT UtilityProcessHost final
 
     // The process name used to identify the process in task manager.
     std::u16string name_;
+
+    // The process priority to apply to the process after launch.
+    std::optional<base::Process::Priority> priority_;
   };
 
   // Creates and starts a new UtilityProcessHost with the specified `Options`.

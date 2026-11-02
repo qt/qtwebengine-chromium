@@ -91,6 +91,12 @@ declare_args() {
   # Use Perfetto SDK headers.
   v8_use_perfetto_sdk = false
 
+  # Enable definition of v8::MicrotaskQueue as a cppgc object.
+  # TODO(https://crbug.com/515252150): remove this flag once the old
+  # v8::MicrotaskQueue::New() returning std::unique_ptr<> gets through
+  # the V8 API deprecation process.
+  v8_cppgc_microtask_queue = true
+
   # Override global symbol level setting for v8.
   v8_symbol_level = symbol_level
 
@@ -153,8 +159,7 @@ declare_args() {
 
   # Include support for WebAssembly. If disabled, the 'WebAssembly' global
   # will not be available, and embedder APIs to generate WebAssembly modules
-  # will fail. Also, asm.js will not be translated to WebAssembly and will be
-  # executed as standard JavaScript instead.
+  # will fail.
   # Sets -dV8_ENABLE_WEBASSEMBLY.
   v8_enable_webassembly = ""
 
@@ -214,7 +219,8 @@ declare_args() {
 
   # Enable object names in cppgc for profiling purposes.
   cppgc_enable_object_names =
-      is_chrome_for_testing || (!is_android && !is_fuchsia)
+      !(is_component_build && is_win) &&
+      (is_chrome_for_testing || (!is_android && !is_fuchsia))
 
   # Enable young generation in cppgc.
   cppgc_enable_young_generation = false
@@ -230,6 +236,9 @@ declare_args() {
   # pointer compression, set cppgc_enable_caged_heap = false.
   cppgc_enable_pointer_compression = false
 
+  cppgc_enable_object_section_gcinfo =
+      (is_linux || is_mac) && !is_component_build
+
   # Enable support for larger cages, up to 16GB.
   # iOS cannot mmap above 8GB, so use the smaller cage.
   cppgc_enable_larger_cage = !is_ios
@@ -237,9 +246,6 @@ declare_args() {
   # Enable advanced BigInt algorithms, costing about 10-30 KB binary size
   # depending on platform. Disabled on Android to save binary size.
   v8_advanced_bigint_algorithms = !is_android
-
-  # TODO: macros for determining endian type are clang specific.
-  v8_use_libm_trig_functions = is_clang
 
   # Location of icu.
   v8_icu_path = "//third_party/icu"

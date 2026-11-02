@@ -3,10 +3,13 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../core/common/common.js';
-import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
+import * as SDK from '../../core/sdk/sdk.js';
+import {renderElementIntoDOM, setTestUniverseForWidgets} from '../../testing/DOMHelpers.js';
 import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
+import {TestUniverse} from '../../testing/TestUniverse.js';
 import * as Lit from '../../ui/lit/lit.js';
 import * as RenderCoordinator from '../components/render_coordinator/render_coordinator.js';
 
@@ -319,6 +322,65 @@ describeWithEnvironment('Widget', () => {
       assert.strictEqual(childPerformUpdate.callCount, 1, 'Expected exactly one call to `childWidget.performUpdate`');
       assert.strictEqual(animationFrame.callCount, 1, 'Expected exactly one call to `requestAnimationFrame`');
     });
+
+    it('prevents starvation by shielding the next update from being aborted', async () => {
+      let callCount = 0;
+      let firstUpdateResolve = () => {};
+      let secondUpdateResolve = () => {};
+      let firstSignal: AbortSignal|undefined;
+      let secondSignal: AbortSignal|undefined;
+
+      const widget = new (class extends Widget {
+        override async performUpdate(signal?: AbortSignal): Promise<void> {
+          callCount++;
+          if (callCount === 1) {
+            firstSignal = signal;
+            await new Promise<void>(resolve => {
+              firstUpdateResolve = resolve;
+            });
+          } else if (callCount === 2) {
+            secondSignal = signal;
+            await new Promise<void>(resolve => {
+              secondUpdateResolve = resolve;
+            });
+          }
+        }
+      })();
+
+      widget.requestUpdate();
+
+      // Wait for the first performUpdate to start
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      assert.strictEqual(callCount, 1);
+      assert.isFalse(firstSignal?.aborted);
+
+      // This requestUpdate will abort firstSignal.
+      widget.requestUpdate();
+      assert.isTrue(firstSignal?.aborted);
+
+      // Resolve the first update so the second update is scheduled
+      firstUpdateResolve?.();
+
+      // Wait for the second update to start
+      await new Promise(resolve => {
+        // We use setTimeout here because the update scheduler uses a queueMicrotask
+        // and requestAnimationFrame. setTimeout ensures we yield to both.
+        setTimeout(() => requestAnimationFrame(resolve), 0);
+      });
+      assert.strictEqual(callCount, 2);
+      assert.isFalse(secondSignal?.aborted);
+
+      // This requestUpdate should be shielded and NOT abort the second signal
+      widget.requestUpdate();
+      assert.isFalse(secondSignal?.aborted);
+
+      // Resolve the second update
+      secondUpdateResolve?.();
+
+      await widget.updateComplete;
+
+      assert.strictEqual(callCount, 3);
+    });
   });
 
   describe('updateComplete', () => {
@@ -590,6 +652,8 @@ describeWithEnvironment('Widget', () => {
 
       mainWidget.focus();
       checkFocus(input3.id);
+
+      container.remove();
     });
 
     it('gives focus an autofocus element of a child widget', () => {
@@ -1043,6 +1107,124 @@ describeWithEnvironment('Widget', () => {
       assert.exists(childElement, 'Child widget element should exist in the Shadow Root');
       assert.strictEqual(childElement?.parentNode, shadowRoot, 'Widget element should remain in the Shadow Root');
       assert.isNull(childElement?.parentElement, 'Widget element should not be moved to the host (Light DOM)');
+    });
+  });
+
+  describe('Universe dependency injection', () => {
+    it('passes injected dependencies to child widgets instantiated via RootView when static INJECT is defined', () => {
+      let passedTargetManager: SDK.TargetManager.TargetManager|null = null;
+      let passedSettings: Common.Settings.Settings|null = null;
+
+      class ChildWidget extends Widget {
+        static override readonly INJECT = [SDK.TargetManager.TargetManager, Common.Settings.Settings] as const;
+
+        constructor(element: HTMLElement, [targetManager, settings]: UI.Widget.WidgetDependencies<typeof ChildWidget>) {
+          super(element);
+          passedTargetManager = targetManager;
+          passedSettings = settings;
+        }
+      }
+
+      const testUniverse = new TestUniverse();
+      const rootView = new UI.RootView.RootView(testUniverse);
+      const container = document.createElement('div');
+      renderElementIntoDOM(container);
+      rootView.attachToDocument(document);
+
+      const childElement = document.createElement('devtools-widget');
+      UI.Widget.registerWidgetConfig(childElement, UI.Widget.widgetConfig(ChildWidget));
+      rootView.element.appendChild(childElement);
+
+      assert.strictEqual(passedTargetManager, testUniverse.targetManager);
+      assert.strictEqual(passedSettings, testUniverse.settings);
+      rootView.detach();
+    });
+
+    it('automatically resolves dependencies via TestUniverse when rendered into DOM', () => {
+      let passedTargetManager: SDK.TargetManager.TargetManager|null = null;
+
+      class ChildWidget extends Widget {
+        static override readonly INJECT = [SDK.TargetManager.TargetManager] as const;
+
+        constructor(element: HTMLElement, [targetManager]: UI.Widget.WidgetDependencies<typeof ChildWidget>) {
+          super(element);
+          passedTargetManager = targetManager;
+        }
+      }
+
+      const container = document.createElement('div');
+      renderElementIntoDOM(container);
+
+      const childElement = document.createElement('devtools-widget');
+      UI.Widget.registerWidgetConfig(childElement, UI.Widget.widgetConfig(ChildWidget));
+      container.appendChild(childElement);
+
+      assert.exists(passedTargetManager);
+    });
+
+    it('allows tests to override Universe via setTestUniverseForWidgets for static INJECT', () => {
+      let passedTargetManager: SDK.TargetManager.TargetManager|null = null;
+
+      class ChildWidget extends Widget {
+        static override readonly INJECT = [SDK.TargetManager.TargetManager] as const;
+
+        constructor(element: HTMLElement, [targetManager]: UI.Widget.WidgetDependencies<typeof ChildWidget>) {
+          super(element);
+          passedTargetManager = targetManager;
+        }
+      }
+
+      const customUniverse = new TestUniverse();
+      setTestUniverseForWidgets(customUniverse);
+
+      const container = document.createElement('div');
+      renderElementIntoDOM(container);
+
+      const childElement = document.createElement('devtools-widget');
+      UI.Widget.registerWidgetConfig(childElement, UI.Widget.widgetConfig(ChildWidget));
+      container.appendChild(childElement);
+
+      assert.strictEqual(passedTargetManager, customUniverse.targetManager);
+    });
+
+    it('does not pass dependencies to constructor when static INJECT is empty array by default', () => {
+      let passedSecondArg: unknown = 'sentinel';
+
+      class DefaultWidget extends Widget {
+        constructor(element: HTMLElement, secondArg?: unknown) {
+          super(element);
+          passedSecondArg = secondArg;
+        }
+      }
+
+      assert.deepEqual(Widget.INJECT, []);
+      assert.deepEqual(DefaultWidget.INJECT, []);
+
+      const container = document.createElement('div');
+      renderElementIntoDOM(container);
+
+      const childElement = document.createElement('devtools-widget');
+      UI.Widget.registerWidgetConfig(childElement, UI.Widget.widgetConfig(DefaultWidget));
+      container.appendChild(childElement);
+
+      assert.isUndefined(passedSecondArg);
+    });
+
+    it('throws an error if widget requests dependencies via INJECT but no Universe is found', () => {
+      class DependentWidget extends Widget {
+        static override readonly INJECT = [SDK.TargetManager.TargetManager] as const;
+
+        constructor(element: HTMLElement, _deps: UI.Widget.WidgetDependencies<typeof DependentWidget>) {
+          super(element);
+        }
+      }
+
+      const childElement = document.createElement('div');
+      const config = UI.Widget.widgetConfig(DependentWidget);
+
+      assert.throws(() => {
+        UI.Widget.instantiateWidget(childElement, config);
+      }, /No Universe found for widget DependentWidget requesting dependencies via INJECT\./);
     });
   });
 });

@@ -47,6 +47,7 @@ devtools_entrypoint("bundle") {
     "../../core/host/*",
     "../../core/sdk/*",
     "../../models/ai_assistance/*",
+    "../../models/badges/*",
     "../../models/bindings/*",
     "../../models/crux-manager/*",
     "../../models/emulation/*",

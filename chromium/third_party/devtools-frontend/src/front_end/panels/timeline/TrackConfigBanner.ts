@@ -84,7 +84,7 @@ export function createHiddenTracksOverlay(parsedTrace: Trace.TraceModel.ParsedTr
           delegate: callbacks.onShowTrackConfigurationMode,
           dismiss: true,
           buttonVariant: Buttons.Button.Variant.PRIMARY,
-        }
+        },
       ],
   );
   infobarForTrace.setCloseCallback(() => {

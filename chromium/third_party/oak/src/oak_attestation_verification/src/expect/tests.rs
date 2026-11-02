@@ -17,25 +17,22 @@
 use std::collections::BTreeMap;
 
 use intoto::statement::Validity;
+use oak_digest::{
+    hex_digest_from_contents, hex_to_raw_digest, raw_digest_from_contents, raw_to_hex_digest,
+};
 use oak_proto_rust::oak::{
-    attestation::v1::{
-        expected_digests, ExpectedDigests, FirmwareAttachment, KernelAttachment, RawDigests,
-        TransparentReleaseEndorsement,
-    },
     HexDigest,
+    attestation::v1::{
+        ExpectedDigests, ExpectedRegex, FirmwareAttachment, KernelAttachment, RawDigests,
+        TextExpectedValue, TextReferenceValue, TransparentReleaseEndorsement, expected_digests,
+        text_expected_value, text_reference_value,
+    },
 };
+use oak_time::Instant;
 use prost::Message;
+use verify_endorsement::{FIRMWARE_CLAIM_TYPE, KERNEL_CLAIM_TYPE};
 
-use crate::{
-    endorsement::{FIRMWARE_CLAIM_TYPE, KERNEL_CLAIM_TYPE},
-    test_util::{self, GetValidity},
-    util,
-};
-
-// Same as raw_digest_from_contents, but emits hex encoded digest formats.
-fn hex_digest_from_contents(contents: &[u8]) -> HexDigest {
-    util::raw_to_hex_digest(&util::raw_digest_from_contents(contents))
-}
+use crate::test_util::{self, GetValidity};
 
 // Returns milliseconds UTC in the middle of the validity period.
 fn make_valid_now_utc_millis(validity: &Validity) -> i64 {
@@ -47,8 +44,8 @@ fn make_valid_now_utc_millis(validity: &Validity) -> i64 {
 fn test_get_expected_measurement_digest_validity() {
     // Create an endorsement of some arbitrary content.
     let measured_content = b"Just some abitrary content";
-    let content_digests = util::raw_digest_from_contents(measured_content);
-    let endorsement = test_util::fake_endorsement(&content_digests, vec![]);
+    let hex_digest = hex_digest_from_contents(measured_content);
+    let endorsement = test_util::fake_endorsement(&hex_digest, vec![]);
     let statement_validity = endorsement.predicate.validity.as_ref().expect("no validity");
 
     // Now create the TR endorsement.
@@ -76,11 +73,12 @@ fn test_get_expected_measurement_digest_validity() {
 
     // Assert that the expected digests are those from the verified endorsement.
 
+    let raw_digest = hex_to_raw_digest(&hex_digest).expect("digest conversion failed");
     assert_eq!(
         expected_digests,
         ExpectedDigests {
             r#type: Some(expected_digests::Type::Digests(RawDigests {
-                digests: vec![content_digests],
+                digests: vec![raw_digest],
                 valid: Some(statement_validity.into()),
             })),
         }
@@ -94,16 +92,19 @@ fn test_get_stage0_expected_values_validity() {
     let mut configs = BTreeMap::<i32, HexDigest>::new();
     let original_content = b"Just some arbitrary content";
     let measured_content = b"Just some different arbitrary content";
-    let measured_digest = util::raw_digest_from_contents(measured_content);
+    let measured_digest = raw_digest_from_contents(measured_content);
     let num_cpus = 2;
-    configs.insert(num_cpus, util::raw_to_hex_digest(&measured_digest));
-    let subject =
-        FirmwareAttachment { binary: Some(hex_digest_from_contents(original_content)), configs };
+    configs.insert(num_cpus, raw_to_hex_digest(&measured_digest));
+    let subject = FirmwareAttachment {
+        binary: Some(hex_digest_from_contents(original_content)),
+        configs,
+        tdx_measurement: None,
+    };
     let serialized_subject = subject.encode_to_vec();
 
     // Now create the endorsement, containing the subject. The *endorsement*
     // hash is the hash of the serialized firmware attachment.
-    let subject_digests = util::raw_digest_from_contents(&serialized_subject);
+    let subject_digests = hex_digest_from_contents(&serialized_subject);
     let (signing_key, public_key) = test_util::new_random_signing_keypair();
     let endorsement = test_util::fake_endorsement(&subject_digests, vec![FIRMWARE_CLAIM_TYPE]);
     let statement_validity = endorsement.predicate.validity.as_ref().expect("no validity");
@@ -145,18 +146,18 @@ fn test_get_kernel_expected_values_validity() {
     let measured_image = b"Just some abitrary kernel image";
     let measured_setup = b"Just some abitrary kernel setup";
     let bz_image_digest = hex_digest_from_contents(bz_image);
-    let image_digest = util::raw_digest_from_contents(measured_image);
-    let setup_digest = util::raw_digest_from_contents(measured_setup);
+    let image_digest = raw_digest_from_contents(measured_image);
+    let setup_digest = raw_digest_from_contents(measured_setup);
     let subject = KernelAttachment {
         bz_image: Some(bz_image_digest),
-        image: Some(util::raw_to_hex_digest(&image_digest)),
-        setup_data: Some(util::raw_to_hex_digest(&setup_digest)),
+        image: Some(raw_to_hex_digest(&image_digest)),
+        setup_data: Some(raw_to_hex_digest(&setup_digest)),
     };
     let serialized_subject = subject.encode_to_vec();
 
     // Now create the endorsement, containing the subject. The *endorsement*
     // hash is the hash of the serialized kernel attachment.
-    let subject_digests = util::raw_digest_from_contents(&serialized_subject);
+    let subject_digests = hex_digest_from_contents(&serialized_subject);
     let (signing_key, public_key) = test_util::new_random_signing_keypair();
     let endorsement = test_util::fake_endorsement(&subject_digests, vec![KERNEL_CLAIM_TYPE]);
     let statement_validity = endorsement.predicate.validity.as_ref().expect("no validity");
@@ -197,4 +198,141 @@ fn test_get_kernel_expected_values_validity() {
             })),
         })
     );
+}
+
+fn text_reference_value_for_endorser_pk(public_key: p256::PublicKey) -> TextReferenceValue {
+    TextReferenceValue {
+        r#type: Some(text_reference_value::Type::Endorsement(
+            test_util::endorsement_reference_value(public_key),
+        )),
+    }
+}
+
+#[test]
+fn test_get_text_expected_values_validity() {
+    let original_content = b"^some regex$";
+    let (signing_key, public_key) = test_util::new_random_signing_keypair();
+
+    // Create endorsement statement and sign it.
+    let hex_digest = hex_digest_from_contents(original_content);
+    let endorsement = test_util::fake_endorsement(&hex_digest, vec![]);
+    let (serialized_endorsement, endorsement_signature) =
+        test_util::serialize_and_sign_endorsement(&endorsement, signing_key);
+
+    let tr_endorsement = TransparentReleaseEndorsement {
+        endorsement: serialized_endorsement,
+        endorsement_signature: endorsement_signature.as_bytes().to_vec(),
+        subject: original_content.to_vec(),
+        ..Default::default()
+    };
+
+    let reference_value = text_reference_value_for_endorser_pk(public_key);
+    let now_utc_millis = make_valid_now_utc_millis(endorsement.validity());
+
+    let result =
+        super::get_text_expected_values(now_utc_millis, Some(&tr_endorsement), &reference_value);
+    assert!(result.is_ok(), "expected success, got: {:?}", result.err());
+
+    let expected = result.unwrap();
+    assert_eq!(
+        expected,
+        TextExpectedValue {
+            r#type: Some(text_expected_value::Type::Regex(ExpectedRegex {
+                value: "^some regex$".to_string(),
+            })),
+        }
+    );
+}
+
+#[test]
+fn test_get_text_expected_values_fails_with_tampered_subject() {
+    let original_content = b"^some regex$";
+    let (signing_key, public_key) = test_util::new_random_signing_keypair();
+
+    // Create endorsement statement and sign it.
+    let hex_digest = hex_digest_from_contents(original_content);
+    let endorsement = test_util::fake_endorsement(&hex_digest, vec![]);
+    let (serialized_endorsement, endorsement_signature) =
+        test_util::serialize_and_sign_endorsement(&endorsement, signing_key);
+
+    let tr_endorsement = TransparentReleaseEndorsement {
+        endorsement: serialized_endorsement,
+        endorsement_signature: endorsement_signature.as_bytes().to_vec(),
+        subject: b".*".to_vec(), // Tampered!
+        ..Default::default()
+    };
+
+    let reference_value = text_reference_value_for_endorser_pk(public_key);
+    let now_utc_millis = make_valid_now_utc_millis(endorsement.validity());
+
+    let result =
+        super::get_text_expected_values(now_utc_millis, Some(&tr_endorsement), &reference_value);
+    assert!(result.is_err(), "expected error due to tampered subject, but it succeeded");
+}
+
+#[test]
+fn test_acquire_text_expected_values_validity() {
+    let original_content = b"^some regex$";
+    let (signing_key, public_key) = test_util::new_random_signing_keypair();
+
+    let not_before = oak_time::make_instant!("2025-09-01T12:00:00Z");
+    let not_after = oak_time::make_instant!("2025-12-01T12:00:00Z");
+    let now_utc_millis = make_valid_now_utc_millis(&Validity { not_before, not_after });
+
+    let signed_endorsement = test_util::make_signed_endorsement_for_contents(
+        original_content,
+        not_before,
+        not_after,
+        &signing_key,
+        vec![],
+    );
+
+    let reference_value = text_reference_value_for_endorser_pk(public_key);
+
+    let result = super::acquire_text_expected_values(
+        now_utc_millis,
+        Some(&signed_endorsement),
+        &reference_value,
+    );
+    assert!(result.is_ok(), "expected success, got: {:?}", result.err());
+
+    let expected = result.unwrap();
+    assert_eq!(
+        expected,
+        TextExpectedValue {
+            r#type: Some(text_expected_value::Type::Regex(ExpectedRegex {
+                value: "^some regex$".to_string(),
+            })),
+        }
+    );
+}
+
+#[test]
+fn test_acquire_text_expected_values_fails_with_tampered_subject() {
+    let original_content = b"^some regex$";
+    let (signing_key, public_key) = test_util::new_random_signing_keypair();
+
+    let not_before = oak_time::make_instant!("2025-09-01T12:00:00Z");
+    let not_after = oak_time::make_instant!("2025-12-01T12:00:00Z");
+    let now_utc_millis = make_valid_now_utc_millis(&Validity { not_before, not_after });
+
+    let mut signed_endorsement = test_util::make_signed_endorsement_for_contents(
+        original_content,
+        not_before,
+        not_after,
+        &signing_key,
+        vec![],
+    );
+
+    // Tamper the unsigned subject.
+    signed_endorsement.endorsement.as_mut().unwrap().subject = b".*".to_vec();
+
+    let reference_value = text_reference_value_for_endorser_pk(public_key);
+
+    let result = super::acquire_text_expected_values(
+        now_utc_millis,
+        Some(&signed_endorsement),
+        &reference_value,
+    );
+    assert!(result.is_err(), "expected error due to tampered subject, but it succeeded");
 }

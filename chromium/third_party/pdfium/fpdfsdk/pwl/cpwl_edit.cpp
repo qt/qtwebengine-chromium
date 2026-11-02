@@ -203,7 +203,7 @@ void CPWL_Edit::DrawThisAppearance(CFX_RenderDevice* pDevice,
 
 void CPWL_Edit::OnSetFocus() {
   ObservedPtr<CPWL_Edit> this_observed(this);
-  this_observed->SetEditCaret(true);
+  this_observed->SetVisibleEditCaret();
   if (!this_observed) {
     return;
   }
@@ -655,34 +655,28 @@ bool CPWL_Edit::OnMouseMove(Mask<FWL_EVENTFLAG> nFlag,
   return true;
 }
 
-void CPWL_Edit::SetEditCaret(bool bVisible) {
-  CFX_PointF ptHead;
-  CFX_PointF ptFoot;
-  if (bVisible) {
-    GetCaretInfo(&ptHead, &ptFoot);
-  }
-
-  SetCaret(bVisible, ptHead, ptFoot);
-  // Note, |this| may no longer be viable at this point. If more work needs to
-  // be done, check the return value of SetCaret().
-}
-
-void CPWL_Edit::GetCaretInfo(CFX_PointF* ptHead, CFX_PointF* ptFoot) const {
-  CPWL_EditImpl::Iterator* pIterator = edit_impl_->GetIterator();
-  pIterator->SetAt(edit_impl_->GetCaret());
+void CPWL_Edit::SetVisibleEditCaret() {
+  CPWL_EditImpl::Iterator* iterator = edit_impl_->GetIterator();
+  iterator->SetAt(edit_impl_->GetCaret());
   CPVT_Word word;
   CPVT_Line line;
-  if (pIterator->GetWord(word)) {
-    ptHead->x = word.ptWord.x + word.fWidth;
-    ptHead->y = word.ptWord.y + word.fAscent;
-    ptFoot->x = word.ptWord.x + word.fWidth;
-    ptFoot->y = word.ptWord.y + word.fDescent;
-  } else if (pIterator->GetLine(line)) {
-    ptHead->x = line.ptLine.x;
-    ptHead->y = line.ptLine.y + line.fLineAscent;
-    ptFoot->x = line.ptLine.x;
-    ptFoot->y = line.ptLine.y + line.fLineDescent;
+  CFX_PointF head;
+  CFX_PointF foot;
+  if (iterator->GetWord(word)) {
+    head.x = word.CaretX();
+    head.y = word.AscentY();
+    foot.x = head.x;
+    foot.y = word.DescentY();
+  } else if (iterator->GetLine(line)) {
+    head.x = iterator->GetLineCaretX(line);
+    head.y = line.ptLine.y + line.fLineAscent;
+    foot.x = head.x;
+    foot.y = line.ptLine.y + line.fLineDescent;
   }
+
+  SetCaret(/*bVisible=*/true, head, foot);
+  // Note, `this` may no longer be viable at this point. If more work needs to
+  // be done, check the return value of SetCaret().
 }
 
 bool CPWL_Edit::SetCaret(bool bVisible,

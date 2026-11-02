@@ -206,6 +206,18 @@ class IcingSearchEngine {
     return ProtoToVec(inner_->Delete(namespace_str, uri_str));
   }
 
+  // Point lookup of a single document by (namespace, uri). Unlike Search, this
+  // does not evaluate a query over the corpus, so it is O(1) in corpus size.
+  std::unique_ptr<std::vector<uint8_t>> get_impl(
+      rust::Slice<const uint8_t> ns, rust::Slice<const uint8_t> uri,
+      rust::Slice<const uint8_t> result_spec) const {
+    std::string namespace_str = RustSliceToString(ns);
+    std::string uri_str = RustSliceToString(uri);
+    icing::lib::GetResultSpecProto result_spec_proto;
+    result_spec_proto.ParseFromString(RustSliceToString(result_spec));
+    return ProtoToVec(inner_->Get(namespace_str, uri_str, result_spec_proto));
+  }
+
   // NOTE: There will be a new API that accepts a proto instead of a uint64_t,
   // but they are not available in the OSS yet.
   std::unique_ptr<std::vector<uint8_t>> get_next_page_impl(
@@ -232,6 +244,14 @@ class IcingSearchEngine {
       int persist_type) const {
     return ProtoToVec(
         inner_->PersistToDisk((icing::lib::PersistType::Code)persist_type));
+  }
+
+  std::unique_ptr<std::vector<uint8_t>> optimize_impl() const {
+    return ProtoToVec(inner_->Optimize());
+  }
+
+  std::unique_ptr<std::vector<uint8_t>> get_optimize_info_impl() const {
+    return ProtoToVec(inner_->GetOptimizeInfo());
   }
 
  private:
@@ -271,11 +291,29 @@ class PropertyConfigBuilder {
     return *this;
   }
 
+  const PropertyConfigBuilder& set_data_type_vector_quantized(
+      int embedding_indexing_type, int quantization_type) const {
+    inner_->SetDataTypeVector(
+        (icing::lib::EmbeddingIndexingConfig::EmbeddingIndexingType::Code)
+            embedding_indexing_type,
+        (icing::lib::EmbeddingIndexingConfig::QuantizationType::Code)
+            quantization_type);
+    return *this;
+  }
+
   const PropertyConfigBuilder& set_data_type_string(int match_type,
                                                     int tokenizer) const {
     inner_->SetDataTypeString(
         (icing::lib::TermMatchType_Code)match_type,
         (icing::lib::StringIndexingConfig_TokenizerType_Code)tokenizer);
+    return *this;
+  }
+
+  const PropertyConfigBuilder& set_data_type_joinable_string(
+      int joinable_value_type) const {
+    inner_->SetDataTypeJoinableString(
+        static_cast<icing::lib::JoinableConfig::ValueType::Code>(
+            joinable_value_type));
     return *this;
   }
 
@@ -296,6 +334,13 @@ class PropertyConfigBuilder {
   const PropertyConfigBuilder& set_description(
       rust::Slice<const uint8_t> description) const {
     inner_->SetDescription(RustSliceToString(description));
+    return *this;
+  }
+
+  const PropertyConfigBuilder& set_scorable_type(int32_t scorable_type) const {
+    inner_->SetScorableType(
+        static_cast<icing::lib::PropertyConfigProto::ScorableType::Code>(
+            scorable_type));
     return *this;
   }
 

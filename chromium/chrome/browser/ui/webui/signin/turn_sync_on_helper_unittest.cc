@@ -341,8 +341,11 @@ class TurnSyncOnHelperTest : public testing::Test {
 
   void SetUp() override {
     // TurnSyncOnHelperTest is no longer used when the feature is enabled.
-    scoped_feature_list_.InitAndDisableFeature(
-        syncer::kReplaceSyncPromosWithSignInPromos);
+    scoped_feature_list_.InitWithFeatures(
+        /*enabled_features=*/{},
+        /*disabled_features=*/{
+            syncer::kReplaceSyncPromosWithSignInPromos,
+            syncer::kReplaceSyncPromosWithSigninPromosNewSignin});
     const base::FilePath temp_user_data_dir =
         base::CreateUniqueTempDirectoryScopedToTest();
     TestingBrowserProcess::GetGlobal()->SetProfileManager(
@@ -502,7 +505,7 @@ class TurnSyncOnHelperTest : public testing::Test {
     account_info = AccountInfo::Builder(account_info)
                        .SetHostedDomain(kEnterpriseHostedDomain)
                        .Build();
-    AccountCapabilitiesTestMutator(&account_info.capabilities)
+    AccountCapabilitiesTestMutator(&account_info)
         .set_is_subject_to_enterprise_features(true);
     signin::UpdateAccountInfoForAccount(identity_manager(), account_info);
   }

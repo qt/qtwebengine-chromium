@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Host from '../../core/host/host.js';
 import {
@@ -28,7 +29,7 @@ function createCallbacks(editor: TextEditor.TextEditor.TextEditor): AiCodeComple
       rpcGlobalId?: Host.AidaClient.RpcGlobalId,
       sampleId?: number,
     }|null) => editor.dispatch({
-      effects: TextEditor.Config.setAiAutoCompleteSuggestion.of(args as unknown as TextEditor.Config.ActiveSuggestion)
+      effects: TextEditor.Config.setAiAutoCompleteSuggestion.of(args as unknown as TextEditor.Config.ActiveSuggestion),
     }),
   };
 }
@@ -186,7 +187,7 @@ describeWithEnvironment('AiCodeCompletion', () => {
         sampleId: 1,
         score: 1,
       }],
-      metadata: {}
+      metadata: {},
     };
     mockAidaClient.completeCode.onSecondCall().resolves(nonEmptyResponse);
 

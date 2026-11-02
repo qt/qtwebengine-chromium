@@ -34,9 +34,9 @@
 #include "core/fxcrt/span_util.h"
 #include "core/fxcrt/stl_util.h"
 #include "core/fxcrt/unowned_ptr.h"
-#include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_fillrenderoptions.h"
 #include "core/fxge/cfx_path.h"
+#include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "core/fxge/dib/fx_dib.h"
 
@@ -858,8 +858,11 @@ void DrawCoonPatchMeshes(
   DCHECK(type == kCoonsPatchMeshShading ||
          type == kTensorProductPatchMeshShading);
 
-  CFX_DefaultRenderDevice device;
-  device.Attach(pBitmap);
+  std::unique_ptr<CFX_RenderDevice> device =
+      CFX_RenderDevice::CreateForBitmap(pBitmap);
+  if (!device) {
+    return;
+  }
 
   CPDF_MeshStream stream(type, funcs, std::move(pShadingStream), pCS);
   if (!stream.Load()) {
@@ -878,7 +881,7 @@ void DrawCoonPatchMeshes(
 
   PatchDrawer patch_drawer;
   patch_drawer.alpha = alpha;
-  patch_drawer.pDevice = &device;
+  patch_drawer.pDevice = device.get();
   patch_drawer.bNoPathSmooth = bNoPathSmooth;
 
   for (size_t i = 0; i < CubicBezierPatch::kBoundaryPathSize; i++) {

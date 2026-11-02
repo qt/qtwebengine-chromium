@@ -9,7 +9,6 @@
 #include "src/execution/local-isolate.h"
 #include "src/objects/bytecode-array.h"
 #include "src/objects/contexts.h"
-#include "src/objects/fixed-array.h"
 #include "src/objects/js-weak-refs.h"
 #include "src/objects/map.h"
 #include "src/objects/object-list-macros.h"
@@ -61,9 +60,7 @@ class MaybeObjectSize final {
   V(ContextCell)                      \
   V(CoverageInfo)                     \
   V(DataHandler)                      \
-  V(DebugInfo)                        \
   V(DescriptorArray)                  \
-  V(StrongDescriptorArray)            \
   V(DoubleStringCache)                \
   V(EmbedderDataArray)                \
   V(EphemeronHashTable)               \
@@ -74,6 +71,7 @@ class MaybeObjectSize final {
   V(Foreign)                          \
   V(FunctionTemplateInfo)             \
   V(HeapNumber)                       \
+  V(HashSeedWrapper)                  \
   V(InterceptorInfo)                  \
   V(Hole)                             \
   V(Map)                              \
@@ -108,7 +106,6 @@ class MaybeObjectSize final {
   IF_WASM(V, WasmArray)               \
   IF_WASM(V, WasmFastApiCallData)     \
   IF_WASM(V, WasmFuncRef)             \
-  IF_WASM(V, WasmMemoryMapDescriptor) \
   IF_WASM(V, WasmNull)                \
   IF_WASM(V, WasmResumeData)          \
   IF_WASM(V, WasmStringViewIter)      \
@@ -139,6 +136,7 @@ class MaybeObjectSize final {
   V(JSExternalObject)                       \
   V(JSFinalizationRegistry)                 \
   V(JSFunction)                             \
+  V(JSGlobalProxy)                          \
   V(JSObject)                               \
   V(JSRegExp)                               \
   V(JSSynchronizationPrimitive)             \

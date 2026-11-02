@@ -60,7 +60,6 @@ namespace core {
 class CommandBufferSubState;
 }  // namespace core
 
-struct SubpassLayout;
 struct SemaphoreSubmitState;
 struct LastBound;
 struct ShaderStageState;
@@ -102,6 +101,10 @@ class Instance : public vvl::InstanceProxy {
                                                                 const VkPhysicalDeviceImageFormatInfo2* pImageFormatInfo,
                                                                 VkImageFormatProperties2* pImageFormatProperties,
                                                                 const ErrorObject& error_obj) const override;
+    bool PreCallValidateGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(
+        VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
+        const VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties, VkBaseOutStructure* pProperties,
+        const ErrorObject& error_obj) const override;
     bool PreCallValidateGetPhysicalDeviceImageFormatProperties2KHR(VkPhysicalDevice physicalDevice,
                                                                    const VkPhysicalDeviceImageFormatInfo2* pImageFormatInfo,
                                                                    VkImageFormatProperties2* pImageFormatProperties,
@@ -306,16 +309,16 @@ class CoreChecks : public vvl::DeviceProxy {
     bool ValidateAttachmentCompatibility(const VulkanTypedHandle& rp1_object, const vvl::RenderPass& rp1_state,
                                          const VulkanTypedHandle& rp2_object, const vvl::RenderPass& rp2_state,
                                          uint32_t primary_attachment, uint32_t secondary_attachment, const Location& caller_loc,
-                                         const Location& attachment_loc) const;
+                                         const Location& attachment_loc, const char* vuid) const;
     bool ValidateSubpassCompatibility(const VulkanTypedHandle& rp1_object, const vvl::RenderPass& rp1_state,
                                       const VulkanTypedHandle& rp2_object, const vvl::RenderPass& rp2_state, const int subpass,
-                                      const Location& loc) const;
+                                      const Location& loc, const char* vuid) const;
     bool ValidateDependencyCompatibility(const VulkanTypedHandle& rp1_object, const vvl::RenderPass& rp1_state,
                                          const VulkanTypedHandle& rp2_object, const vvl::RenderPass& rp2_state,
-                                         const uint32_t dependency, const Location& loc) const;
+                                         const uint32_t dependency, const Location& loc, const char* vuid) const;
     bool ValidateRenderPassCompatibility(const VulkanTypedHandle& rp1_object, const vvl::RenderPass& rp1_state,
-                                         const VulkanTypedHandle& rp2_object, const vvl::RenderPass& rp2_state,
-                                         const Location& loc) const;
+                                         const VulkanTypedHandle& rp2_object, const vvl::RenderPass& rp2_state, const Location& loc,
+                                         const char* vuid = nullptr) const;
     bool ReportInvalidCommandBuffer(const vvl::CommandBuffer& cb_state, const Location& loc, const char* vuid) const;
     bool ValidateProtectedImage(const vvl::CommandBuffer& cb_state, const vvl::Image& image_state, const Location& image_loc,
                                 const char* vuid, const char* more_message = "") const override;
@@ -355,7 +358,7 @@ class CoreChecks : public vvl::DeviceProxy {
                           uint32_t bufferBarrierCount, const VkBufferMemoryBarrier* pBufferMemoryBarriers,
                           uint32_t imageMemoryBarrierCount, const VkImageMemoryBarrier* pImageMemoryBarriers) const;
 
-    bool IsDynamicRenderingImageUsageValid(VkImageUsageFlags image_usage) const;
+    bool IsDynamicRenderingImageUsageValid(VkImageUsageFlags2KHR image_usage) const;
 
     bool ValidateDynamicRenderingBarriers(const LogObjectList& objlist, const Location& outer_loc,
                                           const VkDependencyInfo& dep_info) const;
@@ -377,6 +380,7 @@ class CoreChecks : public vvl::DeviceProxy {
                                VkPipelineStageFlags2KHR stage_mask) const;
     bool ValidateDynamicRenderingPipelineStage(const LogObjectList& objlist, const Location& loc, VkPipelineStageFlags2 stage_mask,
                                                VkDependencyFlags dependency_flags) const;
+    bool ValidateDynamicRenderingAccess(const LogObjectList& objlist, const Location& loc, VkAccessFlags2 access_mask) const;
     bool ValidateDynamicRenderingImageBarrierLayoutMismatch(const vvl::CommandBuffer& cb_state,
                                                             const VkImageMemoryBarrier& image_barrier,
                                                             const Location& image_loc) const;
@@ -434,8 +438,7 @@ class CoreChecks : public vvl::DeviceProxy {
                                                                  const vvl::CommandBuffer& secondary_cb_state,
                                                                  const Location& secondary_cb_loc) const;
     bool ValidateSecondaryCommandBufferWaitEvents(const core::CommandBufferSubState& secondary_cb_sub_state,
-                                                  const Location& secondary_cb_loc,
-                                                  EventSignalingStateMap& local_signaling_state) const;
+                                                  const Location& secondary_cb_loc, EventSignalStateMap& local_signal_states) const;
     bool ValidateInheritanceInfoFramebuffer(const vvl::CommandBuffer& cb_state,
                                             const core::CommandBufferSubState& secondary_cb_state,
                                             const VkCommandBufferInheritanceInfo& secondary_inheritance_info,
@@ -544,15 +547,15 @@ class CoreChecks : public vvl::DeviceProxy {
     bool OutsideRenderPass(const vvl::CommandBuffer& cb_state, const Location& loc, const char* vuid) const;
     bool InsideVideoCodingScope(const vvl::CommandBuffer& cb_state, const Location& loc, const char* vuid) const;
     bool OutsideVideoCodingScope(const vvl::CommandBuffer& cb_state, const Location& loc, const char* vuid) const;
-    std::vector<VkVideoFormatPropertiesKHR> GetVideoFormatProperties(VkImageUsageFlags image_usage,
+    std::vector<VkVideoFormatPropertiesKHR> GetVideoFormatProperties(VkImageUsageFlags2KHR image_usage,
                                                                      const VkVideoProfileListInfoKHR* profile_list) const;
-    std::vector<VkVideoFormatPropertiesKHR> GetVideoFormatProperties(VkImageUsageFlags image_usage,
+    std::vector<VkVideoFormatPropertiesKHR> GetVideoFormatProperties(VkImageUsageFlags2KHR image_usage,
                                                                      const VkVideoProfileInfoKHR* profile) const;
-    bool IsSupportedVideoFormat(VkImageCreateFlags flags, VkImageUsageFlags usage, VkImageType imageType, VkFormat format,
+    bool IsSupportedVideoFormat(VkImageCreateFlags2KHR flags, VkImageUsageFlags2KHR usage, VkImageType imageType, VkFormat format,
                                 VkImageTiling tiling, const VkVideoProfileListInfoKHR* profile_list) const;
-    bool IsSupportedVideoFormat(VkImageCreateFlags flags, VkImageUsageFlags usage, VkImageType imageType, VkFormat format,
+    bool IsSupportedVideoFormat(VkImageCreateFlags2KHR flags, VkImageUsageFlags2KHR usage, VkImageType imageType, VkFormat format,
                                 VkImageTiling tiling, const VkVideoProfileInfoKHR* profile) const;
-    bool IsVideoFormatSupported(VkFormat format, VkImageUsageFlags image_usage, const VkVideoProfileInfoKHR* profile) const;
+    bool IsVideoFormatSupported(VkFormat format, VkImageUsageFlags2KHR image_usage, const VkVideoProfileInfoKHR* profile) const;
     bool IsBufferCompatibleWithVideoSession(const vvl::Buffer& buffer_state, const vvl::VideoSession& vs_state) const;
     bool IsImageCompatibleWithVideoSession(const vvl::Image& image_state, const vvl::VideoSession& vs_state) const;
     bool ValidateVideoInlineQueryInfo(const vvl::QueryPool& query_pool_state, const VkVideoInlineQueryInfoKHR& query_info,
@@ -657,9 +660,6 @@ class CoreChecks : public vvl::DeviceProxy {
     bool ValidateImageSampleCount(const HandleT handle, const vvl::Image& image_state, VkSampleCountFlagBits sample_count,
                                   const Location& loc, const std::string& vuid) const;
 
-    bool ValidateQueueFamilySupport(const vvl::CommandBuffer& cb_state, const vvl::PhysicalDevice& physical_device_state,
-                                    VkImageAspectFlags aspectMask, const vvl::Image& image_state, const Location& aspect_mask_loc,
-                                    const char* vuid) const;
     bool ValidateCmdSubpassState(const vvl::CommandBuffer& cb_state, const Location& loc, const char* vuid) const;
     bool ValidateCmd(const vvl::CommandBuffer& cb_state, const Location& loc) const;
     bool ValidateIndirectCmd(const vvl::CommandBuffer& cb_state, const vvl::Buffer& buffer_state, const Location& loc) const;
@@ -701,22 +701,17 @@ class CoreChecks : public vvl::DeviceProxy {
 
     template <typename TransferBarrier>
     bool ValidateQueuedQFOTransferBarriers(const core::CommandBufferSubState& cb_sub_state,
-                                           QFOTransferCBScoreboards<TransferBarrier>* scoreboards,
                                            const GlobalQFOTransferBarrierMap<TransferBarrier>& global_release_barriers,
                                            const Location& loc) const;
-    bool ValidateQueuedQFOTransfers(const vvl::CommandBuffer& cb_state,
-                                    QFOTransferCBScoreboards<QFOImageTransferBarrier>* qfo_image_scoreboards,
-                                    QFOTransferCBScoreboards<QFOBufferTransferBarrier>* qfo_buffer_scoreboards,
-                                    const Location& loc) const;
+    bool ValidateQueuedQFOTransfers(const vvl::CommandBuffer& cb_state, const Location& loc) const;
 
     void RecordBarrierValidationInfo(const Location& loc, vvl::CommandBuffer& cb_state, const BufferBarrier& barrier,
                                      QFOTransferBarrierSets<QFOBufferTransferBarrier>& barrier_sets);
     void RecordBarrierValidationInfo(const Location& loc, vvl::CommandBuffer& cb_state, const ImageBarrier& barrier,
                                      const vvl::Image& image_state, QFOTransferBarrierSets<QFOImageTransferBarrier>& barrier_sets);
 
-    bool ValidatePrimaryCommandBufferState(const Location& loc, const vvl::CommandBuffer& cb_state, uint32_t current_submit_count,
-                                           QFOTransferCBScoreboards<QFOImageTransferBarrier>* qfo_image_scoreboards,
-                                           QFOTransferCBScoreboards<QFOBufferTransferBarrier>* qfo_buffer_scoreboards) const;
+    bool ValidatePrimaryCommandBufferState(const Location& loc, const vvl::CommandBuffer& cb_state,
+                                           uint32_t current_submit_count) const;
     bool ValidateDrawPipelineRenderpass(const LastBound& last_bound_state, const vvl::Pipeline& pipeline,
                                         const vvl::RenderPass& rp_state, const Location& loc) const;
     bool ValidateDrawPipelineDynamicRenderpass(const LastBound& last_bound_state, const vvl::Pipeline& pipeline,
@@ -763,7 +758,7 @@ class CoreChecks : public vvl::DeviceProxy {
                                            const bool has_embedded_samplers, const Location& loc) const;
     bool ValidateActionStatePushConstant(const LastBound& last_bound_state, const vvl::Pipeline* pipeline,
                                          const Location& loc) const;
-    bool ValidateActionStatePushConstantDescriptorHeap(const vvl::CommandBuffer& cb_state, const spirv::EntryPoint* entry_point,
+    bool ValidateActionStatePushConstantDescriptorHeap(const vvl::CommandBuffer& cb_state, const ShaderStageState& stage_state,
                                                        const VkPipelineBindPoint bind_point, const Location& loc) const;
     bool ValidateActionStateProtectedMemory(const LastBound& last_bound_state, const VkPipelineBindPoint bind_point,
                                             const vvl::Pipeline* pipeline, const Location& loc) const;
@@ -808,6 +803,7 @@ class CoreChecks : public vvl::DeviceProxy {
                              const vvl::DslErrorSource& dsl_error_source) const;
     bool ValidateWriteUpdateDescriptorType(const VkWriteDescriptorSet& update, const Location& write_loc) const;
     bool ValidateWriteUpdateBufferInfo(const VkWriteDescriptorSet& update, const Location& write_loc) const;
+    bool ValidateWriteUpdateTexelBuffer(const VkWriteDescriptorSet& update, const Location& write_loc) const;
     bool ValidateWriteUpdateInlineUniformBlock(const VkWriteDescriptorSet& update, const Location& write_loc) const;
     bool ValidateWriteUpdateAccelerationStructureKHR(const VkWriteDescriptorSet& update, const Location& write_loc) const;
     bool ValidateWriteUpdateAccelerationStructureNV(const VkWriteDescriptorSet& update, const Location& write_loc) const;
@@ -942,6 +938,9 @@ class CoreChecks : public vvl::DeviceProxy {
                                    const Location& loc) const;
     bool ValidateCooperativeVector(const spirv::Module& module_state, const spirv::EntryPoint& entrypoint,
                                    const Location& loc) const;
+    bool ValidateDescriptorMappingSourceHeap(const spirv::Module& module_state, const spirv::EntryPoint& entrypoint,
+                                             const spirv::ResourceInterfaceVariable& resource_variable,
+                                             const VkDescriptorSetAndBindingMappingEXT& mapping, const Location& mapping_loc) const;
     bool ValidateShaderDescriptorSetAndBindingMappingInfo(const spirv::Module& module_state, const spirv::EntryPoint& entrypoint,
                                                           const vvl::Pipeline* pipeline, const ShaderStageState& stage_state,
                                                           const Location& loc) const;
@@ -1042,13 +1041,13 @@ class CoreChecks : public vvl::DeviceProxy {
                                  const Location& loc) const;
 
     bool ValidateImageFormatFeatures(const VkImageCreateInfo& create_info, const Location& loc,
-                                     const VkImageCreateFlags create_flags, const VkImageUsageFlags usage) const;
+                                     const VkImageCreateFlags2KHR create_flags, const VkImageUsageFlags2KHR usage) const;
     bool ValidateImageAlignmentControlCreateInfo(const VkImageCreateInfo& create_info, const Location& create_info_loc) const;
     bool ValidateImageVideo(const VkImageCreateInfo& create_info, const Location& create_info_loc,
-                            const VkImageCreateFlags create_flags, const Location& flags_loc, const VkImageUsageFlags usage,
+                            const VkImageCreateFlags2KHR create_flags, const Location& flags_loc, const VkImageUsageFlags2KHR usage,
                             const Location& usage_loc, const ErrorObject& error_obj) const;
     bool ValidateImageSwapchain(const VkImageCreateInfo& create_info, const Location& create_info_loc,
-                                const VkImageCreateFlags create_flags, const VkImageUsageFlags usage) const;
+                                const VkImageCreateFlags2KHR create_flags, const VkImageUsageFlags2KHR usage) const;
     bool ValidateImageExternalMemory(const VkImageCreateInfo& create_info, const Location& create_info_loc,
                                      VkPhysicalDeviceImageFormatInfo2& image_format_info) const;
 
@@ -1078,6 +1077,14 @@ class CoreChecks : public vvl::DeviceProxy {
                                                     const VkDataGraphPipelineShaderModuleCreateInfoARM& dg_shader_ci,
                                                     const vvl::Pipeline& pipeline) const;
     bool ValidateDataGraphOperations(const vvl::Pipeline& pipeline, uint32_t queueFamilyIndex, const Location& loc) const;
+
+    bool ValidateOpticalFlowFormats(const VkDataGraphPipelineOpticalFlowCreateInfoARM& optical_flow_ci,
+                                    const Location& optical_flow_ci_loc) const;
+    bool ValidateOpticalFlowFlags(const VkDataGraphPipelineOpticalFlowCreateInfoARM& optical_flow_ci,
+                                  const Location& optical_flow_ci_loc) const;
+    bool ValidateOpticalFlowConnections(const VkDataGraphPipelineSingleNodeCreateInfoARM& single_node_ci,
+                                        const Location& single_node_ci_loc,
+                                        VkDataGraphOpticalFlowGridSizeFlagsARM hint_grid_size) const;
 
     bool PreCallValidateCreateDataGraphPipelinesARM(VkDevice device, VkDeferredOperationKHR deferredOperation,
                                                     VkPipelineCache pipelineCache, uint32_t createInfoCount,
@@ -1113,9 +1120,16 @@ class CoreChecks : public vvl::DeviceProxy {
     bool PreCallValidateDestroyDataGraphPipelineSessionARM(VkDevice device, VkDataGraphPipelineSessionARM session,
                                                            const VkAllocationCallbacks* pAllocator,
                                                            const ErrorObject& error_obj) const override;
-    bool PreCallValidateCmdDispatchDataGraphARM(VkCommandBuffer commandBuffer,
-                                                VkDataGraphPipelineSessionARM session,
-                                                const VkDataGraphPipelineDispatchInfoARM *pInfo,
+
+    bool ValidateResourceInfoImageLayouts(const LastBound& last_bound_state, const LogObjectList& obj_list,
+                                          const ErrorObject& error_obj) const;
+
+    bool ValidateOpticalFlowImageLayouts(const LastBound& last_bound_state,
+                                         const VkDataGraphPipelineSingleNodeCreateInfoARM* single_node_ci,
+                                         const LogObjectList& obj_list, const ErrorObject& error_obj) const;
+
+    bool PreCallValidateCmdDispatchDataGraphARM(VkCommandBuffer commandBuffer, VkDataGraphPipelineSessionARM session,
+                                                const VkDataGraphPipelineDispatchInfoARM* pInfo,
                                                 const ErrorObject& error_obj) const override;
     void PostCallRecordCreateImage(VkDevice device, const VkImageCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator,
                                    VkImage* pImage, const RecordObject& record_obj) override;
@@ -1187,7 +1201,7 @@ class CoreChecks : public vvl::DeviceProxy {
                                                    const VkRenderingInfo& rendering_info, const Location& barrier_loc) const;
 
     bool ValidateImageLayoutAgainstImageUsage(const Location& layout_loc, VkImage image, VkImageLayout layout,
-                                              VkImageUsageFlags usage) const;
+                                              VkImageUsageFlags2KHR usage) const;
 
     bool ValidateImageBarrierAgainstImage(const vvl::CommandBuffer& cb_state, const ImageBarrier& barrier,
                                           const Location& barrier_loc, const vvl::Image& image_state,
@@ -1314,7 +1328,7 @@ class CoreChecks : public vvl::DeviceProxy {
                                               const LogObjectList& objlist, const Location& loc) const;
 
     bool ValidateImageViewFormatFeatures(const vvl::Image& image_state, const VkFormat view_format,
-                                         const VkImageUsageFlags image_usage, const Location& create_info_loc) const;
+                                         const VkImageUsageFlags2KHR image_usage, const Location& create_info_loc) const;
 
     bool ValidateImageViewSlicedCreateInfo(const VkImageViewCreateInfo& create_info, const vvl::Image& image_state,
                                            const VkImageSubresourceRange& normalized_subresource_range,
@@ -1439,7 +1453,7 @@ class CoreChecks : public vvl::DeviceProxy {
                                             const ErrorObject& error_obj) const override;
 
     bool ValidateCreateImageANDROID(const VkImageCreateInfo& create_info, const Location& create_info_loc,
-                                    const VkImageCreateFlags create_flags, const VkImageUsageFlags usage) const;
+                                    const VkImageCreateFlags2KHR create_flags, const VkImageUsageFlags2KHR usage) const;
     bool ValidateCreateImageViewANDROID(const VkImageViewCreateInfo& create_info, const vvl::Image& image_state,
                                         const Location& create_info_loc) const;
     bool ValidatePhysicalDeviceQueueFamilies(uint32_t queue_family_count, const uint32_t* queue_families, const Location& loc,
@@ -1571,8 +1585,6 @@ class CoreChecks : public vvl::DeviceProxy {
                                     const RecordObject& record_obj) override;
     bool PreCallValidateQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence,
                                     const ErrorObject& error_obj) const override;
-    void PostCallRecordQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence,
-                                   const RecordObject& record_obj) override;
     bool ValidateRenderPassStripeSubmitInfo(VkQueue queue, const vvl::CommandBuffer& cb_state, const void* pNext,
                                             const Location& loc) const;
     bool ValidateQueueSubmit2(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence,
@@ -1581,12 +1593,6 @@ class CoreChecks : public vvl::DeviceProxy {
                                         const ErrorObject& error_obj) const override;
     bool PreCallValidateQueueSubmit2(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence,
                                      const ErrorObject& error_obj) const override;
-    void RecordQueueSubmit2(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence,
-                            const RecordObject& record_obj);
-    void PostCallRecordQueueSubmit2KHR(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2KHR* pSubmits, VkFence fence,
-                                       const RecordObject& record_obj) override;
-    void PostCallRecordQueueSubmit2(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence,
-                                    const RecordObject& record_obj) override;
     bool ProcessSubmissionBatch(const vvl::SubmitTimeTracker& tracker,
                                 const std::vector<std::shared_ptr<vvl::CommandBuffer>>& command_buffers,
                                 vvl::span<const VkSemaphoreSubmitInfo> signal_semaphores, const Location& submit_loc) override;
@@ -1704,8 +1710,8 @@ class CoreChecks : public vvl::DeviceProxy {
                                                                    const VkCommandBufferInheritanceInfo& info,
                                                                    const VkCommandBufferUsageFlags begin_flags,
                                                                    const Location& inheritance_loc) const;
-    bool ValidateRenderingInfoAttachmentDeviceGroup(const vvl::Image& image_state, const VkRenderingInfo& rendering_info,
-                                                    const LogObjectList& objlist, const Location& loc) const;
+    bool ValidateRenderingInfoAttachment(const vvl::ImageView& image_view_state, const VkRenderingInfo& rendering_info,
+                                         const LogObjectList& objlist, const Location& attachment_loc) const;
     bool ValidateBeginRenderingFragmentDensityMap(VkCommandBuffer commandBuffer, const VkRenderingInfo& rendering_info,
                                                   const Location& rendering_info_loc) const;
     bool ValidateBeginRenderingFragmentShadingRate(VkCommandBuffer commandBuffer, const VkRenderingInfo& rendering_info,
@@ -1851,9 +1857,6 @@ class CoreChecks : public vvl::DeviceProxy {
                                                    const VkAccelerationStructureBuildGeometryInfoKHR& info,
                                                    const VkAccelerationStructureBuildRangeInfoKHR* geometry_build_ranges,
                                                    const Location& info_loc) const;
-    bool ValidateAccelerationStructureBuildGeometryInfoUpdate(const vvl::AccelerationStructureKHR& src_as_state,
-                                                              const VkAccelerationStructureBuildGeometryInfoKHR& info,
-                                                              const Location& info_loc, const VulkanTypedHandle& handle) const;
     bool ValidateAccelerationStructureBuildDst(const vvl::AccelerationStructureKHR& dst_as_state,
                                                const VkAccelerationStructureBuildGeometryInfoKHR& info, const Location& info_loc,
                                                const VulkanTypedHandle& handle) const;
@@ -1867,6 +1870,10 @@ class CoreChecks : public vvl::DeviceProxy {
                                                           const VkAccelerationStructureBuildGeometryInfoKHR* pInfos,
                                                           const VkAccelerationStructureBuildRangeInfoKHR* const* ppBuildRangeInfos,
                                                           const ErrorObject& error_obj) const override;
+
+    bool ValidateAccelerationStructureTrianglesOpacityMicromapKHR(const VkAccelerationStructureTrianglesOpacityMicromapKHR& pInfo,
+                                                                  const LogObjectList& objlist,
+                                                                  const Location& triangles_loc) const;
 
     bool PreCallValidateBuildAccelerationStructuresKHR(VkDevice device, VkDeferredOperationKHR deferredOperation,
                                                        uint32_t infoCount,
@@ -2022,6 +2029,8 @@ class CoreChecks : public vvl::DeviceProxy {
                                           const ErrorObject& error_obj) const override;
     bool PreCallValidateCmdResetEvent2(VkCommandBuffer commandBuffer, VkEvent event, VkPipelineStageFlags2 stageMask,
                                        const ErrorObject& error_obj) const override;
+    bool ValidateResetVsWaitRace(const vvl::CommandBuffer& cb_state, VkEvent event, VkPipelineStageFlags2 reset_stage_mask,
+                                 const Location& loc) const;
     bool PreCallValidateCmdWaitEvents(VkCommandBuffer commandBuffer, uint32_t eventCount, const VkEvent* pEvents,
                                       VkPipelineStageFlags sourceStageMask, VkPipelineStageFlags dstStageMask,
                                       uint32_t memoryBarrierCount, const VkMemoryBarrier* pMemoryBarriers,
@@ -2030,6 +2039,8 @@ class CoreChecks : public vvl::DeviceProxy {
                                       const ErrorObject& error_obj) const override;
     bool PreCallValidateCmdWaitEvents2KHR(VkCommandBuffer commandBuffer, uint32_t eventCount, const VkEvent* pEvents,
                                           const VkDependencyInfoKHR* pDependencyInfos, const ErrorObject& error_obj) const override;
+    bool ValidateWaitEventDependencyFlags(VkDependencyFlags dependency_flags, const LogObjectList& objlist,
+                                          const Location& dep_info_loc) const;
     bool PreCallValidateCmdWaitEvents2(VkCommandBuffer commandBuffer, uint32_t eventCount, const VkEvent* pEvents,
                                        const VkDependencyInfo* pDependencyInfos, const ErrorObject& error_obj) const override;
     bool PreCallValidateCmdPipelineBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags srcStageMask,
@@ -2581,6 +2592,10 @@ class CoreChecks : public vvl::DeviceProxy {
                                                                   const ErrorObject& error_obj) const override;
     bool ValidateCopyAccelerationStructureInfoKHR(const VkCopyAccelerationStructureInfoKHR& as_info,
                                                   const VulkanTypedHandle& handle, const Location& info_loc) const;
+    bool ValidateCopyMemoryToAccelerationStructureInfoKHR(const vvl::AccelerationStructureKHR& dst_as_state,
+                                                          const Location& dst_as_loc) const;
+    bool ValidateCopyAccelerationStructureToMemoryInfoKHR(const vvl::AccelerationStructureKHR& src_as_state,
+                                                          const Location& src_as_loc) const;
     bool PreCallValidateCmdCopyAccelerationStructureKHR(VkCommandBuffer commandBuffer,
                                                         const VkCopyAccelerationStructureInfoKHR* pInfo,
                                                         const ErrorObject& error_obj) const override;

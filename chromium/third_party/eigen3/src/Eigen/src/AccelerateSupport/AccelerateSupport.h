@@ -176,35 +176,28 @@ class AccelerateImpl : public SparseSolverBase<AccelerateImpl<MatrixType_, UpLo_
   AccelerateImpl() {
     m_isInitialized = false;
 
-    EIGEN_IF_CONSTEXPR((UpLo_ & Symmetric) == Symmetric) {
+    EIGEN_IF_CONSTEXPR ((UpLo_ & Symmetric) == Symmetric) {
       m_sparseKind = SparseSymmetric;
       m_triType = (UpLo_ & Lower) ? SparseLowerTriangle : SparseUpperTriangle;
-    }
-    else EIGEN_IF_CONSTEXPR((UpLo_ & UnitLower) == UnitLower) {
+    } else EIGEN_IF_CONSTEXPR ((UpLo_ & UnitLower) == UnitLower) {
       m_sparseKind = SparseUnitTriangular;
       m_triType = SparseLowerTriangle;
-    }
-    else EIGEN_IF_CONSTEXPR((UpLo_ & UnitUpper) == UnitUpper) {
+    } else EIGEN_IF_CONSTEXPR ((UpLo_ & UnitUpper) == UnitUpper) {
       m_sparseKind = SparseUnitTriangular;
       m_triType = SparseUpperTriangle;
-    }
-    else EIGEN_IF_CONSTEXPR((UpLo_ & StrictlyLower) == StrictlyLower) {
+    } else EIGEN_IF_CONSTEXPR ((UpLo_ & StrictlyLower) == StrictlyLower) {
       m_sparseKind = SparseTriangular;
       m_triType = SparseLowerTriangle;
-    }
-    else EIGEN_IF_CONSTEXPR((UpLo_ & StrictlyUpper) == StrictlyUpper) {
+    } else EIGEN_IF_CONSTEXPR ((UpLo_ & StrictlyUpper) == StrictlyUpper) {
       m_sparseKind = SparseTriangular;
       m_triType = SparseUpperTriangle;
-    }
-    else EIGEN_IF_CONSTEXPR((UpLo_ & Lower) == Lower) {
+    } else EIGEN_IF_CONSTEXPR ((UpLo_ & Lower) == Lower) {
       m_sparseKind = SparseTriangular;
       m_triType = SparseLowerTriangle;
-    }
-    else EIGEN_IF_CONSTEXPR((UpLo_ & Upper) == Upper) {
+    } else EIGEN_IF_CONSTEXPR ((UpLo_ & Upper) == Upper) {
       m_sparseKind = SparseTriangular;
       m_triType = SparseUpperTriangle;
-    }
-    else {
+    } else {
       m_sparseKind = SparseOrdinary;
       m_triType = (UpLo_ & Lower) ? SparseLowerTriangle : SparseUpperTriangle;
     }
@@ -213,8 +206,6 @@ class AccelerateImpl : public SparseSolverBase<AccelerateImpl<MatrixType_, UpLo_
   }
 
   explicit AccelerateImpl(const MatrixType& matrix) : AccelerateImpl() { compute(matrix); }
-
-  ~AccelerateImpl() {}
 
   inline Index cols() const { return m_nCols; }
   inline Index rows() const { return m_nRows; }
@@ -263,7 +254,7 @@ class AccelerateImpl : public SparseSolverBase<AccelerateImpl<MatrixType_, UpLo_
   }
 
   void doAnalysis(AccelSparseMatrix& A) {
-    m_numericFactorization.reset(nullptr);
+    m_numericFactorization.reset();
 
     SparseSymbolicFactorOptions opts{};
     opts.control = SparseDefaultControl;
@@ -280,7 +271,7 @@ class AccelerateImpl : public SparseSolverBase<AccelerateImpl<MatrixType_, UpLo_
 
     updateInfoStatus(status);
 
-    if (status != SparseStatusOK) m_symbolicFactorization.reset(nullptr);
+    if (status != SparseStatusOK) m_symbolicFactorization.reset();
   }
 
   void doFactorization(AccelSparseMatrix& A) {
@@ -291,7 +282,7 @@ class AccelerateImpl : public SparseSolverBase<AccelerateImpl<MatrixType_, UpLo_
 
       status = m_numericFactorization->status;
 
-      if (status != SparseStatusOK) m_numericFactorization.reset(nullptr);
+      if (status != SparseStatusOK) m_numericFactorization.reset();
     }
 
     updateInfoStatus(status);
@@ -328,7 +319,7 @@ class AccelerateImpl : public SparseSolverBase<AccelerateImpl<MatrixType_, UpLo_
 /** Computes the symbolic and numeric decomposition of matrix \a a */
 template <typename MatrixType_, int UpLo_, SparseFactorization_t Solver_, bool EnforceSquare_>
 void AccelerateImpl<MatrixType_, UpLo_, Solver_, EnforceSquare_>::compute(const MatrixType& a) {
-  if (EnforceSquare_) eigen_assert(a.rows() == a.cols());
+  EIGEN_IF_CONSTEXPR (EnforceSquare_) eigen_assert(a.rows() == a.cols());
 
   m_nRows = a.rows();
   m_nCols = a.cols();
@@ -353,7 +344,7 @@ void AccelerateImpl<MatrixType_, UpLo_, Solver_, EnforceSquare_>::compute(const 
  */
 template <typename MatrixType_, int UpLo_, SparseFactorization_t Solver_, bool EnforceSquare_>
 void AccelerateImpl<MatrixType_, UpLo_, Solver_, EnforceSquare_>::analyzePattern(const MatrixType& a) {
-  if (EnforceSquare_) eigen_assert(a.rows() == a.cols());
+  EIGEN_IF_CONSTEXPR (EnforceSquare_) eigen_assert(a.rows() == a.cols());
 
   m_nRows = a.rows();
   m_nCols = a.cols();
@@ -380,7 +371,7 @@ void AccelerateImpl<MatrixType_, UpLo_, Solver_, EnforceSquare_>::factorize(cons
   eigen_assert(m_symbolicFactorization && "You must first call analyzePattern()");
   eigen_assert(m_nRows == a.rows() && m_nCols == a.cols());
 
-  if (EnforceSquare_) eigen_assert(a.rows() == a.cols());
+  EIGEN_IF_CONSTEXPR (EnforceSquare_) eigen_assert(a.rows() == a.cols());
 
   AccelSparseMatrix A{};
   std::vector<long> columnStarts;

@@ -311,16 +311,14 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
 }  // namespace
 
 Result<SuccessType> ShaderIO(core::ir::Module& ir, const ShaderIOConfig& config) {
-    AssertValid(ir,
-                core::ir::Capabilities{core::ir::Capability::kAllowHandleVarsWithoutBindings,
-                                       core::ir::Capability::kAllowDuplicateBindings,
-                                       core::ir::Capability::kAllow16BitIntegers},
-                "before glsl.ShaderIO");
+    AssertValid(ir, "before glsl.ShaderIO");
 
     TINT_CHECK_RESULT(core::ir::transform::RunShaderIOBase(
         ir, [&](core::ir::Module& mod, core::ir::Function* func) {
             return std::make_unique<StateImpl>(mod, func, config);
         }));
+
+    ir.properties.Add(core::ir::Property::kAllowBackendSpecificShaderIO);
 
     return Success;
 }

@@ -7,11 +7,14 @@
 #include <memory>
 
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/common/input/web_keyboard_event.h"
 #include "third_party/blink/renderer/core/css/css_default_style_sheets.h"
 #include "third_party/blink/renderer/core/css/resolver/style_resolver.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/dom/document.h"
+#include "third_party/blink/renderer/core/dom/scroll_marker_group_data.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
+#include "third_party/blink/renderer/core/events/keyboard_event.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/html/forms/form_controller.h"
@@ -24,14 +27,17 @@
 #include "third_party/blink/renderer/core/html/forms/select_type.h"
 #include "third_party/blink/renderer/core/html/html_div_element.h"
 #include "third_party/blink/renderer/core/html/html_hr_element.h"
+#include "third_party/blink/renderer/core/html/shadow/shadow_element_names.h"
 #include "third_party/blink/renderer/core/layout/layout_theme.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
 #include "third_party/blink/renderer/core/testing/sim/sim_compositor.h"
 #include "third_party/blink/renderer/core/testing/sim/sim_request.h"
 #include "third_party/blink/renderer/core/testing/sim/sim_test.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/keyboard_codes.h"
 #include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
+#include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
 
@@ -101,6 +107,49 @@ TEST_F(HTMLSelectElementTest, SetAutofillValuePreservesEditedState) {
   select->SetUserHasEditedTheField();
   select->SetAutofillValue("111", WebAutofillState::kAutofilled);
   EXPECT_EQ(select->UserHasEditedTheField(), true);
+}
+
+TEST_F(HTMLSelectElementTest, ListBoxSuggestedOptionScrollTargetGroup) {
+  StringBuilder html;
+  html.Append(
+      "<!DOCTYPE HTML>"
+      "<style>nav { scroll-target-group: auto }</style>"
+      "<select id='sel' size='4'>");
+  for (int i = 0; i < 20; ++i) {
+    html.AppendFormat("<option id='o%d' value='v%d'>o%d</option>", i, i, i);
+  }
+  html.Append("</select><nav id='nav'>");
+  for (int i = 0; i < 20; ++i) {
+    html.AppendFormat("<a id='a%d' href='#o%d'></a>", i, i);
+  }
+  html.Append("</nav>");
+  SetHtmlInnerHTML(html.ToString().Utf8());
+  test::RunPendingTasks();
+  UpdateAllLifecyclePhasesForTest();
+
+  auto* select = To<HTMLSelectElement>(GetElementById("sel"));
+  Element* nav = GetElementById("nav");
+  Element* first_anchor = GetElementById("a0");
+  ScrollMarkerGroupData* group = nav->GetScrollTargetGroupData();
+  ASSERT_TRUE(group);
+  ASSERT_EQ(group->Selected(), first_anchor);
+
+  // Setting the suggested option scrolls the listbox to bring it into view,
+  // but the selected scroll marker should not follow that scroll while the
+  // suggestion has not been accepted.
+  select->SetSuggestedValue("v15");
+  ASSERT_TRUE(select->IsPreviewed());
+  test::RunPendingTasks();
+  UpdateAllLifecyclePhasesForTest();
+  EXPECT_EQ(group->Selected(), first_anchor);
+
+  // Once the suggestion is cleared and a value is committed, the selected
+  // scroll marker tracks the listbox scroll position again.
+  select->setValueForBinding("v15");
+  ASSERT_FALSE(select->IsPreviewed());
+  test::RunPendingTasks();
+  UpdateAllLifecyclePhasesForTest();
+  EXPECT_NE(group->Selected(), first_anchor);
 }
 
 TEST_F(HTMLSelectElementTest, SaveRestoreSelectSingleFormControlState) {
@@ -1101,14 +1150,20 @@ TEST_F(HTMLSelectElementTest, InnerElementOverflow) {
   Element& inner_element = select->InnerElement();
 
   GetDocument().UpdateStyleAndLayoutTree();
-  EXPECT_EQ(inner_element.GetComputedStyle()->OverflowX(), EOverflow::kVisible);
+  EXPECT_EQ(inner_element.GetComputedStyle()->OverflowX(), EOverflow::kClip);
   EXPECT_EQ(inner_element.GetComputedStyle()->OverflowY(), EOverflow::kVisible);
 
   select->SetInlineStyleProperty(CSSPropertyID::kTextOverflow,
                                  CSSValueID::kEllipsis);
   GetDocument().UpdateStyleAndLayoutTree();
-  EXPECT_EQ(inner_element.GetComputedStyle()->OverflowX(), EOverflow::kHidden);
-  EXPECT_EQ(inner_element.GetComputedStyle()->OverflowY(), EOverflow::kHidden);
+  EXPECT_EQ(inner_element.GetComputedStyle()->OverflowX(), EOverflow::kClip);
+  EXPECT_EQ(inner_element.GetComputedStyle()->OverflowY(), EOverflow::kVisible);
+
+  select->SetInlineStyleProperty(CSSPropertyID::kWritingMode,
+                                 CSSValueID::kVerticalRl);
+  GetDocument().UpdateStyleAndLayoutTree();
+  EXPECT_EQ(inner_element.GetComputedStyle()->OverflowX(), EOverflow::kVisible);
+  EXPECT_EQ(inner_element.GetComputedStyle()->OverflowY(), EOverflow::kClip);
 }
 
 TEST_F(HTMLSelectElementTest, DescendantCounters) {
@@ -1124,8 +1179,11 @@ TEST_F(HTMLSelectElementTest, DescendantCounters) {
         <input id=c3i>
         <option id=c3o>option</option>
       </div>
-      <option id=c4>option</option>
-      <div id=c5></div>
+      <div id=c4>
+        <input>
+      </div>
+      <option id=c5>option</option>
+      <div id=c6></div>
     </select>
   )HTML");
 
@@ -1134,39 +1192,133 @@ TEST_F(HTMLSelectElementTest, DescendantCounters) {
   Element* c3 = GetElementById("c3");
   Element* c4 = GetElementById("c4");
   Element* c5 = GetElementById("c5");
+  Element* c6 = GetElementById("c6");
   HTMLInputElement* c1 = MakeGarbageCollected<HTMLInputElement>(GetDocument());
   select->insertBefore(c1, c2);
 
-  EXPECT_EQ(select->ChildrenDescendantCounts().at(c1).num_options, 0);
-  EXPECT_EQ(select->ChildrenDescendantCounts().at(c1).num_inputs, 1);
+  auto input_slot = [select]() {
+    return select->GetShadowRoot()->getElementById(
+        shadow_element_names::kSelectInput);
+  };
+  auto options_slot = [select]() {
+    return select->GetShadowRoot()->getElementById(
+        shadow_element_names::kSelectOptions);
+  };
+
+  EXPECT_FALSE(select->ChildrenDescendantCounts().Contains(c1));
   EXPECT_EQ(select->ChildrenDescendantCounts().at(c2).num_options, 0);
   EXPECT_EQ(select->ChildrenDescendantCounts().at(c2).num_inputs, 1);
   EXPECT_EQ(select->ChildrenDescendantCounts().at(c3).num_options, 1);
   EXPECT_EQ(select->ChildrenDescendantCounts().at(c3).num_inputs, 1);
-  EXPECT_EQ(select->ChildrenDescendantCounts().at(c4).num_options, 1);
-  EXPECT_EQ(select->ChildrenDescendantCounts().at(c4).num_inputs, 0);
+  EXPECT_EQ(select->ChildrenDescendantCounts().at(c4).num_options, 0);
+  EXPECT_EQ(select->ChildrenDescendantCounts().at(c4).num_inputs, 1);
   EXPECT_FALSE(select->ChildrenDescendantCounts().Contains(c5));
-  EXPECT_EQ(select->NumDescendantInputs(), 3);
+  EXPECT_FALSE(select->ChildrenDescendantCounts().Contains(c6));
+  EXPECT_EQ(select->NumDescendantInputs(), 4);
+  EXPECT_TRUE(!!input_slot());
+
+  GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+  EXPECT_EQ(c1->AssignedSlot(), input_slot());
+  EXPECT_EQ(c2->AssignedSlot(), input_slot());
+  EXPECT_EQ(c3->AssignedSlot(), options_slot());
+  EXPECT_EQ(c4->AssignedSlot(), input_slot());
+  EXPECT_EQ(c5->AssignedSlot(), options_slot());
+  EXPECT_EQ(c6->AssignedSlot(), options_slot());
 
   c1->remove();
   EXPECT_FALSE(select->ChildrenDescendantCounts().Contains(c1));
-  EXPECT_EQ(select->NumDescendantInputs(), 2);
+  EXPECT_EQ(select->NumDescendantInputs(), 3);
+
+  GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+  EXPECT_EQ(c2->AssignedSlot(), input_slot());
+  EXPECT_EQ(c3->AssignedSlot(), options_slot());
+  EXPECT_EQ(c4->AssignedSlot(), input_slot());
+  EXPECT_EQ(c5->AssignedSlot(), options_slot());
+  EXPECT_EQ(c6->AssignedSlot(), options_slot());
+
+  select->setAttribute(html_names::kMultipleAttr, g_empty_atom);
+  GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+  EXPECT_EQ(c2->AssignedSlot(), input_slot());
+  EXPECT_EQ(c3->AssignedSlot(), options_slot());
+  EXPECT_EQ(c4->AssignedSlot(), input_slot());
+  EXPECT_EQ(c5->AssignedSlot(), options_slot());
+  EXPECT_EQ(c6->AssignedSlot(), options_slot());
+  select->removeAttribute(html_names::kMultipleAttr);
 
   c2->remove();
   EXPECT_FALSE(select->ChildrenDescendantCounts().Contains(c2));
-  EXPECT_EQ(select->NumDescendantInputs(), 1);
+  EXPECT_EQ(select->NumDescendantInputs(), 2);
+
+  EXPECT_TRUE(!!input_slot());
+  GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+  EXPECT_EQ(c3->AssignedSlot(), options_slot());
+  EXPECT_EQ(c4->AssignedSlot(), input_slot());
+  EXPECT_EQ(c5->AssignedSlot(), options_slot());
+  EXPECT_EQ(c6->AssignedSlot(), options_slot());
+
+  // Move input from grand-child to direct child
+  auto* c3i = GetElementById("c3i");
+  select->appendChild(c3i);
+
+  // The input is a direct child, so it shouldn't be in the map
+  EXPECT_FALSE(select->ChildrenDescendantCounts().Contains(c3i));
+  // The wrapper c3 should no longer have any inputs tracked
+  EXPECT_EQ(select->ChildrenDescendantCounts().at(c3).num_inputs, 0);
+  // The wrapper c3 still has its option
+  EXPECT_EQ(select->ChildrenDescendantCounts().at(c3).num_options, 1);
+  // The total number of descendant inputs should remain unchanged
+  EXPECT_EQ(select->NumDescendantInputs(), 2);
+
+  // Ensure the DOM and slots are still correct
+  GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+  EXPECT_EQ(c3i->AssignedSlot(), input_slot());
+
+  // Restore state to not break the rest of the test
+  c3->appendChild(c3i);
+  GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+  EXPECT_EQ(c3i->AssignedSlot(), nullptr);
+  EXPECT_FALSE(select->ChildrenDescendantCounts().Contains(c3i));
+  EXPECT_EQ(select->ChildrenDescendantCounts().at(c3).num_inputs, 1);
+  EXPECT_EQ(select->ChildrenDescendantCounts().at(c3).num_options, 1);
+  EXPECT_EQ(select->NumDescendantInputs(), 2);
 
   GetElementById("c3o")->remove();
   EXPECT_EQ(select->ChildrenDescendantCounts().at(c3).num_options, 0);
   EXPECT_EQ(select->ChildrenDescendantCounts().at(c3).num_inputs, 1);
-  EXPECT_EQ(select->NumDescendantInputs(), 1);
+  EXPECT_EQ(select->NumDescendantInputs(), 2);
+  GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+  EXPECT_EQ(c3->AssignedSlot(), input_slot());
+  EXPECT_EQ(c4->AssignedSlot(), input_slot());
+  EXPECT_EQ(c5->AssignedSlot(), options_slot());
+  EXPECT_EQ(c6->AssignedSlot(), options_slot());
+
   GetElementById("c3i")->remove();
   EXPECT_FALSE(select->ChildrenDescendantCounts().Contains(c3));
-  EXPECT_EQ(select->NumDescendantInputs(), 0);
+  EXPECT_EQ(select->NumDescendantInputs(), 1);
+  GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+  EXPECT_EQ(c3->AssignedSlot(), options_slot());
+  EXPECT_EQ(c4->AssignedSlot(), input_slot());
+  EXPECT_EQ(c5->AssignedSlot(), options_slot());
+  EXPECT_EQ(c6->AssignedSlot(), options_slot());
 
   c4->remove();
-  EXPECT_FALSE(select->ChildrenDescendantCounts().Contains(c4));
   EXPECT_EQ(select->NumDescendantInputs(), 0);
+
+  EXPECT_FALSE(!!input_slot());
+  GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+  EXPECT_EQ(c3->AssignedSlot(), options_slot());
+  EXPECT_EQ(c4->AssignedSlot(), input_slot());
+  EXPECT_EQ(c5->AssignedSlot(), options_slot());
+  EXPECT_EQ(c6->AssignedSlot(), options_slot());
+
+  c5->remove();
+  EXPECT_FALSE(select->ChildrenDescendantCounts().Contains(c5));
+  EXPECT_EQ(select->NumDescendantInputs(), 0);
+
+  EXPECT_FALSE(!!input_slot());
+  GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+  EXPECT_EQ(c3->AssignedSlot(), options_slot());
+  EXPECT_EQ(c6->AssignedSlot(), options_slot());
 }
 
 class HTMLSelectElementSimTest : public SimTest {};
@@ -1312,6 +1464,96 @@ TEST_F(HTMLSelectElementTest,
   EXPECT_FALSE(HasDescendantsObserver(*select));
 
   test::RunPendingTasks();
+}
+
+TEST_F(HTMLSelectElementTest, KeyboardRepeatDoesNotTogglePopup) {
+  SetHtmlInnerHTML(R"HTML(
+    <style>
+      .base-select, .base-select::picker(select) {
+        appearance: base-select;
+      }
+    </style>
+    <select id="select">
+      <option>one</option>
+      <option>two</option>
+    </select>
+  )HTML");
+
+  auto* select = To<HTMLSelectElement>(GetElementById("select"));
+  ASSERT_TRUE(select);
+
+  // Test both appearance: auto and appearance: base-select
+  for (bool use_base_select : {false, true}) {
+    if (use_base_select) {
+      select->setAttribute(html_names::kClassAttr, AtomicString("base-select"));
+    } else {
+      select->removeAttribute(html_names::kClassAttr);
+    }
+    select->Focus();
+    GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+
+    ASSERT_FALSE(select->PopupIsVisible());
+
+    // 1. Send repeat keypress Space. It should NOT open the popup.
+    {
+      WebKeyboardEvent web_event(WebInputEvent::Type::kChar,
+                                 WebInputEvent::kIsAutoRepeat,
+                                 base::TimeTicks());
+      web_event.windows_key_code = VKEY_SPACE;
+      web_event.text[0] = ' ';
+      auto* event = KeyboardEvent::Create(web_event, GetDocument().domWindow());
+      select->DefaultEventHandler(*event);
+      EXPECT_FALSE(select->PopupIsVisible())
+          << "Repeat Space should not open (base-select: " << use_base_select
+          << ")";
+    }
+
+    // 2. Send non-repeat keypress Space. It SHOULD open the popup.
+    {
+      WebKeyboardEvent web_event(WebInputEvent::Type::kChar,
+                                 WebInputEvent::kNoModifiers,
+                                 base::TimeTicks());
+      web_event.windows_key_code = VKEY_SPACE;
+      web_event.text[0] = ' ';
+      auto* event = KeyboardEvent::Create(web_event, GetDocument().domWindow());
+      select->DefaultEventHandler(*event);
+      EXPECT_TRUE(select->PopupIsVisible())
+          << "Non-repeat Space should open (base-select: " << use_base_select
+          << ")";
+    }
+
+    // 3. Send repeat key event while open. It should NOT close the popup.
+    Element* active_element = GetDocument().ActiveElement();
+    ASSERT_TRUE(active_element);
+    {
+      WebKeyboardEvent web_event(WebInputEvent::Type::kRawKeyDown,
+                                 WebInputEvent::kIsAutoRepeat,
+                                 base::TimeTicks());
+      web_event.windows_key_code = VKEY_SPACE;
+      auto* event = KeyboardEvent::Create(web_event, GetDocument().domWindow());
+      active_element->DefaultEventHandler(*event);
+      EXPECT_TRUE(select->PopupIsVisible())
+          << "Repeat keydown Space should not close (base-select: "
+          << use_base_select << ")";
+    }
+    {
+      WebKeyboardEvent web_event(WebInputEvent::Type::kChar,
+                                 WebInputEvent::kIsAutoRepeat,
+                                 base::TimeTicks());
+      web_event.windows_key_code = VKEY_SPACE;
+      web_event.text[0] = ' ';
+      auto* event = KeyboardEvent::Create(web_event, GetDocument().domWindow());
+      active_element->DefaultEventHandler(*event);
+      EXPECT_TRUE(select->PopupIsVisible())
+          << "Repeat keypress Space should not close (base-select: "
+          << use_base_select << ")";
+    }
+
+    // Clean up: hide popup if still open
+    if (select->PopupIsVisible()) {
+      select->HidePopup(SelectPopupHideBehavior::kNormal);
+    }
+  }
 }
 
 }  // namespace blink

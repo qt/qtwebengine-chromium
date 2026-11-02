@@ -52,8 +52,9 @@ class CardUnmaskPromptController;
 class CreditCardCvcAuthenticator;
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 class OmniboxAutofillDelegate;
+enum class SuggestionHidingReason;
 #endif
-class TouchToFillDelegate;
+class TouchToFillPaymentMethodDelegate;
 
 namespace payments {
 
@@ -168,7 +169,6 @@ class TestPaymentsAutofillClient : public PaymentsAutofillClient {
   CreditCardCvcAuthenticator& GetCvcAuthenticator() override;
   CreditCardOtpAuthenticator* GetOtpAuthenticator() override;
   TestCreditCardRiskBasedAuthenticator* GetRiskBasedAuthenticator() override;
-  bool IsRiskBasedAuthEffectivelyAvailable() const override;
   bool IsMandatoryReauthEnabled() override;
   void ShowMandatoryReauthOptInPrompt(
       base::OnceClosure accept_mandatory_reauth_callback,
@@ -187,16 +187,16 @@ class TestPaymentsAutofillClient : public PaymentsAutofillClient {
       const OfferNotificationOptions& options) override;
   void DismissOfferNotification() override;
   bool ShowTouchToFillCreditCard(
-      base::WeakPtr<TouchToFillDelegate> delegate,
+      base::WeakPtr<TouchToFillPaymentMethodDelegate> delegate,
       base::span<const Suggestion> suggestions) override;
   bool ShowTouchToFillIban(
-      base::WeakPtr<TouchToFillDelegate> delegate,
-      base::span<const autofill::Iban> ibans_to_suggest) override;
+      base::WeakPtr<TouchToFillPaymentMethodDelegate> delegate,
+      base::span<const Iban> ibans_to_suggest) override;
   bool ShowTouchToFillAffiliatedLoyaltyCard(
-      base::WeakPtr<TouchToFillDelegate> delegate,
-      std::vector<autofill::LoyaltyCard> loyalty_cards_to_suggest) override;
+      base::WeakPtr<TouchToFillPaymentMethodDelegate> delegate,
+      std::vector<LoyaltyCard> loyalty_cards_to_suggest) override;
   bool ShowTouchToFillForAllLoyaltyCards(
-      base::WeakPtr<TouchToFillDelegate> delegate,
+      base::WeakPtr<TouchToFillPaymentMethodDelegate> delegate,
       std::vector<LoyaltyCard> loyalty_cards_to_suggest) override;
   bool OnPurchaseAmountExtracted(
       base::span<const payments::BnplIssuerContext> bnpl_issuer_contexts,
@@ -233,12 +233,24 @@ class TestPaymentsAutofillClient : public PaymentsAutofillClient {
   void ShowCreditCardSaveAndFillPendingDialog(
       CardSaveAndFillDialogCallback callback) override;
   void HideCreditCardSaveAndFillDialog() override;
-  bool IsTabModalPopupDeprecated() const override;
+  bool IsTabModalPopup() const override;
   BnplStrategy* GetBnplStrategy() override;
   BnplUiDelegate* GetBnplUiDelegate() override;
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
   OmniboxAutofillDelegate* GetOmniboxAutofillDelegate() override;
-  void ShowOmniboxAutofillChip() override;
+  void ShowExpandedOmniboxAutofillChip(
+      std::vector<Suggestion> suggestions,
+      base::OnceClosure on_chip_shown,
+      base::RepeatingCallback<void(base::span<const Suggestion>)>
+          on_suggestions_shown,
+      base::RepeatingCallback<void(SuggestionHidingReason)>
+          on_suggestions_hidden,
+      base::RepeatingCallback<void(const Suggestion&)> did_select_suggestion,
+      base::RepeatingClosure did_deselect_suggestion,
+      base::RepeatingCallback<
+          void(const Suggestion&,
+               const AutofillSuggestionDelegate::SuggestionMetadata&)>
+          did_accept_suggestion) override;
   void HideOmniboxAutofillChip() override;
 #endif
 

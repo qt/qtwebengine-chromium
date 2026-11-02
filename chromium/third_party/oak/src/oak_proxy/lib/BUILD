@@ -14,7 +14,7 @@
 # limitations under the License.
 #
 
-load("@rules_rust//rust:defs.bzl", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 
 package(
     default_visibility = ["//:default_visibility"],
@@ -30,6 +30,7 @@ rust_library(
         "//oak_attestation_verification",
         "//oak_proto_rust",
         "//oak_session",
+        "//oak_session/tls/rust:oak_session_tls",
         "//oak_time",
         "//oak_time:oak_time_std",
         "@oak_crates_index//:anyhow",
@@ -49,5 +50,17 @@ rust_library(
         "@oak_crates_index//:tungstenite",
         "@oak_crates_index//:url",
         "@oak_crates_index//:x509-cert",
+    ],
+)
+
+rust_test(
+    name = "oak_proxy_lib_tests",
+    srcs = ["src/tests.rs"],
+    data = [
+        "//oak_proxy/testdata",
+    ],
+    deps = [
+        ":oak_proxy_lib",
+        "@oak_crates_index//:toml",
     ],
 )

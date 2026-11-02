@@ -10,14 +10,13 @@
 #include "src/execution/arguments-inl.h"
 #include "src/execution/frames-inl.h"
 #include "src/execution/isolate-inl.h"
-#include "src/execution/isolate.h"
 #include "src/handles/handles.h"
 #include "src/interpreter/bytecode-flags-and-tokens.h"
 #include "src/objects/arguments-inl.h"
 #include "src/objects/fixed-array.h"
+#include "src/objects/heap-object-set-map-inl.h"
 #include "src/objects/heap-object.h"
 #include "src/objects/js-disposable-stack-inl.h"
-#include "src/objects/js-disposable-stack.h"
 #include "src/objects/objects.h"
 #include "src/objects/oddball.h"
 #include "src/objects/smi.h"
@@ -553,7 +552,7 @@ DirectHandle<JSObject> NewSloppyArguments(Isolate* isolate,
                                           T parameters,
                                           uint32_t argument_count) {
   CHECK(!IsDerivedConstructor(callee->shared()->kind()));
-  DCHECK(callee->shared()->has_simple_parameters());
+  CHECK(callee->shared()->has_simple_parameters());
   DirectHandle<JSObject> result =
       isolate->factory()->NewArgumentsObject(callee, argument_count);
 

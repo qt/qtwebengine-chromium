@@ -198,6 +198,8 @@ struct loader_layer_properties {
     struct loader_string_list override_paths;
     bool is_override;
     bool keep;
+    // Set while this meta-layer is being expanded, used to break cyclic component references.
+    bool is_being_expanded;
     struct loader_string_list blacklist_layer_names;
     struct loader_string_list app_key_paths;
 };
@@ -250,9 +252,6 @@ struct loader_device {
         bool ext_debug_marker_enabled;
         bool ext_debug_utils_enabled;
         bool ext_full_screen_exclusive_enabled;
-        bool version_1_1_enabled;
-        bool version_1_2_enabled;
-        bool version_1_3_enabled;
     } driver_extensions;
 
     struct loader_device *next;

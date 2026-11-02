@@ -178,9 +178,9 @@ struct device_expr_traits<Scaled<Inner>> {
 }  // namespace internal
 
 template <typename Lhs, typename Rhs,
-          typename std::enable_if<internal::device_expr_traits<Lhs>::is_device_expr &&
-                                      internal::device_expr_traits<Rhs>::is_device_expr,
-                                  int>::type = 0>
+          std::enable_if_t<internal::device_expr_traits<Lhs>::is_device_expr &&
+                               internal::device_expr_traits<Rhs>::is_device_expr,
+                           int> = 0>
 GemmExpr<Lhs, Rhs> operator*(const Lhs& a, const Rhs& b) {
   return {a, b};
 }

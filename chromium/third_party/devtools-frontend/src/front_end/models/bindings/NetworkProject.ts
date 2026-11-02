@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import * as Common from '../../core/common/common.js';
+import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import type * as Workspace from '../workspace/workspace.js';
@@ -11,23 +12,34 @@ const uiSourceCodeToAttributionMap = new WeakMap<Workspace.UISourceCode.UISource
                                                    frame: SDK.ResourceTreeModel.ResourceTreeFrame,
                                                    count: number,
                                                  }>>();
-const projectToTargetMap = new WeakMap<Workspace.Workspace.Project, SDK.Target.Target>();
-
-let networkProjectManagerInstance: NetworkProjectManager;
 
 export class NetworkProjectManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
-  private constructor() {
-    super();
-  }
+  readonly #projectToTargetMap = new WeakMap<Workspace.Workspace.Project, SDK.Target.Target>();
 
   static instance({forceNew}: {
     forceNew: boolean,
   } = {forceNew: false}): NetworkProjectManager {
-    if (!networkProjectManagerInstance || forceNew) {
-      networkProjectManagerInstance = new NetworkProjectManager();
+    if (!Root.DevToolsContext.globalInstance().has(NetworkProjectManager) || forceNew) {
+      Root.DevToolsContext.globalInstance().set(NetworkProjectManager, new NetworkProjectManager());
     }
 
-    return networkProjectManagerInstance;
+    return Root.DevToolsContext.globalInstance().get(NetworkProjectManager);
+  }
+
+  static removeInstance(): void {
+    Root.DevToolsContext.globalInstance().delete(NetworkProjectManager);
+  }
+
+  setTargetForProject(project: Workspace.Workspace.Project, target: SDK.Target.Target): void {
+    this.#projectToTargetMap.set(project, target);
+  }
+
+  getTargetForProject(project: Workspace.Workspace.Project): SDK.Target.Target|null {
+    return this.#projectToTargetMap.get(project) ?? null;
+  }
+
+  getTargetForUISourceCode(uiSourceCode: Workspace.UISourceCode.UISourceCode): SDK.Target.Target|null {
+    return this.#projectToTargetMap.get(uiSourceCode.project()) ?? null;
   }
 }
 
@@ -132,15 +144,15 @@ export class NetworkProject {
   }
 
   static targetForUISourceCode(uiSourceCode: Workspace.UISourceCode.UISourceCode): SDK.Target.Target|null {
-    return projectToTargetMap.get(uiSourceCode.project()) || null;
+    return NetworkProjectManager.instance().getTargetForUISourceCode(uiSourceCode);
   }
 
   static setTargetForProject(project: Workspace.Workspace.Project, target: SDK.Target.Target): void {
-    projectToTargetMap.set(project, target);
+    NetworkProjectManager.instance().setTargetForProject(project, target);
   }
 
   static getTargetForProject(project: Workspace.Workspace.Project): SDK.Target.Target|null {
-    return projectToTargetMap.get(project) || null;
+    return NetworkProjectManager.instance().getTargetForProject(project);
   }
 
   static framesForUISourceCode(uiSourceCode: Workspace.UISourceCode.UISourceCode):

@@ -37,12 +37,13 @@
 #include "cc/test/pixel_test_utils.h"
 #include "components/ukm/test_ukm_recorder.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
+#include "content/browser/browser_context_impl.h"
 #include "content/browser/browser_url_handler_impl.h"
-#include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/renderer_host/navigation_request.h"
 #include "content/browser/renderer_host/navigation_state_keep_alive.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/renderer_host/spare_render_process_host_manager_impl.h"
+#include "content/browser/security/cpsp/child_process_security_policy_impl.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/content_navigation_policy.h"
@@ -100,6 +101,7 @@
 #include "net/base/load_flags.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/controllable_http_response.h"
+#include "net/test/embedded_test_server/default_handlers.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/expectation_handler.h"
 #include "net/test/embedded_test_server/http_response.h"
@@ -642,8 +644,7 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, BrowserInitiatedNavigations) {
     EXPECT_TRUE(observer.last_navigation_succeeded());
     EXPECT_FALSE(observer.last_initiator_origin().has_value());
     EXPECT_FALSE(observer.last_initiator_frame_token().has_value());
-    EXPECT_EQ(ChildProcessHost::kInvalidUniqueID,
-              observer.last_initiator_process_id());
+    EXPECT_FALSE(observer.last_initiator_process_id());
   }
 
   RenderFrameHost* initial_rfh = current_frame_host();
@@ -657,8 +658,7 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, BrowserInitiatedNavigations) {
     EXPECT_TRUE(observer.last_navigation_succeeded());
     EXPECT_FALSE(observer.last_initiator_origin().has_value());
     EXPECT_FALSE(observer.last_initiator_frame_token().has_value());
-    EXPECT_EQ(ChildProcessHost::kInvalidUniqueID,
-              observer.last_initiator_process_id());
+    EXPECT_FALSE(observer.last_initiator_process_id());
   }
 
   RenderFrameHost* second_rfh = current_frame_host();
@@ -680,8 +680,7 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, BrowserInitiatedNavigations) {
     EXPECT_TRUE(observer.last_navigation_succeeded());
     EXPECT_FALSE(observer.last_initiator_origin().has_value());
     EXPECT_FALSE(observer.last_initiator_frame_token().has_value());
-    EXPECT_EQ(ChildProcessHost::kInvalidUniqueID,
-              observer.last_initiator_process_id());
+    EXPECT_FALSE(observer.last_initiator_process_id());
   }
 
   // The RenderFrameHost should have changed.
@@ -705,8 +704,7 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest,
     EXPECT_TRUE(observer.last_navigation_succeeded());
     EXPECT_FALSE(observer.last_initiator_origin().has_value());
     EXPECT_FALSE(observer.last_initiator_frame_token().has_value());
-    EXPECT_EQ(ChildProcessHost::kInvalidUniqueID,
-              observer.last_initiator_process_id());
+    EXPECT_FALSE(observer.last_initiator_process_id());
   }
 
   RenderFrameHost* initial_rfh = current_frame_host();
@@ -732,13 +730,14 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest,
       EXPECT_NE(current_frame_host(), initial_rfh);
       EXPECT_EQ(initial_rfh_global_token.frame_token,
                 observer.last_initiator_frame_token().value());
+      // TODO(crbug.com/379869738): Remove GetUnsafeValue.
       EXPECT_EQ(initial_rfh_global_token.child_id,
-                observer.last_initiator_process_id());
+                observer.last_initiator_process_id().GetUnsafeValue());
     } else {
       EXPECT_EQ(current_frame_host(), initial_rfh);
       EXPECT_EQ(current_frame_host()->GetFrameToken(),
                 observer.last_initiator_frame_token().value());
-      EXPECT_EQ(current_frame_host()->GetProcess()->GetDeprecatedID(),
+      EXPECT_EQ(current_frame_host()->GetProcess()->GetID(),
                 observer.last_initiator_process_id());
     }
   }
@@ -786,8 +785,9 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest,
     EXPECT_TRUE(observer.last_initiator_frame_token().has_value());
     EXPECT_EQ(initial_rfh_global_token.frame_token,
               observer.last_initiator_frame_token().value());
+    // TODO(crbug.com/379869738): Remove GetUnsafeValue.
     EXPECT_EQ(initial_rfh_global_token.child_id,
-              observer.last_initiator_process_id());
+              observer.last_initiator_process_id().GetUnsafeValue());
   }
 
   // The RenderFrameHost should have changed unless strict SiteInstances (either
@@ -1338,8 +1338,9 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest,
     EXPECT_TRUE(observer.last_initiator_frame_token().has_value());
     EXPECT_EQ(initiator_global_token.frame_token,
               observer.last_initiator_frame_token().value());
+    // TODO(crbug.com/379869738): Remove GetUnsafeValue.
     EXPECT_EQ(initiator_global_token.child_id,
-              observer.last_initiator_process_id());
+              observer.last_initiator_process_id().GetUnsafeValue());
   }
 }
 
@@ -1374,8 +1375,9 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest,
     EXPECT_TRUE(observer.last_initiator_frame_token().has_value());
     EXPECT_EQ(initiator_global_token.frame_token,
               observer.last_initiator_frame_token().value());
+    // TODO(crbug.com/379869738): Remove GetUnsafeValue.
     EXPECT_EQ(initiator_global_token.child_id,
-              observer.last_initiator_process_id());
+              observer.last_initiator_process_id().GetUnsafeValue());
   }
 }
 
@@ -1412,8 +1414,9 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest,
     EXPECT_TRUE(observer.last_initiator_frame_token().has_value());
     EXPECT_EQ(initiator_global_token.frame_token,
               observer.last_initiator_frame_token().value());
+    // TODO(crbug.com/379869738): Remove GetUnsafeValue.
     EXPECT_EQ(initiator_global_token.child_id,
-              observer.last_initiator_process_id());
+              observer.last_initiator_process_id().GetUnsafeValue());
   }
 }
 
@@ -1488,8 +1491,9 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest,
     EXPECT_TRUE(observer.last_initiator_frame_token().has_value());
     EXPECT_EQ(initiator_global_token.frame_token,
               observer.last_initiator_frame_token().value());
+    // TODO(crbug.com/379869738): Remove GetUnsafeValue.
     EXPECT_EQ(initiator_global_token.child_id,
-              observer.last_initiator_process_id());
+              observer.last_initiator_process_id().GetUnsafeValue());
   }
 }
 
@@ -3745,7 +3749,7 @@ class GetEffectiveUrlClient : public ContentBrowserTestContentBrowserClient {
   }
 
   bool IsSuitableHost(RenderProcessHost* process_host,
-                      const GURL& site_url) override {
+                      const SecurityPrincipal& security_principal) override {
     if (!disallowed_process_id_) {
       return true;
     }
@@ -4095,24 +4099,17 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest,
             request->GetInitiatorFrameToken();
         EXPECT_TRUE(frame_token.has_value());
         EXPECT_EQ(initiator_global_token.frame_token, frame_token.value());
+        // TODO(crbug.com/379869738): Remove GetUnsafeValue.
         EXPECT_EQ(initiator_global_token.child_id,
-                  request->GetInitiatorProcessId());
+                  request->GetInitiatorProcessId().GetUnsafeValue());
 
         auto* initiator_rfh = RenderFrameHostImpl::FromFrameToken(
             request->GetInitiatorProcessId(), *frame_token);
         ASSERT_FALSE(initiator_rfh);
 
-        // Even if the initiator RenderFrameHost is gone, its policy container
-        // should still be around since the LocalFrame has not been destroyed
-        // yet.
-        PolicyContainerHost* initiator_policy_container =
-            RenderFrameHostImpl::GetPolicyContainerHost(
-                base::OptionalToPtr(frame_token),
-                request->GetInitiatorProcessId(),
-                web_contents()->GetPrimaryMainFrame()->GetStoragePartition());
-        ASSERT_TRUE(initiator_policy_container);
-        ASSERT_EQ(network::mojom::ReferrerPolicy::kAlways,
-                  initiator_policy_container->referrer_policy());
+        // Even if the initiator RenderFrameHost is gone, a valid initiator
+        // navigation state should have been passed to the navigation request.
+        EXPECT_NE(nullptr, request->GetInitiatorNavigationState());
 
         // Even if the initiator RenderFrameHost is gone, the navigation request
         // (to "about:blank") should have inherited its policy container.
@@ -4189,25 +4186,20 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, FormSubmissionThenDeleteFrame) {
             request->GetInitiatorFrameToken();
         EXPECT_TRUE(frame_token.has_value());
         EXPECT_EQ(initiator_global_token.frame_token, frame_token.value());
+        // TODO(crbug.com/379869738): Remove GetUnsafeValue.
         EXPECT_EQ(initiator_global_token.child_id,
-                  request->GetInitiatorProcessId());
+                  request->GetInitiatorProcessId().GetUnsafeValue());
 
         auto* deleted_initiator_rfh = RenderFrameHostImpl::FromFrameToken(
             request->GetInitiatorProcessId(), frame_token.value());
         ASSERT_FALSE(deleted_initiator_rfh);
 
-        // Even if the initiator RenderFrameHost is gone, its policy container
-        // should still be around since the LocalFrame has not been destroyed
-        // yet.
-        PolicyContainerHost* initiator_policy_container =
-            RenderFrameHostImpl::GetPolicyContainerHost(
-                base::OptionalToPtr(frame_token),
-                request->GetInitiatorProcessId(),
-                web_contents()->GetPrimaryMainFrame()->GetStoragePartition());
-        ASSERT_TRUE(initiator_policy_container);
-        EXPECT_EQ(network::mojom::ReferrerPolicy::kAlways,
-                  initiator_policy_container->referrer_policy());
+        // Even if the initiator RenderFrameHost is gone, a valid initiator
+        // navigation state should have been passed to the navigation request.
+        EXPECT_NE(nullptr, request->GetInitiatorNavigationState());
 
+        // Even if the initiator RenderFrameHost is gone, the request should
+        // have inherited its policies.
         auto* initiator_policies =
             request->GetInitiatorPolicyContainerPolicies();
         ASSERT_TRUE(initiator_policies);
@@ -4298,24 +4290,21 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest,
             request->GetInitiatorFrameToken();
         EXPECT_TRUE(frame_token.has_value());
         EXPECT_EQ(initiator_global_token.frame_token, frame_token.value());
+        // TODO(crbug.com/379869738): Remove GetUnsafeValue.
         EXPECT_EQ(initiator_global_token.child_id,
-                  request->GetInitiatorProcessId());
+                  request->GetInitiatorProcessId().GetUnsafeValue());
 
         auto* deleted_initiator_rfh = RenderFrameHostImpl::FromFrameToken(
             request->GetInitiatorProcessId(), frame_token.value());
         ASSERT_FALSE(deleted_initiator_rfh);
 
-        // Even if the initiator RenderFrameHost is gone, its policy container
-        // should still be around since the LocalFrame has not been destroyed
-        // yet.
-        PolicyContainerHost* initiator_policy_container =
-            RenderFrameHostImpl::GetPolicyContainerHost(
-                base::OptionalToPtr(frame_token),
-                request->GetInitiatorProcessId(),
-                web_contents()->GetPrimaryMainFrame()->GetStoragePartition());
-        ASSERT_TRUE(initiator_policy_container);
-        EXPECT_EQ(network::mojom::ReferrerPolicy::kAlways,
-                  initiator_policy_container->referrer_policy());
+        // Even if the initiator RenderFrameHost is gone, a valid initiator
+        // navigation state should have been passed to the navigation request.
+        EXPECT_NE(nullptr, request->GetInitiatorNavigationState());
+
+        // Even if the initiator RenderFrameHost is gone, the request should
+        // have inherited its policies.
+        ASSERT_TRUE(request->GetInitiatorPolicyContainerPolicies());
         EXPECT_EQ(
             network::mojom::ReferrerPolicy::kAlways,
             request->GetInitiatorPolicyContainerPolicies()->referrer_policy);
@@ -4485,8 +4474,9 @@ IN_PROC_BROWSER_TEST_F(
             request->GetInitiatorFrameToken();
         EXPECT_TRUE(frame_token.has_value());
         EXPECT_EQ(initiator_global_token.frame_token, frame_token.value());
+        // TODO(crbug.com/379869738): Remove GetUnsafeValue.
         EXPECT_EQ(initiator_global_token.child_id,
-                  request->GetInitiatorProcessId());
+                  request->GetInitiatorProcessId().GetUnsafeValue());
 
         // This is the RenderFrameHost in the WebContents that was forced to
         // `Close()` in the interceptor, so it should be deleted.
@@ -4494,17 +4484,9 @@ IN_PROC_BROWSER_TEST_F(
             request->GetInitiatorProcessId(), frame_token.value());
         EXPECT_FALSE(initiator_rfh);
 
-        // Even if the initiator RenderFrameHost is gone, its
-        // PolicyContainerHost should still be around since the LocalFrame has
-        // not been destroyed yet.
-        PolicyContainerHost* initiator_policy_container =
-            RenderFrameHostImpl::GetPolicyContainerHost(
-                base::OptionalToPtr(frame_token),
-                request->GetInitiatorProcessId(),
-                web_contents()->GetPrimaryMainFrame()->GetStoragePartition());
-        ASSERT_TRUE(initiator_policy_container);
-        EXPECT_EQ(network::mojom::ReferrerPolicy::kAlways,
-                  initiator_policy_container->referrer_policy());
+        // Even if the initiator RenderFrameHost is gone, the request should
+        // have inherited its policies.
+        ASSERT_TRUE(request->GetInitiatorPolicyContainerPolicies());
         EXPECT_EQ(
             network::mojom::ReferrerPolicy::kAlways,
             request->GetInitiatorPolicyContainerPolicies()->referrer_policy);
@@ -4584,8 +4566,8 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest,
   // Expect at this point that a NavigationStateKeepAlive has been created for
   // the form submission.
   NavigationStateKeepAlive* keep_alive =
-      current_frame_host()->GetStoragePartition()->GetNavigationStateKeepAlive(
-          current_frame_host()->GetFrameToken());
+      BrowserContextImpl::From(current_frame_host()->GetBrowserContext())
+          ->GetNavigationStateKeepAlive(current_frame_host()->GetFrameToken());
   ASSERT_TRUE(keep_alive);
 
   // Disable ref counts on the process, which resets all ref counts to 0. This
@@ -9945,6 +9927,346 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest,
   ASSERT_FALSE(shell()->web_contents()->IsLoading());
   ASSERT_EQ(shell()->web_contents()->GetURL(),
             embedded_test_server()->GetURL("/title1.html?push"));
+}
+
+// Test that POST submissions and file grants are not preserved if a history
+// navigation ends up at an error page, per https://crbug.com/531165110.
+IN_PROC_BROWSER_TEST_F(NavigationBrowserTest,
+                       DoNotGrantFileAccessToFailedSubframeHistoryNav) {
+  ChildProcessSecurityPolicyImpl* policy =
+      ChildProcessSecurityPolicyImpl::GetInstance();
+  WebContentsImpl* web_contents =
+      static_cast<WebContentsImpl*>(shell()->web_contents());
+  IsolateOriginsForTesting(embedded_test_server(), shell()->web_contents(),
+                           {"a.com", "b.com"});
+
+  // Navigate to site A with a same-origin iframe.
+  GURL main_url(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(a)"));
+  ASSERT_TRUE(NavigateToURL(shell(), main_url));
+  FrameTreeNode* root = web_contents->GetPrimaryFrameTree().root();
+  ASSERT_EQ(1u, root->child_count());
+  FrameTreeNode* child = root->child_at(0);
+  ChildProcessId process_a = root->current_frame_host()->GetProcess()->GetID();
+
+  // Navigate iframe to site B.
+  GURL b_form_url(embedded_test_server()->GetURL(
+      "b.com", "/form_that_posts_to_echoall.html"));
+  ASSERT_TRUE(NavigateToURLFromRenderer(child, b_form_url));
+  ChildProcessId process_b = child->current_frame_host()->GetProcess()->GetID();
+  ASSERT_NE(process_a, process_b);
+
+  // Select a file in the form of the site B iframe.
+  base::ScopedAllowBlockingForTesting allow_blocking;
+  base::ScopedTempDir temp_dir;
+  base::FilePath file_path;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir.GetPath(), &file_path));
+  ASSERT_TRUE(base::WriteFile(file_path, "b-private-data"));
+  {
+    base::RunLoop run_loop;
+    auto delegate = std::make_unique<FileChooserDelegate>(
+        file_path, run_loop.QuitClosure());
+    web_contents->SetDelegate(delegate.get());
+    ASSERT_TRUE(ExecJs(child, "document.getElementById('file').click();"));
+    run_loop.Run();
+    web_contents->SetDelegate(nullptr);
+  }
+
+  // Selecting the file should grant access to the file to the process for site
+  // B, and not the process for site A.
+  EXPECT_TRUE(policy->CanReadFile(process_b, file_path));
+  EXPECT_FALSE(policy->CanReadFile(process_a, file_path));
+
+  // Submit the form to another site B URL, which puts the POST data into the
+  // FrameNavigationEntry.
+  GURL b_post_target(embedded_test_server()->GetURL("b.com", "/echoall"));
+  {
+    TestNavigationObserver post_observer(web_contents, 1);
+    ASSERT_TRUE(
+        ExecJs(child, "document.getElementById('file-form').submit();"));
+    post_observer.Wait();
+  }
+  ASSERT_EQ(b_post_target, child->current_url());
+
+  // Navigate the iframe to site A again, whose process still has no access to
+  // the uploaded file.
+  GURL a_child_url(embedded_test_server()->GetURL("a.com", "/title2.html"));
+  ASSERT_TRUE(NavigateToURLFromRenderer(child, a_child_url));
+  ASSERT_EQ(process_a, child->current_frame_host()->GetProcess()->GetID());
+  ASSERT_FALSE(policy->CanReadFile(process_a, file_path));
+
+  // Install a CSP that will cause a back navigation to site B to fail.
+  ASSERT_TRUE(ExecJs(root,
+                     "var meta = document.createElement('meta');"
+                     "meta.httpEquiv = 'Content-Security-Policy';"
+                     "meta.content = \"frame-src 'none'\";"
+                     "document.head.appendChild(meta);"));
+  // Ensure the CSP has propagated to the browser-side PolicyContainerHost
+  // (which the subframe NavigationRequest will snapshot for its frame-src
+  // check).
+  ASSERT_EQ(1u, root->current_frame_host()
+                    ->policy_container_host()
+                    ->policies()
+                    .content_security_policies.size());
+
+  // Go back to site B in the iframe, which will be blocked by CSP and result in
+  // an error page in site A's process.
+  {
+    TestNavigationObserver back_observer(web_contents, 1);
+    ASSERT_TRUE(ExecJs(root, "history.back();"));
+    back_observer.Wait();
+    EXPECT_FALSE(back_observer.last_navigation_succeeded());
+    EXPECT_EQ(net::ERR_BLOCKED_BY_CSP, back_observer.last_net_error_code());
+  }
+  EXPECT_EQ(process_a, child->current_frame_host()->GetProcess()->GetID());
+  // The error page's URL is the original target (b.com).
+  EXPECT_EQ(b_post_target, child->current_url());
+
+  // Ensure that the failed navigation did not grant site A's process access to
+  // the file that was uploaded to site B.
+  EXPECT_FALSE(policy->CanReadFile(process_a, file_path));
+}
+
+// Similar to DoNotGrantFileAccessToFailedSubframeHistoryNav, but ensures that
+// POST submissions and file grants do work across cross-site 307/308 redirects
+// in session history, which intentionally preserve POST, even across processes.
+//
+// Note: This test uses NavigationBaseBrowserTest because it needs to create
+// ControllableHttpResponses before starting the embedded test server.
+IN_PROC_BROWSER_TEST_F(NavigationBaseBrowserTest,
+                       RedirectOnReloadWithGrantedFile) {
+  // Define custom responses for two separate requests to /echoall, and then
+  // start the test server.
+  net::test_server::ControllableHttpResponse response1(embedded_test_server(),
+                                                       "/echoall");
+  net::test_server::ControllableHttpResponse response2(embedded_test_server(),
+                                                       "/echoall");
+  ASSERT_TRUE(embedded_test_server()->Start());
+  IsolateOriginsForTesting(embedded_test_server(), shell()->web_contents(),
+                           {"a.com", "b.com"});
+
+  ChildProcessSecurityPolicyImpl* policy =
+      ChildProcessSecurityPolicyImpl::GetInstance();
+  WebContentsImpl* web_contents =
+      static_cast<WebContentsImpl*>(shell()->web_contents());
+
+  // Navigate to site A.
+  GURL main_url(embedded_test_server()->GetURL("a.com", "/title1.html"));
+  ASSERT_TRUE(NavigateToURL(shell(), main_url));
+  FrameTreeNode* root = web_contents->GetPrimaryFrameTree().root();
+  ChildProcessId process_a = root->current_frame_host()->GetProcess()->GetID();
+
+  // Navigate cross-process to a page with a form on site B.
+  GURL b_form_url(embedded_test_server()->GetURL(
+      "b.com", "/form_that_posts_to_echoall.html"));
+  ASSERT_TRUE(NavigateToURLFromRenderer(root, b_form_url));
+  ChildProcessId process_b = root->current_frame_host()->GetProcess()->GetID();
+  ASSERT_NE(process_a, process_b);
+
+  // Select a file in the form of the site B frame.
+  base::ScopedAllowBlockingForTesting allow_blocking;
+  base::ScopedTempDir temp_dir;
+  base::FilePath file_path;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir.GetPath(), &file_path));
+  ASSERT_TRUE(base::WriteFile(file_path, "b-private-data"));
+  {
+    base::RunLoop run_loop;
+    auto delegate = std::make_unique<FileChooserDelegate>(
+        file_path, run_loop.QuitClosure());
+    web_contents->SetDelegate(delegate.get());
+    ASSERT_TRUE(ExecJs(root, "document.getElementById('file').click();"));
+    run_loop.Run();
+    web_contents->SetDelegate(nullptr);
+  }
+
+  // Selecting the file should grant site B's process access to the file.
+  EXPECT_TRUE(policy->CanReadFile(process_b, file_path));
+
+  // Submit the form to another site B URL, which puts the POST data into the
+  // FrameNavigationEntry.
+  GURL b_post_target(embedded_test_server()->GetURL("b.com", "/echoall"));
+  {
+    TestNavigationObserver post_observer(web_contents, 1);
+    ASSERT_TRUE(ExecJs(root, "document.getElementById('file-form').submit();"));
+    response1.WaitForRequest();
+    response1.Send(
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: text/html; charset=utf-8\r\n"
+        "\r\n"
+        "Received.");
+    response1.Done();
+    post_observer.Wait();
+  }
+  ASSERT_EQ(b_post_target, root->current_url());
+
+  // Reload the page, which now redirects to site A using a 307 response that
+  // intentionally preserves the POST submission.
+  {
+    TestNavigationObserver back_observer(web_contents, 1);
+    web_contents->GetController().Reload(content::ReloadType::NORMAL,
+                                         /*check_for_repost=*/false);
+
+    // Send a redirect response from B to A.
+    response2.WaitForRequest();
+    response2.Send(
+        "HTTP/1.1 307 Temporary Redirect\r\n"
+        "Location: " +
+        main_url.spec() + "\r\n\r\n");
+    response2.Done();
+
+    back_observer.Wait();
+    EXPECT_TRUE(back_observer.last_navigation_succeeded());
+  }
+  EXPECT_EQ(main_url, root->current_url());
+
+  // There is now a second process for site A, since the previous one went away.
+  ChildProcessId process_a2 = root->current_frame_host()->GetProcess()->GetID();
+
+  // Due to the redirect, we should grant access to the previously posted file.
+  EXPECT_TRUE(policy->CanReadFile(process_a2, file_path));
+
+  // Check the FrameNavigationEntry's post data still exists as well.
+  NavigationEntryImpl* entry =
+      web_contents->GetController().GetLastCommittedEntry();
+  scoped_refptr<FrameNavigationEntry> frame_entry =
+      entry->root_node()->frame_entry.get();
+  std::string content_type;
+  EXPECT_NE(frame_entry->GetPostData(&content_type), nullptr);
+}
+
+// Similar to DoNotGrantFileAccessToFailedSubframeHistoryNav, but ensures that
+// POST submissions and file grants are not preserved if a subframe reload ends
+// up at an error page even if a cross-site redirect occurs before the error.
+IN_PROC_BROWSER_TEST_F(NavigationBaseBrowserTest,
+                       DoNotGrantFileAccessToFailedSubframeReloadRedirect) {
+  // Define custom responses for two separate requests to /echoall, and then
+  // start the test server.
+  net::test_server::ControllableHttpResponse response1(embedded_test_server(),
+                                                       "/echoall");
+  net::test_server::ControllableHttpResponse response2(embedded_test_server(),
+                                                       "/echoall");
+  ASSERT_TRUE(embedded_test_server()->Start());
+  IsolateOriginsForTesting(embedded_test_server(), shell()->web_contents(),
+                           {"a.com", "b.com", "c.com"});
+
+  ChildProcessSecurityPolicyImpl* policy =
+      ChildProcessSecurityPolicyImpl::GetInstance();
+  WebContentsImpl* web_contents =
+      static_cast<WebContentsImpl*>(shell()->web_contents());
+
+  // Navigate to site A with a same-origin iframe.
+  GURL main_url(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(a)"));
+  ASSERT_TRUE(NavigateToURL(shell(), main_url));
+  FrameTreeNode* root = web_contents->GetPrimaryFrameTree().root();
+  ASSERT_EQ(1u, root->child_count());
+  FrameTreeNode* child = root->child_at(0);
+  ChildProcessId process_a = root->current_frame_host()->GetProcess()->GetID();
+
+  // Navigate iframe to site B.
+  GURL b_form_url(embedded_test_server()->GetURL(
+      "b.com", "/form_that_posts_to_echoall.html"));
+  ASSERT_TRUE(NavigateToURLFromRenderer(child, b_form_url));
+  ChildProcessId process_b = child->current_frame_host()->GetProcess()->GetID();
+  ASSERT_NE(process_a, process_b);
+
+  // Select a file in the form of the site B iframe.
+  base::ScopedAllowBlockingForTesting allow_blocking;
+  base::ScopedTempDir temp_dir;
+  base::FilePath file_path;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir.GetPath(), &file_path));
+  ASSERT_TRUE(base::WriteFile(file_path, "b-private-data"));
+  {
+    base::RunLoop run_loop;
+    auto delegate = std::make_unique<FileChooserDelegate>(
+        file_path, run_loop.QuitClosure());
+    web_contents->SetDelegate(delegate.get());
+    ASSERT_TRUE(ExecJs(child, "document.getElementById('file').click();"));
+    run_loop.Run();
+    web_contents->SetDelegate(nullptr);
+  }
+
+  // Selecting the file should grant access to the file to the process for site
+  // B, and not the process for site A.
+  EXPECT_TRUE(policy->CanReadFile(process_b, file_path));
+  EXPECT_FALSE(policy->CanReadFile(process_a, file_path));
+
+  // Submit the form to another site B URL, which puts the POST data into the
+  // FrameNavigationEntry.
+  GURL b_post_target(embedded_test_server()->GetURL("b.com", "/echoall"));
+  {
+    TestNavigationObserver post_observer(web_contents, 1);
+    ASSERT_TRUE(
+        ExecJs(child, "document.getElementById('file-form').submit();"));
+    response1.WaitForRequest();
+    response1.Send(
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: text/html; charset=utf-8\r\n"
+        "Cache-Control: no-store\r\n"
+        "\r\n"
+        "Received.");
+    response1.Done();
+    post_observer.Wait();
+  }
+  ASSERT_EQ(b_post_target, child->current_url());
+
+  // Install a CSP that will allow a reload to B but cause an error page if it
+  // redirects elsewhere (e.g., to site C).
+  ASSERT_TRUE(ExecJs(root,
+                     "var meta = document.createElement('meta');"
+                     "meta.httpEquiv = 'Content-Security-Policy';"
+                     "meta.content = \"frame-src http://b.com:*\";"
+                     "document.head.appendChild(meta);"));
+  // Ensure the CSP has propagated to the browser-side PolicyContainerHost
+  // (which the subframe NavigationRequest will snapshot for its frame-src
+  // check).
+  ASSERT_EQ(1u, root->current_frame_host()
+                    ->policy_container_host()
+                    ->policies()
+                    .content_security_policies.size());
+
+  // Reload the submitted form in the iframe, which redirects to C and will thus
+  // be blocked by CSP and result in an error page.
+  GURL c_url(embedded_test_server()->GetURL("c.com", "/title1.html"));
+  {
+    TestNavigationObserver reload_observer(web_contents, 1);
+    web_contents->GetController().ReloadFrame(child);
+
+    // Send a redirect response from B to C.
+    response2.WaitForRequest();
+    response2.Send(
+        "HTTP/1.1 307 Temporary Redirect\r\n"
+        "Location: " +
+        c_url.spec() + "\r\n\r\n");
+    response2.Done();
+    reload_observer.Wait();
+    EXPECT_FALSE(reload_observer.last_navigation_succeeded());
+    EXPECT_EQ(net::ERR_BLOCKED_BY_CSP, reload_observer.last_net_error_code());
+  }
+
+  // A browser-initiated reload goes into the destination (C) process without
+  // subframe error page isolation, rather than A's process. We can still verify
+  // that file access is not granted due to the error page.
+  //
+  // Note that using location.reload() in the subframe above makes this renderer
+  // initiated, but in that case the error page ends up in B's process (which is
+  // the current process of the subframe), which already has access to the file.
+  // A history navigation might be a way to cause the error page to be in A's
+  // process, but the test doesn't seem to be proceeding to the request in that
+  // case.
+  ChildProcessId process_c = child->current_frame_host()->GetProcess()->GetID();
+  EXPECT_NE(process_c, process_a);
+  EXPECT_NE(process_c, process_b);
+
+  // The error page's URL is the pre-error target (c.com).
+  EXPECT_EQ(c_url, child->current_url());
+
+  // Ensure that the failed navigation did not grant site C's process access to
+  // the file that was uploaded to site B.
+  EXPECT_FALSE(policy->CanReadFile(process_c, file_path));
 }
 
 }  // namespace content

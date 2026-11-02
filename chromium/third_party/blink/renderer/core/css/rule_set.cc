@@ -67,8 +67,8 @@
 #include "third_party/blink/renderer/core/html/track/text_track_cue.h"
 #include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/inspector/invalidation_set_to_selector_map.h"
+#include "third_party/blink/renderer/core/route_matching/navigation_state.h"
 #include "third_party/blink/renderer/core/route_matching/route_map.h"
-#include "third_party/blink/renderer/core/route_matching/route_match_state.h"
 #include "third_party/blink/renderer/core/style/computed_style_constants.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
@@ -295,6 +295,7 @@ bool ShouldStopExtractingAtPseudoElement(
     case CSSSelector::kPseudoViewTransitionOld:
     case CSSSelector::kPseudoScrollMarkerGroup:
     case CSSSelector::kPseudoOverscrollAreaParent:
+    case CSSSelector::kPseudoOverscrollBackdrop:
       return true;
     case CSSSelector::kPseudoCue:
     case CSSSelector::kPseudoFirstLine:
@@ -318,6 +319,7 @@ bool ShouldStopExtractingAtPseudoElement(
     case CSSSelector::kPseudoDetailsContent:
     case CSSSelector::kPseudoPermissionIcon:
     case CSSSelector::kPseudoPicker:
+    case CSSSelector::kPseudoSelectListbox:
     case CSSSelector::kPseudoWebKitCustomElement:
     case CSSSelector::kPseudoBlinkInternalElement:
       return false;
@@ -390,7 +392,6 @@ static bool ExtractBucketingValues(const CSSSelector* selector,
         case CSSSelector::kPseudoSlotted:
         case CSSSelector::kPseudoRoot:
         case CSSSelector::kPseudoActiveViewTransition:
-        case CSSSelector::kPseudoOverscrollTarget:
           // Pseudo classes.
           values.pseudo_type = selector->GetPseudoType();
           if (values.pseudo_type == CSSSelector::kPseudoSlotted) {
@@ -406,6 +407,7 @@ static bool ExtractBucketingValues(const CSSSelector* selector,
         case CSSSelector::kPseudoDetailsContent:
         case CSSSelector::kPseudoPermissionIcon:
         case CSSSelector::kPseudoFileSelectorButton:
+        case CSSSelector::kPseudoSelectListbox:
         case CSSSelector::kPseudoScrollbarButton:
         case CSSSelector::kPseudoScrollbarCorner:
         case CSSSelector::kPseudoScrollbarThumb:
@@ -664,16 +666,6 @@ void RuleSet::FindBestBucketAndAdd(CSSSelector& component,
       });
     }
     AddToBucket(active_view_transition_rules_, rule_data);
-    return;
-  }
-  if (values.pseudo_type == CSSSelector::kPseudoOverscrollTarget) {
-    if (bucket_coverage == BucketCoverage::kCompute) {
-      MarkAsCoveredByBucketing(component, [](const CSSSelector& selector) {
-        return selector.Match() == CSSSelector::kPseudoClass &&
-               selector.GetPseudoType() == CSSSelector::kPseudoOverscrollTarget;
-      });
-    }
-    AddToBucket(overscroll_target_rules_, rule_data);
     return;
   }
 
@@ -1089,20 +1081,16 @@ void RuleSet::AddChildRules(StyleRule* parent_rule,
 
       // Try first the parameter from @apply, then the fallback block given in
       // @contents, and if neither exists, nothing happens.
-      StyleRule* rules_to_add = nullptr;
-      if (apply->FakeParentRuleForDeclarations()) {
+      const StyleRuleGroup* rules_to_add = nullptr;
+      if (apply->HasContentsBlock()) {
         rules_to_add = To<StyleRuleApplyMixin>(
-                           apply->Clone(parent_rule, mixin_parameter_bindings))
-                           ->FakeParentRuleForDeclarations();
-      } else if (contents_rule->FakeParentRuleForFallback() &&
-                 contents_rule->FakeParentRuleForFallback()->ChildRules()) {
-        rules_to_add =
-            To<StyleRuleContentsStatement>(
-                contents_rule->Clone(parent_rule, mixin_parameter_bindings))
-                ->FakeParentRuleForFallback();
+            apply->Clone(parent_rule, mixin_parameter_bindings));
+      } else if (!contents_rule->ChildRules().empty()) {
+        rules_to_add = To<StyleRuleContentsStatement>(
+            contents_rule->Clone(parent_rule, mixin_parameter_bindings));
       }
-      if (rules_to_add && rules_to_add->ChildRules()) {
-        AddChildRules(parent_rule, *rules_to_add->ChildRules(), medium, mixins,
+      if (rules_to_add) {
+        AddChildRules(parent_rule, rules_to_add->ChildRules(), medium, mixins,
                       add_rule_flags, container_queries, cascade_layer,
                       style_scope, apply_mixins_stack);
       }
@@ -1349,7 +1337,11 @@ void RuleSet::AddRulesFromSheet(const StyleSheetContents* sheet,
     // TODO(crbug.com/436805487): See if we can find a better place for this.
     // Maybe RuleSet isn't the right place. DidRoutesChange() was modeled after
     // DidMediaQueryResultsChange(), but maybe there's a better way.
-    route_match_state_ = RouteMatchState::Create(*route_map);
+    if (const NavigationState* new_state = route_map->GetNavigationState()) {
+      navigation_state_ = MakeGarbageCollected<NavigationState>(*new_state);
+    } else {
+      navigation_state_ = nullptr;
+    }
   }
 }
 
@@ -1426,8 +1418,7 @@ void RuleSet::AddFilteredRulesFromOtherSet(
     AddFilteredRulesFromOtherBucket(other, other.active_view_transition_rules_,
                                     only_include,
                                     &active_view_transition_rules_);
-    AddFilteredRulesFromOtherBucket(other, other.overscroll_target_rules_,
-                                    only_include, &overscroll_target_rules_);
+
     AddFilteredRulesFromOtherBucket(other, other.root_element_rules_,
                                     only_include, &root_element_rules_);
 
@@ -1769,7 +1760,7 @@ void RuleSet::CompactRules() {
   part_pseudo_rules_.shrink_to_fit();
   slotted_pseudo_element_rules_.shrink_to_fit();
   active_view_transition_rules_.shrink_to_fit();
-  overscroll_target_rules_.shrink_to_fit();
+
   page_rules_.shrink_to_fit();
   font_face_rules_.shrink_to_fit();
   font_palette_values_rules_.shrink_to_fit();
@@ -1845,7 +1836,6 @@ void RuleSet::AssertRuleListsSorted() const {
   DCHECK(IsRuleListSorted(shadow_host_rules_));
   DCHECK(IsRuleListSorted(part_pseudo_rules_));
   DCHECK(IsRuleListSorted(active_view_transition_rules_));
-  DCHECK(IsRuleListSorted(overscroll_target_rules_));
 }
 
 #endif  // EXPENSIVE_DCHECKS_ARE_ON()
@@ -1856,12 +1846,11 @@ bool RuleSet::DidMediaQueryResultsChange(
 }
 
 bool RuleSet::DidRoutesChange(const Document* document) const {
-  const RouteMap* map = RouteMap::Get(document);
-  if (!map || !route_match_state_) {
-    return false;
+  const auto* current_state = NavigationState::Get(document);
+  if (!current_state != !navigation_state_) {
+    return true;
   }
-  auto* new_state = RouteMatchState::Create(*map);
-  return !new_state->Equals(*route_match_state_);
+  return current_state && *current_state != *navigation_state_;
 }
 
 const CascadeLayer* RuleSet::GetLayerForTest(const RuleData& rule) const {
@@ -1903,7 +1892,7 @@ void RuleSet::Trace(Visitor* visitor) const {
   visitor->Trace(part_pseudo_rules_);
   visitor->Trace(slotted_pseudo_element_rules_);
   visitor->Trace(active_view_transition_rules_);
-  visitor->Trace(overscroll_target_rules_);
+
   visitor->Trace(page_rules_);
   visitor->Trace(font_face_rules_);
   visitor->Trace(font_palette_values_rules_);
@@ -1920,7 +1909,7 @@ void RuleSet::Trace(Visitor* visitor) const {
   visitor->Trace(layer_intervals_);
   visitor->Trace(container_query_intervals_);
   visitor->Trace(scope_intervals_);
-  visitor->Trace(route_match_state_);
+  visitor->Trace(navigation_state_);
 #if DCHECK_IS_ON()
   visitor->Trace(all_rules_);
 #endif  // DCHECK_IS_ON()

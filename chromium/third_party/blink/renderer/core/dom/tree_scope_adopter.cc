@@ -30,13 +30,14 @@
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/renderer/core/dom/attr.h"
 #include "third_party/blink/renderer/core/dom/document.h"
-#include "third_party/blink/renderer/core/dom/element_rare_data_vector.h"
 #include "third_party/blink/renderer/core/dom/node.h"
 #include "third_party/blink/renderer/core/dom/node_lists_node_data.h"
+#include "third_party/blink/renderer/core/dom/node_rare_data.h"
 #include "third_party/blink/renderer/core/dom/node_traversal.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/html/custom/custom_element.h"
 #include "third_party/blink/renderer/core/html/custom/custom_element_registry.h"
+#include "third_party/blink/renderer/core/html/custom/custom_element_registry_assignment.h"
 
 namespace blink {
 
@@ -96,7 +97,7 @@ void TreeScopeAdopter::MoveTreeToNewScope(Node& root) const {
     if (will_move_to_new_document) {
       MoveNodeToNewDocument(node, old_document,
                             is_document_unmodified_and_uninteracted);
-    } else if (ElementRareDataVector* rare_data = node.RareData()) {
+    } else if (NodeRareData* rare_data = node.RareData()) {
       if (rare_data->NodeLists())
         rare_data->NodeLists()->AdoptTreeScope();
     }
@@ -122,9 +123,13 @@ void TreeScopeAdopter::MoveTreeToNewScope(Node& root) const {
         // document with no browsing context) or global registry should get the
         // new document's effective global registry.
         if (!pre_move_registry || pre_move_registry->IsGlobalRegistry()) {
+          CustomElementRegistry* effective_global =
+              new_document.EffectiveGlobalCustomElementRegistry();
           element->SetCustomElementRegistry(
-              new_document.EffectiveGlobalCustomElementRegistry(),
-              /*explicitly_set=*/true);
+              CustomElementRegistryAssignment::ResolveNullableRegistry(
+                  effective_global,
+                  CustomElementRegistryAssignment::NullRegistryFallback::kWait),
+              /*always_retain_registry=*/true);
         }
       } else {
         // Within-document scope change (e.g., document scope -> shadow root
@@ -133,12 +138,16 @@ void TreeScopeAdopter::MoveTreeToNewScope(Node& root) const {
         // already changed the tree scope, the implicit fallback now returns the
         // new scope's registry. Explicitly save the old scope's registry to
         // preserve the element's original registry association.
-        ElementRareDataVector* rare_data = element->RareData();
+        NodeRareData* rare_data = element->RareData();
         if (!rare_data || !rare_data->HasCustomElementRegistrySet()) {
           auto* new_registry = NewScope().customElementRegistry();
           if (pre_move_registry != new_registry) {
-            element->SetCustomElementRegistry(pre_move_registry,
-                                              /*explicitly_set=*/true);
+            element->SetCustomElementRegistry(
+                CustomElementRegistryAssignment::ResolveNullableRegistry(
+                    pre_move_registry,
+                    CustomElementRegistryAssignment::NullRegistryFallback::
+                        kWait),
+                /*always_retain_registry=*/true);
           }
         }
       }
@@ -186,7 +195,10 @@ void TreeScopeAdopter::MoveShadowTreeToNewDocument(
         (shadow_root_registry && shadow_root_registry->IsGlobalRegistry())) {
       shadow_root_registry =
           new_document.EffectiveGlobalCustomElementRegistry();
-      shadow_root.SetCustomElementRegistry(shadow_root_registry);
+      shadow_root.SetCustomElementRegistry(
+          CustomElementRegistryAssignment::ResolveNullableRegistry(
+              shadow_root_registry,
+              CustomElementRegistryAssignment::NullRegistryFallback::kWait));
     }
   }
 
@@ -248,8 +260,9 @@ void TreeScopeAdopter::WillMoveTreeToNewDocument(Node& root) const {
         DCHECK(RuntimeEnabledFeatures::ScopedCustomElementRegistryEnabled());
         auto* registry = element->customElementRegistry();
         if (registry && registry == old_document.customElementRegistry()) {
-          element->SetCustomElementRegistry(registry,
-                                            /*explicitly_set=*/true);
+          element->SetCustomElementRegistry(
+              CustomElementRegistryAssignment::Explicit(registry),
+              /*always_retain_registry=*/true);
         }
       }
       if (ShadowRoot* shadow_root = element->GetShadowRoot())
@@ -294,7 +307,7 @@ inline void TreeScopeAdopter::MoveNodeToNewDocument(
 
   if (!is_document_unmodified_and_uninteracted) {
     // fast adoption can skip all the checks below
-    if (ElementRareDataVector* rare_data = node.RareData()) {
+    if (NodeRareData* rare_data = node.RareData()) {
       if (rare_data->NodeLists()) {
         rare_data->NodeLists()->AdoptDocument(old_document, new_document);
       }

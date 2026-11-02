@@ -4,6 +4,7 @@
 
 #include "gpu/command_buffer/service/graphite_shared_context.h"
 
+#include "base/test/test_future.h"
 #include "base/threading/thread.h"
 #include "gpu/command_buffer/common/shm_count.h"
 #include "gpu/command_buffer/service/skia_utils.h"
@@ -33,14 +34,14 @@ class MockGpuProcessShmCount : public GpuProcessShmCount {
   MOCK_METHOD(void, Decrement, (), (override));
 };
 
-class MockBackendFlushCallback {
+class MockDelegate : public GraphiteSharedContext::Delegate {
  public:
-  MOCK_METHOD(void, Flush, ());
-};
-
-class MockMarkContextLostCallback {
- public:
-  MOCK_METHOD(void, MarkContextLost, (error::ContextLostReason reason));
+  MOCK_METHOD(void, FlushBackend, (), (override));
+  MOCK_METHOD(void,
+              MarkContextLost,
+              (error::ContextLostReason reason),
+              (override));
+  MOCK_METHOD(bool, IsContextLost, (), (const, override));
 };
 
 // Test fixture for GraphiteSharedContext with thread safety enabled.
@@ -109,15 +110,11 @@ class GraphiteSharedContextTest : public testing::TestWithParam<bool> {
         skgpu::graphite::ContextFactory::MakeDawn(backend_context,
                                                   context_options),
         &use_shader_cache_shm_count_, is_thread_safe(), kMaxPendingRecordings,
-        base::BindRepeating(&MockBackendFlushCallback::Flush,
-                            base::Unretained(&backend_flush_callback_)),
-        base::BindRepeating(&MockMarkContextLostCallback::MarkContextLost,
-                            base::Unretained(&mark_context_lost_callback_)));
+        &delegate_);
   }
 
   MockGpuProcessShmCount use_shader_cache_shm_count_;
-  NiceMock<MockBackendFlushCallback> backend_flush_callback_;
-  NiceMock<MockMarkContextLostCallback> mark_context_lost_callback_;
+  NiceMock<MockDelegate> delegate_;
   std::unique_ptr<GraphiteSharedContext> graphite_shared_context_;
   std::unique_ptr<base::Thread> secondary_thread_;
 };
@@ -227,7 +224,7 @@ TEST_P(GraphiteSharedContextTest, OutOfOrderRecording) {
   graphite_shared_context_->insertRecording(info);
 
   info.fRecording = recording1.get();
-  EXPECT_CALL(mark_context_lost_callback_, MarkContextLost(testing::_)).Times(1);
+  EXPECT_CALL(delegate_, MarkContextLost(testing::_)).Times(1);
   EXPECT_FALSE(graphite_shared_context_->insertRecording(info));
 }
 
@@ -260,7 +257,7 @@ TEST_P(GraphiteSharedContextTest, LowPendingRecordings) {
   EXPECT_TRUE(recorder);
 
   // No flush is expected if the number of pending recordings is low.
-  EXPECT_CALL(backend_flush_callback_, Flush()).Times(0);
+  EXPECT_CALL(delegate_, FlushBackend()).Times(0);
 
   for (size_t i = 0; i < kMaxPendingRecordings - 1; ++i) {
     auto recording = recorder->snap();
@@ -278,7 +275,7 @@ TEST_P(GraphiteSharedContextTest, MaxPendingRecordings) {
   EXPECT_TRUE(recorder);
 
   // Expect a flush when the number of pending recordings reaches the max.
-  EXPECT_CALL(backend_flush_callback_, Flush()).Times(1);
+  EXPECT_CALL(delegate_, FlushBackend()).Times(1);
 
   for (size_t i = 0; i < kMaxPendingRecordings; ++i) {
     auto recording = recorder->snap();
@@ -289,6 +286,42 @@ TEST_P(GraphiteSharedContextTest, MaxPendingRecordings) {
 
     EXPECT_TRUE(graphite_shared_context_->insertRecording(info));
   }
+}
+
+// Test that async read pixels callbacks are skipped when the context is lost.
+TEST_P(GraphiteSharedContextTest, ReadPixelsContextLost) {
+  auto recorder = graphite_shared_context_->makeRecorder();
+  EXPECT_TRUE(recorder);
+
+  auto ii = SkImageInfo::Make(64, 64, kN32_SkColorType, kPremul_SkAlphaType);
+  auto surface = SkSurfaces::RenderTarget(recorder.get(), ii);
+  surface->getCanvas()->clear(SK_ColorRED);
+
+  auto recording = recorder->snap();
+  EXPECT_TRUE(recording);
+
+  skgpu::graphite::InsertRecordingInfo info = {};
+  info.fRecording = recording.get();
+  EXPECT_TRUE(graphite_shared_context_->insertRecording(info));
+
+  base::test::TestFuture<void*,
+                         std::unique_ptr<const SkSurface::AsyncReadResult>>
+      readback_future;
+
+  // When context is not lost, the callback should be invoked.
+  EXPECT_CALL(delegate_, IsContextLost()).WillOnce(testing::Return(false));
+  EXPECT_TRUE(graphite_shared_context_->asyncRescaleAndReadPixelsAndSubmit(
+      surface.get(), ii, SkIRect::MakeWH(64, 64), SkImage::RescaleGamma::kSrc,
+      SkImage::RescaleMode::kNearest, readback_future.GetCallback(), nullptr));
+  EXPECT_TRUE(readback_future.IsReady());
+
+  // When context is lost, the callback should not be invoked.
+  readback_future.Clear();
+  EXPECT_CALL(delegate_, IsContextLost()).WillOnce(testing::Return(true));
+  EXPECT_TRUE(graphite_shared_context_->asyncRescaleAndReadPixelsAndSubmit(
+      surface.get(), ii, SkIRect::MakeWH(64, 64), SkImage::RescaleGamma::kSrc,
+      SkImage::RescaleMode::kNearest, readback_future.GetCallback(), nullptr));
+  EXPECT_FALSE(readback_future.IsReady());
 }
 
 INSTANTIATE_TEST_SUITE_P(, GraphiteSharedContextTest, testing::Bool());

@@ -1,0 +1,805 @@
+// Copyright 2023 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+import '../../ui/kit/kit.js';
+
+import * as i18n from '../../core/i18n/i18n.js';
+import * as Platform from '../../core/platform/platform.js';
+import * as Menus from '../../ui/components/menus/menus.js';
+import * as UI from '../../ui/legacy/legacy.js';
+import * as Lit from '../../ui/lit/lit.js';
+import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
+
+import type * as Converters from './converters/converters.js';
+import * as Models from './models/models.js';
+import {StepEditor} from './StepEditor.js';
+import stepViewStyles from './stepView.css.js';
+import {TimelineSection} from './TimelineSection.js';
+
+const {html} = Lit;
+const {widget} = UI.Widget;
+
+const UIStrings = {
+  /**
+   * @description Title for the step type that configures the viewport.
+   */
+  setViewportClickTitle: 'Set viewport',
+  /**
+   * @description Title for the customStep step type.
+   */
+  customStepTitle: 'Custom step',
+  /**
+   * @description Title for the click step type.
+   */
+  clickStepTitle: 'Click',
+  /**
+   * @description Title for the double click step type.
+   */
+  doubleClickStepTitle: 'Double click',
+  /**
+   * @description Title for the hover step type.
+   */
+  hoverStepTitle: 'Hover',
+  /**
+   * @description Title for the emulateNetworkConditions step type.
+   */
+  emulateNetworkConditionsStepTitle: 'Emulate network conditions',
+  /**
+   * @description Title for the change step type.
+   */
+  changeStepTitle: 'Change',
+  /**
+   * @description Title for the close step type.
+   */
+  closeStepTitle: 'Close',
+  /**
+   * @description Title for the scroll step type.
+   */
+  scrollStepTitle: 'Scroll',
+  /**
+   * @description Title for the key up step type. `up` refers to the state of the keyboard key: it's released, i.e., up. It does not refer to the down arrow key specifically.
+   */
+  keyUpStepTitle: 'Key up',
+  /**
+   * @description Title for the navigate step type.
+   */
+  navigateStepTitle: 'Navigate',
+  /**
+   * @description Title for the key down step type. `down` refers to the state of the keyboard key: it's pressed, i.e., down. It does not refer to the down arrow key specifically.
+   */
+  keyDownStepTitle: 'Key down',
+  /**
+   * @description Title for the waitForElement step type.
+   */
+  waitForElementStepTitle: 'Wait for element',
+  /**
+   * @description Title for the waitForExpression step type.
+   */
+  waitForExpressionStepTitle: 'Wait for expression',
+  /**
+   * @description Title for elements with role button.
+   */
+  elementRoleButton: 'Button',
+  /**
+   * @description Title for elements with role input.
+   */
+  elementRoleInput: 'Input',
+  /**
+   * @description Default title for elements without a specific role.
+   */
+  elementRoleFallback: 'Element',
+  /**
+   * @description The title of the button in the step's context menu that adds a new step before the current one.
+   */
+  addStepBefore: 'Add step before',
+  /**
+   * @description The title of the button in the step's context menu that adds a new step after the current one.
+   */
+  addStepAfter: 'Add step after',
+  /**
+   * @description The title of the button in the step's context menu that removes the step.
+   */
+  removeStep: 'Remove step',
+  /**
+   * @description The title of the button that opens the step's context menu.
+   */
+  openStepActions: 'Open step actions',
+  /**
+   * @description The title of the button in the step's context menu that adds a breakpoint.
+   */
+  addBreakpoint: 'Add breakpoint',
+  /**
+   * @description The title of the button in the step's context menu that removes a breakpoint.
+   */
+  removeBreakpoint: 'Remove breakpoint',
+  /**
+   * @description A menu item in the context menu that expands another menu which lists all
+   * the formats the user can copy the recording as.
+   */
+  copyAs: 'Copy as',
+  /**
+   * @description The title of the menu group that holds actions on recording steps.
+   */
+  stepManagement: 'Manage steps',
+  /**
+   * @description The title of the menu group that holds actions related to breakpoints.
+   */
+  breakpoints: 'Breakpoints',
+} as const;
+const str_ = i18n.i18n.registerUIStrings(
+    'panels/recorder/StepView.ts',
+    UIStrings,
+);
+const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
+
+export const enum State {
+  DEFAULT = 'default',
+  SUCCESS = 'success',
+  CURRENT = 'current',
+  OUTSTANDING = 'outstanding',
+  ERROR = 'error',
+  STOPPED = 'stopped',
+}
+
+export const enum AddStepPosition {
+  BEFORE = 'before',
+  AFTER = 'after',
+}
+const COPY_ACTION_PREFIX = 'copy-step-as-';
+
+interface Action {
+  id: string;
+  label: string;
+  group: string;
+  groupTitle: string;
+  jslogContext?: string;
+}
+
+export interface ViewInput {
+  step?: Models.Schema.Step;
+  section?: Models.Section.Section;
+  state: State;
+  error?: Error;
+  showDetails: boolean;
+  isEndOfGroup: boolean;
+  isStartOfGroup: boolean;
+  stepIndex: number;
+  sectionIndex: number;
+  isFirstSection: boolean;
+  isLastSection: boolean;
+  isRecording: boolean;
+  isPlaying: boolean;
+  isVisible: boolean;
+  hasBreakpoint: boolean;
+  removable: boolean;
+  builtInConverters: Converters.Converter.Converter[];
+  extensionConverters: Converters.Converter.Converter[];
+  isSelected: boolean;
+  recorderSettings?: Models.RecorderSettings.RecorderSettings;
+  actions: Action[];
+
+  stepEdited: (newStep: Models.Schema.Step) => void;
+  onAttributeRequested?: (send: (attribute?: string) => void) => void;
+  onBreakpointClick: () => void;
+  handleStepAction: (event: Menus.Menu.MenuItemSelectedEvent) => void;
+  toggleShowDetails: () => void;
+  onToggleShowDetailsKeydown: (event: Event) => void;
+  populateStepContextMenu: (contextMenu: UI.ContextMenu.ContextMenu) => void;
+  onStepClick: (step: Models.Schema.Step|Models.Section.Section) => void;
+  onStepHover: (step: Models.Schema.Step|Models.Section.Section) => void;
+}
+
+export type ViewOutput = unknown;
+
+function getStepTypeTitle(input: {
+  step?: Models.Schema.Step,
+  section?: Models.Section.Section,
+}): string|Lit.TemplateResult {
+  if (input.section) {
+    return input.section.title ? input.section.title : html`<span class="fallback">(No Title)</span>`;
+  }
+  if (!input.step) {
+    throw new Error('Missing both step and section');
+  }
+  switch (input.step.type) {
+    case Models.Schema.StepType.CustomStep:
+      return i18nString(UIStrings.customStepTitle);
+    case Models.Schema.StepType.SetViewport:
+      return i18nString(UIStrings.setViewportClickTitle);
+    case Models.Schema.StepType.Click:
+      return i18nString(UIStrings.clickStepTitle);
+    case Models.Schema.StepType.DoubleClick:
+      return i18nString(UIStrings.doubleClickStepTitle);
+    case Models.Schema.StepType.Hover:
+      return i18nString(UIStrings.hoverStepTitle);
+    case Models.Schema.StepType.EmulateNetworkConditions:
+      return i18nString(UIStrings.emulateNetworkConditionsStepTitle);
+    case Models.Schema.StepType.Change:
+      return i18nString(UIStrings.changeStepTitle);
+    case Models.Schema.StepType.Close:
+      return i18nString(UIStrings.closeStepTitle);
+    case Models.Schema.StepType.Scroll:
+      return i18nString(UIStrings.scrollStepTitle);
+    case Models.Schema.StepType.KeyUp:
+      return i18nString(UIStrings.keyUpStepTitle);
+    case Models.Schema.StepType.KeyDown:
+      return i18nString(UIStrings.keyDownStepTitle);
+    case Models.Schema.StepType.WaitForElement:
+      return i18nString(UIStrings.waitForElementStepTitle);
+    case Models.Schema.StepType.WaitForExpression:
+      return i18nString(UIStrings.waitForExpressionStepTitle);
+    case Models.Schema.StepType.Navigate:
+      return i18nString(UIStrings.navigateStepTitle);
+  }
+}
+
+function getElementRoleTitle(role: string): string {
+  switch (role) {
+    case 'button':
+      return i18nString(UIStrings.elementRoleButton);
+    case 'input':
+      return i18nString(UIStrings.elementRoleInput);
+    default:
+      return i18nString(UIStrings.elementRoleFallback);
+  }
+}
+
+function getSelectorPreview(step: Models.Schema.Step): string {
+  if (!('selectors' in step)) {
+    return '';
+  }
+
+  const ariaSelector = step.selectors.flat().find(selector => selector.startsWith('aria/'));
+
+  if (!ariaSelector) {
+    return '';
+  }
+
+  const m = ariaSelector.match(/^aria\/(.+?)(\[role="(.+)"\])?$/);
+  if (!m) {
+    return '';
+  }
+
+  return `${getElementRoleTitle(m[3])} "${m[1]}"`;
+}
+
+function getSectionPreview(section?: Models.Section.Section): string {
+  if (!section) {
+    return '';
+  }
+  return section.url;
+}
+
+function renderStepActions(input: ViewInput): Lit.TemplateResult|null {
+  // clang-format off
+  return html`
+    <devtools-menu-button
+      class="step-actions"
+      title=${i18nString(UIStrings.openStepActions)}
+      aria-label=${i18nString(UIStrings.openStepActions)}
+      .populateMenuCall=${input.populateStepContextMenu}
+      @keydown=${(event: Event) => {
+        event.stopPropagation();
+      }}
+      jslog=${VisualLogging.dropDown('step-actions').track({click: true})}
+      .iconName=${'dots-vertical'}
+    ></devtools-menu-button>
+  `;
+  // clang-format on
+}
+
+export const DEFAULT_VIEW = (input: ViewInput, _output: ViewOutput, target: HTMLElement|ShadowRoot): void => {
+  if (!input.step && !input.section) {
+    return;
+  }
+
+  const stepClasses = {
+    step: true,
+    expanded: input.showDetails,
+    'is-success': input.state === State.SUCCESS,
+    'is-current': input.state === State.CURRENT,
+    'is-outstanding': input.state === State.OUTSTANDING,
+    'is-error': input.state === State.ERROR,
+    'is-stopped': input.state === State.STOPPED,
+    'is-start-of-group': input.isStartOfGroup,
+    'is-first-section': input.isFirstSection,
+    'has-breakpoint': input.hasBreakpoint,
+  };
+  const isExpandable = Boolean(input.step);
+  const mainTitle = getStepTypeTitle({
+    step: input.step,
+    section: input.section,
+  });
+  const subtitle = input.step ? getSelectorPreview(input.step) : getSectionPreview(input.section);
+
+  // clang-format off
+  Lit.render(
+    html`
+    <style>${stepViewStyles}</style>
+    <div>
+      <devtools-widget ${widget(TimelineSection, {
+          isFirstSection: input.isFirstSection,
+          isLastSection: input.isLastSection,
+          isStartOfGroup: input.isStartOfGroup,
+          isEndOfGroup: input.isEndOfGroup,
+          isSelected: input.isSelected,
+        })}
+        @contextmenu=${
+          (e: Event) => {
+          const menu = new UI.ContextMenu.ContextMenu(e as MouseEvent);
+          input.populateStepContextMenu(menu);
+          void menu.show();}
+        }
+        data-step-index=${input.stepIndex}
+        data-section-index=${input.sectionIndex}
+        @click=${(event: Event) => {
+          event.stopPropagation();
+          const stepOrSection = input.step || input.section;
+          if (stepOrSection) {
+            input.onStepClick(stepOrSection);
+          }
+        }}
+        @mouseover=${() => {
+          const stepOrSection = input.step || input.section;
+          if (stepOrSection) {
+            input.onStepHover(stepOrSection);
+          }
+        }}
+        class=${Lit.Directives.classMap(stepClasses)}>
+        <svg slot="icon" width="24" height="24" class="icon">
+          <circle class="circle-icon"/>
+          <g class="error-icon">
+            <path d="M1.5 1.5L6.5 6.5" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M1.5 6.5L6.5 1.5" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </g>
+          <path @click=${input.onBreakpointClick} jslog=${VisualLogging.action('breakpoint').track({click: true})} class="breakpoint-icon" d="M2.5 5.5H17.7098L21.4241 12L17.7098 18.5H2.5V5.5Z"/>
+        </svg>
+        <div class="summary">
+          <div class="title-container ${isExpandable ? 'action' : ''}"
+            @click=${isExpandable ? input.toggleShowDetails : undefined}
+            @keydown=${
+              isExpandable ? input.onToggleShowDetailsKeydown : undefined
+            }
+            tabindex="0"
+            jslog=${VisualLogging.sectionHeader().track({click: true})}
+            aria-role=${isExpandable ? 'button' : ''}
+            aria-label=${isExpandable ? 'Show details for step' : ''}
+          >
+            ${
+              isExpandable
+                ? html`<devtools-icon
+                    class="chevron"
+                    jslog=${VisualLogging.expand().track({click: true})}
+                    name="triangle-down">
+                  </devtools-icon>`
+                : ''
+            }
+            <div class="title">
+              <div class="main-title" title=${mainTitle}>${mainTitle}</div>
+              <div class="subtitle" title=${subtitle}>${subtitle}</div>
+            </div>
+          </div>
+          ${renderStepActions(input)}
+        </div>
+        <div class="details">
+          ${
+            input.step &&
+            html`<devtools-widget ${widget(StepEditor, {
+              step: input.step,
+              disabled: input.isPlaying,
+              onStepEdited: input.stepEdited,
+              onAttributeRequested: input.onAttributeRequested,
+            })}
+            class=${input.isSelected ? 'is-selected' : ''}></devtools-widget>`
+          }
+          ${
+            input.section?.causingStep &&
+            html`<devtools-widget ${widget(StepEditor, {
+              step: input.section.causingStep,
+              isTypeEditable: false,
+              disabled: input.isPlaying,
+              onStepEdited: input.stepEdited,
+              onAttributeRequested: input.onAttributeRequested,
+            })}></devtools-widget>`
+          }
+          }
+        </div>
+        ${
+          input.error &&
+          html`
+          <div class="error" role="alert">
+            ${input.error.message}
+          </div>
+        `
+        }
+      </devtools-widget>
+    </div>
+  `,
+    target, {container: {classes: ['step-view-widget']}},
+  );
+  // clang-format on
+};
+
+export class StepView extends UI.Widget.Widget<ShadowRoot> {
+  #observer: IntersectionObserver = new IntersectionObserver(result => {
+    this.#viewInput.isVisible = result[0].isIntersecting;
+  });
+  onStepChanged?: (currentStep: Models.Schema.Step, newStep: Models.Schema.Step) => void;
+  onAddStep?: (stepOrSection: Models.Schema.Step|Models.Section.Section, position: AddStepPosition) => void;
+  onRemoveStep?: (step: Models.Schema.Step) => void;
+  onAddBreakpoint?: (index: number) => void;
+  onRemoveBreakpoint?: (index: number) => void;
+  onCopyStep?: (step: Models.Schema.Step) => void;
+  onAttributeRequested?: (send: (attribute?: string) => void) => void;
+  #viewInput: ViewInput = {
+    state: State.DEFAULT,
+    showDetails: false,
+    isEndOfGroup: false,
+    isStartOfGroup: false,
+    stepIndex: 0,
+    sectionIndex: 0,
+    isFirstSection: false,
+    isLastSection: false,
+    isRecording: false,
+    isPlaying: false,
+    isVisible: false,
+    hasBreakpoint: false,
+    removable: true,
+    builtInConverters: [],
+    extensionConverters: [],
+    isSelected: false,
+    actions: [],
+
+    stepEdited: this.#stepEdited.bind(this),
+    onAttributeRequested: send => this.onAttributeRequested?.(send),
+    onBreakpointClick: this.#onBreakpointClick.bind(this),
+    handleStepAction: this.#handleStepAction.bind(this),
+    toggleShowDetails: this.#toggleShowDetails.bind(this),
+    onToggleShowDetailsKeydown: this.#onToggleShowDetailsKeydown.bind(this),
+    populateStepContextMenu: this.#populateStepContextMenu.bind(this),
+    onStepClick: () => {},
+    onStepHover: () => {},
+  };
+  #view: typeof DEFAULT_VIEW;
+
+  constructor(element?: HTMLElement, view?: typeof DEFAULT_VIEW) {
+    super(element, {useShadowDom: 'pure'});
+    this.#view = view || DEFAULT_VIEW;
+  }
+
+  set step(step: Models.Schema.Step|undefined) {
+    this.#viewInput.step = step;
+    this.requestUpdate();
+  }
+
+  set section(section: Models.Section.Section|undefined) {
+    this.#viewInput.section = section;
+    this.requestUpdate();
+  }
+
+  set state(state: State) {
+    const prevState = this.#viewInput.state;
+    this.#viewInput.state = state;
+    this.performUpdate();
+    if (this.#viewInput.state !== prevState && this.#viewInput.state === 'current' && !this.#viewInput.isVisible) {
+      this.element.scrollIntoView();
+    }
+  }
+
+  set error(error: Error|undefined) {
+    this.#viewInput.error = error;
+    this.requestUpdate();
+  }
+
+  set isEndOfGroup(isEndOfGroup: boolean) {
+    this.#viewInput.isEndOfGroup = isEndOfGroup;
+    this.requestUpdate();
+  }
+
+  set isStartOfGroup(isStartOfGroup: boolean) {
+    this.#viewInput.isStartOfGroup = isStartOfGroup;
+    this.requestUpdate();
+  }
+
+  set stepIndex(stepIndex: number) {
+    this.#viewInput.stepIndex = stepIndex;
+    this.requestUpdate();
+  }
+
+  set sectionIndex(sectionIndex: number) {
+    this.#viewInput.sectionIndex = sectionIndex;
+    this.requestUpdate();
+  }
+
+  set isFirstSection(isFirstSection: boolean) {
+    this.#viewInput.isFirstSection = isFirstSection;
+    this.requestUpdate();
+  }
+
+  set isLastSection(isLastSection: boolean) {
+    this.#viewInput.isLastSection = isLastSection;
+    this.requestUpdate();
+  }
+
+  set isRecording(isRecording: boolean) {
+    this.#viewInput.isRecording = isRecording;
+    this.requestUpdate();
+  }
+
+  set isPlaying(isPlaying: boolean) {
+    this.#viewInput.isPlaying = isPlaying;
+    this.requestUpdate();
+  }
+
+  set hasBreakpoint(hasBreakpoint: boolean) {
+    this.#viewInput.hasBreakpoint = hasBreakpoint;
+    this.requestUpdate();
+  }
+
+  set removable(removable: boolean) {
+    this.#viewInput.removable = removable;
+    this.requestUpdate();
+  }
+
+  set builtInConverters(builtInConverters: Converters.Converter.Converter[]) {
+    this.#viewInput.builtInConverters = builtInConverters;
+    this.requestUpdate();
+  }
+
+  set extensionConverters(extensionConverters: Converters.Converter.Converter[]) {
+    this.#viewInput.extensionConverters = extensionConverters;
+    this.requestUpdate();
+  }
+
+  set isSelected(isSelected: boolean) {
+    this.#viewInput.isSelected = isSelected;
+    this.requestUpdate();
+  }
+
+  set recorderSettings(recorderSettings: Models.RecorderSettings.RecorderSettings|undefined) {
+    this.#viewInput.recorderSettings = recorderSettings;
+    this.requestUpdate();
+  }
+
+  set onStepClick(onStepClick: (step: Models.Schema.Step|Models.Section.Section) => void) {
+    this.#viewInput.onStepClick = onStepClick;
+    this.requestUpdate();
+  }
+
+  set onStepHover(onStepHover: (step: Models.Schema.Step|Models.Section.Section) => void) {
+    this.#viewInput.onStepHover = onStepHover;
+    this.requestUpdate();
+  }
+
+  get step(): Models.Schema.Step|undefined {
+    return this.#viewInput.step;
+  }
+
+  get section(): Models.Section.Section|undefined {
+    return this.#viewInput.section;
+  }
+
+  override wasShown(): void {
+    super.wasShown();
+    this.#observer.observe(this.element);
+    this.requestUpdate();
+  }
+
+  override willHide(): void {
+    super.willHide();
+    this.#observer.unobserve(this.element);
+  }
+
+  #toggleShowDetails(): void {
+    this.#viewInput.showDetails = !this.#viewInput.showDetails;
+    this.requestUpdate();
+  }
+
+  #onToggleShowDetailsKeydown(event: Event): void {
+    const keyboardEvent = event as KeyboardEvent;
+    if (keyboardEvent.key === 'Enter' || keyboardEvent.key === ' ') {
+      this.#toggleShowDetails();
+      event.stopPropagation();
+      event.preventDefault();
+    }
+  }
+
+  #stepEdited(newStep: Models.Schema.Step): void {
+    const step = this.#viewInput.step || this.#viewInput.section?.causingStep;
+    if (!step) {
+      throw new Error('Expected step.');
+    }
+    this.onStepChanged?.(step, newStep);
+  }
+
+  #handleStepAction(event: Menus.Menu.MenuItemSelectedEvent): void {
+    switch (event.itemValue) {
+      case 'add-step-before': {
+        const stepOrSection = this.#viewInput.step || this.#viewInput.section;
+        if (!stepOrSection) {
+          throw new Error('Expected step or section.');
+        }
+        this.onAddStep?.(stepOrSection, AddStepPosition.BEFORE);
+        break;
+      }
+      case 'add-step-after': {
+        const stepOrSection = this.#viewInput.step || this.#viewInput.section;
+        if (!stepOrSection) {
+          throw new Error('Expected step or section.');
+        }
+        this.onAddStep?.(stepOrSection, AddStepPosition.AFTER);
+        break;
+      }
+      case 'remove-step': {
+        const causingStep = this.#viewInput.section?.causingStep;
+        if (!this.#viewInput.step && !causingStep) {
+          throw new Error('Expected step.');
+        }
+        this.onRemoveStep?.(this.#viewInput.step || (causingStep as Models.Schema.Step));
+        break;
+      }
+      case 'add-breakpoint': {
+        if (!this.#viewInput.step) {
+          throw new Error('Expected step');
+        }
+        this.onAddBreakpoint?.(this.#viewInput.stepIndex);
+        break;
+      }
+      case 'remove-breakpoint': {
+        if (!this.#viewInput.step) {
+          throw new Error('Expected step');
+        }
+        this.onRemoveBreakpoint?.(this.#viewInput.stepIndex);
+        break;
+      }
+      default: {
+        const actionId = event.itemValue as string;
+        if (!actionId.startsWith(COPY_ACTION_PREFIX)) {
+          throw new Error('Unknown step action.');
+        }
+
+        const copyStep = this.#viewInput.step || this.#viewInput.section?.causingStep;
+        if (!copyStep) {
+          throw new Error('Step not found.');
+        }
+
+        const converterId = actionId.substring(COPY_ACTION_PREFIX.length);
+        if (this.#viewInput.recorderSettings) {
+          this.#viewInput.recorderSettings.preferredCopyFormat = converterId;
+        }
+
+        this.onCopyStep?.(structuredClone(copyStep));
+      }
+    }
+  }
+
+  #onBreakpointClick(): void {
+    if (this.#viewInput.hasBreakpoint) {
+      this.onRemoveBreakpoint?.(this.#viewInput.stepIndex);
+    } else {
+      this.onAddBreakpoint?.(this.#viewInput.stepIndex);
+    }
+    this.requestUpdate();
+  }
+
+  #getActions = (): Action[] => {
+    const actions = [];
+
+    if (!this.#viewInput.isPlaying) {
+      if (this.#viewInput.step) {
+        actions.push({
+          id: 'add-step-before',
+          label: i18nString(UIStrings.addStepBefore),
+          group: 'stepManagement',
+          groupTitle: i18nString(UIStrings.stepManagement),
+        });
+      }
+
+      actions.push({
+        id: 'add-step-after',
+        label: i18nString(UIStrings.addStepAfter),
+        group: 'stepManagement',
+        groupTitle: i18nString(UIStrings.stepManagement),
+      });
+
+      if (this.#viewInput.removable) {
+        actions.push({
+          id: 'remove-step',
+          group: 'stepManagement',
+          groupTitle: i18nString(UIStrings.stepManagement),
+          label: i18nString(UIStrings.removeStep),
+        });
+      }
+    }
+
+    if (this.#viewInput.step && !this.#viewInput.isRecording) {
+      if (this.#viewInput.hasBreakpoint) {
+        actions.push({
+          id: 'remove-breakpoint',
+          label: i18nString(UIStrings.removeBreakpoint),
+          group: 'breakPointManagement',
+          groupTitle: i18nString(UIStrings.breakpoints),
+        });
+      } else {
+        actions.push({
+          id: 'add-breakpoint',
+          label: i18nString(UIStrings.addBreakpoint),
+          group: 'breakPointManagement',
+          groupTitle: i18nString(UIStrings.breakpoints),
+        });
+      }
+    }
+
+    if (this.#viewInput.step) {
+      for (const converter of this.#viewInput.builtInConverters || []) {
+        actions.push({
+          id: COPY_ACTION_PREFIX + Platform.StringUtilities.toKebabCase(converter.getId()),
+          label: converter.getFormatName(),
+          group: 'copy',
+          groupTitle: i18nString(UIStrings.copyAs),
+        });
+      }
+      for (const converter of this.#viewInput.extensionConverters || []) {
+        actions.push({
+          id: COPY_ACTION_PREFIX + Platform.StringUtilities.toKebabCase(converter.getId()),
+          label: converter.getFormatName(),
+          group: 'copy',
+          groupTitle: i18nString(UIStrings.copyAs),
+          jslogContext: COPY_ACTION_PREFIX + 'extension',
+        });
+      }
+    }
+
+    return actions;
+  };
+
+  #populateStepContextMenu(contextMenu: UI.ContextMenu.ContextMenu): void {
+    const actions = this.#getActions();
+    const copyActions = actions.filter(
+        item => item.id.startsWith(COPY_ACTION_PREFIX),
+    );
+    const otherActions = actions.filter(
+        item => !item.id.startsWith(COPY_ACTION_PREFIX),
+    );
+    for (const item of otherActions) {
+      const section = contextMenu.section(item.group);
+      section.appendItem(item.label, () => {
+        this.#handleStepAction(
+            new Menus.Menu.MenuItemSelectedEvent(item.id),
+        );
+      }, {jslogContext: item.id});
+    }
+
+    const preferredCopyAction = copyActions.find(
+        item => item.id === COPY_ACTION_PREFIX + this.#viewInput.recorderSettings?.preferredCopyFormat,
+    );
+
+    if (preferredCopyAction) {
+      contextMenu.section('copy').appendItem(preferredCopyAction.label, () => {
+        this.#handleStepAction(
+            new Menus.Menu.MenuItemSelectedEvent(preferredCopyAction.id),
+        );
+      }, {jslogContext: preferredCopyAction.id});
+    }
+
+    if (copyActions.length) {
+      const copyAs = contextMenu.section('copy').appendSubMenuItem(i18nString(UIStrings.copyAs), false, 'copy');
+      for (const item of copyActions) {
+        if (item === preferredCopyAction) {
+          continue;
+        }
+        copyAs.section(item.group).appendItem(item.label, () => {
+          this.#handleStepAction(
+              new Menus.Menu.MenuItemSelectedEvent(item.id),
+          );
+        }, {jslogContext: item.id});
+      }
+    }
+  }
+
+  override performUpdate(): void {
+    this.#viewInput.actions = this.#getActions();
+    this.#view(this.#viewInput, undefined, this.contentElement);
+  }
+}

@@ -49,7 +49,7 @@ function createNetworkRequest(type: SDK.NetworkRequest.DirectSocketType) {
       receiveBufferSize: 1003,
       dnsQueryType: Protocol.Network.DirectSocketDnsQueryType.Ipv4,
     },
-    openInfo: {remoteAddr: 'www.sample.com', remotePort: 3005, localAddr: '127.0.0.1', localPort: 9472}
+    openInfo: {remoteAddr: 'www.sample.com', remotePort: 3005, localAddr: '127.0.0.1', localPort: 9472},
   };
   networkRequest.setResourceType(Common.ResourceType.resourceTypes.DirectSocket);
   networkRequest.setIssueTime(Date.now(), Date.now());

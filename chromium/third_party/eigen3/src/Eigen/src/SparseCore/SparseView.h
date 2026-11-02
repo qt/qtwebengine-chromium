@@ -36,7 +36,7 @@ struct traits<SparseView<MatrixType> > : traits<MatrixType> {
  * \tparam MatrixType the type of the object of which we are removing the small entries
  *
  * This class represents an expression of a given dense or sparse matrix with
- * entries smaller than \c reference * \c epsilon are removed.
+ * entries smaller than \c reference * \c epsilon removed.
  * It is the return type of MatrixBase::sparseView() and SparseMatrixBase::pruned()
  * and most of the time this is the only way it is used.
  *
@@ -45,7 +45,6 @@ struct traits<SparseView<MatrixType> > : traits<MatrixType> {
 template <typename MatrixType>
 class SparseView : public SparseMatrixBase<SparseView<MatrixType> > {
   typedef typename MatrixType::Nested MatrixTypeNested;
-  typedef internal::remove_all_t<MatrixTypeNested> MatrixTypeNested_;
   typedef SparseMatrixBase<SparseView> Base;
 
  public:
@@ -110,7 +109,7 @@ struct unary_evaluator<SparseView<ArgType>, IteratorBased> : public evaluator_ba
 
    private:
     void incrementToNonZero() {
-      while ((bool(*this)) && internal::isMuchSmallerThan(value(), m_view.reference(), m_view.epsilon())) {
+      while (bool(*this) && internal::isMuchSmallerThan(value(), m_view.reference(), m_view.epsilon())) {
         EvalIterator::operator++();
       }
     }
@@ -167,7 +166,7 @@ struct unary_evaluator<SparseView<ArgType>, IndexBased> : public evaluator_base<
 
    private:
     void incrementToNonZero() {
-      while ((bool(*this)) && internal::isMuchSmallerThan(value(), m_sve.m_view.reference(), m_sve.m_view.epsilon())) {
+      while (bool(*this) && internal::isMuchSmallerThan(value(), m_sve.m_view.reference(), m_sve.m_view.epsilon())) {
         m_inner++;
       }
     }

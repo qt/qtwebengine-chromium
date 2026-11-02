@@ -3,13 +3,12 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
+import type * as Protocol from '../../generated/protocol.js';
 import type * as Trace from '../../models/trace/trace.js';
-import {createTarget} from '../../testing/EnvironmentHelpers.js';
-import {
-  describeWithMockConnection,
-  setMockConnectionResponseHandler,
-} from '../../testing/MockConnection.js';
+import {createTarget, describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
+import {MockCDPConnection} from '../../testing/MockCDPConnection.js';
 import {makeInstantEvent} from '../../testing/TraceHelpers.js';
 
 import * as Tracing from './tracing.js';
@@ -30,18 +29,23 @@ const fakeEvents = [
   makeInstantEvent('test-event-2', 2),
 ];
 
-describeWithMockConnection('TracingManager', () => {
+describeWithEnvironment('TracingManager', () => {
+  let connection: MockCDPConnection;
+  let lastStartRequest: Protocol.Tracing.StartRequest|null = null;
   beforeEach(() => {
-    setMockConnectionResponseHandler('Tracing.start', () => {
+    lastStartRequest = null;
+    connection = new MockCDPConnection();
+    connection.setSuccessHandler('Tracing.start', request => {
+      lastStartRequest = request ?? {};
       return {};
     });
-    setMockConnectionResponseHandler('Tracing.end', () => {
+    connection.setSuccessHandler('Tracing.end', () => {
       return {};
     });
   });
 
   it('sends bufferUsage to the client', async () => {
-    const target = createTarget();
+    const target = createTarget({connection});
     const manager = new Tracing.TracingManager.TracingManager(target);
     const client = new FakeClient();
     const bufferUsageSpy = sinon.spy(client, 'tracingBufferUsage');
@@ -52,7 +56,7 @@ describeWithMockConnection('TracingManager', () => {
   });
 
   it('sends events to the client when they are collected and updates the client with progress', async () => {
-    const target = createTarget();
+    const target = createTarget({connection});
     const manager = new Tracing.TracingManager.TracingManager(target);
     const client = new FakeClient();
     const eventsRetrievalProgressSpy = sinon.spy(client, 'eventsRetrievalProgress');
@@ -67,7 +71,7 @@ describeWithMockConnection('TracingManager', () => {
   });
 
   it('notifies the client when tracing is complete', async () => {
-    const target = createTarget();
+    const target = createTarget({connection});
     const manager = new Tracing.TracingManager.TracingManager(target);
     const client = new FakeClient();
     const tracingCompleteSpy = sinon.spy(client, 'tracingComplete');
@@ -79,7 +83,7 @@ describeWithMockConnection('TracingManager', () => {
   });
 
   it('errors if tracing is started twice', async () => {
-    const target = createTarget();
+    const target = createTarget({connection});
     const manager = new Tracing.TracingManager.TracingManager(target);
     const client = new FakeClient();
     await manager.start(client, 'devtools-timeline');
@@ -95,10 +99,30 @@ describeWithMockConnection('TracingManager', () => {
   });
 
   it('errors if you try to stop when tracing is not active', async () => {
-    const target = createTarget();
+    const target = createTarget({connection});
     const manager = new Tracing.TracingManager.TracingManager(target);
     assert.throws(() => {
       manager.stop();
     }, /Tracing is not started/);
+  });
+
+  it('does not forward screenshot params by default', async () => {
+    const target = createTarget({connection});
+    const manager = new Tracing.TracingManager.TracingManager(target);
+    const client = new FakeClient();
+    await manager.start(client, 'devtools-timeline');
+    assert.isNotNull(lastStartRequest);
+    assert.isUndefined(lastStartRequest?.screenshotMaxSize);
+    assert.isUndefined(lastStartRequest?.screenshotMaxCount);
+  });
+
+  it('forwards screenshot params when provided', async () => {
+    const target = createTarget({connection});
+    const manager = new Tracing.TracingManager.TracingManager(target);
+    const client = new FakeClient();
+    await manager.start(client, 'devtools-timeline', {screenshotMaxSize: 250, screenshotMaxCount: 1800});
+    assert.isNotNull(lastStartRequest);
+    assert.strictEqual(lastStartRequest?.screenshotMaxSize, 250);
+    assert.strictEqual(lastStartRequest?.screenshotMaxCount, 1800);
   });
 });

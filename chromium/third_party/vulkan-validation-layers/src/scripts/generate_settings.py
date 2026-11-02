@@ -110,18 +110,13 @@ static void ValidateLayerSettingsProvided(const VkLayerSettingsCreateInfoEXT &la
         else if (strcmp(VK_LAYER_DISABLES, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_STRING_EXT; }''')
 
     for setting in all_settings:
-        if IsDebugSetting(setting):
-            continue
-        if 'view' in setting and setting['view'] == 'HIDDEN':
-            continue
-
         type = setting['type']
         layer_type = None
         if type == 'BOOL':
             layer_type = 'VK_LAYER_SETTING_TYPE_BOOL32_EXT'
         elif type == 'INT':
             layer_type = 'VK_LAYER_SETTING_TYPE_UINT32_EXT'
-        elif type in ['SAVE_FILE', 'LIST', 'FLAGS']:
+        elif type in ['SAVE_FILE', 'LIST', 'FLAGS', 'LOAD_FILE', 'ENUM']:
             layer_type = 'VK_LAYER_SETTING_TYPE_STRING_EXT'
         else:
             print(f'Warning, not type handled for {type} ({setting["key"]})')

@@ -34,11 +34,22 @@ SessionCommand::SessionCommand(id_type id, const base::Pickle& pickle)
   contents().copy_from(pickle);
 }
 
-bool SessionCommand::GetContents(void* dest, size_t count) const {
-  if (contents_.size() != count) {
+std::unique_ptr<SessionCommand> SessionCommand::Clone() const {
+  auto clone = std::make_unique<SessionCommand>(
+      id(), static_cast<size_type>(contents().size()));
+  clone->contents().copy_from(contents());
+  return clone;
+}
+
+bool SessionCommand::operator==(const SessionCommand& command) const {
+  return id_ == command.id_ && contents_ == command.contents_;
+}
+
+bool SessionCommand::GetContents(base::span<uint8_t> dest) const {
+  if (contents_.size() != dest.size()) {
     return false;
   }
-  UNSAFE_TODO(memcpy(dest, &(contents_[0]), count));
+  dest.copy_from(contents());
   return true;
 }
 

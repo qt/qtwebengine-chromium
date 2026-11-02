@@ -20,6 +20,7 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "url/gurl.h"
+#include "url/url_constants.h"
 
 #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
 #include "extensions/browser/extension_registry.h"
@@ -43,9 +44,9 @@
 
 namespace {
 
-policy::DeveloperToolsPolicyHandler::Availability GetDevToolsAvailability(
+policy::DeveloperToolsAvailability GetDevToolsAvailability(
     Profile* profile) {
-  using Availability = policy::DeveloperToolsPolicyHandler::Availability;
+  using Availability = policy::DeveloperToolsAvailability;
   Availability availability =
       policy::DeveloperToolsPolicyHandler::GetEffectiveAvailability(profile);
 #if BUILDFLAG(IS_CHROMEOS)
@@ -72,8 +73,6 @@ bool IsRestrictedExtension(const extensions::Extension* extension,
   if (extensions::Manifest::IsPolicyLocation(extension->location())) {
     return true;
   }
-  // We also disallow inspecting component extensions, but only for managed
-  // profiles.
   if (extensions::Manifest::IsComponentLocation(extension->location()) &&
       profile->GetProfilePolicyConnector()->IsManaged()) {
     return true;
@@ -102,17 +101,24 @@ bool IsInspectionAllowed(Profile* profile, content::WebContents* web_contents) {
   policy::DeveloperToolsPolicyChecker* checker =
       policy::DeveloperToolsPolicyCheckerFactory::GetForBrowserContext(profile);
   if (checker) {
-    bool is_blocked = false;
-    web_contents->ForEachRenderFrameHost([&](content::RenderFrameHost* frame) {
-      auto frame_availability =
-          checker->GetDevToolsAvailabilityForUrl(frame->GetLastCommittedURL());
-      if (frame_availability == policy::DeveloperToolsPolicyChecker::
-                                    DevToolsAvailability::kDisallowed) {
-        is_blocked = true;
+    if (content::RenderFrameHost* main_frame =
+            web_contents->GetPrimaryMainFrame()) {
+      bool is_blocked = false;
+      main_frame->ForEachRenderFrameHost([&](content::RenderFrameHost* frame) {
+        if (frame->GetLastCommittedURL().is_empty() ||
+            frame->GetLastCommittedURL().SchemeIs(url::kAboutScheme)) {
+          return;
+        }
+        auto frame_availability = checker->GetDevToolsAvailabilityForUrl(
+            frame->GetLastCommittedURL());
+        if (frame_availability == policy::DeveloperToolsPolicyChecker::
+                                      DevToolsAvailability::kDisallowed) {
+          is_blocked = true;
+        }
+      });
+      if (is_blocked) {
+        return false;
       }
-    });
-    if (is_blocked) {
-      return false;
     }
   }
 
@@ -155,63 +161,14 @@ bool IsInspectionAllowed(Profile* profile, content::WebContents* web_contents) {
     }
   }
 
-  // Exhaustively check every frame to prevent subframe bypasses
-  // and identify restricted extensions even on error pages.
-  bool is_blocked = false;
-  web_contents->ForEachRenderFrameHostWithAction(
-      [&](content::RenderFrameHost* frame) {
-        if (!IsInspectionAllowed(profile, frame->GetLastCommittedURL())) {
-#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
-          // If the disallowed URL is the PDF viewer, and it's not the primary
-          // main frame of this WebContents (i.e. it is embedded), we don't
-          // block the whole page. The PDF viewer is implemented as a component
-          // extension. Blocking inspection of the embedding page would render
-          // DevTools unusable for normal pages just because they embed a PDF.
-          // Standalone PDF viewer pages (where it is the main frame) will still
-          // be blocked if policy dictates.
-          if (frame->GetLastCommittedURL().SchemeIs(
-                  extensions::kExtensionScheme) &&
-              frame->GetLastCommittedURL().host() ==
-                  extension_misc::kPdfExtensionId &&
-              frame != web_contents->GetPrimaryMainFrame()) {
-            return content::RenderFrameHost::FrameIterationAction::kContinue;
-          }
-#endif
-          is_blocked = true;
-          return content::RenderFrameHost::FrameIterationAction::kStop;
-        }
-        return content::RenderFrameHost::FrameIterationAction::kContinue;
-      });
-
-  if (is_blocked) {
-    return false;
-  }
-
   // Fall back to the general enum policy for the tab context.
-  using Availability = policy::DeveloperToolsPolicyHandler::Availability;
+  using Availability = policy::DeveloperToolsAvailability;
   Availability availability = GetDevToolsAvailability(profile);
   switch (availability) {
     case Availability::kDisallowed:
       return false;
     case Availability::kAllowed:
-      return true;
     case Availability::kDisallowedForForceInstalledExtensions:
-#if !BUILDFLAG(IS_ANDROID)
-      if (web_app::AreWebAppsEnabled(profile)) {
-        const webapps::AppId* app_id =
-            web_app::WebAppTabHelper::GetAppId(web_contents);
-        auto* web_app_provider =
-            web_app::WebAppProvider::GetForWebContents(web_contents);
-        if (app_id && web_app_provider) {
-          const web_app::WebApp* web_app =
-              web_app_provider->registrar_unsafe().GetAppById(*app_id);
-          if (web_app && (web_app->IsKioskInstalledApp() ||
-                          web_app->IsIwaPolicyInstalledApp())) {
-            return false;
-          }
-        }
-      }
-#endif
       return true;
     default:
       NOTREACHED() << "Unknown developer tools policy";
@@ -240,7 +197,7 @@ bool IsInspectionAllowed(Profile* profile,
   }
 #endif
 
-  using Availability = policy::DeveloperToolsPolicyHandler::Availability;
+  using Availability = policy::DeveloperToolsAvailability;
   Availability availability =
       extension ? policy::DeveloperToolsPolicyHandler::GetEffectiveAvailability(
                       profile)
@@ -296,7 +253,7 @@ bool IsInspectionAllowed(Profile* profile, const web_app::WebApp* web_app) {
         break;
     }
   }
-  using Availability = policy::DeveloperToolsPolicyHandler::Availability;
+  using Availability = policy::DeveloperToolsAvailability;
   Availability availability =
       policy::DeveloperToolsPolicyHandler::GetEffectiveAvailability(profile);
   switch (availability) {
@@ -318,6 +275,9 @@ bool IsInspectionAllowed(Profile* profile, const web_app::WebApp* web_app) {
 #endif
 
 bool IsInspectionAllowed(Profile* profile, const GURL& url) {
+  if (url.is_empty() || url.SchemeIs(url::kAboutScheme)) {
+    return true;
+  }
 #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
   if (url.SchemeIs(extensions::kExtensionScheme)) {
     if (const extensions::Extension* extension =
@@ -340,11 +300,14 @@ bool IsInspectionAllowed(Profile* profile, const GURL& url) {
           kDisallowed:
         return false;
       case policy::DeveloperToolsPolicyChecker::DevToolsAvailability::kNotSet:
+        // The URL is not covered by the URL-based policies, so we fall back to
+        // the general enum-based policy.
         break;
     }
   }
-
-  using Availability = policy::DeveloperToolsPolicyHandler::Availability;
+  // If the URL-based policy doesn't have a rule for this URL, we fall back to
+  // the general enum-based policy.
+  using Availability = policy::DeveloperToolsAvailability;
   Availability availability = GetDevToolsAvailability(profile);
   switch (availability) {
     case Availability::kDisallowed:

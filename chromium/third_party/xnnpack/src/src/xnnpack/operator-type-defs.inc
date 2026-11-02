@@ -26,6 +26,8 @@ XNN_ENUM_ITEM(xnn_operator_type_batch_matrix_multiply_nc_f32,
               "Batch Matrix Multiply (NC, F32)")
 XNN_ENUM_ITEM(xnn_operator_type_batch_matrix_multiply_nc_pf32,
               "Batch Matrix Multiply (NC, PF32)")
+XNN_ENUM_ITEM(xnn_operator_type_batch_matrix_multiply_nc_f32_qc8w,
+              "Batch Matrix Multiply (NC, F32, QC8W)")
 XNN_ENUM_ITEM(xnn_operator_type_batch_matrix_multiply_nc_qd8_f32_qc8w,
               "Batch Matrix Multiply (NC, QD8, F32, QC8W)")
 XNN_ENUM_ITEM(xnn_operator_type_batch_matrix_multiply_nc_qdu8_f32_qc8w,
@@ -38,6 +40,8 @@ XNN_ENUM_ITEM(xnn_operator_type_binary_elementwise, "Binary Elementwise (ND)")
 XNN_ENUM_ITEM(xnn_operator_type_constant_pad_nd_x8, "Constant Pad (ND, X8)")
 XNN_ENUM_ITEM(xnn_operator_type_constant_pad_nd_x16, "Constant Pad (ND, X16)")
 XNN_ENUM_ITEM(xnn_operator_type_constant_pad_nd_x32, "Constant Pad (ND, X32)")
+XNN_ENUM_ITEM(xnn_operator_type_convert_nc_bf16_qd8, "Convert (NC, BF16, QD8)")
+XNN_ENUM_ITEM(xnn_operator_type_convert_nc_bf16_qdu8, "Convert (NC, BF16, QDU8)")
 XNN_ENUM_ITEM(xnn_operator_type_convert_nc_f16_qd8, "Convert (NC, F16, QD8)")
 XNN_ENUM_ITEM(xnn_operator_type_convert_nc_f16_qdu8, "Convert (NC, F16, QDU8)")
 XNN_ENUM_ITEM(xnn_operator_type_convert_nc_f32_qd8, "Convert (NC, F32, QD8)")
@@ -121,6 +125,8 @@ XNN_ENUM_ITEM(xnn_operator_type_fully_connected_nc_qdu8_f16_qc2w,
               "Fully Connected (NC, QDU8, F16, QC2W)")
 XNN_ENUM_ITEM(xnn_operator_type_fully_connected_nc_qd8_f16_qb4w,
               "Fully Connected (NC, QD8, F16, QB4W)")
+XNN_ENUM_ITEM(xnn_operator_type_fully_connected_nc_qd8_bf16_qb4w,
+              "Fully Connected (NC, QD8, BF16, QB4W)")
 XNN_ENUM_ITEM(xnn_operator_type_fully_connected_nc_qd8_f16_qc4w,
               "Fully Connected (NC, QD8, F16, QC4W)")
 XNN_ENUM_ITEM(xnn_operator_type_fully_connected_nc_qd8_f32_qc2w,

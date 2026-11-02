@@ -39,7 +39,7 @@ import type * as Protocol from '../../generated/protocol.js';
 import * as Workspace from '../workspace/workspace.js';
 
 export function resourceForURL(url: Platform.DevToolsPath.UrlString): SDK.Resource.Resource|null {
-  return SDK.ResourceTreeModel.ResourceTreeModel.resourceForURL(url);
+  return SDK.ResourceTreeModel.ResourceTreeModel.resourceForURL(SDK.TargetManager.TargetManager.instance(), url);
 }
 
 export function displayNameForURL(url: Platform.DevToolsPath.UrlString): string {

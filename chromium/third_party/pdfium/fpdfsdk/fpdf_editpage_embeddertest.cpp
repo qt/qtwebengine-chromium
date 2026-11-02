@@ -7,7 +7,7 @@
 #include <array>
 
 #include "core/fxcrt/fx_system.h"
-#include "core/fxge/cfx_defaultrenderdevice.h"
+#include "core/fxge/cfx_renderdevice.h"
 #include "testing/embedder_test.h"
 #include "testing/embedder_test_constants.h"
 #include "testing/gmock/include/gmock/gmock.h"

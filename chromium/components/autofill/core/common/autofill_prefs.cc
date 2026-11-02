@@ -33,6 +33,8 @@ inline constexpr char kFacilitatedPaymentsPixAccountLinkingDeprecated[] =
 #endif
 constexpr char kAutofillRanExtraDeduplication[] =
     "autofill.ran_extra_deduplication";
+constexpr char kAutofillAiSyncedOptInStatusDeprecated[] =
+    "autofill.autofill_ai.synced_opt_in_status";
 
 }  // namespace
 
@@ -50,11 +52,11 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterBooleanPref(
       kAutofillAiShoppingEntitiesEnabled, true,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterBooleanPref(
-      kAutofillAiSyncedOptInStatus, false,
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterIntegerPref(
       kAutofillAiLastVersionDeduped, 0,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      kAutofillAiPrivateInferenceOptInStatus, true,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterBooleanPref(
       kAutofillAiTravelEntitiesEnabled, true,
@@ -79,6 +81,13 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
       kAutofillPaymentCardBenefits, true,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 
+  registry->RegisterBooleanPref(
+      kAutofillGmailOtpFillingEnabled, false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterTimePref(
+      kAutofillGmailOtpFillingActivationDismissalTimestamp, base::Time(),
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+
   registry->RegisterStringPref(
       kAutofillNameAndEmailProfileSignature, "",
       user_prefs::PrefRegistrySyncable::SYNCABLE_PRIORITY_PREF);
@@ -91,6 +100,10 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
 
   // Non-synced prefs. Used for per-device choices, e.g., signin promo.
   registry->RegisterDictionaryPref(kAutofillAiOptInStatus);
+  registry->RegisterTimePref(
+      kAutofillAiPrivateInferenceNoticeAcknowledgedTimestamp, base::Time());
+  registry->RegisterTimePref(
+      kAutofillAiPrivateInferenceNoticeFirstShownTimestamp, base::Time());
   registry->RegisterBooleanPref(kAutofillEmailVerificationEnabled, true);
   registry->RegisterDictionaryPref(kAutofillEmailVerificationState);
   registry->RegisterBooleanPref(kAutofillCreditCardFidoAuthEnabled, false);
@@ -106,6 +119,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterDictionaryPref(kAutofillMetadataUploadEvents);
   registry->RegisterTimePref(kAutofillUploadEventsLastResetTimestamp, {});
   registry->RegisterDictionaryPref(kAutofillSyncTransportOptIn);
+  registry->RegisterListPref(kAutofillTypesBlocked);
 #if BUILDFLAG(IS_ANDROID)
   // Automotive devices require stricter data protection for user privacy, so
   // mandatory reauth for autofill payment methods should always be enabled.
@@ -161,17 +175,19 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
       kAutofillAmountExtractionAiTermsSeen, false,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 
-  if (base::FeatureList::IsEnabled(
-          features::kAutofillEnableSupportForHomeAndWork)) {
-    registry->RegisterDictionaryPref(
-        kAutofillHomeMetadata,
-        user_prefs::PrefRegistrySyncable::SYNCABLE_PRIORITY_PREF);
-    registry->RegisterDictionaryPref(
-        kAutofillWorkMetadata,
-        user_prefs::PrefRegistrySyncable::SYNCABLE_PRIORITY_PREF);
-    registry->RegisterIntegerPref(kAutofillSilentUpdatesToHomeAddress, 0);
-    registry->RegisterIntegerPref(kAutofillSilentUpdatesToWorkAddress, 0);
-  }
+  registry->RegisterDictionaryPref(
+      kAutofillAtMemoryTriggerInfo,
+      base::DictValue().Set("trigger", "@@").Set("is_shortcut", false),
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+
+  registry->RegisterDictionaryPref(
+      kAutofillHomeMetadata,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PRIORITY_PREF);
+  registry->RegisterDictionaryPref(
+      kAutofillWorkMetadata,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PRIORITY_PREF);
+  registry->RegisterIntegerPref(kAutofillSilentUpdatesToHomeAddress, 0);
+  registry->RegisterIntegerPref(kAutofillSilentUpdatesToWorkAddress, 0);
 
   // Deprecated prefs registered for migration.
   registry->RegisterBooleanPref(kAutofillEnabledDeprecated, true);
@@ -181,6 +197,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
                                 /*default_value=*/true);
 #endif  // BUILDFLAG(IS_ANDROID)
   registry->RegisterBooleanPref(kAutofillRanExtraDeduplication, false);
+  registry->RegisterBooleanPref(kAutofillAiSyncedOptInStatusDeprecated, false);
   // Don't add new prefs here. Add them before any deprecated prefs instead.
 }
 
@@ -193,6 +210,8 @@ void MigrateDeprecatedAutofillPrefs(PrefService* pref_service) {
 #endif  // BUILDFLAG(IS_ANDROID)
   // Added 01/2026
   pref_service->ClearPref(kAutofillRanExtraDeduplication);
+  // Added 06/2026
+  pref_service->ClearPref(kAutofillAiSyncedOptInStatusDeprecated);
 }
 
 void RegisterLocalStatePrefs(PrefRegistrySimple* registry) {
@@ -237,6 +256,10 @@ bool IsAutofillCreditCardManaged(const PrefService* prefs) {
   return prefs->IsManagedPreference(kAutofillCreditCardEnabled);
 }
 
+bool IsAutofillTypesBlockedManaged(const PrefService* prefs) {
+  return prefs->IsManagedPreference(kAutofillTypesBlocked);
+}
+
 bool IsAutofillProfileEnabled(const PrefService* prefs) {
   return prefs->GetBoolean(kAutofillProfileEnabled);
 }
@@ -262,12 +285,31 @@ void SetAutofillProfileEnabled(PrefService* prefs, bool enabled) {
                                 enabled ? kOptIn : kOptOut);
 }
 
-bool IsAutofillAiSyncedOptInStatusEnabled(const PrefService* prefs) {
-  return prefs->GetBoolean(kAutofillAiSyncedOptInStatus);
+bool IsAutofillGmailOtpFillingEnabled(const PrefService* prefs) {
+  return prefs->GetBoolean(kAutofillGmailOtpFillingEnabled);
 }
 
-void SetAutofillAiSyncedOptInStatus(PrefService* prefs, bool enabled) {
-  prefs->SetBoolean(kAutofillAiSyncedOptInStatus, enabled);
+void SetAutofillGmailOtpFillingEnabled(PrefService* prefs, bool enabled) {
+  if (prefs->GetBoolean(kAutofillGmailOtpFillingEnabled) == enabled) {
+    return;
+  }
+  prefs->SetBoolean(kAutofillGmailOtpFillingEnabled, enabled);
+  base::UmaHistogramBoolean("Autofill.GmailOtpOptIn.SettingsChange", enabled);
+}
+
+base::Time GetAutofillGmailOtpFillingActivationDismissalTimestamp(
+    const PrefService* prefs) {
+  return prefs->GetTime(kAutofillGmailOtpFillingActivationDismissalTimestamp);
+}
+
+void SetAutofillGmailOtpFillingActivationDismissalTimestamp(PrefService* prefs,
+                                                            base::Time time) {
+  prefs->SetTime(kAutofillGmailOtpFillingActivationDismissalTimestamp, time);
+}
+
+void ClearAutofillGmailOtpFillingActivationDismissalTimestamp(
+    PrefService* prefs) {
+  prefs->ClearPref(kAutofillGmailOtpFillingActivationDismissalTimestamp);
 }
 
 bool IsAutofillAiReauthBeforeFillingEnabled(const PrefService* prefs) {

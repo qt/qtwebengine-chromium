@@ -131,7 +131,7 @@ export class SlowCSSSelector extends BaseInsightComponent<SlowCSSSelectorInsight
               insight: this,
               headers: [`${i18nString(UIStrings.topSelectorElapsedTime)}: ${time(Trace.Types.Timing.Micro(selector['elapsed (us)']))}`],
               rows: [{
-                values: [html`${selector.selector} ${Lit.Directives.until(this.getSelectorLinks(cssModel, selector))}`]}]
+                values: [html`${selector.selector} ${Lit.Directives.until(this.getSelectorLinks(cssModel, selector))}`]}],
             }})}
         </div>
       `);
@@ -149,7 +149,7 @@ export class SlowCSSSelector extends BaseInsightComponent<SlowCSSSelectorInsight
               headers: [`${i18nString(UIStrings.topSelectorMatchAttempt)}: ${selector['match_attempts']}`],
               rows: [{
                   values: [html`${selector.selector} ${Lit.Directives.until(this.getSelectorLinks(cssModel, selector))}` as unknown as string],
-              }]
+              }],
             }})}
         </div>
       `);

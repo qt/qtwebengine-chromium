@@ -22,7 +22,7 @@ node_ts_library("tests") {
     "setup",
   ]
 
-  sources = [ "mocharc.ts" ]
+  sources = [ "run-mocha.ts" ]
 }
 
 generated_file("test_inputs") {

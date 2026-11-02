@@ -3,23 +3,32 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
+import * as Common from '../../core/common/common.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
-import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
-import {createTarget} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {assertScreenshot, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
+import {createTarget, describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
 
 import * as Application from './application.js';
 
-describeWithMockConnection('ServiceWorkersView', () => {
+describeWithEnvironment('ServiceWorkersView', () => {
   let target: SDK.Target.Target;
   let view: Application.ServiceWorkersView.ServiceWorkersView;
 
   beforeEach(() => {
+    Application.ServiceWorkersView.setThrottleDisabledForDebugging(true);
     const tabTarget = createTarget({type: SDK.Target.Type.TAB});
     createTarget({parentTarget: tabTarget, subtype: 'prerender'});
     target = createTarget({parentTarget: tabTarget});
+    sinon.stub(SDK.TargetManager.TargetManager.instance(), 'primaryPageTarget').returns(target);
+    Common.Settings.registerSettingExtension({
+      category: Common.Settings.SettingCategory.MOBILE,
+      settingName: 'service-worker-update-on-reload',
+      settingType: Common.Settings.SettingType.BOOLEAN,
+      defaultValue: false,
+    });
   });
 
   afterEach(() => {
@@ -28,7 +37,7 @@ describeWithMockConnection('ServiceWorkersView', () => {
 
   it('shows service worker registrations', async () => {
     view = new Application.ServiceWorkersView.ServiceWorkersView();
-    renderElementIntoDOM(view);
+    renderElementIntoDOM(view, {includeCommonStyles: true});
     const serviceWorkersManager = target.model(SDK.ServiceWorkerManager.ServiceWorkerManager);
     assert.exists(serviceWorkersManager);
     const securityOriginManager = target.model(SDK.SecurityOriginManager.SecurityOriginManager);
@@ -43,9 +52,12 @@ describeWithMockConnection('ServiceWorkersView', () => {
       fingerprint: () => {},
     } as SDK.ServiceWorkerManager.ServiceWorkerRegistration);
 
-    const sectionTitle = view.currentWorkersView.contentElement.querySelector('.report-section-title');
+    await view.updateComplete;
+
+    const sectionTitle = view.contentElement.querySelector('devtools-report-section-header');
     assert.exists(sectionTitle);
-    assert.strictEqual(sectionTitle.textContent, SCOPE_URL);
+    assert.include(sectionTitle.textContent, SCOPE_URL);
+    await assertScreenshot('application/service-workers-view-basic.png');
   });
 
   describe('router info', () => {
@@ -66,13 +78,13 @@ describeWithMockConnection('ServiceWorkersView', () => {
     let serviceWorkersManager: SDK.ServiceWorkerManager.ServiceWorkerManager|null;
 
     const hasRouterField = () => {
-      return Array.from(view.currentWorkersView.contentElement.querySelectorAll('.report-field')).some(field => {
+      return Array.from(view.contentElement.querySelectorAll('.report-field')).some(field => {
         return field.querySelector('.report-field-name')?.textContent === 'Routers';
       });
     };
 
     beforeEach(() => {
-      Application.ServiceWorkersView.setThrottleDisabledForDebugging(true);
+
       view = new Application.ServiceWorkersView.ServiceWorkersView();
       renderElementIntoDOM(view);
 
@@ -102,6 +114,7 @@ describeWithMockConnection('ServiceWorkersView', () => {
       registration.updateVersion(versionPayload);
       serviceWorkersManager?.dispatchEventToListeners(
           SDK.ServiceWorkerManager.Events.REGISTRATION_UPDATED, registration);
+      await view.updateComplete;
       assert.isTrue(hasRouterField());
     });
 
@@ -122,6 +135,7 @@ describeWithMockConnection('ServiceWorkersView', () => {
       registration.updateVersion(versionPayload);
       serviceWorkersManager?.dispatchEventToListeners(
           SDK.ServiceWorkerManager.Events.REGISTRATION_UPDATED, registration);
+      await view.updateComplete;
       assert.isFalse(hasRouterField());
 
       // Update the version with the empty router rules.
@@ -133,6 +147,7 @@ describeWithMockConnection('ServiceWorkersView', () => {
       registration.updateVersion(versionPayload);
       serviceWorkersManager?.dispatchEventToListeners(
           SDK.ServiceWorkerManager.Events.REGISTRATION_UPDATED, registration);
+      await view.updateComplete;
       assert.isFalse(hasRouterField());
     });
 
@@ -152,30 +167,157 @@ describeWithMockConnection('ServiceWorkersView', () => {
         routerRules: JSON.stringify(routerRules),
       };
 
-      const updateAndDispatchEvent = (status: Protocol.ServiceWorker.ServiceWorkerVersionStatus) => {
+      const updateAndDispatchEvent = async (status: Protocol.ServiceWorker.ServiceWorkerVersionStatus) => {
         versionId++;
         registration.updateVersion(Object.assign({}, versionPayload, {versionId: versionId.toString(), status}));
         serviceWorkersManager?.dispatchEventToListeners(
             SDK.ServiceWorkerManager.Events.REGISTRATION_UPDATED, registration);
+        await view.updateComplete;
       };
 
-      updateAndDispatchEvent(Protocol.ServiceWorker.ServiceWorkerVersionStatus.New);
+      await updateAndDispatchEvent(Protocol.ServiceWorker.ServiceWorkerVersionStatus.New);
       assert.isFalse(hasRouterField());
 
-      updateAndDispatchEvent(Protocol.ServiceWorker.ServiceWorkerVersionStatus.Redundant);
+      await updateAndDispatchEvent(Protocol.ServiceWorker.ServiceWorkerVersionStatus.Redundant);
       assert.isFalse(hasRouterField());
 
-      updateAndDispatchEvent(Protocol.ServiceWorker.ServiceWorkerVersionStatus.Installing);
+      await updateAndDispatchEvent(Protocol.ServiceWorker.ServiceWorkerVersionStatus.Installing);
       assert.isFalse(hasRouterField());
 
-      updateAndDispatchEvent(Protocol.ServiceWorker.ServiceWorkerVersionStatus.Installed);
+      await updateAndDispatchEvent(Protocol.ServiceWorker.ServiceWorkerVersionStatus.Installed);
       assert.isFalse(hasRouterField());
 
-      updateAndDispatchEvent(Protocol.ServiceWorker.ServiceWorkerVersionStatus.Activating);
+      await updateAndDispatchEvent(Protocol.ServiceWorker.ServiceWorkerVersionStatus.Activating);
       assert.isTrue(hasRouterField());
 
-      updateAndDispatchEvent(Protocol.ServiceWorker.ServiceWorkerVersionStatus.Activated);
+      await updateAndDispatchEvent(Protocol.ServiceWorker.ServiceWorkerVersionStatus.Activated);
       assert.isTrue(hasRouterField());
     });
+  });
+
+  it('shows active worker when registration has both active and redundant workers', async () => {
+    Application.ServiceWorkersView.setThrottleDisabledForDebugging(true);
+    view = new Application.ServiceWorkersView.ServiceWorkersView();
+    renderElementIntoDOM(view);
+    const serviceWorkersManager = target.model(SDK.ServiceWorkerManager.ServiceWorkerManager);
+    assert.exists(serviceWorkersManager);
+    const securityOriginManager = target.model(SDK.SecurityOriginManager.SecurityOriginManager);
+    assert.exists(securityOriginManager);
+
+    const SCOPE = 'https://example.com/scope/';
+    const registration = new SDK.ServiceWorkerManager.ServiceWorkerRegistration({
+      registrationId: 'sw-1' as Protocol.ServiceWorker.RegistrationID,
+      scopeURL: SCOPE,
+      isDeleted: false,
+    });
+
+    sinon.stub(securityOriginManager, 'securityOrigins').returns([registration.securityOrigin]);
+
+    // Add redundant version
+    registration.updateVersion({
+      registrationId: 'sw-1' as Protocol.ServiceWorker.RegistrationID,
+      versionId: '1',
+      scriptURL: 'https://example.com/sw.js',
+      status: Protocol.ServiceWorker.ServiceWorkerVersionStatus.Redundant,
+      runningStatus: Protocol.ServiceWorker.ServiceWorkerVersionRunningStatus.Stopped,
+    });
+
+    // Add active version
+    registration.updateVersion({
+      registrationId: 'sw-1' as Protocol.ServiceWorker.RegistrationID,
+      versionId: '2',
+      scriptURL: 'https://example.com/sw.js',
+      status: Protocol.ServiceWorker.ServiceWorkerVersionStatus.Activated,
+      runningStatus: Protocol.ServiceWorker.ServiceWorkerVersionRunningStatus.Running,
+    });
+
+    serviceWorkersManager.dispatchEventToListeners(SDK.ServiceWorkerManager.Events.REGISTRATION_UPDATED, registration);
+    await view.updateComplete;
+
+    const content = view.contentElement.textContent;
+    assert.include(content, SCOPE);
+    assert.include(content, '#2 activated');
+    assert.notInclude(content, '#1 is redundant');
+  });
+
+  it('handles multiple service worker registrations and updates', async () => {
+    Application.ServiceWorkersView.setThrottleDisabledForDebugging(true);
+    view = new Application.ServiceWorkersView.ServiceWorkersView();
+    renderElementIntoDOM(view);
+    const serviceWorkersManager = target.model(SDK.ServiceWorkerManager.ServiceWorkerManager);
+    assert.exists(serviceWorkersManager);
+    const securityOriginManager = target.model(SDK.SecurityOriginManager.SecurityOriginManager);
+    assert.exists(securityOriginManager);
+
+    const SCOPE_1 = 'https://example.com/scope1/';
+    const SCOPE_2 = 'https://example.com/scope2/';
+
+    // Dispatch registration 1
+    const registration1 = new SDK.ServiceWorkerManager.ServiceWorkerRegistration({
+      registrationId: 'sw-1' as Protocol.ServiceWorker.RegistrationID,
+      scopeURL: SCOPE_1,
+      isDeleted: false,
+    });
+
+    sinon.stub(securityOriginManager, 'securityOrigins').returns([registration1.securityOrigin]);
+    registration1.updateVersion({
+      registrationId: 'sw-1' as Protocol.ServiceWorker.RegistrationID,
+      versionId: '101',
+      scriptURL: 'https://example.com/sw1.js',
+      status: Protocol.ServiceWorker.ServiceWorkerVersionStatus.Activated,
+      runningStatus: Protocol.ServiceWorker.ServiceWorkerVersionRunningStatus.Running,
+    });
+    serviceWorkersManager.dispatchEventToListeners(SDK.ServiceWorkerManager.Events.REGISTRATION_UPDATED, registration1);
+    await view.updateComplete;
+
+    // Dispatch registration 2
+    const registration2 = new SDK.ServiceWorkerManager.ServiceWorkerRegistration({
+      registrationId: 'sw-2' as Protocol.ServiceWorker.RegistrationID,
+      scopeURL: SCOPE_2,
+      isDeleted: false,
+    });
+    registration2.updateVersion({
+      registrationId: 'sw-2' as Protocol.ServiceWorker.RegistrationID,
+      versionId: '201',
+      scriptURL: 'https://example.com/sw2.js',
+      status: Protocol.ServiceWorker.ServiceWorkerVersionStatus.Activated,
+      runningStatus: Protocol.ServiceWorker.ServiceWorkerVersionRunningStatus.Running,
+    });
+    serviceWorkersManager.dispatchEventToListeners(SDK.ServiceWorkerManager.Events.REGISTRATION_UPDATED, registration2);
+    await view.updateComplete;
+    let content = view.contentElement.textContent;
+    assert.include(content, SCOPE_1);
+    assert.include(content, '#101 activated');
+    assert.include(content, SCOPE_2);
+    assert.include(content, '#201 activated');
+
+    // Make registration 1 redundant and deleted
+    registration1.update({
+      registrationId: 'sw-1' as Protocol.ServiceWorker.RegistrationID,
+      scopeURL: SCOPE_1,
+      isDeleted: true,
+    });
+    registration1.updateVersion({
+      registrationId: 'sw-1' as Protocol.ServiceWorker.RegistrationID,
+      versionId: '101',
+      scriptURL: 'https://example.com/sw1.js',
+      status: Protocol.ServiceWorker.ServiceWorkerVersionStatus.Redundant,
+      runningStatus: Protocol.ServiceWorker.ServiceWorkerVersionRunningStatus.Stopped,
+    });
+    serviceWorkersManager.dispatchEventToListeners(SDK.ServiceWorkerManager.Events.REGISTRATION_UPDATED, registration1);
+    await view.updateComplete;
+
+    content = view.contentElement.textContent;
+    assert.include(content, `${SCOPE_1} - deleted`);
+    assert.include(content, '#101 is redundant');
+    assert.include(content, SCOPE_2);
+    assert.include(content, '#201 activated');
+
+    // Delete registration 1
+    serviceWorkersManager.dispatchEventToListeners(SDK.ServiceWorkerManager.Events.REGISTRATION_DELETED, registration1);
+    await view.updateComplete;
+    content = view.contentElement.textContent;
+    assert.notInclude(content, SCOPE_1);
+    assert.include(content, SCOPE_2);
   });
 });

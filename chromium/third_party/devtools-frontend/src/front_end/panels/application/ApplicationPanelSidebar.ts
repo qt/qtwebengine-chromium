@@ -40,6 +40,7 @@ import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
+import * as AiAssistance from '../../models/ai_assistance/ai_assistance.js';
 import * as LegacyWrapper from '../../ui/components/legacy_wrapper/legacy_wrapper.js';
 import {createIcon} from '../../ui/kit/kit.js';
 import * as SourceFrame from '../../ui/legacy/components/source_frame/source_frame.js';
@@ -51,6 +52,7 @@ import {BackForwardCacheTreeElement} from './BackForwardCacheTreeElement.js';
 import {BackgroundServiceModel} from './BackgroundServiceModel.js';
 import {BackgroundServiceView} from './BackgroundServiceView.js';
 import {BounceTrackingMitigationsTreeElement} from './BounceTrackingMitigationsTreeElement.js';
+import * as ApplicationComponents from './components/components.js';
 import {DeviceBoundSessionsModel} from './DeviceBoundSessionsModel.js';
 import {RootTreeElement as DeviceBoundSessionsRootTreeElement} from './DeviceBoundSessionsTreeElement.js';
 import {
@@ -68,8 +70,6 @@ import {
   type ObjectStore,
 } from './IndexedDBModel.js';
 import {IDBDatabaseView, IDBDataView} from './IndexedDBViews.js';
-import {Events as InterestGroupModelEvents, InterestGroupStorageModel} from './InterestGroupStorageModel.js';
-import {InterestGroupTreeElement} from './InterestGroupTreeElement.js';
 import {OpenedWindowDetailsView, WorkerDetailsView} from './OpenedWindowDetailsView.js';
 import type * as PreloadingHelper from './preloading/helper/helper.js';
 import {
@@ -94,9 +94,29 @@ import {WebMCPTreeElement} from './WebMCPTreeElement.js';
 
 const UIStrings = {
   /**
+   * @description Text of a context menu item to start a chat with AI
+   */
+  startAChat: 'Start a chat',
+  /**
+   * @description Text of a context menu item to explain contents of a local/session storage bucket with AI
+   */
+  explainStorage: 'Explain storage',
+  /**
+   * @description Text of a context menu item to explain web cookies with AI
+   */
+  explainCookies: 'Explain cookies',
+  /**
    * @description Text in Application Panel Sidebar of the Application panel
    */
   application: 'Application',
+  /**
+   * @description Text in Application Panel Sidebar of the Application panel
+   */
+  ads: 'Ads',
+  /**
+   * @description Tooltip for the experimental icon in the Ads panel
+   */
+  experimental: 'Experimental',
   /**
    * @description Text in Application Panel Sidebar of the Application panel
    */
@@ -276,7 +296,7 @@ const UIStrings = {
   /**
    * @description Description text in the Application Panel describing a frame's resources
    */
-  resourceDescription: 'On this page you can view the frame\'s resources.'
+  resourceDescription: 'On this page you can view the frame’s resources.',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/application/ApplicationPanelSidebar.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -325,7 +345,6 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
   sessionStorageListTreeElement: ExpandableApplicationPanelTreeElement;
   extensionStorageListTreeElement: ExpandableApplicationPanelTreeElement;
   indexedDBListTreeElement: IndexedDBTreeElement;
-  interestGroupTreeElement: InterestGroupTreeElement;
   cookieListTreeElement: ExpandableApplicationPanelTreeElement;
   trustTokensTreeElement: TrustTokensTreeElement;
   cacheStorageListTreeElement: ServiceWorkerCacheTreeElement;
@@ -341,6 +360,7 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
   pushMessagingTreeElement: BackgroundServiceTreeElement;
   reportingApiTreeElement: ReportingApiTreeElement;
   webMcpTreeElement?: WebMCPTreeElement;
+  adsTreeElement?: ApplicationPanelTreeElement;
   deviceBoundSessionsRootTreeElement: DeviceBoundSessionsRootTreeElement|undefined;
   deviceBoundSessionsModel: DeviceBoundSessionsModel|undefined;
   preloadingSummaryTreeElement: PreloadingSummaryTreeElement|undefined;
@@ -390,6 +410,29 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
       this.applicationTreeElement.appendChild(this.webMcpTreeElement);
     }
 
+    if (Root.Runtime.hostConfig.devToolsAdsPanel?.enabled) {
+      const adsTreeElement = new ApplicationPanelTreeElement(panel, i18nString(UIStrings.ads), false, 'ads');
+      adsTreeElement.listItemElement.classList.add('ads-tree-element');
+      const icon = createIcon('ads');
+      adsTreeElement.setLeadingIcons([icon]);
+      const experimentIcon = createIcon('experiment', 'medium');
+      UI.Tooltip.Tooltip.install(experimentIcon, i18nString(UIStrings.experimental));
+      adsTreeElement.setTrailingIcons([experimentIcon]);
+      adsTreeElement.itemURL = 'ads://' as Platform.DevToolsPath.UrlString;
+      let adsView: ApplicationComponents.AdsView.AdsView;
+      adsTreeElement.onselect = (selectedByUser?: boolean): boolean => {
+        ApplicationPanelTreeElement.prototype.onselect.call(adsTreeElement, selectedByUser);
+        if (!adsView) {
+          adsView = new ApplicationComponents.AdsView.AdsView();
+        }
+        adsTreeElement.showView(adsView);
+        UI.UIUserMetrics.UIUserMetrics.instance().panelShown('ads');
+        return false;
+      };
+      this.adsTreeElement = adsTreeElement;
+      this.applicationTreeElement.appendChild(this.adsTreeElement);
+    }
+
     const storageSectionTitle = i18nString(UIStrings.storage);
     const storageTreeElement = this.addSidebarSection(storageSectionTitle, 'storage');
     this.localStorageListTreeElement = new ExpandableApplicationPanelTreeElement(
@@ -437,9 +480,6 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
 
     this.trustTokensTreeElement = new TrustTokensTreeElement(panel);
     storageTreeElement.appendChild(this.trustTokensTreeElement);
-
-    this.interestGroupTreeElement = new InterestGroupTreeElement(panel);
-    storageTreeElement.appendChild(this.interestGroupTreeElement);
 
     this.sharedStorageListTreeElement = new SharedStorageListTreeElement(panel);
     storageTreeElement.appendChild(this.sharedStorageListTreeElement);
@@ -537,12 +577,6 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
         },
         {scoped: true});
     SDK.TargetManager.TargetManager.instance().observeModels(
-        InterestGroupStorageModel, {
-          modelAdded: (model: InterestGroupStorageModel) => this.interestGroupModelAdded(model),
-          modelRemoved: (model: InterestGroupStorageModel) => this.interestGroupModelRemoved(model),
-        },
-        {scoped: true});
-    SDK.TargetManager.TargetManager.instance().observeModels(
         SharedStorageModel, {
           modelAdded: (model: SharedStorageModel) => this.sharedStorageModelAdded(model).catch(err => {
             console.error(err);
@@ -581,12 +615,6 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
 
     this.target = target;
 
-    const interestGroupModel = target.model(InterestGroupStorageModel);
-    if (interestGroupModel) {
-      interestGroupModel.addEventListener(
-          InterestGroupModelEvents.INTEREST_GROUP_ACCESS, this.interestGroupAccess, this);
-    }
-
     const resourceTreeModel = target.model(SDK.ResourceTreeModel.ResourceTreeModel);
     if (!resourceTreeModel) {
       return;
@@ -614,12 +642,6 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
           SDK.ResourceTreeModel.Events.WillLoadCachedResources, this.resetWithFrames, this);
     }
 
-    const interestGroupModel = target.model(InterestGroupStorageModel);
-    if (interestGroupModel) {
-      interestGroupModel.removeEventListener(
-          InterestGroupModelEvents.INTEREST_GROUP_ACCESS, this.interestGroupAccess, this);
-    }
-
     this.resetWithFrames();
   }
 
@@ -628,15 +650,11 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
   }
 
   private initialize(): void {
-    for (const frame of SDK.ResourceTreeModel.ResourceTreeModel.frames()) {
+    for (const frame of SDK.ResourceTreeModel.ResourceTreeModel.frames(this.target?.targetManager() ??
+                                                                       SDK.TargetManager.TargetManager.instance())) {
       this.addCookieDocument(frame);
     }
-    const interestGroupModel = this.target?.model(InterestGroupStorageModel);
-    if (interestGroupModel) {
-      interestGroupModel.enable();
-    }
 
-    this.cacheStorageListTreeElement.initialize();
     const backgroundServiceModel = this.target?.model(BackgroundServiceModel) || null;
     this.backgroundFetchTreeElement.initialize(backgroundServiceModel);
     this.backgroundSyncTreeElement.initialize(backgroundServiceModel);
@@ -689,16 +707,6 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
 
   private indexedDBModelRemoved(model: IndexedDBModel): void {
     this.indexedDBListTreeElement.removeIndexedDBForModel(model);
-  }
-
-  private interestGroupModelAdded(model: InterestGroupStorageModel): void {
-    model.enable();
-    model.addEventListener(InterestGroupModelEvents.INTEREST_GROUP_ACCESS, this.interestGroupAccess, this);
-  }
-
-  private interestGroupModelRemoved(model: InterestGroupStorageModel): void {
-    model.disable();
-    model.removeEventListener(InterestGroupModelEvents.INTEREST_GROUP_ACCESS, this.interestGroupAccess, this);
   }
 
   private async sharedStorageModelAdded(model: SharedStorageModel): Promise<void> {
@@ -770,7 +778,6 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
   private reset(): void {
     this.domains = {};
     this.cookieListTreeElement.removeChildren();
-    this.interestGroupTreeElement.clearEvents();
     this.deviceBoundSessionsModel?.clearVisibleSites();
     this.deviceBoundSessionsModel?.clearEvents();
   }
@@ -782,11 +789,6 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
       this.reset();
     }
     this.addCookieDocument(frame);
-  }
-
-  private interestGroupAccess(event: Common.EventTarget.EventTargetEvent<Protocol.Storage.InterestGroupAccessedEvent>):
-      void {
-    this.interestGroupTreeElement.addEvent(event.data);
   }
 
   private addCookieDocument(frame: SDK.ResourceTreeModel.ResourceTreeFrame): void {
@@ -1759,18 +1761,56 @@ export class DOMStorageTreeElement extends ApplicationPanelTreeElement {
     super.onselect(selectedByUser);
     UI.UIUserMetrics.UIUserMetrics.instance().panelShown('dom-storage');
     this.resourcesPanel.showDOMStorage(this.domStorage);
+    const storageItem = this.#getStorageItem();
+    UI.Context.Context.instance().setFlavor(AiAssistance.StorageItem.StorageItem, storageItem);
     return false;
+  }
+
+  /**
+   * Resolves the DOM storage partition context (`localStorage` or `sessionStorage`)
+   * associated with this tree element for AI assistance.
+   */
+  #getStorageItem(): AiAssistance.StorageItem.StorageItem|null {
+    const target = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
+    const mainPageOrigin =
+        target?.inspectedURL() ? Common.ParsedURL.ParsedURL.extractOrigin(target.inspectedURL()) : '';
+    if (!mainPageOrigin || !this.domStorage.storageKey) {
+      return null;
+    }
+    const origin = SDK.StorageKeyManager.parseStorageKey(this.domStorage.storageKey).origin;
+    const storageType = this.domStorage.isLocalStorage ? 'localStorage' : 'sessionStorage';
+    return new AiAssistance.StorageItem.DOMStorageItem(mainPageOrigin, origin, this.domStorage.storageKey, storageType);
   }
 
   override onattach(): void {
     super.onattach();
     this.listItemElement.addEventListener('contextmenu', this.handleContextMenuEvent.bind(this), true);
+    const storageItem = this.#getStorageItem();
+    if (storageItem) {
+      this.createAiButton(storageItem);
+    }
   }
 
   private handleContextMenuEvent(event: MouseEvent): void {
     const contextMenu = new UI.ContextMenu.ContextMenu(event);
     contextMenu.defaultSection().appendItem(
         i18nString(UIStrings.clear), () => this.domStorage.clear(), {jslogContext: 'clear'});
+
+    const storageItem = this.#getStorageItem();
+    if (storageItem) {
+      const openAiAssistanceId = 'ai-assistance.application-panel-context';
+      if (UI.ActionRegistry.ActionRegistry.instance().hasAction(openAiAssistanceId)) {
+        UI.Context.Context.instance().setFlavor(AiAssistance.StorageItem.StorageItem, storageItem);
+        const action = UI.ActionRegistry.ActionRegistry.instance().getAction(openAiAssistanceId);
+        const submenu = contextMenu.footerSection().appendSubMenuItem(action.title(), false, openAiAssistanceId);
+        submenu.defaultSection().appendAction(openAiAssistanceId, i18nString(UIStrings.startAChat));
+        submenu.defaultSection().appendItem(
+            i18nString(UIStrings.explainStorage),
+            () => action.execute({prompt: 'What is the purpose of this storage bucket?'}),
+            {disabled: !action.enabled(), jslogContext: openAiAssistanceId + '.storage'});
+      }
+    }
+
     void contextMenu.show();
   }
 }
@@ -1851,9 +1891,27 @@ export class CookieTreeElement extends ApplicationPanelTreeElement {
     return this.#cookieDomain;
   }
 
+  /**
+   * Resolves the cookie domain security context associated with this tree element
+   * for AI assistance.
+   */
+  #getStorageItem(): AiAssistance.StorageItem.StorageItem|null {
+    const primaryTarget = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
+    const mainPageOrigin =
+        primaryTarget?.inspectedURL() ? Common.ParsedURL.ParsedURL.extractOrigin(primaryTarget.inspectedURL()) : '';
+    if (!mainPageOrigin || !this.#cookieDomain) {
+      return null;
+    }
+    return new AiAssistance.StorageItem.CookieItem(mainPageOrigin, this.#cookieDomain);
+  }
+
   override onattach(): void {
     super.onattach();
     this.listItemElement.addEventListener('contextmenu', this.handleContextMenuEvent.bind(this), true);
+    const storageItem = this.#getStorageItem();
+    if (storageItem) {
+      this.createAiButton(storageItem);
+    }
   }
 
   private handleContextMenuEvent(event: Event): void {
@@ -1861,6 +1919,22 @@ export class CookieTreeElement extends ApplicationPanelTreeElement {
     contextMenu.defaultSection().appendItem(
         i18nString(UIStrings.clear), () => this.resourcesPanel.clearCookies(this.target, this.#cookieDomain),
         {jslogContext: 'clear'});
+
+    const storageItem = this.#getStorageItem();
+    if (storageItem) {
+      const openAiAssistanceId = 'ai-assistance.application-panel-context';
+      if (UI.ActionRegistry.ActionRegistry.instance().hasAction(openAiAssistanceId)) {
+        UI.Context.Context.instance().setFlavor(AiAssistance.StorageItem.StorageItem, storageItem);
+        const action = UI.ActionRegistry.ActionRegistry.instance().getAction(openAiAssistanceId);
+        const submenu = contextMenu.footerSection().appendSubMenuItem(action.title(), false, openAiAssistanceId);
+        submenu.defaultSection().appendAction(openAiAssistanceId, i18nString(UIStrings.startAChat));
+        submenu.defaultSection().appendItem(
+            i18nString(UIStrings.explainCookies),
+            () => action.execute({prompt: 'What is the purpose of these cookies?'}),
+            {disabled: !action.enabled(), jslogContext: openAiAssistanceId + '.cookies'});
+      }
+    }
+
     void contextMenu.show();
   }
 
@@ -1869,6 +1943,8 @@ export class CookieTreeElement extends ApplicationPanelTreeElement {
     this.resourcesPanel.showCookies(this.target, this.#cookieDomain);
     UI.UIUserMetrics.UIUserMetrics.instance().panelShown(
         Host.UserMetrics.PanelCodes[Host.UserMetrics.PanelCodes.cookies]);
+    const storageItem = this.#getStorageItem();
+    UI.Context.Context.instance().setFlavor(AiAssistance.StorageItem.StorageItem, storageItem);
     return false;
   }
 }
@@ -2225,7 +2301,7 @@ export class FrameTreeElement extends ApplicationPanelTreeElement {
     this.showView(this.view);
 
     this.listItemElement.classList.remove('hovered');
-    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight(SDK.TargetManager.TargetManager.instance());
     return false;
   }
 
@@ -2235,7 +2311,7 @@ export class FrameTreeElement extends ApplicationPanelTreeElement {
       void this.frame.highlight();
     } else {
       this.listItemElement.classList.remove('hovered');
-      SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+      SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight(SDK.TargetManager.TargetManager.instance());
     }
   }
 

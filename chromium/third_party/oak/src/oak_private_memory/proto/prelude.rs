@@ -15,16 +15,22 @@
 
 pub mod v1 {
     pub use crate::oak::private_memory::{
+        AddMemoriesRequest, AddMemoriesResponse, AddMemoryRequest, AddMemoryResponse,
+        ComparisonType, DataBlob, DeleteMemoryRequest, DeleteMemoryResponse, Embedding,
+        EmbeddingFilter, EmbeddingSort, EncryptedDataBlob, EncryptedMetadataBlob,
+        EncryptedUserInfo, GetDatabaseMetricsRequest, GetDatabaseMetricsResponse,
+        GetMemoriesByIdRequest, GetMemoriesByIdResponse, GetMemoriesRequest, GetMemoriesResponse,
+        GetMemoryByIdRequest, GetMemoryByIdResponse, GetMemoryByNameRequest,
+        GetMemoryByNameResponse, InvalidRequestResponse, KeyDerivationInfo, KeySyncRequest,
+        KeySyncResponse, Memory, MemoryContent, MemoryField, MemoryValue, PlainTextUserInfo,
+        ResetMemoryRequest, ResetMemoryResponse, ResultMask, SealedMemoryCredentials,
+        SealedMemoryRequest, SealedMemoryResponse, SealedMemorySessionRequest,
+        SealedMemorySessionResponse, SearchMemoriesFilter, SearchMemoriesFilters,
+        SearchMemoriesRequest, SearchMemoriesResponse, SearchMemoriesResultItem,
+        SearchMemoriesSort, SortOrder, StringFilter, SyncDatabaseRequest, SyncDatabaseResponse,
+        TimeFilter, TimeSort, UserDb, UserRegistrationRequest, UserRegistrationResponse,
+        WrappedDataEncryptionKey, add_memories_response, get_database_metrics_response,
         key_sync_response, memory_value, sealed_memory_request, sealed_memory_response,
-        search_memory_query, user_registration_response, AddMemoryRequest, AddMemoryResponse,
-        DataBlob, DeleteMemoryRequest, DeleteMemoryResponse, Embedding, EmbeddingQuery,
-        EmbeddingQueryMetricType, EncryptedDataBlob, EncryptedUserInfo, GetMemoriesRequest,
-        GetMemoriesResponse, GetMemoryByIdRequest, GetMemoryByIdResponse, InvalidRequestResponse,
-        KeyDerivationInfo, KeySyncRequest, KeySyncResponse, Memory, MemoryContent, MemoryField,
-        MemoryValue, PlainTextUserInfo, ResetMemoryRequest, ResetMemoryResponse, ResultMask,
-        ScoreRange, SealedMemoryCredentials, SealedMemoryRequest, SealedMemoryResponse,
-        SealedMemorySessionRequest, SealedMemorySessionResponse, SearchMemoryQuery,
-        SearchMemoryRequest, SearchMemoryResponse, SearchMemoryResultItem, UserDb,
-        UserRegistrationRequest, UserRegistrationResponse, WrappedDataEncryptionKey,
+        search_memories_filter, search_memories_sort, user_registration_response,
     };
 }

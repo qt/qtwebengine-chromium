@@ -70,35 +70,32 @@ TEST_P(SetFullNameTest, SetFullName) {
   NameInfo name(/*alternative_names_supported=*/false);
   name.SetInfo(NAME_FULL, ASCIIToUTF16(test_case.full_name_input), "en-US");
   EXPECT_TRUE(name.FinalizeAfterImport());
-  EXPECT_EQ(ASCIIToUTF16(test_case.given_name_output),
-            name.GetInfo(NAME_FIRST, "en-US"));
-  EXPECT_EQ(ASCIIToUTF16(test_case.middle_name_output),
-            name.GetInfo(NAME_MIDDLE, "en-US"));
-  EXPECT_EQ(ASCIIToUTF16(test_case.family_name_output),
-            name.GetInfo(NAME_LAST, "en-US"));
-  EXPECT_EQ(ASCIIToUTF16(test_case.full_name_input),
-            name.GetInfo(NAME_FULL, "en-US"));
+  EXPECT_EQ(name.GetInfo(NAME_FIRST, "en-US"),
+            ASCIIToUTF16(test_case.given_name_output));
+  EXPECT_EQ(name.GetInfo(NAME_MIDDLE, "en-US"),
+            ASCIIToUTF16(test_case.middle_name_output));
+  EXPECT_EQ(name.GetInfo(NAME_LAST, "en-US"),
+            ASCIIToUTF16(test_case.family_name_output));
+  EXPECT_EQ(name.GetInfo(NAME_FULL, "en-US"),
+            ASCIIToUTF16(test_case.full_name_input));
 }
 
 class SetFullAlternativeNameTest
     : public testing::TestWithParam<FullAlternativeNameTestCase> {};
 
 TEST_P(SetFullAlternativeNameTest, SetFullAlternativeName) {
-  base::test::ScopedFeatureList scoped_feature_list(
-      features::kAutofillSupportPhoneticNameForJP);
-
   auto test_case = GetParam();
   SCOPED_TRACE(test_case.full_name_input);
 
   NameInfo name(/*alternative_names_supported=*/true);
   name.SetInfo(ALTERNATIVE_FULL_NAME, test_case.full_name_input, "ja");
   EXPECT_TRUE(name.FinalizeAfterImport());
-  EXPECT_EQ(test_case.given_name_output,
-            name.GetInfo(ALTERNATIVE_GIVEN_NAME, "ja"));
-  EXPECT_EQ(test_case.family_name_output,
-            name.GetInfo(ALTERNATIVE_FAMILY_NAME, "ja"));
-  EXPECT_EQ(test_case.full_name_input,
-            name.GetInfo(ALTERNATIVE_FULL_NAME, "ja"));
+  EXPECT_EQ(name.GetInfo(ALTERNATIVE_GIVEN_NAME, "ja"),
+            test_case.given_name_output);
+  EXPECT_EQ(name.GetInfo(ALTERNATIVE_FAMILY_NAME, "ja"),
+            test_case.family_name_output);
+  EXPECT_EQ(name.GetInfo(ALTERNATIVE_FULL_NAME, "ja"),
+            test_case.full_name_input);
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -181,8 +178,6 @@ class NameInfoTest : public testing::Test {
   }
 
  private:
-  base::test::ScopedFeatureList scoped_feature_list_{
-      features::kAutofillSupportPhoneticNameForJP};
 };
 
 TEST_F(NameInfoTest, GetMatchingTypes) {
@@ -695,9 +690,6 @@ TEST_F(NameInfoTest, MergeNamesWithWhitespaceDifferences) {
 }
 
 TEST_F(NameInfoTest, MergeCJKNames) {
-  base::test::ScopedFeatureList scoped_feature_list{
-      features::kAutofillSupportPhoneticNameForJP};
-
   // Korean names that are all mergeable, but constructed differently.
   NameInfo name1 = CreateNameInfo(u"호", u"", u"이영", u"이영 호");
   NameInfo name2 = CreateNameInfo(u"이영호", u"", u"", u"이영호");
@@ -759,9 +751,6 @@ TEST_F(NameInfoTest, MergeCJKNames) {
 }
 
 TEST_F(NameInfoTest, MergeCJKNamesWhereAlternativeNameNormalizationIsNeeded) {
-  base::test::ScopedFeatureList scoped_feature_list{
-      features::kAutofillSupportPhoneticNameForJP};
-
   // Phonetic name using Hiragana.
   NameInfo name1 = CreateNameInfo(u"葵", u"", u"山本", u"山本・葵", u"あおい",
                                   u"やまもと", u"");
@@ -822,8 +811,6 @@ TEST_F(NameInfoTest, MergeCJKNamesWhereAlternativeNameNormalizationIsNeeded) {
 
 TEST_F(NameInfoTest, HaveMergeableAlternativeNames) {
   base::HistogramTester histogram_tester;
-  base::test::ScopedFeatureList scoped_feature_list{
-      features::kAutofillSupportPhoneticNameForJP};
 
   NameInfo empty = CreateNameInfo(u"", u"", u"", u"", u"", u"", u"",
                                   /*should_support_alternative_name=*/true);
@@ -1430,8 +1417,6 @@ class NameInfoNameMigrationTest
 // migrate them to the alternative name fields. Those that do have other
 // characters than phonetic symbols should not be migrated.
 TEST_P(NameInfoNameMigrationTest, NameMigration) {
-  base::test::ScopedFeatureList feature_list{
-      features::kAutofillSupportPhoneticNameForJP};
   AutofillProfile profile(GetParam().country_code);
 
   profile.SetRawInfo(NAME_FULL, base::UTF8ToUTF16(GetParam().name));

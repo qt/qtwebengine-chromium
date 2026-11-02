@@ -11,7 +11,7 @@ import greenDevAnchorsStyle from './tool_green_dev_anchors.css';
 import {
   type GreenDevAnchorsDispatchMessage,
   GreenDevAnchorsOverlay,
-  type GreenDevAnchorsToolMessage
+  type GreenDevAnchorsToolMessage,
 } from './tool_green_dev_anchors.js';
 // @ts-expect-error Importing CSS is handled in Rollup.
 import highlightGridStyle from './tool_grid.css';

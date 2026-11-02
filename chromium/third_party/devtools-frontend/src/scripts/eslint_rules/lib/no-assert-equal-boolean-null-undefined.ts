@@ -117,7 +117,7 @@ export default createRule<[], MessageIds>({
           const args = [argToKeep].concat(node.arguments.slice(2));
           const argsText = args.map(argNode => sourceCode.getText(argNode)).join(', ');
           return fixer.replaceText(node, `${calleeText}(${argsText})`);
-        }
+        },
       });
     }
 
@@ -172,7 +172,7 @@ export default createRule<[], MessageIds>({
             reportError(node, 'assert.isDefined', 1, 'useAssertIsDefined');
           }
         }
-      }
+      },
     };
   },
 });

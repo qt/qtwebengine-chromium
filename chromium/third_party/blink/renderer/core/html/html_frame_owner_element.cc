@@ -58,6 +58,7 @@
 #include "third_party/blink/renderer/core/html/loading_attribute.h"
 #include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/layout/layout_embedded_content.h"
+#include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/loader/frame_load_request.h"
 #include "third_party/blink/renderer/core/loader/frame_loader.h"
@@ -65,7 +66,9 @@
 #include "third_party/blink/renderer/core/loader/url_matcher.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/page/scrolling/root_scroller_controller.h"
+#include "third_party/blink/renderer/core/paint/object_paint_invalidator.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
+#include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/core/timing/dom_window_performance.h"
 #include "third_party/blink/renderer/core/timing/resource_timing_context.h"
 #include "third_party/blink/renderer/core/timing/window_performance.h"
@@ -184,8 +187,7 @@ void HTMLFrameOwnerElement::PluginDisposeSuspendScope::
 HTMLFrameOwnerElement::HTMLFrameOwnerElement(const QualifiedName& tag_name,
                                              Document& document)
     : HTMLElement(tag_name, document),
-      should_lazy_load_children_(DoesParentAllowLazyLoadingChildren(document)),
-      preferred_color_scheme_(mojom::blink::PreferredColorScheme::kLight) {
+      should_lazy_load_children_(DoesParentAllowLazyLoadingChildren(document)) {
   SetHasCustomStyleCallbacks();
   document.IncrementImmediateChildFrameCreationCount();
 }
@@ -222,12 +224,15 @@ Node::InsertionNotificationRequest HTMLFrameOwnerElement::InsertedInto(
   // move flow.
   if (GetDocument().StatePreservingAtomicMoveInProgress() && ContentFrame()) {
     // During a state-preserving atomic move, we must specifically inform all of
-    // `this`'s ancestor nodes of the new connected frame they are adopting.
+    // `this`'s new ancestor nodes, starting from `insertion_point`, of the new
+    // connected frame they are adopting. We also re-increment `this` to match
+    // the decrement performed in `RemovedFrom()` below.
     //
     // For the non-state-preserving atomic move case (i.e., when we're setting
     // up a full frame due to real insertion), this is done in
     // `HTMLFrameOwnerElement::SetContentFrame()` below.
-    for (ContainerNode* node = this; node;
+    IncrementConnectedSubframeCount();
+    for (ContainerNode* node = &insertion_point; node;
          node = node->ParentOrShadowHostNode()) {
       node->IncrementConnectedSubframeCount();
     }
@@ -236,32 +241,26 @@ Node::InsertionNotificationRequest HTMLFrameOwnerElement::InsertedInto(
   return result;
 }
 
-static void SetIsCanvasOrInCanvasSubtreeRecursively(Element& element,
-                                                    bool is_in_canvas) {
-  if (IsA<HTMLCanvasElement>(element)) {
-    is_in_canvas = true;
-  }
-  if (element.IsCanvasOrInCanvasSubtree() == is_in_canvas) {
-    return;
-  }
-  element.SetIsCanvasOrInCanvasSubtree(is_in_canvas);
-
-  if (ShadowRoot* shadow_root = element.GetShadowRoot()) {
-    for (Element& child : ElementTraversal::ChildrenOf(*shadow_root)) {
-      SetIsCanvasOrInCanvasSubtreeRecursively(child, is_in_canvas);
-    }
-  }
-  for (Element& child : ElementTraversal::ChildrenOf(element)) {
-    SetIsCanvasOrInCanvasSubtreeRecursively(child, is_in_canvas);
-  }
-}
-
-void HTMLFrameOwnerElement::DidChangeIsCanvasOrInCanvasSubtree() {
-  HTMLElement::DidChangeIsCanvasOrInCanvasSubtree();
+void HTMLFrameOwnerElement::DidChangeIsInCanvasSubtree() {
+  HTMLElement::DidChangeIsInCanvasSubtree();
   if (Document* inner_document = contentDocument()) {
     if (Element* root = inner_document->documentElement()) {
-      SetIsCanvasOrInCanvasSubtreeRecursively(*root,
-                                              IsCanvasOrInCanvasSubtree());
+      root->SetIsInCanvasSubtree(IsInCanvasSubtree());
+      if (auto* layout_view = inner_document->GetLayoutView()) {
+        layout_view->SetNeedsPaintPropertyUpdate();
+        layout_view->Layer()->SetNeedsRepaint();
+        // At this point we do not know if the layout view background etc.
+        // will be painted by the layout view itself or the scrollable area.
+        // So invalidate both display item clients.
+        ObjectPaintInvalidator(*layout_view)
+            .InvalidateDisplayItemClient(
+                *layout_view, PaintInvalidationReason::kUncacheable);
+        ObjectPaintInvalidator(*layout_view)
+            .InvalidateDisplayItemClient(
+                layout_view->GetScrollableArea()
+                    ->GetScrollingBackgroundDisplayItemClient(),
+                PaintInvalidationReason::kUncacheable);
+      }
     }
   }
 }
@@ -445,6 +444,14 @@ void HTMLFrameOwnerElement::ClearLastNaturalSizingInfo() {
   last_natural_sizing_info_.reset();
 }
 
+void HTMLFrameOwnerElement::ClearAllNaturalSizingInfo() {
+  last_natural_sizing_info_.reset();
+  if (auto* frame_view = DynamicTo<FrameView>(OwnedEmbeddedContentView())) {
+    frame_view->ClearNaturalDimensions();
+  }
+  NaturalSizingInfoChanged();
+}
+
 void HTMLFrameOwnerElement::UpdateContainerPolicy() {
   frame_policy_.container_policy = ConstructContainerPolicy();
   DidChangeContainerPolicy();
@@ -538,6 +545,7 @@ void HTMLFrameOwnerElement::FrameOwnerPropertiesChanged() {
   properties->is_display_none = IsDisplayNone();
   properties->color_scheme = GetColorScheme();
   properties->preferred_color_scheme = GetPreferredColorScheme();
+  properties->responsive_sizing = GetResponsiveSizing();
 
   GetDocument()
       .GetFrame()
@@ -556,17 +564,12 @@ void HTMLFrameOwnerElement::AddResourceTiming(
     return;
   }
 
-  // This would only happen in rare cases, where the frame is navigated from the
-  // outside, e.g. by a web extension or window.open() with target, and that
-  // navigation would cancel the container-initiated navigation. This safeguard
-  // would make this type of race harmless.
-  // TODO(crbug.com/1410705): fix this properly by moving IFrame reporting to
-  // the browser side.
-  if (fallback_timing_info_->name != info->name) {
-    return;
-  }
-
   info->initiator_url = fallback_timing_info_->initiator_url;
+
+  // When the kSanitizeOriginalUrlDuringNavigation feature is enabled, the
+  // original URL will be sanitized in the child frame's commit parameters.
+  // Restore it from the fallback info.
+  info->name = fallback_timing_info_->name;
 
   DOMWindowPerformance::performance(*GetDocument().domWindow())
       ->AddResourceTiming(std::move(info), localName());
@@ -970,6 +973,36 @@ void HTMLFrameOwnerElement::DidRecalcStyle(
   SetPreferredColorScheme(
       GetDocument().GetStyleEngine().ResolveColorSchemeForEmbedding(
           GetComputedStyle()));
+
+  mojom::blink::FrameResponsiveSizing new_responsive_sizing =
+      GetResponsiveSizing();
+  if (new_responsive_sizing != responsive_sizing_) {
+    responsive_sizing_ = new_responsive_sizing;
+    FrameOwnerPropertiesChanged();
+  }
+}
+
+mojom::blink::FrameResponsiveSizing HTMLFrameOwnerElement::GetResponsiveSizing()
+    const {
+  if (const ComputedStyle* style = GetComputedStyle()) {
+    switch (style->FrameSizing()) {
+      case EFrameSizing::kAuto:
+        return mojom::blink::FrameResponsiveSizing::kNone;
+      case EFrameSizing::kContentWidth:
+        return mojom::blink::FrameResponsiveSizing::kWidth;
+      case EFrameSizing::kContentHeight:
+        return mojom::blink::FrameResponsiveSizing::kHeight;
+      case EFrameSizing::kContentInlineSize:
+        return style->IsHorizontalWritingMode()
+                   ? mojom::blink::FrameResponsiveSizing::kWidth
+                   : mojom::blink::FrameResponsiveSizing::kHeight;
+      case EFrameSizing::kContentBlockSize:
+        return style->IsHorizontalWritingMode()
+                   ? mojom::blink::FrameResponsiveSizing::kHeight
+                   : mojom::blink::FrameResponsiveSizing::kWidth;
+    }
+  }
+  return mojom::blink::FrameResponsiveSizing::kNone;
 }
 
 }  // namespace blink

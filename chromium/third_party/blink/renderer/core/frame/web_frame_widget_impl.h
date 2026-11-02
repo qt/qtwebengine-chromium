@@ -31,6 +31,8 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_WEB_FRAME_WIDGET_IMPL_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_WEB_FRAME_WIDGET_IMPL_H_
 
+#include <optional>
+
 #include "base/functional/function_ref.h"
 #include "base/memory/weak_ptr.h"
 #include "base/task/single_thread_task_runner.h"
@@ -50,12 +52,16 @@
 #include "third_party/blink/public/common/input/web_coalesced_input_event.h"
 #include "third_party/blink/public/common/input/web_gesture_device.h"
 #include "third_party/blink/public/mojom/drag/drag.mojom-blink.h"
+#include "third_party/blink/public/mojom/frame/frame.mojom-blink.h"
+#include "third_party/blink/public/mojom/frame_sinks/embedded_frame_sink.mojom-blink.h"
 #include "third_party/blink/public/mojom/input/ime_host.mojom-blink.h"
 #include "third_party/blink/public/mojom/input/input_handler.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/input/stylus_writing_gesture.mojom-blink.h"
+#include "third_party/blink/public/mojom/manifest/application_context.mojom-blink.h"
 #include "third_party/blink/public/mojom/manifest/display_mode.mojom-blink.h"
 #include "third_party/blink/public/mojom/page/widget.mojom-blink.h"
 #include "third_party/blink/public/mojom/scroll/scroll_into_view_params.mojom-blink-forward.h"
+#include "third_party/blink/public/mojom/unbounded_element/unbounded_element.mojom-blink.h"
 #include "third_party/blink/public/platform/cross_variant_mojo_util.h"
 #include "third_party/blink/public/platform/web_drag_data.h"
 #include "third_party/blink/public/web/web_frame_widget.h"
@@ -63,6 +69,7 @@
 #include "third_party/blink/renderer/core/clipboard/data_object.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/editing/forward.h"
+#include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/exported/web_page_popup_impl.h"
 #include "third_party/blink/renderer/core/frame/animation_frame_timing_monitor.h"
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
@@ -96,7 +103,9 @@ class PointF;
 
 namespace blink {
 class AnimationWorkletMutatorDispatcherImpl;
+class ExecutionContext;
 class HitTestResult;
+class HTMLElement;
 class HTMLPlugInElement;
 class Page;
 class PaintWorkletPaintDispatcher;
@@ -107,6 +116,10 @@ class WebViewImpl;
 class WidgetBase;
 class WidgetEventHandler;
 class ScreenMetricsEmulator;
+
+template <typename IDLType>
+class ScriptPromiseResolver;
+struct IDLUndefined;
 
 // Implements WebFrameWidget for both main frames and child local root frame
 // (OOPIF).
@@ -119,7 +132,8 @@ class CORE_EXPORT WebFrameWidgetImpl
       public mojom::blink::FrameWidgetInputHandler,
       public FrameWidget,
       public AnimationFrameTimingMonitor::Client,
-      public WidgetEventHandler {
+      public WidgetEventHandler,
+      public mojom::blink::UnboundedSurfaceClient {
  public:
   struct PromiseCallbacks {
     base::OnceCallback<void(base::TimeTicks)> swap_time_callback;
@@ -254,6 +268,7 @@ class CORE_EXPORT WebFrameWidgetImpl
   cc::EventListenerProperties EventListenerProperties(
       cc::EventListenerClass) const final;
   mojom::blink::DisplayMode DisplayMode() const override;
+  mojom::blink::ApplicationContext ApplicationContext() const override;
   ui::mojom::blink::WindowShowState WindowShowState() const override;
   bool Resizable() const override;
   const std::vector<gfx::Rect>& ViewportSegments() const override;
@@ -268,6 +283,10 @@ class CORE_EXPORT WebFrameWidgetImpl
       Vector<gfx::Rect>* bounds_in_dips) override;
   // Return the last calculated cursor anchor info.
   mojom::blink::InputCursorAnchorInfoPtr& GetLastCursorAnchorInfoForTesting();
+  mojom::blink::InputCursorAnchorInfoPtr CalculateCursorAnchorInfoForTesting(
+      bool update_requested) {
+    return CalculateCursorAnchorInfo(update_requested);
+  }
   bool HasImeRenderWidgetHost() const override {
     return !!ime_render_widget_host_;
   }
@@ -294,11 +313,15 @@ class CORE_EXPORT WebFrameWidgetImpl
                       const gfx::Range& replacement_range,
                       int selection_start,
                       int selection_end,
-                      mojom::blink::ImeState ime_state) override;
+                      mojom::blink::ImeState ime_state,
+                      DOMNodeIdType target_dom_node_id) override;
   void CommitText(const String& text,
                   const Vector<ui::ImeTextSpan>& ime_text_spans,
                   const gfx::Range& replacement_range,
-                  int relative_cursor_pos) override;
+                  int relative_cursor_pos,
+                  DOMNodeIdType target_dom_node_id) override;
+  void PasteIntoNode(const String& text,
+                     DOMNodeIdType target_dom_node_id) override;
   void FinishComposingText(bool keep_selection) override;
   bool IsProvisional() override;
   cc::ElementId GetScrollableContainerIdAt(const gfx::PointF& point) override;
@@ -320,6 +343,7 @@ class CORE_EXPORT WebFrameWidgetImpl
   float DIPsToBlinkSpace(float scalar) override;
   gfx::RectF DIPsToBlinkSpace(const gfx::RectF& rect) override;
   void MouseCaptureLost() override;
+  void SetPointerLocked(bool is_locked) override;
   bool CanComposeInline() override;
   bool ShouldDispatchImeEventsToPlugin() override;
   void ImeSetCompositionForPlugin(const String& text,
@@ -344,6 +368,14 @@ class CORE_EXPORT WebFrameWidgetImpl
   void OnTaskCompletedForFrame(base::TimeTicks start_time,
                                base::TimeTicks end_time,
                                LocalFrame*) override;
+
+  AnimationFrameTimingInfo* RecordRenderingUpdateEndTime(
+      base::TimeTicks) override;
+  void OnFirstContentfulPaint() override;
+  void MarkConditional(const AtomicString& name,
+                       base::TimeTicks start_time) override;
+  // TODO(https://crbug.com/515098190): Below are not FrameWidget overrides.
+
   void SetVirtualKeyboardResizeHeightForTesting(int);
   bool GetMayThrottleIfUndrawnFramesForTesting();
 
@@ -353,16 +385,12 @@ class CORE_EXPORT WebFrameWidgetImpl
                             base::TimeTicks end,
                             ExecutionContext* task_context) override;
   bool RequestedMainFramePending() override;
-  AnimationFrameTimingInfo* RecordRenderingUpdateEndTime(
-      base::TimeTicks) override;
   ukm::UkmRecorder* MainFrameUkmRecorder() override;
   ukm::SourceId MainFrameUkmSourceId() override;
 
   // WebFrameWidget overrides.
   void InitializeNonCompositing(WebNonCompositedWidgetClient* client) override;
   WebLocalFrame* LocalRoot() const override;
-  void UpdateCompositorScrollState(
-      const cc::CompositorCommitData& commit_data) override;
   WebInputMethodController* GetActiveWebInputMethodController() const override;
   void DisableDragAndDrop() override;
   WebLocalFrameImpl* FocusedWebLocalFrameInWidget() const override;
@@ -479,6 +507,10 @@ class CORE_EXPORT WebFrameWidgetImpl
   void BeginMainFrame(const viz::BeginFrameArgs& args) override;
   void UpdateLifecycle(WebLifecycleUpdate requested_update,
                        DocumentUpdateReason reason) override;
+  void UpdateCompositorScrollState(
+      const cc::CompositorCommitData& commit_data) override;
+  void UpdateAnimatedImageState(
+      const cc::CompositorCommitData& commit_data) override;
   void ShowContextMenu(ui::mojom::blink::MenuSourceType source_type,
                        const gfx::Point& location) override;
   void BindInputTargetClient(
@@ -504,6 +536,20 @@ class CORE_EXPORT WebFrameWidgetImpl
 #endif
   void NotifyClearedDisplayedGraphics() override;
 
+  // mojom::blink::UnboundedSurfaceClient overrides:
+  void OnSurfaceAllocated(const viz::FrameSinkId& frame_sink_id,
+                          const viz::LocalSurfaceId& local_surface_id) override;
+  void OnDismissed() override;
+
+  void RegisterActiveUnboundedElement(
+      HTMLElement* element,
+      mojo::PendingAssociatedReceiver<mojom::blink::UnboundedSurfaceClient>
+          client_receiver,
+      mojo::PendingAssociatedRemote<mojom::blink::UnboundedSurfaceHost>
+          host_remote,
+      ScriptPromiseResolver<IDLUndefined>* resolver);
+  void UpdateUnboundedElementBounds(const gfx::Rect& bounds);
+
   // mojom::blink::FrameWidgetInputHandler overrides:
   void HandleStylusWritingGestureAction(
       mojom::blink::StylusWritingGestureDataPtr gesture_data,
@@ -512,6 +558,11 @@ class CORE_EXPORT WebFrameWidgetImpl
   // Sets the display mode, which comes from the top-level browsing context and
   // is applied to all widgets.
   void SetDisplayMode(mojom::blink::DisplayMode);
+
+  // Sets how the top-level browsing context is presented to the user (a
+  // standalone web application window vs ordinary browser UI). Comes from the
+  // top-level browsing context and is applied to all widgets.
+  void SetApplicationContext(mojom::blink::ApplicationContext);
 
   // Sets the window show state.
   void SetWindowShowState(ui::mojom::blink::WindowShowState);
@@ -578,7 +629,6 @@ class CORE_EXPORT WebFrameWidgetImpl
   // Immediately stop deferring commits.
   void StopDeferringCommits();
 
-  void SetShouldThrottleFrameRate(bool flag);
 
   void RequestMainFrameOnCompositorAnimation(
       cc::PropertyChangeForcesCommitCriteria criteria,
@@ -634,6 +684,8 @@ class CORE_EXPORT WebFrameWidgetImpl
 
   void SetWindowRect(const gfx::Rect& requested_rect,
                      const gfx::Rect& adjusted_rect);
+  void MoveWindowTo(const gfx::Point& origin);
+  void ResizeWindowTo(const gfx::Size& size);
   void SetWindowRectSynchronouslyForTesting(const gfx::Rect& new_window_rect);
 
   void UpdateTooltipUnderCursor(const String& tooltip_text, TextDirection dir);
@@ -752,7 +804,6 @@ class CORE_EXPORT WebFrameWidgetImpl
   // coordinate space.
   Vector<gfx::Rect> CalculateVisibleLineBoundsOnScreen();
 #endif  // BUILDFLAG(IS_ANDROID)
-
   // Returns true if this widget corresponds to a frame which is being replaced.
   // The compositor for the widget has been detached and passed to the new
   // widget.
@@ -771,7 +822,6 @@ class CORE_EXPORT WebFrameWidgetImpl
 
   void OnDevToolsSessionConnectionChanged(bool attached);
 
-  void OnFirstContentfulPaint() override;
 
   WidgetBase* widget_base_for_testing() const { return widget_base_.get(); }
 
@@ -818,11 +868,14 @@ class CORE_EXPORT WebFrameWidgetImpl
   bool doing_drag_and_drop_ = false;
 
  private:
+  friend class WebFrameWidgetSimTest;
   friend class WebViewImpl;
   friend class ReportTimeSwapPromise;
   friend class WebFrameWidgetScrollContainerHitTest;
 
   void NotifySwapAndPresentationTime(PromiseCallbacks callbacks);
+  gfx::Rect AdjustPendingWindowRectForDisplay(const gfx::Rect& pending_rect,
+                                              int minimum_size);
 
   // WidgetBaseClient overrides.
   void BeginCommitCompositorFrame() override;
@@ -931,6 +984,7 @@ class CORE_EXPORT WebFrameWidgetImpl
   void ClearImeTextSpansByType(uint32_t start,
                                uint32_t end,
                                ui::ImeTextSpan::Type type) override;
+  void CancelStylusGesturePreview() override;
   void SetCompositionFromExistingText(
       int32_t start,
       int32_t end,
@@ -1009,6 +1063,7 @@ class CORE_EXPORT WebFrameWidgetImpl
   void SendEndOfScrollEvents(const cc::CompositorCommitData& commit_data);
   void SendScrollSnapChangingEventIfNeeded(
       const cc::CompositorCommitData& commit_data);
+
   void RecordManipulationTypeCounts(cc::ManipulationInfo info);
 
   enum DragAction { kDragEnter, kDragOver };
@@ -1124,6 +1179,9 @@ class CORE_EXPORT WebFrameWidgetImpl
       const PositionWithAffinity& pivot_position) const;
 #endif  // BUILDFLAG(IS_WIN)
 
+  mojom::blink::InputCursorAnchorInfoPtr CalculateCursorAnchorInfo(
+      bool update_requested);
+
   // Stores the last cursor anchor info calculated for the currently focused
   // editable element.
   mojom::blink::InputCursorAnchorInfoPtr last_cursor_anchor_info_;
@@ -1181,6 +1239,8 @@ class CORE_EXPORT WebFrameWidgetImpl
   Member<WebLocalFrameImpl> local_root_;
 
   mojom::blink::DisplayMode display_mode_;
+  mojom::blink::ApplicationContext application_context_ =
+      mojom::blink::ApplicationContext::kNone;
   ui::mojom::blink::WindowShowState window_show_state_;
   bool resizable_;
 
@@ -1221,7 +1281,6 @@ class CORE_EXPORT WebFrameWidgetImpl
   Vector<mojom::blink::EditCommandPtr> edit_commands_;
 
   std::optional<gfx::Point> host_context_menu_location_;
-  uint32_t last_capture_sequence_number_ = 0u;
 
   // Indicates whether tab-initiated fullscreen was granted.
   bool is_fullscreen_granted_ = false;
@@ -1353,9 +1412,77 @@ class CORE_EXPORT WebFrameWidgetImpl
   double zoom_level_ = 0;
   double css_zoom_factor_ = 1;
 
+  class UnboundedSurfaceState final
+      : public GarbageCollected<UnboundedSurfaceState>,
+        public ExecutionContextLifecycleObserver {
+   public:
+    UnboundedSurfaceState(WebFrameWidgetImpl* widget, ExecutionContext* context)
+        : ExecutionContextLifecycleObserver(context),
+          widget_(widget),
+          client_receiver_(widget, context),
+          host_(context) {}
+
+    void Trace(Visitor* visitor) const override {
+      visitor->Trace(widget_);
+      visitor->Trace(client_receiver_);
+      visitor->Trace(host_);
+      visitor->Trace(active_element_);
+      visitor->Trace(unbounded_element_resolver_);
+      ExecutionContextLifecycleObserver::Trace(visitor);
+    }
+
+    void ContextDestroyed() override { widget_->UnboundedContextDestroyed(); }
+
+    Member<WebFrameWidgetImpl> widget_;
+    HeapMojoAssociatedReceiver<mojom::blink::UnboundedSurfaceClient,
+                               WebFrameWidgetImpl>
+        client_receiver_;
+    HeapMojoAssociatedRemote<mojom::blink::UnboundedSurfaceHost> host_;
+
+    WeakMember<HTMLElement> active_element_;
+
+    // The resolver for the pending showUnboundedElement() promise. It is used
+    // to resolve or reject when unbounded elements are shown or dismissed.
+    Member<ScriptPromiseResolver<IDLUndefined>> unbounded_element_resolver_;
+
+    viz::FrameSinkId frame_sink_id_;
+    viz::LocalSurfaceId local_surface_id_;
+  };
+
+  Member<UnboundedSurfaceState> unbounded_surface_state_;
+
+  UnboundedSurfaceState* GetOrCreateUnboundedSurfaceState(
+      ExecutionContext* execution_context);
+  UnboundedSurfaceState* GetUnboundedSurfaceState() const {
+    return unbounded_surface_state_.Get();
+  }
+  void UnboundedContextDestroyed();
+  HTMLElement* GetActiveUnboundedElement() const;
+
+ public:
+  // Unbounded elements shown in any local frame under this local root frame
+  // tree are tracked on the WebFrameWidgetImpl so that they can be checked
+  // globally (e.g. for clip escaping and hit testing).
+  void IncrementActiveUnboundedElementCount() {
+    active_unbounded_element_count_++;
+  }
+  void DecrementActiveUnboundedElementCount() {
+    DCHECK_GT(active_unbounded_element_count_, 0u);
+    active_unbounded_element_count_--;
+  }
+  bool HasActiveUnboundedElements() const {
+    return active_unbounded_element_count_ > 0;
+  }
+
+ private:
+  // Used during unbounded element show/hide to keep track of whether there is
+  // an active unbounded element in this widget.
+  // TODO(crbug.com/508672616): This likely can just be a bool, once checks are
+  // implemented to ensure only one unbounded element is open at a time.
+  uint32_t active_unbounded_element_count_ = 0;
+
   std::optional<float> browser_controls_top_height_override_;
 
-  bool throttling_frame_rate_ = false;
 };
 
 }  // namespace blink

@@ -5,12 +5,15 @@
 #import "components/password_manager/ios/password_manager_java_script_feature.h"
 
 #import "base/check.h"
+#import "base/feature_list.h"
 #import "base/functional/callback_helpers.h"
 #import "base/no_destructor.h"
 #import "base/strings/sys_string_conversions.h"
+#import "base/strings/utf_string_conversions.h"
 #import "base/values.h"
 #import "components/autofill/core/common/password_form_fill_data.h"
 #import "components/autofill/ios/browser/autofill_util.h"
+#import "components/autofill/ios/common/autofill_optimization_features.h"
 #import "components/autofill/ios/common/javascript_feature_util.h"
 #import "components/password_manager/ios/account_select_fill_data.h"
 #import "components/password_manager/ios/password_manager_tab_helper.h"
@@ -95,7 +98,19 @@ PasswordManagerJavaScriptFeature::PasswordManagerJavaScriptFeature()
               kScriptName,
               FeatureScript::InjectionTime::kDocumentStart,
               FeatureScript::TargetFrames::kAllFrames,
-              FeatureScript::ReinjectionBehavior::kInjectOncePerWindow)}) {}
+              FeatureScript::ReinjectionBehavior::kInjectOncePerWindow,
+              base::BindRepeating(
+                  []() -> FeatureScript::PlaceholderReplacements {
+                    return @{
+                      @"window."
+                      @"gCrWebPlaceholderAutofillOptimizationFormSearch" :
+                              base::FeatureList::IsEnabled(
+                                  autofill::features::
+                                      kAutofillOptimizationFormSearchIos)
+                          ? @"true"
+                          : @"false",
+                    };
+                  }))}) {}
 
 PasswordManagerJavaScriptFeature::~PasswordManagerJavaScriptFeature() = default;
 
@@ -218,6 +233,33 @@ void PasswordManagerJavaScriptFeature::FocusElement(
   CallJavaScriptFunction(
       frame, "passwords.focusElement",
       base::ListValue().Append(FieldRendererIdToJsParameter(field_identifier)),
+      autofill::CreateBoolCallback(std::move(callback)),
+      kJavaScriptExecutionTimeout);
+}
+
+void PasswordManagerJavaScriptFeature::ScrollAndCheckViewAreaVisible(
+    web::WebFrame* frame,
+    autofill::FieldRendererId field_identifier,
+    base::OnceCallback<void(bool)> callback) {
+  CHECK(callback);
+  CallJavaScriptFunction(
+      frame, "passwords.scrollAndCheckViewAreaVisible",
+      base::ListValue().Append(FieldRendererIdToJsParameter(field_identifier)),
+      autofill::CreateBoolCallback(std::move(callback)),
+      kJavaScriptExecutionTimeout);
+}
+
+void PasswordManagerJavaScriptFeature::FillField(
+    web::WebFrame* frame,
+    autofill::FieldRendererId field_identifier,
+    const std::u16string& value,
+    base::OnceCallback<void(bool)> callback) {
+  CHECK(callback);
+  CallJavaScriptFunction(
+      frame, "passwords.fillField",
+      base::ListValue()
+          .Append(FieldRendererIdToJsParameter(field_identifier))
+          .Append(base::UTF16ToUTF8(value)),
       autofill::CreateBoolCallback(std::move(callback)),
       kJavaScriptExecutionTimeout);
 }

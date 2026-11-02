@@ -355,8 +355,8 @@ avifResult EncodeDecodeGrid(const std::vector<std::vector<Cell>>& cell_rows,
   ImagePtr grid = testutil::CreateImage(
       static_cast<int>(image->width), static_cast<int>(image->height),
       /*depth=*/8, yuv_format, AVIF_PLANES_ALL, AVIF_RANGE_FULL);
-  const int num_rows = (int)cell_rows.size();
-  const int num_cols = (int)cell_rows[0].size();
+  const int num_rows = static_cast<int>(cell_rows.size());
+  const int num_cols = static_cast<int>(cell_rows[0].size());
   AVIF_CHECKRES(
       testutil::MergeGrid(num_cols, num_rows, cell_images, grid.get()));
 

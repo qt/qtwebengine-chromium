@@ -33,7 +33,7 @@
 #include <limits>
 #include <utility>
 
-#include "src/dawn/common/Numeric.h"
+#include "src/utils/numeric.h"
 #include "src/utils/underlying_type.h"
 
 namespace dawn::ityp {
@@ -55,8 +55,7 @@ class array : private ::std::array<Value, Size> {
     constexpr array() = default;
 
     template <typename... Values>
-    // NOLINTNEXTLINE(runtime/explicit)
-    constexpr array(Values&&... values) : Base{std::forward<Values>(values)...} {}
+    explicit(false) constexpr array(Values&&... values) : Base{std::forward<Values>(values)...} {}
 
     using Base::begin, Base::end;
     using Base::front, Base::back;
@@ -75,7 +74,9 @@ class array : private ::std::array<Value, Size> {
 
     constexpr Index size() const { return Index(static_cast<I>(Base::size())); }
 
-    constexpr bool operator==(const array<Index, Value, Size>& other) const = default;
+    constexpr bool operator==(const array<Index, Value, Size>& other) const {
+        return static_cast<const Base&>(*this) == static_cast<const Base&>(other);
+    }
 };
 
 }  // namespace dawn::ityp

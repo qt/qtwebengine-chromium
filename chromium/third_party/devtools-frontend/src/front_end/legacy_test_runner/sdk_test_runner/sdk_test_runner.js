@@ -5,8 +5,8 @@
 import * as Platform from '../../core/platform/platform.js';
 import * as ProtocolClient from '../../core/protocol_client/protocol_client.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as Bindings from '../../models/bindings/bindings.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import {TestRunner} from '../test_runner/test_runner.js';
 
 /**
@@ -43,7 +43,7 @@ SDKTestRunner.PageMock = class {
       'Debugger.setBlackboxExecutionContexts': (id, params) => {},
       'Runtime.enable': this.runtimeEnable,
       'Page.enable': this.pageEnable,
-      'Page.getResourceTree': this.pageGetResourceTree
+      'Page.getResourceTree': this.pageGetResourceTree,
     };
   }
 
@@ -132,7 +132,7 @@ SDKTestRunner.PageMock = class {
       hasSourceURL: true,
       isLiveEdit: false,
       isModule: false,
-      length: content.length
+      length: content.length,
     };
 
     this.scripts.push(script);
@@ -181,7 +181,7 @@ SDKTestRunner.PageMock = class {
       auxData: {isDefault: !isContentScript, frameId: frame.id},
 
       origin: isContentScript ? defaultContentScriptDomain : frame.securityOrigin,
-      name: isContentScript ? 'content-script-context' : ''
+      name: isContentScript ? 'content-script-context' : '',
     };
   }
 
@@ -253,7 +253,7 @@ SDKTestRunner.PageMock = class {
 
     this.sendResponse(id, undefined, {
       message: 'Can\'t handle command ' + methodName,
-      code: ProtocolClient.CDPConnection.CDPErrorStatus.DEVTOOLS_STUB_ERROR
+      code: ProtocolClient.CDPConnection.CDPErrorStatus.DEVTOOLS_STUB_ERROR,
     });
   }
 

@@ -401,9 +401,11 @@ EIGEN_CLANG_PACKET_BITWISE_INT(PacketXl)
     return PACKET_TYPE(Scalar(0));                                                                   \
   }                                                                                                  \
   template <>                                                                                        \
-  constexpr EIGEN_STRONG_INLINE PACKET_TYPE ptrue<PACKET_TYPE>(const PACKET_TYPE& /* unused */) {    \
+  EIGEN_STRONG_INLINE PACKET_TYPE ptrue<PACKET_TYPE>(const PACKET_TYPE& /* unused */) {              \
     using Scalar = detail::scalar_type_of_vector_t<PACKET_TYPE>;                                     \
-    return numext::bit_cast<PACKET_TYPE>(PACKET_TYPE(Scalar(0)) == PACKET_TYPE(Scalar(0)));          \
+    PACKET_TYPE r = numext::bit_cast<PACKET_TYPE>(PACKET_TYPE(Scalar(0)) == PACKET_TYPE(Scalar(0))); \
+    EIGEN_FAST_MATH_CONSTANT_BARRIER(r);                                                             \
+    return r;                                                                                        \
   }                                                                                                  \
   template <>                                                                                        \
   EIGEN_STRONG_INLINE PACKET_TYPE pand<PACKET_TYPE>(const PACKET_TYPE& a, const PACKET_TYPE& b) {    \
@@ -923,13 +925,17 @@ template <>
 EIGEN_STRONG_INLINE PacketXf peven_mask(const PacketXf& /* unused */) {
   float kTrue = numext::bit_cast<float>(int32_t(-1));
   float kFalse = 0.0f;
-  return PacketXf{kTrue, kFalse, kTrue, kFalse};
+  PacketXf r = PacketXf{kTrue, kFalse, kTrue, kFalse};
+  EIGEN_FAST_MATH_CONSTANT_BARRIER(r);
+  return r;
 }
 template <>
 EIGEN_STRONG_INLINE PacketXd peven_mask(const PacketXd& /* unused */) {
   double kTrue = numext::bit_cast<double>(int64_t(-1l));
   double kFalse = 0.0;
-  return PacketXd{kTrue, kFalse};
+  PacketXd r = PacketXd{kTrue, kFalse};
+  EIGEN_FAST_MATH_CONSTANT_BARRIER(r);
+  return r;
 }
 
 #elif EIGEN_GENERIC_VECTOR_SIZE_BYTES == 32
@@ -938,13 +944,17 @@ template <>
 EIGEN_STRONG_INLINE PacketXf peven_mask(const PacketXf& /* unused */) {
   float kTrue = numext::bit_cast<float>(int32_t(-1));
   float kFalse = 0.0f;
-  return PacketXf{kTrue, kFalse, kTrue, kFalse, kTrue, kFalse, kTrue, kFalse};
+  PacketXf r = PacketXf{kTrue, kFalse, kTrue, kFalse, kTrue, kFalse, kTrue, kFalse};
+  EIGEN_FAST_MATH_CONSTANT_BARRIER(r);
+  return r;
 }
 template <>
 EIGEN_STRONG_INLINE PacketXd peven_mask(const PacketXd& /* unused */) {
   double kTrue = numext::bit_cast<double>(int64_t(-1l));
   double kFalse = 0.0;
-  return PacketXd{kTrue, kFalse, kTrue, kFalse};
+  PacketXd r = PacketXd{kTrue, kFalse, kTrue, kFalse};
+  EIGEN_FAST_MATH_CONSTANT_BARRIER(r);
+  return r;
 }
 
 #else  // EIGEN_GENERIC_VECTOR_SIZE_BYTES == 64
@@ -953,14 +963,18 @@ template <>
 EIGEN_STRONG_INLINE PacketXf peven_mask(const PacketXf& /* unused */) {
   float kTrue = numext::bit_cast<float>(int32_t(-1));
   float kFalse = 0.0f;
-  return PacketXf{kTrue, kFalse, kTrue, kFalse, kTrue, kFalse, kTrue, kFalse,
-                  kTrue, kFalse, kTrue, kFalse, kTrue, kFalse, kTrue, kFalse};
+  PacketXf r = PacketXf{kTrue, kFalse, kTrue, kFalse, kTrue, kFalse, kTrue, kFalse,
+                        kTrue, kFalse, kTrue, kFalse, kTrue, kFalse, kTrue, kFalse};
+  EIGEN_FAST_MATH_CONSTANT_BARRIER(r);
+  return r;
 }
 template <>
 EIGEN_STRONG_INLINE PacketXd peven_mask(const PacketXd& /* unused */) {
   double kTrue = numext::bit_cast<double>(int64_t(-1l));
   double kFalse = 0.0;
-  return PacketXd{kTrue, kFalse, kTrue, kFalse, kTrue, kFalse, kTrue, kFalse};
+  PacketXd r = PacketXd{kTrue, kFalse, kTrue, kFalse, kTrue, kFalse, kTrue, kFalse};
+  EIGEN_FAST_MATH_CONSTANT_BARRIER(r);
+  return r;
 }
 
 #endif  // EIGEN_GENERIC_VECTOR_SIZE_BYTES

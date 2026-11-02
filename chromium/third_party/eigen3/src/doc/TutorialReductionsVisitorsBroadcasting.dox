@@ -76,9 +76,21 @@ These are typically used in conjunction with the coefficient-wise comparison and
 
 \subsection TutorialReductionsVisitorsBroadcastingReductionsUserdefined User defined reductions
 
-TODO
+The \link DenseBase::redux() redux() \endlink method lets you define your own reduction by passing a binary functor.
+The functor is called with two coefficients and must return one coefficient of the same scalar type. It should implement
+an associative operation, because Eigen is free to choose the order in which coefficients are combined.
 
-In the meantime you can have a look at the DenseBase::redux() function.
+The following example returns the coefficient with the largest absolute value, first over the whole matrix and then
+column-wise:
+
+<table class="example">
+<tr><th>Example:</th><th>Output:</th></tr>
+<tr><td>
+\include Tutorial_ReductionsVisitorsBroadcasting_reductions_userdefined.cpp
+</td>
+<td>
+\verbinclude Tutorial_ReductionsVisitorsBroadcasting_reductions_userdefined.out
+</td></tr></table>
 
 \section TutorialReductionsVisitorsBroadcastingVisitors Visitors
 Visitors are useful when one wants to obtain the location of a coefficient inside 

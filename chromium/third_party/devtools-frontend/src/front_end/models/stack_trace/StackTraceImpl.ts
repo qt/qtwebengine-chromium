@@ -88,10 +88,13 @@ export class FrameImpl implements StackTrace.StackTrace.Frame {
 
   readonly missingDebugInfo?: StackTrace.StackTrace.MissingDebugInfo;
   readonly rawName?: string;
+  readonly isWasm?: boolean;
+  readonly isInline?: boolean;
 
-  constructor(
-      url: string|undefined, uiSourceCode: Workspace.UISourceCode.UISourceCode|undefined, name: string|undefined,
-      line: number, column: number, missingDebugInfo?: StackTrace.StackTrace.MissingDebugInfo, rawName?: string) {
+  constructor(url: string|undefined, uiSourceCode: Workspace.UISourceCode.UISourceCode|undefined,
+              name: string|undefined, line: number, column: number,
+              missingDebugInfo?: StackTrace.StackTrace.MissingDebugInfo, rawName?: string, isWasm?: boolean,
+              isInline?: boolean) {
     this.url = url;
     this.uiSourceCode = uiSourceCode;
     this.name = name;
@@ -99,6 +102,8 @@ export class FrameImpl implements StackTrace.StackTrace.Frame {
     this.column = column;
     this.missingDebugInfo = missingDebugInfo;
     this.rawName = rawName;
+    this.isWasm = isWasm;
+    this.isInline = isInline;
   }
 }
 
@@ -192,7 +197,10 @@ export class ParsedErrorStackFrameImpl implements StackTrace.StackTrace.ParsedEr
     return this.#evalOrigin;
   }
   get isWasm(): boolean|undefined {
-    return this.#parsedFrameInfo?.isWasm;
+    return this.#frame.isWasm;
+  }
+  get isInline(): boolean|undefined {
+    return this.#frame.isInline;
   }
   get wasmModuleName(): string|undefined {
     return this.#parsedFrameInfo?.wasmModuleName;
@@ -282,6 +290,14 @@ export class DebuggableFrameImpl implements StackTrace.StackTrace.DebuggableFram
 
   get rawName(): string|undefined {
     return this.#frame.rawName;
+  }
+
+  get isWasm(): boolean|undefined {
+    return this.#frame.isWasm;
+  }
+
+  get isInline(): boolean|undefined {
+    return this.#frame.isInline;
   }
 
   get sdkFrame(): SDK.DebuggerModel.CallFrame {

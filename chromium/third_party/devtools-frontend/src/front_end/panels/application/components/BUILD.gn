@@ -10,10 +10,10 @@ import("../../visibility.gni")
 
 generate_css("css_files") {
   sources = [
+    "adsView.css",
     "backForwardCacheView.css",
     "bounceTrackingMitigationsView.css",
     "endpointsGrid.css",
-    "interestGroupAccessGrid.css",
     "permissionsPolicySection.css",
     "protocolHandlersView.css",
     "reportsGrid.css",
@@ -27,12 +27,12 @@ generate_css("css_files") {
 
 devtools_ui_module("components") {
   sources = [
+    "AdsView.ts",
     "BackForwardCacheStrings.ts",
     "BackForwardCacheView.ts",
     "BounceTrackingMitigationsView.ts",
     "CrashReportContextGrid.ts",
     "EndpointsGrid.ts",
-    "InterestGroupAccessGrid.ts",
     "PermissionsPolicySection.ts",
     "ProtocolHandlersView.ts",
     "ReportsGrid.ts",
@@ -50,8 +50,8 @@ devtools_ui_module("components") {
     "../../../core/platform:bundle",
     "../../../core/root:bundle",
     "../../../core/sdk:bundle",
+    "../../../core/text_utils:bundle",
     "../../../generated",
-    "../../../models/text_utils:bundle",
     "../../../panels/network/forward:bundle",
     "../../../third_party/csp_evaluator:bundle",
     "../../../ui/components/buttons:bundle",
@@ -91,11 +91,11 @@ devtools_ui_module("unittests") {
   testonly = true
 
   sources = [
+    "AdsView.test.ts",
     "BackForwardCacheView.test.ts",
     "BounceTrackingMitigationsView.test.ts",
     "CrashReportContextGrid.test.ts",
     "EndpointsGrid.test.ts",
-    "InterestGroupAccessGrid.test.ts",
     "ProtocolHandlersView.test.ts",
     "ReportsGrid.test.ts",
     "ServiceWorkerRouterView.test.ts",

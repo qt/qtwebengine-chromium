@@ -4,13 +4,17 @@
 
 #include "extensions/browser/event_router.h"
 
+#include <array>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "base/compiler_specific.h"
+#include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/run_loop.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/test/bind.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/values.h"
@@ -330,12 +334,7 @@ class EventRouterFilterTest : public ExtensionsTest,
   const base::ListValue* GetFilterList(const ExtensionId& extension_id,
                                        const std::string& event_name) {
     const base::DictValue* filtered_events = GetFilteredEvents(extension_id);
-    const auto iter = filtered_events->begin();
-    if (iter->first != event_name) {
-      return nullptr;
-    }
-
-    return iter->second.is_list() ? &iter->second.GetList() : nullptr;
+    return filtered_events ? filtered_events->FindList(event_name) : nullptr;
   }
 
   std::unique_ptr<content::RenderProcessHost> render_process_host_;
@@ -477,7 +476,9 @@ TEST_F(EventRouterTest, WebUIEventsDoNotCrossIncognitoBoundaries) {
   FeatureProvider provider;
   auto feature = std::make_unique<SimpleFeature>();
   feature->set_name("test feature");
-  feature->set_matches({"chrome://settings/*"});
+  static constexpr auto kMatches =
+      std::to_array<std::string_view>({"chrome://settings/*"});
+  feature->set_matches(StaticSpan(kMatches));
   provider.AddFeature(event_name, std::move(feature));
 
   ExtensionAPI api;
@@ -649,8 +650,7 @@ TEST_F(EventRouterTest, AddLazyListenerForUnloadedExtension) {
   EXPECT_TRUE(registered_sw_events.count(kEventName2));
 }
 
-// TODO(crbug.com/474558883): Remove this after webRequest listener
-// persistence is stable for a few milestones.
+// TODO(crbug.com/474558883): Remove this in M157.
 TEST_F(EventRouterTest, RemovesOrphanedWebRequestEvents) {
   EventRouter* router = EventRouter::Get(browser_context());
   scoped_refptr<const Extension> extension = ExtensionBuilder("Test").Build();
@@ -711,6 +711,12 @@ TEST_P(EventRouterFilterTest, DISABLED_Basic) {
   auto param = mojom::EventListenerOwner::NewExtensionId(kExtensionId);
   const std::string kHostSuffixes[] = {"foo.com", "bar.com", "baz.com"};
 
+  // The extension must be enabled so the lazy listeners actually land in the
+  // in-memory map; otherwise removal never reaches the persisted filters.
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder("Test").SetID(kExtensionId).Build();
+  ExtensionRegistry::Get(browser_context())->AddEnabled(extension);
+
   std::unique_ptr<mojom::ServiceWorkerContext> worker_context;
   if (is_for_service_worker()) {
     worker_context = std::make_unique<mojom::ServiceWorkerContext>(
@@ -756,13 +762,13 @@ TEST_P(EventRouterFilterTest, DISABLED_Basic) {
   ASSERT_FALSE(ContainsFilter(kExtensionId, kEventName, filters[1]));
   ASSERT_TRUE(ContainsFilter(kExtensionId, kEventName, filters[2]));
 
-  // Remove the third filter.
+  // Removing the third filter erases the empty event key.
   event_router()->RemoveFilteredEventListener(
       kEventName, render_process_host(), param.Clone(), worker_context.get(),
       filters[2], true);
-  ASSERT_FALSE(ContainsFilter(kExtensionId, kEventName, filters[0]));
-  ASSERT_FALSE(ContainsFilter(kExtensionId, kEventName, filters[1]));
-  ASSERT_FALSE(ContainsFilter(kExtensionId, kEventName, filters[2]));
+  const base::DictValue* remaining_events = GetFilteredEvents(kExtensionId);
+  ASSERT_TRUE(remaining_events);
+  EXPECT_FALSE(remaining_events->contains(kEventName));
 }
 
 TEST_P(EventRouterFilterTest, AddFilteredLazyListenerForUnloadedExtension) {
@@ -910,6 +916,95 @@ TEST_P(EventRouterFilterTest,
   EXPECT_FALSE(ContainsFilter(kExtensionId, kEventName, filter_foo));
 }
 
+// Tests that removing the last filter of a sub-event listener deletes the empty
+// list and its key from preferences. Regression test for crbug.com/526929792.
+TEST_P(EventRouterFilterTest, RemoveLastFilterErasesSubEventKey) {
+  const std::string kExtensionId = "mbflcebpggnecokmikipoihdbecnjfoj";
+  auto param = mojom::EventListenerOwner::NewExtensionId(kExtensionId);
+
+  // The extension must be enabled so lazy listeners are tracked in memory;
+  // otherwise removal does not update persisted filters.
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder("Test").SetID(kExtensionId).Build();
+  ExtensionRegistry::Get(browser_context())->AddEnabled(extension);
+
+  std::unique_ptr<mojom::ServiceWorkerContext> worker_context;
+  if (is_for_service_worker()) {
+    worker_context = std::make_unique<mojom::ServiceWorkerContext>(
+        Extension::GetBaseURLFromExtensionId(kExtensionId),
+        99,    // Placeholder version_id.
+        199);  // Placeholder thread_id.
+  }
+
+  const base::DictValue filter = CreateHostSuffixFilter("foo.com");
+  for (int i = 0; i < 3; ++i) {
+    // Each addListener call in the renderer creates a unique sub-event name.
+    const std::string event_name =
+        "webRequest.onBeforeRequest/s" + base::NumberToString(i);
+    event_router()->AddFilteredEventListener(
+        event_name, render_process_host(), param.Clone(), worker_context.get(),
+        filter, /*add_lazy_listener=*/true);
+    ASSERT_TRUE(ContainsFilter(kExtensionId, event_name, filter));
+
+    event_router()->RemoveFilteredEventListener(
+        event_name, render_process_host(), param.Clone(), worker_context.get(),
+        filter, /*remove_lazy_listener=*/true);
+    const base::DictValue* filtered_events = GetFilteredEvents(kExtensionId);
+    ASSERT_TRUE(filtered_events);
+    EXPECT_FALSE(filtered_events->contains(event_name));
+  }
+
+  // No keys should remain after all filters are removed.
+  EXPECT_TRUE(GetFilteredEvents(kExtensionId)->empty());
+}
+
+// Tests that removing the last filter from a standard (non-sub-event) filtered
+// event deletes its key from preferences. Regression test for
+// crbug.com/526929792.
+TEST_P(EventRouterFilterTest, RemoveLastFilterErasesEventKey) {
+  const std::string kEventName = "webNavigation.onBeforeNavigate";
+  const std::string kExtensionId = "mbflcebpggnecokmikipoihdbecnjfoj";
+  auto param = mojom::EventListenerOwner::NewExtensionId(kExtensionId);
+
+  // The extension must be enabled so lazy listeners are tracked in memory;
+  // otherwise removal does not update persisted filters.
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder("Test").SetID(kExtensionId).Build();
+  ExtensionRegistry::Get(browser_context())->AddEnabled(extension);
+
+  std::unique_ptr<mojom::ServiceWorkerContext> worker_context;
+  if (is_for_service_worker()) {
+    worker_context = std::make_unique<mojom::ServiceWorkerContext>(
+        Extension::GetBaseURLFromExtensionId(kExtensionId),
+        99,    // Placeholder version_id.
+        199);  // Placeholder thread_id.
+  }
+
+  const base::DictValue filter_foo = CreateHostSuffixFilter("foo.com");
+  const base::DictValue filter_bar = CreateHostSuffixFilter("bar.com");
+  event_router()->AddFilteredEventListener(
+      kEventName, render_process_host(), param.Clone(), worker_context.get(),
+      filter_foo, /*add_lazy_listener=*/true);
+  event_router()->AddFilteredEventListener(
+      kEventName, render_process_host(), param.Clone(), worker_context.get(),
+      filter_bar, /*add_lazy_listener=*/true);
+
+  // Removing one filter leaves the other in place, so the key is preserved.
+  event_router()->RemoveFilteredEventListener(
+      kEventName, render_process_host(), param.Clone(), worker_context.get(),
+      filter_foo, /*remove_lazy_listener=*/true);
+  ASSERT_TRUE(ContainsFilter(kExtensionId, kEventName, filter_bar));
+
+  // Removing the last filter erases the key.
+  event_router()->RemoveFilteredEventListener(
+      kEventName, render_process_host(), param.Clone(), worker_context.get(),
+      filter_bar, /*remove_lazy_listener=*/true);
+  const base::DictValue* filtered_events = GetFilteredEvents(kExtensionId);
+  ASSERT_TRUE(filtered_events);
+  EXPECT_FALSE(filtered_events->contains(kEventName));
+  EXPECT_TRUE(filtered_events->empty());
+}
+
 // TODO(crbug.com/40281129): test is flaky across platforms.
 TEST_P(EventRouterFilterTest, DISABLED_URLBasedFilteredEventListener) {
   const std::string kEventName = "windows.onRemoved";
@@ -956,7 +1051,24 @@ class EventRouterDispatchTest : public ExtensionsTest {
   }
   EventRouter* event_router() { return EventRouter::Get(browser_context()); }
 
+ protected:
+  void RegisterTestApiFeature(std::string_view event_name,
+                              StaticSpan<std::string_view> matches = {}) {
+    auto feature = std::make_unique<SimpleFeature>();
+    feature->set_name("test feature");
+    if (!matches.span().empty()) {
+      feature->set_matches(matches);
+    }
+    provider_.AddFeature(event_name, std::move(feature));
+    api_.RegisterDependencyProvider("api", &provider_);
+    api_scope_ =
+        std::make_unique<ExtensionAPI::OverrideSharedInstanceForTest>(&api_);
+  }
+
  private:
+  FeatureProvider provider_;
+  ExtensionAPI api_;
+  std::unique_ptr<ExtensionAPI::OverrideSharedInstanceForTest> api_scope_;
   std::unique_ptr<content::RenderProcessHost> render_process_host_;
 };
 
@@ -966,15 +1078,9 @@ TEST_F(EventRouterDispatchTest, TestDispatch) {
   GURL webui1("chrome-untrusted://one");
   GURL webui2("chrome-untrusted://two");
   std::string event_name = "testapi.onEvent";
-  FeatureProvider provider;
-  auto feature = std::make_unique<SimpleFeature>();
-  feature->set_name("test feature");
-  feature->set_matches({webui1.spec().c_str(), webui2.spec().c_str()});
-  provider.AddFeature(event_name, std::move(feature));
-
-  ExtensionAPI api;
-  api.RegisterDependencyProvider("api", &provider);
-  ExtensionAPI::OverrideSharedInstanceForTest scope(&api);
+  static constexpr auto kMatches = std::to_array<std::string_view>(
+      {"chrome-untrusted://one/", "chrome-untrusted://two/"});
+  RegisterTestApiFeature(event_name, StaticSpan(kMatches));
 
   TestEventRouterObserver observer(event_router());
   auto add_extension = [&](const std::string& id) {
@@ -1022,19 +1128,117 @@ TEST_F(EventRouterDispatchTest, TestDispatch) {
   EXPECT_EQ(0u, observer.dispatched_events().size());
 }
 
+// Tests that a dispatch restricted to one of an extension's service workers
+// reaches exactly the identified worker.
+TEST_F(EventRouterDispatchTest, ActiveDispatchTargetRestrictsToWorker) {
+  std::string ext1 = "ext1";
+  std::string event_name = "testapi.onEvent";
+  RegisterTestApiFeature(event_name);
+
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder("test extension").SetID(ext1).Build();
+  ExtensionRegistry::Get(browser_context())->AddEnabled(extension);
+
+  // Register two service worker listener contexts of the same extension for
+  // the same event, each with its own event dispatcher.
+  const int64_t sw_version_id1 = 10;
+  const int sw_thread_id1 = 100;
+  const int64_t sw_version_id2 = 11;
+  const int sw_thread_id2 = 101;
+  MockEventDispatcher sw_event_dispatcher1;
+  MockEventDispatcher sw_event_dispatcher2;
+  auto sw_context1 =
+      mojom::ServiceWorkerContext::New(GURL(), sw_version_id1, sw_thread_id1);
+  auto sw_context2 =
+      mojom::ServiceWorkerContext::New(GURL(), sw_version_id2, sw_thread_id2);
+  event_router()->AddServiceWorkerEventListener(ext1, event_name, *sw_context1,
+                                                process());
+  event_router()->AddServiceWorkerEventListener(ext1, event_name, *sw_context2,
+                                                process());
+  event_router()->BindServiceWorkerEventDispatcher(
+      process()->GetDeprecatedID(), sw_thread_id1,
+      sw_event_dispatcher1.BindAndPassRemote());
+  event_router()->BindServiceWorkerEventDispatcher(
+      process()->GetDeprecatedID(), sw_thread_id2,
+      sw_event_dispatcher2.BindAndPassRemote());
+
+  // Creates an event whose dispatch is restricted to the given service worker
+  // and that records every target it is delivered to in `dispatched`.
+  std::vector<extensions::EventTarget> dispatched;
+  auto create_restricted_event = [&](int64_t sw_version_id, int sw_thread_id) {
+    auto event = std::make_unique<extensions::Event>(
+        extensions::events::FOR_TEST, event_name, base::ListValue());
+    event->restrict_to_dispatch_target =
+        Event::DispatchTarget{.render_process_id = process()->GetID(),
+                              .worker_thread_id = sw_thread_id,
+                              .service_worker_version_id = sw_version_id};
+    event->did_dispatch_callback =
+        base::BindLambdaForTesting([&](const extensions::EventTarget& target) {
+          dispatched.push_back(target);
+        });
+    return event;
+  };
+
+  // Although both workers have a listener registered for the event, an event
+  // restricted to the first worker must be delivered to it alone.
+  event_router()->DispatchEventToExtension(
+      ext1, create_restricted_event(sw_version_id1, sw_thread_id1));
+  ASSERT_EQ(1u, dispatched.size());
+  EXPECT_EQ((EventTarget{ext1, process()->GetDeprecatedID(), sw_version_id1,
+                         sw_thread_id1}),
+            dispatched[0]);
+  dispatched.clear();
+
+  // Likewise for the second worker.
+  event_router()->DispatchEventToExtension(
+      ext1, create_restricted_event(sw_version_id2, sw_thread_id2));
+  ASSERT_EQ(1u, dispatched.size());
+  EXPECT_EQ((EventTarget{ext1, process()->GetDeprecatedID(), sw_version_id2,
+                         sw_thread_id2}),
+            dispatched[0]);
+}
+
+// Tests that a dispatch restricted to an active target with no matching
+// listener registration is not delivered anywhere and fires the
+// cannot-dispatch callback.
+TEST_F(EventRouterDispatchTest,
+       ActiveDispatchTargetMissingFiresCannotDispatch) {
+  std::string ext1 = "ext1";
+  std::string event_name = "testapi.onEvent";
+  RegisterTestApiFeature(event_name);
+
+  TestEventRouterObserver observer(event_router());
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder("test extension").SetID(ext1).Build();
+  ExtensionRegistry::Get(browser_context())->AddEnabled(extension);
+
+  // The extension's only listener registration lives in `process()`.
+  event_router()->AddEventListener(event_name, process(), ext1);
+
+  // Restrict the dispatch to `other_process`, where no listener is
+  // registered.
+  auto other_process =
+      std::make_unique<content::MockRenderProcessHost>(browser_context());
+  auto event = std::make_unique<extensions::Event>(
+      extensions::events::FOR_TEST, event_name, base::ListValue());
+  event->restrict_to_dispatch_target =
+      Event::DispatchTarget{.render_process_id = other_process->GetID()};
+
+  // The event must not be handed to the listener in `process()`; instead,
+  // `cannot_dispatch_callback` must fire.
+  base::RunLoop run_loop;
+  event->cannot_dispatch_callback = run_loop.QuitClosure();
+  event_router()->DispatchEventToExtension(ext1, std::move(event));
+  run_loop.Run();
+  EXPECT_EQ(0u, observer.dispatched_events().size());
+}
+
 TEST_F(EventRouterDispatchTest, TestDispatchCallback) {
   std::string ext1 = "ext1";
   std::string ext2 = "ext2";
   std::string ext3 = "ext3";
   std::string event_name = "testapi.onEvent";
-  FeatureProvider provider;
-  auto feature = std::make_unique<SimpleFeature>();
-  feature->set_name("test feature");
-  provider.AddFeature(event_name, std::move(feature));
-
-  ExtensionAPI api;
-  api.RegisterDependencyProvider("api", &provider);
-  ExtensionAPI::OverrideSharedInstanceForTest scope(&api);
+  RegisterTestApiFeature(event_name);
 
   auto add_extension = [&](const std::string& id) {
     scoped_refptr<const Extension> extension =
@@ -1169,14 +1373,7 @@ TEST_F(EventRouterDispatchTest, TestDispatchCallback_OtherExtensionListener) {
   std::string ext1 = "ext1";
   std::string ext2 = "ext2";
   std::string event_name = "testapi.onEvent";
-  FeatureProvider provider;
-  auto feature = std::make_unique<SimpleFeature>();
-  feature->set_name("test feature");
-  provider.AddFeature(event_name, std::move(feature));
-
-  ExtensionAPI api;
-  api.RegisterDependencyProvider("api", &provider);
-  ExtensionAPI::OverrideSharedInstanceForTest scope(&api);
+  RegisterTestApiFeature(event_name);
 
   auto add_extension = [&](const std::string& id) {
     scoped_refptr<const Extension> extension =

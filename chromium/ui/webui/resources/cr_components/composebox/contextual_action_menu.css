@@ -14,6 +14,7 @@
   --cr-menu-background-color: var(--color-composebox-background,
       var(--search-background-color));
   --cr-menu-border-radius: 16px;
+  --cr-menu-shadow: var(--cr-elevation-3);
   --cr-primary-text-color: var(--color-composebox-file-chip-text);
   --cr-hover-background-color:
       var(--color-composebox-context-entrypoint-hover-background);
@@ -21,7 +22,7 @@
 
 #menu::part(dialog) {
   max-height: var(--contextual-menu-max-height, min(540px, 100vh - 16px));
-  min-height: 144px;
+  min-height: var(--contextual-menu-min-height, 144px);
 }
 
 #menu[scrollable]::part(dialog)::-webkit-scrollbar {
@@ -202,7 +203,17 @@ composebox-favicon-group {
 }
 
 .share-tabs-container {
+  max-width: 320px;
   position: relative;
+  width: 100%;
+}
+
+:host([context-management-enabled]) .share-tabs-container {
+  max-width: 240px;
+}
+
+#shareTabsTrigger {
+  anchor-name: --share-tabs-anchor;
 }
 
 .share-tabs-arrow {
@@ -214,20 +225,49 @@ composebox-favicon-group {
 .share-tabs-flyout {
   background-color: var(--cr-menu-background-color);
   border-radius: 16px;
-  box-shadow: 0 4px 12px 0 rgba(0, 0, 0, 0.15);
+  box-shadow: var(--cr-elevation-3);
   box-sizing: border-box;
   max-height: var(--share-tabs-flyout-max-height, 344px);
   overflow-y: auto;
   overflow-x: hidden;
   padding: 8px 0;
   position: fixed;
-  scrollbar-width: thin;
+  position-anchor: --share-tabs-anchor;
   width: 320px;
-  z-index: 1;
+  z-index: 10;
+}
+
+.share-tabs-flyout[data-position='right'] {
+  top: anchor(top);
+  left: anchor(right);
+  right: auto;
+}
+
+.share-tabs-flyout[data-position='left'] {
+  top: anchor(top);
+  left: auto;
+  right: anchor(left);
+}
+
+.share-tabs-flyout[data-position='bottom'] {
+  inset-inline-start: calc(anchor(start) + var(--share-tabs-flyout-indent, 0px));
+  top: anchor(bottom);
 }
 
 .share-tabs-flyout::-webkit-scrollbar {
-  width: 4px;
+  width: 12px;
+}
+
+.share-tabs-flyout::-webkit-scrollbar-thumb {
+  background-color: var(--color-sys-surface-variant, #E1E3E1);
+  background-clip: padding-box;
+  border: 4px solid transparent;
+  border-radius: 100px;
+}
+
+.share-tabs-flyout::-webkit-scrollbar-track {
+  margin-bottom: 15px;
+  margin-top: 15px;
 }
 
 .share-tabs-flyout[hidden] {

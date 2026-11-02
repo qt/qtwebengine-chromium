@@ -69,7 +69,7 @@ const args = [
   '--verify-range',
   '--not-interactive',
   '-c',
-  `"npm run test -- ${test} --chrome-binary=%p"`,
+  `npm run test -- ${test} --chrome-binary="%p"`,
 ];
 
 if (dry) {

@@ -68,4 +68,23 @@ void QuicChromiumClientSessionPeer::SetDefaultNetwork(
   session->default_network_ = network;
 }
 
+// static
+bool QuicChromiumClientSessionPeer::IsMigrateBackToDefaultNetworkTimerRunning(
+    QuicChromiumClientSession* session) {
+  return session->migrate_back_to_default_timer_.IsRunning();
+}
+
+// static
+void QuicChromiumClientSessionPeer::OnCryptoHandshakeComplete(
+    QuicChromiumClientSession* session) {
+  session->OnCryptoHandshakeComplete();
+}
+
+// static
+void QuicChromiumClientSessionPeer::SetEchConfigList(
+    QuicChromiumClientSession* session,
+    std::vector<uint8_t> ech_config_list) {
+  session->ech_config_list_ = std::move(ech_config_list);
+}
+
 }  // namespace net::test

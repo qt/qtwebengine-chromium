@@ -14,7 +14,6 @@
 
 #include "src/symbol_decoder_context.h"
 
-#include <cstdint>
 #include <cstring>
 
 #include "gtest/gtest.h"

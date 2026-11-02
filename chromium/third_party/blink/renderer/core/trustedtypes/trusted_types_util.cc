@@ -17,6 +17,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_sanitizer_config.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_set_html_options.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_set_html_unsafe_options.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_union_sanitizer_sanitizerconfig_sanitizerpresets.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_sethtmlunsafeoptions_trustedparseroptions.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_string_trustedhtml.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_string_trustedscript.h"
@@ -242,7 +243,7 @@ bool TrustedTypeFail(TrustedTypeViolationKind kind,
       strip = strlen(kGeneratorAnonymousPrefix);
     } else if (value.starts_with(kAsyncGeneratorAnonymousPrefix)) {
       strip = strlen(kAsyncGeneratorAnonymousPrefix);
-    };
+    }
   }
 
   // This issue_id is used to generate a link in the DevTools front-end from
@@ -250,10 +251,12 @@ bool TrustedTypeFail(TrustedTypeViolationKind kind,
   // ContentSecurityPolicy::ReportViolation via the call to
   // AllowTrustedTypeAssignmentFailure below.
   base::UnguessableToken issue_id = base::UnguessableToken::Create();
-  bool allow = execution_context->GetContentSecurityPolicy()
-                   ->AllowTrustedTypeAssignmentFailure(
-                       GetMessage(kind), strip ? value.substr(strip) : value,
-                       prefix, issue_id);
+  bool allow =
+      execution_context->GetContentSecurityPolicy()
+          ->AllowTrustedTypeAssignmentFailure(
+              GetMessage(kind),
+              strip ? value.substr(static_cast<string_size_t>(strip)) : value,
+              prefix, issue_id);
 
   // TODO(1087743): Add a console message for Trusted Type-related Function
   // constructor failures, to warn the developer of the outstanding issues
@@ -637,9 +640,9 @@ String TrustedTypesCheckForHTML(const V8UnionStringOrTrustedHTML* value,
   NOTREACHED();
 }
 
-[[nodiscard]] CORE_EXPORT std::optional<FragmentParserOptions>
+[[nodiscard]] std::optional<FragmentParserOptions>
 TrustedTypesCheckForParserOptions(FragmentParserOptions options,
-                                  MarkupInsertionMode insertion_mode,
+                                  bool fail_if_default_policy_is_missing,
                                   const ExecutionContext* execution_context,
                                   const AtomicString& interface_name,
                                   const AtomicString& property_name,
@@ -652,16 +655,9 @@ TrustedTypesCheckForParserOptions(FragmentParserOptions options,
     return options;
   }
 
-  // When streaming, we cannot use createHTML because the full HTML is not known
-  // at the time of checking. So in the streaming scenario, checking the parser
-  // options is a mandatory step. When setting HTML from a fragment (e.g.
-  // SetHTML), a trusted ParserOptions is optional.
-  const bool parser_options_required =
-      insertion_mode == MarkupInsertionMode::kStream;
-
   auto* default_policy = GetDefaultPolicy(execution_context);
   if (!default_policy) {
-    if (parser_options_required &&
+    if (fail_if_default_policy_is_missing &&
         TrustedTypeFail(kTrustedHTMLParserOptionsTransform, execution_context,
                         interface_name, property_name, exception_state,
                         g_empty_string)) {
@@ -671,7 +667,7 @@ TrustedTypesCheckForParserOptions(FragmentParserOptions options,
   }
 
   if (!default_policy->HasCreateParserOptions()) {
-    if (parser_options_required &&
+    if (fail_if_default_policy_is_missing &&
         TrustedTypeFail(
             kTrustedHTMLParserOptionsTransformAndNoDefaultPolicyExisted,
             execution_context, interface_name, property_name, exception_state,
@@ -691,11 +687,19 @@ TrustedTypesCheckForParserOptions(FragmentParserOptions options,
     unsafe_options_for_policy->setRunScripts(
         options.run_scripts() ==
         FragmentParserOptions::RunScripts::kRunScripts);
-    if (options.sanitizer_init()) {
-      unsafe_options_for_policy->setSanitizer(options.sanitizer_init());
+    auto* sanitizer = options.sanitizer_init();
+    if (sanitizer) {
+      if (sanitizer->IsSanitizer()) {
+        Sanitizer* clone = Sanitizer::CreateEmpty();
+        clone->setFrom(*sanitizer->GetAsSanitizer());
+        sanitizer->Set(clone);
+      }
+
+      unsafe_options_for_policy->setSanitizer(sanitizer);
     }
-    result = default_policy->createParserOptions(unsafe_options_for_policy,
-                                                 exception_state);
+    result = default_policy->createParserOptions(
+        execution_context->GetIsolate(), unsafe_options_for_policy,
+        exception_state);
   }
 
   if (exception_state.HadException()) {
@@ -713,6 +717,69 @@ TrustedTypesCheckForParserOptions(FragmentParserOptions options,
   }
 
   return FragmentParserOptions(result);
+}
+
+String TrustedTypesCheckForFragment(const V8UnionStringOrTrustedHTML* html,
+                                    FragmentParserOptions& resolved_options,
+                                    const ExecutionContext* execution_context,
+                                    const AtomicString& interface_name,
+                                    const AtomicString& property_name,
+                                    ExceptionState& exception_state) {
+  String compliant_string = TrustedTypesCheckForHTML(
+      html, execution_context, interface_name, property_name, exception_state);
+  if (exception_state.HadException()) {
+    return String();
+  }
+
+  if (RuntimeEnabledFeatures::TrustedTypesCreateParserOptionsEnabled()) {
+    auto trusted_options = TrustedTypesCheckForParserOptions(
+        resolved_options, /*fail_if_default_policy_is_missing=*/false,
+        execution_context, interface_name, property_name, exception_state);
+    if (!trusted_options) {
+      return String();
+    }
+    resolved_options = *trusted_options;
+  }
+  return compliant_string;
+}
+
+std::tuple<String, FragmentParserOptions> TrustedTypesCheckForLegacyFragment(
+    const V8UnionStringLegacyNullToEmptyStringOrTrustedHTML* html,
+    const ExecutionContext* execution_context,
+    const AtomicString& interface_name,
+    const AtomicString& property_name,
+    ExceptionState& exception_state) {
+  String compliant_string = TrustedTypesCheckForHTML(
+      html, execution_context, interface_name, property_name, exception_state);
+  if (exception_state.HadException()) {
+    return {String(), FragmentParserOptions()};
+  }
+
+  if (!RuntimeEnabledFeatures::TrustedTypesCreateParserOptionsEnabled()) {
+    return {compliant_string, FragmentParserOptions()};
+  }
+
+  auto trusted_options = TrustedTypesCheckForParserOptions(
+      FragmentParserOptions(), /*fail_if_default_policy_is_missing=*/false,
+      execution_context, interface_name, property_name, exception_state);
+  if (exception_state.HadException()) {
+    return {String(), FragmentParserOptions()};
+  }
+
+  return {compliant_string, trusted_options.value_or(FragmentParserOptions())};
+}
+
+std::optional<FragmentParserOptions> TrustedTypesCheckForStreaming(
+    FragmentParserOptions options,
+    const ExecutionContext* execution_context,
+    const AtomicString& interface_name,
+    const AtomicString& property_name,
+    ExceptionState& exception_state) {
+  auto result = TrustedTypesCheckForParserOptions(
+      options, /*fail_if_default_policy_is_missing=*/true, execution_context,
+      interface_name, property_name, exception_state);
+  CHECK_EQ(result.has_value(), !exception_state.HadException());
+  return result;
 }
 
 String TrustedTypesCheckForScript(const V8UnionStringOrTrustedScript* value,

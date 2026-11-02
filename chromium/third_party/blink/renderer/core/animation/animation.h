@@ -35,6 +35,7 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/time/time.h"
+#include "cc/animation/animation.h"
 #include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_property.h"
@@ -42,6 +43,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_replace_state.h"
 #include "third_party/blink/renderer/core/animation/animation_effect.h"
 #include "third_party/blink/renderer/core/animation/animation_effect_owner.h"
+#include "third_party/blink/renderer/core/animation/compositing/specific_compositing_decision.h"
 #include "third_party/blink/renderer/core/animation/compositor_animations.h"
 #include "third_party/blink/renderer/core/animation/timeline_offset.h"
 #include "third_party/blink/renderer/core/core_export.h"
@@ -77,8 +79,19 @@ enum class BlinkAnimationType : int {
   kAnimationTypeEnumMax = 6
 };
 
-// Enum indicating why we're calling StartAnimationOnCompositor.
-enum class StartOnCompositorReason { kGeneric, kAnimationTrigger };
+struct CORE_EXPORT AnimationCompositingDecisionState {
+  DISALLOW_NEW();
+
+  void Trace(Visitor* visitor) const { visitor->Trace(specific_reasons); }
+
+  void Reset(bool force_enable_tracing_for_test = false);
+  void ReportHistogramsAndTracing(const Animation&);
+
+  // TODO(crbug.com/521921832): gradually replace with a more granular enum
+  CompositorAnimations::FailureReasons disposition =
+      CompositorAnimations::kUnchecked;
+  Member<CompositingDecisionDetailsMap> specific_reasons;
+};
 
 class CORE_EXPORT Animation : public EventTarget,
                               public ActiveScriptWrappable<Animation>,
@@ -90,6 +103,8 @@ class CORE_EXPORT Animation : public EventTarget,
   USING_PRE_FINALIZER(Animation, Dispose);
 
  public:
+  using CompositingDecisionState = AnimationCompositingDecisionState;
+  using AutoRewind = cc::Animation::AutoRewind;
   // Priority for sorting getAnimation by Animation class, arranged from lowest
   // priority to highest priority as per spec:
   // https://w3.org/TR/web-animations-1/#dom-document-getanimations
@@ -212,7 +227,7 @@ class CORE_EXPORT Animation : public EventTarget,
   void OnActivePhaseStateChange(bool in_active_phase);
 
   bool Limited() const { return Limited(CurrentTimeInternal()); }
-  bool FinishedInternal() const { return finished_; }
+  bool Inactive() const { return inactive_; }
 
   DEFINE_ATTRIBUTE_EVENT_LISTENER(finish, kFinish)
   DEFINE_ATTRIBUTE_EVENT_LISTENER(cancel, kCancel)
@@ -340,8 +355,7 @@ class CORE_EXPORT Animation : public EventTarget,
 
   CompositorAnimations::FailureReasons CheckCanStartAnimationOnCompositor(
       const PaintArtifactCompositor* paint_artifact_compositor,
-      StartOnCompositorReason check_reason,
-      PropertyHandleSet* unsupported_properties_for_tracing = nullptr) const;
+      StartOnCompositorReason check_reason);
   void StartAnimationOnCompositor(
       const PaintArtifactCompositor* paint_artifact_compositor,
       StartOnCompositorReason check_reason);
@@ -356,15 +370,20 @@ class CORE_EXPORT Animation : public EventTarget,
           CompositorPendingReason::kPendingRestart);
   void CancelIncompatibleAnimationsOnCompositor();
   bool HasActiveAnimationsOnCompositor() const;
-  CompositorAnimations::FailureReasons LastCompositorFailureReason() const {
-    return last_compositor_failure_reasons_;
+  // Returns the *current* compositing decision for this animation, which may be
+  // unchecked (not yet evaluated) or partially checked. Currently this is reset
+  // when the animation is set pending, and fully checked after PreCommit. This
+  // will change as crbug.com/521921835 gets checked in.
+  CompositingDecisionState& GetCompositingDecisionState() {
+    return compositing_decision_;
   }
 
   // The compositor started playing this animation on the impl thread.
   // Synchronize to the impl thread start time. This is only called for
   // triggered[1] animations.
   // [1] https://drafts.csswg.org/animation-triggers-1/
-  void NotifyAnimationStartedAsync(base::TimeDelta monotonic_time);
+  void NotifyAnimationStartedAsync(base::TimeDelta monotonic_time,
+                                   AutoRewind auto_rewind);
   // The compositor paused this animation on the impl thread.
   // This is only called for triggered animations.
   void NotifyAnimationPausedAsync(base::TimeDelta monotonic_time);
@@ -438,7 +457,7 @@ class CORE_EXPORT Animation : public EventTarget,
 
   std::optional<base::TimeDelta> ComputeCompositorHoldTime() const;
 
-  // Updates |compositor_property_animations_have_no_effect_| and marks the
+  // Updates |animation_missing_compositor_elements_| and marks the
   // animation as pending if it changes.
   void MarkPendingIfCompositorPropertyAnimationChanges(
       const PaintArtifactCompositor*);
@@ -505,10 +524,9 @@ class CORE_EXPORT Animation : public EventTarget,
   // Plays an animation. When auto_rewind is enabled, the current time can be
   // adjusted to accommodate reversal of an animation or snapping to an
   // endpoint.
-  enum class AutoRewind { kDisabled, kEnabled };
   void PlayInternal(AutoRewind auto_rewind, ExceptionState& exception_state);
   void PauseInternal(ExceptionState& exception_state);
-  void ReverseInternal(ExceptionState& exception_state);
+  void ReverseInternal(AutoRewind auto_rewind, ExceptionState& exception_state);
 
   void AddTrigger(AnimationTrigger* trigger);
   void RemoveTrigger(AnimationTrigger* trigger);
@@ -553,8 +571,7 @@ class CORE_EXPORT Animation : public EventTarget,
   void BeginUpdatingState();
   void EndUpdatingState();
 
-  CompositorAnimations::FailureReasons
-  CheckCanStartAnimationOnCompositorInternal() const;
+  void CheckCanStartAnimationOnCompositorInternal();
   void CreateCompositorAnimation(std::optional<int> replaced_cc_animation_id);
   void DestroyCompositorAnimation();
   void AttachCompositorTimeline();
@@ -692,9 +709,11 @@ class CORE_EXPORT Animation : public EventTarget,
   // has changed by means other than the ordinary progression of time
   bool outdated_;
 
-  // Indicates the animation is no longer active. Cancelled animation is marked
-  // as finished_.
-  bool finished_;
+  // Indicates the animation is no longer active. An animation in the idle state
+  // or a finished animation with a monotonic timeline, does not require
+  // animation updates.
+  bool inactive_;
+
   // Indicates finish notification has been handled.
   bool committed_finish_notification_;
   // Holds a 'finished' event queued for asynchronous dispatch via the
@@ -771,6 +790,10 @@ class CORE_EXPORT Animation : public EventTarget,
     Member<Animation> animation_;
   };
 
+  // The most recent/in progress compositing decision. Used to determine
+  // how/whether an animation can be optimized.
+  CompositingDecisionState compositing_decision_;
+
   // This mirrors the known compositor state. It is created when a compositor
   // animation is started. Updated once the start time is known and each time
   // modifications are pushed to the compositor.
@@ -779,8 +802,6 @@ class CORE_EXPORT Animation : public EventTarget,
   int compositor_group_;
 
   Member<CompositorAnimationHolder> compositor_animation_;
-
-  CompositorAnimations::FailureReasons last_compositor_failure_reasons_;
 
   bool effect_suppressed_;
 

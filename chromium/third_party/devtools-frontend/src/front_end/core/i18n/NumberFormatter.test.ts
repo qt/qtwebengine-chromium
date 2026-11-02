@@ -85,7 +85,7 @@ describe('NumberFormatter', () => {
   it('does nothing when there is no unit', () => {
     i18n.DevToolsLocale.DevToolsLocale.instance({
       create: true,
-      data: {navigatorLanguage: 'en-US', settingLanguage: 'en-US', lookupClosestDevToolsLocale: l => l}
+      data: {navigatorLanguage: 'en-US', settingLanguage: 'en-US', lookupClosestDevToolsLocale: l => l},
     });
     const formatter = defineFormatter({
       style: 'decimal',

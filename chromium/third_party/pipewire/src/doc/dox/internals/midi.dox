@@ -1,0 +1,127 @@
+/** \page page_midi MIDI Support
+
+This document explains how MIDI is implemented.
+
+
+# Use Cases
+
+## MIDI Devices Are Made Available As Processing Nodes/Ports
+
+Applications need to be able to see a port for each stream of a
+MIDI device.
+
+## MIDI Devices Can Be Plugged and Unplugged
+
+When devices are plugged and unplugged the associated nodes/ports
+need to be created and removed.
+
+## Applications Can Connect To MIDI Devices
+
+Applications can create ports that can connect to the MIDI ports
+so that data can be provided to or consumed from them.
+
+## Some MIDI Devices Are Sinks Or Sources For MIDI Data
+
+It should be possible to create a MIDI sink or source that routes the
+MIDI events to specific MIDI ports.
+
+One example of such a sink would be in front of a software MIDI
+renderer.
+
+An example of a MIDI source would be after a virtual keyboard or
+as a mix from many MIDI input devices.
+
+## Applications Should Auto-connect To MIDI Sinks Or Sources
+
+An application should be able to be connected to a MIDI sink when
+it wants to play MIDI data.
+
+An application should be able to connect to a MIDI source when it
+wants to capture MIDI data.
+
+
+# Design
+
+## SPA
+
+MIDI devices/streams are implemented with an \ref spa_node with generic
+control input and output Ports. These ports have a media type of
+`"application/control"` and the data transported over these ports
+are of type \ref spa_pod_sequence with the \ref spa_pod_control type set to
+\ref SPA_CONTROL_Midi.
+
+This means that every MIDI event is timestamped with the sample
+offset against the current graph clock cycle to get sample accurate
+midi events that can be aligned with the corresponding sample data.
+
+Since the MIDI events are embedded in the generic control stream,
+they can be interleaved with other control message types, such as
+property updates or OSC messages.
+
+As of 1.4, SPA_CONTROL_UMP (Universal Midi Packet) is the prefered format
+for the MIDI 1.0 and 2.0 messages in the \ref spa_pod_sequence. Conversion
+to SPA_CONTROL_Midi is performed for legacy applications.
+
+As of 1.7 the prefered format is Midi1 again because most devices and
+applications are still Midi1 and conversions between Midi1 and UMP are not
+completely transparent in ALSA and PipeWire. UMP in the ALSA sequencer
+and consumers must be enabled explicitly. UMP in producers is supported
+still and will be converted to Midi1 by all consumers that did not explicitly
+enable UMP support.
+
+## The PipeWire Daemon
+
+Nothing special is implemented for MIDI. Negotiation of formats
+happens between `"application/control"` media types and buffers are
+negotiated in the same way as any generic format.
+
+## The Session Manager
+
+The session manager needs to create the MIDI nodes/ports for the available
+devices.
+
+This can either be done as a single node with ports per device/stream
+or as separate nodes created by a MIDI device monitor.
+
+The session manager needs to be aware of the various MIDI sinks and sources
+in order to route MIDI streams to them from applications that want this.
+
+
+# Implementation
+
+## Session manager (Wireplumber)
+
+The session manager uses the \ref SPA_NAME_API_ALSA_SEQ_BRIDGE plugin for
+the MIDI features. This creates a single SPA Node with ports per
+MIDI client/stream.
+
+The media session will check the permissions on `/dev/snd/seq` before
+attempting to create this node. It will also use inotify to wait
+until the sequencer device node is accessible.
+
+Currently, the session manager does not try to link control messages
+automatically.
+
+## JACK
+
+JACK assumes all `"application/control"` ports are MIDI ports.
+
+The control messages are converted to the JACK event format by
+filtering out the \ref SPA_CONTROL_Midi, \ref SPA_CONTROL_OSC and
+\ref SPA_CONTROL_UMP types. On output ports, the JACK event stream is
+converted to control messages in a similar way.
+
+Normally, all MIDI and UMP input messages are converted to MIDI1 jack
+events unless the JACK port was created with an explcit "32 bit raw UMP"
+format or with the JackPortIsMIDI2 flag, in which case the messages are
+converted to UMP or passed on directly.
+
+For output ports, the JACK events are assumed to be
+MIDI1 unless the port has the "32 bit raw UMP" format or the JackPortIsMIDI2
+flag, in which case the control messages are assumed to be UMP.
+
+There is a 1 to 1 mapping between the JACK events and control
+messages so there is no information loss or need for complicated
+conversions.
+
+*/

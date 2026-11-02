@@ -30,6 +30,11 @@
   tags:
     - saas-linux-small-arm64
 
+.build:docker:linux:riscv64:
+  extends: .build:docker
+  tags:
+    - saas-linux-small-amd64
+
 build:docker:ubuntu-24.04-amd64-smoketest-build:
   extends: .build:docker:linux:amd64
   script:
@@ -86,6 +91,37 @@ build:docker:ubuntu-24.04-arm64-smoketest-run:
     - if: $CI_PIPELINE_SOURCE == "push" && $CI_PROJECT_NAMESPACE == "libeigen" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       changes:
         - ci/docker/ubuntu-24.04-arm64-smoketest-run/Dockerfile
+    - if: $CI_PROJECT_NAMESPACE == "libeigen"
+      when: manual
+      allow_failure: true
+
+build:docker:ubuntu-26.04-riscv64-smoketest-build:
+  # amd64 image: the riscv64 builds cross-compile on an amd64 runner.
+  extends: .build:docker:linux:amd64
+  script:
+    - docker buildx build --platform linux/amd64
+        -t $EIGEN_CI_IMAGE_LINUX_RISCV64_SMOKETEST_BUILD
+        --push
+        ci/docker/ubuntu-26.04-riscv64-smoketest-build/
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_PROJECT_NAMESPACE == "libeigen" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes:
+        - ci/docker/ubuntu-26.04-riscv64-smoketest-build/Dockerfile
+    - if: $CI_PROJECT_NAMESPACE == "libeigen"
+      when: manual
+      allow_failure: true
+
+build:docker:ubuntu-26.04-riscv64-smoketest-run:
+  extends: .build:docker:linux:riscv64
+  script:
+    - docker buildx build --platform linux/riscv64
+        -t $EIGEN_CI_IMAGE_LINUX_RISCV64_SMOKETEST_RUN
+        --push
+        ci/docker/ubuntu-26.04-riscv64-smoketest-run/
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_PROJECT_NAMESPACE == "libeigen" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes:
+        - ci/docker/ubuntu-26.04-riscv64-smoketest-run/Dockerfile
     - if: $CI_PROJECT_NAMESPACE == "libeigen"
       when: manual
       allow_failure: true

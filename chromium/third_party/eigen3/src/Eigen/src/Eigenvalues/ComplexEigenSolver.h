@@ -40,7 +40,7 @@ namespace Eigen {
  * \f$. This is called the eigendecomposition.
  *
  * The main function in this class is compute(), which computes the
- * eigenvalues and eigenvectors of a given function. The
+ * eigenvalues and eigenvectors of a given matrix. The
  * documentation for that function contains an example showing the
  * main features of the class.
  *

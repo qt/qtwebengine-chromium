@@ -74,7 +74,9 @@ static_library("file_system_provider") {
     "//ash/constants",
     "//base",
     "//chrome/browser:browser_process",
+    "//chrome/browser/ui/browser_window",
     "//chrome/browser/ash/browser_delegate",
+    "//chrome/browser/ui/tabs:tab_strip",
     "//chrome/browser/ash/file_manager",
     "//chrome/browser/ash/file_system_provider/content_cache",
     "//chrome/browser/ash/file_system_provider/operations",
@@ -194,6 +196,7 @@ source_set("browser_tests") {
   deps = [
     ":file_system_provider",
     ":test_support",
+    "//ash/constants",
     "//base",
     "//base/test:test_support",
     "//chrome/browser/ash/file_manager:test_support",

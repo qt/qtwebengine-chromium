@@ -17,15 +17,14 @@
 #![no_std]
 #![no_main]
 #![feature(alloc_error_handler)]
-#![feature(naked_functions)]
 
 use core::panic::PanicInfo;
 
 use oak_linux_boot_params::BootParams;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rust64_start(_rdi: u64, rsi: &BootParams) -> ! {
-    oak_restricted_kernel::start_kernel(rsi);
+    oak_restricted_kernel::start_kernel::<oak_restricted_kernel_sev::Sev>(rsi);
 }
 
 #[alloc_error_handler]

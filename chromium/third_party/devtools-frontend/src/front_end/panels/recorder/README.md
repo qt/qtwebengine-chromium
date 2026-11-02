@@ -8,8 +8,7 @@ Recorder is a panel in DevTools that allows recording and replaying user actions
 - `images` folder contains Recorder-specific icons and images.
 - `models` folder contains the "business logic" part of Recorder wrapping DevTools SDK modules and Puppeteer to provide record/replay/import/export functionality. The name `models` is historical and, probably, a better name could be found: record/replay used to be implemented as a single SDK Model and was placed in the `models` folder in DevTools before ending up here.
 - `injected` folder holds the code that gets injected into the target page. This code is responsible for interpreting client side events and sending information about them to the `models`.
-- `RecorderPanel.ts` is a light wrapper around `RecorderController` that integrates with `UI.Panel.Panel`, a generic interface for a top-level panel.
-- `RecorderController.ts` is the main class that is responsible for rendering the panel and holds the entire panel state.
+- `RecorderController.ts` is the main component for the Recorder panel. It manages the state and renders the UI.
 
 ## How it works
 

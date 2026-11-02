@@ -16,11 +16,11 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
 #include <new>
 
 #include "src/utils/common.h"
 #include "src/utils/constants.h"
-#include "src/utils/logging.h"
 #include "src/utils/types.h"
 
 namespace libgav1 {

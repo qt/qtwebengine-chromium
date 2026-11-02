@@ -209,6 +209,7 @@ ChildProcessLauncherHelper::ChildProcessLauncherHelper(
 #if BUILDFLAG(IS_ANDROID)
     bool can_use_warm_up_connection,
     bool is_spare_renderer,
+    bool is_for_outermost_main_frame,
 #endif
     mojo::OutgoingInvitation mojo_invitation,
     const mojo::ProcessErrorCallback& process_error_callback,
@@ -231,6 +232,7 @@ ChildProcessLauncherHelper::ChildProcessLauncherHelper(
 #if BUILDFLAG(IS_ANDROID)
       can_use_warm_up_connection_(can_use_warm_up_connection),
       is_spare_renderer_(is_spare_renderer),
+      is_for_outermost_main_frame_(is_for_outermost_main_frame),
 #endif
       histogram_memory_region_(std::move(histogram_memory_region)),
       tracing_config_memory_region_(std::move(tracing_config_memory_region)),
@@ -309,13 +311,16 @@ void ChildProcessLauncherHelper::LaunchOnLauncherThread() {
   }
 
   // Propagate the kWaitForDebugger switch to child process if the
-  // kWaitForDebuggerChildren is specified and matches the child process type.
+  // kWaitForDebuggerChildren is specified and matches the child process type
+  // or utility sub-type.
   const base::CommandLine& current_command_line =
       *base::CommandLine::ForCurrentProcess();
   if (current_command_line.HasSwitch(switches::kWaitForDebuggerChildren)) {
     std::string value = current_command_line.GetSwitchValueASCII(
         switches::kWaitForDebuggerChildren);
-    if (value.empty() || value == GetProcessType()) {
+    if (value.empty() || value == GetProcessType() ||
+        value ==
+            command_line()->GetSwitchValueASCII(switches::kUtilitySubType)) {
       command_line()->AppendSwitch(switches::kWaitForDebugger);
     }
   }
@@ -352,6 +357,7 @@ void ChildProcessLauncherHelper::LaunchOnLauncherThread() {
         options_ptr, std::move(files_to_register),
 #if BUILDFLAG(IS_ANDROID)
         can_use_warm_up_connection_, is_spare_renderer_,
+        is_for_outermost_main_frame_,
 #endif
         &is_synchronous_launch, &launch_result);
     AfterLaunchOnLauncherThread(process, options_ptr);

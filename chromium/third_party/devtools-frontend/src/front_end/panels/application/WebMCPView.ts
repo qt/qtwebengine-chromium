@@ -16,6 +16,7 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
+import type * as Bindings from '../../models/bindings/bindings.js';
 import type * as StackTrace from '../../models/stack_trace/stack_trace.js';
 import * as WebMCP from '../../models/web_mcp/web_mcp.js';
 import * as Adorners from '../../ui/components/adorners/adorners.js';
@@ -33,6 +34,8 @@ import {
   type TemplateResult,
 } from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
+import * as Console from '../console/console.js';
+import symbolizedErrorWidgetStyles from '../console/symbolizedErrorWidget.css.js';
 import * as ProtocolMonitor from '../protocol_monitor/protocol_monitor.js';
 
 import webMCPViewStyles from './webMCPView.css.js';
@@ -192,9 +195,9 @@ const UIStrings = {
    */
   toolUnregisteredNotice: 'This tool has been unregistered',
   /**
-   * @description Text preceding a nested error in a stack trace
+   * @description Label for a list of tool flags or attributes
    */
-  causedBy: 'Caused by:',
+  flags: 'Flags',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/application/WebMCPView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -249,8 +252,8 @@ export interface ViewInput {
   onPaste: () => void;
 }
 
-export function filterToolCalls(
-    toolCalls: WebMCP.WebMCPModel.Call[], filterState: FilterState): WebMCP.WebMCPModel.Call[] {
+export function filterToolCalls(toolCalls: WebMCP.WebMCPModel.Call[],
+                                filterState: FilterState): WebMCP.WebMCPModel.Call[] {
   let filtered = [...toolCalls];
 
   const statusTypes = filterState.statusTypes;
@@ -335,8 +338,10 @@ function toolStatsIcon(status: Protocol.WebMCP.InvocationStatus|undefined): {ico
 function getIconGroupsFromStats(toolStats?: ToolStats):
     Array<IconButton.IconButton.IconWithTextData&{status: Protocol.WebMCP.InvocationStatus | undefined}> {
   const status = [
-    Protocol.WebMCP.InvocationStatus.Completed, Protocol.WebMCP.InvocationStatus.Error,
-    Protocol.WebMCP.InvocationStatus.Canceled, undefined
+    Protocol.WebMCP.InvocationStatus.Completed,
+    Protocol.WebMCP.InvocationStatus.Error,
+    Protocol.WebMCP.InvocationStatus.Canceled,
+    undefined,
   ];
   return status
       .map(status => ({
@@ -592,7 +597,7 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
                   ${widget(PayloadWidget, {
                           valueObject: input.selectedCall?.result?.output,
                           errorText: input.selectedCall?.result?.errorText,
-                          exceptionDetails: input.selectedCall?.result?.exceptionDetails,
+                          symbolizedError: input.selectedCall?.result?.symbolizedError,
                   })}>
                 </devtools-widget>
               </devtools-tabbed-pane>
@@ -688,7 +693,7 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
                 ...getJSONEditorParameters(input.selectedTool.tool),
                 commandToDisplay: {
                   command: input.selectedTool.tool.name,
-                  parameters: input.selectedTool.parameters || {}
+                  parameters: input.selectedTool.parameters || {},
                 },
                 })}
               ${UI.Widget.widgetRef(ProtocolMonitor.JSONEditor.JSONEditor, e => { editorWidget = e; })}
@@ -706,7 +711,7 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
                     data: {
                       command: input.selectedTool.tool.name,
                       parameters: params,
-                    } as ProtocolMonitor.JSONEditor.Command
+                    } as ProtocolMonitor.JSONEditor.Command,
                   });
                 }
               }}>Run tool</devtools-button>
@@ -731,35 +736,32 @@ export class WebMCPView extends UI.Widget.VBox {
 
   #filterButtons: FilterMenuButtons;
 
-  static createFilterButtons(
-      onToolTypesClick: (contextMenu: UI.ContextMenu.ContextMenu) => void,
-      onStatusTypesClick: (contextMenu: UI.ContextMenu.ContextMenu) => void): FilterMenuButtons {
-    const createButton =
-        (label: string, onContextMenu: (contextMenu: UI.ContextMenu.ContextMenu) => void, jsLogContext: string):
-            FilterMenuButton => {
-              const button = new UI.Toolbar.ToolbarMenuButton(
-                  onContextMenu,
-                  /* isIconDropdown=*/ false, /* useSoftMenu=*/ true, jsLogContext,
-                  /* iconName=*/ undefined,
-                  /* keepOpen=*/ true);
-              button.setText(label);
+  static createFilterButtons(onToolTypesClick: (contextMenu: UI.ContextMenu.ContextMenu) => void,
+                             onStatusTypesClick: (contextMenu: UI.ContextMenu.ContextMenu) => void): FilterMenuButtons {
+    const createButton = (label: string, onContextMenu: (contextMenu: UI.ContextMenu.ContextMenu) => void,
+                          jsLogContext: string): FilterMenuButton => {
+      const button = new UI.Toolbar.ToolbarMenuButton(onContextMenu,
+                                                      /* isIconDropdown=*/ false, /* useSoftMenu=*/ true, jsLogContext,
+                                                      /* iconName=*/ undefined,
+                                                      /* keepOpen=*/ true);
+      button.setText(label);
 
-              /* eslint-disable-next-line @devtools/no-imperative-dom-api */
-              const adorner = new Adorners.Adorner.Adorner();
-              adorner.name = 'countWrapper';
-              const countElement = document.createElement('span');
-              adorner.append(countElement);
-              adorner.classList.add('active-filters-count');
-              adorner.classList.add('hidden');
-              button.setAdorner(adorner);
+      /* eslint-disable-next-line @devtools/no-imperative-dom-api */
+      const adorner = new Adorners.Adorner.Adorner();
+      adorner.name = 'countWrapper';
+      const countElement = document.createElement('span');
+      adorner.append(countElement);
+      adorner.classList.add('active-filters-count');
+      adorner.classList.add('hidden');
+      button.setAdorner(adorner);
 
-              const setCount = (count: number): void => {
-                countElement.textContent = `${count}`;
-                count === 0 ? adorner.hide() : adorner.show();
-              };
+      const setCount = (count: number): void => {
+        countElement.textContent = `${count}`;
+        count === 0 ? adorner.hide() : adorner.show();
+      };
 
-              return {button, setCount};
-            };
+      return {button, setCount};
+    };
 
     return {
       toolTypes: createButton(i18nString(UIStrings.toolTypes), onToolTypesClick, 'webmcp.tool-types'),
@@ -953,11 +955,11 @@ export interface PayloadViewInput {
   valueObject?: unknown;
   valueString?: string;
   errorText?: string;
-  exceptionDetails?: WebMCP.WebMCPModel.ExceptionDetails;
+  symbolizedError?: Bindings.SymbolizedError.SymbolizedError|null;
 }
 
 export const PAYLOAD_DEFAULT_VIEW = (input: PayloadViewInput, output: object, target: HTMLElement): void => {
-  if (!input.valueObject && !input.valueString && !input.errorText && !input.exceptionDetails) {
+  if (!input.valueObject && !input.valueString && !input.errorText && !input.symbolizedError) {
     render(nothing, target);
     return;
   }
@@ -965,20 +967,18 @@ export const PAYLOAD_DEFAULT_VIEW = (input: PayloadViewInput, output: object, ta
 
   const createPayload = (parsedInput: unknown): TemplateResult => {
     const object = new SDK.RemoteObject.LocalJSONObject(parsedInput);
-    const section =
-        new ObjectUI.ObjectPropertiesSection.RootElement(new ObjectUI.ObjectPropertiesSection.ObjectTree(object, {
-          readOnly: true,
-          propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED,
-        }));
-    section.title = document.createTextNode(object.description);
-    section.listItemElement.classList.add('source-code', 'object-properties-section');
-    section.childrenListElement.classList.add('source-code', 'object-properties-section');
-    section.expand();
+    const objectTree = new ObjectUI.ObjectPropertiesSection.ObjectTree(object, {
+      readOnly: true,
+      propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED,
+    });
     return html`<devtools-tree .template=${html`
           <style>${ObjectUI.ObjectPropertiesSection.objectValueStyles}</style>
           <style>${ObjectUI.ObjectPropertiesSection.objectPropertiesSectionStyles}</style>
           <ul role="tree">
-            <devtools-tree-wrapper .treeElement=${section}></devtools-tree-wrapper>
+            <li role=treeitem class="object-properties-section-root-element object-properties-section source-code" open>
+              ${object.description}
+              ${object.hasChildren ? ObjectUI.ObjectPropertiesSection.renderObjectTree(objectTree) : nothing}
+            </li>
           </ul>
         `}></devtools-tree>`;
   };
@@ -988,74 +988,44 @@ export const PAYLOAD_DEFAULT_VIEW = (input: PayloadViewInput, output: object, ta
       html`<div class="payload-value source-code error-text">${text}</div>`;
 
   const createException = (
-      details: WebMCP.WebMCPModel.ExceptionDetails,
-      linkifier: Components.Linkifier.Linkifier = new Components.Linkifier.Linkifier(),
-      ): TemplateResult => {
-    const renderFrame = (
-        frame: StackTrace.ErrorStackParser.ParsedErrorFrame,
-        index: number,
-        array: StackTrace.ErrorStackParser.ParsedErrorFrame[],
-        ): TemplateResult => {
-      const newline = index < array.length - 1 ? '\n' : '';
-      const {line, link, isCallFrame} = frame;
-
-      if (!isCallFrame) {
-        return html`<span>${line}${newline}</span>`;
-      }
-
-      if (!link) {
-        return html`<span class="formatted-builtin-stack-frame">${line}${newline}</span>`;
-      }
-
-      const scriptLocationLink = linkifier.linkifyScriptLocation(
-          details.error.runtimeModel().target(),
-          link.scriptId || null,
-          link.url,
-          link.lineNumber,
-          {
-            columnNumber: link.columnNumber,
-            inlineFrameIndex: 0,
-            showColumnNumber: true,
-          },
-      );
-      scriptLocationLink.tabIndex = -1;
-
-      return html`<span class="formatted-stack-frame">${link.prefix}${scriptLocationLink}${link.suffix}${
-          newline}</span>`;
-    };
-
+      error: Bindings.SymbolizedError.SymbolizedError|null,
+      ): TemplateResult|typeof nothing => {
+    if (!error) {
+      return nothing;
+    }
     return html`
       <div class="payload-value source-code error-text">
-        ${details.frames.length === 0 && details.description ? html`<span>${details.description}\n</span>` : nothing}
-        <div>${details.frames.map(renderFrame)}</div>
-        ${
-        details.cause ? html`\n${i18nString(UIStrings.causedBy)}\n${createException(details.cause, linkifier)}` :
-                        nothing}</div>`;
+        <devtools-widget
+          ${UI.Widget.widget(Console.SymbolizedErrorWidget.SymbolizedErrorWidget, {error})}
+        ></devtools-widget>
+      </div>
+    `;
   };
 
-  render(
-      html`
+  render(html`
     <style>${webMCPViewStyles}</style>
+    <style>${symbolizedErrorWidgetStyles}</style>
     <div class="call-payload-view">
       <div class="call-payload-content">
             ${
-          isParsable ? createPayload(input.valueObject) :
-                       (input.valueString !== undefined ?
-                            createSourceText(input.valueString) :
-                            (input.exceptionDetails ? createException(input.exceptionDetails) :
-                                                      (input.errorText ? createErrorText(input.errorText) : nothing)))}
+             isParsable ?
+                 createPayload(input.valueObject) :
+                 (input.valueString !== undefined ?
+                      createSourceText(input.valueString) :
+                      (input.symbolizedError ? createException(input.symbolizedError) :
+                                               (input.errorText ? createErrorText(input.errorText) : nothing)))}
       </div>
     </div>
   `,
-      target);
+         target);
 };
 
 export class PayloadWidget extends UI.Widget.Widget {
   #valueObject?: unknown;
   #valueString?: string;
   #errorText?: string;
-  #exceptionDetailsPromise?: Promise<WebMCP.WebMCPModel.ExceptionDetails|undefined>;
-  #exceptionDetails?: WebMCP.WebMCPModel.ExceptionDetails;
+  #symbolizedErrorPromise?: Promise<Bindings.SymbolizedError.SymbolizedError|null>;
+  #symbolizedError?: Bindings.SymbolizedError.SymbolizedError|null;
   #view: typeof PAYLOAD_DEFAULT_VIEW;
 
   constructor(element?: HTMLElement, view = PAYLOAD_DEFAULT_VIEW) {
@@ -1090,27 +1060,27 @@ export class PayloadWidget extends UI.Widget.Widget {
     return this.#errorText;
   }
 
-  async #updateExceptionDetails(
-      exceptionDetailsPromise: Promise<WebMCP.WebMCPModel.ExceptionDetails|undefined>|undefined): Promise<void> {
-    if (this.#exceptionDetailsPromise === exceptionDetailsPromise) {
+  async #updateSymbolizedError(symbolizedErrorPromise: Promise<Bindings.SymbolizedError.SymbolizedError|null>|
+                               undefined): Promise<void> {
+    if (this.#symbolizedErrorPromise === symbolizedErrorPromise) {
       return;
     }
-    this.#exceptionDetailsPromise = exceptionDetailsPromise;
-    this.#exceptionDetails = undefined;
+    this.#symbolizedErrorPromise = symbolizedErrorPromise;
+    this.#symbolizedError = undefined;
     this.requestUpdate();
-    const exceptionDetails = await exceptionDetailsPromise;
-    if (this.#exceptionDetailsPromise === exceptionDetailsPromise) {
-      this.#exceptionDetails = exceptionDetails;
+    const symbolizedError = await symbolizedErrorPromise;
+    if (this.#symbolizedErrorPromise === symbolizedErrorPromise) {
+      this.#symbolizedError = symbolizedError || null;
       this.requestUpdate();
     }
   }
 
-  set exceptionDetails(exceptionDetailsPromise: Promise<WebMCP.WebMCPModel.ExceptionDetails|undefined>|undefined) {
-    void this.#updateExceptionDetails(exceptionDetailsPromise);
+  set symbolizedError(symbolizedErrorPromise: Promise<Bindings.SymbolizedError.SymbolizedError|null>|undefined) {
+    void this.#updateSymbolizedError(symbolizedErrorPromise);
   }
 
-  get exceptionDetails(): Promise<WebMCP.WebMCPModel.ExceptionDetails|undefined>|undefined {
-    return this.#exceptionDetailsPromise;
+  get symbolizedError(): Promise<Bindings.SymbolizedError.SymbolizedError|null>|undefined {
+    return this.#symbolizedErrorPromise;
   }
   override wasShown(): void {
     super.wasShown();
@@ -1122,7 +1092,7 @@ export class PayloadWidget extends UI.Widget.Widget {
       valueObject: this.#valueObject,
       valueString: this.#valueString,
       errorText: this.#errorText,
-      exceptionDetails: this.#exceptionDetails,
+      symbolizedError: this.#symbolizedError,
     };
     this.#view(input, {}, this.contentElement);
   }
@@ -1145,6 +1115,12 @@ const TOOL_DETAILS_VIEW = (input: ToolDetailsViewInput, output: undefined, targe
   }
   const tool = input.tool;
   const origin = input.origin;
+  const flags = tool.flags;
+  const formatter = new Intl.ListFormat(i18n.DevToolsLocale.DevToolsLocale.instance().locale, {
+    style: 'short',
+    type: 'unit',
+  });
+  const formattedFlags = formatter.format(flags);
   render(html`
     <style>${webMCPViewStyles}</style>
     <div class="tool-details-grid">
@@ -1152,6 +1128,10 @@ const TOOL_DETAILS_VIEW = (input: ToolDetailsViewInput, output: undefined, targe
       <div class="value source-code">${tool.name}</div>
       <div class="label">Description</div>
       <div class="value">${tool.description}</div>
+      ${flags.length > 0 ? html`
+      <div class="label">${i18nString(UIStrings.flags)}</div>
+      <div class="value">${formattedFlags}</div>
+      ` : nothing}
       ${tool.frame ? html`
       <div class="label">${i18nString(UIStrings.frame)}</div>
       <div class="value">${Components.Linkifier.Linkifier.linkifyRevealable(tool.frame, tool.frame.displayName())}</div>
@@ -1167,7 +1147,7 @@ const TOOL_DETAILS_VIEW = (input: ToolDetailsViewInput, output: undefined, targe
           <devtools-node-text .data=${{
               nodeId: origin.getAttribute('id') || undefined,
               nodeTitle: origin.nodeNameInCorrectCase(),
-              nodeClasses: origin.getAttribute('class')?.split(/\s+/).filter(s => Boolean(s))
+              nodeClasses: origin.getAttribute('class')?.split(/\s+/).filter(s => Boolean(s)),
             } as NodeText.NodeText.NodeTextData}>
           </devtools-node-text>
         </span>
@@ -1254,7 +1234,7 @@ export class ToolDetailsWidget extends UI.Widget.Widget {
   };
 
   #clearHighlight = (): void => {
-    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight(SDK.TargetManager.TargetManager.instance());
   };
 
   #revealNode = (node: SDK.DOMModel.DOMNode): void => {
@@ -1368,8 +1348,8 @@ export function parseToolSchema(schema: JSONSchema7): ParsedToolSchema {
     }
   }
 
-  function parseProperty(
-      name: string, propDef: JSONSchema7Definition, optional: boolean): ProtocolMonitor.JSONEditor.Parameter {
+  function parseProperty(name: string, propDef: JSONSchema7Definition,
+                         optional: boolean): ProtocolMonitor.JSONEditor.Parameter {
     if (typeof propDef === 'boolean') {
       return {
         name,

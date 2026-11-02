@@ -494,7 +494,7 @@ EIGEN_DEVICE_FUNC inline T* conditional_aligned_new_auto(std::size_t size) {
   if (size == 0) return nullptr;  // short-cut. Also fixes Bug 884
   check_size_for_overflow<T>(size);
   T* result = static_cast<T*>(conditional_aligned_malloc<Align>(sizeof(T) * size));
-  EIGEN_IF_CONSTEXPR(NumTraits<T>::RequireInitialization) {
+  EIGEN_IF_CONSTEXPR (NumTraits<T>::RequireInitialization) {
     EIGEN_TRY { default_construct_elements_of_array(result, size); }
     EIGEN_CATCH(...) {
       conditional_aligned_free<Align>(result);
@@ -506,7 +506,7 @@ EIGEN_DEVICE_FUNC inline T* conditional_aligned_new_auto(std::size_t size) {
 
 template <typename T, bool Align>
 EIGEN_DEVICE_FUNC inline T* conditional_aligned_realloc_new_auto(T* pts, std::size_t new_size, std::size_t old_size) {
-  EIGEN_IF_CONSTEXPR(NumTraits<T>::RequireInitialization) {
+  EIGEN_IF_CONSTEXPR (NumTraits<T>::RequireInitialization) {
     return conditional_aligned_realloc_new<T, Align>(pts, new_size, old_size);
   }
 
@@ -518,7 +518,7 @@ EIGEN_DEVICE_FUNC inline T* conditional_aligned_realloc_new_auto(T* pts, std::si
 
 template <typename T, bool Align>
 EIGEN_DEVICE_FUNC inline void conditional_aligned_delete_auto(T* ptr, std::size_t size) {
-  EIGEN_IF_CONSTEXPR(NumTraits<T>::RequireInitialization) destruct_elements_of_array<T>(ptr, size);
+  EIGEN_IF_CONSTEXPR (NumTraits<T>::RequireInitialization) destruct_elements_of_array<T>(ptr, size);
   conditional_aligned_free<Align>(ptr);
 }
 
@@ -544,17 +544,20 @@ EIGEN_DEVICE_FUNC inline void conditional_aligned_delete_auto(T* ptr, std::size_
  */
 template <int Alignment, typename Scalar, typename Index>
 EIGEN_DEVICE_FUNC inline Index first_aligned(const Scalar* array, Index size) {
-  const Index ScalarSize = sizeof(Scalar);
-  const Index AlignmentSize = Alignment / ScalarSize;
-  const Index AlignmentMask = AlignmentSize - 1;
+  constexpr Index ScalarSize = sizeof(Scalar);
+  constexpr Index AlignmentSize = Alignment / ScalarSize;
+  constexpr Index AlignmentMask = AlignmentSize - 1;
 
-  if (AlignmentSize <= 1) {
+  EIGEN_IF_CONSTEXPR (AlignmentSize <= 1) {
     // Either the requested alignment if smaller than a scalar, or it exactly match a 1 scalar
     // so that all elements of the array have the same alignment.
     return 0;
-  } else if ((std::uintptr_t(array) & (sizeof(Scalar) - 1)) || (Alignment % ScalarSize) != 0) {
-    // The array is not aligned to the size of a single scalar, or the requested alignment is not a multiple of the
-    // scalar size. Consequently, no element of the array is well aligned.
+  } else EIGEN_IF_CONSTEXPR ((Alignment % ScalarSize) != 0) {
+    // The requested alignment is not a multiple of the scalar size. Consequently, no element of the array is well
+    // aligned.
+    return size;
+  } else if (std::uintptr_t(array) & (sizeof(Scalar) - 1)) {
+    // The array is not aligned to the size of a single scalar. Consequently, no element of the array is well aligned.
     return size;
   } else {
     Index first = (AlignmentSize - (Index((std::uintptr_t(array) / sizeof(Scalar))) & AlignmentMask)) & AlignmentMask;
@@ -590,11 +593,11 @@ EIGEN_DEVICE_FUNC void smart_copy(const T* start, const T* end, T* target) {
 template <typename T>
 struct smart_copy_helper<T, true> {
   EIGEN_DEVICE_FUNC static inline void run(const T* start, const T* end, T* target) {
-    std::intptr_t size = std::intptr_t(end) - std::intptr_t(start);
-    if (size == 0) return;
+    std::ptrdiff_t count = end - start;
+    if (count <= 0) return;
     eigen_internal_assert(start != 0 && end != 0 && target != 0);
     EIGEN_USING_STD(memcpy)
-    memcpy(target, start, size);
+    memcpy(target, start, static_cast<std::size_t>(count) * sizeof(T));
   }
 };
 
@@ -615,10 +618,10 @@ void smart_memmove(const T* start, const T* end, T* target) {
 template <typename T>
 struct smart_memmove_helper<T, true> {
   static inline void run(const T* start, const T* end, T* target) {
-    std::intptr_t size = std::intptr_t(end) - std::intptr_t(start);
-    if (size == 0) return;
+    std::ptrdiff_t count = end - start;
+    if (count <= 0) return;
     eigen_internal_assert(start != 0 && end != 0 && target != 0);
-    std::memmove(target, start, size);
+    std::memmove(target, start, static_cast<std::size_t>(count) * sizeof(T));
   }
 };
 
@@ -673,12 +676,12 @@ class aligned_stack_memory_handler {
    **/
   EIGEN_DEVICE_FUNC aligned_stack_memory_handler(T* ptr, std::size_t size, bool dealloc)
       : m_ptr(ptr), m_size(size), m_deallocate(dealloc) {
-    EIGEN_IF_CONSTEXPR(NumTraits<T>::RequireInitialization) {
+    EIGEN_IF_CONSTEXPR (NumTraits<T>::RequireInitialization) {
       if (m_ptr) Eigen::internal::default_construct_elements_of_array(m_ptr, size);
     }
   }
   EIGEN_DEVICE_FUNC ~aligned_stack_memory_handler() {
-    EIGEN_IF_CONSTEXPR(NumTraits<T>::RequireInitialization) {
+    EIGEN_IF_CONSTEXPR (NumTraits<T>::RequireInitialization) {
       if (m_ptr) Eigen::internal::destruct_elements_of_array<T>(m_ptr, m_size);
     }
     if (m_deallocate) Eigen::internal::aligned_free(m_ptr);
@@ -718,14 +721,14 @@ struct local_nested_eval_wrapper<Xpr, NbEvaluations, true> {
       : object(ptr == 0 ? reinterpret_cast<Scalar*>(Eigen::internal::aligned_malloc(sizeof(Scalar) * xpr.size())) : ptr,
                xpr.rows(), xpr.cols()),
         m_deallocate(ptr == 0) {
-    EIGEN_IF_CONSTEXPR(NumTraits<Scalar>::RequireInitialization) {
+    EIGEN_IF_CONSTEXPR (NumTraits<Scalar>::RequireInitialization) {
       if (object.data()) Eigen::internal::default_construct_elements_of_array(object.data(), object.size());
     }
     object = xpr;
   }
 
   EIGEN_DEVICE_FUNC ~local_nested_eval_wrapper() {
-    EIGEN_IF_CONSTEXPR(NumTraits<Scalar>::RequireInitialization) {
+    EIGEN_IF_CONSTEXPR (NumTraits<Scalar>::RequireInitialization) {
       if (object.data()) Eigen::internal::destruct_elements_of_array(object.data(), object.size());
     }
     if (m_deallocate) Eigen::internal::aligned_free(object.data());
@@ -768,7 +771,7 @@ struct local_nested_eval_wrapper<Xpr, NbEvaluations, true> {
 // We always manually re-align the result of EIGEN_ALLOCA.
 // If alloca is already aligned, the compiler should be smart enough to optimize away the re-alignment.
 
-#if ((EIGEN_COMP_GNUC || EIGEN_COMP_CLANG) && !EIGEN_COMP_NVHPC)
+#if ((EIGEN_COMP_GNUC || EIGEN_COMP_CLANG) && !EIGEN_COMP_NVHPC && !EIGEN_COMP_ICC)
 #define EIGEN_ALIGNED_ALLOCA(SIZE) __builtin_alloca_with_align(SIZE, CHAR_BIT* EIGEN_DEFAULT_ALIGN_BYTES)
 #else
 EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void* eigen_aligned_alloca_helper(void* ptr) {

@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Google LLC
+// Copyright 2024 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -260,7 +260,7 @@ inline void DeleteNativeEasingFunction(int64_t easing_function_native_pointer) {
 }
 
 // Converts the integer value of a Kotlin `Version` into a C++ `Version`.
-absl::StatusOr<Version> IntToVersion(int version);
+Version IntToVersion(int version);
 
 }  // namespace ink::native
 

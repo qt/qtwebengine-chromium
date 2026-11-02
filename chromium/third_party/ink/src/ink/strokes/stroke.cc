@@ -22,16 +22,19 @@
 #include "absl/log/absl_check.h"
 #include "absl/log/absl_log.h"
 #include "absl/status/status.h"
+#include "absl/status/status_macros.h"
 #include "absl/status/statusor.h"
 #include "absl/types/span.h"
 #include "ink/brush/brush.h"
 #include "ink/brush/brush_coat.h"
 #include "ink/brush/brush_family.h"
 #include "ink/color/color.h"
+#include "ink/geometry/affine_transform.h"
 #include "ink/geometry/mesh.h"
 #include "ink/geometry/partitioned_mesh.h"
 #include "ink/strokes/input/stroke_input_batch.h"
 #include "ink/strokes/internal/stroke_input_modeler.h"
+#include "ink/strokes/internal/stroke_segmentation.h"
 #include "ink/strokes/internal/stroke_shape_builder.h"
 #include "ink/strokes/internal/stroke_subtraction.h"
 #include "ink/strokes/internal/stroke_vertex.h"
@@ -109,10 +112,7 @@ absl::Status Stroke::SetBrushSize(float size) {
   if (size == brush_.GetSize()) {
     return absl::OkStatus();
   }
-  absl::Status status = brush_.SetSize(size);
-  if (!status.ok()) {
-    return status;
-  }
+  ABSL_RETURN_IF_ERROR(brush_.SetSize(size));
   RegenerateShape();
   return absl::OkStatus();
 }
@@ -121,10 +121,7 @@ absl::Status Stroke::SetBrushEpsilon(float epsilon) {
   if (epsilon == brush_.GetEpsilon()) {
     return absl::OkStatus();
   }
-  absl::Status status = brush_.SetEpsilon(epsilon);
-  if (!status.ok()) {
-    return status;
-  }
+  ABSL_RETURN_IF_ERROR(brush_.SetEpsilon(epsilon));
   RegenerateShape();
   return absl::OkStatus();
 }
@@ -203,33 +200,38 @@ void Stroke::RegenerateShape() {
 
   absl::StatusOr<PartitionedMesh> partitioned_mesh =
       PartitionedMesh::FromMutableMeshGroups(shape_gen.mesh_groups);
-  if (partitioned_mesh.ok()) {
-    shape_ = *std::move(partitioned_mesh);
-  } else {
+  if (!partitioned_mesh.ok()) {
     ABSL_LOG(WARNING) << "Failed to create PartitionedMesh: "
                       << partitioned_mesh.status();
-    shape_ = PartitionedMesh::WithEmptyGroups(brush_.CoatCount());
   }
-
+  shape_ = partitioned_mesh.ok() ? *std::move(partitioned_mesh)
+                                 : PartitionedMesh::WithEmptyGroups(num_coats);
   ABSL_DCHECK_EQ(shape_.RenderGroupCount(), brush_.CoatCount());
 }
 
-std::vector<Stroke> Stroke::PartialErase(
-    const PartitionedMesh& eraser_shape,
-    const AffineTransform& eraser_transform,
-    const AffineTransform& stroke_transform) const {
-  absl::StatusOr<PartitionedMesh> remaining_mesh = strokes_internal::Subtract(
-      shape_, stroke_transform, eraser_shape, eraser_transform);
-  if (!remaining_mesh.ok()) return {*this};
+Stroke Stroke::Subtract(const PartitionedMesh& mask_shape,
+                        const AffineTransform& mask_transform,
+                        const AffineTransform& stroke_transform) const {
+  absl::StatusOr<PartitionedMesh> remaining_mesh =
+      strokes_internal::Subtract(shape_, stroke_transform, mask_shape,
+                                 mask_transform, brush_.GetEpsilon());
+  if (!remaining_mesh.ok()) return *this;
 
-  // If the entire stroke is erased, return an empty list.
-  if (absl::c_none_of(remaining_mesh->Meshes(), [](const Mesh& mesh) {
-        return mesh.TriangleCount() > 0;
-      })) {
-    return {};
+  return Stroke(brush_, inputs_, *remaining_mesh);
+}
+
+std::vector<Stroke> Stroke::Split(const AffineTransform& stroke_transform,
+                                  float tolerance) const {
+  absl::StatusOr<std::vector<PartitionedMesh>> partitioned_meshes =
+      strokes_internal::SegmentSpatially(shape_, stroke_transform, tolerance);
+  if (!partitioned_meshes.ok()) return {*this};
+
+  std::vector<Stroke> results;
+  results.reserve(partitioned_meshes->size());
+  for (PartitionedMesh& mesh : *partitioned_meshes) {
+    results.emplace_back(brush_, inputs_, std::move(mesh));
   }
-
-  return {Stroke(brush_, inputs_, *remaining_mesh)};
+  return results;
 }
 
 }  // namespace ink

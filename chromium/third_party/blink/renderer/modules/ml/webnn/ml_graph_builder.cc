@@ -194,9 +194,7 @@ enum class MLGraphOperatorUma {
   kMaxValue = kIsInfinite,
 };
 
-using MLGraphOperatorUmaSet = base::EnumSet<MLGraphOperatorUma,
-                                            MLGraphOperatorUma::kMinValue,
-                                            MLGraphOperatorUma::kMaxValue>;
+using MLGraphOperatorUmaSet = base::EnumSet<MLGraphOperatorUma>;
 
 MLGraphOperatorUma GetUmaValueForOperation(
     const blink_mojom::Operation& operation) {
@@ -730,8 +728,8 @@ base::expected<webnn::Pool2dAttributes, std::string> ConvertToPool2dAttributes(
       webnn::Size2d<uint32_t>{.height = dilations[0], .width = dilations[1]};
   attributes.layout =
       BlinkInputOperandLayoutToComponent(options->layout().AsEnum());
-  attributes.rounding_type =
-      BlinkRoundingTypeToComponent(options->roundingType().AsEnum());
+  attributes.output_shape_rounding =
+      BlinkRoundingTypeToComponent(options->outputShapeRounding().AsEnum());
   if (options->hasOutputSizes()) {
     // TODO(ningxin.hu@intel.com): report a DevTools warning message if rounding
     // type is provided but ignored.
@@ -1477,20 +1475,17 @@ blink_mojom::GraphInfoPtr BuildWebNNGraphInfo(
           break;
         }
         case blink_mojom::Operand::Kind::kConstant: {
+          // Tensor-backed constants are not supported. The
+          // MLGraphBuilder::constant(MLTensor*) overload rejects early,
+          // so this should never happen.
+          CHECK(!operand->AsConstantOperand()->tensor());
           // Convert `mojo::Operand` for constant operand.
           webnn::OperandId operand_id = AddOperand(
               *graph_info,
               mojo::ConvertTo<blink_mojom::OperandPtr>(operand.Get()));
           // Build the map of constant operands for this graph with the id.
-          MLConstantOperand const* constant_operand =
-              operand->AsConstantOperand();
-          if (constant_operand->tensor()) {
-            graph_info->id_to_constant_tensor_operand_map.insert(
-                operand_id, constant_operand->tensor()->handle());
-          } else {
-            graph_info->constant_operand_ids_to_handles.insert(
-                operand_id, operand->AsConstantOperand()->handle());
-          }
+          graph_info->constant_operand_ids_to_handles.insert(
+              operand_id, operand->AsConstantOperand()->handle());
           operand_to_id_map.insert(operand, operand_id);
           break;
         }
@@ -1733,7 +1728,8 @@ MLOperand* MLGraphBuilder::constant(ScriptState* script_state,
   auto* constant =
       MakeGarbageCollected<MLConstantOperand>(this, std::move(descriptor));
 
-  UMA_HISTOGRAM_MEMORY_KB("WebNN.ConstantDataSizeInKB", bytes.size() / 1024);
+  UMA_HISTOGRAM_MEMORY_KB("WebNN.ConstantDataSizeInKB",
+                          base::saturated_cast<int>(bytes.size() / 1024));
   TRACE_EVENT_BEGIN("webnn", "copy constant bytes into BigBuffer",
                     scoped_trace.track(), "size", bytes.size());
   mojo_base::BigBuffer constant_data = mojo_base::BigBuffer(bytes);
@@ -1749,26 +1745,12 @@ MLOperand* MLGraphBuilder::constant(ScriptState* script_state,
                                     ExceptionState& exception_state) {
   THROW_AND_RETURN_IF_ERROR(ValidateGraphBuilderState(), nullptr);
 
-  if (tensor->context() != ml_context_) {
-    exception_state.ThrowTypeError(
-        "The tensor wasn't created with this context.");
-    return nullptr;
-  }
-
-  if (!tensor->IsValid()) {
-    exception_state.ThrowDOMException(
-        DOMExceptionCode::kInvalidStateError,
-        "Tensor has been destroyed or context is lost.");
-    return nullptr;
-  }
-
-  if (!tensor->Usage().Has(webnn::MLTensorUsageFlags::kGraphConstant)) {
-    exception_state.ThrowTypeError(
-        "Tensor was not created by createConstantTensor.");
-    return nullptr;
-  }
-
-  return MakeGarbageCollected<MLConstantOperand>(this, tensor);
+  // TODO(crbug.com/516844144): No backend currently supports tensor-backed
+  // graph constants. Reject early until support is added.
+  exception_state.ThrowDOMException(
+      DOMExceptionCode::kNotSupportedError,
+      "Tensor-backed graph constants are not supported.");
+  return nullptr;
 }
 
 MLOperand* MLGraphBuilder::constant(
@@ -1854,7 +1836,8 @@ MLOperand* MLGraphBuilder::constant(
   auto* constant =
       MakeGarbageCollected<MLConstantOperand>(this, std::move(descriptor));
 
-  UMA_HISTOGRAM_MEMORY_KB("WebNN.ConstantDataSizeInKB", byte_length / 1024);
+  UMA_HISTOGRAM_MEMORY_KB("WebNN.ConstantDataSizeInKB",
+                          base::saturated_cast<int>(byte_length / 1024));
   TRACE_EVENT_BEGIN("webnn", "create constant scalar value BigBuffer",
                     scoped_trace.track(), "size", byte_length);
   scoped_trace.AddStep("post mojo message: CreatePendingConstant");
@@ -3509,8 +3492,7 @@ void MLGraphBuilder::DidCreateWebNNGraph(
     }
   }
   auto* graph = MakeGarbageCollected<MLGraph>(
-      resolver->GetExecutionContext(), ml_context_,
-      std::move(success->graph_remote), success->graph_token,
+      resolver->GetExecutionContext(), ml_context_, success->graph_token,
       std::move(input_and_output_constraints.first),
       std::move(input_and_output_constraints.second), std::move(devices),
       base::PassKey<MLGraphBuilder>());

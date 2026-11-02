@@ -512,12 +512,12 @@ TEST_F(MenuItemViewPaintUnitTest, MinorTextAndIconAssertionCoverage) {
   AddItem(u"No secondary label, minor icon only", std::u16string(),
           std::u16string(),
           ui::ImageModel::FromVectorIcon(features::IsRoundedIconsEnabled()
-                                             ? kCheckSmallIcon
+                                             ? kCheckIcon
                                              : views::kMenuCheckOldIcon));
   AddItem(u"No secondary label, minor text and icon", std::u16string(),
           u"minor text",
           ui::ImageModel::FromVectorIcon(features::IsRoundedIconsEnabled()
-                                             ? kCheckSmallIcon
+                                             ? kCheckIcon
                                              : views::kMenuCheckOldIcon));
   AddItem(u"Secondary label, no minor content", u"secondary label",
           std::u16string(), ui::ImageModel());
@@ -526,12 +526,12 @@ TEST_F(MenuItemViewPaintUnitTest, MinorTextAndIconAssertionCoverage) {
   AddItem(u"Secondary label, minor icon only", u"secondary label",
           std::u16string(),
           ui::ImageModel::FromVectorIcon(features::IsRoundedIconsEnabled()
-                                             ? kCheckSmallIcon
+                                             ? kCheckIcon
                                              : views::kMenuCheckOldIcon));
   AddItem(u"Secondary label, minor text and icon", u"secondary label",
           u"minor text",
           ui::ImageModel::FromVectorIcon(features::IsRoundedIconsEnabled()
-                                             ? kCheckSmallIcon
+                                             ? kCheckIcon
                                              : views::kMenuCheckOldIcon));
 
   menu_runner()->RunMenuAt(widget(), nullptr, gfx::Rect(),
@@ -1082,5 +1082,21 @@ TEST_F(MenuItemViewA11yTest, TooltipTextAccessibility) {
   // When no description is explicitly set, the tooltip should be used.
   EXPECT_EQ(data.GetString16Attribute(ax::mojom::StringAttribute::kDescription),
             u"Tooltip");
+}
+
+TEST_F(MenuItemViewA11yTest, ActionViewInterfaceTest) {
+  MenuItemView* item = menu_item_view();
+  std::unique_ptr<actions::ActionItem> action_item =
+      actions::ActionItem::Builder()
+          .SetText(u"Test Action Text")
+          .SetEnabled(false)
+          .SetVisible(false)
+          .Build();
+
+  item->GetActionViewInterface()->ActionItemChangedImpl(action_item.get());
+
+  EXPECT_EQ(item->title(), u"Test Action Text");
+  EXPECT_FALSE(item->GetEnabled());
+  EXPECT_FALSE(item->GetVisible());
 }
 }  // namespace views

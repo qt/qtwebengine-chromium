@@ -25,6 +25,7 @@ package(
 java_library(
     name = "attestation_verifier",
     srcs = ["AttestationVerifier.java"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//java/src/main/java/com/google/oak/util",
         "//proto/attestation:endorsement_java_proto",
@@ -47,15 +48,16 @@ android_library(
 java_library(
     name = "insecure_attestation_verifier",
     srcs = ["InsecureAttestationVerifier.java"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":attestation_verifier",
         "//java/src/main/java/com/google/oak/util",
         "//proto/attestation:endorsement_java_proto",
         "//proto/attestation:evidence_java_proto",
         "//proto/attestation:verification_java_proto",
-        "@co_nstant_in_cbor",
         "@com_google_protobuf//java/lite",
         "@cose_lib",
+        "@maven//:co_nstant_in_cbor",
     ],
 )
 
@@ -68,15 +70,16 @@ android_library(
         "//proto/attestation:endorsement_java_proto",
         "//proto/attestation:evidence_java_proto",
         "//proto/attestation:verification_java_proto",
-        "@co_nstant_in_cbor",
         "@com_google_protobuf//java/lite",
         "@cose_lib",
+        "@maven//:co_nstant_in_cbor",
     ],
 )
 
 java_library(
     name = "attestation_verification_clock",
     srcs = ["AttestationVerificationClock.java"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//java/src/main/java/com/google/oak/remote_attestation/jni:oak_jni_attestation_verification_clock",
     ],

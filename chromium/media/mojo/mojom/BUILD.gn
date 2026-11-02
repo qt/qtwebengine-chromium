@@ -472,10 +472,6 @@ mojom("media_types") {
           cpp = "::media::AudioDecoderType"
         },
         {
-          mojom = "media.mojom.EncryptionScheme"
-          cpp = "::media::EncryptionScheme"
-        },
-        {
           mojom = "media.mojom.FullscreenVideoStatus"
           cpp = "::blink::WebFullscreenVideoStatus"
         },
@@ -541,6 +537,10 @@ mojom("media_types") {
           mojom = "media.mojom.ChannelLayout"
           cpp = "::media::ChannelLayout"
         },
+        {
+          mojom = "media.mojom.EncryptionScheme"
+          cpp = "::media::EncryptionScheme"
+        },
       ]
       traits_headers = [ "media_types_enum_mojom_traits.h" ]
       traits_public_deps = [
@@ -564,6 +564,30 @@ mojom("media_types") {
           mojom = "media.mojom.CaptureVersion"
           cpp = "::media::CaptureVersion"
         },
+      ]
+    },
+    {
+      types = [
+        {
+          mojom = "media.mojom.VideoSpatialFormat"
+          cpp = "::media::VideoSpatialFormat"
+        },
+        {
+          mojom = "media.mojom.VideoStereoMode"
+          cpp = "::media::VideoStereoMode"
+        },
+        {
+          mojom = "media.mojom.VideoProjectionType"
+          cpp = "::media::VideoProjectionType"
+        },
+      ]
+      traits_headers = [
+        "//media/base/video_spatial_format.h",
+        "video_spatial_format_mojom_traits.h",
+      ]
+      traits_public_deps = [
+        "//base",
+        "//media",
       ]
     },
   ]
@@ -677,6 +701,7 @@ mojom("media_types") {
       traits_private_headers = [ "video_decoder_config_mojom_traits.h" ]
       traits_sources = [ "video_decoder_config_mojom_traits.cc" ]
       traits_public_deps = [
+        ":shared_mojom_traits",
         "//base",
         "//media",
         "//media/base/ipc",
@@ -967,6 +992,10 @@ mojom("video_encode") {
           cpp = "::media::BitstreamBufferMetadata"
         },
         {
+          mojom = "media.mojom.YuvPsnr"
+          cpp = "::media::YuvPsnr"
+        },
+        {
           mojom = "media.mojom.VideoBitrateAllocation"
           cpp = "::media::VideoBitrateAllocation"
         },
@@ -1086,6 +1115,8 @@ source_set("unit_tests") {
 
   sources = [
     "audio_decoder_config_mojom_traits_unittest.cc",
+    "audio_encoder_config_mojom_traits_unittest.cc",
+    "audio_parameters_mojom_traits_unittest.cc",
     "audio_processing_mojom_traits_unittest.cc",
     "cdm_key_information_mojom_traits_unittest.cc",
     "channel_layout_mojom_traits_unittest.cc",

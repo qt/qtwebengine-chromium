@@ -17,11 +17,11 @@
 use alloc::collections::VecDeque;
 use core::alloc::Allocator;
 
-use oak_sev_guest::{io::PortFactoryWrapper, msr::SevStatus};
+use oak_hal::Platform;
 use oak_simple_io::SimpleIo;
 use x86_64::VirtAddr;
 
-use crate::{mm::Translator, PAGE_TABLES};
+use crate::{PAGE_TABLES, mm::Translator};
 
 /// A communications channel using a simple IO device.
 pub struct SimpleIoChannel<'a, A: Allocator> {
@@ -34,12 +34,8 @@ pub struct SimpleIoChannel<'a, A: Allocator> {
 }
 
 impl<'a, A: Allocator> SimpleIoChannel<'a, A> {
-    pub fn new(alloc: &'a A, sev_status: SevStatus) -> Self {
-        let io_port_factory = if sev_status.contains(SevStatus::SEV_ES_ENABLED) {
-            crate::ghcb::get_ghcb_port_factory()
-        } else {
-            PortFactoryWrapper::new_raw()
-        };
+    pub fn new<P: Platform>(alloc: &'a A) -> Self {
+        let io_port_factory = P::port_factory();
         let device = {
             let pt_guard = PAGE_TABLES.lock();
             SimpleIo::new_with_defaults(
@@ -86,7 +82,7 @@ impl<'a, A: Allocator> SimpleIoChannel<'a, A> {
     }
 }
 
-impl<'a, A: Allocator> oak_channel::Write for SimpleIoChannel<'a, A> {
+impl<A: Allocator> oak_channel::Write for SimpleIoChannel<'_, A> {
     fn write_all(&mut self, data: &[u8]) -> anyhow::Result<()> {
         let mut start = 0;
         let data_len = data.len();
@@ -103,7 +99,7 @@ impl<'a, A: Allocator> oak_channel::Write for SimpleIoChannel<'a, A> {
     }
 }
 
-impl<'a, A: Allocator> oak_channel::Read for SimpleIoChannel<'a, A> {
+impl<A: Allocator> oak_channel::Read for SimpleIoChannel<'_, A> {
     fn read_exact(&mut self, data: &mut [u8]) -> anyhow::Result<()> {
         let len = data.len();
         let mut count = 0;

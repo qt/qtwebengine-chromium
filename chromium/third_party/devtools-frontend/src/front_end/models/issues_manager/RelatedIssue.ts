@@ -6,7 +6,7 @@ import * as Common from '../../core/common/common.js';
 import * as SDK from '../../core/sdk/sdk.js';
 
 import type {Issue, IssueCategory} from './Issue.js';
-import {IssuesManager} from './IssuesManager.js';
+import type {IssuesManager} from './IssuesManager.js';
 
 export type IssuesAssociatable = Readonly<SDK.NetworkRequest.NetworkRequest>|SDK.Cookie.Cookie|string;
 
@@ -45,24 +45,26 @@ export function issuesAssociatedWith(issues: Issue[], obj: IssuesAssociatable): 
   throw new Error(`issues can not be associated with ${JSON.stringify(obj)}`);
 }
 
-export function hasIssues(obj: IssuesAssociatable): boolean {
-  const issues = Array.from(IssuesManager.instance().issues());
+export function hasIssues(obj: IssuesAssociatable, issuesManager: IssuesManager): boolean {
+  const issues = Array.from(issuesManager.issues());
   return issuesAssociatedWith(issues, obj).length > 0;
 }
 
-export function hasIssueOfCategory(obj: IssuesAssociatable, category: IssueCategory): boolean {
-  const issues = Array.from(IssuesManager.instance().issues());
+export function hasIssueOfCategory(obj: IssuesAssociatable, category: IssueCategory,
+                                   issuesManager: IssuesManager): boolean {
+  const issues = Array.from(issuesManager.issues());
   return issuesAssociatedWith(issues, obj).some(issue => issue.getCategory() === category);
 }
 
-export async function reveal(obj: IssuesAssociatable, category?: IssueCategory): Promise<void|undefined> {
+export async function reveal(obj: IssuesAssociatable, issuesManager: IssuesManager,
+                             category?: IssueCategory): Promise<void|undefined> {
   if (typeof obj === 'string') {
-    const issue = IssuesManager.instance().getIssueById(obj);
+    const issue = issuesManager.getIssueById(obj);
     if (issue) {
       return await Common.Revealer.reveal(issue);
     }
   }
-  const issues = Array.from(IssuesManager.instance().issues());
+  const issues = Array.from(issuesManager.issues());
   const candidates = issuesAssociatedWith(issues, obj).filter(issue => !category || issue.getCategory() === category);
   if (candidates.length > 0) {
     return await Common.Revealer.reveal(candidates[0]);

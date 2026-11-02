@@ -42,11 +42,6 @@ enum { LUNoMarker = 3 };
 enum { emptyIdxLU = -1 };
 inline Index LUnumTempV(Index& m, Index& w, Index& t, Index& b) { return (std::max)(m, (t + b) * w); }
 
-template <typename Scalar>
-inline Index LUTempSpace(Index& m, Index& w) {
-  return (2 * w + 4 + LUNoMarker) * m * sizeof(Index) + (w + 1) * m * sizeof(Scalar);
-}
-
 /**
  * Expand the existing storage to accommodate more fill-ins
  * \param vec Valid pointer to the vector to allocate or expand
@@ -89,7 +84,7 @@ Index SparseLUImpl<Scalar, StorageIndex>::expand(VectorType& vec, Index& length,
       return -1;
     }
     if (keep_prev) {
-      // In this case, the memory length should not not be reduced
+      // In this case, the memory length should not be reduced
       return new_len;
     } else {
       // Reduce the size and increase again

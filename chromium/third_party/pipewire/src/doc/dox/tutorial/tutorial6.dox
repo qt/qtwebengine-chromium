@@ -1,0 +1,69 @@
+/** \page page_tutorial6 Tutorial - Part 6: Binding Objects
+
+\ref page_tutorial5 | \ref page_tutorial "Index" | \ref page_tutorial7
+
+In this tutorial we show how to bind to an object so that we can
+receive events and call methods on the object.
+
+Let take a look at the following application to start.
+
+\snippet tutorial6.c code
+
+To compile the simple test application, copy it into a tutorial6.c file and
+use:
+
+    gcc -Wall tutorial6.c -o tutorial6 $(pkg-config --cflags --libs libpipewire-0.3)
+
+Most of this is the same as \ref page_tutorial2 where we simply
+enumerated all objects on the server. Instead of just printing the object
+id and some other properties, in this example we also bind to the object.
+
+We use the `pw_registry_bind()` method on our registry object like this:
+
+\snippet tutorial6.c registry_event_global
+
+We bind to the first client object that we see. This gives us a pointer
+to a `struct pw_proxy` that we can also cast to a `struct pw_client`.
+
+On the proxy we can call methods and listen for events. PipeWire will
+automatically serialize the method calls and events between client and
+server for us.
+
+We can now listen for events by adding a listener. We're going to
+listen to the info event on the client object that is emitted right
+after we bind to it or when it changes. This is not very different
+from the registry listener we added before:
+
+\snippet tutorial6.c client_info
+
+\code{.c}
+static void registry_event_global(void *_data, uint32_t id,
+			uint32_t permissions, const char *type,
+			uint32_t version, const struct spa_dict *props)
+{
+		/* ... */
+		pw_client_add_listener(data->client,
+				&data->client_listener,
+				&client_events, data);
+		/* ... */
+}
+\endcode
+
+We're also quitting the mainloop after we get the info to nicely stop
+our tutorial application.
+
+When we stop the application, don't forget to destroy all proxies that
+you created. Otherwise, they will be leaked:
+
+\code{.c}
+	/* ... */
+	pw_proxy_destroy((struct pw_proxy *)data.client);
+	/* ... */
+
+	return 0;
+}
+\endcode
+
+\ref page_tutorial5 | \ref page_tutorial "Index" | \ref page_tutorial7
+
+*/

@@ -1032,7 +1032,7 @@ struct generic_j0<T, double> {
     const T DR1 = pset1<T>(5.78318596294678452118E0);
     const T DR2 = pset1<T>(3.04712623436620863991E1);
     const T SQ2OPI = pset1<T>(7.9788456080286535587989E-1); /* sqrt(2 / pi) */
-    const T NEG_PIO4 = pset1<T>(-0.7853981633974483096);    /* pi / 4 */
+    const T NEG_PIO4 = pset1<T>(-0.7853981633974483096);    /* -pi / 4 */
 
     T y = pabs(x);
     T z = pmul(y, y);
@@ -1308,7 +1308,7 @@ struct generic_j1<T, float> {
     T yn = pmadd(q, internal::ppolevl<T, 7>::run(w, PH1), NEG_THPIO4F);
     T y_gt_two = pmul(p, pcos(padd(yn, y)));
     // j1 is an odd function. This implementation differs from cephes to
-    // take this fact in to account. Cephes returns -j1(x) for y > 2 range.
+    // take this fact into account. Cephes returns -j1(x) for y > 2 range.
     y_gt_two = pselect(pcmp_lt(x, pset1<T>(0.0f)), pnegate(y_gt_two), y_gt_two);
     return pselect(pcmp_le(y, pset1<T>(2.0f)), y_le_two, y_gt_two);
   }
@@ -1383,7 +1383,7 @@ struct generic_j1<T, double> {
     p = pmadd(p, pcos(yn), pmul(w, pmul(q, psin(yn))));
     T y_gt_five = pmul(p, pmul(SQ2OPI, prsqrt(y)));
     // j1 is an odd function. This implementation differs from cephes to
-    // take this fact in to account. Cephes returns -j1(x) for y > 5 range.
+    // take this fact into account. Cephes returns -j1(x) for y > 5 range.
     y_gt_five = pselect(pcmp_lt(x, pset1<T>(0.0)), pnegate(y_gt_five), y_gt_five);
     return pselect(pcmp_le(y, pset1<T>(5.0)), y_le_five, y_gt_five);
   }

@@ -60,7 +60,8 @@ class QuicConnectionImpl final : public QuicConnection,
   // OpenScreenSessionBase::Visitor overrides
   void OnCryptoHandshakeComplete() override;
   void OnIncomingStream(QuicStream* QuicStream) override;
-  void OnClientCertificates(const std::vector<std::string>& certs) override;
+  void OnClientCertificates(
+      const std::vector<std::string_view>& certs) override;
   Delegate& GetConnectionDelegate() override { return delegate_; }
   uint64_t GetInstanceID() override { return instance_id_; }
 

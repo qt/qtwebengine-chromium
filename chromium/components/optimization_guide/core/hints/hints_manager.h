@@ -62,11 +62,8 @@ class TopHostProvider;
 BASE_DECLARE_FEATURE(kHintsBatchUpdateForActiveTabsAndTopHosts);
 
 // The max number of concurrent fetches to the remote Optimization Guide
-// Service that should be allowed for batch updates
-// TODO: crbug.com/421924837 - This is only a param because some tests are
-// hardcoded to a assume a value that doesn't match the real one. Fix that and
-// remove this.
-BASE_DECLARE_FEATURE_PARAM(size_t, kHintsMaxConcurrentBatchUpdateFetches);
+// Service that should be allowed for batch updates.
+inline constexpr size_t kMaxConcurrentBatchUpdateFetches = 20;
 
 // The max number of concurrent fetches to the remote Optimization Guide
 // Service that should be allowed for navigations
@@ -74,6 +71,11 @@ BASE_DECLARE_FEATURE_PARAM(size_t, kHintsMaxConcurrentBatchUpdateFetches);
 // hardcoded to a assume a value that doesn't match the real one. Fix that and
 // remove this.
 BASE_DECLARE_FEATURE_PARAM(size_t, kHintsMaxConcurrentNavigationFetches);
+
+extern const char kOptimizationGuideServiceGetHintsDefaultURL[];
+// The local histogram used to record that the component hints are stored in
+// the cache and are ready for use.
+extern const char kLoadedHintLocalHistogramString[];
 
 class HintsManager : public OptimizationHintsComponentObserver,
                      public PushNotificationManager::Delegate {
@@ -243,6 +245,15 @@ class HintsManager : public OptimizationHintsComponentObserver,
       const GURL& url,
       const std::vector<optimization_guide::proto::OptimizationType>&
           optimization_types);
+
+  // Add hints to the cache for the provided optimization types and metadata.
+  // For testing only.
+  void AddHintWithMultipleOptimizationsForTesting(
+      const GURL& url,
+      const std::vector<
+          std::pair<optimization_guide::proto::OptimizationType,
+                    std::optional<optimization_guide::OptimizationMetadata>>>&
+          optimization_types_and_metadata);
 
   // Add hints to be returned for on-demand hints requests.
   void AddOnDemandHintForTesting(

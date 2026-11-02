@@ -133,7 +133,7 @@ class MarkupAccumulator::NamespaceContext final {
     return local_default_namespace;
   }
 
-  AtomicString LookupNamespaceURI(const AtomicString& prefix) const {
+  AtomicString LookupNamespaceUri(const AtomicString& prefix) const {
     auto it = prefix_ns_map_.find(prefix ? prefix : g_empty_atom);
     return it != prefix_ns_map_.end() && !it->value.empty() ? it->value
                                                             : g_null_atom;
@@ -184,7 +184,7 @@ class MarkupAccumulator::ElementSerializationData final {
 };
 
 MarkupAccumulator::MarkupAccumulator(
-    AbsoluteURLs resolve_urls_method,
+    ResolveUrls resolve_urls_method,
     SerializationType serialization_type,
     const ShadowRootInclusion& shadow_root_inclusion,
     AttributesMode attributes_mode)
@@ -200,23 +200,24 @@ void MarkupAccumulator::AppendString(const String& string) {
 
 void MarkupAccumulator::AppendEndTag(const Element& element,
                                      const AtomicString& prefix) {
-  formatter_.AppendEndMarkup(markup_, element, prefix, element.localName());
+  formatter_.AppendEndMarkup(element, prefix, element.localName(), markup_);
 }
 
 void MarkupAccumulator::AppendStartMarkup(const Node& node) {
   switch (node.getNodeType()) {
     case Node::kTextNode:
-      formatter_.AppendText(markup_, To<Text>(node));
+      formatter_.AppendText(To<Text>(node), markup_);
       break;
     case Node::kElementNode:
       NOTREACHED();
     case Node::kAttributeNode:
       // Only XMLSerializer can pass an Attr.  So, |documentIsHTML| flag is
       // false.
-      formatter_.AppendAttributeValue(markup_, To<Attr>(node).value(), false);
+      formatter_.AppendAttributeValue(To<Attr>(node).value(),
+                                      SerializationType::kXml, markup_);
       break;
     default:
-      formatter_.AppendStartMarkup(markup_, node);
+      formatter_.AppendStartMarkup(node, markup_);
       break;
   }
 }
@@ -240,7 +241,7 @@ AtomicString MarkupAccumulator::AppendElement(const Element& element) {
       attributes_mode_ == AttributesMode::kSynchronized
           ? element.Attributes()
           : element.AttributesWithoutUpdate();
-  if (SerializeAsHTML()) {
+  if (SerializeAsHtml()) {
     // https://html.spec.whatwg.org/C/#html-fragment-serialisation-algorithm
 
     // 3.2. Element: If current node's is value is not null, and the
@@ -286,8 +287,8 @@ MarkupAccumulator::ElementSerializationData
 MarkupAccumulator::AppendStartTagOpen(const Element& element) {
   ElementSerializationData data;
   data.serialized_prefix_ = element.prefix();
-  if (SerializeAsHTML()) {
-    formatter_.AppendStartTagOpen(markup_, element);
+  if (SerializeAsHtml()) {
+    formatter_.AppendStartTagOpen(element, markup_);
     return data;
   }
 
@@ -317,7 +318,7 @@ MarkupAccumulator::AppendStartTagOpen(const Element& element) {
     // localName. The node's prefix if it exists, is dropped.
 
     // 11.4. Append the value of qualified name to markup.
-    formatter_.AppendStartTagOpen(markup_, g_null_atom, element.localName());
+    formatter_.AppendStartTagOpen(g_null_atom, element.localName(), markup_);
     data.serialized_prefix_ = g_null_atom;
     return data;
   }
@@ -334,12 +335,12 @@ MarkupAccumulator::AppendStartTagOpen(const Element& element) {
   }
   // 12.4. if candidate prefix is not null (a namespace prefix is defined which
   // maps to ns), then:
-  if (!candidate_prefix.IsNull() && LookupNamespaceURI(candidate_prefix)) {
+  if (!candidate_prefix.IsNull() && LookupNamespaceUri(candidate_prefix)) {
     // 12.4.1. Append to qualified name the concatenation of candidate prefix,
     // ":" (U+003A COLON), and node's localName.
     // 12.4.3. Append the value of qualified name to markup.
-    formatter_.AppendStartTagOpen(markup_, candidate_prefix,
-                                  element.localName());
+    formatter_.AppendStartTagOpen(candidate_prefix, element.localName(),
+                                  markup_);
     data.serialized_prefix_ = candidate_prefix;
     // 12.4.2. If the local default namespace is not null (there exists a
     // locally-defined default namespace declaration attribute) and its value is
@@ -367,10 +368,11 @@ MarkupAccumulator::AppendStartTagOpen(const Element& element) {
     // 12.5.3. Append to qualified name the concatenation of prefix, ":" (U+003A
     // COLON), and node's localName.
     // 12.5.4. Append the value of qualified name to markup.
-    formatter_.AppendStartTagOpen(markup_, prefix, element.localName());
+    formatter_.AppendStartTagOpen(prefix, element.localName(), markup_);
     data.serialized_prefix_ = prefix;
     // 12.5.5. Append the following to markup, in the order listed:
-    MarkupFormatter::AppendAttribute(markup_, g_xmlns_atom, prefix, ns, false);
+    MarkupFormatter::AppendAttribute(g_xmlns_atom, prefix, ns,
+                                     SerializationType::kXml, markup_);
     // 12.5.5.7. If local default namespace is not null (there exists a
     // locally-defined default namespace declaration attribute), then let
     // inherited ns get the value of local default namespace unless the local
@@ -388,10 +390,10 @@ MarkupAccumulator::AppendStartTagOpen(const Element& element) {
     // 12.6.3. Let the value of inherited ns be ns.
     namespace_context.SetContextNamespace(ns);
     // 12.6.4. Append the value of qualified name to markup.
-    formatter_.AppendStartTagOpen(markup_, element);
+    formatter_.AppendStartTagOpen(element, markup_);
     // 12.6.5. Append the following to markup, in the order listed:
-    MarkupFormatter::AppendAttribute(markup_, g_null_atom, g_xmlns_atom, ns,
-                                     false);
+    MarkupFormatter::AppendAttribute(g_null_atom, g_xmlns_atom, ns,
+                                     SerializationType::kXml, markup_);
     return data;
   }
 
@@ -400,25 +402,25 @@ MarkupAccumulator::AppendStartTagOpen(const Element& element) {
   // of inherited ns be ns, and append the value of qualified name to markup.
   DCHECK(EqualIgnoringNullity(local_default_namespace, ns));
   namespace_context.SetContextNamespace(ns);
-  formatter_.AppendStartTagOpen(markup_, element);
+  formatter_.AppendStartTagOpen(element, markup_);
   return data;
 }
 
 void MarkupAccumulator::AppendStartTagClose(const Element& element) {
-  formatter_.AppendStartTagClose(markup_, element);
+  formatter_.AppendStartTagClose(element, markup_);
 }
 
 void MarkupAccumulator::AppendAttribute(const Element& element,
                                         const Attribute& attribute) {
-  String value = formatter_.ResolveURLIfNeeded(element, attribute);
-  if (SerializeAsHTML()) {
-    MarkupFormatter::AppendAttributeAsHTML(markup_, attribute, value);
+  String value = formatter_.ResolveUrlIfNeeded(element, attribute);
+  if (SerializeAsHtml()) {
+    MarkupFormatter::AppendAttributeAsHtml(attribute, value, markup_);
   } else {
-    AppendAttributeAsXMLWithNamespace(element, attribute, value);
+    AppendAttributeAsXmlWithNamespace(element, attribute, value);
   }
 }
 
-void MarkupAccumulator::AppendAttributeAsXMLWithNamespace(
+void MarkupAccumulator::AppendAttributeAsXmlWithNamespace(
     const Element& element,
     const Attribute& attribute,
     const String& value) {
@@ -431,8 +433,8 @@ void MarkupAccumulator::AppendAttributeAsXMLWithNamespace(
   AtomicString candidate_prefix;
 
   if (attribute_namespace.IsNull()) {
-    MarkupFormatter::AppendAttribute(markup_, candidate_prefix,
-                                     attribute.LocalName(), value, false);
+    MarkupFormatter::AppendAttribute(candidate_prefix, attribute.LocalName(),
+                                     value, SerializationType::kXml, markup_);
     return;
   }
   // 3.5. If attribute namespace is not null, then run these sub-steps:
@@ -452,31 +454,31 @@ void MarkupAccumulator::AppendAttributeAsXMLWithNamespace(
     // 3.5.3. Otherwise, the attribute namespace in not the XMLNS namespace.
     // Run these steps:
     if (ShouldAddNamespaceAttribute(attribute, candidate_prefix)) {
-      if (!candidate_prefix || LookupNamespaceURI(candidate_prefix)) {
+      if (!candidate_prefix || LookupNamespaceUri(candidate_prefix)) {
         // 3.5.3.1. Let candidate prefix be the result of generating a prefix
         // providing map, attribute namespace, and prefix index as input.
         candidate_prefix = GeneratePrefix(attribute_namespace);
         // 3.5.3.2. Append the following to result, in the order listed:
-        MarkupFormatter::AppendAttribute(markup_, g_xmlns_atom,
-                                         candidate_prefix, attribute_namespace,
-                                         false);
+        MarkupFormatter::AppendAttribute(g_xmlns_atom, candidate_prefix,
+                                         attribute_namespace,
+                                         SerializationType::kXml, markup_);
       } else {
         DCHECK(candidate_prefix);
         AppendNamespace(candidate_prefix, attribute_namespace);
       }
     }
   }
-  MarkupFormatter::AppendAttribute(markup_, candidate_prefix,
-                                   attribute.LocalName(), value, false);
+  MarkupFormatter::AppendAttribute(candidate_prefix, attribute.LocalName(),
+                                   value, SerializationType::kXml, markup_);
 }
 
 bool MarkupAccumulator::ShouldAddNamespaceAttribute(
     const Attribute& attribute,
     const AtomicString& candidate_prefix) {
   // xmlns and xmlns:prefix attributes should be handled by another branch in
-  // AppendAttributeAsXMLWithNamespace().
+  // AppendAttributeAsXmlWithNamespace().
   DCHECK_NE(attribute.NamespaceURI(), xmlns_names::kNamespaceURI);
-  // Null namespace is checked earlier in AppendAttributeAsXMLWithNamespace().
+  // Null namespace is checked earlier in AppendAttributeAsXmlWithNamespace().
   DCHECK(attribute.NamespaceURI());
 
   // Attributes without a prefix will need one generated for them, and an xmlns
@@ -484,21 +486,21 @@ bool MarkupAccumulator::ShouldAddNamespaceAttribute(
   if (!candidate_prefix)
     return true;
 
-  return !EqualIgnoringNullity(LookupNamespaceURI(candidate_prefix),
+  return !EqualIgnoringNullity(LookupNamespaceUri(candidate_prefix),
                                attribute.NamespaceURI());
 }
 
 void MarkupAccumulator::AppendNamespace(const AtomicString& prefix,
                                         const AtomicString& namespace_uri) {
-  AtomicString found_uri = LookupNamespaceURI(prefix);
+  AtomicString found_uri = LookupNamespaceUri(prefix);
   if (!EqualIgnoringNullity(found_uri, namespace_uri)) {
     AddPrefix(prefix, namespace_uri);
     if (prefix.empty()) {
-      MarkupFormatter::AppendAttribute(markup_, g_null_atom, g_xmlns_atom,
-                                       namespace_uri, false);
+      MarkupFormatter::AppendAttribute(g_null_atom, g_xmlns_atom, namespace_uri,
+                                       SerializationType::kXml, markup_);
     } else {
-      MarkupFormatter::AppendAttribute(markup_, g_xmlns_atom, prefix,
-                                       namespace_uri, false);
+      MarkupFormatter::AppendAttribute(g_xmlns_atom, prefix, namespace_uri,
+                                       SerializationType::kXml, markup_);
     }
   }
 }
@@ -508,8 +510,9 @@ EntityMask MarkupAccumulator::EntityMaskForText(const Text& text) const {
 }
 
 void MarkupAccumulator::PushNamespaces(const Element& element) {
-  if (SerializeAsHTML())
+  if (SerializeAsHtml()) {
     return;
+  }
   DCHECK_GT(namespace_stack_.size(), 0u);
   // TODO(tkent): Avoid to copy the whole map.
   // We can't do |namespace_stack_.emplace_back(namespace_stack_.back())|
@@ -519,8 +522,9 @@ void MarkupAccumulator::PushNamespaces(const Element& element) {
 }
 
 void MarkupAccumulator::PopNamespaces(const Element& element) {
-  if (SerializeAsHTML())
+  if (SerializeAsHtml()) {
     return;
+  }
   namespace_stack_.pop_back();
 }
 
@@ -529,7 +533,7 @@ AtomicString MarkupAccumulator::RetrievePreferredPrefixString(
     const AtomicString& ns,
     const AtomicString& preferred_prefix) {
   DCHECK(!ns.empty()) << ns;
-  AtomicString ns_for_preferred = LookupNamespaceURI(preferred_prefix);
+  AtomicString ns_for_preferred = LookupNamespaceUri(preferred_prefix);
   // Preserve the prefix if the prefix is used in the scope and the namespace
   // for it is matches to the node's one.
   // This is equivalent to the following step in the specification:
@@ -554,7 +558,7 @@ AtomicString MarkupAccumulator::RetrievePreferredPrefixString(
   // We should not get '' for attributes.
   for (const auto& candidate_prefix : base::Reversed(candidate_list)) {
     DCHECK(!candidate_prefix.empty());
-    AtomicString ns_for_candidate = LookupNamespaceURI(candidate_prefix);
+    AtomicString ns_for_candidate = LookupNamespaceUri(candidate_prefix);
     if (EqualIgnoringNullity(ns_for_candidate, ns)) {
       return candidate_prefix;
     }
@@ -574,8 +578,8 @@ void MarkupAccumulator::AddPrefix(const AtomicString& prefix,
   namespace_stack_.back().Add(prefix, namespace_uri);
 }
 
-AtomicString MarkupAccumulator::LookupNamespaceURI(const AtomicString& prefix) {
-  return namespace_stack_.back().LookupNamespaceURI(prefix);
+AtomicString MarkupAccumulator::LookupNamespaceUri(const AtomicString& prefix) {
+  return namespace_stack_.back().LookupNamespaceUri(prefix);
 }
 
 // https://w3c.github.io/DOM-Parsing/#dfn-generating-a-prefix
@@ -589,15 +593,15 @@ AtomicString MarkupAccumulator::GeneratePrefix(
         AtomicString(StrCat({"ns", String::Number(prefix_index_)}));
     // 2. Let the value of prefix index be incremented by one.
     ++prefix_index_;
-  } while (LookupNamespaceURI(generated_prefix));
+  } while (LookupNamespaceUri(generated_prefix));
   // 3. Add to map the generated prefix given the new namespace namespace.
   AddPrefix(generated_prefix, new_namespace);
   // 4. Return the value of generated prefix.
   return generated_prefix;
 }
 
-bool MarkupAccumulator::SerializeAsHTML() const {
-  return formatter_.SerializeAsHTML();
+bool MarkupAccumulator::SerializeAsHtml() const {
+  return formatter_.SerializeAsHtml();
 }
 
 // This serializes the shadow root of this element, if present. The behavior
@@ -644,6 +648,11 @@ std::pair<ShadowRoot*, HTMLTemplateElement*> MarkupAccumulator::GetShadowTree(
   if (shadow_root->serializable()) {
     template_element->SetBooleanAttribute(
         html_names::kShadowrootserializableAttr, true);
+  }
+  if (RuntimeEnabledFeatures::ShadowRootSlotAssignmentEnabled() &&
+      shadow_root->GetSlotAssignmentMode() == SlotAssignmentMode::kManual) {
+    template_element->setAttribute(html_names::kShadowrootslotassignmentAttr,
+                                   keywords::kManual);
   }
   if (shadow_root->clonable()) {
     template_element->SetBooleanAttribute(html_names::kShadowrootclonableAttr,
@@ -717,7 +726,7 @@ void MarkupAccumulator::SerializeNodesWithNamespaces(
     prefix_override = AppendElement(target_element);
 
   bool has_end_tag =
-      !(SerializeAsHTML() && ElementCannotHaveEndTag(target_element));
+      !(SerializeAsHtml() && ElementCannotHaveEndTag(target_element));
   if (has_end_tag) {
     if (emit_choice != EmitElementChoice::kEmitButIgnoreChildren) {
       const Node* parent = &target_element;
@@ -764,7 +773,7 @@ template <typename Strategy>
 CORE_EXPORT String
 MarkupAccumulator::SerializeNodes(const Node& target_node,
                                   ChildrenOnly children_only) {
-  if (!SerializeAsHTML()) {
+  if (!SerializeAsHtml()) {
     // https://w3c.github.io/DOM-Parsing/#dfn-xml-serialization
     DCHECK_EQ(namespace_stack_.size(), 0u);
     // 2. Let prefix map be a new namespace prefix map.

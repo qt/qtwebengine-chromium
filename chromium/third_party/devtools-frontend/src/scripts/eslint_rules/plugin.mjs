@@ -4,6 +4,7 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {pathToFileURL} from 'node:url';
 
 const entries = await fs.readdir(path.join(import.meta.dirname, 'lib'), {
   withFileTypes: true,
@@ -21,7 +22,7 @@ for (const entry of entries) {
   const filename = path.resolve(
     path.join(import.meta.dirname, 'lib', entry.name),
   );
-  const ruleModule = await import(filename);
+  const ruleModule = await import(pathToFileURL(filename).href);
   const name = path.parse(entry.name).name;
   rules[name] = ruleModule.default;
 }

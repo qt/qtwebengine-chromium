@@ -143,14 +143,14 @@ SubresourceRange GetSubresourcesAffectedByCopy(const TextureCopy& copy,
                                                const TexelExtent3D& copySize) {
     switch (copy.texture->GetDimension()) {
         case wgpu::TextureDimension::e1D:
-            DAWN_CHECK(copy.origin.z == TexelCount{0} &&
-                       copySize.depthOrArrayLayers == TexelCount{1});
+            DAWN_CHECK(copy.origin.z == TexelCount{0u} &&
+                       copySize.depthOrArrayLayers == TexelCount{1u});
             DAWN_CHECK(copy.mipLevel == 0);
             return {copy.aspect, {0, 1}, {0, 1}};
         case wgpu::TextureDimension::e2D:
             return {copy.aspect,
-                    {static_cast<uint32_t>(copy.origin.z),
-                     static_cast<uint32_t>(copySize.depthOrArrayLayers)},
+                    {dchecked_cast<uint32_t>(copy.origin.z),
+                     dchecked_cast<uint32_t>(copySize.depthOrArrayLayers)},
                     {copy.mipLevel, 1}};
         case wgpu::TextureDimension::e3D:
             return {copy.aspect, {0, 1}, {copy.mipLevel, 1}};
@@ -199,7 +199,7 @@ MaybeError LazyClearRenderPassAttachments(DeviceBase* device,
                     // If the loadOp is Load, but the subresource is not initialized, use Clear
                     // instead.
                     attachmentInfo.loadOp = wgpu::LoadOp::Clear;
-                    attachmentInfo.clearColor = {0.f, 0.f, 0.f, 0.f};
+                    attachmentInfo.clearColor = {0.0, 0.0, 0.0, 0.0};
                 }
             }
         }
@@ -296,7 +296,7 @@ MaybeError LazyClearRenderPassAttachments(DeviceBase* device,
             if (!view->GetTexture()->IsSubresourceContentInitialized(range)) {
                 if (attachmentInfo.loadOp == wgpu::LoadOp::Load) {
                     attachmentInfo.loadOp = wgpu::LoadOp::Clear;
-                    attachmentInfo.clearColor = {0.f, 0.f, 0.f, 0.f};
+                    attachmentInfo.clearColor = {0.0, 0.0, 0.0, 0.0};
                 }
                 if (partialRenderArea) {
                     renderPass->forceFullRenderArea = true;
@@ -337,8 +337,8 @@ bool IsFullBufferOverwrittenInTextureToBufferCopy(const TextureCopy& source,
 
     const TypedTexelBlockInfo& blockInfo = GetBlockInfo(source);
     BlockExtent3D copySize = blockInfo.ToBlock(copySize_in);
-    const bool multiSlice = copySize.depthOrArrayLayers > BlockCount{1};
-    const bool multiRow = multiSlice || copySize.height > BlockCount{1};
+    const bool multiSlice = copySize.depthOrArrayLayers > BlockCount{1u};
+    const bool multiRow = multiSlice || copySize.height > BlockCount{1u};
 
     if (multiSlice && destination.rowsPerImage > copySize.height) {
         // There are gaps between slices that aren't overwritten

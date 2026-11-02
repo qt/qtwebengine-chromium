@@ -172,7 +172,7 @@ class LLT : public SolverBase<LLT<MatrixType_, UpLo_> > {
   /** \brief Reports whether previous computation was successful.
    *
    * \returns \c Success if computation was successful,
-   *          \c NumericalIssue if the matrix.appears not to be positive definite.
+   *          \c NumericalIssue if the matrix appears not to be positive definite.
    */
   ComputationInfo info() const {
     eigen_assert(m_isInitialized && "LLT is not initialized.");
@@ -228,7 +228,7 @@ static Index llt_rank_update_lower(MatrixType& mat, const VectorType& vec,
   typedef typename MatrixType::ColXpr ColXpr;
   typedef internal::remove_all_t<ColXpr> ColXprCleaned;
   typedef typename ColXprCleaned::SegmentReturnType ColXprSegment;
-  typedef Matrix<Scalar, Dynamic, 1> TempVectorType;
+  using TempVectorType = Matrix<Scalar, MatrixType::RowsAtCompileTime, 1, 0, MatrixType::MaxRowsAtCompileTime, 1>;
   typedef typename TempVectorType::SegmentReturnType TempVecSegment;
 
   Index n = mat.cols();
@@ -415,7 +415,7 @@ LLT<MatrixType, UpLo_>& LLT<MatrixType, UpLo_>::compute(const EigenBase<InputTyp
   return *this;
 }
 
-/** Performs a rank one update (or dowdate) of the current decomposition.
+/** Performs a rank one update (or downdate) of the current decomposition.
  * If A = LL^* before the rank one update,
  * then after it we have LL^* = A + sigma * v v^* where \a v must be a vector
  * of same dimension.

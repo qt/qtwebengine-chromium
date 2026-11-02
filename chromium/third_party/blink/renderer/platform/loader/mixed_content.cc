@@ -56,7 +56,6 @@ MixedContent::ContextTypeFromRequestContext(
     }
 
     // "Blockable" mixed content
-    case mojom::RequestContextType::ATTRIBUTION_SRC:
     case mojom::RequestContextType::BEACON:
     case mojom::RequestContextType::CSP_REPORT:
     case mojom::RequestContextType::EMBED:
@@ -83,6 +82,7 @@ MixedContent::ContextTypeFromRequestContext(
     case mojom::RequestContextType::STYLE:
     case mojom::RequestContextType::SUBRESOURCE:
     case mojom::RequestContextType::SUBRESOURCE_WEBBUNDLE:
+    case mojom::RequestContextType::TEXT:
     case mojom::RequestContextType::TRACK:
     case mojom::RequestContextType::WORKER:
     case mojom::RequestContextType::XML_HTTP_REQUEST:

@@ -546,7 +546,14 @@ void LiftoffAssembler::PatchPrepareStackFrame(
   PatchingAssembler patching_assembler(AssemblerOptions{},
                                        buffer_start_ + offset,
                                        liftoff::kPatchInstructionsRequired);
-  if (V8_LIKELY(frame_size < 4 * KB)) {
+  int max_stack_space =
+      frame_size + max_pushed_argument_slots_ * kSystemPointerSize;
+
+  // The threshold here must match the DCHECK in {Isolate::StackOverflow}:
+  // we could use up this limit once for parameters in a caller, once for the
+  // fixed frame size in its callee, plus we must leave some space for the
+  // runtime call that leads to the DCHECK.
+  if (V8_LIKELY(max_stack_space < 3 * KB)) {
     // This is the standard case for small frames: just subtract from SP and be
     // done with it.
     patching_assembler.sub(sp, sp, Operand(frame_size));
@@ -577,23 +584,24 @@ void LiftoffAssembler::PatchPrepareStackFrame(
   // check in the condition code.
   RecordComment("OOL: stack check for large frame");
   Label continuation;
-  if (frame_size < v8_flags.stack_size * 1024) {
+  if (max_stack_space < v8_flags.stack_size * 1024) {
     UseScratchRegisterScope temps(this);
     Register stack_limit = temps.Acquire();
     LoadStackLimit(stack_limit, StackLimitKind::kRealStackLimit);
-    add(stack_limit, stack_limit, Operand(frame_size));
+    add(stack_limit, stack_limit, Operand(max_stack_space));
     cmp(sp, stack_limit);
     b(cs /* higher or same */, &continuation);
   }
 
-  if (v8_flags.experimental_wasm_growable_stacks) {
+  if (v8_flags.wasm_growable_stacks) {
     LiftoffRegList regs_to_save;
     regs_to_save.set(WasmHandleStackOverflowDescriptor::GapRegister());
     regs_to_save.set(WasmHandleStackOverflowDescriptor::FrameBaseRegister());
     for (auto reg : kGpParamRegisters) regs_to_save.set(reg);
     for (auto reg : kFpParamRegisters) regs_to_save.set(reg);
     PushRegisters(regs_to_save);
-    mov(WasmHandleStackOverflowDescriptor::GapRegister(), Operand(frame_size));
+    mov(WasmHandleStackOverflowDescriptor::GapRegister(),
+        Operand(max_stack_space));
     add(WasmHandleStackOverflowDescriptor::FrameBaseRegister(), fp,
         Operand(stack_param_slots * kSystemPointerSize +
                 CommonFrameConstants::kFixedFrameSizeAboveFp));
@@ -679,7 +687,7 @@ void LiftoffAssembler::CheckTierUp(int declared_func_index, int budget_used,
 }
 
 Register LiftoffAssembler::LoadOldFramePointer() {
-  if (!v8_flags.experimental_wasm_growable_stacks) {
+  if (!v8_flags.wasm_growable_stacks) {
     return fp;
   }
   LiftoffRegister old_fp = GetUnusedRegister(RegClass::kGpReg, {});
@@ -755,6 +763,11 @@ void LiftoffAssembler::LoadConstant(LiftoffRegister reg, WasmValue value) {
     default:
       UNREACHABLE();
   }
+}
+
+void LiftoffAssembler::PrepareDebugTrap(MessageTemplate message) {
+  mov(ip, Operand(Smi::FromInt(static_cast<int>(message))));
+  push(ip);
 }
 
 void LiftoffAssembler::LoadInstanceDataFromFrame(Register dst) {
@@ -1707,7 +1720,7 @@ void LiftoffAssembler::AtomicCompareExchangeTaggedPointer(
   bind(&exit);
 }
 
-void LiftoffAssembler::AtomicFence() { dmb(ISH); }
+void LiftoffAssembler::AtomicFence(AtomicMemoryOrder /*order*/) { dmb(ISH); }
 
 void LiftoffAssembler::Pause() { isb(SY); }
 
@@ -5106,8 +5119,7 @@ void LiftoffAssembler::TailCallNativeWasmCode(Address addr) {
   Jump(addr, RelocInfo::WASM_CALL);
 }
 
-void LiftoffAssembler::CallIndirect(const ValueKindSig* sig,
-                                    compiler::CallDescriptor* call_descriptor,
+void LiftoffAssembler::CallIndirect(compiler::CallDescriptor* call_descriptor,
                                     Register target) {
   DCHECK(target != no_reg);
   CallWasmCodePointer(target);
@@ -5134,7 +5146,6 @@ void LiftoffAssembler::DeallocateStackSlot(uint32_t size) {
   add(sp, sp, Operand(size));
 }
 
-void LiftoffAssembler::MaybeOSR() {}
 
 void LiftoffStackSlots::Construct(int param_slots) {
   DCHECK_LT(0, slots_.size());

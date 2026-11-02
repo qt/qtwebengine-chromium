@@ -55,6 +55,8 @@ FORWARD_DECLARE_TEST(
 FORWARD_DECLARE_TEST(
       WebContentsImplBrowserTest,
       MouseUpInOOPIframeShouldCancelMainFrameAutoscrollSelection);
+FORWARD_DECLARE_TEST(FencedFrameMPArchBrowserTest,
+                     AutoscrollSelectionFromFencedFrameIgnored);
 FORWARD_DECLARE_TEST(SitePerProcessHitTestBrowserTest,
                            CacheCoordinateTransformUponMouseDown);
 FORWARD_DECLARE_TEST(SitePerProcessHitTestBrowserTest,
@@ -165,6 +167,8 @@ class COMPONENT_EXPORT(INPUT) RenderWidgetHostInputEventRouter final
   // creates a touch emulator.
   TouchEmulator* GetTouchEmulator(bool create_if_necessary);
 
+  base::WeakPtr<RenderWidgetHostInputEventRouter> GetWeakPtr();
+
   float last_device_scale_factor() { return last_device_scale_factor_; }
 
   // Returns the RenderWidgetHostViewInput inside the |root_view| at |point|
@@ -264,6 +268,8 @@ class COMPONENT_EXPORT(INPUT) RenderWidgetHostInputEventRouter final
   FRIEND_TEST_ALL_PREFIXES(
       content::WebContentsImplBrowserTest,
       MouseUpInOOPIframeShouldCancelMainFrameAutoscrollSelection);
+  FRIEND_TEST_ALL_PREFIXES(content::FencedFrameMPArchBrowserTest,
+                           AutoscrollSelectionFromFencedFrameIgnored);
 
   using FrameSinkIdOwnerMap =
       std::unordered_map<viz::FrameSinkId,

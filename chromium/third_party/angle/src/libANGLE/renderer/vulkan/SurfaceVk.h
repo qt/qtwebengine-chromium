@@ -25,7 +25,7 @@ class SurfaceVk : public SurfaceImpl, public angle::ObserverInterface, public vk
   public:
     angle::Result getAttachmentRenderTarget(const gl::Context *context,
                                             GLenum binding,
-                                            const gl::ImageIndex &imageIndex,
+                                            const gl::OwnImageIndex &ownImageIndex,
                                             GLsizei samples,
                                             FramebufferAttachmentRenderTarget **rtOut) override;
 
@@ -80,7 +80,7 @@ class OffscreenSurfaceVk : public SurfaceVk
 
     angle::Result initializeContents(const gl::Context *context,
                                      GLenum binding,
-                                     const gl::ImageIndex &imageIndex) override;
+                                     const gl::OwnImageIndex &ownImageIndex) override;
 
     vk::ImageHelper *getColorAttachmentImage();
 
@@ -296,7 +296,7 @@ class WindowSurfaceVk : public SurfaceVk
 
     angle::Result getAttachmentRenderTarget(const gl::Context *context,
                                             GLenum binding,
-                                            const gl::ImageIndex &imageIndex,
+                                            const gl::OwnImageIndex &ownImageIndex,
                                             GLsizei samples,
                                             FramebufferAttachmentRenderTarget **rtOut) override;
     egl::Error prepareSwap(const gl::Context *context) override;
@@ -332,7 +332,7 @@ class WindowSurfaceVk : public SurfaceVk
 
     angle::Result initializeContents(const gl::Context *context,
                                      GLenum binding,
-                                     const gl::ImageIndex &imageIndex) override;
+                                     const gl::OwnImageIndex &ownImageIndex) override;
 
     vk::Framebuffer &chooseFramebuffer();
 
@@ -484,10 +484,6 @@ class WindowSurfaceVk : public SurfaceVk
     void mergeImageResourceUses();
     // Finish all GPU operations on the surface
     angle::Result finish(vk::ErrorContext *context);
-
-    void updateOverlay(ContextVk *contextVk) const;
-    bool overlayHasEnabledWidget(ContextVk *contextVk) const;
-    angle::Result drawOverlay(ContextVk *contextVk, impl::SwapchainImage *image) const;
 
     bool isMultisampledSurface() const;
     bool hasAncillaryColor() const;

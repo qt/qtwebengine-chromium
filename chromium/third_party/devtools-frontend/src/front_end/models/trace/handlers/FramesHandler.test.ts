@@ -12,7 +12,6 @@ async function processTrace(events: readonly Trace.Types.Events.Event[]): Promis
   const handlersInOrder: Trace.Handlers.Types.HandlerName[] = [
     'Meta',
     'Samples',
-    'AuctionWorklets',
     'Renderer',
     'LayerTree',
     'Frames',

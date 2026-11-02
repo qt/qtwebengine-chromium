@@ -10,22 +10,31 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_keyboard_event_init.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_wheel_event_init.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/events/keyboard_event.h"
+#include "third_party/blink/renderer/core/events/wheel_event.h"
 #include "third_party/blink/renderer/core/fileapi/file_list.h"
+#include "third_party/blink/renderer/core/frame/event_handler_registry.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
+#include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/frame/visual_viewport.h"
 #include "third_party/blink/renderer/core/html/forms/date_time_chooser.h"
 #include "third_party/blink/renderer/core/html/forms/file_input_type.h"
 #include "third_party/blink/renderer/core/html/forms/html_form_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_option_element.h"
+#include "third_party/blink/renderer/core/html/forms/spin_button_element.h"
 #include "third_party/blink/renderer/core/html/html_body_element.h"
 #include "third_party/blink/renderer/core/html/html_html_element.h"
+#include "third_party/blink/renderer/core/html/shadow/shadow_element_names.h"
+#include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/input_type_names.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/loader/empty_clients.h"
+#include "third_party/blink/renderer/core/script/classic_script.h"
+#include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/core/testing/null_execution_context.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
@@ -613,6 +622,384 @@ TEST_F(HTMLInputElementTest,
   input.setType(input_type_names::kText);
   GetDocument().UpdateStyleAndLayoutTree();
   EXPECT_TRUE(input.GetTrackedElementSubRect(tracking_feature));
+}
+
+TEST_F(HTMLInputElementTest, SpinButtonWheelBlocks) {
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(
+      "<input id=test type=number min=0 max=2 value=1>");
+  GetDocument().UpdateStyleAndLayoutTree();
+
+  auto& input = TestElement();
+  input.Focus();
+  auto* shadow_root = input.UserAgentShadowRoot();
+  ASSERT_TRUE(shadow_root);
+  auto* spin_button = DynamicTo<SpinButtonElement>(
+      shadow_root->getElementById(shadow_element_names::kIdSpinButton));
+  ASSERT_TRUE(spin_button);
+
+  EventHandlerRegistry& registry =
+      GetDocument().GetFrame()->GetEventHandlerRegistry();
+  const auto* targets =
+      registry.EventHandlerTargets(EventHandlerRegistry::kWheelEventBlocking);
+  EXPECT_TRUE(targets->Contains(&input));
+
+  // Wheel event to step up (value goes from 1 to 2).
+  WheelEventInit* init = WheelEventInit::Create();
+  init->setWheelDeltaY(120);
+  WheelEvent* event = WheelEvent::Create(event_type_names::kWheel, init);
+  spin_button->ForwardEvent(*event);
+  EXPECT_TRUE(event->DefaultHandled());
+  EXPECT_EQ("2", input.Value());
+
+  // Wheel event to step up again (value cannot change, already at max 2).
+  WheelEvent* event2 = WheelEvent::Create(event_type_names::kWheel, init);
+  spin_button->ForwardEvent(*event2);
+  EXPECT_TRUE(event2->DefaultHandled());
+  EXPECT_EQ("2", input.Value());
+
+  // Changing input type to 'text' should unregister it from
+  // kWheelEventBlocking.
+  input.setType(input_type_names::kText);
+  GetDocument().UpdateStyleAndLayoutTree();
+  EXPECT_FALSE(targets->Contains(&input));
+
+  // Changing input type back to 'number' should re-register it (since it is
+  // still focused).
+  input.setType(input_type_names::kNumber);
+  GetDocument().UpdateStyleAndLayoutTree();
+  EXPECT_TRUE(targets->Contains(&input));
+
+  // Blurring the input should unregister it.
+  input.blur();
+  EXPECT_FALSE(targets->Contains(&input));
+
+  // Focusing the input should re-register it.
+  input.Focus();
+  EXPECT_TRUE(targets->Contains(&input));
+
+  // Making the input read-only should unregister it.
+  input.SetBooleanAttribute(html_names::kReadonlyAttr, true);
+  EXPECT_FALSE(targets->Contains(&input));
+
+  // Making the input read-write should re-register it.
+  input.SetBooleanAttribute(html_names::kReadonlyAttr, false);
+  EXPECT_TRUE(targets->Contains(&input));
+
+  // Removing the input from the DOM (triggering DetachLayoutTree) should
+  // unregister it.
+  input.remove();
+  EXPECT_FALSE(targets->Contains(&input));
+}
+
+TEST_F(HTMLInputElementTest, SuggestedValueFontFamilyIsGeneric) {
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes("<input id=test>");
+  HTMLInputElement& input = TestElement();
+  UpdateAllLifecyclePhasesForTest();
+
+  input.SetSuggestedValue("preview");
+  UpdateAllLifecyclePhasesForTest();
+
+  HTMLElement* placeholder = input.PlaceholderElement();
+  ASSERT_TRUE(placeholder);
+  const ComputedStyle* style = placeholder->GetComputedStyle();
+  ASSERT_TRUE(style);
+  EXPECT_TRUE(style->GetFontDescription().Family().FamilyIsGeneric());
+}
+
+TEST_F(HTMLInputElementTest, EmailVerificationIndicator) {
+  // Case 1: EmailVerificationStatusIndicator is disabled.
+  {
+    ScopedEmailVerificationProtocolForTest scoped_protocol(true);
+    ScopedEmailVerificationStatusIndicatorForTest scoped_indicator(false);
+    GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(
+        "<input id=test type=email>");
+    GetDocument().UpdateStyleAndLayoutTree();
+    HTMLInputElement& input = TestElement();
+
+    // Shadow tree shouldn't contain the indicator.
+    Element* indicator =
+        input.UserAgentShadowRoot()
+            ? input.UserAgentShadowRoot()->getElementById(
+                  shadow_element_names::kIdEmailVerificationIndicator)
+            : nullptr;
+    EXPECT_FALSE(indicator);
+  }
+
+  // Case 2: Both features are enabled.
+  {
+    ScopedEmailVerificationProtocolForTest scoped_protocol(true);
+    ScopedEmailVerificationStatusIndicatorForTest scoped_indicator(true);
+    GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(
+        "<input id=test type=email>");
+    GetDocument().UpdateStyleAndLayoutTree();
+    HTMLInputElement& input = TestElement();
+
+    // Shadow tree should contain the indicator.
+    Element* indicator =
+        input.UserAgentShadowRoot()
+            ? input.UserAgentShadowRoot()->getElementById(
+                  shadow_element_names::kIdEmailVerificationIndicator)
+            : nullptr;
+    ASSERT_TRUE(indicator);
+
+    // Default state should be none (represented by null or "none").
+    String initial_state = indicator->getAttribute(AtomicString("data-state"));
+    EXPECT_TRUE(initial_state.IsNull() || initial_state == "none");
+
+    // Setting state to verified.
+    input.SetEmailVerificationState(EmailVerificationState::kVerified);
+    EXPECT_EQ(input.GetEmailVerificationState(),
+              EmailVerificationState::kVerified);
+    EXPECT_EQ(indicator->getAttribute(AtomicString("data-state")), "verified");
+
+    // Setting state to loading.
+    input.SetEmailVerificationState(EmailVerificationState::kLoading);
+    EXPECT_EQ(input.GetEmailVerificationState(),
+              EmailVerificationState::kLoading);
+    EXPECT_EQ(indicator->getAttribute(AtomicString("data-state")), "loading");
+
+    // Setting state to none.
+    input.SetEmailVerificationState(EmailVerificationState::kNone);
+    EXPECT_EQ(input.GetEmailVerificationState(), EmailVerificationState::kNone);
+    EXPECT_EQ(indicator->getAttribute(AtomicString("data-state")), "none");
+
+    // Setting state to logged-out-or-unsupported.
+    input.SetEmailVerificationState(
+        EmailVerificationState::kLoggedOutOrUnsupported);
+    EXPECT_EQ(input.GetEmailVerificationState(),
+              EmailVerificationState::kLoggedOutOrUnsupported);
+    EXPECT_EQ(indicator->getAttribute(AtomicString("data-state")),
+              "logged-out-or-unsupported");
+
+    // Setting state to failed.
+    input.SetEmailVerificationState(EmailVerificationState::kFailed);
+    EXPECT_EQ(input.GetEmailVerificationState(),
+              EmailVerificationState::kFailed);
+    EXPECT_EQ(indicator->getAttribute(AtomicString("data-state")), "failed");
+  }
+}
+
+TEST_F(HTMLInputElementTest, EmailVerificationIndicatorSupported) {
+  ScopedEmailVerificationProtocolForTest scoped_protocol(true);
+  ScopedEmailVerificationStatusIndicatorForTest scoped_indicator(true);
+
+  // Case 1a: Form has both fields from the start.
+  {
+    GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(
+        "<form>"
+        "  <input id=test type=email>"
+        "  <input type=hidden autocomplete=email-verification-token nonce=xyz>"
+        "</form>");
+    GetDocument().UpdateStyleAndLayoutTree();
+    HTMLInputElement& input = TestElement();
+    Element* indicator =
+        input.UserAgentShadowRoot()
+            ? input.UserAgentShadowRoot()->getElementById(
+                  shadow_element_names::kIdEmailVerificationIndicator)
+            : nullptr;
+    ASSERT_TRUE(indicator);
+    EXPECT_EQ(indicator->getAttribute(AtomicString("data-state")), "supported");
+  }
+
+  // Case 1b: Token field is added dynamically after layout.
+  {
+    GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(
+        "<form id=form>"
+        "  <input id=test type=email>"
+        "</form>");
+    GetDocument().UpdateStyleAndLayoutTree();
+    HTMLInputElement& input = TestElement();
+    Element* indicator =
+        input.UserAgentShadowRoot()
+            ? input.UserAgentShadowRoot()->getElementById(
+                  shadow_element_names::kIdEmailVerificationIndicator)
+            : nullptr;
+    ASSERT_TRUE(indicator);
+    // Not supported initially.
+    EXPECT_EQ(indicator->getAttribute(AtomicString("data-state")), "none");
+
+    // Add the token field dynamically.
+    auto* form =
+        To<HTMLFormElement>(GetDocument().getElementById(AtomicString("form")));
+    auto* token_input = GetDocument().CreateRawElement(html_names::kInputTag);
+    token_input->setAttribute(html_names::kAutocompleteAttr,
+                              AtomicString("email-verification-token"));
+    token_input->setAttribute(html_names::kNonceAttr, AtomicString("xyz"));
+    form->AppendChild(token_input);
+    GetDocument().UpdateStyleAndLayoutTree();
+
+    // Now it should be supported.
+    EXPECT_EQ(indicator->getAttribute(AtomicString("data-state")), "supported");
+  }
+
+  // Case 1c: Dynamic attribute changes.
+  {
+    GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(
+        "<form>"
+        "  <input id=test type=email>"
+        "  <input id=token type=hidden autocomplete=email-verification-token>"
+        "</form>");
+    GetDocument().UpdateStyleAndLayoutTree();
+    HTMLInputElement& input = TestElement();
+    Element* indicator =
+        input.UserAgentShadowRoot()
+            ? input.UserAgentShadowRoot()->getElementById(
+                  shadow_element_names::kIdEmailVerificationIndicator)
+            : nullptr;
+    ASSERT_TRUE(indicator);
+    // Not supported because nonce is missing.
+    EXPECT_EQ(indicator->getAttribute(AtomicString("data-state")), "none");
+
+    // Set nonce attribute dynamically.
+    auto* token = GetDocument().getElementById(AtomicString("token"));
+    token->setAttribute(html_names::kNonceAttr, AtomicString("xyz"));
+    GetDocument().UpdateStyleAndLayoutTree();
+
+    // Now it should be supported.
+    EXPECT_EQ(indicator->getAttribute(AtomicString("data-state")), "supported");
+
+    // Remove nonce attribute dynamically.
+    token->removeAttribute(html_names::kNonceAttr);
+    GetDocument().UpdateStyleAndLayoutTree();
+
+    // Should no longer be supported.
+    EXPECT_EQ(indicator->getAttribute(AtomicString("data-state")), "none");
+  }
+
+  // Case 1d: Multiple autocomplete tokens.
+  {
+    GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(
+        "<form>"
+        "  <input id=test type=email>"
+        "  <input id=token type=hidden autocomplete=\"webauthn "
+        "email-verification-token\" nonce=xyz>"
+        "</form>");
+    GetDocument().UpdateStyleAndLayoutTree();
+    HTMLInputElement& input = TestElement();
+    Element* indicator =
+        input.UserAgentShadowRoot()
+            ? input.UserAgentShadowRoot()->getElementById(
+                  shadow_element_names::kIdEmailVerificationIndicator)
+            : nullptr;
+    ASSERT_TRUE(indicator);
+    EXPECT_EQ(indicator->getAttribute(AtomicString("data-state")), "supported");
+
+    // Dynamically update the token field's autocomplete attribute to make EVP
+    // unsupported.
+    auto* token = GetDocument().getElementById(AtomicString("token"));
+    token->setAttribute(html_names::kAutocompleteAttr,
+                        AtomicString("webauthn"));
+    GetDocument().UpdateStyleAndLayoutTree();
+    EXPECT_EQ(indicator->getAttribute(AtomicString("data-state")), "none");
+  }
+
+  // Case 1e: Form has token field first, then email field.
+  {
+    GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(
+        "<form>"
+        "  <input type=hidden autocomplete=email-verification-token nonce=xyz>"
+        "  <input id=test type=email>"
+        "</form>");
+    GetDocument().UpdateStyleAndLayoutTree();
+    HTMLInputElement& input = TestElement();
+    Element* indicator =
+        input.UserAgentShadowRoot()
+            ? input.UserAgentShadowRoot()->getElementById(
+                  shadow_element_names::kIdEmailVerificationIndicator)
+            : nullptr;
+    ASSERT_TRUE(indicator);
+    EXPECT_EQ(indicator->getAttribute(AtomicString("data-state")), "supported");
+  }
+
+  // Case 1f: Nonce set via IDL attribute after association.
+  {
+    GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(
+        "<form>"
+        "  <input id=test type=email>"
+        "  <input id=token type=hidden autocomplete=email-verification-token>"
+        "</form>");
+    GetDocument().UpdateStyleAndLayoutTree();
+    HTMLInputElement& input = TestElement();
+    Element* indicator =
+        input.UserAgentShadowRoot()
+            ? input.UserAgentShadowRoot()->getElementById(
+                  shadow_element_names::kIdEmailVerificationIndicator)
+            : nullptr;
+    ASSERT_TRUE(indicator);
+    EXPECT_EQ(indicator->getAttribute(AtomicString("data-state")), "none");
+
+    // Set nonce via IDL attribute.
+    auto* token = To<HTMLInputElement>(
+        GetDocument().getElementById(AtomicString("token")));
+    token->setNonce(AtomicString("xyz"));
+    GetDocument().UpdateStyleAndLayoutTree();
+
+    // Now it should be supported.
+    EXPECT_EQ(indicator->getAttribute(AtomicString("data-state")), "supported");
+  }
+
+  // Case 1g: Exact user page HTML.
+  {
+    GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(
+        "<form id=\"signup-form\" class=\"signup-form\" method=\"get\" "
+        "action=\"/2024/10/25/verified-email-autocomplete.html\">"
+        "  <label for=\"email-input\">Email address</label>"
+        "  <div class=\"email-row\">"
+        "    <input id=\"test\" type=\"email\" name=\"email\" "
+        "autocomplete=\"email\" placeholder=\"you@example.com\" required>"
+        "    <button type=\"submit\">Sign in</button>"
+        "  </div>"
+        "  <input type=\"hidden\" name=\"evt\" nonce=\"--a-fake-nonce--\" "
+        "autocomplete=\"email-verification-token\">"
+        "</form>");
+    GetDocument().UpdateStyleAndLayoutTree();
+    HTMLInputElement& input = TestElement();
+    Element* indicator =
+        input.UserAgentShadowRoot()
+            ? input.UserAgentShadowRoot()->getElementById(
+                  shadow_element_names::kIdEmailVerificationIndicator)
+            : nullptr;
+    ASSERT_TRUE(indicator);
+    EXPECT_EQ(indicator->getAttribute(AtomicString("data-state")), "supported");
+  }
+
+  // Case 1h: Script forces layout during parsing, cache invalidation check.
+  {
+    GetDocument().GetSettings()->SetScriptEnabled(true);
+    ClassicScript::CreateUnspecifiedScript(R"JS(
+        class CacheForcer extends HTMLElement {
+          connectedCallback() {
+            // Force layout/style update which queries ListedElements()
+            // on the form, caching the elements *before* the token field is parsed.
+            document.getElementById("test").clientWidth;
+          }
+        }
+        customElements.define("cache-forcer", CacheForcer);
+    )JS")
+        ->RunScript(GetDocument().domWindow());
+
+    // Parse the form using document.write() so the elements are parsed directly
+    // into the connected document, which sets form_was_set_by_parser_ = true.
+    GetDocument().open();
+    GetDocument().write(R"HTML(
+        <form>
+          <input id=test type=email>
+          <cache-forcer></cache-forcer>
+          <input id=token type=hidden autocomplete=email-verification-token nonce=xyz>
+        </form>
+    )HTML");
+    GetDocument().close();
+
+    GetDocument().UpdateStyleAndLayoutTree();
+    HTMLInputElement& input = TestElement();
+    Element* indicator =
+        input.UserAgentShadowRoot()
+            ? input.UserAgentShadowRoot()->getElementById(
+                  shadow_element_names::kIdEmailVerificationIndicator)
+            : nullptr;
+    ASSERT_TRUE(indicator);
+    EXPECT_EQ(indicator->getAttribute(AtomicString("data-state")), "supported");
+  }
 }
 
 }  // namespace blink

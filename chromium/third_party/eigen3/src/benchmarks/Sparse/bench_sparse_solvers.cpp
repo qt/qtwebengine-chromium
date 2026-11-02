@@ -1,5 +1,6 @@
-// Benchmarks for sparse decomposition solvers.
-// Tests SimplicialLLT, SimplicialLDLT, SparseQR, SparseLU, CG, BiCGSTAB.
+// Benchmarks for sparse solvers.
+// Tests the direct solvers SimplicialLLT, SimplicialLDLT, SparseQR, SparseLU and the iterative
+// solvers CG, BiCGSTAB, GMRES, DGMRES, MINRES, IDR(s), BiCGSTAB(L).
 // SPDX-FileCopyrightText: The Eigen Authors
 // SPDX-License-Identifier: MPL-2.0
 
@@ -160,9 +161,114 @@ static void BM_BiCGSTAB(benchmark::State& state) {
   state.counters["iterations"] = solver.iterations();
 }
 
+// --- GMRES (general) ---
+static void BM_GMRES(benchmark::State& state) {
+  int n = state.range(0);
+  int bw = state.range(1);
+  SpMat A = generateGeneral(n, bw);
+  Vec b = Vec::Random(n);
+
+  GMRES<SpMat> solver;
+  solver.setMaxIterations(1000);
+  solver.setTolerance(1e-10);
+  solver.compute(A);
+
+  for (auto _ : state) {
+    Vec x = solver.solve(b);
+    benchmark::DoNotOptimize(x.data());
+    benchmark::ClobberMemory();
+  }
+  state.counters["iterations"] = solver.iterations();
+}
+
+// --- DGMRES (general) ---
+static void BM_DGMRES(benchmark::State& state) {
+  int n = state.range(0);
+  int bw = state.range(1);
+  SpMat A = generateGeneral(n, bw);
+  Vec b = Vec::Random(n);
+
+  DGMRES<SpMat> solver;
+  solver.setMaxIterations(1000);
+  solver.setTolerance(1e-10);
+  solver.compute(A);
+
+  for (auto _ : state) {
+    Vec x = solver.solve(b);
+    benchmark::DoNotOptimize(x.data());
+    benchmark::ClobberMemory();
+  }
+  state.counters["iterations"] = solver.iterations();
+}
+
+// --- MINRES (SPD) ---
+static void BM_MINRES(benchmark::State& state) {
+  int n = state.range(0);
+  int bw = state.range(1);
+  SpMat A = generateSPD(n, bw);
+  Vec b = Vec::Random(n);
+
+  MINRES<SpMat> solver;
+  solver.setMaxIterations(1000);
+  solver.setTolerance(1e-10);
+  solver.compute(A);
+
+  for (auto _ : state) {
+    Vec x = solver.solve(b);
+    benchmark::DoNotOptimize(x.data());
+    benchmark::ClobberMemory();
+  }
+  state.counters["iterations"] = solver.iterations();
+}
+
+// --- IDR(s) (general) ---
+static void BM_IDRS(benchmark::State& state) {
+  int n = state.range(0);
+  int bw = state.range(1);
+  SpMat A = generateGeneral(n, bw);
+  Vec b = Vec::Random(n);
+
+  IDRS<SpMat> solver;
+  solver.setMaxIterations(1000);
+  solver.setTolerance(1e-10);
+  solver.compute(A);
+
+  for (auto _ : state) {
+    Vec x = solver.solve(b);
+    benchmark::DoNotOptimize(x.data());
+    benchmark::ClobberMemory();
+  }
+  state.counters["iterations"] = solver.iterations();
+}
+
+// --- BiCGSTAB(L) (general) ---
+static void BM_BiCGSTABL(benchmark::State& state) {
+  int n = state.range(0);
+  int bw = state.range(1);
+  SpMat A = generateGeneral(n, bw);
+  Vec b = Vec::Random(n);
+
+  BiCGSTABL<SpMat> solver;
+  solver.setMaxIterations(1000);
+  solver.setTolerance(1e-10);
+  solver.compute(A);
+
+  for (auto _ : state) {
+    Vec x = solver.solve(b);
+    benchmark::DoNotOptimize(x.data());
+    benchmark::ClobberMemory();
+  }
+  state.counters["iterations"] = solver.iterations();
+}
+
 BENCHMARK(BM_SimplicialLLT)->ArgsProduct({{1000, 5000, 10000, 50000}, {5, 20}});
 BENCHMARK(BM_SimplicialLDLT)->ArgsProduct({{1000, 5000, 10000, 50000}, {5, 20}});
 BENCHMARK(BM_SparseLU)->ArgsProduct({{1000, 5000, 10000, 50000}, {5, 20}});
 BENCHMARK(BM_SparseQR)->ArgsProduct({{1000, 5000, 10000, 50000}, {5, 20}});
 BENCHMARK(BM_CG)->ArgsProduct({{1000, 10000, 50000}, {5, 20}});
 BENCHMARK(BM_BiCGSTAB)->ArgsProduct({{1000, 10000, 50000}, {5, 20}});
+BENCHMARK(BM_GMRES)->ArgsProduct({{1000, 10000, 50000}, {5, 20}});
+BENCHMARK(BM_DGMRES)->ArgsProduct({{1000, 10000, 50000}, {5, 20}});
+BENCHMARK(BM_MINRES)->ArgsProduct({{1000, 10000, 50000}, {5, 20}});
+BENCHMARK(BM_IDRS)->ArgsProduct({{1000, 10000, 50000}, {5, 20}});
+BENCHMARK(BM_BiCGSTABL)->ArgsProduct({{1000, 10000, 50000}, {5, 20}});

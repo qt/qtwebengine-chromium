@@ -17,7 +17,7 @@ import {
   type ProfileHeader,
   ProfileType,
 } from './ProfileHeader.js';
-import {WritableProfileHeader} from './ProfileView.js';
+import {WritableProfileHeader} from './WritableProfileHeader.js';
 
 const UIStrings = {
   /**
@@ -90,7 +90,7 @@ export class DetachedElementsProfileView extends UI.View.SimpleView implements D
   }
 
   override async toolbarItems(): Promise<UI.Toolbar.ToolbarItem[]> {
-    return [...await super.toolbarItems(), this.selectedSizeText];
+    return [this.selectedSizeText];
   }
 }
 

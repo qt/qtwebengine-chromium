@@ -68,7 +68,7 @@ template <typename Derived>
 class SparseSolverBase {
  public:
   /** Default constructor */
-  SparseSolverBase() : m_isInitialized(false) {}
+  SparseSolverBase() = default;
 
   SparseSolverBase(const SparseSolverBase&) = delete;
   SparseSolverBase& operator=(const SparseSolverBase&) = delete;
@@ -111,7 +111,7 @@ class SparseSolverBase {
 #endif  // EIGEN_PARSED_BY_DOXYGEN
 
  protected:
-  mutable bool m_isInitialized;
+  mutable bool m_isInitialized = false;
 };
 
 }  // end namespace Eigen

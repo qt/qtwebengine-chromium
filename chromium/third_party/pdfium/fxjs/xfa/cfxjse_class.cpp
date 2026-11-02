@@ -32,10 +32,6 @@ using pdfium::fxjse::kFuncTag;
 
 namespace {
 
-// TODO(pdfium): Define and use type-specific type tags for aligned pointers
-// stored in V8 objects. The type tags should not overlap with the ones used by
-// Blink, as defined in gin/public/gin_embedders.h.
-constexpr v8::EmbedderDataTypeTag kDefaultPDFiumTag = 0;
 
 FXJSE_FUNCTION_DESCRIPTOR* AsFunctionDescriptor(void* ptr) {
   auto* result = static_cast<FXJSE_FUNCTION_DESCRIPTOR*>(ptr);
@@ -73,7 +69,8 @@ void V8ConstructorCallback_Wrapper(
   }
 
   DCHECK_EQ(info.This()->InternalFieldCount(), 2);
-  info.This()->SetAlignedPointerInInternalField(0, nullptr, kDefaultPDFiumTag);
+  info.This()->SetAlignedPointerInInternalField(0, nullptr,
+                                                fxv8::kPDFiumSentinelTag);
   info.This()->SetInternalField(1, v8::Undefined(info.GetIsolate()));
 }
 
@@ -108,7 +105,8 @@ void DynPropGetterAdapter_MethodCallback(
   }
 
   auto* pClassDescriptor = static_cast<const FXJSE_CLASS_DESCRIPTOR*>(
-      hCallBackInfo->GetAlignedPointerFromInternalField(0, kDefaultPDFiumTag));
+      hCallBackInfo->GetAlignedPointerFromInternalField(
+          0, fxv8::kPDFiumSentinelTag));
   if (pClassDescriptor != &kGlobalClassDescriptor &&
       pClassDescriptor != &kNormalClassDescriptor &&
       pClassDescriptor != &kVariablesClassDescriptor &&
@@ -169,7 +167,7 @@ v8::Local<v8::Value> DynPropGetterAdapter(
             .ToLocalChecked();
     hCallBackInfo->SetAlignedPointerInInternalField(
         0, const_cast<FXJSE_CLASS_DESCRIPTOR*>(pClassDescriptor),
-        kDefaultPDFiumTag);
+        fxv8::kPDFiumSentinelTag);
     hCallBackInfo->SetInternalField(
         1, fxv8::NewStringHelper(pIsolate, szPropName));
     return hscope.Escape(v8::Function::New(pIsolate->GetCurrentContext(),
@@ -224,7 +222,7 @@ v8::Intercepted NamedPropertyQueryCallback(
   // SAFETY: required from V8.
   auto szFxPropName =
       UNSAFE_BUFFERS(ByteStringView(*szPropName, szPropName.length()));
-  if (DynPropQueryAdapter(info.GetIsolate(), pClass, info.HolderV2(),
+  if (DynPropQueryAdapter(info.GetIsolate(), pClass, info.Holder(),
                           szFxPropName)) {
     info.GetReturnValue().Set(v8::DontDelete);
     return v8::Intercepted::kYes;
@@ -248,7 +246,7 @@ v8::Intercepted NamedPropertyGetterCallback(
   auto szFxPropName =
       UNSAFE_BUFFERS(ByteStringView(*szPropName, szPropName.length()));
   v8::Local<v8::Value> new_value = DynPropGetterAdapter(
-      info.GetIsolate(), pClass, info.HolderV2(), szFxPropName);
+      info.GetIsolate(), pClass, info.Holder(), szFxPropName);
   info.GetReturnValue().Set(new_value);
   return v8::Intercepted::kYes;
 }
@@ -268,7 +266,7 @@ v8::Intercepted NamedPropertySetterCallback(
   // SAFETY: required from V8.
   auto szFxPropName =
       UNSAFE_BUFFERS(ByteStringView(*szPropName, szPropName.length()));
-  DynPropSetterAdapter(info.GetIsolate(), pClass, info.HolderV2(), szFxPropName,
+  DynPropSetterAdapter(info.GetIsolate(), pClass, info.Holder(), szFxPropName,
                        value);
   return v8::Intercepted::kYes;
 }

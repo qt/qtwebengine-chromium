@@ -423,16 +423,6 @@ export class IndexedDBModel extends SDK.SDKModel.SDKModel<EventTypes> implements
   cacheStorageContentUpdated(_event: Protocol.Storage.CacheStorageContentUpdatedEvent): void {
   }
 
-  interestGroupAccessed(_event: Protocol.Storage.InterestGroupAccessedEvent): void {
-  }
-
-  interestGroupAuctionEventOccurred(_event: Protocol.Storage.InterestGroupAuctionEventOccurredEvent): void {
-  }
-
-  interestGroupAuctionNetworkRequestCreated(_event: Protocol.Storage.InterestGroupAuctionNetworkRequestCreatedEvent):
-      void {
-  }
-
   sharedStorageAccessed(_event: Protocol.Storage.SharedStorageAccessedEvent): void {
   }
 

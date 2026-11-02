@@ -10,7 +10,7 @@
 #include <array>
 
 #include "core/fxcrt/retain_ptr.h"
-#include "core/fxge/cfx_fontmapper.h"
+#include "core/fxge/cfx_standardfont.h"
 
 class CPDF_Font;
 
@@ -19,8 +19,8 @@ class CPDF_StockFontArray {
   CPDF_StockFontArray();
   ~CPDF_StockFontArray();
 
-  RetainPtr<CPDF_Font> GetFont(CFX_FontMapper::StandardFont index) const;
-  void SetFont(CFX_FontMapper::StandardFont index, RetainPtr<CPDF_Font> font);
+  RetainPtr<CPDF_Font> GetFont(CFX_StandardFont::Index index) const;
+  void SetFont(CFX_StandardFont::Index index, RetainPtr<CPDF_Font> font);
 
  private:
   std::array<RetainPtr<CPDF_Font>, 14> stock_fonts_;

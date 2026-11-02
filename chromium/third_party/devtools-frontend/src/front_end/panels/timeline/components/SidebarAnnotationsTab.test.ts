@@ -190,7 +190,7 @@ describeWithEnvironment('SidebarAnnotationsTab', () => {
 
     component.setData({
       annotations: [entryLabelAnnotation, entryLabelAnnotation2, labelledTimeRangeAnnotation],
-      annotationEntryToColorMap: new Map()
+      annotationEntryToColorMap: new Map(),
     });
     await RenderCoordinator.done();
     await component.updateComplete;

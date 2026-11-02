@@ -301,6 +301,8 @@ PageLoadTracker::PageLoadTracker(
       is_origin_visit_(
           CalculateIsOriginVisit(*is_first_navigation_in_web_contents,
                                  navigation_handle->GetPageTransition())),
+      navigation_scenario_(
+          embedder_interface->GetNavigationScenario(navigation_handle)),
       page_type_(CalculatePageType(navigation_handle)),
       parent_tracker_(std::move(parent_tracker)) {
   DCHECK(!navigation_handle->HasCommitted());
@@ -355,21 +357,6 @@ PageLoadTracker::PageLoadTracker(
               },
               navigation_handle, currently_committed_url),
           /*permit_forwarding=*/true);
-      break;
-    case internal::PageLoadTrackerPageType::kPreviewPrimaryPage:
-      CHECK_NE(ukm::kInvalidSourceId, source_id_);
-      prerendering_state_ = PrerenderingState::kInPreview;
-      InvokeAndPruneObservers(
-          "PageLoadMetricsObserver::OnPreviewStart",
-          base::BindRepeating(
-              [](content::NavigationHandle* navigation_handle,
-                 const GURL& currently_committed_url,
-                 PageLoadMetricsObserverInterface* observer) {
-                return observer->OnPreviewStart(navigation_handle,
-                                                currently_committed_url);
-              },
-              navigation_handle, currently_committed_url),
-          /*permit_forwarding=*/false);
       break;
   }
 }
@@ -433,8 +420,7 @@ void PageLoadTracker::PageHidden() {
     //
     // Here we check that the first background follows some event in foreground.
     if (!first_background_time_.has_value()) {
-      if (prerendering_state_ == PrerenderingState::kNoPrerendering ||
-          prerendering_state_ == PrerenderingState::kInPreview) {
+      if (prerendering_state_ == PrerenderingState::kNoPrerendering) {
         DCHECK_EQ(!started_in_foreground_, first_foreground_time_.has_value());
       } else {
         DCHECK(!first_foreground_time_.has_value());
@@ -474,8 +460,7 @@ void PageLoadTracker::PageShown() {
     // See comment about visibility state transitions in PageHidden.
     //
     // Here we check that the first foreground follows some event in background.
-    if (prerendering_state_ == PrerenderingState::kNoPrerendering ||
-        prerendering_state_ == PrerenderingState::kInPreview) {
+    if (prerendering_state_ == PrerenderingState::kNoPrerendering) {
       DCHECK_EQ(started_in_foreground_, first_background_time_.has_value());
     } else {
       // When a prerendered page is activated in a background tab (e.g.
@@ -624,19 +609,6 @@ void PageLoadTracker::DidActivatePrerenderedPage(
   base::UmaHistogramEnumeration(
       internal::kPageLoadPrerender2Event,
       internal::PageLoadPrerenderEvent::kPrerenderActivationNavigation);
-}
-
-void PageLoadTracker::DidActivatePreviewedPage(
-    base::TimeTicks activation_time) {
-  CHECK_EQ(prerendering_state_, PrerenderingState::kInPreview);
-  prerendering_state_ = PrerenderingState::kNoPrerendering;
-
-  // We don't keep `activation_time` as `activation_start_` because we measure
-  // preview mode performance as navigation originated rather than activation.
-
-  for (const auto& observer : observers_) {
-    observer->DidActivatePreviewedPage(activation_time);
-  }
 }
 
 void PageLoadTracker::DidCommitSameDocumentNavigation(
@@ -1387,6 +1359,10 @@ bool PageLoadTracker::IsFirstNavigationInWebContents() const {
   return *is_first_navigation_in_web_contents_;
 }
 
+NavigationScenario PageLoadTracker::GetNavigationScenario() const {
+  return navigation_scenario_;
+}
+
 bool PageLoadTracker::IsOriginVisit() const {
   return is_origin_visit_;
 }
@@ -1463,15 +1439,6 @@ void PageLoadTracker::OnSharedStorageWorkletHostCreated() {
 void PageLoadTracker::OnSharedStorageSelectURLCalled() {
   for (const auto& observer : observers_) {
     observer->OnSharedStorageSelectURLCalled();
-  }
-}
-
-void PageLoadTracker::OnAdAuctionComplete(bool is_server_auction,
-                                          bool is_on_device_auction,
-                                          content::AuctionResult result) {
-  for (const auto& observer : observers_) {
-    observer->OnAdAuctionComplete(is_server_auction, is_on_device_auction,
-                                  result);
   }
 }
 

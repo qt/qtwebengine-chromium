@@ -11,6 +11,7 @@
 #include <optional>
 #include <utility>
 
+#include "constants/catalog.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_linearized_header.h"
@@ -351,7 +352,7 @@ CPDF_Parser::Error CPDF_Document::HandleLoadResult(CPDF_Parser::Error error) {
 
 RetainPtr<const CPDF_Dictionary> CPDF_Document::GetPagesDict() const {
   const CPDF_Dictionary* pRoot = GetRoot();
-  return pRoot ? pRoot->GetDictFor("Pages") : nullptr;
+  return pRoot ? pRoot->GetDictFor(pdfium::catalog::kPages) : nullptr;
 }
 
 RetainPtr<CPDF_Dictionary> CPDF_Document::GetMutablePagesDict() {
@@ -499,7 +500,8 @@ void CPDF_Document::CreateNewDoc() {
   pPages->SetNewFor<CPDF_Name>("Type", "Pages");
   pPages->SetNewFor<CPDF_Number>("Count", 0);
   pPages->SetNewFor<CPDF_Array>("Kids");
-  root_dict_->SetNewFor<CPDF_Reference>("Pages", this, pPages->GetObjNum());
+  root_dict_->SetNewFor<CPDF_Reference>(pdfium::catalog::kPages, this,
+                                        pPages->GetObjNum());
   info_dict_ = NewIndirect<CPDF_Dictionary>();
 }
 
@@ -575,7 +577,8 @@ bool CPDF_Document::InsertNewPage(int iPage,
     return false;
   }
 
-  RetainPtr<CPDF_Dictionary> pPages = pRoot->GetMutableDictFor("Pages");
+  RetainPtr<CPDF_Dictionary> pPages =
+      pRoot->GetMutableDictFor(pdfium::catalog::kPages);
   if (!pPages) {
     return false;
   }

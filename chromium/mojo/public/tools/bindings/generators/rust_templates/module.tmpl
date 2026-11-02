@@ -8,6 +8,7 @@
 
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
 {#- TODO(crbug.com/500058268): See if we can only add imports that are actually needed #}
 #![allow(unused_imports)]
 
@@ -22,6 +23,7 @@ chromium::import! {
 
 use std::collections::HashMap;
 use ordered_float::OrderedFloat;
+use bindings::interface::{Registrar, ResponseSender};
 
 use mojom_value_parser::*;
 

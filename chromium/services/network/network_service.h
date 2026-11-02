@@ -22,13 +22,16 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/threading/platform_thread.h"
 #include "base/time/time.h"
+#include "base/timer/elapsed_timer.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
 #include "components/vrp_flags/buildflags.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
+#include "mojo/public/cpp/bindings/receiver_set.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "net/base/address_list.h"
 #include "net/base/schemeful_site.h"
@@ -73,6 +76,7 @@
 
 namespace net {
 class FileNetLogObserver;
+enum class NetLogFileFormat;
 class HostResolverManager;
 class HttpAuthHandlerFactory;
 class IPEndPoint;
@@ -92,7 +96,8 @@ class NetworkService;
 class SCTAuditingCache;
 
 class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
-    : public mojom::NetworkService {
+    : public mojom::NetworkService,
+      public mojom::NetworkContextCreator {
  public:
   explicit NetworkService(
       std::unique_ptr<service_manager::BinderRegistry> registry,
@@ -159,6 +164,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
   void StartNetLog(base::File file,
                    uint64_t max_total_size,
                    net::NetLogCaptureMode capture_mode,
+                   net::NetLogFileFormat file_format,
                    base::DictValue constants,
                    std::optional<base::TimeDelta> duration) override;
   void AttachNetLogProxy(
@@ -168,6 +174,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
   void CreateNetworkContext(
       mojo::PendingReceiver<mojom::NetworkContext> receiver,
       mojom::NetworkContextParamsPtr params) override;
+  void BindNetworkContextCreator(
+      mojo::PendingReceiver<mojom::NetworkContextCreator> receiver) override;
   void ConfigureStubHostResolver(
       bool insecure_dns_client_enabled,
       bool happy_eyeballs_v3_enabled,
@@ -284,6 +292,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
   void StartNetLogBounded(base::File file,
                           uint64_t max_total_size,
                           net::NetLogCaptureMode capture_mode,
+                          net::NetLogFileFormat file_format,
                           base::DictValue client_constants);
 
   // Called after StartNetLogBounded() finishes creating a scratch dir.
@@ -291,11 +300,13 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
       base::File file,
       uint64_t max_total_size,
       net::NetLogCaptureMode capture_mode,
+      net::NetLogFileFormat file_format,
       base::DictValue constants,
       const base::FilePath& in_progress_dir_path);
 
   void StartNetLogUnbounded(base::File file,
                             net::NetLogCaptureMode capture_mode,
+                            net::NetLogFileFormat file_format,
                             base::DictValue client_constants);
 
   // Returns an HttpAuthHandlerFactory for the given NetworkContext.
@@ -477,11 +488,26 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
 
   mojo::Receiver<mojom::NetworkService> receiver_{this};
 
+  // Receivers for NetworkContextCreator connections, used to allow
+  // calling CreateNetworkContext from background threads.
+  mojo::ReceiverSet<mojom::NetworkContextCreator> context_creator_receiver_set_;
+
+  // Timer to measure the time from NetworkService creation to the first
+  // CreateNetworkContext call. Reset after the metric is recorded.
+  std::optional<base::ElapsedTimer> time_to_first_context_timer_;
+
   mojo::Remote<mojom::URLLoaderNetworkServiceObserver>
       default_url_loader_network_service_observer_;
 
   std::unique_ptr<NetworkQualityEstimatorManager>
       network_quality_estimator_manager_;
+
+  // Raises the type of the thread the network service runs on (the IO thread
+  // of the network utility process) while there is at least one active
+  // peer-to-peer connection. Only engaged when
+  // webrtc::features::kWebRTCBoostMediaIOThreads is enabled.
+  std::optional<base::PlatformThread::RaiseThreadTypeLease>
+      io_thread_type_lease_;
 
   std::unique_ptr<DnsConfigChangeManager> dns_config_change_manager_;
 

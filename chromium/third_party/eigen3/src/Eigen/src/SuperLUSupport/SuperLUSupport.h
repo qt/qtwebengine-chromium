@@ -58,6 +58,7 @@ DECL_GSSVX(s, float, float)
 DECL_GSSVX(c, float, std::complex<float>)
 DECL_GSSVX(d, double, double)
 DECL_GSSVX(z, double, std::complex<double>)
+#undef DECL_GSSVX
 
 #ifdef MILU_ALPHA
 #define EIGEN_SUPERLU_HAS_ILU
@@ -105,6 +106,7 @@ DECL_GSISX(s, float, float)
 DECL_GSISX(c, float, std::complex<float>)
 DECL_GSISX(d, double, double)
 DECL_GSISX(z, double, std::complex<double>)
+#undef DECL_GSISX
 
 #endif
 
@@ -116,7 +118,7 @@ struct SluMatrixMapHelper;
  * A wrapper class for SuperLU matrices. It supports only compressed sparse matrices
  * and dense matrices. Supernodal and other fancy format are not supported by this wrapper.
  *
- * This wrapper class mainly aims to avoids the need of dynamic allocation of the storage structure.
+ * This wrapper class mainly aims to avoid the need of dynamic allocation of the storage structure.
  */
 struct SluMatrix : SuperMatrix {
   SluMatrix() { Store = &storage; }
@@ -155,11 +157,14 @@ struct SluMatrix : SuperMatrix {
 
   template <typename Scalar>
   void setScalarType() {
-    EIGEN_IF_CONSTEXPR((std::is_same<Scalar, float>::value))
-    Dtype = SLU_S;
-    else EIGEN_IF_CONSTEXPR((std::is_same<Scalar, double>::value)) Dtype = SLU_D;
-    else EIGEN_IF_CONSTEXPR((std::is_same<Scalar, std::complex<float> >::value)) Dtype = SLU_C;
-    else EIGEN_IF_CONSTEXPR((std::is_same<Scalar, std::complex<double> >::value)) Dtype = SLU_Z;
+    EIGEN_IF_CONSTEXPR ((std::is_same<Scalar, float>::value))
+      Dtype = SLU_S;
+    else EIGEN_IF_CONSTEXPR ((std::is_same<Scalar, double>::value))
+      Dtype = SLU_D;
+    else EIGEN_IF_CONSTEXPR ((std::is_same<Scalar, std::complex<float> >::value))
+      Dtype = SLU_C;
+    else EIGEN_IF_CONSTEXPR ((std::is_same<Scalar, std::complex<double> >::value))
+      Dtype = SLU_Z;
     else {
       eigen_assert(false && "Scalar type not supported by SuperLU");
     }
@@ -187,12 +192,11 @@ struct SluMatrix : SuperMatrix {
   static SluMatrix Map(SparseMatrixBase<MatrixType> &a_mat) {
     MatrixType &mat(a_mat.derived());
     SluMatrix res;
-    EIGEN_IF_CONSTEXPR((MatrixType::Flags & RowMajorBit) == RowMajorBit) {
+    EIGEN_IF_CONSTEXPR ((MatrixType::Flags & RowMajorBit) == RowMajorBit) {
       res.setStorageType(SLU_NR);
       res.nrow = internal::convert_index<int>(mat.cols());
       res.ncol = internal::convert_index<int>(mat.rows());
-    }
-    else {
+    } else {
       res.setStorageType(SLU_NC);
       res.nrow = internal::convert_index<int>(mat.rows());
       res.ncol = internal::convert_index<int>(mat.cols());
@@ -208,8 +212,8 @@ struct SluMatrix : SuperMatrix {
     res.setScalarType<typename MatrixType::Scalar>();
 
     // FIXME: the following type mapping is approximate.
-    EIGEN_IF_CONSTEXPR(int(MatrixType::Flags) & int(Upper)) res.Mtype = SLU_TRU;
-    EIGEN_IF_CONSTEXPR(int(MatrixType::Flags) & int(Lower)) res.Mtype = SLU_TRL;
+    EIGEN_IF_CONSTEXPR (int(MatrixType::Flags) & int(Upper)) res.Mtype = SLU_TRU;
+    EIGEN_IF_CONSTEXPR (int(MatrixType::Flags) & int(Lower)) res.Mtype = SLU_TRL;
 
     eigen_assert(((int(MatrixType::Flags) & int(SelfAdjoint)) == 0) &&
                  "SelfAdjoint matrix shape not supported by SuperLU");
@@ -239,12 +243,11 @@ template <typename Derived>
 struct SluMatrixMapHelper<SparseMatrixBase<Derived> > {
   typedef Derived MatrixType;
   static void run(MatrixType &mat, SluMatrix &res) {
-    EIGEN_IF_CONSTEXPR((MatrixType::Flags & RowMajorBit) == RowMajorBit) {
+    EIGEN_IF_CONSTEXPR ((MatrixType::Flags & RowMajorBit) == RowMajorBit) {
       res.setStorageType(SLU_NR);
       res.nrow = mat.cols();
       res.ncol = mat.rows();
-    }
-    else {
+    } else {
       res.setStorageType(SLU_NC);
       res.nrow = mat.rows();
       res.ncol = mat.cols();
@@ -260,8 +263,8 @@ struct SluMatrixMapHelper<SparseMatrixBase<Derived> > {
     res.setScalarType<typename MatrixType::Scalar>();
 
     // FIXME: the following type mapping is approximate.
-    EIGEN_IF_CONSTEXPR(MatrixType::Flags & Upper) res.Mtype = SLU_TRU;
-    EIGEN_IF_CONSTEXPR(MatrixType::Flags & Lower) res.Mtype = SLU_TRL;
+    EIGEN_IF_CONSTEXPR (MatrixType::Flags & Upper) res.Mtype = SLU_TRU;
+    EIGEN_IF_CONSTEXPR (MatrixType::Flags & Lower) res.Mtype = SLU_TRL;
 
     eigen_assert(((MatrixType::Flags & SelfAdjoint) == 0) && "SelfAdjoint matrix shape not supported by SuperLU");
   }
@@ -326,14 +329,14 @@ class SuperLUBase : public SparseSolverBase<Derived> {
   /** \brief Reports whether previous computation was successful.
    *
    * \returns \c Success if computation was successful,
-   *          \c NumericalIssue if the matrix.appears to be negative.
+   *          \c NumericalIssue if the matrix appears to be negative.
    */
   ComputationInfo info() const {
     eigen_assert(m_isInitialized && "Decomposition is not initialized.");
     return m_info;
   }
 
-  /** Computes the sparse Cholesky decomposition of \a matrix */
+  /** Computes the sparse LU decomposition of \a matrix */
   void compute(const MatrixType &matrix) {
     derived().analyzePattern(matrix);
     derived().factorize(matrix);
@@ -470,8 +473,6 @@ class SuperLU : public SuperLUBase<MatrixType_, SuperLU<MatrixType_> > {
     init();
     Base::compute(matrix);
   }
-
-  ~SuperLU() {}
 
   /** Performs a symbolic decomposition on the sparsity of \a matrix.
    *
@@ -665,7 +666,6 @@ void SuperLUBase<MatrixType, Derived>::extractData() const {
     Scalar *Uval = m_u.valuePtr();
 
     Ucol[0] = 0;
-    Ucol[0] = 0;
 
     /* for each supernode */
     for (int k = 0; k <= Lstore->nsuper; ++k) {
@@ -779,8 +779,6 @@ class SuperILU : public SuperLUBase<MatrixType_, SuperILU<MatrixType_> > {
     init();
     Base::compute(matrix);
   }
-
-  ~SuperILU() {}
 
   /** Performs a symbolic decomposition on the sparsity of \a matrix.
    *

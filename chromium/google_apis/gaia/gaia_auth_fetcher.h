@@ -55,6 +55,7 @@ struct MultiloginCookieBindingParams {
   enum class Mode { kDisabled, kEnabledUnenforced, kEnabledEnforced };
 
   Mode mode = Mode::kDisabled;
+  Mode youtube_mode = Mode::kDisabled;
   // Indicates whether the bound session credentials from the server response
   // should be parsed according to the standard format.
   bool standard_device_bound_session_credentials = false;
@@ -70,11 +71,13 @@ class COMPONENT_EXPORT(GOOGLE_APIS) GaiaSource {
     kAccountReconcilorMirror,
     kPrimaryAccountManager,
     kChromeGlic,  // chrome/browser/glic
+    kAccountReconcilorDiceCookieUpgrade,
   };
 
   // Implicit conversion is necessary to avoid boilerplate code.
   GaiaSource(Type type);
   GaiaSource(Type source, const std::string& suffix);
+  Type type() const { return type_; }
   void SetGaiaSourceSuffix(const std::string& suffix);
   std::string ToString();
 

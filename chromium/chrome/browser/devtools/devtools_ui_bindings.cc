@@ -147,6 +147,7 @@
 #include "extensions/common/manifest_handlers/devtools_page_handler.h"
 #include "extensions/common/mojom/api_permission_id.mojom-shared.h"
 #include "extensions/common/permissions/permissions_data.h"
+#include "extensions/common/switches.h"
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS_CORE)
 
 using content::BrowserThread;
@@ -1357,8 +1358,9 @@ void DevToolsUIBindings::LoadNetworkResource(DispatchCallback callback,
           web_contents()->GetPrimaryMainFrame();
 
       mojo::PendingRemote<network::mojom::URLLoaderFactory> pending_remote =
-          content::CreateWebUIURLLoaderFactory(
-              frame_host, target_tab->GetLastCommittedURL().GetScheme(),
+          content::CreateWebUIURLLoaderFactoryWithoutOriginLock(
+              content::WebUIURLLoaderFactoryPasskey::GetPassKey(), frame_host,
+              target_tab->GetLastCommittedURL().GetScheme(),
               std::move(allowed_webui_hosts));
       url_loader_factory = network::SharedURLLoaderFactory::Create(
           std::make_unique<network::WrapperPendingSharedURLLoaderFactory>(
@@ -2076,11 +2078,6 @@ base::DictValue DevToolsUIBindings::GetHostConfigDictionary(Profile* profile) {
   response_dict.Set("devToolsEnableOriginBoundCookies",
                     std::move(origin_bound_cookies_dict));
 
-  if (base::FeatureList::IsEnabled(features::kDevToolsGreenDevUi)) {
-    response_dict.Set("devToolsGreenDevUi",
-                      base::DictValue().Set("enabled", true));
-  }
-
   if (base::FeatureList::IsEnabled(
           ::features::kDevToolsAnimationStylesInStylesTab)) {
     base::DictValue devtools_animation_styles_in_styles_tab_dict;
@@ -2227,11 +2224,36 @@ base::DictValue DevToolsUIBindings::GetHostConfigDictionary(Profile* profile) {
                         "enabled", base::FeatureList::IsEnabled(
                                        blink::features::kDevToolsAdsPanel)));
 
+  response_dict.Set("devToolsPlusButton",
+                    base::DictValue().Set(
+                        "enabled", GetFeatureStateForDevTools(
+                                       ::features::kDevToolsPlusButton,
+                                       enabled_by_flags, disabled_by_flags)));
+
   response_dict.Set(
-      "devToolsPlusButton",
+      "devToolsInstrumentationBreakpoints",
+      base::DictValue().Set(
+          "enabled", GetFeatureStateForDevTools(
+                         ::features::kDevToolsInstrumentationBreakpoints,
+                         enabled_by_flags, disabled_by_flags)));
+
+  response_dict.Set(
+      "devToolsMobileSafeAreaEmulation",
+      base::DictValue().Set("enabled",
+                            GetFeatureStateForDevTools(
+                                ::features::kDevToolsMobileSafeAreaEmulation,
+                                enabled_by_flags, disabled_by_flags)));
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+  // We check AreExtensionsOnExtensionURLsAllowed() here because this is used to
+  // restrict access to chrome-extension:// URLs, and that helper covers both
+  // --extensions-on-extension-urls and the legacy --extensions-on-chrome-urls
+  // behavior.
+  response_dict.Set(
+      "extensionsOnChromeUrls",
       base::DictValue().Set(
           "enabled",
-          base::FeatureList::IsEnabled(::features::kDevToolsPlusButton)));
+          extensions::switches::AreExtensionsOnExtensionURLsAllowed()));
+#endif
 
   return response_dict;
 }
@@ -3046,14 +3068,19 @@ void DevToolsUIBindings::ReadyToCommitNavigation(
       LOG(ERROR) << "Attempt to navigate to an invalid DevTools front-end URL: "
                  << navigation_handle->GetURL().spec();
       frontend_host_.reset();
+      extensions_api_.clear();
       return;
     }
     if (frontend_host_) {
       return;
     }
-    if (content::RenderFrameHost* opener = web_contents_->GetOpener()) {
+    // If the window was opened by another window, ensure the root opener in
+    // the live opener chain is a DevTools WebContents with active DevTools
+    // frontend bindings. This also covers cases where `window.opener` was
+    // severed (e.g. via `window.opener = null` or `rel="noopener"`).
+    if (web_contents_->HasLiveOriginalOpenerChain()) {
       content::WebContents* opener_wc =
-          content::WebContents::FromRenderFrameHost(opener);
+          web_contents_->GetFirstWebContentsInLiveOriginalOpenerChain();
       DevToolsUIBindings* opener_bindings =
           opener_wc ? DevToolsUIBindings::ForWebContents(opener_wc) : nullptr;
       if (!opener_bindings || !opener_bindings->frontend_host_) {
@@ -3065,6 +3092,10 @@ void DevToolsUIBindings::ReadyToCommitNavigation(
         base::BindRepeating(
             &DevToolsUIBindings::HandleMessageFromDevToolsFrontend,
             base::Unretained(this)));
+    return;
+  }
+
+  if (!frontend_host_) {
     return;
   }
 

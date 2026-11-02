@@ -28,6 +28,8 @@ SET(PROD_AVX2_MICROKERNEL_SRCS
   src/f32-velu/gen/f32-velu-avx2-rr1-lut4-p4-perm-u32.c
   src/f32-vlog/gen/f32-vlog-avx2-rational-3-3-div.c
   src/f32-vsigmoid/gen/f32-vsigmoid-avx2-rr1-p5-div-u16.c
+  src/qd8-bf16-qb4w-gemm/gen/qd8-bf16-qb4w-gemm-1x8c8-minmax-avx2.c
+  src/qd8-bf16-qb4w-gemm/gen/qd8-bf16-qb4w-gemm-3x8c8-minmax-avx2.c
   src/qd8-f16-qb4w-gemm/gen/qd8-f16-qb4w-gemm-1x8c8-minmax-avx2.c
   src/qd8-f16-qb4w-gemm/gen/qd8-f16-qb4w-gemm-3x8c8-minmax-avx2.c
   src/qd8-f16-qc2w-gemm/gen/qd8-f16-qc2w-gemm-1x8c8-minmax-avx2-madd.c
@@ -53,6 +55,7 @@ SET(PROD_AVX2_MICROKERNEL_SRCS
   src/qs8-f16-vcvt/gen/qs8-f16-vcvt-avx2-u16.c
   src/qs8-f32-vcvt/gen/qs8-f32-vcvt-avx2-u16.c
   src/qs8-packw/gen/qs8-packw-x8c8-gemm-goi-avx2-madd.c
+  src/qs8-packw/gen/qs8-packw-x16c8-gemm-goi-avx2-madd.c
   src/qs8-qc2w-gemm/gen/qs8-qc2w-gemm-1x8c8-minmax-avx2-madd.c
   src/qs8-qc2w-gemm/gen/qs8-qc2w-gemm-5x8c8-minmax-avx2-madd.c
   src/qs8-qc4w-gemm/gen/qs8-qc4w-gemm-1x8c8-minmax-avx2-madd-prfm.c
@@ -93,6 +96,7 @@ SET(PROD_AVX2_MICROKERNEL_SRCS
   src/x8-lut/gen/x8-lut-avx2-u128.c
   src/x8-transposec/gen/x8-transposec-32x32-reuse-switch-avx2.c
   src/x16-packw/gen/x16-packw-x16-gemm-goi-avx2-u16-prfm.c
+  src/x16-packw/gen/x16-packw-x32-gemm-goi-avx2-u16-prfm.c
   src/x16-transposec/gen/x16-transposec-16x16-reuse-switch-avx2.c)
 
 SET(NON_PROD_AVX2_MICROKERNEL_SRCS
@@ -149,14 +153,6 @@ SET(NON_PROD_AVX2_MICROKERNEL_SRCS
   src/f16-vsigmoid/gen/f16-vsigmoid-avx2-rr1-p2-rcp-u8.c
   src/f16-vsigmoid/gen/f16-vsigmoid-avx2-rr1-p2-rcp-u16.c
   src/f16-vsigmoid/gen/f16-vsigmoid-avx2-rr1-p2-rcp-u24.c
-  src/f16-vtanh/gen/f16-vtanh-avx2-expm1minus-rr1-p3h2ts-div-u8.c
-  src/f16-vtanh/gen/f16-vtanh-avx2-expm1minus-rr1-p3h2ts-div-u16.c
-  src/f16-vtanh/gen/f16-vtanh-avx2-expm1minus-rr1-p3h2ts-div-u24.c
-  src/f16-vtanh/gen/f16-vtanh-avx2-expm1minus-rr1-p3h2ts-div-u32.c
-  src/f16-vtanh/gen/f16-vtanh-avx2-expm1minus-rr1-p3h2ts-rcp-u8.c
-  src/f16-vtanh/gen/f16-vtanh-avx2-expm1minus-rr1-p3h2ts-rcp-u16.c
-  src/f16-vtanh/gen/f16-vtanh-avx2-expm1minus-rr1-p3h2ts-rcp-u24.c
-  src/f16-vtanh/gen/f16-vtanh-avx2-expm1minus-rr1-p3h2ts-rcp-u32.c
   src/f32-qc4w-gemm/gen/f32-qc4w-gemm-2x16-minmax-avx2-broadcast.c
   src/f32-qc4w-gemm/gen/f32-qc4w-gemm-4x16-minmax-avx2-broadcast.c
   src/f32-qc4w-gemm/gen/f32-qc4w-gemm-5x16-minmax-avx2-broadcast.c
@@ -258,6 +254,8 @@ SET(NON_PROD_AVX2_MICROKERNEL_SRCS
   src/f32-vsigmoid/gen/f32-vsigmoid-avx2-rr1-p5-nr2fma-u16.c
   src/f32-vsigmoid/gen/f32-vsigmoid-avx2-rr1-p5-nr2fma-u24.c
   src/f32-vsigmoid/gen/f32-vsigmoid-avx2-rr1-p5-nr2fma-u32.c
+  src/qd8-bf16-qb4w-gemm/gen/qd8-bf16-qb4w-gemm-2x8c8-minmax-avx2.c
+  src/qd8-bf16-qb4w-gemm/gen/qd8-bf16-qb4w-gemm-4x8c8-minmax-avx2.c
   src/qd8-f16-qb4w-gemm/gen/qd8-f16-qb4w-gemm-2x8c8-minmax-avx2.c
   src/qd8-f16-qb4w-gemm/gen/qd8-f16-qb4w-gemm-4x8c8-minmax-avx2.c
   src/qd8-f16-qc2w-gemm/gen/qd8-f16-qc2w-gemm-2x8c8-minmax-avx2-madd.c
@@ -433,6 +431,7 @@ SET(NON_PROD_AVX2_MICROKERNEL_SRCS
   src/x16-packw/gen/x16-packw-x8-gemm-goi-avx2-u16-prfm.c
   src/x16-packw/gen/x16-packw-x8-gemm-goi-avx2-u16.c
   src/x16-packw/gen/x16-packw-x16-gemm-goi-avx2-u16.c
+  src/x16-packw/gen/x16-packw-x32-gemm-goi-avx2-u16.c
   src/x16-transposec/gen/x16-transposec-16x16-reuse-mov-avx2.c)
 
 SET(ALL_AVX2_MICROKERNEL_SRCS ${PROD_AVX2_MICROKERNEL_SRCS} ${NON_PROD_AVX2_MICROKERNEL_SRCS})

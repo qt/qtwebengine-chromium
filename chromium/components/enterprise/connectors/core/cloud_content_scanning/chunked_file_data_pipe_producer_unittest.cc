@@ -50,11 +50,11 @@ class ChunkedFileDataPipeProducerTest : public testing::Test {
 
   std::pair<std::string, MojoResult> ReadProducer(
       base::File file,
-      bool is_obfuscated,
       int64_t file_size,
-      std::optional<enterprise_obfuscation::HeaderData> header_data) {
-    ChunkedFileDataPipeProducer producer(std::move(file), is_obfuscated,
-                                         file_size, std::move(header_data));
+      std::optional<enterprise_obfuscation::ObfuscatedFileReader>
+          obfuscated_reader) {
+    ChunkedFileDataPipeProducer producer(std::move(file), file_size,
+                                         std::move(obfuscated_reader));
 
     std::string content;
     int64_t offset = 0;
@@ -123,15 +123,29 @@ class ChunkedFileDataPipeProducerParamTest
     base::File file(path, base::File::FLAG_OPEN | base::File::FLAG_READ);
     ASSERT_TRUE(file.IsValid());
 
+    std::optional<enterprise_obfuscation::ObfuscatedFileReader>
+        obfuscated_reader;
+    int64_t file_size = content.size();
+    base::File file_pass;
+
     if (is_obfuscated()) {
       auto parsed_header =
           enterprise_obfuscation::ObfuscatedFileReader::ReadHeaderData(file);
       ASSERT_TRUE(parsed_header.has_value());
-      header_data = std::move(parsed_header.value());
+
+      base::File file_clone = file.Duplicate();
+      ASSERT_TRUE(file_clone.IsValid());
+      auto reader = enterprise_obfuscation::ObfuscatedFileReader::Create(
+          parsed_header.value(), std::move(file_clone));
+      ASSERT_TRUE(reader.has_value());
+      obfuscated_reader = std::move(reader.value());
+      file_size = obfuscated_reader->GetSize();
+    } else {
+      file_pass = std::move(file);
     }
 
-    auto result = ReadProducer(std::move(file), is_obfuscated(), content.size(),
-                               std::move(header_data));
+    auto result = ReadProducer(std::move(file_pass), file_size,
+                               std::move(obfuscated_reader));
 
     EXPECT_EQ(MOJO_RESULT_OK, result.second);
     EXPECT_EQ(content, result.first);
@@ -153,22 +167,34 @@ INSTANTIATE_TEST_SUITE_P(All,
                          testing::Bool());
 
 TEST_F(ChunkedFileDataPipeProducerTest, DeobfuscationErrorTest) {
-  std::string obfuscated_content_str(1024, '\0');
-  obfuscated_content_str.replace(enterprise_obfuscation::kHeaderSize, 4, 4,
-                                 '\xFF');
+  std::array<uint8_t, enterprise_obfuscation::kKeySize> derived_key;
+  std::vector<uint8_t> nonce_prefix;
+  auto header =
+      enterprise_obfuscation::CreateHeader(&derived_key, &nonce_prefix);
+  ASSERT_TRUE(header.has_value());
 
-  base::FilePath path = CreateFile(obfuscated_content_str);
+  std::vector<uint8_t> content(
+      enterprise_obfuscation::kHeaderSize +
+          enterprise_obfuscation::kChunkSizePrefixSize - 1,
+      0xCC);
+  std::copy(header->begin(), header->end(), content.begin());
+  std::string content_str(content.begin(), content.end());
+
+  base::FilePath path = CreateFile(content_str);
   ASSERT_FALSE(path.empty());
 
   base::File file(path, base::File::FLAG_OPEN | base::File::FLAG_READ);
   ASSERT_TRUE(file.IsValid());
 
-  enterprise_obfuscation::HeaderData header_data;
+  auto parsed_header =
+      enterprise_obfuscation::ObfuscatedFileReader::ReadHeaderData(file);
+  ASSERT_TRUE(parsed_header.has_value());
 
-  auto result = ReadProducer(std::move(file), /*is_obfuscated=*/true, 1000,
-                             std::move(header_data));
-
-  EXPECT_EQ(result.second, MOJO_RESULT_UNKNOWN);
+  base::File file_clone = file.Duplicate();
+  ASSERT_TRUE(file_clone.IsValid());
+  auto reader = enterprise_obfuscation::ObfuscatedFileReader::Create(
+      parsed_header.value(), std::move(file_clone));
+  EXPECT_FALSE(reader.has_value());
 }
 
 }  // namespace enterprise_connectors

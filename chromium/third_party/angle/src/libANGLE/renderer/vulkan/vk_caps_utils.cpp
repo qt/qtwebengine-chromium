@@ -7,11 +7,8 @@
 //    Helper functions for the Vulkan Caps.
 //
 
-#ifdef UNSAFE_BUFFERS_BUILD
-#    pragma allow_unsafe_buffers
-#endif
-
 #include "libANGLE/renderer/vulkan/vk_caps_utils.h"
+#include "common/unsafe_buffers.h"
 
 #include <type_traits>
 
@@ -162,25 +159,27 @@ bool CanSupportYuvInternalFormat(const Renderer *renderer)
     return twoPlane8bitYuvFormatSupported && threePlane8bitYuvFormatSupported;
 }
 
-uint32_t GetTimestampValidBits(const std::vector<VkQueueFamilyProperties> &queueFamilyProperties,
+uint32_t GetTimestampValidBits(const std::vector<VkQueueFamilyProperties2> &queueFamilyProperties2,
                                uint32_t queueFamilyIndex)
 {
-    ASSERT(!queueFamilyProperties.empty());
+    ASSERT(!queueFamilyProperties2.empty());
 
-    if (queueFamilyIndex < queueFamilyProperties.size())
+    if (queueFamilyIndex < queueFamilyProperties2.size())
     {
         // If a queue family is already selected (which is only currently the case if there is only
         // one family), get the timestamp valid bits from that queue.
-        return queueFamilyProperties[queueFamilyIndex].timestampValidBits;
+        return queueFamilyProperties2[queueFamilyIndex].queueFamilyProperties.timestampValidBits;
     }
 
     // If a queue family is not already selected, we cannot know which queue family will end up
     // being used until a surface is used.  Take the minimum valid bits from all queues as a safe
     // measure.
-    uint32_t timestampValidBits = queueFamilyProperties[0].timestampValidBits;
-    for (const VkQueueFamilyProperties &properties : queueFamilyProperties)
+    uint32_t timestampValidBits =
+        queueFamilyProperties2[0].queueFamilyProperties.timestampValidBits;
+    for (const VkQueueFamilyProperties2 &properties2 : queueFamilyProperties2)
     {
-        timestampValidBits = std::min(timestampValidBits, properties.timestampValidBits);
+        timestampValidBits =
+            std::min(timestampValidBits, properties2.queueFamilyProperties.timestampValidBits);
     }
     return timestampValidBits;
 }
@@ -276,7 +275,7 @@ void LogMissingExtensionsForGLES32(const gl::Extensions &nativeExtensions)
         if (!requiredExtensions[index])
         {
             INFO() << "The following extension is required for GLES 3.2: "
-                   << kRequiredExtensionNames[index];
+                   << ANGLE_UNSAFE_TODO(kRequiredExtensionNames[index]);
         }
     }
 }
@@ -478,7 +477,7 @@ void Renderer::ensureCapsInitialized() const
         vk::RenderPassCommandBuffer::SupportsQueries(mPhysicalDeviceFeatures))
     {
         const uint32_t timestampValidBits =
-            vk::GetTimestampValidBits(mQueueFamilyProperties, mCurrentQueueFamilyIndex);
+            vk::GetTimestampValidBits(mQueueFamilyProperties2, mCurrentQueueFamilyIndex);
 
         mNativeExtensions.disjointTimerQueryEXT = timestampValidBits > 0;
         mNativeCaps.queryCounterBitsTimeElapsed = timestampValidBits;
@@ -1708,25 +1707,25 @@ egl::ConfigSet GenerateConfigs(const GLenum *colorFormats,
     for (size_t colorFormatIdx = 0; colorFormatIdx < colorFormatsCount; colorFormatIdx++)
     {
         const gl::InternalFormat &colorFormatInfo =
-            gl::GetSizedInternalFormatInfo(colorFormats[colorFormatIdx]);
+            gl::GetSizedInternalFormatInfo(ANGLE_UNSAFE_TODO(colorFormats[colorFormatIdx]));
         ASSERT(colorFormatInfo.sized);
 
         for (size_t depthStencilFormatIdx = 0; depthStencilFormatIdx < depthStencilFormatCount;
              depthStencilFormatIdx++)
         {
-            const gl::InternalFormat &depthStencilFormatInfo =
-                gl::GetSizedInternalFormatInfo(depthStencilFormats[depthStencilFormatIdx]);
-            ASSERT(depthStencilFormats[depthStencilFormatIdx] == GL_NONE ||
-                   depthStencilFormatInfo.sized);
+            const gl::InternalFormat &depthStencilFormatInfo = gl::GetSizedInternalFormatInfo(
+                ANGLE_UNSAFE_TODO(depthStencilFormats[depthStencilFormatIdx]));
+            ANGLE_UNSAFE_TODO(ASSERT(depthStencilFormats[depthStencilFormatIdx] == GL_NONE ||
+                                     depthStencilFormatInfo.sized));
 
             const gl::SupportedSampleSet *configSampleCounts = &sampleCounts;
             // If there is no depth/stencil buffer, use the color samples set.
-            if (depthStencilFormats[depthStencilFormatIdx] == GL_NONE)
+            if (ANGLE_UNSAFE_TODO(depthStencilFormats[depthStencilFormatIdx]) == GL_NONE)
             {
                 configSampleCounts = &colorSampleCounts;
             }
             // If there is no color buffer, use the depth/stencil samples set.
-            else if (colorFormats[colorFormatIdx] == GL_NONE)
+            else if (ANGLE_UNSAFE_TODO(colorFormats[colorFormatIdx]) == GL_NONE)
             {
                 configSampleCounts = &depthStencilSampleCounts;
             }

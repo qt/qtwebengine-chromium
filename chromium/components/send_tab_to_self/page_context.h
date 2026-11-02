@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/containers/flat_set.h"
+#include "components/autofill/core/common/form_field_data.h"
 #include "components/autofill/core/common/signatures.h"
 #include "components/sync/protocol/send_tab_to_self_specifics.pb.h"
 
@@ -18,6 +19,9 @@ class TextFragment;
 }  // namespace shared_highlighting
 
 namespace send_tab_to_self {
+
+// Returns true if the field type is password or other sensitive types.
+bool IsSensitiveFieldType(autofill::FormControlType type);
 
 // Text fragment data used for scroll position restoration.
 struct TextFragmentData {
@@ -92,7 +96,8 @@ struct PageContext {
 
     std::u16string id_attribute;
     std::u16string name_attribute;
-    std::string form_control_type;
+    autofill::FormControlType form_control_type =
+        autofill::FormControlType::kInputText;
     std::u16string value;
     FormFieldAutofillSignature autofill_signature;
     base::flat_set<sync_pb::FormField_AutofillFieldType> autofill_types;

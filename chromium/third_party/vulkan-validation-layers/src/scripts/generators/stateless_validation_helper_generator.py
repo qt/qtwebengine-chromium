@@ -23,16 +23,10 @@
 import os
 import re
 from generators.generator_utils import buildListVUID, PlatformGuardHelper
-from vulkan_object import Member, Struct
+from vulkan_object import Member, Struct, Command
 from base_generator import BaseGenerator
 from dataclasses import dataclass
 from string import Template
-
-# Todo: move to vulkan object
-@dataclass
-class ExtendedFlag:
-    struct: str
-    member: Member
 
 # The way we generate this code is "clever" (aka not fun to debug)
 #
@@ -57,7 +51,7 @@ class TemplateData:
 class APISpecific:
     # Generates custom validation for a function parameter or returns None
     @staticmethod
-    def genCustomValidation(targetApiName: str, funcName: str, member) -> list[str]:
+    def genCustomValidation(targetApiName: str, command: Command, member: Member) -> list[str]:
         match targetApiName:
 
             # Vulkan specific custom validation (currently none)
@@ -405,19 +399,6 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
         self.write('// NOLINTBEGIN') # Wrap for clang-tidy to ignore
 
         for member in (m for s in self.vk.structs.values() for m in s.members):
-                member.extendedFlag = None
-
-        buffer_usage2 = self.vk.structs['VkBufferUsageFlags2CreateInfo']
-        pipe_flags2 = self.vk.structs['VkPipelineCreateFlags2CreateInfo']
-        self.vk.structs['VkBufferCreateInfo'].members[4].extendedFlag = ExtendedFlag(struct=buffer_usage2.name, member=buffer_usage2.members[2])
-        self.vk.structs['VkPhysicalDeviceExternalBufferInfo'].members[3].extendedFlag = ExtendedFlag(struct=buffer_usage2.name, member=buffer_usage2.members[2])
-        self.vk.structs['VkDescriptorBufferBindingInfoEXT'].members[3].extendedFlag =ExtendedFlag(struct=buffer_usage2.name, member=buffer_usage2.members[2])
-        self.vk.structs['VkComputePipelineCreateInfo'].members[2].extendedFlag = ExtendedFlag(struct=pipe_flags2.name, member=pipe_flags2.members[2])
-        self.vk.structs['VkGraphicsPipelineCreateInfo'].members[2].extendedFlag = ExtendedFlag(struct=pipe_flags2.name, member=pipe_flags2.members[2])
-        self.vk.structs['VkRayTracingPipelineCreateInfoNV'].members[2].extendedFlag = ExtendedFlag(struct=pipe_flags2.name, member=pipe_flags2.members[2])
-        self.vk.structs['VkRayTracingPipelineCreateInfoKHR'].members[2].extendedFlag = ExtendedFlag(struct=pipe_flags2.name, member=pipe_flags2.members[2])
-        self.vk.structs['VkRayTracingPipelineCreateInfoKHR'].members[2].extendedFlag = ExtendedFlag(struct=pipe_flags2.name, member=pipe_flags2.members[2])
-        for member in (m for s in self.vk.structs.values() for m in s.members):
             if member.extendedFlag:
                 self.extended_structs.add(member.extendedFlag.struct)
         self.extended_structs = sorted(self.extended_structs)
@@ -517,6 +498,88 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
                                 self.stype_version_dict[alias] = set()
                             self.stype_version_dict[alias].add(extension_name)
                             self.stype_version_dict[alias].add(extension_name)
+
+        # HACK: force VkDebugUtilsObjectNameInfoEXT to extends some structs
+        # Remove after merging https://gitlab.khronos.org/vulkan/vulkan/-/merge_requests/8336
+        hack = ["VkResourceDescriptorInfoEXT",
+               "VkDescriptorGetInfoEXT",
+               "VkInstanceCreateInfo",
+               "VkDeviceCreateInfo",
+               "VkSemaphoreCreateInfo",
+               "VkFenceCreateInfo",
+               "VkCommandBufferAllocateInfo",
+               "VkMemoryAllocateInfo",
+               "VkBufferCreateInfo",
+               "VkImageCreateInfo",
+               "VkEventCreateInfo",
+               "VkQueryPoolCreateInfo",
+               "VkBufferViewCreateInfo",
+               "VkImageViewCreateInfo",
+               "VkShaderModuleCreateInfo",
+               "VkPipelineShaderStageCreateInfo",
+               "VkPipelineCacheCreateInfo",
+               "VkPipelineLayoutCreateInfo",
+               "VkRenderPassCreateInfo",
+               "VkGraphicsPipelineCreateInfo",
+               "VkComputePipelineCreateInfo",
+               "VkRayTracingPipelineCreateInfoKHR",
+               "VkRayTracingPipelineCreateInfoNV",
+               "VkExecutionGraphPipelineCreateInfoAMDX",
+               "VkDataGraphPipelineCreateInfoARM",
+               "VkDescriptorSetLayoutCreateInfo",
+               "VkSamplerCreateInfo",
+               "VkDescriptorPoolCreateInfo",
+               "VkDescriptorSetAllocateInfo",
+               "VkFramebufferCreateInfo",
+               "VkCommandPoolCreateInfo",
+               "VkDescriptorUpdateTemplateCreateInfo",
+               "VkSamplerYcbcrConversionCreateInfo",
+               "VkPrivateDataSlotCreateInfo",
+               "VkDisplaySurfaceCreateInfoKHR",
+               "VkXlibSurfaceCreateInfoKHR",
+               "VkXcbSurfaceCreateInfoKHR",
+               "VkWaylandSurfaceCreateInfoKHR",
+               "VkAndroidSurfaceCreateInfoKHR",
+               "VkWin32SurfaceCreateInfoKHR",
+               "VkStreamDescriptorSurfaceCreateInfoGGP",
+               "VkViSurfaceCreateInfoNN",
+               "VkIOSSurfaceCreateInfoMVK",
+               "VkMacOSSurfaceCreateInfoMVK",
+               "VkImagePipeSurfaceCreateInfoFUCHSIA",
+               "VkMetalSurfaceCreateInfoEXT",
+               "VkHeadlessSurfaceCreateInfoEXT",
+               "VkDirectFBSurfaceCreateInfoEXT",
+               "VkScreenSurfaceCreateInfoQNX",
+               "VkSurfaceCreateInfoOHOS",
+               "VkUbmSurfaceCreateInfoSEC",
+               "VkSwapchainCreateInfoKHR",
+               "VkDisplayModeCreateInfoKHR",
+               "VkVideoSessionCreateInfoKHR",
+               "VkVideoSessionParametersCreateInfoKHR",
+               "VkCuFunctionCreateInfoNVX",
+               "VkCuModuleCreateInfoNVX",
+               "VkGpaSessionCreateInfoAMD",
+               "VkAccelerationStructureCreateInfoKHR",
+               "VkAccelerationStructureCreateInfo2KHR",
+               "VkAccelerationStructureCreateInfoNV",
+               "VkMicromapCreateInfoEXT",
+               "VkTensorCreateInfoARM",
+               "VkTensorViewCreateInfoARM",
+               "VkOpticalFlowSessionCreateInfoNV",
+               "VkShaderCreateInfoEXT",
+               "VkDataGraphPipelineSessionCreateInfoARM",
+               "VkExternalComputeQueueCreateInfoNV",
+               "VkIndirectCommandsLayoutCreateInfoEXT",
+               "VkIndirectExecutionSetCreateInfoEXT",
+               "VkShaderInstrumentationCreateInfoARM"]
+        for struct_name in hack:
+            self.vk.structs[struct_name].extendedBy.extend(['VkDebugUtilsObjectNameInfoEXT', 'VkDebugUtilsObjectTagInfoEXT'])
+
+        # Remove when https://gitlab.khronos.org/vulkan/vulkan/-/merge_requests/8410 lands
+        self.vk.structs['VkPipelineShaderStageCreateInfo'].extendedBy.extend(['VkValidationFeaturesEXT'])
+        self.vk.structs['VkGraphicsPipelineCreateInfo'].extendedBy.extend(['VkValidationFeaturesEXT'])
+        self.vk.structs['VkComputePipelineCreateInfo'].extendedBy.extend(['VkValidationFeaturesEXT'])
+        self.vk.structs['VkRayTracingPipelineCreateInfoKHR'].extendedBy.extend(['VkValidationFeaturesEXT'])
 
         # Generate the struct member checking code from the captured data
         for struct in self.vk.structs.values():
@@ -974,7 +1037,10 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
                 # members not tagged as 'noautovalidity' will be validated
                 # We special-case the custom allocator checks, as they are explicit but can be auto-generated.
                 AllocatorFunctions = ['PFN_vkAllocationFunction', 'PFN_vkReallocationFunction', 'PFN_vkFreeFunction', 'PFN_vkInternalAllocationNotification', 'PFN_vkInternalFreeNotification']
-                apiSpecificCustomValidation = APISpecific.genCustomValidation(self.targetApiName, funcName, member)
+                if funcName in self.vk.commands:
+                    apiSpecificCustomValidation = APISpecific.genCustomValidation(self.targetApiName, self.vk.commands[funcName], member)
+                else:
+                    apiSpecificCustomValidation = None
                 if apiSpecificCustomValidation is not None:
                     usedLines.extend(apiSpecificCustomValidation)
                 elif member.noAutoValidity and member.type not in AllocatorFunctions and not countRequiredVuid:
@@ -1158,7 +1224,7 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
                         else:
                             if self.vk.commands[funcName].instance:
                                 isInstanceFunction = 'true'
-                        extended = getattr(member, 'flagsextend', None)
+                        extended = getattr(member, 'extendedFlag', None)
                         if (extended):
                             usedLines.append(f'if (!vku::FindStructInPNextChain<{extended.struct}>({valuePrefix}pNext)) {{')
                         usedLines.append(f'skip |= {context}ValidateFlags({errorLoc}.dot(Field::{member.name}), vvl::FlagBitmask::{flagBitsName}, {allFlagsName}, {valuePrefix}{member.name}, {flagsType}, {invalidVuid}{zeroVuidArg}, {isInstanceFunction});\n')

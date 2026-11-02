@@ -134,6 +134,7 @@ component("gtk") {
     "//base",
     "//cc/paint",
     "//printing/buildflags",
+    "//services/data_decoder/public/cpp",
     "//skia",
 
     # GTK pulls pangoft2, which requires HarfBuzz symbols. When linking

@@ -9,8 +9,8 @@ import 'chrome://resources/cr_elements/cr_icon/cr_icon.js';
 import 'chrome://resources/cr_elements/cr_toast/cr_toast.js';
 import './icons.html.js';
 
-import type {PriceTrackingBrowserProxy} from '//resources/cr_components/commerce/price_tracking_browser_proxy.js';
-import {PriceTrackingBrowserProxyImpl} from '//resources/cr_components/commerce/price_tracking_browser_proxy.js';
+import type {BrowserProxy as PriceTrackingBrowserProxy} from '//resources/cr_components/commerce/price_tracking.mojom-webui.js';
+import {browserProxyFactory as priceTrackingBrowserProxyFactory} from '//resources/cr_components/commerce/price_tracking.mojom-webui.js';
 import type {BookmarkProductInfo} from '//resources/cr_components/commerce/shared.mojom-webui.js';
 import type {CrToastElement} from 'chrome://resources/cr_elements/cr_toast/cr_toast.js';
 import {getFaviconForPageURL} from 'chrome://resources/js/icon.js';
@@ -26,10 +26,13 @@ import {getCss} from './shopping_list.css.js';
 import {getHtml} from './shopping_list.html.js';
 
 export const LOCAL_STORAGE_EXPAND_STATUS_KEY = 'shoppingListExpanded';
-export const ACTION_BUTTON_TRACK_IMAGE =
-    'shopping-list:shopping-list-track-icon';
+export const ACTION_BUTTON_TRACK_IMAGE = 'shopping-list:notification-add';
+export const ACTION_BUTTON_TRACK_IMAGE_OLD =
+    'shopping-list:shopping-list-track-icon-old';
 export const ACTION_BUTTON_UNTRACK_IMAGE =
-    'shopping-list:shopping-list-untrack-icon';
+    'shopping-list:notifications-active-filled';
+export const ACTION_BUTTON_UNTRACK_IMAGE_OLD =
+    'shopping-list:shopping-list-untrack-icon-old';
 
 export interface ShoppingListElement {
   $: {
@@ -55,23 +58,26 @@ export class ShoppingListElement extends CrLitElement {
       open_: {type: Boolean},
       untrackedItems_: {type: Array},
       productInfos: {type: Array},
+      webuiRoundedIconsEnabled_: {type: Boolean},
     };
   }
 
   accessor productInfos: BookmarkProductInfo[] = [];
   private accessor untrackedItems_: BookmarkProductInfo[] = [];
   protected accessor open_: boolean = true;
+  protected accessor webuiRoundedIconsEnabled_: boolean =
+      loadTimeData.getBoolean('webuiRoundedIconsEnabled');
   private bookmarksApi_: BookmarksApiProxy =
       BookmarksApiProxyImpl.getInstance();
   private priceTrackingProxy_: PriceTrackingBrowserProxy =
-      PriceTrackingBrowserProxyImpl.getInstance();
+      priceTrackingBrowserProxyFactory.getInstance();
   private listenerIds_: number[] = [];
-  private retryOperationCallback_: () => void;
+  private retryOperationCallback_: (() => void)|null = null;
 
   override connectedCallback() {
     super.connectedCallback();
 
-    const callbackRouter = this.priceTrackingProxy_.getCallbackRouter();
+    const callbackRouter = this.priceTrackingProxy_.callbackRouter;
     this.listenerIds_.push(
         callbackRouter.priceTrackedForBookmark.addListener(
             (product: BookmarkProductInfo) =>
@@ -96,7 +102,7 @@ export class ShoppingListElement extends CrLitElement {
     super.disconnectedCallback();
 
     this.listenerIds_.forEach(
-        id => this.priceTrackingProxy_.getCallbackRouter().removeListener(id));
+        id => this.priceTrackingProxy_.callbackRouter.removeListener(id));
   }
 
   override willUpdate(changedProperties: PropertyValues) {
@@ -129,7 +135,7 @@ export class ShoppingListElement extends CrLitElement {
   private getProductInfoFromEvent_(event: Event): BookmarkProductInfo {
     const target = event.currentTarget as HTMLElement;
     const index = Number(target.dataset['index']);
-    return this.productInfos[index];
+    return this.productInfos[index]!;
   }
 
   protected onProductAuxclick_(event: MouseEvent) {
@@ -189,21 +195,26 @@ export class ShoppingListElement extends CrLitElement {
       const index = this.untrackedItems_.indexOf(item);
       this.untrackedItems_.splice(index, 1);
       this.requestUpdate();
-      this.priceTrackingProxy_.trackPriceForBookmark(bookmarkId);
+      this.priceTrackingProxy_.handler.trackPriceForBookmark(bookmarkId);
       chrome.metricsPrivate.recordUserAction(
           'Commerce.PriceTracking.SidePanel.Track.BellButton');
     } else {
       this.untrackedItems_.push(item);
       this.requestUpdate();
-      this.priceTrackingProxy_.untrackPriceForBookmark(bookmarkId);
+      this.priceTrackingProxy_.handler.untrackPriceForBookmark(bookmarkId);
       chrome.metricsPrivate.recordUserAction(
           'Commerce.PriceTracking.SidePanel.Untrack.BellButton');
     }
   }
 
   protected getIconForItem_(item: BookmarkProductInfo): string {
-    return this.untrackedItems_.includes(item) ? ACTION_BUTTON_TRACK_IMAGE :
-                                                 ACTION_BUTTON_UNTRACK_IMAGE;
+    const isUntracked = this.untrackedItems_.includes(item);
+    if (this.webuiRoundedIconsEnabled_) {
+      return isUntracked ? ACTION_BUTTON_TRACK_IMAGE :
+                           ACTION_BUTTON_UNTRACK_IMAGE;
+    }
+    return isUntracked ? ACTION_BUTTON_TRACK_IMAGE_OLD :
+                         ACTION_BUTTON_UNTRACK_IMAGE_OLD;
   }
 
   protected getButtonDescriptionForItem_(item: BookmarkProductInfo): string {
@@ -271,9 +282,11 @@ export class ShoppingListElement extends CrLitElement {
       product: BookmarkProductInfo, attemptedTrack: boolean) {
     this.retryOperationCallback_ = () => {
       if (attemptedTrack) {
-        this.priceTrackingProxy_.trackPriceForBookmark(product.bookmarkId);
+        this.priceTrackingProxy_.handler.trackPriceForBookmark(
+            product.bookmarkId);
       } else {
-        this.priceTrackingProxy_.untrackPriceForBookmark(product.bookmarkId);
+        this.priceTrackingProxy_.handler.untrackPriceForBookmark(
+            product.bookmarkId);
       }
     };
     this.$.errorToast.show();

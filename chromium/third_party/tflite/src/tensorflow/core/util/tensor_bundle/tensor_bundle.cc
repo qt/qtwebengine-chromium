@@ -140,8 +140,8 @@ absl::Status ReadStringTensor(io::InputBuffer* buffered_file,
   if (crc32c::Unmask(length_checksum) != *actual_crc32c) {
     return absl::DataLossError(absl::StrCat(
         "The length checksum does not match: expected ",
-        strings::Printf("%08u", crc32c::Unmask(length_checksum)),
-        " but actual is ", strings::Printf("%08u", *actual_crc32c)));
+        absl::StrFormat("%08u", crc32c::Unmask(length_checksum)),
+        " but actual is ", absl::StrFormat("%08u", *actual_crc32c)));
   }
   *actual_crc32c = crc32c::Extend(*actual_crc32c,
                                   reinterpret_cast<char*>(&raw_length_checksum),
@@ -214,8 +214,8 @@ absl::Status ReadVariantTensor(io::InputBuffer* buffered_file, Tensor* ret,
     if (crc32c::Unmask(checksum) != *actual_crc32c) {
       return absl::DataLossError(absl::StrCat(
           "The checksum after Variant ", i, " does not match.",
-          " Expected: ", strings::Printf("%08u", crc32c::Unmask(checksum)),
-          " Actual: ", strings::Printf("%08u", *actual_crc32c)));
+          " Expected: ", absl::StrFormat("%08u", crc32c::Unmask(checksum)),
+          " Actual: ", absl::StrFormat("%08u", *actual_crc32c)));
     }
     *actual_crc32c = crc32c::Extend(
         *actual_crc32c, reinterpret_cast<char*>(&checksum), sizeof(uint32_t));
@@ -1026,7 +1026,7 @@ absl::Status BundleReader::GetValue(const BundleEntryProto& entry,
     return absl::DataLossError(absl::StrCat(
         "TensorBundle at ", prefix_, " shard ", entry.shard_id(), " (",
         entry.size(), " bytes): Checksum does not match: stored ",
-        strings::Printf("%08u", crc32c::Unmask(entry.crc32c())),
+        absl::StrFormat("%08u", crc32c::Unmask(entry.crc32c())),
         " vs. calculated on the restored bytes ", actual_crc32c));
   }
 
@@ -1168,6 +1168,24 @@ absl::Status BundleReader::GetSliceValue(
       return status_;
     }
 
+    // The stored slice's recorded shape must match the geometry obtained by
+    // applying "stored_slice" to the full tensor shape. The copy below walks
+    // "stored_slice_tensor" using the latter, so a smaller recorded shape (from
+    // a crafted checkpoint) would read past the backing buffer. This mirrors
+    // the size check in TensorSliceReader::CopySliceData.
+    TensorShape expected_slice_shape;
+    status_ = stored_slice.SliceTensorShape(full_shape, &expected_slice_shape);
+    if (!status_.ok()) return status_;
+    if (stored_slice_shape != expected_slice_shape) {
+      status_ = absl::DataLossError(
+          absl::StrCat("Stored slice shape ", stored_slice_shape.DebugString(),
+                       " for tensor ", full_tensor_key,
+                       " does not match the expected slice shape ",
+                       expected_slice_shape.DebugString(),
+                       " derived from full shape ", full_shape.DebugString()));
+      return status_;
+    }
+
     Tensor stored_slice_tensor(stored_slice_entry.dtype(), stored_slice_shape);
     status_ = GetValue(stored_slice_entry, &stored_slice_tensor);
     if (!status_.ok()) return status_;
@@ -1250,7 +1268,7 @@ BundleCache::FileState* BundleCache::EnsureOpened(std::string name) {
   // Get the file, opening it if necessary.
   FileState* f;
   {
-    absl::MutexLock l(&mu_);
+    absl::MutexLock l(mu_);
     auto& slot = opened_files_[name];
     if (slot == nullptr) {
       slot = std::make_unique<FileState>();

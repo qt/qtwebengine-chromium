@@ -47,6 +47,7 @@ namespace ui {
 struct AXActionData;
 struct AXNodeData;
 struct AXTreeData;
+class BrowserAccessibility;
 class ChildIterator;
 
 using TextAttribute = std::pair<std::string, std::string>;
@@ -195,6 +196,10 @@ class COMPONENT_EXPORT(AX_PLATFORM) AXPlatformNodeDelegate {
   // compute the value from the control's inner text in the case of a text
   // field.
   virtual std::u16string GetValueForControl() const;
+
+  // Returns kAriaValueText if present/non-empty, otherwise falls back to
+  // kValue. Returns std::nullopt if neither attribute is present or non-empty.
+  std::optional<std::string> GetAriaValueTextOrValue() const;
 
   // See `AXNode::GetUnignoredSelection`.
   virtual const AXSelection GetUnignoredSelection() const;
@@ -660,11 +665,15 @@ class COMPONENT_EXPORT(AX_PLATFORM) AXPlatformNodeDelegate {
   }
 
  protected:
+  friend class BrowserAccessibility;
+
   explicit AXPlatformNodeDelegate(AXNode* node);
 
   virtual std::string SubtreeToStringHelper(size_t level);
 
   virtual void NotifyAccessibilityApiUsage() const {}
+
+  virtual BrowserAccessibility* ToBrowserAccessibility();
 
   AXPlatformNodeDelegate* GetParentDelegate() const;
 

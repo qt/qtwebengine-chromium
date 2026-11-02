@@ -15,9 +15,9 @@ import disabledWidgetStyles from './disabledWidget.css.js';
 
 const UIStrings = {
   /**
-   * @description The error message when the user is not logged in into Chrome.
+   * @description The error message when the user is not signed in to Chrome.
    */
-  notLoggedIn: 'This feature is only available when you are signed into Chrome with your Google account',
+  notLoggedIn: 'This feature is only available when you are signed in to Chrome with your Google account',
   /**
    * @description Message shown when the user is offline.
    */
@@ -134,7 +134,7 @@ export const DEFAULT_VIEW = (
         </div>
       </div>
     `,
-    target
+    target,
   );
   // clang-format on
 };

@@ -2,8 +2,8 @@
 # Open a shell to this image with scripts/docker_sh.
 # Use a fixed snapshot of the base image to create a deterministic environment.
 # Snapshot tags can be found at https://hub.docker.com/_/debian/tags
-ARG image_digest=sha256:f528891ab1aa484bf7233dbcc84f3c806c3e427571d75510a9d74bb5ec535b33
-FROM debian:bookworm-slim@${image_digest}
+ARG image_digest=sha256:5012d0517aa0075a7150a45aae67586641e898913b7af3b08228108565b5f90c
+FROM debian:stable-slim@${image_digest}
 
 # We need unzip for rules_android, which doesn't seem to find unzip in the nix path
 RUN apt-get update && apt-get install --no-install-recommends --yes ca-certificates curl git xz-utils unzip nix

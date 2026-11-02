@@ -454,6 +454,7 @@ size_t NamesProvider::EstimateCurrentMemoryConsumption() const {
 }
 
 size_t CanonicalTypeNamesProvider::EstimateCurrentMemoryConsumption() const {
+  base::MutexGuard lock(&mutex_);
   size_t result = sizeof(this) + payload_size_estimate_;
   result += type_names_.capacity() * sizeof(StringT);
   result += ContentSize(field_names_);
@@ -468,19 +469,24 @@ size_t CanonicalTypeNamesProvider::EstimateCurrentMemoryConsumption() const {
 }
 
 void CanonicalTypeNamesProvider::DecodeNameSections() {
-  // TODO(jkummerow): We'll probably need to lock read accesses too.
-  base::MutexGuard lock(&mutex_);
-  type_names_.resize(GetTypeCanonicalizer()->GetCurrentNumberOfTypes());
+  mutex_.AssertHeld();
   GetWasmEngine()->DecodeAllNameSections(this);
 }
 
 void CanonicalTypeNamesProvider::DecodeNames(NativeModule* native_module) {
+  mutex_.AssertHeld();  // Only called indirectly from {DecodeNameSections}.
+  // If the NativeModule is still under construction, skip it for now.
+  if (!native_module->HasWireBytes()) return;
   const WasmModule* module = native_module->module();
   if (module->canonical_typenames_decoded) return;
   module->canonical_typenames_decoded = true;
   base::Vector<const uint8_t> wire_bytes = native_module->wire_bytes();
   WireBytesRef name_section = module->name_section;
   if (name_section.is_empty()) return;
+  // The caller of this function holds a lock on the WasmEngine's mutex,
+  // so we can rely on the number of known canonical types not changing
+  // concurrently.
+  type_names_.resize(GetTypeCanonicalizer()->GetCurrentNumberOfTypes());
   size_t added_size = 0;
   DecodeCanonicalTypeNames(wire_bytes, module, type_names_, field_names_,
                            &added_size);
@@ -490,6 +496,7 @@ void CanonicalTypeNamesProvider::DecodeNames(NativeModule* native_module) {
 void CanonicalTypeNamesProvider::PrintTypeName(
     StringBuilder& out, CanonicalTypeIndex type_index,
     NamesProvider::IndexAsComment index_as_comment) {
+  base::MutexGuard lock(&mutex_);
   uint32_t index = type_index.index;
   if (index >= type_names_.size() || type_names_[index].empty()) {
     DecodeNameSections();
@@ -532,6 +539,7 @@ void CanonicalTypeNamesProvider::PrintValueType(StringBuilder& out,
 void CanonicalTypeNamesProvider::PrintFieldName(StringBuilder& out,
                                                 CanonicalTypeIndex struct_index,
                                                 uint32_t field_index) {
+  base::MutexGuard lock(&mutex_);
   uint32_t index = struct_index.index;
   if (index >= type_names_.size()) DecodeNameSections();
 

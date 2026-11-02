@@ -15,9 +15,11 @@
 #include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
 #include "base/observer_list.h"
+#include "base/observer_list_types.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
+#include "components/viz/common/display/display_scheduler_draw_result.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
 #include "components/viz/common/gpu/context_lost_observer.h"
 #include "components/viz/common/resources/returned_resource.h"
@@ -66,11 +68,12 @@ class SkiaOutputSurface;
 class SoftwareRenderer;
 class OcclusionCuller;
 
-class VIZ_SERVICE_EXPORT DisplayObserver {
+class VIZ_SERVICE_EXPORT DisplayObserver : public base::CheckedObserver {
  public:
-  virtual ~DisplayObserver() = default;
+  ~DisplayObserver() override = default;
 
-  virtual void OnDisplayDidFinishFrame(const BeginFrameAck& ack) = 0;
+  virtual void OnDisplayDidFinishFrame(const BeginFrameId& frame_id,
+                                       DisplaySchedulerDrawResult result) = 0;
   virtual void OnDisplayDestroyed() = 0;
 };
 
@@ -137,14 +140,6 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
   // outside of Initialize, DrawAndSwap and dtor.
   void DisableGPUAccessByDefault();
 
-  // Stop drawing until Resize() is called with a new size. If the display
-  // hasn't drawn a frame at the current size *and* it's possible to immediately
-  // draw then this will run DrawAndSwap() first.
-  //
-  // |no_pending_swaps_callback| will be run there are no more swaps pending and
-  // may be run immediately.
-  void DisableSwapUntilResize(base::OnceClosure no_pending_swaps_callback);
-
   // Sets the color matrix that will be used to transform the output of this
   // display. This is only supported for GPU compositing.
   void SetColorMatrix(const SkM44& matrix);
@@ -152,12 +147,15 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
   void SetDisplayColorSpaces(
       const gfx::DisplayColorSpaces& display_color_spaces);
   void SetOutputIsSecure(bool secure);
+  void NotifyMinSupportedVsyncInterval(base::TimeDelta min_vsync_interval);
 
   const SurfaceId& CurrentSurfaceId() const;
 
   // DisplaySchedulerClient implementation.
   bool DrawAndSwap(const DrawAndSwapParams& params) override;
-  void DidFinishFrame(const BeginFrameAck& ack) override;
+  void DidFinishFrame(const BeginFrameId& frame_id,
+                      DisplaySchedulerDrawResult result) override;
+  int GetCurrentAllocatedBuffers() const override;
 
   // OutputSurfaceClient implementation.
   void DidReceiveSwapBuffersAck(gpu::SwapBuffersCompleteParams params,
@@ -253,8 +251,7 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
                 HintSession::BoostType boost_type,
                 int64_t choreographer_vsync_id,
                 int64_t swap_trace_id,
-                std::optional<PossibleDeadline> deadline,
-                std::optional<PossibleDeadline> preferred);
+                std::optional<PossibleDeadline> selected_deadline);
     void OnSwap(gfx::SwapTimings timings, DisplaySchedulerBase* scheduler);
     bool HasSwapped() const { return !swap_timings_.is_null(); }
     void OnPresent(const gfx::PresentationFeedback& feedback);
@@ -267,11 +264,8 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
 
     int64_t choreographer_vsync_id() const { return choreographer_vsync_id_; }
     int64_t swap_trace_id() const { return swap_trace_id_; }
-    const std::optional<PossibleDeadline>& deadline() const {
-      return deadline_;
-    }
-    const std::optional<PossibleDeadline>& preferred() const {
-      return preferred_;
+    const std::optional<PossibleDeadline>& selected_deadline() const {
+      return selected_deadline_;
     }
 
    private:
@@ -286,8 +280,7 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
     HintSession::BoostType boost_type_;
     int64_t choreographer_vsync_id_ = 0;
     int64_t swap_trace_id_ = 0;
-    std::optional<PossibleDeadline> deadline_;
-    std::optional<PossibleDeadline> preferred_;
+    std::optional<PossibleDeadline> selected_deadline_;
   };
 
   void InitializeRenderer();
@@ -303,7 +296,7 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
   const raw_ptr<const DebugRendererSettings> debug_settings_;
 
   raw_ptr<DisplayClient> client_ = nullptr;
-  base::ObserverList<DisplayObserver>::Unchecked observers_;
+  base::ObserverList<DisplayObserver> observers_;
   raw_ptr<SurfaceManager> surface_manager_ = nullptr;
   const FrameSinkId frame_sink_id_;
   SurfaceId current_surface_id_;
@@ -311,7 +304,6 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
   float device_scale_factor_ = 1.f;
   gfx::DisplayColorSpaces display_color_spaces_;
   bool visible_ = false;
-  bool swapped_since_resize_ = false;
   bool output_is_secure_ = false;
 
 #if DCHECK_IS_ON()
@@ -359,9 +351,6 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
       pending_presentation_group_timings_;
 
   bool disable_swap_until_resize_ = true;
-
-  // Callback that will be run after all pending swaps have acked.
-  base::OnceClosure no_pending_swaps_callback_;
 
   int pending_swaps_ = 0;
 

@@ -14,6 +14,7 @@
 #include "src/maglev/maglev-graph.h"
 #include "src/maglev/maglev-interpreter-frame-state.h"
 #include "src/maglev/maglev-ir.h"
+#include "src/maglev/maglev-node-type.h"
 #include "src/utils/bit-vector.h"
 
 #define TRACE_RANGE(...)                                      \
@@ -211,7 +212,7 @@ class RangeProcessor {
     ranges_.EnsureMapExistsFor(block);
     return BlockProcessResult::kContinue;
   }
-  void PostProcessBasicBlock(BasicBlock* block) {
+  BlockProcessResult PostProcessBasicBlock(BasicBlock* block) {
     if (JumpLoop* control = block->control_node()->TryCast<JumpLoop>()) {
       if (!ProcessLoopPhisBackedge(control->target(), block)) {
         // We didn't reach a fixpoint for this loop, try this loop header
@@ -233,6 +234,7 @@ class RangeProcessor {
         ProcessNodeBase(block->control_node(), succ);
       });
     }
+    return BlockProcessResult::kContinue;
   }
 
   void PostPhiProcessing() {}
@@ -355,9 +357,32 @@ class RangeProcessor {
                                                      Get(node->input_node(1))));
     return ProcessResult::kContinue;
   }
+  ProcessResult Process(BuiltinStringPrototypeCharCodeOrCodePointAt* node,
+                        const ProcessingState&) {
+    UnionUpdateInt32(
+        node,
+        node->mode() == BuiltinStringPrototypeCharCodeOrCodePointAt::kCharCodeAt
+            ? Range(0, String::kMaxUtf16CodeUnit)
+            : Range(0, String::kMaxCodePoint));
+    return ProcessResult::kContinue;
+  }
+  ProcessResult Process(LoadUnsignedIntTypedArrayElement* node,
+                        const ProcessingState&) {
+    UnionUpdateUint32(node,
+                      UnsignedTypedArrayElementRange(node->elements_kind()));
+    return ProcessResult::kContinue;
+  }
+  ProcessResult Process(LoadUnsignedIntConstantTypedArrayElement* node,
+                        const ProcessingState&) {
+    UnionUpdateUint32(node,
+                      UnsignedTypedArrayElementRange(node->elements_kind()));
+    return ProcessResult::kContinue;
+  }
   ProcessResult Process(LoadTaggedField* node, const ProcessingState&) {
-    if (node->load_type() == LoadType::kSmi) {
-      UnionUpdate(node, Range::Smi());
+    if (node->type() == NodeType::kSmi) {
+      UnionUpdate(node, node->is_array_length() == IsArrayLength::kYes
+                            ? Range::NonNegativeSmi()
+                            : Range::Smi());
     }
     return ProcessResult::kContinue;
   }
@@ -478,6 +503,18 @@ class RangeProcessor {
                         range.IsInt32() ? range : Range::Int32());
   }
 
+  static Range UnsignedTypedArrayElementRange(ElementsKind kind) {
+    switch (kind) {
+      case UINT8_ELEMENTS:
+      case UINT8_CLAMPED_ELEMENTS:
+        return Range(0, kMaxUInt8);
+      case UINT16_ELEMENTS:
+        return Range(0, kMaxUInt16);
+      default:
+        return Range::Uint32();
+    }
+  }
+
   void UnionUpdateUint32(ValueNode* node, Range range) {
     // WARNING: This entails that the current range analysis cannot be used to
     // identify truncation, since we always intersect Int32 operations range.
@@ -487,13 +524,7 @@ class RangeProcessor {
   }
 
   void ProcessPhis(BasicBlock* block, BasicBlock* pred) {
-    int predecessor_id = -1;
-    for (int i = 0; i < block->predecessor_count(); ++i) {
-      if (block->predecessor_at(i) == pred) {
-        predecessor_id = i;
-        break;
-      }
-    }
+    int predecessor_id = block->get_predecessor_index(pred);
     DCHECK_NE(predecessor_id, -1);
     for (Phi* phi : *block->phis()) {
       Range phi_range = ranges_.Get(pred, phi->input_node(predecessor_id));

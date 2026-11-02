@@ -118,6 +118,7 @@ source_set("browser") {
     "//components/safe_browsing/core/browser:verdict_cache_manager",
     "//components/safe_browsing/core/browser/db:database_manager",
     "//components/safe_browsing/core/browser/db:v4_protocol_manager_util",
+    "//components/safe_browsing/core/browser/db:v5_get_hash_protocol_manager",
     "//components/safe_browsing/core/browser/hashprefix_realtime:hash_realtime_service",
     "//components/safe_browsing/core/browser/realtime:policy_engine",
     "//components/safe_browsing/core/browser/realtime:url_lookup_service_base",
@@ -166,13 +167,10 @@ source_set("unit_tests") {
     "async_check_tracker_unittest.cc",
     "client_report_util_unittest.cc",
     "client_side_detection_feature_cache_unittest.cc",
-    "client_side_phishing_model_unittest.cc",
-    "credit_card_form_event_unittest.cc",
   ]
 
   deps = [
     ":client_side_detection_images_cache",
-    ":credit_card_form_event",
     "//base",
     "//base/test:test_support",
     "//components/optimization_guide/core",
@@ -240,6 +238,7 @@ source_set("client_side_detection_images_cache") {
   ]
 
   deps = [
+    "//components/safe_browsing/core/browser:client_side_detection_service_base",
     "//components/safe_browsing/core/common/fbs:client_model",
     "//components/safe_browsing/core/common/proto:csd_proto",
     "//content/public/browser",
@@ -250,26 +249,11 @@ source_set("client_side_detection_images_cache") {
   }
 }
 
-source_set("credit_card_form_event") {
-  sources = [
-    "credit_card_form_event.cc",
-    "credit_card_form_event.h",
-  ]
-
-  deps = [ "//base" ]
-
-  if (is_android) {
-    deps += [ "//components/safe_browsing/core/browser:referring_app_info" ]
-  }
-}
-
 if (safe_browsing_mode != 0) {
   source_set("client_side_detection_service") {
     sources = [
       "client_side_detection_service.cc",
       "client_side_detection_service.h",
-      "client_side_phishing_model.cc",
-      "client_side_phishing_model.h",
     ]
 
     deps = [
@@ -278,6 +262,7 @@ if (safe_browsing_mode != 0) {
       "//components/prefs",
       "//components/safe_browsing/content/browser/web_ui",
       "//components/safe_browsing/content/common:interfaces",
+      "//components/safe_browsing/core/browser:client_side_detection_service_base",
       "//components/safe_browsing/core/common",
       "//components/safe_browsing/core/common:safe_browsing_prefs",
       "//components/safe_browsing/core/common/fbs:client_model",
@@ -307,17 +292,15 @@ if (safe_browsing_mode != 0) {
     deps = [
       ":client_side_detection_images_cache",
       ":client_side_detection_service",
-      ":credit_card_form_event",
       "//base",
       "//components/autofill/content/browser",
-      "//components/autofill/core/browser",
       "//components/optimization_guide/proto:optimization_guide_proto",
       "//components/permissions",
       "//components/prefs",
       "//components/safe_browsing:buildflags",
       "//components/safe_browsing/content/browser",
       "//components/safe_browsing/content/common:interfaces",
-      "//components/safe_browsing/content/common:visual_utils",
+      "//components/safe_browsing/core/browser",
       "//components/safe_browsing/core/browser:intelligent_scan_delegate",
       "//components/safe_browsing/core/browser:token_fetcher",
       "//components/safe_browsing/core/browser:verdict_cache_manager",
@@ -327,7 +310,9 @@ if (safe_browsing_mode != 0) {
       "//components/safe_browsing/core/browser/sync",
       "//components/safe_browsing/core/common",
       "//components/safe_browsing/core/common:safe_browsing_prefs",
+      "//components/safe_browsing/core/common:visual_utils",
       "//components/safe_browsing/core/common/fbs:client_model",
+      "//components/safe_browsing/core/common/phishing_classifier",
       "//components/safe_browsing/core/common/proto:csd_proto",
       "//components/security_interstitials/content:security_interstitial_page",
       "//components/security_interstitials/core:unsafe_resource",
@@ -335,6 +320,7 @@ if (safe_browsing_mode != 0) {
       "//components/zoom",
       "//content/public/browser",
       "//mojo/public/mojom/base:protobuf_support",
+      "//ui/display",
     ]
 
     if (is_android) {

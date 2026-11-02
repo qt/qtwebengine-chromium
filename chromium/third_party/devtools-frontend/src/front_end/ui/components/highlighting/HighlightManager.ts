@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import type * as TextUtils from '../../../models/text_utils/text_utils.js';
+import type * as TextUtils from '../../../core/text_utils/text_utils.js';
 
 export class RangeWalker {
   #offset = 0;
@@ -88,7 +88,8 @@ interface HighlightState {
   currentRange?: TextUtils.TextRange.SourceRange;
 }
 
-let highlightManagerInstance: HighlightManager;
+let highlightManagerInstance: HighlightManager|null;
+
 export class HighlightManager {
   #highlights = new Highlight();
   #currentHighlights = new Highlight();
@@ -108,6 +109,10 @@ export class HighlightManager {
     }
 
     return highlightManagerInstance;
+  }
+
+  static removeInstance(): void {
+    highlightManagerInstance = null;
   }
 
   addHighlights(ranges: Range[]): void {

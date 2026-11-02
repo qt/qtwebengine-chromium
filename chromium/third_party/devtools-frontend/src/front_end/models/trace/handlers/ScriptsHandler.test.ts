@@ -27,7 +27,7 @@ describe('ScriptsHandler', () => {
           Promise<SDK.SourceMap.SourceMap> {
             // Don't need to actually make a source map.
             return {test: params.sourceMapUrl} as unknown as SDK.SourceMap.SourceMap;
-          }
+          },
     });
   });
 
@@ -78,7 +78,7 @@ describe('ScriptsHandler', () => {
         url: 'http://localhost:8080/index.html',
         content: 'source text 1',
         sourceMapUrl: 'http://localhost:8080/source.map.json',
-        sourceMap: {test: 'http://localhost:8080/source.map.json'}
+        sourceMap: {test: 'http://localhost:8080/source.map.json'},
       },
       {
         isolate: '12345',
@@ -88,7 +88,7 @@ describe('ScriptsHandler', () => {
         ts: 50442438976,
         inline: true,
         url: 'http://localhost:8080/index.html',
-        content: 'source text 2'
+        content: 'source text 2',
       },
       {
         isolate: '6789',

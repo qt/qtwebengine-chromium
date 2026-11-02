@@ -57,8 +57,6 @@ component("cpp") {
   output_name = "network_cpp"
 
   sources = [
-    "attribution_utils.cc",
-    "attribution_utils.h",
     "avail_language_header_parser.cc",
     "avail_language_header_parser.h",
     "browsing_topics_parser.cc",
@@ -175,6 +173,8 @@ component("cpp") {
     "url_util.h",
     "weak_wrapper_shared_url_loader_factory.cc",
     "weak_wrapper_shared_url_loader_factory.h",
+    "websocket_utils.cc",
+    "websocket_utils.h",
     "wrapper_shared_url_loader_factory.cc",
     "wrapper_shared_url_loader_factory.h",
     "x_frame_options_parser.cc",
@@ -484,6 +484,7 @@ component("web_platform") {
     "//net",
     "//services/network/public/mojom:mojom_content_security_policy",
     "//services/network/public/mojom:mojom_cors_origin_pattern",
+    "//services/network/public/mojom:mojom_origin_or_wildcard_header_value",
     "//services/network/public/mojom:mojom_permissions_policy_shared",
     "//services/network/public/mojom:url_loader_base_shared",
     "//url",
@@ -578,23 +579,6 @@ component("shared_storage_support") {
 
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
   defines = [ "IS_NETWORK_CPP_SHARED_STORAGE_IMPL" ]
-}
-
-component("ad_auction_support") {
-  sources = [
-    "ad_auction/event_record.cc",
-    "ad_auction/event_record.h",
-    "ad_auction/event_record_mojom_traits.cc",
-    "ad_auction/event_record_mojom_traits.h",
-  ]
-  public_deps = [
-    "//base",
-    "//net",
-    "//services/network/public/mojom:mojom_ad_auction",
-  ]
-
-  configs += [ "//build/config/compiler:wexit_time_destructors" ]
-  defines = [ "IS_NETWORK_CPP_AD_AUCTION_IMPL" ]
 }
 
 # This component is separate from cpp_base as it is a dependency of
@@ -712,7 +696,6 @@ component("cpp_base") {
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
 
   public_deps = [
-    ":ad_auction_support",
     ":connection_allowlist",
     ":cookies_mojom_support",
     ":crash_keys",
@@ -817,9 +800,6 @@ source_set("tests") {
   testonly = true
 
   sources = [
-    "ad_auction/event_record_mojom_traits_unittest.cc",
-    "ad_auction/event_record_unittest.cc",
-    "attribution_utils_unittest.cc",
     "avail_language_header_parser_unittest.cc",
     "browsing_topics_parser_unittest.cc",
     "client_hints_unittest.cc",
@@ -914,6 +894,7 @@ source_set("tests") {
     "url_request_mojom_traits_unittest.cc",
     "url_util_unittest.cc",
     "web_sandbox_flags_unittest.cc",
+    "websocket_utils_unittest.cc",
     "x_frame_options_parser_unittest.cc",
   ]
 
@@ -922,7 +903,6 @@ source_set("tests") {
   }
 
   deps = [
-    ":ad_auction_support",
     ":cpp",
     ":shared_storage_support",
     ":test_interfaces",
@@ -935,9 +915,9 @@ source_set("tests") {
     "//services/network:network_service",
     "//services/network:test_support",
     "//services/network/public/cpp/cert_verifier:cert_verifier_tests",
-    "//services/network/public/mojom:mojom_ad_auction",
     "//services/network/public/mojom:mojom_permissions_policy",
     "//testing/gtest",
+    "//third_party/fuzztest",
   ]
 
   public_deps = [ ":buildflags" ]

@@ -744,6 +744,8 @@ MaybeError Texture::WriteInternal(const ScopedCommandRecordingContext* commandCo
     bool writeCompleteTexture = isCompleteSubresourceCopiedTo && GetNumMipLevels() == 1 &&
                                 GetArrayLayers() == subresources.layerCount;
 
+    uint32_t bytesPerImage = bytesPerRow * rowsPerImage;
+
     if (GetDimension() == wgpu::TextureDimension::e3D) {
         dstBox.front = origin.z;
         dstBox.back = origin.z + size.depthOrArrayLayers;
@@ -751,7 +753,7 @@ MaybeError Texture::WriteInternal(const ScopedCommandRecordingContext* commandCo
             GetSubresourceIndex(subresources.baseMipLevel, 0, D3D11Aspect(subresources.aspects));
         UINT copyFlag = writeCompleteTexture ? D3D11_COPY_DISCARD : 0;
         commandContext->UpdateSubresource1(GetD3D11Resource(), subresource, &dstBox, data,
-                                           bytesPerRow, bytesPerRow * rowsPerImage, copyFlag);
+                                           bytesPerRow, bytesPerImage, copyFlag);
     } else {
         dstBox.front = 0;
         dstBox.back = 1;
@@ -763,7 +765,7 @@ MaybeError Texture::WriteInternal(const ScopedCommandRecordingContext* commandCo
             UINT copyFlag = (writeCompleteTexture && layer == 0) ? D3D11_COPY_DISCARD : 0;
             commandContext->UpdateSubresource1(GetD3D11Resource(), subresource, pDstBox, data,
                                                bytesPerRow, 0, copyFlag);
-            DAWN_UNSAFE_TODO(data += rowsPerImage * bytesPerRow);
+            DAWN_UNSAFE_TODO(data += bytesPerImage);
         }
     }
 
@@ -810,7 +812,7 @@ MaybeError Texture::WriteDepthStencilInternal(const ScopedCommandRecordingContex
         copyCmd.source.mipLevel = subresources.baseMipLevel;
         copyCmd.source.aspect = otherAspects;
         copyCmd.destination.texture = stagingTexture.Get();
-        copyCmd.destination.origin = {TexelCount{0}, TexelCount{0}, TexelCount{0}};
+        copyCmd.destination.origin = {TexelCount{0u}, TexelCount{0u}, TexelCount{0u}};
         copyCmd.destination.mipLevel = 0;
         copyCmd.destination.aspect = otherAspects;
         copyCmd.copySize = size;
@@ -843,13 +845,13 @@ MaybeError Texture::WriteDepthStencilInternal(const ScopedCommandRecordingContex
         commandContext->Unmap(stagingTexture->GetD3D11Resource(), layer);
         DAWN_ASSERT(size.height <= rowsPerImage);
         // Skip the padding rows.
-        DAWN_UNSAFE_TODO(pSrcData += (rowsPerImage - size.height)) * bytesPerRow;
+        DAWN_UNSAFE_TODO(pSrcData += static_cast<size_t>(rowsPerImage - size.height) * bytesPerRow);
     }
 
     // Copy to the dest texture from the staging texture.
     CopyTextureToTextureCmd copyCmd;
     copyCmd.source.texture = stagingTexture.Get();
-    copyCmd.source.origin = {TexelCount{0}, TexelCount{0}, TexelCount{0}};
+    copyCmd.source.origin = {TexelCount{0u}, TexelCount{0u}, TexelCount{0u}};
     copyCmd.source.mipLevel = 0;
     copyCmd.source.aspect = GetFormat().aspects;
     copyCmd.destination.texture = this;
@@ -892,7 +894,7 @@ MaybeError Texture::ReadStaging(const ScopedCommandRecordingContext* commandCont
                 "D3D11 map staging texture"));
 
             uint8_t* pSrcData = static_cast<uint8_t*>(mappedResource.pData);
-            uint64_t dstOffset = dstBytesPerRow * dstRowsPerImage * layer;
+            uint64_t dstOffset = static_cast<uint64_t>(dstBytesPerRow) * dstRowsPerImage * layer;
             if (dstBytesPerRow == bytesPerRow && mappedResource.RowPitch == bytesPerRow) {
                 // If there is no padding in the rows, we can upload the whole image
                 // in one read.
@@ -940,7 +942,7 @@ MaybeError Texture::ReadStaging(const ScopedCommandRecordingContext* commandCont
                      "D3D11 map staging texture"));
 
     for (uint32_t z = 0; z < size.depthOrArrayLayers; ++z) {
-        uint64_t dstOffset = dstBytesPerRow * dstRowsPerImage * z;
+        uint64_t dstOffset = static_cast<uint64_t>(dstBytesPerRow) * dstRowsPerImage * z;
         uint8_t* pSrcData = DAWN_UNSAFE_TODO(static_cast<uint8_t*>(mappedResource.pData) +
                                              z * mappedResource.DepthPitch);
         if (dstBytesPerRow == bytesPerRow && mappedResource.RowPitch == bytesPerRow) {
@@ -990,7 +992,7 @@ MaybeError Texture::Read(const ScopedCommandRecordingContext* commandContext,
     copyCmd.source.mipLevel = subresources.baseMipLevel;
     copyCmd.source.aspect = subresources.aspects;
     copyCmd.destination.texture = stagingTexture.Get();
-    copyCmd.destination.origin = {TexelCount{0}, TexelCount{0}, TexelCount{0}};
+    copyCmd.destination.origin = {TexelCount{0u}, TexelCount{0u}, TexelCount{0u}};
     copyCmd.destination.mipLevel = 0;
     copyCmd.destination.aspect = subresources.aspects;
     copyCmd.copySize = size;
@@ -1048,10 +1050,10 @@ MaybeError Texture::CopyInternal(const ScopedCommandRecordingContext* commandCon
     SubresourceRange dstSubresources = GetSubresourcesAffectedByCopy(dst, copy->copySize);
 
     D3D11_BOX srcBox;
-    srcBox.left = static_cast<uint32_t>(src.origin.x);
-    srcBox.right = static_cast<uint32_t>(src.origin.x + copy->copySize.width);
-    srcBox.top = static_cast<uint32_t>(src.origin.y);
-    srcBox.bottom = static_cast<uint32_t>(src.origin.y + copy->copySize.height);
+    srcBox.left = dchecked_cast<uint32_t>(src.origin.x);
+    srcBox.right = dchecked_cast<uint32_t>(src.origin.x + copy->copySize.width);
+    srcBox.top = dchecked_cast<uint32_t>(src.origin.y);
+    srcBox.bottom = dchecked_cast<uint32_t>(src.origin.y + copy->copySize.height);
     switch (src.texture->GetDimension()) {
         case wgpu::TextureDimension::Undefined:
             DAWN_UNREACHABLE();
@@ -1061,8 +1063,8 @@ MaybeError Texture::CopyInternal(const ScopedCommandRecordingContext* commandCon
             srcBox.back = 1;
             break;
         case wgpu::TextureDimension::e3D:
-            srcBox.front = static_cast<uint32_t>(src.origin.z);
-            srcBox.back = static_cast<uint32_t>(src.origin.z + copy->copySize.depthOrArrayLayers);
+            srcBox.front = dchecked_cast<uint32_t>(src.origin.z);
+            srcBox.back = dchecked_cast<uint32_t>(src.origin.z + copy->copySize.depthOrArrayLayers);
             break;
     }
 
@@ -1081,9 +1083,9 @@ MaybeError Texture::CopyInternal(const ScopedCommandRecordingContext* commandCon
                                              D3D11Aspect(dstSubresources.aspects));
         commandContext->CopySubresourceRegion(
             ToBackend(dst.texture)->GetD3D11Resource(), dstSubresource,
-            static_cast<uint32_t>(dst.origin.x), static_cast<uint32_t>(dst.origin.y),
+            dchecked_cast<uint32_t>(dst.origin.x), dchecked_cast<uint32_t>(dst.origin.y),
             dst.texture->GetDimension() == wgpu::TextureDimension::e3D
-                ? static_cast<uint32_t>(dst.origin.z)
+                ? dchecked_cast<uint32_t>(dst.origin.z)
                 : 0,
             ToBackend(src.texture)->GetD3D11Resource(), srcSubresource,
             isWholeSubresource ? nullptr : &srcBox);

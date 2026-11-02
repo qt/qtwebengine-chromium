@@ -9,6 +9,7 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Badges from '../../models/badges/badges.js';
+import * as Bindings from '../../models/bindings/bindings.js';
 import * as Formatter from '../../models/formatter/formatter.js';
 import * as SourceMapScopes from '../../models/source_map_scopes/source_map_scopes.js';
 import * as CodeMirror from '../../third_party/codemirror.next/codemirror.next.js';
@@ -25,17 +26,17 @@ const {Direction} = TextEditor.TextEditorHistory;
 
 const UIStrings = {
   /**
-   * @description Text in Console Prompt of the Console panel
+   * @description Text in Console prompt of the Console panel.
    */
   consolePrompt: 'Console prompt',
   /**
-   * @description Warning shown to users when pasting text into the DevTools console. IMPORTANT: keep double quotes around PH1 and do not use single quotes.
+   * @description Warning shown to users when pasting text into the DevTools Console. IMPORTANT: keep double quotes around PH1 and do not use single quotes.
    * @example {allow pasting} PH1
    */
   selfXssWarning:
-      'Warning: Don’t paste code into the DevTools Console that you don’t understand or haven’t reviewed yourself. This could allow attackers to steal your identity or take control of your computer. Please type “{PH1}” below and press Enter to allow pasting.',
+      'Warning: Don’t paste code into the DevTools Console that you don’t understand or haven’t reviewed yourself. This could allow attackers to steal your identity or take control of your computer. Type "{PH1}" below and press Enter to allow pasting.',
   /**
-   * @description Text a user needs to type in order to confirm that they are aware of the danger of pasting code into the DevTools console.
+   * @description Text a user needs to type in order to confirm that they are aware of the danger of pasting code into the DevTools Console.
    */
   allowPasting: 'allow pasting',
 } as const;
@@ -170,7 +171,7 @@ export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, t
       this.aiCodeCompletionProvider.editorInitialized(this.editor);
       this.editor.editor.dispatch({
         effects: TextEditor.AiCodeCompletionProvider.setAiCodeCompletionTeaserMode.of(
-            TextEditor.AiCodeCompletionProvider.AiCodeCompletionTeaserMode.ONLY_SHOW_ON_EMPTY)
+            TextEditor.AiCodeCompletionProvider.AiCodeCompletionTeaserMode.ONLY_SHOW_ON_EMPTY),
       });
     }
 
@@ -236,7 +237,7 @@ export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, t
       SDK.OverlayModel.OverlayModel.highlightObjectAsDOMNode(result.object);
     } else if (this.highlightingNode) {
       this.highlightingNode = false;
-      SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+      SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight(SDK.TargetManager.TargetManager.instance());
     }
     if (result && executionContext) {
       executionContext.runtimeModel.releaseEvaluationResult(result);
@@ -247,7 +248,7 @@ export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, t
     super.willHide();
     if (this.highlightingNode) {
       this.highlightingNode = false;
-      SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+      SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight(SDK.TargetManager.TargetManager.instance());
     }
   }
 
@@ -390,7 +391,7 @@ export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, t
         if (teaserMode !== TextEditor.AiCodeCompletionProvider.AiCodeCompletionTeaserMode.OFF) {
           this.editor.editor.dispatch({
             effects: TextEditor.AiCodeCompletionProvider.setAiCodeCompletionTeaserMode.of(
-                TextEditor.AiCodeCompletionProvider.AiCodeCompletionTeaserMode.OFF)
+                TextEditor.AiCodeCompletionProvider.AiCodeCompletionTeaserMode.OFF),
           });
         }
       }
@@ -429,7 +430,8 @@ export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, t
       useCommandLineAPI: boolean): Promise<void> {
     const callFrame = executionContext.debuggerModel.selectedCallFrame();
     if (callFrame?.script.isJavaScript()) {
-      const nameMap = await SourceMapScopes.NamesResolver.allVariablesInCallFrame(callFrame);
+      const nameMap = await SourceMapScopes.NamesResolver.allVariablesInCallFrame(
+          callFrame, Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance());
       expression = await this.substituteNames(expression, nameMap);
     }
 

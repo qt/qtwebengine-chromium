@@ -47,6 +47,7 @@ from mojom.generate.generator import WriteFile
 
 _BUILTIN_GENERATORS = {
     "c++": "mojom_cpp_generator",
+    "fuzzilli": "mojom_fuzzilli_generator",
     "javascript": "mojom_js_generator",
     "java": "mojom_java_generator",
     "mojolpm": "mojom_mojolpm_generator",
@@ -376,7 +377,7 @@ def _Generate(args, remaining_args):
 
 
 def _Precompile(args, _):
-  generator_modules = LoadGenerators(",".join(_BUILTIN_GENERATORS.keys()))
+  generator_modules = LoadGenerators(args.generators_string)
 
   template_expander.PrecompileTemplates(generator_modules, args.output_dir)
   return 0
@@ -499,6 +500,12 @@ def main():
 
   precompile_parser = subparsers.add_parser("precompile",
       description="Precompile templates for the mojom bindings generator.")
+  precompile_parser.add_argument("-g",
+                                 "--generators",
+                                 dest="generators_string",
+                                 metavar="GENERATORS",
+                                 default=",".join(_BUILTIN_GENERATORS.keys()),
+                                 help="comma-separated list of generators")
   precompile_parser.set_defaults(func=_Precompile)
 
   args, remaining_args = parser.parse_known_args()

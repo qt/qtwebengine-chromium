@@ -182,19 +182,21 @@ TEST_F(MoqtIntegrationTest, PublishNamespaceSuccessThenPublishNamespaceDone) {
       .WillOnce([](const TrackNamespace&,
                    const std::optional<MessageParameters>&,
                    MoqtResponseCallback callback) {
-        std::move(callback)(std::nullopt);
+        std::move(callback)(MessageParameters());
       });
-  testing::MockFunction<void(std::optional<MoqtRequestErrorInfo>)>
+  testing::MockFunction<void(
+      std::variant<MessageParameters, MoqtRequestErrorInfo>)>
       response_callback;
   client_->session()->PublishNamespace(TrackNamespace{"foo"}, parameters,
                                        response_callback.AsStdFunction(),
                                        [](MoqtRequestErrorInfo) {});
   bool matches = false;
   EXPECT_CALL(response_callback, Call)
-      .WillOnce([&](std::optional<MoqtRequestErrorInfo> error) {
-        matches = true;
-        EXPECT_FALSE(error.has_value());
-      });
+      .WillOnce(
+          [&](std::variant<MessageParameters, MoqtRequestErrorInfo> response) {
+            matches = true;
+            EXPECT_TRUE(std::holds_alternative<MessageParameters>(response));
+          });
   bool success =
       test_harness_.RunUntilWithDefaultTimeout([&]() { return matches; });
   EXPECT_TRUE(success);
@@ -220,18 +222,21 @@ TEST_F(MoqtIntegrationTest, PublishNamespaceSuccessThenCancel) {
       .WillOnce([](const TrackNamespace&,
                    const std::optional<MessageParameters>&,
                    MoqtResponseCallback callback) {
-        std::move(callback)(std::nullopt);
+        std::move(callback)(MessageParameters());
       });
-  testing::MockFunction<void(std::optional<MoqtRequestErrorInfo>)>
+  testing::MockFunction<void(
+      std::variant<MessageParameters, MoqtRequestErrorInfo>)>
       response_callback;
   testing::MockFunction<void(MoqtRequestErrorInfo)> cancel_callback;
   client_->session()->PublishNamespace(TrackNamespace{"foo"}, parameters,
                                        response_callback.AsStdFunction(),
                                        cancel_callback.AsStdFunction());
   bool matches = false;
-  EXPECT_CALL(response_callback, Call(std::optional<MoqtRequestErrorInfo>()))
-      .WillOnce(
-          [&](std::optional<MoqtRequestErrorInfo> error) { matches = true; });
+  EXPECT_CALL(response_callback, Call(testing::VariantWith<MessageParameters>(
+                                     testing::Eq(MessageParameters()))))
+      .WillOnce([&](std::variant<MessageParameters, MoqtRequestErrorInfo>) {
+        matches = true;
+      });
   bool success =
       test_harness_.RunUntilWithDefaultTimeout([&]() { return matches; });
   EXPECT_TRUE(success);
@@ -258,7 +263,7 @@ TEST_F(MoqtIntegrationTest, PublishNamespaceSuccessSubscribeInResponse) {
       .WillOnce([&](const TrackNamespace& track_namespace,
                     const std::optional<MessageParameters>&,
                     MoqtResponseCallback callback) {
-        std::move(callback)(std::nullopt);
+        std::move(callback)(MessageParameters());
         absl::StatusOr<FullTrackName> track_name =
             FullTrackName::Create(track_namespace, "/catalog");
         QUICHE_ASSERT_OK(track_name.status());
@@ -266,16 +271,18 @@ TEST_F(MoqtIntegrationTest, PublishNamespaceSuccessSubscribeInResponse) {
         server_->session()->Subscribe(*track_name, &subscribe_visitor_,
                                       parameters);
       });
-  testing::MockFunction<void(std::optional<MoqtRequestErrorInfo>)>
+  testing::MockFunction<void(
+      std::variant<MessageParameters, MoqtRequestErrorInfo>)>
       response_callback;
   client_->session()->PublishNamespace(prefix, parameters,
                                        response_callback.AsStdFunction(),
                                        [](MoqtRequestErrorInfo) {});
   bool matches = false;
   EXPECT_CALL(response_callback, Call)
-      .WillOnce([&](std::optional<MoqtRequestErrorInfo> error) {
-        EXPECT_FALSE(error.has_value());
-      });
+      .WillOnce(
+          [&](std::variant<MessageParameters, MoqtRequestErrorInfo> error) {
+            EXPECT_TRUE(std::holds_alternative<MessageParameters>(error));
+          });
   EXPECT_CALL(subscribe_visitor_, OnReply).WillOnce([&]() { matches = true; });
   bool success =
       test_harness_.RunUntilWithDefaultTimeout([&]() { return matches; });
@@ -301,7 +308,7 @@ TEST_F(MoqtIntegrationTest, PublishNamespaceSuccessSendDataInResponse) {
         absl::StatusOr<FullTrackName> track_name =
             FullTrackName::Create(track_namespace, "data");
         QUICHE_ASSERT_OK(track_name.status());
-        std::move(callback)(std::nullopt);
+        std::move(callback)(MessageParameters());
         MessageParameters parameters;
         server_->session()->Subscribe(*track_name, &subscribe_visitor_,
                                       parameters);
@@ -318,7 +325,8 @@ TEST_F(MoqtIntegrationTest, PublishNamespaceSuccessSendDataInResponse) {
   });
   client_->session()->PublishNamespace(
       TrackNamespace{"test"}, parameters,
-      [](std::optional<MoqtRequestErrorInfo>) {}, [](MoqtRequestErrorInfo) {});
+      [](std::variant<MessageParameters, MoqtRequestErrorInfo>) {},
+      [](MoqtRequestErrorInfo) {});
   bool success = test_harness_.RunUntilWithDefaultTimeout(
       [&]() { return received_subscribe_ok; });
   EXPECT_TRUE(success);
@@ -506,7 +514,8 @@ TEST_F(MoqtIntegrationTest, FetchItemsFromPast) {
 
 TEST_F(MoqtIntegrationTest, PublishNamespaceFailure) {
   EstablishSession();
-  testing::MockFunction<void(std::optional<MoqtRequestErrorInfo>)>
+  testing::MockFunction<void(
+      std::variant<MessageParameters, MoqtRequestErrorInfo>)>
       response_callback;
   client_->session()->PublishNamespace(TrackNamespace{"foo"},
                                        MessageParameters(),
@@ -514,11 +523,14 @@ TEST_F(MoqtIntegrationTest, PublishNamespaceFailure) {
                                        [](MoqtRequestErrorInfo error_info) {});
   bool matches = false;
   EXPECT_CALL(response_callback, Call)
-      .WillOnce([&](std::optional<MoqtRequestErrorInfo> error) {
-        matches = true;
-        ASSERT_TRUE(error.has_value());
-        EXPECT_EQ(error->error_code, RequestErrorCode::kNotSupported);
-      });
+      .WillOnce(
+          [&](std::variant<MessageParameters, MoqtRequestErrorInfo> response) {
+            matches = true;
+            ASSERT_TRUE(std::holds_alternative<MoqtRequestErrorInfo>(response));
+            const MoqtRequestErrorInfo& error =
+                std::get<MoqtRequestErrorInfo>(response);
+            EXPECT_EQ(error.error_code, RequestErrorCode::kNotSupported);
+          });
   bool success =
       test_harness_.RunUntilWithDefaultTimeout([&]() { return matches; });
   EXPECT_TRUE(success);
@@ -939,6 +951,90 @@ TEST_F(MoqtIntegrationTest, RecordTrace) {
     }
   }
   EXPECT_EQ(objects_enqueued, 1);
+}
+
+TEST_F(MoqtIntegrationTest, ClientPublishServerSubscribe) {
+  EstablishSession();
+  FullTrackName full_track_name("foo", "bar");
+
+  // Server registers incoming publish callback.
+  bool server_received_publish = false;
+  MoqtResponseCallback server_response_callback;
+  server_->session()->callbacks().incoming_publish_callback =
+      [&](const FullTrackName& name, const MessageParameters& parameters,
+          const TrackExtensions& extensions, MoqtResponseCallback callback) {
+        EXPECT_EQ(name, full_track_name);
+        server_response_callback = std::move(callback);
+        server_received_publish = true;
+        return &subscribe_visitor_;
+      };
+
+  // Client publishes.
+  auto queue = std::make_shared<TestTrackPublisher>(full_track_name);
+  bool client_publish_completed = false;
+  bool client_publish_success = false;
+  MoqtResponseCallback client_publish_callback =
+      [&](std::variant<MessageParameters, MoqtRequestErrorInfo> response) {
+        client_publish_completed = true;
+        client_publish_success =
+            std::holds_alternative<MessageParameters>(response);
+      };
+
+  MessageParameters publish_parameters;
+  TrackExtensions publish_extensions;
+  bool publish_submitted =
+      client_->session()->Publish(queue, publish_parameters, publish_extensions,
+                                  std::move(client_publish_callback));
+  ASSERT_TRUE(publish_submitted);
+
+  // Run until server receives PUBLISH.
+  bool success = test_harness_.RunUntilWithDefaultTimeout(
+      [&]() { return server_received_publish; });
+  ASSERT_TRUE(success);
+
+  // Server responds with REQUEST_OK.
+  std::move(server_response_callback)(MessageParameters());
+
+  // Run until client receives REQUEST_OK.
+  success = test_harness_.RunUntilWithDefaultTimeout(
+      [&]() { return client_publish_completed; });
+  ASSERT_TRUE(success);
+  EXPECT_TRUE(client_publish_success);
+
+  // Deliver objects.
+  queue->AddObject(Location(0, 0), 0, "object0", false);
+  queue->AddObject(Location(0, 1), 0, "object1", true);
+
+  int received_objects = 0;
+  EXPECT_CALL(subscribe_visitor_, OnObjectFragment)
+      .Times(2)
+      .WillRepeatedly([&](const FullTrackName& name,
+                          const PublishedObjectMetadata& metadata,
+                          absl::string_view object, uint64_t offset) {
+        EXPECT_EQ(name, full_track_name);
+        if (received_objects == 0) {
+          EXPECT_EQ(metadata.location, Location(0, 0));
+          EXPECT_EQ(object, "object0");
+        } else if (received_objects == 1) {
+          EXPECT_EQ(metadata.location, Location(0, 1));
+          EXPECT_EQ(object, "object1");
+        }
+        ++received_objects;
+      });
+
+  success = test_harness_.RunUntilWithDefaultTimeout(
+      [&]() { return received_objects == 2; });
+  EXPECT_TRUE(success);
+
+  // Destroy the publisher to induce PUBLISH_DONE.
+  queue->RemoveAllSubscriptions();
+  bool publish_done = false;
+  EXPECT_CALL(subscribe_visitor_, OnPublishDone).WillOnce([&]() {
+    publish_done = true;
+  });
+  success =
+      test_harness_.RunUntilWithDefaultTimeout([&]() { return publish_done; });
+  EXPECT_TRUE(success);
 }
 
 }  // namespace

@@ -7,10 +7,10 @@
 
 #include "src/gpu/ganesh/text/GlyphData.h"
 
-#include "include/private/base/SkAssert.h"
-#include "src/base/SkZip.h"
+#include "include/private/SkAssert.h"
 #include "src/core/SkGlyph.h"
 #include "src/core/SkStrike.h"
+#include "src/core/SkZip.h"
 #include "src/gpu/ganesh/GrAtlasTypes.h"
 #include "src/gpu/ganesh/GrColor.h"
 #include "src/gpu/ganesh/GrMeshDrawTarget.h"
@@ -190,7 +190,14 @@ std::tuple<bool, int> GlyphData::regenerateAtlas(int begin,
     if (fAtlasGeneration != currentAtlasGen) {
         SkSpan<const Glyph> glyphSpan = glyphVector.accessBackendGlyphs<Glyph>();
         // Calculate the texture coordinates for the vertexes during first use (fAtlasGeneration
-        // is set to kInvalidAtlasGeneration) or the atlas has changed in subsequent calls.
+        // is set to kInvalidAtlasGeneration) or the atlas has changed in subsequent calls. Always
+        // reset the update, even when begin > 0. When begin > 0, this subrun was split across
+        // flushes and previously used glyphs in [0, begin) have an older token. If those glyphs are
+        // not used in [begin, end], they shouldn't be part of the next bulk update (and because
+        // we won't have updated the whole subrun in one go, we won't set `fAtlasGeneration` to take
+        // the fast path on reuse). If we do reuse the glyphs, we need the bulk update to have been
+        // reset so that the call to addGlyphToBulkAndSetUseToken() sees the first use with the new
+        // token and updates the atlas locator.
         fBulkUseUpdater.reset();
 
         SkBulkGlyphMetricsAndImages metricsAndImages{fTextStrike->strikeSpec()};
@@ -219,8 +226,11 @@ std::tuple<bool, int> GlyphData::regenerateAtlas(int begin,
             glyphsPlacedInAtlas++;
         }
 
-        // Update atlas generation if there are no more glyphs to put in the atlas.
-        if (success && begin + glyphsPlacedInAtlas == glyphVector.glyphCount()) {
+        // Update atlas generation if there are no more glyphs to put in the atlas. We can only do
+        // this if we successfully checked/added the entire glyph vector in one pass. Otherwise, on
+        // a partial update, some of the previous glyphs of the subrun that were already drawn could
+        // have been evicted to make room for these remaining glyphs.
+        if (success && begin == 0 && glyphsPlacedInAtlas == glyphVector.glyphCount()) {
             // Need to get the freshest value of the atlas' generation because
             // updateTextureCoordinates may have changed it.
             fAtlasGeneration = atlasManager->atlasGeneration(maskFormat);

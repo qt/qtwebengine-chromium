@@ -165,6 +165,36 @@ uint32_t GetTTCIndex(pdfium::span<const uint8_t> font_data,
   return 0;
 }
 
+std::optional<FontTableLocation> FindFontTableLocation(
+    pdfium::span<const uint8_t> table_dir,
+    uint32_t tag) {
+  size_t num_tables = table_dir.size() / 16u;
+  // TODO(tsepez): iterate over span.
+  for (size_t i = 0; i < num_tables; ++i) {
+    auto entry = table_dir.subspan(i * 16u, 16u);
+    if (fxcrt::GetUInt32MSBFirst(entry.first<4u>()) == tag) {
+      uint32_t offset = fxcrt::GetUInt32MSBFirst(entry.subspan<8u, 4u>());
+      uint32_t size = fxcrt::GetUInt32MSBFirst(entry.subspan<12u, 4u>());
+      return FontTableLocation{offset, size};
+    }
+  }
+  return std::nullopt;
+}
+
+uint32_t GetCodePageRangeFromOS2(pdfium::span<const uint8_t> os2_table) {
+  if (os2_table.size() < 86) {
+    return 0;
+  }
+  return fxcrt::GetUInt32MSBFirst(os2_table.subspan<78, 4>());
+}
+
+uint16_t GetGlyphCountFromMaxp(pdfium::span<const uint8_t> maxp_table) {
+  if (maxp_table.size() < 6) {
+    return 0;
+  }
+  return fxcrt::GetUInt16MSBFirst(maxp_table.subspan<4, 2>());
+}
+
 wchar_t UnicodeFromAdobeName(const char* name) {
   return (wchar_t)(FXFT_unicode_from_adobe_name(name) & 0x7FFFFFFF);
 }

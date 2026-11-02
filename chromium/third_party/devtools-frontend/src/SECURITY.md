@@ -18,10 +18,11 @@ Chrome DevTools is a privileged web app running in a sandboxed renderer process,
 * Triggering Chrome memory corruption exploits.
 
 ### Outside Threat Model
-* **Social Engineering:** Convincing developers to paste payloads into the Console or connect to malicious remote debugging ports.
+* **Social Engineering:** Convincing developers to paste payloads into the Console, download and open a compromised file, or connect to malicious remote debugging ports, etc.
 * **Legitimate Data Exposure:** Displaying local user data, cookies, tokens, or auth headers within UI panels.
 * **Local Data Persistence:** Saving user-initiated traces, heaps, profiles, or logs to disk.
 * **Correctness & Availability:** Stale, misleading, or missing UI information (classified as functional bugs).
+* **Denial of Service:** Chrome extensions or debug targets that disrupt DevTools' availability, e.g. through performance degradation.
 * **Disabled-by-default Experimental Features:** Experimental features or capabilities that are disabled by default, e.g. requiring a command-line flag to be activated, or a specific runtime setting within DevTools to be manually turned on.
 
 ## Specific Severity Classification Rules (S1–S4)
@@ -53,3 +54,6 @@ Chrome DevTools is a privileged web app running in a sandboxed renderer process,
 
 ### Side-Effect Free Evaluation
 * Side-effect free JavaScript evaluation is a best-effort developer heuristic to prevent accidental state changes, not a security boundary. Bypassing it to cause side effects on the debugged page is not a vulnerability.
+
+### Self-XSS Paste Gate
+* The self-XSS paste gate is not a security boundary. It is supposed to reduce the chance for abuse, not to fully prevent it. Issues around bypassing it are social engineering, and outside of our threat model.

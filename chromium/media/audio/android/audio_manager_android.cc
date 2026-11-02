@@ -336,8 +336,10 @@ bool UseAAudioInput() {
   return true;
 }
 
+// `kAAudioPerStreamDeviceSelection` is only enabled on Desktop devices for now.
 bool UseAAudioPerStreamDeviceSelection() {
   return UseAAudioInput() && UseAAudioOutput() &&
+         base::android::device_info::is_desktop() &&
          base::FeatureList::IsEnabled(
              features::kAAudioPerStreamDeviceSelection);
 }
@@ -1142,8 +1144,7 @@ AudioManagerAndroid::JniDelegate& AudioManagerAndroid::GetJniDelegate() {
     // These features are checked for on the native side in order to avoid build
     // dependency conflicts when using the Java `ChromeFeatureList`.
     jni_delegate_->InitDeviceListener();
-    if (base::FeatureList::IsEnabled(
-            features::kAAudioPerStreamDeviceSelection)) {
+    if (UseAAudioPerStreamDeviceSelection()) {
       // Listen for SCO state changes to forward them to
       // `AAudioBluetoothOutputStream`s.
       jni_delegate_->InitScoStateListener();
@@ -1263,8 +1264,7 @@ ChannelLayoutConfig AudioManagerAndroid::GetLayoutWithMaxChannels() {
   CHECK_GT(value, 0);
   CHECK_LE(value, CHANNEL_LAYOUT_MAX);
   ChannelLayout channel_layout = static_cast<ChannelLayout>(value);
-  int channel_count = ChannelLayoutToChannelCount(channel_layout);
-  return ChannelLayoutConfig(channel_layout, channel_count);
+  return ChannelLayoutConfig::FromLayout(channel_layout);
 }
 
 void AudioManagerAndroid::SetJniDelegateForTesting(

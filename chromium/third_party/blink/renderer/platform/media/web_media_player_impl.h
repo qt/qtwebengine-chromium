@@ -68,10 +68,6 @@ class ProcessMemoryDump;
 }  // namespace trace_event
 }  // namespace base
 
-namespace cc {
-class VideoLayer;
-}
-
 namespace gfx {
 class Size;
 }
@@ -155,7 +151,6 @@ class PLATFORM_EXPORT WebMediaPlayerImpl
           metrics_provider,
       CreateSurfaceLayerBridgeCB create_bridge_callback,
       scoped_refptr<viz::RasterContextProvider> raster_context_provider,
-      bool use_surface_layer,
       bool is_background_suspend_enabled,
       bool is_background_video_play_enabled,
       bool is_background_video_track_optimization_supported,
@@ -206,7 +201,7 @@ class PLATFORM_EXPORT WebMediaPlayerImpl
   void Paint(cc::PaintCanvas* canvas,
              const gfx::Rect& rect,
              const cc::PaintFlags& flags,
-             bool force_pixel_readback) override;
+             bool acquire_texture_backing) override;
   scoped_refptr<media::VideoFrame> GetCurrentFrameThenUpdate() override;
   std::optional<media::VideoFrame::ID> CurrentFrameId() const override;
   media::PaintCanvasVideoRenderer* GetPaintCanvasVideoRenderer() override;
@@ -216,6 +211,7 @@ class PLATFORM_EXPORT WebMediaPlayerImpl
   // True if the loaded media has a playable video/audio track.
   bool HasVideo() const override;
   bool HasAudio() const override;
+  bool IsVideoBeingCaptured() const override;
 
   void EnabledAudioTracksChanged(
       std::optional<WebMediaPlayer::TrackId> enabled_track_id) override;
@@ -226,6 +222,10 @@ class PLATFORM_EXPORT WebMediaPlayerImpl
   gfx::Size NaturalSize() const override;
 
   gfx::Size VisibleSize() const override;
+
+  media::VideoTransformation GetVideoTransformation() const override;
+
+  media::VideoSpatialFormat GetSpatialFormat() const override;
 
   // Getters of playback state.
   bool Paused() const override;
@@ -284,9 +284,10 @@ class PLATFORM_EXPORT WebMediaPlayerImpl
   // WebMediaPlayerDelegate::Observer implementation.
   void OnPageHidden() override;
   void OnPageShown() override;
+  void OnIdleTimeout() override;
+
   void OnFrameHidden() override;
   void OnFrameShown() override;
-  void OnIdleTimeout() override;
 
   void RequestRemotePlaybackDisabled(bool disabled) override;
   void RequestMediaRemoting() override;
@@ -728,8 +729,6 @@ class PLATFORM_EXPORT WebMediaPlayerImpl
   // allowed to play it.
   bool HasUnmutedAudio() const;
 
-  // Returns true if the video frame from this player are being captured.
-  bool IsVideoBeingCaptured() const;
 
   // Report UMAs when this object instance is destroyed.
   void ReportSessionUMAs() const;
@@ -900,10 +899,6 @@ class PLATFORM_EXPORT WebMediaPlayerImpl
   media::VideoFrameSharedImageCache rgb_shared_image_cache_;
   media::VideoFrameSharedImageCache yuv_shared_image_cache_;
 
-  // The compositor layer for displaying the video content when using composited
-  // playback.
-  scoped_refptr<cc::VideoLayer> video_layer_;
-
   std::unique_ptr<WebContentDecryptionModuleResult> set_cdm_result_;
 
   // If a CdmContext is attached keep a reference to the CdmContextRef, so that
@@ -1039,9 +1034,6 @@ class PLATFORM_EXPORT WebMediaPlayerImpl
   // Whether embedded media experience is currently enabled.
   bool embedded_media_experience_enabled_ = false;
 
-  // When should we use SurfaceLayer for video?
-  bool use_surface_layer_ = false;
-
   // Whether surface layer is currently in use to display frames.
   bool surface_layer_for_video_enabled_ = false;
 
@@ -1121,6 +1113,11 @@ class PLATFORM_EXPORT WebMediaPlayerImpl
   // suspended.
   bool pending_oneshot_suspend_ = false;
 
+  // Last rendered status sent to the player from the containing frame.
+  bool is_frame_hidden_ = false;
+
+  // Whether we should pause playback when the frame is hidden due to the
+  // "media-playback-while-not-visible" permission policy.
   bool should_pause_when_frame_is_hidden_ = false;
 
   bool is_dominant_visible_content_ = false;

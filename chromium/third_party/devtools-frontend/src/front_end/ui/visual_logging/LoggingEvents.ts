@@ -43,7 +43,7 @@ export const logResize = (loggable: Loggable, size: DOMRect): void => {
   const resizeEvent: Host.InspectorFrontendHostAPI.ResizeEvent = {
     veid: loggingState.veid,
     width: Math.round(loggingState.size.width),
-    height: Math.round(loggingState.size.height)
+    height: Math.round(loggingState.size.height),
   };
   Host.InspectorFrontendHost.InspectorFrontendHostInstance.recordResize(resizeEvent);
   processEventForDebugging('Resize', loggingState, {width: Math.round(size.width), height: Math.round(size.height)});

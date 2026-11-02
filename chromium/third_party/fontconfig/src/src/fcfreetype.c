@@ -1511,9 +1511,9 @@ FcFreeTypeQueryFaceInternal (const FT_Face   face,
 		    memmove (utf8, pp, len + 1);
 		    pp = utf8 + len;
 		    while (pp > utf8 &&
-			   (*(pp - 1) == ' ' ||
-			    *(pp - 1) == '\r' ||
-			    *(pp - 1) == '\n'))
+		           (*(pp - 1) == ' ' ||
+		            *(pp - 1) == '\r' ||
+		            *(pp - 1) == '\n'))
 			pp--;
 		    *pp = 0;
 
@@ -1714,7 +1714,13 @@ FcFreeTypeQueryFaceInternal (const FT_Face   face,
 	    goto bail1;
     }
 
-    canon_file = FcStrCanonFilename(file);
+    /* Qt6 seems using :-prefixing to take care of some special case.
+     * Do not call FcStrCanonFilename not to break that
+     */
+    if (file[0] != ':')
+	canon_file = FcStrCanonFilename (file);
+    else
+	canon_file = file;
     if (canon_file && *canon_file && !FcPatternObjectAddString (pat, FC_FILE_OBJECT, canon_file))
 	goto bail1;
 
@@ -2075,34 +2081,52 @@ FcFreeTypeQueryFaceInternal (const FT_Face   face,
 	    goto bail2;
 
     {
-	FcPatternElt *elt;
+	FcPatternElt  *elt;
 	FcValueListPtr l;
-	int generic_family = FC_FAMILY_UNKNOWN;
+	int            generic_family = FC_FAMILY_UNKNOWN;
 
 	elt = FcPatternObjectFindElt (pat, FC_FAMILY_OBJECT);
-	for (l = FcPatternEltValues (elt); l; l = FcValueListNext (l)) {
-	    FcValue v = FcValueCanonicalize (&l->value);
+	if (elt) {
+	    uint32_t memory = 0;
+	    for (l = FcPatternEltValues (elt); l; l = FcValueListNext (l)) {
+		FcValue v = FcValueCanonicalize (&l->value);
 
-	    if (v.type == FcTypeString) {
-		if (FcStrStrIgnoreCase (v.u.s, (FcChar8 *)"mono")) {
-		    generic_family = FC_FAMILY_MONO;
-		    break;
-		} else if (FcStrStrIgnoreCase (v.u.s, (FcChar8 *)"sans")) {
-		    generic_family = FC_FAMILY_SANS;
-		    break;
-		} else if (FcStrStrIgnoreCase (v.u.s, (FcChar8 *)"serif")) {
-		    generic_family = FC_FAMILY_SERIF;
-		    break;
-		} else if (FcStrStrIgnoreCase (v.u.s, (FcChar8 *)"emoji")) {
-		    generic_family = FC_FAMILY_EMOJI;
-		    break;
-		} else if (FcStrStrIgnoreCase (v.u.s, (FcChar8 *)"math")) {
-		    generic_family = FC_FAMILY_MATH;
-		    break;
+		if (v.type == FcTypeString) {
+		    uint32_t field = FcGenericAliasGetClassification ((const char *)v.u.s);
+
+		    if (field != 0) {
+			if ((memory | field) != memory) {
+			    for (int b = 0; b < 15; b++) {
+				if (((memory ^ field) & (1 << b)) != 0) {
+				    FcPatternObjectAddInteger (pat, FC_GENERIC_FAMILY_OBJECT, b + 1);
+				}
+			    }
+			    memory |= field;
+			}
+			goto skip_generic_family;
+		    } else {
+			if (FcStrStrIgnoreCase (v.u.s, (FcChar8 *)"mono")) {
+			    generic_family = FC_FAMILY_MONO;
+			    break;
+			} else if (FcStrStrIgnoreCase (v.u.s, (FcChar8 *)"sans")) {
+			    generic_family = FC_FAMILY_SANS;
+			    break;
+			} else if (FcStrStrIgnoreCase (v.u.s, (FcChar8 *)"serif")) {
+			    generic_family = FC_FAMILY_SERIF;
+			    break;
+			} else if (FcStrStrIgnoreCase (v.u.s, (FcChar8 *)"emoji")) {
+			    generic_family = FC_FAMILY_EMOJI;
+			    break;
+			} else if (FcStrStrIgnoreCase (v.u.s, (FcChar8 *)"math")) {
+			    generic_family = FC_FAMILY_MATH;
+			    break;
+			}
+		    }
 		}
 	    }
 	}
-	FcPatternObjectAddInteger(pat, FC_GENERIC_FAMILY_OBJECT, generic_family);
+	FcPatternObjectAddInteger (pat, FC_GENERIC_FAMILY_OBJECT, generic_family);
+    skip_generic_family:;
     }
 
     /*
@@ -2111,7 +2135,7 @@ FcFreeTypeQueryFaceInternal (const FT_Face   face,
     FcCharSetDestroy (cs);
     if (foundry_)
 	free (foundry_);
-    if (canon_file)
+    if (canon_file && canon_file != file)
 	free (canon_file);
 
     if (mmvar) {
@@ -2698,7 +2722,7 @@ FcFontCapabilities (FT_Face face)
 	goto bail;
 
     maxsize = (((FT_ULong)gpos_count + (FT_ULong)gsub_count) * OTLAYOUT_LEN +
-               (issilgraphitefont ? strlen(fcSilfCapability) + 1: 0));
+               (issilgraphitefont ? strlen (fcSilfCapability) + 1 : 0));
     complex_ = malloc (sizeof (FcChar8) * maxsize);
     if (!complex_)
 	goto bail;

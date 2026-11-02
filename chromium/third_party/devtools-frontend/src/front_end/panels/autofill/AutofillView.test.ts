@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -10,12 +11,19 @@ import * as Protocol from '../../generated/protocol.js';
 import * as AutofillManager from '../../models/autofill_manager/autofill_manager.js';
 import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
+import {TestUniverse} from '../../testing/TestUniverse.js';
 import {createViewFunctionStub} from '../../testing/ViewFunctionHelpers.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import * as Autofill from './autofill.js';
 
 describeWithEnvironment('AutofillView', () => {
+  let universe: TestUniverse;
+
+  beforeEach(() => {
+    universe = new TestUniverse();
+  });
+
   const frameId = 'frame#1' as Protocol.Page.FrameId;
 
   it('renders nothing if there\'s no last filled address form', async () => {
@@ -259,7 +267,7 @@ describeWithEnvironment('AutofillView', () => {
       const actionTakenStub = sinon.stub(Host.userMetrics, 'actionTaken');
 
       const view = createViewFunctionStub(Autofill.AutofillView.AutofillView);
-      const autofillManager = AutofillManager.AutofillManager.AutofillManager.instance({forceNew: true});
+      const autofillManager = universe.autofillManager;
       const autofillView = new Autofill.AutofillView.AutofillView(autofillManager, view);
       renderElementIntoDOM(autofillView);
       return {manager: autofillManager, view: autofillView, showViewStub, actionTakenStub};
@@ -288,5 +296,43 @@ describeWithEnvironment('AutofillView', () => {
       sinon.assert.calledOnceWithExactly(actionTakenStub, Host.UserMetrics.Action.AutofillReceived);
       sinon.assert.notCalled(showViewStub);
     });
+  });
+
+  it('renders default view correctly when empty', async () => {
+    const autofillManager = sinon.createStubInstance(AutofillManager.AutofillManager.AutofillManager);
+    autofillManager.getLastFilledAddressForm.returns(null);
+    const autofillView = new Autofill.AutofillView.AutofillView(autofillManager);
+    renderElementIntoDOM(autofillView);
+    await autofillView.updateComplete;
+
+    assert.isNotNull(autofillView.contentElement.querySelector('.top-left-corner'));
+    assert.isNotNull(autofillView.contentElement.querySelector('.placeholder-container'));
+  });
+
+  it('renders default view correctly with filled address form', async () => {
+    const autofillManager = sinon.createStubInstance(AutofillManager.AutofillManager.AutofillManager);
+    autofillManager.getLastFilledAddressForm.returns({
+      address: '1 Test Road',
+      filledFields: [
+        {
+          htmlType: 'text',
+          id: 'input1',
+          name: '',
+          value: 'Crocodile',
+          autofillType: 'First name',
+          fillingStrategy: Protocol.Autofill.FillingStrategy.AutofillInferred,
+          fieldId: 1 as Protocol.DOM.BackendNodeId,
+          frameId: '1' as Protocol.Page.FrameId,
+        },
+      ],
+      matches: [{startIndex: 0, endIndex: 9, filledFieldIndex: 0}],
+    });
+    const autofillView = new Autofill.AutofillView.AutofillView(autofillManager);
+    renderElementIntoDOM(autofillView);
+    await autofillView.updateComplete;
+
+    assert.isNotNull(autofillView.contentElement.querySelector('.header'));
+    assert.isNotNull(autofillView.contentElement.querySelector('.address'));
+    assert.isNotNull(autofillView.contentElement.querySelector('.grid-wrapper'));
   });
 });

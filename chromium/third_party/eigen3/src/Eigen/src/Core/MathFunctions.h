@@ -52,13 +52,8 @@ struct global_math_functions_filtering_base {
 };
 
 template <typename T>
-struct always_void {
-  typedef void type;
-};
-
-template <typename T>
-struct global_math_functions_filtering_base<
-    T, typename always_void<typename T::Eigen_BaseClassForSpecializationOfGlobalMathFuncImpl>::type> {
+struct global_math_functions_filtering_base<T,
+                                            void_t<typename T::Eigen_BaseClassForSpecializationOfGlobalMathFuncImpl>> {
   typedef typename T::Eigen_BaseClassForSpecializationOfGlobalMathFuncImpl type;
 };
 
@@ -578,7 +573,6 @@ struct log1p_retval {
 template <typename ScalarX, typename ScalarY,
           bool IsInteger = NumTraits<ScalarX>::IsInteger && NumTraits<ScalarY>::IsInteger>
 struct pow_impl {
-  // typedef Scalar retval;
   typedef typename ScalarBinaryOpTraits<ScalarX, ScalarY, internal::scalar_pow_op<ScalarX, ScalarY>>::ReturnType
       result_type;
   static EIGEN_DEVICE_FUNC inline result_type run(const ScalarX& x, const ScalarY& y) {
@@ -921,10 +915,15 @@ struct copysign_impl<Scalar, true, IsInteger> {
 template <typename Scalar>
 struct copysign_impl<Scalar, false, true> {
   EIGEN_DEVICE_FUNC static inline Scalar run(const Scalar& a, const Scalar& b) {
-    EIGEN_IF_CONSTEXPR(!NumTraits<Scalar>::IsSigned) return a;
+    EIGEN_IF_CONSTEXPR (!NumTraits<Scalar>::IsSigned) return a;
     const Scalar abs_a = a < Scalar(0) ? -a : a;
     return b < Scalar(0) ? -abs_a : abs_a;
   }
+};
+
+template <>
+struct copysign_impl<bool, false, true> {
+  EIGEN_DEVICE_FUNC static inline bool run(const bool& a, const bool&) { return a; }
 };
 
 template <typename Scalar>
@@ -1058,7 +1057,7 @@ struct madd_impl<Scalar, std::enable_if_t<has_fma<Scalar>::value>> {
 
 namespace numext {
 
-#if (!defined(EIGEN_GPUCC) || defined(EIGEN_CONSTEXPR_ARE_DEVICE_FUNC))
+#if !defined(EIGEN_GPUCC)
 template <typename T>
 EIGEN_DEVICE_FUNC constexpr EIGEN_ALWAYS_INLINE T mini(const T& x, const T& y) {
   EIGEN_USING_STD(min)
@@ -1072,9 +1071,13 @@ EIGEN_DEVICE_FUNC constexpr EIGEN_ALWAYS_INLINE T maxi(const T& x, const T& y) {
 }
 #else
 template <typename T>
-EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE T mini(const T& x, const T& y) {
+EIGEN_DEVICE_FUNC constexpr EIGEN_ALWAYS_INLINE T mini(const T& x, const T& y) {
   return y < x ? y : x;
 }
+#if !defined(EIGEN_CONSTEXPR_ARE_DEVICE_FUNC)
+// Without relaxed constexpr, numeric GPU scalars keep fmin/fmax's number-preferring
+// NaN behavior. With relaxed constexpr, they use the constexpr ternary overloads,
+// matching std::min/std::max behavior and supporting custom less-comparable scalars.
 template <>
 EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE float mini(const float& x, const float& y) {
   return fminf(x, y);
@@ -1095,11 +1098,13 @@ EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE long double mini(const long double& x, con
 #endif
 }
 #endif
+#endif
 
 template <typename T>
-EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE T maxi(const T& x, const T& y) {
+EIGEN_DEVICE_FUNC constexpr EIGEN_ALWAYS_INLINE T maxi(const T& x, const T& y) {
   return x < y ? y : x;
 }
+#if !defined(EIGEN_CONSTEXPR_ARE_DEVICE_FUNC)
 template <>
 EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE float maxi(const float& x, const float& y) {
   return fmaxf(x, y);
@@ -1118,6 +1123,7 @@ EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE long double maxi(const long double& x, con
   return fmaxl(x, y);
 #endif
 }
+#endif
 #endif
 #endif
 
@@ -1426,7 +1432,7 @@ constexpr int log2(int x) {
  * but slightly faster for float/double and some compilers (e.g., gcc), thanks to
  * specializations when SSE is enabled.
  *
- * It's usage is justified in performance critical functions, like norm/normalize.
+ * Its usage is justified in performance critical functions, like norm/normalize.
  */
 template <typename Scalar>
 EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE EIGEN_MATHFUNC_RETVAL(sqrt, Scalar) sqrt(const Scalar& x) {
@@ -1485,15 +1491,21 @@ EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE double log(const double& x) {
 
 template <typename T>
 EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
-    std::enable_if_t<NumTraits<T>::IsSigned || NumTraits<T>::IsComplex, typename NumTraits<T>::Real>
+    std::enable_if_t<NumTraits<T>::IsSigned && !NumTraits<T>::IsComplex, typename NumTraits<T>::Real>
     abs(const T& x) {
   EIGEN_USING_STD(abs);
   return abs(x);
 }
 
 template <typename T>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE std::enable_if_t<NumTraits<T>::IsComplex, typename NumTraits<T>::Real> abs(
+    const T& x) {
+  return numext::hypot(numext::real(x), numext::imag(x));
+}
+
+template <typename T>
 EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
-    std::enable_if_t<!(NumTraits<T>::IsSigned || NumTraits<T>::IsComplex), typename NumTraits<T>::Real>
+    std::enable_if_t<!NumTraits<T>::IsSigned && !NumTraits<T>::IsComplex, typename NumTraits<T>::Real>
     abs(const T& x) {
   return x;
 }
@@ -1665,6 +1677,37 @@ EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE std::complex<double> exp2(const std::compl
   double res_real = com * ::cos(static_cast<double>(EIGEN_LN2) * x.imag());
   double res_imag = com * ::sin(static_cast<double>(EIGEN_LN2) * x.imag());
   return std::complex<double>(res_real, res_imag);
+}
+#endif
+
+// Exact scaling by 2^exponent, including denormals and unrepresentable scale factors.
+// Results outside the finite range saturate to zero or infinity.
+template <typename T>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE T ldexp(const T& x, int exponent) {
+  EIGEN_USING_STD(ldexp);
+  return static_cast<T>(ldexp(x, exponent));
+}
+
+#if defined(SYCL_DEVICE_ONLY)
+template <>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE cl::sycl::cl_float ldexp(const cl::sycl::cl_float& x, int exponent) {
+  return cl::sycl::ldexp(x, exponent);
+}
+template <>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE cl::sycl::cl_double ldexp(const cl::sycl::cl_double& x, int exponent) {
+  return cl::sycl::ldexp(x, exponent);
+}
+#endif
+
+#if defined(EIGEN_GPUCC)
+template <>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE float ldexp(const float& x, int exponent) {
+  return ::ldexpf(x, exponent);
+}
+
+template <>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE double ldexp(const double& x, int exponent) {
+  return ::ldexp(x, exponent);
 }
 #endif
 
@@ -1946,7 +1989,7 @@ EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE double fmod(const double& a, const double&
 #undef SYCL_SPECIALIZE_UNSIGNED_INTEGER_TYPES_BINARY
 #undef SYCL_SPECIALIZE_UNSIGNED_INTEGER_TYPES_UNARY
 #undef SYCL_SPECIALIZE_INTEGER_TYPES_BINARY
-#undef SYCL_SPECIALIZE_UNSIGNED_INTEGER_TYPES_UNARY
+#undef SYCL_SPECIALIZE_INTEGER_TYPES_UNARY
 #undef SYCL_SPECIALIZE_FLOATING_TYPES_BINARY
 #undef SYCL_SPECIALIZE_FLOATING_TYPES_UNARY
 #undef SYCL_SPECIALIZE_FLOATING_TYPES_UNARY_FUNC_RET_TYPE

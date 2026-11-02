@@ -114,7 +114,7 @@ struct dot_shape {
 // function.
 float estimate_dot_cost(size_t m, size_t n, size_t k, size_t block_m,
                         size_t block_n, size_t block_k, size_t tile_m,
-                        size_t tile_n, size_t tile_k);
+                        size_t tile_n, size_t tile_k, int b_elem_count = 1);
 
 struct dot_packed_shape {
   int block_n = 0;

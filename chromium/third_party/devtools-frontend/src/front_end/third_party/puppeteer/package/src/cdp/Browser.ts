@@ -8,7 +8,11 @@ import type {ChildProcess} from 'node:child_process';
 
 import type {Protocol} from 'devtools-protocol';
 
-import type {CreatePageOptions, DebugInfo} from '../api/Browser.js';
+import type {
+  CreatePageOptions,
+  DebugInfo,
+  ExtensionInstallOptions,
+} from '../api/Browser.js';
 import {
   Browser as BrowserBase,
   BrowserEvent,
@@ -28,6 +32,7 @@ import type {Page} from '../api/Page.js';
 import type {Target} from '../api/Target.js';
 import type {DownloadBehavior} from '../common/DownloadBehavior.js';
 import type {Viewport} from '../common/Viewport.js';
+import {Deferred} from '../util/Deferred.js';
 
 import {CdpBrowserContext} from './BrowserContext.js';
 import type {CdpCDPSession} from './CdpSession.js';
@@ -121,6 +126,7 @@ export class CdpBrowser extends BrowserBase {
   #targetManager: TargetManager;
   #handleDevToolsAsPage = false;
   #extensions = new Map<string, Extension>();
+  #version?: Deferred<Protocol.Browser.GetVersionResponse>;
 
   constructor(
     connection: Connection,
@@ -475,8 +481,14 @@ export class CdpBrowser extends BrowserBase {
     return response.targetId;
   }
 
-  override async installExtension(path: string): Promise<string> {
-    const {id} = await this.#connection.send('Extensions.loadUnpacked', {path});
+  override async installExtension(
+    path: string,
+    options?: ExtensionInstallOptions,
+  ): Promise<string> {
+    const {id} = await this.#connection.send('Extensions.loadUnpacked', {
+      path,
+      enableInIncognito: options?.enabledInIncognito ?? false,
+    });
     this.#extensions.delete(id);
     return id;
   }
@@ -601,8 +613,18 @@ export class CdpBrowser extends BrowserBase {
     return !this.#connection._closed;
   }
 
-  #getVersion(): Promise<Protocol.Browser.GetVersionResponse> {
-    return this.#connection.send('Browser.getVersion');
+  async #getVersion(): Promise<Protocol.Browser.GetVersionResponse> {
+    if (!this.#version) {
+      this.#version = Deferred.create<Protocol.Browser.GetVersionResponse>();
+      try {
+        this.#version.resolve(
+          await this.#connection.send('Browser.getVersion'),
+        );
+      } catch (error) {
+        this.#version.reject(error as Error);
+      }
+    }
+    return await this.#version.valueOrThrow();
   }
 
   override get debugInfo(): DebugInfo {

@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "constants/catalog.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
@@ -64,7 +65,8 @@ RetainPtr<CPDF_SeekableMultiStream> CreateXFAMultiStream(
     return nullptr;
   }
 
-  RetainPtr<const CPDF_Dictionary> pAcroForm = pRoot->GetDictFor("AcroForm");
+  RetainPtr<const CPDF_Dictionary> pAcroForm =
+      pRoot->GetDictFor(pdfium::catalog::kAcroForm);
   if (!pAcroForm) {
     return nullptr;
   }

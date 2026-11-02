@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "gpu/command_buffer/service/shared_image/iosurface_image_backing.h"
 
 #include <EGL/egl.h>
@@ -19,6 +14,7 @@
 #include "base/apple/scoped_cftyperef.h"
 #include "base/apple/scoped_nsobject.h"
 #include "base/bits.h"
+#include "base/compiler_specific.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/scoped_policy.h"
 #include "base/metrics/histogram_macros.h"
@@ -49,6 +45,7 @@
 #include "ui/gl/egl_surface_io_surface.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_display.h"
+#include "ui/gl/gl_display_manager.h"
 #include "ui/gl/gl_fence_egl.h"
 #include "ui/gl/gl_gl_api_implementation.h"
 #include "ui/gl/gl_implementation.h"
@@ -138,21 +135,9 @@ wgpu::Texture CreateWGPUTexture(wgpu::SharedTextureMemory shared_texture_memory,
 }
 
 id<MTLDevice> QueryMetalDeviceFromANGLE(EGLDisplay display) {
-  id<MTLDevice> metal_device = nil;
-  if (gl::GetANGLEImplementation() == gl::ANGLEImplementation::kMetal) {
-    EGLAttrib angle_device_attrib = 0;
-    if (eglQueryDisplayAttribEXT(display, EGL_DEVICE_EXT,
-                                 &angle_device_attrib)) {
-      EGLDeviceEXT angle_device =
-          reinterpret_cast<EGLDeviceEXT>(angle_device_attrib);
-      EGLAttrib metal_device_attrib = 0;
-      if (eglQueryDeviceAttribEXT(angle_device, EGL_METAL_DEVICE_ANGLE,
-                                  &metal_device_attrib)) {
-        metal_device = (__bridge id)(void*)metal_device_attrib;
-      }
-    }
-  }
-  return metal_device;
+  auto* display_egl =
+      gl::GLDisplayManagerEGL::GetInstance()->GetDisplay(display);
+  return display_egl ? display_egl->GetMetalDevice() : nil;
 }
 
 }  // namespace
@@ -173,6 +158,9 @@ IOSurfaceImageBacking::DawnBufferCopyRepresentation::
 
 wgpu::Buffer IOSurfaceImageBacking::DawnBufferCopyRepresentation::BeginAccess(
     wgpu::BufferUsage usage) {
+  CHECK(this->usage().HasAll(SHARED_IMAGE_USAGE_WEBGPU_READ |
+                             SHARED_IMAGE_USAGE_WEBGPU_WRITE));
+
   auto scoped_access = dawn_image_representation_->BeginScopedAccess(
       wgpu::TextureUsage::CopySrc, wgpu::TextureUsage::None,
       /*allow_uncleared=*/AllowUnclearedAccess::kYes);
@@ -219,7 +207,8 @@ wgpu::Buffer IOSurfaceImageBacking::DawnBufferCopyRepresentation::BeginAccess(
   // 3. Create the final packed destination buffer
   wgpu::BufferDescriptor final_buffer_desc;
   final_buffer_desc.size = packed_bytes_per_row * size().height();
-  final_buffer_desc.usage = usage | wgpu::BufferUsage::CopySrc;
+  final_buffer_desc.usage =
+      usage | wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::CopyDst;
   buffer_ = device_.CreateBuffer(&final_buffer_desc);
 
   // 4. Copy from the staging buffer to the final packed buffer, row by row.
@@ -290,6 +279,10 @@ void IOSurfaceImageBacking::DawnBufferCopyRepresentation::EndAccess() {
 
   wgpu::CommandBuffer command_buffer = encoder.Finish();
   device_.GetQueue().Submit(1, &command_buffer);
+
+  // We no longer need the buffer (which was created in BeginAccess).
+  buffer_.Destroy();
+  buffer_ = {};
 }
 
 WebNNIOSurfaceTensorRepresentation::WebNNIOSurfaceTensorRepresentation(
@@ -908,8 +901,8 @@ void IOSurfaceImageBacking::DawnRepresentation::EndAccess() {
   // IOSurface must wait upon before attempting to use that IOSurface on another
   // command queue. Store these events in the underlying IOSurfaceImageBacking.
   for (size_t i = 0; i < end_access_state.fenceCount; i++) {
-    auto fence = end_access_state.fences[i];
-    auto signaled_value = end_access_state.signaledValues[i];
+    auto fence = UNSAFE_TODO(end_access_state.fences[i]);
+    auto signaled_value = UNSAFE_TODO(end_access_state.signaledValues[i]);
 
     wgpu::SharedFenceExportInfo fence_export_info;
     wgpu::SharedFenceMTLSharedEventExportInfo fence_mtl_export_info;
@@ -1934,9 +1927,9 @@ bool IOSurfaceImageBacking::InitializePixels(
   }
 
   for (size_t y = 0; y < height; ++y) {
-    memcpy(dst_data, src_data, src_stride);
-    dst_data += dst_stride;
-    src_data += src_stride;
+    UNSAFE_TODO(memcpy(dst_data, src_data, src_stride));
+    UNSAFE_TODO(dst_data += dst_stride);
+    UNSAFE_TODO(src_data += src_stride);
   }
 
   return true;

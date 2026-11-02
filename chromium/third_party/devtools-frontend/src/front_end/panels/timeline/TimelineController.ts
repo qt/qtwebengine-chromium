@@ -11,6 +11,7 @@ import * as CrUXManager from '../../models/crux-manager/crux-manager.js';
 import * as LiveMetrics from '../../models/live-metrics/live-metrics.js';
 import * as Trace from '../../models/trace/trace.js';
 import * as PanelCommon from '../../panels/common/common.js';
+import * as MobileThrottling from '../../panels/mobile_throttling/mobile_throttling.js';
 import * as Tracing from '../../services/tracing/tracing.js';
 
 import * as RecordingMetadata from './RecordingMetadata.js';
@@ -261,8 +262,15 @@ export class TimelineController implements Tracing.TracingManager.TracingManager
           disabledByDefault('devtools.timeline.layers'), disabledByDefault('devtools.timeline.picture'),
           disabledByDefault('blink.graphics_context_annotations'));
     }
+    const screenshotOptions: Tracing.TracingManager.TracingStartOptions = {};
     if (options.captureFilmStrip) {
       categoriesArray.push(disabledByDefault('devtools.screenshot'));
+      if (options.screenshotMaxSize !== undefined) {
+        screenshotOptions.screenshotMaxSize = options.screenshotMaxSize;
+      }
+      if (options.screenshotMaxCount !== undefined) {
+        screenshotOptions.screenshotMaxCount = options.screenshotMaxCount;
+      }
     }
     if (options.captureSelectorStats) {
       categoriesArray.push(disabledByDefault('blink.debug'));
@@ -280,7 +288,7 @@ export class TimelineController implements Tracing.TracingManager.TracingManager
     this.#fieldData = null;
     this.#recordingStartTime = Date.now();
 
-    const response = await this.startRecordingWithCategories(categoriesArray.join(','));
+    const response = await this.startRecordingWithCategories(categoriesArray.join(','), screenshotOptions);
     if (response.getError()) {
       await SDK.TargetManager.TargetManager.instance().resumeAllTargets();
       throw new Error(response.getError());
@@ -355,9 +363,9 @@ export class TimelineController implements Tracing.TracingManager.TracingManager
     // temporarily disable throttling whilst the final trace event collection
     // takes place. Once it is done, we re-enable it (this is the existing
     // behaviour within DevTools; the throttling settling is sticky + global).
-    const throttlingManager = SDK.CPUThrottlingManager.CPUThrottlingManager.instance();
+    const throttlingManager = MobileThrottling.ThrottlingManager.throttlingManager();
     const optionDuringRecording = throttlingManager.cpuThrottlingOption();
-    throttlingManager.setCPUThrottlingOption(SDK.CPUThrottlingManager.NoThrottlingOption);
+    throttlingManager.setCPUThrottlingOption(PanelCommon.CPUThrottlingOption.NoThrottlingOption);
 
     this.client.loadingStarted();
 
@@ -402,7 +410,9 @@ export class TimelineController implements Tracing.TracingManager.TracingManager
     }
   }
 
-  private async startRecordingWithCategories(categories: string): Promise<Protocol.ProtocolResponseWithError> {
+  private async startRecordingWithCategories(categories: string,
+                                             tracingStartOptions: Tracing.TracingManager.TracingStartOptions = {}):
+      Promise<Protocol.ProtocolResponseWithError> {
     if (!this.tracingManager) {
       throw new Error(i18nString(UIStrings.tracingNotSupported));
     }
@@ -411,7 +421,7 @@ export class TimelineController implements Tracing.TracingManager.TracingManager
     // all the functions data.
     await SDK.TargetManager.TargetManager.instance().suspendAllTargets('performance-timeline');
     this.tracingCompletePromise = Promise.withResolvers();
-    const response = await this.tracingManager.start(this, categories);
+    const response = await this.tracingManager.start(this, categories, tracingStartOptions);
     await this.warmupJsProfiler();
     PanelCommon.ExtensionServer.ExtensionServer.instance().profilingStarted();
     return response;
@@ -484,4 +494,16 @@ export interface RecordingOptions {
   captureFilmStrip?: boolean;
   captureSelectorStats?: boolean;
   navigateToUrl?: Platform.DevToolsPath.UrlString;
+  /**
+   * Maximum width/height (in pixels) of each captured screenshot.
+   * Only meaningful when `captureFilmStrip` is true. When omitted the
+   * backend default is used (see CDP `Tracing.start`).
+   */
+  screenshotMaxSize?: number;
+  /**
+   * Maximum number of screenshots captured during a single recording.
+   * Only meaningful when `captureFilmStrip` is true. When omitted the
+   * backend default is used (see CDP `Tracing.start`).
+   */
+  screenshotMaxCount?: number;
 }

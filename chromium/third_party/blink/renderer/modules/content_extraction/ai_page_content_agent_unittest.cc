@@ -12,14 +12,18 @@
 
 #include "base/functional/bind.h"
 #include "base/logging.h"
+#include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
+#include "base/test/bind.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/mock_log.h"
 #include "base/trace_event/trace_event.h"
+#include "mojo/public/cpp/base/big_buffer.h"
 #include "mojo/public/cpp/test_support/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/frame/frame_ad_evidence.h"
 #include "third_party/blink/public/common/input/web_mouse_event.h"
-#include "third_party/blink/public/mojom/content_extraction/ai_page_content.mojom-shared.h"
+#include "third_party/blink/public/mojom/content_extraction/ai_page_content.mojom.h"
 #include "third_party/blink/public/web/web_script_source.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
 #include "third_party/blink/renderer/core/accessibility/ax_context.h"
@@ -203,12 +207,14 @@ class AIPageContentAgentTest : public testing::Test {
   }
 
   void CheckImageNode(const mojom::blink::AIPageContentNode& node,
-                      const String& expected_caption) {
+                      const String& expected_caption,
+                      const KURL& expected_url) {
     const auto& attributes = *node.content_attributes;
     EXPECT_EQ(attributes.attribute_type,
               mojom::blink::AIPageContentAttributeType::kImage);
     ASSERT_TRUE(attributes.image_info);
     EXPECT_EQ(attributes.image_info->image_caption, expected_caption);
+    EXPECT_EQ(attributes.image_info->url, expected_url);
   }
 
   void CheckAnchorNode(
@@ -221,7 +227,7 @@ class AIPageContentAgentTest : public testing::Test {
     ASSERT_TRUE(attributes.anchor_data);
     EXPECT_EQ(attributes.anchor_data->url, expected_url);
     ASSERT_EQ(attributes.anchor_data->rel.size(), expected_rels.size());
-    for (size_t i = 0; i < expected_rels.size(); ++i) {
+    for (wtf_size_t i = 0; i < expected_rels.size(); ++i) {
       EXPECT_EQ(attributes.anchor_data->rel[i], expected_rels[i]);
     }
   }
@@ -257,6 +263,18 @@ class AIPageContentAgentTest : public testing::Test {
     const auto& attributes = *node.content_attributes;
     EXPECT_EQ(attributes.attribute_type,
               mojom::blink::AIPageContentAttributeType::kContainer);
+  }
+
+  void CheckModalDialogNode(const mojom::blink::AIPageContentNode& node) {
+    const auto& attributes = *node.content_attributes;
+    EXPECT_EQ(attributes.attribute_type,
+              mojom::blink::AIPageContentAttributeType::kDialogModal);
+  }
+
+  void CheckModelessDialogNode(const mojom::blink::AIPageContentNode& node) {
+    const auto& attributes = *node.content_attributes;
+    EXPECT_EQ(attributes.attribute_type,
+              mojom::blink::AIPageContentAttributeType::kDialogModeless);
   }
 
   void CheckHeadingNode(const mojom::blink::AIPageContentNode& node) {
@@ -472,7 +490,7 @@ class AIPageContentAgentTest : public testing::Test {
           *node->content_attributes->dom_node_id == dom_node_id) {
         return node;
       }
-      for (size_t i = node->children_nodes.size(); i > 0; --i) {
+      for (wtf_size_t i = node->children_nodes.size(); i > 0; --i) {
         stack.push_back(node->children_nodes[i - 1].get());
       }
     }
@@ -935,13 +953,44 @@ TEST_F(AIPageContentAgentTest, Image) {
   EXPECT_EQ(root.children_nodes.size(), 1u);
 
   auto& image_node = *root.children_nodes[0];
-  CheckImageNode(image_node, "missing");
+  CheckImageNode(image_node, "missing", KURL());
   CheckGeometry(image_node, gfx::Rect(-20, -10, 30, 40),
                 gfx::Rect(0, 0, 10, 30));
   ASSERT_TRUE(image_node.content_attributes->image_info);
   ASSERT_TRUE(image_node.content_attributes->image_info->source_origin);
   EXPECT_TRUE(
       image_node.content_attributes->image_info->source_origin->IsOpaque());
+}
+
+TEST_F(AIPageContentAgentTest, ImageWithUrl) {
+  url_test_helpers::RegisterMockedURLLoad(
+      url_test_helpers::ToKURL("https://example.com/image.jpg"),
+      test::CoreTestDataPath("white-1x1.png"), "image/png");
+
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <img id='img' src='https://example.com/image.jpg' alt='hello alt "
+      "text'></img>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  GetAIPageContentWithActionableElements();
+
+  const auto& root = ContentRootNode();
+  EXPECT_EQ(root.children_nodes.size(), 1u);
+
+  auto& image_node = *root.children_nodes[0];
+  CheckImageNode(image_node, "hello alt text",
+                 blink::KURL("https://example.com/image.jpg"));
+  ASSERT_TRUE(image_node.content_attributes->image_info);
+  ASSERT_TRUE(image_node.content_attributes->image_info->source_origin);
+  EXPECT_EQ(
+      image_node.content_attributes->image_info->source_origin->ToString(),
+      "https://example.com");
+
+  url_test_helpers::RegisterMockedURLUnregister(
+      url_test_helpers::ToKURL("https://example.com/image.jpg"));
 }
 
 TEST_F(AIPageContentAgentTest, ImageWithAriaLabel) {
@@ -2189,7 +2238,7 @@ TEST_F(AIPageContentAgentTest, Anchors) {
   CheckTextNode(link_with_rel_text, "YouTube");
 }
 
-TEST_F(AIPageContentAgentTest, TopLayerContainer) {
+TEST_F(AIPageContentAgentTest, NativeModalDialog) {
   frame_test_helpers::LoadHTMLString(
       helper_.LocalMainFrame(),
       "<body>"
@@ -2212,11 +2261,100 @@ TEST_F(AIPageContentAgentTest, TopLayerContainer) {
   CheckContainerNode(backdrop);
 
   const auto& dialog = *root.children_nodes[1];
-  CheckContainerNode(dialog);
+  CheckModalDialogNode(dialog);
 
   ASSERT_EQ(dialog.children_nodes.size(), 1u);
   const auto& dialog_text = *dialog.children_nodes[0];
   CheckTextNode(dialog_text, "This is a dialog.");
+}
+
+TEST_F(AIPageContentAgentTest, NativeModelessDialog) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <dialog id='welcomeDialog'>This is a modeless dialog.</dialog>"
+      "  <script>"
+      "    const dialog = document.getElementById('welcomeDialog');"
+      "    dialog.show();"
+      "  </script>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  GetAIPageContent();
+
+  const auto& root = ContentRootNode();
+  ASSERT_EQ(root.children_nodes.size(), 1u);
+
+  const auto& dialog = *root.children_nodes[0];
+  CheckModelessDialogNode(dialog);
+
+  ASSERT_EQ(dialog.children_nodes.size(), 1u);
+  const auto& dialog_text = *dialog.children_nodes[0];
+  CheckTextNode(dialog_text, "This is a modeless dialog.");
+}
+
+TEST_F(AIPageContentAgentTest, AriaModalDialog) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <div role='dialog' aria-modal='true'>This is an ARIA modal dialog."
+      "</div>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  GetAIPageContent();
+
+  const auto& root = ContentRootNode();
+  ASSERT_EQ(root.children_nodes.size(), 1u);
+
+  const auto& dialog = *root.children_nodes[0];
+  CheckModalDialogNode(dialog);
+
+  ASSERT_EQ(dialog.children_nodes.size(), 1u);
+  const auto& dialog_text = *dialog.children_nodes[0];
+  CheckTextNode(dialog_text, "This is an ARIA modal dialog.");
+}
+
+TEST_F(AIPageContentAgentTest, AriaModelessDialog) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <div role='dialog'>This is an ARIA modeless dialog.</div>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  GetAIPageContent();
+
+  const auto& root = ContentRootNode();
+  ASSERT_EQ(root.children_nodes.size(), 1u);
+
+  const auto& dialog = *root.children_nodes[0];
+  CheckModelessDialogNode(dialog);
+
+  ASSERT_EQ(dialog.children_nodes.size(), 1u);
+  const auto& dialog_text = *dialog.children_nodes[0];
+  CheckTextNode(dialog_text, "This is an ARIA modeless dialog.");
+}
+
+TEST_F(AIPageContentAgentTest, AriaAlertDialogDefaultsToModal) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <div role='alertdialog'>This is an ARIA alert dialog.</div>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  GetAIPageContent();
+
+  const auto& root = ContentRootNode();
+  ASSERT_EQ(root.children_nodes.size(), 1u);
+
+  const auto& dialog = *root.children_nodes[0];
+  CheckModalDialogNode(dialog);
+
+  ASSERT_EQ(dialog.children_nodes.size(), 1u);
+  const auto& dialog_text = *dialog.children_nodes[0];
+  CheckTextNode(dialog_text, "This is an ARIA alert dialog.");
 }
 
 TEST_F(AIPageContentAgentTest, TableWithAnonymousCells) {
@@ -2473,13 +2611,9 @@ TEST_F(AIPageContentAgentTest, HiddenUntilFoundGeometry) {
        mojom::blink::AIPageContentAnnotatedRole::kContentHidden});
   EXPECT_EQ(hidden_container.children_nodes.size(), 1u);
 
-  // The hidden container continues to have an empty layout size even when
-  // display locks are forced.
   ASSERT_TRUE(hidden_container.content_attributes->geometry);
   const auto& hidden_container_geometry =
       *hidden_container.content_attributes->geometry;
-  EXPECT_TRUE(hidden_container_geometry.outer_bounding_box.IsEmpty());
-  EXPECT_TRUE(hidden_container_geometry.visible_bounding_box.IsEmpty());
 
   const auto& hidden_text_node = *hidden_container.children_nodes[0];
   CheckTextNode(hidden_text_node, "hidden text");
@@ -2490,6 +2624,14 @@ TEST_F(AIPageContentAgentTest, HiddenUntilFoundGeometry) {
                     gfx::Point(0, 0));
   EXPECT_FALSE(hidden_text_geometry.outer_bounding_box.IsEmpty());
   EXPECT_TRUE(hidden_text_geometry.visible_bounding_box.IsEmpty());
+
+  // The container's own layout size is empty. APC repairs its outer box from
+  // the hidden descendant, but does not give it visible geometry or fragments.
+  EXPECT_EQ(hidden_container_geometry.outer_bounding_box,
+            hidden_text_geometry.outer_bounding_box);
+  EXPECT_TRUE(hidden_container_geometry.visible_bounding_box.IsEmpty());
+  EXPECT_TRUE(
+      hidden_container_geometry.fragment_visible_bounding_boxes.empty());
 
   const auto& visible_text_node = *root.children_nodes[1];
   CheckTextNode(visible_text_node, "visible text");
@@ -2755,6 +2897,41 @@ TEST_F(AIPageContentAgentTest, VisibilityHiddenOnIframe) {
 
   const auto& root = ContentRootNode();
   EXPECT_EQ(root.children_nodes.size(), 0u);
+}
+
+TEST_F(AIPageContentAgentTest,
+       SkipUnclickableFixedOverlaysRespectsFeatureFlag) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      R"HTML(
+        <body style="margin: 0;">
+          <div id="unclickable"
+               style="position: fixed; inset: 0; pointer-events: none;">
+            Readable text
+          </div>
+          <div id="clickable" style="position: fixed;"></div>
+        </body>
+      )HTML",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  {
+    ScopedAIPageContentSkipUnclickableFixedOverlaysForTest disable_feature(
+        false);
+    GetAIPageContentWithActionableElements();
+
+    // Preserve the legacy output while the feature is off.
+    EXPECT_TRUE(FindNodeBySelector("#unclickable"));
+  }
+
+  {
+    ScopedAIPageContentSkipUnclickableFixedOverlaysForTest enable_feature(true);
+    GetAIPageContentWithActionableElements();
+
+    // Flatten the pointer-transparent wrapper without dropping its text.
+    ExpectSelectorNotInApcOutput("#unclickable");
+    EXPECT_TRUE(TreeContainsTextSubstring(ContentRootNode(), "Readable text"));
+    EXPECT_TRUE(FindNodeBySelector("#clickable"));
+  }
 }
 
 TEST_F(AIPageContentAgentTest, NoGeometry) {
@@ -5733,26 +5910,90 @@ TEST_F(AIPageContentAgentTest, AriaDisabled) {
   const auto& root = ContentRootNode();
   ASSERT_EQ(root.children_nodes.size(), 1u);
 
-  // The first node is not actionable anymore.
+  // aria-disabled is advisory, so the section keeps its normal clickability
+  // signal while also reporting why an actor may want to avoid it.
   const auto& section = *root.children_nodes.at(0);
   CheckContainerNode(section);
-  CheckHitTestableButNotInteractive(section);
-  EXPECT_TRUE(section.content_attributes->node_interaction_info->is_disabled);
+  CheckHitTestableAndInteractive(section, {ClickabilityReason::kCursorPointer});
+  EXPECT_FALSE(section.content_attributes->node_interaction_info->is_disabled);
   EXPECT_THAT(
       section.content_attributes->node_interaction_info
           ->interaction_disabled_reasons,
       testing::UnorderedElementsAre(InteractionDisabledReason::kAriaDisabled));
 
-  // The child is also not actionable.
+  // The inherited reason is also advisory for descendants. A child-level
+  // aria-disabled=false does not override the ancestor's true value.
   ASSERT_EQ(section.children_nodes.size(), 1u);
   const auto& input = *section.children_nodes.at(0);
-  CheckHitTestableButNotInteractive(input);
-  // Parent element `aria-disable` value overrides child element's.
-  EXPECT_TRUE(input.content_attributes->node_interaction_info->is_disabled);
+  CheckHitTestableAndInteractive(input,
+                                 {ClickabilityReason::kClickableControl});
+  EXPECT_FALSE(input.content_attributes->node_interaction_info->is_disabled);
   EXPECT_THAT(
       input.content_attributes->node_interaction_info
           ->interaction_disabled_reasons,
       testing::UnorderedElementsAre(InteractionDisabledReason::kAriaDisabled));
+}
+
+TEST_F(AIPageContentAgentTest, AriaHiddenInteractionReason) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      R"HTML(
+      <body>
+        <section aria-hidden=true>
+          <button>Text</button>
+        </section>
+      </body>
+      )HTML",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  GetAIPageContentWithActionableElements();
+  const auto& root = ContentRootNode();
+  ASSERT_EQ(root.children_nodes.size(), 1u);
+
+  const auto& section = *root.children_nodes.at(0);
+  CheckContainerNode(section);
+  ASSERT_EQ(section.children_nodes.size(), 1u);
+
+  // aria-hidden is inherited, so the button carries the reason even though the
+  // attribute is on its section ancestor.
+  const auto& button = *section.children_nodes.at(0);
+  CheckHitTestableAndInteractive(button,
+                                 {ClickabilityReason::kClickableControl,
+                                  ClickabilityReason::kHoverPseudoClass});
+  EXPECT_FALSE(button.content_attributes->node_interaction_info->is_disabled);
+  EXPECT_THAT(
+      button.content_attributes->node_interaction_info
+          ->interaction_disabled_reasons,
+      testing::UnorderedElementsAre(InteractionDisabledReason::kAriaHidden));
+}
+
+TEST_F(AIPageContentAgentTest, AriaPresentationalRoleInteractionReason) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      R"HTML(
+      <body>
+        <button role=presentation>Presentation</button>
+        <button role=none>None</button>
+      </body>
+      )HTML",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  GetAIPageContentWithActionableElements();
+  const auto& root = ContentRootNode();
+  ASSERT_EQ(root.children_nodes.size(), 2u);
+
+  for (const auto& button : root.children_nodes) {
+    // role=presentation and role=none are synonymous ARIA roles.
+    CheckHitTestableAndInteractive(*button,
+                                   {ClickabilityReason::kClickableControl,
+                                    ClickabilityReason::kHoverPseudoClass});
+    EXPECT_FALSE(
+        button->content_attributes->node_interaction_info->is_disabled);
+    EXPECT_THAT(button->content_attributes->node_interaction_info
+                    ->interaction_disabled_reasons,
+                testing::UnorderedElementsAre(
+                    InteractionDisabledReason::kAriaRolePresentational));
+  }
 }
 
 TEST_F(AIPageContentAgentTest, DisabledInheritance) {
@@ -6697,7 +6938,7 @@ TEST_F(AIPageContentAgentTest, InlineWithOnlyFloatGeometry) {
       break;
     }
     // Push children in reverse so traversal order matches natural order.
-    for (size_t i = node->children_nodes.size(); i > 0; --i) {
+    for (wtf_size_t i = node->children_nodes.size(); i > 0; --i) {
       stack.push_back(node->children_nodes[i - 1].get());
     }
   }
@@ -6734,8 +6975,7 @@ TEST_F(AIPageContentAgentTest, StructuralWrapperWithoutPaintGeometry) {
   EXPECT_TRUE(wrapper_node->content_attributes->anchor_data);
   ASSERT_TRUE(wrapper_node->content_attributes->geometry);
   const auto& wrapper_geometry = *wrapper_node->content_attributes->geometry;
-  EXPECT_TRUE(wrapper_geometry.visible_bounding_box.IsEmpty());
-  EXPECT_TRUE(wrapper_geometry.outer_bounding_box.IsEmpty());
+  ASSERT_EQ(wrapper_geometry.fragment_visible_bounding_boxes.size(), 1u);
 
   auto* child_node = FindNodeBySelector("#child");
   ASSERT_TRUE(child_node);
@@ -6743,6 +6983,376 @@ TEST_F(AIPageContentAgentTest, StructuralWrapperWithoutPaintGeometry) {
   const auto& child_geometry = *child_node->content_attributes->geometry;
   EXPECT_FALSE(child_geometry.visible_bounding_box.IsEmpty());
   EXPECT_FALSE(child_geometry.outer_bounding_box.IsEmpty());
+  EXPECT_EQ(wrapper_geometry.outer_bounding_box,
+            child_geometry.outer_bounding_box);
+  EXPECT_EQ(wrapper_geometry.visible_bounding_box,
+            child_geometry.visible_bounding_box);
+  EXPECT_EQ(wrapper_geometry.fragment_visible_bounding_boxes[0],
+            child_geometry.visible_bounding_box);
+}
+
+TEST_F(AIPageContentAgentTest,
+       NonActionableZeroAreaContainerUsesChildGeometry) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      R"HTML(
+      <body style="margin: 0; font: 10px/10px Ahem;">
+        <article id="container" style="position: relative; width: 0;
+                                       height: 0;">
+          <button id="child" style="position: absolute; left: 10px; top: 20px;
+                                    width: 20px; height: 10px;">X</button>
+        </article>
+      </body>)HTML",
+      url_test_helpers::ToKURL("http://example.com"));
+
+  LoadAhem();
+  GetAIPageContentWithActionableElements();
+
+  const auto* container = FindNodeBySelector("#container");
+  const auto* child = FindNodeBySelector("#child");
+  ASSERT_TRUE(container);
+  ASSERT_TRUE(child);
+  ASSERT_TRUE(container->content_attributes->geometry);
+  ASSERT_TRUE(child->content_attributes->geometry);
+  // The article is included for its structure, not because it is actionable.
+  EXPECT_FALSE(container->content_attributes->node_interaction_info);
+
+  const auto& container_geometry = *container->content_attributes->geometry;
+  const auto& child_geometry = *child->content_attributes->geometry;
+  // Ensure equality cannot pass because both source and repaired boxes are
+  // empty.
+  EXPECT_FALSE(child_geometry.outer_bounding_box.IsEmpty());
+  EXPECT_FALSE(child_geometry.visible_bounding_box.IsEmpty());
+  EXPECT_EQ(container_geometry.outer_bounding_box,
+            child_geometry.outer_bounding_box);
+  EXPECT_EQ(container_geometry.visible_bounding_box,
+            child_geometry.visible_bounding_box);
+  EXPECT_THAT(container_geometry.fragment_visible_bounding_boxes,
+              testing::ElementsAre(child_geometry.visible_bounding_box));
+}
+
+TEST_F(AIPageContentAgentTest,
+       ZeroAreaAnchorsUseVisibleOutOfFlowChildrenAsFragments) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      R"HTML(
+      <body style="margin: 0; font: 10px/10px Ahem;">
+        <a id="float" href="#" class="zero">
+          <span id="float-child-1" class="float-child" onclick="void(0)">A</span>
+          <span id="float-child-2" class="float-child" onclick="void(0)">B</span>
+        </a>
+        <a id="absolute" href="#" class="zero">
+          <span id="absolute-child-1" class="absolute-child"
+                onclick="void(0)">C</span>
+          <span id="absolute-child-2" class="absolute-child second"
+                onclick="void(0)">D</span>
+        </a>
+        <a id="fixed" href="#" class="zero">
+          <span id="fixed-child-1" class="fixed-child"
+                onclick="void(0)">E</span>
+          <span id="fixed-child-2" class="fixed-child second"
+                onclick="void(0)">F</span>
+        </a>
+        <style>
+          .zero {
+            display: inline-block;
+            position: relative;
+            width: 0;
+            height: 0;
+          }
+          .float-child { float: left; width: 20px; height: 10px; }
+          .absolute-child {
+            position: absolute;
+            left: 0;
+            top: 20px;
+            width: 20px;
+            height: 10px;
+          }
+          .fixed-child {
+            position: fixed;
+            left: 0;
+            top: 40px;
+            width: 20px;
+            height: 10px;
+          }
+          .second { left: 30px; }
+        </style>
+      </body>)HTML",
+      url_test_helpers::ToKURL("http://example.com"));
+
+  LoadAhem();
+  GetAIPageContentWithActionableElements();
+
+  auto expect_anchor_geometry_from_children =
+      [this](const char* anchor_selector, const char* first_child_selector,
+             const char* second_child_selector) {
+        const auto* anchor_node = FindNodeBySelector(anchor_selector);
+        ASSERT_TRUE(anchor_node);
+        ASSERT_TRUE(anchor_node->content_attributes->geometry);
+        const auto& anchor_geometry =
+            *anchor_node->content_attributes->geometry;
+
+        const auto* first_child = FindNodeBySelector(first_child_selector);
+        ASSERT_TRUE(first_child);
+        ASSERT_TRUE(first_child->content_attributes->geometry);
+        const gfx::Rect first_child_box =
+            first_child->content_attributes->geometry->visible_bounding_box;
+        EXPECT_FALSE(first_child_box.IsEmpty());
+
+        const auto* second_child = FindNodeBySelector(second_child_selector);
+        ASSERT_TRUE(second_child);
+        ASSERT_TRUE(second_child->content_attributes->geometry);
+        const gfx::Rect second_child_box =
+            second_child->content_attributes->geometry->visible_bounding_box;
+        EXPECT_FALSE(second_child_box.IsEmpty());
+
+        EXPECT_THAT(
+            anchor_geometry.fragment_visible_bounding_boxes,
+            testing::UnorderedElementsAre(first_child_box, second_child_box));
+
+        gfx::Rect expected_outer_box =
+            first_child->content_attributes->geometry->outer_bounding_box;
+        expected_outer_box.Union(
+            second_child->content_attributes->geometry->outer_bounding_box);
+        EXPECT_EQ(anchor_geometry.outer_bounding_box, expected_outer_box);
+
+        gfx::Rect expected_visible_box = first_child_box;
+        expected_visible_box.Union(second_child_box);
+        EXPECT_EQ(anchor_geometry.visible_bounding_box, expected_visible_box);
+      };
+
+  expect_anchor_geometry_from_children("#float", "#float-child-1",
+                                       "#float-child-2");
+  expect_anchor_geometry_from_children("#absolute", "#absolute-child-1",
+                                       "#absolute-child-2");
+  expect_anchor_geometry_from_children("#fixed", "#fixed-child-1",
+                                       "#fixed-child-2");
+}
+
+TEST_F(AIPageContentAgentTest,
+       ZeroAreaAncestorUsesFirstNonemptyGeometryFromEachBranch) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      R"HTML(
+      <body style="margin: 0; font: 10px/10px Ahem;">
+        <a id="anchor" href="#" class="zero">
+          <span id="deep-zero-1" class="zero" onclick="void(0)">
+            <span id="deep-zero-2" class="zero" onclick="void(0)">
+              <span id="deep-leaf" class="deep-leaf"
+                    onclick="void(0)">A</span>
+            </span>
+          </span>
+          <span id="nonempty-branch" class="nonempty-branch"
+                onclick="void(0)">
+            <span id="far-leaf" class="far-leaf"
+                  onclick="void(0)">B</span>
+          </span>
+        </a>
+        <style>
+          .zero {
+            display: inline-block;
+            position: relative;
+            width: 0;
+            height: 0;
+          }
+          .deep-leaf, .far-leaf {
+            position: absolute;
+            display: block;
+            width: 10px;
+            height: 10px;
+          }
+          .deep-leaf { left: 20px; top: 10px; }
+          .nonempty-branch {
+            display: inline-block;
+            position: relative;
+            width: 5px;
+            height: 5px;
+          }
+          .far-leaf { left: 100px; top: 100px; }
+        </style>
+      </body>)HTML",
+      url_test_helpers::ToKURL("http://example.com"));
+
+  LoadAhem();
+  GetAIPageContentWithActionableElements();
+
+  const auto* anchor = FindNodeBySelector("#anchor");
+  const auto* deep_zero_1 = FindNodeBySelector("#deep-zero-1");
+  const auto* deep_zero_2 = FindNodeBySelector("#deep-zero-2");
+  const auto* deep_leaf = FindNodeBySelector("#deep-leaf");
+  const auto* nonempty_branch = FindNodeBySelector("#nonempty-branch");
+  const auto* far_leaf = FindNodeBySelector("#far-leaf");
+  ASSERT_TRUE(anchor);
+  ASSERT_TRUE(deep_zero_1);
+  ASSERT_TRUE(deep_zero_2);
+  ASSERT_TRUE(deep_leaf);
+  ASSERT_TRUE(nonempty_branch);
+  ASSERT_TRUE(far_leaf);
+  ASSERT_TRUE(anchor->content_attributes->geometry);
+  ASSERT_TRUE(deep_zero_1->content_attributes->geometry);
+  ASSERT_TRUE(deep_zero_2->content_attributes->geometry);
+  ASSERT_TRUE(deep_leaf->content_attributes->geometry);
+  ASSERT_TRUE(nonempty_branch->content_attributes->geometry);
+  ASSERT_TRUE(far_leaf->content_attributes->geometry);
+
+  const auto& anchor_geometry = *anchor->content_attributes->geometry;
+  const auto& deep_leaf_geometry = *deep_leaf->content_attributes->geometry;
+  const auto& nonempty_branch_geometry =
+      *nonempty_branch->content_attributes->geometry;
+  const auto& far_leaf_geometry = *far_leaf->content_attributes->geometry;
+
+  // Each zero-area level on the deep branch receives the same first nonempty
+  // geometry from below it.
+  EXPECT_EQ(deep_zero_2->content_attributes->geometry->visible_bounding_box,
+            deep_leaf_geometry.visible_bounding_box);
+  EXPECT_EQ(deep_zero_1->content_attributes->geometry->visible_bounding_box,
+            deep_leaf_geometry.visible_bounding_box);
+
+  // The anchor receives one contribution from each branch. The far leaf does
+  // not contribute because its branch already has nonempty container geometry.
+  EXPECT_THAT(anchor_geometry.fragment_visible_bounding_boxes,
+              testing::UnorderedElementsAre(
+                  deep_leaf_geometry.visible_bounding_box,
+                  nonempty_branch_geometry.visible_bounding_box));
+  EXPECT_THAT(
+      anchor_geometry.fragment_visible_bounding_boxes,
+      testing::Not(testing::Contains(far_leaf_geometry.visible_bounding_box)));
+}
+
+TEST_F(AIPageContentAgentTest,
+       ZeroAreaAnchorsUseGeometryThroughNonpaintingWrappers) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      R"HTML(
+      <body style="margin: 0; font: 10px/10px Ahem;">
+        <a id="collapse-anchor" href="#" class="zero">
+          <span style="visibility: collapse;">
+            <span id="collapse-child" class="collapse-child"
+                  onclick="void(0)">A</span>
+          </span>
+        </a>
+        <a id="contents-anchor" href="#" class="zero">
+          <span style="display: contents;">
+            <span id="contents-child" class="contents-child"
+                  onclick="void(0)">B</span>
+          </span>
+        </a>
+        <style>
+          .zero {
+            display: inline-block;
+            position: relative;
+            width: 0;
+            height: 0;
+          }
+          .collapse-child, .contents-child {
+            position: absolute;
+            display: block;
+            width: 20px;
+            height: 10px;
+            visibility: visible;
+          }
+          .collapse-child { left: 10px; top: 20px; }
+          .contents-child { left: 40px; top: 20px; }
+        </style>
+      </body>)HTML",
+      url_test_helpers::ToKURL("http://example.com"));
+
+  LoadAhem();
+  GetAIPageContentWithActionableElements();
+
+  auto expect_anchor_matches_child = [this](const char* anchor_selector,
+                                            const char* child_selector) {
+    const auto* anchor = FindNodeBySelector(anchor_selector);
+    const auto* child = FindNodeBySelector(child_selector);
+    ASSERT_TRUE(anchor);
+    ASSERT_TRUE(child);
+    ASSERT_TRUE(anchor->content_attributes->geometry);
+    ASSERT_TRUE(child->content_attributes->geometry);
+
+    const auto& anchor_geometry = *anchor->content_attributes->geometry;
+    const auto& child_geometry = *child->content_attributes->geometry;
+    EXPECT_EQ(anchor_geometry.outer_bounding_box,
+              child_geometry.outer_bounding_box);
+    EXPECT_EQ(anchor_geometry.visible_bounding_box,
+              child_geometry.visible_bounding_box);
+    EXPECT_THAT(anchor_geometry.fragment_visible_bounding_boxes,
+                testing::ElementsAre(child_geometry.visible_bounding_box));
+  };
+
+  expect_anchor_matches_child("#collapse-anchor", "#collapse-child");
+  expect_anchor_matches_child("#contents-anchor", "#contents-child");
+}
+
+TEST_F(AIPageContentAgentTest,
+       ZeroAreaAnchorCombinesFragmentsFromMultipleSources) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      R"HTML(
+      <body style="margin: 0; font: 10px/10px Ahem;">
+        <a id="anchor" href="#">AB CD<span id="sibling"
+            onclick="void(0)">E</span></a>
+        <style>
+          #anchor {
+            display: block;
+            position: relative;
+            width: 20px;
+            height: 0;
+          }
+          #sibling {
+            position: absolute;
+            left: 50px;
+            top: 30px;
+            width: 10px;
+            height: 10px;
+          }
+        </style>
+      </body>)HTML",
+      url_test_helpers::ToKURL("http://example.com"));
+
+  LoadAhem();
+  GetAIPageContentWithActionableElements();
+
+  Document* document = helper_.LocalMainFrame()->GetFrame()->GetDocument();
+  ASSERT_TRUE(document);
+  Element* anchor = document->getElementById(AtomicString("anchor"));
+  ASSERT_TRUE(anchor);
+  Node* wrapping_text = anchor->firstChild();
+  ASSERT_TRUE(wrapping_text);
+  ASSERT_TRUE(wrapping_text->IsTextNode());
+
+  const auto* anchor_node = FindNodeBySelector("#anchor");
+  const auto* text_node =
+      FindNodeByDomNodeId(DOMNodeIds::IdForNode(wrapping_text));
+  const auto* sibling_node = FindNodeBySelector("#sibling");
+  ASSERT_TRUE(anchor_node);
+  ASSERT_TRUE(text_node);
+  ASSERT_TRUE(sibling_node);
+  ASSERT_TRUE(anchor_node->content_attributes->geometry);
+  ASSERT_TRUE(text_node->content_attributes->geometry);
+  ASSERT_TRUE(sibling_node->content_attributes->geometry);
+
+  const auto& anchor_geometry = *anchor_node->content_attributes->geometry;
+  const auto& text_geometry = *text_node->content_attributes->geometry;
+  const auto& sibling_geometry = *sibling_node->content_attributes->geometry;
+  ASSERT_EQ(text_geometry.fragment_visible_bounding_boxes.size(), 2u);
+  ASSERT_TRUE(sibling_geometry.fragment_visible_bounding_boxes.empty());
+
+  // `#sibling` is inside the anchor and is the wrapping text node's sibling.
+  // The empty anchor therefore combines the first nonempty geometry from both
+  // child branches.
+  Vector<gfx::Rect> expected_fragments =
+      text_geometry.fragment_visible_bounding_boxes;
+  expected_fragments.push_back(sibling_geometry.visible_bounding_box);
+  EXPECT_THAT(anchor_geometry.fragment_visible_bounding_boxes,
+              testing::UnorderedElementsAreArray(expected_fragments));
+
+  gfx::Rect expected_outer_box = text_geometry.outer_bounding_box;
+  expected_outer_box.Union(sibling_geometry.outer_bounding_box);
+  EXPECT_EQ(anchor_geometry.outer_bounding_box, expected_outer_box);
+
+  gfx::Rect expected_visible_box = text_geometry.visible_bounding_box;
+  expected_visible_box.Union(sibling_geometry.visible_bounding_box);
+  EXPECT_EQ(anchor_geometry.visible_bounding_box, expected_visible_box);
 }
 
 TEST_F(AIPageContentAgentTest, InlinePreWrapGeometry) {
@@ -7085,7 +7695,7 @@ TEST_F(AIPageContentAgentTest, TableTextClippedByScrollerAfterScroll) {
   const auto& fragments = geometry.fragment_visible_bounding_boxes;
   const ComputedStyle& after_style = text->GetLayoutObject()->StyleRef();
   std::string fragments_trace;
-  for (size_t i = 0; i < fragments.size(); ++i) {
+  for (wtf_size_t i = 0; i < fragments.size(); ++i) {
     if (!fragments_trace.empty()) {
       fragments_trace.append("; ");
     }
@@ -7180,7 +7790,7 @@ TEST_F(AIPageContentAgentTest, IframeInlineTextClippedWhenViewportScrolled) {
   const auto& fragments = geometry.fragment_visible_bounding_boxes;
   const ComputedStyle& iframe_style = inner_text->GetLayoutObject()->StyleRef();
   std::string fragments_trace;
-  for (size_t i = 0; i < fragments.size(); ++i) {
+  for (wtf_size_t i = 0; i < fragments.size(); ++i) {
     if (!fragments_trace.empty()) {
       fragments_trace.append("; ");
     }
@@ -8526,6 +9136,165 @@ TEST_F(AIPageContentAgentTest, ZeroSizeContainerWithVisibleChild) {
   EXPECT_TRUE(found);
 }
 
+TEST_F(AIPageContentAgentTest, GetImageBytes) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <img alt=testimg></img>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+  auto& document = *helper_.LocalMainFrame()->GetFrame()->GetDocument();
+  document.getElementsByTagName(AtomicString("img"))
+      ->item(0)
+      ->setAttribute(html_names::kSrcAttr, AtomicString(kSmallImage));
+
+  test::RunPendingTasks();
+
+  GetAIPageContentWithActionableElements();
+
+  const auto& root = ContentRootNode();
+  ASSERT_EQ(root.children_nodes.size(), 1u);
+
+  auto& image_node = *root.children_nodes[0];
+  CheckImageNode(image_node, "testimg", KURL());
+  ASSERT_TRUE(image_node.content_attributes->dom_node_id.has_value());
+  int32_t dom_node_id = image_node.content_attributes->dom_node_id.value();
+
+  auto* agent = AIPageContentAgent::From(document);
+  ASSERT_TRUE(agent);
+
+  base::HistogramTester histogram_tester;
+
+  base::RunLoop run_loop;
+  agent->GetImageBytes(
+      dom_node_id,
+      base::BindLambdaForTesting(
+          [&](mojom::blink::AIPageContentImageBytesResultPtr result) {
+            ASSERT_TRUE(result);
+            EXPECT_GT(result->image_bytes.size(), 0u);
+            EXPECT_EQ(result->image_info->mime_type, "image/jpeg");
+            ASSERT_TRUE(result->image_info);
+            EXPECT_EQ(result->image_info->image_caption, "testimg");
+            run_loop.Quit();
+          }));
+  run_loop.Run();
+
+  histogram_tester.ExpectUniqueSample(
+      "OptimizationGuide.AIPageContent.GetImageBytes.Status", 0 /* kSuccess */,
+      1);
+}
+
+TEST_F(AIPageContentAgentTest, GetImageBytesFailures) {
+  base::HistogramTester histogram_tester;
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <img id='img' alt='testimg'></img>"
+      "  <div id='not-image'>hello</div>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+  auto& document = *helper_.LocalMainFrame()->GetFrame()->GetDocument();
+  document.getElementById(AtomicString("img"))
+      ->setAttribute(html_names::kSrcAttr, AtomicString(kSmallImage));
+
+  test::RunPendingTasks();
+
+  auto* agent = AIPageContentAgent::GetOrCreateForTesting(document);
+  ASSERT_TRUE(agent);
+
+  int32_t image_node_id =
+      DOMNodeIds::IdForNode(document.getElementById(AtomicString("img")));
+  int32_t div_node_id =
+      DOMNodeIds::IdForNode(document.getElementById(AtomicString("not-image")));
+
+  // 1. Invalid Node ID
+  {
+    base::RunLoop run_loop;
+    agent->GetImageBytes(
+        image_node_id + 9999,
+        base::BindLambdaForTesting(
+            [&](mojom::blink::AIPageContentImageBytesResultPtr result) {
+              EXPECT_FALSE(result);
+              run_loop.Quit();
+            }));
+    run_loop.Run();
+    histogram_tester.ExpectBucketCount(
+        "OptimizationGuide.AIPageContent.GetImageBytes.Status",
+        1 /* kNodeNotFound */, 1);
+  }
+
+  // 2. Cross-Tree Query (different LocalFrameRoot / different WebView)
+  {
+    frame_test_helpers::WebViewHelper helper2;
+    helper2.Initialize();
+    frame_test_helpers::LoadHTMLString(
+        helper2.LocalMainFrame(),
+        "<body>"
+        "  <img id='img2' alt='testimg2'></img>"
+        "</body>",
+        url_test_helpers::ToKURL("http://foobar2.com"));
+    auto& document2 = *helper2.LocalMainFrame()->GetFrame()->GetDocument();
+    document2.getElementById(AtomicString("img2"))
+        ->setAttribute(html_names::kSrcAttr, AtomicString(kSmallImage));
+
+    test::RunPendingTasks();
+
+    int32_t helper2_image_node_id =
+        DOMNodeIds::IdForNode(document2.getElementById(AtomicString("img2")));
+
+    base::RunLoop run_loop;
+    agent->GetImageBytes(
+        helper2_image_node_id,
+        base::BindLambdaForTesting(
+            [&](mojom::blink::AIPageContentImageBytesResultPtr result) {
+              EXPECT_FALSE(result);
+              run_loop.Quit();
+            }));
+    run_loop.Run();
+    histogram_tester.ExpectBucketCount(
+        "OptimizationGuide.AIPageContent.GetImageBytes.Status",
+        4 /* kCrossTreeQuery */, 1);
+  }
+
+  // 3. Non-Image Node
+  {
+    base::RunLoop run_loop;
+    agent->GetImageBytes(
+        div_node_id,
+        base::BindLambdaForTesting(
+            [&](mojom::blink::AIPageContentImageBytesResultPtr result) {
+              EXPECT_FALSE(result);
+              run_loop.Quit();
+            }));
+    run_loop.Run();
+    histogram_tester.ExpectBucketCount(
+        "OptimizationGuide.AIPageContent.GetImageBytes.Status",
+        5 /* kNotAnImage */, 1);
+  }
+
+  // 4. Image resource error (broken image)
+  {
+    document.getElementById(AtomicString("img"))
+        ->setAttribute(html_names::kSrcAttr,
+                       AtomicString("data:image/jpeg;base64,invalid"));
+    document.UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+    test::RunPendingTasks();
+
+    base::RunLoop run_loop;
+    agent->GetImageBytes(
+        image_node_id,
+        base::BindLambdaForTesting(
+            [&](mojom::blink::AIPageContentImageBytesResultPtr result) {
+              EXPECT_FALSE(result);
+              run_loop.Quit();
+            }));
+    run_loop.Run();
+    histogram_tester.ExpectBucketCount(
+        "OptimizationGuide.AIPageContent.GetImageBytes.Status",
+        6 /* kImageError */, 1);
+  }
+}
+
 class AIPageContentAgentTestTextEncoding : public AIPageContentAgentTest {
  private:
   // All of these tests assume the UTF-8 conversion feature is enabled.
@@ -8587,7 +9356,7 @@ TEST_F(AIPageContentAgentTestTextEncoding, ImageCaptionCorrected) {
   GetAIPageContentWithActionableElements();
 
   auto* image_node = FindNodeBySelector("#wrong");
-  CheckImageNode(*image_node, String(u"Hello\uFFFD"));
+  CheckImageNode(*image_node, String(u"Hello\uFFFD"), KURL());
 }
 
 TEST_F(AIPageContentAgentTestTextEncoding, SVGRootCorrected) {

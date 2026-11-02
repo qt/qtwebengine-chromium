@@ -273,7 +273,7 @@ bool CPDF_OCContext::LoadOCMDState(const CPDF_Dictionary* pOCMDDict) const {
 
   bool bState = (csP == "AllOn" || csP == "AllOff");
   // At least one entry of OCGs needs to be a valid dictionary for it to be
-  // considered present. See "OCGs" in table 4.49 in the PDF 1.7 spec.
+  // considered present. See "OCGs" in Table 99 in the ISO 32000-1:2008 spec.
   bool bValidEntrySeen = false;
   for (size_t i = 0; i < pArray->size(); i++) {
     bool bItem = true;

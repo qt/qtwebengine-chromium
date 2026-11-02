@@ -34,6 +34,9 @@ class ScopedSetInsertion {
   const std::pair<typename std::set<T>::iterator, bool> insert_results_;
 };
 
+template <typename T>
+ScopedSetInsertion(std::set<T>*, const T&) -> ScopedSetInsertion<T>;
+
 }  // namespace fxcrt
 
 using fxcrt::ScopedSetInsertion;

@@ -7,6 +7,7 @@
 #include "public/fpdf_doc.h"
 
 #include <memory>
+#include <optional>
 #include <set>
 #include <utility>
 
@@ -31,6 +32,7 @@
 #include "core/fxcrt/numerics/safe_conversions.h"
 #include "core/fxcrt/span.h"
 #include "core/fxcrt/span_util.h"
+#include "core/fxge/dib/fx_dib.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
 #include "public/fpdf_formfill.h"
 
@@ -189,6 +191,29 @@ FPDFBookmark_GetAction(FPDF_BOOKMARK bookmark) {
   CPDF_Bookmark cBookmark(
       pdfium::WrapRetain(CPDFDictionaryFromFPDFBookmark(bookmark)));
   return FPDFActionFromCPDFDictionary(cBookmark.GetAction().GetDict());
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFBookmark_GetColor(FPDF_BOOKMARK bookmark, float* R, float* G, float* B) {
+  if (!bookmark || !R || !G || !B) {
+    return false;
+  }
+  CPDF_Bookmark cpdf_bookmark(
+      pdfium::WrapRetain(CPDFDictionaryFromFPDFBookmark(bookmark)));
+  std::optional<FX_RGB_STRUCT<float>> color = cpdf_bookmark.GetColor();
+  if (!color.has_value()) {
+    return false;
+  }
+  if (color->red > 1 || color->green > 1 || color->blue > 1) {
+    return false;
+  }
+  if (color->red < 0 || color->green < 0 || color->blue < 0) {
+    return false;
+  }
+  *R = color->red;
+  *G = color->green;
+  *B = color->blue;
+  return true;
 }
 
 FPDF_EXPORT unsigned long FPDF_CALLCONV FPDFAction_GetType(FPDF_ACTION action) {

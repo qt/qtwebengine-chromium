@@ -1646,7 +1646,7 @@ static int defragmentPage(MemPage *pPage, int nMaxFrag){
   ** reconstruct the entire page.  */
   if( (int)data[hdr+7]<=nMaxFrag ){
     int iFree = get2byte(&data[hdr+1]);
-    if( NEVER(iFree>usableSize-4) ) return SQLITE_CORRUPT_PAGE(pPage);
+    if( iFree>usableSize-4 ) return SQLITE_CORRUPT_PAGE(pPage);
     if( iFree ){
       int iFree2 = get2byte(&data[iFree]);
       if( iFree2>usableSize-4 ) return SQLITE_CORRUPT_PAGE(pPage);
@@ -5185,7 +5185,9 @@ static int accessPayload(
     ** means "not yet known" (the cache is lazily populated).
     */
     if( (pCur->curFlags & BTCF_ValidOvfl)==0 ){
-      int nOvfl = (pCur->info.nPayload-pCur->info.nLocal+ovflSize-1)/ovflSize;
+      i64 nOvfl = pCur->info.nPayload;
+      testcase( nOvfl - pCur->info.nLocal + ovflSize - 1 > 0xffffffffU );
+      nOvfl = (nOvfl - pCur->info.nLocal + ovflSize-1)/ovflSize;
       if( pCur->aOverflow==0
        || nOvfl*(int)sizeof(Pgno) > sqlite3MallocSize(pCur->aOverflow)
       ){

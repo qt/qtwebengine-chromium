@@ -69,7 +69,7 @@ export default createRule<unknown[], MessageIds>({
             fixer.replaceText(node.callee, calleeText),
             fixer.replaceText(node.arguments[0], sourceCode.getText(firstArgNode)),
           ];
-        }
+        },
       });
     }
 
@@ -96,7 +96,7 @@ export default createRule<unknown[], MessageIds>({
         } else if (isAssertNotOk(node.callee)) {
           reportError(node, 'assert.isNotOk', argumentNode, 'useAssertIsNotOk');
         }
-      }
+      },
 
     };
   },

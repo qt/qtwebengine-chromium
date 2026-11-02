@@ -21,7 +21,7 @@ export const templateLiteralParslet = composeParslet({
       const literal = getTemplateLiteralLiteral(currentText) ?? ''
 
       // We collect backslashes for total length, but need to replace
-      literals.push(literal.replace(/\\`/g, '`'))
+      literals.push(literal.replace(/\\`/gv, '`'))
 
       currentText = currentText.slice(literal.length)
     }

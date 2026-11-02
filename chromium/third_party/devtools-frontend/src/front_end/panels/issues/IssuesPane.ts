@@ -92,11 +92,6 @@ const UIStrings = {
    */
   issuesPanelDescription: 'On this page you can find warnings from the browser.',
   /**
-   * @description Category title for the different 'Attribution Reporting API' issues. The
-   * Attribution Reporting API is a newly proposed web API (see https://github.com/WICG/conversion-measurement-api).
-   */
-  attributionReporting: 'Attribution Reporting `API`',
-  /**
    * @description Category title for the different 'Quirks Mode' issues. Quirks Mode refers
    *              to the legacy browser modes that displays web content according to outdated
    *              browser behaviors.
@@ -149,8 +144,6 @@ class IssueCategoryView extends UI.TreeOutline.TreeElement {
         return i18nString(UIStrings.lowTextContrast);
       case IssuesManager.Issue.IssueCategory.CORS:
         return i18nString(UIStrings.cors);
-      case IssuesManager.Issue.IssueCategory.ATTRIBUTION_REPORTING:
-        return i18nString(UIStrings.attributionReporting);
       case IssuesManager.Issue.IssueCategory.QUIRKS_MODE:
         return i18nString(UIStrings.quirksMode);
       case IssuesManager.Issue.IssueCategory.GENERIC:
@@ -271,7 +264,7 @@ export class IssuesPane extends UI.Widget.VBox {
     });
     groupByKindSettingCheckbox.setVisible(true);
 
-    const thirdPartySetting = IssuesManager.Issue.getShowThirdPartyIssuesSetting();
+    const thirdPartySetting = IssuesManager.Issue.getShowThirdPartyIssuesSetting(Common.Settings.Settings.instance());
     this.#showThirdPartyCheckbox = new UI.Toolbar.ToolbarSettingCheckbox(
         thirdPartySetting, i18nString(UIStrings.includeCookieIssuesCausedBy),
         i18nString(UIStrings.includeThirdpartyCookieIssues));

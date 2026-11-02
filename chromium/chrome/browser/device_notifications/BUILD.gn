@@ -53,6 +53,7 @@ source_set("impl") {
       "//chrome/browser/profiles:profile",
       "//chrome/browser/profiles:profile_manager",
       "//chrome/browser/ui",
+      "//chrome/browser/ui:chrome_pages",
       "//content/public/browser",
       "//url",
     ]
@@ -61,7 +62,6 @@ source_set("impl") {
       sources += [ "device_status_icon_renderer.cc" ]
       deps += [
         "//base:i18n",
-        "//chrome/app:branded_strings",
         "//chrome/app:command_ids",
         "//chrome/app:generated_resources",
         "//chrome/browser:browser_process",

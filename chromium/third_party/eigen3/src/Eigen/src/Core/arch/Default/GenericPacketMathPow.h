@@ -40,7 +40,7 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet cbrt_halley_iteration
 template <typename Packet>
 EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet cbrt_decompose(const Packet& x, Packet& e_div3) {
   typedef typename unpacket_traits<Packet>::type Scalar;
-  // Extract the significant s in the range [0.5,1) and exponent e, such that
+  // Extract the significand s in the range [0.5,1) and exponent e, such that
   // x = 2^e * s.
   Packet e, s;
   s = pfrexp(x, e);
@@ -58,10 +58,8 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet cbrt_decompose(const 
 template <typename Packet>
 EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet cbrt_special_cases_and_sign(const Packet& x,
                                                                                        const Packet& abs_root) {
-  typedef typename unpacket_traits<Packet>::type Scalar;
-
   // Set sign.
-  const Packet sign_mask = pset1<Packet>(Scalar(-0.0));
+  const Packet sign_mask = psignmask<Packet>();
   const Packet x_sign = pand(sign_mask, x);
   Packet root = por(x_sign, abs_root);
 
@@ -75,7 +73,7 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet cbrt_special_cases_an
 // Generic implementation of cbrt(x) for float.
 //
 // The algorithm computes the cubic root of the input by first
-// decomposing it into a exponent and significant
+// decomposing it into an exponent and significand
 //   x = s * 2^e.
 //
 // We can then write the cube root as
@@ -210,7 +208,7 @@ struct accurate_log2<float> {
     const Packet one = pset1<Packet>(1.0f);
     const Packet x = psub(z, one);
     Packet p = ppolevl<Packet, 8>::run(x, c);
-    // Evaluate the final two step in Horner's rule using double-word
+    // Evaluate the final two steps in Horner's rule using double-word
     // arithmetic.
     Packet p_hi, p_lo;
     twoprod(x, p, p_hi, p_lo);
@@ -308,7 +306,7 @@ struct accurate_log2<double> {
     Packet p3_hi, p3_lo;
     fast_twosum(one, p2_hi, p2_lo, p3_hi, p3_lo);
 
-    // log(z) ~= ((Q(r^2) * r^2 + C) * r^2 + 1) * r
+    // log2(x) ~= ((Q(r^2) * r^2 + C) * r^2 + 1) * r
     twoprod(p3_hi, p3_lo, r_hi, r_lo, log2_x_hi, log2_x_lo);
   }
 };
@@ -379,10 +377,10 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS std::enable_if_t<!is_scalar<
     const Packet& x, const Packet& y) {
   typedef typename unpacket_traits<Packet>::type Scalar;
 
-  const Packet cst_inf = pset1<Packet>(NumTraits<Scalar>::infinity());
+  const Packet cst_inf = pinf<Packet>();
   const Packet cst_zero = pset1<Packet>(Scalar(0));
   const Packet cst_one = pset1<Packet>(Scalar(1));
-  const Packet cst_nan = pset1<Packet>(NumTraits<Scalar>::quiet_NaN());
+  const Packet cst_nan = pnan<Packet>();
 
   const Packet x_abs = pabs(x);
   Packet result = generic_pow_impl(x_abs, y);
@@ -575,8 +573,8 @@ EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Packet handle_nonint_nonint_errors(const P
   using Scalar = typename unpacket_traits<Packet>::type;
   const Packet cst_zero = pzero(x);
   const Packet cst_one = pset1<Packet>(Scalar(1));
-  const Packet cst_inf = pset1<Packet>(NumTraits<Scalar>::infinity());
-  const Packet cst_nan = pset1<Packet>(NumTraits<Scalar>::quiet_NaN());
+  const Packet cst_inf = pinf<Packet>();
+  const Packet cst_nan = pnan<Packet>();
 
   const Packet abs_x = pabs(x);
 

@@ -163,7 +163,7 @@ struct PacketWrapper<PacketReturnType, 4> {
       case 3:
         return in.w();
       default:
-        // INDEX MUST BE BETWEEN 0 and 3.There is no abort function in SYCL kernel. so we cannot use abort here.
+        // INDEX MUST BE BETWEEN 0 and 3. There is no abort function in SYCL kernel. so we cannot use abort here.
         //  The code will never reach here
         __builtin_unreachable();
     }
@@ -202,7 +202,7 @@ struct PacketWrapper<PacketReturnType, 2> {
       case 1:
         return in.y();
       default:
-        // INDEX MUST BE BETWEEN 0 and 1.There is no abort function in SYCL kernel. so we cannot use abort here.
+        // INDEX MUST BE BETWEEN 0 and 1. There is no abort function in SYCL kernel. so we cannot use abort here.
         // The code will never reach here
         __builtin_unreachable();
     }

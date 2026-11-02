@@ -61,7 +61,7 @@ const DEFAULT_VIEW: View = (input, _output, target: HTMLElement) => {
     <span class="monospace">
       <button class="node-link text-button link-style ${classMap({
             'dynamic-link': Boolean(input.dynamic),
-            disabled: Boolean(input.disabled)
+            disabled: Boolean(input.disabled),
           })}"
           aria-description=${ifDefined(input.ariaDescription)}
           jslog=${VisualLogging.link('node').track({click: true, keydown: 'Enter'})}
@@ -134,7 +134,7 @@ export class DOMNodeLink extends UI.Widget.Widget {
         this.#node?.highlight?.();
       },
       onMouseLeave: () => {
-        SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+        SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight(SDK.TargetManager.TargetManager.instance());
       },
       ariaDescription: options.ariaDescription,
     };

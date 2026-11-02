@@ -68,6 +68,11 @@ struct FuzzedOptions {
 Result<SuccessType> IRFuzzer(core::ir::Module& module,
                              const fuzz::ir::Context& context,
                              FuzzedOptions fuzzed_options) {
+    if (context.options.verbose) {
+        PrintReflected(std::cout, fuzzed_options);
+        std::cout << "\n";
+    }
+
     // TODO(375388101): We cannot run the backend for every entry point in the module unless we
     // clone the whole module each time, so for now we just generate the first entry point.
 
@@ -171,6 +176,4 @@ Result<SuccessType> IRFuzzer(core::ir::Module& module,
 }  // namespace
 }  // namespace tint::glsl::writer
 
-TINT_IR_MODULE_FUZZER(tint::glsl::writer::IRFuzzer,
-                      tint::core::ir::Capabilities{},
-                      tint::glsl::writer::kPrinterCapabilities);
+TINT_IR_MODULE_FUZZER(tint::glsl::writer::IRFuzzer);

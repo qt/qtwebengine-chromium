@@ -156,8 +156,8 @@ def addOwnersFile():
     return False
 
 
-def addChromiumReadme():
-    with open(path.join(devtools_paths.node_modules_path(), 'README.chromium'),
+def addReadme():
+    with open(path.join(devtools_paths.node_modules_path(), 'README.md'),
               'w+') as readme_file:
         try:
             readme_file.write(
@@ -167,7 +167,7 @@ def addChromiumReadme():
                 'If you want to make any changes to this directory, please see "scripts/deps/manage_node_deps.py".\n'
             )
         except:
-            print('Unable to write README.chromium file')
+            print('Unable to write README.md file')
             return True
     return False
 
@@ -271,7 +271,7 @@ def run_npm_command():
     if addOwnersFile():
         return True
 
-    if addChromiumReadme():
+    if addReadme():
         return True
 
     fixChaiExports()

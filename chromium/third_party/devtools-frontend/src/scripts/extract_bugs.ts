@@ -11,7 +11,7 @@ const argv = yargs(hideBin(process.argv))
                  .option('format', {
                    alias: 'f',
                    describe: 'Output format',
-                   choices: ['list', 'b'],
+                   choices: ['list', 'b', 'json'],
                    default: 'list',
                  })
                  .option('sources', {
@@ -49,25 +49,12 @@ function extract(sourceFile: ts.SourceFile) {
     return false;
   }
 
-  function isSkipOnPlatformsCall(node: ts.Node) {
-    if (node.getChildAt(0).kind === ts.SyntaxKind.PropertyAccessExpression) {
-      const propAccess = node.getChildAt(0);
-      const skipOnPlatformCalls = new Set(['it.skipOnPlatforms', 'describe.skipOnPlatforms']);
-      if (skipOnPlatformCalls.has(propAccess.getText())) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   function extractBugs(node: ts.Node) {
     switch (node.kind) {
       case ts.SyntaxKind.CallExpression: {
         let description;
         if (isSkipCall(node)) {
           description = node.getChildAt(2).getChildAt(0).getText();
-        } else if (isSkipOnPlatformsCall(node)) {
-          description = node.getChildAt(2).getChildAt(2).getText();
         }
         if (!description) {
           break;
@@ -117,7 +104,13 @@ if (argv.sources.includes('chromium')) {
   }
 }
 
-if (argv.format === 'b') {
+if (argv.format === 'json') {
+  const result = Array.from(bugs).map(bug => ({
+                                        bug: `crbug.com/${bug}`,
+                                        file: bugToFile.get(bug) ?? '',
+                                      }));
+  console.log(JSON.stringify(result, null, 2));
+} else if (argv.format === 'b') {
   console.log(`id: (${Array.from(bugs).join('|')})`);
 } else {
   for (const bug of bugs) {

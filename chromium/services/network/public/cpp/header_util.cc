@@ -18,6 +18,7 @@
 #include "net/http/http_response_headers.h"
 #include "net/http/http_status_code.h"
 #include "net/http/http_util.h"
+#include "net/shared_dictionary/shared_dictionary_constants.h"
 #include "services/network/public/cpp/cors/cors.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
@@ -45,7 +46,8 @@ const char* kUnsafeHeaders[] = {
     net::HttpRequestHeaders::kHost,
 
     // Trailers are not supported.
-    "Trailer", "Te",
+    "Trailer",
+    "Te",
 
     // Websockets use a different API.
     "Upgrade",
@@ -63,19 +65,7 @@ const char* kUnsafeHeaders[] = {
     "Set-Cookie",
 
     // TODO(mmenke): Figure out what to do about the remaining headers:
-    // Connection, Cookie, Date, Expect, Referer, Via.
-};
-
-// Headers that consumers are currently allowed to set, with the exception of
-// certain values could cause problems.
-// TODO(mmenke): Gather stats on these, and see if these headers can be banned
-// outright instead.
-const struct {
-  const char* name;
-  const char* value;
-} kUnsafeHeaderValues[] = {
-    // Websockets use a different API.
-    {net::HttpRequestHeaders::kConnection, "Upgrade"},
+    // Cookie, Date, Expect, Referer, Via.
 };
 
 }  // namespace
@@ -86,10 +76,39 @@ bool IsRequestHeaderSafe(std::string_view key, std::string_view value) {
       return false;
   }
 
-  for (const auto& header : kUnsafeHeaderValues) {
-    if (base::EqualsCaseInsensitiveASCII(header.name, key) &&
-        base::EqualsCaseInsensitiveASCII(header.value, value)) {
-      return false;
+  // The Accept-Encoding header can be set by the media pipeline (e.g.
+  // "identity;q=1, *;q=0"), but must not be used to negotiate shared
+  // dictionary compression (dcb, dcz) which is managed by the network stack.
+  if (base::EqualsCaseInsensitiveASCII(
+          key, net::HttpRequestHeaders::kAcceptEncoding)) {
+    net::HttpUtil::ValuesIterator encodings(value, ',');
+    while (encodings.GetNext()) {
+      if (base::StartsWith(
+              encodings.value(),
+              net::shared_dictionary::kSharedBrotliContentEncodingName,
+              base::CompareCase::INSENSITIVE_ASCII) ||
+          base::StartsWith(
+              encodings.value(),
+              net::shared_dictionary::kSharedZstdContentEncodingName,
+              base::CompareCase::INSENSITIVE_ASCII)) {
+        return false;
+      }
+    }
+  }
+
+  // The Connection header is a comma-separated list of tokens. Per RFC 9110
+  // section 7.6.1, intermediaries treat each listed token as the name of a
+  // header to remove before forwarding, so only allow the connection-management
+  // options that the network stack itself uses. Websockets use a different API,
+  // so "upgrade" is not needed here.
+  if (base::EqualsCaseInsensitiveASCII(key,
+                                       net::HttpRequestHeaders::kConnection)) {
+    net::HttpUtil::ValuesIterator tokens(value, ',');
+    while (tokens.GetNext()) {
+      if (!base::EqualsCaseInsensitiveASCII(tokens.value(), "close") &&
+          !base::EqualsCaseInsensitiveASCII(tokens.value(), "keep-alive")) {
+        return false;
+      }
     }
   }
 
@@ -122,7 +141,8 @@ bool AreRequestHeadersSafe(const net::HttpRequestHeaders& request_headers) {
   return true;
 }
 
-bool ContainsForbiddenSecurityHeader(net::HttpRequestHeaders& headers) {
+bool ContainsForbiddenSecurityHeader(net::HttpRequestHeaders& headers,
+                                     std::string* out_forbidden_header_name) {
   static const bool enabled =
       base::FeatureList::IsEnabled(features::kRestrictForbiddenSecurityHeaders);
   if (!enabled) {
@@ -157,9 +177,8 @@ bool ContainsForbiddenSecurityHeader(net::HttpRequestHeaders& headers) {
     if (base::EqualsCaseInsensitiveASCII(name, "Sec-Browsing-Topics")) {
       return value.size() < 1024;
     }
-    // Shared Storage and FLEDGE fetch headers use structured boolean "?1".
-    if (base::EqualsCaseInsensitiveASCII(name, "Sec-Shared-Storage-Writable") ||
-        base::EqualsCaseInsensitiveASCII(name, "Sec-Ad-Auction-Fetch")) {
+    // Shared Storage fetch headers use structured boolean "?1".
+    if (base::EqualsCaseInsensitiveASCII(name, "Sec-Shared-Storage-Writable")) {
       return value == "?1";
     }
     // Shared Storage data origin headers contain origin URLs.
@@ -182,19 +201,7 @@ bool ContainsForbiddenSecurityHeader(net::HttpRequestHeaders& headers) {
       }
       return true;
     }
-    // FLEDGE/Protected Audience auction headers contain encoded auction
-    // signals.
-    if (base::StartsWith(name, "Sec-Ad-Auction-",
-                         base::CompareCase::INSENSITIVE_ASCII)) {
-      size_t size = value.size();
-      base::UmaHistogramCounts10000("NetworkService.SecAdAuctionHeaderSize",
-                                    size);
-      if (size > 2048) {
-        headers_to_truncate[std::string(name)] =
-            std::string(value.substr(0, 2048));
-      }
-      return true;
-    }
+
     return false;
   };
 
@@ -203,6 +210,9 @@ bool ContainsForbiddenSecurityHeader(net::HttpRequestHeaders& headers) {
     if (base::StartsWith(it.name(), "Sec-",
                          base::CompareCase::INSENSITIVE_ASCII)) {
       if (!sanitize_and_check_security_header(it.name(), it.value())) {
+        if (out_forbidden_header_name) {
+          *out_forbidden_header_name = std::string(it.name());
+        }
         return true;
       }
     }

@@ -473,8 +473,8 @@ Channel::MessagePtr Channel::Message::Deserialize(
   }
 
   uint32_t extra_header_size = 0;
-  auto data_span = UNSAFE_TODO(
-      base::span<const char>(static_cast<const char*>(data), data_num_bytes));
+  auto data_span = UNSAFE_TODO(base::span<const char>(
+      base::unchecked, static_cast<const char*>(data), data_num_bytes));
   base::span<const char> payload_span{};
   if (!header) {
     payload_span = data_span.subspan(sizeof(LegacyHeader),
@@ -1098,11 +1098,10 @@ bool Channel::OnReadComplete(size_t bytes_read, size_t* next_read_size_hint) {
     }
 
     DispatchResult result = TryDispatchMessage(
-        UNSAFE_TODO(base::span(read_buffer_->occupied_bytes(),
+        UNSAFE_TODO(base::span(base::unchecked, read_buffer_->occupied_bytes(),
                                read_buffer_->num_occupied_bytes())),
         next_read_size_hint);
     if (result == DispatchResult::kOK) {
-      RecordReceivedMessageProcessTypeSubsampled();
       read_buffer_->Discard(*next_read_size_hint);
       *next_read_size_hint = 0;
 
@@ -1386,18 +1385,6 @@ void Channel::DelayMessage(uint32_t channel_sequence_number,
                             std::move(delayed_message));
 }
 
-void Channel::RecordReceivedMessageProcessTypeSubsampled() {
-  if (ShouldRecordSubsampledHistograms()) {
-    RecordReceivedMessageProcessType();
-  }
-}
-
-// static
-void Channel::RecordReceivedMessageProcessType() {
-  UMA_HISTOGRAM_ENUMERATION(
-      "Mojo.Channel.WriteReceiveMessageProcessType",
-      base::CurrentProcess::GetInstance().GetShortType({}));
-}
 
 // static
 void Channel::RecordSentMessageProcessType() {

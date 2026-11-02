@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "build/build_config.h"
+#include "constants/catalog.h"
 #include "core/fpdfapi/edit/cpdf_creator.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
@@ -67,7 +68,8 @@ bool SaveXFADocumentData(
     return false;
   }
 
-  RetainPtr<CPDF_Dictionary> acro_form = root->GetMutableDictFor("AcroForm");
+  RetainPtr<CPDF_Dictionary> acro_form =
+      root->GetMutableDictFor(pdfium::catalog::kAcroForm);
   if (!acro_form) {
     return false;
   }

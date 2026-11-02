@@ -16,9 +16,11 @@
 #include "core/fxcrt/span_util.h"
 #include "core/fxcrt/zip.h"
 
-#define ISLATINWORD(u) (u != 0x20 && u <= 0x28FF)
-
 namespace {
+
+constexpr bool IsLatinWord(uint32_t unicode) {
+  return unicode != 0x20 && unicode <= 0x28FF;
+}
 
 bool IsVertWritingCIDFont(const CPDF_CIDFont* font) {
   return font && font->IsVertWriting();
@@ -91,7 +93,7 @@ int CPDF_TextObject::CountWords() const {
   for (uint32_t char_code : char_codes_) {
     WideString unicode_str = font->UnicodeFromCharCode(char_code);
     uint16_t unicode = unicode_str.Front();  // Front() safe when empty.
-    bool is_latin = ISLATINWORD(unicode);
+    const bool is_latin = IsLatinWord(unicode);
     if (is_latin && is_in_latin_word) {
       continue;
     }
@@ -113,7 +115,7 @@ WideString CPDF_TextObject::GetWordString(int word_index) const {
   for (uint32_t char_code : char_codes_) {
     WideString unicode_str = font->UnicodeFromCharCode(char_code);
     uint16_t unicode = unicode_str.Front();  // Front() safe when empty.
-    const bool is_latin = ISLATINWORD(unicode);
+    const bool is_latin = IsLatinWord(unicode);
     if (!is_latin || !is_in_latin_word) {
       is_in_latin_word = is_latin;
       if (unicode != 0x20) {
@@ -146,15 +148,7 @@ void CPDF_TextObject::Transform(const CFX_Matrix& matrix) {
   SetDirty(true);
 }
 
-bool CPDF_TextObject::IsText() const {
-  return true;
-}
-
 CPDF_TextObject* CPDF_TextObject::AsText() {
-  return this;
-}
-
-const CPDF_TextObject* CPDF_TextObject::AsText() const {
   return this;
 }
 

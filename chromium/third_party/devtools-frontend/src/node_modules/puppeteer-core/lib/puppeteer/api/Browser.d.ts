@@ -239,6 +239,15 @@ export interface AddScreenParams {
     isInternal?: boolean;
 }
 /**
+ * @public
+ */
+export interface ExtensionInstallOptions {
+    /**
+     * Whether to enable the extension in Incognito or OTR profiles in Chrome.
+     */
+    enabledInIncognito: boolean;
+}
+/**
  * {@link Browser} represents a browser instance that is either:
  *
  * - connected to via {@link Puppeteer.connect} or
@@ -482,15 +491,11 @@ export declare abstract class Browser extends EventEmitter<BrowserEvents> {
         state: PermissionState;
     }>): Promise<void>;
     /**
-     * Installs an extension and returns the ID. In Chrome, this is only
-     * available if the browser was created using `pipe: true` and the
-     * `--enable-unsafe-extension-debugging` flag is set.
+     * Installs an extension and returns the ID.
      */
-    abstract installExtension(path: string): Promise<string>;
+    abstract installExtension(path: string, options?: ExtensionInstallOptions): Promise<string>;
     /**
-     * Uninstalls an extension. In Chrome, this is only available if the browser
-     * was created using `pipe: true` and the
-     * `--enable-unsafe-extension-debugging` flag is set.
+     * Uninstalls an extension.
      */
     abstract uninstallExtension(id: string): Promise<void>;
     /**

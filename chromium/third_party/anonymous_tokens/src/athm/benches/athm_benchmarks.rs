@@ -19,7 +19,6 @@ const DEPLOYMENT_ID: &str = "athm-benchmarks";
 
 fn benchmark_key_gen(c: &mut Criterion) {
     let mut group = c.benchmark_group("key_gen");
-    let mut rng = rand::thread_rng();
 
     [4, 6].iter().for_each(|&n_buckets| {
         group.bench_with_input(
@@ -28,7 +27,7 @@ fn benchmark_key_gen(c: &mut Criterion) {
             |b, &n_buckets| {
                 let params = Params::new(n_buckets, DEPLOYMENT_ID.into()).unwrap();
                 b.iter(|| {
-                    let (_private_key, _public_key, _proof) = key_gen(black_box(&params), &mut rng);
+                    let (_private_key, _public_key, _proof) = key_gen(black_box(&params));
                 });
             },
         );
@@ -39,7 +38,6 @@ fn benchmark_key_gen(c: &mut Criterion) {
 
 fn benchmark_token_request(c: &mut Criterion) {
     let mut group = c.benchmark_group("token_request");
-    let mut rng = rand::thread_rng();
 
     [4, 6].iter().for_each(|&n_buckets| {
         group.bench_with_input(
@@ -47,14 +45,13 @@ fn benchmark_token_request(c: &mut Criterion) {
             &n_buckets,
             |b, &n_buckets| {
                 let params = Params::new(n_buckets, DEPLOYMENT_ID.into()).unwrap();
-                let (_server_private_key, server_public_key, proof) = key_gen(&params, &mut rng);
+                let (_server_private_key, server_public_key, proof) = key_gen(&params);
 
                 b.iter(|| {
                     let (_context, _request) = token_request(
                         black_box(&server_public_key),
                         black_box(&proof),
                         black_box(&params),
-                        &mut rng,
                     )
                     .unwrap();
                 });
@@ -67,7 +64,6 @@ fn benchmark_token_request(c: &mut Criterion) {
 
 fn benchmark_token_response(c: &mut Criterion) {
     let mut group = c.benchmark_group("token_response");
-    let mut rng = rand::thread_rng();
 
     [4, 6].iter().for_each(|&n_buckets| {
         group.bench_with_input(
@@ -75,9 +71,9 @@ fn benchmark_token_response(c: &mut Criterion) {
             &n_buckets,
             |b, &n_buckets| {
                 let params = Params::new(n_buckets, DEPLOYMENT_ID.into()).unwrap();
-                let (server_private_key, server_public_key, proof) = key_gen(&params, &mut rng);
+                let (server_private_key, server_public_key, proof) = key_gen(&params);
                 let (_context, request) =
-                    token_request(&server_public_key, &proof, &params, &mut rng).unwrap();
+                    token_request(&server_public_key, &proof, &params).unwrap();
                 let hidden_metadata = 2;
 
                 b.iter(|| {
@@ -87,7 +83,6 @@ fn benchmark_token_response(c: &mut Criterion) {
                         black_box(&request),
                         black_box(hidden_metadata),
                         black_box(&params),
-                        &mut rng,
                     )
                     .unwrap();
                 });
@@ -100,7 +95,6 @@ fn benchmark_token_response(c: &mut Criterion) {
 
 fn benchmark_finalize_token(c: &mut Criterion) {
     let mut group = c.benchmark_group("finalize_token");
-    let mut rng = rand::thread_rng();
 
     [4, 6].iter().for_each(|&n_buckets| {
         group.bench_with_input(
@@ -108,9 +102,9 @@ fn benchmark_finalize_token(c: &mut Criterion) {
             &n_buckets,
             |b, &n_buckets| {
                 let params = Params::new(n_buckets, DEPLOYMENT_ID.into()).unwrap();
-                let (server_private_key, server_public_key, proof) = key_gen(&params, &mut rng);
+                let (server_private_key, server_public_key, proof) = key_gen(&params);
                 let (context, request) =
-                    token_request(&server_public_key, &proof, &params, &mut rng).unwrap();
+                    token_request(&server_public_key, &proof, &params).unwrap();
                 let hidden_metadata = 2;
                 let response = token_response(
                     &server_private_key,
@@ -118,7 +112,6 @@ fn benchmark_finalize_token(c: &mut Criterion) {
                     &request,
                     hidden_metadata,
                     &params,
-                    &mut rng,
                 )
                 .unwrap();
 
@@ -129,7 +122,6 @@ fn benchmark_finalize_token(c: &mut Criterion) {
                         black_box(&request),
                         black_box(&response),
                         black_box(&params),
-                        &mut rng,
                     )
                     .unwrap();
                 });
@@ -142,7 +134,6 @@ fn benchmark_finalize_token(c: &mut Criterion) {
 
 fn benchmark_verify_token(c: &mut Criterion) {
     let mut group = c.benchmark_group("verify_token");
-    let mut rng = rand::thread_rng();
 
     [4, 6].iter().for_each(|&n_buckets| {
         group.bench_with_input(
@@ -150,9 +141,9 @@ fn benchmark_verify_token(c: &mut Criterion) {
             &n_buckets,
             |b, &n_buckets| {
                 let params = Params::new(n_buckets, DEPLOYMENT_ID.into()).unwrap();
-                let (server_private_key, server_public_key, proof) = key_gen(&params, &mut rng);
+                let (server_private_key, server_public_key, proof) = key_gen(&params);
                 let (context, request) =
-                    token_request(&server_public_key, &proof, &params, &mut rng).unwrap();
+                    token_request(&server_public_key, &proof, &params).unwrap();
                 let hidden_metadata = 2;
                 let response = token_response(
                     &server_private_key,
@@ -160,18 +151,11 @@ fn benchmark_verify_token(c: &mut Criterion) {
                     &request,
                     hidden_metadata,
                     &params,
-                    &mut rng,
                 )
                 .unwrap();
-                let token = finalize_token(
-                    &context,
-                    &server_public_key,
-                    &request,
-                    &response,
-                    &params,
-                    &mut rng,
-                )
-                .unwrap();
+                let token =
+                    finalize_token(&context, &server_public_key, &request, &response, &params)
+                        .unwrap();
 
                 b.iter(|| {
                     let _metadata = verify_token(
@@ -190,7 +174,6 @@ fn benchmark_verify_token(c: &mut Criterion) {
 
 fn benchmark_verify_public_key_proof(c: &mut Criterion) {
     let mut group = c.benchmark_group("verify_public_key_proof");
-    let mut rng = rand::thread_rng();
 
     [4, 6].iter().for_each(|&n_buckets| {
         group.bench_with_input(
@@ -198,7 +181,7 @@ fn benchmark_verify_public_key_proof(c: &mut Criterion) {
             &n_buckets,
             |b, &n_buckets| {
                 let params = Params::new(n_buckets, DEPLOYMENT_ID.into()).unwrap();
-                let (_server_private_key, server_public_key, proof) = key_gen(&params, &mut rng);
+                let (_server_private_key, server_public_key, proof) = key_gen(&params);
 
                 b.iter(|| {
                     let _result = verify_public_key_proof(
@@ -216,7 +199,6 @@ fn benchmark_verify_public_key_proof(c: &mut Criterion) {
 
 fn benchmark_verify_issuance_proof(c: &mut Criterion) {
     let mut group = c.benchmark_group("verify_issuance_proof");
-    let mut rng = rand::thread_rng();
 
     [4, 6].iter().for_each(|&n_buckets| {
         group.bench_with_input(
@@ -224,9 +206,9 @@ fn benchmark_verify_issuance_proof(c: &mut Criterion) {
             &n_buckets,
             |b, &n_buckets| {
                 let params = Params::new(n_buckets, DEPLOYMENT_ID.into()).unwrap();
-                let (server_private_key, server_public_key, proof) = key_gen(&params, &mut rng);
+                let (server_private_key, server_public_key, proof) = key_gen(&params);
                 let (_context, request) =
-                    token_request(&server_public_key, &proof, &params, &mut rng).unwrap();
+                    token_request(&server_public_key, &proof, &params).unwrap();
                 let hidden_metadata = 2;
                 let response = token_response(
                     &server_private_key,
@@ -234,7 +216,6 @@ fn benchmark_verify_issuance_proof(c: &mut Criterion) {
                     &request,
                     hidden_metadata,
                     &params,
-                    &mut rng,
                 )
                 .unwrap();
 

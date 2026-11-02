@@ -24,17 +24,22 @@ class CFX_DIBitmap;
 class CFX_Font;
 class CFX_GraphStateData;
 class PauseIndicatorIface;
-class TextCharPos;
 struct CFX_Color;
 struct CFX_FillRenderOptions;
 struct CFX_TextRenderOptions;
+struct TextCharPos;
 
 enum class BorderStyle { kSolid, kDash, kBeveled, kInset, kUnderline };
 
-// Base class for all render devices. Derived classes must call
-// SetDeviceDriver() to fully initialize the class. Until then, class methods
-// are not safe to call, or may return invalid results.
-class CFX_RenderDevice {
+#if BUILDFLAG(IS_WIN)
+class CFX_PSFontTracker;
+#endif
+
+#if defined(PDF_USE_SKIA)
+class SkCanvas;
+#endif
+
+class CFX_RenderDevice final {
  public:
   class StateRestorer {
    public:
@@ -45,13 +50,44 @@ class CFX_RenderDevice {
     UnownedPtr<CFX_RenderDevice> device_;
   };
 
-  virtual ~CFX_RenderDevice();
+  static std::unique_ptr<CFX_RenderDevice> CreateForBitmap(
+      RetainPtr<CFX_DIBitmap> bitmap,
+      bool rgb_byte_order = false);
+
+  static std::unique_ptr<CFX_RenderDevice>
+  CreateForBitmapWithBackdropAndGroupKnockout(
+      RetainPtr<CFX_DIBitmap> bitmap,
+      RetainPtr<CFX_DIBitmap> backdrop_bitmap,
+      bool group_knockout);
+
+  static std::unique_ptr<CFX_RenderDevice>
+  CreateForNewBitmap(int width, int height, FXDIB_Format format);
+
+  static std::unique_ptr<CFX_RenderDevice> CreateForNewBitmapWithBackdrop(
+      int width,
+      int height,
+      FXDIB_Format format,
+      RetainPtr<CFX_DIBitmap> backdrop);
+
+#if BUILDFLAG(IS_WIN)
+  static std::unique_ptr<CFX_RenderDevice> CreateForWindowsDC(
+      HDC hdc,
+      CFX_PSFontTracker* ps_font_tracker);
+#endif
+
+#if defined(PDF_USE_SKIA)
+  static std::unique_ptr<CFX_RenderDevice> CreateForSkiaCanvas(
+      SkCanvas& canvas);
+#endif
 
   static CFX_Matrix GetFlipMatrix(float width,
                                   float height,
                                   float left,
                                   float top);
 
+  ~CFX_RenderDevice();
+
+  void Clear(uint32_t color);
   bool CanUseARGBPremul() const;
 
   void SaveState();
@@ -213,8 +249,28 @@ class CFX_RenderDevice {
   void SyncInternalBitmaps();
 #endif  // defined(PDF_USE_SKIA)
 
- protected:
+ private:
   CFX_RenderDevice();
+#if BUILDFLAG(IS_WIN)
+  CFX_RenderDevice(HDC hdc, CFX_PSFontTracker* ps_font_tracker);
+#endif
+
+  [[nodiscard]] bool Attach(RetainPtr<CFX_DIBitmap> pBitmap);
+  [[nodiscard]] bool AttachWithRgbByteOrder(RetainPtr<CFX_DIBitmap> pBitmap,
+                                            bool bRgbByteOrder);
+  [[nodiscard]] bool AttachWithBackdropAndGroupKnockout(
+      RetainPtr<CFX_DIBitmap> pBitmap,
+      RetainPtr<CFX_DIBitmap> pBackdropBitmap,
+      bool bGroupKnockout);
+#if defined(PDF_USE_SKIA)
+  [[nodiscard]] bool AttachCanvas(SkCanvas& canvas);
+#endif
+
+  [[nodiscard]] bool Create(int width, int height, FXDIB_Format format);
+  [[nodiscard]] bool CreateWithBackdrop(int width,
+                                        int height,
+                                        FXDIB_Format format,
+                                        RetainPtr<CFX_DIBitmap> backdrop);
 
   void SetBitmap(RetainPtr<CFX_DIBitmap> bitmap);
 
@@ -223,7 +279,6 @@ class CFX_RenderDevice {
     return device_driver_.get();
   }
 
- private:
   void InitDeviceInfo();
   void UpdateClipBox();
   bool DrawFillStrokePath(const CFX_Path& path,
@@ -242,6 +297,39 @@ class CFX_RenderDevice {
                         bool aliased_path,
                         uint32_t fill_color,
                         uint8_t fill_alpha);
+
+  bool AttachImpl(RetainPtr<CFX_DIBitmap> pBitmap,
+                  bool bRgbByteOrder,
+                  RetainPtr<CFX_DIBitmap> pBackdropBitmap,
+                  bool bGroupKnockout);
+
+#if defined(PDF_USE_AGG)
+  // Implemented in agg/cfx_agg_devicedriver.cpp
+  bool AttachAggImpl(RetainPtr<CFX_DIBitmap> pBitmap,
+                     bool bRgbByteOrder,
+                     RetainPtr<CFX_DIBitmap> pBackdropBitmap,
+                     bool bGroupKnockout);
+
+  // Implemented in agg/cfx_agg_devicedriver.cpp
+  bool CreateAgg(int width,
+                 int height,
+                 FXDIB_Format format,
+                 RetainPtr<CFX_DIBitmap> pBackdropBitmap);
+#endif
+
+#if defined(PDF_USE_SKIA)
+  // Implemented in skia/fx_skia_device.cpp
+  bool AttachSkiaImpl(RetainPtr<CFX_DIBitmap> pBitmap,
+                      bool bRgbByteOrder,
+                      RetainPtr<CFX_DIBitmap> pBackdropBitmap,
+                      bool bGroupKnockout);
+
+  // Implemented in skia/fx_skia_device.cpp
+  bool CreateSkia(int width,
+                  int height,
+                  FXDIB_Format format,
+                  RetainPtr<CFX_DIBitmap> pBackdropBitmap);
+#endif
 
   RetainPtr<CFX_DIBitmap> bitmap_;
   int width_ = 0;

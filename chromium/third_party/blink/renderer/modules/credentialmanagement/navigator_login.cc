@@ -6,7 +6,7 @@
 
 #include "services/network/public/cpp/is_potentially_trustworthy.h"
 #include "third_party/blink/public/common/webid/login_status_options.h"
-#include "third_party/blink/public/mojom/webid/federated_auth_request.mojom-blink.h"
+#include "third_party/blink/public/mojom/webid/federated_request.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/bindings/core/v8/idl_types.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
@@ -19,6 +19,7 @@
 #include "third_party/blink/renderer/modules/credentialmanagement/credential_manager_type_converters.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -47,8 +48,7 @@ ScriptPromise<IDLUndefined> NavigatorLogin::setStatus(
     ScriptState* script_state,
     const V8LoginStatus& v8_status) {
   auto* context = ExecutionContext::From(script_state);
-  auto* request =
-      CredentialManagerProxy::From(script_state)->FederatedAuthRequest();
+  auto* proxy = CredentialManagerProxy::From(script_state);
 
   auto* resolver =
       MakeGarbageCollected<ScriptPromiseResolver<IDLUndefined>>(script_state);
@@ -63,7 +63,7 @@ ScriptPromise<IDLUndefined> NavigatorLogin::setStatus(
       status = mojom::blink::IdpSigninStatus::kSignedOut;
       break;
   }
-  request->SetIdpSigninStatus(
+  proxy->FederatedRequestService()->SetIdpSigninStatus(
       context->GetSecurityOrigin(), status, nullptr,
       BindOnce(&OnSetIdpSigninStatus, WrapPersistent(resolver)));
   return promise;
@@ -74,8 +74,7 @@ ScriptPromise<IDLUndefined> NavigatorLogin::setStatus(
     const V8LoginStatus& v8_status,
     const LoginStatusOptions* options) {
   auto* context = ExecutionContext::From(script_state);
-  auto* request =
-      CredentialManagerProxy::From(script_state)->FederatedAuthRequest();
+  auto* proxy = CredentialManagerProxy::From(script_state);
 
   auto* resolver =
       MakeGarbageCollected<ScriptPromiseResolver<IDLUndefined>>(script_state);
@@ -114,7 +113,7 @@ ScriptPromise<IDLUndefined> NavigatorLogin::setStatus(
     }
   }
 
-  request->SetIdpSigninStatus(
+  proxy->FederatedRequestService()->SetIdpSigninStatus(
       context->GetSecurityOrigin(), status,
       mojo::ConvertTo<blink::mojom::blink::LoginStatusOptionsPtr>(*options),
       BindOnce(&OnSetIdpSigninStatus, WrapPersistent(resolver)));

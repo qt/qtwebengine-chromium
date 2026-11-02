@@ -4,7 +4,7 @@
 
 import {assert} from 'chai';
 
-import type * as TextUtils from '../../models/text_utils/text_utils.js';
+import type * as TextUtils from '../../core/text_utils/text_utils.js';
 
 import * as Coverage from './coverage.js';
 

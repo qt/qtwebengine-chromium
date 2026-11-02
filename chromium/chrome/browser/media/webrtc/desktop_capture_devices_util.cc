@@ -53,8 +53,7 @@
 #endif  // BUILDFLAG(IS_MAC)
 
 #if BUILDFLAG(IS_ANDROID)
-#include "chrome/browser/flags/android/chrome_feature_list.h"
-#include "chrome/browser/media/android/tab_sharing_indicator_android.h"
+#include "chrome/browser/media/android/tab_sharing_ui_android.h"
 #endif  // BUILDFLAG(IS_ANDROID)
 
 #if !BUILDFLAG(IS_ANDROID)
@@ -364,13 +363,10 @@ void CreateMediaStreamCaptureIndicatorUI(
   std::unique_ptr<MediaStreamUI> notification_ui;
 #if BUILDFLAG(IS_ANDROID)
   if (base::FeatureList::IsEnabled(features::kUserMediaScreenCapturing) &&
-      base::FeatureList::IsEnabled(chrome::android::kMediaIndicatorsAndroid) &&
-      base::GetFieldTrialParamByFeatureAsBool(
-          chrome::android::kMediaIndicatorsAndroid, "sharing", true) &&
       display_notification &&
       media_id.type == content::DesktopMediaID::TYPE_WEB_CONTENTS) {
     notification_ui =
-        std::make_unique<TabSharingIndicatorAndroid>(web_contents, media_id);
+        std::make_unique<TabSharingUIAndroid>(web_contents, media_id);
   }
 #else
   // If required, register to display the notification for stream capture.

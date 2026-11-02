@@ -107,6 +107,9 @@ gpu.ci.linux_builder(
         ],
         mixins = [
             "chromium_pixel_2_q",
+            # TODO(crbug.com/538273327): Return these tests to CQ after device
+            # pool stabalizes (or we increase its size?)
+            "ci_only",
         ],
     ),
     targets_settings = targets.settings(
@@ -700,6 +703,7 @@ ci.thin_tester(
         mixins = [
             "mac_arm64_apple_m2_retina_gpu_stable",
             "puppet_production",
+            "isolate_profile_data",
         ],
     ),
     targets_settings = targets.settings(
@@ -806,7 +810,6 @@ ci.thin_tester(
         mixins = [
             "win10_nvidia_gtx_1660_stable",
             "puppet_production",
-            "retry_only_failed_tests",
         ],
         per_test_modifications = {
             "pixel_skia_gold_passthrough_test": targets.per_test_modification(

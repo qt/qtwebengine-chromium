@@ -54,12 +54,14 @@
 #include "src/objects/free-space-inl.h"
 #include "src/objects/hash-table-inl.h"
 #include "src/objects/heap-object-inl.h"
+#include "src/objects/heap-object-set-map-inl.h"
 #include "src/objects/instance-type.h"
 #include "src/objects/js-array-buffer-inl.h"
 #include "src/objects/js-array-inl.h"
 #include "src/objects/js-collection-inl.h"
 #include "src/objects/js-disposable-stack-inl.h"
 #include "src/objects/js-generator-inl.h"
+#include "src/objects/js-proxy-inl.h"
 #include "src/objects/js-regexp-inl.h"
 #include "src/objects/js-weak-refs-inl.h"
 #include "src/objects/keys.h"
@@ -594,7 +596,7 @@ MaybeDirectHandle<String> Object::NoSideEffectsToMaybeString(
       Tagged<HeapObject> target = Cast<JSProxy>(currInput)->target();
       currInput = direct_handle(target, isolate);
     } while (IsJSProxy(*currInput));
-    return NoSideEffectsToString(isolate, currInput);
+    return NoSideEffectsToMaybeString(isolate, currInput);
   } else if (IsBigInt(*input)) {
     return BigInt::NoSideEffectsToString(isolate, Cast<BigInt>(input));
   } else if (IsJSFunctionOrBoundFunctionOrWrappedFunction(*input)) {
@@ -663,17 +665,31 @@ MaybeDirectHandle<String> Object::NoSideEffectsToMaybeString(
       DirectHandle<Object> ctor = JSReceiver::GetDataProperty(
           isolate, receiver, isolate->factory()->constructor_string());
       if (IsJSFunctionOrBoundFunctionOrWrappedFunction(*ctor)) {
+        auto ClearExceptionIfNeeded = [isolate]() {
+          if (isolate->has_exception() &&
+              isolate->is_catchable_by_javascript(isolate->exception())) {
+            isolate->clear_exception();
+          }
+        };
+
         DirectHandle<String> ctor_name;
-        if (IsJSBoundFunction(*ctor)) {
-          ctor_name =
-              JSBoundFunction::GetName(isolate, Cast<JSBoundFunction>(ctor))
-                  .ToHandleChecked();
-        } else if (IsJSFunction(*ctor)) {
-          ctor_name = JSFunction::GetName(isolate, Cast<JSFunction>(ctor));
-        } else if (IsJSWrappedFunction(*ctor)) {
-          ctor_name =
-              JSWrappedFunction::GetName(isolate, Cast<JSWrappedFunction>(ctor))
-                  .ToHandleChecked();
+        if (DirectHandle<JSBoundFunction> bound_fun;
+            TryCast<JSBoundFunction>(ctor, &bound_fun)) {
+          if (!JSBoundFunction::GetName(isolate, bound_fun)
+                   .ToHandle(&ctor_name)) {
+            ClearExceptionIfNeeded();
+            return {};
+          }
+        } else if (DirectHandle<JSFunction> js_fun;
+                   TryCast<JSFunction>(ctor, &js_fun)) {
+          ctor_name = JSFunction::GetName(isolate, js_fun);
+        } else if (DirectHandle<JSWrappedFunction> wrapped_fun;
+                   TryCast<JSWrappedFunction>(ctor, &wrapped_fun)) {
+          if (!JSWrappedFunction::GetName(isolate, wrapped_fun)
+                   .ToHandle(&ctor_name)) {
+            ClearExceptionIfNeeded();
+            return {};
+          }
         } else {
           UNREACHABLE();
         }
@@ -684,7 +700,10 @@ MaybeDirectHandle<String> Object::NoSideEffectsToMaybeString(
           builder.AppendString(ctor_name);
           builder.AppendCharacter('>');
 
-          return builder.Finish().ToHandleChecked();
+          DirectHandle<String> result;
+          if (builder.Finish().ToHandle(&result)) return result;
+          ClearExceptionIfNeeded();
+          return {};
         }
       }
     }
@@ -731,7 +750,10 @@ DirectHandle<String> Object::NoSideEffectsToString(Isolate* isolate,
 
   IncrementalStringBuilder builder(isolate);
   builder.AppendCStringLiteral("[object ");
-  builder.AppendString(tag);
+  // This threshold must be sufficiently far below String::kMaxLength that
+  // the {builder}'s result can never exceed that limit.
+  constexpr int kMaxPrintedStringLength = 1000;
+  builder.AppendStringCapped(tag, kMaxPrintedStringLength);
   builder.AppendCharacter(']');
 
   return builder.Finish().ToHandleChecked();
@@ -2062,8 +2084,7 @@ int HeapObject::SizeFromMap(Tagged<Map> map) const {
   if (instance_type == FEEDBACK_METADATA_TYPE) {
     return UncheckedCast<FeedbackMetadata>(this)->AllocatedSize();
   }
-  if (base::IsInRange(instance_type, FIRST_DESCRIPTOR_ARRAY_TYPE,
-                      LAST_DESCRIPTOR_ARRAY_TYPE)) {
+  if (instance_type == DESCRIPTOR_ARRAY_TYPE) {
     return DescriptorArray::SizeFor(
         UncheckedCast<DescriptorArray>(this)->number_of_all_descriptors());
   }
@@ -2099,7 +2120,7 @@ int HeapObject::SizeFromMap(Tagged<Map> map) const {
   }
   if (instance_type == FEEDBACK_VECTOR_TYPE) {
     return FeedbackVector::SizeFor(
-        UncheckedCast<FeedbackVector>(this)->length());
+        UncheckedCast<FeedbackVector>(this)->length().value());
   }
   if (instance_type == BIGINT_TYPE) {
     return BigInt::SizeFor(UncheckedCast<BigInt>(this)->length());
@@ -2180,7 +2201,6 @@ bool HeapObject::NeedsRehashing(InstanceType instance_type) const {
   DCHECK_EQ(instance_type, map()->instance_type());
   switch (instance_type) {
     case DESCRIPTOR_ARRAY_TYPE:
-    case STRONG_DESCRIPTOR_ARRAY_TYPE:
       return Cast<DescriptorArray>(this)->number_of_descriptors() > 1;
     case TRANSITION_ARRAY_TYPE:
       return Cast<TransitionArray>(this)->number_of_transitions() > 1;
@@ -2227,7 +2247,6 @@ bool HeapObject::CanBeRehashed() const {
     case SWISS_NAME_DICTIONARY_TYPE:
       return true;
     case DESCRIPTOR_ARRAY_TYPE:
-    case STRONG_DESCRIPTOR_ARRAY_TYPE:
       return true;
     case TRANSITION_ARRAY_TYPE:
       return true;
@@ -2274,7 +2293,6 @@ void HeapObject::RehashBasedOnMap(IsolateT* isolate) {
       Cast<SimpleNumberDictionary>(this)->Rehash();
       break;
     case DESCRIPTOR_ARRAY_TYPE:
-    case STRONG_DESCRIPTOR_ARRAY_TYPE:
       DCHECK_LE(1, Cast<DescriptorArray>(this)->number_of_descriptors());
       Cast<DescriptorArray>(this)->Sort();
       break;
@@ -2319,6 +2337,14 @@ void HeapObject::RehashBasedOnMap(IsolateT* isolate) {
 }
 template void HeapObject::RehashBasedOnMap(Isolate* isolate);
 template void HeapObject::RehashBasedOnMap(LocalIsolate* isolate);
+
+bool HeapObject::CheckRequiredAlignment() const {
+  const InSharedSpace in_shared_space{HeapLayout::InWritableSharedSpace(this)};
+  AllocationAlignment alignment =
+      HeapObject::RequiredAlignment(in_shared_space, map());
+  CHECK_EQ(0, MainAllocator::GetFillToAlign(address(), alignment));
+  return true;
+}
 
 void DescriptorArray::GeneralizeAllFields() {
   int length = number_of_descriptors();
@@ -4046,20 +4072,15 @@ template Handle<DescriptorArray> DescriptorArray::Allocate(
 
 void DescriptorArray::Initialize(Tagged<EnumCache> empty_enum_cache,
                                  Tagged<HeapObject> undefined_value,
-                                 int nof_descriptors, int slack,
-                                 uint32_t raw_gc_state) {
+                                 int nof_descriptors, int slack) {
   DCHECK_GE(nof_descriptors, 0);
   DCHECK_GE(slack, 0);
   DCHECK_LE(nof_descriptors + slack, kMaxNumberOfDescriptors);
   set_number_of_all_descriptors(nof_descriptors + slack, kReleaseStore);
   set_number_of_descriptors(nof_descriptors);
-  set_raw_gc_state(raw_gc_state, kRelaxedStore);
   set_enum_cache(empty_enum_cache, SKIP_WRITE_BARRIER);
   set_flags(FastIterableBits::encode(FastIterableState::kUnknown),
             kRelaxedStore);
-#if TAGGED_SIZE_8_BYTES
-  optional_padding_ = 0;
-#endif
   MemsetTagged(GetDescriptorSlot(0), undefined_value,
                number_of_all_descriptors() * kEntrySize);
 }
@@ -4892,8 +4913,8 @@ Handle<Object> JSPromise::TriggerPromiseReactions(
     // https://html.spec.whatwg.org/C/#enqueuejob(queuename,-job,-arguments)
     DirectHandle<NativeContext> handler_context;
 
-    DirectHandle<UnionOf<Undefined, JSCallable>> primary_handler;
-    DirectHandle<UnionOf<Undefined, JSCallable>> secondary_handler;
+    DirectHandle<PromiseReactionHandler> primary_handler;
+    DirectHandle<PromiseReactionHandler> secondary_handler;
     if (type == PromiseReaction::kFulfill) {
       primary_handler = direct_handle(reaction->fulfill_handler(), isolate);
       secondary_handler = direct_handle(reaction->reject_handler(), isolate);
@@ -4904,14 +4925,28 @@ Handle<Object> JSPromise::TriggerPromiseReactions(
 
     bool has_handler_context = false;
     if (IsJSReceiver(*primary_handler)) {
-      has_handler_context =
-          JSReceiver::GetContextForMicrotask(Cast<JSReceiver>(primary_handler))
-              .ToHandle(&handler_context);
+      if (IsJSGeneratorObject(*primary_handler)) {
+        Tagged<Context> context =
+            Cast<JSGeneratorObject>(*primary_handler)->context();
+        handler_context = direct_handle(context->native_context(), isolate);
+        has_handler_context = true;
+      } else {
+        has_handler_context = JSReceiver::GetContextForMicrotask(
+                                  Cast<JSReceiver>(primary_handler))
+                                  .ToHandle(&handler_context);
+      }
     }
     if (!has_handler_context && IsJSReceiver(*secondary_handler)) {
-      has_handler_context = JSReceiver::GetContextForMicrotask(
-                                Cast<JSReceiver>(secondary_handler))
-                                .ToHandle(&handler_context);
+      if (IsJSGeneratorObject(*secondary_handler)) {
+        Tagged<Context> context =
+            Cast<JSGeneratorObject>(*secondary_handler)->context();
+        handler_context = direct_handle(context->native_context(), isolate);
+        has_handler_context = true;
+      } else {
+        has_handler_context = JSReceiver::GetContextForMicrotask(
+                                  Cast<JSReceiver>(secondary_handler))
+                                  .ToHandle(&handler_context);
+      }
     }
     if (!has_handler_context) handler_context = isolate->native_context();
 
@@ -4946,7 +4981,8 @@ Handle<Object> JSPromise::TriggerPromiseReactions(
           kReleaseStore);
       Cast<PromiseRejectReactionJobTask>(task)->set_argument(*argument);
       Cast<PromiseRejectReactionJobTask>(task)->set_context(*handler_context);
-      Cast<PromiseRejectReactionJobTask>(task)->set_handler(*primary_handler);
+      Cast<PromiseRejectReactionJobTask>(task)->set_handler(
+          *primary_handler);
       static_assert(
           static_cast<int>(offsetof(PromiseReaction, promise_or_capability_)) ==
           static_cast<int>(
@@ -5221,7 +5257,7 @@ template <typename Derived, typename Shape>
 void HashTable<Derived, Shape>::Rehash() {
   DisallowGarbageCollection no_gc;
   WriteBarrierModeScope mode = GetWriteBarrierMode(no_gc);
-  EarlyReadOnlyRoots roots = EarlyGetReadOnlyRoots();
+  EarlyReadOnlyRoots roots = ReadOnlyHeap::EarlyGetReadOnlyRoots(this);
   uint32_t capacity = Capacity();
   bool done = false;
   for (int probe = 1; !done; probe++) {

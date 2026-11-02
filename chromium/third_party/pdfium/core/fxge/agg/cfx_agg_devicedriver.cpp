@@ -23,9 +23,9 @@
 #include "core/fxcrt/zip.h"
 #include "core/fxge/agg/cfx_agg_cliprgn.h"
 #include "core/fxge/agg/cfx_agg_imagerenderer.h"
-#include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_path.h"
+#include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "core/fxge/dib/cfx_imagestretcher.h"
 
@@ -1413,11 +1413,10 @@ bool CFX_AggDeviceDriver::ContinueDIBits(
 
 }  // namespace pdfium
 
-bool CFX_DefaultRenderDevice::AttachAggImpl(
-    RetainPtr<CFX_DIBitmap> pBitmap,
-    bool bRgbByteOrder,
-    RetainPtr<CFX_DIBitmap> pBackdropBitmap,
-    bool bGroupKnockout) {
+bool CFX_RenderDevice::AttachAggImpl(RetainPtr<CFX_DIBitmap> pBitmap,
+                                     bool bRgbByteOrder,
+                                     RetainPtr<CFX_DIBitmap> pBackdropBitmap,
+                                     bool bGroupKnockout) {
   // Unlike the Skia version, all callers pass in a non-null `pBitmap`.
   CHECK(pBitmap);
   SetBitmap(pBitmap);
@@ -1427,11 +1426,10 @@ bool CFX_DefaultRenderDevice::AttachAggImpl(
   return true;
 }
 
-bool CFX_DefaultRenderDevice::CreateAgg(
-    int width,
-    int height,
-    FXDIB_Format format,
-    RetainPtr<CFX_DIBitmap> pBackdropBitmap) {
+bool CFX_RenderDevice::CreateAgg(int width,
+                                 int height,
+                                 FXDIB_Format format,
+                                 RetainPtr<CFX_DIBitmap> pBackdropBitmap) {
   auto pBitmap = pdfium::MakeRetain<CFX_DIBitmap>();
   if (!pBitmap->Create(width, height, format)) {
     return false;

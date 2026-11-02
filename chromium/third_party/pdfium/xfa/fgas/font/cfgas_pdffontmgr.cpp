@@ -11,6 +11,7 @@
 #include <iterator>
 #include <utility>
 
+#include "constants/catalog.h"
 #include "core/fpdfapi/font/cpdf_font.h"
 #include "core/fpdfapi/page/cpdf_docpagedata.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
@@ -143,7 +144,7 @@ RetainPtr<CFGAS_GEFont> CFGAS_PDFFontMgr::FindFont(const ByteString& strPsName,
                                                    bool bItalic,
                                                    bool bStrictMatch) {
   RetainPtr<const CPDF_Dictionary> font_set_dict =
-      doc_->GetRoot()->GetDictFor("AcroForm")->GetDictFor("DR");
+      doc_->GetRoot()->GetDictFor(pdfium::catalog::kAcroForm)->GetDictFor("DR");
   if (!font_set_dict) {
     return nullptr;
   }

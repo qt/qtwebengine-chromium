@@ -6,18 +6,10 @@ include_rules = [
   "+components/supervised_user/core/common/features.h",
   "+components/supervised_user/core/common/buildflags.h",
   "+components/sync/base/data_type.h",
+  "+mojo/public",
 ]
 
 specific_include_rules = {
-  "active_directory_account_reconcilor_delegate.cc": [
-    "+chromeos/ash/components/install_attributes/install_attributes.h"
-  ],
-  "account_reconcilor_unittest.cc": [
-    "+chromeos/ash/components/install_attributes/stub_install_attributes.h"
-  ],
-  "chrome_connected_header_helper.cc": [
-    "+chromeos/crosapi/mojom/crosapi.mojom.h"
-  ],
   "mirror_account_reconcilor_delegate.cc": [
     "+components/sync/base/features.h"
   ],

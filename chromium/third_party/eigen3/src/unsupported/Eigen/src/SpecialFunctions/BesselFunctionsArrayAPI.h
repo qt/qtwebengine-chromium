@@ -233,7 +233,7 @@ EIGEN_STRONG_INLINE const
 /** \returns an expression of the coefficient-wise j1(\a x) to the given
  * arrays.
  *
- * It returns the modified Bessel function of the first kind of order one.
+ * It returns the Bessel function of the first kind of order one.
  *
  * \param x is the argument
  *

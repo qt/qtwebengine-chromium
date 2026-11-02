@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../core/common/common.js';
 import * as Root from '../../core/root/root.js';
@@ -18,6 +19,7 @@ const {AiCodeGenerationTeaser, AiCodeGenerationTeaserDisplayState} = PanelCommon
 
 describeWithEnvironment('AiCodeGenerationTeaser', () => {
   beforeEach(() => {
+    Common.Settings.Settings.instance().createSetting('ai-code-generation-used', false);
     AiCodeGenerationTeaser.setDiscoveryTeaserShownInSessionForTest(false);
   });
 

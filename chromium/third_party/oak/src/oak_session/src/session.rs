@@ -65,14 +65,19 @@ use alloc::{
 };
 use core::mem;
 
-use anyhow::{anyhow, Context, Error, Ok};
+use anyhow::{Context, Error, Ok, anyhow};
 use oak_crypto::{encryptor::Encryptor, noise_handshake::session_binding_token_hash};
-use oak_proto_rust::oak::session::v1::{
-    session_request::Request, session_response::Response, EncryptedMessage, EndorsedEvidence,
-    PlaintextMessage, SessionBinding, SessionRequest, SessionResponse,
+use oak_proto_rust::oak::{
+    attestation::v1::Assertion,
+    session::v1::{
+        EncryptedMessage, EndorsedEvidence, PlaintextMessage, SessionBinding, SessionRequest,
+        SessionResponse, session_request::Request, session_response::Response,
+    },
 };
+use prost::Message;
 
 use crate::{
+    ProtocolEngine,
     attestation::{
         AttestationHandler, AttestationState, ClientAttestationHandler, PeerAttestationVerdict,
         ServerAttestationHandler, VerifierResult,
@@ -83,10 +88,12 @@ use crate::{
         HandshakeHandlerBuilder, HandshakeState, ServerHandshakeHandler,
         ServerHandshakeHandlerBuilder,
     },
-    session_binding::{create_session_binding_token, SessionBindingVerifier},
-    verifier::AssertionVerifierResult,
-    ProtocolEngine,
+    session_binding::{SessionBindingVerifier, create_session_binding_token},
+    verifier::BoundAssertionVerifierResult,
 };
+
+pub const DEFAULT_MAX_MESSAGE_QUEUE_LEN: usize = 1000;
+pub const DEFAULT_MAX_ATTESTATION_SIZE: usize = 5 * 1024 * 1024; // 5 Mb
 
 /// A unique identifier for an established secure session channel.
 ///
@@ -130,12 +137,16 @@ impl SessionBindingToken {
 /// This evidence is used to verify the peer's identity and trustworthiness.
 #[derive(Debug, Default, PartialEq)]
 pub struct AttestationEvidence {
-    /// The evidence supplied by the peer.
+    /// The evidence supplied by the peer (in the legacy format).
     ///
     /// The key is the ID of the evidence, and the value is the evidence itself.
     pub evidence: BTreeMap<String, EndorsedEvidence>,
     /// The peer-provided bindings to the evidence.
     pub evidence_bindings: BTreeMap<String, SessionBinding>,
+    // The evidence provided by the peer as assertions.
+    pub assertions: BTreeMap<String, Assertion>,
+    /// The peer-provided assertion bindings.
+    pub assertion_bindings: BTreeMap<String, SessionBinding>,
     /// The hash of the handshake transcript.
     pub handshake_hash: Vec<u8>,
 }
@@ -265,6 +276,10 @@ enum Step<AP: AttestationHandler, H: HandshakeHandler> {
         attestation_state: AttestationState,
         handshake_state: HandshakeState,
     },
+    Error {
+        attestation_state: Option<AttestationState>,
+        handshake_state: Option<HandshakeState>,
+    },
     /// A temporary state indicating that the session is currently transitioning
     /// between valid steps. Operations on a session in this state will fail.
     Invalid,
@@ -296,11 +311,28 @@ impl<AP: AttestationHandler, H: HandshakeHandler> Step<AP, H> {
                 encryptor_provider,
                 attestation_publisher,
             } => {
-                let attestation_state = attester.take_attestation_state()?;
+                let attestation_state = match attester.take_attestation_state() {
+                    core::result::Result::Ok(attestation_state) => attestation_state,
+                    core::result::Result::Err(err) => {
+                        *self = Step::Error { attestation_state: None, handshake_state: None };
+                        return Err(err.context("retrieving attestation state failed"));
+                    }
+                };
                 if let PeerAttestationVerdict::AttestationFailed { reason, .. } =
-                    attestation_state.peer_attestation_verdict
+                    &attestation_state.peer_attestation_verdict
                 {
-                    return Err(anyhow!("attestation failed: {:?}", reason));
+                    if let Some(publisher) = attestation_publisher {
+                        publisher.publish(AttestationEvidence::new_from_state(
+                            &attestation_state,
+                            &HandshakeState::default(),
+                        ));
+                    }
+                    let attestation_failure_reason = reason.clone();
+                    *self = Step::Error {
+                        attestation_state: Some(attestation_state),
+                        handshake_state: None,
+                    };
+                    return Err(anyhow!("attestation failed: {:?}", attestation_failure_reason));
                 }
 
                 // The peer bindings are expected whenever the peer provides evidence that can
@@ -309,26 +341,63 @@ impl<AP: AttestationHandler, H: HandshakeHandler> Step<AP, H> {
                 // supplies.
                 let expect_peer_bindings =
                     attestation_state.peer_attestation_verdict.needs_session_bindings();
-                *self = Step::Handshake {
-                    encryptor_provider,
-                    attestation_publisher,
-                    handshaker: handshake_handler_provider
-                        .build(expect_peer_bindings, attestation_state)?,
+                let handshaker = match handshake_handler_provider
+                    .build(expect_peer_bindings, attestation_state)
+                {
+                    core::result::Result::Ok(handshaker) => handshaker,
+                    core::result::Result::Err(err) => {
+                        *self = Step::Error { attestation_state: None, handshake_state: None };
+                        return Err(err);
+                    }
                 };
+                *self = Step::Handshake { encryptor_provider, attestation_publisher, handshaker };
             }
             Step::Handshake { handshaker, encryptor_provider, attestation_publisher } => {
-                let (handshake_result, attestation_state) = handshaker.take_handshake_result()?;
-                verify_session_binding(
+                let (handshake_result, attestation_state) = match handshaker.take_handshake_result()
+                {
+                    core::result::Result::Ok((handshake_result, attestation_state)) => {
+                        (handshake_result, attestation_state)
+                    }
+                    core::result::Result::Err(err) => {
+                        *self = Step::Error { attestation_state: None, handshake_state: None };
+                        return Err(err);
+                    }
+                };
+                if let Err(err) = verify_session_binding(
                     &attestation_state.peer_session_binding_verifiers,
                     &handshake_result.handshake_state.peer_session_bindings,
                     handshake_result.handshake_state.handshake_binding_token.as_slice(),
-                )?;
-                verify_assertion_session_binding(
+                ) {
+                    if let Some(publisher) = attestation_publisher {
+                        publisher.publish(AttestationEvidence::new_from_state(
+                            &attestation_state,
+                            &handshake_result.handshake_state,
+                        ));
+                    }
+                    *self = Step::Error {
+                        attestation_state: Some(attestation_state),
+                        handshake_state: Some(handshake_result.handshake_state),
+                    };
+                    return Err(err);
+                }
+                if let Err(err) = verify_assertion_session_binding(
                     attestation_state.peer_attestation_verdict.get_assertion_verification_results(),
                     &handshake_result.handshake_state.peer_assertion_bindings,
                     attestation_state.attestation_binding_token.as_slice(),
                     handshake_result.handshake_state.handshake_binding_token.as_slice(),
-                )?;
+                ) {
+                    if let Some(publisher) = attestation_publisher {
+                        publisher.publish(AttestationEvidence::new_from_state(
+                            &attestation_state,
+                            &handshake_result.handshake_state,
+                        ));
+                    }
+                    *self = Step::Error {
+                        attestation_state: Some(attestation_state),
+                        handshake_state: Some(handshake_result.handshake_state),
+                    };
+                    return Err(err);
+                }
                 if let Some(publisher) = attestation_publisher {
                     publisher.publish(AttestationEvidence::new_from_state(
                         &attestation_state,
@@ -342,9 +411,10 @@ impl<AP: AttestationHandler, H: HandshakeHandler> Step<AP, H> {
                 };
             }
             Step::Open { .. } => {
-                return Err(anyhow!("there is no next step when the session is open"))
+                return Err(anyhow!("there is no next step when the session is open"));
             }
             Step::Invalid => return Err(anyhow!("session is currently in an invalid state")),
+            Step::Error { .. } => return Err(anyhow!("session initialization already failed")),
         };
         Ok(())
     }
@@ -370,6 +440,14 @@ impl<AP: AttestationHandler, H: HandshakeHandler> Step<AP, H> {
         match &self {
             Step::Open { attestation_state, handshake_state, .. } => {
                 Ok(AttestationEvidence::new_from_state(attestation_state, handshake_state))
+            }
+            Step::Error { attestation_state, handshake_state } => {
+                Ok(AttestationEvidence::new_from_state(
+                    attestation_state.as_ref().ok_or(anyhow!(
+                        "session initialization failed, and no attestation evidence is available"
+                    ))?,
+                    handshake_state.as_ref().unwrap_or(&HandshakeState::default()),
+                ))
             }
             _ => Err(anyhow!("the session is not open")),
         }
@@ -428,6 +506,10 @@ impl Session for ClientSession {
     fn write(&mut self, plaintext: PlaintextMessage) -> Result<(), Error> {
         match &mut self.step {
             Step::Open { encryptor, .. } => {
+                anyhow::ensure!(
+                    self.outgoing_requests.len() < DEFAULT_MAX_MESSAGE_QUEUE_LEN,
+                    "Message queue limit exceeded"
+                );
                 let encrypted_message: EncryptedMessage = encryptor
                     .encrypt(plaintext.into())
                     .map(From::from)
@@ -479,7 +561,9 @@ impl Session for ClientSession {
     }
 }
 
-impl ProtocolEngine<SessionResponse, SessionRequest> for ClientSession {
+impl ProtocolEngine for ClientSession {
+    type Input = SessionResponse;
+    type Output = SessionRequest;
     /// Gets the next outgoing `SessionRequest` to be sent to the server.
     ///
     /// Depending on the current `step`:
@@ -516,7 +600,9 @@ impl ProtocolEngine<SessionResponse, SessionRequest> for ClientSession {
                 }
             }
             Step::Open { .. } => {}
-            Step::Invalid => return Err(anyhow!("session is in an invalid state")),
+            Step::Invalid | Step::Error { .. } => {
+                return Err(anyhow!("session is in an invalid state"));
+            }
         }
 
         Ok(self.outgoing_requests.pop_front())
@@ -547,6 +633,11 @@ impl ProtocolEngine<SessionResponse, SessionRequest> for ClientSession {
                 SessionResponse { response: Some(Response::AttestResponse(attest_message)) },
                 Step::Attestation { attester, .. },
             ) => {
+                let message_size = attest_message.encoded_len();
+                anyhow::ensure!(
+                    attest_message.encoded_len() < DEFAULT_MAX_ATTESTATION_SIZE,
+                    "Max attest message size exceeded, actual size: {message_size}"
+                );
                 attester.put_incoming_message(attest_message)?.ok_or(anyhow!(
                     "invalid session state: attest message received but attester doesn't expect
                      any"
@@ -571,6 +662,10 @@ impl ProtocolEngine<SessionResponse, SessionRequest> for ClientSession {
                 im @ SessionResponse { response: Some(Response::EncryptedMessage(_)) },
                 Step::Open { .. },
             ) => {
+                anyhow::ensure!(
+                    self.incoming_responses.len() < DEFAULT_MAX_MESSAGE_QUEUE_LEN,
+                    "Message queue limit exceeded"
+                );
                 self.incoming_responses.push_back(im);
                 Ok(Some(()))
             }
@@ -630,6 +725,10 @@ impl Session for ServerSession {
     fn write(&mut self, plaintext: PlaintextMessage) -> Result<(), Error> {
         match &mut self.step {
             Step::Open { encryptor, .. } => {
+                anyhow::ensure!(
+                    self.outgoing_responses.len() < DEFAULT_MAX_MESSAGE_QUEUE_LEN,
+                    "Message queue limit exceeded"
+                );
                 let encrypted_message: EncryptedMessage = encryptor
                     .encrypt(plaintext.into())
                     .map(From::from)
@@ -681,7 +780,9 @@ impl Session for ServerSession {
     }
 }
 
-impl ProtocolEngine<SessionRequest, SessionResponse> for ServerSession {
+impl ProtocolEngine for ServerSession {
+    type Input = SessionRequest;
+    type Output = SessionResponse;
     /// Gets the next outgoing `SessionResponse` to be sent to the client.
     ///
     /// Depending on the current `step`:
@@ -721,7 +822,7 @@ impl ProtocolEngine<SessionRequest, SessionResponse> for ServerSession {
                 }
             }
             Step::Open { .. } => Ok(self.outgoing_responses.pop_front()),
-            Step::Invalid => Err(anyhow!("session is in an invalid state")),
+            Step::Invalid | Step::Error { .. } => Err(anyhow!("session is in an invalid state")),
         }
     }
 
@@ -748,6 +849,11 @@ impl ProtocolEngine<SessionRequest, SessionResponse> for ServerSession {
                 SessionRequest { request: Some(Request::AttestRequest(attest_message)) },
                 Step::Attestation { attester, .. },
             ) => {
+                let message_size = attest_message.encoded_len();
+                anyhow::ensure!(
+                    attest_message.encoded_len() < DEFAULT_MAX_ATTESTATION_SIZE,
+                    "Max attest message size exceeded, actual size: {message_size}"
+                );
                 attester.put_incoming_message(attest_message)?.ok_or(anyhow!(
                     "invalid session state: attest message received but attester doesn't expect any"
                 ))?;
@@ -767,6 +873,10 @@ impl ProtocolEngine<SessionRequest, SessionResponse> for ServerSession {
                 im @ SessionRequest { request: Some(Request::EncryptedMessage(_)) },
                 Step::Open { .. },
             ) => {
+                anyhow::ensure!(
+                    self.incoming_requests.len() < DEFAULT_MAX_MESSAGE_QUEUE_LEN,
+                    "Message queue limit exceeded"
+                );
                 self.incoming_requests.push_back(im);
                 Ok(Some(()))
             }
@@ -809,9 +919,10 @@ fn verify_session_binding(
 }
 
 /// Verifies the received session `assertion_bindings` against the provided
-/// `verified_assertions`.
+/// `verified_bound_assertions`.
 ///
-/// For each `VerifiedAssertion` in `verified_assertions`, this function:
+/// For each `VerifiedBoundAssertion` in `verified_bound_assertions`, this
+/// function:
 /// 1. Retrieves the corresponding `SessionBinding` from the
 ///    `assertion_bindings` map.
 /// 2. Calls `verify_binding` on the assertion with the session binding token
@@ -824,15 +935,17 @@ fn verify_session_binding(
 /// valid. An error is returned if any verification fails, or if
 /// providers/bindings are missing.
 fn verify_assertion_session_binding(
-    verified_assertions: &BTreeMap<String, AssertionVerifierResult>,
+    verified_bound_assertions: &BTreeMap<String, BoundAssertionVerifierResult>,
     assertion_bindings: &BTreeMap<String, SessionBinding>,
     attestation_binding_token: &[u8],
     handshake_hash: &[u8],
 ) -> Result<(), Error> {
     let assertion_bound_data =
         create_session_binding_token(attestation_binding_token, handshake_hash);
-    for (id, result) in verified_assertions {
-        if let AssertionVerifierResult::Success { verified_assertion: assertion } = result {
+    for (id, result) in verified_bound_assertions {
+        if let BoundAssertionVerifierResult::Success { verified_bound_assertion: assertion } =
+            result
+        {
             let binding = assertion_bindings
                 .get(id)
                 .ok_or(anyhow!("peer hasn't sent an assertion binding for ID {id}"))?;
@@ -864,6 +977,22 @@ impl AttestationEvidence {
                 })
                 .collect(),
             evidence_bindings: handshake_state.peer_session_bindings.clone(),
+            assertions: attestation_state
+                .peer_attestation_verdict
+                .get_assertion_verification_results()
+                .iter()
+                .filter_map(|(id, verifier_result)| match verifier_result {
+                    BoundAssertionVerifierResult::Success { verified_bound_assertion, .. } => {
+                        Some((id.clone(), verified_bound_assertion.assertion().clone()))
+                    }
+                    BoundAssertionVerifierResult::Failure { assertion, .. }
+                    | BoundAssertionVerifierResult::Unverified { assertion } => {
+                        Some((id.clone(), assertion.clone()))
+                    }
+                    _ => None,
+                })
+                .collect(),
+            assertion_bindings: handshake_state.peer_assertion_bindings.clone(),
             handshake_hash: handshake_state.handshake_binding_token.clone(),
         }
     }

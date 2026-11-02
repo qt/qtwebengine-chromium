@@ -25,8 +25,9 @@ package(
 rust_binary(
     name = "oak_containers_stage1_bin",
     srcs = glob(["src/**"]),
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
-        "//oak_attestation",
+        "//oak_containers/attester",
         "//oak_containers/stage1",
         "@oak_crates_index//:clap",
         "@oak_crates_index//:tokio",
@@ -74,4 +75,5 @@ genrule(
         gzip --best --no-name $(RULEDIR)/stage1.cpio.tmp
         mv $(RULEDIR)/stage1.cpio.tmp.gz $(RULEDIR)/stage1.cpio
     """,
+    target_compatible_with = ["@platforms//os:linux"],
 )

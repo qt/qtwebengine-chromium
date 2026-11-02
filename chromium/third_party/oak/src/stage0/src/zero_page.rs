@@ -22,9 +22,9 @@ use x86_64::PhysAddr;
 use zerocopy::{FromBytes, IntoBytes};
 
 use crate::{
+    BOOT_ALLOC, Measured,
     cmos::Cmos,
-    fw_cfg::{find_suitable_dma_address, FwCfg},
-    Measured, BOOT_ALLOC,
+    fw_cfg::{FwCfg, find_suitable_dma_address},
 };
 
 /// Boot metadata for the Linux kernel.
@@ -74,7 +74,7 @@ impl ZeroPage {
     pub fn try_fill_hdr_from_setup_data<P: crate::Platform>(
         &mut self,
         fw_cfg: &mut FwCfg<P>,
-    ) -> Option<[u8; 32]> {
+    ) -> Option<(&'static [u8], [u8; 32])> {
         let file = fw_cfg.get_setup_file()?;
         let size = file.size();
         // We temporarily copy the setup data to the end of available mapped virtual
@@ -103,17 +103,20 @@ impl ZeroPage {
         // data.
         let hdr_start = 0x1F1usize;
         // We can determine the end of the setup header information by adding the value
-        // of the byte as offset 0x201 to the value 0x202.
-        let hdr_end = 0x202usize + (buf[0x201] as usize);
+        // of the byte at offset 0x201 to the value 0x202. That byte is supplied by the
+        // untrusted host, and a newer kernel may declare a header larger than the one
+        // we keep, so clamp the range to the size of `hdr` and to the data we read.
+        let dest = self.inner.hdr.as_mut_bytes();
+        let hdr_end =
+            (0x202usize + (buf[0x201] as usize)).min(hdr_start + dest.len()).min(buf.len());
         let src = &buf[hdr_start..hdr_end];
         // If we are loading an older kernel, the setup header might be a bit shorter.
         // New fields for more recent versions of the boot protocol are
         // added to the end of the setup header and there is padding after
         // header, so the resulting data stucture should still be understood
         // correctly by the kernel.
-        let dest = &mut self.inner.hdr.as_mut_bytes()[..src.len()];
-        dest.copy_from_slice(src);
-        Some(measurement)
+        dest[..src.len()].copy_from_slice(src);
+        Some((buf, measurement))
     }
 
     /// Fills the E820 memory map (layout of the physical memory of the machine)
@@ -121,7 +124,10 @@ impl ZeroPage {
     ///
     /// We first try to read "etc/e820" via the QEMU fw_cfg interface, and if
     /// that is not available, fall back to querying RTC NVRAM.
-    pub fn fill_e820_table<P: crate::Platform>(&mut self, fw_cfg: &mut FwCfg<P>) {
+    pub fn fill_e820_table<P: crate::Platform + crate::FirmwarePlatform>(
+        &mut self,
+        fw_cfg: &mut FwCfg<P>,
+    ) {
         // Try to load the E820 table from platform specific functions first
         let len_bytes = P::prefill_e820_table(&mut self.inner.e820_table).or_else(|_| unsafe {
             // Try to load the E820 table from fw_cfg.

@@ -2,15 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "cc/trees/layer_tree_host.h"
-
+#include "base/cfi_buildflags.h"
 #include "base/functional/bind.h"
 #include "base/time/time.h"
+#include "build/build_config.h"
 #include "cc/test/fake_content_layer_client.h"
 #include "cc/test/fake_picture_layer.h"
 #include "cc/test/fake_picture_layer_impl.h"
 #include "cc/test/layer_tree_test.h"
 #include "cc/test/property_tree_test_utils.h"
+#include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "components/viz/test/test_context_provider.h"
 #include "components/viz/test/test_raster_interface.h"
@@ -152,6 +153,13 @@ class LayerTreeHostPictureTestTwinLayer
 // There is no pending layers in single thread mode.
 MULTI_THREAD_TEST_F(LayerTreeHostPictureTestTwinLayer);
 
+// TODO(crbug.com/): Flaky on MSAN, ASAN, TSAN, Linux CFI, and ARM64 Debug
+// builds.
+#if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER) && \
+    !defined(MEMORY_SANITIZER) &&                                \
+    !(BUILDFLAG(CFI_ICALL_CHECK) && BUILDFLAG(IS_LINUX)) &&      \
+    !(defined(ARCH_CPU_ARM64) && !defined(NDEBUG))
+
 class LayerTreeHostPictureTestResizeViewportWithGpuRaster
     : public LayerTreeHostPictureTest {
   void SetUpUnboundContextProviders(
@@ -222,6 +230,11 @@ class LayerTreeHostPictureTestResizeViewportWithGpuRaster
 
 SINGLE_AND_MULTI_THREAD_TEST_F(
     LayerTreeHostPictureTestResizeViewportWithGpuRaster);
+
+#endif  // !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER) &&
+        // !defined(MEMORY_SANITIZER) &&
+        // !(BUILDFLAG(CFI_ICALL_CHECK) && BUILDFLAG(IS_LINUX)) &&
+        // !(defined(ARCH_CPU_ARM64) && !defined(NDEBUG))
 
 class LayerTreeHostPictureTestChangeLiveTilesRectWithRecycleTree
     : public LayerTreeHostPictureTest {

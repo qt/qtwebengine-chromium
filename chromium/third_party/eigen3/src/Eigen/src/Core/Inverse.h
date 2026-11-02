@@ -78,10 +78,10 @@ namespace internal {
 /** \internal
  * \brief Default evaluator for Inverse expression.
  *
- * This default evaluator for Inverse expression simply evaluate the inverse into a temporary
+ * This default evaluator for Inverse expression simply evaluates the inverse into a temporary
  * by a call to internal::call_assignment_no_alias.
  * Therefore, inverse implementers only have to specialize Assignment<Dst,Inverse<...>, ...> for
- * there own nested expression.
+ * their own nested expression.
  *
  * \sa class Inverse
  */

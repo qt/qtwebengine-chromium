@@ -254,13 +254,12 @@ class CORE_EXPORT NativeValueTraitsStringAdapter {
   NativeValueTraitsStringAdapter(const NativeValueTraitsStringAdapter&) =
       delete;
   NativeValueTraitsStringAdapter(NativeValueTraitsStringAdapter&&) = default;
-  explicit NativeValueTraitsStringAdapter(v8::Isolate* isolate,
-                                          v8::Local<v8::String> value)
+  NativeValueTraitsStringAdapter(v8::Isolate* isolate,
+                                 v8::Local<v8::String> value)
       : v8_string_(value), isolate_(isolate) {}
-  explicit NativeValueTraitsStringAdapter(v8::Isolate* isolate,
-                                          const String& value)
+  NativeValueTraitsStringAdapter(v8::Isolate* isolate, const String& value)
       : isolate_(isolate), wtf_string_(value) {}
-  explicit NativeValueTraitsStringAdapter(v8::Isolate* isolate, int32_t value)
+  NativeValueTraitsStringAdapter(v8::Isolate* isolate, int32_t value)
       : isolate_(isolate), wtf_string_(ToBlinkString(value)) {}
 
   NativeValueTraitsStringAdapter& operator=(
@@ -298,20 +297,14 @@ class CORE_EXPORT NativeValueTraitsStringAdapter {
     return StringType(wtf_string_);
   }
 
-  StringView ToStringView() const& {
-    if (!v8_string_.IsEmpty()) [[likely]] {
-      return ToBlinkStringView(isolate_, v8_string_, string_view_backing_store_,
-                               kExternalize);
-    }
-    return wtf_string_;
-  }
+  StringView ToStringView() const&;
 
   // Careful here, ordering some of the members here (mainly the isolate) may
   // be important in the hot path. Having the isolate the second member showed
   // a performance gain on MacOS arm (see crbug.com/1482549).
   v8::Local<v8::String> v8_string_;
   v8::Isolate* isolate_ = nullptr;
-  String wtf_string_;
+  mutable String wtf_string_;
   mutable StringView::StackBackingStore string_view_backing_store_;
 };
 
@@ -1174,14 +1167,19 @@ struct NativeValueTraits<IDLRecord<K, V>>
              .ToLocal(&keys)) {
       return ImplType();
     }
-    if (keys->Length() > ImplType::MaxCapacity()) {
+
+    // Store the length because we use UncheckedAppend() below and we want to
+    // make sure that the length does not change during the loop.
+    uint32_t length = keys->Length();
+
+    if (length > ImplType::MaxCapacity()) {
       exception_state.ThrowRangeError("Array length exceeds supported limit.");
       return ImplType();
     }
 
     // "2. Let result be a new empty instance of record<K, V>."
     ImplType result;
-    result.ReserveInitialCapacity(keys->Length());
+    result.ReserveInitialCapacity(length);
 
     // The conversion algorithm needs a data structure with fast insertion at
     // the end while at the same time requiring fast checks for previous insert
@@ -1189,7 +1187,7 @@ struct NativeValueTraits<IDLRecord<K, V>>
     // the latter part.
     HashMap<String, uint32_t> seen_keys;
 
-    for (uint32_t i = 0; i < keys->Length(); ++i) {
+    for (uint32_t i = 0; i < length; ++i) {
       // "4. Repeat, for each element key of keys in List order:"
       v8::Local<v8::Value> key;
       if (!keys->Get(context, i).ToLocal(&key)) {

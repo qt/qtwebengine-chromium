@@ -797,7 +797,9 @@ class MaglevCodeGeneratingNodeProcessor {
   }
 
   void PostProcessGraph(Graph* graph) {}
-  void PostProcessBasicBlock(BasicBlock* block) {}
+  BlockProcessResult PostProcessBasicBlock(BasicBlock* block) {
+    return BlockProcessResult::kContinue;
+  }
   void PostPhiProcessing() {}
 
   BlockProcessResult PreProcessBasicBlock(BasicBlock* block) {
@@ -1191,7 +1193,9 @@ class SafepointingNodeProcessor {
 
   void PreProcessGraph(Graph* graph) {}
   void PostProcessGraph(Graph* graph) {}
-  void PostProcessBasicBlock(BasicBlock* block) {}
+  BlockProcessResult PostProcessBasicBlock(BasicBlock* block) {
+    return BlockProcessResult::kContinue;
+  }
   BlockProcessResult PreProcessBasicBlock(BasicBlock* block) {
     return BlockProcessResult::kContinue;
   }
@@ -1545,20 +1549,12 @@ class MaglevFrameTranslationBuilder {
     return kNotDuplicated;
   }
 
-  void BuildHeapNumber(const VirtualObject* vobject) {
-    DCHECK_EQ(vobject->object_type(), vobj::ObjectType::kHeapNumber);
-    ValueNode* value_node = vobject->get(offsetof(HeapNumber, value_));
-    return BuildHeapNumber(value_node->Cast<Float64Constant>()->value());
+  int CreateUnduplicatableId() {
+    object_ids_.push_back(kNotDuplicated);
+    return kNotDuplicated;
   }
 
-  void BuildHeapNumber(Float64 number) {
-    DirectHandle<Object> value =
-        local_isolate_->factory()->NewHeapNumberFromBits<AllocationType::kOld>(
-            number.get_bits());
-    translation_array_builder_->StoreLiteral(GetDeoptLiteral(*value));
-  }
-
-  void BuildNestedValue(const ValueNode* value,
+  void BuildNestedValue(const VirtualObject* object, const ValueNode* value,
                         const InputLocation*& input_location,
                         const VirtualObjectList& virtual_objects) {
     const Opcode opcode = value->opcode();
@@ -1567,16 +1563,22 @@ class MaglevFrameTranslationBuilder {
     DCHECK_NE(opcode, Opcode::kIdentity);
     if (IsConstantNode(opcode)) {
       if (opcode == Opcode::kFloat64Constant) {
-        Float64 value_as_float = value->Cast<Float64Constant>()->value();
-        if (value_as_float.is_hole_nan()) {
-          translation_array_builder_->StoreLiteral(
-              GetDeoptLiteral(ReadOnlyRoots{local_isolate_}.the_hole_value()));
-          return;
-        }
+        DCHECK(object->has_static_map());
+        if (object->map()->IsFixedDoubleArrayMap()) {
+          Float64 value_as_float = value->Cast<Float64Constant>()->value();
+          if (value_as_float.is_hole_nan()) {
+            translation_array_builder_->StoreLiteral(GetDeoptLiteral(
+                ReadOnlyRoots{local_isolate_}.the_hole_value()));
+            return;
+          }
 #ifdef V8_ENABLE_UNDEFINED_DOUBLE
-        // TODO(nicohartmann): Handle is_undefined_nan here.
-        DCHECK(!value_as_float.is_undefined_nan());
+          if (value_as_float.is_undefined_nan()) {
+            translation_array_builder_->StoreLiteral(GetDeoptLiteral(
+                ReadOnlyRoots{local_isolate_}.undefined_value()));
+            return;
+          }
 #endif  //  V8_ENABLE_UNDEFINED_DOUBLE
+        }
       }
       translation_array_builder_->StoreLiteral(
           GetDeoptLiteral(*value->Reify(local_isolate_)));
@@ -1610,12 +1612,16 @@ class MaglevFrameTranslationBuilder {
                           const InputLocation*& input_location,
                           const VirtualObjectList& virtual_objects) {
     vobj::ObjectType object_type = object->object_type();
-    if (object_type == vobj::ObjectType::kHeapNumber) {
-      // TODO(jgruber): Could we use the standard path below instead?
-      return BuildHeapNumber(object);
-    }
+    DCHECK_NOT_NULL(object->allocation());
+    // HeapNumbers may be mutable object fields; each materialization must
+    // create a fresh box, so they are never deduplicated.
+    // TODO(victorgomes): Constrain which objects may contain mutable
+    // HeapNumbers. Immutable HeapNumbers can be stored as a literal object
+    // instead of a captured object.
     int dup_id =
-        GetDuplicatedId(reinterpret_cast<intptr_t>(object->allocation()));
+        object_type == vobj::ObjectType::kHeapNumber
+            ? CreateUnduplicatableId()
+            : GetDuplicatedId(reinterpret_cast<intptr_t>(object->allocation()));
     if (dup_id != kNotDuplicated) {
       translation_array_builder_->DuplicateObject(dup_id);
       object->ForEachNestedRuntimeInput(
@@ -1638,7 +1644,7 @@ class MaglevFrameTranslationBuilder {
       translation_array_builder_->BeginCapturedObject(fields);
     }
     auto callback = [&](ValueNode* node, const vobj::Field& desc) -> bool {
-      BuildNestedValue(node, input_location, virtual_objects);
+      BuildNestedValue(object, node, input_location, virtual_objects);
       return true;
     };
     object->ForEachSlot(callback,
@@ -1783,7 +1789,7 @@ class MaglevFrameTranslationBuilder {
   ZoneVector<IndirectHandle<TrustedObject>>* protected_deopt_literals_vector_;
   ZoneVector<IndirectHandle<Object>>* deopt_literals_vector_;
 
-  static const int kNotDuplicated = -1;
+  static constexpr int kNotDuplicated = -1;
   std::vector<intptr_t> object_ids_;
 };
 

@@ -45,8 +45,8 @@
 #endif
 
 #include "absl/container/inlined_vector.h"
-#include "src/dawn/common/Log.h"
 #include "src/dawn/native/SystemEvent.h"
+#include "src/utils/log.h"
 
 namespace dawn::native {
 
@@ -75,7 +75,7 @@ template <typename It>
 [[nodiscard]] bool WaitAnySystemEvent(It begin, It end, Nanoseconds timeout) {
     static_assert(std::is_same_v<typename std::iterator_traits<It>::value_type,
                                  std::pair<const SystemEventReceiver&, bool*>>);
-    size_t count = std::distance(begin, end);
+    size_t count = sign_cast(std::distance(begin, end));
     if (count == 0) {
         return false;
     }
@@ -92,7 +92,7 @@ template <typename It>
         return false;
     }
     DAWN_CHECK(WAIT_OBJECT_0 <= status && status < WAIT_OBJECT_0 + count);
-    const size_t completedIndex = status - WAIT_OBJECT_0;
+    const ptrdiff_t completedIndex = sign_cast(status - WAIT_OBJECT_0);
 
     *(*(DAWN_UNSAFE_TODO(begin + completedIndex))).second = true;
     return true;

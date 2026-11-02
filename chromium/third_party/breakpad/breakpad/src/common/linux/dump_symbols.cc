@@ -402,7 +402,8 @@ void StartProcessSplitDwarf(google_breakpad::CompilationUnit* reader,
   google_breakpad::CompilationUnit split_reader(
       split_file, file_context.section_map(), cu_offset, &split_byte_reader,
       &die_dispatcher);
-  split_reader.SetSplitDwarf(reader->GetAddrBase(), reader->GetDWOID());
+  split_reader.SetSplitDwarf(reader->GetAddrBase(), reader->GetDWOID(),
+                             reader->path());
   split_reader.Start();
   // Normally, it won't happen unless we have transitive reference.
   if (split_reader.ShouldProcessSplitDwarf()) {

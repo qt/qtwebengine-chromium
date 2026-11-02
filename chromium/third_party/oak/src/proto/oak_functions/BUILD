@@ -17,7 +17,7 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
 load("@com_google_protobuf//bazel:java_proto_library.bzl", "java_proto_library")
-load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 
 package(
     default_visibility = ["//:default_visibility"],
@@ -42,6 +42,7 @@ proto_library(
 
 cc_proto_library(
     name = "application_config_cc_proto",
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [":application_config_proto"],
 )
 
@@ -52,6 +53,7 @@ proto_library(
 
 cc_proto_library(
     name = "lookup_data_cc_proto",
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [":lookup_data_proto"],
 )
 

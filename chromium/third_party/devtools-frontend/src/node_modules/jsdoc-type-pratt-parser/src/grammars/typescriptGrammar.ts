@@ -30,6 +30,7 @@ import { readonlyArrayParslet } from '../parslets/ReadonlyArrayParslet.js'
 import { conditionalParslet } from '../parslets/ConditionalParslet.js'
 import { templateLiteralParslet } from '../parslets/TemplateLiteralParslet.js'
 import { genericParslet } from '../parslets/GenericParslet.js'
+import { uniqueSymbolParslet } from '../parslets/UniqueSymbolParslet.js'
 import { baseNameTokens } from '../lexer/Token.js'
 
 const objectFieldGrammar: Grammar = [
@@ -84,6 +85,7 @@ export const typescriptGrammar: Grammar = [
   }),
   assertsParslet,
   conditionalParslet,
+  uniqueSymbolParslet,
   createNameParslet({
     allowedAdditionalTokens: ['event', 'external', 'in']
   }),

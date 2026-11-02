@@ -11,13 +11,11 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/task/cancelable_task_tracker.h"
 #include "base/types/expected.h"
-#include "base/types/pass_key.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "services/webnn/graph_builder_context.h"
 #include "services/webnn/public/cpp/context_properties.h"
-#include "services/webnn/public/mojom/ep_package_info.mojom.h"
 #include "services/webnn/public/mojom/webnn_compiler_context.mojom.h"
 #include "services/webnn/public/mojom/webnn_context_provider.mojom.h"
 #include "services/webnn/public/mojom/webnn_error.mojom.h"
@@ -26,7 +24,8 @@
 
 namespace webnn {
 
-class WebNNTensorImpl;
+struct EpDeviceInfo;
+
 class WebNNConstantOperand;
 
 namespace ort {
@@ -39,18 +38,11 @@ class SessionOptions;
 class CompilerContextImplOrt final : public GraphBuilderContext,
                                      public mojom::WebNNCompilerContext {
  public:
-  static std::unique_ptr<CompilerContextImplOrt> Create(
-      base::flat_map<std::string, mojom::EpPackageInfoPtr> ep_package_info,
+  CompilerContextImplOrt(
+      const EpDeviceInfo& target_device,
       mojom::CreateContextOptionsPtr options,
       ContextProperties properties,
       mojo::PendingRemote<mojom::WebNNModelLoader> model_loader);
-
-  CompilerContextImplOrt(
-      scoped_refptr<Environment> env,
-      mojom::CreateContextOptionsPtr options,
-      ContextProperties properties,
-      mojo::PendingRemote<mojom::WebNNModelLoader> model_loader,
-      base::PassKey<CompilerContextImplOrt> pass_key);
 
   CompilerContextImplOrt(const CompilerContextImplOrt&) = delete;
   CompilerContextImplOrt& operator=(const CompilerContextImplOrt&) = delete;
@@ -65,13 +57,10 @@ class CompilerContextImplOrt final : public GraphBuilderContext,
   const ContextProperties& properties() const override;
   const mojom::CreateContextOptions& options() const override;
   void BuildGraph(
-      mojo::PendingReceiver<mojom::WebNNGraph> receiver,
       mojom::GraphInfoPtr graph_info,
       WebNNGraphImpl::ComputeResourceInfo compute_resource_info,
       base::flat_map<OperandId, std::unique_ptr<WebNNConstantOperand>>
           constant_operands,
-      base::flat_map<OperandId, scoped_refptr<WebNNTensorImpl>>
-          constant_tensor_operands,
       BuildGraphCallback callback) override;
 
  private:
@@ -88,8 +77,7 @@ class CompilerContextImplOrt final : public GraphBuilderContext,
           constant_operands);
 
   // Called on the main thread after compilation completes.
-  void DidCompile(mojo::PendingReceiver<mojom::WebNNGraph> graph_receiver,
-                  WebNNGraphImpl::ComputeResourceInfo compute_resource_info,
+  void DidCompile(WebNNGraphImpl::ComputeResourceInfo compute_resource_info,
                   BuildGraphCallback callback,
                   base::expected<std::unique_ptr<CompilationResult>,
                                  mojom::ErrorPtr> result);

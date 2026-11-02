@@ -162,8 +162,8 @@ void BuiltinStringFromCharCode::GenerateCode(MaglevAssembler* masm,
   Register result_string = ToRegister(result());
   if (Int32Constant* constant =
           CharCodeInput().node()->TryCast<Int32Constant>()) {
-    int32_t char_code = constant->value() & 0xFFFF;
-    if (0 <= char_code && char_code < String::kMaxOneByteCharCode) {
+    uint32_t char_code = constant->value() & 0xFFFF;
+    if (char_code <= String::kMaxOneByteCharCode) {
       __ LoadSingleCharacterString(result_string, char_code);
     } else {
       __ AllocateTwoByteString(register_snapshot(), result_string, 1);
@@ -984,6 +984,7 @@ void CheckJSDataViewBounds::GenerateCode(MaglevAssembler* masm,
     __ Subs(limit, byte_length, Immediate(element_size - 1));
     __ EmitEagerDeoptIf(mi, DeoptimizeReason::kOutOfBounds, this);
   }
+  __ SignExtend32To64Bits(index, index);
   __ Cmp(index, limit);
   __ EmitEagerDeoptIf(hs, DeoptimizeReason::kOutOfBounds, this);
 }
@@ -1199,13 +1200,14 @@ void Return::GenerateCode(MaglevAssembler* masm, const ProcessingState& state) {
 void LoadDictionaryField::GenerateCode(MaglevAssembler* masm,
                                        const ProcessingState& state) {
   Register object = ToRegister(ObjectInput());
+  Register receiver = ToRegister(ReceiverInput());
   Register result_reg = ToRegister(result());
 
   ZoneLabelRef done(masm);
 
   Label* deferred_fallback = __ MakeDeferredCode(
       [](MaglevAssembler* masm, ZoneLabelRef done, LoadDictionaryField* node,
-         Register object, Register result_reg) {
+         Register object, Register receiver, Register result_reg) {
         {
           // Save live registers so the fast path remains register-allocation
           // friendly.
@@ -1214,10 +1216,17 @@ void LoadDictionaryField::GenerateCode(MaglevAssembler* masm,
           snapshot.live_tagged_registers.clear(result_reg);
           SaveRegisterStateForCall save_register_state(masm, snapshot);
 
-          __ CallBuiltin<Builtin::kLoadIC>(
-              node->ContextInput(), object, node->name().object(),
-              TaggedIndex::FromIntptr(node->feedback().index()),
-              node->feedback().vector);
+          if (node->is_super()) {
+            __ CallBuiltin<Builtin::kLoadSuperIC>(
+                node->ContextInput(), receiver, object, node->name().object(),
+                TaggedIndex::FromIntptr(node->feedback().index()),
+                node->feedback().vector);
+          } else {
+            __ CallBuiltin<Builtin::kLoadIC>(
+                node->ContextInput(), object, node->name().object(),
+                TaggedIndex::FromIntptr(node->feedback().index()),
+                node->feedback().vector);
+          }
           masm->DefineExceptionHandlerPoint(node);
           save_register_state.DefineSafepointWithLazyDeopt(
               node->lazy_deopt_info());
@@ -1226,7 +1235,7 @@ void LoadDictionaryField::GenerateCode(MaglevAssembler* masm,
         }
         __ Jump(*done);
       },
-      done, this, object, result_reg);
+      done, this, object, receiver, result_reg);
 
   MaglevAssembler::TemporaryRegisterScope temps(masm);
   Register properties = temps.Acquire();

@@ -27,8 +27,12 @@ typedef std::conditional_t<NumTraits<Scalar>::IsComplex, CwiseUnaryView<internal
     NonConstRealReturnType;
 /** \internal the return type of imag() const */
 typedef CwiseUnaryOp<internal::scalar_imag_op<Scalar>, const Derived> ImagReturnType;
-/** \internal the return type of imag() */
-typedef CwiseUnaryView<internal::scalar_imag_ref_op<Scalar>, Derived> NonConstImagReturnType;
+/** \internal the return type of imag(). The imaginary part of a real-valued object is identically zero and not an
+ * lvalue, so for real scalars the non-const overload returns the same read-only zero expression as the const one
+ * instead of a writable view (whose functor would return a dangling reference to a temporary; see issue #3096). */
+typedef std::conditional_t<NumTraits<Scalar>::IsComplex, CwiseUnaryView<internal::scalar_imag_ref_op<Scalar>, Derived>,
+                           ImagReturnType>
+    NonConstImagReturnType;
 
 typedef CwiseUnaryOp<internal::scalar_opposite_op<Scalar>, const Derived> NegativeReturnType;
 
@@ -85,7 +89,7 @@ EIGEN_DOC_UNARY_ADDONS(real, real part function)
 /// \sa imag()
 EIGEN_DEVICE_FUNC constexpr inline RealReturnType real() const { return RealReturnType(derived()); }
 
-/// \returns an read-only expression of the imaginary part of \c *this.
+/// \returns a read-only expression of the imaginary part of \c *this.
 ///
 EIGEN_DOC_UNARY_ADDONS(imag, imaginary part function)
 ///
@@ -97,7 +101,7 @@ EIGEN_DEVICE_FUNC constexpr inline const ImagReturnType imag() const { return Im
 /// \tparam  CustomUnaryOp Type of \a func
 /// \returns An expression of a custom coefficient-wise unary operator \a func of *this
 ///
-/// The function \c ptr_fun() from the C++ standard library can be used to make functors out of normal functions.
+/// A lambda can be used to adapt a normal function to the functor interface expected by this method.
 ///
 /// Example:
 /// \include class_CwiseUnaryOp_ptrfun.cpp
@@ -130,7 +134,7 @@ EIGEN_DEVICE_FUNC constexpr inline const CwiseUnaryOp<CustomUnaryOp, const Deriv
 ///
 EIGEN_DOC_UNARY_ADDONS(unaryViewExpr, unary function)
 ///
-/// \sa unaryExpr, binaryExpr class CwiseUnaryOp
+/// \sa unaryExpr, binaryExpr, class CwiseUnaryOp
 ///
 template <typename CustomViewOp>
 EIGEN_DEVICE_FUNC constexpr inline const CwiseUnaryView<CustomViewOp, const Derived> unaryViewExpr(
@@ -145,7 +149,7 @@ EIGEN_DEVICE_FUNC constexpr inline const CwiseUnaryView<CustomViewOp, const Deri
 ///
 EIGEN_DOC_UNARY_ADDONS(unaryViewExpr, unary function)
 ///
-/// \sa unaryExpr, binaryExpr class CwiseUnaryOp
+/// \sa unaryExpr, binaryExpr, class CwiseUnaryOp
 ///
 template <typename CustomViewOp>
 EIGEN_DEVICE_FUNC constexpr inline CwiseUnaryView<CustomViewOp, Derived> unaryViewExpr(
@@ -161,6 +165,8 @@ EIGEN_DOC_UNARY_ADDONS(real, real part function)
 EIGEN_DEVICE_FUNC constexpr inline NonConstRealReturnType real() { return NonConstRealReturnType(derived()); }
 
 /// \returns a non const expression of the imaginary part of \c *this.
+/// For real-valued objects the imaginary part is identically zero and not writable; this then returns the
+/// same read-only zero expression as the const overload.
 ///
 EIGEN_DOC_UNARY_ADDONS(imag, imaginary part function)
 ///

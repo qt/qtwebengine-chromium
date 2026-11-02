@@ -318,9 +318,10 @@ void ScopeIterator::TryParseAndRetrieveScopes(ReparseStrategy strategy) {
   const bool parse_result =
       flags.is_toplevel()
           ? parsing::ParseProgram(info_.get(), script, maybe_outer_scope,
-                                  isolate_, parsing::ReportStatisticsMode::kNo)
+                                  isolate_,
+                                  parsing::ReportStatisticsMode{false})
           : parsing::ParseFunction(info_.get(), shared_info, isolate_,
-                                   parsing::ReportStatisticsMode::kNo);
+                                   parsing::ReportStatisticsMode{false});
 
   if (parse_result) {
     DeclarationScope* literal_scope = info_->literal()->scope();
@@ -460,7 +461,9 @@ bool ScopeIterator::NeedsContext() const {
   // context should the function need one. In that case the function has already
   // pushed the context and we are good.
   CHECK_IMPLIES(needs_context && current_scope_ == closure_scope_ &&
-                    current_scope_->is_function_scope() && !function_.is_null(),
+                    (current_scope_->is_function_scope() ||
+                     current_scope_->is_eval_scope()) &&
+                    !function_.is_null(),
                 function_->context() != *context_);
 
   return needs_context;
@@ -696,6 +699,9 @@ bool ScopeIterator::SetVariableValue(Handle<String> name,
                                      DirectHandle<Object> value) {
   DCHECK(!Done());
   name = isolate_->factory()->InternalizeString(name);
+  // Synthetic variables are compiler-introduced and not exposed to the user, so
+  // they may carry values outside the JSAny type and must not be overwritten.
+  if (ScopeInfo::VariableIsSynthetic(*name)) return false;
   switch (Type()) {
     case ScopeTypeGlobal:
     case ScopeTypeWith:
@@ -1094,7 +1100,9 @@ void ScopeIterator::VisitLocalScope(const Visitor& visitor, Mode mode,
     DirectHandle<JSObject> extension(context_->extension_object(), isolate_);
     DirectHandle<FixedArray> keys =
         KeyAccumulator::GetKeys(isolate_, extension,
-                                KeyCollectionMode::kOwnOnly, ENUMERABLE_STRINGS)
+                                KeyCollectionMode::kOwnOnly, ENUMERABLE_STRINGS,
+                                GetKeysConversion::kConvertToString, false,
+                                true)
             .ToHandleChecked();
 
     uint32_t keys_len = keys->ulength().value();
@@ -1216,13 +1224,8 @@ bool ScopeIterator::SetContextExtensionValue(DirectHandle<String> variable_name,
 
 bool ScopeIterator::SetContextVariableValue(DirectHandle<String> variable_name,
                                             DirectHandle<Object> new_value) {
-  VariableLookupResult lookup_result;
-  int slot_index =
-      context_->scope_info()->ContextSlotIndex(*variable_name, &lookup_result);
+  int slot_index = context_->scope_info()->ContextSlotIndex(*variable_name);
   if (slot_index < 0) return false;
-  if (IsPrivateMethodOrAccessorVariableMode(lookup_result.mode)) {
-    return false;
-  }
   Context::Set(context_, slot_index, new_value, isolate_);
   return true;
 }

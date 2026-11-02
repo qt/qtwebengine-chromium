@@ -46,7 +46,7 @@
 
 namespace blink {
 
-unsigned MoveCommands::VerticalScrollDistance(LocalFrame& frame) {
+int MoveCommands::VerticalScrollDistance(LocalFrame& frame) {
   const Element* focused_element = frame.GetDocument()->FocusedElement();
   if (!focused_element) {
     if (frame.IsCaretBrowsingEnabled()) {
@@ -68,21 +68,22 @@ unsigned MoveCommands::VerticalScrollDistance(LocalFrame& frame) {
         IsEditable(*focused_element) || frame.IsCaretBrowsingEnabled()))
     return 0;
   const ScrollableArea& scrollable_area = *frame.View()->LayoutViewport();
-  const int height = std::min<int>(layout_box.ClientHeight().ToInt(),
-                                   scrollable_area.VisibleHeight());
+  const int height =
+      std::min<int>(layout_box.PhysicalPaddingBoxRect().Height().ToInt(),
+                    scrollable_area.VisibleHeight());
   return cc::ScrollUtils::CalculatePageStep(height);
 }
 
 bool MoveCommands::ModifySelectionWithPageGranularity(
     LocalFrame& frame,
     SelectionModifyAlteration alter,
-    unsigned vertical_distance,
+    int vertical_distance,
     SelectionModifyVerticalDirection direction) {
   if (alter == SelectionModifyAlteration::kMove)
     UpdateSelectionForCaretBrowsing(frame);
 
   SelectionModifier selection_modifier(
-      frame, frame.Selection().GetSelectionInDOMTree());
+      frame, frame.Selection().GetSelectionInDomTree());
   selection_modifier.SetSelectionIsDirectional(
       frame.Selection().IsDirectional());
   if (!selection_modifier.ModifyWithPageGranularity(alter, vertical_distance,
@@ -132,7 +133,7 @@ void MoveCommands::UpdateFocusForCaretBrowsing(LocalFrame& frame) {
     return;
   }
 
-  SelectionInDOMTree selection = frame.Selection().GetSelectionInDOMTree();
+  SelectionInDomTree selection = frame.Selection().GetSelectionInDomTree();
   if (!selection.IsCaret())
     return;
 
@@ -176,7 +177,7 @@ void MoveCommands::UpdateSelectionForCaretBrowsing(LocalFrame& frame) {
     return;
 
   frame.Selection().SetSelection(
-      SelectionInDOMTree::Builder()
+      SelectionInDomTree::Builder()
           .Collapse(Position::FirstPositionInOrBeforeNode(*activeElement))
           .Build(),
       SetSelectionOptions::Builder()
@@ -264,7 +265,7 @@ bool MoveCommands::ExecuteMovePageDown(LocalFrame& frame,
                                        Event*,
                                        EditorCommandSource,
                                        const String&) {
-  const unsigned distance = VerticalScrollDistance(frame);
+  const int distance = VerticalScrollDistance(frame);
   if (!distance)
     return false;
   return ModifySelectionWithPageGranularity(
@@ -276,7 +277,7 @@ bool MoveCommands::ExecuteMovePageDownAndModifySelection(LocalFrame& frame,
                                                          Event*,
                                                          EditorCommandSource,
                                                          const String&) {
-  const unsigned distance = VerticalScrollDistance(frame);
+  const int distance = VerticalScrollDistance(frame);
   if (!distance)
     return false;
   return ModifySelectionWithPageGranularity(
@@ -288,7 +289,7 @@ bool MoveCommands::ExecuteMovePageUp(LocalFrame& frame,
                                      Event*,
                                      EditorCommandSource,
                                      const String&) {
-  const unsigned distance = VerticalScrollDistance(frame);
+  const int distance = VerticalScrollDistance(frame);
   if (!distance)
     return false;
   return ModifySelectionWithPageGranularity(
@@ -300,7 +301,7 @@ bool MoveCommands::ExecuteMovePageUpAndModifySelection(LocalFrame& frame,
                                                        Event*,
                                                        EditorCommandSource,
                                                        const String&) {
-  const unsigned distance = VerticalScrollDistance(frame);
+  const int distance = VerticalScrollDistance(frame);
   if (!distance)
     return false;
   return ModifySelectionWithPageGranularity(

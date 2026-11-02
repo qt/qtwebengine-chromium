@@ -146,6 +146,38 @@ class CORE_EXPORT Hinge final : public GarbageCollected<Hinge> {
   Member<InspectorOverlayAgent> overlay_;
 };
 
+enum class DisplayCutoutShape { kPill, kNotch, kCircle, kRectangle };
+
+class CORE_EXPORT DisplayCutout final : public GarbageCollected<DisplayCutout> {
+ public:
+  DisplayCutout(gfx::QuadF quad,
+                DisplayCutoutShape shape,
+                int upper_radius,
+                int lower_radius,
+                int center_x,
+                int center_y,
+                int radius,
+                Color color,
+                InspectorOverlayAgent* overlay);
+  DisplayCutout(const DisplayCutout&) = delete;
+  DisplayCutout& operator=(const DisplayCutout&) = delete;
+  ~DisplayCutout() = default;
+  String GetOverlayName();
+  void Draw(float scale);
+  void Trace(Visitor* visitor) const;
+
+ private:
+  gfx::QuadF quad_;
+  DisplayCutoutShape shape_;
+  int upper_radius_;
+  int lower_radius_;
+  int center_x_;
+  int center_y_;
+  int radius_;
+  Color content_color_;
+  Member<InspectorOverlayAgent> overlay_;
+};
+
 class CORE_EXPORT InspectorOverlayAgent final
     : public InspectorBaseAgent<protocol::Overlay::Metainfo>,
       public InspectorOverlayHost::Delegate {
@@ -173,7 +205,6 @@ class CORE_EXPORT InspectorOverlayAgent final
       protocol::Overlay::HighlightConfig*);
   InspectorOverlayAgent(WebLocalFrameImpl*,
                         InspectedFrames*,
-                        v8_inspector::V8InspectorSession*,
                         InspectorDOMAgent*);
   InspectorOverlayAgent(const InspectorOverlayAgent&) = delete;
   InspectorOverlayAgent& operator=(const InspectorOverlayAgent&) = delete;
@@ -238,6 +269,9 @@ class CORE_EXPORT InspectorOverlayAgent final
       std::unique_ptr<protocol::DictionaryValue>* highlights) override;
   protocol::Response setShowHinge(
       std::unique_ptr<protocol::Overlay::HingeConfig> hinge_config) override;
+  protocol::Response setShowDisplayCutout(
+      std::unique_ptr<protocol::Overlay::DisplayCutoutConfig>
+          display_cutout_config) override;
   protocol::Response setShowWindowControlsOverlay(
       std::unique_ptr<protocol::Overlay::WindowControlsOverlayConfig>
           wco_config) override;
@@ -266,6 +300,10 @@ class CORE_EXPORT InspectorOverlayAgent final
           inspected_element_anchor_config) override;
 
   // InspectorBaseAgent overrides.
+  void Init(CoreProbeSink*,
+            protocol::UberDispatcher*,
+            InspectorSessionState*,
+            V8SessionHolder) override;
   void Restore() override;
   void Dispose() override;
 
@@ -315,7 +353,7 @@ class CORE_EXPORT InspectorOverlayAgent final
 
   protocol::Response CompositingEnabled();
 
-  bool IsVisible() const { return inspect_tool_ || hinge_; }
+  bool IsVisible() const { return inspect_tool_ || hinge_ || display_cutout_; }
   bool InSomeInspectMode();
   void SetNeedsUnbufferedInput(bool unbuffered);
   void PickTheRightTool();
@@ -339,13 +377,12 @@ class CORE_EXPORT InspectorOverlayAgent final
   Member<InspectorOverlayHost> overlay_host_;
   bool resize_timer_active_;
   HeapTaskRunnerTimer<InspectorOverlayAgent> resize_timer_;
-  bool disposed_;
-  v8_inspector::V8InspectorSession* v8_session_;
   Member<InspectorDOMAgent> dom_agent_;
   Member<FrameOverlay> frame_overlay_;
   Member<InspectTool> inspect_tool_;
   Member<PersistentTool> persistent_tool_;
   Member<Hinge> hinge_;
+  Member<DisplayCutout> display_cutout_;
   // The agent needs to keep AXContext because it enables caching of
   // a11y attributes shown in the inspector overlay.
   HeapHashMap<WeakMember<Document>, std::unique_ptr<AXContext>>
@@ -355,7 +392,7 @@ class CORE_EXPORT InspectorOverlayAgent final
   std::unique_ptr<cc::LayerTreeDebugState> original_layer_tree_debug_state_;
 
   DOMNodeId backend_node_id_to_inspect_;
-  InspectorAgentState::Boolean enabled_;
+  bool enabled_ = false;
   InspectorAgentState::Boolean show_ad_highlights_;
   InspectorAgentState::Boolean show_debug_borders_;
   InspectorAgentState::Boolean show_fps_counter_;
@@ -365,7 +402,7 @@ class CORE_EXPORT InspectorOverlayAgent final
   InspectorAgentState::Boolean show_hit_test_borders_;
   InspectorAgentState::Boolean show_web_vitals_;
   InspectorAgentState::Boolean show_size_on_resize_;
-  InspectorAgentState::String paused_in_debugger_message_;
+  String paused_in_debugger_message_;
   InspectorAgentState::String inspect_mode_;
   InspectorAgentState::Bytes inspect_mode_protocol_config_;
 };

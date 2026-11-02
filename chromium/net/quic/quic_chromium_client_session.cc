@@ -35,6 +35,7 @@
 #include "base/trace_event/memory_usage_estimator.h"
 #include "base/values.h"
 #include "net/base/connection_endpoint_metadata.h"
+#include "net/base/ech_mode.h"
 #include "net/base/features.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -438,6 +439,10 @@ base::DictValue NetLogQuicClientSessionParams(
         x509_util::TrustAnchorIDsToString(x509_util::ParseTlsTrustAnchorIDs(
             base::as_byte_span(*ssl_config.trust_anchor_ids))));
   }
+  if (ssl_config.server_padding_to_request.has_value()) {
+    dict.Set("requested_server_padding",
+             ssl_config.server_padding_to_request.value());
+  }
   net_log.source().AddToEventParameters(dict);
   return dict;
 }
@@ -461,6 +466,15 @@ void LogSessionCreationInitiatorToHistogram(
                     is_used ? ".Used" : ".Unused"});
 
   base::UmaHistogramEnumeration(histogram_name, session_creation);
+}
+
+EchMode GetEchModeForHost(SSLConfigService* ssl_config_service,
+                          std::string_view host) {
+  CHECK(ssl_config_service);
+  if (!ssl_config_service->GetSSLContextConfig().ech_enabled) {
+    return EchMode::kDisabled;
+  }
+  return ssl_config_service->GetEchMode(host);
 }
 
 }  // namespace
@@ -1047,11 +1061,22 @@ QuicChromiumClientSession::QuicChromiumClientSession(
       session_alias_key_(std::move(session_alias_key)),
       session_key_(session_alias_key_.session_key()),
       require_confirmation_(require_confirmation),
-      migrate_session_early_v2_(migrate_session_early_v2),
+      migrate_session_early_v2_(migrate_session_early_v2 &&
+                                // If the session targets a network, we should
+                                // not migrate to another.
+                                session_key_.target_network() ==
+                                    handles::kInvalidNetworkHandle),
       migrate_session_on_network_change_v2_(
-          migrate_sessions_on_network_change_v2),
+          migrate_sessions_on_network_change_v2 &&
+          // If the session targets a network, we should not migrate to another.
+          session_key_.target_network() == handles::kInvalidNetworkHandle),
       migrate_idle_session_(migrate_idle_session),
-      allow_port_migration_(allow_port_migration),
+      allow_port_migration_(
+          allow_port_migration &&
+          // If the session targets a network, we could migrate to a different
+          // port onto the same network. Having said that, this is non-trivial
+          // to implement. For the time being don't migrate.
+          session_key_.target_network() == handles::kInvalidNetworkHandle),
       idle_migration_period_(idle_migration_period),
       max_time_on_non_default_network_(max_time_on_non_default_network),
       max_migrations_to_non_default_network_on_write_error_(
@@ -1084,6 +1109,7 @@ QuicChromiumClientSession::QuicChromiumClientSession(
       http3_logger_(std::make_unique<QuicHttp3Logger>(net_log_)),
       path_validation_writer_delegate_(this, task_runner_),
       ech_config_list_(metadata.ech_config_list),
+      ech_mode_(GetEchModeForHost(ssl_config_service, session_key_.host())),
       trust_anchor_ids_(metadata.trust_anchor_ids),
       allow_server_preferred_address_(allow_server_preferred_address),
       session_creation_initiator_(session_creation_initiator) {
@@ -1514,6 +1540,11 @@ bool QuicChromiumClientSession::GetSSLInfo(SSLInfo* ssl_info) const {
   ssl_info->encrypted_client_hello = crypto_params.encrypted_client_hello;
   ssl_info->early_data_accepted =
       crypto_stream_->EarlyDataReason() == ssl_early_data_accepted;
+
+  ssl_info->server_padding_requested =
+      GetSSLConfig().server_padding_to_request.has_value();
+  ssl_info->server_padding_received =
+      SSL_server_sent_requested_padding(crypto_stream_->GetSsl());
   return true;
 }
 
@@ -1533,6 +1564,19 @@ int QuicChromiumClientSession::CryptoConnect(CompletionOnceCallback callback) {
   connect_timing_.connect_start = tick_clock_->NowTicks();
   RecordHandshakeState(STATE_STARTED);
   DCHECK(flow_controller());
+
+  switch (ech_mode_) {
+    case EchMode::kDisabled:
+    case EchMode::kOpportunistic:
+      // Explicitly listed to ensure the switch is exhaustive, forcing compiler
+      // errors if new EchModes are added in the future.
+      break;
+    case EchMode::kStrict:
+      if (ech_config_list_.empty()) {
+        return ERR_STRICT_ECH_REQUIRED;
+      }
+      break;
+  }
 
   if (!crypto_stream_->CryptoConnect()) {
     return ERR_QUIC_HANDSHAKE_FAILED;
@@ -1656,6 +1700,11 @@ void QuicChromiumClientSession::OnStreamClosed(quic::QuicStreamId stream_id) {
 }
 
 bool QuicChromiumClientSession::ShouldKeepConnectionAlive() const {
+  // If the session is going away, we only keep it alive if there are
+  // outstanding requests (handled by the base class).
+  if (going_away_) {
+    return quic::QuicSpdyClientSessionBase::ShouldKeepConnectionAlive();
+  }
   // `quic::QuicSpdyClientSessionBase::ShouldKeepConnectionAlive` returns true
   // when we have an outstanding request in flight. We want to send PINGs when
   // there is an outstanding request or if `enable_periodic_ping_` has been
@@ -1700,17 +1749,29 @@ quic::QuicSSLConfig QuicChromiumClientSession::GetSSLConfig() const {
   quic::QuicSSLConfig config = quic::QuicSpdyClientSessionBase::GetSSLConfig();
   SSLContextConfig ssl_context_config =
       ssl_config_service_->GetSSLContextConfig();
-  if (ssl_context_config.ech_enabled) {
-    config.ech_grease_enabled = true;
-    config.ech_config_list.assign(ech_config_list_.begin(),
-                                  ech_config_list_.end());
+
+  switch (ech_mode_) {
+    case EchMode::kDisabled:
+      // Explicitly listed to ensure the switch is exhaustive, forcing compiler
+      // errors if new EchModes are added in the future.
+      break;
+    case EchMode::kOpportunistic:
+    case EchMode::kStrict:
+      // kStrict must fail on empty ech_config_list. But GetSSLConfig cannot
+      // propagate errors, so kStrict is enforced in CryptoConnect instead.
+      config.ech_grease_enabled = true;
+      config.ech_config_list.assign(ech_config_list_.begin(),
+                                    ech_config_list_.end());
+      break;
   }
+
   if (ssl_context_config.ShouldAdvertiseTrustAnchorIDs()) {
-    config.trust_anchor_ids = base::as_string_view(
-        ssl_context_config.SelectTrustAnchorIDs(trust_anchor_ids_));
+    config.trust_anchor_ids =
+        base::as_string_view(ssl_context_config.SelectAllTrustAnchorIDs());
   }
-  // TODO(crbug.com/515272365) add server padding flag to QUIC config once its
-  // there.
+
+  config.server_padding_to_request = ssl_context_config.RequestServerPadding();
+
   return config;
 }
 
@@ -1832,6 +1893,35 @@ void QuicChromiumClientSession::LogZeroRttStats() {
     state = ZeroRttState::kNotAttempted;
   }
   UMA_HISTOGRAM_ENUMERATION("Net.QuicSession.ZeroRttState", state);
+
+  if (state != ZeroRttState::kNotAttempted) {
+    std::optional<quic::QuicWallTime> ticket_creation_time =
+        crypto_stream_->GetSessionTicketCreationTime();
+    if (ticket_creation_time.has_value()) {
+      quic::QuicWallTime now = clock_->WallNow();
+      uint64_t now_us = now.ToUNIXMicroseconds();
+      uint64_t ticket_us = ticket_creation_time->ToUNIXMicroseconds();
+      if (now_us >= ticket_us) {
+        // QuicWallTime gives us microsecond precision; compute the ticket age
+        // in microseconds to maintain precision before converting to seconds
+        // for histograms.
+        base::TimeDelta ticket_age =
+            base::Seconds(base::Microseconds(now_us - ticket_us).InSeconds());
+        base::UmaHistogramCustomTimes(
+            "Net.QuicSession.ResumeAttemptTicketAge.All", ticket_age,
+            base::Seconds(1), base::Days(14), 50);
+        if (state == ZeroRttState::kAttemptedAndSucceeded) {
+          base::UmaHistogramCustomTimes(
+              "Net.QuicSession.ResumeAttemptTicketAge.Accepted", ticket_age,
+              base::Seconds(1), base::Days(14), 50);
+        } else if (state == ZeroRttState::kAttemptedAndRejected) {
+          base::UmaHistogramCustomTimes(
+              "Net.QuicSession.ResumeAttemptTicketAge.Rejected", ticket_age,
+              base::Seconds(1), base::Days(14), 50);
+        }
+      }
+    }
+  }
   UMA_HISTOGRAM_ENUMERATION("Net.QuicSession.ZeroRttReason", early_data_reason,
                             ssl_early_data_reason_max_value + 1);
   if (IsGoogleHost(session_key_.host())) {
@@ -3427,8 +3517,13 @@ void QuicChromiumClientSession::MaybeStartProbing(
 void QuicChromiumClientSession::CreateContextForMultiPortPath(
     std::unique_ptr<quic::MultiPortPathContextObserver> context_observer) {
   // Create and configure socket on default network
+  // TODO(crbug.com/518753285): Once we no longer bindToNetwork via
+  // `ConnectAndConfigureSocket`, bind the socket via this `CreateSocket` call,
+  // by passing in `default_network_` instead of
+  // `handles::kInvalidNetworkHandle`.
   std::unique_ptr<DatagramClientSocket> probing_socket =
-      session_pool_->CreateSocket(net_log_.net_log(), net_log_.source());
+      session_pool_->CreateSocket(handles::kInvalidNetworkHandle,
+                                  net_log_.net_log(), net_log_.source());
   if (base::FeatureList::IsEnabled(net::features::kAsyncMultiPortPath)) {
     DatagramClientSocket* probing_socket_ptr = probing_socket.get();
     CompletionOnceCallback configure_callback = base::BindOnce(
@@ -3519,9 +3614,13 @@ void QuicChromiumClientSession::StartProbing(
     return;
   }
 
-  // Create and configure socket on |network|.
+  // Create and configure socket on `network`.
+  // TODO(crbug.com/518753285): Once we no longer bindToNetwork via
+  // `FinishStartProbing`, bind the socket via this `CreateSocket` call, by
+  // passing in `network` instead of `handles::kInvalidNetworkHandle`.
   std::unique_ptr<DatagramClientSocket> probing_socket =
-      session_pool_->CreateSocket(net_log_.net_log(), net_log_.source());
+      session_pool_->CreateSocket(handles::kInvalidNetworkHandle,
+                                  net_log_.net_log(), net_log_.source());
   DatagramClientSocket* probing_socket_ptr = probing_socket.get();
   CompletionOnceCallback configure_callback =
       base::BindOnce(&QuicChromiumClientSession::FinishStartProbing,
@@ -4026,9 +4125,22 @@ void QuicChromiumClientSession::OnCryptoHandshakeComplete() {
         handshake_bytes, /*min=*/1, /*exclusive_max=*/8000, /*buckets=*/100);
   }
 
+  if (SSL_server_sent_requested_padding(crypto_stream_->GetSsl())) {
+    UMA_HISTOGRAM_TIMES("Net.QuicSession.HandshakeConfirmedTime.ServerPadding",
+                        handshake_confirmed_time);
+  }
+
   // Indicate that the handshake is complete so that we can safely send pings
   // to the peer.
   crypto_handshake_complete_ = true;
+
+  net_log_.AddEvent(
+      NetLogEventType::QUIC_SESSION_CRYPTO_HANDSHAKE_COMPLETE, [&] {
+        return base::DictValue().Set(
+            "received_server_padding",
+            SSL_server_sent_requested_padding(crypto_stream_->GetSsl()) == 1);
+      });
+
   // We explicitly kick off pings here, since we do not want to ping when there
   // are no available encrypters available.
   if (enable_periodic_ping_) {
@@ -4077,6 +4189,7 @@ void QuicChromiumClientSession::OnCryptoHandshakeComplete() {
   // confirmed if the session is not created on the default network.
   if (migrate_session_on_network_change_v2_ &&
       default_network_ != handles::kInvalidNetworkHandle &&
+      session_key_.proxy_chain().is_direct() &&
       GetCurrentNetwork() != default_network_) {
     current_migration_cause_ = ON_MIGRATE_BACK_TO_DEFAULT_NETWORK;
     StartMigrateBackToDefaultNetworkTimer(
@@ -4121,9 +4234,12 @@ void QuicChromiumClientSession::Migrate(handles::NetworkHandle network,
     }
   }
 
-  // Create and configure socket on |network|.
-  std::unique_ptr<DatagramClientSocket> socket(
-      session_pool_->CreateSocket(net_log_.net_log(), net_log_.source()));
+  // Create and configure socket on `network`.
+  // TODO(crbug.com/518753285): Once we no longer bindToNetwork via
+  // `ConnectAndConfigureSocket`, bind the socket via this `CreateSocket` call,
+  // by passing in `network` instead of `handles::kInvalidNetworkHandle`.
+  std::unique_ptr<DatagramClientSocket> socket(session_pool_->CreateSocket(
+      handles::kInvalidNetworkHandle, net_log_.net_log(), net_log_.source()));
   DatagramClientSocket* socket_ptr = socket.get();
   DVLOG(1) << "Force blocking the packet writer";
   static_cast<QuicChromiumPacketWriter*>(connection()->writer())
@@ -4303,6 +4419,17 @@ void QuicChromiumClientSession::OnServerPreferredAddressAvailable(
     });
     return;
   }
+
+  if (ToIPAddress(connection()->peer_address().host()).IsPubliclyRoutable() &&
+      !ToIPAddress(server_preferred_address.host()).IsPubliclyRoutable()) {
+    net_log_.AddEvent(NetLogEventType::QUIC_CONNECTION_MIGRATION_FAILURE, [&] {
+      return NetLogQuicMigrationFailureParams(
+          connection_id(),
+          "Ignored non-publicly routable server preferred address");
+    });
+    return;
+  }
+
   if (!allow_server_preferred_address_) {
     return;
   }

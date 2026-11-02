@@ -292,6 +292,19 @@ enum AVFrameSideDataType {
     * and Formats standard.
     */
     AV_FRAME_DATA_IAMF_RECON_GAIN_INFO_PARAM,
+
+    /**
+     * Color information from a RAW camera codecs, needed to correctly process
+     * the video data. The payload is an AVRawColorParams struct defined in
+     * libavutil/raw_color_params.h.
+     */
+    AV_FRAME_DATA_RAW_COLOR_PARAMS,
+
+    /**
+     * Metadata relevant to a downmix procedure in the form of a remixig matrix.
+     * The data is the AVDownmixMatrix struct defined in libavutil/downmix_info.h.
+     */
+    AV_FRAME_DATA_DOWNMIX_MATRIX,
 };
 
 enum AVActiveFormatDescription {

@@ -1,0 +1,76 @@
+# Font families for fantasy generic family
+Bauhaus Std
+Cooper Std
+Copperplate Gothic Std
+Fantezi
+Homa
+Impact
+Kamran
+Tabassom
+Akkadian
+Analecta
+Beteckna
+Beteckna Lower Case
+Beteckna Small Caps
+Bola
+Bravura
+CaladingsCLM
+Campania
+Delphine
+Digna's Handwriting
+Domestic Manners
+FontAwesome
+FontAwesome 7 Brands
+FontAwesome 7 Free
+Foundation Icons
+Khmer OS Fasthand
+Khmer OS Freehand
+Khmer OS Metal Chrieng
+Laconic-Shadow
+Leland
+Material Icons
+Perizia
+Petaluma
+PetalumaScript
+SMonohand
+Sniglet
+SteveHand
+Tiza
+ToBeContinued
+UnBom
+UnDinaru
+UnJamoBatang
+UnJamoDotum
+UnJamoNovel
+UnJamoSora
+UnVada
+UnYetgul
+UnifrakturMaguntia
+Widelands
+entypo
+letters laughing
+mnmlicons
+Aegean
+Aegyptus
+Bellota
+GFS Ambrosia
+GFS Baskerville
+GFS Bodoni Classic
+GFS Complutum
+GFS Eustace
+GFS Fleischman
+GFS Garaldus
+GFS Gazis
+GFS Ignacio
+GFS Jackson
+GFS Nicefore
+GFS Olga
+GFS Porson
+GFS Pyrsos
+GFS Solomos
+GFS Theokritos
+Patrick Hand
+Yanone Kaffeesatz
+Agbalumo
+Finale Broadway
+Finale Broadway Text

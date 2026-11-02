@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../../core/common/common.js';
 import * as Host from '../../../core/host/host.js';
@@ -48,7 +49,6 @@ function dispatchCtrlI(editor: TextEditor.TextEditor) {
 
 describeWithEnvironment('AiCodeGenerationProvider', () => {
   let clock: sinon.SinonFakeTimers;
-  let checkAccessPreconditionsStub: sinon.SinonStub;
   let generateCodeStub: sinon.SinonStub;
 
   beforeEach(() => {
@@ -61,14 +61,13 @@ describeWithEnvironment('AiCodeGenerationProvider', () => {
         enabled: true,
         blockedByAge: false,
         blockedByGeo: false,
-      }
+      },
     });
-    checkAccessPreconditionsStub = sinon.stub(Host.AidaClient.AidaClient, 'checkAccessPreconditions');
-    checkAccessPreconditionsStub.resolves(Host.AidaClient.AidaAccessPreconditions.AVAILABLE);
     sinon.stub(Host.AidaClient.HostConfigTracker, 'instance').returns({
       addEventListener: () => {},
       removeEventListener: () => {},
       dispose: () => {},
+      aidaAvailability: Host.AidaClient.AidaAccessPreconditions.AVAILABLE,
     } as unknown as Host.AidaClient.HostConfigTracker);
     Common.Settings.Settings.instance().settingForTest('ai-code-completion-enabled').set(true);
     Common.Settings.Settings.instance().createSetting('ai-code-generation-onboarding-completed', true);
@@ -158,7 +157,7 @@ describeWithEnvironment('AiCodeGenerationProvider', () => {
 
       editor.dispatch({
         effects: AiCodeGenerationProvider.setAiCodeGenerationTeaserMode.of(
-            AiCodeGenerationProvider.AiCodeGenerationTeaserMode.DISMISSED)
+            AiCodeGenerationProvider.AiCodeGenerationTeaserMode.DISMISSED),
       });
       await clock.tickAsync(0);
       assert.isNull(editor.editor.dom.querySelector('.cm-placeholder'));
@@ -173,7 +172,7 @@ describeWithEnvironment('AiCodeGenerationProvider', () => {
 
       editor.dispatch({
         effects: AiCodeGenerationProvider.setAiCodeGenerationTeaserMode.of(
-            AiCodeGenerationProvider.AiCodeGenerationTeaserMode.DISMISSED)
+            AiCodeGenerationProvider.AiCodeGenerationTeaserMode.DISMISSED),
       });
       await clock.tickAsync(0);
       assert.isNull(editor.editor.dom.querySelector('.cm-placeholder'));
@@ -260,7 +259,7 @@ describeWithEnvironment('AiCodeGenerationProvider', () => {
           AiCodeGenerationProvider.setAiCodeGenerationTeaserMode.of(
               AiCodeGenerationProvider.AiCodeGenerationTeaserMode.DISMISSED),
           Config.setAiAutoCompleteSuggestion.of(null),
-        ]
+        ],
       });
       assert.deepEqual(
           loadingSetter.set.lastCall.args[0],
@@ -417,7 +416,7 @@ describeWithEnvironment('AiCodeGenerationProvider', () => {
           attributionMetadata: {
             attributionAction: Host.AidaClient.RecitationAction.BLOCK,
             citations: [{uri: 'https://www.example.com'}],
-          }
+          },
         }],
         metadata: {},
       }));
@@ -465,7 +464,7 @@ describeWithEnvironment('AiCodeGenerationProvider', () => {
         AiCodeGenerationProvider.setAiCodeGenerationTeaserMode.of(
             AiCodeGenerationProvider.AiCodeGenerationTeaserMode.DISMISSED),
         Config.setAiAutoCompleteSuggestion.of(null),
-      ]
+      ],
     });
     provider.dispose();
   });

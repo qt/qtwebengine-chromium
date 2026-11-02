@@ -8,9 +8,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 #include "base/containers/span.h"
@@ -55,6 +57,9 @@ class SESSIONS_EXPORT SessionCommand {
 
   SessionCommand(const SessionCommand&) = delete;
   SessionCommand& operator=(const SessionCommand&) = delete;
+  bool operator==(const SessionCommand& command) const;
+
+  std::unique_ptr<SessionCommand> Clone() const;
 
   // An identifier for the command.  The meaning of the identifier is specific
   // to the service that creates the command.
@@ -76,8 +81,22 @@ class SESSIONS_EXPORT SessionCommand {
   }
 
   // Convenience for extracting the data to a target. Returns false if
-  // count is not equal to the size of data this command contains.
-  bool GetContents(void* dest, size_t count) const;
+  // the destination span's size is not equal to the size of data this
+  // command contains.
+  bool GetContents(base::span<uint8_t> dest) const;
+
+  // Convenience for extracting the data to a target struct. Returns false if
+  // the destination's size is not equal to the size of data this command
+  // contains.
+  template <typename T>
+  bool GetContents(T& dest) const {
+    if constexpr (std::has_unique_object_representations_v<T>) {
+      return GetContents(base::byte_span_from_ref(dest));
+    } else {
+      return GetContents(
+          base::byte_span_from_ref(base::allow_nonunique_obj, dest));
+    }
+  }
 
   // Returns an iterator for reading the contents.
   base::PickleIterator ContentsAsPickle() const;

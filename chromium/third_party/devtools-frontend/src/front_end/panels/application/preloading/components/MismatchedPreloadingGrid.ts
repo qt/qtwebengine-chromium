@@ -124,7 +124,7 @@ export const DEFAULT_VIEW = (input: ViewInput, _output: Record<string, never>, t
                         case Diff.Diff.Operation.Insert:
                           return html`<span style=${styleMap({
                             color: 'var(--sys-color-green)',
-                            'text-decoration': 'line-through'
+                            'text-decoration': 'line-through',
                           })}
                               >${s}</span>`;
                         case Diff.Diff.Operation.Delete:
@@ -132,7 +132,7 @@ export const DEFAULT_VIEW = (input: ViewInput, _output: Record<string, never>, t
                         case Diff.Diff.Operation.Edit:
                           return html`<span style=${styleMap({
                             color: 'var(--sys-color-green',
-                            'text-decoration': 'line-through'
+                            'text-decoration': 'line-through',
                           })}
                           >${s}</span>`;
                         default:

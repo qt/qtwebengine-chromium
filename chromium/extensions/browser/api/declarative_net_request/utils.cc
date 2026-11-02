@@ -29,10 +29,10 @@
 #include "extensions/browser/api/declarative_net_request/flat/extension_ruleset_generated.h"
 #include "extensions/browser/api/declarative_net_request/ruleset_matcher.h"
 #include "extensions/browser/api/web_request/web_request_info.h"
-#include "extensions/browser/api/web_request/web_request_resource_type.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/common/api/declarative_net_request/constants.h"
 #include "extensions/common/api/declarative_net_request/dnr_manifest_data.h"
+#include "extensions/common/api/web_request/web_request_resource_type.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension_features.h"
 #include "extensions/common/features/feature_channel.h"
@@ -500,7 +500,7 @@ size_t GetEnabledStaticRuleCount(const CompositeMatcher* composite_matcher) {
   size_t enabled_static_rule_count = 0;
   for (const std::unique_ptr<RulesetMatcher>& matcher :
        composite_matcher->matchers()) {
-    if (matcher->id() == kDynamicRulesetID) {
+    if (!IsRulesetStatic(matcher->id())) {
       continue;
     }
 

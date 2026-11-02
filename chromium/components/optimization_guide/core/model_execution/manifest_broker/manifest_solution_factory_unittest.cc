@@ -135,7 +135,7 @@ TEST_F(ManifestSolutionFactoryTest, ExecuteTestFeature) {
       ("Encoder cache weight: 1016"
        "Adapter cache weight: 1017"
        "hello max:1024"
-       "TopK: 3, Temp: 0.800000011920929");
+       "TopK: 64, Temp: 1");
   EXPECT_EQ(*response.value(), expected_response);
 }
 
@@ -147,7 +147,8 @@ TEST_F(ManifestSolutionFactoryTest, ExecuteTestGpuCacheFeature) {
   feature_list.InitWithFeaturesAndParameters(
       {{features::kOptimizationGuideOnDeviceModel,
         {{"on_device_model_topk", "1"}, {"on_device_model_temperature", "0"}}},
-       {on_device_model::features::kOnDeviceModelGpuCache, {}}},
+       {on_device_model::features::kOnDeviceModelGpuProgramCache, {}},
+       {on_device_model::features::kOnDeviceModelGpuWeightCache, {}}},
       {});
   ScenarioBuilder(fake_.component_state())
       .AddBaseModel(
@@ -183,6 +184,7 @@ TEST_F(ManifestSolutionFactoryTest, ExecuteTestGpuCacheFeature) {
 
   std::string expected_response =
       ("Fastest inference"
+       "Cache weight: 1015"
        "Encoder cache weight: 1016"
        "Adapter cache weight: 1017"
        "Shader cache data: 0xcafebabe"
@@ -226,7 +228,7 @@ TEST_F(ManifestSolutionFactoryTest, ExecuteTestFeatureWithHints) {
        "Encoder cache weight: 1016"
        "Adapter cache weight: 1017"
        "hello max:1024"
-       "TopK: 3, Temp: 0.800000011920929");
+       "TopK: 64, Temp: 1");
   EXPECT_EQ(*response.value(), expected_response);
 }
 
@@ -258,7 +260,7 @@ TEST_F(ManifestSolutionFactoryTest, ExecuteTestFeatureWithAdaptation) {
        "Encoder cache weight: 1016"
        "Adapter cache weight: 1017"
        "hello max:1024"
-       "TopK: 3, Temp: 0.800000011920929");
+       "TopK: 64, Temp: 1");
   EXPECT_EQ(*response.value(), expected_response);
 }
 
@@ -295,7 +297,7 @@ TEST_F(ManifestSolutionFactoryTest, ExecuteTestFeatureWithSafety) {
       ("Encoder cache weight: 1016"
        "Adapter cache weight: 1017"
        "execute:hello max:1024"
-       "TopK: 3, Temp: 0.800000011920929");
+       "TopK: 64, Temp: 1");
   EXPECT_EQ(*response.value(), expected_response);
 }
 

@@ -19,35 +19,46 @@ mod dice_attestation;
 mod mmio;
 mod smp;
 
+#[cfg(feature = "sev_kernel_hashes")]
+mod kernel_hash_tables;
+
 use alloc::boxed::Box;
 use core::{arch::x86_64::CpuidResult, mem::MaybeUninit};
 
 use oak_attestation::dice::DiceAttester;
 use oak_core::sync::OnceCell;
 use oak_dice::evidence::TeePlatform;
+use oak_hal::{MsrAccess, PageAssignment, Platform};
 use oak_linux_boot_params::BootE820Entry;
 use oak_sev_guest::{
     ap_jump_table::ApJumpTable, cpuid::CpuidInput, ghcb::GhcbProtocol, msr::SevStatus,
 };
 use oak_stage0::{
+    AcpiTables, BOOT_ALLOC, BootAllocator, ZeroPage,
     allocator::Shared,
-    hal::{Base, PageAssignment, Platform, PortFactory},
-    paging::PageEncryption,
-    BootAllocator, Rsdp, ZeroPage, BOOT_ALLOC,
+    hal::{Base, FirmwarePlatform, PortFactory},
 };
-use spinning_top::{lock_api::MutexGuard, RawSpinlock, Spinlock};
-use x86_64::{structures::paging::PageSize, PhysAddr, VirtAddr};
+use spinning_top::{RawSpinlock, Spinlock, lock_api::MutexGuard};
+use x86_64::{
+    PhysAddr, VirtAddr,
+    structures::mem_encrypt::{MemoryEncryptionConfiguration, enable_memory_encryption},
+};
 use zerocopy::{FromBytes, IntoBytes};
 
-#[link_section = ".boot"]
-#[no_mangle]
+#[unsafe(link_section = ".boot")]
+#[unsafe(no_mangle)]
 static mut SEV_SECRETS: MaybeUninit<oak_sev_guest::secrets::SecretsPage> = MaybeUninit::uninit();
-#[link_section = ".boot"]
-#[no_mangle]
+#[unsafe(link_section = ".boot")]
+#[unsafe(no_mangle)]
 static SEV_CPUID: MaybeUninit<oak_sev_guest::cpuid::CpuidPage> = MaybeUninit::uninit();
-#[no_mangle]
-#[link_section = ".ap_bss"]
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".ap_bss")]
 pub static AP_JUMP_TABLE: MaybeUninit<ApJumpTable> = MaybeUninit::uninit();
+#[cfg(feature = "sev_kernel_hashes")]
+#[unsafe(link_section = ".snp_hash_table")]
+#[unsafe(no_mangle)]
+static mut SEV_HASH_TABLE: MaybeUninit<kernel_hash_tables::PaddedSevHashTable> =
+    MaybeUninit::uninit();
 
 static GHCB_WRAPPER: Ghcb = Ghcb::new();
 
@@ -86,15 +97,16 @@ impl Ghcb {
     }
 
     /// Deallocates the GHCB block.
-    ///
     /// # Safety
     ///
     /// The caller needs to guarantee that nobody has a reference to the GHCB
     /// when this function is called and that nobody will try to use the GHCB
     /// after the function returns.
     pub unsafe fn deinit(&self, alloc: &'static BootAllocator) {
-        let ghcb = self.ghcb.deinit().unwrap().into_inner().into_inner();
-        let _ = Shared::<_, _, Sev>::from_raw_in(ghcb, alloc);
+        unsafe {
+            let ghcb = self.ghcb.deinit().unwrap().into_inner().into_inner();
+            let _ = Shared::<_, _, Sev>::from_raw_in(ghcb, alloc);
+        }
     }
 
     pub fn get(
@@ -115,7 +127,7 @@ impl Ghcb {
 fn sev_status() -> SevStatus {
     // Will be set in the bootstrap assembly code where we have to read the MSR
     // anyway.
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     static mut SEV_STATUS: SevStatus = SevStatus::empty();
 
     // Safety: we don't allow mutation and this is initialized in the bootstrap
@@ -124,20 +136,20 @@ fn sev_status() -> SevStatus {
 }
 
 /// Returns the location of the ENCRYPTED bit when running under AMD SEV.
-pub(crate) fn encrypted() -> u64 {
-    #[no_mangle]
-    static mut ENCRYPTED: u64 = 0;
+pub(crate) fn encrypted_bit_position() -> u64 {
+    #[unsafe(no_mangle)]
+    static mut ENCRYPTED_BIT_POSITION: u64 = 0;
 
     // Safety: we don't allow mutation and this is initialized in the bootstrap
     // assembly.
-    unsafe { ENCRYPTED }
+    unsafe { ENCRYPTED_BIT_POSITION }
 }
 
-trait IntoMsrPageAssigment {
+trait IntoMsrPageAssignment {
     fn into_msr(self) -> oak_sev_guest::msr::PageAssignment;
 }
 
-impl IntoMsrPageAssigment for PageAssignment {
+impl IntoMsrPageAssignment for PageAssignment {
     fn into_msr(self) -> oak_sev_guest::msr::PageAssignment {
         match self {
             PageAssignment::Shared => oak_sev_guest::msr::PageAssignment::Shared,
@@ -149,8 +161,7 @@ impl IntoMsrPageAssigment for PageAssignment {
 pub struct Sev {}
 
 impl Platform for Sev {
-    type Mmio<S: PageSize> = mmio::Mmio<S>;
-    type Attester = DiceAttester;
+    type Mmio = mmio::Mmio;
 
     fn cpuid(leaf: u32) -> CpuidResult {
         if let Some(mut ghcb) = GHCB_WRAPPER.get() {
@@ -160,10 +171,8 @@ impl Platform for Sev {
         }
     }
 
-    unsafe fn mmio<S: x86_64::structures::paging::PageSize>(
-        base_address: PhysAddr,
-    ) -> Self::Mmio<S> {
-        mmio::Mmio::new(base_address)
+    unsafe fn mmio(base_address: PhysAddr, size: usize) -> Self::Mmio {
+        unsafe { mmio::Mmio::new(base_address, size) }
     }
 
     fn port_factory() -> PortFactory {
@@ -179,10 +188,6 @@ impl Platform for Sev {
         } else {
             oak_stage0::hal::Base::port_factory()
         }
-    }
-
-    fn prefill_e820_table<T: IntoBytes + FromBytes>(_: &mut T) -> Result<usize, &'static str> {
-        Err("SEV does not support E820 prefill")
     }
 
     fn early_initialize_platform() {
@@ -206,6 +211,47 @@ impl Platform for Sev {
             }
         }
     }
+
+    fn change_frame_state(
+        frame: x86_64::structures::paging::PhysFrame<x86_64::structures::paging::Size4KiB>,
+        state: PageAssignment,
+    ) {
+        accept_memory::change_frame_state(frame, state).expect("failed to change page state");
+    }
+
+    fn revalidate_page(
+        page: x86_64::structures::paging::Page<x86_64::structures::paging::Size4KiB>,
+    ) {
+        accept_memory::revalidate_page(page).expect("failed to revalidate memory");
+    }
+
+    fn wbvind() {
+        Base::wbvind()
+    }
+
+    fn init_memory_encryption() -> bool {
+        if sev_status().contains(SevStatus::SEV_ENABLED) {
+            // Safety: we use the correct encrypted bit location that was set by the
+            // bootstrap assembly. All the relevant pages tables are updated after
+            // this is set.
+            unsafe {
+                enable_memory_encryption(MemoryEncryptionConfiguration::EncryptedBit(
+                    encrypted_bit_position() as u8,
+                ));
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    fn is_memory_encryption_enabled() -> bool {
+        sev_status().contains(SevStatus::SEV_ENABLED)
+    }
+}
+
+impl FirmwarePlatform for Sev {
+    type Attester = DiceAttester;
 
     fn initialize_platform(e820_table: &[BootE820Entry]) {
         log::info!("Enabled SEV features: {:?}", sev_status());
@@ -247,10 +293,14 @@ impl Platform for Sev {
         }
     }
 
-    fn finalize_acpi_tables(rsdp: &mut Rsdp) -> Result<(), &'static str> {
+    fn prefill_e820_table<T: IntoBytes + FromBytes>(_: &mut T) -> Result<usize, &'static str> {
+        Err("SEV does not support E820 prefill")
+    }
+
+    fn finalize_acpi_tables<'a>(tables: &mut AcpiTables) -> Result<(), &'static str> {
         // No further changes needed to ACPI tables, but now that they're in
         // place, we can bring up other CPUs (APs).
-        let result = smp::bootstrap_aps::<Sev>(rsdp);
+        let result = smp::bootstrap_aps::<Sev>(tables);
         if let Err(err) = result {
             log::warn!("Failed to bootstrap APs: {}. APs may not be properly initialized.", err);
         }
@@ -293,18 +343,6 @@ impl Platform for Sev {
         }
     }
 
-    fn page_table_mask(encryption_state: PageEncryption) -> u64 {
-        if sev_status().contains(SevStatus::SEV_ENABLED) {
-            match encryption_state {
-                PageEncryption::Unset => 0,
-                PageEncryption::Encrypted => encrypted(),
-                PageEncryption::Unencrypted => 0,
-            }
-        } else {
-            0
-        }
-    }
-
     fn get_attester() -> Result<Self::Attester, &'static str> {
         dice_attestation::get_attester()
     }
@@ -313,29 +351,47 @@ impl Platform for Sev {
         dice_attestation::get_derived_key()
     }
 
-    fn change_page_state(
-        page: x86_64::structures::paging::Page<x86_64::structures::paging::Size4KiB>,
-        state: PageAssignment,
-    ) {
-        accept_memory::change_page_state(page, state.into_msr())
-            .expect("failed to change page state");
+    #[cfg(feature = "sev_kernel_hashes")]
+    fn validate_measured_boot(
+        cmdline: &[u8],
+        initrd_digest: &[u8],
+        kernel_setup_data: &[u8],
+        kernel_bytes: &[u8],
+    ) -> bool {
+        log::debug!("validating measured boot primitives");
+        // Safety: We must assume that the VMM has populated stage0 with the kernel
+        // hashes if the VMM decides to use this feature. If done so, we may
+        // assume that the table has been initialized
+        let sev_hash_table = unsafe { SEV_HASH_TABLE.assume_init_ref() };
+        let res = kernel_hash_tables::validate_hash_table(
+            &sev_hash_table,
+            cmdline,
+            initrd_digest,
+            kernel_setup_data,
+            kernel_bytes,
+        );
+        log::debug!("validated measured boot primitives");
+        res
     }
 
-    fn revalidate_page(
-        page: x86_64::structures::paging::Page<x86_64::structures::paging::Size4KiB>,
-    ) {
-        accept_memory::revalidate_page(page).expect("failed to revalidate memory");
+    #[cfg(not(feature = "sev_kernel_hashes"))]
+    fn validate_measured_boot(
+        _cmdline: &[u8],
+        _initrd_digest: &[u8],
+        _kernel_setup_data: &[u8],
+        _kernel_bytes: &[u8],
+    ) -> bool {
+        log::debug!("sev_kernel_hashes is not compiled, skipping");
+        true
     }
+}
 
-    fn encrypted() -> u64 {
-        encrypted()
-    }
-
+impl MsrAccess for Sev {
     unsafe fn read_msr(msr_id: u32) -> u64 {
         if let Some(mut ghcb) = GHCB_WRAPPER.get() {
             ghcb.msr_read(msr_id).expect("couldn't read the MSR using the GHCB protocol")
         } else {
-            Base::read_msr(msr_id)
+            unsafe { Base::read_msr(msr_id) }
         }
     }
 
@@ -343,11 +399,7 @@ impl Platform for Sev {
         if let Some(mut ghcb) = GHCB_WRAPPER.get() {
             ghcb.msr_write(msr_id, val).expect("couldn't write the MSR using the GHCB protocol")
         } else {
-            Base::write_msr(msr_id, val)
+            unsafe { Base::write_msr(msr_id, val) }
         }
-    }
-
-    fn wbvind() {
-        Base::wbvind()
     }
 }

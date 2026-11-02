@@ -133,17 +133,13 @@ void FormDataImporter::ImportAndProcessFormData(
         AutofillMetrics::AutofillPromptStatus::kCreditCardShown);
   }
 
-  // TODO(crbug.com/356845298) Clean up when launched.
-  if (base::FeatureList::IsEnabled(
-          features::kAutofillEnableSupportForNameAndEmail)) {
-    base::flat_set<std::string> unedited_autofilled_profile_guids =
-        GetAddressFormDataImporter().ExtractGUIDsOfProfilesWithoutManualEdits(
-            submitted_form);
+  base::flat_set<std::string> unedited_autofilled_profile_guids =
+      GetAddressFormDataImporter().ExtractGUIDsOfProfilesWithoutManualEdits(
+          submitted_form);
 
-    for (auto& candidate : extracted_data.extracted_address_profiles) {
-      candidate.import_metadata.unedited_autofilled_profile_guids =
-          unedited_autofilled_profile_guids;
-    }
+  for (auto& candidate : extracted_data.extracted_address_profiles) {
+    candidate.import_metadata.unedited_autofilled_profile_guids =
+        unedited_autofilled_profile_guids;
   }
 
   GetAddressFormDataImporter().ProcessExtractedAddressProfiles(
@@ -186,12 +182,10 @@ FormDataImporter::ExtractedFormData FormDataImporter::ExtractFormData(
   }
 #endif  // !BUILDFLAG(IS_IOS)
 
-  size_t num_complete_address_profiles = 0;
   if (profile_autofill_enabled &&
       !base::FeatureList::IsEnabled(features::kAutofillDisableAddressImport)) {
-    num_complete_address_profiles =
-        GetAddressFormDataImporter().ExtractAddressProfiles(
-            submitted_form, &extracted_form_data.extracted_address_profiles);
+    extracted_form_data.extracted_address_profiles =
+        GetAddressFormDataImporter().ExtractAddressProfiles(submitted_form);
   }
 
   if (profile_autofill_enabled && payment_methods_autofill_enabled) {
@@ -199,7 +193,8 @@ FormDataImporter::ExtractedFormData FormDataImporter::ExtractFormData(
     FormSignature form_signature = submitted_form.form_signature();
     // If multiple complete address profiles were extracted, this most likely
     // corresponds to billing and shipping sections within the same form.
-    for (size_t i = 0; i < num_complete_address_profiles; ++i) {
+    for (size_t i = 0;
+         i < extracted_form_data.extracted_address_profiles.size(); ++i) {
       form_associator_.TrackFormAssociations(
           origin, form_signature, FormAssociator::FormType::kAddressForm);
     }

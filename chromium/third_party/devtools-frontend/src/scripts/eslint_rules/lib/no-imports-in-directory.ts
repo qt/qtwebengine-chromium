@@ -37,7 +37,7 @@ export default createRule<Options[], 'invalidImport'>({
               properties: {
                 bannedPath: {type: 'string'},
                 allowTypeImports: {type: 'boolean'},
-              }
+              },
             },
           },
         },

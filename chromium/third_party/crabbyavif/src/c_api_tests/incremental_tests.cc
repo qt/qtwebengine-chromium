@@ -350,6 +350,62 @@ TEST(ProgressiveTest, PartialData) {
   EXPECT_EQ(avifDecoderNthImage(decoder.get(), 0), AVIF_RESULT_OK);
 }
 
+TEST(ProgressiveTest, LayeredGridPartialData) {
+  // poc_b_568818122.avif is the first 554 bytes of a 598-byte AVIF file whose
+  // primary item is a 63x100 grid made of 2 layered 64x64 cells, one above the
+  // other. Layer 1 of the lower cell is missing.
+  auto file_data =
+      testutil::read_file(get_file_name("poc_b_568818122.avif").c_str());
+  ASSERT_EQ(file_data.size(), 554u);
+  constexpr size_t kFullSize = 598;
+
+  PartialData data = {/*available=*/{file_data.data(), file_data.size()},
+                      /*fullSize=*/kFullSize,
+                      /*nonpersistent_bytes=*/nullptr,
+                      /*num_nonpersistent_bytes=*/0};
+  avifIO io = {/*destroy=*/nullptr,    PartialRead,
+               /*write=*/nullptr,      kFullSize,
+               /*is_persistent=*/true, &data};
+  DecoderPtr decoder(avifDecoderCreate());
+  ASSERT_NE(decoder, nullptr);
+  avifDecoderSetIO(decoder.get(), &io);
+  decoder->allowProgressive = AVIF_TRUE;
+
+  ASSERT_EQ(avifDecoderParse(decoder.get()), AVIF_RESULT_OK);
+  EXPECT_EQ(decoder->imageCount, 2);
+
+  avifExtent extent0;
+  ASSERT_EQ(avifDecoderNthImageMaxExtent(decoder.get(), 0, &extent0),
+            AVIF_RESULT_OK);
+  avifExtent extent1;
+  ASSERT_EQ(avifDecoderNthImageMaxExtent(decoder.get(), 1, &extent1),
+            AVIF_RESULT_OK);
+  ASSERT_LE(extent0.offset + extent0.size, file_data.size());
+  ASSERT_GT(extent1.offset + extent1.size, file_data.size());
+
+  // Decode the first layer completely.
+  data.available.size = extent0.offset + extent0.size;
+  ASSERT_EQ(avifDecoderNthImage(decoder.get(), 0), AVIF_RESULT_OK);
+  EXPECT_EQ(decoder->image->width, 63u);
+  EXPECT_EQ(decoder->image->height, 100u);
+
+  // Do something with the decoded pixels to make sure that the
+  // |decoder->image->planes| are valid.
+  AvifRgbImage rgb(decoder->image, /*rgbDepth=*/8, AVIF_RGB_FORMAT_RGBA);
+  EXPECT_EQ(avifImageYUVToRGB(decoder->image, &rgb), AVIF_RESULT_OK);
+
+  // Make all the bytes of the file available, so the first cell of layer 1
+  // decodes (reallocating the internal image planes) while the second cell
+  // returns WAITING_ON_IO.
+  data.available.size = file_data.size();
+  EXPECT_EQ(avifDecoderNthImage(decoder.get(), 1), AVIF_RESULT_WAITING_ON_IO);
+  EXPECT_EQ(avifDecoderDecodedRowCount(decoder.get()), 64u);
+
+  // Do something with the decoded pixels to make sure that the
+  // |decoder->image->planes| are valid.
+  EXPECT_EQ(avifImageYUVToRGB(decoder->image, &rgb), AVIF_RESULT_OK);
+}
+
 }  // namespace
 }  // namespace avif
 

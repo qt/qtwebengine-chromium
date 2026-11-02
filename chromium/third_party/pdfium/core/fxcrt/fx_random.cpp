@@ -23,7 +23,6 @@
 
 namespace {
 
-constexpr uint32_t kTwistOffset = 456;
 constexpr uint32_t kUpperMask = 0x80000000;
 constexpr uint32_t kLowerMask = 0x7fffffff;
 
@@ -75,20 +74,15 @@ uint32_t GetNextGlobalSeed() {
   return ++global_seed;
 }
 
-std::array<uint32_t, FX_Random::kStateSize> InitState(uint32_t seed) {
-  std::array<uint32_t, FX_Random::kStateSize> state;
-  state[0] = seed;
-  for (uint32_t i = 1; i < FX_Random::kStateSize; i++) {
-    const uint32_t prev = state[i - 1];
-    state[i] = (1812433253UL * (prev ^ (prev >> 30)) + i);
-  }
-  return state;
-}
-
 }  // namespace
 
-FX_Random::FX_Random(uint32_t seed)
-    : next_index_(kStateSize), state_(InitState(seed)) {}
+FX_Random::FX_Random(uint32_t seed) {
+  state_[0] = seed;
+  for (uint32_t i = 1; i < kStateSize; i++) {
+    const uint32_t prev = state_[i - 1];
+    state_[i] = (1812433253UL * (prev ^ (prev >> 30)) + i);
+  }
+}
 
 FX_Random::~FX_Random() = default;
 

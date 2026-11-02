@@ -102,6 +102,8 @@ _protected_mode_start:
     1:
     mov %ebx, %eax            # eax = ebx (PVALIDATE will clobber EAX)
     pvalidate                 # set validated bit in RMP, but ignore results for now
+    movl (%ebx), %esi         # Read beginning...
+    movl 4092(%ebx), %edi     # ...and end of page to invalidate cache. Read 4 bytes b/c 32-bit mode
     add $0x1000, %ebx         # ebx += 0x1000
     cmp $0xa0000, %ebx        # have we covered the full 640 KiB?
     jl 1b                     # if no, go back
@@ -192,12 +194,12 @@ _protected_mode_start:
     hlt
     jmp 2b
     1:                        # at this point we know the C-bit is > 32
+    mov %ebx, (ENCRYPTED_BIT_POSITION)     # store it in the ENCRYPTED_BIT_POSITION variable as well
+    movl $0, (ENCRYPTED_BIT_POSITION+4)    # (upper half zeroed out)
     sub $32, %ebx             # we know the C-bit is > 32, so subtract that
     mov $1, %esi
     mov %ebx, %ecx
-    shl %cl, %esi             # construct the encrypted bit mask, store it in ESI
-    movl $0, (ENCRYPTED)      # ... and store it in the ENCRYPTED variable as well
-    mov %esi, (ENCRYPTED+4)   # (lower half zeroed out as we expect it to be > 32, as above)
+    shl %cl, %esi             # construct the upper half of the encrypted bit mask, store it in ESI
 
     # We set the encrypted bit for each of the leaf page table entries that we previously created.
     # For non-leaf entries, we don't bother setting the C-bit, as it's "don't care" (page walks are

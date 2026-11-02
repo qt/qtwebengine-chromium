@@ -37,7 +37,7 @@ try_.defaults.set(
     siso_output_local_strategy = "greedy",
     siso_project = siso.project.DEFAULT_UNTRUSTED,
     siso_remote_jobs = siso.remote_jobs.LOW_JOBS_FOR_CQ,
-    siso_remote_linking = False,
+    siso_remote_linking = True,
 )
 
 targets.builder_defaults.set(
@@ -164,6 +164,8 @@ try_.builder(
     experiments = {
         # crbug/940930
         "chromium.enable_cleandead": 100,
+        # go/rts-project-proposal
+        "chromium_rts.filter_file_analysis": 100,
     },
     main_list_view = "try",
     siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CQ,
@@ -215,6 +217,9 @@ try_.orchestrator_builder(
         "chromium.add_one_test_shard": 5,
         # crbug/940930
         "chromium.enable_cleandead": 100,
+        # go/rts-project-proposal
+        "chromium_rts.filter_file_analysis": 100,
+        "luci.buildbucket.run_in_turboci": 100,
     },
     main_list_view = "try",
     use_clang_coverage = True,
@@ -272,6 +277,7 @@ try_.builder(
     ),
     builderless = False,
     cores = 16,
+    os = os.WINDOWS_DEFAULT,
     ssd = True,
     cq_settings = try_.cq_settings(
         # TODO(crbug.com/40847153) Remove once cancelling doesn't wipe
@@ -279,6 +285,9 @@ try_.builder(
         cancel_stale = False,
         on_default_cq = True,
     ),
+    experiments = {
+        "luci.buildbucket.run_in_turboci": 2,
+    },
     main_list_view = "try",
     siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CQ,
 )
@@ -374,6 +383,9 @@ try_.builder(
             "sandbox/policy/win/.+",
         ],
     ),
+    experiments = {
+        "luci.buildbucket.run_in_turboci": 25,
+    },
     # The size of the testing pool is limited.
     max_concurrent_builds = 3,
     use_clang_coverage = True,
@@ -434,7 +446,7 @@ try_.builder(
     ),
     builderless = False,
     cores = None,
-    os = os.WINDOWS_10,
+    os = os.WINDOWS_DEFAULT,
     contact_team_email = "chrome-desktop-engprod@google.com",
     cq_settings = try_.cq_settings(
         # TODO(crbug.com/40847153) Remove once cancelling doesn't wipe
@@ -442,11 +454,11 @@ try_.builder(
         cancel_stale = False,
         on_default_cq = True,
     ),
+    experiments = {
+        "luci.buildbucket.run_in_turboci": 2,
+    },
     main_list_view = "try",
     siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CQ,
-    # TODO: crbug.com/509602362 - Temporarily enable remote linking builder by builder.
-    # Will enable it for all CQ builds again after resolving RBE-CAS issue.
-    siso_remote_linking = True,
 )
 
 try_.builder(
@@ -463,7 +475,7 @@ try_.builder(
     ),
     builderless = True,
     cores = 16,
-    os = os.WINDOWS_10,
+    os = os.WINDOWS_DEFAULT,
     ssd = True,
     contact_team_email = "chrome-desktop-engprod@google.com",
     # The size of the testing pool is limited.
@@ -515,20 +527,6 @@ try_.builder(
     mirrors = [
         "ci/Win x64 Builder",
         "ci/windows-no-initial-webui-rel",
-    ],
-    gn_args = gn_args.config(
-        configs = [
-            "ci/Win x64 Builder",
-            "release_try_builder",
-        ],
-    ),
-    contact_team_email = "chrome-webium-product-eng@google.com",
-)
-
-try_.builder(
-    name = "win-webium-product-rel",
-    mirrors = [
-        "ci/win-webium-product-rel",
     ],
     gn_args = gn_args.config(
         configs = [
@@ -600,9 +598,6 @@ gpu.try_.optional_tests_builder(
             "webgl2_conformance_d3d11_passthrough_tests 8086:9bc5": targets.remove(
                 reason = "TODO(crbug.com/41483572): Re-add this when capacity issues are resolved.",
             ),
-            "webgl_conformance_d3d9_passthrough_tests 8086:9bc5": targets.remove(
-                reason = "Flaky crashes crbug.com/486945324",
-            ),
             "webgl_conformance_vulkan_passthrough_tests 10de:2184": targets.remove(
                 reason = "TODO(crbug.com/380431384): flaky crashes in random tests.",
             ),
@@ -619,6 +614,40 @@ gpu.try_.optional_tests_builder(
         browser_config = targets.browser_config.RELEASE_X64,
         os_type = targets.os_type.WINDOWS,
     ),
+    pool = "luci.chromium.gpu.try",
+    builderless = True,
+    os = os.WINDOWS_DEFAULT,
+    ssd = builders.with_expiration(True, expiration = 5 * time.minute),
+    free_space = None,
+    alerts_enabled = False,
+    contact_team_email = "chrome-gpu-infra@google.com",
+    cq_settings = try_.cq_settings(
+        location_filters = gpu.try_.optional_trybot_location_filters.WINDOWS,
+    ),
+    # default is 6 in _gpu_optional_tests_builder()
+    execution_timeout = 5 * time.hour,
+    main_list_view = "try",
+    # This is higher than the default of 7 for optional GPU builders
+    # because Windows builds take longer than other platforms even
+    # when using SSDs. Increasing the max concurrent builds a bit
+    # allows us to avoid long pending times without risk of
+    # overloading the testing hardware.
+    max_concurrent_builds = 9,
+    siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CQ,
+)
+
+gpu.try_.optional_tests_builder(
+    name = "gpu-fyi-cq-win-arm64",
+    branch_selector = branches.selector.WINDOWS_BRANCHES,
+    description_html = "Runs GPU tests on Windows/ARM64 configs. Only automatically added to CLs that touch GPU-related files.",
+    mirrors = [
+        "ci/GPU FYI Win arm64 Builder",
+        "ci/Win11 FYI arm64 Release (Qualcomm Snapdragon X Elite)",
+    ],
+    builder_config_settings = builder_config.try_settings(
+        retry_failed_shards = False,
+    ),
+    gn_args = "ci/GPU FYI Win arm64 Builder",
     pool = "luci.chromium.gpu.try",
     builderless = True,
     os = os.WINDOWS_DEFAULT,

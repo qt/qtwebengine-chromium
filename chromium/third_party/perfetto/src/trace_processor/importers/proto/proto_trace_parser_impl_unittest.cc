@@ -49,10 +49,12 @@
 #include "src/trace_processor/importers/common/metadata_tracker.h"
 #include "src/trace_processor/importers/common/process_track_translation_table.h"
 #include "src/trace_processor/importers/common/process_tracker.h"
+#include "src/trace_processor/importers/common/profiler_sample_tracker.h"
 #include "src/trace_processor/importers/common/slice_tracker.h"
 #include "src/trace_processor/importers/common/slice_translation_table.h"
 #include "src/trace_processor/importers/common/stack_profile_tracker.h"
 #include "src/trace_processor/importers/common/stats_tracker.h"
+#include "src/trace_processor/importers/common/trace_diagnostics_tracker.h"
 #include "src/trace_processor/importers/common/track_compressor.h"
 #include "src/trace_processor/importers/common/track_tracker.h"
 #include "src/trace_processor/importers/ftrace/ftrace_sched_event_tracker.h"
@@ -200,9 +202,11 @@ class MockProcessTracker : public ProcessTracker {
                ThreadNamePriority priority),
               (override));
 
-  MOCK_METHOD(UniquePid,
-              UpdateProcessWithParent,
-              (UniquePid upid, UniquePid pupid, bool associate_main_thread),
+  MOCK_METHOD(void,
+              SetProcessParent,
+              (UniquePid upid,
+               UniquePid pupid,
+               std::optional<int64_t> timestamp),
               (override));
 
   MOCK_METHOD(void,
@@ -228,26 +232,6 @@ class MockProcessTracker : public ProcessTracker {
                StringId process_name_id,
                ProcessNamePriority priority),
               (override));
-};
-
-class MockBoundInserter : public ArgsTracker::BoundInserter {
- public:
-  MockBoundInserter()
-      : ArgsTracker::BoundInserter(&tracker_, nullptr, 0u, 0u),
-        tracker_(nullptr) {
-    ON_CALL(*this, AddArg(_, _, _, _)).WillByDefault(ReturnRef(*this));
-  }
-
-  MOCK_METHOD(ArgsTracker::BoundInserter&,
-              AddArg,
-              (StringId flat_key,
-               StringId key,
-               Variadic v,
-               ArgsTracker::UpdatePolicy update_policy),
-              (override));
-
- private:
-  ArgsTracker tracker_;
 };
 
 class ProtoTraceParserTest : public ::testing::Test {
@@ -294,9 +278,12 @@ class ProtoTraceParserTest : public ::testing::Test {
         context_.trace_time_state.get(),
         std::make_unique<ClockSynchronizerListenerImpl>(&context_));
     context_.clock_tracker = std::make_unique<ClockTracker>(
-        &context_, std::make_unique<ClockSynchronizerListenerImpl>(&context_),
-        primary_sync_.get(), true);
+        &context_, primary_sync_.get(), /*is_primary=*/true);
     context_.stats_tracker = std::make_unique<StatsTracker>(&context_);
+    context_.profiler_sample_tracker =
+        std::make_unique<ProfilerSampleTracker>(&context_);
+    context_.trace_diagnostics_tracker =
+        std::make_unique<TraceDiagnosticsTracker>(&context_);
     context_.flow_tracker = std::make_unique<FlowTracker>(&context_);
     context_.sorter = std::make_unique<TraceSorter>(
         &context_, TraceSorter::SortingMode::kFullSort);
@@ -304,7 +291,8 @@ class ProtoTraceParserTest : public ::testing::Test {
     context_.uuid_state = std::make_unique<TraceProcessorContext::UuidState>();
     context_.heap_graph_tracker = std::make_unique<HeapGraphTracker>(
         storage_, context_.global_stats_tracker.get());
-
+    context_.trace_diagnostics_tracker =
+        std::make_unique<TraceDiagnosticsTracker>(&context_);
     context_.track_compressor.reset(new TrackCompressor(&context_));
     context_.track_group_idx_state =
         std::make_unique<TrackCompressorGroupIdxState>();
@@ -821,8 +809,7 @@ TEST_F(ProtoTraceParserTest, LoadProcessPacket) {
 
   EXPECT_CALL(*process_, GetOrCreateProcess(3)).WillOnce(testing::Return(2u));
   EXPECT_CALL(*process_, GetOrCreateProcess(1)).WillOnce(testing::Return(4u));
-  EXPECT_CALL(*process_, UpdateProcessWithParent(4u, 2u, true))
-      .WillOnce(testing::Return(4u));
+  EXPECT_CALL(*process_, SetProcessParent(4u, 2u, _));
   EXPECT_CALL(*process_, SetProcessMetadata(4u, base::StringView(kProcName1),
                                             base::StringView(kProcName1)));
   Tokenize();
@@ -842,8 +829,7 @@ TEST_F(ProtoTraceParserTest, LoadProcessPacket_FirstCmdline) {
 
   EXPECT_CALL(*process_, GetOrCreateProcess(3)).WillOnce(testing::Return(2u));
   EXPECT_CALL(*process_, GetOrCreateProcess(1)).WillOnce(testing::Return(4u));
-  EXPECT_CALL(*process_, UpdateProcessWithParent(4u, 2u, true))
-      .WillOnce(testing::Return(4u));
+  EXPECT_CALL(*process_, SetProcessParent(4u, 2u, _));
   EXPECT_CALL(*process_, SetProcessMetadata(4u, base::StringView(kProcName1),
                                             base::StringView("proc1 proc2")));
   Tokenize();
@@ -1016,8 +1002,6 @@ TEST_F(ProtoTraceParserTest, TrackEventWithoutInternedData) {
   row.upid = 1u;
   storage_->mutable_thread_table()->Insert(row);
 
-  MockBoundInserter inserter;
-
   constexpr TrackId thread_time_track{0u};
 
   InSequence in_sequence;  // Below slices should be sorted by timestamp.
@@ -1091,8 +1075,6 @@ TEST_F(ProtoTraceParserTest, TrackEventWithoutInternedDataWithTypes) {
   tables::ThreadTable::Row row(16);
   row.upid = 1u;
   storage_->mutable_thread_table()->Insert(row);
-
-  MockBoundInserter inserter;
 
   constexpr TrackId thread_time_track{0u};
 
@@ -1258,7 +1240,6 @@ TEST_F(ProtoTraceParserTest, TrackEventWithInternedData) {
 
   InSequence in_sequence;  // Below slices should be sorted by timestamp.
 
-  MockBoundInserter inserter;
   // Only the begin timestamp counters can be imported into the counter table.
   EXPECT_CALL(*event_, PushCounter(1005000, testing::DoubleEq(2003000),
                                    thread_time_track));
@@ -2043,8 +2024,6 @@ TEST_F(ProtoTraceParserTest, TrackEventMultipleSequences) {
 }
 
 TEST_F(ProtoTraceParserTest, TrackEventWithDebugAnnotations) {
-  MockBoundInserter inserter;
-
   {
     auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
@@ -2863,24 +2842,32 @@ TEST_F(ProtoTraceParserTest, ParseCPUProfileSamplesIntoTable) {
   Tokenize();
   context_.sorter->ExtractEventsForced();
 
-  // Verify cpu_profile_samples.
-  const auto& samples = storage_->cpu_profile_stack_sample_table();
+  // Verify the profiler samples.
+  const auto& samples = storage_->profiler_sample_table();
   EXPECT_EQ(samples.row_count(), 3u);
 
+  const auto& task_contexts = storage_->profiler_task_context_table();
   EXPECT_EQ(samples[0].ts(), 11000);
   EXPECT_EQ(samples[0].callsite_id(), CallsiteId{0});
-  EXPECT_EQ(samples[0].utid(), 1u);
-  EXPECT_EQ(samples[0].process_priority(), 20);
+  EXPECT_EQ(task_contexts[*samples[0].task_context_id()].utid(), 1u);
 
   EXPECT_EQ(samples[1].ts(), 26000);
   EXPECT_EQ(samples[1].callsite_id(), CallsiteId{1});
-  EXPECT_EQ(samples[1].utid(), 1u);
-  EXPECT_EQ(samples[1].process_priority(), 20);
+  EXPECT_EQ(task_contexts[*samples[1].task_context_id()].utid(), 1u);
 
   EXPECT_EQ(samples[2].ts(), 68000);
   EXPECT_EQ(samples[2].callsite_id(), CallsiteId{0});
-  EXPECT_EQ(samples[2].utid(), 1u);
-  EXPECT_EQ(samples[2].process_priority(), 30);
+  EXPECT_EQ(task_contexts[*samples[2].task_context_id()].utid(), 1u);
+
+  // Process priorities land in the chrome extras table, keyed by sample.
+  const auto& extras = storage_->chrome_stack_sample_extras_table();
+  EXPECT_EQ(extras.row_count(), 3u);
+  EXPECT_EQ(extras[0].profiler_sample_id(), samples[0].id());
+  EXPECT_EQ(extras[0].process_priority(), 20);
+  EXPECT_EQ(extras[1].profiler_sample_id(), samples[1].id());
+  EXPECT_EQ(extras[1].process_priority(), 20);
+  EXPECT_EQ(extras[2].profiler_sample_id(), samples[2].id());
+  EXPECT_EQ(extras[2].process_priority(), 30);
 
   // Breakpad build_ids should not be modified/mangled.
   ASSERT_STREQ(
@@ -2950,13 +2937,15 @@ TEST_F(ProtoTraceParserTest, CPUProfileSamplesTimestampsAreClockMonotonic) {
   Tokenize();
   context_.sorter->ExtractEventsForced();
 
-  const auto& samples = storage_->cpu_profile_stack_sample_table();
+  const auto& samples = storage_->profiler_sample_table();
   EXPECT_EQ(samples.row_count(), 1u);
 
   // Should have been translated to boottime, i.e. 10015 us absolute.
   EXPECT_EQ(samples[0].ts(), 10015000);
   EXPECT_EQ(samples[0].callsite_id(), CallsiteId{0});
-  EXPECT_EQ(samples[0].utid(), 1u);
+  auto task_context =
+      storage_->profiler_task_context_table()[*samples[0].task_context_id()];
+  EXPECT_EQ(task_context.utid(), 1u);
 }
 
 TEST_F(ProtoTraceParserTest, ConfigUuid) {
@@ -3108,6 +3097,25 @@ TEST_F(ProtoTraceParserTest, TraceAttributes) {
                "trace_attribute.string_key");
   EXPECT_STREQ(context_.storage->GetString(metadata_table[1].name()).c_str(),
                "trace_attribute.int_key");
+}
+
+TEST_F(ProtoTraceParserTest, TraceAttributesLastValueWins) {
+  auto* container = trace_->add_packet()->set_trace_attributes();
+  auto* attribute = container->add_attribute();
+  attribute->set_key("key");
+  attribute->set_string_value("old_value");
+  container = trace_->add_packet()->set_trace_attributes();
+  attribute = container->add_attribute();
+  attribute->set_key("key");
+  attribute->set_long_value(42);
+  ASSERT_TRUE(Tokenize().ok());
+  context_.sorter->ExtractEventsForced();
+  const auto& metadata_table = context_.storage->metadata_table();
+  EXPECT_EQ(metadata_table.row_count(), 1u);
+  EXPECT_STREQ(context_.storage->GetString(metadata_table[0].name()).c_str(),
+               "trace_attribute.key");
+  EXPECT_FALSE(metadata_table[0].str_value().has_value());
+  EXPECT_EQ(metadata_table[0].int_value(), 42);
 }
 
 }  // namespace

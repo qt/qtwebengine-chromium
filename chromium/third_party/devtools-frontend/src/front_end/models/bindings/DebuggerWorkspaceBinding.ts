@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import * as Common from '../../core/common/common.js';
+import type * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import type * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as Protocol from '../../generated/protocol.js';
-import * as StackTrace from '../stack_trace/stack_trace.js';
+import type * as StackTrace from '../stack_trace/stack_trace.js';
 // eslint-disable-next-line @devtools/es-modules-import
 import * as StackTraceImpl from '../stack_trace/stack_trace_impl.js';
-import type * as TextUtils from '../text_utils/text_utils.js';
 import * as Workspace from '../workspace/workspace.js';
 
 import {CompilerScriptMapping} from './CompilerScriptMapping.js';
@@ -18,31 +18,33 @@ import {DebuggerLanguagePluginManager} from './DebuggerLanguagePlugins.js';
 import {DefaultScriptMapping} from './DefaultScriptMapping.js';
 import {type LiveLocation, type LiveLocationPool, LiveLocationWithPool} from './LiveLocation.js';
 import {NetworkProject} from './NetworkProject.js';
-import type {ResourceMapping} from './ResourceMapping.js';
+import type {DebuggerLocationUpdater, ResourceMapping} from './ResourceMapping.js';
 import {type ResourceScriptFile, ResourceScriptMapping} from './ResourceScriptMapping.js';
 import {
   isErrorLike,
   type SymbolizedError,
   SymbolizedErrorObject,
-  SymbolizedSyntaxError,
   UnparsableError,
 } from './SymbolizedError.js';
 
-export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObserver<SDK.DebuggerModel.DebuggerModel> {
+export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObserver<SDK.DebuggerModel.DebuggerModel>,
+                                                 DebuggerLocationUpdater {
   readonly resourceMapping: ResourceMapping;
   readonly #debuggerModelToData: Map<SDK.DebuggerModel.DebuggerModel, ModelData>;
   readonly #liveLocationPromises: Set<unknown>;
   readonly pluginManager: DebuggerLanguagePluginManager;
   readonly ignoreListManager: Workspace.IgnoreListManager.IgnoreListManager;
   readonly workspace: Workspace.Workspace.WorkspaceImpl;
+  readonly #settings: Common.Settings.Settings;
 
   constructor(
       resourceMapping: ResourceMapping, targetManager: SDK.TargetManager.TargetManager,
       ignoreListManager: Workspace.IgnoreListManager.IgnoreListManager, workspace: Workspace.Workspace.WorkspaceImpl) {
     this.resourceMapping = resourceMapping;
-    this.resourceMapping.debuggerWorkspaceBinding = this;
+    this.resourceMapping.debuggerLocationUpdater = this;
     this.ignoreListManager = ignoreListManager;
     this.workspace = workspace;
+    this.#settings = targetManager.settings;
 
     this.#debuggerModelToData = new Map();
     targetManager.observeModels(SDK.DebuggerModel.DebuggerModel, this);
@@ -51,7 +53,8 @@ export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObser
 
     this.#liveLocationPromises = new Set();
 
-    this.pluginManager = new DebuggerLanguagePluginManager(targetManager, resourceMapping.workspace, this);
+    this.pluginManager =
+        new DebuggerLanguagePluginManager(targetManager, resourceMapping.workspace, this, targetManager.getConsole());
   }
 
   setFunctionRanges(
@@ -238,14 +241,6 @@ export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObser
       ]);
       fetchedExceptionDetails = details;
       causeRemoteObject = causeRemote;
-
-      if (remoteObject.className === 'SyntaxError' && fetchedExceptionDetails) {
-        const syntaxError = await SymbolizedSyntaxError.fromExceptionDetails(
-            remoteObject.runtimeModel().target(), this, fetchedExceptionDetails);
-        if (syntaxError) {
-          return syntaxError;
-        }
-      }
     } else if (remoteObject.type === 'string') {
       errorStack = remoteObject.description || '';
       if (!isErrorLike(errorStack)) {
@@ -263,7 +258,8 @@ export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObser
 
     const issueSummary = fetchedExceptionDetails?.exceptionMetaData?.issueSummary;
     if (typeof issueSummary === 'string') {
-      errorStack = StackTrace.ErrorStackParser.concatErrorDescriptionAndIssueSummary(errorStack, issueSummary);
+      errorStack =
+          StackTraceImpl.DetailedErrorStackParser.concatErrorDescriptionAndIssueSummary(errorStack, issueSummary);
     }
 
     if (!stackTrace) {
@@ -271,6 +267,12 @@ export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObser
     }
 
     const message = StackTraceImpl.DetailedErrorStackParser.parseMessage(errorStack);
+
+    if (remoteObject.subtype === 'error' && remoteObject.className === 'SyntaxError' && fetchedExceptionDetails) {
+      return await SymbolizedErrorObject.createForSyntaxError(remoteObject.runtimeModel().target(), this, message,
+                                                              fetchedExceptionDetails, stackTrace, cause);
+    }
+
     return new SymbolizedErrorObject(message, stackTrace, cause);
   }
 
@@ -491,7 +493,7 @@ export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObser
     }
     const functionLocation = frame.functionLocation();
     if (!autoSteppingContext || debuggerPausedDetails.reason !== Protocol.Debugger.PausedEventReason.Step ||
-        !functionLocation || !frame.script.isWasm() || !Common.Settings.moduleSetting('wasm-auto-stepping').get() ||
+        !functionLocation || !frame.script.isWasm() || !this.#settings.moduleSetting('wasm-auto-stepping').get() ||
         !this.pluginManager.hasPluginForScript(frame.script)) {
       return true;
     }
@@ -660,7 +662,7 @@ class ModelData {
           uiSourceCode: uiLocation.uiSourceCode,
           name: functionName,
           line: uiLocation.lineNumber,
-          column: uiLocation.columnNumber ?? -1
+          column: uiLocation.columnNumber ?? -1,
         }]);
         return;
       }

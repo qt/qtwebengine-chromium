@@ -25,6 +25,8 @@
 #include "components/favicon/core/test/mock_favicon_service.h"
 #include "components/sync/base/client_tag_hash.h"
 #include "components/sync/base/features.h"
+#include "components/sync/base/server_defined_unique_tags.h"
+#include "components/sync/base/time.h"
 #include "components/sync/base/unique_position.h"
 #include "components/sync/engine/data_type_activation_response.h"
 #include "components/sync/model/data_type_activation_request.h"
@@ -61,9 +63,6 @@ using testing::UnorderedElementsAre;
 
 using syncer::ModelError;
 
-const char kBookmarkBarTag[] = "bookmark_bar";
-const char kOtherBookmarksTag[] = "other_bookmarks";
-const char kMobileBookmarksTag[] = "synced_bookmarks";
 const char kBookmarkBarId[] = "bookmark_bar_id";
 const char kOtherBookmarksId[] = "other_bookmarks_id";
 const char kMobileBookmarksId[] = "mobile_bookmarks_id";
@@ -159,6 +158,10 @@ sync_pb::BookmarkMetadata CreateNodeMetadata(
       syncer::ClientTagHash::FromUnhashed(syncer::BOOKMARKS,
                                           node->uuid().AsLowercaseString())
           .value());
+  bookmark_metadata.mutable_metadata()->set_creation_time(
+      syncer::TimeToProtoTime(base::Time::Now()));
+  bookmark_metadata.mutable_metadata()->set_sequence_number(0);
+  bookmark_metadata.mutable_metadata()->set_acked_sequence_number(0);
   *bookmark_metadata.mutable_metadata()->mutable_unique_position() =
       unique_position.ToProto();
   // Required by SyncedBookmarkTracker during validation of local metadata.
@@ -208,15 +211,15 @@ syncer::UpdateResponseDataList CreateUpdateResponseDataListForPermanentNodes() {
   // Add update for the permanent folders.
   updates.push_back(
       CreateUpdateResponseData({kBookmarkBarId, std::string(), std::string(),
-                                kBookmarksRootId, kBookmarkBarTag},
+                                kBookmarksRootId, syncer::kBookmarkBarTag},
                                kRandomPosition, /*response_version=*/0));
   updates.push_back(
       CreateUpdateResponseData({kOtherBookmarksId, std::string(), std::string(),
-                                kBookmarksRootId, kOtherBookmarksTag},
+                                kBookmarksRootId, syncer::kOtherBookmarksTag},
                                kRandomPosition, /*response_version=*/0));
   updates.push_back(CreateUpdateResponseData(
       {kMobileBookmarksId, std::string(), std::string(), kBookmarksRootId,
-       kMobileBookmarksTag},
+       syncer::kSyncedBookmarksTag},
       kRandomPosition, /*response_version=*/0));
 
   return updates;
@@ -233,13 +236,13 @@ void AssertState(const BookmarkDataTypeProcessor* processor,
 
   for (BookmarkInfo bookmark : bookmarks) {
     const SyncedBookmarkTrackerEntity* entity =
-        tracker->GetEntityForSyncId(bookmark.server_id);
+        tracker->GetEntityForSyncIdExhaustively(bookmark.server_id);
     ASSERT_THAT(entity, NotNull());
     const bookmarks::BookmarkNode* node = entity->bookmark_node();
     ASSERT_THAT(node->GetTitle(), Eq(ASCIIToUTF16(bookmark.title)));
     ASSERT_THAT(node->url(), Eq(GURL(bookmark.url)));
     const SyncedBookmarkTrackerEntity* parent_entity =
-        tracker->GetEntityForSyncId(bookmark.parent_id);
+        tracker->GetEntityForSyncIdExhaustively(bookmark.parent_id);
     ASSERT_THAT(node->parent(), Eq(parent_entity->bookmark_node()));
   }
 }
@@ -778,8 +781,43 @@ TEST_F(BookmarkDataTypeProcessorTest, ShouldApplyGcDirectiveWithLocalDeletion) {
 
   // The tombstone should be removed from tracker because it is also deleted on
   // the server (not present in updates during GC directive).
-  EXPECT_EQ(processor()->GetTrackerForTest()->GetEntityForSyncId(server_id),
+  EXPECT_EQ(processor()->GetTrackerForTest()->GetEntityForSyncIdExhaustively(
+                server_id),
             nullptr);
+}
+
+TEST_F(BookmarkDataTypeProcessorTest,
+       ShouldDeleteSyncedBookmarksUponClearMetadata) {
+  const std::string kTitle = "title";
+  const GURL kUrl("https://www.url.com");
+
+  const bookmarks::BookmarkNode* bookmark_bar =
+      bookmark_model()->bookmark_bar_node();
+
+  // Create a synced node.
+  const bookmarks::BookmarkNode* node = bookmark_model()->AddURL(
+      bookmark_bar, /*index=*/0, base::UTF8ToUTF16(kTitle), kUrl);
+
+  SimulateModelReadyToSyncWithInitialSyncDone();
+  SimulateOnSyncStarting();
+  SimulateConnectSync();
+
+  const SyncedBookmarkTrackerEntity* entity =
+      processor()->GetTrackerForTest()->GetEntityForBookmarkNode(node);
+  ASSERT_THAT(entity, NotNull());
+  ASSERT_FALSE(entity->IsUnsynced());
+
+  // Process an update with a GC directive (clear_metadata).
+  // The update list is empty.
+  syncer::UpdateResponseDataList updates;
+  sync_pb::GarbageCollectionDirective garbage_collection_directive;
+  garbage_collection_directive.set_clear_metadata(true);
+
+  processor()->OnUpdateReceived(CreateDataTypeState(), std::move(updates),
+                                garbage_collection_directive);
+
+  EXPECT_TRUE(
+      bookmark_model()->underlying_model()->GetNodesByURL(kUrl).empty());
 }
 
 TEST_F(
@@ -1175,8 +1213,9 @@ TEST_F(BookmarkDataTypeProcessorTest,
                                 /*gc_directive=*/std::nullopt);
 
   // The bookmarks shouldn't be marked for committing.
-  ASSERT_THAT(tracker->GetEntityForSyncId(kNodeId), NotNull());
-  EXPECT_THAT(tracker->GetEntityForSyncId(kNodeId)->IsUnsynced(), Eq(false));
+  ASSERT_THAT(tracker->GetEntityForSyncIdExhaustively(kNodeId), NotNull());
+  EXPECT_THAT(tracker->GetEntityForSyncIdExhaustively(kNodeId)->IsUnsynced(),
+              Eq(false));
 }
 
 // Verifies that the processor doesn't crash if sync is stopped before receiving
@@ -1361,7 +1400,8 @@ TEST_F(BookmarkDataTypeProcessorTest, ShouldReuploadLegacyBookmarksOnStart) {
 
   ASSERT_TRUE(processor()->IsTrackingMetadata());
   const SyncedBookmarkTrackerEntity* entity =
-      processor()->GetTrackerForTest()->GetEntityForSyncId(server_id);
+      processor()->GetTrackerForTest()->GetEntityForSyncIdExhaustively(
+          server_id);
   ASSERT_THAT(entity, NotNull());
 
   // Entity should be synced before until first update is received.
@@ -2431,6 +2471,61 @@ TEST_F(
       "Sync.ClearMetadataWhileStopped.ImmediateClear", 0);
   histogram_tester.ExpectTotalCount(
       "Sync.ClearMetadataWhileStopped.DelayedClear", 1);
+}
+
+TEST_F(BookmarkDataTypeProcessorTest, ShouldRemoveTombstoneOnCommitResponse) {
+  SimulateModelReadyToSyncWithInitialSyncDone();
+
+  const bookmarks::BookmarkNode* bookmark_bar =
+      bookmark_model()->bookmark_bar_node();
+  const bookmarks::BookmarkNode* node =
+      bookmark_model()->AddFolder(bookmark_bar, /*index=*/0, u"Title");
+
+  const SyncedBookmarkTrackerEntity* entity =
+      processor()->GetTrackerForTest()->GetEntityForBookmarkNode(node);
+  ASSERT_THAT(entity, NotNull());
+  const syncer::ClientTagHash client_tag_hash = entity->GetClientTagHash();
+
+  // Retrieve local changes for the creation request. This calls
+  // GetLocalChanges(), which marks commit as started on the entity in the
+  // tracker.
+  GetLocalChangesFromProcessor(/*max_entries=*/1);
+
+  // Simulate local deletion.
+  bookmark_model()->Remove(node, FROM_HERE);
+  ASSERT_THAT(processor()->GetTrackerForTest()->GetEntityForClientTagHash(
+                  client_tag_hash),
+              NotNull());
+
+  // Simulate commit response for the creation (seq 1).
+  syncer::CommitResponseData response1;
+  response1.id = "server_id";
+  response1.client_tag_hash = client_tag_hash;
+  response1.response_version = 1;
+  response1.sequence_number = 1;
+
+  processor()->OnCommitCompleted(CreateDataTypeState(), {response1},
+                                 syncer::FailedCommitResponseDataList());
+
+  // Entity should still be tracked as a tombstone because deletion is unsynced.
+  ASSERT_THAT(processor()->GetTrackerForTest()->GetEntityForClientTagHash(
+                  client_tag_hash),
+              NotNull());
+
+  // Simulate commit response for the deletion (seq 2).
+  syncer::CommitResponseData response2;
+  response2.id = "server_id";
+  response2.client_tag_hash = client_tag_hash;
+  response2.response_version = 2;
+  response2.sequence_number = 2;
+
+  processor()->OnCommitCompleted(CreateDataTypeState(), {response2},
+                                 syncer::FailedCommitResponseDataList());
+
+  // Tombstone should be removed from tracker.
+  EXPECT_THAT(processor()->GetTrackerForTest()->GetEntityForClientTagHash(
+                  client_tag_hash),
+              IsNull());
 }
 
 TEST_F(BookmarkDataTypeProcessorTest, ShouldWipeBookmarksIfCacheGuidMismatch) {

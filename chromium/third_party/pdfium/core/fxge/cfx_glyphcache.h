@@ -30,7 +30,7 @@ class CFX_GlyphCache final : public Retainable, public Observable {
 
   const CFX_GlyphBitmap* LoadGlyphBitmap(const CFX_Font* font,
                                          uint32_t glyph_index,
-                                         bool bFontStyle,
+                                         bool is_cid_font,
                                          const CFX_Matrix& matrix,
                                          int dest_width,
                                          FontAntiAliasingMode anti_alias,
@@ -54,7 +54,7 @@ class CFX_GlyphCache final : public Retainable, public Observable {
   using WidthMapKey = std::tuple<uint32_t, int, int>;
 
   std::unique_ptr<CFX_GlyphBitmap> RenderGlyph(uint32_t glyph_index,
-                                               bool font_style,
+                                               bool is_cid_font,
                                                bool is_vertical,
                                                const CFX_Matrix& matrix,
                                                int dest_width,
@@ -64,7 +64,7 @@ class CFX_GlyphCache final : public Retainable, public Observable {
                                      const CFX_Matrix& matrix,
                                      const ByteString& FaceGlyphsKey,
                                      uint32_t glyph_index,
-                                     bool bFontStyle,
+                                     bool is_cid_font,
                                      int dest_width,
                                      FontAntiAliasingMode anti_alias);
 

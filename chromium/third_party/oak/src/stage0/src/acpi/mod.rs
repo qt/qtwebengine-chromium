@@ -20,25 +20,29 @@
 // These data structures (and constants) are derived from
 // qemu/hw/acpi/bios-linker-loader.c that defines the interface.
 
-use core::{ffi::CStr, mem::MaybeUninit, ops::Deref};
+use alloc::vec::Vec;
+use core::{ffi::CStr, mem::MaybeUninit, option::Option::Some};
 
 use oak_linux_boot_params::{BootE820Entry, E820EntryType};
 use sha2::{Digest, Sha256};
 use strum::FromRepr;
+use x86_64::VirtAddr;
+use zerocopy::{IntoBytes, TryFromBytes};
 
-use crate::{
-    acpi_tables::{
-        DescriptionHeader, MultiprocessorWakeup, ProcessorLocalApic, ProcessorLocalX2Apic, Rsdp,
-    },
-    fw_cfg::FwCfg,
-    pci::PciWindows,
-    Madt, ZeroPage,
-};
+use crate::{ZeroPage, fw_cfg::FwCfg, pci::PciWindows};
 
 mod commands;
 mod files;
+pub mod tables;
 use commands::{Invoke, RomfileCommand};
 use files::{Files, MemFiles};
+use tables::{
+    AcpiTable, AcpiTables, Fadt, Madt, Rsdp,
+    madt::{
+        InterruptSourceOverride, IoApic, LocalApicNmi, MultiprocessorWakeup, ProcessorLocalApic,
+        ProcessorLocalX2Apic,
+    },
+};
 
 type LowMemoryAllocator = linked_list_allocator::LockedHeap;
 /// Allocator for low memory in the EBDA: 128K of memory (where the RSDP will be
@@ -46,7 +50,7 @@ type LowMemoryAllocator = linked_list_allocator::LockedHeap;
 static LOW_MEMORY_ALLOCATOR: LowMemoryAllocator = LowMemoryAllocator::empty();
 
 /// EDBA is 128 KiB (0x2_0000).
-#[link_section = ".ebda"]
+#[unsafe(link_section = ".ebda")]
 static mut EBDA: [MaybeUninit<u8>; 0x2_0000] = [MaybeUninit::uninit(); 0x2_0000];
 
 /// How much memory to reserve for ACPI tables in "high" memory.
@@ -88,14 +92,13 @@ pub fn setup_high_allocator(zero_page: &mut ZeroPage) -> Result<(), &'static str
         let entry = zero_page
             .e820_table()
             .iter()
-            .filter(|&entry| {
+            .rfind(|&entry| {
                 // We're only interested in (a) entries that are regular memory and (b) that
                 // start below the 1G mark, with enough space for a 1M chunk.
                 entry.entry_type() == Some(E820EntryType::RAM)
                     && entry.addr() < (0x4000_0000 - HIGH_MEM_SIZE)
                     && entry.size() >= HIGH_MEM_SIZE
             })
-            .next_back()
             .ok_or("could not find memory for ACPI tables")?;
         let mem_end = core::cmp::min(0x4000_0000, entry.addr() + entry.size());
         mem_end - HIGH_MEM_SIZE
@@ -114,11 +117,11 @@ pub fn setup_high_allocator(zero_page: &mut ZeroPage) -> Result<(), &'static str
 /// Populates the ACPI tables per linking instructions in `etc/table-loader`.
 ///
 /// Returns the address of the RSDP table.
-pub fn build_acpi_tables<P: crate::Platform>(
+pub fn build_acpi_tables<P: crate::Platform + crate::FirmwarePlatform>(
     fwcfg: &mut FwCfg<P>,
     acpi_digest: &mut Sha256,
     pci_windows: Option<PciWindows>,
-) -> Result<&'static Rsdp, &'static str> {
+) -> Result<VirtAddr, &'static str> {
     let mut files = MemFiles::new(&LOW_MEMORY_ALLOCATOR, &HIGH_MEMORY_ALLOCATOR);
 
     let file =
@@ -131,113 +134,116 @@ pub fn build_acpi_tables<P: crate::Platform>(
     let buf = fwcfg.read_file_vec(&file)?;
     acpi_digest.update(&buf);
 
-    // We can't use zerocopy::FromBytes/IntoBytes here, as the fields of the structs
-    // have padding that zerocopy doesn't support.
-    // Safety: we're using `size_of` here to ensure that we don't go over the
-    // boundaries of the original array.
-    let commands = unsafe {
-        core::slice::from_raw_parts(
-            buf.as_ptr() as *const _ as *const RomfileCommand,
-            buf.len() / core::mem::size_of::<RomfileCommand>(),
-        )
-    };
+    let commands = <[RomfileCommand]>::try_ref_from_bytes(&buf[..])
+        .map_err(|_| "invalid 'etc/table-loader'")?;
 
     for command in commands {
         command.invoke(&mut files, fwcfg, pci_windows.as_ref(), acpi_digest)?;
     }
 
-    // Strictly speaking we should search through the low memory to find the RSDP,
-    // but for practical purposes we know that the VMs we care about end the file
-    // that contains the file with `acpi/rsdp` (the prefix may vary), so let's look
-    // up just that file.
-    let rsdp = files.find_file_suffix(c"acpi/rsdp").ok_or("RSDP file not found")?;
-
-    // Safety: we ensure that the RSDP is valid before returning a reference to it.
-    let rsdp = unsafe { &mut *(rsdp.as_ptr() as *mut Rsdp) };
-    rsdp.validate::<P>()?;
-    log::info!("ACPI tables before finalizing:");
-    debug_print_acpi_tables(rsdp)?;
-
-    log::info!("Finalizing RSDP");
-    P::finalize_acpi_tables(rsdp)?;
-    rsdp.validate::<P>()?;
-    log::info!("ACPI tables after finalizing:");
-    debug_print_acpi_tables(rsdp)?;
+    // Up until this point, we've dealt with fw_cfg files. Now we need to deal with
+    // the _contents_ of the files as data structures. Ideally there'd be a way how
+    // to take the bunch of `Box<[u8]>` structures and turn them into boxed ACPI
+    // tables _without moving_, but there is not, so we need to keep track of things
+    // by hand.
+    //
+    // When leaking the files, we lose the file name, so we first need to make a
+    // note of where the &[u8] that includes the RSDP was.
+    let rsdp_addr =
+        VirtAddr::from_ptr(files.find_file_suffix_mut(c"acpi/rsdp").ok_or("RSDP file not found")?);
 
     // Ensure the tables stick around by leaking the memory holding them.
-    files.leak();
+    let contents = files.leak();
 
-    Ok(rsdp)
+    // One of these must have been the RSDP.
+    let mut tables = AcpiTables::new(contents, rsdp_addr)?;
+
+    log::info!("ACPI tables before finalizing:");
+    debug_print_acpi_tables(&mut tables)?;
+
+    log::info!("Finalizing RSDP");
+    P::finalize_acpi_tables(&mut tables)?;
+
+    log::info!("ACPI tables after finalizing:");
+    debug_print_acpi_tables(&mut tables)?;
+
+    Ok(rsdp_addr)
 }
 
 /// Prints ACPI metadata including RSDP, RSDT and XSDT (if present).
-fn debug_print_acpi_tables(rsdp: &Rsdp) -> Result<(), &'static str> {
-    log::info!("RSDP location: {:#018x}", rsdp as *const _ as u64);
-    log::info!("RSDP: {:?}", rsdp);
+fn debug_print_acpi_tables(tables: &mut AcpiTables) -> Result<(), &'static str> {
+    log::info!("RSDP location: {:#018x}", tables.rsdp as *const dyn Rsdp as *const () as u64);
+    log::info!("RSDP: {:?}", tables.rsdp);
 
-    if let Some(rsdt) = rsdp.rsdt() {
-        let rsdt = rsdt?;
+    let entries = if let Ok(Some(rsdt)) = tables.rsdt() {
         log::info!("RSDT: {:?}", rsdt);
-        log::info!("RSDT entry count: {}", rsdt.entry_headers().count());
-        print_system_data_table_entries(rsdt.entry_headers())?;
+        log::info!("RSDT entry count: {}", rsdt.len());
+        rsdt.iter().collect()
     } else {
         log::info!("No RSDT present");
-    }
+        Vec::new()
+    };
 
-    if let Some(xsdt) = rsdp.xsdt() {
-        let xsdt = xsdt?;
-        log::info!(
-            "XSDT ({:#x}-{:#x}): {:?}",
-            xsdt.addr_range().start,
-            xsdt.addr_range().end,
-            xsdt
-        );
-        log::info!("XSDT entry count: {}", xsdt.entry_ptrs().count());
-        print_system_data_table_entries(
-            xsdt.entry_ptrs()
-                .map(|entry_ptr_or_err| entry_ptr_or_err.map(|entry_ptr| entry_ptr.deref())),
-        )?;
+    print_system_data_table_entries(tables, &entries)?;
+
+    let entries = if let Ok(Some(xsdt)) = tables.xsdt() {
+        log::info!("XSDT: {:?}", xsdt);
+        log::info!("XSDT entry count: {}", xsdt.len());
+        xsdt.iter().collect()
     } else {
         log::info!("No XSDT present");
-    }
+        Vec::new()
+    };
+
+    print_system_data_table_entries(tables, &entries)?;
     Ok(())
 }
 
 /// Prints RSDT or XSDT entries. Prints extra detail for MADT entry.
-fn print_system_data_table_entries<'a>(
-    entries: impl Iterator<Item = Result<&'a DescriptionHeader, &'static str>>,
+fn print_system_data_table_entries(
+    tables: &mut AcpiTables,
+    entries: &[VirtAddr],
 ) -> Result<(), &'static str> {
-    for header in entries {
-        let header = header?;
+    for &addr in entries {
+        // Temporary hack until we've cleaned this up.
+        let header = tables.try_parse_header_at(addr).ok_or("invalid header")?;
+
         log::info!("{}", header);
-        if header.signature == *Madt::SIGNATURE {
+        if header.signature.as_bytes() == <Madt as AcpiTable>::Signature::default().as_bytes() {
             log::info!("    Entry APIC - It is a MADT, Interrupt Controller Structures:");
-            let madt = Madt::new(header)?;
-            for madt_entry in madt.controller_struct_headers() {
-                match madt_entry.structure_type {
-                    ProcessorLocalApic::STRUCTURE_TYPE => {
-                        log::info!("    -> Local APIC: {:?}", ProcessorLocalApic::new(madt_entry)?);
-                    }
-                    ProcessorLocalX2Apic::STRUCTURE_TYPE => {
-                        log::info!(
-                            "    -> Local X2APIC: {:?}",
-                            ProcessorLocalX2Apic::new(madt_entry)?
-                        );
-                    }
-                    MultiprocessorWakeup::STRUCTURE_TYPE => {
-                        log::info!(
-                            "    -> MultiprocessorWakeup: {:?}",
-                            MultiprocessorWakeup::from_header_cast(madt_entry)?
-                        );
-                    }
-                    _ => {
-                        log::info!(
-                            "    -> Unknown structure, type = {}",
-                            madt_entry.structure_type
-                        );
-                    }
+            let madt = tables.try_parse_table_at::<Madt>(addr).ok_or("invalid MADT")?;
+            for madt_entry in madt.iter() {
+                if let Ok(lapic) = ProcessorLocalApic::try_ref_from_bytes(madt_entry.as_bytes()) {
+                    log::info!("    -> Local APIC: {:?}", lapic);
+                } else if let Ok(x2apic) =
+                    ProcessorLocalX2Apic::try_ref_from_bytes(madt_entry.as_bytes())
+                {
+                    log::info!("    -> Local X2APIC: {:?}", x2apic);
+                } else if let Ok(ioapic) = IoApic::try_ref_from_bytes(madt_entry.as_bytes()) {
+                    log::info!("    -> I/O APIC: {:?}", ioapic);
+                } else if let Ok(ios) =
+                    InterruptSourceOverride::try_ref_from_bytes(madt_entry.as_bytes())
+                {
+                    log::info!("    -> Interrupt Source Override: {:?}", ios);
+                } else if let Ok(nmi) = LocalApicNmi::try_ref_from_bytes(madt_entry.as_bytes()) {
+                    log::info!("    -> Local APIC NMI: {:?}", nmi);
+                } else if let Ok(mpw) =
+                    MultiprocessorWakeup::try_ref_from_bytes(madt_entry.as_bytes())
+                {
+                    log::info!("    -> Multiprocessor Wakeup: {:?}", mpw);
+                } else {
+                    log::info!(
+                        "    -> Unknown structure, type = {}",
+                        madt_entry.header.structure_type
+                    );
                 }
             }
+        }
+        // FADT is always guaranteed in the RSDT/XSDT as per ACPI spec:
+        // https://uefi.org/htmlspecs/ACPI_Spec_6_4_html/05_ACPI_Software_Programming_Model/ACPI_Software_Programming_Model.html#overview-of-the-system-description-table-architecture
+        if header.signature.as_bytes() == <dyn Fadt as AcpiTable>::Signature::default().as_bytes() {
+            let fadt = tables.try_parse_table_at::<dyn Fadt>(addr).ok_or("invalid FADT")?;
+            log::info!("FADT: {:?}", fadt);
         }
     }
     Ok(())
@@ -275,12 +281,7 @@ mod tests {
     pub fn test_table_loader_interpretation() {
         let raw = std::fs::read(oak_file_utils::data_path("stage0/testdata/table_loader"))
             .expect("failed to read test data");
-        let commands = unsafe {
-            core::slice::from_raw_parts(
-                raw.as_ptr() as *const _ as *const RomfileCommand,
-                raw.len() / core::mem::size_of::<RomfileCommand>(),
-            )
-        };
+        let commands = <[RomfileCommand]>::try_ref_from_bytes(&raw[..]).unwrap();
 
         let expected_commands: [RomfileCommand; 20] = [
             Allocate::new("etc/acpi/rsdp", 16, Zone::FSeg).into(),
@@ -305,8 +306,6 @@ mod tests {
             RomfileCommand::default(),
         ];
 
-        println!(" COMMAND 0: {:?}", commands[0]);
-        println!("ECOMMAND 0: {:?}", &expected_commands[0]);
         assert_that!(&commands[0], eq(&expected_commands[0]));
         assert_that!(commands, container_eq(expected_commands));
     }
@@ -382,6 +381,18 @@ mod tests {
             err(anything())
         );
 
+        // `start + length` overflows u32 but wraps below the file length, so a
+        // naive bounds check would pass and then read out of range.
+        expect_that!(
+            AddChecksum::new("test", 0, 1, u32::MAX).invoke(
+                &mut files,
+                &mut TestFirmware,
+                None,
+                &mut digest
+            ),
+            err(anything())
+        );
+
         // Finally, a basic success test (although we don't check the result)
         expect_that!(
             AddChecksum::new("test", 0, 1, 3).invoke(
@@ -401,6 +412,42 @@ mod tests {
                 &mut digest
             ),
             ok(())
+        );
+    }
+
+    #[gtest]
+    pub fn test_add_pci_root_stage1_rejects_out_of_range_offset() {
+        let mut files = TestFiles::default();
+        let mut digest = Sha256::default();
+        files.new_file(c"test", &[0u8; 64]);
+
+        // A host-controlled offset past the end of the file must be rejected
+        // instead of panicking on an out-of-range slice write.
+        expect_that!(
+            AddPciRootStage1::new("test", 0xFFFF_FFF0).invoke(
+                &mut files,
+                &mut TestFirmware,
+                None,
+                &mut digest
+            ),
+            err(anything())
+        );
+    }
+
+    #[gtest]
+    pub fn test_add_pci_root_stage2_rejects_out_of_range_offset() {
+        let mut files = TestFiles::default();
+        let mut digest = Sha256::default();
+        files.new_file(c"test", &[0u8; 64]);
+
+        expect_that!(
+            AddPciRootStage2::new("test", 0xFFFF_FFF0).invoke(
+                &mut files,
+                &mut TestFirmware,
+                None,
+                &mut digest
+            ),
+            err(anything())
         );
     }
 

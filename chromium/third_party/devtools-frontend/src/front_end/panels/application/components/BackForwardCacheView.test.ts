@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import type * as Platform from '../../../core/platform/platform.js';
 import * as SDK from '../../../core/sdk/sdk.js';
@@ -12,9 +13,8 @@ import {
   raf,
   renderElementIntoDOM,
 } from '../../../testing/DOMHelpers.js';
-import {createTarget} from '../../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../../testing/MockConnection.js';
-import {getMainFrame, navigate, setMockResourceTree} from '../../../testing/ResourceTreeHelpers.js';
+import {createTarget, describeWithEnvironment} from '../../../testing/EnvironmentHelpers.js';
+import {getMainFrame, navigate} from '../../../testing/ResourceTreeHelpers.js';
 import {createViewFunctionStub} from '../../../testing/ViewFunctionHelpers.js';
 
 import * as ApplicationComponents from './components.js';
@@ -27,12 +27,11 @@ async function renderBackForwardCacheView(): Promise<ApplicationComponents.BackF
   return component;
 }
 
-describeWithMockConnection('BackForwardCacheView', () => {
+describeWithEnvironment('BackForwardCacheView', () => {
   let target: SDK.Target.Target;
   let resourceTreeModel: SDK.ResourceTreeModel.ResourceTreeModel;
 
   beforeEach(async () => {
-    setMockResourceTree(false);
     const tabTarget = createTarget({type: SDK.Target.Type.TAB});
     createTarget({parentTarget: tabTarget, subtype: 'prerender'});
     target = createTarget({parentTarget: tabTarget});
@@ -93,7 +92,7 @@ describeWithMockConnection('BackForwardCacheView', () => {
     const sections = component.contentElement.querySelectorAll('devtools-report-section');
     const sectionsText = Array.from(sections).map(section => section.textContent?.trim());
     const expected = [
-      'Not served from back/forward cache: to trigger back/forward cache, use Chrome\'s back/forward buttons, or use the test button below to automatically navigate away and back.',
+      'Not served from back/forward cache: to trigger back/forward cache, use Chrome’s back/forward buttons, or use the test button below to automatically navigate away and back.',
       'Test back/forward cache',
       'ServiceWorker was unregistered while a page was in back/forward cache.',
       'Pages that use WebLocks are not currently eligible for back/forward cache.',
@@ -136,7 +135,8 @@ describeWithMockConnection('BackForwardCacheView', () => {
       },
     } as unknown as SDK.ResourceTreeModel.ResourceTreeFrame;
     const view = createViewFunctionStub(ApplicationComponents.BackForwardCacheView.BackForwardCacheView);
-    new ApplicationComponents.BackForwardCacheView.BackForwardCacheView(view);
+    const component = new ApplicationComponents.BackForwardCacheView.BackForwardCacheView(view);
+    renderElementIntoDOM(component);
 
     const treeData = (await view.nextInput).frameTreeData;
 
@@ -193,7 +193,7 @@ describeWithMockConnection('BackForwardCacheView', () => {
     const sections = component.contentElement.querySelectorAll('devtools-report-section');
     const sectionsText = Array.from(sections).map(section => section.textContent?.trim());
     const expected = [
-      'Not served from back/forward cache: to trigger back/forward cache, use Chrome\'s back/forward buttons, or use the test button below to automatically navigate away and back.',
+      'Not served from back/forward cache: to trigger back/forward cache, use Chrome’s back/forward buttons, or use the test button below to automatically navigate away and back.',
       'Test back/forward cache',
       'Pages that use WebLocks are not currently eligible for back/forward cache.',
       'Learn more: back/forward cache eligibility',
@@ -264,5 +264,28 @@ describeWithMockConnection('BackForwardCacheView', () => {
       });
     });
     sinon.assert.calledOnceWithExactly(navigateToHistoryEntrySpy, entries[0]);
+  });
+
+  describe('without target initially', () => {
+    it('updates BFCacheView when target is created later', async () => {
+      const performUpdateSpy =
+          sinon.spy(ApplicationComponents.BackForwardCacheView.BackForwardCacheView.prototype, 'performUpdate');
+      const component = new ApplicationComponents.BackForwardCacheView.BackForwardCacheView();
+      renderElementIntoDOM(component);
+
+      const tabTarget = createTarget({type: SDK.Target.Type.TAB});
+      const childTarget = createTarget({parentTarget: tabTarget});
+      const model =
+          childTarget.model(SDK.ResourceTreeModel.ResourceTreeModel) as SDK.ResourceTreeModel.ResourceTreeModel;
+
+      await component.updateComplete;
+      sinon.assert.callCount(performUpdateSpy, 1);
+
+      model.dispatchEventToListeners(SDK.ResourceTreeModel.Events.BackForwardCacheDetailsUpdated,
+                                     getMainFrame(childTarget));
+
+      await component.updateComplete;
+      sinon.assert.callCount(performUpdateSpy, 2);
+    });
   });
 });

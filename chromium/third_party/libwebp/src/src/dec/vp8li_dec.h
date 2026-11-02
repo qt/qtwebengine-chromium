@@ -27,6 +27,8 @@
 #include "src/webp/format_constants.h"
 #include "src/webp/types.h"
 
+WEBP_ASSUME_UNSAFE_INDEXABLE_ABI
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -67,6 +69,8 @@ struct VP8LDecoder {
   uint32_t* pixels;      // Internal data: either uint8_t* for alpha
                          // or uint32_t* for BGRA.
   uint32_t* argb_cache;  // Scratch buffer for temporary BGRA storage.
+  uint16_t* accumulated_rgb_pixels;  // Scratch buffer for accumulated RGB for
+                                     // YUV conversion.
 
   VP8LBitReader br;
   int incremental;         // if true, incremental decoding is expected
@@ -101,9 +105,9 @@ struct ALPHDecoder;  // Defined in dec/alphai.h.
 
 // Decodes image header for alpha data stored using lossless compression.
 // Returns false in case of error.
-WEBP_NODISCARD int VP8LDecodeAlphaHeader(struct ALPHDecoder* const alph_dec,
-                                         const uint8_t* const data,
-                                         size_t data_size);
+WEBP_NODISCARD int VP8LDecodeAlphaHeader(
+    struct ALPHDecoder* const alph_dec,
+    const uint8_t* const WEBP_COUNTED_BY(data_size) data, size_t data_size);
 
 // Decodes *at least* 'last_row' rows of alpha. If some of the initial rows are
 // already decoded in previous call(s), it will resume decoding from where it

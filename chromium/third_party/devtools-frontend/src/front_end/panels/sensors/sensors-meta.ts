@@ -10,113 +10,48 @@ import type * as Sensors from './sensors.js';
 
 const UIStrings = {
   /**
-   * @description Title of the Sensors tool. The sensors tool contains GPS, orientation sensors, touch
-   * settings, etc.
+   * @description Title of the Sensors view. The Sensors view contains GPS, orientation sensors, touch
+   * settings, and more.
    */
   sensors: 'Sensors',
   /**
-   * @description A tag of Sensors tool that can be searched in the command menu
+   * @description A tag of the Sensors view that can be searched in the command menu.
    */
   geolocation: 'geolocation',
   /**
-   * @description A tag of Sensors tool that can be searched in the command menu
+   * @description A tag of the Sensors view that can be searched in the command menu.
    */
   timezones: 'timezones',
   /**
-   * @description Text in Sensors View of the Device Toolbar
+   * @description Text in the Sensors view of the Device toolbar.
    */
   locale: 'locale',
   /**
-   * @description A tag of Sensors tool that can be searched in the command menu
+   * @description A tag of the Sensors view that can be searched in the command menu.
    */
   locales: 'locales',
   /**
-   * @description A tag of Sensors tool that can be searched in the command menu
+   * @description A tag of the Sensors view that can be searched in the command menu.
    */
   accelerometer: 'accelerometer',
   /**
-   * @description A tag of Sensors tool that can be searched in the command menu. Refers to the
-   * orientation of a device (e.g. phone) in 3D space, e.g. tilted right/left.
+   * @description A tag of the Sensors view that can be searched in the command menu. Refers to the
+   * orientation of a device (for example, a phone) in 3D space, tilted right or left.
    */
   deviceOrientation: 'device orientation',
   /**
-   * @description Title of Locations settings. Refers to geographic locations for GPS.
+   * @description Title of the Locations settings tab. Refers to geographic locations for GPS.
    */
   locations: 'Locations',
   /**
-   * @description Text for the touch type to simulate on a device. Refers to touch input as opposed to
-   * mouse input.
-   */
-  touch: 'Touch',
-  /**
-   * @description Text in Sensors View of the Device Toolbar. Refers to device-based touch input,
-   *which means the input type will be 'touch' only if the device normally has touch input e.g. a
-   *phone or tablet.
-   */
-  devicebased: 'Device-based',
-  /**
-   * @description Text in Sensors View of the Device Toolbar. Means that touch input will be forced
-   *on, even if the device type e.g. desktop computer does not normally have touch input.
-   */
-  forceEnabled: 'Force enabled',
-  /**
-   * @description Title of a section option in Sensors tab for idle emulation. This is a command, to
-   *emulate the state of the 'Idle Detector'.
-   */
-  emulateIdleDetectorState: 'Emulate Idle Detector state',
-  /**
-   * @description Title of an option in Sensors tab idle emulation drop-down. Turns off emulation of idle state.
-   */
-  noIdleEmulation: 'No idle emulation',
-  /**
-   * @description Title of an option in Sensors tab idle emulation drop-down.
-   */
-  userActiveScreenUnlocked: 'User active, screen unlocked',
-  /**
-   * @description Title of an option in Sensors tab idle emulation drop-down.
-   */
-  userActiveScreenLocked: 'User active, screen locked',
-  /**
-   * @description Title of an option in Sensors tab idle emulation drop-down.
-   */
-  userIdleScreenUnlocked: 'User idle, screen unlocked',
-  /**
-   * @description Title of an option in Sensors tab idle emulation drop-down.
-   */
-  userIdleScreenLocked: 'User idle, screen locked',
-  /**
-   * @description Command that opens the Sensors view/tool. The sensors tool contains GPS,
-   * orientation sensors, touch settings, etc.
+   * @description Command that opens the Sensors view. The Sensors view contains GPS,
+   * orientation sensors, touch settings, and more.
    */
   showSensors: 'Show Sensors',
   /**
-   * @description Command that shows geographic locations.
+   * @description Command that shows the Locations settings tab.
    */
   showLocations: 'Show Locations',
-  /**
-   * @description Text for the CPU Pressure type to simulate on a device.
-   */
-  cpuPressure: 'CPU Pressure',
-  /**
-   * @description Title of an option in Sensors tab cpu pressure emulation drop-down. Turns off emulation of cpu pressure state.
-   */
-  noPressureEmulation: 'No override',
-  /**
-   * @description An option that appears in a drop-down that represents the nominal state.
-   */
-  nominal: 'Nominal',
-  /**
-   * @description An option that appears in a drop-down that represents the fair state.
-   */
-  fair: 'Fair',
-  /**
-   * @description An option that appears in a drop-down that represents the serious state.
-   */
-  serious: 'Serious',
-  /**
-   * @description An option that appears in a drop-down that represents the critical state.
-   */
-  critical: 'Critical',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/sensors/sensors-meta.ts', UIStrings);
 const i18nLazyString = i18n.i18n.getLazilyComputedLocalizedString.bind(undefined, str_);
@@ -245,95 +180,6 @@ Common.Settings.registerSettingExtension({
       timezoneId: 'Asia/Tokyo',
       locale: 'ja-JP',
       accuracy: 150,
-    },
-  ],
-});
-
-Common.Settings.registerSettingExtension({
-  title: i18nLazyString(UIStrings.cpuPressure),
-  reloadRequired: true,
-  settingName: 'emulation.cpu-pressure',
-  settingType: Common.Settings.SettingType.ENUM,
-  defaultValue: 'none',
-  options: [
-    {
-      value: 'none',
-      title: i18nLazyString(UIStrings.noPressureEmulation),
-      text: i18nLazyString(UIStrings.noPressureEmulation),
-    },
-    {
-      value: 'nominal',
-      title: i18nLazyString(UIStrings.nominal),
-      text: i18nLazyString(UIStrings.nominal),
-    },
-    {
-      value: 'fair',
-      title: i18nLazyString(UIStrings.fair),
-      text: i18nLazyString(UIStrings.fair),
-    },
-    {
-      value: 'serious',
-      title: i18nLazyString(UIStrings.serious),
-      text: i18nLazyString(UIStrings.serious),
-    },
-    {
-      value: 'critical',
-      title: i18nLazyString(UIStrings.critical),
-      text: i18nLazyString(UIStrings.critical),
-    },
-  ],
-});
-
-Common.Settings.registerSettingExtension({
-  title: i18nLazyString(UIStrings.touch),
-  reloadRequired: true,
-  settingName: 'emulation.touch',
-  settingType: Common.Settings.SettingType.ENUM,
-  defaultValue: 'none',
-  options: [
-    {
-      value: 'none',
-      title: i18nLazyString(UIStrings.devicebased),
-      text: i18nLazyString(UIStrings.devicebased),
-    },
-    {
-      value: 'force',
-      title: i18nLazyString(UIStrings.forceEnabled),
-      text: i18nLazyString(UIStrings.forceEnabled),
-    },
-  ],
-});
-
-Common.Settings.registerSettingExtension({
-  title: i18nLazyString(UIStrings.emulateIdleDetectorState),
-  settingName: 'emulation.idle-detection',
-  settingType: Common.Settings.SettingType.ENUM,
-  defaultValue: 'none',
-  options: [
-    {
-      value: 'none',
-      title: i18nLazyString(UIStrings.noIdleEmulation),
-      text: i18nLazyString(UIStrings.noIdleEmulation),
-    },
-    {
-      value: '{\"isUserActive\":true,\"isScreenUnlocked\":true}',
-      title: i18nLazyString(UIStrings.userActiveScreenUnlocked),
-      text: i18nLazyString(UIStrings.userActiveScreenUnlocked),
-    },
-    {
-      value: '{\"isUserActive\":true,\"isScreenUnlocked\":false}',
-      title: i18nLazyString(UIStrings.userActiveScreenLocked),
-      text: i18nLazyString(UIStrings.userActiveScreenLocked),
-    },
-    {
-      value: '{\"isUserActive\":false,\"isScreenUnlocked\":true}',
-      title: i18nLazyString(UIStrings.userIdleScreenUnlocked),
-      text: i18nLazyString(UIStrings.userIdleScreenUnlocked),
-    },
-    {
-      value: '{\"isUserActive\":false,\"isScreenUnlocked\":false}',
-      title: i18nLazyString(UIStrings.userIdleScreenLocked),
-      text: i18nLazyString(UIStrings.userIdleScreenLocked),
     },
   ],
 });

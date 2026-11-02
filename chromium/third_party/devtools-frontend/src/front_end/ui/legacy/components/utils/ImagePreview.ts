@@ -84,11 +84,13 @@ export class ImagePreview {
       ): Promise<HTMLDivElement|null> {
     const {precomputedFeatures, imageAltText, align} = options;
 
-    let resource = SDK.ResourceTreeModel.ResourceTreeModel.resourceForURL(originalImageURL);
+    let resource = SDK.ResourceTreeModel.ResourceTreeModel.resourceForURL(SDK.TargetManager.TargetManager.instance(),
+                                                                          originalImageURL);
     let imageURL = originalImageURL;
     if (!isImageResource(resource) && precomputedFeatures?.currentSrc) {
       imageURL = precomputedFeatures.currentSrc;
-      resource = SDK.ResourceTreeModel.ResourceTreeModel.resourceForURL(imageURL);
+      resource =
+          SDK.ResourceTreeModel.ResourceTreeModel.resourceForURL(SDK.TargetManager.TargetManager.instance(), imageURL);
     }
     if (!resource || !isImageResource(resource)) {
       return null;

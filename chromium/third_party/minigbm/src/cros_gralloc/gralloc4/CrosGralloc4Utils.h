@@ -10,6 +10,7 @@
 #include <aidl/android/hardware/graphics/common/PlaneLayout.h>
 #include <android/hardware/graphics/common/1.2/types.h>
 #include <android/hardware/graphics/mapper/4.0/IMapper.h>
+#include <hidl/HidlSupport.h>
 
 struct cros_gralloc_buffer_descriptor;
 
@@ -32,7 +33,7 @@ int convertToMapUsage(uint64_t grallocUsage, uint32_t* outMapUsage);
 
 int convertToFenceFd(const android::hardware::hidl_handle& fence_handle, int* out_fence_fd);
 
-int convertToFenceHandle(int fence_fd, android::hardware::hidl_handle* out_fence_handle);
+android::hardware::hidl_handle convertToFenceHandle(int fence_fd, char* native_handle_storage);
 
 int getPlaneLayouts(
         uint32_t drm_format,

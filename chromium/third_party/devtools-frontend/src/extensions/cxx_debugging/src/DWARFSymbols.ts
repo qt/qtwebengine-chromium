@@ -392,7 +392,7 @@ export class DWARFLanguageExtensionPlugin implements Chrome.DevTools.LanguageExt
 
       return {
         frames: apiFunctionInfos,
-        missingSymbolFiles: apiMissingSymbolFiles.map(x => new URL(x, moduleInfo.symbolsUrl).href)
+        missingSymbolFiles: apiMissingSymbolFiles.map(x => new URL(x, moduleInfo.symbolsUrl).href),
       };
     } finally {
       flush();

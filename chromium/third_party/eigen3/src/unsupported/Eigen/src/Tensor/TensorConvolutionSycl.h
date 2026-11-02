@@ -52,7 +52,7 @@ struct EigenConvolutionKernel<Evaluator, CoeffReturnType, KernelType, Index, Inp
 
   template <typename BooleanDim2>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool boundary_check(const BooleanDim2 boolean_check) const {
-    return (boolean_check[0] && boolean_check[1]);
+    return boolean_check[0] && boolean_check[1];
   }
   void operator()(cl::sycl::nd_item<2> itemID) const {
     auto buffer_ptr = buffer_acc;
@@ -118,7 +118,7 @@ struct EigenConvolutionKernel<Evaluator, CoeffReturnType, KernelType, Index, Inp
         input_range(input_range_) {}
   template <typename BooleanDim3>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool boundary_check(const BooleanDim3 boolean_check) const {
-    return (boolean_check[0] && boolean_check[1] && boolean_check[2]);
+    return boolean_check[0] && boolean_check[1] && boolean_check[2];
   }
 
   void operator()(cl::sycl::nd_item<3> itemID) const {
@@ -207,7 +207,7 @@ struct EigenConvolutionKernel<Evaluator, CoeffReturnType, KernelType, Index, Inp
         numP(numP_) {}
   template <typename BooleanDim3>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool boundary_check(const BooleanDim3 boolean_check) const {
-    return (boolean_check[0] && boolean_check[1] && boolean_check[2]);
+    return boolean_check[0] && boolean_check[1] && boolean_check[2];
   }
   void operator()(cl::sycl::nd_item<3> itemID) const {
     auto buffer_ptr = buffer_acc;
@@ -532,7 +532,7 @@ struct TensorEvaluator<const TensorConvolutionOp<Indices, InputArgType, KernelAr
   typename KernelStorage::Type m_kernel;
   bool m_local_kernel;
   const Eigen::SyclDevice EIGEN_DEVICE_REF m_device;
-};  // namespace Eigen
+};
 
 }  // end namespace Eigen
 

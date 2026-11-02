@@ -12,9 +12,7 @@ import {debugLog} from '../debug.js';
 import {EvaluateAction, formatError, SideEffectError} from '../EvaluateAction.js';
 import {FREESTYLER_WORLD_NAME} from '../injected.js';
 
-import type {
-  AgentOptions as BaseAgentOptions, FunctionCallHandlerResult, FunctionDeclaration, FunctionHandlerOptions,} from
-  './AiAgent.js';
+import type {AgentOptions as BaseAgentOptions, FunctionCallHandlerResult, FunctionHandlerOptions} from './AiAgent.js';
 
 const lockedString = i18n.i18n.lockedString;
 
@@ -26,95 +24,6 @@ export interface ExecuteJsAgentOptions extends BaseAgentOptions {
   changeManager?: ChangeManager;
   createExtensionScope?: CreateExtensionScopeFunction;
   execJs?: typeof executeJsCode;
-}
-
-export function executeJavaScriptFunction(executor: JavascriptExecutor): FunctionDeclaration<
-    {
-      title: string,
-      explanation: string,
-      code: string,
-    },
-    unknown> {
-  return {
-    description:
-        'This function allows you to run JavaScript code on the inspected page to access the element styles and page content.\nCall this function to gather additional information or modify the page state. Call this function enough times to investigate the user request.',
-    parameters: {
-      type: Host.AidaClient.ParametersTypes.OBJECT,
-      description: '',
-      nullable: false,
-      properties: {
-        code: {
-          type: Host.AidaClient.ParametersTypes.STRING,
-          description:
-              `JavaScript code snippet to run on the inspected page. Make sure the code is formatted for readability.
-
-# Instructions
-
-* To return data, define a top-level \`data\` variable and populate it with data you want to get. Only JSON-serializable objects can be assigned to \`data\`.
-* If you modify styles on an element, ALWAYS call the pre-defined global \`async setElementStyles(el: Element, styles: object)\` function. This function is an internal mechanism for you and should never be presented as a command/advice to the user.
-* **CRITICAL** Only get styles that might be relevant to the user request.
-* **CRITICAL** Never assume a selector for the elements unless you verified your knowledge.
-* **CRITICAL** Consider that \`data\` variable from the previous function calls are not available in a new function call.
-
-For example, the code to change element styles:
-
-\`\`\`
-await setElementStyles($0, {
-  color: 'blue',
-});
-\`\`\`
-
-For example, the code to get overlapping elements:
-
-\`\`\`
-const data = {
-  overlappingElements: Array.from(document.querySelectorAll('*'))
-    .filter(el => {
-      const rect = el.getBoundingClientRect();
-      const popupRect = $0.getBoundingClientRect();
-      return (
-        el !== $0 &&
-        rect.left < popupRect.right &&
-        rect.right > popupRect.left &&
-        rect.top < popupRect.bottom &&
-        rect.bottom > popupRect.top
-      );
-    })
-    .map(el => ({
-      tagName: el.tagName,
-      id: el.id,
-      className: el.className,
-      zIndex: window.getComputedStyle(el)['z-index']
-    }))
-};
-\`\`\`
-`,
-        },
-        explanation: {
-          type: Host.AidaClient.ParametersTypes.STRING,
-          description: 'Explain why you want to run this code',
-        },
-        title: {
-          type: Host.AidaClient.ParametersTypes.STRING,
-          description: 'Provide a summary of what the code does. For example, "Checking related element styles".',
-        },
-      },
-      required: ['code', 'explanation', 'title']
-    },
-    displayInfoFromArgs: params => {
-      return {
-        title: params.title,
-        thought: params.explanation,
-        action: params.code,
-      };
-    },
-    handler: async (
-        params,
-        options,
-        ) => {
-      return await executor.executeAction(params.code, options);
-    },
-  };
 }
 
 export async function executeJsCode(
@@ -270,7 +179,11 @@ export class JavascriptExecutor {
     return error;
   }
 }`;
+    const timeoutSentinel = Symbol('timeout');
+    const {promise: timeoutPromise, resolve: resolveTimeout} = Promise.withResolvers<typeof timeoutSentinel>();
+    let timeoutId: ReturnType<typeof setTimeout>|undefined;
     try {
+      timeoutId = setTimeout(() => resolveTimeout(timeoutSentinel), OBSERVATION_TIMEOUT);
       const result = await Promise.race([
         this.#execJs(
             functionDeclaration,
@@ -279,11 +192,11 @@ export class JavascriptExecutor {
               contextNode: this.#options.getContextNode(),
             },
             ),
-        new Promise<never>((_, reject) => {
-          setTimeout(
-              () => reject(new Error('Script execution exceeded the maximum allowed time.')), OBSERVATION_TIMEOUT);
-        }),
+        timeoutPromise,
       ]);
+      if (result === timeoutSentinel) {
+        throw new Error('Script execution exceeded the maximum allowed time.');
+      }
       const byteCount = Platform.StringUtilities.countWtf8Bytes(result);
       Host.userMetrics.freestylerEvalResponseSize(byteCount);
       if (byteCount > MAX_OBSERVATION_BYTE_LENGTH) {
@@ -308,6 +221,11 @@ export class JavascriptExecutor {
         sideEffect: false,
         canceled: false,
       };
+    } finally {
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
+      resolveTimeout(timeoutSentinel);
     }
   }
 }

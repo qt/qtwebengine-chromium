@@ -10981,23 +10981,23 @@ struct DxilInst_LinAlgVectorAccumulateToDescriptor {
   bool requiresUniformInputs() const { return false; }
   // Operand indexes
   enum OperandIdx {
-    arg_vector = 1,
-    arg_handle = 2,
-    arg_offset = 3,
-    arg_align = 4,
+    arg_handle = 1,
+    arg_offset = 2,
+    arg_align = 3,
+    arg_vector = 4,
   };
   // Accessors
-  llvm::Value *get_vector() const { return Instr->getOperand(1); }
-  void set_vector(llvm::Value *val) { Instr->setOperand(1, val); }
-  llvm::Value *get_handle() const { return Instr->getOperand(2); }
-  void set_handle(llvm::Value *val) { Instr->setOperand(2, val); }
-  llvm::Value *get_offset() const { return Instr->getOperand(3); }
-  void set_offset(llvm::Value *val) { Instr->setOperand(3, val); }
-  llvm::Value *get_align() const { return Instr->getOperand(4); }
-  void set_align(llvm::Value *val) { Instr->setOperand(4, val); }
+  llvm::Value *get_handle() const { return Instr->getOperand(1); }
+  void set_handle(llvm::Value *val) { Instr->setOperand(1, val); }
+  llvm::Value *get_offset() const { return Instr->getOperand(2); }
+  void set_offset(llvm::Value *val) { Instr->setOperand(2, val); }
+  llvm::Value *get_align() const { return Instr->getOperand(3); }
+  void set_align(llvm::Value *val) { Instr->setOperand(3, val); }
+  llvm::Value *get_vector() const { return Instr->getOperand(4); }
+  void set_vector(llvm::Value *val) { Instr->setOperand(4, val); }
 };
 
-/// This instruction triggers a breakpoint if a debugger is attached
+/// This instruction triggers a breakpoint if debugging is enabled
 struct DxilInst_DebugBreak {
   llvm::Instruction *Instr;
   // Construction and identification
@@ -11016,14 +11016,14 @@ struct DxilInst_DebugBreak {
   bool requiresUniformInputs() const { return false; }
 };
 
-/// This instruction returns true if a debugger is attached
-struct DxilInst_IsDebuggerPresent {
+/// This instruction returns true if debugging is enabled
+struct DxilInst_IsDebuggingEnabled {
   llvm::Instruction *Instr;
   // Construction and identification
-  DxilInst_IsDebuggerPresent(llvm::Instruction *pInstr) : Instr(pInstr) {}
+  DxilInst_IsDebuggingEnabled(llvm::Instruction *pInstr) : Instr(pInstr) {}
   operator bool() const {
     return hlsl::OP::IsDxilOpFuncCallInst(Instr,
-                                          hlsl::OP::OpCode::IsDebuggerPresent);
+                                          hlsl::OP::OpCode::IsDebuggingEnabled);
   }
   // Validation support
   bool isAllowed() const { return true; }

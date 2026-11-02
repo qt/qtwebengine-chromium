@@ -1126,10 +1126,13 @@ void CWelsDecoder::ReleaseBufferedReadyPictureNoReorder(PWelsDecoderContext pCtx
     m_sPictInfoList[m_sReoderingStatus.iPictInfoIndex].iPOC = IMinInt32;
     if (pCtx || m_pPicBuff) {
       PPicBuff pPicBuff = pCtx ? pCtx->pPicBuff : m_pPicBuff;
-      PPicture pPic = pPicBuff->ppPic[m_sPictInfoList[m_sReoderingStatus.iPictInfoIndex].iPicBuffIdx];
-      --pPic->iRefCount;
-      if (pPic->iRefCount <= 0 && pPic->pSetUnRef)
-        pPic->pSetUnRef(pPic);
+      int32_t iPicBuffIdx = m_sPictInfoList[m_sReoderingStatus.iPictInfoIndex].iPicBuffIdx;
+      if (pPicBuff != NULL && iPicBuffIdx >= 0 && iPicBuffIdx < pPicBuff->iCapacity) {
+        PPicture pPic = pPicBuff->ppPic[iPicBuffIdx];
+        --pPic->iRefCount;
+        if (pPic->iRefCount <= 0 && pPic->pSetUnRef)
+          pPic->pSetUnRef(pPic);
+      }
     }
     --m_sReoderingStatus.iNumOfPicts;
   }
@@ -1143,6 +1146,24 @@ DECODING_STATE CWelsDecoder::ReorderPicturesInDisplay(PWelsDecoderContext pDecCo
     m_bIsBaseline = pDecContext->pSps->uiProfileIdc == 66 || pDecContext->pSps->uiProfileIdc == 83;
     if (!m_bIsBaseline) {
       if (pDstInfo->iBufferStatus == 1) {
+        if (pDecContext->pSliceHeader->eSliceType == B_SLICE &&
+            ((pDecContext->iSeqNum == m_sReoderingStatus.iLastWrittenSeqNum) ?
+              (pDecContext->pSliceHeader->iPicOrderCntLsb <= m_sReoderingStatus.iLastWrittenPOC + 2) :
+              (pDecContext->iSeqNum - m_sReoderingStatus.iLastWrittenSeqNum == 1 && pDecContext->pSliceHeader->iPicOrderCntLsb == 0))) {
+          m_sReoderingStatus.iLastWrittenPOC = pDecContext->pSliceHeader->iPicOrderCntLsb;
+          m_sReoderingStatus.iLastWrittenSeqNum = pDecContext->iSeqNum;
+          //issue #3478, use b-slice type to determine correct picture order as the first priority as POC order is not as reliable as based on b-slice
+          ppDst[0] = pDstInfo->pDst[0];
+          ppDst[1] = pDstInfo->pDst[1];
+          ppDst[2] = pDstInfo->pDst[2];
+#if defined (_DEBUG)
+#ifdef _MOTION_VECTOR_DUMP_
+          fprintf (stderr, "Output POC: #%d uiDecodingTimeStamp=%d\n", pDecContext->pSliceHeader->iPicOrderCntLsb,
+             pDecContext->uiDecodingTimeStamp);
+#endif
+#endif
+          return iRet;
+        }
         BufferingReadyPicture(pDecContext, ppDst, pDstInfo);
         if (!m_sReoderingStatus.bHasBSlice && m_sReoderingStatus.iNumOfPicts > 1) {
           ReleaseBufferedReadyPictureNoReorder (pDecContext, ppDst, pDstInfo);

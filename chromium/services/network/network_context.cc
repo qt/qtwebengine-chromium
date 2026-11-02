@@ -15,6 +15,7 @@
 #include "base/barrier_closure.h"
 #include "base/base64.h"
 #include "base/build_time.h"
+#include "base/byte_size.h"
 #include "base/callback_list.h"
 #include "base/check.h"
 #include "base/check_op.h"
@@ -79,6 +80,8 @@
 #include "net/cookies/cookie_constants.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/cookies/cookie_setting_override.h"
+#include "net/cookies/cookie_store.h"
+#include "net/cookies/site_for_cookies.h"
 #include "net/device_bound_sessions/session_service.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/dns/context_host_resolver.h"
@@ -102,6 +105,7 @@
 #include "net/proxy_resolution/configured_proxy_resolution_service.h"
 #include "net/proxy_resolution/proxy_config.h"
 #include "net/shared_dictionary/shared_dictionary_isolation_key.h"
+#include "net/ssl/ech_mode_getter.h"
 #include "net/ssl/ssl_config_service.h"
 #include "net/storage_access_api/status.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
@@ -123,6 +127,7 @@
 #include "services/network/ignore_errors_cert_verifier.h"
 #include "services/network/is_browser_initiated.h"
 #include "services/network/known_legacy_scope_domains_delegate.h"
+#include "services/network/logical_invalidation_store.h"
 #include "services/network/net_log_exporter.h"
 #include "services/network/network_service.h"
 #include "services/network/network_service_network_delegate.h"
@@ -132,10 +137,12 @@
 #include "services/network/prefetch_cache.h"
 #include "services/network/prefetch_matching_url_loader_factory.h"
 #include "services/network/prefetch_url_loader_client.h"
+#include "services/network/proxy_checking_host_resolver_request.h"
 #include "services/network/proxy_config_service_mojo.h"
 #include "services/network/proxy_lookup_request.h"
 #include "services/network/proxy_resolving_socket_factory_mojo.h"
 #include "services/network/public/cpp/cert_verifier/mojo_cert_verifier.h"
+#include "services/network/public/cpp/constants.h"
 #include "services/network/public/cpp/content_security_policy/content_security_policy.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/network_switches.h"
@@ -174,6 +181,11 @@
 #include "services/network/web_transport.h"
 #include "url/gurl.h"
 
+#if BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
+#include "services/network/device_bound_session_service_delegate.h"
+#include "services/network/ssl_private_key_proxy.h"
+#endif
+
 #if BUILDFLAG(IS_CT_SUPPORTED)
 // gn check does not account for BUILDFLAG(). So, for iOS builds, it will
 // complain about a missing dependency on the target exposing this header. Add a
@@ -207,6 +219,7 @@
 
 #if BUILDFLAG(IS_ANDROID)
 #include "base/android/application_status_listener.h"
+#include "net/ssl/ech_mode_getter_android.h"
 #endif  // BUILDFLAG(IS_ANDROID)
 
 namespace network {
@@ -640,6 +653,20 @@ bool IsIncognitoFromParams(const mojom::NetworkContextParams& params) {
   return !params.file_paths || !params.file_paths->http_cache_directory;
 }
 
+void RemoveInvalidationFilterCallback(
+    base::WeakPtr<NetworkContext> context,
+    net::HttpCache::InvalidationFilter filter) {
+  if (!context) {
+    return;
+  }
+  net::HttpCache* cache =
+      context->url_request_context()->http_transaction_factory()->GetCache();
+  if (cache) {
+    cache->RemoveInvalidationFilter(filter);
+  }
+  context->OnLogicalFilterRemoved(filter);
+}
+
 }  // namespace
 
 constexpr uint32_t NetworkContext::kMaxOutstandingRequestsPerProcess;
@@ -875,6 +902,28 @@ NetworkContext::NetworkContext(
   device_bound_session_manager_ = DeviceBoundSessionManager::Create(
       url_request_context_->device_bound_session_service(),
       cookie_manager_.get());
+
+  if (params_->file_paths &&
+      params_->file_paths->logical_invalidation_directory) {
+    base::TaskPriority priority =
+        base::FeatureList::IsEnabled(net::features::kLogicalClearHttpCache) &&
+                net::features::kLogicalClearHttpCacheUserVisiblePriority.Get()
+            ? base::TaskPriority::USER_VISIBLE
+            : base::TaskPriority::BEST_EFFORT;
+    scoped_refptr<base::SequencedTaskRunner> file_task_runner =
+        base::ThreadPool::CreateSequencedTaskRunner(
+            {base::MayBlock(), priority,
+             base::TaskShutdownBehavior::BLOCK_SHUTDOWN});
+    logical_invalidation_store_ = std::make_unique<LogicalInvalidationStore>(
+        params_->file_paths->logical_invalidation_directory->path(),
+        file_task_runner);
+    // Start loading persisted invalidation filters asynchronously on startup.
+    logical_invalidation_store_->Load(
+        base::BindOnce(&NetworkContext::OnInvalidationFiltersLoaded,
+                       weak_factory_.GetWeakPtr()));
+  } else {
+    initial_filters_loaded_ = true;
+  }
 }
 
 NetworkContext::NetworkContext(
@@ -1082,6 +1131,11 @@ void NetworkContext::SetClient(
   client_.Bind(std::move(client));
 }
 
+void NetworkContext::CreateSocketFactory(
+    mojo::PendingReceiver<mojom::SocketFactory> receiver) {
+  socket_factory_receivers_.Add(socket_factory_.get(), std::move(receiver));
+}
+
 void NetworkContext::CreateURLLoaderFactory(
     mojo::PendingReceiver<mojom::URLLoaderFactory> receiver,
     mojom::URLLoaderFactoryParamsPtr params) {
@@ -1121,23 +1175,6 @@ void NetworkContext::GetCookieManager(
   cookie_manager_->AddReceiver(std::move(receiver));
 }
 
-void NetworkContext::GetRestrictedCookieManager(
-    mojo::PendingReceiver<mojom::RestrictedCookieManager> receiver,
-    mojom::RestrictedCookieManagerRole role,
-    const url::Origin& origin,
-    const net::IsolationInfo& isolation_info,
-    const net::CookieSettingOverrides& cookie_setting_overrides,
-    const net::CookieSettingOverrides& devtools_cookie_setting_overrides,
-    mojo::PendingRemote<mojom::CookieAccessObserver> cookie_observer) {
-  RestrictedCookieManager::ComputeFirstPartySetMetadata(
-      origin, url_request_context_->cookie_store(), isolation_info,
-      base::BindOnce(&NetworkContext::OnComputedFirstPartySetMetadata,
-                     weak_factory_.GetWeakPtr(), std::move(receiver), role,
-                     origin, isolation_info, cookie_setting_overrides,
-                     devtools_cookie_setting_overrides,
-                     std::move(cookie_observer)));
-}
-
 void NetworkContext::OnRCMDisconnect(
     const network::RestrictedCookieManager* rcm) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -1155,16 +1192,17 @@ void NetworkContext::RemoveConnectionChangeObserver(
   }
 }
 
-void NetworkContext::OnComputedFirstPartySetMetadata(
+void NetworkContext::GetRestrictedCookieManager(
     mojo::PendingReceiver<mojom::RestrictedCookieManager> receiver,
     mojom::RestrictedCookieManagerRole role,
     const url::Origin& origin,
     const net::IsolationInfo& isolation_info,
     const net::CookieSettingOverrides& cookie_setting_overrides,
     const net::CookieSettingOverrides& devtools_cookie_setting_overrides,
-    mojo::PendingRemote<mojom::CookieAccessObserver> cookie_observer,
-    net::FirstPartySetMetadata first_party_set_metadata) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+    mojo::PendingRemote<mojom::CookieAccessObserver> cookie_observer) {
+  net::FirstPartySetMetadata first_party_set_metadata =
+      RestrictedCookieManager::ComputeFirstPartySetMetadata(
+          origin, url_request_context_->cookie_store(), isolation_info);
 
   std::unique_ptr<RestrictedCookieManager> ptr =
       std::make_unique<RestrictedCookieManager>(
@@ -1287,6 +1325,13 @@ void NetworkContext::OnProxyLookupComplete(
   proxy_lookup_requests_.erase(it);
 }
 
+void NetworkContext::OnProxyCheckingHostResolverRequestComplete(
+    ProxyCheckingHostResolverRequest* request) {
+  auto it = proxy_checking_host_resolver_requests_.find(request);
+  CHECK(it != proxy_checking_host_resolver_requests_.end());
+  proxy_checking_host_resolver_requests_.erase(it);
+}
+
 void NetworkContext::SetTLS13EarlyDataEnabled(bool enabled) {
   url_request_context_->http_transaction_factory()
       ->GetSession()
@@ -1334,7 +1379,7 @@ bool NetworkContext::CanCreateLoader(const OriginatingProcessId& process_id) {
 }
 
 size_t NetworkContext::GetNumOutstandingResolveHostRequestsForTesting() const {
-  size_t sum = 0;
+  size_t sum = proxy_checking_host_resolver_requests_.size();
   if (internal_host_resolver_) {
     sum += internal_host_resolver_->GetNumOutstandingRequestsForTesting();
   }
@@ -1420,9 +1465,31 @@ void NetworkContext::ClearHttpCache(base::Time start_time,
                                     base::Time end_time,
                                     mojom::ClearDataFilterPtr filter,
                                     ClearHttpCacheCallback callback) {
-  if (base::FeatureList::IsEnabled(net::features::kLogicalClearHttpCache)) {
+  ClearHttpCacheInternal(start_time, end_time, std::move(filter),
+                         ClearHttpCacheMode::kPhysical, std::move(callback));
+}
+
+void NetworkContext::ClearHttpCacheLogically(
+    base::Time start_time,
+    base::Time end_time,
+    mojom::ClearDataFilterPtr filter,
+    ClearHttpCacheLogicallyCallback callback) {
+  ClearHttpCacheInternal(start_time, end_time, std::move(filter),
+                         ClearHttpCacheMode::kLogical, std::move(callback));
+}
+
+void NetworkContext::ClearHttpCacheInternal(base::Time start_time,
+                                            base::Time end_time,
+                                            mojom::ClearDataFilterPtr filter,
+                                            ClearHttpCacheMode mode,
+                                            base::OnceClosure callback) {
+  base::UmaHistogramEnumeration("NetworkService.ClearHttpCacheMode", mode);
+
+  if (mode == ClearHttpCacheMode::kLogical &&
+      base::FeatureList::IsEnabled(net::features::kLogicalClearHttpCache)) {
     net::HttpCache* cache =
         url_request_context_->http_transaction_factory()->GetCache();
+    net::HttpCache::InvalidationFilter filter_for_callback;
     if (cache) {
       // Step 1: Add a logical filter to the HttpCache. This is near-instant
       // and ensures that subsequent requests won't see invalidated data.
@@ -1441,28 +1508,37 @@ void NetworkContext::ClearHttpCache(base::Time start_time,
       } else {
         invalidation_filter.filter_type = net::UrlFilterType::kFalseIfMatches;
       }
+      filter_for_callback = invalidation_filter;
+
       cache->AddInvalidationFilter(std::move(invalidation_filter));
+      // Queue the filter for disk persistence and invoke `callback` once
+      // LogicalInvalidationStore::Save() finishes saving to disk.
+      OnLogicalFilterAdded(filter_for_callback, std::move(callback));
+    } else {
+      if (callback) {
+        std::move(callback).Run();
+      }
     }
 
-    // Step 2: Trigger the slow physical cleanup in the background. We use a
-    // no-op callback because the logical invalidation already satisfies
-    // the consistency requirements of the caller.
-    http_cache_data_removers_.push_back(HttpCacheDataRemover::CreateAndStart(
-        url_request_context_, std::move(filter), start_time, end_time,
-        base::BindOnce(&NetworkContext::OnHttpCacheCleared,
-                       base::Unretained(this), base::DoNothing())));
+    // Step 2: Trigger the slow physical cleanup in the background.
+    // When it completes, the logical filter is removed since the data is
+    // physically gone.
+    auto logical_cleanup_done_callback = base::BindOnce(
+        &RemoveInvalidationFilterCallback, weak_factory_.GetWeakPtr(),
+        std::move(filter_for_callback));
 
-    // Step 3: Respond to the caller immediately.
-    std::move(callback).Run();
+    StartHttpCacheDataRemover(std::move(filter), start_time, end_time,
+                              std::move(logical_cleanup_done_callback));
+
+    // Step 3: Responding to the caller immediately is omitted to wait for
+    // persistence.
     return;
   }
 
   // It's safe to use Unretained below as the HttpCacheDataRemover is owned by
   // |this| and guarantees it won't call its callback if deleted.
-  http_cache_data_removers_.push_back(HttpCacheDataRemover::CreateAndStart(
-      url_request_context_, std::move(filter), start_time, end_time,
-      base::BindOnce(&NetworkContext::OnHttpCacheCleared,
-                     base::Unretained(this), std::move(callback))));
+  StartHttpCacheDataRemover(std::move(filter), start_time, end_time,
+                            std::move(callback));
 }
 
 void NetworkContext::ComputeHttpCacheSize(
@@ -1967,8 +2043,8 @@ void NetworkContext::CreateTCPConnectedSocket(
     CreateTCPConnectedSocketCallback callback) {
   socket_factory_->CreateTCPConnectedSocket(
       local_addr, remote_addr_list, std::move(tcp_connected_socket_options),
-      static_cast<net::NetworkTrafficAnnotationTag>(traffic_annotation),
-      std::move(receiver), std::move(observer), std::move(callback));
+      traffic_annotation, std::move(receiver), std::move(observer),
+      std::move(callback));
 }
 
 void NetworkContext::CreateTCPBoundSocket(
@@ -2042,7 +2118,7 @@ void NetworkContext::CreateWebSocket(
     mojo::PendingRemote<mojom::WebSocketAuthenticationHandler> auth_handler,
     mojo::PendingRemote<mojom::TrustedHeaderClient> header_client,
     const std::optional<base::UnguessableToken>& throttling_profile_id,
-    const std::optional<base::UnguessableToken>& network_restrictions_id) {
+    const base::UnguessableToken& network_restrictions_id) {
 #if BUILDFLAG(ENABLE_WEBSOCKETS)
   if (!websocket_factory_) {
     websocket_factory_ = std::make_unique<WebSocketFactory>(this);
@@ -2068,14 +2144,29 @@ void NetworkContext::CreateWebTransport(
     std::vector<mojom::WebTransportCertificateFingerprintPtr> fingerprints,
     const std::vector<std::string>& application_protocols,
     mojom::WebTransportCongestionControl congestion_control,
+    std::optional<uint16_t>
+        anticipated_concurrent_incoming_unidirectional_streams,
+    std::optional<uint16_t>
+        anticipated_concurrent_incoming_bidirectional_streams,
     mojo::PendingRemote<mojom::WebTransportHandshakeClient>
         pending_handshake_client,
     mojo::PendingRemote<mojom::URLLoaderNetworkServiceObserver>
         url_loader_network_observer,
-    mojom::ClientSecurityStatePtr client_security_state) {
+    mojom::ClientSecurityStatePtr client_security_state,
+    const base::UnguessableToken& network_restrictions_id) {
+  if (!IsNetworkForNetworkRestrictionsIdAndUrlAllowed(network_restrictions_id,
+                                                      url, key)) {
+    mojo::Remote<mojom::WebTransportHandshakeClient> remote_handshake_client(
+        std::move(pending_handshake_client));
+    remote_handshake_client->OnHandshakeFailed(
+        net::WebTransportError(net::ERR_NETWORK_ACCESS_REVOKED));
+    return;
+  }
   web_transports_.insert(std::make_unique<WebTransport>(
       url, origin, key, fingerprints, application_protocols, congestion_control,
-      this, std::move(pending_handshake_client),
+      anticipated_concurrent_incoming_unidirectional_streams,
+      anticipated_concurrent_incoming_bidirectional_streams, this,
+      std::move(pending_handshake_client),
       std::move(url_loader_network_observer),
       std::move(client_security_state)));
 }
@@ -2115,6 +2206,16 @@ void NetworkContext::ResolveHost(
         net::ResolveErrorInfo(net::ERR_NETWORK_ACCESS_REVOKED),
         /*resolved_addresses=*/{},
         /*alternative_endpoints=*/{});
+    return;
+  }
+
+  if (optional_parameters && optional_parameters->direct_only) {
+    auto request = std::make_unique<ProxyCheckingHostResolverRequest>(
+        this, std::move(host), network_anonymization_key,
+        std::move(optional_parameters), std::move(response_client));
+    auto* request_ptr = request.get();
+    proxy_checking_host_resolver_requests_.insert(std::move(request));
+    request_ptr->Start(url);
     return;
   }
 
@@ -2252,6 +2353,19 @@ void NetworkContext::NotifyExternalCacheHit(const GURL& url,
   }
   cache->OnExternalCacheHit(url, http_method, key, include_credentials);
 }
+
+#if BUILDFLAG(IS_ANDROID)
+void NetworkContext::SetHttpCacheMaxSize(base::ByteSize http_cache_max_size,
+                                         bool force_initialization) {
+  // Note: we do not update params_->http_cache_max_size.
+  net::HttpCache* cache =
+      url_request_context_->http_transaction_factory()->GetCache();
+  if (!cache) {
+    return;
+  }
+  cache->SetMaxBytes(http_cache_max_size, force_initialization);
+}
+#endif  // BUILDFLAG(IS_ANDROID)
 
 void NetworkContext::SetCorsOriginAccessListsForOrigin(
     const url::Origin& source_origin,
@@ -2428,13 +2542,21 @@ void NetworkContext::PreconnectSockets(
     const GURL& original_url,
     mojom::CredentialsMode credentials_mode,
     const net::NetworkAnonymizationKey& network_anonymization_key,
-    const std::optional<base::UnguessableToken>& network_restrictions_id,
+    const base::UnguessableToken& network_restrictions_id,
     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
     const std::optional<net::ConnectionKeepAliveConfig>& keepalive_config,
     mojo::PendingRemote<mojom::ConnectionChangeObserverClient>
         connection_change_observer_client) {
   DCHECK(!require_network_anonymization_key_ ||
          !network_anonymization_key.IsEmpty());
+
+  if (base::FeatureList::IsEnabled(
+          net::features::kEarlyCookieLoadOnPreconnect)) {
+    net::CookieStore* cookie_store = url_request_context_->cookie_store();
+    if (cookie_store) {
+      cookie_store->OnPreconnect(original_url);
+    }
+  }
 
   GURL url = GetHSTSRedirectForPreconnect(original_url);
 
@@ -2446,9 +2568,8 @@ void NetworkContext::PreconnectSockets(
 
   // Preconnect is disallowed if network access is disabled for the
   // network_restrictions_id.
-  if (network_restrictions_id.has_value() &&
-      !IsNetworkForNetworkRestrictionsIdAndUrlAllowed(
-          *network_restrictions_id, url, network_anonymization_key)) {
+  if (!IsNetworkForNetworkRestrictionsIdAndUrlAllowed(
+          network_restrictions_id, url, network_anonymization_key)) {
     return;
   }
 
@@ -2714,12 +2835,11 @@ void NetworkContext::OnHttpAuthDynamicParamsChanged(
       http_auth_dynamic_network_service_params->allow_gssapi_library_load);
 #endif  // BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX)
   if (http_auth_dynamic_network_service_params->allowed_schemes.has_value()) {
-    http_auth_merged_preferences_.set_allowed_schemes(
-        base::flat_set<std::string>(
-            http_auth_dynamic_network_service_params->allowed_schemes->begin(),
-            http_auth_dynamic_network_service_params->allowed_schemes->end()));
+    http_auth_merged_preferences_.SetAllowedSchemes(base::flat_set<std::string>(
+        http_auth_dynamic_network_service_params->allowed_schemes->begin(),
+        http_auth_dynamic_network_service_params->allowed_schemes->end()));
   } else {
-    http_auth_merged_preferences_.set_allowed_schemes(std::nullopt);
+    http_auth_merged_preferences_.SetAllowedSchemes(std::nullopt);
   }
 
   url_matcher_ = std::make_unique<url_matcher::URLMatcher>();
@@ -2851,12 +2971,12 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
         std::move(params_->proxy_resolver_factory));
   }
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
   if (params_->system_proxy_resolver) {
-    builder.SetMojoWindowsSystemProxyResolver(
+    builder.SetMojoSystemProxyResolver(
         std::move(params_->system_proxy_resolver));
   }
-#endif  // BUILDFLAG(IS_WIN)
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
 
 #if BUILDFLAG(IS_CHROMEOS)
   if (params_->dhcp_wpad_url_client) {
@@ -2880,6 +3000,10 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
       if (params_->file_paths->no_vary_search_directory) {
         cache_params.no_vary_search_path =
             params_->file_paths->no_vary_search_directory->path();
+      }
+      if (params_->file_paths->logical_invalidation_directory) {
+        cache_params.logical_invalidation_path =
+            params_->file_paths->logical_invalidation_directory->path();
       }
       cache_params.type = network_session_configurator::ChooseCacheType();
 
@@ -2930,10 +3054,17 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
     builder.EnableHttpCache(cache_params);
   }
 
+  std::unique_ptr<net::EchModeGetter> ech_mode_getter;
+  if (params_->use_platform_ech_policy) {
+#if BUILDFLAG(IS_ANDROID)
+    ech_mode_getter = std::make_unique<net::EchModeGetterAndroid>();
+#endif
+  }
   std::unique_ptr<SSLConfigServiceMojo> ssl_config_service =
       std::make_unique<SSLConfigServiceMojo>(
           std::move(params_->initial_ssl_config),
-          std::move(params_->ssl_config_client_receiver));
+          std::move(params_->ssl_config_client_receiver),
+          std::move(ech_mode_getter));
   SSLConfigServiceMojo* ssl_config_service_raw = ssl_config_service.get();
   builder.set_ssl_config_service(std::move(ssl_config_service));
 
@@ -3152,6 +3283,22 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
         params_->device_bound_sessions_restricted_sites);
 
 #if BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
+    if (base::FeatureList::IsEnabled(
+            net::features::kDeviceBoundSessionsForSingleSignOn)) {
+      builder.set_device_bound_sessions_cookie_access_callback(
+          base::BindRepeating(
+              &NetworkContext::HasCookieAccessForDeviceBoundSession,
+              // `this` outlives the `URLRequestContext` that owns the
+              // device_bound_sessions::SessionService which calls this
+              // callback.
+              base::Unretained(this)));
+    }
+    device_bound_session_service_delegate_ =
+        std::make_unique<DeviceBoundSessionServiceDelegate>(
+            std::move(params_->device_bound_sessions_network_observer));
+    builder.set_device_bound_sessions_client_cert_handler(base::BindRepeating(
+        &DeviceBoundSessionServiceDelegate::SelectClientCertificate,
+        base::Unretained(device_bound_session_service_delegate_.get())));
     if (params_->bound_sessions_unexportable_key_service.is_valid()) {
       builder.set_unexportable_key_service(
           std::make_unique<unexportable_keys::UnexportableKeyServiceProxied>(
@@ -3271,7 +3418,7 @@ NetworkContext::MakeSessionCleanupCookieStore() const {
   return base::MakeRefCounted<SessionCleanupCookieStore>(sqlite_store);
 }
 
-void NetworkContext::OnHttpCacheCleared(ClearHttpCacheCallback callback,
+void NetworkContext::OnHttpCacheCleared(base::OnceClosure callback,
                                         HttpCacheDataRemover* remover) {
   bool removed = false;
   for (auto iter = http_cache_data_removers_.begin();
@@ -3644,8 +3791,32 @@ void NetworkContext::Prefetch(
     int32_t request_id,
     uint32_t options,
     const ResourceRequest& request,
-    const net::MutableNetworkTrafficAnnotationTag& traffic_annotation) {
+    const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
+    const base::UnguessableToken& network_restrictions_id) {
   if (!prefetch_enabled_) {
+    return;
+  }
+
+  // Retrieve the NAK for Connection Allowlist enforcement.
+  const net::NetworkAnonymizationKey& nak =
+      request.trusted_params.has_value()
+          ? request.trusted_params->isolation_info.network_anonymization_key()
+          : net::NetworkAnonymizationKey::CreateTransient();
+
+  // TODO(crbug.com/536913419): Handle the Connection Allowlist redirects
+  // directive correctly, rather than cancelling the whole prefetch.
+  if (!IsNetworkForNetworkRestrictionsIdAndUrlAllowed(
+          network_restrictions_id, request.url, nak, /*is_redirect=*/true)) {
+    return;
+  }
+
+  // The UrlLoaderFactory used below is different from the one used for
+  // subresources, which is normally where enforcement for Connection Allowlist
+  // happens. Enforce here instead before delegating the request to the
+  // prefetch-specific factory. This request is also an initial prefetch and
+  // not a redirect, so perform the allowlist check accordingly.
+  if (!IsNetworkForNetworkRestrictionsIdAndUrlAllowed(
+          network_restrictions_id, request.url, nak, /*is_redirect=*/false)) {
     return;
   }
 
@@ -3715,8 +3886,11 @@ bool NetworkContext::IsNetworkForNetworkRestrictionsIdAndUrlAllowed(
   // If network hasn't been revoked for the network restrictions ID, it's
   // allowed. Likewise, local schemes that reach this point should be excluded
   // as they don't generate network requests.
+  if (network_restrictions_ids_.empty() || url.SchemeIsLocal()) {
+    return true;
+  }
   auto it = network_restrictions_ids_.find(network_restrictions_id);
-  if (it == network_restrictions_ids_.end() || url.SchemeIsLocal()) {
+  if (it == network_restrictions_ids_.end()) {
     return true;
   }
 
@@ -3729,18 +3903,26 @@ bool NetworkContext::IsNetworkForNetworkRestrictionsIdAndUrlAllowed(
   auto restriction_allowed = [&](const NetworkRestriction& r, bool enforced) {
     const auto& patterns = enforced ? r.enforced_allowlisted_patterns
                                     : r.report_only_allowlisted_patterns;
-    const auto& redirect_behavior = enforced ? r.enforced_redirect_behavior
-                                             : r.report_only_redirect_behavior;
+    if (!patterns.has_value()) {
+      // A null pattern implies the response does not contain the corresponding
+      // header at all. No restriction should be applied.
+      return true;
+    }
 
     if (is_redirect) {
+      // For redirects, the URL is not matched against the patterns. Connection
+      // allowlist's redirect directive specifies the behavior.
+      const auto& redirect_behavior = enforced
+                                          ? r.enforced_redirect_behavior
+                                          : r.report_only_redirect_behavior;
       return redirect_behavior == ConnectionAllowlist::RedirectBehavior::kAllow;
     }
-    return !patterns.has_value() ||
-           std::ranges::any_of(
-               *patterns,
-               [&url](
-                   const std::unique_ptr<url_pattern::SimpleUrlPatternMatcher>&
-                       matcher) { return matcher->Match(url); });
+
+    // Match the URL against the patterns.
+    return std::ranges::any_of(
+        *patterns,
+        [&url](const std::unique_ptr<url_pattern::SimpleUrlPatternMatcher>&
+                   matcher) { return matcher->Match(url); });
   };
 
   // First, check against the report-only allowlist, reporting violations:
@@ -3856,6 +4038,133 @@ void NetworkContext::SetVariationsHeaders(
     variations::mojom::VariationsHeadersPtr variations_headers) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   variations_headers_ = std::move(variations_headers);
+}
+
+bool NetworkContext::HasCookieAccessForDeviceBoundSession(
+    const net::device_bound_sessions::CookieAccessCheckParams& params) {
+  if (!cookie_manager_) {
+    return false;
+  }
+  return cookie_manager_->cookie_settings().IsFullCookieAccessAllowed(
+      params.provider_origin->GetURL(),
+      net::SiteForCookies::FromOrigin(*params.relying_party_origin),
+      *params.relying_party_origin,
+      {net::CookieSettingOverride::kStorageAccessGrantEligible},
+      // TODO(crbug.com/353772143): update once partitioned cookies are
+      // supported. DBSC does not support cookie partition yet.
+      /*cookie_partition_key=*/std::nullopt);
+}
+
+void NetworkContext::OnInvalidationFiltersLoaded(
+    LogicalInvalidationStore::LoadResult result,
+    std::vector<net::HttpCache::InvalidationFilter> loaded_filters) {
+  net::HttpCache* cache =
+      url_request_context_->http_transaction_factory()->GetCache();
+  if (!cache) {
+    return;
+  }
+
+  // 1. Determine and save the final list of filters in O(N log N) time.
+  if (logical_invalidation_store_) {
+    std::vector<net::HttpCache::InvalidationFilter> filters_to_save(
+        loaded_filters);
+    filters_to_save.append_range(pending_additions_);
+    std::erase_if(filters_to_save, [&](const auto& filter) {
+      return std::ranges::contains(pending_removals_, filter);
+    });
+    std::ranges::sort(filters_to_save, std::less<>());
+    auto [first, last] =
+        std::ranges::unique(filters_to_save, std::equal_to<>());
+    filters_to_save.erase(first, last);
+    logical_invalidation_store_->Save(std::move(filters_to_save));
+  }
+
+  // 2. Determine which loaded filters need to be registered logically in
+  // memory.
+  std::vector<net::HttpCache::InvalidationFilter> filters_to_register_logically;
+  for (auto& filter : loaded_filters) {
+    if (!std::ranges::contains(pending_removals_, filter) &&
+        !std::ranges::contains(pending_additions_, filter)) {
+      filters_to_register_logically.push_back(std::move(filter));
+    }
+  }
+
+  // 4. Register the logical filters in memory before starting physical purges.
+  for (auto& filter : filters_to_register_logically) {
+    filter.was_loaded_from_disk = true;
+    cache->AddInvalidationFilter(filter);
+  }
+
+  // 5. Start background physical purges for newly registered filters.
+  for (const auto& filter : filters_to_register_logically) {
+    mojom::ClearDataFilterPtr filter_ptr = mojom::ClearDataFilter::New();
+    filter_ptr->type =
+        (filter.filter_type == net::UrlFilterType::kTrueIfMatches)
+            ? mojom::ClearDataFilter_Type::DELETE_MATCHES
+            : mojom::ClearDataFilter_Type::KEEP_MATCHES;
+    filter_ptr->origins.assign_range(filter.origins);
+    filter_ptr->domains.assign_range(filter.domains);
+
+    auto logical_cleanup_done_callback = base::BindOnce(
+        &RemoveInvalidationFilterCallback, weak_factory_.GetWeakPtr(), filter);
+
+    StartHttpCacheDataRemover(std::move(filter_ptr), filter.begin_time,
+                              filter.end_time,
+                              std::move(logical_cleanup_done_callback));
+  }
+
+  // 6. Set state to loaded and clear queues.
+  initial_filters_loaded_ = true;
+  pending_additions_.clear();
+  pending_removals_.clear();
+}
+
+void NetworkContext::StartHttpCacheDataRemover(
+    mojom::ClearDataFilterPtr filter,
+    base::Time start_time,
+    base::Time end_time,
+    base::OnceClosure done_callback) {
+  http_cache_data_removers_.push_back(HttpCacheDataRemover::CreateAndStart(
+      url_request_context_, std::move(filter), start_time, end_time,
+      base::BindOnce(&NetworkContext::OnHttpCacheCleared,
+                     base::Unretained(this), std::move(done_callback))));
+}
+
+void NetworkContext::UpdatePersistenceQueueOrSave(
+    const net::HttpCache::InvalidationFilter& filter,
+    std::vector<net::HttpCache::InvalidationFilter>* pending_queue,
+    base::OnceClosure callback) {
+  if (!initial_filters_loaded_) {
+    pending_queue->push_back(filter);
+    if (callback) {
+      std::move(callback).Run();
+    }
+    return;
+  }
+  if (logical_invalidation_store_) {
+    net::HttpCache* cache =
+        url_request_context_->http_transaction_factory()->GetCache();
+    if (cache) {
+      logical_invalidation_store_->Save(cache->invalidation_filters(),
+                                        std::move(callback));
+      return;
+    }
+  }
+  if (callback) {
+    std::move(callback).Run();
+  }
+}
+
+void NetworkContext::OnLogicalFilterAdded(
+    const net::HttpCache::InvalidationFilter& filter,
+    base::OnceClosure callback) {
+  UpdatePersistenceQueueOrSave(filter, &pending_additions_,
+                               std::move(callback));
+}
+
+void NetworkContext::OnLogicalFilterRemoved(
+    const net::HttpCache::InvalidationFilter& filter) {
+  UpdatePersistenceQueueOrSave(filter, &pending_removals_);
 }
 
 }  // namespace network

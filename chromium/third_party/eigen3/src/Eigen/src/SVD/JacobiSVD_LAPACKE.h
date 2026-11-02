@@ -123,6 +123,10 @@ EIGEN_LAPACK_SVD_OPTIONS(ComputeFullU | ComputeFullV)
 EIGEN_LAPACK_SVD_OPTIONS(ComputeThinU | ComputeFullV)
 EIGEN_LAPACK_SVD_OPTIONS(ComputeFullU | ComputeThinV)
 
+#undef EIGEN_LAPACK_SVD_OPTIONS
+
+#undef EIGEN_LAPACKE_SVD
+
 }  // end namespace Eigen
 
 #endif  // EIGEN_JACOBISVD_LAPACKE_H

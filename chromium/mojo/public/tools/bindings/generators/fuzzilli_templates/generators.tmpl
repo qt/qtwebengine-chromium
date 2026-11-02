@@ -1,0 +1,80 @@
+// TODO(crbug.com/500386713) Consider using mojoBuiltins or another list instead of regex
+private func isTargetObject(type: ILType) -> Bool {
+    guard type.Is(.object()), let group = type.group else { return false }
+    return group.starts(with: mojoPrefix)
+}
+
+/// Mojo variant of the builtin `MethodCallGenerator` that operates only on
+/// "Mojo" objects instead of all the objects in the JavaScript environment,
+/// most of which are unrelated to the interface. This generator emits random
+/// method calls, generating any arguments that are not available.
+private let MojoMethodCallGenerator = CodeGenerator("MojoMethodCallGenerator") {
+    b in
+    // Pick a variable among all Mojo variables with methods
+    var targetVar = b.findVariable {
+        let type = b.type(of: $0)
+        return isTargetObject(type: type) && !type.methods.isEmpty
+    }
+
+    // If we can't find a Mojo object in scope, create the {{primary.name}} remote
+    guard let obj = targetVar else {
+        let getRemoteFunc = b.createNamedVariable(forBuiltin: "getOrCreatePrimaryRemote")
+        b.callFunction(getRemoteFunc, withArgs: [])
+        return
+    }
+
+    let methodName = b.type(of: obj).randomMethod()!
+    let signatures = b.methodSignatures(of: methodName, on: obj)
+    let signature = chooseUniform(from: signatures)
+    let arguments = b.findOrGenerateArguments(forSignature: signature)
+    b.callMethod(methodName, on: obj, withArgs: arguments, guard: false)
+}
+
+/// Mojo variant of the builtin `PropertyRetrievalGenerator` that operates only
+/// on "Mojo" objects instead of all the objects in the JavaScript environment,
+/// most of which are unrelated to the interface. This generator emits random
+/// property retrievals.
+private let MojoPropertyRetrievalGenerator = CodeGenerator(
+    "MojoPropertyRetrievalGenerator"
+) { b in
+    let targetVar = b.findVariable { isTargetObject(type: b.type(of: $0)) }
+    guard let obj = targetVar else { return }
+
+    let propertyName =
+        b.type(of: obj).randomProperty() ?? b.randomCustomPropertyName()
+    b.getProperty(propertyName, of: obj)
+}
+
+{%- for receiver in interface_receivers %}
+    {%- if receiver.methods %}
+
+/// Generates a call to add a callback to the {{receiver.name}}CallbackRouter.
+///
+/// The callback has one parameter, specified with `.parameters(n: 1)`. `build(n: 5)`
+/// then tells Fuzzilli to populate the callback body with five random expressions.
+private let Mojo{{receiver.name}}RouterListenerGenerator = CodeGenerator(
+    "Mojo{{receiver.name}}RouterListenerGenerator",
+    inputs: .required(.js{{receiver.name}}CallbackRouter)
+) { b, router in
+    guard
+        let eventName = ILType.js{{receiver|format_unique_name}}CallbackRouter.properties
+            .subtracting(["$"])
+            .randomElement()
+    else {
+        return
+    }
+
+    let listenerHost = b.getProperty(eventName, of: router)
+    let callback = b.buildPlainFunction(with: .parameters(n: 1)) { args in
+        if probability(0.2) {
+            b.buildIf(args[0]) {
+                let wrapper = b.getProperty("$", of: args[0])
+                b.callMethod("close", on: wrapper, withArgs: [])
+            }
+        }
+        b.build(n: 5)
+    }
+    b.callMethod("addListener", on: listenerHost, withArgs: [callback])
+}
+    {%- endif %}
+{%- endfor %}

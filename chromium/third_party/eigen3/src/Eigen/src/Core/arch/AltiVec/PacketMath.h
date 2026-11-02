@@ -3472,7 +3472,7 @@ inline Packet2d pcast<Packet2l, Packet2d>(const Packet2l& x);
 //
 // Things are more complicated for POWER7. There is actually a
 // vec_xxsxdi intrinsic but it is not supported by some gcc versions.
-// So we need to shift by N % 32 and rearrage bytes.
+// So we need to shift by N % 32 and rearrange bytes.
 #ifdef __POWER8_VECTOR__
 
 template <int N>

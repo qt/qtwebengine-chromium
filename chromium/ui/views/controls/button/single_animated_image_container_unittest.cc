@@ -18,7 +18,7 @@
 
 namespace views {
 
-// Test sub-class of animated image container for testing.
+// Test sub-class of animated image for testing.
 class TestSingleAnimatedImageContainer : public SingleAnimatedImageContainer {
  public:
   using SingleAnimatedImageContainer::SingleAnimatedImageContainer;

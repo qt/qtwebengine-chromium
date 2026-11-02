@@ -865,14 +865,7 @@ DirectHandle<String> BuildDefaultCallSite(Isolate* isolate,
     // This threshold must be sufficiently far below String::kMaxLength that
     // the {builder}'s result can never exceed that limit.
     constexpr int kMaxPrintedStringLength = 100;
-    if (string->length() <= kMaxPrintedStringLength) {
-      builder.AppendString(string);
-    } else {
-      string = isolate->factory()->NewProperSubString(string, 0,
-                                                      kMaxPrintedStringLength);
-      builder.AppendString(string);
-      builder.AppendCStringLiteral("<...>");
-    }
+    builder.AppendStringCapped(string, kMaxPrintedStringLength);
     builder.AppendCStringLiteral("\"");
   } else if (IsNull(*object)) {
     builder.AppendCStringLiteral(" null");
@@ -900,7 +893,7 @@ DirectHandle<String> RenderCallSite(Isolate* isolate,
     ReusableUnoptimizedCompileState reusable_state(isolate);
     ParseInfo info(isolate, flags, &compile_state, &reusable_state);
     if (parsing::ParseAny(&info, location->shared(), isolate,
-                          parsing::ReportStatisticsMode::kNo)) {
+                          parsing::ReportStatisticsMode{false})) {
       info.ast_value_factory()->Internalize(isolate);
       CallPrinter printer(isolate, location->shared()->IsUserJavaScript());
       DirectHandle<String> str =
@@ -966,7 +959,7 @@ Tagged<Object> ErrorUtils::ThrowSpreadArgError(Isolate* isolate,
     ReusableUnoptimizedCompileState reusable_state(isolate);
     ParseInfo info(isolate, flags, &compile_state, &reusable_state);
     if (parsing::ParseAny(&info, location.shared(), isolate,
-                          parsing::ReportStatisticsMode::kNo)) {
+                          parsing::ReportStatisticsMode{false})) {
       info.ast_value_factory()->Internalize(isolate);
       CallPrinter printer(isolate, location.shared()->IsUserJavaScript(),
                           CallPrinter::SpreadErrorInArgsHint::kErrorInArgs);
@@ -1047,7 +1040,7 @@ Tagged<Object> ErrorUtils::ThrowLoadFromNullOrUndefined(
     ReusableUnoptimizedCompileState reusable_state(isolate);
     ParseInfo info(isolate, flags, &compile_state, &reusable_state);
     if (parsing::ParseAny(&info, location.shared(), isolate,
-                          parsing::ReportStatisticsMode::kNo)) {
+                          parsing::ReportStatisticsMode{false})) {
       info.ast_value_factory()->Internalize(isolate);
       CallPrinter printer(isolate, location.shared()->IsUserJavaScript());
       DirectHandle<String> str =

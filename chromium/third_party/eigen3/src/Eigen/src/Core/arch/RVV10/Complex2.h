@@ -62,7 +62,7 @@ EIGEN_STRONG_INLINE void prealimag2(const Packet4Xcf& a, Packet4Xf& real, Packet
 
 template <>
 EIGEN_STRONG_INLINE Packet4Xcf pset1<Packet4Xcf>(const std::complex<float>& from) {
-  const numext::int64_t from2 = *reinterpret_cast<const numext::int64_t*>(reinterpret_cast<const void*>(&from));
+  const numext::int64_t from2 = numext::bit_cast<numext::int64_t>(from);
   Packet4Xf res = __riscv_vreinterpret_v_i64m4_f32m4(pset1<Packet4Xl>(from2));
   return Packet4Xcf(res);
 }
@@ -329,7 +329,7 @@ EIGEN_STRONG_INLINE void prealimag2(const Packet1Xcf& a, Packet1Xf& real, Packet
 
 template <>
 EIGEN_STRONG_INLINE Packet1Xcf pset1<Packet1Xcf>(const std::complex<float>& from) {
-  const numext::int64_t from2 = *reinterpret_cast<const numext::int64_t*>(reinterpret_cast<const void*>(&from));
+  const numext::int64_t from2 = numext::bit_cast<numext::int64_t>(from);
   Packet1Xf res = __riscv_vreinterpret_v_i64m1_f32m1(pset1<Packet1Xl>(from2));
   return Packet1Xcf(res);
 }

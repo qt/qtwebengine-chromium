@@ -37,9 +37,7 @@ class CPDF_TextObject final : public CPDF_PageObject {
   // CPDF_PageObject:
   Type GetType() const override;
   void Transform(const CFX_Matrix& matrix) override;
-  bool IsText() const override;
   CPDF_TextObject* AsText() override;
-  const CPDF_TextObject* AsText() const override;
 
   std::unique_ptr<CPDF_TextObject> Clone() const;
 

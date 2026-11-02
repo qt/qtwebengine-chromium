@@ -6,8 +6,10 @@
 #include <utility>
 
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/mojom/frame/user_activation_notification_type.mojom-blink.h"
 #include "third_party/blink/public/mojom/webid/digital_identity_request.mojom.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
+#include "third_party/blink/renderer/bindings/core/v8/script_promise_tester.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_value.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
@@ -19,8 +21,10 @@
 #include "third_party/blink/renderer/bindings/modules/v8/v8_digital_credential_request_options.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+#include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
 #include "third_party/blink/renderer/modules/credentialmanagement/credential.h"
+#include "third_party/blink/renderer/modules/credentialmanagement/digital_credential.h"
 #include "third_party/blink/renderer/modules/credentialmanagement/digital_identity_credential.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
@@ -174,6 +178,8 @@ TEST_F(DigitalIdentityCredentialProtocolTest, DiscoverProtocolUseCounters) {
         MakeGarbageCollected<ScriptPromiseResolver<IDLNullable<Credential>>>(
             script_state);
 
+    GetFrame().NotifyUserActivation(
+        mojom::blink::UserActivationNotificationType::kTest);
     DiscoverDigitalIdentityCredentialFromExternalSource(
         resolver, *CreateOptionsWithProtocol(script_state, test_case.protocol));
 
@@ -196,6 +202,8 @@ TEST_F(DigitalIdentityCredentialProtocolTest, CreateProtocolUseCounters) {
 
   TestCase test_cases[] = {
       {"openid4vci", mojom::WebFeature::kDigitalCredentialsProtocolOpenId4Vci},
+      {"openid4vci-v1",
+       mojom::WebFeature::kDigitalCredentialsProtocolOpenId4VciV1},
   };
 
   for (const auto& test_case : test_cases) {
@@ -205,6 +213,8 @@ TEST_F(DigitalIdentityCredentialProtocolTest, CreateProtocolUseCounters) {
         MakeGarbageCollected<ScriptPromiseResolver<IDLNullable<Credential>>>(
             script_state);
 
+    GetFrame().NotifyUserActivation(
+        mojom::blink::UserActivationNotificationType::kTest);
     CreateDigitalIdentityCredentialInExternalSource(
         resolver,
         *CreateCreateOptionsWithProtocol(script_state, test_case.protocol));
@@ -247,6 +257,8 @@ TEST_F(DigitalIdentityCredentialProtocolTest,
     requests.push_back(request);
   }
 
+  GetFrame().NotifyUserActivation(
+      mojom::blink::UserActivationNotificationType::kTest);
   DiscoverDigitalIdentityCredentialFromExternalSource(
       resolver, *CreateGetOptionsWithRequests(requests));
 
@@ -269,6 +281,8 @@ TEST_F(DigitalIdentityCredentialProtocolTest,
       MakeGarbageCollected<ScriptPromiseResolver<IDLNullable<Credential>>>(
           script_state);
 
+  GetFrame().NotifyUserActivation(
+      mojom::blink::UserActivationNotificationType::kTest);
   DiscoverDigitalIdentityCredentialFromExternalSource(
       resolver, *CreateOptionsWithProtocol(script_state, "unknown-protocol"));
 
@@ -290,6 +304,8 @@ TEST_F(DigitalIdentityCredentialProtocolTest,
       MakeGarbageCollected<ScriptPromiseResolver<IDLNullable<Credential>>>(
           script_state);
 
+  GetFrame().NotifyUserActivation(
+      mojom::blink::UserActivationNotificationType::kTest);
   CreateDigitalIdentityCredentialInExternalSource(
       resolver,
       *CreateCreateOptionsWithProtocol(script_state, "unknown-protocol"));
@@ -298,6 +314,132 @@ TEST_F(DigitalIdentityCredentialProtocolTest,
 
   EXPECT_TRUE(GetDocument().IsUseCounted(
       mojom::WebFeature::kDigitalCredentialsProtocolUnknown));
+}
+
+class DigitalIdentityCredentialProtocolFilterTest
+    : public DigitalIdentityCredentialProtocolTest {
+ protected:
+  void ExpectDiscoverRejects(const String& protocol) {
+    ScriptState* script_state = ToScriptStateForMainWorld(&GetFrame());
+    ScriptState::Scope scope(script_state);
+    auto* resolver =
+        MakeGarbageCollected<ScriptPromiseResolver<IDLNullable<Credential>>>(
+            script_state);
+
+    GetFrame().NotifyUserActivation(
+        mojom::blink::UserActivationNotificationType::kTest);
+    DiscoverDigitalIdentityCredentialFromExternalSource(
+        resolver, *CreateOptionsWithProtocol(script_state, protocol));
+
+    ScriptPromiseTester tester(script_state, resolver->Promise());
+    tester.WaitUntilSettled();
+
+    EXPECT_TRUE(tester.IsRejected())
+        << "Expected Discover to reject protocol: " << protocol;
+    EXPECT_TRUE(GetDocument().IsUseCounted(
+        mojom::WebFeature::kDigitalCredentialsProtocolUnknown));
+  }
+
+  void ExpectCreateRejects(const String& protocol) {
+    ScriptState* script_state = ToScriptStateForMainWorld(&GetFrame());
+    ScriptState::Scope scope(script_state);
+    auto* resolver =
+        MakeGarbageCollected<ScriptPromiseResolver<IDLNullable<Credential>>>(
+            script_state);
+
+    GetFrame().NotifyUserActivation(
+        mojom::blink::UserActivationNotificationType::kTest);
+    CreateDigitalIdentityCredentialInExternalSource(
+        resolver, *CreateCreateOptionsWithProtocol(script_state, protocol));
+
+    ScriptPromiseTester tester(script_state, resolver->Promise());
+    tester.WaitUntilSettled();
+
+    EXPECT_TRUE(tester.IsRejected())
+        << "Expected Create to reject protocol: " << protocol;
+    EXPECT_TRUE(GetDocument().IsUseCounted(
+        mojom::WebFeature::kDigitalCredentialsProtocolUnknown));
+  }
+};
+
+TEST_F(DigitalIdentityCredentialProtocolFilterTest,
+       DiscoverRejectsInvalidProtocolsWhenFeatureEnabled) {
+  ScopedWebIdentityDigitalCredentialsForTest scoped_digital_credentials(
+      /*enabled=*/true);
+  ScopedDigitalCredentialsProtocolFilterForTest scoped_feature(
+      /*enabled=*/true);
+
+  // "unknown-protocol" is completely unknown.
+  // "openid4vci" is an issuance protocol, which is invalid for Get/Discover.
+  const String kInvalidProtocols[] = {"unknown-protocol", "openid4vci"};
+
+  for (const String& protocol : kInvalidProtocols) {
+    ExpectDiscoverRejects(protocol);
+  }
+}
+
+TEST_F(DigitalIdentityCredentialProtocolFilterTest,
+       CreateRejectsInvalidProtocolsWhenFeatureEnabled) {
+  ScopedWebIdentityDigitalCredentialsCreationForTest
+      scoped_digital_credentials_creation(/*enabled=*/true);
+  ScopedDigitalCredentialsProtocolFilterForTest scoped_feature(
+      /*enabled=*/true);
+
+  // "unknown-protocol" is completely unknown.
+  // "org-iso-mdoc" is a presentation protocol, which is invalid for Create.
+  const String kInvalidProtocols[] = {"unknown-protocol", "org-iso-mdoc"};
+
+  for (const String& protocol : kInvalidProtocols) {
+    ExpectCreateRejects(protocol);
+  }
+}
+
+TEST_F(DigitalIdentityCredentialProtocolFilterTest,
+       UserAgentAllowsProtocolFilter) {
+  ScriptState* script_state = ToScriptStateForMainWorld(&GetFrame());
+  ScriptState::Scope scope(script_state);
+
+  {
+    ScopedDigitalCredentialsProtocolFilterForTest scoped_feature(
+        /*enabled=*/false);
+
+    // When feature is disabled, any format-compliant protocol is allowed.
+    const String kAllowed[] = {"openid4vp", "openid4vp-v1-unsigned",
+                               "some-random-protocol"};
+    for (const String& protocol : kAllowed) {
+      EXPECT_TRUE(
+          DigitalCredential::userAgentAllowsProtocol(script_state, protocol));
+    }
+
+    EXPECT_FALSE(DigitalCredential::userAgentAllowsProtocol(
+        script_state, "INVALID_PROTOCOL"));
+  }
+
+  {
+    ScopedDigitalCredentialsProtocolFilterForTest scoped_feature(
+        /*enabled=*/true);
+
+    // When feature is enabled, only known supported protocols are allowed.
+    const String kAllowed[] = {"openid4vp-v1-unsigned",
+                               "openid4vp-v1-signed",
+                               "openid4vp-v1-multisigned",
+                               "org-iso-mdoc",
+                               "openid4vci",
+                               "openid4vci-v1"};
+    for (const String& protocol : kAllowed) {
+      EXPECT_TRUE(
+          DigitalCredential::userAgentAllowsProtocol(script_state, protocol))
+          << "Expected valid protocol was rejected: " << protocol;
+    }
+
+    const String kBlocked[] = {"openid4vp", "some-random-protocol",
+                               "INVALID_PROTOCOL"};
+    for (const String& protocol : kBlocked) {
+      EXPECT_FALSE(
+          DigitalCredential::userAgentAllowsProtocol(script_state, protocol))
+          << "Expected invalid protocol was allowed: " << protocol;
+    }
+  }
 }
 
 }  // namespace blink

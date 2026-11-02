@@ -9,6 +9,7 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/favicon/favicon_utils.h"
@@ -242,6 +243,17 @@ bool FaviconSource::ShouldServiceRequest(
                                              render_process_id);
 }
 
+std::string FaviconSource::GetAccessControlAllowOriginForOrigin(
+    const std::string& origin) {
+  // chrome-untrusted://favicon2 serves the favicons that the Data Sharing
+  // page renders for the tabs of a shared tab group.
+  if (serve_untrusted_ &&
+      base::StrCat({origin, "/"}) == chrome::kChromeUIUntrustedDataSharingURL) {
+    return origin;
+  }
+  return content::URLDataSource::GetAccessControlAllowOriginForOrigin(origin);
+}
+
 ui::NativeTheme* FaviconSource::GetNativeTheme(
     const content::WebContents::Getter& wc_getter) {
 #if BUILDFLAG(IS_ANDROID)
@@ -317,6 +329,7 @@ void FaviconSource::SendDefaultResponse(
 
   int resource_id;
   switch (size_in_dip) {
+#if !BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_DESKTOP_ANDROID)
     case 64:
       resource_id =
           dark_mode ? IDR_DEFAULT_FAVICON_DARK_64 : IDR_DEFAULT_FAVICON_64;
@@ -325,6 +338,7 @@ void FaviconSource::SendDefaultResponse(
       resource_id =
           dark_mode ? IDR_DEFAULT_FAVICON_DARK_32 : IDR_DEFAULT_FAVICON_32;
       break;
+#endif
     default:
       resource_id = dark_mode ? IDR_DEFAULT_FAVICON_DARK : IDR_DEFAULT_FAVICON;
       break;

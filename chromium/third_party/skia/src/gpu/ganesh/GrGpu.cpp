@@ -13,10 +13,11 @@
 #include "include/gpu/ganesh/GrBackendSemaphore.h"
 #include "include/gpu/ganesh/GrBackendSurface.h"
 #include "include/gpu/ganesh/GrDirectContext.h"
-#include "include/private/base/SkTo.h"
-#include "src/base/SkMathPriv.h"
+#include "include/private/SkTo.h"
 #include "src/core/SkCompressedDataUtils.h"
+#include "src/core/SkMathPriv.h"
 #include "src/core/SkTraceEvent.h"
+#include "src/gpu/GlobalResourceStats.h"
 #include "src/gpu/RefCntedCallback.h"
 #include "src/gpu/ganesh/GrBackendUtils.h"
 #include "src/gpu/ganesh/GrCaps.h"
@@ -680,12 +681,14 @@ void GrGpu::didWriteToSurface(GrSurface* surface, GrSurfaceOrigin origin, const 
     }
 }
 
-void GrGpu::executeFlushInfo(SkSpan<GrSurfaceProxy*> proxies,
-                             SkSurfaces::BackendSurfaceAccess access,
-                             const GrFlushInfo& info,
-                             std::optional<GrTimerQuery> timerQuery,
-                             const skgpu::MutableTextureState* newState) {
+GrDirectContext::FlushResult GrGpu::executeFlushInfo(SkSpan<GrSurfaceProxy*> proxies,
+                                                     SkSurfaces::BackendSurfaceAccess access,
+                                                     const GrFlushInfo& info,
+                                                     std::optional<GrTimerQuery> timerQuery,
+                                                     const skgpu::MutableTextureState* newState) {
     TRACE_EVENT0("skia.gpu", TRACE_FUNC);
+
+    GrSemaphoresSubmitted submitted = GrSemaphoresSubmitted::kNo;
 
     GrResourceProvider* resourceProvider = fContext->priv().resourceProvider();
 
@@ -711,6 +714,8 @@ void GrGpu::executeFlushInfo(SkSpan<GrSurfaceProxy*> proxies,
                 }
             }
         }
+
+        submitted = GrSemaphoresSubmitted::kYes;
     }
 
     if (timerQuery) {
@@ -737,6 +742,10 @@ void GrGpu::executeFlushInfo(SkSpan<GrSurfaceProxy*> proxies,
     SkASSERT(!newState || proxies.size() == 1);
     SkASSERT(!newState || access == SkSurfaces::BackendSurfaceAccess::kNoAccess);
     this->prepareSurfacesForBackendAccessAndStateUpdates(proxies, access, newState);
+
+    // If there were semaphores to flush but no support for it, we have failed.
+    bool semaphoreFailure = !this->caps()->backendSemaphoreSupport() && info.fNumSemaphores;
+    return { !semaphoreFailure, submitted };
 }
 
 GrOpsRenderPass* GrGpu::getOpsRenderPass(
@@ -902,8 +911,14 @@ GrBackendTexture GrGpu::createBackendTexture(SkISize dimensions,
         return {};
     }
 
-    return this->onCreateBackendTexture(
+    auto beTex = this->onCreateBackendTexture(
             dimensions, format, renderable, mipmapped, isProtected, label);
+    if (beTex.isValid()) {
+        skgpu::GlobalResourceStats::RecordCreateBackendTexture(
+                isProtected == GrProtected::kYes ? skgpu::Protected::kYes : skgpu::Protected::kNo,
+                GrSurface::ComputeSize(beTex.getBackendFormat(), dimensions, 1, mipmapped));
+    }
+    return beTex;
 }
 
 bool GrGpu::clearBackendTexture(const GrBackendTexture& backendTexture,
@@ -946,7 +961,25 @@ GrBackendTexture GrGpu::createCompressedBackendTexture(SkISize dimensions,
         return {};
     }
 
-    return this->onCreateCompressedBackendTexture(dimensions, format, mipmapped, isProtected);
+    auto tex =  this->onCreateCompressedBackendTexture(dimensions, format, mipmapped, isProtected);
+    if (tex.isValid()) {
+        skgpu::GlobalResourceStats::RecordCreateBackendTexture(
+                isProtected == GrProtected::kYes ? skgpu::Protected::kYes : skgpu::Protected::kNo,
+                GrSurface::ComputeSize(format, dimensions, /*colorSamplesPerPixel=*/1, mipmapped));
+    }
+    return tex;
+}
+
+void GrGpu::deleteBackendTexture(const GrBackendTexture& beTex) {
+    if (beTex.isValid()) {
+        skgpu::GlobalResourceStats::RecordDeleteBackendTexture(
+                beTex.isProtected() ? skgpu::Protected::kYes : skgpu::Protected::kNo,
+                GrSurface::ComputeSize(beTex.getBackendFormat(),
+                                       beTex.dimensions(),
+                                       /*colorSamplesPerPixel=*/1,
+                                       beTex.mipmapped()));
+        this->onDeleteBackendTexture(beTex);
+    }
 }
 
 bool GrGpu::updateCompressedBackendTexture(const GrBackendTexture& backendTexture,

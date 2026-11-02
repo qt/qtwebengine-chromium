@@ -18,7 +18,7 @@ namespace Eigen {
 
 namespace internal {
 
-// This FFT implementation was derived from kissfft http:sourceforge.net/projects/kissfft
+// This FFT implementation was derived from kissfft http://sourceforge.net/projects/kissfft
 // Copyright 2003-2009 Mark Borgerding
 
 template <typename Scalar_>

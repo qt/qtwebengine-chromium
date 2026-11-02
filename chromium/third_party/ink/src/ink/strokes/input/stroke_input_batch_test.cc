@@ -21,6 +21,8 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "fuzztest/fuzztest.h"
+#include "absl/hash/hash.h"
+#include "absl/hash/hash_testing.h"
 #include "absl/status/status.h"
 #include "absl/status/status_matchers.h"
 #include "absl/status/statusor.h"
@@ -104,6 +106,15 @@ TEST(StrokeInputBatchTest, Stringify) {
   EXPECT_EQ(absl::StrCat(batch),
             "StrokeInputBatch[StrokeInput[Unknown, (1, 2), 1s],"
             " StrokeInput[Unknown, (3, 4), 2s]]");
+  batch.SetBaseAnimationPhase(0.25f);
+  EXPECT_EQ(absl::StrCat(batch),
+            "StrokeInputBatch[StrokeInput[Unknown, (1, 2), 1s],"
+            " StrokeInput[Unknown, (3, 4), 2s], base_animation_phase=0.25]");
+  batch.SetNoiseSeed(12345);
+  EXPECT_EQ(absl::StrCat(batch),
+            "StrokeInputBatch[StrokeInput[Unknown, (1, 2), 1s],"
+            " StrokeInput[Unknown, (3, 4), 2s], noise_seed=12345,"
+            " base_animation_phase=0.25]");
 }
 
 TEST(StrokeInputBatchTest, DefaultConstructed) {
@@ -219,15 +230,34 @@ TEST(StrokeInputBatchTest, AppendEmptyToNonEmpty) {
   EXPECT_THAT(batch, StrokeInputBatchIsArray({input}));
 }
 
+TEST(StrokeInputBatchTest, AppendNonEmptyToEmpty) {
+  StrokeInputBatch batch1;
+  batch1.SetNoiseSeed(12345u);
+  batch1.SetBaseAnimationPhase(0.125f);
+
+  StrokeInputBatch batch2;
+  StrokeInput input = MakeValidTestInput();
+  ASSERT_THAT(batch2.Append(input), IsOk());
+  EXPECT_THAT(batch2, StrokeInputBatchIsArray({input}));
+
+  EXPECT_THAT(batch1.Append(batch2), IsOk());
+  EXPECT_THAT(batch1, StrokeInputBatchIsArray({input}));
+  EXPECT_EQ(batch1.GetNoiseSeed(), 12345u);
+  EXPECT_EQ(batch1.GetBaseAnimationPhase(), 0.125f);
+}
+
 TEST(StrokeInputBatchTest, SetReplacingOnlyExistingValue) {
   StrokeInputBatch batch;
-
   std::vector<StrokeInput> input_vector = MakeValidTestInputSequence();
   ASSERT_THAT(batch.Append(input_vector[0]), IsOk());
+  batch.SetNoiseSeed(12345u);
+  batch.SetBaseAnimationPhase(0.125f);
 
   StrokeInput replacement = input_vector[1];
   EXPECT_THAT(batch.Set(0, replacement), IsOk());
   EXPECT_THAT(batch, StrokeInputBatchIsArray({replacement}));
+  EXPECT_EQ(batch.GetNoiseSeed(), 12345u);
+  EXPECT_EQ(batch.GetBaseAnimationPhase(), 0.125f);
 }
 
 TEST(StrokeInputBatchTest, Set) {
@@ -326,8 +356,8 @@ TEST(StrokeInputBatchTest, SetReplacingLastValueOfMany) {
 
 TEST(StrokeInputBatchTest, Clear) {
   std::vector<StrokeInput> input_vector = MakeValidTestInputSequence();
-  absl::StatusOr<StrokeInputBatch> batch =
-      StrokeInputBatch::Create(input_vector, /*noise_seed=*/12345);
+  absl::StatusOr<StrokeInputBatch> batch = StrokeInputBatch::Create(
+      input_vector, /*noise_seed=*/12345, /*base_animation_phase=*/0.75f);
   ASSERT_THAT(batch, IsOk());
 
   ASSERT_FALSE(batch->IsEmpty());
@@ -337,9 +367,11 @@ TEST(StrokeInputBatchTest, Clear) {
   ASSERT_TRUE(batch->HasOrientation());
   ASSERT_EQ(batch->GetToolType(), StrokeInput::ToolType::kStylus);
   EXPECT_EQ(batch->GetNoiseSeed(), 12345u);
+  EXPECT_EQ(batch->GetBaseAnimationPhase(), 0.75f);
 
   batch->Clear();
-  // Batch should now be empty and the tool type should be unknown.
+  // Batch should now be empty, the tool type should be unknown, and noise seed
+  // and base animation phase should be reset to their default values.
   EXPECT_TRUE(batch->IsEmpty());
   EXPECT_EQ(batch->Size(), 0);
   ASSERT_FALSE(batch->HasPressure());
@@ -347,6 +379,7 @@ TEST(StrokeInputBatchTest, Clear) {
   ASSERT_FALSE(batch->HasOrientation());
   EXPECT_EQ(batch->GetToolType(), StrokeInput::ToolType::kUnknown);
   EXPECT_EQ(batch->GetNoiseSeed(), 0u);
+  EXPECT_EQ(batch->GetBaseAnimationPhase(), 0.0f);
 }
 
 TEST(StrokeInputBatchTest, AppendAfterClear) {
@@ -1338,11 +1371,16 @@ TEST(StrokeInputBatchTest, EraseWithStartEqualToSize) {
 
 TEST(StrokeInputBatchTest, EraseAll) {
   absl::StatusOr<StrokeInputBatch> batch = StrokeInputBatch::Create(
-      MakeValidTestInputSequence(StrokeInput::ToolType::kStylus));
+      MakeValidTestInputSequence(StrokeInput::ToolType::kStylus),
+      /*noise_seed=*/12345, /*base_animation_phase=*/0.75f);
   ASSERT_THAT(batch, IsOk());
   batch->Erase(0, batch->Size());
   EXPECT_TRUE(batch->IsEmpty());
   EXPECT_EQ(batch->GetToolType(), StrokeInput::ToolType::kUnknown);
+  // Unlike `Clear()`, `Erase()` does not reset the noise seed or base animation
+  // phase, even if all inputs get erased.
+  EXPECT_EQ(batch->GetNoiseSeed(), 12345u);
+  EXPECT_EQ(batch->GetBaseAnimationPhase(), 0.75f);
 }
 
 TEST(StrokeInputBatchTest, EraseWithNoPressure) {
@@ -1619,6 +1657,76 @@ TEST(StrokeInputBatchTest, AppendRangeWithIndexOutOfBounds) {
       "");
   EXPECT_DEATH_IF_SUPPORTED(auto status = batch.Append(*source_batch, 5, 0),
                             "");
+}
+
+TEST(StrokeInputBatchTest, AbslHash) {
+  StrokeInputBatch empty_batch;
+  StrokeInputBatch one_input_batch;
+  ASSERT_THAT(one_input_batch.Append(MakeValidTestInput()), IsOk());
+  absl::StatusOr<StrokeInputBatch> multi_input_batch =
+      StrokeInputBatch::Create(MakeValidTestInputSequence());
+  ASSERT_THAT(multi_input_batch, IsOk());
+  absl::StatusOr<StrokeInputBatch> different_tool_batch =
+      StrokeInputBatch::Create(
+          MakeValidTestInputSequence(StrokeInput::ToolType::kMouse));
+  ASSERT_THAT(different_tool_batch, IsOk());
+  std::vector<StrokeInput> no_pressure_inputs = MakeValidTestInputSequence();
+  for (auto& input : no_pressure_inputs) {
+    input.pressure = StrokeInput::kNoPressure;
+  }
+  absl::StatusOr<StrokeInputBatch> no_pressure_batch =
+      StrokeInputBatch::Create(no_pressure_inputs);
+  ASSERT_THAT(no_pressure_batch, IsOk());
+  std::vector<StrokeInput> no_tilt_inputs = MakeValidTestInputSequence();
+  for (auto& input : no_tilt_inputs) {
+    input.tilt = StrokeInput::kNoTilt;
+  }
+  absl::StatusOr<StrokeInputBatch> no_tilt_batch =
+      StrokeInputBatch::Create(no_tilt_inputs);
+  ASSERT_THAT(no_tilt_batch, IsOk());
+  std::vector<StrokeInput> no_orientation_inputs = MakeValidTestInputSequence();
+  for (auto& input : no_orientation_inputs) {
+    input.orientation = StrokeInput::kNoOrientation;
+  }
+  absl::StatusOr<StrokeInputBatch> no_orientation_batch =
+      StrokeInputBatch::Create(no_orientation_inputs);
+  ASSERT_THAT(no_orientation_batch, IsOk());
+  std::vector<StrokeInput> different_stroke_unit_length_inputs =
+      MakeValidTestInputSequence();
+  for (auto& input : different_stroke_unit_length_inputs) {
+    input.stroke_unit_length = PhysicalDistance::Centimeters(0.2);
+  }
+  absl::StatusOr<StrokeInputBatch> different_stroke_unit_length_batch =
+      StrokeInputBatch::Create(different_stroke_unit_length_inputs);
+  ASSERT_THAT(different_stroke_unit_length_batch, IsOk());
+
+  EXPECT_TRUE(absl::VerifyTypeImplementsAbslHashCorrectly(
+      {empty_batch, one_input_batch, *multi_input_batch, *different_tool_batch,
+       *no_pressure_batch, *no_tilt_batch, *no_orientation_batch,
+       *different_stroke_unit_length_batch}));
+}
+
+TEST(StrokeInputBatchTest, EqualityAndHashing) {
+  std::vector<StrokeInput> input_vector = MakeValidTestInputSequence();
+  absl::StatusOr<StrokeInputBatch> batch1 =
+      StrokeInputBatch::Create(input_vector);
+  ASSERT_THAT(batch1, IsOk());
+
+  // Copy constructor should share data.
+  StrokeInputBatch batch2 = *batch1;
+  EXPECT_EQ(*batch1, batch2);
+  EXPECT_EQ(absl::HashOf(*batch1), absl::HashOf(batch2));
+
+  // Deep copy should NOT share data.
+  StrokeInputBatch batch3 = batch1->MakeDeepCopy();
+  EXPECT_NE(*batch1, batch3);
+
+  // Modification should trigger copy-on-write and make them unequal.
+  StrokeInput input = MakeValidTestInput();
+  input.elapsed_time =
+      input_vector.back().elapsed_time + Duration32::Seconds(1);
+  ASSERT_THAT(batch2.Append(input), IsOk());
+  EXPECT_NE(*batch1, batch2);
 }
 
 }  // namespace

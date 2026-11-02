@@ -20,6 +20,7 @@
 #include "components/optimization_guide/core/model_execution/model_execution_util.h"
 #include "components/optimization_guide/core/model_execution/on_device_features.h"
 #include "components/optimization_guide/core/model_execution/on_device_model_feature_adapter.h"
+#include "components/optimization_guide/core/model_execution/performance_class.h"
 #include "components/optimization_guide/core/model_execution/usage_tracker.h"
 #include "components/optimization_guide/core/optimization_guide_constants.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
@@ -31,6 +32,17 @@
 namespace optimization_guide {
 
 namespace {
+
+bool CheckCachesExistOnWorkerThread(
+    const on_device_model::ModelAssetPaths& paths) {
+  for (const auto& path : {paths.cache, paths.program_cache,
+                           paths.encoder_cache, paths.adapter_cache}) {
+    if (!path.empty() && base::GetFileSize(path).value_or(0) > 0) {
+      return true;
+    }
+  }
+  return false;
+}
 
 ml::ModelBackendType ConvertBackendType(
     proto::BaseModelRecipe::BackendType type) {
@@ -273,11 +285,14 @@ ManifestSolutionFactory::ManifestSolutionFactory(
     UsageTracker& usage_tracker,
     on_device_model::ServiceClient& service_client,
     OnDeviceModelAccessController& access_controller,
-    base::OnceClosure on_init_complete)
+    PerformanceClassifier& performance_classifier,
+    base::OnceClosure on_init_complete,
+    base::RepeatingClosure on_solutions_updated)
     : broker_impl_(broker_impl),
       service_client_(service_client),
       usage_tracker_(usage_tracker),
       access_controller_(access_controller),
+      performance_classifier_(performance_classifier),
       manifest_(std::move(manifest)),
       assets_(MakeAssetsMap(manifest_.GetAssets())),
       base_models_(MakeBaseModelsMap(manifest_.GetRecipes())),
@@ -285,7 +300,8 @@ ManifestSolutionFactory::ManifestSolutionFactory(
       safety_models_(MakeSafetyModelsMap(manifest_.GetRecipes())),
       solutions_(MakeSolutionsMap(manifest_.GetRecipes())),
       on_asset_init_(
-          base::BarrierClosure(assets_.size(), std::move(on_init_complete))) {}
+          base::BarrierClosure(assets_.size(), std::move(on_init_complete))),
+      on_solutions_updated_(std::move(on_solutions_updated)) {}
 ManifestSolutionFactory::~ManifestSolutionFactory() = default;
 
 void ManifestSolutionFactory::UpdateAssetState(const std::string& asset_id,
@@ -315,12 +331,77 @@ void ManifestSolutionFactory::UpdateAssetState(const std::string& asset_id,
   it->second = new_state;
 
   if (it->second.has_value()) {
-    // Start loading all of the configs provided by this asset.
-    LoadSolutionConfigsFrom(asset_id, std::move(on_complete));
+    // Start loading configs and checking cache existence concurrently.
+    base::RepeatingClosure barrier =
+        base::BarrierClosure(2, std::move(on_complete));
+    CheckCachesExist(asset_id, barrier);
+    LoadSolutionConfigsFrom(asset_id, barrier);
   } else {
     // No asset to load things from, so we're done.
     std::move(on_complete).Run();
   }
+}
+
+void ManifestSolutionFactory::UpdateFreeDiskSpace(
+    std::optional<base::ByteSize> free_disk_space) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  free_disk_space_ = free_disk_space;
+  UpdateSolutions();
+}
+
+on_device_model::ModelAssetPaths ManifestSolutionFactory::GetModelAssetPaths(
+    const proto::BaseModelRecipe& recipe) const {
+  on_device_model::ModelAssetPaths paths;
+  // We should not get here unless the asset is available.
+  paths.weights = *ResolveFile(recipe.weights_file());
+  if (recipe.backend_type() == proto::BaseModelRecipe::BACKEND_TYPE_CPU ||
+      base::FeatureList::IsEnabled(
+          on_device_model::features::kOnDeviceModelGpuWeightCache)) {
+    paths.cache = paths.weights.DirName().Append(kWeightCacheFile);
+  }
+  paths.encoder_cache = paths.weights.DirName().Append(kEncoderCacheFile);
+  paths.adapter_cache = paths.weights.DirName().Append(kAdapterCacheFile);
+  if (base::FeatureList::IsEnabled(
+          on_device_model::features::kOnDeviceModelGpuProgramCache) &&
+      recipe.backend_type() == proto::BaseModelRecipe::BACKEND_TYPE_GPU) {
+    paths.program_cache = paths.weights.DirName().Append(kProgramCacheFile);
+  }
+  return paths;
+}
+
+void ManifestSolutionFactory::CheckCachesExist(const std::string& asset_id,
+                                               base::OnceClosure on_complete) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  DCHECK(assets_.at(asset_id).has_value());
+  std::vector<std::string> matching_model_ids;
+  for (const auto& [model_id, recipe] : manifest_.GetRecipes().base_models()) {
+    if (recipe.weights_file().asset_id() == asset_id) {
+      matching_model_ids.push_back(model_id);
+    }
+  }
+
+  base::RepeatingClosure barrier =
+      base::BarrierClosure(matching_model_ids.size(), std::move(on_complete));
+
+  for (const std::string& model_id : matching_model_ids) {
+    const auto& recipe = manifest_.GetRecipes().base_models().at(model_id);
+    on_device_model::ModelAssetPaths paths = GetModelAssetPaths(recipe);
+    base::ThreadPool::PostTaskAndReplyWithResult(
+        FROM_HERE, {base::MayBlock()},
+        base::BindOnce(&CheckCachesExistOnWorkerThread, std::move(paths)),
+        base::BindOnce(&ManifestSolutionFactory::OnCachesExistChecked,
+                       weak_ptr_factory_.GetWeakPtr(), model_id, barrier));
+  }
+}
+
+void ManifestSolutionFactory::OnCachesExistChecked(
+    const std::string& model_id,
+    base::OnceClosure on_complete,
+    bool caches_exist) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  DCHECK(base_models_.contains(model_id));
+  base_models_.at(model_id).has_caches = caches_exist;
+  std::move(on_complete).Run();
 }
 
 void ManifestSolutionFactory::UpdateSolutions() {
@@ -338,19 +419,47 @@ void ManifestSolutionFactory::UpdateSolutions() {
               OnDeviceModelEligibilityReason::kFeatureExecutionNotEnabled));
     }
   }
+  if (on_solutions_updated_) {
+    on_solutions_updated_.Run();
+  }
 }
 
-std::vector<mojom::BrokerModelInfoPtr>
+std::vector<std::pair<mojom::BrokerModelInfoPtr, base::FilePath>>
 ManifestSolutionFactory::GetBrokerModels() const {
-  std::vector<mojom::BrokerModelInfoPtr> result;
+  std::vector<std::pair<mojom::BrokerModelInfoPtr, base::FilePath>> result;
   for (const auto& [model_id, state] : base_models_) {
     const auto& recipe = manifest_.GetRecipes().base_models().at(model_id);
     auto info = mojom::BrokerModelInfo::New();
     info->name = model_id;
+    auto it = assets_.find(recipe.weights_file().asset_id());
+    base::FilePath path_to_measure;
+    if (it != assets_.end() && it->second.has_value()) {
+      path_to_measure = it->second->path;
+    }
     if (auto path = ResolveFile(recipe.weights_file())) {
       info->weights_path = path->AsUTF8Unsafe();
     }
-    result.push_back(std::move(info));
+
+    switch (recipe.backend_type()) {
+      case proto::BaseModelRecipe::BACKEND_TYPE_CPU:
+        info->backend_type = "CPU";
+        break;
+      case proto::BaseModelRecipe::BACKEND_TYPE_GPU:
+      default:
+        switch (recipe.performance_hint()) {
+          case proto::BaseModelRecipe::PERFORMANCE_HINT_HIGHEST_QUALITY:
+            info->backend_type = "GPU (highest quality)";
+            break;
+          case proto::BaseModelRecipe::PERFORMANCE_HINT_FASTEST_INFERENCE:
+          default:
+            // Default to fastest inference per `ConvertPerformanceHint`.
+            info->backend_type = "GPU (fastest inference)";
+            break;
+        }
+        break;
+    }
+
+    result.emplace_back(std::move(info), std::move(path_to_measure));
   }
   return result;
 }
@@ -485,6 +594,23 @@ ManifestSolutionFactory::CreateSolutionForUseCase(
       break;
   }
 
+  const auto& solution_recipe =
+      manifest_.GetRecipes().solutions().at(solution_id);
+  const std::string& model_recipe_id = solution_recipe.model_recipe_id();
+  std::string base_model_id = model_recipe_id;
+  if (auto it = manifest_.GetRecipes().adaptations().find(model_recipe_id);
+      it != manifest_.GetRecipes().adaptations().end()) {
+    base_model_id = it->second.base_model_recipe_id();
+  }
+
+  if (!base_models_.at(base_model_id).has_caches &&
+      free_disk_space_.has_value() &&
+      features::IsFreeDiskSpaceTooLowForOnDeviceModelCachesBuild(
+          *free_disk_space_)) {
+    return base::unexpected(
+        OnDeviceModelEligibilityReason::kInsufficientDiskSpaceForCaches);
+  }
+
   // Everything is available, create the solution.
   return std::make_unique<Solution>(weak_ptr_factory_.GetWeakPtr(),
                                     use_case_name, solution_id);
@@ -521,7 +647,7 @@ ManifestSolutionFactory::GetOrLoadTextSafetyModel(const std::string& model_id) {
     if (recipe.has_weights_file()) {
       params.ts_paths.emplace();
       // We should not get here unless the asset is available.
-      params.ts_paths->data = *ResolveFile(recipe.weights_file());
+      params.ts_paths->model = *ResolveFile(recipe.weights_file());
     }
     if (recipe.has_language_detection_model_file()) {
       params.language_paths.emplace();
@@ -568,22 +694,7 @@ void ManifestSolutionFactory::LoadBaseModel(const std::string& model_id,
   TRACE_EVENT("optimization_guide", "ManifestSolutionFactory::LoadBaseModel",
               "model_id", model_id);
   const auto& recipe = manifest_.GetRecipes().base_models().at(model_id);
-  on_device_model::ModelAssetPaths paths;
-  // We should not get here unless the asset is available.
-  paths.weights = *ResolveFile(recipe.weights_file());
-  if (recipe.backend_type() == proto::BaseModelRecipe::BACKEND_TYPE_CPU) {
-    paths.cache = paths.weights.DirName().Append(kWeightCacheFile);
-  }
-  paths.encoder_cache = paths.weights.DirName().Append(kEncoderCacheFile);
-  paths.adapter_cache = paths.weights.DirName().Append(kAdapterCacheFile);
-  // TODO(crbug.com/461547475): GPU cache is experimental for now, remove
-  // once feature flag is no longer needed.
-  if (base::FeatureList::IsEnabled(
-          on_device_model::features::kOnDeviceModelGpuCache) &&
-      recipe.backend_type() == proto::BaseModelRecipe::BACKEND_TYPE_GPU) {
-    // Program cache will be used for GPU backend only.
-    paths.program_cache = paths.weights.DirName().Append(kProgramCacheFile);
-  }
+  on_device_model::ModelAssetPaths paths = GetModelAssetPaths(recipe);
 
   service_client_->AddPendingUsage();
   base::ThreadPool::PostTaskAndReplyWithResult(
@@ -612,6 +723,8 @@ void ManifestSolutionFactory::LoadBaseModel(const std::string& model_id,
             }
             params->performance_hint =
                 ConvertPerformanceHint(recipe.performance_hint());
+            params->vram_mb =
+                factory->performance_classifier_->GetDeviceVramMb();
             for (int32_t rank : recipe.supported_adaptation_ranks()) {
               params->adaptation_ranks.push_back(rank);
             }

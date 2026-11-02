@@ -16,6 +16,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/not_fatal_until.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/system/sys_info.h"
@@ -25,6 +26,7 @@
 #include "components/services/storage/dom_storage/async_dom_storage_database.h"
 #include "components/services/storage/dom_storage/dom_storage_constants.h"
 #include "components/services/storage/dom_storage/dom_storage_database.h"
+#include "components/services/storage/dom_storage/dom_storage_histogram_helper.h"
 #include "components/services/storage/dom_storage/features.h"
 #include "components/services/storage/dom_storage/session_storage_area_impl.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
@@ -342,12 +344,7 @@ void SessionStorageImpl::ShutDown() {
     // Flush any uncommitted data.
     for (const auto& it : data_maps_) {
       auto* area = it.second->storage_area();
-      base::UmaHistogramBoolean("Storage.SessionStorage.ShutdownDroppedChanges",
-                                area->has_pending_load_read_write_tasks());
       area->ScheduleImmediateCommit();
-      // TODO(crbug.com/503422295): Monitor the above histogram, and if dropping
-      // changes is common then handle that here.
-      area->CancelAllPendingRequests();
     }
   }
 }
@@ -421,16 +418,18 @@ bool SessionStorageImpl::OnMemoryDump(
       base::StringPrintf("site_storage/sessionstorage/0x%" PRIXPTR,
                          reinterpret_cast<uintptr_t>(this));
 
-  // Account for database memory usage, which actually lives in the file
-  // service.
-  auto* global_dump = pmd->CreateSharedGlobalAllocatorDump(memory_dump_id_);
-  // The size of the database dump will be added by the database service.
-  auto* db_mad = pmd->CreateAllocatorDump(
-      context_name +
-      (ShouldUseSqliteBackend(in_memory_) ? "/sqlite" : "/leveldb"));
-  // Specifies that the current context is responsible for keeping memory alive.
-  int kImportance = 2;
-  pmd->AddOwnershipEdge(db_mad->guid(), global_dump->guid(), kImportance);
+  if (database_) {
+    // Account for database memory usage, which actually lives in the file
+    // service.
+    auto* global_dump = pmd->CreateSharedGlobalAllocatorDump(memory_dump_id_);
+    // The size of the database dump will be added by the database service.
+    auto* db_mad = pmd->CreateAllocatorDump(
+        context_name + (database_->is_sqlite() ? "/sqlite" : "/leveldb"));
+    // Specifies that the current context is responsible for keeping memory
+    // alive.
+    int kImportance = 2;
+    pmd->AddOwnershipEdge(db_mad->guid(), global_dump->guid(), kImportance);
+  }
 
   if (args.level_of_detail ==
       base::trace_event::MemoryDumpLevelOfDetail::kBackground) {
@@ -472,57 +471,9 @@ void SessionStorageImpl::FlushAreaForTesting(
   it->second->FlushStorageKeyForTesting(storage_key);
 }
 
-void SessionStorageImpl::PutValueForTesting(
-    const std::string& namespace_id,
-    const blink::StorageKey& storage_key,
-    const std::vector<uint8_t>& key,
-    const std::vector<uint8_t>& value,
-    base::OnceCallback<void(bool)> callback) {
-  if (connection_state_ != CONNECTION_FINISHED) {
-    return;
-  }
-
-  const auto& it = namespaces_.find(namespace_id);
-  if (it == namespaces_.end()) {
-    return;
-  }
-
-  it->second->PutValueForTesting(storage_key, key, value, std::move(callback));
-}
-
 void SessionStorageImpl::SetDatabaseOpenCallbackForTesting(
     base::OnceClosure callback) {
   RunWhenConnected(std::move(callback));
-}
-
-base::FilePath SessionStorageImpl::GetDatabasePath() const {
-  return DomStorageDatabase::GetPath(StorageType::kSessionStorage,
-                                     storage_partition_directory_);
-}
-
-scoped_refptr<DomStorageDatabase::SharedMapLocator>
-SessionStorageImpl::RegisterNewAreaMap(const std::string& namespace_id,
-                                       const blink::StorageKey& storage_key) {
-  CHECK_EQ(connection_state_, CONNECTION_FINISHED);
-
-  scoped_refptr<DomStorageDatabase::SharedMapLocator> map_entry =
-      metadata_.RegisterNewMap(namespace_id, storage_key);
-  if (database_) {
-    // Save the new map in the database.
-    DomStorageDatabase::Metadata metadata;
-    metadata.next_map_id = map_entry->map_id().value() + 1;
-    metadata.map_metadata.push_back({
-        .map_locator{
-            /*session_id=*/namespace_id,
-            map_entry->storage_key(),
-            map_entry->map_id().value(),
-        },
-    });
-    database_->PutMetadata(std::move(metadata),
-                           base::BindOnce(&SessionStorageImpl::OnCommitResult,
-                                          weak_ptr_factory_.GetWeakPtr()));
-  }
-  return map_entry;
 }
 
 void SessionStorageImpl::OnDataMapCreation(int64_t map_id,
@@ -540,22 +491,26 @@ void SessionStorageImpl::OnDataMapDestruction(int64_t map_id) {
 }
 
 void SessionStorageImpl::OnCommitResult(DbStatus status) {
+  // Previous commit errors deleted and recreated the database below. Ignore
+  // additional errors from the old database while waiting for the new database
+  // to open. The `!database_` check additionally handles the case where
+  // recovery failed completely and we are now running without a database.
+  if (connection_state_ != CONNECTION_FINISHED || !database_) {
+    return;
+  }
   if (status.ok()) {
+    const DatabaseMetricsType metrics_type = database_->metrics_type();
     if (commit_error_count_ > 0 && tried_to_recover_from_commit_errors_) {
       base::UmaHistogramEnumeration(
-          "Storage.SessionStorage.Recovery.CommitErrorThresholdExceeded",
+          base::StrCat(
+              {"Storage.SessionStorage.Recovery.CommitErrorThresholdExceeded",
+               MaybeGetOnDiskExperimentalSuffix(metrics_type)}),
           DomStorageDatabaseRecoveryOutcome::
               kTransientErrorsAfterAttemptedRecovery);
     }
-    RecordCommitErrorCountAtReset("SessionStorage", commit_error_count_);
+    RecordCommitErrorCountAtReset("SessionStorage", commit_error_count_,
+                                  metrics_type);
     commit_error_count_ = 0;
-    return;
-  }
-
-  if (connection_state_ != CONNECTION_FINISHED) {
-    // Previous commit errors deleted and recreated the database below.  Ignore
-    // additional errors from the old database while waiting for the new
-    // database to open.
     return;
   }
 
@@ -566,7 +521,9 @@ void SessionStorageImpl::OnCommitResult(DbStatus status) {
       // are still having problems: there isn't really anything left to try, so
       // just ignore errors.
       base::UmaHistogramEnumeration(
-          "Storage.SessionStorage.Recovery.CommitErrorThresholdExceeded",
+          base::StrCat(
+              {"Storage.SessionStorage.Recovery.CommitErrorThresholdExceeded",
+               MaybeGetOnDiskExperimentalSuffix(database_->metrics_type())}),
           DomStorageDatabaseRecoveryOutcome::
               kOngoingErrorsAfterAttemptedRecovery);
       return;
@@ -637,8 +594,8 @@ std::unique_ptr<SessionStorageNamespaceImpl>
 SessionStorageImpl::CreateSessionStorageNamespaceImpl(
     std::string namespace_id) {
   SessionStorageAreaImpl::RegisterNewAreaMap map_id_callback =
-      base::BindRepeating(&SessionStorageImpl::RegisterNewAreaMap,
-                          base::Unretained(this));
+      base::BindRepeating(&SessionStorageMetadata::RegisterNewMap,
+                          base::Unretained(&metadata_));
 
   return std::make_unique<SessionStorageNamespaceImpl>(
       std::move(namespace_id), this, std::move(map_id_callback), this);
@@ -692,35 +649,50 @@ void SessionStorageImpl::RunWhenConnected(base::OnceClosure callback) {
   NOTREACHED();
 }
 
-void SessionStorageImpl::InitiateConnection(bool in_memory_only) {
+void SessionStorageImpl::InitiateConnection(
+    bool in_memory_only,
+    bool destroy_existing_db_for_recovery) {
   CHECK_EQ(connection_state_, CONNECTION_IN_PROGRESS);
 
-  if (backing_mode_ != BackingMode::kNoDisk && !in_memory_only &&
-      !storage_partition_directory_.empty()) {
-    // We were given a subdirectory to write to, so use a disk backed database.
-    if (backing_mode_ == BackingMode::kClearDiskStateOnOpen) {
-      DomStorageDatabaseFactory::Destroy(GetDatabasePath(), base::DoNothing());
-    }
+  // Use an in-memory database unless we were given a usable subdirectory and
+  // weren't asked to stay in memory.
+  in_memory_ = in_memory_only || backing_mode_ == BackingMode::kNoDisk ||
+               storage_partition_directory_.empty();
+  const base::FilePath dir_to_open =
+      in_memory_ ? base::FilePath() : storage_partition_directory_;
 
-    in_memory_ = false;
-    database_ = AsyncDomStorageDatabase::Open(
-        StorageType::kSessionStorage, GetDatabasePath(), memory_dump_id_,
-        base::BindOnce(&SessionStorageImpl::OnDatabaseOpened,
-                       weak_ptr_factory_.GetWeakPtr()));
-    return;
-  }
-
-  // We were not given a subdirectory. Use a memory backed database.
-  in_memory_ = true;
+  // Recovery destroys the pre-existing on-disk database before reopening (which
+  // may itself be in-memory). `kClearDiskStateOnOpen` also destroys any
+  // pre-existing on-disk state, but only when actually opening on disk (an
+  // empty dir has nothing to destroy). An empty `dir_to_destroy` means no
+  // destroy.
+  const bool destroy_existing =
+      destroy_existing_db_for_recovery ||
+      (!in_memory_ && backing_mode_ == BackingMode::kClearDiskStateOnOpen);
+  const base::FilePath dir_to_destroy =
+      destroy_existing ? storage_partition_directory_ : base::FilePath();
   database_ = AsyncDomStorageDatabase::Open(
-      StorageType::kSessionStorage,
-      /*database_path=*/base::FilePath(), memory_dump_id_,
+      StorageType::kSessionStorage, dir_to_open, memory_dump_id_,
+      dir_to_destroy,
       base::BindOnce(&SessionStorageImpl::OnDatabaseOpened,
                      weak_ptr_factory_.GetWeakPtr()));
 }
 
-void SessionStorageImpl::OnDatabaseOpened(DbStatus status) {
-  if (!status.ok()) {
+void SessionStorageImpl::OnDatabaseOpened(
+    AsyncDomStorageDatabase::OpenOutcome outcome) {
+  // If this open destroyed a pre-existing database, log the destroy result.
+  // This covers both recovery and the `kClearDiskStateOnOpen` path. If
+  // `recovery_state_` is set, then add the destroy's result to it.
+  if (outcome.destroy_outcome) {
+    outcome.destroy_outcome->status.Log(
+        "Storage.SessionStorage.DestroyDatabase",
+        outcome.destroy_outcome->destroyed_db_metrics_type);
+    if (recovery_state_) {
+      recovery_state_->AddDestroyResult(outcome.destroy_outcome->status.ok());
+    }
+  }
+
+  if (!outcome.open_status.ok()) {
     // If we failed to open the database, try to delete and recreate the
     // database, or ultimately fallback to an in-memory database.
     DeleteAndRecreateDatabase(DomStorageRecoveryReason::kOpenFailure);
@@ -778,11 +750,6 @@ void SessionStorageImpl::OnConnectionFinished() {
 }
 
 void SessionStorageImpl::PurgeAllNamespaceDataMaps() {
-  // Drop all pending load tasks to avoid the DCHECK in `~StorageAreaImpl()`.
-  for (const auto& it : data_maps_) {
-    it.second->storage_area()->CancelAllPendingRequests();
-  }
-
   // Destroy all `SessionStorageDataMap` instances by re-initializing each
   // namespace.
   for (const auto& [namespace_id, namespace_impl] : namespaces_) {
@@ -794,10 +761,13 @@ void SessionStorageImpl::PurgeAllNamespaceDataMaps() {
 
 void SessionStorageImpl::DeleteAndRecreateDatabase(
     DomStorageRecoveryReason reason) {
+  CHECK(database_);
+  const DatabaseMetricsType metrics_type = database_->metrics_type();
+
   // Record the reason that initiated this recovery cycle. Only the first
   // reason is kept when recovery re-enters (e.g. open-fail after destroy).
   if (!recovery_state_) {
-    recovery_state_.emplace(reason, in_memory_);
+    recovery_state_.emplace(reason, metrics_type);
   }
 
   // We're about to set database_ to null, so delete the StorageAreas
@@ -808,7 +778,8 @@ void SessionStorageImpl::DeleteAndRecreateDatabase(
   // StorageAreas to be queued until the connection is complete.
   connection_state_ = CONNECTION_IN_PROGRESS;
   receiver_.Pause();
-  RecordCommitErrorCountAtReset("SessionStorage", commit_error_count_);
+  RecordCommitErrorCountAtReset("SessionStorage", commit_error_count_,
+                                metrics_type);
   commit_error_count_ = 0;
   database_.reset();
 
@@ -829,27 +800,10 @@ void SessionStorageImpl::DeleteAndRecreateDatabase(
 
   protected_namespaces_from_scavenge_.clear();
 
-  // Destroy database, and try again.
-  if (!in_memory_) {
-    DomStorageDatabaseFactory::Destroy(
-        GetDatabasePath(),
-        base::BindOnce(&SessionStorageImpl::OnDBDestroyed,
-                       weak_ptr_factory_.GetWeakPtr(), recreate_in_memory));
-  } else {
-    // No directory, so nothing to destroy. Retrying to recreate will probably
-    // fail, but try anyway.
-    InitiateConnection(recreate_in_memory);
-  }
-}
-
-void SessionStorageImpl::OnDBDestroyed(bool recreate_in_memory,
-                                       DbStatus status) {
-  // Destroy is only called when the database is on disk (see !in_memory_ guard
-  // in DeleteAndRecreateDatabase), so in_memory is always false here.
-  status.Log("Storage.SessionStorage.DestroyDatabase", /*in_memory=*/false);
-  CHECK(recovery_state_);
-  recovery_state_->AddDestroyResult(status.ok());
-  InitiateConnection(recreate_in_memory);
+  // `!in_memory_` means the old database was on-disk and must be destroyed
+  // before reopening.
+  InitiateConnection(recreate_in_memory,
+                     /*destroy_existing_db_for_recovery=*/!in_memory_);
 }
 
 void SessionStorageImpl::GetStatistics(size_t* total_cache_size,

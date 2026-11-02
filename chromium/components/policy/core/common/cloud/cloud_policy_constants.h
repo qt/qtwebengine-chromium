@@ -77,6 +77,7 @@ extern const char kValueRequestCertProvisioningRequest[];
 extern const char kValueRequestChromeProfileReport[];
 extern const char kValueRequestFmRegistrationTokenUpload[];
 extern const char kValueRequestDeterminePromotionEligibility[];
+extern const char kValueRequestGenerateChromeProfileChallenge[];
 
 // Policy type strings for the policy_type field in PolicyFetchRequest.
 extern const char kChromeDevicePolicyType[];
@@ -129,6 +130,7 @@ extern const char kPolicyVerificationKeyHash[];
 // Hence,
 //   (a) existing enumerated constants should never be deleted or reordered, and
 //   (b) new constants should only be appended at the end of the enumeration.
+// LINT.IfChange(DeviceManagementStatus)
 enum DeviceManagementStatus {
   // All is good.
   DM_STATUS_SUCCESS = 0,
@@ -185,6 +187,7 @@ enum DeviceManagementStatus {
   // Service error: Org Unit enrollment limit has been exceeded.
   DM_STATUS_SERVICE_ORG_UNIT_ENROLLMENT_LIMIT_EXCEEEDED = 910
 };
+// LINT.ThenChange(//tools/metrics/histograms/metadata/enterprise/enums.xml:EnterpriseDeviceManagementStatus)
 
 // List of modes that the device can be locked into. Some IDs are skipped
 // because they have been used in the past but got deprecated and deleted.

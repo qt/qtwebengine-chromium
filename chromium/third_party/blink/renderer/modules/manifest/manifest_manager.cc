@@ -155,9 +155,11 @@ void ManifestManager::RequestManifestForTesting(
 }
 
 bool ManifestManager::CanFetchManifest() {
-  // Do not fetch the manifest if we are on an opaque origin.
+  // Do not fetch the manifest if we are on an opaque origin, or if the document
+  // url is an about: url.
   return !GetSupplementable()->GetSecurityOrigin()->IsOpaque() &&
-         GetSupplementable()->Url().IsValid();
+         GetSupplementable()->Url().IsValid() &&
+         !GetSupplementable()->Url().ProtocolIsAbout();
 }
 
 void ManifestManager::RequestManifestImpl(
@@ -246,10 +248,9 @@ void ManifestManager::OnManifestFetchComplete(
   if (response.HttpStatusCode() >= 200 && response.HttpStatusCode() < 400) {
     ParseManifestFromPage(document_url, response.CurrentRequestUrl(), data);
   } else {
-    const String message =
-        String::Format("Manifest fetch from %s failed, code %d",
-                       response.CurrentRequestUrl().GetString().Utf8().c_str(),
-                       response.HttpStatusCode());
+    const String message = StrCat(
+        {"Manifest fetch from ", response.CurrentRequestUrl().GetString(),
+         " failed, code ", String::Number(response.HttpStatusCode())});
 
     GetSupplementable()->AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
         mojom::blink::ConsoleMessageSource::kOther,

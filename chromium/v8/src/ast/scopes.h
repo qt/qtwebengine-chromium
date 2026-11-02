@@ -427,13 +427,6 @@ class V8_EXPORT_PRIVATE Scope : public NON_EXPORTED_BASE(ZoneObject) {
     flags_ = IsWrappedFunctionField::update(flags_, true);
   }
 
-#if V8_ENABLE_WEBASSEMBLY
-  bool IsAsmModule() const;
-  // Returns true if this scope or any inner scopes that might be eagerly
-  // compiled are asm modules.
-  bool ContainsAsmModule() const;
-#endif  // V8_ENABLE_WEBASSEMBLY
-
   bool is_hoisted_in_context() const {
     return IsHoistedInContextField::decode(flags_);
   }
@@ -707,6 +700,14 @@ class V8_EXPORT_PRIVATE Scope : public NON_EXPORTED_BASE(ZoneObject) {
  protected:
   Scope(Zone* zone, ScopeType scope_type);
 
+  void set_scope_type(ScopeType type) {
+    // The only case when a scope type is allowed to change is
+    // SCRIPT_SCOPE->REPL_MODE_SCOPE update.
+    DCHECK_EQ(scope_type_, SCRIPT_SCOPE);
+    DCHECK_EQ(type, REPL_MODE_SCOPE);
+    scope_type_ = type;
+  }
+
   void set_language_mode(LanguageMode language_mode) {
     flags_ = IsStrictField::update(flags_, is_strict(language_mode));
   }
@@ -913,7 +914,7 @@ class V8_EXPORT_PRIVATE Scope : public NON_EXPORTED_BASE(ZoneObject) {
   int num_heap_slots_;
 
   // The scope type.
-  const ScopeType scope_type_;
+  ScopeType scope_type_;
 
   // Scope-specific information computed during parsing.
   //
@@ -973,6 +974,8 @@ class V8_EXPORT_PRIVATE DeclarationScope : public Scope {
   // Creates a script scope.
   DeclarationScope(Zone* zone, AstValueFactory* ast_value_factory,
                    REPLMode repl_mode = REPLMode::kNo);
+
+  void SwitchScriptScopeToREPLMode();
 
   FunctionKind function_kind() const { return function_kind_; }
 
@@ -1132,13 +1135,6 @@ class V8_EXPORT_PRIVATE DeclarationScope : public Scope {
     DCHECK(scope_info_.is_null());
     scope_info_ = scope_info;
   }
-
-#if V8_ENABLE_WEBASSEMBLY
-  bool is_asm_module() const { return IsAsmModuleField::decode(flags_); }
-  void set_is_asm_module(bool value) {
-    flags_ = IsAsmModuleField::update(flags_, value);
-  }
-#endif  // V8_ENABLE_WEBASSEMBLY
 
   bool should_ban_arguments() const {
     return IsClassInitializerFunction(function_kind());
@@ -1450,11 +1446,6 @@ class V8_EXPORT_PRIVATE DeclarationScope : public Scope {
       HasThisDeclarationField::Next<bool, 1>;
   using ClassScopeHasPrivateBrandField =
       NeedsPrivateNameContextChainRecalcField::Next<bool, 1>;
-
-#if V8_ENABLE_WEBASSEMBLY
-  // This scope contains an "use asm" annotation.
-  using IsAsmModuleField = ClassScopeHasPrivateBrandField::Next<bool, 1>;
-#endif  // V8_ENABLE_WEBASSEMBLY
 
 #if DEBUG
   bool is_being_lazily_parsed_;

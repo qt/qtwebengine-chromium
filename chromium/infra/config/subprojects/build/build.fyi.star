@@ -151,10 +151,6 @@ But, the tests are built by {}.\
                 ),
             ),
             "content_browsertests": targets.mixin(
-                # Only retry the individual failed tests instead of rerunning
-                # entire shards.
-                # crbug.com/1475852
-                retry_only_failed_tests = True,
                 swarming = targets.swarming(
                     shards = 12,
                 ),
@@ -180,6 +176,7 @@ But, the tests are built by {}.\
             ),
         },
     ),
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "mac",
         short_name = "test",
@@ -224,11 +221,13 @@ ci.builder(
     cores = 8,
     os = os.LINUX_DEFAULT,
     cpu = cpu.X86_64,
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "linux",
         short_name = "remote",
     ),
     contact_team_email = "chrome-build-team@google.com",
+    execution_timeout = 2 * time.hour,
     siso_configs = ["builder", "remote-link", "default-remote"],
     siso_keep_going = 0,
 )

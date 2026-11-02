@@ -33,6 +33,7 @@ rust_library(
         "//oak_restricted_kernel_wrapper:oak_restricted_kernel_wrapper_virtio_console_channel_bin",
         "//stage0_bin",
     ],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//oak_client",
         "//oak_file_utils",
@@ -40,7 +41,7 @@ rust_library(
         "//oak_functions_client:lib",
         "//oak_proto_rust",
         "@oak_crates_index//:anyhow",
-        "@oak_crates_index//:command-group",
+        "@oak_crates_index//:http",
         "@oak_crates_index//:nix",
         "@oak_crates_index//:once_cell",
         "@oak_crates_index//:port_check",

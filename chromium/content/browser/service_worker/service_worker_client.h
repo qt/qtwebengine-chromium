@@ -314,7 +314,8 @@ class CONTENT_EXPORT ServiceWorkerClient final
   scoped_refptr<network::SharedURLLoaderFactory> CreateNetworkURLLoaderFactory(
       CreateNetworkURLLoaderFactoryType type,
       StoragePartitionImpl* storage_partition,
-      const network::ResourceRequest& resource_request);
+      const network::ResourceRequest& resource_request,
+      const base::UnguessableToken& network_restrictions_id);
 
   // Returns a URLLoaderRequestHandler if an embedder interceptor (e.g. Search
   // Prefetch) can handle the request and returns its handler.
@@ -326,6 +327,11 @@ class CONTENT_EXPORT ServiceWorkerClient final
   std::optional<ContentBrowserClient::URLLoaderRequestHandler>
   TakeInterceptingPreloadHandler(
       const network::ResourceRequest& resource_request);
+
+  // Returns the FrameTreeNodeId of the ongoing navigation for window clients.
+  FrameTreeNodeId GetFrameTreeNodeId() const {
+    return ongoing_navigation_frame_tree_node_id_;
+  }
 
   // For service worker clients.
   // The type of `ongoing_navigation_frame_tree_node_id_` (if any) for metrics.

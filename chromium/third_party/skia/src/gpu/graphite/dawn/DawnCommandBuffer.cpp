@@ -8,7 +8,7 @@
 #include "src/gpu/graphite/dawn/DawnCommandBuffer.h"
 
 #include "include/gpu/graphite/TextureInfo.h"
-#include "include/private/base/SkLog.h"
+#include "include/private/SkLog.h"
 #include "src/gpu/graphite/ContextUtils.h"
 #include "src/gpu/graphite/RenderPassDesc.h"
 #include "src/gpu/graphite/TextureProxy.h"
@@ -661,8 +661,8 @@ bool DawnCommandBuffer::endRenderPass() {
 
 bool DawnCommandBuffer::addDrawPass(DrawPass* drawPass) {
     // If there is gradient data to bind, it must be done prior to draws.
-    if (drawPass->floatStorageManager()->hasData()) {
-        this->bindUniformBuffer(drawPass->floatStorageManager()->getBufferInfo(),
+    if (drawPass->storageBufferManager()->hasData()) {
+        this->bindUniformBuffer(drawPass->storageBufferManager()->getBufferInfo(),
                                 UniformSlot::kGradient);
     }
 

@@ -147,7 +147,7 @@ class MockMediaResource : public MediaResource {
   ~MockMediaResource() override;
 
   // MediaResource implementation.
-  MOCK_METHOD0(GetAllStreams, std::vector<DemuxerStream*>());
+  MOCK_METHOD0(GetAllStreams, std::vector<raw_ptr<DemuxerStream>>());
   MOCK_METHOD1(GetFirstStream, DemuxerStream*(DemuxerStream::Type type));
 };
 
@@ -183,7 +183,10 @@ class MockDemuxer : public Demuxer {
               ());
   MOCK_METHOD(void, Stop, (), (override));
   MOCK_METHOD(void, AbortPendingReads, (), (override));
-  MOCK_METHOD((std::vector<DemuxerStream*>), GetAllStreams, (), (override));
+  MOCK_METHOD((std::vector<raw_ptr<DemuxerStream>>),
+              GetAllStreams,
+              (),
+              (override));
 
   MOCK_METHOD(base::TimeDelta, GetStartTime, (), (const, override));
   MOCK_METHOD(base::Time, GetTimelineOffset, (), (const, override));
@@ -221,6 +224,7 @@ class MockDemuxerStream : public DemuxerStream {
   VideoDecoderConfig video_decoder_config() override;
   MOCK_METHOD0(EnableBitstreamConverter, void());
   MOCK_METHOD0(SupportsConfigChanges, bool());
+  MOCK_METHOD(bool, ManagesTrackSwitchesInternally, (), (const, override));
 
   void set_audio_decoder_config(const AudioDecoderConfig& config);
   void set_video_decoder_config(const VideoDecoderConfig& config);
@@ -535,9 +539,9 @@ class MockRenderer : public Renderer {
   MOCK_METHOD2(OnSetCdm,
                void(CdmContext* cdm_context, CdmAttachedCB& cdm_attached_cb));
   MOCK_METHOD2(OnSelectedVideoTrackChanged,
-               void(std::vector<DemuxerStream*>, base::OnceClosure));
+               void(std::vector<raw_ptr<DemuxerStream>>, base::OnceClosure));
   MOCK_METHOD2(OnSelectedAudioTracksChanged,
-               void(std::vector<DemuxerStream*>, base::OnceClosure));
+               void(std::vector<raw_ptr<DemuxerStream>>, base::OnceClosure));
   RendererType GetRendererType() override { return renderer_type_; }
 
   base::WeakPtr<MockRenderer> AsWeakPtr() {
@@ -855,6 +859,7 @@ class MockStreamParser : public StreamParser {
                     EndMediaSegmentCB end_of_segment_cb,
                     MediaLog* media_log));
   MOCK_METHOD0(Flush, void());
+  MOCK_METHOD0(MarkEndOfStream, void());
   MOCK_CONST_METHOD0(GetGenerateTimestampsFlag, bool());
   MOCK_METHOD1(AppendToParseBuffer, bool(base::span<const uint8_t>));
   MOCK_METHOD1(Parse, ParseStatus(int));

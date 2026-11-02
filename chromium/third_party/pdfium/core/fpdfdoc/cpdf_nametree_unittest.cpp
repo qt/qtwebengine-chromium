@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 #include "core/fpdfdoc/cpdf_nametree.h"
+
+#include "constants/catalog.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_number.h"
@@ -106,7 +108,7 @@ void FillNameTreeDict(CPDF_Dictionary* pRootDict) {
 TEST(CPDFNameTreeTest, GetUnicodeNameWithBOM) {
   // Set up the root dictionary with a Names array.
   auto pRootDict = pdfium::MakeRetain<CPDF_Dictionary>();
-  auto pNames = pRootDict->SetNewFor<CPDF_Array>("Names");
+  auto pNames = pRootDict->SetNewFor<CPDF_Array>(pdfium::catalog::kNames);
 
   // Add the key "1" (with BOM) and value 100 into the array.
   static constexpr uint8_t kData[] = {0xFE, 0xFF, 0x00, 0x31};
@@ -179,7 +181,7 @@ TEST(CPDFNameTreeTest, GetFromTreeWithLimitsArrayWith4Items) {
 TEST(CPDFNameTreeTest, AddIntoNames) {
   // Set up a name tree with a single Names array.
   auto pRootDict = pdfium::MakeRetain<CPDF_Dictionary>();
-  auto pNames = pRootDict->SetNewFor<CPDF_Array>("Names");
+  auto pNames = pRootDict->SetNewFor<CPDF_Array>(pdfium::catalog::kNames);
   AddNameKeyValue(pNames.Get(), "2.txt", 222);
   AddNameKeyValue(pNames.Get(), "7.txt", 777);
 
@@ -213,7 +215,7 @@ TEST(CPDFNameTreeTest, AddIntoNames) {
 TEST(CPDFNameTreeTest, AddIntoEmptyNames) {
   // Set up a name tree with an empty Names array.
   auto pRootDict = pdfium::MakeRetain<CPDF_Dictionary>();
-  auto pNames = pRootDict->SetNewFor<CPDF_Array>("Names");
+  auto pNames = pRootDict->SetNewFor<CPDF_Array>(pdfium::catalog::kNames);
 
   std::unique_ptr<CPDF_NameTree> name_tree =
       CPDF_NameTree::CreateForTesting(pRootDict.Get());

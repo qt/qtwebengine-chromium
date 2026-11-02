@@ -195,17 +195,28 @@ PrintPreviewDialogController* PrintPreviewDialogController::GetInstance() {
 
 void PrintPreviewDialogController::PrintPreview(
     WebContents* initiator,
-    const mojom::RequestPrintPreviewParams& params) {
+    const mojom::RequestPrintPreviewParams& params,
+    bool is_pdf) {
   if (initiator->IsCrashed()) {
     return;
   }
 
-  if (!GetOrCreatePreviewDialog(initiator, params)) {
-    auto* print_view_manager = PrintViewManager::FromWebContents(initiator);
-    if (print_view_manager) {
-      print_view_manager->PrintPreviewDone();
-    }
+  // `initiator` can be destroyed inside GetOrCreatePreviewDialog().
+  base::WeakPtr<content::WebContents> weak_initiator = initiator->GetWeakPtr();
+  if (GetOrCreatePreviewDialog(initiator, params, is_pdf)) {
+    return;
   }
+  if (!weak_initiator) {
+    return;
+  }
+
+  auto* print_view_manager =
+      PrintViewManager::FromWebContents(weak_initiator.get());
+  if (!print_view_manager) {
+    return;
+  }
+
+  print_view_manager->PrintPreviewDone();
 }
 
 // static
@@ -217,14 +228,15 @@ PrintPreviewDialogController::CreatePrintPreviewDialogDelegateForTesting(
 
 WebContents* PrintPreviewDialogController::GetOrCreatePreviewDialogForTesting(
     WebContents* initiator) {
-  mojom::RequestPrintPreviewParams params;
-  params.is_modifiable = true;
-  return GetOrCreatePreviewDialog(initiator, params);
+  constexpr bool kIsPdf = false;
+  return GetOrCreatePreviewDialog(initiator, mojom::RequestPrintPreviewParams(),
+                                  kIsPdf);
 }
 
 WebContents* PrintPreviewDialogController::GetOrCreatePreviewDialog(
     WebContents* initiator,
-    const mojom::RequestPrintPreviewParams& params) {
+    const mojom::RequestPrintPreviewParams& params,
+    bool is_pdf) {
   DCHECK(initiator);
 
   // Get the print preview dialog for `initiator`.
@@ -242,7 +254,7 @@ WebContents* PrintPreviewDialogController::GetOrCreatePreviewDialog(
     return nullptr;
   }
 
-  return CreatePrintPreviewDialog(tab, initiator, params);
+  return CreatePrintPreviewDialog(tab, initiator, params, is_pdf);
 }
 
 WebContents* PrintPreviewDialogController::GetPrintPreviewForContents(
@@ -276,6 +288,15 @@ PrintPreviewDialogController::GetRequestParams(
   return it != preview_dialog_map_.end() ? &it->second.request_params : nullptr;
 }
 
+std::optional<bool> PrintPreviewDialogController::IsPrintingPdf(
+    content::WebContents* preview_dialog) const {
+  auto it = preview_dialog_map_.find(preview_dialog);
+  if (it != preview_dialog_map_.end()) {
+    return it->second.is_pdf;
+  }
+  return std::nullopt;
+}
+
 void PrintPreviewDialogController::ForEachPreviewDialog(
     base::RepeatingCallback<void(content::WebContents*)> callback) {
   for (const auto& it : preview_dialog_map_)
@@ -303,6 +324,8 @@ void PrintPreviewDialogController::EraseInitiatorInfo(
   web_contents_collection_.StopObserving(it->second.initiator);
   it->second.initiator = nullptr;
   it->second.request_params = {};
+  // Set to true to match the original behavior for resetting `request_params`.
+  it->second.is_pdf = true;
   it->second.scoper.reset();
 }
 
@@ -318,9 +341,11 @@ PrintPreviewDialogController::InitiatorData::operator=(
 PrintPreviewDialogController::InitiatorData::InitiatorData(
     content::WebContents* initiator,
     const mojom::RequestPrintPreviewParams& request_params,
+    bool is_pdf,
     std::unique_ptr<tabs::ScopedTabModalUI> scoper)
     : initiator(initiator),
       request_params(request_params),
+      is_pdf(is_pdf),
       scoper(std::move(scoper)) {}
 
 PrintPreviewDialogController::InitiatorData::~InitiatorData() = default;
@@ -357,14 +382,13 @@ void PrintPreviewDialogController::RenderProcessGone(
 
 void PrintPreviewDialogController::WebContentsDestroyed(WebContents* contents) {
   WebContents* preview_dialog = GetPrintPreviewForContents(contents);
-  if (!preview_dialog) {
-    NOTREACHED();
-  }
+  CHECK(preview_dialog);
 
-  if (contents == preview_dialog)
+  if (contents == preview_dialog) {
     RemovePreviewDialog(contents);
-  else
+  } else {
     RemoveInitiator(contents);
+  }
 }
 
 void PrintPreviewDialogController::DidFinishNavigation(
@@ -376,14 +400,13 @@ void PrintPreviewDialogController::DidFinishNavigation(
   }
 
   WebContents* preview_dialog = GetPrintPreviewForContents(contents);
-  if (!preview_dialog) {
-    NOTREACHED();
-  }
+  CHECK(preview_dialog);
 
-  if (contents != preview_dialog)
+  if (contents != preview_dialog) {
     OnInitiatorNavigated(contents, navigation_handle);
-  else
+  } else {
     OnPreviewDialogNavigated(contents, navigation_handle);
+  }
 }
 
 void PrintPreviewDialogController::OnInitiatorNavigated(
@@ -424,13 +447,25 @@ void PrintPreviewDialogController::OnPreviewDialogNavigated(
 WebContents* PrintPreviewDialogController::CreatePrintPreviewDialog(
     tabs::TabInterface* tab,
     content::WebContents* initiator,
-    const mojom::RequestPrintPreviewParams& params) {
+    const mojom::RequestPrintPreviewParams& params,
+    bool is_pdf) {
   base::AutoReset<bool> auto_reset(&is_creating_print_preview_dialog_, true);
+
+  // Showing the dialog synchronously exits HTML fullscreen, which can
+  // potentially destroy `initiator` and its `tab`.
+  base::WeakPtr<content::WebContents> weak_initiator = initiator->GetWeakPtr();
+  base::WeakPtr<tabs::TabInterface> weak_tab =
+      tab ? tab->GetWeakPtr() : nullptr;
 
   // The dialog delegates are deleted when the dialog is closed.
   ConstrainedWebDialogDelegate* web_dialog_delegate = ShowConstrainedWebDialog(
       initiator->GetBrowserContext(),
       std::make_unique<PrintPreviewDialogDelegate>(initiator), initiator);
+
+  if (!weak_initiator || (tab && !weak_tab)) {
+    web_dialog_delegate->OnDialogCloseFromWebUI();
+    return nullptr;
+  }
 
   WebContents* preview_dialog = web_dialog_delegate->GetWebContents();
 
@@ -444,7 +479,8 @@ WebContents* PrintPreviewDialogController::CreatePrintPreviewDialog(
   PrintViewManager::CreateForWebContents(preview_dialog);
 
   // Add an entry to the map.
-  InitiatorData data(initiator, params, tab ? tab->ShowModalUI() : nullptr);
+  InitiatorData data(initiator, params, is_pdf,
+                     tab ? tab->ShowModalUI() : nullptr);
   preview_dialog_map_.emplace(preview_dialog, std::move(data));
 
   // Make the print preview WebContents show up in the task manager.

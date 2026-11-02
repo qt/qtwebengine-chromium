@@ -5,8 +5,8 @@
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as Persistence from '../../models/persistence/persistence.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import type * as CodeMirror from '../../third_party/codemirror.next/codemirror.next.js';
 import * as Tooltips from '../../ui/components/tooltips/tooltips.js';
@@ -39,7 +39,7 @@ const UIStrings = {
    * @example {FolderName} PH1
    */
   changesWereNotSavedToFileSystemToSaveAddFolderToWorkspace:
-      'Changes weren\'t saved to file system. To save, add {PH1} to your Workspace.',
+      'Changes weren’t saved to file system. To save, add {PH1} to your Workspace.',
   /**
    * @description Tooltip shown for the warning icon on an editor tab in the Sources panel
    *              when the developer saved changes via Ctrl+S/Cmd+S, but didn't have a Workspace
@@ -48,7 +48,7 @@ const UIStrings = {
    * @example {Workspace} PH1
    */
   changesWereNotSavedToFileSystemToSaveSetUpYourWorkspace:
-      'Changes weren\'t saved to file system. To save, set up your {PH1}.',
+      'Changes weren’t saved to file system. To save, set up your {PH1}.',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/sources/TabbedEditorContainer.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -718,7 +718,7 @@ export interface EventTypes {
 const MAX_PREVIOUSLY_VIEWED_FILES_COUNT = 30;
 const MAX_SERIALIZABLE_URL_LENGTH = 4096;
 
-interface SerializedHistoryItem {
+export interface SerializedHistoryItem {
   url: string;
   resourceTypeName: string;
   selectionRange?: TextUtils.TextRange.SerializedTextRange;

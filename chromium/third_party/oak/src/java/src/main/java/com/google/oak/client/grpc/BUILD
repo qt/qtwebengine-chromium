@@ -27,6 +27,7 @@ kt_jvm_library(
     srcs = [
         "StreamObserverSessionClient.kt",
     ],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//java/src/main/java/com/google/oak/session:client_session",
         "//java/src/main/java/com/google/oak/session:exception",
@@ -34,7 +35,7 @@ kt_jvm_library(
         "//proto/session:session_java_proto",
         "@com_google_protobuf//java/core",
         "@io_grpc_grpc_java//stub",
-        "@javax_inject_javax_inject",
+        "@maven//:javax_inject_javax_inject",
     ],
 )
 
@@ -43,6 +44,7 @@ kt_jvm_library(
     srcs = [
         "StreamObserverSessionClient.kt",
     ],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//java/src/main/java/com/google/oak/session:client_session_no_jni",
         "//java/src/main/java/com/google/oak/session:exception",
@@ -50,7 +52,7 @@ kt_jvm_library(
         "//proto/session:session_java_proto",
         "@com_google_protobuf//java/core",
         "@io_grpc_grpc_java//stub",
-        "@javax_inject_javax_inject",
+        "@maven//:javax_inject_javax_inject",
     ],
 )
 
@@ -67,7 +69,7 @@ kt_android_library(
         "@com_google_protobuf//java/lite",
         "@io_grpc_grpc_java//api",
         "@io_grpc_grpc_java//stub",
-        "@javax_inject_javax_inject",
+        "@maven//:javax_inject_javax_inject",
     ],
 )
 
@@ -84,6 +86,6 @@ kt_android_library(
         "@com_google_protobuf//java/lite",
         "@io_grpc_grpc_java//api",
         "@io_grpc_grpc_java//stub",
-        "@javax_inject_javax_inject",
+        "@maven//:javax_inject_javax_inject",
     ],
 )

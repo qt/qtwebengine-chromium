@@ -22,7 +22,7 @@ struct static_val {
   static constexpr uint64_t value = n;
   constexpr EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE operator uint64_t() const { return n; }
 
-  constexpr EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE static_val() {}
+  constexpr EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE static_val() = default;
 
   template <typename T>
   EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE static_val(const T& v) {
@@ -120,7 +120,7 @@ template <typename HL, typename LL, typename HR, typename LR>
 static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorUInt128<uint64_t, uint64_t> operator*(
     const TensorUInt128<HL, LL>& lhs, const TensorUInt128<HR, LR>& rhs) {
   // Split each 128-bit integer into 4 32-bit integers, and then do the
-  // multiplications by hand as follow:
+  // multiplications by hand as follows:
   //   lhs      a  b  c  d
   //   rhs      e  f  g  h
   //           -----------

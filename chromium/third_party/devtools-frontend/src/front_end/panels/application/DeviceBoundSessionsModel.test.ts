@@ -3,16 +3,16 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../core/common/common.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
-import {createTarget} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {createTarget, describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
 
 import * as Application from './application.js';
 
-describeWithMockConnection('DeviceBoundSessionsModel', () => {
+describeWithEnvironment('DeviceBoundSessionsModel', () => {
   let model: Application.DeviceBoundSessionsModel.DeviceBoundSessionsModel;
   let target: SDK.Target.Target;
   let networkManager: SDK.NetworkManager.NetworkManager;
@@ -92,7 +92,7 @@ describeWithMockConnection('DeviceBoundSessionsModel', () => {
 
   it('clears visible sites and dispatches CLEAR_VISIBLE_SITES event if preserving log', () => {
     // Not cleared when preserving the log.
-    Common.Settings.moduleSetting('device-bound-sessions-preserve-log').set(true);
+    Common.Settings.Settings.instance().moduleSetting('device-bound-sessions-preserve-log').set(true);
     model.addVisibleSite('example.com');
     assert.isTrue(model.isSiteVisible('example.com'));
     const listener = sinon.spy();
@@ -103,7 +103,7 @@ describeWithMockConnection('DeviceBoundSessionsModel', () => {
     sinon.assert.notCalled(listener);
 
     // Cleared when not preserving the log.
-    Common.Settings.moduleSetting('device-bound-sessions-preserve-log').set(false);
+    Common.Settings.Settings.instance().moduleSetting('device-bound-sessions-preserve-log').set(false);
     assert.isTrue(model.isSiteVisible('example.com'));
     model.clearVisibleSites();
     assert.isFalse(model.isSiteVisible('example.com'));
@@ -116,14 +116,14 @@ describeWithMockConnection('DeviceBoundSessionsModel', () => {
       eventId: 'event_1' as Protocol.Network.DeviceBoundSessionEventId,
       site,
       succeeded: false,
-      creationEventDetails: {fetchResult: Protocol.Network.DeviceBoundSessionFetchResult.InvalidConfigJson}
+      creationEventDetails: {fetchResult: Protocol.Network.DeviceBoundSessionFetchResult.InvalidConfigJson},
     };
     const event2: Protocol.Network.DeviceBoundSessionEventOccurredEvent = {
       eventId: 'event_2' as Protocol.Network.DeviceBoundSessionEventId,
       sessionId: 'sessionId',
       site,
       succeeded: false,
-      creationEventDetails: {fetchResult: Protocol.Network.DeviceBoundSessionFetchResult.InvalidConfigJson}
+      creationEventDetails: {fetchResult: Protocol.Network.DeviceBoundSessionFetchResult.InvalidConfigJson},
     };
     const event3: Protocol.Network.DeviceBoundSessionEventOccurredEvent = {
       eventId: 'event_3' as Protocol.Network.DeviceBoundSessionEventId,
@@ -132,8 +132,8 @@ describeWithMockConnection('DeviceBoundSessionsModel', () => {
       succeeded: true,
       creationEventDetails: {
         newSession: makeSession(site, 'otherSessionId'),
-        fetchResult: Protocol.Network.DeviceBoundSessionFetchResult.Success
-      }
+        fetchResult: Protocol.Network.DeviceBoundSessionFetchResult.Success,
+      },
 
     };
     const event4: Protocol.Network.DeviceBoundSessionEventOccurredEvent = {
@@ -141,7 +141,7 @@ describeWithMockConnection('DeviceBoundSessionsModel', () => {
       sessionId: undefined,
       site: 'otherSite.com',
       succeeded: false,
-      creationEventDetails: {fetchResult: Protocol.Network.DeviceBoundSessionFetchResult.InvalidConfigJson}
+      creationEventDetails: {fetchResult: Protocol.Network.DeviceBoundSessionFetchResult.InvalidConfigJson},
     };
     networkManager.dispatchEventToListeners(SDK.NetworkManager.Events.DeviceBoundSessionEventOccurred, event1);
     networkManager.dispatchEventToListeners(SDK.NetworkManager.Events.DeviceBoundSessionEventOccurred, event2);
@@ -162,7 +162,7 @@ describeWithMockConnection('DeviceBoundSessionsModel', () => {
     model.addEventListener(Application.DeviceBoundSessionsModel.DeviceBoundSessionModelEvents.CLEAR_EVENTS, listener);
 
     // Events are not cleared when preserving the log.
-    Common.Settings.moduleSetting('device-bound-sessions-preserve-log').set(true);
+    Common.Settings.Settings.instance().moduleSetting('device-bound-sessions-preserve-log').set(true);
     model.clearEvents();
     sinon.assert.notCalled(listener);
     assert.exists(model.getSession(site, undefined));
@@ -175,7 +175,7 @@ describeWithMockConnection('DeviceBoundSessionsModel', () => {
     assert.strictEqual(session4.eventsById.size, 1);
 
     // Events are cleared when not preserving the log.
-    Common.Settings.moduleSetting('device-bound-sessions-preserve-log').set(false);
+    Common.Settings.Settings.instance().moduleSetting('device-bound-sessions-preserve-log').set(false);
     model.clearEvents();
     sinon.assert.calledOnce(listener);
     assert.isUndefined(model.getSession(site, undefined));
@@ -210,7 +210,7 @@ describeWithMockConnection('DeviceBoundSessionsModel', () => {
       sessionId: sessionId1,
       succeeded: true,
       creationEventDetails:
-          {newSession: creationSession, fetchResult: Protocol.Network.DeviceBoundSessionFetchResult.Success}
+          {newSession: creationSession, fetchResult: Protocol.Network.DeviceBoundSessionFetchResult.Success},
     };
     networkManager.dispatchEventToListeners(SDK.NetworkManager.Events.DeviceBoundSessionEventOccurred, event1);
     // Verify event 1 has created the session.
@@ -233,8 +233,8 @@ describeWithMockConnection('DeviceBoundSessionsModel', () => {
       refreshEventDetails: {
         refreshResult: Protocol.Network.RefreshEventDetailsRefreshResult.Refreshed,
         wasFullyProactiveRefresh: false,
-        newSession: refreshSession
-      }
+        newSession: refreshSession,
+      },
     };
     networkManager.dispatchEventToListeners(SDK.NetworkManager.Events.DeviceBoundSessionEventOccurred, event2);
     // Verify event 2 has updated the session.
@@ -252,7 +252,7 @@ describeWithMockConnection('DeviceBoundSessionsModel', () => {
       site,
       sessionId: sessionId2,
       succeeded: true,
-      creationEventDetails: {fetchResult: Protocol.Network.DeviceBoundSessionFetchResult.Success, newSession: session2}
+      creationEventDetails: {fetchResult: Protocol.Network.DeviceBoundSessionFetchResult.Success, newSession: session2},
     };
     networkManager.dispatchEventToListeners(SDK.NetworkManager.Events.DeviceBoundSessionEventOccurred, event3);
     // Verify event 3 has created the new session.
@@ -271,7 +271,7 @@ describeWithMockConnection('DeviceBoundSessionsModel', () => {
       sessionId: sessionId2,
       succeeded: true,
       challengeEventDetails:
-          {challenge: challengeString, challengeResult: Protocol.Network.ChallengeEventDetailsChallengeResult.Success}
+          {challenge: challengeString, challengeResult: Protocol.Network.ChallengeEventDetailsChallengeResult.Success},
     };
     networkManager.dispatchEventToListeners(SDK.NetworkManager.Events.DeviceBoundSessionEventOccurred, event4);
     // Verify event 4 has set the session's cached challenge.
@@ -285,7 +285,7 @@ describeWithMockConnection('DeviceBoundSessionsModel', () => {
       site,
       succeeded: false,
       challengeEventDetails:
-          {challenge: challengeString, challengeResult: Protocol.Network.ChallengeEventDetailsChallengeResult.Success}
+          {challenge: challengeString, challengeResult: Protocol.Network.ChallengeEventDetailsChallengeResult.Success},
     };
     networkManager.dispatchEventToListeners(SDK.NetworkManager.Events.DeviceBoundSessionEventOccurred, event5);
     // Verify event 2 has updated the session.
@@ -321,7 +321,7 @@ describeWithMockConnection('DeviceBoundSessionsModel', () => {
       sessionId,
       succeeded: true,
       creationEventDetails:
-          {newSession: creationSession, fetchResult: Protocol.Network.DeviceBoundSessionFetchResult.Success}
+          {newSession: creationSession, fetchResult: Protocol.Network.DeviceBoundSessionFetchResult.Success},
     };
     networkManager.dispatchEventToListeners(SDK.NetworkManager.Events.DeviceBoundSessionEventOccurred, createEvent);
 
@@ -335,7 +335,7 @@ describeWithMockConnection('DeviceBoundSessionsModel', () => {
       site,
       sessionId,
       succeeded: true,
-      terminationEventDetails: {deletionReason: Protocol.Network.TerminationEventDetailsDeletionReason.Expired}
+      terminationEventDetails: {deletionReason: Protocol.Network.TerminationEventDetailsDeletionReason.Expired},
     };
     networkManager.dispatchEventToListeners(
         SDK.NetworkManager.Events.DeviceBoundSessionEventOccurred, terminationEvent);
@@ -350,7 +350,7 @@ describeWithMockConnection('DeviceBoundSessionsModel', () => {
       sessionId,
       succeeded: false,
       creationEventDetails:
-          {newSession: creationSession, fetchResult: Protocol.Network.DeviceBoundSessionFetchResult.Success}
+          {newSession: creationSession, fetchResult: Protocol.Network.DeviceBoundSessionFetchResult.Success},
     };
     networkManager.dispatchEventToListeners(
         SDK.NetworkManager.Events.DeviceBoundSessionEventOccurred, failedRecreateEvent);
@@ -365,7 +365,7 @@ describeWithMockConnection('DeviceBoundSessionsModel', () => {
       sessionId,
       succeeded: true,
       creationEventDetails:
-          {newSession: creationSession, fetchResult: Protocol.Network.DeviceBoundSessionFetchResult.Success}
+          {newSession: creationSession, fetchResult: Protocol.Network.DeviceBoundSessionFetchResult.Success},
     };
     networkManager.dispatchEventToListeners(SDK.NetworkManager.Events.DeviceBoundSessionEventOccurred, recreateEvent);
 
@@ -385,8 +385,8 @@ describeWithMockConnection('DeviceBoundSessionsModel', () => {
       succeeded: true,
       creationEventDetails: {
         newSession: makeSession(site, sessionId),
-        fetchResult: Protocol.Network.DeviceBoundSessionFetchResult.Success
-      }
+        fetchResult: Protocol.Network.DeviceBoundSessionFetchResult.Success,
+      },
     };
     networkManager.dispatchEventToListeners(SDK.NetworkManager.Events.DeviceBoundSessionEventOccurred, createEvent);
 
@@ -400,7 +400,7 @@ describeWithMockConnection('DeviceBoundSessionsModel', () => {
       site,
       sessionId,
       succeeded: false,
-      creationEventDetails: {fetchResult: Protocol.Network.DeviceBoundSessionFetchResult.InvalidConfigJson}
+      creationEventDetails: {fetchResult: Protocol.Network.DeviceBoundSessionFetchResult.InvalidConfigJson},
     };
     networkManager.dispatchEventToListeners(SDK.NetworkManager.Events.DeviceBoundSessionEventOccurred, failedEvent);
 
@@ -414,7 +414,7 @@ describeWithMockConnection('DeviceBoundSessionsModel', () => {
       sessionId,
       succeeded: true,
       challengeEventDetails:
-          {challenge: 'challenge', challengeResult: Protocol.Network.ChallengeEventDetailsChallengeResult.Success}
+          {challenge: 'challenge', challengeResult: Protocol.Network.ChallengeEventDetailsChallengeResult.Success},
     };
     networkManager.dispatchEventToListeners(SDK.NetworkManager.Events.DeviceBoundSessionEventOccurred, successEvent);
 
@@ -425,14 +425,14 @@ describeWithMockConnection('DeviceBoundSessionsModel', () => {
     model.addEventListener(Application.DeviceBoundSessionsModel.DeviceBoundSessionModelEvents.CLEAR_EVENTS, listener);
 
     // Errors are not cleared when clearEvents is called when preserving the log.
-    Common.Settings.moduleSetting('device-bound-sessions-preserve-log').set(true);
+    Common.Settings.Settings.instance().moduleSetting('device-bound-sessions-preserve-log').set(true);
     model.clearEvents();
     sinon.assert.notCalled(listener);
     assert.isTrue(model.sessionHasErrors(site, sessionId));
     assert.isTrue(session?.hasErrors);
 
     // Errors are cleared when clearEvents is called when not preserving the log.
-    Common.Settings.moduleSetting('device-bound-sessions-preserve-log').set(false);
+    Common.Settings.Settings.instance().moduleSetting('device-bound-sessions-preserve-log').set(false);
     model.clearEvents();
     sinon.assert.calledOnce(listener);
     const noLongerFailedSessions = listener.firstCall.args[0].data.noLongerFailedSessions;

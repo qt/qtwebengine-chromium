@@ -16,13 +16,6 @@
 
 namespace Eigen {
 
-namespace internal {
-template <typename T>
-struct add_const_on_value_type_if_arithmetic {
-  typedef std::conditional_t<is_arithmetic<T>::value, T, add_const_on_value_type_t<T>> type;
-};
-}  // namespace internal
-
 /** \brief Base class providing read-only coefficient access to matrices and arrays.
  * \ingroup Core_Module
  * \tparam Derived Type of the derived class
@@ -59,7 +52,8 @@ class DenseCoeffsBase<Derived, ReadOnlyAccessors> : public EigenBase<Derived> {
                              std::conditional_t<internal::is_arithmetic<Scalar>::value, Scalar, const Scalar>>
       CoeffReturnType;
 
-  typedef typename internal::add_const_on_value_type_if_arithmetic<typename internal::packet_traits<Scalar>::type>::type
+  typedef std::conditional_t<internal::is_arithmetic<PacketScalar>::value, PacketScalar,
+                             internal::add_const_on_value_type_t<PacketScalar>>
       PacketReturnType;
 
   typedef EigenBase<Derived> Base;
@@ -105,7 +99,7 @@ class DenseCoeffsBase<Derived, ReadOnlyAccessors> : public EigenBase<Derived> {
     return coeff(rowIndexByOuterInner(outer, inner), colIndexByOuterInner(outer, inner));
   }
 
-  /** \returns the coefficient at given the given row and column.
+  /** \returns the coefficient at the given row and column.
    *
    * \sa operator()(Index,Index), operator[](Index)
    */
@@ -115,7 +109,7 @@ class DenseCoeffsBase<Derived, ReadOnlyAccessors> : public EigenBase<Derived> {
   }
 
 #ifdef EIGEN_MULTIDIMENSIONAL_SUBSCRIPT
-  /** \returns the coefficient at given the given row and column.
+  /** \returns the coefficient at the given row and column.
    *
    * \sa operator[](Index,Index), operator[](Index)
    */
@@ -321,7 +315,7 @@ class DenseCoeffsBase<Derived, WriteAccessors> : public DenseCoeffsBase<Derived,
     return coeffRef(rowIndexByOuterInner(outer, inner), colIndexByOuterInner(outer, inner));
   }
 
-  /** \returns a reference to the coefficient at given the given row and column.
+  /** \returns a reference to the coefficient at the given row and column.
    *
    * \sa operator[](Index)
    */
@@ -331,7 +325,7 @@ class DenseCoeffsBase<Derived, WriteAccessors> : public DenseCoeffsBase<Derived,
   }
 
 #ifdef EIGEN_MULTIDIMENSIONAL_SUBSCRIPT
-  /** \returns a reference to the coefficient at given the given row and column.
+  /** \returns a reference to the coefficient at the given row and column.
    *
    * \sa operator[](Index)
    */

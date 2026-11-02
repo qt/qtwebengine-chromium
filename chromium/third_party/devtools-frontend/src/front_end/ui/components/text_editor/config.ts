@@ -6,7 +6,7 @@
 import * as Common from '../../../core/common/common.js';
 import type * as Host from '../../../core/host/host.js';
 import * as i18n from '../../../core/i18n/i18n.js';
-import * as TextUtils from '../../../models/text_utils/text_utils.js';
+import * as TextUtils from '../../../core/text_utils/text_utils.js';
 import * as CM from '../../../third_party/codemirror.next/codemirror.next.js';
 import {Icon} from '../../kit/kit.js';
 import * as UI from '../../legacy/legacy.js';
@@ -20,11 +20,11 @@ const RECOMPUTE_INDENT_MAX_SIZE = 200;
 
 const UIStrings = {
   /**
-   * @description Label text for the editor
+   * @description Label text for the editor.
    */
   codeEditor: 'Code editor',
   /**
-   * @description Aria alert to read the suggestion for the suggestion box when typing in text editor
+   * @description Aria alert to read the suggestion for the suggestion box when typing in text editor.
    * @example {name} PH1
    * @example {2} PH2
    * @example {5} PH3
@@ -409,6 +409,13 @@ function getTooltipHost(): ShadowRoot {
     CM.StyleModule.mount(tooltipHost, styleModules);
   }
   return tooltipHost;
+}
+
+export function removeTooltipHost(): void {
+  if (tooltipHost) {
+    tooltipHost.host.remove();
+    tooltipHost = null;
+  }
 }
 
 class CompletionHint extends CM.WidgetType {

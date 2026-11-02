@@ -12,6 +12,7 @@
 #include "third_party/blink/renderer/core/dom/scroll_marker_group_pseudo_element.h"
 #include "third_party/blink/renderer/core/events/keyboard_event.h"
 #include "third_party/blink/renderer/core/frame/web_feature.h"
+#include "third_party/blink/renderer/core/layout/geometry/axis.h"
 #include "third_party/blink/renderer/core/layout/layout_block.h"
 #include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
 #include "third_party/blink/renderer/core/scroll/scroll_alignment.h"
@@ -193,12 +194,12 @@ void ScrollMarkerPseudoElement::ScrollIntoView(bool apply_snap_alignment) {
         if (ShouldSnapToAreaHorizontally(group_box, group_snap_type,
                                          marker_snap_align)) {
           align_x = scroll_into_view_util::PhysicalAlignmentFromSnapAlignStyle(
-              *marker_object, kHorizontalScroll);
+              *marker_object, PhysicalAxis::kHorizontal);
         }
         if (ShouldSnapToAreaVertically(group_box, group_snap_type,
                                        marker_snap_align)) {
           align_y = scroll_into_view_util::PhysicalAlignmentFromSnapAlignStyle(
-              *marker_object, kVerticalScroll);
+              *marker_object, PhysicalAxis::kVertical);
         }
       }
       mojom::blink::ScrollIntoViewParamsPtr params =
@@ -280,9 +281,42 @@ void ScrollMarkerPseudoElement::Dispose() {
   PseudoElement::Dispose();
 }
 
+void ScrollMarkerPseudoElement::RemovedFrom(ContainerNode& insertion_point) {
+  SetScrollMarkerGroup(nullptr);
+  PseudoElement::RemovedFrom(insertion_point);
+}
+
 void ScrollMarkerPseudoElement::Trace(Visitor* v) const {
   v->Trace(scroll_marker_group_);
   PseudoElement::Trace(v);
+}
+
+const ComputedStyle* ScrollMarkerPseudoElement::AdjustedLayoutStyle(
+    const ComputedStyle& style,
+    const ComputedStyle& layout_parent_style) {
+  const ComputedStyle* adjusted_style =
+      PseudoElement::AdjustedLayoutStyle(style, layout_parent_style);
+  if (!adjusted_style) {
+    adjusted_style = &style;
+  }
+  ComputedStyleBuilder builder(*adjusted_style);
+  // The layout parent of a scroll marker is the scroll marker group, not
+  // the originating element of the scroll marker.
+  StyleAdjuster::AdjustStyleForDisplay(builder, layout_parent_style, this,
+                                       &GetDocument());
+  if (style.IsCSSInertIsInherited() &&
+      style.IsCSSInert() != layout_parent_style.IsCSSInert()) {
+    // A ::scroll-marker gets its inertness from its ::scroll-marker-group
+    // instead of its originating element unless the inertness is applied
+    // directly to the ::scroll-marker itself.
+    builder.SetIsCSSInert(layout_parent_style.IsCSSInert());
+    builder.SetIsCSSInertIsInherited(false);
+  }
+  if (style.IsHTMLInert() != layout_parent_style.IsHTMLInert()) {
+    builder.SetIsHTMLInert(layout_parent_style.IsHTMLInert());
+    builder.SetIsHTMLInertIsInherited(false);
+  }
+  return builder.TakeStyle();
 }
 
 }  // namespace blink

@@ -6,7 +6,7 @@
 import { CDPSessionEvent } from '../api/CDPSession.js';
 import { FrameEvent } from '../api/Frame.js';
 import { EventEmitter } from '../common/EventEmitter.js';
-import { debugError, PuppeteerURL, UTILITY_WORLD_NAME } from '../common/util.js';
+import { debugError, PuppeteerURL, UTILITY_WORLD_NAME, debugCatchError, } from '../common/util.js';
 import { assert } from '../util/assert.js';
 import { Deferred } from '../util/Deferred.js';
 import { disposeSymbol } from '../util/disposable.js';
@@ -22,7 +22,6 @@ import { FrameTree } from './FrameTree.js';
 import { IsolatedWorld } from './IsolatedWorld.js';
 import { MAIN_WORLD, PUPPETEER_WORLD } from './IsolatedWorlds.js';
 import { NetworkManager } from './NetworkManager.js';
-const TIME_FOR_WAITING_FOR_SWAP = 100; // ms.
 const CHROME_EXTENSION_PREFIX = 'chrome-extension://';
 /**
  * A frame manager manages the frames for a given {@link Page | page}.
@@ -63,7 +62,7 @@ export class FrameManager extends EventEmitter {
         this.#timeoutSettings = timeoutSettings;
         this.setupEventListeners(this.#client);
         client.once(CDPSessionEvent.Disconnected, () => {
-            this.#onClientDisconnect().catch(debugError);
+            void this.#onClientDisconnect(client).catch(debugCatchError);
         });
     }
     /**
@@ -71,32 +70,43 @@ export class FrameManager extends EventEmitter {
      * disconnect means that the frame is removed or if it will be replaced by a
      * new frame. Therefore, we wait for a swap event.
      */
-    async #onClientDisconnect() {
+    async #onClientDisconnect(client) {
         const mainFrame = this._frameTree.getMainFrame();
         if (!mainFrame) {
             return;
         }
-        if (!this.#page.browser().connected) {
-            // If the browser is not connected we know
-            // that activation will not happen
+        // If the disconnected client is not the current one, it means a swap
+        // has already happened.
+        if (this.#client !== client) {
+            return;
+        }
+        if (!this.#page.browser().connected || this.#page.isClosed()) {
+            // If the browser is not connected or the page is closed, we know
+            // that activation will not happen.
             this.#removeFramesRecursively(mainFrame);
             return;
         }
         for (const child of mainFrame.childFrames()) {
             this.#removeFramesRecursively(child);
         }
-        const swapped = Deferred.create({
-            timeout: TIME_FOR_WAITING_FOR_SWAP,
-            message: 'Frame was not swapped',
-        });
-        mainFrame.once(FrameEvent.FrameSwappedByActivation, () => {
+        const swapped = Deferred.create();
+        const onFrameSwapped = () => {
             swapped.resolve();
-        });
+        };
+        const onPageClosed = () => {
+            swapped.reject(new Error('Page closed'));
+        };
+        mainFrame.once(FrameEvent.FrameSwappedByActivation, onFrameSwapped);
+        this.#page.once("close" /* PageEvent.Close */, onPageClosed);
         try {
             await swapped.valueOrThrow();
         }
         catch {
             this.#removeFramesRecursively(mainFrame);
+        }
+        finally {
+            mainFrame.off(FrameEvent.FrameSwappedByActivation, onFrameSwapped);
+            this.#page.off("close" /* PageEvent.Close */, onPageClosed);
         }
     }
     /**
@@ -116,7 +126,7 @@ export class FrameManager extends EventEmitter {
         }
         this.setupEventListeners(client);
         client.once(CDPSessionEvent.Disconnected, () => {
-            this.#onClientDisconnect().catch(debugError);
+            void this.#onClientDisconnect(client).catch(debugCatchError);
         });
         await this.initialize(client, frame);
         await this.#networkManager.addClient(client);
@@ -259,7 +269,7 @@ export class FrameManager extends EventEmitter {
                 .send('Page.removeScriptToEvaluateOnNewDocument', {
                 identifier,
             })
-                .catch(debugError);
+                .catch(debugCatchError);
         }));
     }
     onAttachedToTarget(target) {
@@ -271,7 +281,7 @@ export class FrameManager extends EventEmitter {
             frame.updateClient(target._session());
         }
         this.setupEventListeners(target._session());
-        void this.initialize(target._session(), frame).catch(debugError);
+        void this.initialize(target._session(), frame).catch(debugCatchError);
     }
     _deviceRequestPromptManager(client) {
         let manager = this.#deviceRequestPromptManagerMap.get(client);
@@ -389,7 +399,7 @@ export class FrameManager extends EventEmitter {
                 worldName: name,
                 grantUniveralAccess: true,
             })
-                .catch(debugError);
+                .catch(debugCatchError);
         }));
         this.#isolatedWorlds.add(key);
     }
@@ -458,7 +468,7 @@ export class FrameManager extends EventEmitter {
             else if (this.#isExtensionOrigin(origin)) {
                 const extId = this.#extractExtensionId(origin);
                 if (!extId) {
-                    debugError('Error while parsing extension id');
+                    debugError?.('Error while parsing extension id');
                     return;
                 }
                 if (frame.extensionWorlds[extId]) {

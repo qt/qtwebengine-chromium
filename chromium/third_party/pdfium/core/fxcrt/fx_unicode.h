@@ -9,8 +9,11 @@
 
 #include <stdint.h>
 
+namespace pdfium {
+namespace unicode {
+
 // NOTE: Order matters, less-than/greater-than comparisons are used.
-enum class FX_BIDICLASS : uint8_t {
+enum class BidiClass : uint8_t {
   kON = 0,    // Other Neutral
   kL = 1,     // Left Letter
   kR = 2,     // Right Letter
@@ -35,7 +38,7 @@ enum class FX_BIDICLASS : uint8_t {
 
 #ifdef PDF_ENABLE_XFA
 // As defined in http://www.unicode.org/reports/tr14
-enum class FX_BREAKPROPERTY : uint8_t {
+enum class BreakProperty : uint8_t {
   kOP = 0,
   kCL = 1,
   kQU = 2,
@@ -76,7 +79,7 @@ enum class FX_BREAKPROPERTY : uint8_t {
   kTB = 37,
 };
 
-enum class FX_CHARTYPE : uint8_t {
+enum class CharType : uint8_t {
   kUnknown = 0,
   kTab,
   kSpace,
@@ -93,9 +96,6 @@ enum class FX_CHARTYPE : uint8_t {
 };
 #endif  // PDF_ENABLE_XFA
 
-namespace pdfium {
-namespace unicode {
-
 constexpr wchar_t kRightSingleQuotationMark = 0x2019;
 constexpr wchar_t kLineSeparator = 0x2028;
 constexpr wchar_t kParagraphSeparator = 0x2029;
@@ -103,17 +103,23 @@ constexpr wchar_t kBoxDrawingsLightVerical = 0x2502;
 constexpr wchar_t kZeroWidthNoBreakSpace = 0xfeff;
 
 wchar_t GetMirrorChar(wchar_t wch);
-FX_BIDICLASS GetBidiClass(wchar_t wch);
+BidiClass GetBidiClass(wchar_t wch);
 
 #ifdef PDF_ENABLE_XFA
-FX_CHARTYPE GetCharType(wchar_t wch);
+CharType GetCharType(wchar_t wch);
 
 // Analagous to ULineBreak in icu's uchar.h, but permuted order, and a
 // subset lacking some more recent additions.
-FX_BREAKPROPERTY GetBreakProperty(wchar_t wch);
+BreakProperty GetBreakProperty(wchar_t wch);
 #endif  // PDF_ENABLE_XFA
 
 }  // namespace unicode
 }  // namespace pdfium
+
+using pdfium::unicode::BidiClass;
+#ifdef PDF_ENABLE_XFA
+using pdfium::unicode::BreakProperty;
+using pdfium::unicode::CharType;
+#endif  // PDF_ENABLE_XFA
 
 #endif  // CORE_FXCRT_FX_UNICODE_H_

@@ -186,7 +186,7 @@ class SparseCompressedBase : public SparseMatrixBase<Derived> {
 
  protected:
   /** Default constructor. Do nothing. */
-  SparseCompressedBase() {}
+  SparseCompressedBase() = default;
 
   /** \internal return the index of the coeff at (row,col) or just before if it does not exist.
    * This is an analogue of std::lower_bound.
@@ -218,7 +218,7 @@ class SparseCompressedBase : public SparseMatrixBase<Derived> {
 template <typename Derived>
 class SparseCompressedBase<Derived>::InnerIterator {
  public:
-  InnerIterator() : m_values(0), m_indices(0), m_outer(0), m_id(0), m_end(0) {}
+  InnerIterator() = default;
 
   InnerIterator(const InnerIterator& other)
       : m_values(other.m_values),
@@ -282,7 +282,7 @@ class SparseCompressedBase<Derived>::InnerIterator {
   inline Index row() const { return IsRowMajor ? m_outer.value() : index(); }
   inline Index col() const { return IsRowMajor ? index() : m_outer.value(); }
 
-  inline operator bool() const { return (m_id < m_end); }
+  inline operator bool() const { return m_id < m_end; }
 
   // Position-based equality (bug #1192 — without these, == falls back to bool conversion).
   inline bool operator==(const InnerIterator& other) const {
@@ -292,12 +292,12 @@ class SparseCompressedBase<Derived>::InnerIterator {
   inline bool operator!=(const InnerIterator& other) const { return !(*this == other); }
 
  protected:
-  const Scalar* m_values;
-  const StorageIndex* m_indices;
+  const Scalar* m_values = nullptr;
+  const StorageIndex* m_indices = nullptr;
   typedef internal::variable_if_dynamic<Index, Derived::IsVectorAtCompileTime ? 0 : Dynamic> OuterType;
-  const OuterType m_outer;
-  Index m_id;
-  Index m_end;
+  const OuterType m_outer{0};
+  Index m_id = 0;
+  Index m_end = 0;
 
  private:
   // If you get here, then you're not using the right InnerIterator type, e.g.:
@@ -356,7 +356,7 @@ class SparseCompressedBase<Derived>::ReverseInnerIterator {
   inline Index row() const { return IsRowMajor ? m_outer.value() : index(); }
   inline Index col() const { return IsRowMajor ? index() : m_outer.value(); }
 
-  inline operator bool() const { return (m_id > m_start); }
+  inline operator bool() const { return m_id > m_start; }
 
   inline bool operator==(const ReverseInnerIterator& other) const {
     eigen_assert(m_values == other.m_values && "comparing iterators from different sources");
@@ -389,7 +389,7 @@ template <typename Scalar, typename StorageIndex>
 class StorageVal {
  public:
   StorageVal(const StorageIndex& innerIndex, const Scalar& value) : m_innerIndex(innerIndex), m_value(value) {}
-  StorageVal(const StorageVal& other) : m_innerIndex(other.m_innerIndex), m_value(other.m_value) {}
+  StorageVal(const StorageVal& other) = default;
   StorageVal(StorageVal&& other) = default;
 
   inline const StorageIndex& key() const { return m_innerIndex; }
@@ -414,7 +414,7 @@ class StorageRef {
  public:
   using value_type = StorageVal<Scalar, StorageIndex>;
 
-  // StorageRef Needs to be move-able for sort on macos.
+  // StorageRef needs to be move-able for sort on macOS.
   StorageRef(StorageRef&& other) = default;
 
   inline StorageRef& operator=(const StorageRef& other) {
@@ -452,8 +452,7 @@ class StorageRef {
   // these constructors are called by the CompressedStorageIterator constructors for convenience only
   StorageRef(StorageIndex* innerIndexIterator, Scalar* valueIterator)
       : m_innerIndexIterator(innerIndexIterator), m_valueIterator(valueIterator) {}
-  StorageRef(const StorageRef& other)
-      : m_innerIndexIterator(other.m_innerIndexIterator), m_valueIterator(other.m_valueIterator) {}
+  StorageRef(const StorageRef& other) = default;
 
   friend class CompressedStorageIterator<Scalar, StorageIndex>;
 };
@@ -472,7 +471,7 @@ class CompressedStorageIterator {
   CompressedStorageIterator(difference_type index, StorageIndex* innerIndexPtr, Scalar* valuePtr)
       : m_index(index), m_data(innerIndexPtr, valuePtr) {}
   CompressedStorageIterator(difference_type index, reference data) : m_index(index), m_data(data) {}
-  CompressedStorageIterator(const CompressedStorageIterator& other) : m_index(other.m_index), m_data(other.m_data) {}
+  CompressedStorageIterator(const CompressedStorageIterator& other) = default;
   CompressedStorageIterator(CompressedStorageIterator&& other) = default;
   inline CompressedStorageIterator& operator=(const CompressedStorageIterator& other) {
     m_index = other.m_index;

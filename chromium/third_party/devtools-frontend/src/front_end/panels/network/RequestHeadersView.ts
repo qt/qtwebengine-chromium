@@ -193,7 +193,7 @@ export const DEFAULT_VIEW: View = (input, _output, target) => {
                 toReveal: input.toReveal,
               } as NetworkComponents.ResponseHeaderSection
               .ResponseHeaderSectionData}></devtools-early-hints-header-section>
-              `
+              `,
           })}
         ${renderCategory({
           name: 'response-headers',
@@ -212,7 +212,7 @@ export const DEFAULT_VIEW: View = (input, _output, target) => {
             toReveal: input.toReveal,
           } as NetworkComponents.ResponseHeaderSection.ResponseHeaderSectionData} jslog=${
             VisualLogging.section('response-headers')}></devtools-response-header-section>
-            `
+            `,
         })}
         ${renderCategory({
           name: 'request-headers',
@@ -228,11 +228,11 @@ export const DEFAULT_VIEW: View = (input, _output, target) => {
           <devtools-widget ${widget(NetworkComponents.RequestHeaderSection.RequestHeaderSection, {
               request: input.request,
               toReveal: input.toReveal,
-            })} jslog=${VisualLogging.section('request-headers')}></devtools-widget>`
+            })} jslog=${VisualLogging.section('request-headers')}></devtools-widget>`,
         })}
       `,
-      // clang-format on
-      target, {container: {attributes: {jslog: `${VisualLogging.pane('headers').track({resize: true})}`}}});
+         // clang-format on
+         target, {container: {attributes: {jslog: `${VisualLogging.pane('headers').track({resize: true})}`}}});
 };
 
 /**
@@ -412,7 +412,7 @@ function renderHeaderOverridesLink(input: ViewInput): Lit.LitTemplate {
           class="link devtools-link"
           jslogcontext="devtools-override"
       >
-        <devtools-icon name="help" class="inline-icon medium">
+        <devtools-icon name="help" class="inline-icon">
         </devtools-icon>
       </devtools-link>
       <devtools-link
@@ -424,7 +424,7 @@ function renderHeaderOverridesLink(input: ViewInput): Lit.LitTemplate {
         ${fileIcon}${Persistence.NetworkPersistenceManager.HEADERS_FILENAME}
       </devtools-link>
     `;
-  // clang-format on
+    // clang-format on
 }
 
 function renderRawHeaders(text: string): Lit.TemplateResult {

@@ -7,9 +7,6 @@ import("//media/gpu/args.gni")
 import("//testing/test.gni")
 import("//third_party/protobuf/proto_library.gni")
 
-# V4L2 and VAAPI for video acceleration should not be enabled simultaneously.
-assert(!(use_v4l2_codec && use_vaapi))
-
 assert(use_linux_video_acceleration)
 
 # V4L2 or Vaapi imply the OS is Linux or ChromeOS
@@ -275,10 +272,6 @@ source_set("unit_tests") {
     deps +=
         [ "//chromeos/components/cdm_factory_daemon:cdm_factory_daemon_gpu" ]
   }
-
-  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
-  # enable the diagnostic by removing this line.
-  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 source_set("perf_test_utils") {
@@ -294,10 +287,6 @@ source_set("perf_test_utils") {
     "perf_test_util.cc",
     "perf_test_util.h",
   ]
-
-  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
-  # enable the diagnostic by removing this line.
-  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 test("image_processor_test") {
@@ -329,10 +318,6 @@ test("image_processor_test") {
   if (enable_vulkan) {
     deps += [ "//gpu/command_buffer/service:gles2" ]
   }
-
-  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
-  # enable the diagnostic by removing this line.
-  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 if (use_v4l2_codec) {

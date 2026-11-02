@@ -26,6 +26,8 @@
 #include "state_tracker/state_tracker.h"
 #include "state_tracker/shader_stage_state.h"
 
+#include "gpuav/spirv/instrumentation_status.h"
+
 // Fwd declarations -- including descriptor_set.h creates an ugly include loop
 namespace vvl {
 class DescriptorSetLayoutDef;
@@ -150,21 +152,6 @@ class Pipeline : public StateObject, public SubStateManager<PipelineSubState> {
 
     const uint32_t descriptor_heap_embedded_samplers_count;
 
-    // TODO - Because we have hack to create a pipeline at PreCallValidate time (for GPL) we have no proper way to create inherited
-    // state objects of the pipeline This is to make it clear that while currently everyone has to allocate this memory, it is only
-    // meant for GPU-AV
-    struct InstrumentationData {
-        // We create a VkShaderModule that is instrumented and it needs to be destroyed before leaving the pipeline call
-        std::vector<VkShaderModule> shader_modules;
-        bool was_instrumented = false;
-        // When we instrument GPL at link time, we need to hold the libraries created by GPU-AV
-        // so they can be re-used
-        VkPipeline instrumented_pipeline_lib = VK_NULL_HANDLE;
-        // We need to lock the pipelines when doig GPL
-        // while we have one in vvl::ShaderModule GPL needs it also at the pipeline library scope
-        std::mutex mutex;
-    } instrumentation_data;
-
     Pipeline(const DeviceState &state_data, const VkGraphicsPipelineCreateInfo *pCreateInfo,
              std::shared_ptr<const vvl::PipelineCache> pipe_cache, std::shared_ptr<const vvl::RenderPass> &&rpstate,
              std::shared_ptr<const vvl::PipelineLayout> &&layout,
@@ -279,6 +266,11 @@ class Pipeline : public StateObject, public SubStateManager<PipelineSubState> {
     // There could be an invalid RenderPass which will not come as null, need to check RenderPassState() if it is valid
     bool IsRenderPassNull() const { return GraphicsCreateInfo().renderPass == VK_NULL_HANDLE; }
 
+    // WARNING - This function is dangerous to use the |set_layouts| if you are inside a command buffer recording
+    // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/10560
+    // While we keep a shared pointer of the vvl::PipelineLayout (in case it is destroyed) we don't save any immutable samplers
+    // If this pipeline layout has |has_immutable_samplers| true, then using this at draw time can lead to undesired effects
+    // (At draw time, you need to use the pipeline found in vkCmdBindDescriptorSets)
     const std::shared_ptr<const vvl::PipelineLayout> PipelineLayoutState() const {
         // TODO A render pass object is required for all of these library states. Which one should be used for an "executable
         // pipeline"?

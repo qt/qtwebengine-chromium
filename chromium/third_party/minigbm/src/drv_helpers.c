@@ -8,6 +8,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,6 +16,10 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <xf86drm.h>
+
+#ifdef __ANDROID__
+#include <cutils/properties.h>
+#endif
 
 #include "drv_priv.h"
 #include "util.h"
@@ -96,6 +101,7 @@ static const struct planar_layout *layout_from_format(uint32_t format)
 		return &packed_1bpp_layout;
 
 	case DRM_FORMAT_R16:
+	case DRM_FORMAT_DEPTH16:
 		return &packed_2bpp_layout;
 
 	case DRM_FORMAT_YVU420:
@@ -140,6 +146,9 @@ static const struct planar_layout *layout_from_format(uint32_t format)
 	case DRM_FORMAT_RGB888:
 		return &packed_3bpp_layout;
 
+	case DRM_FORMAT_DEPTH24:
+	case DRM_FORMAT_DEPTH24_STENCIL8:
+	case DRM_FORMAT_DEPTH32:
 	case DRM_FORMAT_ABGR2101010:
 	case DRM_FORMAT_ABGR8888:
 	case DRM_FORMAT_ARGB2101010:
@@ -157,9 +166,12 @@ static const struct planar_layout *layout_from_format(uint32_t format)
 	case DRM_FORMAT_XBGR8888:
 	case DRM_FORMAT_XRGB2101010:
 	case DRM_FORMAT_XRGB8888:
+	case DRM_FORMAT_GR1616:
 		return &packed_4bpp_layout;
 
+	case DRM_FORMAT_DEPTH32_STENCIL8:
 	case DRM_FORMAT_ABGR16161616F:
+	case DRM_FORMAT_AXBXGXRX106106106106:
 		return &packed_8bpp_layout;
 
 	default:
@@ -250,18 +262,30 @@ uint32_t drv_size_from_format(uint32_t format, uint32_t stride, uint32_t height,
 	return stride * drv_height_from_format(format, height, plane);
 }
 
-static uint32_t subsample_stride(uint32_t stride, uint32_t format, size_t plane)
+static uint32_t subsample_stride(uint32_t stride, uint32_t stride_align, uint32_t format,
+				 size_t plane)
 {
+	uint32_t plane_stride = stride;
+
 	if (plane != 0) {
 		switch (format) {
 		case DRM_FORMAT_YVU420:
 		case DRM_FORMAT_YVU420_ANDROID:
-			stride = DIV_ROUND_UP(stride, 2);
+			plane_stride = DIV_ROUND_UP(plane_stride, 2);
 			break;
 		}
 	}
 
-	return stride;
+	plane_stride = ALIGN(plane_stride, stride_align);
+
+	if (format == DRM_FORMAT_YVU420_ANDROID) {
+		if (plane != 0)
+			assert(plane_stride == ALIGN(stride / 2, 16));
+		else
+			assert(plane_stride % 16 == 0);
+	}
+
+	return plane_stride;
 }
 
 /*
@@ -269,14 +293,17 @@ static uint32_t subsample_stride(uint32_t stride, uint32_t format, size_t plane)
  * the first plane, height and a format. This function assumes there is just
  * one kernel buffer per buffer object.
  */
-int drv_bo_from_format(struct bo *bo, uint32_t stride, uint32_t aligned_height, uint32_t format)
+int drv_bo_from_format(struct bo *bo, uint32_t stride, uint32_t stride_align,
+		       uint32_t aligned_height, uint32_t format)
 {
 	uint32_t padding[DRV_MAX_PLANES] = { 0 };
-	return drv_bo_from_format_and_padding(bo, stride, aligned_height, format, padding);
+	return drv_bo_from_format_and_padding(bo, stride, stride_align, aligned_height, format,
+					      padding);
 }
 
-int drv_bo_from_format_and_padding(struct bo *bo, uint32_t stride, uint32_t aligned_height,
-				   uint32_t format, uint32_t padding[DRV_MAX_PLANES])
+int drv_bo_from_format_and_padding(struct bo *bo, uint32_t stride, uint32_t stride_align,
+				   uint32_t aligned_height, uint32_t format,
+				   uint32_t padding[DRV_MAX_PLANES])
 {
 	size_t p, num_planes;
 	uint32_t offset = 0;
@@ -287,16 +314,18 @@ int drv_bo_from_format_and_padding(struct bo *bo, uint32_t stride, uint32_t alig
 	/*
 	 * HAL_PIXEL_FORMAT_YV12 requires that (see <system/graphics.h>):
 	 *  - the aligned height is same as the buffer's height.
-	 *  - the chroma stride is 16 bytes aligned, i.e., the luma's strides
-	 *    is 32 bytes aligned.
+	 *  - the luma stride is 16 bytes aligned
+	 *  - the chroma stride is ALIGN(luma_stride / 2, 16)
 	 */
 	if (format == DRM_FORMAT_YVU420_ANDROID) {
 		assert(aligned_height == bo->meta.height);
-		assert(stride == ALIGN(stride, 32));
+		/* force 16 if the caller has no requirement */
+		if (stride_align <= 1)
+			stride_align = 16;
 	}
 
 	for (p = 0; p < num_planes; p++) {
-		bo->meta.strides[p] = subsample_stride(stride, format, p);
+		bo->meta.strides[p] = subsample_stride(stride, stride_align, format, p);
 		bo->meta.sizes[p] =
 		    drv_size_from_format(format, bo->meta.strides[p], aligned_height, p) +
 		    padding[p];
@@ -312,7 +341,6 @@ int drv_dumb_bo_create_ex(struct bo *bo, uint32_t width, uint32_t height, uint32
 			  uint64_t use_flags, uint64_t quirks)
 {
 	int ret;
-	size_t plane;
 	uint32_t aligned_width, aligned_height;
 	struct drm_mode_create_dumb create_dumb = { 0 };
 
@@ -353,6 +381,9 @@ int drv_dumb_bo_create_ex(struct bo *bo, uint32_t width, uint32_t height, uint32
 		    DIV_ROUND_UP(aligned_width * layout_from_format(format)->bytes_per_pixel[0], 4);
 		create_dumb.bpp = 32;
 	} else {
+		/* Align for llvmpipe 64-byte tile size for dumb_driver */
+		aligned_width = ALIGN(aligned_width, MESA_LLVMPIPE_TILE_SIZE);
+		aligned_height = ALIGN(aligned_height, MESA_LLVMPIPE_TILE_SIZE);
 		create_dumb.bpp = layout_from_format(format)->bytes_per_pixel[0] * 8;
 	}
 	create_dumb.width = aligned_width;
@@ -365,10 +396,9 @@ int drv_dumb_bo_create_ex(struct bo *bo, uint32_t width, uint32_t height, uint32
 		return -errno;
 	}
 
-	drv_bo_from_format(bo, create_dumb.pitch, height, format);
+	drv_bo_from_format(bo, create_dumb.pitch, 1, height, format);
 
-	for (plane = 0; plane < bo->meta.num_planes; plane++)
-		bo->handles[plane].u32 = create_dumb.handle;
+	bo->handle.u32 = create_dumb.handle;
 
 	bo->meta.total_size = create_dumb.size;
 	return 0;
@@ -385,42 +415,36 @@ int drv_dumb_bo_destroy(struct bo *bo)
 	int ret;
 	struct drm_mode_destroy_dumb destroy_dumb = { 0 };
 
-	destroy_dumb.handle = bo->handles[0].u32;
+	destroy_dumb.handle = bo->handle.u32;
 	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy_dumb);
 	if (ret) {
-		drv_loge("DRM_IOCTL_MODE_DESTROY_DUMB failed (handle=%x)\n", bo->handles[0].u32);
+		drv_loge("DRM_IOCTL_MODE_DESTROY_DUMB failed (handle=%x)\n", bo->handle.u32);
 		return -errno;
 	}
 
 	return 0;
 }
 
-int drv_gem_bo_destroy(struct bo *bo)
+int drv_gem_close(struct driver *drv, uint32_t gem_handle)
 {
 	struct drm_gem_close gem_close;
 	int ret, error = 0;
-	size_t plane, i;
 
-	for (plane = 0; plane < bo->meta.num_planes; plane++) {
-		for (i = 0; i < plane; i++)
-			if (bo->handles[i].u32 == bo->handles[plane].u32)
-				break;
-		/* Make sure close hasn't already been called on this handle */
-		if (i != plane)
-			continue;
+	memset(&gem_close, 0, sizeof(gem_close));
+	gem_close.handle = gem_handle;
 
-		memset(&gem_close, 0, sizeof(gem_close));
-		gem_close.handle = bo->handles[plane].u32;
-
-		ret = drmIoctl(bo->drv->fd, DRM_IOCTL_GEM_CLOSE, &gem_close);
-		if (ret) {
-			drv_loge("DRM_IOCTL_GEM_CLOSE failed (handle=%x) error %d\n",
-				 bo->handles[plane].u32, ret);
-			error = -errno;
-		}
+	ret = drmIoctl(drv->fd, DRM_IOCTL_GEM_CLOSE, &gem_close);
+	if (ret) {
+		drv_loge("DRM_IOCTL_GEM_CLOSE failed (handle=%x) error %d\n", gem_handle, ret);
+		error = -errno;
 	}
 
 	return error;
+}
+
+int drv_gem_bo_destroy(struct bo *bo)
+{
+	return drv_gem_close(bo->drv, bo->handle.u32);
 }
 
 int drv_prime_bo_import(struct bo *bo, struct drv_import_fd_data *data)
@@ -435,35 +459,50 @@ int drv_prime_bo_import(struct bo *bo, struct drv_import_fd_data *data)
 
 		ret = drmIoctl(bo->drv->fd, DRM_IOCTL_PRIME_FD_TO_HANDLE, &prime_handle);
 
+		if (plane > 0 && !ret && bo->handle.u32 != prime_handle.handle) {
+			drv_gem_close(bo->drv, prime_handle.handle);
+			ret = -1;
+			errno = EINVAL;
+		}
+
 		if (ret) {
 			drv_loge("DRM_IOCTL_PRIME_FD_TO_HANDLE failed (fd=%u)\n", prime_handle.fd);
-
-			/*
-			 * Need to call GEM close on planes that were opened,
-			 * if any. Adjust the num_planes variable to be the
-			 * plane that failed, so GEM close will be called on
-			 * planes before that plane.
-			 */
-			bo->meta.num_planes = plane;
-			drv_gem_bo_destroy(bo);
+			if (plane > 0)
+				drv_gem_close(bo->drv, bo->handle.u32);
 			return -errno;
 		}
 
-		bo->handles[plane].u32 = prime_handle.handle;
+		bo->handle.u32 = prime_handle.handle;
 	}
 	bo->meta.tiling = data->tiling;
 
 	return 0;
 }
 
-void *drv_dumb_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint32_t map_flags)
+int drv_prime_bo_export(struct bo *bo, size_t plane)
+{
+	int ret, fd;
+
+	ret = drmPrimeHandleToFD(bo->drv->fd, bo->handle.u32, DRM_CLOEXEC | DRM_RDWR, &fd);
+
+	// Older DRM implementations blocked DRM_RDWR, but gave a read/write mapping anyways
+	if (ret)
+		ret = drmPrimeHandleToFD(bo->drv->fd, bo->handle.u32, DRM_CLOEXEC, &fd);
+
+	if (ret)
+		drv_loge("Failed to get plane fd: %s\n", strerror(errno));
+
+	return (ret) ? ret : fd;
+}
+
+void *drv_dumb_bo_map(struct bo *bo, struct vma *vma, uint32_t map_flags)
 {
 	int ret;
 	size_t i;
 	struct drm_mode_map_dumb map_dumb;
 
 	memset(&map_dumb, 0, sizeof(map_dumb));
-	map_dumb.handle = bo->handles[plane].u32;
+	map_dumb.handle = bo->handle.u32;
 
 	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_MODE_MAP_DUMB, &map_dumb);
 	if (ret) {
@@ -472,8 +511,7 @@ void *drv_dumb_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint32_t map
 	}
 
 	for (i = 0; i < bo->meta.num_planes; i++)
-		if (bo->handles[i].u32 == bo->handles[plane].u32)
-			vma->length += bo->meta.sizes[i];
+		vma->length += bo->meta.sizes[i];
 
 	return mmap(0, vma->length, drv_get_prot(map_flags), MAP_SHARED, bo->drv->fd,
 		    map_dumb.offset);
@@ -600,4 +638,67 @@ void drv_resolve_format_and_use_flags_helper(struct driver *drv, uint32_t format
 	default:
 		break;
 	}
+}
+
+const char *drv_get_os_option(const char *name)
+{
+	const char *ret = getenv(name);
+#ifdef __ANDROID__
+	if (!ret) {
+		static char prop[PROPERTY_VALUE_MAX];
+		return property_get(name, prop, NULL) > 1 ? prop : NULL;
+	}
+#endif
+	return ret;
+}
+
+static void lru_remove_entry(struct lru_entry *entry)
+{
+	entry->prev->next = entry->next;
+	entry->next->prev = entry->prev;
+}
+
+static void lru_link_entry(struct lru *lru, struct lru_entry *entry)
+{
+	struct lru_entry *head = &lru->head;
+	entry->prev = head;
+	entry->next = head->next;
+
+	head->next->prev = entry;
+	head->next = entry;
+}
+
+struct lru_entry *lru_find(struct lru *lru, bool (*eq)(struct lru_entry *e, void *data), void *data)
+{
+	struct lru_entry *head = &lru->head;
+	struct lru_entry *cur = head->next;
+
+	while (cur != head) {
+		if (eq(cur, data)) {
+			lru_remove_entry(cur);
+			lru_link_entry(lru, cur);
+			return cur;
+		}
+		cur = cur->next;
+	}
+
+	return NULL;
+}
+
+void lru_insert(struct lru *lru, struct lru_entry *entry)
+{
+	if (lru->count == lru->max) {
+		lru_remove_entry(lru->head.prev);
+	} else {
+		lru->count++;
+	}
+	lru_link_entry(lru, entry);
+}
+
+void lru_init(struct lru *lru, int max)
+{
+	lru->head.next = &lru->head;
+	lru->head.prev = &lru->head;
+	lru->count = 0;
+	lru->max = max;
 }

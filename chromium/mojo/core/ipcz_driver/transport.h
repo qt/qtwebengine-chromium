@@ -99,6 +99,60 @@ class MOJO_SYSTEM_IMPL_EXPORT Transport : public Object<Transport>,
   void set_is_trusted_by_peer(bool trusted) { is_trusted_by_peer_ = trusted; }
   bool is_trusted_by_peer() const { return is_trusted_by_peer_; }
 
+  void set_is_peer_elevated(bool elevated) { is_peer_elevated_ = elevated; }
+  bool is_peer_elevated() const { return is_peer_elevated_; }
+
+  void set_is_elevated(bool elevated) { is_elevated_ = elevated; }
+  bool is_elevated() const { return is_elevated_; }
+
+  // Indicates whether the remote peer on this transport is trusted as a source
+  // of privileged objects (e.g. HandleOwner::kRecipient handles or
+  // broker-destined transports). A non-broker implicitly trusts its broker;
+  // otherwise the peer must be explicitly trusted via is_peer_trusted(). When
+  // both endpoints are brokers, the peer being a broker does not by itself
+  // confer any trust on this end.
+  bool is_source_trusted() const {
+    return is_peer_trusted_ ||
+           (destination_type() == kBroker && source_type() != kBroker);
+  }
+
+#if BUILDFLAG(IS_WIN)
+  // Whether this end may adopt handles the peer claims to have already
+  // duplicated into this process (HandleOwner::kRecipient). That means trusting
+  // a handle value chosen by the peer, so the peer must be at least as
+  // privileged as this end. A non-broker trusts its broker. Two connected
+  // brokers (e.g. a mojo::IsolatedConnection) are peers, so a broker peer is
+  // refused only if this end has declared the remote process untrusted, as
+  // the system updater's public endpoint does.
+  bool CanAcceptReceiverOwnedHandles() const {
+    return is_peer_trusted() ||
+           (destination_type() == kBroker && !is_elevated() &&
+            remote_process_trust() != ProcessTrust::kUntrusted);
+  }
+#endif  // BUILDFLAG(IS_WIN)
+
+  // Whether a peer sending us a serialized transport may choose that
+  // transport's remote process, by attaching a process handle or by setting
+  // TransportHeader::is_same_remote_process. kSender handles arriving on the
+  // new transport are duplicated out of that (sending) process.
+  //
+  // A broker always allows this from a non-broker; mojo::DirectReceiver relies
+  // on it. That holds even for an untrusted non-broker such as a renderer:
+  // a broker adopts kRecipient handles only from a non-broker it trusts, so an
+  // untrusted peer can only supply the broker's own handle to that peer or a
+  // process handle the peer itself held.
+  // Otherwise this is refused if the remote process is declared untrusted.
+  bool CanAcceptRemoteProcessFromPeer() const {
+    if (source_type() == kBroker && destination_type() != kBroker) {
+      return true;
+    }
+#if BUILDFLAG(IS_WIN)
+    return remote_process_trust() != ProcessTrust::kUntrusted;
+#else
+    return true;
+#endif
+  }
+
   ProcessTrust remote_process_trust() const { return remote_process_trust_; }
 
   void SetErrorHandler(MojoProcessErrorHandler handler, uintptr_t context) {
@@ -210,18 +264,26 @@ class MOJO_SYSTEM_IMPL_EXPORT Transport : public Object<Transport>,
   bool leak_channel_on_shutdown_ = false;
 
   // Indicates whether the remote transport endpoint is "trusted" by this
-  // endpoint. In practice this means we will accept pre-duplicated handles from
-  // the remote process on Windows. This bit is ignored if the remote endpoint
-  // is a broker, since brokers are implicitly trusted; and it's currently
-  // meaningless on platforms other than Windows.
+  // endpoint, e.g. to send pre-duplicated handles on Windows or broker-destined
+  // transports. A non-broker implicitly trusts its broker regardless of this
+  // bit; see is_source_trusted() and CanAcceptReceiverOwnedHandles().
   bool is_peer_trusted_ = false;
 
-  // Indicates whether this endpoint is "trusted" by the remote endpoint.
-  // In practice this means the remote endpoint will accept pre-duplicated
-  // handles from us on Windows. This bit is ignored if the local endpoint is a
-  // broker, since brokers are implicitly trusted; and it's currently
-  // meaningless on platforms other than Windows.
+  // Indicates whether this endpoint is "trusted" by the remote endpoint. In
+  // practice this means the remote endpoint will accept pre-duplicated handles
+  // from us on Windows. A non-broker peer implicitly trusts this endpoint if it
+  // is its broker, regardless of this bit.
   bool is_trusted_by_peer_ = false;
+
+  // Indicates whether the remote transport endpoint is running in an elevated
+  // process relative to this endpoint. On Windows, handles cannot be
+  // pre-duplicated into an elevated process by a less-privileged process.
+  bool is_peer_elevated_ = false;
+
+  // Indicates whether this endpoint is running in an elevated process relative
+  // to the remote endpoint. On Windows, an elevated process does not accept
+  // recipient-owned handles from a less-privileged broker.
+  bool is_elevated_ = false;
 
   // Indicates whether the remote process is "untrusted" in Mojo parlance,
   // meaning this Transport restricts what kinds of objects can be transferred

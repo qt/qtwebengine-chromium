@@ -466,7 +466,7 @@ struct TensorContractionEvaluatorBase {
     DSizes<Index, LDims> eval_left_dims;
     DSizes<Index, RDims> eval_right_dims;
     array<IndexPair<Index>, ContractDims> eval_op_indices;
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       // For ColMajor, we keep using the existing dimensions
       for (int i = 0; i < LDims; i++) {
         eval_left_dims[i] = m_leftImpl.dimensions()[i];
@@ -479,8 +479,7 @@ struct TensorContractionEvaluatorBase {
         eval_op_indices[i].first = op.indices()[i].first;
         eval_op_indices[i].second = op.indices()[i].second;
       }
-    }
-    else {
+    } else {
       // For RowMajor, we need to reverse the existing dimensions
       for (int i = 0; i < LDims; i++) {
         eval_left_dims[i] = m_leftImpl.dimensions()[LDims - i - 1];
@@ -642,7 +641,7 @@ struct TensorContractionEvaluatorBase {
     }
 
     // If the layout is RowMajor, we need to reverse the m_dimensions
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(RowMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(RowMajor)) {
       for (int i = 0, j = NumDims - 1; i < j; i++, j--) {
         numext::swap(m_dimensions[i], m_dimensions[j]);
       }
@@ -708,7 +707,7 @@ struct TensorContractionEvaluatorBase {
     //     (B) m_lhs_contracted_dims_leading: contracted dims at contiguous end.
     //         RowMajor view of LHS via const_blas_data_mapper.
     //
-    //   m_i_size == 1: RowMajor inputs (lines 407-414 swap LHS/RHS at the type
+    //   m_i_size == 1: RowMajor inputs (lines 431-434 swap LHS/RHS at the type
     //         level, so the matrix is m_rightImpl).
     //     (C) m_rhs_contracted_dims_leading: contracted dims at contiguous end
     //         of (eval-)RHS. RowMajor view of m_rightImpl.
@@ -725,20 +724,24 @@ struct TensorContractionEvaluatorBase {
             buffer);
         return;
       }
-      if (m_lhs_contracted_dims_leading && m_leftImpl.data() != nullptr && m_rightImpl.data() != nullptr) {
-        if (internal::GemvDirectDispatcher<types_match, RowMajor, false>::run(this, buffer)) {
-          return;
+      EIGEN_IF_CONSTEXPR (types_match) {
+        if (m_lhs_contracted_dims_leading && m_leftImpl.data() != nullptr && m_rightImpl.data() != nullptr) {
+          if (internal::GemvDirectDispatcher<types_match, RowMajor, false>::run(this, buffer)) {
+            return;
+          }
         }
       }
     } else if (this->m_i_size == 1 && m_leftImpl.data() != nullptr && m_rightImpl.data() != nullptr) {
-      if (m_rhs_contracted_dims_leading) {
-        if (internal::GemvDirectDispatcher<types_match, RowMajor, true>::run(this, buffer)) {
-          return;
+      EIGEN_IF_CONSTEXPR (types_match) {
+        if (m_rhs_contracted_dims_leading) {
+          if (internal::GemvDirectDispatcher<types_match, RowMajor, true>::run(this, buffer)) {
+            return;
+          }
         }
-      }
-      if (m_rhs_contracted_dims_trailing) {
-        if (internal::GemvDirectDispatcher<types_match, ColMajor, true>::run(this, buffer)) {
-          return;
+        if (m_rhs_contracted_dims_trailing) {
+          if (internal::GemvDirectDispatcher<types_match, ColMajor, true>::run(this, buffer)) {
+            return;
+          }
         }
       }
     }
@@ -797,7 +800,7 @@ struct TensorContractionEvaluatorBase {
   // StorageOrder is the layout of the (rows × cols) matrix view in memory.
   // MatrixIsRight selects which TensorEvaluator holds the matrix and which
   // holds the vector — needed because the constructor swaps LHS/RHS for
-  // RowMajor inputs (lines 407-414), so the gemv shape lives in m_rightImpl
+  // RowMajor inputs (lines 431-434), so the gemv shape lives in m_rightImpl
   // there. Caller guarantees both impls expose direct memory.
   template <int StorageOrder, bool MatrixIsRight>
 #if !defined(EIGEN_HIPCC)
@@ -920,7 +923,7 @@ struct TensorContractionEvaluatorBase {
 
     // If a contraction kernel does not support beta, explicitly initialize
     // output buffer with zeroes.
-    if (!TensorContractionKernel::HasBeta) {
+    EIGEN_IF_CONSTEXPR (!TensorContractionKernel::HasBeta) {
       this->m_device.fill(buffer, buffer + m * n, Scalar(0));
     }
 

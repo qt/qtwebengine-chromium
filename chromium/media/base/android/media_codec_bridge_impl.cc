@@ -28,9 +28,11 @@
 #include "media/base/android/media_codec_util.h"
 #include "media/base/android/media_format_color_space.h"
 #include "media/base/audio_codecs.h"
+#include "media/base/limits.h"
 #include "media/base/media_switches.h"
 #include "media/base/subsample_entry.h"
 #include "media/base/video_codecs.h"
+#include "ui/gfx/android/rect_jni_conversion.h"
 
 // Must come after all headers that specialize FromJniType() / ToJniType().
 #include "media/base/android/media_jni_headers/MediaCodecBridgeBuilder_jni.h"
@@ -543,7 +545,9 @@ MediaCodecResult MediaCodecBridgeImpl::Flush() {
   return FromMediaCodecStatus(status);
 }
 
-MediaCodecResult MediaCodecBridgeImpl::GetOutputSize(gfx::Size* size) {
+MediaCodecResult MediaCodecBridgeImpl::GetOutputSizeAndCropRect(
+    gfx::Size& size,
+    gfx::Rect& crop_rect) {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> result =
       Java_MediaCodecBridge_getOutputFormat(env, j_bridge_);
@@ -551,8 +555,11 @@ MediaCodecResult MediaCodecBridgeImpl::GetOutputSize(gfx::Size* size) {
     return {MediaCodecResult::Codes::kError, "Unable to get output format."};
   }
 
-  size->SetSize(Java_MediaFormatWrapper_width(env, result),
-                Java_MediaFormatWrapper_height(env, result));
+  size.SetSize(Java_MediaFormatWrapper_width(env, result),
+               Java_MediaFormatWrapper_height(env, result));
+
+  crop_rect = jni_zero::FromJniType<gfx::Rect>(
+      env, Java_MediaFormatWrapper_cropRect(env, result));
   return OkStatus();
 }
 
@@ -645,6 +652,10 @@ MediaCodecResult MediaCodecBridgeImpl::QueueSecureInputBuffer(
   // one subsample here just to be on the safe side.
   const auto num_subsamples =
       std::max(static_cast<size_t>(1), decrypt_config.subsamples().size());
+
+  if (num_subsamples > media::limits::kMaxSubsamplesPerBuffer) {
+    return {MediaCodecResult::Codes::kError, "Too many subsamples."};
+  }
 
   // Decompose SubsampleEntry objects into two int32_t arrays since there's no
   // way to set the values directly into a jintArray :|

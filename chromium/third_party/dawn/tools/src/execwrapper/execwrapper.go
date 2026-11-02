@@ -53,6 +53,8 @@ type CmdWrapper interface {
 	WithStdout(stdout io.Writer) CmdWrapper
 	// WithStderr returns a new CmdWrapper with the error stream set.
 	WithStderr(stderr io.Writer) CmdWrapper
+	// WithDir returns a new CmdWrapper with the working directory set.
+	WithDir(dir string) CmdWrapper
 	// Run executes the Cmd.
 	Run() error
 	// RunWithCombinedOutput executes the Cmd and returns its combined output. Calling this with stdout or stderr set return ErrCombinedOutputWithWriters.

@@ -243,7 +243,7 @@ export class PreloadingDetailsReportView extends LegacyWrapper.LegacyWrapper.Wra
             .data=${
               {
                 affectedRequest,
-                requestResolver: this.#data.requestResolver || new Logs.RequestResolver.RequestResolver(),
+                requestResolver: this.#data.requestResolver || new Logs.RequestResolver.RequestResolver(Logs.NetworkLog.NetworkLog.instance()),
                 displayURL: true,
                 urlToDisplay: url,
               }
@@ -273,7 +273,8 @@ export class PreloadingDetailsReportView extends LegacyWrapper.LegacyWrapper.Wra
 
   #isPrerenderLike(speculationAction: Protocol.Preload.SpeculationAction): boolean {
     return [
-      Protocol.Preload.SpeculationAction.Prerender, Protocol.Preload.SpeculationAction.PrerenderUntilScript
+      Protocol.Preload.SpeculationAction.Prerender,
+      Protocol.Preload.SpeculationAction.PrerenderUntilScript,
     ].includes(speculationAction);
   }
 

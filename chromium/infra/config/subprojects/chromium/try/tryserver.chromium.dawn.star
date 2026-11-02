@@ -144,6 +144,7 @@ try_.builder(
     mirrors = [
         "ci/Dawn Android arm64 DEPS Builder",
         "ci/Dawn Android arm64 DEPS Release (Pixel 6)",
+        "ci/Dawn Android arm64 DEPS Release (Pixel 10)",
     ],
     gn_args = "ci/Dawn Android arm64 DEPS Builder",
     pool = "luci.chromium.gpu.try",
@@ -152,7 +153,6 @@ try_.builder(
     ssd = None,
     free_space = None,
     cq_settings = try_.cq_settings(
-        experiment_percentage = 100,
         location_filters = [
             cq.location_filter(path_regexp = "content/test/gpu/.+"),
             cq.location_filter(path_regexp = "gpu/.+"),
@@ -357,6 +357,7 @@ dawn_win_builderless_builder(
     branch_selector = branches.selector.WINDOWS_BRANCHES,
     mirrors = [
         "ci/Dawn Win11 arm64 DEPS Builder",
+        "ci/Dawn Win11 arm64 DEPS Release (Qualcomm Snapdragon X Elite)",
     ],
     gn_args = "ci/Dawn Win11 arm64 DEPS Builder",
     cq_settings = try_.cq_settings(
@@ -394,6 +395,9 @@ try_.builder(
     os = os.LINUX_DEFAULT,
     ssd = None,
     free_space = None,
+    # Occasionally receives bursty CQ traffic from the Dawn repo, so increase
+    # the expiration/pending timeout to more gracefully handle that.
+    expiration_timeout = 4 * time.hour,
     max_concurrent_builds = 3,
     test_presentation = resultdb.test_presentation(
         grouping_keys = ["status", "v.test_suite", "v.gpu"],
@@ -405,6 +409,7 @@ try_.builder(
     mirrors = [
         "ci/Dawn Android arm64 Builder",
         "ci/Dawn Android arm64 Release (Pixel 6)",
+        "ci/Dawn Android arm64 Release (Pixel 10)",
     ],
     gn_args = "ci/Dawn Android arm64 Builder",
     pool = "luci.chromium.gpu.try",
@@ -412,6 +417,9 @@ try_.builder(
     os = os.LINUX_DEFAULT,
     ssd = None,
     free_space = None,
+    # Occasionally receives bursty CQ traffic from the Dawn repo, so increase
+    # the expiration/pending timeout to more gracefully handle that.
+    expiration_timeout = 4 * time.hour,
     max_concurrent_builds = 3,
     test_presentation = resultdb.test_presentation(
         grouping_keys = ["status", "v.test_suite", "v.gpu"],
@@ -518,6 +526,9 @@ try_.builder(
     os = os.LINUX_DEFAULT,
     ssd = None,
     free_space = None,
+    # Occasionally receives bursty CQ traffic from the Dawn repo, so increase
+    # the expiration/pending timeout to more gracefully handle that.
+    expiration_timeout = 4 * time.hour,
     max_concurrent_builds = 3,
     test_presentation = resultdb.test_presentation(
         grouping_keys = ["status", "v.test_suite", "v.gpu"],
@@ -556,6 +567,9 @@ try_.builder(
     os = os.MAC_ANY,
     cpu = cpu.ARM64,
     free_space = None,
+    # Occasionally receives bursty CQ traffic from the Dawn repo, so increase
+    # the expiration/pending timeout to more gracefully handle that.
+    expiration_timeout = 4 * time.hour,
     max_concurrent_builds = 3,
     test_presentation = resultdb.test_presentation(
         grouping_keys = ["status", "v.test_suite", "v.gpu"],
@@ -754,6 +768,9 @@ dawn_win_builderless_builder(
         "ci/Dawn Win10 x64 Release (NVIDIA)",
     ],
     gn_args = "ci/Dawn Win10 x64 Builder",
+    # Occasionally receives bursty CQ traffic from the Dawn repo, so increase
+    # the expiration/pending timeout to more gracefully handle that.
+    expiration_timeout = 4 * time.hour,
     max_concurrent_builds = 3,
     test_presentation = resultdb.test_presentation(
         grouping_keys = ["status", "v.test_suite", "v.gpu"],
@@ -764,9 +781,13 @@ dawn_win_builderless_builder(
     name = "win11-arm64-dawn-rel",
     mirrors = [
         "ci/Dawn Win11 arm64 Builder",
+        "ci/Dawn Win11 arm64 Release (Qualcomm Snapdragon X Elite)",
     ],
     gn_args = "ci/Dawn Win11 arm64 Builder",
-    max_concurrent_builds = 6,
+    # Occasionally receives bursty CQ traffic from the Dawn repo, so increase
+    # the expiration/pending timeout to more gracefully handle that.
+    expiration_timeout = 4 * time.hour,
+    max_concurrent_builds = 3,
     test_presentation = resultdb.test_presentation(
         grouping_keys = ["status", "v.test_suite", "v.gpu"],
     ),

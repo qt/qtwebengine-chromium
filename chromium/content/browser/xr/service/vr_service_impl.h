@@ -10,11 +10,11 @@
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
-#include "base/types/pass_key.h"
 #include "build/build_config.h"
 #include "content/browser/xr/metrics/session_metrics_helper.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/permission_result.h"
+#include "content/public/browser/visibility.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/xr_install_helper.h"
 #include "device/vr/public/mojom/isolated_xr_service.mojom-forward.h"
@@ -40,7 +40,6 @@ class WebContents;
 namespace content {
 
 class XRRuntimeManagerImpl;
-class XRRuntimeManagerTest;
 class BrowserXRRuntimeImpl;
 
 // Browser process implementation of the VRService mojo interface. Instantiated
@@ -49,9 +48,6 @@ class CONTENT_EXPORT VRServiceImpl : public device::mojom::VRService,
                                      content::WebContentsObserver {
  public:
   explicit VRServiceImpl(content::RenderFrameHost* render_frame_host);
-
-  // Constructor for tests.
-  explicit VRServiceImpl(base::PassKey<XRRuntimeManagerTest>);
 
   VRServiceImpl(const VRServiceImpl&) = delete;
   VRServiceImpl& operator=(const VRServiceImpl&) = delete;
@@ -131,15 +127,19 @@ class CONTENT_EXPORT VRServiceImpl : public device::mojom::VRService,
   void OnWebContentsFocused(content::RenderWidgetHost* host) override;
   void OnWebContentsLostFocus(content::RenderWidgetHost* host) override;
   void RenderFrameDeleted(content::RenderFrameHost* host) override;
+  void OnVisibilityChanged(content::Visibility visibility) override;
 
   void OnWebContentsFocusChanged(content::RenderWidgetHost* host, bool focused);
 
   void ResolvePendingRequests();
+  void Teardown();
 
   // Returns currently active instance of SessionMetricsHelper from WebContents.
   // If the instance is not present on WebContents, it will be created with the
   // assumption that we are not already in VR.
   SessionMetricsHelper* GetSessionMetricsHelper();
+
+  bool IsRenderFrameHostVisible() const;
 
   bool InternalSupportsSession(device::mojom::XRSessionOptions* options);
 
@@ -210,6 +210,7 @@ class CONTENT_EXPORT VRServiceImpl : public device::mojom::VRService,
   bool in_focused_frame_ = false;
   bool frames_throttled_ = false;
   bool has_immersive_session_ = false;
+  bool pending_device_changed_ = false;
 
   std::vector<XrCompatibleCallback> xr_compatible_callbacks_;
 

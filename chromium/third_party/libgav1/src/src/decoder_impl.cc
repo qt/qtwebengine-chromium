@@ -19,31 +19,43 @@
 #include <cassert>
 #include <cmath>
 #include <condition_variable>  // NOLINT (unapproved c++11 header)
-#include <iterator>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <memory>
 #include <mutex>  // NOLINT (unapproved c++11 header)
 #include <new>
 #include <utility>
 #include <vector>
 
-#include "src/dsp/common.h"
-#include "src/dsp/constants.h"
+#include "src/buffer_pool.h"
+#include "src/decoder_state.h"
 #include "src/dsp/dsp.h"
 #include "src/film_grain.h"
 #include "src/frame_buffer_utils.h"
 #include "src/frame_scratch_buffer.h"
+#include "src/gav1/decoder_buffer.h"
+#include "src/gav1/decoder_settings.h"
+#include "src/gav1/status_code.h"
 #include "src/loop_restoration_info.h"
 #include "src/obu_parser.h"
 #include "src/post_filter.h"
 #include "src/prediction_mask.h"
+#include "src/quantizer.h"
+#include "src/residual_buffer_pool.h"
+#include "src/symbol_decoder_context.h"
 #include "src/threading_strategy.h"
+#include "src/tile.h"
+#include "src/tile_scratch_buffer.h"
 #include "src/utils/blocking_counter.h"
 #include "src/utils/common.h"
+#include "src/utils/compiler_attributes.h"
 #include "src/utils/constants.h"
 #include "src/utils/logging.h"
-#include "src/utils/raw_bit_reader.h"
-#include "src/utils/segmentation.h"
+#include "src/utils/segmentation_map.h"
 #include "src/utils/threadpool.h"
+#include "src/utils/types.h"
+#include "src/utils/vector.h"
 #include "src/yuv_buffer.h"
 
 namespace libgav1 {

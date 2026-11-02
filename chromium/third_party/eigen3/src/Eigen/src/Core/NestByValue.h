@@ -78,7 +78,7 @@ EIGEN_DEVICE_FUNC constexpr inline const NestByValue<Derived> DenseBase<Derived>
 
 namespace internal {
 
-// Evaluator of Solve -> eval into a temporary
+// Evaluator of NestByValue<> -> forwards to the evaluator of the nested expression
 template <typename ArgType>
 struct evaluator<NestByValue<ArgType> > : public evaluator<ArgType> {
   typedef evaluator<ArgType> Base;

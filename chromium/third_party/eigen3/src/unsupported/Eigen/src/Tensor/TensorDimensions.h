@@ -96,7 +96,7 @@ struct Sizes {
     return internal::arg_prod(Indices...);
   }
 
-  constexpr EIGEN_DEVICE_FUNC Sizes() {}
+  constexpr EIGEN_DEVICE_FUNC Sizes() = default;
   template <typename DenseIndex>
   explicit constexpr EIGEN_DEVICE_FUNC Sizes(const array<DenseIndex, count>& /*indices*/) {
     // TODO: Add assertion.
@@ -261,46 +261,22 @@ std::ostream& operator<<(std::ostream& os, const DSizes<IndexType, NumDims>& dim
   return os;
 }
 
-// Boilerplate
-namespace internal {
-template <typename Index, std::ptrdiff_t NumIndices, std::ptrdiff_t n, bool RowMajor>
-struct tensor_vsize_index_linearization_helper {
-  static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index run(array<Index, NumIndices> const& indices,
-                                                         std::vector<DenseIndex> const& dimensions) {
-    return array_get < RowMajor ? n
-           : (NumIndices - n - 1) > (indices) + array_get < RowMajor
-               ? n
-               : (NumIndices - n - 1) >
-                     (dimensions)*tensor_vsize_index_linearization_helper<Index, NumIndices, n - 1, RowMajor>::run(
-                         indices, dimensions);
-  }
-};
-
-template <typename Index, std::ptrdiff_t NumIndices, bool RowMajor>
-struct tensor_vsize_index_linearization_helper<Index, NumIndices, 0, RowMajor> {
-  static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index run(array<Index, NumIndices> const& indices,
-                                                         std::vector<DenseIndex> const&) {
-    return array_get < RowMajor ? 0 : NumIndices - 1 > (indices);
-  }
-};
-}  // end namespace internal
-
 namespace internal {
 
 template <typename DenseIndex, int NumDims>
-struct array_size<const DSizes<DenseIndex, NumDims> > {
+struct array_size<const DSizes<DenseIndex, NumDims>> {
   static constexpr ptrdiff_t value = NumDims;
 };
 template <typename DenseIndex, int NumDims>
-struct array_size<DSizes<DenseIndex, NumDims> > {
+struct array_size<DSizes<DenseIndex, NumDims>> {
   static constexpr ptrdiff_t value = NumDims;
 };
 template <typename std::ptrdiff_t... Indices>
-struct array_size<const Sizes<Indices...> > {
+struct array_size<const Sizes<Indices...>> {
   static constexpr std::ptrdiff_t value = Sizes<Indices...>::count;
 };
 template <typename std::ptrdiff_t... Indices>
-struct array_size<Sizes<Indices...> > {
+struct array_size<Sizes<Indices...>> {
   static constexpr std::ptrdiff_t value = Sizes<Indices...>::count;
 };
 template <std::ptrdiff_t n, typename std::ptrdiff_t... Indices>

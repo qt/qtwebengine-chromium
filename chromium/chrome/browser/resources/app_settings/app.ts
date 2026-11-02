@@ -19,7 +19,7 @@ import './supported_links_overlapping_apps_dialog.js';
 import './supported_links_dialog.js';
 
 import type {App} from 'chrome://resources/cr_components/app_management/app_management.mojom-webui.js';
-import {BrowserProxy} from 'chrome://resources/cr_components/app_management/browser_proxy.js';
+import {browserProxyFactory} from 'chrome://resources/cr_components/app_management/app_management.mojom-webui.js';
 import type {AppMap} from 'chrome://resources/cr_components/app_management/constants.js';
 import {getAppIcon} from 'chrome://resources/cr_components/app_management/util.js';
 import {I18nMixinLit} from 'chrome://resources/cr_elements/i18n_mixin_lit.js';
@@ -53,6 +53,7 @@ export class AppElement extends AppElementBase {
       iconUrl_: {type: String},
       showSearch_: {type: Boolean},
       apps_: {type: Object},
+      webuiRoundedIconsEnabled_: {type: Boolean},
     };
   }
 
@@ -60,6 +61,8 @@ export class AppElement extends AppElementBase {
   protected accessor apps_: AppMap = {};
   protected accessor iconUrl_: string = '';
   protected accessor showSearch_: boolean = false;
+  protected accessor webuiRoundedIconsEnabled_: boolean =
+      loadTimeData.getBoolean('webuiRoundedIconsEnabled');
 
   override connectedCallback() {
     super.connectedCallback();
@@ -76,7 +79,7 @@ export class AppElement extends AppElementBase {
     };
 
     const appId = urlPath.substring(1);
-    BrowserProxy.getInstance().handler.getApp(appId).then((result) => {
+    browserProxyFactory.getInstance().handler.getApp(appId).then((result) => {
       assert(result.app);
       this.app_ = result.app;
       this.hidden = false;
@@ -87,18 +90,18 @@ export class AppElement extends AppElementBase {
         // value, informs this page via `onAppChanged`. This way we can quickly
         // render the cached data first without waiting for disk operations to
         // finish and then update the DOM later if necessary.
-        BrowserProxy.getInstance().handler.updateAppSize(appId);
+        browserProxyFactory.getInstance().handler.updateAppSize(appId);
       }
     });
 
-    BrowserProxy.getInstance().handler.getApps().then((result) => {
+    browserProxyFactory.getInstance().handler.getApps().then((result) => {
       for (const app of result.apps) {
         this.apps_[app.id] = app;
       }
     });
 
     // Listens to app update.
-    const callbackRouter = BrowserProxy.getInstance().callbackRouter;
+    const callbackRouter = browserProxyFactory.getInstance().callbackRouter;
     callbackRouter.onAppChanged.addListener(this.onAppChanged_.bind(this));
     callbackRouter.onAppRemoved.addListener(this.onAppRemoved_.bind(this));
   }
@@ -150,7 +153,7 @@ export class AppElement extends AppElementBase {
     e.detail.event.preventDefault();
     e.stopPropagation();
     // <if expr="is_macosx">
-    BrowserProxy.getInstance().handler.openSystemNotificationSettings(
+    browserProxyFactory.getInstance().handler.openSystemNotificationSettings(
         this.app_.id);
     // </if>
   }

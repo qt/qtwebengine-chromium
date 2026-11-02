@@ -10,13 +10,10 @@
 #ifndef LIBANGLE_RENDERER_VULKAN_VK_UTILS_H_
 #define LIBANGLE_RENDERER_VULKAN_VK_UTILS_H_
 
-#ifdef UNSAFE_BUFFERS_BUILD
-#    pragma allow_unsafe_buffers
-#endif
-
 #include <atomic>
 #include <limits>
 #include <queue>
+#include "common/unsafe_buffers.h"
 
 #include "GLSLANG/ShaderLang.h"
 #include "common/FixedVector.h"
@@ -42,7 +39,6 @@
     PROC(Context)                \
     PROC(Framebuffer)            \
     PROC(MemoryObject)           \
-    PROC(Overlay)                \
     PROC(Program)                \
     PROC(ProgramExecutable)      \
     PROC(ProgramPipeline)        \
@@ -65,7 +61,6 @@ class ShareGroup;
 
 namespace gl
 {
-class MockOverlay;
 class ProgramExecutable;
 struct RasterizerState;
 struct SwizzleState;
@@ -276,7 +271,7 @@ void AppendToPNextChain(VulkanStruct1 *chainStart, VulkanStruct2 *ptr)
 class QueueSerialIndexAllocator final
 {
   public:
-    QueueSerialIndexAllocator() : mLargestIndexEverAllocated(kInvalidQueueSerialIndex)
+    QueueSerialIndexAllocator() : mLargestIndexEverAllocated(0)
     {
         // Start with every index is free
         mFreeIndexBitSetArray.set();
@@ -294,7 +289,8 @@ class QueueSerialIndexAllocator final
         SerialIndex index = static_cast<SerialIndex>(mFreeIndexBitSetArray.first());
         ASSERT(index < kMaxQueueSerialIndexCount);
         mFreeIndexBitSetArray.reset(index);
-        mLargestIndexEverAllocated = (~mFreeIndexBitSetArray).last();
+        // Increase mLargestIndexEverAllocated to include the newly allocated index.
+        mLargestIndexEverAllocated = std::max<size_t>(mLargestIndexEverAllocated, index);
         return index;
     }
 
@@ -440,12 +436,6 @@ struct ImplTypeHelper<gl::OBJ>         \
 ANGLE_GL_OBJECTS_X(ANGLE_IMPL_TYPE_HELPER_GL)
 
 template <>
-struct ImplTypeHelper<gl::MockOverlay>
-{
-    using ImplType = OverlayVk;
-};
-
-template <>
 struct ImplTypeHelper<egl::Display>
 {
     using ImplType = DisplayVk;
@@ -476,12 +466,6 @@ template <typename T>
 GetImplType<T> *SafeGetImpl(const T *glObject)
 {
     return SafeGetImplAs<GetImplType<T>>(glObject);
-}
-
-template <>
-inline OverlayVk *GetImpl(const gl::MockOverlay *glObject)
-{
-    return nullptr;
 }
 
 // Reference to a deleted object. The object is due to be destroyed at some point in the future.
@@ -547,18 +531,18 @@ class MemoryProperties final : angle::NonCopyable
         }
 
         ASSERT(memoryType < getMemoryTypeCount());
-        return mMemoryProperties.memoryTypes[memoryType].heapIndex;
+        return ANGLE_UNSAFE_TODO(mMemoryProperties.memoryTypes[memoryType]).heapIndex;
     }
 
     VkDeviceSize getHeapSizeForMemoryType(uint32_t memoryType) const
     {
-        uint32_t heapIndex = mMemoryProperties.memoryTypes[memoryType].heapIndex;
-        return mMemoryProperties.memoryHeaps[heapIndex].size;
+        uint32_t heapIndex = ANGLE_UNSAFE_TODO(mMemoryProperties.memoryTypes[memoryType]).heapIndex;
+        return ANGLE_UNSAFE_TODO(mMemoryProperties.memoryHeaps[heapIndex]).size;
     }
 
     const VkMemoryType &getMemoryType(uint32_t memoryTypeIndex) const
     {
-        return mMemoryProperties.memoryTypes[memoryTypeIndex];
+        return ANGLE_UNSAFE_TODO(mMemoryProperties.memoryTypes[memoryTypeIndex]);
     }
 
     uint32_t getMemoryHeapCount() const { return mMemoryProperties.memoryHeapCount; }
@@ -581,7 +565,10 @@ class StagingBuffer final : angle::NonCopyable
     void collectGarbage(Renderer *renderer, const QueueSerial &queueSerial);
     void destroy(Renderer *renderer);
 
-    angle::Result init(ErrorContext *context, VkDeviceSize size, StagingUsage usage);
+    angle::Result init(ErrorContext *context,
+                       VkDeviceSize size,
+                       StagingUsage usage,
+                       const int initValue);
 
     Buffer &getBuffer() { return mBuffer; }
     const Buffer &getBuffer() const { return mBuffer; }
@@ -1519,10 +1506,13 @@ void InitSamplerYcbcrKHRFunctionsFromCore();
 void InitGetMemoryRequirements2KHRFunctionsFromCore();
 void InitBindMemory2KHRFunctionsFromCore();
 
+// Promoted to KHR
+void InitGetImageSubresourceLayoutEXTFunctionFromKHR();
+
 GLenum CalculateGenerateMipmapFilter(ContextVk *contextVk, angle::FormatID formatID);
 
 bool HasRequiredGlobalPriority(
-    const std::vector<VkQueueFamilyGlobalPriorityPropertiesEXT> &globalPriorityProperties,
+    const VkQueueFamilyGlobalPriorityProperties &globalPriorityProperties,
     VkQueueGlobalPriorityEXT requiredGlobalPriority);
 
 namespace gl_vk
@@ -1689,7 +1679,7 @@ enum class RenderPassClosureReason
     TemporaryForClearTexture,
     TemporaryForImageClear,
     TemporaryForImageCopy,
-    TemporaryForOverlayDraw,
+    TemporaryForMSRTTUnresolve,
 
     // LegacyDithering requires updating the render pass
     LegacyDithering,
@@ -1700,6 +1690,7 @@ enum class RenderPassClosureReason
     InvalidEnum,
     EnumCount = InvalidEnum,
 };
+std::ostream &operator<<(std::ostream &os, const RenderPassClosureReason reason);
 
 enum class QueueSubmitReason
 {
@@ -1724,7 +1715,7 @@ enum class QueueSubmitReason
     CopySurfaceImageToBuffer,
     ForeignImageRelease,
     ImageUseThenReleaseToExternal,
-    InitNonZeroMemory,
+    InitializeMemory,
     TextureReformatToRenderable,
     CopyTextureOnCPU,
     GenerateMipmapOnCPU,
@@ -1756,12 +1747,12 @@ enum class QueueSubmitReason
 
     // Others
     DeferredFlush,
-    DrawOverlay,
     TileMemoryFallback,
 
     InvalidEnum,
     EnumCount = InvalidEnum,
 };
+std::ostream &operator<<(std::ostream &os, const QueueSubmitReason reason);
 
 // The scope of synchronization for a sync object.  Synchronization is done between the signal
 // entity (src) and the entities waiting on the signal (dst)

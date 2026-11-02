@@ -15,11 +15,11 @@
 #include "base/notreached.h"
 #include "base/trace_event/typed_macros.h"
 #include "content/browser/bad_message.h"
-#include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/isolated_origin_util.h"
 #include "content/browser/isolation_context.h"
 #include "content/browser/process_lock.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
+#include "content/browser/security/cpsp/child_process_security_policy_impl.h"
 #include "content/browser/site_instance_group.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/common/content_navigation_policy.h"
@@ -280,7 +280,7 @@ scoped_refptr<SiteInstanceImpl> SiteInstanceImpl::CreateForFencedFrame(
   // process will change after the first navigation (the new SiteInstance will
   // have a SiteInfo with is_fenced set to true).
   if (!embedder_site_instance->IsDefaultSiteInstance()) {
-    site_instance->SetSite(embedder_site_instance->GetSiteInfo());
+    site_instance->SetSiteInfo(embedder_site_instance->GetSiteInfo());
   } else if (embedder_site_instance->GetSecurityPrincipal().IsGuest()) {
     // For guests, in the case where the embedder is not a default SiteInstance,
     // we reuse the embedder's SiteInfo above. When the embedder is
@@ -291,7 +291,7 @@ scoped_refptr<SiteInstanceImpl> SiteInstanceImpl::CreateForFencedFrame(
     // code path and will need to also set is_fenced for the SiteInfo created
     // below.
     DCHECK(!should_isolate_fenced_frames);
-    site_instance->SetSite(SiteInfo::CreateForGuest(
+    site_instance->SetSiteInfo(SiteInfo::CreateForGuest(
         browser_context, embedder_site_instance->GetSecurityPrincipal()
                              .GetStoragePartitionConfig()));
   }
@@ -611,8 +611,17 @@ void SiteInstanceImpl::SetSite(const UrlInfo& url_info) {
       url_info, /* allow_default_instance */ false));
 }
 
-void SiteInstanceImpl::SetSite(const SiteInfo& site_info) {
-  TRACE_EVENT2("navigation", "SiteInstanceImpl::SetSite", "site id",
+void SiteInstanceImpl::SetSiteInfoAndOriginalUrl(const SiteInfo& site_info,
+                                                 const GURL& original_url) {
+  TRACE_EVENT2("navigation", "SiteInstanceImpl::SetSiteInfoAndOriginalUrl",
+               "site id", id_.value(), "siteinfo", site_info.GetDebugString());
+  DCHECK(!has_site_);
+  original_url_ = original_url;
+  SetSiteInfoInternal(site_info);
+}
+
+void SiteInstanceImpl::SetSiteInfo(const SiteInfo& site_info) {
+  TRACE_EVENT2("navigation", "SiteInstanceImpl::SetSiteInfo", "site id",
                id_.value(), "siteinfo", site_info.GetDebugString());
   DCHECK(!has_site_);
   SetSiteInfoInternal(site_info);
@@ -945,6 +954,17 @@ bool SiteInstanceImpl::IsSuitableForUrlInfo(const UrlInfo& url_info) {
   if (!SandboxConfigurationsMatch(GetSiteInfo(), url_info))
     return false;
 
+  if (!base::FeatureList::IsEnabled(
+          features::kIsSuitableForUrlInfoEarlyReturnHoldback)) {
+    // TODO(crbug.com/527302857): Remove the duplicated check below in
+    // !HasProcess() once the holdback experiment concludes.
+    // If there is no process or site, then this is a new SiteInstance that can
+    // be used for anything. Avoid computing DeriveSiteInfo in this case.
+    if (!HasProcess() && !HasSite()) {
+      return true;
+    }
+  }
+
   // If the site URL is an extension (e.g., for hosted apps or WebUI) but the
   // process is not (or vice versa), make sure we notice and fix it.
 
@@ -965,6 +985,8 @@ bool SiteInstanceImpl::IsSuitableForUrlInfo(const UrlInfo& url_info) {
   // available. We want to use such a process in the IsSuitableHost check, so we
   // may end up assigning process_ in the GetProcess() call below.
   if (!HasProcess()) {
+    // TODO(crbug.com/527302857): Remove this check once the early return above
+    // (guarded by kIsSuitableForUrlInfoEarlyReturnHoldback) is made default.
     // If there is no process or site, then this is a new SiteInstance that can
     // be used for anything.
     if (!HasSite())
@@ -1181,9 +1203,12 @@ bool SiteInstanceImpl::IsNavigationSameSite(
   if (!SandboxConfigurationsMatch(GetSiteInfo(), dest_url_info))
     return false;
 
-  // Similarly, do not consider PDF and non-PDF documents to be same-site; they
-  // should never share a SiteInstance. See https://crbug.com/359345045.
-  if (IsPdf() != dest_url_info.embedder_isolation_info.is_pdf()) {
+  // Documents with different embedder-imposed isolation (PDF vs non-PDF, see
+  // https://crbug.com/359345045; isolated-instance vs non-isolated; two
+  // isolated-instance navigations with different per-instance ids) must never
+  // be considered same-site.
+  if (GetSiteInfo().embedder_isolation_info() !=
+      dest_url_info.embedder_isolation_info) {
     return false;
   }
 
@@ -1419,7 +1444,7 @@ bool SiteInstanceImpl::DoesSiteInfoForURLMatch(const UrlInfo& url_info) {
 void SiteInstanceImpl::RegisterAsDefaultOriginIsolation(
     const url::Origin& previously_visited_origin) {
   auto* policy = ChildProcessSecurityPolicyImpl::GetInstance();
-  policy->AddDefaultIsolatedOriginIfNeeded(
+  policy->RecordDefaultOriginAgentClusterOriginIfNew(
       GetIsolationContext(), previously_visited_origin,
       true /* is_global_walk_or_frame_removal */);
 }

@@ -25,12 +25,14 @@ rust_library(
     name = "lib",
     srcs = ["src/lib.rs"],
     crate_name = "oak_functions_client",
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//micro_rpc",
         "//oak_client",
         "//oak_client/tonic:oak_client_tonic",
         "//oak_proto_rust/grpc",
         "@oak_crates_index//:anyhow",
+        "@oak_crates_index//:http",
         "@oak_crates_index//:prost",
         "@oak_crates_index//:tonic",
     ],
@@ -39,6 +41,7 @@ rust_library(
 rust_binary(
     name = "oak_functions_client",
     srcs = ["src/main.rs"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":lib",
         "//oak_client",
@@ -46,6 +49,7 @@ rust_binary(
         "@oak_crates_index//:anyhow",
         "@oak_crates_index//:clap",
         "@oak_crates_index//:env_logger",
+        "@oak_crates_index//:http",
         "@oak_crates_index//:regex",
         "@oak_crates_index//:tokio",
     ],

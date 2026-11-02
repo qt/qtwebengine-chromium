@@ -21,7 +21,7 @@
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTypes.h"
 #include "include/core/SkVertices.h"
-#include "include/private/base/SkTArray.h"
+#include "include/private/SkTArray.h"
 #include "include/private/chromium/Slug.h"
 #include "src/core/SkPictureFlat.h"
 #include "src/core/SkReadBuffer.h"
@@ -182,8 +182,6 @@ private:
 
     static void WriteFactories(SkWStream* stream, const SkFactorySet& rec);
     static void WriteTypefaces(SkWStream* stream, const SkRefCntSet& rec, const SkSerialProcs&);
-
-    void initForPlayback() const;
 };
 
 #endif

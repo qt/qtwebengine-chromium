@@ -25,9 +25,6 @@ rust_library(
     name = "oak_tdx_quote",
     srcs = glob(["src/**"]),
     crate_name = "oak_tdx_quote",
-    proc_macro_deps = [
-        "@oak_crates_index//:strum_macros",
-    ],
     deps = [
         "@oak_crates_index//:bitflags",
         "@oak_crates_index//:nom",
@@ -39,6 +36,7 @@ rust_library(
 rust_test(
     name = "oak_tdx_quote_tests",
     crate = ":oak_tdx_quote",
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//oak_attestation_verification:test_util",
         "//oak_proto_rust",

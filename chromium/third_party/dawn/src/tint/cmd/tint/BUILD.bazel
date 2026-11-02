@@ -52,6 +52,7 @@ cc_binary(
     "//src/tint/cmd/common",
     "//src/tint/lang/core",
     "//src/tint/lang/core/constant",
+    "//src/tint/lang/core/intrinsic",
     "//src/tint/lang/core/ir",
     "//src/tint/lang/core/ir/transform",
     "//src/tint/lang/core/type",
@@ -176,8 +177,8 @@ alias(
 selects.config_setting_group(
     name = "tint_build_spv_reader_or_tint_build_spv_writer",
     match_any = [
-        "tint_build_spv_reader",
-        "tint_build_spv_writer",
+        ":tint_build_spv_reader",
+        ":tint_build_spv_writer",
     ],
 )
 

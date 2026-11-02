@@ -5,6 +5,9 @@
 #include "base/allocator/scheduler_loop_quarantine_config.h"
 
 #include "base/allocator/partition_alloc_features.h"
+#include "base/base_switches.h"
+#include "base/command_line.h"
+#include "base/test/scoped_command_line.h"
 #include "base/test/scoped_feature_list.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -271,6 +274,122 @@ TEST(SchedulerLoopQuarantineConfigTest, InvalidConfig) {
   EXPECT_FALSE(config.leak_on_destruction);
   EXPECT_EQ(0, config.branch_capacity_in_bytes);
   EXPECT_STREQ(config.branch_name, "renderer/main");
+}
+
+TEST(SchedulerLoopQuarantineConfigTest, CommandLineOverride) {
+  base::test::ScopedCommandLine scoped_command_line;
+  base::test::ScopedFeatureList feature_list;
+  // Enable the feature, but with a config that we expect to be overridden.
+  feature_list.InitAndEnableFeatureWithParameters(
+      base::features::kPartitionAllocSchedulerLoopQuarantine,
+      {{base::features::kPartitionAllocSchedulerLoopQuarantineConfig.name,
+        kValidTestingConfigJSON}});
+
+  // Set the command line switch with a different config.
+  constexpr char kCommandLineConfigJSON[] = R"({
+    "browser": {
+      "global": {
+        "enable-quarantine": true,
+        "branch-capacity-in-bytes": 999
+      }
+    }
+  })";
+
+  scoped_command_line.GetProcessCommandLine()->AppendSwitchASCII(
+      switches::kPartitionAllocSchedulerLoopQuarantine, kCommandLineConfigJSON);
+
+  partition_alloc::internal::SchedulerLoopQuarantineConfig config;
+
+  // This should use the command line config, not the feature param config.
+  config = GetSchedulerLoopQuarantineConfiguration(
+      "browser", SchedulerLoopQuarantineBranchType::kGlobal);
+  EXPECT_TRUE(config.enable_quarantine);
+  EXPECT_EQ(999, config.branch_capacity_in_bytes);
+}
+
+TEST(SchedulerLoopQuarantineConfigTest, CommandLineOverrideFeatureDisabled) {
+  base::test::ScopedCommandLine scoped_command_line;
+  base::test::ScopedFeatureList feature_list;
+  // Disable the feature.
+  feature_list.InitAndDisableFeature(
+      base::features::kPartitionAllocSchedulerLoopQuarantine);
+
+  // Set the command line switch.
+  constexpr char kCommandLineConfigJSON[] = R"({
+    "browser": {
+      "global": {
+        "enable-quarantine": true,
+        "branch-capacity-in-bytes": 999
+      }
+    }
+  })";
+
+  scoped_command_line.GetProcessCommandLine()->AppendSwitchASCII(
+      switches::kPartitionAllocSchedulerLoopQuarantine, kCommandLineConfigJSON);
+
+  partition_alloc::internal::SchedulerLoopQuarantineConfig config;
+
+  // This should still use the command line config, even though the feature is
+  // disabled.
+  config = GetSchedulerLoopQuarantineConfiguration(
+      "browser", SchedulerLoopQuarantineBranchType::kGlobal);
+  EXPECT_TRUE(config.enable_quarantine);
+  EXPECT_EQ(999, config.branch_capacity_in_bytes);
+}
+
+TEST(SchedulerLoopQuarantineConfigTest, FeatureDisabledNoSwitch) {
+  base::test::ScopedFeatureList feature_list;
+  // Disable the feature.
+  feature_list.InitAndDisableFeature(
+      base::features::kPartitionAllocSchedulerLoopQuarantine);
+
+  partition_alloc::internal::SchedulerLoopQuarantineConfig config;
+
+  // This should return disabled config.
+  config = GetSchedulerLoopQuarantineConfiguration(
+      "browser", SchedulerLoopQuarantineBranchType::kGlobal);
+  EXPECT_FALSE(config.enable_quarantine);
+}
+
+TEST(SchedulerLoopQuarantineConfigTest, HasSchedulerLoopQuarantineTaskControl) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeatureWithParameters(
+      base::features::kPartitionAllocSchedulerLoopQuarantine,
+      {{"PartitionAllocSchedulerLoopQuarantineConfig", R"({
+          "browser": {
+            "main": {
+              "enable-task-controlled-purge": true,
+              "pause-in-between-tasks": true
+            }
+          },
+          "gpu": {
+            "main": {
+              "enable-task-controlled-purge": true,
+              "pause-in-between-tasks": false
+            }
+          },
+          "utility": {
+            "main": {
+              "enable-task-controlled-purge": false,
+              "pause-in-between-tasks": true
+            }
+          },
+          "renderer": {
+            "main": {
+              "enable-task-controlled-purge": false,
+              "pause-in-between-tasks": false
+            }
+          }
+        })"}});
+
+  // Enables both.
+  EXPECT_TRUE(HasSchedulerLoopQuarantineTaskControl("browser"));
+  // Enables task-controlled purge only.
+  EXPECT_TRUE(HasSchedulerLoopQuarantineTaskControl("gpu"));
+  // Enables pause-in-between-tasks only.
+  EXPECT_TRUE(HasSchedulerLoopQuarantineTaskControl("utility"));
+  // Enables neither.
+  EXPECT_FALSE(HasSchedulerLoopQuarantineTaskControl("renderer"));
 }
 
 }  // namespace

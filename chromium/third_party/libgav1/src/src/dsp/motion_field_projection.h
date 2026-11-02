@@ -35,12 +35,23 @@
 
 // IWYU pragma: end_exports
 
+#include "src/utils/reference_info.h"
+#include "src/utils/types.h"
+
 namespace libgav1 {
 namespace dsp {
 
 // Initializes Dsp::motion_field_projection_kernel. This function is not
 // thread-safe.
 void MotionFieldProjectionInit_C();
+
+// Provides a fallback for optimizations with limited support for high
+// resolutions.
+void MotionFieldProjectionKernel_C(const ReferenceInfo& reference_info,
+                                   int reference_to_current_with_sign,
+                                   int dst_sign, int y8_start, int y8_end,
+                                   int x8_start, int x8_end,
+                                   TemporalMotionField* motion_field);
 
 }  // namespace dsp
 }  // namespace libgav1

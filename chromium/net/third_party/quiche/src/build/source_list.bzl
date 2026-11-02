@@ -43,6 +43,7 @@ quiche_core_hdrs = [
     "common/print_elements.h",
     "common/quiche_buffer_allocator.h",
     "common/quiche_callbacks.h",
+    "common/quiche_checked_math.h",
     "common/quiche_circular_deque.h",
     "common/quiche_cord_utils.h",
     "common/quiche_crypto_logging.h",
@@ -1072,6 +1073,7 @@ io_tool_support_hdrs = [
     "quic/tools/quic_epoll_client_factory.h",
     "quic/tools/quic_event_loop_tools.h",
     "quic/tools/quic_server.h",
+    "quic/tools/web_transport_only_client.h",
 ]
 io_tool_support_srcs = [
     "quic/core/io/event_loop_connecting_client_socket.cc",
@@ -1093,6 +1095,7 @@ io_tool_support_srcs = [
     "quic/tools/quic_default_client.cc",
     "quic/tools/quic_epoll_client_factory.cc",
     "quic/tools/quic_server.cc",
+    "quic/tools/web_transport_only_client.cc",
 ]
 io_test_support_hdrs = [
     "quic/test_tools/quic_mock_syscall_wrapper.h",
@@ -1138,6 +1141,7 @@ quiche_tests_srcs = [
     "common/print_elements_test.cc",
     "common/quiche_buffer_allocator_test.cc",
     "common/quiche_callbacks_test.cc",
+    "common/quiche_checked_math_test.cc",
     "common/quiche_circular_deque_test.cc",
     "common/quiche_cord_utils_test.cc",
     "common/quiche_data_reader_test.cc",
@@ -1395,6 +1399,7 @@ quiche_tests_srcs = [
     "quic/tools/connect_tunnel_test.cc",
     "quic/tools/connect_udp_tunnel_test.cc",
     "quic/tools/quic_memory_cache_backend_test.cc",
+    "quic/tools/quic_simple_client_session_test.cc",
     "quic/tools/quic_tcp_like_trace_converter_test.cc",
     "quic/tools/simple_ticket_crypter_test.cc",
     "web_transport/encapsulated/encapsulated_web_transport_test.cc",
@@ -1421,6 +1426,7 @@ io_tests_srcs = [
     "quic/tools/quic_simple_server_session_test.cc",
     "quic/tools/quic_simple_server_stream_test.cc",
     "quic/tools/quic_url_test.cc",
+    "quic/tools/web_transport_only_client_test.cc",
 ]
 fuzzers_hdrs = [
 ]
@@ -1577,6 +1583,7 @@ load_balancer_srcs = [
 moqt_hdrs = [
     "quic/moqt/moqt_bidi_stream.h",
     "quic/moqt/moqt_bitrate_adjuster.h",
+    "quic/moqt/moqt_control_message_queue.h",
     "quic/moqt/moqt_error.h",
     "quic/moqt/moqt_fetch_task.h",
     "quic/moqt/moqt_framer.h",
@@ -1591,6 +1598,7 @@ moqt_hdrs = [
     "quic/moqt/moqt_parser.h",
     "quic/moqt/moqt_priority.h",
     "quic/moqt/moqt_probe_manager.h",
+    "quic/moqt/moqt_publish_stream.h",
     "quic/moqt/moqt_publisher.h",
     "quic/moqt/moqt_quic_config.h",
     "quic/moqt/moqt_relay_publisher.h",
@@ -1615,6 +1623,7 @@ moqt_hdrs = [
 moqt_srcs = [
     "quic/moqt/moqt_bidi_stream.cc",
     "quic/moqt/moqt_bitrate_adjuster.cc",
+    "quic/moqt/moqt_control_message_queue.cc",
     "quic/moqt/moqt_error.cc",
     "quic/moqt/moqt_framer.cc",
     "quic/moqt/moqt_key_value_pair.cc",
@@ -1628,6 +1637,7 @@ moqt_srcs = [
     "quic/moqt/moqt_parser.cc",
     "quic/moqt/moqt_priority.cc",
     "quic/moqt/moqt_probe_manager.cc",
+    "quic/moqt/moqt_publish_stream.cc",
     "quic/moqt/moqt_quic_config.cc",
     "quic/moqt/moqt_relay_publisher.cc",
     "quic/moqt/moqt_relay_track_publisher.cc",
@@ -1649,6 +1659,7 @@ moqt_test_hdrs = [
 moqt_test_srcs = [
     "quic/moqt/moqt_bidi_stream_test.cc",
     "quic/moqt/moqt_bitrate_adjuster_test.cc",
+    "quic/moqt/moqt_control_message_queue_test.cc",
     "quic/moqt/moqt_framer_test.cc",
     "quic/moqt/moqt_integration_test.cc",
     "quic/moqt/moqt_key_value_pair_test.cc",
@@ -1662,6 +1673,7 @@ moqt_test_srcs = [
     "quic/moqt/moqt_parser_test.cc",
     "quic/moqt/moqt_priority_test.cc",
     "quic/moqt/moqt_probe_manager_test.cc",
+    "quic/moqt/moqt_publish_stream_test.cc",
     "quic/moqt/moqt_relay_publisher_test.cc",
     "quic/moqt/moqt_relay_track_publisher_test.cc",
     "quic/moqt/moqt_session_test.cc",
@@ -1752,6 +1764,8 @@ qbone_hdrs = [
     "quic/qbone/qbone_server_session.h",
     "quic/qbone/qbone_session_base.h",
     "quic/qbone/qbone_stream.h",
+    "quic/qbone/test_tools/basic_quic_server.h",
+    "quic/qbone/test_tools/qbone_basic_quic_server_handler.h",
 ]
 qbone_srcs = [
     "quic/qbone/bonnet/icmp_reachable.cc",
@@ -1789,6 +1803,8 @@ qbone_srcs = [
     "quic/qbone/qbone_session_test.cc",
     "quic/qbone/qbone_stream.cc",
     "quic/qbone/qbone_stream_test.cc",
+    "quic/qbone/test_tools/basic_quic_server.cc",
+    "quic/qbone/test_tools/qbone_basic_quic_server_handler.cc",
 ]
 blind_sign_auth_hdrs = [
     "blind_sign_auth/blind_sign_auth.h",
@@ -1819,7 +1835,6 @@ blind_sign_auth_tests_srcs = [
     "blind_sign_auth/cached_blind_sign_auth_test.cc",
 ]
 protobuf_blind_sign_auth = [
-    "blind_sign_auth/proto/any.proto",
     "blind_sign_auth/proto/attest_and_sign.proto",
     "blind_sign_auth/proto/attestation.proto",
     "blind_sign_auth/proto/auth_and_sign.proto",

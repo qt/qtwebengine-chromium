@@ -32,7 +32,7 @@ class ArCoreHostDisplayClient : public viz::HostDisplayClient {
       : HostDisplayClient(gfx::kNullAcceleratedWidget),
         main_thread_task_runner_(main_thread_task_runner),
         root_window_(root_window) {
-    // TODO(crbug.com/40758616): Ideally, we'd DCHECK here, but the UTs
+    // Ideally, we'd DCHECK(root_window_) here, but the unit tests
     // don't create a root_window.
   }
 
@@ -221,7 +221,6 @@ void ArCompositorFrameSink::RequestBeginFrame(base::TimeDelta interval,
                                   next_begin_frame_id_++,
                                   base::TimeTicks::Now(), deadline, interval,
                                   viz::BeginFrameArgs::NORMAL),
-      true,
       base::BindOnce(&ArCompositorFrameSink::OnFrameSubmitAck,
                      base::Unretained(this)));
   can_issue_new_begin_frame_ = false;
@@ -283,11 +282,11 @@ void ArCompositorFrameSink::ReclaimResources(
     // we've got all of the resources associated with a frame cleared before we
     // actually clear the frame. First determine which buffer this ResourceId
     // was associated with and then clear it.
+    WebXrSharedBuffer* matched_buffer = nullptr;
     if (resource.id == rendering_frame->shared_buffer->id) {
-      rendering_frame->shared_buffer->id = viz::kInvalidResourceId;
-    }
-    if (resource.id == rendering_frame->camera_image_shared_buffer->id) {
-      rendering_frame->camera_image_shared_buffer->id = viz::kInvalidResourceId;
+      matched_buffer = rendering_frame->shared_buffer.get();
+    } else if (resource.id == rendering_frame->camera_image_shared_buffer->id) {
+      matched_buffer = rendering_frame->camera_image_shared_buffer.get();
     }
 
     // In order to keep our map size small we can remove this association as it
@@ -299,9 +298,12 @@ void ArCompositorFrameSink::ReclaimResources(
     // token to determine when the frame is *actually* done. Given that each
     // frame can have multiple buffers associated with it, we'll store the token
     // until we get all of the buffers associated with the frame returned.
-    rendering_frame->reclaimed_sync_tokens.push_back(
-        rendering_frame->shared_buffer->shared_image->EndExport(
-            std::move(resource.shared_image_export_result)));
+    if (matched_buffer) {
+      matched_buffer->id = viz::kInvalidResourceId;
+      matched_buffer->reclaimed_sync_token =
+          matched_buffer->shared_image->EndExport(
+              std::move(resource.shared_image_export_result));
+    }
 
     // Once we've cleared all of the buffers on the frame that were passed to
     // viz, we can tell our parent that the frame is ready to be reclaimed
@@ -461,9 +463,6 @@ viz::CompositorFrame ArCompositorFrameSink::CreateFrame(WebXrFrame* xr_frame,
 
     viz::TransferableResource::MetadataOverride render_resource_overrides = {
         .is_overlay_candidate = false,
-        .origin = frame_type == FrameType::kHasWebGlContent
-                      ? kBottomLeft_GrSurfaceOrigin
-                      : kTopLeft_GrSurfaceOrigin,
     };
 
     auto renderer_resource = viz::TransferableResource::Make(
@@ -511,7 +510,6 @@ viz::CompositorFrame ArCompositorFrameSink::CreateFrame(WebXrFrame* xr_frame,
 
   viz::TransferableResource::MetadataOverride camera_resource_overrides = {
       .is_overlay_candidate = false,
-      .origin = kBottomLeft_GrSurfaceOrigin,
   };
 
   // Additionally append to the resource_list

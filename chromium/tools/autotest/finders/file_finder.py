@@ -7,6 +7,7 @@ import pathlib
 import re
 import sys
 import shutil
+import logging
 
 import utils.command_util as command
 import utils.constants as const
@@ -15,7 +16,7 @@ from utils.command_error import CommandError
 
 _DIR_SOURCE_ROOT = os.path.normpath(
     os.path.join(os.path.basename(__file__), '../../..'))
-_COMMON_EXTENSIONS = ('.java', '.cc', '.mm', '.h', '.json')
+_COMMON_EXTENSIONS = ('.java', '.cc', '.mm', '.h', '.json', '.html', '.ts')
 
 
 def _CodeSearchFiles(query_args: list[str]) -> list[str]:
@@ -46,7 +47,33 @@ def _FindRemoteCandidates(target: str) -> tuple[list[str], list[str]]:
   return list(exact), list(close)
 
 
+def IsWebTestFile(file_path: str) -> bool:
+  normalized = os.path.normpath(file_path).replace('\\', '/')
+  if 'third_party/blink/web_tests/' not in normalized and \
+      'third_party/web_tests/' not in normalized:
+    return False
+
+  _, ext = os.path.splitext(normalized)
+  if ext not in ('.html', '.htm', '.xhtml', '.xht', '.xml', '.svg', '.js',
+                 '.php'):
+    return False
+
+  parts = normalized.split('/')
+  if 'resources' in parts or 'support' in parts:
+    return False
+
+  basename = os.path.basename(normalized)
+  if basename.endswith(('-expected.html', '-expected.xml', '-expected.txt',
+                        '-expected.png', '-expected.ini')):
+    return False
+
+  return True
+
+
 def IsTestFile(file_path: str) -> const.TestValidity:
+  if IsWebTestFile(file_path):
+    return const.TestValidity.VALID_TEST
+
   if not const.TEST_FILE_NAME_REGEX.match(file_path):
     return const.TestValidity.NOT_A_TEST
 
@@ -96,30 +123,33 @@ def _RecursiveMatchFilename(folder: str,
             exact += matches[0]
             close += matches[1]
           except FileNotFoundError:
-            if const.DEBUG:
-              print(f'Failed to scan directory "{entry}" - junction?')
+            logging.debug(f'Failed to scan directory "{entry}" - junction?')
             pass
   except PermissionError:
-    print(f'Permission error while scanning {folder}')
+    logging.warning(f'Permission error while scanning {folder}')
 
   return (exact, close)
 
 
 def _FindTestFilesInDirectory(directory: str) -> list[str]:
-  test_files: list[str] = []
-  if const.DEBUG:
-    print('Test files:')
+  test_files: set[str] = set()
+  logging.debug('Test files:')
   for root, _, files in os.walk(directory):
     for f in files:
       path: str = os.path.join(root, f)
+      if f.endswith(('_test.ts', '_unittest.ts', '_spec.ts')):
+        resolved_path = _FindCppTestForTsFile(path)
+        if resolved_path:
+          test_files.add(resolved_path)
+          continue
       file_validity: const.TestValidity = IsTestFile(path)
       if file_validity is const.TestValidity.VALID_TEST:
-        if const.DEBUG:
-          print(path)
-        test_files.append(path)
-      elif const.DEBUG and file_validity is const.TestValidity.MAYBE_A_TEST:
-        print(path + ' matched but doesn\'t include gtest files, skipping.')
-  return test_files
+        logging.debug(path)
+        test_files.add(path)
+      elif file_validity is const.TestValidity.MAYBE_A_TEST:
+        logging.debug(path +
+                      ' matched but doesn\'t include gtest files, skipping.')
+  return sorted(test_files)
 
 
 def SearchForTestsByName(terms: list[str], quiet: bool,
@@ -181,8 +211,7 @@ def SearchForTestsByName(terms: list[str], quiet: bool,
       else:
         # Exit status 2: error (regex syntax error, unable to read file).
         raise
-    if const.DEBUG:
-      print(f'rg found: {files}')
+    logging.debug(f'rg found: {files}')
   else:
     # Use code search.
     files = _CodeSearchFiles(['pcre:true', pattern])
@@ -190,12 +219,12 @@ def SearchForTestsByName(terms: list[str], quiet: bool,
   gtest_filter: str = ':'.join(GetFilterForTerm(t) for t in terms)
 
   if files and not quiet:
-    print('Found tests in files:')
+    logging.info('Found tests in files:')
     limit = 50
-    print('\n'.join([f'  {f}' for f in files[:limit]]))
+    for f in files[:limit]:
+      logging.info(f'  {f}')
     if len(files) > limit:
-      print(f'... ({len(files)} total)')
-
+      logging.info(f'... ({len(files)} total)')
   return files, gtest_filter
 
 
@@ -206,8 +235,37 @@ def IsProbablyFile(name: str) -> bool:
           or os.path.exists(os.path.join(_DIR_SOURCE_ROOT, name)))
 
 
+def _FindCppTestForTsFile(target: str) -> str | None:
+  filename = os.path.basename(target)
+  js_filename = os.path.splitext(filename)[0] + '.js'
+  current_dir = os.path.dirname(os.path.abspath(target))
+  webui_root = str(const.SRC_DIR / 'chrome' / 'test' / 'data' / 'webui')
+  while current_dir.startswith(webui_root):
+    try:
+      for f in os.listdir(current_dir):
+        if f.endswith(('test.cc', 'tests.cc')):
+          cc_path = os.path.join(current_dir, f)
+          try:
+            with open(cc_path, 'r', encoding='utf-8') as cc_file:
+              cc_content = cc_file.read()
+              if js_filename in cc_content or filename in cc_content:
+                return cc_path
+          except IOError:
+            pass
+    except OSError:
+      pass
+    current_dir = os.path.dirname(current_dir)
+  return None
+
+
 def _FindTestForFile(target: os.PathLike[str]) -> str | None:
   root, ext = os.path.splitext(target)
+
+  # For WebUI TypeScript tests, resolve to the nearest C++ wrapper that
+  # references this test
+  if ext == '.ts':
+    return _FindCppTestForTsFile(str(target))
+
   # If the target is a C++ implementation file, try to guess the test file.
   # Candidates should be ordered most to least promising.
   test_candidates: list[str] = [target]
@@ -255,30 +313,27 @@ def FindMatchingTestFiles(target: str,
 
   if sys.platform.startswith('win32') and os.path.altsep in target:
     # Use backslash as the path separator on Windows to match os.scandir().
-    if const.DEBUG:
-      print('Replacing ' + os.path.altsep + ' with ' + os.path.sep + ' in: ' +
-            target)
+    logging.debug('Replacing ' + os.path.altsep + ' with ' + os.path.sep +
+                  ' in: ' + target)
     target = target.replace(os.path.altsep, os.path.sep)
-  if const.DEBUG:
-    print('Finding files with full path containing: ' + target)
+  logging.debug('Finding files with full path containing: ' + target)
 
   if remote_search:
     exact, close = _FindRemoteCandidates(target)
     if not exact and not close:
-      print('Failed to find remote candidates; searching recursively')
+      logging.info('Failed to find remote candidates; searching recursively')
       exact, close = _RecursiveMatchFilename(str(const.SRC_DIR), target)
   else:
-    print(f'Warning: Doing a slow local search for {target}. '
-          f'Consider installing `cs` or using -r.')
+    logging.warning(f'Doing a slow local search for {target}. '
+                    f'Consider installing `cs` or using -r.')
     exact, close = _RecursiveMatchFilename(str(const.SRC_DIR), target)
 
-  if const.DEBUG:
-    if exact:
-      print('Found exact matching file(s):')
-      print('\n'.join(exact))
-    if close:
-      print('Found possible matching file(s):')
-      print('\n'.join(close))
+  if exact:
+    logging.debug('Found exact matching file(s):')
+    logging.debug('\n'.join(exact))
+  if close:
+    logging.debug('Found possible matching file(s):')
+    logging.debug('\n'.join(close))
 
   if len(exact) >= 1:
     # Given "Foo", don't ask to disambiguate ModFoo.java vs Foo.java.

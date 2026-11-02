@@ -10,6 +10,7 @@
 #include "base/feature_list.h"
 #include "base/no_destructor.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/task/thread_type.h"
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
@@ -19,8 +20,8 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/utility/content_utility_client.h"
 #include "content/public/utility/utility_thread.h"
-#include "content/services/auction_worklet/auction_worklet_service_impl.h"
-#include "content/services/auction_worklet/public/mojom/auction_worklet_service.mojom.h"
+#include "content/services/devtools_media_encoding_service/devtools_media_encoding_service_impl.h"
+#include "content/services/devtools_media_encoding_service/public/mojom/devtools_media_encoding_service.mojom.h"
 #include "device/vr/buildflags/buildflags.h"
 #include "media/base/media_switches.h"
 #include "media/gpu/buildflags.h"
@@ -66,6 +67,8 @@
 #if BUILDFLAG(IS_WIN)
 #include "base/win/scoped_com_initializer.h"
 #include "sandbox/win/src/sandbox.h"
+#include "services/webnn/public/mojom/webnn_compiler_service.mojom.h"
+#include "services/webnn/webnn_compiler_service_impl.h"
 extern sandbox::TargetServices* g_utility_target_services;
 #endif  // BUILDFLAG(IS_WIN)
 
@@ -193,11 +196,11 @@ auto RunNetworkService(
       /*delay_initialization_until_set_client=*/true);
 }
 
-auto RunAuctionWorkletService(
-    mojo::PendingReceiver<auction_worklet::mojom::AuctionWorkletService>
+auto RunDevToolsMediaEncodingService(
+    mojo::PendingReceiver<
+        devtools_media_encoding_service::mojom::DevToolsMediaEncodingService>
         receiver) {
-  return auction_worklet::AuctionWorkletServiceImpl::CreateForService(
-      std::move(receiver));
+  return std::make_unique<DevToolsMediaEncodingServiceImpl>(std::move(receiver));
 }
 
 auto RunAudio(mojo::PendingReceiver<audio::mojom::AudioService> receiver) {
@@ -290,6 +293,11 @@ auto RunMediaFoundationServiceBroker(
         receiver) {
   return std::make_unique<media::MediaFoundationServiceBroker>(
       std::move(receiver), base::BindOnce(&EnsureSandboxedWin));
+}
+
+auto RunWebNNCompilerService(
+    mojo::PendingReceiver<webnn::mojom::WebNNCompilerService> receiver) {
+  return std::make_unique<webnn::WebNNCompilerServiceImpl>(std::move(receiver));
 }
 #endif  // BUILDFLAG(IS_WIN)
 
@@ -392,7 +400,7 @@ void RegisterIOThreadServices(mojo::ServiceFactory& services) {
 }
 
 void RegisterMainThreadServices(mojo::ServiceFactory& services) {
-  services.Add(RunAuctionWorkletService);
+  services.Add(RunDevToolsMediaEncodingService);
   services.Add(RunAudio);
 
   services.Add(RunDataDecoder);
@@ -414,11 +422,15 @@ void RegisterMainThreadServices(mojo::ServiceFactory& services) {
 #endif
 
 #if BUILDFLAG(ENABLE_LIBRARY_CDMS)
-  services.Add(RunCdmServiceBroker);
+  services.Add(RunCdmServiceBroker,
+               base::FeatureList::IsEnabled(media::kCdmThreadPriorityElevation)
+                   ? base::ThreadType::kPresentation
+                   : base::ThreadType::kDefault);
 #endif
 
 #if BUILDFLAG(IS_WIN)
   services.Add(RunMediaFoundationServiceBroker);
+  services.Add(RunWebNNCompilerService);
 #endif  // BUILDFLAG(IS_WIN)
 
 #if BUILDFLAG(IS_ANDROID)

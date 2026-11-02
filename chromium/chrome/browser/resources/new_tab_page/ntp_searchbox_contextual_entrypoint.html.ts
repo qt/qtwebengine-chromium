@@ -30,12 +30,16 @@ export function getHtml(this: NtpSearchboxElement) {
         .inputState="${this.inputState_}"
         .searchboxLayoutMode="${this.searchboxLayoutMode}"
         .tabSuggestions="${this.tabSuggestions_}"
-        .tabSuggestionsLoading="${this.tabSuggestionsLoading_}"
-        .tabSuggestionsHasLoaded="${this.tabSuggestionsHasLoaded_}"
+        .tabSuggestionsState="${this.tabSuggestionsState_}"
         .recentTabId="${this.recentTabId_}"
+        .contextManagementInComposeboxEnabled="${this.contextManagementInComposeboxEnabled}"
         ?show-context-menu-description="${!this.useCompactLayout_()}"
         .glifAnimationState="${this.contextMenuGlifAnimationState}"
-        .energyEffectAnimationEnabled="${this.energyEffectAnimationEnabled}">
+        .energyEffectAnimationEnabled="${this.energyEffectAnimationEnabled}"
+        .smartTabSharingVisible="${this.smartTabSharingVisible}"
+        .smartTabSharingActive="${this.smartTabSharingActive}"
+        @smart-tab-sharing-active-changed="${this.onSmartTabSharingActiveChanged_}"
+      >
     </cr-composebox-contextual-entrypoint-and-menu>
   </div>
 </cr-composebox-file-inputs>

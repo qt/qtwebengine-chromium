@@ -16,11 +16,11 @@ const {classMap} = Directives;
 
 const UIStrings = {
   /**
-   * @description Label for the 'Clear overview' button in the CSS overview report
+   * @description Label for the 'Clear overview' button in the CSS overview report.
    */
   clearOverview: 'Clear overview',
   /**
-   * @description Accessible label for the CSS overview panel sidebar
+   * @description Accessible label for the CSS overview panel sidebar.
    */
   cssOverviewPanelSidebar: 'CSS overview panel sidebar',
 } as const;
@@ -105,7 +105,7 @@ export class CSSOverviewSidebarPanel extends UI.Widget.VBox {
       selectedId: this.#selectedId,
       onReset: this.#onReset,
       onItemClick: this.#onItemClick.bind(this),
-      onItemKeyDown: this.#onItemKeyDown.bind(this)
+      onItemKeyDown: this.#onItemKeyDown.bind(this),
     };
     this.#view(viewInput, {}, this.contentElement);
   }

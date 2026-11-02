@@ -35,6 +35,8 @@ import sys
 import tempfile
 import time
 import urllib
+import urllib.error
+import urllib.request
 
 from update import (CDS_URL, CHROMIUM_DIR, CLANG_REVISION, LLVM_BUILD_DIR,
                     FORCE_HEAD_REVISION_FILENAME, FORCE_HEAD_REVISION_FILE,
@@ -72,6 +74,11 @@ BUG_REPORT_URL = ('https://crbug.com in the Tools>LLVM component,'
 
 LIBXML2_VERSION = 'libxml2-v2.9.12'
 ZSTD_VERSION = 'zstd-1.5.5'
+
+# This must be less than or equal to the lowest target used in Chromium. See
+# e.g. mac_deployment_target in //build/config/mac/mac_sdk.gni and min_version
+# in //chrome/installer/gcapi_mac/BUILD.gn.
+DEFAULT_MACOSX_DEPLOYMENT_TARGET = '10.12'
 
 win_sdk_dir = None
 def GetWinSDKDir():
@@ -183,12 +190,16 @@ def CheckoutGitRepo(name, git_url, commit, dir):
   print('CheckoutGitRepo failed.')
   sys.exit(1)
 
-# Git commits include timing metadata in their hash.
+# Git commits include timing and author metadata in their hash.
 # To ensure we get a consistent hash when applying local changes,
-# set the dates to a specific value via environment variable
-MODIFICATION_DATES = {
+# set everything to fixed values via environment variable
+GIT_METADATA_OVERRIDES = {
+    'GIT_AUTHOR_NAME': 'Dummy Author',
+    'GIT_AUTHOR_EMAIL': 'none@none.com',
     'GIT_AUTHOR_DATE': '2099-01-01 10:10:10',
-    'GIT_COMMITTER_DATE': '2099-01-01 10:10:10'
+    'GIT_COMMITTER_NAME': 'Dummy Committer',
+    'GIT_COMMITTER_EMAIL': 'none@none.com',
+    'GIT_COMMITTER_DATE': '2099-01-01 10:10:10',
 }
 
 
@@ -217,7 +228,7 @@ def GitCherryPick(git_repository,
     return
 
   env = os.environ.copy()
-  env.update(MODIFICATION_DATES)
+  env.update(GIT_METADATA_OVERRIDES)
   RunCommand([
       'git', '-C', git_repository, 'cherry-pick', '--keep-redundant-commits',
       commit
@@ -231,34 +242,43 @@ def GitRevert(git_repository, commit):
     print('Commit not an ancestor; skipping.')
     return
   env = os.environ.copy()
-  env.update(MODIFICATION_DATES)
+  env.update(GIT_METADATA_OVERRIDES)
   RunCommand(['git', '-C', git_repository, 'revert', '--no-edit', commit],
              env=env)
 
 
-def GetLatestLLVMCommit():
-  """Get the latest commit hash in the LLVM monorepo. If the fetch fails,
-     retry several times after a short delay."""
-  max_tries = 5
-  delay_seconds = 1
+def FetchUrl(url, max_tries=5, delay_seconds=1):
+  """Fetch content from a URL. If the fetch fails, retry several times after a
+     short delay."""
   for i in range(max_tries):
     try:
-      main = json.loads(
-          urllib.request.urlopen('https://chromium.googlesource.com/external/' +
-                                 'github.com/llvm/llvm-project/' +
-                                 '+/refs/heads/main?format=JSON').read().decode(
-                                     "utf-8").replace(")]}'", ""))
-      return main['commit']
-    except urllib.error.URLError as e:
-      # If this was the last try then re-raise, otherwise loop again.
-      if i >= max_tries - 1:
+      with urllib.request.urlopen(url) as response:
+        return response.read()
+    except (ConnectionError, urllib.error.URLError) as e:
+      # If this was the last try or a permanent 404 client error, re-raise.
+      if i >= max_tries - 1 or (isinstance(e, urllib.error.HTTPError)
+                                and e.code == 404):
         raise e
 
-      print(
-          f"GetLatestLLVMCommit failed: {e.reason} (attempt {i + 1}/{max_tries}). Retrying in {delay_seconds}s..."
-      )
+      reason = getattr(e, 'reason', e)
+      print(f"Failed to fetch {url}: {reason} (attempt {i + 1}/{max_tries}). "
+            f"Retrying in {delay_seconds}s...")
       time.sleep(delay_seconds)
       delay_seconds *= 2
+
+
+def GetLatestCommit(url):
+  """Get the latest commit hash from a git repository's JSON output. If the
+     fetch fails, retry several times after a short delay."""
+  main = json.loads(FetchUrl(url).decode("utf-8").replace(")]}'", ""))
+  return main['commit']
+
+
+def GetLatestLLVMCommit():
+  """Get the latest commit hash in the LLVM monorepo."""
+  url = ('https://chromium.googlesource.com/external/' +
+         'github.com/llvm/llvm-project/+/refs/heads/main?format=JSON')
+  return GetLatestCommit(url)
 
 
 def GetCommitDescription(commit):
@@ -805,6 +825,11 @@ def main():
 
   global CLANG_REVISION, PACKAGE_VERSION, LLVM_BUILD_DIR, STAMP_FILE, FORCE_HEAD_REVISION_FILE
 
+  # TODO(crbug.com/534655507): Remove in next Clang roll.
+  if args.llvm_force_head_revision:
+    global RELEASE_VERSION
+    RELEASE_VERSION = '24'
+
   if (args.pgo or args.thinlto) and not args.bootstrap:
     print('--pgo/--thinlto requires --bootstrap')
     return 1
@@ -906,7 +931,7 @@ def main():
   # while elsewhere it's called through the compiler driver, and we pass
   # -fuse-ld=lld there to make the compiler driver call the linker (by setting
   # LLVM_ENABLE_LLD).
-  cc, cxx, lld = None, None, None
+  cc, cxx, lld, libtool = None, None, None, None
   cmake_sysroot = None
 
   cflags = []
@@ -967,6 +992,8 @@ def main():
   if sys.platform == 'darwin':
     isysroot = subprocess.check_output(['xcrun', '--show-sdk-path'],
                                        universal_newlines=True).rstrip()
+    # TODO(crbug.com/522267458): Remove this when class stub is implemented for lld.
+    base_cmake_args.append('-DHOST_LINK_VERSION=1249')
   base_cmake_args += ['-DLLVM_ENABLE_UNWIND_TABLES=OFF']
 
   compiler_wrapper_cmake_args = []
@@ -1027,7 +1054,7 @@ def main():
     base_cmake_args.append('-DLLVM_WINSYSROOT="%s"' %
                            os.path.dirname(os.path.dirname(GetWinSDKDir())))
 
-  deployment_target = '10.12'
+  deployment_target = DEFAULT_MACOSX_DEPLOYMENT_TARGET
 
   # Statically link libxml2 to make lld-link not require mt.exe on Windows,
   # and to make sure lld-link output on other platforms is identical to
@@ -1089,6 +1116,10 @@ def main():
   test_env['LIT_OPTS'] = '--show-flakypass'
   if lit_excludes:
     test_env['LIT_FILTER_OUT'] = '|'.join(lit_excludes)
+
+  crash_diagnostics_dir = os.path.join(CHROMIUM_DIR, 'out', 'clang-crashreports')
+  cflags.append('-fcrash-diagnostics-dir=' + crash_diagnostics_dir)
+  cxxflags.append('-fcrash-diagnostics-dir=' + crash_diagnostics_dir)
 
   if args.bootstrap:
     print('Building bootstrap compiler')
@@ -1167,6 +1198,8 @@ def main():
     else:
       cc = os.path.join(LLVM_BOOTSTRAP_INSTALL_DIR, 'bin', 'clang')
       cxx = os.path.join(LLVM_BOOTSTRAP_INSTALL_DIR, 'bin', 'clang++')
+      if sys.platform == 'darwin':
+        libtool = os.path.join(LLVM_BOOTSTRAP_INSTALL_DIR, 'bin', 'llvm-libtool-darwin')
 
     print('Bootstrap compiler installed.')
 
@@ -1196,6 +1229,7 @@ def main():
     if cc is not None:  instrument_args.append('-DCMAKE_C_COMPILER=' + cc)
     if cxx is not None: instrument_args.append('-DCMAKE_CXX_COMPILER=' + cxx)
     if lld is not None: instrument_args.append('-DCMAKE_LINKER=' + lld)
+    if libtool is not None: instrument_args.append('-DCMAKE_LIBTOOL=' + libtool)
 
     with timer.time('pgo cmake'):
       RunCommand(['cmake'] + instrument_args + [os.path.join(LLVM_DIR, 'llvm')],
@@ -1280,6 +1314,7 @@ def main():
   if cc is not None:  base_cmake_args.append('-DCMAKE_C_COMPILER=' + cc)
   if cxx is not None: base_cmake_args.append('-DCMAKE_CXX_COMPILER=' + cxx)
   if lld is not None: base_cmake_args.append('-DCMAKE_LINKER=' + lld)
+  if libtool is not None: base_cmake_args.append('-DCMAKE_LIBTOOL=' + libtool)
   final_install_dir = args.install_dir if args.install_dir else LLVM_BUILD_DIR
   cmake_args = base_cmake_args + [
       '-DCMAKE_C_FLAGS=' + ' '.join(cflags),

@@ -17,15 +17,12 @@
 #include "chrome/browser/apps/app_service/app_service_proxy.h"
 #include "chrome/browser/ash/arc/arc_util.h"
 #include "chrome/browser/ash/child_accounts/on_device_controls/app_controls_service_factory.h"
-#include "chrome/browser/ash/plugin_vm/plugin_vm_features.h"
-#include "chrome/browser/ash/plugin_vm/plugin_vm_pref_names.h"
-#include "chrome/browser/ash/plugin_vm/plugin_vm_util.h"
 #include "chrome/browser/ui/webui/ash/settings/pages/apps/android_apps_handler.h"
-#include "chrome/browser/ui/webui/ash/settings/pages/apps/plugin_vm_handler.h"
 #include "chrome/browser/ui/webui/ash/settings/pages/crostini/guest_os_handler.h"
 #include "chrome/browser/ui/webui/ash/settings/pages/system_preferences/startup_section.h"
 #include "chrome/browser/ui/webui/ash/settings/search/search_tag_registry.h"
 #include "chrome/browser/web_applications/isolated_web_apps/isolated_web_app_features.h"
+#include "chrome/browser/web_applications/link_capturing_features.h"
 #include "chrome/grit/generated_resources.h"
 #include "chrome/grit/os_settings_resources.h"
 #include "chromeos/ash/experiences/arc/app/arc_app_constants.h"
@@ -311,6 +308,10 @@ void AddAppManagementStrings(content::WebUIDataSource* html_source) {
        IDS_OS_SETTINGS_PERMISSION_ITEM_CLICK_TOGGLE_PERMISSION},
       {"appManagementIntentSharingOpenBrowserLabel",
        IDS_APP_MANAGEMENT_INTENT_SHARING_BROWSER_OPEN},
+      {"appManagementIntentSharingOpenExistingTabLabel",
+       IDS_APP_MANAGEMENT_INTENT_SHARING_APP_OPEN_EXISTING_TAB},
+      {"appManagementIntentSharingOpenNewTabLabel",
+       IDS_APP_MANAGEMENT_INTENT_SHARING_BROWSER_OPEN_NEW_TAB},
       {"appManagementIntentSharingTabExplanation",
        IDS_APP_MANAGEMENT_INTENT_SHARING_TAB_EXPLANATION},
       {"appManagementLocationPermissionLabel", IDS_APP_MANAGEMENT_LOCATION},
@@ -353,6 +354,17 @@ void AddAppManagementStrings(content::WebUIDataSource* html_source) {
        IDS_APP_MANAGEMENT_FILE_HANDLING_OVERFLOW_DIALOG_TITLE},
       {"fileHandlingSetDefaults",
        IDS_APP_MANAGEMENT_FILE_HANDLING_SET_DEFAULTS_LINK},
+      {"appManagementCheckForUpdates",
+       IDS_SETTINGS_ABOUT_PAGE_CHECK_FOR_UPDATES},
+      {"appManagementCheckingForUpdates", IDS_APP_MANAGEMENT_CHECKING},
+      {"appManagementApplyUpdate", IDS_APP_MANAGEMENT_APPLY_UPDATE},
+      {"appManagementAppIsUpToDate", IDS_APP_MANAGEMENT_APP_IS_UP_TO_DATE},
+      {"appManagementUpdateFoundDialogTitle",
+       IDS_APP_MANAGEMENT_UPDATE_FOUND_DIALOG_TITLE},
+      {"appManagementUpdateFoundDialogDescription",
+       IDS_APP_MANAGEMENT_UPDATE_FOUND_DIALOG_DESCRIPTION},
+      {"appManagementUpdateFoundWarningDialogDescription",
+       IDS_APP_MANAGEMENT_UPDATE_FOUND_WARNING_DIALOG_DESCRIPTION},
   };
   html_source->AddLocalizedStrings(kLocalizedStrings);
 }
@@ -470,13 +482,6 @@ void AddAppParentalControlsStrings(content::WebUIDataSource* html_source) {
       l10n_util::GetStringFUTF16(
           IDS_OS_SETTINGS_APP_PARENTAL_CONTROLS_SUBLABEL_DESCRIPTION,
           ui::GetChromeOSDeviceName()));
-}
-
-bool ShowPluginVm(const Profile* profile, const PrefService& pref_service) {
-  // Even if not allowed, we still want to show Plugin VM if the VM image is on
-  // disk, so that users are still able to delete the image at will.
-  return plugin_vm::PluginVmFeatures::Get()->IsAllowed(profile) ||
-         pref_service.GetBoolean(plugin_vm::prefs::kPluginVmImageExists);
 }
 
 }  // namespace
@@ -632,6 +637,9 @@ void AppsSection::AddLoadTimeData(content::WebUIDataSource* html_source) {
                              ash::external_urls::kIsolatedWebAppsLearnMoreUrl));
   html_source->AddString("isolatedWebAppsLearnMoreUrl",
                          ash::external_urls::kIsolatedWebAppsLearnMoreUrl);
+  html_source->AddBoolean(
+      "isIwaInlineUpdateEnabled",
+      base::FeatureList::IsEnabled(ash::features::kIsolatedWebAppInlineUpdate));
 
   html_source->AddBoolean("privacyHubLocationAccessControlEnabled",
                           ash::features::IsCrosPrivacyHubLocationEnabled());
@@ -640,10 +648,13 @@ void AppsSection::AddLoadTimeData(content::WebUIDataSource* html_source) {
                           on_device_controls::AppControlsServiceFactory::
                               IsOnDeviceAppControlsAvailable(profile()));
 
+  html_source->AddBoolean("updateAppStringsOnSettingsEnabled",
+                          base::FeatureList::IsEnabled(
+                              apps::features::kUpdateAppStringsOnSettings));
+
   AddAppManagementStrings(html_source);
   AddGuestOsStrings(html_source);
   AddAndroidAppStrings(html_source);
-  AddPluginVmLoadTimeData(html_source);
   AddBorealisStrings(html_source);
   AddAppParentalControlsStrings(html_source);
 }
@@ -653,11 +664,6 @@ void AppsSection::AddHandlers(content::WebUI* web_ui) {
       std::make_unique<AndroidAppsHandler>(profile(), app_service_proxy_));
   if (arc::IsArcVmEnabled()) {
     web_ui->AddMessageHandler(std::make_unique<GuestOsHandler>(profile()));
-  }
-
-  if (ShowPluginVm(profile(), *pref_service_)) {
-    web_ui->AddMessageHandler(std::make_unique<GuestOsHandler>(profile()));
-    web_ui->AddMessageHandler(std::make_unique<PluginVmHandler>(profile()));
   }
 }
 
@@ -826,33 +832,6 @@ void AppsSection::AddAndroidAppStrings(content::WebUIDataSource* html_source) {
   html_source->AddLocalizedString(
       "androidAppsSubtextDescription",
       IDS_OS_SETTINGS_ANDROID_APPS_SUBTEXT_DESCRIPTION);
-}
-
-void AppsSection::AddPluginVmLoadTimeData(
-    content::WebUIDataSource* html_source) {
-  static constexpr webui::LocalizedString kLocalizedStrings[] = {
-      {"pluginVmSharedPathsInstructionsAdd",
-       IDS_SETTINGS_APPS_PLUGIN_VM_SHARED_PATHS_INSTRUCTIONS_ADD},
-      {"pluginVmSharedPathsRemoveFailureDialogMessage",
-       IDS_SETTINGS_APPS_PLUGIN_VM_SHARED_PATHS_REMOVE_FAILURE_DIALOG_MESSAGE},
-      {"pluginVmSharedUsbDevicesDescription",
-       IDS_SETTINGS_APPS_PLUGIN_VM_SHARED_USB_DEVICES_DESCRIPTION},
-      {"pluginVmPermissionDialogCameraLabel",
-       IDS_SETTINGS_APPS_PLUGIN_VM_PERMISSION_DIALOG_CAMERA_LABEL},
-      {"pluginVmPermissionDialogMicrophoneLabel",
-       IDS_SETTINGS_APPS_PLUGIN_VM_PERMISSION_DIALOG_MICROPHONE_LABEL},
-      {"pluginVmPermissionDialogRelaunchButton",
-       IDS_SETTINGS_APPS_PLUGIN_VM_PERMISSION_DIALOG_RELAUNCH_BUTTON},
-  };
-  html_source->AddLocalizedStrings(kLocalizedStrings);
-
-  html_source->AddBoolean("isPluginVmAvailable",
-                          ShowPluginVm(profile(), *pref_service_));
-  html_source->AddString(
-      "pluginVmSharedPathsInstructionsLocate",
-      l10n_util::GetStringFUTF16(
-          IDS_SETTINGS_APPS_PLUGIN_VM_SHARED_PATHS_INSTRUCTIONS_LOCATE,
-          base::UTF8ToUTF16(plugin_vm::kChromeOSBaseDirectoryDisplayText)));
 }
 
 void AppsSection::UpdateAndroidSearchTags() {

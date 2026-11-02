@@ -54,14 +54,14 @@ struct traits<BDCSVD<MatrixType_, Options> > : svd_traits<MatrixType_, Options> 
  *                  Possible values are #ComputeThinU, #ComputeThinV, #ComputeFullU, #ComputeFullV, and
  *                  #DisableQRDecomposition. It is not possible to request both the thin and full version of \a U or
  *                  \a V. By default, unitaries are not computed. BDCSVD uses R-Bidiagonalization to improve
- *                  performance on tall and wide matrices. For backwards compatility, the option
+ *                  performance on tall and wide matrices. For backwards compatibility, the option
  *                  #DisableQRDecomposition can be used to disable this optimization.
  *
  * This class first reduces the input matrix to bi-diagonal form using class UpperBidiagonalization,
  * and then performs a divide-and-conquer diagonalization. Small blocks are diagonalized using class JacobiSVD.
  * You can control the switching size with the setSwitchSize() method, default is 16.
- * For small matrice (<16), it is thus preferable to directly use JacobiSVD. For larger ones, BDCSVD is highly
- * recommended and can several order of magnitude faster.
+ * For small matrices (<16), it is thus preferable to directly use JacobiSVD. For larger ones, BDCSVD is highly
+ * recommended and can be several orders of magnitude faster.
  *
  * \warning this algorithm is unlikely to provide accurate result when compiled with unsafe math optimizations.
  * For instance, this concerns Intel's compiler (ICC), which performs such optimization by default unless
@@ -191,8 +191,6 @@ class BDCSVD : public SVDBase<BDCSVD<MatrixType_, Options_> > {
     compute_impl(matrix, computationOptions);
   }
 
-  ~BDCSVD() {}
-
   /** \brief Method performing the decomposition of given matrix. Computes Thin/Full unitaries U/V if specified
    *         using the \a Options template parameter or the class constructor.
    *
@@ -241,6 +239,10 @@ class BDCSVD : public SVDBase<BDCSVD<MatrixType_, Options_> > {
  private:
   template <typename Derived>
   BDCSVD& compute_impl(const MatrixBase<Derived>& matrix, unsigned int computationOptions);
+  template <typename Derived>
+  BDCSVD& compute_impl(const MatrixBase<Derived>& matrix, unsigned int computationOptions, internal::true_type);
+  template <typename Derived>
+  BDCSVD& compute_impl(const MatrixBase<Derived>& matrix, unsigned int computationOptions, internal::false_type);
   template <typename DerivedD, typename DerivedE>
   BDCSVD& compute_bidiagonal_impl(const MatrixBase<DerivedD>& diagonal, const MatrixBase<DerivedE>& superdiagonal,
                                   unsigned int computationOptions);
@@ -250,6 +252,7 @@ class BDCSVD : public SVDBase<BDCSVD<MatrixType_, Options_> > {
 
  protected:
   void allocate(Index rows, Index cols, unsigned int computationOptions);
+  void allocate_small(Index rows, Index cols, unsigned int computationOptions);
   internal::bdcsvd_impl<RealScalar> m_impl;
   bool m_isTranspose, m_useQrDecomp;
   JacobiSVD<MatrixX> smallSvd;
@@ -309,13 +312,48 @@ void BDCSVD<MatrixType, Options>::allocate(Index rows, Index cols, unsigned int 
 }  // end allocate
 
 template <typename MatrixType, int Options>
+void BDCSVD<MatrixType, Options>::allocate_small(Index rows, Index cols, unsigned int computationOptions) {
+  if (Base::allocate(rows, cols, computationOptions)) return;
+
+  smallSvd.allocate(rows, cols, Options == 0 ? computationOptions : internal::get_computation_options(Options));
+  m_isTranspose = (cols > rows);
+}
+
+template <typename MatrixType, int Options>
 template <typename Derived>
-EIGEN_DONT_INLINE BDCSVD<MatrixType, Options>& BDCSVD<MatrixType, Options>::compute_impl(
-    const MatrixBase<Derived>& matrix, unsigned int computationOptions) {
+BDCSVD<MatrixType, Options>& BDCSVD<MatrixType, Options>::compute_impl(const MatrixBase<Derived>& matrix,
+                                                                       unsigned int computationOptions) {
   EIGEN_STATIC_ASSERT_SAME_MATRIX_SIZE(Derived, MatrixType);
   EIGEN_STATIC_ASSERT((std::is_same<typename Derived::Scalar, typename MatrixType::Scalar>::value),
                       Input matrix must have the same Scalar type as the BDCSVD object.);
 
+  // setSwitchSize() enforces a minimum of 3, so these types can only use the JacobiSVD fallback.
+  typedef internal::bool_constant<(MaxColsAtCompileTime != Dynamic && MaxColsAtCompileTime < 3)> AlwaysUseSmallSvd;
+  return compute_impl(matrix, computationOptions, AlwaysUseSmallSvd());
+}
+
+template <typename MatrixType, int Options>
+template <typename Derived>
+EIGEN_DONT_INLINE BDCSVD<MatrixType, Options>& BDCSVD<MatrixType, Options>::compute_impl(
+    const MatrixBase<Derived>& matrix, unsigned int computationOptions, internal::true_type) {
+  allocate_small(matrix.rows(), matrix.cols(), computationOptions);
+
+  smallSvd.compute(matrix);
+  m_isInitialized = true;
+  m_info = smallSvd.info();
+  if (m_info == Success || m_info == NoConvergence) {
+    if (computeU()) m_matrixU = smallSvd.matrixU();
+    if (computeV()) m_matrixV = smallSvd.matrixV();
+    m_singularValues = smallSvd.singularValues();
+    m_nonzeroSingularValues = smallSvd.nonzeroSingularValues();
+  }
+  return *this;
+}
+
+template <typename MatrixType, int Options>
+template <typename Derived>
+EIGEN_DONT_INLINE BDCSVD<MatrixType, Options>& BDCSVD<MatrixType, Options>::compute_impl(
+    const MatrixBase<Derived>& matrix, unsigned int computationOptions, internal::false_type) {
   using std::abs;
 
   allocate(matrix.rows(), matrix.cols(), computationOptions);

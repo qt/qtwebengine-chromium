@@ -63,6 +63,7 @@ use_repo(
     "org_chromium_go_luci",
     "org_golang_google_api",
     "org_golang_google_protobuf",
+    "org_golang_x_oauth2",
     "org_skia_go_infra",
 )
 
@@ -122,7 +123,7 @@ crate.annotation(
 )
 crate.spec(
     package = "font-types",
-    version = "=0.11.3",
+    version = "=0.12.0",
 )
 crate.spec(
     features = [
@@ -138,9 +139,17 @@ crate.spec(
     package = "png",
     version = "=0.18.1",
 )
+crate.annotation(
+    crate = "png",
+    patch_args = ["-p1"],
+    patches = ["//bazel/external/image-png:captured-chunks.patch"],
+)
 crate.spec(
     default_features = False,
-    features = ["bmp"],
+    features = [
+        "bmp",
+        "ico",
+    ],
     # Using image crate with streaming/resumable BMP decoder API.
     # rows_decoded() returns RowsDecoded enum for orientation detection.
     git = "https://github.com/image-rs/image.git",
@@ -165,7 +174,7 @@ crate.spec(
 )
 crate.spec(
     package = "read-fonts",
-    version = "=0.39.2",
+    version = "=0.40.1",
 )
 crate.spec(
     package = "regex",
@@ -173,7 +182,7 @@ crate.spec(
 )
 crate.spec(
     package = "skrifa",
-    version = "=0.42.1",
+    version = "=0.43.2",
 )
 crate.spec(
     package = "thiserror",
@@ -262,6 +271,7 @@ cpp_modules = use_extension("//bazel:cpp_modules.bzl", "cpp_modules")
 cpp_modules.from_file(deps_json = "//bazel:deps.json")
 use_repo(
     cpp_modules,
+    "d3d12allocator",
     "dawn",
     "delaunator",
     "dng_sdk",
@@ -306,6 +316,10 @@ download_clang_mac_toolchain(name = "clang_mac")
 
 download_ndk_linux_amd64_toolchain = use_extension("//toolchain:download_ndk_linux_amd64_toolchain.bzl", "download_ndk_linux_amd64_toolchain")
 use_repo(download_ndk_linux_amd64_toolchain, "ndk_linux_amd64")
+
+download_windows_amd64_toolchain = use_repo_rule("//toolchain:download_windows_amd64_toolchain.bzl", "download_windows_amd64_toolchain")
+
+download_windows_amd64_toolchain(name = "clang_windows_amd64")
 
 #toolchain_names = ["clang_windows_amd64", "clang_ios"],
 

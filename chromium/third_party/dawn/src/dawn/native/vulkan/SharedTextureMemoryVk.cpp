@@ -28,10 +28,13 @@
 #include "src/dawn/native/vulkan/SharedTextureMemoryVk.h"
 
 #include <algorithm>
+#include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
 #include "dawn/native/wgpu_structs_autogen.h"
+#include "src/dawn/common/Enumerator.h"
 #include "src/dawn/native/ChainUtils.h"
 #include "src/dawn/native/Instance.h"
 #include "src/dawn/native/vulkan/DeviceVk.h"
@@ -44,6 +47,7 @@
 #include "src/dawn/native/vulkan/VulkanError.h"
 #include "src/dawn/utils/SystemHandle.h"
 #include "src/utils/compiler.h"
+#include "src/utils/numeric.h"
 
 #if DAWN_PLATFORM_IS(ANDROID)
 #include <android/hardware_buffer.h>
@@ -304,12 +308,12 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
                             memoryPlaneCount, formatPlaneCount);
         }
         DAWN_INVALID_IF(
-            memoryPlaneCount != descriptor->planeCount,
+            memoryPlaneCount != descriptor->planes.size(),
             "Memory plane count (%x) for drm format (%u) and modifier (%u) specify a plane "
             "count of %u which "
             "does not match the provided plane count (%u)",
             vkFormat, descriptor->drmFormat, descriptor->drmModifier, memoryPlaneCount,
-            descriptor->planeCount);
+            descriptor->planes.size());
         DAWN_INVALID_IF(memoryPlaneCount == 0, "Memory plane count must not be 0");
         DAWN_INVALID_IF(memoryPlaneCount > kMaxPlanesPerFormat,
                         "Memory plane count (%u) must not exceed %u.", memoryPlaneCount,
@@ -389,12 +393,11 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
     // VK_IMAGE_CREATE_DISJOINT_BIT, and separately bind the image planes to memory. Dawn doesn't
     // support use of VK_IMAGE_CREATE_DISJOINT_BIT currently. See crbug.com/42240514.
     int fd = descriptor->planes[0].fd;
-    for (uint32_t i = 1; i < descriptor->planeCount; ++i) {
-        DAWN_UNSAFE_TODO(DAWN_INVALID_IF(
-            descriptor->planes[i].fd != fd,
-            "descriptor->planes[%u].fd (%i) does not match other plane fd (%i). All "
-            "fds must be the same.",
-            i, descriptor->planes[i].fd, fd));
+    for (auto [i, plane] : Enumerate(descriptor->planes.subspan(1))) {
+        DAWN_INVALID_IF(plane.fd != fd,
+                        "descriptor->planes[%u].fd (%i) does not match other plane fd (%i). All "
+                        "fds must be the same.",
+                        i + 1, plane.fd, fd);
     }
 
     // Don't add the view format if backend validation is enabled, otherwise most image creations
@@ -410,9 +413,9 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
     {
         std::array<VkSubresourceLayout, kMaxPlanesPerFormat> planeLayouts{};
         for (uint32_t plane = 0u; plane < memoryPlaneCount; ++plane) {
-            planeLayouts[plane].offset = DAWN_UNSAFE_TODO(descriptor->planes[plane]).offset;
+            planeLayouts[plane].offset = descriptor->planes[plane].offset;
             planeLayouts[plane].size = 0;  // VK_EXT_image_drm_format_modifier mandates size = 0.
-            planeLayouts[plane].rowPitch = DAWN_UNSAFE_TODO(descriptor->planes[plane]).stride;
+            planeLayouts[plane].rowPitch = descriptor->planes[plane].stride;
             planeLayouts[plane].arrayPitch = 0;  // Not an array texture
             planeLayouts[plane].depthPitch = 0;  // Not a depth texture
         }
@@ -451,9 +454,21 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
     // Choose the best memory type that satisfies both the image's constraint and the
     // import's constraint.
     memoryRequirements.memoryTypeBits &= fdProperties.memoryTypeBits;
-    int memoryTypeIndex = device->GetResourceMemoryAllocator()->FindBestTypeIndex(
+    auto maybeMemoryTypeIndex = device->GetResourceMemoryAllocator()->FindBestTypeIndex(
         memoryRequirements, MemoryKind::DeviceLocal);
-    DAWN_INVALID_IF(memoryTypeIndex == -1, "Unable to find an appropriate memory type for import.");
+
+    // Some devices may fail to find device local memory for these FD imports (likely from
+    // camera).  When this occurs we can alternatively use host memory even though there could
+    // be performance consequences. This issue was discovered on AMD
+    // (https://www.techpowerup.com/gpu-specs/amd-mendocino.g1022).
+    // See crbug.com/422128949
+    if (!maybeMemoryTypeIndex.has_value()) {
+        maybeMemoryTypeIndex = device->GetResourceMemoryAllocator()->FindBestTypeIndex(
+            memoryRequirements, MemoryKind::HostCached);
+    }
+    DAWN_INVALID_IF(!maybeMemoryTypeIndex.has_value(),
+                    "Unable to find an appropriate memory type for import.");
+    uint32_t memoryTypeIndex = maybeMemoryTypeIndex.value();
 
     utils::SystemHandle memoryFD = utils::SystemHandle::Duplicate(fd);
 
@@ -686,10 +701,11 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
         // Choose the best memory type that satisfies the import's constraint.
         VkMemoryRequirements memoryRequirements;
         memoryRequirements.memoryTypeBits = bufferProperties.memoryTypeBits;
-        int memoryTypeIndex = device->GetResourceMemoryAllocator()->FindBestTypeIndex(
+        auto maybeMemoryTypeIndex = device->GetResourceMemoryAllocator()->FindBestTypeIndex(
             memoryRequirements, MemoryKind::DeviceLocal);
-        DAWN_INVALID_IF(memoryTypeIndex == -1,
+        DAWN_INVALID_IF(!maybeMemoryTypeIndex.has_value(),
                         "Unable to find an appropriate memory type for import.");
+        uint32_t memoryTypeIndex = maybeMemoryTypeIndex.value();
 
         VkMemoryAllocateInfo memoryAllocateInfo = {};
         memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -858,20 +874,21 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
         "which is required for view format reinterpretation.");
 
     if (imageFormatListInfo && mayNeedViewReinterpretation) {
-        auto viewFormatsBegin = imageFormatListInfo->pViewFormats;
-        auto viewFormatsEnd = DAWN_UNSAFE_TODO(imageFormatListInfo->pViewFormats +
-                                               imageFormatListInfo->viewFormatCount);
+        // SAFETY: Vulkan requires that pViewFormats point at viewFormatCount valid formats and the
+        // application giving us its VkImageCreateInfo needs to conform to that.
+        Span<const VkFormat> viewFormats = DAWN_UNSAFE_BUFFERS(
+            {imageFormatListInfo->pViewFormats, imageFormatListInfo->viewFormatCount});
         VkFormat baseVkFormat = VulkanImageFormat(device, properties.format);
 
         DAWN_INVALID_IF(
-            std::find(viewFormatsBegin, viewFormatsEnd, baseVkFormat) == viewFormatsEnd,
+            std::ranges::find(viewFormats, baseVkFormat) == viewFormats.end(),
             "VkImageFormatCreateInfo did not contain VkFormat 0x%x which may be required to "
             "create a texture view with %s.",
             baseVkFormat, properties.format);
 
         for (const auto* f : compatibleViewFormats) {
             VkFormat vkFormat = VulkanImageFormat(device, f->format);
-            DAWN_INVALID_IF(std::find(viewFormatsBegin, viewFormatsEnd, vkFormat) == viewFormatsEnd,
+            DAWN_INVALID_IF(std::ranges::find(viewFormats, vkFormat) == viewFormats.end(),
                             "VkImageFormatCreateInfo did not contain VkFormat 0x%x which may be "
                             "required to create a texture view with %s.",
                             vkFormat, f->format);
@@ -1030,11 +1047,10 @@ MaybeError SharedTextureMemory::BeginAccessImpl(
     auto vkLayoutBeginState = descriptor.Get<SharedTextureMemoryVkImageLayoutBeginState>();
     DAWN_ASSERT(vkLayoutBeginState != nullptr);
 
-    for (size_t i = 0; i < descriptor->fenceCount; ++i) {
+    for (auto [i, fence] : Enumerate(descriptor->fences)) {
         // All fences are backed by binary semaphores.
-        DAWN_UNSAFE_TODO(DAWN_INVALID_IF(descriptor->signaledValues[i] != 1,
-                                         "%s signaled value (%u) was not 1.", descriptor->fences[i],
-                                         descriptor->signaledValues[i]));
+        DAWN_INVALID_IF(descriptor->signaledValues[i] != 1, "%s signaled value (%u) was not 1.",
+                        fence, descriptor->signaledValues[i]);
     }
     static_cast<SharedTexture*>(texture)->SetPendingAcquire(
         static_cast<VkImageLayout>(vkLayoutBeginState->oldLayout),

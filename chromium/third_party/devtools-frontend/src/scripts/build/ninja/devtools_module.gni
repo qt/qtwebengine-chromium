@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("../../../scripts/build/ninja/vars.gni")
 import("../../../scripts/build/typescript/typescript.gni")
 
 template("devtools_base_module") {
@@ -17,6 +18,25 @@ template("devtools_base_module") {
 template("devtools_module") {
   devtools_base_module(target_name) {
     forward_variables_from(invoker, "*")
+  }
+}
+
+template("devtools_api_test_module") {
+  devtools_module(target_name) {
+    testonly = true
+    forward_variables_from(invoker,
+                           "*",
+                           [
+                             "additional_type_definitions",
+                             "testonly",
+                           ])
+    if (defined(invoker.additional_type_definitions)) {
+      additional_type_definitions = invoker.additional_type_definitions
+    } else {
+      additional_type_definitions = []
+    }
+    additional_type_definitions +=
+        [ devtools_location_prepend + "test/api/types.d.ts" ]
   }
 }
 
@@ -72,6 +92,7 @@ template("devtools_ui_module") {
 
 foreach(module,
         [
+          "devtools_api_test_module",
           "devtools_foundation_module",
           "devtools_module",
           "devtools_ui_module",

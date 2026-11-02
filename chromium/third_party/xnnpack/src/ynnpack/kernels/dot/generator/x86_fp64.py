@@ -56,8 +56,8 @@ class x86_avx_fp64(x86_fp64, x86_avx):
     super().__init__(arch, 256, (1, 4, 1))
     self.flags += ["dot_flag::unaligned_b"]
 
-  def b_alignment_required(self):
-    return 1
+  def b_alignment_bytes(self):
+    return 8
 
   def load_b_tile(self, k, j):
     ptr = self.b_ptr(k, j)
@@ -86,8 +86,8 @@ class x86_avx512_fp64(x86_fp64, x86_avx512):
     self.flags += ["dot_flag::consistent_arithmetic"]
     self.flags += ["dot_flag::unaligned_b"]
 
-  def b_alignment_required(self):
-    return 1
+  def b_alignment_bytes(self):
+    return 8
 
   def load_b_tile(self, k, j):
     mm = self._mm()

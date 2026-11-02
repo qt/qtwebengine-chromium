@@ -394,6 +394,8 @@ void RenderAccessibilityImpl::PerformAction(const ui::AXActionData& data) {
     case ax::mojom::Action::kScrollLeft:
     case ax::mojom::Action::kScrollRight:
     case ax::mojom::Action::kStitchChildTree:
+    case ax::mojom::Action::kShowTooltip:
+    case ax::mojom::Action::kHideTooltip:
       target->PerformAction(data);
       break;
     case ax::mojom::Action::kCustomAction:
@@ -410,8 +412,6 @@ void RenderAccessibilityImpl::PerformAction(const ui::AXActionData& data) {
       HandleAXEvent(
           ui::AXEvent(ComputeRoot().AxID(), ax::mojom::Event::kEndOfTest));
       break;
-    case ax::mojom::Action::kShowTooltip:
-    case ax::mojom::Action::kHideTooltip:
     case ax::mojom::Action::kInternalInvalidateTree:
     case ax::mojom::Action::kResumeMedia:
     case ax::mojom::Action::kStartDuckingMedia:
@@ -573,16 +573,18 @@ bool RenderAccessibilityImpl::SendAccessibilitySerialization(
   }
   // Also log the time taken in this function to track serialization
   // performance.
-  UMA_HISTOGRAM_CUSTOM_TIMES(
-      "Accessibility.Performance.SendPendingAccessibilityEvents2",
-      elapsed_time_ms, base::Microseconds(1), base::Seconds(1), 50);
-
-  if (loading_stage_ == LoadingStage::kPostLoad) {
-    // Track serialization after document load in order to measure the
-    // contribution of serialization to interaction latency.
+  if (!accessibility_mode_.has_mode(ui::AXMode::kNativeAdaptedWebContents)) {
     UMA_HISTOGRAM_CUSTOM_TIMES(
-        "Accessibility.Performance.SendPendingAccessibilityEvents.PostLoad2",
+        "Accessibility.Performance.SendPendingAccessibilityEvents2",
         elapsed_time_ms, base::Microseconds(1), base::Seconds(1), 50);
+
+    if (loading_stage_ == LoadingStage::kPostLoad) {
+      // Track serialization after document load in order to measure the
+      // contribution of serialization to interaction latency.
+      UMA_HISTOGRAM_CUSTOM_TIMES(
+          "Accessibility.Performance.SendPendingAccessibilityEvents.PostLoad2",
+          elapsed_time_ms, base::Microseconds(1), base::Seconds(1), 50);
+    }
   }
 
   if (loading_stage_ == LoadingStage::kLoadCompleted) {

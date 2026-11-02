@@ -18,6 +18,8 @@ namespace Eigen {
 
 namespace internal {
 
+EIGEN_GCC_FAST_MATH_COMPLEX_VECTORIZE_WORKAROUND_PUSH
+
 //---------- float ----------
 struct Packet4cf {
   EIGEN_STRONG_INLINE Packet4cf() {}
@@ -135,9 +137,25 @@ EIGEN_STRONG_INLINE Packet4cf ploadu<Packet4cf>(const std::complex<float>* from)
 
 template <>
 EIGEN_STRONG_INLINE Packet4cf pset1<Packet4cf>(const std::complex<float>& from) {
-  const float re = std::real(from);
-  const float im = std::imag(from);
-  return Packet4cf(_mm256_set_ps(im, re, im, re, im, re, im, re));
+  // Broadcast one complex<float> (64 bits) to all four 64-bit lanes.
+  // _mm256_set_ps with 8 scalar arguments generates a store-to-load forwarding
+  // sequence (4 × 64-bit stores then a 256-bit load) that causes ~15-cycle stalls
+  // on every call.
+  //
+  // _mm_loadl_epi64 is an 8-byte unaligned load through __m128i* (__may_alias__),
+  // so it is safe regardless of complex<float>'s 4-byte alignment and avoids the
+  // strict-aliasing UB that would arise from casting to double* or int64_t*.
+  const __m128i lo64 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(&from));
+#ifdef EIGEN_VECTORIZE_AVX2
+  return Packet4cf(_mm256_castsi256_ps(_mm256_broadcastq_epi64(lo64)));
+#else
+  // No vpbroadcastq without AVX2: first duplicate the 64-bit complex across both
+  // halves of the 128-bit lane (movedup_pd: {x,_} -> {x,x}), otherwise the upper
+  // complex of each lane stays zeroed by _mm_loadl_epi64. Then vinsertf128 the
+  // filled lane into the high 256-bit lane.
+  const __m128 lo = _mm_castpd_ps(_mm_movedup_pd(_mm_castsi128_pd(lo64)));
+  return Packet4cf(_mm256_insertf128_ps(_mm256_castps128_ps256(lo), lo, 1));
+#endif
 }
 
 template <>
@@ -554,6 +572,8 @@ inline void pstoreuSegment<std::complex<double>, Packet2cd>(std::complex<double>
 }
 
 /*---------------- end load/store segment support ----------------*/
+
+EIGEN_GCC_FAST_MATH_COMPLEX_VECTORIZE_WORKAROUND_POP
 
 }  // end namespace internal
 

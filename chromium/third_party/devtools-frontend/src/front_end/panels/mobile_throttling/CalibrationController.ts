@@ -4,6 +4,7 @@
 
 import * as i18n from '../../core/i18n/i18n.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as PanelsCommon from '../common/common.js';
 
 const UIStrings = {
   /**
@@ -55,7 +56,7 @@ export class CalibrationController {
   #runtimeModel!: SDK.RuntimeModel.RuntimeModel;
   #emulationModel!: SDK.EmulationModel.EmulationModel;
   #originalUrl!: string;
-  #result?: SDK.CPUThrottlingManager.CalibratedCPUThrottling;
+  #result?: PanelsCommon.CPUThrottlingOption.CalibratedCPUThrottling;
   #state: 'idle'|'running'|'aborting' = 'idle';
 
   /**
@@ -220,14 +221,14 @@ export class CalibrationController {
       if (actualScore < midScore) {
         if (actualScore < lowScore) {
           this.#result = {
-            low: SDK.CPUThrottlingManager.CalibrationError.DEVICE_TOO_WEAK,
-            mid: SDK.CPUThrottlingManager.CalibrationError.DEVICE_TOO_WEAK,
+            low: PanelsCommon.CPUThrottlingOption.CalibrationError.DEVICE_TOO_WEAK,
+            mid: PanelsCommon.CPUThrottlingOption.CalibrationError.DEVICE_TOO_WEAK,
           };
           return;
         }
 
         // Can still emulate the low-end device.
-        this.#result = {mid: SDK.CPUThrottlingManager.CalibrationError.DEVICE_TOO_WEAK};
+        this.#result = {mid: PanelsCommon.CPUThrottlingOption.CalibrationError.DEVICE_TOO_WEAK};
         isHalfwayDone = true;
       }
     }
@@ -258,7 +259,7 @@ export class CalibrationController {
     }
   }
 
-  result(): SDK.CPUThrottlingManager.CalibratedCPUThrottling|undefined {
+  result(): PanelsCommon.CPUThrottlingOption.CalibratedCPUThrottling|undefined {
     return this.#result;
   }
 

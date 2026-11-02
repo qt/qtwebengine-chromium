@@ -161,23 +161,12 @@ std::string GetDeviceNameSuffixFromSyncUserAgent(
   return "";
 }
 
-void FilterStableChannelSessions(
-    const syncer::DeviceInfoTracker& device_info_tracker,
-    std::vector<raw_ptr<const sync_sessions::SyncedSession,
-                        VectorExperimental>>& sessions) {
-  std::erase_if(sessions, [&](const sync_sessions::SyncedSession* session) {
-    const syncer::DeviceInfo* device_info =
-        device_info_tracker.GetDeviceInfo(session->GetSessionTag());
-    return device_info && device_info->sync_user_agent().find(
-                              "channel(stable)") != std::string::npos;
-  });
-}
-
 }  // namespace
 
 ForeignSessionHandler::ForeignSessionHandler(
     mojo::PendingReceiver<history::mojom::ForeignSessionPageHandler>
         pending_page_handler,
+    mojo::PendingRemote<history::mojom::ForeignSessionPage> pending_page,
     Profile* profile,
     content::WebContents* web_contents,
     RestoreForeignSessionTabCallback restore_tab_callback,
@@ -185,6 +174,7 @@ ForeignSessionHandler::ForeignSessionHandler(
     TabsFromOtherDevicesSidePanelUI* side_panel_ui)
     : profile_(profile),
       web_contents_(web_contents),
+      page_(std::move(pending_page)),
       receiver_(this, std::move(pending_page_handler)),
       side_panel_ui_(side_panel_ui),
       restore_tab_callback_(std::move(restore_tab_callback)),
@@ -220,19 +210,6 @@ sync_sessions::OpenTabsUIDelegate* ForeignSessionHandler::GetOpenTabsUIDelegate(
   sync_sessions::SessionSyncService* service =
       SessionSyncServiceFactory::GetInstance()->GetForProfile(profile);
   return service ? service->GetOpenTabsUIDelegate() : nullptr;
-}
-
-void ForeignSessionHandler::SetPage(
-    mojo::PendingRemote<history::mojom::ForeignSessionPage> pending_page) {
-  page_.Bind(std::move(pending_page));
-
-  if (side_panel_ui_) {
-    base::WeakPtr<TopChromeWebUIController::Embedder> embedder =
-        side_panel_ui_->embedder();
-    if (embedder) {
-      embedder->ShowUI();
-    }
-  }
 }
 
 void ForeignSessionHandler::GetForeignSessions(
@@ -366,6 +343,16 @@ void ForeignSessionHandler::SetForeignSessionCollapsed(
   }
 }
 
+void ForeignSessionHandler::ShowUi() {
+  if (side_panel_ui_) {
+    base::WeakPtr<TopChromeWebUIController::Embedder> embedder =
+        side_panel_ui_->embedder();
+    if (embedder) {
+      embedder->ShowUI();
+    }
+  }
+}
+
 void ForeignSessionHandler::OnForeignSessionUpdated() {
   if (page_) {
     page_->OnForeignSessionsChanged(GetForeignSessionsInternal());
@@ -408,12 +395,6 @@ ForeignSessionHandler::GetForeignSessionsInternal() {
           DeviceInfoSyncServiceFactory::GetForProfile(profile_);
       if (device_info_sync_service) {
         device_info_tracker = device_info_sync_service->GetDeviceInfoTracker();
-      }
-
-      if (base::FeatureList::IsEnabled(
-              features::kTabsFromOtherDevicesSidePanelExcludeStableChannel) &&
-          device_info_tracker) {
-        FilterStableChannelSessions(*device_info_tracker, sessions);
       }
 
       for (const sync_sessions::SyncedSession* session : sessions) {

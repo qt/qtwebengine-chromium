@@ -40,7 +40,7 @@ export const startDebuggerTestPromise = function(quiet) {
 };
 
 export const completeDebuggerTest = function() {
-  Common.Settings.moduleSetting('breakpoints-active').set(true);
+  Common.Settings.Settings.instance().moduleSetting('breakpoints-active').set(true);
   resumeExecution(TestRunner.completeTest.bind(TestRunner));
 };
 
@@ -369,8 +369,11 @@ export const pausedScript = function(callFrames, reason, auxData, breakpointIds,
 
   const debuggerModel = this.target().model(SDK.DebuggerModel.DebuggerModel);
   pausedScriptArguments = [
-    SDK.DebuggerModel.CallFrame.fromPayloadArray(debuggerModel, callFrames), reason, breakpointIds, asyncStackTrace,
-    auxData
+    SDK.DebuggerModel.CallFrame.fromPayloadArray(debuggerModel, callFrames),
+    reason,
+    breakpointIds,
+    asyncStackTrace,
+    auxData,
   ];
 
   if (waitUntilPausedCallback) {
@@ -512,7 +515,11 @@ export const dumpSectionsWithIndent = function(treeElements, depth) {
 };
 
 export const scopeChainSections = function() {
-  return Sources.ScopeChainSidebarPane.ScopeChainSidebarPane.instance().treeOutline.rootElement().children();
+  return Sources.ScopeChainSidebarPane.ScopeChainSidebarPane.instance()
+      .contentElement.querySelector('devtools-tree')
+      ?.getInternalTreeOutlineForTest()
+      .rootElement()
+      .children();
 };
 
 export const expandScopeVariablesSidebarPane = function(callback) {

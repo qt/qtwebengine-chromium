@@ -58,6 +58,7 @@ export class PowerBookmarksListHeaderElement extends CrLitElement {
       disableEdit: {type: Boolean},
       editing: {type: Boolean},
       sortTypes_: {type: Array},
+      webuiRoundedIconsEnabled_: {type: Boolean},
     };
   }
 
@@ -97,6 +98,8 @@ export class PowerBookmarksListHeaderElement extends CrLitElement {
       lowerLabel: loadTimeData.getString('sortReverseAlphabetically'),
     },
   ];
+  protected accessor webuiRoundedIconsEnabled_: boolean =
+      loadTimeData.getBoolean('webuiRoundedIconsEnabled');
   private bookmarksService_: PowerBookmarksService =
       PowerBookmarksService.getInstance();
 
@@ -107,7 +110,7 @@ export class PowerBookmarksListHeaderElement extends CrLitElement {
 
   override connectedCallback() {
     super.connectedCallback();
-    recordSortType(this.sortTypes_[this.activeSortIndex_].sortOrder);
+    recordSortType(this.sortTypes_[this.activeSortIndex_]!.sortOrder);
   }
 
   override willUpdate(changedProperties: PropertyValues<this>) {
@@ -140,12 +143,22 @@ export class PowerBookmarksListHeaderElement extends CrLitElement {
   }
 
   protected getViewButtonIcon_() {
-    return this.compact ? 'bookmarks:compact-view' : 'bookmarks:visual-view';
+    return this.compact ? (loadTimeData.getBoolean('webuiRoundedIconsEnabled') ?
+                               'bookmarks:view-list' :
+                               'bookmarks:compact-view-old') :
+                          (loadTimeData.getBoolean('webuiRoundedIconsEnabled') ?
+                               'bookmarks:list' :
+                               'bookmarks:visual-view-old');
   }
 
   protected getViewButtonTooltip_() {
     return this.compact ? loadTimeData.getString('compactView') :
                           loadTimeData.getString('visualView');
+  }
+
+  protected getViewButtonA11yLabel_() {
+    return this.compact ? loadTimeData.getString('switchToVisualView') :
+                          loadTimeData.getString('switchToCompactView');
   }
 
   protected onBackButtonClick_() {
@@ -170,16 +183,14 @@ export class PowerBookmarksListHeaderElement extends CrLitElement {
     this.fire('bulk-edit');
   }
 
-  private getSortMenuItemLabel_(sortType: SortOption): string {
-    return loadTimeData.getStringF('sortByType', sortType.label);
-  }
+
 
   protected getSortMenuItemLowerLabel_(sortType: SortOption): string {
     return loadTimeData.getStringF('sortByType', sortType.lowerLabel);
   }
 
   protected sortMenuItemIsSelected_(sortType: SortOption): boolean {
-    return this.sortTypes_[this.activeSortIndex_].sortOrder ===
+    return this.sortTypes_[this.activeSortIndex_]!.sortOrder ===
         sortType.sortOrder;
   }
 
@@ -189,17 +200,17 @@ export class PowerBookmarksListHeaderElement extends CrLitElement {
     this.$.sortMenu.close();
     const target = event.currentTarget as HTMLElement;
     const index = parseInt(target.dataset['index']!, 10);
-    const sortOption = this.sortTypes_[index];
+    const sortOption = this.sortTypes_[index]!;
     this.activeSortIndex_ = index;
     this.bookmarksApi_.setSortOrder(sortOption.sortOrder);
     recordSortType(sortOption.sortOrder);
   }
 
   private onActiveSortIndexChanged_() {
-    this.activeSortType_ = this.sortTypes_[this.activeSortIndex_];
+    this.activeSortType_ = this.sortTypes_[this.activeSortIndex_]!;
     this.fire('sort-changed', {
       index: this.activeSortIndex_,
-      sortOrder: this.sortTypes_[this.activeSortIndex_].sortOrder,
+      sortOrder: this.sortTypes_[this.activeSortIndex_]!.sortOrder,
     });
   }
 }

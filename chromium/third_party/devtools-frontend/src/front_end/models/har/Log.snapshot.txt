@@ -1,0 +1,193 @@
+Title: HAR Log build converts network requests into a complete HAR log with pages and entries
+Content:
+{
+  "version": "1.2",
+  "creator": {
+    "name": "WebInspector",
+    "version": "VERSION"
+  },
+  "pages": [
+    {
+      "startedDateTime": "1970-01-01T00:00:01.000Z",
+      "id": "page_1",
+      "title": "http://127.0.0.1:8000/devtools/resources/inspected-page.html",
+      "pageTimings": {
+        "onContentLoad": 9000,
+        "onLoad": 14000
+      }
+    }
+  ],
+  "entries": [
+    {
+      "_initiator": null,
+      "_priority": null,
+      "_resourceType": "document",
+      "cache": {},
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:8000/devtools/resources/inspected-page.html",
+        "httpVersion": "HTTP/1.1",
+        "headers": [
+          {
+            "name": "version",
+            "value": "HTTP/1.1"
+          }
+        ],
+        "queryString": [],
+        "cookies": [
+          {
+            "name": "a",
+            "value": "b",
+            "path": "/path",
+            "domain": "example.com",
+            "expires": null,
+            "httpOnly": false,
+            "secure": false
+          },
+          {
+            "name": "a1",
+            "value": "b1",
+            "expires": null,
+            "httpOnly": false,
+            "secure": false
+          },
+          {
+            "name": "c1",
+            "value": "d1",
+            "expires": null,
+            "httpOnly": false,
+            "secure": false
+          }
+        ],
+        "headersSize": -1,
+        "bodySize": 0
+      },
+      "response": {
+        "status": 0,
+        "statusText": "",
+        "httpVersion": "",
+        "headers": [
+          {
+            "name": "Set-Cookie",
+            "value": "x=y; Path=/path; Domain=example.com; httpOnly; Secure\nx1=y1; SameSite=Strict\nz2=y2; SameSite=Lax"
+          }
+        ],
+        "cookies": [
+          {
+            "name": "x",
+            "value": "y",
+            "path": "/path",
+            "domain": "example.com",
+            "expires": null,
+            "httpOnly": true,
+            "secure": true
+          },
+          {
+            "name": "x1",
+            "value": "y1",
+            "domain": "127.0.0.1",
+            "expires": null,
+            "httpOnly": false,
+            "secure": false,
+            "sameSite": "Strict"
+          },
+          {
+            "name": "z2",
+            "value": "y2",
+            "domain": "127.0.0.1",
+            "expires": null,
+            "httpOnly": false,
+            "secure": false,
+            "sameSite": "Lax"
+          }
+        ],
+        "content": {
+          "size": 0,
+          "mimeType": "x-unknown"
+        },
+        "redirectURL": "",
+        "headersSize": -1,
+        "bodySize": -1,
+        "_transferSize": 0,
+        "_error": null,
+        "_fetchedViaServiceWorker": true,
+        "_responseCacheStorageCacheName": "v1",
+        "_serviceWorkerResponseSource": "cache-storage",
+        "_serviceWorkerRouterRuleIdMatched": 3,
+        "_serviceWorkerRouterMatchedSourceType": "cache",
+        "_serviceWorkerRouterActualSourceType": "cache"
+      },
+      "serverIPAddress": "",
+      "startedDateTime": "1969-12-31T23:59:59.000Z",
+      "time": 0,
+      "timings": {
+        "blocked": 0,
+        "dns": -1,
+        "ssl": -1,
+        "connect": -1,
+        "send": 0,
+        "wait": 0,
+        "receive": 0,
+        "_blocked_queueing": 2000
+      },
+      "pageref": "page_1"
+    },
+    {
+      "_initiator": null,
+      "_priority": null,
+      "_resourceType": "xhr",
+      "cache": {},
+      "request": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/devtools/resources/post-target.cgi",
+        "httpVersion": "",
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": "text/xml"
+          }
+        ],
+        "queryString": [],
+        "cookies": [],
+        "headersSize": -1,
+        "bodySize": 11,
+        "postData": {
+          "mimeType": "text/xml",
+          "text": "<xml></xml>"
+        }
+      },
+      "response": {
+        "status": 0,
+        "statusText": "",
+        "httpVersion": "",
+        "headers": [],
+        "cookies": [],
+        "content": {
+          "size": 0,
+          "mimeType": "application/xml"
+        },
+        "redirectURL": "",
+        "headersSize": -1,
+        "bodySize": -1,
+        "_transferSize": 0,
+        "_error": null,
+        "_fetchedViaServiceWorker": false
+      },
+      "serverIPAddress": "",
+      "startedDateTime": "1969-12-31T23:59:59.000Z",
+      "time": 0,
+      "timings": {
+        "blocked": 0,
+        "dns": -1,
+        "ssl": -1,
+        "connect": -1,
+        "send": 0,
+        "wait": 0,
+        "receive": 0,
+        "_blocked_queueing": -1
+      },
+      "pageref": "page_1"
+    }
+  ]
+}
+=== end content

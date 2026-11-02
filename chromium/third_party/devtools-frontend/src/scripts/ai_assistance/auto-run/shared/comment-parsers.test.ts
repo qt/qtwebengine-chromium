@@ -20,7 +20,7 @@ describe('parsing comments', () => {
     const result = parseComment(input);
     assert.deepEqual(result, {
       prompt: 'Is the contrast between the text and the background sufficient?',
-      explanation: 'The text on this element has low contrast which is not sufficient for accessibility'
+      explanation: 'The text on this element has low contrast which is not sufficient for accessibility',
     });
   });
 
@@ -43,7 +43,7 @@ describe('parsing comments', () => {
     const result = parseComment(input);
     assert.deepEqual(result, {
       prompt: 'Is the contrast between the text and the background sufficient?',
-      explanation: 'The text on this element has low contrast which is not sufficient for accessibility'
+      explanation: 'The text on this element has low contrast which is not sufficient for accessibility',
     });
   });
 
@@ -57,7 +57,7 @@ describe('parsing comments', () => {
     assert.deepEqual(result, {
       prompt: 'Is the contrast between the text and the background sufficient?',
       explanation: 'The text on this element has low contrast which is not sufficient for accessibility',
-      insight: 'LCP breakdown'
+      insight: 'LCP breakdown',
     });
   });
 

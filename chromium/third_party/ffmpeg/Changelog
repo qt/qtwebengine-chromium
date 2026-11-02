@@ -2,6 +2,15 @@ Entries are sorted chronologically from oldest to youngest within each release,
 releases are sorted from youngest to oldest.
 
 version <next>:
+- extensively improved AAC encoder
+- APV Vulkan encoder
+- iTerm2 inline image protocol muxer
+- LCEVC payload merging bitstream filter
+- MVR demuxer
+- latticepal filter
+
+
+version 9.0:
 - Extend AMF Color Converter (vf_vpp_amf) HDR capabilities
 - LCEVC track muxing support in MP4 muxer
 - Playdate video encoder and muxer
@@ -11,6 +20,16 @@ version <next>:
 - Add AMF Frame Rate Converter (vf_frc_amf) filter
 - SMPTE 2094-50 metadata support and passthrough
 - ProRes RAW VideoToolbox hwaccel
+- APV Vulkan hwaccel
+- Animated WebP decoder
+- Animated WebP demuxer
+- Remove CELT decoding support (doesn't affect Opus CELT)
+- Remove ogg/celt parsing
+- Bitstream filter to split Dolby Vision multi-layer HEVC
+- Add AMF hardware memory mapping support.
+- ONNX Runtime DNN backend with GPU execution provider support
+- Remove deprecated NVENC options and support for pre-11.1 SDK versions
+- Add AMF Video Quality Enhancer (vf_vqe_amf) filter
 
 
 version 8.1:

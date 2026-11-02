@@ -16,7 +16,6 @@
 
 #![no_std]
 #![allow(rustdoc::private_intra_doc_links)]
-#![feature(array_chunks)]
 
 #[cfg(feature = "std")]
 extern crate std;
@@ -100,6 +99,9 @@ impl InvocationChannel {
         }
 
         if first_frame.flags.contains(frame::Flags::END) {
+            if message_buffer.len() < message::BODY_OFFSET {
+                anyhow::bail!("message is smaller than the message header");
+            }
             return Ok((M::decode(&message_buffer[..]), timer));
         }
 
@@ -107,9 +109,11 @@ impl InvocationChannel {
         // The length includes the first frame. Decode it so the buffer needs to
         // be resized/copied at most once.
         let message_length: usize = {
-            let mut buffer = [0u8; message::LENGTH_SIZE];
             let range = message::LENGTH_OFFSET..(message::LENGTH_OFFSET + message::LENGTH_SIZE);
-            buffer.copy_from_slice(&first_frame.body[range]);
+            let length_bytes =
+                first_frame.body.get(range).context("first frame too short for message length")?;
+            let mut buffer = [0u8; message::LENGTH_SIZE];
+            buffer.copy_from_slice(length_bytes);
             usize::try_from(message::Length::from_le_bytes(buffer))
                 .expect("couldn't convert message length to usize")
         };
@@ -117,7 +121,10 @@ impl InvocationChannel {
         // This likely causes a copy of the pre-existing data, but we needed to read the
         // first frame to figure out how much space we need for the entire
         // message. No more resizes are going to happen from here.
-        message_buffer.reserve(message_length - frame::MAX_BODY_SIZE);
+        let additional_capacity = message_length
+            .checked_sub(frame::MAX_BODY_SIZE)
+            .context("message length is smaller than the first frame")?;
+        message_buffer.reserve(additional_capacity);
 
         loop {
             let (frame, _) =

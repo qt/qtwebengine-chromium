@@ -1,8 +1,4 @@
 {
-  "$build/chromium_orchestrator": {
-    "compilator": "mac15-arm64-rel-compilator",
-    "compilator_watcher_git_revision": "27c191f304c8d7329a393d8a69020fc14032c3c3"
-  },
   "$build/chromium_tests_builder_config": {
     "builder_config": {
       "additional_exclusions": [
@@ -14,7 +10,7 @@
             "builder_id": {
               "bucket": "ci",
               "builder": "mac-arm64-rel",
-              "project": "chromium-m150"
+              "project": "chromium-m152"
             },
             "builder_spec": {
               "builder_group": "chromium.mac",
@@ -42,7 +38,7 @@
             "builder_id": {
               "bucket": "ci",
               "builder": "mac15-arm64-rel-tests",
-              "project": "chromium-m150"
+              "project": "chromium-m152"
             },
             "builder_spec": {
               "builder_group": "chromium.mac",
@@ -63,7 +59,7 @@
               "parent": {
                 "bucket": "ci",
                 "builder": "mac-arm64-rel",
-                "project": "chromium-m150"
+                "project": "chromium-m152"
               }
             }
           }
@@ -73,14 +69,14 @@
         {
           "bucket": "ci",
           "builder": "mac-arm64-rel",
-          "project": "chromium-m150"
+          "project": "chromium-m152"
         }
       ],
       "builder_ids_in_scope_for_testing": [
         {
           "bucket": "ci",
           "builder": "mac15-arm64-rel-tests",
-          "project": "chromium-m150"
+          "project": "chromium-m152"
         }
       ],
       "targets_spec_directory": "infra/config/generated/builders/try/mac15-arm64-rel/targets"
@@ -95,8 +91,7 @@
     "experiments": [],
     "keep_going": 3,
     "profile_mode": "cloud",
-    "project": "rbe-chromium-untrusted",
-    "remote_jobs": -1
+    "project": "rbe-chromium-untrusted"
   },
   "$recipe_engine/resultdb/test_presentation": {
     "column_keys": [],
@@ -106,5 +101,5 @@
     ]
   },
   "builder_group": "tryserver.chromium.mac",
-  "recipe": "chromium/orchestrator"
+  "recipe": "chromium_trybot"
 }

@@ -37,10 +37,10 @@ use oak_proto_rust::oak::functions::config::WasmtimeConfig;
 use wasmtime::{PoolingAllocationConfig, Store};
 
 use crate::{
+    Handler, Observer,
     logger::{OakLogger, StandaloneLogger},
     lookup::LookupDataManager,
-    wasm::{api::StdWasmApiFactory, WasmApiFactory},
-    Handler, Observer,
+    wasm::{WasmApiFactory, api::StdWasmApiFactory},
 };
 
 /// Fixed name of the function to start a Wasm. Every Oak Wasm module must
@@ -85,8 +85,8 @@ macro_rules! stub_wasm_function {
                 caller
                     .data()
                     .log_error(concat!("called stubbed ", stringify!($function_mod), ".", stringify!($function_name)));
-                Err::<$r, ::anyhow::Error>(
-                    ::anyhow::anyhow!(
+                Err::<$r, wasmtime::Error>(
+                    wasmtime::Error::msg(
                         concat!("called stubbed ", stringify!($function_mod), ".", stringify!($function_name))))
             },
         )
@@ -433,7 +433,7 @@ impl WasmtimeHandler {
                     total_core_instances,
                     max_core_instance_size as usize,
                     max_tables_per_module,
-                    table_elements,
+                    table_elements as usize,
                     max_memories_per_module
                 ]
             );
@@ -443,13 +443,7 @@ impl WasmtimeHandler {
         maybe_set!(
             config,
             config_proto,
-            [
-                static_memory_maximum_size,
-                static_memory_guard_size,
-                dynamic_memory_guard_size,
-                dynamic_memory_reserved_for_growth,
-                memory_init_cow
-            ]
+            [memory_init_cow, memory_reservation_for_growth, memory_guard_size]
         );
 
         let engine = wasmtime::Engine::new(&config)
@@ -546,8 +540,8 @@ impl Handler for WasmtimeHandler {
 
 /// A helper function to move between our specific result type `Result<(),
 /// StatusCode>` and the `wasmtime` specific result type `Result<i32,
-/// wasmtime::Trap>`.
-fn from_status_code(result: Result<(), StatusCode>) -> anyhow::Result<i32> {
+/// wasmtime::Error>`.
+fn from_status_code(result: Result<(), StatusCode>) -> Result<i32, wasmtime::Error> {
     let status_code = result.err().unwrap_or(StatusCode::Ok);
     Ok(status_code as i32)
 }

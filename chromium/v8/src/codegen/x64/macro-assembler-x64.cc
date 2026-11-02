@@ -801,28 +801,7 @@ void MacroAssembler::LoadTrustedUnknownPointerField(
     testl(handle, handle);
     j(zero, is_unavailable, Label::kNear);
 
-    bool handles_code_case = false;
-    for (auto& [type, label, distance] : cases) {
-      if (type == CODE_TYPE) {
-        handles_code_case = true;
-
-        Label not_code_handle;
-        testl(handle, Immediate(kCodePointerHandleMarker));
-        j(zero, &not_code_handle, Label::kNear);
-
-        ResolveCodePointerHandle(destination, handle);
-        jmp(label, distance);
-
-        bind(&not_code_handle);
-        break;
-      }
-    }
-    if (!handles_code_case) {
-      testl(handle, Immediate(kCodePointerHandleMarker));
-      j(not_zero, &zero_and_fallthrough, Label::kNear);
-    }
-
-    ResolveTrustedPointerHandle(destination, handle, kAllTrustedPointerTags);
+    ResolveIndirectPointerHandle(destination, handle, kAllIndirectPointerTags);
   }
 #else
   LoadTaggedField(destination, field_operand);
@@ -832,18 +811,12 @@ void MacroAssembler::LoadTrustedUnknownPointerField(
 #if V8_STATIC_ROOTS_BOOL
   LoadCompressedMap(scratch, destination);
   for (auto& [type, label, distance] : cases) {
-    if (V8_ENABLE_SANDBOX_BOOL && type == CODE_TYPE) {
-      continue;
-    }
     CompareInstanceTypeWithUniqueCompressedMap(scratch, type);
     j(equal, label, distance);
   }
 #else
   LoadMap(scratch, destination);
   for (auto& [type, label, distance] : cases) {
-    if (V8_ENABLE_SANDBOX_BOOL && type == CODE_TYPE) {
-      continue;
-    }
     CmpInstanceType(scratch, type);
     j(equal, label, distance);
   }
@@ -893,22 +866,6 @@ void MacroAssembler::StoreIndirectPointerField(Operand dst_field_operand,
 #ifdef V8_ENABLE_SANDBOX
 void MacroAssembler::ResolveIndirectPointerHandle(
     Register destination, Register handle, IndirectPointerTagRange tag_range) {
-  // This function must not be used to resolve kAllIndirectPointerTags. Use
-  // LoadTrustedUnknownPointerField for that instead.
-  CHECK_NE(tag_range, kAllIndirectPointerTags);
-
-  // The tag implies which pointer table to use.
-  if (tag_range == kCodeIndirectPointerTag) {
-    ResolveCodePointerHandle(destination, handle);
-  } else {
-    DCHECK(!tag_range.Contains(kCodeIndirectPointerTag));
-    ResolveTrustedPointerHandle(destination, handle, tag_range);
-  }
-}
-
-void MacroAssembler::ResolveTrustedPointerHandle(
-    Register destination, Register handle, IndirectPointerTagRange tag_range) {
-  DCHECK(!tag_range.Contains(kCodeIndirectPointerTag));
   DCHECK(!AreAliased(handle, destination));
   shrl(handle, Immediate(kTrustedPointerHandleShift));
   static_assert(kTrustedPointerTableEntrySize == 8);
@@ -943,40 +900,6 @@ void MacroAssembler::ResolveTrustedPointerHandle(
   }
 }
 
-void MacroAssembler::ResolveCodePointerHandle(Register destination,
-                                              Register handle) {
-  DCHECK(!AreAliased(handle, destination));
-  Register table = destination;
-  LoadCodePointerTableBase(table);
-  shrl(handle, Immediate(kCodePointerHandleShift));
-  // The code pointer table entry size is 16 bytes, so we have to do an
-  // explicit shift first (times_16 doesn't exist).
-  shll(handle, Immediate(kCodePointerTableEntrySizeLog2));
-  movq(destination,
-       Operand(table, handle, times_1, kCodePointerTableEntryCodeObjectOffset));
-  // The LSB is used as marking bit by the code pointer table, so here we have
-  // to set it using a bitwise OR as it may or may not be set.
-  orq(destination, Immediate(kHeapObjectTag));
-}
-
-void MacroAssembler::LoadCodePointerTableBase(Register destination) {
-#ifdef V8_COMPRESS_POINTERS_IN_MULTIPLE_CAGES
-  if (!options().isolate_independent_code && isolate()) {
-    // Embed the code pointer table address into the code.
-    LoadAddress(destination,
-                ExternalReference::code_pointer_table_base_address(isolate()));
-  } else {
-    // Force indirect load via root register as a workaround for
-    // isolate-independent code (for example, for Wasm).
-    Load(destination,
-         ExternalReference::address_of_code_pointer_table_base_address());
-  }
-#else
-  // Embed the code pointer table address into the code.
-  LoadAddress(destination,
-              ExternalReference::global_code_pointer_table_base_address());
-#endif  // V8_COMPRESS_POINTERS_IN_MULTIPLE_CAGES
-}
 #endif  // V8_ENABLE_SANDBOX
 
 void MacroAssembler::LoadEntrypointFromJSDispatchTable(
@@ -3621,27 +3544,26 @@ void MacroAssembler::CallWasmCodePointer(Register target,
   shll(target, Immediate(kNumClearedHighBits));
   shrl(target, Immediate(kNumClearedHighBits - kLeftShift));
 
-  // Add `target` and `kScratchRegister` early to free `kScratchRegister` again.
-  addq(target, kScratchRegister);
-
-  Operand signature_hash_op{target,
-                            wasm::WasmCodePointerTable::kOffsetOfSignatureHash};
+  // `target_op` is overwritten for the `!is_int32(signature_hash)` case below.
+  Operand target_op{kScratchRegister, target, ScaleFactor::times_1, 0};
   if (is_int32(signature_hash)) {
+    Operand signature_hash_op{
+        kScratchRegister, target, ScaleFactor::times_1,
+        wasm::WasmCodePointerTable::kOffsetOfSignatureHash};
     // cmpq sign-extends the 32-bit immediate.
     cmpq(signature_hash_op, Immediate(static_cast<int32_t>(signature_hash)));
+    SbxCheck(equal, AbortReason::kWasmSignatureMismatch);
   } else {
+    // Add `target` and `kScratchRegister` early to free `kScratchRegister`
+    // again.
+    addq(target, kScratchRegister);
+    Operand signature_hash_op{
+        target, wasm::WasmCodePointerTable::kOffsetOfSignatureHash};
     Move(kScratchRegister, signature_hash);
     cmpq(kScratchRegister, signature_hash_op);
+    SbxCheck(equal, AbortReason::kWasmSignatureMismatch);
+    target_op = Operand{target, 0};
   }
-  Label fail, ok;
-  j(Condition::kNotEqual, &fail, Label::Distance::kNear);
-  jmp(&ok, Label::Distance::kNear);
-
-  bind(&fail);
-  Abort(AbortReason::kWasmSignatureMismatch);
-
-  bind(&ok);
-  Operand target_op{target, 0};
 #else
   static_assert(sizeof(wasm::WasmCodePointerTableEntry) == 8);
   Operand target_op{kScratchRegister, target, ScaleFactor::times_8, 0};
@@ -3917,7 +3839,7 @@ void MacroAssembler::IncsspqIfSupported(Register number_of_words,
                                         Register scratch) {
   // Optimized code can validate at runtime whether the cpu supports the
   // incsspq instruction, so it shouldn't use this method.
-  CHECK(isolate()->IsGeneratingEmbeddedBuiltins());
+  CHECK(options().generating_embedded_builtin);
   DCHECK_NE(number_of_words, scratch);
   Label not_supported;
   ExternalReference supports_cetss =
@@ -4566,9 +4488,19 @@ void MacroAssembler::LeaveFrame(StackFrame::Type type) {
   // IsJSFrame or similar. Could then unify with manual frame leaves in the
   // interpreter too.
   if (v8_flags.debug_code && !StackFrame::IsJavaScript(type)) {
+    Label ok;
     cmpq(Operand(rbp, CommonFrameConstants::kContextOrFrameTypeOffset),
          Immediate(StackFrame::TypeToMarker(type)));
-    Check(equal, AbortReason::kStackFrameTypesMustMatch);
+    j(equal, &ok, Label::kNear);
+#if V8_ENABLE_WEBASSEMBLY
+    if (type == StackFrame::WASM && v8_flags.wasm_growable_stacks) {
+      cmpq(Operand(rbp, CommonFrameConstants::kContextOrFrameTypeOffset),
+           Immediate(StackFrame::TypeToMarker(StackFrame::WASM_SEGMENT_START)));
+      j(equal, &ok, Label::kNear);
+    }
+#endif
+    Abort(AbortReason::kStackFrameTypesMustMatch);
+    bind(&ok);
   }
   movq(rsp, rbp);
   popq(rbp);

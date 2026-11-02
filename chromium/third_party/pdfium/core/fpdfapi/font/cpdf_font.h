@@ -35,6 +35,7 @@ class CPDF_Type3Font;
 class CPDF_ToUnicodeMap;
 enum class FontEncoding;
 
+// Abstract base class for all PDF fonts.
 class CPDF_Font : public Retainable, public Observable {
  public:
   // Callback mechanism for Type3 fonts to get pixels from forms.
@@ -69,18 +70,30 @@ class CPDF_Font : public Retainable, public Observable {
   static RetainPtr<CPDF_Font> GetStockFont(CPDF_Document* doc,
                                            ByteStringView fontname);
 
-  virtual bool IsType1Font() const;
-  virtual bool IsTrueTypeFont() const;
-  virtual bool IsType3Font() const;
-  virtual bool IsCIDFont() const;
-  virtual const CPDF_Type1Font* AsType1Font() const;
   virtual CPDF_Type1Font* AsType1Font();
-  virtual const CPDF_TrueTypeFont* AsTrueTypeFont() const;
   virtual CPDF_TrueTypeFont* AsTrueTypeFont();
-  virtual const CPDF_Type3Font* AsType3Font() const;
   virtual CPDF_Type3Font* AsType3Font();
-  virtual const CPDF_CIDFont* AsCIDFont() const;
   virtual CPDF_CIDFont* AsCIDFont();
+
+  // Const methods wrap non-const virtual As*() methods.
+  const CPDF_Type1Font* AsType1Font() const {
+    return const_cast<CPDF_Font*>(this)->AsType1Font();
+  }
+  const CPDF_TrueTypeFont* AsTrueTypeFont() const {
+    return const_cast<CPDF_Font*>(this)->AsTrueTypeFont();
+  }
+  const CPDF_Type3Font* AsType3Font() const {
+    return const_cast<CPDF_Font*>(this)->AsType3Font();
+  }
+  const CPDF_CIDFont* AsCIDFont() const {
+    return const_cast<CPDF_Font*>(this)->AsCIDFont();
+  }
+
+  // Type-testing methods merely wrap As*() methods.
+  bool IsType1Font() const { return !!AsType1Font(); }
+  bool IsTrueTypeFont() const { return !!AsTrueTypeFont(); }
+  bool IsType3Font() const { return !!AsType3Font(); }
+  bool IsCIDFont() const { return !!AsCIDFont(); }
 
   virtual void WillBeDestroyed();
   virtual bool IsVertWriting() const;
@@ -177,6 +190,7 @@ class CPDF_Font : public Retainable, public Observable {
   bool will_be_destroyed_ = false;
   int flags_ = 0;
   int stem_v_ = 0;
+  std::optional<int> font_weight_;
   int ascent_ = 0;
   int descent_ = 0;
   int italic_angle_ = 0;

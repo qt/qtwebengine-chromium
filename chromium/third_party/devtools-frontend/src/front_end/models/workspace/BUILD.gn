@@ -23,7 +23,7 @@ devtools_foundation_module("workspace") {
     "../../core/platform:bundle",
     "../../core/root:bundle",
     "../../core/sdk:bundle",
-    "../../models/text_utils:bundle",
+    "../../core/text_utils:bundle",
   ]
 }
 
@@ -93,6 +93,7 @@ devtools_entrypoint("meta") {
 
   visibility = [
     "../../../mcp/*",
+    "../../../test/api/*",
     "../../entrypoints/*",
     "../../panels/greendev/*",
   ]
@@ -113,9 +114,9 @@ devtools_foundation_module("foundation_unittests") {
     "../../core/common:bundle",
     "../../core/platform:bundle",
     "../../core/sdk:bundle",
+    "../../core/text_utils:bundle",
     "../../generated",
     "../../testing",
     "../bindings:bundle",
-    "../text_utils:bundle",
   ]
 }

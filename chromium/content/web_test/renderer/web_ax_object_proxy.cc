@@ -264,7 +264,7 @@ bool WebAXObjectProxy::UpdateLayout() {
   }
 
   factory()->GetAXContext()->UpdateAXForAllDocuments();
-  return true;
+  return !IsDetached();
 }
 
 ui::AXNodeData WebAXObjectProxy::GetAXNodeData() const {
@@ -625,8 +625,8 @@ std::string WebAXObjectProxy::ValueDescription() {
   if (!UpdateLayout()) {
     return "";
   }
-  std::string value_description =
-      GetAXNodeData().GetStringAttribute(ax::mojom::StringAttribute::kValue);
+  std::string value_description = GetAXNodeData().GetStringAttribute(
+      ax::mojom::StringAttribute::kAriaValueText);
   return value_description.insert(0, "AXValueDescription: ");
 }
 
@@ -1572,7 +1572,6 @@ v8::Local<v8::Object> WebAXObjectProxy::ParentElement() {
   if (!UpdateLayout()) {
     return v8::Local<v8::Object>();
   }
-  UpdateLayout();
   blink::WebAXObject parent_object = accessibility_object_.ParentObject();
   return factory_->GetOrCreate(parent_object);
 }

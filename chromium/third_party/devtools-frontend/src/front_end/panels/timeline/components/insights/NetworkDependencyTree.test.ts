@@ -40,7 +40,7 @@ describeWithEnvironment('NetworkDependencyTree', () => {
           url: 'https://example.com/',
         },
       },
-      name: Trace.Types.Events.Name.SYNTHETIC_NETWORK_REQUEST
+      name: Trace.Types.Events.Name.SYNTHETIC_NETWORK_REQUEST,
     } as Trace.Types.Events.SyntheticNetworkRequest;
   }
 

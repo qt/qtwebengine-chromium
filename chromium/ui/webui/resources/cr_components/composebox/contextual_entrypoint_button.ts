@@ -15,13 +15,14 @@ import {I18nMixinLit} from '//resources/cr_elements/i18n_mixin_lit.js';
 import {assert} from '//resources/js/assert.js';
 import {EventTracker} from '//resources/js/event_tracker.js';
 import {loadTimeData} from '//resources/js/load_time_data.js';
+import {PluralStringProxyImpl} from '//resources/js/plural_string_proxy.js';
 import type {PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
 import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
 import type {TabInfo} from '//resources/mojo/components/omnibox/browser/searchbox.mojom-webui.js';
 import type {InputState} from '//resources/mojo/components/omnibox/composebox/composebox_query.mojom-webui.js';
 import {ToolMode} from '//resources/mojo/components/omnibox/composebox/composebox_query.mojom-webui.js';
 
-import {GlifAnimationState, recordBoolean, recordUserAction} from './common.js';
+import {getLoadTimeBoolean, GlifAnimationState, recordBoolean} from './common.js';
 import {getCss} from './contextual_entrypoint_button.css.js';
 import {getHtml} from './contextual_entrypoint_button.html.js';
 import {WindowProxy} from './window_proxy.js';
@@ -62,6 +63,7 @@ export class ContextualEntrypointButtonElement extends
       energyEffectAnimationEnabled: {type: Boolean, reflect: true},
       disableFallbackGlifAnimation: {type: Boolean},
       smartTabSharingActive: {type: Boolean},
+      entrypointAriaLabel_: {type: String},
       isLensSearchbox_: {
         type: Boolean,
         reflect: true,
@@ -83,6 +85,7 @@ export class ContextualEntrypointButtonElement extends
   accessor energyEffectAnimationEnabled: boolean = false;
   accessor disableFallbackGlifAnimation: boolean = false;
   accessor smartTabSharingActive: boolean = false;
+  protected accessor entrypointAriaLabel_: string = '';
   protected accessor windowWidthBelowThreshold_: boolean = false;
   protected accessor isLensSearchbox_: boolean =
       loadTimeData.valueExists('isLensSearchbox') &&
@@ -90,11 +93,9 @@ export class ContextualEntrypointButtonElement extends
   protected accessor tabFaviconChipsToCoinsEnabled_: boolean =
       loadTimeData.getBoolean('tabFaviconChipsToCoinsEnabled');
   private showContextMenuDescriptionEnabled_: boolean =
-      loadTimeData.getBoolean('composeboxShowContextMenuDescription');
+      getLoadTimeBoolean('composeboxShowContextMenuDescription', false);
   private metricsSource_: string = loadTimeData.getString('composeboxSource');
   private eventTracker_: EventTracker = new EventTracker();
-  private hasRecordedShown_: boolean = false;
-  private hasRecordedHover_: boolean = false;
 
   constructor() {
     super();
@@ -111,6 +112,10 @@ export class ContextualEntrypointButtonElement extends
     return reversedShared.concat(reversedRestored);
   }
 
+  protected getSubmittedTabIds_(): Set<number> {
+    return new Set((this.restoredTabs || []).map(t => t.tabId));
+  }
+
   override connectedCallback() {
     super.connectedCallback();
     this.eventTracker_.add(
@@ -118,11 +123,6 @@ export class ContextualEntrypointButtonElement extends
         (e: MediaQueryListEvent) => {
           this.windowWidthBelowThreshold_ = e.matches;
         });
-    if (!this.hasRecordedShown_) {
-      recordUserAction(
-          'ContextualSearch.AddTabsButton.Shown.' + this.metricsSource_);
-      this.hasRecordedShown_ = true;
-    }
   }
 
   override disconnectedCallback() {
@@ -140,13 +140,34 @@ export class ContextualEntrypointButtonElement extends
         this.showContextMenuDescription = !inToolMode;
       }
     }
+
+    if (changedProperties.has('sharedTabs') ||
+        changedProperties.has('restoredTabs') ||
+        changedProperties.has('smartTabSharingActive')) {
+      this.updateAriaLabel_();
+    }
+  }
+
+  private async updateAriaLabel_() {
+    const baseLabel = this.i18n('addContextTitle');
+    const tabCount = this.getTabs_().length;
+    if (tabCount === 0) {
+      this.entrypointAriaLabel_ = baseLabel;
+      return;
+    }
+
+    const sharingTabsStr =
+        await PluralStringProxyImpl.getInstance().getPluralString(
+            'sharingTabs', tabCount);
+    this.entrypointAriaLabel_ = `${baseLabel}, ${sharingTabsStr}`;
+  }
+
+  protected getEntrypointAriaLabel_(): string {
+    return this.entrypointAriaLabel_ || this.i18n('addContextTitle');
   }
 
   protected onEntrypointClick_(e: Event) {
     e.stopPropagation();
-
-    recordUserAction(
-        'ContextualSearch.AddTabsButton.Clicked.' + this.metricsSource_);
 
     const metricName =
         'ContextualSearch.ContextMenuEntry.Clicked.' + this.metricsSource_;
@@ -161,11 +182,6 @@ export class ContextualEntrypointButtonElement extends
   }
 
   protected onEntrypointPointerenter_() {
-    if (!this.hasRecordedHover_) {
-      recordUserAction(
-          'ContextualSearch.AddTabsButton.Hovered.' + this.metricsSource_);
-      this.hasRecordedHover_ = true;
-    }
     this.fire('context-menu-entrypoint-hover');
   }
 

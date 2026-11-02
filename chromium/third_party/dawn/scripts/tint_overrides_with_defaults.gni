@@ -163,6 +163,12 @@ declare_args() {
   }
 }
 
+# Intentionally not allowing is_wasm, even though it is Linux like,
+# because it uses a different toolchain
+if (tint_build_mesa && !is_linux) {
+  assert(false, "Building Mesa is only supported on Linux")
+}
+
 declare_args() {
   # Enable Vulkan support in Tint fuzzers
   if (!defined(tint_build_fuzzer_vulkan_support)) {

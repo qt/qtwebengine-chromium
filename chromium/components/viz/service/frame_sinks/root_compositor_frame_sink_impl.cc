@@ -178,7 +178,7 @@ RootCompositorFrameSinkImpl::Create(
             frame_sink_manager,
             std::move(params->external_begin_frame_controller),
             std::move(params->external_begin_frame_controller_client),
-            restart_id);
+            restart_id, params->wait_for_all_frame_sinks);
     external_begin_frame_source_mojo =
         static_cast<ExternalBeginFrameSourceMojo*>(
             external_begin_frame_source.get());
@@ -223,7 +223,7 @@ RootCompositorFrameSinkImpl::Create(
       external_begin_frame_source =
           std::make_unique<ExternalBeginFrameSourceMac>(
               restart_id, params->renderer_settings.display_id,
-              output_surface.get());
+              params->refresh_rate, output_surface.get());
       created_external_begin_frame_source_mac = true;
 #endif
       if (!external_begin_frame_source && !synthetic_begin_frame_source) {
@@ -320,6 +320,15 @@ RootCompositorFrameSinkImpl::Create(
 }
 
 RootCompositorFrameSinkImpl::~RootCompositorFrameSinkImpl() {
+#if BUILDFLAG(IS_MAC)
+  if (external_begin_frame_source()) {
+    // Reset update_vsync_params_callback_ as it should not be called in
+    // destructor.
+    external_begin_frame_source()->SetUpdateVSyncParametersCallback(
+        UpdateVSyncParametersCallback());
+  }
+#endif
+
   support_->frame_sink_manager()->UnregisterBeginFrameSource(
       begin_frame_source());
 }
@@ -349,13 +358,6 @@ void RootCompositorFrameSinkImpl::SetDisplayVisible(bool visible) {
   display_->SetVisible(visible);
 }
 
-#if BUILDFLAG(IS_WIN)
-void RootCompositorFrameSinkImpl::DisableSwapUntilResize(
-    DisableSwapUntilResizeCallback callback) {
-  display_->DisableSwapUntilResize(std::move(callback));
-}
-#endif
-
 void RootCompositorFrameSinkImpl::Resize(const gfx::Size& size) {
   if (!display_->resize_based_on_root_surface())
     display_->Resize(size);
@@ -374,10 +376,6 @@ void RootCompositorFrameSinkImpl::SetDisplayColorSpaces(
 #if BUILDFLAG(IS_MAC)
 void RootCompositorFrameSinkImpl::SetVSyncDisplayID(int64_t display_id) {
   begin_frame_source()->SetVSyncDisplayID(display_id, /*force_update=*/false);
-}
-
-void RootCompositorFrameSinkImpl::RefreshRateChangedOnSameDisplay() {
-  begin_frame_source()->RefreshRateChangedOnSameDisplay();
 }
 #endif
 
@@ -444,7 +442,8 @@ RootCompositorFrameSinkImpl::GetSupportedFrameIntervals() {
         display_frame_interval_);
   }
 
-  return {display_frame_interval_, display_frame_interval_ * 2};
+  return BeginFrameSource::GetDefaultSupportedFrameIntervals(
+      display_frame_interval_);
 }
 
 void RootCompositorFrameSinkImpl::UpdateVSyncParameters() {
@@ -526,6 +525,11 @@ void RootCompositorFrameSinkImpl::SetSupportedRefreshRates(
   for (float rate : supported_refresh_rates) {
     const base::TimeDelta interval = base::Hertz(rate);
     exact_supported_refresh_rates_[interval] = rate;
+  }
+
+  if (!exact_supported_refresh_rates_.empty() && display_) {
+    display_->NotifyMinSupportedVsyncInterval(
+        exact_supported_refresh_rates_.begin()->first);
   }
 
   UpdateFrameIntervalDeciderSettings();
@@ -919,10 +923,10 @@ void RootCompositorFrameSinkImpl::DisplayDidReceiveCALayerParams(
   // DisplayLinkMac, which is responsible for querying for vsync updates.
   next_forced_ca_layer_params_update_time_ =
       base::TimeTicks::Now() + base::Seconds(10);
-  if (display_client_)
+  if (display_client_) {
     display_client_->OnDisplayReceivedCALayerParams(std::move(ca_layer_params));
+  }
 
-  external_begin_frame_source()->DidReceiveNewCALayerParams();
 #else
   NOTREACHED();
 #endif

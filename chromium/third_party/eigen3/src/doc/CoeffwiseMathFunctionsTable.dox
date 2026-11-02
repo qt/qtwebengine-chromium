@@ -140,6 +140,21 @@ means that the STL's function \c std::foo will be potentially called if it is co
   <td></td>
 </tr>
 <tr>
+  <td class="code">
+  \anchor cwisetable_ldexp
+  a.\link ArrayBase::ldexp ldexp\endlink(e); \n
+  \link Eigen::ldexp ldexp\endlink(a,e);
+  </td>
+  <td>multiplies each coefficient by \f$ 2^{e} \f$ for an integer \c e (\f$ a_i \cdot 2^{e} \f$); \n
+  exact — the floating-point exponent is adjusted directly, so the result \n
+  is correct (including denormals) even when \f$ 2^{e} \f$ itself is not representable</td>
+  <td class="code">
+  using <a href="http://en.cppreference.com/w/cpp/numeric/math/ldexp">std::ldexp</a>; \n
+  ldexp(a[i],e);
+  </td>
+  <td>SSE2, AVX (f,d)</td>
+</tr>
+<tr>
 <th colspan="4">Power functions</th>
 </tr>
 <tr>

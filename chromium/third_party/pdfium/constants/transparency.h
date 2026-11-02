@@ -8,7 +8,7 @@
 namespace pdfium {
 namespace transparency {
 
-// PDF 1.7 spec, table 7.2.
+// ISO 32000-1:2008 spec, table 136.
 // Standard separable blend modes.
 inline constexpr char kNormal[] = "Normal";
 inline constexpr char kMultiply[] = "Multiply";
@@ -23,14 +23,14 @@ inline constexpr char kSoftLight[] = "SoftLight";
 inline constexpr char kDifference[] = "Difference";
 inline constexpr char kExclusion[] = "Exclusion";
 
-// PDF 1.7 spec, table 7.3.
+// ISO 32000-1:2008 spec, table 137.
 // Standard nonseparable blend modes.
 inline constexpr char kHue[] = "Hue";
 inline constexpr char kSaturation[] = "Saturation";
 inline constexpr char kColor[] = "Color";
 inline constexpr char kLuminosity[] = "Luminosity";
 
-// PDF 1.7 spec, table 7.10.
+// ISO 32000-1:2008 spec, table 144.
 // Entries in a soft-mask dictionary.
 inline constexpr char kSoftMaskSubType[] = "S";
 inline constexpr char kAlpha[] = "Alpha";
@@ -38,7 +38,7 @@ inline constexpr char kG[] = "G";
 inline constexpr char kBC[] = "BC";
 inline constexpr char kTR[] = "TR";
 
-// PDF 1.7 spec, table 7.13.
+// ISO 32000-1:2008 spec, table 147.
 // Additional entries specific to a transparency group attributes dictionary.
 inline constexpr char kGroupSubType[] = "S";
 inline constexpr char kTransparency[] = "Transparency";

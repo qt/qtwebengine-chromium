@@ -260,6 +260,10 @@ class SigninMetricsTest : public ::testing::Test {
         return "Indigo";
       case AccessPoint::kOverflowMenu:
         return "OverflowMenu";
+      case AccessPoint::kLevelUp:
+        return "LevelUp";
+      case AccessPoint::kSignoutUndoSnackbar:
+        return "SignoutUndoSnackbar";
     }
   }
 };

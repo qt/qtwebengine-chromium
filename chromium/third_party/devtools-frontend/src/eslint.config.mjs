@@ -103,6 +103,7 @@ export default defineConfig([
       '@stylistic/semi': 'error',
       '@stylistic/no-extra-semi': 'error',
       '@stylistic/comma-style': ['error', 'last'],
+      '@stylistic/comma-dangle': ['error', 'always-multiline'],
       '@stylistic/wrap-iife': ['error', 'inside'],
 
       '@stylistic/spaced-comment': [
@@ -621,9 +622,9 @@ export default defineConfig([
       ],
       '@devtools/l10n-i18nString-call-only-with-uistrings': 'error',
       '@devtools/l10n-no-i18nString-calls-module-instantiation': 'error',
-      '@devtools/l10n-no-locked-or-placeholder-only-phrase': 'error',
       '@devtools/l10n-no-uistrings-export': 'error',
       '@devtools/l10n-no-unused-message': 'error',
+      '@devtools/l10n-uistrings-text-style': 'error',
     },
   },
   {
@@ -692,6 +693,13 @@ export default defineConfig([
     },
   },
   {
+    name: 'Front-end core files',
+    files: ['front_end/core/**/*.ts'],
+    rules: {
+      '@devtools/no-instance-of-migrated-singletons': 'error',
+    },
+  },
+  {
     name: 'Front-end meta files',
     files: ['front_end/**/*-meta.ts'],
     rules: {
@@ -713,6 +721,13 @@ export default defineConfig([
     },
   },
   {
+    name: 'API test files',
+    files: ['**/*.test.api.ts'],
+    rules: {
+      '@devtools/no-api-test-unit-helpers': 'error',
+    },
+  },
+  {
     name: 'TypeScript test files',
     files: [
       '*.test.ts',
@@ -721,7 +736,8 @@ export default defineConfig([
       'test/**/*.ts',
       '**/testing/*.ts',
       'scripts/eslint_rules/test/**/*',
-      'extensions/cxx_debugging/e2e/**',
+      'extensions/cxx_debugging/e2e/**/*.ts',
+      'extensions/cxx_debugging/tests/**/*.ts',
     ],
 
     rules: {
@@ -750,6 +766,7 @@ export default defineConfig([
       ],
 
       '@devtools/check-test-definitions': 'error',
+      '@devtools/prefer-chai-assert': 'error',
       '@devtools/no-assert-strict-equal-for-arrays-and-objects': 'error',
       '@devtools/no-assert-deep-strict-equal': 'error',
       '@devtools/no-assert-equal': 'error',
@@ -773,11 +790,6 @@ export default defineConfig([
 
     settings: {
       'mocha/additionalCustomNames': [
-        {
-          name: 'describeWithDevtoolsExtension',
-          type: 'suite',
-          interfaces: ['BDD', 'TDD'],
-        },
         {
           name: 'describeWithEnvironment',
           type: 'suite',

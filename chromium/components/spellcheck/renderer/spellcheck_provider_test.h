@@ -111,6 +111,14 @@ class TestingSpellCheckProvider : public SpellCheckProvider,
 #if BUILDFLAG(USE_RENDERER_SPELLCHECKER)
   void ResetResult();
 
+  int AddCompletionForTest(
+      std::unique_ptr<FakeTextCheckingCompletion> completion);
+
+  void OnRespondSpellingService(int identifier,
+                                const std::u16string& text,
+                                bool success,
+                                const std::vector<SpellCheckResult>& results);
+
   // Variables logging CallSpellingService() mojo calls.
   std::u16string text_;
   size_t spelling_service_call_count_ = 0;
@@ -175,9 +183,15 @@ class SpellCheckProviderTest : public testing::Test {
   ~SpellCheckProviderTest() override;
 
  protected:
+  void SetUp() override;
+  void TearDown() override;
+
   base::test::SingleThreadTaskEnvironment task_environment_;
   spellcheck::EmptyLocalInterfaceProvider embedder_provider_;
   TestingSpellCheckProvider provider_;
+
+  // The SpellCheckCustomDictionaryAPI feature value captured in SetUp().
+  bool custom_dictionary_api_enabled_ = false;
 };
 
 #endif  // COMPONENTS_SPELLCHECK_RENDERER_SPELLCHECK_PROVIDER_TEST_H_

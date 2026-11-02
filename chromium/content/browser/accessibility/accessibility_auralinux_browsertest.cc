@@ -21,6 +21,8 @@
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/shell/browser/shell.h"
 #include "content/test/content_browser_test_utils_internal.h"
+#include "ui/accessibility/ax_selection.h"
+#include "ui/accessibility/platform/ax_platform.h"
 #include "ui/accessibility/platform/ax_platform_node_auralinux.h"
 #include "ui/accessibility/platform/browser_accessibility.h"
 #include "ui/base/glib/scoped_gsignal.h"
@@ -452,11 +454,17 @@ IN_PROC_BROWSER_TEST_F(AccessibilityAuraLinuxBrowserTest,
   CheckTextAtOffset(atk_text, 46, ATK_TEXT_BOUNDARY_LINE_START, 32,
                     contents_string_length, "\"KHTML, like\".\n");
 
-  // An offset one past the last character should return the last line which is
-  // blank. This is represented by Blink with yet another line break.
-  CheckTextAtOffset(atk_text, contents_string_length,
-                    ATK_TEXT_BOUNDARY_LINE_START, contents_string_length,
-                    (contents_string_length + 1), "\n");
+  {
+    // There should be no text at an offset one past the last character.
+    int start_offset = 0;
+    int end_offset = 0;
+    char* text = atk_text_get_text_at_offset(atk_text, contents_string_length,
+                                             ATK_TEXT_BOUNDARY_LINE_START,
+                                             &start_offset, &end_offset);
+    EXPECT_EQ(0, start_offset);
+    EXPECT_EQ(0, end_offset);
+    EXPECT_EQ(nullptr, text);
+  }
 
   {
     // There should be no text after the blank line.
@@ -497,6 +505,41 @@ IN_PROC_BROWSER_TEST_F(AccessibilityAuraLinuxBrowserTest,
         atk_text, i, ATK_TEXT_BOUNDARY_LINE_START, newline_offset + 1,
         n_characters,
         "cooperation between intelligent rational decision-makers.\"");
+  }
+
+  g_object_unref(atk_text);
+}
+
+IN_PROC_BROWSER_TEST_F(AccessibilityAuraLinuxBrowserTest,
+                       TestLastLineTextAtOffsetWithTrailingIgnoredContent) {
+  LoadInitialAccessibilityTreeFromHtml(R"HTML(<!DOCTYPE html>
+      <style>
+        pre { position: relative; white-space: pre; }
+        pre > code { display: block; white-space: inherit; }
+        .line-numbers { position: absolute; top: 0; left: -3.2em; }
+        .line-numbers > span { display: block; counter-increment: ln; }
+        .line-numbers > span:before { content: counter(ln); display: block; }
+      </style>
+      <pre><code>L1
+L2
+L3
+<span aria-hidden="true" class="line-numbers"><span></span><span></span>
+<span></span></span></code></pre>)HTML");
+
+  // The <code> element is exposed as a static text object.
+  AtkText* atk_text = FindNode(ATK_ROLE_STATIC);
+  ASSERT_NE(nullptr, atk_text);
+
+  ASSERT_EQ(9, atk_text_get_character_count(atk_text));
+
+  for (int i = 0; i < 3; ++i) {
+    CheckTextAtOffset(atk_text, i, ATK_TEXT_BOUNDARY_LINE_START, 0, 3, "L1\n");
+  }
+  for (int i = 3; i < 6; ++i) {
+    CheckTextAtOffset(atk_text, i, ATK_TEXT_BOUNDARY_LINE_START, 3, 6, "L2\n");
+  }
+  for (int i = 6; i < 9; ++i) {
+    CheckTextAtOffset(atk_text, i, ATK_TEXT_BOUNDARY_LINE_START, 6, 9, "L3\n");
   }
 
   g_object_unref(atk_text);
@@ -1665,6 +1708,115 @@ IN_PROC_BROWSER_TEST_F(
   g_object_unref(child_2);
   g_object_unref(child_3);
   g_object_unref(child_7);
+}
+
+// A caret in non-editable content is a collapsed selection, which is not
+// rendered unless Caret Browsing is enabled. Its offset must be reported
+// regardless, or an assistive technology cannot find out where it is.
+IN_PROC_BROWSER_TEST_F(AccessibilityAuraLinuxBrowserTest,
+                       TestGetCaretOffsetWithoutCaretBrowsing) {
+  LoadInitialAccessibilityTreeFromHtml(
+      R"HTML(<!DOCTYPE html>
+      <html><body>
+      <p>Paragraph one text.</p>
+      <p>Paragraph two text.</p>
+      </body></html>)HTML");
+
+  AtkObject* document = GetRendererAccessible();
+  AtkObject* paragraph_1 = atk_object_ref_accessible_child(document, 0);
+  AtkObject* paragraph_2 = atk_object_ref_accessible_child(document, 1);
+  ASSERT_NE(nullptr, paragraph_1);
+  ASSERT_NE(nullptr, paragraph_2);
+
+  {
+    AccessibilityNotificationWaiter waiter(
+        shell()->web_contents(), ax::mojom::Event::kDocumentSelectionChanged);
+    ASSERT_TRUE(atk_text_set_caret_offset(ATK_TEXT(paragraph_1), 5));
+    ASSERT_TRUE(waiter.WaitForNotification());
+  }
+  EXPECT_EQ(5, atk_text_get_caret_offset(ATK_TEXT(paragraph_1)));
+  EXPECT_EQ(-1, atk_text_get_caret_offset(ATK_TEXT(paragraph_2)));
+  EXPECT_EQ(0, atk_text_get_n_selections(ATK_TEXT(paragraph_1)));
+
+  {
+    AccessibilityNotificationWaiter waiter(
+        shell()->web_contents(), ax::mojom::Event::kDocumentSelectionChanged);
+    ASSERT_TRUE(atk_text_set_caret_offset(ATK_TEXT(paragraph_2), 0));
+    ASSERT_TRUE(waiter.WaitForNotification());
+  }
+  EXPECT_EQ(-1, atk_text_get_caret_offset(ATK_TEXT(paragraph_1)));
+  EXPECT_EQ(0, atk_text_get_caret_offset(ATK_TEXT(paragraph_2)));
+
+  g_object_unref(paragraph_1);
+  g_object_unref(paragraph_2);
+}
+
+class AccessibilityAuraLinuxCaretBrowsingBrowserTest
+    : public AccessibilityAuraLinuxBrowserTest {
+ public:
+  void SetUpOnMainThread() override {
+    AccessibilityAuraLinuxBrowserTest::SetUpOnMainThread();
+    ui::AXPlatform::GetInstance().SetCaretBrowsingState(true);
+  }
+
+  void TearDownOnMainThread() override {
+    ui::AXPlatform::GetInstance().SetCaretBrowsingState(false);
+    AccessibilityAuraLinuxBrowserTest::TearDownOnMainThread();
+  }
+};
+
+// With Caret Browsing enabled, an object which does not contain the caret must
+// not report one. Otherwise every object before the caret claims a caret at its
+// end and every object after it claims a caret at offset 0, and setting the
+// caret to that offset is silently treated as a no-op.
+IN_PROC_BROWSER_TEST_F(AccessibilityAuraLinuxCaretBrowsingBrowserTest,
+                       TestSetCaretOffsetToStartOfObjectWithoutCaret) {
+  LoadInitialAccessibilityTreeFromHtml(
+      R"HTML(<!DOCTYPE html>
+      <html><body>
+      <p>Paragraph one text.</p>
+      <p>Paragraph two text.</p>
+      </body></html>)HTML");
+
+  AtkObject* document = GetRendererAccessible();
+  AtkObject* paragraph_1 = atk_object_ref_accessible_child(document, 0);
+  AtkObject* paragraph_2 = atk_object_ref_accessible_child(document, 1);
+  ASSERT_NE(nullptr, paragraph_1);
+  ASSERT_NE(nullptr, paragraph_2);
+
+  {
+    AccessibilityNotificationWaiter waiter(
+        shell()->web_contents(), ax::mojom::Event::kDocumentSelectionChanged);
+    ASSERT_TRUE(atk_text_set_caret_offset(ATK_TEXT(paragraph_1), 5));
+    ASSERT_TRUE(waiter.WaitForNotification());
+  }
+  EXPECT_EQ(5, atk_text_get_caret_offset(ATK_TEXT(paragraph_1)));
+  EXPECT_EQ(-1, atk_text_get_caret_offset(ATK_TEXT(paragraph_2)));
+
+  // The caret is before the second paragraph, so offset 0 is a real move.
+  {
+    AccessibilityNotificationWaiter waiter(
+        shell()->web_contents(), ax::mojom::Event::kDocumentSelectionChanged);
+    ASSERT_TRUE(atk_text_set_caret_offset(ATK_TEXT(paragraph_2), 0));
+    ASSERT_TRUE(waiter.WaitForNotification());
+  }
+  EXPECT_EQ(-1, atk_text_get_caret_offset(ATK_TEXT(paragraph_1)));
+  EXPECT_EQ(0, atk_text_get_caret_offset(ATK_TEXT(paragraph_2)));
+
+  // The caret is now after the first paragraph, so its end is a real move too.
+  int character_count = atk_text_get_character_count(ATK_TEXT(paragraph_1));
+  {
+    AccessibilityNotificationWaiter waiter(
+        shell()->web_contents(), ax::mojom::Event::kDocumentSelectionChanged);
+    ASSERT_TRUE(
+        atk_text_set_caret_offset(ATK_TEXT(paragraph_1), character_count));
+    ASSERT_TRUE(waiter.WaitForNotification());
+  }
+  EXPECT_EQ(character_count, atk_text_get_caret_offset(ATK_TEXT(paragraph_1)));
+  EXPECT_EQ(-1, atk_text_get_caret_offset(ATK_TEXT(paragraph_2)));
+
+  g_object_unref(paragraph_1);
+  g_object_unref(paragraph_2);
 }
 
 IN_PROC_BROWSER_TEST_F(AccessibilityAuraLinuxBrowserTest,

@@ -12,6 +12,7 @@ devtools_entrypoint("entrypoint") {
     "../../core/sdk:meta",
     "../../entrypoints/inspector_main:meta",
     "../../entrypoints/main:meta",
+    "../../models/badges:meta",
     "../../models/logs:meta",
     "../../models/persistence:meta",
     "../../models/workspace:meta",

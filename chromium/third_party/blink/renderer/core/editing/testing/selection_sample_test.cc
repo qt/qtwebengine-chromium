@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/editing/testing/selection_sample.h"
 
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/processing_instruction.h"
 #include "third_party/blink/renderer/core/dom/text.h"
 #include "third_party/blink/renderer/core/editing/selection_template.h"
@@ -21,7 +22,7 @@ class SelectionSampleTest : public EditingTestBase {
 };
 
 TEST_F(SelectionSampleTest, GetSelectionTextFlatTree) {
-  const SelectionInDOMTree selection = SelectionSample::SetSelectionText(
+  const SelectionInDomTree selection = SelectionSample::SetSelectionText(
       GetDocument().body(),
       "<p>"
       "  <template data-mode=open>"
@@ -39,10 +40,10 @@ TEST_F(SelectionSampleTest, GetSelectionTextFlatTree) {
 }
 
 TEST_F(SelectionSampleTest, SetCommentInBody) {
-  const SelectionInDOMTree& selection = SelectionSample::SetSelectionText(
+  const SelectionInDomTree& selection = SelectionSample::SetSelectionText(
       GetDocument().body(), "<!--^-->foo<!--|-->");
   EXPECT_EQ("foo", GetDocument().body()->GetInnerHTMLString());
-  EXPECT_EQ(SelectionInDOMTree::Builder()
+  EXPECT_EQ(SelectionInDomTree::Builder()
                 .Collapse(Position(GetDocument().body(), 0))
                 .Extend(Position(GetDocument().body(), 1))
                 .Build(),
@@ -50,13 +51,13 @@ TEST_F(SelectionSampleTest, SetCommentInBody) {
 }
 
 TEST_F(SelectionSampleTest, SetCommentInElement) {
-  const SelectionInDOMTree& selection = SelectionSample::SetSelectionText(
+  const SelectionInDomTree& selection = SelectionSample::SetSelectionText(
       GetDocument().body(), "<span id=sample><!--^-->foo<!--|--></span>");
   const Element* const sample =
       GetDocument().body()->getElementById(AtomicString("sample"));
   EXPECT_EQ("<span id=\"sample\">foo</span>",
             GetDocument().body()->GetInnerHTMLString());
-  EXPECT_EQ(SelectionInDOMTree::Builder()
+  EXPECT_EQ(SelectionInDomTree::Builder()
                 .Collapse(Position(sample, 0))
                 .Extend(Position(sample, 1))
                 .Build(),
@@ -64,34 +65,34 @@ TEST_F(SelectionSampleTest, SetCommentInElement) {
 }
 
 TEST_F(SelectionSampleTest, SetEmpty1) {
-  const SelectionInDOMTree& selection =
+  const SelectionInDomTree& selection =
       SelectionSample::SetSelectionText(GetDocument().body(), "|");
   EXPECT_EQ("", GetDocument().body()->GetInnerHTMLString());
   EXPECT_EQ(0u, GetDocument().body()->CountChildren());
-  EXPECT_EQ(SelectionInDOMTree::Builder()
+  EXPECT_EQ(SelectionInDomTree::Builder()
                 .Collapse(Position(GetDocument().body(), 0))
                 .Build(),
             selection);
 }
 
 TEST_F(SelectionSampleTest, SetEmpty2) {
-  const SelectionInDOMTree& selection =
+  const SelectionInDomTree& selection =
       SelectionSample::SetSelectionText(GetDocument().body(), "^|");
   EXPECT_EQ("", GetDocument().body()->GetInnerHTMLString());
   EXPECT_EQ(0u, GetDocument().body()->CountChildren());
-  EXPECT_EQ(SelectionInDOMTree::Builder()
+  EXPECT_EQ(SelectionInDomTree::Builder()
                 .Collapse(Position(GetDocument().body(), 0))
                 .Build(),
             selection);
 }
 
 TEST_F(SelectionSampleTest, SetElement) {
-  const SelectionInDOMTree& selection = SelectionSample::SetSelectionText(
+  const SelectionInDomTree& selection = SelectionSample::SetSelectionText(
       GetDocument().body(), "<p>^<a>0</a>|<b>1</b></p>");
   const Element* const sample = QuerySelector("p");
   EXPECT_EQ(2u, sample->CountChildren())
       << "We should remove Text node for '^' and '|'.";
-  EXPECT_EQ(SelectionInDOMTree::Builder()
+  EXPECT_EQ(SelectionInDomTree::Builder()
                 .Collapse(Position(sample, 0))
                 .Extend(Position(sample, 1))
                 .Build(),
@@ -103,7 +104,7 @@ TEST_F(SelectionSampleTest, SetText) {
     const auto& selection =
         SelectionSample::SetSelectionText(GetDocument().body(), "^ab|c");
     EXPECT_EQ("abc", GetDocument().body()->GetInnerHTMLString());
-    EXPECT_EQ(SelectionInDOMTree::Builder()
+    EXPECT_EQ(SelectionInDomTree::Builder()
                   .Collapse(Position(GetDocument().body()->firstChild(), 0))
                   .Extend(Position(GetDocument().body()->firstChild(), 2))
                   .Build(),
@@ -113,7 +114,7 @@ TEST_F(SelectionSampleTest, SetText) {
     const auto& selection =
         SelectionSample::SetSelectionText(GetDocument().body(), "a^b|c");
     EXPECT_EQ("abc", GetDocument().body()->GetInnerHTMLString());
-    EXPECT_EQ(SelectionInDOMTree::Builder()
+    EXPECT_EQ(SelectionInDomTree::Builder()
                   .Collapse(Position(GetDocument().body()->firstChild(), 1))
                   .Extend(Position(GetDocument().body()->firstChild(), 2))
                   .Build(),
@@ -123,7 +124,7 @@ TEST_F(SelectionSampleTest, SetText) {
     const auto& selection =
         SelectionSample::SetSelectionText(GetDocument().body(), "ab^|c");
     EXPECT_EQ("abc", GetDocument().body()->GetInnerHTMLString());
-    EXPECT_EQ(SelectionInDOMTree::Builder()
+    EXPECT_EQ(SelectionInDomTree::Builder()
                   .Collapse(Position(GetDocument().body()->firstChild(), 2))
                   .Build(),
               selection);
@@ -132,7 +133,7 @@ TEST_F(SelectionSampleTest, SetText) {
     const auto& selection =
         SelectionSample::SetSelectionText(GetDocument().body(), "ab|c^");
     EXPECT_EQ("abc", GetDocument().body()->GetInnerHTMLString());
-    EXPECT_EQ(SelectionInDOMTree::Builder()
+    EXPECT_EQ(SelectionInDomTree::Builder()
                   .Collapse(Position(GetDocument().body()->firstChild(), 3))
                   .Extend(Position(GetDocument().body()->firstChild(), 2))
                   .Build(),
@@ -183,7 +184,7 @@ TEST_F(SelectionSampleTest, SerializeNamespace) {
   SetBodyContent("<div xmlns:foo='http://xyz'><foo:bar></foo:bar>");
   auto& sample = *To<ContainerNode>(GetDocument().body()->firstChild());
   EXPECT_EQ("<foo:bar></foo:bar>",
-            SelectionSample::GetSelectionText(sample, SelectionInDOMTree()))
+            SelectionSample::GetSelectionText(sample, SelectionInDomTree()))
       << "GetSelectionText() does not insert namespace declaration.";
 }
 
@@ -198,7 +199,7 @@ TEST_F(SelectionSampleTest, SerializeProcessingInstruction2) {
 
   // Note: PI ::= '<?' PITarget (S (Char* - (Char* '?>' Char*)))? '?>'
   EXPECT_EQ("<?foo bar?>", SelectionSample::GetSelectionText(
-                               *GetDocument().body(), SelectionInDOMTree()))
+                               *GetDocument().body(), SelectionInDomTree()))
       << "No space after 'bar'";
 }
 
@@ -248,7 +249,7 @@ TEST_F(SelectionSampleTest, SerializeVoidElementBR) {
       "<br>abc|</br>",
       SelectionSample::GetSelectionText(
           *GetDocument().body(),
-          SelectionInDOMTree::Builder().Collapse(Position(br, 1)).Build()))
+          SelectionInDomTree::Builder().Collapse(Position(br, 1)).Build()))
       << "When BR has child nodes, it is not void element.";
 }
 
@@ -322,7 +323,7 @@ TEST_F(SelectionSampleTest, TraverseShadowContent) {
                                   "<div id=shadow2>shadow_second|</div>"
                                 "</template>"
                               "</div>";
-  const SelectionInDOMTree& selection =
+  const SelectionInDomTree& selection =
       SelectionSample::SetSelectionText(body, content);
   EXPECT_EQ("<div id=\"host\"></div>", body->GetInnerHTMLString());
 
@@ -356,7 +357,7 @@ TEST_F(SelectionSampleTest, TraverseShadowContentWithSlot) {
                                 "</template>"
                                 "<span slot=slot1>bar</slot>"
                               "</div>";
-  const SelectionInDOMTree& selection =
+  const SelectionInDomTree& selection =
       SelectionSample::SetSelectionText(body, content);
   EXPECT_EQ("<div id=\"host\">foo<span slot=\"slot1\">bar</span></div>",
             body->GetInnerHTMLString());
@@ -394,7 +395,7 @@ TEST_F(SelectionSampleTest, TraverseMultipleShadowContents) {
                                 "<div id=shadow4>shadow_forth|</div>"
                               "</template>"
                             "</div>";
-  const SelectionInDOMTree& selection =
+  const SelectionInDomTree& selection =
       SelectionSample::SetSelectionText(body, content);
   EXPECT_EQ("<div id=\"host1\"></div><div id=\"host2\"></div>",
             body->GetInnerHTMLString());

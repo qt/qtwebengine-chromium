@@ -9,7 +9,7 @@
 #define skgpu_graphite_Resource_DEFINED
 
 #include "include/gpu/GpuTypes.h"
-#include "include/private/base/SkMutex.h"
+#include "include/private/SkMutex.h"
 #include "src/gpu/GpuTypesPriv.h"
 #include "src/gpu/graphite/GraphiteResourceKey.h"
 #include "src/gpu/graphite/ResourceTypes.h"
@@ -238,6 +238,8 @@ public:
     Budgeted budgeted() const { return fBudgeted; }
     Shareable shareable() const { return fShareable; }
     const GraphiteResourceKey& key() const { return fKey; }
+
+    virtual Protected isProtected() const { return Protected::kNo; }
 
     // Retrieves the amount of GPU memory used by this resource in bytes. It is approximate since we
     // aren't aware of additional padding or copies made by the driver.

@@ -33,7 +33,6 @@
 #include <string_view>
 #include <utility>
 
-#include "src/dawn/common/Assert.h"
 #include "src/dawn/common/Strings.h"
 #include "src/dawn/native/BindGroup.h"
 #include "src/dawn/native/BlockInfo.h"
@@ -48,6 +47,7 @@
 #include "src/dawn/native/Queue.h"
 #include "src/dawn/native/Sampler.h"
 #include "src/dawn/native/utils/WGPUHelpers.h"
+#include "src/utils/assert.h"
 #include "src/utils/compiler.h"
 
 namespace dawn::native {
@@ -985,12 +985,11 @@ ResultOrError<Ref<ComputePipelineBase>> GetOrCreateTextureToBufferPipeline(
                                                    },
                                                    /* allowInternalBinding */ true));
 
-        std::array<BindGroupLayoutBase*, 2> bindGroupLayouts = {bindGroupLayout0.Get(),
-                                                                bindGroupLayout1.Get()};
+        ityp::array<BindGroupIndex, BindGroupLayoutBase*, 2u> bindGroupLayouts = {
+            bindGroupLayout0.Get(), bindGroupLayout1.Get()};
 
         PipelineLayoutDescriptor descriptor;
-        descriptor.bindGroupLayoutCount = bindGroupLayouts.size();
-        descriptor.bindGroupLayouts = bindGroupLayouts.data();
+        descriptor.bindGroupLayouts = bindGroupLayouts;
         DAWN_TRY_ASSIGN(pipelineLayout, device->CreatePipelineLayout(&descriptor));
     } else {
         DAWN_TRY_ASSIGN(pipelineLayout, utils::MakeBasicPipelineLayout(device, bindGroupLayout0));
@@ -1012,8 +1011,7 @@ ResultOrError<Ref<ComputePipelineBase>> GetOrCreateTextureToBufferPipeline(
         {nullptr, "workgroupSizeY", static_cast<double>(adjustedWorkGroupSizeY)},
         {nullptr, "gOutputUnitSize", static_cast<double>(outputUnitSize)},
     }};
-    computePipelineDescriptor.compute.constantCount = constants.size();
-    computePipelineDescriptor.compute.constants = constants.data();
+    computePipelineDescriptor.compute.constants = constants;
 
     Ref<ComputePipelineBase> pipeline;
     DAWN_TRY_ASSIGN(pipeline, device->CreateComputePipeline(&computePipelineDescriptor));
@@ -1098,9 +1096,9 @@ MaybeError BlitTextureToBuffer(DeviceBase* device,
     // As the texture is uncompressed, texel and block space extents are the same, but we still use
     // texel space here because the compute shader works on texels.
     const TexelExtent3D texCopyExtent = blockInfo.ToTexel(copyExtent);
-    const uint32_t texelCopyWidth = static_cast<uint32_t>(texCopyExtent.width);
-    const uint32_t texelCopyHeight = static_cast<uint32_t>(texCopyExtent.height);
-    const uint32_t texelCopyDepth = static_cast<uint32_t>(texCopyExtent.depthOrArrayLayers);
+    const uint32_t texelCopyWidth = dchecked_cast<uint32_t>(texCopyExtent.width);
+    const uint32_t texelCopyHeight = dchecked_cast<uint32_t>(texCopyExtent.height);
+    const uint32_t texelCopyDepth = dchecked_cast<uint32_t>(texCopyExtent.depthOrArrayLayers);
 
     const uint32_t bytesPerTexel = blockInfo.byteSize;
     uint32_t workgroupCountX = 1;
@@ -1140,13 +1138,13 @@ MaybeError BlitTextureToBuffer(DeviceBase* device,
         switch (bytesPerTexel) {
             case 1:
                 // One thread is responsible for writing four texel values (x, y) ~ (x+3, y).
-                workgroupCountX =
-                    Align(texelCopyWidth, 4 * kWorkgroupSizeX) / (4 * kWorkgroupSizeX);
+                workgroupCountX = Align(texelCopyWidth, static_cast<size_t>(4) * kWorkgroupSizeX) /
+                                  (static_cast<size_t>(4) * kWorkgroupSizeX);
                 break;
             case 2:
                 // One thread is responsible for writing two texel values (x, y) and (x+1, y).
-                workgroupCountX =
-                    Align(texelCopyWidth, 2 * kWorkgroupSizeX) / (2 * kWorkgroupSizeX);
+                workgroupCountX = Align(texelCopyWidth, static_cast<size_t>(2) * kWorkgroupSizeX) /
+                                  (static_cast<size_t>(2) * kWorkgroupSizeX);
                 break;
             case 4:
             case 8:
@@ -1255,22 +1253,22 @@ MaybeError BlitTextureToBuffer(DeviceBase* device,
         uint32_t* params =
             static_cast<uint32_t*>(uniformBuffer->GetMappedRange(0, bufferDesc.size));
         // srcOrigin: vec3u
-        params[0] = static_cast<uint32_t>(src.origin.x);
-        DAWN_UNSAFE_TODO(params[1]) = static_cast<uint32_t>(src.origin.y);
-        DAWN_UNSAFE_TODO(params[2]) = static_cast<uint32_t>(src.origin.z);
+        params[0] = dchecked_cast<uint32_t>(src.origin.x);
+        DAWN_UNSAFE_TODO(params[1]) = dchecked_cast<uint32_t>(src.origin.y);
+        DAWN_UNSAFE_TODO(params[2]) = dchecked_cast<uint32_t>(src.origin.z);
 
         // packTexelCount: number of texel values (1, 2, or 4) one thread packs into the dst
         // buffer
         DAWN_UNSAFE_TODO(params[3]) = std::max(1u, 4 / bytesPerTexel);
         // srcExtent: vec3u
-        DAWN_UNSAFE_TODO(params[4]) = static_cast<uint32_t>(copyExtent.width);
-        DAWN_UNSAFE_TODO(params[5]) = static_cast<uint32_t>(copyExtent.height);
-        DAWN_UNSAFE_TODO(params[6]) = static_cast<uint32_t>(copyExtent.depthOrArrayLayers);
+        DAWN_UNSAFE_TODO(params[4]) = dchecked_cast<uint32_t>(copyExtent.width);
+        DAWN_UNSAFE_TODO(params[5]) = dchecked_cast<uint32_t>(copyExtent.height);
+        DAWN_UNSAFE_TODO(params[6]) = dchecked_cast<uint32_t>(copyExtent.depthOrArrayLayers);
 
         DAWN_UNSAFE_TODO(params[7]) = src.mipLevel;
 
         DAWN_UNSAFE_TODO(params[8]) = static_cast<uint32_t>(blockInfo.ToBytes(dst.blocksPerRow));
-        DAWN_UNSAFE_TODO(params[9]) = static_cast<uint32_t>(dst.rowsPerImage);
+        DAWN_UNSAFE_TODO(params[9]) = dchecked_cast<uint32_t>(dst.rowsPerImage);
         DAWN_UNSAFE_TODO(params[10]) = static_cast<uint32_t>(shaderStartOffset);
 
         // These params are only used for formats smaller than 4 bytes

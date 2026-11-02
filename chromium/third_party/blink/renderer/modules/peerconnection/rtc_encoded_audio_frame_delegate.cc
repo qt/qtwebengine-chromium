@@ -6,6 +6,7 @@
 
 #include <optional>
 #include <utility>
+#include <variant>
 
 #include "base/containers/span.h"
 #include "base/feature_list.h"
@@ -39,10 +40,17 @@ RTCEncodedAudioFrameDelegate::RTCEncodedAudioFrameDelegate(
       contributing_sources_(contributing_sources),
       sequence_number_(sequence_number) {}
 
-uint32_t RTCEncodedAudioFrameDelegate::RtpTimestamp() const {
+std::optional<uint32_t> RTCEncodedAudioFrameDelegate::RtpTimestamp() const {
   base::AutoLock lock(lock_);
-  return webrtc_frame_ ? webrtc_frame_->GetTimestamp()
-                       : post_neuter_metadata_.rtp_timestamp;
+  std::optional<webrtc::RtpTimestampInfo> rtp_timestamp_info =
+      webrtc_frame_ ? std::make_optional(webrtc_frame_->GetRtpTimestampInfo())
+                    : post_neuter_metadata_.rtp_timestamp_info;
+  if (rtp_timestamp_info &&
+      std::holds_alternative<webrtc::RtpTimestampWithOffset>(
+          *rtp_timestamp_info)) {
+    return std::get<webrtc::RtpTimestampWithOffset>(*rtp_timestamp_info);
+  }
+  return std::nullopt;
 }
 
 DOMArrayBuffer* RTCEncodedAudioFrameDelegate::CreateDataBuffer(
@@ -173,8 +181,11 @@ std::optional<uint32_t> RTCEncodedAudioFrameDelegate::Ssrc() const {
 
 std::optional<uint8_t> RTCEncodedAudioFrameDelegate::PayloadType() const {
   base::AutoLock lock(lock_);
-  return webrtc_frame_ ? std::make_optional(webrtc_frame_->GetPayloadType())
-                       : post_neuter_metadata_.payload_type;
+  if (webrtc_frame_) {
+    return static_cast<uint8_t>(webrtc_frame_->GetPayloadType());
+  } else {
+    return post_neuter_metadata_.payload_type;
+  }
 }
 
 std::optional<std::string> RTCEncodedAudioFrameDelegate::MimeType() const {
@@ -261,14 +272,16 @@ RTCEncodedAudioFrameDelegate::PassWebRtcFrame() {
   if (base::FeatureList::IsEnabled(kWebRtcEncodedTransformRememberMetadata) &&
       webrtc_frame_) {
     post_neuter_metadata_.ssrc = webrtc_frame_->GetSsrc();
-    post_neuter_metadata_.payload_type = webrtc_frame_->GetPayloadType();
+    post_neuter_metadata_.payload_type =
+        static_cast<uint8_t>(webrtc_frame_->GetPayloadType());
     post_neuter_metadata_.mime_type = webrtc_frame_->GetMimeType();
     post_neuter_metadata_.receive_time = ComputeReceiveTime();
     post_neuter_metadata_.capture_time_info = ComputeCaptureTime();
     post_neuter_metadata_.sender_capture_time_offset =
         ComputeSenderCaptureTimeOffset();
     post_neuter_metadata_.audio_level = ComputeAudioLevel();
-    post_neuter_metadata_.rtp_timestamp = webrtc_frame_->GetTimestamp();
+    post_neuter_metadata_.rtp_timestamp_info =
+        webrtc_frame_->GetRtpTimestampInfo();
   }
   return std::move(webrtc_frame_);
 }

@@ -124,7 +124,7 @@ class AlignedVector3 : public MatrixBase<AlignedVector3<Scalar_> > {
 
   inline AlignedVector3 operator-() const { return AlignedVector3(-m_coeffs); }
 
-  inline AlignedVector3 operator-=(const AlignedVector3& other) {
+  inline AlignedVector3& operator-=(const AlignedVector3& other) {
     m_coeffs -= other.m_coeffs;
     return *this;
   }

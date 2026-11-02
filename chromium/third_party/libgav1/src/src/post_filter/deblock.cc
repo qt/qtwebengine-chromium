@@ -14,8 +14,16 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 
+#include "src/dsp/dsp.h"
 #include "src/post_filter.h"
+#include "src/utils/common.h"
+#include "src/utils/constants.h"
+#include "src/utils/types.h"
 
 namespace libgav1 {
 namespace {

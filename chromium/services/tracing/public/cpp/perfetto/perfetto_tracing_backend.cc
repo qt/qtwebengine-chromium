@@ -8,6 +8,7 @@
 #include "base/command_line.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
+#include "base/containers/span.h"
 #include "base/feature_list.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
@@ -335,7 +336,9 @@ class ConsumerEndpoint : public perfetto::ConsumerEndpoint,
 
   ~ConsumerEndpoint() override {
     DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-    consumer_.ExtractAsDangling()->OnDisconnect();  // May delete |consumer_|.
+    if (consumer_) {
+      consumer_.ExtractAsDangling()->OnDisconnect();  // May delete |consumer_|.
+    }
   }
 
   base::WeakPtr<ConsumerEndpoint> GetWeakPtr() {
@@ -614,6 +617,13 @@ class ConsumerEndpoint : public perfetto::ConsumerEndpoint,
     tracing_session_client_.reset();
     drainer_.reset();
     tokenizer_.reset();
+
+    if (consumer_) {
+      perfetto::Consumer* consumer = consumer_.ExtractAsDangling();
+      consumer_ = nullptr;
+      consumer->OnDisconnect();
+      return;
+    }
   }
 
   void OnReadBuffersComplete() {

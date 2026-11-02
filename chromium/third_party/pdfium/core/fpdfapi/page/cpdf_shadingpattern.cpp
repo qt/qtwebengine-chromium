@@ -83,7 +83,7 @@ bool CPDF_ShadingPattern::Load() {
   cs_ = pDocPageData->GetColorSpace(pCSObj.Get(), nullptr);
 
   // The color space is required and cannot be a Pattern space, according to the
-  // PDF 1.7 spec, page 305.
+  // ISO 32000-1:2008 spec, table 78.
   if (!cs_ || cs_->GetFamily() == CPDF_ColorSpace::Family::kPattern) {
     return false;
   }

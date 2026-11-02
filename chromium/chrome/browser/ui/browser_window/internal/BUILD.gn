@@ -63,7 +63,6 @@ source_set("internal") {
       "//chrome/browser/actor/ui/task_list_bubble:controller",
       "//chrome/browser/autocomplete:aim_eligibility_service",
       "//chrome/browser/collaboration",
-      "//chrome/browser/contextual_cueing",
       "//chrome/browser/contextual_tasks:ui",
       "//chrome/browser/devtools",
       "//chrome/browser/glic",
@@ -73,10 +72,11 @@ source_set("internal") {
       "//chrome/browser/prefs",
       "//chrome/browser/skills:public",
       "//chrome/browser/tab_group_sync:factories",
-      "//chrome/browser/ui:tab_search_feature",
+      "//chrome/browser/ui:browser_actions",
       "//chrome/browser/ui:ui_features",
       "//chrome/browser/ui/animation",
       "//chrome/browser/ui/bookmarks",
+      "//chrome/browser/ui/browser_web_contents_delegate",
       "//chrome/browser/ui/call_to_action",
       "//chrome/browser/ui/commerce",
       "//chrome/browser/ui/context_highlight",
@@ -96,10 +96,11 @@ source_set("internal") {
       "//chrome/browser/ui/tabs",
       "//chrome/browser/ui/tabs:tab_list_bridge",
       "//chrome/browser/ui/tabs:tab_strip",
-      "//chrome/browser/ui/tabs/projects:impl",
+      "//chrome/browser/ui/tabs/organizer:impl",
       "//chrome/browser/ui/tabs/saved_tab_groups",
       "//chrome/browser/ui/tabs/tab_drag_api",
       "//chrome/browser/ui/tabs/tab_drag_api:impl",
+      "//chrome/browser/ui/tabs/tab_drag_api/desktop_tab_drag_impl",
       "//chrome/browser/ui/tabs/tab_strip_api",
       "//chrome/browser/ui/tabs/tab_strip_api:impl",
       "//chrome/browser/ui/tabs/tab_strip_api/controllers",
@@ -108,15 +109,21 @@ source_set("internal") {
       "//chrome/browser/ui/toolbar/chrome_labs",
       "//chrome/browser/ui/views/animations",
       "//chrome/browser/ui/views/contextual_tasks",
+      "//chrome/browser/ui/views/data_sharing",
       "//chrome/browser/ui/views/download",
+      "//chrome/browser/ui/views/fullscreen_control",
       "//chrome/browser/ui/views/interaction:impl",
       "//chrome/browser/ui/views/location_bar:impl",
       "//chrome/browser/ui/views/location_bar/cookie_controls",
+      "//chrome/browser/ui/views/media_router",
       "//chrome/browser/ui/views/new_tab_footer",
+      "//chrome/browser/ui/views/qrcode_generator",
       "//chrome/browser/ui/views/send_tab_to_self",
+      "//chrome/browser/ui/views/sharing",
       "//chrome/browser/ui/views/side_panel",
-      "//chrome/browser/ui/views/tabs/projects",
+      "//chrome/browser/ui/views/tabs/organizer",
       "//chrome/browser/ui/views/toolbar",
+      "//chrome/browser/ui/views/translate",
       "//chrome/browser/ui/waap:manager",
       "//chrome/browser/ui/waap:window_metrics_manager",
       "//chrome/browser/ui/web_applications",
@@ -124,6 +131,7 @@ source_set("internal") {
       "//chrome/browser/ui/web_modal:browser_window_modal_dialog_delegate",
       "//chrome/browser/ui/webui_browser",
       "//chrome/browser/ui/window_feature_controller",
+      "//chrome/browser/ui/window_metadata",
       "//chrome/browser/ui/zoom:browser_window_zoom_observer",
       "//components/breadcrumbs/core:status",
       "//components/collaboration/public",
@@ -174,6 +182,15 @@ source_set("internal") {
 
   if (enable_extensions_core) {
     deps += [ "//chrome/browser/extensions" ]
+  }
+
+  if (!is_android) {
+    deps += [
+      "//chrome/browser/ui:breadcrumb_manager_browser_agent",
+      "//chrome/browser/ui:browser_instant_controller",
+      "//chrome/browser/ui:browser_location_bar_model_delegate",
+      "//chrome/browser/ui:browser_select_file_dialog_controller",
+    ]
   }
 }
 

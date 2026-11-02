@@ -30,7 +30,7 @@ describeWithEnvironment('ChatView', () => {
     renderViewForScreenshots(Host.AidaClient.AidaAccessPreconditions.AVAILABLE, {
       devToolsAiAssistancePerformanceAgent: {
         enabled: true,
-      }
+      },
     });
     await assertScreenshot('ai_assistance/components/consent-view.png');
   });
@@ -39,7 +39,7 @@ describeWithEnvironment('ChatView', () => {
     renderViewForScreenshots(Host.AidaClient.AidaAccessPreconditions.NO_ACCOUNT_EMAIL, {
       devToolsAiAssistancePerformanceAgent: {
         enabled: true,
-      }
+      },
     });
     await assertScreenshot('ai_assistance/components/disable-view.png');
   });

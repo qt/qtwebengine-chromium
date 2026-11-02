@@ -14,26 +14,25 @@
 // limitations under the License.
 //
 
+use core::ops::DerefMut;
+
 use goblin::{elf32::program_header::PT_LOAD, elf64::program_header::ProgramHeader};
 use log::info;
+use oak_hal::PageAssignment;
 use oak_linux_boot_params::{BootE820Entry, E820EntryType, Ramdisk};
-use oak_sev_guest::msr::{get_sev_status, SevStatus};
 use x86_64::{
+    PhysAddr, VirtAddr,
     addr::{align_down, align_up},
     structures::paging::{
+        FrameAllocator, Page, PageSize, PageTable, PageTableFlags, PhysFrame, Size2MiB, Size4KiB,
         frame::PhysFrameRange,
-        mapper::{FlagUpdateError, MapToError, MapperFlush, UnmapError},
-        FrameAllocator, Page, PageSize, PageTable, PageTableFlags as BasePageTableFlags, PhysFrame,
-        Size2MiB, Size4KiB,
+        mapper::{Mapper, OffsetPageTable},
     },
-    PhysAddr, VirtAddr,
 };
 
-use self::encrypted_mapper::{EncryptedPageTable, MemoryEncryption};
 use crate::{FRAME_ALLOCATOR, PAGE_TABLES, VMA_ALLOCATOR};
 
 mod bitmap_frame_allocator;
-pub mod encrypted_mapper;
 pub mod frame_allocator;
 pub mod page_tables;
 pub mod virtual_address_allocator;
@@ -41,12 +40,141 @@ pub mod virtual_address_allocator;
 /// The start of kernel memory.
 pub const KERNEL_OFFSET: u64 = 0xFFFF_FFFF_8000_0000;
 
+/// Exclusive upper bound of user space: the end of the lower half of the 48-bit
+/// virtual address space. User space is `0x0000_0000_0000_0000 ..=
+/// 0x0000_7FFF_FFFF_FFFF` (see the memory layout table on [`initial_pml4`]);
+/// this is the same split `find_unallocated_pages` and the userspace stack in
+/// `processes.rs` rely on.
+pub const USERSPACE_VIRT_END: u64 = 0x8000_0000_0000;
+
+/// Returns `true` if the whole `[start, start + len)` byte range lies within
+/// user space (the lower half) and does not wrap around the address space.
+///
+/// The range is accepted iff its exclusive end is `<= USERSPACE_VIRT_END`, so
+/// the last accessible byte is at most `USERSPACE_VIRT_END - 1` (the final user
+/// address). A zero-length range only requires `start` itself to be in range.
+/// Note: being in user space does not imply the range is mapped; an unmapped
+/// user address still faults when accessed.
+pub fn is_user_range(start: u64, len: usize) -> bool {
+    match start.checked_add(len as u64) {
+        Some(end) => end <= USERSPACE_VIRT_END,
+        None => false, // address-space wrap
+    }
+}
+
+#[cfg(test)]
+mod user_range_tests {
+    use super::{USERSPACE_VIRT_END, is_user_range};
+
+    #[test]
+    fn accepts_normal_lower_half_range() {
+        assert!(is_user_range(0x1000, 0x1000));
+        assert!(is_user_range(0, 0)); // null, zero length
+        // A range ending exactly at the boundary (last byte = USERSPACE_VIRT_END-1).
+        assert!(is_user_range(USERSPACE_VIRT_END - 0x1000, 0x1000));
+    }
+
+    #[test]
+    fn rejects_range_crossing_or_above_boundary() {
+        // Starts at the first kernel-half address.
+        assert!(!is_user_range(USERSPACE_VIRT_END, 1));
+        // Lower-half start but the range spills one byte past the boundary.
+        assert!(!is_user_range(USERSPACE_VIRT_END - 0x1000, 0x1001));
+        // Kernel image address.
+        assert!(!is_user_range(0xFFFF_FFFF_8000_0000, 8));
+    }
+
+    #[test]
+    fn rejects_wrapping_range() {
+        assert!(!is_user_range(u64::MAX, 1));
+        assert!(!is_user_range(u64::MAX - 3, 16));
+    }
+}
+
+/// A raw pointer supplied by user space (ring 3). It is *untrusted*: the
+/// wrapped address cannot be turned into a slice without going through one of
+/// the validating accessors below, which enforce that the requested byte range
+/// lies fully within user space and does not wrap. `repr(transparent)`
+/// guarantees it has the same ABI as the raw pointer, so it can be passed to
+/// the syscall entry points without changing the calling convention.
+#[repr(transparent)]
+#[derive(Clone, Copy)]
+pub struct UserSpacePtr(*const core::ffi::c_void);
+
+impl From<*const core::ffi::c_void> for UserSpacePtr {
+    fn from(ptr: *const core::ffi::c_void) -> Self {
+        UserSpacePtr(ptr)
+    }
+}
+
+impl From<*mut core::ffi::c_void> for UserSpacePtr {
+    fn from(ptr: *mut core::ffi::c_void) -> Self {
+        UserSpacePtr(ptr as *const core::ffi::c_void)
+    }
+}
+
+impl UserSpacePtr {
+    /// Validate that `[ptr, ptr + len)` lies fully in user space and return the
+    /// raw byte pointer. `None` means the range is outside user space or wraps
+    /// (callers map this to `EFAULT`). Not called for `len == 0`; the accessors
+    /// handle the empty case first.
+    fn checked(self, len: usize) -> Option<*mut u8> {
+        if is_user_range(self.0 as u64, len) { Some(self.0 as *mut u8) } else { None }
+    }
+
+    /// Borrow the user range `[ptr, ptr + len)` as an immutable byte slice.
+    /// Returns an empty slice for `len == 0` (no memory is touched). `None` if
+    /// the range is not fully within user space.
+    ///
+    /// # Safety
+    /// The caller must ensure the user range stays mapped and is not aliased
+    /// for the lifetime `'a` of the returned slice.
+    pub unsafe fn as_bytes<'a>(self, len: usize) -> Option<&'a [u8]> {
+        if len == 0 {
+            return Some(&[]);
+        }
+        let ptr = self.checked(len)?;
+        // Safety: `is_user_range` verified `[ptr, ptr + len)` is a non-wrapping
+        // user-space range; the caller upholds the mapping/aliasing invariant.
+        Some(unsafe { core::slice::from_raw_parts(ptr as *const u8, len) })
+    }
+
+    /// Mutable counterpart of [`Self::as_bytes`].
+    ///
+    /// # Safety
+    /// As [`Self::as_bytes`], and the range must be uniquely borrowed for `'a`.
+    pub unsafe fn as_bytes_mut<'a>(self, len: usize) -> Option<&'a mut [u8]> {
+        if len == 0 {
+            // A mutable empty-slice literal borrows a temporary and won't satisfy
+            // `'a`; a dangling, aligned, non-null pointer is the sound way to build
+            // a zero-length mutable slice.
+            return Some(unsafe {
+                core::slice::from_raw_parts_mut(core::ptr::NonNull::<u8>::dangling().as_ptr(), 0)
+            });
+        }
+        let ptr = self.checked(len)?;
+        // Safety: as above; the borrow is unique for `'a`.
+        Some(unsafe { core::slice::from_raw_parts_mut(ptr, len) })
+    }
+}
+
 /// The offset used for the direct mapping of all physical memory.
 const DIRECT_MAPPING_OFFSET: VirtAddr = VirtAddr::new_truncate(0xFFFF_8800_0000_0000);
 
-/// For now we use a fixed position for the encrypted bit. For now we assume
-/// that we will be running on AMD Arcadia-Milan CPUs, which use bit 51.
-pub const ENCRYPTED_BIT_POSITION: u8 = 51;
+impl Translator for OffsetPageTable<'_> {
+    fn translate_virtual(&self, addr: VirtAddr) -> Option<PhysAddr> {
+        use x86_64::structures::paging::Translate;
+        self.translate_addr(addr)
+    }
+
+    fn translate_physical(&self, addr: PhysAddr) -> Option<VirtAddr> {
+        Some(self.phys_offset() + addr.as_u64())
+    }
+
+    fn translate_physical_frame<S: PageSize>(&self, frame: PhysFrame<S>) -> Option<Page<S>> {
+        Page::from_start_address(self.translate_physical(frame.start_address())?).ok()
+    }
+}
 
 // TODO(#3394): Move to a shared crate.
 pub trait Translator {
@@ -68,101 +196,17 @@ pub trait Translator {
     fn translate_physical_frame<S: PageSize>(&self, frame: PhysFrame<S>) -> Option<Page<S>>;
 }
 
-bitflags::bitflags! {
-    /// Possible flags for a page table entry.
-    ///
-    /// See <x86_64::structures::paging::PageTableFlags> for more details.
-    #[derive(Clone, Copy, Debug)]
-    pub struct PageTableFlags: u64 {
-        const PRESENT = 1;
-        const WRITABLE = 1 << 1;
-        const USER_ACCESSIBLE = 1 << 2;
-        const WRITE_THROUGH = 1 << 3;
-        const NO_CACHE = 1 << 4;
-        const ACCESSED = 1<< 5;
-        const DIRTY = 1 << 6;
-        const HUGE_PAGE = 1 << 7;
-        const GLOBAL = 1 << 8;
-        /// Marks the page as encrypted. Ignored under <NoEncryption>.
-        ///
-        /// The bit value is hardcoded to be 51 here, but that's because it's not possible to
-        /// represent `ENCRYPTED = 1 << C` in Rust right now. The actual bit set may not be 51.
-        const ENCRYPTED = 1 << 51;
-        const NO_EXECUTE = 1 << 63;
+pub fn encryption_aware_page_table_flags(
+    mut flags: PageTableFlags,
+    assignment: PageAssignment,
+) -> PageTableFlags {
+    if crate::is_memory_encryption_enabled() {
+        flags.set_encrypted(match assignment {
+            PageAssignment::Private => true,
+            PageAssignment::Shared => false,
+        });
     }
-}
-
-impl From<PageTableFlags> for BasePageTableFlags {
-    fn from(value: PageTableFlags) -> Self {
-        let mut flags = BasePageTableFlags::empty();
-        if value.contains(PageTableFlags::PRESENT) {
-            flags |= BasePageTableFlags::PRESENT
-        }
-        if value.contains(PageTableFlags::WRITABLE) {
-            flags |= BasePageTableFlags::WRITABLE
-        }
-        if value.contains(PageTableFlags::USER_ACCESSIBLE) {
-            flags |= BasePageTableFlags::USER_ACCESSIBLE
-        }
-        if value.contains(PageTableFlags::WRITE_THROUGH) {
-            flags |= BasePageTableFlags::WRITE_THROUGH
-        }
-        if value.contains(PageTableFlags::NO_CACHE) {
-            flags |= BasePageTableFlags::NO_CACHE
-        }
-        if value.contains(PageTableFlags::ACCESSED) {
-            flags |= BasePageTableFlags::ACCESSED
-        }
-        if value.contains(PageTableFlags::DIRTY) {
-            flags |= BasePageTableFlags::DIRTY
-        }
-        if value.contains(PageTableFlags::HUGE_PAGE) {
-            flags |= BasePageTableFlags::HUGE_PAGE
-        }
-        if value.contains(PageTableFlags::GLOBAL) {
-            flags |= BasePageTableFlags::GLOBAL
-        }
-        // There is no equivalent of ENCRYPTED in BasePageTableFlags.
-        if value.contains(PageTableFlags::NO_EXECUTE) {
-            flags |= BasePageTableFlags::NO_EXECUTE
-        }
-        flags
-    }
-}
-
-/// Page mapper for pages of type `<S>`.
-///
-/// This is equivalent to <x86_64::structures::paging::mapper::Mapper>, but
-/// knows about memory encryption.
-pub trait Mapper<S: PageSize> {
-    unsafe fn map_to_with_table_flags(
-        &self,
-        page: Page<S>,
-        frame: PhysFrame<S>,
-        flags: PageTableFlags,
-        parent_table_flags: PageTableFlags,
-    ) -> Result<MapperFlush<S>, MapToError<S>>;
-
-    /// Unmaps a page.
-    ///
-    /// # Safety
-    ///
-    /// No checks are done whether the page is actually in use or not.
-    unsafe fn unmap(&self, page: Page<S>) -> Result<(PhysFrame<S>, MapperFlush<S>), UnmapError>;
-
-    /// Changes the flags on a page table entry by unmapping and remapping it.
-    ///
-    /// # Safety
-    ///
-    /// There are many ways how changing page table entries can break memory
-    /// safety or cause other failures, e.g. by setting the `NO_EXECUTE` bit
-    /// on pages that contain your code or removing `WRITABLE` from the page
-    /// that contains your stack.
-    unsafe fn update_flags(
-        &self,
-        page: Page<S>,
-        flags: PageTableFlags,
-    ) -> Result<MapperFlush<S>, FlagUpdateError>;
+    flags
 }
 
 pub fn init(memory_map: &[BootE820Entry], program_headers: &[ProgramHeader], ramdisk: &Ramdisk) {
@@ -264,16 +308,6 @@ pub fn ramdisk_range(ramdisk: &Ramdisk) -> PhysFrameRange<Size2MiB> {
     )
 }
 
-pub fn encryption() -> MemoryEncryption {
-    // Should we set the C-bit (encrypted memory for SEV)? For now, let's assume
-    // it's bit 51.
-    if get_sev_status().unwrap_or(SevStatus::empty()).contains(SevStatus::SEV_ENABLED) {
-        MemoryEncryption::Encrypted(ENCRYPTED_BIT_POSITION)
-    } else {
-        MemoryEncryption::NoEncryption
-    }
-}
-
 /// Creates the initial page tables used by the kernel.
 ///
 /// The memory layout we follow is largely based on the Linux layout
@@ -312,11 +346,11 @@ pub fn initial_pml4(program_headers: &[ProgramHeader]) -> Result<PhysFrame, &'st
                 fa.allocate_frame().ok_or("couldn't allocate a frame for PML3")?;
             let pml3 = unsafe { &mut *(pml3_frame.start_address().as_u64() as *mut PageTable) };
             pml3.zero();
-            entry.set_frame(pml3_frame, PageTableFlags::PRESENT.into());
+            entry.set_frame(pml3_frame, PageTableFlags::PRESENT);
         }
     };
 
-    let mut page_table = EncryptedPageTable::new(pml4, VirtAddr::new(0), encryption());
+    let mut page_table = unsafe { OffsetPageTable::new(pml4, VirtAddr::new(0)) };
 
     // Safety: these operations are safe as they're not done on active page tables.
     unsafe {
@@ -329,11 +363,13 @@ pub fn initial_pml4(program_headers: &[ProgramHeader]) -> Result<PhysFrame, &'st
                 PhysFrame::from_start_address(PhysAddr::new(0x20_0000_0000)).unwrap(),
             ),
             DIRECT_MAPPING_OFFSET,
-            PageTableFlags::PRESENT
-                | PageTableFlags::GLOBAL
-                | PageTableFlags::WRITABLE
-                | PageTableFlags::NO_EXECUTE
-                | PageTableFlags::ENCRYPTED,
+            encryption_aware_page_table_flags(
+                PageTableFlags::PRESENT
+                    | PageTableFlags::GLOBAL
+                    | PageTableFlags::WRITABLE
+                    | PageTableFlags::NO_EXECUTE,
+                PageAssignment::Private,
+            ),
             &mut page_table,
         )
         .map_err(|_| "couldn't set up paging for physical memory")?;
@@ -371,17 +407,23 @@ pub fn allocate_stack() -> VirtAddr {
     unsafe {
         PAGE_TABLES
             .lock()
-            .get()
+            .get_mut()
             .unwrap()
             .map_to_with_table_flags(
                 stack_page,
                 frame,
-                PageTableFlags::GLOBAL
-                    | PageTableFlags::PRESENT
-                    | PageTableFlags::ENCRYPTED
-                    | PageTableFlags::NO_EXECUTE
-                    | PageTableFlags::WRITABLE,
-                PageTableFlags::ENCRYPTED | PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                encryption_aware_page_table_flags(
+                    PageTableFlags::GLOBAL
+                        | PageTableFlags::PRESENT
+                        | PageTableFlags::NO_EXECUTE
+                        | PageTableFlags::WRITABLE,
+                    PageAssignment::Private,
+                ),
+                encryption_aware_page_table_flags(
+                    PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                    PageAssignment::Private,
+                ),
+                FRAME_ALLOCATOR.lock().deref_mut(),
             )
             .expect("failed to update page tables for syscall stack")
             .flush();

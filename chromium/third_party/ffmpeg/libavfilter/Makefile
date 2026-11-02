@@ -371,6 +371,7 @@ OBJS-$(CONFIG_KIRSCH_FILTER)                 += vf_convolution.o
 OBJS-$(CONFIG_LAGFUN_FILTER)                 += vf_lagfun.o
 OBJS-$(CONFIG_LCEVC_FILTER)                  += vf_lcevc.o
 OBJS-$(CONFIG_LATENCY_FILTER)                += f_latency.o
+OBJS-$(CONFIG_LATTICEPAL_FILTER)             += vf_latticepal.o
 OBJS-$(CONFIG_LENSCORRECTION_FILTER)         += vf_lenscorrection.o
 OBJS-$(CONFIG_LENSFUN_FILTER)                += vf_lensfun.o
 OBJS-$(CONFIG_LIBPLACEBO_FILTER)             += vf_libplacebo.o vulkan.o vulkan_filter.o
@@ -473,15 +474,13 @@ OBJS-$(CONFIG_SAB_FILTER)                    += vf_sab.o
 OBJS-$(CONFIG_SCALE_FILTER)                  += vf_scale.o scale_eval.o framesync.o
 OBJS-$(CONFIG_SCALE_D3D11_FILTER)            += vf_scale_d3d11.o scale_eval.o
 OBJS-$(CONFIG_SCALE_D3D12_FILTER)            += vf_scale_d3d12.o scale_eval.o
-OBJS-$(CONFIG_SCALE_CUDA_FILTER)             += vf_scale_cuda.o scale_eval.o \
+OBJS-$(CONFIG_SCALE_CUDA_FILTER)             += vf_scale_cuda.o scale_eval.o scale_filters.o \
                                                 vf_scale_cuda.ptx.o cuda/load_helper.o
-OBJS-$(CONFIG_SCALE_NPP_FILTER)              += vf_scale_npp.o scale_eval.o
 OBJS-$(CONFIG_SCALE_QSV_FILTER)              += vf_vpp_qsv.o
 OBJS-$(CONFIG_SCALE_VAAPI_FILTER)            += vf_scale_vaapi.o scale_eval.o vaapi_vpp.o
 OBJS-$(CONFIG_SCALE_VT_FILTER)               += vf_scale_vt.o scale_eval.o
 OBJS-$(CONFIG_SCALE_VULKAN_FILTER)           += vf_scale_vulkan.o vulkan.o vulkan_filter.o
 OBJS-$(CONFIG_SCALE2REF_FILTER)              += vf_scale.o scale_eval.o framesync.o
-OBJS-$(CONFIG_SCALE2REF_NPP_FILTER)          += vf_scale_npp.o scale_eval.o
 OBJS-$(CONFIG_SCDET_FILTER)                  += vf_scdet.o
 OBJS-$(CONFIG_SCDET_VULKAN_FILTER)           += vf_scdet_vulkan.o
 OBJS-$(CONFIG_SCHARR_FILTER)                 += vf_convolution.o
@@ -498,7 +497,6 @@ OBJS-$(CONFIG_SETPTS_FILTER)                 += setpts.o
 OBJS-$(CONFIG_SETRANGE_FILTER)               += vf_setparams.o
 OBJS-$(CONFIG_SETSAR_FILTER)                 += vf_aspect.o
 OBJS-$(CONFIG_SETTB_FILTER)                  += settb.o
-OBJS-$(CONFIG_SHARPEN_NPP_FILTER)            += vf_sharpen_npp.o
 OBJS-$(CONFIG_SHARPNESS_VAAPI_FILTER)        += vf_misc_vaapi.o vaapi_vpp.o
 OBJS-$(CONFIG_SHEAR_FILTER)                  += vf_shear.o
 OBJS-$(CONFIG_SHOWINFO_FILTER)               += vf_showinfo.o
@@ -548,7 +546,6 @@ OBJS-$(CONFIG_TPAD_FILTER)                   += vf_tpad.o
 OBJS-$(CONFIG_TRANSPOSE_FILTER)              += vf_transpose.o
 OBJS-$(CONFIG_TRANSPOSE_CUDA_FILTER)         += vf_transpose_cuda.o vf_transpose_cuda.ptx.o \
                                                 cuda/load_helper.o
-OBJS-$(CONFIG_TRANSPOSE_NPP_FILTER)          += vf_transpose_npp.o
 OBJS-$(CONFIG_TRANSPOSE_OPENCL_FILTER)       += vf_transpose_opencl.o opencl.o opencl/transpose.o
 OBJS-$(CONFIG_TRANSPOSE_VAAPI_FILTER)        += vf_transpose_vaapi.o vaapi_vpp.o
 OBJS-$(CONFIG_TRANSPOSE_VT_FILTER)           += vf_transpose_vt.o
@@ -576,6 +573,7 @@ OBJS-$(CONFIG_VIGNETTE_FILTER)               += vf_vignette.o
 OBJS-$(CONFIG_VMAFMOTION_FILTER)             += vf_vmafmotion.o framesync.o
 OBJS-$(CONFIG_VPP_AMF_FILTER)                += vf_vpp_amf.o scale_eval.o vf_amf_common.o
 OBJS-$(CONFIG_FRC_AMF_FILTER)                += vf_frc_amf.o vf_amf_common.o
+OBJS-$(CONFIG_VQE_AMF_FILTER)                += vf_vqe_amf.o vf_amf_common.o
 OBJS-$(CONFIG_VPP_QSV_FILTER)                += vf_vpp_qsv.o
 OBJS-$(CONFIG_VSTACK_FILTER)                 += vf_stack.o framesync.o
 OBJS-$(CONFIG_W3FDIF_FILTER)                 += vf_w3fdif.o
@@ -668,10 +666,6 @@ OBJS-$(CONFIG_SPECTRUMSYNTH_FILTER)          += vaf_spectrumsynth.o
 OBJS-$(CONFIG_AVSYNCTEST_FILTER)             += src_avsynctest.o
 OBJS-$(CONFIG_AMOVIE_FILTER)                 += src_movie.o
 OBJS-$(CONFIG_MOVIE_FILTER)                  += src_movie.o
-
-# vulkan libs
-OBJS-$(CONFIG_LIBGLSLANG)                    += vulkan_glslang.o
-OBJS-$(CONFIG_LIBSHADERC)                    += vulkan_shaderc.o
 
 # Objects duplicated from other libraries for shared builds
 SHLIBOBJS                                    += log2_tab.o

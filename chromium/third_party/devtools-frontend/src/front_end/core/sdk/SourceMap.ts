@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as ScopesCodec from '../../third_party/source-map-scopes-codec/source-map-scopes-codec.js';
 import * as Common from '../common/common.js';
 import * as Platform from '../platform/platform.js';
-import * as Root from '../root/root.js';
+import * as TextUtils from '../text_utils/text_utils.js';
 
 import type {CallFrame, ScopeChainEntry} from './DebuggerModel.js';
 import {scopeTreeForScript} from './ScopeTreeCache.js';
@@ -139,25 +138,25 @@ export class SourceMap {
   readonly #debugId?: DebugId;
 
   #scopesFallbackPromise?: Promise<void>;
+  readonly #console: Common.Console.Console;
 
   /**
    * Implements Source Map V3 model. See https://github.com/google/closure-compiler/wiki/Source-Maps
    * for format description.
    */
-  constructor(
-      compiledURL: Platform.DevToolsPath.UrlString, sourceMappingURL: Platform.DevToolsPath.UrlString,
-      payload: SourceMapV3, script?: Script) {
+  constructor(compiledURL: Platform.DevToolsPath.UrlString, sourceMappingURL: Platform.DevToolsPath.UrlString,
+              payload: SourceMapV3, console: Common.Console.Console, script?: Script) {
     this.#json = payload;
     this.#script = script;
     this.#compiledURL = compiledURL;
     this.#sourceMappingURL = sourceMappingURL;
     this.#baseURL = (Common.ParsedURL.schemeIs(sourceMappingURL, 'data:')) ? compiledURL : sourceMappingURL;
     this.#debugId = 'debugId' in payload ? (payload.debugId as DebugId | undefined) : undefined;
+    this.#console = console;
 
     if ('sections' in this.#json) {
       if (this.#json.sections.find(section => 'url' in section)) {
-        Common.Console.Console.instance().warn(
-            `SourceMap "${sourceMappingURL}" contains unsupported "URL" field in one of its sections.`);
+        this.#console.warn(`SourceMap "${sourceMappingURL}" contains unsupported "URL" field in one of its sections.`);
       }
     }
     this.eachSection(this.parseSources.bind(this));
@@ -584,23 +583,21 @@ export class SourceMap {
           lineNumber, columnNumber, sourceIndex, sourceURL, sourceLineNumber, sourceColumnNumber, names[nameIndex]));
     }
 
-    if (Root.Runtime.experiments.isEnabled(Root.ExperimentNames.ExperimentName.USE_SOURCE_MAP_SCOPES)) {
-      if (!this.#scopesInfo) {
-        this.#scopesInfo = new SourceMapScopesInfo(this, {scopes: [], ranges: []});
-      }
-      if (map.scopes) {
-        const {scopes, ranges} = ScopesCodec.decode(
-            map as ScopesCodec.SourceMapJson,
-            {mode: ScopesCodec.DecodeMode.LAX, generatedOffset: {line: baseLineNumber, column: baseColumnNumber}});
-        this.#scopesInfo.addOriginalScopes(scopes);
-        this.#scopesInfo.addGeneratedRanges(ranges);
-      } else if (map.x_com_bloomberg_sourcesFunctionMappings) {
-        const originalScopes = this.parseBloombergScopes(map);
-        this.#scopesInfo.addOriginalScopes(originalScopes);
-      } else {
-        // Keep the OriginalScope[] tree array consistent with sources.
-        this.#scopesInfo.addOriginalScopes(new Array(map.sources.length).fill(null));
-      }
+    if (!this.#scopesInfo) {
+      this.#scopesInfo = new SourceMapScopesInfo(this, {scopes: [], ranges: []});
+    }
+    if (map.scopes) {
+      const {scopes, ranges} = ScopesCodec.decode(
+          map as ScopesCodec.SourceMapJson,
+          {mode: ScopesCodec.DecodeMode.LAX, generatedOffset: {line: baseLineNumber, column: baseColumnNumber}});
+      this.#scopesInfo.addOriginalScopes(scopes);
+      this.#scopesInfo.addGeneratedRanges(ranges);
+    } else if (map.x_com_bloomberg_sourcesFunctionMappings) {
+      const originalScopes = this.parseBloombergScopes(map);
+      this.#scopesInfo.addOriginalScopes(originalScopes);
+    } else {
+      // Keep the OriginalScope[] tree array consistent with sources.
+      this.#scopesInfo.addOriginalScopes(new Array(map.sources.length).fill(null));
     }
   }
 

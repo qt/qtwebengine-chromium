@@ -13,6 +13,7 @@
 #include <variant>
 
 #include "base/containers/span.h"
+#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/json/json_writer.h"
@@ -58,6 +59,7 @@
 #include "extensions/common/api/messaging/messaging_util.h"
 #include "extensions/common/api/messaging/port_context.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_features.h"
 #include "extensions/common/extension_id.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/manifest_handlers/background_info.h"
@@ -542,9 +544,11 @@ void MessageService::OpenChannelToExtension(
         DCHECK_EQ(MessagingEndpoint::Relationship::kExternalWebPage,
                   relationship);
 
-        // Check that the web page URL matches.
+        // Check that the web page URL matches. Skip error pages, whose last
+        // committed URL reflects the failed navigation target rather than a
+        // document the source process actually hosts.
         is_externally_connectable = externally_connectable->matches.MatchesURL(
-            source_render_frame_host->GetLastCommittedURL());
+            util::GetURLForExtensionPermissionCheck(source_render_frame_host));
       }
     } else {
       // Default behaviour. Any extension or content script, no webpages.
@@ -647,7 +651,9 @@ void MessageService::OpenChannelToExtension(
     // - Only for extensions that can't normally be enabled in incognito, since
     //   that surface (e.g. chrome://extensions) should be the only one for
     //   enabling in incognito. In practice this means platform apps only.
-    if (relationship != MessagingEndpoint::Relationship::kExternalWebPage ||
+    if (base::FeatureList::IsEnabled(
+            extensions_features::kExtensionAutoRejectIncognitoConnectability) ||
+        relationship != MessagingEndpoint::Relationship::kExternalWebPage ||
         IncognitoInfo::IsSplitMode(target_extension) ||
         util::CanBeIncognitoEnabled(target_extension)) {
       OnOpenChannelAllowed(std::move(params), false);

@@ -20,7 +20,6 @@ namespace Eigen {
 template <typename XprType, int BlockRows, int BlockCols>
 class BlockImpl<XprType, BlockRows, BlockCols, true, Sparse>
     : public SparseCompressedBase<Block<XprType, BlockRows, BlockCols, true> > {
-  typedef internal::remove_all_t<typename XprType::Nested> MatrixTypeNested_;
   typedef Block<XprType, BlockRows, BlockCols, true> BlockType;
 
  public:
@@ -118,7 +117,6 @@ namespace internal {
 
 template <typename SparseMatrixType, int BlockRows, int BlockCols>
 class sparse_matrix_block_impl : public SparseCompressedBase<Block<SparseMatrixType, BlockRows, BlockCols, true> > {
-  typedef internal::remove_all_t<typename SparseMatrixType::Nested> MatrixTypeNested_;
   typedef Block<SparseMatrixType, BlockRows, BlockCols, true> BlockType;
   typedef SparseCompressedBase<Block<SparseMatrixType, BlockRows, BlockCols, true> > Base;
   using Base::convert_index;
@@ -127,7 +125,6 @@ class sparse_matrix_block_impl : public SparseCompressedBase<Block<SparseMatrixT
   enum { IsRowMajor = internal::traits<BlockType>::IsRowMajor };
   EIGEN_SPARSE_PUBLIC_INTERFACE(BlockType)
  protected:
-  typedef typename Base::IndexVector IndexVector;
   enum { OuterSize = IsRowMajor ? BlockRows : BlockCols };
 
  public:
@@ -204,11 +201,10 @@ class sparse_matrix_block_impl : public SparseCompressedBase<Block<SparseMatrixT
     }
 
     // update outer index pointers and innerNonZeros
-    EIGEN_IF_CONSTEXPR(IsVectorAtCompileTime) {
+    EIGEN_IF_CONSTEXPR (IsVectorAtCompileTime) {
       if (!m_matrix.isCompressed()) matrix.innerNonZeroPtr()[m_outerStart] = StorageIndex(nnz);
       matrix.outerIndexPtr()[m_outerStart] = StorageIndex(start);
-    }
-    else {
+    } else {
       StorageIndex p = StorageIndex(start);
       for (Index k = 0; k < m_outerSize.value(); ++k) {
         StorageIndex nnz_k = internal::convert_index<StorageIndex>(tmp.innerVector(k).nonZeros());
@@ -387,7 +383,6 @@ class BlockImpl<XprType, BlockRows, BlockCols, InnerPanel, Sparse>
   Index blockCols() const { return m_blockCols.value(); }
 
  protected:
-  //     friend class internal::GenericSparseBlockInnerIteratorImpl<XprType,BlockRows,BlockCols,InnerPanel>;
   friend struct internal::unary_evaluator<Block<XprType, BlockRows, BlockCols, InnerPanel>, internal::IteratorBased,
                                           Scalar>;
 

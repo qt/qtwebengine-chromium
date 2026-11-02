@@ -282,6 +282,113 @@ void Hinge::Draw(float scale) {
   overlay_->EvaluateInOverlay("drawHighlight", highlight.AsProtocolValue());
 }
 
+// DisplayCutout ---------------------------------------------------------------
+
+DisplayCutout::DisplayCutout(gfx::QuadF quad,
+                             DisplayCutoutShape shape,
+                             int upper_radius,
+                             int lower_radius,
+                             int center_x,
+                             int center_y,
+                             int radius,
+                             Color content_color,
+                             InspectorOverlayAgent* overlay)
+    : quad_(quad),
+      shape_(shape),
+      upper_radius_(upper_radius),
+      lower_radius_(lower_radius),
+      center_x_(center_x),
+      center_y_(center_y),
+      radius_(radius),
+      content_color_(content_color),
+      overlay_(overlay) {}
+
+String DisplayCutout::GetOverlayName() {
+  return OverlayNames::OVERLAY_HIGHLIGHT;
+}
+
+void DisplayCutout::Trace(Visitor* visitor) const {
+  visitor->Trace(overlay_);
+}
+
+void DisplayCutout::Draw(float scale) {
+  // scaling is applied at the drawHighlight code.
+  InspectorHighlight highlight(1.f);
+  gfx::RectF bounds = quad_.BoundingBox();
+  std::unique_ptr<protocol::ListValue> path = protocol::ListValue::create();
+  // InspectorHighlight::AppendPath uses SVG-style path commands encoded as a
+  // protocol list. M moves the pen, L draws a straight line, Q draws a
+  // quadratic curve, C draws a cubic Bezier curve, and Z closes the path.
+  auto append_point = [&path](float x, float y) {
+    path->pushValue(protocol::FundamentalValue::create(x));
+    path->pushValue(protocol::FundamentalValue::create(y));
+  };
+
+  if (shape_ == DisplayCutoutShape::kCircle) {
+    constexpr float kappa = 0.5522847498f;
+    float radius = radius_;
+    float center_x = center_x_;
+    float center_y = center_y_;
+    float control = radius * kappa;
+    path->pushValue(protocol::StringValue::create("M"));
+    append_point(center_x + radius, center_y);
+    path->pushValue(protocol::StringValue::create("C"));
+    append_point(center_x + radius, center_y + control);
+    append_point(center_x + control, center_y + radius);
+    append_point(center_x, center_y + radius);
+    path->pushValue(protocol::StringValue::create("C"));
+    append_point(center_x - control, center_y + radius);
+    append_point(center_x - radius, center_y + control);
+    append_point(center_x - radius, center_y);
+    path->pushValue(protocol::StringValue::create("C"));
+    append_point(center_x - radius, center_y - control);
+    append_point(center_x - control, center_y - radius);
+    append_point(center_x, center_y - radius);
+    path->pushValue(protocol::StringValue::create("C"));
+    append_point(center_x + control, center_y - radius);
+    append_point(center_x + radius, center_y - control);
+    append_point(center_x + radius, center_y);
+    path->pushValue(protocol::StringValue::create("Z"));
+    highlight.AppendPath(std::move(path), content_color_, Color::kTransparent);
+    overlay_->EvaluateInOverlay("drawHighlight", highlight.AsProtocolValue());
+    return;
+  }
+
+  float max_radius = std::min(bounds.width(), bounds.height()) / 2.f;
+  float upper_radius = std::min<float>(upper_radius_, max_radius);
+  float lower_radius = std::min<float>(lower_radius_, max_radius);
+
+  float left = bounds.x();
+  float top = bounds.y();
+  float right = bounds.right();
+  float bottom = bounds.bottom();
+  path->pushValue(protocol::StringValue::create("M"));
+  append_point(left + upper_radius, top);
+  path->pushValue(protocol::StringValue::create("L"));
+  append_point(right - upper_radius, top);
+  path->pushValue(protocol::StringValue::create("Q"));
+  append_point(right, top);
+  append_point(right, top + upper_radius);
+  path->pushValue(protocol::StringValue::create("L"));
+  append_point(right, bottom - lower_radius);
+  path->pushValue(protocol::StringValue::create("Q"));
+  append_point(right, bottom);
+  append_point(right - lower_radius, bottom);
+  path->pushValue(protocol::StringValue::create("L"));
+  append_point(left + lower_radius, bottom);
+  path->pushValue(protocol::StringValue::create("Q"));
+  append_point(left, bottom);
+  append_point(left, bottom - lower_radius);
+  path->pushValue(protocol::StringValue::create("L"));
+  append_point(left, top + upper_radius);
+  path->pushValue(protocol::StringValue::create("Q"));
+  append_point(left, top);
+  append_point(left + upper_radius, top);
+  path->pushValue(protocol::StringValue::create("Z"));
+  highlight.AppendPath(std::move(path), content_color_, Color::kTransparent);
+  overlay_->EvaluateInOverlay("drawHighlight", highlight.AsProtocolValue());
+}
+
 // InspectorOverlayAgent -------------------------------------------------------
 
 class InspectorOverlayAgent::InspectorPageOverlayDelegate final
@@ -387,7 +494,6 @@ class InspectorOverlayAgent::InspectorOverlayChromeClient final
 InspectorOverlayAgent::InspectorOverlayAgent(
     WebLocalFrameImpl* frame_impl,
     InspectedFrames* inspected_frames,
-    v8_inspector::V8InspectorSession* v8_session,
     InspectorDOMAgent* dom_agent)
     : frame_impl_(frame_impl),
       inspected_frames_(inspected_frames),
@@ -396,12 +502,9 @@ InspectorOverlayAgent::InspectorOverlayAgent(
           frame_impl->GetFrame()->GetTaskRunner(TaskType::kInternalInspector),
           this,
           &InspectorOverlayAgent::OnResizeTimer),
-      disposed_(false),
-      v8_session_(v8_session),
       dom_agent_(dom_agent),
       swallow_next_mouse_up_(false),
       backend_node_id_to_inspect_(0),
-      enabled_(&agent_state_, false),
       show_ad_highlights_(&agent_state_, false),
       show_debug_borders_(&agent_state_, false),
       show_fps_counter_(&agent_state_, false),
@@ -411,7 +514,6 @@ InspectorOverlayAgent::InspectorOverlayAgent(
       show_hit_test_borders_(&agent_state_, false),
       show_web_vitals_(&agent_state_, false),
       show_size_on_resize_(&agent_state_, false),
-      paused_in_debugger_message_(&agent_state_, String()),
       inspect_mode_(&agent_state_, protocol::Overlay::InspectModeEnum::None),
       inspect_mode_protocol_config_(&agent_state_, std::vector<uint8_t>()) {
   DCHECK(dom_agent);
@@ -429,6 +531,7 @@ InspectorOverlayAgent::~InspectorOverlayAgent() {
   DCHECK(!overlay_page_);
   DCHECK(!inspect_tool_);
   DCHECK(!hinge_);
+  DCHECK(!display_cutout_);
   DCHECK(!persistent_tool_);
   DCHECK(!frame_overlay_);
 }
@@ -445,12 +548,27 @@ void InspectorOverlayAgent::Trace(Visitor* visitor) const {
   visitor->Trace(inspect_tool_);
   visitor->Trace(persistent_tool_);
   visitor->Trace(hinge_);
+  visitor->Trace(display_cutout_);
   visitor->Trace(document_to_ax_context_);
   InspectorBaseAgent::Trace(visitor);
 }
 
+void InspectorOverlayAgent::Init(CoreProbeSink* instrumenting_agents,
+                                 protocol::UberDispatcher* dispatcher,
+                                 InspectorSessionState* state,
+                                 V8SessionHolder v8_session) {
+  InspectorBaseAgent::Init(instrumenting_agents, dispatcher, state, v8_session);
+  const auto* reattach_state = state->ReattachState();
+  if (reattach_state && reattach_state->browser_originating_session_state) {
+    const auto& browser_state =
+        reattach_state->browser_originating_session_state;
+    enabled_ = browser_state->overlay_enabled;
+    paused_in_debugger_message_ = browser_state->paused_in_debugger_message;
+  }
+}
+
 void InspectorOverlayAgent::Restore() {
-  if (enabled_.Get()) {
+  if (enabled_) {
     enable();
   }
   setShowAdHighlights(show_ad_highlights_.Get());
@@ -467,7 +585,6 @@ void InspectorOverlayAgent::Restore() {
 
 void InspectorOverlayAgent::Dispose() {
   InspectorBaseAgent::Dispose();
-  disposed_ = true;
 
   frame_impl_->GetFrame()->GetProbeSink()->RemoveInspectorOverlayAgent(this);
 }
@@ -476,7 +593,7 @@ protocol::Response InspectorOverlayAgent::enable() {
   if (!dom_agent_->Enabled()) {
     return protocol::Response::ServerError("DOM should be enabled first");
   }
-  enabled_.Set(true);
+  enabled_ = true;
   if (backend_node_id_to_inspect_) {
     GetFrontend()->inspectNodeRequested(
         static_cast<int>(backend_node_id_to_inspect_));
@@ -502,10 +619,10 @@ void InspectorOverlayAgent::EnsureAXContext(Document& document) {
 }
 
 protocol::Response InspectorOverlayAgent::disable() {
-  enabled_.Clear();
+  enabled_ = false;
   setShowAdHighlights(false);
   setShowViewportSizeOnResize(false);
-  paused_in_debugger_message_.Clear();
+  paused_in_debugger_message_ = String();
   inspect_mode_.Set(protocol::Overlay::InspectModeEnum::None);
   inspect_mode_protocol_config_.Set(std::vector<uint8_t>());
 
@@ -530,6 +647,7 @@ protocol::Response InspectorOverlayAgent::disable() {
 
   persistent_tool_ = nullptr;
   hinge_ = nullptr;
+  display_cutout_ = nullptr;
   if (inspect_tool_) {
     inspect_tool_->OnAgentDisable();
   }
@@ -679,7 +797,7 @@ protocol::Response InspectorOverlayAgent::setShowWindowControlsOverlay(
 
 protocol::Response InspectorOverlayAgent::setPausedInDebuggerMessage(
     std::optional<String> message) {
-  paused_in_debugger_message_.Set(message.value_or(String()));
+  paused_in_debugger_message_ = message.value_or(String());
   PickTheRightTool();
   return protocol::Response::Success();
 }
@@ -716,7 +834,7 @@ protocol::Response InspectorOverlayAgent::setShowHinge(
   // Hide the hinge when called without a configuration.
   if (!tool_config) {
     hinge_ = nullptr;
-    if (!inspect_tool_) {
+    if (!inspect_tool_ && !display_cutout_) {
       DisableFrameOverlay();
     }
     ScheduleUpdate();
@@ -749,6 +867,95 @@ protocol::Response InspectorOverlayAgent::setShowHinge(
 
   LoadOverlayPageResource();
   EvaluateInOverlay("setOverlay", hinge_->GetOverlayName());
+  EnsureEnableFrameOverlay();
+
+  ScheduleUpdate();
+
+  return protocol::Response::Success();
+}
+
+protocol::Response InspectorOverlayAgent::setShowDisplayCutout(
+    std::unique_ptr<protocol::Overlay::DisplayCutoutConfig> tool_config) {
+  if (!tool_config) {
+    display_cutout_ = nullptr;
+    if (!inspect_tool_ && !hinge_) {
+      DisableFrameOverlay();
+    }
+    ScheduleUpdate();
+    return protocol::Response::Success();
+  }
+
+  protocol::Overlay::DisplayCutoutConfig& config = *tool_config;
+  String shape = config.getShape();
+  bool is_pill = shape == protocol::Overlay::DisplayCutoutShapeEnum::Pill;
+  bool is_notch = shape == protocol::Overlay::DisplayCutoutShapeEnum::Notch;
+  bool is_circle = shape == protocol::Overlay::DisplayCutoutShapeEnum::Circle;
+  bool is_rectangle =
+      shape == protocol::Overlay::DisplayCutoutShapeEnum::Rectangle;
+  if (!is_pill && !is_notch && !is_circle && !is_rectangle) {
+    return protocol::Response::InvalidParams(
+        "Unsupported display cutout shape.");
+  }
+
+  protocol::DOM::Rect* rect = config.getRect();
+  int x = rect->getX();
+  int y = rect->getY();
+  int width = rect->getWidth();
+  int height = rect->getHeight();
+  int border_radius = config.getBorderRadius(0);
+  int upper_radius = config.getUpperRadius(0);
+  int lower_radius = config.getLowerRadius(0);
+  int center_x = config.getCx(0);
+  int center_y = config.getCy(0);
+  int radius = config.getRadius(0);
+  if (x < 0 || y < 0 || width < 0 || height < 0 || border_radius < 0 ||
+      upper_radius < 0 || lower_radius < 0 || center_x < 0 || center_y < 0 ||
+      radius < 0) {
+    return protocol::Response::InvalidParams(
+        "Invalid display cutout geometry.");
+  }
+  if (is_pill && !config.hasBorderRadius()) {
+    return protocol::Response::InvalidParams(
+        "Pill display cutout requires borderRadius.");
+  }
+  if (is_notch && (!config.hasUpperRadius() || !config.hasLowerRadius())) {
+    return protocol::Response::InvalidParams(
+        "Notch display cutout requires upperRadius and lowerRadius.");
+  }
+  if (is_circle &&
+      (!config.hasCx() || !config.hasCy() || !config.hasRadius())) {
+    return protocol::Response::InvalidParams(
+        "Circle display cutout requires cx, cy, and radius.");
+  }
+
+  DisplayCutoutShape display_cutout_shape = DisplayCutoutShape::kRectangle;
+  if (is_pill) {
+    display_cutout_shape = DisplayCutoutShape::kPill;
+  } else if (is_notch) {
+    display_cutout_shape = DisplayCutoutShape::kNotch;
+  } else if (is_circle) {
+    display_cutout_shape = DisplayCutoutShape::kCircle;
+  }
+
+  Color content_color = config.hasContentColor()
+                            ? ParseColor(config.getContentColor(nullptr))
+                            : Color::kBlack;
+
+  // Pill cutouts use a single border radius for both ends.
+  if (is_pill) {
+    upper_radius = border_radius;
+    lower_radius = border_radius;
+  }
+
+  DCHECK(frame_impl_->GetFrameView() && GetFrame());
+
+  gfx::QuadF quad(gfx::RectF(x, y, width, height));
+  display_cutout_ = MakeGarbageCollected<DisplayCutout>(
+      quad, display_cutout_shape, upper_radius, lower_radius, center_x,
+      center_y, radius, content_color, this);
+
+  LoadOverlayPageResource();
+  EvaluateInOverlay("setOverlay", display_cutout_->GetOverlayName());
   EnsureEnableFrameOverlay();
 
   ScheduleUpdate();
@@ -958,33 +1165,6 @@ protocol::Response InspectorOverlayAgent::setShowInspectedElementAnchor(
         MakeGarbageCollected<PersistentTool>(this, GetFrontend());
   }
 
-  if (inspected_element_anchor_config) {
-    std::optional<int> node_id;
-    if (inspected_element_anchor_config->hasNodeId()) {
-      node_id = inspected_element_anchor_config->getNodeId(0);
-    }
-    std::optional<int> backend_node_id;
-    if (inspected_element_anchor_config->hasBackendNodeId()) {
-      backend_node_id = inspected_element_anchor_config->getBackendNodeId(0);
-    }
-
-    Node* node = nullptr;
-    protocol::Response response =
-        dom_agent_->AssertNode(node_id, backend_node_id, std::nullopt, node);
-    if (!response.IsSuccess()) {
-      return response;
-    }
-
-    auto anchor_config =
-        std::make_unique<InspectorGreenDevFloatyAnchorConfig>();
-    anchor_config->node_id = node->GetDomNodeId();
-    persistent_tool_->AddGreenDevFloatyAnchorConfig(node,
-                                                    std::move(anchor_config));
-  } else {
-    persistent_tool_->SetGreenDevFloatyAnchorConfigs(
-        GreenDevFloatyAnchorConfigs());
-  }
-
   PickTheRightTool();
 
   return protocol::Response::Success();
@@ -1161,7 +1341,7 @@ void InspectorOverlayAgent::SetPageIsScrolling(bool is_scrolling) {
 
 WebInputEventResult InspectorOverlayAgent::HandleInputEvent(
     const WebInputEvent& input_event) {
-  if (!enabled_.Get()) {
+  if (!enabled_) {
     return WebInputEventResult::kNotHandled;
   }
 
@@ -1298,6 +1478,9 @@ void InspectorOverlayAgent::PaintOverlayPage() {
 
   if (hinge_) {
     hinge_->Draw(scale);
+  }
+  if (display_cutout_) {
+    display_cutout_->Draw(scale);
   }
 
   EvaluateInOverlay("drawingFinished", "");
@@ -1607,7 +1790,7 @@ void InspectorOverlayAgent::Inspect(Node* inspected_node) {
   }
 
   DOMNodeId backend_node_id = node->GetDomNodeId();
-  if (!enabled_.Get()) {
+  if (!enabled_) {
     backend_node_id_to_inspect_ = backend_node_id;
     return;
   }
@@ -1662,9 +1845,9 @@ void InspectorOverlayAgent::PickTheRightTool() {
   } else if (inspect_mode ==
              protocol::Overlay::InspectModeEnum::CaptureAreaScreenshot) {
     inspect_tool = MakeGarbageCollected<ScreenshotTool>(this, GetFrontend());
-  } else if (!paused_in_debugger_message_.Get().IsNull()) {
+  } else if (!paused_in_debugger_message_.empty()) {
     inspect_tool = MakeGarbageCollected<PausedInDebuggerTool>(
-        this, GetFrontend(), v8_session_, paused_in_debugger_message_.Get());
+        this, GetFrontend(), V8Session().get(), paused_in_debugger_message_);
   } else if (persistent_tool_) {
     inspect_tool = persistent_tool_;
   }
@@ -1698,7 +1881,7 @@ void InspectorOverlayAgent::EnsureEnableFrameOverlay() {
 
 void InspectorOverlayAgent::ClearInspectTool() {
   inspect_tool_ = nullptr;
-  if (!hinge_) {
+  if (!hinge_ && !display_cutout_) {
     DisableFrameOverlay();
   }
 }
@@ -1711,7 +1894,7 @@ protocol::Response InspectorOverlayAgent::SetInspectTool(
     return protocol::Response::Success();
   }
 
-  if (!enabled_.Get()) {
+  if (!enabled_) {
     return protocol::Response::InvalidRequest(
         "Overlay must be enabled before a tool can be shown");
   }

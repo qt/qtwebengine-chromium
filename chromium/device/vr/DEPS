@@ -12,6 +12,7 @@ include_rules = [
   "+third_party/blink/public/common/features_generated.h",
   "+third_party/gvr-android-sdk/src",
   "+third_party/skia/include/core/SkColor.h",
+  "+third_party/skia/include/gpu/ganesh/GrTypes.h",
   "+ui/display",
   "+ui/gfx",
   "+ui/gl",
@@ -27,7 +28,7 @@ include_rules = [
 specific_include_rules = {
   # Override the earlier restriction on third_party openxr_platform for the
   # wrapper class.
-  "device/vr/openxr/openxr_platform\.h" : [
+  "device/vr/openxr/openxr_platform\\.h" : [
     "+third_party/openxr/src/include/openxr/openxr_platform.h"
   ]
 }

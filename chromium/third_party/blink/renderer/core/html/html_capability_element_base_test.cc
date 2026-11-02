@@ -20,6 +20,8 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_permission_state.h"
 #include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/css/properties/css_property.h"
+#include "third_party/blink/renderer/core/css/properties/longhand.h"
+#include "third_party/blink/renderer/core/css/properties/longhands.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/document_init.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
@@ -156,7 +158,7 @@ protocol::Audits::PermissionElementIssueDetails* GetPermissionElementIssue(
         bool(protocol::Audits::PermissionElementIssueDetails&)> matcher =
         base::NullCallback()) {
   auto& storage = document.GetPage()->GetInspectorIssueStorage();
-  for (size_t i = 0; i < storage.size(); ++i) {
+  for (wtf_size_t i = 0; i < storage.size(); ++i) {
     auto* issue = storage.at(i);
     if (issue->getCode() ==
             protocol::Audits::InspectorIssueCodeEnum::PermissionElementIssue &&
@@ -176,7 +178,7 @@ protocol::Audits::PermissionElementIssueDetails* GetPermissionElementIssue(
 size_t CountPermissionElementIssues(Document& document) {
   auto& storage = document.GetPage()->GetInspectorIssueStorage();
   size_t count = 0;
-  for (size_t i = 0; i < storage.size(); ++i) {
+  for (wtf_size_t i = 0; i < storage.size(); ++i) {
     auto* issue = const_cast<protocol::Audits::InspectorIssue*>(storage.at(i));
     if (issue->getCode() ==
         protocol::Audits::InspectorIssueCodeEnum::PermissionElementIssue) {
@@ -201,6 +203,7 @@ class HTMLCapabilityElementBaseTestBase : public PageTestBase {
 
  private:
   ScopedUserMediaElementForTest scoped_feature_{true};
+  ScopedUserMediaElementLegacyForTest legacy_enabled_{true};
 };
 
 TEST_F(HTMLCapabilityElementBaseTestBase, GetTypeAttribute) {
@@ -293,7 +296,6 @@ class HTMLCapabilityElementBaseTest : public HTMLCapabilityElementBaseTestBase {
     }
 
     GetDocument().body()->AppendChild(permission_element);
-    GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kTest);
     GetDocument().View()->UpdateAllLifecyclePhasesForTest();
     return permission_element;
   }
@@ -755,6 +757,7 @@ class HTMLCapabilityElementBaseSimTest : public SimTest {
   PermissionElementTestPermissionService permission_service_;
   ScopedTestingPlatformSupport<LocalePlatformSupport> support;
   ScopedUserMediaElementForTest scoped_feature_{true};
+  ScopedUserMediaElementLegacyForTest legacy_enabled_{true};
 };
 
 TEST_F(HTMLCapabilityElementBaseSimTest, InitializeGrantedText) {
@@ -951,6 +954,28 @@ TEST_F(HTMLCapabilityElementBaseSimTest, BadContrastDisablesElement) {
           "color: rgba(255, 255, 0, 0.99); background-color: purple;"));
   GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kTest);
   checker.CheckClickingEnabled(/*enabled=*/false);
+}
+
+TEST_F(HTMLCapabilityElementBaseSimTest, VisitedLinkIgnoresVisitedStyles) {
+  auto* permission_element = CreatePermissionElement(GetDocument(), "camera");
+  DeferredChecker checker(permission_element);
+
+  // Since the element forces internal visited colors to replicate unvisited
+  // colors, VisitedDependentColor will return the unvisited color, avoiding
+  // history leaks.
+  permission_element->setAttribute(
+      html_names::kStyleAttr,
+      AtomicString("color: red; background-color: white;"));
+  GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+  checker.CheckClickingEnabledAfterDelay(kDefaultTimeout,
+                                         /*expected_enabled=*/true);
+
+  const ComputedStyle* style = permission_element->GetComputedStyle();
+  ASSERT_TRUE(style);
+  EXPECT_EQ(Color::FromRGB(255, 0, 0),
+            style->VisitedDependentColor(GetCSSPropertyColor()));
+  EXPECT_EQ(Color::kWhite,
+            style->VisitedDependentColor(GetCSSPropertyBackgroundColor()));
 }
 
 TEST_F(HTMLCapabilityElementBaseSimTest, FontSizeCanDisableElement) {
@@ -1610,6 +1635,61 @@ class HTMLCapabilityElementBaseIntersectionTest
     checker.CheckClickingEnabled(/*expected_enabled*/ false);
   }
 };
+
+TEST_F(HTMLCapabilityElementBaseIntersectionTest,
+       MovePEPCFromIframeAndDestroyIframe) {
+  GetDocument().GetSettings()->SetDefaultFontSize(12);
+  SimRequest main_resource("https://example.test/", "text/html");
+  SimRequest iframe_resource("https://example.test/foo.html", "text/html");
+  LoadURL("https://example.test/");
+  main_resource.Complete(R"HTML(
+    <body>
+      <style>
+        #occluder {
+          position:absolute;
+          left:0;
+          top:0;
+          width:100px;
+          height:100px;
+          background:black;
+        }
+        #iframe {
+          position:absolute;
+          left:0;
+          top:150px;
+        }
+      </style>
+      <div id="occluder"></div>
+      <iframe id="iframe" src='https://example.test/foo.html' allow="camera *">
+      </iframe>
+    </body>
+  )HTML");
+  iframe_resource.Complete(R"HTML(
+    <!DOCTYPE html><usermedia id='camera' type='camera'></usermedia>
+  )HTML");
+
+  Compositor().BeginFrame();
+
+  auto* subframe = To<WebLocalFrameImpl>(MainFrame().FirstChild())->GetFrame();
+  auto* permission_element = static_cast<HTMLCapabilityElementBase*>(
+      subframe->GetDocument()->getElementById(AtomicString("camera")));
+  DeferredChecker checker1(permission_element);
+  checker1.CheckClickingEnabledAfterDelay(kDefaultTimeout,
+                                          /*expected_enabled*/ true);
+
+  // Move PEPC to main document and remove iframe
+  auto& main_document = *MainFrame().GetFrame()->GetDocument();
+  main_document.body()->AppendChild(permission_element);
+  main_document.getElementById(AtomicString("iframe"))->remove();
+
+  Compositor().BeginFrame();
+
+  // Verify it is occluded and clicking is disabled.
+  WaitForIntersectionVisibilityChanged(
+      permission_element,
+      HTMLCapabilityElementBase::IntersectionVisibility::kOccludedOrDistorted);
+  EXPECT_FALSE(permission_element->IsClickingEnabled());
+}
 
 TEST_F(HTMLCapabilityElementBaseIntersectionTest, IntersectionChanged) {
   GetDocument().GetSettings()->SetDefaultFontSize(12);

@@ -4,6 +4,8 @@
 
 import type {Brand} from './Brand.js';
 
+let graphemeSegmenter: Intl.Segmenter|null = null;
+
 export const escapeCharacters = (inputString: string, charsToEscape: string): string => {
   let foundChar = false;
   for (let i = 0; i < charsToEscape.length; ++i) {
@@ -48,23 +50,71 @@ const escapedReplacements = new Map([
   ['</script', '\\x3C/script'],
 ]);
 
+const UNICODE_ESCAPE_SOURCE = '[\\p{Format}\\p{Surrogate}]';
+const UNICODE_ESCAPE_REGEX = new RegExp(UNICODE_ESCAPE_SOURCE, 'u');
+const UNICODE_ESCAPE_GLOBAL_REGEX = new RegExp(UNICODE_ESCAPE_SOURCE, 'gu');
+
+const UNICODE_ESCAPE_EXCEPT_ZWSP_SOURCE = '(?![\\u200B\\u200C\\u200D])[\\p{Format}]|\\p{Surrogate}';
+const UNICODE_ESCAPE_EXCEPT_ZWSP_REGEX = new RegExp(UNICODE_ESCAPE_EXCEPT_ZWSP_SOURCE, 'u');
+const UNICODE_ESCAPE_EXCEPT_ZWSP_GLOBAL_REGEX = new RegExp(UNICODE_ESCAPE_EXCEPT_ZWSP_SOURCE, 'gu');
+
+/**
+ * Escapes formatting and surrogate characters in the string into literal Unicode escape sequences (e.g. \u200B).
+ * Use this when displaying strings to developers for inspection (e.g. in the Console or Object properties)
+ * where you want hidden or invisible characters to be explicitly visible as literal text.
+ */
+export const escapeUnicodeAsText = (content: string): string => {
+  if (!UNICODE_ESCAPE_REGEX.test(content)) {
+    return content;
+  }
+  return content.replaceAll(UNICODE_ESCAPE_GLOBAL_REGEX, match => {
+    return match.split('').map(char => '\\u' + toHexadecimal(char.charCodeAt(0), 4)).join('');
+  });
+};
+
+/**
+ * Escapes dangerous formatting and surrogate characters (like bidi override characters) to prevent
+ * security and layout issues, but leaves safe, layout-critical zero-width formatting characters
+ * (Zero Width Space \u200B, Zero Width Non-Joiner \u200C, and Zero Width Joiner \u200D) untouched.
+ * Use this when rendering user-controlled content inside templates or HTML markup where you want formatting
+ * characters to function normally for word wrapping or rendering layout, rather than showing as literal text.
+ */
+export const safeEscapeUnicode = (content: string): string => {
+  if (!UNICODE_ESCAPE_EXCEPT_ZWSP_REGEX.test(content)) {
+    return content;
+  }
+  return content.replaceAll(UNICODE_ESCAPE_EXCEPT_ZWSP_GLOBAL_REGEX, match => {
+    return match.split('').map(char => '\\u' + toHexadecimal(char.charCodeAt(0), 4)).join('');
+  });
+};
+
 export const formatAsJSLiteral = (content: string): string => {
-  const patternsToEscape = /(\\|<(?:!--|\/?script))|(\p{Control})|(\p{Surrogate})/gu;
-  const patternsToEscapePlusSingleQuote = /(\\|'|<(?:!--|\/?script))|(\p{Control})|(\p{Surrogate})/gu;
+  const patternsToEscape = /(\\|<(?:!--|\/?script))|(\p{Control}|\p{Format})|(\p{Surrogate})/giu;
+  const patternsToEscapePlusSingleQuote = /(\\|'|<(?:!--|\/?script))|(\p{Control}|\p{Format})|(\p{Surrogate})/giu;
   const escapePattern = (match: string, pattern: string, controlChar: string, loneSurrogate: string): string => {
     if (controlChar) {
       if (escapedReplacements.has(controlChar)) {
         // @ts-expect-error https://github.com/microsoft/TypeScript/issues/13086
         return escapedReplacements.get(controlChar);
       }
-      const twoDigitHex = toHexadecimal(controlChar.charCodeAt(0), 2);
-      return '\\x' + twoDigitHex;
+      return controlChar.split('')
+          .map(char => {
+            const charCode = char.charCodeAt(0);
+            if (controlChar.length === 1 && charCode <= 0xFF) {
+              return '\\x' + toHexadecimal(charCode, 2);
+            }
+            return '\\u' + toHexadecimal(charCode, 4);
+          })
+          .join('');
     }
     if (loneSurrogate) {
       const fourDigitHex = toHexadecimal(loneSurrogate.charCodeAt(0), 4);
       return '\\u' + fourDigitHex;
     }
     if (pattern) {
+      if (pattern.startsWith('<')) {
+        return '\\x3C' + pattern.slice(1);
+      }
       return escapedReplacements.get(pattern) || '';
     }
     return match;
@@ -158,8 +208,8 @@ export const toBase64 = (inputString: string): string => {
     shift = i % 3;
     v |= data[i] << (16 >>> shift & 24);
     if (shift === 2) {
-      encoded += String.fromCharCode(
-          encodeBits(v >>> 18 & 63), encodeBits(v >>> 12 & 63), encodeBits(v >>> 6 & 63), encodeBits(v & 63));
+      encoded += String.fromCharCode(encodeBits(v >>> 18 & 63), encodeBits(v >>> 12 & 63), encodeBits(v >>> 6 & 63),
+                                     encodeBits(v & 63));
       v = 0;
     }
   }
@@ -294,8 +344,8 @@ export const filterRegex = function(query: string): RegExp {
   return new RegExp(regexString, 'i');
 };
 
-export const createSearchRegex = function(
-    query: string, caseSensitive: boolean, isRegex: boolean, matchWholeWord = false): RegExp {
+export const createSearchRegex = function(query: string, caseSensitive: boolean, isRegex: boolean,
+                                          matchWholeWord = false): RegExp {
   const regexFlags = caseSensitive ? 'g' : 'gi';
   let regexObject;
 
@@ -445,6 +495,39 @@ export const trimEndWithMaxLength = (str: string, maxLength: number): string => 
   }
 
   return str.slice(0, lastSegmentIndex) + ellipsis;
+};
+
+/**
+ * Truncates a string to not exceed a maximum number of UTF-16 code units (as measured by JS `string.length`).
+ *
+ * Unlike simple character limiters, this helper is grapheme-aware and uses `Intl.Segmenter` to prevent
+ * slicing inside surrogate pairs (e.g. Plane 1+ characters or emojis like '𠜎' / '🥳') or combining characters
+ * (e.g. 'é' represented in NFD as 'e' + combining acute accent). If the limit falls in the middle of a
+ * grapheme cluster, the function backs off to drop the entire cluster, ensuring the result is always a valid
+ * Unicode string.
+ *
+ * @param str The string to truncate.
+ * @param maxCodeUnits The maximum allowed code unit length (must be >= 0).
+ * @returns The truncated string, guaranteed to be <= maxCodeUnits in length and grapheme-safe.
+ */
+export const truncateToCodeUnitLength = (str: string, maxCodeUnits: number): string => {
+  if (isNaN(maxCodeUnits) || maxCodeUnits <= 0) {
+    return '';
+  }
+  if (str.length <= maxCodeUnits) {
+    return str;
+  }
+  if (!graphemeSegmenter) {
+    graphemeSegmenter = new Intl.Segmenter(undefined, {granularity: 'grapheme'});
+  }
+  let lastSafeIndex = 0;
+  for (const {index, segment} of graphemeSegmenter.segment(str)) {
+    if (index + segment.length > maxCodeUnits) {
+      break;
+    }
+    lastSafeIndex = index + segment.length;
+  }
+  return str.slice(0, lastSafeIndex);
 };
 
 export const escapeForRegExp = (str: string): string => {

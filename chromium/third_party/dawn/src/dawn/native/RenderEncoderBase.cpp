@@ -719,58 +719,43 @@ void RenderEncoderBase::APISetVertexBuffer(uint32_t slot,
 
 void RenderEncoderBase::APISetBindGroup(uint32_t groupIndexIn,
                                         BindGroupBase* group,
-                                        uint32_t dynamicOffsetCount,
-                                        const uint32_t* dynamicOffsets) {
+                                        ityp::span<BindingIndex, const uint32_t> dynamicOffsets) {
     mEncodingContext->TryEncode(
         this,
         [&](CommandAllocator* allocator) -> MaybeError {
             BindGroupIndex groupIndex(groupIndexIn);
 
             if (IsValidationEnabled()) {
-                DAWN_TRY(
-                    ValidateSetBindGroup(groupIndex, group, dynamicOffsetCount, dynamicOffsets));
+                DAWN_TRY(ValidateSetBindGroup(groupIndex, group, dynamicOffsets));
             }
 
             if (group == nullptr) {
                 mCommandBufferState.UnsetBindGroup(groupIndex);
             } else {
-                RecordSetBindGroup(allocator, groupIndex, group, dynamicOffsetCount,
-                                   dynamicOffsets);
-                mCommandBufferState.SetBindGroup(groupIndex, group, dynamicOffsetCount,
-                                                 dynamicOffsets);
+                RecordSetBindGroup(allocator, groupIndex, group, dynamicOffsets);
+                mCommandBufferState.SetBindGroup(groupIndex, group, dynamicOffsets);
                 mUsageTracker.AddBindGroup(group);
             }
 
             return {};
         },
         "encoding %s.SetBindGroup(%u, %s, %u, ...).", this, groupIndexIn, group,
-        dynamicOffsetCount);
+        dynamicOffsets.size());
 }
 
-void RenderEncoderBase::APISetImmediates(uint32_t offset, const void* data, size_t size) {
+void RenderEncoderBase::APISetImmediates(uint32_t offset, Span<const std::byte> data) {
     mEncodingContext->TryEncode(
         this,
         [&](CommandAllocator* allocator) -> MaybeError {
             if (IsValidationEnabled()) {
-                DAWN_TRY(ValidateSetImmediates(offset, size));
+                DAWN_TRY(ValidateSetImmediates(offset, data.size()));
             }
 
-            // Skip SetImmediates when uploading constants are empty.
-            if (size == 0) {
-                return {};
-            }
-
-            SetImmediatesCmd* cmd = allocator->Allocate<SetImmediatesCmd>(Command::SetImmediates);
-            cmd->offset = offset;
-            cmd->size = uint32_t(size);
-            uint8_t* immediateDatas = allocator->AllocateData<uint8_t>(cmd->size);
-            DAWN_UNSAFE_TODO(memcpy(immediateDatas, data, size));
-
-            mCommandBufferState.SetImmediateData(offset, uint32_t(size));
-
+            RecordSetImmediates(allocator, offset, data);
+            mCommandBufferState.SetImmediateData(offset, data.size());
             return {};
         },
-        "encoding %s.SetImmediates(%u, %u, ...).", this, offset, size);
+        "encoding %s.SetImmediates(%u, %u, ...).", this, offset, data.size());
 }
 
 }  // namespace dawn::native

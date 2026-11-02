@@ -30,13 +30,18 @@ const renderSection =
       const style = Directives.styleMap(
           {left: position ? `${position.left}px` : undefined, width: position ? `${position.width}px` : undefined});
 
+      const durationText =
+          section.showDuration ? i18n.TimeUtilities.formatMicroSecondsAsMillisFixed(section.bounds.range) : '';
+      const labelText = section.label instanceof HTMLElement ? (section.label.textContent || '') : section.label;
+      const tooltip = durationText ? `${durationText} ${labelText}` : labelText;
+
       // clang-format off
     return html`
-      <div class="timespan-breakdown-overlay-section" style=${style}>
+      <div class="timespan-breakdown-overlay-section" style=${style} title=${tooltip}>
         <div class="timespan-breakdown-overlay-label">
           ${
             section.showDuration ?
-                html`<span class="duration-text">${i18n.TimeUtilities.formatMicroSecondsAsMillisFixed(section.bounds.range)}</span> ` :
+                html`<span class="duration-text">${durationText}</span> ` :
                 nothing
           }
           <span class="section-label-text">${section.label}</span>
@@ -47,11 +52,11 @@ const renderSection =
 
 export const DEFAULT_VIEW = (input: Input, _output: undefined, target: HTMLElement): void => {
   const style = Directives.styleMap({
-    left: input.left ? `${input.left}px` : undefined,
-    width: input.width ? `${input.width}px` : undefined,
-    top: input.top ? `${input.top}px` : undefined,
-    maxHeight: input.maxHeight ? `${input.maxHeight}px` : undefined,
-    position: 'relative'
+    left: input.left !== null ? `${input.left}px` : undefined,
+    width: input.width !== null ? `${input.width}px` : undefined,
+    top: input.top !== null ? `${input.top}px` : undefined,
+    maxHeight: input.maxHeight !== null ? `${input.maxHeight}px` : undefined,
+    position: 'relative',
   });
   // clang-format off
   render(
@@ -252,7 +257,7 @@ export class TimespanBreakdownOverlay extends UI.Widget.Widget {
       width: this.#width,
       top: this.#top,
       maxHeight: this.#maxHeight,
-      className
+      className,
     }, undefined, this.contentElement);
 
     this.checkSectionLabelPositioning();

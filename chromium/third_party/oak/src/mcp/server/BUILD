@@ -16,21 +16,25 @@
 
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
 
 package(
     default_visibility = ["//:default_visibility"],
     licenses = ["notice"],
 )
 
-rust_binary(
-    name = "mcp_server",
-    srcs = glob([
-        "src/*.rs",
-    ]),
+rust_library(
+    name = "mcp_server_lib",
+    srcs = [
+        "src/lib.rs",
+        "src/service.rs",
+        "src/tools.rs",
+    ],
     proc_macro_deps = [
         "@oak_std_crates_index//:rmcp-macros",
+        "@oak_std_crates_index//:async-trait",
     ],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//oak_functions_standalone/client:oak_functions_standalone_client_lib",
         "//oak_proto_rust",
@@ -47,6 +51,38 @@ rust_binary(
         "@oak_crates_index//:prost",
         "@oak_crates_index//:rmcp",
         "@oak_crates_index//:serde",
+        "@oak_crates_index//:serde_json",
+        "@oak_crates_index//:tokio",
+        "@oak_crates_index//:tonic",
+    ],
+)
+
+rust_binary(
+    name = "mcp_server",
+    srcs = ["src/main.rs"],
+    proc_macro_deps = [
+        "@oak_std_crates_index//:rmcp-macros",
+        "@oak_std_crates_index//:async-trait",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":mcp_server_lib",
+        "//oak_functions_standalone/client:oak_functions_standalone_client_lib",
+        "//oak_proto_rust",
+        "//oak_proto_rust/grpc",
+        "//oak_session",
+        "//oak_time",
+        "//oak_time:oak_time_std",
+        "@oak_crates_index//:anyhow",
+        "@oak_crates_index//:axum",
+        "@oak_crates_index//:clap",
+        "@oak_crates_index//:env_logger",
+        "@oak_crates_index//:futures",
+        "@oak_crates_index//:log",
+        "@oak_crates_index//:prost",
+        "@oak_crates_index//:rmcp",
+        "@oak_crates_index//:serde",
+        "@oak_crates_index//:serde_json",
         "@oak_crates_index//:tokio",
         "@oak_crates_index//:tonic",
     ],
@@ -74,7 +110,7 @@ pkg_tar(
 
 oci_image(
     name = "mcp_server_image",
-    base = "@distroless_cc_debian12",
+    base = "@distroless_cc_debian12_linux_amd64",
     entrypoint = [
         "/bin/server",
         "--config=/etc/proxy.toml",
@@ -84,9 +120,17 @@ oci_image(
     },
     exposed_ports = ["8080/tcp"],
     labels = {
-        "tee.launch_policy.allow_env_override": "CONTAINER_IMAGE",
+        # Confidential Space launch policy that allows specific environment variables to
+        # be provided at runtime:
+        # - `CONTAINER_IMAGE`: self-referrence for the TEE workload which it can use to fetch endorsements.
+        # - `OAK_FUNCTIONS_URL` known at runtime because they are dynamically assigned by gCloud to
+        #   corresponding services.
+        #
+        # https://cloud.google.com/confidential-computing/confidential-space/docs/create-customize-workloads#launch_policies
+        "tee.launch_policy.allow_env_override": "CONTAINER_IMAGE,OAK_FUNCTIONS_URL",
         "tee.launch_policy.log_redirect": "always",
     },
+    target_compatible_with = ["@platforms//os:linux"],
     tars = [
         ":mcp_server_tar",
         ":config_tar",
@@ -97,4 +141,5 @@ oci_load(
     name = "mcp_server_load_image",
     image = ":mcp_server_image",
     repo_tags = ["attested-mcp-server:latest"],
+    target_compatible_with = ["@platforms//os:linux"],
 )

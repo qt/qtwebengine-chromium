@@ -20,6 +20,8 @@ namespace Eigen {
 
 namespace internal {
 
+EIGEN_GCC_FAST_MATH_COMPLEX_VECTORIZE_WORKAROUND_PUSH
+
 //---------- float ----------
 struct Packet2cf {
   EIGEN_STRONG_INLINE Packet2cf() {}
@@ -491,6 +493,8 @@ EIGEN_STRONG_INLINE void ptranspose(PacketBlock<Packet1cd, 2>& kernel) {
   kernel.packet[1].v = (__m128d)__lsx_vilvh_d((__m128i)kernel.packet[1].v, (__m128i)kernel.packet[0].v);
   kernel.packet[0].v = tmp;
 }
+
+EIGEN_GCC_FAST_MATH_COMPLEX_VECTORIZE_WORKAROUND_POP
 
 }  // end namespace internal
 }  // end namespace Eigen

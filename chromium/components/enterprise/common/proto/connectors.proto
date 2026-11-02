@@ -24,6 +24,8 @@ enum AnalysisConnector {
   BULK_DATA_ENTRY = 3;
   PRINT = 4;
   FILE_TRANSFER = 5;
+  DATA_COPIED = 6;
+  NETWORK_REQUEST = 7;
 }
 
 message ContentMetaData {
@@ -86,6 +88,7 @@ message ContentMetaData {
       CLIPBOARD = 2;
       OTHER_PROFILE = 3;
       SAME_PROFILE = 4;
+      GEMINI_IN_CHROME = 5;
     }
     // Holds Chrome context of copied data.
     optional CopiedTextSourceType context = 2;
@@ -221,6 +224,7 @@ message ContentAnalysisRequest {
     // Only possible for the `FILE_DOWNLOADED` analysis connector.
     NORMAL_DOWNLOAD = 6;
     SAVE_AS_DOWNLOAD = 7;
+    CLIPBOARD_COPY = 8;
   }
   optional Reason reason = 19;
 
@@ -285,6 +289,7 @@ message ContentAnalysisResponse {
         WARN = 2;
         BLOCK = 3;
         FORCE_SAVE_TO_CLOUD = 4;
+        KEEP_IN_MANAGED_CHROME = 5;
       }
       optional Action action = 1;
       optional string rule_name = 2;
@@ -386,6 +391,7 @@ message ContentAnalysisAcknowledgement {
     REPORT_ONLY = 2;
     WARN = 3;
     BLOCK = 4;
+    KEEP_IN_MANAGED_CHROME = 5;
   }
   optional FinalAction final_action = 3;
 }

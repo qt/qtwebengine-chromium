@@ -12,6 +12,7 @@
 #include "base/metrics/field_trial_params.h"
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
+#include "build/buildflag.h"
 #include "extensions/buildflags/buildflags.h"
 
 namespace feature_engagement {
@@ -83,6 +84,7 @@ FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHGlicTryItFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHGMCCastStartStopFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHGMCLocalMediaCastingFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHMemorySaverModeFeature);
+FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHMultistepFilterPromoFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHLensOverlayFeature);
 COMPONENT_EXPORT(FEATURE_ENGAGEMENT_FEATURE_CONSTANTS)
 extern const base::FeatureParam<std::string> kIPHLensOverlayUrlAllowFilters;
@@ -114,6 +116,7 @@ FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHPasswordSharingFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHPdfGlicSummarizeFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHPdfInkSignaturesFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHPdfSearchifyFeature);
+FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHPdfTextAnnotationsFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHPerformanceInterventionDialogFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHPowerBookmarksSidePanelFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHPriceInsightsPageActionIconLabelFeature);
@@ -132,12 +135,14 @@ FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHSmartTabSharingFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHSmartTabSharingTryItFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHSideBySidePinnableFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHSideBySideTabSwitchFeature);
+FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHSplitViewHorizontalIndirectAccessFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHVerticalTabsExpandOnHoverFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHVerticalTabstripTutorialFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHSidePanelGenericPinnableFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHSidePanelLensOverlayPinnableFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(
     kIPHSidePanelLensOverlayPinnableFollowupFeature);
+FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHSidePanelContextualTasksPinnableFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHSideSearchAutoTriggeringFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHSideSearchPageActionLabelFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHPwaQuietNotificationFeature);
@@ -146,7 +151,6 @@ FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHTabGroupsSaveV2CloseGroupFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHTabGroupsSharedTabChangedFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHTabGroupsSharedTabFeedbackFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHTabSearchComboButtonFeature);
-FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHTabSearchToolbarButtonFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHDesktopSnoozeFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHDesktopPwaInstallFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHProfileSwitchFeature);
@@ -156,6 +160,10 @@ FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHBackNavigationMenuFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHBookmarkBarSimplifiedFeature);
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_LINUX) ||
         // BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_FUCHSIA)
+
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHExtensionsPinnedByDefaultFeature);
+#endif
 
 // All the features declared for Android below that are also used in Java,
 // should also be declared in:
@@ -175,10 +183,14 @@ FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHAdaptiveButtonInTopToolbarCustomizationSha
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHAdaptiveButtonInTopToolbarCustomizationTranslateFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHAdaptiveButtonInTopToolbarCustomizationVoiceSearchFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHAdaptiveButtonPinGlicToolbarButtonFeature);
+FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHAimActivationHint);
+FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHAndroidBottomBarAim);
+FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHAndroidBottomBarAimPromoDialog);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHAndroidBottomBarGlic);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHAndroidBottomBarNewTab);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHAndroidBottomBarPromoDialog);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHAndroidTabDeclutter);
+FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHAndroidVerticalTabsPromoFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHAppRatingPromptFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHAppSpecificHistory);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHAutoDarkOptOutFeature);
@@ -249,6 +261,7 @@ FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHReadLaterAppMenuBookmarksFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHReadLaterAppMenuBookmarkThisPageFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHReadLaterBottomSheetFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHReadLaterContextMenuFeature);
+FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHRecentTabsFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHRequestDesktopSiteDefaultOnFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHRequestDesktopSiteExceptionsGenericFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHRequestDesktopSiteWindowSettingFeature);
@@ -399,6 +412,9 @@ FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHiOSGeminiFullscreenPromoFeature);
 // FET feature flag that enables omnibox Gemini contextual cue chip.
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHiOSGeminiContextualCueChip);
 
+// FET feature flag that enables "What can Gemini do" suggestion.
+FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHiOSGeminiWhatCanGeminiDo);
+
 // FET feature flag that enables customized sites in the most visited tile.
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHiOSPinMostVisitedSiteFeature);
 
@@ -428,7 +444,6 @@ FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHAutofillAiValuablesFeature);
 COMPONENT_EXPORT(FEATURE_ENGAGEMENT_FEATURE_CONSTANTS)
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHAutofillVirtualCardCVCSuggestionFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHAutofillVirtualCardSuggestionFeature);
-FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHCookieControlsFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHAutofillEnableLoyaltyCardsFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHAutofillDownstreamCardAwarenessFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHAutofillOmniboxPaymentChipFeature);
@@ -442,9 +457,14 @@ FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHGoogleOneOfferNotificationFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHLauncherSearchHelpUiFeature);
 #endif
 
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
+    BUILDFLAG(IS_CHROMEOS)
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHDesktopPWAsLinkCapturingLaunch);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHDesktopPWAsLinkCapturingLaunchAppInTab);
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
+        // BUILDFLAG(IS_CHROMEOS)
+
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHSignInBenefitsFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHSignInBenefitsNewSigninFeature);
 FEATURE_CONSTANTS_DECLARE_FEATURE(kIPHSupervisedUserProfileSigninFeature);

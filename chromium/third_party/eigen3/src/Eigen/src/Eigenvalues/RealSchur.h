@@ -171,8 +171,8 @@ class RealSchur {
 
   /** \brief Computes Schur decomposition of a Hessenberg matrix H = Z T Z^T
    *  \param[in] matrixH Matrix in Hessenberg form H
-   *  \param[in] matrixQ orthogonal matrix Q that transform a matrix A to H : A = Q H Q^T
-   *  \param computeU Computes the matriX U of the Schur vectors
+   *  \param[in] matrixQ orthogonal matrix Q that transforms a matrix A to H : A = Q H Q^T
+   *  \param computeU Computes the matrix U of the Schur vectors
    * \return Reference to \c *this
    *
    *  This routine assumes that the matrix is already reduced in Hessenberg form matrixH
@@ -275,8 +275,6 @@ template <typename MatrixType>
 template <typename HessMatrixType, typename OrthMatrixType>
 RealSchur<MatrixType>& RealSchur<MatrixType>::computeFromHessenberg(const HessMatrixType& matrixH,
                                                                     const OrthMatrixType& matrixQ, bool computeU) {
-  using std::abs;
-
   m_matT = matrixH;
   m_workspaceVector.resize(m_matT.cols());
   if (computeU && !internal::is_same_dense(m_matU, matrixQ)) m_matU = matrixQ;

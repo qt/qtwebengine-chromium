@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// Next MinVersion: 4
+// Next MinVersion: 5
 
 module on_device_model.mojom;
 
@@ -80,29 +80,14 @@ struct LoadModelParams {
   // Chooses the performance characteristics of the model loaded. If only a
   // single model is available, this field will do nothing.
   ModelPerformanceHint performance_hint = kHighestQuality;
-};
 
-struct TextSafetyModelAssets {
-  mojo_base.mojom.ReadOnlyFile data;
-  mojo_base.mojom.ReadOnlyFile sp_model;
-};
-
-struct BertSafetyModelAssets {
-  mojo_base.mojom.ReadOnlyFile model;
-};
-
-struct LanguageModelAssets {
-  mojo_base.mojom.ReadOnlyFile model;
-};
-
-union SafetyModelAssets {
-  TextSafetyModelAssets ts_assets;
-  BertSafetyModelAssets bs_assets;
+  // Estimated device VRAM capacity in MB (0 if unknown).
+  [MinVersion=4] uint64 vram_mb = 0;
 };
 
 struct TextSafetyModelParams {
-  SafetyModelAssets? safety_assets;
-  LanguageModelAssets? language_assets;
+  mojo_base.mojom.ReadOnlyFile? safety_model;
+  mojo_base.mojom.ReadOnlyFile? language_model;
 };
 
 // An observer to report the current platform model loading progress.

@@ -1,4 +1,4 @@
-# Copyright 2024-2026 Google LLC
+# Copyright 2024 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -36,9 +36,11 @@ cc_library(
         "//ink/jni/internal:jni_defines",
         "//ink/jni/internal:status_jni_helper",
         "//ink/rendering/skia/common_internal:mesh_specification_data",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:status_macros",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings:string_view",
+        "@abseil-cpp//absl/types:span",
     ] + select({
         "@platforms//os:android": [],
         "//conditions:default": [

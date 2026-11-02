@@ -28,6 +28,7 @@
 #include "src/dawn/native/IndirectDrawValidationEncoder.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
@@ -422,7 +423,7 @@ ResultOrError<ComputePipelineBase*> GetOrCreateMultiDrawValidationPipeline(Devic
 }
 
 size_t GetBatchDataSize(uint32_t numDraws) {
-    return sizeof(BatchInfo) + (numDraws * kIndirectDrawByteSize);
+    return sizeof(BatchInfo) + (static_cast<size_t>(numDraws) * kIndirectDrawByteSize);
 }
 
 }  // namespace
@@ -469,7 +470,7 @@ MaybeError EncodeIndirectDrawValidationCommands(DeviceBase* device,
         IndirectDrawMetadata::DrawType drawType;
         uint64_t outputParamsSize = 0;
         uint64_t batchDataSize = 0;
-        std::unique_ptr<void, void (*)(void*)> batchData{nullptr, std::free};
+        HeapArray<uint8_t> batchData;
         std::vector<Batch> batches;
     };
 
@@ -595,7 +596,7 @@ MaybeError EncodeIndirectDrawValidationCommands(DeviceBase* device,
                 continue;
             }
             outputParamsSizeForMultiDraw +=
-                draw.cmd->maxDrawCount *
+                static_cast<uint64_t>(draw.cmd->maxDrawCount) *
                 GetOutputIndirectDrawSize(draw.type, draw.duplicateBaseVertexInstance);
             outputParamsSizeForMultiDraw =
                 Align(outputParamsSizeForMultiDraw, minStorageBufferOffsetAlignment);
@@ -646,13 +647,11 @@ MaybeError EncodeIndirectDrawValidationCommands(DeviceBase* device,
 
     // Now we allocate and populate host-side batch data to be copied to the GPU.
     for (Pass& pass : passes) {
-        // We use std::malloc here because it guarantees maximal scalar alignment.
-        pass.batchData = {std::malloc(pass.batchDataSize), std::free};
-        DAWN_UNSAFE_TODO(memset(pass.batchData.get(), 0, pass.batchDataSize));
-        uint8_t* batchData = static_cast<uint8_t*>(pass.batchData.get());
+        // batchData is maximally-aligned, so we can suballocate it.
+        pass.batchData = HeapArray<uint8_t>{checked_cast<size_t>(pass.batchDataSize)};
         for (Batch& batch : pass.batches) {
-            batch.batchInfo =
-                new (&DAWN_UNSAFE_TODO(batchData[batch.dataBufferOffset])) BatchInfo();
+            auto placement = pass.batchData.subspan(batch.dataBufferOffset, sizeof(BatchInfo));
+            batch.batchInfo = new (placement.data()) BatchInfo();
             batch.batchInfo->numDraws = static_cast<uint32_t>(batch.metadata->draws.size());
             batch.batchInfo->flags = pass.flags;
 
@@ -696,7 +695,7 @@ MaybeError EncodeIndirectDrawValidationCommands(DeviceBase* device,
         Ref<BindGroupLayoutBase> layout;
         DAWN_TRY_ASSIGN(layout, pipeline->GetBindGroupLayout(0));
 
-        BindGroupEntry bindings[3];
+        std::array<BindGroupEntry, 3> bindings;
         BindGroupEntry& bufferDataBinding = bindings[0];
         bufferDataBinding.binding = 0;
         bufferDataBinding.buffer = batchDataBuffer.GetBuffer();
@@ -710,7 +709,6 @@ MaybeError EncodeIndirectDrawValidationCommands(DeviceBase* device,
 
         BindGroupDescriptor bindGroupDescriptor = {};
         bindGroupDescriptor.layout = layout.Get();
-        bindGroupDescriptor.entryCount = 3;
         bindGroupDescriptor.entries = bindings;
 
         // Finally, we can now encode our validation and duplication passes. Each pass first
@@ -718,8 +716,7 @@ MaybeError EncodeIndirectDrawValidationCommands(DeviceBase* device,
         // compute pass. The compute pass encodes a separate SetBindGroup and Dispatch command
         // for each batch.
         for (const Pass& pass : passes) {
-            commandEncoder->APIWriteBuffer(batchDataBuffer.GetBuffer(), 0,
-                                           static_cast<const uint8_t*>(pass.batchData.get()),
+            commandEncoder->APIWriteBuffer(batchDataBuffer.GetBuffer(), 0, pass.batchData.data(),
                                            pass.batchDataSize);
 
             Ref<ComputePassEncoder> passEncoder = commandEncoder->BeginComputePass();
@@ -756,7 +753,7 @@ MaybeError EncodeIndirectDrawValidationCommands(DeviceBase* device,
         Ref<BindGroupLayoutBase> layout;
         DAWN_TRY_ASSIGN(layout, pipeline->GetBindGroupLayout(0));
 
-        BindGroupEntry bindings[4];
+        std::array<BindGroupEntry, 4> bindings;
 
         BindGroupEntry& drawConstantsBinding = bindings[0];
         drawConstantsBinding.binding = 0;
@@ -774,7 +771,6 @@ MaybeError EncodeIndirectDrawValidationCommands(DeviceBase* device,
 
         BindGroupDescriptor bindGroupDescriptor = {};
         bindGroupDescriptor.layout = layout.Get();
-        bindGroupDescriptor.entryCount = 4;
         bindGroupDescriptor.entries = bindings;
 
         // Start of the region for multi draw output params.
@@ -838,7 +834,7 @@ MaybeError EncodeIndirectDrawValidationCommands(DeviceBase* device,
             outputParamsBinding.buffer = outputParamsBuffer.GetBuffer();
             outputParamsBinding.offset = outputOffset;
             outputParamsBinding.size =
-                draw.cmd->maxDrawCount *
+                static_cast<uint64_t>(draw.cmd->maxDrawCount) *
                 GetOutputIndirectDrawSize(draw.type, draw.duplicateBaseVertexInstance);
 
             if (cmd->drawCountBuffer != nullptr) {
@@ -887,7 +883,7 @@ MaybeError EncodeIndirectDrawValidationCommands(DeviceBase* device,
             cmd->indirectOffset = outputOffset;
 
             // Proceed to the next output offset.
-            outputOffset += cmd->maxDrawCount *
+            outputOffset += static_cast<uint64_t>(cmd->maxDrawCount) *
                             GetOutputIndirectDrawSize(draw.type, draw.duplicateBaseVertexInstance);
             outputOffset = Align(outputOffset, minStorageBufferOffsetAlignment);
         }

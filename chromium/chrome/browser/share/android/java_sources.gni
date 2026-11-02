@@ -60,10 +60,16 @@ share_java_sources = [
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/scroll_capture/ScrollCaptureManagerDelegateImpl.java",
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/send_tab_to_self/DevicePickerBottomSheetAdapter.java",
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/send_tab_to_self/DevicePickerBottomSheetContent.java",
+  "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/send_tab_to_self/EnhancedTargetDevicePickerMediator.java",
+  "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/send_tab_to_self/EnhancedTargetDevicePickerProperties.java",
+  "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/send_tab_to_self/EnhancedTargetDevicePickerView.java",
+  "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/send_tab_to_self/EnhancedTargetDevicePickerViewBinder.java",
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/send_tab_to_self/ManageAccountDevicesLinkView.java",
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/send_tab_to_self/NoTargetDeviceBottomSheetContent.java",
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/send_tab_to_self/NotificationManager.java",
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/send_tab_to_self/NotificationSharedPrefManager.java",
+  "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/send_tab_to_self/OtherDevicesShortcutController.java",
+  "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/send_tab_to_self/OtherDevicesShortcutControllerFactory.java",
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/send_tab_to_self/SendTabToSelfAndroidBridge.java",
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/send_tab_to_self/SendTabToSelfCoordinator.java",
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/send_tab_to_self/SendTabToSelfGestureDetector.java",
@@ -80,8 +86,11 @@ share_java_sources = [
 ]
 
 share_java_deps = [
+  "//chrome/browser/profiles/android:java",
+  "//components/browser_ui/bottomsheet/android:java",
   "//components/feature_engagement/public:public_java",
   "//components/shared_highlighting/core/common:shared_highlighting_android_enums_java",
   "//components/strings:components_strings_grd",
   "//components/sync_device_info:sync_device_info_java",
+  "//third_party/androidx:androidx_annotation_annotation_java",
 ]

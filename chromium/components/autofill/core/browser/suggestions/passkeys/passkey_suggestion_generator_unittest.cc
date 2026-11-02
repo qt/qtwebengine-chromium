@@ -49,7 +49,7 @@ class PasskeySuggestionGeneratorTest : public testing::Test {
 
  private:
   base::test::SingleThreadTaskEnvironment task_environment_;
-  autofill::test::AutofillUnitTestEnvironment test_environment_;
+  test::AutofillUnitTestEnvironment test_environment_;
   TestAutofillClient test_autofill_client_;
   std::unique_ptr<PasskeySuggestionGenerator> generator_;
   FormData form_;
@@ -66,6 +66,25 @@ TEST_F(PasskeySuggestionGeneratorTest, FetchCreatesValidSuggestionForGenerate) {
   base::MockOnceCallback<void(ReturnedSuggestions)> generate_cb;
   EXPECT_CALL(generate_cb, Run(Pair(SuggestionDataSource::kPasskey,
                                     ElementsAre(suggestion))));
+  generator().GenerateSuggestions(form(), field(), /*form_structure=*/nullptr,
+                                  /*trigger_autofill_field=*/nullptr, client(),
+                                  generate_cb.Get());
+}
+
+TEST_F(PasskeySuggestionGeneratorTest,
+       FetchCreatesValidInlineQrAndHybridSuggestionsForGenerate) {
+  Suggestion inline_qr(SuggestionType::kWebauthnPasskeyQrCode);
+  Suggestion hybrid_suggestion(
+      SuggestionType::kWebauthnSignInWithAnotherDevice);
+  EXPECT_CALL(password_delegate(), GetWebauthnInlineQrCodeSuggestion)
+      .WillRepeatedly(Return(inline_qr));
+  EXPECT_CALL(password_delegate(), GetWebauthnSignInWithAnotherDeviceSuggestion)
+      .WillRepeatedly(Return(hybrid_suggestion));
+
+  base::MockOnceCallback<void(ReturnedSuggestions)> generate_cb;
+  EXPECT_CALL(generate_cb,
+              Run(Pair(SuggestionDataSource::kPasskey,
+                       ElementsAre(inline_qr, hybrid_suggestion))));
   generator().GenerateSuggestions(form(), field(), /*form_structure=*/nullptr,
                                   /*trigger_autofill_field=*/nullptr, client(),
                                   generate_cb.Get());

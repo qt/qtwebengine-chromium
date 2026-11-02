@@ -33,7 +33,6 @@
 #include <utility>
 #include <vector>
 
-#include "src/dawn/common/Assert.h"
 #include "src/dawn/common/MatchVariant.h"
 #include "src/dawn/common/Range.h"
 #include "src/dawn/native/Format.h"
@@ -45,6 +44,8 @@
 #include "src/dawn/native/d3d11/PipelineLayoutD3D11.h"
 #include "src/dawn/native/d3d11/SamplerD3D11.h"
 #include "src/dawn/native/d3d11/TextureD3D11.h"
+#include "src/utils/assert.h"
+#include "src/utils/numeric.h"
 
 namespace dawn::native::d3d11 {
 namespace {
@@ -192,8 +193,11 @@ void BindGroupTracker::BindingSlot<T, InitialCapacity>::Bind(uint32_t idx,
 }
 
 BindGroupTracker::BindGroupTracker(const ScopedSwapStateCommandRecordingContext* commandContext)
-    : mCommandContext(commandContext) {
-    mLastAppliedPipelineLayout = mCommandContext->GetDevice()->GetEmptyPipelineLayout();
+    : mCommandContext(commandContext) {}
+
+PipelineLayoutBase* BindGroupTracker::LastAppliedPipelineLayout() const {
+    return mLastAppliedPipeline ? mLastAppliedPipeline->GetLayout()
+                                : mCommandContext->GetDevice()->GetEmptyPipelineLayout();
 }
 
 BindGroupTracker::~BindGroupTracker() {
@@ -223,7 +227,7 @@ void BindGroupTracker::SetConstantBuffer(uint32_t idx,
     mConstantBufferSlots[Stage].Bind(idx, {d3d11Buffer, firstConstant, numConstants},
                                      [this](size_t idx, const ConstantBufferBinding& binding) {
                                          SetConstantBuffersImpl<Stage>(
-                                             mCommandContext->GetD3D11DeviceContext3(), idx, 1,
+                                             mCommandContext->GetD3D11DeviceContext3(), idx, 1u,
                                              binding.buffer.GetAddressOf(), &binding.firstConstant,
                                              &binding.numConstants);
                                      });
@@ -239,15 +243,15 @@ void BindGroupTracker::UnbindConstantBuffers() {
     static constexpr ID3D11Buffer* kNullBuffers[D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT] =
         {};
 
-    SetConstantBuffersImpl<Stage>(mCommandContext->GetD3D11DeviceContext3(), 0, slots, kNullBuffers,
-                                  nullptr, nullptr);
+    SetConstantBuffersImpl<Stage>(mCommandContext->GetD3D11DeviceContext3(), 0u, slots,
+                                  kNullBuffers, nullptr, nullptr);
 }
 
 template <SingleShaderStage Stage>
 void BindGroupTracker::SetShaderResource(uint32_t idx, ID3D11ShaderResourceView* srv) {
     mSRVSlots[Stage].Bind(
         idx, std::move(srv), [this](size_t idx, const ComPtr<ID3D11ShaderResourceView>& binding) {
-            SetShaderResourcesImpl<Stage>(mCommandContext->GetD3D11DeviceContext3(), idx, 1,
+            SetShaderResourcesImpl<Stage>(mCommandContext->GetD3D11DeviceContext3(), idx, 1u,
                                           binding.GetAddressOf());
         });
 }
@@ -262,7 +266,7 @@ void BindGroupTracker::UnbindShaderResources() {
     static constexpr ID3D11ShaderResourceView*
         kNullSRVs[D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT] = {};
 
-    SetShaderResourcesImpl<Stage>(mCommandContext->GetD3D11DeviceContext3(), 0, slots, kNullSRVs);
+    SetShaderResourcesImpl<Stage>(mCommandContext->GetD3D11DeviceContext3(), 0u, slots, kNullSRVs);
 }
 
 template <SingleShaderStage Stage>
@@ -270,7 +274,7 @@ void BindGroupTracker::SetSampler(uint32_t idx, ID3D11SamplerState* sampler) {
     mSamplerSlots[Stage].Bind(idx, sampler,
                               [this](size_t idx, const ComPtr<ID3D11SamplerState>& binding) {
                                   SetSamplersImpl<Stage>(mCommandContext->GetD3D11DeviceContext3(),
-                                                         idx, 1, binding.GetAddressOf());
+                                                         idx, 1u, binding.GetAddressOf());
                               });
 }
 
@@ -283,7 +287,7 @@ void BindGroupTracker::UnbindSamplers() {
 
     static constexpr ID3D11SamplerState* kNullSamplers[D3D11_COMMONSHADER_SAMPLER_SLOT_COUNT] = {};
 
-    SetSamplersImpl<Stage>(mCommandContext->GetD3D11DeviceContext3(), 0, slots, kNullSamplers);
+    SetSamplersImpl<Stage>(mCommandContext->GetD3D11DeviceContext3(), 0u, slots, kNullSamplers);
 }
 
 void BindGroupTracker::CSSetUnorderedAccessView(uint32_t idx, ID3D11UnorderedAccessView* uav) {
@@ -291,8 +295,8 @@ void BindGroupTracker::CSSetUnorderedAccessView(uint32_t idx, ID3D11UnorderedAcc
 
     mCSUAVSlots.Bind(
         idx, std::move(uav), [this](size_t idx, const ComPtr<ID3D11UnorderedAccessView>& binding) {
-            SetUnorderedAccessViewsImpl<kCompute>(mCommandContext->GetD3D11DeviceContext3(), idx, 1,
-                                                  binding.GetAddressOf());
+            SetUnorderedAccessViewsImpl<kCompute>(mCommandContext->GetD3D11DeviceContext3(), idx,
+                                                  1u, binding.GetAddressOf());
         });
 }
 
@@ -463,7 +467,7 @@ MaybeError BindGroupTracker::ApplyBindGroup(BindGroupIndex index) {
 
     BindGroupBase* group = mBindGroups[index];
     const ityp::span<BindingIndex, uint32_t>& dynamicOffsets = GetDynamicOffsets(index);
-    const auto& indices = ToBackend(mPipelineLayout)->GetBindingTableIndexMap()[index];
+    const auto& indices = ToBackend(mPipeline->GetLayout())->GetBindingTableIndexMap()[index];
 
     for (BindingIndex bindingIndex : Range(group->GetLayout()->GetBindingCount())) {
         const BindingInfo& bindingInfo = group->GetLayout()->GetBindingInfo(bindingIndex);
@@ -635,9 +639,9 @@ ComputePassBindGroupTracker::ComputePassBindGroupTracker(
 ComputePassBindGroupTracker::~ComputePassBindGroupTracker() = default;
 
 void ComputePassBindGroupTracker::UnapplyComputeBindings(BindGroupIndex index) {
-    const BindGroupLayoutInternalBase* groupLayout =
-        mLastAppliedPipelineLayout->GetBindGroupLayout(index);
-    const auto& indices = ToBackend(mLastAppliedPipelineLayout)->GetBindingTableIndexMap()[index];
+    PipelineLayoutBase* lastAppliedLayout = LastAppliedPipelineLayout();
+    const BindGroupLayoutInternalBase* groupLayout = lastAppliedLayout->GetBindGroupLayout(index);
+    const auto& indices = ToBackend(lastAppliedLayout)->GetBindingTableIndexMap()[index];
 
     for (BindingIndex bindingIndex : Range(groupLayout->GetBindingCount())) {
         const BindingInfo& bindingInfo = groupLayout->GetBindingInfo(bindingIndex);
@@ -651,7 +655,7 @@ void ComputePassBindGroupTracker::UnapplyComputeBindings(BindGroupIndex index) {
             [&](const BufferBindingInfo& layout) {
                 switch (layout.type) {
                     case wgpu::BufferBindingType::Uniform: {
-                        this->SetConstantBuffer<kCompute>(bindingSlot, nullptr, 0, 0);
+                        this->SetConstantBuffer<kCompute>(bindingSlot, nullptr, 0u, 0u);
                         break;
                     }
                     case wgpu::BufferBindingType::Storage:
@@ -706,9 +710,9 @@ void ComputePassBindGroupTracker::UnapplyComputeBindings(BindGroupIndex index) {
 MaybeError ComputePassBindGroupTracker::Apply() {
     BeforeApply();
 
-    BindGroupMask inheritedGroups =
-        mPipelineLayout->InheritedGroupsMask(mLastAppliedPipelineLayout);
-    BindGroupMask previousGroups = mLastAppliedPipelineLayout->GetBindGroupLayoutsMask();
+    PipelineLayoutBase* lastAppliedLayout = LastAppliedPipelineLayout();
+    BindGroupMask inheritedGroups = mPipeline->GetLayout()->InheritedGroupsMask(lastAppliedLayout);
+    BindGroupMask previousGroups = lastAppliedLayout->GetBindGroupLayoutsMask();
 
     // To avoid UAV / SRV conflicts with bindings in previously bind groups, we unset the bind
     // groups that aren't reused by the current pipeline.
@@ -743,17 +747,19 @@ MaybeError RenderPassBindGroupTracker::Apply() {
     BeforeApply();
 
     if (!mDirtyBindGroupsObjectChangedOrIsDynamic.any() &&
-        mLastAppliedPipelineLayout == mPipelineLayout) {
+        LastAppliedPipelineLayout() == mPipeline->GetLayout()) {
         AfterApply();
         return {};
     }
 
+    auto* pipelineLayout = ToBackend(mPipeline->GetLayout());
+
     // As D3d11 requires to bind all UAVs slots at the same time for pixel shaders, we record
     // all UAV slot assignments in the bind groups, and then bind them all together.
-    const BindGroupMask uavBindGroups = ToBackend(mPipelineLayout)->GetUAVBindGroupLayoutsMask();
-    const uint32_t plsSlotCount = ToBackend(mPipelineLayout)->GetPLSSlotCount();
-    const uint32_t uavStartSlot = ToBackend(mPipelineLayout)->GetUAVStartIndex(kFragment);
-    const uint32_t uavCount = ToBackend(mPipelineLayout)->GetUAVCount(kFragment);
+    const BindGroupMask uavBindGroups = pipelineLayout->GetUAVBindGroupLayoutsMask();
+    const uint32_t plsSlotCount = pipelineLayout->GetPLSSlotCount();
+    const uint32_t uavStartSlot = pipelineLayout->GetUAVStartIndex(kFragment);
+    const uint32_t uavCount = pipelineLayout->GetUAVCount(kFragment);
 
     DAWN_ASSERT(uavCount >= plsSlotCount);
     const uint32_t usedUavCount = uavCount - plsSlotCount;
@@ -763,7 +769,7 @@ MaybeError RenderPassBindGroupTracker::Apply() {
     for (BindGroupIndex index : uavBindGroups) {
         BindGroupBase* group = mBindGroups[index];
         const ityp::span<BindingIndex, uint32_t>& dynamicOffsets = GetDynamicOffsets(index);
-        const auto& indices = ToBackend(mPipelineLayout)->GetBindingTableIndexMap()[index];
+        const auto& indices = pipelineLayout->GetBindingTableIndexMap()[index];
 
         // D3D11 uav slot allocated in reverse order.
         for (BindingIndex bindingIndex : Range(group->GetLayout()->GetBindingCount())) {

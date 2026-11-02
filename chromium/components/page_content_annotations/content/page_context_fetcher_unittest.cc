@@ -11,6 +11,7 @@
 
 #include "base/functional/callback_helpers.h"
 #include "base/test/metrics/histogram_tester.h"
+#include "base/test/protobuf_matchers.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/token.h"
 #include "base/types/expected.h"
@@ -102,6 +103,7 @@ TEST_F(PageContextFetcherIframeInfoTest, AddIframeInfoSuccess) {
   viz::TrackedElementRect iframe_rect(
       base::Token(1, 2), gfx::Rect(10, 20, 150, 250),
       /*should_add_to_compositor_frame_metadata=*/true,
+      /*should_exclude_fixed_and_sticky_occlusions=*/false,
       subframe->GetFrameToken(), main_rfh()->GetFrameToken());
   viz::TrackedElementRects tracked_element_rects = {
       {viz::TrackedElementFeature::kIframeTracking, {iframe_rect}}};
@@ -122,20 +124,22 @@ TEST_F(PageContextFetcherIframeInfoTest, AddIframeInfoSuccess) {
   EXPECT_EQ(fetcher.iframe_info_[0].bounding_box().width(), 150);
   EXPECT_EQ(fetcher.iframe_info_[0].bounding_box().height(), 250);
 
-  // Setup the remaining state and call MaybeAddIframeInfoToAPC.
+  // Setup the remaining state and call MaybeAddIframeInfo.
   fetcher.pending_result_ = std::make_unique<FetchPageContextResult>();
   optimization_guide::AIPageContentResult apc_result;
   fetcher.pending_result_->annotated_page_content_result =
       base::ok(PageContentResultWithEndTime(std::move(apc_result)));
   fetcher.screenshot_capture_done_ = true;
   fetcher.annotated_page_content_done_ = true;
-  fetcher.MaybeAddIframeInfoToAPC();
+  fetcher.MaybeAddIframeInfo();
 
   // Verify metrics and result.
   histograms.ExpectUniqueSample("Glic.PageContextFetcher.IframeInfoAddedToAPC",
                                 true, 1);
   histograms.ExpectUniqueSample(
       "Glic.PageContextFetcher.IframeInfoHasUrlOrigin", true, 1);
+  histograms.ExpectTotalCount(
+      "Glic.PageContextFetcher.ScreenshotInfo.IframeInfo.ProtoSize", 1);
 
   const auto& screenshot_info =
       fetcher.pending_result_->annotated_page_content_result->proto
@@ -150,6 +154,13 @@ TEST_F(PageContextFetcherIframeInfoTest, AddIframeInfoSuccess) {
   EXPECT_EQ(screenshot_info.iframe_info(0).bounding_box().y(), 20);
   EXPECT_EQ(screenshot_info.iframe_info(0).bounding_box().width(), 150);
   EXPECT_EQ(screenshot_info.iframe_info(0).bounding_box().height(), 250);
+
+  ASSERT_TRUE(fetcher.pending_result_->screenshot_info.has_value());
+  EXPECT_THAT(fetcher.pending_result_->screenshot_info.value(),
+              base::test::EqualsProto(
+                  fetcher.pending_result_->annotated_page_content_result->proto
+                      .gemini_in_chrome_page_metadata()
+                      .screenshot_info()));
 }
 
 TEST_F(PageContextFetcherIframeInfoTest, AddIframeInfoNoUrlOrigin) {
@@ -163,7 +174,8 @@ TEST_F(PageContextFetcherIframeInfoTest, AddIframeInfoNoUrlOrigin) {
   blink::LocalFrameToken fake_parent_token;
   viz::TrackedElementRect iframe_rect(
       base::Token(3, 4), gfx::Rect(30, 40, 350, 450),
-      /*should_add_to_compositor_frame_metadata=*/true, fake_iframe_token,
+      /*should_add_to_compositor_frame_metadata=*/true,
+      /*should_exclude_fixed_and_sticky_occlusions=*/false, fake_iframe_token,
       fake_parent_token);
   viz::TrackedElementRects tracked_element_rects = {
       {viz::TrackedElementFeature::kIframeTracking, {iframe_rect}}};
@@ -183,20 +195,22 @@ TEST_F(PageContextFetcherIframeInfoTest, AddIframeInfoNoUrlOrigin) {
   EXPECT_EQ(fetcher.iframe_info_[0].bounding_box().width(), 350);
   EXPECT_EQ(fetcher.iframe_info_[0].bounding_box().height(), 450);
 
-  // Setup the remaining state and call MaybeAddIframeInfoToAPC.
+  // Setup the remaining state and call MaybeAddIframeInfo.
   fetcher.pending_result_ = std::make_unique<FetchPageContextResult>();
   optimization_guide::AIPageContentResult apc_result;
   fetcher.pending_result_->annotated_page_content_result =
       base::ok(PageContentResultWithEndTime(std::move(apc_result)));
   fetcher.screenshot_capture_done_ = true;
   fetcher.annotated_page_content_done_ = true;
-  fetcher.MaybeAddIframeInfoToAPC();
+  fetcher.MaybeAddIframeInfo();
 
   // Verify metrics and result.
   histograms.ExpectUniqueSample("Glic.PageContextFetcher.IframeInfoAddedToAPC",
                                 true, 1);
   histograms.ExpectUniqueSample(
       "Glic.PageContextFetcher.IframeInfoHasUrlOrigin", false, 1);
+  histograms.ExpectTotalCount(
+      "Glic.PageContextFetcher.ScreenshotInfo.IframeInfo.ProtoSize", 1);
 
   const auto& screenshot_info =
       fetcher.pending_result_->annotated_page_content_result->proto
@@ -209,6 +223,13 @@ TEST_F(PageContextFetcherIframeInfoTest, AddIframeInfoNoUrlOrigin) {
   EXPECT_EQ(screenshot_info.iframe_info(0).bounding_box().y(), 40);
   EXPECT_EQ(screenshot_info.iframe_info(0).bounding_box().width(), 350);
   EXPECT_EQ(screenshot_info.iframe_info(0).bounding_box().height(), 450);
+
+  ASSERT_TRUE(fetcher.pending_result_->screenshot_info.has_value());
+  EXPECT_THAT(fetcher.pending_result_->screenshot_info.value(),
+              base::test::EqualsProto(
+                  fetcher.pending_result_->annotated_page_content_result->proto
+                      .gemini_in_chrome_page_metadata()
+                      .screenshot_info()));
 }
 
 TEST_F(PageContextFetcherIframeInfoTest, NoIframeInfoWhenFeatureDisabled) {
@@ -230,6 +251,7 @@ TEST_F(PageContextFetcherIframeInfoTest, NoIframeInfoWhenFeatureDisabled) {
   viz::TrackedElementRect iframe_rect(
       base::Token(1, 2), gfx::Rect(10, 20, 150, 250),
       /*should_add_to_compositor_frame_metadata=*/true,
+      /*should_exclude_fixed_and_sticky_occlusions=*/false,
       subframe->GetFrameToken(), main_rfh()->GetFrameToken());
   viz::TrackedElementRects tracked_element_rects = {
       {viz::TrackedElementFeature::kIframeTracking, {iframe_rect}}};
@@ -243,20 +265,22 @@ TEST_F(PageContextFetcherIframeInfoTest, NoIframeInfoWhenFeatureDisabled) {
 
   EXPECT_TRUE(fetcher.iframe_info_.empty());
 
-  // Setup the remaining state and call MaybeAddIframeInfoToAPC.
+  // Setup the remaining state and call MaybeAddIframeInfo.
   fetcher.pending_result_ = std::make_unique<FetchPageContextResult>();
   optimization_guide::AIPageContentResult apc_result;
   fetcher.pending_result_->annotated_page_content_result =
       base::ok(PageContentResultWithEndTime(std::move(apc_result)));
   fetcher.screenshot_capture_done_ = true;
   fetcher.annotated_page_content_done_ = true;
-  fetcher.MaybeAddIframeInfoToAPC();
+  fetcher.MaybeAddIframeInfo();
 
   // Verify metrics and that nothing was added to the result.
   histograms.ExpectTotalCount("Glic.PageContextFetcher.IframeInfoHasUrlOrigin",
                               0);
   histograms.ExpectTotalCount("Glic.PageContextFetcher.IframeInfoAddedToAPC",
                               0);
+
+  EXPECT_FALSE(fetcher.pending_result_->screenshot_info.has_value());
 
   const auto& screenshot_info =
       fetcher.pending_result_->annotated_page_content_result->proto

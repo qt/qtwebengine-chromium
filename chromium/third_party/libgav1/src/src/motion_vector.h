@@ -17,14 +17,11 @@
 #ifndef LIBGAV1_SRC_MOTION_VECTOR_H_
 #define LIBGAV1_SRC_MOTION_VECTOR_H_
 
-#include <algorithm>
 #include <array>
-#include <cstdint>
 
 #include "src/buffer_pool.h"
-#include "src/obu_parser.h"
 #include "src/tile.h"
-#include "src/utils/array_2d.h"
+#include "src/utils/common.h"
 #include "src/utils/constants.h"
 #include "src/utils/types.h"
 

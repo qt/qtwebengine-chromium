@@ -42,6 +42,7 @@
 #include "third_party/blink/public/common/web_preferences/web_preferences.h"
 #include "third_party/blink/public/mojom/ad_tagging/ad_evidence.mojom-blink.h"
 #include "third_party/blink/public/mojom/loader/same_document_navigation_type.mojom-blink.h"
+#include "third_party/blink/renderer/bindings/core/v8/isolated_world_csp.h"
 #include "third_party/blink/renderer/bindings/core/v8/local_window_proxy.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_evaluation_result.h"
@@ -350,6 +351,14 @@ bool InspectorPageAgent::SegmentedBufferContent(
   if (decoder) {
     text_content = decoder->Decode(byte_buffer);
     text_content = StrCat({text_content, decoder->Flush()});
+    // If the decoder encountered invalid byte sequences for the declared
+    // encoding, the decoded text does not faithfully represent the original
+    // bytes (e.g., invalid UTF-8 sequences are replaced with U+FFFD).
+    // Discard the lossy text and fall back to base64 to preserve the exact
+    // response body.
+    if (decoder->SawError()) {
+      text_content = String();
+    }
   } else if (encoding.IsValid()) {
     text_content = encoding.Decode(byte_buffer);
   }
@@ -490,11 +499,9 @@ InspectorPageAgent::InspectorPageAgent(
     InspectedFrames* inspected_frames,
     Client* client,
     InspectorResourceContentLoader* resource_content_loader,
-    v8_inspector::V8InspectorSession* v8_session,
     const String& script_to_evaluate_on_load,
     InspectorInjectedScriptManager* injected_script_manager)
     : inspected_frames_(inspected_frames),
-      v8_session_(v8_session),
       client_(client),
       inspector_resource_content_loader_(resource_content_loader),
       resource_content_loader_client_id_(
@@ -638,8 +645,8 @@ protocol::Response InspectorPageAgent::reload(
   }
   pending_script_injection_on_load_ =
       optional_script_to_evaluate_on_load.value_or("");
-  v8_session_->setSkipAllPauses(true);
-  v8_session_->resume(true /* terminate on resume */);
+  V8Session()->setSkipAllPauses(true);
+  V8Session()->resume(true /* terminate on resume */);
   return protocol::Response::Success();
 }
 
@@ -834,7 +841,7 @@ void InspectorPageAgent::SearchContentAfterResourcesContentLoaded(
     return;
   }
 
-  auto matches = v8_session_->searchInTextByLines(
+  auto matches = V8Session()->searchInTextByLines(
       ToV8InspectorStringView(content), ToV8InspectorStringView(query),
       case_sensitive, is_regex);
   callback->sendSuccess(
@@ -1006,7 +1013,8 @@ void InspectorPageAgent::DidNavigateWithinDocument(
 DOMWrapperWorld* InspectorPageAgent::EnsureDOMWrapperWorld(
     LocalFrame* frame,
     const String& world_name,
-    bool grant_universal_access) {
+    bool grant_universal_access,
+    const String& content_security_policy) {
   LocalDOMWindow* window = frame->DomWindow();
   DOMWrapperWorld* world =
       DOMWrapperWorld::EnsureInspectorIsolatedWorldWithName(
@@ -1021,6 +1029,8 @@ DOMWrapperWorld* InspectorPageAgent::EnsureDOMWrapperWorld(
   }
   DOMWrapperWorld::SetIsolatedWorldSecurityOrigin(world->GetWorldId(),
                                                   security_origin);
+  IsolatedWorldCSP::Get().SetContentSecurityPolicy(
+      world->GetWorldId(), content_security_policy, security_origin);
   return world;
 }
 
@@ -1030,9 +1040,9 @@ void InspectorPageAgent::DidCreateMainWorldContext(LocalFrame* frame) {
   }
 
   for (auto& request : pending_isolated_worlds_.Take(frame)) {
-    CreateIsolatedWorldImpl(*frame, request.world_name,
-                            request.grant_universal_access,
-                            std::move(request.callback));
+    CreateIsolatedWorldImpl(
+        *frame, request.world_name, request.grant_universal_access,
+        request.content_security_policy, std::move(request.callback));
   }
   CHECK(injected_script_manager_);  // It would only be null after Dispose(),
                                     // which we tested for first thing.
@@ -1043,11 +1053,11 @@ void InspectorPageAgent::DidCreateMainWorldContext(LocalFrame* frame) {
   }
   String script = std::move(script_injection_on_load_once_);
   ScriptState* script_state = ToScriptStateForMainWorld(frame);
-  if (!script_state || !v8_session_) {
+  if (!script_state || !V8Session()) {
     return;
   }
 
-  v8_session_->evaluate(script_state->GetContext(),
+  V8Session()->evaluate(script_state->GetContext(),
                         ToV8InspectorStringView(script));
 }
 
@@ -1695,6 +1705,7 @@ void InspectorPageAgent::createIsolatedWorld(
     const String& frame_id,
     std::optional<String> world_name,
     std::optional<bool> grant_universal_access,
+    std::optional<String> content_security_policy,
     std::unique_ptr<CreateIsolatedWorldCallback> callback) {
   LocalFrame* frame =
       IdentifiersFactory::FrameById(inspected_frames_, frame_id);
@@ -1714,22 +1725,23 @@ void InspectorPageAgent::createIsolatedWorld(
     pending_isolated_worlds_.insert(frame, Vector<IsolatedWorldRequest>())
         .stored_value->value.push_back(IsolatedWorldRequest(
             world_name.value_or(""), grant_universal_access.value_or(false),
-            std::move(callback)));
+            content_security_policy.value_or(String()), std::move(callback)));
     return;
   }
-  CreateIsolatedWorldImpl(*frame, world_name.value_or(""),
-                          grant_universal_access.value_or(false),
-                          std::move(callback));
+  CreateIsolatedWorldImpl(
+      *frame, world_name.value_or(""), grant_universal_access.value_or(false),
+      content_security_policy.value_or(String()), std::move(callback));
 }
 
 void InspectorPageAgent::CreateIsolatedWorldImpl(
     LocalFrame& frame,
-    String world_name,
+    const String& world_name,
     bool grant_universal_access,
+    const String& content_security_policy,
     std::unique_ptr<CreateIsolatedWorldCallback> callback) {
   DCHECK(!frame.IsProvisional());
-  DOMWrapperWorld* world =
-      EnsureDOMWrapperWorld(&frame, world_name, grant_universal_access);
+  DOMWrapperWorld* world = EnsureDOMWrapperWorld(
+      &frame, world_name, grant_universal_access, content_security_policy);
   if (!world) {
     callback->sendFailure(
         protocol::Response::ServerError("Could not create isolated world"));
@@ -1994,7 +2006,6 @@ void InspectorPageAgent::Trace(Visitor* visitor) const {
 void InspectorPageAgent::Dispose() {
   InspectorBaseAgent::Dispose();
   injected_script_manager_ = nullptr;
-  v8_session_ = nullptr;
 }
 
 protocol::Response InspectorPageAgent::getOriginTrials(

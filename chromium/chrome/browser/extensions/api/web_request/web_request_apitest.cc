@@ -31,7 +31,6 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/test/test_future.h"
 #include "base/test/with_feature_override.h"
-#include "base/time/time.h"
 #include "base/time/time_override.h"
 #include "base/values.h"
 #include "build/build_config.h"
@@ -40,7 +39,6 @@
 #include "chrome/browser/devtools/protocol/devtools_protocol_test_support.h"
 #include "chrome/browser/devtools/url_constants.h"
 #include "chrome/browser/extensions/chrome_test_extension_loader.h"
-#include "chrome/browser/extensions/error_console/error_console.h"
 #include "chrome/browser/extensions/error_console/error_console_test_observer.h"
 #include "chrome/browser/extensions/extension_action_runner.h"
 #include "chrome/browser/extensions/extension_apitest.h"
@@ -96,6 +94,7 @@
 #include "content/public/test/web_transport_simple_test_server.h"
 #include "extensions/browser/api/web_request/extension_web_request_event_router.h"
 #include "extensions/browser/api/web_request/web_request_api.h"
+#include "extensions/browser/api/web_request/web_request_proxying_webtransport.h"
 #include "extensions/browser/api_test_utils.h"
 #include "extensions/browser/background_script_executor.h"
 #include "extensions/browser/blocked_action_type.h"
@@ -104,6 +103,7 @@
 #include "extensions/browser/extension_registrar.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/install_prefs_helper.h"
+#include "extensions/browser/lazy_context_id.h"
 #include "extensions/browser/permissions/active_tab_permission_granter.h"
 #include "extensions/browser/permissions/scripting_permissions_modifier.h"
 #include "extensions/browser/process_manager.h"
@@ -125,6 +125,8 @@
 #include "net/cookies/site_for_cookies.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/http/http_util.h"
+#include "net/log/net_log_source.h"
+#include "net/socket/udp_server_socket.h"
 #include "net/test/embedded_test_server/default_handlers.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
@@ -161,6 +163,7 @@
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/login/login_handler.h"                 // nogncheck
 #include "chrome/browser/ui/navigator/browser_navigator_params.h"  // nogncheck
 #include "chrome/browser/ui/search/ntp_test_utils.h"
@@ -2907,6 +2910,110 @@ IN_PROC_BROWSER_TEST_F(
   api.reset();
 }
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS)
+
+// Verifies that for child-process requests, the proxying `URLLoaderFactory`
+// generates and forwards a unique, non-zero request ID to the underlying
+// factory, even when the client passes duplicate IDs or 0. For
+// browser-initiated navigations (`render_process_id == -1`), verifies that the
+// original negative request ID is preserved without modification.
+IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest,
+                       ProxyingFactoryAssignsUniqueRequestId) {
+  ASSERT_TRUE(StartEmbeddedTestServer());
+
+  // Make sure the WebRequest proxy is inserted into the `URLLoaderFactory`
+  // chain for subresource and navigation requests.
+  auto* web_request_api =
+      BrowserContextKeyedAPIFactory<WebRequestAPI>::Get(profile());
+  ASSERT_TRUE(web_request_api);
+  web_request_api->ForceProxyForTesting();
+  profile()->GetDefaultStoragePartition()->FlushNetworkInterfaceForTesting();
+
+  const GURL navigation_url = embedded_test_server()->GetURL("/simple.html");
+  const GURL url_a = embedded_test_server()->GetURL("/echo?a");
+  const GURL url_b = embedded_test_server()->GetURL("/echo?b");
+  const GURL url_c = embedded_test_server()->GetURL("/echo?c");
+
+  // Intercept requests exiting the WebRequest proxy and record the forwarded
+  // network service request ID for each target URL.
+  std::map<GURL, int32_t> forwarded_request_ids;
+  content::URLLoaderInterceptor interceptor(base::BindLambdaForTesting(
+      [&](content::URLLoaderInterceptor::RequestParams* params) {
+        const GURL& url = params->url_request.url;
+        if (url == navigation_url || url == url_a || url == url_b ||
+            url == url_c) {
+          forwarded_request_ids[url] = params->request_id;
+        }
+        return false;
+      }));
+
+  // Perform a main-frame navigation. Because navigations are browser-initiated
+  // (`render_process_id == -1`), `GlobalRequestID::MakeBrowserInitiated()`
+  // generates a negative request ID.
+  ASSERT_TRUE(NavigateToURL(GetActiveWebContents(), navigation_url));
+  content::RenderFrameHost* frame =
+      GetActiveWebContents()->GetPrimaryMainFrame();
+
+  // Bind a WebRequest-proxied `URLLoaderFactory` for subresource requests and
+  // drive it directly to simulate a client submitting duplicate or zero IDs.
+  mojo::Remote<network::mojom::URLLoaderFactory> factory;
+  ASSERT_TRUE(frame->CreateNetworkServiceDefaultFactory(
+      factory.BindNewPipeAndPassReceiver()));
+
+  constexpr int32_t kClientRequestId = 42;
+
+  auto make_request = [&](const GURL& url) {
+    network::ResourceRequest request;
+    request.url = url;
+    request.request_initiator = frame->GetLastCommittedOrigin();
+    return request;
+  };
+
+  network::TestURLLoaderClient client_a;
+  mojo::PendingRemote<network::mojom::URLLoader> loader_a;
+  factory->CreateLoaderAndStart(
+      loader_a.InitWithNewPipeAndPassReceiver(), kClientRequestId,
+      network::mojom::kURLLoadOptionNone, make_request(url_a),
+      client_a.CreateRemote(),
+      net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));
+
+  network::TestURLLoaderClient client_b;
+  mojo::PendingRemote<network::mojom::URLLoader> loader_b;
+  factory->CreateLoaderAndStart(
+      loader_b.InitWithNewPipeAndPassReceiver(), kClientRequestId,
+      network::mojom::kURLLoadOptionNone, make_request(url_b),
+      client_b.CreateRemote(),
+      net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));
+
+  network::TestURLLoaderClient client_c;
+  mojo::PendingRemote<network::mojom::URLLoader> loader_c;
+  factory->CreateLoaderAndStart(
+      loader_c.InitWithNewPipeAndPassReceiver(), 0 /* request_id */,
+      network::mojom::kURLLoadOptionNone, make_request(url_c),
+      client_c.CreateRemote(),
+      net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));
+
+  client_a.RunUntilComplete();
+  client_b.RunUntilComplete();
+  client_c.RunUntilComplete();
+
+  // Verify that the browser-initiated navigation (`render_process_id == -1`)
+  // forwarded its original negative request ID unmodified.
+  ASSERT_TRUE(forwarded_request_ids.contains(navigation_url));
+  EXPECT_LT(forwarded_request_ids[navigation_url], 0);
+
+  // Verify that untrusted child-process requests receive unique, non-zero
+  // network service request IDs, even when the client reuses an ID (`url_a` vs
+  // `url_b`) or passes 0 (`url_c`).
+  ASSERT_TRUE(forwarded_request_ids.contains(url_a));
+  ASSERT_TRUE(forwarded_request_ids.contains(url_b));
+  ASSERT_TRUE(forwarded_request_ids.contains(url_c));
+  EXPECT_NE(forwarded_request_ids[url_a], 0);
+  EXPECT_NE(forwarded_request_ids[url_b], 0);
+  EXPECT_NE(forwarded_request_ids[url_c], 0);
+  EXPECT_NE(forwarded_request_ids[url_a], forwarded_request_ids[url_b]);
+  EXPECT_NE(forwarded_request_ids[url_a], forwarded_request_ids[url_c]);
+  EXPECT_NE(forwarded_request_ids[url_b], forwarded_request_ids[url_c]);
+}
 
 // Tests that webRequest API can inspect window.open() requests initiated from
 // chrome-untrusted:// pages to Web origins, but not other WebUI origins.
@@ -7026,6 +7133,123 @@ IN_PROC_BROWSER_TEST_F(ManifestV3WebRequestApiTest,
   ASSERT_TRUE(skipped_listener.WaitUntilSatisfied());
 }
 
+// Regression test for a bug where lazy webRequest event dispatching failed to
+// specify `restrict_to_browser_context` on the generated Event. Previously,
+// omitting this restriction caused the EventRouter to bypass profile isolation
+// checks and uselessly wake up incognito service workers for split-mode
+// extensions whenever a navigation occurred in a regular window (and vice
+// versa). This test verifies that lazy events are properly scoped to the
+// originating browser context and neither service worker is unnecessarily
+// woken up.
+IN_PROC_BROWSER_TEST_F(ManifestV3WebRequestApiTest,
+                       LazyDispatchDoesNotWakeIncognitoSplitModeWorker) {
+  ASSERT_TRUE(StartEmbeddedTestServer());
+
+  // Ensure an incognito browser exists before loading the extension so that
+  // loading the split-mode extension initializes both contexts.
+  content::WebContents* incognito_contents =
+      PlatformOpenURLOffTheRecord(profile(), GURL("about:blank"));
+  ASSERT_TRUE(incognito_contents);
+  Profile* incognito_profile =
+      profile()->GetPrimaryOTRProfile(/*create_if_needed=*/true);
+  ASSERT_TRUE(incognito_profile);
+
+  static constexpr char kManifest[] =
+      R"({
+           "name": "Split Mode WebRequest Test",
+           "version": "0.1",
+           "manifest_version": 3,
+           "incognito": "split",
+           "permissions": ["webRequest"],
+           "host_permissions": ["<all_urls>"],
+           "background": {"service_worker": "background.js"}
+         })";
+  static constexpr char kBackgroundJs[] =
+      R"(const mode = chrome.extension.inIncognitoContext ? 'incognito'
+                                                          : 'regular';
+         chrome.webRequest.onBeforeRequest.addListener(
+             (details) => {
+               chrome.test.sendMessage('event_' + mode);
+             },
+             {urls: ['<all_urls>'], types: ['main_frame']});
+         chrome.test.sendMessage('started_' + mode);)";
+
+  TestExtensionDir test_dir;
+  test_dir.WriteManifest(kManifest);
+  test_dir.WriteFile(FILE_PATH_LITERAL("background.js"), kBackgroundJs);
+
+  const Extension* extension = nullptr;
+  {
+    ExtensionTestMessageListener started_regular("started_regular");
+    ExtensionTestMessageListener started_incognito("started_incognito");
+
+    extension = LoadExtension(
+        test_dir.UnpackedPath(),
+        {.allow_in_incognito = true, .wait_for_registration_stored = true});
+    ASSERT_TRUE(extension);
+
+    // Wait for both regular and incognito service workers to finish starting.
+    EXPECT_TRUE(started_regular.WaitUntilSatisfied());
+    EXPECT_TRUE(started_incognito.WaitUntilSatisfied());
+  }
+
+  // Stop both service workers so the event listener becomes lazy in both
+  // contexts.
+  browsertest_util::StopServiceWorkerForExtensionGlobalScope(profile(),
+                                                             extension->id());
+  browsertest_util::StopServiceWorkerForExtensionGlobalScope(incognito_profile,
+                                                             extension->id());
+  base::RunLoop().RunUntilIdle();
+
+  auto expect_no_running_or_pending_workers =
+      [extension](content::BrowserContext* context) {
+        EXPECT_TRUE(ProcessManager::Get(context)
+                        ->GetServiceWorkersForExtension(extension->id())
+                        .empty());
+        EXPECT_EQ(
+            0u, ServiceWorkerTaskQueue::Get(context)->GetNumPendingTasksForTest(
+                    LazyContextId::ForExtension(context, extension)));
+      };
+
+  // 1) Navigate only in the incognito browser context.
+  {
+    ExtensionTestMessageListener event_incognito("event_incognito");
+
+    ASSERT_TRUE(NavigateToURL(
+        incognito_contents,
+        embedded_test_server()->GetURL("example.com", "/simple.html")));
+
+    // Only the incognito service worker should be woken up and receive the
+    // event; the regular service worker must remain stopped with no pending
+    // tasks or starts.
+    EXPECT_TRUE(event_incognito.WaitUntilSatisfied());
+    expect_no_running_or_pending_workers(profile());
+  }
+
+  // 2) Stop the incognito worker again to test regular navigation isolation.
+  // Note that the regular worker remained stopped from step 1 because our
+  // event dispatching fix correctly avoided waking it up.
+  browsertest_util::StopServiceWorkerForExtensionGlobalScope(incognito_profile,
+                                                             extension->id());
+  base::RunLoop().RunUntilIdle();
+
+  // Navigate only in the regular (on-the-record) browser context.
+  {
+    ExtensionTestMessageListener event_regular("event_regular");
+
+    content::WebContents* web_contents = GetActiveWebContents();
+    ASSERT_TRUE(NavigateToURL(
+        web_contents,
+        embedded_test_server()->GetURL("example.com", "/simple.html")));
+
+    // Only the regular service worker should be woken up and receive the event;
+    // the incognito service worker must remain stopped with no pending tasks or
+    // starts.
+    EXPECT_TRUE(event_regular.WaitUntilSatisfied());
+    expect_no_running_or_pending_workers(incognito_profile);
+  }
+}
+
 // Tests a service worker-based extension using webRequest for observational
 // purposes receives events after the worker stops.
 IN_PROC_BROWSER_TEST_F(ManifestV3WebRequestApiTest,
@@ -7417,6 +7641,110 @@ IN_PROC_BROWSER_TEST_F(
   // in the in-memory lazy listeners, it assumes it's also in the prefs and
   // tries to remove it. That should be handled gracefully nad this test should
   // NOT crash.
+}
+
+// Tests that a request resumes when a stale lazy webRequest listener has a
+// different filter than the re-registered listener.
+IN_PROC_BROWSER_TEST_F(ManifestV3WebRequestApiTest,
+                       WebRequestBlocking_MismatchedLazyReregistration) {
+  ASSERT_TRUE(StartEmbeddedTestServer());
+  static constexpr char kManifest[] =
+      R"({
+           "name": "MV3 WebRequest",
+           "version": "0.1",
+           "manifest_version": 3,
+           "permissions": ["webRequest", "webRequestBlocking"],
+           "host_permissions": [
+             "http://example.com/*",
+             "http://mismatch.example/*"
+           ],
+           "background": {"service_worker": "background.js"}
+         })";
+
+  static constexpr char kBackgroundJs[] =
+      R"(chrome.webRequest.onBeforeRequest.addListener(
+             (details) => {
+               return new Promise(() => {});
+             },
+             {urls: ['http://mismatch.example/*'], types: ['main_frame']},
+             ['blocking']);
+         chrome.test.sendMessage('ready');)";
+
+  TestExtensionDir test_dir;
+  test_dir.WriteManifest(kManifest);
+  test_dir.WriteFile(FILE_PATH_LITERAL("background.js"), kBackgroundJs);
+
+  const Extension* extension = LoadPolicyExtension(test_dir);
+  ASSERT_TRUE(extension);
+
+  EXPECT_EQ(1u, web_request_router()->GetListenerCountForTesting(
+                    profile(), "webRequest.onBeforeRequest"));
+  EXPECT_EQ(0u, web_request_router()->GetInactiveListenerCount(
+                    profile(), "webRequest.onBeforeRequest"));
+
+  std::optional<WorkerId> worker_id = GetWorkerIdForExtension(extension->id());
+  ASSERT_TRUE(worker_id);
+  int version_id = worker_id->version_id;
+
+  // Stop the worker so its current webRequest listener becomes inactive.
+  browsertest_util::StopServiceWorkerForExtensionGlobalScope(profile(),
+                                                             extension->id());
+  ASSERT_TRUE(content::CheckServiceWorkerIsStopped(GetServiceWorkerContext(),
+                                                   version_id));
+  ASSERT_TRUE(base::test::RunUntil([&]() {
+    return web_request_router()->GetListenerCountForTesting(
+               profile(), "webRequest.onBeforeRequest") == 0u &&
+           web_request_router()->GetInactiveListenerCount(
+               profile(), "webRequest.onBeforeRequest") == 1u;
+  }));
+
+  EXPECT_EQ(0u, web_request_router()->GetListenerCountForTesting(
+                    profile(), "webRequest.onBeforeRequest"));
+  EXPECT_EQ(1u, web_request_router()->GetInactiveListenerCount(
+                    profile(), "webRequest.onBeforeRequest"));
+
+  // Simulate stale inactive listener state where an old listener can wake the
+  // service worker, but the worker registers a different filter under the same
+  // generated sub-event name.
+  base::DictValue stale_filter_value;
+  base::ListValue urls;
+  urls.Append("http://example.com/*");
+  stale_filter_value.Set("urls", std::move(urls));
+  base::ListValue types;
+  types.Append("main_frame");
+  stale_filter_value.Set("types", std::move(types));
+  WebRequestEventRouter::RequestFilter stale_filter;
+  std::string error;
+  ASSERT_TRUE(stale_filter.InitFromValue(stale_filter_value, &error)) << error;
+  ASSERT_TRUE(web_request_router()->AddEventListener(
+      profile(), extension->id(), extension->name(),
+      "webRequest.onBeforeRequest", "webRequest.onBeforeRequest/s1",
+      std::move(stale_filter),
+      extension_web_request_api_helpers::ExtraInfoSpec::BLOCKING,
+      -1 /* render_process_id */, 0 /* web_view_instance_id */,
+      -1 /* worker_thread_id */, blink::mojom::kInvalidServiceWorkerVersionId,
+      true /* is_lazy */));
+
+  // Navigating to the stale filter should wake the worker. The worker then
+  // registers the mismatched listener from `kBackgroundJs`.
+  content::WebContents* web_contents = GetActiveWebContents();
+  const GURL url =
+      embedded_test_server()->GetURL("example.com", "/simple.html");
+  content::TestNavigationObserver nav_observer(web_contents);
+  ExtensionTestMessageListener reregistered_listener("ready");
+  content::NavigationController::LoadURLParams params(url);
+  web_contents->GetController().LoadURLWithParams(params);
+  ASSERT_TRUE(reregistered_listener.WaitUntilSatisfied());
+
+  // The stale listener should have been cleaned up, allowing the navigation to
+  // finish instead of waiting forever for the stale listener's response.
+  EXPECT_TRUE(content::WaitForLoadStop(web_contents));
+  EXPECT_TRUE(nav_observer.last_navigation_succeeded());
+  EXPECT_EQ(url, web_contents->GetLastCommittedURL());
+  EXPECT_EQ(1u, web_request_router()->GetListenerCountForTesting(
+                    profile(), "webRequest.onBeforeRequest"));
+  EXPECT_EQ(0u, web_request_router()->GetInactiveListenerCount(
+                    profile(), "webRequest.onBeforeRequest"));
 }
 
 // Tests unloading an extension with lazy listeners while the worker is
@@ -8885,9 +9213,7 @@ IN_PROC_BROWSER_TEST_F(ManifestV3WebRequestApiTest,
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 
-// TODO(crbug.com/478208019): Test is flaky.
-IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest,
-                       DISABLE_SecurityInfo_Secure) {
+IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest, SecurityInfo_Secure) {
   UseHttpsTestServer(net::EmbeddedTestServer::ServerCertificate::CERT_OK);
   ASSERT_TRUE(StartEmbeddedTestServer());
 
@@ -8919,9 +9245,8 @@ class SecurityInfoBrokenWebRequestApiTest : public ExtensionWebRequestApiTest {
   }
 };
 
-// TODO(crbug.com/478208019): Test is flaky.
 IN_PROC_BROWSER_TEST_F(SecurityInfoBrokenWebRequestApiTest,
-                       DISABLE_SecurityInfo_Broken) {
+                       SecurityInfo_Broken) {
   UseHttpsTestServer(net::EmbeddedTestServer::ServerCertificate::CERT_EXPIRED);
   ASSERT_TRUE(StartEmbeddedTestServer());
 
@@ -8930,9 +9255,8 @@ IN_PROC_BROWSER_TEST_F(SecurityInfoBrokenWebRequestApiTest,
                       embedded_test_server()->GetURL("/simple.html"));
 }
 
-// TODO(crbug.com/478208019): Test is flaky.
 IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest,
-                       DISABLE_SecurityInfo_WebSocket_Secure) {
+                       SecurityInfo_WebSocket_Secure) {
   ASSERT_TRUE(StartEmbeddedTestServer());
 
   InitWebSocketHttpsServer();
@@ -8955,9 +9279,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest,
       GetWebSocketServer().GetURL("/echo-with-no-extension"));
 }
 
-// TODO(crbug.com/478208019): Test is flaky.
 IN_PROC_BROWSER_TEST_F(SecurityInfoBrokenWebRequestApiTest,
-                       DISABLED_SecurityInfo_WebSocket_Broken) {
+                       SecurityInfo_WebSocket_Broken) {
   ASSERT_TRUE(StartEmbeddedTestServer());
 
   InitWebSocketHttpsServer(
@@ -9059,6 +9382,116 @@ IN_PROC_BROWSER_TEST_P(ExtensionWebRequestApiCoverageTest,
                        MAYBE_RequestInterceptionCoverage) {
   ASSERT_TRUE(StartWebSocketServer());
   ASSERT_TRUE(RunTest("test_interception_coverage.html")) << message_;
+}
+
+class WebRequestProxyingWebTransportCrashTest : public ExtensionApiTest {
+ public:
+  WebRequestProxyingWebTransportCrashTest() = default;
+  ~WebRequestProxyingWebTransportCrashTest() override = default;
+
+  void SetUpOnMainThread() override {
+    ExtensionApiTest::SetUpOnMainThread();
+    ASSERT_TRUE(embedded_test_server()->Start());
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(WebRequestProxyingWebTransportCrashTest,
+                       IncognitoProfileDestructionCrash) {
+  // Create a UDP sink to guarantee a hanging connection.
+  net::IPEndPoint bind_address(net::IPAddress::IPv4Localhost(), 0);
+  auto udp_sink =
+      std::make_unique<net::UDPServerSocket>(nullptr, net::NetLogSource());
+  udp_sink->AllowAddressReuse();
+  ASSERT_EQ(udp_sink->Listen(bind_address), net::OK);
+  net::IPEndPoint local_address;
+  ASSERT_EQ(udp_sink->GetLocalAddress(&local_address), net::OK);
+  std::string hanging_port = base::NumberToString(local_address.port());
+
+  // Setup the MV3 Extension to universally intercept and proxy everything.
+  TestExtensionDir test_dir;
+  test_dir.WriteManifest(R"({
+    "name": "WebTransport Interceptor",
+    "version": "1.0",
+    "manifest_version": 3,
+    "host_permissions": ["<all_urls>"],
+    "permissions": ["webRequest"],
+    "background": {"service_worker": "background.js"}
+  })");
+
+  test_dir.WriteFile(FILE_PATH_LITERAL("background.js"), R"(
+    let requestsSeen = 0;
+    const requestsExpected = 4;
+    chrome.webRequest.onBeforeRequest.addListener(
+      function(details) {
+        // Filter for test endpoints to ignore background noise.
+        if (
+          details.url.includes("127.0.0.1") ||
+          details.url.includes("198.51.100.1")
+        ) {
+          requestsSeen++;
+          if (requestsSeen === requestsExpected) {
+            chrome.test.sendMessage("requests proxied");
+          }
+        }
+      },
+      {urls: ["<all_urls>"]}
+    );
+  )");
+
+  const Extension* extension =
+      LoadExtension(test_dir.UnpackedPath(), {.allow_in_incognito = true});
+  ASSERT_TRUE(extension);
+
+  // Open Incognito and navigate.
+  Browser* incognito_browser = CreateIncognitoBrowser();
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      incognito_browser, embedded_test_server()->GetURL("/empty.html")));
+  content::WebContents* web_contents =
+      incognito_browser->tab_strip_model()->GetActiveWebContents();
+
+  // This utilizes a mix of fast-failing, hanging, and asynchronous network
+  // rejections to blanket the teardown timeline, guaranteeing the IPC
+  // collision.
+  std::string script = base::StringPrintf(
+      R"(
+    const endpoints = [
+      'https://127.0.0.1:0/',                 // OS-level instant refusal
+      'https://198.51.100.1:443/',            // Network-level timeout
+      'https://127.0.0.1:%s/',                // UDP sink
+      '%s'                                    // QUIC to TCP port rejection
+    ];
+
+    for (const endpoint of endpoints) {
+      try {
+        let wt = new WebTransport(endpoint);
+        wt.ready.catch(() => {});
+        wt.closed.catch(() => {});
+      } catch(e) {}
+    }
+  )",
+      hanging_port.c_str(), embedded_test_server()->GetURL("/").spec().c_str());
+
+  // Setup the listener before executing the JS.
+  ExtensionTestMessageListener proxy_listener("requests proxied");
+
+  EXPECT_TRUE(content::ExecJs(web_contents, script));
+
+  // Wait for the extension to confirm all 4 requests have successfully
+  // reached the Browser process and hit the WebRequest proxy.
+  ASSERT_TRUE(proxy_listener.WaitUntilSatisfied());
+
+  // Asynchronous teardown.
+  // Initiate profile shutdown asynchronously to ensure the message loop remains
+  // unblocked and capable of processing the incoming Mojo network errors.
+  incognito_browser->GetWindow()->Close();
+
+  // Force the message loop collision.
+  // Pump the loop to race the network errors against the profile shutdown
+  // tasks. Explicitly declare the loop and use QuitWhenIdle() to satisfy
+  // presubmit checks while achieving the same timing as RunUntilIdle().
+  base::RunLoop teardown_loop;
+  teardown_loop.QuitWhenIdle();
+  teardown_loop.Run();
 }
 
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS)

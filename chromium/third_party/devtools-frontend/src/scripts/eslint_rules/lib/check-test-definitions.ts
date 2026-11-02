@@ -30,47 +30,27 @@ export default createRule({
       category: 'Possible Errors',
     },
     messages: {
-      missingBugId:
-          'Skipped tests must have a CRBug included in the description: `it.skip(\'[crbug.com/BUGID]: testname\', async() => {})',
+      disallowSkip: 'Do not use .skip. Use test/TestExpectations instead.',
       extraBugId:
-          'Non-skipped tests cannot include a CRBug tag at the beginning of the description: `it.skip(\'testname (crbug.com/BUGID)\', async() => {})',
-      comment: 'A skipped test must have an attached comment with an explanation written before the test',
+          'Non-skipped tests cannot include a CRBug tag at the beginning of the description: `it(\'testname (crbug.com/BUGID)\', async() => {})',
     },
     fixable: 'code',
     schema: [],  // no options
   },
   defaultOptions: [],
   create: function(context) {
-    const sourceCode = context.sourceCode;
     return {
       MemberExpression(node) {
         if (node.object.type !== 'Identifier' || node.property.type !== 'Identifier') {
           return;
         }
 
-        if ((node.object.name === 'it' || node.object.name === 'describe') &&
-            (node.property.name === 'skip' || node.property.name === 'skipOnPlatforms') &&
+        if ((node.object.name === 'it' || node.object.name === 'describe') && node.property.name === 'skip' &&
             node.parent?.type === 'CallExpression') {
-          const testNameNode = node.property.name === 'skip' ? node.parent.arguments[0] : node.parent.arguments[1];
-
-          if (!testNameNode) {
-            return;
-          }
-
-          const textValue = getTextValue(testNameNode);
-
-          if (!textValue || !TEST_NAME_REGEX.test(textValue)) {
-            context.report({
-              node,
-              messageId: 'missingBugId',
-            });
-          }
-
-          const attachedComments = sourceCode.getCommentsBefore(node.parent);
-
-          if (attachedComments.length === 0) {
-            context.report({node, messageId: 'comment'});
-          }
+          context.report({
+            node,
+            messageId: 'disallowSkip',
+          });
         }
       },
 

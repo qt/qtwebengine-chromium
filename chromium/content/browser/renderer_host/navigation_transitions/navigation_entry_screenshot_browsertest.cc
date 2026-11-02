@@ -965,13 +965,11 @@ IN_PROC_BROWSER_TEST_P(NavigationEntryScreenshotBrowserTest,
             GURL(url::kAboutBlankURL));
 
   // Navigates away from about:blank.
-  ASSERT_TRUE(NavigateToURL(tab, GetNextUrl("/green.html")));
-  WaitForCopyableViewInWebContents(tab);
-  // Captured.
+  NavigateTabAndWaitForScreenshotCached(tab, controller,
+                                        GetNextUrl("/green.html"));
   AssertOrderedScreenshotsAre(controller, {SK_ColorWHITE, std::nullopt});
 
   HistoryNavigateTabAndWaitForScreenshotCached(tab, controller, -1);
-  // Captured.
   AssertOrderedScreenshotsAre(controller, {std::nullopt, SK_ColorGREEN});
 }
 

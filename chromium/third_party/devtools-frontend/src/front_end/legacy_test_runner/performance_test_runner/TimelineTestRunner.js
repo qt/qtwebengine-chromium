@@ -46,7 +46,7 @@ PerformanceTestRunner.timelinePropertyFormatters = {
   timing: 'formatAsTypeName',
   streamed: 'formatAsTypeName',
   producedCacheSize: 'formatAsTypeName',
-  consumedCacheSize: 'formatAsTypeName'
+  consumedCacheSize: 'formatAsTypeName',
 };
 
 PerformanceTestRunner.InvalidationFormatters = {
@@ -60,7 +60,7 @@ PerformanceTestRunner.InvalidationFormatters = {
   linkedLayoutEvent: 'skip',
   nodeId: 'skip',
   paintId: 'skip',
-  startTime: 'skip'
+  startTime: 'skip',
 };
 
 TestRunner.formatters.formatAsInvalidationCause = function(cause) {
@@ -223,7 +223,7 @@ PerformanceTestRunner.printTraceEventProperties = function(traceEvent) {
     endTime: traceEvent.endTime || traceEvent.startTime,
     frameId,
     startTime: traceEvent.startTime,
-    type: traceEvent.name
+    type: traceEvent.name,
   };
 
   for (const field in object) {
@@ -249,8 +249,19 @@ PerformanceTestRunner.findChildEvent = function(events, parentIndex, name) {
 
 PerformanceTestRunner.dumpFrame = function(frame) {
   const fieldsToDump = [
-    'cpuTime', 'duration', 'startTime', 'endTime', 'id', 'mainThreadFrameId', 'timeByCategory', 'other', 'scripting',
-    'painting', 'rendering', 'committedFrom', 'idle'
+    'cpuTime',
+    'duration',
+    'startTime',
+    'endTime',
+    'id',
+    'mainThreadFrameId',
+    'timeByCategory',
+    'other',
+    'scripting',
+    'painting',
+    'rendering',
+    'committedFrom',
+    'idle',
   ];
 
   function formatFields(object) {

@@ -463,7 +463,7 @@ describe('HAR Importer', () => {
         eventId: '3',
         eventName: 'message',
         time: 1607978160,
-      }
+      },
     ];
     assert.deepEqual(messages, expected);
   });
@@ -579,5 +579,12 @@ describe('HAR Importer', () => {
     assert.strictEqual(messages[0].eventId, '');
     assert.strictEqual(messages[1].eventName, 'message');
     assert.strictEqual(messages[1].eventId, '2');
+  });
+
+  it('sets the isImportedHar flag to true on imported requests', () => {
+    const parsedRequests = HAR.Importer.Importer.requestsFromHARLog(exampleLog);
+    assert.lengthOf(parsedRequests, 2);
+    assert.isTrue(parsedRequests[0].isImportedHar());
+    assert.isTrue(parsedRequests[1].isImportedHar());
   });
 });

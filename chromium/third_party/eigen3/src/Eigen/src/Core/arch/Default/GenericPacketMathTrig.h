@@ -57,7 +57,7 @@ inline float trig_reduce_huge(float xf, Eigen::numext::int32_t* quadrant) {
   // Below, -118 = -126 + 8.
   //   -126 is to get the exponent,
   //   +8 is to enable alignment of 2/pi's bits on 8 bits.
-  // This is possible because the fractional part of x as only 24 meaningful bits.
+  // This is possible because the fractional part of x has only 24 meaningful bits.
   uint32_t e = (xi >> 23) - 118;
   // Extract the mantissa and shift it to align it wrt the exponent
   xi = ((xi & 0x007fffffu) | 0x00800000u) << (e & 0x7);
@@ -79,7 +79,7 @@ inline float trig_reduce_huge(float xf, Eigen::numext::int32_t* quadrant) {
   // Now it remains to compute "r = x - q*pi/2" with high accuracy,
   // since we have p=x/(pi/2) with high accuracy, we can more efficiently compute r as:
   //   r = (p-q)*pi/2,
-  // where the product can be be carried out with sufficient accuracy using double precision.
+  // where the product can be carried out with sufficient accuracy using double precision.
   p -= q << 62;
   return float(double(int64_t(p)) * pio2_62);
 }
@@ -96,7 +96,7 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
   const Packet cst_2oPI = pset1<Packet>(0.636619746685028076171875f);  // 2/PI
   const Packet cst_rounding_magic = pset1<Packet>(12582912);           // 2^23 for rounding
   const PacketI csti_1 = pset1<PacketI>(1);
-  const Packet cst_sign_mask = pset1frombits<Packet>(static_cast<Eigen::numext::uint32_t>(0x80000000u));
+  const Packet cst_sign_mask = psignmask<Packet>();
 
   Packet x = pabs(_x);
 
@@ -176,7 +176,7 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
   y1 = pmadd(y1, x2, pset1<Packet>(-0.5f));
   y1 = pmadd(y1, x2, pset1<Packet>(1.f));
 
-  // Evaluate the sin(x) polynomial. (Pi/4 <= x <= Pi/4)
+  // Evaluate the sin(x) polynomial. (-Pi/4 <= x <= Pi/4)
   // octave/matlab code to compute those coefficients:
   //    x = (0:0.0001:pi/4)';
   //    A = [x.^3 x.^5 x.^7];
@@ -294,7 +294,7 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
   typedef typename unpacket_traits<Packet>::integer_packet PacketI;
   typedef typename unpacket_traits<PacketI>::type ScalarI;
 
-  const Packet cst_sign_mask = pset1frombits<Packet>(static_cast<Eigen::numext::uint64_t>(0x8000000000000000u));
+  const Packet cst_sign_mask = psignmask<Packet>();
 
   // If the argument is smaller than this value, use a simpler argument reduction
   const double small_th = 15;
@@ -579,7 +579,7 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet generic_atan(const Pa
 
   constexpr Scalar kPiOverTwo = static_cast<Scalar>(EIGEN_PI / 2);
 
-  const Packet cst_signmask = pset1<Packet>(Scalar(-0.0));
+  const Packet cst_signmask = psignmask<Packet>();
   const Packet cst_one = pset1<Packet>(Scalar(1));
   const Packet cst_pi_over_two = pset1<Packet>(kPiOverTwo);
 
@@ -679,7 +679,7 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS T ptanh_float(const T& x) {
   const T q = ppolevl<T, 2>::run(x2, beta);
   const T small_tanh = pmadd(x3, pdiv(p, q), x);
 
-  const T sign_mask = pset1<T>(-0.0f);
+  const T sign_mask = psignmask<T>();
   const T abs_x = pandnot(x, sign_mask);
   constexpr float kSmallThreshold = 1.25f;
   const T large_mask = pcmp_lt(pset1<T>(kSmallThreshold), abs_x);
@@ -790,9 +790,9 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet patanh_float(const Pa
 
   const Packet x_eq_one = pcmp_eq(one, pabs(x));
   const Packet x_gt_one = pcmp_lt(one, pabs(x));
-  const Packet sign_mask = pset1<Packet>(-0.0f);
+  const Packet sign_mask = psignmask<Packet>();
   const Packet x_sign = pand(sign_mask, x);
-  const Packet inf = pset1<Packet>(std::numeric_limits<float>::infinity());
+  const Packet inf = pinf<Packet>();
   return por(x_gt_one, pselect(x_eq_one, por(x_sign, inf), pselect(x_gt_half, r, p)));
 }
 
@@ -828,9 +828,9 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet patanh_double(const P
 
   const Packet x_eq_one = pcmp_eq(one, pabs(x));
   const Packet x_gt_one = pcmp_lt(one, pabs(x));
-  const Packet sign_mask = pset1<Packet>(-0.0);
+  const Packet sign_mask = psignmask<Packet>();
   const Packet x_sign = pand(sign_mask, x);
-  const Packet inf = pset1<Packet>(std::numeric_limits<double>::infinity());
+  const Packet inf = pinf<Packet>();
   return por(x_gt_one, pselect(x_eq_one, por(x_sign, inf), pselect(x_gt_half, y_large, y_small)));
 }
 
@@ -848,7 +848,7 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet psinh_float(const Pac
   typedef typename unpacket_traits<Packet>::type Scalar;
   static_assert(std::is_same<Scalar, float>::value, "Scalar type must be float");
 
-  const Packet sign_mask = pset1<Packet>(-0.0f);
+  const Packet sign_mask = psignmask<Packet>();
   const Packet abs_x = pandnot(x, sign_mask);
   const Packet x_sign = pand(x, sign_mask);
 
@@ -888,7 +888,7 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet psinh_double(const Pa
   typedef typename unpacket_traits<Packet>::type Scalar;
   static_assert(std::is_same<Scalar, double>::value, "Scalar type must be double");
 
-  const Packet sign_mask = pset1<Packet>(-0.0);
+  const Packet sign_mask = psignmask<Packet>();
   const Packet abs_x = pandnot(x, sign_mask);
   const Packet x_sign = pand(x, sign_mask);
 
@@ -990,7 +990,7 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pcosh_double(const Pa
 */
 template <typename Packet>
 EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pasinh_float(const Packet& x) {
-  const Packet sign_mask = pset1<Packet>(-0.0f);
+  const Packet sign_mask = psignmask<Packet>();
   const Packet abs_x = pandnot(x, sign_mask);
   const Packet x_sign = pand(x, sign_mask);
   const Packet one = pset1<Packet>(1.0f);
@@ -1015,7 +1015,7 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pasinh_float(const Pa
 
 template <typename Packet>
 EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pasinh_double(const Packet& x) {
-  const Packet sign_mask = pset1<Packet>(-0.0);
+  const Packet sign_mask = psignmask<Packet>();
   const Packet abs_x = pandnot(x, sign_mask);
   const Packet x_sign = pand(x, sign_mask);
   const Packet one = pset1<Packet>(1.0);

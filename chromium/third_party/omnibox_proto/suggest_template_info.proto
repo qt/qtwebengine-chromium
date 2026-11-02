@@ -13,8 +13,10 @@ option java_outer_classname = 'SuggestTemplateInfoProto';
 
 package omnibox;
 
-import "answer_data.proto";
 import "chrome_searchbox_stats.proto";
+import "formatted_string.proto";
+import "input_source.proto";
+import "model_mode.proto";
 import "suggest_inventory.proto";
 import "tool_mode.proto";
 
@@ -34,7 +36,7 @@ message SuggestTemplateInfo {
   // The style of the suggestion.
   optional StandardSuggestStyle style = 1;
 
-  // Next ID: 11
+  // Next ID: 15
   enum IconType {
     // Unspecified.
     ICON_TYPE_UNSPECIFIED = 0;
@@ -49,7 +51,6 @@ message SuggestTemplateInfo {
     // A sub arrow right icon.
     SUB_ARROW_RIGHT = 5;
     // A globe with a search loop icon, typically used for deep search.
-    //
     GLOBE_WITH_SEARCH_LOOP = 6;
     // Banana icon, typically used for nano banana suggestions.
     // Uses the banana emoji.
@@ -58,11 +59,17 @@ message SuggestTemplateInfo {
     // is from.
     FAVICON = 8;
     // Notes spark icon, used for AIM More Threads suggestions.
-    //
     NOTES_SPARK = 9;
     // Draft spark icon, typically used for AIM canvas suggestions.
-    //
     DRAFT_SPARK = 10;
+    // A light bulb icon, used for the Brainstorm suggestions.
+    LIGHTBULB = 11;
+    // Attach file icon, used in suggestions that ask the user to attach a file.
+    ATTACH_FILE = 12;
+    // School icon, used in EDU suggestions.
+    SCHOOL = 13;
+    // Ink pen icon, used for writing suggestions.
+    INK_PEN = 14;
   }
 
   // The icon type of the suggestion, this is typically the icon in front of
@@ -139,8 +146,7 @@ message SuggestTemplateInfo {
 
   // This sends information about what the Fusebox action does. For example,
   // it might preselect a tool, a model or something else.
-  // See
-  // Next ID: 3
+  // Next ID: 7
   message FuseboxAction {
     // Which tool gets preselected when the user clicks on the suggestion.
     optional ToolMode preselected_tool = 1;
@@ -148,6 +154,40 @@ message SuggestTemplateInfo {
     // The inventory of suggestions to show when the user clicks on the
     // suggestion.
     optional SuggestInventory preferred_inventory = 2;
+
+    // Preselect Gemini model mode
+    optional ModelMode preselected_model = 3;
+
+    // Picker/Input source to trigger immediately on chip / suggestion click
+    // (e.g., tab picker, image picker, file picker).
+    optional InputSource preselected_input_source = 4;
+
+    // This changes what the suggestion text (query) does on click.
+    enum QueryActionOverride {
+      // Default implicit behavior: submits the query immediately.
+      QUERY_ACTION_DEFAULT = 0;
+
+      // Opens the searchbox with the provided query.
+      QUERY_ACTION_PASTE = 1;
+
+      // Opens the searchbox and displays the suggestion query text as
+      // placeholder hint.
+      QUERY_ACTION_HINT = 2;
+    }
+    optional QueryActionOverride query_action_override = 5;
+
+    // This changes which searchbox opens on click.
+    enum SearchboxOverride {
+      // Unspecified means no searchbox is open on click.
+      SEARCHBOX_OVERRIDE_UNSPECIFIED = 0;
+
+      // Opens the realbox.
+      SEARCHBOX_OVERRIDE_REALBOX = 1;
+
+      // Opens the composebox.
+      SEARCHBOX_OVERRIDE_COMPOSEBOX = 2;
+    }
+    optional SearchboxOverride searchbox_override = 6;
   }
 
   optional FuseboxAction fusebox_action = 8;

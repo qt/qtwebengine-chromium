@@ -4,6 +4,8 @@
 
 #include "components/page_content_annotations/content/page_content_extraction_service.h"
 
+#include <stdint.h>
+
 #include <memory>
 #include <optional>
 #include <utility>
@@ -11,13 +13,11 @@
 #include <vector>
 
 #include "base/base64.h"
-#include "base/check.h"
 #include "base/feature_list.h"
 #include "base/files/file_path.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
-#include "components/feature_engagement/public/feature_constants.h"
 #include "components/feature_engagement/public/tracker.h"
 #include "components/optimization_guide/content/browser/page_content_proto_provider.h"
 #include "components/optimization_guide/proto/features/common_quality_data.pb.h"
@@ -259,13 +259,19 @@ void PageContentExtractionService::
 void PageContentExtractionService::
     GetExtractedPageContentAndEligibilityForPageAsync(
         content::Page& page,
-        GetExtractedPageContentAndEligibilityCallback callback) {
+        GetExtractedPageContentAndEligibilityCallback callback,
+        bool trigger_if_not_cached) {
   AnnotatedPageContentRequest* request =
       GetAnnotatedPageContentRequestFromPage(page);
-  if (request) {
-    request->GetCachedContentAndEligibilityAsync(std::move(callback));
-  } else {
+  if (!request) {
     std::move(callback).Run(std::nullopt);
+    return;
+  }
+
+  if (trigger_if_not_cached) {
+    request->GetContentAndEligibilityAsync(std::move(callback));
+  } else {
+    request->GetCachedContentAndEligibilityAsync(std::move(callback));
   }
 }
 
@@ -366,10 +372,29 @@ void PageContentExtractionService::RunCleanUpTasksWithActiveTabs(
   }
 }
 
-PageContentCache* PageContentExtractionService::GetPageContentCache() {
-  return is_page_content_cache_enabled_
-             ? page_content_cache_handler_->page_content_cache()
-             : nullptr;
+bool PageContentExtractionService::IsOnDiskCacheEnabled() const {
+  return is_page_content_cache_enabled_;
+}
+
+void PageContentExtractionService::GetPageContentFromOnDiskCache(
+    int64_t tab_id,
+    GetPageContentCallback callback) {
+  if (is_page_content_cache_enabled_) {
+    page_content_cache_handler_->page_content_cache()->GetPageContentForTab(
+        tab_id, std::move(callback));
+  } else {
+    std::move(callback).Run(std::nullopt);
+  }
+}
+
+void PageContentExtractionService::GetOnDiskCachedTabIds(
+    GetAllTabIdsCallback callback) {
+  if (is_page_content_cache_enabled_) {
+    page_content_cache_handler_->page_content_cache()->GetAllTabIds(
+        std::move(callback));
+  } else {
+    std::move(callback).Run({});
+  }
 }
 
 AnnotatedPageContentRequest*

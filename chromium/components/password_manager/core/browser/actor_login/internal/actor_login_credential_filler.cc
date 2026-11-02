@@ -9,8 +9,11 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/containers/span.h"
+#include "base/containers/to_vector.h"
 #include "base/feature_list.h"
 #include "base/functional/concurrent_closures.h"
+#include "base/notimplemented.h"
 #include "base/strings/to_string.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/types/expected.h"
@@ -115,6 +118,7 @@ ActorLoginCredentialFiller::ActorLoginCredentialFiller(
     base::WeakPtr<ActorLoginQualityLoggerInterface> mqls_logger,
     base::TimeTicks attempt_login_start_time,
     IsTaskInFocus is_task_in_focus,
+    FrameFillingStartedCallback frame_filling_started_cb,
     LoginStatusResultOrErrorReply callback)
     : origin_(main_frame_origin),
       credential_(credential),
@@ -125,6 +129,7 @@ ActorLoginCredentialFiller::ActorLoginCredentialFiller(
       attempt_login_start_time_(attempt_login_start_time),
       login_form_finder_(std::make_unique<ActorLoginFormFinder>(client_)),
       is_task_in_focus_(std::move(is_task_in_focus)),
+      on_frame_filling_started_cb_(std::move(frame_filling_started_cb)),
       callback_(std::move(callback)) {}
 
 ActorLoginCredentialFiller::~ActorLoginCredentialFiller() {
@@ -145,7 +150,7 @@ void ActorLoginCredentialFiller::AttemptLogin(
 
   // The check is added separately in order to differentiate between having
   // no signin form on the page and filling being disallowed.
-  if (!client_->IsFillingEnabled(origin_.GetURL())) {
+  if (!client_->IsFillingEnabled(origin_)) {
     LogStatus(logger.get(), Logger::STRING_ACTOR_LOGIN_FILLING_NOT_ALLOWED);
     BuildAttemptLoginOutcome(AttemptLoginOutcomeMqls::kFillingNotAllowed);
     std::move(callback_).Run(
@@ -417,12 +422,14 @@ bool ActorLoginCredentialFiller::IsReauthBeforeFillingRequired() {
 void ActorLoginCredentialFiller::ReauthenticateAndFill(
     base::OnceClosure fill_form_cb) {
   std::u16string message;
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS) || \
+    BUILDFLAG(IS_IOS)
   const std::u16string origin =
       base::UTF8ToUTF16(password_manager::GetShownOrigin(origin_));
   message =
       l10n_util::GetStringFUTF16(IDS_PASSWORD_MANAGER_FILLING_REAUTH, origin);
-#endif  // BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS)
+#endif  // BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS) ||
+        // BUILDFLAG(IS_IOS)
   auto on_reauth_completed =
       base::BindOnce(&ActorLoginCredentialFiller::OnDeviceReauthCompleted,
                      weak_ptr_factory_.GetWeakPtr(), std::move(fill_form_cb));
@@ -465,6 +472,19 @@ void ActorLoginCredentialFiller::FillAllEligibleFields(
                     return !form_manager->GetDriver()->IsInPrimaryMainFrame();
                   });
   }
+  std::erase_if(eligible_managers, [&](const PasswordFormManager* manager) {
+    return !DoesStoredCredentialBelongToManager(manager, stored_credential);
+  });
+
+  // TODO(crbug.com/504573041): Consider removing frames where we failed to
+  // fill. This would need to be done after filling is done though.
+  if (on_frame_filling_started_cb_) {
+    std::move(on_frame_filling_started_cb_)
+        .Run(
+            base::ToVector(eligible_managers, [](PasswordFormManager* manager) {
+              return manager->GetFrameId();
+            }));
+  }
 
   for (PasswordFormManager* manager : eligible_managers) {
     if (manager->GetMetricsRecorder()) {
@@ -474,9 +494,6 @@ void ActorLoginCredentialFiller::FillAllEligibleFields(
           attempt_login_start_time_);
     }
 
-    if (!DoesStoredCredentialBelongToManager(manager, stored_credential)) {
-      continue;
-    }
     if (should_store_permission_) {
       manager->SetShouldStoreActorLoginPermission();
     }

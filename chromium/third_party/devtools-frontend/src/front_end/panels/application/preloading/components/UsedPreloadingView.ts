@@ -35,7 +35,7 @@ const UIStrings = {
    * @description Message that tells this page was prerendered.
    */
   downgradedPrefetchUsed:
-      'The initiating page attempted to prerender this page\'s URL. The prerender failed, but the resulting response body was still used as a prefetch.',
+      'The initiating page attempted to prerender this page’s URL. The prerender failed, but the resulting response body was still used as a prefetch.',
   /**
    * @description Message that tells this page was prefetched.
    */
@@ -48,16 +48,16 @@ const UIStrings = {
    * @description Message that tells this page was prefetched.
    */
   prefetchFailed:
-      'The initiating page attempted to prefetch this page\'s URL, but the prefetch failed, so a full navigation was performed instead.',
+      'The initiating page attempted to prefetch this page’s URL, but the prefetch failed, so a full navigation was performed instead.',
   /**
    * @description Message that tells this page was prerendered.
    */
   prerenderFailed:
-      'The initiating page attempted to prerender this page\'s URL, but the prerender failed, so a full navigation was performed instead.',
+      'The initiating page attempted to prerender this page’s URL, but the prerender failed, so a full navigation was performed instead.',
   /**
    * @description Message that tells this page was not preloaded.
    */
-  noPreloads: 'The initiating page did not attempt to speculatively load this page\'s URL.',
+  noPreloads: 'The initiating page did not attempt to speculatively load this page’s URL.',
   /**
    * @description Header for current URL.
    */
@@ -451,7 +451,8 @@ export class UsedPreloadingView extends UI.Widget.VBox {
 
   #isPrerenderLike(speculationAction: Protocol.Preload.SpeculationAction): boolean {
     return [
-      Protocol.Preload.SpeculationAction.Prerender, Protocol.Preload.SpeculationAction.PrerenderUntilScript
+      Protocol.Preload.SpeculationAction.Prerender,
+      Protocol.Preload.SpeculationAction.PrerenderUntilScript,
     ].includes(speculationAction);
   }
 

@@ -23,31 +23,31 @@ import sidebarStyles from './sidebar.css.js';
 
 const UIStrings = {
   /**
-   * @description Section title for the the Security Panel's sidebar
+   * @description Section title for the Security panel's sidebar.
    */
   security: 'Security',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Title of the tree item in the Security panel sidebar representing the main origin.
    */
   mainOrigin: 'Main origin',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Title of the tree group in the Security panel sidebar for non-secure origins.
    */
   nonsecureOrigins: 'Non-secure origins',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Title of the tree group in the Security panel sidebar for secure origins.
    */
   secureOrigins: 'Secure origins',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Title of the tree group in the Security panel sidebar for unknown or canceled origins.
    */
   unknownCanceled: 'Unknown / canceled',
   /**
-   * @description Title text content in Security Panel of the Security panel
+   * @description Title of the overview tree item in the Security panel sidebar.
    */
   overview: 'Overview',
   /**
-   * @description Text in Security Panel of the Security panel
+   * @description Message shown in the Security panel sidebar prompting the user to reload the page to record origins.
    */
   reloadToViewDetails: 'Reload to view details',
 } as const;

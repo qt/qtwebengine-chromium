@@ -3,11 +3,12 @@
 // found in the LICENSE file.
 
 import * as Root from '../../core/root/root.js';
+import type * as Foundation from '../../foundation/foundation.js';
 
 import type {App} from './App.js';
 
 export interface AppProvider {
-  createApp(): App;
+  createApp(universe: Foundation.Universe.Universe): App;
 }
 
 const registeredAppProvider: AppProviderRegistration[] = [];

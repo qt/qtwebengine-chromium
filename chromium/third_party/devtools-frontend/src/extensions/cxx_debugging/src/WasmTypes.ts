@@ -19,7 +19,7 @@ export const enum SerializedWasmType {
   f32,
   f64,
   v128,
-  reftype
+  reftype,
 }
 /* eslint-enable @typescript-eslint/naming-convention, @typescript-eslint/prefer-enum-initializers */
 
@@ -91,7 +91,7 @@ export function deserializeWasmValue(buffer: ArrayBufferLike, type: SerializedWa
       return {
         type: 'v128',
         value: `i32x4 0x${a.toString(16).padStart(8, '0')} 0x${b.toString(16).padStart(8, '0')} 0x${
-            c.toString(16).padStart(8, '0')} 0x${d.toString(16).padStart(8, '0')}`
+            c.toString(16).padStart(8, '0')} 0x${d.toString(16).padStart(8, '0')}`,
       };
     }
     case SerializedWasmType.reftype: {

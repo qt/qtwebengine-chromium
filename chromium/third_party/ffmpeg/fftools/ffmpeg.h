@@ -51,16 +51,6 @@
 
 #include "libswresample/swresample.h"
 
-// deprecated features
-#define FFMPEG_OPT_QPHIST 1
-#define FFMPEG_OPT_ADRIFT_THRESHOLD 1
-#define FFMPEG_OPT_ENC_TIME_BASE_NUM 1
-#define FFMPEG_OPT_TOP 1
-#define FFMPEG_OPT_FORCE_KF_SOURCE_NO_DROP 1
-#define FFMPEG_OPT_VSYNC_DROP 1
-#define FFMPEG_OPT_VSYNC 1
-#define FFMPEG_OPT_FILTER_SCRIPT 1
-
 #define FFMPEG_ERROR_RATE_EXCEEDED FFERRTAG('E', 'R', 'E', 'D')
 
 enum VideoSyncMethod {
@@ -69,9 +59,6 @@ enum VideoSyncMethod {
     VSYNC_CFR,
     VSYNC_VFR,
     VSYNC_VSCFR,
-#if FFMPEG_OPT_VSYNC_DROP
-    VSYNC_DROP,
-#endif
 };
 
 enum EncTimeBase {
@@ -206,6 +193,7 @@ typedef struct OptionsContext {
     AVDictionary *streamid;
 
     SpecifierOptList metadata;
+    SpecifierOptList keep_metadata;
     SpecifierOptList max_frames;
     SpecifierOptList bitstream_filters;
     SpecifierOptList codec_tags;
@@ -224,17 +212,11 @@ typedef struct OptionsContext {
     SpecifierOptList intra_matrices;
     SpecifierOptList inter_matrices;
     SpecifierOptList chroma_intra_matrices;
-#if FFMPEG_OPT_TOP
-    SpecifierOptList top_field_first;
-#endif
     SpecifierOptList metadata_map;
     SpecifierOptList presets;
     SpecifierOptList copy_initial_nonkeyframes;
     SpecifierOptList copy_prior_start;
     SpecifierOptList filters;
-#if FFMPEG_OPT_FILTER_SCRIPT
-    SpecifierOptList filter_scripts;
-#endif
     SpecifierOptList reinit_filters;
     SpecifierOptList drop_changed;
     SpecifierOptList fix_sub_duration;
@@ -436,9 +418,6 @@ enum DecoderFlags {
     // decoder should override timestamps by fixed framerate
     // from DecoderOpts.framerate
     DECODER_FLAG_FRAMERATE_FORCED = (1 << 2),
-#if FFMPEG_OPT_TOP
-    DECODER_FLAG_TOP_FIELD_FIRST  = (1 << 3),
-#endif
     DECODER_FLAG_SEND_END_TS      = (1 << 4),
     // force bitexact decoding
     DECODER_FLAG_BITEXACT         = (1 << 5),
@@ -471,7 +450,7 @@ typedef struct Decoder {
 
     enum AVMediaType type;
 
-    const uint8_t   *subtitle_header;
+    uint8_t         *subtitle_header;
     int              subtitle_header_size;
 
     // number of frames/samples retrieved from the decoder
@@ -502,9 +481,6 @@ typedef struct InputStream {
 
     /* framerate forced with -r */
     AVRational            framerate;
-#if FFMPEG_OPT_TOP
-    int                   top_field_first;
-#endif
 
     int                   fix_sub_duration;
 
@@ -606,9 +582,6 @@ typedef struct EncStats {
 
 enum {
     KF_FORCE_SOURCE         = 1,
-#if FFMPEG_OPT_FORCE_KF_SOURCE_NO_DROP
-    KF_FORCE_SOURCE_NO_DROP = 2,
-#endif
     // force keyframe if lavfi.scd.time metadata is set
     KF_FORCE_SCD_METADATA = 3,
 };
@@ -665,10 +638,6 @@ typedef struct OutputStream {
 
     Encoder *enc;
 
-    /* video only */
-#if FFMPEG_OPT_TOP
-    int top_field_first;
-#endif
     int bitexact;
     int bits_per_raw_sample;
 
@@ -815,7 +784,7 @@ int check_avoptions_used(const AVDictionary *opts, const AVDictionary *opts_used
 int assert_file_overwrite(const char *filename);
 int find_codec(void *logctx, const char *name,
                enum AVMediaType type, int encoder, const AVCodec **codec);
-int parse_and_set_vsync(const char *arg, enum VideoSyncMethod *vsync_var, int file_idx, int st_idx, int is_global);
+int parse_and_set_vsync(const char *arg, enum VideoSyncMethod *vsync_var, int file_idx, int st_idx);
 
 int filtergraph_is_simple(const FilterGraph *fg);
 int fg_create_simple(FilterGraph **pfg,

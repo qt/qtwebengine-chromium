@@ -18,7 +18,7 @@ namespace Eigen {
 
 namespace internal {
 
-/** \internal \returns the exponentially scaled modified Bessel function of
+/** \internal \returns the modified Bessel function of the first kind of
  * order zero i0(\a a) (coeff-wise) */
 template <typename Packet>
 EIGEN_DEVICE_FUNC EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pbessel_i0(const Packet& x) {
@@ -26,13 +26,13 @@ EIGEN_DEVICE_FUNC EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pb
 }
 
 /** \internal \returns the exponentially scaled modified Bessel function of
- * order zero i0e(\a a) (coeff-wise) */
+ * the first kind of order zero i0e(\a a) (coeff-wise) */
 template <typename Packet>
 EIGEN_DEVICE_FUNC EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pbessel_i0e(const Packet& x) {
   return numext::bessel_i0e(x);
 }
 
-/** \internal \returns the exponentially scaled modified Bessel function of
+/** \internal \returns the modified Bessel function of the first kind of
  * order one i1(\a a) (coeff-wise) */
 template <typename Packet>
 EIGEN_DEVICE_FUNC EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pbessel_i1(const Packet& x) {
@@ -40,41 +40,41 @@ EIGEN_DEVICE_FUNC EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pb
 }
 
 /** \internal \returns the exponentially scaled modified Bessel function of
- * order one i1e(\a a) (coeff-wise) */
+ * the first kind of order one i1e(\a a) (coeff-wise) */
 template <typename Packet>
 EIGEN_DEVICE_FUNC EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pbessel_i1e(const Packet& x) {
   return numext::bessel_i1e(x);
 }
 
-/** \internal \returns the exponentially scaled modified Bessel function of
- * order zero j0(\a a) (coeff-wise) */
+/** \internal \returns the Bessel function of the first kind of order zero
+ * j0(\a a) (coeff-wise) */
 template <typename Packet>
 EIGEN_DEVICE_FUNC EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pbessel_j0(const Packet& x) {
   return numext::bessel_j0(x);
 }
 
-/** \internal \returns the exponentially scaled modified Bessel function of
- * order zero j1(\a a) (coeff-wise) */
+/** \internal \returns the Bessel function of the first kind of order one
+ * j1(\a a) (coeff-wise) */
 template <typename Packet>
 EIGEN_DEVICE_FUNC EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pbessel_j1(const Packet& x) {
   return numext::bessel_j1(x);
 }
 
-/** \internal \returns the exponentially scaled modified Bessel function of
- * order one y0(\a a) (coeff-wise) */
+/** \internal \returns the Bessel function of the second kind of order zero
+ * y0(\a a) (coeff-wise) */
 template <typename Packet>
 EIGEN_DEVICE_FUNC EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pbessel_y0(const Packet& x) {
   return numext::bessel_y0(x);
 }
 
-/** \internal \returns the exponentially scaled modified Bessel function of
- * order one y1(\a a) (coeff-wise) */
+/** \internal \returns the Bessel function of the second kind of order one
+ * y1(\a a) (coeff-wise) */
 template <typename Packet>
 EIGEN_DEVICE_FUNC EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pbessel_y1(const Packet& x) {
   return numext::bessel_y1(x);
 }
 
-/** \internal \returns the exponentially scaled modified Bessel function of
+/** \internal \returns the modified Bessel function of the second kind of
  * order zero k0(\a a) (coeff-wise) */
 template <typename Packet>
 EIGEN_DEVICE_FUNC EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pbessel_k0(const Packet& x) {
@@ -82,21 +82,21 @@ EIGEN_DEVICE_FUNC EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pb
 }
 
 /** \internal \returns the exponentially scaled modified Bessel function of
- * order zero k0e(\a a) (coeff-wise) */
+ * the second kind of order zero k0e(\a a) (coeff-wise) */
 template <typename Packet>
 EIGEN_DEVICE_FUNC EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pbessel_k0e(const Packet& x) {
   return numext::bessel_k0e(x);
 }
 
-/** \internal \returns the exponentially scaled modified Bessel function of
- * order one k1e(\a a) (coeff-wise) */
+/** \internal \returns the modified Bessel function of the second kind of
+ * order one k1(\a a) (coeff-wise) */
 template <typename Packet>
 EIGEN_DEVICE_FUNC EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pbessel_k1(const Packet& x) {
   return numext::bessel_k1(x);
 }
 
 /** \internal \returns the exponentially scaled modified Bessel function of
- * order one k1e(\a a) (coeff-wise) */
+ * the second kind of order one k1e(\a a) (coeff-wise) */
 template <typename Packet>
 EIGEN_DEVICE_FUNC EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pbessel_k1e(const Packet& x) {
   return numext::bessel_k1e(x);

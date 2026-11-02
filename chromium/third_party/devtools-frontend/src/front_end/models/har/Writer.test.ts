@@ -7,9 +7,9 @@ import {assert} from 'chai';
 import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import type * as Protocol from '../../generated/protocol.js';
 import {setupLocaleHooks} from '../../testing/LocaleHelpers.js';
-import * as TextUtils from '../text_utils/text_utils.js';
 
 import * as HAR from './har.js';
 
@@ -67,5 +67,79 @@ describe('HARWriter', () => {
     assert.lengthOf(resultEntries[0]._eventSourceMessages, 2);
     assert.strictEqual(resultEntries[0]._eventSourceMessages[0].eventName, 'session');
     assert.strictEqual(resultEntries[0]._eventSourceMessages[1].eventId, '2');
+  });
+
+  it('exports WebSocket messages', async () => {
+    const request = simulateRequestWithStartTime(Date.now() / 1000);
+    request.setResourceType(Common.ResourceType.resourceTypes.WebSocket);
+
+    const frames: SDK.NetworkRequest.WebSocketFrame[] = [
+      {
+        type: SDK.NetworkRequest.WebSocketFrameType.Send,
+        time: 1,
+        text: 'text message',
+        opCode: 1,
+        mask: true,
+      },
+      {
+        type: SDK.NetworkRequest.WebSocketFrameType.Send,
+        time: 2,
+        text: 'YmluYXJ5IG1lc3NhZ2U=',
+        opCode: 2,
+        mask: true,
+      },
+      {
+        type: SDK.NetworkRequest.WebSocketFrameType.Send,
+        time: 3,
+        text: 'last message',
+        opCode: 1,
+        mask: true,
+      },
+      {
+        type: SDK.NetworkRequest.WebSocketFrameType.Receive,
+        time: 4,
+        text: 'text message',
+        opCode: 1,
+        mask: false,
+      },
+      {
+        type: SDK.NetworkRequest.WebSocketFrameType.Receive,
+        time: 5,
+        text: 'YmluYXJ5IG1lc3NhZ2U=',
+        opCode: 2,
+        mask: false,
+      },
+      {
+        type: SDK.NetworkRequest.WebSocketFrameType.Receive,
+        time: 6,
+        text: 'last message',
+        opCode: 1,
+        mask: false,
+      },
+    ];
+
+    for (const frame of frames) {
+      request.addFrame(frame);
+    }
+
+    const progress = new Common.Progress.Progress();
+    const compositeProgress = new Common.Progress.CompositeProgress(progress);
+    const result = await HAR.Writer.Writer.harStringForRequests([request], {sanitize: false}, compositeProgress);
+    const resultEntries = JSON.parse(result).log.entries;
+
+    assert.lengthOf(resultEntries, 1);
+    const entry = resultEntries[0];
+    assert.property(entry, '_webSocketMessages');
+    const exportedMessages = entry._webSocketMessages;
+    assert.lengthOf(exportedMessages, 6);
+
+    const expectedMessages = frames.map(f => ({
+                                          type: f.type,
+                                          time: f.time,
+                                          opcode: f.opCode,
+                                          data: f.text,
+                                        }));
+
+    assert.deepEqual(exportedMessages, expectedMessages);
   });
 });

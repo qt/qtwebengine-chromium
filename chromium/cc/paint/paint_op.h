@@ -61,18 +61,6 @@ class DisplayItemList;
 class PaintOpWriter;
 class PaintOpReader;
 
-class CC_PAINT_EXPORT ThreadsafePath : public SkPath {
- public:
-  explicit ThreadsafePath(const SkPath& path) : SkPath(path) {
-    updateBoundsCache();
-    getGenerationID();
-  }
-  ThreadsafePath() {
-    updateBoundsCache();
-    getGenerationID();
-  }
-};
-
 // See PaintOp::Serialize/Deserialize for comments.  Serialize() of derived
 // types don't write the type/serialized_size header because they don't know how
 // much data they will need to write. PaintOp::Serialize itself must update the
@@ -177,12 +165,11 @@ class CC_PAINT_EXPORT PaintOp {
   // Returns null on any errors.
   // The PaintOp is deserialized into the `output` buffer and returned
   // if valid.  nullptr is returned if the deserialization fails.
-  // `output_size` must be at least ComputeOpAlignedSize<LargestPaintOp>(),
+  // `output` must be at least ComputeOpAlignedSize<LargestPaintOp>() bytes,
   // to fit all ops.  The caller is responsible for destroying these ops.
   // After reading, it returns the number of bytes read in `read_bytes`.
   static PaintOp* Deserialize(base::span<const volatile uint8_t> input,
-                              void* output,
-                              size_t output_size,
+                              base::span<uint8_t> output,
                               size_t* read_bytes,
                               const DeserializeOptions& options);
   // Similar to the above, but deserializes into `buffer`.
@@ -392,7 +379,7 @@ class CC_PAINT_EXPORT ClipPathOp final : public PaintOpBaseInternal {
   bool HasNonAAPaint() const { return !antialias; }
   HAS_SERIALIZATION_FUNCTIONS();
 
-  ThreadsafePath path;
+  SkPath path;
   SkClipOp op;
   bool antialias;
   UsePaintCache use_cache = UsePaintCache::kDisabled;
@@ -813,7 +800,7 @@ class CC_PAINT_EXPORT DrawPathOp final : public PaintOpWithFlagsBaseInternal {
   int CountSlowPaths() const;
   HAS_SERIALIZATION_FUNCTIONS();
 
-  ThreadsafePath path;
+  SkPath path;
 
   // Changing the fill type on an SkPath does not change the
   // generation id. This can lead to caching issues so we explicitly

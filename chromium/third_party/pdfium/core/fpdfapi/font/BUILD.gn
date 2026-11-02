@@ -15,6 +15,8 @@ source_set("font") {
     "cpdf_cmap.h",
     "cpdf_cmapparser.cpp",
     "cpdf_cmapparser.h",
+    "cpdf_facebasedsimplefont.cpp",
+    "cpdf_facebasedsimplefont.h",
     "cpdf_font.cpp",
     "cpdf_font.h",
     "cpdf_fontencoding.cpp",

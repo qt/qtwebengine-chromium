@@ -15,45 +15,42 @@
 //
 
 #![cfg_attr(not(test), no_std)]
-#![feature(int_roundings)]
 #![feature(allocator_api)]
 #![feature(slice_ptr_get)]
-#![feature(let_chains)]
 #![allow(static_mut_refs)]
 
 extern crate alloc;
 
 use alloc::{boxed::Box, format, vec::Vec};
-use core::panic::PanicInfo;
+use core::{mem::MaybeUninit, panic::PanicInfo};
 
 use linked_list_allocator::LockedHeap;
 use oak_attestation_types::{
-    attester::Attester,
-    util::{encode_length_delimited_proto, try_decode_length_delimited_proto, Serializable},
+    transparent_attester::TransparentAttester,
+    util::{Serializable, encode_length_delimited_proto, try_decode_length_delimited_proto},
 };
 use oak_dice::evidence::{
-    DICE_DATA_CMDLINE_PARAM, DICE_DATA_LENGTH_CMDLINE_PARAM, EVENTLOG_CMDLINE_PARAM,
-    STAGE0_DICE_PROTO_MAGIC,
+    DICE_DATA_ATTESTATION_PARAM, DICE_DATA_CMDLINE_PARAM, DICE_DATA_LENGTH_CMDLINE_PARAM,
+    EVENTLOG_CMDLINE_PARAM, STAGE0_DICE_PROTO_MAGIC,
 };
 use oak_linux_boot_params::{BootE820Entry, E820EntryType};
 use oak_proto_rust::oak::attestation::v1::DiceData;
-use oak_stage0_dice::{derive_sealing_cdi, DerivedKey};
+use oak_stage0_dice::{DerivedKey, derive_sealing_cdi};
 use sha2::{Digest, Sha256};
 use x86_64::{
+    PhysAddr, VirtAddr,
     instructions::{hlt, interrupts::int3},
     registers::segmentation::*,
     structures::{
         gdt::{Descriptor, GlobalDescriptorTable},
         idt::InterruptDescriptorTable,
-        paging::{PageSize, Size1GiB},
+        paging::{PageSize, Size1GiB, Size4KiB},
     },
-    PhysAddr, VirtAddr,
 };
 use zerocopy::IntoBytes;
 use zeroize::Zeroize;
 
 mod acpi;
-mod acpi_tables;
 pub mod allocator;
 mod apic;
 mod cmos;
@@ -69,12 +66,15 @@ mod pci;
 mod pic;
 mod zero_page;
 
-pub use acpi_tables::{
-    DescriptionHeader, LocalApicFlags, Madt, MultiprocessorWakeup, ProcessorLocalApic,
-    ProcessorLocalX2Apic, Rsdp, Rsdt, RsdtEntryPairMut, Xsdt,
+pub use acpi::{
+    HIGH_MEMORY_ALLOCATOR,
+    tables::{
+        AcpiTable, AcpiTables, DescriptionHeader, Madt, Rsdp, Rsdt, Xsdt,
+        madt::{LocalApicFlags, MultiprocessorWakeup, ProcessorLocalApic, ProcessorLocalX2Apic},
+    },
 };
 pub use apic::Lapic;
-pub use hal::Platform;
+pub use hal::{FirmwarePlatform, Platform};
 pub use pic::disable_pic8259;
 pub use zero_page::ZeroPage;
 
@@ -92,7 +92,15 @@ pub static SHORT_TERM_ALLOC: LockedHeap = LockedHeap::empty();
 /// We create an identity map for the first 1GiB of memory.
 const TOP_OF_VIRTUAL_MEMORY: u64 = Size1GiB::SIZE;
 
-const PAGE_SIZE: usize = 4096;
+// Default memory page size on x86_64.
+const PAGE_SIZE: usize = Size4KiB::SIZE as usize;
+
+// Double page size for items larger than the PAGE_SIZE limit.
+const DOUBLE_PAGE_SIZE: usize = PAGE_SIZE * 2;
+
+/// BDA is 256 bytes.
+#[unsafe(link_section = ".bda")]
+static mut BDA: [MaybeUninit<u8>; 0x100] = [MaybeUninit::uninit(); 0x100];
 
 pub fn create_gdt(gdt: &mut GlobalDescriptorTable) -> (SegmentSelector, SegmentSelector) {
     let cs = gdt.append(Descriptor::kernel_code_segment());
@@ -108,12 +116,25 @@ pub fn create_idt(_idt: &mut InterruptDescriptorTable) {}
 ///
 /// * `encrypted` - If not zero, the `encrypted`-th bit will be set in the page
 ///   tables.
-pub fn rust64_start<P: hal::Platform>() -> ! {
+pub fn rust64_start<P: hal::Platform + hal::FirmwarePlatform>() -> ! {
+    // Ensure the BDA is zeroed out, lest some legacy code go looking for some data
+    // from there.
+    //
+    // This needs to happen before we initialize the page tables, as we leave the
+    // lower 4K unmapped when setting up the page tables (so that you'd crash when
+    // dereferencing a null pointer), but the BDA is at the 1K mark.
+    //
+    // Safety: this is the only place where we access the BDA.
+    unsafe {
+        BDA.zeroize();
+    }
+    P::init_memory_encryption();
     paging::init_page_table_refs::<P>();
 
     P::early_initialize_platform();
     logging::init_logging::<P>();
     log::info!("starting...");
+
     // Safety: we assume there won't be any other hardware devices using the fw_cfg
     // IO ports.
     let mut fwcfg = unsafe { fw_cfg::FwCfg::new(&BOOT_ALLOC) }.expect("fw_cfg device not found!");
@@ -153,16 +174,20 @@ pub fn rust64_start<P: hal::Platform>() -> ! {
     // allocator before this point will fail.
     allocator::init_global_allocator(zero_page.e820_table());
 
-    let setup_data_sha2_256_digest =
+    #[allow(unused_variables)]
+    let (setup_data, setup_data_sha2_256_digest) =
         zero_page.try_fill_hdr_from_setup_data(&mut fwcfg).unwrap_or_default();
 
     P::populate_zero_page(&mut zero_page);
 
     let cmdline = kernel::try_load_cmdline(&mut fwcfg).unwrap_or_default();
+    let kernel_cmdline = cmdline.kernel_cmdline();
 
     // Safety: this is the only place where we try to load a kernel, so the backing
     // memory is unused.
-    let kernel = unsafe { kernel::Kernel::try_load_kernel_image(&mut fwcfg) }.unwrap();
+    let kernel =
+        unsafe { kernel::Kernel::try_load_kernel_image(&mut fwcfg, zero_page.e820_table()) }
+            .unwrap();
     let kernel_sha2_256_digest = kernel.measure();
 
     // Set up the allocator for ACPI-related memory in the EBDA region.
@@ -179,7 +204,7 @@ pub fn rust64_start<P: hal::Platform>() -> ! {
 
     let mut acpi_digest = Sha256::default();
     let rsdp = acpi::build_acpi_tables(&mut fwcfg, &mut acpi_digest, pci_windows).unwrap();
-    zero_page.set_acpi_rsdp_addr(PhysAddr::new(rsdp as *const _ as u64));
+    zero_page.set_acpi_rsdp_addr(PhysAddr::new(rsdp.as_u64()));
     let acpi_digest = acpi_digest.finalize();
     let mut acpi_sha2_256_digest = Measurement::default();
     acpi_sha2_256_digest[..].copy_from_slice(&acpi_digest[..]);
@@ -191,6 +216,19 @@ pub fn rust64_start<P: hal::Platform>() -> ! {
                 ram_disk.measure()
             })
             .unwrap_or_default();
+
+    #[cfg(feature = "sev_kernel_hashes")]
+    {
+        // Before writing these values to the event log, if a kernel hashes table was
+        // supplied, do a quick check to verify that the launch primitives are
+        // valid via measured direct boot
+        assert!(P::validate_measured_boot(
+            kernel_cmdline.as_bytes(),
+            &ram_disk_sha2_256_digest,
+            setup_data.as_bytes(),
+            kernel.as_bytes()
+        ));
+    }
 
     // QEMU assumes all SEV VMs use OVMF, and leaves type_of_loader 0x00. This
     // would make the kernel unable to load stage1. We need to fix it to make
@@ -205,8 +243,22 @@ pub fn rust64_start<P: hal::Platform>() -> ! {
         ram_disk_digest: ram_disk_sha2_256_digest.as_bytes().to_vec(),
         memory_map_digest: memory_map_sha2_256_digest.as_bytes().to_vec(),
         acpi_digest: acpi_sha2_256_digest.as_bytes().to_vec(),
-        kernel_cmdline: cmdline.clone(),
+        kernel_cmdline: kernel_cmdline.clone(),
     };
+
+    let kernel_commandline_digest = cmdline.measure();
+
+    // Introduce transparent measurements (i.e. measurements that do not contain
+    // sensitive data).
+    let stage0_transparent_event_proto =
+        oak_proto_rust::oak::attestation::v1::Stage0TransparentMeasurements {
+            setup_data_digest: stage0_event_proto.setup_data_digest.clone(),
+            kernel_measurement: stage0_event_proto.kernel_measurement.clone(),
+            ram_disk_digest: stage0_event_proto.ram_disk_digest.clone(),
+            memory_map_digest: stage0_event_proto.memory_map_digest.clone(),
+            acpi_digest: stage0_event_proto.acpi_digest.clone(),
+            kernel_cmdline_digest: kernel_commandline_digest.as_bytes().to_vec(),
+        };
 
     // Use the root derived key as the UDS (unique device secret) for deriving
     // sealing keys.
@@ -225,16 +277,28 @@ pub fn rust64_start<P: hal::Platform>() -> ! {
         base
     };
 
+    // Generate Stage0 Transparent Event Log data.
+    // TODO: b/452735395 - Update the attester to accept the new transparent event.
+    let stage0_transparent_event =
+        oak_stage0_dice::encode_stage0_transparent_event(stage0_transparent_event_proto);
+    let transparent_event_sha2_256_digest = Sha256::digest(&stage0_transparent_event).to_vec();
+
     log::debug!("Kernel image digest: sha2-256:{}", hex::encode(kernel_sha2_256_digest));
     log::debug!("Kernel setup data digest: sha2-256:{}", hex::encode(setup_data_sha2_256_digest));
-    log::debug!("Kernel command-line: {}", cmdline);
+    log::debug!("Kernel command-line: {}", kernel_cmdline);
     log::debug!("Initial RAM disk digest: sha2-256:{}", hex::encode(ram_disk_sha2_256_digest));
     log::debug!("ACPI table generation digest: sha2-256:{}", hex::encode(acpi_sha2_256_digest));
     log::debug!("E820 table digest: sha2-256:{}", hex::encode(memory_map_sha2_256_digest));
     log::debug!("Event digest: sha2-256:{}", hex::encode(event_sha2_256_digest));
+    log::debug!(
+        "Transparent event digest: sha2-256:{}",
+        hex::encode(transparent_event_sha2_256_digest)
+    );
 
     let mut attester = P::get_attester().expect("couldn't get a valid attester");
-    attester.extend(&stage0_event[..]).expect("couldn't extend attester");
+    attester
+        .extend_transparent(&stage0_event[..], &stage0_transparent_event[..])
+        .expect("couldn't extend attester");
     let mut serialized_attestation_data = attester.serialize();
 
     let mut attestation_data: DiceData =
@@ -275,46 +339,61 @@ pub fn rust64_start<P: hal::Platform>() -> ! {
     // First copy the size of the encoded proto in Little Endian format. Then copy
     // the actual EventLog.
     event_log.extend_from_slice(serialized_event_log.as_bytes());
-    let event_log_data = event_log.leak();
+    let event_log_data = event_log.leak().as_ptr() as usize;
     // Reserve memory containing Eventlog Data.
     zero_page.insert_e820_entry(BootE820Entry::new(
-        event_log_data.as_bytes().as_ptr() as usize,
+        event_log_data,
         PAGE_SIZE,
         E820EntryType::RESERVED,
     ));
+
     sensitive_attestation_data_length += PAGE_SIZE;
 
     // TODO: b/360223468 - Combine the DiceData proto with the EventLog Proto and
     // write all of it in memory.
     // Write DiceData protobuf bytes to memory.
-    let mut encoded_attestation_proto = Vec::with_capacity_in(PAGE_SIZE, &crate::BOOT_ALLOC);
+    let mut encoded_attestation_proto = Vec::with_capacity_in(DOUBLE_PAGE_SIZE, &crate::BOOT_ALLOC);
     // Ensure that DiceData proto bytes is not too big. The 8 bytes are reserved for
     // the size of the encoded DiceData proto.
-    assert!(serialized_attestation_data.len() < PAGE_SIZE - size_of_val(&STAGE0_DICE_PROTO_MAGIC));
+    assert!(
+        serialized_attestation_data.len()
+            < DOUBLE_PAGE_SIZE - size_of_val(&STAGE0_DICE_PROTO_MAGIC)
+    );
     // Insert a magic number to ensure the correctness of the data being read.
     encoded_attestation_proto.extend_from_slice(STAGE0_DICE_PROTO_MAGIC.to_le_bytes().as_slice());
     encoded_attestation_proto.extend_from_slice(serialized_attestation_data.as_ref());
     // Zero out the serialized proto since it contains a copy of the private key.
     serialized_attestation_data.zeroize();
 
+    let encoded_attestation_proto_data = encoded_attestation_proto.leak();
+
     // Reserve memory containing DICE proto Data.
     zero_page.insert_e820_entry(BootE820Entry::new(
-        encoded_attestation_proto.as_bytes().as_ptr() as usize,
-        PAGE_SIZE,
+        encoded_attestation_proto_data.as_bytes().as_ptr() as usize,
+        DOUBLE_PAGE_SIZE,
         E820EntryType::RESERVED,
     ));
-    sensitive_attestation_data_length += PAGE_SIZE;
+    sensitive_attestation_data_length += DOUBLE_PAGE_SIZE;
 
     // Append the DICE data address to the kernel command-line.
+    // TODO: b/463325402 - Remove eventlog and dice data from kernel command-line
+    // and only use the new DICE_DATA_ATTESTATION_PARAM arg with the serialized
+    // attester.
     let extra = format!(
-        "--{DICE_DATA_CMDLINE_PARAM}={attestation_data:p} --{EVENTLOG_CMDLINE_PARAM}={event_log_data:p} --{DICE_DATA_LENGTH_CMDLINE_PARAM}={sensitive_attestation_data_length}"
+        "--{DICE_DATA_CMDLINE_PARAM}={attestation_data:p} --{EVENTLOG_CMDLINE_PARAM}={event_log_data:#x} --{DICE_DATA_LENGTH_CMDLINE_PARAM}={sensitive_attestation_data_length}"
     );
-    let cmdline = if cmdline.is_empty() {
-        extra
-    } else if cmdline.contains("--") {
-        format!("{} {}", cmdline, extra)
+    let extra = if cfg!(feature = "cmdline_with_serialized_attestation_data") {
+        format!("{extra} --{DICE_DATA_ATTESTATION_PARAM}={encoded_attestation_proto_data:p}")
     } else {
-        format!("{} -- {}", cmdline, extra)
+        extra
+    };
+
+    let cmdline = if kernel_cmdline.is_empty() {
+        extra
+    } else if kernel_cmdline.contains("--") {
+        format!("{} {}", kernel_cmdline, extra)
+    } else {
+        format!("{} -- {}", kernel_cmdline, extra)
     };
     zero_page.set_cmdline(cmdline);
 

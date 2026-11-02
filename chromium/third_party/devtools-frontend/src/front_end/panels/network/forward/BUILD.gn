@@ -15,7 +15,7 @@ devtools_ui_module("forward") {
 
   deps = [
     "../../../core/sdk:bundle",
-    "../../../models/text_utils:bundle",
+    "../../../core/text_utils:bundle",
   ]
 }
 

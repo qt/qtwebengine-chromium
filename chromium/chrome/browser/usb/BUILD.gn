@@ -126,6 +126,7 @@ source_set("impl") {
       "//chrome/app/vector_icons",
       "//chrome/browser:browser_process",
       "//chrome/browser/ui:browser_tab_strip",
+      "//chrome/browser/ui:chrome_pages",
       "//chrome/browser/ui/browser_window",
       "//chrome/browser/ui/tab_contents",
       "//chrome/browser/ui/tabs:tab_strip",
@@ -159,6 +160,10 @@ source_set("impl") {
   }
 
   public_deps = [ "//chrome/browser:browser_public_dependencies" ]
+
+  if (!is_android) {
+    deps += [ "//chrome/browser/ui:browser_tab_strip_tracker" ]
+  }
 }
 
 if (!is_android) {

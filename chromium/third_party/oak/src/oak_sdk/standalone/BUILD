@@ -29,6 +29,7 @@ rust_library(
     deps = [
         "//oak_attestation",
         "//oak_attestation_types",
+        "//oak_attestation_verification:oak_attestation_verification_results",
         "//oak_containers/attestation",
         "//oak_crypto",
         "//oak_dice",
@@ -48,21 +49,5 @@ rust_test(
         "//oak_attestation_verification",
         "//oak_attestation_verification_types",
         "//oak_time:oak_time_std",
-    ],
-)
-
-rust_library(
-    name = "ffi",
-    testonly = True,
-    srcs = [
-        "ffi/standalone_c.rs",
-    ],
-    deps = [
-        ":oak_sdk_standalone",
-        "//oak_crypto",
-        "//oak_ffi:oak_ffi_bytes",
-        "//oak_proto_rust",
-        "@oak_crates_index//:anyhow",
-        "@oak_crates_index//:prost",
     ],
 )

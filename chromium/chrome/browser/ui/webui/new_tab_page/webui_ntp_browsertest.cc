@@ -11,7 +11,7 @@
 #include "base/test/mock_callback.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
-#include "chrome/browser/new_tab_page/ntp_pref_names.h"
+#include "chrome/browser/new_tab_page/prefs/ntp_pref_names.h"
 #include "chrome/browser/preloading/scoped_prewarm_feature_list.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -134,7 +134,7 @@ IN_PROC_BROWSER_TEST_F(WebUiNtpBrowserTest, ProcessPerSite) {
   // Open a few NTPs.
   for (size_t i = 0; i < 3; i++) {
     content::WebContentsAddedObserver tab_observer;
-    chrome::NewTab(browser());
+    chrome::NewTab(browser(), NewTabTypes::kNoUserAction);
 
     // Wait for the new tab.
     auto* tab = tab_observer.GetWebContents();
@@ -168,7 +168,7 @@ IN_PROC_BROWSER_TEST_F(WebUiNtpBrowserTest, SpareRenderer) {
       LiveRenderProcessHostIds();
 
   // Open an NTP.
-  chrome::NewTab(browser());
+  chrome::NewTab(browser(), NewTabTypes::kNoUserAction);
   auto* ntp = browser()->tab_strip_model()->GetActiveWebContents();
   ASSERT_TRUE(WaitForLoadStop(ntp));
   ExpectIsWebUiNtp(ntp);
@@ -266,9 +266,9 @@ class WebUiNtpEnterpriseShortcutsBrowserTest : public WebUiNtpBrowserTest {
 IN_PROC_BROWSER_TEST_F(WebUiNtpEnterpriseShortcutsBrowserTest,
                        DISABLED_EnterpriseShortcuts) {
   // 1. Set the user preference to use enterprise shortcuts.
-  browser()->profile()->GetPrefs()->SetBoolean(
+  browser()->GetProfile()->GetPrefs()->SetBoolean(
       ntp_prefs::kNtpCustomLinksVisible, false);
-  browser()->profile()->GetPrefs()->SetBoolean(
+  browser()->GetProfile()->GetPrefs()->SetBoolean(
       ntp_prefs::kNtpEnterpriseShortcutsVisible, true);
 
   // 2. Navigate to the New Tab Page.

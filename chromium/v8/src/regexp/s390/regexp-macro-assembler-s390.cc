@@ -105,7 +105,7 @@ RegExpMacroAssemblerS390::RegExpMacroAssemblerS390(Isolate* isolate, Zone* zone,
                                                    int registers_to_save)
     : NativeRegExpMacroAssembler(isolate, zone, mode),
       masm_(std::make_unique<MacroAssembler>(
-          isolate, CodeObjectRequired::kYes,
+          isolate, CodeObjectRequired{true},
           NewAssemblerBuffer(kRegExpCodeSize))),
       no_root_array_scope_(masm_.get()),
       num_registers_(registers_to_save),
@@ -539,11 +539,12 @@ void RegExpMacroAssemblerS390::CheckBitInTable(Handle<ByteArray> table,
 
 void RegExpMacroAssemblerS390::SkipUntilBitInTable(
     int cp_offset, Handle<ByteArray> table, Handle<ByteArray> nibble_table,
-    int advance_by, Label* on_match, Label* on_no_match) {
+    int advance_by, int bounds_check_offset, Label* on_match,
+    Label* on_no_match) {
   // TODO(pthier): Optimize. Table can be loaded outside of the loop.
   Label again;
   Bind(&again);
-  LoadCurrentCharacter(cp_offset, on_no_match, true);
+  LoadCurrentCharacter(cp_offset, on_no_match, true, 1, bounds_check_offset);
   CheckBitInTable(table, on_match);
   AdvanceCurrentPosition(advance_by);
   GoTo(&again);
@@ -804,7 +805,16 @@ DirectHandle<HeapObject> RegExpMacroAssemblerS390::GetCode(
   // memory when returning from this irregexp code object.
   PushRegExpBasePointer(backtrack_stackpointer(), r3);
 
-  {
+  // Skip the JS stack guard check for patterns whose register file fits within
+  // the stack limit's guaranteed slack: allocating it then can never push the
+  // stack past the point the check would catch, so the check is pure overhead
+  // on every match. This is the same slack that lets optimized JS elide the
+  // entry stack check for small leaf frames (see the static_assert and
+  // CodeGenerator::ShouldApplyOffsetToStackCheck).
+  static constexpr int kMaxRegistersWithoutStackCheck = 32;
+  static_assert(kMaxRegistersWithoutStackCheck * kSystemPointerSize <=
+                kStackLimitSlackForDeoptimizationInBytes);
+  if (num_registers_ > kMaxRegistersWithoutStackCheck) {
     // Check if we have space on the stack for registers.
     Label stack_limit_hit, stack_ok;
 

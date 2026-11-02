@@ -64,7 +64,7 @@ static int vc4_bo_create_for_modifier(struct bo *bo, uint32_t width, uint32_t he
 	 */
 	stride = drv_stride_from_format(format, width, 0);
 	stride = ALIGN(stride, 64);
-	drv_bo_from_format(bo, stride, height, format);
+	drv_bo_from_format(bo, stride, 1, height, format);
 
 	bo_create.size = bo->meta.total_size;
 
@@ -74,8 +74,7 @@ static int vc4_bo_create_for_modifier(struct bo *bo, uint32_t width, uint32_t he
 		return -errno;
 	}
 
-	for (plane = 0; plane < bo->meta.num_planes; plane++)
-		bo->handles[plane].u32 = bo_create.handle;
+	bo->handle.u32 = bo_create.handle;
 
 	return 0;
 }
@@ -105,12 +104,12 @@ static int vc4_bo_create_with_modifiers(struct bo *bo, uint32_t width, uint32_t 
 	return vc4_bo_create_for_modifier(bo, width, height, format, modifier);
 }
 
-static void *vc4_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint32_t map_flags)
+static void *vc4_bo_map(struct bo *bo, struct vma *vma, uint32_t map_flags)
 {
 	int ret;
 	struct drm_vc4_mmap_bo bo_map = { 0 };
 
-	bo_map.handle = bo->handles[0].u32;
+	bo_map.handle = bo->handle.u32;
 	ret = drmCommandWriteRead(bo->drv->fd, DRM_VC4_MMAP_BO, &bo_map, sizeof(bo_map));
 	if (ret) {
 		drv_loge("DRM_VC4_MMAP_BO failed\n");
@@ -128,6 +127,7 @@ const struct backend backend_vc4 = {
 	.bo_create = vc4_bo_create,
 	.bo_create_with_modifiers = vc4_bo_create_with_modifiers,
 	.bo_import = drv_prime_bo_import,
+	.bo_export = drv_prime_bo_export,
 	.bo_destroy = drv_gem_bo_destroy,
 	.bo_map = vc4_bo_map,
 	.bo_unmap = drv_bo_munmap,

@@ -3,19 +3,14 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
-import {
-  createTarget,
-  registerNoopActions,
-} from '../../testing/EnvironmentHelpers.js';
-import {
-  describeWithMockConnection,
-  dispatchEvent,
-} from '../../testing/MockConnection.js';
+import {createTarget, describeWithEnvironment, registerNoopActions} from '../../testing/EnvironmentHelpers.js';
+import {dispatchEvent} from '../../testing/MockConnection.js';
 import * as TextEditor from '../../ui/components/text_editor/text_editor.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
@@ -26,8 +21,9 @@ function compileScriptResponse(exception?: string): Protocol.Runtime.CompileScri
   return {exceptionDetails, getError: () => {}} as unknown as Protocol.Runtime.CompileScriptResponse;
 }
 
-describeWithMockConnection('ConsoleContextSelector', () => {
+describeWithEnvironment('ConsoleContextSelector', () => {
   let target: SDK.Target.Target;
+  let targetContext: SDK.RuntimeModel.ExecutionContext;
   let consolePrompt: Console.ConsolePrompt.ConsolePrompt;
   let evaluateOnTarget: sinon.SinonStub;
   let compileScript: sinon.SinonStub;
@@ -44,7 +40,7 @@ describeWithMockConnection('ConsoleContextSelector', () => {
     setCodeMirrorContent('foo');
 
     target = createTarget();
-    const targetContext = createExecutionContext(target);
+    targetContext = createExecutionContext(target);
     UI.Context.Context.instance().setFlavor(SDK.RuntimeModel.ExecutionContext, targetContext);
     evaluateOnTarget = sinon.stub(target.runtimeAgent(), 'invoke_evaluate');
     compileScript = sinon.stub(target.runtimeAgent(), 'invoke_compileScript').resolves(compileScriptResponse());
@@ -94,7 +90,33 @@ describeWithMockConnection('ConsoleContextSelector', () => {
     dispatchKeydown('Enter');
     await new Promise(resolve => setTimeout(resolve, 0));
 
-    sinon.assert.called(evaluateOnTarget);
+    sinon.assert.calledOnce(evaluateOnTarget);
+    const args = evaluateOnTarget.firstCall.args[0];
+    assert.strictEqual(args.expression, 'foo');
+    assert.strictEqual(args.uniqueContextId, targetContext.uniqueId);
+
+    const consoleModel = target.model(SDK.ConsoleModel.ConsoleModel);
+    assert.exists(consoleModel);
+    const messages = consoleModel.messages();
+    assert.lengthOf(messages, 1);
+    assert.strictEqual(messages[0].messageText, 'foo');
+  });
+
+  it('evaluates object literal on enter', async () => {
+    setCodeMirrorContent('{a: 1, b: 2}');
+    dispatchKeydown('Enter');
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    sinon.assert.calledOnce(evaluateOnTarget);
+    const args = evaluateOnTarget.firstCall.args[0];
+    assert.strictEqual(args.expression, '({a: 1, b: 2})');
+    assert.strictEqual(args.uniqueContextId, targetContext.uniqueId);
+
+    const consoleModel = target.model(SDK.ConsoleModel.ConsoleModel);
+    assert.exists(consoleModel);
+    const messages = consoleModel.messages();
+    assert.lengthOf(messages, 1);
+    assert.strictEqual(messages[0].messageText, '{a: 1, b: 2}');
   });
 
   it('allows user to enable pasting by typing \'allow pasting\'', async () => {

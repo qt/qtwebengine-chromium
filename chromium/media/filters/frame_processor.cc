@@ -115,6 +115,14 @@ class MseTrackBuffer {
                                     base::TimeDelta start_pts);
 
  private:
+  // Returns true if `frame` is an audio frame that is a duplicate of the most
+  // recently processed frame. A duplicate is defined as:
+  // 1) zero duration
+  // 2) identical timestamps
+  // 3) the exact same keyframe status.
+  bool IsDuplicateAudioZeroDurationFrame(
+      const scoped_refptr<StreamParserBuffer>& frame) const;
+
   // The decode timestamp of the last coded frame appended in the current coded
   // frame group. Initially kNoTimestamp, meaning "unset".
   DecodeTimestamp last_decode_timestamp_;
@@ -182,7 +190,7 @@ class MseTrackBuffer {
   StreamParser::BufferQueue processed_frames_;
 
   // MediaLog for reporting messages and properties to debug content and engine.
-  raw_ptr<MediaLog> media_log_;
+  const std::unique_ptr<MediaLog> media_log_;
 
   // Callback for reporting problematic conditions that are not necessarily
   // errors.
@@ -204,7 +212,7 @@ MseTrackBuffer::MseTrackBuffer(ChunkDemuxerStream* stream,
       highest_presentation_timestamp_(kNoTimestamp),
       needs_random_access_point_(true),
       stream_(stream),
-      media_log_(media_log),
+      media_log_(MediaLog::CloneSafely(media_log)),
       parse_warning_cb_(std::move(parse_warning_cb)) {
   DCHECK(stream_);
   DCHECK(parse_warning_cb_);
@@ -236,8 +244,22 @@ void MseTrackBuffer::SetHighestPresentationTimestampIfIncreased(
   }
 }
 
+bool MseTrackBuffer::IsDuplicateAudioZeroDurationFrame(
+    const scoped_refptr<StreamParserBuffer>& frame) const {
+  return stream_->type() == DemuxerStream::AUDIO &&
+         !processed_frames_.empty() &&
+         frame->timestamp() == processed_frames_.back()->timestamp() &&
+         frame->duration().is_zero() &&
+         processed_frames_.back()->duration().is_zero() &&
+         frame->is_key_frame() == processed_frames_.back()->is_key_frame();
+}
+
 bool MseTrackBuffer::EnqueueProcessedFrame(
     scoped_refptr<StreamParserBuffer> frame) {
+  if (IsDuplicateAudioZeroDurationFrame(frame)) {
+    processed_frames_.pop_back();
+  }
+
   if (frame->is_key_frame()) {
     last_keyframe_presentation_timestamp_ = frame->timestamp();
   } else {
@@ -340,7 +362,7 @@ FrameProcessor::FrameProcessor(UpdateDurationCB update_duration_cb,
                                MediaLog* media_log)
     : group_start_timestamp_(kNoTimestamp),
       update_duration_cb_(std::move(update_duration_cb)),
-      media_log_(media_log) {
+      media_log_(MediaLog::CloneSafely(media_log)) {
   DVLOG(2) << __func__ << "()";
   DCHECK(update_duration_cb_);
 }
@@ -490,8 +512,8 @@ bool FrameProcessor::AddTrack(StreamParser::TrackId id,
     return false;
   }
 
-  track_buffers_[id] =
-      std::make_unique<MseTrackBuffer>(stream, media_log_, parse_warning_cb_);
+  track_buffers_[id] = std::make_unique<MseTrackBuffer>(
+      stream, media_log_.get(), parse_warning_cb_);
   return true;
 }
 

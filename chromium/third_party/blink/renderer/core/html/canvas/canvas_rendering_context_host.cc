@@ -20,8 +20,8 @@
 #include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h"
 #include "third_party/blink/renderer/core/html/canvas/unique_font_selector.h"
 #include "third_party/blink/renderer/platform/fonts/plain_text_painter.h"
+#include "third_party/blink/renderer/platform/graphics/canvas_2d_resource_provider.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_resource_dispatcher.h"
-#include "third_party/blink/renderer/platform/graphics/canvas_resource_provider.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
 #include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
@@ -50,8 +50,9 @@ CanvasRenderingContextHost::CanvasRenderingContextHost(HostType host_type,
 
 CanvasRenderingContextHost::~CanvasRenderingContextHost() {
   if (externally_allocated_memory_.is_positive()) {
-    external_memory_accounter_.Decrease(v8::Isolate::GetCurrent(),
-                                        externally_allocated_memory_.InBytes());
+    external_memory_accounter_.Decrease(
+        v8::Isolate::GetCurrent(),
+        static_cast<size_t>(externally_allocated_memory_.InBytes()));
   }
 }
 
@@ -156,6 +157,20 @@ void CanvasRenderingContextHost::InitializeForRecording(
     cc::PaintCanvas* canvas) const {
   if (RenderingContext())
     RenderingContext()->RestoreCanvasMatrixClipStack(canvas);
+}
+
+scoped_refptr<const cc::AnimatedImageFrameIndexMap>
+CanvasRenderingContextHost::GetAnimatedImageFrameIndexes(uint32_t id) const {
+  if (auto* context = RenderingContext()) {
+    return context->GetAnimatedImageFrameIndexMap(id);
+  }
+  return nullptr;
+}
+
+void CanvasRenderingContextHost::DidFlush() {
+  if (auto* context = RenderingContext()) {
+    context->DidFlush();
+  }
 }
 
 bool CanvasRenderingContextHost::IsWebGL() const {

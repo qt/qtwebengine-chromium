@@ -7,10 +7,11 @@
 #include <string_view>
 #include <utility>
 
+#include "base/check.h"
 #include "base/logging.h"
+#include "components/spellcheck/common/spellcheck_features.h"
 #include "components/spellcheck/renderer/spellcheck_worditerator.h"
 #include "components/spellcheck/renderer/spelling_engine.h"
-#include "third_party/blink/public/platform/web_runtime_features.h"
 
 SpellcheckLanguage::SpellcheckLanguage(
     service_manager::LocalInterfaceProvider* embedder_provider)
@@ -23,9 +24,15 @@ void SpellcheckLanguage::Init(base::File file, const std::string& language) {
   DCHECK(platform_spelling_engine_);
   platform_spelling_engine_->Init(std::move(file));
 
-  character_attributes_.SetDefaultLanguage(language);
+  language_ = language;
+  character_attributes_.reset();
   text_iterator_.Reset();
   contraction_iterator_.Reset();
+
+  if (!base::FeatureList::IsEnabled(
+          spellcheck::kLazyInitializeSpellcheckCharAttribute)) {
+    EnsureCharacterAttributesInitialized();
+  }
 }
 
 bool SpellcheckLanguage::InitializeIfNeeded() {
@@ -57,14 +64,16 @@ SpellcheckLanguage::SpellcheckWordResult SpellcheckLanguage::SpellCheckWord(
     return IS_CORRECT;  // No input means always spelled correctly.
   }
 
+  EnsureCharacterAttributesInitialized();
+
   std::u16string word;
   size_t word_start;
   size_t word_length;
   if (!text_iterator_.IsInitialized() &&
-      !text_iterator_.Initialize(&character_attributes_, true)) {
-      // We failed to initialize text_iterator_, return as spelled correctly.
-      VLOG(1) << "Failed to initialize SpellcheckWordIterator";
-      return IS_CORRECT;
+      !text_iterator_.Initialize(&*character_attributes_, true)) {
+    // We failed to initialize text_iterator_, return as spelled correctly.
+    VLOG(1) << "Failed to initialize SpellcheckWordIterator";
+    return IS_CORRECT;
   }
 
   text_iterator_.SetText(text);
@@ -87,12 +96,6 @@ SpellcheckLanguage::SpellcheckWordResult SpellcheckLanguage::SpellCheckWord(
     // Found a word (or a contraction) that the spellchecker can check the
     // spelling of.
     if (platform_spelling_engine_->CheckSpelling(word, host)) {
-      continue;
-    }
-
-    if (blink::WebRuntimeFeatures::IsSpellCheckCustomDictionaryAPIEnabled() &&
-        local_dictionary_engine_.SpellCheckWord(word, word_start,
-                                                word_length)) {
       continue;
     }
 
@@ -123,8 +126,10 @@ SpellcheckLanguage::SpellcheckWordResult SpellcheckLanguage::SpellCheckWord(
 bool SpellcheckLanguage::IsValidContraction(
     const std::u16string& contraction,
     spellcheck::mojom::SpellCheckHost& host) {
+  EnsureCharacterAttributesInitialized();
+
   if (!contraction_iterator_.IsInitialized() &&
-      !contraction_iterator_.Initialize(&character_attributes_, false)) {
+      !contraction_iterator_.Initialize(&*character_attributes_, false)) {
     // We failed to initialize the word iterator, return as spelled correctly.
     VLOG(1) << "Failed to initialize contraction_iterator_";
     return true;
@@ -157,17 +162,15 @@ bool SpellcheckLanguage::IsEnabled() {
   return platform_spelling_engine_->IsEnabled();
 }
 
-void SpellcheckLanguage::SpellCheckCustomDictionaryChanged(
-    const std::vector<std::string>& words_added,
-    const std::vector<std::string>& words_removed) {
-  if (blink::WebRuntimeFeatures::IsSpellCheckCustomDictionaryAPIEnabled()) {
-    const std::set<std::string> added(words_added.begin(), words_added.end());
-    local_dictionary_engine_.OnCustomDictionaryChanged(
-        added,
-        std::set<std::string>(words_removed.begin(), words_removed.end()));
-  }
+bool SpellcheckLanguage::IsTextInSameScript(const std::u16string& text) {
+  EnsureCharacterAttributesInitialized();
+  return character_attributes_->IsTextInSameScript(text);
 }
 
-bool SpellcheckLanguage::IsTextInSameScript(const std::u16string& text) const {
-  return character_attributes_.IsTextInSameScript(text);
+void SpellcheckLanguage::EnsureCharacterAttributesInitialized() {
+  CHECK(language_.has_value());
+  if (!character_attributes_) {
+    character_attributes_.emplace();
+    character_attributes_->SetDefaultLanguage(*language_);
+  }
 }

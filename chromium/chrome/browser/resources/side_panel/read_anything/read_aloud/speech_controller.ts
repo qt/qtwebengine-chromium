@@ -9,6 +9,7 @@ import type {ContentPosition} from '../content/read_anything_types.js';
 import {ContentPositionSource} from '../content/read_anything_types.js';
 import {getWordCount, playFromSelectionTimeout} from '../shared/common.js';
 import {ReadAnythingLogger, SpeechControls} from '../shared/read_anything_logger.js';
+import {getNextValidNodeFromPosition} from '../shared/tree_traversal.js';
 
 import {ReadAloudHighlighter} from './highlighter.js';
 import {getReadAloudModel} from './read_aloud_model_browser_proxy.js';
@@ -432,11 +433,22 @@ export class SpeechController {
         SpeechControls.PLAY_FROM_SELECTION :
         SpeechControls.PLAY_FROM_LINE_FOCUS;
     setTimeout(() => {
-      const readAloudNode = ReadAloudNode.create(position.node);
+      let startNode = position.node;
+      let startOffset = position.offset;
+
+      // If the content position was set to an invalid position (e.g. an image),
+      // update it to be the next valid read aloud node.
+      const validNode = this.getFirstValidReadAloudNode_(startNode);
+      if (validNode && validNode !== startNode) {
+        startNode = validNode;
+        startOffset = 0;
+      }
+
+      const readAloudNode = ReadAloudNode.create(startNode);
       if (!readAloudNode) {
         return;
       }
-      this.movePlaybackToNode_(readAloudNode, position.offset);
+      this.movePlaybackToNode_(readAloudNode, startOffset);
       // Play the next granularity, which includes the selection.
       if (this.highlightAndPlayMessage_()) {
         this.logger_.logSpeechControlClick(speechControl);
@@ -514,15 +526,34 @@ export class SpeechController {
         return skippedPosition;
 
       } else {
-        this.notifyWordBoundary_(resumeBoundary);
-        this.playText_(utteranceTextForWordBoundary);
+        if (chrome.readingMode.isLineFocusEnabled) {
+          // When line focus is enabled, highlight and position the current
+          // granularity before notifying word boundaries and playing audio so
+          // line focus is properly aligned to the text before speech starts.
+          this.highlightCurrentGranularity_(segments);
+          this.notifyWordBoundary_(resumeBoundary);
+          this.playText_(utteranceTextForWordBoundary);
+        } else {
+          this.notifyWordBoundary_(resumeBoundary);
+          this.playText_(utteranceTextForWordBoundary);
+          this.highlightCurrentGranularity_(segments);
+        }
       }
     } else {
-      this.notifyWordBoundary_(0);
-      this.playText_(utteranceText);
+      if (chrome.readingMode.isLineFocusEnabled) {
+        // When line focus is enabled, highlight and position the current
+        // granularity before notifying word boundaries and playing audio so
+        // line focus is properly aligned to the text before speech starts.
+        this.highlightCurrentGranularity_(segments);
+        this.notifyWordBoundary_(0);
+        this.playText_(utteranceText);
+      } else {
+        this.notifyWordBoundary_(0);
+        this.playText_(utteranceText);
+        this.highlightCurrentGranularity_(segments);
+      }
     }
 
-    this.highlightCurrentGranularity_(segments);
     return true;
   }
 
@@ -567,6 +598,10 @@ export class SpeechController {
         // of the current utterance until the utterance is complete. The
         // entire utterance is highlighted, so there's no need to update
         // highlighting until the utterance substring is an acceptable size.
+        if (!this.isSpeechActive()) {
+          this.model_.setPauseSource(PauseActionSource.DEFAULT);
+          return;
+        }
         const remainingText = utteranceText.substring(textToPlay.length);
         this.playText_(remainingText);
         return;
@@ -578,6 +613,16 @@ export class SpeechController {
       // boundary index whenever we move the granularity position.
       this.wordBoundaries_.resetToDefaultState();
       this.moveToNextGranularity_();
+
+      // If speech was paused (e.g. via the play/pause button calling pause()
+      // instead of cancel()), do not speak the next block of text. Clear the
+      // pause source so that resuming speech correctly calls speak() on the
+      // new granularity instead of resume() on the finished utterance.
+      if (!this.isSpeechActive()) {
+        this.model_.setPauseSource(PauseActionSource.DEFAULT);
+        return;
+      }
+
       // Continue speaking with the next block of text.
       if (!this.highlightAndPlayMessage_()) {
         this.onSpeechFinished_();
@@ -612,7 +657,7 @@ export class SpeechController {
     this.setEngineState_(SpeechEngineState.LOADED);
 
     if (error.error === 'interrupted') {
-      this.onSpeechInterrupted_();
+      this.onSpeechInterrupted_(error.utterance);
       return;
     }
 
@@ -660,6 +705,7 @@ export class SpeechController {
   }
 
   private stopSpeech_(pauseSource: PauseActionSource) {
+    this.model_.setActiveUtterance(null);
     this.clearEngineTimeout_();
     // Pause source needs to be set before updating isSpeechActive so that
     // listeners get the correct source when listening for isSpeechActive
@@ -823,7 +869,15 @@ export class SpeechController {
     }
   }
 
-  private onSpeechInterrupted_() {
+  private onSpeechInterrupted_(utterance: SpeechSynthesisUtterance) {
+    // It's possible for there to be a race condition where onSpeechInterrupted
+    // is triggered on an old utterance, which can lead to an indeterminate
+    // state. When this happens, return early.
+    const activeUtterance = this.model_.getActiveUtterance();
+    if (activeUtterance && utterance !== activeUtterance) {
+      return;
+    }
+
     // SpeechSynthesis.cancel() was called, which could have originated
     // either within or outside of reading mode. If it originated from
     // within reading mode, we should do nothing. If it came from outside
@@ -868,6 +922,7 @@ export class SpeechController {
     this.speech_.cancel();
     this.highlighter_.reset();
     this.wordBoundaries_.resetToDefaultState();
+    this.model_.setActiveUtterance(null);
 
     const speechPlayingState = {
       isSpeechActive: false,
@@ -925,17 +980,71 @@ export class SpeechController {
     // offset to determine if the selected text is in this granularity or if
     // we have to move to the next one.
     let foundSegment = this.findSegment_(currentSegments, node, offset);
+    let previousNode: ReadAloudNode|undefined;
+    let previousStart: number|undefined;
+
     while (hasCurrentText && !foundSegment) {
-      this.highlightCurrentGranularity_(
-          currentSegments, /*scrollIntoView=*/ false,
-          /*shouldUpdateSentenceHighlight=*/ true,
-          /*shouldSetLastReadingPos=*/ false);
-      this.moveToNextGranularity_();
+      const firstSegment = currentSegments[0];
+      if (firstSegment) {
+        // Prevent infinite loops if the node that's being searched for
+        // doesn't exist or can't be found.
+        if (previousNode && previousStart !== undefined &&
+            firstSegment.node.equals(previousNode) &&
+            firstSegment.start === previousStart) {
+          break;
+        }
+        previousNode = firstSegment.node;
+        previousStart = firstSegment.start;
+      }
+
+      // On pages with lots of speech segments, if playback is moved to a
+      // node towards the end of the page, multiple calls to
+      // highlightCurrentGranularity can create lag and in some cases crash
+      // reading mode because of a blocked UI thread.
+      // Calling readAloudModel_.moveSpeechForward() allows speech to start
+      // much more quickly when playing from the content position but does
+      // prevent the previous highlights from being added. However, not
+      // showing the previous highlight is preferred to 10+ second speech
+      // delays / crashes.
+      // This is technically a bug with both line focus and playing from
+      // selection. However, this bug is much more noticeable with line focus.
+      // Therefore, this change is being temporarily guarded with the line
+      // focus flag to allow it to be more safely tested in case it causes
+      // unexpected bugs. Longer term, moveSpeechForward should be the default
+      // regardless of the line focus flag OR reading mode should implement
+      // a better searching algorithm for finding the node in the DOM instead
+      // of looking through every element one-by-one.
+      if (chrome.readingMode.isLineFocusEnabled) {
+        this.readAloudModel_.moveSpeechForward();
+      } else {
+        this.highlightCurrentGranularity_(
+            currentSegments, /*scrollIntoView=*/ false,
+            /*shouldUpdateSentenceHighlight=*/ true,
+            /*shouldSetLastReadingPos=*/ false);
+        this.moveToNextGranularity_();
+      }
 
       currentSegments = this.readAloudModel_.getCurrentTextSegments();
       hasCurrentText = currentSegments.length > 0;
       foundSegment = this.findSegment_(currentSegments, node, offset);
     }
+  }
+
+  // Gets the first valid node for read aloud from the given node. If the
+  // given node is a text node with text content, it will be returned.
+  // Otherwise, the next valid text node will be used. This allows playing
+  // from a specific position (e.g. through selection or line focus) to work
+  // even if the current position is an image.
+  private getFirstValidReadAloudNode_(node: Node): Node|null {
+    if (node.nodeType === Node.TEXT_NODE && node.textContent?.trim().length) {
+      return node;
+    }
+
+    // If the current playback node is not a valid text node, traverse
+    // the entire tree starting from the current node to find the next
+    // valid text node.
+    const root = node.getRootNode();
+    return getNextValidNodeFromPosition(root, node);
   }
 
   private findSegment_(
@@ -965,11 +1074,22 @@ export class SpeechController {
         return (segment.start + segment.length > offset);
       }
 
+      // If the segment node contains the selected node, then the selection is
+      // inside this segment. This is the case if the node was wrapped in a
+      // highlight span.
+      if (segmentDomNode.contains(selectedDomNode)) {
+        // Verify that the offset falls within the segment in case the
+        // original node contained multiple segments.
+        return (segment.start + segment.length > offset);
+      }
+
       if (selectedDomNode.contains(segmentDomNode)) {
         return true;
       }
 
-      return false;
+      // Ensure findSegment_ terminates if no match is found.
+      const position = selectedDomNode.compareDocumentPosition(segmentDomNode);
+      return !!(position & Node.DOCUMENT_POSITION_FOLLOWING);
     });
   }
 
@@ -1042,6 +1162,8 @@ export class SpeechController {
     message.volume = this.model_.getVolume();
     message.lang = chrome.readingMode.baseLanguageForSpeech;
     message.rate = getCurrentSpeechRate();
+    this.model_.setActiveUtterance(message);
+
     // Cancel any pending utterances that may be happening in other tabs.
     this.speech_.cancel();
 

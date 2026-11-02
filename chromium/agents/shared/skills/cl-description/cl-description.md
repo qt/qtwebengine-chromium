@@ -17,11 +17,14 @@ following are missing or ambiguous, **STOP and ask the user for clarification**:
   Chromium bug or an internal Buganizer issue.
 - **Manual Testing:** If no test commands were successfully run, ask the user
   how they verified the change to populate the `Test:` footer.
+- **Histogram Obsoletion:** If non-expired UMA histograms are removed or
+  renamed, and the obsoletion reason or replacement is unclear, ask the user.
 
 ### 2. Formatting Constraints (Mandatory)
 
 - **72-Column Wrap:** Every line (Subject and Body) **MUST** be hard-wrapped at
-  72 characters.
+  72 characters (exception: footer tags like `OBSOLETE_HISTOGRAM` must remain on
+  a single line).
 - **Subject Line:** A single, concise summary. Prefix it with the relevant
   component in brackets, e.g., `[Omnibox]: ...`. The entire subject line
   **MUST** be under 50 characters if possible, and no more than 72 characters.
@@ -55,6 +58,19 @@ following are missing or ambiguous, **STOP and ask the user for clarification**:
   automatically.
 - **Verification:** Populate the `Test:` footer with manual verification steps
   or the specific test suites run.
+- **Histogram Obsoletion (UMA):** When removing or renaming non-expired
+  histograms from `histograms.xml` (including patterned variants or suffixes),
+  add obsoletion tags to the footer explaining why and when (YYYY-MM) they were
+  removed, or what replaces them:
+  - **Specific Histogram:** `OBSOLETE_HISTOGRAM[HistogramName]=message` (e.g.,
+    `OBSOLETE_HISTOGRAM[Tab.Count]=Replaced by Tab.Count2`).
+  - **All Removed Histograms:** `OBSOLETE_HISTOGRAMS=message` (used when all
+    removed histograms share the same message, especially useful for patterned
+    histograms; overridden by specific tags).
+  - **Single Line:** The full tag **MUST** be on a single line, even if it
+    exceeds 72 characters.
+  - **Expired Histograms:** Can be omitted if the removed histogram was already
+    expired.
 
 ______________________________________________________________________
 
@@ -70,4 +86,5 @@ diff is short and self-explanatory.]
 
 Bug: [b:ID or ID]
 Test: [Manual test commands or verification steps]
+OBSOLETE_HISTOGRAM[HistogramName]=[Reason or replacement (single line)]
 ```

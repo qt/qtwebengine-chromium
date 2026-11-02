@@ -5,7 +5,6 @@
 import * as Common from '../../core/common/common.js';
 import type * as Protocol from '../../generated/protocol.js';
 
-import {AttributionReportingIssue} from './AttributionReportingIssue.js';
 import {ContentSecurityPolicyIssue} from './ContentSecurityPolicyIssue.js';
 import {CookieDeprecationMetadataIssue} from './CookieDeprecationMetadataIssue.js';
 import {CookieIssue} from './CookieIssue.js';
@@ -17,6 +16,7 @@ import {HeavyAdIssue} from './HeavyAdIssue.js';
 import {Issue, IssueCategory, IssueKind, unionIssueKind} from './Issue.js';
 import type {EventTypes as IssuesManagerEventsTypes, IssueAddedEvent} from './IssuesManager.js';
 import {Events as IssuesManagerEvents} from './IssuesManagerEvents.js';
+import {LazyLoadImageIssue} from './LazyLoadImageIssue.js';
 import type {MarkdownIssueDescription} from './MarkdownIssueDescription.js';
 import {MixedContentIssue} from './MixedContentIssue.js';
 import {PartitioningBlobURLIssue} from './PartitioningBlobURLIssue.js';
@@ -68,10 +68,10 @@ export class AggregatedIssue extends Issue {
   #mixedContentIssues = new Set<MixedContentIssue>();
   #partitioningBlobURLIssues = new Set<PartitioningBlobURLIssue>();
   #permissionElementIssues = new Set<PermissionElementIssue>();
+  #lazyLoadImageIssues = new Set<LazyLoadImageIssue>();
   #selectivePermissionsInterventionIssues = new Set<SelectivePermissionsInterventionIssue>();
   #sharedArrayBufferIssues = new Set<SharedArrayBufferIssue>();
   #quirksModeIssues = new Set<QuirksModeIssue>();
-  #attributionReportingIssues = new Set<AttributionReportingIssue>();
   #genericIssues = new Set<GenericIssue>();
   #elementAccessibilityIssues = new Set<ElementAccessibilityIssue>();
   #representative?: Issue;
@@ -158,10 +158,6 @@ export class AggregatedIssue extends Issue {
     return this.#quirksModeIssues;
   }
 
-  getAttributionReportingIssues(): ReadonlySet<AttributionReportingIssue> {
-    return this.#attributionReportingIssues;
-  }
-
   getGenericIssues(): ReadonlySet<GenericIssue> {
     return this.#genericIssues;
   }
@@ -194,6 +190,10 @@ export class AggregatedIssue extends Issue {
 
   getPermissionElementIssues(): Iterable<PermissionElementIssue> {
     return this.#permissionElementIssues;
+  }
+
+  getLazyLoadImageIssues(): Iterable<LazyLoadImageIssue> {
+    return this.#lazyLoadImageIssues;
   }
 
   /**
@@ -273,9 +273,6 @@ export class AggregatedIssue extends Issue {
     if (issue instanceof QuirksModeIssue) {
       this.#quirksModeIssues.add(issue);
     }
-    if (issue instanceof AttributionReportingIssue) {
-      this.#attributionReportingIssues.add(issue);
-    }
     if (issue instanceof GenericIssue) {
       this.#genericIssues.add(issue);
     }
@@ -287,6 +284,9 @@ export class AggregatedIssue extends Issue {
     }
     if (issue instanceof PermissionElementIssue) {
       this.#permissionElementIssues.add(issue);
+    }
+    if (issue instanceof LazyLoadImageIssue) {
+      this.#lazyLoadImageIssues.add(issue);
     }
     if (issue instanceof SelectivePermissionsInterventionIssue) {
       this.#selectivePermissionsInterventionIssues.add(issue);

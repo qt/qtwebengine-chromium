@@ -15,6 +15,7 @@
 #include "chrome/browser/ui/webui/favicon_source.h"
 #include "chrome/browser/ui/webui/history/foreign_session_handler.h"
 #include "chrome/browser/ui/webui/side_panel/tabs_from_other_devices/synced_screenshot_data_source.h"
+#include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/webui_url_constants.h"
 #include "chrome/grit/generated_resources.h"
 #include "chrome/grit/side_panel_shared_resources.h"
@@ -86,6 +87,7 @@ TabsFromOtherDevicesSidePanelUI::TabsFromOtherDevicesSidePanelUI(
 
   content::URLDataSource::Add(profile,
                               std::make_unique<SyncedScreenshotDataSource>());
+  content::URLDataSource::Add(profile, std::make_unique<ThemeSource>(profile));
 }
 
 TabsFromOtherDevicesSidePanelUI::~TabsFromOtherDevicesSidePanelUI() = default;
@@ -98,11 +100,19 @@ void TabsFromOtherDevicesSidePanelUI::SetBrowserWindowInterface(
 }
 
 void TabsFromOtherDevicesSidePanelUI::BindInterface(
-    mojo::PendingReceiver<history::mojom::ForeignSessionPageHandler>
-        pending_page_handler) {
+    mojo::PendingReceiver<history::mojom::ForeignSessionPageHandlerFactory>
+        pending_receiver) {
+  foreign_session_page_handler_factory_receiver_.reset();
+  foreign_session_page_handler_factory_receiver_.Bind(
+      std::move(pending_receiver));
+}
+
+void TabsFromOtherDevicesSidePanelUI::CreateForeignSessionPageHandler(
+    mojo::PendingRemote<history::mojom::ForeignSessionPage> page,
+    mojo::PendingReceiver<history::mojom::ForeignSessionPageHandler> receiver) {
   foreign_session_handler_ =
       std::make_unique<browser_sync::ForeignSessionHandler>(
-          std::move(pending_page_handler), Profile::FromWebUI(web_ui()),
+          std::move(receiver), std::move(page), Profile::FromWebUI(web_ui()),
           web_ui()->GetWebContents(),
           base::BindRepeating([](content::WebContents* source_web_contents,
                                  const ::sessions::SessionTab& tab,

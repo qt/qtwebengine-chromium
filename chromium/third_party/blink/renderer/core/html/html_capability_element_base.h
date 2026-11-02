@@ -106,6 +106,11 @@ class CORE_EXPORT HTMLCapabilityElementBase
 
   void HandleActivation(Event&, base::OnceClosure on_success);
 
+  // Called when the element activation (e.g. click) fails one of the security
+  // or validation checks in the base class. Derived classes can override this
+  // to perform custom error handling, such as firing DOM events.
+  virtual void OnActivationFailed(const String& error_message) {}
+
   bool PermissionsGranted() const {
     return aggregated_permission_status_.has_value() &&
            aggregated_permission_status_ ==
@@ -150,10 +155,6 @@ class CORE_EXPORT HTMLCapabilityElementBase
   bool HasPendingPermissionRequest() const {
     return pending_request_created_.has_value();
   }
-
-  // Called on activation of an <install> element with attributes that fail
-  // installability checks.
-  void HandleInstallDataError();
 
  private:
   // TODO(crbug.com/1315595): remove this friend class once migration
@@ -201,10 +202,18 @@ class CORE_EXPORT HTMLCapabilityElementBase
                            InvalidUrlMakesElementInvalid);
   FRIEND_TEST_ALL_PREFIXES(HTMLInstallElementTestBase,
                            InvalidManifestIdMakesElementInvalid);
+  FRIEND_TEST_ALL_PREFIXES(HTMLInstallElementTestBase,
+                           ActivationWithManifestDataError);
+  FRIEND_TEST_ALL_PREFIXES(HTMLInstallElementTestBase,
+                           ManifestIdOnlyMakesElementInvalid);
+  FRIEND_TEST_ALL_PREFIXES(HTMLInstallElementTestBase,
+                           InvalidManifestUrlMakesElementInvalid);
   FRIEND_TEST_ALL_PREFIXES(HTMLCapabilityElementBaseClickingEnabledTest,
                            UnclickableBeforeRegistered);
   FRIEND_TEST_ALL_PREFIXES(HTMLCapabilityElementBaseIntersectionTest,
                            IntersectionChanged);
+  FRIEND_TEST_ALL_PREFIXES(HTMLCapabilityElementBaseIntersectionTest,
+                           MovePEPCFromIframeAndDestroyIframe);
   FRIEND_TEST_ALL_PREFIXES(HTMLCapabilityElementBaseIntersectionTest,
                            IntersectionChangedDisableEnableDisable);
   FRIEND_TEST_ALL_PREFIXES(HTMLCapabilityElementBaseIntersectionTest,
@@ -275,11 +284,6 @@ class CORE_EXPORT HTMLCapabilityElementBase
 
     // The element's attribute changed.
     kAttributeChanged,
-
-    // The <install> element's install attempt failed due to data error.
-    // TODO(crbug.com/481519343): Move DataError out of invalidReason. Revisit
-    // how to best surface this for <install>.
-    kInstallDataError,
   };
 
   // Define the different states of visibility depending on IntersectionObserver
@@ -330,8 +334,10 @@ class CORE_EXPORT HTMLCapabilityElementBase
     void Fired() final { (element_->*function_)(this); }
 
     base::OnceClosure BindTimerClosure() final {
+      // TODO(https://crbug.com/521917543): avoid UnretainedException().
       return BindOnce(&DisableReasonExpireTimer::RunInternalTrampoline,
-                      Unretained(this), WrapWeakPersistent(element_.Get()));
+                      blink::subtle::UnretainedException(this),
+                      WrapWeakPersistent(element_.Get()));
     }
 
    private:
@@ -399,7 +405,7 @@ class CORE_EXPORT HTMLCapabilityElementBase
       override;
 
   // Callback triggered when permission is decided from browser side.
-  void OnEmbeddedPermissionsDecided(
+  virtual void OnEmbeddedPermissionsDecided(
       mojom::blink::EmbeddedPermissionControlResult result);
 
   // Callback triggered when the `disable_reason_expire_timer_` fires.
@@ -590,6 +596,9 @@ class CORE_EXPORT HTMLCapabilityElementBase
 
   // Whether the elements has entered fallback mode. See |EnableFallbackMode|.
   bool fallback_mode_ = false;
+
+ private:
+  String GetActivationErrorMessage() const;
 };
 
 // The custom type casting is required for the PermissionElement OT because the

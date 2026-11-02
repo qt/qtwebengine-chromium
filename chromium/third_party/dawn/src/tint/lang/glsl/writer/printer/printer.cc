@@ -116,6 +116,7 @@ bool IsKeyword(std::string_view ident);
 
 // The list of properties that are not supported.
 const core::ir::Properties kUnsupportedProperties{
+    core::ir::Property::kAllow8BitIntegers,
     core::ir::Property::kAllowMultipleEntryPoints,
     core::ir::Property::kAllowOverrides,
 };
@@ -130,7 +131,7 @@ class Printer : public tint::TextGenerator {
 
     /// @returns the generated GLSL shader
     tint::Result<Output> Generate() {
-        AssertValid(ir_, kPrinterCapabilities, "before glsl.Printer");
+        AssertValid(ir_, "before glsl.Printer");
         AssertNoUnsupportedProperties(ir_, kUnsupportedProperties);
 
         {

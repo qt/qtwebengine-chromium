@@ -152,8 +152,6 @@ class GeneralizedSelfAdjointEigenSolver : public SelfAdjointEigenSolver<MatrixTy
    */
   GeneralizedSelfAdjointEigenSolver& compute(const MatrixType& matA, const MatrixType& matB,
                                              int options = ComputeEigenvectors | Ax_lBx);
-
- protected:
 };
 
 template <typename MatrixType>

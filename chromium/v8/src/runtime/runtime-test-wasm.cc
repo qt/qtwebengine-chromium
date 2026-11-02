@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include "include/v8-wasm.h"
+#include "src/api/api.h"
 #include "src/base/memory.h"
 #include "src/base/platform/mutex.h"
 #include "src/builtins/builtins-inl.h"
@@ -318,24 +319,6 @@ RUNTIME_FUNCTION(Runtime_WasmTraceExit) {
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
-RUNTIME_FUNCTION(Runtime_IsAsmWasmCode) {
-  SealHandleScope shs(isolate);
-  DisallowGarbageCollection no_gc;
-  if (args.length() != 1 || !IsJSFunction(args[0])) {
-    return CrashUnlessFuzzing(isolate);
-  }
-  auto function = Cast<JSFunction>(args[0]);
-  if (!function->shared()->HasAsmWasmData()) {
-    return ReadOnlyRoots(isolate).false_value();
-  }
-  if (function->shared()->HasBuiltinId() &&
-      function->shared()->builtin_id() == Builtin::kInstantiateAsmJs) {
-    // Hasn't been compiled yet.
-    return ReadOnlyRoots(isolate).false_value();
-  }
-  return ReadOnlyRoots(isolate).true_value();
-}
-
 namespace {
 
 bool DisallowWasmCodegenFromStringsCallback(v8::Local<v8::Context> context,
@@ -527,8 +510,9 @@ RUNTIME_FUNCTION(Runtime_GetWasmExceptionTagId) {
   DirectHandle<Object> tag =
       WasmExceptionPackage::GetExceptionTag(isolate, exception);
   CHECK(IsWasmExceptionTag(*tag));
-  DirectHandle<FixedArray> tags_table(trusted_data->tags_table(), isolate);
-  uint32_t tags_table_len = tags_table->ulength().value();
+  DirectHandle<TrustedFixedArray> tags_table(trusted_data->tags_table(),
+                                             isolate);
+  uint32_t tags_table_len = tags_table->length().value();
   for (uint32_t index = 0; index < tags_table_len; ++index) {
     if (tags_table->get(index) == *tag) return Smi::FromUInt(index);
   }
@@ -626,15 +610,14 @@ RUNTIME_FUNCTION(Runtime_WasmTraceGlobal) {
   DCHECK(!it.done());
   DCHECK(it.is_wasm());
   WasmFrame* frame = WasmFrame::cast(it.frame());
-  Tagged<WasmInstanceObject> instance = frame->wasm_instance();
 
-  const wasm::WasmGlobal& global =
-      instance->module()->globals[info->global_index];
+  const wasm::WasmModule* module = frame->trusted_instance_data()->module();
+  const wasm::WasmGlobal& global = module->globals[info->global_index];
 
   wasm::ExecutionTier tier = frame->wasm_code()->tier();
 
   wasm::WasmValue value =
-      instance->trusted_data(isolate)->GetGlobalValue(isolate, global);
+      frame->trusted_instance_data()->GetGlobalValue(isolate, global);
 
   wasm::GlobalTraceEntry trace_entry = {
       .function_index = frame->GetInnermostFunctionIndex(),
@@ -807,15 +790,16 @@ static Tagged<Object> CreateWasmObject(Isolate* isolate,
   // Instantiate the module.
   MaybeDirectHandle<WasmInstanceObject> maybe_instance =
       engine->SyncInstantiate(isolate, &thrower, module_object,
-                              Handle<JSReceiver>::null(),
-                              MaybeDirectHandle<JSArrayBuffer>());
+                              Handle<JSReceiver>::null());
   CHECK(!thrower.error());
   DirectHandle<WasmInstanceObject> instance;
   if (!maybe_instance.ToHandle(&instance)) {
     DCHECK(isolate->has_exception());
     return ReadOnlyRoots(isolate).exception();
   }
-  const wasm::WasmModule* module = module_object->native_module()->module();
+  Managed<wasm::NativeModule>::Ptr native_module =
+      module_object->native_module();
+  const wasm::WasmModule* module = native_module->module();
   wasm::WasmValue value(int64_t{0x7AADF00DBAADF00D});
   wasm::ModuleTypeIndex type_index{0};
   Tagged<Map> map =
@@ -1100,12 +1084,13 @@ RUNTIME_FUNCTION(Runtime_BuildRefTypeBitfield) {
   static constexpr uint32_t kMask = (1u << wasm::ValueType::kNumIndexBits) - 1;
   wasm::ModuleTypeIndex type_index{
       static_cast<uint32_t>(Cast<Smi>(args[0]).value()) & kMask};
-  const wasm::WasmModule* module = Cast<WasmInstanceObject>(args[1])->module();
+  const wasm::WasmModule* module =
+      Cast<WasmInstanceObject>(args[1])->trusted_data(isolate)->module();
   // If we get an invalid type index, make up the additional data; the result
   // may still be useful for fuzzers for causing interesting confusion.
   wasm::ValueType t = module->has_type(type_index)
                           ? wasm::ValueType::Ref(module->heap_type(type_index))
-                          : wasm::ValueType::Ref(type_index, SharedFlag::kNo,
+                          : wasm::ValueType::Ref(type_index, SharedFlag{false},
                                                  wasm::RefTypeKind::kStruct);
   return Smi::FromInt(t.raw_bit_field());
 }

@@ -413,7 +413,9 @@ EIGEN_STRONG_INLINE Packet2d pset1frombits<Packet2d>(uint64_t from) {
 
 template <>
 EIGEN_STRONG_INLINE Packet4f peven_mask(const Packet4f& /*a*/) {
-  return _mm_castsi128_ps(_mm_set_epi32(0, -1, 0, -1));
+  Packet4f r = _mm_castsi128_ps(_mm_set_epi32(0, -1, 0, -1));
+  EIGEN_FAST_MATH_CONSTANT_BARRIER(r);
+  return r;
 }
 template <>
 EIGEN_STRONG_INLINE Packet2l peven_mask(const Packet2l& /*a*/) {
@@ -429,7 +431,9 @@ EIGEN_STRONG_INLINE Packet4ui peven_mask(const Packet4ui& /*a*/) {
 }
 template <>
 EIGEN_STRONG_INLINE Packet2d peven_mask(const Packet2d& /*a*/) {
-  return _mm_castsi128_pd(_mm_set_epi32(0, 0, -1, -1));
+  Packet2d r = _mm_castsi128_pd(_mm_set_epi32(0, 0, -1, -1));
+  EIGEN_FAST_MATH_CONSTANT_BARRIER(r);
+  return r;
 }
 
 template <>
@@ -454,7 +458,7 @@ EIGEN_STRONG_INLINE Packet4ui pzero(const Packet4ui& /*a*/) {
 }
 
 // GCC generates a shufps instruction for _mm_set1_ps/_mm_load1_ps instead of the more efficient pshufd instruction.
-// However, using inrinsics for pset1 makes gcc to generate crappy code in some cases (see bug 203)
+// However, using intrinsics for pset1 makes gcc to generate crappy code in some cases (see bug 203)
 // Using inline assembly is also not an option because then gcc fails to reorder properly the instructions.
 // Therefore, we introduced the pload1 functions to be used in product kernels for which bug 203 does not apply.
 // Also note that with AVX, we want it to generate a vbroadcastss.
@@ -771,12 +775,16 @@ EIGEN_STRONG_INLINE Packet16b ptrue<Packet16b>(const Packet16b& /*a*/) {
 template <>
 EIGEN_STRONG_INLINE Packet4f ptrue<Packet4f>(const Packet4f& a) {
   Packet4i b = _mm_castps_si128(a);
-  return _mm_castsi128_ps(_mm_cmpeq_epi32(b, b));
+  Packet4f r = _mm_castsi128_ps(_mm_cmpeq_epi32(b, b));
+  EIGEN_FAST_MATH_CONSTANT_BARRIER(r);
+  return r;
 }
 template <>
 EIGEN_STRONG_INLINE Packet2d ptrue<Packet2d>(const Packet2d& a) {
   Packet4i b = _mm_castpd_si128(a);
-  return _mm_castsi128_pd(_mm_cmpeq_epi32(b, b));
+  Packet2d r = _mm_castsi128_pd(_mm_cmpeq_epi32(b, b));
+  EIGEN_FAST_MATH_CONSTANT_BARRIER(r);
+  return r;
 }
 
 template <>
@@ -1444,7 +1452,7 @@ EIGEN_STRONG_INLINE Packet16b ploaddup<Packet16b>(const bool* from) {
 }
 
 // Loads 4 bools from memory and returns the packet
-// {b0, b0  b0, b0, b1, b1, b1, b1, b2, b2, b2, b2, b3, b3, b3, b3}
+// {b0, b0, b0, b0, b1, b1, b1, b1, b2, b2, b2, b2, b3, b3, b3, b3}
 template <>
 EIGEN_STRONG_INLINE Packet16b ploadquad<Packet16b>(const bool* from) {
   EIGEN_USING_STD(memcpy);
@@ -1799,15 +1807,13 @@ EIGEN_STRONG_INLINE Packet2d pldexp<Packet2d>(const Packet2d& a, const Packet2d&
   // Convert e to integer and swizzle to low-order bits.
   const Packet4i ei = vec4i_swizzle1(_mm_cvtpd_epi32(e), 0, 3, 1, 3);
 
-  // 4-way split + depth-3 multiply tree; see pldexp_generic for derivation.
+  // Preserve the sequential 4-way split; see pldexp_generic.
   const Packet4i bias = _mm_set_epi32(0, 1023, 0, 1023);
   const Packet4i b = parithmetic_shift_right<2>(ei);                                  // floor(e/4)
   const Packet4i b_remainder = psub(psub(ei, b), padd(b, b));                         // e - 3b (depth 2)
   const Packet2d c1 = _mm_castsi128_pd(_mm_slli_epi64(padd(b, bias), 52));            // 2^b
   const Packet2d c2 = _mm_castsi128_pd(_mm_slli_epi64(padd(b_remainder, bias), 52));  // 2^(e - 3b)
-  const Packet2d c1_squared = pmul(c1, c1);
-  const Packet2d a_c1 = pmul(a, c1);
-  return pmul(pmul(a_c1, c1_squared), c2);  // a * 2^e
+  return pmul(pmul(pmul(pmul(a, c1), c1), c1), c2);                                   // a * 2^e
 }
 
 // We specialize pldexp here, since the generic implementation uses Packet2l, which is not well

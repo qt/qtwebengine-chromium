@@ -96,9 +96,11 @@ bool IsBackgroundEffectView(NSView* view) {
     return true;
   }
 
-  Class glass_effect_view_class = NSClassFromString(@"NSGlassEffectView");
-  return glass_effect_view_class &&
-         [view isKindOfClass:glass_effect_view_class];
+  if (@available(macOS 26, *)) {
+    return [view isKindOfClass:[NSGlassEffectView class]];
+  }
+
+  return false;
 }
 
 }  // namespace
@@ -266,14 +268,15 @@ NSComparisonResult SubviewSorter(__kindof NSView* lhs,
 
   // Put background effect views before `ViewsCompositorSuperview`, otherwise
   // they can cover content displayed by the compositor.
-  if (IsBackgroundEffectView(lhs)) {
-    return NSOrderedAscending;
+  bool lhs_is_bg = IsBackgroundEffectView(lhs);
+  bool rhs_is_bg = IsBackgroundEffectView(rhs);
+  if (lhs_is_bg != rhs_is_bg) {
+    return lhs_is_bg ? NSOrderedAscending : NSOrderedDescending;
   }
-  if ([lhs isKindOfClass:[ViewsCompositorSuperview class]]) {
-    if (IsBackgroundEffectView(rhs)) {
-      return NSOrderedDescending;
-    }
-    return NSOrderedAscending;
+  bool lhs_is_comp = [lhs isKindOfClass:[ViewsCompositorSuperview class]];
+  bool rhs_is_comp = [rhs isKindOfClass:[ViewsCompositorSuperview class]];
+  if (lhs_is_comp != rhs_is_comp) {
+    return lhs_is_comp ? NSOrderedAscending : NSOrderedDescending;
   }
 
   const RankMap* rank = static_cast<const RankMap*>(rank_as_void);
@@ -1366,6 +1369,9 @@ void NativeWidgetNSWindowBridge::OnWindowWillClose() {
   [window_ setCommandDispatcherDelegate:nil];
 
   ui::CATransactionCoordinator::Get().RemovePreCommitObserver(this);
+  // This is the standard teardown path when the NSWindow is closing.
+  // Notify the host process that the window is closing so that it can
+  // tear down the browser-side widget/window structures.
   host_->OnWindowWillClose();
 
   // Ensure NativeWidgetNSWindowBridge does not have capture, otherwise
@@ -1513,7 +1519,12 @@ void NativeWidgetNSWindowBridge::InitCompositorView(
   // native shape is what's most appropriate for displaying sheets on Mac.
   if (is_translucent_window_ && !IsWindowModalSheet()) {
     [window_ setOpaque:NO];
-    [window_ setBackgroundColor:[NSColor clearColor]];
+    // A completely transparent background ([NSColor clearColor]) causes AppKit
+    // to continuously invalidate the window surface, resulting in high CPU
+    // and energy usage. Using an almost-transparent color (alpha 0.001) avoids
+    // this performance issue while remaining visually indistinguishable.
+    [window_ setBackgroundColor:[[NSColor windowBackgroundColor]
+                                    colorWithAlphaComponent:0.001]];
 
     // Don't block waiting for the initial frame of completely transparent
     // windows. This allows us to avoid blocking on the UI thread e.g, while
@@ -1637,14 +1648,7 @@ void NativeWidgetNSWindowBridge::FullscreenControllerTransitionComplete(
   UpdateWindowDisplay();
 
   // Add any children that were skipped during the fullscreen transition.
-  // A weak pointer is needed because OrderChildren() can synchronously run a
-  // modal sheet animation (ShowAsModalSheet), entering a nested run-loop during
-  // which this bridge may be destroyed.
-  base::WeakPtr<NativeWidgetNSWindowBridge> weak_ptr = factory_.GetWeakPtr();
   OrderChildren();
-  if (!weak_ptr) {
-    return;
-  }
 
   host_->OnWindowFullscreenTransitionComplete(is_fullscreen);
   if (is_fullscreen && immersive_mode_controller_) {
@@ -1853,15 +1857,11 @@ void NativeWidgetNSWindowBridge::SetCanAppearInExistingFullscreenSpaces(
     bool can_appear_in_existing_fullscreen_spaces) {
   NSWindowCollectionBehavior collectionBehavior = window_.collectionBehavior;
   if (can_appear_in_existing_fullscreen_spaces) {
-    if (@available(macOS 13.0, *)) {
-      collectionBehavior &= ~NSWindowCollectionBehaviorPrimary;
-    }
+    collectionBehavior &= ~NSWindowCollectionBehaviorPrimary;
     collectionBehavior |= NSWindowCollectionBehaviorFullScreenAuxiliary;
     collectionBehavior &= ~NSWindowCollectionBehaviorFullScreenPrimary;
   } else {
-    if (@available(macOS 13.0, *)) {
-      collectionBehavior |= NSWindowCollectionBehaviorPrimary;
-    }
+    collectionBehavior |= NSWindowCollectionBehaviorPrimary;
     collectionBehavior |= NSWindowCollectionBehaviorFullScreenPrimary;
     collectionBehavior &= ~NSWindowCollectionBehaviorFullScreenAuxiliary;
   }
@@ -2221,41 +2221,47 @@ void NativeWidgetNSWindowBridge::ShowAsModalSheet() {
     return;
   }
 
-  auto begin_sheet_closure = base::BindOnce(^{
-    [parent_window beginSheet:window_
-            completionHandler:^(NSModalResponse return_code) {
-              // This class, NativeWidgetNSWindowBridge, clears the window's
-              // delegate as an indication of its death, in which case this
-              // completion handler will no-op. This is necessary to handle
-              // AppKit invoking this selector via a posted task. See
-              // https://crbug.com/851376.
-              NSWindow* window = weak_window;
-              if (!window.delegate) {
-                return;
-              }
-              // Make sure to mark ourselves as not wanting to be visible.
-              // Otherwise if during the orderOut call our parent becomes the
-              // key window, it would try to show us as a new modal sheet.
-              wants_to_be_visible_ = false;
-              [window orderOut:nil];
-              OnWindowWillClose();
-            }];
-  });
-
-  if (host_helper_->MustPostTaskToRunModalSheetAnimation()) {
-    // This function is called via mojo when using remote cocoa. Inside the
-    // nested run loop, we will wait for a message providing the correctly-sized
-    // frame for the new sheet. This message will not be processed until we
-    // return from handling this message, because it will coming on the same
-    // pipe. Avoid the resulting hang by posting a task to show the modal
-    // sheet (which will be executed on a fresh stack, which will not block
-    // the message).
-    // https://crbug.com/1234509
-    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
-        FROM_HERE, std::move(begin_sheet_closure));
-  } else {
-    std::move(begin_sheet_closure).Run();
-  }
+  base::WeakPtr<NativeWidgetNSWindowBridge> weak_this = factory_.GetWeakPtr();
+  // AppKit's sheet presentation animation runs a nested run loop. We post
+  // this task to run the animation asynchronously for two reasons:
+  // 1. For remote cocoa (out-of-process), it prevents a deadlock by allowing
+  //    the sizing message to be processed before entering the nested run loop.
+  // 2. For in-process windows, it prevents Use-After-Free (UAF) bugs and
+  //    undefined behavior when returning from the nested run loop if the
+  //    window was closed during presentation, causing its bridge (this) to be
+  //    destroyed.
+  // https://crbug.com/40781530, https://crbug.com/517040438,
+  // https://crbug.com/518006007
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce(^{
+        NativeWidgetNSWindowBridge* bridge = weak_this.get();
+        if (!bridge || !bridge->wants_to_be_visible_) {
+          return;
+        }
+        [parent_window beginSheet:bridge->ns_window()
+                completionHandler:^(NSModalResponse return_code) {
+                  // This class, NativeWidgetNSWindowBridge, clears the window's
+                  // delegate as an indication of its death, in which case this
+                  // completion handler will no-op. This is necessary to handle
+                  // AppKit invoking this selector via a posted task. See
+                  // https://crbug.com/41393772
+                  NSWindow* window = weak_window;
+                  if (!window.delegate) {
+                    return;
+                  }
+                  // Make sure to mark ourselves as not wanting to be visible.
+                  // Otherwise if during the orderOut call our parent becomes
+                  // the key window, it would try to show us as a new modal
+                  // sheet.
+                  if (weak_this) {
+                    weak_this->wants_to_be_visible_ = false;
+                  }
+                  [window orderOut:nil];
+                  if (weak_this) {
+                    weak_this->OnWindowWillClose();
+                  }
+                }];
+      }));
 }
 
 }  // namespace remote_cocoa

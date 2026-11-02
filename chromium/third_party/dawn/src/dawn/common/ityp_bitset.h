@@ -32,9 +32,10 @@
 #include <bitset>
 #include <limits>
 
-#include "src/dawn/common/Assert.h"
 #include "src/dawn/common/BitSetRangeIterator.h"
 #include "src/dawn/common/Math.h"
+#include "src/utils/assert.h"
+#include "src/utils/numeric.h"
 #include "src/utils/underlying_type.h"
 
 namespace dawn {
@@ -80,7 +81,7 @@ uint32_t Iterator64<Index, N>::getNextBit() const {
     if (mBits == 0) {
         return 0;
     }
-    return std::countr_zero(mBits);
+    return sign_dcast(std::countr_zero(mBits));
 }
 
 template <typename Index, size_t N>
@@ -137,7 +138,7 @@ uint32_t IteratorArray<Index, N>::getNextBit() {
     while (mOffset < N) {
         uint64_t wordBits = static_cast<uint64_t>((mBits & wordMask).to_ullong());
         if (wordBits != 0ull) {
-            return std::countr_zero(wordBits) + mOffset;
+            return sign_dcast(std::countr_zero(wordBits)) + mOffset;
         }
 
         mBits >>= kBitsPerWord;
@@ -178,8 +179,7 @@ class bitset : private ::std::bitset<N> {
 
     constexpr bitset() noexcept : Base() {}
 
-    // NOLINTNEXTLINE(runtime/explicit)
-    constexpr bitset(uint64_t value) noexcept : Base(value) {
+    explicit(false) constexpr bitset(uint64_t value) noexcept : Base(value) {
         // Unlike std::bitset, we don't simply discard the most significant bits >= N as this is
         // almost always an error (e.g. the bitset is not large enough, or the value was incorrectly
         // computed). We assert that only the least significant bits < N are being set.

@@ -635,7 +635,7 @@ bool CPDF_Creator::Create(Mask<CreateFlags> flags, int32_t file_version) {
 void CPDF_Creator::InitID() {
   DCHECK(!id_array_);
 
-  id_array_ = pdfium::MakeRetain<CPDF_Array>();
+  id_array_ = document_->New<CPDF_Array>();
   RetainPtr<const CPDF_Array> pOldIDArray =
       parser_ ? parser_->GetIDArray() : nullptr;
   RetainPtr<const CPDF_Object> pID1 =

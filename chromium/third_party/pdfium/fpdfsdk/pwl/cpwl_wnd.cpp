@@ -26,12 +26,10 @@ constexpr float kDefaultFontSize = 9.0f;
 }  // namespace
 
 // static
-const CFX_Color CPWL_Wnd::kDefaultBlackColor =
-    CFX_Color(CFX_Color::Type::kGray, 0);
+const CFX_Color CPWL_Wnd::kDefaultBlackColor = CFX_Color::MakeGray(0.0f);
 
 // static
-const CFX_Color CPWL_Wnd::kDefaultWhiteColor =
-    CFX_Color(CFX_Color::Type::kGray, 1);
+const CFX_Color CPWL_Wnd::kDefaultWhiteColor = CFX_Color::MakeGray(1.0f);
 
 CPWL_Wnd::CreateParams::CreateParams(CFX_Timer::HandlerIface* timer_handler,
                                      IPWL_FillerNotify* filler_notify,
@@ -732,9 +730,9 @@ void CPWL_Wnd::SetFontSize(float fFontSize) {
 CFX_Color CPWL_Wnd::GetBorderLeftTopColor(BorderStyle nBorderStyle) const {
   switch (nBorderStyle) {
     case BorderStyle::kBeveled:
-      return CFX_Color(CFX_Color::Type::kGray, 1);
+      return CFX_Color::MakeGray(1.0f);
     case BorderStyle::kInset:
-      return CFX_Color(CFX_Color::Type::kGray, 0.5f);
+      return CFX_Color::MakeGray(0.5f);
     default:
       return CFX_Color();
   }
@@ -745,7 +743,7 @@ CFX_Color CPWL_Wnd::GetBorderRightBottomColor(BorderStyle nBorderStyle) const {
     case BorderStyle::kBeveled:
       return GetBackgroundColor() / 2.0f;
     case BorderStyle::kInset:
-      return CFX_Color(CFX_Color::Type::kGray, 0.75f);
+      return CFX_Color::MakeGray(0.75f);
     default:
       return CFX_Color();
   }

@@ -66,6 +66,25 @@ export class ItemMouseOverEvent<TreeNodeDataType> extends Event {
   }
 }
 
+export class ItemContextMenuEvent<TreeNodeDataType> extends Event {
+  static readonly eventName = 'itemcontextmenu';
+  data: {
+    node: TreeNode<TreeNodeDataType>,
+    originalEvent: MouseEvent,
+  };
+
+  constructor(node: TreeNode<TreeNodeDataType>, originalEvent: MouseEvent) {
+    super(ItemContextMenuEvent.eventName, {bubbles: true, composed: true, cancelable: true});
+    this.data = {node, originalEvent};
+  }
+
+  createContextMenu(): UI.ContextMenu.ContextMenu {
+    this.preventDefault();
+    this.stopPropagation();
+    return new UI.ContextMenu.ContextMenu(this.data.originalEvent);
+  }
+}
+
 export class ItemMouseOutEvent<TreeNodeDataType> extends Event {
   static readonly eventName = 'itemmouseout';
   data: {
@@ -332,14 +351,27 @@ export class TreeOutline<TreeNodeDataType> extends HTMLElement {
     void this.#focusTreeNode(domNode);
   }
 
+  #onContextMenu(event: MouseEvent, node: TreeNode<TreeNodeDataType>): void {
+    if (!node) {
+      return;
+    }
+    const innerEvent = new ItemContextMenuEvent(node, event);
+    this.dispatchEvent(innerEvent);
+    if (innerEvent.defaultPrevented) {
+      event.stopPropagation();
+      event.preventDefault();
+      void this.#focusTreeNode((event.currentTarget as HTMLElement)?.parentElement as HTMLLIElement);
+    }
+  }
+
   async #focusTreeNode(domNode: HTMLLIElement): Promise<void> {
     const treeNode = this.#domNodeToTreeNodeMap.get(domNode);
     if (!treeNode) {
       return;
     }
     this.#selectedTreeNode = treeNode;
-    await this.#render();
     this.dispatchEvent(new ItemSelectedEvent(treeNode));
+    await this.#render();
     void RenderCoordinator.write('DOMNode focus', () => {
       domNode.focus();
     });
@@ -496,6 +528,7 @@ export class TreeOutline<TreeNodeDataType> extends HTMLElement {
         })}
       >
         <span class="arrow-and-key-wrapper"
+          @contextmenu=${(event: MouseEvent) => this.#onContextMenu(event, node)}
           @mouseover=${() => {
             this.dispatchEvent(new ItemMouseOverEvent(node));
           }}
@@ -573,6 +606,12 @@ export class TreeOutline<TreeNodeDataType> extends HTMLElement {
 customElements.define('devtools-tree-outline', TreeOutline);
 
 declare global {
+  interface HTMLElementEventMap {
+    [ItemSelectedEvent.eventName]: ItemSelectedEvent<unknown>;
+    [ItemMouseOverEvent.eventName]: ItemMouseOverEvent<unknown>;
+    [ItemMouseOutEvent.eventName]: ItemMouseOutEvent<unknown>;
+    [ItemContextMenuEvent.eventName]: ItemContextMenuEvent<unknown>;
+  }
   interface HTMLElementTagNameMap {
     'devtools-tree-outline': TreeOutline<unknown>;
   }

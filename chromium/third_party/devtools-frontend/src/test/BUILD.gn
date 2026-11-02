@@ -7,11 +7,21 @@ import("../scripts/build/typescript/typescript.gni")
 
 group("test") {
   deps = [
+    ":api_tests",
     ":run",
     ":unittests",
+    "api",
     "e2e",
     "perf",
     "shared",
+  ]
+}
+
+group("api_tests") {
+  deps = [
+    "../front_end:api_test_inputs",
+    "../front_end:api_tests",
+    "api",
   ]
 }
 

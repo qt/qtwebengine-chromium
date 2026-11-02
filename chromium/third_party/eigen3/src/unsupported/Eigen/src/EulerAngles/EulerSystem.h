@@ -28,7 +28,7 @@ template <int Num>
 struct Abs<Num, false> : std::integral_constant<int, -Num> {};
 
 template <int Axis>
-struct IsValidAxis : std::integral_constant<bool, Axis != 0 && Abs<Axis>::value <= 3> {};
+struct IsValidAxis : bool_constant<Axis != 0 && Abs<Axis>::value <= 3> {};
 
 template <typename System, typename Other, int OtherRows = Other::RowsAtCompileTime,
           int OtherCols = Other::ColsAtCompileTime>
@@ -83,11 +83,11 @@ enum EulerAxis {
  *  - _right handed_ or _left handed_
  *  - _counterclockwise_ or _clockwise_
  *
- * Notice all axed combination are valid, and would trigger a static assertion.
+ * Notice not all axes combinations are valid, and invalid ones would trigger a static assertion.
  * Same unsigned axes can't be neighbors, e.g. {X,X,Y} is invalid.
- * This yield two and only two classes:
+ * This yields two and only two classes:
  *  - _Tait-Bryan_ - all unsigned axes are distinct, e.g. {X,Y,Z}
- *  - _proper/classic Euler angles_ - The first and the third unsigned axes is equal,
+ *  - _proper/classic Euler angles_ - The first and the third unsigned axes are equal,
  *     and the second is different, e.g. {X,Y,X}
  *
  * ### Intrinsic vs extrinsic Euler systems ###
@@ -137,8 +137,8 @@ class EulerSystem {
 
     // Parity is even if alpha axis X is followed by beta axis Y, or Y is followed
     // by Z, or Z is followed by X; otherwise it is odd.
-    IsOdd = ((AlphaAxisAbs) % 3 == (BetaAxisAbs - 1) % 3) ? 0 : 1, /*!< whether the Euler system is odd */
-    IsEven = IsOdd ? 0 : 1,                                        /*!< whether the Euler system is even */
+    IsOdd = (AlphaAxisAbs % 3 == (BetaAxisAbs - 1) % 3) ? 0 : 1, /*!< whether the Euler system is odd */
+    IsEven = IsOdd ? 0 : 1,                                      /*!< whether the Euler system is even */
 
     IsTaitBryan =
         ((unsigned)AlphaAxisAbs != (unsigned)GammaAxisAbs) ? 1 : 0 /*!< whether the Euler system is Tait-Bryan */
@@ -162,11 +162,11 @@ class EulerSystem {
                               const typename EulerAngles<Scalar, EulerSystem>::Matrix3& mat) {
     res.angles() = mat.canonicalEulerAngles(AlphaAxisAbs - 1, BetaAxisAbs - 1, GammaAxisAbs - 1);
 
-    if (IsAlphaOpposite) res.alpha() = -res.alpha();
+    EIGEN_IF_CONSTEXPR (IsAlphaOpposite) res.alpha() = -res.alpha();
 
-    if (IsBetaOpposite) res.beta() = -res.beta();
+    EIGEN_IF_CONSTEXPR (IsBetaOpposite) res.beta() = -res.beta();
 
-    if (IsGammaOpposite) res.gamma() = -res.gamma();
+    EIGEN_IF_CONSTEXPR (IsGammaOpposite) res.gamma() = -res.gamma();
   }
 
   template <typename Scalar_, class _System>
@@ -196,5 +196,8 @@ EIGEN_EULER_SYSTEM_TYPEDEF(Z, X, Z)
 EIGEN_EULER_SYSTEM_TYPEDEF(Z, Y, X)
 EIGEN_EULER_SYSTEM_TYPEDEF(Z, Y, Z)
 }  // namespace Eigen
+
+#undef EIGEN_EULER_ANGLES_CLASS_STATIC_ASSERT
+#undef EIGEN_EULER_SYSTEM_TYPEDEF
 
 #endif  // EIGEN_EULERSYSTEM_H

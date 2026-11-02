@@ -18,6 +18,7 @@
 #include "core/fxcrt/check_op.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/fx_string.h"
+#include "core/fxcrt/numerics/safe_conversions.h"
 
 namespace {
 
@@ -211,7 +212,7 @@ float CPDF_PSEngine::Pop() {
 }
 
 int CPDF_PSEngine::PopInt() {
-  return static_cast<int>(Pop());
+  return pdfium::saturated_cast<int>(Pop());
 }
 
 bool CPDF_PSEngine::Parse(pdfium::span<const uint8_t> input) {

@@ -17,10 +17,12 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <cinttypes>
 #include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <new>
 #include <utility>
@@ -89,6 +91,95 @@ int GetLastNonzeroByteIndex(const uint8_t* data, size_t size) {
     --i;
   }
   return i;
+}
+
+// Partial implementation of level conformance defined in Section A.3. Levels.
+// Only the level information for operating point 0 is checked. Returns true if
+// the bitstream satisfies the level constraints.
+StatusCode CheckLevelConformance(const ObuSequenceHeader& sequence_header,
+                                 const ObuFrameHeader& frame_header) {
+  struct LevelInfo {
+    int max_pic_size;
+    int max_h_size;
+    int max_v_size;
+    int max_tiles;
+    int max_tile_cols;
+  };
+  static constexpr int kUndefined = std::numeric_limits<int>::max();
+  // Select levels in the range of 2.0 - 6.3 [0, 19] are defined in Version
+  // 1.0.0 with Errata 1.
+  static constexpr std::array<LevelInfo, 20> kLevelInfo = {{
+      {147456, 2048, 1152, 8, 4},                                    // 2.0
+      {278784, 2816, 1584, 8, 4},                                    // 2.1
+      {kUndefined, kUndefined, kUndefined, kUndefined, kUndefined},  // 2.2
+      {kUndefined, kUndefined, kUndefined, kUndefined, kUndefined},  // 2.3
+      {665856, 4352, 2448, 16, 6},                                   // 3.0
+      {1065024, 5504, 3096, 16, 6},                                  // 3.1
+      {kUndefined, kUndefined, kUndefined, kUndefined, kUndefined},  // 3.2
+      {kUndefined, kUndefined, kUndefined, kUndefined, kUndefined},  // 3.3
+      {2359296, 6144, 3456, 32, 8},                                  // 4.0
+      {2359296, 6144, 3456, 32, 8},                                  // 4.1
+      {kUndefined, kUndefined, kUndefined, kUndefined, kUndefined},  // 4.2
+      {kUndefined, kUndefined, kUndefined, kUndefined, kUndefined},  // 4.3
+      {8912896, 8192, 4352, 64, 8},                                  // 5.0
+      {8912896, 8192, 4352, 64, 8},                                  // 5.1
+      {8912896, 8192, 4352, 64, 8},                                  // 5.2
+      {8912896, 8192, 4352, 64, 8},                                  // 5.3
+      {35651584, 16384, 8704, 128, 16},                              // 6.0
+      {35651584, 16384, 8704, 128, 16},                              // 6.1
+      {35651584, 16384, 8704, 128, 16},                              // 6.2
+      {35651584, 16384, 8704, 128, 16}                               // 6.3
+  }};
+  const unsigned int level_major = sequence_header.level[0].major;
+  const unsigned int level_minor = sequence_header.level[0].minor;
+  const unsigned int seq_level_idx = ((level_major - 2) << 2) + level_minor;
+  if (seq_level_idx >= kLevelInfo.size()) return kStatusOk;
+  const LevelInfo& level_info = kLevelInfo[seq_level_idx];
+
+  // UpscaledWidth * FrameHeight is less than or equal to MaxPicSize.
+  const int64_t max_pic_size =
+      static_cast<int64_t>(frame_header.upscaled_width) * frame_header.height;
+  if (max_pic_size > level_info.max_pic_size) {
+    LIBGAV1_DLOG(
+        ERROR, "Invalid MaxPicSize (%" PRId64 ") for level %u.%u (max: %d)",
+        max_pic_size, level_major, level_minor, level_info.max_pic_size);
+    return kStatusBitstreamError;
+  }
+
+  // UpscaledWidth is less than or equal to MaxHSize.
+  if (frame_header.upscaled_width > level_info.max_h_size) {
+    LIBGAV1_DLOG(ERROR, "Invalid MaxHSize (%d) for level %u.%u (max: %d)",
+                 frame_header.upscaled_width, level_major, level_minor,
+                 level_info.max_h_size);
+    return kStatusBitstreamError;
+  }
+
+  // FrameHeight is less than or equal to MaxVSize.
+  if (frame_header.height > level_info.max_v_size) {
+    LIBGAV1_DLOG(ERROR, "Invalid MaxVSize (%d) for level %u.%u (max: %d)",
+                 frame_header.height, level_major, level_minor,
+                 level_info.max_v_size);
+    return kStatusBitstreamError;
+  }
+
+  const TileInfo& tile_info = frame_header.tile_info;
+  // NumTiles is less than or equal to MaxTiles.
+  if (tile_info.tile_count > level_info.max_tiles) {
+    LIBGAV1_DLOG(ERROR, "Invalid MaxTiles (%d) for level %u.%u (max: %d)",
+                 tile_info.tile_count, level_major, level_minor,
+                 level_info.max_tiles);
+    return kStatusBitstreamError;
+  }
+
+  // TileCols is less than or equal to MaxTileCols.
+  if (tile_info.tile_columns > level_info.max_tile_cols) {
+    LIBGAV1_DLOG(ERROR, "Invalid MaxTileCols (%d) for level %u.%u (max: %d)",
+                 tile_info.tile_columns, level_major, level_minor,
+                 level_info.max_tile_cols);
+    return kStatusBitstreamError;
+  }
+
+  return kStatusOk;
 }
 
 // A cleanup helper class that releases the frame buffer reference held in
@@ -2907,7 +2998,7 @@ StatusCode ObuParser::ParseOneFrame(RefCountedBufferPtr* const current_frame) {
   data_ = data;
   size_ = size;
   *current_frame = std::move(current_frame_);
-  return kStatusOk;
+  return CheckLevelConformance(sequence_header_, frame_header_);
 }
 
 // AV1CodecConfigurationBox specification:

@@ -37,6 +37,7 @@
 #include "src/dawn/native/IntegerTypes.h"
 #include "src/dawn/native/ObjectBase.h"
 #include "src/dawn/native/dawn_platform.h"
+#include "src/utils/span.h"
 
 namespace dawn::native {
 
@@ -57,18 +58,20 @@ class ProgrammableEncoder : public ApiObjectBase {
     MaybeError ValidateProgrammableEncoderEnd() const;
 
     MaybeError ValidateSetImmediates(uint32_t offset, size_t size) const;
+    void RecordSetImmediates(CommandAllocator* allocator,
+                             uint32_t offset,
+                             Span<const std::byte> data);
 
     // Compute and render passes do different things on SetBindGroup. These are helper functions
     // for the logic they have in common.
-    MaybeError ValidateSetBindGroup(BindGroupIndex index,
-                                    BindGroupBase* group,
-                                    uint32_t dynamicOffsetCountIn,
-                                    const uint32_t* dynamicOffsetsIn) const;
+    MaybeError ValidateSetBindGroup(
+        BindGroupIndex index,
+        BindGroupBase* group,
+        ityp::span<BindingIndex, const uint32_t> dynamicOffsetsIn) const;
     void RecordSetBindGroup(CommandAllocator* allocator,
                             BindGroupIndex index,
                             BindGroupBase* group,
-                            uint32_t dynamicOffsetCount,
-                            const uint32_t* dynamicOffsets) const;
+                            ityp::span<BindingIndex, const uint32_t> dynamicOffsets) const;
 
     // Construct an "error" programmable pass encoder.
     ProgrammableEncoder(DeviceBase* device,

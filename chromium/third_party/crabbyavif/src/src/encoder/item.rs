@@ -24,7 +24,8 @@ pub(crate) struct Item {
     pub item_type: String,
     pub category: Category,
     // True if Sample Transforms derived image item input used as the least
-    // significant bits of the bit depth extension.
+    // significant bits of the bit depth extension, or as the least significant
+    // bits of the mantissa for Recipe::Float32b.
     pub is_sato_least_significant_input: bool,
     pub codec: Option<Codec>,
     pub samples: Vec<Sample>,
@@ -137,8 +138,14 @@ impl Item {
                 stream.write_bits(channel_idc, 3)?; // unsigned int(3) channel_idc;
                 stream.write_bits(0, 1)?; // unsigned int(1) reserved;
 
-                // 0 means unsigned int samples.
-                stream.write_bits(0, 2)?; // unsigned int(2) component_format;
+                stream.write_bits(
+                    if cfg!(feature = "satofloat") && image_metadata.depth == 32 {
+                        3 // float (only for Recipe::Float32b)
+                    } else {
+                        0 // unsigned int
+                    },
+                    2,
+                )?; // unsigned int(2) component_format;
 
                 let subsampling_type = match (self.category, i) {
                     (Category::Color | Category::Gainmap | Category::Alpha, 0) => 0, // 4:4:4

@@ -16,12 +16,13 @@
 
 package scheme;
 
-import static java.lang.Math.max;
-
-import dislike.DislikeAnalyzer;
+import dynamiccolor.ColorSpec.SpecVersion;
+import dynamiccolor.ColorSpecs;
+import dynamiccolor.DynamicScheme;
+import dynamiccolor.Variant;
 import hct.Hct;
-import palettes.TonalPalette;
-import temperature.TemperatureCache;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * A scheme that places the source color in Scheme.primaryContainer.
@@ -36,23 +37,56 @@ import temperature.TemperatureCache;
  * appearance.
  */
 public class SchemeContent extends DynamicScheme {
+
   public SchemeContent(Hct sourceColorHct, boolean isDark, double contrastLevel) {
+    this(sourceColorHct, isDark, contrastLevel, DEFAULT_SPEC_VERSION, DEFAULT_PLATFORM);
+  }
+
+  public SchemeContent(
+      Hct sourceColorHct,
+      boolean isDark,
+      double contrastLevel,
+      SpecVersion specVersion,
+      Platform platform) {
+    this(Collections.singletonList(sourceColorHct), isDark, contrastLevel, specVersion, platform);
+  }
+
+  public SchemeContent(List<Hct> sourceColorHctList, boolean isDark, double contrastLevel) {
+    this(sourceColorHctList, isDark, contrastLevel, DEFAULT_SPEC_VERSION, DEFAULT_PLATFORM);
+  }
+
+  public SchemeContent(
+      List<Hct> sourceColorHctList,
+      boolean isDark,
+      double contrastLevel,
+      SpecVersion specVersion,
+      Platform platform) {
     super(
-        sourceColorHct,
+        sourceColorHctList,
         Variant.CONTENT,
         isDark,
         contrastLevel,
-        TonalPalette.fromHueAndChroma(sourceColorHct.getHue(), sourceColorHct.getChroma()),
-        TonalPalette.fromHueAndChroma(
-            sourceColorHct.getHue(),
-            max(sourceColorHct.getChroma() - 32.0, sourceColorHct.getChroma() * 0.5)),
-        TonalPalette.fromHct(
-            DislikeAnalyzer.fixIfDisliked(
-                new TemperatureCache(sourceColorHct)
-                    .getAnalogousColors(/* count= */ 3, /* divisions= */ 6)
-                    .get(2))),
-        TonalPalette.fromHueAndChroma(sourceColorHct.getHue(), sourceColorHct.getChroma() / 8.0),
-        TonalPalette.fromHueAndChroma(
-            sourceColorHct.getHue(), (sourceColorHct.getChroma() / 8.0) + 4.0));
+        platform,
+        specVersion,
+        ColorSpecs.get(specVersion)
+            .getPrimaryPalette(
+                Variant.CONTENT, sourceColorHctList.get(0), isDark, platform, contrastLevel),
+        ColorSpecs.get(specVersion)
+            .getSecondaryPalette(
+                Variant.CONTENT, sourceColorHctList.get(0), isDark, platform, contrastLevel),
+        ColorSpecs.get(specVersion)
+            .getTertiaryPalette(
+                Variant.CONTENT, sourceColorHctList.get(0), isDark, platform, contrastLevel),
+        ColorSpecs.get(specVersion)
+            .getNeutralPalette(
+                Variant.CONTENT, sourceColorHctList.get(0), isDark, platform, contrastLevel),
+        ColorSpecs.get(specVersion)
+            .getNeutralVariantPalette(
+                Variant.CONTENT, sourceColorHctList.get(0), isDark, platform, contrastLevel),
+        ColorSpecs.get(specVersion)
+            .getErrorPalette(
+                Variant.CONTENT, sourceColorHctList.get(0), isDark, platform, contrastLevel));
   }
 }
+
+

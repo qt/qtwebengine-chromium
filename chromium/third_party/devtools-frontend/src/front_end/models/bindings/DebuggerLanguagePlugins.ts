@@ -8,10 +8,10 @@ import * as i18n from '../../core/i18n/i18n.js';
 import type * as Platform from '../../core/platform/platform.js';
 import {assertNotNullOrUndefined} from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as StackTrace from '../stack_trace/stack_trace.js';
 import type * as StackTraceImpl from '../stack_trace/stack_trace_impl.js';
-import * as TextUtils from '../text_utils/text_utils.js';
 import * as Workspace from '../workspace/workspace.js';
 
 import {ContentProviderBasedProject} from './ContentProviderBasedProject.js';
@@ -20,39 +20,38 @@ import {NetworkProject} from './NetworkProject.js';
 
 const UIStrings = {
   /**
-   * @description Error message that is displayed in the Console when language #plugins report errors
+   * @description Error message displayed in the Console panel when language plugins report errors.
    * @example {File not found} PH1
    */
   errorInDebuggerLanguagePlugin: 'Error in debugger language plugin: {PH1}',
   /**
-   * @description Status message that is shown in the Console when debugging information is being
-   *loaded. The 2nd and 3rd placeholders are URLs.
+   * @description Status message shown in the Console panel when debugging information is being loaded. PH2 and PH3 are URLs.
    * @example {C/C++ DevTools Support (DWARF)} PH1
    * @example {http://web.dev/file.wasm} PH2
    * @example {http://web.dev/file.wasm.debug.wasm} PH3
    */
   loadingDebugSymbolsForVia: '[{PH1}] Loading debug symbols for {PH2} (via {PH3})…',
   /**
-   * @description Status message that is shown in the Console when debugging information is being loaded
+   * @description Status message shown in the Console panel when debugging information is being loaded.
    * @example {C/C++ DevTools Support (DWARF)} PH1
    * @example {http://web.dev/file.wasm} PH2
    */
   loadingDebugSymbolsFor: '[{PH1}] Loading debug symbols for {PH2}…',
   /**
-   * @description Warning message that is displayed in the Console when debugging information was loaded, but no source files were found
+   * @description Warning message displayed in the Console panel when debugging information was loaded, but no source files were found.
    * @example {C/C++ DevTools Support (DWARF)} PH1
    * @example {http://web.dev/file.wasm} PH2
    */
-  loadedDebugSymbolsForButDidnt: '[{PH1}] Loaded debug symbols for {PH2}, but didn\'t find any source files',
+  loadedDebugSymbolsForButDidnt: '[{PH1}] Loaded debug symbols for {PH2}, but didn’t find any source files',
   /**
-   * @description Status message that is shown in the Console when debugging information is successfully loaded
+   * @description Status message shown in the Console panel when debugging information is successfully loaded.
    * @example {C/C++ DevTools Support (DWARF)} PH1
    * @example {http://web.dev/file.wasm} PH2
    * @example {42} PH3
    */
   loadedDebugSymbolsForFound: '[{PH1}] Loaded debug symbols for {PH2}, found {PH3} source file(s)',
   /**
-   * @description Error message that is displayed in the Console when debugging information cannot be loaded
+   * @description Error message displayed in the Console panel when debugging information cannot be loaded.
    * @example {C/C++ DevTools Support (DWARF)} PH1
    * @example {http://web.dev/file.wasm} PH2
    * @example {File not found} PH3
@@ -404,6 +403,7 @@ export class DebuggerLanguagePluginManager implements
     SDK.TargetManager.SDKModelObserver<SDK.DebuggerModel.DebuggerModel> {
   readonly #workspace: Workspace.Workspace.WorkspaceImpl;
   readonly #debuggerWorkspaceBinding: DebuggerWorkspaceBinding;
+  readonly #console: Common.Console.Console;
   #plugins: DebuggerLanguagePlugin[];
   readonly #debuggerModelToData: Map<SDK.DebuggerModel.DebuggerModel, ModelData>;
   readonly #rawModuleHandles: Map<string, {
@@ -417,11 +417,11 @@ export class DebuggerLanguagePluginManager implements
   private readonly stopIdByCallFrame = new Map<SDK.DebuggerModel.CallFrame, StopId>();
   private nextStopId: StopId = 0n;
 
-  constructor(
-      targetManager: SDK.TargetManager.TargetManager, workspace: Workspace.Workspace.WorkspaceImpl,
-      debuggerWorkspaceBinding: DebuggerWorkspaceBinding) {
+  constructor(targetManager: SDK.TargetManager.TargetManager, workspace: Workspace.Workspace.WorkspaceImpl,
+              debuggerWorkspaceBinding: DebuggerWorkspaceBinding, console: Common.Console.Console) {
     this.#workspace = workspace;
     this.#debuggerWorkspaceBinding = debuggerWorkspaceBinding;
+    this.#console = console;
 
     this.#plugins = [];
 
@@ -511,8 +511,8 @@ export class DebuggerLanguagePluginManager implements
       const scripts = rawModuleHandle.scripts.filter(script => script.debuggerModel !== debuggerModel);
       if (scripts.length === 0) {
         rawModuleHandle.plugin.removeRawModule(rawModuleId).catch(error => {
-          Common.Console.Console.instance().error(
-              i18nString(UIStrings.errorInDebuggerLanguagePlugin, {PH1: error.message}), /* show=*/ false);
+          this.#console.error(i18nString(UIStrings.errorInDebuggerLanguagePlugin, {PH1: error.message}),
+                              /* show=*/ false);
         });
         this.#rawModuleHandles.delete(rawModuleId);
       } else {
@@ -633,8 +633,7 @@ export class DebuggerLanguagePluginManager implements
             sourceLocation.lineNumber, sourceLocation.columnNumber >= 0 ? sourceLocation.columnNumber : undefined);
       }
     } catch (error) {
-      Common.Console.Console.instance().error(
-          i18nString(UIStrings.errorInDebuggerLanguagePlugin, {PH1: error.message}), /* show=*/ false);
+      this.#console.error(i18nString(UIStrings.errorInDebuggerLanguagePlugin, {PH1: error.message}), /* show=*/ false);
     }
     return null;
   }
@@ -663,8 +662,7 @@ export class DebuggerLanguagePluginManager implements
     }
 
     return Promise.all(locationPromises).then(locations => locations.flat()).catch(error => {
-      Common.Console.Console.instance().error(
-          i18nString(UIStrings.errorInDebuggerLanguagePlugin, {PH1: error.message}), /* show=*/ false);
+      this.#console.error(i18nString(UIStrings.errorInDebuggerLanguagePlugin, {PH1: error.message}), /* show=*/ false);
       return null;
     });
 
@@ -841,7 +839,7 @@ export class DebuggerLanguagePluginManager implements
       let rawModuleHandle = this.#rawModuleHandles.get(rawModuleId);
       if (!rawModuleHandle) {
         const sourceFileURLsPromise = (async () => {
-          const console = Common.Console.Console.instance();
+          const console = this.#console;
           const url = script.sourceURL;
           const symbolsUrl = (script.debugSymbols?.externalURL) || '';
           if (symbolsUrl) {
@@ -962,8 +960,7 @@ export class DebuggerLanguagePluginManager implements
       }
       return Array.from(scopes.values());
     } catch (error) {
-      Common.Console.Console.instance().error(
-          i18nString(UIStrings.errorInDebuggerLanguagePlugin, {PH1: error.message}), /* show=*/ false);
+      this.#console.error(i18nString(UIStrings.errorInDebuggerLanguagePlugin, {PH1: error.message}), /* show=*/ false);
       return null;
     }
   }
@@ -995,7 +992,7 @@ export class DebuggerLanguagePluginManager implements
       }
       return functionInfo;
     } catch (error) {
-      Common.Console.Console.instance().warn(i18nString(UIStrings.errorInDebuggerLanguagePlugin, {PH1: error.message}));
+      this.#console.warn(i18nString(UIStrings.errorInDebuggerLanguagePlugin, {PH1: error.message}));
       return {frames: []};
     }
   }
@@ -1032,7 +1029,7 @@ export class DebuggerLanguagePluginManager implements
                 script.debuggerModel, script.scriptId, 0, Number(m.endOffset) + (script.codeOffset() || 0)),
           }));
     } catch (error) {
-      Common.Console.Console.instance().warn(i18nString(UIStrings.errorInDebuggerLanguagePlugin, {PH1: error.message}));
+      this.#console.warn(i18nString(UIStrings.errorInDebuggerLanguagePlugin, {PH1: error.message}));
       return [];
     }
   }
@@ -1069,7 +1066,7 @@ export class DebuggerLanguagePluginManager implements
                 script.debuggerModel, script.scriptId, 0, Number(m.endOffset) + (script.codeOffset() || 0)),
           }));
     } catch (error) {
-      Common.Console.Console.instance().warn(i18nString(UIStrings.errorInDebuggerLanguagePlugin, {PH1: error.message}));
+      this.#console.warn(i18nString(UIStrings.errorInDebuggerLanguagePlugin, {PH1: error.message}));
       return [];
     }
   }
@@ -1102,9 +1099,9 @@ class ModelData {
   project: ContentProviderBasedProject;
   readonly uiSourceCodeToScripts: Map<Workspace.UISourceCode.UISourceCode, SDK.Script.Script[]>;
   constructor(debuggerModel: SDK.DebuggerModel.DebuggerModel, workspace: Workspace.Workspace.WorkspaceImpl) {
-    this.project = new ContentProviderBasedProject(
-        workspace, 'language_plugins::' + debuggerModel.target().id(), Workspace.Workspace.projectTypes.Network, '',
-        false /* isServiceProject */);
+    this.project =
+        new ContentProviderBasedProject(workspace, 'language_plugins::' + debuggerModel.target().id(),
+                                        Workspace.Workspace.projectTypes.Network, '', false /* isServiceProject */);
     NetworkProject.setTargetForProject(this.project, debuggerModel.target());
 
     this.uiSourceCodeToScripts = new Map();
@@ -1128,7 +1125,8 @@ class ModelData {
         this.uiSourceCodeToScripts.set(uiSourceCode, [script]);
 
         const contentProvider = new SDK.CompilerSourceMappingContentProvider.CompilerSourceMappingContentProvider(
-            url, Common.ResourceType.resourceTypes.SourceMapScript, initiator);
+            url, Common.ResourceType.resourceTypes.SourceMapScript, initiator,
+            script.target().targetManager().getPageResourceLoader());
         const mimeType = Common.ResourceType.ResourceType.mimeFromURL(url) || 'text/javascript';
         this.project.addUISourceCodeWithProvider(uiSourceCode, contentProvider, null, mimeType);
       } else {

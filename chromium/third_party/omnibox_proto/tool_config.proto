@@ -13,10 +13,10 @@ option java_outer_classname = 'ToolConfigProto';
 
 package omnibox;
 
-import "icon.proto";
-import "tool_mode.proto";
 import "tool_rule.proto";
+import "icon.proto";
 import "tool_substate_config.proto";
+import "tool_mode.proto";
 import "url_param.proto";
 
 // Configuration for a tool mode.
@@ -24,6 +24,9 @@ import "url_param.proto";
 // LINT.IfChange(ToolConfig)
 message ToolConfig {
   // The tool mode.
+  // Note: Clients should use the *Value accessor variant (e.g. getToolValue())
+  // rather than enum accessors to be future-proof against new open enum values
+  // served by the backend without requiring client updates.
   ToolMode tool = 1;
   // Disable model selection state when the tool is selected (e.g. no check mark
   // on model selection when the tool is selected). Some tools are not
@@ -46,9 +49,6 @@ message ToolConfig {
   optional Icon icon = 9;
   // Whether to hide the tool from the tools menu (including tool chips).
   bool hide_from_menu = 10;
-
-  // DO NOT USE in Chrome. Search VE logging fields.
-  reserved 11, 12;
 
   // Optional tooltip for the tool in a menu.
   string menu_tooltip = 13;

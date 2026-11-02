@@ -40,6 +40,7 @@
 
 import "src/tint/lang/core/address_space.def"
 import "src/tint/lang/core/access.def"
+import "src/tint/lang/core/majorness.def"
 import "src/tint/lang/core/subgroup_matrix_kind.def"
 import "src/tint/lang/core/texel_format.def"
 
@@ -76,7 +77,6 @@ enum builtin_value {
 
 // https://github.com/gpuweb/gpuweb/blob/main/proposals/fragment-depth.md
 enum builtin_depth_mode {
-  any
   greater
   less
 }
@@ -1754,72 +1754,134 @@ type u64
 ////////////////////////////////////////
 // Subgroup matrix
 ////////////////////////////////////////
-@stage("compute") implicit(K: subgroup_matrix_kind, S: fiu32_f16, C: num, R: num)
-  fn subgroupMatrixLoad<T: subgroup_matrix<K, S, C, R> >(ptr<storage, runtime_array<S>, readable>,
-                                                         offset: u32,
-                                                         @const col_major: bool, stride: u32) -> T
-@stage("compute") implicit(K: subgroup_matrix_kind, S: fiu32_f16, C: num, R: num, AC: num)
-  fn subgroupMatrixLoad<T: subgroup_matrix<K, S, C, R> >(ptr<workgroup_or_storage, array<S, AC>, readable>,
-                                                         offset: u32,
+@stage("compute") implicit(K: subgroup_matrix_kind, E: fiu32_f16, C: num, R: num, AM: readable, O: iu32, S: iu32)
+  fn subgroupMatrixLoad<T: subgroup_matrix<K, E, C, R> >(ptr<storage, runtime_array<E>, AM>,
+                                                         offset: O,
+                                                         @const col_major: bool, stride: S) -> T
+@stage("compute") implicit(K: subgroup_matrix_kind, E: fiu32_f16, C: num, R: num, AC: num, AS: workgroup_or_storage, AM: readable, O: iu32, S: iu32)
+  fn subgroupMatrixLoad<T: subgroup_matrix<K, E, C, R> >(ptr<AS, array<E, AC>, AM>,
+                                                         offset: O,
                                                          @const col_major: bool,
-                                                         stride: u32) -> T
-@stage("compute") implicit(K: subgroup_matrix_kind, S: i8, C: num, R: num)
-  fn subgroupMatrixLoad<T: subgroup_matrix<K, S, C, R> >(ptr<storage, runtime_array<i32>, readable>,
-                                                         offset: u32,
+                                                         stride: S) -> T
+@stage("compute") implicit(K: subgroup_matrix_kind, E: i8, C: num, R: num, AM: readable, O: iu32, S: iu32)
+  fn subgroupMatrixLoad<T: subgroup_matrix<K, E, C, R> >(ptr<storage, runtime_array<i32>, AM>,
+                                                         offset: O,
                                                          @const col_major: bool,
-                                                         stride: u32) -> T
-@stage("compute") implicit(K: subgroup_matrix_kind, S: u8, C: num, R: num)
-  fn subgroupMatrixLoad<T: subgroup_matrix<K, S, C, R> >(ptr<storage, runtime_array<u32>, readable>,
-                                                         offset: u32,
+                                                         stride: S) -> T
+@stage("compute") implicit(K: subgroup_matrix_kind, E: u8, C: num, R: num, AM: readable, O: iu32, S: iu32)
+  fn subgroupMatrixLoad<T: subgroup_matrix<K, E, C, R> >(ptr<storage, runtime_array<u32>, AM>,
+                                                         offset: O,
                                                          @const col_major: bool,
-                                                         stride: u32) -> T
-@stage("compute") implicit(K: subgroup_matrix_kind, S: i8, C: num, R: num, AC: num)
-  fn subgroupMatrixLoad<T: subgroup_matrix<K, S, C, R> >(ptr<workgroup_or_storage, array<i32, AC>, readable>,
-                                                         offset: u32,
+                                                         stride: S) -> T
+@stage("compute") implicit(K: subgroup_matrix_kind, E: i8, C: num, R: num, AC: num, AS: workgroup_or_storage, AM: readable, O: iu32, S: iu32)
+  fn subgroupMatrixLoad<T: subgroup_matrix<K, E, C, R> >(ptr<AS, array<i32, AC>, AM>,
+                                                         offset: O,
                                                          @const col_major: bool,
-                                                         stride: u32) -> T
-@stage("compute") implicit(K: subgroup_matrix_kind, S: u8, C: num, R: num, AC: num)
-  fn subgroupMatrixLoad<T: subgroup_matrix<K, S, C, R> >(ptr<workgroup_or_storage, array<u32, AC>, readable>,
-                                                         offset: u32,
+                                                         stride: S) -> T
+@stage("compute") implicit(K: subgroup_matrix_kind, E: u8, C: num, R: num, AC: num, AS: workgroup_or_storage, AM: readable, O: iu32, S: iu32)
+  fn subgroupMatrixLoad<T: subgroup_matrix<K, E, C, R> >(ptr<AS, array<u32, AC>, AM>,
+                                                         offset: O,
                                                          @const col_major: bool,
-                                                         stride: u32) -> T
+                                                         stride: S) -> T
 
-@stage("compute") implicit(K: subgroup_matrix_kind, S: fiu32_f16, C: num, R: num)
-  fn subgroupMatrixStore(ptr<storage, runtime_array<S>, writable>,
-                         offset: u32,
-                         subgroup_matrix<K, S, C, R>,
+@must_use @stage("compute") implicit(K: subgroup_matrix_kind, E: fiu32_f16, C: num, R: num, AM: readable, O: iu32, S: iu32)
+  fn subgroupMatrixLoad<T: subgroup_matrix<K, E, C, R> , Majorness: majorness > (
+    ptr<storage, runtime_array<E>, AM>,
+    offset: O,
+    @test_value(8) stride: S) -> T
+@must_use @stage("compute") implicit(K: subgroup_matrix_kind, E: fiu32_f16, C: num, R: num, AC: num, AS: workgroup_or_storage, AM: readable, O: iu32, S: iu32)
+  fn subgroupMatrixLoad<T: subgroup_matrix<K, E, C, R> , Majorness: majorness >(
+    ptr<AS, array<E, AC>, AM>,
+    offset: O,
+    @test_value(8) stride: S) -> T
+@must_use @stage("compute") implicit(K: subgroup_matrix_kind, E: i8, C: num, R: num, AM: readable, O: iu32, S: iu32)
+  fn subgroupMatrixLoad<T: subgroup_matrix<K, E, C, R> , Majorness: majorness >(
+    ptr<storage, runtime_array<i32>, AM>,
+    offset: O,
+    @test_value(8) stride: S) -> T
+@must_use @stage("compute") implicit(K: subgroup_matrix_kind, E: u8, C: num, R: num, AM: readable, O: iu32, S: iu32)
+  fn subgroupMatrixLoad<T: subgroup_matrix<K, E, C, R> , Majorness: majorness >(
+    ptr<storage, runtime_array<u32>, AM>,
+    offset: O,
+    @test_value(8) stride: S) -> T
+@must_use @stage("compute") implicit(K: subgroup_matrix_kind, E: i8, C: num, R: num, AC: num, AS: workgroup_or_storage, AM: readable, O: iu32, S: iu32)
+  fn subgroupMatrixLoad<T: subgroup_matrix<K, E, C, R> , Majorness: majorness >(
+    ptr<AS, array<i32, AC>, AM>,
+    offset: O,
+    @test_value(8) stride: S) -> T
+@must_use @stage("compute") implicit(K: subgroup_matrix_kind, E: u8, C: num, R: num, AC: num, AS: workgroup_or_storage, AM: readable, O: iu32, S: iu32)
+  fn subgroupMatrixLoad<T: subgroup_matrix<K, E, C, R> , Majorness: majorness >(
+    ptr<AS, array<u32, AC>, AM>,
+    offset: O,
+    @test_value(8) stride: S) -> T
+
+@stage("compute") implicit(K: subgroup_matrix_kind, E: fiu32_f16, C: num, R: num, AM: writable, O: iu32, S: iu32)
+  fn subgroupMatrixStore(ptr<storage, runtime_array<E>, AM>,
+                         offset: O,
+                         subgroup_matrix<K, E, C, R>,
                          @const col_major: bool,
-                         stride: u32)
-@stage("compute") implicit(K: subgroup_matrix_kind, S: fiu32_f16, C: num, R: num, AC: num)
-  fn subgroupMatrixStore(ptr<workgroup_or_storage, array<S, AC>, writable>,
-                         offset: u32,
-                         subgroup_matrix<K, S, C, R>,
+                         stride: S)
+@stage("compute") implicit(K: subgroup_matrix_kind, E: fiu32_f16, C: num, R: num, AC: num, AS: workgroup_or_storage, AM: writable, O: iu32, S: iu32)
+  fn subgroupMatrixStore(ptr<AS, array<E, AC>, AM>,
+                         offset: O,
+                         subgroup_matrix<K, E, C, R>,
                          @const col_major: bool,
-                         stride: u32)
-@stage("compute") implicit(K: subgroup_matrix_kind, S: i8, C: num, R: num)
-  fn subgroupMatrixStore(ptr<storage, runtime_array<i32>, writable>,
-                         offset: u32,
-                         subgroup_matrix<K, S, C, R>,
+                         stride: S)
+@stage("compute") implicit(K: subgroup_matrix_kind, E: i8, C: num, R: num, AM: writable, O: iu32, S: iu32)
+  fn subgroupMatrixStore(ptr<storage, runtime_array<i32>, AM>,
+                         offset: O,
+                         subgroup_matrix<K, E, C, R>,
                          @const col_major: bool,
-                         stride: u32)
-@stage("compute") implicit(K: subgroup_matrix_kind, S: u8, C: num, R: num)
-  fn subgroupMatrixStore(ptr<storage, runtime_array<u32>, writable>,
-                         offset: u32,
-                         subgroup_matrix<K, S, C, R>,
+                         stride: S)
+@stage("compute") implicit(K: subgroup_matrix_kind, E: u8, C: num, R: num, AM: writable, O: iu32, S: iu32)
+  fn subgroupMatrixStore(ptr<storage, runtime_array<u32>, AM>,
+                         offset: O,
+                         subgroup_matrix<K, E, C, R>,
                          @const col_major: bool,
-                         stride: u32)
-@stage("compute") implicit(K: subgroup_matrix_kind, S: i8, C: num, R: num, AC: num)
-  fn subgroupMatrixStore(ptr<workgroup_or_storage, array<i32, AC>, writable>,
-                         offset: u32,
-                         subgroup_matrix<K, S, C, R>,
+                         stride: S)
+@stage("compute") implicit(K: subgroup_matrix_kind, E: i8, C: num, R: num, AC: num, AS: workgroup_or_storage, AM: writable, O: iu32, S: iu32)
+  fn subgroupMatrixStore(ptr<AS, array<i32, AC>, AM>,
+                         offset: O,
+                         subgroup_matrix<K, E, C, R>,
                          @const col_major: bool,
-                         stride: u32)
-@stage("compute") implicit(K: subgroup_matrix_kind, S: u8, C: num, R: num, AC: num)
-  fn subgroupMatrixStore(ptr<workgroup_or_storage, array<u32, AC>, writable>,
-                         offset: u32,
-                         subgroup_matrix<K, S, C, R>,
+                         stride: S)
+@stage("compute") implicit(K: subgroup_matrix_kind, E: u8, C: num, R: num, AC: num, AS: workgroup_or_storage, AM: writable, O: iu32, S: iu32)
+  fn subgroupMatrixStore(ptr<AS, array<u32, AC>, AM>,
+                         offset: O,
+                         subgroup_matrix<K, E, C, R>,
                          @const col_major: bool,
-                         stride: u32)
+                         stride: S)
+
+@stage("compute") implicit(K: subgroup_matrix_kind, E: fiu32_f16, C: num, R: num, AM: writable, O: iu32, S: iu32)
+  fn subgroupMatrixStore<Majorness: majorness>(ptr<storage, runtime_array<E>, AM>,
+                                               offset: O,
+                                               subgroup_matrix<K, E, C, R>,
+                                               @test_value(8) stride: S)
+@stage("compute") implicit(K: subgroup_matrix_kind, E: fiu32_f16, C: num, R: num, AC: num, AS: workgroup_or_storage, AM: writable, O: iu32, S: iu32)
+  fn subgroupMatrixStore<Majorness: majorness>(ptr<AS, array<E, AC>, AM>,
+                                               offset: O,
+                                               subgroup_matrix<K, E, C, R>,
+                                               @test_value(8) stride: S)
+@stage("compute") implicit(K: subgroup_matrix_kind, E: i8, C: num, R: num, AM: writable, O: iu32, S: iu32)
+  fn subgroupMatrixStore<Majorness: majorness>(ptr<storage, runtime_array<i32>, AM>,
+                                               offset: O,
+                                               subgroup_matrix<K, E, C, R>,
+                                               @test_value(8) stride: S)
+@stage("compute") implicit(K: subgroup_matrix_kind, E: u8, C: num, R: num, AM: writable, O: iu32, S: iu32)
+  fn subgroupMatrixStore<Majorness: majorness>(ptr<storage, runtime_array<u32>, AM>,
+                                               offset: O,
+                                               subgroup_matrix<K, E, C, R>,
+                                               @test_value(8) stride: S)
+@stage("compute") implicit(K: subgroup_matrix_kind, E: i8, C: num, R: num, AC: num, AS: workgroup_or_storage, AM: writable, O: iu32, S: iu32)
+  fn subgroupMatrixStore<Majorness: majorness>(ptr<AS, array<i32, AC>, AM>,
+                                               offset: O,
+                                               subgroup_matrix<K, E, C, R>,
+                                               @test_value(8) stride: S)
+@stage("compute") implicit(K: subgroup_matrix_kind, E: u8, C: num, R: num, AC: num, AS: workgroup_or_storage, AM: writable, O: iu32, S: iu32)
+  fn subgroupMatrixStore<Majorness: majorness>(ptr<AS, array<u32, AC>, AM>,
+                                               offset: O,
+                                               subgroup_matrix<K, E, C, R>,
+                                               @test_value(8) stride: S)
 
 @must_use @stage("compute") implicit(T: f16, C: num, R: num, K: num)
   fn subgroupMatrixMultiply<TR: f32_f16>(subgroup_matrix<subgroup_matrix_kind_left, T, K, R>,
@@ -2333,4 +2395,3 @@ ctor mat4x4<T: f32_f16>(T, T, T, T,
   fn getResource<S: sampler>(index: I) -> S
 @must_use implicit(I: iu32)
   fn getResource<S: sampler_comparison>(index: I) -> S
-

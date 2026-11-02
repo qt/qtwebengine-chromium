@@ -63,7 +63,7 @@ class HybridNonLinearSolver {
           nb_of_superdiagonals(-1),
           epsfcn(Scalar(0.)) {}
     Scalar factor;
-    Index maxfev;  // maximum number of function evaluation
+    Index maxfev;  // maximum number of function evaluations
     Scalar xtol;
     Index nb_of_subdiagonals;
     Index nb_of_superdiagonals;
@@ -102,7 +102,6 @@ class HybridNonLinearSolver {
  private:
   FunctorType &functor;
   Index n;
-  Scalar sum;
   bool sing;
   Scalar temp;
   Scalar delta;

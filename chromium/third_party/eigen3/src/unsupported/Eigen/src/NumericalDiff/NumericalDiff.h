@@ -55,7 +55,7 @@ class NumericalDiff : public Functor_ {
   enum { InputsAtCompileTime = Functor::InputsAtCompileTime, ValuesAtCompileTime = Functor::ValuesAtCompileTime };
 
   /**
-   * return the number of evaluation of functor
+   * return the number of evaluations of the functor
    */
   int df(const InputType& _x, JacobianType& jac) const {
     using std::abs;
@@ -83,7 +83,7 @@ class NumericalDiff : public Functor_ {
         break;
       default:
         eigen_assert(false);
-    };
+    }
 
     // Function Body
     for (int j = 0; j < n; ++j) {
@@ -111,7 +111,7 @@ class NumericalDiff : public Functor_ {
           break;
         default:
           eigen_assert(false);
-      };
+      }
     }
     return nfev;
   }

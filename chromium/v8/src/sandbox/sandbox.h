@@ -81,6 +81,12 @@ class V8_EXPORT_PRIVATE Sandbox {
   // accesses.
   static constexpr size_t kSmiAddressRangePadding = 4 * KB;
 
+  // A heuristic used by the sandbox crash filter to identify crashes on
+  // unaddressable accesses (e.g. on ARM64). Note that this is only a testing
+  // heuristic and does not reflect the actual virtual address space size,
+  // which is determined dynamically during sandbox initialization.
+  static constexpr int kMaxVirtualAddressBitsForCrashFilter = 48;
+
   /**
    * Initializes this sandbox.
    *
@@ -265,6 +271,15 @@ class V8_EXPORT_PRIVATE Sandbox {
 
   V8_INLINE static Sandbox* GetDefault() { return default_sandbox_; }
 
+  // Allocator that can be used for in-sandbox allocations. The sandbox will
+  // provide a default allocator which can be overridden with
+  // `set_in_sandbox_allocator()`.
+  Allocator* in_sandbox_allocator() { return in_sandbox_allocator_.get(); }
+
+  // Sets a custom in-sandbox allocator that can be retrieved with
+  // `in_sandbox_allocator()`.
+  void set_in_sandbox_allocator(std::shared_ptr<Allocator> allocator);
+
  private:
   // The SequentialUnmapperTest calls the private Initialize method to create a
   // sandbox without guard regions, which would consume too much memory.
@@ -331,6 +346,9 @@ class V8_EXPORT_PRIVATE Sandbox {
 
   // The page allocator instance for this sandbox.
   std::shared_ptr<v8::PageAllocator> sandbox_page_allocator_;
+
+  // An allocator that can be used to allocate in-sandbox memory.
+  std::shared_ptr<v8::Allocator> in_sandbox_allocator_;
 
   // Constant objects inside this sandbox.
   SandboxedPointerConstants constants_;

@@ -21,7 +21,6 @@
 #include "ink/geometry/angle.h"
 #include "ink/strokes/input/stroke_input.h"
 #include "ink/strokes/internal/jni/stroke_input_batch_native_helper.h"
-#include "ink/strokes/internal/jni/stroke_input_native_helper.h"
 #include "ink/types/duration.h"
 #include "ink/types/physical_distance.h"
 
@@ -33,7 +32,6 @@ using ::ink::native::CastToMutableStrokeInputBatch;
 using ::ink::native::CastToStrokeInputBatch;
 using ::ink::native::DeleteNativeStrokeInputBatch;
 using ::ink::native::NewNativeStrokeInputBatch;
-using ::ink::native::ToolTypeToInt;
 
 extern "C" {
 
@@ -52,16 +50,15 @@ int StrokeInputBatchNative_getSize(int64_t native_pointer) {
 StrokeInputBatchNative_Input StrokeInputBatchNative_getStrokeInput(
     int64_t native_pointer, int index) {
   StrokeInput input = CastToStrokeInputBatch(native_pointer).Get(index);
-  return StrokeInputBatchNative_Input{
-      .tool_type = ToolTypeToInt(input.tool_type),
-      .x = input.position.x,
-      .y = input.position.y,
-      .elapsed_time_millis =
-          static_cast<int64_t>(input.elapsed_time.ToMillis()),
-      .stroke_unit_length_cm = input.stroke_unit_length.ToCentimeters(),
-      .pressure = input.pressure,
-      .tilt_radians = input.tilt.ValueInRadians(),
-      .orientation_radians = input.orientation.ValueInRadians()};
+  return {.tool_type_int = static_cast<int>(input.tool_type),
+          .x = input.position.x,
+          .y = input.position.y,
+          .elapsed_time_millis =
+              static_cast<int64_t>(input.elapsed_time.ToMillis()),
+          .stroke_unit_length_cm = input.stroke_unit_length.ToCentimeters(),
+          .pressure = input.pressure,
+          .tilt_radians = input.tilt.ValueInRadians(),
+          .orientation_radians = input.orientation.ValueInRadians()};
 }
 
 int64_t StrokeInputBatchNative_getDurationMillis(int64_t native_pointer) {
@@ -99,6 +96,10 @@ int StrokeInputBatchNative_getNoiseSeed(int64_t native_pointer) {
   return CastToStrokeInputBatch(native_pointer).GetNoiseSeed();
 }
 
+float StrokeInputBatchNative_getBaseAnimationPhase(int64_t native_pointer) {
+  return CastToStrokeInputBatch(native_pointer).GetBaseAnimationPhase();
+}
+
 void MutableStrokeInputBatchNative_clear(int64_t native_pointer) {
   CastToMutableStrokeInputBatch(native_pointer).Clear();
 }
@@ -107,7 +108,8 @@ bool MutableStrokeInputBatchNative_appendSingle(
     void* jni_env_pass_through, int64_t native_pointer, int tool_type, float x,
     float y, int64_t elapsed_time_millis, float stroke_unit_length_cm,
     float pressure, float tilt, float orientation,
-    void (*throw_from_status_callback)(void*, int, const char*)) {
+    void (*throw_from_status_callback)(void* jni_env, int status_code,
+                                       const char* status_str)) {
   StrokeInput input = {
       .tool_type = static_cast<StrokeInput::ToolType>(tool_type),
       .position = {x, y},
@@ -123,7 +125,7 @@ bool MutableStrokeInputBatchNative_appendSingle(
       !status.ok()) {
     throw_from_status_callback(jni_env_pass_through,
                                static_cast<int>(status.code()),
-                               status.message().data());
+                               status.ToString().c_str());
     return false;
   }
   return true;
@@ -132,14 +134,15 @@ bool MutableStrokeInputBatchNative_appendSingle(
 bool MutableStrokeInputBatchNative_appendBatch(
     void* jni_env_pass_through, int64_t native_pointer,
     int64_t append_from_native_pointer,
-    void (*throw_from_status_callback)(void*, int, const char*)) {
+    void (*throw_from_status_callback)(void* jni_env, int status_code,
+                                       const char* status_str)) {
   if (absl::Status status =
           CastToMutableStrokeInputBatch(native_pointer)
               .Append(CastToStrokeInputBatch(append_from_native_pointer));
       !status.ok()) {
     throw_from_status_callback(jni_env_pass_through,
                                static_cast<int>(status.code()),
-                               status.message().data());
+                               status.ToString().c_str());
     return false;
   }
   return true;
@@ -152,6 +155,11 @@ int64_t MutableStrokeInputBatchNative_newCopy(int64_t native_pointer) {
 void MutableStrokeInputBatchNative_setNoiseSeed(int64_t native_pointer,
                                                 int seed) {
   CastToMutableStrokeInputBatch(native_pointer).SetNoiseSeed(seed);
+}
+
+void MutableStrokeInputBatchNative_setBaseAnimationPhase(int64_t native_pointer,
+                                                         float phase) {
+  CastToMutableStrokeInputBatch(native_pointer).SetBaseAnimationPhase(phase);
 }
 
 }  // extern "C"

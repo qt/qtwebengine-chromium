@@ -34,6 +34,8 @@ const base::FeatureParam<base::TimeDelta> kModelIdleTimeout{
     &optimization_guide::features::kOptimizationGuideOnDeviceModel,
     "on_device_model_active_session_idle_timeout", kDefaultModelIdleTimeout};
 
+constexpr base::TimeDelta kAsrIdleTimerUpdateInterval = base::Seconds(10);
+
 class AsrStreamWrapper;
 
 class SessionWrapper final : public mojom::Session {
@@ -43,6 +45,12 @@ class SessionWrapper final : public mojom::Session {
                  std::unique_ptr<BackendSession> session,
                  mojom::Priority priority);
   ~SessionWrapper() override;
+
+  void UpdateIdleTimer() {
+    if (model_) {
+      model_->UpdateIdleTimer();
+    }
+  }
 
   SessionWrapper(const SessionWrapper&) = delete;
   SessionWrapper& operator=(const SessionWrapper&) = delete;
@@ -77,9 +85,10 @@ class SessionWrapper final : public mojom::Session {
  private:
   void AppendInternal(mojom::AppendOptionsPtr options,
                       mojo::PendingRemote<mojom::ContextClient> client,
+                      mojo::ReportBadMessageCallback bad_message_callback,
                       base::OnceClosure on_complete) {
     session_->Append(std::move(options), std::move(client),
-                     std::move(on_complete));
+                     std::move(bad_message_callback), std::move(on_complete));
   }
 
   void GenerateInternal(mojom::GenerateOptionsPtr input,
@@ -89,10 +98,12 @@ class SessionWrapper final : public mojom::Session {
                        std::move(on_complete));
   }
 
-  void GetSizeInTokensInternal(mojom::InputPtr input,
-                               GetSizeInTokensCallback callback,
-                               base::OnceClosure on_complete) {
-    session_->SizeInTokens(std::move(input),
+  void GetSizeInTokensInternal(
+      mojom::InputPtr input,
+      mojo::ReportBadMessageCallback bad_message_callback,
+      GetSizeInTokensCallback callback,
+      base::OnceClosure on_complete) {
+    session_->SizeInTokens(std::move(input), std::move(bad_message_callback),
                            std::move(callback).Then(std::move(on_complete)));
   }
 
@@ -145,12 +156,21 @@ class AsrStreamWrapper final : public mojom::AsrStreamInput {
     if (!session_) {
       return;  // Session was already closed.
     }
+    auto now = base::TimeTicks::Now();
+
+    // Throttle timer resets to avoid flooding the sequence manager with dead
+    // delayed tasks.
+    if (now - last_timer_restart_ > kAsrIdleTimerUpdateInterval) {
+      session_->UpdateIdleTimer();
+      last_timer_restart_ = now;
+    }
     session_->backend().AsrAddAudioChunk(std::move(data));
   }
 
  private:
   base::WeakPtr<SessionWrapper> session_;
   mojo::Receiver<mojom::AsrStreamInput> receiver_;
+  base::TimeTicks last_timer_restart_ = base::TimeTicks::Now();
   base::WeakPtrFactory<AsrStreamWrapper> weak_ptr_factory_{this};
 };
 
@@ -170,9 +190,12 @@ void SessionWrapper::Append(mojom::AppendOptionsPtr options,
   if (!model_) {
     return;
   }
-  auto append_internal = base::BindOnce(&SessionWrapper::AppendInternal,
-                                        weak_ptr_factory_.GetWeakPtr(),
-                                        std::move(options), std::move(client));
+
+  mojo::ReportBadMessageCallback bad_message_callback =
+      base::BindPostTaskToCurrentDefault(receiver_.GetBadMessageCallback());
+  auto append_internal = base::BindOnce(
+      &SessionWrapper::AppendInternal, weak_ptr_factory_.GetWeakPtr(),
+      std::move(options), std::move(client), std::move(bad_message_callback));
 
   model_->AddAndRunPendingTask(std::move(append_internal),
                                weak_ptr_factory_.GetWeakPtr());
@@ -199,9 +222,11 @@ void SessionWrapper::GetSizeInTokens(mojom::InputPtr input,
     return;
   }
 
+  mojo::ReportBadMessageCallback bad_message_callback =
+      base::BindPostTaskToCurrentDefault(receiver_.GetBadMessageCallback());
   auto size_in_tokens_internal = base::BindOnce(
       &SessionWrapper::GetSizeInTokensInternal, weak_ptr_factory_.GetWeakPtr(),
-      std::move(input), std::move(callback));
+      std::move(input), std::move(bad_message_callback), std::move(callback));
 
   model_->AddAndRunPendingTask(std::move(size_in_tokens_internal),
                                weak_ptr_factory_.GetWeakPtr());
@@ -473,6 +498,14 @@ void OnDeviceModelMojomImpl::RestartIdleTimer() {
   idle_timer_->Start(FROM_HERE, kModelIdleTimeout.Get(),
                      base::BindOnce(&OnDeviceModelMojomImpl::OnIdleTimeout,
                                     base::Unretained(this)));
+}
+
+void OnDeviceModelMojomImpl::UpdateIdleTimer() {
+  // Only restart if active to avoid accidentally re-enabling the timer while a
+  // standard text task is running.
+  if (idle_timer_) {
+    RestartIdleTimer();
+  }
 }
 
 void OnDeviceModelMojomImpl::OnIdleTimeout() {

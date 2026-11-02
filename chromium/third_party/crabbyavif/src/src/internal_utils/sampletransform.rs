@@ -15,7 +15,7 @@
 use crate::internal_utils::*;
 use crate::*;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum SampleTransformUnaryOp {
     // Unary operators. L is the operand.
     Negation, // S = -L
@@ -24,7 +24,7 @@ pub enum SampleTransformUnaryOp {
     Bsr,      // S = L<=0 ? 0 : truncate(log2(L)) (Bit Scan Reverse)
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum SampleTransformBinaryOp {
     Sum,        // S = L + R
     Difference, // S = L - R
@@ -38,7 +38,7 @@ pub enum SampleTransformBinaryOp {
     Max,        // S = L<=R ? R : L
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum SampleTransformToken {
     Constant(i64),
     ImageItem(usize), // 0-based item_idx in source items
@@ -46,7 +46,7 @@ pub enum SampleTransformToken {
     BinaryOp(SampleTransformBinaryOp),
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 pub struct SampleTransform {
     pub bit_depth: u8,
     pub num_inputs: usize, // Number of input images.
@@ -489,6 +489,33 @@ impl SampleTransform {
             output.allocate_planes(Category::Alpha)?;
         }
         self.apply(extra_inputs, output)
+    }
+
+    #[cfg(feature = "satofloat")]
+    pub(crate) fn from_float32b_recipe() -> Result<Self, AvifError> {
+        Self::create_from(
+            64, // bit_depth
+            3,  // num_inputs
+            vec![
+                // Postfix (or Reverse Polish) notation.
+
+                // The sign bit and the 7 most significant bits of the exponent.
+                SampleTransformToken::ImageItem(0),
+                // Shift that by 12 to make room for the other bits.
+                SampleTransformToken::Constant(1 << 12),
+                SampleTransformToken::BinaryOp(SampleTransformBinaryOp::Product),
+                // Add the least significant bit of the exponent and
+                // the 11 most significant bits of the mantissa.
+                SampleTransformToken::ImageItem(1),
+                SampleTransformToken::BinaryOp(SampleTransformBinaryOp::Or),
+                // Shift that by 12 to make room for the remaining bits.
+                SampleTransformToken::Constant(1 << 12),
+                SampleTransformToken::BinaryOp(SampleTransformBinaryOp::Product),
+                // Add the 12 least significant bits of the mantissa.
+                SampleTransformToken::ImageItem(2),
+                SampleTransformToken::BinaryOp(SampleTransformBinaryOp::Or),
+            ],
+        )
     }
 }
 

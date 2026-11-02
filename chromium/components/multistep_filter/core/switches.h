@@ -7,11 +7,12 @@
 
 namespace multistep_filter::switches {
 
-// Overrides the base URL for the `SiteAutomationIndexServer` Server APIs.
-extern const char kMultistepFilterIndexServerApiBaseUrl[];
+// Allows HTTP URLs for extraction and suggestions during browser testing.
+inline constexpr char kMultistepFilterAllowHttpForTesting[] =
+    "multistep-filter-allow-http-for-testing";
 
-// Path to a local JSON file containing cue templates. Used for testing.
-extern const char kMultistepFilterCueConfigPath[];
+// Tag the browser instance as running evals to filter out UMA metrics.
+inline constexpr char kMultistepFilterEvals[] = "multistep-filter-evals";
 
 }  // namespace multistep_filter::switches
 

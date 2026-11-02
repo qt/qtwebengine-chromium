@@ -7,7 +7,7 @@ use icu_locale::LocaleCanonicalizer;
 use icu_locale_core::Locale;
 use std::fmt;
 
-#[cxx::bridge(namespace = "base::i18n::internal")]
+#[cxx::bridge(namespace = "base::i18n_internal")]
 pub mod ffi {
     pub struct OptionalIcu4xLocale {
         pub value: Box<Icu4xLocale>,
@@ -32,6 +32,8 @@ pub mod ffi {
         type IcuFallbacker;
         fn create_icu_fallbacker() -> Box<IcuFallbacker>;
         fn fallback_to_vec(self: &IcuFallbacker, locale_bytes: &[u8]) -> Vec<Icu4xLocale>;
+
+        fn create_icu_locale(locale_bytes: &[u8]) -> OptionalIcu4xLocale;
     }
 }
 
@@ -171,6 +173,18 @@ fn create_icu_fallbacker() -> Box<IcuFallbacker> {
     IcuFallbacker::new()
 }
 
+fn create_icu_locale(locale_bytes: &[u8]) -> ffi::OptionalIcu4xLocale {
+    match Locale::try_from_utf8(locale_bytes) {
+        Ok(locale) => {
+            ffi::OptionalIcu4xLocale { value: Box::new(Icu4xLocale { locale }), has_value: true }
+        }
+        Err(_) => ffi::OptionalIcu4xLocale {
+            value: Box::new(Icu4xLocale { locale: Locale::try_from_str("und").unwrap() }),
+            has_value: false,
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -262,5 +276,68 @@ mod tests {
         let fallback_strings: Vec<String> = fallbacks.iter().map(|f| f.to_string()).collect();
         // ICU4X fallback strips away the "Hans" script as it is the default for 'zh'.
         assert_eq!(fallback_strings, vec!["zh"]);
+    }
+
+    #[test]
+    fn test_fallbacker_catalan() {
+        let fallbacker = IcuFallbacker::new();
+        let fallbacks = fallbacker.fallback_to_vec(b"ca-u-va-valencia");
+        let fallback_strings: Vec<String> = fallbacks.iter().map(|f| f.to_string()).collect();
+        assert_eq!(fallback_strings, vec!["ca"]);
+    }
+
+    #[test]
+    fn test_fallbacker_spanish() {
+        let fallbacker = IcuFallbacker::new();
+        let fallbacks = fallbacker.fallback_to_vec(b"es-MX");
+        let fallback_strings: Vec<String> = fallbacks.iter().map(|f| f.to_string()).collect();
+        assert_eq!(fallback_strings, vec!["es-MX", "es-419", "es"]);
+    }
+
+    #[test]
+    fn test_fallbacker_english_lr() {
+        let fallbacker = IcuFallbacker::new();
+        let fallbacks = fallbacker.fallback_to_vec(b"en-LR");
+        let fallback_strings: Vec<String> = fallbacks.iter().map(|f| f.to_string()).collect();
+        assert_eq!(fallback_strings, vec!["en-LR", "en-001", "en"]);
+    }
+
+    #[test]
+    fn test_fallbacker_english_ca() {
+        let fallbacker = IcuFallbacker::new();
+        let fallbacks = fallbacker.fallback_to_vec(b"en-CA");
+        let fallback_strings: Vec<String> = fallbacks.iter().map(|f| f.to_string()).collect();
+        assert_eq!(fallback_strings, vec!["en-CA", "en"]);
+    }
+
+    #[test]
+    fn test_fallbacker_english_gb() {
+        let fallbacker = IcuFallbacker::new();
+        let fallbacks = fallbacker.fallback_to_vec(b"en-GB");
+        let fallback_strings: Vec<String> = fallbacks.iter().map(|f| f.to_string()).collect();
+        assert_eq!(fallback_strings, vec!["en-GB", "en-001", "en"]);
+    }
+
+    #[test]
+    fn test_fallbacker_english_us() {
+        let fallbacker = IcuFallbacker::new();
+        let fallbacks = fallbacker.fallback_to_vec(b"en-US");
+        let fallback_strings: Vec<String> = fallbacks.iter().map(|f| f.to_string()).collect();
+        assert_eq!(fallback_strings, vec!["en-US", "en"]);
+    }
+
+    #[test]
+    fn test_create_icu_locale() {
+        let res = create_icu_locale(b"en-US");
+        assert!(res.has_value);
+        assert_eq!(res.value.to_string_inherent(), "en-US");
+
+        let res_tl = create_icu_locale(b"tl-PH");
+        assert!(res_tl.has_value);
+        assert_eq!(res_tl.value.to_string_inherent(), "tl-PH");
+
+        let res_invalid = create_icu_locale(b"\xFF");
+        assert!(!res_invalid.has_value);
+        assert_eq!(res_invalid.value.to_string_inherent(), "und");
     }
 }

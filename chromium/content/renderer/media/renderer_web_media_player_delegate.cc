@@ -6,6 +6,8 @@
 
 #include <stdint.h>
 
+#include <vector>
+
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/metrics/user_metrics_action.h"
@@ -71,19 +73,6 @@ bool RendererWebMediaPlayerDelegate::IsPageHidden() {
       return true;
   }
   NOTREACHED();
-}
-
-bool RendererWebMediaPlayerDelegate::IsFrameHidden() {
-  // There is always a render frame except perhaps during teardown (though
-  // `this` should be deleted before that would be observable).
-  CHECK(render_frame());
-
-  // If the view is gone it means we are tearing down.
-  if (!render_frame()->GetWebView()) {
-    return true;
-  }
-
-  return is_frame_hidden_;
 }
 
 int RendererWebMediaPlayerDelegate::AddObserver(Observer* observer) {
@@ -221,17 +210,34 @@ void RendererWebMediaPlayerDelegate::OnPageVisibilityChanged(
 
   if (is_shown) {
     RecordAction(base::UserMetricsAction("Media.Shown"));
-
-    for (base::IDMap<Observer*>::iterator it(&id_map_); !it.IsAtEnd();
-         it.Advance()) {
-      it.GetCurrentValue()->OnPageShown();
-    }
   } else {
     RecordAction(base::UserMetricsAction("Media.Hidden"));
+  }
 
-    for (base::IDMap<Observer*>::iterator it(&id_map_); !it.IsAtEnd();
-         it.Advance()) {
-      it.GetCurrentValue()->OnPageHidden();
+  // Create a list of players before making any possibly reentrant calls to
+  // OnPageShown() or OnPageHidden().
+  std::vector<int> player_ids;
+  player_ids.reserve(id_map_.size());
+  for (base::IDMap<Observer*>::iterator it(&id_map_); !it.IsAtEnd();
+       it.Advance()) {
+    player_ids.push_back(it.GetCurrentKey());
+  }
+
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+  for (int player_id : player_ids) {
+    Observer* player = id_map_.Lookup(player_id);
+    if (!player) {
+      continue;
+    }
+
+    if (is_shown) {
+      player->OnPageShown();
+    } else {
+      player->OnPageHidden();
+    }
+
+    if (!weak_this) {
+      return;
     }
   }
 
@@ -252,17 +258,6 @@ void RendererWebMediaPlayerDelegate::SetIdleCleanupParamsForTesting(
 bool RendererWebMediaPlayerDelegate::IsIdleCleanupTimerRunningForTesting()
     const {
   return idle_cleanup_timer_.IsRunning();
-}
-
-void RendererWebMediaPlayerDelegate::SetFrameHiddenForTesting(
-    bool is_frame_hidden) {
-  if (is_frame_hidden == is_frame_hidden_) {
-    return;
-  }
-
-  is_frame_hidden_ = is_frame_hidden;
-
-  ScheduleUpdateTask();
 }
 
 void RendererWebMediaPlayerDelegate::ScheduleUpdateTask() {
@@ -335,30 +330,6 @@ void RendererWebMediaPlayerDelegate::CleanUpIdlePlayers(
       player->OnIdleTimeout();
     }
   }
-}
-
-void RendererWebMediaPlayerDelegate::OnFrameVisibilityChanged(
-    blink::mojom::FrameVisibility render_status) {
-  bool is_frame_hidden =
-      (render_status == blink::mojom::FrameVisibility::kNotRendered);
-  if (is_frame_hidden == is_frame_hidden_) {
-    return;
-  }
-
-  is_frame_hidden_ = is_frame_hidden;
-  if (is_frame_hidden_) {
-    for (base::IDMap<Observer*>::iterator it(&id_map_); !it.IsAtEnd();
-         it.Advance()) {
-      it.GetCurrentValue()->OnFrameHidden();
-    }
-  } else {
-    for (base::IDMap<Observer*>::iterator it(&id_map_); !it.IsAtEnd();
-         it.Advance()) {
-      it.GetCurrentValue()->OnFrameShown();
-    }
-  }
-
-  ScheduleUpdateTask();
 }
 
 void RendererWebMediaPlayerDelegate::OnDestruct() {

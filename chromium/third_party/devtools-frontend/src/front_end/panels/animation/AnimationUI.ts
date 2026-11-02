@@ -15,15 +15,15 @@ import {type AnimationTimeline, StepTimingFunction} from './AnimationTimeline.js
 
 const UIStrings = {
   /**
-   * @description Title of the first and last points of an animation
+   * @description Title of the first and last points of an animation.
    */
-  animationEndpointSlider: 'Animation Endpoint slider',
+  animationEndpointSlider: 'Animation endpoint slider',
   /**
-   * @description Title of an Animation Keyframe point
+   * @description Title of an animation keyframe point.
    */
-  animationKeyframeSlider: 'Animation Keyframe slider',
+  animationKeyframeSlider: 'Animation keyframe slider',
   /**
-   * @description Title of an animation keyframe group
+   * @description Title of an animation keyframe group.
    * @example {anilogo} PH1
    */
   sSlider: '{PH1} slider',

@@ -7,6 +7,7 @@
 #ifndef CORE_FXCODEC_GIF_CFX_GIF_H_
 #define CORE_FXCODEC_GIF_CFX_GIF_H_
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include <memory>
@@ -17,24 +18,35 @@
 extern const char kGifSignature87[];
 extern const char kGifSignature89[];
 
-#define GIF_SIG_EXTENSION 0x21
-#define GIF_SIG_IMAGE 0x2C
-#define GIF_SIG_TRAILER 0x3B
-#define GIF_BLOCK_GCE 0xF9
-#define GIF_BLOCK_PTE 0x01
-#define GIF_BLOCK_CE 0xFE
-#define GIF_BLOCK_TERMINAL 0x00
-#define GIF_MAX_LZW_EXP 12
-#define GIF_MAX_LZW_CODE 4096
-#define GIF_D_STATUS_SIG 0x01
-#define GIF_D_STATUS_TAIL 0x02
-#define GIF_D_STATUS_EXT 0x03
-#define GIF_D_STATUS_EXT_CE 0x05
-#define GIF_D_STATUS_EXT_GCE 0x06
-#define GIF_D_STATUS_EXT_PTE 0x07
-#define GIF_D_STATUS_EXT_UNE 0x08
-#define GIF_D_STATUS_IMG_INFO 0x09
-#define GIF_D_STATUS_IMG_DATA 0x0A
+enum class GifSignature : uint8_t {
+  kExtension = 0x21,
+  kImage = 0x2C,
+  kTrailer = 0x3B,
+};
+
+enum class GifExtensionLabel : uint8_t {
+  kPlainText = 0x01,
+  kGraphicControl = 0xF9,
+  kComment = 0xFE,
+};
+
+// Sentinel sub-block length that marks the end of a sub-block sequence.
+constexpr uint8_t kGifSubBlockTerminator = 0x00;
+
+constexpr uint8_t kGifMaxLzwExp = 12;
+constexpr size_t kGifMaxLzwCode = 4096;
+
+enum class GifDecoderStatus : uint8_t {
+  kSig = 0x01,
+  kTail = 0x02,
+  kExt = 0x03,
+  kExtCe = 0x05,
+  kExtGce = 0x06,
+  kExtPte = 0x07,
+  kExtUne = 0x08,
+  kImgInfo = 0x09,
+  kImgData = 0x0A,
+};
 
 #pragma pack(1)
 struct CFX_GifGlobalFlags {

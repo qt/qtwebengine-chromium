@@ -38,7 +38,7 @@ rust_library(
         "//oak_proto_rust/oak_proto_rust_lib",
         "//oak_session",
         "//oak_time",
-        "//trex/sigstore",
+        "//tr/rekor",
         "@oak_crates_index//:anyhow",
         "@oak_crates_index//:futures",
         "@oak_crates_index//:futures-util",
@@ -55,6 +55,7 @@ rust_binary(
     deps = [
         ":oak_gcp_examples_echo_client",
         "//oak_proto_rust",
+        "//oak_session",
         "//oak_time",
         "//oak_time:oak_time_std",
         "@oak_crates_index//:anyhow",

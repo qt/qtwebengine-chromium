@@ -56,10 +56,52 @@ namespace tint::core::ir {
 /// The IR validator will reject use of any non-core IR functionality when the module does not
 /// contain the corresponding property.
 enum class Property : uint8_t {
+    /// Allows 8-bit integer types to be used.
+    kAllow8BitIntegers,
+    /// Allows 16-bit integer types to be used.
+    kAllow16BitIntegers,
+    /// Allows 64-bit integer types to be used.
+    kAllow64BitIntegers,
+    /// Allows use of 16-bit floats.
+    kAllow16BitFloats,
+    /// Allows input_attachment_index to be associated with any type
+    kAllowAnyInputAttachmentIndexType,
+    /// Allows lets to have any type.
+    kAllowAnyLetType,
+    /// Allows various backend-specific features for ShaderIO, like blend_src on non-struct members.
+    kAllowBackendSpecificShaderIO,
+    /// Allows use of buffer types.
+    kAllowBufferTypes,
+    /// Allows ClipDistances on f32 and vecN<f32> parameters
+    kAllowClipDistancesOnF32ScalarAndVector,
+    /// Allows binding points to be non-unique.
+    kAllowDuplicateBindings,
+    /// Allows @location on structs, matrices, and arrays that have numeric elements
+    kAllowLocationForNumericComposites,
+    /// Allows module scoped lets
+    kAllowModuleScopeLets,
+    /// Allows MSL specific entry point interface variance.
+    kAllowMslEntryPointInterface,
     /// Allows multiple entry points in the module.
     kAllowMultipleEntryPoints,
+    /// Allows non-core types to be used.
+    kAllowNonCoreTypes,
     /// Allow overrides
     kAllowOverrides,
+    /// Allows phony assignment instructions to be used.
+    kAllowPhonyInstructions,
+    /// Allows the PointSize builtin to be used.
+    kAllowPointSizeBuiltin,
+    /// Allows a pointer to a handle type
+    kAllowPointerToHandle,
+    /// Allows reference types in the IR
+    kAllowRefTypes,
+    /// Allows matrix annotations on structure members.
+    kAllowStructMatrixDecorations,
+    /// Allows module scope `var`s to exist without an IO annotation.
+    kAllowUnannotatedModuleIOVariables,
+    /// Allows access instructions to create pointers to vector elements.
+    kAllowVectorElementPointer,
 
     /// Disallow use of the min/max/clamp builtins with vector types.
     kDisallowVectorMinMaxClamp,
@@ -79,8 +121,29 @@ auto& operator<<(STREAM& out, Property p) {
     case Property::k##p: \
         return out << #p
     switch (p) {  //
+        CASE(Allow8BitIntegers);
+        CASE(Allow16BitIntegers);
+        CASE(Allow64BitIntegers);
+        CASE(AllowAnyInputAttachmentIndexType);
+        CASE(AllowAnyLetType);
+        CASE(AllowBackendSpecificShaderIO);
+        CASE(AllowClipDistancesOnF32ScalarAndVector);
+        CASE(AllowDuplicateBindings);
+        CASE(AllowLocationForNumericComposites);
+        CASE(AllowModuleScopeLets);
+        CASE(AllowMslEntryPointInterface);
         CASE(AllowMultipleEntryPoints);
+        CASE(AllowNonCoreTypes);
         CASE(AllowOverrides);
+        CASE(AllowPhonyInstructions);
+        CASE(AllowPointSizeBuiltin);
+        CASE(AllowPointerToHandle);
+        CASE(AllowRefTypes);
+        CASE(AllowStructMatrixDecorations);
+        CASE(AllowUnannotatedModuleIOVariables);
+        CASE(AllowVectorElementPointer);
+        CASE(AllowBufferTypes);
+        CASE(Allow16BitFloats);
         CASE(DisallowVectorMinMaxClamp);
     }
 #undef CASE

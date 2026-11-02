@@ -118,11 +118,6 @@ export const NativeFunctions = [
     receivers: ["Clients","BackgroundFetchManager"]
   },
   {
-    name: "get",
-    signatures: [["entry"]],
-    receivers: ["RouteMap"]
-  },
-  {
     name: "set",
     signatures: [["v"]],
     receivers: ["PropertyDescriptor"]
@@ -226,7 +221,7 @@ export const NativeFunctions = [
   {
     name: "create",
     signatures: [["?options"]],
-    receivers: ["CredentialsContainer","Classifier"]
+    receivers: ["CredentialsContainer","SemanticEmbedder"]
   },
   {
     name: "defineProperty",
@@ -1430,7 +1425,7 @@ export const NativeFunctions = [
   },
   {
     name: "add",
-    signatures: [["sub_apps_to_add"]],
+    signatures: [["install_paths"]],
     receivers: ["SubApps"]
   },
   {
@@ -2005,7 +2000,12 @@ export const NativeFunctions = [
   },
   {
     name: "remove",
-    signatures: [["app_ids"]],
+    signatures: [["slot"]],
+    receivers: ["GPUResourceTable"]
+  },
+  {
+    name: "remove",
+    signatures: [["manifest_ids"]],
     receivers: ["SubApps"]
   },
   {
@@ -3301,6 +3301,11 @@ export const NativeFunctions = [
     name: "update",
     signatures: [["response"]],
     receivers: ["MediaKeySession"]
+  },
+  {
+    name: "update",
+    signatures: [["slot","resource"]],
+    receivers: ["GPUResourceTable"]
   },
   {
     name: "createObjectStore",
@@ -6490,6 +6495,22 @@ export const NativeFunctions = [
     signatures: [["type","eventInitDict"]]
   },
   {
+    name: "XRMediaBinding",
+    signatures: [["session"]]
+  },
+  {
+    name: "createQuadLayer",
+    signatures: [["video","init"]]
+  },
+  {
+    name: "createCylinderLayer",
+    signatures: [["video","init"]]
+  },
+  {
+    name: "createEquirectLayer",
+    signatures: [["video","init"]]
+  },
+  {
     name: "XRRay",
     signatures: [["transform"],["?origin","?direction"]]
   },
@@ -6670,6 +6691,14 @@ export const NativeFunctions = [
     signatures: [["querySet","queryIndex"]]
   },
   {
+    name: "setResourceTable",
+    signatures: [["table"]]
+  },
+  {
+    name: "createResourceTable",
+    signatures: [["descriptor"]]
+  },
+  {
     name: "GPUInternalError",
     signatures: [["message"]]
   },
@@ -6687,7 +6716,7 @@ export const NativeFunctions = [
   },
   {
     name: "copyElementImageToTexture",
-    signatures: [["source","destination"],["source","width","height","destination"],["source","sx","sy","swidth","sheight","destination"],["source","sx","sy","swidth","sheight","width","height","destination"]]
+    signatures: [["source","destination"]]
   },
   {
     name: "multiDrawIndirect",
@@ -6696,6 +6725,10 @@ export const NativeFunctions = [
   {
     name: "multiDrawIndexedIndirect",
     signatures: [["indirectBuffer","indirectOffset","maxDrawCount","?drawCountBuffer","?drawCountBufferOffset"]]
+  },
+  {
+    name: "insert",
+    signatures: [["resource"]]
   },
   {
     name: "GPUUncapturedErrorEvent",
@@ -6771,7 +6804,7 @@ export const NativeFunctions = [
   },
   {
     name: "texElementImage2D",
-    signatures: [["target","level","internalformat","format","type","element"],["target","level","internalformat","width","height","format","type","element"],["target","level","internalformat","sx","sy","swidth","sheight","format","type","element"],["target","level","internalformat","sx","sy","swidth","sheight","width","height","format","type","element"]]
+    signatures: [["target","internalformat","element","?config"]]
   },
   {
     name: "drawingBufferStorage",
@@ -6959,7 +6992,7 @@ export const NativeFunctions = [
   },
   {
     name: "install",
-    signatures: [["?install_url","?manifest_id"]],
+    signatures: [["?install_url","?manifest_id"],["params"]],
     receivers: ["Navigator"]
   },
   {
@@ -7239,7 +7272,7 @@ export const NativeFunctions = [
   },
   {
     name: "RTCEncodedAudioFrame",
-    signatures: [["originalFrame","?options"]]
+    signatures: [["init"],["originalFrame","?options"]]
   },
   {
     name: "setMetadata",
@@ -8242,10 +8275,6 @@ export const NativeFunctions = [
     signatures: [["animatorName","effects","?timeline","?options"]]
   },
   {
-    name: "classify",
-    signatures: [["input","?options"]]
-  },
-  {
     name: "LanguageModelToolCall",
     signatures: [["init"]]
   },
@@ -8258,6 +8287,14 @@ export const NativeFunctions = [
     signatures: [["init"]]
   },
   {
+    name: "availability",
+    signatures: [["?options"]]
+  },
+  {
+    name: "embed",
+    signatures: [["input","?options"]]
+  },
+  {
     name: "queryFeatureSupport",
     signatures: [["feature"]]
   },
@@ -8267,7 +8304,7 @@ export const NativeFunctions = [
   },
   {
     name: "setAttributionReporting",
-    signatures: [["attributionReporting"]]
+    signatures: [["options"]]
   },
   {
     name: "Worker",
@@ -8362,6 +8399,10 @@ export const NativeFunctions = [
     signatures: [["?ns"]]
   },
   {
+    name: "markConditional",
+    signatures: [["markName"]]
+  },
+  {
     name: "PerformanceMark",
     signatures: [["markName","?markOptions"]]
   },
@@ -8372,6 +8413,14 @@ export const NativeFunctions = [
   {
     name: "Profiler",
     signatures: [["options"]]
+  },
+  {
+    name: "getPathData",
+    signatures: [["?settings"]]
+  },
+  {
+    name: "setPathData",
+    signatures: [["pathData"]]
   },
   {
     name: "ByteLengthQueuingStrategy",
@@ -8410,8 +8459,12 @@ export const NativeFunctions = [
     signatures: [["tool","?options"]]
   },
   {
+    name: "getTools",
+    signatures: [["?options"]]
+  },
+  {
     name: "executeTool",
-    signatures: [["tool","input_arguments","?options"]]
+    signatures: [["tool","inputArguments","?options"]]
   },
   {
     name: "TaskController",
@@ -8432,10 +8485,6 @@ export const NativeFunctions = [
   {
     name: "removeProcessingInstruction",
     signatures: [["pi"]]
-  },
-  {
-    name: "RouteEvent",
-    signatures: [["type"]]
   },
   {
     name: "ResizeObserver",
@@ -8600,6 +8649,10 @@ export const NativeFunctions = [
   {
     name: "Touch",
     signatures: [["initDict"]]
+  },
+  {
+    name: "InstallResultEvent",
+    signatures: [["type","?eventInitDict"]]
   },
   {
     name: "TrackEvent",

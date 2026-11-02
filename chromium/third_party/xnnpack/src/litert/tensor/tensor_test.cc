@@ -20,6 +20,7 @@ limitations under the License.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/strings/string_view.h"
 #include "litert/tensor/arithmetic.h"
 #include "litert/tensor/buffer.h"
 #include "litert/tensor/datatypes.h"
@@ -32,10 +33,13 @@ namespace {
 using ::litert::tensor::IsOk;
 using ::litert::tensor::IsOkAndHolds;
 using ::testing::Address;
+using ::testing::AllOf;
+using ::testing::Each;
 using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
 using ::testing::Eq;
 using ::testing::Not;
+using ::testing::SizeIs;
 using ::testing::StrEq;
 
 MATCHER(IsValidTensor, "") {
@@ -101,6 +105,36 @@ TEST(TensorTest, SetBufferOnRValueWorks) {
   EXPECT_THAT(buffer.Lock(), ElementsAreArray(expected_buffer->Lock()));
 }
 
+TEST(TensorTest, BuildWithIntegerScalarWorks) {
+  Tensor a =
+      TensorHandle(TensorInit{.type = Type::kI32, .shape = {1}, .buffer = 3});
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & buffer, a.GetBuffer());
+  EXPECT_THAT(buffer.Lock().As<const int>(), ElementsAre(3));
+}
+
+TEST(TensorTest, BuildWithFloatingScalarWorks) {
+  Tensor a = TensorHandle(
+      TensorInit{.type = Type::kFP32, .shape = {1}, .buffer = 3.14});
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & buffer, a.GetBuffer());
+  EXPECT_THAT(buffer.Lock().As<const float>(), ElementsAre(3.14));
+}
+
+TEST(TensorTest, BuildWithScalarInfersTypeAndShape) {
+  Tensor a = TensorHandle(TensorInit{.buffer = 3.14});
+  EXPECT_THAT(a.GetType(), Type::kFP64);
+  EXPECT_THAT(a.GetShape(), ElementsAre(1));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & buffer, a.GetBuffer());
+  EXPECT_THAT(buffer.Lock().As<const double>(), ElementsAre(3.14));
+}
+
+TEST(TensorTest, BuildWithScalarBroadcastsShape) {
+  Tensor a = TensorHandle(TensorInit{.shape = {2, 3}, .buffer = 3.14f});
+  EXPECT_THAT(a.GetType(), Type::kFP32);
+  EXPECT_THAT(a.GetShape(), ElementsAre(2, 3));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & buffer, a.GetBuffer());
+  EXPECT_THAT(buffer.Lock().As<const float>(), AllOf(SizeIs(6), Each(3.14)));
+}
+
 TEST(TensorTest, DefaultConstructedTensorDontHaveAProducer) {
   Tensor a;
   // The input tensors don't have a producer.
@@ -120,6 +154,46 @@ TEST(TensorTest, InitConstructorWorks) {
   EXPECT_THAT(a_info.buffer, Eq(buffer));
 }
 
+TEST(TensorTest, CreateWithStdStringWorks) {
+  std::string name = "test_tensor";
+  TensorHandle a = Create(name, Type::kI32, {2, 2});
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const graph::TensorInformation& a_info,
+                                  GetInfo(a));
+  EXPECT_EQ(a_info.type, Type::kI32);
+  EXPECT_THAT(a_info.shape, ElementsAre(2, 2));
+  EXPECT_THAT(a_info.name, StrEq("test_tensor"));
+
+  std::shared_ptr<OwningCpuBuffer> buffer =
+      OwningCpuBuffer::Copy<Type::kI32>({1, 2, 3, 4});
+  TensorHandle b = Create(name, Type::kI32, {2, 2}, buffer);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const graph::TensorInformation& b_info,
+                                  GetInfo(b));
+  EXPECT_EQ(b_info.type, Type::kI32);
+  EXPECT_THAT(b_info.shape, ElementsAre(2, 2));
+  EXPECT_THAT(b_info.name, StrEq("test_tensor"));
+  EXPECT_THAT(b_info.buffer, Eq(buffer));
+}
+
+TEST(TensorTest, CreateWithAbslStringViewWorks) {
+  absl::string_view name = "test_tensor";
+  TensorHandle a = Create(name, Type::kI32, {2, 2});
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const graph::TensorInformation& a_info,
+                                  GetInfo(a));
+  EXPECT_EQ(a_info.type, Type::kI32);
+  EXPECT_THAT(a_info.shape, ElementsAre(2, 2));
+  EXPECT_THAT(a_info.name, StrEq("test_tensor"));
+
+  std::shared_ptr<OwningCpuBuffer> buffer =
+      OwningCpuBuffer::Copy<Type::kI32>({1, 2, 3, 4});
+  TensorHandle b = Create(name, Type::kI32, {2, 2}, buffer);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const graph::TensorInformation& b_info,
+                                  GetInfo(b));
+  EXPECT_EQ(b_info.type, Type::kI32);
+  EXPECT_THAT(b_info.shape, ElementsAre(2, 2));
+  EXPECT_THAT(b_info.name, StrEq("test_tensor"));
+  EXPECT_THAT(b_info.buffer, Eq(buffer));
+}
+
 TEST(TensorTest, FullyConnectedKeepDims) {
   Tensor input({.type = Type::kFP32, .shape = {2, 2, 3, 4}});
   Tensor weights({.type = Type::kFP32, .shape = {5, 4}});
@@ -137,7 +211,7 @@ TEST(TensorTest, FullyConnectedFlatten) {
   Tensor output = FullyConnected(input, weights, bias, kActNone,
                                  /*keep_num_dims=*/false);
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const auto& output_info, GetInfo(output));
-  EXPECT_THAT(output_info.shape, ElementsAre(2, 5));
+  EXPECT_THAT(output_info.shape, ElementsAre(12, 5));
 }
 
 TEST(TensorTest, SetQuantizationWorks) {

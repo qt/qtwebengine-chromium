@@ -77,7 +77,9 @@ class RealTimeUrlLookupService : public RealTimeUrlLookupServiceBase {
           min_allowed_timestamp_for_referrer_chains_getter,
       ReferrerChainProvider* referrer_chain_provider,
       WebUIDelegate* delegate,
-      IntelligentScanDelegate* intelligent_scan_delegate);
+      IntelligentScanDelegate* intelligent_scan_delegate,
+      base::RepeatingCallback<network::mojom::NetworkContext*()>
+          network_context_getter);
 
   RealTimeUrlLookupService(const RealTimeUrlLookupService&) = delete;
   RealTimeUrlLookupService& operator=(const RealTimeUrlLookupService&) = delete;
@@ -121,9 +123,7 @@ class RealTimeUrlLookupService : public RealTimeUrlLookupServiceBase {
   std::optional<base::Time> GetMinAllowedTimestampForReferrerChains()
       const override;
   void MaybeLogLastProtegoPingTimeToPrefs(bool sent_with_token) override;
-  void MaybeLogProtegoPingCookieHistograms(bool request_had_cookie,
-                                           bool was_first_request,
-                                           bool sent_with_token) override;
+
   void MaybeFillReferringWebApk(
       const internal::ReferringAppInfo& referring_app_info,
       RTLookupRequest& request) override;

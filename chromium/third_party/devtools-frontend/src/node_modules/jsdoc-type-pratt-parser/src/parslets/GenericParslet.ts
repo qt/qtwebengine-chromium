@@ -2,6 +2,7 @@ import { composeParslet } from './Parslet.js'
 import { Precedence } from '../Precedence.js'
 import { assertRootResult } from '../assertTypes.js'
 import { UnexpectedTypeError } from '../errors.js'
+import type { RootResult, InferResult } from '../result/RootResult.js'
 
 export const genericParslet = composeParslet({
   name: 'genericParslet',
@@ -11,21 +12,22 @@ export const genericParslet = composeParslet({
     const dot = parser.consume('.')
     parser.consume('<')
 
-    const objects = []
-    let infer = false
-    if (parser.consume('infer')) {
-      infer = true
-      const left = parser.parseIntermediateType(Precedence.SYMBOL)
+    const elements: Array<RootResult | InferResult> = []
 
-      if (left.type !== 'JsdocTypeName') {
-        throw new UnexpectedTypeError(left, 'A typescript infer always has to have a name.')
+    do {
+      if (parser.consume('infer')) {
+        const name = parser.parseIntermediateType(Precedence.SYMBOL)
+        if (name.type !== 'JsdocTypeName') {
+          throw new UnexpectedTypeError(name, 'A typescript infer always has to have a name.')
+        }
+        elements.push({
+          type: 'JsdocTypeInfer',
+          element: name
+        })
+      } else {
+        elements.push(parser.parseType(Precedence.PARAMETER_LIST))
       }
-      objects.push(left)
-    } else {
-      do {
-        objects.push(parser.parseType(Precedence.PARAMETER_LIST))
-      } while (parser.consume(','))
-    }
+    } while (parser.consume(','))
 
     if (!parser.consume('>')) {
       throw new Error('Unterminated generic parameter list')
@@ -34,8 +36,7 @@ export const genericParslet = composeParslet({
     return {
       type: 'JsdocTypeGeneric',
       left: assertRootResult(left),
-      elements: objects,
-      ...(infer ? { infer: true } : {}),
+      elements,
       meta: {
         brackets: 'angle',
         dot

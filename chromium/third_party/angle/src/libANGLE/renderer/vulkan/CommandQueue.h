@@ -10,6 +10,7 @@
 #ifndef LIBANGLE_RENDERER_VULKAN_COMMAND_Queue_H_
 #define LIBANGLE_RENDERER_VULKAN_COMMAND_Queue_H_
 
+#include <atomic>
 #include <condition_variable>
 #include <mutex>
 #include <queue>
@@ -32,6 +33,32 @@ using SharedExternalFence = std::shared_ptr<ExternalFence>;
 constexpr size_t kInFlightCommandsLimit    = 50u;
 constexpr size_t kMaxFinishedCommandsLimit = 64u;
 static_assert(kInFlightCommandsLimit <= kMaxFinishedCommandsLimit);
+
+struct CommandQueuePerfCounters
+{
+    CommandQueuePerfCounters() = default;
+    CommandQueuePerfCounters(const CommandQueuePerfCounters &other)
+        : queueSubmitCallsTotal(other.queueSubmitCallsTotal.load(std::memory_order_relaxed)),
+          vkQueueSubmitCallsTotal(other.vkQueueSubmitCallsTotal.load(std::memory_order_relaxed)),
+          queueWaitSemaphoresTotal(other.queueWaitSemaphoresTotal.load(std::memory_order_relaxed))
+    {}
+
+    CommandQueuePerfCounters &operator=(const CommandQueuePerfCounters &other)
+    {
+        queueSubmitCallsTotal.store(other.queueSubmitCallsTotal.load(std::memory_order_relaxed),
+                                    std::memory_order_relaxed);
+        vkQueueSubmitCallsTotal.store(other.vkQueueSubmitCallsTotal.load(std::memory_order_relaxed),
+                                      std::memory_order_relaxed);
+        queueWaitSemaphoresTotal.store(
+            other.queueWaitSemaphoresTotal.load(std::memory_order_relaxed),
+            std::memory_order_relaxed);
+        return *this;
+    }
+
+    std::atomic<uint64_t> queueSubmitCallsTotal{0};
+    std::atomic<uint64_t> vkQueueSubmitCallsTotal{0};
+    std::atomic<uint64_t> queueWaitSemaphoresTotal{0};
+};
 
 struct Error
 {
@@ -131,13 +158,20 @@ class QueueFamily final : angle::NonCopyable
   public:
     static const uint32_t kInvalidIndex = std::numeric_limits<uint32_t>::max();
 
-    static uint32_t FindIndex(const std::vector<VkQueueFamilyProperties> &queueFamilyProperties,
+    static uint32_t FindIndex(const std::vector<VkQueueFamilyProperties2> &queueFamilyProperties2,
                               VkQueueFlags includeFlags,
                               VkQueueFlags optionalFlags,
                               VkQueueFlags excludeFlags,
                               uint32_t *matchCount);
-    static const uint32_t kQueueCount = static_cast<uint32_t>(egl::ContextPriority::EnumCount);
-    static const float kQueuePriorities[static_cast<uint32_t>(egl::ContextPriority::EnumCount)];
+
+    static constexpr float kQueuePriorityLow      = 0.0f;
+    static constexpr float kQueuePriorityMedium   = 0.4f;
+    static constexpr float kQueuePriorityHigh     = 0.8f;
+    static constexpr float kQueuePriorityRealtime = 1.0f;
+
+    static constexpr std::array<float, static_cast<uint32_t>(egl::ContextPriority::EnumCount)>
+        kQueuePriorities = {kQueuePriorityMedium, kQueuePriorityHigh, kQueuePriorityRealtime,
+                            kQueuePriorityLow};
 
     QueueFamily() : mProperties{}, mQueueFamilyIndex(kInvalidIndex) {}
     ~QueueFamily() {}
@@ -242,19 +276,22 @@ class CommandsState : angle::NonCopyable
         return (*renderPassCommands)->reset(context, &mSecondaryCommands);
     }
 
-    void flushImagesTransitionToForeign(
+    angle::Result flushImagesTransitionToForeign(
+        Context *context,
         std::vector<VkImageMemoryBarrier> &&imagesToTransitionToForeign)
     {
         std::lock_guard<angle::SimpleMutex> lock(mCmdPoolMutex);
-        // If we have foreign images to transit, we must have already issued some barrier, which
-        // means command buffer can't be empty.
-        ASSERT(mPrimaryCommands.valid());
+        // Usually we have foreign images to transit, we must have already issued some barrier,
+        // which means command buffer can't be empty. But if we flush and submit outsideRPCommands
+        // only, we may still end up with invalid primary command buffer.
+        ANGLE_TRY(ensurePrimaryCommandBufferValidLocked(context));
 
         mPrimaryCommands.pipelineBarrier(
             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0, nullptr, 0,
             nullptr, static_cast<uint32_t>(imagesToTransitionToForeign.size()),
             imagesToTransitionToForeign.data());
         imagesToTransitionToForeign.clear();
+        return angle::Result::Continue;
     }
 
     angle::Result getCommandsAndWaitSemaphores(
@@ -441,8 +478,7 @@ class CommandQueue : angle::NonCopyable
 
     CommandPoolAccess &getCommandPoolAccess() { return mCommandPoolAccess; }
 
-    const angle::VulkanPerfCounters getPerfCounters() const;
-    void resetPerFramePerfCounters();
+    const CommandQueuePerfCounters getPerfCounters() const;
 
     // Release finished commands and clean up garbage immediately, or request async clean up if
     // enabled.
@@ -495,13 +531,14 @@ class CommandQueue : angle::NonCopyable
 
     // Warning: Mutexes must be locked in the order as declared below.
     // Protect multi-thread access to mInFlightCommands.push/back and ensure ordering of submission.
-    // Also protects mPerfCounters.
     mutable angle::SimpleMutex mQueueSubmitMutex;
     // Protect multi-thread access to mInFlightCommands.pop/front and
     // mFinishedCommandBatches.push/back.
     angle::SimpleMutex mCmdCompleteMutex;
     // Protect multi-thread access to mFinishedCommandBatches.pop/front.
     angle::SimpleMutex mCmdReleaseMutex;
+
+    FenceRecycler mFenceRecycler;
 
     CommandBatchQueue mInFlightCommands;
     // Temporary storage for finished command batches that should be reset.
@@ -522,9 +559,7 @@ class CommandQueue : angle::NonCopyable
     // QueueMap
     DeviceQueueMap mQueueMap;
 
-    FenceRecycler mFenceRecycler;
-
-    angle::VulkanPerfCounters mPerfCounters;
+    CommandQueuePerfCounters mPerfCounters;
 };
 
 ANGLE_INLINE bool CommandQueue::isInFlightCommandsEmpty() const

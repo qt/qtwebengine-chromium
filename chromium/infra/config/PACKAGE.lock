@@ -12,6 +12,7 @@
 				"autoshard_exceptions.json",
 				"dev/chromium-header.textpb",
 				"lib/linux-default.json",
+				"lib/windows-default.json",
 				"luci-analysis-dev.cfg",
 				"luci-analysis.cfg",
 				"luci-bisection-dev.cfg",
@@ -32,7 +33,7 @@
 			"name": "@chromium-luci",
 			"source": {
 				"repo": "https://chromium.googlesource.com/infra/chromium/+/refs/heads/main",
-				"revision": "b5db180b6ca4f82f62669c0acbbcc34655698d6a",
+				"revision": "d381c78e626229ce32debabaf2af7666b3e85a4a",
 				"path": "starlark-libs/chromium-luci"
 			},
 			"lucicfg": "1.46.1"

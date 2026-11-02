@@ -19,6 +19,16 @@
 #include "core/fxge/dib/blend.h"
 #include "core/fxge/dib/fx_dib.h"
 
+#if defined(PDF_USE_SKIA)
+#include <type_traits>
+
+#include "third_party/skia/include/core/SkBlendMode.h"  // nogncheck
+#include "third_party/skia/include/core/SkCanvas.h"     // nogncheck
+#include "third_party/skia/include/core/SkImage.h"      // nogncheck
+#include "third_party/skia/include/core/SkPaint.h"      // nogncheck
+#include "third_party/skia/include/core/SkPixmap.h"     // nogncheck
+#endif
+
 using fxge::Blend;
 using GrayWithAlpha = CFX_ScanlineCompositor::GrayWithAlpha;
 
@@ -150,17 +160,6 @@ void AlphaMergeToDest(const T& input, U& output, uint8_t alpha) {
   output.red = AlphaMerge(output.red, input.red, alpha);
 }
 
-#if defined(PDF_USE_SKIA)
-template <typename T, typename U>
-void AlphaMergeToDestPremul(const T& input, U& output) {
-  const int in_alpha = 255 - input.alpha;
-  const int out_alpha = 255 - output.alpha;
-  output.blue = (output.blue * in_alpha + input.blue * out_alpha) / 255;
-  output.green = (output.green * in_alpha + input.green * out_alpha) / 255;
-  output.red = (output.red * in_alpha + input.red * out_alpha) / 255;
-}
-#endif  // defined(PDF_USE_SKIA)
-
 template <typename T, typename U>
 void AlphaMergeToSource(const T& input, U& output, uint8_t alpha) {
   output.blue = AlphaMerge(input.blue, output.blue, alpha);
@@ -199,21 +198,17 @@ void CompositeRowBgra2Mask(pdfium::span<const FX_BGRA_STRUCT<uint8_t>> src_span,
 }
 
 void CompositeRow_Rgb2Mask(pdfium::span<uint8_t> dest_span,
-                           int width,
+                           size_t width,
                            pdfium::span<const uint8_t> clip_span) {
+  auto dest_sub = dest_span.first(width);
   if (clip_span.empty()) {
-    std::ranges::fill(dest_span.first(static_cast<size_t>(width)), 0xff);
+    std::ranges::fill(dest_sub, 0xff);
     return;
   }
-  uint8_t* dest_scan = dest_span.data();
-  const uint8_t* clip_scan = clip_span.data();
-  UNSAFE_TODO({
-    for (int i = 0; i < width; ++i) {
-      *dest_scan = AlphaUnion(*dest_scan, *clip_scan);
-      ++dest_scan;
-      ++clip_scan;
-    }
-  });
+  auto clip_sub = clip_span.first(width);
+  for (auto [clip, output] : fxcrt::Zip(clip_sub, dest_sub)) {
+    output = AlphaUnion(output, clip);
+  }
 }
 
 bool IsNonSeparableBlendMode(BlendMode mode) {
@@ -659,113 +654,40 @@ void CompositeRowBgra2Bgra(pdfium::span<const FX_BGRA_STRUCT<uint8_t>> src_span,
 }
 
 #if defined(PDF_USE_SKIA)
-// Returns false when no further work is required by the caller. Otherwise,
-// returns true and the caller needs to call one of the
-// CompositePixelBgraPremul2BgraPremul*Blend() functions.
-template <typename DestPixelStruct>
-uint8_t CompositePixelBgraPremul2BgraPremulCommon(
-    const FX_BGRA_STRUCT<uint8_t>& input,
-    DestPixelStruct& output) {
-  if (output.alpha != 0) {
-    return true;
-  }
-
-  output.blue = input.blue;
-  output.green = input.green;
-  output.red = input.red;
-  output.alpha = input.alpha;
-  return false;
-}
-
-template <typename DestPixelStruct>
-void CompositePixelBgraPremul2BgraPremulNonSeparableBlend(
-    const FX_BGRA_STRUCT<uint8_t>& input,
-    DestPixelStruct& output,
-    BlendMode blend_type) {
-  if (!CompositePixelBgraPremul2BgraPremulCommon(input, output)) {
-    return;
-  }
-
-  FX_BGRA_STRUCT<uint8_t> input_for_blend;
-  input_for_blend.blue = input.blue * output.alpha / 255;
-  input_for_blend.green = input.green * output.alpha / 255;
-  input_for_blend.red = input.red * output.alpha / 255;
-  DestPixelStruct output_for_blend;
-  output_for_blend.blue = output.blue * input.alpha / 255;
-  output_for_blend.green = output.green * input.alpha / 255;
-  output_for_blend.red = output.red * input.alpha / 255;
-  FX_RGB_STRUCT<int> blended_color =
-      RgbBlend(blend_type, input_for_blend, output_for_blend);
-
-  AlphaMergeToDestPremul(input, output);
-  output.blue += blended_color.blue;
-  output.green += blended_color.green;
-  output.red += blended_color.red;
-  output.alpha = AlphaUnion(output.alpha, input.alpha);
-}
-
-template <typename DestPixelStruct>
-void CompositePixelBgraPremul2BgraPremulBlend(
-    const FX_BGRA_STRUCT<uint8_t>& input,
-    DestPixelStruct& output,
-    BlendMode blend_type) {
-  if (!CompositePixelBgraPremul2BgraPremulCommon(input, output)) {
-    return;
-  }
-
-  FX_BGR_STRUCT<int> blended_color = {
-      .blue = Blend(blend_type, input.blue * output.alpha / 255,
-                    output.blue * input.alpha / 255),
-      .green = Blend(blend_type, input.green * output.alpha / 255,
-                     output.green * input.alpha / 255),
-      .red = Blend(blend_type, input.red * output.alpha / 255,
-                   output.red * input.alpha / 255),
-  };
-
-  AlphaMergeToDestPremul(input, output);
-  output.blue += blended_color.blue;
-  output.green += blended_color.green;
-  output.red += blended_color.red;
-  output.alpha = AlphaUnion(output.alpha, input.alpha);
-}
-
-template <typename DestPixelStruct>
-void CompositePixelBgraPremul2BgraPremulNoBlend(
-    const FX_BGRA_STRUCT<uint8_t>& input,
-    DestPixelStruct& output) {
-  if (!CompositePixelBgraPremul2BgraPremulCommon(input, output)) {
-    return;
-  }
-
-  const int in_alpha = 255 - input.alpha;
-  output.blue = input.blue + output.blue * in_alpha / 255;
-  output.green = input.green + output.green * in_alpha / 255;
-  output.red = input.red + output.red * in_alpha / 255;
-  output.alpha = AlphaUnion(output.alpha, input.alpha);
-}
-
 template <typename DestPixelStruct>
 void CompositeRowBgraPremul2BgraPremul(
     pdfium::span<const FX_BGRA_STRUCT<uint8_t>> src_span,
     pdfium::span<DestPixelStruct> dest_span,
     BlendMode blend_type) {
-  const bool non_separable_blend = IsNonSeparableBlendMode(blend_type);
-  if (non_separable_blend) {
-    for (auto [input, output] : fxcrt::Zip(src_span, dest_span)) {
-      CompositePixelBgraPremul2BgraPremulNonSeparableBlend(input, output,
-                                                           blend_type);
-    }
+  if (src_span.empty()) {
     return;
   }
-  if (blend_type != BlendMode::kNormal) {
-    for (auto [input, output] : fxcrt::Zip(src_span, dest_span)) {
-      CompositePixelBgraPremul2BgraPremulBlend(input, output, blend_type);
-    }
-    return;
+
+  SkColorType dest_color_type;
+  if constexpr (std::is_same_v<DestPixelStruct, FX_BGRA_STRUCT<uint8_t>>) {
+    dest_color_type = kBGRA_8888_SkColorType;
+  } else {
+    static_assert(std::is_same_v<DestPixelStruct, FX_RGBA_STRUCT<uint8_t>>);
+    dest_color_type = kRGBA_8888_SkColorType;
   }
-  for (auto [input, output] : fxcrt::Zip(src_span, dest_span)) {
-    CompositePixelBgraPremul2BgraPremulNoBlend(input, output);
-  }
+
+  const int width = static_cast<int>(src_span.size());
+  SkImageInfo src_info = SkImageInfo::Make(
+      width, /*height=*/1, kBGRA_8888_SkColorType, kPremul_SkAlphaType);
+  SkImageInfo dest_info = SkImageInfo::Make(
+      width, /*height=*/1, dest_color_type, kPremul_SkAlphaType);
+
+  SkPixmap src_pixmap(src_info, src_span.data(), src_info.minRowBytes());
+  sk_sp<SkImage> src_image =
+      SkImages::RasterFromPixmap(src_pixmap, nullptr, nullptr);
+
+  std::unique_ptr<SkCanvas> canvas = SkCanvas::MakeRasterDirect(
+      dest_info, dest_span.data(), dest_info.minRowBytes());
+  CHECK(canvas);
+
+  SkPaint paint;
+  paint.setBlendMode(GetSkiaBlendMode(blend_type));
+  canvas->drawImage(src_image, 0, 0, SkSamplingOptions(), &paint);
 }
 #endif  // defined(PDF_USE_SKIA)
 
@@ -2137,7 +2059,7 @@ void CFX_ScanlineCompositor::CompositeRgbBitmapLineSrcBgrx(
     }
     case FXDIB_Format::k8bppMask: {
       CHECK(!rgb_byte_order_);  // Disallowed by Init();
-      CompositeRow_Rgb2Mask(dest_scan, width, clip_scan);
+      CompositeRow_Rgb2Mask(dest_scan, static_cast<size_t>(width), clip_scan);
       return;
     }
     case FXDIB_Format::kBgr:
@@ -2391,6 +2313,7 @@ void CFX_ScanlineCompositor::CompositePalBitmapLineSrcBpp1(
     int width,
     pdfium::span<const uint8_t> clip_scan) const {
   CHECK_EQ(src_format_, FXDIB_Format::k1bppRgb);
+  CHECK_GE(width, 0);
 
   switch (dest_format_) {
     case FXDIB_Format::kInvalid:
@@ -2407,7 +2330,7 @@ void CFX_ScanlineCompositor::CompositePalBitmapLineSrcBpp1(
     }
     case FXDIB_Format::k8bppMask: {
       CHECK(!rgb_byte_order_);  // Disallowed by Init();
-      CompositeRow_Rgb2Mask(dest_scan, width, clip_scan);
+      CompositeRow_Rgb2Mask(dest_scan, static_cast<size_t>(width), clip_scan);
       return;
     }
     case FXDIB_Format::kBgr:
@@ -2452,6 +2375,7 @@ void CFX_ScanlineCompositor::CompositePalBitmapLineSrcBpp8(
     int width,
     pdfium::span<const uint8_t> clip_scan) const {
   CHECK_EQ(src_format_, FXDIB_Format::k8bppRgb);
+  CHECK_GE(width, 0);
 
   switch (dest_format_) {
     case FXDIB_Format::kInvalid:
@@ -2468,7 +2392,7 @@ void CFX_ScanlineCompositor::CompositePalBitmapLineSrcBpp8(
     }
     case FXDIB_Format::k8bppMask: {
       CHECK(!rgb_byte_order_);  // Disallowed by Init();
-      CompositeRow_Rgb2Mask(dest_scan, width, clip_scan);
+      CompositeRow_Rgb2Mask(dest_scan, static_cast<size_t>(width), clip_scan);
       return;
     }
     case FXDIB_Format::kBgr:

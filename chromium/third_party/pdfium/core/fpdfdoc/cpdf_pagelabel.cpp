@@ -10,6 +10,7 @@
 #include <array>
 #include <utility>
 
+#include "constants/catalog.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fpdfapi/parser/fpdf_parser_decode.h"
@@ -107,7 +108,7 @@ std::optional<WideString> CPDF_PageLabel::GetLabel(int page_index) const {
   }
 
   RetainPtr<const CPDF_Dictionary> labels_dict =
-      root_dict->GetDictFor("PageLabels");
+      root_dict->GetDictFor(pdfium::catalog::kPageLabels);
   if (!labels_dict) {
     return std::nullopt;
   }

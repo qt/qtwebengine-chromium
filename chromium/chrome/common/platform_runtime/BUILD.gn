@@ -25,8 +25,8 @@ source_set("unit_tests") {
   data_deps = [ ":platform_runtime_test_lib" ]
 }
 
-# TODO(crbug.com/526955821): Use loadble_module everywhere & change
-# GetNativeLibraryName() to GetLoadableModuleName().
+# TODO(quarz): Use loadble_module everwhere & change GetNativeLibraryName()
+#     to GetLoadableModuleName().
 
 if (is_mac || is_ios) {
   _target_type = "shared_library"

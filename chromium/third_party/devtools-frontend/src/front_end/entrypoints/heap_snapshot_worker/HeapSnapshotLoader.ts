@@ -4,7 +4,7 @@
 
 import type * as PlatformApi from '../../core/platform/api/api.js';
 import * as Platform from '../../core/platform/platform.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 
 import {type HeapSnapshotHeader, HeapSnapshotProgress, JSHeapSnapshot, type Profile} from './HeapSnapshot.js';
 import type {HeapSnapshotWorkerDispatcher} from './HeapSnapshotWorkerDispatcher.js';

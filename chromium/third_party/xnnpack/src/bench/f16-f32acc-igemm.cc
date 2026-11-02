@@ -119,9 +119,8 @@ static void f16_igemm(benchmark::State& state,
 
   // Prepare minmax parameters.
   xnn_f16_minmax_params params;
-  // TODO: min = INFINITY, max = -INFINITY?!
-  init_params(&params, static_cast<xnn_float16>(INFINITY),
-              static_cast<xnn_float16>(-INFINITY));
+  init_params(&params, static_cast<xnn_float16>(-INFINITY),
+              static_cast<xnn_float16>(INFINITY));
 
   size_t buffer_index = 0;
   for (auto _ : state) {
@@ -216,6 +215,82 @@ BENCHMARK_CONV(f16_f32acc_igemm_1x16__avx2_broadcast)
 BENCHMARK_CONV(f16_f32acc_igemm_3x16__avx2_broadcast)
 BENCHMARK_CONV(f16_f32acc_igemm_4x16__avx2_broadcast)
 BENCHMARK_CONV(f16_f32acc_igemm_5x16__avx2_broadcast)
+
+#if XNN_ENABLE_AVX512SKX && (XNN_ARCH_X86 || XNN_ARCH_X86_64)
+static void f16_f32acc_igemm_1x16__avx512skx_broadcast(benchmark::State& state) {
+  f16_igemm(state, xnn_f16_f32acc_igemm_minmax_ukernel_1x16__avx512skx_broadcast, 1,
+            16, 1, 1, xnn_init_f16_minmax_scalar_params,
+            xnn_arch_x86_avx512skx);
+}
+static void f16_f32acc_igemm_4x16__avx512skx_broadcast(benchmark::State& state) {
+  f16_igemm(state, xnn_f16_f32acc_igemm_minmax_ukernel_4x16__avx512skx_broadcast, 4,
+            16, 1, 1, xnn_init_f16_minmax_scalar_params,
+            xnn_arch_x86_avx512skx);
+}
+static void f16_f32acc_igemm_5x16__avx512skx_broadcast(benchmark::State& state) {
+  f16_igemm(state, xnn_f16_f32acc_igemm_minmax_ukernel_5x16__avx512skx_broadcast, 5,
+            16, 1, 1, xnn_init_f16_minmax_scalar_params,
+            xnn_arch_x86_avx512skx);
+}
+static void f16_f32acc_igemm_6x16__avx512skx_broadcast(benchmark::State& state) {
+  f16_igemm(state, xnn_f16_f32acc_igemm_minmax_ukernel_6x16__avx512skx_broadcast, 6,
+            16, 1, 1, xnn_init_f16_minmax_scalar_params,
+            xnn_arch_x86_avx512skx);
+}
+static void f16_f32acc_igemm_7x16__avx512skx_broadcast(benchmark::State& state) {
+  f16_igemm(state, xnn_f16_f32acc_igemm_minmax_ukernel_7x16__avx512skx_broadcast, 7,
+            16, 1, 1, xnn_init_f16_minmax_scalar_params,
+            xnn_arch_x86_avx512skx);
+}
+static void f16_f32acc_igemm_8x16__avx512skx_broadcast(benchmark::State& state) {
+  f16_igemm(state, xnn_f16_f32acc_igemm_minmax_ukernel_8x16__avx512skx_broadcast, 8,
+            16, 1, 1, xnn_init_f16_minmax_scalar_params,
+            xnn_arch_x86_avx512skx);
+}
+static void f16_f32acc_igemm_1x32__avx512skx_broadcast(benchmark::State& state) {
+  f16_igemm(state, xnn_f16_f32acc_igemm_minmax_ukernel_1x32__avx512skx_broadcast, 1,
+            32, 1, 1, xnn_init_f16_minmax_scalar_params,
+            xnn_arch_x86_avx512skx);
+}
+static void f16_f32acc_igemm_4x32__avx512skx_broadcast(benchmark::State& state) {
+  f16_igemm(state, xnn_f16_f32acc_igemm_minmax_ukernel_4x32__avx512skx_broadcast, 4,
+            32, 1, 1, xnn_init_f16_minmax_scalar_params,
+            xnn_arch_x86_avx512skx);
+}
+static void f16_f32acc_igemm_5x32__avx512skx_broadcast(benchmark::State& state) {
+  f16_igemm(state, xnn_f16_f32acc_igemm_minmax_ukernel_5x32__avx512skx_broadcast, 5,
+            32, 1, 1, xnn_init_f16_minmax_scalar_params,
+            xnn_arch_x86_avx512skx);
+}
+static void f16_f32acc_igemm_6x32__avx512skx_broadcast(benchmark::State& state) {
+  f16_igemm(state, xnn_f16_f32acc_igemm_minmax_ukernel_6x32__avx512skx_broadcast, 6,
+            32, 1, 1, xnn_init_f16_minmax_scalar_params,
+            xnn_arch_x86_avx512skx);
+}
+static void f16_f32acc_igemm_7x32__avx512skx_broadcast(benchmark::State& state) {
+  f16_igemm(state, xnn_f16_f32acc_igemm_minmax_ukernel_7x32__avx512skx_broadcast, 7,
+            32, 1, 1, xnn_init_f16_minmax_scalar_params,
+            xnn_arch_x86_avx512skx);
+}
+static void f16_f32acc_igemm_8x32__avx512skx_broadcast(benchmark::State& state) {
+  f16_igemm(state, xnn_f16_f32acc_igemm_minmax_ukernel_8x32__avx512skx_broadcast, 8,
+            32, 1, 1, xnn_init_f16_minmax_scalar_params,
+            xnn_arch_x86_avx512skx);
+}
+
+BENCHMARK_CONV(f16_f32acc_igemm_1x16__avx512skx_broadcast)
+BENCHMARK_CONV(f16_f32acc_igemm_4x16__avx512skx_broadcast)
+BENCHMARK_CONV(f16_f32acc_igemm_5x16__avx512skx_broadcast)
+BENCHMARK_CONV(f16_f32acc_igemm_6x16__avx512skx_broadcast)
+BENCHMARK_CONV(f16_f32acc_igemm_7x16__avx512skx_broadcast)
+BENCHMARK_CONV(f16_f32acc_igemm_8x16__avx512skx_broadcast)
+BENCHMARK_CONV(f16_f32acc_igemm_1x32__avx512skx_broadcast)
+BENCHMARK_CONV(f16_f32acc_igemm_4x32__avx512skx_broadcast)
+BENCHMARK_CONV(f16_f32acc_igemm_5x32__avx512skx_broadcast)
+BENCHMARK_CONV(f16_f32acc_igemm_6x32__avx512skx_broadcast)
+BENCHMARK_CONV(f16_f32acc_igemm_7x32__avx512skx_broadcast)
+BENCHMARK_CONV(f16_f32acc_igemm_8x32__avx512skx_broadcast)
+#endif  // XNN_ENABLE_AVX512SKX && (XNN_ARCH_X86 || XNN_ARCH_X86_64)
 #endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
 
 #ifndef XNNPACK_BENCHMARK_NO_MAIN

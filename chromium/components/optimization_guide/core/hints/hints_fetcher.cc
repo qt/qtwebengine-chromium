@@ -19,7 +19,6 @@
 #include "components/optimization_guide/core/hints/hints_processing_util.h"
 #include "components/optimization_guide/core/hints/store_update_data.h"
 #include "components/optimization_guide/core/optimization_guide_common.mojom.h"
-#include "components/optimization_guide/core/optimization_guide_constants.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
 #include "components/optimization_guide/core/optimization_guide_logger.h"
 #include "components/optimization_guide/core/optimization_guide_prefs.h"
@@ -40,6 +39,9 @@
 #include "services/network/public/mojom/url_response_head.mojom.h"
 
 namespace optimization_guide {
+
+const char kOptimizationGuideLanguageOverrideHeaderKey[] =
+    "x-optimization-guide-language-override";
 
 namespace {
 
@@ -76,6 +78,8 @@ std::string_view GetStringNameForRequestContext(
       return "ShopCard";
     case proto::RequestContext::CONTEXT_GLIC_ZERO_STATE_SUGGESTIONS:
       return "GlicZeroStateSuggestions";
+    case proto::RequestContext::CONTEXT_FILTER_EXECUTION:
+      return "FilterExecution";
   }
   NOTREACHED();
 }

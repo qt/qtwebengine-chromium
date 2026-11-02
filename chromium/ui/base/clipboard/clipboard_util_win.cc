@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "ui/base/clipboard/clipboard_util_win.h"
 
 #include <shellapi.h>
@@ -20,12 +15,12 @@
 #include <string_view>
 #include <utility>
 
+#include "base/compiler_specific.h"
 #include "base/containers/to_vector.h"
 #include "base/feature_list.h"
 #include "base/files/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
-#include "base/metrics/histogram_functions.h"
 #include "base/numerics/checked_math.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
@@ -50,18 +45,49 @@ namespace {
 constexpr STGMEDIUM kNullStorageMedium = {.tymed = TYMED_NULL,
                                           .pUnkForRelease = nullptr};
 
+// Returns the locked HGLOBAL contents as UTF-16, bounded by size() and
+// truncated at the first embedded NUL. Untrusted external sources may omit a
+// NUL terminator, so size() is authoritative; reading via data() alone would
+// scan past the allocation.
+std::u16string HGlobalAsWideString(base::win::ScopedHGlobal<wchar_t*>& data) {
+  if (!data.data()) {
+    return std::u16string();
+  }
+  std::u16string out = base::WideToUTF16(
+      std::wstring_view(data.data(), data.size() / sizeof(wchar_t)));
+  if (size_t pos = out.find(u'\0'); pos != std::u16string::npos) {
+    out.resize(pos);
+  }
+  return out;
+}
+
+// Returns the locked HGLOBAL contents as UTF-16, decoding the bytes as UTF-8
+// and bounded by size(), truncated at the first embedded NUL. Untrusted
+// external sources may omit a NUL terminator, so size() is authoritative;
+// reading via data() alone would scan past the allocation.
+std::u16string HGlobalAsString(base::win::ScopedHGlobal<char*>& data) {
+  if (!data.data()) {
+    return std::u16string();
+  }
+  std::string out(data.data(), data.size());
+  if (size_t pos = out.find('\0'); pos != std::string::npos) {
+    out.resize(pos);
+  }
+  return base::UTF8ToUTF16(out);
+}
+
 // Result type for virtual file extraction: pairs of (temp_file_path,
 // display_name).
 using VirtualFileResults =
     std::vector<std::pair<base::FilePath, base::FilePath>>;
 
-// These values are persisted to logs. Entries should not be renumbered and
-// numeric values should never be reused.
-enum class AsyncVirtualFileExtractionError {
-  kCoGetInterfaceAndReleaseStreamFailed = 0,
-  kCoMarshalInterThreadInterfaceInStreamFailed = 1,
-  kSourceStreamSOKWithZeroBytesRead = 2,
-  kMaxValue = kSourceStreamSOKWithZeroBytesRead,
+// A surviving (non-directory) virtual file: its unique display name plus the
+// original FILEGROUPDESCRIPTOR index, used as the CFSTR_FILECONTENTS lindex.
+// Skipping directory descriptors makes the filtered position diverge from the
+// descriptor index, so the index must be carried explicitly.
+struct VirtualFileNameWithIndex {
+  base::FilePath display_name;
+  LONG content_index;
 };
 
 bool HasData(IDataObject* data_object, const ClipboardFormatType& format) {
@@ -398,10 +424,6 @@ HGLOBAL CopyFileContentsToHGlobal(IDataObject* data_object, LONG index) {
             }
           }
           if (hr == S_OK && bytes_read == 0) {
-            base::UmaHistogramEnumeration(
-                "Clipboard.AsyncVirtualFileExtractionError",
-                AsyncVirtualFileExtractionError::
-                    kSourceStreamSOKWithZeroBytesRead);
             LOG(WARNING) << "Source stream returned S_OK with zero bytes read.";
           }
         } else {
@@ -437,7 +459,8 @@ HGLOBAL CopyFileContentsToHGlobal(IDataObject* data_object, LONG index) {
     hdata = ::GlobalAlloc(GHND, data_source.size());
     if (hdata) {
       base::win::ScopedHGlobal<char*> data_destination(hdata);
-      memcpy(data_destination.data(), data_source.data(), data_source.size());
+      UNSAFE_TODO(memcpy(data_destination.data(), data_source.data(),
+                         data_source.size()));
     }
   }
 
@@ -451,7 +474,7 @@ HGLOBAL CopyFileContentsToHGlobal(IDataObject* data_object, LONG index) {
 // on a worker thread.
 VirtualFileResults ExtractVirtualFiles(
     Microsoft::WRL::ComPtr<IStream> marshaled_data_object_stream,
-    const std::vector<base::FilePath>& display_names) {
+    const std::vector<VirtualFileNameWithIndex>& files) {
   base::ScopedBlockingCall scoped_blocking_call(FROM_HERE,
                                                 base::BlockingType::MAY_BLOCK);
 
@@ -464,19 +487,19 @@ VirtualFileResults ExtractVirtualFiles(
   marshaled_data_object_stream.Detach();
 
   if (FAILED(hr) || !data_object) {
-    base::UmaHistogramEnumeration(
-        "Clipboard.AsyncVirtualFileExtractionError",
-        AsyncVirtualFileExtractionError::kCoGetInterfaceAndReleaseStreamFailed);
     LOG(WARNING) << "CoGetInterfaceAndReleaseStream failed: "
                  << (FAILED(hr) ? hr : E_UNEXPECTED);
     return {};
   }
 
+  std::vector<base::FilePath> display_names;
+  display_names.reserve(files.size());
   std::vector<HGLOBAL> memory_backed_contents;
-  memory_backed_contents.reserve(display_names.size());
-  for (size_t i = 0; i < display_names.size(); i++) {
+  memory_backed_contents.reserve(files.size());
+  for (const auto& file : files) {
+    display_names.push_back(file.display_name);
     memory_backed_contents.push_back(
-        CopyFileContentsToHGlobal(data_object.Get(), static_cast<LONG>(i)));
+        CopyFileContentsToHGlobal(data_object.Get(), file.content_index));
   }
 
   return WriteAllFileContentsToTempFiles(display_names, memory_backed_contents);
@@ -513,7 +536,7 @@ struct FileGroupDescriptorData<FILEGROUPDESCRIPTORA> {
 // Use template parameter of FILEGROUPDESCRIPTORW for retrieving Unicode data
 // and FILEGROUPDESCRIPTORA for ascii.
 template <typename FileGroupDescriptorType>
-std::optional<std::vector<base::FilePath>> GetVirtualFilenames(
+std::optional<std::vector<VirtualFileNameWithIndex>> GetVirtualFilenames(
     IDataObject* data_object) {
   STGMEDIUM medium;
 
@@ -522,7 +545,10 @@ std::optional<std::vector<base::FilePath>> GetVirtualFilenames(
     return std::nullopt;
   }
 
-  std::vector<base::FilePath> filenames;
+  std::vector<VirtualFileNameWithIndex> filenames;
+  // Display names already added, used only for uniquification (the
+  // case-insensitive de-dup must see the prior names, not the indices).
+  std::vector<base::FilePath> unique_names;
 
   {
     base::win::ScopedHGlobal<FileGroupDescriptorType*> descriptor(
@@ -556,22 +582,38 @@ std::optional<std::vector<base::FilePath>> GetVirtualFilenames(
 
     for (size_t i = 0; i < num_files; i++) {
       // Folder entries not currently supported--skip this item.
-      if ((descriptor->fgd[i].dwFlags & FD_ATTRIBUTES) &&
-          (descriptor->fgd[i].dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+      if ((UNSAFE_TODO(descriptor->fgd[i]).dwFlags & FD_ATTRIBUTES) &&
+          (UNSAFE_TODO(descriptor->fgd[i]).dwFileAttributes &
+           FILE_ATTRIBUTE_DIRECTORY)) {
         DLOG(WARNING) << "GetVirtualFilenames: display name '"
-                      << ConvertString(descriptor->fgd[i].cFileName)
+                      << ConvertString(
+                             UNSAFE_TODO(descriptor->fgd[i]).cFileName)
                       << "' refers to a directory (not supported).";
         continue;
       }
       base::FilePath display_name = GetUniqueVirtualFilename(
-          ConvertString(descriptor->fgd[i].cFileName), filenames, &uniquifier);
+          ConvertString(UNSAFE_TODO(descriptor->fgd[i]).cFileName),
+          unique_names, &uniquifier);
 
-      filenames.push_back(display_name);
+      unique_names.push_back(display_name);
+      filenames.push_back({display_name, static_cast<LONG>(i)});
     }
   }
 
   ReleaseStgMedium(&medium);
   return filenames;
+}
+
+// Tries the Unicode (W) descriptor first, then the ASCII (A) descriptor,
+// preserving each surviving entry's original descriptor index.
+std::optional<std::vector<VirtualFileNameWithIndex>>
+GetVirtualFilenamesWithIndices(IDataObject* data_object) {
+  std::optional<std::vector<VirtualFileNameWithIndex>> filenames =
+      GetVirtualFilenames<FILEGROUPDESCRIPTORW>(data_object);
+  if (filenames) {
+    return filenames;
+  }
+  return GetVirtualFilenames<FILEGROUPDESCRIPTORA>(data_object);
 }
 
 template <typename FileGroupDescriptorType>
@@ -703,7 +745,7 @@ bool GetUrlInfos(IDataObject* data_object,
   if (GetData(data_object, ClipboardFormatType::BookmarkListType(), &store)) {
     {
       base::win::ScopedHGlobal<wchar_t*> data(store.hGlobal);
-      ParseBookmarkListData(base::WideToUTF16(data.data()), url_infos);
+      ParseBookmarkListData(HGlobalAsWideString(data), url_infos);
     }
     ReleaseStgMedium(&store);
     return !url_infos.empty();
@@ -716,7 +758,7 @@ bool GetUrlInfos(IDataObject* data_object,
       GetData(data_object, ClipboardFormatType::UrlType(), &store)) {
     {
       base::win::ScopedHGlobal<wchar_t*> data(store.hGlobal);
-      SplitUrlAndTitle(base::WideToUTF16(data.data()), &url, &title);
+      SplitUrlAndTitle(HGlobalAsWideString(data), &url, &title);
       url_infos.emplace_back(url, title);
     }
     ReleaseStgMedium(&store);
@@ -727,7 +769,7 @@ bool GetUrlInfos(IDataObject* data_object,
   if (GetData(data_object, ClipboardFormatType::UrlAType(), &store)) {
     {
       base::win::ScopedHGlobal<char*> data(store.hGlobal);
-      SplitUrlAndTitle(base::UTF8ToUTF16(data.data()), &url, &title);
+      SplitUrlAndTitle(HGlobalAsString(data), &url, &title);
       url_infos.emplace_back(url, title);
     }
     ReleaseStgMedium(&store);
@@ -793,7 +835,9 @@ bool GetFilenames(IDataObject* data_object,
       // filename using Unicode
       base::win::ScopedHGlobal<wchar_t*> data(medium.hGlobal);
       if (data.data() && data.data()[0]) {
-        filenames->push_back(data.data());
+        std::wstring filename(data.data(), data.size() / sizeof(wchar_t));
+        filename.resize(std::min(filename.size(), filename.find(L'\0')));
+        filenames->push_back(std::move(filename));
       }
     }
     ReleaseStgMedium(&medium);
@@ -805,7 +849,9 @@ bool GetFilenames(IDataObject* data_object,
       // filename using ASCII
       base::win::ScopedHGlobal<char*> data(medium.hGlobal);
       if (data.data() && data.data()[0]) {
-        filenames->push_back(base::SysNativeMBToWide(data.data()));
+        std::string mb(data.data(), data.size());
+        mb.resize(std::min(mb.size(), mb.find('\0')));
+        filenames->push_back(base::SysNativeMBToWide(mb));
       }
     }
     ReleaseStgMedium(&medium);
@@ -846,12 +892,13 @@ STGMEDIUM CreateStorageForFileNames(const std::vector<FileInfo>& filenames) {
   drop_files->pFiles = sizeof(DROPFILES);
   drop_files->fWide = TRUE;
 
-  wchar_t* data = reinterpret_cast<wchar_t*>(
-      reinterpret_cast<BYTE*>(drop_files) + kDropFilesHeaderSizeInBytes);
+  wchar_t* data = reinterpret_cast<wchar_t*>(UNSAFE_TODO(
+      reinterpret_cast<BYTE*>(drop_files) + kDropFilesHeaderSizeInBytes));
 
   size_t next_filename_offset = 0;
   for (const auto& filename : filenames) {
-    wcscpy(data + next_filename_offset, filename.path.value().c_str());
+    UNSAFE_TODO(
+        wcscpy(data + next_filename_offset, filename.path.value().c_str()));
     // Skip the terminating null character of the filename.
     next_filename_offset += filename.path.value().length() + 1;
   }
@@ -870,16 +917,18 @@ std::optional<std::vector<base::FilePath>> GetVirtualFilenames(
   // Nothing prevents the drag source app from using the CFSTR_FILEDESCRIPTORA
   // ANSI format (e.g., it could be that it doesn't support Unicode). So need to
   // check for both the ANSI and Unicode file group descriptors.
-
-  // Unicode.
-  std::optional<std::vector<base::FilePath>> filenames =
-      ui::GetVirtualFilenames<FILEGROUPDESCRIPTORW>(data_object);
-  if (filenames) {
-    return filenames;
+  std::optional<std::vector<VirtualFileNameWithIndex>> filenames_with_indices =
+      GetVirtualFilenamesWithIndices(data_object);
+  if (!filenames_with_indices) {
+    return std::nullopt;
   }
 
-  // ASCII.
-  return ui::GetVirtualFilenames<FILEGROUPDESCRIPTORA>(data_object);
+  std::vector<base::FilePath> filenames;
+  filenames.reserve(filenames_with_indices->size());
+  for (const auto& entry : *filenames_with_indices) {
+    filenames.push_back(entry.display_name);
+  }
+  return filenames;
 }
 
 // Checks if the data object supports async operations via
@@ -912,10 +961,6 @@ Microsoft::WRL::ComPtr<IStream> MarshalDataObjectToStream(
   HRESULT hr = ::CoMarshalInterThreadInterfaceInStream(
       IID_IDataObject, data_object, &marshaled_stream);
   if (FAILED(hr) || !marshaled_stream) {
-    base::UmaHistogramEnumeration(
-        "Clipboard.AsyncVirtualFileExtractionError",
-        AsyncVirtualFileExtractionError::
-            kCoMarshalInterThreadInterfaceInStreamFailed);
     LOG(WARNING) << "CoMarshalInterThreadInterfaceInStream failed: " << hr;
     return nullptr;
   }
@@ -926,11 +971,11 @@ Microsoft::WRL::ComPtr<IStream> MarshalDataObjectToStream(
 void PostVirtualFileExtractionTask(
     Microsoft::WRL::ComPtr<IStream> marshaled_stream,
     Microsoft::WRL::ComPtr<IDataObjectAsyncCapability> async_capability,
-    const std::vector<base::FilePath>& display_names,
+    const std::vector<VirtualFileNameWithIndex>& files,
     base::OnceCallback<void(const VirtualFileResults&)> callback) {
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
-      base::BindOnce(&ExtractVirtualFiles, marshaled_stream, display_names),
+      base::BindOnce(&ExtractVirtualFiles, marshaled_stream, files),
       base::BindOnce(
           [](Microsoft::WRL::ComPtr<IDataObjectAsyncCapability> async_cap,
              base::OnceCallback<void(const VirtualFileResults&)> cb,
@@ -948,10 +993,18 @@ void PostVirtualFileExtractionTask(
 void GetVirtualFilesAsTempFiles(
     IDataObject* data_object,
     base::OnceCallback<void(const VirtualFileResults&)> callback) {
-  // Retrieve the display names of the virtual files.
-  std::optional<std::vector<base::FilePath>> display_names =
-      GetVirtualFilenames(data_object);
-  if (!display_names) {
+  // Favor real files on the file system over virtual files; bail out if this
+  // data object should not surface virtual files.
+  if (!HasVirtualFilenames(data_object)) {
+    std::move(callback).Run({});
+    return;
+  }
+
+  // Retrieve the display names of the virtual files along with their original
+  // descriptor indices.
+  std::optional<std::vector<VirtualFileNameWithIndex>> files =
+      GetVirtualFilenamesWithIndices(data_object);
+  if (!files) {
     std::move(callback).Run({});
     return;
   }
@@ -962,8 +1015,8 @@ void GetVirtualFilesAsTempFiles(
 
     if (auto marshaled_stream = MarshalDataObjectToStream(data_object)) {
       PostVirtualFileExtractionTask(std::move(marshaled_stream),
-                                    std::move(async_capability),
-                                    display_names.value(), std::move(callback));
+                                    std::move(async_capability), files.value(),
+                                    std::move(callback));
       return;
     }
 
@@ -971,17 +1024,23 @@ void GetVirtualFilesAsTempFiles(
     async_capability->EndOperation(E_FAIL, nullptr, DROPEFFECT_NONE);
   }
 
-  // Fallback: async not supported or marshal failed.
-  // Copy file contents to global memory on the UI thread.
+  // Fallback: async not supported or marshal failed. Copy file contents to
+  // global memory on the UI thread, using each entry's original descriptor
+  // index as the CFSTR_FILECONTENTS lindex.
+  std::vector<base::FilePath> display_names;
+  display_names.reserve(files->size());
   std::vector<HGLOBAL> memory_backed_contents;
-  for (size_t i = 0; i < display_names.value().size(); i++) {
-    memory_backed_contents.push_back(CopyFileContentsToHGlobal(data_object, i));
+  memory_backed_contents.reserve(files->size());
+  for (const auto& file : *files) {
+    display_names.push_back(file.display_name);
+    memory_backed_contents.push_back(
+        CopyFileContentsToHGlobal(data_object, file.content_index));
   }
 
   // Write the temp files on a worker thread.
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
-      base::BindOnce(&WriteAllFileContentsToTempFiles, display_names.value(),
+      base::BindOnce(&WriteAllFileContentsToTempFiles, display_names,
                      memory_backed_contents),
       std::move(callback));  // callback on the UI thread
 }
@@ -996,7 +1055,7 @@ bool GetPlainText(IDataObject* data_object, std::u16string* plain_text) {
     {
       // Unicode text
       base::win::ScopedHGlobal<wchar_t*> data(store.hGlobal);
-      plain_text->assign(base::as_u16cstr(data.data()));
+      plain_text->assign(HGlobalAsWideString(data));
     }
     ReleaseStgMedium(&store);
     return true;
@@ -1006,7 +1065,7 @@ bool GetPlainText(IDataObject* data_object, std::u16string* plain_text) {
     {
       // ASCII text
       base::win::ScopedHGlobal<char*> data(store.hGlobal);
-      plain_text->assign(base::UTF8ToUTF16(data.data()));
+      plain_text->assign(HGlobalAsString(data));
     }
     ReleaseStgMedium(&store);
     return true;
@@ -1052,7 +1111,7 @@ bool GetHtml(IDataObject* data_object,
   {
     // text/html
     base::win::ScopedHGlobal<wchar_t*> data(store.hGlobal);
-    html->assign(base::as_u16cstr(data.data()));
+    html->assign(HGlobalAsWideString(data));
   }
   ReleaseStgMedium(&store);
   return true;
@@ -1081,7 +1140,7 @@ bool ReadStreamToVector(IStream* stream, std::vector<uint8_t>* out) {
       out->clear();
       return false;
     }
-    ptr += bytes_read;
+    UNSAFE_TODO(ptr += bytes_read);
     bytes_remaining -= bytes_read;
   }
   return true;
@@ -1364,15 +1423,15 @@ void CFHtmlExtractMetadata(std::string_view cf_html,
     static constexpr char kStartFragmentStr[] = "StartFragment:";
     size_t start_fragment_start = cf_html.find(kStartFragmentStr);
     if (start_fragment_start != std::string::npos) {
-      *fragment_start = static_cast<size_t>(atoi(
-          cf_html.data() + start_fragment_start + strlen(kStartFragmentStr)));
+      *fragment_start = static_cast<size_t>(atoi(UNSAFE_TODO(
+          cf_html.data() + start_fragment_start + strlen(kStartFragmentStr))));
     }
 
     static constexpr char kEndFragmentStr[] = "EndFragment:";
     size_t end_fragment_start = cf_html.find(kEndFragmentStr);
     if (end_fragment_start != std::string::npos) {
-      *fragment_end = static_cast<size_t>(
-          atoi(cf_html.data() + end_fragment_start + strlen(kEndFragmentStr)));
+      *fragment_end = static_cast<size_t>(atoi(UNSAFE_TODO(
+          cf_html.data() + end_fragment_start + strlen(kEndFragmentStr))));
     }
   } else {
     *fragment_start = cf_html.find('>', tag_start) + 1;

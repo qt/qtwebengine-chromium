@@ -23,7 +23,6 @@
 #include <string>
 #include <vector>
 
-#include "examples/file_reader.h"
 #include "examples/file_reader_factory.h"
 #include "examples/file_reader_interface.h"
 #include "gtest/gtest.h"

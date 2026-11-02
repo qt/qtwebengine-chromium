@@ -8,16 +8,22 @@
 #include <vector>
 
 #include "components/multistep_filter/core/annotation_index/proto/annotation_index.pb.h"
+#include "components/optimization_guide/core/hints/optimization_guide_decision.h"
+#include "components/optimization_guide/core/hints/optimization_metadata.h"
+#include "components/optimization_guide/proto/hints.pb.h"
 #include "url/gurl.h"
 
 namespace multistep_filter {
 
+using ::optimization_guide::OptimizationGuideDecision;
+using ::optimization_guide::OptimizationGuideDecisionWithMetadata;
+using ::optimization_guide::OptimizationMetadata;
+using ::optimization_guide::proto::Any;
+
 ExtractTaskAttributesResponse CreateExtractTaskAttributesResponse(
-    const std::string& domain,
     const std::string& task_type,
     const std::vector<std::pair<std::string, std::string>>& attributes) {
   ExtractTaskAttributesResponse response;
-  response.set_domain(domain);
   response.set_task_type(task_type);
   for (const auto& attribute : attributes) {
     auto* attr = response.add_task_attributes();
@@ -37,6 +43,7 @@ GetSupportedTasksResponse CreateSupportedTasksResponse(
   return response;
 }
 
+// TODO(crbug.com/530959140): Add a parameter for the candidate id.
 GetTaskExecutionStrategiesResponse CreateTaskExecutionStrategiesResponse(
     const GURL& suggestion_url,
     const std::vector<std::pair<std::string, std::string>>& attributes) {
@@ -54,7 +61,27 @@ GetTaskExecutionStrategiesResponse CreateTaskExecutionStrategiesResponse(
   auto* execution = new TaskExecution();
   execution->set_allocated_url_navigation(url_nav);
   strategy->set_allocated_execution(execution);
+
+  auto* suggestion_msg = strategy->mutable_suggestion_message();
+  suggestion_msg->set_short_text("Template");
+  suggestion_msg->set_detailed_text("Template");
+
   return response;
+}
+
+OptimizationMetadata CreateOptimizationMetadata(const Any& any_metadata) {
+  OptimizationMetadata metadata;
+  metadata.set_any_metadata(any_metadata);
+  return metadata;
+}
+
+optimization_guide::OptimizationGuideDecisionWithMetadata
+CreateDecisionWithMetadata(const OptimizationGuideDecision& decision,
+                           const OptimizationMetadata& metadata) {
+  OptimizationGuideDecisionWithMetadata decision_with_metadata;
+  decision_with_metadata.decision = decision;
+  decision_with_metadata.metadata = metadata;
+  return decision_with_metadata;
 }
 
 }  // namespace multistep_filter

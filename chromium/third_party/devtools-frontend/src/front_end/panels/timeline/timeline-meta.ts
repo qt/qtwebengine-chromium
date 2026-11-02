@@ -5,7 +5,9 @@
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as LiveMetrics from '../../models/live-metrics/live-metrics.js';
 import * as UI from '../../ui/legacy/legacy.js';
+import * as SettingsUI from '../../ui/settings/settings.js';
 
 import type * as Timeline from './timeline.js';
 
@@ -69,11 +71,67 @@ const UIStrings = {
   /**
    * @description Title of a setting under the Performance category in Settings
    */
+  enableSoftNavigations: 'Enable soft navigation performance monitoring',
+  /**
+   * @description Title of a setting under the Performance category in Settings
+   */
   timelineDebugMode: 'Timeline debug mode (trace event details, etc.)',
   /**
    * @description Title of a setting under the Performance category in Settings
    */
   timelineInvalidationTracking: 'Invalidation tracking',
+  /**
+   * @description Title of a setting in Performance panel.
+   */
+  disableJavascriptSamples: 'Disable JavaScript samples',
+  /**
+   * @description Title of a setting in Performance panel.
+   */
+  enableAdvancedPaint: 'Enable advanced paint instrumentation (slow)',
+  /**
+   * @description Title of a setting in Performance panel.
+   */
+  enableSelectorStats: 'Enable CSS selector stats (slow)',
+  /**
+   * @description Title of a setting in Performance panel.
+   */
+  screenshotCapture: 'Screenshot capture',
+  /**
+   * @description Title of a setting in Performance panel.
+   */
+  screenshots: 'Screenshots',
+  /**
+   * @description Title of a setting in Performance panel.
+   */
+  memory: 'Memory',
+  /**
+   * @description Title of a setting in Performance panel.
+   */
+  dimThirdParties: 'Dim 3rd parties',
+  /**
+   * @description Title of a setting in Performance panel.
+   */
+  showCustomtracks: 'Show custom tracks',
+  /**
+   * @description Title of a setting in Performance panel counters graph.
+   */
+  jsHeap: 'JS heap',
+  /**
+   * @description Title of a setting in Performance panel counters graph.
+   */
+  documents: 'Documents',
+  /**
+   * @description Title of a setting in Performance panel counters graph.
+   */
+  nodes: 'Nodes',
+  /**
+   * @description Title of a setting in Performance panel counters graph.
+   */
+  listeners: 'Listeners',
+  /**
+   * @description Title of a setting in Performance panel counters graph.
+   */
+  gpuMemory: 'GPU memory',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/timeline/timeline-meta.ts', UIStrings);
 const i18nLazyString = i18n.i18n.getLazilyComputedLocalizedString.bind(undefined, str_);
@@ -101,8 +159,9 @@ UI.ViewManager.registerViewExtension({
   order: 50,
   async loadView(universe) {
     const Timeline = await loadTimelineModule();
-    const resourceLoader = universe.context.get(SDK.PageResourceLoader.PageResourceLoader);
-    return Timeline.TimelinePanel.TimelinePanel.instance({forceNew: true, resourceLoader});
+    const {pageResourceLoader: resourceLoader, targetManager, isolateManager} = universe;
+    return Timeline.TimelinePanel.TimelinePanel.instance(
+        {forceNew: true, resourceLoader, targetManager, isolateManager});
   },
 });
 
@@ -346,6 +405,11 @@ Common.Settings.registerSettingExtension({
   defaultValue: false,
 });
 
+SettingsUI.SettingUIRegistration.register(LiveMetrics.timelineEnableSoftNavigationsSettingDescriptor, {
+  category: Common.Settings.SettingCategory.PERFORMANCE,
+  title: i18nLazyString(UIStrings.enableSoftNavigations),
+});
+
 // IMPORTANT: if you are updating this, you should also update the setting in
 // js_timeline-meta.
 Common.Settings.registerSettingExtension({
@@ -454,4 +518,134 @@ Common.Revealer.registerRevealer({
     const Timeline = await loadTimelineModule();
     return new Timeline.TimelinePanel.BottomUpProfileRevealer();
   },
+});
+
+Common.Revealer.registerRevealer({
+  contextTypes() {
+    return [
+      SDK.CPUProfilerModel.ProfileFinishedData,
+    ];
+  },
+  destination: Common.Revealer.RevealerDestination.TIMELINE_PANEL,
+  async loadRevealer() {
+    const Timeline = await loadTimelineModule();
+    return new Timeline.TimelinePanel.ProfileFinishedRevealer();
+  },
+});
+
+Common.Settings.registerSettingExtension({
+  category: Common.Settings.SettingCategory.NONE,
+  storageType: Common.Settings.SettingStorageType.SESSION,
+  title: i18nLazyString(UIStrings.disableJavascriptSamples),
+  settingName: 'timeline-disable-js-sampling',
+  settingType: Common.Settings.SettingType.BOOLEAN,
+  defaultValue: false,
+});
+
+Common.Settings.registerSettingExtension({
+  category: Common.Settings.SettingCategory.NONE,
+  storageType: Common.Settings.SettingStorageType.SESSION,
+  title: i18nLazyString(UIStrings.enableAdvancedPaint),
+  settingName: 'timeline-capture-layers-and-pictures',
+  settingType: Common.Settings.SettingType.BOOLEAN,
+  defaultValue: false,
+});
+
+Common.Settings.registerSettingExtension({
+  category: Common.Settings.SettingCategory.NONE,
+  storageType: Common.Settings.SettingStorageType.SESSION,
+  title: i18nLazyString(UIStrings.enableSelectorStats),
+  settingName: 'timeline-capture-selector-stats',
+  settingType: Common.Settings.SettingType.BOOLEAN,
+  defaultValue: false,
+});
+
+Common.Settings.registerSettingExtension({
+  category: Common.Settings.SettingCategory.NONE,
+  storageType: Common.Settings.SettingStorageType.SESSION,
+  title: i18nLazyString(UIStrings.screenshotCapture),
+  settingName: 'timeline-screenshot-capture-mode',
+  settingType: Common.Settings.SettingType.ENUM,
+  defaultValue: 'auto',
+});
+
+Common.Settings.registerSettingExtension({
+  category: Common.Settings.SettingCategory.NONE,
+  storageType: Common.Settings.SettingStorageType.GLOBAL,
+  title: i18nLazyString(UIStrings.screenshots),
+  settingName: 'timeline-show-screenshots',
+  settingType: Common.Settings.SettingType.BOOLEAN,
+  defaultValue: true,
+});
+
+Common.Settings.registerSettingExtension({
+  category: Common.Settings.SettingCategory.NONE,
+  storageType: Common.Settings.SettingStorageType.SESSION,
+  title: i18nLazyString(UIStrings.memory),
+  settingName: 'timeline-show-memory',
+  settingType: Common.Settings.SettingType.BOOLEAN,
+  defaultValue: false,
+});
+
+Common.Settings.registerSettingExtension({
+  category: Common.Settings.SettingCategory.NONE,
+  storageType: Common.Settings.SettingStorageType.SESSION,
+  title: i18nLazyString(UIStrings.dimThirdParties),
+  settingName: 'timeline-dim-third-parties',
+  settingType: Common.Settings.SettingType.BOOLEAN,
+  defaultValue: false,
+});
+
+Common.Settings.registerSettingExtension({
+  category: Common.Settings.SettingCategory.NONE,
+  storageType: Common.Settings.SettingStorageType.GLOBAL,
+  title: i18nLazyString(UIStrings.showCustomtracks),
+  settingName: 'timeline-show-extension-data',
+  settingType: Common.Settings.SettingType.BOOLEAN,
+  defaultValue: true,
+});
+
+Common.Settings.registerSettingExtension({
+  category: Common.Settings.SettingCategory.NONE,
+  storageType: Common.Settings.SettingStorageType.GLOBAL,
+  title: i18nLazyString(UIStrings.jsHeap),
+  settingName: 'timeline-counters-graph-js-heap-size-used',
+  settingType: Common.Settings.SettingType.BOOLEAN,
+  defaultValue: true,
+});
+
+Common.Settings.registerSettingExtension({
+  category: Common.Settings.SettingCategory.NONE,
+  storageType: Common.Settings.SettingStorageType.GLOBAL,
+  title: i18nLazyString(UIStrings.documents),
+  settingName: 'timeline-counters-graph-documents',
+  settingType: Common.Settings.SettingType.BOOLEAN,
+  defaultValue: true,
+});
+
+Common.Settings.registerSettingExtension({
+  category: Common.Settings.SettingCategory.NONE,
+  storageType: Common.Settings.SettingStorageType.GLOBAL,
+  title: i18nLazyString(UIStrings.nodes),
+  settingName: 'timeline-counters-graph-nodes',
+  settingType: Common.Settings.SettingType.BOOLEAN,
+  defaultValue: true,
+});
+
+Common.Settings.registerSettingExtension({
+  category: Common.Settings.SettingCategory.NONE,
+  storageType: Common.Settings.SettingStorageType.GLOBAL,
+  title: i18nLazyString(UIStrings.listeners),
+  settingName: 'timeline-counters-graph-js-event-listeners',
+  settingType: Common.Settings.SettingType.BOOLEAN,
+  defaultValue: true,
+});
+
+Common.Settings.registerSettingExtension({
+  category: Common.Settings.SettingCategory.NONE,
+  storageType: Common.Settings.SettingStorageType.GLOBAL,
+  title: i18nLazyString(UIStrings.gpuMemory),
+  settingName: 'timeline-counters-graph-gpu-memory-used-kb',
+  settingType: Common.Settings.SettingType.BOOLEAN,
+  defaultValue: true,
 });

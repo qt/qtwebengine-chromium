@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 import type * as SDK from '../../../core/sdk/sdk.js';
-import type * as TextUtils from '../../../models/text_utils/text_utils.js';
+import type * as TextUtils from '../../../core/text_utils/text_utils.js';
 
 export const enum UIHeaderSection {
   GENERAL = 'General',

@@ -11,13 +11,13 @@ import type {MarkdownIssueDescription} from './MarkdownIssueDescription.js';
 
 const UIStrings = {
   /**
-   * @description Title for Partitioning BlobURL explainer url link.
+   * @description Title for Partitioning BlobURL explainer URL link.
    */
   partitioningBlobURL: 'Partitioning BlobURL',
   /**
-   * @description Title for Chrome Status Entry url link.
+   * @description Title for Chrome Status entry URL link.
    */
-  chromeStatusEntry: 'Chrome Status Entry'
+  chromeStatusEntry: 'Chrome Status entry',
 } as const;
 
 const str_ = i18n.i18n.registerUIStrings('models/issues_manager/PartitioningBlobURLIssue.ts', UIStrings);

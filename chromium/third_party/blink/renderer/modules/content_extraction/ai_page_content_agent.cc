@@ -6,13 +6,17 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <optional>
 
 #include "base/check.h"
 #include "base/containers/adapters.h"
+#include "base/containers/span.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/notreached.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/trace_id_helper.h"
+#include "mojo/public/cpp/base/big_buffer.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/mojom/content_extraction/ai_page_content.mojom-blink.h"
@@ -44,6 +48,7 @@
 #include "third_party/blink/renderer/core/html/forms/option_list.h"
 #include "third_party/blink/renderer/core/html/forms/text_control_element.h"
 #include "third_party/blink/renderer/core/html/html_anchor_element.h"
+#include "third_party/blink/renderer/core/html/html_dialog_element.h"
 #include "third_party/blink/renderer/core/html/html_head_element.h"
 #include "third_party/blink/renderer/core/html/html_image_element.h"
 #include "third_party/blink/renderer/core/html/html_meta_element.h"
@@ -84,12 +89,15 @@
 #include "third_party/blink/renderer/modules/content_extraction/ai_page_content_debug_utils.h"
 #include "third_party/blink/renderer/platform/geometry/infinite_int_rect.h"
 #include "third_party/blink/renderer/platform/geometry/layout_unit.h"
+#include "third_party/blink/renderer/platform/graphics/image.h"
+#include "third_party/blink/renderer/platform/loader/fetch/resource_response.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/web_test_support.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/widget/frame_widget.h"
+#include "third_party/blink/renderer/platform/wtf/shared_buffer.h"
 #include "third_party/blink/renderer/platform/wtf/text/character_names.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_view.h"
 #include "ui/accessibility/ax_role_properties.h"
@@ -527,8 +535,7 @@ bool IsReachableInOverflowContainer(const LayoutObject& object,
 
   // `overflow:hidden` creates a Blink scroll container, but users cannot scroll
   // it. Only the current overflow clip is reachable.
-  return overflow_container.OverflowClipRect(PhysicalOffset())
-      .Intersects(object_rect);
+  return overflow_container.OverflowClipRect().Intersects(object_rect);
 }
 
 gfx::Rect ComputeDocumentBoundsInViewport(const LayoutView& layout_view) {
@@ -780,6 +787,52 @@ bool IsVisible(const LayoutObject& object) {
   return object.StyleRef().Visibility() == EVisibility::kVisible;
 }
 
+bool HasEmptyGeometry(const mojom::blink::AIPageContentNode* content_node) {
+  if (!content_node || !content_node->content_attributes ||
+      !content_node->content_attributes->geometry) {
+    return false;
+  }
+  return content_node->content_attributes->geometry->outer_bounding_box
+      .IsEmpty();
+}
+
+// Accumulate geometry from a descendant APC node into an ancestor whose own
+// layout box is 0x0. WalkChildren calls this as descendant branches produce
+// geometry. A 0x0 descendant first accumulates geometry from its own branches,
+// then passes the combined geometry upward.
+//
+// A common example is a position:absolute or position:fixed node whose own box
+// is 0x0 but which has visible out-of-flow descendants. The ancestor unions
+// outer and visible boxes from its descendant branches. Explicit fragments are
+// copied when available; otherwise a descendant's visible box becomes one
+// fragment. Repairing the ancestor gives downstream processing usable geometry
+// for that node.
+void MergeNodeGeometryIntoAncestor(
+    const mojom::blink::AIPageContentNode& descendant,
+    mojom::blink::AIPageContentNode& ancestor) {
+  if (!descendant.content_attributes ||
+      !descendant.content_attributes->geometry ||
+      descendant.content_attributes->geometry->outer_bounding_box.IsEmpty()) {
+    return;
+  }
+
+  DCHECK(ancestor.content_attributes);
+  DCHECK(ancestor.content_attributes->geometry);
+  const auto& descendant_geometry = *descendant.content_attributes->geometry;
+  auto& ancestor_geometry = *ancestor.content_attributes->geometry;
+  ancestor_geometry.outer_bounding_box.Union(
+      descendant_geometry.outer_bounding_box);
+  ancestor_geometry.visible_bounding_box.Union(
+      descendant_geometry.visible_bounding_box);
+  if (!descendant_geometry.fragment_visible_bounding_boxes.empty()) {
+    ancestor_geometry.fragment_visible_bounding_boxes.append_range(
+        descendant_geometry.fragment_visible_bounding_boxes);
+  } else if (!descendant_geometry.visible_bounding_box.IsEmpty()) {
+    ancestor_geometry.fragment_visible_bounding_boxes.push_back(
+        descendant_geometry.visible_bounding_box);
+  }
+}
+
 bool AreChildrenBlockedByDisplayLock(const LayoutObject& object) {
   return object.ChildLayoutBlockedByDisplayLock() ||
          object.ChildPrePaintBlockedByDisplayLock();
@@ -898,19 +951,40 @@ void AddClickabilityReasons(
   }
 }
 
-// Returns whether interaction is determined to be disabled.
+// Returns whether the node is in the strong disabled state that requires click
+// rejection.
 bool AddInteractionDisabledReasons(
     const Element& element,
     bool is_aria_disabled,
+    bool is_aria_hidden,
     mojom::blink::AIPageContentNodeInteractionInfo& interaction_info) {
   using Reason = mojom::blink::AIPageContentInteractionDisabledReason;
 
   bool is_disabled = false;
 
   if (is_aria_disabled) {
+    // aria-disabled asks consumers to avoid the node, but it does not prevent
+    // DOM events. Record the advisory reason without setting `is_disabled`.
     interaction_info.interaction_disabled_reasons.push_back(
         Reason::kAriaDisabled);
-    is_disabled = true;
+  }
+
+  if (is_aria_hidden) {
+    // aria-hidden hides the node from assistive technology, but it does not
+    // require click rejection. Record the reason without setting `is_disabled`.
+    interaction_info.interaction_disabled_reasons.push_back(
+        Reason::kAriaHidden);
+  }
+
+  // ARIA treats role=presentation and role=none as the same role. Blink's raw
+  // ARIA role resolver reports both as kNone.
+  if (AXObject::DetermineRawAriaRole(element) ==
+      ax::mojom::blink::Role::kNone) {
+    // A presentational role hides the node's role from assistive technology,
+    // but it does not require click rejection. Record the reason without
+    // setting `is_disabled`.
+    interaction_info.interaction_disabled_reasons.push_back(
+        Reason::kAriaRolePresentational);
   }
 
   if (auto* form_control_element = DynamicTo<HTMLFormControlElement>(&element);
@@ -1075,9 +1149,9 @@ void ProcessTextNode(const LayoutText& layout_text,
   DCHECK(!ShouldRedactSubtree(attributes.redaction_decision));
 
   auto text_style = mojom::blink::AIPageContentTextStyle::New();
-  text_style->text_size = GetTextSize(*layout_text.Style(), document_style);
-  text_style->has_emphasis = HasEmphasis(*layout_text.Style());
-  text_style->color = GetColor(*layout_text.Style());
+  text_style->text_size = GetTextSize(layout_text.StyleRef(), document_style);
+  text_style->has_emphasis = HasEmphasis(layout_text.StyleRef());
+  text_style->color = GetColor(layout_text.StyleRef());
 
   auto text_info = mojom::blink::AIPageContentTextInfo::New();
   text_info->text_content =
@@ -1128,24 +1202,28 @@ scoped_refptr<const SecurityOrigin> GetOriginForUrl(const KURL& url,
   return SecurityOrigin::CreateWithReferenceOrigin(url, reference_origin);
 }
 
+// Resolves the image resource content for the given layout object.
+const ImageResourceContent* GetImageResourceContent(
+    const LayoutObject& layout_object) {
+  if (const auto* layout_image = DynamicTo<LayoutImage>(&layout_object)) {
+    return layout_image->CachedImage();
+  } else if (const auto* layout_svg_image =
+                 DynamicTo<LayoutSVGImage>(&layout_object)) {
+    if (const LayoutImageResource* image_resource =
+            layout_svg_image->ImageResource()) {
+      return image_resource->CachedImage();
+    }
+  }
+  return nullptr;
+}
+
 // Resolves the security origin for the image element associated with the layout
 // image. Prioritizes standard image resources, and falls back to DOM-level
 // attributes.
 scoped_refptr<const SecurityOrigin> GetImageSourceOrigin(
-    const LayoutObject& layout_image) {
+    const LayoutObject& layout_image,
+    const ImageResourceContent* image_resource_content) {
   KURL image_url;
-
-  const ImageResourceContent* image_resource_content = nullptr;
-  if (const auto* layout_image_concrete =
-          DynamicTo<LayoutImage>(&layout_image)) {
-    image_resource_content = layout_image_concrete->CachedImage();
-  } else if (const auto* layout_svg_image =
-                 DynamicTo<LayoutSVGImage>(&layout_image)) {
-    if (const LayoutImageResource* image_resource =
-            layout_svg_image->ImageResource()) {
-      image_resource_content = image_resource->CachedImage();
-    }
-  }
 
   if (image_resource_content) {
     image_url = image_resource_content->Url();
@@ -1158,20 +1236,21 @@ scoped_refptr<const SecurityOrigin> GetImageSourceOrigin(
   return GetOriginForUrl(image_url, layout_image.GetNode());
 }
 
-void ProcessImageNode(const LayoutObject& layout_image,
-                      mojom::blink::AIPageContentAttributes& attributes) {
-  attributes.attribute_type = mojom::blink::AIPageContentAttributeType::kImage;
-  CHECK(IsVisible(layout_image));
-  CHECK(layout_image.IsImage() || layout_image.IsSVGImage());
-
+bool IsImage(const LayoutObject& layout_object) {
   // LayoutImage is a superclass of LayoutMedia, which is a superclass of
   // LayoutVideo and LayoutAudio. We only want to process images here, so
   // we enforce that the object is not a media object.
-  CHECK(!layout_image.IsMedia());
+  return (layout_object.IsImage() || layout_object.IsSVGImage()) &&
+         !layout_object.IsMedia();
+}
 
-  auto image_info = mojom::blink::AIPageContentImageInfo::New();
+mojom::blink::AIPageContentImageInfoPtr GetImageInfo(
+    const LayoutObject& layout_image,
+    const ImageResourceContent* image_resource_content) {
+  CHECK(IsImage(layout_image));
 
   // TODO(b/468126774): Set caption for SVG <images> based on <title> elements.
+  auto image_info = mojom::blink::AIPageContentImageInfo::New();
   if (auto* image_element =
           DynamicTo<HTMLImageElement>(layout_image.GetNode())) {
     // TODO(crbug.com/383127202): A11y stack generates alt text using image
@@ -1180,9 +1259,41 @@ void ProcessImageNode(const LayoutObject& layout_image,
         ReplaceUnpairedSurrogates(image_element->AltText());
   }
 
-  image_info->source_origin = GetImageSourceOrigin(layout_image);
+  image_info->source_origin =
+      GetImageSourceOrigin(layout_image, image_resource_content);
 
-  attributes.image_info = std::move(image_info);
+  KURL image_url = ResolveImageUrl(layout_image);
+  // Skip data: URLs for both performance and security.
+  // 1. Performance: These URLs embed full binary content, which would
+  //    significantly bloat the APC payload.
+  // 2. Security: data: URLs use opaque origins to maintain isolation; exposing
+  //    them here could bypass these protections.
+  if (!image_url.ProtocolIsData()) {
+    image_info->url = image_url;
+  }
+
+  if (image_resource_content) {
+    const blink::Image* image = image_resource_content->GetImage();
+    String mime_type = image ? image->MimeType() : String();
+    if (mime_type.empty()) {
+      mime_type = image_resource_content->GetResponse().MimeType();
+    }
+    if (!mime_type.empty()) {
+      image_info->mime_type = mime_type;
+    }
+  }
+
+  return image_info;
+}
+
+void ProcessImageNode(const LayoutObject& layout_image,
+                      mojom::blink::AIPageContentAttributes& attributes) {
+  attributes.attribute_type = mojom::blink::AIPageContentAttributeType::kImage;
+  CHECK(IsVisible(layout_image));
+  CHECK(IsImage(layout_image));
+
+  attributes.image_info =
+      GetImageInfo(layout_image, GetImageResourceContent(layout_image));
 }
 
 void ProcessSVGRoot(const LayoutSVGRoot& layout_svg,
@@ -1223,6 +1334,7 @@ void ProcessVideoNode(const HTMLVideoElement& video_element,
 
   auto video_data = mojom::blink::AIPageContentVideoData::New();
   KURL video_url = video_element.SourceURL();
+  // TODO(b/382558422): Consider filtering out data URLs.
   video_data->url = video_url;
   video_data->source_origin = GetOriginForUrl(video_url, &video_element);
   attributes.video_data = std::move(video_data);
@@ -1430,6 +1542,49 @@ bool ProcessAriaFormControlNode(
     form_control_data.is_checked = aria_checked;
   }
   return true;
+}
+
+// Returns a modal/modeless dialog attribute type if relevant.
+std::optional<mojom::blink::AIPageContentAttributeType> GetDialogAttributeType(
+    const Element* element) {
+  using AttributeType = mojom::blink::AIPageContentAttributeType;
+
+  // Layout objects without DOM elements cannot be dialogs.
+  if (!element) {
+    return std::nullopt;
+  }
+
+  // Native <dialog> tracks whether showModal() placed it in modal state.
+  if (const auto* dialog = DynamicTo<HTMLDialogElement>(element)) {
+    if (!dialog->IsOpen()) {
+      return std::nullopt;
+    }
+
+    return dialog->IsModal() ? AttributeType::kDialogModal
+                             : AttributeType::kDialogModeless;
+  }
+
+  // Map ARIA dialogs.
+  const ax::mojom::blink::Role aria_role =
+      AXObject::DetermineRawAriaRole(*element);
+  if (!ui::IsDialog(aria_role)) {
+    return std::nullopt;
+  }
+
+  // alertdialog defaults to modal unless aria-modal is explicitly set.
+  bool is_aria_modal = false;
+  const bool has_aria_modal = AXObject::AriaBooleanAttribute(
+      *element, html_names::kAriaModalAttr, &is_aria_modal);
+  if (has_aria_modal) {
+    return is_aria_modal ? AttributeType::kDialogModal
+                         : AttributeType::kDialogModeless;
+  }
+
+  if (aria_role == ax::mojom::blink::Role::kAlertDialog) {
+    return AttributeType::kDialogModal;
+  }
+
+  return AttributeType::kDialogModeless;
 }
 
 void ProcessFormControlNode(const HTMLFormControlElement& form_control_element,
@@ -1681,6 +1836,29 @@ void OffsetNodeGeometry(mojom::blink::AIPageContentNode& node,
   }
 }
 
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+//
+// LINT.IfChange(GetImageBytesStatus)
+enum class GetImageBytesStatus {
+  kSuccess = 0,
+  kNodeNotFound = 1,
+  kTargetFrameNotFound = 2,
+  kAgentFrameNotFound = 3,
+  kCrossTreeQuery = 4,
+  kNotAnImage = 5,
+  kImageError = 6,
+  kNoResourceBuffer = 7,
+  kBigBufferCopyFailed = 8,
+  kMaxValue = kBigBufferCopyFailed,
+};
+// LINT.ThenChange(//tools/metrics/histograms/metadata/optimization/enums.xml:AIPageContentGetImageBytesStatus)
+
+void RecordGetImageBytesStatus(GetImageBytesStatus status) {
+  base::UmaHistogramEnumeration(
+      "OptimizationGuide.AIPageContent.GetImageBytes.Status", status);
+}
+
 }  // namespace
 
 // static
@@ -1800,6 +1978,77 @@ void AIPageContentAgent::GetAIPageContent(
   async_extraction_tasks_.push_back(blink::BindOnce(
       &AIPageContentAgent::GetAIPageContentSync, WrapWeakPersistent(this),
       std::move(options), std::move(callback), start_time));
+}
+
+void AIPageContentAgent::GetImageBytes(int32_t dom_node_id,
+                                       GetImageBytesCallback callback) {
+  const Node* node = DOMNodeIds::NodeForId(dom_node_id);
+  if (!node) {
+    RecordGetImageBytesStatus(GetImageBytesStatus::kNodeNotFound);
+    std::move(callback).Run(/*result=*/nullptr);
+    return;
+  }
+
+  LocalFrame* target_frame = node->GetDocument().GetFrame();
+  if (!target_frame) {
+    RecordGetImageBytesStatus(GetImageBytesStatus::kTargetFrameNotFound);
+    std::move(callback).Run(/*result=*/nullptr);
+    return;
+  }
+
+  // Ensure the target frame containing the requested DOM node belongs to the
+  // same local frame tree as this agent. This prevents cross-page/cross-tree
+  // node queries since `DOMNodeIds` are process-wide unique.
+  LocalFrame* agent_frame = GetSupplementable()->GetFrame();
+  if (!agent_frame) {
+    RecordGetImageBytesStatus(GetImageBytesStatus::kAgentFrameNotFound);
+    std::move(callback).Run(/*result=*/nullptr);
+    return;
+  }
+
+  CHECK(agent_frame->IsLocalRoot());
+  if (&target_frame->LocalFrameRoot() != agent_frame) {
+    RecordGetImageBytesStatus(GetImageBytesStatus::kCrossTreeQuery);
+    std::move(callback).Run(/*result=*/nullptr);
+    return;
+  }
+
+  const LayoutObject* layout_object = node->GetLayoutObject();
+  if (!layout_object || !IsImage(*layout_object)) {
+    RecordGetImageBytesStatus(GetImageBytesStatus::kNotAnImage);
+    std::move(callback).Run(/*result=*/nullptr);
+    return;
+  }
+
+  const ImageResourceContent* image_resource_content =
+      GetImageResourceContent(*layout_object);
+  if (!image_resource_content || image_resource_content->ErrorOccurred()) {
+    RecordGetImageBytesStatus(GetImageBytesStatus::kImageError);
+    std::move(callback).Run(/*result=*/nullptr);
+    return;
+  }
+
+  scoped_refptr<const SharedBuffer> buffer =
+      image_resource_content->ResourceBuffer();
+  if (!buffer) {
+    RecordGetImageBytesStatus(GetImageBytesStatus::kNoResourceBuffer);
+    std::move(callback).Run(/*result=*/nullptr);
+    return;
+  }
+
+  mojo_base::BigBuffer big_buffer(buffer->size());
+  if (!buffer->GetBytes(base::span(big_buffer))) {
+    RecordGetImageBytesStatus(GetImageBytesStatus::kBigBufferCopyFailed);
+    std::move(callback).Run(/*result=*/nullptr);
+    return;
+  }
+
+  auto result = mojom::blink::AIPageContentImageBytesResult::New();
+  result->image_bytes = std::move(big_buffer);
+  result->image_info = GetImageInfo(*layout_object, image_resource_content);
+
+  RecordGetImageBytesStatus(GetImageBytesStatus::kSuccess);
+  std::move(callback).Run(std::move(result));
 }
 
 void AIPageContentAgent::GetAIPageContentSync(
@@ -1981,7 +2230,7 @@ mojom::blink::AIPageContentPtr AIPageContentAgent::ContentBuilder::Build(
   UpdateLifecycle(document);
 
   auto* layout_view = document.GetLayoutView();
-  auto* document_style = layout_view->Style();
+  const auto& document_style = layout_view->StyleRef();
 
   if (ShouldSkipNonSalientNode(*layout_view, *options_)) {
     return nullptr;
@@ -1998,7 +2247,7 @@ mojom::blink::AIPageContentPtr AIPageContentAgent::ContentBuilder::Build(
   AddFrameData(frame, *frame_data);
   page_content->frame_data = std::move(frame_data);
 
-  RecursionData recursion_data(*document_style);
+  RecursionData recursion_data(document_style);
   recursion_data.accessibility_focused_node_id =
       GetAccessibilityFocusedDOMNodeId(frame);
 
@@ -2099,7 +2348,17 @@ bool AIPageContentAgent::ContentBuilder::ShouldSkipSingleNode(
     const LayoutObject& object,
     const mojom::blink::AIPageContentAttributes& attributes) const {
   if (object.StyleRef().GetPosition() == EPosition::kFixed) {
-    return false;
+    // Fixed elements may implement blocking UI such as paywalls, so APC
+    // normally preserves them. When enabled, the feature lets
+    // pointer-transparent fixed wrappers be skipped via the normal rules for
+    // containers.
+    const bool should_preserve_as_fixed_overlay =
+        !RuntimeEnabledFeatures::
+            AIPageContentSkipUnclickableFixedOverlaysEnabled() ||
+        object.StyleRef().UsedPointerEvents() != EPointerEvents::kNone;
+    if (should_preserve_as_fixed_overlay) {
+      return false;
+    }
   }
 
   if (object.StyleRef().GetPosition() == EPosition::kSticky) {
@@ -2170,7 +2429,8 @@ void AIPageContentAgent::ContentBuilder::AddInteractiveNode(
 bool AIPageContentAgent::ContentBuilder::WalkChildren(
     const LayoutObject& object,
     mojom::blink::AIPageContentNode& content_node,
-    const RecursionData& recursion_data) {
+    const RecursionData& recursion_data,
+    mojom::blink::AIPageContentNode* ancestor_for_geometry_repair) {
   if (AreChildrenBlockedByDisplayLock(object)) {
     // APC only includes content with layout objects; display-locked subtrees
     // skip child layout/prepaint, so they are not included in the layout tree.
@@ -2199,6 +2459,11 @@ bool AIPageContentAgent::ContentBuilder::WalkChildren(
         AXObject::IsAriaAttributeTrue(*child_element,
                                       html_names::kAriaDisabledAttr)) {
       child_recursion_data.is_aria_disabled = true;
+    }
+    if (!child_recursion_data.is_aria_hidden && child_element &&
+        AXObject::IsAriaAttributeTrue(*child_element,
+                                      html_names::kAriaHiddenAttr)) {
+      child_recursion_data.is_aria_hidden = true;
     }
     const auto* child_box = DynamicTo<LayoutBox>(child);
     const bool child_is_fixed_to_view = child_box && child_box->IsFixedToView();
@@ -2234,18 +2499,42 @@ bool AIPageContentAgent::ContentBuilder::WalkChildren(
 
     if (!ShouldSkipDescendants(child_content_node, *child)) {
       if (child_content_node) {
+        // This layout object has an APC node. Walk its descendants under that
+        // node, and let them repair its geometry if it starts empty.
         child_recursion_data.stack_depth++;
+        // When repairing an ancestor's empty geometry, use only the first
+        // nonempty APC node on each descendant branch.
+        // * If this child already has geometry, leave this null so deeper nodes
+        //   do not also repair the ancestor.
+        // * Otherwise, collect geometry from its descendants into this child
+        //   before using it to repair the ancestor.
+        mojom::blink::AIPageContentNode*
+            ancestor_for_descendant_geometry_repair = nullptr;
+        if (HasEmptyGeometry(child_content_node.get())) {
+          ancestor_for_descendant_geometry_repair = child_content_node.get();
+        }
+        child_has_visible_content =
+            WalkChildren(*child, *child_content_node, child_recursion_data,
+                         ancestor_for_descendant_geometry_repair);
+      } else {
+        // This layout object is omitted from APC. Continue walking so its APC
+        // descendants can be added without this wrapper.
+        child_has_visible_content =
+            WalkChildren(*child, content_node, child_recursion_data,
+                         ancestor_for_geometry_repair);
       }
-
-      auto& node_for_child =
-          child_content_node ? *child_content_node : content_node;
-      child_has_visible_content =
-          WalkChildren(*child, node_for_child, child_recursion_data);
       has_visible_content |= child_has_visible_content;
     }
 
     const bool should_add_node_for_child =
         IsVisible(*child) || child_has_visible_content;
+    if (should_add_node_for_child && ancestor_for_geometry_repair &&
+        child_content_node) {
+      // If this node started empty, its walk has already repaired it from
+      // deeper branches.
+      MergeNodeGeometryIntoAncestor(*child_content_node,
+                                    *ancestor_for_geometry_repair);
+    }
     if (should_add_node_for_child && child_content_node) {
       content_node.children_nodes.emplace_back(std::move(child_content_node));
     }
@@ -2383,7 +2672,8 @@ AIPageContentAgent::ContentBuilder::MaybeGenerateContentNodeImpl(
   if (actionable_mode() && element) {
     attributes.aria_role = AXObject::DetermineRawAriaRole(*element);
   }
-  AddNodeInteractionInfo(object, attributes, recursion_data.is_aria_disabled);
+  AddNodeInteractionInfo(object, attributes, recursion_data.is_aria_disabled,
+                         recursion_data.is_aria_hidden);
 
   // Set the attribute type and add any special attributes if the attribute type
   // requires it.
@@ -2404,7 +2694,7 @@ AIPageContentAgent::ContentBuilder::MaybeGenerateContentNodeImpl(
     }
     ProcessTextNode(To<LayoutText>(object), attributes,
                     recursion_data.document_style);
-  } else if (object.IsImage() || object.IsSVGImage()) {
+  } else if (IsImage(object)) {
     // Since image is a leaf node, do not create a content node if should skip
     // content.
     if (!IsVisible(object)) {
@@ -2443,6 +2733,8 @@ AIPageContentAgent::ContentBuilder::MaybeGenerateContentNodeImpl(
   } else if (const auto* form_control =
                  DynamicTo<HTMLFormControlElement>(object.GetNode())) {
     ProcessFormControlNode(*form_control, attributes);
+  } else if (auto dialog_attribute_type = GetDialogAttributeType(element)) {
+    attributes.attribute_type = *dialog_attribute_type;
   } else if (element &&
              ProcessAriaFormControlNode(object, *element, attributes)) {
     // ProcessAriaFormControlNode sets the attribute type and data.
@@ -2885,8 +3177,8 @@ void AIPageContentAgent::ContentBuilder::AddFrameInteractionInfo(
         *frame_interaction_info.selection;
     selection.selected_text = ReplaceUnpairedSurrogates(frame.SelectedText());
 
-    const SelectionInDOMTree& frame_selection =
-        frame.Selection().GetSelectionInDOMTree();
+    const SelectionInDomTree& frame_selection =
+        frame.Selection().GetSelectionInDomTree();
     const Position& start_position = frame_selection.ComputeStartPosition();
     const Position& end_position = frame_selection.ComputeEndPosition();
     Node* start_node = start_position.ComputeContainerNode();
@@ -3027,10 +3319,15 @@ void AIPageContentAgent::ContentBuilder::AddInteractionInfoForHitTesting(
 void AIPageContentAgent::ContentBuilder::AddNodeInteractionInfo(
     const LayoutObject& object,
     mojom::blink::AIPageContentAttributes& attributes,
-    bool is_aria_disabled) {
-  // The node is not hit-testable which also means no interaction is supported.
-  const ComputedStyle& style = *object.Style();
+    bool is_aria_disabled,
+    bool is_aria_hidden) {
+  const ComputedStyle& style = object.StyleRef();
   if (style.UsedPointerEvents() == EPointerEvents::kNone) {
+    // Treat nodes exposed through pointer-events:none as non-actionable. This
+    // includes elements the author explicitly removed from hit testing and
+    // inert subtrees Blink maps to the same used value, such as [inert],
+    // interactivity:inert, content outside an active modal dialog or fullscreen
+    // element, and elements transitioning to display:none.
     return;
   }
 
@@ -3048,17 +3345,18 @@ void AIPageContentAgent::ContentBuilder::AddNodeInteractionInfo(
   auto* element = DynamicTo<Element>(object.GetNode());
   bool is_disabled = false;
   if (element) {
-    is_disabled = AddInteractionDisabledReasons(*element, is_aria_disabled,
-                                                *node_interaction_info);
+    is_disabled = AddInteractionDisabledReasons(
+        *element, is_aria_disabled, is_aria_hidden, *node_interaction_info);
   }
 
-  // TODO(linnan): Remove `is_disabled` when consumers move to use
-  // `interaction_disabled_reasons`.
+  // Strongly disabled nodes are not valid action targets, so do not populate
+  // their normal clickability or focus signals. Keep interaction information
+  // for visible nodes so consumers can see `is_disabled` and reject them.
   if (is_disabled) {
     if (node_interaction_info->document_scoped_z_order) {
       attributes.node_interaction_info = std::move(node_interaction_info);
-      // `is_disabled` is only set for nodes with `document_scoped_z_order`.
-      // This implies offscreen nodes will not be marked as disabled.
+      // Offscreen nodes do not have a z-order, so this branch cannot retain
+      // interaction information or expose `is_disabled` for them.
       attributes.node_interaction_info->is_disabled = true;
     }
 
@@ -3111,6 +3409,7 @@ void AIPageContentAgent::ContentBuilder::AddNodeInteractionInfo(
       node_interaction_info->scroller_info ||
       node_interaction_info->is_focusable ||
       !node_interaction_info->aria_action_target_node_ids.empty() ||
+      !node_interaction_info->interaction_disabled_reasons.empty() ||
       node_interaction_info->document_scoped_z_order ||
       !node_interaction_info->clickability_reasons.empty();
 

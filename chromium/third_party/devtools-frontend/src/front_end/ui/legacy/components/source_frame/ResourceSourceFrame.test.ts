@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../../../core/common/common.js';
 import * as Platform from '../../../../core/platform/platform.js';
-import * as TextUtils from '../../../../models/text_utils/text_utils.js';
+import * as TextUtils from '../../../../core/text_utils/text_utils.js';
 import {renderElementIntoDOM} from '../../../../testing/DOMHelpers.js';
 import {describeWithEnvironment} from '../../../../testing/EnvironmentHelpers.js';
 import type * as CodeMirror from '../../../../third_party/codemirror.next/codemirror.next.js';

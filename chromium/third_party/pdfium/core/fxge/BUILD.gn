@@ -29,8 +29,6 @@ source_set("fxge") {
     "cfx_color.h",
     "cfx_cttgsubtable.cpp",
     "cfx_cttgsubtable.h",
-    "cfx_defaultrenderdevice.cpp",
-    "cfx_defaultrenderdevice.h",
     "cfx_drawutils.cpp",
     "cfx_drawutils.h",
     "cfx_face.cpp",
@@ -58,6 +56,8 @@ source_set("fxge") {
     "cfx_path.h",
     "cfx_renderdevice.cpp",
     "cfx_renderdevice.h",
+    "cfx_standardfont.cpp",
+    "cfx_standardfont.h",
     "cfx_substfont.cpp",
     "cfx_substfont.h",
     "cfx_textrenderoptions.h",
@@ -165,10 +165,6 @@ source_set("fxge") {
 
   if (is_android) {
     sources += [
-      "android/cfpf_skiafont.cpp",
-      "android/cfpf_skiafont.h",
-      "android/cfpf_skiafontmgr.cpp",
-      "android/cfpf_skiafontmgr.h",
       "android/cfx_androidfontinfo.cpp",
       "android/cfx_androidfontinfo.h",
       "android/fx_android_impl.cpp",
@@ -192,8 +188,6 @@ source_set("fxge") {
 
   if (is_win) {
     sources += [
-      "cfx_windowsrenderdevice.cpp",
-      "cfx_windowsrenderdevice.h",
       "win32/cfx_psfonttracker.cpp",
       "win32/cfx_psfonttracker.h",
       "win32/cfx_psrenderer.cpp",
@@ -238,8 +232,8 @@ if (pdf_enable_fontations) {
     features = [ "agl" ]
     deps = [
       "//build/rust:cxx_cppdeps",
-      "//third_party/rust/read_fonts/v0_39:lib",
-      "//third_party/rust/skrifa/v0_42:lib",
+      "//third_party/rust/read_fonts/v0_40:lib",
+      "//third_party/rust/skrifa/v0_43:lib",
     ]
     configs += [ ":skrifa_cxx_config" ]
   }
@@ -264,11 +258,14 @@ if (pdf_enable_fontations) {
 
 pdfium_unittest_source_set("unittests") {
   sources = [
-    "cfx_defaultrenderdevice_unittest.cpp",
+    "cfx_color_unittest.cpp",
     "cfx_folderfontinfo_unittest.cpp",
     "cfx_font_unittest.cpp",
     "cfx_fontmapper_unittest.cpp",
     "cfx_path_unittest.cpp",
+    "cfx_renderdevice_unittest.cpp",
+    "cfx_standardfont_unittest.cpp",
+    "cfx_substfont_unittest.cpp",
     "dib/blend_unittest.cpp",
     "dib/cfx_cmyk_to_srgb_unittest.cpp",
     "dib/cfx_dibbase_unittest.cpp",
@@ -288,6 +285,16 @@ pdfium_unittest_source_set("unittests") {
 
   if (is_win) {
     sources += [ "win32/cfx_psrenderer_unittest.cpp" ]
+  }
+
+  # CFX_AndroidFontInfo contains cross-platform logic that can be tested on
+  # Linux without Android-specific APIs.
+  if (is_linux) {
+    sources += [
+      "android/cfx_androidfontinfo.cpp",
+      "android/cfx_androidfontinfo.h",
+      "android/cfx_androidfontinfo_unittest.cpp",
+    ]
   }
 
   if (pdf_enable_fontations) {
@@ -314,14 +321,6 @@ pdfium_embeddertest_source_set("embeddertests") {
       "../fpdfapi/page",
       "../fpdfapi/render",
       "//skia",
-    ]
-  }
-
-  if (is_win) {
-    sources += [ "cfx_windowsrenderdevice_embeddertest.cpp" ]
-    deps += [
-      ":fxge",
-      "../fxcodec",
     ]
   }
 }

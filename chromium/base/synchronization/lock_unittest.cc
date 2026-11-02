@@ -599,7 +599,14 @@ TEST(LockTest, PriorityIsInherited) {
 class LockTrySpinTest : public testing::Test {
  public:
   void SetUp() override {
-    LockMetricsRecorder::Get()->SetTargetCurrentThread();
+    scoped_feature_list_.InitAndEnableFeature(
+        base::features::kRecordLockAcquisitionTime);
+    LockMetricsRecorder::SetAllowedThreadsForTesting({"LockTrySpinTest"});
+    LockMetricsRecorder::EnableRecordingOnCurrentThread("LockTrySpinTest");
+  }
+
+  void TearDown() override {
+    LockMetricsRecorder::DisableRecordingOnCurrentThreadForTesting();
   }
 
  protected:
@@ -632,19 +639,26 @@ class LockTrySpinTest : public testing::Test {
 
   bool DidRecordLockMetricsSample() {
     bool sample_recorded = false;
-    LockMetricsRecorder::Get()->ForEachSample(
-        LockMetricsRecorder::LockType::kBaseLock,
-        [&sample_recorded](const TimeDelta&) { sample_recorded = true; });
+    auto* recorder = LockMetricsRecorder::GetForCurrentThread();
+    if (recorder) {
+      recorder->ForEachSample(
+          LockMetricsRecorder::LockType::kBaseLock,
+          [&sample_recorded](const TimeDelta&) { sample_recorded = true; });
+    }
     return sample_recorded;
   }
 
   void ClearLockMetricsSamples() {
     // Clear any samples that may have been recorded.
-    LockMetricsRecorder::Get()->ForEachSample(
-        LockMetricsRecorder::LockType::kBaseLock, [](const TimeDelta&) {});
+    auto* recorder = LockMetricsRecorder::GetForCurrentThread();
+    if (recorder) {
+      recorder->ForEachSample(LockMetricsRecorder::LockType::kBaseLock,
+                              [](const TimeDelta&) {});
+    }
   }
 
  private:
+  base::test::ScopedFeatureList scoped_feature_list_;
   MetricsSubSampler::ScopedAlwaysSampleForTesting always_sample_;
 };
 

@@ -11,8 +11,8 @@
 #include "third_party/blink/public/mojom/credentialmanagement/credential_manager.mojom-blink.h"
 #include "third_party/blink/public/mojom/webauthn/authenticator.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/webid/digital_identity_request.mojom-blink-forward.h"
-#include "third_party/blink/public/mojom/webid/federated_auth_request.mojom-blink-forward.h"
-#include "third_party/blink/public/mojom/webid/federated_auth_request.mojom-blink.h"
+#include "third_party/blink/public/mojom/webid/federated_request.mojom-blink-forward.h"
+#include "third_party/blink/public/mojom/webid/federated_request.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_all_accepted_credentials_options.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_resolve_redirect_request_method.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_unknown_credential_options.h"
@@ -28,8 +28,6 @@ class AuthenticationExtensionsCmtgKeyOutputs;
 class AuthenticationExtensionsPRFInputs;
 class AuthenticationExtensionsPRFValues;
 class AuthenticationExtensionsPaymentOutputs;
-class AuthenticationExtensionsSupplementalPubKeysInputs;
-class AuthenticationExtensionsSupplementalPubKeysOutputs;
 class AuthenticatorSelectionCriteria;
 class Credential;
 class CurrentUserDetailsOptions;
@@ -79,13 +77,6 @@ struct MODULES_EXPORT TypeConverter<
     blink::mojom::blink::AuthenticationExtensionsClientOutputsPtr> {
   static blink::AuthenticationExtensionsClientOutputs* Convert(
       const blink::mojom::blink::AuthenticationExtensionsClientOutputsPtr&);
-};
-
-template <>
-struct TypeConverter<blink::AuthenticationExtensionsSupplementalPubKeysOutputs*,
-                     blink::mojom::blink::SupplementalPubKeysResponsePtr> {
-  static blink::AuthenticationExtensionsSupplementalPubKeysOutputs* Convert(
-      const blink::mojom::blink::SupplementalPubKeysResponsePtr&);
 };
 
 template <>
@@ -283,14 +274,6 @@ struct TypeConverter<blink::mojom::blink::IdentityUserInfoPtr,
                      blink::IdentityUserInfo> {
   static blink::mojom::blink::IdentityUserInfoPtr Convert(
       const blink::IdentityUserInfo&);
-};
-
-template <>
-struct TypeConverter<
-    std::optional<blink::mojom::blink::SupplementalPubKeysRequestPtr>,
-    blink::AuthenticationExtensionsSupplementalPubKeysInputs> {
-  static std::optional<blink::mojom::blink::SupplementalPubKeysRequestPtr>
-  Convert(const blink::AuthenticationExtensionsSupplementalPubKeysInputs&);
 };
 
 template <>

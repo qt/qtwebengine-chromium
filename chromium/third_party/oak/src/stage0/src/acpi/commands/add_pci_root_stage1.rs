@@ -17,6 +17,7 @@
 use core::{ffi::CStr, fmt::Debug, iter::zip};
 
 use sha2::Sha256;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::{
     acpi::{
@@ -24,13 +25,13 @@ use crate::{
         files::Files,
     },
     fw_cfg::Firmware,
-    pci::{read_pci_crs_allowlist, PciWindows},
+    pci::{PciWindows, read_pci_crs_allowlist},
 };
 
 pub const PCI_ROOT_STAGE1_ALLOWLIST_OFFSET_COUNT: usize = 4;
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, FromBytes, IntoBytes, KnownLayout, Immutable)]
 pub struct AllowlistOffset {
     pub start: u32,
     pub end: u32,
@@ -38,7 +39,7 @@ pub struct AllowlistOffset {
 static_assertions::assert_eq_size!(AllowlistOffset, u64);
 
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, FromBytes, IntoBytes, KnownLayout, Immutable)]
 pub struct AddPciRootStage1 {
     file: RomfileName,
 
@@ -53,12 +54,23 @@ pub struct AddPciRootStage1 {
     // 8 offsets in 4 pairs.
     allowlist_offsets: [AllowlistOffset; PCI_ROOT_STAGE1_ALLOWLIST_OFFSET_COUNT],
     bus_index: u8,
+    _reserved: [u8; 3],
 }
 static_assertions::assert_eq_size!(AddPciRootStage1, Pad);
 
 impl AddPciRootStage1 {
     pub fn file(&self) -> &CStr {
         CStr::from_bytes_until_nul(&self.file).unwrap()
+    }
+
+    /// Builds a command targeting `file` whose 32-bit window start is written
+    /// at `pci32_start_offset`; all other offsets stay zero. Test-only.
+    #[cfg(test)]
+    pub fn new(file: &str, pci32_start_offset: u32) -> Self {
+        let mut cmd = <Self as zerocopy::FromZeros>::new_zeroed();
+        cmd.file[..file.len()].copy_from_slice(file.as_bytes());
+        cmd.pci32_start_offset = pci32_start_offset;
+        cmd
     }
 }
 
@@ -75,6 +87,23 @@ impl<FW: Firmware, F: Files> Invoke<FW, F> for AddPciRootStage1 {
 
         if self.bus_index != 0 {
             return Err("AddPciRootStage1: only bus 0 supported for now");
+        }
+
+        let file_len = file.len();
+        let write_fits = |offset: u32, size: usize| offset as usize + size <= file_len;
+        if !write_fits(self.pci32_start_offset, size_of::<u32>())
+            || !write_fits(self.pci32_end_offset, size_of::<u32>())
+            || !write_fits(self.pci64_valid_offset, size_of::<u8>())
+            || !write_fits(self.pci64_start_offset, size_of::<u64>())
+            || !write_fits(self.pci64_end_offset, size_of::<u64>())
+            || !write_fits(self.pci64_length_offset, size_of::<u64>())
+            || !write_fits(self.pci16_io_start_offset, size_of::<u16>())
+            || !write_fits(self.pci16_io_end_offset, size_of::<u16>())
+            || self.allowlist_offsets.iter().any(|o| {
+                !write_fits(o.start, size_of::<u32>()) || !write_fits(o.end, size_of::<u32>())
+            })
+        {
+            return Err("AddPciRootStage1 invalid; offsets would overflow file");
         }
 
         let data = pci_windows.ok_or("no PCI holes for AddPciRootStage1 to add")?;

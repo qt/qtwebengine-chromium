@@ -25,11 +25,11 @@
  *
  * \brief Performs a QZ decomposition of a pair of matrices A, B
  *
- * \tparam MatrixType_ the type input type of the matrix.
+ * \tparam MatrixType_ the input type of the matrix.
  *
- * Given to complex square matrices A and B, this class computes the QZ decomposition
+ * Given two complex square matrices A and B, this class computes the QZ decomposition
  * \f$ A = Q S Z \f$, \f$ B = Q T Z\f$ where Q and Z are unitary matrices and
- * S and T a re upper-triangular matrices. More precisely, Q and Z fulfill
+ * S and T are upper-triangular matrices. More precisely, Q and Z fulfill
  * \f$ Q Q* = Id\f$ and \f$ Z Z* = Id\f$. The generalized Eigenvalues are then
  * obtained as ratios of corresponding diagonal entries, lambda(i) = S(i,i) / T(i, i).
  *
@@ -98,9 +98,9 @@ class ComplexQZ {
     return m_S;
   }
 
-  /** \brief Returns matrix S in the QZ decomposition.
+  /** \brief Returns matrix T in the QZ decomposition.
    *
-   * \returns A const reference to the matrix S.
+   * \returns A const reference to the matrix T.
    */
   const MatrixType& matrixT() const {
     eigen_assert(m_isInitialized && "ComplexQZ is not initialized.");
@@ -308,10 +308,9 @@ void ComplexQZ<MatrixType>::hessenbergTriangularSparse(const SparseMatrixType_& 
                "Call .makeCompressed() before passing it to SparseQR");
 
   // Computing QR decomposition of T...
-  sparseQR.setPivotThreshold(RealScalar(0));  // This prevends algorithm from doing pivoting
+  sparseQR.setPivotThreshold(RealScalar(0));  // This prevents the algorithm from doing pivoting
   sparseQR.compute(B);
   // perform QR decomposition of T, overwrite T with R, save Q
-  // HouseholderQR<Mat> qrT(m_T);
   m_T = sparseQR.matrixR();
   m_T.template triangularView<StrictlyLower>().setZero();
 
@@ -327,7 +326,6 @@ void ComplexQZ<MatrixType>::hessenbergTriangularSparse(const SparseMatrixType_& 
     for (Index i = m_n - 1; i >= j + 2; i--) {
       JacobiRotation<Scalar> G;
       // kill S(i,j)
-      // if(!numext::is_exactly_zero(_S.coeff(i, j)))
       if (m_S.coeff(i, j) != Scalar(0)) {
         // This is the adapted code
         G.makeGivens(m_S.coeff(i - 1, j), m_S.coeff(i, j), &m_S.coeffRef(i - 1, j));
@@ -485,9 +483,9 @@ void ComplexQZ<MatrixType_>::do_QZ_step(Index p, Index q) {
     if (k < p + m - 3) {
       z = m_S(k + 3, k);
     }
-  };
+  }
 
-  // Find a Householdermartirx Qn1 s.t. Qn1 (x y)^T = (* 0)
+  // Find a Householder matrix Qn1 s.t. Qn1 (x y)^T = (* 0)
   JacobiRotation<Scalar> J;
   J.makeGivens(x, y);
   m_S.template middleRows<2>(p + m - 2).applyOnTheLeft(0, 1, J.adjoint());
@@ -495,7 +493,7 @@ void ComplexQZ<MatrixType_>::do_QZ_step(Index p, Index q) {
 
   if (m_computeQZ) m_Q.template middleCols<2>(p + m - 2).applyOnTheRight(0, 1, J);
 
-  // Find a Householdermatrix Zn1 s.t. (b(n,n-1) b(n,n)) * Zn1 = (0 *)
+  // Find a Householder matrix Zn1 s.t. (b(n,n-1) b(n,n)) * Zn1 = (0 *)
   Mat2 Zn1 = computeZk2(m_T.template block<1, 2>(p + m - 1, p + m - 2));
   m_S.template middleCols<2>(p + m - 2).applyOnTheRight(Zn1);
   m_T.template middleCols<2>(p + m - 2).applyOnTheRight(Zn1);
@@ -522,7 +520,7 @@ void ComplexQZ<MatrixType_>::reduceDiagonal2x2block(Index i) {
     m_S.applyOnTheRight(i, i + 1, G.adjoint());
     m_T.applyOnTheRight(i, i + 1, G.adjoint());
     if (m_computeQZ) m_Z.applyOnTheLeft(i, i + 1, G);
-  } else if (!is_negligible(Ti(0, 0)) && !is_negligible((Ti(1, 1)))) {
+  } else if (!is_negligible(Ti(0, 0)) && !is_negligible(Ti(1, 1))) {
     Scalar mu = Si(0, 0) / Ti(0, 0);
     Scalar a12_bar = Si(0, 1) - mu * Ti(0, 1);
     Scalar a22_bar = Si(1, 1) - mu * Ti(1, 1);
@@ -560,8 +558,6 @@ void ComplexQZ<MatrixType_>::reduceDiagonal2x2block(Index i) {
 /** \internal We found a zero at T(k,k) and want to "push it down" to T(l,l) */
 template <typename MatrixType_>
 void ComplexQZ<MatrixType_>::push_down_zero_ST(Index k, Index l) {
-  // Test Preconditions
-
   JacobiRotation<Scalar> J;
   for (Index j = k + 1; j <= l; j++) {
     // Create a 0 at _T(j, j)
@@ -634,7 +630,6 @@ inline Index ComplexQZ<MatrixType_>::findSmallSubdiagEntry(Index iu) {
   return res;
 }
 
-//
 /** \internal Look for single small diagonal element T(res, res) for res between f and l, and return res (or f-1).
  * Copied from Eigen3 RealQZ implementation. */
 template <typename MatrixType_>

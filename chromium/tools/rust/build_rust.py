@@ -56,9 +56,10 @@ sys.path.append(
                  'scripts'))
 
 from build import (AddCMakeToPath, AddZlibToPath, CheckoutGitRepo, CopyFile,
-                   DownloadDebianSysroot, GetLibXml2Dirs, GitCherryPick,
-                   GitRevert, LLVM_DIR, IsGitAncestorToHead,
-                   LLVM_BUILD_TOOLS_DIR, RunCommand)
+                   DownloadDebianSysroot, FetchUrl, GetLibXml2Dirs,
+                   GitCherryPick, GitRevert, LLVM_DIR, IsGitAncestorToHead,
+                   LLVM_BUILD_TOOLS_DIR, RunCommand,
+                   DEFAULT_MACOSX_DEPLOYMENT_TARGET, GetLatestCommit)
 from update import (CHROMIUM_DIR, DownloadAndUnpack, EnsureDirExists,
                     GetDefaultHostOs, RmTree, ReadStampFile, WriteStampFile,
                     UpdatePackage, STAMP_FILENAME as LLVM_STAMP_FILENAME,
@@ -76,6 +77,17 @@ EXCLUDED_TESTS = [
     os.path.join('tests', 'codegen-llvm', 'common_prim_int_ptr.rs'),
     # Temporarily disabled due to https://crbug.com/433249564
     os.path.join('tests', 'codegen-llvm', 'enum', 'enum-discriminant-eq.rs'),
+    # Temporarily disabled due to https://crbug.com/522257311
+    os.path.join('tests', 'codegen-llvm', 'issues', 'issue-118306.rs'),
+    os.path.join('tests', 'codegen-llvm', 'pow_known_base.rs'),
+    # Temporarily disabled due to https://crbug.com/531751211
+    os.path.join('tests', 'codegen-llvm', 'asm', 'global_asm.rs'),
+    os.path.join('tests', 'codegen-llvm', 'asm', 'global_asm_x2.rs'),
+    os.path.join('tests', 'codegen-llvm', 'asm', 'global_asm_include.rs'),
+    os.path.join('tests', 'codegen-llvm', 'array-cmp.rs'),
+    os.path.join('tests', 'codegen-llvm', 'enum', 'enum-match.rs'),
+    # Temporarily disabled due to https://crbug.com/535127458
+    os.path.join('tests', 'ui', 'asm', 'riscv', 'riscv32e-registers.rs'),
 ]
 EXCLUDED_TESTS_WINDOWS = [
     # Temporarily disabled due to https://crbug.com/379308086
@@ -204,8 +216,7 @@ def VerifyStage0JsonHash(stage0_json_url=None):
     hasher = hashlib.sha256()
     if stage0_json_url:
         print(stage0_json_url)
-        base64_text = urllib.request.urlopen(stage0_json_url).read().decode(
-            "utf-8")
+        base64_text = FetchUrl(stage0_json_url).decode("utf-8")
         stage0 = base64.b64decode(base64_text)
         hasher.update(stage0)
     else:
@@ -236,10 +247,11 @@ def FetchBetaPackage(name, rust_git_hash, triple=None):
     # Pull the stage0 to find the package intended to be used to build this
     # version of the Rust compiler.
     STAGE0_JSON_URL = (
-        'https://raw.githubusercontent.com/'
-        'rust-lang/rust/{GIT_HASH}/src/stage0')
-    stage0 = urllib.request.urlopen(
-        STAGE0_JSON_URL.format(GIT_HASH=rust_git_hash)).read().decode("utf-8")
+        'https://chromium.googlesource.com/external/github.com/'
+        'rust-lang/rust/+/{GIT_HASH}/src/stage0?format=TEXT')
+    base64_text = FetchUrl(
+        STAGE0_JSON_URL.format(GIT_HASH=rust_git_hash)).decode("utf-8")
+    stage0 = base64.b64decode(base64_text).decode("utf-8")
     lines = stage0.splitlines()
 
     # The stage0 file contains the path to all tarballs it uses binaries from.
@@ -369,10 +381,12 @@ class XPy:
             # `SDKROOT`.
             self._env['SDKROOT'] = sdk_path
 
-            # We don't have an official policy of which platforms we support
-            # building chromium on, but we generally expect builders to be
-            # recent, so this should track the OS versions on our buildbots.
-            self._env['MACOSX_DEPLOYMENT_TARGET'] = '15.6'
+            self._env[
+                'MACOSX_DEPLOYMENT_TARGET'] = DEFAULT_MACOSX_DEPLOYMENT_TARGET
+
+            # Due to an interaction with Homebrew installed `liblzma.dylib`, we
+            # must tell lzma-sys explicitly to build it from source.
+            self._env['LZMA_API_STATIC'] = '1'
 
         if zlib_path:
             self._env['CFLAGS'] += f' -I{zlib_path}'
@@ -557,9 +571,7 @@ def GetLatestRustCommit():
         'https://chromium.googlesource.com/external/' +
         'github.com/rust-lang/rust/+/refs/heads/main?format=JSON'  # nocheck
     )
-    main = json.loads(
-        urllib.request.urlopen(url).read().decode("utf-8").replace(")]}'", ""))
-    return main['commit']
+    return GetLatestCommit(url)
 
 
 def RustTargetTriple():

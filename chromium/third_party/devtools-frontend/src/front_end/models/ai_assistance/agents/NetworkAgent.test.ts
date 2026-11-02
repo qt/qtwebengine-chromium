@@ -3,25 +3,30 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Host from '../../../core/host/host.js';
 import * as Platform from '../../../core/platform/platform.js';
 import * as SDK from '../../../core/sdk/sdk.js';
+import * as TextUtils from '../../../core/text_utils/text_utils.js';
 import type * as Protocol from '../../../generated/protocol.js';
 import {mockAidaClient} from '../../../testing/AiAssistanceHelpers.js';
-import {updateHostConfig} from '../../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../../testing/MockConnection.js';
+import {deinitializeGlobalVars, updateHostConfig} from '../../../testing/EnvironmentHelpers.js';
+import {setupSettingsHooks} from '../../../testing/SettingsHelpers.js';
 import {SnapshotTester} from '../../../testing/SnapshotTester.js';
+import {TestUniverse} from '../../../testing/TestUniverse.js';
 import * as RenderCoordinator from '../../../ui/components/render_coordinator/render_coordinator.js';
 import * as Logs from '../../logs/logs.js';
 import * as NetworkTimeCalculator from '../../network_time_calculator/network_time_calculator.js';
-import * as TextUtils from '../../text_utils/text_utils.js';
-import {AiAgent, NetworkAgent} from '../ai_assistance.js';
+import {AiAgent, NetworkAgent, RequestContext} from '../ai_assistance.js';
 
 const {urlString} = Platform.DevToolsPath;
 
-describeWithMockConnection('NetworkAgent', function() {
+describe('NetworkAgent', function() {
+  setupSettingsHooks();
   const snapshotTester = new SnapshotTester(this, import.meta);
+  let universe: TestUniverse;
+
   function mockHostConfig(modelId?: string, temperature?: number) {
     updateHostConfig({
       devToolsAiAssistanceNetworkAgent: {
@@ -31,8 +36,14 @@ describeWithMockConnection('NetworkAgent', function() {
     });
   }
 
+  beforeEach(() => {
+    universe = new TestUniverse();
+    sinon.stub(Logs.NetworkLog.NetworkLog, 'instance').returns(universe.networkLog);
+  });
+
   afterEach(async () => {
     await RenderCoordinator.done();
+    await deinitializeGlobalVars();
   });
 
   describe('buildRequest', () => {
@@ -56,25 +67,6 @@ describeWithMockConnection('NetworkAgent', function() {
           agent.buildRequest({text: 'test input'}, Host.AidaClient.Role.USER).options?.temperature,
           1,
       );
-    });
-  });
-  describe('RequestContext', () => {
-    it('should return the origin of the documentURL', () => {
-      const request = SDK.NetworkRequest.NetworkRequest.create(
-          'requestId' as Protocol.Network.RequestId, urlString`https://www.example.com`,
-          urlString`https://www.example.com/path/to/page.html`, null, null, null);
-      const calculator = new NetworkTimeCalculator.NetworkTransferTimeCalculator();
-      const context = new NetworkAgent.RequestContext(request, calculator);
-      assert.strictEqual(context.getOrigin(), 'https://www.example.com');
-    });
-
-    it('should return the origin of the documentURL and strips the trailing slash', () => {
-      const request = SDK.NetworkRequest.NetworkRequest.create(
-          'requestId' as Protocol.Network.RequestId, urlString`https://www.example.com`,
-          urlString`https://www.example.com/`, null, null, null);
-      const calculator = new NetworkTimeCalculator.NetworkTransferTimeCalculator();
-      const context = new NetworkAgent.RequestContext(request, calculator);
-      assert.strictEqual(context.getOrigin(), 'https://www.example.com');
     });
   });
 
@@ -123,7 +115,7 @@ describeWithMockConnection('NetworkAgent', function() {
           'requestId' as Protocol.Network.RequestId, urlString`https://www.example.com/2`, urlString``, null, null,
           null);
 
-      sinon.stub(Logs.NetworkLog.NetworkLog.instance(), 'initiatorGraphForRequest')
+      sinon.stub(universe.networkLog, 'initiatorGraphForRequest')
           .withArgs(selectedNetworkRequest)
           .returns({
             initiators: new Set([selectedNetworkRequest, initiatorNetworkRequest]),
@@ -163,7 +155,7 @@ describeWithMockConnection('NetworkAgent', function() {
       });
 
       const responses = await Array.fromAsync(
-          agent.run('test', {selected: new NetworkAgent.RequestContext(selectedNetworkRequest, calculator)}));
+          agent.run('test', {selected: new RequestContext.RequestContext(selectedNetworkRequest, calculator)}));
       snapshotTester.assert(this, JSON.stringify(responses, null, 2));
     });
 
@@ -178,7 +170,7 @@ describeWithMockConnection('NetworkAgent', function() {
       });
 
       const responses = await Array.fromAsync(
-          agent.run('test', {selected: new NetworkAgent.RequestContext(selectedNetworkRequest, calculator)}));
+          agent.run('test', {selected: new RequestContext.RequestContext(selectedNetworkRequest, calculator)}));
 
       const contextResponse = responses.find(r => r.type === AiAgent.ResponseType.CONTEXT);
       assert.exists(contextResponse);
@@ -200,7 +192,7 @@ describeWithMockConnection('NetworkAgent', function() {
       });
 
       await Array.fromAsync(
-          agent.run('test', {selected: new NetworkAgent.RequestContext(selectedNetworkRequest, calculator)}));
+          agent.run('test', {selected: new RequestContext.RequestContext(selectedNetworkRequest, calculator)}));
 
       const historicalCtx = agent.buildRequest({text: ''}, Host.AidaClient.Role.USER).historical_contexts;
       snapshotTester.assert(this, JSON.stringify(historicalCtx, null, 2));

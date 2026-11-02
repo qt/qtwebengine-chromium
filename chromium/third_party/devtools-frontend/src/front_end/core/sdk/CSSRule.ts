@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 import * as Protocol from '../../generated/protocol.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Platform from '../platform/platform.js';
+import * as TextUtils from '../text_utils/text_utils.js';
 
 import {CSSContainerQuery} from './CSSContainerQuery.js';
 import {CSSLayer} from './CSSLayer.js';
@@ -121,7 +121,7 @@ export class CSSStyleRule extends CSSRule {
       origin: payload.origin,
       style: payload.style,
       header: styleSheetHeaderForRule(cssModel, payload),
-      originTreeScopeNodeId: payload.originTreeScopeNodeId
+      originTreeScopeNodeId: payload.originTreeScopeNodeId,
     });
     this.reinitializeSelectors(payload.selectorList);
     this.nestingSelectors = payload.nestingSelectors;
@@ -415,9 +415,10 @@ export class CSSFunctionRule extends CSSRule {
         cssProperties: [],
         shorthandEntries: [],
         range: CSSFunctionRule.mergeRanges(payload.children),
-        styleSheetId: payload.styleSheetId
+        styleSheetId: payload.styleSheetId,
       },
       header: styleSheetHeaderForRule(cssModel, payload),
+      originTreeScopeNodeId: payload.originTreeScopeNodeId,
     });
     this.#name = new CSSValue(payload.name);
     this.#parameters = payload.parameters.map(({name}) => name);

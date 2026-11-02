@@ -7,11 +7,12 @@
 
 #include "include/v8-array-buffer.h"
 #include "include/v8-typed-array.h"
+#include "src/base/bit-field.h"
 #include "src/handles/maybe-handles.h"
 #include "src/objects/backing-store.h"
+#include "src/objects/js-function.h"
 #include "src/objects/js-objects.h"
 #include "src/sandbox/external-pointer.h"
-#include "torque-generated/bit-fields.h"
 
 // Has to be the last include (doesn't have include guards):
 #include "src/objects/object-macros.h"
@@ -20,8 +21,6 @@ namespace v8 {
 namespace internal {
 
 class ArrayBufferExtension;
-
-#include "torque-generated/src/objects/js-array-buffer-tq.inc"
 
 V8_OBJECT class JSArrayBuffer : public JSAPIObjectWithEmbedderSlots {
  public:
@@ -66,7 +65,23 @@ V8_OBJECT class JSArrayBuffer : public JSAPIObjectWithEmbedderSlots {
   V8_INLINE void clear_padding();
 
   // Bit positions for [bit_field].
-  DEFINE_TORQUE_GENERATED_JS_ARRAY_BUFFER_FLAGS()
+  using IsExternalBit = base::BitField<bool, 0, 1, uint32_t>;
+  using IsDetachableBit = IsExternalBit::Next<bool, 1>;
+  using WasDetachedBit = IsDetachableBit::Next<bool, 1>;
+  using IsSharedBit = WasDetachedBit::Next<SharedFlag, 1>;
+  using IsResizableByJsBit = IsSharedBit::Next<ResizableFlag, 1>;
+  using IsImmutableBit = IsResizableByJsBit::Next<ImmutableFlag, 1>;
+  enum Flag : uint32_t {
+    kNone = 0,
+    kIsExternal = IsExternalBit::kMask,
+    kIsDetachable = IsDetachableBit::kMask,
+    kWasDetached = WasDetachedBit::kMask,
+    kIsShared = IsSharedBit::kMask,
+    kIsResizableByJs = IsResizableByJsBit::kMask,
+    kIsImmutable = IsImmutableBit::kMask,
+  };
+  using Flags = base::Flags<Flag>;
+  static constexpr int kFlagCount = 6;
 
   // [is_external]: true indicates that the embedder is in charge of freeing the
   // backing_store, while is_external == false means that v8 will free the
@@ -83,14 +98,17 @@ V8_OBJECT class JSArrayBuffer : public JSAPIObjectWithEmbedderSlots {
 
   // [is_shared]: true if this is a SharedArrayBuffer or a
   // GrowableSharedArrayBuffer.
-  DECL_BOOLEAN_ACCESSORS(is_shared)
+  inline SharedFlag is_shared() const;
+  inline void set_is_shared(SharedFlag value);
 
   // [is_resizable_by_js]: true if this is a ResizableArrayBuffer or a
   // GrowableSharedArrayBuffer.
-  DECL_BOOLEAN_ACCESSORS(is_resizable_by_js)
+  inline ResizableFlag is_resizable_by_js() const;
+  inline void set_is_resizable_by_js(ResizableFlag value);
 
   // [is_immutable]: true if this is an ImmutableArrayBuffer.
-  DECL_BOOLEAN_ACCESSORS(is_immutable)
+  inline bool is_immutable() const;
+  inline void set_is_immutable(ImmutableFlag value);
 
   V8_EXPORT_PRIVATE void MakeImmutable(Isolate* isolate);
 
@@ -276,8 +294,8 @@ class ArrayBufferExtension final
   };
 
   ArrayBufferExtension(std::shared_ptr<BackingStore> backing_store,
-                       ArrayBufferExtension::Age age, bool is_shared,
-                       bool is_resizable_by_js)
+                       ArrayBufferExtension::Age age, SharedFlag is_shared,
+                       ResizableFlag is_resizable_by_js)
       : backing_store_(std::move(backing_store)),
         accounting_state_(AccountingLengthField::encode(static_cast<size_t>(
                               backing_store_->PerIsolateAccountingLength())) |
@@ -357,10 +375,12 @@ class ArrayBufferExtension final
   ArrayBufferExtension* next() const { return next_; }
   void set_next(ArrayBufferExtension* extension) { next_ = extension; }
 
-  bool is_shared() const { return is_shared_; }
+  SharedFlag is_shared() const { return is_shared_; }
 
-  bool is_resizable_by_js() const { return is_resizable_by_js_; }
-  void set_is_resizable_by_js(bool value) { is_resizable_by_js_ = value; }
+  ResizableFlag is_resizable_by_js() const { return is_resizable_by_js_; }
+  void set_is_resizable_by_js(ResizableFlag value) {
+    is_resizable_by_js_ = value;
+  }
 
   Age age() const {
     return AccountingState{accounting_state_.load(std::memory_order_relaxed)}
@@ -399,8 +419,8 @@ class ArrayBufferExtension final
 
   // Trusted copies of the in-sandbox JSArrayBuffer flags. We verify that the
   // in-sandbox flags match these trusted copies during critical operations.
-  const bool is_shared_;
-  bool is_resizable_by_js_;
+  const SharedFlag is_shared_;
+  ResizableFlag is_resizable_by_js_;
 };
 
 V8_OBJECT class JSArrayBufferView : public JSAPIObjectWithEmbedderSlots {
@@ -427,7 +447,15 @@ V8_OBJECT class JSArrayBufferView : public JSAPIObjectWithEmbedderSlots {
   DECL_VERIFIER(JSArrayBufferView)
 
   // Bit positions for [bit_field].
-  DEFINE_TORQUE_GENERATED_JS_ARRAY_BUFFER_VIEW_FLAGS()
+  using IsLengthTrackingBit = base::BitField<bool, 0, 1, uint32_t>;
+  using IsBackedByRabBit = IsLengthTrackingBit::Next<bool, 1>;
+  enum Flag : uint32_t {
+    kNone = 0,
+    kIsLengthTracking = IsLengthTrackingBit::kMask,
+    kIsBackedByRab = IsBackedByRabBit::kMask,
+  };
+  using Flags = base::Flags<Flag>;
+  static constexpr int kFlagCount = 2;
 
   inline bool WasDetached() const;
   inline bool IsDetachedOrOutOfBounds() const;
@@ -645,6 +673,34 @@ V8_OBJECT class JSRabGsabDataView : public JSDataViewOrRabGsabDataView {
 
   inline size_t GetByteLength() const;
   inline bool IsOutOfBounds() const;
+} V8_OBJECT_END;
+
+V8_OBJECT class TypedArrayConstructor : public JSFunctionWithPrototype {
+} V8_OBJECT_END;
+V8_OBJECT class Uint8TypedArrayConstructor : public TypedArrayConstructor {
+} V8_OBJECT_END;
+V8_OBJECT class Int8TypedArrayConstructor : public TypedArrayConstructor {
+} V8_OBJECT_END;
+V8_OBJECT class Uint16TypedArrayConstructor : public TypedArrayConstructor {
+} V8_OBJECT_END;
+V8_OBJECT class Int16TypedArrayConstructor : public TypedArrayConstructor {
+} V8_OBJECT_END;
+V8_OBJECT class Uint32TypedArrayConstructor : public TypedArrayConstructor {
+} V8_OBJECT_END;
+V8_OBJECT class Int32TypedArrayConstructor : public TypedArrayConstructor {
+} V8_OBJECT_END;
+V8_OBJECT class Float16TypedArrayConstructor : public TypedArrayConstructor {
+} V8_OBJECT_END;
+V8_OBJECT class Float32TypedArrayConstructor : public TypedArrayConstructor {
+} V8_OBJECT_END;
+V8_OBJECT class Float64TypedArrayConstructor : public TypedArrayConstructor {
+} V8_OBJECT_END;
+V8_OBJECT class Uint8ClampedTypedArrayConstructor
+    : public TypedArrayConstructor {
+} V8_OBJECT_END;
+V8_OBJECT class Biguint64TypedArrayConstructor : public TypedArrayConstructor {
+} V8_OBJECT_END;
+V8_OBJECT class Bigint64TypedArrayConstructor : public TypedArrayConstructor {
 } V8_OBJECT_END;
 
 }  // namespace internal

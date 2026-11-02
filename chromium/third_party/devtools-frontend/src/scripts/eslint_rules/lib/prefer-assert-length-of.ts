@@ -59,7 +59,7 @@ export default createRule({
             fixer.replaceText(firstArgNode, sourceCode.getText(objectNode)),
             fixer.replaceText(secondArgNode, sourceCode.getText(lengthNode)),
           ];
-        }
+        },
       });
     }
 
@@ -70,7 +70,7 @@ export default createRule({
              (isNumberLiteral(node.arguments[0]) && isLengthProperty(node.arguments[1])))) {
           reportError(node);
         }
-      }
+      },
     };
   },
 });

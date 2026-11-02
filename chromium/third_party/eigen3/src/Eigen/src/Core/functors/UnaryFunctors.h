@@ -323,6 +323,11 @@ struct functor_traits<scalar_real_ref_op<Scalar>> {
  */
 template <typename Scalar>
 struct scalar_imag_ref_op {
+  // For a real Scalar, numext::imag_ref returns the temporary RealScalar(0) by value; binding it to the
+  // reference return types below would dangle (issue #3096). Real-valued objects get a read-only zero
+  // expression from imag() instead (see NonConstImagReturnType in CommonCwiseUnaryOps.inc).
+  static_assert(NumTraits<Scalar>::IsComplex,
+                "THE IMAGINARY PART OF A REAL-VALUED OBJECT IS NOT AN LVALUE. USE THE READ-ONLY imag() OVERLOAD.");
   typedef typename NumTraits<Scalar>::Real result_type;
   EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE result_type& operator()(Scalar& a) const {
     return numext::imag_ref(a);
@@ -387,6 +392,38 @@ struct functor_traits<scalar_exp2_op<Scalar>> {
   enum {
     PacketAccess = packet_traits<Scalar>::HasExp,
     Cost = functor_traits<scalar_exp_op<Scalar>>::Cost  // TODO: measure cost of exp2
+  };
+};
+
+/** \internal
+ *
+ * \brief Multiplies a scalar by 2 raised to a fixed integer exponent.
+ *
+ * \sa class CwiseUnaryOp, ArrayBase::ldexp()
+ */
+template <typename Scalar>
+struct scalar_ldexp_op {
+  static_assert(!NumTraits<Scalar>::IsComplex && !NumTraits<Scalar>::IsInteger,
+                "ldexp is only defined for real floating-point scalar types");
+  EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE explicit scalar_ldexp_op(int exponent) : m_exponent(exponent) {}
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Scalar operator()(const Scalar& a) const {
+    return numext::ldexp(a, m_exponent);
+  }
+  template <typename Packet>
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Packet packetOp(const Packet& a) const {
+    // pldexp clamps exponents, so a saturating conversion to Scalar is safe.
+    return internal::pldexp(a, pset1<Packet>(static_cast<Scalar>(m_exponent)));
+  }
+
+ private:
+  const int m_exponent;
+};
+template <typename Scalar>
+struct functor_traits<scalar_ldexp_op<Scalar>> {
+  enum {
+    // HasExp packets already require a tested pldexp implementation.
+    PacketAccess = packet_traits<Scalar>::HasExp,
+    Cost = 4 * NumTraits<Scalar>::MulCost
   };
 };
 
@@ -1210,7 +1247,7 @@ struct scalar_logistic_op_impl {
   }
 };
 
-// Complex-valud implementation.
+// Complex-valued implementation.
 template <typename T>
 struct scalar_logistic_op_impl<T, std::enable_if_t<NumTraits<T>::IsComplex>> {
   EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE T operator()(const T& x) const {
@@ -1237,7 +1274,7 @@ struct scalar_logistic_op : scalar_logistic_op_impl<T> {};
  * pexp_float. See the individual steps described in the code below.
  * Note that compared to pexp, we use an additional outer multiplicative
  * range reduction step using the identity exp(x) = exp(x/2)^2.
- * This prevert us from having to call ldexp on values that could produce
+ * This prevents us from having to call ldexp on values that could produce
  * a denormal result, which allows us to call the faster implementation in
  * pldexp_fast_impl<Packet>::run(p, m).
  * The final squaring, however, doubles the error bound on the final
@@ -1313,12 +1350,12 @@ struct scalar_logistic_op<float> {
     return pselect(zero_mask, cst_zero, pdiv(e, padd(cst_one, e)));
   }
 };
-#endif  // #ifndef EIGEN_GPU_COMPILE_PHASE
+#endif  // #ifndef EIGEN_GPUCC
 
 template <typename T>
 struct functor_traits<scalar_logistic_op<T>> {
   enum {
-    // The cost estimate for float here here is for the common(?) case where
+    // The cost estimate for float here is for the common(?) case where
     // all arguments are greater than -9.
     Cost = scalar_div_cost<T, packet_traits<T>::HasDiv>::value +
            (std::is_same<T, float>::value ? NumTraits<T>::AddCost * 15 + NumTraits<T>::MulCost * 11

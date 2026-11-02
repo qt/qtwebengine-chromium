@@ -44,8 +44,8 @@ void* Alloc(size_t num_members, size_t member_size) {
 
   return GetGeneralPartitionAllocator()
       .root()
-      ->AllocInline<partition_alloc::AllocFlags::kReturnNull>(
-          total.ValueOrDie(), "GeneralPartition");
+      ->Alloc<partition_alloc::AllocFlags::kReturnNull>(total.ValueOrDie(),
+                                                        "GeneralPartition");
 }
 
 void* Calloc(size_t num_members, size_t member_size) {
@@ -57,9 +57,9 @@ void* Calloc(size_t num_members, size_t member_size) {
 
   return GetGeneralPartitionAllocator()
       .root()
-      ->AllocInline<partition_alloc::AllocFlags::kReturnNull |
-                    partition_alloc::AllocFlags::kZeroFill>(total.ValueOrDie(),
-                                                            "GeneralPartition");
+      ->Alloc<partition_alloc::AllocFlags::kReturnNull |
+              partition_alloc::AllocFlags::kZeroFill>(total.ValueOrDie(),
+                                                      "GeneralPartition");
 }
 
 void* Realloc(void* ptr, size_t num_members, size_t member_size) {
@@ -98,8 +98,8 @@ void* StringAlloc(size_t num_members, size_t member_size) {
 
   return GetStringPartitionAllocator()
       .root()
-      ->AllocInline<partition_alloc::AllocFlags::kReturnNull>(
-          total.ValueOrDie(), "StringPartition");
+      ->Alloc<partition_alloc::AllocFlags::kReturnNull>(total.ValueOrDie(),
+                                                        "StringPartition");
 }
 
 void StringDealloc(void* ptr) {

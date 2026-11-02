@@ -32,7 +32,7 @@
 #include "include/gpu/ganesh/GrRecordingContext.h"
 #include "include/gpu/ganesh/GrTypes.h"
 #include "include/gpu/ganesh/SkImageGanesh.h"
-#include "include/private/base/SkAssert.h"
+#include "include/private/SkAssert.h"
 #include "include/private/gpu/ganesh/GrImageContext.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkAutoPixmapStorage.h"
@@ -166,7 +166,11 @@ sk_sp<SkImage> TextureFromAHardwareBufferWithData(GrDirectContext* dContext,
     surfaceContext.writePixels(dContext, pixmap, {0, 0});
 
     GrSurfaceProxy* p[1] = {surfaceContext.asSurfaceProxy()};
-    drawingManager->flush(p, SkSurfaces::BackendSurfaceAccess::kNoAccess, {}, nullptr);
+    GrDirectContext::FlushResult result = drawingManager->flush(
+        p, SkSurfaces::BackendSurfaceAccess::kNoAccess, {}, nullptr);
+    if (!result.fSuccess) {
+        return nullptr;
+    }
 
     return image;
 }

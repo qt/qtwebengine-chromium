@@ -9,7 +9,7 @@ import * as i18n from '../i18n/i18n.js';
 import * as Platform from '../platform/platform.js';
 
 import {type DeferredDOMNode, DOMModel, type DOMNode} from './DOMModel.js';
-import {FrameManager} from './FrameManager.js';
+import type {FrameManager} from './FrameManager.js';
 import {Events as NetworkManagerEvents, NetworkManager, type RequestUpdateDroppedEventData} from './NetworkManager.js';
 import type {NetworkRequest} from './NetworkRequest.js';
 import {Resource} from './Resource.js';
@@ -18,13 +18,14 @@ import {SDKModel} from './SDKModel.js';
 import {SecurityOriginManager} from './SecurityOriginManager.js';
 import {StorageKeyManager} from './StorageKeyManager.js';
 import {Capability, type Target, Type} from './Target.js';
-import {TargetManager} from './TargetManager.js';
+import type {TargetManager} from './TargetManager.js';
 
 export class ResourceTreeModel extends SDKModel<EventTypes> {
   readonly agent: ProtocolProxyApi.PageApi;
   readonly storageAgent: ProtocolProxyApi.StorageApi;
   readonly #securityOriginManager: SecurityOriginManager;
   readonly #storageKeyManager: StorageKeyManager;
+  readonly #frameManager: FrameManager;
   readonly framesInternal = new Map<string, ResourceTreeFrame>();
   #cachedResourcesProcessed = false;
   #pendingReloadOptions: {
@@ -38,6 +39,7 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
 
   constructor(target: Target) {
     super(target);
+    this.#frameManager = target.targetManager().getFrameManager();
 
     const networkManager = target.model(NetworkManager);
     if (networkManager) {
@@ -72,16 +74,16 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
     return request.frameId ? resourceTreeModel.frameForId(request.frameId) : null;
   }
 
-  static frames(): ResourceTreeFrame[] {
+  static frames(targetManager: TargetManager): ResourceTreeFrame[] {
     const result = [];
-    for (const resourceTreeModel of TargetManager.instance().models(ResourceTreeModel)) {
+    for (const resourceTreeModel of targetManager.models(ResourceTreeModel)) {
       result.push(...resourceTreeModel.frames());
     }
     return result;
   }
 
-  static resourceForURL(url: Platform.DevToolsPath.UrlString): Resource|null {
-    for (const resourceTreeModel of TargetManager.instance().models(ResourceTreeModel)) {
+  static resourceForURL(targetManager: TargetManager, url: Platform.DevToolsPath.UrlString): Resource|null {
+    for (const resourceTreeModel of targetManager.models(ResourceTreeModel)) {
       const mainFrame = resourceTreeModel.mainFrame;
       // Workers call into this with no #frames available.
       const result = mainFrame ? mainFrame.resourceForURL(url) : null;
@@ -92,8 +94,8 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
     return null;
   }
 
-  static reloadAllPages(bypassCache?: boolean, scriptToEvaluateOnLoad?: string): void {
-    for (const resourceTreeModel of TargetManager.instance().models(ResourceTreeModel)) {
+  static reloadAllPages(targetManager: TargetManager, bypassCache?: boolean, scriptToEvaluateOnLoad?: string): void {
+    for (const resourceTreeModel of targetManager.models(ResourceTreeModel)) {
       if (resourceTreeModel.target().parentTarget()?.type() !== Type.FRAME) {
         resourceTreeModel.reloadPage(bypassCache, scriptToEvaluateOnLoad);
       }
@@ -215,8 +217,8 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
     void this.updateStorageKeys();
 
     if (frame.backForwardCacheDetails.restoredFromCache) {
-      FrameManager.instance().modelRemoved(this);
-      FrameManager.instance().modelAdded(this);
+      this.#frameManager.modelRemoved(this);
+      this.#frameManager.modelAdded(this);
       void this.#buildResourceTree();
     }
   }

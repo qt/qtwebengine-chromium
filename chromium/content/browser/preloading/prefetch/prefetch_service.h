@@ -12,6 +12,7 @@
 #include "base/dcheck_is_on.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
+#include "base/types/pass_key.h"
 #include "base/types/strong_alias.h"
 #include "content/browser/preloading/prefetch/pre_prefetch_container.h"
 #include "content/browser/preloading/prefetch/prefetch_container.h"
@@ -167,13 +168,6 @@ class CONTENT_EXPORT PrefetchService : public PrefetchContainerObserver {
   static void SetHostNonUniqueFilterForTesting(
       bool (*filter)(std::string_view));
 
-  // Sets the URLLoaderFactory to be used as
-  // `GetURLLoaderFactoryForCurrentPrefetch()` during testing. Note that this
-  // does not take ownership of |url_loader_factory|, and caller must keep
-  // ownership over the course of the test.
-  static void SetURLLoaderFactoryForTesting(
-      network::SharedURLLoaderFactory* url_loader_factory);
-
   // Sets the NetworkContext to use just for the proxy lookup. Note that this
   // does not take ownership of |network_context|, and the caller must keep
   // ownership over the course of the test.
@@ -211,27 +205,10 @@ class CONTENT_EXPORT PrefetchService : public PrefetchContainerObserver {
       const StoragePartition::StorageKeyMatcherFunction& storage_key_filter,
       PrefetchStatus prefetch_status_on_destruction);
 
-  // Returns candidate `PrefetchContainer`s and servable states for matching
-  // process. Corresponds to 3.4. of
-  // https://wicg.github.io/nav-speculation/prefetch.html#wait-for-a-matching-prefetch-record
-  //
-  // Note that `PrefetchContainer::GetMatchResolverAction().ToServableState()`
-  // depends on `base::TimeTicks::now()` and can expire (can change from
-  // `kServable` to `kNotServable`) in the minute between two calls. Deciding
-  // something with multiple
-  // ``PrefetchContainer::GetMatchResolverAction().ToServableState()` calls can
-  // lead inconsistent state. To avoid that, we record
-  // `PrefetchServableState` in the `flat_map` at the beginning of
-  // matching process and refer to it.
-  std::pair<std::vector<PrefetchContainer*>,
-            base::flat_map<PrefetchKey, PrefetchServableState>>
-  CollectMatchCandidates(const PrefetchKey& key,
-                         bool is_nav_prerender,
-                         base::WeakPtr<PrefetchServingPageMetricsContainer>
-                             serving_page_metrics_container,
-                         const PrefetchKey* key_ahead_of_prerender,
-                         PrefetchPotentialCandidateCollectResult*
-                             collect_result_ahead_of_prerender);
+  const std::map<PrefetchKey, std::unique_ptr<PrefetchContainer>>&
+  owned_prefetches(base::PassKey<PrefetchMatchResolver>) const {
+    return owned_prefetches_;
+  }
   PrefetchContainer* FindPrefetchAheadOfPrerenderForMetrics(
       const PreloadPipelineInfo& pipeline_info);
 
@@ -246,8 +223,6 @@ class CONTENT_EXPORT PrefetchService : public PrefetchContainerObserver {
   bool StartSinglePrefetch(base::PassKey<PrefetchScheduler>,
                            PrefetchContainer& prefetch_container);
 
-  bool StartSinglePrefetchForTesting(PrefetchContainer& prefetch_container);
-
   const PrefetchScheduler& GetPrefetchSchedulerForMetrics() {
     return *scheduler_;
   }
@@ -260,7 +235,9 @@ class CONTENT_EXPORT PrefetchService : public PrefetchContainerObserver {
   // Cancels unrelated prefetches.
   //
   // See `CancelUnrelatedPrefetchURLLoaderThrottle`.
-  void CancelUnrelatedPrefetchForNavigation();
+  void CancelUnrelatedPrefetchForNavigation(
+      const std::optional<blink::DocumentToken>&
+          navigation_initiator_document_token);
 
   const PrefetchContainer* GetPrefetchContainerForTesting(
       const PrefetchKey& key) const;
@@ -350,8 +327,6 @@ class CONTENT_EXPORT PrefetchService : public PrefetchContainerObserver {
   // `PrefetchContainerDefaultTtlInPrefetchService()` returns a value less than
   // or equal to zero, the prefetch is kept indefinitely.
   void OnPrefetchTimeout(base::WeakPtr<PrefetchContainer> prefetch);
-
-  bool StartSinglePrefetch(PrefetchContainer& prefetch_container);
 
   // Creates a new URL loader and starts a network request for
   // |prefetch_container|. |MakePrefetchRequest| must have been previously

@@ -10,7 +10,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 // This file is included into the body of the base classes supporting matrix specific coefficient-wise functions.
-// This include MatrixBase and SparseMatrixBase.
+// These are MatrixBase, ArrayBase, and SparseMatrixBase.
 
 typedef CwiseUnaryOp<internal::scalar_abs_op<Scalar>, const Derived> CwiseAbsReturnType;
 typedef CwiseUnaryOp<internal::scalar_abs2_op<Scalar>, const Derived> CwiseAbs2ReturnType;

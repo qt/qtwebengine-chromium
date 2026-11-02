@@ -21,8 +21,6 @@ try_.defaults.set(
     experiments = {
         "chromium_tests.resultdb_module": 100,
     },
-    # Max. pending time for builds. CQ considers builds pending >2h as timed
-    # out: http://shortn/_8PaHsdYmlq. Keep this in sync.
     expiration_timeout = 2 * time.hour,
     service_account = "chromium-try-gpu-builder@chops-service-accounts.iam.gserviceaccount.com",
     siso_project = siso.project.DEFAULT_UNTRUSTED,
@@ -54,15 +52,6 @@ def gpu_android_builder(*, name, **kwargs):
         ssd = None,
         **kwargs
     )
-
-gpu_android_builder(
-    name = "gpu-fyi-try-android-nvidia-shield-tv",
-    mirrors = [
-        "ci/GPU FYI Android arm Builder",
-        "ci/Android FYI Release (NVIDIA Shield TV)",
-    ],
-    gn_args = "ci/GPU FYI Android arm Builder",
-)
 
 gpu_android_builder(
     name = "gpu-fyi-try-android-q-pixel-2-32",
@@ -259,27 +248,6 @@ gpu_linux_builder(
 )
 
 gpu_linux_builder(
-    name = "gpu-fyi-try-linux-amd-9900x-exp",
-    description_html = "Runs release GPU tests on experimental Linux/AMD 9900X configs",
-    mirrors = [
-        "ci/GPU FYI Linux Builder",
-        "ci/Linux FYI Experimental Release (AMD 9900X)",
-    ],
-    gn_args = "ci/GPU FYI Linux Builder",
-    execution_timeout = 12 * time.hour,
-)
-
-gpu_linux_builder(
-    name = "gpu-fyi-try-linux-intel-arc-140v-exp",
-    mirrors = [
-        "ci/GPU FYI Linux Builder",
-        "ci/Linux FYI Experimental Release (Intel Arc 140V)",
-    ],
-    gn_args = "ci/GPU FYI Linux Builder",
-    execution_timeout = 12 * time.hour,
-)
-
-gpu_linux_builder(
     name = "gpu-fyi-try-linux-intel-exp",
     mirrors = [
         "ci/GPU FYI Linux Builder",
@@ -398,15 +366,6 @@ def gpu_mac_builder(*, name, **kwargs):
         siso_remote_jobs = siso.remote_jobs.LOW_JOBS_FOR_CQ,
         **kwargs
     )
-
-gpu_mac_builder(
-    name = "gpu-fyi-try-mac-amd-pro-rel",
-    mirrors = [
-        "ci/GPU FYI Mac Builder",
-        "ci/Mac Pro FYI Release (AMD)",
-    ],
-    gn_args = "ci/GPU FYI Mac Builder",
-)
 
 gpu_mac_builder(
     name = "gpu-fyi-try-mac-amd-retina-asan",
@@ -716,17 +675,6 @@ gpu_win_builder(
 )
 
 gpu_win_builder(
-    name = "gpu-fyi-try-win11-x64-amd-9900x-exp",
-    description_html = "Runs release GPU tests on experimental Win/AMD 9900X configs",
-    mirrors = [
-        "ci/GPU FYI Win x64 Builder",
-        "ci/Win11 FYI x64 Experimental Release (AMD 9900X)",
-    ],
-    gn_args = "ci/GPU FYI Win x64 Builder",
-    execution_timeout = 12 * time.hour,
-)
-
-gpu_win_builder(
     name = "gpu-fyi-try-win11-x64-amd-rx-9070xt-exp",
     description_html = "Runs release GPU tests on experimental Win/AMD 9070XT configs",
     mirrors = [
@@ -734,16 +682,6 @@ gpu_win_builder(
         "ci/Win11 FYI x64 Experimental Release (AMD 9070XT)",
     ],
     gn_args = "ci/GPU FYI Win x64 Builder",
-)
-
-gpu_win_builder(
-    name = "gpu-fyi-try-win11-x64-intel-arc-140v-exp",
-    mirrors = [
-        "ci/GPU FYI Win x64 Builder",
-        "ci/Win11 FYI x64 Experimental Release (Intel Arc 140V)",
-    ],
-    gn_args = "ci/GPU FYI Win x64 Builder",
-    execution_timeout = 12 * time.hour,
 )
 
 gpu_win_builder(

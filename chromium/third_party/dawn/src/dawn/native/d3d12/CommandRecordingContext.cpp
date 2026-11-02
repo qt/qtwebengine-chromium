@@ -40,6 +40,7 @@
 #include "src/dawn/native/d3d12/HeapD3D12.h"
 #include "src/dawn/native/d3d12/ResidencyManagerD3D12.h"
 #include "src/dawn/platform/tracing/TraceEvent.h"
+#include "src/utils/numeric.h"
 
 namespace dawn::native::d3d12 {
 
@@ -81,8 +82,7 @@ MaybeError CommandRecordingContext::ExecuteCommandList(Device* device,
     if (error.IsError()) {
         DAWN_TRY(std::move(error));
     }
-    DAWN_TRY(device->GetResidencyManager()->EnsureHeapsAreResident(mHeapsPendingUsage.data(),
-                                                                   mHeapsPendingUsage.size()));
+    DAWN_TRY(device->GetResidencyManager()->EnsureHeapsAreResident(mHeapsPendingUsage));
 
     if (device->IsToggleEnabled(Toggle::RecordDetailedTimingInTraceEvents)) {
         uint64_t gpuTimestamp;
@@ -101,7 +101,7 @@ MaybeError CommandRecordingContext::ExecuteCommandList(Device* device,
         LARGE_INTEGER cpuFrequencyLargeInteger;
         commandQueue->GetTimestampFrequency(&gpuFrequency);
         QueryPerformanceFrequency(&cpuFrequencyLargeInteger);  // Supported since Windows 2000
-        cpuFrequency = cpuFrequencyLargeInteger.QuadPart;
+        cpuFrequency = sign_cast(cpuFrequencyLargeInteger.QuadPart);
 
         std::string timingInfo = absl::StrFormat(
             "UTC Time: %u/%u/%u %02u:%02u:%02u.%03u, File Time: %u, CPU "

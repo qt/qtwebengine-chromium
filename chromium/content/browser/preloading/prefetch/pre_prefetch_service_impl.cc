@@ -34,6 +34,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_features.h"
 #include "mojo/public/cpp/bindings/remote.h"
+#include "services/network/public/cpp/constants.h"
 #include "services/network/public/cpp/url_loader_factory_builder.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
@@ -77,7 +78,11 @@ CreateURLLoaderFactoryOnUI(BrowserContext* browser_context) {
     pending_factory = url_loader_factory::CreatePendingRemote(
         ContentBrowserClient::URLLoaderFactoryType::kPrefetch,
         url_loader_factory::TerminalParams::ForNetworkContext(
-            network_context, CreatePrefetchURLLoaderFactoryParams(),
+            network_context,
+            CreatePrefetchURLLoaderFactoryParams(
+                // Pre-prefetches are browser-initiated without a referring
+                // frame/context, so no creator restrictions apply.
+                network::GetNoOpNetworkRestrictionsId()),
             url_loader_factory::HeaderClientOption::kDisallow),
         /*content_client_params=*/std::nullopt);
   }
@@ -99,7 +104,7 @@ network::HttpRequestHeadersUpdateParams PreCalculatePrePrefetchHeadersOnUI(
       PrefetchRequest::CreateBrowserInitiatedWithoutWebContents(
           browser_context, key.origin.GetURL(),
           PrefetchType(PreloadingTriggerType::kEmbedder,
-                       /*use_prefetch_proxy=*/true),
+                       /*use_prefetch_proxy=*/false),
           /*histogram_suffix=*/"Tentative", blink::mojom::Referrer(),
           key.javascript_enabled,
           /*referring_origin=*/std::nullopt,
@@ -422,7 +427,7 @@ PrePrefetchServiceImpl::StartPrePrefetchRequest(
       PrefetchRequest::CreateBrowserInitiatedWithoutWebContentsOffTheMainThread(
           browser_context_weak_on_ui_thread_, url,
           PrefetchType(PreloadingTriggerType::kEmbedder,
-                       /*use_prefetch_proxy=*/true),
+                       /*use_prefetch_proxy=*/false),
           histogram_suffix, blink::mojom::Referrer(), javascript_enabled,
           /*referring_origin=*/std::nullopt, std::move(no_vary_search_hint),
           priority,

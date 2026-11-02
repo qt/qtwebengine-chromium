@@ -20,6 +20,27 @@ package(default_visibility = ["//visibility:public"])
 cc_library(
     name = "mixin",
     hdrs = ["mixin.h"],
+    deps = [
+        ":graph",
+        ":type_id",
+    ],
+)
+
+cc_library(
+    name = "type_id",
+    hdrs = ["type_id.h"],
+    deps = [
+        "@abseil-cpp//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "type_id_test",
+    srcs = ["type_id_test.cc"],
+    deps = [
+        ":type_id",
+        "@com_google_googletest//:gtest_main",  # gunit
+    ],
 )
 
 cc_library(
@@ -27,6 +48,7 @@ cc_library(
     hdrs = ["arithmetic_helpers.h"],
     deps = [
         ":graph",
+        ":mixin",
         ":shape",
         ":utils",
         "//litert/tensor",
@@ -80,16 +102,18 @@ cc_library(
     name = "graph",
     srcs = ["graph.cc"],
     hdrs = ["graph.h"],
-    # copybara:uncomment includes = ["../utils"],
     defines = select({
         ":op_debugger_enabled": ["LITERT_OP_DEBUGGER_ENABLED=1"],
         "//conditions:default": [],
     }),
+    # copybara:uncomment includes = ["../utils"],
     deps = [
+        ":type_id",
         "//litert/tensor:buffer",
         "//litert/tensor:datatypes",
         "//litert/tensor/utils:macros",
         "//litert/tensor/utils:source_location",
+        "@abseil-cpp//absl/container:inlined_vector",
         "@abseil-cpp//absl/log:absl_log",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:statusor",
@@ -103,6 +127,7 @@ cc_test(
     srcs = ["graph_test.cc"],
     deps = [
         ":graph",
+        ":type_id",
         "//litert/tensor:buffer",
         "//litert/tensor:datatypes",
         "//litert/tensor/utils:matchers",

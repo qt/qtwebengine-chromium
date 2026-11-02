@@ -22,10 +22,11 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "fcp/base/tracing_schema.h"
 #include "fcp/base/unique_value.h"
 #include "fcp/testing/result_matchers.h"
-#include "fcp/testing/testing.h"
 #include "fcp/testing/tracing.h"
 #include "fcp/tracing/test_tracing_recorder.h"
 
@@ -264,7 +265,7 @@ TEST(ResultTest, ExpectOneOf) {
 
 TEST(ResultTest, ExpectOk) {
   TestTracingRecorder recorder;
-  EXPECT_THAT(Result<absl::Status>(FCP_STATUS(OK)).Then(ExpectOk()),
+  EXPECT_THAT(Result<absl::Status>(absl::OkStatus()).Then(ExpectOk()),
               HasValue(Unit{}));
 }
 
@@ -272,7 +273,7 @@ TEST(ResultTest, ExpectOkReturnsError) {
   TestTracingRecorder recorder;
   recorder.ExpectError<ResultExpectStatusError>();
   EXPECT_THAT(
-      Result<absl::Status>(FCP_STATUS(INVALID_ARGUMENT)).Then(ExpectOk()),
+      Result<absl::Status>(absl::InvalidArgumentError("")).Then(ExpectOk()),
       IsError());
 }
 
@@ -286,7 +287,7 @@ TEST(ResultTest, ExpectOkStatusOr) {
 TEST(ResultTest, ExpectOkStatusOrReturnsError) {
   TestTracingRecorder recorder;
   recorder.ExpectError<ResultExpectStatusError>();
-  EXPECT_THAT(Result<absl::StatusOr<Unit>>(FCP_STATUS(INVALID_ARGUMENT))
+  EXPECT_THAT(Result<absl::StatusOr<Unit>>(absl::InvalidArgumentError(""))
                   .Then(ExpectOk()),
               IsError());
   EXPECT_THAT(
@@ -298,7 +299,7 @@ TEST(ResultTest, ExpectOkStatusOrReturnsError) {
 TEST(ResultTest, TraceFailedPrecondition) {
   TestTracingRecorder recorder;
   recorder.ExpectError<ResultExpectStatusError>();
-  EXPECT_THAT(Result<absl::StatusOr<Unit>>(FCP_STATUS(FAILED_PRECONDITION))
+  EXPECT_THAT(Result<absl::StatusOr<Unit>>(absl::FailedPreconditionError(""))
                   .Then(ExpectOk()),
               IsError());
   EXPECT_THAT(

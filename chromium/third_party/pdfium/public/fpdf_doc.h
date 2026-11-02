@@ -136,6 +136,20 @@ FPDFBookmark_GetDest(FPDF_DOCUMENT document, FPDF_BOOKMARK bookmark);
 FPDF_EXPORT FPDF_ACTION FPDF_CALLCONV
 FPDFBookmark_GetAction(FPDF_BOOKMARK bookmark);
 
+// Experimental API.
+// Get the color of a bookmark.
+//
+// bookmark - handle to a bookmark.
+// R        - pointer to a float to receive the red component [0.0 - 1.0].
+// G        - pointer to a float to receive the green component [0.0 - 1.0].
+// B        - pointer to a float to receive the blue component [0.0 - 1.0].
+//
+// Returns TRUE on success, in which case |R|, |G|, and |B| are updated.
+// Returns FALSE on failure, if the bookmark is invalid, output for R, G and B
+// aren't in the range or if the bookmark does not specify a color.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFBookmark_GetColor(FPDF_BOOKMARK bookmark, float* R, float* G, float* B);
+
 // Get the type of |action|.
 //
 //   action - handle to the action.

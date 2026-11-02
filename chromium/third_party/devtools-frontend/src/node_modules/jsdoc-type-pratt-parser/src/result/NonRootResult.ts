@@ -1,7 +1,8 @@
 import type {
   QuoteStyle,
   RootResult,
-  NameResult
+  NameResult,
+  BaseNode
 } from './RootResult.js'
 
 import type { Node } from 'estree'
@@ -25,7 +26,7 @@ export type NonRootResult =
   | ComputedPropertyResult
   | ComputedMethodResult
 
-export interface ObjectFieldResult {
+export interface ObjectFieldResult extends BaseNode {
   type: 'JsdocTypeObjectField'
   key: string | MappedTypeResult | IndexSignatureResult | ComputedPropertyResult | ComputedMethodResult
   right: RootResult | undefined
@@ -39,13 +40,13 @@ export interface ObjectFieldResult {
   }
 }
 
-export interface JsdocObjectFieldResult {
+export interface JsdocObjectFieldResult extends BaseNode {
   type: 'JsdocTypeJsdocObjectField'
   left: RootResult
   right: RootResult
 }
 
-export interface PropertyResult {
+export interface PropertyResult extends BaseNode {
   type: 'JsdocTypeProperty'
   value: string
   meta: {
@@ -57,7 +58,7 @@ export interface PropertyResult {
  * A key value pair represented by a `:`. Can occur as a named parameter of a {@link FunctionResult} or as an entry for
  * an {@link TupleResult}. Is a {@link NonRootResult}.
  */
-export interface KeyValueResult {
+export interface KeyValueResult extends BaseNode {
   type: 'JsdocTypeKeyValue'
   key: string
   right: RootResult | undefined
@@ -71,19 +72,19 @@ export interface KeyValueResult {
   }
 }
 
-export interface IndexSignatureResult {
+export interface IndexSignatureResult extends BaseNode {
   type: 'JsdocTypeIndexSignature'
   key: string
   right: RootResult
 }
 
-export interface MappedTypeResult {
+export interface MappedTypeResult extends BaseNode {
   type: 'JsdocTypeMappedType'
   key: string
   right: RootResult
 }
 
-export interface TypeParameterResult {
+export interface TypeParameterResult extends BaseNode {
   type: 'JsdocTypeTypeParameter'
   defaultValue?: RootResult
   name: NameResult
@@ -93,7 +94,7 @@ export interface TypeParameterResult {
   }
 }
 
-export interface CallSignatureResult {
+export interface CallSignatureResult extends BaseNode {
   type: 'JsdocTypeCallSignature'
   parameters: Array<RootResult | KeyValueResult>
   returnType: RootResult,
@@ -107,7 +108,7 @@ export interface CallSignatureResult {
   }
 }
 
-export interface ConstructorSignatureResult {
+export interface ConstructorSignatureResult extends BaseNode {
   type: 'JsdocTypeConstructorSignature'
   parameters: Array<RootResult | KeyValueResult>
   returnType: RootResult,
@@ -122,7 +123,7 @@ export interface ConstructorSignatureResult {
   }
 }
 
-export interface MethodSignatureResult {
+export interface MethodSignatureResult extends BaseNode {
   type: 'JsdocTypeMethodSignature'
   name: string
   meta: {
@@ -139,17 +140,17 @@ export interface MethodSignatureResult {
   typeParameters?: TypeParameterResult[]
 }
 
-export interface IndexedAccessIndexResult {
+export interface IndexedAccessIndexResult extends BaseNode {
   type: 'JsdocTypeIndexedAccessIndex',
   right: RootResult
 }
 
-export interface ComputedPropertyResult {
+export interface ComputedPropertyResult extends BaseNode {
   type: 'JsdocTypeComputedProperty',
   value: RootResult | Node
 }
 
-export interface ComputedMethodResult {
+export interface ComputedMethodResult extends BaseNode {
   type: 'JsdocTypeComputedMethod',
   value: RootResult | Node,
   optional: boolean,

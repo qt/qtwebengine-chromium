@@ -146,10 +146,10 @@ mod test {
     ];
 
     #[test]
+    #[cfg_attr(skip_external_fonts, ignore)]
     fn test_instance_iterator() {
         let bytes = std::fs::read(variable_collection_testfont())
-            .ok()
-            .unwrap_or_default();
+            .expect("Could not read test font file");
         let fileref = FileRef::new(&bytes).ok();
         let fonts = fonts_and_indices(fileref);
         for (font, _ttc_index) in fonts {

@@ -20,8 +20,7 @@ use core::{
 };
 
 use sha2::Sha256;
-#[cfg(test)]
-use zerocopy::{Immutable, IntoBytes};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use super::{Invoke, Pad, RomfileName};
 use crate::{acpi::files::Files, fw_cfg::Firmware, pci::PciWindows};
@@ -35,7 +34,7 @@ use crate::{acpi::files::Files, fw_cfg::Firmware, pci::PciWindows};
 /// See `bios_linker_loader_add_checksum()` in QEMU
 /// `hw/acpi/bios-linker-loader.c` for the best available documentation.
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, FromBytes, IntoBytes, KnownLayout, Immutable)]
 pub struct AddChecksum {
     file: RomfileName,
     /// Location of the checksum to be patched within the file, relative to the
@@ -90,15 +89,13 @@ impl<FW: Firmware, F: Files> Invoke<FW, F> for AddChecksum {
     ) -> Result<(), &'static str> {
         let file = files.get_file_mut(self.file())?;
 
-        if self.start as usize > file.len()
-            || (self.start + self.length) as usize > file.len()
-            || self.offset as usize >= file.len()
-        {
+        let start = self.start as usize;
+        let end = start + self.length as usize;
+        if start > file.len() || end > file.len() || self.offset as usize >= file.len() {
             return Err("COMMAND_ADD_CHECKSUM invalid; read or write would overflow file");
         }
 
-        let checksum =
-            AddChecksum::checksum(&file[self.start as usize..(self.start + self.length) as usize]);
+        let checksum = AddChecksum::checksum(&file[start..end]);
         let val = file.get_mut(self.offset as usize).unwrap();
         *val = val.wrapping_sub(checksum);
         Ok(())

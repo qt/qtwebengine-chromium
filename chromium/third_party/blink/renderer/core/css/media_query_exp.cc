@@ -67,13 +67,15 @@ static inline bool FeatureWithValidIdent(const String& media_feature,
            ident == CSSValueID::kPictureInPicture;
   }
 
-  if (RuntimeEnabledFeatures::DesktopPWAsAdditionalWindowingControlsEnabled() &&
+  if (RuntimeEnabledFeatures::DesktopPWAsAdditionalWindowingControlsEnabled(
+          context.GetExecutionContext()) &&
       media_feature == media_feature_names::kDisplayStateMediaFeature) {
     return ident == CSSValueID::kFullscreen || ident == CSSValueID::kNormal ||
            ident == CSSValueID::kMinimized || ident == CSSValueID::kMaximized;
   }
 
-  if (RuntimeEnabledFeatures::DesktopPWAsAdditionalWindowingControlsEnabled() &&
+  if (RuntimeEnabledFeatures::DesktopPWAsAdditionalWindowingControlsEnabled(
+          context.GetExecutionContext()) &&
       media_feature == media_feature_names::kResizableMediaFeature) {
     return ident == CSSValueID::kTrue || ident == CSSValueID::kFalse;
   }
@@ -659,7 +661,7 @@ String MediaQueryExp::Serialize() const {
   // <mf-plain>  e.g. (width: 100px)
   if (!bounds_.IsRange()) {
     if (HasMediaFeature() || IsCustomMedia()) {
-      result.Append(media_feature_);
+      SerializeIdentifier(media_feature_, result);
     } else {
       result.Append(reference_value_->CssText());
     }
@@ -677,7 +679,7 @@ String MediaQueryExp::Serialize() const {
       result.Append(" ");
     }
     if (HasMediaFeature()) {
-      result.Append(media_feature_);
+      SerializeIdentifier(media_feature_, result);
     } else {
       result.Append(reference_value_->CssText());
     }
@@ -743,9 +745,12 @@ unsigned MediaQueryExpValue::GetUnitFlags() const {
       length_type_flags.test(CSSPrimitiveValue::kUnitTypeZeroCharacterWidth) ||
       length_type_flags.test(CSSPrimitiveValue::kUnitTypeFontCapitalHeight) ||
       length_type_flags.test(
-          CSSPrimitiveValue::kUnitTypeIdeographicFullWidth) ||
-      length_type_flags.test(CSSPrimitiveValue::kUnitTypeLineHeight)) {
+          CSSPrimitiveValue::kUnitTypeIdeographicFullWidth)) {
     unit_flags |= UnitFlags::kFontRelative;
+  }
+
+  if (length_type_flags.test(CSSPrimitiveValue::kUnitTypeLineHeight)) {
+    unit_flags |= UnitFlags::kLineHeightRelative;
   }
 
   if (length_type_flags.test(CSSPrimitiveValue::kUnitTypeRootFontSize) ||
@@ -757,7 +762,7 @@ unsigned MediaQueryExpValue::GetUnitFlags() const {
       length_type_flags.test(
           CSSPrimitiveValue::kUnitTypeRootFontIdeographicFullWidth) ||
       length_type_flags.test(CSSPrimitiveValue::kUnitTypeRootLineHeight)) {
-    unit_flags |= UnitFlags::kRootFontRelative;
+    unit_flags |= UnitFlags::kRootRelative;
   }
 
   if (CSSPrimitiveValue::HasDynamicViewportUnits(length_type_flags)) {

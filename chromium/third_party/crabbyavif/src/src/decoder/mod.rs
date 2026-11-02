@@ -32,6 +32,9 @@ use crate::codecs::avm::Avm;
 #[cfg(feature = "jpegxl")]
 use crate::codecs::libjxl::Libjxl;
 
+#[cfg(feature = "satofloat")]
+use crate::internal_utils::sampletransform::*;
+
 use crate::codecs::DecoderConfig;
 use crate::gainmap::*;
 use crate::image::*;
@@ -123,8 +126,10 @@ pub const DEFAULT_IMAGE_COUNT_LIMIT: u32 = 12 * 3600 * 60;
 #[derive(Debug, PartialEq)]
 pub enum ImageContentType {
     None,
+    Color,
     ColorAndAlpha,
     GainMap,
+    ColorAndGainMap,
     All,
 }
 
@@ -132,15 +137,17 @@ impl ImageContentType {
     pub(crate) fn decoding_items(&self) -> Vec<DecodingItem> {
         let categories = match self {
             Self::None => vec![],
+            Self::Color => vec![Category::Color],
             Self::ColorAndAlpha => vec![Category::Color, Category::Alpha],
             Self::GainMap => vec![Category::Gainmap],
+            Self::ColorAndGainMap => vec![Category::Color, Category::Gainmap],
             Self::All => Category::ALL.to_vec(),
         };
         DecodingItem::all_for_categories(&categories)
     }
 
     pub(crate) fn gainmap(&self) -> bool {
-        matches!(self, Self::GainMap | Self::All)
+        matches!(self, Self::GainMap | Self::ColorAndGainMap | Self::All)
     }
 }
 
@@ -213,6 +220,7 @@ pub enum StrictnessFlag {
     PixiRequired,
     ClapValid,
     AlphaIspeRequired,
+    MultipleIlocEntriesForSameItemDisallowed,
 }
 
 #[derive(Debug, Default)]
@@ -247,6 +255,19 @@ impl Strictness {
             Strictness::SpecificExclude(flags) => !flags
                 .iter()
                 .any(|x| matches!(x, StrictnessFlag::AlphaIspeRequired)),
+            _ => false,
+        }
+    }
+
+    fn multiple_iloc_entries_for_same_item_disallowed(&self) -> bool {
+        match self {
+            Strictness::All => true,
+            Strictness::SpecificInclude(flags) => flags
+                .iter()
+                .any(|x| matches!(x, StrictnessFlag::MultipleIlocEntriesForSameItemDisallowed)),
+            Strictness::SpecificExclude(flags) => !flags
+                .iter()
+                .any(|x| matches!(x, StrictnessFlag::MultipleIlocEntriesForSameItemDisallowed)),
             _ => false,
         }
     }
@@ -286,7 +307,7 @@ pub struct DecodingItem {
 
 impl DecodingItem {
     const COUNT: usize = 3 + Self::MAX_EXTRA_INPUTS * 2;
-    // Max supported number of inputs for derived image items.
+    // Max supported number of inputs for derived image items, primary item inclusive.
     const MAX_EXTRA_INPUTS: usize = 3;
     const ALL: [DecodingItem; Self::COUNT] = [
         Self::COLOR,
@@ -1016,7 +1037,12 @@ impl Decoder {
                     }
                 }
             }
-            self.items = construct_items(&avif_boxes.meta)?;
+            self.items = construct_items(
+                &avif_boxes.meta,
+                self.settings
+                    .strictness
+                    .multiple_iloc_entries_for_same_item_disallowed(),
+            )?;
             if avif_boxes.ftyp.has_tmap() && !self.items.values().any(|x| x.item_type == "tmap") {
                 return AvifError::bmff_parse_failed("tmap was required but not found");
             }
@@ -1056,7 +1082,12 @@ impl Decoder {
                     .find(|x| x.is_color())
                     .ok_or(AvifError::NoContent)?;
                 if let Some(meta) = &color_track.meta {
-                    let mut color_track_items = construct_items(meta)?;
+                    let mut color_track_items = construct_items(
+                        meta,
+                        self.settings
+                            .strictness
+                            .multiple_iloc_entries_for_same_item_disallowed(),
+                    )?;
                     Self::search_exif_or_xmp_metadata(
                         &mut color_track_items,
                         None,
@@ -2128,9 +2159,31 @@ impl Decoder {
             // allow_sample_transform is true.
             assert!(self.settings.allow_sample_transform);
 
-            self.tile_info[DecodingItem::COLOR.usize()]
-                .sample_transform
-                .allocate_planes_and_apply(&self.extra_inputs.each_ref(), &mut self.image)?;
+            match self.image.depth {
+                #[cfg(feature = "satofloat")]
+                32 => {
+                    // 32 bits are supported only for Recipe::Float32b, so expect it.
+                    let expected_recipe = SampleTransform::from_float32b_recipe()?;
+                    if self.tile_info[DecodingItem::COLOR.usize()].sample_transform
+                        != expected_recipe
+                    {
+                        // 32 bits are not supported for other recipes.
+                        return AvifError::unsupported_depth();
+                    }
+                    // Decoder::image() cannot return 32-bit float samples.
+                    // Wait for Decoder::image_float() to be called before applying the
+                    // sample transform.
+                }
+                16 => {
+                    self.tile_info[DecodingItem::COLOR.usize()]
+                        .sample_transform
+                        .allocate_planes_and_apply(
+                            &self.extra_inputs.each_ref(),
+                            &mut self.image,
+                        )?;
+                }
+                _ => return AvifError::unsupported_depth(),
+            }
         }
 
         self.image_index = next_image_index;
@@ -2244,6 +2297,45 @@ impl Decoder {
         } else {
             None
         }
+    }
+
+    #[cfg(feature = "satofloat")]
+    pub fn image_float(&self) -> AvifResult<FloatPlanes> {
+        if !self.parsing_complete() {
+            return AvifError::no_content();
+        }
+        if !self.settings.allow_sample_transform {
+            return AvifError::invalid_argument();
+        }
+        if self.tile_info[DecodingItem::COLOR.usize()].sample_transform
+            != SampleTransform::from_float32b_recipe()?
+        {
+            return AvifError::invalid_argument();
+        }
+        let mut float_planes: FloatPlanes = [const { None }; MAX_PLANE_COUNT];
+        for plane in ALL_PLANES {
+            if !self.extra_inputs[0].has_plane(plane) {
+                continue;
+            }
+            let width = self.extra_inputs[0].width(plane);
+            let height = self.extra_inputs[0].height(plane);
+            let mut float_plane = Vec::with_capacity(width.checked_mul(height).unwrap());
+
+            for y in 0..height as u32 {
+                let sign_exponent_msb_row = self.extra_inputs[0].row(plane, y)?;
+                let exponent_lsb_mantissa_msb_row = self.extra_inputs[1].row16(plane, y)?;
+                let mantissa_lsb_row = self.extra_inputs[2].row16(plane, y)?;
+                for x in 0..width {
+                    let b1 = sign_exponent_msb_row[x] as u32;
+                    let b2 = exponent_lsb_mantissa_msb_row[x] as u32;
+                    let b3 = mantissa_lsb_row[x] as u32;
+                    let bits = (b1 << 24) | (b2 << 12) | b3;
+                    float_plane.push(f32::from_bits(bits));
+                }
+            }
+            float_planes[plane.as_usize()] = Some(float_plane);
+        }
+        Ok(float_planes)
     }
 
     pub fn nth_image_timing(&self, n: u32) -> AvifResult<ImageTiming> {

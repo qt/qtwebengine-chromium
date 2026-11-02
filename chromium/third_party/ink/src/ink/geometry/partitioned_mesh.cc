@@ -29,6 +29,7 @@
 #include "absl/functional/function_ref.h"
 #include "absl/log/absl_check.h"
 #include "absl/status/status.h"
+#include "absl/status/status_macros.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/substitute.h"
 #include "absl/synchronization/mutex.h"
@@ -109,12 +110,10 @@ absl::StatusOr<PartitionedMesh> PartitionedMesh::FromMutableMeshGroups(
       }
     }
 
-    absl::StatusOr<absl::InlinedVector<Mesh, 1>> group_meshes =
-        mesh.AsMeshes(group.packing_params, group.omit_attributes);
-    if (!group_meshes.ok()) {
-      return group_meshes.status();
-    }
-    all_meshes.push_back(*std::move(group_meshes));
+    ABSL_ASSIGN_OR_RETURN(
+        auto group_meshes,
+        mesh.AsMeshes(group.packing_params, group.omit_attributes));
+    all_meshes.push_back(std::move(group_meshes));
 
     // There's a bit of performance that we're leaving on the table here:
     // - we're computing the partitions twice (once here, once in
@@ -191,9 +190,9 @@ absl::StatusOr<PartitionedMesh> PartitionedMesh::FromMeshes(
 
 absl::StatusOr<PartitionedMesh> PartitionedMesh::FromMeshGroups(
     absl::Span<const MeshGroup> groups) {
-  absl::StatusOr<std::unique_ptr<Data>> data = Data::FromMeshGroups(groups);
-  if (!data.ok()) return data.status();
-  return PartitionedMesh(*std::move(data));
+  ABSL_ASSIGN_OR_RETURN(std::unique_ptr<Data> data,
+                        Data::FromMeshGroups(groups));
+  return PartitionedMesh(std::move(data));
 }
 
 absl::StatusOr<absl_nonnull std::unique_ptr<PartitionedMesh::Data>>
@@ -567,7 +566,7 @@ bool PartitionedMesh::CoverageIsGreaterThan(
 const RTree& PartitionedMesh::Data::SpatialIndex() const {
   ABSL_CHECK(!meshes_.empty());
 
-  absl::MutexLock lock(&cache_mutex_);
+  absl::MutexLock lock(cache_mutex_);
 
   // The index is already initialized, there's nothing to do.
   // NOMUTANTS -- Removing this would not have an observable effect on behavior
@@ -612,7 +611,7 @@ const RTree& PartitionedMesh::Data::SpatialIndex() const {
 float PartitionedMesh::Data::TotalAbsoluteArea() const {
   ABSL_CHECK(!meshes_.empty());
 
-  absl::MutexLock lock(&cache_mutex_);
+  absl::MutexLock lock(cache_mutex_);
   if (!cached_total_absolute_area_.has_value()) {
     float total_abs_area = 0;
     for (const Mesh& mesh : meshes_) {

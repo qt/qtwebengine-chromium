@@ -22,7 +22,6 @@
 
 #include "src/utils/constants.h"
 #include "src/utils/dynamic_buffer.h"
-#include "src/utils/segmentation.h"
 #include "src/utils/types.h"
 
 namespace libgav1 {

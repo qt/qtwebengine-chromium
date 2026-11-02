@@ -35,10 +35,10 @@
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/maybe_owned.h"
 #include "core/fxcrt/zip.h"
-#include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_fillrenderoptions.h"
 #include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/cfx_path.h"
+#include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/dib/cfx_dibbase.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "core/fxge/dib/cfx_imagestretcher.h"
@@ -261,7 +261,7 @@ CFX_Matrix CPDF_ImageRenderer::GetDrawMatrix(const FX_RECT& rect) const {
 }
 
 RetainPtr<const CFX_DIBitmap> CPDF_ImageRenderer::CalculateDrawImage(
-    CFX_DefaultRenderDevice& bitmap_device,
+    CFX_RenderDevice* bitmap_device,
     RetainPtr<CFX_DIBBase> pDIBBase,
     const CFX_Matrix& mtNewMatrix,
     const FX_RECT& rect) const {
@@ -274,10 +274,12 @@ RetainPtr<const CFX_DIBitmap> CPDF_ImageRenderer::CalculateDrawImage(
   {
     // Limit the scope of `mask_device`, so its dtor can flush out pending
     // operations, if any, to `mask_bitmap`.
-    CFX_DefaultRenderDevice mask_device;
-    CHECK(mask_device.Attach(mask_bitmap));
+    std::unique_ptr<CFX_RenderDevice> mask_device =
+        CFX_RenderDevice::CreateForBitmap(mask_bitmap);
+    CHECK(mask_device);
 
-    CPDF_RenderStatus mask_status(render_status_->GetContext(), &mask_device);
+    CPDF_RenderStatus mask_status(render_status_->GetContext(),
+                                  mask_device.get());
     mask_status.SetDropObjects(render_status_->GetDropObjects());
     mask_status.SetStdCS(true);
     mask_status.Initialize(nullptr, nullptr);
@@ -291,7 +293,7 @@ RetainPtr<const CFX_DIBitmap> CPDF_ImageRenderer::CalculateDrawImage(
       const int matte_r = FXARGB_R(loader_->MatteColor());
       const int matte_g = FXARGB_G(loader_->MatteColor());
       const int matte_b = FXARGB_B(loader_->MatteColor());
-      RetainPtr<CFX_DIBitmap> dest_bitmap = bitmap_device.GetBitmap();
+      RetainPtr<CFX_DIBitmap> dest_bitmap = bitmap_device->GetBitmap();
       for (int row = 0; row < rect.Height(); row++) {
         auto mask_scan = mask_bitmap->GetScanline(row).first(
             static_cast<size_t>(rect.Width()));
@@ -334,12 +336,15 @@ bool CPDF_ImageRenderer::DrawPatternImage() {
   }
 
   CFX_Matrix new_matrix = GetDrawMatrix(rect);
-  CFX_DefaultRenderDevice bitmap_device;
-  if (!bitmap_device.Create(rect.Width(), rect.Height(), FXDIB_Format::kBgra)) {
+  std::unique_ptr<CFX_RenderDevice> bitmap_device =
+      CFX_RenderDevice::CreateForNewBitmap(rect.Width(), rect.Height(),
+                                           FXDIB_Format::kBgra);
+  if (!bitmap_device) {
     return true;
   }
 
-  CPDF_RenderStatus bitmap_status(render_status_->GetContext(), &bitmap_device);
+  CPDF_RenderStatus bitmap_status(render_status_->GetContext(),
+                                  bitmap_device.get());
   bitmap_status.SetOptions(GetRenderOptions());
   bitmap_status.SetDropObjects(render_status_->GetDropObjects());
   bitmap_status.SetStdCS(true);
@@ -357,14 +362,14 @@ bool CPDF_ImageRenderer::DrawPatternImage() {
   }
 
   RetainPtr<const CFX_DIBitmap> mask_bitmap =
-      CalculateDrawImage(bitmap_device, dibbase_, new_matrix, rect);
+      CalculateDrawImage(bitmap_device.get(), dibbase_, new_matrix, rect);
   if (!mask_bitmap) {
     return true;
   }
 
-  bitmap_device.GetBitmap()->MultiplyAlphaMask(std::move(mask_bitmap));
+  bitmap_device->GetBitmap()->MultiplyAlphaMask(std::move(mask_bitmap));
   render_status_->GetRenderDevice()->SetDIBitsWithBlend(
-      bitmap_device.GetBitmap(), rect.left, rect.top, blend_type_);
+      bitmap_device->GetBitmap(), rect.left, rect.top, blend_type_);
   return false;
 }
 
@@ -382,12 +387,15 @@ bool CPDF_ImageRenderer::DrawMaskedImage() {
   }
 
   CFX_Matrix new_matrix = GetDrawMatrix(rect);
-  CFX_DefaultRenderDevice bitmap_device;
-  if (!bitmap_device.Create(rect.Width(), rect.Height(), FXDIB_Format::kBgrx)) {
+  std::unique_ptr<CFX_RenderDevice> bitmap_device =
+      CFX_RenderDevice::CreateForNewBitmap(rect.Width(), rect.Height(),
+                                           FXDIB_Format::kBgrx);
+  if (!bitmap_device) {
     return true;
   }
-  bitmap_device.Clear(0xffffffff);
-  CPDF_RenderStatus bitmap_status(render_status_->GetContext(), &bitmap_device);
+  bitmap_device->Clear(0xffffffff);
+  CPDF_RenderStatus bitmap_status(render_status_->GetContext(),
+                                  bitmap_device.get());
   bitmap_status.SetDropObjects(render_status_->GetDropObjects());
   bitmap_status.SetStdCS(true);
   bitmap_status.Initialize(nullptr, nullptr);
@@ -395,8 +403,8 @@ bool CPDF_ImageRenderer::DrawMaskedImage() {
   if (bitmap_renderer.Start(dibbase_, 0, new_matrix, resample_options_, true)) {
     bitmap_renderer.Continue(nullptr);
   }
-  RetainPtr<const CFX_DIBitmap> mask_bitmap =
-      CalculateDrawImage(bitmap_device, loader_->GetMask(), new_matrix, rect);
+  RetainPtr<const CFX_DIBitmap> mask_bitmap = CalculateDrawImage(
+      bitmap_device.get(), loader_->GetMask(), new_matrix, rect);
   if (!mask_bitmap) {
     return true;
   }
@@ -404,15 +412,15 @@ bool CPDF_ImageRenderer::DrawMaskedImage() {
 #if defined(PDF_USE_SKIA)
   if (CFX_GEModule::Get()->UseSkiaRenderer() &&
       render_status_->GetRenderDevice()->SetBitsWithMask(
-          bitmap_device.GetBitmap(), mask_bitmap, rect.left, rect.top, alpha_,
+          bitmap_device->GetBitmap(), mask_bitmap, rect.left, rect.top, alpha_,
           blend_type_)) {
     return false;
   }
 #endif
-  bitmap_device.GetBitmap()->MultiplyAlphaMask(std::move(mask_bitmap));
-  bitmap_device.GetBitmap()->MultiplyAlpha(alpha_);
+  bitmap_device->GetBitmap()->MultiplyAlphaMask(std::move(mask_bitmap));
+  bitmap_device->GetBitmap()->MultiplyAlpha(alpha_);
   render_status_->GetRenderDevice()->SetDIBitsWithBlend(
-      bitmap_device.GetBitmap(), rect.left, rect.top, blend_type_);
+      bitmap_device->GetBitmap(), rect.left, rect.top, blend_type_);
   return false;
 }
 

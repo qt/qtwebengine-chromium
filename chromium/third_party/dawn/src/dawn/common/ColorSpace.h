@@ -57,6 +57,11 @@ namespace dawn {
 // color gradients. (Read up on sRGB, that's the most used and well known perceptual color space).
 // The inverse transfer function is called the opto-electronic transfer function (OETF).
 //
+// Note that a weirdness of HLG is that the EOTF is not the inverse of its OETF but of OETF(OOTF)
+// (for unfortunate and historical reasons). The Annex 1 "The relationship between the OETF, the
+// EOTF and the OOTF" of
+// https://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.2100-1-201706-S!!PDF-E.pdf
+//
 // The color primaries, what it means to say "red of 1" in that colorspace. This is where CIE XYZ is
 // used as the primaries for the colorspace are mapped to colors in the XYZ colorspace. XYZ itself
 // is a physical standard developed through experimentation on the human perception of color. The
@@ -128,46 +133,43 @@ namespace dawn {
 
 // https://registry.khronos.org/DataFormat/specs/1.4/dataformat.1.4.html#QUANTIZATION_FULL
 inline constexpr math::Mat4x3f kYCbCrRange_Full = {
-    {1.0, 0.0, 0.0},
-    {0.0, 1.0, 0.0},
-    {0.0, 0.0, 1.0},
-    {0.0, -128.0 / 255.0, -128.0 / 255.0},
+    {1.0f, 0.0f, 0.0f},
+    {0.0f, 1.0f, 0.0f},
+    {0.0f, 0.0f, 1.0f},
+    {0.0f, -128.0f / 255.0f, -128.0f / 255.0f},
 };
 
 // https://registry.khronos.org/DataFormat/specs/1.4/dataformat.1.4.html#QUANTIZATION_NARROW
-constexpr float kYCbCrRange_NarrowYFactor = 255.0 / 219.0;
-constexpr float kYCbCrRange_NarrowChromaFactor = 255.0 / 224.0;
-constexpr math::Mat4x3f kYCbCrRange_Narrow = {
-    {kYCbCrRange_NarrowYFactor, 0.0, 0.0},
-    {0.0, kYCbCrRange_NarrowChromaFactor, 0.0},
-    {0.0, 0.0, kYCbCrRange_NarrowChromaFactor},
-    {-16.0 / 255.0 * kYCbCrRange_NarrowYFactor,        //
-     -128.0 / 255.0 * kYCbCrRange_NarrowChromaFactor,  //
-     -128.0 / 255.0 * kYCbCrRange_NarrowChromaFactor},
-};
+constexpr float kYCbCrRange_NarrowYFactor = 255.0f / 219.0f;
+constexpr float kYCbCrRange_NarrowChromaFactor = 255.0f / 224.0f;
+constexpr auto kYCbCrRange_Narrow = math::Mat4x3f::FromRows({
+    {kYCbCrRange_NarrowYFactor, 0.0f, 0.0f, -16.0f / 255.0f * kYCbCrRange_NarrowYFactor},
+    {0.0f, kYCbCrRange_NarrowChromaFactor, 0.0f, -128.0f / 255.0f * kYCbCrRange_NarrowChromaFactor},
+    {0.0f, 0.0f, kYCbCrRange_NarrowChromaFactor, -128.0f / 255.0f * kYCbCrRange_NarrowChromaFactor},
+});
 
 // YCbCr to RGB matrices for various standards
 
 // https://registry.khronos.org/DataFormat/specs/1.4/dataformat.1.4.html#MODEL_BT601
-inline constexpr math::Mat3x3f kYCbCrToRGB_Rec601 = {
-    {1.0, 1.0, 1.0},
-    {0.0, -(0.202008 / 0.587), 1.772},
-    {1.402, -(0.419198 / 0.587), 0.0},
-};
+inline constexpr auto kYCbCrToRGB_Rec601 = math::Mat3x3f::FromRows({
+    {1.0f, 0.0f, 1.402f},
+    {1.0f, -(0.202008f / 0.587f), -(0.419198f / 0.587f)},
+    {1.0f, 1.772f, 0.0f},
+});
 
 // https://registry.khronos.org/DataFormat/specs/1.4/dataformat.1.4.html#MODEL_BT709
-inline constexpr math::Mat3x3f kYCbCrToRGB_Rec709 = {
-    {1.0, 1.0, 1.0},
-    {0.0, -(0.13397432 / 0.7152), 1.8556},
-    {1.5748, -(0.33480248 / 0.7152), 0.0},
-};
+inline constexpr auto kYCbCrToRGB_Rec709 = math::Mat3x3f::FromRows({
+    {1.0f, 0.0f, 1.5748f},
+    {1.0f, -(0.133974f / 0.7152f), -(0.334802f / 0.7152f)},
+    {1.0f, 1.8556f, 0.0f},
+});
 
 // https://registry.khronos.org/DataFormat/specs/1.4/dataformat.1.4.html#MODEL_BT2020
-inline constexpr math::Mat3x3f kYCbCrToRGB_Rec2020 = {
-    {1.0, 1.0, 1.0},
-    {0.0, -(0.11156702 / 0.6780), 1.8814},
-    {1.4746, -(0.38737742 / 0.6780), 0.0},
-};
+inline constexpr auto kYCbCrToRGB_Rec2020 = math::Mat3x3f::FromRows({
+    {1.0f, 0.0f, 1.4746f},
+    {1.0f, -(0.111567f / 0.678f), -(0.387377f / 0.678f)},
+    {1.0f, 1.8814f, 0.0f},
+});
 
 // RGB to XYZ (D65) for various standards.
 // TODO(https://crbug.com/468988322): Define an XYZPrimaries structure and compute the matrices from
@@ -176,17 +178,19 @@ inline constexpr math::Mat3x3f kYCbCrToRGB_Rec2020 = {
 
 // https://registry.khronos.org/DataFormat/specs/1.4/dataformat.1.4.html#PRIMARIES_BT601_EBU
 // Rec 601 625-line.
-inline constexpr math::Mat3x3f kRGBToXYZ_Rec601 = {{0.430554, 0.222004, 0.020182},
-                                                   {0.341550, 0.706655, 0.129553},
-                                                   {0.178352, 0.071341, 0.939322}};
+inline constexpr auto kRGBToXYZ_Rec601 = math::Mat3x3f::FromRows({
+    {0.430554f, 0.341550f, 0.178352f},
+    {0.222004f, 0.706655f, 0.071341f},
+    {0.020182f, 0.129553f, 0.939322f},
+});
 inline constexpr math::Mat3x3f kXYZToRGB_Rec601 = kRGBToXYZ_Rec601.Inverse();
 
 // https://registry.khronos.org/DataFormat/specs/1.4/dataformat.1.4.html#PRIMARIES_BT709
-inline constexpr math::Mat3x3f kRGBToXYZ_Rec709 = {
-    {0.412391, 0.212639, 0.019331},
-    {0.357584, 0.715169, 0.119195},
-    {0.180481, 0.072192, 0.950532},
-};
+inline constexpr auto kRGBToXYZ_Rec709 = math::Mat3x3f::FromRows({
+    {0.412391f, 0.357584f, 0.180481f},
+    {0.212639f, 0.715169f, 0.072192f},
+    {0.019331f, 0.119195f, 0.950532f},
+});
 inline constexpr math::Mat3x3f kXYZToRGB_Rec709 = kRGBToXYZ_Rec709.Inverse();
 
 // sRGB is the same as Rec709.
@@ -194,19 +198,19 @@ inline constexpr math::Mat3x3f kRGBToXYZ_sRGB = kRGBToXYZ_Rec709;
 inline constexpr math::Mat3x3f kXYZToRGB_sRGB = kXYZToRGB_Rec709;
 
 // https://registry.khronos.org/DataFormat/specs/1.4/dataformat.1.4.html#PRIMARIES_BT2020
-inline constexpr math::Mat3x3f kRGBToXYZ_Rec2020 = {
-    {0.636958, 0.262700, 0.000000},
-    {0.144617, 0.677998, 0.028073},
-    {0.168881, 0.059302, 1.060985},
-};
+inline constexpr auto kRGBToXYZ_Rec2020 = math::Mat3x3f::FromRows({
+    {0.636958f, 0.144617f, 0.168881f},
+    {0.262700f, 0.677998f, 0.059302f},
+    {0.000000f, 0.028073f, 1.060985f},
+});
 inline constexpr math::Mat3x3f kXYZToRGB_Rec2020 = kRGBToXYZ_Rec2020.Inverse();
 
 // https://registry.khronos.org/DataFormat/specs/1.4/dataformat.1.4.html#PRIMARIES_BT2020
-inline constexpr math::Mat3x3f kRGBToXYZ_DisplayP3 = {
-    {0.4865709486, 0.2289745641, 0.0000000000},
-    {0.2656676932, 0.6917385218, 0.0451133819},
-    {0.1982172852, 0.0792869141, 1.0439443689},
-};
+inline constexpr auto kRGBToXYZ_DisplayP3 = math::Mat3x3f::FromRows({
+    {0.4865709486f, 0.2656676932f, 0.1982172852f},
+    {0.2289745641f, 0.6917385218f, 0.0792869141f},
+    {0.0000000000f, 0.0451133819f, 1.0439443689f},
+});
 inline constexpr math::Mat3x3f kXYZToRGB_DisplayP3 = kRGBToXYZ_DisplayP3.Inverse();
 
 // Transfer functions for various standards, in a format.
@@ -285,16 +289,19 @@ inline constexpr TransferFunction kEOTF_SMPTE_170M = {
 // Luminance values of various color spaces for the white of value "1" after the transfer function.
 
 // When SDR content is composited in HDR, it should be assumed to have a white at 203 nits, even if
-// the sRGB spec defines it as 80 nits. See
-// https://www.w3.org/TR/css-color-hdr-1/#Compositing-SDR-HDR
-inline constexpr float kSDRLuminanceOf1 = 203;
+// the sRGB spec defines it as 80 nits. Note that this constant is only informative and Dawn allows
+// configuring the reference white luminance with wgpu::ColorSpaceDawn::hdrReferenceWhiteLuminance.
+// See https://www.w3.org/TR/css-color-hdr-1/#Compositing-SDR-HDR and Section 2.1 "HDR Reference
+// White" of https://www.itu.int/dms_pub/itu-r/opb/rep/R-REP-BT.2408-9-2026-PDF-E.pdf
+inline constexpr float kDefaultHDRReferenceWhiteLuminance = 203;
 
 // https://www.w3.org/TR/css-color-hdr-1/#valdef-color-rec2100-pq
 inline constexpr float kPQLuminanceOf1 = 10000;
 
-// https://www.w3.org/TR/css-color-hdr-1/#valdef-color-rec2100-hlg
-// The magic constant is used to place "media white" (so 1) at HLG value 0.75
-inline constexpr float kHLGLuminanceOf1 = 3.7743 * kSDRLuminanceOf1;
+// https://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.2100-3-202502-I!!PDF-E.pdf table 5
+// "Hybrid Log-Gamma (HLG) system reference non-linear transfer functions". The peak luminance of
+// HLG is 1 (assuming an OOTF of 1.2).
+inline constexpr float kHLGLuminanceOf1 = 1000;
 
 }  // namespace dawn
 

@@ -27,16 +27,21 @@ NSArray<FormSuggestion*>* FormSuggestionsFromPasskeyCredentials(
     NSString* displayName = base::SysUTF8ToNSString(passkey.display_name());
     NSString* value = displayName.length ? displayName : username;
     NSString* displayDescription =
-        ComputePasskeyDescription(username, displayName);
+        FormatPasskeySuggestionDescription(username, displayName);
 
     FormSuggestion* suggestion = [FormSuggestion
-        suggestionWithValue:value
-         displayDescription:displayDescription
-                       icon:nil
-                       type:autofill::SuggestionType::kWebauthnCredential
-                    payload:autofill::Suggestion::Guid(
-                                base::Base64Encode(passkey.credential_id()))
-             requiresReauth:YES];
+                suggestionWithValue:value
+                         minorValue:base::SysUTF8ToNSString(passkey.rp_id())
+                 displayDescription:displayDescription
+                               icon:nil
+                               type:autofill::SuggestionType::
+                                        kWebauthnCredential
+                            payload:autofill::Suggestion::Guid(
+                                        base::Base64Encode(
+                                            passkey.credential_id()))
+        fieldByFieldFillingTypeUsed:autofill::FieldType::EMPTY_TYPE
+                     requiresReauth:YES
+         acceptanceA11yAnnouncement:nil];
     [passkey_suggestions addObject:suggestion];
   }
 
@@ -83,14 +88,46 @@ NSArray<FormSuggestion*>* MergePasskeyAndPasswordSuggestions(
       [passkey_suggestions arrayByAddingObjectsFromArray:password_suggestions];
 }
 
-NSString* ComputePasskeyDescription(NSString* username,
-                                    NSString* display_name) {
+NSString* FormatPasskeySuggestionDescription(NSString* username,
+                                             NSString* display_name) {
+  NSString* passkey_label =
+      l10n_util::GetNSString(IDS_IOS_PASSKEY_SUGGESTION_LABEL);
+  if (!display_name.length || [display_name isEqualToString:username]) {
+    return passkey_label;
+  }
+  return [NSString stringWithFormat:@"%@ • %@", passkey_label, username];
+}
+
+NSString* FormatPasskeyManualFillSubtitle(NSString* display_name) {
   NSString* passkey_label =
       l10n_util::GetNSString(IDS_IOS_PASSKEY_SUGGESTION_LABEL);
   if (!display_name.length) {
     return passkey_label;
   }
-  return [NSString stringWithFormat:@"%@ • %@", passkey_label, username];
+  return [NSString stringWithFormat:@"%@ • %@", passkey_label, display_name];
+}
+
+NSString* GetPasskeyUsernameForSuggestion(
+    FormSuggestion* suggestion,
+    const std::vector<password_manager::PasskeyCredential>& passkeys) {
+  if (suggestion.type != autofill::SuggestionType::kWebauthnCredential) {
+    return nil;
+  }
+  std::string encoded_id = GetPasskeySuggestionEncodedCredentialId(suggestion);
+  std::string decoded_id_string;
+  if (base::Base64Decode(encoded_id, &decoded_id_string)) {
+    std::vector<uint8_t> decoded_id(decoded_id_string.begin(),
+                                    decoded_id_string.end());
+    auto it = std::ranges::find_if(
+        passkeys,
+        [&decoded_id](const password_manager::PasskeyCredential& passkey) {
+          return passkey.credential_id() == decoded_id;
+        });
+    if (it != passkeys.end()) {
+      return base::SysUTF8ToNSString(it->username());
+    }
+  }
+  return nil;
 }
 
 }  // namespace webauthn

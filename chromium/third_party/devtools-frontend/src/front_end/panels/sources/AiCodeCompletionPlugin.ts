@@ -43,7 +43,7 @@ export class AiCodeCompletionPlugin extends Plugin {
           included_reason: Host.AidaClient.Reason.RELATED_FILE,
         }] :
                                                                             undefined,
-        inferenceLanguage: this.#getInferenceLanguage()
+        inferenceLanguage: this.#getInferenceLanguage(),
       },
       generationContext: {
         additionalPreambleContext: this.uiSourceCode.url().startsWith('snippet://') ?
@@ -81,7 +81,7 @@ export class AiCodeCompletionPlugin extends Plugin {
     this.#aiCodeCompletionProvider.editorInitialized(editor);
     this.#editor.editor.dispatch({
       effects: TextEditor.AiCodeCompletionProvider.setAiCodeCompletionTeaserMode.of(
-          TextEditor.AiCodeCompletionProvider.AiCodeCompletionTeaserMode.ON)
+          TextEditor.AiCodeCompletionProvider.AiCodeCompletionTeaserMode.ON),
     });
   }
 
@@ -117,7 +117,7 @@ export class AiCodeCompletionPlugin extends Plugin {
         new PanelCommon.AiCodeCompletionSummaryToolbar.AiCodeCompletionSummaryToolbar({
           citationsTooltipId: CITATIONS_TOOLTIP_ID,
           hasTopBorder: true,
-          panel: AiCodeCompletion.AiCodeCompletion.ContextFlavor.SOURCES
+          panel: AiCodeCompletion.AiCodeCompletion.ContextFlavor.SOURCES,
         });
     this.#aiCodeCompletionCitationsToolbar.show(this.#aiCodeCompletionCitationsToolbarContainer, undefined, true);
   }
@@ -126,7 +126,7 @@ export class AiCodeCompletionPlugin extends Plugin {
     if (this.#editor) {
       this.#editor.dispatch({
         effects: SourceFrame.SourceFrame.addSourceFrameInfobar.of(
-            {element: this.#aiCodeCompletionCitationsToolbarContainer, order: 100})
+            {element: this.#aiCodeCompletionCitationsToolbarContainer, order: 100}),
       });
       this.#aiCodeCompletionCitationsToolbarAttached = true;
     }
@@ -137,7 +137,7 @@ export class AiCodeCompletionPlugin extends Plugin {
     if (this.#editor) {
       this.#editor.dispatch({
         effects: SourceFrame.SourceFrame.removeSourceFrameInfobar.of(
-            {element: this.#aiCodeCompletionCitationsToolbarContainer})
+            {element: this.#aiCodeCompletionCitationsToolbarContainer}),
       });
       this.#aiCodeCompletionCitationsToolbarAttached = false;
     }

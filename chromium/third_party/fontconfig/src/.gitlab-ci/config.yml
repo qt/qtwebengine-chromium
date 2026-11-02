@@ -1,4 +1,4 @@
-.default_tag: &default_tag "2025-09-04.1"
+.default_tag: &default_tag "2026-04-28.1"
 
 build_patterns:
   - name: "autotools shared expat"
@@ -88,8 +88,8 @@ distributions:
     qemu_based: false
     versions:
       - "rawhide"
-      - "42"
-      - "41"
+      - "44"
+      - "43"
     builds:
       - name: "standard build"
         upload: "rawhide"
@@ -106,13 +106,6 @@ distributions:
     versions:
       - "rawhide"
     builds:
-      - name: "MinGW"
-        variables:
-          FC_BUILDSYS: meson
-          FC_BUILD_TYPE: static
-          FC_BUILD_PLATFORM: mingw
-          FC_BUILD_ARCH: linux-mingw-w64-64bit
-          FC_BUILD_NO_INSTALL: 1
       - name: "android aarch64"
         variables:
           FC_BUILDSYS: meson
@@ -128,7 +121,7 @@ distributions:
     base_type: freebsd
     qemu_based: true
     versions:
-      - "14.2"
+      - "14.3"
     builds:
       - name: "standard build"
         variables:
@@ -136,6 +129,30 @@ distributions:
           FC_BUILD_TYPE: shared
           FC_XML_BACKEND: libxml2
           FC_BUILD_NO_CHECK: 1
+  - name: msys2
+    tag: *default_tag
+    base_type: msys2
+    qemu_based: false
+    versions:
+      - "latest"
+    builds:
+      - name: "UCRT64"
+        variables:
+          FC_BUILDSYS: meson
+          FC_BUILD_TYPE: static
+          FC_XML_BACKEND: expat
+          FC_BUILD_DISABLED: nls iconv
+          FC_BUILD_NO_VENV: 1
+          FC_BUILD_SH: msys2 -c
+      - name: "MINGW64"
+        variables:
+          FC_BUILDSYS: meson
+          FC_BUILD_TYPE: static
+          FC_XML_BACKEND: expat
+          FC_BUILD_DISABLED: nls iconv
+          FC_BUILD_NO_VENV: 1
+          FC_BUILD_SH: msys2 -c
+          MSYSTEM: MINGW64
 
 packages:
   alpine:
@@ -182,24 +199,17 @@ packages:
         "ninja-build",
         "wget",
         "python3-pip",
-        "mingw64-expat",
-        "mingw64-gcc",
-        "mingw64-gettext",
-        "mingw64-freetype",
-        "mingw64-libxml2",
         "rust",
         "cargo",
         "bindgen-cli",
         "libasan",
-        "libubsan"
+        "libubsan",
+        "libabigail",
       ]
   freebsd:
     needed:
       [
         "gcc",
-        "autoconf",
-        "automake",
-        "libtool",
         "gettext",
         "gperf",
         "expat",
@@ -207,11 +217,34 @@ packages:
         "freetype2",
         "json-c",
         "git",
-        "ninja",
         "wget",
         "python3",
         "py311-pip",
         "pkgconf",
         "gmake",
         "gettext-runtime",
+        "ninja",
+      ]
+  msys2:
+    needed:
+      [
+        "git",
+        "mingw-w64-ucrt-x86_64-expat",
+        "mingw-w64-ucrt-x86_64-freetype",
+        "mingw-w64-ucrt-x86_64-gcc",
+        "mingw-w64-ucrt-x86_64-gperf",
+        "mingw-w64-ucrt-x86_64-meson",
+        "mingw-w64-ucrt-x86_64-python",
+        "mingw-w64-ucrt-x86_64-python-certifi",
+        "mingw-w64-ucrt-x86_64-python-pip",
+        "mingw-w64-ucrt-x86_64-python-yaml",
+        "mingw-w64-x86_64-expat",
+        "mingw-w64-x86_64-freetype",
+        "mingw-w64-x86_64-gcc",
+        "mingw-w64-x86_64-gperf",
+        "mingw-w64-x86_64-meson",
+        "mingw-w64-x86_64-python",
+        "mingw-w64-x86_64-python-certifi",
+        "mingw-w64-x86_64-python-pip",
+        "mingw-w64-x86_64-python-yaml",
       ]

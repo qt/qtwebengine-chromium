@@ -3,19 +3,125 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
-import {createTarget} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
+import {createTarget, describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
 import {getMainFrame, navigate} from '../../testing/ResourceTreeHelpers.js';
 
 import * as Security from './security.js';
 
 const {urlString} = Platform.DevToolsPath;
 
-describeWithMockConnection('SecurityPanelSidebarTree', () => {
+describe('createHighlightedUrl', () => {
+  it('renders a URL without a scheme separator as plain text', () => {
+    const highlightedUrl =
+        Security.SecurityPanel.createHighlightedUrl(urlString`foo.bar`, Protocol.Security.SecurityState.Secure);
+
+    assert.strictEqual(highlightedUrl.textContent, 'foo.bar');
+    assert.isFalse(highlightedUrl.classList.contains('highlighted-url'));
+  });
+
+  it('renders a URL with a highlighted scheme', () => {
+    const highlightedUrl =
+        Security.SecurityPanel.createHighlightedUrl(urlString`https://foo.bar`, Protocol.Security.SecurityState.Secure);
+
+    assert.strictEqual(highlightedUrl.textContent, 'https://foo.bar');
+    assert.isTrue(highlightedUrl.classList.contains('highlighted-url'));
+
+    const scheme = highlightedUrl.querySelector('.url-scheme-secure');
+    assert.isNotNull(scheme);
+    assert.strictEqual(scheme.textContent, 'https');
+
+    const schemeSeparator = highlightedUrl.querySelector('.url-scheme-separator');
+    assert.isNotNull(schemeSeparator);
+    assert.strictEqual(schemeSeparator.textContent, '://');
+  });
+});
+
+describeWithEnvironment('SecurityOriginView', () => {
+  function createOriginState(sanList: string[]): Security.SecurityPanel.OriginState {
+    return {
+      securityState: Protocol.Security.SecurityState.Secure,
+      securityDetails: {
+        protocol: 'TLS 1.3',
+        keyExchange: '',
+        cipher: 'AES_128_GCM',
+        certificateId: 0 as Protocol.Security.CertificateId,
+        subjectName: 'example.com',
+        sanList,
+        issuer: 'Test CA',
+        validFrom: 0,
+        validTo: 1,
+        signedCertificateTimestampList: [],
+        certificateTransparencyCompliance: Protocol.Network.CertificateTransparencyCompliance.Unknown,
+        encryptedClientHello: false,
+      },
+      loadedFromCache: false,
+    };
+  }
+
+  it('renders an empty SAN', () => {
+    const view = new Security.SecurityPanel.SecurityOriginView(urlString`https://foo.bar`, createOriginState([]));
+
+    const sanElement = view.element.querySelector('.san');
+    assert.instanceOf(sanElement, HTMLElement);
+    assert.strictEqual(sanElement.textContent, '(n/a)');
+  });
+
+  it('renders a SAN without truncation button', () => {
+    const view = new Security.SecurityPanel.SecurityOriginView(urlString`https://foo.bar`,
+                                                               createOriginState(['a.test', 'b.test', 'c.test']));
+    renderElementIntoDOM(view);
+
+    const sanElement = view.element.querySelector('.san');
+    assert.instanceOf(sanElement, HTMLElement);
+
+    const sanEntries = [...sanElement.querySelectorAll<HTMLElement>('.san-entry')];
+    assert.deepEqual(sanEntries.map(entry => entry.textContent), ['a.test', 'b.test', 'c.test']);
+    assert.isTrue(sanEntries.every(entry => entry.checkVisibility()));
+
+    const truncationToggle = sanElement.querySelector('devtools-button');
+    assert.notExists(truncationToggle);
+  });
+
+  it('renders a SAN with truncation button and updates on truncation toggle', () => {
+    const view = new Security.SecurityPanel.SecurityOriginView(
+        urlString`https://foo.bar`, createOriginState(['a.test', 'b.test', 'c.test', 'd.test']));
+    renderElementIntoDOM(view);
+
+    const sanElement = view.element.querySelector('.san');
+    assert.instanceOf(sanElement, HTMLElement);
+
+    const visibleSanEntries = () => [...sanElement.querySelectorAll<HTMLElement>('.san-entry')]
+                                        .filter(entry => entry.checkVisibility())
+                                        .map(entry => entry.textContent);
+
+    assert.deepEqual(visibleSanEntries(), ['a.test', 'b.test']);
+
+    const toggleButton = sanElement.querySelector('devtools-button');
+    assert.instanceOf(toggleButton, HTMLElement);
+    assert.strictEqual(toggleButton.textContent, 'Show more (4 total)');
+    assert.isFalse(toggleButton.accessibleExpanded);
+
+    toggleButton.click();
+
+    assert.deepEqual(visibleSanEntries(), ['a.test', 'b.test', 'c.test', 'd.test']);
+    assert.strictEqual(toggleButton.textContent, 'Show less');
+    assert.isTrue(toggleButton.accessibleExpanded);
+
+    toggleButton.click();
+
+    assert.deepEqual(visibleSanEntries(), ['a.test', 'b.test']);
+    assert.strictEqual(toggleButton.textContent, 'Show more (4 total)');
+    assert.isFalse(toggleButton.accessibleExpanded);
+  });
+});
+
+describeWithEnvironment('SecurityPanelSidebarTree', () => {
   describe('updateOrigin', () => {
     it('correctly updates the URL scheme highlighting', () => {
       const origin = urlString`https://foo.bar`;
@@ -37,7 +143,7 @@ describeWithMockConnection('SecurityPanelSidebarTree', () => {
   });
 });
 
-describeWithMockConnection('SecurityPanel', () => {
+describeWithEnvironment('SecurityPanel', () => {
   let target: SDK.Target.Target;
   let prerenderTarget: SDK.Target.Target;
 

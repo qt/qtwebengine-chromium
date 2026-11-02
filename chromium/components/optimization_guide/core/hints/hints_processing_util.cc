@@ -241,6 +241,20 @@ std::string_view GetStringNameForOptimizationType(
       return "FindsPageTheme";
     case proto::OptimizationType::OMNIBOX_AUTOFILL_IFRAME_ALLOWLIST:
       return "OmniboxAutofillIframeAllowlist";
+    case proto::OptimizationType::CURINOS_CREDIT_CARD_FLIGHT_BENEFITS:
+      return "CurinosCreditCardFlightBenefits";
+    case proto::OptimizationType::CURINOS_CREDIT_CARD_HOTEL_BENEFITS:
+      return "CurinosCreditCardHotelBenefits";
+    case proto::OptimizationType::CURINOS_CREDIT_CARD_CAR_RENTAL_BENEFITS:
+      return "CurinosCreditCardCarRentalBenefits";
+    case proto::OptimizationType::FILTER_TASKS_SUPPORTED:
+      return "FilterTasksSupported";
+    case proto::OptimizationType::FILTER_EXTRACT_ATTRIBUTES:
+      return "FilterExtractAttributes";
+    case proto::OptimizationType::AUTOFILL_AT_MEMORY_BLOCKED:
+      return "AutofillAtMemoryBlocked";
+    case proto::OptimizationType::FILTER_EXECUTION_STRATEGY:
+      return "FilterExecutionStrategy";
   }
 
   // The returned string is used to record histograms for the optimization type.

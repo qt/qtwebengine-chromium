@@ -23,7 +23,7 @@
 #include "include/gpu/graphite/ImageProvider.h"
 #include "include/gpu/graphite/Recording.h"
 #include "include/gpu/graphite/TextureInfo.h"
-#include "include/private/base/SkLog.h"
+#include "include/private/SkLog.h"
 #include "src/capture/SkCaptureManager.h"
 #include "src/core/SkMipmap.h"
 #include "src/core/SkTraceEvent.h"
@@ -125,7 +125,7 @@ Recorder::Recorder(sk_sp<SharedContext> sharedContext,
         , fRuntimeEffectDict(sk_make_sp<RuntimeEffectDictionary>())
         , fRootTaskList(new TaskList)
         , fRootUploads(new UploadList)
-        , fFloatStorageManager(sk_make_sp<FloatStorageManager>())
+        , fStorageBufferManager(sk_make_sp<StorageBufferManager>())
         , fProxyReadCounts(new ProxyReadCountMap)
         , fUniqueID(next_id())
         , fRequireOrderedRecordings(options.fRequireOrderedRecordings.has_value()
@@ -220,7 +220,7 @@ std::unique_ptr<Recording> Recorder::snap() {
                                                        std::move(fFinishedProcs)));
     // Allow the buffer managers to add any collected tasks for data transfer or initialization
     // before moving the root task list to the Recording.
-    bool valid = fFloatStorageManager->finalize(fDrawBufferManager.get());
+    bool valid = fStorageBufferManager->finalize(fDrawBufferManager.get());
     valid &= fDrawBufferManager->transferToRecording(recording.get());
 
     // We create the Recording's full task list even if the DrawBufferManager failed because it is
@@ -261,7 +261,7 @@ std::unique_ptr<Recording> Recorder::snap() {
     // Remaining cleanup that must always happen regardless of success or failure
     fRuntimeEffectDict = sk_make_sp<RuntimeEffectDictionary>();
     fProxyReadCounts = std::make_unique<ProxyReadCountMap>();
-    fFloatStorageManager = sk_make_sp<FloatStorageManager>();
+    fStorageBufferManager = sk_make_sp<StorageBufferManager>();
     if (!fRequireOrderedRecordings) {
         fAtlasProvider->invalidateAtlases();
     }
@@ -305,11 +305,10 @@ SkCanvas* Recorder::makeCaptureCanvas(SkCanvas* canvas) {
     return nullptr;
 }
 
-SkContentID Recorder::createCaptureBreakpoint(SkSurface* surface) {
+void Recorder::createCaptureBreakpoint(SkSurface* surface) {
    if (fSharedContext->captureManager()) {
-        return fSharedContext->captureManager()->snapPicture(surface);
+        fSharedContext->captureManager()->snapPicture(surface);
     }
-    return SkContentID();
 }
 
 void Recorder::registerDevice(sk_sp<Device> device) {

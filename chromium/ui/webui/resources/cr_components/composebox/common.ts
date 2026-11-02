@@ -5,7 +5,8 @@
 import {ComposeboxContextAddedMethod} from '//resources/cr_components/search/constants.js';
 import {assertNotReachedCase} from '//resources/js/assert.js';
 import {loadTimeData} from '//resources/js/load_time_data.js';
-import type {DriveUploadError, SuggestInventory} from '//resources/mojo/components/omnibox/browser/searchbox.mojom-webui.js';
+import {TabAttachmentSource} from '//resources/mojo/components/omnibox/browser/searchbox.mojom-webui.js';
+import type {DriveUploadError, SearchContextAttachment, SuggestInventory} from '//resources/mojo/components/omnibox/browser/searchbox.mojom-webui.js';
 import type {UnguessableToken} from '//resources/mojo/mojo/public/mojom/base/unguessable_token.mojom-webui.js';
 import type {Url} from '//resources/mojo/url/mojom/url.mojom-webui.js';
 
@@ -60,6 +61,12 @@ export enum ProcessFilesError {
   MAX_IMAGES_EXCEEDED = 5,
   MAX_PDFS_EXCEEDED = 6,
   FILE_UPLOAD_NOT_ALLOWED = 7,
+}
+
+export enum TabSuggestionsState {
+  NOT_STARTED = 0,
+  LOADING = 1,
+  LOADED = 2,
 }
 
 export const FILE_VALIDATION_ERRORS_MAP =
@@ -125,6 +132,7 @@ export class ComposeboxFile {
   supportsUnimodal: boolean;
   thumbnailUrl?: string|null;
   iconUrl?: Url|null;
+  origin?: TabUploadOrigin;
 
   constructor(
       uuid: UnguessableToken, name: string, type: string, inputType: InputType,
@@ -143,6 +151,7 @@ export class ComposeboxFile {
     this.supportsUnimodal = options?.supportsUnimodal ?? false;
     this.thumbnailUrl = options?.thumbnailUrl ?? null;
     this.iconUrl = options?.iconUrl ?? null;
+    this.origin = options?.origin;
   }
 
   static createFromFile(
@@ -188,6 +197,9 @@ export interface ComposeboxState {
   mode: ToolMode;
   model: ModelMode;
   suggestInventory?: SuggestInventory;
+  // <if expr="not is_android">
+  smartTabSharingActive: boolean;
+  // </if>
 }
 
 export interface FileUpload {
@@ -204,10 +216,75 @@ export interface DriveUpload {
 
 export enum TabUploadOrigin {
   CONTEXT_MENU = 0,
-  RECENT_TAB_CHIP = 1,
+  CURRENT_TAB_CHIP = 1,
   ACTION_CHIP = 2,
   AUTO_ACTIVE = 3,
   OTHER = 4,
+  AUTO_ADDED = 5,
+}
+
+// TODO (crbug.com/542691701): Consolidate the two enums if possible
+// to avoid duplication.
+const ORIGIN_TO_MOJO: Record<TabUploadOrigin, TabAttachmentSource> = {
+  [TabUploadOrigin.CONTEXT_MENU]: TabAttachmentSource.kContextMenu,
+  [TabUploadOrigin.CURRENT_TAB_CHIP]: TabAttachmentSource.kCurrentTabChip,
+  [TabUploadOrigin.ACTION_CHIP]: TabAttachmentSource.kActionChip,
+  [TabUploadOrigin.AUTO_ACTIVE]: TabAttachmentSource.kAutoActive,
+  [TabUploadOrigin.AUTO_ADDED]: TabAttachmentSource.kAutoAdded,
+  [TabUploadOrigin.OTHER]: TabAttachmentSource.kOther,
+};
+
+export function mapOriginToMojoSource(origin?: TabUploadOrigin): TabAttachmentSource {
+  return origin === undefined ? TabAttachmentSource.kOther : ORIGIN_TO_MOJO[origin];
+}
+
+const MOJO_TO_ORIGIN: Record<TabAttachmentSource, TabUploadOrigin> = {
+  [TabAttachmentSource.kContextMenu]: TabUploadOrigin.CONTEXT_MENU,
+  [TabAttachmentSource.kCurrentTabChip]: TabUploadOrigin.CURRENT_TAB_CHIP,
+  [TabAttachmentSource.kActionChip]: TabUploadOrigin.ACTION_CHIP,
+  [TabAttachmentSource.kAutoActive]: TabUploadOrigin.AUTO_ACTIVE,
+  [TabAttachmentSource.kAutoAdded]: TabUploadOrigin.AUTO_ADDED,
+  [TabAttachmentSource.kOther]: TabUploadOrigin.OTHER,
+};
+
+export function mapMojoSourceToOrigin(source: TabAttachmentSource): TabUploadOrigin {
+  return MOJO_TO_ORIGIN[source];
+}
+
+export function isSuggestedOrigin(origin?: TabUploadOrigin): boolean {
+  return origin === TabUploadOrigin.AUTO_ADDED ||
+      origin === TabUploadOrigin.CURRENT_TAB_CHIP;
+}
+
+export function hasOnlySuggestedTabs(
+    files: Map<UnguessableToken, ComposeboxFile>): boolean {
+  if (files.size === 0) {
+    return false;
+  }
+  for (const file of files.values()) {
+    if (file.inputType !== InputType.kBrowserTab ||
+        !isSuggestedOrigin(file.origin)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export function hasOnlySuggestedTabAttachments(
+    attachments: SearchContextAttachment[]): boolean {
+  if (attachments.length === 0) {
+    return false;
+  }
+  for (const attachment of attachments) {
+    if (!attachment.tabAttachment) {
+      return false;
+    }
+    const origin = mapMojoSourceToOrigin(attachment.tabAttachment.source);
+    if (!isSuggestedOrigin(origin)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export interface TabUpload {

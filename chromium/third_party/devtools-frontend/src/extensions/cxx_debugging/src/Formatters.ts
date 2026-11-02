@@ -275,7 +275,7 @@ export function formatExternRef(wasm: WasmInterface, value: Value): () => LazyOb
       const ValueClasses: ['global', 'local', 'operand'] = ['global', 'local', 'operand'];
       const valueClass = ValueClasses[Number(encodedValue >> 32n)];
       return {type: 'reftype', valueClass, index: Number(BigInt.asUintN(32, encodedValue))};
-    }
+    },
   };
   return () => obj;
 }

@@ -34,14 +34,11 @@ pub mod session;
 pub mod session_binding;
 pub mod verifier;
 
-#[cfg(test)]
-mod tests;
-
 pub use session::{ClientSession, ServerSession, Session};
 
 /// Trait that represents a state-machine for protocol message generation.
-/// Incoming and outgoing messages are represented as generic arguments `I` and
-/// `O`.
+/// Incoming and outgoing messages are represented as associated types`Input`
+/// and `Output`.
 ///
 /// This trait can be used to implement bidirectional streams, meaning that
 /// there doesn't have to be a one-to-one correspondence between incoming and
@@ -50,7 +47,9 @@ pub use session::{ClientSession, ServerSession, Session};
 /// If one of the methods returns an error, it means that there was a protocol
 /// error and the session needs to be restarted (because the state-machine is in
 /// an incorrect state).
-pub trait ProtocolEngine<I, O> {
+pub trait ProtocolEngine {
+    type Input;
+    type Output;
     /// Puts a message received from the peer into the state-machine changing
     /// its state.
     ///
@@ -58,7 +57,8 @@ pub trait ProtocolEngine<I, O> {
     /// - `Ok(None)`: No incoming messages were expected
     /// - `Ok(Some(()))`: An incoming message was accepted by the state-machine
     /// - `Err`: Protocol error
-    fn put_incoming_message(&mut self, incoming_message: I) -> anyhow::Result<Option<()>>;
+    fn put_incoming_message(&mut self, incoming_message: Self::Input)
+    -> anyhow::Result<Option<()>>;
 
     /// Creates a next message that needs to be sent to the peer.
     ///
@@ -66,5 +66,5 @@ pub trait ProtocolEngine<I, O> {
     /// - `Ok(None)`: No outgoing messages
     /// - `Ok(Some(O))`: An outgoing message that needs to be sent to the peer
     /// - `Err`: Protocol error
-    fn get_outgoing_message(&mut self) -> anyhow::Result<Option<O>>;
+    fn get_outgoing_message(&mut self) -> anyhow::Result<Option<Self::Output>>;
 }

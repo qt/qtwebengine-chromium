@@ -126,7 +126,7 @@ TEST_F(URLRequestContextBuilderTest, DefaultSettings) {
   TestDelegate delegate;
   std::unique_ptr<URLRequest> request(context->CreateRequest(
       test_server_.GetURL("/echoheader?Foo"), DEFAULT_PRIORITY, &delegate,
-      TRAFFIC_ANNOTATION_FOR_TESTS));
+      TRAFFIC_ANNOTATION_FOR_TESTS, net::handles::kInvalidNetworkHandle));
   request->set_method("GET");
   request->SetExtraRequestHeaderByName("Foo", "Bar", false);
   request->Start();
@@ -142,7 +142,8 @@ TEST_F(URLRequestContextBuilderTest, UserAgent) {
   TestDelegate delegate;
   std::unique_ptr<URLRequest> request(context->CreateRequest(
       test_server_.GetURL("/echoheader?User-Agent"), DEFAULT_PRIORITY,
-      &delegate, TRAFFIC_ANNOTATION_FOR_TESTS));
+      &delegate, TRAFFIC_ANNOTATION_FOR_TESTS,
+      net::handles::kInvalidNetworkHandle));
   request->set_method("GET");
   request->Start();
   delegate.RunUntilComplete();
@@ -294,9 +295,9 @@ TEST_F(URLRequestContextBuilderTest, ShutdownHostResolverWithPendingRequest) {
   std::unique_ptr<URLRequestContext> context(builder_.Build());
 
   std::unique_ptr<HostResolver::ResolveHostRequest> request =
-      context->host_resolver()->CreateRequest(HostPortPair("example.com", 1234),
-                                              NetworkAnonymizationKey(),
-                                              NetLogWithSource(), std::nullopt);
+      context->host_resolver()->CreateRequest(
+          HostPortPair("example.com", 1234), NetworkAnonymizationKey(),
+          handles::kInvalidNetworkHandle, NetLogWithSource(), std::nullopt);
   TestCompletionCallback callback;
   int rv = request->Start(callback.callback());
   ASSERT_TRUE(state->has_pending_requests());

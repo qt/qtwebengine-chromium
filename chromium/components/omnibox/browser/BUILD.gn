@@ -151,6 +151,9 @@ proto_library("partner_location_descriptor_proto") {
 }
 
 static_library("browser") {
+  _configs = configs
+  configs = []
+  configs = [ "//third_party/tflite:tflite_shim_config" ] + _configs
   sources = [
     "actions/contextual_search_action.cc",
     "actions/contextual_search_action.h",
@@ -158,6 +161,8 @@ static_library("browser") {
     "actions/cross_device_tab_action.h",
     "actions/omnibox_action.cc",
     "actions/omnibox_action.h",
+    "actions/omnibox_action_client_delegator.cc",
+    "actions/omnibox_action_client_delegator.h",
     "actions/omnibox_action_concepts.h",
     "actions/omnibox_action_in_suggest.cc",
     "actions/omnibox_action_in_suggest.h",
@@ -285,6 +290,7 @@ static_library("browser") {
     "omnibox_log.h",
     "omnibox_logging_utils.cc",
     "omnibox_logging_utils.h",
+    "omnibox_metrics_constants.h",
     "omnibox_metrics_provider.cc",
     "omnibox_metrics_provider.h",
     "omnibox_navigation_observer.h",
@@ -329,6 +335,8 @@ static_library("browser") {
     "search_scoring_signals_annotator.h",
     "search_suggestion_parser.cc",
     "search_suggestion_parser.h",
+    "searchbox_utils.cc",
+    "searchbox_utils.h",
     "shortcuts_backend.cc",
     "shortcuts_backend.h",
     "shortcuts_constants.cc",
@@ -389,7 +397,6 @@ static_library("browser") {
     "//components/omnibox/resources:omnibox_pedal_synonyms",
     "//components/saved_tab_groups/public",
     "//components/security_state/core",
-    "//services/data_decoder/public/cpp",
     "//third_party/metrics_proto",
     "//third_party/omnibox_proto",
     "//third_party/tflite",
@@ -400,6 +407,7 @@ static_library("browser") {
   ]
 
   deps = [
+    "//build:android_buildflags",
     "//build:branding_buildflags",
     "//components/bookmarks/browser",
     "//components/component_updater",
@@ -463,6 +471,11 @@ static_library("browser") {
     ]
   } else {
     deps += [ "//components/keep_alive_registry" ]
+    sources += [
+      "suggest_inventory_fallback_prompts.h",
+      "suggest_inventory_fallback_utils.cc",
+      "suggest_inventory_fallback_utils.h",
+    ]
   }
 
   # GeolocationHeaderService is not supported on iOS due to dependencies on
@@ -581,6 +594,8 @@ static_library("location_bar") {
       "autocomplete_scheme_classifier_android.cc",
       "autocomplete_scheme_classifier_android.h",
       "omnibox_url_emphasizer.cc",
+      "omnibox_word_boundary.cc",
+      "omnibox_word_boundary.h",
     ]
     deps += [ ":scheme_classifier_jni" ]
   }
@@ -595,8 +610,10 @@ if (is_android) {
 
   android_resources("java_resources") {
     sources = [
+      "android/java/res/color-night/omnibox_popover_suggestion_bg_color.xml",
       "android/java/res/color-night/omnibox_suggestion_dropdown_bg.xml",
       "android/java/res/color-night/search_suggestion_bg_color.xml",
+      "android/java/res/color/omnibox_popover_suggestion_bg_color.xml",
       "android/java/res/color/omnibox_suggestion_dropdown_bg.xml",
       "android/java/res/color/search_suggestion_bg_color.xml",
       "android/java/res/drawable-hdpi/omnibox_https_valid_lock.png",
@@ -612,6 +629,7 @@ if (is_android) {
       "android/java/res/drawable/omnibox_dangerous.xml",
       "android/java/res/drawable/omnibox_no_encryption.xml",
       "android/java/res/drawable/omnibox_not_secure_warning.xml",
+      "android/java/res/drawable/shield_question.xml",
       "android/java/res/values-sw600dp/dimens.xml",
       "android/java/res/values/colors.xml",
       "android/java/res/values/dimens.xml",
@@ -627,6 +645,7 @@ if (is_android) {
     sources = [
       "android/java/src/org/chromium/components/omnibox/AutocompleteSchemeClassifier.java",
       "android/java/src/org/chromium/components/omnibox/OmniboxUrlEmphasizer.java",
+      "android/java/src/org/chromium/components/omnibox/OmniboxWordBoundary.java",
     ]
   }
 
@@ -636,11 +655,13 @@ if (is_android) {
     sources = [
       "android/java/src/org/chromium/components/omnibox/AutocompleteSchemeClassifier.java",
       "android/java/src/org/chromium/components/omnibox/OmniboxUrlEmphasizer.java",
+      "android/java/src/org/chromium/components/omnibox/OmniboxWordBoundary.java",
       "android/java/src/org/chromium/components/omnibox/SecurityStatusIcon.java",
     ]
     deps = [
       ":java_resources",
       "//chrome/browser/flags:java",
+      "//components/browser_ui/styles/android:java_resources",
       "//components/embedder_support/android:util_java",
       "//components/security_state/core:security_state_enums_java",
       "//third_party/androidx:androidx_annotation_annotation_java",
@@ -655,6 +676,7 @@ if (is_android) {
       "android/java/src/org/chromium/components/omnibox/AutocompleteRequestType.java",
       "android/java/src/org/chromium/components/omnibox/AutocompleteResult.java",
       "android/java/src/org/chromium/components/omnibox/OmniboxFocusReason.java",
+      "android/java/src/org/chromium/components/omnibox/TextSelection.java",
       "android/java/src/org/chromium/components/omnibox/ToolModeUtils.java",
       "android/java/src/org/chromium/components/omnibox/action/OmniboxAction.java",
       "android/java/src/org/chromium/components/omnibox/action/OmniboxActionDelegate.java",
@@ -674,6 +696,7 @@ if (is_android) {
       "//components/embedder_support/android:util_java",
       "//components/omnibox/common:features_java",
       "//components/saved_tab_groups/public:java",
+      "//components/search_engines/android:java",
       "//components/security_state/core:security_state_enums_java",
       "//third_party/android_deps:protobuf_lite_runtime_java",
       "//third_party/androidx:androidx_annotation_annotation_java",
@@ -735,6 +758,7 @@ if (is_android) {
     ]
     deps = [
       "//components/omnibox/browser:browser_java",
+      "//components/search_engines/android:java",
       "//third_party/android_deps:protobuf_lite_runtime_java",
       "//third_party/androidx:androidx_annotation_annotation_java",
       "//third_party/androidx:androidx_collection_collection_java",
@@ -924,6 +948,7 @@ source_set("unit_tests") {
     "remote_suggestions_service_unittest.cc",
     "scored_history_match_unittest.cc",
     "search_suggestion_parser_unittest.cc",
+    "searchbox_utils_unittest.cc",
     "shortcuts_backend_unittest.cc",
     "shortcuts_database_unittest.cc",
     "shortcuts_provider_unittest.cc",
@@ -947,9 +972,12 @@ source_set("unit_tests") {
     ":partner_location_descriptor_proto",
     ":test_support",
     ":unit_tests_bundle_data",
+    ":vector_icons",
     "//base",
     "//base/test:test_support",
+    "//build:android_buildflags",
     "//build:blink_buildflags",
+    "//build:branding_buildflags",
     "//components/bookmarks/browser",
     "//components/bookmarks/test",
     "//components/content_settings/core/browser",
@@ -986,6 +1014,7 @@ source_set("unit_tests") {
     "//components/variations",
     "//components/variations:test_support",
     "//components/variations/net",
+    "//components/vector_icons",
     "//extensions/buildflags",
     "//services/metrics/public/cpp:ukm_builders",
     "//services/network:test_support",
@@ -997,6 +1026,10 @@ source_set("unit_tests") {
     "//ui/gfx:test_support",
     "//url",
   ]
+
+  if (!is_android) {
+    sources += [ "suggest_inventory_fallback_utils_unittest.cc" ]
+  }
 
   if ((!is_android || enable_vr) && !is_ios) {
     sources += [ "location_bar_model_util_unittest.cc" ]
@@ -1011,10 +1044,14 @@ source_set("unit_tests") {
   # //content
   if (!is_ios) {
     sources += [
+      "fusebox_action_mojo_utils_unittest.cc",
       "geolocation_header_service_unittest.cc",
       "history_cluster_provider_unittest.cc",
     ]
     deps += [
+      ":fusebox_action_mojo_bindings",
+      ":fusebox_action_mojo_test_utils",
+      ":fusebox_action_mojo_utils",
       "//components/permissions:test_support",
       "//content/test:test_support",
       "//services/device/public/cpp:test_support",
@@ -1039,6 +1076,7 @@ source_set("unit_tests") {
   }
 
   if (is_android) {
+    sources += [ "omnibox_word_boundary_unittest.cc" ]
     deps += [ "//components/location/android:test_support" ]
   }
 
@@ -1107,6 +1145,41 @@ mojom("mojo_bindings") {
         traits_sources = [ "searchbox_mojom_traits.cc" ]
         traits_deps = [ "//third_party/omnibox_proto" ]
       },
+    ]
+  }
+}
+
+if (!is_ios) {
+  mojom("fusebox_action_mojo_bindings") {
+    sources = [ "fusebox_action.mojom" ]
+    webui_module_path = "/"
+    public_deps = [
+      ":mojo_bindings",
+      "//components/omnibox/composebox:mojo_bindings",
+    ]
+  }
+
+  source_set("fusebox_action_mojo_utils") {
+    sources = [
+      "fusebox_action_mojo_utils.cc",
+      "fusebox_action_mojo_utils.h",
+    ]
+    deps = [
+      ":fusebox_action_mojo_bindings",
+      ":mojo_bindings",
+      "//third_party/omnibox_proto",
+    ]
+  }
+
+  source_set("fusebox_action_mojo_test_utils") {
+    testonly = true
+    sources = [
+      "fusebox_action_mojo_test_utils.cc",
+      "fusebox_action_mojo_test_utils.h",
+    ]
+    deps = [
+      ":fusebox_action_mojo_bindings",
+      ":mojo_bindings",
     ]
   }
 }

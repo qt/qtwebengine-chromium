@@ -13,6 +13,7 @@
 #include <array>
 #include <vector>
 
+#include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/strings/strcat.h"
@@ -423,6 +424,8 @@ TEST(VariationsStudyFilteringTest, CheckStudyOSVersion) {
       {"0.3.4", "1.2.3", true},
       // Wildcards.
       {"1.*", "1.2.3", true},
+      {"1.2.*", "1.1", false},
+      {"1.2.*", "1.2", true},
       {"1.2.*", "1.2.3", true},
       {"1.2.3.*", "1.2.3", true},
       {"1.2.4.*", "1.2.3", false},
@@ -930,6 +933,39 @@ TEST(VariationsStudyFilteringTest, FilterAndValidateStudies) {
   EXPECT_EQ(kTrial3Name, processed_studies[1].study()->name());
 }
 
+TEST(VariationsStudyFilteringTest, FilterAndValidateStudiesWithCustomFilter) {
+  const std::string kMutableTrialName = "A";
+  const std::string kImmutableTrialName = "B";
+
+  VariationsSeed seed;
+  Study* study1 = seed.add_study();
+  study1->set_name(kMutableTrialName);
+  study1->set_default_experiment_name("Default");
+  study1->set_runtime_mutable(true);
+  AddExperiment("Default", 100, study1);
+
+  Study* study2 = seed.add_study();
+  study2->set_name(kImmutableTrialName);
+  study2->set_default_experiment_name("Default");
+  study2->set_runtime_mutable(false);
+  AddExperiment("Default", 100, study2);
+
+  auto client_state = CreateDummyClientFilterableState();
+  client_state->locale = "en-CA";
+  client_state->reference_date = base::Time::Now();
+  client_state->version = base::Version("20.0.0.0");
+  client_state->channel = Study::STABLE;
+  client_state->form_factor = Study::DESKTOP;
+  client_state->platform = Study::PLATFORM_ANDROID;
+
+  std::vector<ProcessedStudy> processed_studies = FilterAndValidateStudies(
+      seed, *client_state, VariationsLayers(),
+      [](const Study& study) { return study.runtime_mutable(); });
+
+  ASSERT_EQ(1U, processed_studies.size());
+  EXPECT_EQ(kMutableTrialName, processed_studies[0].study()->name());
+}
+
 TEST(VariationsStudyFilteringTest, FilterAndValidateStudiesWithBadFilters) {
   constexpr auto versions = std::to_array<const char*>(
       {"invalid", "1.invalid.0", "0.invalid.0", "\001\000\000\003"});
@@ -1026,6 +1062,39 @@ TEST(VariationsStudyFilteringTest, FilterAndValidateStudiesWithBlankStudyName) {
 
   ASSERT_EQ(0U, processed_studies.size());
   histogram_tester.ExpectUniqueSample("Variations.InvalidStudyReason", 8, 1);
+}
+
+TEST(VariationsStudyFilteringTest,
+     FilterAndValidateStudiesWithEnterpriseGroups) {
+  VariationsSeed seed;
+  Study* study1 = seed.add_study();
+  study1->set_name("enterprise_study");
+  study1->set_default_experiment_name("First");
+  AddExperiment("First", 100, study1);
+  study1->mutable_filter()->add_platform(Study::PLATFORM_ANDROID);
+  study1->mutable_filter()->add_enterprise_group("a");
+
+  Study* study2 = seed.add_study();
+  study2->set_name("non_enterprise_study");
+  study2->set_default_experiment_name("Second");
+  AddExperiment("Second", 100, study2);
+  study2->mutable_filter()->add_platform(Study::PLATFORM_ANDROID);
+  study2->mutable_filter()->add_exclude_enterprise_group("a");
+
+  auto client_state = ClientFilterableStateForEnterpriseGroups(
+      base::flat_set<std::string>({"a"}));
+  client_state->locale = "en-CA";
+  client_state->reference_date = base::Time::Now();
+  client_state->version = base::Version("20.0.0.0");
+  client_state->channel = Study::STABLE;
+  client_state->form_factor = Study::DESKTOP;
+  client_state->platform = Study::PLATFORM_ANDROID;
+
+  std::vector<ProcessedStudy> processed_studies =
+      FilterAndValidateStudies(seed, *client_state, VariationsLayers());
+
+  ASSERT_THAT(processed_studies, testing::SizeIs(1));
+  EXPECT_EQ(processed_studies[0].study()->name(), "enterprise_study");
 }
 
 TEST(VariationsStudyFilteringTest, FilterAndValidateStudiesWithCountry) {

@@ -8,11 +8,11 @@ import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as LHModel from '../../models/lighthouse/lighthouse.js';
 import type * as Trace from '../../models/trace/trace.js';
-import * as Greendev from '../greendev/greendev.js';
 import type * as NetworkTimeCalculator from '../network_time_calculator/network_time_calculator.js';
 
-import {AccessibilityAgent, AccessibilityContext} from './agents/AccessibilityAgent.js';
+import {AccessibilityAgent} from './agents/AccessibilityAgent.js';
 import {
+  type AgentOptions,
   type AiAgent,
   type AllowedOriginResult,
   type ContextDetail,
@@ -21,16 +21,22 @@ import {
   type MultimodalInput,
   type ResponseData,
   ResponseType,
-  type UserQuery
+  type UserQuery,
 } from './agents/AiAgent.js';
 import {ContextSelectionAgent} from './agents/ContextSelectionAgent.js';
-import {FileAgent, FileContext} from './agents/FileAgent.js';
-import {NetworkAgent, RequestContext} from './agents/NetworkAgent.js';
-import {PerformanceAgent, PerformanceTraceContext} from './agents/PerformanceAgent.js';
+import {FileAgent} from './agents/FileAgent.js';
+import {NetworkAgent} from './agents/NetworkAgent.js';
+import {PerformanceAgent} from './agents/PerformanceAgent.js';
 import {StorageAgent, StorageContext} from './agents/StorageAgent.js';
-import {NodeContext, StylingAgent} from './agents/StylingAgent.js';
+import {StylingAgent} from './agents/StylingAgent.js';
+import {AiAgent2} from './AiAgent2.js';
 import {AiHistoryStorage, ConversationType, type SerializedConversation} from './AiHistoryStorage.js';
 import type {ChangeManager} from './ChangeManager.js';
+import {AccessibilityContext} from './contexts/AccessibilityContext.js';
+import {DOMNodeContext} from './contexts/DOMNodeContext.js';
+import {FileContext} from './contexts/FileContext.js';
+import {PerformanceTraceContext} from './contexts/PerformanceTraceContext.js';
+import {RequestContext} from './contexts/RequestContext.js';
 
 export const NOT_FOUND_IMAGE_DATA = '';
 export const CONTEXT_TITLE = 'Analyzing data';
@@ -62,11 +68,12 @@ export interface AiConversationOptions {
   isReadOnly?: boolean;
   aidaClient?: Host.AidaClient.AidaClient;
   changeManager?: ChangeManager;
-  isExternal?: boolean;
   performanceRecordAndReload?: () => Promise<Trace.TraceModel.ParsedTrace>;
   onInspectElement?: () => Promise<SDK.DOMModel.DOMNode|null>;
   networkTimeCalculator?: NetworkTimeCalculator.NetworkTransferTimeCalculator;
   lighthouseRecording?: (overrides?: LHModel.RunTypes.RunOverrides) => Promise<LHModel.ReporterTypes.ReportJSON|null>;
+  aiHistoryStorage?: AiHistoryStorage;
+  targetManager?: SDK.TargetManager.TargetManager;
 }
 
 export class AiConversation {
@@ -82,7 +89,6 @@ export class AiConversation {
       data: history,
       id: serializedConversation.id,
       isReadOnly: true,
-      isExternal: serializedConversation.isExternal,
     });
   }
 
@@ -94,7 +100,6 @@ export class AiConversation {
 
   #isReadOnly: boolean;
   readonly history: ResponseData[];
-  #isExternal: boolean;
 
   #aidaClient: Host.AidaClient.AidaClient;
   #changeManager: ChangeManager|undefined;
@@ -107,6 +112,8 @@ export class AiConversation {
   #lighthouseRecording?: (overrides?: LHModel.RunTypes.RunOverrides) => Promise<LHModel.ReporterTypes.ReportJSON|null>;
   #onInspectElement?: () => Promise<SDK.DOMModel.DOMNode|null>;
   #networkTimeCalculator?: NetworkTimeCalculator.NetworkTransferTimeCalculator;
+  readonly #aiHistoryStorage: AiHistoryStorage;
+  readonly #targetManager: SDK.TargetManager.TargetManager;
 
   constructor(options: AiConversationOptions) {
     const {
@@ -116,11 +123,12 @@ export class AiConversation {
       isReadOnly = true,
       aidaClient = new Host.AidaClient.AidaClient(),
       changeManager,
-      isExternal = false,
       performanceRecordAndReload,
       onInspectElement,
       networkTimeCalculator,
       lighthouseRecording,
+      aiHistoryStorage = AiHistoryStorage.instance(),
+      targetManager = SDK.TargetManager.TargetManager.instance(),
     } = options;
     this.#changeManager = changeManager;
     this.#aidaClient = aidaClient;
@@ -128,10 +136,11 @@ export class AiConversation {
     this.#onInspectElement = onInspectElement;
     this.#networkTimeCalculator = networkTimeCalculator;
     this.#lighthouseRecording = lighthouseRecording;
+    this.#aiHistoryStorage = aiHistoryStorage;
+    this.#targetManager = targetManager;
 
     this.id = id;
     this.#isReadOnly = isReadOnly;
-    this.#isExternal = isExternal;
     this.history = this.#reconstructHistory(data);
     // Needs to be last
     this.#updateAgent(type);
@@ -141,6 +150,18 @@ export class AiConversation {
     return this.#isReadOnly;
   }
 
+  static titleForSerialized(serialized: SerializedConversation): string|undefined {
+    const query = serialized.history.find(item => item.type === ResponseType.USER_QUERY)?.query;
+    if (!query) {
+      return undefined;
+    }
+    return AiConversation.title(query);
+  }
+
+  static title(query: string): string {
+    return `${query.substring(0, MAX_TITLE_LENGTH)}${query.length > MAX_TITLE_LENGTH ? '…' : ''}`;
+  }
+
   get title(): string|undefined {
     const query = this.history.find(response => response.type === ResponseType.USER_QUERY)?.query;
 
@@ -148,11 +169,7 @@ export class AiConversation {
       return;
     }
 
-    if (this.#isExternal) {
-      return `[External] ${query.substring(0, MAX_TITLE_LENGTH - 11)}${
-          query.length > MAX_TITLE_LENGTH - 11 ? '…' : ''}`;
-    }
-    return `${query.substring(0, MAX_TITLE_LENGTH)}${query.length > MAX_TITLE_LENGTH ? '…' : ''}`;
+    return AiConversation.title(query);
   }
 
   get isEmpty(): boolean {
@@ -180,7 +197,7 @@ export class AiConversation {
     if (isAiAssistanceContextSelectionAgentEnabled()) {
       if (updateContext instanceof FileContext) {
         this.#updateAgent(ConversationType.FILE);
-      } else if (updateContext instanceof NodeContext) {
+      } else if (updateContext instanceof DOMNodeContext) {
         this.#updateAgent(ConversationType.STYLING);
       } else if (updateContext instanceof RequestContext) {
         this.#updateAgent(ConversationType.NETWORK);
@@ -198,13 +215,8 @@ export class AiConversation {
     return this.#contexts.at(0);
   }
 
-  getPendingMultimodalInput(): MultimodalInput|undefined {
-    const greenDevEmulationEnabled = Greendev.Prototypes.instance().isEnabled('emulationCapabilities');
-    return greenDevEmulationEnabled ? this.#agent.popPendingMultimodalInput() : undefined;
-  }
-
   #reconstructHistory(historyWithoutImages: ResponseData[]): ResponseData[] {
-    const imageHistory = AiHistoryStorage.instance().getImageHistory();
+    const imageHistory = this.#aiHistoryStorage.getImageHistory();
     if (imageHistory && imageHistory.length > 0) {
       const history: ResponseData[] = [];
       for (const data of historyWithoutImages) {
@@ -282,12 +294,12 @@ export class AiConversation {
 
   async addHistoryItem(item: ResponseData): Promise<void> {
     this.history.push(item);
-    await AiHistoryStorage.instance().upsertHistoryEntry(this.serialize());
+    await this.#aiHistoryStorage.upsertHistoryEntry(this.serialize());
     if (item.type === ResponseType.USER_QUERY) {
-      void AiHistoryStorage.instance().addRecentPrompt(item.query);
+      void this.#aiHistoryStorage.addRecentPrompt(item.query);
       if (item.imageId && item.imageInput && 'inlineData' in item.imageInput) {
         const inlineData = item.imageInput.inlineData;
-        await AiHistoryStorage.instance().upsertImage({
+        await this.#aiHistoryStorage.upsertImage({
           id: item.imageId,
           data: inlineData.data,
           mimeType: inlineData.mimeType,
@@ -321,8 +333,19 @@ export class AiConversation {
                    })
                    .filter(history => !!history),
       type: this.#type,
-      isExternal: this.#isExternal,
     };
+  }
+
+  #filterHistoryForNewAgent(): Host.AidaClient.Content[] {
+    return this.#agent?.history
+               .map(content => {
+                 return {
+                   ...content,
+                   parts: content.parts.filter(part => !('functionCall' in part) && !('functionResponse' in part)),
+                 };
+               })
+               .filter(content => content.parts.length > 0) ??
+        [];
   }
 
   #updateAgent(type: ConversationType): void {
@@ -330,19 +353,10 @@ export class AiConversation {
       return;
     }
 
-    this.#type = type;
+    const isTransitioningFromStorage = this.#type === ConversationType.STORAGE && type !== ConversationType.STORAGE;
+    const history = isTransitioningFromStorage ? [] : this.#filterHistoryForNewAgent();
 
-    // We need to filter out the function calls
-    // as the LLM tries to call the existing ones.
-    const history =
-        this.#agent?.history
-            .map(content => {
-              return {
-                ...content,
-                parts: content.parts.filter(part => !('functionCall' in part) && !('functionResponse' in part)),
-              };
-            })
-            .filter(content => content.parts.length > 0);
+    this.#type = type;
 
     const options = {
       aidaClient: this.#aidaClient,
@@ -355,36 +369,29 @@ export class AiConversation {
       lighthouseRecording: this.#lighthouseRecording,
       allowedOrigin: this.allowedOrigin,
       history,
+      targetManager: this.#targetManager,
     };
+
+    this.#agent = Root.Runtime.hostConfig.devToolsAiV2Architecture?.enabled ? new AiAgent2(options) :
+                                                                              this.#createV1Agent(type, options);
+  }
+
+  #createV1Agent(type: ConversationType, options: AgentOptions): AiAgent<unknown> {
     switch (type) {
-      case ConversationType.STYLING: {
-        this.#agent = new StylingAgent(options);
-        break;
-      }
-      case ConversationType.NETWORK: {
-        this.#agent = new NetworkAgent(options);
-        break;
-      }
-      case ConversationType.FILE: {
-        this.#agent = new FileAgent(options);
-        break;
-      }
-      case ConversationType.PERFORMANCE: {
-        this.#agent = new PerformanceAgent(options);
-        break;
-      }
-      case ConversationType.ACCESSIBILITY: {
-        this.#agent = new AccessibilityAgent(options);
-        break;
-      }
-      case ConversationType.STORAGE: {
-        this.#agent = new StorageAgent(options);
-        break;
-      }
-      case ConversationType.NONE: {
-        this.#agent = new ContextSelectionAgent(options);
-        break;
-      }
+      case ConversationType.STYLING:
+        return new StylingAgent(options);
+      case ConversationType.NETWORK:
+        return new NetworkAgent(options);
+      case ConversationType.FILE:
+        return new FileAgent(options);
+      case ConversationType.PERFORMANCE:
+        return new PerformanceAgent(options);
+      case ConversationType.ACCESSIBILITY:
+        return new AccessibilityAgent(options);
+      case ConversationType.STORAGE:
+        return new StorageAgent(options);
+      case ConversationType.NONE:
+        return new ContextSelectionAgent(options);
       default:
         Platform.assertNever(type, 'Unknown conversation type');
     }
@@ -399,20 +406,20 @@ export class AiConversation {
           } = {},
           ): AsyncGenerator<ResponseData, void, void> {
     this.#navigationOccurredDuringRun = false;
-    const originAtRunStart = getPrimaryPageOrigin();
+    const originAtRunStart = getPrimaryPageOrigin(this.#targetManager);
     const listener = (): void => {
       // If an unexpected navigation to a different origin occurred
       // during processing the user's request, we don't want to allow
       // the agent to run any function calls and retrieve data from the new origin.
       // Performance agent and accessibility agent navigate to 'about://' or 'chrome://terms'
-      const newOrigin = getPrimaryPageOrigin();
+      const newOrigin = getPrimaryPageOrigin(this.#targetManager);
       if (originAtRunStart !== newOrigin && newOrigin && !ALLOWED_PAGE_NAVIGATIONS.includes(newOrigin)) {
         this.#navigationOccurredDuringRun = true;
       }
     };
-    const targetManager = SDK.TargetManager.TargetManager.instance();
-    targetManager.addModelListener(
-        SDK.ResourceTreeModel.ResourceTreeModel, SDK.ResourceTreeModel.Events.PrimaryPageChanged, listener, this);
+    const targetManager = this.#targetManager;
+    targetManager.addModelListener(SDK.ResourceTreeModel.ResourceTreeModel,
+                                   SDK.ResourceTreeModel.Events.PrimaryPageChanged, listener, this);
 
     try {
       if (this.isBlockedByOrigin) {
@@ -423,8 +430,8 @@ export class AiConversation {
 
       yield* this.#runAgent(initialQuery, options, {isInitialCall: true});
     } finally {
-      targetManager.removeModelListener(
-          SDK.ResourceTreeModel.ResourceTreeModel, SDK.ResourceTreeModel.Events.PrimaryPageChanged, listener, this);
+      targetManager.removeModelListener(SDK.ResourceTreeModel.ResourceTreeModel,
+                                        SDK.ResourceTreeModel.Events.PrimaryPageChanged, listener, this);
     }
   }
 
@@ -495,8 +502,8 @@ export class AiConversation {
       if (data.type === ResponseType.CONTEXT_CHANGE) {
         this.setContext(data.context);
         yield*
-            this.#runAgent(
-                this.#getQueryAfterSelection(initialQuery, data.description), options, {isInitialCall: false});
+            this.#runAgent(this.#getQueryAfterSelection(initialQuery, data.description), options,
+                           {isInitialCall: false});
         return;
       }
     }
@@ -526,7 +533,7 @@ export class AiConversation {
     if (this.#origin) {
       return {origin: this.#origin};
     }
-    this.#origin = getPrimaryPageOrigin();
+    this.#origin = getPrimaryPageOrigin(this.#targetManager);
 
     return {origin: this.#origin};
   };
@@ -540,8 +547,10 @@ function isAiAssistanceContextSelectionAgentEnabled(): boolean {
   return Boolean(Root.Runtime.hostConfig.devToolsAiAssistanceContextSelectionAgent?.enabled);
 }
 
-function getPrimaryPageOrigin(): Platform.DevToolsPath.UrlString|undefined {
-  const target = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
+function getPrimaryPageOrigin(
+    targetManager: SDK.TargetManager.TargetManager,
+    ): Platform.DevToolsPath.UrlString|undefined {
+  const target = targetManager.primaryPageTarget();
   const inspectedURL = target?.inspectedURL();
   return inspectedURL ? new Common.ParsedURL.ParsedURL(inspectedURL).securityOrigin() : undefined;
 }

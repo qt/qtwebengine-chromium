@@ -55,9 +55,9 @@ class SkewSymmetricBase : public EigenBase<Derived> {
   typedef DenseMatrixType DenseType;
   typedef SkewSymmetricMatrix3<Scalar> PlainObject;
 
-  /** \returns a reference to the derived object. */
-  EIGEN_DEVICE_FUNC inline const Derived& derived() const { return *static_cast<const Derived*>(this); }
   /** \returns a const reference to the derived object. */
+  EIGEN_DEVICE_FUNC inline const Derived& derived() const { return *static_cast<const Derived*>(this); }
+  /** \returns a reference to the derived object. */
   EIGEN_DEVICE_FUNC inline Derived& derived() { return *static_cast<Derived*>(this); }
 
   /**
@@ -86,9 +86,9 @@ class SkewSymmetricBase : public EigenBase<Derived> {
     return retVal;
   }
 
-  /** \returns a reference to the derived object's vector of coefficients. */
-  EIGEN_DEVICE_FUNC inline const SkewSymmetricVectorType& vector() const { return derived().vector(); }
   /** \returns a const reference to the derived object's vector of coefficients. */
+  EIGEN_DEVICE_FUNC inline const SkewSymmetricVectorType& vector() const { return derived().vector(); }
+  /** \returns a reference to the derived object's vector of coefficients. */
   EIGEN_DEVICE_FUNC inline SkewSymmetricVectorType& vector() { return derived().vector(); }
 
   /** \returns the number of rows. */

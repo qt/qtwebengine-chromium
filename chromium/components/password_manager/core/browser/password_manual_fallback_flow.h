@@ -65,29 +65,28 @@ class PasswordManualFallbackFlow : public autofill::AutofillSuggestionDelegate,
   // Generates suggestions and shows the Autofill popup if the passwords were
   // already read from disk. Otherwise, saves the input parameters to run the
   // flow when the passwords are read from disk.
-  void RunFlow(autofill::FieldRendererId field_id,
+  void RunFlow(const autofill::FieldGlobalId& field_id,
                const gfx::RectF& bounds,
                base::i18n::TextDirection text_direction) override;
 
   // AutofillSuggestionDelegate:
-  std::variant<autofill::AutofillDriver*, PasswordManagerDriver*> GetDriver()
-      override;
-  void OnSuggestionsShown(
-      base::span<const autofill::Suggestion> suggestions) override;
+  std::variant<autofill::AutofillDriver*, PasswordManagerDriver*>
+  GetDriver_DoNotUse() override;
+  void OnSuggestionsShown(base::span<const autofill::Suggestion> suggestions,
+                          base::optional_ref<const SuggestionMetadata>
+                              parent_suggestion_metadata) override;
   void OnSuggestionsHidden(autofill::SuggestionHidingReason reason) override;
   bool OnFilterChanged(const std::u16string& filter) override;
   bool OnSearchSubmitted(const std::u16string& filter) override;
   void DidSelectSuggestion(const autofill::Suggestion& suggestion) override;
   void DidAcceptSuggestion(const autofill::Suggestion& suggestion,
                            const SuggestionMetadata& metadata) override;
-  void DidPerformButtonActionForSuggestion(
-      const autofill::Suggestion&,
-      const autofill::SuggestionButtonAction&) override;
   bool RemoveSuggestion(const autofill::Suggestion& suggestion) override;
   void ClearPreviewedForm() override;
   autofill::FillingProduct GetMainFillingProduct() const override;
   void OnTabSelected(autofill::TabbedPaneTabType tab_type) override;
   bool IsSearching() const override;
+  autofill::FieldGlobalId GetQueriedFieldId() const override;
 
  private:
   // Is used to track whether the flow was invoked and whether the passwords
@@ -170,7 +169,7 @@ class PasswordManualFallbackFlow : public autofill::AutofillSuggestionDelegate,
   base::OnceClosure on_all_password_data_ready_;
 
   // The latest `RunFlow()` call arguments.
-  autofill::FieldRendererId field_id_;
+  autofill::FieldGlobalId field_id_;
   gfx::RectF bounds_;
   base::i18n::TextDirection text_direction_;
 

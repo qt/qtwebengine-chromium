@@ -16,6 +16,25 @@
 
 using testing::ElementsAre;
 
+// Ensure that these functions are usable in a constexpr context.
+static_assert(FXSYS_IsLowerASCII('a'), "Should be lower");
+static_assert(!FXSYS_IsLowerASCII('A'), "Should not be lower");
+
+static_assert(FXSYS_IsUpperASCII('A'), "Should be upper");
+static_assert(!FXSYS_IsUpperASCII('a'), "Should not be upper");
+
+static_assert(FXSYS_ToLowerASCII('A') == 'a', "Should convert to lower");
+static_assert(FXSYS_ToLowerASCII('a') == 'a', "Should remain lower");
+
+static_assert(FXSYS_ToUpperASCII('a') == 'A', "Should convert to upper");
+static_assert(FXSYS_ToUpperASCII('A') == 'A', "Should remain upper");
+
+static_assert(FXSYS_IsOctalDigit('7'), "Should be octal");
+static_assert(!FXSYS_IsOctalDigit('8'), "Should not be octal");
+
+static_assert(FXSYS_HexCharToInt('a') == 10, "Should convert hex");
+static_assert(FXSYS_WideHexCharToInt(L'a') == 10, "Should convert wide hex");
+
 TEST(fxcrt, FXSYSIsLowerASCII) {
   EXPECT_TRUE(FXSYS_IsLowerASCII('a'));
   EXPECT_TRUE(FXSYS_IsLowerASCII(L'a'));
@@ -131,6 +150,78 @@ TEST(fxcrt, FXSYSToUTF16BE) {
   EXPECT_THAT(result, ElementsAre('D', 'B', 'F', 'F', 'D', 'F', 'F', 'F'));
   result = FXSYS_ToUTF16BE(0x2003E, buf);
   EXPECT_THAT(result, ElementsAre('D', '8', '4', '0', 'D', 'C', '3', 'E'));
+}
+
+TEST(fxcrt, FXSYSTimeZoneOffsetInMinutes) {
+  {
+    const tm local_time = {
+        .tm_min = 35,
+        .tm_hour = 10,
+        .tm_mday = 23,
+    };
+    const tm utc_time = {
+        .tm_min = 5,
+        .tm_hour = 3,
+        .tm_mday = 23,
+    };
+    EXPECT_EQ(450, FXSYS_TimeZoneOffsetInMinutes(local_time, utc_time));
+  }
+
+  {
+    const tm local_time = {
+        .tm_min = 5,
+        .tm_hour = 23,
+        .tm_mday = 22,
+    };
+    const tm utc_time = {
+        .tm_min = 5,
+        .tm_hour = 3,
+        .tm_mday = 23,
+    };
+    EXPECT_EQ(-240, FXSYS_TimeZoneOffsetInMinutes(local_time, utc_time));
+  }
+
+  {
+    const tm local_time = {
+        .tm_min = 5,
+        .tm_hour = 7,
+        .tm_mday = 24,
+    };
+    const tm utc_time = {
+        .tm_min = 5,
+        .tm_hour = 17,
+        .tm_mday = 23,
+    };
+    EXPECT_EQ(840, FXSYS_TimeZoneOffsetInMinutes(local_time, utc_time));
+  }
+
+  {
+    const tm local_time = {
+        .tm_min = 5,
+        .tm_hour = 7,
+        .tm_mday = 1,
+    };
+    const tm utc_time = {
+        .tm_min = 5,
+        .tm_hour = 17,
+        .tm_mday = 31,
+    };
+    EXPECT_EQ(840, FXSYS_TimeZoneOffsetInMinutes(local_time, utc_time));
+  }
+
+  {
+    const tm local_time = {
+        .tm_min = 5,
+        .tm_hour = 23,
+        .tm_mday = 31,
+    };
+    const tm utc_time = {
+        .tm_min = 5,
+        .tm_hour = 3,
+        .tm_mday = 1,
+    };
+    EXPECT_EQ(-240, FXSYS_TimeZoneOffsetInMinutes(local_time, utc_time));
+  }
 }
 
 TEST(fxcrt, FXSYSwcstof) {

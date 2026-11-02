@@ -15,8 +15,6 @@
 //
 
 #![no_std]
-#![feature(never_type)]
-#![feature(result_flattening)]
 #![doc = core::include_str!("../README.md")]
 
 extern crate alloc;
@@ -71,11 +69,7 @@ where
 }
 
 fn bytes_value_to_option(b: BytesValue) -> Option<Vec<u8>> {
-    if b.found {
-        Some(b.value)
-    } else {
-        None
-    }
+    if b.found { Some(b.value) } else { None }
 }
 
 /// See [`StdWasmApiClient::log`].
@@ -147,7 +141,7 @@ fn client() -> StdWasmApiClient<Transport> {
     StdWasmApiClient::new(Transport)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn alloc(len: u32) -> *mut u8 {
     // Create a new mutable buffer with capacity `len`.
     let mut buf = Vec::with_capacity(len as usize);

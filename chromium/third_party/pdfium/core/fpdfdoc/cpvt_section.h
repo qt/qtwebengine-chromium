@@ -17,6 +17,7 @@
 #include "core/fpdfdoc/cpvt_wordinfo.h"
 #include "core/fpdfdoc/cpvt_wordrange.h"
 #include "core/fxcrt/fx_coordinates.h"
+#include "core/fxcrt/span.h"
 #include "core/fxcrt/unowned_ptr.h"
 
 class CPVT_VariableText;
@@ -57,7 +58,6 @@ class CPVT_Section final {
   CPVT_WordPlace SearchWordPlace(const CFX_PointF& point) const;
   CPVT_WordPlace SearchWordPlace(float fx,
                                  const CPVT_WordPlace& lineplace) const;
-  CPVT_WordPlace SearchWordPlace(float fx, const CPVT_WordRange& range) const;
 
   void SetPlace(const CPVT_WordPlace& place) { sec_place_ = place; }
   void SetPlaceIndex(int32_t index) { sec_place_.nSecIndex = index; }
@@ -71,14 +71,43 @@ class CPVT_Section final {
   void EraseWordsFrom(int32_t index);
 
  private:
+  using WordIterator =
+      std::vector<std::unique_ptr<CPVT_WordInfo>>::const_iterator;
+
+  struct WordRangeIteratorPair {
+    WordIterator begin;
+    WordIterator end;
+  };
+
   CPVT_FloatRect RearrangeCharArray() const;
   CPVT_FloatRect RearrangeTypeset();
   CPVT_FloatRect SplitLines(bool bTypeset, float fFontSize);
+  // Iterates through all lines in the section, laying out words according to
+  // the text alignment and bidi rules (reordering words if necessary), and
+  // assigns final (X, Y) coordinates to each word and line. Returns the
+  // bounding box encompassing all the lines.
   CPVT_FloatRect OutputLines(const CPVT_FloatRect& rect) const;
 
-  void ClearLeftWords(int32_t nWordIndex);
-  void ClearRightWords(int32_t nWordIndex);
-  void ClearMidWords(int32_t nBeginIndex, int32_t nEndIndex);
+  // Clears [0, word_index] from `word_array_`.
+  void ClearLeftWords(int32_t word_index);
+  // Clears (word_index, word_array_.size()) from `word_array_`.
+  void ClearRightWords(int32_t word_index);
+  // Clears (begin_index, end_index] from `word_array_`.
+  void ClearMidWords(int32_t begin_index, int32_t end_index);
+
+  // Returns iterators for the range [begin_index, end_index) in `word_array_`.
+  // Both indices are clamped to [0, word_array_.size()].
+  // If `begin_index` > `end_index`, returns an empty range.
+  WordRangeIteratorPair GetWordRangeIteratorPair(int32_t begin_index,
+                                                 int32_t end_index) const;
+
+  // Like GetWordRangeIteratorPair(), but returns a span into `word_array_`.
+  pdfium::span<const std::unique_ptr<CPVT_WordInfo>> GetWordRangeSpan(
+      int32_t start,
+      int32_t length) const;
+
+  CPVT_WordPlace SearchWordPlaceImpl(float fx,
+                                     const CPVT_WordRange& range) const;
 
   CPVT_WordPlace sec_place_;
   CPVT_FloatRect rect_;

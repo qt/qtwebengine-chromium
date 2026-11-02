@@ -62,14 +62,6 @@ slinky::ref_count<ynn_subgraph> clone_subgraph_subset(
   while (head < values_to_traverse.size()) {
     uint32_t curr_id = values_to_traverse[head++];
 
-    const ynn_value& val = subgraph.value(curr_id);
-    if (val.scale_id != YNN_INVALID_VALUE_ID) {
-      add_value_for_traversal(val.scale_id);
-    }
-    if (val.zero_point_id != YNN_INVALID_VALUE_ID) {
-      add_value_for_traversal(val.zero_point_id);
-    }
-
     if (curr_id == input_id) {
       continue;
     }
@@ -149,15 +141,6 @@ slinky::ref_count<ynn_subgraph> clone_subgraph_subset(
     clone_or_get_new_value(old_id);
   }
 
-  // Now fix up quantization links.
-  for (uint32_t old_id : relevant_values) {
-    uint32_t new_id = old_to_new_id[old_id];
-    const ynn_value& old_val = subgraph.value(old_id);
-    ynn_value& new_val = new_subgraph->value(new_id);
-    new_val.scale_id = clone_or_get_new_value(old_val.scale_id);
-    new_val.zero_point_id = clone_or_get_new_value(old_val.zero_point_id);
-  }
-
   // Clone nodes in topological order.
   for (const auto& node : subgraph.nodes) {
     if (relevant_nodes.find(&node) != relevant_nodes.end()) {
@@ -226,13 +209,23 @@ bool allow_in_place(uint32_t input_id, uint32_t output_id,
     return false;
   }
 
-  if (is_broadcast_op<ynn_node::broadcast>(*producer) ||
-      is_broadcast_op<ynn_node::broadcast_like>(*producer)) {
+  if (is_broadcast_op<ynn_node::broadcast_like>(*producer)) {
     // We can't compute in place with a broadcast input.
     return false;
   }
 
   return true;
+}
+
+int compute_allow_in_place(const ynn_node& node, const ynn_subgraph& subgraph) {
+  assert(node.outputs.size() == 1);
+  int result = 0;
+  for (int i = 0; i < node.inputs.size(); ++i) {
+    if (allow_in_place(node.inputs[i], node.outputs[0], subgraph)) {
+      result |= 1 << i;
+    }
+  }
+  return result;
 }
 
 }  // namespace ynn

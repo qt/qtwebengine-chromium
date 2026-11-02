@@ -18,7 +18,10 @@
 #include <cassert>
 #include <cstdint>
 
+#include "src/dsp/dsp.h"
+#include "src/utils/array_2d.h"
 #include "src/utils/common.h"
+#include "src/utils/constants.h"
 
 namespace libgav1 {
 namespace {

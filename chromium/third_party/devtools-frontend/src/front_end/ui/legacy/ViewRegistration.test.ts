@@ -5,8 +5,8 @@
 import {assert} from 'chai';
 
 import * as i18n from '../../core/i18n/i18n.js';
-import * as Root from '../../core/root/root.js';
-import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
+import {deinitializeGlobalVars, initializeGlobalVars} from '../../testing/EnvironmentHelpers.js';
+import {TestUniverse} from '../../testing/TestUniverse.js';
 
 import * as QuickOpen from './components/quick_open/quick_open.js';
 import * as UI from './legacy.js';
@@ -21,8 +21,9 @@ const viewTitle = 'Mock';
 const commandPrompt = 'Show Mock';
 const order = 10;
 
-describeWithEnvironment('ViewRegistration', () => {
-  before(() => {
+describe('ViewRegistration', () => {
+  before(async () => {
+    await initializeGlobalVars();
     UI.ViewManager.registerViewExtension({
       location: UI.ViewManager.ViewLocationValues.PANEL,
       id: viewId,
@@ -44,9 +45,10 @@ describeWithEnvironment('ViewRegistration', () => {
         return new MockView();
       },
     });
-    UI.ViewManager.ViewManager.instance(
-        {forceNew: true, universe: {context: new Root.DevToolsContext.WritableDevToolsContext()}});
+    UI.ViewManager.ViewManager.instance({forceNew: true, universe: new TestUniverse()});
   });
+
+  after(async () => await deinitializeGlobalVars());
 
   it('retrieves a registered view', async () => {
     const preRegisteredView = UI.ViewManager.ViewManager.instance().view(viewId) as UI.ViewManager.PreRegisteredView;

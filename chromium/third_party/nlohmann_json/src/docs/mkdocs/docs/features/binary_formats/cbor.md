@@ -5,7 +5,7 @@ extremely small code sizes, fairly small message size, and extensibility without
 
 !!! abstract "References"
 
-      - [CBOR Website](http://cbor.io) - the main source on CBOR
+    - [CBOR Website](http://cbor.io) - the main source on CBOR
     - [CBOR Playground](http://cbor.me) - an interactive webpage to translate between JSON and CBOR
     - [RFC 7049](https://tools.ietf.org/html/rfc7049) - the CBOR specification
 
@@ -37,22 +37,22 @@ The library uses the following mapping from JSON values types to CBOR types acco
 | number_float    | *any value representable by a float*       | Single-Precision Float            | 0xFA       |
 | number_float    | *any value NOT representable by a float*   | Double-Precision Float            | 0xFB       |
 | string          | *length*: 0..23                            | UTF-8 string                      | 0x60..0x77 |
-| string          | *length*: 23..255                          | UTF-8 string (1 byte follow)      | 0x78       |
+| string          | *length*: 24..255                          | UTF-8 string (1 byte follow)      | 0x78       |
 | string          | *length*: 256..65535                       | UTF-8 string (2 bytes follow)     | 0x79       |
 | string          | *length*: 65536..4294967295                | UTF-8 string (4 bytes follow)     | 0x7A       |
 | string          | *length*: 4294967296..18446744073709551615 | UTF-8 string (8 bytes follow)     | 0x7B       |
 | array           | *size*: 0..23                              | array                             | 0x80..0x97 |
-| array           | *size*: 23..255                            | array (1 byte follow)             | 0x98       |
+| array           | *size*: 24..255                            | array (1 byte follow)             | 0x98       |
 | array           | *size*: 256..65535                         | array (2 bytes follow)            | 0x99       |
 | array           | *size*: 65536..4294967295                  | array (4 bytes follow)            | 0x9A       |
 | array           | *size*: 4294967296..18446744073709551615   | array (8 bytes follow)            | 0x9B       |
 | object          | *size*: 0..23                              | map                               | 0xA0..0xB7 |
-| object          | *size*: 23..255                            | map (1 byte follow)               | 0xB8       |
+| object          | *size*: 24..255                            | map (1 byte follow)               | 0xB8       |
 | object          | *size*: 256..65535                         | map (2 bytes follow)              | 0xB9       |
 | object          | *size*: 65536..4294967295                  | map (4 bytes follow)              | 0xBA       |
 | object          | *size*: 4294967296..18446744073709551615   | map (8 bytes follow)              | 0xBB       |
 | binary          | *size*: 0..23                              | byte string                       | 0x40..0x57 |
-| binary          | *size*: 23..255                            | byte string (1 byte follow)       | 0x58       |
+| binary          | *size*: 24..255                            | byte string (1 byte follow)       | 0x58       |
 | binary          | *size*: 256..65535                         | byte string (2 bytes follow)      | 0x59       |
 | binary          | *size*: 65536..4294967295                  | byte string (4 bytes follow)      | 0x5A       |
 | binary          | *size*: 4294967296..18446744073709551615   | byte string (8 bytes follow)      | 0x5B       |
@@ -66,7 +66,15 @@ see "binary" cells in the table above.
 
 !!! info "NaN/infinity handling"
 
-    If NaN or Infinity are stored inside a JSON number, they are serialized properly. This behavior differs from the normal JSON serialization which serializes NaN or Infinity to `null`.
+    `NaN`, `Infinity`, and `-Infinity` are serialized as a CBOR half-precision float (type 0xF9, 3 bytes total):
+    `NaN` as `0xF9 0x7E 0x00`, `Infinity` as `0xF9 0x7C 0x00`, and `-Infinity` as `0xF9 0xFC 0x00`. This behavior
+    differs from the normal JSON serialization which serializes NaN or Infinity to `null`.
+
+!!! note
+
+    Prior to version 3.13.0, NaN and Infinity were instead serialized as a CBOR double-precision float (type 0xFB,
+    9 bytes total), because the check used to select a smaller encoding compared magnitudes with NaN, which is
+    always `false` and caused the intended half-precision path to be skipped.
 
 !!! info "Unused CBOR types"
 
@@ -159,6 +167,13 @@ The library maps CBOR types to JSON value types as follows:
      - expected conversions (0xD5..0xD7)
      - simple values (0xE0..0xF3, 0xF8)
      - undefined (0xF7)
+
+!!! warning "Negative integer overflow"
+
+    CBOR negative integers (major type 1) are decoded as `-1 - n`. If the encoded magnitude `n` is too large for the
+    result to fit into `number_integer_t` (`std::int64_t` by default), parsing fails with a
+    [`parse_error.112`](../../home/exceptions.md#jsonexceptionparse_error112) exception rather than overflowing
+    silently.
 
 !!! warning "Object keys"
 

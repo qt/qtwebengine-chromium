@@ -19,7 +19,7 @@ namespace Eigen {
 
 namespace internal {
 template <typename MatrixType>
-struct traits<Transpose<MatrixType> > : public traits<MatrixType> {
+struct traits<Transpose<MatrixType>> : public traits<MatrixType> {
   typedef typename ref_selector<MatrixType>::type MatrixTypeNested;
   typedef std::remove_reference_t<MatrixTypeNested> MatrixTypeNestedPlain;
   enum {
@@ -89,23 +89,18 @@ class Transpose : public TransposeImpl<MatrixType, typename internal::traits<Mat
 
 namespace internal {
 
-template <typename MatrixType, bool HasDirectAccess = has_direct_access<MatrixType>::value>
-struct TransposeImpl_base {
-  typedef typename dense_xpr_base<Transpose<MatrixType> >::type type;
-};
-
 template <typename MatrixType>
-struct TransposeImpl_base<MatrixType, false> {
-  typedef typename dense_xpr_base<Transpose<MatrixType> >::type type;
+struct TransposeImpl_base {
+  typedef typename dense_xpr_base<Transpose<MatrixType>>::type type;
 };
 
 }  // end namespace internal
 
 // Generic API dispatcher
 template <typename XprType, typename StorageKind>
-class TransposeImpl : public internal::generic_xpr_base<Transpose<XprType> >::type {
+class TransposeImpl : public internal::generic_xpr_base<Transpose<XprType>>::type {
  public:
-  typedef typename internal::generic_xpr_base<Transpose<XprType> >::type Base;
+  typedef typename internal::generic_xpr_base<Transpose<XprType>>::type Base;
 };
 
 template <typename MatrixType>
@@ -125,8 +120,14 @@ class TransposeImpl<MatrixType, Dense> : public internal::TransposeImpl_base<Mat
 
   typedef std::conditional_t<internal::is_lvalue<MatrixType>::value, Scalar, const Scalar> ScalarWithConstIfNotLvalue;
 
-  EIGEN_DEVICE_FUNC constexpr ScalarWithConstIfNotLvalue* data() { return derived().nestedExpression().data(); }
-  EIGEN_DEVICE_FUNC constexpr const Scalar* data() const { return derived().nestedExpression().data(); }
+  template <typename T = MatrixType, typename = internal::void_t<decltype(std::declval<T&>().data())>>
+  EIGEN_DEVICE_FUNC constexpr ScalarWithConstIfNotLvalue* data() {
+    return derived().nestedExpression().data();
+  }
+  template <typename T = MatrixType, typename = internal::void_t<decltype(std::declval<const T&>().data())>>
+  EIGEN_DEVICE_FUNC constexpr const Scalar* data() const {
+    return derived().nestedExpression().data();
+  }
 
   // FIXME: shall we keep the const version of coeffRef?
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE const Scalar& coeffRef(Index rowId, Index colId) const {
@@ -282,15 +283,17 @@ struct inplace_transpose_selector<MatrixType, false, MatchPacketSize> {  // non 
     typedef typename MatrixType::Scalar Scalar;
     if (m.rows() == m.cols()) {
       const Index PacketSize = internal::packet_traits<Scalar>::size;
-      if (!NumTraits<Scalar>::IsComplex && m.rows() >= PacketSize) {
-        if ((m.rows() % PacketSize) == 0)
-          BlockedInPlaceTranspose<MatrixType, internal::evaluator<MatrixType>::Alignment>(m);
-        else
-          BlockedInPlaceTranspose<MatrixType, Unaligned>(m);
-      } else {
-        m.matrix().template triangularView<StrictlyUpper>().swap(
-            m.matrix().transpose().template triangularView<StrictlyUpper>());
+      EIGEN_IF_CONSTEXPR (!NumTraits<Scalar>::IsComplex) {
+        if (m.rows() >= PacketSize) {
+          if ((m.rows() % PacketSize) == 0)
+            BlockedInPlaceTranspose<MatrixType, internal::evaluator<MatrixType>::Alignment>(m);
+          else
+            BlockedInPlaceTranspose<MatrixType, Unaligned>(m);
+          return;
+        }
       }
+      m.matrix().template triangularView<StrictlyUpper>().swap(
+          m.matrix().transpose().template triangularView<StrictlyUpper>());
     } else {
       m = m.transpose().eval();
     }
@@ -361,12 +364,12 @@ namespace internal {
 
 template <bool DestIsTransposed, typename OtherDerived>
 struct check_transpose_aliasing_compile_time_selector
-    : std::integral_constant<bool, bool(blas_traits<OtherDerived>::IsTransposed) != DestIsTransposed> {};
+    : bool_constant<bool(blas_traits<OtherDerived>::IsTransposed) != DestIsTransposed> {};
 
 template <bool DestIsTransposed, typename BinOp, typename DerivedA, typename DerivedB>
-struct check_transpose_aliasing_compile_time_selector<DestIsTransposed, CwiseBinaryOp<BinOp, DerivedA, DerivedB> >
-    : std::integral_constant<bool, bool(blas_traits<DerivedA>::IsTransposed) != DestIsTransposed ||
-                                       bool(blas_traits<DerivedB>::IsTransposed) != DestIsTransposed> {};
+struct check_transpose_aliasing_compile_time_selector<DestIsTransposed, CwiseBinaryOp<BinOp, DerivedA, DerivedB>>
+    : bool_constant<bool(blas_traits<DerivedA>::IsTransposed) != DestIsTransposed ||
+                    bool(blas_traits<DerivedB>::IsTransposed) != DestIsTransposed> {};
 
 template <typename Scalar, bool DestIsTransposed, typename OtherDerived>
 struct check_transpose_aliasing_run_time_selector {
@@ -377,7 +380,7 @@ struct check_transpose_aliasing_run_time_selector {
 };
 
 template <typename Scalar, bool DestIsTransposed, typename BinOp, typename DerivedA, typename DerivedB>
-struct check_transpose_aliasing_run_time_selector<Scalar, DestIsTransposed, CwiseBinaryOp<BinOp, DerivedA, DerivedB> > {
+struct check_transpose_aliasing_run_time_selector<Scalar, DestIsTransposed, CwiseBinaryOp<BinOp, DerivedA, DerivedB>> {
   EIGEN_DEVICE_FUNC static bool run(const Scalar* dest, const CwiseBinaryOp<BinOp, DerivedA, DerivedB>& src) {
     return ((blas_traits<DerivedA>::IsTransposed != DestIsTransposed) &&
             (dest != 0 && dest == (const Scalar*)extract_data(src.lhs()))) ||
@@ -412,8 +415,9 @@ struct checkTransposeAliasing_impl<Derived, OtherDerived, false> {
 
 template <typename Dst, typename Src>
 EIGEN_DEVICE_FUNC inline void check_for_aliasing(const Dst& dst, const Src& src) {
-  if ((!Dst::IsVectorAtCompileTime) && dst.rows() > 1 && dst.cols() > 1)
-    internal::checkTransposeAliasing_impl<Dst, Src>::run(dst, src);
+  EIGEN_IF_CONSTEXPR (!Dst::IsVectorAtCompileTime) {
+    if (dst.rows() > 1 && dst.cols() > 1) internal::checkTransposeAliasing_impl<Dst, Src>::run(dst, src);
+  }
 }
 
 }  // end namespace internal

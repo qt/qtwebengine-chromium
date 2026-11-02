@@ -229,7 +229,7 @@ export class BreakpointEditDialog extends UI.Widget.Widget {
       },
       set editor(editor) {
         that.#editor = editor;
-      }
+      },
     };
     this.#view(input, output, this.contentElement);
   }
@@ -279,7 +279,7 @@ export class BreakpointEditDialog extends UI.Widget.Widget {
         run: () => {
           this.finishEditing(false, '');
           return true;
-        }
+        },
       },
     ];
 

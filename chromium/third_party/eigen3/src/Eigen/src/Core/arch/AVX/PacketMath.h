@@ -758,7 +758,9 @@ EIGEN_STRONG_INLINE Packet8ui pzero(const Packet8ui& /*a*/) {
 
 template <>
 EIGEN_STRONG_INLINE Packet8f peven_mask(const Packet8f& /*a*/) {
-  return _mm256_castsi256_ps(_mm256_set_epi32(0, -1, 0, -1, 0, -1, 0, -1));
+  Packet8f r = _mm256_castsi256_ps(_mm256_set_epi32(0, -1, 0, -1, 0, -1, 0, -1));
+  EIGEN_FAST_MATH_CONSTANT_BARRIER(r);
+  return r;
 }
 template <>
 EIGEN_STRONG_INLINE Packet8i peven_mask(const Packet8i& /*a*/) {
@@ -770,7 +772,9 @@ EIGEN_STRONG_INLINE Packet8ui peven_mask(const Packet8ui& /*a*/) {
 }
 template <>
 EIGEN_STRONG_INLINE Packet4d peven_mask(const Packet4d& /*a*/) {
-  return _mm256_castsi256_pd(_mm256_set_epi32(0, 0, -1, -1, 0, 0, -1, -1));
+  Packet4d r = _mm256_castsi256_pd(_mm256_set_epi32(0, 0, -1, -1, 0, 0, -1, -1));
+  EIGEN_FAST_MATH_CONSTANT_BARRIER(r);
+  return r;
 }
 
 template <>
@@ -1250,9 +1254,13 @@ EIGEN_STRONG_INLINE Packet8f ptrue<Packet8f>(const Packet8f& a) {
 #ifdef EIGEN_VECTORIZE_AVX2
   // vpcmpeqd has lower latency than the more general vcmpps
   const __m256i b = _mm256_castps_si256(a);
-  return _mm256_castsi256_ps(_mm256_cmpeq_epi32(b, b));
+  Packet8f r = _mm256_castsi256_ps(_mm256_cmpeq_epi32(b, b));
+  EIGEN_FAST_MATH_CONSTANT_BARRIER(r);
+  return r;
 #else
-  return _mm256_cmp_ps(a, a, _CMP_TRUE_UQ);
+  Packet8f r = _mm256_cmp_ps(a, a, _CMP_TRUE_UQ);
+  EIGEN_FAST_MATH_CONSTANT_BARRIER(r);
+  return r;
 #endif
 }
 
@@ -1261,9 +1269,13 @@ EIGEN_STRONG_INLINE Packet4d ptrue<Packet4d>(const Packet4d& a) {
 #ifdef EIGEN_VECTORIZE_AVX2
   // vpcmpeqq has lower latency than the more general vcmppd
   const __m256i b = _mm256_castpd_si256(a);
-  return _mm256_castsi256_pd(_mm256_cmpeq_epi64(b, b));
+  Packet4d r = _mm256_castsi256_pd(_mm256_cmpeq_epi64(b, b));
+  EIGEN_FAST_MATH_CONSTANT_BARRIER(r);
+  return r;
 #else
-  return _mm256_cmp_pd(a, a, _CMP_TRUE_UQ);
+  Packet4d r = _mm256_cmp_pd(a, a, _CMP_TRUE_UQ);
+  EIGEN_FAST_MATH_CONSTANT_BARRIER(r);
+  return r;
 #endif
 }
 
@@ -1504,7 +1516,7 @@ EIGEN_STRONG_INLINE Packet8f ploadu<Packet8f>(const float* from, uint8_t umask) 
 #endif
 }
 
-// Loads 4 floats from memory a returns the packet {a0, a0  a1, a1, a2, a2, a3, a3}
+// Loads 4 floats from memory a returns the packet {a0, a0, a1, a1, a2, a2, a3, a3}
 template <>
 EIGEN_STRONG_INLINE Packet8f ploaddup<Packet8f>(const float* from) {
   // TODO try to find a way to avoid the need of a temporary register
@@ -1557,7 +1569,7 @@ EIGEN_STRONG_INLINE Packet8ui ploaddup<Packet8ui>(const uint32_t* from) {
 #endif
 }
 
-// Loads 2 floats from memory a returns the packet {a0, a0  a0, a0, a1, a1, a1, a1}
+// Loads 2 floats from memory a returns the packet {a0, a0, a0, a0, a1, a1, a1, a1}
 template <>
 EIGEN_STRONG_INLINE Packet8f ploadquad<Packet8f>(const float* from) {
   Packet8f tmp = _mm256_castps128_ps256(_mm_broadcast_ss(from));
@@ -1895,17 +1907,14 @@ EIGEN_STRONG_INLINE Packet4d pldexp<Packet4d>(const Packet4d& a, const Packet4d&
   const Packet4d max_exponent = pset1<Packet4d>(2099.0);
   const Packet4i e = _mm256_cvtpd_epi32(pmin(pmax(exponent, pnegate(max_exponent)), max_exponent));
 
-  // 4-way split + depth-3 multiply tree; see pldexp_generic for derivation
-  // (including why the first multiply must be a*c1, not a*c2).
+  // Preserve the sequential 4-way split; see pldexp_generic.
   const Packet4i bias = pset1<Packet4i>(1023);
   const Packet4i b = parithmetic_shift_right<2>(e);                          // floor(e/4)
   const Packet4i b_remainder = psub(psub(e, b), padd(b, b));                 // e - 3b (depth 2)
   const Packet4d c1 = pldexp_avx_pow2_from_biased(padd(b, bias));            // 2^b
   const Packet4d c2 = pldexp_avx_pow2_from_biased(padd(b_remainder, bias));  // 2^(e-3b)
 
-  const Packet4d c1_squared = pmul(c1, c1);
-  const Packet4d a_c1 = pmul(a, c1);
-  return pmul(pmul(a_c1, c1_squared), c2);  // a * 2^e
+  return pmul(pmul(pmul(pmul(a, c1), c1), c1), c2);  // a * 2^e
 }
 
 template <>

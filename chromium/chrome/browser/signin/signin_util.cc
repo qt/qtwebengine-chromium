@@ -28,7 +28,6 @@
 #include "chrome/browser/ui/webui/signin/signin_utils_desktop.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/grit/generated_resources.h"
 #include "components/google/core/common/google_util.h"
 #include "components/policy/core/browser/signin/profile_separation_policies.h"
 #include "components/prefs/pref_service.h"
@@ -490,6 +489,8 @@ bool IsValidAccessPointForHistoryOptinScreen(
     case signin_metrics::AccessPoint::kIosAppBar:
     case signin_metrics::AccessPoint::kIosGeminiButtonToolbar:
     case signin_metrics::AccessPoint::kIndigo:
+    case signin_metrics::AccessPoint::kLevelUp:
+    case signin_metrics::AccessPoint::kSignoutUndoSnackbar:
       return false;
     case signin_metrics::AccessPoint::kStartPage:
     case signin_metrics::AccessPoint::kMenu:
@@ -625,7 +626,8 @@ bool ShouldShowAvatarSyncPromo(Profile* profile) {
   return true;
 }
 
-void ShowErrorDialogWithMessage(Browser* browser, int error_message_id) {
+void ShowErrorDialogWithMessage(BrowserWindowInterface* browser,
+                                int error_message_id) {
   if (!browser) {
     return;
   }

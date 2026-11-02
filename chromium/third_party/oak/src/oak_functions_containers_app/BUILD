@@ -14,10 +14,8 @@
 # limitations under the License.
 #
 
-load("@rules_oci//oci:defs.bzl", "oci_image")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
-load("//bazel:defs.bzl", "oci_runtime_bundle")
+load("//oak_containers/app_base:defs.bzl", "app_bundle")
 
 package(
     default_visibility = ["//:internal"],
@@ -40,6 +38,7 @@ LIB_DEPS = [
     "@oak_crates_index//:anyhow",
     "@oak_crates_index//:http",
     "@oak_crates_index//:opentelemetry",
+    "@oak_crates_index//:opentelemetry_sdk",
     "@oak_crates_index//:ouroboros",
     "@oak_crates_index//:prost",
     "@oak_crates_index//:tempfile",
@@ -65,6 +64,7 @@ rust_library(
         "deny_sensitive_logging",
     ],
     crate_name = "oak_functions_containers_app",
+    target_compatible_with = ["@platforms//os:linux"],
     deps = LIB_DEPS + ["//oak_functions_service:lib_unrestricted"],
 )
 
@@ -76,29 +76,9 @@ rust_library(
         "allow_sensitive_logging",
     ],
     crate_name = "oak_functions_containers_app",
+    target_compatible_with = ["@platforms//os:linux"],
     deps = LIB_DEPS + ["//oak_functions_service:lib_insecure_unrestricted"],
 )
-
-APP_DEPS = [
-    "//oak_containers/agent",
-    "//oak_containers/orchestrator",
-    "//oak_sdk/containers:oak_sdk_containers",
-    "//oak_crypto",
-    "//oak_proto_rust",
-    "@oak_crates_index//:anyhow",
-    "@oak_crates_index//:clap",
-    "@oak_crates_index//:log",
-    "@oak_crates_index//:opentelemetry",
-    "@oak_crates_index//:opentelemetry-otlp",
-    "@oak_crates_index//:opentelemetry_sdk",
-    "@oak_crates_index//:prost",
-    "@oak_crates_index//:env_logger",
-    "@oak_crates_index//:tikv-jemallocator",
-    "@oak_crates_index//:tonic",
-    "@oak_crates_index//:tokio",
-    "@oak_crates_index//:tokio-stream",
-    "@oak_crates_index//:tokio-vsock",
-]
 
 rust_binary(
     name = "oak_functions_containers_app",
@@ -106,9 +86,31 @@ rust_binary(
     crate_features = [
         "deny_sensitive_logging",
     ],
-    deps = APP_DEPS + [
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
         ":lib",
+        "//oak_containers/agent",
+        "//oak_containers/orchestrator",
+        "//oak_crypto",
         "//oak_functions_service:lib_unrestricted",
+        "//oak_proto_rust",
+        "//oak_sdk/containers:oak_sdk_containers",
+        "@oak_crates_index//:anyhow",
+        "@oak_crates_index//:clap",
+        "@oak_crates_index//:env_logger",
+        "@oak_crates_index//:log",
+        "@oak_crates_index//:opentelemetry",
+        "@oak_crates_index//:opentelemetry-appender-tracing",
+        "@oak_crates_index//:opentelemetry-otlp",
+        "@oak_crates_index//:opentelemetry_sdk",
+        "@oak_crates_index//:prost",
+        "@oak_crates_index//:tikv-jemallocator",
+        "@oak_crates_index//:tokio",
+        "@oak_crates_index//:tokio-stream",
+        "@oak_crates_index//:tokio-vsock",
+        "@oak_crates_index//:tonic",
+        "@oak_crates_index//:tracing",
+        "@oak_crates_index//:tracing-subscriber",
     ],
 )
 
@@ -118,15 +120,38 @@ rust_binary(
     crate_features = [
         "allow_sensitive_logging",
     ],
-    deps = APP_DEPS + [
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
         ":lib_insecure",
+        "//oak_containers/agent",
+        "//oak_containers/orchestrator",
+        "//oak_crypto",
         "//oak_functions_service:lib_insecure_unrestricted",
+        "//oak_proto_rust",
+        "//oak_sdk/containers:oak_sdk_containers",
+        "@oak_crates_index//:anyhow",
+        "@oak_crates_index//:clap",
+        "@oak_crates_index//:env_logger",
+        "@oak_crates_index//:log",
+        "@oak_crates_index//:opentelemetry",
+        "@oak_crates_index//:opentelemetry-appender-tracing",
+        "@oak_crates_index//:opentelemetry-otlp",
+        "@oak_crates_index//:opentelemetry_sdk",
+        "@oak_crates_index//:prost",
+        "@oak_crates_index//:tikv-jemallocator",
+        "@oak_crates_index//:tokio",
+        "@oak_crates_index//:tokio-stream",
+        "@oak_crates_index//:tokio-vsock",
+        "@oak_crates_index//:tonic",
+        "@oak_crates_index//:tracing",
+        "@oak_crates_index//:tracing-subscriber",
     ],
 )
 
 rust_test(
     name = "lib_test",
     crate = ":lib",
+    target_compatible_with = ["@platforms//os:linux"],
 )
 
 rust_test(
@@ -136,6 +161,7 @@ rust_test(
     data = [
         "//oak_functions/examples/key_value_lookup",
     ],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":lib",
         "//micro_rpc",
@@ -149,44 +175,21 @@ rust_test(
         "//oak_proto_rust",
         "//oak_proto_rust/grpc",
         "@oak_crates_index//:opentelemetry",
+        "@oak_crates_index//:opentelemetry_sdk",
         "@oak_crates_index//:tokio",
         "@oak_crates_index//:tokio-stream",
         "@oak_crates_index//:tonic",
     ],
 )
 
-pkg_tar(
-    name = "tar",
-    srcs = [":oak_functions_containers_app"],
-    package_dir = "/usr/local/bin",
-)
-
-oci_image(
-    name = "image",
-    base = "@distroless_cc_debian12",
-    entrypoint = ["/usr/local/bin/oak_functions_containers_app"],
-    tars = [":tar"],
-)
-
-oci_runtime_bundle(
+app_bundle(
     name = "bundle",
-    image = ":image",
+    binary = ":oak_functions_containers_app",
+    target_compatible_with = ["@platforms//os:linux"],
 )
 
-pkg_tar(
-    name = "tar_insecure",
-    srcs = [":oak_functions_containers_app_insecure"],
-    package_dir = "/usr/local/bin",
-)
-
-oci_image(
-    name = "image_insecure",
-    base = "@distroless_cc_debian12",
-    entrypoint = ["/usr/local/bin/oak_functions_containers_app_insecure"],
-    tars = [":tar_insecure"],
-)
-
-oci_runtime_bundle(
+app_bundle(
     name = "bundle_insecure",
-    image = ":image_insecure",
+    binary = ":oak_functions_containers_app_insecure",
+    target_compatible_with = ["@platforms//os:linux"],
 )

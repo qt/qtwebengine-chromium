@@ -13,7 +13,7 @@ import {RehydratingConnectionTransport} from './RehydratingConnection.js';
 
 const UIStrings = {
   /**
-   * @description Text on the remote debugging window to indicate the connection is lost
+   * @description Text on the remote debugging window to indicate the connection is lost.
    */
   websocketDisconnected: 'WebSocket disconnected',
 } as const;
@@ -189,7 +189,7 @@ export class StubTransport implements ProtocolClient.ConnectionTransport.Connect
   }
 
   sendRawMessage(message: string): void {
-    window.setTimeout(this.respondWithError.bind(this, message), 0);
+    globalThis.setTimeout(this.respondWithError.bind(this, message), 0);
   }
 
   private respondWithError(message: string): void {

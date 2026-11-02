@@ -70,7 +70,7 @@ export const TIMELINE_RANGE_SUMMARY_VIEW_DEFAULT_VIEW: View = (input, _output, t
             categories,
             total,
             isInAIWidget: input.isInAIWidget,
-          }
+          },
         })}
       ></devtools-widget>
       ${input.thirdPartyTreeTemplate ?? Lit.nothing}

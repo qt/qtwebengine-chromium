@@ -54,11 +54,11 @@ template("chrome_common_shared_library") {
     }
 
     if (!_is_webview) {
-      deps += [ "//chrome:chrome_android_core" ]
-    }
-
-    if (enable_javaless_renderers) {
-      deps += [ "//content/app:javaless_renderer" ]
+      deps += [
+        "//chrome:chrome_android_core",
+        "//third_party/androidx/third_party/ink:ink_jni_registration",
+      ]
+      configs += [ "//third_party/androidx/third_party/ink:ink_jni_registration_version_script" ]
     }
 
     if (!(defined(testonly) && testonly)) {

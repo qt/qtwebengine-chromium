@@ -146,15 +146,21 @@ TNode<BytecodeArray> InterpreterAssembler::BytecodeArrayTaggedPointer() {
   return bytecode_array_.value();
 }
 
+template <typename Feedback>
 void InterpreterAssembler::UpdateEmbeddedFeedback(TNode<Smi> feedback,
                                                   int feedback_operand_index) {
 #ifndef V8_JITLESS
   TNode<IntPtrT> feedback_index_offset =
       BytecodeOperandOffset(feedback_operand_index);
-  CodeStubAssembler::UpdateEmbeddedFeedback(
+  CodeStubAssembler::UpdateEmbeddedFeedback<Feedback>(
       feedback, BytecodeArrayTaggedPointer(), feedback_index_offset);
 #endif  // V8_JITLESS
 }
+
+template void InterpreterAssembler::UpdateEmbeddedFeedback<
+    CompareOperationFeedback>(TNode<Smi>, int);
+template void InterpreterAssembler::UpdateEmbeddedFeedback<
+    BinaryOperationFeedback>(TNode<Smi>, int);
 
 TNode<ExternalReference> InterpreterAssembler::DispatchTablePointer() {
   if (Bytecodes::MakesCallAlongCriticalPath(bytecode_) && made_call_ &&
@@ -294,6 +300,17 @@ TNode<Object> InterpreterAssembler::LoadRegisterFromRegisterList(
     const RegListNodePair& reg_list, int index) {
   TNode<IntPtrT> location = RegisterLocationInRegisterList(reg_list, index);
   return LoadFullTagged(location);
+}
+
+void InterpreterAssembler::StoreRegisterFromRegisterList(
+    TNode<Object> value, const RegListNodePair& reg_list,
+    TNode<IntPtrT> index) {
+  CSA_DCHECK(this, UintPtrGreaterThan(ChangeUint32ToWord(reg_list.reg_count()),
+                                      Unsigned(index)));
+  TNode<IntPtrT> location = Signed(
+      IntPtrSub(reg_list.base_reg_location(), RegisterFrameOffset(index)));
+  StoreFullTaggedNoWriteBarrier(ReinterpretCast<RawPtrT>(location),
+                                IntPtrConstant(0), value);
 }
 
 TNode<IntPtrT> InterpreterAssembler::RegisterLocationInRegisterList(

@@ -38,15 +38,7 @@ void CPDF_ShadingObject::Transform(const CFX_Matrix& matrix) {
   SetDirty(true);
 }
 
-bool CPDF_ShadingObject::IsShading() const {
-  return true;
-}
-
 CPDF_ShadingObject* CPDF_ShadingObject::AsShading() {
-  return this;
-}
-
-const CPDF_ShadingObject* CPDF_ShadingObject::AsShading() const {
   return this;
 }
 

@@ -349,6 +349,12 @@ chromium_strings.grd. -->
       <message name="IDS_PRODUCT_LOGO_ENTERPRISE_ALT_TEXT" desc="Alt text for the Chrome Enterprise logo image." formatter_data="android_java">
         Chrome Enterprise logo
       </message>
+      <message name="IDS_ACCESSIBILITY_TOOLBAR_BTN_IDENTITY_DISC_WITH_NAME_AND_EMAIL_AI_TIER" desc="The content description for a toolbar button displaying user profile picture when the user has an AI subscription. Tapping on this button navigates to Settings page" formatter_data="android_java">
+        Signed in as <ph name="USER_NAME">%1$s<ex>Peter Parker</ex></ph>, <ph name="USER_EMAIL">%2$s<ex>peter.parker@gmail.com</ex></ph>, Google membership. Open the account menu
+      </message>
+      <message name="IDS_ACCESSIBILITY_TOOLBAR_BTN_IDENTITY_DISC_WITH_NAME_AI_TIER" desc="The content description for a toolbar button displaying user profile picture when the user has an AI subscription, for users who don't have a readable email address. Tapping on this button navigates to Settings page" formatter_data="android_java">
+        Signed in as <ph name="USER_NAME">%s<ex>Bruce Wayne</ex></ph>, Google membership. Open the account menu
+      </message>
       <if expr="is_macosx or is_chromeos">
         <message name="IDS_TASK_MANAGER_TITLE" desc="The title of the Task Manager window">
           Task Manager
@@ -407,17 +413,34 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
         </message>
       </if>
       <!-- Reset Profile Settings strings -->
-      <message name="IDS_RESET_PROFILE_SETTINGS_EXPLANATION_IN_BULLET_POINTS" desc="A label formatted with bullet points describing the consequences of the 'reset profile settings' feature">
-        This action will:
-        <ph name="LINE_BREAKS">&lt;br&gt;&lt;br&gt;</ph>
-          • Reset some Chrome settings and Chrome shortcuts
-          <ph name="LINE_BREAK">&lt;br&gt;</ph>
-          • Disable extensions
-          <ph name="LINE_BREAK">&lt;br&gt;</ph>
-          • Delete cookies and other temporary site data
+      <if expr="is_win">
+        <message name="IDS_RESET_PROFILE_SETTINGS_EXPLANATION_IN_BULLET_POINTS" desc="A label formatted with bullet points describing the consequences of the 'reset profile settings' feature">
+          This action will:
           <ph name="LINE_BREAKS">&lt;br&gt;&lt;br&gt;</ph>
-          Bookmarks, history, and saved passwords won't be affected.
-      </message>
+            • Reset your startup page, new tab page, search engine and pinned tabs
+            <ph name="LINE_BREAK">&lt;br&gt;</ph>
+            • Disable extensions
+            <ph name="LINE_BREAK">&lt;br&gt;</ph>
+            • Delete cookies and other temporary site data
+            <ph name="LINE_BREAK">&lt;br&gt;</ph>
+            • Reset Chrome shortcuts
+            <ph name="LINE_BREAKS">&lt;br&gt;&lt;br&gt;</ph>
+            Bookmarks, history, and saved passwords won't be affected.
+        </message>
+      </if>
+      <if expr="not is_win">
+        <message name="IDS_RESET_PROFILE_SETTINGS_EXPLANATION_IN_BULLET_POINTS" desc="A label formatted with bullet points describing the consequences of the 'reset profile settings' feature">
+          This action will:
+          <ph name="LINE_BREAKS">&lt;br&gt;&lt;br&gt;</ph>
+            • Reset your startup page, new tab page, search engine and pinned tabs
+            <ph name="LINE_BREAK">&lt;br&gt;</ph>
+            • Disable extensions
+            <ph name="LINE_BREAK">&lt;br&gt;</ph>
+            • Delete cookies and other temporary site data
+            <ph name="LINE_BREAKS">&lt;br&gt;&lt;br&gt;</ph>
+            Bookmarks, history, and saved passwords won't be affected.
+        </message>
+      </if>
       <if expr="not is_chromeos">
         <!-- Browser Window Title Format -->
         <message name="IDS_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for titles displayed in tabs and popup windows">
@@ -538,12 +561,6 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
         </message>
       </if>
       <!-- Sharing messages -->
-      <message name="IDS_BROWSER_SHARING_CLICK_TO_CALL_DIALOG_HELP_TEXT_NO_DEVICES" desc="The label to be shown as a help text of the dialog when user click on a phone number, if there are no phones to choose from.">
-        To send a number from here to your Android phone, sign in to Chrome on both devices.
-      </message>
-      <message name="IDS_BROWSER_SHARING_CLICK_TO_CALL_DIALOG_HELP_TEXT_NO_DEVICES_ORIGIN" desc="The label to be shown as a help text of the dialog when user click on a phone number, if there are no phones to choose from.">
-        To send a number from <ph name="ORIGIN">$1<ex>www.google.com</ex></ph> to your Android phone, sign in to Chrome on both devices.
-      </message>
       <message name="IDS_BROWSER_SHARING_ERROR_DIALOG_TEXT_DEVICE_NOT_FOUND" desc="The text to be shown on the dialog when an error occurred because the device is not synced.">
         Make sure you are signed in to Chrome on your <ph name="TARGET_DEVICE_NAME">$1<ex>Pixel XL</ex></ph> and then try sending again.
       </message>
@@ -571,13 +588,13 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
           Set Chrome as your default browser
         </message>
         <message name="IDS_DEFAULT_BROWSER_VISUAL_GUIDED_SETTER_HEADER_TITLE" desc="Header text of the default browser visual guided setter.">
-          Use Google recommended browser settings
+          Set Google Chrome as your default browser
         </message>
         <message name="IDS_DEFAULT_BROWSER_VISUAL_GUIDED_SETTER_CONTENT_TITLE" desc="Content title of the default browser visual guided setter.">
-          Set Chrome as your default
+          Click <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>Set Default<ph name="END_BOLD">&lt;/strong&gt;</ph> in your Windows settings.
         </message>
         <message name="IDS_DEFAULT_BROWSER_VISUAL_GUIDED_SETTER_CONTENT_DESCRIPTION" desc="Body text of the default browser visual guided setter.">
-          Get easy access to the features you know, love, and trust by setting Chrome as your default browser.
+          Keep your passwords, bookmarks, and history perfectly synced across devices by setting Chrome as your default browser.
         </message>
         <message name="IDS_DEFAULT_BROWSER_VISUAL_GUIDED_SETTER_INSTRUCTION_STEP_2" desc="Instruction step 2 of the default browser visual guided setter. $1 is the bold button name.">
           Click <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>Yes<ph name="END_BOLD">&lt;/strong&gt;</ph> in the Windows notification to pin Chrome to your taskbar for quick access.
@@ -649,7 +666,7 @@ Google Chrome is unable to recover your settings.
       <message name="IDS_PASSWORD_MANAGER_TITLE_BRAND" desc="The product name used in the title of the password bubble." translateable="false">
         Google Chrome
       </message>
-      <message name="IDS_PASSWORD_BUBBLES_PASSWORD_MANAGER_LINK_TEXT_SAVING_ON_DEVICE" desc="The text of the Google Password Manager links displayed on Password Manager bubbles footer when the credentials are stored only locally.">
+      <message name="IDS_PASSWORD_MANAGER_BRAND_NAME" desc="This string is used both as a standalone label and injected into sentences. Please translate this as a standalone noun in the Nominative case to ensure it looks correct in titles. Sentence structures surrounding it may read slightly awkwardly.">
         Google Password Manager
       </message>
       <message name="IDS_PASSWORD_MANAGER_SAVE_PASSWORD_SIGNED_OUT_MESSAGE_DESCRIPTION" desc="The description of the Google Password Manager's save password message when the user is signed out.">
@@ -805,10 +822,10 @@ Google Chrome is unable to recover your settings.
         <message name="IDS_PDF_GLIC_SUMMARIZE_IPH_TEXT" desc="Text of the In Product Help message shown for the button to summarize PDF.">
           Get a quick overview of this document and ask questions with Gemini in Chrome
         </message>
-        <message name="IDS_PDF_GLIC_SUMMARIZE_IPH_TEXT_NEW" desc="Text of the In Product Help message shown for the button to summarize PDF." translateable="false">
+        <message name="IDS_PDF_GLIC_SUMMARIZE_IPH_TEXT_NEW" desc="Text of the In Product Help message shown for the button to summarize PDF.">
           Share this document with Gemini in Chrome to get a quick overview and ask follow-up questions
         </message>
-        <message name="IDS_PDF_GLIC_SUMMARIZE_IPH_TEXT_NEW_SCREENREADER" desc="The screenreader text of the In Product Help message shown for the button to summarize PDF." translateable="false" is_accessibility_with_no_ui="true">
+        <message name="IDS_PDF_GLIC_SUMMARIZE_IPH_TEXT_NEW_SCREENREADER" desc="The screenreader text of the In Product Help message shown for the button to summarize PDF." is_accessibility_with_no_ui="true">
           Click the Summarize button to share this document with Gemini in Chrome to get a quick overview and ask follow-up questions
         </message>
       </if>
@@ -943,16 +960,6 @@ Google Chrome is unable to recover your settings.
         </message>
         <message name="IDS_EXTENSIONS_ALERT_ITEM_BLOCKLISTED_MALWARE_TITLE" desc="A statement that an extension has been newly blocklisted for malware.">
           Chrome found that these extensions contain malware:
-        </message>
-
-        <!-- Manifest V2 Deprecation dialog -->
-        <message name="IDS_EXTENSIONS_MANIFEST_V2_DEPRECATION_KEEP_DIALOG_DESCRIPTION" desc="The description of the dialog asking the user if they want to keep the extension installed, which is affected by the Manifest V2 deprecation">
-          This extension is no longer supported. Chrome recommends that you remove it instead.
-        </message>
-        <message name="IDS_EXTENSIONS_MANIFEST_V2_DEPRECATION_DISABLED_DIALOG_DESCRIPTION"  desc="The description of the dialog that appears when extensions were disabled due to the Manifest V2 deprecation">
-          {NUM_EXTENSIONS, plural,
-          =1 {This extension is no longer supported. Chrome recommends that you remove it.}
-          other {These extensions are no longer supported. Chrome recommends that you remove them.}}
         </message>
         <message name="IDS_EXTENSIONS_MV2_DEPRECATION_MESSAGE_DISABLED_SUBTITLE" desc="Subtitle text displayed in the manifest v2 deprecation message for a specific extension during the disabled stage.">
           Chrome recommends that you remove it. <ph name="BEGIN_LINK">&lt;a href="$1" aria-description="$2" target="_blank"&gt;</ph>Learn more about supported extensions<ph name="END_LINK">&lt;/a&gt;</ph>
@@ -1514,6 +1521,11 @@ Google Chrome is unable to recover your settings.
         </message>
       </if>
 
+      <!-- Sign in on your phone (QR code) strings  -->
+      <message name="IDS_QR_CODE_BUBBLE_SIGNIN_ON_PHONE_TITLE" desc="Title of the QR Code bubble showing a code for the user to sign in on their phone.">
+        Sign in to Chrome on your phone
+      </message>
+
       <!-- App list -->
       <if expr="is_chromeos">
         <message name="IDS_APP_LIST_EXTENSIONS_UNINSTALL" desc="Title text for the context menu item of a non-platform-app app list item that removes the app.">
@@ -1875,24 +1887,7 @@ Google Chrome is unable to recover your settings.
 
       <!-- Runtime permission strings -->
       <if expr="is_android">
-        <message name="IDS_INFOBAR_MISSING_AR_CAMERA_PERMISSION_TEXT" desc="Text shown in an infobar when a website has requested access to augmented reality capabilities, but Chrome is missing the Android camera permission.">
-          Chrome needs permission to access your camera to create a 3D map of your surroundings
-        </message>
-        <message name="IDS_INFOBAR_MISSING_CAMERA_PERMISSION_TEXT" desc="Text shown in an infobar when a website has requested access to the camera capabilities, but Chrome is missing the Android camera permission.">
-          Chrome needs permission to access your camera for this site
-        </message>
-        <message name="IDS_INFOBAR_MISSING_HAND_TRACKING_PERMISSION_TEXT" desc="Text shown in an infobar when a website has requested access to hand tracking capabilities, but Chrome is missing the Android hand tracking permission.">
-          Chrome needs permission to track your hands
-        </message>
-        <message name="IDS_INFOBAR_MISSING_MICROPHONE_PERMISSION_TEXT" desc="Text shown in an infobar when a website has requested access to the microphone capabilities, but Chrome is missing the Android microphone permission.">
-          Chrome needs permission to access your microphone for this site
-        </message>
-        <message name="IDS_INFOBAR_MISSING_MICROPHONE_CAMERA_PERMISSIONS_TEXT" desc="Text shown in an infobar when a website has requested access to the microphone and camera capabilities, but Chrome is missing the Android microphone and camera permissions.">
-          Chrome needs permission to access your camera and microphone for this site
-        </message>
-        <message name="IDS_INFOBAR_MISSING_LOCATION_PERMISSION_TEXT" desc="Text shown in an infobar when a website has requested access to the location capabilities, but Chrome is missing the Android location permission.">
-          Chrome needs access to your location to share your location with this site
-        </message>
+
         <message name="IDS_MISSING_STORAGE_PERMISSION_DOWNLOAD_EDUCATION_TEXT" desc="Text shown educating the user that Chrome is missing the Android storage permission, which is required to download files.">
           Chrome needs storage access to download files
         </message>
@@ -1914,6 +1909,9 @@ Google Chrome is unable to recover your settings.
         </message>
         <message name="IDS_MESSAGE_MISSING_LOCATION_PERMISSION_TEXT" desc="Text shown in a prompt ui when a website has requested access to the location capabilities, but Chrome is missing the Android location permission.">
           Chrome needs location permission for this site
+        </message>
+        <message name="IDS_MESSAGE_MISSING_LOCAL_NETWORK_PERMISSION_TEXT" desc="Text shown in a prompt ui when a website has requested access to the local network capabilities, but Chrome is missing the Android local network permission.">
+          Chrome needs local network permission for this site
         </message>
         <message name="IDS_MESSAGE_STORAGE_ACCESS_PERMISSION_TEXT" desc="Text shown educating the user that Chrome is missing the Android storage permission, which is required to download files.">
           Chrome needs storage access permission to download files
@@ -1971,6 +1969,19 @@ Google Chrome is unable to recover your settings.
           desc="The screen reader text of the IPH describing that the Lens Overlay panel has been pinned."
           is_accessibility_with_no_ui="true">
           Pinned! You can access Google Lens again from the new button on the toolbar
+        </message>
+
+        <message name="IDS_SIDE_PANEL_CONTEXTUAL_TASKS_PINNABLE_IPH" desc="The body text of the IPH describing that the Contextual Tasks side panel is pinnable.">
+          You can pin Google Search AI Mode to ask questions as you browse
+        </message>
+        <message name="IDS_TUTORIAL_CONTEXTUAL_TASKS_STEP1" desc="The body text of the first step of the Contextual Tasks tutorial. THREE_DOTS_ICON is the vertical three-dot overflow menu icon that we are instructing users to click on.">
+          Open the more <ph name="THREE_DOTS_ICON">⋮</ph> menu
+        </message>
+        <message name="IDS_TUTORIAL_CONTEXTUAL_TASKS_STEP2" desc="The body text of the second step of the Contextual Tasks tutorial.">
+          Select "Pin to toolbar"
+        </message>
+        <message name="IDS_TUTORIAL_CONTEXTUAL_TASKS_STEP3" desc="The body text of the third step of the Contextual Tasks tutorial.">
+          Success! You can now easily ask questions as you browse with Google Search AI Mode
         </message>
 
         <!-- Overlay WebUI Strings -->
@@ -2045,6 +2056,10 @@ Google Chrome is unable to recover your settings.
         <message name="IDS_LENS_OVERLAY_INITIAL_TOAST_LABEL"
           desc="Accessibility label for the initial user eduction bubble that appears at the top of the screen after the user invokes the Lens Overlay feature. Informs the user to select an object to search with Google Lens, or use the escape key to exit the feature.">
           Select anything to search with Google Lens or press escape to exit Google Lens
+        </message>
+        <message name="IDS_LENS_OVERLAY_COBROWSE_INITIAL_TOAST_LABEL"
+          desc="Label for the initial user education bubble when invoking the Lens Overlay along side the cobrowse side panel, instructing the user to select a region of the screen.">
+          Select region of screen to search
         </message>
         <message name="IDS_LENS_OVERLAY_INITIAL_TOAST_MESSAGE"
           desc="Text that is shown in the Lens Overlay education bubble when starting the feature. Informs the user to tap an object or drag over the screen to select a region to search with Google Lens.">
@@ -2202,26 +2217,6 @@ Google Chrome is unable to recover your settings.
           Search with Google Lens
         </message>
 
-        <message name="IDS_LENS_OVERLAY_ENTRYPOINT_LABEL_ALT1"
-          desc="Label for the Lens overlay command, through which the user can ask Google questions about the page.">
-          Ask Google about this page
-        </message>
-        <message name="IDS_LENS_OVERLAY_ENTRYPOINT_LABEL_ALT2"
-          desc="Label for the Lens overlay command, through which the user can ask Google Lens questions about the page.">
-          Ask Google Lens about this page
-        </message>
-        <message name="IDS_LENS_OVERLAY_ENTRYPOINT_LABEL_ALT3"
-          desc="Label for the Lens overlay command, through which the page will be searched using Google Lens.">
-          Search this page with Google Lens
-        </message>
-        <message name="IDS_LENS_OVERLAY_IMAGE_ENTRYPOINT_LABEL_ALT1"
-          desc="Label for the Lens overlay command, through which the user can ask Google questions about the image.">
-          Ask Google about this image
-        </message>
-        <message name="IDS_LENS_OVERLAY_IMAGE_ENTRYPOINT_LABEL_ALT2"
-          desc="Label for the Lens overlay command, through which the user can ask Google Lens questions about the image.">
-          Ask Google Lens about this image
-        </message>
         <message name="IDS_LENS_OVERLAY_IMAGE_ENTRYPOINT_LABEL_ALT3"
           desc="Label for the Lens overlay command, through which the image will be searched using Google Lens.">
           Search this image with Google Lens
@@ -2234,24 +2229,11 @@ Google Chrome is unable to recover your settings.
           desc="Label for the Lens overlay command, through which the current tab will be searched using Google Lens.">
           Search with Google Lens
         </message>
-        <message name="IDS_LENS_OVERLAY_VIDEO_ENTRYPOINT_LABEL_ALT1"
-          desc="Label for the Lens overlay command, through which the user can ask Google questions about the video.">
-          Ask Google about this video
-        </message>
-        <message name="IDS_LENS_OVERLAY_VIDEO_ENTRYPOINT_LABEL_ALT2"
-          desc="Label for the Lens overlay command, through which the user can ask Google Lens questions about the video.">
-          Ask Google Lens about this video
-        </message>
         <message name="IDS_LENS_OVERLAY_VIDEO_ENTRYPOINT_LABEL_ALT3"
           desc="Label for the Lens overlay command, through which the video will be searched using Google Lens.">
           Search this video with Google Lens
         </message>
       </if>
-
-      <message name="IDS_AI_MODE_ENTRYPOINT_LABEL"
-        desc="The label of the AI mode entrypoint in the omnibox" formatter_data="android_java">
-        AI Mode
-      </message>
 
       <if expr="not is_android">
         <!-- Lens Side Panel Error Page -->
@@ -2379,18 +2361,6 @@ Google Chrome is unable to recover your settings.
           desc="Header in the Lens side panel indicating a new AI Mode search session.">
           New search
         </message>
-
-        <if expr="use_titlecase">
-          <message name="IDS_CONTEXT_MENU_SHOW_AI_MODE_OMNIBOX_BUTTON"
-            desc="In Title Case: The text label of the omnibox context menu option to enable showing 'AI Mode'">
-            Always Show AI Mode
-          </message>
-        </if>
-        <if expr="not use_titlecase">
-        <message name="IDS_CONTEXT_MENU_SHOW_AI_MODE_OMNIBOX_BUTTON" desc="The text label of the omnibox context menu option to enable showing 'AI Mode'">
-          Always show AI Mode
-        </message>
-      </if>
 
         <!-- On Sign-in Avatar Button Label Desktop -->
         <message name="IDS_AVATAR_BUTTON_MAKING_CHROME_YOURS" desc="The avatar button label when the user has just signed in. When clicked, it opens the profile menu.">
@@ -2566,30 +2536,6 @@ Google Chrome is unable to recover your settings.
         <message name="IDS_EXTENSION_PERMISSIONS_BLOCKED_BY_PARENT_PROMPT_MESSAGE" desc="Text for the dialog indicating that a parent has blocked extensions and apps.">
          Your parent has turned off "Permissions for sites, apps and extensions" for Chrome
         </message>
-
-        <message name="IDS_EXTENSION_EXTERNAL_INSTALL_PROMPT_TITLE_APP" desc="Titlebar of the prompt window for an externally installed app">
-          Another program on your computer added an app that may change the way Chrome works.
-
-<ph name="EXTENSION_NAME">$1<ex>Babylon Toolbar</ex></ph>
-        </message>
-        <message name="IDS_EXTENSION_EXTERNAL_INSTALL_PROMPT_TITLE_EXTENSION" desc="Titlebar of the prompt window for an externally installed extension">
-          Another program on your computer added an extension that may change the way Chrome works.
-
-<ph name="EXTENSION_NAME">$1<ex>Babylon Toolbar</ex></ph>
-        </message>
-        <message name="IDS_EXTENSION_EXTERNAL_INSTALL_PROMPT_TITLE_THEME" desc="Titlebar of the prompt window for an externally installed theme">
-          Another program on your computer added a theme that may change the way Chrome works.
-
-<ph name="EXTENSION_NAME">$1<ex>Babylon Toolbar</ex></ph>
-        </message>
-        <message name="IDS_EXTENSION_EXTERNAL_INITIAL_INSTALL_PROMPT_TITLE_EXTENSION" desc="">
-          <ph name="PARTNER_NAME">$1<ex>Google</ex></ph> has added an extension that may change the way Chrome works.
-
-<ph name="EXTENSION_NAME">$2<ex>Babylon Toolbar</ex></ph>
-        </message>
-        <message name="IDS_EXTENSION_EXTERNAL_INSTALL_PROMPT_ABORT_BUTTON" desc="Button on the external install prompt to remove an extension installed by a third party.">
-          Remove from Chrome
-        </message>
       </if>
 
       <if expr="not is_chromeos and not is_android">
@@ -2683,6 +2629,32 @@ Google Chrome is unable to recover your settings.
         </message>
         <message name="IDS_SIGNOUT_DICE_WEB_INTERCEPT_BUBBLE_CHROME_SIGNOUT_IPH_TEXT_SCREENREADER" desc="Text announced by screenreaders related to the confirmation message is intended to help users to understand that signing out of a Google service (like Gmail) will not sign them out of Chrome. It appears in a blue in-product help bubble, which points to the Chrome Profile Menu; it appears after the user signs out of a Google service (like Gmail). The user can open the Profile Menu and sign out of Chrome, if they wish to do so.">
           To remove your Google Account from Chrome, sign out of Chrome in the Settings page
+        </message>
+
+        <!-- Feature Showcase - Google Password Manager -->
+        <message name="IDS_FEATURE_SHOWCASE_PASSWORD_MANAGER_TITLE" desc="Headline for the password security onboarding screen. It introduces the product name 'Google Password Manager,' which should typically remain in English or follow established brand guidelines for the locale. The intent is to highlight safety and security. (CHAR LIMIT = 50)">
+          Stay safe with Google Password Manager
+        </message>
+        <message name="IDS_FEATURE_SHOWCASE_PASSWORD_MANAGER_SUBTITLE" desc="Description for the Password Manager page in the Feature Showcase.">
+          Built into Chrome to help you create, save, and autofill strong passwords. Add the shortcut for easy access.
+        </message>
+
+        <!-- Feature Showcase - Lens Overlay -->
+        <message name="IDS_FEATURE_SHOWCASE_LENS_OVERLAY_TITLE" desc="This is the headline for the Lens Overlay opt-in screen. It introduces the visual search feature. (CHAR LIMIT = 40).">
+          Browse smarter with Google Lens
+        </message>
+        <message name="IDS_FEATURE_SHOWCASE_LENS_OVERLAY_DISCLOSURE" desc="This is a technical disclosure for Google Lens. It specifies that PDFs are also part of the shared data. The tone should be informative.">
+          When you use Google Lens on desktop, the page title, URL, and content, including PDFs, are sent to Google
+        </message>
+
+        <!-- Feature Showcase - Gemini -->
+        <message name="IDS_FEATURE_SHOWCASE_GEMINI_TITLE" desc="This is the headline for the Gemini (AI assistant) opt-in screen. It introduces the benefit of AI assistance for productivity. (CHAR LIMIT = 60)">
+          Ask anything, right where you are, with Gemini in Chrome
+        </message>
+
+        <!-- Feature Showcase - Themes -->
+        <message name="IDS_FEATURE_SHOWCASE_THEMES_TITLE" desc="This is the headline for a customization onboarding screen. It focuses on personalization and user choice. (CHAR LIMIT = 30)">
+          Make Chrome yours
         </message>
       </if>
 
@@ -3148,19 +3120,25 @@ Google Chrome is unable to recover your settings.
         <message name="IDS_SETTINGS_GLIC_OS_WIDGET_TOGGLE" desc="Name of the toggle that controls whether the Gemini icon is shown in the MacOS menu bar (on Mac only).">
           Show Gemini in Chrome in Mac menu bar and turn on keyboard shortcut
         </message>
+        <message name="IDS_SETTINGS_GLIC_OS_WIDGET_TOGGLE_SHORTCUT_EXCLUDED" desc="Name of the toggle that controls whether the Gemini icon is shown in the MacOS menu bar (on Mac only) when local hotkeys can be configured independently.">
+          Show Gemini in Chrome in Mac menu bar
+        </message>
       </if>
       <if expr="is_win or is_linux or is_chromeos">
         <message name="IDS_SETTINGS_GLIC_OS_WIDGET_TOGGLE" desc="Name of the toggle that controls whether the Gemini icon is shown in the system tray (on ChromeOS, Windows and Linux).">
           Show Gemini in Chrome in system tray and turn on keyboard shortcut
         </message>
+        <message name="IDS_SETTINGS_GLIC_OS_WIDGET_TOGGLE_SHORTCUT_EXCLUDED" desc="Name of the toggle that controls whether the Gemini icon is shown in the system tray (on ChromeOS, Windows and Linux) when local hotkeys can be configured independently.">
+          Show Gemini in Chrome in system tray
+        </message>
       </if>
-      <message name="IDS_SETTINGS_GLIC_OS_WIDGET_TOGGLE_SUBLABEL" desc="Sublabel of the toggle that controls whether the Gemini icon is shown in the menu bar (on Mac) / system tray (on Windows and Linux).">
+      <message name="IDS_SETTINGS_GLIC_OS_WIDGET_TOGGLE_SUBLABEL" desc="Sublabel of the toggle that controls whether the Gemini icon is shown in the menu bar (on Mac) / system tray (on Windows and Linux)." formatter_data="android_java">
         Easy access to use Gemini in Chrome across your device, even if Chrome is minimized.
       </message>
-      <message name="IDS_SETTINGS_GLIC_KEYBOARD_SHORTCUT_SUBLABEL" desc="Sublabel describing the keyboard shortcut that's used to globally invoke Gemini.">
+      <message name="IDS_SETTINGS_GLIC_KEYBOARD_SHORTCUT_SUBLABEL" desc="Sublabel describing the keyboard shortcut that's used to globally invoke Gemini." formatter_data="android_java">
         Open Gemini in Chrome with a keyboard shortcut.
       </message>
-      <message name="IDS_SETTINGS_GLIC_NAVIGATION_SHORTCUT_SUBLABEL" desc="Sublabel describing the keyboard shortcut navigate between Chrome and Gemini.">
+      <message name="IDS_SETTINGS_GLIC_NAVIGATION_SHORTCUT_SUBLABEL" desc="Sublabel describing the keyboard shortcut navigate between Chrome and Gemini." formatter_data="android_java">
         To leave or return to Gemini in Chrome, use keyboard shortcut.
       </message>
       <message name="IDS_SETTINGS_GLIC_KEEP_SIDEPANEL_OPEN_ON_NEW_TABS_SUBLABEL" desc="Sublabel describing the setting to keep side panel open when new tabs are opened.">
@@ -3168,6 +3146,9 @@ Google Chrome is unable to recover your settings.
       </message>
       <message name="IDS_SETTINGS_GLIC_SELECTION_SHORTCUT_SUBLABEL" desc="Sublabel describing the selection shortcut triggering in Gemini.">
         To select part of the screen in Gemini in Chrome, use keyboard shortcut.
+      </message>
+      <message name="IDS_SETTINGS_GLIC_HOTKEY_SCOPE_CHROME" desc="Label for the 'In Chrome' option in the shortcut invocation scope dropdown.">
+        In Chrome
       </message>
 
       <!-- Profile Picker Glic version-->
@@ -3229,6 +3210,32 @@ Google Chrome is unable to recover your settings.
         </if>
       </if>
 
+      <!-- Dictation strings -->
+      <!-- TODO(b/510738735): Marked non-translateable as the feature
+      isn't yet shipping these aren't yet finalized. -->
+      <if expr="not is_android">
+        <if expr="use_titlecase">
+          <message name="IDS_DICTATION_CONTEXT_MENU_STRING" desc="The string shown in the right-click context menu to start using the dictation feature." translateable="false">
+            Voice Typing
+          </message>
+        </if>
+        <if expr="not use_titlecase">
+          <message name="IDS_DICTATION_CONTEXT_MENU_STRING" desc="The string shown in the right-click context menu to start using the dictation feature." translateable="false">
+            Voice typing
+          </message>
+        </if>
+
+        <message name="IDS_DICTATION_ONBOARDING_TITLE" desc="The title string in the onboarding dialog for the dictation feature." translateable="false">
+          Allow voice typing to use your microphone and page content to generate polished text?
+        </message>
+        <message name="IDS_DICTATION_ONBOARDING_BULLET_MICROPHONE" desc="The first paragraph in the onboarding dialog describing how the microphone is used." translateable="false">
+          Your microphone will be used to capture your voice.
+        </message>
+        <message name="IDS_DICTATION_ONBOARDING_BULLET_DISCLAIMER" desc="The disclaimer text in the onboarding dialog describing the use of AI and potential for mistakes and providing a link for more details." translateable="false">
+          Gemini is AI and can make mistakes. <ph name="LEARN_MORE_LINK">$1<ex>Learn more</ex></ph>
+        </message>
+      </if>
+
       <!--Desktop to iOS promo strings-->
       <if expr="not is_android">
         <message name="IDS_IOS_DESKTOP_ESB_PROMO_BUBBLE_DESCRIPTION_REMINDER" desc="The description for the iOS desktop ESB promo bubble with a reminder button.">
@@ -3274,7 +3281,10 @@ Google Chrome is unable to recover your settings.
         <message name="IDS_IOS_DESKTOP_PRICE_TRACKING_DESCRIPTION_QR" desc="The description for the iOS desktop price tracking promo bubble with a QR code.">
           Download Chrome on your phone to track prices and get alerts when the price drops on any site
         </message>
-         <message name="IDS_IOS_DESKTOP_PRICE_TRACKING_REMINDER_CONFIRMATION" desc="Body text of the promo bubble that appears after the user chooses to be reminded of price tracking on their iOS device.">
+        <message name="IDS_IOS_DESKTOP_PRICE_TRACKING_PROMO_BUBBLE_TITLE_QR" desc="The title for the iOS desktop Price Tracking promo bubble with a QR Code.">
+          Get price tracking alerts with Chrome on your phone
+        </message>
+        <message name="IDS_IOS_DESKTOP_PRICE_TRACKING_REMINDER_CONFIRMATION" desc="Body text of the promo bubble that appears after the user chooses to be reminded of price tracking on their iOS device.">
           Next time you open Chrome on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>, you’ll see a prompt to enable price tracking alerts.
         </message>
         <message name="IDS_IOS_DESKTOP_TAB_GROUPS_PROMO_BUBBLE_DESCRIPTION_QR" desc="The description for the iOS desktop Tab Groups promo bubble with a QR code.">
@@ -3282,6 +3292,87 @@ Google Chrome is unable to recover your settings.
         </message>
         <message name="IDS_IOS_DESKTOP_TAB_GROUPS_REMINDER_CONFIRMATION" desc="Body text of the promo bubble that appears after the user chooses to be reminded of tab groups on their iOS device.">
           Next time you open Chrome on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>, you'll see a prompt to use tab groups.
+        </message>
+        <message name="IDS_IOS_DESKTOP_AI_PROMO_BUBBLE_DESCRIPTION_QR" desc="The description for the iOS desktop AI promo bubble with a QR code.">
+          Scan the QR code with your phone to download Chrome and sign in to your Google Account.
+        </message>
+        <message name="IDS_IOS_DESKTOP_AI_PROMO_BUBBLE_TITLE_QR" desc="The title for the iOS desktop AI promo bubble with a QR code.">
+          Use Google's best AI tools with the Chrome app on your phone
+        </message>
+        <message name="IDS_IOS_DESKTOP_AI_PROMO_BUBBLE_DESCRIPTION_REMINDER" desc="The description for the iOS desktop AI promo bubble with a reminder.">
+          Take your favorite Google AI tools on the go with Chrome on iOS.
+        </message>
+        <message name="IDS_IOS_DESKTOP_AI_PROMO_BUBBLE_TITLE_REMINDER" desc="The title for the iOS desktop AI promo bubble with a reminder.">
+          Get the power of AI when you use the Chrome app on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>
+        </message>
+        <message name="IDS_IOS_DESKTOP_AI_PROMO_NOTIFICATION_BODY" desc="The body for the iOS desktop AI promo notification.">
+          Use the Chrome app to take the best AI tools on the go
+        </message>
+        <message name="IDS_IOS_DESKTOP_BEST_OF_GOOGLE_PROMO_BUBBLE_DESCRIPTION_QR" desc="The description for the iOS desktop Best of Google promo bubble with a QR code.">
+          Scan the QR code with your phone to download Chrome and sign in to your Google Account.
+        </message>
+        <message name="IDS_IOS_DESKTOP_BEST_OF_GOOGLE_PROMO_BUBBLE_TITLE_QR" desc="The title for the iOS desktop Best of Google promo bubble with a QR code.">
+          Get the best of Google with the Chrome app on your phone
+        </message>
+        <message name="IDS_IOS_DESKTOP_BEST_OF_GOOGLE_PROMO_BUBBLE_DESCRIPTION_REMINDER" desc="The description for the iOS desktop Best of Google promo bubble with a reminder.">
+          Seamlessly work with your favorite apps like Google Drive and YouTube on the go with Chrome.
+        </message>
+        <message name="IDS_IOS_DESKTOP_BEST_OF_GOOGLE_PROMO_BUBBLE_TITLE_REMINDER" desc="The title for the iOS desktop Best of Google promo bubble with a reminder.">
+          Get the best of Google with the Chrome app on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>
+        </message>
+        <message name="IDS_IOS_DESKTOP_BEST_OF_GOOGLE_PROMO_NOTIFICATION_BODY" desc="The body for the iOS desktop Best of Google promo notification.">
+          Access all of your Google favorites with Chrome on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>
+        </message>
+        <message name="IDS_IOS_DESKTOP_BEST_OF_GOOGLE_PROMO_NOTIFICATION_TITLE" desc="The title for the iOS desktop Best of Google promo notification.">
+          Reminder: The best of Google in your pocket
+        </message>
+        <message name="IDS_IOS_DESKTOP_SAFETY_PROMO_BUBBLE_DESCRIPTION_QR" desc="The description for the iOS desktop Safety promo bubble with a QR code.">
+          Scan the QR code with your phone to download Chrome and sign in to your Google Account.
+        </message>
+        <message name="IDS_IOS_DESKTOP_SAFETY_PROMO_BUBBLE_TITLE_QR" desc="The title for the iOS desktop Safety promo bubble with a QR code.">
+          Get Google's best safety features on the go, with the Chrome app on your phone
+        </message>
+        <message name="IDS_IOS_DESKTOP_SAFETY_PROMO_BUBBLE_DESCRIPTION_REMINDER" desc="The description for the iOS desktop Safety promo bubble with a reminder.">
+          Get Google’s best safety features on the go with Chrome.
+        </message>
+        <message name="IDS_IOS_DESKTOP_SAFETY_PROMO_BUBBLE_TITLE_REMINDER" desc="The title for the iOS desktop Safety promo bubble with a reminder.">
+          Take the safety of Google on the go with the Chrome app on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>
+        </message>
+        <message name="IDS_IOS_DESKTOP_SAFETY_PROMO_NOTIFICATION_BODY" desc="The body for the iOS desktop Safety promo notification.">
+          Use the Chrome app to take the safety of Google on the go
+        </message>
+        <message name="IDS_IOS_DESKTOP_SAFETY_PROMO_NOTIFICATION_TITLE" desc="The title for the iOS desktop Safety promo notification.">
+          Reminder: Google’s best safety features in your pocket
+        </message>
+        <message name="IDS_IOS_DESKTOP_SHOPPING_PROMO_BUBBLE_DESCRIPTION_QR" desc="The description for the iOS desktop Shopping promo bubble with a QR code.">
+          Scan the QR code with your phone to download Chrome and sign in to your Google Account.
+        </message>
+        <message name="IDS_IOS_DESKTOP_SHOPPING_PROMO_BUBBLE_TITLE_QR" desc="The title for the iOS desktop Shopping promo bubble with a QR code.">
+          Get price drop alerts on items you're interested in with the Chrome app on your phone
+        </message>
+        <message name="IDS_IOS_DESKTOP_SHOPPING_PROMO_BUBBLE_DESCRIPTION_REMINDER" desc="The description for the iOS desktop Shopping promo bubble with a reminder.">
+          Discover products with your camera, track price drops and more on the go with Chrome on iOS.
+        </message>
+        <message name="IDS_IOS_DESKTOP_SHOPPING_PROMO_BUBBLE_TITLE_REMINDER" desc="The title for the iOS desktop Shopping promo bubble with a reminder.">
+          Get more out of online shopping when you use the Chrome app on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>
+        </message>
+        <message name="IDS_IOS_DESKTOP_SHOPPING_PROMO_NOTIFICATION_BODY" desc="The body for the iOS desktop Shopping promo notification.">
+          Use the Chrome app to take the best shopping tools on the go
+        </message>
+        <message name="IDS_IOS_DESKTOP_YOUR_CHROME_PROMO_BUBBLE_DESCRIPTION_QR" desc="The description for the iOS desktop Your Chrome promo bubble with a QR code.">
+          Scan the QR code with your phone to download Chrome and sign in to your Google Account.
+        </message>
+        <message name="IDS_IOS_DESKTOP_YOUR_CHROME_PROMO_BUBBLE_TITLE_QR" desc="The title for the iOS desktop Your Chrome promo bubble with a QR code.">
+          Take your passwords, tabs and more on the go with the Chrome app on your phone
+        </message>
+        <message name="IDS_IOS_DESKTOP_YOUR_CHROME_PROMO_BUBBLE_DESCRIPTION_REMINDER" desc="The description for the iOS desktop Your Chrome promo bubble with a reminder.">
+          Pick up right where you left off with Chrome on iOS.
+        </message>
+        <message name="IDS_IOS_DESKTOP_YOUR_CHROME_PROMO_BUBBLE_TITLE_REMINDER" desc="The title for the iOS desktop Your Chrome promo bubble with a reminder.">
+          Take your passwords, tabs and more on the go with the Chrome app on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>
+        </message>
+        <message name="IDS_IOS_DESKTOP_YOUR_CHROME_PROMO_NOTIFICATION_BODY" desc="The body for the iOS desktop Your Chrome promo notification.">
+          Use the Chrome app to keep browsing on the go
         </message>
       </if>
 
@@ -3334,6 +3425,13 @@ If this page isn’t working as expected, try allowing optimization.
        <!-- Contextual Tasks -->
       <message name="IDS_CONTEXTUAL_TASKS_ENTRY_POINT_TOOLTIP_V2" desc="The tooltip text used for contextual task toolbar button">
         Reopen Google Search AI Mode
+      </message>
+      <!-- Enterprise device signals disclaimer -->
+      <message name="IDS_ENTERPRISE_DEVICE_SIGNALS_DISCLAIMER_TITLE" desc="Title of an enterprise device signals collection disclaimer modal dialog. The dialog is shown on Chrome startup to managed Chrome users who have not previously acknowledged device signals collection.">
+        Your work secured on Chrome
+      </message>
+      <message name="IDS_ENTERPRISE_DEVICE_SIGNALS_DISCLAIMER_SUBTITLE" desc="Subtitle of an enterprise device signals collection disclaimer modal dialog. The dialog is shown on Chrome startup to managed Chrome users who have not previously acknowledged device signals collection.">
+        To secure your work on Chrome, your organization will be able to view or manage certain information when you’re signed-in to Chrome.
       </message>
     </messages>
   </release>

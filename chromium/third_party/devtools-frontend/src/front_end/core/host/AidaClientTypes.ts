@@ -29,16 +29,18 @@ export interface Content {
   role: Role;
 }
 
+export interface FunctionResponsePart {
+  functionResponse: {
+    name: string,
+    response: Record<string, unknown>,
+  };
+}
+
 export type Part = {
   text: string,
 }|{
   functionCall: AidaFunctionCall,
-}|{
-  functionResponse: {
-    name: string,
-    response: Record<string, unknown>,
-  },
-}|{
+}|FunctionResponsePart|{
   /** Inline media bytes. */
   inlineData: MediaBlob,
 };
@@ -132,6 +134,8 @@ export enum ClientFeature {
   CHROME_CONVERSATION_SUMMARY_AGENT = 27,
   // Chrome AI Assistance Storage Agent.
   CHROME_STORAGE_AGENT = 28,
+  // Chrome DevTools V2 Agent.
+  CHROME_DEVTOOLS_V2_AGENT = 29,
 }
 
 export enum UserTier {

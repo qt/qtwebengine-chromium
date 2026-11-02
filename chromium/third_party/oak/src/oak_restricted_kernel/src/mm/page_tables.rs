@@ -14,23 +14,26 @@
 // limitations under the License.
 //
 
-use goblin::elf64::program_header::{ProgramHeader, PF_W, PF_X, PT_LOAD};
+use core::ops::DerefMut;
+
+use goblin::elf64::program_header::{PF_W, PF_X, PT_LOAD, ProgramHeader};
+use oak_hal::PageAssignment;
 use x86_64::{
-    align_down, align_up,
+    PhysAddr, VirtAddr, align_down, align_up,
     registers::control::{Cr3, Cr3Flags},
     structures::paging::{
+        FrameAllocator, Page, PageSize, PageTable, PageTableFlags, PhysFrame, Size2MiB, Size4KiB,
         frame::PhysFrameRange,
-        mapper::{FlagUpdateError, MapToError, MapperFlush, UnmapError},
+        mapper::{
+            FlagUpdateError, MapToError, Mapper, MapperFlush, MapperFlushAll, OffsetPageTable,
+            TranslateError, UnmapError,
+        },
         page::PageRange,
-        MappedPageTable, Page, PageSize, PageTable, PhysFrame, Size2MiB, Size4KiB,
     },
-    PhysAddr, VirtAddr,
 };
 
-use super::{
-    encrypted_mapper::{EncryptedPageTable, MemoryEncryption, PhysOffset},
-    Mapper, PageTableFlags, Translator, KERNEL_OFFSET,
-};
+use super::{KERNEL_OFFSET, Translator, encryption_aware_page_table_flags};
+use crate::FRAME_ALLOCATOR;
 
 /// Map a region of physical memory to a virtual address using 2 MiB pages.
 ///
@@ -51,14 +54,20 @@ pub unsafe fn create_offset_map<S: PageSize, M: Mapper<S>>(
         // page table entries, AMD ignores it in lower entries _except_ PML4 and
         // PML5); the `G` bit has semantic meaning only in the lowest level of
         // page tables.
-        mapper
-            .map_to_with_table_flags(
-                Page::<S>::from_start_address(offset + (i as u64) * S::SIZE).unwrap(),
-                frame,
-                flags,
-                PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::ENCRYPTED,
-            )?
-            .ignore();
+        unsafe {
+            mapper
+                .map_to_with_table_flags(
+                    Page::<S>::from_start_address(offset + (i as u64) * S::SIZE).unwrap(),
+                    frame,
+                    flags,
+                    encryption_aware_page_table_flags(
+                        PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                        PageAssignment::Private,
+                    ),
+                    FRAME_ALLOCATOR.lock().deref_mut(),
+                )?
+                .ignore();
+        }
     }
     Ok(())
 }
@@ -115,39 +124,41 @@ pub unsafe fn create_kernel_map<M: Mapper<Size2MiB> + Mapper<Size4KiB>>(
                 ),
                 VirtAddr::new(phdr.p_vaddr),
                 /* It's not possible to mark a page not readable, so we ignore PF_R. */
-                PageTableFlags::PRESENT
-                    | PageTableFlags::GLOBAL
-                    | PageTableFlags::ENCRYPTED
-                    | if phdr.p_flags & PF_W > 0 {
-                        PageTableFlags::WRITABLE
-                    } else {
-                        PageTableFlags::empty()
-                    }
-                    | if phdr.p_flags & PF_X == 0 {
-                        PageTableFlags::NO_EXECUTE
-                    } else {
-                        PageTableFlags::empty()
-                    },
+                encryption_aware_page_table_flags(
+                    PageTableFlags::PRESENT
+                        | PageTableFlags::GLOBAL
+                        | if phdr.p_flags & PF_W > 0 {
+                            PageTableFlags::WRITABLE
+                        } else {
+                            PageTableFlags::empty()
+                        }
+                        | if phdr.p_flags & PF_X == 0 {
+                            PageTableFlags::NO_EXECUTE
+                        } else {
+                            PageTableFlags::empty()
+                        },
+                    PageAssignment::Private,
+                ),
             )
         })
-        .try_for_each(|(range, offset, flags)| create_offset_map(range, offset, flags, mapper))
+        .try_for_each(|(range, offset, flags)| unsafe {
+            create_offset_map(range, offset, flags, mapper)
+        })
 }
 
 pub struct RootPageTable {
-    inner: EncryptedPageTable<MappedPageTable<'static, PhysOffset>>,
+    inner: OffsetPageTable<'static>,
 }
 
 impl RootPageTable {
-    pub fn new(
-        pml4: &'static mut PageTable,
-        offset: VirtAddr,
-        encryption: MemoryEncryption,
-    ) -> Self {
-        RootPageTable { inner: EncryptedPageTable::new(pml4, offset, encryption) }
+    pub fn new(pml4: &'static mut PageTable, offset: VirtAddr) -> Self {
+        RootPageTable { inner: unsafe { OffsetPageTable::new(pml4, offset) } }
     }
-    pub fn into_inner(self) -> EncryptedPageTable<MappedPageTable<'static, PhysOffset>> {
-        self.inner
+
+    pub fn level_4_table(&self) -> &PageTable {
+        self.inner.level_4_table()
     }
+
     /// Checks wheter all the pages in the range are unallocated.
     ///
     /// Even though the pages may be of arbitrary size, we check all
@@ -211,70 +222,139 @@ impl RootPageTable {
 }
 
 impl Mapper<Size4KiB> for RootPageTable {
-    unsafe fn map_to_with_table_flags(
-        &self,
+    unsafe fn map_to_with_table_flags<A>(
+        &mut self,
         page: Page<Size4KiB>,
         frame: PhysFrame<Size4KiB>,
         flags: PageTableFlags,
         parent_table_flags: PageTableFlags,
-    ) -> Result<MapperFlush<Size4KiB>, MapToError<Size4KiB>> {
-        self.inner.map_to_with_table_flags(page, frame, flags, parent_table_flags)
+        allocator: &mut A,
+    ) -> Result<MapperFlush<Size4KiB>, MapToError<Size4KiB>>
+    where
+        A: FrameAllocator<Size4KiB> + ?Sized,
+    {
+        unsafe {
+            self.inner.map_to_with_table_flags(page, frame, flags, parent_table_flags, allocator)
+        }
     }
 
-    unsafe fn unmap(
-        &self,
+    fn unmap(
+        &mut self,
         page: Page<Size4KiB>,
     ) -> Result<(PhysFrame<Size4KiB>, MapperFlush<Size4KiB>), UnmapError> {
         self.inner.unmap(page)
     }
 
     unsafe fn update_flags(
-        &self,
+        &mut self,
         page: Page<Size4KiB>,
         flags: PageTableFlags,
     ) -> Result<MapperFlush<Size4KiB>, FlagUpdateError> {
-        self.inner.update_flags(page, flags)
+        unsafe { self.inner.update_flags(page, flags) }
+    }
+
+    unsafe fn set_flags_p4_entry(
+        &mut self,
+        page: Page<Size4KiB>,
+        flags: PageTableFlags,
+    ) -> Result<MapperFlushAll, FlagUpdateError> {
+        unsafe { self.inner.set_flags_p4_entry(page, flags) }
+    }
+
+    unsafe fn set_flags_p3_entry(
+        &mut self,
+        page: Page<Size4KiB>,
+        flags: PageTableFlags,
+    ) -> Result<MapperFlushAll, FlagUpdateError> {
+        unsafe { self.inner.set_flags_p3_entry(page, flags) }
+    }
+
+    unsafe fn set_flags_p2_entry(
+        &mut self,
+        page: Page<Size4KiB>,
+        flags: PageTableFlags,
+    ) -> Result<MapperFlushAll, FlagUpdateError> {
+        unsafe { self.inner.set_flags_p2_entry(page, flags) }
+    }
+
+    fn translate_page(&self, page: Page<Size4KiB>) -> Result<PhysFrame<Size4KiB>, TranslateError> {
+        self.inner.translate_page(page)
     }
 }
 
 impl Mapper<Size2MiB> for RootPageTable {
-    unsafe fn map_to_with_table_flags(
-        &self,
+    unsafe fn map_to_with_table_flags<A>(
+        &mut self,
         page: Page<Size2MiB>,
         frame: PhysFrame<Size2MiB>,
         flags: PageTableFlags,
         parent_table_flags: PageTableFlags,
-    ) -> Result<MapperFlush<Size2MiB>, MapToError<Size2MiB>> {
-        self.inner.map_to_with_table_flags(page, frame, flags, parent_table_flags)
+        allocator: &mut A,
+    ) -> Result<MapperFlush<Size2MiB>, MapToError<Size2MiB>>
+    where
+        A: FrameAllocator<Size4KiB> + ?Sized,
+    {
+        unsafe {
+            self.inner.map_to_with_table_flags(page, frame, flags, parent_table_flags, allocator)
+        }
     }
 
-    unsafe fn unmap(
-        &self,
+    fn unmap(
+        &mut self,
         page: Page<Size2MiB>,
     ) -> Result<(PhysFrame<Size2MiB>, MapperFlush<Size2MiB>), UnmapError> {
         self.inner.unmap(page)
     }
 
     unsafe fn update_flags(
-        &self,
+        &mut self,
         page: Page<Size2MiB>,
         flags: PageTableFlags,
     ) -> Result<MapperFlush<Size2MiB>, FlagUpdateError> {
-        self.inner.update_flags(page, flags)
+        unsafe { self.inner.update_flags(page, flags) }
+    }
+
+    unsafe fn set_flags_p4_entry(
+        &mut self,
+        page: Page<Size2MiB>,
+        flags: PageTableFlags,
+    ) -> Result<MapperFlushAll, FlagUpdateError> {
+        unsafe { self.inner.set_flags_p4_entry(page, flags) }
+    }
+
+    unsafe fn set_flags_p3_entry(
+        &mut self,
+        page: Page<Size2MiB>,
+        flags: PageTableFlags,
+    ) -> Result<MapperFlushAll, FlagUpdateError> {
+        unsafe { self.inner.set_flags_p3_entry(page, flags) }
+    }
+
+    unsafe fn set_flags_p2_entry(
+        &mut self,
+        page: Page<Size2MiB>,
+        flags: PageTableFlags,
+    ) -> Result<MapperFlushAll, FlagUpdateError> {
+        unsafe { self.inner.set_flags_p2_entry(page, flags) }
+    }
+
+    fn translate_page(&self, page: Page<Size2MiB>) -> Result<PhysFrame<Size2MiB>, TranslateError> {
+        self.inner.translate_page(page)
     }
 }
 
 impl Translator for RootPageTable {
     fn translate_virtual(&self, addr: VirtAddr) -> Option<PhysAddr> {
-        self.inner.translate_virtual(addr)
+        use x86_64::structures::paging::Translate;
+        self.inner.translate_addr(addr)
     }
 
     fn translate_physical(&self, addr: PhysAddr) -> Option<VirtAddr> {
-        self.inner.translate_physical(addr)
+        Some(self.inner.phys_offset() + addr.as_u64())
     }
 
     fn translate_physical_frame<S: PageSize>(&self, frame: PhysFrame<S>) -> Option<Page<S>> {
-        self.inner.translate_physical_frame(frame)
+        Page::from_start_address(self.translate_physical(frame.start_address())?).ok()
     }
 }
 
@@ -306,7 +386,7 @@ impl CurrentRootPageTable {
             &mut *(super::DIRECT_MAPPING_OFFSET + pml4_frame.start_address().as_u64()).as_mut_ptr()
         };
 
-        let new_pt = RootPageTable::new(pml4, super::DIRECT_MAPPING_OFFSET, super::encryption());
+        let new_pt = RootPageTable::new(pml4, super::DIRECT_MAPPING_OFFSET);
 
         self.inner.replace(new_pt)
     }

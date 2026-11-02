@@ -20,7 +20,8 @@ describe('RecorderPluginManager', () => {
         Extensions.RecorderPluginManager.Events.PLUGIN_REMOVED,
         event => events.push({event: 'pluginRemoved', plugin: event.data}));
     const plugin = new Extensions.RecorderExtensionEndpoint.RecorderExtensionEndpoint(
-        'test', new MessageChannel().port1, ['export'], urlString`chrome-extension://test`, 'application/javascript');
+        'test', new MessageChannel().port1, ['export'], urlString`chrome-extension://test`, manager,
+        'application/javascript');
 
     manager.addPlugin(plugin);
     manager.removePlugin(plugin);
@@ -35,5 +36,16 @@ describe('RecorderPluginManager', () => {
         plugin,
       },
     ]);
+  });
+
+  it('supports instance and removeInstance for backwards compatibility', () => {
+    const instance1 = Extensions.RecorderPluginManager.RecorderPluginManager.instance({forceNew: true});
+    const instance2 = Extensions.RecorderPluginManager.RecorderPluginManager.instance();
+    assert.strictEqual(instance1, instance2);
+
+    Extensions.RecorderPluginManager.RecorderPluginManager.removeInstance();
+    const instance3 = Extensions.RecorderPluginManager.RecorderPluginManager.instance();
+    assert.notStrictEqual(instance1, instance3);
+    Extensions.RecorderPluginManager.RecorderPluginManager.removeInstance();
   });
 });

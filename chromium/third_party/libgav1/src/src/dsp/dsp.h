@@ -19,11 +19,10 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 
 #include "src/dsp/common.h"
 #include "src/dsp/constants.h"
-#include "src/dsp/film_grain_common.h"
+#include "src/utils/constants.h"
 #include "src/utils/cpu.h"
 #include "src/utils/reference_info.h"
 #include "src/utils/types.h"

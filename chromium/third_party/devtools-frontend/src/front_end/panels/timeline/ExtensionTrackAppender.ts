@@ -77,7 +77,7 @@ export class ExtensionTrackAppender implements TrackAppender {
       shareHeaderLine: false,
       padding: 2,
       nestingLevel: 1,
-      collapsible: PerfUI.FlameChart.GroupCollapsibleState.ALWAYS
+      collapsible: PerfUI.FlameChart.GroupCollapsibleState.ALWAYS,
     });
     const group = buildTrackHeader(
         VisualLoggingTrackName.EXTENSION, trackStartLevel, headerTitle, style,

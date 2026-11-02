@@ -22,7 +22,7 @@
 
 namespace Eigen {
 
-// These helpers are required since it allows to use mixed types as parameters
+// These helpers are required since they allow the use of mixed types as parameters
 // for the Umeyama. The problem with mixed parameters is that the return type
 // cannot trivially be deduced when float and double types are mixed.
 namespace internal {
@@ -68,7 +68,7 @@ struct umeyama_transform_matrix_type {
  * \f$ \Sigma_{\mathbf{x}\mathbf{y}} \in \mathbb{R}^{d \times d} \f$
  * of the input point sets \f$ \mathbf{x} \f$ and \f$ \mathbf{y} \f$ where
  * \f$d\f$ is corresponding to the dimension (which is typically small).
- * The analysis is involving the SVD having a complexity of \f$O(d^3)\f$
+ * The analysis involves the SVD having a complexity of \f$O(d^3)\f$
  * though the actual computational effort lies in the covariance
  * matrix computation which has an asymptotic lower bound of \f$O(dm)\f$ when
  * the input point sets have dimension \f$d \times m\f$.

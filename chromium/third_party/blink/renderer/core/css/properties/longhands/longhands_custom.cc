@@ -15,6 +15,7 @@
 #include "third_party/blink/renderer/core/css/css_custom_ident_value.h"
 #include "third_party/blink/renderer/core/css/css_dynamic_range_limit_mix_value.h"
 #include "third_party/blink/renderer/core/css/css_font_selector.h"
+#include "third_party/blink/renderer/core/css/css_font_style_range_value.h"
 #include "third_party/blink/renderer/core/css/css_font_variation_value.h"
 #include "third_party/blink/renderer/core/css/css_function_value.h"
 #include "third_party/blink/renderer/core/css/css_gap_decoration_property_utils.h"
@@ -219,8 +220,8 @@ const CSSValue* PositionAnchor::ParseSingleValue(
     const CSSParserContext& context,
     CSSParserLocalContext& local_context) const {
   if (CSSValue* value =
-          css_parsing_utils::ConsumeIdent<CSSValueID::kNone, CSSValueID::kAuto>(
-              stream)) {
+          css_parsing_utils::ConsumeIdent<CSSValueID::kAuto, CSSValueID::kNone,
+                                          CSSValueID::kNormal>(stream)) {
     return value;
   }
   return css_parsing_utils::ConsumeDashedIdent(stream, context, local_context);
@@ -241,6 +242,8 @@ const CSSValue* PositionAnchor::CSSValueFromComputedStyleInternal(
     case Type::kName:
       return MakeGarbageCollected<CSSCustomIdentValue>(
           position_anchor.GetName());
+    case Type::kNormal:
+      return CSSIdentifierValue::Create(CSSValueID::kNormal);
   }
 }
 
@@ -3624,7 +3627,7 @@ const CSSValue* PathLength::ParseSingleValue(
   if (stream.Peek().Id() == CSSValueID::kNone) {
     return css_parsing_utils::ConsumeIdent(stream);
   }
-  return css_parsing_utils::ConsumeNumber(
+  return css_parsing_utils::ConsumeLength(
       stream, context, local_context,
       CSSPrimitiveValue::ValueRange::kNonNegative);
 }
@@ -3634,12 +3637,12 @@ const CSSValue* PathLength::CSSValueFromComputedStyleInternal(
     const LayoutObject*,
     bool allow_visited_style,
     CSSValuePhase value_phase) const {
-  float path_length = style.PathLength();
-  if (path_length < 0) {
+  const Length& path_length = style.PathLength();
+  if (path_length.IsNone()) {
     return CSSIdentifierValue::Create(CSSValueID::kNone);
   }
-  return CSSNumericLiteralValue::Create(path_length,
-                                        CSSPrimitiveValue::UnitType::kNumber);
+  return ComputedStyleUtils::ZoomAdjustedPixelValueForLength(path_length,
+                                                             style);
 }
 
 const CSSValue* D::ParseSingleValue(CSSParserTokenStream& stream,
@@ -4430,7 +4433,11 @@ const blink::Color FloodColor::ColorIncludingFallback(
   if (style.ShouldForceColor(flood_color)) {
     return style.GetInternalForcedCurrentColor(is_current_color);
   }
-  return style.ResolvedColor(flood_color, is_current_color);
+  blink::Color current_color = visited_link
+                                   ? style.GetInternalVisitedCurrentColor()
+                                   : style.GetCurrentColor();
+  return flood_color.Resolve(current_color, style.UsedColorScheme(),
+                             is_current_color);
 }
 
 const CSSValue* FloodColor::CSSValueFromComputedStyleInternal(
@@ -4564,6 +4571,36 @@ const CSSValue* FontStyle::CSSValueFromComputedStyleInternal(
     bool allow_visited_style,
     CSSValuePhase value_phase) const {
   return ComputedStyleUtils::ValueForFontStyle(style);
+}
+
+void FontStyle::ApplyInherit(StyleResolverState& state) const {
+  const FontDescription& parent_font = state.ParentFontDescription();
+  state.GetFontBuilder().SetStyle(parent_font.Style());
+  state.GetFontBuilder().SetStyleSyntax(parent_font.GetStyleSyntax());
+}
+
+void FontStyle::ApplyValue(StyleResolverState& state,
+                           const CSSValue& value,
+                           ValueModeFlags) const {
+  state.GetFontBuilder().SetStyle(
+      StyleBuilderConverter::ConvertFontStyle(state, value));
+
+  // `italic` and bare `oblique`/`normal` parse as a bare CSSIdentifierValue,
+  // while `oblique <angle>` is wrapped in a CSSFontStyleRangeValue with a
+  // non-empty oblique-values list.
+  FontDescription::StyleSyntax source =
+      FontDescription::StyleSyntax::kImplicitAngle;
+  if (const auto* id = DynamicTo<CSSIdentifierValue>(value)) {
+    if (id->GetValueID() == CSSValueID::kItalic) {
+      source = FontDescription::StyleSyntax::kItalicKeyword;
+    }
+  } else if (const auto* range =
+                 DynamicTo<cssvalue::CSSFontStyleRangeValue>(value)) {
+    if (range->GetObliqueValues() && range->GetObliqueValues()->length()) {
+      source = FontDescription::StyleSyntax::kExplicitAngle;
+    }
+  }
+  state.GetFontBuilder().SetStyleSyntax(source);
 }
 
 const CSSValue* FontVariantCaps::ParseSingleValue(
@@ -5422,38 +5459,19 @@ const CSSValue* PositionArea::CSSValueFromComputedStyleInternal(
   return ComputedStyleUtils::ValueForPositionArea(style.GetPositionArea());
 }
 
-namespace {
-
-void ComputeAnchorEdgeOffsetsForPositionArea(
-    StyleResolverState& state,
-    blink::PositionArea position_area) {
-  if (AnchorEvaluator* evaluator =
-          state.CssToLengthConversionData().GetAnchorEvaluator()) {
-    state.SetPositionAreaOffsets(evaluator->ComputePositionAreaOffsetsForLayout(
-        state.StyleBuilder().PositionAnchor(), position_area));
-  }
-  state.StyleBuilder().SetHasAnchorFunctions();
+void PositionArea::ApplyInitial(StyleResolverState& state) const {
+  state.SetPositionArea(ComputedStyleInitialValues::InitialPositionArea());
 }
 
-}  // namespace
+void PositionArea::ApplyInherit(StyleResolverState& state) const {
+  state.SetPositionArea(state.ParentStyle()->GetPositionArea());
+}
 
 void PositionArea::ApplyValue(StyleResolverState& state,
                               const CSSValue& value,
                               ValueModeFlags) const {
-  blink::PositionArea position_area =
-      StyleBuilderConverter::ConvertPositionArea(state, value);
-  state.StyleBuilder().SetPositionArea(position_area);
-  if (!position_area.IsNone()) {
-    ComputeAnchorEdgeOffsetsForPositionArea(state, position_area);
-  }
-}
-
-void PositionArea::ApplyInherit(StyleResolverState& state) const {
-  blink::PositionArea position_area = state.ParentStyle()->GetPositionArea();
-  state.StyleBuilder().SetPositionArea(position_area);
-  if (!position_area.IsNone()) {
-    ComputeAnchorEdgeOffsetsForPositionArea(state, position_area);
-  }
+  state.SetPositionArea(
+      StyleBuilderConverter::ConvertPositionArea(state, value));
 }
 
 const CSSValue* InsetBlockEnd::ParseSingleValue(
@@ -6335,7 +6353,11 @@ const blink::Color LightingColor::ColorIncludingFallback(
   if (style.ShouldForceColor(lighting_color)) {
     return style.GetInternalForcedCurrentColor(is_current_color);
   }
-  return style.ResolvedColor(lighting_color, is_current_color);
+  blink::Color current_color = visited_link
+                                   ? style.GetInternalVisitedCurrentColor()
+                                   : style.GetCurrentColor();
+  return lighting_color.Resolve(current_color, style.UsedColorScheme(),
+                                is_current_color);
 }
 
 const CSSValue* LightingColor::CSSValueFromComputedStyleInternal(
@@ -6428,6 +6450,168 @@ const CSSValue* BlockEllipsis::CSSValueFromComputedStyleInternal(
     bool allow_visited_style,
     CSSValuePhase value_phase) const {
   return CSSIdentifierValue::Create(style.BlockEllipsis());
+}
+
+const CSSValue* LineClamp::ParseSingleValue(
+    CSSParserTokenStream& stream,
+    const CSSParserContext& context,
+    CSSParserLocalContext& local_context) const {
+  if (stream.Peek().Id() == CSSValueID::kNone) {
+    return css_parsing_utils::ConsumeIdent(stream);
+  }
+
+  const CSSPrimitiveValue* num_lines = nullptr;
+  const CSSIdentifierValue* auto_keyword = nullptr;
+  const CSSIdentifierValue* block_ellipsis = nullptr;
+  const CSSIdentifierValue* webkit_legacy = nullptr;
+
+  do {
+    if (stream.Peek().Id() == CSSValueID::kWebkitLegacy) {
+      webkit_legacy = css_parsing_utils::ConsumeIdent(stream);
+      break;
+    }
+
+    if (!auto_keyword && stream.Peek().Id() == CSSValueID::kAuto) {
+      auto_keyword = css_parsing_utils::ConsumeIdent(stream);
+      continue;
+    }
+
+    if (!block_ellipsis) {
+      block_ellipsis =
+          css_parsing_utils::ConsumeIdent<CSSValueID::kEllipsis,
+                                          CSSValueID::kNoEllipsis>(stream);
+      if (block_ellipsis) {
+        continue;
+      }
+    }
+
+    if (!num_lines) {
+      num_lines = css_parsing_utils::ConsumePositiveInteger(stream, context,
+                                                            local_context);
+      if (num_lines) {
+        continue;
+      }
+    }
+
+    break;
+  } while (!stream.AtEnd());
+
+  if (!num_lines && !auto_keyword && !block_ellipsis) {
+    return nullptr;
+  }
+
+  if (block_ellipsis && block_ellipsis->GetValueID() == CSSValueID::kEllipsis) {
+    block_ellipsis = nullptr;
+  }
+
+  CSSValueList* list = CSSValueList::CreateSpaceSeparated();
+  if (num_lines) {
+    list->Append(*num_lines);
+  }
+  if (auto_keyword) {
+    if (num_lines || !block_ellipsis) {
+      list->Append(*auto_keyword);
+    }
+  } else if (!num_lines && !block_ellipsis) {
+    list->Append(*CSSIdentifierValue::Create(CSSValueID::kAuto));
+  }
+  if (block_ellipsis) {
+    list->Append(*block_ellipsis);
+  }
+  if (webkit_legacy) {
+    list->Append(*webkit_legacy);
+  }
+  DCHECK(list->length());
+  return list;
+}
+
+const CSSValue* LineClamp::CSSValueFromComputedStyleInternal(
+    const ComputedStyle& style,
+    const LayoutObject*,
+    bool allow_visited_style,
+    CSSValuePhase value_phase) const {
+  if (style.Continue() == EContinue::kNormal) {
+    DCHECK(style.MaxLines().IsAutoValue());
+    DCHECK_EQ(style.LineClampInternalBlockEllipsis(),
+              EBlockEllipsis::kNoEllipsis);
+    return CSSIdentifierValue::Create(CSSValueID::kNone);
+  }
+
+  CSSValueList* list = CSSValueList::CreateSpaceSeparated();
+  if (!style.MaxLines().IsAutoValue() ||
+      style.LineClampInternalBlockEllipsis() == EBlockEllipsis::kEllipsis) {
+    if (style.MaxLines().Lines() != 0) {
+      list->Append(*CSSNumericLiteralValue::Create(
+          style.MaxLines().Lines(), CSSPrimitiveValue::UnitType::kInteger));
+    }
+    if (style.MaxLines().HasAutoKeyword()) {
+      list->Append(*CSSIdentifierValue::Create(CSSValueID::kAuto));
+    }
+  }
+
+  if (style.LineClampInternalBlockEllipsis() != EBlockEllipsis::kEllipsis) {
+    list->Append(*CSSIdentifierValue::Create(style.BlockEllipsis()));
+  }
+
+  if (style.Continue() == EContinue::kWebkitLegacy) {
+    list->Append(*CSSIdentifierValue::Create(style.Continue()));
+  } else {
+    DCHECK_EQ(style.Continue(), EContinue::kCollapse);
+  }
+
+  DCHECK(list->length());
+  return list;
+}
+
+void LineClamp::ApplyInitial(StyleResolverState& state) const {
+  state.StyleBuilder().SetContinue(EContinue::kNormal);
+  state.StyleBuilder().SetMaxLines(MaxLinesData(0, true));
+  state.StyleBuilder().SetLineClampInternalBlockEllipsis(
+      EBlockEllipsis::kNoEllipsis);
+}
+
+void LineClamp::ApplyInherit(StyleResolverState& state) const {
+  state.StyleBuilder().SetContinue(state.ParentStyle()->Continue());
+  state.StyleBuilder().SetMaxLines(state.ParentStyle()->MaxLines());
+  state.StyleBuilder().SetLineClampInternalBlockEllipsis(
+      state.ParentStyle()->LineClampInternalBlockEllipsis());
+}
+
+void LineClamp::ApplyValue(StyleResolverState& state,
+                           const CSSValue& value,
+                           ValueModeFlags) const {
+  if (const auto* ident = DynamicTo<CSSIdentifierValue>(value)) {
+    DCHECK_EQ(ident->GetValueID(), CSSValueID::kNone);
+    ApplyInitial(state);
+    return;
+  }
+
+  uint16_t num_lines = 0;
+  bool force_auto = false;
+  bool webkit_legacy = false;
+  EBlockEllipsis ellipsis = EBlockEllipsis::kEllipsis;
+
+  for (const auto& item : To<CSSValueList>(value)) {
+    if (const auto* primitive_value = DynamicTo<CSSPrimitiveValue>(*item)) {
+      num_lines = primitive_value->ConvertTo<uint16_t>(
+          state.CssToLengthConversionData());
+      continue;
+    }
+    CSSValueID keyword = To<CSSIdentifierValue>(*item).GetValueID();
+    if (keyword == CSSValueID::kAuto) {
+      force_auto = true;
+    } else if (keyword == CSSValueID::kWebkitLegacy) {
+      webkit_legacy = true;
+    } else {
+      ellipsis = CssValueIDToPlatformEnum<EBlockEllipsis>(keyword);
+    }
+  }
+
+  state.StyleBuilder().SetContinue(webkit_legacy ? EContinue::kWebkitLegacy
+                                                 : EContinue::kCollapse);
+  state.StyleBuilder().SetMaxLines(
+      MaxLinesData(num_lines, force_auto || !num_lines));
+  state.StyleBuilder().SetLineClampInternalBlockEllipsis(ellipsis);
 }
 
 const CSSValue* LineHeight::CSSValueFromComputedStyleInternal(
@@ -7604,12 +7788,10 @@ const CSSValue* OverflowClipMargin::ParseSingleValue(
   if (stream.Peek().GetType() == kIdentToken) {
     reference_box = css_parsing_utils::ConsumeVisualBox(stream);
     length = css_parsing_utils::ConsumeLength(
-        stream, context, local_context,
-        CSSPrimitiveValue::ValueRange::kNonNegative);
+        stream, context, local_context, CSSPrimitiveValue::ValueRange::kAll);
   } else {
     length = css_parsing_utils::ConsumeLength(
-        stream, context, local_context,
-        CSSPrimitiveValue::ValueRange::kNonNegative);
+        stream, context, local_context, CSSPrimitiveValue::ValueRange::kAll);
     reference_box = css_parsing_utils::ConsumeVisualBox(stream);
   }
 
@@ -8666,7 +8848,7 @@ const CSSValue* ScrollMarkerGroup::CSSValueFromComputedStyleInternal(
   }
   auto* position = MakeGarbageCollected<CSSIdentifierValue>(
       style.GetScrollMarkerGroup()->Position());
-  if (!RuntimeEnabledFeatures::CSSPseudoScrollMarkersEnabled()) {
+  if (!RuntimeEnabledFeatures::CSSScrollMarkerGroupModesEnabled()) {
     return position;
   }
   auto* mode = MakeGarbageCollected<CSSIdentifierValue>(
@@ -8688,8 +8870,8 @@ const CSSValue* ScrollMarkerGroup::ParseSingleValue(
   if (position->GetValueID() == CSSValueID::kNone || stream.AtEnd()) {
     return position;
   }
-  if (!RuntimeEnabledFeatures::CSSPseudoScrollMarkersEnabled()) {
-    return position;
+  if (!RuntimeEnabledFeatures::CSSScrollMarkerGroupModesEnabled()) {
+    return nullptr;
   }
   const CSSIdentifierValue* mode =
       css_parsing_utils::ConsumeIdent<CSSValueID::kTabs, CSSValueID::kLinks>(
@@ -9396,7 +9578,11 @@ const blink::Color StopColor::ColorIncludingFallback(
   if (style.ShouldForceColor(stop_color)) {
     return style.GetInternalForcedCurrentColor(is_current_color);
   }
-  return style.ResolvedColor(stop_color, is_current_color);
+  blink::Color current_color = visited_link
+                                   ? style.GetInternalVisitedCurrentColor()
+                                   : style.GetCurrentColor();
+  return stop_color.Resolve(current_color, style.UsedColorScheme(),
+                            is_current_color);
 }
 
 const CSSValue* StopColor::CSSValueFromComputedStyleInternal(
@@ -10793,27 +10979,54 @@ const CSSValue* AppRegion::CSSValueFromComputedStyleInternal(
     const LayoutObject*,
     bool allow_visited_style,
     CSSValuePhase value_phase) const {
-  if (style.DraggableRegionMode() == EDraggableRegionMode::kNone) {
-    return CSSIdentifierValue::Create(CSSValueID::kNone);
+  switch (style.DraggableRegionMode()) {
+    case EDraggableRegionMode::kNone:
+      return CSSIdentifierValue::Create(CSSValueID::kNone);
+    case EDraggableRegionMode::kMove:
+      return CSSIdentifierValue::Create(CSSValueID::kDrag);
+    case EDraggableRegionMode::kNoDrag:
+      // `kNoDrag` emits an explicit non-draggable region (subtracting from an
+      // ancestor's drag region), as distinct from `kNone` which emits nothing.
+      // It is produced by `app-region: no-drag` and, via the legacy quirk in
+      // `WindowDrag::ApplyValue`, by an explicit `none` on either property.
+      // `window-drag` serializes this state back as `none` (it cannot express
+      // `no-drag`), so only `app-region` round-trips it as `no-drag`.
+      return CSSIdentifierValue::Create(CSSValueID::kNoDrag);
   }
-  return CSSIdentifierValue::Create(style.DraggableRegionMode() ==
-                                            EDraggableRegionMode::kDrag
-                                        ? CSSValueID::kDrag
-                                        : CSSValueID::kNoDrag);
+  NOTREACHED();
 }
 
-void AppRegion::ApplyInitial(StyleResolverState& state) const {}
+const CSSValue* WindowDrag::CSSValueFromComputedStyleInternal(
+    const ComputedStyle& style,
+    const LayoutObject*,
+    bool allow_visited_style,
+    CSSValuePhase value_phase) const {
+  return CSSIdentifierValue::Create(style.DraggableRegionMode() ==
+                                            EDraggableRegionMode::kMove
+                                        ? CSSValueID::kMove
+                                        : CSSValueID::kNone);
+}
 
-void AppRegion::ApplyInherit(StyleResolverState& state) const {}
-
-void AppRegion::ApplyValue(StyleResolverState& state,
-                           const CSSValue& value,
-                           ValueModeFlags) const {
+void WindowDrag::ApplyValue(StyleResolverState& state,
+                            const CSSValue& value,
+                            ValueModeFlags) const {
   const auto& identifier_value = To<CSSIdentifierValue>(value);
-  state.StyleBuilder().SetDraggableRegionMode(
-      identifier_value.GetValueID() == CSSValueID::kDrag
-          ? EDraggableRegionMode::kDrag
-          : EDraggableRegionMode::kNoDrag);
+  // `window-drag` accepts {none, move}; the surrogate `app-region` routes its
+  // {drag, no-drag, none} keywords here as well. `move`/`drag` both map to the
+  // shared `kMove` (draggable) state, while any other explicit value (`none` or
+  // `no-drag`) maps to kNoDrag, preserving the legacy `app-region` behavior
+  // where setting the property to any value emits a region.
+  EDraggableRegionMode mode;
+  switch (identifier_value.GetValueID()) {
+    case CSSValueID::kMove:
+    case CSSValueID::kDrag:
+      mode = EDraggableRegionMode::kMove;
+      break;
+    default:
+      mode = EDraggableRegionMode::kNoDrag;
+      break;
+  }
+  state.StyleBuilder().SetDraggableRegionMode(mode);
   state.GetDocument().SetHasDraggableRegions(true);
 }
 
@@ -11086,6 +11299,72 @@ const CSSValue* WebkitLineClamp::CSSValueFromComputedStyleInternal(
   }
   return CSSNumericLiteralValue::Create(style.WebkitLineClamp(),
                                         CSSPrimitiveValue::UnitType::kNumber);
+}
+
+const CSSValue* AlternativeWebkitLineClampLonghand::ParseSingleValue(
+    CSSParserTokenStream& stream,
+    const CSSParserContext& context,
+    CSSParserLocalContext& local_context) const {
+  if (stream.Peek().Id() == CSSValueID::kNone) {
+    return css_parsing_utils::ConsumeIdent(stream);
+  } else {
+    // When specifying number of lines, don't allow 0 as a valid value.
+    return css_parsing_utils::ConsumePositiveInteger(stream, context,
+                                                     local_context);
+  }
+}
+
+const CSSValue*
+AlternativeWebkitLineClampLonghand::CSSValueFromComputedStyleInternal(
+    const ComputedStyle& style,
+    const LayoutObject*,
+    bool allow_visited_style,
+    CSSValuePhase value_phase) const {
+  if (style.Continue() == EContinue::kNormal) {
+    DCHECK(style.MaxLines().IsAutoValue());
+    DCHECK_EQ(style.LineClampInternalBlockEllipsis(),
+              EBlockEllipsis::kNoEllipsis);
+    return CSSIdentifierValue::Create(CSSValueID::kNone);
+  }
+  if (style.Continue() == EContinue::kWebkitLegacy &&
+      !style.MaxLines().HasAutoKeyword() &&
+      style.LineClampInternalBlockEllipsis() == EBlockEllipsis::kEllipsis) {
+    return CSSNumericLiteralValue::Create(
+        style.MaxLines().Lines(), CSSPrimitiveValue::UnitType::kInteger);
+  }
+  return nullptr;
+}
+
+void AlternativeWebkitLineClampLonghand::ApplyInitial(
+    StyleResolverState& state) const {
+  state.StyleBuilder().SetContinue(EContinue::kNormal);
+  state.StyleBuilder().SetMaxLines(MaxLinesData(0, true));
+  state.StyleBuilder().SetLineClampInternalBlockEllipsis(
+      EBlockEllipsis::kNoEllipsis);
+}
+
+void AlternativeWebkitLineClampLonghand::ApplyInherit(
+    StyleResolverState& state) const {
+  state.StyleBuilder().SetContinue(state.ParentStyle()->Continue());
+  state.StyleBuilder().SetMaxLines(state.ParentStyle()->MaxLines());
+  state.StyleBuilder().SetLineClampInternalBlockEllipsis(
+      state.ParentStyle()->LineClampInternalBlockEllipsis());
+}
+
+void AlternativeWebkitLineClampLonghand::ApplyValue(StyleResolverState& state,
+                                                    const CSSValue& value,
+                                                    ValueModeFlags) const {
+  if (const auto* ident = DynamicTo<CSSIdentifierValue>(value)) {
+    DCHECK_EQ(ident->GetValueID(), CSSValueID::kNone);
+    ApplyInitial(state);
+    return;
+  }
+  uint16_t num_lines = To<CSSPrimitiveValue>(value).ConvertTo<uint16_t>(
+      state.CssToLengthConversionData());
+  state.StyleBuilder().SetContinue(EContinue::kWebkitLegacy);
+  state.StyleBuilder().SetMaxLines(MaxLinesData(num_lines, false));
+  state.StyleBuilder().SetLineClampInternalBlockEllipsis(
+      EBlockEllipsis::kEllipsis);
 }
 
 const CSSValue* WebkitLocale::ParseSingleValue(
@@ -11546,7 +11825,11 @@ const blink::Color WebkitTapHighlightColor::ColorIncludingFallback(
                ? style.GetInternalForcedVisitedCurrentColor(is_current_color)
                : style.GetInternalForcedCurrentColor(is_current_color);
   }
-  return style.ResolvedColor(style.TapHighlightColor(), is_current_color);
+  blink::Color current_color = visited_link
+                                   ? style.GetInternalVisitedCurrentColor()
+                                   : style.GetCurrentColor();
+  return highlight_color.Resolve(current_color, style.UsedColorScheme(),
+                                 is_current_color);
 }
 
 const CSSValue* WebkitTapHighlightColor::CSSValueFromComputedStyleInternal(

@@ -35,14 +35,6 @@ CPDF_Type3Font::CPDF_Type3Font(CPDF_Document* document,
 
 CPDF_Type3Font::~CPDF_Type3Font() = default;
 
-bool CPDF_Type3Font::IsType3Font() const {
-  return true;
-}
-
-const CPDF_Type3Font* CPDF_Type3Font::AsType3Font() const {
-  return this;
-}
-
 CPDF_Type3Font* CPDF_Type3Font::AsType3Font() {
   return this;
 }
@@ -99,8 +91,6 @@ bool CPDF_Type3Font::Load() {
   }
   return true;
 }
-
-void CPDF_Type3Font::LoadGlyphMap() {}
 
 void CPDF_Type3Font::CheckType3FontMetrics() {
   CheckFontMetrics();

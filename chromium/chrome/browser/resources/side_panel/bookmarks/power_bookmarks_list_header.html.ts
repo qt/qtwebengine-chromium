@@ -22,7 +22,9 @@ export function getHtml(this: PowerBookmarksListHeaderElement) {
     ${this.activeSortType_.label}
   </div>
   <cr-icon-button slot="buttons" class="sort-menu-button"
-      iron-icon="sp:filter-list"
+      iron-icon="${this.webuiRoundedIconsEnabled_
+          ? 'sp:filter-list'
+          : 'sp:filter-list-old'}"
       title="$i18n{tooltipOrganize}"
       aria-label="$i18n{sortMenuA11yLabel}"
       aria-description="${this.activeSortType_.label}"
@@ -31,7 +33,7 @@ export function getHtml(this: PowerBookmarksListHeaderElement) {
   <cr-icon-button id="viewButton" slot="buttons"
       iron-icon="${this.getViewButtonIcon_()}"
       title="${this.getViewButtonTooltip_()}"
-      aria-label="${this.getViewButtonTooltip_()}"
+      aria-label="${this.getViewButtonA11yLabel_()}"
       @click="${this.onViewToggleClick_}">
   </cr-icon-button>
   <cr-icon-button id="editButton" slot="buttons" class="icon-edit"

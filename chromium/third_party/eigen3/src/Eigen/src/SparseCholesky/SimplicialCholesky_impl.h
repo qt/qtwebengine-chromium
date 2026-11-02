@@ -241,7 +241,7 @@ struct simpl_chol_helper {
     }
   }
 
-  // Finalizes the non zero pattern of the L factor and allocates the memory for the factorization.
+  // Finalizes the non-zero pattern of the L factor and allocates the memory for the factorization.
   static void init_matrix(const StorageIndex size, const StorageIndex* nonZerosPerCol, CholMatrixType& L) {
     eigen_assert(L.outerIndexPtr()[0] == 0);
     std::partial_sum(nonZerosPerCol, nonZerosPerCol + size, L.outerIndexPtr() + 1);
@@ -353,7 +353,7 @@ void SimplicialCholeskyBase<Derived>::factorize_preordered(const CholMatrixType&
 
       /* the nonzero entry L(k,i) */
       Scalar l_ki;
-      if (DoLDLT)
+      EIGEN_IF_CONSTEXPR (DoLDLT)
         l_ki = yi / getDiag(m_diag[i]);
       else
         yi = l_ki = yi / Lx[Lp[i]];
@@ -366,7 +366,7 @@ void SimplicialCholeskyBase<Derived>::factorize_preordered(const CholMatrixType&
       Lx[p] = l_ki;
       ++nonZerosPerCol[i]; /* increment count of nonzeros in col i */
     }
-    if (DoLDLT) {
+    EIGEN_IF_CONSTEXPR (DoLDLT) {
       m_diag[k] = d;
       if (d == RealScalar(0)) {
         ok = false; /* failure, D(k,k) is zero */
@@ -376,8 +376,9 @@ void SimplicialCholeskyBase<Derived>::factorize_preordered(const CholMatrixType&
       Index p = Lp[k] + nonZerosPerCol[k]++;
       Li[p] = k; /* store L(k,k) = sqrt (d) in column k */
       bool failed;
-      EIGEN_IF_CONSTEXPR(NonHermitian) { failed = d == RealScalar(0); }
-      else {
+      EIGEN_IF_CONSTEXPR (NonHermitian) {
+        failed = d == RealScalar(0);
+      } else {
         failed = numext::real(d) <= RealScalar(0);
       }
       if (failed) {

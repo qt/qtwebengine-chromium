@@ -868,7 +868,7 @@ export class LocalJSONObject extends RemoteObject {
       Promise<GetPropertiesResult> {
     function isArrayIndex(name: string): boolean {
       const index = Number(name) >>> 0;
-      return String(index) === name;
+      return String(index) === name && index < 4294967295;
     }
 
     let properties = this.children();

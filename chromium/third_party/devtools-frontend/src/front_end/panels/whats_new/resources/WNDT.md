@@ -1,15 +1,11 @@
 ### [DevTools for agents](devtools-for-agents)
 
-DevTools for agents 1.4 and later bring new experimental memory debugging tools,
-experimental TOON support for structured content output, and improved skill discovery.
+DevTools for agents 1.7 improves memory profiling with the `get_heapsnapshot_object_details` tool and native V8 context filtering.
 
-### [AI assistance](ai-assistance)
+### [Soft navigation metrics in Live Metrics](performance)
 
-The agent walkthrough in the updated AI assistance panel now renders rich widgets
-for performance network tracks, timeline event summaries, network requests,
-syntax-highlighted source code, and inspected file lists.
+The Live Metrics view in the Performance panel now captures and reports metrics like LCP and INP for client-side soft navigations in single-page applications by default.
 
-### [@container and @function](css-container-function)
+### [Nested CSS parent selector interactions](nested-selectors)
 
-You can now directly edit `@container` and `@function`
-rules within the Styles tab, allowing for seamless experimentation.
+Hovering over parent selectors highlights matching elements on the page, nested rules respond to Styles tab filtering, and `@nested-declarations` include specificity tooltips.

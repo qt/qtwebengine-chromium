@@ -47,6 +47,7 @@ class InlineNodeForTest : public InlineNode {
   using InlineNode::InlineNode;
 
   std::string Text() const { return Data().text_content.Utf8(); }
+  const String& TextContent() const { return Data().text_content; }
   InlineItems& Items() { return MutableData()->items; }
   static InlineItems& Items(InlineNodeData& data) { return data.items; }
   void Append(const String& text, LayoutObject* layout_object) {
@@ -213,6 +214,71 @@ TEST_F(InlineNodeTest, CollectInlinesBR) {
   TEST_ITEM_TYPE_OFFSET(items[1], kControl, 5u, 6u);
   TEST_ITEM_TYPE_OFFSET(items[2], kText, 6u, 11u);
   EXPECT_EQ(3u, items.size());
+}
+
+namespace {
+
+constexpr wtf_size_t kLargeSharedTextLength = 1024;
+
+String MakeLargeMultilineText() {
+  StringBuilder builder;
+  while (builder.length() < kLargeSharedTextLength) {
+    if (!builder.empty()) {
+      builder.Append("\n");
+    }
+    builder.Append("abcdefghijklmnopqrstuvwxyz0123456789");
+  }
+  return builder.ToString();
+}
+
+String WrapInDiv(const StringView& style, const StringView& content) {
+  StringBuilder html;
+  html << "<div id=t";
+  if (!style.empty()) {
+    html << " style='" << style << "'";
+  }
+  html << ">" << content << "</div>";
+  return html.ToString();
+}
+}  // namespace
+
+TEST_F(InlineNodeTest, ShareInlineTextContentSingleSource) {
+  String content = MakeLargeMultilineText();
+  SetupHtml("t", WrapInDiv("white-space:pre", content));
+  InlineNodeForTest node = CreateInlineNode();
+  node.CollectInlines();
+  const auto* layout_text = To<LayoutText>(layout_object_.Get());
+  EXPECT_EQ(content, node.TextContent());
+  EXPECT_EQ(node.TextContent().Impl(), layout_text->TransformedText().Impl());
+}
+
+// Large text whose whitespace collapsing changes the length is not shared.
+TEST_F(InlineNodeTest, ShareInlineTextContentLargeNotSharedWhenCollapsed) {
+  StringBuilder builder;
+  while (builder.length() < kLargeSharedTextLength) {
+    if (!builder.empty()) {
+      builder.Append("  ");  // Two spaces collapse to one.
+    }
+    builder.Append("word");
+  }
+  String content = builder.ToString();
+  SetupHtml("t", WrapInDiv(/*style=*/"", content));
+  InlineNodeForTest node = CreateInlineNode();
+  node.CollectInlines();
+  const auto* layout_text = To<LayoutText>(layout_object_.Get());
+  EXPECT_NE(node.TextContent().Impl(), layout_text->TransformedText().Impl());
+}
+
+// Large text whose collapsing keeps the length but changes bytes (each '\n'
+// becomes a space) is not shared.
+TEST_F(InlineNodeTest, ShareInlineTextContentLargeNotSharedSameLength) {
+  String content = MakeLargeMultilineText();
+  SetupHtml("t", WrapInDiv(/*style=*/"", content));
+  InlineNodeForTest node = CreateInlineNode();
+  node.CollectInlines();
+  const auto* layout_text = To<LayoutText>(layout_object_.Get());
+  ASSERT_EQ(content.length(), node.TextContent().length());
+  EXPECT_NE(node.TextContent().Impl(), layout_text->TransformedText().Impl());
 }
 
 TEST_F(InlineNodeTest, CollectInlinesFloat) {
@@ -500,6 +566,22 @@ struct MinMaxData {
     {"A B<span>C D</span>", {20, 60}},
     // A close tag after a forced break.
     {"<span>12<br></span>", {80, 80}, "", "span { border: 30px solid blue; }"},
+    // crbug.com/41462717: Symmetric `border` keeps this stable in LTR/RTL.
+    {"<span>a</span><span> a</span>",
+     {13, 34},
+     "",
+     "span { border: 1px solid }"},
+    // Same, with a nested open tag wrapping the inner span.
+    {"<span>a</span><b><span> a</span></b>",
+     {13, 34},
+     "",
+     "span { border: 1px solid }"},
+    // `dir` attribute introduces a `kBidiControl` item between the close tag
+    // and the open tag; it must not bypass the suppression.
+    {"<span>a</span><span dir=\"rtl\"> a</span>",
+     {13, 34},
+     "",
+     "span { border: 1px solid }"},
     // `pre-wrap` with trailing spaces.
     {"12345 6789 ", {50, 110}, "white-space: pre-wrap;"},
     // `word-break: break-word` can break a space run.
@@ -511,6 +593,13 @@ struct MinMaxData {
     {"&#9;&#9;<span>X</span>",
      {10, 170},
      "white-space: pre-wrap; word-break: break-word;"},
+    // Tabulation inside a ruby base.
+    {"X<ruby>&#9;Y<rt>z</rt></ruby>", {90, 90}, "white-space: pre;"},
+    {"<ruby>X&#9;Y<rt>z</rt></ruby>", {90, 90}, "white-space: pre;"},
+    // Tabulation inside a nested ruby base.
+    {"A<ruby>B<ruby>&#9;X<rt>y</rt></ruby><rt>z</rt></ruby>",
+     {90, 90},
+     "white-space: pre;"},
     // Soft Hyphens.
     {"abcd&shy;ef xx", {50, 90}},
     {"abcd&shy;ef xx", {60, 90}, "hyphens: none;"},
@@ -1692,26 +1781,6 @@ TEST_F(InlineNodeTest, FindSvgTextChunksCrash3) {
   tspan->appendChild(GetDocument().createTextNode(text));
   UpdateAllLifecyclePhasesForTest();
   // Pass if no CHECK() failures in FindSvgTextChunks().
-}
-
-TEST_F(InlineNodeTest, FontFeaturesInitial) {
-  SetBodyInnerHTML(R"HTML(
-    <div id="initial"></div>
-    <div id="no-kern" style="font-kerning: none"></div>
-  )HTML");
-  const auto is_initial = [this](const char* id) {
-    const auto* layout_object = GetLayoutObjectByElementId(id);
-    Vector<FontFeatureRange, FontFeatureRange::kInitialSize> features;
-    FontFeatureRange::FromFontDescription(
-        layout_object->StyleRef().GetFont()->GetFontDescription(), features);
-    if (FontFeatureRange::IsInitial(features)) {
-      EXPECT_EQ(features.size(), FontFeatureRange::kInitialSize);
-      return true;
-    }
-    return false;
-  };
-  EXPECT_TRUE(is_initial("initial"));
-  EXPECT_FALSE(is_initial("no-kern"));
 }
 
 // crbug.com/437612643

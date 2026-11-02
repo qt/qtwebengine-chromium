@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "constants/catalog.h"
 #include "core/fpdfapi/page/test_with_page_module.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
@@ -33,7 +34,8 @@ TEST_F(CPDFInteractiveFormTest, LoadFieldsWithReferencedNames) {
   auto bad_stream = doc->NewIndirect<CPDF_Stream>(doc->New<CPDF_Dictionary>());
   bad_stream->SetData(ByteStringView("bad_stream").unsigned_span());
 
-  auto acroform_dict = root->SetNewFor<CPDF_Dictionary>("AcroForm");
+  auto acroform_dict =
+      root->SetNewFor<CPDF_Dictionary>(pdfium::catalog::kAcroForm);
   auto fields_array = acroform_dict->SetNewFor<CPDF_Array>("Fields");
 
   auto good_string_field_dict = fields_array->AppendNew<CPDF_Dictionary>();

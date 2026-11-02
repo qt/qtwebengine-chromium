@@ -8,7 +8,7 @@ create {
       # TODO(agrieve): Move back to rui314 if PR is accepted:
       #    https://github.com/rui314/mold/pull/1590
       repo: "https://github.com/agrieve/mold.git"
-      fixed_commit: "b3816a58f2e16f12594a483b5451315f17488f20"
+      fixed_commit: "a1b3d1a6ad03c6de4a287f8393e0a52579a5a3cf"
     }
   }
 

@@ -6,15 +6,12 @@
 // Symbol.cpp: Symbols representing variables, functions, structures and interface blocks.
 //
 
-#ifdef UNSAFE_BUFFERS_BUILD
-#    pragma allow_unsafe_buffers
-#endif
-
 #if defined(_MSC_VER)
 #    pragma warning(disable : 4718)
 #endif
 
 #include "compiler/translator/Symbol.h"
+#include "common/unsafe_buffers.h"
 
 #include "compiler/translator/ImmutableStringBuilder.h"
 #include "compiler/translator/SymbolTable.h"
@@ -125,7 +122,10 @@ TStructure::TStructure(TSymbolTable *symbolTable,
                        const ImmutableString &name,
                        const TFieldList *fields,
                        SymbolType symbolType)
-    : TSymbol(symbolTable, name, symbolType, SymbolClass::Struct), TFieldListCollection(fields)
+    : TSymbol(symbolTable, name, symbolType, SymbolClass::Struct),
+      TFieldListCollection(fields),
+      mAtGlobalScope(false),
+      mImplementingInterfaceBlock(false)
 {}
 
 void TStructure::createSamplerSymbols(const char *namePrefix,
@@ -236,7 +236,7 @@ ImmutableString TFunction::buildMangledName() const
 
     for (size_t i = 0u; i < mParamCount; ++i)
     {
-        newName += mParameters[i]->getType().getMangledName();
+        newName += ANGLE_UNSAFE_TODO(mParameters[i])->getType().getMangledName();
     }
     return ImmutableString(newName);
 }

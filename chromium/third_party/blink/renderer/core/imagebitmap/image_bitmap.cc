@@ -31,7 +31,6 @@
 #include "third_party/blink/renderer/core/svg/graphics/svg_image_for_container.h"
 #include "third_party/blink/renderer/platform/bindings/enumeration_base.h"
 #include "third_party/blink/renderer/platform/graphics/accelerated_static_bitmap_image.h"
-#include "third_party/blink/renderer/platform/graphics/canvas_resource_provider.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context_types.h"
@@ -494,10 +493,10 @@ scoped_refptr<StaticBitmapImage> ImageBitmap::Transfer() {
     // For it to be safe to transfer a StaticBitmapImage it must not be
     // referenced by any other object on this thread.
     // The first step is to attempt to release other references via
-    // NotifyWillTransfer
+    // NotifyImageBitmapWillTransfer.
     const auto content_id =
         image_->PaintImageForCurrentFrame().GetContentIdForFrame(0);
-    CanvasResourceProvider::NotifyWillTransfer(content_id);
+    NotifyImageBitmapWillTransfer(content_id);
 
     // If will still have other references, the last resort is to make a copy
     // of the bitmap.  This could happen, for example, if another ImageBitmap

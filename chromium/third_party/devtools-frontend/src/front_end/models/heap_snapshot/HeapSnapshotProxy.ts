@@ -11,22 +11,32 @@ import type * as HeapSnapshotModel from './HeapSnapshotModel.js';
 
 export class HeapSnapshotWorkerProxy extends Common.ObjectWrapper.ObjectWrapper<HeapSnapshotWorkerProxy.EventTypes> {
   readonly eventHandler: (arg0: string, arg1: string) => void;
+  #console: Common.Console.Console;
   nextObjectId = 1;
   nextCallId = 1;
   callbacks = new Map<number, (...args: any[]) => void>();
   readonly previousCallbacks = new Set<number>();
   readonly worker: PlatformApi.HostRuntime.Worker;
-  interval?: number;
+  interval?: ReturnType<typeof setInterval>;
   readonly workerUrl?: string;
 
-  constructor(eventHandler: (arg0: string, arg1: string) => void, workerUrl?: string) {
+  constructor(
+      eventHandler: (arg0: string, arg1: string) => void,
+      console: Common.Console.Console,
+      workerUrl?: string,
+  ) {
     super();
     this.eventHandler = eventHandler;
+    this.#console = console;
     this.workerUrl = workerUrl;
     this.worker = Platform.HostRuntime.HOST_RUNTIME.createWorker(
         workerUrl ?? import.meta.resolve('../../entrypoints/heap_snapshot_worker/heap_snapshot_worker-entrypoint.js'),
     );
     this.worker.onmessage = this.messageReceived.bind(this);
+  }
+
+  get console(): Common.Console.Console {
+    return this.#console;
   }
 
   createLoader(profileUid: number, snapshotReceivedCallback: (arg0: HeapSnapshotProxy) => void):
@@ -119,7 +129,7 @@ export class HeapSnapshotWorkerProxy extends Common.ObjectWrapper.ObjectWrapper<
       return;
     }
     this.checkLongRunningCalls();
-    this.interval = window.setInterval(this.checkLongRunningCalls.bind(this), 300);
+    this.interval = globalThis.setInterval(this.checkLongRunningCalls.bind(this), 300);
   }
 
   checkLongRunningCalls(): void {
@@ -159,9 +169,8 @@ export class HeapSnapshotWorkerProxy extends Common.ObjectWrapper.ObjectWrapper<
       return;
     }
     if (data.error) {
-      Common.Console.Console.instance().error(
-          `An error occurred when a call to method '${data.errorMethodName}' was requested`);
-      Common.Console.Console.instance().error(data['errorCallStack']);
+      this.#console.error(`An error occurred when a call to method '${data.errorMethodName}' was requested`);
+      this.#console.error(data['errorCallStack']);
       this.callbacks.delete(data.callId);
       return;
     }
@@ -238,14 +247,12 @@ export class HeapSnapshotLoaderProxy extends HeapSnapshotProxyObject implements 
 
   async close(): Promise<void> {
     await this.callMethodPromise('close');
-    const secondWorker = new HeapSnapshotWorkerProxy(() => {}, this.worker.workerUrl);
+    const secondWorker = new HeapSnapshotWorkerProxy(() => {}, this.worker.console, this.worker.workerUrl);
     const channel = new MessageChannel();
     await secondWorker.setupForSecondaryInit(channel.port2);
     const snapshotProxy = await this.callFactoryMethodPromise('buildSnapshot', HeapSnapshotProxy, [channel.port1]);
     secondWorker.dispose();
     this.dispose();
-    // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration)
-    // @ts-expect-error
     snapshotProxy.setProfileUid(this.profileUid);
     await snapshotProxy.updateStaticData();
     this.snapshotReceivedCallback(snapshotProxy);
@@ -254,7 +261,7 @@ export class HeapSnapshotLoaderProxy extends HeapSnapshotProxyObject implements 
 
 export class HeapSnapshotProxy extends HeapSnapshotProxyObject {
   staticData: HeapSnapshotModel.StaticData|null;
-  profileUid?: string;
+  profileUid?: number;
 
   constructor(worker: HeapSnapshotWorkerProxy, objectId: number) {
     super(worker, objectId);
@@ -269,9 +276,17 @@ export class HeapSnapshotProxy extends HeapSnapshotProxyObject {
     return this.callMethodPromise('interfaceDefinitions');
   }
 
+  getNativeContextSizes(): Promise<HeapSnapshotModel.NativeContextSizes> {
+    return this.callMethodPromise('getNativeContextSizes');
+  }
+
   aggregatesWithFilter(filter: HeapSnapshotModel.NodeFilter):
       Promise<Record<string, HeapSnapshotModel.AggregatedInfo>> {
     return this.callMethodPromise('aggregatesWithFilter', filter);
+  }
+
+  getDuplicateStrings(): Promise<HeapSnapshotModel.DuplicateStringGroup[]> {
+    return this.callMethodPromise('getDuplicateStrings');
   }
 
   aggregatesForDiff(interfaceDefinitions: string): Promise<Record<string, HeapSnapshotModel.AggregateForDiff>> {
@@ -279,7 +294,7 @@ export class HeapSnapshotProxy extends HeapSnapshotProxyObject {
   }
 
   calculateSnapshotDiff(
-      baseSnapshotId: string,
+      baseSnapshotId: number,
       baseSnapshotAggregates: Record<string, HeapSnapshotModel.AggregateForDiff>,
       ): Promise<Record<string, HeapSnapshotModel.Diff>> {
     return this.callMethodPromise('calculateSnapshotDiff', baseSnapshotId, baseSnapshotAggregates);
@@ -287,6 +302,14 @@ export class HeapSnapshotProxy extends HeapSnapshotProxyObject {
 
   nodeClassKey(snapshotObjectId: number): Promise<string|null> {
     return this.callMethodPromise('nodeClassKey', snapshotObjectId);
+  }
+
+  nodeIndexForId(nodeId: number): Promise<number|undefined> {
+    return this.callMethodPromise('nodeIndexForId', nodeId);
+  }
+
+  getObjectInfo(nodeIndex: number): Promise<HeapSnapshotModel.ObjectInfo> {
+    return this.callMethodPromise('getObjectInfo', nodeIndex);
   }
 
   createEdgesProvider(nodeIndex: number): HeapSnapshotProviderProxy {
@@ -297,7 +320,7 @@ export class HeapSnapshotProxy extends HeapSnapshotProxyObject {
     return this.callFactoryMethod('createRetainingEdgesProvider', HeapSnapshotProviderProxy, nodeIndex);
   }
 
-  createAddedNodesProvider(baseSnapshotId: string, classKey: string): HeapSnapshotProviderProxy {
+  createAddedNodesProvider(baseSnapshotId: number, classKey: string): HeapSnapshotProviderProxy {
     return this.callFactoryMethod('createAddedNodesProvider', HeapSnapshotProviderProxy, baseSnapshotId, classKey);
   }
 
@@ -363,6 +386,15 @@ export class HeapSnapshotProxy extends HeapSnapshotProxyObject {
     return this.callMethodPromise('ignoreNodeInRetainersView', nodeIndex);
   }
 
+  getRetainingPaths(nodeIndex: number, maxDepth?: number, maxNodes?: number, maxSiblings?: number):
+      Promise<HeapSnapshotModel.RetainingPaths> {
+    return this.callMethodPromise('getRetainingPaths', nodeIndex, maxDepth, maxNodes, maxSiblings);
+  }
+
+  getDominatorsOf(nodeIndex: number): Promise<HeapSnapshotModel.DominatorChain> {
+    return this.callMethodPromise('getDominatorsOf', nodeIndex);
+  }
+
   unignoreNodeInRetainersView(nodeIndex: number): Promise<void> {
     return this.callMethodPromise('unignoreNodeInRetainersView', nodeIndex);
   }
@@ -382,11 +414,11 @@ export class HeapSnapshotProxy extends HeapSnapshotProxyObject {
     return this.staticData.totalSize;
   }
 
-  get uid(): string|undefined {
+  get uid(): number|undefined {
     return this.profileUid;
   }
 
-  setProfileUid(profileUid: string): void {
+  setProfileUid(profileUid: number): void {
     this.profileUid = profileUid;
   }
 

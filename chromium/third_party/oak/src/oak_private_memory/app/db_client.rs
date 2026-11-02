@@ -21,18 +21,19 @@ use metrics::get_global_metrics;
 use sealed_memory_grpc_proto::oak::private_memory::sealed_memory_database_service_client::SealedMemoryDatabaseServiceClient;
 use tokio::sync::RwLock;
 use tonic::transport::{Channel, Endpoint};
+
 const MAX_CONNECT_RETRIES: usize = 5;
 const INITIAL_BACKOFF_MS: u64 = 100;
-const MAX_DECODE_SIZE: usize = 10 * 1024 * 1024; // 10 MB
 
 pub struct SharedDbClient {
     database_service_host: SocketAddr,
+    max_grpc_decode_size: usize,
     client: RwLock<Option<SealedMemoryDatabaseServiceClient<Channel>>>,
 }
 
 impl SharedDbClient {
-    pub fn new(database_service_host: SocketAddr) -> Self {
-        Self { database_service_host, client: RwLock::new(None) }
+    pub fn new(database_service_host: SocketAddr, max_grpc_decode_size: usize) -> Self {
+        Self { database_service_host, max_grpc_decode_size, client: RwLock::new(None) }
     }
 
     pub async fn get_or_connect(
@@ -67,7 +68,7 @@ impl SharedDbClient {
             match endpoint.connect().await {
                 Ok(channel) => {
                     let new_client = SealedMemoryDatabaseServiceClient::new(channel)
-                        .max_decoding_message_size(MAX_DECODE_SIZE);
+                        .max_decoding_message_size(self.max_grpc_decode_size);
                     *write_guard = Some(new_client.clone());
                     info!("Successfully created and cached new DB client");
                     return Ok(new_client);
@@ -77,9 +78,9 @@ impl SharedDbClient {
                 }
             }
 
+            get_global_metrics().inc_db_connect_retries();
             tokio::time::sleep(tokio::time::Duration::from_millis(backoff)).await;
             backoff *= 2;
-            get_global_metrics().inc_db_connect_retries();
         }
         bail!("Failed to connect to database service after {} attempts", MAX_CONNECT_RETRIES);
     }

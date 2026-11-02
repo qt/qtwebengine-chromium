@@ -10,7 +10,7 @@ import type {Browser} from '../api/Browser.js';
 import type {BrowserContext} from '../api/BrowserContext.js';
 import {PageEvent, type Page} from '../api/Page.js';
 import {Target, TargetType} from '../api/Target.js';
-import {debugError} from '../common/util.js';
+import {debugCatchError} from '../common/util.js';
 import type {Viewport} from '../common/Viewport.js';
 import {Deferred} from '../util/Deferred.js';
 
@@ -36,8 +36,7 @@ export class CdpTarget extends Target {
   #targetInfo: Protocol.Target.TargetInfo;
   #targetManager?: TargetManager;
   #sessionFactory:
-    | ((isAutoAttachEmulated: boolean) => Promise<CdpCDPSession>)
-    | undefined;
+    ((isAutoAttachEmulated: boolean) => Promise<CdpCDPSession>) | undefined;
   #childTargets = new Set<CdpTarget>();
   _initializedDeferred = Deferred.create<InitializationStatus>();
   _isClosedDeferred = Deferred.create<void>();
@@ -57,8 +56,7 @@ export class CdpTarget extends Target {
     browserContext: BrowserContext | undefined,
     targetManager: TargetManager | undefined,
     sessionFactory:
-      | ((isAutoAttachEmulated: boolean) => Promise<CdpCDPSession>)
-      | undefined,
+      ((isAutoAttachEmulated: boolean) => Promise<CdpCDPSession>) | undefined,
   ) {
     super();
     this.#session = session;
@@ -233,7 +231,7 @@ export class PageTarget extends CdpTarget {
   }
 
   override _initialize(): void {
-    this._initializedDeferred
+    void this._initializedDeferred
       .valueOrThrow()
       .then(async result => {
         if (result === InitializationStatus.ABORTED) {
@@ -254,7 +252,7 @@ export class PageTarget extends CdpTarget {
         openerPage.emit(PageEvent.Popup, popupPage);
         return true;
       })
-      .catch(debugError);
+      .catch(debugCatchError);
     this._checkIfInitialized();
   }
 

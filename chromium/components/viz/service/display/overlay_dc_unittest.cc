@@ -81,6 +81,9 @@ static ResourceId CreateResourceInLayerTree(
   if (is_overlay_candidate) {
     usage |= gpu::SHARED_IMAGE_USAGE_SCANOUT;
   }
+  if (is_low_latency) {
+    usage |= gpu::SHARED_IMAGE_USAGE_CONCURRENT_READ_WRITE;
+  }
   auto resource = TransferableResource::Make(
       gpu::ClientSharedImage::CreateForTesting(
           {format, size, color_space, kTopLeft_GrSurfaceOrigin,
@@ -88,7 +91,6 @@ static ResourceId CreateResourceInLayerTree(
           GL_TEXTURE_2D),
       TransferableResource::ResourceSource::kTest, gpu::SyncToken());
   resource.hdr_metadata = hdr_metadata;
-  resource.is_low_latency_rendering = is_low_latency;
 
   ResourceId resource_id =
       child_resource_provider->ImportResource(resource, base::DoNothing());
@@ -920,7 +922,7 @@ TEST_F(DCLayerOverlayProcessorTest, RoundedCorners) {
 
     auto* root_pass = pass_list.back().get();
     auto* replaced_quad = root_pass->quad_list.back();
-    auto* replaced_sqs = replaced_quad->shared_quad_state;
+    const SharedQuadState* replaced_sqs = replaced_quad->shared_quad_state;
 
     // The video should be forced to an underlay mode, even there is nothing on
     // top.
@@ -970,7 +972,7 @@ TEST_F(DCLayerOverlayProcessorTest, RoundedCorners) {
 
     auto* root_pass = pass_list.back().get();
     auto* replaced_quad = root_pass->quad_list.back();
-    auto* replaced_sqs = replaced_quad->shared_quad_state;
+    const SharedQuadState* replaced_sqs = replaced_quad->shared_quad_state;
 
     // still in an underlay mode.
     EXPECT_EQ(1U, overlay_data.promoted_overlays.size());
@@ -1020,7 +1022,7 @@ TEST_F(DCLayerOverlayProcessorTest, RoundedCorners) {
 
     auto* root_pass = pass_list.back().get();
     auto* replaced_quad = root_pass->quad_list.back();
-    auto* replaced_sqs = replaced_quad->shared_quad_state;
+    const SharedQuadState* replaced_sqs = replaced_quad->shared_quad_state;
 
     // still in an underlay mode.
     EXPECT_EQ(1U, overlay_data.promoted_overlays.size());
@@ -2612,7 +2614,6 @@ class OverlayProcessorWinTest : public OverlayProcessorTestBase {
 
   std::unique_ptr<OverlayProcessorWin> overlay_processor_;
   gfx::Rect damage_rect_;
-
 };
 
 enum class SurfaceTestMode {

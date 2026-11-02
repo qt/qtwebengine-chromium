@@ -3,17 +3,25 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
-import type * as Common from '../../core/common/common.js';
+import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
-import {createTarget, expectConsoleLogs, stubNoopSettings, updateHostConfig} from '../../testing/EnvironmentHelpers.js';
+import * as AiAssistance from '../../models/ai_assistance/ai_assistance.js';
+import {getContextMenuForElement} from '../../testing/ContextMenuHelpers.js';
 import {
-  describeWithMockConnection,
-  setMockConnectionResponseHandler,
-} from '../../testing/MockConnection.js';
-import {createResource, getMainFrame} from '../../testing/ResourceTreeHelpers.js';
+  createTarget,
+  describeWithEnvironment,
+  expectConsoleLogs,
+  stubNoopSettings,
+  updateHostConfig,
+} from '../../testing/EnvironmentHelpers.js';
+import {setupLocaleHooks} from '../../testing/LocaleHelpers.js';
+import {MockCDPConnection} from '../../testing/MockCDPConnection.js';
+import {createResource, getMainFrame, mockResourceTree} from '../../testing/ResourceTreeHelpers.js';
+import {TestUniverse} from '../../testing/TestUniverse.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import * as Application from './application.js';
@@ -53,8 +61,9 @@ class SharedStorageTreeElementListener {
   }
 }
 
-describeWithMockConnection('ApplicationPanelSidebar', () => {
+describeWithEnvironment('ApplicationPanelSidebar', () => {
   let target: SDK.Target.Target;
+  let tabTarget: SDK.Target.Target;
 
   const TEST_ORIGIN_A = 'http://www.example.com/';
   const TEST_SITE_A = 'http://example.com';
@@ -126,13 +135,16 @@ describeWithMockConnection('ApplicationPanelSidebar', () => {
   beforeEach(() => {
     stubNoopSettings();
     SDK.ChildTargetManager.ChildTargetManager.install();
-    const tabTarget = createTarget({type: SDK.Target.Type.TAB});
+    const connection = new MockCDPConnection();
+    mockResourceTree(connection);
+    connection.setSuccessHandler('Storage.getSharedStorageEntries',
+                                 () => ({} as Protocol.Storage.GetSharedStorageEntriesResponse));
+    connection.setSuccessHandler('Storage.setSharedStorageTracking', () => ({}));
+    tabTarget = createTarget({type: SDK.Target.Type.TAB, connection});
     createTarget({parentTarget: tabTarget, subtype: 'prerender'});
     target = createTarget({parentTarget: tabTarget});
+    SDK.TargetManager.TargetManager.instance().setScopeTarget(target);
     sinon.stub(UI.ViewManager.ViewManager.instance(), 'showView').resolves();  // Silence console error
-    setMockConnectionResponseHandler(
-        'Storage.getSharedStorageEntries', () => ({} as Protocol.Storage.GetSharedStorageEntriesResponse));
-    setMockConnectionResponseHandler('Storage.setSharedStorageTracking', () => ({}));
   });
 
   it('shows WebMCP only if the WebMCP config is enabled', async () => {
@@ -145,6 +157,18 @@ describeWithMockConnection('ApplicationPanelSidebar', () => {
     Application.ResourcesPanel.ResourcesPanel.instance({forceNew: true});
     sidebar = await Application.ResourcesPanel.ResourcesPanel.showAndGetSidebar();
     assert.isUndefined(sidebar.webMcpTreeElement);
+  });
+
+  it('shows Ads panel only if the Ads panel config is enabled', async () => {
+    updateHostConfig({devToolsAdsPanel: {enabled: true}});
+    Application.ResourcesPanel.ResourcesPanel.instance({forceNew: true});
+    let sidebar = await Application.ResourcesPanel.ResourcesPanel.showAndGetSidebar();
+    assert.exists(sidebar.adsTreeElement);
+
+    updateHostConfig({devToolsAdsPanel: {enabled: false}});
+    Application.ResourcesPanel.ResourcesPanel.instance({forceNew: true});
+    sidebar = await Application.ResourcesPanel.ResourcesPanel.showAndGetSidebar();
+    assert.isUndefined(sidebar.adsTreeElement);
   });
 
   it('shows cookies for all frames', async () => {
@@ -331,15 +355,6 @@ describeWithMockConnection('ApplicationPanelSidebar', () => {
     assert.strictEqual(expectedCall.called, inScope);
   };
 
-  it('adds interest group event on in scope event',
-     testUiUpdate(
-         Application.InterestGroupStorageModel.Events.INTEREST_GROUP_ACCESS,
-         Application.InterestGroupStorageModel.InterestGroupStorageModel, 'interestGroupTreeElement.addEvent', true));
-
-  it('does not add interest group event on out of scope event',
-     testUiUpdate(
-         Application.InterestGroupStorageModel.Events.INTEREST_GROUP_ACCESS,
-         Application.InterestGroupStorageModel.InterestGroupStorageModel, 'interestGroupTreeElement.addEvent', false));
   it('adds DOM storage on in scope event',
      testUiUpdate(
          SDK.DOMStorageModel.Events.DOM_STORAGE_ADDED, SDK.DOMStorageModel.DOMStorageModel,
@@ -450,16 +465,20 @@ describeWithMockConnection('ApplicationPanelSidebar', () => {
   });
 });
 
-describeWithMockConnection('IDBDatabaseTreeElement', () => {
+describeWithEnvironment('IDBDatabaseTreeElement', () => {
+  let target: SDK.Target.Target;
   beforeEach(() => {
     stubNoopSettings();
+    const connection = new MockCDPConnection();
+    mockResourceTree(connection);
+    target = createTarget({connection});
+    SDK.TargetManager.TargetManager.instance().setScopeTarget(target);
   });
   expectConsoleLogs({
     error: ['Error: No LanguageSelector instance exists yet.'],
   });
 
   it('only becomes selectable after database is updated', () => {
-    const target = createTarget();
     const model = target.model(Application.IndexedDBModel.IndexedDBModel);
     assert.exists(model);
     const panel = Application.ResourcesPanel.ResourcesPanel.instance({forceNew: true});
@@ -472,13 +491,15 @@ describeWithMockConnection('IDBDatabaseTreeElement', () => {
   });
 });
 
-describeWithMockConnection('ResourcesSection', () => {
+describeWithEnvironment('ResourcesSection', () => {
   const tests = (inScope: boolean) => () => {
     let target: SDK.Target.Target;
     beforeEach(() => {
       stubNoopSettings();
       SDK.FrameManager.FrameManager.instance({forceNew: true});
-      target = createTarget();
+      const connection = new MockCDPConnection();
+      mockResourceTree(connection);
+      target = createTarget({connection});
     });
 
     expectConsoleLogs({
@@ -524,7 +545,7 @@ describeWithMockConnection('ResourcesSection', () => {
   describe('out of scope', tests(false));
 });
 
-describeWithMockConnection('IndexedDBTreeElement live update', () => {
+describeWithEnvironment('IndexedDBTreeElement live update', () => {
   let target: SDK.Target.Target;
   let model: Application.IndexedDBModel.IndexedDBModel;
   let sidebar: Application.ApplicationPanelSidebar.ApplicationPanelSidebar;
@@ -532,7 +553,10 @@ describeWithMockConnection('IndexedDBTreeElement live update', () => {
 
   beforeEach(async () => {
     stubNoopSettings();
-    target = createTarget();
+    const connection = new MockCDPConnection();
+    mockResourceTree(connection);
+    target = createTarget({connection});
+    SDK.TargetManager.TargetManager.instance().setScopeTarget(target);
     model = target.model(Application.IndexedDBModel.IndexedDBModel) as Application.IndexedDBModel.IndexedDBModel;
     sinon.stub(model, 'refreshDatabase');
     sinon.stub(UI.ViewManager.ViewManager.instance(), 'showView').resolves();  // Silence console error
@@ -643,5 +667,274 @@ describeWithMockConnection('IndexedDBTreeElement live update', () => {
     model.dispatchEventToListeners(Application.IndexedDBModel.Events.DatabaseRemoved, {databaseId: db2Id, model});
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.strictEqual(indexedDBTreeElement.childCount(), 0);
+  });
+
+  it('marks object store and index views as needing refresh on indexedDBContentUpdated', async () => {
+    const MAIN_FRAME_ID = 'main' as Protocol.Page.FrameId;
+    const storageKey = `test-storage-key|${MAIN_FRAME_ID}|http://www.example.com`;
+
+    sinon.stub(model, 'loadObjectStoreData')
+        .callsFake((_dbId, _storeName, _keyRange, _skipCount, _pageSize, callback) => {
+          callback([], false);
+        });
+    sinon.stub(model, 'loadIndexData')
+        .callsFake((_dbId, _storeName, _indexName, _keyRange, _skipCount, _pageSize, callback) => {
+          callback([], false);
+        });
+    sinon.stub(model, 'getMetadata').resolves({entriesCount: 0, keyGeneratorValue: 0});
+
+    const db1Id = new Application.IndexedDBModel.DatabaseId({storageKey}, 'database1');
+    model.dispatchEventToListeners(Application.IndexedDBModel.Events.DatabaseAdded, {databaseId: db1Id, model});
+    const db1 = new Application.IndexedDBModel.Database(db1Id, 1);
+    const os1 = new Application.IndexedDBModel.ObjectStore('objectStore1', 'test', false);
+    os1.indexes.set('index1', new Application.IndexedDBModel.Index('index1', 'test', false, false));
+    db1.objectStores.set('objectStore1', os1);
+    model.dispatchEventToListeners(Application.IndexedDBModel.Events.DatabaseLoaded,
+                                   {database: db1, model, entriesUpdated: true});
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    const db1TreeElement =
+        indexedDBTreeElement.children()[0] as Application.ApplicationPanelSidebar.IDBDatabaseTreeElement;
+    const os1TreeElement =
+        db1TreeElement.children()[0] as Application.ApplicationPanelSidebar.IDBObjectStoreTreeElement;
+    const index1TreeElement = os1TreeElement.children()[0] as Application.ApplicationPanelSidebar.IDBIndexTreeElement;
+
+    os1TreeElement.onselect(false);
+    index1TreeElement.onselect(false);
+
+    interface TreeElementWithView {
+      view?: Application.IndexedDBViews.IDBDataView;
+    }
+    const os1View = (os1TreeElement as unknown as TreeElementWithView).view;
+    const index1View = (index1TreeElement as unknown as TreeElementWithView).view;
+    assert.exists(os1View);
+    assert.exists(index1View);
+
+    assert.isNull(os1View.element.querySelector('.stale-data-warning'));
+    assert.isNull(index1View.element.querySelector('.stale-data-warning'));
+
+    model.dispatchEventToListeners(Application.IndexedDBModel.Events.IndexedDBContentUpdated,
+                                   {databaseId: db1Id, objectStoreName: 'objectStore1', model});
+
+    assert.isNotNull(os1View.element.querySelector('.stale-data-warning'));
+    assert.isNotNull(index1View.element.querySelector('.stale-data-warning'));
+
+    os1View.refreshData();
+    index1View.refreshData();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    assert.isNull(os1View.element.querySelector('.stale-data-warning'));
+    assert.isNull(index1View.element.querySelector('.stale-data-warning'));
+  });
+});
+
+describe('Ask-AI Hover Floating Button', () => {
+  setupLocaleHooks();
+
+  let universe: TestUniverse;
+  let target: SDK.Target.Target;
+  let panel: Application.ResourcesPanel.ResourcesPanel;
+
+  before(() => {
+    UI.ActionRegistration.registerActionExtension({
+      actionId: 'ai-assistance.storage-floating-button',
+      category: UI.ActionRegistration.ActionCategory.GLOBAL,
+      title: () => 'Ask Ai' as Common.UIString.LocalizedString,
+    });
+  });
+
+  beforeEach(() => {
+    universe = new TestUniverse();
+    target = universe.createTarget({url: urlString`http://example.com/`});
+    sinon.stub(target, 'inspectedURL').returns(urlString`http://example.com/`);
+    sinon.stub(universe.targetManager, 'primaryPageTarget').returns(target);
+
+    // Bridge legacy SDK and Settings singletons for legacy tree elements
+    const {targetManager, settings} = universe;
+    sinon.stub(SDK.TargetManager.TargetManager, 'instance').returns(targetManager);
+    sinon.stub(Common.Settings.Settings, 'instance').returns(settings);
+
+    const actionRegistry = UI.ActionRegistry.ActionRegistry.instance({forceNew: true});
+    UI.ShortcutRegistry.ShortcutRegistry.instance({forceNew: true, actionRegistry});
+
+    panel = sinon.createStubInstance(Application.ResourcesPanel.ResourcesPanel);
+  });
+
+  it('adds hover Ask-AI button for DOMStorageTreeElement', () => {
+    const domStorageModel = target.model(SDK.DOMStorageModel.DOMStorageModel);
+    assert.exists(domStorageModel);
+    const domStorage = new SDK.DOMStorageModel.DOMStorage(domStorageModel, 'http://example.com/', true);
+    const treeElement = new Application.ApplicationPanelSidebar.DOMStorageTreeElement(panel, domStorage);
+    treeElement.onattach();
+
+    const floatingButton = treeElement.listItemElement.querySelector('devtools-floating-button');
+    assert.exists(floatingButton, 'Expected Ask-AI floating button on tree element');
+  });
+
+  it('adds hover Ask-AI button for CookieTreeElement', () => {
+    const resourceTreeModel = target.model(SDK.ResourceTreeModel.ResourceTreeModel);
+    assert.exists(resourceTreeModel);
+    const frame = sinon.createStubInstance(SDK.ResourceTreeModel.ResourceTreeFrame);
+    frame.resourceTreeModel.returns(resourceTreeModel);
+    const cookieUrl = new Common.ParsedURL.ParsedURL('https://example.com/');
+    const treeElement = new Application.ApplicationPanelSidebar.CookieTreeElement(panel, frame, cookieUrl);
+    treeElement.onattach();
+    const floatingButton = treeElement.listItemElement.querySelector('devtools-floating-button') ||
+        treeElement.listItemElement.querySelector('button');
+    assert.exists(floatingButton, 'Expected Ask-AI floating button on tree element');
+  });
+});
+
+describe('Storage Agent Context Menu', () => {
+  setupLocaleHooks();
+
+  let universe: TestUniverse;
+  let target: SDK.Target.Target;
+  let panel: Application.ResourcesPanel.ResourcesPanel;
+  let actionExecutedStub: sinon.SinonStub;
+
+  before(() => {
+    actionExecutedStub = sinon.stub();
+    UI.ActionRegistration.registerActionExtension({
+      actionId: 'ai-assistance.application-panel-context',
+      category: UI.ActionRegistration.ActionCategory.GLOBAL,
+      title: () => 'Debug with AI' as Common.UIString.LocalizedString,
+      contextTypes() {
+        return [AiAssistance.StorageItem.StorageItem];
+      },
+    });
+    universe = new TestUniverse();
+    target = universe.createTarget({url: urlString`http://example.com/`});
+    panel = sinon.createStubInstance(Application.ResourcesPanel.ResourcesPanel);
+  });
+
+  beforeEach(() => {
+    actionExecutedStub.resetHistory();
+    sinon.stub(target, 'inspectedURL').returns(urlString`http://example.com/`);
+    sinon.stub(universe.targetManager, 'primaryPageTarget').returns(target);
+    sinon.stub(SDK.TargetManager.TargetManager, 'instance').returns(universe.targetManager);
+    sinon.stub(Common.Settings.Settings, 'instance').returns(universe.settings);
+
+    const actionRegistry = UI.ActionRegistry.ActionRegistry.instance({forceNew: true});
+    UI.ShortcutRegistry.ShortcutRegistry.instance({forceNew: true, actionRegistry});
+  });
+
+  it('populates context menu with Debug with AI submenu and expected items for DOMStorageTreeElement', () => {
+    const domStorageModel = target.model(SDK.DOMStorageModel.DOMStorageModel);
+    assert.exists(domStorageModel);
+    const domStorage = new SDK.DOMStorageModel.DOMStorage(domStorageModel, 'http://example.com/', true);
+    const treeElement = new Application.ApplicationPanelSidebar.DOMStorageTreeElement(panel, domStorage);
+    treeElement.onattach();
+
+    const contextMenu = getContextMenuForElement(treeElement.listItemElement);
+    const footerSection = contextMenu.footerSection();
+    const debugWithAiItemInFooter = footerSection.items.find(item => item.buildDescriptor().label === 'Debug with AI');
+    assert.exists(debugWithAiItemInFooter, 'Expected Debug with AI context menu item in footer section');
+
+    const debugWithAiItem = contextMenu.buildDescriptor().subItems?.find(item => item.label === 'Debug with AI');
+    assert.exists(debugWithAiItem, 'Expected Debug with AI context menu item');
+
+    assert.deepEqual(debugWithAiItem.subItems?.map(item => item.label), ['Start a chat', 'Explain storage']);
+
+    // Test primary action execution (Start a chat)
+    const startChatSubItem = debugWithAiItem.subItems?.find(item => item.label === 'Start a chat');
+    assert.exists(startChatSubItem?.id);
+    contextMenu.invokeHandler(startChatSubItem.id);
+
+    const flavor = UI.Context.Context.instance().flavor(AiAssistance.StorageItem.StorageItem);
+    assert.exists(flavor);
+    assert.instanceOf(flavor, AiAssistance.StorageItem.DOMStorageItem);
+    assert.strictEqual((flavor as AiAssistance.StorageItem.DOMStorageItem).type, 'localStorage');
+  });
+
+  it('populates context menu with Debug with AI submenu and expected items for CookieTreeElement', () => {
+    const resourceTreeModel = target.model(SDK.ResourceTreeModel.ResourceTreeModel);
+    assert.exists(resourceTreeModel);
+    const frame = sinon.createStubInstance(SDK.ResourceTreeModel.ResourceTreeFrame);
+    frame.resourceTreeModel.returns(resourceTreeModel);
+    const cookieUrl = new Common.ParsedURL.ParsedURL('https://example.com/');
+    const treeElement = new Application.ApplicationPanelSidebar.CookieTreeElement(panel, frame, cookieUrl);
+    treeElement.onattach();
+
+    const contextMenu = getContextMenuForElement(treeElement.listItemElement);
+    const footerSection = contextMenu.footerSection();
+    const debugWithAiItemInFooter = footerSection.items.find(item => item.buildDescriptor().label === 'Debug with AI');
+    assert.exists(debugWithAiItemInFooter, 'Expected Debug with AI context menu item in footer section');
+
+    const debugWithAiItem = contextMenu.buildDescriptor().subItems?.find(item => item.label === 'Debug with AI');
+    assert.exists(debugWithAiItem, 'Expected Debug with AI context menu item');
+
+    assert.deepEqual(debugWithAiItem.subItems?.map(item => item.label), ['Start a chat', 'Explain cookies']);
+
+    // Test secondary action execution (Explain cookies)
+    const explainCookiesSubItem = debugWithAiItem.subItems?.find(item => item.label === 'Explain cookies');
+    assert.exists(explainCookiesSubItem?.id);
+    contextMenu.invokeHandler(explainCookiesSubItem.id);
+
+    const flavor = UI.Context.Context.instance().flavor(AiAssistance.StorageItem.StorageItem);
+    assert.exists(flavor);
+    assert.instanceOf(flavor, AiAssistance.StorageItem.CookieItem);
+    assert.strictEqual((flavor as AiAssistance.StorageItem.CookieItem).origin, 'https://example.com');
+  });
+});
+
+describe('Storage Agent Selection', () => {
+  setupLocaleHooks();
+
+  let universe: TestUniverse;
+  let target: SDK.Target.Target;
+  let panel: Application.ResourcesPanel.ResourcesPanel;
+
+  beforeEach(() => {
+    universe = new TestUniverse();
+    target = universe.createTarget({url: urlString`http://example.com/`});
+    sinon.stub(target, 'inspectedURL').returns(urlString`http://example.com/`);
+    sinon.stub(universe.targetManager, 'primaryPageTarget').returns(target);
+    sinon.stub(SDK.TargetManager.TargetManager, 'instance').returns(universe.targetManager);
+    sinon.stub(Common.Settings.Settings, 'instance').returns(universe.settings);
+
+    panel = sinon.createStubInstance(Application.ResourcesPanel.ResourcesPanel);
+  });
+
+  it('sets active StorageItem flavor on DOMStorageTreeElement selection', () => {
+    const domStorageModel = target.model(SDK.DOMStorageModel.DOMStorageModel);
+    assert.exists(domStorageModel);
+    const domStorage = new SDK.DOMStorageModel.DOMStorage(domStorageModel, 'http://example.com/', true);
+    const treeOutline = new UI.TreeOutline.TreeOutlineInShadow();
+    const treeElement = new Application.ApplicationPanelSidebar.DOMStorageTreeElement(panel, domStorage);
+    treeOutline.appendChild(treeElement);
+
+    // Clear flavor first
+    UI.Context.Context.instance().setFlavor(AiAssistance.StorageItem.StorageItem, null);
+
+    // Select the element
+    treeElement.select();
+
+    const flavor = UI.Context.Context.instance().flavor(AiAssistance.StorageItem.StorageItem);
+    assert.exists(flavor);
+    assert.instanceOf(flavor, AiAssistance.StorageItem.DOMStorageItem);
+    assert.strictEqual((flavor as AiAssistance.StorageItem.DOMStorageItem).type, 'localStorage');
+  });
+
+  it('sets active StorageItem flavor on CookieTreeElement selection', () => {
+    const resourceTreeModel = target.model(SDK.ResourceTreeModel.ResourceTreeModel);
+    assert.exists(resourceTreeModel);
+    const frame = sinon.createStubInstance(SDK.ResourceTreeModel.ResourceTreeFrame);
+    frame.resourceTreeModel.returns(resourceTreeModel);
+    const cookieUrl = new Common.ParsedURL.ParsedURL('https://example.com/');
+    const treeOutline = new UI.TreeOutline.TreeOutlineInShadow();
+    const treeElement = new Application.ApplicationPanelSidebar.CookieTreeElement(panel, frame, cookieUrl);
+    treeOutline.appendChild(treeElement);
+
+    // Clear flavor first
+    UI.Context.Context.instance().setFlavor(AiAssistance.StorageItem.StorageItem, null);
+
+    // Select the element
+    treeElement.select();
+
+    const flavor = UI.Context.Context.instance().flavor(AiAssistance.StorageItem.StorageItem);
+    assert.exists(flavor);
+    assert.instanceOf(flavor, AiAssistance.StorageItem.CookieItem);
+    assert.strictEqual((flavor as AiAssistance.StorageItem.CookieItem).origin, 'https://example.com');
   });
 });

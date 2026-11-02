@@ -51,7 +51,8 @@ class UpperBidiagonalization {
    * The default constructor is useful in cases in which the user intends to
    * perform decompositions via Bidiagonalization::compute(const MatrixType&).
    */
-  UpperBidiagonalization() : m_householder(), m_bidiagonal(0, 0), m_isInitialized(false) {}
+  UpperBidiagonalization()
+      : m_householder(), m_bidiagonal(m_householder.cols(), m_householder.cols()), m_isInitialized(false) {}
 
   explicit UpperBidiagonalization(const MatrixType& matrix)
       : m_householder(matrix.rows(), matrix.cols()),
@@ -184,7 +185,7 @@ void upperbidiagonalization_blocked_helper(
       SubMatType Y_k(Y.block(k + 1, 0, remainingCols, k + 1));
       SubMatType U_k1(A.block(0, k + 1, k, remainingCols));
 
-      // this eases the application of Householder transforAions
+      // this eases the application of Householder transformations
       // A(k,k) will store tau_v later
       A(k, k) = Scalar(1);
 

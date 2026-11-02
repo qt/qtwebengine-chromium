@@ -48,6 +48,7 @@
 #include "third_party/blink/renderer/core/style_property_shorthand.h"
 #include "third_party/blink/renderer/core/testing/color_scheme_helper.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
@@ -192,7 +193,8 @@ class TestCascade {
   }
 
   String ComputedValue(String name) const {
-    CSSPropertyRef ref(name, GetDocument());
+    AtomicString atomic_name(name);
+    CSSPropertyRef ref(&atomic_name, GetDocument());
     DCHECK(ref.IsValid());
     const LayoutObject* layout_object = nullptr;
     bool allow_visited_style = false;
@@ -717,8 +719,9 @@ TEST_F(StyleCascadeTest, DetectCycleByName) {
   TestCascadeResolver resolver;
 
   // Two different CustomProperty instances with the same name:
-  CustomProperty a1(AtomicString("--a"), GetDocument());
-  CustomProperty a2(AtomicString("--a"), GetDocument());
+  AtomicString a_name("--a");
+  CustomProperty a1(&a_name, GetDocument());
+  CustomProperty a2(&a_name, GetDocument());
 
   {
     TestCascadeAutoLock lock(a1, resolver);
@@ -736,9 +739,12 @@ TEST_F(StyleCascadeTest, ResolverDetectCycle) {
   TestCascade cascade(GetDocument());
   TestCascadeResolver resolver;
 
-  CustomProperty a(AtomicString("--a"), GetDocument());
-  CustomProperty b(AtomicString("--b"), GetDocument());
-  CustomProperty c(AtomicString("--c"), GetDocument());
+  AtomicString a_name("--a");
+  AtomicString b_name("--b");
+  AtomicString c_name("--c");
+  CustomProperty a(&a_name, GetDocument());
+  CustomProperty b(&b_name, GetDocument());
+  CustomProperty c(&c_name, GetDocument());
 
   {
     TestCascadeAutoLock lock_a(a, resolver);
@@ -764,10 +770,14 @@ TEST_F(StyleCascadeTest, ResolverDetectNoCycle) {
   TestCascade cascade(GetDocument());
   TestCascadeResolver resolver;
 
-  CustomProperty a(AtomicString("--a"), GetDocument());
-  CustomProperty b(AtomicString("--b"), GetDocument());
-  CustomProperty c(AtomicString("--c"), GetDocument());
-  CustomProperty x(AtomicString("--x"), GetDocument());
+  AtomicString a_name("--a");
+  AtomicString b_name("--b");
+  AtomicString c_name("--c");
+  AtomicString x_name("--x");
+  CustomProperty a(&a_name, GetDocument());
+  CustomProperty b(&b_name, GetDocument());
+  CustomProperty c(&c_name, GetDocument());
+  CustomProperty x(&x_name, GetDocument());
 
   {
     TestCascadeAutoLock lock_a(a, resolver);
@@ -793,7 +803,8 @@ TEST_F(StyleCascadeTest, ResolverDetectCycleSelf) {
   TestCascade cascade(GetDocument());
   TestCascadeResolver resolver;
 
-  CustomProperty a(AtomicString("--a"), GetDocument());
+  AtomicString a_name("--a");
+  CustomProperty a(&a_name, GetDocument());
 
   {
     TestCascadeAutoLock lock(a, resolver);
@@ -811,10 +822,14 @@ TEST_F(StyleCascadeTest, ResolverDetectMultiCycle) {
   TestCascade cascade(GetDocument());
   TestCascadeResolver resolver;
 
-  CustomProperty a(AtomicString("--a"), GetDocument());
-  CustomProperty b(AtomicString("--b"), GetDocument());
-  CustomProperty c(AtomicString("--c"), GetDocument());
-  CustomProperty d(AtomicString("--d"), GetDocument());
+  AtomicString a_name("--a");
+  AtomicString b_name("--b");
+  AtomicString c_name("--c");
+  AtomicString d_name("--d");
+  CustomProperty a(&a_name, GetDocument());
+  CustomProperty b(&b_name, GetDocument());
+  CustomProperty c(&c_name, GetDocument());
+  CustomProperty d(&d_name, GetDocument());
 
   {
     AutoLock lock_a(a, resolver);
@@ -853,10 +868,14 @@ TEST_F(StyleCascadeTest, ResolverDetectMultiCycleReverse) {
   TestCascade cascade(GetDocument());
   TestCascadeResolver resolver;
 
-  CustomProperty a(AtomicString("--a"), GetDocument());
-  CustomProperty b(AtomicString("--b"), GetDocument());
-  CustomProperty c(AtomicString("--c"), GetDocument());
-  CustomProperty d(AtomicString("--d"), GetDocument());
+  AtomicString a_name("--a");
+  AtomicString b_name("--b");
+  AtomicString c_name("--c");
+  AtomicString d_name("--d");
+  CustomProperty a(&a_name, GetDocument());
+  CustomProperty b(&b_name, GetDocument());
+  CustomProperty c(&c_name, GetDocument());
+  CustomProperty d(&d_name, GetDocument());
 
   {
     AutoLock lock_a(a, resolver);
@@ -895,9 +914,12 @@ TEST_F(StyleCascadeTest, CurrentProperty) {
   TestCascade cascade(GetDocument());
   TestCascadeResolver resolver;
 
-  CustomProperty a(AtomicString("--a"), GetDocument());
-  CustomProperty b(AtomicString("--b"), GetDocument());
-  CustomProperty c(AtomicString("--c"), GetDocument());
+  AtomicString a_name("--a");
+  AtomicString b_name("--b");
+  AtomicString c_name("--c");
+  CustomProperty a(&a_name, GetDocument());
+  CustomProperty b(&b_name, GetDocument());
+  CustomProperty c(&c_name, GetDocument());
 
   EXPECT_FALSE(resolver.CurrentProperty());
   {
@@ -923,10 +945,14 @@ TEST_F(StyleCascadeTest, CycleWithExtraEdge) {
   TestCascade cascade(GetDocument());
   TestCascadeResolver resolver;
 
-  CustomProperty a(AtomicString("--a"), GetDocument());
-  CustomProperty b(AtomicString("--b"), GetDocument());
-  CustomProperty c(AtomicString("--c"), GetDocument());
-  CustomProperty d(AtomicString("--d"), GetDocument());
+  AtomicString a_name("--a");
+  AtomicString b_name("--b");
+  AtomicString c_name("--c");
+  AtomicString d_name("--d");
+  CustomProperty a(&a_name, GetDocument());
+  CustomProperty b(&b_name, GetDocument());
+  CustomProperty c(&c_name, GetDocument());
+  CustomProperty d(&d_name, GetDocument());
 
   {
     AutoLock lock_a(a, resolver);
@@ -4122,13 +4148,12 @@ class NullAnchorEvaluator : public AnchorEvaluator {
  public:
   std::optional<LayoutUnit> Evaluate(
       const AnchorQuery&,
-      const StylePositionAnchor& position_anchor,
+      const DefaultAnchorData&,
       const std::optional<PositionAreaOffsets>&) override {
     return std::nullopt;
   }
   std::optional<PositionAreaOffsets> ComputePositionAreaOffsetsForLayout(
-      const StylePositionAnchor&,
-      PositionArea) override {
+      const DefaultAnchorData&) override {
     return PositionAreaOffsets();
   }
   std::optional<PhysicalOffset> ComputeAnchorCenterOffsets(
@@ -4409,7 +4434,7 @@ class TopAnchorEvaluator : public NullAnchorEvaluator {
  public:
   std::optional<LayoutUnit> Evaluate(
       const AnchorQuery&,
-      const StylePositionAnchor& position_anchor,
+      const DefaultAnchorData&,
       const std::optional<PositionAreaOffsets>&) override {
     if (GetMode() == Mode::kTop) {
       return LayoutUnit(1);
@@ -4866,4 +4891,37 @@ TEST_F(StyleCascadeTest, CSSFunctionDoesNotExistInShorthand) {
   }
 }
 
+// When `line-clamp` is exposed as a longhand, it overlaps with
+// `-alternative-webkit-line-clamp`.
+TEST_F(StyleCascadeTest, LineClampCascadeOrder) {
+  ScopedCSSLineClampForTest scoped_feature1(true);
+  ScopedCSSLineClampAsShorthandForTest scoped_feature2(false);
+
+  {
+    TestCascade cascade(GetDocument());
+    cascade.Add("line-clamp", "6 auto");
+    cascade.Add("-webkit-line-clamp", "3");
+    cascade.Apply();
+    EXPECT_EQ("3 -webkit-legacy", cascade.ComputedValue("line-clamp"));
+    EXPECT_EQ("3", cascade.ComputedValue("-webkit-line-clamp"));
+  }
+
+  {
+    TestCascade cascade(GetDocument());
+    cascade.Add("-webkit-line-clamp", "3");
+    cascade.Add("line-clamp", "none");
+    cascade.Apply();
+    EXPECT_EQ("none", cascade.ComputedValue("line-clamp"));
+    EXPECT_EQ("none", cascade.ComputedValue("-webkit-line-clamp"));
+  }
+
+  {
+    TestCascade cascade(GetDocument());
+    cascade.Add("-webkit-line-clamp", "3", Origin::kUser);
+    cascade.Add("line-clamp", "6 auto", Origin::kAuthor);
+    cascade.Apply();
+    EXPECT_EQ("6 auto", cascade.ComputedValue("line-clamp"));
+    EXPECT_EQ(nullptr, cascade.ComputedValue("-webkit-line-clamp"));
+  }
+}
 }  // namespace blink

@@ -4,7 +4,7 @@
 
 import {assert} from 'chai';
 
-import * as TextUtils from '../../models/text_utils/text_utils.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 
 import * as Network from './network.js';
 

@@ -18,6 +18,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/bind.h"
 #include "base/test/scoped_feature_list.h"
+#include "build/build_config.h"
 #include "chrome/browser/preloading/chrome_preloading.h"
 #include "chrome/browser/preloading/prefetch/search_prefetch/field_trial_settings.h"
 #include "chrome/browser/preloading/prefetch/search_prefetch/search_prefetch_browser_test_base.h"
@@ -87,13 +88,16 @@ class RealboxSearchBrowserTestPage : public searchbox::mojom::Page {
       const base::UnguessableToken& token,
       searchbox::mojom::SelectedFileInfoPtr file_info) override {}
   void UpdateAutoSuggestedTabContext(
-      searchbox::mojom::TabInfoPtr tab_info) override {}
+      searchbox::mojom::TabInfoPtr tab_info,
+      const std::optional<std::string>& invocation_source) override {}
   void OnPermissionPromptChanged(bool is_showing,
                                  const gfx::Size& prompt_size) override {}
-  MOCK_METHOD(void, SetKeywordSelected, (bool is_keyword_selected), (override));
   MOCK_METHOD(void, UpdateContentSharingPolicy, (bool enabled), (override));
   MOCK_METHOD(void, UpdateLensSearchEligibility, (bool eligible), (override));
   MOCK_METHOD(void, UpdateAimPopupEligibility, (bool eligible), (override));
+#if !BUILDFLAG(IS_ANDROID)
+  MOCK_METHOD(void, UpdateSmartTabSharingActive, (bool active), (override));
+#endif
   MOCK_METHOD(void,
               SetRestoredTabIds,
               (const std::vector<int32_t>& ids),
@@ -109,6 +113,11 @@ class RealboxSearchBrowserTestPage : public searchbox::mojom::Page {
               (override));
   MOCK_METHOD(void, OpenCurrentSelection, (WindowOpenDisposition), (override));
   MOCK_METHOD(void, SetAimButtonVisible, (bool visible), (override));
+  MOCK_METHOD(
+      void,
+      SetAimButtonConfig,
+      (const std::string&, const std::string&, const std::string&, const GURL&),
+      (override));
 
   mojo::PendingRemote<searchbox::mojom::Page> GetRemotePage() {
     return receiver_.BindNewPipeAndPassRemote();
@@ -139,7 +148,7 @@ class RealboxSearchPreloadBrowserTest : public SearchPrefetchBaseBrowserTest {
     RealboxSearchBrowserTestPage page;
     RealboxHandler realbox_handler = RealboxHandler(
         remote_page_handler.BindNewPipeAndPassReceiver(), page.GetRemotePage(),
-        browser()->profile(), GetWebContents(),
+        browser()->GetProfile(), GetWebContents(),
         base::BindLambdaForTesting(
             []() -> contextual_search::ContextualSearchSessionHandle* {
               return nullptr;
@@ -154,8 +163,11 @@ class RealboxSearchPreloadBrowserTest : public SearchPrefetchBaseBrowserTest {
     auto [search_url, prefetch] = GetSearchPrefetchAndNonPrefetch(search_terms);
     // Fake a WebUI input.
     remote_page_handler->QueryAutocomplete(
-        base::ASCIIToUTF16(input_query),
-        /*prevent_inline_autocomplete=*/false, 0);
+        0, base::ASCIIToUTF16(input_query),
+        /*prevent_inline_autocomplete=*/false, 0,
+        omnibox::SuggestInventory::SUGGEST_INVENTORY_DEFAULT,
+        /*is_on_focus=*/false, /*keyword=*/"",
+        searchbox::mojom::InputMethod::kKeyboard);
     remote_page_handler.FlushForTesting();
 
     // Prefetch should be triggered.
@@ -230,7 +242,7 @@ IN_PROC_BROWSER_TEST_F(RealboxSearchPreloadWithSearchStatsBrowserTest,
 
   // The prefetch should match the prerender.
   EXPECT_TRUE(IsSearchDestinationMatch(GetCanonicalSearchURL(prefetch_url),
-                                       browser()->profile(), prerender_url));
+                                       browser()->GetProfile(), prerender_url));
 }
 
 IN_PROC_BROWSER_TEST_F(RealboxSearchPreloadWithoutSearchStatsBrowserTest,
@@ -249,7 +261,7 @@ IN_PROC_BROWSER_TEST_F(RealboxSearchPreloadWithoutSearchStatsBrowserTest,
 
   // The prefetch should match the prerender.
   EXPECT_TRUE(IsSearchDestinationMatch(GetCanonicalSearchURL(prefetch_url),
-                                       browser()->profile(), prerender_url));
+                                       browser()->GetProfile(), prerender_url));
 }
 
 class RealboxHandlerTest : public InProcessBrowserTest,
@@ -274,7 +286,7 @@ class RealboxHandlerTest : public InProcessBrowserTest,
     InProcessBrowserTest::SetUpOnMainThread();
     handler_ = std::make_unique<RealboxHandler>(
         mojo::PendingReceiver<searchbox::mojom::PageHandler>(),
-        page_.BindAndGetRemote(), browser()->profile(),
+        page_.BindAndGetRemote(), browser()->GetProfile(),
         /*web_contents=*/browser()->tab_strip_model()->GetActiveWebContents(),
         base::BindLambdaForTesting(
             []() -> contextual_search::ContextualSearchSessionHandle* {
@@ -292,7 +304,7 @@ IN_PROC_BROWSER_TEST_F(RealboxHandlerTest, RealboxUpdatesEditModelInput) {
   handler_->autocomplete_controller_observation_.Reset();
 
   TemplateURLService* template_url_service =
-      TemplateURLServiceFactory::GetForProfile(browser()->profile());
+      TemplateURLServiceFactory::GetForProfile(browser()->GetProfile());
   auto client = std::make_unique<MockAutocompleteProviderClient>();
   client->set_template_url_service(template_url_service);
   // Set a mock AutocompleteController.
@@ -335,18 +347,28 @@ IN_PROC_BROWSER_TEST_F(RealboxHandlerTest, RealboxUpdatesEditModelInput) {
       .Times(2)
       .WillRepeatedly(SaveArg<0>(&input));
 
-  handler_->QueryAutocomplete(u"", /*prevent_inline_autocomplete=*/false, 0);
+  handler_->QueryAutocomplete(
+      0, u"", /*prevent_inline_autocomplete=*/false, 0,
+      omnibox::SuggestInventory::SUGGEST_INVENTORY_DEFAULT,
+      /*is_on_focus=*/true, /*keyword=*/"",
+      searchbox::mojom::InputMethod::kKeyboard);
 
   EXPECT_EQ(input.focus_type(), metrics::OmniboxFocusType::INTERACTION_FOCUS);
 
-  handler_->OpenAutocompleteMatch(2, url, true, 1, false, false, false, false);
+  auto modifiers = searchbox::mojom::ActionModifiers::New();
+  handler_->OpenAutocompleteMatch(2, url, /*are_matches_showing=*/true,
+                                  /*mouse_button=*/1, std::move(modifiers),
+                                  /*via_keyboard=*/false);
 
   // Assert that the input gets correctly updated for the realbox.
   EXPECT_TRUE(omnibox_edit_model_->GetInputForTesting().IsZeroSuggest());
   EXPECT_EQ(u"", omnibox_edit_model_->GetInputForTesting().text());
 
-  handler_->QueryAutocomplete(u"match", /*prevent_inline_autocomplete=*/false,
-                              0);
+  handler_->QueryAutocomplete(
+      0, u"match", /*prevent_inline_autocomplete=*/false, 0,
+      omnibox::SuggestInventory::SUGGEST_INVENTORY_DEFAULT,
+      /*is_on_focus=*/false, /*keyword=*/"",
+      searchbox::mojom::InputMethod::kKeyboard);
 
   // Assert that the input text gets correctly updated for the realbox.
   EXPECT_EQ(u"match", omnibox_edit_model_->GetInputForTesting().text());

@@ -56,7 +56,7 @@ class KroneckerProductBase : public ReturnByValue<Derived> {
    */
   Scalar coeff(Index i) const {
     EIGEN_STATIC_ASSERT_VECTOR_ONLY(Derived);
-    return m_A.coeff(i / m_A.size()) * m_B.coeff(i % m_A.size());
+    return m_A.coeff(i / m_B.size()) * m_B.coeff(i % m_B.size());
   }
 
  protected:
@@ -74,7 +74,7 @@ class KroneckerProductBase : public ReturnByValue<Derived> {
  * directly to avoid specifying template parameters.
  *
  * \tparam Lhs  Type of the left-hand side, a matrix expression.
- * \tparam Rhs  Type of the rignt-hand side, a matrix expression.
+ * \tparam Rhs  Type of the right-hand side, a matrix expression.
  */
 template <typename Lhs, typename Rhs>
 class KroneckerProduct : public KroneckerProductBase<KroneckerProduct<Lhs, Rhs> > {
@@ -105,7 +105,7 @@ class KroneckerProduct : public KroneckerProductBase<KroneckerProduct<Lhs, Rhs> 
  * directly to avoid specifying template parameters.
  *
  * \tparam Lhs  Type of the left-hand side, a matrix expression.
- * \tparam Rhs  Type of the rignt-hand side, a matrix expression.
+ * \tparam Rhs  Type of the right-hand side, a matrix expression.
  */
 template <typename Lhs, typename Rhs>
 class KroneckerProductSparse : public KroneckerProductBase<KroneckerProductSparse<Lhs, Rhs> > {

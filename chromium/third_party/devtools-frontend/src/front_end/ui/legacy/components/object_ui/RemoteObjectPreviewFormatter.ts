@@ -228,9 +228,20 @@ export class RemoteObjectPreviewFormatter {
   }
 
   renderPropertyPreview(type: string, subtype?: string, className?: string|null, description?: string): LitTemplate {
-    const title = type === 'accessor'   ? i18nString(UIStrings.thePropertyIsComputedWithAGetter) :
-        (type === 'object' && !subtype) ? description :
-                                          undefined;
+    let title: string|undefined;
+    switch (type) {
+      case 'accessor':
+        title = i18nString(UIStrings.thePropertyIsComputedWithAGetter);
+        break;
+      case 'string':
+        title = description;
+        break;
+      case 'object':
+        if (!subtype) {
+          title = description;
+        }
+        break;
+    }
 
     const abbreviateFullQualifiedClassName = (description: string): string => {
       const abbreviatedDescription = description.split('.');
@@ -302,6 +313,7 @@ export function renderNodeTitle(nodeTitle: string): LitTemplate|null {
       match[3] && html`<span class=webkit-html-attribute-name>${match[3]}</span>`}`;
 }
 
-export function renderTrustedType(description: string, className: string): LitTemplate {
-  return html`${className} <span class=object-value-string>"${description.replace(/\n/g, '\u21B5')}"</span>`;
+export function renderTrustedType(description: string, className: string|null): LitTemplate {
+  return html`${className} <span class=object-value-string title=${description}>"${
+      description.replace(/\n/g, '\u21B5')}"</span>`;
 }

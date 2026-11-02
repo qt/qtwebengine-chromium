@@ -148,15 +148,6 @@ BASE_FEATURE(kWebViewVulkanIntermediateBuffer,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 #if BUILDFLAG(IS_ANDROID)
-// Hardcoded as disabled for WebView to have a different default for
-// UseSurfaceLayerForVideo from chrome.
-BASE_FEATURE(kUseSurfaceLayerForVideoDefault, base::FEATURE_ENABLED_BY_DEFAULT);
-
-BASE_FEATURE(kWebViewNewInvalidateHeuristic, base::FEATURE_ENABLED_BY_DEFAULT);
-
-BASE_FEATURE(kWebViewNewInvalidateHeuristicForTV,
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 // If enabled and the device's SOC manufacturer is in the allowlist, WebView
 // reports the set of threads involved in frame production to HWUI, and they're
 // included in the HWUI ADPF session.
@@ -193,11 +184,6 @@ BASE_FEATURE(kVSyncAlignedPresentationForScrolling,
              base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kVSyncAlignedPresentation, base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-
-// If enabled, other frame sinks are throttled when a frame sink is handling
-// user interaction.
-BASE_FEATURE(kThrottleFrameSinksOnInteraction,
-             base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kAllowUndamagedNonrootRenderPassToSkip,
 #if BUILDFLAG(IS_MAC)
@@ -260,12 +246,23 @@ const base::FeatureParam<int>
 // If enabled, DisplayScheduler will attempt to select a future deadline if the
 // preferred deadline is not achievable.
 BASE_FEATURE(kSelectFutureFrameDeadline, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kAllowMultipleSwapsPerVsync, base::FEATURE_DISABLED_BY_DEFAULT);
 
 #if BUILDFLAG(IS_ANDROID)
 // If enabled, DisplayScheduler will use a custom FrameDeadlineDecider to
 // dynamically select VSync deadlines based on input timestamps.
 BASE_FEATURE(kUseAndroidCustomFrameDeadlines,
              base::FEATURE_DISABLED_BY_DEFAULT);
+const base::FeatureParam<int> kAndroidCustomFrameDeadlinePresentationOffset{
+    &kUseAndroidCustomFrameDeadlines, "presentation_offset", 0};
+const base::FeatureParam<base::TimeDelta>
+    kAndroidCustomFrameDeadlineMaxNonInteractiveIdleDuration{
+        &kUseAndroidCustomFrameDeadlines, "max_non_interactive_idle_duration",
+        base::Milliseconds(50)};
+const base::FeatureParam<base::TimeDelta>
+    kAndroidCustomFrameDeadlineMaxInteractionIdleDuration{
+        &kUseAndroidCustomFrameDeadlines, "max_interaction_idle_duration",
+        base::Seconds(3)};
 #endif
 
 // When enabled, SDR maximum luminance nits of then current display will be used
@@ -284,6 +281,8 @@ BASE_FEATURE(kUseDisplaySDRMaxLuminanceNits, base::FEATURE_DISABLED_BY_DEFAULT);
 // On mac, when the RenderWidgetHostViewMac is hidden, also hide the
 // DelegatedFrameHost. Among other things, it unlocks the compositor frames,
 // which can saves hundreds of MiB of memory with bfcache entries.
+// TODO(crbug.com/538294830): Enable this in Finch alongside
+// OmniboxWebUIPopupMarkAsHidden to fix Mac memory eviction tracking.
 BASE_FEATURE(kHideDelegatedFrameHostMac, base::FEATURE_DISABLED_BY_DEFAULT);
 
 // When enabled, ClientResourceProvider will attempt to unlock and delete
@@ -297,6 +296,10 @@ BASE_FEATURE(kEvictionUnlocksResources, base::FEATURE_DISABLED_BY_DEFAULT);
 // perfect cadence.
 BASE_FEATURE(kSingleVideoFrameRateThrottling,
              base::FEATURE_DISABLED_BY_DEFAULT);
+
+// If enabled, the FrameEvictionManager scales its limit of max number of saved
+// frames dynamically based on memory pressure.
+BASE_FEATURE(kScalableFrameEviction, base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Remove gpu process reference if gpu context is loss, and gpu channel cannot
 // be established due to said gpu process exiting.
@@ -349,7 +352,7 @@ BASE_FEATURE(kCrosContentAdjustedRefreshRate,
 BASE_FEATURE(kNoCompositorFrameAcks, base::FEATURE_DISABLED_BY_DEFAULT);
 const base::FeatureParam<int> kNumberPendingFramesUntilThrottle{
     &kNoCompositorFrameAcks, "pending_frames", 1};
-BASE_FEATURE(kDisplaySchedulerAsClient, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kDisplaySchedulerAsClient, base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enables prioritization of the BeginFrame InputClient (like
 // FlingSchedulerAndroid) so it can dispatch events before the renderer
@@ -361,12 +364,6 @@ BASE_FEATURE(kFlingSchedulingImprovements, base::FEATURE_DISABLED_BY_DEFAULT);
 // This is a temporary flag to work as a kill switch for the optimization and
 // should be removed as soon as we confirm that the optimization is stable.
 BASE_FEATURE(kRpdqFilterLookupOptimizations, base::FEATURE_ENABLED_BY_DEFAULT);
-
-// Use correct default ColorSpace in `SharedMemoryVideoFramePool::WrapBuffer`
-// when creating a VideoFrame instead of when it is used in
-// `FrameSinkVideoCapturerImpl::MaybeCaptureFrame`.
-BASE_FEATURE(kSharedMemoryVFPoolUseCorrectColorSpace,
-             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // When enabled, bypasses deadlocks caused by outdated activation dependency
 // tokens when parent frame submission lags behind child surface execution.
@@ -420,34 +417,6 @@ bool ShouldWebRtcLogCapturePipeline() {
   return base::FeatureList::IsEnabled(kWebRtcLogCapturePipeline);
 }
 
-#if BUILDFLAG(IS_ANDROID)
-bool UseWebViewNewInvalidateHeuristic() {
-  // For Android TVs we bundle this with WebViewSurfaceControlForTV.
-  if (base::android::device_info::is_tv()) {
-    return base::FeatureList::IsEnabled(kWebViewNewInvalidateHeuristicForTV);
-  }
-
-  return base::FeatureList::IsEnabled(kWebViewNewInvalidateHeuristic);
-}
-#endif
-
-bool UseSurfaceLayerForVideo() {
-#if BUILDFLAG(IS_ANDROID)
-  // SurfaceLayer video should work fine with new heuristic.
-  if (UseWebViewNewInvalidateHeuristic()) {
-    return true;
-  }
-
-  // Allow enabling UseSurfaceLayerForVideo if webview is using surface control.
-  if (::features::IsAndroidSurfaceControlEnabled()) {
-    return true;
-  }
-  return base::FeatureList::IsEnabled(kUseSurfaceLayerForVideoDefault);
-#else
-  return true;
-#endif
-}
-
 int MaxOverlaysConsidered() {
   if (!base::FeatureList::IsEnabled(kUseMultipleOverlays)) {
     return 1;
@@ -459,11 +428,6 @@ int MaxOverlaysConsidered() {
 
 bool ShouldOnBeginFrameThrottleVideo() {
   return base::FeatureList::IsEnabled(features::kOnBeginFrameThrottleVideo);
-}
-
-bool ShouldThrottleWhenInteractiveFrameSinks() {
-  return base::FeatureList::IsEnabled(
-      features::kThrottleFrameSinksOnInteraction);
 }
 
 bool ShouldAckOnSurfaceActivationWhenInteractive() {
@@ -521,12 +485,11 @@ bool ShouldRemoveRedirectionBitmap() {
     return false;
   }
 
-  // Some users set ANGLE backend to D3D9 or OpenGL via chrome://flags and in
+  // Some users set ANGLE backend to OpenGL via chrome://flags and in
   // that case too we would also use an ANGLE EGLSurface.
   const std::string angle_backend =
       command_line->GetSwitchValueASCII(switches::kUseANGLE);
-  if (angle_backend == gl::kANGLEImplementationD3D9Name ||
-      angle_backend == gl::kANGLEImplementationOpenGLName) {
+  if (angle_backend == gl::kANGLEImplementationOpenGLName) {
     return false;
   }
 

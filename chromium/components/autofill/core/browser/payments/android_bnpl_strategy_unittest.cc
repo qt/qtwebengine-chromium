@@ -48,6 +48,23 @@ TEST_F(AndroidBnplStrategyTest, GetBeforeViewSwitchAction) {
             BnplStrategy::BeforeSwitchingViewAction::kDoNothing);
 }
 
+// Verify that GetNextActionOnAiBasedAmountExtractionReturned() returns the
+// correct action for the Android platform.
+TEST_F(AndroidBnplStrategyTest,
+       GetNextActionOnAiBasedAmountExtractionReturned) {
+  EXPECT_EQ(
+      android_bnpl_strategy_.GetNextActionOnAiBasedAmountExtractionReturned(),
+      BnplStrategy::BnplAiBasedAmountExtractionReturnedNextAction::
+          kSwitchToIssuerSelectionScreenOnAndroid);
+}
+
+// Verify that GetUiDismissalAction() returns the correct action for
+// the Android platform.
+TEST_F(AndroidBnplStrategyTest, GetUiDismissalAction) {
+  EXPECT_EQ(android_bnpl_strategy_.GetUiDismissalAction(),
+            BnplStrategy::UiDismissalAction::kRemoveBnplUi);
+}
+
 // Verify that ShouldRemoveExistingUiOnServerReturn() returns the correct
 // value for the Android platform.
 TEST_F(AndroidBnplStrategyTest, ShouldRemoveExistingUiOnServerReturn) {

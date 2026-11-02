@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-
 #include "content/browser/accessibility/web_contents_accessibility_android.h"
 
 #include <algorithm>
@@ -46,6 +45,7 @@
 #include "ui/accessibility/ax_node.h"
 #include "ui/accessibility/ax_node_id_forward.h"
 #include "ui/accessibility/ax_range.h"
+#include "ui/accessibility/ax_role_properties.h"
 #include "ui/accessibility/ax_selection.h"
 #include "ui/accessibility/platform/ax_android_constants.h"
 #include "ui/accessibility/platform/browser_accessibility.h"
@@ -541,26 +541,28 @@ ScopedJavaLocalRef<jobject> ToJavaStringRangesMap(
       ranges_count);
 }
 
-// If `node` is or is under an editable, returns the highest editable parent,
-// otherwise returns null.
-ui::AXNode* GetRootEditable(ui::AXNode* node) {
+// Climbs up the platform parent hierarchy of |node| and returns the enclosing
+// selection context boundary container (e.g. the atomic textbox or media player
+// widget), or nullptr if the node belongs to the main document scope.
+BrowserAccessibilityAndroid* GetSelectionContext(
+    BrowserAccessibilityAndroid* node) {
   while (node) {
-    if (node->data().IsAtomicTextField() ||
-        node->data().GetBoolAttribute(
-            ax::mojom::BoolAttribute::kNonAtomicTextFieldRoot)) {
+    if (node->IsSelectionContextBoundary()) {
       return node;
     }
-    node = node->parent();
+    node = static_cast<BrowserAccessibilityAndroid*>(node->PlatformGetParent());
   }
-  return node;
+  return nullptr;
 }
 
-// Selection is not valid if it is cross documents, or its start and end have
-// different root editable nodes.
-// These restrictions are primarily validated in `blink::AXSelection::IsValid()`
-// for atomic text fields and in `blink::AssertUserSelection` in general, and
-// are based on the behavior in `blink::SelectionAdjuster` class.
+// Returns true if the selection range from |start_position| to |end_position|
+// is valid. Selection is not valid if it crosses document boundaries (different
+// tree ids) or if its endpoints belong to different selection contexts (e.g.
+// spanning across different editables, or crossing into/out of form controls).
+// These restrictions are based on the behavior in Blink's `SelectionAdjuster`
+// class.
 bool IsSelectionValid(
+    BrowserAccessibilityManagerAndroid* root_manager,
     const ui::BrowserAccessibility::AXPosition& start_position,
     const ui::BrowserAccessibility::AXPosition& end_position) {
   CHECK(!start_position->IsNullPosition());
@@ -574,11 +576,24 @@ bool IsSelectionValid(
     return true;
   }
 
-  ui::AXNode* start_root_editable =
-      GetRootEditable(start_position->GetAnchor());
-  ui::AXNode* end_root_editable = GetRootEditable(end_position->GetAnchor());
+  // Ensure that both endpoints belong to the exact same selection context
+  // (e.g., both are in the main document, or both are inside the same text
+  // input or widget).
+  return GetSelectionContext(static_cast<BrowserAccessibilityAndroid*>(
+             root_manager->GetFromAXNode(start_position->GetAnchor()))) ==
+         GetSelectionContext(static_cast<BrowserAccessibilityAndroid*>(
+             root_manager->GetFromAXNode(end_position->GetAnchor())));
+}
 
-  return start_root_editable == end_root_editable;
+std::optional<ExtendedSelectionOffsetType> AsExtendedSelectionOffsetType(
+    int32_t offset_type) {
+  if (offset_type ==
+          static_cast<int32_t>(ExtendedSelectionOffsetType::OFFSET_TYPE_TEXT) ||
+      offset_type == static_cast<int32_t>(
+                         ExtendedSelectionOffsetType::OFFSET_TYPE_CHILD)) {
+    return static_cast<ExtendedSelectionOffsetType>(offset_type);
+  }
+  return std::nullopt;
 }
 
 }  // anonymous namespace
@@ -1128,6 +1143,14 @@ void WebContentsAccessibilityAndroid::HandleEditableTextChanged(
       env, obj, unique_id, subType);
 }
 
+void WebContentsAccessibilityAndroid::HandleSpinButtonStepIntent(
+    int32_t unique_id) {
+  should_announce_full_text_ = true;
+  HandleEditableTextChanged(
+      unique_id, ANDROID_ACCESSIBILITY_EVENT_TEXT_CHANGE_TYPE_UNDEFINED);
+  should_announce_full_text_ = false;
+}
+
 void WebContentsAccessibilityAndroid::HandleActiveDescendantChanged(
     int32_t unique_id) {
   JNIEnv* env = AttachCurrentThread();
@@ -1333,42 +1356,6 @@ int32_t WebContentsAccessibilityAndroid::GetRootId(JNIEnv* env) {
     }
   }
   return ui::kAXAndroidInvalidViewId;
-}
-
-// TODO(crbug.com/485227837): Remove experiment's methods
-size_t WebContentsAccessibilityAndroid::GetAccessibilityTreeSizeForExperiment(
-    JNIEnv* env) {
-  BrowserAccessibilityManagerAndroid* root_manager =
-      GetRootBrowserAccessibilityManager();
-  if (!root_manager) {
-    return 0;
-  }
-
-  size_t count = 0;
-  std::vector<ui::BrowserAccessibilityManager*> managers_to_process;
-  managers_to_process.push_back(root_manager);
-
-  while (!managers_to_process.empty()) {
-    ui::BrowserAccessibilityManager* manager = managers_to_process.back();
-    managers_to_process.pop_back();
-
-    if (!manager->ax_tree()) {
-      continue;
-    }
-
-    count += manager->ax_tree()->size();
-
-    for (const ui::AXTreeID& child_tree_id :
-         manager->ax_tree()->GetAllChildTreeIds()) {
-      ui::BrowserAccessibilityManager* child_manager =
-          ui::BrowserAccessibilityManager::FromID(child_tree_id);
-      if (child_manager) {
-        managers_to_process.push_back(child_manager);
-      }
-    }
-  }
-
-  return count;
 }
 
 bool WebContentsAccessibilityAndroid::IsNodeValid(JNIEnv* env,
@@ -1597,7 +1584,8 @@ void WebContentsAccessibilityAndroid::
       node->IsFocusable(), node->IsFocused(), node->IsCollapsed(),
       node->IsExpanded(), node->HasNonEmptyValue(),
       !node->GetTextContentUTF16().empty(), node->IsSeekControl(),
-      node->IsFormDescendant());
+      node->IsFormDescendant(), !node->GetAndroidTooltipText().empty(),
+      tooltip_showing_node_id_ == unique_id);
 }
 
 void WebContentsAccessibilityAndroid::
@@ -1924,13 +1912,34 @@ void WebContentsAccessibilityAndroid::PopulateAccessibilityNodeInfoSelection(
 
   if (selection.has_value()) {
     Java_AccessibilityNodeInfoBuilder_setAccessibilityNodeInfoExtendedSelectionAttrs(
-        env, obj, info, selection->anchor_object->GetUniqueId(),
-        selection->anchor_offset, selection->focus_object->GetUniqueId(),
-        selection->focus_offset);
+        env, obj, info, selection->anchor.node->GetUniqueId(),
+        selection->anchor.offset,
+        static_cast<int32_t>(selection->anchor.offset_type),
+        selection->focus.node->GetUniqueId(), selection->focus.offset,
+        static_cast<int32_t>(selection->focus.offset_type));
     return;
   }
   Java_AccessibilityNodeInfoBuilder_clearAccessibilityNodeInfoExtendedSelectionAttrs(
       env, obj, info);
+}
+
+void WebContentsAccessibilityAndroid::
+    PopulateAccessibilityNodeInfoMathAttributes(
+        JNIEnv* env,
+        const JavaRef<jobject>& info,
+        const ScopedJavaLocalRef<jobject>& obj,
+        BrowserAccessibilityAndroid* node) {
+  CHECK(!obj.is_null());
+
+  const std::string& math_tag = node->GetMathTag();
+  if (math_tag.empty()) {
+    return;
+  }
+
+  Java_AccessibilityNodeInfoBuilder_setAccessibilityNodeInfoMathAttributes(
+      env, obj, info, base::android::ConvertUTF8ToJavaString(env, math_tag),
+      base::android::ConvertUTF8ToJavaString(env, node->GetMathIntent()),
+      base::android::ConvertUTF8ToJavaString(env, node->GetMathArg()));
 }
 
 ScopedJavaLocalRef<jintArray>
@@ -1949,11 +1958,15 @@ WebContentsAccessibilityAndroid::GetExtendedSelection(JNIEnv* env,
     return nullptr;
   }
 
-  const int anchor_unique_id = selection->anchor_object->GetUniqueId();
-  const int focus_unique_id = selection->focus_object->GetUniqueId();
+  const int anchor_unique_id = selection->anchor.node->GetUniqueId();
+  const int focus_unique_id = selection->focus.node->GetUniqueId();
 
-  int selection_data[] = {anchor_unique_id, selection->anchor_offset,
-                          focus_unique_id, selection->focus_offset};
+  int selection_data[] = {anchor_unique_id,
+                          selection->anchor.offset,
+                          static_cast<int>(selection->anchor.offset_type),
+                          focus_unique_id,
+                          selection->focus.offset,
+                          static_cast<int>(selection->focus.offset_type)};
   return ToJavaIntArray(env, selection_data);
 }
 
@@ -1999,6 +2012,9 @@ bool WebContentsAccessibilityAndroid::PopulateAccessibilityNodeInfo(
   PopulateAccessibilityNodeInfoRangeInfo(env, info, obj, node);
   PopulateAccessibilityNodeInfoPaneTitle(env, info, obj, node);
   PopulateAccessibilityNodeInfoSelection(env, info, obj, node);
+  if (features::IsAccessibilityAndroidMathEnabled()) {
+    PopulateAccessibilityNodeInfoMathAttributes(env, info, obj, node);
+  }
   UpdateAccessibilityNodeInfoBoundsRect(env, obj, info, unique_id, node);
 
   return true;
@@ -2031,9 +2047,30 @@ bool WebContentsAccessibilityAndroid::PopulateAccessibilityEvent(
     case ANDROID_ACCESSIBILITY_EVENT_TEXT_CHANGED: {
       std::u16string before_text = node->GetTextChangeBeforeText();
       std::u16string text = node->GetTextContentUTF16();
+      int from_index = node->GetTextChangeFromIndex();
+      int added_count = node->GetTextChangeAddedCount();
+      int removed_count = node->GetTextChangeRemovedCount();
+
+      // Bypass text diff logic for custom spinbuttons, or for native
+      // spinbuttons when explicitly triggered by an increment/decrement intent
+      // (e.g. arrow keys). This forces TalkBack to announce the full string.
+      bool is_spin_button = node->GetRole() == ax::mojom::Role::kSpinButton;
+      bool is_native_spinbutton =
+          node->GetStringAttribute(ax::mojom::StringAttribute::kInputType) ==
+          "number";
+      bool is_custom_spinbutton = is_spin_button && !is_native_spinbutton;
+
+      if ((is_custom_spinbutton ||
+           (is_native_spinbutton && should_announce_full_text_)) &&
+          !text.empty()) {
+        before_text = std::u16string();
+        from_index = 0;
+        added_count = text.length();
+        removed_count = 0;
+      }
+
       Java_WebContentsAccessibilityImpl_setAccessibilityEventTextChangedAttrs(
-          env, obj, event, node->GetTextChangeFromIndex(),
-          node->GetTextChangeAddedCount(), node->GetTextChangeRemovedCount(),
+          env, obj, event, from_index, added_count, removed_count,
           base::android::ConvertUTF16ToJavaString(env, before_text),
           base::android::ConvertUTF16ToJavaString(env, text));
       break;
@@ -2179,10 +2216,24 @@ bool WebContentsAccessibilityAndroid::SetExtendedSelection(
     int32_t id,
     int32_t start_node_id,
     int32_t start_node_offset,
+    int32_t start_offset_type,
     int32_t end_node_id,
-    int32_t end_node_offset) {
+    int32_t end_node_offset,
+    int32_t end_offset_type) {
   CHECK(
       base::FeatureList::IsEnabled(features::kAccessibilityExtendedSelection));
+
+  std::optional<ExtendedSelectionOffsetType> start_offset_enum =
+      AsExtendedSelectionOffsetType(start_offset_type);
+  if (!start_offset_enum) {
+    return false;
+  }
+
+  std::optional<ExtendedSelectionOffsetType> end_offset_enum =
+      AsExtendedSelectionOffsetType(end_offset_type);
+  if (!end_offset_enum) {
+    return false;
+  }
 
   BrowserAccessibilityAndroid* node = GetAXFromUniqueID(id);
   if (!node) {
@@ -2201,20 +2252,20 @@ bool WebContentsAccessibilityAndroid::SetExtendedSelection(
     return false;
   }
   ui::BrowserAccessibility::AXPosition start_position =
-      root_manager->ConvertAndroidSelectionPositionToChrome(start_node,
-                                                            start_node_offset);
+      root_manager->ConvertAndroidSelectionPositionToChrome(
+          start_node, start_node_offset, *start_offset_enum);
   if (start_position->IsNullPosition()) {
     return false;
   }
 
   ui::BrowserAccessibility::AXPosition end_position =
-      root_manager->ConvertAndroidSelectionPositionToChrome(end_node,
-                                                            end_node_offset);
+      root_manager->ConvertAndroidSelectionPositionToChrome(
+          end_node, end_node_offset, *end_offset_enum);
   if (end_position->IsNullPosition()) {
     return false;
   }
 
-  if (!IsSelectionValid(start_position, end_position)) {
+  if (!IsSelectionValid(root_manager, start_position, end_position)) {
     return false;
   }
 
@@ -2271,6 +2322,34 @@ void WebContentsAccessibilityAndroid::ShowContextMenu(JNIEnv* env,
   if (node) {
     node->manager()->ShowContextMenu(*node);
   }
+}
+
+bool WebContentsAccessibilityAndroid::ShowTooltip(JNIEnv* env,
+                                                  int32_t unique_id) {
+  BrowserAccessibilityAndroid* node = GetAXFromUniqueID(unique_id);
+  if (node) {
+    node->manager()->ShowTooltip(*node);
+    tooltip_showing_node_id_ = unique_id;
+    return true;
+  }
+  return false;
+}
+
+bool WebContentsAccessibilityAndroid::HideTooltip(JNIEnv* env,
+                                                  int32_t unique_id) {
+  BrowserAccessibilityAndroid* node = GetAXFromUniqueID(unique_id);
+  if (node) {
+    node->manager()->HideTooltip(*node);
+    if (tooltip_showing_node_id_ == unique_id) {
+      tooltip_showing_node_id_ = 0;
+    }
+    return true;
+  }
+  return false;
+}
+
+void WebContentsAccessibilityAndroid::OnTooltipCleared() {
+  tooltip_showing_node_id_ = 0;
 }
 
 int32_t WebContentsAccessibilityAndroid::FindElementType(

@@ -6,7 +6,15 @@
 
 namespace enterprise_data_protection {
 
+BASE_FEATURE(kEnableAndroidEnterpriseScreenshotProtection,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 BASE_FEATURE(kEnableDeepScanVerdictCacheSize,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+// TODO(crbug.com/533005087): Disable the flag on iOS when changing default
+// state to enabled, then support timestamp timezone formatting for iOS.
+BASE_FEATURE(kEnableWatermarkTimestampTimezone,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE_PARAM(size_t,
@@ -14,5 +22,11 @@ BASE_FEATURE_PARAM(size_t,
                    &kEnableDeepScanVerdictCacheSize,
                    /*name=*/"verdict_cache_max_size",
                    /*default_value=*/200);
+
+BASE_FEATURE_PARAM(bool,
+                   kVerdictCacheRemoveQueryParams,
+                   &kEnableDeepScanVerdictCacheSize,
+                   /*name=*/"remove_query_params",
+                   /*default_value=*/false);
 
 }  // namespace enterprise_data_protection

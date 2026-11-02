@@ -34,7 +34,7 @@ enum class FetchKeepAliveRequestMetricType {
   kBeacon = 1,
   kPing = 2,
   kReporting = 3,
-  kAttribution = 4,
+  // kAttribution = 4, obsolete
   kBackgroundFetchIcon = 5,
   kMaxValue = kBackgroundFetchIcon,
 };
@@ -123,9 +123,10 @@ net::NetworkTrafficAnnotationTag FetchUtils::GetTrafficAnnotationTag(
     case network::mojom::RequestDestination::kEmailVerification:
     case network::mojom::RequestDestination::kSharedStorageWorklet:
       NOTREACHED();
-    case network::mojom::RequestDestination::kEmpty:
     case network::mojom::RequestDestination::kAudio:
     case network::mojom::RequestDestination::kAudioWorklet:
+    case network::mojom::RequestDestination::kCompressionDictionary:
+    case network::mojom::RequestDestination::kEmpty:
     case network::mojom::RequestDestination::kFont:
     case network::mojom::RequestDestination::kImage:
     case network::mojom::RequestDestination::kJson:
@@ -137,12 +138,12 @@ net::NetworkTrafficAnnotationTag FetchUtils::GetTrafficAnnotationTag(
     case network::mojom::RequestDestination::kSharedWorker:
     case network::mojom::RequestDestination::kSpeculationRules:
     case network::mojom::RequestDestination::kStyle:
+    case network::mojom::RequestDestination::kText:
     case network::mojom::RequestDestination::kTrack:
     case network::mojom::RequestDestination::kVideo:
     case network::mojom::RequestDestination::kWebBundle:
     case network::mojom::RequestDestination::kWorker:
     case network::mojom::RequestDestination::kXslt:
-    case network::mojom::RequestDestination::kDictionary:
       return net::DefineNetworkTrafficAnnotation("blink_resource_loader", R"(
       semantics {
         sender: "Blink Resource Loader"
@@ -217,13 +218,9 @@ void FetchUtils::LogFetchKeepAliveRequestMetric(
     case mojom::blink::RequestContextType::CSP_REPORT:
       sample_type = FetchKeepAliveRequestMetricType::kReporting;
       break;
-    case mojom::blink::RequestContextType::ATTRIBUTION_SRC:
-      sample_type = FetchKeepAliveRequestMetricType::kAttribution;
-      break;
     case mojom::blink::RequestContextType::IMAGE:
       sample_type = FetchKeepAliveRequestMetricType::kBackgroundFetchIcon;
       break;
-    case mojom::blink::RequestContextType::UNSPECIFIED:
     case mojom::blink::RequestContextType::AUDIO:
     case mojom::blink::RequestContextType::DOWNLOAD:
     case mojom::blink::RequestContextType::EMBED:
@@ -246,10 +243,12 @@ void FetchUtils::LogFetchKeepAliveRequestMetric(
     case mojom::blink::RequestContextType::SERVICE_WORKER:
     case mojom::blink::RequestContextType::SHARED_WORKER:
     case mojom::blink::RequestContextType::SPECULATION_RULES:
+    case mojom::blink::RequestContextType::STYLE:
     case mojom::blink::RequestContextType::SUBRESOURCE:
     case mojom::blink::RequestContextType::SUBRESOURCE_WEBBUNDLE:
-    case mojom::blink::RequestContextType::STYLE:
+    case mojom::blink::RequestContextType::TEXT:
     case mojom::blink::RequestContextType::TRACK:
+    case mojom::blink::RequestContextType::UNSPECIFIED:
     case mojom::blink::RequestContextType::VIDEO:
     case mojom::blink::RequestContextType::WORKER:
     case mojom::blink::RequestContextType::XML_HTTP_REQUEST:
@@ -295,7 +294,7 @@ void FetchUtils::LogFetchKeepAliveRequestSentToServiceMetric(
     case mojom::blink::ResourceType::kXhr:
       sample_type = FetchKeepAliveRequestMetricType::kFetch;
       break;
-    // Includes BEACON/PING/ATTRIBUTION_SRC types
+    // Includes BEACON/PING types
     case mojom::blink::ResourceType::kPing:
       sample_type = FetchKeepAliveRequestMetricType::kPing;
       break;

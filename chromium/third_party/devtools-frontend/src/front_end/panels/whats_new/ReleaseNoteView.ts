@@ -19,7 +19,7 @@ import releaseNoteViewStyles from './releaseNoteView.css.js';
 
 const UIStrings = {
   /**
-   * @description Text that is usually a hyperlink to more documentation
+   * @description Text on a button in the What's new tool that opens a link with more documentation about new features.
    */
   seeFeatures: 'See all new features',
 } as const;

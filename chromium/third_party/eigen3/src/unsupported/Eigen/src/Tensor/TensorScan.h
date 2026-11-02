@@ -286,14 +286,14 @@ struct ScanLauncher<Self, Reducer, ThreadPoolDevice, Vectorize> {
           [=](Index blk_size) { return AdjustBlockSize(inner_block_size * sizeof(Scalar), blk_size); },
           [&](Index first, Index last) {
             for (Index idx1 = first; idx1 < last; ++idx1) {
-              ReduceBlock<Self, Vectorize, /*Parallelize=*/false> block_reducer;
+              ReduceBlock<Self, Vectorize, /*Parallel=*/false> block_reducer;
               block_reducer(self, idx1 * inner_block_size, data);
             }
           });
     } else {
       // Parallelize over inner packets/scalars dimensions when the reduction
       // axis is not an inner dimension.
-      ReduceBlock<Self, Vectorize, /*Parallelize=*/true> block_reducer;
+      ReduceBlock<Self, Vectorize, /*Parallel=*/true> block_reducer;
       for (Index idx1 = 0; idx1 < total_size; idx1 += self.stride() * self.size()) {
         block_reducer(self, idx1, data);
       }
@@ -398,12 +398,11 @@ struct TensorEvaluator<const TensorScanOp<Op, ArgType>, Device> {
 
     // Compute stride of scan axis
     const Dimensions& dims = m_impl.dimensions();
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       for (int i = 0; i < op.axis(); ++i) {
         m_stride = m_stride * dims[i];
       }
-    }
-    else {
+    } else {
       // dims can only be indexed through unsigned integers,
       // so use an unsigned type to let the compiler know.
       // This prevents spurious warnings: "'*((void*)(& evaluator)+64)[18446744073709551615]' may be used uninitialized

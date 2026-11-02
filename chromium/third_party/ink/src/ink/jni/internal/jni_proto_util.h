@@ -17,11 +17,64 @@
 
 #include <jni.h>
 
+#include <cstdint>
+
+#include "absl/base/nullability.h"
+#include "absl/container/flat_hash_map.h"
 #include "absl/status/status.h"
 #include "google/protobuf/message_lite.h"
 
-namespace ink {
-namespace jni {
+namespace ink::jni {
+
+// A read-only view of bytes from the JVM passed via either a direct
+// java.nio.ByteBuffer or a jbyteArray. Handles cleanup when the object goes out
+// of scope.
+class JvmBytes {
+ public:
+  static JvmBytes FromDirectByteBuffer(JNIEnv* env, jobject direct_byte_buffer);
+  static JvmBytes FromByteArray(JNIEnv* env, jbyteArray byte_array);
+  static JvmBytes FromEither(JNIEnv* env, jobject direct_byte_buffer,
+                             jbyteArray byte_array);
+  ~JvmBytes();
+
+  // Not copyable or movable, meant to handle access and cleanup in a single
+  // scope.
+  JvmBytes(const JvmBytes&) = delete;
+  JvmBytes& operator=(const JvmBytes&) = delete;
+  JvmBytes(JvmBytes&&) = delete;
+  JvmBytes& operator=(JvmBytes&&) = delete;
+
+  const int8_t* NativeBytes() const {
+    return reinterpret_cast<int8_t*>(bytes_);
+  }
+
+ private:
+  JvmBytes(JNIEnv* env, absl_nullable jobject direct_byte_buffer,
+           absl_nullable jbyteArray byte_array);
+
+  JNIEnv* env_;
+  jobject direct_byte_buffer_;
+  jbyteArray byte_array_;
+  jbyte* bytes_;
+};
+
+// A helper class for allocating JVM byte arrays in the middle of KMP-compatible
+// native code. Passes back a pointer to the array elements and handles copying
+// back of the elements and cleanup when the object goes out of scope.
+class JvmByteArrayNativeAlloc {
+ public:
+  explicit JvmByteArrayNativeAlloc(JNIEnv* env);
+  ~JvmByteArrayNativeAlloc();
+
+  int8_t* Allocate(int size);
+  jbyteArray Release(int8_t* native_bytes);
+
+ private:
+  JNIEnv* env_;
+  absl::flat_hash_map<int8_t*, jbyteArray> byte_arrays_;
+};
+
+int8_t* JvmByteArrayNativeAllocCallback(void* allocator_pass_through, int size);
 
 // Attempts to parse a serialized proto from either a direct java.nio.ByteBuffer
 // or a jbyteArray, one of which must be non-null. If the proto doesn't parse,
@@ -62,7 +115,6 @@ absl::Status ParseProtoFromBuffer(JNIEnv* env,
 [[nodiscard]] jbyteArray SerializeProto(JNIEnv* env,
                                         const google::protobuf::MessageLite& src);
 
-}  // namespace jni
-}  // namespace ink
+}  // namespace ink::jni
 
 #endif  // INK_JNI_INTERNAL_JNI_PROTO_UTIL_H_

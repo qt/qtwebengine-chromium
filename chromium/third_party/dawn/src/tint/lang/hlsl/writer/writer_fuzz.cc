@@ -31,6 +31,7 @@
 #include "src/tint/cmd/fuzz/common/ir_fuzzer.h"
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/var.h"
+#include "src/tint/lang/core/type/pointer.h"
 #include "src/tint/lang/hlsl/validate/validate.h"
 #include "src/tint/lang/hlsl/writer/printer/printer.h"
 #include "src/tint/lang/hlsl/writer/writer.h"
@@ -64,7 +65,6 @@ struct FuzzedOptions {
     std::vector<BindingPoint> ignored_by_robustness_transform;
     SubstituteOverridesConfig substitute_overrides_config;
     bool d3d12_decompose_workgroup_access;
-    bool polyfill_sample_mask;
     bool collapse_subgroup_min_max;
 
     /// Reflect the fields of this class so that it can be used by tint::ForeachField()
@@ -88,13 +88,17 @@ struct FuzzedOptions {
                  ignored_by_robustness_transform,
                  substitute_overrides_config,
                  d3d12_decompose_workgroup_access,
-                 polyfill_sample_mask,
                  collapse_subgroup_min_max);
 };
 
 Result<SuccessType> IRFuzzer(core::ir::Module& module,
                              const fuzz::ir::Context& context,
                              FuzzedOptions fuzzed_options) {
+    if (context.options.verbose) {
+        PrintReflected(std::cout, fuzzed_options);
+        std::cout << "\n";
+    }
+
     // TODO(375388101): We cannot run the backend for every entry point in the module unless we
     // clone the whole module each time, so for now we just generate the first entry point.
 
@@ -139,7 +143,6 @@ Result<SuccessType> IRFuzzer(core::ir::Module& module,
     options.first_index_offset = fuzzed_options.first_index_offset;
     options.first_instance_offset = fuzzed_options.first_instance_offset;
     options.num_workgroups_start_offset = fuzzed_options.num_workgroups_start_offset;
-    options.polyfill_sample_mask = fuzzed_options.polyfill_sample_mask;
     options.ignored_by_robustness_transform = fuzzed_options.ignored_by_robustness_transform;
     options.substitute_overrides_config = fuzzed_options.substitute_overrides_config;
 
@@ -150,6 +153,14 @@ Result<SuccessType> IRFuzzer(core::ir::Module& module,
     std::unordered_set<tint::BindingPoint> storage_bindings;
     for (auto* inst : *module.root_block) {
         auto* var = inst->As<core::ir::Var>();
+        if (!var) {
+            continue;
+        }
+        if (auto* ptr_ty = var->Result()->Type()->As<core::type::Pointer>()) {
+            if (ptr_ty->AddressSpace() != core::AddressSpace::kStorage) {
+                continue;
+            }
+        }
         if (!var->Result()->Type()->UnwrapPtr()->HasFixedFootprint()) {
             if (auto bp = var->BindingPoint()) {
                 if (storage_bindings.insert(bp.value()).second) {
@@ -188,6 +199,4 @@ Result<SuccessType> IRFuzzer(core::ir::Module& module,
 }  // namespace
 }  // namespace tint::hlsl::writer
 
-TINT_IR_MODULE_FUZZER(tint::hlsl::writer::IRFuzzer,
-                      tint::core::ir::Capabilities{},
-                      tint::hlsl::writer::kPrinterCapabilities);
+TINT_IR_MODULE_FUZZER(tint::hlsl::writer::IRFuzzer);

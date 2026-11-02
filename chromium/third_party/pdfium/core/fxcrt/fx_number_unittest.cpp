@@ -89,7 +89,7 @@ TEST(fxnumber, FromStringUnsigned) {
 
   // No explicit sign will allow the number to go negative if retrieved as a
   // signed value. This is needed for things like the encryption permissions
-  // flag (Table 3.20 PDF 1.7 spec)
+  // flag (ISO 32000-1:2008 spec, table 22.)
   static constexpr TestCase kNegativeCases[] = {
       {"4294965252", -2044}, {"4294967247", -49}, {"4294967248", -48},
       {"4294967292", -4},    {"4294967295", -1},

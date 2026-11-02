@@ -26,6 +26,7 @@
 
 #include <optional>
 
+#include "base/types/strong_alias.h"
 #include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/create_element_flags.h"
@@ -42,6 +43,7 @@ namespace blink {
 
 class ExceptionState;
 class HTMLFormElement;
+class HTMLMapElement;
 class ImageCandidate;
 
 class CORE_EXPORT HTMLImageElement
@@ -85,6 +87,7 @@ class CORE_EXPORT HTMLImageElement
 
   const String& currentSrc() const;
 
+  HTMLMapElement* GetImageMap() const;
   bool IsServerMap() const;
 
   String AltText() const final;
@@ -145,7 +148,8 @@ class CORE_EXPORT HTMLImageElement
       const RespectImageOrientationEnum) const override;
 
   // public so that HTMLPictureElement can call this as well.
-  void SelectSourceURL(ImageLoader::UpdateFromElementBehavior);
+  void SelectSourceURL(ImageLoader::UpdateFromElementBehavior behavior =
+                           ImageLoader::kUpdateNormal);
 
   void SetIsFallbackImage() { is_fallback_image_ = true; }
 
@@ -202,6 +206,10 @@ class CORE_EXPORT HTMLImageElement
   // Uses the element's current document if |document| is not specified.
   void ResetImageReplacement(Document* document = nullptr);
   void StartImageReplacement();
+
+  bool replacedByUserAgent() const;
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(uareplacestart, kUareplacestart)
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(uareplaceend, kUareplaceend)
 
  protected:
   // Controls how an image element appears in the layout. See:
@@ -261,9 +269,10 @@ class CORE_EXPORT HTMLImageElement
   Image* ImageContents() override;
 
   void ResetFormOwner();
+  bool IsUrlInCandidateSet(const AtomicString& url) const;
   ImageCandidate FindBestFitImageFromPictureParent();
   void SetBestFitURLAndDPRFromImageCandidate(const ImageCandidate&);
-  PhysicalSize DensityCorrectedIntrinsicDimensions() const;
+  gfx::Size DensityCorrectedIntrinsicDimensions() const;
   HTMLImageLoader& GetImageLoader() const override { return *image_loader_; }
   void NotifyViewportChanged();
   void CreateMediaQueryListIfDoesNotExist();
@@ -291,6 +300,7 @@ class CORE_EXPORT HTMLImageElement
   bool is_lcp_element_ : 1;
   bool is_auto_sized_ : 1;
   bool is_predicted_lcp_element_ : 1;
+  bool is_lazy_load_issue_reported_ : 1;
 
   HashSet<String> creator_scripts_;
 };

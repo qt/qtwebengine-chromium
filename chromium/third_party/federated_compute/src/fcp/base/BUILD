@@ -43,7 +43,6 @@ cc_library(
     name = "base",
     srcs = [
         "base_name.cc",
-        "monitoring.cc",
         "platform.cc",
     ],
     hdrs = [
@@ -117,7 +116,10 @@ cc_library(
         "reentrancy_guard.h",
     ],
     copts = FCP_COPTS,
-    deps = [":base"],
+    deps = [
+        ":base",
+        "@com_google_absl//absl/status",
+    ],
 )
 
 cc_test(
@@ -127,10 +129,11 @@ cc_test(
     ],
     copts = FCP_COPTS,
     deps = [
-        ":base",
         ":reentrancy_guard",
         ":scheduler",
-        "//fcp/testing",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/synchronization",
         "@com_google_googletest//:gtest_main",
     ],
@@ -177,13 +180,14 @@ cc_library(
         "future.h",
     ],
     copts = FCP_COPTS,
+    visibility = ["//visibility:public"],
     deps = [
         ":base",
-        ":meta",
         ":scheduler",
         ":unique_value",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/time",
     ],
 )
 
@@ -195,7 +199,7 @@ cc_test(
         ":base",
         ":future",
         ":meta",
-        "@com_google_absl//absl/base:core_headers",
+        ":unique_value",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",
@@ -211,9 +215,6 @@ cc_test(
     copts = FCP_COPTS,
     deps = [
         ":base",
-        "@com_google_absl//absl/base:log_severity",
-        "@com_google_absl//absl/status:status_matchers",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -228,6 +229,7 @@ cc_test(
     deps = [
         ":base",
         "//fcp/testing",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings:cord",
         "@com_google_googletest//:gtest_main",
     ],
@@ -242,6 +244,7 @@ cc_library(
         "scheduler.h",
     ],
     copts = FCP_COPTS,
+    visibility = ["//visibility:public"],
     deps = [
         ":base",
         "@com_google_absl//absl/synchronization",
@@ -350,10 +353,11 @@ cc_test(
         ":result",
         ":tracing_schema",
         ":unique_value",
-        "//fcp/testing",
         "//fcp/testing:result_matchers",
         "//fcp/testing:tracing",
         "//fcp/tracing:test_tracing_recorder",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -424,66 +428,6 @@ cc_test(
 )
 
 cc_library(
-    name = "clock",
-    srcs = [
-        "clock.cc",
-    ],
-    hdrs = [
-        "clock.h",
-    ],
-    copts = FCP_COPTS,
-    deps = [
-        ":base",
-        "@com_google_absl//absl/synchronization",
-        "@com_google_absl//absl/time",
-    ],
-)
-
-cc_library(
-    name = "simulated_clock",
-    testonly = 1,
-    srcs = [
-        "simulated_clock.cc",
-    ],
-    hdrs = [
-        "simulated_clock.h",
-    ],
-    copts = FCP_COPTS,
-    deps = [
-        ":clock",
-        "@com_google_absl//absl/synchronization",
-        "@com_google_absl//absl/time",
-    ],
-)
-
-cc_test(
-    name = "simulated_clock_test",
-    srcs = [
-        "simulated_clock_test.cc",
-    ],
-    copts = FCP_COPTS,
-    deps = [
-        ":simulated_clock",
-        "@com_google_absl//absl/time",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_test(
-    name = "realtime_clock_test",
-    srcs = [
-        "realtime_clock_test.cc",
-    ],
-    copts = FCP_COPTS,
-    deps = [
-        ":clock",
-        "@com_google_absl//absl/synchronization",
-        "@com_google_absl//absl/time",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_library(
     name = "time_util",
     srcs = ["time_util.cc"],
     hdrs = ["time_util.h"],
@@ -521,7 +465,6 @@ cc_test(
     srcs = ["wall_clock_stopwatch_test.cc"],
     copts = FCP_COPTS,
     deps = [
-        ":clock",
         ":scheduler",
         ":wall_clock_stopwatch",
         "@com_google_absl//absl/time",

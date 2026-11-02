@@ -15,6 +15,7 @@
 #include "media/base/test_data_util.h"
 #include "media/filters/h26x_annex_b_bitstream_builder.h"
 #include "media/gpu/h265_builder.h"
+#include "media/parsers/h26x_parser.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/abseil-cpp/absl/functional/overload.h"
 
@@ -445,7 +446,7 @@ TEST_F(H265ParserTest, HDRMetadataSEIParsing) {
   EXPECT_EQ(clli_sei.msgs.size(), 1u);
   for (const auto& sei_msg : clli_sei.msgs) {
     const auto* content_light_level_info =
-        std::get_if<H265SEIContentLightLevelInfo>(&sei_msg);
+        std::get_if<H26xSEIContentLightLevelInfo>(&sei_msg);
     ASSERT_TRUE(content_light_level_info);
     EXPECT_EQ(content_light_level_info->max_content_light_level, 1000u);
     EXPECT_EQ(content_light_level_info->max_picture_average_light_level, 400u);
@@ -458,7 +459,7 @@ TEST_F(H265ParserTest, HDRMetadataSEIParsing) {
   EXPECT_EQ(mdcv_sei.msgs.size(), 1u);
   for (const auto& sei_msg : mdcv_sei.msgs) {
     const auto* mastering_display_info =
-        std::get_if<H265SEIMasteringDisplayInfo>(&sei_msg);
+        std::get_if<H26xSEIMasteringDisplayInfo>(&sei_msg);
     ASSERT_TRUE(mastering_display_info);
     EXPECT_EQ(mastering_display_info->display_primaries[0][0], 13250u);
     EXPECT_EQ(mastering_display_info->display_primaries[0][1], 34500u);
@@ -519,6 +520,49 @@ TEST_F(H265ParserTest, AlphaChannelInfoSEIParsing) {
     EXPECT_EQ(alpha_channel_info->alpha_channel_clip_flag, false);
     EXPECT_EQ(alpha_channel_info->alpha_channel_clip_type_flag, false);
   }
+}
+
+TEST_F(H265ParserTest, T35SEIParsing) {
+  constexpr uint8_t kStream[] = {
+      // Start code.
+      0x00,
+      0x00,
+      0x01,
+      // NALU type = 39 (PREFIX_SEI).
+      0x4e,
+      0x01,
+      // SEI payload type = 4 (user_data_registered_itu_t_t35).
+      0x04,
+      // SEI payload size = 5.
+      0x05,
+      // Country code = 0xB5.
+      0xB5,
+      // Payload data (4 bytes).
+      0x01,
+      0x02,
+      0x03,
+      0x04,
+  };
+
+  H265Parser parser;
+  parser.SetStream(kStream);
+
+  H265NALU target_nalu;
+  ASSERT_EQ(H265Parser::kOk, parser.AdvanceToNextNALU(&target_nalu));
+  EXPECT_EQ(target_nalu.nal_unit_type, H265NALU::PREFIX_SEI_NUT);
+
+  H265SEI sei;
+  EXPECT_EQ(H265Parser::kOk, parser.ParseSEI(&sei));
+  EXPECT_EQ(sei.msgs.size(), 1u);
+
+  const auto* t35 = std::get_if<H26xSEIUserDataRegisteredT35>(&sei.msgs[0]);
+  ASSERT_TRUE(t35);
+  EXPECT_EQ(t35->country_code, 0xB5);
+  ASSERT_EQ(t35->payload.size(), 4u);
+  EXPECT_EQ(t35->payload[0], 0x01);
+  EXPECT_EQ(t35->payload[1], 0x02);
+  EXPECT_EQ(t35->payload[2], 0x03);
+  EXPECT_EQ(t35->payload[3], 0x04);
 }
 
 TEST_F(H265ParserTest, RecursiveSEIParsing) {
@@ -586,11 +630,11 @@ TEST_F(H265ParserTest, RecursiveSEIParsing) {
 
   for (const auto& sei_msg : clli_mdcv_sei.msgs) {
     std::visit(
-        absl::Overload{[](const H265SEIContentLightLevelInfo& info) {
+        absl::Overload{[](const H26xSEIContentLightLevelInfo& info) {
                          EXPECT_EQ(info.max_content_light_level, 1000u);
                          EXPECT_EQ(info.max_picture_average_light_level, 200u);
                        },
-                       [](const H265SEIMasteringDisplayInfo& info) {
+                       [](const H26xSEIMasteringDisplayInfo& info) {
                          EXPECT_EQ(info.display_primaries[0][0], 13249u);
                          EXPECT_EQ(info.display_primaries[0][1], 34499u);
                          EXPECT_EQ(info.display_primaries[1][0], 7500u);
@@ -694,6 +738,214 @@ TEST_F(H265ParserTest, SpsOverwritesInvalidatesPps) {
 
   // The PPS should be invalidated because the SPS has changed.
   EXPECT_EQ(parser_.GetPPS(pps_id), nullptr);
+}
+
+class H265CrossSliceTest : public H265ParserTest {
+ protected:
+  void BuildSpsAndPps(H26xAnnexBBitstreamBuilder& builder) {
+    H265SPS sps = {};
+    sps.profile_tier_level.general_profile_idc = 1;
+    sps.profile_tier_level.general_level_idc = 120;
+    sps.pic_width_in_luma_samples = 32;
+    sps.pic_height_in_luma_samples = 16;
+    sps.log2_max_pic_order_cnt_lsb_minus4 = 4;
+    sps.log2_diff_max_min_luma_coding_block_size = 1;
+    sps.sps_max_dec_pic_buffering_minus1[0] = 1;
+
+    H265PPS pps = {};
+    pps.pps_pic_parameter_set_id = 0;
+    pps.pps_seq_parameter_set_id = 0;
+
+    BuildPackedH265SPS(builder, sps);
+    BuildPackedH265PPS(builder, pps);
+  }
+
+  // Appends an I slice that is the first slice segment of a picture.
+  void AppendFirstSlice(H26xAnnexBBitstreamBuilder& builder,
+                        H265NALU::Type nal_unit_type) {
+    builder.BeginNALU(nal_unit_type);
+    builder.AppendBool(true);   // first_slice_segment_in_pic_flag
+    builder.AppendBool(false);  // no_output_of_prior_pics_flag
+    builder.AppendUE(0);        // slice_pic_parameter_set_id
+    builder.AppendUE(H265SliceHeader::kSliceTypeI);
+    builder.AppendSE(0);  // slice_qp_delta
+    builder.FinishNALU();
+  }
+
+  // Appends an I slice that is a subsequent slice segment of the same picture
+  void AppendSecondSlice(H26xAnnexBBitstreamBuilder& builder,
+                         H265NALU::Type nal_unit_type) {
+    const bool is_irap = nal_unit_type >= H265NALU::BLA_W_LP &&
+                         nal_unit_type <= H265NALU::RSV_IRAP_VCL23;
+    const bool is_idr = nal_unit_type == H265NALU::IDR_W_RADL ||
+                        nal_unit_type == H265NALU::IDR_N_LP;
+    builder.BeginNALU(nal_unit_type);
+    builder.AppendBool(false);  // first_slice_segment_in_pic_flag
+    if (is_irap) {
+      builder.AppendBool(false);  // no_output_of_prior_pics_flag
+    }
+    builder.AppendUE(0);       // slice_pic_parameter_set_id
+    builder.AppendBits(1, 1);  // slice_segment_address (Log2Ceiling(2) == 1)
+    builder.AppendUE(H265SliceHeader::kSliceTypeI);  // slice_type
+    if (!is_idr) {
+      builder.AppendBits(8, 0);   // slice_pic_order_cnt_lsb
+      builder.AppendBool(false);  // short_term_ref_pic_set_sps_flag
+      builder.AppendUE(0);        // num_negative_pics
+      builder.AppendUE(0);        // num_positive_pics
+    }
+    builder.AppendSE(0);  // slice_qp_delta
+    builder.FinishNALU();
+  }
+
+  // Appends a non-IRAP (TRAIL_R) I slice carrying an explicit short-term RPS
+  // with |num_negative_pics| entries.
+  // We use I-slice instead of P-slice to simplify the test and it is valid for
+  // I-slice to declare RPS while not using it. Otherwise the construction of
+  // RPS would be more complicated.
+  void AppendTrailISliceWithRps(H26xAnnexBBitstreamBuilder& builder,
+                                bool first_slice,
+                                int num_negative_pics) {
+    builder.BeginNALU(H265NALU::TRAIL_R);
+    builder.AppendBool(first_slice);  // first_slice_segment_in_pic_flag
+    builder.AppendUE(0);              // slice_pic_parameter_set_id
+    if (!first_slice) {
+      builder.AppendBits(1, 1);  // slice_segment_address
+    }
+    builder.AppendUE(H265SliceHeader::kSliceTypeI);
+    builder.AppendBits(8, 0);   // slice_pic_order_cnt_lsb
+    builder.AppendBool(false);  // short_term_ref_pic_set_sps_flag
+    // Inline short_term_ref_pic_set(): num_short_term_ref_pic_sets == 0 in the
+    // SPS, so inter_ref_pic_set_prediction_flag is not present.
+    builder.AppendUE(num_negative_pics);
+    builder.AppendUE(0);  // num_positive_pics
+    for (int i = 0; i < num_negative_pics; ++i) {
+      builder.AppendUE(0);       // delta_poc_s0_minus1 (delta = -1)
+      builder.AppendBool(true);  // used_by_curr_pic_s0
+    }
+    builder.AppendSE(0);  // slice_qp_delta
+    builder.FinishNALU();
+  }
+
+  // Parses the SPS/PPS and the first slice, leaving the parser positioned at
+  // the second slice. Returns the parsed first slice header via |first_shdr|.
+  void ParseUpToSecondSlice(H265SliceHeader* first_shdr) {
+    H265NALU nalu;
+    int sps_id;
+    int pps_id;
+    ASSERT_EQ(parser_.AdvanceToNextNALU(&nalu), H265Parser::kOk);
+    ASSERT_EQ(nalu.nal_unit_type, H265NALU::SPS_NUT);
+    ASSERT_EQ(parser_.ParseSPS(&sps_id), H265Parser::kOk);
+    ASSERT_EQ(parser_.AdvanceToNextNALU(&nalu), H265Parser::kOk);
+    ASSERT_EQ(nalu.nal_unit_type, H265NALU::PPS_NUT);
+    ASSERT_EQ(parser_.ParsePPS(nalu, &pps_id), H265Parser::kOk);
+    ASSERT_EQ(parser_.AdvanceToNextNALU(&nalu), H265Parser::kOk);
+    ASSERT_EQ(parser_.ParseSliceHeader(nalu, first_shdr, nullptr),
+              H265Parser::kOk);
+  }
+};
+
+TEST_F(H265CrossSliceTest, RejectsMismatchedNalUnitType) {
+  H26xAnnexBBitstreamBuilder builder;
+  BuildSpsAndPps(builder);
+  AppendFirstSlice(builder, H265NALU::IDR_W_RADL);
+  AppendSecondSlice(builder, H265NALU::TRAIL_R);
+  builder.Flush();
+  parser_.SetStream(builder.data());
+
+  H265SliceHeader first_shdr;
+  ParseUpToSecondSlice(&first_shdr);
+
+  H265NALU nalu;
+  ASSERT_EQ(parser_.AdvanceToNextNALU(&nalu), H265Parser::kOk);
+  ASSERT_EQ(nalu.nal_unit_type, H265NALU::TRAIL_R);
+  H265SliceHeader second_shdr;
+  EXPECT_EQ(parser_.ParseSliceHeader(nalu, &second_shdr, &first_shdr),
+            H265Parser::kInvalidStream);
+}
+
+TEST_F(H265CrossSliceTest, AcceptsConsistentSlices) {
+  H26xAnnexBBitstreamBuilder builder;
+  BuildSpsAndPps(builder);
+  AppendFirstSlice(builder, H265NALU::IDR_W_RADL);
+  AppendSecondSlice(builder, H265NALU::IDR_W_RADL);
+  builder.Flush();
+  parser_.SetStream(builder.data());
+
+  H265SliceHeader first_shdr;
+  ParseUpToSecondSlice(&first_shdr);
+
+  H265NALU nalu;
+  ASSERT_EQ(parser_.AdvanceToNextNALU(&nalu), H265Parser::kOk);
+  ASSERT_EQ(nalu.nal_unit_type, H265NALU::IDR_W_RADL);
+  H265SliceHeader second_shdr;
+  EXPECT_EQ(parser_.ParseSliceHeader(nalu, &second_shdr, &first_shdr),
+            H265Parser::kOk);
+}
+
+TEST_F(H265CrossSliceTest, RejectsMismatchedShortTermRefPicSet) {
+  H26xAnnexBBitstreamBuilder builder;
+  BuildSpsAndPps(builder);
+  AppendTrailISliceWithRps(builder, /*first_slice=*/true,
+                           /*num_negative_pics=*/0);
+  AppendTrailISliceWithRps(builder, /*first_slice=*/false,
+                           /*num_negative_pics=*/1);
+  builder.Flush();
+  parser_.SetStream(builder.data());
+
+  H265SliceHeader first_shdr;
+  ParseUpToSecondSlice(&first_shdr);
+
+  H265NALU nalu;
+  ASSERT_EQ(parser_.AdvanceToNextNALU(&nalu), H265Parser::kOk);
+  ASSERT_EQ(nalu.nal_unit_type, H265NALU::TRAIL_R);
+  H265SliceHeader second_shdr;
+  EXPECT_EQ(parser_.ParseSliceHeader(nalu, &second_shdr, &first_shdr),
+            H265Parser::kInvalidStream);
+}
+
+TEST_F(H265CrossSliceTest, AcceptsMatchingShortTermRefPicSet) {
+  H26xAnnexBBitstreamBuilder builder;
+  BuildSpsAndPps(builder);
+  AppendTrailISliceWithRps(builder, /*first_slice=*/true,
+                           /*num_negative_pics=*/1);
+  AppendTrailISliceWithRps(builder, /*first_slice=*/false,
+                           /*num_negative_pics=*/1);
+  builder.Flush();
+  parser_.SetStream(builder.data());
+
+  H265SliceHeader first_shdr;
+  ParseUpToSecondSlice(&first_shdr);
+
+  H265NALU nalu;
+  ASSERT_EQ(parser_.AdvanceToNextNALU(&nalu), H265Parser::kOk);
+  ASSERT_EQ(nalu.nal_unit_type, H265NALU::TRAIL_R);
+  H265SliceHeader second_shdr;
+  EXPECT_EQ(parser_.ParseSliceHeader(nalu, &second_shdr, &first_shdr),
+            H265Parser::kOk);
+}
+
+TEST_F(H265CrossSliceTest, RejectsNonFirstSliceSegmentWithoutPriorSliceHeader) {
+  H26xAnnexBBitstreamBuilder builder;
+  BuildSpsAndPps(builder);
+  AppendSecondSlice(builder, H265NALU::IDR_W_RADL);
+  builder.Flush();
+  parser_.SetStream(builder.data());
+
+  H265NALU nalu;
+  int sps_id;
+  int pps_id;
+  ASSERT_EQ(parser_.AdvanceToNextNALU(&nalu), H265Parser::kOk);
+  ASSERT_EQ(nalu.nal_unit_type, H265NALU::SPS_NUT);
+  ASSERT_EQ(parser_.ParseSPS(&sps_id), H265Parser::kOk);
+  ASSERT_EQ(parser_.AdvanceToNextNALU(&nalu), H265Parser::kOk);
+  ASSERT_EQ(nalu.nal_unit_type, H265NALU::PPS_NUT);
+  ASSERT_EQ(parser_.ParsePPS(nalu, &pps_id), H265Parser::kOk);
+
+  ASSERT_EQ(parser_.AdvanceToNextNALU(&nalu), H265Parser::kOk);
+  ASSERT_EQ(nalu.nal_unit_type, H265NALU::IDR_W_RADL);
+  H265SliceHeader shdr;
+  EXPECT_EQ(parser_.ParseSliceHeader(nalu, &shdr, nullptr),
+            H265Parser::kInvalidStream);
 }
 
 }  // namespace media

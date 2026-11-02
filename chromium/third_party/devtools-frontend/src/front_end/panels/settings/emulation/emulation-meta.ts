@@ -9,7 +9,7 @@ import type * as Emulation from './emulation.js';
 
 const UIStrings = {
   /**
-   * @description Title of the Devices tab/tool. Devices refers to e.g. phones/tablets.
+   * @description Title of the Devices tab/tool. Devices refers to e.g., phones/tablets.
    */
   devices: 'Devices',
   /**

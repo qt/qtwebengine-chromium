@@ -248,6 +248,7 @@ CorsURLLoaderFactory::CorsURLLoaderFactory(
           params->devtools_cookie_setting_overrides),
       is_main_frame_origin_recently_accessed_(
           params->is_main_frame_origin_recently_accessed),
+      is_outermost_main_frame_(params->is_outermost_main_frame),
       origin_access_list_(origin_access_list),
       owner_(owner),
       network_restrictions_id_(params->network_restrictions_id) {
@@ -628,6 +629,20 @@ bool CorsURLLoaderFactory::IsValidRequest(
     }
   }
 
+  if (!process_id_.is_browser() && request.is_outermost_main_frame &&
+      !is_outermost_main_frame_ &&
+      request.mode != mojom::RequestMode::kNavigate) {
+    // The request value is renderer-controlled, while the factory value is
+    // browser-derived. Initial empty documents in opener-retaining popups can
+    // legitimately use a factory inherited from their creating subframe.
+    // Canonicalize to the factory's less-privileged value so Network Service
+    // downstream cookie policy does not allow top-level storage-access.
+    request.is_outermost_main_frame = is_outermost_main_frame_;
+    UMA_HISTOGRAM_BOOLEAN(
+        "NetworkService.CorsURLLoaderFactory.IsOutermostMainFrameClamped",
+        true);
+  }
+
   // Check if this is an untrusted factory being provided parameters that should
   // only be passed if it's trusted.
   if (!is_trusted_) {
@@ -638,13 +653,7 @@ bool CorsURLLoaderFactory::IsValidRequest(
     }
 
     // Apply allowlist for which flags untrusted factories are allowed to use.
-    if (request.load_flags &
-        ~(net::LOAD_VALIDATE_CACHE | net::LOAD_BYPASS_CACHE |
-          net::LOAD_SKIP_CACHE_VALIDATION | net::LOAD_ONLY_FROM_CACHE |
-          net::LOAD_DISABLE_CACHE | net::LOAD_PREFETCH |
-          net::LOAD_IGNORE_LIMITS | net::LOAD_DO_NOT_USE_EMBEDDED_IDENTITY |
-          net::LOAD_SUPPORT_ASYNC_REVALIDATION |
-          net::LOAD_RESTRICTED_PREFETCH_FOR_MAIN_FRAME)) {
+    if (request.load_flags & ~GetAllowedLoadFlagsForUntrustedRequests()) {
       mojo::ReportBadMessage(
           "CorsURLLoaderFactory: Untrusted caller using restricted load flag");
       return false;
@@ -676,6 +685,31 @@ bool CorsURLLoaderFactory::IsValidRequest(
     mojo::ReportBadMessage(
         "CorsURLLoaderFactory: original_destination is unexpectedly set to "
         "kDocument");
+    return false;
+  }
+
+  // A request whose destination is a frame type must be a navigation. A
+  // renderer-initiated subresource fetch must never claim to be a document /
+  // frame load, otherwise downstream consumers (e.g. Android WebView's
+  // shouldInterceptRequest) may misclassify it as a main-frame navigation.
+  // See 2.2.5 Requests: https://fetch.spec.whatwg.org/#requests
+  // See Navigation Request: https://fetch.spec.whatwg.org/#navigation-request
+  // See fenced frames: https://github.com/WICG/fenced-frame/issues/239
+  //
+  // This intentionally excludes destination types (see
+  // https://chromium-review.git.corp.google.com/c/chromium/src/+/7952612?tab=checks
+  // for details):
+  // * kEmbed: used by PDF pages to embed subresources.
+  // * kObject: used by wpt tests.
+  if (base::FeatureList::IsEnabled(
+          features::kRestrictFrameDestinationsToNavigate) &&
+      (request.destination == mojom::RequestDestination::kDocument ||
+       request.destination == mojom::RequestDestination::kFrame ||
+       request.destination == mojom::RequestDestination::kIframe ||
+       request.destination == mojom::RequestDestination::kFencedframe) &&
+      request.mode != mojom::RequestMode::kNavigate) {
+    mojo::ReportBadMessage(
+        "CorsURLLoaderFactory: frame destination requires kNavigate mode");
     return false;
   }
 
@@ -761,33 +795,34 @@ bool CorsURLLoaderFactory::IsValidRequest(
 
     switch (request.destination) {
       // Allowed destinations from unprivileged process:
-      case network::mojom::RequestDestination::kEmpty:
       case network::mojom::RequestDestination::kAudio:
       case network::mojom::RequestDestination::kAudioWorklet:
+      case network::mojom::RequestDestination::kCompressionDictionary:
       case network::mojom::RequestDestination::kDocument:
       case network::mojom::RequestDestination::kEmbed:
+      case network::mojom::RequestDestination::kEmpty:
+      case network::mojom::RequestDestination::kFencedframe:
       case network::mojom::RequestDestination::kFont:
       case network::mojom::RequestDestination::kFrame:
       case network::mojom::RequestDestination::kIframe:
       case network::mojom::RequestDestination::kImage:
+      case network::mojom::RequestDestination::kJson:
       case network::mojom::RequestDestination::kManifest:
       case network::mojom::RequestDestination::kObject:
       case network::mojom::RequestDestination::kPaintWorklet:
       case network::mojom::RequestDestination::kReport:
       case network::mojom::RequestDestination::kScript:
       case network::mojom::RequestDestination::kServiceWorker:
+      case network::mojom::RequestDestination::kSharedStorageWorklet:
       case network::mojom::RequestDestination::kSharedWorker:
+      case network::mojom::RequestDestination::kSpeculationRules:
       case network::mojom::RequestDestination::kStyle:
+      case network::mojom::RequestDestination::kText:
       case network::mojom::RequestDestination::kTrack:
       case network::mojom::RequestDestination::kVideo:
       case network::mojom::RequestDestination::kWebBundle:
       case network::mojom::RequestDestination::kWorker:
       case network::mojom::RequestDestination::kXslt:
-      case network::mojom::RequestDestination::kFencedframe:
-      case network::mojom::RequestDestination::kDictionary:
-      case network::mojom::RequestDestination::kSpeculationRules:
-      case network::mojom::RequestDestination::kJson:
-      case network::mojom::RequestDestination::kSharedStorageWorklet:
         break;
       case network::mojom::RequestDestination::kWebIdentity:
       case network::mojom::RequestDestination::kEmailVerification:
@@ -854,10 +889,15 @@ bool CorsURLLoaderFactory::IsValidRequest(
 
   const bool allow_unsafe_headers = cors::ShouldAllowUnsafeHeaders(
       *origin_access_list_, request.request_initiator, request.url);
+  std::string forbidden_header;
   if (!process_id_.is_browser() && !allow_unsafe_headers &&
-      ContainsForbiddenSecurityHeader(request.headers)) {
-    mojo::ReportBadMessage(
-        "CorsURLLoaderFactory: Forbidden Sec- header from renderer");
+      ContainsForbiddenSecurityHeader(request.headers, &forbidden_header)) {
+    SCOPED_CRASH_KEY_STRING32("network", "forbidden_sec_header",
+                              forbidden_header);
+    if (features::kRestrictForbiddenSecurityHeadersDump.Get()) {
+      mojo::ReportBadMessage(
+          "CorsURLLoaderFactory: Forbidden Sec- header from renderer");
+    }
     return false;
   }
 

@@ -4,8 +4,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
-VERSION=5.2.0
-GIT_SHA=331486c02721e1d37835177ffc89589a580ba57e # web-vitals does not tag releases.
+VERSION=6.0.0
+GIT_SHA=67a9ddb4cf77f8d1cb2c877ccd870b9c821aa853 # web-vitals does not tag releases.
 
 # Note: this is just to handle updating README.chromium.
 # For the actual sources, below we checkout the repo, apply local patches, then build with tsc.

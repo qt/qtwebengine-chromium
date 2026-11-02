@@ -12,7 +12,7 @@ import {
   makeCompleteEvent,
   makeInstantEvent,
   makeMockRendererHandlerData,
-  makeProfileCall
+  makeProfileCall,
 } from '../../../testing/TraceHelpers.js';
 import {TraceLoader} from '../../../testing/TraceLoader.js';
 import * as Trace from '../trace.js';
@@ -287,7 +287,7 @@ describeWithEnvironment('StackTraceForTraceEvent', function() {
           {...payloadCallStack[0], lineNumber: payloadLineNumber - 1, columnNumber: payloadColumnNumber - 1},
           {...payloadCallStack[1], lineNumber: payloadLineNumber - 1, columnNumber: payloadColumnNumber - 1},
         ],
-        description: undefined
+        description: undefined,
       },
     ]);
   });
@@ -302,16 +302,17 @@ describeWithEnvironment('StackTraceForTraceEvent', function() {
         shapeStackTraceAsArray(stackTraceForExtensionEntry)
             .map(stack => ({...stack, callFrames: stack.callFrames.map(frame => ({...frame, url: ''}))}));
     assert.deepEqual(prettyStack as unknown[], [
-      {callFrames: [], description: undefined}, {
+      {callFrames: [], description: undefined},
+      {
         callFrames: [{columnNumber: 8, functionName: 'App', lineNumber: 45, scriptId: '31', url: ''}],
-        description: '<Container>'
+        description: '<Container>',
       },
       {
         callFrames: [
           {columnNumber: 14, functionName: 'renderApp', lineNumber: 98, scriptId: '25', url: ''},
-          {columnNumber: 16, functionName: '<anonymous>', lineNumber: 165, scriptId: '26', url: ''}
+          {columnNumber: 16, functionName: '<anonymous>', lineNumber: 165, scriptId: '26', url: ''},
         ],
-        description: '<App>'
+        description: '<App>',
       },
       {
         callFrames: [
@@ -323,10 +324,10 @@ describeWithEnvironment('StackTraceForTraceEvent', function() {
           {columnNumber: 39, functionName: 'options.factory', lineNumber: 31995, scriptId: '11', url: ''},
           {columnNumber: 38, functionName: '__webpack_require__', lineNumber: 31365, scriptId: '11', url: ''},
           {columnNumber: 10, functionName: '', lineNumber: 0, scriptId: '11', url: ''},
-          {columnNumber: 0, functionName: '', lineNumber: 0, scriptId: '11', url: ''}
+          {columnNumber: 0, functionName: '', lineNumber: 0, scriptId: '11', url: ''},
         ],
-        description: '"use server"'
-      }
+        description: '"use server"',
+      },
     ]);
   });
 });

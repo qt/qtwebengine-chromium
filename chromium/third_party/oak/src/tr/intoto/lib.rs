@@ -1,3 +1,4 @@
+//
 // Copyright 2025 The Project Oak Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,3 +19,6 @@
 #![no_std]
 
 pub mod statement;
+
+#[cfg(test)]
+mod tests;

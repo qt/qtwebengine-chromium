@@ -87,9 +87,10 @@ void HeadlessPrintManager::RequestPrintPreview(
   mojo::ReportBadMessage(kUnexpectedPrintManagerCall);
 }
 
-void HeadlessPrintManager::CheckForCancel(int32_t preview_ui_id,
-                                          int32_t request_id,
-                                          CheckForCancelCallback callback) {
+void HeadlessPrintManager::CheckForCancel(
+    const base::UnguessableToken& preview_ui_id,
+    int32_t request_id,
+    CheckForCancelCallback callback) {
   mojo::ReportBadMessage(kUnexpectedPrintManagerCall);
 }
 
@@ -101,6 +102,11 @@ void HeadlessPrintManager::SetAccessibilityTree(
 #endif  // BUILDFLAG(ENABLE_PRINT_PREVIEW)
 
 #if BUILDFLAG(IS_ANDROID)
+void HeadlessPrintManager::SetupScriptedPrintAndroid(
+    SetupScriptedPrintAndroidCallback callback) {
+  std::move(callback).Run();
+}
+
 void HeadlessPrintManager::PdfWritingDone(int page_count) {}
 #endif
 

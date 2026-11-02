@@ -132,9 +132,9 @@ const DEFAULT_CONFIG = {
     // ignored by the 'aria-valid-attr' rule.
     // This should be removed after axe-core is updated.
     // See: https://github.com/dequelabs/axe-core/issues/1457
-    {id: 'aria-valid-attr', options: ['aria-placeholder', 'aria-description']}
+    {id: 'aria-valid-attr', options: ['aria-placeholder', 'aria-description']},
   ],
-  runOnly: {type: 'tags', values: {include: ['wcag2a', 'best-practice'], exclude: ['experimental']}}
+  runOnly: {type: 'tags', values: {include: ['wcag2a', 'best-practice'], exclude: ['experimental']}},
 };
 
 export const AxeCoreTestRunner = {};
@@ -146,7 +146,7 @@ AxeCoreTestRunner.processAxeResult = function(violations) {
       helpUrl: rule.helpUrl,
       ruleId: rule.id,
       impact: rule.impact,
-      failedNodes: AxeCoreTestRunner.processAxeResultNodesArray(rule.nodes)
+      failedNodes: AxeCoreTestRunner.processAxeResultNodesArray(rule.nodes),
     };
   });
   return JSON.stringify(result, undefined, 2);

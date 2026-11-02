@@ -16,9 +16,12 @@
 
 #include <cassert>
 #include <cstdint>
+#include <cstring>
 
+#include "src/utils/array_2d.h"
 #include "src/utils/common.h"
 #include "src/utils/constants.h"
+#include "src/utils/types.h"
 
 #if LIBGAV1_MAX_BITDEPTH != 8 && LIBGAV1_MAX_BITDEPTH != 10 && \
     LIBGAV1_MAX_BITDEPTH != 12

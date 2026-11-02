@@ -6,11 +6,8 @@
 // Unit tests for HandleAllocator.
 //
 
-#ifdef UNSAFE_BUFFERS_BUILD
-#    pragma allow_unsafe_buffers
-#endif
-
 #include <unordered_set>
+#include "common/unsafe_buffers.h"
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -140,7 +137,7 @@ TEST(HandleAllocatorTest, SortedOrderHandle)
     GLuint allocatedList[5];
     for (GLuint count = 0; count < 5; count++)
     {
-        EXPECT_TRUE(allocator.allocate(&allocatedList[count]));
+        ANGLE_UNSAFE_TODO(EXPECT_TRUE(allocator.allocate(&allocatedList[count])));
     }
 
     EXPECT_EQ(1u, allocatedList[0]);
@@ -304,7 +301,7 @@ TEST(HandleAllocatorTest, ReleaseThenReuseInFIFO)
     GLuint handles[11];
     for (int i = 0; i < 11; i++)
     {
-        EXPECT_TRUE(allocator.allocate(&handles[i]));
+        ANGLE_UNSAFE_TODO(EXPECT_TRUE(allocator.allocate(&handles[i])));
     }
 
     // Release handles in a non-sorted order. None is adjacent to 12, so all go into mReleasedList
@@ -412,6 +409,77 @@ TEST(HandleAllocatorTest, InterleavedReleaseAllocate)
         EXPECT_TRUE(allocator.allocate(&newHandle));
         EXPECT_EQ(handle, newHandle);
     }
+}
+
+// Test MinimumReleasedToKeep parameter behavior for HandleAllocator.
+TEST(HandleAllocatorTest, MinimumReleasedToKeep)
+{
+    // MinimumReleasedToKeep = 3
+    gl::HandleAllocator allocator(100, 3);
+
+    // Allocate 5 handles (1, 2, 3, 4, 5)
+    for (GLuint i = 1; i <= 5; ++i)
+    {
+        GLuint handle = 0;
+        EXPECT_TRUE(allocator.allocate(&handle));
+        EXPECT_EQ(handle, i);
+    }
+
+    // Release 1 and 3 (mReleasedList size becomes 2 <= 3)
+    allocator.release(1);
+    allocator.release(3);
+
+    // Next allocation should NOT recycle from mReleasedList because size (2) <= 3.
+    // It should allocate handle 6 from mUnallocatedList.
+    GLuint handle = 0;
+    EXPECT_TRUE(allocator.allocate(&handle));
+    EXPECT_EQ(6u, handle);
+
+    // Release handle 2 (mReleasedList size becomes 3 <= 3: [1, 3, 2])
+    allocator.release(2);
+
+    // Next allocation should NOT recycle from mReleasedList because size (3) <= 3.
+    // It should allocate handle 7 from mUnallocatedList.
+    EXPECT_TRUE(allocator.allocate(&handle));
+    EXPECT_EQ(7u, handle);
+
+    // Release handle 4 (mReleasedList size becomes 4 > 3: [1, 3, 2, 4])
+    allocator.release(4);
+
+    // Next allocation SHOULD recycle from mReleasedList because size (4) > 3.
+    // Recycles handle 1 in FIFO order.
+    EXPECT_TRUE(allocator.allocate(&handle));
+    EXPECT_EQ(1u, handle);
+
+    // Now mReleasedList size is 3 <= 3. Next allocation should take handle 8 from mUnallocatedList.
+    EXPECT_TRUE(allocator.allocate(&handle));
+    EXPECT_EQ(8u, handle);
+}
+
+// Test that HandleAllocator falls back to recycling from mReleasedList when mUnallocatedList is
+// empty
+TEST(HandleAllocatorTest, MinimumReleasedToKeepExhaustionFallback)
+{
+    // MinimumReleasedToKeep = 3, max handles = 3
+    gl::HandleAllocator allocator(3, 3);
+
+    // Allocate all 3 handles
+    for (GLuint i = 1; i <= 3; ++i)
+    {
+        GLuint handle = 0;
+        EXPECT_TRUE(allocator.allocate(&handle));
+        EXPECT_EQ(handle, i);
+    }
+
+    // Release 1 and 2 (mReleasedList size = 2 < 3)
+    allocator.release(1);
+    allocator.release(2);
+
+    // mUnallocatedList is empty. Even though mReleasedList size (2) < 3,
+    // allocation should fallback to recycling from mReleasedList rather than failing.
+    GLuint handle = 0;
+    EXPECT_TRUE(allocator.allocate(&handle));
+    EXPECT_EQ(1u, handle);
 }
 
 }  // anonymous namespace

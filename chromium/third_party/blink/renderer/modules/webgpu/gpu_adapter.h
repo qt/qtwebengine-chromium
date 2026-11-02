@@ -43,7 +43,6 @@ class GPUAdapter final : public ScriptWrappable, DawnObject<wgpu::Adapter> {
   GPUSupportedLimits* limits() const { return limits_.Get(); }
   GPUAdapterInfo* info() const;
   wgpu::BackendType backendType() const;
-  bool SupportsMultiPlanarFormats() const;
 
   ScriptPromise<GPUDevice> requestDevice(ScriptState* script_state,
                                          GPUDeviceDescriptor* descriptor);
@@ -67,7 +66,7 @@ class GPUAdapter final : public ScriptWrappable, DawnObject<wgpu::Adapter> {
                                wgpu::Device dawn_device,
                                wgpu::StringView error_message);
 
-  void SetLabelImpl(const String&) override {
+  void SetLabelImpl(std::string_view) override {
     // There isn't a wgpu::Adapter::SetLabel, just skip.
   }
 

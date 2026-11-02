@@ -5,17 +5,16 @@
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as Platform from '../../core/platform/platform.js';
+import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as Breakpoints from '../breakpoints/breakpoints.js';
-import * as TextUtils from '../text_utils/text_utils.js';
 import * as Workspace from '../workspace/workspace.js';
 
 import {type FileSystem, FileSystemWorkspaceBinding} from './FileSystemWorkspaceBinding.js';
 import {IsolatedFileSystemManager} from './IsolatedFileSystemManager.js';
 import {PersistenceBinding, PersistenceImpl} from './PersistenceImpl.js';
-
-let networkPersistenceManagerInstance: NetworkPersistenceManager|null;
 
 const forbiddenUrls = ['chromewebstore.google.com', 'chrome.google.com'];
 
@@ -24,8 +23,14 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
   #bindings = new WeakMap<Workspace.UISourceCode.UISourceCode, PersistenceBinding>();
   readonly #originalResponseContentPromises = new WeakMap<Workspace.UISourceCode.UISourceCode, Promise<string|null>>();
   #savingForOverrides = new WeakSet<Workspace.UISourceCode.UISourceCode>();
-  #enabledSetting = Common.Settings.Settings.instance().moduleSetting<boolean>('persistence-network-overrides-enabled');
+  readonly #enabledSetting: Common.Settings.Setting<boolean>;
   readonly #workspace: Workspace.Workspace.WorkspaceImpl;
+  readonly #persistence: PersistenceImpl;
+  readonly #breakpointManager: Breakpoints.BreakpointManager.BreakpointManager;
+  readonly #targetManager: SDK.TargetManager.TargetManager;
+  readonly #settings: Common.Settings.Settings;
+  readonly #isolatedFileSystemManager: IsolatedFileSystemManager;
+  readonly #multitargetNetworkManager: SDK.NetworkManager.MultitargetNetworkManager;
   readonly #networkUISourceCodeForEncodedPath =
       new Map<Platform.DevToolsPath.EncodedPathString, Workspace.UISourceCode.UISourceCode>();
   readonly #interceptionHandlerBound: (interceptedRequest: SDK.NetworkManager.InterceptedRequest) => Promise<void>;
@@ -39,12 +44,27 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
   readonly #eventDispatchThrottler = new Common.Throttler.Throttler(50);
   #headerOverridesForEventDispatch = new Set<Workspace.UISourceCode.UISourceCode>();
 
-  private constructor(workspace: Workspace.Workspace.WorkspaceImpl) {
+  constructor(
+      workspace: Workspace.Workspace.WorkspaceImpl,
+      persistence: PersistenceImpl,
+      breakpointManager: Breakpoints.BreakpointManager.BreakpointManager,
+      targetManager: SDK.TargetManager.TargetManager,
+      settings: Common.Settings.Settings,
+      isolatedFileSystemManager: IsolatedFileSystemManager,
+      multitargetNetworkManager: SDK.NetworkManager.MultitargetNetworkManager,
+  ) {
     super();
 
-    this.#enabledSetting.addChangeListener(this.enabledChanged, this);
-
     this.#workspace = workspace;
+    this.#persistence = persistence;
+    this.#breakpointManager = breakpointManager;
+    this.#targetManager = targetManager;
+    this.#settings = settings;
+    this.#isolatedFileSystemManager = isolatedFileSystemManager;
+    this.#multitargetNetworkManager = multitargetNetworkManager;
+
+    this.#enabledSetting = this.#settings.moduleSetting<boolean>('persistence-network-overrides-enabled');
+    this.#enabledSetting.addChangeListener(this.enabledChanged, this);
 
     this.#interceptionHandlerBound = this.interceptionHandler.bind(this);
 
@@ -55,13 +75,12 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
       void this.onProjectRemoved(event.data);
     });
 
-    PersistenceImpl.instance().addNetworkInterceptor(this.canHandleNetworkUISourceCode.bind(this));
-    Breakpoints.BreakpointManager.BreakpointManager.instance().addUpdateBindingsCallback(
-        this.networkUISourceCodeAdded.bind(this));
+    this.#persistence.addNetworkInterceptor(this.canHandleNetworkUISourceCode.bind(this));
+    this.#breakpointManager.addUpdateBindingsCallback(this.networkUISourceCodeAdded.bind(this));
 
     void this.enabledChanged();
 
-    SDK.TargetManager.TargetManager.instance().observeTargets(this);
+    this.#targetManager.observeTargets(this);
   }
 
   targetAdded(): void {
@@ -76,14 +95,29 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
     workspace: Workspace.Workspace.WorkspaceImpl|null,
   } = {forceNew: null, workspace: null}): NetworkPersistenceManager {
     const {forceNew, workspace} = opts;
-    if (!networkPersistenceManagerInstance || forceNew) {
+    if (!Root.DevToolsContext.globalInstance().has(NetworkPersistenceManager) || forceNew) {
       if (!workspace) {
         throw new Error('Missing workspace for NetworkPersistenceManager');
       }
-      networkPersistenceManagerInstance = new NetworkPersistenceManager(workspace);
+      Root.DevToolsContext.globalInstance().set(
+          NetworkPersistenceManager,
+          new NetworkPersistenceManager(
+              workspace,
+              PersistenceImpl.instance(),
+              Breakpoints.BreakpointManager.BreakpointManager.instance(),
+              SDK.TargetManager.TargetManager.instance(),
+              Common.Settings.Settings.instance(),
+              IsolatedFileSystemManager.instance(),
+              SDK.NetworkManager.MultitargetNetworkManager.instance(),
+              ),
+      );
     }
 
-    return networkPersistenceManagerInstance;
+    return Root.DevToolsContext.globalInstance().get(NetworkPersistenceManager);
+  }
+
+  static removeInstance(): void {
+    Root.DevToolsContext.globalInstance().delete(NetworkPersistenceManager);
   }
 
   active(): boolean {
@@ -111,24 +145,20 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
     if (this.#enabled) {
       Host.userMetrics.actionTaken(Host.UserMetrics.Action.PersistenceNetworkOverridesEnabled);
       this.#eventDescriptors = [
-        Workspace.Workspace.WorkspaceImpl.instance().addEventListener(
-            Workspace.Workspace.Events.UISourceCodeRenamed,
-            event => {
-              void this.uiSourceCodeRenamedListener(event);
-            }),
-        Workspace.Workspace.WorkspaceImpl.instance().addEventListener(
-            Workspace.Workspace.Events.UISourceCodeAdded,
-            event => {
-              void this.uiSourceCodeAdded(event);
-            }),
-        Workspace.Workspace.WorkspaceImpl.instance().addEventListener(
-            Workspace.Workspace.Events.UISourceCodeRemoved,
-            event => {
-              void this.uiSourceCodeRemovedListener(event);
-            }),
-        Workspace.Workspace.WorkspaceImpl.instance().addEventListener(
-            Workspace.Workspace.Events.WorkingCopyCommitted,
-            event => this.onUISourceCodeWorkingCopyCommitted(event.data.uiSourceCode)),
+        this.#workspace.addEventListener(Workspace.Workspace.Events.UISourceCodeRenamed,
+                                         event => {
+                                           void this.uiSourceCodeRenamedListener(event);
+                                         }),
+        this.#workspace.addEventListener(Workspace.Workspace.Events.UISourceCodeAdded,
+                                         event => {
+                                           void this.uiSourceCodeAdded(event);
+                                         }),
+        this.#workspace.addEventListener(Workspace.Workspace.Events.UISourceCodeRemoved,
+                                         event => {
+                                           void this.uiSourceCodeRemovedListener(event);
+                                         }),
+        this.#workspace.addEventListener(Workspace.Workspace.Events.WorkingCopyCommitted,
+                                         event => this.onUISourceCodeWorkingCopyCommitted(event.data.uiSourceCode)),
       ];
       await this.updateActiveProject();
     } else {
@@ -158,8 +188,7 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
 
   private async updateActiveProject(): Promise<void> {
     const wasActive = this.#active;
-    this.#active =
-        Boolean(this.#enabledSetting.get() && SDK.TargetManager.TargetManager.instance().rootTarget() && this.#project);
+    this.#active = Boolean(this.#enabledSetting.get() && this.#targetManager.rootTarget() && this.#project);
     if (this.#active === wasActive) {
       return;
     }
@@ -178,7 +207,7 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
           [...this.#project.uiSourceCodes()].map(uiSourceCode => this.filesystemUISourceCodeRemoved(uiSourceCode)));
       this.#networkUISourceCodeForEncodedPath.clear();
     }
-    PersistenceImpl.instance().refreshAutomapping();
+    this.#persistence.refreshAutomapping();
   }
 
   encodedPathFromUrl(url: Platform.DevToolsPath.UrlString, ignoreInactive?: boolean):
@@ -270,7 +299,7 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
     const folderUrlFromRequest =
         Common.ParsedURL.ParsedURL.substring(fileUrlFromRequest, 0, fileUrlFromRequest.lastIndexOf('/'));
     const headersFileUrl = Common.ParsedURL.ParsedURL.concatenate(folderUrlFromRequest, '/', HEADERS_FILENAME);
-    return Workspace.Workspace.WorkspaceImpl.instance().uiSourceCodeForURL(headersFileUrl);
+    return this.#workspace.uiSourceCodeForURL(headersFileUrl);
   }
 
   async getOrCreateHeadersUISourceCodeFromUrl(url: Platform.DevToolsPath.UrlString):
@@ -315,7 +344,7 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
   #innerUnbind(binding: PersistenceBinding): Promise<void> {
     this.#bindings.delete(binding.network);
     this.#bindings.delete(binding.fileSystem);
-    return PersistenceImpl.instance().removeBinding(binding);
+    return this.#persistence.removeBinding(binding);
   }
 
   async #bind(
@@ -352,12 +381,12 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
     const binding = new PersistenceBinding(networkUISourceCode, fileSystemUISourceCode);
     this.#bindings.set(networkUISourceCode, binding);
     this.#bindings.set(fileSystemUISourceCode, binding);
-    await PersistenceImpl.instance().addBinding(binding);
+    await this.#persistence.addBinding(binding);
     const uiSourceCodeOfTruth =
         this.#savingForOverrides.has(networkUISourceCode) ? networkUISourceCode : fileSystemUISourceCode;
     const contentDataOrError = await uiSourceCodeOfTruth.requestContentData();
     const {content, isEncoded} = TextUtils.ContentData.ContentData.asDeferredContent(contentDataOrError);
-    PersistenceImpl.instance().syncContent(uiSourceCodeOfTruth, content || '', isEncoded);
+    this.#persistence.syncContent(uiSourceCodeOfTruth, content || '', isEncoded);
   }
 
   private onUISourceCodeWorkingCopyCommitted(uiSourceCode: Workspace.UISourceCode.UISourceCode): void {
@@ -398,7 +427,7 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
     if (this.#shouldPromptSaveForOverridesDialog(uiSourceCode)) {
       Host.userMetrics.actionTaken(Host.UserMetrics.Action.OverrideContentContextMenuSetup);
       await new Promise<void>(resolve => this.dispatchEventToListeners(Events.LOCAL_OVERRIDES_REQUESTED, resolve));
-      await IsolatedFileSystemManager.instance().addFileSystem('overrides');
+      await this.#isolatedFileSystemManager.addFileSystem('overrides');
     }
 
     if (!this.project()) {
@@ -683,8 +712,8 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
   async #innerUpdateInterceptionPatterns(): Promise<void> {
     this.#headerOverridesMap.clear();
     if (!this.#active || !this.#project) {
-      return await SDK.NetworkManager.MultitargetNetworkManager.instance().setInterceptionHandlerForPatterns(
-          [], this.#interceptionHandlerBound);
+      return await this.#multitargetNetworkManager.setInterceptionHandlerForPatterns([],
+                                                                                     this.#interceptionHandlerBound);
     }
     let patterns = new Set<string>();
     for (const uiSourceCode of this.#project.uiSourceCodes()) {
@@ -713,9 +742,9 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
       }
     }
 
-    return await SDK.NetworkManager.MultitargetNetworkManager.instance().setInterceptionHandlerForPatterns(
-        Array.from(patterns).map(
-            pattern => ({urlPattern: pattern, requestStage: Protocol.Fetch.RequestStage.Response})),
+    return await this.#multitargetNetworkManager.setInterceptionHandlerForPatterns(
+        Array.from(patterns).map(pattern =>
+                                     ({urlPattern: pattern, requestStage: Protocol.Fetch.RequestStage.Response})),
         this.#interceptionHandlerBound);
   }
 
@@ -888,6 +917,10 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
   }
 
   handleHeaderInterception(interceptedRequest: SDK.NetworkManager.InterceptedRequest): Protocol.Fetch.HeaderEntry[] {
+    if (NetworkPersistenceManager.isForbiddenNetworkUrl(interceptedRequest.request.url as
+                                                        Platform.DevToolsPath.UrlString)) {
+      return [];
+    }
     let result: Protocol.Fetch.HeaderEntry[] = interceptedRequest.responseHeaders || [];
     // 'rawPathFromUrl()''s return value is already (singly-)encoded, so we can
     // treat it as an 'EncodedPathString' here.
@@ -914,8 +947,12 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
     if (!this.#active || (method === 'OPTIONS')) {
       return;
     }
+    const requestUrl = interceptedRequest.request.url as Platform.DevToolsPath.UrlString;
+    if (NetworkPersistenceManager.isForbiddenNetworkUrl(requestUrl)) {
+      return;
+    }
     const proj = this.#project as FileSystem;
-    const path = this.fileUrlFromNetworkUrl(interceptedRequest.request.url as Platform.DevToolsPath.UrlString);
+    const path = this.fileUrlFromNetworkUrl(requestUrl);
     const fileSystemUISourceCode = proj.uiSourceCodeForURL(path);
     let responseHeaders = this.handleHeaderInterception(interceptedRequest);
     if (!fileSystemUISourceCode && !responseHeaders.length) {

@@ -44,13 +44,11 @@
 }
 
 path.animation-keyframe {
-  /* stylelint-disable-next-line declaration-property-value-no-unknown */
   fill-opacity: 20%;
 }
 
 .animation-node-selected path.animation-keyframe,
 svg.animation-ui g:first-child:hover path.animation-keyframe {
-  /* stylelint-disable-next-line declaration-property-value-no-unknown */
   fill-opacity: 40%;
 }
 

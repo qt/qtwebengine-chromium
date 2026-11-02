@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/paint/image_painter.h"
 
+#include "third_party/blink/renderer/core/animation/css/css_image_animations.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/editing/frame_selection.h"
@@ -11,7 +12,6 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/html/html_area_element.h"
 #include "third_party/blink/renderer/core/html/html_image_element.h"
-#include "third_party/blink/renderer/core/html/media/html_video_element.h"
 #include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/layout/adjust_for_absolute_zoom.h"
 #include "third_party/blink/renderer/core/layout/layout_image.h"
@@ -23,7 +23,6 @@
 #include "third_party/blink/renderer/core/paint/paint_auto_dark_mode.h"
 #include "third_party/blink/renderer/core/paint/paint_info.h"
 #include "third_party/blink/renderer/core/paint/scoped_paint_state.h"
-#include "third_party/blink/renderer/core/paint/timing/image_element_timing.h"
 #include "third_party/blink/renderer/core/paint/timing/paint_timing_detector.h"
 #include "third_party/blink/renderer/platform/geometry/path.h"
 #include "third_party/blink/renderer/platform/geometry/path_builder.h"
@@ -79,11 +78,12 @@ void ImagePainter::PaintAreaElementFocusRing(const PaintInfo& paint_info) {
     return;
 
   // We use EnsureComputedStyle() instead of GetComputedStyle() here because
-  // <area> is used and its style applied even if it has display:none.
+  // <area> is used and its style applied even if it has display:none. The style
+  // may still be null if the area_element is outside the flat tree.
   const ComputedStyle* area_element_style = area_element->EnsureComputedStyle();
   // If the outline is hidden we want to avoid drawing anything even if we
   // don't use the value directly.
-  if (!area_element_style->HasOutline()) {
+  if (!area_element_style || !area_element_style->HasOutline()) {
     return;
   }
 
@@ -116,11 +116,13 @@ void ImagePainter::PaintAreaElementFocusRing(const PaintInfo& paint_info) {
 
 void ImagePainter::PaintReplaced(const PaintInfo& paint_info,
                                  const PhysicalOffset& paint_offset) {
-  const PhysicalSize content_size = layout_image_.PhysicalContentBoxSize();
+  const PhysicalRect content_rect =
+      layout_image_.PhysicalContentBoxRect() + paint_offset;
   bool has_image = layout_image_.ImageResource()->HasImage();
   if (has_image) {
-    if (content_size.IsEmpty())
+    if (content_rect.IsEmpty()) {
       return;
+    }
     if (paint_info.IsPrivacyPreserving() &&
         !layout_image_.ImageResource()->IsCorsSameOrigin()) {
       return;
@@ -128,16 +130,13 @@ void ImagePainter::PaintReplaced(const PaintInfo& paint_info,
   } else {
     if (paint_info.phase == PaintPhase::kSelectionDragImage)
       return;
-    if (content_size.width <= 2 || content_size.height <= 2) {
+    if (content_rect.size.width <= 2 || content_rect.size.height <= 2) {
       return;
     }
   }
 
-  PhysicalRect content_rect(
-      paint_offset + layout_image_.PhysicalContentBoxOffset(), content_size);
-
-  PhysicalRect paint_rect = layout_image_.ReplacedContentRect();
-  paint_rect.offset += paint_offset;
+  const PhysicalRect paint_rect =
+      layout_image_.ReplacedContentRect() + paint_offset;
 
   // If |overflow| is supported for replaced elements, paint the complete image
   // and the painting will be clipped based on overflow value by clip paint
@@ -268,33 +267,16 @@ void ImagePainter::PaintIntoRect(GraphicsContext& context,
   // timing data. Do so now in order to mark the resulting PaintImage as
   // an LCP candidate.
   ImageResourceContent* image_content = image_resource.CachedImage();
-  bool is_image_or_video_element =
-      IsA<HTMLImageElement>(node) || IsA<HTMLVideoElement>(node);
-  if (image_content &&
-      (RuntimeEnabledFeatures::AllImagesPaintedSentToElementTimingEnabled() ||
-       is_image_or_video_element) &&
-      image_content->IsLoaded()) {
-    Document& document = layout_image_.GetDocument();
-    LocalDOMWindow* window = document.domWindow();
-    DCHECK(window);
-    if (!is_image_or_video_element) {
-      UseCounter::Count(document,
-                        WebFeature::kImageElementTimingNotImageOrVideoNode);
-    }
-    ImageElementTiming::From(*window).NotifyImagePainted(
-        layout_image_, *image_content,
-        context.GetPaintController().CurrentPaintChunkProperties(),
-        pixel_snapped_dest_rect);
-  }
-
+  ImageNodeAnimationInfo image_animation =
+      CSSImageAnimations::CreateImageNodeAnimationInfo(
+          node, image_content, layout_image_.StyleRef().ImageAnimation());
   context.DrawImage(
       *image, decode_mode, image_auto_dark_mode,
       ComputeImagePaintTimingInfo(layout_image_, *image, image_content, context,
                                   pixel_snapped_dest_rect),
       gfx::RectF(pixel_snapped_dest_rect), &src_rect, SkBlendMode::kSrcOver,
       respect_orientation, Image::ImageClampingMode::kClampImageToSourceRect,
-      ImageNodeAnimationInfo(node ? node->GetDomNodeId() : kInvalidDOMNodeId,
-                             layout_image_.StyleRef().ImageAnimation()));
+      &image_animation);
 }
 
 }  // namespace blink

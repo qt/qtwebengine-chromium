@@ -10,7 +10,7 @@ import {
   dispatchClickEvent,
   dispatchKeyDownEvent,
   raf,
-  renderElementIntoDOM
+  renderElementIntoDOM,
 } from '../../../testing/DOMHelpers.js';
 import {setupLocaleHooks} from '../../../testing/LocaleHelpers.js';
 import * as RenderCoordinator from '../render_coordinator/render_coordinator.js';
@@ -390,43 +390,6 @@ describe('Dialog', () => {
            assert.isAtLeast(dialogLeft, containerLeft);
          });
     });
-
-    // Fails on Windows only after the window-size was increased.
-    it.skip(
-        '[crbug.com/420924642]: updates the dialog client rect automatically when its dimensions change',
-        async function() {
-          host.addEventListener('click', () => dialog.setDialogVisible(true));
-          const dialogContent = document.createElement('div');
-          dialogContent.style.display = 'block';
-          dialogContent.style.minWidth = '10px';
-          dialogContent.style.minHeight = '10px';
-          dialogContent.style.fontSize = '10px';
-          dialogContent.innerText = 'Hello';
-
-          dialog.append(dialogContent);
-          container.appendChild(host);
-          container.appendChild(dialog);
-          renderElementIntoDOM(container);
-          await RenderCoordinator.done();
-
-          dispatchClickEvent(host);
-          await RenderCoordinator.done();
-
-          const initialWidth = dialog.getDialogBounds().width;
-          const initialHeight = dialog.getDialogBounds().height;
-
-          // Increase the font size to increase the dialog's dimensions
-          dialogContent.style.fontSize = '1000px';
-
-          // Wait for the resize handling to take effect.
-          await new Promise(res => setTimeout(res, 200));
-
-          const finalWidth = dialog.getDialogBounds().width;
-          const finalHeight = dialog.getDialogBounds().height;
-
-          assert.isAbove(finalWidth, initialWidth);
-          assert.isAbove(finalHeight, initialHeight);
-        });
   });
 
   describe('closing the dialog with the ESC key', () => {
@@ -791,7 +754,7 @@ describe('visual appearance', () => {
       }
     }
 
-    renderElementIntoDOM(root);
+    renderElementIntoDOM(root, {includeCommonStyles: true});
 
     return root;
   }

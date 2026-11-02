@@ -241,7 +241,7 @@ TEST_F(IR_ValidatorTest, Var_NonFunction_InsideFunctionScope) {
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Var_Private_InsideFunctionScopeWithCapability) {
+TEST_F(IR_ValidatorTest, Var_Private_InsideFunctionScopeWithProperty) {
     auto* f = b.Function("my_func", ty.void_());
 
     b.Append(f->Block(), [&] {
@@ -249,7 +249,8 @@ TEST_F(IR_ValidatorTest, Var_Private_InsideFunctionScopeWithCapability) {
         b.Return(f);
     });
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kMslAllowEntryPointInterface});
+    mod.properties.Add(Property::kAllowMslEntryPointInterface);
+    auto res = ir::Validate(mod);
     ASSERT_EQ(res, Success) << res.Failure();
 }
 
@@ -386,12 +387,10 @@ TEST_F(IR_ValidatorTest, Var_Init_FunctionTypeInit) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(
-        res.Failure().reason,
-        testing::HasSubstr(
-            R"(:8:41 error: var: initializer type '<function>' does not match store type 'f32'
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr(
+                                          R"(:8:45 error: var: function may not be used as a operand
     %i:ptr<function, f32, read_write> = var %invalid_init
-                                        ^^^
+                                            ^^^^^^^^^^^^^
 )")) << res.Failure();
 }
 
@@ -399,9 +398,12 @@ TEST_F(IR_ValidatorTest, Var_Init_InvalidAddressSpace) {
     auto* p = b.Var<private_, f32>("p");
     p->SetInitializer(b.Constant(1_f));
     mod.root_block->Append(p);
+
     auto* s = b.Var<storage, f32>("s");
     s->SetInitializer(b.Constant(1_f));
+    s->SetBindingPoint(0, 0);
     mod.root_block->Append(s);
+
     auto* f = b.Function("my_func", ty.void_());
 
     b.Append(f->Block(), [&] {
@@ -416,7 +418,7 @@ TEST_F(IR_ValidatorTest, Var_Init_InvalidAddressSpace) {
         res.Failure().reason,
         testing::HasSubstr(
             R"(:3:38 error: var: only variables in the function, private, or __out address space may be initialized
-  %s:ptr<storage, f32, read_write> = var 1.0f
+  %s:ptr<storage, f32, read_write> = var 1.0f @binding_point(0, 0)
                                      ^^^
 )")) << res.Failure();
 }
@@ -535,14 +537,7 @@ TEST_F(IR_ValidatorTest, Var_Immediate_f16) {
     mod.root_block->Append(v);
 
     auto res = ir::Validate(mod);
-    ASSERT_NE(res, Success);
-    EXPECT_THAT(
-        res.Failure().reason,
-        testing::HasSubstr(
-            R"(:2:34 error: var: vars in the 'immediate' address space cannot contain f16 types
-  %1:ptr<immediate, f16, read> = var undef
-                                 ^^^
-)")) << res.Failure();
+    ASSERT_EQ(res, Success) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, Var_Immediate_Struct_f16) {
@@ -553,14 +548,7 @@ TEST_F(IR_ValidatorTest, Var_Immediate_Struct_f16) {
     mod.root_block->Append(v);
 
     auto res = ir::Validate(mod);
-    ASSERT_NE(res, Success);
-    EXPECT_THAT(
-        res.Failure().reason,
-        testing::HasSubstr(
-            R"(:6:32 error: var: vars in the 'immediate' address space cannot contain f16 types
-  %1:ptr<immediate, S, read> = var undef
-                               ^^^
-)")) << res.Failure();
+    ASSERT_EQ(res, Success) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, Var_Immediate_vec3f16) {
@@ -568,14 +556,7 @@ TEST_F(IR_ValidatorTest, Var_Immediate_vec3f16) {
     mod.root_block->Append(v);
 
     auto res = ir::Validate(mod);
-    ASSERT_NE(res, Success);
-    EXPECT_THAT(
-        res.Failure().reason,
-        testing::HasSubstr(
-            R"(:2:40 error: var: vars in the 'immediate' address space cannot contain f16 types
-  %1:ptr<immediate, vec3<f16>, read> = var undef
-                                       ^^^
-)")) << res.Failure();
+    ASSERT_EQ(res, Success) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, Var_Immediate_Multiple_SameEntryPoint) {
@@ -743,7 +724,9 @@ TEST_F(IR_ValidatorTest, Var_DuplicateBindingPoints_BothReferenced) {
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Var_DuplicateBindingPoints_CapabilityOverride) {
+TEST_F(IR_ValidatorTest, Var_DuplicateBindingPoints_WithProperty) {
+    mod.properties.Add(Property::kAllowDuplicateBindings);
+
     auto* var_a = b.Var<uniform, f32>();
     var_a->SetBindingPoint(1, 2);
     mod.root_block->Append(var_a);
@@ -759,7 +742,7 @@ TEST_F(IR_ValidatorTest, Var_DuplicateBindingPoints_CapabilityOverride) {
         b.Return(f);
     });
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kAllowDuplicateBindings});
+    auto res = ir::Validate(mod);
     ASSERT_EQ(res, Success);
 }
 
@@ -874,7 +857,7 @@ TEST_F(IR_ValidatorTest, Var_Struct_Location_InvalidType) {
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Var_Location_Struct_WithCapability) {
+TEST_F(IR_ValidatorTest, Var_Location_Struct_WithProperty) {
     auto* str_ty = ty.Struct(mod.symbols.New("MyStruct"), {
                                                               {mod.symbols.New("a"), ty.f32()},
                                                           });
@@ -882,11 +865,12 @@ TEST_F(IR_ValidatorTest, Var_Location_Struct_WithCapability) {
     v->SetLocation(0);
     mod.root_block->Append(v);
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kAllowLocationForNumericElements});
+    mod.properties.Add(Property::kAllowLocationForNumericComposites);
+    auto res = ir::Validate(mod);
     ASSERT_EQ(res, Success) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Var_Location_Struct_WithoutCapability) {
+TEST_F(IR_ValidatorTest, Var_Location_Struct_WithoutProperty) {
     auto* str_ty = ty.Struct(mod.symbols.New("MyStruct"), {
                                                               {mod.symbols.New("a"), ty.f32()},
                                                           });
@@ -939,7 +923,7 @@ TEST_F(IR_ValidatorTest, Var_BindingArray_Texture_NonHandleAddressSpace) {
     auto* v = b.Var(ty.ptr(
         AddressSpace::kPrivate,
         ty.binding_array(ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32()), 4_u),
-        read));
+        read_write));
     mod.root_block->Append(v);
 
     auto res = ir::Validate(mod);
@@ -948,15 +932,15 @@ TEST_F(IR_ValidatorTest, Var_BindingArray_Texture_NonHandleAddressSpace) {
         res.Failure().reason,
         testing::HasSubstr(
             R"(:2:3 error: var: handle types can only be declared in the 'handle' address space
-  %1:ptr<private, binding_array<texture_2d<f32>, 4>, read> = var undef
-  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  %1:ptr<private, binding_array<texture_2d<f32>, 4>, read_write> = var undef
+  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 )")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, Var_TexelBuffer_NonHandleAddressSpace) {
-    auto* v =
-        b.Var(ty.ptr(AddressSpace::kPrivate,
-                     ty.texel_buffer(core::TexelFormat::kRgba32Float, core::Access::kRead), read));
+    auto* v = b.Var(ty.ptr(AddressSpace::kPrivate,
+                           ty.texel_buffer(core::TexelFormat::kRgba32Float, core::Access::kRead),
+                           read_write));
     mod.root_block->Append(v);
 
     auto res = ir::Validate(mod);
@@ -965,8 +949,8 @@ TEST_F(IR_ValidatorTest, Var_TexelBuffer_NonHandleAddressSpace) {
         res.Failure().reason,
         testing::HasSubstr(
             R"(:2:3 error: var: handle types can only be declared in the 'handle' address space
-  %1:ptr<private, texel_buffer<rgba32float, read>, read> = var undef
-  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  %1:ptr<private, texel_buffer<rgba32float, read>, read_write> = var undef
+  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 )")) << res.Failure();
 }
 
@@ -986,7 +970,8 @@ TEST_F(IR_ValidatorTest, Var_InputAttachementIndex_NonHandle) {
 }
 
 TEST_F(IR_ValidatorTest, Var_InputAttachementIndex_WrongType) {
-    auto* v = b.Var(ty.ptr(AddressSpace::kHandle, ty.f32(), read_write));
+    auto* v = b.Var(ty.ptr(AddressSpace::kHandle,
+                           ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32()), read));
     v->SetBindingPoint(0, 0);
     v->SetInputAttachmentIndex(0);
     mod.root_block->Append(v);
@@ -996,9 +981,9 @@ TEST_F(IR_ValidatorTest, Var_InputAttachementIndex_WrongType) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:2:37 error: var: '@input_attachment_index' is only valid for 'input_attachment' type var
-  %1:ptr<handle, f32, read_write> = var undef @binding_point(0, 0) @input_attachment_index(0)
-                                    ^^^
+            R"(:2:43 error: var: '@input_attachment_index' is only valid for 'input_attachment' type var
+  %1:ptr<handle, texture_2d<f32>, read> = var undef @binding_point(0, 0) @input_attachment_index(0)
+                                          ^^^
 )")) << res.Failure();
 }
 
@@ -1011,9 +996,9 @@ TEST_F(IR_ValidatorTest, Var_RuntimeArray_NonStorage) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:2:3 error: var: vars not in the 'storage' or 'handle' address spaces must have a fixed footprint
+            R"(:2:45 error: var: vars not in the 'storage' or 'handle' address spaces must have a fixed footprint
   %1:ptr<private, array<f32>, read_write> = var undef
-  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                            ^^^
 )")) << res.Failure();
 }
 
@@ -1032,9 +1017,9 @@ TEST_F(IR_ValidatorTest, Var_RuntimeArray_NonStorageInStruct) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:6:3 error: var: vars not in the 'storage' or 'handle' address spaces must have a fixed footprint
+            R"(:6:37 error: var: vars not in the 'storage' or 'handle' address spaces must have a fixed footprint
   %1:ptr<uniform, MyStruct, read> = var undef @binding_point(0, 0) @input_attachment_index(0)
-  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                    ^^^
 )")) << res.Failure();
 }
 
@@ -1128,7 +1113,7 @@ TEST_F(IR_ValidatorTest, Let_WrongType) {
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Let_VoidResultWithCapability) {
+TEST_F(IR_ValidatorTest, Let_VoidResultWithProperty) {
     auto* f = b.Function("my_func", ty.void_());
     b.Append(f->Block(), [&] {
         auto* l = mod.CreateInstruction<ir::Let>(b.InstructionResult(ty.void_()), b.Constant(1_i));
@@ -1136,7 +1121,8 @@ TEST_F(IR_ValidatorTest, Let_VoidResultWithCapability) {
         b.Return(f);
     });
 
-    auto res = ir::Validate(mod, Capabilities{ir::Capability::kAllowAnyLetType});
+    mod.properties.Add(ir::Property::kAllowAnyLetType);
+    auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(res.Failure().reason, testing::HasSubstr(
                                           R"(:3:5 error: let: result type cannot be void
@@ -1145,7 +1131,7 @@ TEST_F(IR_ValidatorTest, Let_VoidResultWithCapability) {
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Let_VoidResultWithoutCapability) {
+TEST_F(IR_ValidatorTest, Let_VoidResultWithoutProperty) {
     auto* f = b.Function("my_func", ty.void_());
     b.Append(f->Block(), [&] {
         auto* l = mod.CreateInstruction<ir::Let>(b.InstructionResult(ty.void_()), b.Constant(1_i));
@@ -1162,7 +1148,7 @@ TEST_F(IR_ValidatorTest, Let_VoidResultWithoutCapability) {
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Let_VoidValueWithCapability) {
+TEST_F(IR_ValidatorTest, Let_VoidValueWithProperty) {
     auto* v = b.Function("void_func", ty.void_());
     b.Append(v->Block(), [&] { b.Return(v); });
 
@@ -1173,7 +1159,8 @@ TEST_F(IR_ValidatorTest, Let_VoidValueWithCapability) {
         b.Return(f);
     });
 
-    auto res = ir::Validate(mod, Capabilities{ir::Capability::kAllowAnyLetType});
+    mod.properties.Add(ir::Property::kAllowAnyLetType);
+    auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr(R"(:9:14 error: let: value type cannot be void
@@ -1182,7 +1169,7 @@ TEST_F(IR_ValidatorTest, Let_VoidValueWithCapability) {
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Let_VoidValueWithoutCapability) {
+TEST_F(IR_ValidatorTest, Let_VoidValueWithoutProperty) {
     auto* v = b.Function("void_func", ty.void_());
     b.Append(v->Block(), [&] { b.Return(v); });
 
@@ -1198,7 +1185,7 @@ TEST_F(IR_ValidatorTest, Let_VoidValueWithoutCapability) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:9:14 error: let: value type, 'void', must be concrete constructible type or a pointer type
+            R"(:9:14 error: let: value type, 'void', must be a concrete constructible type or a pointer type
     %4:i32 = let %3
              ^^^
 )")) << res.Failure();
@@ -1220,7 +1207,7 @@ TEST_F(IR_ValidatorTest, Let_NotConstructibleResult) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:3:18 error: let: result type, 'sampler', must be concrete constructible type or a pointer type
+            R"(:3:18 error: let: result type, 'sampler', must be a concrete constructible type or a pointer type
     %3:sampler = let 1i
                  ^^^
 )")) << res.Failure();
@@ -1231,7 +1218,7 @@ TEST_F(IR_ValidatorTest, Let_NotConstructibleValue) {
     auto* p = b.FunctionParam("p", ty.sampler());
     f->AppendParam(p);
     b.Append(f->Block(), [&] {
-        auto* l = mod.CreateInstruction<ir::Let>(b.InstructionResult(ty.i32()), p);
+        auto* l = mod.CreateInstruction<ir::Let>(b.InstructionResult(ty.sampler()), p);
         b.Append(l);
         b.Return(f);
     });
@@ -1241,13 +1228,13 @@ TEST_F(IR_ValidatorTest, Let_NotConstructibleValue) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:3:14 error: let: value type, 'sampler', must be concrete constructible type or a pointer type
-    %3:i32 = let %p
-             ^^^
+            R"(:3:18 error: let: value type, 'sampler', must be a concrete constructible type or a pointer type
+    %3:sampler = let %p
+                 ^^^
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Let_CapabilityBypass) {
+TEST_F(IR_ValidatorTest, Let_PropertyBypass) {
     auto* f = b.Function("my_func", ty.void_());
     auto* p = b.FunctionParam("p", ty.sampler());
     f->AppendParam(p);
@@ -1258,7 +1245,8 @@ TEST_F(IR_ValidatorTest, Let_CapabilityBypass) {
         b.Return(f);
     });
 
-    auto res = ir::Validate(mod, Capabilities{ir::Capability::kAllowAnyLetType});
+    mod.properties.Add(ir::Property::kAllowAnyLetType);
+    auto res = ir::Validate(mod);
     ASSERT_EQ(res, Success) << res.Failure();
 }
 
@@ -1270,7 +1258,8 @@ TEST_F(IR_ValidatorTest, Phony_NullValue) {
     sb.Append(v);
     sb.Return(f);
 
-    auto res = ir::Validate(mod, Capabilities{ir::Capability::kAllowPhonyInstructions});
+    mod.properties.Add(Property::kAllowPhonyInstructions);
+    auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(res.Failure().reason, testing::HasSubstr(R"(:3:19 error: phony: operand is undefined
     undef = phony undef
@@ -1288,7 +1277,8 @@ TEST_F(IR_ValidatorTest, Phony_EmptyValue) {
     sb.Append(v);
     sb.Return(f);
 
-    auto res = ir::Validate(mod, Capabilities{ir::Capability::kAllowPhonyInstructions});
+    mod.properties.Add(Property::kAllowPhonyInstructions);
+    auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr(R"(:3:13 error: phony: expected exactly 1 operands, got 0
@@ -1297,7 +1287,7 @@ TEST_F(IR_ValidatorTest, Phony_EmptyValue) {
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Phony_MissingCapability) {
+TEST_F(IR_ValidatorTest, Phony_MissingProperty) {
     auto* v = mod.CreateInstruction<ir::Phony>(b.Constant(1_i));
 
     auto* f = b.Function("my_func", ty.void_());
@@ -1308,9 +1298,8 @@ TEST_F(IR_ValidatorTest, Phony_MissingCapability) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(
-        res.Failure().reason,
-        testing::HasSubstr(R"(:3:13 error: phony: missing capability 'kAllowPhonyInstructions'
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(R"(:3:13 error: phony: missing property 'kAllowPhonyInstructions'
     undef = phony 1i
             ^^^^^
 )")) << res.Failure();
@@ -1461,11 +1450,12 @@ TEST_F(IR_ValidatorTest, Var_Atomic_NestedArray_Private) {
 )"));
 }
 
-TEST_F(IR_ValidatorTest, WorkgroupVar_RuntimeSizedArray_WithMslCapability) {
+TEST_F(IR_ValidatorTest, WorkgroupVar_RuntimeSizedArray_WithMslProperty) {
     auto* v = b.Var("v", ty.ptr<workgroup, array<i32>>());
     mod.root_block->Append(v);
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kMslAllowEntryPointInterface});
+    mod.properties.Add(Property::kAllowMslEntryPointInterface);
+    auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
@@ -1487,6 +1477,20 @@ TEST_F(IR_ValidatorTest, SubgroupMatrix_Constant) {
     ASSERT_NE(res, Success);
     EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr("error: let: subgroup_matrix values cannot be constant"));
+}
+
+TEST_F(IR_ValidatorTest, Override_RequiresInitOperand) {
+    mod.properties.Add(core::ir::Property::kAllowOverrides);
+    auto* o = mod.CreateInstruction<Override>();
+    o->AddResult(b.InstructionResult<core::type::U32>());
+    o->SetOverrideId(OverrideId{1});
+    mod.root_block->Append(o);
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr("error: override: override is malformed, missing initializer operand"));
 }
 
 }  // namespace tint::core::ir

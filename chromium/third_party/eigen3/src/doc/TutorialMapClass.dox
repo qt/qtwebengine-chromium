@@ -38,12 +38,13 @@ Map<typename MatrixType,
     typename StrideType>
 \endcode
 \li \c MapOptions specifies whether the pointer is \c #Aligned, or \c #Unaligned.  The default is \c #Unaligned.
-\li \c StrideType allows you to specify a custom layout for the memory array, using the Stride class.  One example would be to specify that the data array is organized in row-major format:
+\li \c StrideType allows you to specify a custom layout for the memory array, using the Stride class.  One example is
+to map every other row from a column-major array with an inner stride of 2:
 <table class="example">
 <tr><th>Example:</th><th>Output:</th></tr>
 <tr>
-<td>\include Tutorial_Map_rowmajor.cpp </td>
-<td>\verbinclude Tutorial_Map_rowmajor.out </td>
+<td>\include Tutorial_Map_inner_stride.cpp </td>
+<td>\verbinclude Tutorial_Map_inner_stride.out </td>
 </table>
 However, Stride is even more flexible than this; for details, see the documentation for the Map and Stride classes.
 

@@ -16,9 +16,9 @@
 #include "base/containers/span.h"
 #include "extensions/browser/api/declarative_net_request/file_backed_ruleset_source.h"
 #include "extensions/browser/api/declarative_net_request/flat/extension_ruleset_generated.h"
-#include "extensions/browser/api/web_request/web_request_resource_type.h"
 #include "extensions/common/api/declarative_net_request.h"
 #include "extensions/common/api/declarative_net_request/constants.h"
+#include "extensions/common/api/web_request/web_request_resource_type.h"
 #include "extensions/common/extension.h"
 #include "third_party/re2/src/re2/re2.h"
 
@@ -171,6 +171,9 @@ template <typename T>
 T CreateString(const flatbuffers::String& str) {
   return T(str.c_str(), str.size());
 }
+
+// Returns true if the given `id` corresponds to a static ruleset.
+bool IsRulesetStatic(const RulesetID& id);
 
 // Returns the number of static rules enabled for the specified
 // `composite_matcher`.

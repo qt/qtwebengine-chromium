@@ -43,11 +43,13 @@ TEST(DecoderTest, AlphaNoIspe) {
   auto decoder = CreateDecoder("alpha_noispe.avif");
   ASSERT_NE(decoder, nullptr);
   // By default, loose files are refused. Cast to avoid C4389 Windows warning.
-  EXPECT_EQ(decoder->strictFlags, (avifStrictFlags)AVIF_STRICT_ENABLED);
+  EXPECT_EQ(decoder->strictFlags,
+            static_cast<avifStrictFlags>(AVIF_STRICT_ENABLED));
   ASSERT_EQ(avifDecoderParse(decoder.get()), AVIF_RESULT_BMFF_PARSE_FAILED);
   // Allow this kind of file specifically.
-  decoder->strictFlags = (avifStrictFlags)AVIF_STRICT_ENABLED &
-                         ~(avifStrictFlags)AVIF_STRICT_ALPHA_ISPE_REQUIRED;
+  decoder->strictFlags =
+      static_cast<avifStrictFlags>(AVIF_STRICT_ENABLED) &
+      ~static_cast<avifStrictFlags>(AVIF_STRICT_ALPHA_ISPE_REQUIRED);
   ASSERT_EQ(avifDecoderParse(decoder.get()), AVIF_RESULT_OK);
   EXPECT_EQ(decoder->compressionFormat, COMPRESSION_FORMAT_AVIF);
   EXPECT_EQ(decoder->alphaPresent, AVIF_TRUE);
@@ -70,6 +72,23 @@ TEST(DecoderTest, AlphaPremultiplied) {
   EXPECT_EQ(avifDecoderNextImage(decoder.get()), AVIF_RESULT_OK);
   EXPECT_NE(decoder->image->alphaPlane, nullptr);
   EXPECT_GT(decoder->image->alphaRowBytes, 0u);
+}
+
+TEST(DecoderTest, AlphaPremultipliedIgnoreAlpha) {
+  if (!testutil::Av1DecoderAvailable()) {
+    GTEST_SKIP() << "AV1 Codec unavailable, skip test.";
+  }
+  auto decoder = CreateDecoder("alpha_premultiplied.avif");
+  ASSERT_NE(decoder, nullptr);
+  decoder->imageContentToDecode &= ~AVIF_IMAGE_CONTENT_ALPHA;
+  ASSERT_EQ(avifDecoderParse(decoder.get()), AVIF_RESULT_OK);
+  EXPECT_EQ(decoder->compressionFormat, COMPRESSION_FORMAT_AVIF);
+  EXPECT_EQ(decoder->alphaPresent, AVIF_TRUE);
+  ASSERT_NE(decoder->image, nullptr);
+  EXPECT_EQ(decoder->image->alphaPremultiplied, AVIF_TRUE);
+  EXPECT_EQ(avifDecoderNextImage(decoder.get()), AVIF_RESULT_OK);
+  EXPECT_EQ(decoder->image->alphaPlane, nullptr);
+  EXPECT_EQ(decoder->image->alphaRowBytes, 0u);
 }
 
 TEST(DecoderTest, AnimatedImage) {
@@ -116,6 +135,20 @@ TEST(DecoderTest, AnimatedImageWithSourceSetToPrimaryItem) {
 TEST(DecoderTest, AnimatedImageWithAlphaAndMetadata) {
   auto decoder = CreateDecoder("colors-animated-8bpc-alpha-exif-xmp.avif");
   ASSERT_NE(decoder, nullptr);
+  ASSERT_EQ(avifDecoderParse(decoder.get()), AVIF_RESULT_OK);
+  EXPECT_EQ(decoder->compressionFormat, COMPRESSION_FORMAT_AVIF);
+  EXPECT_EQ(decoder->alphaPresent, AVIF_TRUE);
+  EXPECT_EQ(decoder->imageSequenceTrackPresent, AVIF_TRUE);
+  EXPECT_EQ(decoder->imageCount, 5);
+  EXPECT_EQ(decoder->repetitionCount, AVIF_REPETITION_COUNT_INFINITE);
+  EXPECT_EQ(decoder->image->exif.size, 1126);
+  EXPECT_EQ(decoder->image->xmp.size, 3898);
+}
+
+TEST(DecoderTest, AnimatedImageWithAlphaAndMetadataIgnoreAlpha) {
+  auto decoder = CreateDecoder("colors-animated-8bpc-alpha-exif-xmp.avif");
+  ASSERT_NE(decoder, nullptr);
+  decoder->imageContentToDecode &= ~AVIF_IMAGE_CONTENT_ALPHA;
   ASSERT_EQ(avifDecoderParse(decoder.get()), AVIF_RESULT_OK);
   EXPECT_EQ(decoder->compressionFormat, COMPRESSION_FORMAT_AVIF);
   EXPECT_EQ(decoder->alphaPresent, AVIF_TRUE);
@@ -333,6 +366,23 @@ TEST(DecoderTest, ColorGridAlphaNoGrid) {
   EXPECT_GT(decoder->image->alphaRowBytes, 0u);
 }
 
+TEST(DecoderTest, ColorGridAlphaNoGridIgnoreAlpha) {
+  if (!testutil::Av1DecoderAvailable()) {
+    GTEST_SKIP() << "AV1 Codec unavailable, skip test.";
+  }
+  // Test case from https://github.com/AOMediaCodec/libavif/issues/1203.
+  auto decoder = CreateDecoder("color_grid_alpha_nogrid.avif");
+  ASSERT_NE(decoder, nullptr);
+  decoder->imageContentToDecode &= ~AVIF_IMAGE_CONTENT_ALPHA;
+  ASSERT_EQ(avifDecoderParse(decoder.get()), AVIF_RESULT_OK);
+  EXPECT_EQ(decoder->compressionFormat, COMPRESSION_FORMAT_AVIF);
+  EXPECT_EQ(decoder->alphaPresent, AVIF_TRUE);
+  EXPECT_EQ(decoder->imageSequenceTrackPresent, AVIF_FALSE);
+  EXPECT_EQ(avifDecoderNextImage(decoder.get()), AVIF_RESULT_OK);
+  EXPECT_EQ(decoder->image->alphaPlane, nullptr);
+  EXPECT_EQ(decoder->image->alphaRowBytes, 0u);
+}
+
 TEST(DecoderTest, GainMapGrid) {
   auto decoder = CreateDecoder("color_grid_gainmap_different_grid.avif");
   ASSERT_NE(decoder, nullptr);
@@ -347,7 +397,7 @@ TEST(DecoderTest, GainMapGrid) {
   ASSERT_NE(decoded, nullptr);
 
   // Verify that the gain map is present and matches the input.
-  EXPECT_NE(decoder->image->gainMap, nullptr);
+  EXPECT_NE(decoded->gainMap, nullptr);
   // Color+alpha: 4x3 grid of 128x200 tiles.
   EXPECT_EQ(decoded->width, 128u * 4u);
   EXPECT_EQ(decoded->height, 200u * 3u);
@@ -367,7 +417,7 @@ TEST(DecoderTest, GainMapGrid) {
 }
 
 TEST(DecoderTest, GainMapOriented) {
-  auto decoder = CreateDecoder(("gainmap_oriented.avif"));
+  auto decoder = CreateDecoder("gainmap_oriented.avif");
   ASSERT_NE(decoder, nullptr);
   decoder->imageContentToDecode |= AVIF_IMAGE_CONTENT_GAIN_MAP;
   ASSERT_EQ(avifDecoderParse(decoder.get()), AVIF_RESULT_OK);
@@ -377,8 +427,33 @@ TEST(DecoderTest, GainMapOriented) {
             AVIF_TRANSFORM_IROT | AVIF_TRANSFORM_IMIR);
   EXPECT_EQ(decoder->image->irot.angle, 1);
   EXPECT_EQ(decoder->image->imir.axis, 0);
+  EXPECT_EQ(decoder->alphaPresent, AVIF_TRUE);
   EXPECT_EQ(decoder->image->gainMap->image->transformFlags,
             AVIF_TRANSFORM_NONE);
+
+  ASSERT_EQ(avifDecoderNextImage(decoder.get()), AVIF_RESULT_OK);
+  EXPECT_NE(decoder->image->alphaPlane, nullptr);
+  EXPECT_GT(decoder->image->alphaRowBytes, 0u);
+}
+
+TEST(DecoderTest, GainMapOrientedIgnoreAlpha) {
+  auto decoder = CreateDecoder("gainmap_oriented.avif");
+  ASSERT_NE(decoder, nullptr);
+  decoder->imageContentToDecode = AVIF_IMAGE_CONTENT_COLOR_AND_GAIN_MAP;
+  ASSERT_EQ(avifDecoderParse(decoder.get()), AVIF_RESULT_OK);
+
+  // Verify that the transformative properties were kept.
+  EXPECT_EQ(decoder->image->transformFlags,
+            AVIF_TRANSFORM_IROT | AVIF_TRANSFORM_IMIR);
+  EXPECT_EQ(decoder->image->irot.angle, 1);
+  EXPECT_EQ(decoder->image->imir.axis, 0);
+  EXPECT_EQ(decoder->alphaPresent, AVIF_TRUE);
+  EXPECT_EQ(decoder->image->gainMap->image->transformFlags,
+            AVIF_TRANSFORM_NONE);
+
+  ASSERT_EQ(avifDecoderNextImage(decoder.get()), AVIF_RESULT_OK);
+  EXPECT_EQ(decoder->image->alphaPlane, nullptr);
+  EXPECT_EQ(decoder->image->alphaRowBytes, 0u);
 }
 
 TEST(DecoderTest, GainmapOnlyDecodedRowCount) {
@@ -406,7 +481,7 @@ TEST(DecoderTest, GainmapOnlyDecodedRowCount) {
 }
 
 TEST(DecoderTest, IgnoreGainMapButReadMetadata) {
-  auto decoder = CreateDecoder(("seine_sdr_gainmap_srgb.avif"));
+  auto decoder = CreateDecoder("seine_sdr_gainmap_srgb.avif");
   ASSERT_NE(decoder, nullptr);
   auto result = avifDecoderParse(decoder.get());
   ASSERT_EQ(result, AVIF_RESULT_OK)
@@ -415,7 +490,7 @@ TEST(DecoderTest, IgnoreGainMapButReadMetadata) {
   ASSERT_NE(decoded, nullptr);
 
   // Verify that the gain map was detected...
-  EXPECT_NE(decoder->image->gainMap, nullptr);
+  EXPECT_NE(decoded->gainMap, nullptr);
   // ... but not decoded because enableDecodingGainMap is false by default.
   EXPECT_EQ(decoded->gainMap->image, nullptr);
   // Check that the gain map metadata WAS populated.
@@ -424,7 +499,7 @@ TEST(DecoderTest, IgnoreGainMapButReadMetadata) {
 }
 
 TEST(DecoderTest, IgnoreColorAndAlpha) {
-  auto decoder = CreateDecoder(("seine_sdr_gainmap_srgb.avif"));
+  auto decoder = CreateDecoder("seine_sdr_gainmap_srgb.avif");
   ASSERT_NE(decoder, nullptr);
   decoder->imageContentToDecode = AVIF_IMAGE_CONTENT_GAIN_MAP;
   auto result = avifDecoderParse(decoder.get());
@@ -445,14 +520,14 @@ TEST(DecoderTest, IgnoreColorAndAlpha) {
   EXPECT_EQ(decoded->yuvRowBytes[2], 0u);
   EXPECT_EQ(decoded->alphaRowBytes, 0u);
   // The gain map was decoded.
-  EXPECT_NE(decoder->image->gainMap, nullptr);
+  EXPECT_NE(decoded->gainMap, nullptr);
   ASSERT_NE(decoded->gainMap->image, nullptr);
   // Including pixels.
   EXPECT_GT(decoded->gainMap->image->yuvRowBytes[0], 0u);
 }
 
 TEST(DecoderTest, IgnoreAll) {
-  auto decoder = CreateDecoder(("seine_sdr_gainmap_srgb.avif"));
+  auto decoder = CreateDecoder("seine_sdr_gainmap_srgb.avif");
   ASSERT_NE(decoder, nullptr);
   decoder->imageContentToDecode = AVIF_IMAGE_CONTENT_NONE;
   auto result = avifDecoderParse(decoder.get());
@@ -461,12 +536,25 @@ TEST(DecoderTest, IgnoreAll) {
   avifImage* decoded = decoder->image;
   ASSERT_NE(decoded, nullptr);
 
-  EXPECT_NE(decoder->image->gainMap, nullptr);
-  ASSERT_EQ(decoder->image->gainMap->image, nullptr);
+  EXPECT_NE(decoded->gainMap, nullptr);
+  ASSERT_EQ(decoded->gainMap->image, nullptr);
 
   // But trying to access the next image should give an error because both
   // ignoreColorAndAlpha and enableDecodingGainMap are set.
   ASSERT_EQ(avifDecoderNextImage(decoder.get()), AVIF_RESULT_NO_CONTENT);
+}
+
+TEST(DecoderTest, GainMapReadMemoryFails) {
+  auto data =
+      testutil::read_file(GetFilename("seine_sdr_gainmap_srgb.avif").c_str());
+  ASSERT_GT(data.size(), 0);
+  DecoderPtr decoder(avifDecoderCreate());
+  ASSERT_NE(decoder, nullptr);
+  avifImage image;
+  // avifDecoderReadMemory does not support gainmaps.
+  EXPECT_NE(
+      avifDecoderReadMemory(decoder.get(), &image, data.data(), data.size()),
+      AVIF_RESULT_OK);
 }
 
 TEST(DecoderTest, KeyFrame) {
@@ -543,7 +631,7 @@ TEST(DecoderTest, Progressive) {
 // A test for https://github.com/AOMediaCodec/libavif/issues/1086 to prevent
 // regression.
 TEST(DecoderTest, ParseICC) {
-  auto decoder = CreateDecoder(("paris_icc_exif_xmp.avif"));
+  auto decoder = CreateDecoder("paris_icc_exif_xmp.avif");
   ASSERT_NE(decoder, nullptr);
 
   decoder->ignoreXMP = AVIF_TRUE;
@@ -579,7 +667,7 @@ TEST(DecoderTest, ParseICC) {
 }
 
 TEST(DecoderTest, ParseExifNonZeroTiffOffset) {
-  auto decoder = CreateDecoder(("paris_exif_non_zero_tiff_offset.avif"));
+  auto decoder = CreateDecoder("paris_exif_non_zero_tiff_offset.avif");
   ASSERT_NE(decoder, nullptr);
 
   EXPECT_EQ(avifDecoderParse(decoder.get()), AVIF_RESULT_OK);
@@ -1296,6 +1384,27 @@ TEST(DecoderTest, NullCases) {
   EXPECT_NE(avifDecoderNthImageMaxExtent(nullptr, 0, &extent), AVIF_RESULT_OK);
 
   EXPECT_NE(avifDecoderReset(nullptr), AVIF_RESULT_OK);
+}
+
+TEST(DecoderTest, MultipleIlocExtentsForSameItem) {
+  if (!testutil::Av1DecoderAvailable()) {
+    GTEST_SKIP() << "AV1 Codec unavailable, skip test.";
+  }
+  auto decoder =
+      CreateDecoder("white_2x2_multiple_iloc_entries_for_same_item.avif");
+  ASSERT_NE(decoder, nullptr);
+  // By default, non-strict files are refused.
+  EXPECT_EQ(decoder->strictFlags,
+            static_cast<avifStrictFlags>(AVIF_STRICT_ENABLED));
+  ASSERT_EQ(avifDecoderParse(decoder.get()), AVIF_RESULT_BMFF_PARSE_FAILED);
+  // Allow this kind of file specifically.
+  decoder->strictFlags =
+      static_cast<avifStrictFlags>(AVIF_STRICT_ENABLED) &
+      ~static_cast<avifStrictFlags>(
+          AVIF_STRICT_MULTIPLE_ILOC_ENTRIES_FOR_SAME_ITEM_DISALLOWED);
+  ASSERT_EQ(avifDecoderParse(decoder.get()), AVIF_RESULT_OK);
+  EXPECT_EQ(decoder->compressionFormat, COMPRESSION_FORMAT_AVIF);
+  EXPECT_EQ(avifDecoderNextImage(decoder.get()), AVIF_RESULT_OK);
 }
 
 }  // namespace

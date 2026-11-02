@@ -120,7 +120,15 @@ class BLINK_EXPORT WebNode {
   bool ContainsViaFlatTree(const WebNode*) const;
 
   WebNode ParentNode() const;
+  // Returns the DOM parent, or the shadow host when this node is a shadow root.
   WebNode ParentOrShadowHostNode() const;
+  // Returns the parent node of this node in the flat (composed) tree.
+  WebNode ParentInFlatTree() const;
+  // Returns the next node in flat-tree preorder, or a null node if advancing
+  // would leave the subtree rooted at `stay_within`.
+  WebNode NextInFlatTree(const WebNode& stay_within) const;
+  // As above, but skips this node's descendants.
+  WebNode NextSkippingChildrenInFlatTree(const WebNode& stay_within) const;
   bool IsInUserAgentShadowRoot() const;
   WebString NodeValue() const;
   WebDocument GetDocument() const;

@@ -35,7 +35,7 @@ import {
   BottomUpTimelineTreeView,
   CallTreeTimelineTreeView,
   TimelineStackView,
-  TimelineTreeView
+  TimelineTreeView,
 } from './TimelineTreeView.js';
 import {TimelineUIUtils} from './TimelineUIUtils.js';
 import {TracingFrameLayerTree} from './TracingLayerTree.js';
@@ -326,7 +326,7 @@ export class TimelineDetailsPane extends
       view.model = {
         selectedEvents: data.selectedEvents,
         parsedTrace: data.parsedTrace,
-        entityMapper: data.entityMapper
+        entityMapper: data.entityMapper,
       };
     }
     this.#summaryContent.requestUpdate();

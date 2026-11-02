@@ -8,8 +8,8 @@
 #define CORE_FPDFAPI_PARSER_CPDF_NAME_H_
 
 #include "core/fpdfapi/parser/cpdf_object.h"
+#include "core/fxcrt/bytestring_pool.h"
 #include "core/fxcrt/retain_ptr.h"
-#include "core/fxcrt/string_pool_template.h"
 #include "core/fxcrt/weak_ptr.h"
 
 class CPDF_Name final : public CPDF_Object {

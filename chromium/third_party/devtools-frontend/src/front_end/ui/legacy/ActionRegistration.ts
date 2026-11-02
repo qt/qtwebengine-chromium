@@ -262,7 +262,7 @@ export function getRegisteredActionExtensions(): Action[] {
       .filter(action => {
         const settingName = action.setting();
         try {
-          if (settingName && !Common.Settings.moduleSetting(settingName).get()) {
+          if (settingName && !Common.Settings.Settings.instance().moduleSetting(settingName).get()) {
             return false;
           }
         } catch (err) {

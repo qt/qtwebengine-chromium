@@ -1,0 +1,12 @@
+Name: pybind11
+Short Name: pybind11
+URL: https://github.com/pybind/pybind11
+Version: 3.0.4
+Revision: d03662f0984f652b60e7ddce53d3868002275197
+Update Mechanism: static
+License: BSD-3-Clause
+License File: LICENSE
+Shipped: Yes
+Security Critical: Yes
+Description: A C++ header-only library that provides bindings for native Python extension modules, written in Python.
+Local Modifications: None

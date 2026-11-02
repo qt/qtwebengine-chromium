@@ -28,6 +28,7 @@
 #include "absl/memory/memory.h"
 #include "absl/random/random.h"
 #include "absl/status/status.h"
+#include "absl/status/status_macros.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/cord.h"
@@ -36,8 +37,8 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/synchronization/mutex.h"
+#include "absl/time/clock_interface.h"
 #include "absl/time/time.h"
-#include "fcp/base/clock.h"
 #include "fcp/base/compression.h"
 #include "fcp/base/monitoring.h"
 #include "fcp/client/cache/resource_cache.h"
@@ -58,7 +59,7 @@ absl::StatusOr<absl::Cord> TryGetResourceFromCache(
     absl::string_view client_cache_id,
     const std::optional<absl::Duration>& max_age,
     cache::ResourceCache& resource_cache) {
-  FCP_ASSIGN_OR_RETURN(
+  ABSL_ASSIGN_OR_RETURN(
       cache::ResourceCache::ResourceAndMetadata cached_resource_and_metadata,
       resource_cache.Get(client_cache_id, max_age));
   HttpResourceMetadata metadata;
@@ -68,8 +69,8 @@ absl::StatusOr<absl::Cord> TryGetResourceFromCache(
   absl::Cord cached_resource = cached_resource_and_metadata.resource;
   if (metadata.compression_format() ==
       ResourceCompressionFormat::RESOURCE_COMPRESSION_FORMAT_GZIP) {
-    FCP_ASSIGN_OR_RETURN(cached_resource,
-                         UncompressWithGzip(std::string(cached_resource)));
+    ABSL_ASSIGN_OR_RETURN(cached_resource,
+                          UncompressWithGzip(std::string(cached_resource)));
   }
   return cached_resource;
 }
@@ -152,7 +153,7 @@ PerformMultipleRequestsInMemory(
     }
   }
 
-  FCP_RETURN_IF_ERROR(result);
+  ABSL_RETURN_IF_ERROR(result);
 
   // Gather and return the results.
   std::vector<absl::StatusOr<InMemoryHttpResponse>> results;
@@ -182,7 +183,7 @@ absl::StatusOr<std::unique_ptr<HttpRequest>> InMemoryHttpRequest::Create(
         absl::StrCat("Non-HTTPS URIs are not supported: ", uri));
   }
   if (use_compression) {
-    FCP_ASSIGN_OR_RETURN(body, CompressWithGzip(body));
+    ABSL_ASSIGN_OR_RETURN(body, CompressWithGzip(body));
     extra_headers.push_back({kContentEncodingHdr, kGzipEncodingHdrValue});
   }
   std::optional<std::string> content_length_hdr =
@@ -374,7 +375,7 @@ void InMemoryHttpRequestCallback::OnResponseCompleted(
 absl::StatusOr<InMemoryHttpResponse> InMemoryHttpRequestCallback::Response()
     const {
   absl::ReaderMutexLock _(mutex_);
-  FCP_RETURN_IF_ERROR(status_);
+  ABSL_RETURN_IF_ERROR(status_);
   // If status_ is OK, then response_code_ and response_headers_ are guaranteed
   // to have values.
 
@@ -385,14 +386,14 @@ absl::StatusOr<InMemoryHttpResponse> InMemoryHttpRequestCallback::Response()
 absl::StatusOr<InMemoryHttpResponse> PerformRequestInMemory(
     HttpClient& http_client, InterruptibleRunner& interruptible_runner,
     std::unique_ptr<http::HttpRequest> request, int64_t* bytes_received_acc,
-    int64_t* bytes_sent_acc, Clock* clock, absl::BitGen* bit_gen,
+    int64_t* bytes_sent_acc, absl::Clock* clock, absl::BitGen* bit_gen,
     int32_t retry_max_attempts, int32_t retry_delay_ms) {
   // Note: we must explicitly instantiate a vector here as opposed to passing an
   // initializer list to PerformRequestsInMemory, because initializer lists do
   // not support move-only values.
   std::vector<std::unique_ptr<http::HttpRequest>> requests;
   requests.push_back(std::move(request));
-  FCP_ASSIGN_OR_RETURN(
+  ABSL_ASSIGN_OR_RETURN(
       auto result, PerformMultipleRequestsInMemoryWithRetry(
                        http_client, interruptible_runner, std::move(requests),
                        bytes_received_acc, bytes_sent_acc, clock, bit_gen,
@@ -404,7 +405,7 @@ absl::StatusOr<std::vector<absl::StatusOr<InMemoryHttpResponse>>>
 PerformMultipleRequestsInMemoryWithRetry(
     HttpClient& http_client, InterruptibleRunner& interruptible_runner,
     std::vector<std::unique_ptr<http::HttpRequest>> requests,
-    int64_t* bytes_received_acc, int64_t* bytes_sent_acc, Clock* clock,
+    int64_t* bytes_received_acc, int64_t* bytes_sent_acc, absl::Clock* clock,
     absl::BitGen* bit_gen, int32_t retry_max_attempts, int32_t retry_delay_ms) {
   if (retry_max_attempts == 0) {
     return PerformMultipleRequestsInMemory(http_client, interruptible_runner,
@@ -424,10 +425,10 @@ PerformMultipleRequestsInMemoryWithRetry(
 
   std::vector<absl::StatusOr<InMemoryHttpResponse>> responses;
 
-  FCP_ASSIGN_OR_RETURN(responses, PerformMultipleRequestsInMemory(
-                                      http_client, interruptible_runner,
-                                      std::move(requests_copy),
-                                      bytes_received_acc, bytes_sent_acc));
+  ABSL_ASSIGN_OR_RETURN(responses, PerformMultipleRequestsInMemory(
+                                       http_client, interruptible_runner,
+                                       std::move(requests_copy),
+                                       bytes_received_acc, bytes_sent_acc));
   // Get indexes of responses that have a retry-able error
   std::vector<int> retry_indexes;
   for (int i = 0; i < responses.size(); i++) {
@@ -446,7 +447,7 @@ PerformMultipleRequestsInMemoryWithRetry(
 
     // Wait for retry window, using interruptible runner to correctly propagate
     // cancellation.
-    FCP_RETURN_IF_ERROR(interruptible_runner.Run(
+    ABSL_RETURN_IF_ERROR(interruptible_runner.Run(
         [clock, bit_gen, retry_delay_ms, retry_attempt]() {
           clock->Sleep(GetRetryDelay(
               *bit_gen, absl::Milliseconds(retry_delay_ms), retry_attempt));
@@ -458,7 +459,7 @@ PerformMultipleRequestsInMemoryWithRetry(
     // then call PerformMultipleRequestsInMemory again with new vector of
     // requests
     std::vector<absl::StatusOr<InMemoryHttpResponse>> retry_responses;
-    FCP_ASSIGN_OR_RETURN(
+    ABSL_ASSIGN_OR_RETURN(
         retry_responses,
         PerformMultipleRequestsInMemory(http_client, interruptible_runner,
                                         std::move(retry_requests),
@@ -486,7 +487,7 @@ FetchResourcesInMemory(HttpClient& http_client,
                        InterruptibleRunner& interruptible_runner,
                        const std::vector<UriOrInlineData>& resources,
                        int64_t* bytes_received_acc, int64_t* bytes_sent_acc,
-                       cache::ResourceCache* resource_cache, Clock* clock,
+                       cache::ResourceCache* resource_cache, absl::Clock* clock,
                        absl::BitGen* bit_gen, int32_t retry_max_attempts,
                        int32_t retry_delay_ms) {
   // Each resource may have the data already available (by having been included
@@ -537,11 +538,11 @@ FetchResourcesInMemory(HttpClient& http_client,
       // If the resource URI is set, then create a request to fetch the data for
       // it, and point the accessor at the slot in http_responses where that
       // request's response will eventually live.
-      FCP_ASSIGN_OR_RETURN(std::unique_ptr<http::HttpRequest> request,
-                           InMemoryHttpRequest::Create(
-                               resource.uri().uri, HttpRequest::Method::kGet,
-                               {}, "", /*use_compression=*/
-                               false));
+      ABSL_ASSIGN_OR_RETURN(std::unique_ptr<http::HttpRequest> request,
+                            InMemoryHttpRequest::Create(
+                                resource.uri().uri, HttpRequest::Method::kGet,
+                                {}, "", /*use_compression=*/
+                                false));
       http_requests.push_back(std::move(request));
       int64_t response_index = http_requests.end() - http_requests.begin() - 1;
       auto response_accessing_fn = [&http_responses, response_index]() {
@@ -585,7 +586,7 @@ FetchResourcesInMemory(HttpClient& http_client,
       retry_delay_ms);
   // Check whether issuing the requests failed as a whole (generally indicating
   // a programming error).
-  FCP_RETURN_IF_ERROR(resource_fetch_result);
+  ABSL_RETURN_IF_ERROR(resource_fetch_result.status());
   http_responses = std::move(*resource_fetch_result);
 
   // Compile the result vector by getting each resource's response using the

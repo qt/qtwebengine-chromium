@@ -4,6 +4,7 @@
 
 #include "content/browser/webtransport/web_transport_connector_impl.h"
 
+#include "base/not_fatal_until.h"
 #include "base/strings/stringprintf.h"
 #include "content/browser/devtools/devtools_instrumentation.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
@@ -162,15 +163,22 @@ class InterceptingHandshakeClient final : public WebTransportHandshakeClient {
 WebTransportConnectorImpl::WebTransportConnectorImpl(
     int process_id,
     base::WeakPtr<RenderFrameHostImpl> frame,
+    WeakDocumentPtr weak_document,
     const url::Origin& origin,
     const net::NetworkAnonymizationKey& network_anonymization_key,
-    network::mojom::ClientSecurityStatePtr client_security_state)
+    network::mojom::ClientSecurityStatePtr client_security_state,
+    const base::UnguessableToken& network_restrictions_id)
     : process_id_(process_id),
       frame_(std::move(frame)),
+      weak_document_(std::move(weak_document)),
+      has_document_(weak_document_.AsRenderFrameHostIfValid() != nullptr),
       origin_(origin),
       network_anonymization_key_(network_anonymization_key),
       client_security_state_(std::move(client_security_state)),
-      throttle_context_(GetThrottleContext(process_id_, frame_)) {}
+      throttle_context_(GetThrottleContext(process_id_, frame_)),
+      network_restrictions_id_(network_restrictions_id) {
+  CHECK(!network_restrictions_id.is_empty(), base::NotFatalUntil::M165);
+}
 
 WebTransportConnectorImpl::~WebTransportConnectorImpl() = default;
 
@@ -180,9 +188,20 @@ void WebTransportConnectorImpl::Connect(
         fingerprints,
     const std::vector<std::string>& application_protocols,
     network::mojom::WebTransportCongestionControl congestion_control,
+    std::optional<uint16_t>
+        anticipated_concurrent_incoming_unidirectional_streams,
+    std::optional<uint16_t>
+        anticipated_concurrent_incoming_bidirectional_streams,
     mojo::PendingRemote<network::mojom::WebTransportHandshakeClient>
         handshake_client) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  // For document-scoped contexts (e.g., RenderFrame or DedicatedWorker), abort
+  // the connection if the original document is no longer active (including
+  // cases where the RenderFrameHost was reused after a same-site navigation).
+  if (has_document_ && !weak_document_.AsRenderFrameHostIfValid()) {
+    return;
+  }
 
   RenderProcessHost* process = RenderProcessHost::FromID(process_id_);
   if (!process) {
@@ -193,6 +212,8 @@ void WebTransportConnectorImpl::Connect(
     auto result = throttle_context_->PerformThrottle(base::BindOnce(
         &WebTransportConnectorImpl::OnThrottleDone, weak_factory_.GetWeakPtr(),
         url, std::move(fingerprints), application_protocols, congestion_control,
+        anticipated_concurrent_incoming_unidirectional_streams,
+        anticipated_concurrent_incoming_bidirectional_streams,
         std::move(handshake_client)));
     if (result ==
         WebTransportThrottleContext::ThrottleResult::kTooManyPendingSessions) {
@@ -209,7 +230,10 @@ void WebTransportConnectorImpl::Connect(
     }
   } else {
     OnThrottleDone(url, std::move(fingerprints), application_protocols,
-                   congestion_control, std::move(handshake_client),
+                   congestion_control,
+                   anticipated_concurrent_incoming_unidirectional_streams,
+                   anticipated_concurrent_incoming_bidirectional_streams,
+                   std::move(handshake_client),
                    /*tracker=*/nullptr);
   }
 }
@@ -220,6 +244,10 @@ void WebTransportConnectorImpl::OnThrottleDone(
         fingerprints,
     const std::vector<std::string>& application_protocols,
     network::mojom::WebTransportCongestionControl congestion_control,
+    std::optional<uint16_t>
+        anticipated_concurrent_incoming_unidirectional_streams,
+    std::optional<uint16_t>
+        anticipated_concurrent_incoming_bidirectional_streams,
     mojo::PendingRemote<network::mojom::WebTransportHandshakeClient>
         handshake_client,
     std::unique_ptr<WebTransportThrottleContext::Tracker> tracker) {
@@ -271,6 +299,8 @@ void WebTransportConnectorImpl::OnThrottleDone(
           &WebTransportConnectorImpl::OnWillCreateWebTransportCompleted,
           weak_factory_.GetWeakPtr(), url, std::move(fingerprints),
           application_protocols, congestion_control,
+          anticipated_concurrent_incoming_unidirectional_streams,
+          anticipated_concurrent_incoming_bidirectional_streams,
           std::move(url_loader_network_observer),
           client_security_state_.Clone()));
 }
@@ -281,6 +311,10 @@ void WebTransportConnectorImpl::OnWillCreateWebTransportCompleted(
         fingerprints,
     const std::vector<std::string>& application_protocols,
     network::mojom::WebTransportCongestionControl congestion_control,
+    std::optional<uint16_t>
+        anticipated_concurrent_incoming_unidirectional_streams,
+    std::optional<uint16_t>
+        anticipated_concurrent_incoming_bidirectional_streams,
     mojo::PendingRemote<network::mojom::URLLoaderNetworkServiceObserver>
         url_loader_network_observer,
     network::mojom::ClientSecurityStatePtr client_security_state,
@@ -306,8 +340,11 @@ void WebTransportConnectorImpl::OnWillCreateWebTransportCompleted(
 
   process->GetStoragePartition()->GetNetworkContext()->CreateWebTransport(
       url, origin_, network_anonymization_key_, std::move(fingerprints),
-      application_protocols, congestion_control, std::move(handshake_client),
-      std::move(url_loader_network_observer), std::move(client_security_state));
+      application_protocols, congestion_control,
+      anticipated_concurrent_incoming_unidirectional_streams,
+      anticipated_concurrent_incoming_bidirectional_streams,
+      std::move(handshake_client), std::move(url_loader_network_observer),
+      std::move(client_security_state), network_restrictions_id_);
 }
 
 }  // namespace content

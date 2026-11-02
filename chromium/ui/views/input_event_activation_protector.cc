@@ -4,15 +4,28 @@
 
 #include "ui/views/input_event_activation_protector.h"
 
+#include <utility>
+
 #include "base/command_line.h"
 #include "ui/events/event.h"
+#include "ui/views/input_protection/default_input_protection_policy.h"
+#include "ui/views/input_protection/input_protection_policy.h"
 #include "ui/views/metrics.h"
 #include "ui/views/views_switches.h"
 
 namespace views {
 
-InputEventActivationProtector::InputEventActivationProtector() {
+InputEventActivationProtector::InputEventActivationProtector()
+    : cooldown_interval_(GetDoubleClickInterval()) {
   WindowsStationarityMonitor::GetInstance()->AddObserver(this);
+  AddPolicy(std::make_unique<DefaultInputProtectionPolicy>());
+}
+
+InputEventActivationProtector::InputEventActivationProtector(
+    std::unique_ptr<InputProtectionPolicy> policy)
+    : cooldown_interval_(GetDoubleClickInterval()) {
+  WindowsStationarityMonitor::GetInstance()->AddObserver(this);
+  AddPolicy(std::move(policy));
 }
 
 InputEventActivationProtector::~InputEventActivationProtector() {
@@ -20,41 +33,37 @@ InputEventActivationProtector::~InputEventActivationProtector() {
 }
 
 void InputEventActivationProtector::VisibilityChanged(bool is_visible) {
-  if (is_visible) {
-    view_protected_time_stamp_ = base::TimeTicks::Now();
+  for (const auto& policy : policies_) {
+    if (is_visible) {
+      policy->OnProtectionStarted();
+    } else {
+      policy->OnProtectionStopped();
+    }
   }
 }
 
 void InputEventActivationProtector::MaybeUpdateViewProtectedTimeStamp(
     bool force) {
-  // The UI was never shown, ignore.
-  if (!force && view_protected_time_stamp_ == base::TimeTicks()) {
-    return;
+  for (const auto& policy : policies_) {
+    if (force) {
+      policy->OnProtectionStarted();
+    } else {
+      policy->OnProtectionReset();
+    }
   }
-
-  view_protected_time_stamp_ = base::TimeTicks::Now();
 }
 
 bool InputEventActivationProtector::IsPossiblyUnintendedInteraction(
     const ui::Event& event,
-    bool allow_key_events) {
+    bool allow_key_events,
+    const View* target_view) {
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableInputEventActivationProtectionForTesting))
       [[unlikely]] {
     return false;
   }
 
-  if (view_protected_time_stamp_ == base::TimeTicks()) {
-    // The UI was never shown, ignore. This can happen in tests.
-    return false;
-  }
-
-  // Don't let key repeats close the dialog, they might've been held when the
-  // dialog pops up.
-  if (event.IsKeyEvent() && event.AsKeyEvent()->is_repeat()) {
-    return true;
-  }
-
+  // Allow non-input and allowed key events early.
   if (!event.IsMouseEvent() && !event.IsTouchEvent() &&
       !event.IsGestureEvent()) {
     if (allow_key_events || !event.IsKeyEvent()) {
@@ -62,30 +71,31 @@ bool InputEventActivationProtector::IsPossiblyUnintendedInteraction(
     }
   }
 
-  const base::TimeDelta kShortInterval = GetDoubleClickInterval();
-  const bool short_event_after_last_event =
-      event.time_stamp() < last_event_timestamp_ + kShortInterval;
-  last_event_timestamp_ = event.time_stamp();
-
-  // Unintended if the user has been clicking with short intervals.
-  if (short_event_after_last_event) {
-    repeated_event_count_++;
-    return true;
+  // Forward to policies to run their actual blocking checks.
+  for (const auto& policy : policies_) {
+    if (policy->IsPossiblyUnintendedInteraction(event, target_view, *this)) {
+      return true;
+    }
   }
-  repeated_event_count_ = 0;
 
-  // Unintended if the user clicked right after the view was protected.
-  return event.time_stamp() < view_protected_time_stamp_ + kShortInterval;
+  return false;
+}
+
+void InputEventActivationProtector::AddPolicy(
+    std::unique_ptr<InputProtectionPolicy> policy) {
+  policies_.push_back(std::move(policy));
 }
 
 void InputEventActivationProtector::OnWindowStationaryStateChanged() {
-  MaybeUpdateViewProtectedTimeStamp();
+  for (const auto& policy : policies_) {
+    policy->OnProtectionReset();
+  }
 }
 
 void InputEventActivationProtector::ResetForTesting() {
-  view_protected_time_stamp_ = base::TimeTicks();
-  last_event_timestamp_ = base::TimeTicks();
-  repeated_event_count_ = 0;
+  for (const auto& policy : policies_) {
+    policy->OnProtectionStopped();
+  }
 }
 
 }  // namespace views

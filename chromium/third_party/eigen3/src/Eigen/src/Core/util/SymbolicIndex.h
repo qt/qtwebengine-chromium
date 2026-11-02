@@ -43,8 +43,6 @@ namespace Eigen {
  */
 namespace symbolic {
 
-template <typename Tag>
-class Symbol;
 template <typename Tag, typename Type>
 class SymbolValue;
 template <typename Arg0>

@@ -19,6 +19,8 @@ namespace Eigen {
 
 namespace internal {
 
+EIGEN_GCC_FAST_MATH_COMPLEX_VECTORIZE_WORKAROUND_PUSH
+
 #if !defined(__ARCH__) || (defined(__ARCH__) && __ARCH__ >= 12)
 inline Packet4ui p4ui_CONJ_XOR() {
   return Packet4ui{0x00000000, 0x80000000, 0x00000000,
@@ -526,6 +528,8 @@ EIGEN_STRONG_INLINE void ptranspose(PacketBlock<Packet2cf, 2>& kernel) {
 }
 
 #endif
+
+EIGEN_GCC_FAST_MATH_COMPLEX_VECTORIZE_WORKAROUND_POP
 
 }  // end namespace internal
 

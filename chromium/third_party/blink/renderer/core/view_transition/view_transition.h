@@ -55,6 +55,8 @@ class CORE_EXPORT ViewTransition : public GarbageCollected<ViewTransition>,
     virtual void OnSkipTransitionWithPendingCallback(ViewTransition*) = 0;
     virtual void OnSkippedTransitionDOMCallback(ViewTransition*) = 0;
     virtual void OnTransitionCaptured(ViewTransition*) = 0;
+    virtual void OnCaptureCommitted(ViewTransition*) = 0;
+    virtual bool IsEarlyCallbackEnabled() const { return false; }
   };
 
   // Creates and starts a same-document ViewTransition initiated using the
@@ -291,7 +293,8 @@ class CORE_EXPORT ViewTransition : public GarbageCollected<ViewTransition>,
   bool IsGeneratingPseudo(
       const ViewTransitionPseudoElementBase& pseudo_element) const;
 
-  Element* Scope() const { return scope_.Get(); }
+  Element* Scope() const;
+  bool NeedsContainmentForDurationOfCapture() const;
 
   // The start of a VT cancels the previous transition; however, first VT's
   // DOM callback must still run. To avoid capturing its DOM changes are part
@@ -299,8 +302,10 @@ class CORE_EXPORT ViewTransition : public GarbageCollected<ViewTransition>,
   // has started the DOM callback. We do not wait for completion as the callback
   // may be asynchronous and might never complete.
   void NotifySkippedTransitionDOMCallbackScheduled();
+  void OnCaptureCommitted();
   void NotifyInvokeDOMChangeCallback();
   bool PendingDomCallback();
+  void OnCaptureRectsReceived();
 
   // Notifies the view transition object when we start or stop style processing
   // for getComputedStyle.
@@ -331,6 +336,7 @@ class CORE_EXPORT ViewTransition : public GarbageCollected<ViewTransition>,
  private:
   friend class ViewTransitionTest;
   friend class AXViewTransitionTest;
+  friend class ViewTransitionTestUtils;
 
   // Tracks how the ViewTransition object was created.
   enum class CreationType {
@@ -361,6 +367,7 @@ class CORE_EXPORT ViewTransition : public GarbageCollected<ViewTransition>,
     kCaptureTagDiscovery,
     kCaptureRequestPending,
     kCapturing,
+    kCaptureCommitted,
     kCaptured,
 
     // Navigation specific states.
@@ -371,6 +378,7 @@ class CORE_EXPORT ViewTransition : public GarbageCollected<ViewTransition>,
     // Callback states.
     kDOMCallbackRunning,
     kDOMCallbackFinished,
+    kWaitingForCaptureRects,
 
     // Animate states.
     kAnimateTagDiscovery,
@@ -388,6 +396,8 @@ class CORE_EXPORT ViewTransition : public GarbageCollected<ViewTransition>,
   // Advance to the new state. This returns true if the state should be
   // processed immediately.
   bool AdvanceTo(State state);
+  bool NeedsContainmentForDurationOfCapture(State state) const;
+  void SaveRememberedSizeIfNeeded(State old_state, State new_state);
 
   bool CanAdvanceTo(State state) const;
   static bool StateRunsInViewTransitionStepsDuringMainFrame(State state);
@@ -428,8 +438,6 @@ class CORE_EXPORT ViewTransition : public GarbageCollected<ViewTransition>,
   // API are never cross frame sink.
   bool MaybeCrossFrameSink() const;
 
-  void LogIfDocumentElementChanged() const;
-
   static int NextId() { return next_id_++; }
 
   State state_ = State::kInitial;
@@ -438,11 +446,10 @@ class CORE_EXPORT ViewTransition : public GarbageCollected<ViewTransition>,
   Member<Document> document_;
 
   // For a scoped transition, this is the element scope.
-  // For a document transition, this is the document element at the time the
-  // ViewTransition was created.
+  // For a document transition, this is null.
   // TODO(crbug.com/394052227): Consider skipping the transition if the identity
   // of the document element changes.
-  Member<Element> scope_;
+  Member<Element> scope_ = nullptr;
   bool has_document_scope_ = false;
 
   Delegate* const delegate_ = nullptr;
@@ -463,7 +470,7 @@ class CORE_EXPORT ViewTransition : public GarbageCollected<ViewTransition>,
   // selectively pausing animations for a CC instance is difficult.
   class ScopedPauseRendering {
    public:
-    explicit ScopedPauseRendering(const Element&, bool has_document_scope);
+    explicit ScopedPauseRendering(const Document&, bool has_document_scope);
     ~ScopedPauseRendering();
 
     bool ShouldThrottleRendering() const;
@@ -498,6 +505,7 @@ class CORE_EXPORT ViewTransition : public GarbageCollected<ViewTransition>,
   bool dom_callback_succeeded_ = false;
   bool first_animating_frame_ = true;
   bool pending_skip_view_transitions_ = false;
+  bool capture_rects_received_ = false;
 
   int wait_until_pending_promise_count_ = 0;
 

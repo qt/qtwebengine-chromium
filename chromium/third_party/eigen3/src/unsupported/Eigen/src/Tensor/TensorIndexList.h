@@ -82,30 +82,30 @@ template <Index idx>
 struct is_compile_time_constant_impl<type2index<idx>> : std::true_type {};
 
 template <typename T>
-struct is_compile_time_constant : is_compile_time_constant_impl<std::remove_cv_t<std::remove_reference_t<T>>> {};
+using is_compile_time_constant = is_compile_time_constant_impl<std::remove_cv_t<std::remove_reference_t<T>>>;
 
 template <typename... T>
 struct IndexTuple;
 
 template <typename T, typename... O>
 struct IndexTuple<T, O...> {
-  EIGEN_DEVICE_FUNC constexpr IndexTuple() : head(), others() {}
+  EIGEN_DEVICE_FUNC constexpr IndexTuple() = default;
   EIGEN_DEVICE_FUNC constexpr IndexTuple(const T& v, const O... o) : head(v), others(o...) {}
 
   static constexpr int count = 1 + sizeof...(O);
-  T head;
-  IndexTuple<O...> others;
+  T head{};
+  IndexTuple<O...> others{};
   typedef T Head;
   typedef IndexTuple<O...> Other;
 };
 
 template <typename T>
 struct IndexTuple<T> {
-  EIGEN_DEVICE_FUNC constexpr IndexTuple() : head() {}
+  EIGEN_DEVICE_FUNC constexpr IndexTuple() = default;
   EIGEN_DEVICE_FUNC constexpr IndexTuple(const T& v) : head(v) {}
 
   constexpr static int count = 1;
-  T head;
+  T head{};
   typedef T Head;
 };
 
@@ -163,7 +163,7 @@ template <Index Idx, typename ValueT>
 struct tuple_coeff {
   template <typename... T>
   EIGEN_DEVICE_FUNC static constexpr ValueT get(const Index i, const IndexTuple<T...>& t) {
-    return (i == Idx ? array_get<Idx>(t) : tuple_coeff<Idx - 1, ValueT>::get(i, t));
+    return i == Idx ? array_get<Idx>(t) : tuple_coeff<Idx - 1, ValueT>::get(i, t);
   }
   template <typename... T>
   EIGEN_DEVICE_FUNC static void set(const Index i, IndexTuple<T...>& t, const ValueT& value) {
@@ -255,13 +255,13 @@ struct IndexList : internal::IndexTuple<FirstType, OtherTypes...> {
                                  Index>::set(i, *this, value);
   }
 
-  EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC constexpr std::size_t size() const { return 1 + sizeof...(OtherTypes); };
+  EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC constexpr std::size_t size() const { return 1 + sizeof...(OtherTypes); }
 
   EIGEN_DEVICE_FUNC constexpr IndexList(const internal::IndexTuple<FirstType, OtherTypes...>& other)
       : internal::IndexTuple<FirstType, OtherTypes...>(other) {}
   EIGEN_DEVICE_FUNC constexpr IndexList(FirstType& first, OtherTypes... other)
       : internal::IndexTuple<FirstType, OtherTypes...>(first, other...) {}
-  EIGEN_DEVICE_FUNC constexpr IndexList() : internal::IndexTuple<FirstType, OtherTypes...>() {}
+  EIGEN_DEVICE_FUNC constexpr IndexList() = default;
 
   EIGEN_DEVICE_FUNC constexpr bool value_known_statically(const Index i) const {
     return internal::tuple_coeff<internal::array_size<internal::IndexTuple<FirstType, OtherTypes...>>::value - 1,
@@ -307,7 +307,7 @@ struct IndexPairList : internal::IndexTuple<FirstType, OtherTypes...> {
 
   EIGEN_DEVICE_FUNC constexpr IndexPairList(const internal::IndexTuple<FirstType, OtherTypes...>& other)
       : internal::IndexTuple<FirstType, OtherTypes...>(other) {}
-  EIGEN_DEVICE_FUNC constexpr IndexPairList() : internal::IndexTuple<FirstType, OtherTypes...>() {}
+  EIGEN_DEVICE_FUNC constexpr IndexPairList() = default;
 
   EIGEN_DEVICE_FUNC constexpr bool value_known_statically(const Index i) const {
     return internal::tuple_coeff<internal::array_size<internal::IndexTuple<FirstType, OtherTypes...>>::value - 1,

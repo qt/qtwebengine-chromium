@@ -3,16 +3,18 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
+import * as Bindings from '../../models/bindings/bindings.js';
 import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
-import {createTarget} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {createTarget, describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
+import {TestUniverse} from '../../testing/TestUniverse.js';
 
 import * as Elements from './elements.js';
 
-describeWithMockConnection('AdoptedStyleSheetTreeElement highlighting', () => {
+describeWithEnvironment('AdoptedStyleSheetTreeElement highlighting', () => {
   let domModel: SDK.DOMModel.DOMModel;
   let treeOutline: Elements.ElementsTreeOutline.ElementsTreeOutline;
   let containerNode: SDK.DOMModel.DOMNode;
@@ -21,6 +23,10 @@ describeWithMockConnection('AdoptedStyleSheetTreeElement highlighting', () => {
   const sheetId = 'sheet-id' as Protocol.DOM.StyleSheetId;
 
   beforeEach(async () => {
+    const universe = new TestUniverse();
+    sinon.stub(Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding, 'instance')
+        .returns(universe.debuggerWorkspaceBinding);
+    sinon.stub(Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding, 'instance').returns(universe.cssWorkspaceBinding);
     const target = createTarget();
     domModel = target.model(SDK.DOMModel.DOMModel)!;
 

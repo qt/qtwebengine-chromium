@@ -17,8 +17,8 @@
 #include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/ganesh/GrRecordingContext.h"
 #include "include/gpu/ganesh/GrTypes.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkDebug.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkDebug.h"
 #include "include/private/gpu/ganesh/GrImageContext.h"
 #include "src/core/SkSamplingPriv.h"
 #include "src/gpu/SkBackingFit.h"
@@ -114,8 +114,8 @@ bool SkImage_GaneshYUVA::setupMipmapsForPlanes(GrRecordingContext* context) cons
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
-GrSemaphoresSubmitted SkImage_GaneshYUVA::flush(GrDirectContext* dContext,
-                                                const GrFlushInfo& info) const {
+GrDirectContext::FlushResult SkImage_GaneshYUVA::flush(GrDirectContext* dContext,
+                                                       const GrFlushInfo& info) const {
     if (!fContext->priv().matches(dContext) || dContext->abandoned()) {
         if (info.fSubmittedProc) {
             info.fSubmittedProc(info.fSubmittedContext, false);
@@ -123,7 +123,7 @@ GrSemaphoresSubmitted SkImage_GaneshYUVA::flush(GrDirectContext* dContext,
         if (info.fFinishedProc) {
             info.fFinishedProc(info.fFinishedContext);
         }
-        return GrSemaphoresSubmitted::kNo;
+        return {false, GrSemaphoresSubmitted::kNo};
     }
 
     GrSurfaceProxy* proxies[SkYUVAInfo::kMaxPlanes] = {};

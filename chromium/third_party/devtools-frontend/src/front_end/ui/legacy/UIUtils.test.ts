@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as i18n from '../../core/i18n/i18n.js';
 import {raf, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
@@ -189,7 +190,7 @@ describe('UIUtils', () => {
         this.additions.push(...nodes);
       }
 
-      override removeNodes(nodes: NodeList): void {
+      override removeNodes(nodes: NodeList|Node[]): void {
         this.removals.push(...nodes);
       }
     }
@@ -854,7 +855,8 @@ describe('bindCheckbox', () => {
     it('returns "await in <functionName>" if description is "await" and the previous frame is another async fragment',
        () => {
          const stackTrace = StubStackTrace.create([], [
-           {description: 'someAsyncCall', frames: ['url:1:asyncFunction:10:1']}, {description: 'await', frames: []}
+           {description: 'someAsyncCall', frames: ['url:1:asyncFunction:10:1']},
+           {description: 'await', frames: []},
          ]);
          assert.strictEqual(
              UI.UIUtils.asyncFragmentLabel(stackTrace, stackTrace.asyncFragments[1]), 'await in asyncFunction');

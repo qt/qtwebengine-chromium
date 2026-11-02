@@ -39,6 +39,7 @@
 #include "components/metrics/metrics_state_manager.h"
 #include "components/metrics/metrics_upload_scheduler.h"
 #include "components/metrics/stability_metrics_helper.h"
+#include "components/metrics/startup_visibility.h"
 #include "components/metrics/test/test_enabled_state_provider.h"
 #include "components/metrics/test/test_metrics_provider.h"
 #include "components/metrics/test/test_metrics_service_client.h"
@@ -668,6 +669,9 @@ TEST_F(MetricsServiceTest, IndependentLogAtProviderRequest) {
   // have been put into the independent log).
   EXPECT_TRUE(DecodeLogDataToProto(test_log_store->staged_log(), &uma_log));
   EXPECT_EQ(GetHistogramSampleCount(uma_log, test_histogram), 1);
+
+  // Clean up histograms.
+  base::StatisticsRecorder::ForgetHistogramForTesting(test_histogram);
 }
 
 TEST_F(MetricsServiceTest, OnDidCreateMetricsLogAtShutdown) {

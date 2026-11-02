@@ -280,7 +280,8 @@ ConditionalClip ComputeAccumulatedClip(PropertyTrees* property_trees,
       }
     }
     parent_chain.push(clip_node);
-    clip_node = clip_tree.parent(clip_node);
+    clip_node = clip_tree.HasParent(*clip_node) ? &clip_tree.parent(*clip_node)
+                                                : nullptr;
   }
 
   if (parent_chain.size() == 0) {
@@ -360,9 +361,9 @@ int LowestCommonAncestor(int clip_id_1,
   const ClipNode* clip_node_2 = &clip_tree.Node(clip_id_2);
   while (clip_node_1->id != clip_node_2->id) {
     if (clip_node_1->id < clip_node_2->id) {
-      clip_node_2 = clip_tree.parent(clip_node_2);
+      clip_node_2 = &clip_tree.parent(*clip_node_2);
     } else {
-      clip_node_1 = clip_tree.parent(clip_node_1);
+      clip_node_1 = &clip_tree.parent(*clip_node_1);
     }
   }
   return clip_node_1->id;
@@ -570,7 +571,7 @@ void SetSurfaceIsClipped(const ClipTree& clip_tree,
     for (const ClipNode* clip_node =
              &clip_tree.Node(render_surface->common_ancestor_clip_id());
          clip_node && clip_node->id != parent_target_clip_id;
-         clip_node = clip_tree.parent(clip_node)) {
+         clip_node = &clip_tree.parent(*clip_node)) {
       if (clip_node->AppliesLocalClip()) {
         is_clipped = true;
         break;
@@ -586,9 +587,11 @@ void SetSurfaceDrawOpacity(const EffectTree& tree,
   // (included) and its target surface (excluded).
   const EffectNode& node = tree.Node(render_surface->EffectTreeIndex());
   float draw_opacity = tree.EffectiveOpacity(node);
-  for (const EffectNode* parent_node = tree.parent(&node);
+  for (const EffectNode* parent_node = tree.HasParent(node) ? &tree.parent(node)
+                                                            : nullptr;
        parent_node && !parent_node->HasRenderSurface();
-       parent_node = tree.parent(parent_node)) {
+       parent_node = tree.HasParent(*parent_node) ? &tree.parent(*parent_node)
+                                                  : nullptr) {
     draw_opacity *= tree.EffectiveOpacity(*parent_node);
   }
   render_surface->SetDrawOpacity(draw_opacity);
@@ -608,7 +611,7 @@ float LayerDrawOpacity(const LayerImpl* layer, const EffectTree& tree) {
   float draw_opacity = 1.f;
   while (node != &target_node) {
     draw_opacity *= tree.EffectiveOpacity(*node);
-    node = tree.parent(node);
+    node = tree.HasParent(*node) ? &tree.parent(*node) : nullptr;
   }
   return draw_opacity;
 }
@@ -692,77 +695,6 @@ void SetSurfaceDrawTransform(const PropertyTrees* property_trees,
                                    pixel_alignment_offset);
 }
 
-gfx::Rect LayerVisibleRect(PropertyTrees* property_trees, LayerImpl* layer) {
-  const EffectTree& effect_tree = property_trees->effect_tree();
-  int unbounded_effect_id = kInvalidPropertyNodeId;
-  for (int i = layer->effect_tree_index(); i != kInvalidNodeId;) {
-    const EffectNode& node = effect_tree.Node(i);
-    if (node.id == kContentsRootPropertyNodeId) {
-      break;
-    }
-    if (node.render_surface_reason ==
-        cc::RenderSurfaceReason::kUnboundedElement) {
-      unbounded_effect_id = node.id;
-      break;
-    }
-    i = node.parent_id;
-  }
-
-  const EffectNode& effect_node = effect_tree.Node(layer->effect_tree_index());
-  int lower_effect_closest_ancestor =
-      effect_node.closest_ancestor_with_cached_render_surface_id;
-  lower_effect_closest_ancestor =
-      std::max(lower_effect_closest_ancestor,
-               effect_node.closest_ancestor_with_copy_request_id);
-  lower_effect_closest_ancestor =
-      std::max(lower_effect_closest_ancestor,
-               effect_node.closest_ancestor_being_captured_id);
-  lower_effect_closest_ancestor =
-      std::max(lower_effect_closest_ancestor,
-               effect_node.closest_ancestor_with_shared_element_id);
-  if (unbounded_effect_id != kInvalidPropertyNodeId) {
-    lower_effect_closest_ancestor =
-        std::max(lower_effect_closest_ancestor, unbounded_effect_id);
-  }
-  const bool non_root_with_render_surface =
-      lower_effect_closest_ancestor > kContentsRootPropertyNodeId;
-  gfx::Rect layer_content_rect = gfx::Rect(layer->bounds());
-
-  gfx::RectF accumulated_clip_in_root_space;
-  if (non_root_with_render_surface) {
-    bool include_expanding_clips = true;
-    ConditionalClip accumulated_clip = ComputeAccumulatedClip(
-        property_trees, include_expanding_clips, layer->clip_tree_index(),
-        lower_effect_closest_ancestor);
-    if (!accumulated_clip.is_clipped)
-      return layer_content_rect;
-    accumulated_clip_in_root_space = accumulated_clip.clip_rect;
-  } else {
-    const ClipNode& clip_node =
-        property_trees->clip_tree().Node(layer->clip_tree_index());
-    accumulated_clip_in_root_space =
-        clip_node.cached_accumulated_rect_in_screen_space;
-  }
-
-  const EffectNode& root_effect_node =
-      non_root_with_render_surface
-          ? effect_tree.Node(lower_effect_closest_ancestor)
-          : effect_tree.Node(kContentsRootPropertyNodeId);
-  ConditionalClip accumulated_clip_in_layer_space =
-      ComputeTargetRectInLocalSpace(
-          accumulated_clip_in_root_space, property_trees,
-          root_effect_node.transform_id, layer->transform_tree_index(),
-          root_effect_node.id);
-  if (!accumulated_clip_in_layer_space.is_clipped) {
-    return layer_content_rect;
-  }
-  gfx::RectF clip_in_layer_space = accumulated_clip_in_layer_space.clip_rect;
-  clip_in_layer_space.Offset(-layer->offset_to_transform_parent());
-
-  gfx::Rect visible_rect = ToEnclosingClipRect(clip_in_layer_space);
-  visible_rect.Intersect(layer_content_rect);
-  return visible_rect;
-}
 
 ConditionalClip LayerClipRect(PropertyTrees* property_trees, LayerImpl* layer) {
   const EffectTree* effect_tree = &property_trees->effect_tree();
@@ -814,7 +746,8 @@ std::pair<gfx::MaskFilterInfo, bool> GetMaskFilterInfoPair(
     if (node->id == target_id)
       break;
 
-    node = effect_tree->parent(node);
+    node =
+        effect_tree->HasParent(*node) ? &effect_tree->parent(*node) : nullptr;
   }
 
   // While traversing up the parent chain we did not find any node with mask
@@ -864,10 +797,10 @@ void UpdateRenderTarget(LayerTreeImpl* layer_tree_impl,
     if (i == kContentsRootPropertyNodeId) {
       // Render target of the node corresponding to root is itself.
       node.target_id = kContentsRootPropertyNodeId;
-    } else if (effect_tree->parent(&node)->HasRenderSurface()) {
+    } else if (effect_tree->parent(node).HasRenderSurface()) {
       node.target_id = node.parent_id;
     } else {
-      node.target_id = effect_tree->parent(&node)->target_id;
+      node.target_id = effect_tree->parent(node).target_id;
     }
     if (node.has_potential_backdrop_filter_animation ||
         !node.backdrop_filters.AllowsLCDText()) {
@@ -939,10 +872,9 @@ void ComputeClips(PropertyTrees* property_trees) {
       clip_node.cached_accumulated_rect_in_screen_space = clip_node.clip;
       continue;
     }
-    ClipNode* parent_clip_node = clip_tree->MutableParent(&clip_node);
-    DCHECK(parent_clip_node);
+    ClipNode& parent_clip_node = clip_tree->MutableParent(clip_node);
     gfx::RectF accumulated_clip =
-        parent_clip_node->cached_accumulated_rect_in_screen_space;
+        parent_clip_node.cached_accumulated_rect_in_screen_space;
     bool success = ApplyClipNodeToAccumulatedClip(
         property_trees, include_expanding_clips, target_effect_id,
         target_transform_id, &clip_node, &accumulated_clip);
@@ -1058,7 +990,8 @@ void AddSurfaceToRenderSurfaceList(
   const FilterOperations& filters = render_surface->Filters();
   bool is_occlusion_immune = render_surface->CopyOfOutputRequired() ||
                              filters.HasFilterThatMovesPixels() ||
-                             allow_skipping_render_pass;
+                             allow_skipping_render_pass ||
+                             render_surface->IsUnbounded();
 
   // Setting |is_occlusion_immune| leads to an empty
   // |occlusion_from_outside_target| for a non-root render_surface. It does not
@@ -1129,7 +1062,7 @@ void ComputeLayerClipAndVisibleRect(LayerImpl* layer,
   layer->draw_properties().is_clipped = clip.is_clipped;
   layer->draw_properties().clip_rect = ToEnclosingClipRect(clip.clip_rect);
   layer->draw_properties().visible_layer_rect =
-      LayerVisibleRect(property_trees, layer);
+      LayerVisibleRect(layer, property_trees);
 }
 
 void ComputeLayerDrawableContentRect(LayerImpl* layer,
@@ -1697,6 +1630,85 @@ gfx::Transform ScreenSpaceTransform(const Layer* layer,
 gfx::Transform ScreenSpaceTransform(const LayerImpl* layer,
                                     const TransformTree& tree) {
   return ScreenSpaceTransformInternal(layer, tree);
+}
+
+gfx::Rect LayerVisibleRect(const LayerImpl* layer,
+                           PropertyTrees* property_trees) {
+  if (!property_trees || layer->effect_tree_index() == kInvalidPropertyNodeId ||
+      layer->clip_tree_index() == kInvalidPropertyNodeId ||
+      layer->transform_tree_index() == kInvalidPropertyNodeId) {
+    return gfx::Rect(layer->bounds());
+  }
+
+  const EffectTree& effect_tree = property_trees->effect_tree();
+  int unbounded_effect_id = kInvalidPropertyNodeId;
+  for (int i = layer->effect_tree_index(); i != kInvalidPropertyNodeId;) {
+    const EffectNode& node = effect_tree.Node(i);
+    if (node.id == kContentsRootPropertyNodeId) {
+      break;
+    }
+    if (node.render_surface_reason == RenderSurfaceReason::kUnboundedElement) {
+      unbounded_effect_id = node.id;
+      break;
+    }
+    i = node.parent_id;
+  }
+
+  const EffectNode& effect_node = effect_tree.Node(layer->effect_tree_index());
+  int lower_effect_closest_ancestor =
+      effect_node.closest_ancestor_with_cached_render_surface_id;
+  lower_effect_closest_ancestor =
+      std::max(lower_effect_closest_ancestor,
+               effect_node.closest_ancestor_with_copy_request_id);
+  lower_effect_closest_ancestor =
+      std::max(lower_effect_closest_ancestor,
+               effect_node.closest_ancestor_being_captured_id);
+  lower_effect_closest_ancestor =
+      std::max(lower_effect_closest_ancestor,
+               effect_node.closest_ancestor_with_shared_element_id);
+  if (unbounded_effect_id != kInvalidPropertyNodeId) {
+    lower_effect_closest_ancestor =
+        std::max(lower_effect_closest_ancestor, unbounded_effect_id);
+  }
+  const bool non_root_with_render_surface =
+      lower_effect_closest_ancestor > kContentsRootPropertyNodeId;
+  gfx::Rect layer_content_rect = gfx::Rect(layer->bounds());
+
+  gfx::RectF accumulated_clip_in_root_space;
+  if (non_root_with_render_surface) {
+    bool include_expanding_clips = true;
+    ConditionalClip accumulated_clip = ComputeAccumulatedClip(
+        property_trees, include_expanding_clips, layer->clip_tree_index(),
+        lower_effect_closest_ancestor);
+    if (!accumulated_clip.is_clipped) {
+      return layer_content_rect;
+    }
+    accumulated_clip_in_root_space = accumulated_clip.clip_rect;
+  } else {
+    const ClipNode& clip_node =
+        property_trees->clip_tree().Node(layer->clip_tree_index());
+    accumulated_clip_in_root_space =
+        clip_node.cached_accumulated_rect_in_screen_space;
+  }
+
+  const EffectNode& root_effect_node =
+      non_root_with_render_surface
+          ? effect_tree.Node(lower_effect_closest_ancestor)
+          : effect_tree.Node(kContentsRootPropertyNodeId);
+  ConditionalClip accumulated_clip_in_layer_space =
+      ComputeTargetRectInLocalSpace(
+          accumulated_clip_in_root_space, property_trees,
+          root_effect_node.transform_id, layer->transform_tree_index(),
+          root_effect_node.id);
+  if (!accumulated_clip_in_layer_space.is_clipped) {
+    return layer_content_rect;
+  }
+  gfx::RectF clip_in_layer_space = accumulated_clip_in_layer_space.clip_rect;
+  clip_in_layer_space.Offset(-layer->offset_to_transform_parent());
+
+  gfx::Rect visible_rect = ToEnclosingClipRect(clip_in_layer_space);
+  visible_rect.Intersect(layer_content_rect);
+  return visible_rect;
 }
 
 void UpdatePageScaleFactor(PropertyTrees* property_trees,

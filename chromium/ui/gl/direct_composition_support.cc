@@ -113,18 +113,18 @@ void SetOverlayCapsValid(bool valid) {
 }
 
 // A wrapper of IDXGIOutput4::CheckOverlayColorSpaceSupport()
-bool CheckOverlayColorSpaceSupport(
-    DXGI_FORMAT dxgi_format,
-    DXGI_COLOR_SPACE_TYPE dxgi_color_space,
-    Microsoft::WRL::ComPtr<IDXGIOutput> output,
-    Microsoft::WRL::ComPtr<ID3D11Device> d3d11_device) {
+bool CheckOverlayColorSpaceSupport(DXGI_FORMAT dxgi_format,
+                                   DXGI_COLOR_SPACE_TYPE dxgi_color_space,
+                                   IDXGIOutput* output,
+                                   ID3D11Device* d3d11_device) {
   UINT color_space_support_flags = 0;
   Microsoft::WRL::ComPtr<IDXGIOutput4> output4;
-  if (FAILED(output.As(&output4)) ||
+  if (FAILED(output->QueryInterface(IID_PPV_ARGS(&output4))) ||
       FAILED(output4->CheckOverlayColorSpaceSupport(
-          dxgi_format, dxgi_color_space, d3d11_device.Get(),
-          &color_space_support_flags)))
+          dxgi_format, dxgi_color_space, d3d11_device,
+          &color_space_support_flags))) {
     return false;
+  }
   return (color_space_support_flags &
           DXGI_OVERLAY_COLOR_SPACE_SUPPORT_FLAG_PRESENT);
 }
@@ -151,6 +151,13 @@ ID3D11Device* g_d3d11_device = nullptr;
 // Global d3d12 command queue created by Chromium's Dawn instance and used by
 // SharedImage code to queue work when it runs in D3D12 mode.
 ID3D12CommandQueue* g_d3d12_command_queue = nullptr;
+
+// Factory that produces a `SolidColorPoolBase` matching the active
+// GPU backend.
+SolidColorPoolFactory& GetSolidColorPoolFactoryRef() {
+  static base::NoDestructor<SolidColorPoolFactory> factory;
+  return *factory;
+}
 
 // Preferred overlay format set when detecting overlay support during
 // initialization.  Set to NV12 by default so that it's used when enabling
@@ -279,7 +286,7 @@ void GetGpuDriverOverlayInfo(bool* supports_overlays,
       if (g_check_ycbcr_studio_g22_left_p709_for_nv12_support &&
           !CheckOverlayColorSpaceSupport(
               DXGI_FORMAT_NV12, DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P709,
-              output, d3d11_device)) {
+              output.Get(), d3d11_device.Get())) {
         // Some new Intel drivers only claim to support unscaled overlays, but
         // scaled overlays still work. It's possible DWM works around it by
         // performing an extra scaling Blt before calling the driver. Even when
@@ -307,8 +314,10 @@ void GetGpuDriverOverlayInfo(bool* supports_overlays,
     if (FlagsSupportsOverlays(*rgb10a2_overlay_support_flags)) {
       if (!CheckOverlayColorSpaceSupport(
               DXGI_FORMAT_R10G10B10A2_UNORM,
-              DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020, output, d3d11_device))
+              DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020, output.Get(),
+              d3d11_device.Get())) {
         *rgb10a2_overlay_support_flags = 0;
+      }
     }
     if (g_force_rgb10a2_overlay_support) {
       *rgb10a2_overlay_support_flags = DXGI_OVERLAY_SUPPORT_FLAG_SCALING;
@@ -700,8 +709,11 @@ HRESULT DCompositionGetStatistics(COMPOSITION_FRAME_ID frameId,
 
 void InitializeDirectComposition(
     Microsoft::WRL::ComPtr<ID3D11Device> d3d11_device,
-    Microsoft::WRL::ComPtr<ID3D12CommandQueue> d3d12_command_queue) {
+    Microsoft::WRL::ComPtr<ID3D12CommandQueue> d3d12_command_queue,
+    SolidColorPoolFactory solid_color_content_provider_factory) {
   CHECK(!g_dcomp_device);
+  CHECK(!GetSolidColorPoolFactoryRef());
+
   if (!d3d11_device) {
     return;
   }
@@ -770,6 +782,9 @@ void InitializeDirectComposition(
 
   g_d3d11_device = d3d11_device.Detach();
 
+  GetSolidColorPoolFactoryRef() =
+      std::move(solid_color_content_provider_factory);
+
   Microsoft::WRL::ComPtr<EXPERIMENTAL_IDCompositionDevice6> dcomp_device6;
   hr = g_dcomp_device->QueryInterface(IID_PPV_ARGS(&dcomp_device6));
   if (SUCCEEDED(hr)) {
@@ -817,7 +832,12 @@ void ShutdownDirectComposition() {
       g_d3d12_command_queue->Release();
       g_d3d12_command_queue = nullptr;
     }
+    GetSolidColorPoolFactoryRef().Reset();
   }
+}
+
+SolidColorPoolFactory GetDirectCompositionSolidColorPoolFactory() {
+  return GetSolidColorPoolFactoryRef();
 }
 
 IDCompositionDevice3* GetDirectCompositionDevice() {
@@ -866,6 +886,20 @@ bool DirectCompositionDecodeSwapChainSupported() {
     return GetDirectCompositionSDROverlayFormat() == DXGI_FORMAT_NV12;
   }
   return false;
+}
+
+// Returns true if |color_space| is supported by the IHV overlay hardware for
+// |format| on |output|. The caller (DCLayerTree) is responsible for finding
+// the correct IDXGIOutput by enumerating all adapters, so this works even when
+// the window is on a monitor driven by a different adapter than the rendering
+// device.
+bool DirectCompositionColorSpaceOverlaySupported(
+    DXGI_FORMAT format,
+    DXGI_COLOR_SPACE_TYPE color_space,
+    IDXGIOutput* output) {
+  DCHECK(output);
+  return CheckOverlayColorSpaceSupport(format, color_space, output,
+                                       GetDirectCompositionD3D11Device());
 }
 
 void DisableDirectCompositionOverlays() {

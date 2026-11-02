@@ -7,26 +7,26 @@
 
 #include <stdint.h>
 
+#include <optional>
+
 #include "base/functional/callback.h"
 #include "base/memory/weak_ptr.h"
 #include "components/payments/content/payment_app.h"
 #include "components/payments/content/payment_request_spec.h"
 #include "components/payments/content/web_app_manifest.h"
+#include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/stored_payment_app.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "third_party/blink/public/mojom/payments/payment_app.mojom.h"
 #include "third_party/blink/public/mojom/payments/payment_handler_host.mojom.h"
 #include "third_party/blink/public/mojom/payments/payment_request.mojom.h"
+#include "url/origin.h"
 
 namespace content {
 class PaymentAppProvider;
 class WebContents;
 }  // namespace content
-
-namespace url {
-class Origin;
-}  // namespace url
 
 namespace payments {
 
@@ -45,13 +45,15 @@ class ServiceWorkerPaymentApp : public PaymentApp {
       std::unique_ptr<content::StoredPaymentApp> stored_payment_app_info,
       bool is_incognito,
       bool prefs_can_make_payment,
-      const base::RepeatingClosure& show_processing_spinner);
+      const base::RepeatingClosure& show_processing_spinner,
+      const base::RepeatingClosure& show_loading_view);
 
   // This constructor is used for a payment app that has not been installed in
   // Chrome but can be installed when paying with it. The `spec` parameter
   // should not be null.
   ServiceWorkerPaymentApp(
       content::WebContents* web_contents,
+      content::GlobalRenderFrameHostId requesting_frame_id,
       const GURL& top_origin,
       const GURL& frame_origin,
       base::WeakPtr<PaymentRequestSpec> spec,
@@ -59,7 +61,8 @@ class ServiceWorkerPaymentApp : public PaymentApp {
       const std::string& enabled_method,
       bool is_incognito,
       bool prefs_can_make_payment,
-      const base::RepeatingClosure& show_processing_spinner);
+      const base::RepeatingClosure& show_processing_spinner,
+      const base::RepeatingClosure& show_loading_view);
 
   ServiceWorkerPaymentApp(const ServiceWorkerPaymentApp&) = delete;
   ServiceWorkerPaymentApp& operator=(const ServiceWorkerPaymentApp&) = delete;
@@ -86,6 +89,7 @@ class ServiceWorkerPaymentApp : public PaymentApp {
   bool HasEnrolledInstrument() const override;
   bool NeedsInstallation() const override;
   std::string GetId() const override;
+  std::optional<url::Origin> GetPaymentHandlerOrigin() const override;
   std::u16string GetLabel() const override;
   std::u16string GetSublabel() const override;
   bool IsValidForModifier(const std::string& method) const override;
@@ -149,6 +153,7 @@ class ServiceWorkerPaymentApp : public PaymentApp {
   // Disables user interaction by showing a spinner. Used when the app is
   // invoked.
   base::RepeatingClosure show_processing_spinner_;
+  base::RepeatingClosure show_loading_view_;
 
   base::WeakPtr<PaymentHandlerHost> payment_handler_host_;
   mojo::PendingRemote<mojom::PaymentHandlerHost> payment_handler_host_remote_;
@@ -170,6 +175,19 @@ class ServiceWorkerPaymentApp : public PaymentApp {
   ukm::SourceId ukm_source_id_ = ukm::kInvalidSourceId;
 
   base::WeakPtr<content::WebContents> web_contents_;
+
+  // The frame ID is used by payment app service worker registration to enforce
+  // connection allowlists checks. Those checks only apply if there is an
+  // initiator frame of the PaymentRequest API. By default, it is an invalid
+  // `GlobalRenderFrameHostId`, which bypasses the connection allowlists checks.
+  // The invalid ID is used for payment app that does not require service worker
+  // registration, for example,  a payment app that has been installed in
+  // Chrome. See: https://github.com/WICG/connection-allowlists.
+  //
+  // TODO(crbug.com/537630723): Replace this with a `WeakDocumentPtr` to avoid
+  // referencing a reused `RenderFrameHost` via the `GlobalRenderFrameHostId`,
+  // which can happen when there is a same-site navigation.
+  content::GlobalRenderFrameHostId requesting_frame_id_;
 
   base::WeakPtrFactory<ServiceWorkerPaymentApp> weak_ptr_factory_{this};
 };

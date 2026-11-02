@@ -34,6 +34,9 @@ namespace base {
 class File;
 class Lock;
 class RefCountedMemory;
+namespace i18n {
+class LanguageTag;
+}  // namespace i18n
 }  // namespace base
 
 namespace ui {
@@ -269,7 +272,8 @@ class COMPONENT_EXPORT(UI_BASE) ResourceBundle {
       const base::MemoryMappedFile::Region& region);
 
   // Check if the .pak for the given locale exists.
-  static bool LocaleDataPakExists(std::string_view locale, Gender gender);
+  static bool LocaleDataPakExists(const base::i18n::LanguageTag& locale,
+                                  Gender gender);
 
   // Registers additional data pack files with this ResourceBundle.  When
   // looking for a DataResource, we will search these files after searching the
@@ -568,6 +572,9 @@ class COMPONENT_EXPORT(UI_BASE) ResourceBundle {
 
   // Protects |locale_resources_data_|.
   std::unique_ptr<base::Lock> locale_resources_data_lock_;
+
+  // Protects |resource_handles_|.
+  std::unique_ptr<base::Lock> resource_handles_lock_;
 
   // Handles for data sources.
   std::vector<std::unique_ptr<ResourceHandle>> locale_resources_data_;

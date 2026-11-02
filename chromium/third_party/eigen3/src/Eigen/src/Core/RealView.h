@@ -44,10 +44,10 @@ struct traits<RealView<Xpr>> : public traits<Xpr> {
 
   static constexpr bool ArrayAccess = complex_array_access<ComplexScalar>::value;
   static constexpr int ActualDirectAccessBit = ArrayAccess ? DirectAccessBit : 0;
-  static constexpr int ActualLvaluebit = !std::is_const<Xpr>::value && ArrayAccess ? LvalueBit : 0;
+  static constexpr int ActualLvalueBit = !std::is_const<Xpr>::value && ArrayAccess ? LvalueBit : 0;
   static constexpr int ActualPacketAccessBit = packet_traits<Scalar>::Vectorizable ? PacketAccessBit : 0;
   static constexpr int FlagMask =
-      ActualDirectAccessBit | ActualLvaluebit | ActualPacketAccessBit | HereditaryBits | LinearAccessBit;
+      ActualDirectAccessBit | ActualLvalueBit | ActualPacketAccessBit | HereditaryBits | LinearAccessBit;
   static constexpr int BaseFlags = int(evaluator<Xpr>::Flags) | int(Base::Flags);
   static constexpr int Flags = BaseFlags & FlagMask;
   static constexpr bool IsRowMajor = Flags & RowMajorBit;

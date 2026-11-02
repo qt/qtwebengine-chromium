@@ -41,6 +41,7 @@ import * as ShortcutRegistry from './ShortcutRegistry.js';
 import * as SoftContextMenu from './SoftContextMenu.js';
 import * as SoftDropDown from './SoftDropDown.js';
 import * as SplitWidget from './SplitWidget.js';
+import * as StackedPane from './StackedPane.js';
 import * as SuggestBox from './SuggestBox.js';
 import * as TabbedPane from './TabbedPane.js';
 import * as TargetCrashedScreen from './TargetCrashedScreen.js';
@@ -50,6 +51,7 @@ import * as Tooltip from './Tooltip.js';
 import * as TreeOutline from './Treeoutline.js';
 import * as UIUserMetrics from './UIUserMetrics.js';
 import * as UIUtils from './UIUtils.js';
+import * as UniverseRequestEvent from './UniverseRequestEvent.js';
 import * as View from './View.js';
 import * as ViewManager from './ViewManager.js';
 import * as Widget from './Widget.js';
@@ -95,6 +97,7 @@ export {
   SoftContextMenu,
   SoftDropDown,
   SplitWidget,
+  StackedPane,
   SuggestBox,
   TabbedPane,
   TargetCrashedScreen,
@@ -104,8 +107,9 @@ export {
   TreeOutline,
   UIUserMetrics,
   UIUtils,
+  UniverseRequestEvent,
   View,
   ViewManager,
   Widget,
-  ZoomManager
+  ZoomManager,
 };

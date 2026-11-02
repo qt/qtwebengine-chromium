@@ -235,6 +235,8 @@ cache_print_set (FcFontSet *set, FcStrSet *dirs, const FcChar8 *base_name, FcBoo
 	if (s) {
 	    printf ("%s", s);
 	    FcStrFree (s);
+	} else {
+	    goto bail3;
 	}
     }
     if (verbose && !set->nfont && !ndir)

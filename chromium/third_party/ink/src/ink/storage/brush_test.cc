@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Google LLC
+// Copyright 2024 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <optional>
 #include <string>
@@ -1474,6 +1475,33 @@ TEST(BrushTest, EncodeMultipleBrushFamiliesSingletonIsSameAsEncodeBrushFamily) {
   EncodeBrushFamily(*family, family_proto);
   proto::BrushFamily family_proto2;
   EncodeMultipleBrushFamilies({*family}, family_proto2);
+  EXPECT_THAT(family_proto, EqualsProto(family_proto2));
+}
+
+TEST(BrushTest, EncodeMultipleBrushFamiliesAllowsVectorOfReferences) {
+  absl::StatusOr<BrushFamily> family = BrushFamily::Create(
+      BrushTip({1, 1}, 1, Angle::Radians(0), 0, Angle::Radians(0), 0,
+               Duration32::Zero(),
+               {BrushBehavior(
+                   {BrushBehavior::SourceNode{
+                        .source = BrushBehavior::Source::
+                            kTimeFromInputToStrokeEndInSeconds,
+                        .source_out_of_range_behavior =
+                            BrushBehavior::OutOfRange::kClamp,
+                        .source_value_range = {0, 1},
+                    },
+                    BrushBehavior::TargetNode{
+                        .target = BrushBehavior::Target::kHeightMultiplier,
+                        .target_modifier_range = {0, 1},
+                    }})}),
+      BrushPaint());
+  ASSERT_THAT(family, IsOk());
+  proto::BrushFamily family_proto;
+  EncodeBrushFamily(*family, family_proto);
+  proto::BrushFamily family_proto2;
+  std::vector<std::reference_wrapper<const BrushFamily>> family_ref_vector = {
+      std::cref(*family)};
+  EncodeMultipleBrushFamilies(family_ref_vector, family_proto2);
   EXPECT_THAT(family_proto, EqualsProto(family_proto2));
 }
 

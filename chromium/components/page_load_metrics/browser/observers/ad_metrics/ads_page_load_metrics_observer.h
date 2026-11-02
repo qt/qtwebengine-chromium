@@ -9,12 +9,13 @@
 #include <map>
 #include <memory>
 
-#include "base/byte_count.h"
+#include "base/byte_size.h"
 #include "base/functional/callback_forward.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
 #include "base/time/tick_clock.h"
+#include "base/unguessable_token.h"
 #include "build/build_config.h"
 #include "components/blocklist/opt_out_blocklist/opt_out_blocklist_data.h"
 #include "components/history/core/browser/history_service.h"
@@ -51,6 +52,19 @@ class AdsPageLoadMetricsObserver
   using ResourceMimeType = page_load_metrics::ResourceMimeType;
   using ApplicationLocaleGetter = base::RepeatingCallback<std::string()>;
 
+  // A snapshot of the current ad frame statistics, to be serialized and
+  // reported by the DevTools Ads domain.
+  struct AdFrameLiveStats {
+    // The initial origin of the frame.
+    url::Origin initial_origin;
+
+    // The network bytes used by the frame.
+    int64_t network_bytes;
+
+    // The CPU time used by the frame.
+    base::TimeDelta cpu_time;
+  };
+
   // Helper class that generates a random amount of noise to apply to thresholds
   // for heavy ads. A different noise should be generated for each frame.
   class HeavyAdThresholdNoiseProvider {
@@ -64,12 +78,12 @@ class AdsPageLoadMetricsObserver
     // Gets a random amount of noise to add to a threshold. The generated noise
     // is uniform random over the range 0 to kMaxThresholdNoiseBytes. Virtual
     // for testing.
-    virtual base::ByteCount GetNetworkThresholdNoiseForFrame() const;
+    virtual base::ByteSize GetNetworkThresholdNoiseForFrame() const;
 
     // Maximum amount of additive noise to add to the network threshold to
     // obscure cross origin resource sizes: 1303 KB.
-    static constexpr base::ByteCount kMaxNetworkThresholdNoiseBytes =
-        base::KiB(1303);
+    static constexpr base::ByteSize kMaxNetworkThresholdNoiseBytes =
+        base::KiBU(1303);
 
    private:
     // Whether to use noise.
@@ -147,14 +161,15 @@ class AdsPageLoadMetricsObserver
   void OnMainFrameAdRectsChanged(
       const base::flat_map<int, gfx::Rect>& main_frame_ad_rects) override;
   void OnSubFrameDeleted(content::FrameTreeNodeId frame_tree_node_id) override;
-  void OnAdAuctionComplete(bool is_server_auction,
-                           bool is_on_device_auction,
-                           content::AuctionResult result) override;
-
   base::TimeDelta GetTotalAdCpuTime() const;
   int64_t GetTotalAdNetworkBytes() const;
 
-  PageAdDensityTracker::LiveStats GetLiveStats() {
+  // Returns a snapshot of the current ad frame statistics, keyed by the
+  // DevTools frame token.
+  [[nodiscard]] base::flat_map<base::UnguessableToken, AdFrameLiveStats>
+  GetAdFrameLiveStats() const;
+
+  PageAdDensityTracker::LiveStats GetAdDensityLiveStats() {
     return page_ad_density_tracker_.GetLiveStats();
   }
 
@@ -204,6 +219,7 @@ class AdsPageLoadMetricsObserver
 
     // Returns underlying pointer from |owned_frame_data_| if it exists.
     FrameTreeData* GetOwnedFrame();
+    const FrameTreeData* GetOwnedFrame() const;
 
    private:
     // Only |owned_frame_data_| or |unowned_frame_data_| can be set at one time.
@@ -230,7 +246,7 @@ class AdsPageLoadMetricsObserver
 
   // Gets the number of bytes that we may have not attributed to ad
   // resources due to the resource being reported as an ad late.
-  base::ByteCount GetUnaccountedAdBytes(
+  base::ByteSize GetUnaccountedAdBytes(
       int process_id,
       const mojom::ResourceDataUpdatePtr& resource) const;
 

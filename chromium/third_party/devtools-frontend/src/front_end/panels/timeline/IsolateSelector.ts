@@ -26,10 +26,14 @@ export class IsolateSelector extends UI.Toolbar.ToolbarItem implements SDK.Isola
   options?: Array<{index: number, isolate: SDK.IsolateManager.Isolate}>;
   items?: Menus.Menu.MenuItem[];
   readonly itemByIsolate = new Map<SDK.IsolateManager.Isolate, Menus.Menu.MenuItem>();
+  readonly #targetManager: SDK.TargetManager.TargetManager;
+  readonly #isolateManager: SDK.IsolateManager.IsolateManager;
 
-  constructor() {
+  constructor(targetManager: SDK.TargetManager.TargetManager, isolateManager: SDK.IsolateManager.IsolateManager) {
     const menu = new Menus.SelectMenu.SelectMenu();
     super(menu);
+    this.#targetManager = targetManager;
+    this.#isolateManager = isolateManager;
 
     this.menu = menu;
     menu.buttonTitle = i18nString(UIStrings.selectJavascriptVmInstance);
@@ -38,18 +42,16 @@ export class IsolateSelector extends UI.Toolbar.ToolbarItem implements SDK.Isola
 
     menu.addEventListener('selectmenuselected', this.#onSelectMenuSelected.bind(this));
 
-    SDK.IsolateManager.IsolateManager.instance().observeIsolates(this);
-    SDK.TargetManager.TargetManager.instance().addEventListener(
-        SDK.TargetManager.Events.NAME_CHANGED, this.targetChanged, this);
-    SDK.TargetManager.TargetManager.instance().addEventListener(
-        SDK.TargetManager.Events.INSPECTED_URL_CHANGED, this.targetChanged, this);
+    this.#isolateManager.observeIsolates(this);
+    this.#targetManager.addEventListener(SDK.TargetManager.Events.NAME_CHANGED, this.targetChanged, this);
+    this.#targetManager.addEventListener(SDK.TargetManager.Events.INSPECTED_URL_CHANGED, this.targetChanged, this);
   }
 
   #updateIsolateItem(isolate: SDK.IsolateManager.Isolate, itemForIsolate: Menus.Menu.MenuItem): void {
     const modelCountByName = new Map<string, number>();
     for (const model of isolate.models()) {
       const target = model.target();
-      const name = SDK.TargetManager.TargetManager.instance().rootTarget() !== target ? target.name() : '';
+      const name = this.#targetManager.rootTarget() !== target ? target.name() : '';
       const parsedURL = new Common.ParsedURL.ParsedURL(target.inspectedURL());
       const domain = parsedURL.isValid ? parsedURL.domain() : '';
       const title =
@@ -117,7 +119,7 @@ export class IsolateSelector extends UI.Toolbar.ToolbarItem implements SDK.Isola
     if (!model) {
       return;
     }
-    const isolate = SDK.IsolateManager.IsolateManager.instance().isolateByModel(model);
+    const isolate = this.#isolateManager.isolateByModel(model);
     if (isolate) {
       this.isolateChanged(isolate);
     }

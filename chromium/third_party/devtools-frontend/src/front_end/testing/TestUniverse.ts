@@ -5,12 +5,25 @@
 /* eslint @devtools/enforce-test-universe-return-types: "error" */
 
 import * as Common from '../core/common/common.js';
-import type * as Host from '../core/host/host.js';
+import * as Host from '../core/host/host.js';
 import * as Root from '../core/root/root.js';
 import * as SDK from '../core/sdk/sdk.js';
 import type * as Foundation from '../foundation/foundation.js';
+import * as AiAssistance from '../models/ai_assistance/ai_assistance.js';
+import * as AutofillManager from '../models/autofill_manager/autofill_manager.js';
+import * as Badges from '../models/badges/badges.js';
 import * as Bindings from '../models/bindings/bindings.js';
+import * as Breakpoints from '../models/breakpoints/breakpoints.js';
+import * as CrUXManager from '../models/crux-manager/crux-manager.js';
+import * as Emulation from '../models/emulation/emulation.js';
+import * as IssuesManager from '../models/issues_manager/issues_manager.js';
+import * as JavaScriptMetadata from '../models/javascript_metadata/javascript_metadata.js';
+import * as LiveMetrics from '../models/live-metrics/live-metrics.js';
+import * as Logs from '../models/logs/logs.js';
+import * as Persistence from '../models/persistence/persistence.js';
+import * as ProjectSettings from '../models/project_settings/project_settings.js';
 import * as Workspace from '../models/workspace/workspace.js';
+import * as WorkspaceDiff from '../models/workspace_diff/workspace_diff.js';
 
 import {DEFAULT_SETTING_REGISTRATIONS_FOR_TEST} from './SettingsHelpers.js';
 import {createTarget} from './TargetHelpers.js';
@@ -36,12 +49,264 @@ export interface CreationOptions extends Partial<Foundation.Universe.CreationOpt
  * uses DEFAULT_SETTING_REGISTRATIONS_FOR_TEST, but it will not read the global
  * registered settings (on purpose).
  */
-export class TestUniverse {
+export class TestUniverse implements Foundation.Universe.Universe {
   readonly #context = new Root.DevToolsContext.WritableDevToolsContext();
   readonly #creationOptions?: CreationOptions;
+  readonly supportsEmulation = true;
+
+  readonly #producers = new Map<Root.DevToolsContext.ConstructorT<unknown>, () => unknown>([
+    [
+      AiAssistance.AiHistoryStorage.AiHistoryStorage,
+      () => new AiAssistance.AiHistoryStorage.AiHistoryStorage(this.settings),
+    ],
+    [
+      AiAssistance.BuiltInAi.BuiltInAi,
+      () => new AiAssistance.BuiltInAi.BuiltInAi(),
+    ],
+    [
+      AutofillManager.AutofillManager.AutofillManager,
+      () => new AutofillManager.AutofillManager.AutofillManager(this.targetManager, this.frameManager),
+    ],
+    [
+      Badges.UserBadges,
+      () => new Badges.UserBadges(
+          this.settings,
+          this.gdpClient,
+          this.#creationOptions?.inspectorFrontendHost ?? Host.InspectorFrontendHost.InspectorFrontendHostInstance,
+          ),
+    ],
+    [
+      Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding,
+      () => new Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding(this.#resourceMapping, this.targetManager),
+    ],
+    [
+      Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding,
+      () => new Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding(this.#resourceMapping, this.targetManager,
+                                                                           this.ignoreListManager, this.workspace),
+    ],
+    [
+      Bindings.NetworkProject.NetworkProjectManager,
+      () => new Bindings.NetworkProject.NetworkProjectManager(),
+    ],
+    [
+      Bindings.PresentationConsoleMessageHelper.PresentationConsoleMessageManager,
+      () => {
+        const manager = new Bindings.PresentationConsoleMessageHelper.PresentationConsoleMessageManager(
+            this.targetManager, this.workspace, this.debuggerWorkspaceBinding, this.cssWorkspaceBinding);
+        manager.enable();
+        return manager;
+      },
+    ],
+    [
+      Bindings.ResourceMapping.ResourceMapping,
+      () => new Bindings.ResourceMapping.ResourceMapping(this.targetManager, this.workspace),
+    ],
+    [
+      Breakpoints.BreakpointManager.BreakpointManager,
+      () => new Breakpoints.BreakpointManager.BreakpointManager(this.targetManager, this.workspace,
+                                                                this.debuggerWorkspaceBinding, this.settings),
+    ],
+    [
+      Common.Console.Console,
+      () => new Common.Console.Console(),
+    ],
+    [
+      Common.Settings.Settings,
+      () => {
+        const storage = new Common.Settings.SettingsStorage({}, undefined, 'test');
+        const options = {
+          syncedStorage: storage,
+          globalStorage: storage,
+          localStorage: storage,
+          settingRegistrations: [...DEFAULT_SETTING_REGISTRATIONS_FOR_TEST],
+          console: this.console,
+          ...this.#creationOptions?.settingsCreationOptions,
+        };
+        return new Common.Settings.Settings(options);
+      },
+    ],
+    [
+      CrUXManager.CrUXManager,
+      () => new CrUXManager.CrUXManager(this.targetManager, this.settings),
+    ],
+    [
+      Emulation.DeviceModeModel.DeviceModeModel,
+      () => new Emulation.DeviceModeModel.DeviceModeModel(this.targetManager, this.settings,
+                                                          this.multitargetNetworkManager),
+    ],
+    [
+      Emulation.EmulatedDevices.EmulatedDevicesList,
+      () => new Emulation.EmulatedDevices.EmulatedDevicesList(this.settings),
+    ],
+    [
+      Host.AidaClient.HostConfigTracker,
+      () => new Host.AidaClient.HostConfigTracker(),
+    ],
+    [
+      Host.GdpClient.GdpClient,
+      () => new Host.GdpClient.GdpClient(),
+    ],
+    [
+      JavaScriptMetadata.JavaScriptMetadata.JavaScriptMetadataImpl,
+      () => new JavaScriptMetadata.JavaScriptMetadata.JavaScriptMetadataImpl(),
+    ],
+    [
+      LiveMetrics.LiveMetrics,
+      () => new LiveMetrics.LiveMetrics(this.targetManager, this.settings, this.deviceModeModel),
+    ],
+    [
+      Logs.LogManager.LogManager,
+      () => new Logs.LogManager.LogManager(this.targetManager, this.networkLog),
+    ],
+    [
+      Logs.NetworkLog.NetworkLog,
+      () => new Logs.NetworkLog.NetworkLog(this.targetManager, this.settings),
+    ],
+    [
+      Persistence.AutomaticFileSystemManager.AutomaticFileSystemManager,
+      () => new Persistence.AutomaticFileSystemManager.AutomaticFileSystemManager(
+          this.#creationOptions?.inspectorFrontendHost ?? Host.InspectorFrontendHost.InspectorFrontendHostInstance,
+          this.projectSettingsModel,
+          ),
+    ],
+    [
+      Persistence.AutomaticFileSystemWorkspaceBinding.AutomaticFileSystemWorkspaceBinding,
+      () => new Persistence.AutomaticFileSystemWorkspaceBinding.AutomaticFileSystemWorkspaceBinding(
+          this.automaticFileSystemManager,
+          this.isolatedFileSystemManager,
+          this.workspace,
+          ),
+    ],
+    [
+      Persistence.FileSystemWorkspaceBinding.FileSystemWorkspaceBinding,
+      () => new Persistence.FileSystemWorkspaceBinding.FileSystemWorkspaceBinding(
+          this.isolatedFileSystemManager,
+          this.workspace,
+          ),
+    ],
+    [
+      Persistence.IsolatedFileSystemManager.IsolatedFileSystemManager,
+      () => new Persistence.IsolatedFileSystemManager.IsolatedFileSystemManager(
+          this.settings,
+          this.console,
+          ),
+    ],
+    [
+      Persistence.NetworkPersistenceManager.NetworkPersistenceManager,
+      () => new Persistence.NetworkPersistenceManager.NetworkPersistenceManager(
+          this.workspace,
+          this.persistence,
+          this.breakpointManager,
+          this.targetManager,
+          this.settings,
+          this.isolatedFileSystemManager,
+          this.multitargetNetworkManager,
+          ),
+    ],
+    [
+      Persistence.Persistence.PersistenceImpl,
+      () => new Persistence.Persistence.PersistenceImpl(this.workspace, this.breakpointManager),
+    ],
+    [
+      ProjectSettings.ProjectSettingsModel.ProjectSettingsModel,
+      () => new ProjectSettings.ProjectSettingsModel.ProjectSettingsModel(
+          this.#creationOptions?.hostConfig ?? {} as Root.Runtime.HostConfig,
+          this.pageResourceLoader,
+          this.targetManager,
+          ),
+    ],
+    [
+      SDK.CPUThrottlingManager.CPUThrottlingManager,
+      () => new SDK.CPUThrottlingManager.CPUThrottlingManager(this.settings, this.targetManager),
+    ],
+    [
+      SDK.DOMDebuggerModel.DOMDebuggerManager,
+      () => new SDK.DOMDebuggerModel.DOMDebuggerManager(this.targetManager),
+    ],
+    [
+      SDK.DOMModel.DOMModelUndoStack,
+      () => new SDK.DOMModel.DOMModelUndoStack(),
+    ],
+    [
+      SDK.EventBreakpointsModel.EventBreakpointsManager,
+      () => new SDK.EventBreakpointsModel.EventBreakpointsManager(this.targetManager),
+    ],
+    [
+      SDK.FrameManager.FrameManager,
+      () => new SDK.FrameManager.FrameManager(this.targetManager),
+    ],
+    [
+      SDK.IsolateManager.IsolateManager,
+      () => new SDK.IsolateManager.IsolateManager(this.targetManager),
+    ],
+    [
+      SDK.NetworkManager.MultitargetNetworkManager,
+      () => new SDK.NetworkManager.MultitargetNetworkManager(this.targetManager),
+    ],
+    [
+      SDK.PageResourceLoader.PageResourceLoader,
+      () => {
+        const options = this.#creationOptions?.pageResourceLoaderOptions ?? {
+          loadOverride: null,
+        };
+        return new SDK.PageResourceLoader.PageResourceLoader(this.targetManager, this.settings,
+                                                             this.multitargetNetworkManager, options.loadOverride,
+                                                             options.maxConcurrentLoads);
+      },
+    ],
+    [
+      SDK.TargetManager.TargetManager,
+      () => {
+        const universe = this;
+        const context = new (class LazyContext extends Root.DevToolsContext.WritableDevToolsContext {
+          // eslint-disable-next-line @devtools/enforce-test-universe-return-types
+          override get<T>(ctor: Root.DevToolsContext.ConstructorT<T>): T {
+            return universe.get(ctor);
+          }
+          // eslint-disable-next-line @devtools/enforce-test-universe-return-types
+          override has<T>(ctor: Root.DevToolsContext.ConstructorT<T>): boolean {
+            return universe.#context.has(ctor) || universe.#producers.has(ctor);
+          }
+        })();
+        return new SDK.TargetManager.TargetManager(context,
+                                                   this.#creationOptions?.overrideAutoStartModels ?? new Set());
+      },
+    ],
+    [
+      Workspace.FileManager.FileManager,
+      () => new Workspace.FileManager.FileManager(),
+    ],
+    [
+      Workspace.IgnoreListManager.IgnoreListManager,
+      () => new Workspace.IgnoreListManager.IgnoreListManager(this.settings, this.targetManager),
+    ],
+    [
+      Workspace.Workspace.WorkspaceImpl,
+      () => new Workspace.Workspace.WorkspaceImpl(),
+    ],
+    [
+      WorkspaceDiff.WorkspaceDiff.WorkspaceDiffImpl,
+      () => new WorkspaceDiff.WorkspaceDiff.WorkspaceDiffImpl(this.workspace, this.persistence,
+                                                              this.networkPersistenceManager, this.settings),
+    ],
+  ]);
 
   constructor(options?: CreationOptions) {
     this.#creationOptions = options;
+  }
+
+  // eslint-disable-next-line @devtools/enforce-test-universe-return-types
+  get<T>(ctor: Root.DevToolsContext.ConstructorT<T>): T {
+    if (this.#context.has(ctor)) {
+      return this.#context.get(ctor);
+    }
+    const producer = this.#producers.get(ctor);
+    if (producer) {
+      const instance = producer() as T;
+      this.#context.set(ctor, instance);
+      return instance;
+    }
+    throw new Error(`Class ${ctor.name} not set-up in TestUniverse.`);
   }
 
   /**
@@ -51,128 +316,189 @@ export class TestUniverse {
     return createTarget({...options, targetManager: this.targetManager});
   }
 
+  get aiHistoryStorage(): AiAssistance.AiHistoryStorage.AiHistoryStorage {
+    return this.get(AiAssistance.AiHistoryStorage.AiHistoryStorage);
+  }
+
+  get builtInAi(): AiAssistance.BuiltInAi.BuiltInAi {
+    return this.get(AiAssistance.BuiltInAi.BuiltInAi);
+  }
+
+  get autofillManager(): AutofillManager.AutofillManager.AutofillManager {
+    return this.get(AutofillManager.AutofillManager.AutofillManager);
+  }
+
+  get automaticFileSystemManager(): Persistence.AutomaticFileSystemManager.AutomaticFileSystemManager {
+    return this.get(Persistence.AutomaticFileSystemManager.AutomaticFileSystemManager);
+  }
+
+  get automaticFileSystemWorkspaceBinding():
+      Persistence.AutomaticFileSystemWorkspaceBinding.AutomaticFileSystemWorkspaceBinding {
+    return this.get(Persistence.AutomaticFileSystemWorkspaceBinding.AutomaticFileSystemWorkspaceBinding);
+  }
+
+  get breakpointManager(): Breakpoints.BreakpointManager.BreakpointManager {
+    return this.get(Breakpoints.BreakpointManager.BreakpointManager);
+  }
+
   get console(): Common.Console.Console {
-    if (!this.#context.has(Common.Console.Console)) {
-      this.#context.set(Common.Console.Console, new Common.Console.Console());
-    }
-    return this.#context.get(Common.Console.Console);
+    return this.get(Common.Console.Console);
+  }
+
+  // eslint-disable-next-line @devtools/enforce-test-universe-return-types
+  get context(): Root.DevToolsContext.DevToolsContext {
+    return this.#context;
+  }
+
+  get cpuThrottlingManager(): SDK.CPUThrottlingManager.CPUThrottlingManager {
+    return this.get(SDK.CPUThrottlingManager.CPUThrottlingManager);
+  }
+
+  get cruxManager(): CrUXManager.CrUXManager {
+    return this.get(CrUXManager.CrUXManager);
   }
 
   get cssWorkspaceBinding(): Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding {
-    if (!this.#context.has(Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding)) {
-      this.#context.set(
-          Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding,
-          new Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding(this.#resourceMapping, this.targetManager));
-    }
-    return this.#context.get(Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding);
+    return this.get(Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding);
   }
 
   get debuggerWorkspaceBinding(): Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding {
-    if (!this.#context.has(Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding)) {
-      this.#context.set(
-          Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding,
-          new Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding(
-              this.#resourceMapping, this.targetManager, this.ignoreListManager, this.workspace));
-    }
-    return this.#context.get(Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding);
+    return this.get(Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding);
+  }
+
+  get deviceModeModel(): Emulation.DeviceModeModel.DeviceModeModel {
+    return this.get(Emulation.DeviceModeModel.DeviceModeModel);
+  }
+
+  get domDebuggerManager(): SDK.DOMDebuggerModel.DOMDebuggerManager {
+    return this.get(SDK.DOMDebuggerModel.DOMDebuggerManager);
+  }
+
+  get domModelUndoStack(): SDK.DOMModel.DOMModelUndoStack {
+    return this.get(SDK.DOMModel.DOMModelUndoStack);
+  }
+
+  get emulatedDevicesList(): Emulation.EmulatedDevices.EmulatedDevicesList {
+    return this.get(Emulation.EmulatedDevices.EmulatedDevicesList);
+  }
+
+  get eventBreakpointsManager(): SDK.EventBreakpointsModel.EventBreakpointsManager {
+    return this.get(SDK.EventBreakpointsModel.EventBreakpointsManager);
+  }
+
+  get fileManager(): Workspace.FileManager.FileManager {
+    return this.get(Workspace.FileManager.FileManager);
+  }
+
+  get fileSystemWorkspaceBinding(): Persistence.FileSystemWorkspaceBinding.FileSystemWorkspaceBinding {
+    return this.get(Persistence.FileSystemWorkspaceBinding.FileSystemWorkspaceBinding);
   }
 
   get frameManager(): SDK.FrameManager.FrameManager {
-    if (!this.#context.has(SDK.FrameManager.FrameManager)) {
-      this.#context.set(SDK.FrameManager.FrameManager, new SDK.FrameManager.FrameManager(this.targetManager));
-    }
-    return this.#context.get(SDK.FrameManager.FrameManager);
+    return this.get(SDK.FrameManager.FrameManager);
+  }
+
+  get gdpClient(): Host.GdpClient.GdpClient {
+    return this.get(Host.GdpClient.GdpClient);
+  }
+
+  get hostConfigTracker(): Host.AidaClient.HostConfigTracker {
+    return this.get(Host.AidaClient.HostConfigTracker);
   }
 
   get ignoreListManager(): Workspace.IgnoreListManager.IgnoreListManager {
-    if (!this.#context.has(Workspace.IgnoreListManager.IgnoreListManager)) {
-      this.#context.set(
-          Workspace.IgnoreListManager.IgnoreListManager,
-          new Workspace.IgnoreListManager.IgnoreListManager(this.settings, this.targetManager));
+    return this.get(Workspace.IgnoreListManager.IgnoreListManager);
+  }
+
+  get isolateManager(): SDK.IsolateManager.IsolateManager {
+    return this.get(SDK.IsolateManager.IsolateManager);
+  }
+
+  get issuesManager(): IssuesManager.IssuesManager.IssuesManager {
+    if (!this.#context.has(IssuesManager.IssuesManager.IssuesManager)) {
+      this.#context.set(IssuesManager.IssuesManager.IssuesManager,
+                        new IssuesManager.IssuesManager.IssuesManager(
+                            IssuesManager.Issue.getShowThirdPartyIssuesSetting(this.settings),
+                            IssuesManager.IssuesManager.getHideIssueByCodeSetting(this.settings),
+                            this.frameManager,
+                            this.targetManager,
+                            this.workspace,
+                            this.debuggerWorkspaceBinding,
+                            this.cssWorkspaceBinding,
+                            ));
     }
-    return this.#context.get(Workspace.IgnoreListManager.IgnoreListManager);
+    return this.#context.get(IssuesManager.IssuesManager.IssuesManager);
+  }
+
+  get logManager(): Logs.LogManager.LogManager {
+    return this.get(Logs.LogManager.LogManager);
+  }
+
+  get isolatedFileSystemManager(): Persistence.IsolatedFileSystemManager.IsolatedFileSystemManager {
+    return this.get(Persistence.IsolatedFileSystemManager.IsolatedFileSystemManager);
+  }
+
+  get javaScriptMetadata(): JavaScriptMetadata.JavaScriptMetadata.JavaScriptMetadataImpl {
+    return this.get(JavaScriptMetadata.JavaScriptMetadata.JavaScriptMetadataImpl);
+  }
+
+  get liveMetrics(): LiveMetrics.LiveMetrics {
+    return this.get(LiveMetrics.LiveMetrics);
   }
 
   get multitargetNetworkManager(): SDK.NetworkManager.MultitargetNetworkManager {
-    if (!this.#context.has(SDK.NetworkManager.MultitargetNetworkManager)) {
-      const multitargetNetworkManager = new SDK.NetworkManager.MultitargetNetworkManager(this.targetManager);
-      this.#context.set(SDK.NetworkManager.MultitargetNetworkManager, multitargetNetworkManager);
-    }
-    return this.#context.get(SDK.NetworkManager.MultitargetNetworkManager);
+    return this.get(SDK.NetworkManager.MultitargetNetworkManager);
+  }
+
+  get networkLog(): Logs.NetworkLog.NetworkLog {
+    return this.get(Logs.NetworkLog.NetworkLog);
+  }
+
+  get networkPersistenceManager(): Persistence.NetworkPersistenceManager.NetworkPersistenceManager {
+    return this.get(Persistence.NetworkPersistenceManager.NetworkPersistenceManager);
+  }
+
+  get networkProjectManager(): Bindings.NetworkProject.NetworkProjectManager {
+    return this.get(Bindings.NetworkProject.NetworkProjectManager);
   }
 
   get pageResourceLoader(): SDK.PageResourceLoader.PageResourceLoader {
-    if (!this.#context.has(SDK.PageResourceLoader.PageResourceLoader)) {
-      const options = this.#creationOptions?.pageResourceLoaderOptions ?? {
-        loadOverride: null,
-      };
-      const pageResourceLoader = new SDK.PageResourceLoader.PageResourceLoader(
-          this.targetManager, this.settings, this.multitargetNetworkManager, options.loadOverride,
-          options.maxConcurrentLoads);
-      this.#context.set(SDK.PageResourceLoader.PageResourceLoader, pageResourceLoader);
-    }
-    return this.#context.get(SDK.PageResourceLoader.PageResourceLoader);
+    return this.get(SDK.PageResourceLoader.PageResourceLoader);
+  }
+
+  get persistence(): Persistence.Persistence.PersistenceImpl {
+    return this.get(Persistence.Persistence.PersistenceImpl);
+  }
+
+  get presentationConsoleMessageManager(): Bindings.PresentationConsoleMessageHelper.PresentationConsoleMessageManager {
+    return this.get(Bindings.PresentationConsoleMessageHelper.PresentationConsoleMessageManager);
+  }
+
+  get projectSettingsModel(): ProjectSettings.ProjectSettingsModel.ProjectSettingsModel {
+    return this.get(ProjectSettings.ProjectSettingsModel.ProjectSettingsModel);
   }
 
   get targetManager(): SDK.TargetManager.TargetManager {
-    if (!this.#context.has(SDK.TargetManager.TargetManager)) {
-      // `SDKModel` instances pull their dependencies from the context we pass here.
-      // Instead of eagerly creating them in `createTarget`, we pass a simple stub that
-      // re-directs to the TestUniverse for lazy initialization. This also makes it explicit
-      // what dependencies `SDKModel` instances are using and also safe-guards against
-      // `createTarget({targetManager: universe.targetManager}) instantiations.
-      const universe = this;
-      const context = new (class LazyContext implements Root.DevToolsContext.DevToolsContext {
-        // eslint-disable-next-line @devtools/enforce-test-universe-return-types
-        get<T>(ctor: Root.DevToolsContext.ConstructorT<T>): T {
-          if (ctor === Common.Settings.Settings.prototype.constructor) {
-            return universe.settings as T;
-          }
-          if (ctor === SDK.FrameManager.FrameManager.prototype.constructor) {
-            return universe.frameManager as T;
-          }
-          if (ctor === SDK.PageResourceLoader.PageResourceLoader.prototype.constructor) {
-            return universe.pageResourceLoader as T;
-          }
-          throw new Error(`Class ${
-              ctor.name} not set-up as a dependency for SDKModels in TestUniverse.ts. Add it to LazyContext#get in TestUniverse.ts`);
-        }
-      })();
-      const targetManager =
-          new SDK.TargetManager.TargetManager(context, this.#creationOptions?.overrideAutoStartModels ?? new Set());
-      this.#context.set(SDK.TargetManager.TargetManager, targetManager);
-    }
-    return this.#context.get(SDK.TargetManager.TargetManager);
+    return this.get(SDK.TargetManager.TargetManager);
+  }
+
+  get userBadges(): Badges.UserBadges {
+    return this.get(Badges.UserBadges);
   }
 
   get settings(): Common.Settings.Settings {
-    if (!this.#context.has(Common.Settings.Settings)) {
-      const storage = new Common.Settings.SettingsStorage({}, undefined, 'test');
-      const options = this.#creationOptions?.settingsCreationOptions ?? {
-        syncedStorage: storage,
-        globalStorage: storage,
-        localStorage: storage,
-        settingRegistrations: DEFAULT_SETTING_REGISTRATIONS_FOR_TEST,
-      };
-      const settings = new Common.Settings.Settings(options);
-      this.#context.set(Common.Settings.Settings, settings);
-    }
-    return this.#context.get(Common.Settings.Settings);
+    return this.get(Common.Settings.Settings);
   }
 
   get workspace(): Workspace.Workspace.WorkspaceImpl {
-    if (!this.#context.has(Workspace.Workspace.WorkspaceImpl)) {
-      this.#context.set(Workspace.Workspace.WorkspaceImpl, new Workspace.Workspace.WorkspaceImpl());
-    }
-    return this.#context.get(Workspace.Workspace.WorkspaceImpl);
+    return this.get(Workspace.Workspace.WorkspaceImpl);
+  }
+
+  get workspaceDiff(): WorkspaceDiff.WorkspaceDiff.WorkspaceDiffImpl {
+    return this.get(WorkspaceDiff.WorkspaceDiff.WorkspaceDiffImpl);
   }
 
   get #resourceMapping(): Bindings.ResourceMapping.ResourceMapping {
-    if (!this.#context.has(Bindings.ResourceMapping.ResourceMapping)) {
-      this.#context.set(
-          Bindings.ResourceMapping.ResourceMapping,
-          new Bindings.ResourceMapping.ResourceMapping(this.targetManager, this.workspace));
-    }
-    return this.#context.get(Bindings.ResourceMapping.ResourceMapping);
+    return this.get(Bindings.ResourceMapping.ResourceMapping);
   }
 }

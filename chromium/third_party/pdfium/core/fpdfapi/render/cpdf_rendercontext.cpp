@@ -6,6 +6,7 @@
 
 #include "core/fpdfapi/render/cpdf_rendercontext.h"
 
+#include <memory>
 #include <utility>
 
 #include "build/build_config.h"
@@ -19,7 +20,6 @@
 #include "core/fpdfapi/render/cpdf_renderstatus.h"
 #include "core/fpdfapi/render/cpdf_textrenderer.h"
 #include "core/fxcrt/check.h"
-#include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "core/fxge/dib/fx_dib.h"
@@ -48,9 +48,12 @@ void CPDF_RenderContext::GetBackgroundToDevice(
 void CPDF_RenderContext::GetBackgroundToBitmap(RetainPtr<CFX_DIBitmap> bitmap,
                                                const CPDF_PageObject* object,
                                                const CFX_Matrix& matrix) {
-  CFX_DefaultRenderDevice device;
-  device.Attach(std::move(bitmap));
-  GetBackgroundToDevice(&device, object, /*options=*/nullptr, matrix);
+  std::unique_ptr<CFX_RenderDevice> device =
+      CFX_RenderDevice::CreateForBitmap(std::move(bitmap));
+  if (!device) {
+    return;
+  }
+  GetBackgroundToDevice(device.get(), object, /*options=*/nullptr, matrix);
 }
 #endif
 

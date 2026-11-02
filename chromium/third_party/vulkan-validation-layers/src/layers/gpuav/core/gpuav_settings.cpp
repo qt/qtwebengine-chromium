@@ -17,6 +17,7 @@
 
 #include "gpuav/core/gpuav_settings.h"
 
+#include <fstream>
 #include "profiling/profiling.h"
 
 // Fix GCC 13 issues with regex
@@ -35,9 +36,7 @@ bool GpuAVSettings::IsShaderInstrumentationEnabled() const {
            shader_instrumentation.post_process_descriptor_indexing || shader_instrumentation.vertex_attribute_fetch_oob ||
            shader_instrumentation.sanitizer || shader_instrumentation.shared_memory_data_race;
 }
-bool GpuAVSettings::IsSpirvModified() const {
-    return IsShaderInstrumentationEnabled() || debug_printf_enabled || debug_descriptor_enabled;
-}
+bool GpuAVSettings::IsSpirvModified() const { return IsShaderInstrumentationEnabled() || debug_printf_enabled; }
 
 // Also disables shader caching and select shader instrumentation
 void GpuAVSettings::DisableShaderInstrumentationAndOptions() {
@@ -67,7 +66,35 @@ void GpuAVSettings::SetBufferValidationEnabled(bool enabled) {
 }
 
 void GpuAVSettings::SetShaderSelectionRegexes(std::vector<std::string>&& shader_selection_regexes) {
-    this->shader_selection_regexes = std::move(shader_selection_regexes);
+    for (std::string& r : shader_selection_regexes) {
+        this->shader_selection_regexes.emplace_back(std::move(r));
+    }
+}
+
+void GpuAVSettings::LoadCDLDump(std::string&& path, std::vector<std::string>& setting_warnings) {
+    std::ifstream cdl_dump_file(path, std::ios::ate | std::ios::in);
+    if (!cdl_dump_file.is_open()) {
+        setting_warnings.emplace_back(std::string("Could not load CDL dump file ") + path);
+        return;
+    }
+
+    size_t size = (size_t)cdl_dump_file.tellg();
+    std::string cdl_dump_txt(size, ' ');
+    cdl_dump_file.seekg(0, std::ios::beg);
+    cdl_dump_file.read(&cdl_dump_txt[0], size);
+
+    bool found_pipeline = false;
+    std::regex look_for_pipeline(R"(pipeline:\s*handle:[\s\S]*?\[([^\]]*)\])", std::regex_constants::ECMAScript);
+    for (std::smatch matches; (found_pipeline = std::regex_search(cdl_dump_txt, matches, look_for_pipeline));
+         cdl_dump_txt = matches.suffix()) {
+        const std::string pipe_name = matches[1];
+        if (!pipe_name.empty()) {
+            shader_selection_regexes.emplace_back(pipe_name);
+        }
+    }
+    if (!found_pipeline) {
+        setting_warnings.emplace_back(std::string("No named pipeline found in CDL dump file ") + path);
+    }
 }
 
 bool GpuAVSettings::MatchesAnyShaderSelectionRegex(const std::string& debug_name) {
@@ -120,6 +147,7 @@ void GpuAVSettings::TracyLogSettings() const {
     VVL_TRACY_PRINT_GPUAV_SETTING(debug_validate_instrumented_shaders);
     VVL_TRACY_PRINT_GPUAV_SETTING(debug_dump_instrumented_shaders);
     VVL_TRACY_PRINT_GPUAV_SETTING(debug_max_instrumentations_count);
+    VVL_TRACY_PRINT_GPUAV_SETTING(debug_disable_dontinline);
     VVL_TRACY_PRINT_GPUAV_SETTING(debug_print_instrumentation_info);
 #define VVL_TRACY_PRINT_INSTRUMENTATION_SETTING(setting) \
     VVL_TracyMessageStream("    " #setting ": " << shader_instrumentation.setting);
@@ -138,8 +166,6 @@ void GpuAVSettings::TracyLogSettings() const {
     VVL_TRACY_PRINT_GPUAV_SETTING(debug_printf_to_stdout);
     VVL_TRACY_PRINT_GPUAV_SETTING(debug_printf_verbose);
     VVL_TRACY_PRINT_GPUAV_SETTING(debug_printf_buffer_size);
-    VVL_TRACY_PRINT_GPUAV_SETTING(debug_descriptor_enabled);
-    VVL_TRACY_PRINT_GPUAV_SETTING(debug_descriptor_to_stdout);
 #undef VVL_TRACY_PRINT_GPUAV_SETTING
 #undef VVL_TRACY_PRINT_INSTRUMENTATION_SETTING
 #endif

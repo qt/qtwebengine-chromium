@@ -90,27 +90,27 @@ class CloudPolicyValidatorTest : public testing::Test {
   CloudPolicyValidatorTest(const CloudPolicyValidatorTest&) = delete;
   CloudPolicyValidatorTest& operator=(const CloudPolicyValidatorTest&) = delete;
 
-  void Validate(testing::Action<void(UserCloudPolicyValidator*)> check_action) {
+  void Validate(testing::Action<void(CloudPolicyValidatorBase*)> check_action) {
     policy_.Build();
     ValidatePolicy(check_action, policy_.GetCopy());
   }
 
   void ValidatePolicy(
-      testing::Action<void(UserCloudPolicyValidator*)> check_action,
+      testing::Action<void(CloudPolicyValidatorBase*)> check_action,
       std::unique_ptr<em::PolicyFetchResponse> policy_response) {
     // Create a validator.
-    std::unique_ptr<UserCloudPolicyValidator> validator =
+    std::unique_ptr<CloudPolicyValidatorBase> validator =
         CreateValidator(std::move(policy_response));
     ValidatePolicy(check_action, std::move(validator));
   }
 
   void ValidatePolicy(
-      testing::Action<void(UserCloudPolicyValidator*)> check_action,
-      std::unique_ptr<UserCloudPolicyValidator> validator) {
+      testing::Action<void(CloudPolicyValidatorBase*)> check_action,
+      std::unique_ptr<CloudPolicyValidatorBase> validator) {
     // Run validation and check the result.
     EXPECT_CALL(*this, ValidationCompletion(validator.get()))
         .WillOnce(check_action);
-    UserCloudPolicyValidator::StartValidation(
+    CloudPolicyValidatorBase::StartValidation(
         std::move(validator),
         base::BindOnce(&CloudPolicyValidatorTest::ValidationCompletion,
                        base::Unretained(this)));
@@ -162,17 +162,18 @@ class CloudPolicyValidatorTest : public testing::Test {
     return validator;
   }
 
-  void CheckSuccessfulValidation(UserCloudPolicyValidator* validator) {
+  void CheckSuccessfulValidation(CloudPolicyValidatorBase* validator) {
     EXPECT_TRUE(validator->success());
     EXPECT_EQ(policy_.policy().SerializeAsString(),
               validator->policy()->SerializeAsString());
     EXPECT_EQ(policy_.policy_data().SerializeAsString(),
               validator->policy_data()->SerializeAsString());
+    auto* typed_validator = static_cast<UserCloudPolicyValidator*>(validator);
     EXPECT_EQ(policy_.payload().SerializeAsString(),
-              validator->payload()->SerializeAsString());
+              typed_validator->payload()->SerializeAsString());
   }
 
-  void CheckValueValidation(UserCloudPolicyValidator* validator) {
+  void CheckValueValidation(CloudPolicyValidatorBase* validator) {
     std::unique_ptr<CloudPolicyValidatorBase::ValidationResult>
         validation_result = validator->GetValidationResult();
     ASSERT_EQ(1u, validation_result->value_validation_issues.size());
@@ -200,7 +201,7 @@ class CloudPolicyValidatorTest : public testing::Test {
   UserPolicyBuilder policy_;
 
  private:
-  MOCK_METHOD1(ValidationCompletion, void(UserCloudPolicyValidator* validator));
+  MOCK_METHOD1(ValidationCompletion, void(CloudPolicyValidatorBase* validator));
 };
 
 #if BUILDFLAG(IS_CHROMEOS)
@@ -541,6 +542,35 @@ TEST_F(CloudPolicyValidatorTest, GoodNewSignatureEmptyDeprecatedSignature) {
   policy_.policy().set_new_public_key_verification_signature_deprecated("");
   ValidatePolicy(CheckStatus(CloudPolicyValidatorBase::VALIDATION_OK),
                  policy_.GetCopy());
+}
+
+TEST_F(CloudPolicyValidatorTest, ErrorVerificationDataKeyMismatch) {
+  // Build a response whose new_public_key_verification_data certifies the
+  // default new signing key.
+  policy_.Build();
+  const std::string verification_data =
+      policy_.policy().new_public_key_verification_data();
+  const std::string verification_data_signature =
+      policy_.policy().new_public_key_verification_data_signature();
+
+  // Build a second response that delivers an unrelated new_public_key and
+  // signs policy_data with it, then attach the verification data from the
+  // first response.
+  UserPolicyBuilder other;
+  other.SetDefaultInitialSigningKey();
+  other.Build();
+  ASSERT_NE(other.policy().new_public_key(), policy_.policy().new_public_key());
+  other.policy().set_new_public_key_verification_data(verification_data);
+  other.policy().set_new_public_key_verification_data_signature(
+      verification_data_signature);
+  other.policy().clear_new_public_key_verification_signature_deprecated();
+
+  auto validator = std::make_unique<UserCloudPolicyValidator>(
+      other.GetCopy(), base::SingleThreadTaskRunner::GetCurrentDefault());
+  validator->ValidateInitialKey(PolicyBuilder::kFakeDomain);
+  validator->RunValidation();
+  EXPECT_EQ(CloudPolicyValidatorBase::VALIDATION_BAD_KEY_VERIFICATION_SIGNATURE,
+            validator->status());
 }
 
 TEST_F(CloudPolicyValidatorTest, ErrorDomainMismatchForKeyVerification) {

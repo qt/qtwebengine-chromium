@@ -21,6 +21,7 @@
 #include "components/autofill/core/browser/country_type.h"
 #include "components/autofill/core/browser/data_manager/autofill_ai/entity_instance_cleaner.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
+#include "components/autofill/core/browser/network/autofill_ai/autofill_ai_personal_context_access_manager.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service_observer.h"
 #include "components/history/core/browser/history_service.h"
@@ -47,8 +48,12 @@ namespace autofill {
 
 class AutofillAiSaveStrikeDatabaseByHost;
 
-// Loads, adds, updates, and removes EntityInstances. Deletes data from
-// AutofillAI strike databases on history deletion.
+// Loads, adds, updates, and removes EntityInstances. Masked EntityInstances of
+// all record types are managed by this class, regardless of origin (e.g., local
+// entities, Wallet entities received via Sync, pContext entities received
+// though the AutofillAiPersonalContextAccessManager). Unmasked EntityInstances
+// are never stored in the EntityDataManager. Deletes data from AutofillAI
+// strike databases on history deletion.
 //
 // These operations are asynchronous; this is similar to
 // AutocompleteHistoryManager and unlike AddressDataManager.
@@ -57,9 +62,11 @@ class AutofillAiSaveStrikeDatabaseByHost;
 // their own EntityDataManager instance, they use the same underlying database.
 // Therefore, it is the responsibility of the callers to ensure that no data
 // from an incognito session is persisted unintentionally.
-class EntityDataManager : public KeyedService,
-                          public AutofillWebDataServiceObserverOnUISequence,
-                          public history::HistoryServiceObserver {
+class EntityDataManager
+    : public KeyedService,
+      public AutofillWebDataServiceObserverOnUISequence,
+      public history::HistoryServiceObserver,
+      public AutofillAiPersonalContextAccessManager::Observer {
  public:
   // Autofill AI enabled pref migration status.
   //
@@ -86,8 +93,8 @@ class EntityDataManager : public KeyedService,
   class Observer : public base::CheckedObserver {
    public:
     // Fired by any operation that changes GetEntityInstances().
-    // This includes database operations as well as updates from Accessibility
-    // Annotator.
+    // This includes database operations as well as updates from personal
+    // context.
     virtual void OnEntityInstancesChanged() {}
   };
 
@@ -97,6 +104,7 @@ class EntityDataManager : public KeyedService,
       syncer::SyncService* sync_service,
       scoped_refptr<AutofillWebDataService> profile_database,
       history::HistoryService* history_service,
+      AutofillAiPersonalContextAccessManager* pcontext_manager,
       strike_database::StrikeDatabaseBase* strike_database,
       GeoIpCountryCode variation_country_code);
   EntityDataManager(const EntityDataManager&) = delete;
@@ -155,6 +163,13 @@ class EntityDataManager : public KeyedService,
   void OnHistoryDeletions(history::HistoryService*,
                           const history::DeletionInfo& deletion_info) override;
 
+  // AutofillAiPersonalContextAccessManager::Observer:
+  void OnPrefetchContextComplete(
+      const AutofillAiPersonalContextAccessManager& manager,
+      std::optional<base::span<const EntityInstance>> entities) override;
+  void OnMaskedEntityTypeEvicted(
+      const AutofillAiPersonalContextAccessManager& manager,
+      EntityType type) override;
 
   // Records the date an entity was used and also increments the number of times
   // it was used.
@@ -180,6 +195,16 @@ class EntityDataManager : public KeyedService,
 
   const GeoIpCountryCode& GetVariationCountryCode() const;
 
+  // Populates this `EntityDataManager` directly with `entities`. This should
+  // only be used for testing purposes.
+  void SetPersonalContextEntitiesForTesting(
+      std::vector<EntityInstance> entities) {
+    AddPersonalContextEntities(entities);
+    test_pcontext_entities_ =
+        base::flat_set<EntityInstance, EntityInstance::CompareByGuid>(
+            std::move(entities));
+  }
+
   base::WeakPtr<EntityDataManager> GetWeakPtr() {
     return weak_ptr_factory_.GetWeakPtr();
   }
@@ -190,6 +215,9 @@ class EntityDataManager : public KeyedService,
   base::optional_ref<EntityInstance> GetMutableEntityInstance(
       const EntityInstance::EntityId& guid);
 
+  // Populates this `EntityDataManager` with the provided `entities`.
+  void AddPersonalContextEntities(base::span<const EntityInstance> entities);
+
   // Wallet private passes are not supported on devices without re-auth.
   // Depending on the `reauth_availability_`, this function might remove them
   // to avoid that they surface during filling or in settings.
@@ -198,6 +226,11 @@ class EntityDataManager : public KeyedService,
   // Dropping passes happens at a data manager level (rather than a sync bridge
   // level) because the device's re-auth state can change.
   void EnforceEntityReauthRequirements();
+
+  // Removes any cached `kPersonalContext` entities from `entities_` that
+  // represent the same entity as any non-pContext entity in the cache, based
+  // on their merge constraints.
+  void DedupePersonalContextEntities();
 
   // Becomes true after the response of the initial LoadEntitiesFromDatabase()
   // and remains true from then on.
@@ -214,9 +247,14 @@ class EntityDataManager : public KeyedService,
   // The ongoing LoadEntitiesFromDatabase() query.
   WebDataServiceBase::Handle pending_query_{};
 
-  // Contains the entities from the database and Accessibility Annotator.
+  // Contains the entities from the database and personal context.
   // All entries are identifiable by their EntityInstance::guid().
   base::flat_set<EntityInstance, EntityInstance::CompareByGuid> entities_;
+
+  // Contains personal context testing entities, which are intentionally stored
+  // separately to avoid evicting them like normal entities.
+  base::flat_set<EntityInstance, EntityInstance::CompareByGuid>
+      test_pcontext_entities_;
 
   base::ScopedObservation<AutofillWebDataService,
                           AutofillWebDataServiceObserverOnUISequence>
@@ -224,6 +262,10 @@ class EntityDataManager : public KeyedService,
 
   base::ScopedObservation<history::HistoryService, HistoryServiceObserver>
       history_service_observation_{this};
+
+  base::ScopedObservation<AutofillAiPersonalContextAccessManager,
+                          AutofillAiPersonalContextAccessManager::Observer>
+      pcontext_observation_{this};
 
   std::unique_ptr<AutofillAiSaveStrikeDatabaseByHost> save_strike_db_by_host_;
 

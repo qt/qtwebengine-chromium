@@ -33,7 +33,6 @@ MqlsFeatureMetadata::MqlsFeatureMetadata(
     CHECK_EQ(name_, "ActorLogin");
   }
 }
-
 MqlsFeatureMetadata::~MqlsFeatureMetadata() = default;
 
 bool MqlsFeatureMetadata::LoggingEnabledViaFieldTrial() const {

@@ -195,24 +195,6 @@ class AutofillField : public FormFieldData {
   static std::unique_ptr<AutofillField> Clone(const AutofillField& other,
                                               AutofillFieldCopyKey pass_key);
 
-  // This is deprecated, consider using `AutofillField::field_modifiers_`
-  // instead.
-  // TODO(crbug.com/393114125): Remove this getter after launching
-  // `AutofillFixIsAutofilled`.
-  bool is_autofilled_deprecated(base::PassKey<FormStructure> pass_key) const {
-    return is_autofilled_according_to_renderer();
-  }
-
-  // This is deprecated, consider using `AutofillField::AddFieldModifier()`
-  // instead.
-  // TODO(crbug.com/393114125): Remove this setter after launching
-  // `AutofillFixIsAutofilled`.
-  void set_is_autofilled_deprecated(
-      bool is_autofilled_deprecated,
-      base::PassKey<FormStructure, FormFiller> pass_key) {
-    set_is_autofilled_according_to_renderer(is_autofilled_deprecated);
-  }
-
   // The unique identifier of the section (e.g. billing vs. shipping address)
   // of this field.
   const Section& section() const { return section_; }
@@ -496,6 +478,14 @@ class AutofillField : public FormFieldData {
   void set_was_focused(bool was_focused) { was_focused_ = was_focused; }
   bool was_focused() const { return was_focused_; }
 
+  void set_did_trigger_javascript_autofill(
+      bool did_trigger_javascript_autofill) {
+    did_trigger_javascript_autofill_ = did_trigger_javascript_autofill;
+  }
+  bool did_trigger_javascript_autofill() const {
+    return did_trigger_javascript_autofill_;
+  }
+
   void set_ml_supported_types(const FieldTypeSet& s) {
     ml_supported_types_ = s;
   }
@@ -520,7 +510,6 @@ class AutofillField : public FormFieldData {
  private:
   friend class AutofillFieldTestApi;
 
-  using FormFieldData::is_autofilled_according_to_renderer;
   using FormFieldData::set_is_autofilled_according_to_renderer;
 
   struct PredictionResult {
@@ -636,6 +625,18 @@ class AutofillField : public FormFieldData {
   // Tracks the relative order of all the modifiers of the field. Each
   // `FieldModifier` value is present at most once in the list, and the order of
   // the list depends on the order of events that modified the field's value.
+  //
+  // Only `FillingProduct`s in //components/autofill/ do mutate this, meaning
+  // that products like Password Manager do not append `kAutofill` to this list.
+  //
+  // This attribute is slightly similar to
+  // `FormFieldData::is_autofill_according_to_renderer` with the following
+  // difference in definition:
+  // - `field_modifiers_` is tracked by the browser process using the
+  //   autofill/user-edit signals there.
+  // - `is_autofill_according_to_renderer` is the exact copy of the
+  //   `blink::WebFormControlElement`'s `WebAutofillState` at form extraction
+  //   time in the renderer process.
   std::vector<FieldModifier> field_modifiers_;
 
   // Whether the field should be filled when it is not the highlighted field.
@@ -673,6 +674,9 @@ class AutofillField : public FormFieldData {
 
   // True iff the field was ever focused.
   bool was_focused_ = false;
+
+  // Denotes whether this field triggered a custom JS autofill.
+  bool did_trigger_javascript_autofill_ = false;
 
   // Field types that the ML model is able to output.
   // Assigned by the model when it has classified the field.

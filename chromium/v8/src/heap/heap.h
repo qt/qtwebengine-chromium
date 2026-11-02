@@ -44,7 +44,9 @@
 #include "src/heap/sweeper.h"
 #include "src/init/heap-symbols.h"
 #include "src/objects/allocation-site.h"
+#include "src/objects/fixed-array-base.h"
 #include "src/objects/fixed-array.h"
+#include "src/objects/fixed-primitive-array.h"
 #include "src/objects/hash-table.h"
 #include "src/objects/heap-object.h"
 #include "src/objects/js-array-buffer.h"
@@ -52,7 +54,6 @@
 #include "src/objects/smi.h"
 #include "src/objects/visitors.h"
 #include "src/roots/roots.h"
-#include "src/sandbox/code-pointer-table.h"
 #include "src/sandbox/external-pointer-table.h"
 #include "src/sandbox/js-dispatch-table.h"
 #include "src/sandbox/trusted-pointer-table.h"
@@ -108,6 +109,8 @@ class JSFinalizationRegistry;
 class JSPromise;
 class LinearAllocationArea;
 class LocalHeap;
+class YoungPendingAllocations;
+class SpaceWithLinearArea;
 class MemoryAllocator;
 class MemoryBalancer;
 class MutablePage;
@@ -142,15 +145,19 @@ class TrustedRange;
 class TrustedSpace;
 class WeakObjectRetainer;
 
-enum class ClearRecordedSlots { kYes, kNo };
+using ClearRecordedSlots =
+    base::StrongAlias<struct ClearRecordedSlotsTag, bool>;
 
 enum class SlotClearingMode { kCheckSweeping, kUnconditional };
 
-enum class InvalidateRecordedSlots { kYes, kNo };
+using InvalidateRecordedSlots =
+    base::StrongAlias<struct InvalidateRecordedSlotsTag, bool>;
 
-enum class InvalidateExternalPointerSlots { kYes, kNo };
+using InvalidateExternalPointerSlots =
+    base::StrongAlias<struct InvalidateExternalPointerSlotsTag, bool>;
 
-enum class ClearFreedMemoryMode { kClearFreedMemory, kDontClearFreedMemory };
+using ClearFreedMemoryMode =
+    base::StrongAlias<struct ClearFreedMemoryModeTag, bool>;
 
 enum class SkipRoot {
   kExternalStringTable,
@@ -270,7 +277,7 @@ static constexpr v8::base::TimeDelta kMaxSynchronuousGCOperation =
 
 class Heap final {
  public:
-  enum class HeapGrowingMode { kSlow, kConservative, kMinimal, kDefault };
+  using HeapGrowingMode = HeapGrowingMode;
 
   enum HeapState {
     NOT_IN_GC,
@@ -345,15 +352,6 @@ class Heap final {
       uint64_t physical_memory);
 
   static size_t HeapSizeToSemiSpaceRatio(uint64_t physical_memory);
-
-  // Calculates the maximum amount of filler that could be required by the
-  // given alignment.
-  V8_EXPORT_PRIVATE static int GetMaximumFillToAlign(
-      AllocationAlignment alignment);
-  // Calculates the actual amount of filler required for a given address at the
-  // given alignment.
-  V8_EXPORT_PRIVATE static int GetFillToAlign(Address address,
-                                              AllocationAlignment alignment);
 
   // Returns the size of the initial area of a code-range, which is marked
   // writable and reserved to contain unwind information.
@@ -432,12 +430,6 @@ class Heap final {
   // should not happen during deserialization.
   void NotifyDeserializationComplete();
 
-  // Weakens StrongDescriptorArray objects into regular DescriptorArray objects.
-  //
-  // Thread-safe.
-  void WeakenDescriptorArrays(
-      GlobalHandleVector<DescriptorArray> strong_descriptor_arrays);
-
   void NotifyBootstrapComplete();
 
   enum class OldGenerationExpansionNotificationOrigin {
@@ -475,8 +467,7 @@ class Heap final {
   // are recorded in this free memory.
   V8_EXPORT_PRIVATE void CreateFillerObjectAt(
       Address addr, int size,
-      ClearFreedMemoryMode clear_memory_mode =
-          ClearFreedMemoryMode::kDontClearFreedMemory,
+      ClearFreedMemoryMode clear_memory_mode = ClearFreedMemoryMode{false},
       std::optional<AllocationType> allocation_type = {});
 
   // Initialize a filler object at a specific address. Unlike
@@ -721,7 +712,7 @@ class Heap final {
   // ===========================================================================
 
   void ConfigureHeap(const v8::ResourceConstraints& constraints,
-                     v8::CppHeap* cpp_heap);
+                     v8::CppHeap& cpp_heap);
   void ConfigureHeapDefault();
 
   // Prepares the heap, setting up for deserialization.
@@ -828,7 +819,9 @@ class Heap final {
     return &trusted_pointer_space_;
   }
 
-  CodePointerTable::Space* code_pointer_space() { return &code_pointer_space_; }
+  TrustedPointerTable::Space* read_only_trusted_pointer_space() {
+    return &read_only_trusted_pointer_space_;
+  }
 
 #endif  // V8_ENABLE_SANDBOX
 
@@ -889,6 +882,10 @@ class Heap final {
   LocalHeap* main_thread_local_heap() { return main_thread_local_heap_; }
 
   Heap* AsHeap() { return this; }
+
+  YoungPendingAllocations* young_pending_allocations() const {
+    return young_pending_allocations_.get();
+  }
 
   // ===========================================================================
   // Root set access. ==========================================================
@@ -979,16 +976,16 @@ class Heap final {
       AllocationSpace space, GarbageCollectionReason gc_reason,
       const GCCallbackFlags gc_callback_flags = kNoGCCallbackFlags,
       PerformHeapLimitCheck check_heap_limit_reached =
-          PerformHeapLimitCheck::kYes,
+          PerformHeapLimitCheck{true},
       PerformIneffectiveMarkCompactCheck check_ineffective_mark_compact =
-          PerformIneffectiveMarkCompactCheck::kYes);
+          PerformIneffectiveMarkCompactCheck{true});
 
   // Performs a full garbage collection.
   V8_EXPORT_PRIVATE void CollectAllGarbage(
       GCFlags gc_flags, GarbageCollectionReason gc_reason,
       const GCCallbackFlags gc_callback_flags = kNoGCCallbackFlags,
-      PerformHeapLimitCheck check_heap_limit_reached =
-          PerformHeapLimitCheck::kYes);
+      PerformHeapLimitCheck check_heap_limit_reached = PerformHeapLimitCheck{
+          true});
 
   // Last hope garbage collection. Will try to free as much memory as possible
   // with multiple rounds of garbage collection.
@@ -1140,7 +1137,7 @@ class Heap final {
   // The runtime uses this function to notify potentially unsafe object layout
   // changes that require special synchronization with the concurrent marker.
   // By default recorded slots in the object are invalidated. Pass
-  // InvalidateRecordedSlots::kNo if this is not necessary or to perform this
+  // InvalidateRecordedSlots{false} if this is not necessary or to perform this
   // manually.
   // If the object contains external pointer slots, then these need to be
   // invalidated as well if a GC marker may have observed them previously. To
@@ -1477,10 +1474,7 @@ class Heap final {
       const uint64_t overshoot_margin) const;
 
   // Return the maximum size objects can be before having to allocate them as
-  // large objects. This takes into account allocating in the code space for
-  // which the size of the allocatable space per V8 page may depend on the OS
-  // page size at runtime. You may use kMaxRegularHeapObjectSize as a constant
-  // instead if you know the allocation isn't in the code spaces.
+  // large objects.
   inline V8_EXPORT_PRIVATE int MaxRegularHeapObjectSize(
       AllocationType allocation);
 
@@ -1825,6 +1819,7 @@ class Heap final {
                                 const char* collector_reason);
 
   void PerformHeapVerification();
+  void VerifyEmptySharedHeap();
   std::vector<Isolate*> PauseConcurrentThreadsInClients(
       GarbageCollector collector);
   void ResumeConcurrentThreadsInClients(std::vector<Isolate*> paused_clients);
@@ -1841,7 +1836,8 @@ class Heap final {
   void CreateInternalAccessorInfoObjects();
   void CreateInitialMutableObjects();
 
-  enum class VerifyNoSlotsRecorded { kYes, kNo };
+  using VerifyNoSlotsRecorded =
+      base::StrongAlias<struct VerifyNoSlotsRecordedTag, bool>;
 
   // Creates a filler object in the specified memory area. This method is the
   // internal method used by all CreateFillerObjectAtXXX-methods.
@@ -2080,6 +2076,8 @@ class Heap final {
 
   // Helper for IsPendingAllocation.
   inline bool IsPendingAllocationInternal(Tagged<HeapObject> object);
+  V8_EXPORT_PRIVATE bool IsPendingAllocationSlow(Tagged<HeapObject> object,
+                                                 MemoryChunk* chunk);
 
 #ifdef DEBUG
   V8_EXPORT_PRIVATE void IncrementObjectCounters();
@@ -2186,9 +2184,8 @@ class Heap final {
 #ifdef V8_ENABLE_SANDBOX
   // Likewise, but for the trusted pointer table.
   TrustedPointerTable::Space trusted_pointer_space_;
+  TrustedPointerTable::Space read_only_trusted_pointer_space_;
 
-  // The space in the process-wide code pointer table managed by this heap.
-  CodePointerTable::Space code_pointer_space_;
 #endif  // V8_ENABLE_SANDBOX
 
   // The spaces in the JSDispatchTable containing entries owned by objects
@@ -2291,6 +2288,8 @@ class Heap final {
 
   std::shared_ptr<v8::TaskRunner> task_runner_;
 
+  std::unique_ptr<YoungPendingAllocations> young_pending_allocations_;
+
   // This object controls virtual space reserved for code on the V8 heap. This
   // is only valid for 64-bit architectures where kPlatformRequiresCodeRange.
   //
@@ -2377,8 +2376,6 @@ class Heap final {
   int gc_callbacks_depth_ = 0;
 
   bool deserialization_complete_ = false;
-
-  int max_regular_code_object_size_ = 0;
 
   bool inline_allocation_enabled_ = true;
 
@@ -2562,8 +2559,7 @@ constexpr const char* ToString(Heap::HeapGrowingMode mode) {
 RIGHT_TRIMMABLE_ARRAY_LIST(DECL_RIGHT_TRIM)
 #undef DECL_RIGHT_TRIM
 
-struct HexAddressTag;
-using HexAddress = base::StrongAlias<HexAddressTag, Address>;
+using HexAddress = base::StrongAlias<struct HexAddressTag, Address>;
 
 using ByteSize = ::heap::base::ByteSize;
 
@@ -2607,6 +2603,7 @@ using TraceRingBuffer = char[Heap::kTraceRingBufferSize + 1];
   V(ByteSize, malloced_memory)              \
   V(ByteSize, malloced_peak_memory)         \
   V(size_t, isolate_count)                  \
+  V(size_t, native_context_count)           \
   V(size_t, last_os_error)                  \
   V(bool, is_main_isolate)                  \
   V(CageStats, main_cage)                   \

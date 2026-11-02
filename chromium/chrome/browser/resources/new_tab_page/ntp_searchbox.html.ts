@@ -38,9 +38,11 @@ export function getHtml(this: NtpSearchboxElement) {
       searchbox-aria-description="${this.searchboxAriaDescription}"
       searchbox-icon="${this.searchboxIcon_}"
       .selectedMatch="${this.selectedMatch}"
+      .inputKeywordModel="${this.inputKeywordModel}"
       ?input-has-matches="${this.inputHasMatches_()}"
       ?allow-file-paste="${this.ntpRealboxNextEnabled}"
       @focusin="${this.onInputFocusin_}"
+      @searchbox-input-pasted="${this.onSearchboxInputPasted_}"
       @searchbox-input-files-pasted="${this.onSearchboxInputFilesPasted_}"
       @searchbox-input-text-updated="${this.onSearchboxInputTextUpdated_}"
       @input-focus-changed="${this.onInputFocusChanged}">
@@ -65,8 +67,10 @@ export function getHtml(this: NtpSearchboxElement) {
         </button>
       </div>
     ` : ''}
-    ${this.composeButtonEnabled ? html`
+    ${this.showComposeButton_ ? html`
       <cr-searchbox-compose-button id="composeButton" slot="compose-button"
+          ?dynamic="${this.ntpRealboxDynamicAiModeButtonEnabled_}"
+          ?has-user-input="${this.hasUserInput_}"
           @compose-click="${this.onComposeClick_}">
       </cr-searchbox-compose-button>
     ` : ''}

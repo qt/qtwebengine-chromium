@@ -205,6 +205,7 @@ class ComponentUpdateService {
   // required components are up to date.
   virtual void EnsureRequiredComponentsReady(base::TimeDelta timeout) = 0;
 #endif
+  virtual void Stop() = 0;
 
  private:
   friend class screen_ai::ScreenAIDownloaderNonChromeOS;
@@ -244,6 +245,8 @@ class OnDemandUpdater {
 #endif  // BUILDFLAG(IS_CHROMEOS)
   friend class IwaKeyDistributionComponentInstallerPolicy;
   friend class PlatformRuntimeComponentInstallerPolicy;
+  friend void UpdateAIEmbeddingsComponentOnDemand(Priority priority,
+                                                  Callback callback);
 
   // Triggers an update check for a component. |id| is a value
   // returned by GetCrxComponentID(). If an update for this component is already

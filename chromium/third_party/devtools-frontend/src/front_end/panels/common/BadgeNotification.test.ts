@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../core/common/common.js';
 import * as Badges from '../../models/badges/badges.js';
@@ -10,6 +11,7 @@ import {
   renderElementIntoDOM,
 } from '../../testing/DOMHelpers.js';
 import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
+import {createSettingsForTest} from '../../testing/SettingsHelpers.js';
 import {createViewFunctionStub} from '../../testing/ViewFunctionHelpers.js';
 import {html, type LitTemplate, render} from '../../ui/lit/lit.js';
 
@@ -42,6 +44,7 @@ function createMockBadge(badgeCtor: new (badgeContext: Badges.BadgeContext) => B
   return new badgeCtor({
     onTriggerBadge: () => {},
     badgeActionEventTarget: new Common.ObjectWrapper.ObjectWrapper<Badges.BadgeActionEvents>(),
+    settings: createSettingsForTest(),
   });
 }
 

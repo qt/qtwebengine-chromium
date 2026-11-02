@@ -45,8 +45,6 @@ static const struct {
 
 #define NUM_FC_BOOL_DEFAULTS (int)(sizeof FcBoolDefaults / sizeof FcBoolDefaults[0])
 
-FcStrSet *default_langs;
-
 FcStrSet *
 FcConfigGetDefaultLangs (FcConfig *config)
 {

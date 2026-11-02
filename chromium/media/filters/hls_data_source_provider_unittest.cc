@@ -3,8 +3,11 @@
 // found in the LICENSE file.
 
 #include "media/filters/hls_data_source_provider.h"
+
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
+#include "url/origin.h"
 
 namespace media {
 
@@ -19,17 +22,17 @@ class HlsDataSourceStreamUnittest : public testing::Test {
  protected:
   std::unique_ptr<HlsDataSourceStream> CreateStream(
       std::optional<hls::types::ByteRange> range) {
-    HlsDataSourceProvider::SegmentQueue segments;
-    segments.emplace(GURL("https://example.com"), range);
-    return CreateStream(std::move(segments));
+    HlsDataSourceProvider::UrlDataSegment segment(GURL("https://example.com"),
+                                                  range);
+    return CreateStream(std::move(segment));
   }
 
   std::unique_ptr<HlsDataSourceStream> CreateStream(
-      HlsDataSourceProvider::SegmentQueue queue) {
+      HlsDataSourceProvider::UrlDataSegment segment) {
     auto stream_id = stream_id_generator_.GenerateNextId();
     EXPECT_CALL(*this, OnRelease(stream_id));
     return std::make_unique<HlsDataSourceStream>(
-        stream_id, std::move(queue),
+        stream_id, std::move(segment),
         base::BindOnce(&HlsDataSourceStreamUnittest::OnReleaseInternal,
                        base::Unretained(this), stream_id));
   }
@@ -44,35 +47,18 @@ TEST_F(HlsDataSourceStreamUnittest, TestNewStreamHasProperties) {
   ASSERT_EQ(stream->buffer_size(), static_cast<size_t>(0));
   ASSERT_EQ(stream->max_read_position(), std::nullopt);
   ASSERT_TRUE(stream->CanReadMore());
-  ASSERT_TRUE(stream->RequiresNextDataSource());
-  ASSERT_EQ(stream->GetNextSegmentURI(), GURL("https://example.com"));
-  ASSERT_FALSE(stream->RequiresNextDataSource());
+  ASSERT_TRUE(stream->RequiresInit());
+  ASSERT_EQ(std::get<0>(stream->GetSegmentInfo()), GURL("https://example.com"));
+  ASSERT_FALSE(stream->RequiresInit());
 
   auto capped = CreateStream(hls::types::ByteRange::Validate(10, 20));
   ASSERT_EQ(capped->read_position(), static_cast<size_t>(0));
   ASSERT_EQ(capped->buffer_size(), static_cast<size_t>(0));
   ASSERT_EQ(capped->max_read_position(), std::nullopt);
   ASSERT_TRUE(capped->CanReadMore());
-  ASSERT_TRUE(capped->RequiresNextDataSource());
-  ASSERT_EQ(capped->GetNextSegmentURI(), GURL("https://example.com"));
-  ASSERT_FALSE(capped->RequiresNextDataSource());
-
-  HlsDataSourceProvider::SegmentQueue segments;
-  segments.emplace(GURL("https://example.com"), std::nullopt);
-  segments.emplace(GURL("https://foo.com"), std::nullopt);
-  auto double_url = CreateStream(std::move(segments));
-  ASSERT_EQ(double_url->read_position(), static_cast<size_t>(0));
-  ASSERT_EQ(double_url->buffer_size(), static_cast<size_t>(0));
-  ASSERT_EQ(double_url->max_read_position(), std::nullopt);
-  ASSERT_TRUE(double_url->CanReadMore());
-  ASSERT_TRUE(double_url->RequiresNextDataSource());
-  ASSERT_EQ(double_url->GetNextSegmentURI(), GURL("https://example.com"));
-  ASSERT_FALSE(double_url->RequiresNextDataSource());
-  double_url->LockStreamForWriting(4);
-  double_url->UnlockStreamPostWrite(0, true);
-  ASSERT_TRUE(double_url->RequiresNextDataSource());
-  ASSERT_EQ(double_url->GetNextSegmentURI(), GURL("https://foo.com"));
-  ASSERT_FALSE(double_url->RequiresNextDataSource());
+  ASSERT_TRUE(capped->RequiresInit());
+  ASSERT_EQ(std::get<0>(capped->GetSegmentInfo()), GURL("https://example.com"));
+  ASSERT_FALSE(capped->RequiresInit());
 }
 
 TEST_F(HlsDataSourceStreamUnittest, TestWritesAndClears) {
@@ -109,6 +95,98 @@ TEST_F(HlsDataSourceStreamUnittest, TestWritesAndClears) {
   ASSERT_EQ(stream->buffer_size(), static_cast<size_t>(0));
   ASSERT_EQ(stream->max_read_position(), std::nullopt);
   ASSERT_EQ(stream->CanReadMore(), true);
+}
+
+TEST_F(HlsDataSourceStreamUnittest, PrependInitStreamWithData) {
+  auto stream = CreateStream(std::nullopt);
+  auto init_stream = CreateStream(std::nullopt);
+
+  // Add data to init_stream
+  base::span<uint8_t> init_span = init_stream->LockStreamForWriting(5);
+  for (size_t i = 0; i < 5; ++i) {
+    init_span[i] = i + 1;
+  }
+  init_stream->UnlockStreamPostWrite(5, false);
+
+  // Add data to main stream
+  base::span<uint8_t> main_span = stream->LockStreamForWriting(5);
+  for (size_t i = 0; i < 5; ++i) {
+    main_span[i] = i + 10;
+  }
+  stream->UnlockStreamPostWrite(5, false);
+
+  // Set security metadata
+  hls::SecurityMetadata init_meta;
+  init_meta.would_taint_origin = true;
+  init_meta.response_origins.insert(
+      url::Origin::Create(GURL("https://init.com")));
+  init_stream->SetSecurityInfoForTesting(init_meta);
+
+  hls::SecurityMetadata main_meta;
+  main_meta.would_taint_origin = false;
+  main_meta.response_origins.insert(
+      url::Origin::Create(GURL("https://main.com")));
+  stream->SetSecurityInfoForTesting(main_meta);
+
+  stream->PrependInitStream(std::move(init_stream));
+
+  // Check data is prepended
+  ASSERT_EQ(stream->buffer_size(), 10u);
+  auto data = stream->data();
+  EXPECT_EQ(data[0], 1);
+  EXPECT_EQ(data[4], 5);
+  EXPECT_EQ(data[5], 10);
+  EXPECT_EQ(data[9], 14);
+
+  // Check security metadata is merged
+  EXPECT_TRUE(stream->SecurityInfo().would_taint_origin);
+  EXPECT_EQ(stream->SecurityInfo().response_origins.size(), 2u);
+  EXPECT_TRUE(stream->SecurityInfo().response_origins.contains(
+      url::Origin::Create(GURL("https://init.com"))));
+  EXPECT_TRUE(stream->SecurityInfo().response_origins.contains(
+      url::Origin::Create(GURL("https://main.com"))));
+}
+
+TEST_F(HlsDataSourceStreamUnittest, PrependInitStreamEmpty) {
+  auto stream = CreateStream(std::nullopt);
+
+  // Add data to main stream
+  base::span<uint8_t> main_span = stream->LockStreamForWriting(5);
+  for (size_t i = 0; i < 5; ++i) {
+    main_span[i] = i + 10;
+  }
+  stream->UnlockStreamPostWrite(5, false);
+
+  auto init_stream = CreateStream(std::nullopt);  // Empty
+
+  // Set security metadata on empty init stream
+  hls::SecurityMetadata init_meta;
+  init_meta.would_taint_origin = true;
+  init_meta.response_origins.insert(
+      url::Origin::Create(GURL("https://init.com")));
+  init_stream->SetSecurityInfoForTesting(init_meta);
+
+  hls::SecurityMetadata main_meta;
+  main_meta.would_taint_origin = false;
+  main_meta.response_origins.insert(
+      url::Origin::Create(GURL("https://main.com")));
+  stream->SetSecurityInfoForTesting(main_meta);
+
+  stream->PrependInitStream(std::move(init_stream));
+
+  // Check data is NOT prepended (stream remains same size)
+  ASSERT_EQ(stream->buffer_size(), 5u);
+  auto data = stream->data();
+  EXPECT_EQ(data[0], 10);
+  EXPECT_EQ(data[4], 14);
+
+  // Check security metadata IS merged
+  EXPECT_TRUE(stream->SecurityInfo().would_taint_origin);
+  EXPECT_EQ(stream->SecurityInfo().response_origins.size(), 2u);
+  EXPECT_TRUE(stream->SecurityInfo().response_origins.contains(
+      url::Origin::Create(GURL("https://init.com"))));
+  EXPECT_TRUE(stream->SecurityInfo().response_origins.contains(
+      url::Origin::Create(GURL("https://main.com"))));
 }
 
 }  // namespace media

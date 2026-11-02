@@ -15,15 +15,13 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use anyhow::Context;
-use oak_attestation_gcp::attestation::request_attestation_token;
+use cosign_util::pull_package;
+use oak_attestation_gcp::{OAK_SESSION_NOISE_V1_AUDIENCE, attestation::request_attestation_token};
 use oak_gcp_examples_echo_enclave_app::{app, app_service, gcp};
-use oak_proto_rust::oak::attestation::v1::{
-    endorsement::Format, ConfidentialSpaceEndorsement, Endorsement, Signature, SignedEndorsement,
-};
-use oci_client::{client::ClientConfig, secrets::RegistryAuth, Client, Reference};
-use p256::ecdsa::{signature::rand_core::OsRng, SigningKey};
+use oak_proto_rust::oak::attestation::v1::ConfidentialSpaceEndorsement;
+use oci_client::{Client, Reference, client::ClientConfig, secrets::RegistryAuth};
+use p256::ecdsa::{SigningKey, signature::rand_core::OsRng};
 use sha2::Digest;
-use sigstore_client::cosign;
 use tokio::net::TcpListener;
 
 const ENCLAVE_APP_PORT: u16 = 8080;
@@ -42,7 +40,7 @@ async fn main() -> anyhow::Result<()> {
 
     println!("Requesting attestation token for {public_key_hash}...");
     let jwt_token =
-        request_attestation_token("oak://session/attestation", public_key_hash.as_str())?;
+        request_attestation_token(OAK_SESSION_NOISE_V1_AUDIENCE, public_key_hash.as_str())?;
 
     println!("Received evidence: {jwt_token}");
 
@@ -55,7 +53,7 @@ async fn main() -> anyhow::Result<()> {
         .expect("Could not read tee-image-reference, are we running in Confidential Space?");
     let image_reference: Reference = image_reference
         .parse()
-        .context("Could not parse tee-image-reference into an OCI image reference")?;
+        .context("parsing tee-image-reference into an OCI image reference")?;
     anyhow::ensure!(
         image_reference.digest().is_some(),
         "Only images with digests are supported, not {image_reference}"
@@ -64,30 +62,23 @@ async fn main() -> anyhow::Result<()> {
     println!("Getting bearer token...");
     let token = gcp::get_bearer_token().await?;
 
-    println!("Fetching image endorsement for {image_reference}...");
+    println!("Fetching endorsement for {image_reference}...");
     let client = Client::new(ClientConfig::default());
     let auth = RegistryAuth::Bearer(token);
-    let (statement, rekor) = cosign::pull_payload(&client, &auth, &image_reference).await?;
 
-    println!("Received signature: {statement:?}");
-    println!("Received Rekor inclusion data: {rekor:?}");
-
-    // The JWT evidence, container signature and the Rekor inclusion data are left
-    // unverified. Normally you would want to verify them to avoid any
-    // unexpected failures if something has gone wrong when producing hte
-    // endorsement.
-    let workload_endorsement = Some(SignedEndorsement {
-        endorsement: Some(Endorsement {
-            format: Format::EndorsementFormatJsonIntoto.into(),
-            serialized: statement.unverified_message().to_vec(),
-            ..Default::default()
-        }),
-        // The signature proto has a key ID which we do not use at the moment.
-        signature: Some(Signature { raw: statement.signature().to_vec(), ..Default::default() }),
-        rekor_log_entry: rekor.raw_data().to_vec(),
-    });
-
-    let endorsement = ConfidentialSpaceEndorsement { jwt_token, workload_endorsement };
+    let signed_endorsement = {
+        // The signed endorsement does not contain the endorser public key,
+        // therefore we may pass the key as empty.
+        let package = pull_package(&client, &auth, &image_reference, "").await?;
+        let endorsement = &package.endorsement;
+        let rekor_log_entry =
+            package.rekor_log_entry.as_ref().ok_or(anyhow::anyhow!("missing Rekor log entry"))?;
+        println!("Received statement: {endorsement:?}");
+        println!("Converted Rekor log entry: {rekor_log_entry:?}");
+        package.get_signed_endorsement()?
+    };
+    let endorsement =
+        ConfidentialSpaceEndorsement { jwt_token, workload_endorsement: Some(signed_endorsement) };
 
     println!("Starting enclave echo app...");
     let join_handle =

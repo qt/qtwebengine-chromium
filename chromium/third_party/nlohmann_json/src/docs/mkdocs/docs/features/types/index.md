@@ -131,13 +131,13 @@ std::map<
 The choice of `object_t` influences the behavior of the JSON class. With the default type, objects have the following behavior:
 
 - When all names are unique, objects will be interoperable in the sense that all software implementations receiving that object will agree on the name-value mappings.
-- When the names within an object are not unique, it is unspecified which one of the values for a given key will be chosen. For instance, `#!json {"key": 2, "key": 1}` could be equal to either `#!json {"key": 1}` or `#!json {"key": 2}`.
+- When the names within an object are not unique, it is unspecified which one of the values for a given key will be chosen. For instance, `#!json {"key": 2, "key": 1}` could be equal to either `#!json {"key": 1}` or `#!json {"key": 2}`. To reject duplicate keys instead of silently resolving them one way or another, see [this parsing recipe](../parsing/parser_callbacks.md#recipe-rejecting-duplicate-object-keys).
 - Internally, name/value pairs are stored in lexicographical order of the names. Objects will also be serialized (see `dump`) in this order. For instance, both `#!json {"b": 1, "a": 2}` and `#!json {"a": 2, "b": 1}` will be stored and serialized as `#!json {"a": 2, "b": 1}`.
 - When comparing objects, the order of the name/value pairs is irrelevant. This makes objects interoperable in the sense that they will not be affected by these differences. For instance, `#!json {"b": 1, "a": 2}` and `#!json {"a": 2, "b": 1}` will be treated as equal.
 
 ### Key order
 
-The order name/value pairs are added to the object are *not* preserved by the library. Therefore, iterating an object may return name/value pairs in a different order than they were originally stored. In fact, keys will be traversed in alphabetical order as `std::map` with `std::less` is used by default. Please note this behavior conforms to [RFC 8259](https://tools.ietf.org/html/rfc8259), because any order implements the specified "unordered" nature of JSON objects.
+The order in which name/value pairs are added to the object is *not* preserved by the library. Therefore, iterating an object may return name/value pairs in a different order than they were originally stored. In fact, keys will be traversed in alphabetical order as `std::map` with `std::less` is used by default. Please note this behavior conforms to [RFC 8259](https://tools.ietf.org/html/rfc8259), because any order implements the specified "unordered" nature of JSON objects.
 
 ### Limits
 
@@ -150,6 +150,18 @@ In this class, the object's limit of nesting is not explicitly constrained. Howe
 ### Storage
 
 Objects are stored as pointers in a `basic_json` type. That is, for any access to object values, a pointer of type `object_t*` must be dereferenced.
+
+### Converting maps with non-string keys
+
+A `std::map`/`std::unordered_map` whose key type is not string-like (e.g., `std::map<int, std::string>`) is
+converted to a JSON *array* of 2-element `[key, value]` arrays rather than a JSON object, because JSON object
+keys must be strings:
+
+```cpp
+std::map<int, std::string> m{{1, "one"}, {2, "two"}};
+json j = m;
+// j is [[1,"one"],[2,"two"]], not {"1":"one","2":"two"}
+```
 
 
 ## Arrays

@@ -16,6 +16,9 @@
 
 #include "cpp/dynamiccolor/dynamic_scheme.h"
 
+#include <optional>
+#include <vector>
+
 #include "cpp/cam/hct.h"
 #include "cpp/dynamiccolor/material_dynamic_colors.h"
 #include "cpp/dynamiccolor/variant.h"
@@ -24,14 +27,15 @@
 
 namespace material_color_utilities {
 
-DynamicScheme::DynamicScheme(Argb source_color_argb, Variant variant,
+DynamicScheme::DynamicScheme(Hct source_color_hct, Variant variant,
                              double contrast_level, bool is_dark,
                              TonalPalette primary_palette,
                              TonalPalette secondary_palette,
                              TonalPalette tertiary_palette,
                              TonalPalette neutral_palette,
-                             TonalPalette neutral_variant_palette)
-    : source_color_hct(Hct(source_color_argb)),
+                             TonalPalette neutral_variant_palette,
+                             std::optional<TonalPalette> error_palette)
+    : source_color_hct(source_color_hct),
       variant(variant),
       is_dark(is_dark),
       contrast_level(contrast_level),
@@ -40,7 +44,7 @@ DynamicScheme::DynamicScheme(Argb source_color_argb, Variant variant,
       tertiary_palette(tertiary_palette),
       neutral_palette(neutral_palette),
       neutral_variant_palette(neutral_variant_palette),
-      error_palette(TonalPalette(25.0, 84.0)) {}
+      error_palette(error_palette.value_or(TonalPalette(25.0, 84.0))) {}
 
 double DynamicScheme::GetRotatedHue(Hct source_color, std::vector<double> hues,
                                     std::vector<double> rotations) {
@@ -50,7 +54,7 @@ double DynamicScheme::GetRotatedHue(Hct source_color, std::vector<double> hues,
     return SanitizeDegreesDouble(source_color.get_hue() + rotations[0]);
   }
   int size = hues.size();
-  for (int i = 0; i <= (size - 2); i++) {
+  for (int i = 0; i <= (size - 2); ++i) {
     double this_hue = hues[i];
     double next_hue = hues[i + 1];
     if (this_hue < source_hue && source_hue < next_hue) {

@@ -32,6 +32,10 @@ namespace base {
 class TimeTicks;
 }
 
+namespace contextual_search {
+class ContextualSearchSessionHandle;
+}
+
 class Profile;
 
 class ActionChipsHandler : public action_chips::mojom::ActionChipsHandler
@@ -41,20 +45,27 @@ class ActionChipsHandler : public action_chips::mojom::ActionChipsHandler
 #endif
 {
  public:
+  using GetSessionHandleCallback = base::RepeatingCallback<
+      contextual_search::ContextualSearchSessionHandle*()>;
+
   ActionChipsHandler(
       mojo::PendingReceiver<action_chips::mojom::ActionChipsHandler> receiver,
       mojo::PendingRemote<action_chips::mojom::Page> page,
       Profile* profile,
       content::WebUI* web_ui,
-      std::unique_ptr<ActionChipsGenerator> action_chips_generator);
+      std::unique_ptr<ActionChipsGenerator> action_chips_generator,
+      GetSessionHandleCallback get_session_handle_callback);
   ActionChipsHandler(const ActionChipsHandler&) = delete;
   ActionChipsHandler& operator=(const ActionChipsHandler&) = delete;
   ~ActionChipsHandler() override;
 
+  // action_chips::mojom::ActionChipsHandler:
   void StartActionChipsRetrieval() override;
   void ActivateMetricsFunnel(const std::string& funnel_name) override;
   void SetActionChipsVisibility(bool is_visible) override;
-  void NotifyActionChipClicked() override;
+  void NavigateToAim(const std::string& query_text,
+                     uint8_t mouse_button,
+                     searchbox::mojom::ActionModifiersPtr modifiers) override;
 
 #if !BUILDFLAG(IS_ANDROID)
   void OnTabStripModelChanged(
@@ -80,9 +91,11 @@ class ActionChipsHandler : public action_chips::mojom::ActionChipsHandler
   raw_ptr<Profile> profile_;
   raw_ptr<content::WebUI> web_ui_;
   std::unique_ptr<ActionChipsGenerator> action_chips_generator_;
+  GetSessionHandleCallback get_session_handle_callback_;
   PrefChangeRegistrar pref_change_registrar_;
 
   std::optional<GURL> last_processed_url_;
+  bool has_recorded_any_shown_ = false;
 
   base::WeakPtrFactory<ActionChipsHandler> weak_factory_{this};
 };

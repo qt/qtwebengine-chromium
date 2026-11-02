@@ -60,9 +60,10 @@ class ShaderModule final : public ShaderModuleBase {
         SingleShaderStage stage,
         const PipelineLayout* layout,
         uint32_t compileFlags,
-        bool applySampleMaskPolyfill,
+        const ImmediateMask& pipelineImmediateMask,
         const std::optional<dawn::native::d3d::InterStageShaderVariablesMask>&
-            usedInterstageVariables = {});
+            usedInterstageVariables = {},
+        std::vector<uint32_t> snorm10_10_10_2_locations = {});
 
   private:
     ShaderModule(Device* device,

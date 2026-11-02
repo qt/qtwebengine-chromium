@@ -28,7 +28,7 @@ devtools_foundation_module("formatter_worker") {
     ":formatter_actions",
     "../../core/platform:bundle",
     "../../core/root:bundle",
-    "../../models/text_utils:bundle",
+    "../../core/text_utils:bundle",
     "../../third_party/acorn",
     "../../third_party/acorn:bundle",
     "../../third_party/codemirror",

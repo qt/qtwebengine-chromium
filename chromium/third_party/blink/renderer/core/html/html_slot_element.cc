@@ -47,6 +47,7 @@
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -93,7 +94,8 @@ HeapVector<Member<Node>> CollectFlattenedAssignedNodes(
     const HTMLSlotElement& slot) {
   DCHECK(slot.SupportsAssignment());
 
-  const HeapVector<Member<Node>>& assigned_nodes = slot.AssignedNodes();
+  // Copy the array - code inside the loop can modify assigned nodes.
+  const HeapVector<Member<Node>> assigned_nodes = slot.AssignedNodes();
   HeapVector<Member<Node>> nodes;
   if (assigned_nodes.empty()) {
     // Fallback contents.
@@ -259,10 +261,29 @@ void HTMLSlotElement::Assign(const HeapVector<Member<Node>>& nodes) {
   }
 
   if (!changed_slots.empty()) {
-    for (HTMLSlotElement& slot :
-         Traversal<HTMLSlotElement>::DescendantsOf(*shadow_root)) {
-      if (changed_slots.Contains(&slot)) {
-        slot.DidSlotChange(SlotChangeType::kSignalSlotChangeEvent);
+    if (RuntimeEnabledFeatures::SlotAssignNotifyDifferentShadowRootsEnabled()) {
+      if (shadow_root) {
+        for (HTMLSlotElement& slot :
+             Traversal<HTMLSlotElement>::DescendantsOf(*shadow_root)) {
+          if (changed_slots.Take(&slot)) {
+            slot.DidSlotChange(SlotChangeType::kSignalSlotChangeEvent);
+          }
+        }
+      }
+      // A previous slot may belong to a different shadow tree than `this`, or
+      // `this` may not be in a shadow tree at all. Such slots are not reached
+      // by the traversal above; signal them here.
+      for (HTMLSlotElement* slot : changed_slots) {
+        slot->DidSlotChange(SlotChangeType::kSignalSlotChangeEvent);
+      }
+    } else {
+      if (shadow_root) {
+        for (HTMLSlotElement& slot :
+             Traversal<HTMLSlotElement>::DescendantsOf(*shadow_root)) {
+          if (changed_slots.Contains(&slot)) {
+            slot.DidSlotChange(SlotChangeType::kSignalSlotChangeEvent);
+          }
+        }
       }
     }
   }
@@ -292,7 +313,8 @@ void HTMLSlotElement::ClearAssignedNodesAndFlatTreeChildren() {
 
 void HTMLSlotElement::UpdateFlatTreeNodeDataForAssignedNodes() {
   Node* previous = nullptr;
-  for (auto& current : assigned_nodes_) {
+  const HeapVector<Member<Node>> assigned_nodes = assigned_nodes_;
+  for (auto& current : assigned_nodes) {
     bool mark_parent_slot_changed = false;
     if (!current->NeedsStyleRecalc() && !current->GetLayoutObject()) {
       if (current->IsTextNode() ||
@@ -339,7 +361,8 @@ void HTMLSlotElement::DetachDisplayLockedAssignedNodesLayoutTreeIfNeeded() {
   // detach the node's layout tree.
   StyleEngine& style_engine = GetDocument().GetStyleEngine();
   StyleEngine::DetachLayoutTreeScope detach_scope(style_engine);
-  for (auto& current : assigned_nodes_) {
+  const HeapVector<Member<Node>> assigned_nodes = assigned_nodes_;
+  for (auto& current : assigned_nodes) {
     if (current->GetForceReattachLayoutTree()) {
       current->DetachLayoutTree();
       // Restore the force-reattach state for when it's no longer display
@@ -388,7 +411,9 @@ AtomicString HTMLSlotElement::GetName() const {
 }
 
 void HTMLSlotElement::AttachLayoutTreeForSlotChildren(AttachContext& context) {
-  for (Node* child : flat_tree_children_) {
+  // Defensive copy to prevent UAF from sync recalc. See crbug.com/520167277.
+  const HeapVector<Member<Node>> flat_tree_children = flat_tree_children_;
+  for (Node* child : flat_tree_children) {
     child->AttachLayoutTree(context);
   }
 }
@@ -422,7 +447,9 @@ void HTMLSlotElement::RebuildDistributedChildrenLayoutTrees(
 
   // This loop traverses the nodes from right to left for the same reason as the
   // one described in ContainerNode::RebuildChildrenLayoutTrees().
-  for (const auto& child : base::Reversed(flat_tree_children_)) {
+  // Defensive copy to prevent UAF from sync recalc. See crbug.com/520167277.
+  const HeapVector<Member<Node>> flat_tree_children = flat_tree_children_;
+  for (const auto& child : base::Reversed(flat_tree_children)) {
     RebuildLayoutTreeForChild(child, whitespace_attacher);
   }
 }
@@ -531,7 +558,9 @@ void HTMLSlotElement::RemovedFrom(ContainerNode& insertion_point) {
 void HTMLSlotElement::RecalcStyleForSlotChildren(
     const StyleRecalcChange change,
     const StyleRecalcContext& style_recalc_context) {
-  for (auto& node : flat_tree_children_) {
+  // Defensive copy to prevent UAF from sync recalc. See crbug.com/520167277.
+  const HeapVector<Member<Node>> flat_tree_children = flat_tree_children_;
+  for (auto& node : flat_tree_children) {
     if (!change.TraverseChild(*node))
       continue;
     if (auto* element = DynamicTo<Element>(node.Get()))
@@ -685,10 +714,11 @@ void HTMLSlotElement::NotifySlottedNodesOfFlatTreeChangeNaive(
       ++j;
       continue;
     }
-    if (old_index_map.Contains(new_node)) {
-      wtf_size_t old_index = old_index_map.at(new_node);
+    if (auto it = old_index_map.find(new_node);
+        it != old_index_map.end()) {
+      wtf_size_t old_index = it->value;
       if (old_index > i) {
-        i = old_index_map.at(new_node) + 1;
+        i = old_index + 1;
         ++j;
         continue;
       }
@@ -714,8 +744,9 @@ void HTMLSlotElement::NotifySlottedNodesOfFlatTreeChangeNaive(
       --j;
       continue;
     }
-    if (old_index_map.Contains(new_node)) {
-      wtf_size_t old_index = old_index_map.at(new_node);
+    if (auto it = old_index_map.find(new_node);
+        it != old_index_map.end()) {
+      wtf_size_t old_index = it->value;
       if (old_index < i - 1) {
         i = old_index;
         --j;

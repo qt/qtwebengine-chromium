@@ -9,14 +9,14 @@
 namespace personal_context::prefs {
 
 void RegisterProfilePrefs(PrefRegistrySimple* registry) {
-  registry->RegisterBooleanPref(kPersonalContextInAutofillNoticeShouldBeShown,
+  registry->RegisterBooleanPref(
+      kPersonalContextAmbientAutofillNoticeShouldBeShown, true);
+
+  registry->RegisterBooleanPref(kPersonalContextAtMemoryNoticeShouldBeShown,
                                 true);
 
-  registry->RegisterBooleanPref(kPersonalContextInAutofillNoticeHasBeenShown,
-                                false);
-
   registry->RegisterBooleanPref(kPersonalContextInAutofillSettingsToggleStatus,
-                                false);
+                                true);
 }
 
 }  // namespace personal_context::prefs

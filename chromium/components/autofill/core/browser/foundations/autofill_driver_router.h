@@ -26,11 +26,16 @@
 #include "components/autofill/core/common/mojom/autofill_types.mojom-shared.h"
 #include "components/autofill/core/common/password_form_fill_data.h"
 #include "components/autofill/core/common/unique_ids.h"
+#include "mojo/public/cpp/bindings/pending_remote.h"
 #include "third_party/abseil-cpp/absl/container/flat_hash_map.h"
 #include "ui/gfx/geometry/rect.h"
 #include "url/origin.h"
 
 namespace autofill {
+
+namespace mojom {
+class AutofillVisibilityObserver;
+}  // namespace mojom
 
 // AutofillDriverRouter routes events between AutofillDriver objects in order to
 // handle frame-transcending forms.
@@ -162,6 +167,42 @@ class AutofillDriverRouter {
   // the parent frame).
   void UnregisterDriver(AutofillDriver& driver, bool driver_is_dying);
 
+  // Returns whether a value of type `filled_type` can be filled into `field`
+  // by a fill operation triggered on `trigger_origin`, according to the iframe
+  // security policy.
+  //
+  // A field is *safe to fill* iff at least one of the conditions (1–3) and
+  // additionally condition (4) hold:
+  //
+  // (1) The field's origin is the triggered origin.
+  // (2) The field's origin is the main origin, the field's type is
+  //     non-sensitive, and the policy-controlled feature "autofill" is enabled
+  //     in the field's frame.
+  // (3) The triggered origin is the main origin and the policy-controlled
+  //     feature "autofill" is enabled in the field's frame.
+  // (4) The field is in the same frame tree as the field on which Autofill was
+  //     triggered (*).
+  //
+  // (*) Condition (4) is asserted by AutofillDriverRouter when it calls
+  //     `FormForest::GetRendererForms()`.
+  //
+  // The *origin of a field* is the origin of the frame that contains the
+  // corresponding form-control element.
+  //
+  // The *triggered origin* is the origin of the field from which Autofill was
+  // queried, `security_options.triggered_origin()`.
+  //
+  // The *main origin* is the origin of the main frame of the frame of the field
+  // from which Autofill was queried, `security_options.main_origin()`.
+  //
+  // The "allow" attribute of the <iframe> element controls whether the
+  // *policy-controlled feature "autofill"* is enabled in a document
+  // (see https://www.w3.org/TR/permissions-policy-1/).
+  bool IsSafeToFill(const FormFieldData& field,
+                    FieldType filled_type,
+                    const url::Origin& main_origin,
+                    const url::Origin& trigger_origin) const;
+
   // Events called by the renderer, passed to the browser:
   // Keep in alphabetic order.
   void AskForValuesToFill(
@@ -189,6 +230,19 @@ class AutofillDriverRouter {
   void DidAutofillForm(RoutedCallback<const FormData&> callback,
                        AutofillDriver& source,
                        FormData form);
+  void FormWithEmailVerificationTokenSubmitted(
+      RoutedCallback<const FormData&, const FieldGlobalId&> callback,
+      AutofillDriver& source,
+      FormData form,
+      const FieldGlobalId& field_id);
+  void DidDetectJavaScriptAutofill(
+      RoutedCallback<const FormData&,
+                     const FieldGlobalId&,
+                     const std::vector<JavaScriptFieldModification>&> callback,
+      AutofillDriver& source,
+      FormData form,
+      FieldGlobalId trigger_field_id,
+      std::vector<JavaScriptFieldModification> field_modifications);
   void FocusOnFormField(
       RoutedCallback<const FormData&, const FieldGlobalId&> callback,
       AutofillDriver& source,
@@ -280,6 +334,10 @@ class AutofillDriverRouter {
                                   const std::string& email,
                                   const FieldGlobalId& token_field_id,
                                   const std::string& token);
+  void UpdateEmailVerificationState(
+      RoutedCallback<FieldRendererId, mojom::EmailVerificationState> callback,
+      const FieldGlobalId& email_field_id,
+      mojom::EmailVerificationState state);
   void ExposeDomNodeIdsInAllFrames(RoutedCallback<> callback);
   using BrowserFormHandler = AutofillDriver::BrowserFormHandler;
   using RendererFormHandler =
@@ -310,6 +368,12 @@ class AutofillDriverRouter {
       RoutedCallback<FieldRendererId, RendererFormHandler> callback,
       FieldGlobalId field_id,
       BrowserFormHandler browser_form_handler);
+  void ObserveFieldVisibility(
+      RoutedCallback<FieldRendererId,
+                     mojo::PendingRemote<mojom::AutofillVisibilityObserver>>
+          callback,
+      const FieldGlobalId& field_id,
+      mojo::PendingRemote<mojom::AutofillVisibilityObserver> observer);
   void RendererShouldAcceptDataListSuggestion(
       RoutedCallback<FieldRendererId, const std::u16string&> callback,
       const FieldGlobalId& field_id,
@@ -340,7 +404,7 @@ class AutofillDriverRouter {
  private:
   // Returns the driver of |frame| stored in |form_forest_|.
   // Does not invalidate any forms in the FormForest.
-  AutofillDriver* DriverOfFrame(LocalFrameToken frame);
+  AutofillDriver* DriverOfFrame(LocalFrameToken frame) const;
 
   // Calls AutofillDriver::TriggerFormExtractionInDriverFrame() for all
   // drivers in |form_forest_| except for |exception|.
@@ -358,7 +422,7 @@ class AutofillDriverRouter {
   // The maximum number of coexisting FormForest::FrameDatas over the lifetime
   // of this factory.
   // TODO: crbug.com/342132628 - Remove the counter and the metric.
-  size_t max_frame_datas_ = 0;
+  mutable size_t max_frame_datas_ = 0;
 };
 
 }  // namespace autofill

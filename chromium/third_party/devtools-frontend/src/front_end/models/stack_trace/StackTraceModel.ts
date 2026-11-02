@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import * as Common from '../../core/common/common.js';
+import type * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 
@@ -16,7 +17,7 @@ import {
   FragmentImpl,
   FrameImpl,
   ParsedErrorStackFragmentImpl,
-  StackTraceImpl
+  StackTraceImpl,
 } from './StackTraceImpl.js';
 import {EvalOrigin, type FrameNode, type RawFrame, Trie} from './Trie.js';
 
@@ -37,9 +38,9 @@ export class StackTraceModel extends SDK.SDKModel.SDKModel<unknown> {
   readonly #trie = new Trie();
   readonly #mutex = new Common.Mutex.Mutex();
 
-  /** @returns the {@link StackTraceModel} for the target, or the model for the primaryPageTarget when passing null/undefined */
+  /** @returns the {@link StackTraceModel} for the target. Throws if the target or its model cannot be found. */
   static #modelForTarget(target: SDK.Target.Target|null|undefined): StackTraceModel {
-    const model = (target ?? SDK.TargetManager.TargetManager.instance().primaryPageTarget())?.model(StackTraceModel);
+    const model = target?.model(StackTraceModel);
     if (!model) {
       throw new Error('Unable to find StackTraceModel');
     }
@@ -48,8 +49,14 @@ export class StackTraceModel extends SDK.SDKModel.SDKModel<unknown> {
 
   async createFromProtocolRuntime(stackTrace: Protocol.Runtime.StackTrace, rawFramesToUIFrames: TranslateRawFrames):
       Promise<StackTrace.StackTrace.StackTrace> {
+    const debuggerModel = this.target().model(SDK.DebuggerModel.DebuggerModel);
+    const syncFrames = stackTrace.callFrames.map((frame): RawFrame => {
+      const isWasm = debuggerModel?.isWasm(frame.scriptId) ?? false;
+      return {...frame, isWasm};
+    });
+
     const [syncFragment, asyncFragments] = await Promise.all([
-      this.#createFragment(stackTrace.callFrames, rawFramesToUIFrames),
+      this.#createFragment(syncFrames, rawFramesToUIFrames),
       this.#createAsyncFragments(stackTrace, rawFramesToUIFrames),
     ]);
 
@@ -59,7 +66,17 @@ export class StackTraceModel extends SDK.SDKModel.SDKModel<unknown> {
   async createFromErrorStackLikeString(
       stack: string, rawFramesToUIFrames: TranslateRawFrames,
       exceptionDetails?: Protocol.Runtime.ExceptionDetails): Promise<StackTrace.StackTrace.ParsedErrorStackTrace|null> {
-    const rawFrames = parseRawFramesFromErrorStack(stack);
+    const debuggerModel = this.target().model(SDK.DebuggerModel.DebuggerModel) as SDK.DebuggerModel.DebuggerModel;
+    const baseURL = this.target().inspectedURL();
+    const resolveURL = (url: Platform.DevToolsPath.UrlString): Platform.DevToolsPath.UrlString|null => {
+      let urlWithScheme = parseOrScriptMatch(debuggerModel, url);
+      if (!urlWithScheme && Common.ParsedURL.ParsedURL.isRelativeURL(url)) {
+        urlWithScheme = parseOrScriptMatch(debuggerModel, Common.ParsedURL.ParsedURL.completeURL(baseURL, url));
+      }
+      return urlWithScheme;
+    };
+
+    const rawFrames = parseRawFramesFromErrorStack(stack, resolveURL);
     if (!rawFrames) {
       return null;
     }
@@ -126,6 +143,7 @@ export class StackTraceModel extends SDK.SDKModel.SDKModel<unknown> {
                                        functionName: frame.functionName,
                                        lineNumber: frame.location().lineNumber,
                                        columnNumber: frame.location().columnNumber,
+                                       isWasm: frame.script.isWasm(),
                                      })),
         rawFramesToUIFrames);
     return new DebuggableFragmentImpl(fragment, pausedDetails.callFrames);
@@ -143,9 +161,15 @@ export class StackTraceModel extends SDK.SDKModel.SDKModel<unknown> {
           // Skip empty async fragments, they don't add value.
           continue;
         }
-        const model = StackTraceModel.#modelForTarget(target);
+        const model = StackTraceModel.#modelForTarget(target ?? this.target().targetManager().primaryPageTarget());
+        const targetDebuggerModel = target.model(SDK.DebuggerModel.DebuggerModel);
+        const asyncFrames = asyncStackTrace.callFrames.map((frame): RawFrame => {
+          const isWasm = targetDebuggerModel?.isWasm(frame.scriptId) ?? false;
+          return {...frame, isWasm};
+        });
+
         const asyncFragmentPromise =
-            model.#createFragment(asyncStackTrace.callFrames, rawFramesToUIFrames)
+            model.#createFragment(asyncFrames, rawFramesToUIFrames)
                 .then(fragment => new AsyncFragmentImpl(asyncStackTrace.description ?? '', fragment));
         asyncFragments.push(asyncFragmentPromise);
       }
@@ -198,10 +222,11 @@ export class StackTraceModel extends SDK.SDKModel.SDKModel<unknown> {
     let i = 0;
     let evalI = 0;
     for (const node of fragment.node.getCallStack()) {
-      node.frames = uiFrames[i++].map(
-          frame => new FrameImpl(
-              frame.url, frame.uiSourceCode, frame.name, frame.line, frame.column, frame.missingDebugInfo,
-              node.rawFrame.functionName));
+      const group = uiFrames[i++];
+      node.frames =
+          group.map((frame, index) => new FrameImpl(frame.url, frame.uiSourceCode, frame.name, frame.line, frame.column,
+                                                    frame.missingDebugInfo, node.rawFrame.functionName,
+                                                    node.rawFrame.isWasm, index < group.length - 1));
 
       if (node.parsedFrameInfo?.evalOrigin) {
         node.evalOrigin = evalOrigins[evalI++];
@@ -240,10 +265,10 @@ async function translateEvalOrigin(
     rawFrame: RawFrame, rawFramesToUIFrames: TranslateRawFrames,
     target: SDK.Target.Target): Promise<EvalOrigin|undefined> {
   const uiFrames = await rawFramesToUIFrames([rawFrame], target);
-  const frames = uiFrames[0].map(
-      frame => new FrameImpl(
-          frame.url, frame.uiSourceCode, frame.name, frame.line, frame.column, frame.missingDebugInfo,
-          rawFrame.functionName));
+  const group = uiFrames[0];
+  const frames = group.map((frame, index) => new FrameImpl(frame.url, frame.uiSourceCode, frame.name, frame.line,
+                                                           frame.column, frame.missingDebugInfo, rawFrame.functionName,
+                                                           rawFrame.isWasm, index < group.length - 1));
 
   let parentEvalOrigin: EvalOrigin|undefined;
   if (rawFrame.parsedFrameInfo?.evalOrigin) {
@@ -251,6 +276,28 @@ async function translateEvalOrigin(
   }
 
   return new EvalOrigin(frames, parentEvalOrigin);
+}
+
+function parseOrScriptMatch(debuggerModel: SDK.DebuggerModel.DebuggerModel,
+                            url: Platform.DevToolsPath.UrlString|null): Platform.DevToolsPath.UrlString|null {
+  if (!url) {
+    return null;
+  }
+  if (Common.ParsedURL.ParsedURL.isValidUrlString(url)) {
+    return url;
+  }
+  if (debuggerModel.scriptsForSourceURL(url).length) {
+    return url;
+  }
+  // nodejs stack traces contain (absolute) file paths, but v8 reports them as file: urls.
+  try {
+    const fileUrl = new URL(url, 'file://');
+    if (debuggerModel.scriptsForSourceURL(fileUrl.href as Platform.DevToolsPath.UrlString).length) {
+      return fileUrl.href as Platform.DevToolsPath.UrlString;
+    }
+  } catch {
+  }
+  return null;
 }
 
 SDK.SDKModel.SDKModel.register(StackTraceModel, {capabilities: SDK.Target.Capability.NONE, autostart: false});

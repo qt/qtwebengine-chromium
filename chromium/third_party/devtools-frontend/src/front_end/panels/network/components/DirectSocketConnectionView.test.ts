@@ -42,7 +42,7 @@ function createNetworkRequest() {
       receiveBufferSize: 1003,
       dnsQueryType: Protocol.Network.DirectSocketDnsQueryType.Ipv4,
     },
-    openInfo: {remoteAddr: 'www.sample.com', remotePort: 3005, localAddr: '127.0.0.1', localPort: 9472}
+    openInfo: {remoteAddr: 'www.sample.com', remotePort: 3005, localAddr: '127.0.0.1', localPort: 9472},
   };
   networkRequest.setResourceType(Common.ResourceType.resourceTypes.DirectSocket);
   networkRequest.setIssueTime(Date.now(), Date.now());
@@ -89,17 +89,16 @@ describeWithEnvironment('DirectSocketConnectionView', () => {
       assert.isFalse((await view.nextInput).openCategories.includes(categoryName));
 
       // make keyboard event to open
-      view.input.onSummaryKeyDown(
-          {
-            target: {
-              parentElement: {
-                // current state
-                open: false
-              }
-            },
-            key: 'ArrowRight'
-          } as unknown as KeyboardEvent,
-          categoryName);
+      view.input.onSummaryKeyDown({
+        target: {
+          parentElement: {
+            // current state
+            open: false,
+          },
+        },
+        key: 'ArrowRight',
+      } as unknown as KeyboardEvent,
+                                  categoryName);
 
       assert.isTrue((await view.nextInput).openCategories.includes(categoryName));
     });
@@ -110,17 +109,16 @@ describeWithEnvironment('DirectSocketConnectionView', () => {
       assert.isTrue((await view.nextInput).openCategories.includes(categoryName));
 
       // make keyboard event to close
-      view.input.onSummaryKeyDown(
-          {
-            target: {
-              parentElement: {
-                // current state
-                open: true
-              }
-            },
-            key: 'ArrowLeft'
-          } as unknown as KeyboardEvent,
-          categoryName);
+      view.input.onSummaryKeyDown({
+        target: {
+          parentElement: {
+            // current state
+            open: true,
+          },
+        },
+        key: 'ArrowLeft',
+      } as unknown as KeyboardEvent,
+                                  categoryName);
 
       assert.isFalse((await view.nextInput).openCategories.includes(categoryName));
     });
@@ -137,18 +135,17 @@ describeWithEnvironment('DirectSocketConnectionView', () => {
     it('ignores unknown keys', async () => {
       // set initial state as opened
       view.input.onToggleCategory({target: {open: true} as HTMLDetailsElement} as unknown as Event, categoryName);
-      view.input.onSummaryKeyDown(
-          {
-            target: {
-              parentElement: {
-                // current state
-                open: true
-              }
-            },
-            // unknown key
-            key: 'ArrowDown'
-          } as unknown as KeyboardEvent,
-          categoryName);
+      view.input.onSummaryKeyDown({
+        target: {
+          parentElement: {
+            // current state
+            open: true,
+          },
+        },
+        // unknown key
+        key: 'ArrowDown',
+      } as unknown as KeyboardEvent,
+                                  categoryName);
 
       assert.isTrue((await view.nextInput).openCategories.includes(categoryName));
     });
@@ -186,16 +183,16 @@ describeWithEnvironment('view', () => {
           receiveBufferSize: 1003,
           dnsQueryType: Protocol.Network.DirectSocketDnsQueryType.Ipv4,
         },
-        openInfo: {remoteAddr: 'www.sample.com', remotePort: 3005, localAddr: '127.0.0.1', localPort: 9472}
+        openInfo: {remoteAddr: 'www.sample.com', remotePort: 3005, localAddr: '127.0.0.1', localPort: 9472},
       },
       openCategories: [
         NetworkComponents.DirectSocketConnectionView.CATEGORY_NAME_GENERAL,
         NetworkComponents.DirectSocketConnectionView.CATEGORY_NAME_OPEN_INFO,
-        NetworkComponents.DirectSocketConnectionView.CATEGORY_NAME_OPTIONS
+        NetworkComponents.DirectSocketConnectionView.CATEGORY_NAME_OPTIONS,
       ],
       onSummaryKeyDown: () => {},
       onToggleCategory: () => {},
-      onCopyRow: () => {}
+      onCopyRow: () => {},
     };
 
     view(viewInput, undefined, target);
@@ -216,11 +213,11 @@ describeWithEnvironment('view', () => {
       openCategories: [
         NetworkComponents.DirectSocketConnectionView.CATEGORY_NAME_GENERAL,
         NetworkComponents.DirectSocketConnectionView.CATEGORY_NAME_OPEN_INFO,
-        NetworkComponents.DirectSocketConnectionView.CATEGORY_NAME_OPTIONS
+        NetworkComponents.DirectSocketConnectionView.CATEGORY_NAME_OPTIONS,
       ],
       onSummaryKeyDown: () => {},
       onToggleCategory: () => {},
-      onCopyRow: () => {}
+      onCopyRow: () => {},
     };
 
     view(viewInput, undefined, target);
@@ -241,12 +238,12 @@ describeWithEnvironment('view', () => {
           receiveBufferSize: 2003,
           dnsQueryType: Protocol.Network.DirectSocketDnsQueryType.Ipv4,
         },
-        openInfo: {remoteAddr: 'www.sample.com', remotePort: 3005, localAddr: '127.0.0.1', localPort: 9472}
+        openInfo: {remoteAddr: 'www.sample.com', remotePort: 3005, localAddr: '127.0.0.1', localPort: 9472},
       },
       openCategories: [],
       onSummaryKeyDown: () => {},
       onToggleCategory: () => {},
-      onCopyRow: () => {}
+      onCopyRow: () => {},
     };
 
     view(viewInput, undefined, target);

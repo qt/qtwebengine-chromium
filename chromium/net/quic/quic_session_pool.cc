@@ -556,7 +556,9 @@ QuicSessionPool::QuicCryptoClientConfigOwner::QuicCryptoClientConfigOwner(
     QuicSessionPool* quic_session_pool)
     : network_anonymization_key_(std::move(network_anonymization_key)),
       config_(std::move(proof_verifier), std::move(session_cache)),
-      clock_(base::DefaultClock::GetInstance()),
+      clock_(quic_session_pool->clock_for_testing_
+                 ? quic_session_pool->clock_for_testing_.get()
+                 : base::DefaultClock::GetInstance()),
       max_cache_entries_(max_cache_entries),
       quic_session_pool_(quic_session_pool) {
   DCHECK(quic_session_pool_);
@@ -589,11 +591,17 @@ void QuicSessionPool::QuicCryptoClientConfigOwner::OnMemoryPressure(
     return;
   }
 
+  uint64_t now_u64 = std::max<int64_t>(0, clock_->Now().ToTimeT());
+
+  // Under the global ignore memory pressure experiment, we evict expired
+  // entries instead of ignoring memory pressure completely.
   if (base::FeatureList::IsEnabled(
           features::kIgnoreQuicCryptoConfigMemoryPressure)) {
-    // We are experimenting with ignoring memory pressure for all network
-    // isolation partitions to improve the cache hit rate of all Quic sessions,
-    // especially for memory-constrained devices.
+    if (memory_pressure_level == base::MEMORY_PRESSURE_LEVEL_MODERATE ||
+        memory_pressure_level == base::MEMORY_PRESSURE_LEVEL_CRITICAL) {
+      session_cache->RemoveExpiredEntries(
+          quic::QuicWallTime::FromUNIXSeconds(now_u64));
+    }
     return;
   }
 
@@ -617,11 +625,6 @@ void QuicSessionPool::QuicCryptoClientConfigOwner::OnMemoryPressure(
     return;
   }
 
-  time_t now = clock_->Now().ToTimeT();
-  uint64_t now_u64 = 0;
-  if (now > 0) {
-    now_u64 = static_cast<uint64_t>(now);
-  }
   switch (memory_pressure_level) {
     case base::MEMORY_PRESSURE_LEVEL_NONE:
       break;
@@ -1383,10 +1386,11 @@ handles::NetworkHandle QuicSessionPool::FindAlternateNetwork(
 }
 
 std::unique_ptr<DatagramClientSocket> QuicSessionPool::CreateSocket(
+    handles::NetworkHandle target_network,
     NetLog* net_log,
     const NetLogSource& source) {
   auto socket = client_socket_factory_->CreateDatagramClientSocket(
-      DatagramSocket::DEFAULT_BIND, net_log, source);
+      DatagramSocket::DEFAULT_BIND, target_network, net_log, source);
   if (params_.enable_socket_recv_optimization) {
     socket->EnableRecvOptimization();
   }
@@ -1576,7 +1580,8 @@ base::TimeDelta QuicSessionPool::GetTimeDelayForWaitingJob(
 
   int64_t srtt = 1.5 * GetServerNetworkStatsSmoothedRttInMicroseconds(
                            session_key.server_id(),
-                           session_key.network_anonymization_key());
+                           session_key.network_anonymization_key(),
+                           session_key.proxy_chain());
   // Picked 300ms based on mean time from
   // Net.QuicSession.HostResolution.HandshakeConfirmedTime histogram.
   const int kDefaultRTT = 300 * quic::kNumMicrosPerMilli;
@@ -1836,24 +1841,32 @@ int QuicSessionPool::CreateSessionSync(
   *session = nullptr;
   // TODO(crbug.com/40256842): This logic only knows how to try one IP
   // endpoint.
-  std::unique_ptr<DatagramClientSocket> socket(
-      CreateSocket(net_log.net_log(), net_log.source()));
+  std::unique_ptr<DatagramClientSocket> socket(CreateSocket(
+      key.session_key().target_network(), net_log.net_log(), net_log.source()));
 
   // If migrate_sessions_on_network_change_v2 is on, passing in
   // handles::kInvalidNetworkHandle will bind the socket to the default network.
-  int rv = ConfigureSocket(socket.get(), peer_address, *network,
-                           key.session_key().socket_tag());
+  int rv = ConfigureSocket(
+      socket.get(), peer_address,
+      // TODO(crbug.com/518753285): Stop setting the network that should be used
+      // due to connection migration via ConfigureSocket. Instead, rely on the
+      // new parameter in `CreateSocket`.
+      *network, key.session_key().socket_tag());
   if (rv != OK) {
     return rv;
   }
+
   base::expected<QuicSessionAttempt::CreateSessionResult, int> result =
       CreateSessionHelper(
           std::move(key), quic_version, cert_verify_flags, require_confirmation,
           std::move(peer_address), std::move(metadata),
           dns_resolution_start_time, dns_resolution_end_time,
           std::move(resolution_details),
-          /*session_max_packet_length=*/0, net_log, *network, std::move(socket),
-          session_creation_initiator, connection_management_config);
+          /*session_max_packet_length=*/0, net_log,
+          // TODO(crbug.com/518753285): Stop passing the network explicitly,
+          // instead rely on socket being already bound to the correct network.
+          *network, std::move(socket), session_creation_initiator,
+          connection_management_config);
   if (!result.has_value()) {
     return result.error();
   }
@@ -1880,8 +1893,8 @@ int QuicSessionPool::CreateSessionAsync(
     std::optional<ConnectionManagementConfig> connection_management_config) {
   // TODO(crbug.com/40256842): This logic only knows how to try one IP
   // endpoint.
-  std::unique_ptr<DatagramClientSocket> socket(
-      CreateSocket(net_log.net_log(), net_log.source()));
+  std::unique_ptr<DatagramClientSocket> socket(CreateSocket(
+      key.session_key().target_network(), net_log.net_log(), net_log.source()));
   DatagramClientSocket* socket_ptr = socket.get();
   CompletionOnceCallback connect_and_configure_callback = base::BindOnce(
       &QuicSessionPool::FinishCreateSession, weak_factory_.GetWeakPtr(),
@@ -1889,14 +1902,22 @@ int QuicSessionPool::CreateSessionAsync(
       require_confirmation, peer_address, std::move(metadata),
       dns_resolution_start_time, dns_resolution_end_time,
       std::move(resolution_details),
-      /*session_max_packet_length=*/0, net_log, network, std::move(socket),
-      session_creation_initiator, connection_management_config);
+      /*session_max_packet_length=*/0, net_log,
+      // TODO(crbug.com/518753285): Stop setting the network that should be used
+      // due to connection migration via ConnectAndConfigureSocket. Instead,
+      // rely on the new parameter in `CreateSocket`.
+      network, std::move(socket), session_creation_initiator,
+      connection_management_config);
 
   // If migrate_sessions_on_network_change_v2 is on, passing in
   // handles::kInvalidNetworkHandle will bind the socket to the default network.
   ConnectAndConfigureSocket(std::move(connect_and_configure_callback),
-                            socket_ptr, std::move(peer_address), network,
-                            key.session_key().socket_tag());
+                            socket_ptr, std::move(peer_address),
+                            // TODO(crbug.com/518753285): Stop setting the
+                            // network that should be used due to connection
+                            // migration via ConnectAndConfigureSocket. Instead,
+                            // rely on the new parameter in `CreateSocket`.
+                            network, key.session_key().socket_tag());
   return ERR_IO_PENDING;
 }
 
@@ -1961,7 +1982,12 @@ int QuicSessionPool::CreateSessionOnProxyStream(
           std::move(callback), std::move(key), quic_version, cert_verify_flags,
           require_confirmation, proxy_peer_address, std::move(metadata),
           dns_resolution_time, dns_resolution_time, std::nullopt,
-          session_max_packet_length, net_log, network, std::move(socket),
+          session_max_packet_length, net_log,
+          // TODO(crbug.com/518753285): Stop setting the
+          // network that should be used due to connection
+          // migration via ConnectViaStream. Instead,
+          // rely on the new parameter in `CreateSocket`.
+          network, std::move(socket),
           MultiplexedSessionCreationInitiator::kUnknown,
           /*connection_management_config=*/std::nullopt));
 
@@ -2007,6 +2033,8 @@ void QuicSessionPool::FinishCreateSession(
           std::move(peer_address), std::move(metadata),
           dns_resolution_start_time, dns_resolution_end_time,
           std::move(resolution_details), session_max_packet_length, net_log,
+          // TODO(crbug.com/518753285): Stop passing the network explicitly,
+          // instead rely on socket being already bound to the correct network.
           network, std::move(socket), session_creation_initiator,
           connection_management_config);
   std::move(callback).Run(std::move(result));
@@ -2093,8 +2121,9 @@ QuicSessionPool::CreateSessionHelper(
   connection->SetMaxPacketLength(max_packet_length);
 
   quic::QuicConfig config = config_;
-  ConfigureInitialRttEstimate(
-      server_id, key.session_key().network_anonymization_key(), &config);
+  ConfigureInitialRttEstimate(server_id,
+                              key.session_key().network_anonymization_key(),
+                              key.session_key().proxy_chain(), &config);
 
   if (params_.enable_debugging_sni_in_transport_param &&
       IsGoogleHost(server_id.host())) {
@@ -2229,9 +2258,10 @@ void QuicSessionPool::MarkAllActiveSessionsGoingAway(
 void QuicSessionPool::ConfigureInitialRttEstimate(
     const quic::QuicServerId& server_id,
     const NetworkAnonymizationKey& network_anonymization_key,
+    const ProxyChain& proxy_chain,
     quic::QuicConfig* config) {
-  const base::TimeDelta* srtt =
-      GetServerNetworkStatsSmoothedRtt(server_id, network_anonymization_key);
+  const base::TimeDelta* srtt = GetServerNetworkStatsSmoothedRtt(
+      server_id, network_anonymization_key, proxy_chain);
   // Sometimes *srtt is negative. See https://crbug.com/1225616.
   // TODO(ricea): When the root cause of the negative value is fixed, change the
   // non-negative assertion to a DCHECK.
@@ -2264,15 +2294,22 @@ void QuicSessionPool::ConfigureInitialRttEstimate(
 
 int64_t QuicSessionPool::GetServerNetworkStatsSmoothedRttInMicroseconds(
     const quic::QuicServerId& server_id,
-    const NetworkAnonymizationKey& network_anonymization_key) const {
-  const base::TimeDelta* srtt =
-      GetServerNetworkStatsSmoothedRtt(server_id, network_anonymization_key);
+    const NetworkAnonymizationKey& network_anonymization_key,
+    const ProxyChain& proxy_chain) const {
+  const base::TimeDelta* srtt = GetServerNetworkStatsSmoothedRtt(
+      server_id, network_anonymization_key, proxy_chain);
   return srtt == nullptr ? 0 : srtt->InMicroseconds();
 }
 
 const base::TimeDelta* QuicSessionPool::GetServerNetworkStatsSmoothedRtt(
     const quic::QuicServerId& server_id,
-    const NetworkAnonymizationKey& network_anonymization_key) const {
+    const NetworkAnonymizationKey& network_anonymization_key,
+    const ProxyChain& proxy_chain) const {
+  // ServerNetworkStats are not partitioned by proxy chain, so only use them
+  // for direct connections to avoid mixing measurements from different paths.
+  if (!proxy_chain.is_direct()) {
+    return nullptr;
+  }
   url::SchemeHostPort server("https", server_id.host(), server_id.port());
   const ServerNetworkStats* stats =
       http_server_properties_->GetServerNetworkStats(server,
@@ -2415,21 +2452,31 @@ void QuicSessionPool::ProcessGoingAwaySession(
     return;
   }
 
+  // ServerNetworkStats are not partitioned by proxy chain, so only record
+  // them for direct connections to avoid mixing measurements from different
+  // paths.
+  const bool record_network_stats =
+      session->quic_session_key().proxy_chain().is_direct();
+
   if (session->OneRttKeysAvailable()) {
     http_server_properties_->ConfirmAlternativeService(
         alternative_service,
         session->quic_session_key().network_anonymization_key());
-    ServerNetworkStats network_stats;
-    network_stats.srtt = base::Microseconds(stats.srtt_us);
-    network_stats.bandwidth_estimate = stats.estimated_bandwidth;
-    http_server_properties_->SetServerNetworkStats(
-        server, session->quic_session_key().network_anonymization_key(),
-        network_stats);
+    if (record_network_stats) {
+      ServerNetworkStats network_stats;
+      network_stats.srtt = base::Microseconds(stats.srtt_us);
+      network_stats.bandwidth_estimate = stats.estimated_bandwidth;
+      http_server_properties_->SetServerNetworkStats(
+          server, session->quic_session_key().network_anonymization_key(),
+          network_stats);
+    }
     return;
   }
 
-  http_server_properties_->ClearServerNetworkStats(
-      server, session->quic_session_key().network_anonymization_key());
+  if (record_network_stats) {
+    http_server_properties_->ClearServerNetworkStats(
+        server, session->quic_session_key().network_anonymization_key());
+  }
 
   UMA_HISTOGRAM_COUNTS_1M("Net.QuicHandshakeNotConfirmedNumPacketsReceived",
                           stats.packets_received);

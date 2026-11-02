@@ -10,7 +10,7 @@
 #include "include/core/SkTextureCompressionType.h"
 #include "include/gpu/graphite/TextureInfo.h"
 #include "include/gpu/graphite/mtl/MtlGraphiteTypes.h"
-#include "include/private/base/SkLog.h"
+#include "include/private/SkLog.h"
 #include "src/gpu/SwizzlePriv.h"
 #include "src/gpu/graphite/CommandBuffer.h"
 #include "src/gpu/graphite/ComputePipelineDesc.h"
@@ -137,31 +137,16 @@ void MtlCaps::initCaps(const id<MTLDevice> device) {
         fAvoidMSAA = true;
     }
 
-    // ShaderCaps
+    // ShaderCaps overrides
     SkSL::ShaderCaps* shaderCaps = fShaderCaps.get();
 
     // Dual source blending requires Metal 1.2, but our minimum requirements ensure 2.2
     shaderCaps->fDualSourceBlendingSupport = true;
-
-    shaderCaps->fFlatInterpolationSupport = true;
-    shaderCaps->fShaderDerivativeSupport = true;
-    shaderCaps->fInfinitySupport = true;
-
+    shaderCaps->fVectorClampMinMaxSupport = !isIntel;
     if (this->isApple()) {
         shaderCaps->fFBFetchSupport = true;
         shaderCaps->fFBFetchColorName = "sk_LastFragColor";
     }
-
-    if (isIntel) {
-        shaderCaps->fVectorClampMinMaxSupport = false;
-    }
-
-    shaderCaps->fIntegerSupport = true;
-    shaderCaps->fNonsquareMatrixSupport = true;
-    shaderCaps->fInverseHyperbolicSupport = true;
-
-    // Metal uses IEEE floats so assuming those values here.
-    shaderCaps->fFloatIs32Bits = true;
 }
 
 
@@ -386,6 +371,11 @@ bool MtlCaps::extractGraphicsDescs(const UniqueKey& key,
 
     keyData.fWriteSwizzle = SwizzleCtorAccessor::Make(rawKeyData[3]);
 
+    if ((keyData.fColorSampleCount > SampleCount::k1 && this->avoidMSAA()) ||
+        (keyData.fDSFormat != TextureFormat::kUnsupported && this->avoidDepthMode())) {
+        return false;
+    }
+
     // Recreate the RenderPassDesc, picking arbitrary load/store ops. Since Metal doesn't need
     // to include resolve attachment details, assume that if color attachment's sample count is > 1
     // that there is a matching resolve attachment (no MSAA-render-to-single-sample support in MTL).
@@ -396,10 +386,12 @@ bool MtlCaps::extractGraphicsDescs(const UniqueKey& key,
                                         LoadOp::kClear,
                                         StoreOp::kStore,
                                         keyData.fColorSampleCount};
-    renderPassDesc->fDepthStencilAttachment = {keyData.fDSFormat,
-                                               LoadOp::kClear,
-                                               StoreOp::kDiscard,
-                                               keyData.fDSSampleCount};
+    if (!this->avoidDepthMode()) {
+        renderPassDesc->fDepthStencilAttachment = {keyData.fDSFormat,
+                                                   LoadOp::kClear,
+                                                   StoreOp::kDiscard,
+                                                   keyData.fDSSampleCount};
+    }
     if (keyData.fColorSampleCount > SampleCount::k1) {
         renderPassDesc->fColorResolveAttachment = {keyData.fColorFormat,
                                                    LoadOp::kClear,

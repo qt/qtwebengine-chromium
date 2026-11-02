@@ -8,8 +8,10 @@
 #include <optional>
 
 #include "base/functional/callback.h"
+#include "base/functional/callback_helpers.h"
 #include "base/time/time.h"
 #include "base/types/expected.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "components/one_time_tokens/core/browser/one_time_token.h"
 #include "components/one_time_tokens/core/browser/one_time_token_retrieval_error.h"
 #include "components/one_time_tokens/core/browser/util/expiring_subscription.h"
@@ -27,14 +29,14 @@ enum class OneTimeTokenSource {
 };
 
 // Service to subscribe to `OneTimeToken`s. One instance per profile.
-class OneTimeTokenService {
+class OneTimeTokenService : public KeyedService {
  public:
   using CallbackSignature =
       void(OneTimeTokenSource,
            base::expected<OneTimeToken, OneTimeTokenRetrievalError>);
   using Callback = base::RepeatingCallback<CallbackSignature>;
 
-  virtual ~OneTimeTokenService() = default;
+  ~OneTimeTokenService() override = default;
 
   // Calls `callback` with tokens that were received in the recent past (if any
   // exist). `callback` may be called multiple times for this. This should
@@ -55,7 +57,8 @@ class OneTimeTokenService {
   [[nodiscard]] virtual ExpiringSubscription Subscribe(
       OneTimeTokenSource source,
       base::Time expiration,
-      Callback callback) = 0;
+      Callback callback,
+      base::OnceClosure expiration_callback) = 0;
 
   // Requests one time tokens from the underlying backend. `callback` is called
   // exactly once when the request is complete, with the fetched token if

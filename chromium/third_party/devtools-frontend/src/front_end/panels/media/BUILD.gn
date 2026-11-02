@@ -83,6 +83,7 @@ devtools_ui_module("unittests") {
   testonly = true
 
   sources = [
+    "EventDisplayTable.test.ts",
     "MainView.test.ts",
     "PlayerListView.test.ts",
     "PlayerMessagesView.test.ts",

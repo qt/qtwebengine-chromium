@@ -250,9 +250,12 @@ class Impl {
                     EmitVariable(var);
                 },
                 [&](const ast::Function* func) { EmitFunction(func); },
-                [&](const ast::Enable*) {
+                [&](const ast::Enable* enable) {
                     // TODO(dsinclair): Implement? I think these need to be passed along so further
                     // stages know what is enabled.
+                    if (enable->HasExtension(wgsl::Extension::kF16)) {
+                        mod.properties.Add(core::ir::Property::kAllow16BitFloats);
+                    }
                 },
                 [&](const ast::ConstAssert*) {
                     // Evaluated by the resolver, drop from the IR.
@@ -369,6 +372,10 @@ class Impl {
 
             scopes_.Set(p->name->symbol, param);
             params.Push(param);
+
+            if (ty->UnwrapPtr()->Is<core::type::Buffer>()) {
+                mod.properties.Add(core::ir::Property::kAllowBufferTypes);
+            }
         }
         ir_func->SetParams(params);
 
@@ -1139,20 +1146,31 @@ class Impl {
                         if (b->Overload().num_explicit_templates > 0) {
                             auto* tmpl = expr->target->identifier->As<ast::TemplatedIdentifier>();
                             TINT_ASSERT(tmpl);
-                            Vector<const core::type::Type*, 1> explicit_types;
+                            Vector<core::ir::TemplateParameter, 1> explicit_templates;
                             for (uint32_t i = 0; i < b->Overload().num_explicit_templates; i++) {
                                 auto* tmpl_sem = impl.program_.Sem().Get(tmpl->arguments[i]);
-                                auto* tmpl_ty = tmpl_sem->As<sem::TypeExpression>();
-                                TINT_ASSERT(tmpl_ty);
-                                auto* cloned_ty = tmpl_ty->Type()->Clone(impl.clone_ctx_.type_ctx);
-                                explicit_types.Push(cloned_ty);
+                                if (auto* tmpl_ty = tmpl_sem->As<sem::TypeExpression>()) {
+                                    auto* cloned_ty =
+                                        tmpl_ty->Type()->Clone(impl.clone_ctx_.type_ctx);
+                                    explicit_templates.Push(cloned_ty);
+                                } else if (auto* tmpl_majorness =
+                                               tmpl_sem->As<
+                                                   sem::BuiltinEnumExpression<core::Majorness>>()) {
+                                    explicit_templates.Push(tmpl_majorness->Value());
+                                } else {
+                                    TINT_UNREACHABLE() << "Unhandled template parameter kind";
+                                }
                             }
-                            call->SetExplicitTemplateParams(std::move(explicit_types));
+                            call->SetExplicitTemplateParams(std::move(explicit_templates));
                         }
 
                         inst = call;
                     }
                 } else if (sem->Target()->As<sem::ValueConstructor>()) {
+                    const core::type::SubgroupMatrix* sm = ty->As<core::type::SubgroupMatrix>();
+                    if (sm && sm->Type()->IsAnyOf<core::type::I8, core::type::U8>()) {
+                        impl.mod.properties.Add(core::ir::Property::kAllow8BitIntegers);
+                    }
                     inst = impl.builder_.Construct(ty, std::move(args));
                 } else if (sem->Target()->Is<sem::ValueConversion>()) {
                     inst = impl.builder_.Convert(ty, args[0]);
@@ -1395,6 +1413,15 @@ class Impl {
                 // Record the original name and source of the var
                 builder_.ir.SetName(val, v->name->symbol.Name());
                 builder_.ir.SetSource(val, v->source);
+
+                if (store_ty->Is<core::type::Buffer>()) {
+                    mod.properties.Add(core::ir::Property::kAllowBufferTypes);
+                }
+
+                const core::type::SubgroupMatrix* sm = store_ty->As<core::type::SubgroupMatrix>();
+                if (sm && sm->Type()->IsAnyOf<core::type::I8, core::type::U8>()) {
+                    mod.properties.Add(core::ir::Property::kAllow8BitIntegers);
+                }
             },
             [&](const ast::Let* l) {
                 auto init = EmitValueExpression(l->initializer);
@@ -1408,6 +1435,12 @@ class Impl {
                 if (init->Type()->IsAnyOf<core::type::Texture, core::type::Sampler>()) {
                     scopes_.Set(l->name->symbol, init);
                     return;
+                }
+
+                const core::type::SubgroupMatrix* sm =
+                    init->Type()->As<core::type::SubgroupMatrix>();
+                if (sm && sm->Type()->IsAnyOf<core::type::I8, core::type::U8>()) {
+                    mod.properties.Add(core::ir::Property::kAllow8BitIntegers);
                 }
 
                 auto* let = current_block_->Append(builder_.Let(l->name->symbol.Name(), init));

@@ -37,12 +37,12 @@
 #include "partition_alloc/pointers/raw_ptr_exclusion.h"
 #include "src/dawn/common/Constants.h"
 #include "src/dawn/common/ityp_bitset.h"
-#include "src/dawn/common/ityp_span.h"
 #include "src/dawn/native/Device.h"
 #include "src/dawn/native/ImmediatesLayout.h"
 #include "src/dawn/native/IntegerTypes.h"
 #include "src/dawn/native/Pipeline.h"
 #include "src/utils/compiler.h"
+#include "src/utils/span.h"
 
 namespace dawn::native {
 
@@ -52,7 +52,7 @@ struct ImmediateDataContent {
     const T* operator->() const { return reinterpret_cast<const T*>(&mData); }
     T* operator->() { return reinterpret_cast<T*>(&mData); }
 
-    const unsigned char* data() const { return mData; }
+    const unsigned char* data() const { return mData.data(); }
 
     template <typename Out>
     const Out* Get(uint32_t offset) const {
@@ -67,7 +67,7 @@ struct ImmediateDataContent {
     }
 
   private:
-    alignas(T) unsigned char mData[sizeof(T)] = {0};
+    std::array<unsigned char, sizeof(T)> mData = {0};
 };
 
 // TODO(crbug.com/366291600): Add inheritance ability(like BindGroupTracker) so that it can inherit
@@ -78,7 +78,7 @@ class UserImmediatesTrackerBase {
     UserImmediatesTrackerBase() {}
 
     // Setters
-    void SetImmediates(uint32_t offset, uint8_t* values, uint32_t size) {
+    void SetImmediates(uint32_t offset, const uint8_t* values, uint32_t size) {
         uint8_t* destData = mContent.template Get<uint8_t>(offsetof(T, userImmediates) + offset);
         if (DAWN_UNSAFE_TODO(memcmp(destData, values, size)) != 0) {
             DAWN_UNSAFE_TODO(memcpy(destData, values, size));

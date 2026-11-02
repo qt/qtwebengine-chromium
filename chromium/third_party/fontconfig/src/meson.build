@@ -1,6 +1,6 @@
 project('fontconfig', 'c',
-  version: '2.17.1',
-  meson_version : '>= 1.6.1',
+  version: '2.18.1',
+  meson_version : '>= 1.11.0',
   default_options: [
     'c_std=c11,c99',
     'buildtype=debugoptimized',
@@ -116,6 +116,7 @@ check_headers = [
   ['sys/mount.h'],
   ['time.h'],
   ['wchar.h'],
+  ['xlocale.h'],
 ]
 
 check_funcs = [
@@ -139,9 +140,12 @@ check_funcs = [
   ['strerror'],
   ['strerror_r'],
   ['mmap'],
+  ['vasprintf_l'],
   ['vasprintf'],
   ['vprintf'],
   ['vsnprintf'],
+  ['_vsnprintf_l'],
+  ['_vsnprintf_l', {'prefix': '#include <stdio.h>'}],
   ['vsprintf'],
   ['getpagesize'],
   ['getpid'],
@@ -263,8 +267,9 @@ foreach check : check_funcs
   name = check[0]
   opts = check.length() > 1 ? check[1] : {}
   extra_deps = opts.get('dependencies', [])
+  prefix = opts.get('prefix', '')
 
-  if cc.has_function(name, dependencies: extra_deps)
+  if cc.has_function(name, dependencies: extra_deps, prefix: prefix)
     conf.set('HAVE_@0@'.format(name.to_upper()), 1)
   endif
 endforeach
@@ -334,9 +339,7 @@ if cc.links(files('meson-cc-tests/solaris-atomic-operations.c'), name: 'Solaris 
   conf.set('HAVE_SOLARIS_ATOMIC_OPS', 1)
 endif
 
-if cc.links(files('meson-cc-tests/c99-vsnprint-test.c'), name: 'C99 compliant vsnprintf()')
-  conf.set('HAVE_C99_VSNPRINTF', 1)
-endif
+conf.set('HAVE_C99_VSNPRINTF', 1)
 
 prefix = get_option('prefix')
 
@@ -347,7 +350,7 @@ if default_fonts_dirs == ['yes']
   if host_machine.system() == 'windows'
     fc_fonts_paths = ['WINDOWSFONTDIR', 'WINDOWSUSERFONTDIR']
   elif host_machine.system() == 'darwin'
-    fc_fonts_paths = ['/System/Library/Fonts', '/Library/Fonts', '~/Library/Fonts', '/System/Library/Assets/com_apple_MobileAsset_Font3', '/System/Library/Assets/com_apple_MobileAsset_Font4']
+    fc_fonts_paths = ['/System/Library/Fonts', '/Library/Fonts', '~/Library/Fonts', '/System/Library/Assets', '/System/Library/AssetsV2']
   elif host_machine.system() == 'android'
     fc_fonts_paths = ['/system/fonts/', '/product/fonts/']
   else
@@ -526,6 +529,7 @@ tools_man_pages = []
 subdir('fc-case')
 subdir('fc-lang')
 subdir('fc-const')
+subdir('fc-genericfamily')
 subdir('src')
 
 if get_option('fontations').enabled()
@@ -640,6 +644,7 @@ summary({
   'Documentation': (doc_targets.length() > 0 ? doc_targets : false),
   'NLS': not opt_nls.disabled(),
   'Tests': not get_option('tests').disabled(),
+  'Tests (external fonts)': get_option('tests-external-fonts').allowed(),
   'Pytest': pytest.found(),
   'Tools': not get_option('tools').disabled(),
   'iconv': found_iconv == 1,

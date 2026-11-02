@@ -53,9 +53,6 @@ UnoptimizedCompileFlags UnoptimizedCompileFlags::ForFunctionCompile(
   flags.set_allow_lazy_parsing(true);
   flags.set_is_lazy_compile(true);
 
-#if V8_ENABLE_WEBASSEMBLY
-  flags.set_is_asm_wasm_broken(shared->is_asm_wasm_broken());
-#endif  // V8_ENABLE_WEBASSEMBLY
   flags.set_is_repl_mode(script->is_repl_mode());
 
   // Do not support re-parsing top-level function of a wrapped script.
@@ -206,9 +203,6 @@ ParseInfo::ParseInfo(const UnoptimizedCompileFlags flags,
       source_range_map_(nullptr),
       literal_(nullptr),
       allow_eval_cache_(false),
-#if V8_ENABLE_WEBASSEMBLY
-      contains_asm_module_(false),
-#endif  // V8_ENABLE_WEBASSEMBLY
       language_mode_(flags.outer_language_mode()),
       is_background_compilation_(false),
       is_streaming_compilation_(false),
@@ -322,7 +316,8 @@ void ParseInfo::CheckFlagsForFunctionFromScript(Tagged<Script> script) {
   // We set "is_eval" for wrapped scripts to get an outer declaration scope.
   // This is a bit hacky, but ok since we can't be both eval and wrapped.
   DCHECK_EQ(flags().is_eval() && !script->is_wrapped(),
-            script->compilation_type() == Script::CompilationType::kEval);
+            flags().is_toplevel() &&
+                script->compilation_type() == Script::CompilationType::kEval);
   DCHECK_EQ(flags().is_module(), script->origin_options().IsModule());
   DCHECK_IMPLIES(flags().block_coverage_enabled() && script->IsUserJavaScript(),
                  source_range_map() != nullptr);

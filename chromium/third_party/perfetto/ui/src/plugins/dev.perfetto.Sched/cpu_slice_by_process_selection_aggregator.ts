@@ -15,9 +15,9 @@
 import m from 'mithril';
 import {Icons} from '../../base/semantic_icons';
 import {
-  type AggregatePivotModel,
   type Aggregation,
   type Aggregator,
+  type AggregatorGridConfig,
   createIITable,
 } from '../../components/aggregation_adapter';
 import type {AreaSelection} from '../../public/selection';
@@ -31,8 +31,17 @@ import {
   UnionDatasetWithLineage,
 } from '../../trace_processor/dataset';
 import type {Engine} from '../../trace_processor/engine';
-import {LONG, NUM, UNKNOWN} from '../../trace_processor/query_result';
+import {
+  LONG,
+  NUM,
+  type SqlValue,
+  UNKNOWN,
+} from '../../trace_processor/query_result';
 import {Anchor} from '../../widgets/anchor';
+import {
+  formatDurationValue,
+  formatPercentValue,
+} from '../../components/aggregation_panel';
 
 const CPU_SLICE_SPEC = {
   id: NUM,
@@ -122,24 +131,12 @@ export class CpuSliceByProcessSelectionAggregator implements Aggregator {
     return 'CPU by process';
   }
 
-  getColumnDefinitions(): AggregatePivotModel {
+  getGridConfig(): AggregatorGridConfig {
     return {
-      groupBy: [{id: 'process_name', field: 'process_name'}],
-      aggregates: [
-        {id: 'count', function: 'COUNT'},
-        {id: 'dur_sum', field: 'dur', function: 'SUM', sort: 'DESC'},
-        {
-          id: 'fraction_of_total_sum',
-          field: 'fraction_of_total',
-          function: 'SUM',
-        },
-        {id: 'dur_avg', field: 'dur', function: 'AVG'},
-      ],
-      columns: [
-        {
+      schema: {
+        id_with_lineage: {
           title: 'ID',
-          columnId: 'id_with_lineage',
-          formatHint: 'ID',
+          columnType: 'identifier',
           cellRenderer: (value: unknown) => {
             // Value is a JSON object {id, groupid, partition}
             if (typeof value !== 'string') {
@@ -149,7 +146,7 @@ export class CpuSliceByProcessSelectionAggregator implements Aggregator {
             const parsed = JSON.parse(value) as {
               id: number;
               groupid: number;
-              partition: unknown;
+              partition: SqlValue;
             };
             const {id, groupid, partition} = parsed;
 
@@ -174,38 +171,47 @@ export class CpuSliceByProcessSelectionAggregator implements Aggregator {
             );
           },
         },
-        {
-          title: 'PID',
-          columnId: 'pid',
-          formatHint: 'NUMERIC',
-        },
-        {
-          title: 'Process Name',
-          columnId: 'process_name',
-        },
-        {
+        pid: {title: 'PID', columnType: 'identifier'},
+        process_name: {title: 'Process Name', columnType: 'text'},
+        dur: {
           title: 'CPU Time',
-          formatHint: 'DURATION_NS',
-          columnId: 'dur',
+          columnType: 'quantitative',
+          cellRenderer: formatDurationValue,
         },
-        {
+        fraction_of_total: {
           title: 'CPU Time %',
-          formatHint: 'PERCENT',
-          columnId: 'fraction_of_total',
+          columnType: 'quantitative',
+          cellRenderer: formatPercentValue,
         },
-        {
+        fraction_of_selection: {
           title: 'CPU Time / Wall Time',
-          columnId: 'fraction_of_selection',
-          formatHint: 'PERCENT',
+          columnType: 'quantitative',
+          cellRenderer: formatPercentValue,
         },
-      ],
+      },
+      initialPivot: {
+        groupBy: [{id: 'process_name', field: 'process_name'}],
+        aggregates: [
+          {id: 'count', function: 'COUNT'},
+          {id: 'dur_sum', field: 'dur', function: 'SUM', sort: 'DESC'},
+          {
+            id: 'fraction_of_total_sum',
+            field: 'fraction_of_total',
+            function: 'SUM',
+          },
+          {id: 'dur_avg', field: 'dur', function: 'AVG'},
+        ],
+      },
     };
   }
 
   /**
    * Resolve a track from lineage information.
    */
-  private resolveTrack(groupId: number, partition: unknown): Track | undefined {
+  private resolveTrack(
+    groupId: number,
+    partition: SqlValue,
+  ): Track | undefined {
     if (!this.trackDatasetMap || !this.unionDataset) return undefined;
 
     // Ensure partition is a valid SqlValue

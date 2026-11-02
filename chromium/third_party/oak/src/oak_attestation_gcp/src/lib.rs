@@ -14,19 +14,18 @@
 // limitations under the License.
 //
 
-#![feature(assert_matches)]
-#![feature(box_patterns)]
 #![feature(try_blocks)]
+#![cfg_attr(test, feature(box_patterns))]
 
 extern crate alloc;
 
+pub mod assertions;
 pub mod attestation;
-pub mod cosign;
 pub mod jwt;
 pub mod policy;
 pub mod policy_generator;
 
-pub const CONFIDENTIAL_SPACE_ATTESTATION_ID: &str = "c0bbb3a6-2256-4390-a342-507b6aecb7e1";
-
 pub const CONFIDENTIAL_SPACE_ROOT_CERT_PEM: &str =
     include_str!("../data/confidential_space_root.pem");
+
+pub const OAK_SESSION_NOISE_V1_AUDIENCE: &str = "d9b8d46d-6841-4825-9b5e-e77768638044";

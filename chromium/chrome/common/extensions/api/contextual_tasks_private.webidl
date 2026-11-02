@@ -7,6 +7,7 @@ dictionary ProfileState {
   required boolean isEligible;
 };
 
+// LINT.IfChange(AimParams)
 dictionary AimParams {
   // Whether the link click came from a Nitrogen tab. Used for metrics.
   DOMString ntc;
@@ -42,7 +43,12 @@ dictionary AimParams {
 
   // Event ID for the query. Used for logging.
   DOMString ei;
+
+  // The search query.
+  DOMString q;
 };
+// LINT.ThenChange(//chrome/browser/resources/contextual_tasks/extension/background.ts:AimParams,//chrome/browser/resources/contextual_tasks/extension/background.ts:AimParamsCall,//chrome/browser/extensions/api/contextual_tasks_private/contextual_tasks_private_api.cc:AimParamsCpp)
+
 
 dictionary LaunchPanelInNewTabDetails {
   // The query parameters to construct the AIM URL.

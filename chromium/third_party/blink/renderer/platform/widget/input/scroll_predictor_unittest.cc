@@ -778,35 +778,47 @@ TEST_F(ScrollPredictorTest, RefinedHasPredictionTimeout) {
       scroll_predictor_->ResampleLatency(interval);
   EXPECT_EQ(resample_latency, base::Milliseconds(3));
 
-  // MaxResampleTime = 20ms.
-  // last_event_time = 10ms.
-
-  // Test Case 1: t=26ms.
-  // Old: 26 - 10 = 16 <= 20 (TRUE).
-  // New: 26 + 3 - 10 = 19 <= 20 (TRUE).
-  base::TimeTicks time_a = start_time + base::Milliseconds(26);
-
-  // Test Case 2: t=29ms.
-  // Old: 29 - 10 = 19 <= 20 (TRUE).
-  // New: 29 + 3 - 10 = 22 > 20 (FALSE).
-  base::TimeTicks time_b = start_time + base::Milliseconds(29);
+  // Dynamically query the configured max resample time (e.g., 20ms or 35ms)
+  const base::TimeDelta max_resample_time =
+      blink::features::kScrollPredictorMaxResampleTime.Get();
+  const base::TimeTicks last_event_time = start_time + base::Milliseconds(10);
 
   {
-    // Feature DISABLED: Uses Old Logic (frame_time - last_event).
+    // Feature disabled: Uses Old Logic (frame_time - last_event >
+    // max_resample_time).
+    // The exact maximum frame time that should still produce a prediction:
+    const base::TimeTicks max_frame_time_old =
+        last_event_time + max_resample_time;
+
     base::test::ScopedFeatureList scoped_feature_list;
     scoped_feature_list.InitAndDisableFeature(
         blink::features::kScrollPredictorRefinedHasPrediction);
-    EXPECT_TRUE(scroll_predictor_->HasPrediction(time_a, interval));
-    EXPECT_TRUE(scroll_predictor_->HasPrediction(time_b, interval));
+
+    // At the exact limit, it must succeed.
+    EXPECT_TRUE(scroll_predictor_->HasPrediction(max_frame_time_old, interval));
+
+    // Exactly 1 microsecond over the limit, it must timeout.
+    EXPECT_FALSE(scroll_predictor_->HasPrediction(
+        max_frame_time_old + base::Microseconds(1), interval));
   }
 
   {
-    // Feature ENABLED: Uses New Logic (frame_time + latency - last_event).
+    // Feature enabled: Uses New Logic (frame_time + latency - last_event >
+    // max_resample_time).
+    // The exact maximum frame time that should still produce a prediction:
+    const base::TimeTicks max_frame_time_new =
+        last_event_time + max_resample_time - resample_latency;
+
     base::test::ScopedFeatureList scoped_feature_list;
     scoped_feature_list.InitAndEnableFeature(
         blink::features::kScrollPredictorRefinedHasPrediction);
-    EXPECT_TRUE(scroll_predictor_->HasPrediction(time_a, interval));
-    EXPECT_FALSE(scroll_predictor_->HasPrediction(time_b, interval));
+
+    // At the exact limit, it must succeed.
+    EXPECT_TRUE(scroll_predictor_->HasPrediction(max_frame_time_new, interval));
+
+    // Exactly 1 microsecond over the limit, it must timeout.
+    EXPECT_FALSE(scroll_predictor_->HasPrediction(
+        max_frame_time_new + base::Microseconds(1), interval));
   }
 }
 
@@ -955,6 +967,33 @@ TEST_F(ScrollPredictorTest, SyntheticFilterBypass) {
   gfx::Vector2dF model_movement = GetLastRawSyntheticPos() - prev_raw_syn_pos;
 
   EXPECT_NEAR(screen_movement.y(), model_movement.y(), kEpsilon);
+}
+
+TEST_F(ScrollPredictorTest, ResetOnGestureScrollBeginClearsState) {
+  // 1. Send a touchscreen GestureScrollBegin.
+  WebGestureEvent touchscreen_gsb(WebInputEvent::Type::kGestureScrollBegin,
+                                  WebInputEvent::kNoModifiers,
+                                  WebInputEvent::GetStaticTimeStampForTests(),
+                                  WebGestureDevice::kTouchscreen);
+  scroll_predictor_->ResetOnGestureScrollBegin(touchscreen_gsb);
+  EXPECT_TRUE(GetResamplingState());
+
+  // 2. Send a touchscreen GestureScrollUpdate to populate prediction state.
+  std::unique_ptr<WebInputEvent> touchscreen_gsu =
+      CreateGestureScrollUpdate(0, -10, 10);
+  HandleResampleScrollEvents(touchscreen_gsu, 10);
+  EXPECT_FALSE(GetLastAccumulatedDelta().IsOrigin());
+
+  // 3. Send a non-touchscreen GestureScrollBegin (e.g., touchpad).
+  WebGestureEvent touchpad_gsb(
+      WebInputEvent::Type::kGestureScrollBegin, WebInputEvent::kNoModifiers,
+      WebInputEvent::GetStaticTimeStampForTests(), WebGestureDevice::kTouchpad);
+  scroll_predictor_->ResetOnGestureScrollBegin(touchpad_gsb);
+
+  // 4. Verify that resampling is now disabled, and the internal prediction
+  // state has been reset.
+  EXPECT_FALSE(GetResamplingState());
+  EXPECT_TRUE(GetLastAccumulatedDelta().IsOrigin());
 }
 
 }  // namespace test

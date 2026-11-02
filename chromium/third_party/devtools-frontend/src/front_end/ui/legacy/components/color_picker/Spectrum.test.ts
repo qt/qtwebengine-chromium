@@ -3,15 +3,12 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../../../core/common/common.js';
 import * as SDK from '../../../../core/sdk/sdk.js';
-import * as TextUtils from '../../../../models/text_utils/text_utils.js';
-import {
-  createTarget,
-  describeWithEnvironment,
-} from '../../../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../../../testing/MockConnection.js';
+import * as TextUtils from '../../../../core/text_utils/text_utils.js';
+import {createTarget, describeWithEnvironment} from '../../../../testing/EnvironmentHelpers.js';
 import * as UI from '../../legacy.js';
 
 import * as ColorPicker from './color_picker.js';
@@ -101,7 +98,7 @@ describeWithEnvironment('ColorPicker aka Spectrum', () => {
   });
 });
 
-describeWithMockConnection('PaletteGenerator', () => {
+describeWithEnvironment('PaletteGenerator', () => {
   it('does not interpret selectors as colors', async () => {
     createTarget();
     const [model] = SDK.TargetManager.TargetManager.instance().models(SDK.CSSModel.CSSModel);

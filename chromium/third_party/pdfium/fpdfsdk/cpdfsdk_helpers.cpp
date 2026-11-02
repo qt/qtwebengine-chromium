@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "build/build_config.h"
+#include "constants/catalog.h"
 #include "constants/form_fields.h"
 #include "constants/stream_dict_common.h"
 #include "core/fpdfapi/page/cpdf_page.h"
@@ -61,7 +62,8 @@ bool DocHasXFA(const CPDF_Document* doc) {
     return false;
   }
 
-  RetainPtr<const CPDF_Dictionary> form = root->GetDictFor("AcroForm");
+  RetainPtr<const CPDF_Dictionary> form =
+      root->GetDictFor(pdfium::catalog::kAcroForm);
   return form && form->GetArrayFor("XFA");
 }
 
@@ -259,12 +261,6 @@ CPDFSDK_InteractiveForm* FormHandleToInteractiveForm(FPDF_FORMHANDLE hHandle) {
   return pFormFillEnv ? pFormFillEnv->GetInteractiveForm() : nullptr;
 }
 
-ByteString ByteStringFromFPDFWideString(FPDF_WIDESTRING wide_string) {
-  // SAFETY: caller ensures `wide_string` is NUL-terminated and enforced
-  // by UNSAFE_BUFFER_USAGE in header file.
-  return UNSAFE_BUFFERS(WideStringFromFPDFWideString(wide_string).ToUTF8());
-}
-
 WideString WideStringFromFPDFWideString(FPDF_WIDESTRING wide_string) {
   // SAFETY: caller ensures `wide_string` is NUL-terminated and enforced
   // by UNSAFE_BUFFER_USAGE in header file.
@@ -424,7 +420,8 @@ void ReportUnsupportedFeatures(const CPDF_Document* doc) {
     RaiseUnsupportedError(FPDF_UNSP_DOC_PORTABLECOLLECTION);
   }
 
-  RetainPtr<const CPDF_Dictionary> pNameDict = pRootDict->GetDictFor("Names");
+  RetainPtr<const CPDF_Dictionary> pNameDict =
+      pRootDict->GetDictFor(pdfium::catalog::kNames);
   if (pNameDict) {
     if (pNameDict->KeyExist("EmbeddedFiles")) {
       RaiseUnsupportedError(FPDF_UNSP_DOC_ATTACHMENT);

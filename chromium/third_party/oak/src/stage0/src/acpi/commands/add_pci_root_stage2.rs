@@ -17,24 +17,25 @@
 use core::{ffi::CStr, fmt::Debug, iter::zip};
 
 use sha2::Sha256;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::{
     acpi::{
         commands::{
-            add_pci_root_stage1::{AllowlistOffset, PCI_ROOT_STAGE1_ALLOWLIST_OFFSET_COUNT},
             Invoke, Pad, RomfileName,
+            add_pci_root_stage1::{AllowlistOffset, PCI_ROOT_STAGE1_ALLOWLIST_OFFSET_COUNT},
         },
         files::Files,
     },
     fw_cfg::Firmware,
-    pci::{read_pci_crs_allowlist, PciWindows, PCI_CRS_ALLOWLIST_MAX_ENTRY_COUNT},
+    pci::{PCI_CRS_ALLOWLIST_MAX_ENTRY_COUNT, PciWindows, read_pci_crs_allowlist},
 };
 
 const PCI_ROOT_STAGE2_ALLOWLIST_OFFSET_COUNT: usize =
     PCI_CRS_ALLOWLIST_MAX_ENTRY_COUNT - PCI_ROOT_STAGE1_ALLOWLIST_OFFSET_COUNT;
 
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, FromBytes, IntoBytes, KnownLayout, Immutable)]
 pub struct AddPciRootStage2 {
     file: RomfileName,
     // 4 of them in Stage1; rest (11-4) here.
@@ -47,6 +48,17 @@ static_assertions::assert_eq_size!(AddPciRootStage2, Pad);
 impl AddPciRootStage2 {
     pub fn file(&self) -> &CStr {
         CStr::from_bytes_until_nul(&self.file).unwrap()
+    }
+
+    /// Builds a command targeting `file` whose first allowlist entry writes its
+    /// start at `allowlist_start_offset`; all other offsets stay zero.
+    /// Test-only.
+    #[cfg(test)]
+    pub fn new(file: &str, allowlist_start_offset: u32) -> Self {
+        let mut cmd = <Self as zerocopy::FromZeros>::new_zeroed();
+        cmd.file[..file.len()].copy_from_slice(file.as_bytes());
+        cmd.allowlist_offsets[0].start = allowlist_start_offset;
+        cmd
     }
 }
 
@@ -64,6 +76,17 @@ impl<FW: Firmware, F: Files> Invoke<FW, F> for AddPciRootStage2 {
         if self.bus_index != 0 {
             return Err("AddPciRootStage2: only bus 0 supported for now");
         }
+
+        let file_len = file.len();
+        let write_fits = |offset: u32, size: usize| offset as usize + size <= file_len;
+        if self
+            .allowlist_offsets
+            .iter()
+            .any(|o| !write_fits(o.start, size_of::<u32>()) || !write_fits(o.end, size_of::<u32>()))
+        {
+            return Err("AddPciRootStage2 invalid; offsets would overflow file");
+        }
+
         let crs_allowlist = read_pci_crs_allowlist(fwcfg)?.unwrap_or_default();
         log::debug!("PCI CRS allowlist: {:?}", crs_allowlist);
 

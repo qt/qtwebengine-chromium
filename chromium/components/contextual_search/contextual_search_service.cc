@@ -9,6 +9,7 @@
 #include "components/contextual_search/contextual_search_context_controller.h"
 #include "components/contextual_search/contextual_search_metrics_recorder.h"
 #include "components/contextual_search/contextual_search_session_entry.h"
+#include "components/contextual_search/input_state_model.h"
 #include "components/contextual_search/internal/composebox_query_controller.h"
 #include "components/contextual_search/pref_names.h"
 #include "components/pref_registry/pref_registry_syncable.h"
@@ -41,8 +42,10 @@ ContextualSearchService::ContextualSearchService(
     TemplateURLService* template_url_service,
     variations::VariationsClient* variations_client,
     version_info::Channel channel,
-    const std::string& locale)
-    : identity_manager_(identity_manager),
+    const std::string& locale,
+    std::unique_ptr<ContextualSearchSessionHandle::TabValidator> tab_validator)
+    : tab_validator_(std::move(tab_validator)),
+      identity_manager_(identity_manager),
       url_loader_factory_(std::move(url_loader_factory)),
       template_url_service_(template_url_service),
       variations_client_(variations_client),
@@ -67,7 +70,8 @@ void ContextualSearchService::RegisterProfilePrefs(
       kSearchContentSharingSettings,
       static_cast<int>(kSearchContentSharingAllowedDefault));
   registry->RegisterIntegerPref(
-      kDriveConsentState, 0, user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+      kDriveConsentState, static_cast<int>(DriveConsentState::kRestricted),
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 }
 
 // static
@@ -148,6 +152,11 @@ ContextualSearchService::GetSessionMetricsRecorder(
     return it->second.metrics_recorder_.get();
   }
   return nullptr;
+}
+
+ContextualSearchSessionHandle::TabValidator*
+ContextualSearchService::GetTabValidator() const {
+  return tab_validator_.get();
 }
 
 void ContextualSearchService::ReleaseSession(

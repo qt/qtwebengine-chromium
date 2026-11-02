@@ -14,6 +14,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/notreached.h"
 #include "base/time/time.h"
+#include "cc/paint/paint_record.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_fill_rule.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_image_smoothing_quality.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h"
@@ -24,6 +25,7 @@
 #include "third_party/blink/renderer/modules/modules_export.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_2d_color_params.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_deferred_paint_record.h"
+#include "third_party/blink/renderer/platform/graphics/flush_reason.h"
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
 #include "third_party/blink/renderer/platform/heap/forward.h"  // IWYU pragma: keep (blink::Visitor)
@@ -48,12 +50,10 @@ class Rect;
 class Vector2d;
 }  // namespace gfx
 
-namespace viz {
-class SharedImageFormat;
-}
-
 namespace blink {
 
+class Canvas2DResourceProvider;
+class Canvas2DBitmapProvider;
 class CanvasContextCreationAttributesCore;
 class CanvasRenderingContext2DSettings;
 class ExceptionState;
@@ -94,14 +94,6 @@ class MODULES_EXPORT BaseRenderingContext2D : public CanvasRenderingContext,
 
   void ResetInternal() override;
 
-  base::ByteSize AllocatedBufferSize() const override {
-    auto* provider = GetResourceProvider();
-    if (provider) {
-      return provider->EstimatedSizeInBytes();
-    }
-    return base::ByteSize();
-  }
-
   CanvasRenderingContext2DSettings* getContextAttributes() const;
 
   ImageData* createImageData(ImageData*, ExceptionState&) const;
@@ -138,7 +130,7 @@ class MODULES_EXPORT BaseRenderingContext2D : public CanvasRenderingContext,
                     ExceptionState&);
 
   virtual bool CanCreateResourceProvider() = 0;
-  virtual CanvasResourceProvider* GetOrCreateResourceProvider() = 0;
+  virtual bool InitializeResourceProvider() = 0;
 
   String lang() const;
   void setLang(const String&);
@@ -238,23 +230,24 @@ class MODULES_EXPORT BaseRenderingContext2D : public CanvasRenderingContext,
                                  std::optional<double> dheight,
                                  ExceptionState& exception_state);
 
+  scoped_refptr<const cc::AnimatedImageFrameIndexMap>
+  GetAnimatedImageFrameIndexMap(uint32_t id) const override;
+
   void Trace(Visitor*) const override;
 
   // Implementing methods from CanvasRenderingContext
-  bool IsOpaque() const final { return GetAlphaType() == kOpaque_SkAlphaType; }
+  bool IsOpaque() const final {
+    return color_params_.GetAlphaType() == kOpaque_SkAlphaType;
+  }
   void DisableAccelerationForCanvas2D() final { DisableAcceleration(); }
-  bool Is2DCanvasAccelerated() const final;
   void PageVisibilityChanged() override {}
   void RestoreCanvasMatrixClipStack(cc::PaintCanvas* c) const final;
   void Reset() override;
-  scoped_refptr<StaticBitmapImage> PaintRenderingResultsToSnapshot(
-      SourceDrawingBuffer source_buffer) final;
+  void DidFlush() override;
 
   void SetRestoreFailedCallbackForTesting(base::RepeatingClosure callback) {
     on_restore_failed_callback_for_testing_ = std::move(callback);
   }
-
-  bool IsResourceProviderValid();
 
   HeapTaskRunnerTimer<BaseRenderingContext2D>
       dispatch_context_lost_event_timer_;
@@ -264,6 +257,11 @@ class MODULES_EXPORT BaseRenderingContext2D : public CanvasRenderingContext,
   unsigned try_restore_context_attempt_count_ = 0;
 
  protected:
+  std::optional<cc::PaintRecord> FlushCanvasInternal(
+      Canvas2DResourceProvider* shared_image_provider,
+      Canvas2DBitmapProvider* bitmap_provider,
+      FlushReason reason);
+
   explicit BaseRenderingContext2D(
       CanvasRenderingContextHost* canvas,
       const CanvasContextCreationAttributesCore& attrs,
@@ -293,9 +291,6 @@ class MODULES_EXPORT BaseRenderingContext2D : public CanvasRenderingContext,
   void TryRestoreContextEvent(TimerBase*);
   void RestoreFromInvalidSizeIfNeeded() override;
 
-  virtual std::unique_ptr<CanvasResourceProvider> ReplaceResourceProvider(
-      std::unique_ptr<CanvasResourceProvider>) = 0;
-
   static const char kInheritString[];
 
   // Override to prematurely disable acceleration because of a readback.
@@ -307,18 +302,10 @@ class MODULES_EXPORT BaseRenderingContext2D : public CanvasRenderingContext,
   }
 
   bool context_restorable_{true};
-
-  viz::SharedImageFormat GetSharedImageFormat() const {
-    return color_params_.GetSharedImageFormat();
-  }
-  gfx::ColorSpace GetColorSpace() const {
-    return color_params_.GetGfxColorSpace();
-  }
-  SkAlphaType GetAlphaType() const { return color_params_.GetAlphaType(); }
+  Canvas2DColorParams color_params_;
 
  private:
   virtual bool IsHibernating() const { return false; }
-  virtual CanvasResourceProvider* GetResourceProvider() const { NOTREACHED(); }
   virtual void EnableAccelerationIfPossible() {}
   void DrawTextInternal(const String& text,
                         double x,
@@ -339,8 +326,9 @@ class MODULES_EXPORT BaseRenderingContext2D : public CanvasRenderingContext,
 
   int num_readbacks_performed_ = 0;
   unsigned read_count_ = 0;
-  Canvas2DColorParams color_params_;
   base::RepeatingClosure on_restore_failed_callback_for_testing_;
+  Vector<scoped_refptr<const cc::AnimatedImageFrameIndexMap>>
+      animated_image_frame_index_maps_;
 };
 
 }  // namespace blink

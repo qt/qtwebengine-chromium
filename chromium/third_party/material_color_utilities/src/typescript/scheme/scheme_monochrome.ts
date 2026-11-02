@@ -15,26 +15,30 @@
  * limitations under the License.
  */
 
+import {SpecVersion} from '../dynamiccolor/color_spec.js';
+import {DynamicScheme, Platform} from '../dynamiccolor/dynamic_scheme';
+import {Variant} from '../dynamiccolor/variant.js';
 import {Hct} from '../hct/hct.js';
-import {TonalPalette} from '../palettes/tonal_palette.js';
-
-import {DynamicScheme} from './dynamic_scheme.js';
-import {Variant} from './variant.js';
 
 /** A Dynamic Color theme that is grayscale. */
 export class SchemeMonochrome extends DynamicScheme {
-  constructor(sourceColorHct: Hct, isDark: boolean, contrastLevel: number) {
+  constructor(
+      sourceColorHct: Hct, isDark: boolean, contrastLevel: number,
+      specVersion?: SpecVersion, platform?: Platform);
+  constructor(
+      sourceColorHcts: Hct[], isDark: boolean, contrastLevel: number,
+      specVersion?: SpecVersion, platform?: Platform);
+  constructor(
+      sourceColorOrList: Hct|Hct[], isDark: boolean, contrastLevel: number,
+      specVersion: SpecVersion = DynamicScheme.DEFAULT_SPEC_VERSION,
+      platform: Platform = DynamicScheme.DEFAULT_PLATFORM) {
     super({
-      sourceColorArgb: sourceColorHct.toInt(),
+      sourceColorHcts: Array.isArray(sourceColorOrList) ? sourceColorOrList : [sourceColorOrList],
       variant: Variant.MONOCHROME,
       contrastLevel,
       isDark,
-      primaryPalette: TonalPalette.fromHueAndChroma(sourceColorHct.hue, 0.0),
-      secondaryPalette: TonalPalette.fromHueAndChroma(sourceColorHct.hue, 0.0),
-      tertiaryPalette: TonalPalette.fromHueAndChroma(sourceColorHct.hue, 0.0),
-      neutralPalette: TonalPalette.fromHueAndChroma(sourceColorHct.hue, 0.0),
-      neutralVariantPalette:
-          TonalPalette.fromHueAndChroma(sourceColorHct.hue, 0.0),
+      platform,
+      specVersion,
     });
   }
 }

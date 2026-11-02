@@ -12,12 +12,7 @@
 #include "build/build_config.h"
 #include "core/fxcrt/fx_coordinates.h"
 
-class TextCharPos {
- public:
-  TextCharPos();
-  TextCharPos(const TextCharPos&);
-  ~TextCharPos();
-
+struct TextCharPos {
   CFX_Matrix GetEffectiveMatrix(const CFX_Matrix& matrix) const;
 
   CFX_PointF origin_;
@@ -29,7 +24,7 @@ class TextCharPos {
 #endif
   int32_t fallback_font_position_ = 0;
   bool glyph_adjust_ = false;
-  bool font_style_ = false;
+  bool is_cid_font_ = false;
   std::array<float, 4> adjust_matrix_ = {};
 };
 

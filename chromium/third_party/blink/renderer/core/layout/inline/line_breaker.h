@@ -295,11 +295,13 @@ class CORE_EXPORT LineBreaker {
   void SetCurrentStyleForce(const ComputedStyle&);
 
   bool IsPreviousItemOfType(InlineItem::InlineItemType);
+  bool IsNextNonBidiControlItemOpenTag() const;
   void MoveToNextOf(const InlineItem&);
   void MoveToNextOf(const InlineItemResult&);
   bool IsAtEnd() const { return current_.item_index >= end_item_index_; }
 
   void ComputeBaseDirection();
+  LayoutUnit ComputeFloatOffset() const;
   void RecalcClonedBoxDecorations();
 
   LayoutUnit AvailableWidth() const { return available_width_; }
@@ -349,6 +351,12 @@ class CORE_EXPORT LineBreaker {
   // The current position from inline_start. Unlike InlineLayoutAlgorithm
   // that computes position in visual order, this position in logical order.
   LayoutUnit position_;
+
+  // Offset of this (sub-)line's start from the tab-stop origin, i.e. the start
+  // content edge of the nearest block container ancestor. Non-zero only for
+  // ruby sub-LineBreakers.
+  LayoutUnit tab_stop_offset_;
+
   LayoutUnit applied_text_indent_;
   LayoutUnit available_width_;
   // Available width without `box-decoration-break`.

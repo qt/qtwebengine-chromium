@@ -134,7 +134,7 @@ export class AiCodeGeneration {
               seconds,
               nanos,
             },
-          }
+          },
         },
       },
     });
@@ -150,7 +150,7 @@ export class AiCodeGeneration {
         user_acceptance: {
           sample: {
             sample_id: sampleId,
-          }
+          },
         },
       },
     });

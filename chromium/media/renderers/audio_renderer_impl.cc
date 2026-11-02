@@ -44,6 +44,13 @@
 
 namespace media {
 
+namespace {
+perfetto::NamedTrack GetTracingTrack(const AudioRendererImpl* renderer) {
+  return perfetto::NamedTrack::FromPointer("media::AudioRendererImpl",
+                                           renderer);
+}
+}  // namespace
+
 AudioRendererImpl::AudioRendererImpl(
     const scoped_refptr<base::SequencedTaskRunner>& task_runner,
     scoped_refptr<AudioRendererSink> sink,
@@ -298,8 +305,7 @@ TimeSource* AudioRendererImpl::GetTimeSource() {
 void AudioRendererImpl::Flush(base::OnceClosure callback) {
   DVLOG(1) << __func__;
   DCHECK(task_runner_->RunsTasksInCurrentSequence());
-  TRACE_EVENT_BEGIN("media", "AudioRendererImpl::Flush",
-                    perfetto::Track::FromPointer(this));
+  TRACE_EVENT_BEGIN("media", "AudioRendererImpl::Flush", GetTracingTrack(this));
 
   // Flush |sink_| now.  |sink_| must only be accessed on |task_runner_| and not
   // be called under |lock_|.
@@ -389,7 +395,7 @@ void AudioRendererImpl::Initialize(DemuxerStream* stream,
   DCHECK(state_ == kUninitialized || state_ == kFlushed);
   DCHECK(sink_);
   TRACE_EVENT_BEGIN("media", "AudioRendererImpl::Initialize",
-                    perfetto::Track::FromPointer(this));
+                    GetTracingTrack(this));
 
   // If we are re-initializing playback (e.g. switching media tracks), stop the
   // sink first.
@@ -600,8 +606,6 @@ void AudioRendererImpl::OnDeviceInfoReceived(
       sample_rate = stream->audio_decoder_config().samples_per_second();
     }
 
-    int stream_channel_count = stream->audio_decoder_config().channels();
-
     bool try_supported_channel_layouts = false;
 #if BUILDFLAG(IS_WIN)
     try_supported_channel_layouts =
@@ -641,15 +645,13 @@ void AudioRendererImpl::OnDeviceInfoReceived(
     //   hardware later changes to equal stream channels, browser-side will stop
     //   down-mixing and use the data from all stream channels.
 
-    ChannelLayout stream_channel_layout =
-        stream->audio_decoder_config().channel_layout();
+    ChannelLayoutConfig stream_layout_config =
+        stream->audio_decoder_config().channel_layout_config();
     bool use_stream_channel_layout =
-        hw_channel_layout.channels() <= stream_channel_count;
+        hw_channel_layout.channels() <= stream_layout_config.channels();
 
     ChannelLayoutConfig renderer_channel_layout_config =
-        use_stream_channel_layout
-            ? ChannelLayoutConfig(stream_channel_layout, stream_channel_count)
-            : hw_channel_layout;
+        use_stream_channel_layout ? stream_layout_config : hw_channel_layout;
 
     audio_parameters_.Reset(hw_params.format(), renderer_channel_layout_config,
                             sample_rate,
@@ -775,15 +777,15 @@ void AudioRendererImpl::OnAudioDecoderStreamInitialized(bool success) {
 
 void AudioRendererImpl::FinishInitialization(PipelineStatus status) {
   DCHECK(init_cb_);
-  TRACE_EVENT_END("media", perfetto::Track::FromPointer(this), "status",
+  TRACE_EVENT_END("media", GetTracingTrack(this), "status",
                   PipelineStatusToString(status));
   std::move(init_cb_).Run(status);
 }
 
 void AudioRendererImpl::FinishFlush() {
   DCHECK(flush_cb_);
-  TRACE_EVENT_END("media", /*"AudioRendererImpl::Flush"*/
-                  perfetto::Track::FromPointer(this));
+  TRACE_EVENT_END("media",
+                  /*"AudioRendererImpl::Flush"*/ GetTracingTrack(this));
   // The |flush_cb_| must always post in order to avoid deadlocking, as some of
   // the functions which may be bound here are re-entrant into lock-acquiring
   // methods of AudioRendererImpl, and FinishFlush may be called while holding
@@ -1602,9 +1604,9 @@ void AudioRendererImpl::ConfigureChannelMask() {
 
   // Determine the matrix used to upmix the channels.
   std::vector<std::vector<float>> matrix;
-  ChannelMixingMatrix(last_decoded_channel_layout_, last_decoded_channels_,
-                      audio_parameters_.channel_layout(),
-                      audio_parameters_.channels())
+  ChannelMixingMatrix(
+      ChannelLayoutConfig(last_decoded_channel_layout_, last_decoded_channels_),
+      audio_parameters_.channel_layout_config())
       .CreateTransformationMatrix(&matrix);
 
   // All channels with a zero mix are muted and can be ignored.

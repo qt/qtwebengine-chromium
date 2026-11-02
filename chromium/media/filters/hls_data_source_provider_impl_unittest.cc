@@ -57,7 +57,7 @@ TEST_F(HlsDataSourceProviderImplUnittest, TestReadFromUrlOnce) {
   // The entire read is satisfied, so there is more to read.
   factory_->AddReadExpectation(0, 16384, 16384);
   impl_->ReadFromUrl(
-      {GURL("example.com"), std::nullopt},
+      {GURL("https://example.com"), std::nullopt},
       base::BindOnce([](HlsDataSourceProvider::ReadResult result) {
         ASSERT_TRUE(result.has_value());
         auto stream = std::move(result).value();
@@ -72,7 +72,7 @@ TEST_F(HlsDataSourceProviderImplUnittest, TestReadFromUrlOnce) {
   // we'd have to read again (and get a 0) to be sure.
   factory_->AddReadExpectation(0, 16384, 400);
   impl_->ReadFromUrl(
-      {GURL("example.com"), std::nullopt},
+      {GURL("https://example.com"), std::nullopt},
       base::BindOnce([](HlsDataSourceProvider::ReadResult result) {
         ASSERT_TRUE(result.has_value());
         auto stream = std::move(result).value();
@@ -87,7 +87,7 @@ TEST_F(HlsDataSourceProviderImplUnittest, TestReadFromUrlOnce) {
   // at an offset of 99. The read should be from 99, size of 4242.
   factory_->AddReadExpectation(99, 4242, 4242);
   impl_->ReadFromUrl(
-      {GURL("example.com"), hls::types::ByteRange::Validate(4242, 99)},
+      {GURL("https://example.com"), hls::types::ByteRange::Validate(4242, 99)},
       base::BindOnce([](HlsDataSourceProvider::ReadResult result) {
         ASSERT_TRUE(result.has_value());
         auto stream = std::move(result).value();
@@ -105,7 +105,7 @@ TEST_F(HlsDataSourceProviderImplUnittest, TestReadFromUrlThenReadAgain) {
   factory_->AddReadExpectation(32768, 16384, 3);
   factory_->AddReadExpectation(32771, 16384, 0);
   impl_->ReadFromUrl(
-      {GURL("example.com"), std::nullopt},
+      {GURL("https://example.com"), std::nullopt},
       base::BindOnce(
           [](HlsDataSourceProviderImpl* impl_ptr,
              HlsDataSourceProvider::ReadResult result) {
@@ -162,21 +162,27 @@ TEST_F(HlsDataSourceProviderImplUnittest, TestReadFromUrlThenReadAgain) {
 }
 
 TEST_F(HlsDataSourceProviderImplUnittest, TestAbortMidDownload) {
-  // Pregenerating the mock requires setting all our own expectations.
-  auto* mock_data_source = factory_->PregenerateNextMock();
-  EXPECT_CALL(*mock_data_source, Initialize).WillOnce(RunOnceCallback<0>(true));
-  EXPECT_CALL(*mock_data_source, Abort()).Times(0);
-  EXPECT_CALL(*mock_data_source, Stop()).Times(0);
-
   DataSource::ReadCB read_cb;
-  EXPECT_CALL(*mock_data_source, Read(0, _, _))
-      .WillOnce([&read_cb](int64_t, base::span<uint8_t>,
-                           DataSource::ReadCB cb) { read_cb = std::move(cb); });
+  MockDataSource* mock_ds;
+  MockDataSource** write_out = &mock_ds;
+  EXPECT_CALL(*factory_, Setup(_, GURL("https://example.com"), _, _))
+      .WillOnce([&read_cb, &write_out](auto* data_source, const auto&, ...) {
+        EXPECT_CALL(*data_source, Initialize)
+            .WillOnce(RunOnceCallback<0>(true));
+        EXPECT_CALL(*data_source, GetUrlAfterRedirects())
+            .WillOnce(testing::Return(GURL("https://example.com")));
+        EXPECT_CALL(*data_source, Stop()).Times(0);
+        EXPECT_CALL(*data_source, Abort()).Times(0);
+        EXPECT_CALL(*data_source, Read(0, _, _))
+            .WillOnce(
+                [&read_cb](auto, auto, auto cb) { read_cb = std::move(cb); });
+        *write_out = data_source;
+      });
 
   // The Read CB is captured, and so will not execute right away.
   bool has_been_read = false;
   impl_->ReadFromUrl(
-      {GURL("example.com"), std::nullopt},
+      {GURL("https://example.com"), std::nullopt},
       base::BindOnce(
           [](bool* read_canary, HlsDataSourceProvider::ReadResult result) {
             *read_canary = true;
@@ -189,7 +195,7 @@ TEST_F(HlsDataSourceProviderImplUnittest, TestAbortMidDownload) {
   ASSERT_TRUE(!!read_cb);
 
   // Deleting the HlsDataSourceproviderImpl will stop all existing reads.
-  EXPECT_CALL(*mock_data_source, Stop());
+  EXPECT_CALL(*mock_ds, Stop());
   RecreateImpl();
   task_environment_.RunUntilIdle();
 
@@ -201,15 +207,16 @@ TEST_F(HlsDataSourceProviderImplUnittest, TestAbortMidDownload) {
 }
 
 TEST_F(HlsDataSourceProviderImplUnittest, AbortMidInit) {
-  auto* mock_data_source = factory_->PregenerateNextMock();
-
-  // Don't run init cb!
-  EXPECT_CALL(*mock_data_source, Initialize);
-  EXPECT_CALL(*mock_data_source, Stop());
+  EXPECT_CALL(*factory_, Setup(_, GURL("https://example.com"), _, _))
+      .WillOnce([](MockDataSource* mock, const GURL&, ...) {
+        // Don't run init cb!
+        EXPECT_CALL(*mock, Initialize);
+        EXPECT_CALL(*mock, Stop());
+      });
 
   bool has_been_read = false;
   impl_->ReadFromUrl(
-      {GURL("example.com"), std::nullopt},
+      {GURL("https://example.com"), std::nullopt},
       base::BindOnce(
           [](bool* read_canary, HlsDataSourceProvider::ReadResult result) {
             *read_canary = true;
@@ -224,141 +231,74 @@ TEST_F(HlsDataSourceProviderImplUnittest, AbortMidInit) {
   ASSERT_FALSE(has_been_read);
 }
 
-TEST_F(HlsDataSourceProviderImplUnittest, ReadMultipleSegments) {
-  HlsDataSourceProvider::SegmentQueue segments;
-  segments.emplace(GURL("example.com"), std::nullopt);
-  segments.emplace(GURL("foo.com"), std::nullopt);
+TEST_F(HlsDataSourceProviderImplUnittest, ReadSegmentWithRedirect) {
+  HlsDataSourceProvider::UrlDataSegment segment(GURL("http://evil.com"),
+                                                std::nullopt);
 
-  // Request 16k, but only 4k is read. Another read then happens and the 0 byte
-  // EOS read happens.
-  factory_->AddReadExpectation(0, 16384, 4096);
-  factory_->AddReadExpectation(4096, 16384, 0);
+  {
+    MockDataSourceFactory::DataSourceBehavior params;
+    params.would_taint_origin = true;
+    params.original_uri = GURL("http://evil.com");
+    params.redirect_uri = "http://innocent.com";
+    params.read_expectations = {
+        // Request 16k, but only 4k is read. Another read then happens and the
+        // 0 byte EOS read happens.
+        std::make_tuple(0, 16384, 4096),
+        std::make_tuple(4096, 16384, 0),
+    };
+    factory_->Expect(std::move(params));
+  }
 
-  std::unique_ptr<HlsDataSourceStream> read_result;
-  impl_->ReadFromCombinedUrlQueue(
-      std::move(segments), base::BindOnce(
-                               [](std::unique_ptr<HlsDataSourceStream>* extract,
-                                  HlsDataSourceProvider::ReadResult result) {
-                                 *extract = std::move(result).value();
-                               },
-                               &read_result));
+  std::unique_ptr<HlsDataSourceStream> first_read;
+  impl_->ReadFromUrl(std::move(segment),
+                     base::BindOnce(
+                         [](std::unique_ptr<HlsDataSourceStream>* extract,
+                            HlsDataSourceProvider::ReadResult result) {
+                           *extract = std::move(result).value();
+                         },
+                         &first_read));
   task_environment_.RunUntilIdle();
-  ASSERT_NE(read_result, nullptr);
-  ASSERT_TRUE(read_result->CanReadMore());
-  ASSERT_FALSE(read_result->RequiresNextDataSource());
+  ASSERT_NE(first_read, nullptr);
+  ASSERT_TRUE(first_read->CanReadMore());
+  ASSERT_FALSE(first_read->RequiresInit());
 
+  std::unique_ptr<HlsDataSourceStream> second_read;
   impl_->ReadFromExistingStream(
-      std::move(read_result),
+      std::move(first_read),
       base::BindOnce(
           [](std::unique_ptr<HlsDataSourceStream>* extract,
              HlsDataSourceProvider::ReadResult result) {
             *extract = std::move(result).value();
           },
-          &read_result));
+          &second_read));
   task_environment_.RunUntilIdle();
-  ASSERT_NE(read_result, nullptr);
-  ASSERT_TRUE(read_result->CanReadMore());
-  ASSERT_TRUE(read_result->RequiresNextDataSource());
+  ASSERT_NE(second_read, nullptr);
+  ASSERT_FALSE(second_read->CanReadMore());
+  ASSERT_FALSE(second_read->RequiresInit());
+  ASSERT_EQ(second_read->SecurityInfo().response_origins.size(), 1u);
+  ASSERT_EQ(*second_read->SecurityInfo().response_origins.begin(),
+            url::Origin::Create(GURL("http://innocent.com")));
 
-  factory_->AddReadExpectation(0, 16384, 4096);
-  factory_->AddReadExpectation(4096, 16384, 0);
-  impl_->ReadFromExistingStream(
-      std::move(read_result),
-      base::BindOnce(
-          [](std::unique_ptr<HlsDataSourceStream>* extract,
-             HlsDataSourceProvider::ReadResult result) {
-            *extract = std::move(result).value();
-          },
-          &read_result));
-
-  task_environment_.RunUntilIdle();
-  ASSERT_NE(read_result, nullptr);
-  ASSERT_TRUE(read_result->CanReadMore());
-  ASSERT_FALSE(read_result->RequiresNextDataSource());
-
-  impl_->ReadFromExistingStream(
-      std::move(read_result),
-      base::BindOnce(
-          [](std::unique_ptr<HlsDataSourceStream>* extract,
-             HlsDataSourceProvider::ReadResult result) {
-            *extract = std::move(result).value();
-          },
-          &read_result));
-
-  task_environment_.RunUntilIdle();
-  ASSERT_NE(read_result, nullptr);
-  ASSERT_FALSE(read_result->CanReadMore());
-  ASSERT_FALSE(read_result->RequiresNextDataSource());
-
-  read_result = nullptr;
-  task_environment_.RunUntilIdle();
-}
-
-TEST_F(HlsDataSourceProviderImplUnittest, ReadMultipleRangedSegments) {
-  HlsDataSourceProvider::SegmentQueue segments;
-  // Read 10 bytes from offset 0.
-  segments.emplace(GURL("example.com"), hls::types::ByteRange::Validate(10, 0));
-
-  // Read 100 bytes from offset 100
-  segments.emplace(GURL("foo.com"), hls::types::ByteRange::Validate(100, 100));
-
-  // Request 10 bytes from the 0 offset. this is fairly common for EXT-X-MAP.
-  factory_->AddReadExpectation(0, 10, 10);
-
-  std::unique_ptr<HlsDataSourceStream> read_result;
-  impl_->ReadFromCombinedUrlQueue(
-      std::move(segments), base::BindOnce(
-                               [](std::unique_ptr<HlsDataSourceStream>* extract,
-                                  HlsDataSourceProvider::ReadResult result) {
-                                 *extract = std::move(result).value();
-                               },
-                               &read_result));
-
-  task_environment_.RunUntilIdle();
-  ASSERT_NE(read_result, nullptr);
-  ASSERT_TRUE(read_result->CanReadMore());
-  ASSERT_TRUE(read_result->RequiresNextDataSource());
-
-  // The second segment will request another 100 bytes, and again, because it is
-  // a range request, more should be returned.
-  factory_->AddReadExpectation(100, 100, 100);
-  impl_->ReadFromExistingStream(
-      std::move(read_result),
-      base::BindOnce(
-          [](std::unique_ptr<HlsDataSourceStream>* extract,
-             HlsDataSourceProvider::ReadResult result) {
-            *extract = std::move(result).value();
-          },
-          &read_result));
-
-  task_environment_.RunUntilIdle();
-  ASSERT_NE(read_result, nullptr);
-  ASSERT_FALSE(read_result->CanReadMore());
-  ASSERT_FALSE(read_result->RequiresNextDataSource());
-
-  read_result = nullptr;
+  second_read = nullptr;
   task_environment_.RunUntilIdle();
 }
 
 TEST_F(HlsDataSourceProviderImplUnittest, TestCrossOriginRangeRequest) {
-  HlsDataSourceProvider::SegmentQueue segments;
-  // Read 10 bytes from offset 0.
-  segments.emplace(GURL("http://example.com"),
-                   hls::types::ByteRange::Validate(10, 0));
+  HlsDataSourceProvider::UrlDataSegment segment(
+      GURL("http://example.com"), hls::types::ByteRange::Validate(10, 0));
 
-  auto* mock_data_source = factory_->PregenerateNextMock();
-
-  // It's not cross origin at first until it has been initialized. After that
-  // the second `WouldTaintOrigin` call should return true.
-  EXPECT_CALL(*mock_data_source, WouldTaintOrigin())
-      .WillOnce(Return(false))
-      .WillOnce(Return(true));
-  EXPECT_CALL(*mock_data_source, Initialize)
-      .WillOnce(base::test::RunOnceCallback<0>(true));
+  const GURL url("http://example.com");
+  EXPECT_CALL(*factory_, Setup(_, url, _, _))
+      .WillOnce([](MockDataSource* mock, const GURL& uri, ...) {
+        MockDataSourceFactory::ConfigureAsSuccess(mock, uri);
+        EXPECT_CALL(*mock, WouldTaintOrigin())
+            .WillOnce(Return(false))
+            .WillOnce(Return(true));
+      });
 
   bool has_error = false;
-  impl_->ReadFromCombinedUrlQueue(
-      std::move(segments),
+  impl_->ReadFromUrl(
+      std::move(segment),
       base::BindOnce(
           [](bool* error_canary, HlsDataSourceProvider::ReadResult result) {
             if (!result.has_value()) {
@@ -373,122 +313,5 @@ TEST_F(HlsDataSourceProviderImplUnittest, TestCrossOriginRangeRequest) {
   ASSERT_TRUE(has_error);
 }
 
-TEST_F(HlsDataSourceProviderImplUnittest, TestPersistentTainting) {
-  // First, a full request that is cross-origin.
-  {
-    HlsDataSourceProvider::SegmentQueue segments;
-    segments.emplace(GURL("http://example.com"), std::nullopt);
-
-    auto* mock_data_source = factory_->PregenerateNextMock();
-    EXPECT_CALL(*mock_data_source, WouldTaintOrigin())
-        .WillRepeatedly(Return(true));
-    EXPECT_CALL(*mock_data_source, Initialize)
-        .WillOnce(base::test::RunOnceCallback<0>(true));
-    EXPECT_CALL(*mock_data_source, Read(0, SpanSizeEq(16384), _))
-        .WillOnce(base::test::RunOnceCallback<2>(16384));
-    EXPECT_CALL(*mock_data_source, Stop());
-
-    bool has_result = false;
-    impl_->ReadFromCombinedUrlQueue(
-        std::move(segments),
-        base::BindOnce(
-            [](bool* canary, HlsDataSourceProvider::ReadResult result) {
-              ASSERT_TRUE(result.has_value());
-              *canary = true;
-            },
-            &has_result));
-    task_environment_.RunUntilIdle();
-    ASSERT_TRUE(has_result);
-  }
-
-  // Now, a range request that is NOT cross-origin (but the provider is already
-  // tainted).
-  {
-    HlsDataSourceProvider::SegmentQueue segments;
-    segments.emplace(GURL("http://example.com"),
-                     hls::types::ByteRange::Validate(10, 0));
-
-    auto* mock_data_source = factory_->PregenerateNextMock();
-    // This one doesn't taint, but the provider is already tainted.
-    EXPECT_CALL(*mock_data_source, WouldTaintOrigin())
-        .WillRepeatedly(Return(false));
-
-    bool has_error = false;
-    impl_->ReadFromCombinedUrlQueue(
-        std::move(segments),
-        base::BindOnce(
-            [](bool* error_canary, HlsDataSourceProvider::ReadResult result) {
-              if (!result.has_value()) {
-                *error_canary =
-                    (std::move(result).error() ==
-                     HlsDataSourceProvider::ReadStatus::Codes::kError);
-              }
-            },
-            &has_error));
-
-    task_environment_.RunUntilIdle();
-    ASSERT_TRUE(has_error);
-  }
-}
-
-TEST_F(HlsDataSourceProviderImplUnittest, TestRangeThenCrossorigin) {
-  HlsDataSourceProvider::SegmentQueue segments;
-  // First segment: same-origin range request.
-  segments.emplace(GURL("http://a.com/init"),
-                   hls::types::ByteRange::Validate(10, 0));
-  // Second segment: cross-origin non-range request.
-  segments.emplace(GURL("http://b.com/media"), std::nullopt);
-
-  // Setup for the first segment (init)
-  {
-    auto* mock_data_source = factory_->PregenerateNextMock();
-    EXPECT_CALL(*mock_data_source, WouldTaintOrigin())
-        .WillRepeatedly(Return(false));
-    EXPECT_CALL(*mock_data_source, Initialize)
-        .WillOnce(base::test::RunOnceCallback<0>(true));
-    EXPECT_CALL(*mock_data_source, Read(0, SpanSizeEq(10), _))
-        .WillOnce(base::test::RunOnceCallback<2>(10));
-    EXPECT_CALL(*mock_data_source, Stop());
-  }
-
-  std::unique_ptr<HlsDataSourceStream> stream;
-  impl_->ReadFromCombinedUrlQueue(
-      std::move(segments), base::BindOnce(
-                               [](std::unique_ptr<HlsDataSourceStream>* extract,
-                                  HlsDataSourceProvider::ReadResult result) {
-                                 ASSERT_TRUE(result.has_value());
-                                 *extract = std::move(result).value();
-                               },
-                               &stream));
-
-  task_environment_.RunUntilIdle();
-  ASSERT_NE(stream, nullptr);
-  ASSERT_TRUE(stream->RequiresNextDataSource());
-
-  // Setup for the second segment (media) - it's cross-origin!
-  {
-    auto* mock_data_source = factory_->PregenerateNextMock();
-    EXPECT_CALL(*mock_data_source, WouldTaintOrigin())
-        .WillRepeatedly(Return(true));
-    // It should fail before Initialize/Read/Stop.
-    EXPECT_CALL(*mock_data_source, Initialize).Times(0);
-  }
-
-  bool has_error = false;
-  impl_->ReadFromExistingStream(
-      std::move(stream),
-      base::BindOnce(
-          [](bool* error_canary, HlsDataSourceProvider::ReadResult result) {
-            if (!result.has_value()) {
-              *error_canary =
-                  (std::move(result).error() ==
-                   HlsDataSourceProvider::ReadStatus::Codes::kError);
-            }
-          },
-          &has_error));
-
-  task_environment_.RunUntilIdle();
-  ASSERT_TRUE(has_error);
-}
 
 }  // namespace media

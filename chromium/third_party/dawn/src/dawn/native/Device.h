@@ -81,6 +81,7 @@ class Blob;
 class BlobCache;
 class CallbackTaskManager;
 class DynamicUploader;
+class MemoryBlockAllocator;
 class ErrorScope;
 class ErrorScopeStack;
 class OwnedCompilationMessages;
@@ -295,7 +296,9 @@ class DeviceBase : public ErrorSink,
 
     // For Dawn Wire
     BufferBase* APICreateErrorBuffer(const BufferDescriptor* desc);
+    ComputePipelineBase* APICreateErrorComputePipeline(StringView label);
     ExternalTextureBase* APICreateErrorExternalTexture();
+    RenderPipelineBase* APICreateErrorRenderPipeline(StringView label);
     TextureBase* APICreateErrorTexture(const TextureDescriptor* desc);
 
     AdapterBase* APIGetAdapter();
@@ -336,6 +339,8 @@ class DeviceBase : public ErrorSink,
 
     DynamicUploader* GetDynamicUploader() const;
 
+    MemoryBlockAllocator* GetMemoryBlockAllocator();
+
     // The device state which is a combination of creation state and loss state.
     //
     //   - BeingCreated: the device didn't finish creation yet and the frontend cannot be used
@@ -344,7 +349,7 @@ class DeviceBase : public ErrorSink,
     //   - Alive: the device is usable and might have work happening on the GPU timeline.
     //   - BeingDisconnected: the device is no longer usable because we are waiting for all
     //     work on the GPU timeline to finish. (this is to make validation prevent the
-    //     application from adding more work during the transition from Available to
+    //     application from adding more work during the transition from Alive to
     //     Disconnected)
     //   - Disconnected: there is no longer work happening on the GPU timeline and the CPU data
     //     structures can be safely destroyed without additional synchronization.
@@ -429,6 +434,9 @@ class DeviceBase : public ErrorSink,
 
     // Whether the backend needs to validate the indirect buffer on GPU.
     virtual bool NeedsIndirectGPUValidation() const;
+
+    // Whether the GPU is known to be a tile-based (deferred) renderer, based on vendor/device ID.
+    bool IsTileBasedRenderer() const;
 
     bool HasFeature(Feature feature) const;
 
@@ -647,6 +655,7 @@ class DeviceBase : public ErrorSink,
     Ref<TextureViewBase> mExternalTexturePlaceholderView;
 
     std::unique_ptr<DynamicUploader> mDynamicUploader;
+    std::unique_ptr<MemoryBlockAllocator> mMemoryBlockAllocator;
     Ref<QueueBase> mQueue;
 
     std::atomic<uint32_t> mEmittedCompilationLogCount = 0;

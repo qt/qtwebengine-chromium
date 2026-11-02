@@ -344,18 +344,18 @@ CPWL_Wnd::CreateParams CFFL_FormField::GetCreateParam() {
 
   std::optional<FX_COLORREF> color = widget_->GetFillColor();
   if (color.has_value()) {
-    cp.sBackgroundColor = CFX_Color(color.value());
+    cp.sBackgroundColor = CFX_Color::FromColorRef(color.value());
   }
   color = widget_->GetBorderColor();
   if (color.has_value()) {
-    cp.sBorderColor = CFX_Color(color.value());
+    cp.sBorderColor = CFX_Color::FromColorRef(color.value());
   }
 
-  cp.sTextColor = CFX_Color(CFX_Color::Type::kGray, 0);
+  cp.sTextColor = CFX_Color::MakeGray(0.0f);
 
   color = widget_->GetTextColor();
   if (color.has_value()) {
-    cp.sTextColor = CFX_Color(color.value());
+    cp.sTextColor = CFX_Color::FromColorRef(color.value());
   }
 
   cp.fFontSize = widget_->GetFontSize();

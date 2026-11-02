@@ -20,20 +20,21 @@
 // endorsements are created and signed on the fly. For other tests (in
 // particular negative ones) see verifier_tests.rs.
 
+use oak_digest::raw_to_hex_digest;
 use oak_proto_rust::oak::{
-    attestation::v1::{
-        binary_reference_value, extracted_evidence::EvidenceValues, kernel_binary_reference_value,
-        reference_values, tcb_version_reference_value, text_reference_value, AmdSevReferenceValues,
-        ApplicationLayerEndorsements, ApplicationLayerReferenceValues, BinaryReferenceValue,
-        ContainerLayerEndorsements, ContainerLayerReferenceValues, Endorsements, ExtractedEvidence,
-        KernelBinaryReferenceValue, KernelLayerEndorsements, KernelLayerReferenceValues,
-        OakContainersEndorsements, OakContainersReferenceValues, OakRestrictedKernelEndorsements,
-        OakRestrictedKernelReferenceValues, ReferenceValues, RootLayerEndorsements,
-        RootLayerReferenceValues, SkipVerification, StringLiterals, SystemLayerEndorsements,
-        SystemLayerReferenceValues, TcbVersionReferenceValue, TextReferenceValue,
-        TransparentReleaseEndorsement,
-    },
     RawDigest,
+    attestation::v1::{
+        AmdSevReferenceValues, ApplicationLayerEndorsements, ApplicationLayerReferenceValues,
+        BinaryReferenceValue, ContainerLayerEndorsements, ContainerLayerReferenceValues,
+        Endorsements, ExtractedEvidence, KernelBinaryReferenceValue, KernelLayerEndorsements,
+        KernelLayerReferenceValues, OakContainersEndorsements, OakContainersReferenceValues,
+        OakRestrictedKernelEndorsements, OakRestrictedKernelReferenceValues, ReferenceValues,
+        RootLayerEndorsements, RootLayerReferenceValues, SkipVerification, StringLiterals,
+        SystemLayerEndorsements, SystemLayerReferenceValues, TcbVersionReferenceValue,
+        TextReferenceValue, TransparentReleaseEndorsement, binary_reference_value,
+        extracted_evidence::EvidenceValues, kernel_binary_reference_value, reference_values,
+        tcb_version_reference_value, text_reference_value,
+    },
 };
 use oak_sev_snp_attestation_report::AttestationReport;
 use test_util::attestation_data::AttestationData;
@@ -45,13 +46,13 @@ use crate::{
         binary_reference_value_for_endorser_pk, fake_endorsement, new_random_signing_keypair,
         serialize_and_sign_endorsement,
     },
-    verifier::{to_attestation_results, verify, Status},
+    verifier::{Status, to_attestation_results, verify},
 };
 
-// Pretend the tests run at this time: 1 Nov 2024, 12:00 UTC. This date
+// Pretend the tests run at this time: 2025-10-01, 08:00 UTC. This date
 // must be valid with respect to the period hardwired in
 // test_util::fake_endorsement().
-const NOW_UTC_MILLIS: i64 = 1730462400000;
+const NOW_UTC_MILLIS: i64 = 1_759_305_600_000;
 
 #[test]
 fn test_milan_oc_staging_success() {
@@ -87,12 +88,41 @@ fn test_milan_rk_staging_success() {
     assert!(p.status() == Status::Success);
 }
 
+#[test]
+fn event_log_with_unbound_event_is_rejected() {
+    let d = AttestationData::load_milan_oc_staging();
+    let event_log = d.evidence.event_log.as_ref().expect("no event log");
+
+    // Genuine evidence carries one event per DICE layer, so the binding validates.
+    super::validate_that_event_log_is_captured_in_dice_layers(
+        event_log,
+        &d.evidence.layers,
+        super::EventLogType::OriginalEventLog.into(),
+    )
+    .expect("genuine event log should validate");
+
+    // An event that no DICE layer commits to must be rejected: the surplus event is
+    // not captured anywhere in the chain, yet it would still be decoded as a
+    // measurement downstream.
+    let mut tampered = event_log.clone();
+    tampered.encoded_events.push(b"unbound event".to_vec());
+    assert!(
+        super::validate_that_event_log_is_captured_in_dice_layers(
+            &tampered,
+            &d.evidence.layers,
+            super::EventLogType::OriginalEventLog.into(),
+        )
+        .is_err()
+    );
+}
+
 fn create_endorsement(
     digest: &RawDigest,
     claim_types: Vec<&str>,
 ) -> (TransparentReleaseEndorsement, p256::PublicKey) {
+    let hex_digest = raw_to_hex_digest(digest);
     let (signing_key, verifying_key) = new_random_signing_keypair();
-    let statement = fake_endorsement(digest, claim_types);
+    let statement = fake_endorsement(&hex_digest, claim_types);
     let (endorsement, signature) = serialize_and_sign_endorsement(&statement, signing_key);
     (
         TransparentReleaseEndorsement {
@@ -190,17 +220,26 @@ fn create_oc_endorsements_reference_values(
                 root_layer: Some(RootLayerReferenceValues {
                     amd_sev: Some(AmdSevReferenceValues {
                         min_tcb_version: Some(tcb_version),
-                        milan: Some(TcbVersionReferenceValue { r#type: Some(tcb_version_reference_value::Type::Minimum(tcb_version)) }),
-                        genoa: Some(TcbVersionReferenceValue { r#type: Some(tcb_version_reference_value::Type::Minimum(tcb_version)) }),
-                        turin: Some(TcbVersionReferenceValue { r#type: Some(tcb_version_reference_value::Type::Minimum(tcb_version)) }),
+                        milan: Some(TcbVersionReferenceValue {
+                            r#type: Some(tcb_version_reference_value::Type::Minimum(tcb_version)),
+                        }),
+                        genoa: Some(TcbVersionReferenceValue {
+                            r#type: Some(tcb_version_reference_value::Type::Minimum(tcb_version)),
+                        }),
+                        turin: Some(TcbVersionReferenceValue {
+                            r#type: Some(tcb_version_reference_value::Type::Minimum(tcb_version)),
+                        }),
                         allow_debug: false,
+                        check_vcek_cert_expiry: true,
                         stage0: Some(skip.clone()),
                     }),
                     ..Default::default()
                 }),
                 kernel_layer: Some(KernelLayerReferenceValues {
                     kernel: Some(KernelBinaryReferenceValue {
-                        r#type: Some(kernel_binary_reference_value::Type::Skip(SkipVerification {})),
+                        r#type: Some(kernel_binary_reference_value::Type::Skip(
+                            SkipVerification {},
+                        )),
                     }),
                     kernel_cmd_line_text: Some(TextReferenceValue {
                         r#type: Some(text_reference_value::Type::StringLiterals(StringLiterals {
@@ -314,6 +353,7 @@ fn create_rk_endorsements_reference_values(
                                 )),
                             }),
                             allow_debug: false,
+                            check_vcek_cert_expiry: true,
                             stage0: Some(skip.clone()),
                         }),
                         ..Default::default()

@@ -71,9 +71,9 @@ class CFGAS_Break {
   void SetBreakStatus();
   bool HasLine() const { return ready_line_index_ >= 0; }
   bool IsGreaterThanLineWidth(int32_t width) const;
-  FX_CHARTYPE GetUnifiedCharType(FX_CHARTYPE dwType) const;
+  CharType GetUnifiedCharType(CharType dwType) const;
 
-  FX_CHARTYPE char_type_ = FX_CHARTYPE::kUnknown;
+  CharType char_type_ = CharType::kUnknown;
   bool single_line_ = false;
   bool comb_text_ = false;
   Mask<LayoutStyle> layout_styles_ = LayoutStyle::kNone;

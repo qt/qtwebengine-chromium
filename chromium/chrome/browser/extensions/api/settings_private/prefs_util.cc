@@ -13,6 +13,7 @@
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/accessibility/tree_fixing/pref_names.h"
+#include "chrome/browser/autofill/generated_find_and_fill_with_gemini_pref.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part.h"
 #include "chrome/browser/content_settings/generated_cookie_prefs.h"
@@ -22,7 +23,6 @@
 #include "chrome/browser/extensions/api/settings_private/generated_prefs_factory.h"
 #include "chrome/browser/extensions/settings_api_helpers.h"
 #include "chrome/browser/glic/glic_pref_names.h"
-#include "chrome/browser/glic/public/glic_enabling.h"
 #include "chrome/browser/metrics/profile_pref_names.h"
 #include "chrome/browser/nearby_sharing/common/nearby_share_prefs.h"
 #include "chrome/browser/password_manager/generated_password_leak_detection_pref.h"
@@ -34,6 +34,7 @@
 #include "chrome/browser/ui/safety_hub/safety_hub_prefs.h"
 #include "chrome/browser/ui/tabs/tab_strip_prefs.h"
 #include "chrome/browser/ui/toolbar/toolbar_pref_names.h"
+#include "chrome/common/chrome_features.h"
 #include "chrome/common/extensions/api/settings_private.h"
 #include "chrome/common/pref_names.h"
 #include "components/autofill/core/common/autofill_prefs.h"
@@ -43,6 +44,7 @@
 #include "components/component_updater/pref_names.h"
 #include "components/compose/buildflags.h"
 #include "components/content_settings/core/common/pref_names.h"
+#include "components/contextual_search/pref_names.h"
 #include "components/contextual_tasks/public/prefs.h"
 #include "components/dom_distiller/core/pref_names.h"
 #include "components/drive/drive_pref_names.h"
@@ -57,12 +59,14 @@
 #include "components/payments/core/payment_prefs.h"
 #include "components/performance_manager/public/user_tuning/prefs.h"
 #include "components/permissions/pref_names.h"
+#include "components/personal_context/core/personal_context_prefs.h"
 #include "components/prefs/pref_service.h"
 #include "components/privacy_sandbox/privacy_sandbox_prefs.h"
 #include "components/proxy_config/proxy_config_pref_names.h"
 #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "components/saved_tab_groups/public/pref_names.h"
 #include "components/search_engines/default_search_manager.h"
+#include "components/search_engines/search_engines_pref_names.h"
 #include "components/signin/public/base/signin_pref_names.h"
 #include "components/skills/public/skills_prefs.h"
 #include "components/spellcheck/browser/pref_names.h"
@@ -95,7 +99,6 @@
 #include "chrome/browser/ash/policy/core/browser_policy_connector_ash.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/ash/settings/supervised_user_cros_settings_provider.h"
-#include "chrome/browser/ash/system/timezone_util.h"
 #include "chrome/browser/extensions/api/settings_private/chromeos_resolve_time_zone_by_geolocation_method_short.h"
 #include "chrome/browser/extensions/api/settings_private/chromeos_resolve_time_zone_by_geolocation_on_off.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
@@ -153,6 +156,12 @@ bool IsSettingReadOnly(const std::string& pref_name) {
   // download.default_directory is used to display the directory location and
   // for policy indicators, but should not be changed directly.
   if (pref_name == prefs::kDownloadDefaultDirectory) {
+    return true;
+  }
+
+  // The pref is only used for deciding when to display a data logging
+  // disclaimer - users cannot change it directly.
+  if (pref_name == optimization_guide::prefs::kFindAndFillWithGeminiSettings) {
     return true;
   }
 
@@ -236,6 +245,8 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
     BUILDFLAG(IS_CHROMEOS)
   (*s_allowlist)[autofill::prefs::kAutofillBnplEnabled] =
       settings_api::PrefType::kBoolean;
+  (*s_allowlist)[autofill::prefs::kAutofillAtMemoryTriggerInfo] =
+      settings_api::PrefType::kDictionary;
   (*s_allowlist)[autofill::prefs::kAutofillAiIdentityEntitiesEnabled] =
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[autofill::prefs::kAutofillAiShoppingEntitiesEnabled] =
@@ -244,10 +255,22 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[autofill::prefs::kAutofillAiTravelEntitiesEnabled] =
       settings_api::PrefType::kBoolean;
+  (*s_allowlist)[personal_context::prefs::
+                     kPersonalContextInAutofillSettingsToggleStatus] =
+      settings_api::PrefType::kBoolean;
+  (*s_allowlist)[autofill::kGeneratedFindAndFillWithGeminiPref] =
+      settings_api::PrefType::kBoolean;
+  (*s_allowlist)[optimization_guide::prefs::kFindAndFillWithGeminiSettings] =
+      settings_api::PrefType::kNumber;
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
         // BUILDFLAG(IS_CHROMEOS)
   (*s_allowlist)[payments::kCanMakePaymentEnabled] =
       settings_api::PrefType::kBoolean;
+  if (base::FeatureList::IsEnabled(
+          features::kGlicActorAutofillOneTimePassword)) {
+    (*s_allowlist)[autofill::prefs::kAutofillGmailOtpFillingEnabled] =
+        settings_api::PrefType::kBoolean;
+  }
   (*s_allowlist)[bookmarks::prefs::kShowBookmarkBar] =
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[bookmarks::prefs::kBookmarkBarVisibilityState] =
@@ -262,11 +285,9 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[::prefs::kVerticalTabsExpandOnHoverEnabled] =
       settings_api::PrefType::kBoolean;
-  (*s_allowlist)[::prefs::kTabSearchRightAligned] =
-      settings_api::PrefType::kBoolean;
   (*s_allowlist)[::prefs::kTabSearchPinnedToTabstrip] =
       settings_api::PrefType::kBoolean;
-  (*s_allowlist)[::prefs::kProjectsPanelPinnedToTabstrip] =
+  (*s_allowlist)[::prefs::kOrganizerPanelPinnedToTabstrip] =
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[::prefs::kEverythingMenuPinnedToTabstrip] =
       settings_api::PrefType::kBoolean;
@@ -278,6 +299,8 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
       settings_api::PrefType::kBoolean;
 #endif
   (*s_allowlist)[::prefs::kShowHomeButton] = settings_api::PrefType::kBoolean;
+  (*s_allowlist)[contextual_search::kDriveConsentState] =
+      settings_api::PrefType::kNumber;
   (*s_allowlist)[::prefs::kShowForwardButton] =
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[::prefs::kPinContextualTaskButton] =
@@ -320,6 +343,8 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
   (*s_allowlist)[::prefs::kWebkitTabsToLinks] =
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[::prefs::kConfirmToQuitEnabled] =
+      settings_api::PrefType::kBoolean;
+  (*s_allowlist)[::prefs::kGlassFrameEnabled] =
       settings_api::PrefType::kBoolean;
 #endif
   (*s_allowlist)[prefs::kHoverCardImagesEnabled] =
@@ -546,6 +571,8 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
   // Search page.
   (*s_allowlist)[DefaultSearchManager::kDefaultSearchProviderDataPrefName] =
       settings_api::PrefType::kDictionary;
+  (*s_allowlist)[::prefs::kDefaultSearchProviderEnabled] =
+      settings_api::PrefType::kBoolean;
   (*s_allowlist)[::omnibox::kKeywordSpaceTriggeringEnabled] =
       settings_api::PrefType::kBoolean;
 
@@ -575,17 +602,11 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
   // Clear browsing data settings.
   (*s_allowlist)[browsing_data::prefs::kDeleteBrowsingHistory] =
       settings_api::PrefType::kBoolean;
-  (*s_allowlist)[browsing_data::prefs::kDeleteBrowsingHistoryBasic] =
-      settings_api::PrefType::kBoolean;
   (*s_allowlist)[browsing_data::prefs::kDeleteDownloadHistory] =
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[browsing_data::prefs::kDeleteCache] =
       settings_api::PrefType::kBoolean;
-  (*s_allowlist)[browsing_data::prefs::kDeleteCacheBasic] =
-      settings_api::PrefType::kBoolean;
   (*s_allowlist)[browsing_data::prefs::kDeleteCookies] =
-      settings_api::PrefType::kBoolean;
-  (*s_allowlist)[browsing_data::prefs::kDeleteCookiesBasic] =
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[browsing_data::prefs::kDeletePasswords] =
       settings_api::PrefType::kBoolean;
@@ -596,10 +617,6 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
   (*s_allowlist)[browsing_data::prefs::kDeleteHostedAppsData] =
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[browsing_data::prefs::kDeleteTimePeriod] =
-      settings_api::PrefType::kNumber;
-  (*s_allowlist)[browsing_data::prefs::kDeleteTimePeriodBasic] =
-      settings_api::PrefType::kNumber;
-  (*s_allowlist)[browsing_data::prefs::kLastClearBrowsingDataTab] =
       settings_api::PrefType::kNumber;
 
   // Accessibility.
@@ -1162,13 +1179,15 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[ash::prefs::kPowerBatterySaver] =
       settings_api::PrefType::kBoolean;
-  (*s_allowlist)[::prefs::kConsumerAutoUpdateToggle] =
+  (*s_allowlist)[ash::prefs::kConsumerAutoUpdateToggle] =
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[::ash::prefs::kChargingSoundsEnabled] =
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[::ash::prefs::kLowBatterySoundEnabled] =
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[::ash::prefs::kInputVoiceIsolationEnabled] =
+      settings_api::PrefType::kBoolean;
+  (*s_allowlist)[::ash::prefs::kAudioFocusEnforcementEnabled] =
       settings_api::PrefType::kBoolean;
   (*s_allowlist)[::ash::prefs::kInputVoiceIsolationPreferredEffect] =
       settings_api::PrefType::kNumber;
@@ -1232,7 +1251,7 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
       settings_api::PrefType::kBoolean;
 
 #if BUILDFLAG(IS_CHROMEOS)
-  (*s_allowlist)[::prefs::kDocumentScanAPITrustedExtensions] =
+  (*s_allowlist)[::ash::prefs::kDocumentScanAPITrustedExtensions] =
       settings_api::PrefType::kList;
   (*s_allowlist)[::prefs::kPrintingAPIExtensionsAllowlist] =
       settings_api::PrefType::kList;
@@ -1364,27 +1383,33 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
       settings_api::PrefType::kNumber;
 
   // Glic prefs
-  if (glic::GlicEnabling::IsEnabledByGlobalCriteria()) {
-    (*s_allowlist)[glic::prefs::kGlicPinnedToTabstrip] =
-        settings_api::PrefType::kBoolean;
-    (*s_allowlist)[glic::prefs::kGlicLauncherEnabled] =
-        settings_api::PrefType::kBoolean;
-    (*s_allowlist)[glic::prefs::kGlicClosedCaptioningEnabled] =
-        settings_api::PrefType::kBoolean;
-    (*s_allowlist)[glic::prefs::kGlicGeolocationEnabled] =
-        settings_api::PrefType::kBoolean;
-    (*s_allowlist)[glic::prefs::kGlicMicrophoneEnabled] =
-        settings_api::PrefType::kBoolean;
-    (*s_allowlist)[glic::prefs::kGlicTabContextEnabled] =
-        settings_api::PrefType::kBoolean;
-    (*s_allowlist)[glic::prefs::kGlicDefaultTabContextEnabled] =
-        settings_api::PrefType::kBoolean;
-    (*s_allowlist)[glic::prefs::kGlicUserStatus] =
-        settings_api::PrefType::kDictionary;
-    (*s_allowlist)[prefs::kGeminiSettings] = settings_api::PrefType::kNumber;
-    (*s_allowlist)[glic::prefs::kGlicKeepSidepanelOpenOnNewTabsEnabled] =
-        settings_api::PrefType::kBoolean;
-  }
+  (*s_allowlist)[glic::prefs::kGlicPinnedToTabstrip] =
+      settings_api::PrefType::kBoolean;
+  (*s_allowlist)[glic::prefs::kGlicLauncherEnabled] =
+      settings_api::PrefType::kBoolean;
+  (*s_allowlist)[glic::prefs::kGlicClosedCaptioningEnabled] =
+      settings_api::PrefType::kBoolean;
+  (*s_allowlist)[glic::prefs::kGlicMediaUnderstandingEnabled] =
+      settings_api::PrefType::kBoolean;
+  (*s_allowlist)[glic::prefs::kGlicGeolocationEnabled] =
+      settings_api::PrefType::kBoolean;
+  (*s_allowlist)[glic::prefs::kGlicMicrophoneEnabled] =
+      settings_api::PrefType::kBoolean;
+  (*s_allowlist)[glic::prefs::kGlicTabContextEnabled] =
+      settings_api::PrefType::kBoolean;
+  (*s_allowlist)[glic::prefs::kGlicDefaultTabContextEnabled] =
+      settings_api::PrefType::kBoolean;
+  (*s_allowlist)[glic::prefs::kGlicUserStatus] =
+      settings_api::PrefType::kDictionary;
+  (*s_allowlist)[optimization_guide::prefs::kGeminiSettings] =
+      settings_api::PrefType::kNumber;
+  (*s_allowlist)[glic::prefs::kGlicKeepSidepanelOpenOnNewTabsEnabled] =
+      settings_api::PrefType::kBoolean;
+  (*s_allowlist)[glic::prefs::kGlicHotkeyGlobalScopeEnabled] =
+      settings_api::PrefType::kBoolean;
+
+  // Dictation / Voice typing prefs
+  (*s_allowlist)[prefs::kVoiceTypingHotkey] = settings_api::PrefType::kString;
 
   return *s_allowlist;
 }
@@ -1710,7 +1735,8 @@ bool PrefsUtil::IsPrefEnterpriseManaged(const std::string& pref_name) {
   // (kSystemTimezonePolicy and kSystemTimezoneAutomaticDetectionPolicy).
   if (pref_name == ash::kSystemTimezone ||
       pref_name == ash::prefs::kUserTimezone) {
-    return ash::system::IsTimezonePrefsManaged(pref_name);
+    return ash::system::IsTimezonePrefsManaged(
+        CHECK_DEREF(g_browser_process->local_state()), pref_name);
   }
 
   return IsPrivilegedCrosSetting(pref_name);

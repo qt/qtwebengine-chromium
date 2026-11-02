@@ -4,13 +4,19 @@
 
 #include "third_party/blink/renderer/core/highlight/highlight_registry.h"
 
+#include <optional>
+
+#include "base/functional/function_ref.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_highlight_hit_result.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_highlights_from_point_options.h"
 #include "third_party/blink/renderer/core/dom/abstract_range.h"
+#include "third_party/blink/renderer/core/dom/element.h"
+#include "third_party/blink/renderer/core/dom/node_range.h"
 #include "third_party/blink/renderer/core/dom/opaque_range.h"
 #include "third_party/blink/renderer/core/dom/static_range.h"
 #include "third_party/blink/renderer/core/dom/text.h"
 #include "third_party/blink/renderer/core/dom/tree_scope.h"
+#include "third_party/blink/renderer/core/editing/editing_utilities.h"
 #include "third_party/blink/renderer/core/editing/ephemeral_range.h"
 #include "third_party/blink/renderer/core/editing/markers/custom_highlight_marker.h"
 #include "third_party/blink/renderer/core/editing/markers/document_marker_controller.h"
@@ -20,10 +26,47 @@
 #include "third_party/blink/renderer/core/highlight/highlight_style_utils.h"
 #include "third_party/blink/renderer/core/html/forms/text_control_element.h"
 #include "third_party/blink/renderer/core/layout/hit_test_result.h"
+#include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/layout/layout_text.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 
 namespace blink {
+
+namespace {
+
+// Returns whether a custom highlight should tint `element` as a whole: it is a
+// replaced box (the only kind PaintCustomHighlights paints) that opts in as a
+// selection leaf, so ::selection and ::highlight() both paint the same types
+// of nodes (canvas/SVG roots and boxes with painted children like <video> are
+// excluded).
+bool IsTrackableReplacedElement(const Element& element) {
+  const LayoutObject* layout_object = element.GetLayoutObject();
+  return layout_object && layout_object->IsLayoutReplaced() &&
+         layout_object->CanBeSelectionLeaf();
+}
+
+// Resolves `abstract_range` to an EphemeralRange for geometry queries. When the
+// OpaqueRange feature is enabled and the range is opaque, this builds its inner
+// value-geometry range and returns std::nullopt if that can't be built.
+std::optional<EphemeralRange> ResolveEphemeralRange(
+    AbstractRange* abstract_range,
+    Document* document) {
+  if (RuntimeEnabledFeatures::OpaqueRangeEnabled(
+          document->GetExecutionContext())) {
+    if (auto* opaque_range = DynamicTo<OpaqueRange>(abstract_range)) {
+      Range* inner_range = opaque_range->BuildValueGeometryContext();
+      if (!inner_range) {
+        return std::nullopt;
+      }
+      return EphemeralRange(inner_range);
+    }
+  }
+  auto* node_range = DynamicTo<NodeRange>(abstract_range);
+  CHECK(node_range);
+  return EphemeralRange(node_range);
+}
+
+}  // namespace
 
 HighlightRegistry* HighlightRegistry::From(LocalDOMWindow& window) {
   HighlightRegistry* supplement =
@@ -47,6 +90,7 @@ void HighlightRegistry::Trace(blink::Visitor* visitor) const {
   visitor->Trace(frame_);
   visitor->Trace(active_iterators_);
   visitor->Trace(active_highlights_in_node_);
+  visitor->Trace(active_highlights_in_replaced_element_);
   ScriptWrappable::Trace(visitor);
   Supplement<LocalDOMWindow>::Trace(visitor);
 }
@@ -75,10 +119,12 @@ bool HighlightRegistry::IsAbstractRangePaintable(AbstractRange* abstract_range,
     }
   }
 
-  if (!abstract_range->startContainer() ||
-      !abstract_range->startContainer()->isConnected() ||
-      !abstract_range->endContainer() ||
-      !abstract_range->endContainer()->isConnected()) {
+  auto* node_range = DynamicTo<NodeRange>(abstract_range);
+  CHECK(node_range);
+  if (!node_range->startContainer() ||
+      !node_range->startContainer()->isConnected() ||
+      !node_range->endContainer() ||
+      !node_range->endContainer()->isConnected()) {
     return false;
   }
 
@@ -97,21 +143,33 @@ void HighlightRegistry::ValidateHighlightMarkers() {
   if (!document)
     return;
 
-  // Markers are still valid if there were no changes in DOM or style and there
-  // were no calls to |HighlightRegistry::ScheduleRepaint|, so we can avoid
-  // rebuilding them.
-  if (dom_tree_version_for_validate_highlight_markers_ ==
-          document->DomTreeVersion() &&
-      style_version_for_validate_highlight_markers_ ==
-          document->StyleVersion() &&
-      !force_markers_validation_) {
+  // Markers and the replaced-element highlights are still valid if neither the
+  // DOM nor style changed and there were no calls to
+  // `HighlightRegistry::ScheduleRepaint`, so we can avoid rebuilding them.
+  const bool dom_changed = dom_tree_version_for_validate_highlight_markers_ !=
+                           document->DomTreeVersion();
+  const bool style_changed =
+      style_version_for_validate_highlight_markers_ != document->StyleVersion();
+  if (!dom_changed && !style_changed && !force_markers_validation_) {
     return;
   }
+
+  const bool force_invalidate_replaced =
+      force_markers_validation_ || style_changed;
 
   dom_tree_version_for_validate_highlight_markers_ = document->DomTreeVersion();
   style_version_for_validate_highlight_markers_ = document->StyleVersion();
   force_markers_validation_ = false;
   active_highlights_in_node_.clear();
+
+  // Save the previous set of replaced elements so we can invalidate paint on
+  // any element whose set of active highlights has changed (added, removed, or
+  // membership differs). The marker-based pipeline below handles invalidation
+  // for text nodes, but replaced elements have no markers.
+  HeapHashMap<WeakMember<const Element>, HashSet<AtomicString>>
+      previous_active_highlights_in_replaced_element;
+  previous_active_highlights_in_replaced_element.swap(
+      active_highlights_in_replaced_element_);
 
   DocumentMarkerController& markers_controller = document->Markers();
 
@@ -142,25 +200,32 @@ void HighlightRegistry::ValidateHighlightMarkers() {
     const auto& highlight_name = highlight_registry_map_entry->highlight_name;
     const auto& highlight = highlight_registry_map_entry->highlight;
     for (const auto& abstract_range : highlight->GetRanges()) {
-      if (IsAbstractRangePaintable(abstract_range, document)) {
-        EphemeralRange eph_range;
-        if (RuntimeEnabledFeatures::OpaqueRangeEnabled(
-                document->GetExecutionContext()) &&
-            abstract_range->IsOpaqueRange()) {
-          auto* opaque_range = static_cast<OpaqueRange*>(abstract_range.Get());
-          Range* inner_range = opaque_range->BuildValueGeometryContext();
-          if (inner_range) {
-            eph_range = EphemeralRange(inner_range);
-          } else {
-            continue;
-          }
-        } else {
-          eph_range = EphemeralRange(abstract_range);
-        }
-
-        markers_controller.AddCustomHighlightMarker(eph_range, highlight_name,
-                                                    highlight);
+      if (!IsAbstractRangePaintable(abstract_range, document)) {
+        continue;
       }
+      std::optional<EphemeralRange> eph_range =
+          ResolveEphemeralRange(abstract_range.Get(), document);
+      if (!eph_range) {
+        continue;
+      }
+
+      // Track replaced elements (e.g. <img>) covered by this range in the
+      // same TextIterator pass that builds the text markers. The marker
+      // pipeline emits an object replacement character for each replaced
+      // element it crosses and reports it through this callback; the marker
+      // pipeline itself still only creates markers for text nodes, so
+      // without this callback the ::highlight() background would never paint
+      // over images.
+      auto track_replaced_element = [&](const Element& element) {
+        if (IsTrackableReplacedElement(element) &&
+            IsNodeFullyContained(*eph_range, element)) {
+          TrackReplacedElementForHighlight(element, highlight_name);
+        }
+      };
+      base::FunctionRef<void(const Element&)> on_replaced_element(
+          track_replaced_element);
+      markers_controller.AddCustomHighlightMarker(
+          *eph_range, highlight_name, highlight, &on_replaced_element);
     }
   }
 
@@ -203,6 +268,51 @@ void HighlightRegistry::ValidateHighlightMarkers() {
       layout_object->InvalidateVisualOverflow();
     }
   }
+
+  // Invalidate paint on any replaced element whose set of active highlights
+  // changed. Additionally, when a highlight mutation or style mutation forced
+  // this re-validation (force_invalidate_replaced==true), unconditionally
+  // invalidate every currently tracked replaced element.
+  auto invalidate_replaced = [](const Element* element) {
+    if (LayoutObject* layout_object = element->GetLayoutObject()) {
+      layout_object->SetShouldDoFullPaintInvalidationWithoutLayoutChange(
+          PaintInvalidationReason::kStyle);
+    }
+  };
+  for (const auto& entry : previous_active_highlights_in_replaced_element) {
+    const Element* element = entry.key.Get();
+    auto it = active_highlights_in_replaced_element_.find(element);
+    if (it == active_highlights_in_replaced_element_.end() ||
+        it->value != entry.value) {
+      invalidate_replaced(element);
+    }
+  }
+  for (const auto& entry : active_highlights_in_replaced_element_) {
+    const Element* element = entry.key.Get();
+    if (force_invalidate_replaced ||
+        !previous_active_highlights_in_replaced_element.Contains(element)) {
+      invalidate_replaced(element);
+    }
+  }
+}
+
+const HashSet<AtomicString>&
+HighlightRegistry::GetActiveHighlightsForReplacedElement(
+    const Element& element) const {
+  auto it = active_highlights_in_replaced_element_.find(&element);
+  if (it == active_highlights_in_replaced_element_.end()) {
+    DEFINE_STATIC_LOCAL(const HashSet<AtomicString>, empty_set, ());
+    return empty_set;
+  }
+  return it->value;
+}
+
+void HighlightRegistry::TrackReplacedElementForHighlight(
+    const Element& element,
+    const AtomicString& highlight_name) {
+  auto add_result = active_highlights_in_replaced_element_.insert(
+      &element, HashSet<AtomicString>());
+  add_result.stored_value->value.insert(highlight_name);
 }
 
 const HashSet<AtomicString>& HighlightRegistry::GetActiveHighlights(
@@ -452,33 +562,28 @@ HeapVector<Member<HighlightHitResult>> HighlightRegistry::highlightsFromPoint(
       // If the range starts and ends in a different tree scope than the hit
       // node (i.e., the range encloses a shadow tree), do not return it when
       // the hit is on a node inside that shadow tree. Only consider ranges
-      // within the same tree scope as the hit node.
-      auto* opaque_range = RuntimeEnabledFeatures::OpaqueRangeEnabled(
-                               document->GetExecutionContext())
-                               ? DynamicTo<OpaqueRange>(abstract_range.Get())
-                               : nullptr;
-      if (!opaque_range && abstract_range->startContainer()->GetTreeScope() !=
-                               hit_node->GetTreeScope()) {
+      // within the same tree scope as the hit node. OpaqueRanges are internal
+      // to a text control and always share the hit node's effective scope.
+      if (!IsAbstractRangePaintable(abstract_range, document)) {
         continue;
       }
 
-      if (IsAbstractRangePaintable(abstract_range, document)) {
-        EphemeralRange ephemeral_range;
-        if (opaque_range) {
-          Range* inner_range = opaque_range->BuildValueGeometryContext();
-          if (!inner_range) {
-            continue;
-          }
-          ephemeral_range = EphemeralRange(inner_range);
-        } else {
-          ephemeral_range = EphemeralRange(abstract_range);
-        }
-        Vector<gfx::QuadF> quads = ComputeTextBounds(ephemeral_range);
-        for (const auto& quad : quads) {
-          if (quad.Contains(hit_point)) {
-            highlight_ranges_hit.push_back(abstract_range);
-            break;
-          }
+      auto* node_range = DynamicTo<NodeRange>(abstract_range.Get());
+      if (node_range && node_range->startContainer()->GetTreeScope() !=
+                            hit_node->GetTreeScope()) {
+        continue;
+      }
+
+      std::optional<EphemeralRange> ephemeral_range =
+          ResolveEphemeralRange(abstract_range.Get(), document);
+      if (!ephemeral_range) {
+        continue;
+      }
+      Vector<gfx::QuadF> quads = ComputeTextBounds(*ephemeral_range);
+      for (const auto& quad : quads) {
+        if (quad.Contains(hit_point)) {
+          highlight_ranges_hit.push_back(abstract_range);
+          break;
         }
       }
     }

@@ -23,7 +23,6 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "src/dsp/constants.h"
 #include "src/dsp/dsp.h"
 #include "src/dsp/x86/common_sse4.h"
 #include "src/utils/common.h"

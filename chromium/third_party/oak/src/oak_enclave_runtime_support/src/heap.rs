@@ -37,7 +37,7 @@ impl Source {
 unsafe impl FlexSource for Source {
     unsafe fn alloc(&mut self, min_size: usize) -> Option<NonNull<[u8]>> {
         // Ensure that we're allocating page-sized chunks of memory.
-        let size = if min_size % Self::PAGE_SIZE != 0 {
+        let size = if !min_size.is_multiple_of(Self::PAGE_SIZE) {
             Self::PAGE_SIZE * ((min_size / Self::PAGE_SIZE) + 1)
         } else {
             min_size
@@ -95,7 +95,7 @@ impl GrowableHeap {
     ///  - The memory block must have been allocated with the same alignment
     ///    ([`Layout::align`]) as `align`.
     pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, align: usize) {
-        self.heap.deallocate(ptr, align)
+        unsafe { self.heap.deallocate(ptr, align) }
     }
 }
 
@@ -122,6 +122,8 @@ unsafe impl GlobalAlloc for LockedGrowableHeap {
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {
-        self.0.lock().deallocate(NonNull::new_unchecked(ptr), layout.align())
+        unsafe {
+            self.0.lock().deallocate(NonNull::new_unchecked(ptr), layout.align());
+        }
     }
 }

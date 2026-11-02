@@ -15,6 +15,7 @@
 #include "examples/file_writer.h"
 
 #include <cerrno>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <memory>
@@ -27,6 +28,7 @@
 #endif
 
 #include "examples/logging.h"
+#include "gav1/decoder_buffer.h"
 
 namespace libgav1 {
 namespace {

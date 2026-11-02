@@ -84,6 +84,8 @@ inline constexpr char kPagePrintDataTransferEventTrigger[] = "PAGE_PRINT";
 inline constexpr char kUrlVisitedDataTransferEventTrigger[] = "URL_VISITED";
 inline constexpr char kClipboardCopyDataTransferEventTrigger[] =
     "CLIPBOARD_COPY";
+inline constexpr char kNetworkRequestDataTransferEventTrigger[] =
+    "NETWORK_REQUEST";
 inline constexpr char kFileTransferDataTransferEventTrigger[] = "FILE_TRANSFER";
 inline constexpr char kPageLoadDataTransferEventTrigger[] = "PAGE_LOAD";
 inline constexpr char kMutationDataTransferEventTrigger[] = "MUTATION";
@@ -97,6 +99,8 @@ inline constexpr char kContentTransferMethodDragAndDrop[] =
     "CONTENT_TRANSFER_METHOD_DRAG_AND_DROP";
 inline constexpr char kContentTransferMethodFilePaste[] =
     "CONTENT_TRANSFER_METHOD_FILE_PASTE";
+inline constexpr char kContentTransferMethodClipboardCopy[] =
+    "CONTENT_TRANSFER_METHOD_CLIPBOARD_COPY";
 
 // All the reporting events that can be set in the `enabled_events_names` field
 // of `ReportingSettings`

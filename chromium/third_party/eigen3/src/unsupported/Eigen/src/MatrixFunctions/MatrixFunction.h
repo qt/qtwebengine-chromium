@@ -99,7 +99,7 @@ MatrixType MatrixFunctionAtomic<MatrixType>::compute(const MatrixType& A) {
 
 /** \brief Find cluster in \p clusters containing some value
  * \param[in] key Value to find
- * \returns Iterator to cluster containing \p key, or \c clusters.end() if no cluster in \p m_clusters
+ * \returns Iterator to cluster containing \p key, or \c clusters.end() if no cluster in \p clusters
  * contains \p key.
  */
 template <typename Index, typename ListOfClusters>
@@ -345,7 +345,7 @@ void matrix_function_compute_above_diagonal(const MatrixType& T, const VectorTyp
  * \tparam  IsComplex   used internally to select correct specialization.
  *
  * This class implements the Schur-Parlett algorithm for computing matrix functions. The spectrum of the
- * matrix is divided in clustered of eigenvalues that lies close together. This class delegates the
+ * matrix is divided into clusters of eigenvalues that lie close together. This class delegates the
  * computation of the matrix function on every block corresponding to these clusters to an object of type
  * \p AtomicType and uses these results to compute the matrix function of the whole matrix. The class
  * \p AtomicType should have a \p compute() member function for computing the matrix function of a block.
@@ -449,7 +449,7 @@ struct matrix_function_compute<MatrixType, 1> {
  *
  * This class holds the argument to the matrix function until it is assigned or evaluated for some other
  * reason (so the argument should not be changed in the meantime). It is the return type of
- * matrixBase::matrixFunction() and related functions and most of the time this is the only way it is used.
+ * MatrixBase::matrixFunction() and related functions and most of the time this is the only way it is used.
  */
 template <typename Derived>
 class MatrixFunctionReturnValue : public ReturnByValue<MatrixFunctionReturnValue<Derived> > {

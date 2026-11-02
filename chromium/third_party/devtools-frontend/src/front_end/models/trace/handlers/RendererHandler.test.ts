@@ -974,16 +974,6 @@ describeWithEnvironment('RendererHandler', function() {
     ]);
   });
 
-  it('keeps the processes associated with AuctionWorklets and assigns them URLs', async () => {
-    const {Renderer, AuctionWorklets} = await handleEventsFromTraceFile(this, 'fenced-frame-fledge.json.gz');
-    assert.strictEqual(AuctionWorklets.worklets.size, 3);
-    for (const [pid] of AuctionWorklets.worklets) {
-      const process = Renderer.processes.get(pid);
-      assert.exists(process);
-      // Ensure that the URL was set properly based on the AuctionWorklets metadata event.
-      assert.isTrue(process?.url?.includes('fledge-demo.glitch.me'));
-    }
-  });
   describe('ThirdParty', () => {
     it('correctly creates entities (simple)', async function() {
       const {Renderer} = await handleEventsFromTraceFile(this, 'load-simple.json.gz');

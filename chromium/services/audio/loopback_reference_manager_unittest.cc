@@ -36,6 +36,7 @@ namespace {
 using ReferenceOpenOutcome = ReferenceSignalProvider::ReferenceOpenOutcome;
 using OpenOutcome = media::AudioInputStream::OpenOutcome;
 using AudioInputCallback = media::AudioInputStream::AudioInputCallback;
+using Error = media::AudioInputStream::AudioInputCallback::Error;
 
 class MockAudioLog : public media::AudioLog {
  public:
@@ -419,7 +420,7 @@ TEST_F(LoopbackReferenceManagerTest, StreamCreateError) {
       &mock_listener, output_device_id_);
   EXPECT_EQ(outcome, ReferenceOpenOutcome::STREAM_CREATE_ERROR);
   histogram_tester.ExpectUniqueSample(
-      "Media.Audio.LoopbackReference.OpenResult",
+      "Media.Audio.LoopbackReference.OpenResult2",
       static_cast<int>(ReferenceOpenOutcome::STREAM_CREATE_ERROR), 1);
   histogram_tester.ExpectTotalCount(
       "Media.Audio.LoopbackReference.HadRuntimeError", 0);
@@ -461,7 +462,7 @@ void LoopbackReferenceManagerTest::TestStreamOpenError(
       &mock_listener, output_device_id_);
   EXPECT_EQ(outcome, expected_reference_open_outcome);
   histogram_tester.ExpectUniqueSample(
-      "Media.Audio.LoopbackReference.OpenResult",
+      "Media.Audio.LoopbackReference.OpenResult2",
       static_cast<int>(expected_reference_open_outcome), 1);
   histogram_tester.ExpectTotalCount(
       "Media.Audio.LoopbackReference.HadRuntimeError", 0);
@@ -512,7 +513,7 @@ TEST_F(LoopbackReferenceManagerTest, OnReferenceStreamError) {
   // deleted. Note that this will not normally be called on the main thread, but
   // we do so in this test to check the various cases in which the scheduled
   // deletion interacts with StartListening() and GetReferenceSignalProvider().
-  audio_callback->OnError();
+  audio_callback->OnError(Error::kRuntimeError);
 
   // We have had an error but destruction of the core has not yet occurred, so
   // listening will be successful.
@@ -552,10 +553,10 @@ TEST_F(LoopbackReferenceManagerTest, OnReferenceStreamError) {
   }
 
   histogram_tester.ExpectBucketCount(
-      "Media.Audio.LoopbackReference.OpenResult",
+      "Media.Audio.LoopbackReference.OpenResult2",
       static_cast<int>(ReferenceOpenOutcome::SUCCESS), 3);
   histogram_tester.ExpectBucketCount(
-      "Media.Audio.LoopbackReference.OpenResult",
+      "Media.Audio.LoopbackReference.OpenResult2",
       static_cast<int>(ReferenceOpenOutcome::STREAM_PREVIOUS_ERROR), 1);
   histogram_tester.ExpectUniqueSample(
       "Media.Audio.LoopbackReference.HadRuntimeError", true, 1);
@@ -583,7 +584,7 @@ TEST_F(LoopbackReferenceManagerTest, StopListeningAfterOnError) {
   AudioInputCallback* audio_callback = *(mock_input_stream->captured_callback_);
 
   // Send an error.
-  audio_callback->OnError();
+  audio_callback->OnError(Error::kRuntimeError);
 
   // Stop listening to the provider before the error has been processed.
   reference_signal_provider->StopListening(&mock_listener);
@@ -703,7 +704,7 @@ TEST_F(LoopbackReferenceManagerTest, DeliversErrorsOnMainThread) {
       FROM_HERE, base::BindOnce(
                      [](base::WaitableEvent* fired_error_event,
                         AudioInputCallback* audio_callback) {
-                       audio_callback->OnError();
+                       audio_callback->OnError(Error::kRuntimeError);
                        fired_error_event->Signal();
                      },
                      &fired_error_event, audio_callback));

@@ -165,13 +165,13 @@ ${exampleAsMarkdown}`,
                 properties: {
                   rubric: {type: 'string', description: 'The name of the rubric.'},
                   score: {type: 'number', description: 'A numerical score assigned by the AI.'},
-                  reason: {type: 'string', description: 'A string containing the reasons for the assigned score.'}
+                  reason: {type: 'string', description: 'A string containing the reasons for the assigned score.'},
                 },
-                required: ['rubric', 'score', 'reason']
-              }
-            }
+                required: ['rubric', 'score', 'reason'],
+              },
+            },
           },
-          required: ['rubricScores']
+          required: ['rubricScores'],
         });
     const r = JSON.parse(response) as {rubricScores: RubricScore[]};
     return {rubricScores: r.rubricScores, rubricWeights};

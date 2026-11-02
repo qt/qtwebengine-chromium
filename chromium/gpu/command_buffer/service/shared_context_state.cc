@@ -4,7 +4,9 @@
 
 #include "gpu/command_buffer/service/shared_context_state.h"
 
+#include "base/atomic_sequence_num.h"
 #include "base/compiler_specific.h"
+#include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/immediate_crash.h"
 #include "base/metrics/histogram_functions.h"
@@ -55,6 +57,10 @@
 
 #if BUILDFLAG(ENABLE_VULKAN)
 #include <vulkan/vulkan.h>
+// X11 Xlib.h defines Status as int and X.h defines Success as 0, both
+// conflicting with wgpu::Status::Success.
+#undef Status
+#undef Success
 
 #include "components/viz/common/gpu/vulkan_context_provider.h"
 #include "gpu/vulkan/vulkan_device_queue.h"
@@ -816,37 +822,46 @@ bool SharedContextState::InitializeGLWithFeatureInfo(
   return true;
 }
 
-void SharedContextState::FlushGraphiteRecorder() {
+bool SharedContextState::FlushGraphiteRecorder() {
   auto recording = gpu_main_graphite_recorder()->snap();
-  if (recording) {
-    skgpu::graphite::InsertRecordingInfo info = {};
-    info.fRecording = recording.get();
-    graphite_shared_context()->insertRecording(info);
+  if (!recording) {
+    return false;
   }
+
+  skgpu::graphite::InsertRecordingInfo info = {};
+  info.fRecording = recording.get();
+  return graphite_shared_context()->insertRecording(info);
 }
 
-void SharedContextState::FlushAndSubmit(bool sync_to_cpu) {
+bool SharedContextState::FlushAndSubmit(bool sync_to_cpu) {
   if (graphite_shared_context()) {
-    FlushGraphiteRecorder();
+    bool flush_succeeded = FlushGraphiteRecorder();
+    // We submit any pending GPU work despite insertRecording failing since the
+    // caller can expect any resources used to be eventually released when the
+    // submitted work is done on the GPU.
     graphite_shared_context()->submit(sync_to_cpu
                                           ? skgpu::graphite::SyncToCpu::kYes
                                           : skgpu::graphite::SyncToCpu::kNo);
+    return flush_succeeded;
   } else if (gr_context()) {
-    gr_context()->flushAndSubmit(sync_to_cpu ? GrSyncCpu::kYes
-                                             : GrSyncCpu::kNo);
+    return gr_context()
+        ->flushAndSubmit(sync_to_cpu ? GrSyncCpu::kYes : GrSyncCpu::kNo)
+        .fSuccess;
   }
+  return true;
 }
 
-void SharedContextState::FlushWriteAccess(
+bool SharedContextState::FlushWriteAccess(
     SkiaImageRepresentation::ScopedWriteAccess* access) {
   static int flush_count = 0;
   const base::TimeTicks start = base::TimeTicks::Now();
+  bool success = true;
   if (graphite_shared_context()) {
     // The only way to flush GPU work with Graphite is to snap and insert a
     // recording here. It's also necessary to submit before dropping the scoped
     // access since we want the Dawn texture to be alive on submit, but that's
     // handled in SubmitIfNecessary.
-    FlushGraphiteRecorder();
+    success = FlushGraphiteRecorder();
   } else {
     if (access->HasBackendSurfaceEndState()) {
       access->ApplyBackendSurfaceEndState();
@@ -857,7 +872,7 @@ void SharedContextState::FlushWriteAccess(
       for (int plane_index = 0; plane_index < num_planes; plane_index++) {
         auto* surface = access->surface(plane_index);
         DCHECK(surface);
-        skgpu::ganesh::Flush(surface);
+        success &= skgpu::ganesh::Flush(surface).fSuccess;
       }
     }
   }
@@ -867,9 +882,10 @@ void SharedContextState::FlushWriteAccess(
         "GPU.RasterDecoder.TimeToFlush", base::TimeTicks::Now() - start,
         base::Microseconds(1), base::Seconds(1), 100);
   }
+  return success;
 }
 
-void SharedContextState::SubmitIfNecessary(
+bool SharedContextState::SubmitIfNecessary(
     std::vector<GrBackendSemaphore> signal_semaphores,
     bool need_graphite_submit) {
   if (graphite_shared_context() && need_graphite_submit) {
@@ -881,33 +897,35 @@ void SharedContextState::SubmitIfNecessary(
     // and DrDC is not enabled.
     CHECK(signal_semaphores.empty());
     graphite_shared_context()->submit(skgpu::graphite::SyncToCpu::kNo);
-    return;
+    return true;
   }
 
-  // Do nothing here if there is no context.
+  // Do nothing here if there is no Skia Ganesh GrContext.
   if (!gr_context()) {
-    return;
+    return true;
   }
 
   // Note that when DrDc is enabled, we need to call
   // AddVulkanCleanupTaskForSkiaFlush() on gpu main thread and do skia flush.
   // This will ensure that vulkan memory allocated on gpu main thread will be
   // cleaned up.
+  SCOPED_CRASH_KEY_BOOL("gpu", "DrDcEnabled", is_drdc_enabled_);
+  SCOPED_CRASH_KEY_NUMBER("gpu", "SignalSemaphores", signal_semaphores.size());
   if (!signal_semaphores.empty() || is_drdc_enabled_) {
-    // NOTE: The Graphite SharedImage representation does not set semaphores,
-    // and we are not enabling DrDC with Graphite.
-    CHECK(gr_context());
     GrFlushInfo flush_info = {
         .fNumSemaphores = signal_semaphores.size(),
         .fSignalSemaphores = signal_semaphores.data(),
     };
     gpu::AddVulkanCleanupTaskForSkiaFlush(vk_context_provider(), &flush_info);
 
-    auto result = gr_context()->flush(flush_info);
-    DCHECK_EQ(result, GrSemaphoresSubmitted::kYes);
+    if (gr_context()->flush(flush_info) != GrSemaphoresSubmitted::kYes) {
+      base::debug::DumpWithoutCrashing();
+      return false;
+    }
   }
 
   bool sync_cpu = gpu::ShouldVulkanSyncCpuForSkiaSubmit(vk_context_provider());
+  SCOPED_CRASH_KEY_BOOL("gpu", "SubmitSyncCpu", sync_cpu);
 
   // If DrDc is enabled, submit the gr_context() to ensure correct ordering
   // of vulkan commands between raster and display compositor.
@@ -919,10 +937,12 @@ void SharedContextState::SubmitIfNecessary(
   const bool need_submit =
       sync_cpu || !signal_semaphores.empty() || is_drdc_enabled_;
 
-  if (need_submit) {
-    CHECK(gr_context());
-    gr_context()->submit(sync_cpu ? GrSyncCpu::kYes : GrSyncCpu::kNo);
+  if (need_submit &&
+      !gr_context()->submit(sync_cpu ? GrSyncCpu::kYes : GrSyncCpu::kNo)) {
+    base::debug::DumpWithoutCrashing();
+    return false;
   }
+  return true;
 }
 
 bool SharedContextState::MakeCurrent(gl::GLSurface* surface, bool needs_gl) {
@@ -1377,7 +1397,7 @@ int32_t SharedContextState::GetMaxTextureSize() {
     if (dawn_context_provider()) {
       wgpu::Limits limits = {};
       auto succeded = dawn_context_provider()->GetDevice().GetLimits(&limits);
-      CHECK(succeded);
+      CHECK(succeded == wgpu::Status::Success);
       max_texture_size = limits.maxTextureDimension2D;
     }
 #endif  // BUILDFLAG(SKIA_USE_DAWN)

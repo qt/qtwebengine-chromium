@@ -13,14 +13,31 @@ namespace {
 
 CFX_GEModule* g_GEModule = nullptr;
 
+#if BUILDFLAG(IS_WIN)
+WindowsPrintMode g_print_mode = WindowsPrintMode::kEmf;
+#endif
+
 }  // namespace
 
+#if BUILDFLAG(IS_WIN)
 // static
-void CFX_GEModule::Create(const char** pUserFontPaths,
-                          RendererType renderer_type,
-                          CFX_FontMgr::FontBackend backend) {
+void CFX_GEModule::SetPrintMode(WindowsPrintMode mode) {
+  g_print_mode = mode;
+}
+
+// static
+WindowsPrintMode CFX_GEModule::GetPrintMode() {
+  return g_print_mode;
+}
+#endif
+
+// static
+void CFX_GEModule::Create(
+    std::optional<pdfium::span<const char* const>> user_font_paths,
+    RendererType renderer_type,
+    CFX_FontMgr::FontBackend backend) {
   DCHECK(!g_GEModule);
-  g_GEModule = new CFX_GEModule(pUserFontPaths, renderer_type, backend);
+  g_GEModule = new CFX_GEModule(user_font_paths, renderer_type, backend);
   g_GEModule->platform_->Init();
   g_GEModule->font_mgr_->GetBuiltinMapper()->SetSystemFontInfo(
       g_GEModule->platform_->CreateDefaultSystemFontInfo());
@@ -40,12 +57,13 @@ CFX_GEModule* CFX_GEModule::Get() {
   return g_GEModule;
 }
 
-CFX_GEModule::CFX_GEModule(const char** pUserFontPaths,
-                           RendererType renderer_type,
-                           CFX_FontMgr::FontBackend backend)
+CFX_GEModule::CFX_GEModule(
+    std::optional<pdfium::span<const char* const>> user_font_paths,
+    RendererType renderer_type,
+    CFX_FontMgr::FontBackend backend)
     : renderer_type_(renderer_type),
       platform_(PlatformIface::Create()),
       font_mgr_(std::make_unique<CFX_FontMgr>(backend)),
-      user_font_paths_(pUserFontPaths) {}
+      user_font_paths_(user_font_paths) {}
 
 CFX_GEModule::~CFX_GEModule() = default;

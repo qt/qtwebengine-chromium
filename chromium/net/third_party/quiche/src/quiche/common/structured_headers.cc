@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"
+#include "absl/base/attributes.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/escaping.h"
@@ -21,6 +22,7 @@
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
+#include "quiche/common/platform/api/quiche_client_stats.h"
 #include "quiche/common/platform/api/quiche_flag_utils.h"
 #include "quiche/common/platform/api/quiche_logging.h"
 
@@ -49,6 +51,31 @@ constexpr char kBase64Chars[] = DIGIT UCALPHA LCALPHA "+/=";
 #undef DIGIT
 #undef LCALPHA
 #undef UCALPHA
+
+// Decodes a base64-encoded string, synthesizing padding if necessary.
+// https://www.rfc-editor.org/rfc/rfc8941.html#section-4.2.7
+std::optional<std::string> LenientBase64Decode(absl::string_view s) {
+  std::string base64(s);
+  base64.resize((base64.size() + 3) / 4 * 4, '=');
+  std::string binary;
+  if (!absl::Base64Unescape(base64, &binary)) {
+    return std::nullopt;
+  }
+  return binary;
+}
+
+// Decodes a base64-encoded string, but only if it strictly follows the RFC 8941
+// alphabet (no whitespace, no characters outside ALPHA, DIGIT, +, /, =).
+std::optional<std::string> StrictBase64Decode(absl::string_view s) {
+  if (s.find_first_not_of(kBase64Chars) != absl::string_view::npos) {
+    return std::nullopt;
+  }
+  std::string binary;
+  if (!absl::Base64Unescape(s, &binary)) {
+    return std::nullopt;
+  }
+  return binary;
+}
 
 // https://www.rfc-editor.org/rfc/rfc8941.html#section-3.3.1
 constexpr int64_t kMaxInteger = 999'999'999'999'999L;
@@ -183,7 +210,7 @@ class StructuredHeaderParser {
     QUICHE_CHECK_EQ(version_, kFinal);
     Dictionary members;
     while (!input_.empty()) {
-      std::optional<std::string> key(ReadKey());
+      std::optional<absl::string_view> key(ReadKey());
       if (!key) return std::nullopt;
       std::optional<ParameterizedMember> member;
       if (ConsumeChar('=')) {
@@ -232,7 +259,7 @@ class StructuredHeaderParser {
     while (ConsumeChar(';')) {
       SkipWhitespaces();
 
-      std::optional<std::string> name = ReadKey();
+      std::optional<absl::string_view> name = ReadKey();
       if (!name) return std::nullopt;
 
       Item value;
@@ -269,12 +296,12 @@ class StructuredHeaderParser {
   // Parses Parameters ([RFC8941] 4.2.3.2)
   std::optional<Parameters> ReadParameters() {
     Parameters parameters;
-    absl::flat_hash_set<std::string> keys;
+    absl::flat_hash_set<absl::string_view> keys;
 
     while (ConsumeChar(';')) {
       SkipWhitespaces();
 
-      std::optional<std::string> name = ReadKey();
+      std::optional<absl::string_view> name = ReadKey();
       if (!name) return std::nullopt;
       bool is_duplicate_key = !keys.insert(*name).second;
 
@@ -292,7 +319,7 @@ class StructuredHeaderParser {
           }
         }
       } else {
-        parameters.emplace_back(std::move(*name), std::move(value));
+        parameters.emplace_back(*name, std::move(value));
       }
     }
     return parameters;
@@ -322,7 +349,7 @@ class StructuredHeaderParser {
   }
 
   // Parses a Key ([SH09] 4.2.2, [RFC8941] 4.2.3.3).
-  std::optional<std::string> ReadKey() {
+  std::optional<absl::string_view> ReadKey() ABSL_ATTRIBUTE_LIFETIME_BOUND {
     if (version_ == kDraft09) {
       if (input_.empty() || !absl::ascii_islower(input_.front())) {
         LogParseError("ReadKey", "lcalpha");
@@ -339,7 +366,7 @@ class StructuredHeaderParser {
         (version_ == kDraft09 ? kKeyChars09 : kKeyChars);
     size_t len = input_.find_first_not_of(allowed_chars);
     if (len == absl::string_view::npos) len = input_.size();
-    std::string key(input_.substr(0, len));
+    absl::string_view key = input_.substr(0, len);
     input_.remove_prefix(len);
     return key;
   }
@@ -396,12 +423,20 @@ class StructuredHeaderParser {
         LogParseError("ReadNumber", "too many digits after decimal");
         return std::nullopt;
       }
+      // TODO(b/517189418): This is never reached due to an off-by-one error.
       if (i == decimal_position) {
         LogParseError("ReadNumber", "no digits after decimal");
         return std::nullopt;
       }
+      // Counter to track instances of b/517189418 in which trailing decimal
+      // points are erroneously accepted.
+      QUICHE_CLIENT_HISTOGRAM_BOOL(
+          "StructuredHeaders.DecimalWithZeroFractionalDigits",
+          i == decimal_position + 1,
+          "Whether a decimal point is erroneously accepted without any "
+          "digits following it.");
     }
-    std::string output_number_string(input_.substr(0, i));
+    absl::string_view output_number_string = input_.substr(0, i);
     input_.remove_prefix(i);
 
     if (is_decimal) {
@@ -441,7 +476,7 @@ class StructuredHeaderParser {
         QUICHE_DVLOG(1) << "ReadString: missing closing '\"'";
         return std::nullopt;
       }
-      s.append(std::string(input_.substr(0, i)));
+      s.append(input_.substr(0, i));
       input_.remove_prefix(i);
       if (ConsumeChar('\\')) {
         if (input_.empty()) {
@@ -472,32 +507,26 @@ class StructuredHeaderParser {
       return std::nullopt;
     }
 
-    absl::string_view unpadded = input_.substr(0, len);
-    // This check is partially redundant with the call to
-    // `absl::Base64Unescape()` below, but unfortunately that function
-    // allows `.` as a padding byte and does not reject ASCII whitespace, so it
-    // cannot be used in isolation.
-    if (unpadded.find_first_not_of(kBase64Chars) != absl::string_view::npos) {
-      QUICHE_CODE_COUNT(structured_header_invalid_base64_char);
-      // TODO(b/393153699, b/393408763): Early-return here to reject the invalid
-      // input instead of silently proceeding.
+    absl::string_view encoded = input_.substr(0, len);
+    std::optional<std::string> binary = StrictBase64Decode(encoded);
+    bool is_strict = binary.has_value();
+    if (!is_strict) {
+      binary = LenientBase64Decode(encoded);
     }
-
-    // TODO: This string copy shouldn't be necessary, as
-    // `absl::Base64Unescape()` already handles the absence of padding.
-    std::string base64(unpadded);
-    // Append the necessary padding characters.
-    base64.resize((base64.size() + 3) / 4 * 4, '=');
-
-    std::string binary;
-    if (!absl::Base64Unescape(base64, &binary)) {
+    if (binary) {
+      QUICHE_CLIENT_HISTOGRAM_BOOL(
+          "StructuredHeaders.Base64DecodingIsStrictCompliant", is_strict,
+          "Recorded true when RFC 8941 base64 decoding succeeds, false "
+          "when it fails but lenient legacy decoding succeeds.");
+    }
+    if (!binary) {
       QUICHE_DVLOG(1) << "ReadByteSequence: failed to decode base64: "
-                      << base64;
+                      << encoded;
       return std::nullopt;
     }
     input_.remove_prefix(len);
     ConsumeChar(delimiter);
-    return Item(std::move(binary), Item::kByteSequenceType);
+    return Item(std::move(*binary), Item::kByteSequenceType);
   }
 
   // Parses a Boolean ([RFC8941] 4.2.8).
@@ -538,7 +567,7 @@ class StructuredHeaderParser {
     return false;
   }
 
-  void LogParseError(const char* func, const char* expected) {
+  void LogParseError(const char* func, const char* expected) const {
     QUICHE_DVLOG(1) << func << ": " << expected << " expected, got "
                     << (input_.empty()
                             ? "EOS"
@@ -559,7 +588,7 @@ class StructuredHeaderSerializer {
   StructuredHeaderSerializer& operator=(const StructuredHeaderSerializer&) =
       delete;
 
-  std::string Output() { return output_.str(); }
+  std::string Output() && { return std::move(output_).str(); }
 
   // Serializes a List ([RFC8941] 4.1.1).
   bool WriteList(const List& value) {
@@ -929,25 +958,25 @@ std::optional<Dictionary> ParseDictionary(absl::string_view str) {
 
 std::optional<std::string> SerializeItem(const Item& value) {
   StructuredHeaderSerializer s;
-  if (s.WriteItem(ParameterizedItem(value, {}))) return s.Output();
+  if (s.WriteItem(ParameterizedItem(value, {}))) return std::move(s).Output();
   return std::nullopt;
 }
 
 std::optional<std::string> SerializeItem(const ParameterizedItem& value) {
   StructuredHeaderSerializer s;
-  if (s.WriteItem(value)) return s.Output();
+  if (s.WriteItem(value)) return std::move(s).Output();
   return std::nullopt;
 }
 
 std::optional<std::string> SerializeList(const List& value) {
   StructuredHeaderSerializer s;
-  if (s.WriteList(value)) return s.Output();
+  if (s.WriteList(value)) return std::move(s).Output();
   return std::nullopt;
 }
 
 std::optional<std::string> SerializeDictionary(const Dictionary& value) {
   StructuredHeaderSerializer s;
-  if (s.WriteDictionary(value)) return s.Output();
+  if (s.WriteDictionary(value)) return std::move(s).Output();
   return std::nullopt;
 }
 

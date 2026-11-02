@@ -275,11 +275,11 @@ bool CXFA_FFCheckButton::OnLButtonUp(Mask<XFA_FWL_KeyFlag> dwFlags,
 }
 
 XFA_CheckState CXFA_FFCheckButton::FWLState2XFAState() {
-  uint32_t dwState = GetNormalWidget()->GetStates();
-  if (dwState & FWL_STATE_CKB_Checked) {
+  Mask<pdfium::WidgetState> state = GetNormalWidget()->GetStates();
+  if (state & pdfium::WidgetState::kCheckboxChecked) {
     return XFA_CheckState::kOn;
   }
-  if (dwState & FWL_STATE_CKB_Neutral) {
+  if (state & pdfium::WidgetState::kCheckboxNeutral) {
     return XFA_CheckState::kNeutral;
   }
   return XFA_CheckState::kOff;
@@ -297,11 +297,11 @@ bool CXFA_FFCheckButton::IsDataChanged() {
 
 void CXFA_FFCheckButton::SetFWLCheckState(XFA_CheckState eCheckState) {
   if (eCheckState == XFA_CheckState::kNeutral) {
-    GetNormalWidget()->SetStates(FWL_STATE_CKB_Neutral);
+    GetNormalWidget()->SetStates(pdfium::WidgetState::kCheckboxNeutral);
   } else if (eCheckState == XFA_CheckState::kOn) {
-    GetNormalWidget()->SetStates(FWL_STATE_CKB_Checked);
+    GetNormalWidget()->SetStates(pdfium::WidgetState::kCheckboxChecked);
   } else {
-    GetNormalWidget()->RemoveStates(FWL_STATE_CKB_Checked);
+    GetNormalWidget()->ClearStates(pdfium::WidgetState::kCheckboxChecked);
   }
 }
 

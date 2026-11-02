@@ -8,7 +8,7 @@
 namespace pdfium {
 namespace access_permissions {
 
-// PDF 1.7 spec, table 3.20.
+// ISO 32000-1:2008 spec, table 22.
 // User access permissions.
 constexpr uint32_t kModifyContent = 1 << 3;
 constexpr uint32_t kModifyAnnotation = 1 << 5;

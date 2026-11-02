@@ -713,6 +713,11 @@ class ValidationState_t {
   bool IsFP8VectorType(uint32_t id) const;
   bool IsFP8CoopMatType(uint32_t id) const;
   bool IsFP8Type(uint32_t id) const;
+  bool IsOCPMicroscalingScalarType(uint32_t id) const;
+  bool IsOCPMicroscalingNonByteScalarType(uint32_t id) const;
+  bool IsOCPMicroscalingType(uint32_t id) const;
+  bool ContainsOCPMicroscalingType(uint32_t id) const;
+  bool ContainsOCPMicroscalingNonByteType(uint32_t id) const;
   bool IsFloatScalarType(uint32_t id, uint32_t width = 0) const;
   bool IsFloatArrayType(uint32_t id) const;
   bool IsFloatVectorType(uint32_t id) const;
@@ -930,6 +935,23 @@ class ValidationState_t {
   }
   std::string SpvDecorationString(spv::Decoration decoration) {
     return SpvDecorationString(uint32_t(decoration));
+  }
+
+  bool CheckForceOpacityMicromap2StateKHRCapabilityRequirement(
+      const Instruction* inst, uint32_t flag_operand) {
+    bool retval = true;
+    uint64_t flag_val = 0;
+    if (EvalConstantValUint64(inst->GetOperandAs<uint32_t>(flag_operand),
+                              &flag_val)) {
+      if ((flag_val & static_cast<uint64_t>(
+                          spv::RayFlagsMask::ForceOpacityMicromap2StateKHR)) !=
+          0) {
+        assert(HasCapability(spv::Capability::RayQueryKHR) ||
+               HasCapability(spv::Capability::RayTracingKHR));
+        retval = HasCapability(spv::Capability::RayTracingOpacityMicromapKHR);
+      }
+    }
+    return retval;
   }
 
   // Returns whether type result_type_id and type m2 are cooperative matrices

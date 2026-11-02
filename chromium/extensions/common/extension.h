@@ -94,10 +94,10 @@ class Extension final : public base::RefCountedThreadSafe<Extension> {
     WAS_INSTALLED_BY_DEFAULT = 1 << 7,
 
     // Unused - was part of an abandoned experiment.
-    REQUIRE_PERMISSIONS_CONSENT = 1 << 8,
+    // REQUIRE_PERMISSIONS_CONSENT = 1 << 8,
 
     // Unused - this flag has been moved to ExtensionPrefs.
-    IS_EPHEMERAL = 1 << 9,
+    // IS_EPHEMERAL = 1 << 9,
 
     // `WAS_INSTALLED_BY_OEM` installed by an OEM (e.g on Chrome OS) and should
     // be placed in a special OEM folder in the App Launcher. Note: OEM apps are
@@ -237,14 +237,35 @@ class Extension final : public base::RefCountedThreadSafe<Extension> {
   bool OverlapsWithOrigin(const GURL& origin) const;
 
   // Get the manifest data associated with the key, or NULL if there is none.
-  // Can only be called after InitFromValue is finished.
+  // Can only be called after Init is finished.
   const ManifestData* GetManifestData(std::string_view key) const;
 
+  template <class T>
+  const T* GetManifestData() const {
+    static_assert(std::is_base_of_v<ManifestData, T>,
+                  "T must derive from Extension::ManifestData");
+    return static_cast<const T*>(GetManifestData(T::kManifestDataKey));
+  }
+
+  template <class T>
+  const T* GetManifestData(std::string_view key) const {
+    static_assert(std::is_base_of_v<ManifestData, T>,
+                  "T must derive from Extension::ManifestData");
+    return static_cast<const T*>(GetManifestData(key));
+  }
+
   // Sets `data` to be associated with the key.
-  // Can only be called before InitFromValue is finished. Not thread-safe;
+  // Can only be called before Init is finished. Not thread-safe;
   // all SetManifestData calls should be on only one thread.
   void SetManifestData(std::string_view key,
                        std::unique_ptr<ManifestData> data);
+
+  template <class T>
+  void SetManifestData(std::unique_ptr<T> data) {
+    static_assert(std::is_base_of_v<ManifestData, T>,
+                  "T must derive from Extension::ManifestData");
+    SetManifestData(T::kManifestDataKey, std::move(data));
+  }
 
   // Sets the GUID for this extension. Note: this should *only* be used when
   // duplicating an existing extension; otherwise, the GUID will be
@@ -262,7 +283,6 @@ class Extension final : public base::RefCountedThreadSafe<Extension> {
   const HashedExtensionId& hashed_id() const;
   const ExtensionGuid& guid() const;
   const base::Version& version() const { return version_; }
-  const std::string& version_name() const;
   std::string VersionString() const;
   std::string DifferentialFingerprint() const;
   std::string GetVersionForDisplay() const;
@@ -334,30 +354,22 @@ class Extension final : public base::RefCountedThreadSafe<Extension> {
   void AddWebExtentPattern(const URLPattern& pattern);
   const URLPatternSet& web_extent() const { return extent_; }
 
-  // Sets whether to ignore deprecated manifest versions for testing purposes.
-  // PLEASE DON'T USE THIS. Instead:
-  // * Ideally, use the current manifest version (V3)! :)
-  // * Failing that, please instead allow the warning to be emitted by e.g.
-  //   toggling ignore_manifest_warnings on ChromeTestExtensionLoader.
-  static void set_silence_deprecated_manifest_version_warnings_for_testing(
-      bool silence);
-
  private:
   friend class base::RefCountedThreadSafe<Extension>;
 
   Extension(const base::FilePath& path,
+            int creation_flags,
             std::unique_ptr<extensions::Manifest> manifest);
   ~Extension();
 
   // Initialize the extension from a parsed manifest.
-  // TODO(aa): Rename to just Init()? There's no Value here anymore.
   // TODO(aa): It is really weird the way this class essentially contains a copy
   // of the underlying base::DictValue in its members. We should decide to
   // either wrap the base::DictValue and go with that only, or we should parse
   // into strong types and discard the value. But doing both is bad.
-  bool InitFromValue(int flags, std::u16string* error);
+  bool Init(std::u16string* error);
 
-  // The following are helpers for InitFromValue to load various features of the
+  // The following are helpers for Init to load various features of the
   // extension from the manifest.
 
   bool LoadRequiredFeatures(std::vector<InstallWarning>* install_warnings,
@@ -423,7 +435,7 @@ class Extension final : public base::RefCountedThreadSafe<Extension> {
 
   // True if the extension was generated from a user script. (We show slightly
   // different UI if so).
-  bool converted_from_user_script_;
+  bool converted_from_user_script_ = false;
 
   // The public key used to sign the contents of the crx package.
   std::string public_key_;
@@ -436,8 +448,8 @@ class Extension final : public base::RefCountedThreadSafe<Extension> {
       std::map<std::string, std::unique_ptr<ManifestData>, std::less<>>;
   ManifestDataMap manifest_data_;
 
-  // Set to true at the end of InitFromValue when initialization is finished.
-  bool finished_parsing_manifest_;
+  // Set to true at the end of Init when initialization is finished.
+  bool finished_parsing_manifest_ = false;
 
   // Ensures that any call to GetManifestData() prior to finishing
   // initialization happens from the same thread (this can happen when certain
@@ -447,10 +459,10 @@ class Extension final : public base::RefCountedThreadSafe<Extension> {
   // Whether the extension has host permissions or user script patterns that
   // imply access to file:/// scheme URLs (the user may not have actually
   // granted it that access).
-  bool wants_file_access_;
+  bool wants_file_access_ = false;
 
-  // The flags that were passed to InitFromValue.
-  int creation_flags_;
+  // The flags that were passed to the constructor.
+  const int creation_flags_;
 
   // A dynamic ID that can be used when referencing extension resources via URL
   // instead of an extension ID.
@@ -458,27 +470,6 @@ class Extension final : public base::RefCountedThreadSafe<Extension> {
 };
 
 using ExtensionList = std::vector<scoped_refptr<const Extension>>;
-
-// Handy struct to pass core extension info around.
-struct ExtensionInfo {
-  ExtensionInfo(const base::DictValue* manifest,
-                const ExtensionId& id,
-                const base::FilePath& path,
-                mojom::ManifestLocation location);
-  ExtensionInfo(ExtensionInfo&&) noexcept;
-  ExtensionInfo(const ExtensionInfo&) = delete;
-  ExtensionInfo& operator=(const ExtensionInfo&) = delete;
-  ExtensionInfo& operator=(ExtensionInfo&&);
-  ~ExtensionInfo();
-
-  // Note: This may be null (e.g. for unpacked extensions retrieved from the
-  // Preferences file).
-  std::unique_ptr<base::DictValue> extension_manifest;
-
-  ExtensionId extension_id;
-  base::FilePath extension_path;
-  mojom::ManifestLocation extension_location;
-};
 
 }  // namespace extensions
 

@@ -14,6 +14,7 @@
 #include "cc/trees/render_frame_metadata.h"
 #include "components/input/cursor_manager.h"
 #include "content/browser/compositor/surface_utils.h"
+#include "content/browser/pointer_lock_browsertest.h"
 #include "content/browser/renderer_host/render_widget_host_view_child_frame.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/visibility.h"
@@ -44,7 +45,10 @@ class MockSurfaceEmbedConnectorDelegate
   MockSurfaceEmbedConnectorDelegate() = default;
   ~MockSurfaceEmbedConnectorDelegate() = default;
 
-  MOCK_METHOD(void, SetFrameSinkId, (const viz::FrameSinkId&), (override));
+  MOCK_METHOD(void,
+              SetFrameSinkId,
+              (const viz::FrameSinkId&, bool),
+              (override));
   MOCK_METHOD(void,
               UpdateLocalSurfaceIdFromChild,
               (const viz::LocalSurfaceId&),
@@ -154,9 +158,15 @@ class SurfaceEmbedConnectorImplBrowserTest : public ContentBrowserTest {
         static_cast<WebContentsImpl*>(context.child_web_contents.get());
 
     EXPECT_TRUE(NavigateToURL(parent_web_contents_impl, GURL("about:blank")));
+    // Expect SetView of connector to be called during Attach, which calls
+    // delegate's SetFrameSinkId.
+    EXPECT_CALL(*delegate,
+                SetFrameSinkId(testing::_, /*allow_paint_holding=*/false))
+        .Times(1);
     SurfaceEmbedConnector::Attach(
         child_web_contents_impl,
         parent_web_contents_impl->GetPrimaryMainFrame(), delegate);
+    testing::Mock::VerifyAndClearExpectations(delegate);
 
     context.connector = static_cast<SurfaceEmbedConnectorImpl*>(
         child_web_contents_impl->GetSurfaceEmbedConnector());
@@ -176,6 +186,10 @@ class SurfaceEmbedConnectorImplBrowserTest : public ContentBrowserTest {
 
   bool HasKeepSurfaceAlive(SurfaceEmbedConnectorImpl* connector) const {
     return !!connector->keep_surface_alive_;
+  }
+
+  bool HasParentWCObserver(SurfaceEmbedConnectorImpl* connector) const {
+    return !!connector->parent_wc_observer_;
   }
 };
 
@@ -210,6 +224,7 @@ IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorImplBrowserTest,
       static_cast<WebContentsImpl*>(context.parent_web_contents.get());
 
   EXPECT_EQ(connector->GetParentWebContentsView(), parent_impl->GetView());
+  EXPECT_TRUE(HasParentWCObserver(connector));
 
   context.parent_web_contents = nullptr;
   Shell* shell = context.parent_shell;
@@ -219,10 +234,8 @@ IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorImplBrowserTest,
   // Verify connector handles missing parent gracefully where checks exist.
   EXPECT_EQ(connector->GetParentWebContentsView(), nullptr);
   EXPECT_EQ(connector->GetParentRenderViewHostDelegateView(), nullptr);
-
-  // Note: GetInputEventRouter() and GetTextInputManager() in
-  // SurfaceEmbedConnectorImpl currently do not check for null parent, so we
-  // don't test them here to avoid crash.
+  EXPECT_EQ(connector->GetInputEventRouter(), nullptr);
+  EXPECT_EQ(connector->GetTextInputManager(), nullptr);
 }
 
 IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorImplBrowserTest, ConstGetters) {
@@ -318,7 +331,6 @@ IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorImplBrowserTest,
   visual_properties.screen_infos = display::ScreenInfos(screen_info);
   visual_properties.local_frame_size = gfx::Size(100, 200);
   visual_properties.rect_in_local_root = gfx::Rect(10, 20, 300, 400);
-  visual_properties.capture_sequence_number = 5u;
   visual_properties.css_zoom_factor = 1.25;
   visual_properties.local_surface_id =
       viz::LocalSurfaceId(1, base::UnguessableToken::CreateForTesting(2, 3));
@@ -328,16 +340,9 @@ IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorImplBrowserTest,
   connector->UpdateCursor(ui::Cursor());
 
   EXPECT_EQ(connector->HasFocus(),
-            FrameConnector::RootViewFocusState::kNullView);
+            FrameConnector::RootViewFocusState::kFocused);
 
   connector->FocusRootView();  // void
-
-  EXPECT_EQ(connector->LockPointer(false),
-            blink::mojom::PointerLockResult::kUnknownError);
-  EXPECT_EQ(connector->ChangePointerLock(false),
-            blink::mojom::PointerLockResult::kUnknownError);
-
-  connector->UnlockPointer();  // void
 
   EXPECT_TRUE(connector->HasSize());
 
@@ -346,8 +351,6 @@ IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorImplBrowserTest,
 
   // Just check it returns valid reference
   connector->GetIntersectionState();
-
-  EXPECT_EQ(connector->GetCaptureSequenceNumber(), 5u);
 
   EXPECT_EQ(connector->GetRectInParentViewInDip(), gfx::Rect(5, 10, 150, 200));
   EXPECT_EQ(connector->GetLocalFrameSizeInDip(), gfx::Size(50, 100));
@@ -408,7 +411,7 @@ IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorImplBrowserTest, SetView) {
   MockSurfaceEmbedConnectorDelegate delegate;
   auto context = SetupConnectorTest(&delegate);
 
-  EXPECT_CALL(delegate, SetFrameSinkId(testing::_)).Times(1);
+  EXPECT_CALL(delegate, SetFrameSinkId(testing::_, testing::_)).Times(1);
   FrameConnector* original_connector =
       context.rwhvcf->FrameConnectorForTesting();
 
@@ -431,7 +434,7 @@ IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorImplBrowserTest,
   FrameConnector* original_connector =
       context.rwhvcf->FrameConnectorForTesting();
 
-  EXPECT_CALL(delegate, SetFrameSinkId(testing::_)).Times(3);
+  EXPECT_CALL(delegate, SetFrameSinkId(testing::_, testing::_)).Times(3);
 
   context.connector->SetView(context.rwhvcf, false);
 
@@ -442,6 +445,31 @@ IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorImplBrowserTest,
   context.connector->OnVisibilityChanged(
       blink::mojom::FrameVisibility::kNotRendered);
   context.connector->SetView(context.rwhvcf, false);
+
+  context.connector->SetView(nullptr, false);
+  context.rwhvcf->SetFrameConnector(original_connector);
+}
+
+IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorImplBrowserTest,
+                       SetViewPropagatesAllowPaintHolding) {
+  MockSurfaceEmbedConnectorDelegate delegate;
+  auto context = SetupConnectorTest(&delegate);
+
+  FrameConnector* original_connector =
+      context.rwhvcf->FrameConnectorForTesting();
+
+  EXPECT_CALL(delegate,
+              SetFrameSinkId(testing::_, /*allow_paint_holding=*/false))
+      .Times(1);
+  context.connector->SetView(context.rwhvcf, /*allow_paint_holding=*/false);
+  testing::Mock::VerifyAndClearExpectations(&delegate);
+
+  context.connector->SetView(nullptr, false);
+
+  EXPECT_CALL(delegate,
+              SetFrameSinkId(testing::_, /*allow_paint_holding=*/true))
+      .Times(1);
+  context.connector->SetView(context.rwhvcf, /*allow_paint_holding=*/true);
 
   context.connector->SetView(nullptr, false);
   context.rwhvcf->SetFrameConnector(original_connector);
@@ -503,6 +531,72 @@ IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorImplBrowserTest,
 
   // Clean up.
   context.connector->SetView(nullptr, false);
+}
+
+IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorImplBrowserTest,
+                       SameOriginNavigationSetsAllowPaintHolding) {
+  MockSurfaceEmbedConnectorDelegate delegate;
+  auto context = SetupConnectorTest(&delegate);
+
+  display::ScreenInfo screen_info;
+  screen_info.display_id = 1;
+  screen_info.device_scale_factor = 1.0f;
+  screen_info.rect = gfx::Rect(800, 600);
+  screen_info.available_rect = gfx::Rect(800, 600);
+  SetScreenInfos(context.connector, display::ScreenInfos(screen_info));
+  SetLocalSurfaceId(context.connector,
+                    viz::LocalSurfaceId(1, base::UnguessableToken::Create()));
+
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  // Navigate the child to an initial page.
+  GURL url1 = embedded_test_server()->GetURL("a.com", "/title1.html");
+  EXPECT_TRUE(NavigateToURL(context.child_web_contents.get(), url1));
+
+  context.rwhvcf = nullptr;  // Clear raw_ptr to avoid DanglingPtr check.
+
+  // Navigate same-site. The delegate should receive SetFrameSinkId with
+  // allow_paint_holding=true.
+  EXPECT_CALL(delegate,
+              SetFrameSinkId(testing::_, /*allow_paint_holding=*/true))
+      .Times(1);
+
+  GURL url2 = embedded_test_server()->GetURL("a.com", "/title2.html");
+  EXPECT_TRUE(NavigateToURL(context.child_web_contents.get(), url2));
+}
+
+IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorImplBrowserTest,
+                       CrossOriginNavigationNotAllowPaintHolding) {
+  MockSurfaceEmbedConnectorDelegate delegate;
+  auto context = SetupConnectorTest(&delegate);
+
+  display::ScreenInfo screen_info;
+  screen_info.display_id = 1;
+  screen_info.device_scale_factor = 1.0f;
+  screen_info.rect = gfx::Rect(800, 600);
+  screen_info.available_rect = gfx::Rect(800, 600);
+  SetScreenInfos(context.connector, display::ScreenInfos(screen_info));
+  SetLocalSurfaceId(context.connector,
+                    viz::LocalSurfaceId(1, base::UnguessableToken::Create()));
+
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  // Navigate the child to an initial page.
+  GURL url1 = embedded_test_server()->GetURL("a.com", "/title1.html");
+  EXPECT_TRUE(NavigateToURL(context.child_web_contents.get(), url1));
+
+  context.rwhvcf = nullptr;  // Clear raw_ptr to avoid DanglingPtr check.
+
+  // Navigate cross-site without user interaction. The delegate should receive
+  // SetFrameSinkId with allow_paint_holding=false. See code in
+  // Navigator::DidNavigate() for detailed logic on deciding whether to allow
+  // paint holding for main frame.
+  EXPECT_CALL(delegate,
+              SetFrameSinkId(testing::_, /*allow_paint_holding=*/false))
+      .Times(1);
+
+  GURL url2 = embedded_test_server()->GetURL("b.com", "/title2.html");
+  EXPECT_TRUE(NavigateToURL(context.child_web_contents.get(), url2));
 }
 
 IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorImplBrowserTest,
@@ -928,6 +1022,113 @@ IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorImplBrowserTest, UpdateCursor) {
 
   // This should not crash.
   connector_ptr->UpdateCursor(ui::Cursor(ui::mojom::CursorType::kPointer));
+}
+
+class MockPointerLockWebContentsDelegate : public WebContentsDelegate {
+ public:
+  MockPointerLockWebContentsDelegate() = default;
+  ~MockPointerLockWebContentsDelegate() override = default;
+
+  void RequestPointerLock(WebContents* web_contents,
+                          bool user_gesture,
+                          bool last_unlocked_by_target) override {
+    web_contents->GotResponseToPointerLockRequest(
+        blink::mojom::PointerLockResult::kSuccess);
+  }
+
+  void LostPointerLock() override {}
+};
+
+IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorImplBrowserTest, PointerLock) {
+  InstallCreateHooksForPointerLockBrowserTests();
+
+  MockSurfaceEmbedConnectorDelegate delegate;
+  auto context = SetupConnectorTest(&delegate);
+
+  WebContentsImpl* parent_web_contents_impl =
+      static_cast<WebContentsImpl*>(context.parent_web_contents.get());
+  WebContentsImpl* child_web_contents_impl =
+      static_cast<WebContentsImpl*>(context.child_web_contents.get());
+
+  MockPointerLockWebContentsDelegate parent_delegate;
+  parent_web_contents_impl->SetDelegate(&parent_delegate);
+
+  EXPECT_TRUE(NavigateToURL(child_web_contents_impl, GURL("about:blank")));
+
+  child_web_contents_impl->Focus();
+
+  RenderWidgetHostImpl* child_widget =
+      child_web_contents_impl->GetPrimaryMainFrame()->GetRenderWidgetHost();
+
+  // Initially no pointer lock.
+  EXPECT_FALSE(parent_web_contents_impl->mouse_lock_widget_for_testing());
+  EXPECT_FALSE(child_web_contents_impl->mouse_lock_widget_for_testing());
+
+  EXPECT_TRUE(
+      ExecJs(child_web_contents_impl, "document.body.requestPointerLock()"));
+
+  // Since we mocked the delegate to succeed, it should be locked now that we
+  // requested pointer lock from child JS.
+  EXPECT_EQ(child_widget,
+            parent_web_contents_impl->mouse_lock_widget_for_testing());
+  EXPECT_EQ(child_widget,
+            child_web_contents_impl->mouse_lock_widget_for_testing());
+
+  // Unlock.
+  EXPECT_TRUE(ExecJs(child_web_contents_impl, "document.exitPointerLock()"));
+
+  EXPECT_FALSE(parent_web_contents_impl->mouse_lock_widget_for_testing());
+  EXPECT_FALSE(child_web_contents_impl->mouse_lock_widget_for_testing());
+
+  parent_web_contents_impl->SetDelegate(nullptr);
+}
+
+IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorImplBrowserTest,
+                       PointerLockDestruction) {
+  InstallCreateHooksForPointerLockBrowserTests();
+
+  MockSurfaceEmbedConnectorDelegate delegate;
+  auto context = SetupConnectorTest(&delegate);
+
+  WebContentsImpl* parent_web_contents_impl =
+      static_cast<WebContentsImpl*>(context.parent_web_contents.get());
+  WebContentsImpl* child_web_contents_impl =
+      static_cast<WebContentsImpl*>(context.child_web_contents.get());
+
+  MockPointerLockWebContentsDelegate parent_delegate;
+  parent_web_contents_impl->SetDelegate(&parent_delegate);
+
+  EXPECT_TRUE(NavigateToURL(child_web_contents_impl, GURL("about:blank")));
+
+  child_web_contents_impl->Focus();
+
+  RenderWidgetHostImpl* child_widget =
+      child_web_contents_impl->GetPrimaryMainFrame()->GetRenderWidgetHost();
+
+  // Initially no pointer lock.
+  EXPECT_FALSE(parent_web_contents_impl->mouse_lock_widget_for_testing());
+  EXPECT_FALSE(child_web_contents_impl->mouse_lock_widget_for_testing());
+
+  EXPECT_TRUE(
+      ExecJs(child_web_contents_impl, "document.body.requestPointerLock()"));
+
+  // It should be locked.
+  EXPECT_EQ(child_widget,
+            parent_web_contents_impl->mouse_lock_widget_for_testing());
+  EXPECT_EQ(child_widget,
+            child_web_contents_impl->mouse_lock_widget_for_testing());
+
+  // Clear raw_ptrs that will dangle after child destruction.
+  context.connector = nullptr;
+  context.rwhvcf = nullptr;
+
+  // Destroy the child WebContents.
+  context.child_web_contents.reset();
+
+  // Verify that parent WebContents's pointer lock widget is cleared.
+  EXPECT_FALSE(parent_web_contents_impl->mouse_lock_widget_for_testing());
+
+  parent_web_contents_impl->SetDelegate(nullptr);
 }
 
 }  // namespace content

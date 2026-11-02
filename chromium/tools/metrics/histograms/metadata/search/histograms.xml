@@ -86,7 +86,7 @@ chromium-metrics-reviews@google.com.
 </variants>
 
 <histogram name="Search.Ambient.Query" enum="AmbientSearchEntryPoint"
-    expires_after="2026-10-04">
+    expires_after="2026-12-06">
   <owner>juanmojica@google.com</owner>
   <owner>schechter@google.com</owner>
   <owner>stanfield@google.com</owner>
@@ -163,7 +163,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="Search.AuxiliarySearch.DonationCount.{AuxiliarySearchEntryType}"
-    units="count" expires_after="2026-09-24">
+    units="count" expires_after="2026-11-29">
   <owner>hanxi@chromium.org</owner>
   <owner>gangwu@chromium.org</owner>
   <owner>clank-start@google.com</owner>
@@ -286,7 +286,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Search.AuxiliarySearch.Schedule.Favicon.FetchTime" units="ms"
-    expires_after="2026-10-25">
+    expires_after="2026-12-27">
   <owner>hanxi@chromium.org</owner>
   <owner>gangwu@chromium.org</owner>
   <owner>clank-start@google.com</owner>
@@ -346,7 +346,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Search.ChoiceCompletedOnMonth.OnProfileLoad2{Profile}"
-    enum="SearchEngineChoiceDate" expires_after="2026-11-08">
+    enum="SearchEngineChoiceDate" expires_after="2027-01-10">
 <!-- When bumping expiry date, also update the enum (making the enumeration in
 sync with existing values). Escalate when data count exceeds 1000 entries:
 https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/README.md#When-To-Use-Sparse-Histograms -->
@@ -370,6 +370,31 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
     {Profile}
   </summary>
   <token key="Profile" variants="ProfileIndex"/>
+</histogram>
+
+<histogram name="Search.ChoiceDebug.PreexistingProgramTaggedEntries"
+    units="entries" expires_after="2026-12-01">
+  <owner>dgn@google.com</owner>
+  <owner>chrome-regionalcapabilities@google.com</owner>
+  <summary>
+    Recorded on Android whenever a new Play API search engine is set (e.g., via
+    the EEA Choice Screen). Records the total count of pre-existing regulatory
+    program tagged search engines (Android EEA) found in the
+    TemplateURLService's loaded engines list and removed prior to adding the new
+    engine. Identifies how many stale regulatory entries were accumulated and
+    successfully cleaned up.
+  </summary>
+</histogram>
+
+<histogram name="Search.ChoiceDebug.PropagatedDataOutcome"
+    enum="CurrentDefaultPropagationOutcome" expires_after="2026-12-01">
+  <owner>dgn@chromium.org</owner>
+  <owner>chrome-regionalcapabilities@google.com</owner>
+  <summary>
+    Records the outcome of attempting to propagate the search engine choice data
+    from an existing profile to a newly created one. Recorded each time a
+    profile forks or creates a new profile while capturing preferences.
+  </summary>
 </histogram>
 
 <histogram name="Search.ChoiceDebug.ScrollStateWithMoreButtonClick"
@@ -401,7 +426,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.ChoiceDebug.UnhandledChoiceStatusAtLoadTime"
-    enum="SearchEngineChoiceStatus" expires_after="2026-10-18">
+    enum="SearchEngineChoiceStatus" expires_after="2026-12-20">
   <owner>dgn@chromium.org</owner>
   <owner>chrome-regionalcapabilities@google.com</owner>
   <summary>
@@ -418,7 +443,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.ChoiceDebug.UnknownCountryIdStored"
-    enum="UnknownCountryIdStored" expires_after="2026-10-18">
+    enum="UnknownCountryIdStored" expires_after="2026-12-20">
   <owner>cschlosser@chromium.org</owner>
   <owner>chromeos-privacyhub@google.com</owner>
   <owner>chrome-regionalcapabilities@google.com</owner>
@@ -435,7 +460,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.ChoicePrefsCheck.PendingChoiceScreenDisplayStateStatus"
-    enum="PendingChoiceScreenDisplayStateStatus" expires_after="2026-10-18">
+    enum="PendingChoiceScreenDisplayStateStatus" expires_after="2026-12-20">
   <owner>dgn@chromium.org</owner>
   <owner>chrome-regionalcapabilities@google.com</owner>
   <summary>
@@ -455,7 +480,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.ChoicePrefsCheck.WipeOnMissingDse" enum="Boolean"
-    expires_after="2026-10-18">
+    expires_after="2026-12-20">
   <owner>dgn@chromium.org</owner>
   <owner>chrome-regionalcapabilities@google.com</owner>
   <summary>
@@ -468,7 +493,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.ChoiceReprompt{Category}"
-    enum="SearchEngineChoiceReprompt" expires_after="2026-10-25">
+    enum="SearchEngineChoiceReprompt" expires_after="2027-01-03">
   <owner>droger@chromium.org</owner>
   <owner>chrome-regionalcapabilities@google.com</owner>
   <summary>
@@ -484,7 +509,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.ChoiceScreenDefaultSearchEngineType2{Profile}"
-    enum="OmniboxSearchEngineType" expires_after="2026-10-25">
+    enum="OmniboxSearchEngineType" expires_after="2027-01-03">
   <owner>dgn@chromium.org</owner>
   <owner>chrome-regionalcapabilities@google.com</owner>
   <summary>
@@ -501,7 +526,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.ChoiceScreenDefaultSearchEngineType{Profile}"
-    enum="OmniboxSearchEngineType" expires_after="2026-10-25">
+    enum="OmniboxSearchEngineType" expires_after="2027-01-03">
   <owner>dgn@chromium.org</owner>
   <owner>chrome-regionalcapabilities@google.com</owner>
   <summary>
@@ -516,7 +541,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.ChoiceScreenEvents{Context}{Profile}"
-    enum="SearchEngineChoiceScreenEvents" expires_after="2026-09-13">
+    enum="SearchEngineChoiceScreenEvents" expires_after="2026-11-29">
   <owner>dgn@chromium.org</owner>
   <owner>samarchehade@chromium.org</owner>
   <owner>chrome-regionalcapabilities@google.com</owner>
@@ -536,7 +561,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.ChoiceScreenNavigationConditions{Context}{Profile}"
-    enum="SearchEngineChoiceScreenConditions" expires_after="2026-10-25">
+    enum="SearchEngineChoiceScreenConditions" expires_after="2027-01-03">
   <owner>dgn@chromium.org</owner>
   <owner>ljjlee@chromium.org</owner>
   <owner>chrome-regionalcapabilities@google.com</owner>
@@ -556,7 +581,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.ChoiceScreenProfileInitConditions{Context}{Profile}"
-    enum="SearchEngineChoiceScreenConditions" expires_after="2026-10-25">
+    enum="SearchEngineChoiceScreenConditions" expires_after="2027-01-03">
   <owner>dgn@chromium.org</owner>
   <owner>ljjlee@chromium.org</owner>
   <owner>chrome-regionalcapabilities@google.com</owner>
@@ -575,7 +600,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.ChoiceScreenSelectedEngineIndex" units="index"
-    expires_after="2026-10-18">
+    expires_after="2026-12-20">
   <owner>dgn@chromium.org</owner>
   <owner>chrome-regionalcapabilities@google.com</owner>
   <summary>
@@ -586,7 +611,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.ChoiceScreenShowedEngineAt.CountryMismatch"
-    enum="BooleanSkipped" expires_after="2026-10-18">
+    enum="BooleanSkipped" expires_after="2026-12-20">
   <owner>dgn@chromium.org</owner>
   <owner>chrome-regionalcapabilities@google.com</owner>
   <summary>
@@ -598,7 +623,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.ChoiceScreenShowedEngineAt.Index{Index}{Profile}"
-    enum="OmniboxSearchEngineType" expires_after="2026-10-25">
+    enum="OmniboxSearchEngineType" expires_after="2027-01-03">
   <owner>dgn@chromium.org</owner>
   <owner>chrome-regionalcapabilities@google.com</owner>
   <summary>
@@ -632,7 +657,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.ChoiceWipeReason" enum="SearchEngineChoiceWipeReason"
-    expires_after="2026-10-18">
+    expires_after="2026-12-20">
   <owner>droger@chromium.org</owner>
   <owner>chrome-regionalcapabilities@google.com</owner>
   <summary>
@@ -1018,7 +1043,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.DefaultSearchEngineMirrorCheckOutcome"
-    enum="DefaultSearchEngineMirrorCheckOutcomeType" expires_after="2026-09-30">
+    enum="DefaultSearchEngineMirrorCheckOutcomeType" expires_after="2026-11-29">
   <owner>fikremengistu@chromium.org</owner>
   <owner>chrome-counter-abuse-alerts@google.com</owner>
   <summary>
@@ -1033,7 +1058,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.DefaultSearchEngineMirrored" enum="Boolean"
-    expires_after="2026-11-10">
+    expires_after="2027-01-10">
   <owner>davidbienvenu@chromium.org</owner>
   <owner>wfh@chromium.org</owner>
   <summary>
@@ -1048,7 +1073,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.DefaultSearchEngineResetNotificationShown"
-    enum="BooleanShown" expires_after="2026-09-30">
+    enum="BooleanShown" expires_after="2026-11-29">
   <owner>fikremengistu@chromium.org</owner>
   <owner>chrome-counter-abuse-alerts@google.com</owner>
   <summary>
@@ -1064,7 +1089,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.DefaultSearchProviderType2{Population}"
-    enum="OmniboxSearchEngineType" expires_after="2026-08-30">
+    enum="OmniboxSearchEngineType" expires_after="2026-11-29">
   <owner>mpearson@chromium.org</owner>
   <owner>ftirelo@chromium.org</owner>
   <summary>
@@ -1100,7 +1125,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.Image.Camera.Open" enum="CameraOpenEntryPoint"
-    expires_after="2026-09-27">
+    expires_after="2026-11-29">
   <owner>juanmojica@google.com</owner>
   <owner>schechter@google.com</owner>
   <owner>stanfield@google.com</owner>
@@ -1125,7 +1150,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.Integrity.CrossDomainSearch" enum="Boolean"
-    expires_after="2026-10-20">
+    expires_after="2026-12-20">
   <owner>yeroshkin@chromium.org</owner>
   <owner>musalmaan@chromium.org</owner>
   <owner>chrome-desktop-ui-waterloo@google.com</owner>
@@ -1136,7 +1161,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.Integrity.CrossTldSearch" enum="Boolean"
-    expires_after="2026-10-20">
+    expires_after="2026-12-20">
   <owner>yeroshkin@chromium.org</owner>
   <owner>musalmaan@chromium.org</owner>
   <owner>chrome-desktop-ui-waterloo@google.com</owner>
@@ -1147,7 +1172,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.Integrity.CustomPopulatedDefault" enum="Boolean"
-    expires_after="2026-10-20">
+    expires_after="2026-12-27">
   <owner>musalmaan@chromium.org</owner>
   <owner>iclelland@chromium.org</owner>
   <owner>chrome-desktop-ui-waterloo@google.com</owner>
@@ -1164,7 +1189,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 
 <histogram
     name="Search.Integrity.Enterprise.IsDefaultCustomWithMatchingPolicyEngine"
-    enum="Boolean" expires_after="2026-10-20">
+    enum="Boolean" expires_after="2026-12-20">
   <owner>musalmaan@chromium.org</owner>
   <owner>iclelland@chromium.org</owner>
   <owner>chrome-desktop-ui-waterloo@google.com</owner>
@@ -1179,7 +1204,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.Integrity.Enterprise.IsDefaultEnforcedWithoutPolicy"
-    enum="Boolean" expires_after="2026-10-20">
+    enum="Boolean" expires_after="2026-12-20">
   <owner>musalmaan@chromium.org</owner>
   <owner>iclelland@chromium.org</owner>
   <owner>chrome-desktop-ui-waterloo@google.com</owner>
@@ -1195,7 +1220,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.Integrity.Enterprise.Referral.ParameterFound"
-    enum="SearchReferralParam" expires_after="2026-10-20">
+    enum="SearchReferralParam" expires_after="2026-12-27">
   <owner>musalmaan@chromium.org</owner>
   <owner>iclelland@chromium.org</owner>
   <owner>chrome-desktop-ui-waterloo@google.com</owner>
@@ -1208,7 +1233,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.Integrity.ExtensionUrlSearch" enum="Boolean"
-    expires_after="2026-10-20">
+    expires_after="2026-12-20">
   <owner>yeroshkin@chromium.org</owner>
   <owner>musalmaan@chromium.org</owner>
   <owner>chrome-desktop-ui-waterloo@google.com</owner>
@@ -1219,7 +1244,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.Integrity.HasCustomSearchEngine" enum="Boolean"
-    expires_after="2026-10-20">
+    expires_after="2026-12-20">
   <owner>musalmaan@chromium.org</owner>
   <owner>iclelland@chromium.org</owner>
   <owner>chrome-desktop-ui-waterloo@google.com</owner>
@@ -1234,7 +1259,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.Integrity.IsDefaultCustomWithMatchingPolicyEngine"
-    enum="Boolean" expires_after="2026-10-20">
+    enum="Boolean" expires_after="2026-12-20">
   <owner>musalmaan@chromium.org</owner>
   <owner>iclelland@chromium.org</owner>
   <owner>chrome-desktop-ui-waterloo@google.com</owner>
@@ -1251,7 +1276,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.Integrity.IsDefaultEnforcedWithoutPolicy"
-    enum="Boolean" expires_after="2026-10-20">
+    enum="Boolean" expires_after="2026-12-20">
   <owner>musalmaan@chromium.org</owner>
   <owner>iclelland@chromium.org</owner>
   <owner>chrome-desktop-ui-waterloo@google.com</owner>
@@ -1267,7 +1292,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.Integrity.IsDefaultSearchEngineCustom" enum="Boolean"
-    expires_after="2026-10-20">
+    expires_after="2026-12-20">
   <owner>musalmaan@chromium.org</owner>
   <owner>iclelland@chromium.org</owner>
   <owner>chrome-desktop-ui-waterloo@google.com</owner>
@@ -1281,7 +1306,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.Integrity.ObfuscatedSearchUrl" enum="Boolean"
-    expires_after="2026-10-20">
+    expires_after="2026-12-20">
   <owner>yeroshkin@chromium.org</owner>
   <owner>musalmaan@chromium.org</owner>
   <owner>chrome-desktop-ui-waterloo@google.com</owner>
@@ -1292,7 +1317,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.Integrity.Referral.ParameterFound"
-    enum="SearchReferralParam" expires_after="2026-10-20">
+    enum="SearchReferralParam" expires_after="2026-12-20">
   <owner>musalmaan@chromium.org</owner>
   <owner>iclelland@chromium.org</owner>
   <owner>chrome-desktop-ui-waterloo@google.com</owner>
@@ -1305,7 +1330,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.Integrity{Enterprise}.DuplicateKeyword"
-    enum="SearchDuplicateKeyword" expires_after="2026-10-20">
+    enum="SearchDuplicateKeyword" expires_after="2026-12-20">
   <owner>yeroshkin@chromium.org</owner>
   <owner>musalmaan@chromium.org</owner>
   <owner>chrome-desktop-ui-waterloo@google.com</owner>
@@ -1325,7 +1350,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.iOS.SelectDefaultSearchEngine"
-    enum="OmniboxSearchEngineType" expires_after="2026-09-20">
+    enum="OmniboxSearchEngineType" expires_after="2026-11-29">
   <owner>sczs@chromium.org</owner>
   <owner>gambard@chromium.org</owner>
   <summary>
@@ -1363,7 +1388,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.OsDefaultsChoice.DelayFromDialogShownToFirstStatus"
-    units="ms" expires_after="2026-11-03">
+    units="ms" expires_after="2027-01-03">
   <owner>dgn@chromium.org</owner>
   <owner>triploblastic@google.com</owner>
   <owner>chrome-regionalcapabilities@google.com</owner>
@@ -1383,7 +1408,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.OsDefaultsChoice.DelayFromObservationToFirstStatus"
-    units="ms" expires_after="2026-11-03">
+    units="ms" expires_after="2027-01-03">
   <owner>dgn@chromium.org</owner>
   <owner>triploblastic@google.com</owner>
   <owner>chrome-regionalcapabilities@google.com</owner>
@@ -1400,7 +1425,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.OsDefaultsChoice.DialogShownAttempt" units="attempts"
-    expires_after="2026-11-03">
+    expires_after="2027-01-03">
   <owner>dgn@chromium.org</owner>
   <owner>triploblastic@google.com</owner>
   <owner>chrome-regionalcapabilities@google.com</owner>
@@ -1420,7 +1445,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.OsDefaultsChoice.DialogStatusChange"
-    enum="OsDefaultsChoiceDialogStatus" expires_after="2026-11-03">
+    enum="OsDefaultsChoiceDialogStatus" expires_after="2027-01-03">
   <owner>dgn@chromium.org</owner>
   <owner>triploblastic@google.com</owner>
   <owner>chrome-regionalcapabilities@google.com</owner>
@@ -1438,7 +1463,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.OsDefaultsChoice.DialogStatusOnAppOpen"
-    enum="OsDefaultsChoiceDialogStatus" expires_after="2026-11-03">
+    enum="OsDefaultsChoiceDialogStatus" expires_after="2027-01-03">
   <owner>dgn@chromium.org</owner>
   <owner>triploblastic@google.com</owner>
   <owner>chrome-regionalcapabilities@google.com</owner>
@@ -1449,7 +1474,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.OsDefaultsChoice.DialogSuppressionStatus"
-    enum="OsDefaultsChoiceDialogSuppressionStatus" expires_after="2026-11-03">
+    enum="OsDefaultsChoiceDialogSuppressionStatus" expires_after="2027-01-03">
   <owner>dgn@chromium.org</owner>
   <owner>triploblastic@google.com</owner>
   <owner>chrome-regionalcapabilities@google.com</owner>
@@ -1491,28 +1516,6 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
   <owner>chrome-upboarding-eng@google.com</owner>
   <summary>
     Indicates whether or not a bitmap could be shown for a tile. {TileUiSurface}
-  </summary>
-</histogram>
-
-<histogram name="Search.QueryTiles.{TileUiSurface}Bitmap.FetchDuration"
-    units="ms" expires_after="2022-04-01">
-  <owner>shaktisahu@chromium.org</owner>
-  <owner>chrome-upboarding-eng@google.com</owner>
-  <summary>
-    Records the time taken to fetch a bitmap for a tile when a bitmap could be
-    found. It includes the time starting from the UI layer requesting the
-    backend till the backend returns the associated bitmap. {TileUiSurface}
-  </summary>
-</histogram>
-
-<histogram name="Search.QueryTiles.{TileUiSurface}NoBitmap.FetchDuration"
-    units="ms" expires_after="2022-04-01">
-  <owner>shaktisahu@chromium.org</owner>
-  <owner>chrome-upboarding-eng@google.com</owner>
-  <summary>
-    Records the time taken by the bitmap request for a tile when no bitmap could
-    be found. It includes the time starting from the UI layer requesting the
-    backend till the backend returns the associated bitmap. {TileUiSurface}
   </summary>
 </histogram>
 
@@ -1570,7 +1573,7 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
 </histogram>
 
 <histogram name="Search.RegionSearch.Lens.Result"
-    enum="LensRegionSearchCaptureResult" expires_after="2026-09-27">
+    enum="LensRegionSearchCaptureResult" expires_after="2026-11-29">
   <owner>juanmojica@google.com</owner>
   <owner>benwgold@google.com</owner>
   <owner>stanfield@google.com</owner>
@@ -1815,61 +1818,105 @@ https://chromium.googlesource.com/chromium/src/tools/+/HEAD/metrics/histograms/R
   </summary>
 </histogram>
 
-<histogram name="Search.SearchPolicyConflict.HasConflictWith.{ConflictType}"
-    enum="Boolean" expires_after="2026-01-02">
-  <owner>ftirelo@chromium.org</owner>
-  <owner>pastarmovj@chromium.org</owner>
+<histogram name="Search.SearchPromotion.DefaultBrowserState"
+    enum="DefaultBrowserState" expires_after="2027-05-22">
+  <owner>qlucyk@chromium.org</owner>
+  <owner>iclelland@chromium.org</owner>
+  <owner>top-chrome-desktop-ui@google.com</owner>
   <summary>
-    Records whether at least one search engine created by SiteSearchSettings
-    policy and {ConflictType} has the same keyword as an existing search engine
-    the user manually edited, counted once per user regardless of the number of
-    conflicting search engines the policy creates.
-
-    Search engines created by the policy can be marked as &quot;featured&quot;,
-    and they override search engines with the same keyword that were manually
-    edited by the user. Search engine created by the policy and not marked as
-    featured do not override search engines manually edited by the user.
-
-    Use &quot;Search.SearchPolicyConflict.NumberOfSearchEngines&quot; for the
-    number of search engines created by policy that conflict with search engines
-    manually edited by the user.
-
-    Collected when the SiteSearchSettings policy is enabled or updated and after
-    that on every browser start.
+    Records the user's default browser state. Recorded when the user visits a
+    Google Search URL and is evaluated for the search promotion. Recorded
+    asynchronously to avoid blocking the UI thread. Only recorded on Windows.
   </summary>
-  <token key="ConflictType">
-    <variant name="Featured" summary="marked as 'featured'"/>
-    <variant name="NonFeatured" summary="not marked as 'featured'"/>
+</histogram>
+
+<histogram name="Search.SearchPromotion.DefaultBrowserType.{Interaction}.{Arm}"
+    enum="SearchPromotionDefaultBrowserType" expires_after="2027-05-22">
+  <owner>qlucyk@chromium.org</owner>
+  <owner>iclelland@chromium.org</owner>
+  <owner>top-chrome-desktop-ui@google.com</owner>
+  <summary>
+    Records the user's default browser type (Chrome, Edge, Safari, Firefox,
+    etc.). Recorded when the user {Interaction} the search promotion IPH on
+    {Arm}. Recorded asynchronously on a background task thread. Only recorded on
+    Windows.
+  </summary>
+  <token key="Interaction">
+    <variant name="Accepted" summary="accepted"/>
+    <variant name="Dismissed" summary="dismissed or closed"/>
+  </token>
+  <token key="Arm">
+    <variant name="ArmA" summary="Arm A (promo only)"/>
+    <variant name="ArmB" summary="Arm B (promo and install)"/>
   </token>
 </histogram>
 
-<histogram name="Search.SearchPolicyConflict.NumberOfSearchEngines"
-    enum="SearchPolicyConflictType" expires_after="2025-05-22">
-  <owner>ftirelo@chromium.org</owner>
-  <owner>pastarmovj@chromium.org</owner>
+<histogram name="Search.SearchPromotion.Install.ForegroundFallbackLaunchFailed"
+    enum="Boolean" expires_after="2027-07-09">
+  <owner>qlucyk@chromium.org</owner>
+  <owner>iclelland@chromium.org</owner>
   <summary>
-    Records the number of search engines created by SiteSearchSettings policy
-    with the same keyword as an existing search engine the user manually edited.
+    Records whether launching the fallback browser in the foreground failed.
+    Recorded when a foreground escalation is attempted (due to the background
+    installation not completing within the threshold time, or because the
+    background process terminated) and the launch fails. Only recorded on
+    Windows.
+  </summary>
+</histogram>
 
-    Search engines created by the policy can be marked as &quot;featured&quot;,
-    and they override search engines with the same keyword that were manually
-    edited by the user. Search engine created by the policy and not marked as
-    featured do not override search engines manually edited by the user.
+<histogram name="Search.SearchPromotion.Install.ForegroundFallbackTriggered"
+    enum="Boolean" expires_after="2027-07-09">
+  <owner>qlucyk@chromium.org</owner>
+  <owner>iclelland@chromium.org</owner>
+  <summary>
+    Records when the fallback foreground browser launch is triggered because the
+    background installation did not complete within the threshold time (or the
+    background process terminated/crashed). Recorded at the moment the
+    foreground escalation is initiated. Only recorded on Windows.
+  </summary>
+</histogram>
 
-    Each count corresponds to one search engine, so the total count per user
-    equals the number of search engines created by the policy.
+<histogram name="Search.SearchPromotion.InstallDuration.SuccessBackground"
+    units="ms" expires_after="2027-07-09">
+  <owner>qlucyk@chromium.org</owner>
+  <owner>iclelland@chromium.org</owner>
+  <summary>
+    Records the duration (in milliseconds) taken for a successful background
+    installation of the extension. Recorded at the moment the extension
+    installation is successfully detected, provided that the installation
+    completed purely in the background (without needing to launch the browser in
+    the foreground). Only recorded on Windows.
+  </summary>
+</histogram>
 
-    Use &quot;Search.SearchPolicyConflict.HasConflictWith.*&quot; for the number
-    of users that have at least one conflict with featured or non-featured
-    search engines created by policy.
+<histogram name="Search.SearchPromotion.InstallDuration.SuccessWithFallback"
+    units="ms" expires_after="2027-07-09">
+  <owner>qlucyk@chromium.org</owner>
+  <owner>iclelland@chromium.org</owner>
+  <summary>
+    Records the total duration (in milliseconds) taken for a successful
+    installation of the extension. Recorded at the moment the extension
+    installation is successfully detected, provided that a foreground browser
+    launch was triggered because the background installation did not complete
+    within the threshold time. Only recorded on Windows.
+  </summary>
+</histogram>
 
-    Collected when the SiteSearchSettings policy is enabled or updated and after
-    that on every browser start.
+<histogram name="Search.SearchPromotion.InstallResult"
+    enum="SearchPromotionInstallResult" expires_after="2027-07-09">
+  <owner>qlucyk@chromium.org</owner>
+  <owner>iclelland@chromium.org</owner>
+  <summary>
+    Records the outcome of the extension installation process for the Search
+    Promotion. Recorded when the installation attempt completes, which is either
+    when the extension installation is successfully detected, when the fallback
+    browser launch fails, or when the overall installation process times out.
+    Only recorded on Windows.
   </summary>
 </histogram>
 
 <histogram name="Search.SearchProviderOverrideStatus"
-    enum="SearchProviderOverrideStatus" expires_after="2026-11-15">
+    enum="SearchProviderOverrideStatus" expires_after="2027-01-17">
   <owner>dgn@chromium.org</owner>
   <owner>droger@chromium.org</owner>
   <summary>

@@ -17,7 +17,7 @@ export default createRule({
       requiredEndTag: 'Custom elements should not be self-closing.',
     },
     fixable: 'code',
-    schema: []  // no options
+    schema: [],  // no options
   },
   defaultOptions: [],
   create: function(context) {
@@ -38,5 +38,5 @@ export default createRule({
         }
       },
     };
-  }
+  },
 });

@@ -27,6 +27,7 @@
 
 #include <memory>
 
+#include "base/feature_list.h"
 #include "base/functional/callback_helpers.h"
 #include "base/metrics/histogram_functions.h"
 #include "cc/layers/layer.h"
@@ -53,6 +54,7 @@
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
+#include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/picture_in_picture_controller.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
@@ -67,6 +69,7 @@
 #include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/intersection_observer/intersection_observer_entry.h"
+#include "third_party/blink/renderer/core/layout/geometry/physical_rect.h"
 #include "third_party/blink/renderer/core/layout/layout_image.h"
 #include "third_party/blink/renderer/core/layout/layout_video.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
@@ -75,7 +78,7 @@
 #include "third_party/blink/renderer/core/loader/resource/video_timing.h"
 #include "third_party/blink/renderer/core/paint/timing/paint_timing_detector.h"
 #include "third_party/blink/renderer/platform/blob/blob_data.h"
-#include "third_party/blink/renderer/platform/graphics/canvas_resource_provider.h"
+#include "third_party/blink/renderer/platform/graphics/canvas_non_2d_resource_provider.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_snapshot_info.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/extensions_3d_util.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
@@ -88,7 +91,9 @@
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/public/event_loop.h"
 #include "third_party/blink/renderer/platform/web_test_support.h"
+#include "third_party/blink/renderer/platform/widget/frame_widget.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_utf8_adaptor.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace blink {
 
@@ -104,6 +109,22 @@ namespace {
 constexpr int kVisibilityThreshold = 10000;
 
 constexpr base::TimeDelta kTemporaryResourceDeletionDelay = base::Seconds(3);
+
+// If enabled, VideoTiming is held as a strong member of HTMLVideoElement.
+BASE_FEATURE(kKeepVideoTimingAlive,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+//
+// LINT.IfChange(PictureInPictureSizeConstraintResult)
+enum class PictureInPictureSizeConstraintResult {
+  kSizeConstraintMet = 0,
+  kSizeConstraintNotMet = 1,
+  kMaxValue = kSizeConstraintNotMet,
+};
+// LINT.ThenChange(//tools/metrics/histograms/metadata/media/enums.xml:PictureInPictureSizeConstraintResult)
+
 }  // namespace
 
 HTMLVideoElement::HTMLVideoElement(Document& document)
@@ -133,6 +154,7 @@ void HTMLVideoElement::Trace(Visitor* visitor) const {
   visitor->Trace(wake_lock_);
   visitor->Trace(remoting_interstitial_);
   visitor->Trace(picture_in_picture_interstitial_);
+  visitor->Trace(video_timing_);
   visitor->Trace(cache_deleting_timer_);
   Supplementable<HTMLVideoElement>::Trace(visitor);
   HTMLMediaElement::Trace(visitor);
@@ -376,6 +398,20 @@ void HTMLVideoElement::UpdatePictureInPictureAvailability() {
     observer->OnPictureInPictureAvailabilityChanged(SupportsPictureInPicture());
 }
 
+void HTMLVideoElement::UpdateVideoFrameAvailability() {
+  bool available = !IsEncrypted() && web_media_player_ &&
+                   HasAvailableVideoFrame() && HasReadableVideoFrame();
+
+  if (available == last_reported_video_frame_availability_) {
+    return;
+  }
+  last_reported_video_frame_availability_ = available;
+
+  for (auto& observer : GetMediaPlayerObserverRemoteSet()) {
+    observer->OnVideoFrameAvailabilityChanged(available);
+  }
+}
+
 // TODO(zqzhang): this callback could be used to hide native controls instead of
 // using a settings. See `HTMLMediaElement::onMediaControlsEnabledChange`.
 void HTMLVideoElement::SetPersistentState(bool persistent) {
@@ -494,7 +530,9 @@ void HTMLVideoElement::OnCdmAttached(const media::CdmConfig& cdm_config) {
 }
 
 void HTMLVideoElement::RequestSaveVideoFrame() {
-  auto image = CreateStaticBitmapImage();
+  auto image = CreateStaticBitmapImage(
+      /*size=*/std::nullopt, /*reinterpret_as_srgb=*/false,
+      /*respect_orientation=*/kDoNotRespectImageOrientation);
   if (!image) {
     return;
   }
@@ -549,6 +587,38 @@ void HTMLVideoElement::OnVisibilityRatioReport(double ratio) {
 void HTMLVideoElement::ResetCache(TimerBase*) {
   snapshot_provider_.reset();
   cached_draw_info_.reset();
+}
+
+gfx::Size HTMLVideoElement::GetVisualSizeInDIPs() const {
+  auto* layout_video = DynamicTo<LayoutVideo>(GetLayoutObject());
+  LocalFrameView* view = GetDocument().View();
+  gfx::Rect viewport_rect;
+  if (layout_video && view) {
+    const PhysicalRect content_rect = layout_video->ReplacedContentRect();
+    viewport_rect = view->FrameToViewport(
+        ToEnclosingRect(layout_video->LocalToAbsoluteRect(content_rect)));
+  } else {
+    viewport_rect = BoundsInWidget();
+  }
+
+  gfx::Size dip_size = viewport_rect.size();
+  LocalFrame* frame = GetDocument().GetFrame();
+  if (auto* widget = frame ? frame->GetWidgetForLocalRoot() : nullptr) {
+    dip_size = widget->BlinkSpaceToEnclosedDIPs(viewport_rect).size();
+  }
+
+  return dip_size;
+}
+
+bool HTMLVideoElement::MeetsRequestEnterPictureInPictureSizeConstraint(
+    const std::optional<gfx::Size>& min_size) const {
+  if (!min_size.has_value()) {
+    return true;
+  }
+
+  const gfx::Size visual_size = GetVisualSizeInDIPs();
+  return visual_size.width() >= min_size->width() &&
+         visual_size.height() >= min_size->height();
 }
 
 bool HTMLVideoElement::IsPersistent() const {
@@ -610,7 +680,41 @@ void HTMLVideoElement::UpdateVideoVisibilityTracker() {
   visibility_tracker_->UpdateVisibilityTrackerState();
 }
 
-void HTMLVideoElement::RequestEnterPictureInPicture() {
+void HTMLVideoElement::LogPictureInPictureSizeMetrics(
+    bool meets_constraint) const {
+  base::UmaHistogramEnumeration(
+      "Media.PictureInPicture.SizeConstraintResult",
+      meets_constraint
+          ? PictureInPictureSizeConstraintResult::kSizeConstraintMet
+          : PictureInPictureSizeConstraintResult::kSizeConstraintNotMet);
+
+  const gfx::Size visual_size = GetVisualSizeInDIPs();
+  if (visual_size.width() <= 0xFFFF && visual_size.width() >= 0 &&
+      visual_size.height() <= 0xFFFF && visual_size.height() >= 0) {
+    int32_t encoded_size = (visual_size.width() << 16) | visual_size.height();
+    if (meets_constraint) {
+      base::UmaHistogramSparse("Media.PictureInPicture.AllowedVideoEncodedSize",
+                               encoded_size);
+    } else {
+      base::UmaHistogramSparse("Media.PictureInPicture.BlockedVideoEncodedSize",
+                               encoded_size);
+    }
+  }
+}
+
+void HTMLVideoElement::RequestEnterPictureInPicture(
+    const std::optional<gfx::Size>& min_size) {
+  bool meets_constraint =
+      MeetsRequestEnterPictureInPictureSizeConstraint(min_size);
+
+  if (min_size.has_value()) {
+    LogPictureInPictureSizeMetrics(meets_constraint);
+  }
+
+  if (!meets_constraint) {
+    return;
+  }
+
   PictureInPictureController::From(GetDocument())
       .EnterPictureInPicture(this, /*promise=*/nullptr);
 }
@@ -632,9 +736,9 @@ void HTMLVideoElement::RequestVisibility(
 void HTMLVideoElement::PaintCurrentFrame(cc::PaintCanvas* canvas,
                                          const gfx::Rect& dest_rect,
                                          const cc::PaintFlags& flags,
-                                         bool force_pixel_readback) const {
+                                         bool acquire_texture_backing) const {
   if (auto* wmp = GetWebMediaPlayer()) {
-    wmp->Paint(canvas, dest_rect, flags, force_pixel_readback);
+    wmp->Paint(canvas, dest_rect, flags, acquire_texture_backing);
   }
 }
 
@@ -654,6 +758,8 @@ bool HTMLVideoElement::HasReadableVideoFrame() const {
 void HTMLVideoElement::OnFirstFrame(base::TimeTicks frame_time,
                                     size_t bytes_to_first_frame) {
   DCHECK(GetWebMediaPlayer());
+  has_received_first_frame_ = true;
+
   LayoutObject* layout_object = GetLayoutObject();
   // HasLocalBorderBoxProperties will be false in some cases, specifically
   // picture-in-picture video may return false here.
@@ -669,7 +775,16 @@ void HTMLVideoElement::OnFirstFrame(base::TimeTicks frame_time,
         *layout_object, videoVisibleSize(), *video_timing,
         layout_object->FirstFragment().LocalBorderBoxProperties(),
         layout_object->AbsoluteBoundingBoxRect());
+
+    if (base::FeatureList::IsEnabled(kKeepVideoTimingAlive)) {
+      // Keep VideoTiming alive as a strong member so it isn't garbage collected
+      // before being reported as LCP.
+      video_timing_ = video_timing;
+    }
   }
+
+  MaybeEnterImmersivePictureInPicture();
+  UpdateVideoFrameAvailability();
 }
 
 void HTMLVideoElement::EnterFullscreen() {
@@ -742,9 +857,9 @@ unsigned HTMLVideoElement::webkitDecodedFrameCount() const {
   return 0;
 }
 
-void HTMLVideoElement::DidChangeIsCanvasOrInCanvasSubtree() {
-  HTMLMediaElement::DidChangeIsCanvasOrInCanvasSubtree();
-  if (IsCanvasOrInCanvasSubtree()) {
+void HTMLVideoElement::DidChangeIsInCanvasSubtree() {
+  HTMLMediaElement::DidChangeIsInCanvasSubtree();
+  if (IsInCanvasSubtree()) {
     UpdateLayoutObject();
     if (auto* wmp = GetWebMediaPlayer()) {
       wmp->RequestVideoFrameCallback();
@@ -772,36 +887,75 @@ bool HTMLVideoElement::IsDefaultPosterImageURL() const {
 
 scoped_refptr<StaticBitmapImage> HTMLVideoElement::CreateStaticBitmapImage(
     std::optional<gfx::Size> size,
-    bool reinterpret_as_srgb) {
-  media::PaintCanvasVideoRenderer* video_renderer = nullptr;
-  scoped_refptr<media::VideoFrame> media_video_frame;
-  if (auto* wmp = GetWebMediaPlayer()) {
-    media_video_frame = wmp->GetCurrentFrameThenUpdate();
-    video_renderer = wmp->GetPaintCanvasVideoRenderer();
+    bool reinterpret_as_srgb,
+    RespectImageOrientationEnum respect_orientation) {
+  auto* wmp = GetWebMediaPlayer();
+  if (!wmp) {
+    return nullptr;
   }
+
+  scoped_refptr<media::VideoFrame> media_video_frame =
+      wmp->GetCurrentFrameThenUpdate();
+  media::PaintCanvasVideoRenderer* video_renderer =
+      wmp->GetPaintCanvasVideoRenderer();
 
   if (!media_video_frame || !video_renderer || (size && size->IsEmpty())) {
     return nullptr;
   }
 
+  media::VideoTransformation transform =
+      media_video_frame->metadata().transformation.value_or(
+          media::kNoTransformation);
+
+  // The underlying VideoFrame may have been stripped of its transformation
+  // metadata by the decoder or hardware buffer pipeline. If the frame lacks
+  // a rotation but the WebMediaPlayer's pipeline metadata knows it exists,
+  // we must inherit it.
+  if (transform.rotation == media::VIDEO_ROTATION_0) {
+    transform = wmp->GetVideoTransformation();
+  }
+
+  if (media_video_frame->visible_rect().size() == wmp->NaturalSize() &&
+      (transform.rotation == media::VIDEO_ROTATION_90 ||
+       transform.rotation == media::VIDEO_ROTATION_270)) {
+    // Clear the transformation metadata to prevent double rotation during
+    // paint
+    transform = media::kNoTransformation;
+  }
+
+  viz::RasterContextProvider* raster_context_provider = nullptr;
+  if (auto wrapper = SharedGpuContext::ContextProviderWrapper()) {
+    raster_context_provider =
+        wrapper->ContextProvider().RasterContextProvider();
+  }
+
+  bool is_accelerated = ShouldCreateAcceleratedImages(raster_context_provider);
+  bool will_hard_flip =
+      is_accelerated || respect_orientation == kDoNotRespectImageOrientation;
+
+  std::optional<gfx::Size> dest_size = size;
+  if (!dest_size && will_hard_flip) {
+    if (transform.rotation == media::VIDEO_ROTATION_90 ||
+        transform.rotation == media::VIDEO_ROTATION_270) {
+      dest_size = gfx::Size(media_video_frame->natural_size().height(),
+                            media_video_frame->natural_size().width());
+    }
+  }
+
   auto required_provider_info = CreateSnapshotProviderInfoForVideoFrame(
-      *media_video_frame, size, reinterpret_as_srgb);
+      *media_video_frame, dest_size, reinterpret_as_srgb);
 
   bool cached_info_matches_required_info =
       cached_draw_info_ &&
       required_provider_info.Matches(cached_draw_info_.value());
   if (!cached_info_matches_required_info) {
-    viz::RasterContextProvider* raster_context_provider = nullptr;
-    if (auto wrapper = SharedGpuContext::ContextProviderWrapper()) {
-      raster_context_provider =
-          wrapper->ContextProvider().RasterContextProvider();
-    }
     snapshot_provider_.reset();
 
     if (ShouldCreateAcceleratedImages(raster_context_provider)) {
-      snapshot_provider_ = CanvasNon2DResourceProviderSharedImage::Create(
+      snapshot_provider_ = CanvasNon2DResourceProvider::Create(
           required_provider_info.size, required_provider_info.format,
           required_provider_info.alpha_type, required_provider_info.color_space,
+          required_provider_info.hdr_metadata,
           SharedGpuContext::ContextProviderWrapper(),
           gpu::SHARED_IMAGE_USAGE_DISPLAY_READ);
       if (!snapshot_provider_) {
@@ -814,19 +968,22 @@ scoped_refptr<StaticBitmapImage> HTMLVideoElement::CreateStaticBitmapImage(
   cache_deleting_timer_.StartOneShot(kTemporaryResourceDeletionDelay,
                                      FROM_HERE);
 
+  bool prefer_tagged_orientation =
+      respect_orientation == kRespectImageOrientation;
   scoped_refptr<StaticBitmapImage> image;
-  const bool kPreferTaggedOrientation = true;
   if (snapshot_provider_) {
     image = CreateAcceleratedImageFromVideoFrame(
         std::move(media_video_frame), snapshot_provider_.get(), video_renderer,
-        kPreferTaggedOrientation, reinterpret_as_srgb);
+        prefer_tagged_orientation, reinterpret_as_srgb, transform);
   } else {
     image = CreateUnacceleratedImageFromVideoFrame(
         std::move(media_video_frame), cached_draw_info_.value(), video_renderer,
-        kPreferTaggedOrientation, reinterpret_as_srgb);
+        prefer_tagged_orientation, reinterpret_as_srgb, transform);
   }
-  if (image)
+
+  if (image) {
     image->SetOriginClean(!WouldTaintOrigin());
+  }
   return image;
 }
 
@@ -993,15 +1150,22 @@ void HTMLVideoElement::SetIsEffectivelyFullscreen(
     wmp->OnDisplayTypeChanged(GetDisplayType());
   }
 
-  // If the video becomes effectively fullscreen, request user confirmation to
-  // enter an immersive Picture-in-Picture session if enabled.
+  // If the video becomes effectively fullscreen, enter an immersive
+  // Picture-in-Picture session if enabled.
   if (is_effectively_fullscreen_ && !was_effectively_fullscreen) {
-    if (GetDocument().GetSettings() &&
-        GetDocument().GetSettings()->GetImmersiveVideoPlaybackEnabled()) {
-      if (!PictureInPictureController::IsElementInPictureInPicture(this)) {
-        PictureInPictureController::From(GetDocument())
-            .RequestImmersivePlaybackConfirmation(*this);
-      }
+    MaybeEnterImmersivePictureInPicture();
+  }
+}
+
+void HTMLVideoElement::MaybeEnterImmersivePictureInPicture() {
+  if (!is_effectively_fullscreen_ || !has_received_first_frame_) {
+    return;
+  }
+  if (GetDocument().GetSettings() &&
+      GetDocument().GetSettings()->GetImmersiveVideoPlaybackEnabled()) {
+    if (!PictureInPictureController::IsElementInPictureInPicture(this)) {
+      PictureInPictureController::From(GetDocument())
+          .EnterPictureInPictureImmersive(*this);
     }
   }
 }
@@ -1068,10 +1232,13 @@ void HTMLVideoElement::OnWebMediaPlayerCreated() {
 }
 
 void HTMLVideoElement::OnWebMediaPlayerCleared() {
+  has_received_first_frame_ = false;
   if (auto* vfc_requester = VideoFrameCallbackRequester::From(*this))
     vfc_requester->OnWebMediaPlayerCleared();
 
   UpdateVideoVisibilityTracker();
+
+  UpdateVideoFrameAvailability();
 }
 
 void HTMLVideoElement::RecordVideoOcclusionState(

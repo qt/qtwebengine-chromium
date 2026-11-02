@@ -106,6 +106,18 @@ class CONTENT_EXPORT DocumentAssociatedData : public base::SupportsUserData {
     pending_did_stop_loading_for_prerendering_ = true;
   }
 
+  // Stores the original URL of the navigation that committed this document.
+  // When `kSanitizeOriginalUrlDuringNavigation` is enabled, the renderer
+  // process only receives an origin-sanitized version of the original URL, but
+  // they then provide that sanitized value to browser-side features (such as
+  // observers) that still expect the full URL. Since `NavigationRequest` is
+  // destroyed upon commit, we preserve the original URL for the document's
+  // lifetime.
+  const GURL& original_url() const { return original_url_; }
+  void set_original_url(const GURL& original_url) {
+    original_url_ = original_url;
+  }
+
   // Reporting API:
   //
   // Contains the reporting source token for this document, which will be
@@ -146,8 +158,7 @@ class CONTENT_EXPORT DocumentAssociatedData : public base::SupportsUserData {
   // Sets the network restrictions id. Should only be called when the document
   // is being committed. For more details see
   // NavigationRequest::network_restrictions_id_
-  void SetNetworkRestrictionsId(
-      std::optional<base::UnguessableToken> network_restrictions_id);
+  void SetNetworkRestrictionsId(base::UnguessableToken network_restrictions_id);
 
   // Shares the network restrictions id from another document (e.g. the
   // creator's), incrementing the reference count. The nonce will only be
@@ -157,7 +168,7 @@ class CONTENT_EXPORT DocumentAssociatedData : public base::SupportsUserData {
       scoped_refptr<base::RefCountedData<base::UnguessableToken>>
           network_restrictions_id);
 
-  std::optional<base::UnguessableToken> NetworkRestrictionsId() const;
+  base::UnguessableToken NetworkRestrictionsId() const;
 
   // Returns the shared ref-counted handle for the network restrictions id.
   // Used internally for sharing the id between documents (e.g. initial empty
@@ -184,7 +195,7 @@ class CONTENT_EXPORT DocumentAssociatedData : public base::SupportsUserData {
   void set_keep_alive_url_loader_factory_context(
       base::WeakPtr<KeepAliveURLLoaderService::FactoryContext>
           factory_context) {
-    DCHECK(!keep_alive_url_loader_factory_context_);
+    CHECK(!keep_alive_url_loader_factory_context_, base::NotFatalUntil::M152);
     keep_alive_url_loader_factory_context_ = factory_context;
   }
 
@@ -231,6 +242,7 @@ class CONTENT_EXPORT DocumentAssociatedData : public base::SupportsUserData {
   bool is_discarded_ = false;
   std::optional<GURL> pending_did_finish_load_url_for_prerendering_;
   bool pending_did_stop_loading_for_prerendering_ = false;
+  GURL original_url_;
   std::vector<raw_ptr<internal::DocumentServiceBase, VectorExperimental>>
       services_;
   scoped_refptr<NavigationOrDocumentHandle> navigation_or_document_handle_;

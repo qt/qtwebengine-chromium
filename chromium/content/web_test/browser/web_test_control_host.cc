@@ -45,14 +45,12 @@
 #include "components/subresource_filter/core/common/test_ruleset_creator.h"
 #include "components/subresource_filter/core/common/test_ruleset_utils.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
-#include "content/browser/aggregation_service/aggregation_service.h"
-#include "content/browser/attribution_reporting/attribution_manager.h"
-#include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/in_memory_federated_permission_context.h"
 #include "content/browser/renderer_host/frame_tree.h"
 #include "content/browser/renderer_host/frame_tree_node.h"
 #include "content/browser/renderer_host/navigation_request.h"
 #include "content/browser/screen_orientation/screen_orientation_provider.h"
+#include "content/browser/security/cpsp/child_process_security_policy_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_termination_info.h"
@@ -777,30 +775,12 @@ void WebTestControlHost::ResetBrowserAfterWebTest() {
   }
 #endif  // BUILDFLAG(ENABLE_COMPUTE_PRESSURE)
 
-  // Delete all cookies, Attribution Reporting data and Aggregation service data
+  // Delete all cookies.
   {
     StoragePartition* storage_partition =
         browser_context->GetDefaultStoragePartition();
     storage_partition->GetCookieManagerForBrowserProcess()->DeleteCookies(
         network::mojom::CookieDeletionFilter::New(), base::DoNothing());
-
-    if (auto* attribution_manager =
-            AttributionManager::FromBrowserContext(browser_context)) {
-      attribution_manager->ClearData(
-          /*delete_begin=*/base::Time::Min(), /*delete_end=*/base::Time::Max(),
-          /*filter=*/StoragePartition::StorageKeyMatcherFunction(),
-          /*filter_builder=*/nullptr,
-          /*delete_rate_limit_data=*/true,
-          /*done=*/base::DoNothing());
-    }
-
-    if (auto* aggregation_service =
-            AggregationService::GetService(browser_context)) {
-      aggregation_service->ClearData(
-          /*delete_begin=*/base::Time::Min(), /*delete_end=*/base::Time::Max(),
-          /*filter=*/StoragePartition::StorageKeyMatcherFunction(),
-          /*done=*/base::DoNothing());
-    }
   }
 
   ui::SelectFileDialog::SetFactory(nullptr);
@@ -1111,7 +1091,8 @@ void WebTestControlHost::WebContentsDestroyed() {
 
 void WebTestControlHost::DidUpdateFaviconURL(
     RenderFrameHost* render_frame_host,
-    const std::vector<blink::mojom::FaviconURLPtr>& candidates) {
+    const std::vector<blink::mojom::FaviconURLPtr>& candidates,
+    blink::mojom::FaviconUpdateReason reason) {
   if (web_test_runtime_flags_.dump_icon_changes()) {
     std::string log = IsMainWindow(web_contents()) ? "main frame " : "frame ";
     printer_->AddMessageRaw(log + "- didChangeIcons\n");
@@ -1342,8 +1323,6 @@ void WebTestControlHost::OnTestFinished() {
       content::StoragePartition::REMOVE_DATA_MASK_MEDIA_LICENSES |
       // Internal flags manage browser-internal state, not website data, and
       // should not be cleared.
-      content::StoragePartition::
-          REMOVE_DATA_MASK_ATTRIBUTION_REPORTING_INTERNAL |
       content::StoragePartition::REMOVE_DATA_MASK_PRIVATE_AGGREGATION_INTERNAL |
       content::StoragePartition::REMOVE_DATA_MASK_INTEREST_GROUPS_INTERNAL |
       // These flags are designed for explicit user actions in settings.

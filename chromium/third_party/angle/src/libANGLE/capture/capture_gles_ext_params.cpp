@@ -2836,7 +2836,7 @@ void CaptureTexParameterIuivEXT_params(const State &glState,
 
 // GL_EXT_texture_storage_compression
 void CaptureTexStorageAttribs2DEXT_attrib_list(const State &glState,
-                                               GLenum target,
+                                               TextureType targetPacked,
                                                GLsizei levels,
                                                GLenum internalformat,
                                                GLsizei width,
@@ -2848,7 +2848,7 @@ void CaptureTexStorageAttribs2DEXT_attrib_list(const State &glState,
 }
 
 void CaptureTexStorageAttribs3DEXT_attrib_list(const State &glState,
-                                               GLenum target,
+                                               TextureType targetPacked,
                                                GLsizei levels,
                                                GLenum internalformat,
                                                GLsizei width,
@@ -3123,11 +3123,12 @@ void CaptureReadnPixelsKHR_data(const State &glState,
 // GL_MESA_framebuffer_flip_y
 void CaptureGetFramebufferParameterivMESA_params(const State &glState,
                                                  GLenum target,
-                                                 GLenum pname,
+                                                 FramebufferParameter pnamePacked,
                                                  GLint *params,
                                                  angle::ParamCapture *paramCapture)
 {
-    // Skipped
+    // All glGetFramebufferParameteriv queries write back one single value.
+    paramCapture->readBufferSizeBytes = sizeof(GLint);
 }
 
 // GL_NV_fence

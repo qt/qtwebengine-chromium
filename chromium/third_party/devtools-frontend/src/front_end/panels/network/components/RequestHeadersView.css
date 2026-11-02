@@ -128,7 +128,7 @@ div.raw-headers-row {
 }
 
 .inline-icon {
-  vertical-align: middle;
+  vertical-align: sub;
 }
 
 .header-grid-container {
@@ -153,6 +153,7 @@ devtools-link {
 
 devtools-link .inline-icon {
   padding-right: 3px;
+  vertical-align: middle;
 }
 
 .purple.dot::before {

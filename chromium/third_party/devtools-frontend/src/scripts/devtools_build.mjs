@@ -422,7 +422,7 @@ async function computeBuildTargetsForFiles(target, filenames) {
     }
   }
 
-  return ['devtools_all_files'];
+  return [];
 }
 
 /**

@@ -8,8 +8,10 @@
 #include "hwy/highway.h"
 #include "include/v8config.h"
 #include "src/base/small-vector.h"
+#include "src/base/strong-alias.h"
 #include "src/common/assert-scope.h"
 #include "src/common/globals.h"
+#include "src/common/synchronization-point-support.h"
 #include "src/execution/isolate-utils.h"
 #include "src/execution/thread-id.h"
 #include "src/handles/handles-inl.h"
@@ -139,6 +141,8 @@ void String::MakeThin(IsolateT* isolate,
   DisallowGarbageCollection no_gc;
   DCHECK_NE(this, internalized);
 
+  SYNCHRONIZATION_POINT("MakeThinString");
+
   Tagged<Map> initial_map = map(kAcquireLoad);
   StringShape initial_shape(initial_map);
 
@@ -168,8 +172,8 @@ void String::MakeThin(IsolateT* isolate,
     // ExternalString -> ThinString transitions can only happen on the
     // main-thread.
     isolate->AsIsolate()->heap()->NotifyObjectLayoutChange(
-        Tagged(this), no_gc, InvalidateRecordedSlots::kYes,
-        InvalidateExternalPointerSlots::kYes, sizeof(ThinString));
+        Tagged(this), no_gc, InvalidateRecordedSlots{true},
+        InvalidateExternalPointerSlots{true}, sizeof(ThinString));
     MigrateExternalString(isolate->AsIsolate(), this, internalized);
   }
 
@@ -185,8 +189,8 @@ void String::MakeThin(IsolateT* isolate,
     if (!HeapLayout::InAnyLargeSpace(thin)) {
       isolate->heap()->NotifyObjectSizeChange(
           thin, old_size, sizeof(ThinString),
-          may_contain_recorded_slots ? ClearRecordedSlots::kYes
-                                     : ClearRecordedSlots::kNo);
+          may_contain_recorded_slots ? ClearRecordedSlots{true}
+                                     : ClearRecordedSlots{false});
     } else {
       // We don't need special handling for the combination InAnyLargeSpace &&
       // may_contain_recorded_slots, because indirect strings never get that
@@ -315,7 +319,7 @@ void String::MakeExternalDuringGC(Isolate* isolate, T* resource) {
 
   if (!HeapLayout::InAnyLargeSpace(this)) {
     isolate->heap()->NotifyObjectSizeChange(this, size, new_size,
-                                            ClearRecordedSlots::kNo);
+                                            ClearRecordedSlots{false});
   }
 
   // The external pointer slots must be initialized before the new map is
@@ -350,6 +354,8 @@ bool String::MakeExternal(Isolate* isolate,
   // Disallow garbage collection to avoid possible GC vs string access deadlock.
   DisallowGarbageCollection no_gc;
 
+  SYNCHRONIZATION_POINT("MakeExternalTwoByteString");
+
   // Externalizing twice leaks the external resource, so it's
   // prohibited by the API.
   DCHECK(
@@ -382,7 +388,7 @@ bool String::MakeExternal(Isolate* isolate,
     resource->Unaccount(reinterpret_cast<v8::Isolate*>(isolate));
     isolate = isolate->shared_space_isolate();
   }
-  bool is_internalized = IsInternalizedString(this);
+  bool is_internalized = Is<InternalizedString>(this);
   bool has_pointers = StringShape(this).IsIndirect();
 
   base::MutexGuardIf mutex_guard(isolate->internalized_string_access(),
@@ -402,14 +408,14 @@ bool String::MakeExternal(Isolate* isolate,
 
   if (has_pointers) {
     isolate->heap()->NotifyObjectLayoutChange(
-        this, no_gc, InvalidateRecordedSlots::kYes,
-        InvalidateExternalPointerSlots::kNo, new_size);
+        this, no_gc, InvalidateRecordedSlots{true},
+        InvalidateExternalPointerSlots{false}, new_size);
   }
 
   if (!HeapLayout::InAnyLargeSpace(this)) {
     isolate->heap()->NotifyObjectSizeChange(
         this, size, new_size,
-        has_pointers ? ClearRecordedSlots::kYes : ClearRecordedSlots::kNo);
+        has_pointers ? ClearRecordedSlots{true} : ClearRecordedSlots{false});
   } else {
     // We don't need special handling for the combination InAnyLargeSpace &&
     // has_pointers, because indirect strings never get that large.
@@ -440,6 +446,8 @@ bool String::MakeExternal(Isolate* isolate,
                           v8::String::ExternalOneByteStringResource* resource) {
   // Disallow garbage collection to avoid possible GC vs string access deadlock.
   DisallowGarbageCollection no_gc;
+
+  SYNCHRONIZATION_POINT("MakeExternalOneByteString");
 
   // Externalizing twice leaks the external resource, so it's
   // prohibited by the API.
@@ -478,7 +486,7 @@ bool String::MakeExternal(Isolate* isolate,
     resource->Unaccount(reinterpret_cast<v8::Isolate*>(isolate));
     isolate = isolate->shared_space_isolate();
   }
-  bool is_internalized = IsInternalizedString(this);
+  bool is_internalized = Is<InternalizedString>(this);
   bool has_pointers = StringShape(this).IsIndirect();
 
   base::MutexGuardIf mutex_guard(isolate->internalized_string_access(),
@@ -500,12 +508,12 @@ bool String::MakeExternal(Isolate* isolate,
     if (has_pointers) {
       DCHECK(!HeapLayout::InWritableSharedSpace(this));
       isolate->heap()->NotifyObjectLayoutChange(
-          this, no_gc, InvalidateRecordedSlots::kYes,
-          InvalidateExternalPointerSlots::kNo, new_size);
+          this, no_gc, InvalidateRecordedSlots{true},
+          InvalidateExternalPointerSlots{false}, new_size);
     }
     isolate->heap()->NotifyObjectSizeChange(
         this, size, new_size,
-        has_pointers ? ClearRecordedSlots::kYes : ClearRecordedSlots::kNo);
+        has_pointers ? ClearRecordedSlots{true} : ClearRecordedSlots{false});
   } else {
     // We don't need special handling for the combination InAnyLargeSpace &&
     // has_pointers, because indirect strings never get that large.
@@ -533,9 +541,8 @@ bool String::MakeExternal(Isolate* isolate,
 }
 
 bool String::SupportsExternalization(v8::String::Encoding encoding) {
-  if (IsThinString(this)) {
-    return i::Cast<i::ThinString>(this)->actual()->SupportsExternalization(
-        encoding);
+  if (Is<ThinString>(this)) {
+    return Cast<ThinString>(this)->actual()->SupportsExternalization(encoding);
   }
 
   // RO_SPACE strings cannot be externalized.
@@ -793,24 +800,33 @@ void String::WriteToFlat(Tagged<String> source, SinkCharT* sink, uint32_t start,
 
     if (source->DispatchToSpecificType(absl::Overload{
             [&](Tagged<SeqOneByteString> str) {
+              SYNCHRONIZATION_POINT_TEST_ONLY(
+                  "StringWriteToFlatSeqOneByteString");
               CopyChars(sink, str->GetChars(no_gc, access_guard) + start,
                         length);
               return true;
             },
             [&](Tagged<SeqTwoByteString> str) {
+              SYNCHRONIZATION_POINT_TEST_ONLY(
+                  "StringWriteToFlatSeqTwoByteString");
               CopyChars(sink, str->GetChars(no_gc, access_guard) + start,
                         length);
               return true;
             },
             [&](Tagged<ExternalOneByteString> str) {
+              SYNCHRONIZATION_POINT_TEST_ONLY(
+                  "StringWriteToFlatExternalOneByteString");
               CopyChars(sink, str->GetChars() + start, length);
               return true;
             },
             [&](Tagged<ExternalTwoByteString> str) {
+              SYNCHRONIZATION_POINT_TEST_ONLY(
+                  "StringWriteToFlatExternalTwoByteString");
               CopyChars(sink, str->GetChars() + start, length);
               return true;
             },
             [&](Tagged<ConsString> cons_string) {
+              SYNCHRONIZATION_POINT_TEST_ONLY("StringWriteToFlatConsString");
               Tagged<String> first = cons_string->first();
               uint32_t boundary = first->length();
               // Here we explicitly use signed ints as the values can become
@@ -873,12 +889,14 @@ void String::WriteToFlat(Tagged<String> source, SinkCharT* sink, uint32_t start,
               return length == 0;
             },
             [&](Tagged<SlicedString> slice) {
+              SYNCHRONIZATION_POINT_TEST_ONLY("StringWriteToFlatSlicedString");
               uint32_t offset = slice->offset();
               source = slice->parent();
               start += offset;
               return false;
             },
             [&](Tagged<ThinString> thin_string) {
+              SYNCHRONIZATION_POINT_TEST_ONLY("StringWriteToFlatThinString");
               source = thin_string->actual();
               return false;
             }})) {
@@ -1300,9 +1318,9 @@ bool String::SlowEquals(
 
   // Fast check: if at least one ThinString is involved, dereference it/them
   // and restart.
-  if (IsThinString(this) || IsThinString(other)) {
-    if (IsThinString(other)) other = Cast<ThinString>(other)->actual();
-    if (IsThinString(this)) {
+  if (Is<ThinString>(this) || Is<ThinString>(other)) {
+    if (Is<ThinString>(other)) other = Cast<ThinString>(other)->actual();
+    if (Is<ThinString>(this)) {
       return Cast<ThinString>(this)->actual()->Equals(other);
     } else {
       return this->Equals(other);
@@ -1354,7 +1372,7 @@ bool String::SlowEqualsNonThinSameLength(
   // before we try to flatten the strings.
   if (this->Get(0, access_guard) != other->Get(0, access_guard)) return false;
 
-  if (IsSeqOneByteString(this) && IsSeqOneByteString(other)) {
+  if (Is<SeqOneByteString>(this) && Is<SeqOneByteString>(other)) {
     const uint8_t* str1 =
         Cast<SeqOneByteString>(this)->GetChars(no_gc, access_guard);
     const uint8_t* str2 =
@@ -1918,6 +1936,23 @@ uint32_t String::ComputeAndSetRawHash(bool* out_one_byte_content) {
                               out_one_byte_content);
 }
 
+// This looks like the kind of function we'd put into header files, but it's
+// only used right below, so putting it here keeps headers leaner and still
+// allows the compiler to inline it.
+void Name::set_raw_hash_field_if_empty(uint32_t hash) {
+  uint32_t field_value = kEmptyHashField;
+  bool result = raw_hash_field_.compare_exchange_strong(field_value, hash);
+  USE(result);
+  // CAS can only fail if the string is shared or we use the forwarding table
+  // for all strings and the hash was already set (by another thread) or it is
+  // a forwarding index (that overwrites the previous hash).
+  // In all cases we don't want overwrite the old value, so we don't handle the
+  // failure case.
+  DCHECK_IMPLIES(!result, (Cast<String>(this)->IsShared() ||
+                           v8_flags.always_use_string_forwarding_table) &&
+                              (field_value == hash || IsForwardingIndex(hash)));
+}
+
 uint32_t String::ComputeAndSetRawHash(
     const SharedStringAccessGuardIfNeeded& access_guard,
     bool* out_one_byte_content) {
@@ -1931,7 +1966,7 @@ uint32_t String::ComputeAndSetRawHash(
   DCHECK_IMPLIES(!v8_flags.shared_string_table, !HasHashCode());
 
   // Store the hash code in the object.
-  const HashSeed seed = HashSeed(EarlyGetReadOnlyRoots());
+  const HashSeed seed = HashSeed(ReadOnlyHeap::EarlyGetReadOnlyRoots(this));
   size_t start = 0;
   Tagged<String> string = this;
   StringShape shape(string);
@@ -1978,7 +2013,7 @@ bool String::SlowAsArrayIndex(uint32_t* index) {
     uint32_t field = EnsureRawHash();  // Force computation of hash code.
     if (!IsIntegerIndex(field)) return false;
     *index = StringHasher::DecodeArrayIndexFromHashField(
-        field, HashSeed(EarlyGetReadOnlyRoots()));
+        field, HashSeed(ReadOnlyHeap::EarlyGetReadOnlyRoots(this)));
     return true;
   }
   if (length == 0 || length > kMaxArrayIndexSize) return false;
@@ -1993,7 +2028,7 @@ bool String::SlowAsIntegerIndex(size_t* index) {
     uint32_t field = EnsureRawHash();  // Force computation of hash code.
     if (!IsIntegerIndex(field)) return false;
     *index = StringHasher::DecodeArrayIndexFromHashField(
-        field, HashSeed(EarlyGetReadOnlyRoots()));
+        field, HashSeed(ReadOnlyHeap::EarlyGetReadOnlyRoots(this)));
     return true;
   }
   if (length == 0 || length > kMaxIntegerIndexSize) return false;
@@ -2046,7 +2081,7 @@ Handle<String> SeqString::Truncate(Isolate* isolate, Handle<SeqString> string,
     // No slot invalidation needed since this method is only used on freshly
     // allocated strings.
     heap->NotifyObjectSizeChange(*string, old_size, new_size,
-                                 ClearRecordedSlots::kNo);
+                                 ClearRecordedSlots{false});
   }
   // We are storing the new length using release store after creating a filler
   // for the left-over space to avoid races with the sweeper thread.
@@ -2057,7 +2092,7 @@ Handle<String> SeqString::Truncate(Isolate* isolate, Handle<SeqString> string,
 }
 
 SeqString::DataAndPaddingSizes SeqString::GetDataAndPaddingSizes() const {
-  if (IsSeqOneByteString(this)) {
+  if (Is<SeqOneByteString>(this)) {
     return Cast<SeqOneByteString>(this)->GetDataAndPaddingSizes();
   }
   return Cast<SeqTwoByteString>(this)->GetDataAndPaddingSizes();
@@ -2080,7 +2115,7 @@ SeqString::DataAndPaddingSizes SeqTwoByteString::GetDataAndPaddingSizes()
 #ifdef VERIFY_HEAP
 V8_EXPORT_PRIVATE void SeqString::SeqStringVerify(Isolate* isolate) {
   StringVerify(isolate);
-  CHECK(IsSeqString(this));
+  CHECK(Is<SeqString>(this));
   DataAndPaddingSizes sz = GetDataAndPaddingSizes();
   auto padding = reinterpret_cast<char*>(address() + sz.data_size);
   CHECK(sz.padding_size <= kTaggedSize);
@@ -2189,7 +2224,7 @@ void FlatStringReader::PostGarbageCollection() {
 }
 
 void ConsStringIterator::Initialize(Tagged<ConsString> cons_string,
-                                    int offset) {
+                                    uint32_t offset) {
   DCHECK(!cons_string.is_null());
   root_ = cons_string;
   consumed_ = offset;
@@ -2199,7 +2234,7 @@ void ConsStringIterator::Initialize(Tagged<ConsString> cons_string,
   DCHECK(StackBlown());
 }
 
-Tagged<String> ConsStringIterator::Continue(int* offset_out) {
+Tagged<String> ConsStringIterator::Continue(uint32_t* offset_out) {
   DCHECK_NE(depth_, 0);
   DCHECK_EQ(0, *offset_out);
   bool blew_stack = StackBlown();
@@ -2216,7 +2251,7 @@ Tagged<String> ConsStringIterator::Continue(int* offset_out) {
   return string;
 }
 
-Tagged<String> ConsStringIterator::Search(int* offset_out) {
+Tagged<String> ConsStringIterator::Search(uint32_t* offset_out) {
   Tagged<ConsString> cons_string = root_;
   // Reset the stack, pushing the root string.
   depth_ = 1;
@@ -2384,7 +2419,12 @@ namespace {
 // Check that the constants defined in src/objects/instance-type.h coincides
 // with the Torque-definition of string instance types in src/objects/string.tq.
 
-DEFINE_TORQUE_GENERATED_STRING_INSTANCE_TYPE()
+using RepresentationBits =
+    base::BitField<StringRepresentationTag, 0, 3, uint16_t>;
+using IsOneByteBit = base::BitField<bool, 3, 1, uint16_t>;
+using IsUncachedBit = base::BitField<bool, 4, 1, uint16_t>;
+using IsNotInternalizedBit = base::BitField<bool, 5, 1, uint16_t>;
+using IsSharedBit = base::BitField<bool, 6, 1, uint16_t>;
 
 static_assert(kStringRepresentationMask == RepresentationBits::kMask);
 

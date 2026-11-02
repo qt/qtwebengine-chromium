@@ -6,18 +6,12 @@
 
 #include "core/fxge/cfx_fontmgr.h"
 
-#include <array>
-#include <iterator>
 #include <memory>
-#include <utility>
 
-#include "core/fxcrt/check_op.h"
-#include "core/fxcrt/fixed_size_data_vector.h"
+#include "core/fxge/cfx_face.h"
 #include "core/fxge/cfx_font.h"
 #include "core/fxge/cfx_fontmapper.h"
 #include "core/fxge/cfx_glyphcache.h"
-#include "core/fxge/cfx_substfont.h"
-#include "core/fxge/fontdata/chromefontdata/chromefontdata.h"
 #include "core/fxge/fx_font.h"
 #include "core/fxge/systemfontinfo_iface.h"
 
@@ -39,28 +33,6 @@
 #endif  // PDF_USE_SKIA
 
 namespace {
-
-constexpr std::array<pdfium::span<const uint8_t>,
-                     CFX_FontMapper::kNumStandardFonts>
-    kFoxitFonts = {{
-        kFoxitFixedFontData,
-        kFoxitFixedBoldFontData,
-        kFoxitFixedBoldItalicFontData,
-        kFoxitFixedItalicFontData,
-        kFoxitSansFontData,
-        kFoxitSansBoldFontData,
-        kFoxitSansBoldItalicFontData,
-        kFoxitSansItalicFontData,
-        kFoxitSerifFontData,
-        kFoxitSerifBoldFontData,
-        kFoxitSerifBoldItalicFontData,
-        kFoxitSerifItalicFontData,
-        kFoxitSymbolFontData,
-        kFoxitDingbatsFontData,
-    }};
-
-constexpr pdfium::span<const uint8_t> kGenericSansFont = kFoxitSansMMFontData;
-constexpr pdfium::span<const uint8_t> kGenericSerifFont = kFoxitSerifMMFontData;
 
 #if defined(PDF_USE_SKIA)
 // A singleton SkFontMgr which can be used to decode raw font data or
@@ -95,22 +67,6 @@ sk_sp<SkFontMgr> CreateSkiaFontManager(CFX_FontMgr::FontBackend backend) {
 #endif  // defined(PDF_USE_SKIA)
 }  // namespace
 
-CFX_FontMgr::FontCacheEntry::FontCacheEntry(FixedSizeDataVector<uint8_t>&& data)
-    : font_stream_(pdfium::MakeRetain<CFX_ReadOnlyFixedSizeDataVectorStream>(
-          std::move(data))) {}
-
-CFX_FontMgr::FontCacheEntry::~FontCacheEntry() = default;
-
-void CFX_FontMgr::FontCacheEntry::SetFace(uint32_t face_index, CFX_Face* face) {
-  CHECK_LT(face_index, std::size(ttc_faces_));
-  ttc_faces_[face_index].Reset(face);
-}
-
-CFX_Face* CFX_FontMgr::FontCacheEntry::GetFace(uint32_t face_index) const {
-  CHECK_LT(face_index, std::size(ttc_faces_));
-  return ttc_faces_[face_index].Get();
-}
-
 CFX_FontMgr::CFX_FontMgr(FontBackend backend)
     : ft_library_(InitializeFreeType()),
 #if defined(PDF_USE_SKIA)
@@ -124,41 +80,6 @@ CFX_FontMgr::CFX_FontMgr(FontBackend backend)
 }
 
 CFX_FontMgr::~CFX_FontMgr() = default;
-
-RetainPtr<CFX_FontMgr::FontCacheEntry> CFX_FontMgr::GetFontCacheEntry(
-    const ByteString& face_name,
-    int weight,
-    bool italic) {
-  auto it = face_map_.find({face_name, weight, italic});
-  return it != face_map_.end() ? pdfium::WrapRetain(it->second.Get()) : nullptr;
-}
-
-RetainPtr<CFX_FontMgr::FontCacheEntry> CFX_FontMgr::AddFontCacheEntry(
-    const ByteString& face_name,
-    int weight,
-    bool italic,
-    FixedSizeDataVector<uint8_t> data) {
-  auto cache_entry = pdfium::MakeRetain<FontCacheEntry>(std::move(data));
-  face_map_[{face_name, weight, italic}].Reset(cache_entry.Get());
-  return cache_entry;
-}
-
-RetainPtr<CFX_FontMgr::FontCacheEntry> CFX_FontMgr::GetTTCFontCacheEntry(
-    size_t ttc_size,
-    uint32_t checksum) {
-  auto it = ttc_face_map_.find({ttc_size, checksum});
-  return it != ttc_face_map_.end() ? pdfium::WrapRetain(it->second.Get())
-                                   : nullptr;
-}
-
-RetainPtr<CFX_FontMgr::FontCacheEntry> CFX_FontMgr::AddTTCFontCacheEntry(
-    size_t ttc_size,
-    uint32_t checksum,
-    FixedSizeDataVector<uint8_t> data) {
-  auto new_entry = pdfium::MakeRetain<FontCacheEntry>(std::move(data));
-  ttc_face_map_[{ttc_size, checksum}].Reset(new_entry.Get());
-  return new_entry;
-}
 
 RetainPtr<CFX_GlyphCache> CFX_FontMgr::GetGlyphCache(const CFX_Font* font) {
   RetainPtr<CFX_Face> face = font->GetFace();
@@ -192,18 +113,3 @@ sk_sp<SkTypeface> CFX_FontMgr::MakeSkTypeface(
   return result;
 }
 #endif  // defined(PDF_USE_SKIA)
-
-// static
-pdfium::span<const uint8_t> CFX_FontMgr::GetStandardFont(size_t index) {
-  return kFoxitFonts[index];
-}
-
-// static
-pdfium::span<const uint8_t> CFX_FontMgr::GetGenericSansFont() {
-  return kGenericSansFont;
-}
-
-// static
-pdfium::span<const uint8_t> CFX_FontMgr::GetGenericSerifFont() {
-  return kGenericSerifFont;
-}

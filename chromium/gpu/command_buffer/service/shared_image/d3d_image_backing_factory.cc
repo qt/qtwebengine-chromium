@@ -482,7 +482,7 @@ bool D3DImageBackingFactory::IsSwapChainSupported(
 }
 
 // static
-bool D3DImageBackingFactory::ClearBackBufferToColor(IDXGISwapChain1* swap_chain,
+bool D3DImageBackingFactory::ClearBackBufferToColor(IDXGISwapChain3* swap_chain,
                                                     const SkColor4f& color) {
   Microsoft::WRL::ComPtr<ID3D11Texture2D> d3d11_texture;
   HRESULT hr = swap_chain->GetBuffer(0, IID_PPV_ARGS(&d3d11_texture));
@@ -496,7 +496,7 @@ bool D3DImageBackingFactory::ClearBackBufferToColor(IDXGISwapChain1* swap_chain,
 }
 
 bool D3DImageBackingFactory::CreateSwapChainInternal(
-    Microsoft::WRL::ComPtr<IDXGISwapChain1>& swap_chain,
+    Microsoft::WRL::ComPtr<IDXGISwapChain3>& swap_chain,
     Microsoft::WRL::ComPtr<ID3D11Texture2D>& back_buffer_texture,
     Microsoft::WRL::ComPtr<ID3D11Texture2D>& front_buffer_texture,
     viz::SharedImageFormat format,
@@ -545,24 +545,25 @@ bool D3DImageBackingFactory::CreateSwapChainInternal(
   desc.AlphaMode = format.HasAlpha() ? DXGI_ALPHA_MODE_PREMULTIPLIED
                                      : DXGI_ALPHA_MODE_IGNORE;
 
+  Microsoft::WRL::ComPtr<IDXGISwapChain1> swap_chain1;
   hr = dxgi_factory->CreateSwapChainForComposition(d3d11_device_.Get(), &desc,
-                                                   nullptr, &swap_chain);
+                                                   nullptr, &swap_chain1);
   if (FAILED(hr)) {
     LOG(ERROR) << "CreateSwapChainForComposition failed with error " << std::hex
                << hr;
     return false;
   }
 
+  // IDXGISwapChain3 is supported on all Windows versions >= 10. Windows 10
+  // which is the minimum Windows version Chromium supports.
+  CHECK_EQ(swap_chain1.As(&swap_chain), S_OK);
   gl::LabelSwapChainAndBuffers(swap_chain.Get(), kD3DImageBackingLabel);
 
   if (gl::DXGIWaitableSwapChainEnabled()) {
-    Microsoft::WRL::ComPtr<IDXGISwapChain3> swap_chain3;
-    if (SUCCEEDED(swap_chain.As(&swap_chain3))) {
-      hr = swap_chain3->SetMaximumFrameLatency(
-          gl::GetDXGIWaitableSwapChainMaxQueuedFrames());
-      DCHECK(SUCCEEDED(hr)) << "SetMaximumFrameLatency failed with error "
-                            << logging::SystemErrorCodeToString(hr);
-    }
+    hr = swap_chain->SetMaximumFrameLatency(
+        gl::GetDXGIWaitableSwapChainMaxQueuedFrames());
+    DCHECK(SUCCEEDED(hr)) << "SetMaximumFrameLatency failed with error "
+                          << logging::SystemErrorCodeToString(hr);
   }
 
   // Explicitly clear front and back buffers to ensure that there are no
@@ -607,7 +608,7 @@ std::unique_ptr<SharedImageBacking> D3DImageBackingFactory::CreateSharedImage(
   const auto size = si_info.size;
   const auto usage = si_info.usage;
   if (usage.Has(SHARED_IMAGE_USAGE_CONCURRENT_READ_WRITE)) {
-    Microsoft::WRL::ComPtr<IDXGISwapChain1> swap_chain;
+    Microsoft::WRL::ComPtr<IDXGISwapChain3> swap_chain;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> back_buffer_texture;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> front_buffer_texture;
     if (!CreateSwapChainInternal(swap_chain, back_buffer_texture,
@@ -970,36 +971,33 @@ D3DImageBackingFactory::CreateSharedBufferD3D12(const Mailbox& mailbox,
       return nullptr;
     }
 
-    // If adapter supports UMA, create the custom heap with equivalent heap
-    // type. Otherwise, use shared cross-adapter heaps for a discrete (NUMA)
-    // adapter. This is currently required for ORT interop since ORT can only
-    // import mapped buffers.
-    // TODO(crbug.com/6064345): support D3D12_HEAP_TYPE_DEFAULT for NUMA.
-    if (arch.UMA == TRUE) {
-      // Default to UPLOAD heap to enable CPU read-write access. This is
-      // currently required for ORT interop.
-      D3D12_HEAP_TYPE target_heap_type = D3D12_HEAP_TYPE_UPLOAD;
-      if (usage.Has(SHARED_IMAGE_USAGE_WEBNN_SHARED_TENSOR_READ)) {
-        target_heap_type = D3D12_HEAP_TYPE_READBACK;
-      }
-      heap_desc.Properties =
-          d3d12_device_->GetCustomHeapProperties(0, target_heap_type);
-    } else {
-      // Discrete adapters cannot directly create shared cross-adapter heaps
-      // that are accessible to the CPU. We allocate the backing memory
-      // ourselves and open the heap from it to bypass this restriction.
-      DWORD page_protection = PAGE_READWRITE;
-      if (usage.Has(SHARED_IMAGE_USAGE_WEBNN_SHARED_TENSOR_WRITE)) {
-        page_protection |= PAGE_WRITECOMBINE;
-      }
+    // Using OpenExistingHeapFromAddress for both UMA and NUMA adapters.
+    //
+    // For UMA adapters, OpenExistingHeapFromAddress is the only way to create a
+    // heap that is both CPU accessible and SHARED. SHARED is required by the
+    // ORT interop API, and CPU accessibility is required for zero-copy
+    // reads/writes as well as the fallback path when an ORT EP does not support
+    // the interop API.
+    //
+    // For NUMA adapter, OpenExistingHeapFromAddress is currently required
+    // because the ORT interop API is not supported by all ORT EPs and we can't
+    // use the fallback path with D3D12_HEAP_TYPE_DEFAULT heaps.
+    // TODO(crbug.com/481268786): support D3D12_HEAP_TYPE_DEFAULT for NUMA.
 
-      d3d12_heap_memory.reset(::VirtualAlloc(nullptr, heap_desc.SizeInBytes,
-                                             MEM_RESERVE | MEM_COMMIT,
-                                             page_protection));
-      if (!d3d12_heap_memory) {
-        PLOG(ERROR) << "Failed to allocate D3D12 heap backing memory.";
-        return nullptr;
-      }
+    DWORD page_protection = PAGE_READWRITE;
+    // UMA adapters with cache coherency can use write-back for better write
+    // performance.
+    if ((!arch.UMA || !arch.CacheCoherentUMA) &&
+        usage.Has(SHARED_IMAGE_USAGE_WEBNN_SHARED_TENSOR_WRITE)) {
+      page_protection |= PAGE_WRITECOMBINE;
+    }
+
+    d3d12_heap_memory.reset(::VirtualAlloc(nullptr, heap_desc.SizeInBytes,
+                                           MEM_RESERVE | MEM_COMMIT,
+                                           page_protection));
+    if (!d3d12_heap_memory) {
+      PLOG(ERROR) << "Failed to allocate D3D12 heap backing memory.";
+      return nullptr;
     }
   } else {
     // Standard WebGPU uses default.
@@ -1148,6 +1146,13 @@ bool D3DImageBackingFactory::IsSupported(SharedImageUsageSet usage,
   }
 
   if (is_buffer) {
+    // If the SharedImage can be used as a WebGPU buffer, that means it's
+    // readable and writable and must have those usages.
+    if (!usage.HasAll(gpu::SHARED_IMAGE_USAGE_WEBGPU_READ |
+                      gpu::SHARED_IMAGE_USAGE_WEBGPU_WRITE)) {
+      return false;
+    }
+
     // If this buffer is for WebNN, only allow usages that WebNN supports.
     // We allow height > 1 because the factory flattens it to a 1D D3D buffer.
     if (usage.Has(gpu::SHARED_IMAGE_USAGE_WEBNN_SHARED_TENSOR)) {

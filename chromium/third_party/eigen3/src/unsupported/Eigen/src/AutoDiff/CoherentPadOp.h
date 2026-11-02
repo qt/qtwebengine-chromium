@@ -92,12 +92,11 @@ struct unary_evaluator<CoherentPadOp<ArgType, SizeAtCompileTime>>
       : m_arg(pad.nestedExpression()), m_argImpl(m_arg), m_size(pad.nestedExpression().size()) {}
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE CoeffReturnType coeff(Index row, Index col) const {
-    EIGEN_IF_CONSTEXPR(XprType::IsRowMajor) {
+    EIGEN_IF_CONSTEXPR (XprType::IsRowMajor) {
       if (col < m_size.value()) {
         return m_argImpl.coeff(1, col);
       }
-    }
-    else {
+    } else {
       if (row < m_size.value()) {
         return m_argImpl.coeff(row, 1);
       }
@@ -116,7 +115,9 @@ struct unary_evaluator<CoherentPadOp<ArgType, SizeAtCompileTime>>
   EIGEN_STRONG_INLINE PacketType packet(Index row, Index col) const {
     // AutoDiff scalar's derivative must be a vector, which is enforced by static assert.
     // Defer to linear access for simplicity.
-    EIGEN_IF_CONSTEXPR(XprType::IsRowMajor) { return packet(col); }
+    EIGEN_IF_CONSTEXPR (XprType::IsRowMajor) {
+      return packet(col);
+    }
     return packet(row);
   }
 

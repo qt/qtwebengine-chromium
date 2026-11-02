@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import * as Common from '../common/common.js';
+
 import {InspectorFrontendHostInstance} from './InspectorFrontendHost.js';
 import {EnumeratedHistogram} from './InspectorFrontendHostAPI.js';
 
@@ -27,6 +29,11 @@ export class UserMetrics {
 
   actionTaken(action: Action): void {
     InspectorFrontendHostInstance.recordEnumeratedHistogram(EnumeratedHistogram.ActionTaken, action, Action.MAX_VALUE);
+  }
+
+  resendRequest(resourceType: ResendRequestType): void {
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(EnumeratedHistogram.ResendRequest, resourceType,
+                                                            ResendRequestType.MAX_VALUE);
   }
 
   keybindSetSettingChanged(keybindSet: string): void {
@@ -204,21 +211,6 @@ export class UserMetrics {
     InspectorFrontendHostInstance.recordCountHistogram('DevTools.Freestyler.EvalResponseSize', bytes, 0, 100_000, 100);
   }
 
-  performanceAINetworkSummaryResponseSize(bytes: number): void {
-    InspectorFrontendHostInstance.recordCountHistogram(
-        'DevTools.PerformanceAI.NetworkSummaryResponseSize', bytes, 0, 100_000, 100);
-  }
-
-  performanceAINetworkRequestDetailResponseSize(bytes: number): void {
-    InspectorFrontendHostInstance.recordCountHistogram(
-        'DevTools.PerformanceAI.NetworkRequestDetailResponseSize', bytes, 0, 100_000, 100);
-  }
-
-  performanceAIMainThreadActivityResponseSize(bytes: number): void {
-    InspectorFrontendHostInstance.recordCountHistogram(
-        'DevTools.PerformanceAI.MainThreadActivityResponseSize', bytes, 0, 100_000, 100);
-  }
-
   builtInAiAvailability(availability: BuiltInAiAvailability): void {
     InspectorFrontendHostInstance.recordEnumeratedHistogram(
         EnumeratedHistogram.BuiltInAiAvailability, availability, BuiltInAiAvailability.MAX_VALUE);
@@ -267,11 +259,6 @@ export class UserMetrics {
   consoleInsightShortTeaserGenerated(timeInMilliseconds: number): void {
     InspectorFrontendHostInstance.recordPerformanceHistogram(
         'DevTools.Insights.ShortTeaserGenerationTime', timeInMilliseconds);
-  }
-
-  extensionEvalTarget(target: ExtensionEvalTarget): void {
-    InspectorFrontendHostInstance.recordEnumeratedHistogram(
-        EnumeratedHistogram.ExtensionEvalTarget, target, ExtensionEvalTarget.MAX_VALUE);
   }
 }
 
@@ -496,7 +483,9 @@ export enum Action {
   AiCodeGenerationRequestTriggeredFromSources = 205,
   AiCodeCompletionFreCompletedFromConsole = 206,
   AiCodeCompletionFreCompletedFromSources = 207,
-  MAX_VALUE = 208,
+  AiAssistanceOpenedFromApplicationPanelFloatingButton = 208,
+  AiAssistanceOpenedFromApplicationPanel = 209,
+  MAX_VALUE = 210,
   /* eslint-enable @typescript-eslint/naming-convention */
 }
 
@@ -569,8 +558,9 @@ export enum PanelCodes {
   'developer-resources' = 66,
   'autofill-view' = 67,
   freestyler = 68,
+  ads = 69,
   /* eslint-enable @typescript-eslint/naming-convention */
-  MAX_VALUE = 69,
+  MAX_VALUE = 70,
 }
 
 export enum MediaTypes {
@@ -766,7 +756,6 @@ export enum DevtoolsExperiments {
   /* eslint-disable @typescript-eslint/naming-convention */
   'protocol-monitor' = 13,
   'instrumentation-breakpoints' = 61,
-  'use-source-map-scopes' = 76,
   'durable-messages' = 110,
   'jpeg-xl' = 111,
   'plus-button' = 112,
@@ -830,18 +819,7 @@ export enum IssueCreated {
   'CookieIssue::ExcludeSameSiteNoneInsecure::SetCookie' = 15,
   'CookieIssue::WarnSameSiteNoneInsecure::ReadCookie' = 16,
   'CookieIssue::WarnSameSiteNoneInsecure::SetCookie' = 17,
-  'CookieIssue::WarnSameSiteStrictLaxDowngradeStrict::Secure' = 18,
-  'CookieIssue::WarnSameSiteStrictLaxDowngradeStrict::Insecure' = 19,
-  'CookieIssue::WarnCrossDowngrade::ReadCookie::Secure' = 20,
-  'CookieIssue::WarnCrossDowngrade::ReadCookie::Insecure' = 21,
-  'CookieIssue::WarnCrossDowngrade::SetCookie::Secure' = 22,
-  'CookieIssue::WarnCrossDowngrade::SetCookie::Insecure' = 23,
-  'CookieIssue::ExcludeNavigationContextDowngrade::Secure' = 24,
-  'CookieIssue::ExcludeNavigationContextDowngrade::Insecure' = 25,
-  'CookieIssue::ExcludeContextDowngrade::ReadCookie::Secure' = 26,
-  'CookieIssue::ExcludeContextDowngrade::ReadCookie::Insecure' = 27,
-  'CookieIssue::ExcludeContextDowngrade::SetCookie::Secure' = 28,
-  'CookieIssue::ExcludeContextDowngrade::SetCookie::Insecure' = 29,
+
   'CookieIssue::ExcludeSameSiteUnspecifiedTreatedAsLax::ReadCookie' = 30,
   'CookieIssue::ExcludeSameSiteUnspecifiedTreatedAsLax::SetCookie' = 31,
   'CookieIssue::WarnSameSiteUnspecifiedLaxAllowUnsafe::ReadCookie' = 32,
@@ -1211,9 +1189,44 @@ export const enum BuiltInAiAvailability {
   MAX_VALUE = 10,
 }
 
-export const enum ExtensionEvalTarget {
-  WEB_PAGE = 0,
-  SAME_EXTENSION = 1,
-  OTHER_EXTENSION = 2,
-  MAX_VALUE = 3,
+export const enum ResendRequestType {
+  XHR = 0,
+  FETCH = 1,
+  SCRIPT = 2,
+  STYLESHEET = 3,
+  IMAGE = 4,
+  MEDIA = 5,
+  FONT = 6,
+  WASM = 7,
+  MANIFEST = 8,
+  TEXT_TRACK = 9,
+  SOURCE_MAP_SCRIPT = 10,
+  SOURCE_MAP_STYLE_SHEET = 11,
+  DOCUMENT = 12,
+  PREFETCH = 13,
+  PING = 14,
+  OTHER = 15,
+  MAX_VALUE = 16,
+}
+
+const resendRequestTypeMap = new Map<Common.ResourceType.ResourceType, ResendRequestType>([
+  [Common.ResourceType.resourceTypes.XHR, ResendRequestType.XHR],
+  [Common.ResourceType.resourceTypes.Fetch, ResendRequestType.FETCH],
+  [Common.ResourceType.resourceTypes.Script, ResendRequestType.SCRIPT],
+  [Common.ResourceType.resourceTypes.Stylesheet, ResendRequestType.STYLESHEET],
+  [Common.ResourceType.resourceTypes.Image, ResendRequestType.IMAGE],
+  [Common.ResourceType.resourceTypes.Media, ResendRequestType.MEDIA],
+  [Common.ResourceType.resourceTypes.Font, ResendRequestType.FONT],
+  [Common.ResourceType.resourceTypes.Wasm, ResendRequestType.WASM],
+  [Common.ResourceType.resourceTypes.Manifest, ResendRequestType.MANIFEST],
+  [Common.ResourceType.resourceTypes.TextTrack, ResendRequestType.TEXT_TRACK],
+  [Common.ResourceType.resourceTypes.SourceMapScript, ResendRequestType.SOURCE_MAP_SCRIPT],
+  [Common.ResourceType.resourceTypes.SourceMapStyleSheet, ResendRequestType.SOURCE_MAP_STYLE_SHEET],
+  [Common.ResourceType.resourceTypes.Document, ResendRequestType.DOCUMENT],
+  [Common.ResourceType.resourceTypes.Prefetch, ResendRequestType.PREFETCH],
+  [Common.ResourceType.resourceTypes.Ping, ResendRequestType.PING],
+]);
+
+export function resendRequestType(resourceType: Common.ResourceType.ResourceType): ResendRequestType {
+  return resendRequestTypeMap.get(resourceType) ?? ResendRequestType.OTHER;
 }

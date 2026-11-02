@@ -664,6 +664,8 @@ class CDM_CLASS_API FileIOClient {
 // function. To add a new metric, please add it to the end of this enum list
 // without changing any existing enum values.
 // Metric names that use generic naming like `Time1` are key system specific.
+// The Widevine documentation and UKM privacy approval related to these metrics
+// can be found here http://shortn/_pX9Q6zEcX8.
 // Note: For forward compatibility, Host implementations must gracefully handle
 // unexpected (new) enum values, e.g. no-op.
 enum MetricName : uint32_t {
@@ -677,6 +679,7 @@ enum MetricName : uint32_t {
   kKeySystemDataTime2,
   kKeySystemDataTime3,
   kKeySystemDataBool1,
+  kSessionInitDataType,
 };
 CHECK_TYPE(MetricName, 4, 4);
 
@@ -991,8 +994,12 @@ class CDM_CLASS_API ContentDecryptionModule_11 {
                             const char* session_id,
                             uint32_t session_id_size) = 0;
 
-  // Removes any stored session data associated with this session. Will only be
-  // called for persistent sessions. The CDM must respond by calling either
+  // Removes any stored session data associated with this session. Removes all
+  // license(s) and key(s) associated with the session, whether they are in
+  // memory, persistent store, or both. For persistent session types, other
+  // session data (e.g. record of license destruction) will be cleared as
+  // defined for each session type once a release message acknowledgment is
+  // processed by UpdateSession(). The CDM must respond by calling either
   // Host::OnResolvePromise() or Host::OnRejectPromise() when the request has
   // been processed.
   virtual void RemoveSession(uint32_t promise_id,

@@ -9,7 +9,6 @@
 #include "src/xnnpack/indirection.h"
 
 #include <assert.h>
-#include <fxdiv.h>
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -41,17 +40,25 @@ void xnn_indirection_init_conv2d(
   size_t input_padding_top,
   size_t input_padding_left)
 {
+  assert(output_height != 0);
+  assert(output_width != 0);
   const size_t output_size = output_height * output_width;
   const size_t kernel_size = kernel_height * kernel_width;
 
-  const struct fxdiv_divisor_size_t output_width_divisor = fxdiv_init_size_t(output_width);
+  size_t cur_oy = output_start / output_width;
+  size_t cur_ox = output_start % output_width;
+  const size_t clamp_oy = (output_size - 1) / output_width;
+  const size_t clamp_ox = (output_size - 1) % output_width;
 
   for (size_t output_tile_start = output_start; output_tile_start < output_end; output_tile_start += output_tile_size) {
+    size_t oy = cur_oy;
+    size_t ox = cur_ox;
     for (size_t output_tile_offset = 0; output_tile_offset < output_tile_size; output_tile_offset++) {
-      const size_t output_index = min(output_tile_start + output_tile_offset, output_size - 1);
-      const struct fxdiv_result_size_t output_y_x = fxdiv_divide_size_t(output_index, output_width_divisor);
-      const size_t output_x = output_y_x.remainder;
-      const size_t output_y = output_y_x.quotient;
+      const size_t output_index = output_tile_start + output_tile_offset;
+      const bool clamped = output_index >= output_size - 1;
+      const size_t output_x = clamped ? clamp_ox : ox;
+      const size_t output_y = clamped ? clamp_oy : oy;
+
       for (size_t kernel_y = 0; kernel_y < kernel_height; kernel_y++) {
         const size_t input_y = output_y * stride_height + kernel_y * dilation_height - input_padding_top;
         if (input_y < input_height) {
@@ -74,7 +81,17 @@ void xnn_indirection_init_conv2d(
           }
         }
       }
+
+      if (output_index < output_size - 1) {
+        ox++;
+        if (ox == output_width) {
+          ox = 0;
+          oy++;
+        }
+      }
     }
+    cur_oy = oy;
+    cur_ox = ox;
   }
 }
 
@@ -101,22 +118,26 @@ void xnn_indirection_init_deconv2d(
   const size_t tiled_output_size = round_up(output_size, output_tile_size);
   const size_t kernel_size = kernel_height * kernel_width;
 
-  const struct fxdiv_divisor_size_t output_width_divisor = fxdiv_init_size_t(output_width);
-  const struct fxdiv_divisor_size_t stride_height_divisor = fxdiv_init_size_t(stride_height);
-  const struct fxdiv_divisor_size_t stride_width_divisor = fxdiv_init_size_t(stride_width);
+  size_t cur_oy = 0;
+  size_t cur_ox = 0;
+  const size_t clamp_oy = (output_size - 1) / output_width;
+  const size_t clamp_ox = (output_size - 1) % output_width;
 
   for (size_t output_tile_start = 0; output_tile_start < tiled_output_size; output_tile_start += output_tile_size) {
+    size_t oy = cur_oy;
+    size_t ox = cur_ox;
     for (size_t output_tile_offset = 0; output_tile_offset < output_tile_size; output_tile_offset++) {
-      const size_t output_index = min(output_tile_start + output_tile_offset, output_size - 1);
-      const struct fxdiv_result_size_t output_y_x = fxdiv_divide_size_t(output_index, output_width_divisor);
-      const size_t output_x = output_y_x.remainder;
-      const size_t output_y = output_y_x.quotient;
+      const size_t output_index = output_tile_start + output_tile_offset;
+      const bool clamped = output_index >= output_size - 1;
+      const size_t output_x = clamped ? clamp_ox : ox;
+      const size_t output_y = clamped ? clamp_oy : oy;
+
       for (size_t kernel_y = 0; kernel_y < kernel_height; kernel_y++) {
         const size_t y = output_y + padding_top - kernel_y * dilation_height;
-        const size_t input_y = fxdiv_quotient_size_t(y, stride_height_divisor);
+        const size_t input_y = y / stride_height;
         for (size_t kernel_x = 0; kernel_x < kernel_width; kernel_x++) {
           const size_t x = output_x + padding_left - kernel_x * dilation_width;
-          const size_t input_x = fxdiv_quotient_size_t(x, stride_width_divisor);
+          const size_t input_x = x / stride_width;
           const size_t kernel_index = kernel_y * kernel_width + kernel_x;
           const size_t index = output_tile_start * kernel_size + kernel_index * output_tile_size + output_tile_offset;
           if (input_y * stride_height == y && input_y < input_height && input_x * stride_width == x && input_x < input_width) {
@@ -126,7 +147,17 @@ void xnn_indirection_init_deconv2d(
           }
         }
       }
+
+      if (output_index < output_size - 1) {
+        ox++;
+        if (ox == output_width) {
+          ox = 0;
+          oy++;
+        }
+      }
     }
+    cur_oy = oy;
+    cur_ox = ox;
   }
 }
 
@@ -384,7 +415,10 @@ void xnn_indirection_init_maxpool2d(
         while (input_y >= input_height + input_padding_top) {
           input_y = doz(input_y, dilation_height);
         }
-        input_y -= input_padding_top;
+        // When dilation_height > input_height the loop above can step below
+        // input_padding_top, so the subtraction would underflow. Clamp the
+        // result to the last valid input row to stay in bounds.
+        input_y = min(doz(input_y, input_padding_top), input_height - 1);
 
         for (size_t output_x = 0; output_x < output_width; output_x++) {
           size_t safe_input_x = output_x * stride_width;
@@ -401,7 +435,10 @@ void xnn_indirection_init_maxpool2d(
             while (input_x >= input_width + input_padding_left) {
               input_x = doz(input_x, dilation_width);
             }
-            input_x -= input_padding_left;
+            // When dilation_width > input_width the loop above can step below
+            // input_padding_left, so the subtraction would underflow. Clamp the
+            // result to the last valid input column to stay in bounds.
+            input_x = min(doz(input_x, input_padding_left), input_width - 1);
 
             const size_t index = output_y * step_height + output_x * step_width * kernel_height + pooling_x * kernel_height + pooling_y;
             indirection_buffer[index] = (const void*) ((uintptr_t) input + (input_y * input_width + input_x) * input_pixel_stride);
@@ -465,7 +502,7 @@ void xnn_indirection_init_resize_bilinear2d_hwc_f16(
   const uint32_t input_x_max = (uint32_t) input_width - 1;
   if (tensorflow_legacy || align_corners) {
     for (size_t output_y = output_y_start; output_y < output_y_end; output_y++) {
-      const float input_y = (float) (int32_t) output_y * height_scale;
+      const float input_y = math_min_f32((float) (int32_t) output_y * height_scale, (float) input_y_max);
       assert(input_y >= 0.0f);
       assert(input_y < (float) input_height);
 
@@ -473,7 +510,7 @@ void xnn_indirection_init_resize_bilinear2d_hwc_f16(
       const uint32_t input_y_bottom = math_min_u32(input_y_top + 1, input_y_max);
       const float alpha_y = input_y - (float) input_y_top;
       for (size_t output_x = 0; output_x < output_width; output_x++) {
-        const float input_x = (float) (int32_t) output_x * width_scale;
+        const float input_x = math_min_f32((float) (int32_t) output_x * width_scale, (float) input_x_max);
         assert(input_x >= 0.0f);
         assert(input_x < (float) input_width);
 
@@ -566,7 +603,7 @@ void xnn_indirection_init_resize_bilinear2d_hwc_f32(
 
   if (tensorflow_legacy || align_corners) {
     for (size_t output_y = output_y_start; output_y < output_y_end; output_y++) {
-      const float input_y = (float) (int32_t) output_y * height_scale;
+      const float input_y = math_min_f32((float) (int32_t) output_y * height_scale, (float) input_y_max);
       assert(input_y >= 0.0f);
       assert(input_y < (float) input_height);
 
@@ -574,7 +611,7 @@ void xnn_indirection_init_resize_bilinear2d_hwc_f32(
       const uint32_t input_y_bottom = math_min_u32(input_y_top + 1, input_y_max);
       const float alpha_y = input_y - (float) input_y_top;
       for (size_t output_x = 0; output_x < output_width; output_x++) {
-        const float input_x = (float) (int32_t) output_x * width_scale;
+        const float input_x = math_min_f32((float) (int32_t) output_x * width_scale, (float) input_x_max);
         assert(input_x >= 0.0f);
         assert(input_x < (float) input_width);
 
@@ -667,7 +704,7 @@ void xnn_indirection_init_resize_bilinear2d_hwc_q11(
 
   if (tensorflow_legacy || align_corners) {
     for (size_t output_y = output_y_start; output_y < output_y_end; output_y++) {
-      const float input_y = (float) (int32_t) output_y * height_scale;
+      const float input_y = math_min_f32((float) (int32_t) output_y * height_scale, (float) input_y_max);
       assert(input_y >= 0.0f);
       assert(input_y < (float) input_height);
 
@@ -675,7 +712,7 @@ void xnn_indirection_init_resize_bilinear2d_hwc_q11(
       const uint32_t input_y_bottom = math_min_u32(input_y_top + 1, input_y_max);
       const float alpha_y = input_y - (float) input_y_top;
       for (size_t output_x = 0; output_x < output_width; output_x++) {
-        const float input_x = (float) (int32_t) output_x * width_scale;
+        const float input_x = math_min_f32((float) (int32_t) output_x * width_scale, (float) input_x_max);
         assert(input_x >= 0.0f);
         assert(input_x < (float) input_width);
 
@@ -763,7 +800,7 @@ void xnn_indirection_init_resize_bilinear2d_chw_f16(
   const uint32_t input_x_max = (uint32_t) input_width - 1;
   if (tensorflow_legacy || align_corners) {
     for (size_t output_y = 0; output_y < output_height; output_y++) {
-      const float input_y = (float) (int32_t) output_y * height_scale;
+      const float input_y = math_min_f32((float) (int32_t) output_y * height_scale, (float) input_y_max);
       assert(input_y >= 0.0f);
       assert(input_y < (float) input_height);
 
@@ -771,7 +808,7 @@ void xnn_indirection_init_resize_bilinear2d_chw_f16(
       const uint32_t input_y_bottom = math_min_u32(input_y_top + 1, input_y_max);
       const float alpha_y = input_y - (float) input_y_top;
       for (size_t output_x = 0; output_x < output_width; output_x++) {
-        const float input_x = (float) (int32_t) output_x * width_scale;
+        const float input_x = math_min_f32((float) (int32_t) output_x * width_scale, (float) input_x_max);
         assert(input_x >= 0.0f);
         assert(input_x < (float) input_width);
 
@@ -863,7 +900,7 @@ void xnn_indirection_init_resize_bilinear2d_chw_f32(
   const uint32_t input_x_max = (uint32_t) input_width - 1;
   if (tensorflow_legacy || align_corners) {
     for (size_t output_y = 0; output_y < output_height; output_y++) {
-      const float input_y = (float) (int32_t) output_y * height_scale;
+      const float input_y = math_min_f32((float) (int32_t) output_y * height_scale, (float) input_y_max);
       assert(input_y >= 0.0f);
       assert(input_y < (float) input_height);
 
@@ -871,7 +908,7 @@ void xnn_indirection_init_resize_bilinear2d_chw_f32(
       const uint32_t input_y_bottom = math_min_u32(input_y_top + 1, input_y_max);
       const float alpha_y = input_y - (float) input_y_top;
       for (size_t output_x = 0; output_x < output_width; output_x++) {
-        const float input_x = (float) (int32_t) output_x * width_scale;
+        const float input_x = math_min_f32((float) (int32_t) output_x * width_scale, (float) input_x_max);
         assert(input_x >= 0.0f);
         assert(input_x < (float) input_width);
 

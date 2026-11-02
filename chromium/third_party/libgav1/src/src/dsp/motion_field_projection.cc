@@ -27,12 +27,6 @@
 
 namespace libgav1 {
 namespace dsp {
-namespace {
-
-// Silence unused function warnings when MotionFieldProjectionKernel_C is
-// not used.
-#if LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS || \
-    !defined(LIBGAV1_Dsp8bpp_MotionFieldProjectionKernel)
 
 // 7.9.2.
 void MotionFieldProjectionKernel_C(const ReferenceInfo& reference_info,
@@ -97,11 +91,6 @@ void MotionFieldProjectionKernel_C(const ReferenceInfo& reference_info,
     dst_mv += stride;
   } while (++y8 < y8_end);
 }
-
-#endif  // LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS ||
-        // !defined(LIBGAV1_Dsp8bpp_MotionFieldProjectionKernel)
-
-}  // namespace
 
 void MotionFieldProjectionInit_C() {
 #if LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS || \

@@ -6,8 +6,10 @@
 
 #include "core/fpdfapi/render/cpdf_rendertiling.h"
 
+#include <cmath>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include "core/fpdfapi/page/cpdf_form.h"
@@ -19,7 +21,7 @@
 #include "core/fpdfapi/render/cpdf_renderstatus.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/span_util.h"
-#include "core/fxge/cfx_defaultrenderdevice.h"
+#include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 
 namespace {
@@ -41,9 +43,12 @@ RetainPtr<CFX_DIBitmap> DrawPatternBitmap(
                                            : FXDIB_Format::k8bppMask)) {
     return nullptr;
   }
-  CFX_DefaultRenderDevice bitmap_device;
-  bitmap_device.AttachWithBackdropAndGroupKnockout(
-      pBitmap, /*pBackdropBitmap=*/nullptr, /*bGroupKnockout=*/true);
+  std::unique_ptr<CFX_RenderDevice> bitmap_device =
+      CFX_RenderDevice::CreateForBitmapWithBackdropAndGroupKnockout(
+          pBitmap, /*backdrop_bitmap=*/nullptr, /*group_knockout=*/true);
+  if (!bitmap_device) {
+    return nullptr;
+  }
   CFX_FloatRect cell_bbox =
       pPattern->pattern_to_form().TransformRect(pPattern->bbox());
   cell_bbox = mtObject2Device.TransformRect(cell_bbox);
@@ -62,9 +67,16 @@ RetainPtr<CFX_DIBitmap> DrawPatternBitmap(
 
   CPDF_RenderContext context(doc, nullptr, pCache);
   context.AppendLayer(pPatternForm, mtPattern2Bitmap);
-  context.Render(&bitmap_device, nullptr, &options, nullptr);
+  context.Render(bitmap_device.get(), nullptr, &options, nullptr);
 
   return pBitmap;
+}
+
+std::optional<int> CheckedFloatToInt(float value) {
+  if (!pdfium::IsValueInRangeForNumericType<int>(value)) {
+    return std::nullopt;
+  }
+  return static_cast<int>(value);
 }
 
 }  // namespace
@@ -101,16 +113,32 @@ RetainPtr<CFX_DIBitmap> CPDF_RenderTiling::Draw(
     height = 1;
   }
 
+  const float x_step = pPattern->x_step();
+  const float y_step = pPattern->y_step();
+  if (!std::isfinite(x_step) || !std::isfinite(y_step) || x_step == 0.0f ||
+      y_step == 0.0f) {
+    return nullptr;
+  }
+
   CFX_FloatRect clip_box_p =
       mtPattern2Device.GetInverse().TransformRect(CFX_FloatRect(clip_box));
-  int min_col = static_cast<int>(
-      ceil((clip_box_p.left - pPattern->bbox().right) / pPattern->x_step()));
-  int max_col = static_cast<int>(
-      floor((clip_box_p.right - pPattern->bbox().left) / pPattern->x_step()));
-  int min_row = static_cast<int>(
-      ceil((clip_box_p.bottom - pPattern->bbox().top) / pPattern->y_step()));
-  int max_row = static_cast<int>(
-      floor((clip_box_p.top - pPattern->bbox().bottom) / pPattern->y_step()));
+  std::optional<int> maybe_min_col = CheckedFloatToInt(
+      std::ceil((clip_box_p.left - pPattern->bbox().right) / x_step));
+  std::optional<int> maybe_max_col = CheckedFloatToInt(
+      std::floor((clip_box_p.right - pPattern->bbox().left) / x_step));
+  std::optional<int> maybe_min_row = CheckedFloatToInt(
+      std::ceil((clip_box_p.bottom - pPattern->bbox().top) / y_step));
+  std::optional<int> maybe_max_row = CheckedFloatToInt(
+      std::floor((clip_box_p.top - pPattern->bbox().bottom) / y_step));
+  if (!maybe_min_col.has_value() || !maybe_max_col.has_value() ||
+      !maybe_min_row.has_value() || !maybe_max_row.has_value()) {
+    return nullptr;
+  }
+
+  int min_col = maybe_min_col.value();
+  int max_col = maybe_max_col.value();
+  int min_row = maybe_min_row.value();
+  int max_row = maybe_max_row.value();
 
   // Make sure we can fit the needed width * height into an int.
   if (height > std::numeric_limits<int>::max() / width) {

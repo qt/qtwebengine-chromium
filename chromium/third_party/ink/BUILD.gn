@@ -2,6 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+assert(
+    !is_android,
+    "Ink in //third_party/ink is not supported on Android. Use //third_party/androidx/third_party/ink instead.")
+
 config("public_config") {
   include_dirs = [ "//third_party/ink/src" ]
 }
@@ -24,6 +28,8 @@ source_set("ink") {
     "src/ink/brush/color_function.h",
     "src/ink/brush/easing_function.cc",
     "src/ink/brush/easing_function.h",
+    "src/ink/brush/stock_brushes.cc",
+    "src/ink/brush/stock_brushes.h",
     "src/ink/color/color.cc",
     "src/ink/color/color.h",
     "src/ink/color/color_space.cc",
@@ -55,6 +61,8 @@ source_set("ink") {
     "src/ink/geometry/internal/mesh_packing.h",
     "src/ink/geometry/internal/modulo.cc",
     "src/ink/geometry/internal/modulo.h",
+    "src/ink/geometry/internal/outline_processing.cc",
+    "src/ink/geometry/internal/outline_processing.h",
     "src/ink/geometry/internal/static_rtree.cc",
     "src/ink/geometry/internal/static_rtree.h",
     "src/ink/geometry/intersects.cc",
@@ -162,6 +170,8 @@ source_set("ink") {
     "src/ink/strokes/internal/stroke_input_modeler/sliding_window_input_modeler.h",
     "src/ink/strokes/internal/stroke_outline.cc",
     "src/ink/strokes/internal/stroke_outline.h",
+    "src/ink/strokes/internal/stroke_segmentation.cc",
+    "src/ink/strokes/internal/stroke_segmentation.h",
     "src/ink/strokes/internal/stroke_shape_builder.cc",
     "src/ink/strokes/internal/stroke_shape_builder.h",
     "src/ink/strokes/internal/stroke_shape_update.cc",

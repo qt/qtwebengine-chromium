@@ -3,11 +3,13 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import {setupLocaleHooks} from '../../testing/LocaleHelpers.js';
 import {setupRuntimeHooks} from '../../testing/RuntimeHelpers.js';
 
 import * as Host from './host.js';
+import type {DispatchHttpRequestRequest, DispatchHttpRequestResult} from './InspectorFrontendHostAPI.js';
 
 describe('GcaClient', () => {
   setupLocaleHooks();
@@ -18,33 +20,43 @@ describe('GcaClient', () => {
     gcaClient = new Host.GcaClient.GcaClient();
   });
 
-  it('returns null for completeCode when request fails', async () => {
+  it('throws for completeCode when request fails', async () => {
     sinon.stub(Host.InspectorFrontendHost.InspectorFrontendHostInstance, 'dispatchHttpRequest')
-        .callsFake((_request, callback) => {
+        .callsFake((_request: DispatchHttpRequestRequest, callback: (result: DispatchHttpRequestResult) => void) => {
           callback({statusCode: 500, error: 'Internal Server Error'});
         });
 
-    const result = await gcaClient.completeCode(
-        {client: 'test', prefix: 'test', metadata: {disable_user_content_logging: true, client_version: '1.2.3'}});
-
-    assert.isNull(result);
+    let threw = false;
+    try {
+      await gcaClient.completeCode(
+          {client: 'test', prefix: 'test', metadata: {disable_user_content_logging: true, client_version: '1.2.3'}});
+    } catch (err) {
+      threw = true;
+      assert.instanceOf(err, Error);
+    }
+    assert.isTrue(threw, 'completeCode did not throw');
   });
 
-  it('returns null for generateCode when request fails', async () => {
+  it('throws for generateCode when request fails', async () => {
     sinon.stub(Host.InspectorFrontendHost.InspectorFrontendHostInstance, 'dispatchHttpRequest')
-        .callsFake((_request, callback) => {
+        .callsFake((_request: DispatchHttpRequestRequest, callback: (result: DispatchHttpRequestResult) => void) => {
           callback({statusCode: 500, error: 'Internal Server Error'});
         });
 
-    const result = await gcaClient.generateCode({
-      client: 'test',
-      preamble: 'test',
-      current_message: {parts: [{text: 'test'}], role: Host.AidaClient.Role.USER},
-      use_case: Host.AidaClient.UseCase.CODE_GENERATION,
-      metadata: {disable_user_content_logging: true, client_version: '1.2.3'}
-    });
-
-    assert.isNull(result);
+    let threw = false;
+    try {
+      await gcaClient.generateCode({
+        client: 'test',
+        preamble: 'test',
+        current_message: {parts: [{text: 'test'}], role: Host.AidaClient.Role.USER},
+        use_case: Host.AidaClient.UseCase.CODE_GENERATION,
+        metadata: {disable_user_content_logging: true, client_version: '1.2.3'},
+      });
+    } catch (err) {
+      threw = true;
+      assert.instanceOf(err, Error);
+    }
+    assert.isTrue(threw, 'generateCode did not throw');
   });
 
   it('handles successful completeCode', async () => {
@@ -53,10 +65,10 @@ describe('GcaClient', () => {
         index: 0,
         content: {role: 'model', parts: [{text: 'result'}]},
       }],
-      responseId: '123'
+      responseId: '123',
     };
     sinon.stub(Host.InspectorFrontendHost.InspectorFrontendHostInstance, 'dispatchHttpRequest')
-        .callsFake((_request, callback) => {
+        .callsFake((_request: DispatchHttpRequestRequest, callback: (result: DispatchHttpRequestResult) => void) => {
           callback({statusCode: 200, response: JSON.stringify(mockResponse)});
         });
 
@@ -74,10 +86,10 @@ describe('GcaClient', () => {
         index: 0,
         content: {role: 'model', parts: [{text: 'generated code'}]},
       }],
-      responseId: '456'
+      responseId: '456',
     };
     sinon.stub(Host.InspectorFrontendHost.InspectorFrontendHostInstance, 'dispatchHttpRequest')
-        .callsFake((_request, callback) => {
+        .callsFake((_request: DispatchHttpRequestRequest, callback: (result: DispatchHttpRequestResult) => void) => {
           callback({statusCode: 200, response: JSON.stringify(mockResponse)});
         });
 
@@ -86,7 +98,7 @@ describe('GcaClient', () => {
       preamble: 'test',
       current_message: {parts: [{text: 'test'}], role: Host.AidaClient.Role.USER},
       use_case: Host.AidaClient.UseCase.CODE_GENERATION,
-      metadata: {disable_user_content_logging: true, client_version: '1.2.3'}
+      metadata: {disable_user_content_logging: true, client_version: '1.2.3'},
     });
 
     assert.isNotNull(result);
@@ -96,33 +108,31 @@ describe('GcaClient', () => {
 
   it('handles successful conversationRequest', async () => {
     sinon.stub(Host.InspectorFrontendHost.InspectorFrontendHostInstance, 'dispatchHttpRequest')
-        .callsFake((_request, callback) => {
+        .callsFake((_request: DispatchHttpRequestRequest, callback: (result: DispatchHttpRequestResult) => void) => {
           callback({statusCode: 200, response: '{}'});
         });
 
-    await gcaClient.conversationRequest(
-        {
-          client: 'test',
-          current_message: {parts: [{text: 'test'}], role: Host.AidaClient.Role.USER},
-          metadata: {disable_user_content_logging: true, client_version: '1.2.3'}
-        },
-        1);
+    await gcaClient.conversationRequest({
+      client: 'test',
+      current_message: {parts: [{text: 'test'}], role: Host.AidaClient.Role.USER},
+      metadata: {disable_user_content_logging: true, client_version: '1.2.3'},
+    },
+                                        1);
   });
 
   it('throws for conversationRequest when request fails', async () => {
     sinon.stub(Host.InspectorFrontendHost.InspectorFrontendHostInstance, 'dispatchHttpRequest')
-        .callsFake((_request, callback) => {
+        .callsFake((_request: DispatchHttpRequestRequest, callback: (result: DispatchHttpRequestResult) => void) => {
           callback({statusCode: 500, error: 'Internal Server Error'});
         });
 
     try {
-      await gcaClient.conversationRequest(
-          {
-            client: 'test',
-            current_message: {parts: [{text: 'test'}], role: Host.AidaClient.Role.USER},
-            metadata: {disable_user_content_logging: true, client_version: '1.2.3'}
-          },
-          1);
+      await gcaClient.conversationRequest({
+        client: 'test',
+        current_message: {parts: [{text: 'test'}], role: Host.AidaClient.Role.USER},
+        metadata: {disable_user_content_logging: true, client_version: '1.2.3'},
+      },
+                                          1);
       assert.fail('Should have thrown');
     } catch (err) {
       assert.instanceOf(err, Error);
@@ -131,7 +141,7 @@ describe('GcaClient', () => {
 
   it('handles successful registerClientEvent', async () => {
     sinon.stub(Host.InspectorFrontendHost.InspectorFrontendHostInstance, 'dispatchHttpRequest')
-        .callsFake((_request, callback) => {
+        .callsFake((_request: DispatchHttpRequestRequest, callback: (result: DispatchHttpRequestResult) => void) => {
           callback({statusCode: 200, response: '{}'});
         });
 
@@ -145,7 +155,7 @@ describe('GcaClient', () => {
 
   it('returns error for registerClientEvent when request fails', async () => {
     sinon.stub(Host.InspectorFrontendHost.InspectorFrontendHostInstance, 'dispatchHttpRequest')
-        .callsFake((_request, callback) => {
+        .callsFake((_request: DispatchHttpRequestRequest, callback: (result: DispatchHttpRequestResult) => void) => {
           callback({statusCode: 500, error: 'Internal Server Error'});
         });
 

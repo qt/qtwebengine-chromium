@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Google LLC
+// Copyright 2024 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -67,6 +67,13 @@ JNI_METHOD(brush, BrushFamilyNative, jstring, getDeveloperComment)
 (JNIEnv* env, jobject object, jlong native_pointer) {
   return env->NewStringUTF(
       BrushFamilyNative_getDeveloperComment(native_pointer));
+}
+
+JNI_METHOD(brush, BrushFamilyNative, jlong,
+           getTextureAnimationLoopDurationMillis)
+(JNIEnv* env, jobject object, jlong native_pointer) {
+  return BrushFamilyNative_getTextureAnimationLoopDurationMillis(
+      native_pointer);
 }
 
 JNI_METHOD(brush, BrushFamilyNative, jlong, getBrushCoatCount)

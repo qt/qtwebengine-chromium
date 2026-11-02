@@ -27,6 +27,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_EDITING_SERIALIZERS_MARKUP_FORMATTER_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_EDITING_SERIALIZERS_MARKUP_FORMATTER_H_
 
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/editing/editing_strategy.h"
 #include "third_party/blink/renderer/core/editing/serializers/serialization.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
@@ -52,78 +53,85 @@ enum EntityMask {
   // reasons. See http://trac.webkit.org/changeset/32879. However, we cannot do
   // this in an XML document because it does not have the entity reference
   // defined (see bug 19215).
-  kEntityMaskInCDATA = 0,
-  kEntityMaskInPCDATA = kEntityAmp | kEntityLt | kEntityGt,
-  kEntityMaskInHTMLPCDATA = kEntityMaskInPCDATA | kEntityNbsp,
+  kEntityMaskInCdata = 0,
+  kEntityMaskInPcdata = kEntityAmp | kEntityLt | kEntityGt,
+  kEntityMaskInHtmlPcdata = kEntityMaskInPcdata | kEntityNbsp,
   kEntityMaskInAttributeValue = kEntityAmp | kEntityQuot | kEntityLt |
                                 kEntityGt | kEntityTab | kEntityLineFeed |
                                 kEntityCarriageReturn,
   // Note: historically, "<" and ">" were not escaped in HTML attribute values.
   // This was changed in the HTML spec on May 20, 2025, see:
   // https://github.com/whatwg/html/pull/6362.
-  kEntityMaskInHTMLAttributeValue =
+  kEntityMaskInHtmlAttributeValue =
       kEntityAmp | kEntityQuot | kEntityLt | kEntityGt | kEntityNbsp,
 };
 
-enum class SerializationType { kHTML, kXML };
+enum class SerializationType { kHtml, kXml };
 
 class MarkupFormatter final {
   STACK_ALLOCATED();
 
  public:
-  static void AppendAttributeValue(StringBuilder&, const String&, bool);
-  static void AppendAttributeAsHTML(StringBuilder& result,
-                                    const Attribute& attribute,
-                                    const String& value);
-  static void AppendAttributeAsXMLWithoutNamespace(StringBuilder& result,
-                                                   const Attribute& attribute,
-                                                   const String& value);
-  static void AppendAttribute(StringBuilder& result,
-                              const AtomicString& prefix,
+  static void AppendAttributeValue(const String&,
+                                   SerializationType,
+                                   StringBuilder&);
+  static void AppendAttributeAsHtml(const Attribute& attribute,
+                                    const String& value,
+                                    StringBuilder& result);
+  static void AppendAttributeAsXmlWithoutNamespace(const Attribute& attribute,
+                                                   const String& value,
+                                                   StringBuilder& result);
+  static void AppendAttribute(const AtomicString& prefix,
                               const AtomicString& local_name,
                               const String& value,
-                              bool document_is_html);
-  static void AppendCDATASection(StringBuilder&, const String&);
-  static void AppendCharactersReplacingEntities(StringBuilder& result,
-                                                const StringView& source,
-                                                EntityMask entity_mask);
-  static void AppendComment(StringBuilder&, const String&);
-  static void AppendDocumentType(StringBuilder&, const DocumentType&);
-  static void AppendProcessingInstruction(StringBuilder&,
-                                          const String& target,
-                                          const String& data);
-  static void AppendXMLDeclaration(StringBuilder&, const Document&);
+                              SerializationType type,
+                              StringBuilder& result);
+  static void AppendCdataSection(const String&, StringBuilder&);
+  static void AppendCharactersReplacingEntities(const StringView& source,
+                                                EntityMask entity_mask,
+                                                StringBuilder&);
+  static void AppendComment(const String&, StringBuilder&);
+  static void AppendDocumentType(const DocumentType&, StringBuilder&);
+  static void AppendProcessingInstruction(const String& target,
+                                          const String& data,
+                                          StringBuilder&);
+  static void AppendXmlDeclaration(const Document&, StringBuilder&);
 
-  MarkupFormatter(AbsoluteURLs, SerializationType);
+  MarkupFormatter(ResolveUrls, SerializationType);
   MarkupFormatter(const MarkupFormatter&) = delete;
   MarkupFormatter& operator=(const MarkupFormatter&) = delete;
 
-  void AppendStartMarkup(StringBuilder&, const Node&);
-  void AppendEndMarkup(StringBuilder&, const Element&);
-  void AppendEndMarkup(StringBuilder& result,
-                       const Element& element,
+  void AppendStartMarkup(const Node&, StringBuilder&);
+  void AppendEndMarkup(const Element&, StringBuilder&);
+  void AppendEndMarkup(const Element& element,
                        const AtomicString& prefix,
-                       const AtomicString& local_name);
+                       const AtomicString& local_name,
+                       StringBuilder& result);
 
-  bool SerializeAsHTML() const;
+  bool SerializeAsHtml() const;
 
-  void AppendText(StringBuilder&, const Text&);
+  void AppendText(const Text&, StringBuilder&);
   // Serialize '<' and the element name.
-  void AppendStartTagOpen(StringBuilder&, const Element&);
-  void AppendStartTagOpen(StringBuilder& result,
-                          const AtomicString& prefix,
-                          const AtomicString& local_name);
+  void AppendStartTagOpen(const Element&, StringBuilder&);
+  void AppendStartTagOpen(const AtomicString& prefix,
+                          const AtomicString& local_name,
+                          StringBuilder& result);
   // Serialize '>' or '/>'
-  void AppendStartTagClose(StringBuilder&, const Element&);
+  void AppendStartTagClose(const Element&, StringBuilder& result);
 
   EntityMask EntityMaskForText(const Text&) const;
   bool ShouldSelfClose(const Element&) const;
-  String ResolveURLIfNeeded(const Element&, const Attribute& attribute) const;
+  String ResolveUrlIfNeeded(const Element&, const Attribute& attribute) const;
 
  private:
-  const AbsoluteURLs resolve_urls_method_;
+  const ResolveUrls resolve_urls_method_;
   SerializationType serialization_type_;
 };
+
+inline SerializationType GetSerializationType(const Document& document) {
+  return document.IsHTMLDocument() ? SerializationType::kHtml
+                                   : SerializationType::kXml;
+}
 
 }  // namespace blink
 

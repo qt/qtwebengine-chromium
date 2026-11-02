@@ -25,7 +25,6 @@
 #include "gtest/gtest.h"
 #include "src/dsp/common.h"
 #include "src/dsp/dsp.h"
-#include "src/utils/common.h"
 #include "src/utils/constants.h"
 #include "src/utils/cpu.h"
 #include "src/utils/memory.h"

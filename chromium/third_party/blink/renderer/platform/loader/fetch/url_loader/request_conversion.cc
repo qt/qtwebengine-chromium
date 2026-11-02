@@ -96,7 +96,6 @@ mojom::ResourceType RequestContextToResourceType(
       return mojom::ResourceType::kObject;
 
     // Ping
-    case mojom::blink::RequestContextType::ATTRIBUTION_SRC:
     case mojom::blink::RequestContextType::BEACON:
     case mojom::blink::RequestContextType::PING:
       return mojom::ResourceType::kPing;
@@ -124,6 +123,7 @@ mojom::ResourceType RequestContextToResourceType(
     case mojom::blink::RequestContextType::SPECULATION_RULES:
     case mojom::blink::RequestContextType::SUBRESOURCE:
     case mojom::blink::RequestContextType::SUBRESOURCE_WEBBUNDLE:
+    case mojom::blink::RequestContextType::TEXT:
       return mojom::ResourceType::kSubResource;
 
     // TextTrack
@@ -357,8 +357,6 @@ void PopulateResourceRequest(const ResourceRequestHead& src,
   }
 
   dest->keepalive = src.GetKeepalive();
-  dest->browsing_topics = src.GetBrowsingTopics();
-  dest->ad_auction_headers = src.GetAdAuctionHeaders();
   dest->shared_storage_writable_eligible =
       src.GetSharedStorageWritableEligible();
   dest->has_user_gesture = src.HasUserGesture();
@@ -420,13 +418,6 @@ void PopulateResourceRequest(const ResourceRequestHead& src,
   }
 
   dest->storage_access_api_status = src.GetStorageAccessApiStatus();
-
-  dest->attribution_reporting_support = src.GetAttributionReportingSupport();
-
-  dest->attribution_reporting_eligibility =
-      src.GetAttributionReportingEligibility();
-
-  dest->attribution_reporting_src_token = src.GetAttributionSrcToken();
 
   dest->keepalive_token = src.GetKeepaliveToken();
 

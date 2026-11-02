@@ -12,15 +12,17 @@
 #include <algorithm>
 #include <cmath>
 
-#include "base/byte_count.h"
+#include "base/byte_size.h"
 #include "base/check_op.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/mac/mac_util.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/path_service.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
+#include "components/memory_pressure/multi_source_memory_pressure_monitor.h"
 
 namespace memory_pressure::mac {
 
@@ -37,14 +39,13 @@ BASE_FEATURE(kMacCriticalDiskSpacePressure, base::FEATURE_ENABLED_BY_DEFAULT);
 
 // The default threshold for the critical disk space pressure
 // signal.
-constexpr base::ByteCount kDefaultCriticalDiskSpace = base::MiB(250);
+constexpr base::ByteSize kDefaultCriticalDiskSpace = base::MiBU(250);
 
 // Defines the threshold for the critical disk space pressure
 // signal. This is a parameter for the kMacCriticalDiskSpacePressure feature.
-BASE_FEATURE_PARAM(int,
+BASE_FEATURE_PARAM(size_t,
                    kMacCriticalDiskSpacePressureThresholdMB,
                    &kMacCriticalDiskSpacePressure,
-                   "MacCriticalDiskSpacePressureThresholdMB",
                    kDefaultCriticalDiskSpace.InMiB());
 
 // How often to check for free disk space.
@@ -152,14 +153,24 @@ void SystemMemoryPressureEvaluator::UpdatePressureLevel() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   // Get the current macOS pressure level and convert to the corresponding
   // Chrome pressure level.
-  auto os_pressure_level =
+  os_pressure_level_ =
       MemoryPressureLevelForMacMemoryPressureLevel(GetMacMemoryPressureLevel());
+
+  // Lazy initialization of the OS-only transition reporter.
+  if (!os_transition_reporter_) {
+    os_transition_reporter_ = std::make_unique<MemoryPressureLevelReporter>(
+        os_pressure_level_, std::nullopt, "Memory.PressureWindowDuration.");
+    last_os_pressure_level_ = os_pressure_level_;
+  } else if (os_pressure_level_ != last_os_pressure_level_) {
+    last_os_pressure_level_ = os_pressure_level_;
+    os_transition_reporter_->OnMemoryPressureLevelChanged(os_pressure_level_);
+  }
 
   // The effective pressure level is the most severe of the OS-reported level
   // and our disk-space-derived level. If the disk pressure feature is disabled,
   // `disk_pressure_vote_` will always be `NONE`.
   auto effective_pressure_level =
-      std::max(os_pressure_level, disk_pressure_vote_);
+      std::max(os_pressure_level_, disk_pressure_vote_);
 
   SetCurrentVote(effective_pressure_level);
 }
@@ -173,22 +184,22 @@ void SystemMemoryPressureEvaluator::CheckDiskSpace() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   disk_check_task_runner_->PostTaskAndReplyWithResult(
       FROM_HERE,
-      base::BindOnce(&base::SysInfo::AmountOfFreeDiskSpace, user_data_dir_),
+      base::BindOnce(&base::SysInfo::AmountOfDiskSpace, user_data_dir_),
       base::BindOnce(&SystemMemoryPressureEvaluator::OnDiskSpaceCheckComplete,
                      weak_ptr_factory_.GetWeakPtr()));
 }
 
 void SystemMemoryPressureEvaluator::OnDiskSpaceCheckComplete(
-    std::optional<int64_t> free_bytes) {
+    std::optional<base::SysInfo::DiskSpaceInfo> disk_space_info) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   base::MemoryPressureLevel new_disk_vote = base::MEMORY_PRESSURE_LEVEL_NONE;
 
   // The minimum free disk space before dispatching a critical memory pressure
   // signal.
-  const base::ByteCount threshold =
-      base::MiB(kMacCriticalDiskSpacePressureThresholdMB.Get());
+  const base::ByteSize threshold =
+      base::MiBU(kMacCriticalDiskSpacePressureThresholdMB.Get());
 
-  if (free_bytes.has_value() && base::ByteCount(*free_bytes) < threshold) {
+  if (disk_space_info.has_value() && disk_space_info->available < threshold) {
     new_disk_vote = base::MEMORY_PRESSURE_LEVEL_CRITICAL;
   }
 
@@ -205,6 +216,15 @@ void SystemMemoryPressureEvaluator::UpdatePressureAndManageNotifications() {
   // Go through the normal memory pressure level checking mechanism so that
   // |current_vote_| and UMA get updated to the current value.
   UpdatePressureLevel();
+
+  // Notify the reporter of disk pressure state changes, including the
+  // current OS pressure level so that time is only attributed to the disk
+  // bucket when the OS is not also critical.
+  if (auto* monitor = MultiSourceMemoryPressureMonitor::Get()) {
+    monitor->UpdateDiskPressureState(
+        disk_pressure_vote_ == base::MEMORY_PRESSURE_LEVEL_CRITICAL,
+        os_pressure_level_);
+  }
 
   // Run the callback that's waiting on memory pressure change notifications.
   if (current_vote() != old_vote) {

@@ -75,16 +75,12 @@ class VIZ_SERVICE_EXPORT RootCompositorFrameSinkImpl
 
   // mojom::DisplayPrivate:
   void SetDisplayVisible(bool visible) override;
-#if BUILDFLAG(IS_WIN)
-  void DisableSwapUntilResize(DisableSwapUntilResizeCallback callback) override;
-#endif
   void Resize(const gfx::Size& size) override;
   void SetDisplayColorMatrix(const gfx::Transform& color_matrix) override;
   void SetDisplayColorSpaces(
       const gfx::DisplayColorSpaces& display_color_spaces) override;
 #if BUILDFLAG(IS_MAC)
   void SetVSyncDisplayID(int64_t display_id) override;
-  void RefreshRateChangedOnSameDisplay() override;
 #endif
   void SetOutputIsSecure(bool secure) override;
   void SetDisplayVSyncParameters(base::TimeTicks timebase,

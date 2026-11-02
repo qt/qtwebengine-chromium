@@ -7,10 +7,7 @@
 //   Pointer parameter capture functions for the OpenGL ES 3.0 entry points.
 //
 
-#ifdef UNSAFE_BUFFERS_BUILD
-#    pragma allow_unsafe_buffers
-#endif
-
+#include "common/unsafe_buffers.h"
 #include "libANGLE/capture/capture_gles_2_0_autogen.h"
 #include "libANGLE/capture/capture_gles_3_0_autogen.h"
 
@@ -324,7 +321,7 @@ void CaptureGetInternalformativ_params(const State &glState,
         {
             case GL_SAMPLES:
                 // Maximum case: 1, 2, 4, 8, 16, 32 (IMPLEMENTATION_MAX_SAMPLES)
-                paramCount = rx::Log2(gl::IMPLEMENTATION_MAX_SAMPLES) + 1;
+                paramCount = gl::log2(static_cast<size_t>(gl::IMPLEMENTATION_MAX_SAMPLES)) + 1;
                 break;
             case GL_SURFACE_COMPRESSION_EXT:
                 // From SURFACE_COMPRESSION_FIXED_RATE_1BPC_EXT to
@@ -525,7 +522,7 @@ void CaptureGetUniformIndices_uniformNames(const State &glState,
 {
     for (GLsizei index = 0; index < uniformCount; ++index)
     {
-        CaptureString(uniformNames[index], paramCapture);
+        CaptureString(ANGLE_UNSAFE_TODO(uniformNames[index]), paramCapture);
     }
 }
 
@@ -685,7 +682,7 @@ void CaptureTransformFeedbackVaryings_varyings(const State &glState,
 {
     for (GLsizei index = 0; index < count; ++index)
     {
-        CaptureString(varyings[index], paramCapture);
+        CaptureString(ANGLE_UNSAFE_TODO(varyings[index]), paramCapture);
     }
 }
 

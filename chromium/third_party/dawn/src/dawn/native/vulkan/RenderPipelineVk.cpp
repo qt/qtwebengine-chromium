@@ -144,6 +144,8 @@ VkFormat VulkanVertexFormat(wgpu::VertexFormat format) {
             return VK_FORMAT_A2B10G10R10_UNORM_PACK32;
         case wgpu::VertexFormat::Unorm8x4BGRA:
             return VK_FORMAT_B8G8R8A8_UNORM;
+        case wgpu::VertexFormat::Snorm10_10_10_2:
+            return VK_FORMAT_A2B10G10R10_SNORM_PACK32;
         default:
             DAWN_UNREACHABLE();
     }
@@ -501,6 +503,14 @@ ResultOrError<RenderPipeline::SpecializationResult> RenderPipeline::InitializeSp
         // string_view returned by GetIsolatedEntryPointName() points to a null-terminated string.
         shaderStage->pName = device->GetIsolatedEntryPointName().data();
 
+        if (device->GetDeviceInfo().HasExt(DeviceExt::SubgroupSizeControl) &&
+            shaderStage->stage == VK_SHADER_STAGE_FRAGMENT_BIT) {
+            // This is required to ensure SubgroupSize is reported as the actual size of the
+            // subgroups (even if some invocations may be disabled). This becomes unnecessary with
+            // SPIR-V 1.6.
+            shaderStage->flags |= VK_PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT;
+        }
+
         stageCount++;
         return {};
     };
@@ -713,14 +723,14 @@ ResultOrError<RenderPipeline::SpecializationResult> RenderPipeline::InitializeSp
 
         dynamicStates.push_back(VK_DYNAMIC_STATE_STENCIL_OP_EXT);
         mDynamicState.packedFrontStencil =
-            PackStencilOpState(depthStencilState.front, depthStencilState.stencilTestEnable);
+            PackStencilOpState(depthStencilState.front, mDynamicState.stencilTestEnable);
         depthStencilState.front.failOp = VK_STENCIL_OP_KEEP;
         depthStencilState.front.passOp = VK_STENCIL_OP_KEEP;
         depthStencilState.front.depthFailOp = VK_STENCIL_OP_KEEP;
         depthStencilState.front.compareOp = VK_COMPARE_OP_NEVER;
 
         mDynamicState.packedBackStencil =
-            PackStencilOpState(depthStencilState.back, depthStencilState.stencilTestEnable);
+            PackStencilOpState(depthStencilState.back, mDynamicState.stencilTestEnable);
         depthStencilState.back.failOp = VK_STENCIL_OP_KEEP;
         depthStencilState.back.passOp = VK_STENCIL_OP_KEEP;
         depthStencilState.back.depthFailOp = VK_STENCIL_OP_KEEP;

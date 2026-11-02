@@ -9,31 +9,50 @@
 
 #include <stdint.h>
 
-#include "core/fpdfdoc/cpvt_wordplace.h"
 #include "core/fxcrt/fx_codepage.h"
+#include "core/fxcrt/fx_coordinates.h"
 
 class CPVT_Word {
  public:
   CPVT_Word();
+  CPVT_Word(uint16_t word,
+            FX_Charset charset,
+            const CFX_PointF& location,
+            float ascent,
+            float descent,
+            float width,
+            int32_t font_index,
+            float font_size,
+            bool is_rtl);
+  CPVT_Word(const CPVT_Word&);
+  CPVT_Word& operator=(const CPVT_Word&);
+  ~CPVT_Word();
 
-  uint16_t Word;
-  FX_Charset nCharset;
-  CPVT_WordPlace WordPlace;
-  CFX_PointF ptWord;
-  float fAscent;
-  float fDescent;
-  float fWidth;
-  int32_t nFontIndex;
-  float fFontSize;
+  uint16_t word() const { return word_; }
+  FX_Charset charset() const { return charset_; }
+  int32_t font_index() const { return font_index_; }
+  const CFX_PointF& location() const { return location_; }
+  void set_location(const CFX_PointF& location) { location_ = location; }
+  float width() const { return width_; }
+  float font_size() const { return font_size_; }
+  bool is_rtl() const { return is_rtl_; }
+  float ascent() const { return ascent_; }
+  float descent() const { return descent_; }
+
+  float CaretX() const { return is_rtl_ ? location_.x : location_.x + width_; }
+  float AscentY() const { return location_.y + ascent_; }
+  float DescentY() const { return location_.y + descent_; }
+
+ private:
+  uint16_t word_ = 0;
+  FX_Charset charset_ = FX_Charset::kANSI;
+  CFX_PointF location_;
+  float ascent_ = 0.0f;
+  float descent_ = 0.0f;
+  float width_ = 0.0f;
+  int32_t font_index_ = -1;
+  float font_size_ = 0.0f;
+  bool is_rtl_ = false;
 };
-
-inline CPVT_Word::CPVT_Word()
-    : Word(0),
-      nCharset(FX_Charset::kANSI),
-      fAscent(0.0f),
-      fDescent(0.0f),
-      fWidth(0.0f),
-      nFontIndex(-1),
-      fFontSize(0.0f) {}
 
 #endif  // CORE_FPDFDOC_CPVT_WORD_H_

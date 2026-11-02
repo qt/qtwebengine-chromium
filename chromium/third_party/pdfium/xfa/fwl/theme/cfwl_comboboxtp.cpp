@@ -31,9 +31,9 @@ void CFWL_ComboBoxTP::DrawBackground(const CFWL_ThemeBackground& pParams) {
       path.AddRectangle(rect.left, rect.top, rect.width, rect.height);
       FX_ARGB argb_color;
       if (pParams.states_ & CFWL_PartState::kSelected) {
-        argb_color = FWLTHEME_COLOR_BKSelected;
+        argb_color = kFwlThemeColorBackgroundSelected;
       } else if (pParams.states_ & CFWL_PartState::kDisabled) {
-        argb_color = FWLTHEME_COLOR_EDGERB1;
+        argb_color = kFwlThemeColorEdgeRb1;
       } else {
         argb_color = 0xFFFFFFFF;
       }

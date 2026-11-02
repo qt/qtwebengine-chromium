@@ -23,11 +23,10 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 export class CPUProfilerModel extends SDKModel<EventTypes> implements ProtocolProxyApi.ProfilerDispatcher {
   #nextAnonymousConsoleProfileNumber: number;
-  #anonymousConsoleProfileIdToTitle: Map<string, string>;
+  readonly #anonymousConsoleProfileIdToTitle: Map<string, string>;
   readonly #profilerAgent: ProtocolProxyApi.ProfilerApi;
   #preciseCoverageDeltaUpdateCallback: ((arg0: number, arg2: Protocol.Profiler.ScriptCoverage[]) => Promise<void>)|null;
   readonly #debuggerModel: DebuggerModel;
-  readonly registeredConsoleProfileMessages: ProfileFinishedData[] = [];
 
   constructor(target: Target) {
     super(target);
@@ -62,11 +61,7 @@ export class CPUProfilerModel extends SDKModel<EventTypes> implements ProtocolPr
       title = this.#anonymousConsoleProfileIdToTitle.get(id);
       this.#anonymousConsoleProfileIdToTitle.delete(id);
     }
-    const eventData: ProfileFinishedData = {
-      ...this.createEventDataFrom(id, location, title),
-      cpuProfile: profile,
-    };
-    this.registeredConsoleProfileMessages.push(eventData);
+    const eventData = new ProfileFinishedData(this.createEventDataFrom(id, location, title), profile);
     this.dispatchEventToListeners(Events.CONSOLE_PROFILE_FINISHED, eventData);
   }
 
@@ -91,10 +86,10 @@ export class CPUProfilerModel extends SDKModel<EventTypes> implements ProtocolPr
     return this.#profilerAgent.invoke_stop().then(response => response.profile || null);
   }
 
-  startPreciseCoverage(
-      jsCoveragePerBlock: boolean,
-      preciseCoverageDeltaUpdateCallback: ((arg0: number, arg2: Protocol.Profiler.ScriptCoverage[]) => Promise<void>)|
-      null): Promise<unknown> {
+  startPreciseCoverage(jsCoveragePerBlock: boolean,
+                       preciseCoverageDeltaUpdateCallback:
+                           ((arg0: number, arg2: Protocol.Profiler.ScriptCoverage[]) => Promise<void>)|
+                       null): Promise<unknown> {
     const callCount = false;
     this.#preciseCoverageDeltaUpdateCallback = preciseCoverageDeltaUpdateCallback;
     const allowUpdatesTriggeredByBackend = true;
@@ -143,6 +138,19 @@ export interface EventData {
   cpuProfilerModel: CPUProfilerModel;
 }
 
-export interface ProfileFinishedData extends EventData {
-  cpuProfile: Protocol.Profiler.Profile;
+// This class is used used as a Revealer in timeline-meta.ts
+export class ProfileFinishedData implements EventData {
+  readonly id: string;
+  readonly scriptLocation: Location;
+  readonly title: string;
+  readonly cpuProfilerModel: CPUProfilerModel;
+  readonly cpuProfile: Protocol.Profiler.Profile;
+
+  constructor(eventData: EventData, cpuProfile: Protocol.Profiler.Profile) {
+    this.id = eventData.id;
+    this.scriptLocation = eventData.scriptLocation;
+    this.title = eventData.title;
+    this.cpuProfilerModel = eventData.cpuProfilerModel;
+    this.cpuProfile = cpuProfile;
+  }
 }

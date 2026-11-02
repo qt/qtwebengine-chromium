@@ -17,36 +17,36 @@
 use alloc::alloc::{alloc, dealloc};
 use core::{alloc::Layout, mem::size_of};
 
+use oak_hal::PageAssignment;
 use x86_64::{
-    instructions::tlb::flush_all,
-    structures::paging::{PageSize, PageTableFlags, Size2MiB},
     PhysAddr, VirtAddr,
+    instructions::tlb::flush_all,
+    structures::paging::{PageSize, PageTableFlags, Size2MiB, Size4KiB},
 };
 
 use super::Base;
-use crate::paging::{page_table_level::PT, PageEncryption, PageTableEntry, PAGE_TABLE_REFS};
+use crate::paging::{PAGE_TABLE_REFS, PageTableEntry, page_table_level::PT};
 
-pub struct Mmio<S: PageSize> {
+pub struct Mmio {
     pub base_address: PhysAddr,
-    layout: Layout,
+    pub layout: Layout,
     mmio_memory: VirtAddr,
     old_pte: PageTableEntry<PT>,
-    phantom: core::marker::PhantomData<S>,
 }
 
-impl<S: PageSize> Mmio<S> {
+impl Mmio {
     /// # Safety
-    //   - base_address is aligned to u32
-    //   - we've checked it's within the page size
-    //   - we were promised that he memory is valid
-    pub unsafe fn new(base_address: PhysAddr) -> Self {
+    ///
+    /// The caller must ensure that the base address is the start of a valid
+    /// 4KiB MMIO region.
+    pub unsafe fn new(base_address: PhysAddr, size: usize) -> Self {
         // Tehcnically we only need a chunk of virtual memory (as we remap the physical
         // memory backing it anyway), but the easiest way how to get a chunk of virtual
         // memory is just to allocate it using the normal mechanisms. This means there
         // will be a chunk of physical memory sitting unmapped and unused, but that
         // should not matter for our use case.
-        let layout = Layout::from_size_align(S::SIZE as usize, S::SIZE as usize).unwrap();
-        let mmio_memory = VirtAddr::from_ptr(alloc(layout));
+        let layout = Layout::from_size_align(size, Size4KiB::SIZE as usize).unwrap();
+        let mmio_memory = VirtAddr::from_ptr(unsafe { alloc(layout) });
 
         // Remap our mmio_memory to base_address.
         if mmio_memory.as_u64() > Size2MiB::SIZE {
@@ -57,18 +57,18 @@ impl<S: PageSize> Mmio<S> {
         tables.pt_0[mmio_memory.p1_index()].set_address::<Base>(
             base_address,
             PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_CACHE,
-            PageEncryption::Unencrypted,
+            PageAssignment::Shared,
         );
         flush_all();
 
-        Mmio { base_address, layout, mmio_memory, old_pte, phantom: core::marker::PhantomData }
+        Mmio { base_address, layout, mmio_memory, old_pte }
     }
 }
 
-impl<S: PageSize> crate::hal::Mmio<S> for Mmio<S> {
+impl crate::hal::Mmio for Mmio {
     fn read_u32(&self, offset: usize) -> u32 {
         let offset = offset * size_of::<u32>();
-        if offset >= S::SIZE as usize {
+        if offset >= self.layout.size() {
             panic!("invalid MMIO access for read: offset would read beyond memory boundary");
         }
         // # Safety
@@ -80,7 +80,7 @@ impl<S: PageSize> crate::hal::Mmio<S> for Mmio<S> {
 
     unsafe fn write_u32(&mut self, offset: usize, value: u32) {
         let offset = offset * size_of::<u32>();
-        if offset >= S::SIZE as usize {
+        if offset >= self.layout.size() {
             panic!("invalid MMIO access for write: offset would write beyond memory boundary");
         }
         // # Safety
@@ -88,11 +88,15 @@ impl<S: PageSize> crate::hal::Mmio<S> for Mmio<S> {
         //   - we've checked it's within the page size
         //   - when calling new() we were promised the memory is valid
         //   - the caller needs to guarantee the value makes sense
-        self.mmio_memory.as_mut_ptr::<u32>().add(offset).write_volatile(value)
+        unsafe { self.mmio_memory.as_mut_ptr::<u32>().add(offset).write_volatile(value) }
+    }
+
+    fn region_size(&self) -> usize {
+        self.layout.size()
     }
 }
 
-impl<S: PageSize> Drop for Mmio<S> {
+impl Drop for Mmio {
     fn drop(&mut self) {
         // Restore the memory mapping and deallocate our chunk of memory.
         let mut tables = PAGE_TABLE_REFS.get().unwrap().lock();

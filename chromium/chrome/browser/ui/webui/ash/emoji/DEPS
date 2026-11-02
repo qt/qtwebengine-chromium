@@ -18,7 +18,12 @@ include_rules = [
   "+chrome/browser/ui/webui/sanitized_image/sanitized_image_source.h",
   "+chrome/browser/ui/webui/top_chrome",
   "+chrome/browser/ui/webui/webui_load_timer.h",
-  "+chrome/common",
   "+chrome/grit",
   "+chrome/test/base",
 ]
+
+specific_include_rules = {
+  "emoji_ui\\.cc": [
+    "+chrome/browser/ui/webui/theme_source.h",
+  ],
+}

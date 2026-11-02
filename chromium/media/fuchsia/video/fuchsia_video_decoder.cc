@@ -107,11 +107,6 @@ std::optional<gfx::Size> GetMinBufferSize() {
   return value;
 }
 
-// If this feature is enabled, we use the default color space
-// for SharedImage instead of passing an invalid color space.
-BASE_FEATURE(kUseDefaultColorSpaceInFuchsiaDecoder,
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 }  // namespace
 
 // Helper used to hold mailboxes for the output textures. OutputMailbox may
@@ -128,14 +123,15 @@ class FuchsiaVideoDecoder::OutputMailbox {
         weak_factory_(this) {
     gpu::SharedImageUsageSet usage = gpu::SHARED_IMAGE_USAGE_DISPLAY_READ |
                                      gpu::SHARED_IMAGE_USAGE_SCANOUT |
-                                     gpu::SHARED_IMAGE_USAGE_VIDEO_DECODE;
+                                     gpu::SHARED_IMAGE_USAGE_VIDEO_DECODE |
+                                     gpu::SHARED_IMAGE_USAGE_RASTER_READ |
+                                     gpu::SHARED_IMAGE_USAGE_GLES2_READ;
 
     // Note that the shared image prefers external sampler.
     format.SetPrefersExternalSampler();
 
     auto si_color_space = color_space;
-    if (!si_color_space.IsValid() &&
-        base::FeatureList::IsEnabled(kUseDefaultColorSpaceInFuchsiaDecoder)) {
+    if (!si_color_space.IsValid()) {
       // Fuchsia decoder video frames are always multiplanar, so use BT.709
       // color space as default.
       si_color_space = gfx::ColorSpace::CreateREC709();
@@ -146,8 +142,9 @@ class FuchsiaVideoDecoder::OutputMailbox {
             std::move(gmb_handle));
     CHECK(shared_image_);
 
-    create_sync_token_ = raster_context_provider_->SharedImageInterface()
-                             ->GenVerifiedSyncToken();
+    create_sync_token_ = shared_image_->creation_sync_token();
+    raster_context_provider_->SharedImageInterface()->VerifySyncToken(
+        create_sync_token_);
   }
 
   OutputMailbox(const OutputMailbox&) = delete;
@@ -166,10 +163,12 @@ class FuchsiaVideoDecoder::OutputMailbox {
                                         const gfx::Rect& visible_rect,
                                         const gfx::Size& natural_size,
                                         base::TimeDelta timestamp,
-                                        base::OnceClosure reuse_callback) {
-    CHECK(!is_used_);
-    is_used_ = true;
-    reuse_callback_ = std::move(reuse_callback);
+                                        base::OnceClosure ready_to_reuse_cb) {
+    DCHECK(ready_to_reuse_cb);
+    CHECK(!is_wrapped_in_video_frame_);
+    CHECK(!ready_to_reuse_cb_);
+    is_wrapped_in_video_frame_ = true;
+    ready_to_reuse_cb_ = std::move(ready_to_reuse_cb);
 
     auto frame = VideoFrame::WrapSharedImage(
         pixel_format, shared_image_, create_sync_token_,
@@ -190,11 +189,11 @@ class FuchsiaVideoDecoder::OutputMailbox {
 
   // Called by FuchsiaVideoDecoder when it no longer needs this mailbox.
   void Release() {
-    if (is_used_) {
+    if (is_wrapped_in_video_frame_) {
       // The mailbox is referenced by a VideoFrame. It will be deleted  as soon
       // as the frame is destroyed.
-      DCHECK(reuse_callback_);
-      reuse_callback_ = base::OnceClosure();
+      DCHECK(ready_to_reuse_cb_);
+      ready_to_reuse_cb_ = base::OnceClosure();
     } else {
       delete this;
     }
@@ -202,25 +201,28 @@ class FuchsiaVideoDecoder::OutputMailbox {
 
  private:
   void OnFrameDestroyed(const gpu::SyncToken& sync_token) {
-    DCHECK(is_used_);
-    is_used_ = false;
+    DCHECK(is_wrapped_in_video_frame_);
+    is_wrapped_in_video_frame_ = false;
     release_sync_token_ = sync_token;
 
-    if (!reuse_callback_) {
+    if (!ready_to_reuse_cb_) {
       // If the mailbox cannot be reused then we can just delete it.
       delete this;
       return;
     }
 
-    raster_context_provider_->ContextSupport()->SignalSyncToken(
-        release_sync_token_,
+    gpu::ClientSharedImage::SignalLatestSyncToken(
+        std::vector<scoped_refptr<gpu::ClientSharedImage>>{shared_image_},
+        std::vector<gpu::SyncToken>{release_sync_token_},
         base::BindPostTaskToCurrentDefault(base::BindOnce(
-            &OutputMailbox::OnSyncTokenSignaled, weak_factory_.GetWeakPtr())));
+            &OutputMailbox::OnSyncTokenSignaled, weak_factory_.GetWeakPtr())),
+        raster_context_provider_->ContextSupport(),
+        /*pending_callback_id=*/0);
   }
 
   void OnSyncTokenSignaled() {
     release_sync_token_.Clear();
-    std::move(reuse_callback_).Run();
+    std::move(ready_to_reuse_cb_).Run();
   }
 
   const scoped_refptr<viz::RasterContextProvider> raster_context_provider_;
@@ -231,9 +233,9 @@ class FuchsiaVideoDecoder::OutputMailbox {
   gpu::SyncToken release_sync_token_;
 
   // Set to true when the mailbox is referenced by a video frame.
-  bool is_used_ = false;
+  bool is_wrapped_in_video_frame_ = false;
 
-  base::OnceClosure reuse_callback_;
+  base::OnceClosure ready_to_reuse_cb_;
 
   base::WeakPtrFactory<OutputMailbox> weak_factory_;
 };
@@ -349,7 +351,10 @@ void FuchsiaVideoDecoder::Initialize(const VideoDecoderConfig& config,
   if (!current_config_.color_space_info().IsSpecified())
     current_config_.set_color_space_info(VideoColorSpace::REC601());
 
-  std::move(done_callback).Run(DecoderStatus::Codes::kOk);
+  if (init_cb_) {
+    std::move(init_cb_).Run(DecoderStatus::Codes::kAborted);
+  }
+  init_cb_ = std::move(done_callback);
 }
 
 void FuchsiaVideoDecoder::Decode(scoped_refptr<DecoderBuffer> buffer,
@@ -472,6 +477,14 @@ void FuchsiaVideoDecoder::OnSysmemBufferStreamNoKey() {
   waiting_cb_.Run(WaitingReason::kNoDecryptionKey);
 }
 
+void FuchsiaVideoDecoder::OnStreamProcessorAllocateInputBuffers(
+    const fuchsia::media::StreamBufferConstraints& stream_constraints) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (init_cb_) {
+    std::move(init_cb_).Run(DecoderStatus::Codes::kOk);
+  }
+}
+
 void FuchsiaVideoDecoder::OnStreamProcessorAllocateOutputBuffers(
     const fuchsia::media::StreamBufferConstraints& output_constraints) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -561,13 +574,14 @@ void FuchsiaVideoDecoder::OnStreamProcessorOutputPacket(
       pixel_format = PIXEL_FORMAT_NV12;
       si_format = viz::MultiPlaneFormat::kNV12;
       break;
-
     case fuchsia::images2::PixelFormat::I420:
-    case fuchsia::images2::PixelFormat::YV12:
       pixel_format = PIXEL_FORMAT_I420;
+      si_format = viz::MultiPlaneFormat::kI420;
+      break;
+    case fuchsia::images2::PixelFormat::YV12:
+      pixel_format = PIXEL_FORMAT_YV12;
       si_format = viz::MultiPlaneFormat::kYV12;
       break;
-
     default:
       DLOG(ERROR) << "Unsupported pixel format: "
                   << static_cast<int>(sysmem_pixel_format);
@@ -712,6 +726,10 @@ void FuchsiaVideoDecoder::OnError() {
   decoder_.reset();
 
   ReleaseOutputBuffers();
+
+  if (init_cb_) {
+    std::move(init_cb_).Run(DecoderStatus::Codes::kFailedToCreateDecoder);
+  }
 
   DropInputQueue(DecoderStatus::Codes::kFailed);
 }

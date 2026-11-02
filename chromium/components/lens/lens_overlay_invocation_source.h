@@ -84,7 +84,19 @@ enum class LensOverlayInvocationSource {
   // The cobrowse toolbar button.
   kCobrowseToolbarButton = 19,
 
-  kMaxValue = kCobrowseToolbarButton
+  // The cobrowse pinned toolbar button.
+  kCobrowsePinnedToolbarButton = 20,
+
+  // Action chips shown on the new tab page.
+  kNtpActionChips = 21,
+
+  // The AIM button on the App Bar in Chrome iOS.
+  kAppBarAimButton = 22,
+
+  // The everywhere omnibox contextual composebox.
+  kOmniboxEverywhereComposebox = 23,
+
+  kMaxValue = kOmniboxEverywhereComposebox
 };
 // LINT.ThenChange(//tools/metrics/histograms/metadata/lens/enums.xml:LensOverlayInvocationSource)
 // When adding a value here, also update:

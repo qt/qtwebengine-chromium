@@ -5,7 +5,6 @@
 import type * as Helpers from '../helpers/helpers.js';
 import type * as Types from '../types/types.js';
 
-import type {AuctionWorkletsData} from './AuctionWorkletsHandler.js';
 import type * as Renderer from './RendererHandler.js';
 import type {HandlerData} from './types.js';
 
@@ -24,15 +23,12 @@ export const enum ThreadType {
   MAIN_THREAD = 'MAIN_THREAD',
   WORKER = 'WORKER',
   RASTERIZER = 'RASTERIZER',
-  AUCTION_WORKLET = 'AUCTION_WORKLET',
   OTHER = 'OTHER',
   CPU_PROFILE = 'CPU_PROFILE',
   THREAD_POOL = 'THREAD_POOL',
 }
 
-function getThreadTypeForRendererThread(
-    pid: Types.Events.ProcessID, thread: Renderer.RendererThread,
-    auctionWorkletsData: AuctionWorkletsData): ThreadType {
+function getThreadTypeForRendererThread(pid: Types.Events.ProcessID, thread: Renderer.RendererThread): ThreadType {
   let threadType = ThreadType.OTHER;
   if (thread.name === 'CrRendererMain') {
     threadType = ThreadType.MAIN_THREAD;
@@ -40,8 +36,6 @@ function getThreadTypeForRendererThread(
     threadType = ThreadType.WORKER;
   } else if (thread.name?.startsWith('CompositorTileWorker')) {
     threadType = ThreadType.RASTERIZER;
-  } else if (auctionWorkletsData.worklets.has(pid)) {
-    threadType = ThreadType.AUCTION_WORKLET;
   } else if (thread.name?.startsWith('ThreadPool')) {
     // TODO(paulirish): perhaps exclude ThreadPoolServiceThread entirely
     threadType = ThreadType.THREAD_POOL;
@@ -49,8 +43,7 @@ function getThreadTypeForRendererThread(
   return threadType;
 }
 
-export function threadsInRenderer(
-    rendererData: Renderer.RendererHandlerData, auctionWorkletsData: AuctionWorkletsData): readonly ThreadData[] {
+export function threadsInRenderer(rendererData: Renderer.RendererHandlerData): readonly ThreadData[] {
   const foundThreads: ThreadData[] = [];
   // If we have Renderer threads, we prefer to use those. In the event that a
   // trace is a CPU Profile trace, we will never have Renderer threads, so we
@@ -65,7 +58,7 @@ export function threadsInRenderer(
           // filtering we need.
           continue;
         }
-        const threadType = getThreadTypeForRendererThread(pid, thread, auctionWorkletsData);
+        const threadType = getThreadTypeForRendererThread(pid, thread);
         foundThreads.push({
           name: thread.name,
           pid,
@@ -99,7 +92,7 @@ export function threadsInTrace(handlerData: HandlerData): readonly ThreadData[] 
   }
 
   // If we have Renderer threads, we prefer to use those.
-  const threadsFromRenderer = threadsInRenderer(handlerData.Renderer, handlerData.AuctionWorklets);
+  const threadsFromRenderer = threadsInRenderer(handlerData.Renderer);
   if (threadsFromRenderer.length) {
     threadsInHandlerDataCache.set(handlerData, threadsFromRenderer);
     return threadsFromRenderer;

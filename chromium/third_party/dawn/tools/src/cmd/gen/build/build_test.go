@@ -1137,3 +1137,139 @@ func TestEmitDotFile_OnlyMatchingKindIncluded(t *testing.T) {
 `
 	require.Equal(t, expectedContents, string(bytes[:]))
 }
+
+func TestHasSupportedDeps(t *testing.T) {
+	test := func(name string, internalDeps []string, externalDeps []string, expected bool) {
+		t.Run(name, func(t *testing.T) {
+			cond := &TargetConditional{}
+			for _, dep := range internalDeps {
+				cond.InternalDependencies = append(cond.InternalDependencies, &Target{
+					Name: TargetName(dep),
+				})
+			}
+			for _, dep := range externalDeps {
+				cond.ExternalDependencies = append(cond.ExternalDependencies, ExternalDependency{
+					Name: ExternalDependencyName(dep),
+				})
+			}
+
+			got := HasSupportedDeps(cond)
+			require.Equal(t, expected, got)
+		})
+	}
+
+	test("Empty deps", nil, nil, false)
+	test("Only internal dependency", []string{"some_internal_lib"}, nil, true)
+	test("Only supported external dependency", nil, []string{"gtest"}, true)
+	test("Only unsupported external dependency", nil, []string{"metal"}, false)
+	test("Mixed dependencies", []string{"some_internal_lib"}, []string{"metal"}, true)
+}
+
+func TestConditionTargetLabel(t *testing.T) {
+	test := func(variable string, isNegated bool, expected string) {
+		name := fmt.Sprintf("%v_%v", variable, isNegated)
+		t.Run(name, func(t *testing.T) {
+			got := ConditionTargetLabel(variable, isNegated)
+			require.Equal(t, expected, got)
+		})
+	}
+
+	test("tint_build_is_win", false, "@platforms//os:windows")
+	test("tint_build_is_linux", false, "@platforms//os:linux")
+	test("tint_build_is_mac", false, "@platforms//os:macos")
+	// We should never get a negated platform case due to ShouldSkipUnary
+	test("tint_build_is_mac", true, "@platforms//os:macos")
+
+	test("tint_build_glsl_writer", false, "//src/tint:tint_build_glsl_writer_true")
+	test("tint_build_glsl_writer", true, "//src/tint:tint_build_glsl_writer_false")
+}
+
+func TestShouldSkipOrs(t *testing.T) {
+	test := func(name string, unaries []cnf.Unary, expected bool) {
+		t.Run(name, func(t *testing.T) {
+			got := ShouldSkipOrs(cnf.Ors(unaries))
+			require.Equal(t, expected, got)
+		})
+	}
+
+	test("Negated platform variables", []cnf.Unary{
+		{Var: "tint_build_is_win", Negate: true},
+		{Var: "tint_build_is_mac", Negate: true},
+	}, true)
+
+	test("Positive platform variable", []cnf.Unary{
+		{Var: "tint_build_is_win", Negate: false},
+	}, false)
+
+	test("Negated non-platform variable", []cnf.Unary{
+		{Var: "tint_build_glsl_writer", Negate: true},
+	}, false)
+
+	test("Mixed platform and non-platform", []cnf.Unary{
+		{Var: "tint_build_is_win", Negate: true},
+		{Var: "tint_build_glsl_writer", Negate: true},
+	}, false)
+}
+
+func TestShouldSkipAnds(t *testing.T) {
+	test := func(name string, ands cnf.Ands, expected bool) {
+		t.Run(name, func(t *testing.T) {
+			got := ShouldSkipAnds(ands)
+			require.Equal(t, expected, got)
+		})
+	}
+
+	test("Negated platform variables", cnf.Ands{
+		cnf.Ors{{Var: "tint_build_is_win", Negate: true}},
+		cnf.Ors{{Var: "tint_build_is_mac", Negate: true}},
+	}, true)
+
+	test("Positive platform variable", cnf.Ands{
+		cnf.Ors{{Var: "tint_build_is_win", Negate: false}},
+	}, false)
+
+	test("Mixed negated platform and non-platform", cnf.Ands{
+		cnf.Ors{{Var: "tint_build_is_win", Negate: true}},
+		cnf.Ors{{Var: "tint_build_glsl_writer", Negate: true}},
+	}, false)
+}
+
+func TestTargetHasObjcSrcs(t *testing.T) {
+	test := func(name string, sourceFiles []string, expected bool) {
+		t.Run(name, func(t *testing.T) {
+			target := &Target{
+				SourceFileSet: container.NewSet[string](),
+			}
+			for _, file := range sourceFiles {
+				target.SourceFileSet.Add(file)
+			}
+			got := target.HasObjcSrcs()
+			require.Equal(t, expected, got)
+		})
+	}
+
+	test("Empty sources", nil, false)
+	test("Only C++ sources", []string{"alpha.cc", "beta.cpp", "gamma.h"}, false)
+	test("Objective-C++ sources present", []string{"alpha.cc", "delta.mm"}, true)
+	test("Only Objective-C++ sources", []string{"delta.mm"}, true)
+}
+
+func TestHasCppSrcs(t *testing.T) {
+	test := func(name string, sourceFiles []string, expected bool) {
+		t.Run(name, func(t *testing.T) {
+			cond := &TargetConditional{}
+			for _, file := range sourceFiles {
+				cond.SourceFiles = append(cond.SourceFiles, &File{
+					Name: file,
+				})
+			}
+			got := HasCppSrcs(cond)
+			require.Equal(t, expected, got)
+		})
+	}
+
+	test("Empty sources", nil, false)
+	test("Only standard C++ sources", []string{"alpha.cc", "beta.cpp", "gamma.h"}, true)
+	test("Only Objective-C++ sources", []string{"validate_metal.mm"}, false)
+	test("Mixed sources", []string{"validate.cc", "validate_metal.mm"}, true)
+}

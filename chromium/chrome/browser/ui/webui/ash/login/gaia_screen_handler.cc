@@ -14,6 +14,7 @@
 #include "ash/constants/ash_login_pref_names.h"
 #include "ash/constants/ash_pref_names.h"
 #include "ash/constants/ash_switches.h"
+#include "ash/login/resources/grit/ash_login_strings.h"
 #include "ash/public/cpp/login_screen.h"
 #include "base/check.h"
 #include "base/check_deref.h"
@@ -68,7 +69,6 @@
 #include "chrome/browser/ui/ash/login/login_display_host_webui.h"
 #include "chrome/browser/ui/ash/login/signin_ui.h"
 #include "chrome/browser/ui/ash/login/user_adding_screen.h"
-#include "chrome/browser/ui/webui/ash/login/cookie_waiter.h"
 #include "chrome/browser/ui/webui/ash/login/enrollment_screen_handler.h"
 #include "chrome/browser/ui/webui/ash/login/error_screen_handler.h"
 #include "chrome/browser/ui/webui/ash/login/network_state_informer.h"
@@ -1042,13 +1042,22 @@ void GaiaScreenHandler::CompleteAuthentication(
     if (features::IsManagedLocalPinAndPasswordEnabled()) {
       user_context->SetScrapedSamlPasswords(std::move(scraped_saml_passwords));
       user_context->SetRequiresPasswordConfirmation(true);
-      if (!auth_factor_editor_) {
-        auth_factor_editor_ =
-            std::make_unique<AuthFactorEditor>(UserDataAuthClient::Get());
+      // For device ephemeral users, immediately show the saml confirm password
+      // screen if it is required.
+      if (user_manager::UserManager::Get()->IsUserNonCryptohomeDataEphemeral(
+              user_context->GetAccountId())) {
+        LoginDisplayHost::default_host()
+            ->GetSigninUI()
+            ->ShowSamlConfirmPassword(std::move(user_context));
+      } else {
+        if (!auth_factor_editor_) {
+          auth_factor_editor_ =
+              std::make_unique<AuthFactorEditor>(UserDataAuthClient::Get());
+        }
+        auth_factor_editor_->GetAuthFactorsConfiguration(
+            std::move(user_context),
+            base::BindOnce(&OnGetAuthFactorsConfiguration));
       }
-      auth_factor_editor_->GetAuthFactorsConfiguration(
-          std::move(user_context),
-          base::BindOnce(&OnGetAuthFactorsConfiguration));
     } else {
       LoginDisplayHost::default_host()->GetSigninUI()->SAMLConfirmPassword(
           std::move(scraped_saml_passwords), std::move(user_context));

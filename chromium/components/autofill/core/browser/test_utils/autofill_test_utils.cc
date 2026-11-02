@@ -28,6 +28,7 @@
 #include "base/uuid.h"
 #include "build/build_config.h"
 #include "components/autofill/core/browser/crowdsourcing/randomized_encoder.h"
+#include "components/autofill/core/browser/data_manager/addresses/account_name_email_store.h"
 #include "components/autofill/core/browser/data_manager/payments/payments_data_manager.h"
 #include "components/autofill/core/browser/data_manager/test_personal_data_manager.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_i18n_api.h"
@@ -47,6 +48,7 @@
 #include "components/autofill/core/browser/proto/server.pb.h"
 #include "components/autofill/core/browser/suggestions/suggestion.h"
 #include "components/autofill/core/browser/suggestions/suggestion_type.h"
+#include "components/autofill/core/browser/test_utils/autofill_form_test_utils.h"
 #include "components/autofill/core/browser/ui/autofill_external_delegate.h"
 #include "components/autofill/core/browser/webdata/payments/payments_autofill_table.h"
 #include "components/autofill/core/common/autofill_clock.h"
@@ -62,12 +64,14 @@
 #include "components/autofill/core/common/form_field_data_predictions.h"
 #include "components/autofill/core/common/signatures.h"
 #include "components/autofill/core/common/unique_ids.h"
+#include "components/personal_context/core/personal_context_prefs.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/pref_service_factory.h"
 #include "components/prefs/testing_pref_store.h"
 #include "components/security_interstitials/core/pref_names.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
+#include "components/subscription_eligibility/subscription_eligibility_prefs.h"
 #include "components/sync/protocol/autofill_specifics.pb.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/abseil-cpp/absl/functional/overload.h"
@@ -148,6 +152,8 @@ std::unique_ptr<AutofillTestingPrefService> PrefServiceForTesting() {
   auto pref_service = std::make_unique<AutofillTestingPrefService>();
   user_prefs::PrefRegistrySyncable* registry = pref_service->registry();
   signin::IdentityManager::RegisterProfilePrefs(registry);
+  subscription_eligibility::prefs::RegisterProfilePrefs(registry);
+  personal_context::prefs::RegisterProfilePrefs(registry);
   registry->RegisterBooleanPref(
       RandomizedEncoder::kUrlKeyedAnonymizedDataCollectionEnabled, false);
   registry->RegisterBooleanPref(::prefs::kMixedFormsWarningsEnabled, true);
@@ -165,81 +171,70 @@ std::unique_ptr<PrefService> PrefServiceForTesting(
 }
 
 [[nodiscard]] FormData CreateTestAddressFormData(std::string_view unique_id) {
-  FormData form;
-  form.set_host_frame(MakeLocalFrameToken());
-  form.set_renderer_id(MakeFormRendererId());
-  form.set_name(u"MyForm" + ASCIIToUTF16(unique_id));
-  form.set_button_titles({std::make_pair(
-      u"Submit", mojom::ButtonTitleType::BUTTON_ELEMENT_SUBMIT_TYPE)});
-  form.set_url(GURL("https://myform.com/form.html"));
-  form.set_action(GURL("https://myform.com/submit.html"));
+  FormData form = test::GetFormData(test::FormDescription{
+      .fields = {{.label = u"First Name", .name = u"firstname"},
+                 {.label = u"Middle Name", .name = u"middlename"},
+                 {.label = u"Last Name", .name = u"lastname"},
+                 {.label = u"Address Line 1", .name = u"addr1"},
+                 {.label = u"Address Line 2", .name = u"addr2"},
+                 {.label = u"City", .name = u"city"},
+                 {.label = u"State", .name = u"state"},
+                 {.label = u"Postal Code", .name = u"zipcode"},
+                 {.label = u"Country", .name = u"country"},
+                 {.label = u"Phone Number",
+                  .name = u"phonenumber",
+                  .form_control_type = FormControlType::kInputTelephone},
+                 {.label = u"Email",
+                  .name = u"email",
+                  .form_control_type = FormControlType::kInputEmail}},
+      .name = u"MyForm" + ASCIIToUTF16(unique_id),
+      .url = "https://myform.com/form.html",
+      .action = "https://myform.com/submit.html",
+      .main_frame_origin =
+          url::Origin::Create(GURL("https://myform_root.com/form.html")),
+      .button_titles = {{u"Submit",
+                         mojom::ButtonTitleType::BUTTON_ELEMENT_SUBMIT_TYPE}},
+  });
   form.set_is_action_empty(true);
-  form.set_main_frame_origin(
-      url::Origin::Create(GURL("https://myform_root.com/form.html")));
   form.set_submission_event(
       mojom::SubmissionIndicatorEvent::SAME_DOCUMENT_NAVIGATION);
-
-  form.set_fields(
-      {CreateTestFormField("First Name", "firstname", "",
-                           FormControlType::kInputText),
-       CreateTestFormField("Middle Name", "middlename", "",
-                           FormControlType::kInputText),
-       CreateTestFormField("Last Name", "lastname", "",
-                           FormControlType::kInputText),
-       CreateTestFormField("Address Line 1", "addr1", "",
-                           FormControlType::kInputText),
-       CreateTestFormField("Address Line 2", "addr2", "",
-                           FormControlType::kInputText),
-       CreateTestFormField("City", "city", "", FormControlType::kInputText),
-       CreateTestFormField("State", "state", "", FormControlType::kInputText),
-       CreateTestFormField("Postal Code", "zipcode", "",
-                           FormControlType::kInputText),
-       CreateTestFormField("Country", "country", "",
-                           FormControlType::kInputText),
-       CreateTestFormField("Phone Number", "phonenumber", "",
-                           FormControlType::kInputTelephone),
-       CreateTestFormField("Email", "email", "",
-                           FormControlType::kInputEmail)});
   return form;
 }
 
 [[nodiscard]] FormData CreateTestOtpFormData(const char* unique_id) {
-  FormData form;
-  form.set_host_frame(MakeLocalFrameToken());
-  form.set_renderer_id(MakeFormRendererId());
-  form.set_name(u"MyForm" + ASCIIToUTF16(unique_id ? unique_id : ""));
-  form.set_button_titles({std::make_pair(
-      u"Submit", mojom::ButtonTitleType::BUTTON_ELEMENT_SUBMIT_TYPE)});
-  form.set_url(GURL("https://myform.com/form.html"));
-  form.set_action(GURL("https://myform.com/submit.html"));
+  FormData form = test::GetFormData(test::FormDescription{
+      .fields = {{.label = u"One time password", .name = u"otp"}},
+      .name = u"MyForm" + ASCIIToUTF16(unique_id ? unique_id : ""),
+      .url = "https://myform.com/form.html",
+      .action = "https://myform.com/submit.html",
+      .main_frame_origin =
+          url::Origin::Create(GURL("https://myform_root.com/form.html")),
+      .button_titles = {{u"Submit",
+                         mojom::ButtonTitleType::BUTTON_ELEMENT_SUBMIT_TYPE}},
+  });
   form.set_is_action_empty(true);
-  form.set_main_frame_origin(
-      url::Origin::Create(GURL("https://myform_root.com/form.html")));
   form.set_submission_event(
       mojom::SubmissionIndicatorEvent::SAME_DOCUMENT_NAVIGATION);
-
-  form.set_fields({CreateTestFormField("One time password", "otp", "",
-                                       FormControlType::kInputText)});
   return form;
 }
 
 [[nodiscard]] FormData CreateTestHybridSignUpFormData(const char* unique_id) {
-  FormData form;
-  form.set_host_frame(MakeLocalFrameToken());
-  form.set_renderer_id(MakeFormRendererId());
-  form.set_name(u"MyForm" + ASCIIToUTF16(unique_id ? unique_id : ""));
-  form.set_button_titles({std::make_pair(
-      u"Submit", mojom::ButtonTitleType::BUTTON_ELEMENT_SUBMIT_TYPE)});
-  form.set_url(GURL("https://myform.com/form.html"));
-  form.set_action(GURL("https://myform.com/submit.html"));
+  FormData form = test::GetFormData(test::FormDescription{
+      .fields = {{.label = u"Email",
+                  .name = u"email",
+                  .autocomplete_attribute = "webauthn",
+                  .form_control_type = FormControlType::kInputEmail}},
+      .name = u"MyForm" + ASCIIToUTF16(unique_id ? unique_id : ""),
+      .url = "https://myform.com/form.html",
+      .action = "https://myform.com/submit.html",
+      .main_frame_origin =
+          url::Origin::Create(GURL("https://myform_root.com/form.html")),
+      .button_titles = {{u"Submit",
+                         mojom::ButtonTitleType::BUTTON_ELEMENT_SUBMIT_TYPE}},
+  });
   form.set_is_action_empty(true);
-  form.set_main_frame_origin(
-      url::Origin::Create(GURL("https://myform_root.com/form.html")));
   form.set_submission_event(
       mojom::SubmissionIndicatorEvent::SAME_DOCUMENT_NAVIGATION);
-
-  form.set_fields({CreateTestFormField(
-      "Email", "email", "", FormControlType::kInputEmail, "webauthn")});
   return form;
 }
 
@@ -437,46 +432,30 @@ Iban GetServerIban3() {
 }
 
 CreditCard GetCreditCard() {
-  CreditCard credit_card(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                         kEmptyOrigin);
+  CreditCard credit_card(base::Uuid::GenerateRandomV4().AsLowercaseString());
   SetCreditCardInfo(&credit_card, "Test User", "4111111111111111" /* Visa */,
                     NextMonth().c_str(), NextYear().c_str(), "1");
   return credit_card;
 }
 
 CreditCard GetCreditCard2() {
-  CreditCard credit_card(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                         kEmptyOrigin);
+  CreditCard credit_card(base::Uuid::GenerateRandomV4().AsLowercaseString());
   SetCreditCardInfo(&credit_card, "Someone Else", "378282246310005" /* AmEx */,
                     NextMonth().c_str(), TenYearsFromNow().c_str(), "1");
   return credit_card;
 }
 
 CreditCard GetExpiredCreditCard() {
-  CreditCard credit_card(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                         kEmptyOrigin);
+  CreditCard credit_card(base::Uuid::GenerateRandomV4().AsLowercaseString());
   SetCreditCardInfo(&credit_card, "Test User", "4111111111111111" /* Visa */,
                     NextMonth().c_str(), LastYear().c_str(), "1");
   return credit_card;
 }
 
 CreditCard GetIncompleteCreditCard() {
-  CreditCard credit_card(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                         kEmptyOrigin);
+  CreditCard credit_card(base::Uuid::GenerateRandomV4().AsLowercaseString());
   SetCreditCardInfo(&credit_card, "", "4111111111111111" /* Visa */,
                     NextMonth().c_str(), NextYear().c_str(), "1");
-  return credit_card;
-}
-
-CreditCard GetVerifiedCreditCard() {
-  CreditCard credit_card(GetCreditCard());
-  credit_card.set_origin(kSettingsOrigin);
-  return credit_card;
-}
-
-CreditCard GetVerifiedCreditCard2() {
-  CreditCard credit_card(GetCreditCard2());
-  credit_card.set_origin(kSettingsOrigin);
   return credit_card;
 }
 
@@ -595,8 +574,7 @@ CreditCard GetRandomCreditCard(CreditCard::RecordType record_type) {
 
   CreditCard credit_card =
       (record_type == CreditCard::RecordType::kLocalCard)
-          ? CreditCard(base::Uuid::GenerateRandomV4().AsLowercaseString(),
-                       kEmptyOrigin)
+          ? CreditCard(base::Uuid::GenerateRandomV4().AsLowercaseString())
           : CreditCard(
                 record_type,
                 base::Uuid::GenerateRandomV4().AsLowercaseString().substr(24));
@@ -822,7 +800,7 @@ void HideAccountNameEmailProfile(PrefService* pref_service,
   // the kAccountNameEmail profile that matches `info` will be removed.
   pref_service->SetInteger(
       prefs::kAutofillNameAndEmailProfileNotSelectedCounter,
-      features::kAutofillNameAndEmailProfileNotSelectedThreshold.Get() + 1);
+      AccountNameEmailStore::kNotSelectedThreshold + 1);
   pref_service->SetString(
       prefs::kAutofillNameAndEmailProfileSignature,
       base::NumberToString(base::PersistentHash(base::StrCat(
@@ -1075,14 +1053,12 @@ void GenerateTestAutofillPopup(
   field.set_bounds(gfx::RectF(100.f, 100.f));
   autofill_external_delegate->OnQuery(
       form, field, /*caret_bounds=*/gfx::Rect(),
-      AutofillSuggestionTriggerSource::kFormControlElementClicked,
-      /*update_datalist=*/false);
+      AutofillSuggestionTriggerSource::kFormControlElementClicked);
 
   std::vector<Suggestion> suggestions;
   suggestions.emplace_back(u"Test suggestion",
                            SuggestionType::kAutocompleteEntry);
-  autofill_external_delegate->OnSuggestionsReturned(field.global_id(),
-                                                    suggestions);
+  autofill_external_delegate->OnSuggestionsReturned(field, suggestions);
 }
 
 std::string ObfuscatedCardDigitsAsUTF8(const std::string& str,
@@ -1311,7 +1287,7 @@ sync_pb::PaymentInstrument CreatePaymentInstrumentWithLinkedBnplIssuer(
 }
 
 BnplIssuer GetTestLinkedBnplIssuer(
-    autofill::BnplIssuer::IssuerId issuer_id,
+    BnplIssuer::IssuerId issuer_id,
     DenseSet<PaymentInstrument::ActionRequired> actions_required) {
   std::vector<BnplIssuer::EligiblePriceRange> eligible_price_ranges;
   // Currency: USD, price lower bound: $50, price upper bound: $200.
@@ -1329,7 +1305,7 @@ BnplIssuer GetTestUnlinkedBnplIssuer() {
   eligible_price_ranges.emplace_back(/*currency=*/"USD",
                                      /*price_lower_bound=*/35'000'000,
                                      /*price_upper_bound=*/100'000'000);
-  return BnplIssuer(std::nullopt, autofill::BnplIssuer::IssuerId::kBnplZip,
+  return BnplIssuer(std::nullopt, BnplIssuer::IssuerId::kBnplZip,
                     std::move(eligible_price_ranges));
 }
 

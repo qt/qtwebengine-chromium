@@ -205,6 +205,26 @@ buildflag_header("ffmpeg_features") {
   flags = [ "USE_SYSTEM_FFMPEG=false" ]
 }
 
+if (os_config == "linux-noasm") {
+  # When assembly is disabled, exclude architecture-specific C init files
+  # (which contain static global tables referencing assembly functions) to
+  # prevent unresolved symbol lookup errors in libffmpeg.so. Also clear GNU
+  # Assembler sources for non-x86 targets.
+  _filtered_c_sources = filter_exclude(ffmpeg_c_sources,
+                                       [
+                                         "*/x86/*",
+                                         "*/arm/*",
+                                         "*/aarch64/*",
+                                         "*/riscv/*",
+                                         "*/mips/*",
+                                         "*/loongarch/*",
+                                         "*/ppc/*",
+                                       ])
+  ffmpeg_c_sources = []
+  ffmpeg_c_sources = _filtered_c_sources
+  ffmpeg_gas_sources = []
+}
+
 if (is_component_ffmpeg) {
   link_target_type = "source_set"
 } else {

@@ -29,7 +29,10 @@ rust_test_suite(
     data = [
         "//oak_proxy/client",
         "//oak_proxy/server",
+        "//oak_proxy/testdata",
+        "//oak_session/tls/testing:test_keys",
     ],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//oak_proxy/lib:oak_proxy_lib",
         "@oak_crates_index//:anyhow",
@@ -50,17 +53,42 @@ pkg_tar(
     package_dir = "/bin",
 )
 
+filegroup(
+    name = "config",
+    srcs = ["proxy_client.toml"],
+)
+
+pkg_tar(
+    name = "config_tar",
+    srcs = [":config"],
+    package_dir = "/etc",
+)
+
 oci_image(
     name = "oak_proxy_image",
-    base = "@distroless_cc_debian12",
+    base = "@distroless_cc_debian12_linux_amd64",
+    # Docker image starts an Oak Proxy client. Corresponding server URL must be
+    # specified in the CMD arguments for the ENTRYPOINT.
+    entrypoint = ["/bin/client"],
+    exposed_ports = ["8080/tcp"],
     labels = {
+        # CMD arguments will be limited to the oak_proxy executable, specified
+        # in the ENTRYPOINT.
+        # See https://docs.docker.com/reference/dockerfile/#cmd
         "tee.launch_policy.allow_cmd_override": "true",
+        # Logs from the open-sourced code are permitted.
+        "tee.launch_policy.log_redirect": "always",
     },
-    tars = [":oak_proxy_tar"],
+    target_compatible_with = ["@platforms//os:linux"],
+    tars = [
+        ":oak_proxy_tar",
+        ":config_tar",
+    ],
 )
 
 oci_load(
     name = "oak_proxy_load_image",
     image = ":oak_proxy_image",
     repo_tags = ["oak-proxy:latest"],
+    target_compatible_with = ["@platforms//os:linux"],
 )

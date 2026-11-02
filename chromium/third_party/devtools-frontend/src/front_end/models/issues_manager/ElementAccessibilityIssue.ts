@@ -9,7 +9,7 @@ import {Issue, IssueCategory, IssueKind} from './Issue.js';
 import {
   type LazyMarkdownIssueDescription,
   type MarkdownIssueDescription,
-  resolveLazyDescription
+  resolveLazyDescription,
 } from './MarkdownIssueDescription.js';
 
 export class ElementAccessibilityIssue extends Issue<Protocol.Audits.ElementAccessibilityIssueDetails> {

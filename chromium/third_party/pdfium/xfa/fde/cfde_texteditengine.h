@@ -19,7 +19,7 @@
 #include "xfa/fgas/layout/cfgas_txtbreak.h"
 
 class CFGAS_GEFont;
-class TextCharPos;
+struct TextCharPos;
 
 namespace pdfium {
 

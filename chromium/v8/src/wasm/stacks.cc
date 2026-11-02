@@ -17,6 +17,13 @@ StackMemory* StackMemory::GetCentralStackView(Isolate* isolate) {
   return new StackMemory(view.begin(), view.size());
 }
 
+void StackMemory::UpdateCentralStackLimit(Isolate* isolate) {
+  DCHECK(!owned_);
+  base::Vector<uint8_t> view = SimulatorStack::GetCentralStackView(isolate);
+  limit_ = view.begin();
+  size_ = view.size();
+}
+
 StackMemory::~StackMemory() {
   if (v8_flags.trace_wasm_stack_switching) {
     PrintF("Delete stack #%d\n", id_);
@@ -37,7 +44,7 @@ Address StackMemory::limit() const {
 void* StackMemory::jslimit() const {
   return (active_segment_ ? active_segment_->limit_ : limit_) +
          (owned_ ? StackMemory::JSGrowableStackLimitMarginKB() * KB
-                 : StackMemory::JSCentralStackLimitMarginKB() * KB);
+                 : V8_STACK_LIMIT_MARGIN_KB * KB);
 }
 
 StackMemory::StackMemory() : owned_(true) {
@@ -113,7 +120,7 @@ void StackMemory::Iterate(v8::internal::RootVisitor* v, Isolate* isolate,
   for (; !it.done(); it.Advance()) {
     it.frame()->Iterate(v);
   }
-  if (v8_flags.experimental_wasm_wasmfx) {
+  if (v8_flags.wasm_wasmfx) {
     v->VisitRootPointer(
         Root::kStackRoots, nullptr,
         FullObjectSlot(reinterpret_cast<Address>(&current_cont_)));
@@ -175,7 +182,7 @@ bool StackMemory::Grow(Address current_fp, size_t min_size) {
            active_segment_->size_, active_segment_->limit_,
            active_segment_->limit_ + active_segment_->size_);
   }
-#if V8_TARGET_OS_WIN
+#if V8_OS_WIN
   base::Stack::SetCurrentThreadStackBounds(
       reinterpret_cast<uintptr_t>(active_segment_->limit_),
       active_segment_->base());
@@ -195,7 +202,7 @@ Address StackMemory::Shrink() {
            active_segment_->limit_,
            active_segment_->limit_ + active_segment_->size_);
   }
-#if V8_TARGET_OS_WIN
+#if V8_OS_WIN
   base::Stack::SetCurrentThreadStackBounds(
       reinterpret_cast<uintptr_t>(active_segment_->limit_),
       active_segment_->base());
@@ -226,6 +233,7 @@ void StackMemory::Reset() {
   num_bound_args_ = 0;
   param_types_ = {};
   signature_id_ = CanonicalTypeIndex{kInvalidCanonicalIndex};
+  wasm_code_ = nullptr;
 }
 
 bool StackMemory::IsValidContinuation(Tagged<WasmContinuationObject> cont) {

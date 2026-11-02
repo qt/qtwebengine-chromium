@@ -44,6 +44,7 @@
 #include "src/dawn/native/webgpu/Serialization.h"
 #include "src/dawn/native/webgpu/TextureWGPU.h"
 #include "src/utils/compiler.h"
+#include "src/utils/numeric.h"
 
 namespace dawn::native::webgpu {
 
@@ -114,11 +115,8 @@ void CaptureContext::CaptureSurfaceConfigure(Surface* surface, const SurfaceConf
         return;
     }
 
-    std::vector<wgpu::TextureFormat> viewFormats;
-    for (uint32_t i = 0; i < config->viewFormatCount; ++i) {
-        viewFormats.push_back(DAWN_UNSAFE_TODO(config->viewFormats[i]));
-    }
-
+    std::vector<wgpu::TextureFormat> viewFormats{config->viewFormats.begin(),
+                                                 config->viewFormats.end()};
     schema::RootCommandSurfaceConfigureCmd cmd{{
         .data = {{
             .surfaceId = surfaceId,
@@ -244,36 +242,34 @@ WGPUBuffer CaptureContext::GetCopyBuffer() {
 }
 
 void CaptureContext::WriteContentBytes(const void* data, size_t size) {
-    mContentStream->write(reinterpret_cast<const char*>(data), size);
+    mContentStream->write(reinterpret_cast<const char*>(data), sign_cast(size));
 }
 
 void CaptureContext::WriteCommandBytes(const void* data, size_t size) {
-    mCommandStream->write(reinterpret_cast<const char*>(data), size);
+    mCommandStream->write(reinterpret_cast<const char*>(data), sign_cast(size));
     mCommandBytesWritten += size;
 }
 
 MaybeError CaptureContext::CaptureQueueWriteBuffer(Buffer* buffer,
                                                    uint64_t bufferOffset,
-                                                   const void* data,
-                                                   size_t size) {
+                                                   Span<const std::byte> data) {
     schema::ObjectId id;
     DAWN_TRY_ASSIGN(id, AddResourceAndGetId(buffer));
     schema::RootCommandWriteBufferCmd cmd{{
         .data = {{
             .bufferId = id,
             .bufferOffset = bufferOffset,
-            .size = size,
+            .size = data.size(),
         }},
     }};
 
     Serialize(*this, cmd);
-    WriteContentBytes(data, size);
+    WriteContentBytes(data.data(), data.size());
     return {};
 }
 
 MaybeError CaptureContext::CaptureQueueWriteTexture(const TexelCopyTextureInfo& destination,
-                                                    const void* data,
-                                                    size_t dataSize,
+                                                    Span<const std::byte> data,
                                                     const TexelCopyBufferLayout& dataLayout,
                                                     const TexelExtent3D& writeSizePixel) {
     DAWN_TRY(AddResource(ToBackend(destination.texture)));
@@ -282,13 +278,13 @@ MaybeError CaptureContext::CaptureQueueWriteTexture(const TexelCopyTextureInfo& 
             .destination = ToSchema(*this, destination),
             .layout = ToSchema(dataLayout),
             .size = ToSchema(writeSizePixel),
-            .dataSize = dataSize,
+            .dataSize = data.size(),
         }},
     }};
     Serialize(*this, cmd);
 
     CaptureContext::ScopedContentWriter writer(*this);
-    writer.WriteContentBytes(data, dataSize);
+    writer.WriteContentBytes(data.data(), data.size());
     return {};
 }
 
@@ -311,9 +307,9 @@ wgpu::TextureAspect ToDawn(const Aspect aspect) {
 
 schema::Origin3D ToSchema(const TexelOrigin3D& origin) {
     return {{
-        .x = static_cast<uint32_t>(origin.x),
-        .y = static_cast<uint32_t>(origin.y),
-        .z = static_cast<uint32_t>(origin.z),
+        .x = dchecked_cast<uint32_t>(origin.x),
+        .y = dchecked_cast<uint32_t>(origin.y),
+        .z = dchecked_cast<uint32_t>(origin.z),
     }};
 }
 
@@ -326,9 +322,9 @@ schema::Origin2D ToSchema(const Origin2D& origin) {
 
 schema::Extent3D ToSchema(const TexelExtent3D& extent) {
     return {{
-        .width = static_cast<uint32_t>(extent.width),
-        .height = static_cast<uint32_t>(extent.height),
-        .depthOrArrayLayers = static_cast<uint32_t>(extent.depthOrArrayLayers),
+        .width = dchecked_cast<uint32_t>(extent.width),
+        .height = dchecked_cast<uint32_t>(extent.height),
+        .depthOrArrayLayers = dchecked_cast<uint32_t>(extent.depthOrArrayLayers),
     }};
 }
 
@@ -353,7 +349,7 @@ schema::TexelCopyBufferLayout ToSchema(const BufferCopy& bufferCopy,
     return {{
         .offset = bufferCopy.offset,
         .bytesPerRow = static_cast<uint32_t>(blockInfo.ToBytes(bufferCopy.blocksPerRow)),
-        .rowsPerImage = static_cast<uint32_t>(bufferCopy.rowsPerImage),
+        .rowsPerImage = dchecked_cast<uint32_t>(bufferCopy.rowsPerImage),
     }};
 }
 

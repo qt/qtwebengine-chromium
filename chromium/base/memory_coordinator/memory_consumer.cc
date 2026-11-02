@@ -4,8 +4,10 @@
 
 #include "base/memory_coordinator/memory_consumer.h"
 
+#include "base/check_is_test.h"
 #include "base/check_op.h"
 #include "base/memory_coordinator/memory_consumer_registry.h"
+#include "build/build_config.h"
 
 namespace base {
 
@@ -13,6 +15,14 @@ namespace base {
 
 MemoryConsumer::MemoryConsumer() {
   DETACH_FROM_SEQUENCE(sequence_checker_);
+}
+
+bool MemoryConsumer::IsPassive() const {
+  return false;
+}
+
+bool PassiveMemoryConsumer::IsPassive() const {
+  return true;
 }
 
 void MemoryConsumer::ReleaseMemory() {
@@ -39,17 +49,20 @@ MemoryConsumerRegistration::MemoryConsumerRegistration(
     std::string_view consumer_name,
     std::optional<MemoryConsumerTraits> traits,
     MemoryConsumer* consumer,
-    CheckUnregister check_unregister,
-    CheckRegistryExists check_registry_exists)
+    CheckUnregister check_unregister)
     : consumer_name_(consumer_name),
       consumer_(consumer),
       check_unregister_(check_unregister),
       registry_(MemoryConsumerRegistry::MaybeGet()) {
   if (!registry_) {
-    CHECK_EQ(check_registry_exists, CheckRegistryExists::kDisabled)
+#if !BUILDFLAG(IS_IOS)
+    // Enforce that the registry exists outside of tests to prevent components
+    // from silently failing to respond to memory pressure.
+    CHECK_IS_TEST()
         << ". The MemoryConsumerRegistry did not exist at the time the "
            "MemoryConsumerRegistration for "
         << consumer_name << " was created.";
+#endif
     return;
   }
 

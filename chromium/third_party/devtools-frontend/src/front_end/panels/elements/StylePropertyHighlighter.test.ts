@@ -3,26 +3,30 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as SDK from '../../core/sdk/sdk.js';
 import * as ComputedStyle from '../../models/computed_style/computed_style.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
+import {MockCDPConnection} from '../../testing/MockCDPConnection.js';
 import {createStubbedDomNodeWithModels, getMatchedStyles} from '../../testing/StyleHelpers.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as PanelUtils from '../utils/utils.js';
 
 import * as Elements from './elements.js';
 
-describeWithMockConnection('StylePropertyHighlighter', () => {
+describeWithEnvironment('StylePropertyHighlighter', () => {
   async function setupStylesPane(): Promise<{
     stylesSidebarPane: Elements.StylesSidebarPane.StylesSidebarPane,
     matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles,
   }> {
+    const connection = new MockCDPConnection();
     const {cssModel, node} = createStubbedDomNodeWithModels();
     UI.Context.Context.instance().setFlavor(SDK.DOMModel.DOMNode, node);
     const computedStyleModel = new ComputedStyle.ComputedStyleModel.ComputedStyleModel(node);
     const stylesSidebarPane = new Elements.StylesSidebarPane.StylesSidebarPane(computedStyleModel);
-    const matchedStyles = await getMatchedStyles({node: stylesSidebarPane.node() as SDK.DOMModel.DOMNode, cssModel});
+    const matchedStyles =
+        await getMatchedStyles({node: stylesSidebarPane.node() as SDK.DOMModel.DOMNode, cssModel, connection});
     return {
       stylesSidebarPane,
       matchedStyles,
@@ -97,6 +101,28 @@ describeWithMockConnection('StylePropertyHighlighter', () => {
 
     sinon.assert.called(blockExpandSpy);
     sinon.assert.calledOnceWithExactly(highlightSpy, block.sections[0].element);
+  });
+
+  it('highlights sections with tree scope distance', async () => {
+    const {stylesSidebarPane, matchedStyles} = await setupStylesPane();
+    const getSectionBlockByName = sinon.stub(stylesSidebarPane, 'getSectionBlockByName');
+
+    const block = createBlockAndSection(stylesSidebarPane, matchedStyles, 'sectionname');
+    const otherSection = createSection(stylesSidebarPane, matchedStyles, 'sectionname');
+    sinon.stub(block.sections[0], 'treeScopeDistance').returns(1);
+    sinon.stub(otherSection, 'treeScopeDistance').returns(2);
+    block.sections.push(otherSection);
+
+    const blockExpandSpy = sinon.spy(block, 'expand');
+
+    getSectionBlockByName.callsFake(name => name === 'blockname' ? block : undefined);
+
+    const highlighter = new Elements.StylePropertyHighlighter.StylePropertyHighlighter(stylesSidebarPane);
+    const highlightSpy = sinon.stub(PanelUtils.PanelUtils, 'highlightElement');
+    highlighter.findAndHighlightSection('sectionname', 'blockname', 2);
+
+    sinon.assert.called(blockExpandSpy);
+    sinon.assert.calledOnceWithExactly(highlightSpy, block.sections[1].element);
   });
 
   it('highlights properties in sections in blocks', async () => {

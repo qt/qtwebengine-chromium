@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "base/dcheck_is_on.h"
+#include "base/functional/callback.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/scoped_refptr.h"
 #include "cc/layers/content_layer_client.h"
@@ -196,6 +197,7 @@ class PLATFORM_EXPORT PaintArtifactCompositor final
   bool DirectlyUpdateScrollOffsetTransform(const TransformPaintPropertyNode&);
   bool DirectlyUpdateTransform(const TransformPaintPropertyNode&);
   bool DirectlyUpdatePageScaleTransform(const TransformPaintPropertyNode&);
+  bool DirectlyUpdateScrollingContentsCullRect(const ScrollPaintPropertyNode&);
 
   // Directly sets cc::ScrollTree::current_scroll_offset. This doesn't affect
   // cc::TransformNode::scroll_offset (which will be synched with blink
@@ -216,6 +218,12 @@ class PLATFORM_EXPORT PaintArtifactCompositor final
   cc::Layer* RootLayer() const { return root_layer_.get(); }
 
   void SetTracksRasterInvalidations(bool);
+
+  using GetCanvasSnapshotCallback =
+      base::RepeatingCallback<std::optional<cc::PaintRecord>(DOMNodeId)>;
+  void SetGetCanvasSnapshotCallback(GetCanvasSnapshotCallback callback) {
+    get_canvas_snapshot_callback_ = std::move(callback);
+  }
 
   bool HasCanvasChildPaintRecord(DOMNodeId child_id) const;
   std::optional<CanvasChildPaintRecord> GetCanvasChildPaintRecord(
@@ -316,6 +324,8 @@ class PLATFORM_EXPORT PaintArtifactCompositor final
   PendingLayer::CompositingType ChunkCompositingType(const PaintArtifact&,
                                                      const PaintChunk&) const;
 
+  void AddRangeDependentScroll(const PropertyTreeState&);
+
   static void UpdateRenderSurfaceForEffects(
       cc::EffectTree&,
       const cc::LayerList&,
@@ -349,6 +359,7 @@ class PLATFORM_EXPORT PaintArtifactCompositor final
   class OldPendingLayerMatcher;
   PendingLayers pending_layers_;
   HashMap<DOMNodeId, wtf_size_t> canvas_child_layer_map_;
+  GetCanvasSnapshotCallback get_canvas_snapshot_callback_;
 
   class Layerizer;
 
@@ -362,6 +373,11 @@ class PLATFORM_EXPORT PaintArtifactCompositor final
   // scrolling (including raster-inducing and main-thread repainted).
   HeapHashMap<Member<const TransformPaintPropertyNode>, ScrollTranslationInfo>
       painted_scroll_translations_;
+
+  // Scroll nodes whose painted scroll ranges (i.e. scrolling contents cull
+  // rects) the last layerization result depended on. We'll need a full update
+  // if any of these scroll nodes' scrolling contents cull rects change.
+  HeapHashSet<Member<const ScrollPaintPropertyNode>> range_dependent_scrolls_;
 
   friend class PaintArtifactCompositorTest;
 };

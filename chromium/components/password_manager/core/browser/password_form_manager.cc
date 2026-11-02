@@ -54,6 +54,7 @@
 #include "components/password_manager/core/browser/password_store/interactions_stats.h"
 #include "components/password_manager/core/browser/password_store/password_form_converters.h"
 #include "components/password_manager/core/browser/password_store/password_store_backend_error.h"
+#include "components/password_manager/core/browser/password_store/password_store_util.h"
 #include "components/password_manager/core/browser/password_store/psl_matching_helper.h"
 #include "components/password_manager/core/browser/possible_username_data.h"
 #include "components/password_manager/core/browser/votes_uploader.h"
@@ -354,6 +355,12 @@ PasswordFormManager::~PasswordFormManager() {
 }
 
 void PasswordFormManager::OnPasswordFilledManually() {
+  if (client_->IsActorTaskActive()) {
+    client_->OnPasswordFilled(
+        driver_.get(), GetURL(),
+        PasswordManagerClient::PasswordFillTrigger::kAgentTask);
+  }
+  allow_filling_upon_fetching_ = false;
   if (!base::FeatureList::IsEnabled(features::kPasswordDateLastFilled) ||
       !parsed_submitted_form_ ||
       !password_save_manager_->IsEqualToSavedMatch()) {
@@ -974,15 +981,17 @@ void PasswordFormManager::OnFetchCompleted() {
     CreatePendingCredentials();
   }
 
-  if (IsHttpAuth()) {
-    // No server prediction for http auth, so no need to wait.
-    FillHttpAuth();
-  } else if (parser_.server_predictions() ||
-             !wait_for_server_predictions_for_filling_) {
-    ReportTimeBetweenStoreAndServerUMA();
-    FillNow();
-  } else if (!async_predictions_waiter_.IsActive()) {
-    DelayFillForServerSidePredictions();
+  if (allow_filling_upon_fetching_) {
+    if (IsHttpAuth()) {
+      // No server prediction for http auth, so no need to wait.
+      FillHttpAuth();
+    } else if (parser_.server_predictions() ||
+               !wait_for_server_predictions_for_filling_) {
+      ReportTimeBetweenStoreAndServerUMA();
+      FillNow();
+    } else if (!async_predictions_waiter_.IsActive()) {
+      DelayFillForServerSidePredictions();
+    }
   }
 
   if (should_schedule_save_for_later_) {
@@ -1004,13 +1013,11 @@ bool PasswordFormManager::WebAuthnCredentialsAvailable() const {
     WebAuthnCredentialsDelegate* delegate =
         client_->GetWebAuthnCredentialsDelegateForDriver(driver_.get());
 #if !BUILDFLAG(IS_IOS) && !BUILDFLAG(IS_ANDROID)
-    if (base::FeatureList::IsEnabled(
-            features::kWebAuthnUsePasskeyFromAnotherDeviceInContextMenu)) {
-      return delegate && delegate->GetPasskeys().has_value() &&
-             !delegate->GetPasskeys().value()->empty();
-    }
-#endif  //! BUILDFLAG(IS_IOS) && !BUILDFLAG(IS_ANDROID)
+    return delegate && delegate->GetPasskeys().has_value() &&
+           !delegate->GetPasskeys().value()->empty();
+#else
     return delegate && delegate->GetPasskeys().has_value();
+#endif
   };
 #if BUILDFLAG(IS_ANDROID)
   auto check_cred_man_delegate = [=, this]() {
@@ -1064,7 +1071,9 @@ bool PasswordFormManager::ProvisionallySave(
         *form_parsing_result.password_form);
   }
 
-  if (!client_->IsSavingAndFillingEnabled(submitted_form.url())) {
+  url::Origin origin = driver_ ? driver_->GetLastCommittedOrigin()
+                               : url::Origin::Create(submitted_form.url());
+  if (!client_->IsSavingAndFillingEnabled(origin, submitted_form.url())) {
     RecordSavingIsDisabled(client_);
     is_saving_allowed_ = false;
   }
@@ -1192,6 +1201,10 @@ void PasswordFormManager::Fill() {
 }
 
 void PasswordFormManager::FillNow() {
+  if (!allow_filling_upon_fetching_) {
+    return;
+  }
+
   if (!driver_) {
     return;
   }
@@ -1363,6 +1376,7 @@ void PasswordFormManager::RecordMetricOnReadonly(
 }
 
 void PasswordFormManager::ReportTimeBetweenStoreAndServerUMA() {
+  // TODO(crbug.com/525318107): Prevent multiple records of this metric.
   if (!received_stored_credentials_time_.is_null()) {
     UMA_HISTOGRAM_TIMES("PasswordManager.TimeBetweenStoreAndServer",
                         TimeTicks::Now() - received_stored_credentials_time_);

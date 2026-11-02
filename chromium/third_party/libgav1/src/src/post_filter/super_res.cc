@@ -14,9 +14,15 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 
 #include "src/post_filter.h"
 #include "src/utils/blocking_counter.h"
+#include "src/utils/common.h"
+#include "src/utils/constants.h"
 
 namespace libgav1 {
 

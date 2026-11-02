@@ -3,15 +3,15 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as SDK from '../../../core/sdk/sdk.js';
 import type * as Protocol from '../../../generated/protocol.js';
-import {createTarget} from '../../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../../testing/MockConnection.js';
+import {createTarget, describeWithEnvironment} from '../../../testing/EnvironmentHelpers.js';
 
 import * as App from './app.js';
 
-describeWithMockConnection('NodeChildTargetManager', () => {
+describeWithEnvironment('NodeChildTargetManager', () => {
   it('attaches Node.js targets without a parent target', () => {
     const browserTarget = createTarget({type: SDK.Target.Type.BROWSER});
     const childTargetManager = browserTarget.model(App.NodeMain.NodeChildTargetManager);
@@ -59,7 +59,7 @@ describeWithMockConnection('NodeChildTargetManager', () => {
     assert.exists(target);
 
     // Creating the target should have already sent a bunch of messages, like Debugger.enable
-    sinon.assert.calledWithMatch(sendStub, sinon.match(request => {
+    sinon.assert.calledWithMatch(sendStub, sinon.match((request: {message: string}) => {
       const {method} = JSON.parse(request.message);
       return method === 'Debugger.enable';
     }));

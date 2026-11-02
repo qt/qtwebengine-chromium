@@ -49,8 +49,8 @@ int LLVMFuzzerInitialize(int* argc, char*** argv) {
 int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   // Truncate the input.
   // SAFETY: Wrapping arguments from libFuzzer in a span.
-  auto data_span =
-      UNSAFE_BUFFERS(base::span(data, base::saturated_cast<wtf_size_t>(size)));
+  auto data_span = UNSAFE_BUFFERS(base::span(
+      base::unchecked, data, base::saturated_cast<wtf_size_t>(size)));
   // Odd sizes are handled in various ways, depending how they arrive.
   // Let's not worry about that case here.
   if (data_span.size() % sizeof(UChar)) {
@@ -67,7 +67,7 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
       "d875dfc2-4505-461b-98fe-0cf6cc5eaf44", "path", "text/plain"));
 
   // Used to control what kind of extra data is provided to the deserializer.
-  unsigned hash = StringHasher::HashMemory(data_span);
+  unsigned hash = StringHasher::HashMemory32(data_span);
 
   SerializedScriptValue::DeserializeOptions options;
   MessagePortArray message_ports;

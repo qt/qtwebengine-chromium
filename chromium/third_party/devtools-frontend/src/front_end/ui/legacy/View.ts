@@ -86,7 +86,7 @@ export class SimpleView<ContentTypeT extends HTMLElement|DocumentFragment = HTML
     return false;
   }
 
-  toolbarItems(): Promise<ToolbarItem[]> {
+  toolbarItems(): Promise<ToolbarItem[]|TemplateResult> {
     return Promise.resolve([]);
   }
 

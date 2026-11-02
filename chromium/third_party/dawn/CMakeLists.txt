@@ -114,17 +114,19 @@ elseif(UNIX)
   set(ENABLE_OPENGLES ON)
   set(ENABLE_DESKTOP_GL ON)
   set(ENABLE_VULKAN ON)
+  set(USE_WAYLAND ON)
   set(USE_X11 ON)
 endif()
 
-# GLFW is not supported in UWP
+# Not enabled for UWP because it only supports CoreWindow for windowing.
+# Not enabled for Emscripten because samples use Emscripten APIs, not GLFW.
 set(DAWN_SUPPORTS_GLFW_FOR_WINDOWING OFF)
-if (EMSCRIPTEN OR (WIN32 AND NOT WINDOWS_STORE) OR (UNIX AND NOT ANDROID))
+if ((WIN32 AND NOT WINDOWS_STORE) OR (UNIX AND NOT ANDROID AND NOT EMSCRIPTEN))
     set(DAWN_SUPPORTS_GLFW_FOR_WINDOWING ON)
 endif()
 
-# Current examples are depend on GLFW
-if (DAWN_SUPPORTS_GLFW_FOR_WINDOWING)
+# Samples require either GLFW or Emscripten for windowing.
+if (DAWN_SUPPORTS_GLFW_FOR_WINDOWING OR EMSCRIPTEN)
     set(BUILD_SAMPLES ON)
 endif()
 
@@ -161,6 +163,7 @@ option(DAWN_USE_GLFW "Enable compilation of the GLFW windowing utils" ${DAWN_SUP
 option(DAWN_USE_WINDOWS_UI "Enable support for Windows UI surface" ${USE_WINDOWS_UI})
 option(DAWN_USE_BUILT_DXC "Enable building and using DXC by the D3D12 backend" OFF)
 option(DAWN_DXC_ENABLE_ASSERTS_IN_NDEBUG "Enable DXC asserts in non-debug builds" ON)
+option(DAWN_USE_AGILITY_SDK "Enable building Dawn with the D3D12 Agility SDK" OFF)
 option(DAWN_TARGET_MACOS "Manually link Apple core frameworks" ${TARGET_MACOS})
 
 option(DAWN_BUILD_SAMPLES "Enables building Dawn's samples" ${BUILD_SAMPLES})
@@ -199,6 +202,7 @@ set_if_not_defined(DAWN_VULKAN_HEADERS_DIR "${DAWN_THIRD_PARTY_DIR}/vulkan-heade
 set_if_not_defined(DAWN_VULKAN_LOADER_DIR "${DAWN_THIRD_PARTY_DIR}/vulkan-loader/src" "Directory in which to find Vulkan-Loader")
 set_if_not_defined(DAWN_VULKAN_UTILITY_LIBRARIES_DIR "${DAWN_THIRD_PARTY_DIR}/vulkan-utility-libraries/src" "Directory in which to find Vulkan-Utility-Libraries")
 set_if_not_defined(DAWN_WEBGPU_HEADERS_DIR "${DAWN_THIRD_PARTY_DIR}/webgpu-headers/src" "Directory in which to find webgpu headers")
+set_if_not_defined(DAWN_AGILITY_SDK_DIR "${DAWN_THIRD_PARTY_DIR}/agility-sdk" "Directory in which to find the D3D12 Agility SDK")
 
 
 # Handling of the type of monolithic library to build, if any.
@@ -222,6 +226,12 @@ else()
   set(TINT_DEFAULT_GLSL OFF)
 endif()
 
+if (DAWN_ENABLE_D3D11 OR DAWN_ENABLE_D3D12)
+  set(TINT_DEFAULT_HLSL ON)
+else()
+  set(TINT_DEFAULT_HLSL OFF)
+endif()
+
 option(TINT_ENABLE_INSTALL "Enable install step for Tint libraries" OFF)
 option(TINT_BUILD_CMD_TOOLS "Build the Tint command line tools" ON)
 
@@ -235,7 +245,7 @@ option(TINT_BUILD_SPV_READER "Build the SPIR-V input reader" ${DAWN_ENABLE_VULKA
 option(TINT_BUILD_WGSL_READER "Build the WGSL input reader" ON)
 option(TINT_BUILD_GLSL_WRITER "Build the GLSL output writer" ${TINT_DEFAULT_GLSL})
 option(TINT_BUILD_GLSL_VALIDATOR "Build the GLSL output validator" ON)
-option(TINT_BUILD_HLSL_WRITER "Build the HLSL output writer" ${DAWN_ENABLE_D3D12})
+option(TINT_BUILD_HLSL_WRITER "Build the HLSL output writer" ${TINT_DEFAULT_HLSL})
 option(TINT_BUILD_MSL_WRITER "Build the MSL output writer" ${DAWN_ENABLE_METAL})
 option(TINT_BUILD_SPV_WRITER "Build the SPIR-V output writer" ${DAWN_ENABLE_VULKAN})
 option(TINT_BUILD_WGSL_WRITER "Build the WGSL output writer" ON)
@@ -248,6 +258,10 @@ option(TINT_BUILD_BENCHMARKS "Build Tint benchmarks" OFF)
 option(TINT_BUILD_TESTS "Build tests" ON)
 option(TINT_BUILD_AS_OTHER_OS "Override OS detection to force building of *_other.cc files" OFF)
 option(TINT_BUILD_MESA "Build Mesa" OFF)
+
+if (TINT_BUILD_MESA AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(FATAL_ERROR "Building Mesa is only supported on Linux")
+endif()
 
 if (EMSCRIPTEN)
   # Skip tint tests in emscripten build

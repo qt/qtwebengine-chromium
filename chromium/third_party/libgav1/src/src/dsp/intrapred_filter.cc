@@ -14,18 +14,15 @@
 
 #include "src/dsp/intrapred_filter.h"
 
-#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <cstring>
 
 #include "src/dsp/constants.h"
 #include "src/dsp/dsp.h"
 #include "src/utils/common.h"
 #include "src/utils/constants.h"
-#include "src/utils/memory.h"
 
 namespace libgav1 {
 namespace dsp {

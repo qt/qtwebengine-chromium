@@ -677,3 +677,5 @@ scoped_refptr<AudioDeviceModule> CreateAudioDeviceModuleFromInputAndOutput(
 
 }  // namespace jni
 }  // namespace webrtc
+
+DEFINE_JNI(WebRtcAudioManager)

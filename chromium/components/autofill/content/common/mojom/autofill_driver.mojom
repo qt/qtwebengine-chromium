@@ -149,9 +149,20 @@ interface AutofillDriver {
                                    FieldRendererId field_id,
                                    mojo_base.mojom.String16 old_value);
 
-  // Notification that an email verification token was shared with a form.
-  // `field_id` identifies the field where the token was shared.
-  OnEmailVerificationTokenShared(FieldRendererId field_id);
+  // Sent when a form with an email verification token is submitted.
+  //
+  // `field_id` must identify a field of `form`. This is enforced by
+  // ContentAutofillDriver.
+  FormWithEmailVerificationTokenSubmitted(FormData form,
+                                          FieldRendererId field_id);
+
+  // Sent when the renderer suspects a custom JavaScript autofill event has
+  // occurred, filling all fields in `field_ids`, and suspecting that
+  // `trigger_field_id` is the field that triggered this.
+  DidDetectJavaScriptAutofill(
+    FormData form,
+    FieldRendererId trigger_field_id,
+    array<JavaScriptFieldModification> field_modifications);
 };
 
 // There is one instance of this interface per web contents in the browser

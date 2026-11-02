@@ -54,9 +54,9 @@ class DiagonalBase : public EigenBase<Derived> {
   typedef DiagonalMatrix<Scalar, DiagonalVectorType::SizeAtCompileTime, DiagonalVectorType::MaxSizeAtCompileTime>
       PlainObject;
 
-  /** \returns a reference to the derived object. */
-  EIGEN_DEVICE_FUNC inline const Derived& derived() const { return *static_cast<const Derived*>(this); }
   /** \returns a const reference to the derived object. */
+  EIGEN_DEVICE_FUNC inline const Derived& derived() const { return *static_cast<const Derived*>(this); }
+  /** \returns a reference to the derived object. */
   EIGEN_DEVICE_FUNC inline Derived& derived() { return *static_cast<Derived*>(this); }
 
   /**
@@ -65,14 +65,14 @@ class DiagonalBase : public EigenBase<Derived> {
    * \returns A dense matrix, with its diagonal entries set from the derived object. */
   EIGEN_DEVICE_FUNC DenseMatrixType toDenseMatrix() const { return derived(); }
 
-  /** \returns a reference to the derived object's vector of diagonal coefficients. */
-  EIGEN_DEVICE_FUNC inline const DiagonalVectorType& diagonal() const { return derived().diagonal(); }
   /** \returns a const reference to the derived object's vector of diagonal coefficients. */
+  EIGEN_DEVICE_FUNC inline const DiagonalVectorType& diagonal() const { return derived().diagonal(); }
+  /** \returns a reference to the derived object's vector of diagonal coefficients. */
   EIGEN_DEVICE_FUNC inline DiagonalVectorType& diagonal() { return derived().diagonal(); }
 
   /** \returns the value of the coefficient as if \c *this was a dense matrix. */
   EIGEN_DEVICE_FUNC inline Scalar coeff(Index row, Index col) const {
-    eigen_assert(row >= 0 && col >= 0 && row < rows() && col <= cols());
+    eigen_assert(row >= 0 && col >= 0 && row < rows() && col < cols());
     return row == col ? diagonal().coeff(row) : Scalar(0);
   }
 
@@ -102,7 +102,7 @@ class DiagonalBase : public EigenBase<Derived> {
   using DiagonalInverseReturnType =
       DiagonalWrapper<const CwiseUnaryOp<internal::scalar_inverse_op<Scalar>, const DiagonalVectorType>>;
 
-  /** \returns the inverse \c *this. Computed as the coefficient-wise inverse of the diagonal. */
+  /** \returns the inverse of \c *this. Computed as the coefficient-wise inverse of the diagonal. */
   EIGEN_DEVICE_FUNC inline const DiagonalInverseReturnType inverse() const {
     return diagonal().cwiseInverse().asDiagonal();
   }
@@ -269,9 +269,9 @@ class DiagonalMatrix : public DiagonalBase<DiagonalMatrix<Scalar_, SizeAtCompile
   EIGEN_DEVICE_FUNC static const ZeroInitializeReturnType Zero(Index size) {
     return DiagonalVectorType::Zero(size).asDiagonal();
   }
-  /** Initializes a identity matrix of size SizeAtCompileTime */
+  /** Initializes an identity matrix of size SizeAtCompileTime */
   EIGEN_DEVICE_FUNC static const InitializeReturnType Identity() { return DiagonalVectorType::Ones().asDiagonal(); }
-  /** Initializes a identity matrix of size dim */
+  /** Initializes an identity matrix of size dim */
   EIGEN_DEVICE_FUNC static const InitializeReturnType Identity(Index size) {
     return DiagonalVectorType::Ones(size).asDiagonal();
   }

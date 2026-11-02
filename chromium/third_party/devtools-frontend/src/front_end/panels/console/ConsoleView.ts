@@ -40,13 +40,14 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as AiCodeCompletion from '../../models/ai_code_completion/ai_code_completion.js';
 import * as AiCodeGeneration from '../../models/ai_code_generation/ai_code_generation.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 import * as Logs from '../../models/logs/logs.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
+import * as Workspace from '../../models/workspace/workspace.js';
 import * as CodeHighlighter from '../../ui/components/code_highlighter/code_highlighter.js';
 import * as Highlighting from '../../ui/components/highlighting/highlighting.js';
 import * as IssueCounter from '../../ui/components/issue_counter/issue_counter.js';
@@ -75,16 +76,17 @@ import {
   getMessageForElement,
 } from './ConsoleViewMessage.js';
 import {ConsoleViewport, type ConsoleViewportElement, type ConsoleViewportProvider} from './ConsoleViewport.js';
+import symbolizedErrorWidgetStyles from './symbolizedErrorWidget.css.js';
 
 const UIStrings = {
   /**
    * @description Label for button which links to Issues tab, specifying how many issues there are.
    */
-  issuesWithColon: '{n, plural, =0 {No Issues} =1 {# Issue:} other {# Issues:}}',
+  issuesWithColon: '{n, plural, =0 {No issues} =1 {# issue:} other {# issues:}}',
   /**
-   * @description Text for the tooltip of the issue counter toolbar item
+   * @description Text for the tooltip of the issue counter toolbar item.
    */
-  issueToolbarTooltipGeneral: 'Some problems no longer generate console messages, but are surfaced in the issues tab.',
+  issueToolbarTooltipGeneral: 'Some problems no longer generate console messages, but are surfaced in the Issues tab.',
   /**
    * @description Text for the tooltip of the issue counter toolbar item. The placeholder indicates how many issues
    * there are in the Issues tab broken down by kind.
@@ -95,33 +97,33 @@ const UIStrings = {
    * @description Text for the tooltip of the issue counter toolbar item. The placeholder indicates how many issues
    * there are in the Issues tab broken down by kind.
    */
-  issueToolbarClickToGoToTheIssuesTab: 'Click to go to the issues tab',
+  issueToolbarClickToGoToTheIssuesTab: 'Click to go to the Issues tab',
   /**
-   * @description Text in Console View of the Console panel
+   * @description Label for the search box input field in the Console view.
    */
   findStringInLogs: 'Find string in logs',
   /**
-   * @description Tooltip text that appears when hovering over the largeicon settings gear in show settings pane setting in console view of the console panel
+   * @description Tooltip text that appears when hovering over the largeicon settings gear in show settings pane setting in Console view of the Console panel.
    */
   consoleSettings: 'Console settings',
   /**
-   * @description Title of a setting under the Console category that can be invoked through the Command Menu
+   * @description Title of a setting under the Console category that can be invoked through the command menu.
    */
   groupSimilarMessagesInConsole: 'Group similar messages',
   /**
-   * @description Title of a setting under the Console category that can be invoked through the Command Menu
+   * @description Title of a setting under the Console category that can be invoked through the command menu.
    */
   showCorsErrorsInConsole: 'CORS errors in console',
   /**
-   * @description Tooltip for the the console sidebar toggle in the Console panel. Command to
+   * @description Tooltip for the the Console sidebar toggle in the Console panel. Command to
    * open/show the sidebar.
    */
-  showConsoleSidebar: 'Show console sidebar',
+  showConsoleSidebar: 'Show Console sidebar',
   /**
-   * @description Tooltip for the the console sidebar toggle in the Console panel. Command to
+   * @description Tooltip for the the Console sidebar toggle in the Console panel. Command to
    * open/show the sidebar.
    */
-  hideConsoleSidebar: 'Hide console sidebar',
+  hideConsoleSidebar: 'Hide Console sidebar',
   /**
    * @description Screen reader announcement when the sidebar is shown in the Console panel.
    */
@@ -131,24 +133,24 @@ const UIStrings = {
    */
   consoleSidebarHidden: 'Console sidebar hidden',
   /**
-   * @description Tooltip text that appears on the setting to preserve log when hovering over the item
+   * @description Tooltip text that appears on the setting to preserve log when hovering over the item.
    */
-  doNotClearLogOnPageReload: 'Do not clear log on page reload / navigation',
+  doNotClearLogOnPageReload: 'Don’t clear log on page reload / navigation',
   /**
-   * @description Text to preserve the log after refreshing
+   * @description Text to preserve the log after refreshing.
    */
-  preserveLog: 'Preserve log',
+  preserveLog: 'Keep log',
   /**
-   * @description Text in Console View of the Console panel
+   * @description Title of a setting under the Console category to show network requests in the console.
    */
   networkMessages: 'Network messages',
   /**
-   * @description Tooltip text that appears on the setting when hovering over it in Console View of the Console panel
+   * @description Tooltip text that appears on the setting when hovering over it in Console view of the Console panel.
    */
   onlyShowMessagesFromTheCurrentContext:
       'Only show messages from the current context (`top`, `iframe`, `worker`, extension)',
   /**
-   * @description Alternative title text of a setting in Console View of the Console panel
+   * @description Alternative title text of a setting in Console view of the Console panel.
    */
   selectedContextOnly: 'Selected context only',
   /**
@@ -156,7 +158,7 @@ const UIStrings = {
    */
   logXMLHttpRequests: 'Log XMLHttpRequests',
   /**
-   * @description Tooltip text that appears on the setting when hovering over it in Console View of the Console panel
+   * @description Tooltip text that appears on the setting when hovering over it in Console view of the Console panel.
    */
   eagerlyEvaluateTextInThePrompt: 'Eagerly evaluate text in the prompt',
   /**
@@ -168,96 +170,96 @@ const UIStrings = {
    */
   treatEvaluationAsUserActivation: 'Treat evaluation as user activation',
   /**
-   * @description Text in Console View of the Console panel, indicating that a number of console
+   * @description Text in Console view of the Console panel, indicating that a number of console
    * messages have been hidden.
    */
   sHidden: '{n, plural, =1 {# hidden} other {# hidden}}',
   /**
-   * @description Alert message for screen readers when the console is cleared
+   * @description Alert message for screen readers when the console is cleared.
    */
   consoleCleared: 'Console cleared',
   /**
-   * @description Text in Console View of the Console panel
+   * @description Context menu item to filter out console messages originating from a specific script or file.
    * @example {index.js} PH1
    */
   hideMessagesFromS: 'Hide messages from {PH1}',
   /**
-   * @description Text to save content as a specific file type
+   * @description Text to save content as a specific file type.
    */
   saveAs: 'Save as…',
   /**
-   * @description Text to copy Console log to clipboard
+   * @description Text to copy console log to clipboard.
    */
   copyConsole: 'Copy console',
   /**
-   * @description A context menu item in the Console View of the Console panel
+   * @description A context menu item in the Console view of the Console panel.
    */
   copyVisibleStyledSelection: 'Copy visible styled selection',
   /**
-   * @description Text to replay an XHR request
+   * @description Text to resend a network request.
    */
-  replayXhr: 'Replay XHR',
+  resend: 'Resend',
   /**
-   * @description Text to indicate DevTools is writing to a file
+   * @description Text to indicate DevTools is writing to a file.
    */
   writingFile: 'Writing file…',
   /**
-   * @description Text to indicate the searching is in progress
+   * @description Text to indicate the searching is in progress.
    */
   searching: 'Searching…',
   /**
-   * @description Text in Console View of the Console panel
+   * @description Placeholder hint text inside the filter input box in the Console view.
    */
   egEventdCdnUrlacom: 'e.g. `/event\d/ -cdn url:a.com`',
   /**
-   * @description Sdk console message message level verbose of level Labels in Console View of the Console panel
+   * @description Label for the verbose log level option in the filter dropdown in the Console view.
    */
   verbose: 'Verbose',
   /**
-   * @description Sdk console message message level info of level Labels in Console View of the Console panel
+   * @description Label for the info log level option in the filter dropdown in the Console view.
    */
   info: 'Info',
   /**
-   * @description Sdk console message message level warning of level Labels in Console View of the Console panel
+   * @description Label for the warning log level option in the filter dropdown in the Console view.
    */
   warnings: 'Warnings',
   /**
-   * @description Text for errors
+   * @description Label for the error log level option in the filter dropdown in the Console view.
    */
   errors: 'Errors',
   /**
    * @description Tooltip text of the info icon shown next to the filter drop down
    *              in the Console panels main toolbar when the sidebar is active.
    */
-  overriddenByFilterSidebar: 'Log levels are controlled by the console sidebar.',
+  overriddenByFilterSidebar: 'Log levels are controlled by the Console sidebar.',
   /**
-   * @description Text in Console View of the Console panel
+   * @description Label for the custom log levels option in the filter dropdown in the Console view.
    */
   customLevels: 'Custom levels',
   /**
-   * @description Text in Console View of the Console panel
+   * @description Option in the log level filter menu to show only a specific log level.
    * @example {Warnings} PH1
    */
   sOnly: '{PH1} only',
   /**
-   * @description Text in Console View of the Console panel
+   * @description Option in the log level filter menu to show all log levels.
    */
   allLevels: 'All levels',
   /**
-   * @description Text in Console View of the Console panel
+   * @description Option in the log level filter menu to show default log levels.
    */
   defaultLevels: 'Default levels',
   /**
-   * @description Text in Console View of the Console panel
+   * @description Option in the log level filter menu to hide all log levels.
    */
   hideAll: 'Hide all',
   /**
-   * @description Title of level menu button in console view of the console panel
+   * @description Title of level menu button in Console view of the Console panel.
    * @example {All levels} PH1
    */
   logLevelS: 'Log level: {PH1}',
   /**
-   * @description A context menu item in the Console View of the Console panel
+   * @description A context menu item in the Console view of the Console panel.
    */
   default: 'Default',
   /**
@@ -343,8 +345,9 @@ export class ConsoleView extends UI.Widget.VBox implements
   private pendingSidebarMessages: ConsoleViewMessage[] = [];
   private userHasOpenedSidebarAtLeastOnce = false;
   private issueToolbarThrottle: Common.Throttler.Throttler;
-  private requestResolver = new Logs.RequestResolver.RequestResolver();
-  private issueResolver = new IssuesManager.IssueResolver.IssueResolver();
+  private requestResolver = new Logs.RequestResolver.RequestResolver(Logs.NetworkLog.NetworkLog.instance());
+  private issueResolver =
+      new IssuesManager.IssueResolver.IssueResolver(IssuesManager.IssuesManager.IssuesManager.instance());
   #isDetached = false;
   #onIssuesCountUpdateBound = this.#onIssuesCountUpdate.bind(this);
   #collapseAllButton: UI.Toolbar.ToolbarButton;
@@ -356,7 +359,11 @@ export class ConsoleView extends UI.Widget.VBox implements
   constructor(viewportThrottlerTimeout: number) {
     super();
     this.setMinimumSize(0, 35);
-    this.registerRequiredCSS(consoleViewStyles, objectValueStyles, CodeHighlighter.codeHighlighterStyles);
+    // We register the SymbolizedErrorWidget styles here because many web and e2e
+    // tests use `deepTextContent`, which would also include <style> tags if they
+    // were injected directly into the widget's shadow DOM.
+    this.registerRequiredCSS(consoleViewStyles, symbolizedErrorWidgetStyles, objectValueStyles,
+                             CodeHighlighter.codeHighlighterStyles);
 
     this.#searchableView = new UI.SearchableView.SearchableView(this, null);
     this.#searchableView.element.classList.add('console-searchable-view');
@@ -695,7 +702,7 @@ export class ConsoleView extends UI.Widget.VBox implements
   }
 
   clearConsole(): void {
-    SDK.ConsoleModel.ConsoleModel.requestClearMessages();
+    SDK.ConsoleModel.ConsoleModel.requestClearMessages(SDK.TargetManager.TargetManager.instance());
     this.prompt.clearAiCodeCompletionCache();
   }
 
@@ -1331,10 +1338,10 @@ export class ConsoleView extends UI.Widget.VBox implements
 
     if (consoleMessage) {
       const request = Logs.NetworkLog.NetworkLog.requestForConsoleMessage(consoleMessage);
-      if (request && SDK.NetworkManager.NetworkManager.canReplayRequest(request)) {
-        contextMenu.debugSection().appendItem(
-            i18nString(UIStrings.replayXhr), SDK.NetworkManager.NetworkManager.replayRequest.bind(null, request),
-            {jslogContext: 'replay-xhr'});
+      if (request && SDK.NetworkManager.NetworkManager.canResendRequest(request)) {
+        contextMenu.debugSection().appendItem(i18nString(UIStrings.resend),
+                                              SDK.NetworkManager.NetworkManager.replayRequest.bind(null, request),
+                                              {jslogContext: 'resend'});
       }
     }
 
@@ -1347,7 +1354,7 @@ export class ConsoleView extends UI.Widget.VBox implements
     const filename =
         Platform.StringUtilities.sprintf('%s-%d.log', parsedURL ? parsedURL.host : 'console', Date.now()) as
         Platform.DevToolsPath.RawPathString;
-    const stream = new Bindings.FileUtils.FileOutputStream();
+    const stream = new Bindings.FileUtils.FileOutputStream(Workspace.FileManager.FileManager.instance());
 
     const progressIndicator = document.createElement('devtools-progress');
     progressIndicator.title = i18nString(UIStrings.writingFile);

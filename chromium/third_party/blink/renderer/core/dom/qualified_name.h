@@ -209,6 +209,7 @@ class CORE_EXPORT QualifiedName {
   static void InitAndReserveCapacityForSize(wtf_size_t size);
 
   static const QualifiedName& Null() { return g_null_name; }
+  bool IsNull() const { return impl_ == g_null_name.impl_; }
 
   // The below methods are only for creating static global QNames that need no
   // ref counting.
@@ -263,7 +264,7 @@ inline bool operator==(const QualifiedName& q, const AtomicString& a) {
 }
 
 inline unsigned HashComponents(const QualifiedNameComponents& buf) {
-  return StringHasher::HashMemory(base::byte_span_from_ref(buf)) & 0xFFFFFF;
+  return StringHasher::HashMemory32(base::byte_span_from_ref(buf));
 }
 
 CORE_EXPORT std::ostream& operator<<(std::ostream&, const QualifiedName&);

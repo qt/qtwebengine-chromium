@@ -149,12 +149,12 @@ export class TrustTokensView extends UI.Widget.VBox {
   override wasShown(): void {
     super.wasShown();
     this.requestUpdate();
-    this.#updateInterval = setInterval(this.requestUpdate.bind(this), REFRESH_INTERVAL_MS);
+    this.#updateInterval = window.setInterval(this.requestUpdate.bind(this), REFRESH_INTERVAL_MS);
   }
 
   override willHide(): void {
     super.willHide();
-    clearInterval(this.#updateInterval);
+    window.clearInterval(this.#updateInterval);
     this.#updateInterval = 0;
   }
 

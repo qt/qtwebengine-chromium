@@ -21,6 +21,8 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Pass/Pass.h"
 #include "triton/Dialect/Triton/IR/Dialect.h"
 // Above header needs to be included first to avoid 'major' macro collision.
 
@@ -766,24 +768,5 @@ class TritonXLAExtractInsertToTritonPass
 };
 
 }  // namespace
-
-std::unique_ptr<mlir::Pass> CreateTritonXLAExtractInsertToTritonPass() {
-  return std::make_unique<TritonXLAExtractInsertToTritonPass>();
-}
-
-std::unique_ptr<mlir::Pass> CreateTritonXLAExtractInsertToTritonPass(
-    bool allow_tma, int num_stages) {
-  return std::make_unique<TritonXLAExtractInsertToTritonPass>(
-      TritonXLAExtractInsertToTritonPassOptions{allow_tma,
-                                                /*allow_tdm=*/false,
-                                                num_stages});
-}
-
-std::unique_ptr<mlir::Pass> CreateTritonXLAExtractInsertToTritonPass(
-    bool allow_tma, bool allow_tdm, int num_stages) {
-  return std::make_unique<TritonXLAExtractInsertToTritonPass>(
-      TritonXLAExtractInsertToTritonPassOptions{allow_tma, allow_tdm,
-                                                num_stages});
-}
 
 }  // namespace mlir::triton::xla

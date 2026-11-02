@@ -4,6 +4,7 @@
 
 #include "components/facilitated_payments/core/browser/pix_account_linking_manager.h"
 
+#include <string_view>
 #include <utility>
 
 #include "base/check_deref.h"
@@ -23,11 +24,77 @@
 
 namespace payments::facilitated {
 
+constexpr std::string_view kPixFopSuffix = "Pix";
+
 PixAccountLinkingManager::PixAccountLinkingManager(
-    FacilitatedPaymentsClient* client)
-    : client_(CHECK_DEREF(client)) {}
+    FacilitatedPaymentsClient* client,
+    FacilitatedPaymentsApiClientCreator api_client_creator)
+    : NativeAccountLinkingHandler(client, std::move(api_client_creator)) {}
 
 PixAccountLinkingManager::~PixAccountLinkingManager() = default;
+
+std::string_view PixAccountLinkingManager::GetHistogramSuffix() const {
+  return kPixFopSuffix;
+}
+
+base::DictValue
+PixAccountLinkingManager::GetPayloadForGetDetailsForCreatePaymentInstrument() {
+  return base::DictValue();
+}
+
+base::WeakPtr<NativeAccountLinkingHandler>
+PixAccountLinkingManager::GetWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
+}
+
+std::optional<AccountLinkingParams>
+PixAccountLinkingManager::CreateAccountLinkingParams() {
+  return std::nullopt;
+}
+
+void PixAccountLinkingManager::DoOnClientTokenReceived(
+    const std::vector<uint8_t>& client_token) {
+  client_token_ = client_token;
+  InitiateAccountLinkingNetworkCall(client_token);
+}
+
+void PixAccountLinkingManager::DoOnAccountLinkingResult(
+    AccountLinkingResult result) {
+  DismissPrompt();
+
+  switch (result.error_code) {
+    case AccountLinkingResultCode::kResultOk:
+      if (result.is_successful && result.instrument_id > 0) {
+        LogAccountLinkingResult(kPixFopSuffix, /*is_successful=*/true);
+        client()->ShowPixAccountLinkingSuccessScreen();
+      } else {
+        LogAccountLinkingResult(kPixFopSuffix, /*is_successful=*/false);
+        LogAccountLinkingFlowExitedReason(
+            kPixFopSuffix, AccountLinkingFlowExitedReason::kGmsCoreFlowFailed);
+        // TODO(crbug.com/532367369): Trigger error notification.
+      }
+      break;
+    case AccountLinkingResultCode::kResultCanceled:
+      LogAccountLinkingResult(kPixFopSuffix, /*is_successful=*/false);
+      if (is_prompt_accepted_) {
+        LogAccountLinkingFlowExitedReason(
+            kPixFopSuffix,
+            AccountLinkingFlowExitedReason::kUserCanceledInGmsCore);
+      }
+      break;
+    case AccountLinkingResultCode::kResultError:
+      LogAccountLinkingResult(kPixFopSuffix, /*is_successful=*/false);
+      LogAccountLinkingFlowExitedReason(
+          kPixFopSuffix, AccountLinkingFlowExitedReason::kGmsCoreFlowFailed);
+      // TODO(crbug.com/532367369): Trigger error notification.
+      break;
+    case AccountLinkingResultCode::kCouldNotInvoke:
+      // Default result passed during early exit paths in the base class. The
+      // specific flow exited reason has already been logged by
+      // NativeAccountLinkingHandler.
+      break;
+  }
+}
 
 void PixAccountLinkingManager::MaybeShowPixAccountLinkingPrompt(
     const url::Origin& pix_payment_page_origin) {
@@ -41,67 +108,39 @@ void PixAccountLinkingManager::MaybeShowPixAccountLinkingPrompt(
       case PixAccountLinkingStrikeDatabase::kDoNotBlock:
         break;
       case PixAccountLinkingStrikeDatabase::kMaxStrikeLimitReached:
-        LogPixAccountLinkingFlowExitedReason(
-            PixAccountLinkingFlowExitedReason::kMaxStrikes);
+        LogAccountLinkingFlowExitedReason(
+            kPixFopSuffix, AccountLinkingFlowExitedReason::kMaxStrikes);
         return;
       case PixAccountLinkingStrikeDatabase::kRequiredDelayNotPassed:
-        LogPixAccountLinkingFlowExitedReason(
-            PixAccountLinkingFlowExitedReason::kRequiredDelayNotPassed);
+        LogAccountLinkingFlowExitedReason(
+            kPixFopSuffix,
+            AccountLinkingFlowExitedReason::kRequiredDelayNotPassed);
         return;
     }
   }
 
-  WalletEligibilityForPixAccountLinking wallet_eligibility =
-      client_->GetDeviceDelegate()->IsPixAccountLinkingSupported();
-  switch (wallet_eligibility) {
-    case WalletEligibilityForPixAccountLinking::kWalletNotInstalled:
-      LogPixAccountLinkingFlowExitedReason(
-          PixAccountLinkingFlowExitedReason::kWalletNotInstalled);
-      return;
-    case WalletEligibilityForPixAccountLinking::kWalletVersionNotSupported:
-      LogPixAccountLinkingFlowExitedReason(
-          PixAccountLinkingFlowExitedReason::kWalletVersionNotSupported);
-      return;
-    case WalletEligibilityForPixAccountLinking::kEligible:
-      break;
-  }
-
-  if (!client_->GetPaymentsDataManager()
+  if (!client()
+           ->GetPaymentsDataManager()
            ->IsFacilitatedPaymentsPixAccountLinkingUserPrefEnabled()) {
-    LogPixAccountLinkingFlowExitedReason(
-        PixAccountLinkingFlowExitedReason::kUserOptedOut);
+    LogAccountLinkingFlowExitedReason(
+        kPixFopSuffix, AccountLinkingFlowExitedReason::kUserOptedOut);
     return;
   }
 
-  if (!client_->HasScreenlockOrBiometricSetup()) {
-    LogPixAccountLinkingFlowExitedReason(
-        PixAccountLinkingFlowExitedReason::kNoScreenlockOrBiometricSetup);
+  if (!client()->HasScreenlockOrBiometricSetup()) {
+    LogAccountLinkingFlowExitedReason(
+        kPixFopSuffix,
+        AccountLinkingFlowExitedReason::kNoScreenlockOrBiometricSetup);
     return;
   }
 
-  // Make a request to payments backend to check if user is eligible for Pix
-  // account linking.
-  auto billing_customer_id = autofill::payments::GetBillingCustomerId(
-      CHECK_DEREF(client_->GetPaymentsDataManager()));
-  if (billing_customer_id == 0) {
-    // If the user is not a payments customer and has copied a Pix code, we
-    // automatically assume that they are eligible for account linking.
-    is_eligible_for_pix_account_linking_ = true;
-  } else {
-    // The user is an existing payments customer. Make a backend call to check
-    // eligibility for Pix account linking.
-    client_->GetFacilitatedPaymentsNetworkInterface()
-        ->GetDetailsForCreatePaymentInstrument(
-            billing_customer_id,
-            base::BindOnce(
-                &PixAccountLinkingManager::
-                    OnGetDetailsForCreatePaymentInstrumentResponseReceived,
-                weak_ptr_factory_.GetWeakPtr(), base::TimeTicks::Now()),
-            client_->GetPaymentsDataManager()->app_locale());
-  }
+  // Asynchronously fetch the GMSCore client token, which will automatically
+  // initiate the GetDetailsForCreatePaymentInstrument network call to check
+  // eligibility and retrieve the action token.
+  FetchClientToken();
   // TODO(crbug.com/417330610): Move this to after the user comes back to Chrome
   // and GetDetailsForCreatePaymentInstrument is completed.
-  client_->GetDeviceDelegate()->SetOnReturnToChromeCallbackAndObserveAppState(
+  client()->GetDeviceDelegate()->SetOnReturnToChromeCallbackAndObserveAppState(
       base::BindOnce(
           &PixAccountLinkingManager::ShowPixAccountLinkingPromptIfEligible,
           weak_ptr_factory_.GetWeakPtr()));
@@ -115,9 +154,10 @@ void PixAccountLinkingManager::Reset() {
     // TODO(crbug.com/427597144): Replace with CHECK(!is_prompt_showing_) in
     // MaybeShowPixAccountLinkingPrompt after M144.
     base::debug::DumpWithoutCrashing();
-    client_->DismissPrompt();
+    client()->DismissPrompt();
   }
   is_prompt_showing_ = false;
+  is_prompt_accepted_ = false;
   pix_payment_page_origin_ = url::Origin();
   weak_ptr_factory_.InvalidateWeakPtrs();
 }
@@ -127,15 +167,15 @@ void PixAccountLinkingManager::ShowPixAccountLinkingPromptIfEligible() {
   // account linking, exit.
   if (!is_eligible_for_pix_account_linking_.has_value() ||
       !is_eligible_for_pix_account_linking_.value()) {
-    LogPixAccountLinkingFlowExitedReason(
-        PixAccountLinkingFlowExitedReason::kServerSideIneligible);
+    LogAccountLinkingFlowExitedReason(
+        kPixFopSuffix, AccountLinkingFlowExitedReason::kServerSideIneligible);
     return;
   }
 
   // If the user has switched to a different tab, don't show the prompt.
-  if (!client_->IsWebContentsVisibleOrOccluded()) {
-    LogPixAccountLinkingFlowExitedReason(
-        PixAccountLinkingFlowExitedReason::kTabIsNotActive);
+  if (!client()->IsWebContentsVisibleOrOccluded()) {
+    LogAccountLinkingFlowExitedReason(
+        kPixFopSuffix, AccountLinkingFlowExitedReason::kTabIsNotActive);
     return;
   }
 
@@ -143,9 +183,9 @@ void PixAccountLinkingManager::ShowPixAccountLinkingPromptIfEligible() {
   // code was copied from, do NOT show the prompt. Same origin means the two
   // URLs have the same scheme, the same host, and the same port.
   if (!pix_payment_page_origin_.IsSameOriginWith(
-          client_->GetLastCommittedOrigin())) {
-    LogPixAccountLinkingFlowExitedReason(
-        PixAccountLinkingFlowExitedReason::kUserSwitchedWebsite);
+          client()->GetLastCommittedOrigin())) {
+    LogAccountLinkingFlowExitedReason(
+        kPixFopSuffix, AccountLinkingFlowExitedReason::kUserSwitchedWebsite);
     return;
   }
 
@@ -160,7 +200,7 @@ void PixAccountLinkingManager::ShowPixAccountLinkingPromptIfEligible() {
 }
 
 void PixAccountLinkingManager::ShowPixAccountLinkingPromptAfterDelay() {
-  client_->SetUiEventListener(
+  client()->SetUiEventListener(
       base::BindRepeating(&PixAccountLinkingManager::OnUiScreenEvent,
                           weak_ptr_factory_.GetWeakPtr()));
   is_prompt_showing_ = true;
@@ -168,7 +208,7 @@ void PixAccountLinkingManager::ShowPixAccountLinkingPromptAfterDelay() {
   if (auto* strike_database = GetOrCreateStrikeDatabase()) {
     strike_count = strike_database->GetStrikes();
   }
-  client_->ShowPixAccountLinkingPrompt(
+  client()->ShowPixAccountLinkingPrompt(
       strike_count,
       base::BindOnce(&PixAccountLinkingManager::OnAccepted,
                      weak_ptr_factory_.GetWeakPtr()),
@@ -177,33 +217,18 @@ void PixAccountLinkingManager::ShowPixAccountLinkingPromptAfterDelay() {
 }
 
 void PixAccountLinkingManager::DismissPrompt() {
-  if (!is_prompt_showing_) {
-    return;
-  }
-  is_prompt_showing_ = false;
-  client_->DismissPrompt();
+  NativeAccountLinkingHandler::DismissPrompt();
 }
 
-void PixAccountLinkingManager::OnAccepted() {
-  LogPixAccountLinkingPromptAccepted();
-  DismissPrompt();
+void PixAccountLinkingManager::DoOnAccepted() {
+  is_prompt_accepted_ = true;
   // Clear strikes when user accepts the prompt.
   if (auto* strike_database = GetOrCreateStrikeDatabase()) {
     strike_database->ClearStrikes();
   }
-  auto account_info =
-      client_->GetPaymentsDataManager()->GetAccountInfoForPaymentsServer();
-  if (!account_info.IsEmpty() && !account_info.email.empty()) {
-    client_->GetDeviceDelegate()->LaunchPixAccountLinkingPage(
-        account_info.email);
-  }
 }
 
-void PixAccountLinkingManager::OnDeclined() {
-  LogPixAccountLinkingFlowExitedReason(
-      PixAccountLinkingFlowExitedReason::kUserDeclined);
-  DismissPrompt();
-
+void PixAccountLinkingManager::DoOnDeclined() {
   if (auto* strike_database = GetOrCreateStrikeDatabase()) {
     strike_database->AddStrike();
   }
@@ -218,23 +243,24 @@ void PixAccountLinkingManager::OnUiScreenEvent(UiEvent ui_event_type) {
     }
     case UiEvent::kScreenCouldNotBeShown: {
       CHECK(is_prompt_showing_);
-      LogPixAccountLinkingFlowExitedReason(
-          PixAccountLinkingFlowExitedReason::kScreenNotShown);
+      LogAccountLinkingFlowExitedReason(
+          kPixFopSuffix, AccountLinkingFlowExitedReason::kScreenNotShown);
       is_prompt_showing_ = false;
       break;
     }
     case UiEvent::kScreenClosedNotByUser: {
       if (is_prompt_showing_) {
-        LogPixAccountLinkingFlowExitedReason(
-            PixAccountLinkingFlowExitedReason::kScreenClosedNotByUser);
+        LogAccountLinkingFlowExitedReason(
+            kPixFopSuffix,
+            AccountLinkingFlowExitedReason::kScreenClosedNotByUser);
       }
       is_prompt_showing_ = false;
       break;
     }
     case UiEvent::kScreenClosedByUser: {
       CHECK(is_prompt_showing_);
-      LogPixAccountLinkingFlowExitedReason(
-          PixAccountLinkingFlowExitedReason::kScreenClosedByUser);
+      LogAccountLinkingFlowExitedReason(
+          kPixFopSuffix, AccountLinkingFlowExitedReason::kScreenClosedByUser);
       is_prompt_showing_ = false;
       break;
     }
@@ -243,20 +269,15 @@ void PixAccountLinkingManager::OnUiScreenEvent(UiEvent ui_event_type) {
   }
 }
 
-void PixAccountLinkingManager::
-    OnGetDetailsForCreatePaymentInstrumentResponseReceived(
-        base::TimeTicks start_time,
-        autofill::payments::PaymentsAutofillClient::PaymentsRpcResult result,
-        bool is_eligible_for_pix_account_linking) {
-  LogGetDetailsForCreatePaymentInstrumentResultAndLatency(
-      is_eligible_for_pix_account_linking, base::TimeTicks::Now() - start_time);
-  is_eligible_for_pix_account_linking_ = is_eligible_for_pix_account_linking;
+void PixAccountLinkingManager::DoOnGetDetailsForCreatePaymentInstrumentResponse(
+    bool is_eligible) {
+  is_eligible_for_pix_account_linking_ = is_eligible;
 }
 
 PixAccountLinkingStrikeDatabase*
 PixAccountLinkingManager::GetOrCreateStrikeDatabase() {
   if (!strike_database_) {
-    auto* strike_db_provider = client_->GetStrikeDatabase();
+    auto* strike_db_provider = client()->GetStrikeDatabase();
     if (strike_db_provider) {
       strike_database_ =
           std::make_unique<PixAccountLinkingStrikeDatabase>(strike_db_provider);

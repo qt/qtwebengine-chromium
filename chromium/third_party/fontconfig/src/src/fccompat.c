@@ -40,6 +40,7 @@
 #if HAVE_UNISTD_H
 #  include <unistd.h>
 #endif
+#include <locale.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
@@ -359,6 +360,34 @@ FcCompatClosedirWin32 (DIR *dir)
     return 0;
 }
 #endif /* HAVE_DIRENT_H */
+
+FcLocale
+FcLocaleCreate (FcLocaleMask mask, const char *locale)
+{
+#ifdef _WIN32
+    return _create_locale (mask, locale);
+#else
+    return newlocale (mask, locale, (locale_t)0);
+#endif
+}
+
+#ifndef _WIN32
+FcLocale
+FcLocaleSetCurrent (FcLocale loc)
+{
+    return uselocale (loc);
+}
+#endif
+
+void
+FcLocaleDestroy (FcLocale locale)
+{
+#ifdef _WIN32
+    _free_locale (locale);
+#else
+    freelocale (locale);
+#endif
+}
 
 #define __fccompat__
 #include "fcaliastail.h"

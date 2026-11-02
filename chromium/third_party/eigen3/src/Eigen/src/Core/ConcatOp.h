@@ -115,10 +115,9 @@ class Concat : public internal::dense_xpr_base<Concat<Direction, LhsType, RhsTyp
                             int(RhsType::ColsAtCompileTime) == Dynamic ||
                             int(LhsType::ColsAtCompileTime) == int(RhsType::ColsAtCompileTime),
                         YOU_MIXED_MATRICES_OF_DIFFERENT_SIZES)
-    EIGEN_IF_CONSTEXPR(Direction == Vertical) {
+    EIGEN_IF_CONSTEXPR (Direction == Vertical) {
       eigen_assert(lhs.cols() == rhs.cols() && "vcat: number of columns must match");
-    }
-    else {
+    } else {
       eigen_assert(lhs.rows() == rhs.rows() && "hcat: number of rows must match");
     }
   }
@@ -175,13 +174,12 @@ struct evaluator<Concat<Direction, LhsType, RhsType>> : evaluator_base<Concat<Di
         m_lhsCols(xpr.lhs().cols()) {}
 
   EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE CoeffReturnType coeff(Index row, Index col) const {
-    EIGEN_IF_CONSTEXPR(Direction == Vertical) {
+    EIGEN_IF_CONSTEXPR (Direction == Vertical) {
       if (row < m_lhsRows.value())
         return m_lhsImpl.coeff(row, col);
       else
         return m_rhsImpl.coeff(row - m_lhsRows.value(), col);
-    }
-    else {
+    } else {
       if (col < m_lhsCols.value())
         return m_lhsImpl.coeff(row, col);
       else
@@ -200,22 +198,21 @@ struct evaluator<Concat<Direction, LhsType, RhsType>> : evaluator_base<Concat<Di
   template <int LoadMode, typename PacketType>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE PacketType packet(Index row, Index col) const {
     constexpr int packetSize = unpacket_traits<PacketType>::size;
-    EIGEN_IF_CONSTEXPR(Direction == Vertical) {
+    EIGEN_IF_CONSTEXPR (Direction == Vertical) {
       const Index boundary = m_lhsRows.value();
       if (row >= boundary) return m_rhsImpl.template packet<LoadMode, PacketType>(row - boundary, col);
       // Column-major: inner=rows, packet extends along rows and may straddle the row boundary.
       // Row-major: inner=cols, packet extends along cols — never crosses the row boundary.
-      EIGEN_IF_CONSTEXPR(!IsRowMajor) {
+      EIGEN_IF_CONSTEXPR (!IsRowMajor) {
         if (row + packetSize > boundary) return packetBoundary<LoadMode, PacketType>(row, col);
       }
       return m_lhsImpl.template packet<LoadMode, PacketType>(row, col);
-    }
-    else {
+    } else {
       const Index boundary = m_lhsCols.value();
       if (col >= boundary) return m_rhsImpl.template packet<LoadMode, PacketType>(row, col - boundary);
       // Row-major: inner=cols, packet extends along cols and may straddle the col boundary.
       // Column-major: inner=rows, packet extends along rows — never crosses the col boundary.
-      EIGEN_IF_CONSTEXPR(IsRowMajor) {
+      EIGEN_IF_CONSTEXPR (IsRowMajor) {
         if (col + packetSize > boundary) return packetBoundary<LoadMode, PacketType>(row, col);
       }
       return m_lhsImpl.template packet<LoadMode, PacketType>(row, col);
@@ -233,20 +230,19 @@ struct evaluator<Concat<Direction, LhsType, RhsType>> : evaluator_base<Concat<Di
 
   template <int LoadMode, typename PacketType>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE PacketType packetSegment(Index row, Index col, Index begin, Index count) const {
-    EIGEN_IF_CONSTEXPR(Direction == Vertical) {
+    EIGEN_IF_CONSTEXPR (Direction == Vertical) {
       const Index boundary = m_lhsRows.value();
       if (row >= boundary)
         return m_rhsImpl.template packetSegment<LoadMode, PacketType>(row - boundary, col, begin, count);
-      EIGEN_IF_CONSTEXPR(!IsRowMajor) {
+      EIGEN_IF_CONSTEXPR (!IsRowMajor) {
         if (row + begin + count > boundary) return packetSegmentBoundary<LoadMode, PacketType>(row, col, begin, count);
       }
       return m_lhsImpl.template packetSegment<LoadMode, PacketType>(row, col, begin, count);
-    }
-    else {
+    } else {
       const Index boundary = m_lhsCols.value();
       if (col >= boundary)
         return m_rhsImpl.template packetSegment<LoadMode, PacketType>(row, col - boundary, begin, count);
-      EIGEN_IF_CONSTEXPR(IsRowMajor) {
+      EIGEN_IF_CONSTEXPR (IsRowMajor) {
         if (col + begin + count > boundary) return packetSegmentBoundary<LoadMode, PacketType>(row, col, begin, count);
       }
       return m_lhsImpl.template packetSegment<LoadMode, PacketType>(row, col, begin, count);

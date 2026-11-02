@@ -3254,7 +3254,10 @@ void Builtins::Generate_WasmCompileLazy(MacroAssembler* masm) {
   __ jmp(edi);
 }
 
-void Builtins::Generate_WasmDebugBreak(MacroAssembler* masm) {
+namespace {
+enum class DebugBreakKind { kBreak, kTrap };
+
+void Generate_WasmDebugBreakOrTrap(MacroAssembler* masm, DebugBreakKind kind) {
   HardAbortScope hard_abort(masm);  // Avoid calls to Abort.
   {
     FrameScope scope(masm, StackFrame::WASM_DEBUG_BREAK);
@@ -3276,23 +3279,43 @@ void Builtins::Generate_WasmDebugBreak(MacroAssembler* masm) {
       __ movdqu(Operand(esp, offset), reg);
     }
 
-    // Initialize the JavaScript context with 0. CEntry will use it to
-    // set the current context on the isolate.
-    __ Move(kContextRegister, Smi::zero());
-    __ CallRuntime(Runtime::kWasmDebugBreak, 0);
+    // Load instance data.
+    __ mov(eax, Operand(ebp, 0));
+    __ mov(kWasmImplicitArgRegister,
+           Operand(eax, WasmFrameConstants::kWasmInstanceDataOffset));
+    __ mov(esi, FieldOperand(kWasmImplicitArgRegister,
+                             WasmTrustedInstanceData::kNativeContextOffset));
 
-    // Restore registers.
-    for (DoubleRegister reg : WasmDebugBreakFrameConstants::kPushedFpRegs) {
-      __ movdqu(reg, Operand(esp, offset));
-      offset += kSimd128Size;
-    }
-    __ add(esp, Immediate(kFpStackSize));
-    for (Register reg : WasmDebugBreakFrameConstants::kPushedGpRegs) {
-      __ Pop(reg);
+    if (kind == DebugBreakKind::kTrap) {
+      // Reason was pushed before the frame.
+      // [ebp+0]=saved ebp, [ebp+4]=return address, [ebp+8]=reason.
+      __ push(Operand(ebp, 2 * kSystemPointerSize));
+      __ CallRuntime(Runtime::kThrowWasmError, 1);
+      __ int3();
+    } else {
+      __ CallRuntime(Runtime::kWasmDebugBreak, 0);
+
+      // Restore registers.
+      for (DoubleRegister reg : WasmDebugBreakFrameConstants::kPushedFpRegs) {
+        __ movdqu(reg, Operand(esp, offset));
+        offset += kSimd128Size;
+      }
+      __ add(esp, Immediate(kFpStackSize));
+      for (Register reg : WasmDebugBreakFrameConstants::kPushedGpRegs) {
+        __ Pop(reg);
+      }
     }
   }
+  if (kind == DebugBreakKind::kBreak) __ ret(0);
+}
+}  // namespace
 
-  __ ret(0);
+void Builtins::Generate_WasmDebugBreak(MacroAssembler* masm) {
+  Generate_WasmDebugBreakOrTrap(masm, DebugBreakKind::kBreak);
+}
+
+void Builtins::Generate_WasmDebugTrap(MacroAssembler* masm) {
+  Generate_WasmDebugBreakOrTrap(masm, DebugBreakKind::kTrap);
 }
 
 namespace {
@@ -3896,6 +3919,7 @@ void Generate_WasmResumeHelper(MacroAssembler* masm, wasm::OnResume on_resume) {
   }
   __ Trap();
   __ bind(&suspend);
+  __ LoadRoot(kReturnRegister0, RootIndex::kUndefinedValue);
   __ LeaveFrame(StackFrame::WASM_JSPI);
   // Pop receiver + parameter.
   __ ret(2 * kSystemPointerSize);
@@ -5250,11 +5274,23 @@ void Builtins::Generate_RestartFrameTrampoline(MacroAssembler* masm) {
   __ mov(edi, Operand(ebp, StandardFrameConstants::kFunctionOffset));
   __ mov(eax, Operand(ebp, StandardFrameConstants::kArgCOffset));
 
+  // If the actual argument count for the previous invocation is smaller than
+  // the formal parameter count then use the latter as the actual argument
+  // count for the next invocation instead of the former.
+  // This approach avoids dropping adapted parameters for simplicity while
+  // keeping the caller stack balanced after the call.
+  __ mov(ecx, Operand(ebp, UnoptimizedFrameConstants::kBytecodeArrayFromFp));
+  __ movzx_w(ecx, FieldOperand(ecx, offsetof(BytecodeArray, parameter_size_)));
+  __ cmp(eax, ecx);
+  __ cmov(kLessThan, eax, ecx);
+
   __ LeaveFrame(StackFrame::INTERPRETED);
 
-  // The arguments are already in the stack (including any necessary padding),
-  // we should not try to massage the arguments again.
-  __ mov(ecx, Immediate(kDontAdaptArgumentsSentinel));
+  // The arguments are already in the stack, but we might need to adapt them
+  // if the function signature changed (e.g. via LiveEdit).
+  __ mov(ecx, FieldOperand(edi, offsetof(JSFunction, shared_function_info_)));
+  __ movzx_w(ecx, FieldOperand(ecx, offsetof(SharedFunctionInfo,
+                                             formal_parameter_count_)));
   __ mov(esi, FieldOperand(edi, offsetof(JSFunction, context_)));
   __ InvokeFunctionCode(edi, no_reg, ecx, eax, InvokeType::kJump);
 }

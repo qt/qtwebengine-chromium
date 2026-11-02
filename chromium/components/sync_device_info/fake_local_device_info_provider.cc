@@ -25,6 +25,7 @@ FakeLocalDeviceInfoProvider::FakeLocalDeviceInfoProvider()
                    "device_id",
                    "fake_manufacturer",
                    "fake_model",
+                   /*server_determined_model_name=*/std::nullopt,
                    "fake_full_hardware_class",
                    /*last_updated_timestamp=*/base::Time::Now(),
                    DeviceInfoUtil::GetPulseInterval(),
@@ -44,7 +45,8 @@ FakeLocalDeviceInfoProvider::FakeLocalDeviceInfoProvider()
                    /*glic_experimental_triggering_state=*/
                    DeviceInfo::GlicExperimentalTriggeringState::kUnavailable,
                    /*glic_experimental_triggering_version=*/
-                   std::nullopt) {}
+                   std::nullopt,
+                   /*android_os_build_fingerprint_prefix=*/std::nullopt) {}
 
 FakeLocalDeviceInfoProvider::~FakeLocalDeviceInfoProvider() = default;
 
@@ -69,6 +71,7 @@ void FakeLocalDeviceInfoProvider::Initialize(
     const std::string& manufacturer_name,
     const std::string& model_name,
     const std::string& full_hardware_class,
+    std::optional<std::string> android_os_build_fingerprint_prefix,
     const DeviceInfo* device_info_restored_from_store) {}
 
 void FakeLocalDeviceInfoProvider::Clear() {}

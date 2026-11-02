@@ -45,9 +45,23 @@ import re
 import shlex
 import subprocess
 import sys
+import urllib.parse
 from typing import Any, Self, Type
 
 import requests
+
+# depot_tools is DEPSed in at //third_party/depot_tools.
+_DEPOT_TOOLS_DIR = (pathlib.Path(__file__).resolve().parents[1] /
+                    'third_party' / 'depot_tools')
+if _DEPOT_TOOLS_DIR.exists():
+    _DEPOT_TOOLS_DIR_STR = str(_DEPOT_TOOLS_DIR)
+    if _DEPOT_TOOLS_DIR_STR not in sys.path:
+        sys.path.insert(0, _DEPOT_TOOLS_DIR_STR)
+else:
+    logging.warning('depot_tools not found at %s, gerrit_util import may fail',
+                    _DEPOT_TOOLS_DIR)
+
+import gerrit_util  # pylint: disable=import-error
 
 DAWN_ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEPS_FILE = DAWN_ROOT / 'DEPS'
@@ -61,8 +75,13 @@ CHROMIUM_REVISION_VAR = 'chromium_revision'
 DEFAULT_REVISION_CHARACTERS = 10
 
 # GN variables that need to be synced. A map from Dawn variable name to
-# Chromium variable name.
-SYNCED_VARIABLES = {}
+# Chromium variable name (if different).
+SYNCED_VARIABLES = {
+    # For Android builds in standalone.
+    # TODO(crbug.com/528413044): Replace this with a SYNCED_CIPD_DEPS entry on
+    # 'third_party/android_toolchain/ndk' instead to implicitly update this var.
+    'android_ndk_version': None,
+}
 
 # DEPS entries which have dep_type = cipd. In the Chromium DEPS file, these
 # will be prefixed with src/.
@@ -73,6 +92,12 @@ SYNCED_CIPD_DEPS = {
     'buildtools/win',
     'third_party/ninja',
     'third_party/siso/cipd',
+
+    # For Android builds in standalone.
+    'third_party/android_sdk/public',
+    'third_party/jdk/current',
+    'third_party/android_build_tools/aapt2/cipd',
+    'third_party/android_build_tools/manifest_merger/cipd',
 }
 
 # DEPS entries which have dep_type = gcs. In the Chromium DEPS file, these will
@@ -84,6 +109,13 @@ SYNCED_GCS_DEPS = {
     'build/linux/debian_bullseye_mipsel-sysroot',
     'build/linux/debian_bullseye_mips64el-sysroot',
     'build/linux/debian_bullseye_amd64-sysroot',
+}
+
+# Files that are copied from Chromium directly. A map from Dawn file path to
+# Chromium file path (if different).
+SYNCED_TEXT_FILES = {
+    'third_party/cpu_features/BUILD.gn': None,
+    'third_party/jdk/BUILD.gn': None,
 }
 
 # Repos that are independently synced by Chromium and Dawn. A map from Dawn
@@ -126,16 +158,22 @@ SYNCED_REPOS = {
     # third_party/webgpu-cts is technically used by both Chromium and Dawn, but
     # they are used for different purposes and the CTS roller needs to roll
     # Dawn's copy in order to update expectations.
+
+    # For Android builds in standalone.
+    'third_party/cpu_features/src': None,
+    'third_party/libunwind/src': None,
 }
 
 # Chromium directories that are exported as pseudo-repos in
 # chromium.googlesource.com under chromium/src/. Mapping of Dawn path to
 # Chromium src-relative path. None means that the names are identical.
+# NOTE: These are always rolled to top-of-tree - they ignore --revision.
 EXPORTED_CHROMIUM_REPOS = {
     'build': None,
     'buildtools': None,
     'testing': None,
     'third_party/abseil-cpp': None,
+    'third_party/chromium-tools-build/src': '../tools/build',
     'third_party/jinja2': None,
     'third_party/markupsafe': None,
     'third_party/partition_alloc': 'base/allocator/partition_allocator',
@@ -147,6 +185,11 @@ EXPORTED_CHROMIUM_REPOS = {
     'tools/protoc_wrapper': None,
     'tools/valgrind': None,
     'tools/win': None,
+
+    # For Android builds in standalone.
+    'third_party/android_build_tools': None,
+    'third_party/android_sdk': None,
+    'third_party/ijar': None,
 }
 
 
@@ -324,6 +367,89 @@ class ChangedGcs(ChangedDepsEntry):
         ]
 
 
+class GerritUtilHttpConnAdapter:
+    """Adapter to extract auth headers from gerrit_util."""
+
+    def __init__(self, host: str, uri: str):
+        # Convert Gitiles host into Gerrit host
+        if "review" not in host:
+            subdomain, domain = host.split(".", 1)
+            host = f"{subdomain}-review.{domain}"
+        self.req_host = host
+        self.req_uri = uri
+        self.req_headers = {}
+        self.proxy_info = None
+
+    def has_header(self, header: str) -> bool:
+        return header in self.req_headers
+
+    def get_full_url(self) -> str:
+        return self.req_uri
+
+    def get_header(self, header: str, default: str = None) -> str:
+        return self.req_headers.get(header, default)
+
+    def add_unredirected_header(self, header: str, value: str):
+        self.req_headers[header] = value
+
+    @property
+    def unverifiable(self) -> bool:
+        return False
+
+    @property
+    def origin_req_host(self) -> str:
+        return self.req_host
+
+    @property
+    def type(self) -> str:
+        return urllib.parse.urlparse(self.req_uri).scheme
+
+    @property
+    def host(self) -> str:
+        return self.req_host
+
+
+@functools.cache
+def _get_gitiles_session(host: str) -> requests.Session:
+    """Creates and configures an authenticated requests.Session for Gitiles.
+
+    Args:
+        host: The Gitiles hostname (e.g. 'chromium.googlesource.com').
+
+    Returns:
+        A requests.Session configured with authentication headers and proxy.
+    """
+
+    session = requests.Session()
+    gerrit_adapter = GerritUtilHttpConnAdapter(host, f'https://{host}/a/')
+
+    try:
+        # pylint: disable=protected-access
+        authenticator = gerrit_util._Authenticator.get()
+        # pylint: enable=protected-access
+        authenticator.authenticate(gerrit_adapter)
+    except Exception as e:
+        raise RuntimeError(f'Failed to authenticate for {host}: {e}') from e
+
+    session.headers.update(gerrit_adapter.req_headers)
+
+    # Apply proxy if set for SSO.
+    if gerrit_adapter.proxy_info:
+        proxy_host = gerrit_adapter.proxy_info.proxy_host
+        if isinstance(proxy_host, bytes):
+            proxy_host = proxy_host.decode('utf-8')
+        proxy_url = f'http://{proxy_host}:{gerrit_adapter.proxy_info.proxy_port}'
+        session.proxies = {
+            'http': proxy_url,
+            'https': proxy_url,
+        }
+        logging.debug('Using SSO proxy: %s', proxy_url)
+
+    # Store the base URL (potentially rewritten by SSO).
+    session.gitiles_base_url = gerrit_adapter.req_uri.rstrip('/')
+    return session
+
+
 def _parse_deps_file(deps_content: str) -> dict[str, Any]:
     """Parses DEPS file content into a Python dict.
 
@@ -490,8 +616,19 @@ def _read_gitiles_content(file_url: str) -> str:
     Returns:
         The string content of the specified file.
     """
-    file_url = file_url + '?format=TEXT'
-    r = requests.get(file_url)
+    parsed = urllib.parse.urlparse(file_url)
+    session = _get_gitiles_session(parsed.netloc)
+
+    path = parsed.path
+    if path.startswith('/a/'):
+        path = path[2:]
+
+    query = 'format=TEXT'
+    if parsed.query:
+        query = f'{parsed.query}&{query}'
+
+    auth_url = f'{session.gitiles_base_url}{path}?{query}'
+    r = session.get(auth_url)
     r.raise_for_status()
     return base64.b64decode(r.text).decode('utf-8')
 
@@ -545,6 +682,7 @@ def _get_changed_variables(dawn_deps: dict,
     """
     changed_variables = []
     for dawn_var, chromium_var in SYNCED_VARIABLES.items():
+        chromium_var = chromium_var or dawn_var
         dawn_value = dawn_deps['vars'].get(dawn_var)
         chromium_value = chromium_deps['vars'].get(chromium_var)
         if not dawn_value:
@@ -1129,6 +1267,14 @@ def _replace_starlark_package_revision(package_name: str, new_revision: str,
     return updated_contents
 
 
+def _sync_text_files(new_revision):
+    for dawn_file, chromium_file in SYNCED_TEXT_FILES.items():
+        chromium_file = chromium_file or dawn_file
+        content = _read_remote_chromium_file(chromium_file, new_revision)
+        with open(dawn_file, 'w', encoding='utf-8') as outfile:
+            outfile.write(content)
+
+
 def _parse_args() -> argparse.Namespace:
     """Parses and returns command line arguments."""
     parser = argparse.ArgumentParser('Roll DEPS entries shared with Chromium.')
@@ -1202,6 +1348,7 @@ def main() -> None:
         _create_roll_branch()
 
     _apply_changed_deps(changed_entries)
+    _sync_text_files(revision_range.new_revision)
 
     if args.autoroll:
         _amend_commit(commit_message)

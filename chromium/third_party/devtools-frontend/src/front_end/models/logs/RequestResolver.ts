@@ -6,7 +6,7 @@ import * as Common from '../../core/common/common.js';
 import type * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 
-import {Events as NetworkLogEvents, NetworkLog} from './NetworkLog.js';
+import {Events as NetworkLogEvents, type NetworkLog} from './NetworkLog.js';
 
 /**
  * A class that facilitates resolving a requestId to a network request. If the requestId does not resolve, a listener
@@ -22,7 +22,7 @@ export class RequestResolver extends
   private networkListener: Common.EventTarget.EventDescriptor|null = null;
   private networkLog: NetworkLog;
 
-  constructor(networkLog: NetworkLog = NetworkLog.instance()) {
+  constructor(networkLog: NetworkLog) {
     super();
     this.networkLog = networkLog;
   }

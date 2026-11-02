@@ -17,10 +17,10 @@ import type {
 } from '../common/Cookie.js';
 import {EventEmitter, type EventType} from '../common/EventEmitter.js';
 import {
-  debugError,
   fromEmitterEvent,
   filterAsync,
   timeout,
+  debugCatchError,
 } from '../common/util.js';
 import {asyncDisposeSymbol, disposeSymbol} from '../util/disposable.js';
 import {Mutex} from '../util/Mutex.js';
@@ -125,7 +125,7 @@ export abstract class BrowserContext extends EventEmitter<BrowserContextEvents> 
   abstract targets(): Target[];
 
   /**
-   * If defined, indicates an ongoing screenshot opereation.
+   * If defined, indicates an ongoing screenshot operation.
    */
   #pageScreenshotMutex?: Mutex;
   #screenshotOperationsCount = 0;
@@ -150,8 +150,7 @@ export abstract class BrowserContext extends EventEmitter<BrowserContextEvents> 
    * @internal
    */
   waitForScreenshotOperations():
-    | Promise<InstanceType<typeof Mutex.Guard>>
-    | undefined {
+    Promise<InstanceType<typeof Mutex.Guard>> | undefined {
     return this.#pageScreenshotMutex?.acquire();
   }
 
@@ -374,7 +373,7 @@ export abstract class BrowserContext extends EventEmitter<BrowserContextEvents> 
 
   /** @internal */
   override [disposeSymbol](): void {
-    return void this[asyncDisposeSymbol]().catch(debugError);
+    return void this[asyncDisposeSymbol]().catch(debugCatchError);
   }
 
   /** @internal */

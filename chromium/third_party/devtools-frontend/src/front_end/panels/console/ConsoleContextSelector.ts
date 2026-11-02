@@ -15,15 +15,15 @@ import consoleContextSelectorStyles from './consoleContextSelector.css.js';
 const {render, nothing, html} = Lit;
 const UIStrings = {
   /**
-   * @description Title of toolbar item in console context selector of the console panel
+   * @description Title of toolbar item in Console context selector of the Console panel.
    */
   javascriptContextNotSelected: 'JavaScript context: Not selected',
   /**
-   * @description Text in Console Context Selector of the Console panel
+   * @description Text in Console context selector of the Console panel.
    */
   extension: 'Extension',
   /**
-   * @description Text in Console Context Selector of the Console panel
+   * @description Text in Console context selector of the Console panel.
    * @example {top} PH1
    */
   javascriptContextS: 'JavaScript context: {PH1}',
@@ -78,7 +78,7 @@ export class ConsoleContextSelector implements SDK.TargetManager.SDKModelObserve
   highlightedItemChanged(
       _from: SDK.RuntimeModel.ExecutionContext|null, to: SDK.RuntimeModel.ExecutionContext|null,
       fromElement: Element|null, toElement: Element|null): void {
-    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight(SDK.TargetManager.TargetManager.instance());
     if (to?.frameId) {
       const frame = SDK.FrameManager.FrameManager.instance().getFrame(to.frameId);
       if (frame && !frame.isOutermostFrame()) {

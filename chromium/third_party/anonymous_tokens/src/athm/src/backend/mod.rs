@@ -24,7 +24,6 @@
 
 use core::fmt;
 use core::ops::{Add, Mul, Neg, Sub};
-use rand_core::CryptoRngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 use zeroize::Zeroize;
 
@@ -41,6 +40,10 @@ mod cross_backend_test;
 ///
 /// Implementors provide P-256 scalar and point types along with all
 /// operations needed by the protocol (arithmetic, hashing, serialization).
+///
+/// Random generation is handled internally by each backend:
+/// - The `boringssl` backend uses BoringSSL's built-in CSPRNG.
+/// - The `rustcrypto` backend uses `rand::thread_rng()`.
 pub trait AthmBackend: 'static + Sized {
     /// Scalar type (element of the P-256 scalar field).
     type Scalar: Copy
@@ -131,11 +134,12 @@ pub trait AthmBackend: 'static + Sized {
 
     // ----- Random generation -----
 
-    /// Generate a uniformly random scalar.
-    fn random_scalar<R: CryptoRngCore>(rng: &mut R) -> Self::Scalar;
+    /// Generate a uniformly random scalar using the backend's built-in CSPRNG.
+    fn random_scalar() -> Self::Scalar;
 
-    /// Generate a uniformly random non-zero scalar.
-    fn random_non_zero_scalar<R: CryptoRngCore>(rng: &mut R) -> Self::Scalar;
+    /// Generate a uniformly random non-zero scalar using the backend's
+    /// built-in CSPRNG.
+    fn random_non_zero_scalar() -> Self::Scalar;
 }
 
 // ---------------------------------------------------------------------------

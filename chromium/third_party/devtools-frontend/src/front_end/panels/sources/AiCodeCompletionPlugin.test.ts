@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -73,7 +74,7 @@ describeWithEnvironment('AiCodeCompletionPlugin', () => {
           enabled: true,
           blockedByAge: false,
           blockedByGeo: false,
-        }
+        },
       });
       sinon.stub(TextEditor.AiCodeCompletionProvider.AiCodeCompletionProvider, 'createInstance')
           .returns(sinon.createStubInstance(TextEditor.AiCodeCompletionProvider.AiCodeCompletionProvider));
@@ -84,7 +85,8 @@ describeWithEnvironment('AiCodeCompletionPlugin', () => {
       } as unknown as Host.AidaClient.HostConfigTracker);
     });
 
-    afterEach(() => {
+    afterEach(async () => {
+      await clock.runAllAsync();
       clock.restore();
     });
 

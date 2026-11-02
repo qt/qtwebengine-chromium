@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 #include "content/browser/blob_storage/file_backed_blob_factory_frame_impl.h"
+
 #include "content/browser/blob_storage/chrome_blob_storage_context.h"
-#include "content/browser/child_process_security_policy_impl.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/render_process_host.h"
 #include "url/gurl.h"
@@ -33,7 +33,7 @@ GURL FileBackedBlobFactoryFrameImpl::GetCurrentUrl() {
   if (render_frame_host().IsNestedWithinFencedFrame()) {
     return GURL();
   }
-  return render_frame_host().GetOutermostMainFrame()->GetLastCommittedURL();
+  return render_frame_host().GetLastCommittedURL();
 }
 
 mojo::ReportBadMessageCallback

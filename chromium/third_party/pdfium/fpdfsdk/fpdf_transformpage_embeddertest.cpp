@@ -5,7 +5,7 @@
 #include "public/fpdf_transformpage.h"
 
 #include "build/build_config.h"
-#include "core/fxge/cfx_defaultrenderdevice.h"
+#include "core/fxge/cfx_renderdevice.h"
 #include "testing/embedder_test.h"
 #include "testing/embedder_test_constants.h"
 

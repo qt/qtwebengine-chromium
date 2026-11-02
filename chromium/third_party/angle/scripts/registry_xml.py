@@ -51,7 +51,6 @@ angle_requestable_extensions = [
     "GL_ANGLE_get_image",
     "GL_ANGLE_get_tex_level_parameter",
     "GL_ANGLE_logic_op",
-    "GL_ANGLE_lossy_etc_decode",
     "GL_ANGLE_memory_object_flags",
     "GL_ANGLE_memory_object_fuchsia",
     "GL_ANGLE_memory_size",
@@ -68,7 +67,6 @@ angle_requestable_extensions = [
     "GL_ANGLE_stencil_texturing",
     "GL_ANGLE_texture_compression_dxt3",
     "GL_ANGLE_texture_compression_dxt5",
-    "GL_ANGLE_texture_external_update",
     "GL_ANGLE_texture_multisample",
     "GL_ANGLE_texture_rectangle",
     "GL_ANGLE_vulkan_image",
@@ -192,17 +190,7 @@ gles_requestable_extensions = [
     "GL_NV_read_depth_stencil",
     "GL_NV_read_stencil",
     "GL_NV_shader_noperspective_interpolation",
-    "GL_OES_compressed_EAC_R11_signed_texture",
-    "GL_OES_compressed_EAC_R11_unsigned_texture",
-    "GL_OES_compressed_EAC_RG11_signed_texture",
-    "GL_OES_compressed_EAC_RG11_unsigned_texture",
     "GL_OES_compressed_ETC1_RGB8_texture",
-    "GL_OES_compressed_ETC2_punchthroughA_RGBA8_texture",
-    "GL_OES_compressed_ETC2_punchthroughA_sRGB8_alpha_texture",
-    "GL_OES_compressed_ETC2_RGB8_texture",
-    "GL_OES_compressed_ETC2_RGBA8_texture",
-    "GL_OES_compressed_ETC2_sRGB8_alpha8_texture",
-    "GL_OES_compressed_ETC2_sRGB8_texture",
     "GL_OES_compressed_paletted_texture",
     "GL_OES_copy_image",
     "GL_OES_depth_texture_cube_map",
@@ -251,11 +239,11 @@ gles_requestable_extensions = [
     "GL_QCOM_texture_foveated",
     "GL_QCOM_texture_lod_bias",
     "GL_QCOM_tiled_rendering",
-    "GL_WEBGL_video_texture",
 ]
 
 angle_es_only_extensions = [
     "GL_ANGLE_client_arrays",
+    "GL_ANGLE_explicit_context",
     "GL_ANGLE_get_serialized_context_string",
     "GL_ANGLE_program_binary",
     "GL_ANGLE_program_binary_readiness_query",
@@ -364,7 +352,6 @@ supported_egl_extensions = [
     "EGL_ANGLE_device_creation",
     "EGL_ANGLE_device_d3d",
     "EGL_ANGLE_device_d3d11",
-    "EGL_ANGLE_device_d3d9",
     "EGL_ANGLE_device_vulkan",
     "EGL_ANGLE_display_semaphore_share_group",
     "EGL_ANGLE_display_texture_share_group",
@@ -454,13 +441,11 @@ supported_cl_extensions = [
     "cl_khr_subgroups",
 ]
 
-# Strip these suffixes from Context entry point names. NV is excluded (for now).
-strip_suffixes = ["AMD", "ANDROID", "ANGLE", "CHROMIUM", "EXT", "KHR", "OES", "OVR", "QCOM"]
+# Strip these suffixes from Context entry point names.
+strip_suffixes = [
+    "AMD", "ANDROID", "ANGLE", "CHROMIUM", "EXT", "KHR", "MESA", "NV", "OES", "OVR", "QCOM"
+]
 check_sorted('strip_suffixes', strip_suffixes)
-
-# The EGL_ANGLE_explicit_context extension is generated differently from other extensions.
-# Toggle generation here.
-support_EGL_ANGLE_explicit_context = True
 
 # Group names that appear in command/param, but not present in groups/group
 unsupported_enum_group_names = {

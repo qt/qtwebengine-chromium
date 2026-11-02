@@ -66,7 +66,7 @@ Index SparseLUImpl<Scalar, StorageIndex>::column_bmod(const Index jcol, const In
    * nsupr = number of rows in a supernode
    * luptr = location of supernodal LU-block in storage
    * kfnz = first nonz in the k-th supernodal segment
-   * no_zeros = no lf leading zeros in a supernodal U-segment
+   * no_zeros = no of leading zeros in a supernodal U-segment
    */
 
   jsupno = glu.supno(jcol);

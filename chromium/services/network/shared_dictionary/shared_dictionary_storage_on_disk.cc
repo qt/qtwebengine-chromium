@@ -101,13 +101,6 @@ SharedDictionaryStorageOnDisk::SharedDictionaryStorageOnDisk(
       isolation_key_(isolation_key),
       on_deleted_closure_runner_(std::move(on_deleted_closure_runner)),
       dictionary_cache_(dictionary_cache),
-      memory_consumer_registration_(
-          "SharedDictionaryStorageOnDisk",
-          /*traits=*/std::nullopt,  // TODO(crbug.com/489671163): Fill traits.
-          this,
-          base::AsyncMemoryConsumerRegistration::CheckUnregister::kDisabled,
-          base::AsyncMemoryConsumerRegistration::CheckRegistryExists::
-              kDisabled),
       previous_eviction_reason_(previous_eviction_reason) {
   manager_->metadata_store().GetDictionaries(
       isolation_key_,
@@ -264,7 +257,7 @@ SharedDictionaryStorageOnDisk::GetDictionarySyncInternal(
           weak_factory_.GetWeakPtr(), info->disk_cache_key_token())));
   dictionaries_.emplace(info->disk_cache_key_token(), shared_dictionary.get());
 
-  if (memory_limit() >= base::kNoMemoryPressureThreshold) {
+  if (manager_->memory_limit() > base::kModerateMemoryPressureThreshold) {
     dictionary_cache_->Put(info->disk_cache_key_token(), destination,
                            shared_dictionary);
   }

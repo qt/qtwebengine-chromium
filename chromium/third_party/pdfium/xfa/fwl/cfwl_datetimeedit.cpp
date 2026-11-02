@@ -28,8 +28,8 @@ void CFWL_DateTimeEdit::OnProcessMessage(CFWL_Message* pMessage) {
   CFWL_MessageMouse* pMouse = static_cast<CFWL_MessageMouse*>(pMessage);
   if (pMouse->cmd_ == CFWL_MessageMouse::MouseCommand::kLeftButtonDown ||
       pMouse->cmd_ == CFWL_MessageMouse::MouseCommand::kRightButtonDown) {
-    if ((properties_.states_ & FWL_STATE_WGT_Focused) == 0) {
-      properties_.states_ |= FWL_STATE_WGT_Focused;
+    if (!(properties_.states_ & WidgetState::kFocused)) {
+      properties_.states_ |= WidgetState::kFocused;
     }
 
     CFWL_DateTimePicker* pDateTime =

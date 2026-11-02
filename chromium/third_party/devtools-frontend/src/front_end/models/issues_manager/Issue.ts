@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import * as Common from '../../core/common/common.js';
+import type * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import type * as Platform from '../../core/platform/platform.js';
@@ -13,27 +13,27 @@ import type {MarkdownIssueDescription} from './MarkdownIssueDescription.js';
 
 const UIStrings = {
   /**
-   * @description The kind of an issue (plural) (Issues are categorized into kinds).
+   * @description The kind of an issue (plural, issues are categorized into kinds).
    */
   improvements: 'Improvements',
   /**
-   * @description The kind of an issue (plural) (Issues are categorized into kinds).
+   * @description The kind of an issue (plural, issues are categorized into kinds).
    */
-  pageErrors: 'Page Errors',
+  pageErrors: 'Page errors',
   /**
-   * @description The kind of an issue (plural) (Issues are categorized into kinds).
+   * @description The kind of an issue (plural, issues are categorized into kinds).
    */
-  breakingChanges: 'Breaking Changes',
+  breakingChanges: 'Breaking changes',
   /**
-   * @description A description for a kind of issue we display in the issues tab.
+   * @description A description for a kind of issue we display in the Issues tab.
    */
   pageErrorIssue: 'A page error issue: the page is not working correctly',
   /**
-   * @description A description for a kind of issue we display in the issues tab.
+   * @description A description for a kind of issue we display in the Issues tab.
    */
   breakingChangeIssue: 'A breaking change issue: the page may stop working in an upcoming version of Chrome',
   /**
-   * @description A description for a kind of issue we display in the issues tab.
+   * @description A description for a kind of issue we display in the Issues tab.
    */
   improvementIssue: 'An improvement issue: there is an opportunity to improve the page',
 } as const;
@@ -49,7 +49,6 @@ export const enum IssueCategory {
   CONTENT_SECURITY_POLICY = 'ContentSecurityPolicy',
   LOW_TEXT_CONTRAST = 'LowTextContrast',
   CORS = 'Cors',
-  ATTRIBUTION_REPORTING = 'AttributionReporting',
   QUIRKS_MODE = 'QuirksMode',
   PERMISSION_ELEMENT = 'PermissionElement',
   SELECTIVE_PERMISSIONS_INTERVENTION = 'SelectivePermissionsIntervention',
@@ -112,8 +111,8 @@ export function unionIssueKind(a: IssueKind, b: IssueKind): IssueKind {
   return IssueKind.IMPROVEMENT;
 }
 
-export function getShowThirdPartyIssuesSetting(): Common.Settings.Setting<boolean> {
-  return Common.Settings.Settings.instance().createSetting('show-third-party-issues', true);
+export function getShowThirdPartyIssuesSetting(settings: Common.Settings.Settings): Common.Settings.Setting<boolean> {
+  return settings.createSetting('show-third-party-issues', true);
 }
 
 export interface AffectedElement {

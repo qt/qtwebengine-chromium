@@ -9,11 +9,11 @@ import type * as Security from './security.js';
 
 const UIStrings = {
   /**
-   * @description Default Title of the security panel
+   * @description Title of the Security panel.
    */
   security: 'Security',
   /**
-   * @description Default command to open the security panel
+   * @description Command in the Command Menu to show the Security panel.
    */
   showSecurity: 'Show Security',
 } as const;

@@ -19,8 +19,6 @@ group("front_end") {
     "entrypoints/device_mode_emulation_frame",
     "entrypoints/devtools_app:entrypoint",
     "entrypoints/formatter_worker:worker_entrypoint",
-    "entrypoints/greendev_floaty:copy_floaty_resources",
-    "entrypoints/greendev_floaty:floaty_entrypoint",
     "entrypoints/heap_snapshot_worker:worker_entrypoint",
     "entrypoints/inspector:entrypoint",
     "entrypoints/js_app:entrypoint",
@@ -131,7 +129,6 @@ group("unittests") {
     "models/emulation:unittests",
     "models/extensions:unittests",
     "models/geometry:unittests",
-    "models/har:unittests",
     "models/issues_manager:unittests",
     "models/javascript_metadata:unittests",
     "models/live-metrics:unittests",
@@ -139,7 +136,6 @@ group("unittests") {
     "models/persistence:unittests",
     "models/project_settings:unittests",
     "models/source_map_scopes:unittests",
-    "models/text_utils:unittests",
     "models/trace:unittests",
     "models/trace/extras:unittests",
     "models/trace/handlers:unittests",
@@ -184,9 +180,9 @@ group("unittests") {
     "panels/network:unittests",
     "panels/network/components:unittests",
     "panels/performance_monitor:unittests",
+    "panels/profiler:unittests",
     "panels/protocol_monitor:unittests",
     "panels/recorder:unittests",
-    "panels/recorder/components:unittests",
     "panels/recorder/converters:unittests",
     "panels/recorder/injected/selectors:unittests",
     "panels/recorder/models:unittests",
@@ -215,6 +211,7 @@ group("unittests") {
     "panels/web_audio:unittests",
     "panels/webauthn:unittests",
     "panels/whats_new:unittests",
+    "services/puppeteer:unittests",
     "services/trace_bounds:unittests",
     "services/tracing:unittests",
     "testing:unittests",
@@ -254,6 +251,7 @@ group("unittests") {
     "ui/legacy:copy_stylesheets_for_server",
     "ui/legacy:unittests",
     "ui/legacy/components/color_picker:unittests",
+    "ui/legacy/components/cookie_table:unittests",
     "ui/legacy/components/data_grid:unittests",
     "ui/legacy/components/inline_editor:unittests",
     "ui/legacy/components/object_ui:unittests",
@@ -264,6 +262,7 @@ group("unittests") {
     "ui/legacy/components/utils:unittests",
     "ui/legacy/theme_support:unittests",
     "ui/lit:unittests",
+    "ui/settings:unittests",
     "ui/visual_logging:unittests",
   ]
 }
@@ -277,17 +276,35 @@ group("foundation_unittests") {
     "core/protocol_client:unittests",
     "core/root:foundation_unittests",
     "core/sdk:foundation_unittests",
+    "core/text_utils:unittests",
     "entrypoints/formatter_worker:unittests",
     "entrypoints/heap_snapshot_worker:unittests",
     "foundation:unittests",
     "models/ai_assistance:foundation_unittests",
     "models/crux-manager:foundation_unittests",
     "models/formatter:unittests",
+    "models/har:unittests",
     "models/heap_snapshot:unittests",
     "models/issues_manager:foundation_unittests",
     "models/stack_trace:unittests",
     "models/workspace:foundation_unittests",
+    "testing:foundation_unittests",
   ]
+}
+
+group("api_tests") {
+  deps = [
+    "core/sdk:api_tests",
+    "foundation:api_tests",
+  ]
+}
+
+generated_file("api_test_inputs") {
+  outputs = [ "$target_gen_dir/api_tests.txt" ]
+  data_keys = [ "tests" ]
+  rebase = target_gen_dir
+
+  deps = [ ":api_tests" ]
 }
 
 generated_file("foundation_test_inputs") {

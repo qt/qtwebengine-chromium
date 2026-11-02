@@ -1,7 +1,7 @@
 Name: Anti-Grain Geometry
 URL: https://sourceforge.net/projects/agg/
 Version: 2.3
-Update Mechanism: Manual
+Update Mechanism: Static.HardFork(https://crbug.com/538320033)
 Security Critical: yes
 License: MIT
 License File: copying
@@ -39,3 +39,4 @@ outline_aa::render_line().
 0016-support-negative-dash-phases.patch: Support negative dash phases in
 calc_dash_start().
 0017-support-odd-size-dash-arrays.patch: Support odd-sized dash arrays.
+0018-outline_aa_reset.patch: Correctly reset current cell.

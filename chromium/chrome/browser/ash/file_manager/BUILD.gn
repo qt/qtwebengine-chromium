@@ -252,6 +252,7 @@ static_library("test_support") {
   ]
 
   deps = [
+    "//ash/constants",
     "//base/test:test_support",
     "//chrome/browser/apps/app_service",
     "//chrome/browser/ash/drive",
@@ -331,6 +332,7 @@ source_set("unit_tests") {
     "//chrome/browser/chromeos/policy/dlp",
     "//chrome/browser/chromeos/policy/dlp/dialogs",
     "//chrome/browser/chromeos/policy/dlp/test:test_support",
+    "//chrome/browser/enterprise/connectors/analysis:test_support",
     "//chrome/browser/enterprise/connectors/test:test_support",
     "//chrome/browser/extensions",
     "//chrome/browser/extensions:test_support",
@@ -470,6 +472,7 @@ source_set("browser_tests") {
     "//chrome/browser/chromeos/policy/dlp",
     "//chrome/browser/chromeos/policy/dlp/test:test_support",
     "//chrome/browser/chromeos/upload_office_to_cloud",
+    "//chrome/browser/enterprise/connectors/analysis:test_support",
     "//chrome/browser/enterprise/connectors/test:test_support",
     "//chrome/browser/extensions",
     "//chrome/browser/policy:test_support",
@@ -477,7 +480,9 @@ source_set("browser_tests") {
     "//chrome/browser/signin",
     "//chrome/browser/sync",
     "//chrome/browser/sync_file_system",
+    "//chrome/browser/sync_file_system:test_support",
     "//chrome/browser/ui",
+    "//chrome/browser/ui:browser_select_file_dialog_controller",
     "//chrome/browser/ui/ash/cast_config",
     "//chrome/browser/ui/ash/sharesheet",
     "//chrome/browser/ui/ash/system_web_apps",
@@ -486,6 +491,7 @@ source_set("browser_tests") {
     "//chrome/browser/ui/webui/ash/cloud_upload",
     "//chrome/browser/ui/webui/ash/office_fallback",
     "//chrome/browser/web_applications",
+    "//chrome/browser/web_applications:profile_test_support",
     "//chrome/browser/web_applications:web_applications_test_support",
     "//chrome/common:chrome_features",
     "//chrome/common:constants",

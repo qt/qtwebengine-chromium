@@ -34,19 +34,17 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-import type {Chrome} from '../../../extension-api/ExtensionAPI.js';
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as AiAssistanceModel from '../../models/ai_assistance/ai_assistance.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import type * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 import * as Logs from '../../models/logs/logs.js';
-import * as StackTrace from '../../models/stack_trace/stack_trace.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as CodeHighlighter from '../../ui/components/code_highlighter/code_highlighter.js';
 import * as Highlighting from '../../ui/components/highlighting/highlighting.js';
@@ -66,53 +64,54 @@ import {format, updateStyle} from './ConsoleFormat.js';
 import {ConsoleInsightTeaser} from './ConsoleInsightTeaser.js';
 import consoleViewStyles from './consoleView.css.js';
 import type {ConsoleViewportElement} from './ConsoleViewport.js';
+import {SymbolizedErrorWidget} from './SymbolizedErrorWidget.js';
 
 const UIStrings = {
   /**
-   * @description Message element text content in Console View Message of the Console panel. Shown
-   * when the user tried to run console.clear() but the 'Preserve log' option is enabled, which stops
+   * @description Message element text content in Console view message of the Console panel. Shown
+   * when the user tried to run console.clear() but the 'Keep log' option is enabled, which stops
    * the log from being cleared.
    */
-  consoleclearWasPreventedDueTo: '`console.clear()` was prevented due to \'Preserve log\'',
+  consoleclearWasPreventedDueTo: '`console.clear()` was prevented due to \'Keep log\'',
   /**
    * @description Text shown in the Console panel after the user has cleared the console, which
    * removes all messages from the console so that it is empty.
    */
   consoleWasCleared: 'Console was cleared',
   /**
-   * @description Message element title in Console View Message of the Console panel
+   * @description Message element title in Console view message of the Console panel.
    * @example {Ctrl+L} PH1
    */
   clearAllMessagesWithS: 'Clear all messages with {PH1}',
   /**
-   * @description Message prefix in Console View Message of the Console panel
+   * @description Message prefix in Console view message of the Console panel.
    */
   assertionFailed: 'Assertion failed: ',
   /**
-   * @description Message text in Console View Message of the Console panel
+   * @description Message text in Console view message of the Console panel.
    * @example {console.log(1)} PH1
    */
   violationS: '`[Violation]` {PH1}',
   /**
-   * @description Message text in Console View Message of the Console panel
+   * @description Message text in Console view message of the Console panel.
    * @example {console.log(1)} PH1
    */
   interventionS: '`[Intervention]` {PH1}',
   /**
-   * @description Message text in Console View Message of the Console panel
+   * @description Message text in Console view message of the Console panel.
    * @example {console.log(1)} PH1
    */
   deprecationS: '`[Deprecation]` {PH1}',
   /**
-   * @description Note title in Console View Message of the Console panel
+   * @description Note title in Console view message of the Console panel.
    */
-  thisValueWillNotBeCollectedUntil: 'This value will not be collected until console is cleared.',
+  thisValueWillNotBeCollectedUntil: 'This value won’t be collected until console is cleared.',
   /**
-   * @description Note title in Console View Message of the Console panel
+   * @description Note title in Console view message of the Console panel.
    */
   thisValueWasEvaluatedUponFirst: 'This value was evaluated upon first expanding. It may have changed since then.',
   /**
-   * @description Note title in Console View Message of the Console panel
+   * @description Note title in Console view message of the Console panel.
    */
   functionWasResolvedFromBound: 'Function was resolved from bound function.',
   /**
@@ -121,24 +120,24 @@ const UIStrings = {
    */
   exception: '<exception>',
   /**
-   * @description Text to indicate an item is a warning
+   * @description Text to indicate an item is a warning.
    */
   warning: 'Warning',
   /**
-   * @description Text for errors
+   * @description Text for errors.
    */
   error: 'Error',
   /**
    * @description Accessible label for an icon. The icon is used to mark console messages that
    * originate from a logpoint. Logpoints are special breakpoints that log a user-provided JavaScript
-   * expression to the DevTools console.
+   * expression to the DevTools Console.
    */
   logpoint: 'Logpoint',
   /**
    * @description Accessible label for an icon. The icon is used to mark console messages that
    * originate from conditional breakpoints.
    */
-  cndBreakpoint: 'Conditional Breakpoint',
+  cndBreakpoint: 'Conditional breakpoint',
   /**
    * @description Announced by the screen reader to indicate how many times a particular message in
    * the console was repeated.
@@ -155,77 +154,89 @@ const UIStrings = {
    */
   errorS: '{n, plural, =1 {Error, Repeated # time} other {Error, Repeated # times}}',
   /**
-   * @description Text appended to grouped console messages that are related to URL requests
+   * @description Text appended to grouped console messages that are related to URL requests.
    */
   url: '<URL>',
   /**
-   * @description Text appended to grouped console messages about tasks that took longer than N ms
+   * @description Text appended to grouped console messages about tasks that took longer than N ms.
    */
   tookNms: 'took <N>ms',
   /**
-   * @description Text appended to grouped console messages about tasks that are related to some DOM event
+   * @description Text appended to grouped console messages about tasks that are related to some DOM event.
    */
   someEvent: '<some> event',
   /**
-   * @description Text appended to grouped console messages about tasks that are related to a particular milestone
+   * @description Text appended to grouped console messages about tasks that are related to a particular milestone.
    */
   Mxx: ' M<XX>',
   /**
-   * @description Text appended to grouped console messages about tasks that are related to autofill completions
+   * @description Text appended to grouped console messages about tasks that are related to autofill completions.
    */
   attribute: '<attribute>',
   /**
-   * @description Text for the index of something
+   * @description Text for the index of something.
    */
   index: '(index)',
   /**
-   * @description Text for the value of something
+   * @description Text for the value of something.
    */
   value: 'Value',
   /**
-   * @description Title of the Console tool
+   * @description Title of the Console tool.
    */
   console: 'Console',
   /**
-   * @description Message to indicate a console message with a stack table is expanded
+   * @description Message to indicate a console message with a stack table is expanded.
    */
   stackMessageExpanded: 'Stack table expanded',
   /**
-   * @description Message to indicate a console message with a stack table is collapsed
+   * @description Message to indicate a console message with a stack table is collapsed.
    */
   stackMessageCollapsed: 'Stack table collapsed',
   /**
-   * @description Message to offer insights for a console error message
+   * @description Message to offer insights for a console error message.
    */
   explainThisError: 'Understand this error',
   /**
-   * @description Message to offer insights for a console warning message
+   * @description Message to offer insights for a console warning message.
    */
   explainThisWarning: 'Understand this warning',
   /**
-   * @description Message to offer insights for a console message
+   * @description Message to offer insights for a console message.
    */
   explainThisMessage: 'Understand this message',
   /**
-   * @description Message to offer insights for a console error message
+   * @description Message to offer insights for a console error message.
    */
-  explainThisErrorWithAI: 'Understand this error. Powered by AI.',
+  explainThisErrorWithAI: 'Understand this error',
   /**
-   * @description Message to offer insights for a console warning message
+   * @description Message to offer insights for a console warning message.
    */
-  explainThisWarningWithAI: 'Understand this warning. Powered by AI.',
+  explainThisWarningWithAI: 'Understand this warning',
   /**
-   * @description Message to offer insights for a console message
+   * @description Message to offer insights for a console message.
    */
-  explainThisMessageWithAI: 'Understand this message. Powered by AI',
+  explainThisMessageWithAI: 'Understand this message',
   /**
-   * @description Element text content in Object Properties Section
+   * @description Element text content in Object properties section.
    */
   dots: '(...)',
   /**
-   * @description Element title in Object Properties Section
+   * @description Element title in Object properties section.
    */
   invokePropertyGetter: 'Invoke property getter',
+  /**
+   * @description Context menu item to copy table data.
+   */
+  copyTableAs: 'Copy table as',
+  /**
+   * @description Submenu item to copy table as Markdown.
+   */
+  copyAsMarkdown: 'Copy as Markdown',
+  /**
+   * @description Submenu item to copy table as CSV.
+   */
+  copyAsCsv: 'Copy as CSV',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/console/ConsoleViewMessage.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -449,7 +460,14 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
           if (this.message.parameters?.length === 1) {
             const parameter = this.message.parameters[0];
             if (typeof parameter !== 'string' && parameter.type === 'string') {
-              messageElement = this.tryFormatAsError((parameter.value as string));
+              const value = parameter.value as string;
+              const runtimeModel = this.message.runtimeModel();
+              if (runtimeModel && Bindings.SymbolizedError.isErrorLike(value)) {
+                const remoteObj = parameter instanceof SDK.RemoteObject.RemoteObject ?
+                    parameter :
+                    runtimeModel.createRemoteObject(parameter);
+                messageElement = this.renderSymbolizedError(remoteObj);
+              }
             }
           }
           const args = this.message.parameters || [messageText];
@@ -570,23 +588,21 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
       const userMetric = this.#getLinkifierMetric();
       if (stackFrameWithBreakpoint) {
         return this.linkifier.maybeLinkifyConsoleCallFrame(runtimeModel.target(), stackFrameWithBreakpoint, {
-          inlineFrameIndex: 0,
           revealBreakpoint: true,
           userMetric,
         });
       }
       if (scriptId) {
-        return this.linkifier.linkifyScriptLocation(
-            runtimeModel.target(), scriptId, url || Platform.DevToolsPath.EmptyUrlString, line,
-            {columnNumber: column, inlineFrameIndex: 0, userMetric});
+        return this.linkifier.linkifyScriptLocation(runtimeModel.target(), scriptId,
+                                                    url || Platform.DevToolsPath.EmptyUrlString, line,
+                                                    {columnNumber: column, userMetric});
       }
       if (stackTrace?.callFrames.length) {
         return this.linkifier.linkifyStackTraceTopFrame(runtimeModel.target(), stackTrace);
       }
       if (url && url !== 'undefined') {
-        return this.linkifier.linkifyScriptLocation(
-            runtimeModel.target(), /* scriptId */ null, url, line,
-            {columnNumber: column, inlineFrameIndex: 0, userMetric});
+        return this.linkifier.linkifyScriptLocation(runtimeModel.target(), /* scriptId */ null, url, line,
+                                                    {columnNumber: column, userMetric});
       }
       return null;
     };
@@ -695,17 +711,19 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
     stackTracePreview.options = {widthConstrained: true};
     if (stackTraceTarget && stackTrace) {
       const selectableChildIndex = this.selectableChildren.length;
-      void Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance()
-          .createStackTraceFromProtocolRuntime(stackTrace, stackTraceTarget)
-          .then(stackTrace => {
-            stackTracePreview.stackTrace = stackTrace;
-            return stackTracePreview.updateComplete;
-          })
-          .then(() => {
-            const selectableLinks =
-                stackTracePreview.linkElements.map(element => ({element, forceSelect: () => element.focus()}));
-            this.selectableChildren.splice(selectableChildIndex, 0, ...selectableLinks);
-          });
+      const stackTracePromise = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance()
+                                    .createStackTraceFromProtocolRuntime(stackTrace, stackTraceTarget)
+                                    .then(stackTrace => {
+                                      stackTracePreview.stackTrace = stackTrace;
+                                      return stackTracePreview.updateComplete;
+                                    })
+                                    .then(() => {
+                                      const selectableLinks = stackTracePreview.linkElements.map(
+                                          (element: HTMLElement) => ({element, forceSelect: () => element.focus()}));
+                                      this.selectableChildren.splice(selectableChildIndex, 0, ...selectableLinks);
+                                    });
+      this.#formatErrorStackPromiseForTest =
+          Promise.all([this.#formatErrorStackPromiseForTest, stackTracePromise]).then(() => {});
     }
     stackTracePreview.markAsRoot();
     stackTracePreview.show(stackTraceElement);
@@ -771,7 +789,7 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
     let element;
     switch (outputType) {
       case 'error':
-        element = this.formatParameterAsError(output);
+        element = this.renderSymbolizedError(output);
         break;
       case 'function':
         element = this.formatParameterAsFunction(output, includePreview);
@@ -980,42 +998,28 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
     return result;
   }
 
-  private formatParameterAsError(output: SDK.RemoteObject.RemoteObject): HTMLElement {
-    const result = document.createElement('span');
+  private renderSymbolizedError(errorRemoteObject: SDK.RemoteObject.RemoteObject): HTMLElement {
+    const container = document.createElement('span');
+    const widget = new SymbolizedErrorWidget();
+    widget.ignoreListManager = Workspace.IgnoreListManager.IgnoreListManager.instance();
+    const selectableChildIndex = this.selectableChildren.length;
 
-    // Combine the ExceptionDetails for this error object with the parsed Error#stack.
-    // The Exceptiondetails include script IDs for stack frames, which allows more accurate
-    // linking.
-    const formatErrorStack =
-        async(errorObj: SDK.RemoteObject.RemoteObject, includeCausedByPrefix: boolean): Promise<void> => {
-      const error = SDK.RemoteObject.RemoteError.objectAsError(errorObj);
-      const [details, cause] = await Promise.all([error.exceptionDetails(), error.cause()]);
-      let errorElement = this.tryFormatAsError(error.errorStack, details);
-      if (!errorElement) {
-        errorElement = document.createElement('span');
-        appendOrShow(errorElement, this.linkifyStringAsFragment(error.errorStack));
+    const format = async(): Promise<void> => {
+      const error = await Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().createSymbolizedError(
+          errorRemoteObject, this.message.exceptionDetails);
+      if (error) {
+        widget.error = error;
       }
-
-      if (includeCausedByPrefix) {
-        const causeElement = document.createElement('div');
-        causeElement.append('Caused by: ', errorElement);
-        result.appendChild(causeElement);
-      } else {
-        result.appendChild(errorElement);
-      }
-
-      if (cause?.subtype === 'error') {
-        await formatErrorStack(cause, /* includeCausedByPrefix */ true);
-      } else if (cause?.type === 'string') {
-        const stringCauseElement = document.createElement('div');
-        stringCauseElement.append(`Caused by: ${cause.value}`);
-        result.append(stringCauseElement);
-      }
+      await widget.updateComplete;
+      const selectableLinks =
+          widget.linkElements.map((element: HTMLElement) => ({element, forceSelect: () => element.focus()}));
+      this.selectableChildren.splice(selectableChildIndex, 0, ...selectableLinks);
     };
 
-    this.#formatErrorStackPromiseForTest = formatErrorStack(output, /* includeCausedByPrefix */ false);
-
-    return result;
+    this.#formatErrorStackPromiseForTest = Promise.all([this.#formatErrorStackPromiseForTest, format()]).then(() => {});
+    widget.markAsRoot();
+    widget.show(container);
+    return container;
   }
 
   private formatAsArrayEntry(output: SDK.RemoteObject.RemoteObject): DocumentFragment {
@@ -1781,165 +1785,6 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
     return this.searchHighlightNodes[index];
   }
 
-  private async getInlineFrames(
-      debuggerModel: SDK.DebuggerModel.DebuggerModel, url: Platform.DevToolsPath.UrlString,
-      lineNumber: number|undefined, columnNumber: number|undefined): Promise<{frames: Chrome.DevTools.FunctionInfo[]}> {
-    const debuggerWorkspaceBinding = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance();
-    const projects = Workspace.Workspace.WorkspaceImpl.instance().projects();
-    const uiSourceCodes = projects.map(project => project.uiSourceCodeForURL(url)).flat().filter(f => !!f);
-    const scripts =
-        uiSourceCodes.map(uiSourceCode => debuggerWorkspaceBinding.scriptsForUISourceCode(uiSourceCode)).flat();
-    if (scripts.length) {
-      const location =
-          new SDK.DebuggerModel.Location(debuggerModel, scripts[0].scriptId, lineNumber || 0, columnNumber);
-      const functionInfo = await debuggerWorkspaceBinding.pluginManager.getFunctionInfo(scripts[0], location);
-      return functionInfo && 'frames' in functionInfo ? functionInfo : {frames: []};
-    }
-
-    return {frames: []};
-  }
-
-  // Expand inline stack frames in the formatted error in the stackTrace element, inserting new elements before the
-  // insertBefore anchor.
-  private async expandInlineStackFrames(
-      debuggerModel: SDK.DebuggerModel.DebuggerModel, prefix: string, suffix: string,
-      url: Platform.DevToolsPath.UrlString, lineNumber: number|undefined, columnNumber: number|undefined,
-      stackTrace: HTMLElement, insertBefore: HTMLElement): Promise<boolean> {
-    const {frames} = await this.getInlineFrames(debuggerModel, url, lineNumber, columnNumber);
-    if (!frames.length) {
-      return false;
-    }
-
-    for (let f = 0; f < frames.length; ++f) {
-      const {name} = frames[f];
-      const formattedLine = document.createElement('span');
-      appendOrShow(formattedLine, this.linkifyStringAsFragment(`${prefix} ${name} (`));
-      const scriptLocationLink = this.linkifier.linkifyScriptLocation(
-          debuggerModel.target(), null, url, lineNumber, {columnNumber, inlineFrameIndex: f});
-      scriptLocationLink.tabIndex = -1;
-      this.selectableChildren.push({element: scriptLocationLink, forceSelect: () => scriptLocationLink.focus()});
-      formattedLine.appendChild(scriptLocationLink);
-      appendOrShow(formattedLine, this.linkifyStringAsFragment(suffix));
-      formattedLine.classList.add('formatted-stack-frame');
-      stackTrace.insertBefore(formattedLine, insertBefore);
-    }
-    return true;
-  }
-
-  private createScriptLocationLinkForSyntaxError(
-      debuggerModel: SDK.DebuggerModel.DebuggerModel, exceptionDetails: Protocol.Runtime.ExceptionDetails): HTMLElement
-      |undefined {
-    const {scriptId, lineNumber, columnNumber} = exceptionDetails;
-    if (!scriptId) {
-      return;
-    }
-
-    // SyntaxErrors might not populate the URL field. Try to resolve it via scriptId.
-    const url =
-        exceptionDetails.url as Platform.DevToolsPath.UrlString || debuggerModel.scriptForId(scriptId)?.sourceURL;
-    if (!url) {
-      return;
-    }
-
-    const scriptLocationLink = this.linkifier.linkifyScriptLocation(
-        debuggerModel.target(), exceptionDetails.scriptId || null, url, lineNumber, {
-          columnNumber,
-          inlineFrameIndex: 0,
-          showColumnNumber: true,
-        });
-    scriptLocationLink.tabIndex = -1;
-    return scriptLocationLink;
-  }
-
-  private tryFormatAsError(string: string, exceptionDetails?: Protocol.Runtime.ExceptionDetails): HTMLElement|null {
-    const runtimeModel = this.message.runtimeModel();
-    if (!runtimeModel) {
-      return null;
-    }
-
-    const issueSummary = exceptionDetails?.exceptionMetaData?.issueSummary;
-    if (typeof issueSummary === 'string') {
-      string = StackTrace.ErrorStackParser.concatErrorDescriptionAndIssueSummary(string, issueSummary);
-    }
-
-    const linkInfos = StackTrace.ErrorStackParser.parseSourcePositionsFromErrorStack(runtimeModel, string);
-    if (!linkInfos?.length) {
-      return null;
-    }
-    if (exceptionDetails?.stackTrace) {
-      StackTrace.ErrorStackParser.augmentErrorStackWithScriptIds(linkInfos, exceptionDetails.stackTrace);
-    }
-
-    const debuggerModel = runtimeModel.debuggerModel();
-    const formattedResult = document.createElement('span');
-
-    for (let i = 0; i < linkInfos.length; ++i) {
-      const newline = i < linkInfos.length - 1 ? '\n' : '';
-      const {line, link, isCallFrame} = linkInfos[i];
-      // Syntax errors don't have a stack frame that points to the source position
-      // where the error occurred. We use the source location from the
-      // exceptionDetails and append it to the end of the message instead.
-      if (!link && exceptionDetails && line.startsWith('SyntaxError')) {
-        appendOrShow(formattedResult, this.linkifyStringAsFragment(line));
-        const maybeScriptLocation = this.createScriptLocationLinkForSyntaxError(debuggerModel, exceptionDetails);
-        if (maybeScriptLocation) {
-          formattedResult.append(' (at ');
-          formattedResult.appendChild(maybeScriptLocation);
-          formattedResult.append(')');
-        }
-        formattedResult.append(newline);
-        continue;
-      }
-      if (!isCallFrame) {
-        appendOrShow(formattedResult, this.linkifyStringAsFragment(`${line}${newline}`));
-        continue;
-      }
-      const formattedLine = document.createElement('span');
-      if (!link) {
-        appendOrShow(formattedLine, this.linkifyStringAsFragment(`${line}${newline}`));
-        formattedLine.classList.add('formatted-builtin-stack-frame');
-        formattedResult.appendChild(formattedLine);
-        continue;
-      }
-      const suffix = `${link.suffix}${newline}`;
-      appendOrShow(formattedLine, this.linkifyStringAsFragment(link.prefix));
-      const scriptLocationLink = this.linkifier.linkifyScriptLocation(
-          debuggerModel.target(), link.scriptId || null, link.url, link.lineNumber, {
-            columnNumber: link.columnNumber,
-            inlineFrameIndex: 0,
-            showColumnNumber: true,
-          });
-      scriptLocationLink.tabIndex = -1;
-      this.selectableChildren.push({element: scriptLocationLink, forceSelect: () => scriptLocationLink.focus()});
-      formattedLine.appendChild(scriptLocationLink);
-      appendOrShow(formattedLine, this.linkifyStringAsFragment(suffix));
-      formattedLine.classList.add('formatted-stack-frame');
-      formattedResult.appendChild(formattedLine);
-
-      if (!link.enclosedInBraces) {
-        continue;
-      }
-
-      const prefixWithoutFunction = link.prefix.substring(0, link.prefix.lastIndexOf(' ', link.prefix.length - 3));
-
-      // If we were able to parse the function name from the stack trace line, try to replace it with an expansion of
-      // any inline frames.
-      const selectableChildIndex = this.selectableChildren.length - 1;
-      void this
-          .expandInlineStackFrames(
-              debuggerModel, prefixWithoutFunction, suffix, link.url, link.lineNumber, link.columnNumber,
-              formattedResult, formattedLine)
-          .then(modified => {
-            if (modified) {
-              formattedResult.removeChild(formattedLine);
-              this.selectableChildren.splice(selectableChildIndex, 1);
-            }
-          });
-    }
-
-    return formattedResult;
-  }
-
   static linkifyWithCustomLinkifier(
       string: string,
       linkifier: (arg0: string, arg1: Platform.DevToolsPath.UrlString, arg2?: number, arg3?: number) => Node):
@@ -2347,6 +2192,7 @@ export class ConsoleTableMessageView extends ConsoleViewMessage {
       if (this.dataGrid) {
         this.dataGrid.setStriped(true);
         this.dataGrid.setFocusable(false);
+        this.dataGrid.setTableContextMenuCallback(this.populateTableContextMenu.bind(this));
 
         const formattedResult = document.createElement('span');
         formattedResult.classList.add('console-message-text');
@@ -2371,6 +2217,38 @@ export class ConsoleTableMessageView extends ConsoleViewMessage {
       return defaultConsoleRowHeight * table.preview.properties.length;
     }
     return defaultConsoleRowHeight;
+  }
+
+  private populateTableContextMenu(contextMenu: UI.ContextMenu.ContextMenu): void {
+    const copySubMenu = contextMenu.clipboardSection().appendSubMenuItem(i18nString(UIStrings.copyTableAs));
+    copySubMenu.defaultSection().appendItem(i18nString(UIStrings.copyAsMarkdown), this.copyTableAsMarkdown.bind(this),
+                                            {jslogContext: 'copy-as-markdown'});
+    copySubMenu.defaultSection().appendItem(i18nString(UIStrings.copyAsCsv), this.copyTableAsCSV.bind(this),
+                                            {jslogContext: 'copy-as-csv'});
+  }
+
+  private copyTableAsMarkdown(): void {
+    if (!this.dataGrid) {
+      return;
+    }
+    const markdown = DataGrid.DataGridExporter.exportToMarkdown(this.dataGrid);
+    UI.UIUtils.copyTextToClipboard(markdown);
+  }
+
+  private copyTableAsCSV(): void {
+    if (!this.dataGrid) {
+      return;
+    }
+    const csv = DataGrid.DataGridExporter.exportToCSV(this.dataGrid);
+    UI.UIUtils.copyTextToClipboard(csv);
+  }
+
+  getDataGridForTest(): DataGrid.SortableDataGrid.SortableDataGrid<unknown>|null {
+    return this.dataGrid;
+  }
+
+  populateTableContextMenuForTest(contextMenu: UI.ContextMenu.ContextMenu): void {
+    this.populateTableContextMenu(contextMenu);
   }
 }
 

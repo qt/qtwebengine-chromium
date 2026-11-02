@@ -30,7 +30,7 @@ void CFWL_ListBoxTP::DrawBackground(const CFWL_ThemeBackground& pParams) {
       FillSolidRect(pParams.GetGraphics(), ArgbEncode(255, 255, 255, 255),
                     pParams.part_rect_, pParams.matrix_);
       if (pParams.data_rect_) {
-        FillSolidRect(pParams.GetGraphics(), FWLTHEME_COLOR_Background,
+        FillSolidRect(pParams.GetGraphics(), kFwlThemeColorBackground,
                       *pParams.data_rect_, pParams.matrix_);
       }
       break;
@@ -63,7 +63,7 @@ void CFWL_ListBoxTP::DrawListBoxItem(CFGAS_GEGraphics* pGraphics,
                                      const CFX_Matrix& matrix) {
   if (dwStates & CFWL_PartState::kSelected) {
     CFGAS_GEGraphics::StateRestorer restorer(pGraphics);
-    pGraphics->SetFillColor(CFGAS_GEColor(FWLTHEME_COLOR_BKSelected));
+    pGraphics->SetFillColor(CFGAS_GEColor(kFwlThemeColorBackgroundSelected));
     CFGAS_GEPath path;
 #if BUILDFLAG(IS_APPLE)
     path.AddRectangle(rtItem.left, rtItem.top, rtItem.width - 1,

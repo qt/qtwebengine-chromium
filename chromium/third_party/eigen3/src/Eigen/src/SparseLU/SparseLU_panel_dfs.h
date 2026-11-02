@@ -136,7 +136,7 @@ void SparseLUImpl<Scalar, StorageIndex>::dfs_kernel(const StorageIndex jj, Index
         //    Place snode-rep krep in postorder DFS, if this
         //    segment is seen for the first time. (Note that
         //    "repfnz(krep)" may change later.)
-        //    Baktrack dfs to its parent
+        //    Backtrack dfs to its parent
         if (traits.update_segrep(krep, jj)) {
           segrep(nseg) = krep;
           ++nseg;

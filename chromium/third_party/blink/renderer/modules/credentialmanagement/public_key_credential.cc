@@ -69,8 +69,7 @@ void OnGetClientCapabilitiesComplete(
   // extension implemented by the client, formed by prefixing "extension:"
   // to the extension identifier.
   //
-  // Excluded extensions: uvm, remoteDesktopClientOverride, and
-  // supplementalPubKeys.
+  // Excluded extensions: uvm and remoteDesktopClientOverride.
   results.emplace_back("extension:appid", true);
   results.emplace_back("extension:appidExclude", true);
   results.emplace_back("extension:hmacCreateSecret", true);
@@ -100,17 +99,6 @@ void OnGetClientCapabilitiesComplete(
         return CodeUnitCompare(a.first, b.first) < 0;
       });
 
-  // TODO(crbug.com/393055190): Remove this when the feature is graduated from
-  // origin trials.
-  if (!RuntimeEnabledFeatures::WebAuthenticationImmediateGetEnabled(
-          resolver->GetExecutionContext())) {
-    for (wtf_size_t i = 0; i < results.size(); ++i) {
-      if (results[i].first == "immediateGet") {
-        results.EraseAt(i);
-        break;
-      }
-    }
-  }
   if (!RuntimeEnabledFeatures::WebAuthenticationAmbientEnabled(
           resolver->GetExecutionContext())) {
     for (wtf_size_t i = 0; i < results.size(); ++i) {

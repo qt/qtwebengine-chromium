@@ -23,6 +23,7 @@
 #include "components/favicon/core/test/mock_favicon_service.h"
 #include "components/signin/public/base/signin_switches.h"
 #include "components/sync/base/client_tag_hash.h"
+#include "components/sync/base/server_defined_unique_tags.h"
 #include "components/sync/base/unique_position.h"
 #include "components/sync/protocol/entity_metadata.pb.h"
 #include "components/sync_bookmarks/bookmark_model_view.h"
@@ -98,7 +99,6 @@ enum class ExpectedBookmarksUuidDuplicates {
 };
 
 const char kBookmarkBarId[] = "bookmark_bar_id";
-const char kBookmarkBarTag[] = "bookmark_bar";
 
 // Fork of enum RemoteBookmarkUpdateError.
 enum class ExpectedRemoteBookmarkUpdateError {
@@ -225,7 +225,7 @@ syncer::UpdateResponseData CreateUpdateResponseData(
 syncer::UpdateResponseData CreateBookmarkBarNodeUpdateData() {
   syncer::EntityData data;
   data.id = kBookmarkBarId;
-  data.server_defined_unique_tag = kBookmarkBarTag;
+  data.server_defined_unique_tag = syncer::kBookmarkBarTag;
 
   data.specifics.mutable_bookmark();
 
@@ -2071,8 +2071,8 @@ TEST(BookmarkModelMergerTest, ShouldRemoveMatchingFolderDuplicatesByUuid) {
       "Sync.BookmarksGUIDDuplicates",
       /*sample=*/ExpectedBookmarksUuidDuplicates::kMatchingFolders,
       /*expected_count=*/1);
-  EXPECT_THAT(tracker->GetEntityForSyncId("Id1"), IsNull());
-  EXPECT_THAT(tracker->GetEntityForSyncId("Id2"), NotNull());
+  EXPECT_THAT(tracker->GetEntityForSyncIdExhaustively("Id1"), IsNull());
+  EXPECT_THAT(tracker->GetEntityForSyncIdExhaustively("Id2"), NotNull());
 }
 
 TEST(BookmarkModelMergerTest, ShouldRemoveDifferentFolderDuplicatesByUuid) {
@@ -2128,8 +2128,8 @@ TEST(BookmarkModelMergerTest, ShouldRemoveDifferentFolderDuplicatesByUuid) {
       "Sync.BookmarksGUIDDuplicates",
       /*sample=*/ExpectedBookmarksUuidDuplicates::kDifferentFolders,
       /*expected_count=*/1);
-  EXPECT_THAT(tracker->GetEntityForSyncId("Id1"), NotNull());
-  EXPECT_THAT(tracker->GetEntityForSyncId("Id2"), IsNull());
+  EXPECT_THAT(tracker->GetEntityForSyncIdExhaustively("Id1"), NotNull());
+  EXPECT_THAT(tracker->GetEntityForSyncIdExhaustively("Id2"), IsNull());
   EXPECT_EQ(bookmark_bar_node->children().front()->GetTitle(), kTitle1);
   EXPECT_EQ(bookmark_bar_node->children().front()->children().size(), 2u);
 }
@@ -2284,8 +2284,8 @@ TEST(BookmarkModelMergerTest, ShouldRemoveDifferentTypeDuplicatesByUuid) {
       "Sync.BookmarksGUIDDuplicates",
       /*sample=*/ExpectedBookmarksUuidDuplicates::kDifferentTypes,
       /*expected_bucket_count=*/1);
-  EXPECT_THAT(tracker->GetEntityForSyncId("Id1"), NotNull());
-  EXPECT_THAT(tracker->GetEntityForSyncId("Id2"), IsNull());
+  EXPECT_THAT(tracker->GetEntityForSyncIdExhaustively("Id1"), NotNull());
+  EXPECT_THAT(tracker->GetEntityForSyncIdExhaustively("Id2"), IsNull());
   EXPECT_EQ(bookmark_bar_node->children().front()->children().size(), 1u);
 }
 

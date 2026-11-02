@@ -11,19 +11,16 @@
 #include "components/multistep_filter/core/annotation_index/proto/annotation_index.pb.h"
 #include "components/multistep_filter/core/data_models/filter_annotation.h"
 #include "components/multistep_filter/core/data_models/filter_suggestion_candidate.h"
+#include "components/optimization_guide/proto/hints.pb.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
 namespace multistep_filter {
 namespace {
 
+using ::optimization_guide::proto::RequestContextMetadata;
+
 constexpr char kTestCandidateId[] = "12345678-1234-4678-a234-567812345678";
-
-TEST(AnnotationIndexConversionUtilTest, ToGetSupportedTasksRequest) {
-  GetSupportedTasksRequest request = ToGetSupportedTasksRequest("example.com");
-
-  EXPECT_EQ(request.domain(), "example.com");
-}
 
 TEST(AnnotationIndexConversionUtilTest, ToSupportedTasks) {
   GetSupportedTasksResponse response;
@@ -39,7 +36,8 @@ TEST(AnnotationIndexConversionUtilTest, ToSupportedTasks) {
 
 TEST(AnnotationIndexConversionUtilTest, ToExecutionCandidate) {
   FilterAnnotation annotation(base::Uuid::ParseLowercase(kTestCandidateId),
-                              "SEARCH_FLIGHTS", "travel.com", base::Time::Now(),
+                              "SEARCH_FLIGHTS", "sub.travel.com",
+                              base::Time::Now(),
                               {FilterAttribute("PRICE_MIN", "100"),
                                FilterAttribute("PRICE_MAX", "500")});
 
@@ -54,29 +52,39 @@ TEST(AnnotationIndexConversionUtilTest, ToExecutionCandidate) {
   EXPECT_EQ(candidate.task_attributes(1).value(), "500");
 }
 
-TEST(AnnotationIndexConversionUtilTest, ToGetTaskExecutionStrategiesRequest) {
+TEST(AnnotationIndexConversionUtilTest, ToRequestContextMetadata) {
   FilterAnnotation annotation1(
       base::Uuid::ParseLowercase("11111111-1111-1111-1111-111111111111"),
-      "TASK1", "example.com", base::Time::Now(),
+      "TASK1", "sub.example.com", base::Time::Now(),
       {FilterAttribute("KEY1", "VAL1")});
   FilterAnnotation annotation2(
       base::Uuid::ParseLowercase("22222222-2222-2222-2222-222222222222"),
-      "TASK2", "example.com", base::Time::Now(),
+      "TASK2", "sub.example.com", base::Time::Now(),
       {FilterAttribute("KEY2", "VAL2")});
   std::vector<FilterAnnotation> annotations = {annotation1, annotation2};
 
-  GetTaskExecutionStrategiesRequest request =
-      ToGetTaskExecutionStrategiesRequest(GURL("https://example.com/test"),
-                                          annotations);
+  RequestContextMetadata context_metadata =
+      ToRequestContextMetadata(annotations);
 
-  EXPECT_EQ(request.current_url(), "https://example.com/test");
-  ASSERT_EQ(request.candidates_size(), 2);
-  EXPECT_EQ(request.candidates(0).candidate_id(),
+  ASSERT_EQ(
+      context_metadata.filter_execution_metadata().execution_candidate_size(),
+      2);
+  EXPECT_EQ(context_metadata.filter_execution_metadata()
+                .execution_candidate(0)
+                .candidate_id(),
             "11111111-1111-1111-1111-111111111111");
-  EXPECT_EQ(request.candidates(0).task_type(), "TASK1");
-  EXPECT_EQ(request.candidates(1).candidate_id(),
+  EXPECT_EQ(context_metadata.filter_execution_metadata()
+                .execution_candidate(0)
+                .task_type(),
+            "TASK1");
+  EXPECT_EQ(context_metadata.filter_execution_metadata()
+                .execution_candidate(1)
+                .candidate_id(),
             "22222222-2222-2222-2222-222222222222");
-  EXPECT_EQ(request.candidates(1).task_type(), "TASK2");
+  EXPECT_EQ(context_metadata.filter_execution_metadata()
+                .execution_candidate(1)
+                .task_type(),
+            "TASK2");
 }
 
 TEST(AnnotationIndexConversionUtilTest, ToFilterSuggestionCandidates) {
@@ -119,16 +127,8 @@ TEST(AnnotationIndexConversionUtilTest, ToFilterSuggestionCandidates) {
   EXPECT_EQ(suggestion.attributes[1].label, u"Max Price");
 }
 
-TEST(AnnotationIndexConversionUtilTest, ToExtractTaskAttributesRequest) {
-  ExtractTaskAttributesRequest request =
-      ToExtractTaskAttributesRequest(GURL("https://example.com/path?q=1"));
-
-  EXPECT_EQ(request.source().raw_url(), "https://example.com/path?q=1");
-}
-
 TEST(AnnotationIndexConversionUtilTest, ToFilterAnnotation) {
   ExtractTaskAttributesResponse response;
-  response.set_domain("example.com");
   response.set_task_type("SEARCH_FLIGHTS");
 
   TaskAttribute* attr1 = response.add_task_attributes();
@@ -139,12 +139,13 @@ TEST(AnnotationIndexConversionUtilTest, ToFilterAnnotation) {
   attr2->set_key("PRICE_MAX");
   attr2->set_value("500");
 
-  std::optional<FilterAnnotation> annotation = ToFilterAnnotation(response);
+  std::optional<FilterAnnotation> annotation =
+      ToFilterAnnotation(GURL("https://example.com"), response);
 
   ASSERT_TRUE(annotation.has_value());
   EXPECT_TRUE(annotation->id.is_valid());
   EXPECT_EQ(annotation->task_type, "SEARCH_FLIGHTS");
-  EXPECT_EQ(annotation->source_domain, "example.com");
+  EXPECT_EQ(annotation->source_host, "example.com");
   ASSERT_EQ(annotation->attributes.size(), 2u);
   EXPECT_EQ(annotation->attributes[0].key, "PRICE_MIN");
   EXPECT_EQ(annotation->attributes[0].value, "100");
@@ -154,7 +155,21 @@ TEST(AnnotationIndexConversionUtilTest, ToFilterAnnotation) {
 
 TEST(AnnotationIndexConversionUtilTest, ToFilterAnnotation_EmptyResponse) {
   ExtractTaskAttributesResponse response;
-  std::optional<FilterAnnotation> annotation = ToFilterAnnotation(response);
+  std::optional<FilterAnnotation> annotation =
+      ToFilterAnnotation(GURL("https://example.com"), response);
+  EXPECT_FALSE(annotation.has_value());
+}
+
+TEST(AnnotationIndexConversionUtilTest, ToFilterAnnotation_EmptyHost) {
+  ExtractTaskAttributesResponse response;
+  response.set_task_type("SEARCH_FLIGHTS");
+
+  TaskAttribute* attr1 = response.add_task_attributes();
+  attr1->set_key("PRICE_MIN");
+  attr1->set_value("100");
+
+  std::optional<FilterAnnotation> annotation =
+      ToFilterAnnotation(GURL("file:///invalid-host"), response);
   EXPECT_FALSE(annotation.has_value());
 }
 

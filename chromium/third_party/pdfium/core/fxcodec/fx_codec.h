@@ -38,6 +38,9 @@ void ReverseRGB(pdfium::span<uint8_t> pDestBuf,
                 pdfium::span<const uint8_t> pSrcBuf,
                 int pixels);
 
+// Can be called only after CFX_GEModule::Create().
+void RegisterEncoders();
+
 }  // namespace fxcodec
 
 #ifdef PDF_ENABLE_XFA

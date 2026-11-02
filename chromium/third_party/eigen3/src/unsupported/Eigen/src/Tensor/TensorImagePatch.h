@@ -48,12 +48,12 @@ struct nested<TensorImagePatchOp<Rows, Cols, XprType>, 1,
  * \ingroup Tensor_Module
  *
  * \brief Patch extraction specialized for image processing.
- * This assumes that the input has a least 3 dimensions ordered as follow:
+ * This assumes that the input has at least 3 dimensions ordered as follows:
  *  1st dimension: channels (of size d)
  *  2nd dimension: rows (of size r)
  *  3rd dimension: columns (of size c)
  *  There can be additional dimensions such as time (for video) or batch (for
- * bulk processing after the first 3.
+ * bulk processing) after the first 3.
  * Calling the image patch code with patch_rows and patch_cols is equivalent
  * to calling the regular patch extraction code with parameters d, patch_rows,
  * patch_cols, and 1 for all the additional dimensions.
@@ -193,12 +193,11 @@ struct TensorEvaluator<const TensorImagePatchOp<Rows, Cols, ArgType>, Device> {
     const typename TensorEvaluator<ArgType, Device>::Dimensions& input_dims = m_impl.dimensions();
 
     // Caches a few variables.
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       m_inputDepth = input_dims[0];
       m_inputRows = input_dims[1];
       m_inputCols = input_dims[2];
-    }
-    else {
+    } else {
       m_inputDepth = input_dims[NumInputDims - 1];
       m_inputRows = input_dims[NumInputDims - 2];
       m_inputCols = input_dims[NumInputDims - 3];
@@ -214,7 +213,7 @@ struct TensorEvaluator<const TensorImagePatchOp<Rows, Cols, ArgType>, Device> {
     m_col_inflate_strides = op.col_inflate_strides();
     // The "effective" input rows and input cols are the input rows and cols
     // after inflating them with zeros.
-    // For examples, a 2x3 matrix with row_inflate_strides and
+    // For example, a 2x3 matrix with row_inflate_strides and
     // col_inflate_strides of 2 comes from:
     //   A B C
     //   D E F
@@ -270,7 +269,7 @@ struct TensorEvaluator<const TensorImagePatchOp<Rows, Cols, ArgType>, Device> {
     eigen_assert(m_outputCols > 0);
 
     // Dimensions for result of extraction.
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       // ColMajor
       // 0: depth
       // 1: patch_rows
@@ -284,8 +283,7 @@ struct TensorEvaluator<const TensorImagePatchOp<Rows, Cols, ArgType>, Device> {
       for (int i = 4; i < NumDims; ++i) {
         m_dimensions[i] = input_dims[i - 1];
       }
-    }
-    else {
+    } else {
       // RowMajor
       // NumDims-1: depth
       // NumDims-2: patch_rows
@@ -302,12 +300,11 @@ struct TensorEvaluator<const TensorImagePatchOp<Rows, Cols, ArgType>, Device> {
     }
 
     // Strides for moving the patch in various dimensions.
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       m_colStride = m_dimensions[1];
       m_patchStride = m_colStride * m_dimensions[2] * m_dimensions[0];
       m_otherStride = m_patchStride * m_dimensions[3];
-    }
-    else {
+    } else {
       m_colStride = m_dimensions[NumDims - 2];
       m_patchStride = m_colStride * m_dimensions[NumDims - 3] * m_dimensions[NumDims - 1];
       m_otherStride = m_patchStride * m_dimensions[NumDims - 4];
@@ -328,10 +325,9 @@ struct TensorEvaluator<const TensorImagePatchOp<Rows, Cols, ArgType>, Device> {
 
     // Number of patches in the width dimension.
     m_fastOutputRows = internal::TensorIntDivisor<Index>(m_outputRows);
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       m_fastOutputDepth = internal::TensorIntDivisor<Index>(m_dimensions[0]);
-    }
-    else {
+    } else {
       m_fastOutputDepth = internal::TensorIntDivisor<Index>(m_dimensions[NumDims - 1]);
     }
   }
@@ -355,7 +351,7 @@ struct TensorEvaluator<const TensorImagePatchOp<Rows, Cols, ArgType>, Device> {
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE CoeffReturnType coeff(Index index) const {
     // Other ways to index this element.
     Index otherIndex, patch2DIndex;
-    if (NumDims == 4) {
+    EIGEN_IF_CONSTEXPR (NumDims == 4) {
       otherIndex = 0;
       patch2DIndex = index / m_fastPatchStride;
     } else {
@@ -408,7 +404,7 @@ struct TensorEvaluator<const TensorImagePatchOp<Rows, Cols, ArgType>, Device> {
     // Use multiply+compare instead of a second TensorIntDivisor division
     // to check whether the last packet element is in the same region.
     Index otherIndex, patch2DIndex, patchRemainder0, patchRemainder1;
-    if (NumDims == 4) {
+    EIGEN_IF_CONSTEXPR (NumDims == 4) {
       otherIndex = 0;
       patch2DIndex = index / m_fastPatchStride;
       const Index patchBase = patch2DIndex * m_patchStride;

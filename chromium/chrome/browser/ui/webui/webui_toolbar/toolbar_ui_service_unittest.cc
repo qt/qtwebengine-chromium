@@ -72,6 +72,9 @@ class Observer : public mojom::ToolbarUIObserver {
     state = std::move(changed);
   }
 
+  void OnFocusRequested(
+      toolbar_ui_api::mojom::FocusRequestTarget target) override {}
+
   void FlushForTesting() { receiver_.FlushForTesting(); }
 
   // Easily accessible for testing. Start with nullopt to easily differentiate
@@ -247,11 +250,12 @@ TEST_F(ToolbarUIServiceSplitTabsTest, TestOnTabSplitStatusChanged) {
 
 // Tests that OnNavigationControlsStateChanged calls the page with the correct
 // state.
-TEST_F(ToolbarUIServiceSplitTabsTest, TestOnSplitTabsButtonPinStateChanged) {
-  navigation_controls_state()->split_tabs_control_state->is_pinned = true;
+TEST_F(ToolbarUIServiceSplitTabsTest,
+       TestOnSplitTabsButtonShouldBeShownChanged) {
+  navigation_controls_state()->split_tabs_control_state->should_be_shown = true;
   PushNavigationControlsStateUpdate();
 
-  ASSERT_TRUE(observer()->state->split_tabs_control_state->is_pinned);
+  ASSERT_TRUE(observer()->state->split_tabs_control_state->should_be_shown);
 }
 
 // Tests that OnPageInitialized calls the delegate.
@@ -397,7 +401,7 @@ TEST_F(ToolbarUIServiceNoInitialObserverTest, IconUpdatesBeforeConnect2) {
 TEST_F(ToolbarUIServiceTest, TestShowAvatarMenu) {
   EXPECT_CALL(delegate(), ShowAvatarMenu());
 
-  service().ShowAvatarMenu(base::NullCallback());
+  service().ShowAvatarMenu(base::DoNothing());
 }
 
 }  // namespace

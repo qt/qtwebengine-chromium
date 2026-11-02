@@ -40,7 +40,10 @@ using namespace tint::core::number_suffixes;  // NOLINT
 namespace tint::msl::writer::raise {
 namespace {
 
-using MslWriter_BinaryPolyfillTest = core::ir::transform::TransformTest;
+struct MslWriter_BinaryPolyfillTest : public core::ir::transform::TransformTest {
+  protected:
+    void SetUp() override { mod.properties.Add(core::ir::Property::kAllow16BitFloats); }
+};
 
 TEST_F(MslWriter_BinaryPolyfillTest, FMod_Scalar) {
     auto* lhs = b.FunctionParam<f32>("lhs");
@@ -385,6 +388,45 @@ TEST_F(MslWriter_BinaryPolyfillTest, UDiv_WithPolyfill) {
     %4:u32 = msl.volatile_zero
     %5:u32 = add %lhs, %4
     %6:u32 = div %5, %rhs
+    ret %6
+  }
+}
+)";
+
+    BinaryPolyfillConfig config{
+        .fix_u32_div_mod = true,
+    };
+    Run(BinaryPolyfill, config);
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(MslWriter_BinaryPolyfillTest, UDiv_Vector_WithPolyfill) {
+    auto* lhs = b.FunctionParam<vec4u>("lhs");
+    auto* rhs = b.FunctionParam<vec4u>("rhs");
+    auto* func = b.Function("foo", ty.vec4u());
+    func->SetParams({lhs, rhs});
+    b.Append(func->Block(), [&] {
+        auto* result = b.Divide(lhs, rhs);
+        b.Return(func, result);
+    });
+
+    auto* src = R"(
+%foo = func(%lhs:vec4<u32>, %rhs:vec4<u32>):vec4<u32> {
+  $B1: {
+    %4:vec4<u32> = div %lhs, %rhs
+    ret %4
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%lhs:vec4<u32>, %rhs:vec4<u32>):vec4<u32> {
+  $B1: {
+    %4:u32 = msl.volatile_zero
+    %5:vec4<u32> = add %lhs, %4
+    %6:vec4<u32> = div %5, %rhs
     ret %6
   }
 }

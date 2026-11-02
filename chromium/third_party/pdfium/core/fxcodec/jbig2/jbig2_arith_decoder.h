@@ -13,7 +13,6 @@
 #include "core/fxcrt/unowned_ptr.h"
 
 class CJBig2_BitStream;
-struct JBig2ArithQe;
 
 class JBig2ArithCtx {
  public:
@@ -30,11 +29,11 @@ class JBig2ArithCtx {
   int DecodeNMPS(const JBig2ArithQe& qe);
 
   unsigned int MPS() const { return mps_ ? 1 : 0; }
-  unsigned int I() const { return i_; }
+  uint8_t I() const { return i_; }
 
  private:
   bool mps_ = false;
-  unsigned int i_ = 0;
+  uint8_t i_ = 0;
 };
 FX_DATA_PARTITION_EXCEPTION(JBig2ArithCtx);
 

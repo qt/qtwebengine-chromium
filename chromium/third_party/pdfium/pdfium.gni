@@ -16,6 +16,9 @@ declare_args() {
   #    //build/config/freetype.
   pdf_bundle_freetype = pdf_bundle_freetype_override
 
+  # Build PDFium with experimental Brotli compression support.
+  pdf_enable_brotli = pdf_enable_brotli_override
+
   # Generate logging messages for click events that reach PDFium
   pdf_enable_click_logging = false
 
@@ -70,6 +73,11 @@ declare_args() {
   # developing locally.
   pdf_enable_skia_typeface_checks = false
 
+  # Build PDFium with Rust-based BMP decoder. If enabled, it ensures that PDFium
+  # doesn't depend on its native C++ BMP decoder. Note that
+  # `pdf_enable_rust_bmp` requires Skia and Rust support.
+  pdf_enable_rust_bmp = pdf_enable_rust_bmp_override
+
   # Build PDFium with Rust-based PNG decoder and encoder.
   # If enabled, it ensures that PDFium doesn't depend on `libpng`.
   # Note that `pdf_enable_rust_png` requires Skia and Rust support.
@@ -110,6 +118,10 @@ assert(pdf_use_agg || pdf_use_skia,
 assert(
     !pdf_enable_fontations || (enable_rust && enable_rust_cxx && pdf_use_skia),
     "pdf_enable_fontations=true requires enable_rust=true, enable_rust_cxx=true, and pdf_use_skia=true")
+
+assert(
+    !pdf_enable_rust_bmp || (enable_rust && enable_rust_cxx && pdf_use_skia),
+    "pdf_enable_rust_bmp=true requires enable_rust=true, enable_rust_cxx=true, and pdf_use_skia=true")
 
 assert(
     !pdf_enable_rust_png || (enable_rust && enable_rust_cxx && pdf_use_skia),

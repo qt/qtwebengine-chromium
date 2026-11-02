@@ -198,7 +198,7 @@ describeWithEnvironment('UsedPreloadingView', () => {
     assert.strictEqual(sections[0]?.querySelector('.status-badge span')?.textContent?.trim(), 'Failure');
     assert.include(
         sections[0]?.textContent,
-        'The initiating page attempted to prefetch this page\'s URL, but the prefetch failed, so a full navigation was performed instead.');
+        'The initiating page attempted to prefetch this page’s URL, but the prefetch failed, so a full navigation was performed instead.');
     assert.include(headers[1]?.textContent, 'Failure reason');
     assert.include(
         sections[1]?.textContent, 'The prefetch was redirected, but the redirect URL is not eligible for prefetch.');
@@ -262,7 +262,7 @@ describeWithEnvironment('UsedPreloadingView', () => {
     assert.strictEqual(sections[0]?.querySelector('.status-badge span')?.textContent?.trim(), 'Failure');
     assert.include(
         sections[0]?.textContent,
-        'The initiating page attempted to prerender this page\'s URL, but the prerender failed, so a full navigation was performed instead.');
+        'The initiating page attempted to prerender this page’s URL, but the prerender failed, so a full navigation was performed instead.');
     assert.include(headers[1]?.textContent, 'Failure reason');
     assert.include(
         sections[1]?.textContent,
@@ -337,7 +337,7 @@ describeWithEnvironment('UsedPreloadingView', () => {
     assert.include(headers[0]?.textContent, 'Speculative loading status');
     assert.include(
         sections[0]?.textContent,
-        'The initiating page attempted to prerender this page\'s URL, but the prerender failed, so a full navigation was performed instead.');
+        'The initiating page attempted to prerender this page’s URL, but the prerender failed, so a full navigation was performed instead.');
 
     assert.include(headers[1]?.textContent, 'Failure reason');
     assert.include(
@@ -414,7 +414,7 @@ describeWithEnvironment('UsedPreloadingView', () => {
     assert.strictEqual(sections[0]?.querySelector('.status-badge span')?.textContent?.trim(), 'Success');
     assert.include(
         sections[0]?.textContent,
-        'The initiating page attempted to prerender this page\'s URL. The prerender failed, but the resulting response body was still used as a prefetch.');
+        'The initiating page attempted to prerender this page’s URL. The prerender failed, but the resulting response body was still used as a prefetch.');
     assert.include(headers[1]?.textContent, 'Failure reason');
     assert.include(
         sections[1]?.textContent,
@@ -447,8 +447,8 @@ describeWithEnvironment('UsedPreloadingView', () => {
 
     assert.include(headers[0]?.textContent, 'Speculative loading status');
     assert.strictEqual(sections[0]?.querySelector('.status-badge span')?.textContent?.trim(), 'No speculative loads');
-    assert.include(
-        sections[0]?.textContent, 'The initiating page did not attempt to speculatively load this page\'s URL.');
+    assert.include(sections[0]?.textContent,
+                   'The initiating page did not attempt to speculatively load this page’s URL.');
 
     assert.include(headers[1]?.textContent, 'Speculations initiated by this page');
     const badges = sections[1]?.querySelectorAll('.status-badge span') || [];
@@ -538,8 +538,8 @@ describeWithEnvironment('UsedPreloadingView', () => {
 
     assert.include(headers[0]?.textContent, 'Speculative loading status');
     assert.strictEqual(sections[0]?.querySelector('.status-badge span')?.textContent?.trim(), 'No speculative loads');
-    assert.include(
-        sections[0]?.textContent, 'The initiating page did not attempt to speculatively load this page\'s URL.');
+    assert.include(sections[0]?.textContent,
+                   'The initiating page did not attempt to speculatively load this page’s URL.');
     assert.include(headers[1]?.textContent, 'Current URL');
     assert.include(sections[1]?.textContent, 'https://example.com/prerendered.html#alpha');
     assert.include(headers[2]?.textContent, 'URLs being speculatively loaded by the initiating page');
@@ -610,8 +610,8 @@ describeWithEnvironment('UsedPreloadingView', () => {
 
     assert.include(headers[0]?.textContent, 'Speculative loading status');
     assert.strictEqual(sections[0]?.querySelector('.status-badge span')?.textContent?.trim(), 'No speculative loads');
-    assert.include(
-        sections[0]?.textContent, 'The initiating page did not attempt to speculatively load this page\'s URL.');
+    assert.include(sections[0]?.textContent,
+                   'The initiating page did not attempt to speculatively load this page’s URL.');
     assert.include(headers[1]?.textContent, 'Current URL');
     assert.include(sections[1]?.textContent, 'https://example.com/no-preloads.html');
     assert.include(headers[2]?.textContent, 'URLs being speculatively loaded by the initiating page');
@@ -731,8 +731,8 @@ describeWithEnvironment('UsedPreloadingView', () => {
 
     assert.include(headers[0]?.textContent, 'Speculative loading status');
     assert.strictEqual(sections[0]?.querySelector('.status-badge span')?.textContent?.trim(), 'No speculative loads');
-    assert.include(
-        sections[0]?.textContent, 'The initiating page did not attempt to speculatively load this page\'s URL.');
+    assert.include(sections[0]?.textContent,
+                   'The initiating page did not attempt to speculatively load this page’s URL.');
 
     assert.include(headers[1]?.textContent, 'Speculations initiated by this page');
     const badges = sections[1]?.querySelectorAll('.status-badge span') || [];
@@ -822,9 +822,9 @@ describeWithEnvironment('UsedPreloadingView', () => {
           mismatchedHeaders: null,
           ruleSetIds: ['ruleSetId:1'] as Protocol.Preload.RuleSetId[],
           nodeIds: [1] as Protocol.DOM.BackendNodeId[],
-        }
+        },
       ],
-      currentAttempts: []
+      currentAttempts: [],
     };
 
     const component = await renderUsedPreloadingView(data);

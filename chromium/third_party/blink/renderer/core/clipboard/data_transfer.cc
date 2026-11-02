@@ -560,7 +560,7 @@ void DataTransfer::DeclareAndWriteDragImage(Element* element,
 
   // Put img tag on the clipboard referencing the image
   data_object_->SetData(ui::kMimeTypeHtml,
-                        CreateMarkup(element, kIncludeNode, kResolveAllURLs));
+                        CreateMarkup(element, kIncludeNode, ResolveUrls::kAll));
 }
 
 void DataTransfer::WriteURL(Node* node, const KURL& url, const String& title) {
@@ -575,7 +575,7 @@ void DataTransfer::WriteURL(Node* node, const KURL& url, const String& title) {
 
   // The URL can also be used as an HTML fragment.
   data_object_->SetHTMLAndBaseURL(
-      CreateMarkup(node, kIncludeNode, kResolveAllURLs), url);
+      CreateMarkup(node, kIncludeNode, ResolveUrls::kAll), url);
 }
 
 void DataTransfer::WriteSelection(const FrameSelection& selection) {
@@ -583,8 +583,8 @@ void DataTransfer::WriteSelection(const FrameSelection& selection) {
     return;
 
   if (!EnclosingTextControl(
-          selection.ComputeVisibleSelectionInDOMTree().Start())) {
-    data_object_->SetHTMLAndBaseURL(selection.SelectedHTMLForClipboard(),
+          selection.ComputeVisibleSelectionInDomTree().Start())) {
+    data_object_->SetHTMLAndBaseURL(selection.SelectedHtmlForClipboard(),
                                     selection.GetFrame()->GetDocument()->Url());
   }
 
@@ -693,28 +693,6 @@ void DataTransfer::setDragImage(ImageResourceContent* image,
   drag_image_ = image;
   drag_loc_ = loc;
   drag_image_element_ = node;
-}
-
-bool DataTransfer::HasFileOfType(const String& type) const {
-  if (!CanReadTypes())
-    return false;
-
-  for (uint32_t i = 0; i < data_object_->length(); ++i) {
-    if (data_object_->Item(i)->Kind() == DataObjectItem::kFileKind) {
-      Blob* blob = data_object_->Item(i)->GetAsFile();
-      if (blob && blob->IsFile() &&
-          DeprecatedEqualIgnoringCase(blob->type(), type))
-        return true;
-    }
-  }
-  return false;
-}
-
-bool DataTransfer::HasStringOfType(const String& type) const {
-  if (!CanReadTypes())
-    return false;
-
-  return data_object_->Types().Contains(type);
 }
 
 void DataTransfer::Trace(Visitor* visitor) const {

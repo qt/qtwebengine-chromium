@@ -130,8 +130,12 @@ void WebView::SetWebContents(content::WebContents* replacement) {
   // notifications when in the background and not directly part of a UI
   // hierarchy. This avoids color pop-in if the WebContents is re-inserted into
   // the same hierarchy at a later point in time.
+  // Note that if the widget is not ready yet, we don't set the color provider
+  // source to avoid clearing the existing one.
   if (replacement) {
-    replacement->SetColorProviderSource(GetWidget());
+    if (GetWidget()) {
+      replacement->SetColorProviderSource(GetWidget());
+    }
     replacement->SetUserData(kIsWebViewContentsKey,
                              std::make_unique<base::SupportsUserData::Data>());
   }
@@ -458,14 +462,16 @@ gfx::NativeViewAccessible WebView::GetNativeViewAccessible() {
     if (host_view) {
       gfx::NativeViewAccessible accessible =
           host_view->GetNativeViewAccessible();
-      // |accessible| needs to know whether this is the primary WebContents.
-      if (is_primary_web_contents_for_window_) {
-        if (auto* ax_platform_node =
-                ui::AXPlatformNode::FromNativeViewAccessible(accessible)) {
-          ax_platform_node->GetDelegate()->SetIsPrimaryWebContentsForWindow();
+      if (accessible) {
+        // |accessible| needs to know whether this is the primary WebContents.
+        if (is_primary_web_contents_for_window_) {
+          if (auto* ax_platform_node =
+                  ui::AXPlatformNode::FromNativeViewAccessible(accessible)) {
+            ax_platform_node->GetDelegate()->SetIsPrimaryWebContentsForWindow();
+          }
         }
+        return accessible;
       }
-      return accessible;
     }
   }
   return View::GetNativeViewAccessible();

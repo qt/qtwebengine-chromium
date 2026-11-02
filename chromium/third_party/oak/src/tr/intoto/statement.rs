@@ -21,14 +21,17 @@ extern crate alloc;
 
 use alloc::{
     borrow::ToOwned,
-    collections::BTreeMap,
     string::{String, ToString},
     vec,
     vec::Vec,
 };
 
-use anyhow::Context;
-use oak_proto_rust::oak::{HexDigest, RawDigest};
+use anyhow::{Context, ensure};
+use oak_digest::{
+    DigestSet, hex_to_raw_digest, hex_to_set_digest, is_hex_digest_match, raw_digest_from_contents,
+    raw_to_hex_digest, set_to_hex_digest,
+};
+use oak_proto_rust::oak::{HexDigest, attestation::v1::EndorsementDetails};
 use oak_time::Instant;
 use serde::{Deserialize, Serialize};
 
@@ -36,26 +39,17 @@ use serde::{Deserialize, Serialize};
 /// versions will be rejected.
 const STATEMENT_TYPE: &str = "https://in-toto.io/Statement/v1";
 
-/// Oldest predicate type for in-toto endorsement statements. References still
-/// exist, but fully removing it will be easy.
-#[deprecated = "Use PREDICATE_TYPE_V3"]
-const PREDICATE_TYPE_V1: &str = "https://github.com/project-oak/transparent-release/claim/v1";
-
-/// Previous predicate type of in-toto endorsement statements. In operation.
-#[deprecated = "Use PREDICATE_TYPE_V3"]
-const PREDICATE_TYPE_V2: &str = "https://github.com/project-oak/transparent-release/claim/v2";
-
-/// Current predicate type of in-toto endorsement statements, which loses
-/// the `usage` field and adds claim types.
-const PREDICATE_TYPE_V3: &str = "https://project-oak.github.io/oak/tr/endorsement/v1";
-
-// A map from algorithm name to lowercase hex-encoded value.
-pub type DigestSet = BTreeMap<String, String>;
+/// Predicate type of in-toto endorsement statements.
+const PREDICATE_TYPE_V1: &str = "https://project-oak.github.io/oak/tr/endorsement/v1";
 
 /// An artifact identified by its name and digest.
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct Subject {
+    /// The name of the artifact. Defaults to empty and may be absent.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
+
+    /// A map from algorithm name to lowercase hex-encoded value of the digest.
     pub digest: DigestSet,
 }
 
@@ -94,17 +88,13 @@ impl TryFrom<&oak_proto_rust::oak::Validity> for Validity {
 // A single claim about the endorsement subject.
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct Claim {
+    /// The type of the claim as URI.
     pub r#type: String,
 }
 
 /// The predicate part of an endorsement subject.
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct DefaultPredicate {
-    // Specifies how to interpret the endorsement subject.
-    // The `default` option is needed to support predicate V2.
-    #[serde(default)]
-    pub usage: String,
-
     /// The timestamp (encoded as an Epoch time) when the statement was created.
     #[serde(rename = "issuedOn", with = "oak_time::instant::rfc3339")]
     pub issued_on: Instant,
@@ -120,10 +110,18 @@ pub struct DefaultPredicate {
 /// Represents a generic statement that binds a predicate to a subject.
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct Statement<P> {
+    /// The type of the intoto statement, as a URI.
     pub _type: String,
+
+    /// The type of the predicate, as a URI.
     #[serde(rename = "predicateType")]
     pub predicate_type: String,
+
+    /// The subject of the statement. Even though never used, we allow
+    /// intoto statements referring to more than one subject.
     pub subject: Vec<Subject>,
+
+    /// The predicate of the statement.
     pub predicate: P,
 }
 
@@ -131,31 +129,30 @@ pub type DefaultStatement = Statement<DefaultPredicate>;
 
 /// Parses the given serialized JSON into an endorsement statement.
 pub fn parse_statement(bytes: &[u8]) -> anyhow::Result<DefaultStatement> {
-    serde_json::from_slice(bytes).context("parsing endorsement statement")
+    Ok(serde_json::from_slice(bytes)?)
 }
 
 /// Serializes an endorsement statement as JSON.
 pub fn serialize_statement(statement: &DefaultStatement) -> anyhow::Result<Vec<u8>> {
-    serde_json::to_vec(statement).context("serializing endorsement statement")
+    Ok(serde_json::to_vec(statement)?)
 }
 
 /// Creates an endorsement statement from ingredients.
 pub fn make_statement(
     subject_name: &str,
-    digest: &RawDigest,
+    digest: &HexDigest,
     issued_on: Instant,
     not_before: Instant,
     not_after: Instant,
     claim_types: Vec<&str>,
 ) -> DefaultStatement {
-    let map_digest = raw_digest_to_map(digest);
+    let digest_set = hex_to_set_digest(digest);
 
     DefaultStatement {
         _type: STATEMENT_TYPE.to_owned(),
-        predicate_type: PREDICATE_TYPE_V3.to_owned(),
-        subject: vec![Subject { name: subject_name.to_string(), digest: map_digest }],
+        predicate_type: PREDICATE_TYPE_V1.to_owned(),
+        subject: vec![Subject { name: subject_name.to_string(), digest: digest_set }],
         predicate: DefaultPredicate {
-            usage: "".to_owned(), // Ignored with predicate V3, do not use.
             issued_on,
             validity: Some(Validity { not_before, not_after }),
             claims: claim_types.iter().map(|x| Claim { r#type: x.to_string() }).collect(),
@@ -164,226 +161,90 @@ pub fn make_statement(
 }
 
 /// Checks that the given endorsement statement is valid, based on timestamp
-/// and required claims.
-pub fn validate_statement(
-    now_utc_millis: i64,
-    required_claims: &[&str],
-    statement: &DefaultStatement,
-) -> anyhow::Result<()> {
-    if statement._type != STATEMENT_TYPE {
-        anyhow::bail!("unsupported statement type");
-    }
-    #[allow(deprecated)] // We still need to validate the older types.
-    if statement.predicate_type != PREDICATE_TYPE_V1
-        && statement.predicate_type != PREDICATE_TYPE_V2
-        && statement.predicate_type != PREDICATE_TYPE_V3
-    {
-        anyhow::bail!("unsupported predicate type");
+impl DefaultStatement {
+    /// Verifies that the given digest is mentioned in the subject.
+    pub fn validate_subject_digest(&self, digest: &HexDigest) -> anyhow::Result<()> {
+        let actual = get_hex_digest_from_statement(self)?;
+        is_hex_digest_match(digest, &actual).context("comparing subject digests")
     }
 
-    match &statement.predicate.validity {
-        Some(validity) => {
-            let now = Instant::from_unix_millis(now_utc_millis);
-            if now < validity.not_before {
-                anyhow::bail!("the claim is not yet applicable")
-            }
-            if validity.not_after < now {
-                anyhow::bail!("the claim is no longer applicable")
-            }
+    /// Verifies that the SHA-256 digest of the given subject raw payload
+    /// matches the subject digest in the verified in-toto statement.
+    pub fn validate_subject(&self, subject: &[u8]) -> anyhow::Result<()> {
+        let digest = raw_to_hex_digest(&raw_digest_from_contents(subject));
+        self.validate_subject_digest(&digest)
+    }
+
+    fn validate_header(&self) -> anyhow::Result<()> {
+        ensure!(self._type == STATEMENT_TYPE, "unsupported statement type");
+        ensure!(self.predicate_type == PREDICATE_TYPE_V1, "unsupported predicate type");
+        Ok(())
+    }
+
+    /// Validates the entire endorsement statement.
+    ///
+    /// Verification of the subject digest will be skipped if the `digest`
+    /// parameter is empty.
+    pub fn validate(
+        &self,
+        digest: Option<HexDigest>,
+        verification_time: Instant,
+        required_claims: &[&str],
+    ) -> anyhow::Result<()> {
+        self.validate_header()?;
+        if let Some(d) = digest {
+            self.validate_subject_digest(&d)?;
         }
-        None => anyhow::bail!("the validity field is not set"),
+        self.predicate.validate(verification_time, required_claims)
     }
 
-    for claim_type in required_claims {
-        statement
-            .predicate
-            .claims
-            .iter()
-            .find(|k| &k.r#type == claim_type)
-            .context("required claim type not found")?;
-    }
+    /// Returns a curated view of essential data in the endorsement statement.
+    pub fn get_details(&self) -> anyhow::Result<EndorsementDetails> {
+        let digest = hex_to_raw_digest(&get_hex_digest_from_statement(self)?)?;
+        let validity = self.predicate.validity.as_ref().context("missing validity in statement")?;
+        let claims = &self.predicate.claims;
 
-    Ok(())
+        Ok(EndorsementDetails {
+            subject_digest: Some(digest),
+            valid: Some(oak_proto_rust::oak::Validity::from(validity)),
+            claim_types: claims.iter().map(|x| x.r#type.clone()).collect(),
+        })
+    }
 }
 
-fn set_digest_field_from_map_entry(
-    digest: &mut HexDigest,
-    key: &str,
-    value: &str,
-) -> anyhow::Result<()> {
-    match key {
-        "psha2" => {
-            if !digest.psha2.is_empty() {
-                anyhow::bail!("duplicate key {}", key);
+/// Checks that the endorsement predicate is valid, based on timestamp and
+/// required claims.
+impl DefaultPredicate {
+    pub fn validate(&self, current_time: Instant, required_claims: &[&str]) -> anyhow::Result<()> {
+        match &self.validity {
+            Some(validity) => {
+                if current_time < validity.not_before {
+                    anyhow::bail!("the claim is not yet applicable")
+                }
+                if validity.not_after < current_time {
+                    anyhow::bail!("the claim is no longer applicable")
+                }
             }
-            digest.psha2.push_str(value);
+            None => anyhow::bail!("the validity field is not set"),
         }
-        "sha1" => {
-            if !digest.sha1.is_empty() {
-                anyhow::bail!("duplicate key {}", key);
-            }
-            digest.sha1.push_str(value);
-        }
-        "sha256" | "sha2_256" => {
-            if !digest.sha2_256.is_empty() {
-                anyhow::bail!("duplicate key {}", key);
-            }
-            digest.sha2_256.push_str(value);
-        }
-        "sha512" | "sha2_512" => {
-            if !digest.sha2_512.is_empty() {
-                anyhow::bail!("duplicate key {}", key);
-            }
-            digest.sha2_512.push_str(value);
-        }
-        "sha3_512" => {
-            if !digest.sha3_512.is_empty() {
-                anyhow::bail!("duplicate key {}", key);
-            }
-            digest.sha3_512.push_str(value);
-        }
-        "sha3_384" => {
-            if !digest.sha3_384.is_empty() {
-                anyhow::bail!("duplicate key {}", key);
-            }
-            digest.sha3_384.push_str(value);
-        }
-        "sha3_256" => {
-            if !digest.sha3_256.is_empty() {
-                anyhow::bail!("duplicate key {}", key);
-            }
-            digest.sha3_256.push_str(value);
-        }
-        "sha3_224" => {
-            if !digest.sha3_224.is_empty() {
-                anyhow::bail!("duplicate key {}", key);
-            }
-            digest.sha3_224.push_str(value);
-        }
-        "sha384" | "sha2_384" => {
-            if !digest.sha2_384.is_empty() {
-                anyhow::bail!("duplicate key {}", key);
-            }
-            digest.sha2_384.push_str(value);
-        }
-        _ => anyhow::bail!("unknown digest key {key}"),
-    }
 
-    Ok(())
+        for claim_type in required_claims {
+            self.claims
+                .iter()
+                .find(|k| &k.r#type == claim_type)
+                .context("required claim type not found")?;
+        }
+
+        Ok(())
+    }
 }
 
 /// Returns the digest of the statement's subject.
-pub fn get_digest<T>(statement: &Statement<T>) -> anyhow::Result<HexDigest> {
+pub fn get_hex_digest_from_statement<T>(statement: &Statement<T>) -> anyhow::Result<HexDigest> {
     if statement.subject.len() != 1 {
         anyhow::bail!("expected a single subject, found {}", statement.subject.len());
     }
 
-    let mut digest = HexDigest::default();
-    statement.subject[0].digest.iter().try_fold(&mut digest, |acc, (key, value)| {
-        set_digest_field_from_map_entry(acc, key.as_str(), value.as_str())?;
-        Ok::<&mut HexDigest, anyhow::Error>(acc)
-    })?;
-
+    let digest = set_to_hex_digest(&statement.subject[0].digest)?;
     Ok(digest)
-}
-
-fn raw_digest_to_map(h: &RawDigest) -> BTreeMap<String, String> {
-    let mut map = BTreeMap::<String, String>::new();
-
-    macro_rules! insert_if_present {
-        ($field:ident) => {
-            if !h.$field.is_empty() {
-                map.insert(stringify!($field).into(), hex::encode(&h.$field));
-            }
-        };
-    }
-
-    insert_if_present!(psha2);
-    insert_if_present!(sha1);
-    insert_if_present!(sha2_256);
-    insert_if_present!(sha2_512);
-    insert_if_present!(sha3_512);
-    insert_if_present!(sha3_384);
-    insert_if_present!(sha3_256);
-    insert_if_present!(sha3_224);
-    insert_if_present!(sha2_384);
-
-    map
-}
-
-#[cfg(test)]
-mod tests {
-    extern crate std;
-    use std::fs;
-
-    use oak_file_utils::data_path;
-    use oak_time::Instant;
-
-    use super::{get_digest, parse_statement, Validity};
-
-    const ENDORSEMENT_PATH: &str = "oak_attestation_verification/testdata/endorsement.json";
-
-    // Minimum supported value for Timestamp: 0001-01-01 00:00:00.0 +00:00:00.
-    const MIN_VALUE_MILLIS: i64 = -62_135_596_800_000;
-    const MIN_VALUE_NANOS: i128 = 1_000_000 * MIN_VALUE_MILLIS as i128;
-
-    // Maximum supported value for Timestamp: 9999-12-31 23:59:59.0 +00:00:00
-    const MAX_VALUE_MILLIS: i64 = 253_402_300_799_000;
-    const MAX_VALUE_NANOS: i128 = 1_000_000 * MAX_VALUE_MILLIS as i128;
-
-    #[test]
-    fn test_get_digest() {
-        let endorsement = fs::read(data_path(ENDORSEMENT_PATH)).expect("couldn't read endorsement");
-        let statement = parse_statement(&endorsement).expect("couldn't parse statement");
-        let digest = get_digest(&statement).expect("failed to get digest from claim");
-
-        assert_eq!(
-            digest.sha2_256,
-            "18c34d8cc737fb5709a99acb073cdc5ed8a404503f626cea6e0bad0a406002fc"
-        );
-    }
-
-    #[test]
-    fn test_convert_validity_left_min() {
-        let expected = Validity {
-            not_before: Instant::from_unix_nanos(MIN_VALUE_NANOS),
-            not_after: Instant::from_unix_nanos(0),
-        };
-        let proto = oak_proto_rust::oak::Validity::from(&expected);
-        let actual = Validity::try_from(&proto).expect("failed to convert");
-        assert_eq!(expected, actual);
-    }
-
-    #[test]
-    fn test_convert_validity_left_max() {
-        let expected = Validity {
-            not_before: Instant::from_unix_nanos(0),
-            not_after: Instant::from_unix_nanos(MAX_VALUE_NANOS),
-        };
-        let proto = oak_proto_rust::oak::Validity::from(&expected);
-        let actual = Validity::try_from(&proto).expect("failed to convert");
-        assert_eq!(expected, actual);
-    }
-
-    #[test]
-    fn test_convert_validity_right_min() {
-        let expected: oak_proto_rust::oak::Validity = oak_proto_rust::oak::Validity {
-            not_before: Some(Instant::from_unix_millis(MIN_VALUE_MILLIS).into_timestamp()),
-            not_after: Some(Instant::from_unix_millis(0).into_timestamp()),
-        };
-        let statement = Validity::try_from(&expected).expect("failed to convert");
-        let actual = oak_proto_rust::oak::Validity::from(&statement);
-        assert_eq!(expected, actual);
-    }
-
-    #[test]
-    fn test_convert_validity_right_max() {
-        let expected: oak_proto_rust::oak::Validity = oak_proto_rust::oak::Validity {
-            not_before: Some(Instant::from_unix_millis(0).into_timestamp()),
-            not_after: Some(Instant::from_unix_millis(MAX_VALUE_MILLIS).into_timestamp()),
-        };
-        let statement = Validity::try_from(&expected).expect("failed to convert");
-        let actual = oak_proto_rust::oak::Validity::from(&statement);
-        assert_eq!(expected, actual);
-    }
 }

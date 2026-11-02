@@ -53,7 +53,8 @@ std::unique_ptr<SecureChannel> SecureChannelImpl::FactoryImpl::Create(
       std::make_unique<WebSocketClient>(url_, network_context_, logger_);
   auto secure_session =
       std::make_unique<SecureSessionAsyncImpl>(oak_session_driver_);
-  auto attestation_handler = std::make_unique<AttestationHandlerImpl>(logger_);
+  auto attestation_handler =
+      std::make_unique<AttestationHandlerImpl>(url_, logger_);
 
   return std::make_unique<SecureChannelImpl>(
       std::move(on_established), std::move(callback), std::move(transport),
@@ -138,7 +139,7 @@ void SecureChannelImpl::OnResponseReceived(
                                          static_cast<int>(response.error()),
                                          static_cast<int>(state_)));
 
-    StatusCode status_code = StatusCode::kError;
+    StatusCode status_code = StatusCode::kUnexpectedTransportError;
     switch (state_) {
       case State::kPerformingAttestation:
         status_code = StatusCode::kAttestationFailed;
@@ -147,7 +148,10 @@ void SecureChannelImpl::OnResponseReceived(
         status_code = StatusCode::kHandshakeFailed;
         break;
       case State::kEstablished:
-        status_code = StatusCode::kNetworkError;
+        status_code =
+            response.error() == Transport::TransportError::kSocketClosed
+                ? StatusCode::kConnectionClosedByServer
+                : StatusCode::kNetworkError;
         break;
       case State::kWaitingHandshakeMessage:
       case State::kVerifyingHandshake:

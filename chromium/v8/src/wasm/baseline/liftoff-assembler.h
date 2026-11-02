@@ -610,6 +610,12 @@ class LiftoffAssembler : public MacroAssembler {
     if (size > ool_spill_space_size_) ool_spill_space_size_ = size;
   }
 
+  void RecordPushedCallArgs(int slots) {
+    if (slots > max_pushed_argument_slots_) {
+      max_pushed_argument_slots_ = slots;
+    }
+  }
+
   // Load parameters into the right registers / stack slots for the call.
   void PrepareBuiltinCall(const ValueKindSig* sig,
                           compiler::CallDescriptor* call_descriptor,
@@ -694,7 +700,15 @@ class LiftoffAssembler : public MacroAssembler {
   inline Register LoadOldFramePointer();
   inline void CheckStackShrink();
   inline void LoadConstant(LiftoffRegister, WasmValue);
+
+  inline void PrepareDebugTrap(MessageTemplate message);
   inline void LoadInstanceDataFromFrame(Register dst);
+  inline void LoadMemoryStart(Register dst, Register instance_data,
+                              int mem_index);
+  inline void RestoreCachedRegisters(Register instance_data,
+                                     bool reload_instance_data,
+                                     Register mem_start, bool reload_mem_start,
+                                     int mem_index);
   inline void LoadTrustedPointer(Register dst, Register src_addr, int offset,
                                  IndirectPointerTag tag);
   inline void LoadFromInstance(Register dst, Register instance, int offset,
@@ -820,7 +834,7 @@ class LiftoffAssembler : public MacroAssembler {
       LiftoffRegister result, uint32_t* trapping_load_pc,
       LiftoffRegList pinned);
 
-  inline void AtomicFence();
+  inline void AtomicFence(AtomicMemoryOrder order);
   inline void Pause();
 
   inline void LoadCallerFrameSlot(LiftoffRegister, uint32_t caller_slot_idx,
@@ -939,6 +953,18 @@ class LiftoffAssembler : public MacroAssembler {
                            Register amount);
   inline void emit_i64_shri(LiftoffRegister dst, LiftoffRegister src,
                             int32_t amount);
+
+#if V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_LOONG64 || \
+    V8_TARGET_ARCH_MIPS64
+  inline void emit_i64_rol(LiftoffRegister dst, LiftoffRegister src,
+                           Register amount);
+  inline void emit_i64_roli(LiftoffRegister dst, LiftoffRegister src,
+                            int32_t amount);
+  inline void emit_i64_ror(LiftoffRegister dst, LiftoffRegister src,
+                           Register amount);
+  inline void emit_i64_rori(LiftoffRegister dst, LiftoffRegister src,
+                            int32_t amount);
+#endif
 
   // i64 unops.
   inline void emit_i64_clz(LiftoffRegister dst, LiftoffRegister src);
@@ -1609,9 +1635,7 @@ class LiftoffAssembler : public MacroAssembler {
 
   inline void CallNativeWasmCode(Address addr);
   inline void TailCallNativeWasmCode(Address addr);
-  // Indirect call: If {target == no_reg}, then pop the target from the stack.
-  inline void CallIndirect(const ValueKindSig* sig,
-                           compiler::CallDescriptor* call_descriptor,
+  inline void CallIndirect(compiler::CallDescriptor* call_descriptor,
                            Register target);
   inline void TailCallIndirect(compiler::CallDescriptor* call_descriptor,
                                Register target);
@@ -1621,8 +1645,11 @@ class LiftoffAssembler : public MacroAssembler {
   inline void AllocateStackSlot(Register addr, uint32_t size);
   inline void DeallocateStackSlot(uint32_t size);
 
+#if V8_TARGET_ARCH_X64
   // Instrumentation for shadow-stack-compatible OSR on x64.
   inline void MaybeOSR();
+  inline void AssertOSREmpty();
+#endif
 
   inline bool supports_f16_mem_access();
 
@@ -1654,7 +1681,7 @@ class LiftoffAssembler : public MacroAssembler {
   CacheState* cache_state() { return &cache_state_; }
   const CacheState* cache_state() const { return &cache_state_; }
 
-  bool did_bailout() { return bailout_reason_ != kSuccess; }
+  bool did_bailout() { return bailout_reason_ != kNoReason; }
   LiftoffBailoutReason bailout_reason() const { return bailout_reason_; }
   const char* bailout_detail() const { return bailout_detail_; }
 
@@ -1683,7 +1710,9 @@ class LiftoffAssembler : public MacroAssembler {
   int max_used_spill_offset_ = StaticStackFrameSize();
   // The amount of memory needed for register spills in OOL code.
   int ool_spill_space_size_ = 0;
-  LiftoffBailoutReason bailout_reason_ = kSuccess;
+  // The maximum number of stack slots used for pushed call arguments.
+  int max_pushed_argument_slots_ = 0;
+  LiftoffBailoutReason bailout_reason_ = kNoReason;
   const char* bailout_detail_ = nullptr;
 };
 

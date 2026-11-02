@@ -121,7 +121,7 @@ enum xnn_status create_average_pooling2d_nhwc(
   return xnn_status_success;
 }
 
-enum xnn_status xnn_create_average_pooling2d_nhwc_f16(
+XNN_NO_SANITIZE_FUNCTION enum xnn_status xnn_create_average_pooling2d_nhwc_f16(
     uint32_t input_padding_top,
     uint32_t input_padding_right,
     uint32_t input_padding_bottom,
@@ -214,7 +214,7 @@ error:
   return status;
 }
 
-enum xnn_status xnn_create_average_pooling2d_nhwc_f32(
+XNN_NO_SANITIZE_FUNCTION enum xnn_status xnn_create_average_pooling2d_nhwc_f32(
     uint32_t input_padding_top,
     uint32_t input_padding_right,
     uint32_t input_padding_bottom,
@@ -398,9 +398,9 @@ static XNN_NO_SANITIZE_FUNCTION enum xnn_status reshape_average_pooling2d(
     const uint32_t kernel_height = average_pooling_op->convolution_op->kernel_height;
     const uint32_t kernel_width = average_pooling_op->convolution_op->kernel_width;
     const uint32_t total_padding_height =
-      (average_pooling_op->convolution_op->output_height - 1) * average_pooling_op->convolution_op->stride_height + kernel_height - input_height;
+      doz((average_pooling_op->convolution_op->output_height - 1) * average_pooling_op->convolution_op->stride_height + kernel_height, input_height);
     const uint32_t total_padding_width =
-      (average_pooling_op->convolution_op->output_width - 1) * average_pooling_op->convolution_op->stride_width + kernel_width - input_width;
+      doz((average_pooling_op->convolution_op->output_width - 1) * average_pooling_op->convolution_op->stride_width + kernel_width, input_width);
     average_pooling_op->convolution_op->padding_top = total_padding_height / 2;
     average_pooling_op->convolution_op->padding_left = total_padding_width / 2;
     average_pooling_op->convolution_op->padding_bottom = total_padding_height - average_pooling_op->convolution_op->padding_top;
@@ -429,17 +429,51 @@ static XNN_NO_SANITIZE_FUNCTION enum xnn_status reshape_average_pooling2d(
   const size_t output_width = average_pooling_op->convolution_op->output_width;
   const size_t pooling_height = average_pooling_op->convolution_op->kernel_height;
   const size_t pooling_width = average_pooling_op->convolution_op->kernel_width;
-  const size_t pooling_size = pooling_height * pooling_width;
+  size_t pooling_size = 0;
+  if (!xnn_safe_mul(pooling_height, pooling_width, &pooling_size)) {
+    xnn_log_error(
+        "failed to reshape %s operator: indirection buffer size overflows for "
+        "%zux%zu pooling size",
+        xnn_operator_type_to_string_v2(average_pooling_op), pooling_width,
+        pooling_height);
+    return xnn_status_out_of_memory;
+  }
 
   const size_t step_width = min(average_pooling_op->convolution_op->stride_width, pooling_width);
-  const size_t step_height = pooling_size + (output_width - 1) * step_width * pooling_height;
+  size_t step_height = 0;
+  size_t step_height_increment = 0;
+  if (!xnn_safe_mul(output_width - 1, step_width, &step_height_increment) ||
+      !xnn_safe_mul(step_height_increment, pooling_height,
+                    &step_height_increment) ||
+      !xnn_safe_add(pooling_size, step_height_increment, &step_height)) {
+    xnn_log_error(
+        "failed to reshape %s operator: indirection buffer size overflows for "
+        "%zux%zu output and %zux%zu pooling size",
+        xnn_operator_type_to_string_v2(average_pooling_op), output_width,
+        output_height, pooling_width, pooling_height);
+    return xnn_status_out_of_memory;
+  }
 
   const size_t indirect_top_height = divide_round_up(average_pooling_op->convolution_op->padding_top, average_pooling_op->convolution_op->stride_height);
   const size_t indirect_bot_height = divide_round_up(average_pooling_op->convolution_op->padding_bottom, average_pooling_op->convolution_op->stride_height);
 
   if (input_size_changed) {
     const size_t indirection_buffer_output_height = (indirect_top_height + indirect_bot_height + 1);
-    const size_t indirection_buffer_size = sizeof(void*) * ((pooling_size - 1) + indirection_buffer_output_height * step_height);
+    size_t indirection_buffer_elements = 0;
+    size_t indirection_buffer_size = 0;
+    if (!xnn_safe_mul(indirection_buffer_output_height, step_height,
+                      &indirection_buffer_elements) ||
+        !xnn_safe_add(pooling_size - 1, indirection_buffer_elements,
+                      &indirection_buffer_elements) ||
+        !xnn_safe_mul(indirection_buffer_elements, sizeof(void*),
+                      &indirection_buffer_size)) {
+      xnn_log_error(
+          "failed to reshape %s operator: indirection buffer size overflows "
+          "for %zux%zu output and %zux%zu pooling size",
+          xnn_operator_type_to_string_v2(average_pooling_op), output_width,
+          output_height, pooling_width, pooling_height);
+      return xnn_status_out_of_memory;
+    }
 
     const void** indirection_buffer =
       (const void**) xnn_reallocate_memory(average_pooling_op->convolution_op->indirection_buffer, indirection_buffer_size);

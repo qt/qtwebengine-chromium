@@ -14,7 +14,6 @@
 
 #include "src/reconstruction.h"
 
-#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <vector>
@@ -22,14 +21,12 @@
 #include "absl/strings/match.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "src/dsp/constants.h"
 #include "src/dsp/dsp.h"
 #include "src/dsp/inverse_transform.h"
 #include "src/utils/array_2d.h"
 #include "src/utils/common.h"
 #include "src/utils/constants.h"
 #include "src/utils/cpu.h"
-#include "src/utils/memory.h"
 #include "tests/block_utils.h"
 #include "tests/utils.h"
 

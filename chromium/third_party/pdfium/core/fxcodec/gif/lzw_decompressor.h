@@ -76,7 +76,7 @@ class LZWDecompressor {
   pdfium::span<const uint8_t> avail_input_;
   uint8_t bits_left_ = 0;
   uint32_t code_store_ = 0;
-  std::array<CodeEntry, GIF_MAX_LZW_CODE> code_table_;
+  std::array<CodeEntry, kGifMaxLzwCode> code_table_;
 };
 
 }  // namespace fxcodec

@@ -4,7 +4,6 @@
 
 import type * as Platform from '../../../core/platform/platform.js';
 import type * as Protocol from '../../../generated/protocol.js';
-import * as Annotations from '../../annotations/annotations.js';
 import * as CrUXManager from '../../crux-manager/crux-manager.js';
 import type * as SourceMapScopes from '../../source_map_scopes/source_map_scopes.js';
 import * as Trace from '../../trace/trace.js';
@@ -40,12 +39,29 @@ export class PerformanceTraceFormatter {
       (url: Platform.DevToolsPath.UrlString, line: number,
        column: number) => Promise<SourceMapScopes.FunctionCodeResolver.FunctionCode|null>;
 
-  constructor(focus: AgentFocus, deviceScope: CrUXManager.DeviceScope|null = null) {
+  readonly #cruxManager: CrUXManager.CrUXManager|null;
+
+  constructor(
+      focus: AgentFocus,
+      deviceScope: CrUXManager.DeviceScope|null = null,
+      cruxManager?: CrUXManager.CrUXManager,
+  ) {
     this.#focus = focus;
     this.#parsedTrace = focus.parsedTrace;
     this.#insightSet = focus.primaryInsightSet;
     this.#eventsSerializer = focus.eventsSerializer;
     this.#deviceScope = deviceScope;
+    if (cruxManager) {
+      this.#cruxManager = cruxManager;
+    } else {
+      // In environments outside DevTools (like the MCP server or some tests),
+      // CrUXManager.instance() can fail due to uninitialized global settings/storage.
+      try {
+        this.#cruxManager = CrUXManager.CrUXManager.instance();
+      } catch {
+        this.#cruxManager = null;
+      }
+    }
   }
 
   serializeEvent(event: Trace.Types.Events.Event): string {
@@ -66,8 +82,14 @@ export class PerformanceTraceFormatter {
       return [];
     }
     try {
-      const cruxScope: CrUXManager.Scope = this.#deviceScope ? {pageScope: 'url', deviceScope: this.#deviceScope} :
-                                                               CrUXManager.CrUXManager.instance().getSelectedScope();
+      let cruxScope: CrUXManager.Scope;
+      if (this.#deviceScope) {
+        cruxScope = {pageScope: 'url', deviceScope: this.#deviceScope};
+      } else if (this.#cruxManager) {
+        cruxScope = this.#cruxManager.getSelectedScope();
+      } else {
+        return [];
+      }
       const parts: string[] = [];
       const fieldMetrics =
           Trace.Insights.Common.getFieldMetricsForInsightSet(insightSet, this.#parsedTrace.metadata, cruxScope);
@@ -186,16 +208,6 @@ export class PerformanceTraceFormatter {
         if (cls) {
           const eventText = cls.worstClusterEvent ? `, event: ${this.serializeEvent(cls.worstClusterEvent)}` : '';
           parts.push(`  - CLS: ${cls.value.toFixed(2)}${eventText}`);
-
-          if (Annotations.AnnotationRepository.annotationsEnabled()) {
-            const worstClusterEvent = cls.worstClusterEvent as Trace.Types.Events.SyntheticLayoutShiftCluster;
-            const layoutShiftData =
-                worstClusterEvent?.worstShiftEvent?.args?.data as Trace.Types.Events.LayoutShiftData;
-            if (layoutShiftData?.impacted_nodes && layoutShiftData.impacted_nodes?.length > 0) {
-              Annotations.AnnotationRepository.instance().addElementsAnnotation(
-                  'This element is impacted by a layout shift', layoutShiftData.impacted_nodes[0].node_id.toString());
-            }
-          }
         }
       } else {
         parts.push('Metrics (lab / observed): n/a');
@@ -237,6 +249,22 @@ export class PerformanceTraceFormatter {
         }
         const insightPartsText = insightParts.join('\n    ');
         parts.push(`  - ${insightPartsText}`);
+      }
+    }
+
+    const extensionTrackData = parsedTrace.data.ExtensionTraceData?.extensionTrackData;
+    if (extensionTrackData && extensionTrackData.length > 0) {
+      parts.push('\n# Custom tracks\n');
+      parts.push('The following is a list of custom tracks or track groups from the extensibility API.');
+      for (const trackData of extensionTrackData) {
+        if (trackData.isTrackGroup) {
+          parts.push(`\n## Group: ${trackData.name}\n`);
+          for (const trackName of Object.keys(trackData.entriesByTrack)) {
+            parts.push(`  - Track: ${trackName}`);
+          }
+        } else {
+          parts.push(`\n## Track: ${trackData.name}\n`);
+        }
       }
     }
 
@@ -518,6 +546,56 @@ export class PerformanceTraceFormatter {
     return results.join('\n\n');
   }
 
+  formatExtensionTrackSummary(bounds: Trace.Types.Timing.TraceWindowMicro): string {
+    const extensionTrackData = this.#parsedTrace.data.ExtensionTraceData?.extensionTrackData;
+    if (!extensionTrackData || extensionTrackData.length === 0) {
+      return 'No custom track activity found';
+    }
+
+    const results: string[] = [];
+
+    for (const trackData of extensionTrackData) {
+      const trackLines: string[] = [];
+      const header = trackData.isTrackGroup ? `# Track Group: ${trackData.name}` : `# Track: ${trackData.name}`;
+      trackLines.push(header);
+
+      let hasEntriesInBounds = false;
+      for (const trackName of Object.keys(trackData.entriesByTrack)) {
+        const entries = trackData.entriesByTrack[trackName];
+        const filteredEntries = entries.filter(entry => Trace.Helpers.Timing.eventIsInBounds(entry, bounds));
+        if (filteredEntries.length === 0) {
+          continue;
+        }
+        hasEntriesInBounds = true;
+        if (trackData.isTrackGroup) {
+          trackLines.push(`## Track: ${trackName}`);
+        }
+        for (const entry of filteredEntries) {
+          const entryKey = this.serializeEvent(entry);
+          const parts = [
+            `Name: ${entry.name}`,
+            `eventKey: ${entryKey}`,
+            `duration: ${micros(entry.dur ?? Trace.Types.Timing.Micro(0))}`,
+          ];
+          if (entry.devtoolsObj.properties) {
+            const props = entry.devtoolsObj.properties.map(prop => `${prop[0]}: ${JSON.stringify(prop[1])}`).join(', ');
+            parts.push(`properties: {${props}}`);
+          }
+          trackLines.push(`- ${parts.join(', ')}`);
+        }
+      }
+      if (hasEntriesInBounds) {
+        results.push(trackLines.join('\n'));
+      }
+    }
+
+    if (results.length === 0) {
+      return 'No custom track activity found in the given bounds';
+    }
+
+    return results.join('\n\n');
+  }
+
   async formatCallTree(tree: AICallTree, headerLevel = 1): Promise<string> {
     let result = `${tree.serialize(headerLevel)}\n\nIMPORTANT: Never show eventKey to the user.\n`;
 
@@ -601,7 +679,6 @@ export class PerformanceTraceFormatter {
       string {
     const {
       url,
-      requestId,
       statusCode,
       initialPriority,
       priority,
@@ -609,7 +686,7 @@ export class PerformanceTraceFormatter {
       mimeType,
       responseHeaders,
       syntheticData,
-      protocol
+      protocol,
     } = request.args.data;
     const parsedTrace = this.#parsedTrace;
 
@@ -662,8 +739,7 @@ export class PerformanceTraceFormatter {
     const eventKey = this.#eventsSerializer.keyForEvent(request);
     const eventKeyLine = eventKey ? `eventKey: ${eventKey}\n` : '';
 
-    return `${titlePrefix}: ${url}${
-        Annotations.AnnotationRepository.annotationsEnabled() ? `\nrequestId: ${requestId}` : ''}
+    return `${titlePrefix}: ${url}
 ${eventKeyLine}Timings:
 - Queued at: ${micros(startTimesForLifecycle.queuedAt)}
 - Request sent at: ${micros(startTimesForLifecycle.requestSentAt)}
@@ -889,7 +965,7 @@ The order of headers corresponds to an internal fixed list. If a header is not p
       startLine: contextStartLine,
       startColumn: contextStartColumn,
       endLine: contextEndLine,
-      endColumn: contextEndColumn
+      endColumn: contextEndColumn,
     } = code.rangeWithContext;
     const name = code.functionBounds.name || '(anonymous)';
     const url = code.functionBounds.uiSourceCode.url();

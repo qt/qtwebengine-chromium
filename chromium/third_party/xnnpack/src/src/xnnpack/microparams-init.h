@@ -174,6 +174,10 @@ XNN_INTERNAL size_t xnn_init_f32_qb4w_minmax_scalar_params(
     struct xnn_f32_qb4w_minmax_params* params, float output_min,
     float output_max, uint8_t kernel_zero_point, size_t blocksize);
 
+XNN_INTERNAL size_t xnn_init_bf16_qb4w_minmax_scalar_params(
+    struct xnn_bf16_qb4w_minmax_params* params, float output_min,
+    float output_max, uint8_t kernel_zero_point, size_t blocksize);
+
 #define DECLARE_INIT_UNARY_MICROPARAMS_FUNCTION(fn_name)        \
   XNN_INTERNAL size_t fn_name(                                  \
       union xnn_unary_uparams* microparams,                     \
@@ -193,6 +197,7 @@ DECLARE_INIT_UNARY_MICROPARAMS_FUNCTION(xnn_init_qs8_clamp_scalar_params);
 DECLARE_INIT_UNARY_MICROPARAMS_FUNCTION(xnn_init_qu8_clamp_scalar_params);
 
 DECLARE_INIT_UNARY_MICROPARAMS_FUNCTION(xnn_init_bf16_qs8_cvt_scalar_params);
+DECLARE_INIT_UNARY_MICROPARAMS_FUNCTION(xnn_init_bf16_qu8_cvt_scalar_params);
 DECLARE_INIT_UNARY_MICROPARAMS_FUNCTION(xnn_init_f16_qs8_cvt_scalar_params);
 DECLARE_INIT_UNARY_MICROPARAMS_FUNCTION(xnn_init_f16_qu8_cvt_scalar_params);
 DECLARE_INIT_UNARY_MICROPARAMS_FUNCTION(xnn_init_f32_qs8_cvt_scalar_params);

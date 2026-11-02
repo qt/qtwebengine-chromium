@@ -32,6 +32,8 @@
 #include "src/webp/format_constants.h"
 #include "src/webp/types.h"
 
+WEBP_ASSUME_UNSAFE_INDEXABLE_ABI
+
 //------------------------------------------------------------------------------
 
 int WebPGetDecoderVersion(void) {
@@ -61,7 +63,7 @@ int VP8InitIoInternal(VP8Io* const io, int version) {
     return 0;  // mismatch error
   }
   if (io != NULL) {
-    memset(io, 0, sizeof(*io));
+    WEBP_UNSAFE_MEMSET(io, 0, sizeof(*io));
   }
   return 1;
 }
@@ -111,13 +113,14 @@ int VP8SetError(VP8Decoder* const dec, VP8StatusCode error,
 
 //------------------------------------------------------------------------------
 
-int VP8CheckSignature(const uint8_t* const data, size_t data_size) {
+int VP8CheckSignature(const uint8_t* const WEBP_COUNTED_BY(data_size) data,
+                      size_t data_size) {
   return (data_size >= 3 && data[0] == 0x9d && data[1] == 0x01 &&
           data[2] == 0x2a);
 }
 
-int VP8GetInfo(const uint8_t* data, size_t data_size, size_t chunk_size,
-               int* const width, int* const height) {
+int VP8GetInfo(const uint8_t* WEBP_COUNTED_BY(data_size) data, size_t data_size,
+               size_t chunk_size, int* const width, int* const height) {
   if (data == NULL || data_size < VP8_FRAME_HEADER_SIZE) {
     return 0;  // not enough data
   }
@@ -166,8 +169,8 @@ static void ResetSegmentHeader(VP8SegmentHeader* const hdr) {
   hdr->use_segment = 0;
   hdr->update_map = 0;
   hdr->absolute_delta = 1;
-  memset(hdr->quantizer, 0, sizeof(hdr->quantizer));
-  memset(hdr->filter_strength, 0, sizeof(hdr->filter_strength));
+  WEBP_UNSAFE_MEMSET(hdr->quantizer, 0, sizeof(hdr->quantizer));
+  WEBP_UNSAFE_MEMSET(hdr->filter_strength, 0, sizeof(hdr->filter_strength));
 }
 
 // Paragraph 9.3
@@ -216,12 +219,13 @@ static int ParseSegmentHeader(VP8BitReader* br, VP8SegmentHeader* hdr,
 // If we don't even have the partitions' sizes, then VP8_STATUS_NOT_ENOUGH_DATA
 // is returned, and this is an unrecoverable error.
 // If the partitions were positioned ok, VP8_STATUS_OK is returned.
-static VP8StatusCode ParsePartitions(VP8Decoder* const dec, const uint8_t* buf,
+static VP8StatusCode ParsePartitions(VP8Decoder* const dec,
+                                     const uint8_t* WEBP_COUNTED_BY(size) buf,
                                      size_t size) {
   VP8BitReader* const br = &dec->br;
-  const uint8_t* sz = buf;
+  const uint8_t* WEBP_BIDI_INDEXABLE sz = buf;
   const uint8_t* buf_end = buf + size;
-  const uint8_t* part_start;
+  const uint8_t* WEBP_BIDI_INDEXABLE part_start;
   size_t size_left = size;
   size_t last_part;
   size_t p;
@@ -277,8 +281,8 @@ static int ParseFilterHeader(VP8BitReader* br, VP8Decoder* const dec) {
 
 // Topmost call
 int VP8GetHeaders(VP8Decoder* const dec, VP8Io* const io) {
-  const uint8_t* buf;
   size_t buf_size;
+  const uint8_t* WEBP_COUNTED_BY(buf_size) buf;
   VP8FrameHeader* frm_hdr;
   VP8PictureHeader* pic_hdr;
   VP8BitReader* br;
@@ -292,8 +296,9 @@ int VP8GetHeaders(VP8Decoder* const dec, VP8Io* const io) {
     return VP8SetError(dec, VP8_STATUS_INVALID_PARAM,
                        "null VP8Io passed to VP8GetHeaders()");
   }
-  buf = io->data;
   buf_size = io->data_size;
+  buf =
+      WEBP_UNSAFE_FORGE_BIDI_INDEXABLE(const uint8_t*, io->data, io->data_size);
   if (buf_size < 4) {
     return VP8SetError(dec, VP8_STATUS_NOT_ENOUGH_DATA, "Truncated header.");
   }
@@ -540,7 +545,7 @@ static int ParseResiduals(VP8Decoder* const dec, VP8MB* const mb,
   uint32_t out_t_nz, out_l_nz;
   int first;
 
-  memset(dst, 0, 384 * sizeof(*dst));
+  WEBP_UNSAFE_MEMSET(dst, 0, 384 * sizeof(*dst));
   if (!block->is_i4x4) {  // parse DC
     int16_t dc[16] = {0};
     const int ctx = mb->nz_dc + left_mb->nz_dc;
@@ -650,7 +655,7 @@ void VP8InitScanline(VP8Decoder* const dec) {
   VP8MB* const left = dec->mb_info - 1;
   left->nz = 0;
   left->nz_dc = 0;
-  memset(dec->intra_l, B_DC_PRED, sizeof(dec->intra_l));
+  WEBP_UNSAFE_MEMSET(dec->intra_l, B_DC_PRED, sizeof(dec->intra_l));
   dec->mb_x = 0;
 }
 
@@ -732,7 +737,7 @@ void VP8Clear(VP8Decoder* const dec) {
   WebPSafeFree(dec->mem);
   dec->mem = NULL;
   dec->mem_size = 0;
-  memset(&dec->br, 0, sizeof(dec->br));
+  WEBP_UNSAFE_MEMSET(&dec->br, 0, sizeof(dec->br));
   dec->ready = 0;
 }
 

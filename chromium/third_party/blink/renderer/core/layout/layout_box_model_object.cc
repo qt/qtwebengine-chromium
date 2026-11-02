@@ -52,6 +52,7 @@
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/style/computed_style_base_constants.h"
+#include "third_party/blink/renderer/core/style/fill_layer.h"
 #include "third_party/blink/renderer/core/style/shadow_list.h"
 #include "third_party/blink/renderer/platform/geometry/length_functions.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
@@ -83,9 +84,8 @@ bool NeedsAnchorPositionScrollData(Element& element,
   if (!style.HasOutOfFlowPosition()) {
     return false;
   }
-  const StylePositionAnchor& position_anchor = style.PositionAnchor();
   using Type = StylePositionAnchor::Type;
-  switch (position_anchor.GetType()) {
+  switch (style.GetDefaultAnchorData().GetType()) {
     case Type::kNone:
       return false;
     case Type::kAuto:
@@ -95,6 +95,8 @@ bool NeedsAnchorPositionScrollData(Element& element,
     case Type::kName:
       // There's an explicitly set default anchor.
       return true;
+    case Type::kNormal:
+      NOTREACHED();
   }
 }
 
@@ -107,11 +109,6 @@ LayoutBoxModelObject::~LayoutBoxModelObject() = default;
 
 void LayoutBoxModelObject::WillBeDestroyed() {
   NOT_DESTROYED();
-
-  GetDocument()
-      .GetFrame()
-      ->GetInputMethodController()
-      .LayoutObjectWillBeDestroyed(*this);
 
   LayoutObject::WillBeDestroyed();
 
@@ -193,6 +190,11 @@ void LayoutBoxModelObject::StyleDidChange(
         ClearStickyConstraints(remove_axes);
       }
     }
+  }
+
+  if (RuntimeEnabledFeatures::AnnotationSpaceOnStartEnabled() &&
+      StyleRef().GetTextEmphasisMark() != TextEmphasisMark::kNone) {
+    View()->SetContainsAnnotations();
   }
 
   PaintLayerType type = LayerTypeRequired();
@@ -467,6 +469,23 @@ bool LayoutBoxModelObject::ShouldBeHandledAsInline(
   // anonymous <table> is not created, and the LayoutObject should adjust
   // IsInline flag for inlinifying.
   return style.IsInInlinifyingDisplay() && !IsTablePart();
+}
+
+void LayoutBoxModelObject::ImageChanged(WrappedImagePtr image,
+                                        CanDeferInvalidation) {
+  NOT_DESTROYED();
+  for (const FillLayer* layer = &StyleRef().MaskLayers(); layer;
+       layer = layer->Next()) {
+    if (layer->GetImage() && image == layer->GetImage()->Data()) {
+      // Since an invalid <mask> reference does not yield a paint property
+      // (see CSSMaskPainter), we need to update paint properties when such a
+      // reference changes.
+      SetNeedsPaintPropertyUpdate();
+      SetShouldDoFullPaintInvalidationWithoutLayoutChange(
+          PaintInvalidationReason::kImage);
+      break;
+    }
+  }
 }
 
 void LayoutBoxModelObject::UpdateFromStyle() {

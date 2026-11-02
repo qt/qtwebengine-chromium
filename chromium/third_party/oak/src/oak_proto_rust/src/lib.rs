@@ -20,12 +20,19 @@
 // TODO: b/333064338 - Remove this crate once we've stopped using cargo.
 
 #![cfg_attr(not(feature = "std"), no_std)]
-#![feature(never_type)]
 
 macro_rules! include_proto {
     ($package: tt) => {
         include!(concat!(env!("OUT_DIR"), concat!("/", $package, ".rs")));
     };
+}
+
+pub mod google {
+    pub mod pes {
+        pub mod v1 {
+            include_proto!("google.pes.v1");
+        }
+    }
 }
 
 pub mod perftools {
@@ -48,28 +55,6 @@ pub mod oak {
     pub mod attestation {
         pub mod v1 {
             include_proto!("oak.attestation.v1");
-            extern crate alloc;
-            use alloc::{format, string::String};
-
-            use prost::Name;
-
-            const PACKAGE: &str = "oak.attestation.v1";
-
-            /// Compute the type URL for the given `oak.attestation.v1` type,
-            /// using `type.googleapis.com` as the authority for the
-            /// URL.
-            fn type_url_for<T: Name>() -> String {
-                format!("type.googleapis.com/{}.{}", T::PACKAGE, T::NAME)
-            }
-
-            impl Name for Stage0Measurements {
-                const PACKAGE: &'static str = PACKAGE;
-                const NAME: &'static str = "Stage0Measurements";
-
-                fn type_url() -> String {
-                    type_url_for::<Self>()
-                }
-            }
         }
     }
 
@@ -78,10 +63,6 @@ pub mod oak {
         pub mod v1 {
             include_proto!("oak.containers.v1");
         }
-    }
-
-    pub mod ctf_sha2 {
-        include_proto!("oak.ctf_sha2");
     }
 
     pub mod debug {
@@ -119,12 +100,6 @@ pub mod oak {
         }
     }
 
-    pub mod key_provisioning {
-        pub mod v1 {
-            include_proto!("oak.key_provisioning.v1");
-        }
-    }
-
     pub mod packages {
         include_proto!("oak.packages");
     }
@@ -138,5 +113,9 @@ pub mod oak {
             #![allow(dead_code)]
             include_proto!("oak.session.v1");
         }
+    }
+
+    pub mod verity {
+        include_proto!("oak.verity");
     }
 }

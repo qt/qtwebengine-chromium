@@ -836,6 +836,12 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo* pCreateInfo, DeviceFeatu
                 features->videoMaintenance2 |= enabled->videoMaintenance2 == VK_TRUE;
                 break;
             }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_FEEDBACK_2_FEATURES_KHR: {
+                const VkPhysicalDeviceVideoEncodeFeedback2FeaturesKHR* enabled =
+                    reinterpret_cast<const VkPhysicalDeviceVideoEncodeFeedback2FeaturesKHR*>(pNext);
+                features->videoEncodeFeedback2 |= enabled->videoEncodeFeedback2 == VK_TRUE;
+                break;
+            }
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLAMP_ZERO_ONE_FEATURES_KHR: {
                 const VkPhysicalDeviceDepthClampZeroOneFeaturesKHR* enabled =
                     reinterpret_cast<const VkPhysicalDeviceDepthClampZeroOneFeaturesKHR*>(pNext);
@@ -872,6 +878,12 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo* pCreateInfo, DeviceFeatu
                 const VkPhysicalDeviceMaintenance11FeaturesKHR* enabled =
                     reinterpret_cast<const VkPhysicalDeviceMaintenance11FeaturesKHR*>(pNext);
                 features->maintenance11 |= enabled->maintenance11 == VK_TRUE;
+                break;
+            }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_FLAGS_FEATURES_KHR: {
+                const VkPhysicalDeviceExtendedFlagsFeaturesKHR* enabled =
+                    reinterpret_cast<const VkPhysicalDeviceExtendedFlagsFeaturesKHR*>(pNext);
+                features->extendedFlags |= enabled->extendedFlags == VK_TRUE;
                 break;
             }
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TRANSFORM_FEEDBACK_FEATURES_EXT: {
@@ -1458,9 +1470,9 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo* pCreateInfo, DeviceFeatu
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_FEATURES_EXT: {
                 const VkPhysicalDeviceOpacityMicromapFeaturesEXT* enabled =
                     reinterpret_cast<const VkPhysicalDeviceOpacityMicromapFeaturesEXT*>(pNext);
-                features->micromap |= enabled->micromap == VK_TRUE;
-                features->micromapCaptureReplay |= enabled->micromapCaptureReplay == VK_TRUE;
-                features->micromapHostCommands |= enabled->micromapHostCommands == VK_TRUE;
+                features->micromapEXT |= enabled->micromap == VK_TRUE;
+                features->micromapCaptureReplayEXT |= enabled->micromapCaptureReplay == VK_TRUE;
+                features->micromapHostCommandsEXT |= enabled->micromapHostCommands == VK_TRUE;
                 break;
             }
 #ifdef VK_ENABLE_BETA_EXTENSIONS
@@ -1986,6 +1998,12 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo* pCreateInfo, DeviceFeatu
                 features->presentMetering |= enabled->presentMetering == VK_TRUE;
                 break;
             }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTISAMPLED_RENDER_TO_SWAPCHAIN_FEATURES_EXT: {
+                const VkPhysicalDeviceMultisampledRenderToSwapchainFeaturesEXT* enabled =
+                    reinterpret_cast<const VkPhysicalDeviceMultisampledRenderToSwapchainFeaturesEXT*>(pNext);
+                features->multisampledRenderToSwapchain |= enabled->multisampledRenderToSwapchain == VK_TRUE;
+                break;
+            }
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ZERO_INITIALIZE_DEVICE_MEMORY_FEATURES_EXT: {
                 const VkPhysicalDeviceZeroInitializeDeviceMemoryFeaturesEXT* enabled =
                     reinterpret_cast<const VkPhysicalDeviceZeroInitializeDeviceMemoryFeaturesEXT*>(pNext);
@@ -2044,6 +2062,15 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo* pCreateInfo, DeviceFeatu
                 const VkPhysicalDeviceShaderSubgroupPartitionedFeaturesEXT* enabled =
                     reinterpret_cast<const VkPhysicalDeviceShaderSubgroupPartitionedFeaturesEXT*>(pNext);
                 features->shaderSubgroupPartitioned |= enabled->shaderSubgroupPartitioned == VK_TRUE;
+                break;
+            }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OCP_MICROSCALING_TYPES_FEATURES_EXT: {
+                const VkPhysicalDeviceShaderOCPMicroscalingTypesFeaturesEXT* enabled =
+                    reinterpret_cast<const VkPhysicalDeviceShaderOCPMicroscalingTypesFeaturesEXT*>(pNext);
+                features->shaderFloat4 |= enabled->shaderFloat4 == VK_TRUE;
+                features->shaderFloat6 |= enabled->shaderFloat6 == VK_TRUE;
+                features->shaderFloat8UnsignedE8M0 |= enabled->shaderFloat8UnsignedE8M0 == VK_TRUE;
+                features->shaderMXInt8 |= enabled->shaderMXInt8 == VK_TRUE;
                 break;
             }
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_MIXED_FLOAT_DOT_PRODUCT_FEATURES_VALVE: {

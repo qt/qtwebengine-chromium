@@ -12,6 +12,7 @@
 #include <tuple>
 #include <type_traits>
 
+#include "include/v8config.h"
 #include "src/base/iterator.h"
 #include "src/base/logging.h"
 #include "src/base/small-vector.h"
@@ -272,7 +273,7 @@ class RandomAccessStackDominatorNode
 
 // A simple iterator to walk over the predecessors of a block. Note that the
 // iteration order is reversed.
-class PredecessorIterator {
+class V8_GSL_POINTER PredecessorIterator {
  public:
   explicit PredecessorIterator(const Block* block) : current_(block) {}
 
@@ -785,10 +786,7 @@ class Graph {
     return NewBlock(Block::Kind::kMerge, origin);
   }
 
-  V8_INLINE Block* NewBlock(Block::Kind kind, const Block* origin = nullptr) {
-    if (V8_UNLIKELY(next_block_ == all_blocks_.size())) {
-      AllocateNewBlocks();
-    }
+  V8_INLINE Block* NewBlockUnchecked(Block::Kind kind, const Block* origin) {
     Block* result = all_blocks_[next_block_++];
     new (result) Block(kind);
 #ifdef DEBUG
@@ -801,6 +799,13 @@ class Graph {
 #endif
     result->SetOrigin(origin);
     return result;
+  }
+
+  V8_INLINE Block* NewBlock(Block::Kind kind, const Block* origin = nullptr) {
+    if (V8_UNLIKELY(next_block_ == all_blocks_.size())) {
+      return GrowAndNewBlock(kind, origin);
+    }
+    return NewBlockUnchecked(kind, origin);
   }
 
   V8_INLINE bool Add(Block* block) {
@@ -919,11 +924,11 @@ class Graph {
 
    private:
     OpIndex index_;
-    const Graph* const graph_;
+    const Graph* graph_;
   };
 
   template <class OperationT, typename GraphT>
-  class OperationIterator
+  class V8_GSL_POINTER OperationIterator
       : public base::iterator<std::bidirectional_iterator_tag, OperationT> {
    public:
     static_assert(std::is_same_v<std::remove_const_t<OperationT>, Operation> &&
@@ -1221,6 +1226,12 @@ class Graph {
     // Eventually most new blocks will be bound anyway, so pre-allocate as well.
     DCHECK_LE(bound_blocks_.size(), all_blocks_.size());
     bound_blocks_.reserve(all_blocks_.size());
+  }
+
+  V8_NOINLINE V8_PRESERVE_MOST Block* GrowAndNewBlock(Block::Kind kind,
+                                                      const Block* origin) {
+    AllocateNewBlocks();
+    return NewBlockUnchecked(kind, origin);
   }
 
   Origin origin_ = Origin::kInvalid;

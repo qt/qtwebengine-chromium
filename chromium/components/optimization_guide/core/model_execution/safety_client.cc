@@ -24,7 +24,7 @@ void SafetyClient::SetLanguageDetectionModel(
     return;
   }
   remote_.reset();  // The remote's assets are outdated.
-  language_detection_model_path_ = model_info->GetModelFilePath();
+  language_detection_model_path_ = model_info->model_file_path;
 }
 
 void SafetyClient::MaybeUpdateSafetyModel(
@@ -82,8 +82,7 @@ on_device_model::TextSafetyLoaderParams SafetyClient::LoaderParams() const {
   // feature, since the base model remote could be used for subsequent features.
   if (safety_model_info_) {
     params.ts_paths.emplace();
-    params.ts_paths->data = safety_model_info_->GetDataPath();
-    params.ts_paths->sp_model = safety_model_info_->GetSpModelPath();
+    params.ts_paths->model = safety_model_info_->GetDataPath();
   }
   if (language_detection_model_path_) {
     params.language_paths.emplace();

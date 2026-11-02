@@ -369,41 +369,4 @@ TEST_F(DragDropOperationTest, WebCustomDataFiltersFilesAppKeysAndTaints) {
                                   original_dnd_controller);
 }
 
-TEST_F(DragDropOperationTest, DragFromDefaultEndpointIsNotTainted) {
-  TestDataExchangeDelegate data_exchange_delegate;
-  data_exchange_delegate.set_endpoint_type(ui::EndpointType::kDefault);
-
-  auto delegate = std::make_unique<TestDataSourceDelegate>();
-  auto data_source = std::make_unique<DataSource>(delegate.get());
-  data_source->Offer(kTextMimeType);
-  delegate->SetData(kTextMimeType, "data");
-
-  auto origin_surface = std::make_unique<Surface>();
-  ash::Shell::GetPrimaryRootWindow()->AddChild(origin_surface->window());
-
-  auto* original_dnd_controller =
-      aura::client::GetDragDropClient(ash::Shell::GetPrimaryRootWindow());
-  {
-    base::RunLoop run_loop;
-    auto test_drag_drop_controller =
-        std::make_unique<TestDragDropController>(run_loop.QuitClosure());
-    aura::client::SetDragDropClient(ash::Shell::GetPrimaryRootWindow(),
-                                    test_drag_drop_controller.get());
-
-    auto operation = DragDropOperation::Create(
-        &data_exchange_delegate, data_source.get(), origin_surface.get(),
-        /*icon=*/nullptr, gfx::PointF(), ui::mojom::DragEventSource::kMouse);
-
-    run_loop.Run();
-
-    ASSERT_TRUE(test_drag_drop_controller->captured_data_);
-    ui::OSExchangeData* captured_data =
-        test_drag_drop_controller->captured_data_.get();
-
-    EXPECT_FALSE(captured_data->IsRendererTainted());
-  }
-  aura::client::SetDragDropClient(ash::Shell::GetPrimaryRootWindow(),
-                                  original_dnd_controller);
-}
-
 }  // namespace exo

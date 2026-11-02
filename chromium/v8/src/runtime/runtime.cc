@@ -271,7 +271,10 @@ bool Runtime::IsEnabledForFuzzing(FunctionId id) {
     case Runtime::kGetFunctionForCurrentFrame:
     case Runtime::kGetCallable:
     case Runtime::kGetAbstractModuleSource:
+    case Runtime::kAssertNotPeeled:
+    case Runtime::kAssertPeeled:
     case Runtime::kTurbofanStaticAssert:
+    case Runtime::kAssertEscapeAnalysisElided:
     case Runtime::kClearFunctionFeedback:
     case Runtime::kStringIsFlat:
     case Runtime::kGetInitializerFunction:

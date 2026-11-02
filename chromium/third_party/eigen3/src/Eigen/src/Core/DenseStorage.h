@@ -497,7 +497,7 @@ struct use_default_move {
 
 /** \internal
  *
- * \class DenseStorage_impl
+ * \class DenseStorage
  * \ingroup Core_Module
  *
  * \brief Stores the data of a matrix

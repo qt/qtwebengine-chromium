@@ -9,7 +9,8 @@
 #include "base/test/gmock_callback_support.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
-#include "chrome/browser/new_tab_page/ntp_pref_names.h"
+#include "build/build_config.h"
+#include "chrome/browser/new_tab_page/prefs/ntp_pref_names.h"
 #include "chrome/browser/search_engines/template_url_service_factory_test_util.h"
 #include "chrome/browser/ui/search/ntp_user_data_types.h"
 #include "chrome/test/base/testing_profile.h"
@@ -63,7 +64,7 @@ class MostVisitedAutoRemovalTest
     handler_ = std::make_unique<MostVisitedHandler>(
         mojo::PendingReceiver<most_visited::mojom::MostVisitedPageHandler>(),
         page_.BindAndGetRemote(), &profile_, web_contents_.get(), GURL(),
-        base::Time());
+        base::Time(), base::TimeTicks());
     handler_->EnableTileTypes(
         ntp_tiles::MostVisitedSites::EnableTileTypesOptions().with_custom_links(
             GetParam().custom_links_enabled));
@@ -300,6 +301,9 @@ TEST_P(MostVisitedAutoRemovalTest, DoNotRemoveStaleShortcutsIfFeatureDisabled) {
   EXPECT_TRUE(profile_.GetPrefs()->GetBoolean(ntp_prefs::kNtpShortcutsVisible));
 }
 
+// TODO(b/514161985): Enable this test on Android once enterprise shortcuts are
+// supported.
+#if !BUILDFLAG(IS_ANDROID)
 TEST_P(MostVisitedAutoRemovalTest,
        DoNotRemoveStaleShortcutsIfEnterpriseShortcutsEnabled) {
   InitFeature(true);
@@ -319,6 +323,7 @@ TEST_P(MostVisitedAutoRemovalTest,
 
   EXPECT_TRUE(profile_.GetPrefs()->GetBoolean(ntp_prefs::kNtpShortcutsVisible));
 }
+#endif
 
 TEST_P(MostVisitedAutoRemovalTest, RemoveStaleShortcutsIfReachThreshold) {
   InitFeature(true);

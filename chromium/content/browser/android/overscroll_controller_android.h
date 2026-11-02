@@ -68,8 +68,10 @@ class CONTENT_EXPORT OverscrollControllerAndroid
   // Note: The effect will detach itself when no further animation is required.
   bool Animate(base::TimeTicks current_time, cc::slim::Layer* parent_layer);
 
-  // To be called whenever the content frame has been updated.
-  void OnFrameMetadataUpdated(float page_scale_factor,
+  // To be called whenever the content frame has been updated. `view_width_px`
+  // is the width of the embedding native view in device pixels.
+  void OnFrameMetadataUpdated(float view_width_px,
+                              float page_scale_factor,
                               float device_scale_factor,
                               const gfx::SizeF& scrollable_viewport_size,
                               const gfx::SizeF& root_layer_size,
@@ -82,6 +84,7 @@ class CONTENT_EXPORT OverscrollControllerAndroid
   void Disable();
 
   void SetTouchpadOverscrollHistoryNavigation(bool enabled);
+  void SetIsGestureNavigationMode(bool is_gesture_navigation_mode);
 
   // Returns true if the controller is actively handling the current input
   // sequence. This state persists until reset by

@@ -147,6 +147,9 @@
   --toolbar-menu-background-color: rgb(255, 255, 255);
   --toolbar-text-color: rgb(31, 31, 31);
 
+  /* Overflow menu colors */
+  --toolbar-menu-icon-color: rgba(71, 71, 71, 1);
+
   /* Animations */
   --composebox-zero-state-animation: zero-state-fade-in 600ms ease forwards;
   --composebox-header-wrapper-zero-state-animation: zero-state-fade-in 600ms
@@ -281,6 +284,9 @@
   --toolbar-divider-color: rgb(94,94,94);
   --toolbar-menu-background-color: rgb(31, 31, 31);
   --toolbar-text-color: rgb(227,227,227);
+
+  /* Overflow menu colors - Dark mode */
+  --toolbar-menu-icon-color: rgba(199, 199, 199, 1);
 
   /* Color of Active tool chip */
   --color-composebox-context-entrypoint-hover-background: rgba(42, 43, 54, 1);
@@ -510,8 +516,11 @@ error-page {
 }
 
 :host([is-zero-state_]:not([in-nlm_])) #composebox {
-  animation: var(--composebox-zero-state-animation);
   opacity: 0;
+}
+
+:host(.play-zero-state[is-zero-state_]:not([in-nlm_])) #composebox {
+  animation: var(--composebox-zero-state-animation);
 }
 
 :host([is-zero-state_][is-shown-in-tab_]) {
@@ -583,14 +592,14 @@ error-page {
   height: 52%;
 }
 
-:host([is-zero-state_][is-shown-in-tab_]) #flexCenterContainer {
+:host([is-zero-state_][is-shown-in-tab_]:not([in-nlm_])) #flexCenterContainer {
   height: calc(var(--flex-center-height) - 88px);
   inset-inline-start: 76px;
   top: 88px;
   width: calc(100% - 76px);
 }
 
-:host([is-zero-state_]:not([is-shown-in-tab_])) #flexCenterContainer {
+:host([is-zero-state_]:not([is-shown-in-tab_]):not([in-nlm_])) #flexCenterContainer {
   --wrapper-indent_: 20px;
   align-items: flex-start;
   gap: 24px;
@@ -610,7 +619,7 @@ error-page {
 }
 
 @media (min-width: 789px) {
-  :host([is-zero-state_]:not([is-shown-in-tab_])[is-ai-page_]) #flexCenterContainer {
+  :host([is-zero-state_]:not([is-shown-in-tab_])[is-ai-page_]:not([in-nlm_])) #flexCenterContainer {
     /* 96px gutter + 5px for text indentation in thread. */
     --wrapper-indent_: 101px;
     inset-inline-start: var(--wrapper-indent_);
@@ -624,7 +633,7 @@ error-page {
  * composebox.css min-width: 1420px for full explanation.
  */
 @media (min-width: 1420px) {
-  :host(:not([is-shown-in-tab_])[is-zero-state_][is-ai-page_]) #flexCenterContainer {
+  :host(:not([is-shown-in-tab_])[is-zero-state_][is-ai-page_]:not([in-nlm_])) #flexCenterContainer {
     --wrapper-indent_: max(285px, calc(50% - 570px));
     inset-inline-start: var(--wrapper-indent_);
     width: calc(100% - var(--wrapper-indent_));
@@ -783,6 +792,13 @@ error-page {
 
 :host([is-zero-state_]) #composeboxHeaderWrapper {
   display: flex;
+  opacity: 0;
+}
+
+:host([is-initial-frame-load_]:not([is-shown-in-tab_])) #composebox,
+:host([is-initial-frame-load_]:not([is-shown-in-tab_])) #composeboxHeaderWrapper {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 @keyframes zero-state-header-text {
@@ -884,8 +900,13 @@ error-page {
   display: none;
 }
 
-#onboardingTooltip {
-  pointer-events: all;
+#onboardingTooltip,
+#askGTooltip,
+#lensSearchTooltip {
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 101;
 }
 
 #iphMenuSmartTabSharingAnchor {
@@ -919,10 +940,10 @@ error-page {
   }
 }
 
-:host([is-initial-frame-load_]:not([is-dom-content-loaded_])) #composebox,
-:host([is-initial-frame-load_]:not([is-dom-content-loaded_])) #composeboxHeaderWrapper,
-:host([is-zero-state_]:not([is-dom-content-loaded_])) #composebox,
-:host([is-zero-state_]:not([is-dom-content-loaded_])) #composeboxHeaderWrapper {
+:host([is-initial-frame-load_][is-shown-in-tab_]:not([is-dom-content-loaded_])) #composebox,
+:host([is-initial-frame-load_][is-shown-in-tab_]:not([is-dom-content-loaded_])) #composeboxHeaderWrapper,
+:host([is-zero-state_][is-shown-in-tab_]:not([is-dom-content-loaded_])) #composebox,
+:host([is-zero-state_][is-shown-in-tab_]:not([is-dom-content-loaded_])) #composeboxHeaderWrapper {
   visibility: hidden;
   pointer-events: none;
 }
@@ -932,7 +953,7 @@ error-page {
     var(--standard-accelerate-curve) 100ms both;
 }
 
-:host(.play-zero-state) #flexCenterContainer {
+:host(.play-zero-state:not([in-nlm_])) #flexCenterContainer {
   animation: zero-state-slide-up 500ms var(--emphasized-decelerate-curve) both;
 }
 

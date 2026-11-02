@@ -58,11 +58,11 @@ struct EntityDescription {
 
 template <typename CharType>
 inline void AppendCharactersReplacingEntitiesInternal(
-    StringBuilder& result,
     const StringView& source,
     base::span<const CharType> text,
     base::span<const EntityDescription> entities,
-    EntityMask entity_mask) {
+    EntityMask entity_mask,
+    StringBuilder& result) {
   size_t position_after_last_entity = 0;
   // Avoid scanning the string in cases where the mask is empty, for example
   // scriptTag.innerHTML that use the kEntityMaskInCDATA mask.
@@ -128,9 +128,9 @@ const AtomicString& ResolveAttributePrefixForXml(
 }  // namespace
 
 void MarkupFormatter::AppendCharactersReplacingEntities(
-    StringBuilder& result,
     const StringView& source,
-    EntityMask entity_mask) {
+    EntityMask entity_mask,
+    StringBuilder& result) {
   DEFINE_STATIC_LOCAL(const std::string, amp_reference, ("&amp;"));
   DEFINE_STATIC_LOCAL(const std::string, lt_reference, ("&lt;"));
   DEFINE_STATIC_LOCAL(const std::string, gt_reference, ("&gt;"));
@@ -152,66 +152,66 @@ void MarkupFormatter::AppendCharactersReplacingEntities(
   };
 
   VisitCharacters(source, [&](auto chars) {
-    AppendCharactersReplacingEntitiesInternal(result, source, chars,
-                                              kEntityMaps, entity_mask);
+    AppendCharactersReplacingEntitiesInternal(source, chars, kEntityMaps,
+                                              entity_mask, result);
   });
 }
 
-MarkupFormatter::MarkupFormatter(AbsoluteURLs resolve_urls_method,
+MarkupFormatter::MarkupFormatter(ResolveUrls resolve_urls_method,
                                  SerializationType serialization_type)
     : resolve_urls_method_(resolve_urls_method),
       serialization_type_(serialization_type) {}
 
-String MarkupFormatter::ResolveURLIfNeeded(const Element& element,
+String MarkupFormatter::ResolveUrlIfNeeded(const Element& element,
                                            const Attribute& attribute) const {
   String value = attribute.Value();
   switch (resolve_urls_method_) {
-    case kResolveAllURLs:
+    case ResolveUrls::kAll:
       if (element.IsURLAttribute(attribute))
         return element.GetDocument().CompleteURL(value).GetString();
       break;
 
-    case kResolveNonLocalURLs:
+    case ResolveUrls::kNonLocal:
       if (element.IsURLAttribute(attribute) &&
           !element.GetDocument().Url().IsLocalFile())
         return element.GetDocument().CompleteURL(value).GetString();
       break;
 
-    case kDoNotResolveURLs:
+    case ResolveUrls::kNone:
       break;
   }
   return value;
 }
 
-void MarkupFormatter::AppendStartMarkup(StringBuilder& result,
-                                        const Node& node) {
+void MarkupFormatter::AppendStartMarkup(const Node& node,
+                                        StringBuilder& result) {
   switch (node.getNodeType()) {
     case Node::kTextNode:
       NOTREACHED();
     case Node::kCommentNode:
-      AppendComment(result, To<Comment>(node).data());
+      AppendComment(To<Comment>(node).data(), result);
       break;
     case Node::kDocumentNode:
-      AppendXMLDeclaration(result, To<Document>(node));
+      AppendXmlDeclaration(To<Document>(node), result);
       break;
     case Node::kDocumentFragmentNode:
       break;
     case Node::kDocumentTypeNode:
-      AppendDocumentType(result, To<DocumentType>(node));
+      AppendDocumentType(To<DocumentType>(node), result);
       break;
-    case Node::kProcessingInstructionNode:
-      AppendProcessingInstruction(result,
-                                  To<ProcessingInstruction>(node).target(),
-                                  To<ProcessingInstruction>(node).data());
+    case Node::kProcessingInstructionNode: {
+      const auto& pi = To<ProcessingInstruction>(node);
+      AppendProcessingInstruction(pi.target(), pi.data(), result);
       break;
+    }
     case Node::kElementNode:
       NOTREACHED();
     case Node::kCdataSectionNode: {
-      auto& cdata = To<CDATASection>(node);
-      if (SerializeAsHTML()) {
-        AppendText(result, cdata);
+      const auto& cdata = To<CDATASection>(node);
+      if (SerializeAsHtml()) {
+        AppendText(cdata, result);
       } else {
-        AppendCDATASection(result, cdata.data());
+        AppendCdataSection(cdata.data(), result);
       }
       break;
     }
@@ -220,15 +220,15 @@ void MarkupFormatter::AppendStartMarkup(StringBuilder& result,
   }
 }
 
-void MarkupFormatter::AppendEndMarkup(StringBuilder& result,
-                                      const Element& element) {
-  AppendEndMarkup(result, element, element.prefix(), element.localName());
+void MarkupFormatter::AppendEndMarkup(const Element& element,
+                                      StringBuilder& result) {
+  AppendEndMarkup(element, element.prefix(), element.localName(), result);
 }
 
-void MarkupFormatter::AppendEndMarkup(StringBuilder& result,
-                                      const Element& element,
+void MarkupFormatter::AppendEndMarkup(const Element& element,
                                       const AtomicString& prefix,
-                                      const AtomicString& local_name) {
+                                      const AtomicString& local_name,
+                                      StringBuilder& result) {
   if (ShouldSelfClose(element) ||
       (!element.HasChildren() && ElementCannotHaveEndTag(element)))
     return;
@@ -242,19 +242,20 @@ void MarkupFormatter::AppendEndMarkup(StringBuilder& result,
   result.Append('>');
 }
 
-void MarkupFormatter::AppendAttributeValue(StringBuilder& result,
-                                           const String& attribute,
-                                           bool document_is_html) {
-  EntityMask entity_mask = document_is_html ? kEntityMaskInHTMLAttributeValue
-                                            : kEntityMaskInAttributeValue;
-  AppendCharactersReplacingEntities(result, attribute, entity_mask);
+void MarkupFormatter::AppendAttributeValue(const String& attribute,
+                                           SerializationType type,
+                                           StringBuilder& result) {
+  EntityMask entity_mask = type == SerializationType::kHtml
+                               ? kEntityMaskInHtmlAttributeValue
+                               : kEntityMaskInAttributeValue;
+  AppendCharactersReplacingEntities(attribute, entity_mask, result);
 }
 
-void MarkupFormatter::AppendAttribute(StringBuilder& result,
-                                      const AtomicString& prefix,
+void MarkupFormatter::AppendAttribute(const AtomicString& prefix,
                                       const AtomicString& local_name,
                                       const String& value,
-                                      bool document_is_html) {
+                                      SerializationType type,
+                                      StringBuilder& result) {
   result.Append(' ');
   if (!prefix.empty()) {
     result.Append(prefix);
@@ -262,17 +263,17 @@ void MarkupFormatter::AppendAttribute(StringBuilder& result,
   }
   result.Append(local_name);
   result.Append("=\"");
-  AppendAttributeValue(result, value, document_is_html);
+  AppendAttributeValue(value, type, result);
   result.Append('"');
 }
 
-void MarkupFormatter::AppendText(StringBuilder& result, const Text& text) {
-  AppendCharactersReplacingEntities(result, text.data(),
-                                    EntityMaskForText(text));
+void MarkupFormatter::AppendText(const Text& text, StringBuilder& result) {
+  AppendCharactersReplacingEntities(text.data(), EntityMaskForText(text),
+                                    result);
 }
 
-void MarkupFormatter::AppendComment(StringBuilder& result,
-                                    const String& comment) {
+void MarkupFormatter::AppendComment(const String& comment,
+                                    StringBuilder& result) {
   // FIXME: Comment content is not escaped, but XMLSerializer (and possibly
   // other callers) should raise an exception if it includes "-->".
   result.Append("<!--");
@@ -280,8 +281,8 @@ void MarkupFormatter::AppendComment(StringBuilder& result,
   result.Append("-->");
 }
 
-void MarkupFormatter::AppendXMLDeclaration(StringBuilder& result,
-                                           const Document& document) {
+void MarkupFormatter::AppendXmlDeclaration(const Document& document,
+                                           StringBuilder& result) {
   if (!document.HasXMLDeclaration())
     return;
 
@@ -303,8 +304,8 @@ void MarkupFormatter::AppendXMLDeclaration(StringBuilder& result,
   result.Append("\"?>");
 }
 
-void MarkupFormatter::AppendDocumentType(StringBuilder& result,
-                                         const DocumentType& n) {
+void MarkupFormatter::AppendDocumentType(const DocumentType& n,
+                                         StringBuilder& result) {
   if (n.name().empty())
     return;
 
@@ -327,9 +328,9 @@ void MarkupFormatter::AppendDocumentType(StringBuilder& result,
   result.Append('>');
 }
 
-void MarkupFormatter::AppendProcessingInstruction(StringBuilder& result,
-                                                  const String& target,
-                                                  const String& data) {
+void MarkupFormatter::AppendProcessingInstruction(const String& target,
+                                                  const String& data,
+                                                  StringBuilder& result) {
   // FIXME: PI data is not escaped, but XMLSerializer (and possibly other
   // callers) this should raise an exception if it includes "?>".
   result.Append("<?");
@@ -339,14 +340,14 @@ void MarkupFormatter::AppendProcessingInstruction(StringBuilder& result,
   result.Append("?>");
 }
 
-void MarkupFormatter::AppendStartTagOpen(StringBuilder& result,
-                                         const Element& element) {
-  AppendStartTagOpen(result, element.prefix(), element.localName());
+void MarkupFormatter::AppendStartTagOpen(const Element& element,
+                                         StringBuilder& result) {
+  AppendStartTagOpen(element.prefix(), element.localName(), result);
 }
 
-void MarkupFormatter::AppendStartTagOpen(StringBuilder& result,
-                                         const AtomicString& prefix,
-                                         const AtomicString& local_name) {
+void MarkupFormatter::AppendStartTagOpen(const AtomicString& prefix,
+                                         const AtomicString& local_name,
+                                         StringBuilder& result) {
   result.Append('<');
   if (!prefix.empty()) {
     result.Append(prefix);
@@ -355,8 +356,8 @@ void MarkupFormatter::AppendStartTagOpen(StringBuilder& result,
   result.Append(local_name);
 }
 
-void MarkupFormatter::AppendStartTagClose(StringBuilder& result,
-                                          const Element& element) {
+void MarkupFormatter::AppendStartTagClose(const Element& element,
+                                          StringBuilder& result) {
   if (ShouldSelfClose(element)) {
     if (element.IsHTMLElement())
       result.Append(' ');  // XHTML 1.0 <-> HTML compatibility.
@@ -365,25 +366,27 @@ void MarkupFormatter::AppendStartTagClose(StringBuilder& result,
   result.Append('>');
 }
 
-void MarkupFormatter::AppendAttributeAsHTML(StringBuilder& result,
-                                            const Attribute& attribute,
-                                            const String& value) {
+void MarkupFormatter::AppendAttributeAsHtml(const Attribute& attribute,
+                                            const String& value,
+                                            StringBuilder& result) {
   const AtomicString& resolved_prefix =
       ResolveAttributePrefixForHtml(attribute.GetName());
-  AppendAttribute(result, resolved_prefix, attribute.LocalName(), value, true);
+  AppendAttribute(resolved_prefix, attribute.LocalName(), value,
+                  SerializationType::kHtml, result);
 }
 
-void MarkupFormatter::AppendAttributeAsXMLWithoutNamespace(
-    StringBuilder& result,
+void MarkupFormatter::AppendAttributeAsXmlWithoutNamespace(
     const Attribute& attribute,
-    const String& value) {
+    const String& value,
+    StringBuilder& result) {
   const AtomicString& resolved_prefix =
       ResolveAttributePrefixForXml(attribute.GetName());
-  AppendAttribute(result, resolved_prefix, attribute.LocalName(), value, false);
+  AppendAttribute(resolved_prefix, attribute.LocalName(), value,
+                  SerializationType::kXml, result);
 }
 
-void MarkupFormatter::AppendCDATASection(StringBuilder& result,
-                                         const String& section) {
+void MarkupFormatter::AppendCdataSection(const String& section,
+                                         StringBuilder& result) {
   // FIXME: CDATA content is not escaped, but XMLSerializer (and possibly other
   // callers) should raise an exception if it includes "]]>".
   result.Append("<![CDATA[");
@@ -392,8 +395,9 @@ void MarkupFormatter::AppendCDATASection(StringBuilder& result,
 }
 
 EntityMask MarkupFormatter::EntityMaskForText(const Text& text) const {
-  if (!SerializeAsHTML())
-    return kEntityMaskInPCDATA;
+  if (!SerializeAsHtml()) {
+    return kEntityMaskInPcdata;
+  }
 
   // TODO(hajimehoshi): We need to switch EditingStrategy.
   const QualifiedName* parent_name = nullptr;
@@ -419,10 +423,10 @@ EntityMask MarkupFormatter::EntityMaskForText(const Text& text) const {
         *parent_name == html_names::kNoembedTag ||
         *parent_name == html_names::kNoframesTag ||
         is_noscript_tag_with_script_enabled) {
-      return kEntityMaskInCDATA;
+      return kEntityMaskInCdata;
     }
   }
-  return kEntityMaskInHTMLPCDATA;
+  return kEntityMaskInHtmlPcdata;
 }
 
 // Rules of self-closure
@@ -432,8 +436,9 @@ EntityMask MarkupFormatter::EntityMaskForText(const Text& text) const {
 // separate end tag.
 // 4. Other elements self-close.
 bool MarkupFormatter::ShouldSelfClose(const Element& element) const {
-  if (SerializeAsHTML())
+  if (SerializeAsHtml()) {
     return false;
+  }
   if (element.HasChildren())
     return false;
   if (element.IsHTMLElement() && !ElementCannotHaveEndTag(element))
@@ -441,8 +446,8 @@ bool MarkupFormatter::ShouldSelfClose(const Element& element) const {
   return true;
 }
 
-bool MarkupFormatter::SerializeAsHTML() const {
-  return serialization_type_ == SerializationType::kHTML;
+bool MarkupFormatter::SerializeAsHtml() const {
+  return serialization_type_ == SerializationType::kHtml;
 }
 
 }  // namespace blink

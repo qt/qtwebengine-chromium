@@ -54,7 +54,8 @@ function prefetchStatusCode(requestId: Protocol.Network.RequestId): number|undef
  * Retrieves the HTTP status code for a prerender attempt.
  */
 function prerenderStatusCode(loaderId: Protocol.Network.LoaderId): number|undefined {
-  const frame = SDK.ResourceTreeModel.ResourceTreeModel.frames().find(f => f.loaderId === loaderId);
+  const frame = SDK.ResourceTreeModel.ResourceTreeModel.frames(SDK.TargetManager.TargetManager.instance())
+                    .find(f => f.loaderId === loaderId);
   if (!frame) {
     return undefined;
   }

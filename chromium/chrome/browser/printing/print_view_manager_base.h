@@ -17,9 +17,6 @@
 #include "base/observer_list_types.h"
 #include "build/build_config.h"
 #include "chrome/browser/printing/print_job.h"
-// Causes circular dependencies with //chrome/browser/ui. The nogncheck can be
-// removed when printer_handler.h is modularized.
-#include "chrome/browser/ui/webui/print_preview/printer_handler.h"  // nogncheck
 #include "components/enterprise/buildflags/buildflags.h"
 #include "components/prefs/pref_member.h"
 #include "components/printing/browser/print_manager.h"
@@ -28,6 +25,12 @@
 #include "components/services/print_compositor/public/mojom/print_compositor.mojom.h"
 #include "printing/buildflags/buildflags.h"
 #include "ui/accessibility/ax_tree_update_forward.h"
+
+#if BUILDFLAG(ENABLE_PRINT_PREVIEW)
+// Causes circular dependencies with //chrome/browser/ui. The nogncheck can be
+// removed when printer_handler.h is modularized.
+#include "chrome/browser/ui/webui/print_preview/printer_handler.h"  // nogncheck crbug.com/40147906
+#endif
 
 #if BUILDFLAG(ENABLE_OOP_PRINTING)
 #include <optional>
@@ -79,6 +82,10 @@ class PrintViewManagerBase : public PrintManager, public PrintJob::Observer {
   // asynchronous, the actual printing will not be completed on the return of
   // this function. Returns false if printing is impossible at the moment.
   virtual bool PrintNow(content::RenderFrameHost* rfh);
+#if BUILDFLAG(IS_ANDROID)
+  virtual bool PrintNow(content::RenderFrameHost* rfh,
+                        bool print_selection_only);
+#endif
 
   // Like PrintNow(), but for the node under the context menu, instead of the
   // entire frame.
@@ -122,11 +129,6 @@ class PrintViewManagerBase : public PrintManager, public PrintJob::Observer {
                         DidPrintDocumentCallback callback) override;
   void GetDefaultPrintSettings(
       GetDefaultPrintSettingsCallback callback) override;
-#if BUILDFLAG(ENABLE_PRINT_PREVIEW)
-  void SetAccessibilityTree(
-      int32_t cookie,
-      const ui::AXTreeUpdate& accessibility_tree) override;
-#endif
   void IsPrintingEnabled(IsPrintingEnabledCallback callback) override;
   void ScriptedPrint(mojom::ScriptedPrintParamsPtr params,
                      ScriptedPrintCallback callback) override;
@@ -157,7 +159,8 @@ class PrintViewManagerBase : public PrintManager, public PrintJob::Observer {
 
   // Helper method to do some common operations and checks when starting to
   // printing.
-  bool StartPrintCommon(content::RenderFrameHost* rfh);
+  bool StartPrintCommon(content::RenderFrameHost* rfh,
+                        bool print_selection_only);
 
 #if BUILDFLAG(ENABLE_OOP_PRINTING)
   // Register with the `PrintBackendServiceManager` as a client for queries
@@ -360,6 +363,8 @@ class PrintViewManagerBase : public PrintManager, public PrintJob::Observer {
       bool allowed);
 #endif  // BUILDFLAG(ENTERPRISE_CONTENT_ANALYSIS)
 
+  bool PrintNowImpl(content::RenderFrameHost* rfh, bool print_selection_only);
+
   // The current RFH that is printing with a system printing dialog.
   raw_ptr<content::RenderFrameHost> printing_rfh_ = nullptr;
 
@@ -368,6 +373,10 @@ class PrintViewManagerBase : public PrintManager, public PrintJob::Observer {
 
   // Indication that the job is getting canceled.
   bool canceling_job_ = false;
+
+#if BUILDFLAG(IS_ANDROID)
+  bool print_selection_only_ = false;
+#endif
 
   // Set while running an inner message loop inside RenderAllMissingPagesNow().
   // This means we are _blocking_ until all the necessary pages have been

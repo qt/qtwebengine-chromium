@@ -3,10 +3,9 @@
 // found in the LICENSE file.
 
 import * as Common from '../../core/common/common.js';
+import * as Root from '../../core/root/root.js';
 
 import type {RecorderExtensionEndpoint} from './RecorderExtensionEndpoint.js';
-
-let instance: RecorderPluginManager|null = null;
 
 export interface ViewDescriptor {
   id: string;
@@ -21,11 +20,16 @@ export class RecorderPluginManager extends Common.ObjectWrapper.ObjectWrapper<Ev
   #plugins = new Set<RecorderExtensionEndpoint>();
   #views = new Map<string, ViewDescriptor>();
 
-  static instance(): RecorderPluginManager {
-    if (!instance) {
-      instance = new RecorderPluginManager();
+  static instance(opts?: {forceNew: boolean}): RecorderPluginManager {
+    if (!Root.DevToolsContext.globalInstance().has(RecorderPluginManager) || opts?.forceNew) {
+      Root.DevToolsContext.globalInstance().set(RecorderPluginManager, new RecorderPluginManager());
     }
-    return instance;
+
+    return Root.DevToolsContext.globalInstance().get(RecorderPluginManager);
+  }
+
+  static removeInstance(): void {
+    Root.DevToolsContext.globalInstance().delete(RecorderPluginManager);
   }
 
   addPlugin(plugin: RecorderExtensionEndpoint): void {

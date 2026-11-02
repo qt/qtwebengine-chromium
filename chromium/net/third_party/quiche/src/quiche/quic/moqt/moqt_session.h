@@ -11,6 +11,7 @@
 #include <string>
 #include <utility>
 
+#include "absl/base/casts.h"
 #include "absl/base/nullability.h"
 #include "absl/cleanup/cleanup.h"
 #include "absl/container/btree_map.h"
@@ -92,6 +93,10 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
                        const MessageParameters& parameters,
                        MoqtResponseCallback response_callback) override;
   void Unsubscribe(const FullTrackName& name) override;
+  bool Publish(std::shared_ptr<MoqtTrackPublisher> absl_nonnull publisher,
+               const MessageParameters& parameters,
+               const TrackExtensions& extensions,
+               MoqtResponseCallback response_callback) override;
   bool Fetch(const FullTrackName& name, FetchResponseCallback callback,
              Location start, uint64_t end_group,
              std::optional<uint64_t> end_object,
@@ -206,6 +211,7 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
   MoqtTraceRecorder& trace_recorder() { return trace_recorder_; }
 
  private:
+  friend class ControlMessageDispatcher;
   friend class test::MoqtSessionPeer;
 
   struct Empty {};
@@ -240,9 +246,6 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
     explicit ControlStream(MoqtSession* session)
         : MoqtBidiStreamBase(
               &session->framer_, session->ControlMessageParser(),
-              // Do nothing on deletion. It threw an error on RESET_STREAM or
-              // FIN, and we're here because the session is being destroyed.
-              []() {},
               [session](MoqtError code, absl::string_view reason) {
                 session->control_stream_ =
                     quiche::QuicheWeakPtr<ControlStream>();
@@ -251,44 +254,17 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
                 }
               }),
           session_(session),
-          weak_ptr_factory_(this) {}
+          weak_ptr_factory_(this) {
+      this->set_control_stream();
+    }
+    // TODO(martinduke): Remove constructor body once SUBSCRIBE moves to a bidi
+    // stream.
 
     void OnStreamBound() override;
     absl::Status OnRawControlMessage(
         const MoqtRawControlMessage& message) override;
 
     // MoqtControlParserVisitor implementation.
-    absl::Status OnControlMessage(const MoqtClientSetup& message);
-    absl::Status OnControlMessage(const MoqtServerSetup& message);
-    absl::Status OnControlMessage(const MoqtRequestOk& message);
-    absl::Status OnControlMessage(const MoqtRequestError& message);
-    absl::Status OnControlMessage(const MoqtSubscribe& message);
-    absl::Status OnControlMessage(const MoqtSubscribeOk& message);
-    absl::Status OnControlMessage(const MoqtUnsubscribe& message);
-    absl::Status OnControlMessage(const MoqtPublishDone& /*message*/);
-    absl::Status OnControlMessage(const MoqtRequestUpdate& message);
-    absl::Status OnControlMessage(const MoqtPublishNamespace& message);
-    absl::Status OnControlMessage(const MoqtPublishNamespaceDone& /*message*/);
-    absl::Status OnControlMessage(const MoqtPublishNamespaceCancel& message);
-    absl::Status OnControlMessage(const MoqtTrackStatus& message);
-    absl::Status OnControlMessage(const MoqtGoAway& /*message*/);
-    absl::Status OnControlMessage(const MoqtMaxRequestId& message);
-    absl::Status OnControlMessage(const MoqtFetch& message);
-    absl::Status OnControlMessage(const MoqtFetchCancel& /*message*/) {
-      return absl::OkStatus();
-    }
-    absl::Status OnControlMessage(const MoqtFetchOk& message);
-    absl::Status OnControlMessage(const MoqtRequestsBlocked& message);
-    absl::Status OnControlMessage(const MoqtPublish& message);
-    absl::Status OnControlMessage(const MoqtObjectAck& message) {
-      auto subscription_it =
-          session_->published_subscriptions_.find(message.subscribe_id);
-      if (subscription_it == session_->published_subscriptions_.end()) {
-        return absl::OkStatus();
-      }
-      subscription_it->second->ProcessObjectAck(message);
-      return absl::OkStatus();
-    }
 
     // webtransport::StreamVisitor overrides
     void OnResetStreamReceived(webtransport::StreamErrorCode error) override {
@@ -305,6 +281,9 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
     }
     quiche::QuicheWeakPtr<ControlStream> GetWeakPtr() {
       return weak_ptr_factory_.Create();
+    }
+    void Detach() override {
+      session_->Error(MoqtError::kProtocolViolation, "Control stream closed");
     }
 
    private:
@@ -455,7 +434,53 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
 
   MoqtControlMessageParser ControlMessageParser() const {
     return MoqtControlMessageParser(parameters_.version,
-                                    parameters_.using_webtrans);
+                                    parameters_.using_webtrans,
+                                    parameters_.perspective);
+  }
+
+  // Handlers for the control messages on the main control stream.
+  absl::Status OnControlMessage(const MoqtSetup& message);
+  absl::Status OnControlMessage(const MoqtRequestOk& message);
+  absl::Status OnControlMessage(const MoqtRequestError& message);
+  absl::Status OnControlMessage(const MoqtSubscribe& message);
+  absl::Status OnControlMessage(const MoqtSubscribeOk& message);
+  absl::Status OnControlMessage(const MoqtUnsubscribe& message);
+  absl::Status OnControlMessage(const MoqtPublishDone& /*message*/);
+  absl::Status OnControlMessage(const MoqtRequestUpdate& message);
+  absl::Status OnControlMessage(const MoqtPublishNamespace& message);
+  absl::Status OnControlMessage(const MoqtPublishNamespaceDone& /*message*/);
+  absl::Status OnControlMessage(const MoqtPublishNamespaceCancel& message);
+  absl::Status OnControlMessage(const MoqtTrackStatus& message);
+  absl::Status OnControlMessage(const MoqtGoAway& /*message*/);
+  absl::Status OnControlMessage(const MoqtMaxRequestId& message);
+  absl::Status OnControlMessage(const MoqtFetch& message);
+  absl::Status OnControlMessage(const MoqtFetchCancel& /*message*/) {
+    return absl::OkStatus();
+  }
+  absl::Status OnControlMessage(const MoqtFetchOk& message);
+  absl::Status OnControlMessage(const MoqtRequestsBlocked& message);
+  absl::Status OnControlMessage(const MoqtPublish& message);
+  absl::Status OnControlMessage(const MoqtObjectAck& message) {
+    auto subscription_it = published_subscriptions_.find(message.subscribe_id);
+    if (subscription_it == published_subscriptions_.end()) {
+      return absl::OkStatus();
+    }
+    subscription_it->second->ProcessObjectAck(message);
+    return absl::OkStatus();
+  }
+
+  // TODO(vasilvv): remove this once all requests are moved into individual
+  // streams.
+  void SendRequestErrorOnControlStream(
+      uint64_t request_id, RequestErrorCode error_code,
+      std::optional<quic::QuicTimeDelta> retry_interval,
+      absl::string_view reason_phrase) {
+    MoqtRequestError request_error;
+    request_error.request_id = request_id;
+    request_error.error_code = error_code;
+    request_error.retry_interval = retry_interval;
+    request_error.reason_phrase = reason_phrase;
+    SendControlMessage(framer_.SerializeRequestError(request_error));
   }
 
   bool is_closing_ = false;
@@ -568,6 +593,11 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
 
   std::shared_ptr<Empty> liveness_token_;
 };
+
+static MoqtSession* absl_nullable MoqtSessionFromWeakPtr(
+    const quiche::QuicheWeakPtr<MoqtSessionInterface>& weak_ptr) {
+  return absl::down_cast<MoqtSession*>(weak_ptr.GetIfAvailable());
+}
 
 }  // namespace moqt
 

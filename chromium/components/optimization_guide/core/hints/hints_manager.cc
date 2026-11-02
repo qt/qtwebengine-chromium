@@ -42,7 +42,6 @@
 #include "components/optimization_guide/core/hints/optimization_metadata.h"
 #include "components/optimization_guide/core/hints/tab_url_provider.h"
 #include "components/optimization_guide/core/hints/top_host_provider.h"
-#include "components/optimization_guide/core/optimization_guide_constants.h"
 #include "components/optimization_guide/core/optimization_guide_enums.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
 #include "components/optimization_guide/core/optimization_guide_logger.h"
@@ -62,6 +61,12 @@
 
 namespace optimization_guide {
 
+const char kOptimizationGuideServiceGetHintsDefaultURL[] =
+    "https://optimizationguide-pa.googleapis.com/v1:GetHints";
+
+const char kLoadedHintLocalHistogramString[] =
+    "OptimizationGuide.LoadedHint.Result";
+
 BASE_FEATURE(kHintsBatchUpdateForActiveTabsAndTopHosts,
              "OptimizationGuideHintsBatchUpdateForActiveTabsAndTopHosts",
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
@@ -70,14 +75,6 @@ BASE_FEATURE(kHintsBatchUpdateForActiveTabsAndTopHosts,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
-BASE_FEATURE(kHintsMaxConcurrentBatchUpdateFetchesOverride,
-             "OptimizationGuideHintsMaxConcurrentBatchUpdateFetchesOverride",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-BASE_FEATURE_PARAM(size_t,
-                   kHintsMaxConcurrentBatchUpdateFetches,
-                   &kHintsMaxConcurrentBatchUpdateFetchesOverride,
-                   "OptimizationGuideHintsMaxConcurrentBatchUpdateFetches",
-                   20);
 
 BASE_FEATURE(kHintsMaxConcurrentNavigationFetchesOverride,
              "OptimizationGuideHintsMaxConcurrentNavigationFetchesOverride",
@@ -359,6 +356,8 @@ bool ShouldContextResponsePopulateHintCache(
       return false;
     case proto::RequestContext::CONTEXT_GLIC_ZERO_STATE_SUGGESTIONS:
       return false;
+    case proto::RequestContext::CONTEXT_FILTER_EXECUTION:
+      return false;
   }
   NOTREACHED();
 }
@@ -405,7 +404,7 @@ HintsManager::HintsManager(
       hint_cache_(
           std::make_unique<HintCache>(hint_store,
                                       features::MaxHostKeyedHintCacheSize())),
-      batch_update_hints_fetchers_(kHintsMaxConcurrentBatchUpdateFetches.Get()),
+      batch_update_hints_fetchers_(kMaxConcurrentBatchUpdateFetches),
       page_navigation_hints_fetchers_(
           kHintsMaxConcurrentNavigationFetches.Get()),
       hints_fetcher_factory_(
@@ -1252,8 +1251,13 @@ void HintsManager::CanApplyOptimizationOnDemand(
                              optimization_guide_logger_);
 
   if (request_context_metadata != std::nullopt) {
-    if (request_context != proto::RequestContext::CONTEXT_PAGE_INSIGHTS_HUB ||
-        !request_context_metadata->has_page_insights_hub_metadata()) {
+    bool has_valid_metadata =
+        (request_context ==
+             proto::RequestContext::CONTEXT_PAGE_INSIGHTS_HUB &&
+         request_context_metadata->has_page_insights_hub_metadata()) ||
+        (request_context == proto::RequestContext::CONTEXT_FILTER_EXECUTION &&
+         request_context_metadata->has_filter_execution_metadata());
+    if (!has_valid_metadata) {
       request_context_metadata = std::nullopt;
     }
   }
@@ -1964,28 +1968,8 @@ void HintsManager::AddHintForTesting(
     const GURL& url,
     proto::OptimizationType optimization_type,
     const std::optional<OptimizationMetadata>& metadata) {
-  std::unique_ptr<proto::Hint> hint = std::make_unique<proto::Hint>();
-  hint->set_key(url.spec());
-  proto::PageHint* page_hint = hint->add_page_hints();
-  page_hint->set_page_pattern("*");
-  proto::Optimization* optimization =
-      page_hint->add_allowlisted_optimizations();
-  optimization->set_optimization_type(optimization_type);
-  if (!metadata) {
-    hint_cache_->AddHintForTesting(url, std::move(hint));  // IN-TEST
-    PrepareToInvokeRegisteredCallbacks(url);
-    return;
-  }
-  if (metadata->loading_predictor_metadata()) {
-    *optimization->mutable_loading_predictor_metadata() =
-        *metadata->loading_predictor_metadata();
-  } else if (metadata->any_metadata()) {
-    *optimization->mutable_any_metadata() = *metadata->any_metadata();
-  } else {
-    NOTREACHED();
-  }
-  hint_cache_->AddHintForTesting(url, std::move(hint));  // IN-TEST
-  PrepareToInvokeRegisteredCallbacks(url);
+  AddHintWithMultipleOptimizationsForTesting(
+      url, {{optimization_type, metadata}});
 }
 
 void HintsManager::AddHintWithMultipleOptimizationsForTesting(
@@ -2000,6 +1984,37 @@ void HintsManager::AddHintWithMultipleOptimizationsForTesting(
     proto::Optimization* optimization =
         page_hint->add_allowlisted_optimizations();
     optimization->set_optimization_type(optimization_type);
+  }
+  hint_cache_->AddHintForTesting(url, std::move(hint));  // IN-TEST
+  PrepareToInvokeRegisteredCallbacks(url);
+}
+
+void HintsManager::AddHintWithMultipleOptimizationsForTesting(
+    const GURL& url,
+    const std::vector<
+        std::pair<optimization_guide::proto::OptimizationType,
+                  std::optional<optimization_guide::OptimizationMetadata>>>&
+        optimization_types_and_metadata) {
+  std::unique_ptr<proto::Hint> hint = std::make_unique<proto::Hint>();
+  hint->set_key(url.spec());
+  proto::PageHint* page_hint = hint->add_page_hints();
+  page_hint->set_page_pattern("*");
+  for (const auto& [optimization_type, metadata] :
+       optimization_types_and_metadata) {
+    proto::Optimization* optimization =
+        page_hint->add_allowlisted_optimizations();
+    optimization->set_optimization_type(optimization_type);
+    if (!metadata) {
+      continue;
+    }
+    if (metadata->loading_predictor_metadata()) {
+      *optimization->mutable_loading_predictor_metadata() =
+          *metadata->loading_predictor_metadata();
+    } else if (metadata->any_metadata()) {
+      *optimization->mutable_any_metadata() = *metadata->any_metadata();
+    } else {
+      NOTREACHED();
+    }
   }
   hint_cache_->AddHintForTesting(url, std::move(hint));  // IN-TEST
   PrepareToInvokeRegisteredCallbacks(url);

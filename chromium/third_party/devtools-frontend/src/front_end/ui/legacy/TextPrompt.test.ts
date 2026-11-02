@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import type * as Platform from '../../core/platform/platform.js';
 import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
@@ -239,6 +240,46 @@ describe('TextPromptElement', () => {
     sinon.assert.notCalled(commitListener);
     sinon.assert.called(cancelListener);
   });
+
+  it('prevents double commit when commit listener triggers a synchronous blur', async () => {
+    const prompt = renderPrompt(html`<devtools-prompt editing></devtools-prompt>`);
+    const commitListener = sinon.stub().callsFake(() => {
+      const placeholder = prompt.shadowRoot?.querySelector('[contenteditable]') as HTMLElement | null;
+      placeholder?.blur();
+    });
+    prompt.addEventListener('commit', commitListener);
+
+    const placeholder = prompt.shadowRoot!.querySelector('[contenteditable]') as HTMLElement;
+    assert.exists(placeholder);
+    placeholder.textContent = 'foo';
+    placeholder.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
+
+    sinon.assert.calledOnce(commitListener);
+  });
+
+  it('uses the value attribute when starting to edit instead of innerText', async () => {
+    const prompt = renderPrompt(html`<devtools-prompt value=${'Value content'}>Initial content</devtools-prompt>`);
+    prompt.setAttribute('editing', 'true');
+
+    assert.strictEqual(prompt.innerText, '');
+    assert.strictEqual(prompt.deepInnerText(), 'Value content');
+
+    const placeholder = prompt.shadowRoot?.querySelector('[contenteditable]');
+    assert.exists(placeholder);
+    assert.strictEqual(placeholder.textContent, 'Value content');
+    assert.strictEqual(window.getSelection()?.toString(), 'Value content');
+  });
+
+  it('allows setting value attribute dynamically', async () => {
+    const prompt = renderPrompt(html`<devtools-prompt>Initial content</devtools-prompt>`);
+    prompt.setAttribute('value', 'Updated value');
+    assert.strictEqual(prompt.getAttribute('value'), 'Updated value');
+
+    prompt.setAttribute('editing', 'true');
+    const placeholder = prompt.shadowRoot?.querySelector('[contenteditable]');
+    assert.exists(placeholder);
+    assert.strictEqual(placeholder.textContent, 'Updated value');
+  });
 });
 
 describe('TextPrompt', () => {
@@ -307,5 +348,31 @@ describe('TextPrompt', () => {
     assert.strictEqual(prompt.text(), 'the expression and query');
     assert.strictEqual(expression, 'the expression and ');
     assert.strictEqual(query, 'query');
+  });
+
+  it('updates hint as user types', async () => {
+    const suggestions = [{text: 'testTextPrompt'}];
+    prompt.initialize(async (expression, query) => suggestions.filter(s => s.text.startsWith(query)));
+    prompt.attachAndStartEditing(div);
+
+    prompt.setText('testT');
+    await prompt.complete();
+    assert.strictEqual(prompt.textWithCurrentSuggestion(), 'testTextPrompt');
+
+    prompt.setText('testTe');
+    await prompt.complete();
+    assert.strictEqual(prompt.textWithCurrentSuggestion(), 'testTextPrompt');
+
+    prompt.setText('testTez');
+    await prompt.complete();
+    assert.strictEqual(prompt.textWithCurrentSuggestion(), 'testTez');
+
+    prompt.setText('testTe');
+    await prompt.complete();
+    assert.strictEqual(prompt.textWithCurrentSuggestion(), 'testTextPrompt');
+
+    prompt.setText('something_before testT');
+    await prompt.complete();
+    assert.strictEqual(prompt.textWithCurrentSuggestion(), 'something_before testTextPrompt');
   });
 });

@@ -11,9 +11,9 @@ import type {MarkdownIssueDescription} from './MarkdownIssueDescription.js';
 
 const UIStrings = {
   /**
-   * @description Title for a learn more link in Heavy Ads issue description
+   * @description Title for a learn more link in heavy ads issue description.
    */
-  handlingHeavyAdInterventions: 'Handling Heavy Ad Interventions',
+  handlingHeavyAdInterventions: 'Handling heavy ad interventions',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('models/issues_manager/HeavyAdIssue.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -57,7 +57,7 @@ export class HeavyAdIssue extends Issue<Protocol.Audits.HeavyAdIssueDetails> {
       issuesModel: SDK.IssuesModel.IssuesModel|null, inspectorIssue: Protocol.Audits.InspectorIssue): HeavyAdIssue[] {
     const heavyAdIssueDetails = inspectorIssue.details.heavyAdIssueDetails;
     if (!heavyAdIssueDetails) {
-      console.warn('Heavy Ad issue without details received.');
+      console.warn('Heavy ad issue without details received.');
       return [];
     }
     return [new HeavyAdIssue(heavyAdIssueDetails, issuesModel)];

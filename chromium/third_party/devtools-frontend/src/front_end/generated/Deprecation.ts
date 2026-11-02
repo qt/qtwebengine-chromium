@@ -55,6 +55,10 @@ export const UIStrings = {
    */
   DataUrlInSvgUse: "Support for data: URLs in SVGUseElement is deprecated and it will be removed in the future.",
   /**
+   * @description Warning displayed to developers when an unknown protocol string is used in a call to navigator.credentials.get() or create() with the 'digital' option.
+   */
+  DigitalCredentialsUnknownProtocol: "An unknown Digital Credentials protocol was requested in navigator.credentials.get() or create(). In a future release, unrecognized protocols will be blocked.",
+  /**
    * @description Warning displayed to developers when document.createEvent() is called with 'KeyboardEvents', which is a non-standard event interface that will be removed.
    */
   DocumentCreateEventKeyboardEvents: "document.createEvent('KeyboardEvents') is deprecated and will be removed. Use `new KeyboardEvent()` instead.",
@@ -275,6 +279,14 @@ export const UIStrings = {
    */
   WebBluetoothRemoteCharacteristicWriteValue: "`BluetoothRemoteGATTCharacteristic.writeValue()` is deprecated. Use `writeValueWithResponse()` or `writeValueWithoutResponse()` instead.",
   /**
+   * @description Warning for using the deprecated 'incomingHighWaterMark' attribute on WebTransportDatagramDuplexStream. Developers should use 'incomingMaxBufferedDatagrams' instead.
+   */
+  WebTransportDatagramDuplexStreamIncomingHighWaterMark: "WebTransportDatagramDuplexStream.incomingHighWaterMark has been renamed to incomingMaxBufferedDatagrams. incomingHighWaterMark will be removed in a future version of Chrome.",
+  /**
+   * @description Warning for using the deprecated 'outgoingHighWaterMark' attribute on WebTransportDatagramDuplexStream. Developers should use 'outgoingMaxBufferedDatagrams' instead.
+   */
+  WebTransportDatagramDuplexStreamOutgoingHighWaterMark: "WebTransportDatagramDuplexStream.outgoingHighWaterMark has been renamed to outgoingMaxBufferedDatagrams. outgoingHighWaterMark will be removed in a future version of Chrome.",
+  /**
    * @description Warning displayed to developers that they are using `XMLHttpRequest` API in a way that they expect an unsupported character encoding `UTF-16` could be used in the server reply.
    */
   XHRJSONEncodingDetection: "UTF-16 is not supported by response json in `XMLHttpRequest`",
@@ -324,6 +336,10 @@ export const DEPRECATIONS_METADATA: Partial<Record<string, DeprecationDescriptor
   "DataUrlInSvgUse": {
     "chromeStatusFeature": 5128825141198848,
     "milestone": 119
+  },
+  "DigitalCredentialsUnknownProtocol": {
+    "chromeStatusFeature": 6492906882990080,
+    "milestone": 160
   },
   "DocumentCreateEventKeyboardEvents": {
     "chromeStatusFeature": 5095987863486464,
@@ -438,6 +454,14 @@ export const DEPRECATIONS_METADATA: Partial<Record<string, DeprecationDescriptor
   },
   "WebBluetoothRemoteCharacteristicWriteValue": {
     "chromeStatusFeature": 5088568590598144
+  },
+  "WebTransportDatagramDuplexStreamIncomingHighWaterMark": {
+    "chromeStatusFeature": 5143839699501056,
+    "milestone": 156
+  },
+  "WebTransportDatagramDuplexStreamOutgoingHighWaterMark": {
+    "chromeStatusFeature": 5143839699501056,
+    "milestone": 156
   },
   "XHRJSONEncodingDetection": {
     "milestone": 93

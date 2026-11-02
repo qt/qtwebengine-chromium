@@ -17,20 +17,11 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@com_github_grpc_grpc//bazel:cc_grpc_library.bzl", "cc_grpc_library")
 load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
-load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 
 package(
     default_visibility = ["//:default_visibility"],
     licenses = ["notice"],
-)
-
-proto_library(
-    name = "hostlib_key_provisioning_proto",
-    srcs = ["hostlib_key_provisioning.proto"],
-    deps = [
-        "//proto/key_provisioning:key_provisioning_proto",
-        "@com_google_protobuf//:empty_proto",
-    ],
 )
 
 proto_library(
@@ -46,6 +37,7 @@ proto_library(
 
 cc_proto_library(
     name = "interfaces_cc_proto",
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [":interfaces_proto"],
 )
 
@@ -54,6 +46,7 @@ cc_grpc_library(
     srcs = [":interfaces_proto"],
     generate_mocks = True,
     grpc_only = True,
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [":interfaces_cc_proto"],
 )
 
@@ -69,6 +62,7 @@ proto_library(
 
 cc_proto_library(
     name = "orchestrator_crypto_cc_proto",
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [":orchestrator_crypto_proto"],
 )
 
@@ -77,18 +71,6 @@ cc_grpc_library(
     srcs = [":orchestrator_crypto_proto"],
     generate_mocks = True,
     grpc_only = True,
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [":orchestrator_crypto_cc_proto"],
-)
-
-build_test(
-    name = "build_test",
-    targets = [
-        ":hostlib_key_provisioning_proto",
-        ":interfaces_proto",
-        ":interfaces_cc_proto",
-        ":interfaces_cc_grpc",
-        ":orchestrator_crypto_proto",
-        ":orchestrator_crypto_cc_proto",
-        ":orchestrator_crypto_cc_grpc",
-    ],
 )

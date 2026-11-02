@@ -38,6 +38,7 @@ component("network") {
     "//components/pref_registry",
     "//components/prefs",
     "//components/server_certificate_database",
+    "//components/session_manager/core",
     "//components/url_formatter",
     "//components/user_manager",
     "//crypto",
@@ -223,10 +224,6 @@ component("network") {
     "traffic_counters_handler.cc",
     "traffic_counters_handler.h",
   ]
-
-  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
-  # enable the diagnostic by removing this line.
-  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 source_set("test_support") {
@@ -327,6 +324,9 @@ source_set("unit_tests") {
     "//components/prefs:test_support",
     "//components/proxy_config",
     "//components/server_certificate_database:test_support",
+    "//components/session_manager/core",
+    "//components/session_manager/core:test_support",
+    "//components/session_manager/test:test_support",
     "//components/sync_preferences:test_support",
     "//components/user_manager:test_support",
     "//crypto",
@@ -395,8 +395,4 @@ source_set("unit_tests") {
     "text_message_provider_unittest.cc",
     "traffic_counters_handler_unittest.cc",
   ]
-
-  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
-  # enable the diagnostic by removing this line.
-  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }

@@ -8,14 +8,35 @@ import("../../../scripts/build/ninja/generate_css.gni")
 import("../../../scripts/build/typescript/typescript.gni")
 
 generate_css("css_files") {
-  sources = [ "recorderController.css" ]
+  sources = [
+    "controlButton.css",
+    "createRecordingView.css",
+    "extensionView.css",
+    "recorderPanel.css",
+    "recordingListView.css",
+    "recordingView.css",
+    "replaySection.css",
+    "selectorPicker.css",
+    "stepEditor.css",
+    "stepView.css",
+    "timelineSection.css",
+  ]
 }
 
 devtools_ui_module("recorder") {
   sources = [
-    "RecorderController.ts",
+    "ControlButton.ts",
+    "CreateRecordingView.ts",
+    "ExtensionView.ts",
     "RecorderEvents.ts",
     "RecorderPanel.ts",
+    "RecordingListView.ts",
+    "RecordingView.ts",
+    "ReplaySection.ts",
+    "SelectorPicker.ts",
+    "StepEditor.ts",
+    "StepView.ts",
+    "TimelineSection.ts",
   ]
 
   deps = [
@@ -25,25 +46,34 @@ devtools_ui_module("recorder") {
     "../../core/platform:bundle",
     "../../core/root:bundle",
     "../../core/sdk:bundle",
+    "../../generated",
+    "../../models/badges:bundle",
     "../../models/bindings:bundle",
     "../../models/extensions:bundle",
     "../../models/trace:bundle",
     "../../panels/common:bundle",
     "../../panels/emulation:bundle",
     "../../services/tracing:bundle",
+    "../../third_party/codemirror.next:bundle",
+    "../../third_party/puppeteer:bundle",
     "../../third_party/puppeteer-replay:bundle",
     "../../ui/components/buttons:bundle",
+    "../../ui/components/code_highlighter:bundle",
     "../../ui/components/dialogs:bundle",
+    "../../ui/components/input:bundle",
     "../../ui/components/menus:bundle",
+    "../../ui/components/suggestion_input:bundle",
+    "../../ui/components/text_editor:bundle",
     "../../ui/kit:bundle",
     "../../ui/legacy:bundle",
     "../../ui/lit:bundle",
     "../../ui/visual_logging:bundle",
-    "./components:bundle",
     "./converters:bundle",
     "./extensions:bundle",
     "./models:bundle",
+    "./models:recorder",
     "./recorder-actions:bundle",
+    "./util:bundle",
   ]
 }
 
@@ -61,6 +91,7 @@ devtools_entrypoint("bundle") {
     "../../../test/e2e/recorder:*",
     "../../entrypoints/main/*",
     "../../panels/sources/*",
+    "../../ui/components/docs/*",
   ]
 }
 
@@ -85,18 +116,29 @@ devtools_ui_module("unittests") {
   testonly = true
 
   sources = [
-    "RecorderController.test.ts",
+    "CreateRecordingView.test.ts",
+    "RecorderPanel.test.ts",
+    "RecordingListView.test.ts",
+    "RecordingView.test.ts",
+    "ReplaySection.test.ts",
+    "StepEditor.test.ts",
+    "StepView.test.ts",
     "injected.test.ts",
   ]
 
   deps = [
     ":bundle",
+    "../../core/host:bundle",
     "../../testing",
+    "../../ui/components/menus:bundle",
     "../../ui/components/render_coordinator:bundle",
+    "../../ui/components/suggestion_input:bundle",
     "../../ui/legacy:bundle",
-    "./components:bundle",
+    "./converters:bundle",
+    "./extensions:bundle",
     "./models:bundle",
+    "./recorder-actions:bundle",
+    "./testing",
     "injected:bundle",
-    "recorder-actions:bundle",
   ]
 }

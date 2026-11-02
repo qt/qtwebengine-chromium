@@ -256,12 +256,14 @@ export class TraceLoader {
               const {sourceUrl, sourceMapUrl, cachedRawSourceMap} = params;
 
               if (cachedRawSourceMap) {
-                return new SDK.SourceMap.SourceMap(sourceUrl, sourceMapUrl, cachedRawSourceMap);
+                return new SDK.SourceMap.SourceMap(sourceUrl, sourceMapUrl, cachedRawSourceMap,
+                                                   Common.Console.Console.instance());
               }
 
               if (sourceMapUrl.startsWith('data:')) {
                 const rawSourceMap = await (await fetch(sourceMapUrl)).json();
-                return new SDK.SourceMap.SourceMap(sourceUrl, sourceMapUrl, rawSourceMap);
+                return new SDK.SourceMap.SourceMap(sourceUrl, sourceMapUrl, rawSourceMap,
+                                                   Common.Console.Console.instance());
               }
 
               return null;

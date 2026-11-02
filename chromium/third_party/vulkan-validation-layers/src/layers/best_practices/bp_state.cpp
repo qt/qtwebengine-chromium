@@ -634,7 +634,7 @@ void CommandBufferSubState::RecordSetEvent(VkEvent event, VkPipelineStageFlags) 
     }
 }
 
-void CommandBufferSubState::RecordSetEvent2(VkEvent event, const VkDependencyInfo&) {
+void CommandBufferSubState::RecordSetEvent2(VkEvent event, const VkDependencyInfo&, const Location&) {
     if (auto* signaling_info = vvl::Find(event_signaling_state, event)) {
         signaling_info->signaled = true;
     } else {
@@ -642,7 +642,7 @@ void CommandBufferSubState::RecordSetEvent2(VkEvent event, const VkDependencyInf
     }
 }
 
-void CommandBufferSubState::RecordResetEvent(VkEvent event, VkPipelineStageFlags2) {
+void CommandBufferSubState::RecordResetEvent(VkEvent event, VkPipelineStageFlags2, const Location&) {
     if (auto* signaling_info = vvl::Find(event_signaling_state, event)) {
         signaling_info->signaled = false;
     } else {
@@ -664,7 +664,7 @@ void CommandBufferSubState::RecordBarriers(uint32_t, const VkBufferMemoryBarrier
 
         // Is a queue ownership acquisition barrier
         if (barrier.srcQueueFamilyIndex != barrier.dstQueueFamilyIndex &&
-            barrier.dstQueueFamilyIndex == base.command_pool->queueFamilyIndex) {
+            barrier.dstQueueFamilyIndex == base.command_pool.queueFamilyIndex) {
             auto subresource_range = barrier.subresourceRange;
             queue_submit_functions.emplace_back(
                 [image_state, subresource_range](const vvl::Queue& qs, const vvl::CommandBuffer& cbs) -> bool {
@@ -695,7 +695,7 @@ void CommandBufferSubState::RecordBarriers2(const VkDependencyInfo& dep_info, co
 
         // Is a queue ownership acquisition barrier
         if (barrier.srcQueueFamilyIndex != barrier.dstQueueFamilyIndex &&
-            barrier.dstQueueFamilyIndex == base.command_pool->queueFamilyIndex) {
+            barrier.dstQueueFamilyIndex == base.command_pool.queueFamilyIndex) {
             auto subresource_range = barrier.subresourceRange;
             queue_submit_functions.emplace_back(
                 [image_state, subresource_range](const vvl::Queue& qs, const vvl::CommandBuffer& cbs) -> bool {

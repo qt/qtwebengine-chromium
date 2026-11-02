@@ -12,7 +12,7 @@ import {ApplicationPanelTreeElement} from './ApplicationPanelTreeElement.js';
 import {
   DeviceBoundSessionModelEvents,
   type DeviceBoundSessionModelEventTypes,
-  type DeviceBoundSessionsModel
+  type DeviceBoundSessionsModel,
 } from './DeviceBoundSessionsModel.js';
 import type {ResourcesPanel} from './ResourcesPanel.js';
 

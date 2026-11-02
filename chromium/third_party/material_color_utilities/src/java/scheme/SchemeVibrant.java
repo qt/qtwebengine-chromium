@@ -15,27 +15,65 @@
  */
 package scheme;
 
+import dynamiccolor.ColorSpec.SpecVersion;
+import dynamiccolor.ColorSpecs;
+import dynamiccolor.DynamicScheme;
+import dynamiccolor.Variant;
 import hct.Hct;
-import palettes.TonalPalette;
+import java.util.Collections;
+import java.util.List;
 
 /** A loud theme, colorfulness is maximum for Primary palette, increased for others. */
 public class SchemeVibrant extends DynamicScheme {
-  private static final double[] HUES = {0, 41, 61, 101, 131, 181, 251, 301, 360};
-  private static final double[] SECONDARY_ROTATIONS = {18, 15, 10, 12, 15, 18, 15, 12, 12};
-  private static final double[] TERTIARY_ROTATIONS = {35, 30, 20, 25, 30, 35, 30, 25, 25};
 
   public SchemeVibrant(Hct sourceColorHct, boolean isDark, double contrastLevel) {
+    this(sourceColorHct, isDark, contrastLevel, DEFAULT_SPEC_VERSION, DEFAULT_PLATFORM);
+  }
+
+  public SchemeVibrant(
+      Hct sourceColorHct,
+      boolean isDark,
+      double contrastLevel,
+      SpecVersion specVersion,
+      Platform platform) {
+    this(Collections.singletonList(sourceColorHct), isDark, contrastLevel, specVersion, platform);
+  }
+
+  public SchemeVibrant(List<Hct> sourceColorHctList, boolean isDark, double contrastLevel) {
+    this(sourceColorHctList, isDark, contrastLevel, DEFAULT_SPEC_VERSION, DEFAULT_PLATFORM);
+  }
+
+  public SchemeVibrant(
+      List<Hct> sourceColorHctList,
+      boolean isDark,
+      double contrastLevel,
+      SpecVersion specVersion,
+      Platform platform) {
     super(
-        sourceColorHct,
+        sourceColorHctList,
         Variant.VIBRANT,
         isDark,
         contrastLevel,
-        TonalPalette.fromHueAndChroma(sourceColorHct.getHue(), 200.0),
-        TonalPalette.fromHueAndChroma(
-            DynamicScheme.getRotatedHue(sourceColorHct, HUES, SECONDARY_ROTATIONS), 24.0),
-        TonalPalette.fromHueAndChroma(
-            DynamicScheme.getRotatedHue(sourceColorHct, HUES, TERTIARY_ROTATIONS), 32.0),
-        TonalPalette.fromHueAndChroma(sourceColorHct.getHue(), 10.0),
-        TonalPalette.fromHueAndChroma(sourceColorHct.getHue(), 12.0));
+        platform,
+        specVersion,
+        ColorSpecs.get(specVersion)
+            .getPrimaryPalette(
+                Variant.VIBRANT, sourceColorHctList.get(0), isDark, platform, contrastLevel),
+        ColorSpecs.get(specVersion)
+            .getSecondaryPalette(
+                Variant.VIBRANT, sourceColorHctList.get(0), isDark, platform, contrastLevel),
+        ColorSpecs.get(specVersion)
+            .getTertiaryPalette(
+                Variant.VIBRANT, sourceColorHctList.get(0), isDark, platform, contrastLevel),
+        ColorSpecs.get(specVersion)
+            .getNeutralPalette(
+                Variant.VIBRANT, sourceColorHctList.get(0), isDark, platform, contrastLevel),
+        ColorSpecs.get(specVersion)
+            .getNeutralVariantPalette(
+                Variant.VIBRANT, sourceColorHctList.get(0), isDark, platform, contrastLevel),
+        ColorSpecs.get(specVersion)
+            .getErrorPalette(
+                Variant.VIBRANT, sourceColorHctList.get(0), isDark, platform, contrastLevel));
   }
 }
+

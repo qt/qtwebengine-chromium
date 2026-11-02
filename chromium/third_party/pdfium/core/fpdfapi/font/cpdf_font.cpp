@@ -31,7 +31,7 @@
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/stl_util.h"
-#include "core/fxge/cfx_fontmapper.h"
+#include "core/fxge/cfx_standardfont.h"
 #include "core/fxge/cfx_substfont.h"
 #include "core/fxge/fx_font.h"
 #include "core/fxge/fx_fontencoding.h"
@@ -60,31 +60,7 @@ CPDF_Font::~CPDF_Font() {
   }
 }
 
-bool CPDF_Font::IsType1Font() const {
-  return false;
-}
-
-bool CPDF_Font::IsTrueTypeFont() const {
-  return false;
-}
-
-bool CPDF_Font::IsType3Font() const {
-  return false;
-}
-
-bool CPDF_Font::IsCIDFont() const {
-  return false;
-}
-
-const CPDF_Type1Font* CPDF_Font::AsType1Font() const {
-  return nullptr;
-}
-
 CPDF_Type1Font* CPDF_Font::AsType1Font() {
-  return nullptr;
-}
-
-const CPDF_TrueTypeFont* CPDF_Font::AsTrueTypeFont() const {
   return nullptr;
 }
 
@@ -92,15 +68,7 @@ CPDF_TrueTypeFont* CPDF_Font::AsTrueTypeFont() {
   return nullptr;
 }
 
-const CPDF_Type3Font* CPDF_Font::AsType3Font() const {
-  return nullptr;
-}
-
 CPDF_Type3Font* CPDF_Font::AsType3Font() {
-  return nullptr;
-}
-
-const CPDF_CIDFont* CPDF_Font::AsCIDFont() const {
   return nullptr;
 }
 
@@ -168,6 +136,14 @@ void CPDF_Font::LoadFontDescriptor(const CPDF_Dictionary* font_desc) {
     stem_v_ = font_desc->GetIntegerFor("StemV");
     bExistStemV = true;
   }
+  bool has_valid_font_weight = false;
+  if (font_desc->KeyExist("FontWeight")) {
+    int font_weight = font_desc->GetIntegerFor("FontWeight");
+    has_valid_font_weight = font_weight > 0;
+    if (has_valid_font_weight) {
+      font_weight_ = font_weight;
+    }
+  }
   bool bExistAscent = false;
   if (font_desc->KeyExist("Ascent")) {
     ascent_ = font_desc->GetIntegerFor("Ascent");
@@ -183,8 +159,8 @@ void CPDF_Font::LoadFontDescriptor(const CPDF_Dictionary* font_desc) {
     bExistCapHeight = true;
   }
   if (bExistItalicAngle && bExistAscent && bExistCapHeight && bExistDescent &&
-      bExistStemV) {
-    flags_ |= FXFONT_USEEXTERNATTR;
+      (bExistStemV || has_valid_font_weight)) {
+    flags_ |= kFontUseExternAttr;
   }
   if (descent_ > 10) {
     descent_ = -descent_;
@@ -273,9 +249,9 @@ bool CPDF_Font::ShouldApplyGlyphSpacingHeuristic(
   ByteString base_font_name = GetBaseFontName();
   base_font_name.MakeLower();
 
-  auto standard_font_name =
-      CFX_FontMapper::GetStandardFontName(&base_font_name);
-  if (standard_font_name.has_value()) {
+  std::optional<CFX_StandardFont::Index> base_font_index =
+      CFX_StandardFont::GetStandardFontIndex(base_font_name);
+  if (base_font_index.has_value()) {
     return false;
   }
 
@@ -310,11 +286,12 @@ int CPDF_Font::GetStringWidth(ByteStringView pString) {
 RetainPtr<CPDF_Font> CPDF_Font::GetStockFont(CPDF_Document* doc,
                                              ByteStringView name) {
   ByteString fontname(name);
-  std::optional<CFX_FontMapper::StandardFont> font_id =
-      CFX_FontMapper::GetStandardFontName(&fontname);
+  std::optional<CFX_StandardFont::Index> font_id =
+      CFX_StandardFont::GetStandardFontIndex(fontname);
   if (!font_id.has_value()) {
     return nullptr;
   }
+  fontname = CFX_StandardFont::GetCanonicalFontName(font_id.value());
 
   auto* font_globals = CPDF_FontGlobals::GetInstance();
   RetainPtr<CPDF_Font> font = font_globals->Find(doc, font_id.value());
@@ -432,7 +409,7 @@ std::vector<TextCharPos> CPDF_Font::GetCharPosList(
     results.emplace_back();
     TextCharPos& text_char_pos = results.back();
     if (cid_font) {
-      text_char_pos.font_style_ = true;
+      text_char_pos.is_cid_font_ = true;
     }
     WideString unicode = UnicodeFromCharCode(char_code);
     text_char_pos.unicode_ = !unicode.IsEmpty() ? unicode.Front() : char_code;
@@ -524,11 +501,11 @@ std::vector<TextCharPos> CPDF_Font::GetCharPosList(
 }
 
 std::optional<FX_Charset> CPDF_Font::GetSubstFontCharset() const {
-  CFX_SubstFont* font = font_.GetSubstFont();
+  const CFX_SubstFont* font = font_.GetSubstFont();
   if (!font) {
     return std::nullopt;
   }
-  return font->charset_;
+  return font->GetCharset();
 }
 
 // static
@@ -631,6 +608,9 @@ bool CPDF_Font::UseTTCharmap(const RetainPtr<CFX_Face>& face,
 }
 
 std::optional<int> CPDF_Font::GetFontWeight() const {
+  if (font_weight_.has_value()) {
+    return font_weight_.value();
+  }
   FX_SAFE_INT32 safe_stem_v(stem_v_);
   if (stem_v_ < 140) {
     safe_stem_v *= 5;

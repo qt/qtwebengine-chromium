@@ -36,7 +36,9 @@ namespace {
 using namespace tint::core::fluent_types;     // NOLINT
 using namespace tint::core::number_suffixes;  // NOLINT
 
-using IR_ArrayLengthFromUniformTest = TransformTest;
+struct IR_ArrayLengthFromUniformTest : public TransformTest {
+    void SetUp() override { mod.properties.Add(Property::kAllowBufferTypes); }
+};
 
 TEST_F(IR_ArrayLengthFromUniformTest, NoModify_UserFunction) {
     auto* arr = ty.array<i32>();
@@ -1551,7 +1553,8 @@ TEST_F(IR_ArrayLengthFromUniformTest, BufferView_Unsized_Direct) {
     auto* foo = b.ComputeFunction("foo", 1_u, 1_u, 1_u);
     b.Append(foo->Block(), [&] {
         auto* offset = b.Let("offset", 16_u);
-        auto* view = b.CallExplicit(S_ptr, core::BuiltinFn::kBufferView, Vector{S}, gv, offset);
+        auto* view = b.CallExplicit(S_ptr, core::BuiltinFn::kBufferView,
+                                    Vector<TemplateParameter, 1>{S}, gv, offset);
         auto* access = b.Access(arr_ptr, view, 1_u);
         auto* length = b.Call(ty.u32(), core::BuiltinFn::kArrayLength, access);
         b.Let("len", length);
@@ -1635,8 +1638,8 @@ TEST_F(IR_ArrayLengthFromUniformTest, BufferArrayView_Sized_Direct) {
 
     auto* foo = b.ComputeFunction("foo", 1_u, 1_u, 1_u);
     b.Append(foo->Block(), [&] {
-        auto* offset = b.CallExplicit(arr_ptr, core::BuiltinFn::kBufferArrayView, Vector{arr}, gv,
-                                      0_u, 128_u, 256_u);
+        auto* offset = b.CallExplicit(arr_ptr, core::BuiltinFn::kBufferArrayView,
+                                      Vector<TemplateParameter, 1>{arr}, gv, 0_u, 128_u, 256_u);
         auto* length = b.Call(ty.u32(), core::BuiltinFn::kArrayLength, offset);
         b.Let("len", length);
         b.Return(foo);
@@ -1717,7 +1720,8 @@ TEST_F(IR_ArrayLengthFromUniformTest, BufferView_Unsized_Indirect) {
 
     auto* foo = b.ComputeFunction("foo", 1_u, 1_u, 1_u);
     b.Append(foo->Block(), [&] {
-        auto* offset = b.CallExplicit(arr_ptr, core::BuiltinFn::kBufferView, Vector{arr}, gv, 0_u);
+        auto* offset = b.CallExplicit(arr_ptr, core::BuiltinFn::kBufferView,
+                                      Vector<TemplateParameter, 1>{arr}, gv, 0_u);
         auto* construct = b.Construct(bundle, offset, 0_u, 0_u, 0_u, 0_u);
         b.Call(ty.void_(), bar, construct);
         b.Return(foo);
@@ -1805,7 +1809,7 @@ $B1: {  # root
 }
 )";
 
-    capabilities.Add(core::ir::Capability::kMslAllowEntryPointInterface);
+    mod.properties.Add(core::ir::Property::kAllowMslEntryPointInterface);
     std::unordered_map<BindingPoint, uint32_t> bindpoint_to_index;
     bindpoint_to_index[{0, 0}] = 0;
     Run(ArrayLengthFromUniform, BindingPoint{1, 2}, bindpoint_to_index);

@@ -34,6 +34,7 @@
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as AiAssistanceModel from '../../models/ai_assistance/ai_assistance.js';
 import * as Geometry from '../../models/geometry/geometry.js';
 import * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 import * as CookieTable from '../../ui/legacy/components/cookie_table/cookie_table.js';
@@ -49,6 +50,14 @@ const UIStrings = {
    * @description Label for checkbox to show URL-decoded cookie values
    */
   showUrlDecoded: 'Show URL-decoded',
+  /**
+   * @description Text of a context menu item to start a chat with AI
+   */
+  startAChat: 'Start a chat',
+  /**
+   * @description Text of a context menu item to explain a web cookie with AI
+   */
+  explainCookie: 'Explain this cookie',
   /**
    * @description Text in Cookie Items View of the Application panel to indicate that no cookie has been selected for preview
    */
@@ -173,6 +182,10 @@ interface CookieItemsViewInput {
   onDeleteSelectedItems: () => void;
   onDeleteAllItems: () => void;
   onRefreshItems: () => void;
+  aiButtonIsEnabled: boolean;
+  onPopulateAiContextMenu: (cookie: SDK.Cookie.Cookie, contextMenu: UI.ContextMenu.ContextMenu) => void;
+  onAiButtonClick: (cookie: SDK.Cookie.Cookie, event: Event) => void;
+  aiButtonTitle?: string;
   selectedCookie: SDK.Cookie.Cookie|null;
 }
 
@@ -202,6 +215,10 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
             refreshCallback: input.onRefresh,
             selectedCallback: input.onSelect,
             deleteCallback: input.onDelete,
+            aiButtonIsEnabled: input.aiButtonIsEnabled,
+            onAiButtonClick: input.onAiButtonClick,
+            onPopulateAiContextMenu: input.onPopulateAiContextMenu,
+            aiButtonTitle: input.aiButtonTitle,
             editable: true,
           })}
           ></devtools-widget>
@@ -213,14 +230,14 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
                  </devtools-widget>` :
             html`<devtools-widget ${widget(UI.EmptyWidget.EmptyWidget, {
               header: i18nString(UIStrings.noCookieSelected),
-              text: i18nString(UIStrings.selectACookieToPreviewItsValue)
+              text: i18nString(UIStrings.selectACookieToPreviewItsValue),
             })}></devtools-widget>`}
         </devtools-widget>
       </devtools-split-view>
     </devtools-widget>
   `,
-      // clang-format on
-      target, {container: {attributes: {jslog: `${VisualLogging.pane('cookies-data')}`}}});
+         // clang-format on
+         target, {container: {attributes: {jslog: `${VisualLogging.pane('cookies-data')}`}}});
 };
 
 export class CookieItemsView extends UI.Widget.VBox {
@@ -294,6 +311,12 @@ export class CookieItemsView extends UI.Widget.VBox {
       onDeleteAllItems: this.deleteAllItems.bind(this),
       onRefreshItems: this.refreshItems.bind(this),
       selectedCookie: this.selectedCookie,
+      aiButtonIsEnabled: this.isAiButtonEnabled(),
+      onPopulateAiContextMenu: this.#onPopulateAiContextMenu.bind(this),
+      onAiButtonClick: this.#onAiButtonClick.bind(this),
+      aiButtonTitle: this.isAiButtonEnabled() ?
+          UI.ActionRegistry.ActionRegistry.instance().getAction('ai-assistance.storage-floating-button').title() :
+          undefined,
     };
 
     this.view(input, output, this.contentElement);
@@ -312,12 +335,33 @@ export class CookieItemsView extends UI.Widget.VBox {
     this.requestUpdate();
   }
 
+  #updateAiAssistanceContext(cookie: SDK.Cookie.Cookie|null): void {
+    if (cookie && cookie.httpOnly()) {
+      UI.Context.Context.instance().setFlavor(AiAssistanceModel.StorageItem.StorageItem, null);
+      return;
+    }
+
+    const target = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
+    const mainPageOrigin =
+        target?.inspectedURL() ? Common.ParsedURL.ParsedURL.extractOrigin(target.inspectedURL()) : '';
+
+    if (!mainPageOrigin) {
+      // If we don't have a primary target origin, we shouldn't allow the AI assistance context to be attached.
+      UI.Context.Context.instance().setFlavor(AiAssistanceModel.StorageItem.StorageItem, null);
+      return;
+    }
+
+    const storageItem = new AiAssistanceModel.StorageItem.CookieItem(mainPageOrigin, this.cookieDomain, cookie?.name());
+    UI.Context.Context.instance().setFlavor(AiAssistanceModel.StorageItem.StorageItem, storageItem);
+  }
+
   private handleCookieSelected(selectedCookie: SDK.Cookie.Cookie|null): void {
     if (!this.#toolbar) {
       return;
     }
     this.#toolbar.setCanDeleteSelected(Boolean(selectedCookie));
     this.showPreview(selectedCookie);
+    this.#updateAiAssistanceContext(selectedCookie);
   }
 
   private async saveCookie(newCookie: SDK.Cookie.Cookie, oldCookie: SDK.Cookie.Cookie|null): Promise<boolean> {
@@ -358,7 +402,7 @@ export class CookieItemsView extends UI.Widget.VBox {
         return true;
       }
       if (object instanceof SDK.Cookie.Cookie) {
-        return IssuesManager.RelatedIssue.hasIssues(object);
+        return IssuesManager.RelatedIssue.hasIssues(object, IssuesManager.IssuesManager.IssuesManager.instance());
       }
       return false;
     };
@@ -369,6 +413,7 @@ export class CookieItemsView extends UI.Widget.VBox {
    * This will only delete the currently visible cookies.
    */
   deleteAllItems(): void {
+    UI.Context.Context.instance().setFlavor(AiAssistanceModel.StorageItem.StorageItem, null);
     this.showPreview(null);
     void this.model.deleteCookies(this.shownCookies);
   }
@@ -387,5 +432,33 @@ export class CookieItemsView extends UI.Widget.VBox {
 
   refreshItems(): void {
     void this.model.getCookiesForDomain(this.cookieDomain, true).then(this.updateWithCookies.bind(this));
+  }
+
+  private isAiButtonEnabled(): boolean {
+    return UI.ActionRegistry.ActionRegistry.instance().hasAction('ai-assistance.storage-floating-button');
+  }
+
+  #onPopulateAiContextMenu(cookie: SDK.Cookie.Cookie, contextMenu: UI.ContextMenu.ContextMenu): void {
+    const openAiAssistanceId = 'ai-assistance.application-panel-context';
+    if (this.isAiButtonEnabled() && UI.ActionRegistry.ActionRegistry.instance().hasAction(openAiAssistanceId)) {
+      this.#updateAiAssistanceContext(cookie);
+      if (UI.Context.Context.instance().flavor(AiAssistanceModel.StorageItem.StorageItem)) {
+        const action = UI.ActionRegistry.ActionRegistry.instance().getAction(openAiAssistanceId);
+        const submenu = contextMenu.footerSection().appendSubMenuItem(action.title(), false, openAiAssistanceId);
+        submenu.defaultSection().appendAction(openAiAssistanceId, i18nString(UIStrings.startAChat));
+        submenu.defaultSection().appendItem(
+            i18nString(UIStrings.explainCookie), () => action.execute({prompt: 'What is the purpose of this cookie?'}),
+            {disabled: !action.enabled(), jslogContext: openAiAssistanceId + '.cookies'});
+      }
+    }
+  }
+
+  #onAiButtonClick(cookie: SDK.Cookie.Cookie, _event: Event): void {
+    this.#updateAiAssistanceContext(cookie);
+    const actionRegistry = UI.ActionRegistry.ActionRegistry.instance();
+    const storageFloatingButtonId = 'ai-assistance.storage-floating-button';
+    if (actionRegistry.hasAction(storageFloatingButtonId)) {
+      void actionRegistry.getAction(storageFloatingButtonId).execute();
+    }
   }
 }

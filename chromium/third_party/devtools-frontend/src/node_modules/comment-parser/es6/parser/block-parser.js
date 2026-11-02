@@ -1,4 +1,4 @@
-const reTag = /^@\S+/;
+const reTag = /^@[^\s/]+(?=\s|$)/;
 /**
  * Creates configured `Parser`
  * @param {Partial<Options>} options

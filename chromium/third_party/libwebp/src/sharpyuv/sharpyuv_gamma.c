@@ -9,14 +9,14 @@
 //
 // Gamma correction utilities.
 
-#include "sharpyuv/sharpyuv_gamma.h"
+#include "./sharpyuv_gamma.h"
 
 #include <assert.h>
 #include <float.h>
 #include <math.h>
 
-#include "sharpyuv/sharpyuv.h"
-#include "src/webp/types.h"
+#include "./sharpyuv.h"
+#include "webp/types.h"
 
 // Gamma correction compensates loss of resolution during chroma subsampling.
 // Size of pre-computed table for converting from gamma to linear.
@@ -100,6 +100,7 @@ static WEBP_INLINE uint32_t FixedPointInterpolation(int v, uint32_t* tab,
 
 static uint32_t ToLinearSrgb(uint16_t v, int bit_depth) {
   const int shift = GAMMA_TO_LINEAR_TAB_BITS - bit_depth;
+  assert(v <= ((1 << bit_depth) - 1));
   if (shift > 0) {
     return kGammaToLinearTabS[v << shift];
   }
@@ -107,6 +108,7 @@ static uint32_t ToLinearSrgb(uint16_t v, int bit_depth) {
 }
 
 static uint16_t FromLinearSrgb(uint32_t value, int bit_depth) {
+  assert(value <= (1 << GAMMA_TO_LINEAR_BITS));
   return FixedPointInterpolation(
       value, kLinearToGammaTabS,
       (GAMMA_TO_LINEAR_BITS - LINEAR_TO_GAMMA_TAB_BITS),

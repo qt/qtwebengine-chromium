@@ -12,7 +12,7 @@ visibility = [ "./*" ]
 config("certificate_config") {
   visibility += [
     "../standalone_receiver:cast_receiver",
-    "../standalone_sender:cast_sender",
+    "../standalone_sender:*",
   ]
   defines = []
 }
@@ -54,7 +54,7 @@ openscreen_source_set("certificate_boringssl") {
   visibility += [
     "../..:openscreen_unittests",
     "../standalone_receiver:cast_receiver",
-    "../standalone_sender:cast_sender",
+    "../standalone_sender:*",
     "../test:*",
     "//components/media_router/common/providers/cast/channel:*",
   ]

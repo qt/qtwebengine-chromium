@@ -1,0 +1,29 @@
+/** \page page_internals Internals
+
+# Internals
+
+- \subpage page_design
+- \subpage page_audio
+- \subpage page_access
+- \subpage page_portal
+- \subpage page_midi
+- \subpage page_objects_design
+- \subpage page_library
+- \subpage page_dma_buf
+- \subpage page_scheduling
+- \subpage page_driver
+- \subpage page_latency
+- \subpage page_tag
+- \subpage page_native_protocol
+
+
+# Components
+
+- \subpage page_daemon
+- \subpage page_session_manager
+
+# Backends
+
+- \subpage page_pulseaudio
+
+*/

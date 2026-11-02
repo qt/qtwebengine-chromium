@@ -16,7 +16,7 @@ import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 import {
   DeviceBoundSessionModelEvents,
   type DeviceBoundSessionsModel,
-  type SessionAndEvents
+  type SessionAndEvents,
 } from './DeviceBoundSessionsModel.js';
 import deviceBoundSessionsViewStyles from './deviceBoundSessionsView.css.js';
 const {widget} = UI.Widget;
@@ -159,13 +159,13 @@ const UIStrings = {
    */
   noEvents: 'No events have been logged yet.',
   /**
-   *@description Text to preserve the log of events after refreshing.
+   *@description Text to keep the log of events after refreshing.
    */
-  preserveLog: 'Preserve log',
+  preserveLog: 'Keep log',
   /**
-   *@description Tooltip text that appears on the preserve log setting when hovering over it.
+   *@description Tooltip text that appears on the keep log setting when hovering over it.
    */
-  doNotClearLogOnPageReload: 'Do not clear log on page reload/navigation.',
+  doNotClearLogOnPageReload: 'Don’t clear log on page reload/navigation',
   /**
    *@description Label for the ID of a session.
    */
@@ -218,11 +218,19 @@ const UIStrings = {
   /**
    *@description Explanation for an event outcome. Key refers to a cryptographic key.
    */
-  keyError: 'Key error',
+  signingKeyGenerationError: 'Signing key generation error',
+  /**
+   *@description Explanation for an event outcome. Key refers to a cryptographic key.
+   */
+  attestationKeyGenerationError: 'Attestation key generation error',
   /**
    *@description Explanation for an event outcome. Signing refers to cryptographic signing.
    */
   signingError: 'Signing error',
+  /**
+   *@description Explanation for an event outcome. Signing refers to cryptographic signing.
+   */
+  transientSigningError: 'Transient signing error',
   /**
    *@description Explanation for an event outcome.
    */
@@ -500,10 +508,7 @@ const UIStrings = {
    *@description Explanation for an event outcome.
    */
   serverError: 'Endpoint transient error',
-  /**
-   *@description Explanation for an event outcome.
-   */
-  refreshQuotaExceeded: 'Refresh quota exceeded',
+
   /**
    *@description Explanation for an event outcome.
    */
@@ -942,10 +947,14 @@ function fetchResultToString(fetchResult: Protocol.Network.DeviceBoundSessionFet
   switch (fetchResult) {
     case Protocol.Network.DeviceBoundSessionFetchResult.Success:
       return i18nString(UIStrings.success);
-    case Protocol.Network.DeviceBoundSessionFetchResult.KeyError:
-      return i18nString(UIStrings.keyError);
+    case Protocol.Network.DeviceBoundSessionFetchResult.SigningKeyGenerationError:
+      return i18nString(UIStrings.signingKeyGenerationError);
+    case Protocol.Network.DeviceBoundSessionFetchResult.AttestationKeyGenerationError:
+      return i18nString(UIStrings.attestationKeyGenerationError);
     case Protocol.Network.DeviceBoundSessionFetchResult.SigningError:
       return i18nString(UIStrings.signingError);
+    case Protocol.Network.DeviceBoundSessionFetchResult.TransientSigningError:
+      return i18nString(UIStrings.transientSigningError);
     case Protocol.Network.DeviceBoundSessionFetchResult.ServerRequestedTermination:
       return i18nString(UIStrings.serverRequestedTermination);
     case Protocol.Network.DeviceBoundSessionFetchResult.InvalidSessionId:
@@ -1091,8 +1100,7 @@ function refreshResultToString(refreshResult: Protocol.Network.RefreshEventDetai
       return i18nString(UIStrings.unreachable);
     case Protocol.Network.RefreshEventDetailsRefreshResult.ServerError:
       return i18nString(UIStrings.serverError);
-    case Protocol.Network.RefreshEventDetailsRefreshResult.RefreshQuotaExceeded:
-      return i18nString(UIStrings.refreshQuotaExceeded);
+
     case Protocol.Network.RefreshEventDetailsRefreshResult.FatalError:
       return i18nString(UIStrings.fatalError);
     case Protocol.Network.RefreshEventDetailsRefreshResult.SigningQuotaExceeded:

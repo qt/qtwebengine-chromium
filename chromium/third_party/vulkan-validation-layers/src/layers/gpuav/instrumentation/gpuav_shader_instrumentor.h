@@ -16,6 +16,7 @@
  */
 #pragma once
 
+#include "gpuav/spirv/instrumentation_status.h"
 #include "state_tracker/descriptor_mode.h"
 #include "state_tracker/shader_instruction.h"
 #include "state_tracker/state_tracker.h"
@@ -45,6 +46,9 @@ struct Module;
 
 namespace gpuav {
 class Validator;
+namespace spirv {
+struct InstrumentationStatus;
+}
 
 // There are 3 ways to have a null VkShaderModule
 // 1. Use GPL for something like Vertex Input which won't have a shader
@@ -64,6 +68,8 @@ struct InstrumentedShader {
     VkShaderEXT shader_object;
     // We keep the original SPIR-V so we can match up where the error occurred to map to shader source files
     std::vector<uint32_t> original_spirv;
+
+    gpuav::spirv::InstrumentationStatus::Device status;
 };
 
 // Historically this was an common interface to both GPU-AV and DebugPrintf before the were merged together.
@@ -102,6 +108,9 @@ class GpuShaderInstrumentor : public vvl::DeviceProxy {
     void PreCallRecordCreatePipelineLayout(VkDevice device, const VkPipelineLayoutCreateInfo *pCreateInfo,
                                            const VkAllocationCallbacks *pAllocator, VkPipelineLayout *pPipelineLayout,
                                            const RecordObject &record_obj, chassis::CreatePipelineLayout &chassis_state) override;
+
+    void PreCallRecordSetDebugUtilsObjectNameEXT(VkDevice device, const VkDebugUtilsObjectNameInfoEXT* pNameInfo,
+                                                 const RecordObject& record_obj) override;
 
     void PostCallRecordCreateShaderModule(VkDevice device, const VkShaderModuleCreateInfo *pCreateInfo,
                                           const VkAllocationCallbacks *pAllocator, VkShaderModule *pShaderModule,
@@ -192,9 +201,8 @@ class GpuShaderInstrumentor : public vvl::DeviceProxy {
         vku::safe_VkGraphicsPipelineCreateInfo& modified_pipeline_ci, const Location& loc);
 
     // Function that will hook into the SPIR-V instrumentation passes.
-    // Returns if shader was instrumented successfully or not.
-    bool InstrumentShader(const vvl::span<const uint32_t>& input_spirv, const spirv::InstrumentationInterface& interface,
-                          std::vector<uint32_t>& out_instrumented_spirv);
+    void InstrumentShader(const vvl::span<const uint32_t>& input_spirv, const spirv::InstrumentationInterface& interface,
+                          spirv::InstrumentationStatus& out_status, std::vector<uint32_t>& out_instrumented_spirv);
 
   public:
     void SetupClassicDescriptor(const Location &loc);
@@ -215,6 +223,9 @@ class GpuShaderInstrumentor : public vvl::DeviceProxy {
     // sense too)
     mutable bool aborted_ = false;
 
+    // Some errors/warnings only want to report once for the lifetime of the app
+    bool reported_code_type_binary_ = false;
+
     std::atomic<uint32_t> unique_shader_module_id_ = 1;  // zero represents no shader module found
     // The descriptor slot we will be injecting our error buffer into
     uint32_t instrumentation_desc_set_bind_index_ = 0;
@@ -226,15 +237,19 @@ class GpuShaderInstrumentor : public vvl::DeviceProxy {
 
     std::vector<spirv::InternalOnlyDebugPrintf> internal_only_debug_printf_;
 
-    // Size to reserve in front of every resource descriptor buffer
-    VkDeviceSize resource_descriptor_buffer_size_ = 0;
+    // VK_EXT_descriptor_buffer
+    // Each action command advances into the global indirect buffer by this stride
+    VkDeviceSize resource_descriptor_buffer_stride_ = 0;
     // Each vector index maps to the binding number with the offset to map to (with the start offset included)
     std::vector<VkDeviceSize> resource_descriptor_buffer_offsets_;
+    // our way to know if VK_EXT_descriptor_buffer is likely being used
+    // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/12676
+    bool hint_descriptor_buffer_ = false;
 
-    // Size to reserve in front of reserved range in resource heap
-    VkDeviceSize resource_heap_reserved_bytes_ = 0;
-    VkDeviceSize buffer_descriptor_size_ = 0;
-    VkDeviceSize buffer_descriptor_alignment_ = 0;
+    // VK_EXT_descriptor_heap
+    // Each action command advances into the global indirect buffer by this stride
+    VkDeviceSize heap_indirect_buffer_stride_ = 0;
+    // where in push data we provide our address to the indirect buffer
     uint32_t push_data_offset_ = 0;
 
     // These are the same as enabled_features, but may have been altered at setup time. This should be use for any feature GPU-AV
@@ -242,13 +257,10 @@ class GpuShaderInstrumentor : public vvl::DeviceProxy {
     DeviceExtensions modified_extensions;
     DeviceFeatures modified_features;
 
-    // If we should be setting null descriptors for the app (for Descriptor Buffer/Heap)
-    bool set_null_descriptors_ = false;
-
   private:
-    bool IsPipelineSelectedForInstrumentation(VkPipeline pipeline, const Location &loc);
-    bool IsShaderSelectedForInstrumentation(vku::safe_VkShaderModuleCreateInfo *modified_shader_module_ci,
-                                            VkShaderModule modified_shader, const Location &loc);
+    bool IsPipelineSelectedForInstrumentation(const void* pipeline_ci_pnext, VkPipeline pipeline, const Location& loc);
+    bool IsShaderSelectedForInstrumentation(const vku::safe_VkPipelineShaderStageCreateInfo& stage_ci,
+                                            VkShaderModule modified_shader, const Location& loc);
     void AddDescriptorHeapMappings(VkBaseOutStructure *create_info);
     void Cleanup();
     VkDescriptorSetLayout instrumentation_desc_layout_[vvl::DescriptorModeCount];

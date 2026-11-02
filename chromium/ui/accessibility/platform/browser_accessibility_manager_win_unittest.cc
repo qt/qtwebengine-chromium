@@ -5,14 +5,13 @@
 #include "ui/accessibility/platform/browser_accessibility_manager.h"
 
 #include "base/memory/raw_ptr.h"
-#include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/accessibility/accessibility_features.h"
 #include "ui/accessibility/platform/ax_fragment_root_delegate_win.h"
 #include "ui/accessibility/platform/ax_fragment_root_win.h"
 #include "ui/accessibility/platform/ax_platform_node_win.h"
 #include "ui/accessibility/platform/browser_accessibility.h"
+#include "ui/accessibility/platform/browser_accessibility_manager_win.h"
 #include "ui/accessibility/platform/test_ax_node_id_delegate.h"
 #include "ui/accessibility/platform/test_ax_node_wrapper.h"
 #include "ui/accessibility/platform/test_ax_platform_tree_manager_delegate.h"
@@ -72,8 +71,6 @@ void BrowserAccessibilityManagerWinTest::SetUp() {
 }
 
 TEST_F(BrowserAccessibilityManagerWinTest, DynamicallyAddedIFrame) {
-  base::test::ScopedFeatureList scoped_feature_list(::features::kUiaProvider);
-
   AXNodeData root;
   root.id = 1;
   root.role = ax::mojom::Role::kRootWebArea;
@@ -121,8 +118,6 @@ TEST_F(BrowserAccessibilityManagerWinTest, DynamicallyAddedIFrame) {
 }
 
 TEST_F(BrowserAccessibilityManagerWinTest, ChildTree) {
-  base::test::ScopedFeatureList scoped_feature_list(::features::kUiaProvider);
-
   AXNodeData child_tree_root;
   child_tree_root.id = 1;
   child_tree_root.role = ax::mojom::Role::kRootWebArea;
@@ -183,10 +178,6 @@ TEST_F(BrowserAccessibilityManagerWinTest, ChildTree) {
 // incorrectly suppress events. See crbug.com/40672441.
 TEST_F(BrowserAccessibilityManagerWinTest,
        AriaNotificationSkipsListenerCheckForNonWebContent) {
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitWithFeatures(
-      {::features::kUiaProvider, ::features::kUiaEventOptimization}, {});
-
   AXNodeData root;
   root.id = 1;
   root.role = ax::mojom::Role::kRootWebArea;
@@ -215,6 +206,74 @@ TEST_F(BrowserAccessibilityManagerWinTest,
       manager->GetBrowserAccessibilityRoot(), "test notification",
       ax::mojom::AriaNotificationPriority::kNormal,
       ax::mojom::AriaNotificationInterrupt::kNone, "");
+}
+
+TEST_F(BrowserAccessibilityManagerWinTest,
+       CheckedStateChangedMapsToExposedPattern) {
+  // This test validates that CHECKED_STATE_CHANGED on a menu button
+  // (which exposes ExpandCollapse, not Toggle) must raise
+  // ExpandCollapseState, not ToggleState.
+  AXNodeData root;
+  root.id = 1;
+  root.role = ax::mojom::Role::kRootWebArea;
+
+  // HasPopup=menu exposes ExpandCollapse, not Toggle.
+  AXNodeData menu_button;
+  menu_button.id = 2;
+  menu_button.role = ax::mojom::Role::kButton;
+  menu_button.SetHasPopup(ax::mojom::HasPopup::kMenu);
+
+  // An expandable popup button also exposes ExpandCollapse.
+  AXNodeData popup_button;
+  popup_button.id = 3;
+  popup_button.role = ax::mojom::Role::kPopUpButton;
+  popup_button.AddState(ax::mojom::State::kCollapsed);
+
+  // Genuine toggle/checkable control: raises ToggleState.
+  AXNodeData checkbox;
+  checkbox.id = 4;
+  checkbox.role = ax::mojom::Role::kCheckBox;
+
+  // A toggle button without a popup exposes Toggle, not ExpandCollapse.
+  AXNodeData toggle_button;
+  toggle_button.id = 5;
+  toggle_button.role = ax::mojom::Role::kToggleButton;
+
+  root.child_ids = {menu_button.id, popup_button.id, checkbox.id,
+                    toggle_button.id};
+
+  test_browser_accessibility_delegate_->accelerated_widget_ =
+      gfx::kMockAcceleratedWidget;
+
+  std::unique_ptr<BrowserAccessibilityManager> manager(
+      BrowserAccessibilityManager::Create(
+          MakeAXTreeUpdateForTesting(root, menu_button, popup_button, checkbox,
+                                     toggle_button),
+          node_id_delegate_, test_browser_accessibility_delegate_.get()));
+
+  BrowserAccessibility* menu_button_node = manager->GetFromID(menu_button.id);
+  ASSERT_TRUE(menu_button_node);
+  BrowserAccessibility* popup_button_node = manager->GetFromID(popup_button.id);
+  ASSERT_TRUE(popup_button_node);
+  BrowserAccessibility* checkbox_node = manager->GetFromID(checkbox.id);
+  ASSERT_TRUE(checkbox_node);
+  BrowserAccessibility* toggle_button_node =
+      manager->GetFromID(toggle_button.id);
+  ASSERT_TRUE(toggle_button_node);
+
+  EXPECT_EQ(BrowserAccessibilityManagerWin::GetCheckedStateChangedUiaProperty(
+                *menu_button_node),
+            UIA_ExpandCollapseExpandCollapseStatePropertyId);
+  EXPECT_EQ(BrowserAccessibilityManagerWin::GetCheckedStateChangedUiaProperty(
+                *popup_button_node),
+            UIA_ExpandCollapseExpandCollapseStatePropertyId);
+
+  EXPECT_EQ(BrowserAccessibilityManagerWin::GetCheckedStateChangedUiaProperty(
+                *checkbox_node),
+            UIA_ToggleToggleStatePropertyId);
+  EXPECT_EQ(BrowserAccessibilityManagerWin::GetCheckedStateChangedUiaProperty(
+                *toggle_button_node),
+            UIA_ToggleToggleStatePropertyId);
 }
 
 }  // namespace ui

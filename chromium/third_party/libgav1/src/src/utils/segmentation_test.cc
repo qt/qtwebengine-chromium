@@ -14,8 +14,6 @@
 
 #include "src/utils/segmentation.h"
 
-#include <cstdint>
-
 #include "gtest/gtest.h"
 #include "src/utils/common.h"
 #include "src/utils/types.h"

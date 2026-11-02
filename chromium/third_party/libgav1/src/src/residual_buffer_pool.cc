@@ -14,9 +14,12 @@
 
 #include "src/residual_buffer_pool.h"
 
+#include <cstddef>
 #include <memory>
 #include <mutex>  // NOLINT (unapproved c++11 header)
 #include <utility>
+
+#include "src/utils/common.h"
 
 namespace libgav1 {
 namespace {

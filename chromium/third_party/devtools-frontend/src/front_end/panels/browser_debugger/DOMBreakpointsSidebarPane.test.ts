@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
@@ -33,7 +34,8 @@ describe('DOMBreakpointsSidebarPane', () => {
     const container = document.createElement('div');
     container.classList.add('sources', 'panel');
     container.style.width = '300px';
-    renderElementIntoDOM(container);
+    container.style.position = 'relative';
+    renderElementIntoDOM(container, {includeCommonStyles: true});
 
     const shadowHost = container.createChild('div');
     const shadowRoot = shadowHost.attachShadow({mode: 'open'});
@@ -57,7 +59,8 @@ describe('DOMBreakpointsSidebarPane', () => {
     const container = document.createElement('div');
     container.classList.add('elements', 'panel');
     container.style.width = '300px';
-    renderElementIntoDOM(container);
+    container.style.position = 'relative';
+    renderElementIntoDOM(container, {includeCommonStyles: true});
 
     const shadowHost = container.createChild('div');
     const shadowRoot = shadowHost.attachShadow({mode: 'open'});
@@ -80,7 +83,7 @@ describe('DOMBreakpointsSidebarPane', () => {
   it('renders correctly with some breakpoints', async () => {
     const container = document.createElement('div');
     container.style.width = '300px';
-    renderElementIntoDOM(container);
+    renderElementIntoDOM(container, {includeCommonStyles: true});
 
     const shadowHost = container.createChild('div');
     const shadowRoot = shadowHost.attachShadow({mode: 'open'});
@@ -129,7 +132,7 @@ describe('DOMBreakpointsSidebarPane', () => {
               label: 'Attribute Modified',
               isHighlighted: false,
               isFocused: false,
-            }
+            },
           ],
           onBreakpointClick: () => {},
           onBreakpointCheckboxClick: () => {},

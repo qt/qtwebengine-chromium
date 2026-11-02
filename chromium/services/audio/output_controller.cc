@@ -89,7 +89,9 @@ OutputController::ErrorStatisticsTracker::ErrorStatisticsTracker(
     : controller_(controller),
       start_time_(base::TimeTicks::Now()),
       last_periodic_log_time_(start_time_),
-      on_more_io_data_called_(0) {
+      on_more_io_data_called_(0),
+      task_runner_(base::SingleThreadTaskRunner::GetCurrentDefault()) {
+  weak_this_ = weak_ptr_factory_.GetWeakPtr();
   // WedgeCheck() will look to see if |on_more_io_data_called_| is true after
   // the timeout expires and log this as a UMA stat. If the stream is
   // paused/closed before the timer fires, nothing is logged.
@@ -141,19 +143,30 @@ void OutputController::ErrorStatisticsTracker::WedgeCheck() {
   }
 }
 void OutputController::ErrorStatisticsTracker::LogGlitchStats(
-    const std::string& call_name,
+    const char* call_name,
     base::TimeTicks now) {
   const base::TimeDelta total_duration = now - start_time_;
   const double glitch_percentage =
       total_duration.is_zero()
           ? 0
           : glitch_info_.duration.InSecondsF() / total_duration.InSecondsF();
+  task_runner_->PostTask(
+      FROM_HERE, base::BindOnce(&ErrorStatisticsTracker::DoLogGlitchStats,
+                                weak_this_, call_name, total_duration,
+                                glitch_info_, glitch_percentage));
+}
+
+void OutputController::ErrorStatisticsTracker::DoLogGlitchStats(
+    const char* call_name,
+    base::TimeDelta total_duration,
+    media::AudioGlitchInfo glitch_info,
+    double glitch_percentage) {
   controller_->SendLogMessage(
-      base::StringPrintf("%s => (duration=%" PRId64 " sec)", call_name.c_str(),
+      base::StringPrintf("%s => (duration=%" PRId64 " sec)", call_name,
                          total_duration.InSeconds()));
   controller_->SendLogMessage(base::StringPrintf(
-      "%s => (glitches=[%s], glitch_percentage=%.3f%%)", call_name.c_str(),
-      glitch_info_.ToString().c_str(), glitch_percentage * 100));
+      "%s => (glitches=[%s], glitch_percentage=%.3f%%)", call_name,
+      glitch_info.ToString().c_str(), glitch_percentage * 100));
 }
 
 OutputController::OutputController(
@@ -266,6 +279,7 @@ void OutputController::RecreateStream(OutputController::RecreateReason reason) {
   DCHECK_EQ(kEmpty, state_);
 
   if (disable_local_output_) {
+    TRACE_EVENT0("audio", "OutputController::RecreateStream_FakeAllocation");
     SendLogMessage(base::StringPrintf(
         "%s => (WARNING: local output disabled, using a fake stream)",
         __func__));
@@ -279,11 +293,13 @@ void OutputController::RecreateStream(OutputController::RecreateReason reason) {
         mute_params, std::string(),
         /*log_callback, not used*/ base::DoNothing());
   } else if (managed_device_output_stream_create_callback_) {
+    TRACE_EVENT0("audio", "OutputController::RecreateStream_ManagedAllocation");
     stream_ = managed_device_output_stream_create_callback_.Run(
         output_device_id_, params_,
         base::BindRepeating(&OutputController::ProcessDeviceChange,
                             base::Unretained(this)));
   } else {
+    TRACE_EVENT0("audio", "OutputController::RecreateStream_ProxyAllocation");
     media::AudioOutputStream* stream =
         audio_manager_->MakeAudioOutputStreamProxy(params_, output_device_id_);
     if (stream) {
@@ -304,7 +320,13 @@ void OutputController::RecreateStream(OutputController::RecreateReason reason) {
     return;
   }
 
-  if (!stream_->Open()) {
+  bool open_success = false;
+  {
+    TRACE_EVENT0("audio", "OutputController::RecreateStream_Open");
+    open_success = stream_->Open();
+  }
+
+  if (!open_success) {
     SendLogMessage(base::StringPrintf(
         "%s => (ERROR: failed to open the created output stream)", __func__));
     StopCloseAndClearStream();
@@ -342,6 +364,7 @@ void OutputController::Play() {
 void OutputController::StartStream() {
   DCHECK(task_runner_->BelongsToCurrentThread());
   SCOPED_UMA_HISTOGRAM_TIMER("Media.AudioOutputController.StartStreamTime");
+  TRACE_EVENT0("audio", "OutputController::StartStream");
   DCHECK(state_ == kCreated || state_ == kPaused);
 
   if (!request_before_read_) {
@@ -367,6 +390,7 @@ void OutputController::StartStream() {
 void OutputController::StopStream() {
   DCHECK(task_runner_->BelongsToCurrentThread());
   SCOPED_UMA_HISTOGRAM_TIMER("Media.AudioOutputController.StopStreamTime");
+  TRACE_EVENT0("audio", "OutputController::StopStream");
 
   if (state_ == kPlaying) {
     stream_->Stop();
@@ -551,7 +575,8 @@ void OutputController::OnError(ErrorType type) {
   SendLogMessage(base::StringPrintf("%s({type=%s} [state=%s])", __func__,
                                     ErrorTypeToString(type),
                                     StateToString(state_)));
-  TRACE_EVENT0("audio", "OutputController::OnError");
+  TRACE_EVENT1("audio", "OutputController::OnError", "type",
+               ErrorTypeToString(type));
   DLOG(ERROR) << "OutputController::OnError";
   if (state_ != kClosed) {
     if (stats_tracker_)
@@ -562,6 +587,7 @@ void OutputController::OnError(ErrorType type) {
 
 void OutputController::StopCloseAndClearStream() {
   DCHECK(task_runner_->BelongsToCurrentThread());
+  TRACE_EVENT0("audio", "OutputController::StopCloseAndClearStream");
 
   // Allow calling unconditionally and bail if we don't have a stream_ to close.
   if (stream_) {

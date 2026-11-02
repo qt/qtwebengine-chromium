@@ -52,6 +52,7 @@ class CFX_AggDeviceDriver final : public RenderDeviceDriverIface {
   int GetPixelWidth() const override;
   int GetPixelHeight() const override;
   int GetBitsPerPixel() const override;
+  void Clear(uint32_t color) override;
   void SaveState() override;
   void RestoreState(bool bKeepSaved) override;
   bool SetClip_PathFill(const CFX_Path& path,
@@ -104,8 +105,6 @@ class CFX_AggDeviceDriver final : public RenderDeviceDriverIface {
   int GetDriverType() const override;
   bool MultiplyAlpha(float alpha) override;
   bool MultiplyAlphaMask(RetainPtr<const CFX_DIBitmap> mask) override;
-
-  void Clear(uint32_t color);
 
  private:
   void RenderRasterizer(pdfium::agg::rasterizer_scanline_aa& rasterizer,

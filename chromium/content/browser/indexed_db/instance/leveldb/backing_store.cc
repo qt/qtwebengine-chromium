@@ -18,7 +18,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/byte_count.h"
 #include "base/check.h"
 #include "base/check_op.h"
 #include "base/containers/span.h"
@@ -3076,6 +3075,12 @@ uintptr_t BackingStore::GetIdentifierForMemoryDump() {
   // This pointer is used to match the pointer used in
   // TransactionalLevelDBDatabase::OnMemoryDump.
   return reinterpret_cast<uintptr_t>(db()->db());
+}
+
+void BackingStore::ReportMemoryUsage(base::trace_event::ProcessMemoryDump* pmd,
+                                     const std::string& dump_name) {
+  // Intentionally empty. The LevelDB backend reports its memory usage via
+  // TransactionalLevelDBDatabase::OnMemoryDump.
 }
 
 StatusOr<std::vector<blink::mojom::IDBNameAndVersionPtr>>

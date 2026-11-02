@@ -27,8 +27,10 @@ interface MediaPlayer {
   // Requests the media player to move to a specific time.
   RequestSeekTo(mojo_base.mojom.TimeDelta seek_time);
 
-  // Requests the media player to enter the Picture-in-Picture mode.
-  RequestEnterPictureInPicture();
+  // Requests the media player to enter the Picture-in-Picture mode, optionally
+  // enforcing a minimum visual size constraint in the viewport (in DIPs,
+  // accounting for transforms and zoom).
+  RequestEnterPictureInPicture(gfx.mojom.Size? min_size);
 
   // Requests the media player to mute or unmute.
   RequestMute(bool mute);
@@ -68,6 +70,9 @@ interface MediaPlayer {
   // information. This information helps identify why a request to enter
   // picture in picture automatically is denied/accepted.
   RecordAutoPictureInPictureInfo (AutoPipInfo auto_picture_in_picture_info);
+
+  // Request the media player to save the current video frame.
+  RequestSaveVideoFrame();
 };
 
 // Implemented by the MediaWebContentsObserver. The remote lives in the renderer
@@ -127,6 +132,9 @@ interface MediaPlayerObserver {
 
   // Notifies that the video visibility has changed.
   OnVideoVisibilityChanged(bool meets_visibility_threshold);
+
+  // Notifies the browser process of save video frame's availability.
+  OnVideoFrameAvailabilityChanged(bool available);
 };
 
 // Implemented by MediaWebContentsObserver::MediaPlayerHostImpl in the browser

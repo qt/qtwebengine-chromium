@@ -26,10 +26,6 @@
 
 namespace {
 
-// TODO(pdfium): Define and use type-specific type tags for aligned pointers
-// stored in V8 objects. The type tags should not overlap with the ones used by
-// Blink, as defined in gin/public/gin_embedders.h.
-constexpr v8::EmbedderDataTypeTag kDefaultPDFiumTag = 0;
 
 const char szCompatibleModeScript[] =
     "(function(global, list) {\n"
@@ -130,15 +126,18 @@ void FXJSE_UpdateObjectBinding(v8::Local<v8::Object> hObject,
   DCHECK(!hObject.IsEmpty());
   DCHECK_EQ(hObject->InternalFieldCount(), 2);
   hObject->SetAlignedPointerInInternalField(
-      0, const_cast<wchar_t*>(kFXJSEHostObjectTag), kDefaultPDFiumTag);
-  hObject->SetAlignedPointerInInternalField(1, pNewBinding, kDefaultPDFiumTag);
+      0, const_cast<wchar_t*>(kFXJSEHostObjectTag), fxv8::kPDFiumSentinelTag);
+  hObject->SetAlignedPointerInInternalField(1, pNewBinding,
+                                            fxv8::kFXJSEHostObjectDataTag);
 }
 
 void FXJSE_ClearObjectBinding(v8::Local<v8::Object> hObject) {
   DCHECK(!hObject.IsEmpty());
   DCHECK_EQ(hObject->InternalFieldCount(), 2);
-  hObject->SetAlignedPointerInInternalField(0, nullptr, kDefaultPDFiumTag);
-  hObject->SetAlignedPointerInInternalField(1, nullptr, kDefaultPDFiumTag);
+  hObject->SetAlignedPointerInInternalField(0, nullptr,
+                                            fxv8::kPDFiumSentinelTag);
+  hObject->SetAlignedPointerInInternalField(1, nullptr,
+                                            fxv8::kFXJSEHostObjectDataTag);
 }
 
 CFXJSE_HostObject* FXJSE_RetrieveObjectBinding(v8::Local<v8::Value> hValue) {
@@ -148,13 +147,14 @@ CFXJSE_HostObject* FXJSE_RetrieveObjectBinding(v8::Local<v8::Value> hValue) {
 
   v8::Local<v8::Object> hObject = hValue.As<v8::Object>();
   if (hObject->InternalFieldCount() != 2 ||
-      hObject->GetAlignedPointerFromInternalField(0, kDefaultPDFiumTag) !=
-          kFXJSEHostObjectTag) {
+      hObject->GetAlignedPointerFromInternalField(
+          0, fxv8::kPDFiumSentinelTag) != kFXJSEHostObjectTag) {
     return nullptr;
   }
 
   return static_cast<CFXJSE_HostObject*>(
-      hObject->GetAlignedPointerFromInternalField(1, kDefaultPDFiumTag));
+      hObject->GetAlignedPointerFromInternalField(
+          1, fxv8::kFXJSEHostObjectDataTag));
 }
 
 // static

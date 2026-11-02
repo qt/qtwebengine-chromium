@@ -32,9 +32,7 @@ struct traits<TensorEvalToOp<XprType, MakePointer_> > {
   enum { Flags = 0 };
   template <class T>
   struct MakePointer {
-    // Intermediate typedef to workaround MSVC issue.
-    typedef MakePointer_<T> MakePointerT;
-    typedef typename MakePointerT::Type Type;
+    typedef typename MakePointer_<T>::Type Type;
   };
 };
 
@@ -111,8 +109,6 @@ struct TensorEvaluator<const TensorEvalToOp<ArgType, MakePointer_>, Device> {
 
   EIGEN_STRONG_INLINE TensorEvaluator(const XprType& op, const Device& device)
       : m_impl(op.expression(), device), m_buffer(device.get(op.buffer())), m_expression(op.expression()) {}
-
-  EIGEN_STRONG_INLINE ~TensorEvaluator() {}
 
   EIGEN_DEVICE_FUNC const Dimensions& dimensions() const { return m_impl.dimensions(); }
 

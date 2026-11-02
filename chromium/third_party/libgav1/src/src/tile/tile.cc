@@ -19,6 +19,8 @@
 #include <cassert>
 #include <climits>
 #include <condition_variable>  // NOLINT (unapproved c++11 header)
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -28,15 +30,33 @@
 #include <type_traits>
 #include <utility>
 
+#include "src/buffer_pool.h"
+#include "src/decoder_state.h"
+#include "src/dsp/common.h"
+#include "src/dsp/dsp.h"
 #include "src/frame_scratch_buffer.h"
+#include "src/loop_restoration_info.h"
 #include "src/motion_vector.h"
+#include "src/obu_parser.h"
+#include "src/post_filter.h"
+#include "src/quantizer.h"
 #include "src/reconstruction.h"
+#include "src/symbol_decoder_context.h"
+#include "src/tile_scratch_buffer.h"
+#include "src/utils/array_2d.h"
 #include "src/utils/bit_mask_set.h"
+#include "src/utils/blocking_counter.h"
 #include "src/utils/common.h"
 #include "src/utils/constants.h"
 #include "src/utils/logging.h"
-#include "src/utils/segmentation.h"
+#include "src/utils/memory.h"
+#include "src/utils/queue.h"
+#include "src/utils/reference_info.h"
+#include "src/utils/segmentation_map.h"
 #include "src/utils/stack.h"
+#include "src/utils/threadpool.h"
+#include "src/utils/types.h"
+#include "src/yuv_buffer.h"
 
 namespace libgav1 {
 namespace {

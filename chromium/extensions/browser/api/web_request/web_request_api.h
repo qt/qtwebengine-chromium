@@ -29,6 +29,7 @@
 #include "content/public/common/child_process_id.h"
 #include "extensions/browser/api/declarative_webrequest/request_stage.h"
 #include "extensions/browser/api/web_request/extension_web_request_event_router.h"
+#include "extensions/browser/api/web_request/web_request_event_router_factory.h"
 #include "extensions/browser/api/web_request/web_request_permissions.h"
 #include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/browser/event_router.h"
@@ -164,21 +165,27 @@ class WebRequestAPI : public BrowserContextKeyedAPI,
 
     ~RequestIDGenerator();
 
-    // Generates a WebRequest ID. If the same (routing_id,
-    // network_service_request_id) pair is passed to this as was previously
-    // passed to SaveID(), the `request_id` passed to SaveID() will be returned.
-    int64_t Generate(int32_t routing_id, int32_t network_service_request_id);
+    // Generates a WebRequest ID. If `SaveID()` was previously called with the
+    // same (`routing_id`, `request_id_from_client`) pair, returns the saved ID
+    // and removes the mapping. Otherwise, generates and returns a new unique
+    // ID.
+    uint64_t Generate(int32_t routing_id, int32_t request_id_from_client);
 
-    // This saves a WebRequest ID mapped to the (routing_id,
-    // network_service_request_id) pair. Clients must call Generate() with the
-    // same ID pair to retrieve the `request_id`, or else there may be a memory
-    // leak.
+    // Maps a WebRequest ID to a (`routing_id`, `request_id_from_client`) pair
+    // when a request is restarted. Callers must subsequently call `Generate()`
+    // with the same pair to reclaim the ID and prevent memory leaks.
     void SaveID(int32_t routing_id,
-                int32_t network_service_request_id,
+                int32_t request_id_from_client,
                 uint64_t request_id);
 
+    // Generates a non-zero request ID to forward to the network service for
+    // requests originating from child processes. Values are unique for the
+    // lifetime of this generator (until wrap-around).
+    int32_t GenerateNetworkRequestId();
+
    private:
-    int64_t id_ = 0;
+    uint64_t id_ = 0;
+    int32_t network_request_id_ = 0;
     std::map<std::pair<int32_t, int32_t>, uint64_t> saved_id_map_;
   };
 
@@ -260,7 +267,8 @@ class WebRequestAPI : public BrowserContextKeyedAPI,
       const net::SiteForCookies& site_for_cookies,
       const std::optional<std::string>& user_agent,
       mojo::PendingRemote<network::mojom::WebSocketHandshakeClient>
-          handshake_client);
+          handshake_client,
+      mojo::PendingRemote<network::mojom::TrustedHeaderClient> header_client);
 
   // Starts proxying WebTransport handshake.
   void ProxyWebTransport(
@@ -338,6 +346,9 @@ class WebRequestAPI : public BrowserContextKeyedAPI,
   // when the task is run and forwards to the corresponding member function
   // in ExtensionWebRequestEventRouter, or not, if the owning BrowserContext
   // goes away or the WeakPtr instance bound in the callback is invalidated.
+  // For per-context (parent event named) registrations, `filter`,
+  // `extra_info_spec`, and `web_view_instance_id` narrow the update to a
+  // single registration.
   void UpdateActiveListener(
       void* browser_context_id,
       WebRequestEventRouter::ListenerUpdateType update_type,
@@ -345,15 +356,23 @@ class WebRequestAPI : public BrowserContextKeyedAPI,
       const std::string& sub_event_name,
       content::ChildProcessId render_process_id,
       int worker_thread_id,
-      int64_t service_worker_version_id);
+      int64_t service_worker_version_id,
+      const std::optional<WebRequestEventRouter::RequestFilter>& filter,
+      std::optional<int> extra_info_spec,
+      std::optional<int> web_view_instance_id);
 
   // This a proxy API for the tasks that are posted. It is either called
   // when the task is run and forwards to the corresponding member function
   // in ExtensionWebRequestEventRouter, or not, if the owning BrowserContext
   // goes away or the WeakPtr instance bound in the callback is invalidated.
-  void RemoveLazyListener(content::BrowserContext* browser_context,
-                          const ExtensionId& extension_id,
-                          const std::string& sub_event_name);
+  // For per-context (parent event named) registrations, `filter` and
+  // `extra_info_spec` narrow the removal to a single registration.
+  void RemoveLazyListener(
+      content::BrowserContext* browser_context,
+      const ExtensionId& extension_id,
+      const std::string& sub_event_name,
+      const std::optional<WebRequestEventRouter::RequestFilter>& filter,
+      std::optional<int> extra_info_spec);
 
   // Internal implementation of MaybeProxyURLLoaderFactory that returns a
   // detailed reason, ProxyDecision, to tell why the proxy is used.
@@ -406,6 +425,23 @@ class WebRequestAPI : public BrowserContextKeyedAPI,
   base::WeakPtrFactory<WebRequestAPI> weak_factory_{this};
 };
 
+template <>
+struct BrowserContextFactoryDependencies<WebRequestAPI> {
+  static void DeclareFactoryDependencies(
+      BrowserContextKeyedAPIFactory<WebRequestAPI>* factory) {
+    // Restore the default dependency on the ExtensionSystemFactory that is
+    // otherwise lost when explicitly specializing this template.
+    if (ExtensionsBrowserClient::Get()) {
+      factory->DependsOn(
+          ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
+    }
+
+    // Ensure the EventRouter outlives the WebRequestAPI so that proxies can
+    // safely broadcast network errors during profile teardown.
+    factory->DependsOn(WebRequestEventRouterFactory::GetInstance());
+  }
+};
+
 class WebRequestInternalFunction : public ExtensionFunction {
  public:
   WebRequestInternalFunction() = default;
@@ -441,16 +477,38 @@ class WebRequestInternalEventHandledFunction
   ~WebRequestInternalEventHandledFunction() override = default;
 
  private:
-  // Unblocks the network request. Use this function when handling incorrect
-  // requests from the extension that cannot be detected by the schema
-  // validator.
-  void OnError(const std::string& event_name,
-               const std::string& sub_event_name,
-               uint64_t request_id,
-               int render_process_id,
-               int web_view_instance_id,
-               std::unique_ptr<WebRequestEventRouter::EventResponse> response);
+  // Routes a blocking response to the matching `WebRequestEventRouter` method,
+  // based on the `WebRequestPerContextEventDispatch` feature:
+  // - If disabled, the legacy per-listener sub-event name identifies the
+  //   responding listener; this method routes to `OnEventHandled()`.
+  // - If enabled, the per-context parent event name is used; this method
+  //   routes to `OnEventHandledForTarget()`, carrying the responding
+  //   listener's `extra_info_spec`.
+  // Used both on the success path and to unblock the request when a response
+  // failed validation.
+  void RouteEventResponse(
+      const std::string& event_name,
+      const std::string& sub_event_name,
+      uint64_t request_id,
+      int render_process_id,
+      int web_view_instance_id,
+      int extra_info_spec,
+      std::unique_ptr<WebRequestEventRouter::EventResponse> response);
 
+  // ExtensionFunction:
+  ResponseAction Run() override;
+};
+
+class WebRequestInternalEventHandlingDoneFunction
+    : public WebRequestInternalFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("webRequestInternal.eventHandlingDone",
+                             WEBREQUESTINTERNAL_EVENTHANDLINGDONE)
+
+ protected:
+  ~WebRequestInternalEventHandlingDoneFunction() override = default;
+
+ private:
   // ExtensionFunction:
   ResponseAction Run() override;
 };

@@ -13,6 +13,8 @@
  * limitations under the License.
  */
 
+#include "chassis/dispatch_object.h"
+#include "containers/container_utils.h"
 #include "containers/limits.h"
 #include "containers/small_vector.h"
 #include "generated/spirv_grammar_helper.h"
@@ -355,6 +357,23 @@ bool Module::ConstantFoldCompositeInsert(Instruction* inst, const Type& result_t
     return true;
 }
 
+uint32_t Module::ResolveConstantSizeOf(const Instruction& inst) {
+    assert(inst.Opcode() == spv::OpConstantSizeOfEXT);
+    const Type* descriptor_type = type_manager_.FindTypeById(inst.Word(3));
+    assert(descriptor_type);
+
+    if (descriptor_type->spv_type_ == SpvType::kSampler) {
+        return (uint32_t)settings_.phys_dev_ext_props->descriptor_heap_props.samplerDescriptorSize;
+    } else if (descriptor_type->spv_type_ == SpvType::kBufferEXT ||
+               descriptor_type->spv_type_ == SpvType::kAccelerationStructureKHR) {
+        return (uint32_t)settings_.phys_dev_ext_props->descriptor_heap_props.bufferDescriptorSize;
+    } else if (descriptor_type->spv_type_ == SpvType::kImage) {
+        return (uint32_t)settings_.phys_dev_ext_props->descriptor_heap_props.imageDescriptorSize;
+    }
+    assert(false);
+    return 0;
+}
+
 bool Module::ConstantFold(Instruction* inst, const Type& result_type) {
     assert(inst->Opcode() == spv::OpSpecConstantOp);
     if (result_type.spv_type_ == SpvType::kStruct) {
@@ -362,6 +381,12 @@ bool Module::ConstantFold(Instruction* inst, const Type& result_type) {
     }
 
     spv::Op target_opcode = (spv::Op)inst->Word(3);
+    if (IsValueIn(target_opcode,
+                  {spv::OpFConvert, spv::OpConvertFToU, spv::OpConvertFToS, spv::OpConvertUToF, spv::OpConvertSToF})) {
+        // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/12641#issuecomment-4917017999
+        // When we get c++ 20, we can use the std::bit_cast to do it for us actually!
+        return false;
+    }
 
     // OpSpecConstantOp has a limited set of instructions it can be, these are not handled the special
     if (target_opcode == spv::OpVectorShuffle) {
@@ -383,7 +408,9 @@ bool Module::ConstantFold(Instruction* inst, const Type& result_type) {
     // Scalar will have a single lane
     for (uint32_t lane = 0; lane < vector_length; lane++) {
         // might be up to 3 for OpSelect
-        small_vector<uint64_t, 3> args;
+        // I had a small_vector<uint64_t, 3> here but compilers would give false positive warnings
+        uint64_t args[3];
+        uint32_t arg_count = 0;
 
         for (uint32_t i = start_operand_index; i < final_operand_index; i++) {
             const uint32_t operand_id = inst->Word(i);
@@ -403,17 +430,27 @@ bool Module::ConstantFold(Instruction* inst, const Type& result_type) {
                 }
             }
 
+            if (arg_count == 3) {
+                assert(false);  // if we hit this, we are missing some case
+                break;
+            }
             if (lane_constant->inst_.Opcode() == spv::OpConstantNull) {
-                args.emplace_back(0ul);
+                args[arg_count++] = 0ul;
+            } else if (lane_constant->inst_.Opcode() == spv::OpConstantSizeOfEXT) {
+                args[arg_count++] = ResolveConstantSizeOf(lane_constant->inst_);
             } else if (lane_constant->type_.spv_type_ == SpvType::kBool) {
                 if (lane_constant->inst_.Opcode() == spv::OpConstantTrue) {
-                    args.emplace_back(1ul);
+                    args[arg_count++] = 1ul;
                 } else {
                     assert(lane_constant->inst_.Opcode() == spv::OpConstantFalse);
-                    args.emplace_back(0ul);
+                    args[arg_count++] = 0ul;
                 }
             } else {
-                bool op_is_signed = lane_constant->type_.inst_.Word(3) != 0;
+                bool op_is_signed = false;
+                // Might be a float, which doesn't care
+                if (lane_constant->type_.spv_type_ == SpvType::kInt) {
+                    op_is_signed = lane_constant->type_.inst_.Word(3) != 0;
+                }
 
                 if (target_opcode == spv::OpSConvert) {
                     // OpSConvert implies the source is treated as signed and must sign-extend
@@ -424,9 +461,10 @@ bool Module::ConstantFold(Instruction* inst, const Type& result_type) {
                 }
 
                 const uint64_t value64 = lane_constant->GetValueUint64(op_is_signed);
-                args.emplace_back(value64);
+                args[arg_count++] = value64;
             }
         }
+        assert(arg_count != 0);
 
         uint64_t lane_result = 0;
         const uint32_t result_bit_width = scalar_type.meta_.scalar.bit_width;
@@ -436,7 +474,8 @@ bool Module::ConstantFold(Instruction* inst, const Type& result_type) {
         } else if (target_opcode == spv::OpSelect) {
             lane_result = (args[0] != 0) ? args[1] : args[2];
         } else {
-            const uint64_t arg1 = args.size() > 1 ? args[1] : 0;
+            // Need to handle 64-bit constant math
+            const uint64_t arg1 = arg_count > 1 ? args[1] : 0;
             lane_result = EvaluateArithmetic(target_opcode, args[0], arg1, result_bit_width);
         }
 

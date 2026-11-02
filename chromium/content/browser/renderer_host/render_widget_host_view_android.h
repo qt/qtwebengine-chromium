@@ -19,6 +19,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/i18n/rtl.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/process/process.h"
 #include "base/scoped_observation.h"
@@ -94,7 +95,7 @@ class TouchSelectionControllerClientManagerAndroid;
 class WebContentsAccessibilityAndroid;
 struct ContextMenuParams;
 
-BASE_FEATURE(kTooltips, "Tooltips", base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE(kTooltips, base::FEATURE_ENABLED_BY_DEFAULT);
 
 // -----------------------------------------------------------------------------
 // See comments in render_widget_host_view.h about this class and its members.
@@ -197,8 +198,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
       base::OnceCallback<void(scoped_refptr<gpu::ClientSharedImage>,
                               viz::ReleaseCallback release_callback)> callback);
 
-  void EnsureSurfaceSynchronizedForWebTest() override;
-  uint32_t GetCaptureSequenceNumber() const override;
   int GetMouseWheelMinimumGranularity() const override;
   void UpdateCursor(const ui::Cursor& cursor) override;
   void DisplayCursor(const ui::Cursor& cursor) override;
@@ -221,7 +220,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
                                  const gfx::Rect& bounds) override;
   void ClearKeyboardTriggeredTooltip() override;
   void TransformPointToRootSurface(gfx::PointF* point) override;
-  gfx::Rect GetBoundsInRootWindow() override;
+  gfx::Rect GetBoundsInScreen() override;
   const viz::LocalSurfaceId& IncrementSurfaceIdForNavigation() override;
   void ProcessAckedTouchEvent(
       const input::TouchEventWithLatencyInfo& touch,
@@ -354,7 +353,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   // AndroidInputHelper::Delegate implementation.
   void SendGestureEvent(const blink::WebGestureEvent& event) override;
-  ui::FilteredGestureProvider& GetGestureProvider() override;
+  scoped_refptr<ui::FilteredGestureProvider> GetGestureProvider() override;
 
   void set_ime_adapter(ImeAdapterAndroid* ime_adapter) {
     ime_adapter_android_ = ime_adapter;
@@ -453,6 +452,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   bool IsReady(JNIEnv* env);
 
   void DismissTextHandles(JNIEnv* env);
+
+  void SetIsGestureNavigationMode(JNIEnv* env, bool is_gesture_navigation_mode);
 
   // Returns an int equivalent to an Optional<SKColor>, with a value of 0
   // indicating SKTransparent for not set.
@@ -669,6 +670,11 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void ComputeDisplayFeature();
   void SetDisplayFeatureBoundsForTesting(const gfx::Rect& bounds);
 
+  // Update `tooltip_text_` returning `false` if already set to input string.
+  bool UpdateTooltipText(const std::u16string& tooltip_text);
+  // Return `tooltip_text_` clamped to `kMaxTooltipLength`.
+  std::u16string GetTrimmedTooltipText() const;
+
   // Window-specific bits that affect widget visibility.
   bool is_window_visible_;
   bool is_window_activity_started_;
@@ -714,7 +720,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   // Provides gesture synthesis given a stream of touch events (derived from
   // Android MotionEvent's) and touch event acks.
-  ui::FilteredGestureProvider gesture_provider_;
+  scoped_refptr<ui::FilteredGestureProvider> gesture_provider_;
 
   // Handles gesture based text selection
   StylusTextSelector stylus_text_selector_;
@@ -770,11 +776,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   base::TimeTicks prev_mousedown_timestamp_;
   gfx::Point prev_mousedown_point_;
   int left_click_count_ = 0;
-
   base::ObserverList<DestructionObserver>::Unchecked destruction_observers_;
-
   MouseWheelPhaseHandler mouse_wheel_phase_handler_;
-  uint32_t latest_capture_sequence_number_ = 0u;
 
   viz::ParentLocalSurfaceIdAllocator local_surface_id_allocator_;
   bool in_rotation_ = false;

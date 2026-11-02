@@ -16,7 +16,7 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "content/browser/webauth/authenticator_environment.h"
-#include "content/browser/webauth/webauth_request_security_checker.h"
+#include "content/browser/webauth/webauth_request_security_checker_impl.h"
 #include "content/public/browser/web_authentication_delegate.h"
 #include "device/fido/fido_discovery_factory.h"
 #include "device/fido/public/authenticator_selection_criteria.h"
@@ -115,6 +115,7 @@ void TestAuthenticatorRequestDelegate::ConfigureDiscoveries(
     device::FidoRequestType request_type,
     std::optional<device::ResidentKeyRequirement> resident_key_requirement,
     device::UserVerificationRequirement user_verification_requirement,
+    bool cmtg_key_requested,
     std::optional<std::string_view> user_name,
     bool is_enclave_authenticator_available,
     device::FidoDiscoveryFactory* fido_discovery_factory) {
@@ -395,8 +396,8 @@ void AuthenticatorTestBase::SetUpTestSuite() {
 void AuthenticatorTestBase::SetUp() {
   RenderViewHostTestHarness::SetUp();
 
-  WebAuthRequestSecurityChecker::UseSystemSharedURLLoaderFactoryForTesting() =
-      true;
+  WebAuthRequestSecurityCheckerImpl::
+      UseSystemSharedURLLoaderFactoryForTesting() = true;
 
   mojo::SetDefaultProcessErrorHandler(base::BindRepeating(
       &AuthenticatorTestBase::OnMojoError, base::Unretained(this)));
@@ -423,8 +424,8 @@ void AuthenticatorTestBase::SetUp() {
 
 void AuthenticatorTestBase::TearDown() {
   RenderViewHostTestHarness::TearDown();
-  WebAuthRequestSecurityChecker::UseSystemSharedURLLoaderFactoryForTesting() =
-      false;
+  WebAuthRequestSecurityCheckerImpl::
+      UseSystemSharedURLLoaderFactoryForTesting() = false;
 
   mojo::SetDefaultProcessErrorHandler(base::NullCallback());
 

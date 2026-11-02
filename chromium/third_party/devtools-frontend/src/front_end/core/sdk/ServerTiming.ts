@@ -9,32 +9,32 @@ import type {NameValue} from './NetworkRequest.js';
 
 const UIStrings = {
   /**
-   * @description Text in Server Timing
+   * @description Warning message when deprecated Server-Timing header syntax is found.
    * @example {sql-lookup} PH1
    */
   deprecatedSyntaxFoundPleaseUse:
-      'Deprecated syntax found for metric "{PH1}". Please use: <name>;dur=<duration>;desc=<description>',
+      'Deprecated syntax found for metric "{PH1}". Use: <name>;dur=<duration>;desc=<description>',
   /**
-   * @description Text in Server Timing
+   * @description Warning message when a duplicate parameter is found in Server-Timing header.
    * @example {https} PH1
    */
   duplicateParameterSIgnored: 'Duplicate parameter "{PH1}" ignored.',
   /**
-   * @description Text in Server Timing
+   * @description Warning message when no value is found for a parameter in Server-Timing header.
    * @example {https} PH1
    */
   noValueFoundForParameterS: 'No value found for parameter "{PH1}".',
   /**
-   * @description Text in Server Timing
+   * @description Warning message when an unrecognized parameter is found in Server-Timing header.
    * @example {https} PH1
    */
   unrecognizedParameterS: 'Unrecognized parameter "{PH1}".',
   /**
-   * @description Text in Server Timing
+   * @description Warning message when extraneous trailing characters are found in Server-Timing header.
    */
   extraneousTrailingCharacters: 'Extraneous trailing characters.',
   /**
-   * @description Text in Server Timing
+   * @description Warning message when a parameter value cannot be parsed in Server-Timing header.
    * @example {https} PH1
    * @example {2.0} PH2
    */
@@ -69,14 +69,14 @@ export class ServerTiming {
     this.description = description;
   }
 
-  static parseHeaders(headers: NameValue[]): ServerTiming[]|null {
+  static parseHeaders(headers: NameValue[], devToolsConsole: Common.Console.Console): ServerTiming[]|null {
     const rawServerTimingHeaders = headers.filter(item => item.name.toLowerCase() === 'server-timing');
     if (!rawServerTimingHeaders.length) {
       return null;
     }
 
     const serverTimings = rawServerTimingHeaders.reduce<ServerTiming[]>((timings, header) => {
-      const timing = this.createFromHeaderValue(header.value);
+      const timing = this.createFromHeaderValue(header.value, devToolsConsole);
       timings.push(...timing.map(function(entry) {
         return new ServerTiming(entry.name, entry.dur ?? null, entry.desc ?? '');
       }));
@@ -85,7 +85,9 @@ export class ServerTiming {
     return serverTimings;
   }
 
-  static createFromHeaderValue(valueString: string): ServerTimingMetric[] {
+  static createFromHeaderValue(valueString: string,
+                               devToolsConsole: Common.Console.Console = new Common.Console.Console()):
+      ServerTimingMetric[] {
     function trimLeadingWhiteSpace(): void {
       valueString = valueString.replace(/^\s*/, '');
     }
@@ -158,7 +160,7 @@ export class ServerTiming {
       const entry: ServerTimingMetric = {name};
 
       if (valueString.charAt(0) === '=') {
-        this.showWarning(i18nString(UIStrings.deprecatedSyntaxFoundPleaseUse, {PH1: name}));
+        this.#showWarning(i18nString(UIStrings.deprecatedSyntaxFoundPleaseUse, {PH1: name}), devToolsConsole);
       }
 
       while (consumeDelimiter(';')) {
@@ -168,7 +170,7 @@ export class ServerTiming {
         }
 
         paramName = paramName.toLowerCase();
-        const parseParameter = this.getParserForParameter(paramName);
+        const parseParameter = this.#getParserForParameter(paramName, devToolsConsole);
         let paramValue: (string|null)|null = null;
         if (consumeDelimiter('=')) {
           // always parse the value, even if we don't recognize the parameter #name
@@ -179,19 +181,19 @@ export class ServerTiming {
         if (parseParameter) {
           // paramName is valid
           if (entry.hasOwnProperty(paramName)) {
-            this.showWarning(i18nString(UIStrings.duplicateParameterSIgnored, {PH1: paramName}));
+            this.#showWarning(i18nString(UIStrings.duplicateParameterSIgnored, {PH1: paramName}), devToolsConsole);
             continue;
           }
 
           if (paramValue === null) {
-            this.showWarning(i18nString(UIStrings.noValueFoundForParameterS, {PH1: paramName}));
+            this.#showWarning(i18nString(UIStrings.noValueFoundForParameterS, {PH1: paramName}), devToolsConsole);
           }
 
           parseParameter.call(this, entry, paramValue);
         } else {
           // paramName is not valid
           // TODO(paulirish): consider showing other included params, like `start`: https://github.com/w3c/server-timing/issues/43
-          this.showWarning(i18nString(UIStrings.unrecognizedParameterS, {PH1: paramName}));
+          this.#showWarning(i18nString(UIStrings.unrecognizedParameterS, {PH1: paramName}), devToolsConsole);
         }
       }
 
@@ -219,12 +221,13 @@ export class ServerTiming {
     }
 
     if (valueString.length) {
-      this.showWarning(i18nString(UIStrings.extraneousTrailingCharacters));
+      this.#showWarning(i18nString(UIStrings.extraneousTrailingCharacters), devToolsConsole);
     }
     return result;
   }
 
-  static getParserForParameter(paramName: string): ((arg0: ServerTimingMetric, arg1: string|null) => void)|null {
+  static #getParserForParameter(paramName: string, devToolsConsole: Common.Console.Console):
+      ((arg0: ServerTimingMetric, arg1: string|null) => void)|null {
     switch (paramName) {
       case 'dur': {
         function durParser(entry: ServerTimingMetric, paramValue: string|null): void {
@@ -232,7 +235,8 @@ export class ServerTiming {
           if (paramValue !== null) {
             const duration = parseFloat(paramValue);
             if (isNaN(duration)) {
-              ServerTiming.showWarning(i18nString(UIStrings.unableToParseSValueS, {PH1: paramName, PH2: paramValue}));
+              ServerTiming.#showWarning(i18nString(UIStrings.unableToParseSValueS, {PH1: paramName, PH2: paramValue}),
+                                        devToolsConsole);
               return;
             }
             entry.dur = duration;
@@ -254,7 +258,7 @@ export class ServerTiming {
     }
   }
 
-  static showWarning(msg: string): void {
-    Common.Console.Console.instance().warn(`ServerTiming: ${msg}`);
+  static #showWarning(msg: string, devToolsConsole: Common.Console.Console): void {
+    devToolsConsole.warn(`ServerTiming: ${msg}`);
   }
 }

@@ -14,17 +14,15 @@
 #include "base/android/device_info.h"
 #include "base/containers/flat_map.h"
 #include "base/functional/bind.h"
-#include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/test_future.h"
-#include "base/test/test_timeouts.h"
 #include "base/time/time.h"
-#include "base/timer/elapsed_timer.h"
 #include "components/optimization_guide/content/browser/mock_media_transcript_provider.h"
 #include "components/optimization_guide/content/browser/no_response_ai_page_content_agent.h"
+#include "components/optimization_guide/content/browser/page_content_test_utils.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
 #include "components/optimization_guide/proto/features/common_quality_data.pb.h"
 #include "components/ukm/test_ukm_recorder.h"
@@ -33,7 +31,6 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/content_switches.h"
 #include "content/public/test/back_forward_cache_util.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
@@ -43,7 +40,6 @@
 #include "content/public/test/media_start_stop_observer.h"
 #include "content/shell/browser/shell.h"
 #include "content/shell/common/shell_switches.h"
-#include "mojo/public/cpp/bindings/callback_helpers.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/request_handler_util.h"
 #include "services/media_session/public/cpp/test/mock_media_session.h"
@@ -82,24 +78,6 @@ void AssertHasText(const optimization_guide::proto::ContentNode& node,
   EXPECT_EQ(node.children_nodes().size(), 1);
   const auto& text_node = node.children_nodes().at(0);
   AssertIsTextNode(text_node, text);
-}
-
-const optimization_guide::proto::ContentNode* FindFirstNodeWithAttributeType(
-    const optimization_guide::proto::ContentNode& root,
-    optimization_guide::proto::ContentAttributeType attribute_type) {
-  std::vector<const optimization_guide::proto::ContentNode*> nodes_to_visit;
-  nodes_to_visit.push_back(&root);
-  while (!nodes_to_visit.empty()) {
-    const auto* current = nodes_to_visit.back();
-    nodes_to_visit.pop_back();
-    if (current->content_attributes().attribute_type() == attribute_type) {
-      return current;
-    }
-    for (const auto& child : current->children_nodes()) {
-      nodes_to_visit.push_back(&child);
-    }
-  }
-  return nullptr;
 }
 
 const optimization_guide::proto::ContentNode* FindFirstInteractiveNode(
@@ -918,6 +896,7 @@ IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
   const auto& image_data = image_node.content_attributes().image_data();
   EXPECT_TRUE(image_data.security_origin().opaque());
   EXPECT_FALSE(image_data.security_origin().value().empty());
+  EXPECT_TRUE(image_data.url().empty());
 }
 
 IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest, SVG) {
@@ -993,6 +972,8 @@ IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
   const auto& image_data = image_node.content_attributes().image_data();
   AssertValidOrigin(image_data.security_origin(),
                     url::Origin::Create(cross_origin_url));
+  EXPECT_EQ(image_data.url(),
+            https_server()->GetURL("b.com", "/image.gif").spec());
 }
 
 IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
@@ -1023,6 +1004,7 @@ IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
   const auto& image_data = image_node.content_attributes().image_data();
   AssertValidOrigin(image_data.security_origin(),
                     url::Origin::Create(https_server()->GetURL("a.com", "/")));
+  EXPECT_EQ(image_data.url(), "about:blank");
 }
 
 IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
@@ -2491,8 +2473,11 @@ IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
   const auto& button = ActionableContentRootNode().children_nodes()[0];
   ASSERT_TRUE(button.content_attributes().has_interaction_info());
   const auto& interaction_info = button.content_attributes().interaction_info();
-  EXPECT_TRUE(interaction_info.clickability_reasons().empty());
-  EXPECT_TRUE(interaction_info.is_disabled());
+  EXPECT_THAT(
+      interaction_info.clickability_reasons(),
+      testing::UnorderedElementsAre(
+          optimization_guide::proto::CLICKABILITY_REASON_CLICKABLE_CONTROL));
+  EXPECT_FALSE(interaction_info.is_disabled());
   EXPECT_THAT(interaction_info.interaction_disabled_reasons(),
               testing::UnorderedElementsAre(
                   optimization_guide::proto::

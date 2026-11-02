@@ -170,6 +170,8 @@ class SyncValidator : public vvl::DeviceProxy {
     bool PreCallValidateCmdCopyImage2(VkCommandBuffer commandBuffer, const VkCopyImageInfo2 *pCopyImageInfo,
                                       const ErrorObject &error_obj) const override;
 
+    bool ValidateCmdPipelineBarrier(const CommandBufferAccessContext& cb_context, const BarrierSet& barrier_set,
+                                    const Location& loc) const;
     bool PreCallValidateCmdPipelineBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags srcStageMask,
                                            VkPipelineStageFlags dstStageMask, VkDependencyFlags dependencyFlags,
                                            uint32_t memoryBarrierCount, const VkMemoryBarrier *pMemoryBarriers,
@@ -177,6 +179,7 @@ class SyncValidator : public vvl::DeviceProxy {
                                            uint32_t imageMemoryBarrierCount, const VkImageMemoryBarrier *pImageMemoryBarriers,
                                            const ErrorObject &error_obj) const override;
 
+    void RecordCmdPipelineBarrier(CommandBufferAccessContext& cb_context, BarrierSet&& barrier_set, const Location& loc) const;
     void PostCallRecordCmdPipelineBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags srcStageMask,
                                           VkPipelineStageFlags dstStageMask, VkDependencyFlags dependencyFlags,
                                           uint32_t memoryBarrierCount, const VkMemoryBarrier *pMemoryBarriers,
@@ -202,8 +205,7 @@ class SyncValidator : public vvl::DeviceProxy {
     bool PreCallValidateCmdNextSubpass2KHR(VkCommandBuffer commandBuffer, const VkSubpassBeginInfo *pSubpassBeginInfo,
                                            const VkSubpassEndInfo *pSubpassEndInfo, const ErrorObject &error_obj) const override;
 
-    bool ValidateCmdEndRenderPass(VkCommandBuffer commandBuffer, const VkSubpassEndInfo *pSubpassEndInfo,
-                                  const ErrorObject &error_obj) const;
+    bool ValidateCmdEndRenderPass(VkCommandBuffer commandBuffer, const ErrorObject& error_obj) const;
     bool PreCallValidateCmdEndRenderPass(VkCommandBuffer commandBuffer, const ErrorObject &error_obj) const override;
     bool PreCallValidateCmdEndRenderPass2KHR(VkCommandBuffer commandBuffer, const VkSubpassEndInfo *pSubpassEndInfo,
                                              const ErrorObject &error_obj) const override;
@@ -360,6 +362,26 @@ class SyncValidator : public vvl::DeviceProxy {
     void PostCallRecordCmdDrawIndexedIndirectCountAMD(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
                                                       VkBuffer countBuffer, VkDeviceSize countBufferOffset, uint32_t maxDrawCount,
                                                       uint32_t stride, const RecordObject &record_obj) override;
+    bool PreCallValidateCmdDrawMeshTasksIndirectEXT(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
+                                                    uint32_t drawCount, uint32_t stride,
+                                                    const ErrorObject& error_obj) const override;
+    void PostCallRecordCmdDrawMeshTasksIndirectEXT(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
+                                                   uint32_t drawCount, uint32_t stride, const RecordObject& record_obj) override;
+    bool PreCallValidateCmdDrawMeshTasksIndirectCountEXT(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
+                                                         VkBuffer countBuffer, VkDeviceSize countBufferOffset,
+                                                         uint32_t maxDrawCount, uint32_t stride,
+                                                         const ErrorObject& error_obj) const override;
+    void PostCallRecordCmdDrawMeshTasksIndirectCountEXT(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
+                                                        VkBuffer countBuffer, VkDeviceSize countBufferOffset, uint32_t maxDrawCount,
+                                                        uint32_t stride, const RecordObject& record_obj) override;
+    bool PreCallValidateCmdDrawMultiIndexedEXT(VkCommandBuffer commandBuffer, uint32_t drawCount,
+                                               const VkMultiDrawIndexedInfoEXT* pIndexInfo, uint32_t instanceCount,
+                                               uint32_t firstInstance, uint32_t stride, const int32_t* pVertexOffset,
+                                               const ErrorObject& error_obj) const override;
+    void PostCallRecordCmdDrawMultiIndexedEXT(VkCommandBuffer commandBuffer, uint32_t drawCount,
+                                              const VkMultiDrawIndexedInfoEXT* pIndexInfo, uint32_t instanceCount,
+                                              uint32_t firstInstance, uint32_t stride, const int32_t* pVertexOffset,
+                                              const RecordObject& record_obj) override;
 
     bool PreCallValidateCmdClearColorImage(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout imageLayout,
                                            const VkClearColorValue *pColor, uint32_t rangeCount,
@@ -405,11 +427,21 @@ class SyncValidator : public vvl::DeviceProxy {
     bool PreCallValidateCmdEncodeVideoKHR(VkCommandBuffer commandBuffer, const VkVideoEncodeInfoKHR *pEncodeInfo,
                                           const ErrorObject &error_obj) const override;
 
+    void PostCallRecordResetEvent(VkDevice device, VkEvent event, const RecordObject& record_obj) override;
+
+
+    bool ValidateCmdSetEvent(const CommandExecutionContext& exec_context, const std::shared_ptr<const vvl::Event>& event,
+                             const SyncExecScope& src_exec_scope, ResourceUsageTag base_tag, const Location& loc) const;
     bool PreCallValidateCmdSetEvent(VkCommandBuffer commandBuffer, VkEvent event, VkPipelineStageFlags stageMask,
                                     const ErrorObject &error_obj) const override;
+
+    void ApplySetEvent(CommandExecutionContext& exec_context, const std::shared_ptr<const vvl::Event>& event,
+                       const SyncExecScope& src_exec_scope, const std::shared_ptr<const AccessContext>& src_access_context,
+                       ResourceUsageTag tag, vvl::Func command) const;
+    void RecordCmdSetEvent(CommandBufferAccessContext& cb_context, std::shared_ptr<const vvl::Event>&& event,
+                           const SyncExecScope& src_exec_scope, const Location& loc) const;
     void PostCallRecordCmdSetEvent(VkCommandBuffer commandBuffer, VkEvent event, VkPipelineStageFlags stageMask,
                                    const RecordObject &record_obj) override;
-
     bool PreCallValidateCmdSetEvent2KHR(VkCommandBuffer commandBuffer, VkEvent event, const VkDependencyInfoKHR *pDependencyInfo,
                                         const ErrorObject &error_obj) const override;
     bool PreCallValidateCmdSetEvent2(VkCommandBuffer commandBuffer, VkEvent event, const VkDependencyInfo *pDependencyInfo,
@@ -419,11 +451,17 @@ class SyncValidator : public vvl::DeviceProxy {
     void PostCallRecordCmdSetEvent2(VkCommandBuffer commandBuffer, VkEvent event, const VkDependencyInfo *pDependencyInfo,
                                     const RecordObject &record_obj) override;
 
+    bool ValidateCmdResetEvent(const CommandExecutionContext& exec_context, const std::shared_ptr<const vvl::Event>& event,
+                               const SyncExecScope& exec_scope, ResourceUsageTag base_tag, const Location& loc) const;
     bool PreCallValidateCmdResetEvent(VkCommandBuffer commandBuffer, VkEvent event, VkPipelineStageFlags stageMask,
                                       const ErrorObject &error_obj) const override;
+
+    void ApplyResetEvent(CommandExecutionContext& exec_context, const std::shared_ptr<const vvl::Event>& event,
+                         ResourceUsageTag tag, vvl::Func command) const;
+    void RecordCmdResetEvent(CommandBufferAccessContext& cb_context, std::shared_ptr<const vvl::Event>&& event,
+                             const SyncExecScope& exec_scope, const Location& loc) const;
     void PostCallRecordCmdResetEvent(VkCommandBuffer commandBuffer, VkEvent event, VkPipelineStageFlags stageMask,
                                      const RecordObject &record_obj) override;
-
     bool PreCallValidateCmdResetEvent2KHR(VkCommandBuffer commandBuffer, VkEvent event, VkPipelineStageFlags2KHR stageMask,
                                           const ErrorObject &error_obj) const override;
     bool PreCallValidateCmdResetEvent2(VkCommandBuffer commandBuffer, VkEvent event, VkPipelineStageFlags2 stageMask,
@@ -433,12 +471,19 @@ class SyncValidator : public vvl::DeviceProxy {
     void PostCallRecordCmdResetEvent2(VkCommandBuffer commandBuffer, VkEvent event, VkPipelineStageFlags2 stageMask,
                                       const RecordObject &record_obj) override;
 
-    bool PreCallValidateCmdWaitEvents(VkCommandBuffer commandBuffer, uint32_t eventCount, const VkEvent *pEvents,
+    bool ValidateCmdWaitEvents(const CommandExecutionContext& exec_context,
+                               const std::vector<std::shared_ptr<const vvl::Event>>& events,
+                               const vvl::span<const BarrierSet>& barrier_sets, const ResourceUsageTag base_tag,
+                               const Location& loc) const;
+    bool PreCallValidateCmdWaitEvents(VkCommandBuffer commandBuffer, uint32_t eventCount, const VkEvent* pEvents,
                                       VkPipelineStageFlags sourceStageMask, VkPipelineStageFlags dstStageMask,
                                       uint32_t memoryBarrierCount, const VkMemoryBarrier *pMemoryBarriers,
                                       uint32_t bufferMemoryBarrierCount, const VkBufferMemoryBarrier *pBufferMemoryBarriers,
                                       uint32_t imageMemoryBarrierCount, const VkImageMemoryBarrier *pImageMemoryBarriers,
                                       const ErrorObject &error_obj) const override;
+
+    void RecordCmdWaitEvents(CommandBufferAccessContext& cb_context, std::vector<std::shared_ptr<const vvl::Event>>&& events,
+                             std::vector<BarrierSet>&& barrier_sets, const Location& loc) const;
     void PostCallRecordCmdWaitEvents(VkCommandBuffer commandBuffer, uint32_t eventCount, const VkEvent *pEvents,
                                      VkPipelineStageFlags sourceStageMask, VkPipelineStageFlags dstStageMask,
                                      uint32_t memoryBarrierCount, const VkMemoryBarrier *pMemoryBarriers,

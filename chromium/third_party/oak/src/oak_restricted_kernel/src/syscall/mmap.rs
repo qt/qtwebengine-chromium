@@ -18,23 +18,23 @@ use core::{
     cmp::max,
     ffi::{c_int, c_size_t, c_void},
     iter::repeat_with,
+    ops::DerefMut,
     slice,
 };
 
+use oak_hal::PageAssignment;
 use oak_restricted_kernel_interface::{
-    syscalls::{MmapFlags, MmapProtection},
     Errno,
+    syscalls::{MmapFlags, MmapProtection},
 };
 use x86_64::{
-    align_up,
-    structures::paging::{FrameAllocator, Page, PageSize, Size2MiB},
     VirtAddr,
+    structures::paging::{
+        FrameAllocator, Page, PageSize, PageTableFlags, Size2MiB, mapper::Mapper,
+    },
 };
 
-use crate::{
-    mm::{Mapper, PageTableFlags},
-    FRAME_ALLOCATOR, PAGE_TABLES,
-};
+use crate::{FRAME_ALLOCATOR, PAGE_TABLES, mm::encryption_aware_page_table_flags};
 
 pub fn mmap(
     addr: Option<VirtAddr>,
@@ -68,32 +68,36 @@ pub fn mmap(
     };
 
     // We only deal with 2 MiB pages, so round `size` up to the closest 2 MiB
-    // boundary as well.
-    let size = align_up(size as u64, Size2MiB::SIZE) as usize;
+    // boundary as well. Use a checked rounding so a huge `size` can't wrap to a
+    // small one.
+    let size =
+        (size as u64).checked_next_multiple_of(Size2MiB::SIZE).ok_or(Errno::EINVAL)? as usize;
     let count = size / Size2MiB::SIZE as usize;
 
     // Allocate enough physical frames to cover the request.
     // Iterator that keeps allocating physical frames.
     let frames = repeat_with(|| FRAME_ALLOCATOR.lock().allocate_frame());
 
-    let pt_flags = PageTableFlags::PRESENT
-        | PageTableFlags::USER_ACCESSIBLE
-        | PageTableFlags::ENCRYPTED
-        | if prot.contains(MmapProtection::PROT_EXEC) {
-            PageTableFlags::empty()
-        } else {
-            PageTableFlags::NO_EXECUTE
-        }
-        | if prot.contains(MmapProtection::PROT_WRITE) {
-            PageTableFlags::WRITABLE
-        } else {
-            PageTableFlags::empty()
-        };
+    let pt_flags = encryption_aware_page_table_flags(
+        PageTableFlags::PRESENT
+            | PageTableFlags::USER_ACCESSIBLE
+            | if prot.contains(MmapProtection::PROT_EXEC) {
+                PageTableFlags::empty()
+            } else {
+                PageTableFlags::NO_EXECUTE
+            }
+            | if prot.contains(MmapProtection::PROT_WRITE) {
+                PageTableFlags::WRITABLE
+            } else {
+                PageTableFlags::empty()
+            },
+        PageAssignment::Private,
+    );
 
     let pages = {
         // This critical section is rather long...
-        let pt_guard = PAGE_TABLES.lock();
-        let pt = pt_guard.get().unwrap();
+        let mut pt_guard = PAGE_TABLES.lock();
+        let pt = pt_guard.get_mut().unwrap();
 
         // Now, find a gap in the page tables that satisifies the following:
         //  - in the lower half of virtual memory (user space)
@@ -110,6 +114,17 @@ pub fn mmap(
             log::warn!("mmap: could not find suitable virtual addresses for request");
             Errno::ENOMEM
         })?;
+
+        // Ensure the pages are in user space (lower half of virtual memory).
+        //
+        // Note that PageRange::end is exclusive, so we subtract one to get the last
+        // (inclusive) virtual address.
+        if pages.start.start_address().as_u64() & (1 << 63) != 0
+            || (pages.end.start_address().as_u64() - 1) & (1 << 63) != 0
+        {
+            log::warn!("mmap: requested pages not in user space: {:?}", pages);
+            return Err(Errno::EINVAL);
+        }
 
         // For each page we also need a physical frame to back it to create a mapping.
         for (page, frame) in pages.zip(frames) {
@@ -139,10 +154,13 @@ pub fn mmap(
                         Errno::ENOMEM
                     })?,
                     pt_flags,
-                    PageTableFlags::PRESENT
-                        | PageTableFlags::WRITABLE
-                        | PageTableFlags::ENCRYPTED
-                        | PageTableFlags::USER_ACCESSIBLE,
+                    encryption_aware_page_table_flags(
+                        PageTableFlags::PRESENT
+                            | PageTableFlags::WRITABLE
+                            | PageTableFlags::USER_ACCESSIBLE,
+                        PageAssignment::Private,
+                    ),
+                    FRAME_ALLOCATOR.lock().deref_mut(),
                 )
                 .map_err(|err| {
                     log::error!(
@@ -192,6 +210,15 @@ pub fn syscall_mmap(
         return Errno::EINVAL as isize;
     };
 
-    mmap(Some(VirtAddr::from_ptr(addr)), size, prot, flags)
-        .map_or_else(|err| err as isize, |ptr| ptr.as_ptr() as isize)
+    // `addr` is untrusted user input; a non-canonical value must not be allowed
+    // to panic the kernel (`VirtAddr::new`). Reject it with EINVAL instead.
+    let addr = match VirtAddr::try_new(addr as u64) {
+        Ok(addr) => addr,
+        Err(_) => {
+            log::warn!("mmap: non-canonical address passed to mmap");
+            return Errno::EINVAL as isize;
+        }
+    };
+
+    mmap(Some(addr), size, prot, flags).map_or_else(|err| err as isize, |ptr| ptr.as_ptr() as isize)
 }

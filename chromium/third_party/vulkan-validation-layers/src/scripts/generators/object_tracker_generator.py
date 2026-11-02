@@ -718,6 +718,8 @@ bool Device::ReportUndestroyedObjects(const Location& loc) const {
             return '"UNASSIGNED-VkMicromapCreateInfoEXT-buffer-parent"'
         if commandName == 'vkCreateAccelerationStructureKHR' and memberName == 'buffer':
             return '"UNASSIGNED-VkAccelerationStructureCreateInfoKHR-buffer-parent"'
+        if commandName == 'vkCreateAccelerationStructure2KHR' and memberName == 'buffer':
+            return '"UNASSIGNED-VkAccelerationStructureCreateInfo2KHR-buffer-parent"'
         if commandName == 'vkCreateImage' and memberName == 'swapchain':
             return '"UNASSIGNED-VkImageSwapchainCreateInfoKHR-swapchain-parent"'
         if commandName == 'vkQueuePresentKHR' and memberName == 'pFences':
@@ -870,12 +872,10 @@ bool Device::ReportUndestroyedObjects(const Location& loc) const {
             return '"UNASSIGNED-VkPastPresentationTimingInfoEXT-swapchain-parent"'
         if structName == 'VkMemoryGetNativeBufferInfoOHOS' and memberName == 'memory':
             return '"UNASSIGNED-VkMemoryGetNativeBufferInfoOHOS-memory-parent"'
-        if structName == 'VkImageViewCreateInfo' and memberName == 'image':
-            return '"VUID-VkImageViewCreateInfo-image-parent"'
         if structName == 'VkCopyDeviceMemoryImageInfoKHR' and memberName == 'image':
-            return '"VUID-VkCopyDeviceMemoryImageInfoKHR-image-parent"'
+            return '"UNASSIGNED-VkCopyDeviceMemoryImageInfoKHR-image-parent"'
         if structName == 'VkGpaSessionCreateInfoAMD' and memberName == 'secondaryCopySource':
-            return '"VUID-VkGpaSessionCreateInfoAMD-secondaryCopySource-parent"'
+            return '"UNASSIGNED-VkGpaSessionCreateInfoAMD-secondaryCopySource-parent"'
 
         # Common parents because the structs have more then one handle that needs to be check
         if (structName == 'VkBufferMemoryBarrier' and memberName == 'buffer') or (structName == 'VkImageMemoryBarrier' and memberName == 'image'):

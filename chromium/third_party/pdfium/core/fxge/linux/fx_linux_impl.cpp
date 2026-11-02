@@ -11,7 +11,6 @@
 
 #include "build/build_config.h"
 #include "core/fxcrt/check.h"
-#include "core/fxcrt/compiler_specific.h"
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxge/cfx_folderfontinfo.h"
 #include "core/fxge/cfx_fontmgr.h"
@@ -87,16 +86,16 @@ class CFX_LinuxFontInfo final : public CFX_FolderFontInfo {
   ~CFX_LinuxFontInfo() override = default;
 
   // CFX_FolderFontInfo:
-  void* MapFont(int weight,
+  void* MapFont(CFX_FontMapper* mapper,
+                int weight,
                 bool bItalic,
                 FX_Charset charset,
                 int pitch_family,
                 const ByteString& face) override;
-
-  bool ParseFontCfg(const char** pUserPaths);
 };
 
-void* CFX_LinuxFontInfo::MapFont(int weight,
+void* CFX_LinuxFontInfo::MapFont(CFX_FontMapper* mapper,
+                                 int weight,
                                  bool bItalic,
                                  FX_Charset charset,
                                  int pitch_family,
@@ -153,20 +152,6 @@ void* CFX_LinuxFontInfo::MapFont(int weight,
   return FindFont(weight, bItalic, charset, pitch_family, face, !bCJK);
 }
 
-bool CFX_LinuxFontInfo::ParseFontCfg(const char** pUserPaths) {
-  if (!pUserPaths) {
-    return false;
-  }
-
-  // SAFETY: nullptr-terminated array required from caller.
-  UNSAFE_BUFFERS({
-    for (const char** pPath = pUserPaths; *pPath; ++pPath) {
-      AddPath(*pPath);
-    }
-  });
-  return true;
-}
-
 }  // namespace
 
 class CLinuxPlatform : public CFX_GEModule::PlatformIface {
@@ -179,7 +164,12 @@ class CLinuxPlatform : public CFX_GEModule::PlatformIface {
 
   std::unique_ptr<SystemFontInfoIface> CreateDefaultSystemFontInfo() override {
     auto pInfo = std::make_unique<CFX_LinuxFontInfo>();
-    if (!pInfo->ParseFontCfg(CFX_GEModule::Get()->GetUserFontPaths())) {
+    auto user_paths = CFX_GEModule::Get()->GetUserFontPaths();
+    if (user_paths.has_value()) {
+      for (const char* path : user_paths.value()) {
+        pInfo->AddPath(path);
+      }
+    } else {
       pInfo->AddPath("/usr/share/fonts");
       pInfo->AddPath("/usr/share/X11/fonts/Type1");
       pInfo->AddPath("/usr/share/X11/fonts/TTF");

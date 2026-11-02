@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Platform from '../../core/platform/platform.js';
 import * as Persistence from '../../models/persistence/persistence.js';
@@ -18,7 +19,7 @@ const {urlString} = Platform.DevToolsPath;
 describeWithEnvironment('WorkspaceSettingsTab view', () => {
   it('renders the exclude regex setting and one card per mapped file system', async () => {
     const target = document.createElement('div');
-    renderElementIntoDOM(target);
+    renderElementIntoDOM(target, {includeCommonStyles: true});
 
     const fileSystem = sinon.createStubInstance(Persistence.IsolatedFileSystem.IsolatedFileSystem);
     fileSystem.path.returns(urlString`file:///home/user/foo`);
@@ -60,7 +61,7 @@ describeWithEnvironment('WorkspaceSettingsTab widget', () => {
     const widget = new WorkspaceSettingsTab(view);
 
     const container = document.createElement('div');
-    renderElementIntoDOM(container);
+    renderElementIntoDOM(container, {includeCommonStyles: true});
     widget.markAsRoot();
     widget.show(container);
     await view.nextInput;

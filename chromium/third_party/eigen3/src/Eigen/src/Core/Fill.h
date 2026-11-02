@@ -35,16 +35,14 @@ struct eigen_fill_helper<Block<Xpr, BlockRows, BlockCols, /*InnerPanel*/ true>> 
 
 template <typename Xpr, int BlockRows, int BlockCols>
 struct eigen_fill_helper<Block<Xpr, BlockRows, BlockCols, /*InnerPanel*/ false>>
-    : std::integral_constant<bool, eigen_fill_helper<Xpr>::value &&
-                                       (Xpr::IsRowMajor ? (BlockRows == 1) : (BlockCols == 1))> {};
+    : bool_constant<eigen_fill_helper<Xpr>::value && (Xpr::IsRowMajor ? (BlockRows == 1) : (BlockCols == 1))> {};
 
 template <typename Xpr, int Options>
 struct eigen_fill_helper<Map<Xpr, Options, Stride<0, 0>>> : eigen_fill_helper<Xpr> {};
 
 template <typename Xpr, int Options, int OuterStride_>
 struct eigen_fill_helper<Map<Xpr, Options, Stride<OuterStride_, 0>>>
-    : std::integral_constant<bool, eigen_fill_helper<Xpr>::value &&
-                                       enum_eq_not_dynamic(OuterStride_, Xpr::InnerSizeAtCompileTime)> {};
+    : bool_constant<eigen_fill_helper<Xpr>::value && enum_eq_not_dynamic(OuterStride_, Xpr::InnerSizeAtCompileTime)> {};
 
 template <typename Xpr, int Options, int OuterStride_>
 struct eigen_fill_helper<Map<Xpr, Options, Stride<OuterStride_, 1>>>
@@ -61,7 +59,6 @@ struct eigen_fill_helper<Map<Xpr, Options, OuterStride<OuterStride_>>>
 template <typename Xpr>
 struct eigen_fill_impl<Xpr, /*use_fill*/ false> {
   using Scalar = typename Xpr::Scalar;
-  using Func = scalar_constant_op<Scalar>;
   using PlainObject = typename Xpr::PlainObject;
   using Constant = typename PlainObject::ConstantReturnType;
   static EIGEN_DEVICE_FUNC constexpr void run(Xpr& dst, const Scalar& val) {
@@ -122,7 +119,14 @@ template <typename Xpr>
 struct eigen_zero_impl<Xpr, /*use_memset*/ true> {
   using Scalar = typename Xpr::Scalar;
   static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void run(Xpr& dst) {
-    const std::ptrdiff_t num_bytes = dst.size() * static_cast<std::ptrdiff_t>(sizeof(Scalar));
+    Index size = dst.size();
+    EIGEN_IF_CONSTEXPR (Xpr::MaxSizeAtCompileTime != Dynamic) {
+      if (size > Xpr::MaxSizeAtCompileTime) {
+        eigen_internal_assert(false && "invalid dense object size");
+        return;
+      }
+    }
+    const std::ptrdiff_t num_bytes = size * static_cast<std::ptrdiff_t>(sizeof(Scalar));
     if (num_bytes <= 0) return;
     void* dst_ptr = static_cast<void*>(dst.data());
 #ifndef EIGEN_NO_DEBUG

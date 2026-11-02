@@ -15,10 +15,14 @@ import("//third_party/tflite/tf_version.gni")
 import("//third_party/tflite/tflite_target.gni")
 
 config("tflite_shim_config") {
-  include_dirs = [
-    "shims",
-    "shims/third_party/tflite/src",
-  ]
+  include_dirs = []
+  if (use_litert_tflite) {
+    include_dirs = [
+      "//third_party/tflite/shims/third_party/tflite/src",
+      "//third_party/tflite/shims",
+    ]
+  }
+  configs = [ "//third_party/ml_dtypes:ml_dtypes-includes" ]
 }
 
 # The config `tflite_config_no_undef` is used when compiling WebRTC outside the
@@ -27,12 +31,20 @@ config("tflite_config_no_undef") {
   cflags = [ "-Wno-undef" ]
 }
 
-buildflag_header("buildflags") {
+buildflag_header("buildflags_header") {
   header = "buildflags.h"
   flags = [
     "BUILD_TFLITE_WITH_XNNPACK=$build_tflite_with_xnnpack",
     "USE_LITERT_TFLITE=$use_litert_tflite",
   ]
+}
+
+group("buildflags") {
+  public_deps = [ ":buildflags_header" ]
+
+  if (use_litert_tflite) {
+    public_deps += [ "//third_party/litert:buildflags" ]
+  }
 }
 
 if (use_litert_tflite) {
@@ -259,6 +271,9 @@ if (!use_litert_tflite) {
   }
 
   static_library("tflite_builtin_op_resolver_internals") {
+    _configs = configs
+    configs = []
+    configs = [ ":tflite_shim_config" ] + _configs
     sources = [
       "src/tensorflow/lite/kernels/internal/mfcc.cc",
       "src/tensorflow/lite/kernels/internal/mfcc_dct.cc",
@@ -306,7 +321,6 @@ if (!use_litert_tflite) {
       "src/tensorflow/lite/kernels/bitwise_xor.cc",
       "src/tensorflow/lite/kernels/broadcast_args.cc",
       "src/tensorflow/lite/kernels/bucketize.cc",
-      "src/tensorflow/lite/kernels/call_once.cc",
       "src/tensorflow/lite/kernels/complex_support.cc",
       "src/tensorflow/lite/kernels/conv3d.cc",
       "src/tensorflow/lite/kernels/conv3d_transpose.cc",
@@ -337,7 +351,6 @@ if (!use_litert_tflite) {
       "src/tensorflow/lite/kernels/stablehlo_reduce_window.cc",
       "src/tensorflow/lite/kernels/stablehlo_shift_left.cc",
       "src/tensorflow/lite/kernels/unsorted_segment.cc",
-      "src/tensorflow/lite/kernels/var_handle.cc",
     ]
 
     deps = [
@@ -393,6 +406,9 @@ if (!use_litert_tflite) {
   }
 
   source_set("mutable_schema") {
+    _configs = configs
+    configs = []
+    configs = [ ":tflite_shim_config" ] + _configs
     public_deps = [
       ":mutable_schema_compiler_path",
       ":mutable_schema_tflite_path",
@@ -400,6 +416,9 @@ if (!use_litert_tflite) {
   }
 
   source_set("tflite_public_headers") {
+    _configs = configs
+    configs = []
+    configs = [ ":tflite_shim_config" ] + _configs
     public_configs = [ ":tflite_shim_config" ]
     public = [
       "shims/tensorflow/lite/types/fp16.h",
@@ -434,14 +453,18 @@ if (!use_litert_tflite) {
       "src/tensorflow/lite/util.h",
     ]
 
-    deps = [ "//third_party/fp16" ]
+    public_deps = [ "//third_party/fp16" ]
 
     configs += [ ":tflite_flags" ]
   }
 
   source_set("tflite_kernel_common_headers") {
+    _configs = configs
+    configs = []
+    configs = [ ":tflite_shim_config" ] + _configs
     public = [
       "src/tensorflow/lite/core/kernels/register.h",
+      "src/tensorflow/lite/experimental/resource/initialization_status.h",
       "src/tensorflow/lite/experimental/resource/resource_base.h",
       "src/tensorflow/lite/experimental/resource/resource_variable.h",
       "src/tensorflow/lite/external_cpu_backend_context.h",
@@ -495,6 +518,9 @@ if (!use_litert_tflite) {
   }
 
   source_set("tflite_kernel_internals") {
+    _configs = configs
+    configs = []
+    configs = [ ":tflite_shim_config" ] + _configs
     sources = [
       "src/tensorflow/lite/kernels/internal/common.cc",
       "src/tensorflow/lite/kernels/internal/common.h",
@@ -541,7 +567,6 @@ if (!use_litert_tflite) {
       "src/tensorflow/lite/kernels/internal/reference/batch_matmul.h",
       "src/tensorflow/lite/kernels/internal/reference/binary_function.h",
       "src/tensorflow/lite/kernels/internal/reference/ceil.h",
-      "src/tensorflow/lite/kernels/internal/reference/comparisons.cc",
       "src/tensorflow/lite/kernels/internal/reference/comparisons.h",
       "src/tensorflow/lite/kernels/internal/reference/concatenation.h",
       "src/tensorflow/lite/kernels/internal/reference/conv.h",
@@ -646,6 +671,7 @@ if (!use_litert_tflite) {
       "src/tensorflow/lite/kernels/bidirectional_sequence_rnn.cc",
       "src/tensorflow/lite/kernels/broadcast_to.cc",
       "src/tensorflow/lite/kernels/builtin_op_kernels.h",
+      "src/tensorflow/lite/kernels/call_once.cc",
       "src/tensorflow/lite/kernels/cast.cc",
       "src/tensorflow/lite/kernels/ceil.cc",
       "src/tensorflow/lite/kernels/comparisons.cc",
@@ -748,6 +774,7 @@ if (!use_litert_tflite) {
       "src/tensorflow/lite/kernels/unidirectional_sequence_rnn.cc",
       "src/tensorflow/lite/kernels/unique.cc",
       "src/tensorflow/lite/kernels/unpack.cc",
+      "src/tensorflow/lite/kernels/var_handle.cc",
       "src/tensorflow/lite/kernels/where.cc",
       "src/tensorflow/lite/kernels/while.cc",
       "src/tensorflow/lite/kernels/zeros_like.cc",
@@ -830,6 +857,9 @@ if (!use_litert_tflite) {
   # libraries.
   if (build_with_chromium) {
     source_set("tflite_logging") {
+      _configs = configs
+      configs = []
+      configs = [ ":tflite_shim_config" ] + _configs
       sources = [ "shims/minimal_logging_chromium.cc" ]
       deps = [
         ":tflite_public_headers",
@@ -848,6 +878,9 @@ if (!use_litert_tflite) {
   # This target is used in conditional_deps in the ":tflite" target, which
   # requires both a "target" and companion "target_standalone" source set.
   source_set("tflite_logging_standalone") {
+    _configs = configs
+    configs = []
+    configs = [ ":tflite_shim_config" ] + _configs
     if (is_ios) {
       sources = [ "src/tensorflow/lite/minimal_logging_ios.cc" ]
     } else if (is_android) {
@@ -872,6 +905,9 @@ if (!use_litert_tflite) {
   }
 
   source_set("tflite_compiler_utils") {
+    _configs = configs
+    configs = []
+    configs = [ ":tflite_shim_config" ] + _configs
     sources = [
       "src/tensorflow/compiler/mlir/lite/core/api/flatbuffer_conversions.cc",
       "src/tensorflow/compiler/mlir/lite/core/api/flatbuffer_conversions.h",
@@ -1025,6 +1061,8 @@ if (!use_litert_tflite) {
         "src/tensorflow/lite/delegates/xnnpack/file_util.h",
         "src/tensorflow/lite/delegates/xnnpack/mmap_handle.cc",
         "src/tensorflow/lite/delegates/xnnpack/mmap_handle.h",
+        "src/tensorflow/lite/delegates/xnnpack/moe_delegate_kernel.cc",
+        "src/tensorflow/lite/delegates/xnnpack/moe_delegate_kernel.h",
         "src/tensorflow/lite/delegates/xnnpack/quantization_util.cc",
         "src/tensorflow/lite/delegates/xnnpack/quantization_util.h",
         "src/tensorflow/lite/delegates/xnnpack/weight_cache.cc",
@@ -1126,12 +1164,18 @@ if (!use_litert_tflite) {
     # not want propagated. For the time being, allow this in the standalone
     # target (which is assumed to be for third-party code that is OK to have
     # these switches).
-    public_deps_for_standalone = [ "//third_party/neon_2_sse" ]
+    public_deps_for_standalone = [
+      "//third_party/neon_2_sse",
+      "//third_party/gemmlowp",
+    ]
   }
 }
 
 if (!use_litert_tflite && build_with_chromium) {
   executable("tflite_benchmark") {
+    _configs = configs
+    configs = []
+    configs = [ ":tflite_shim_config" ] + _configs
     sources = [
       "src/tensorflow/lite/tools/benchmark/benchmark_main.cc",
       "src/tensorflow/lite/tools/benchmark/benchmark_model.cc",

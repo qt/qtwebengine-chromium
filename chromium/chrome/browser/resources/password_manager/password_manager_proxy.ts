@@ -8,14 +8,26 @@
  * testing. The chrome.passwordsPrivate API is being migrated to use Mojo.
  */
 
-import {PageCallbackRouter, PageHandlerFactory, PageHandlerRemote, PasswordManagerActionableError} from './password_manager.mojom-webui.js';
-import type {ActorLoginPermission} from './password_manager.mojom-webui.js';
+import {assertNotReached} from 'chrome://resources/js/assert.js';
+import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
+
+import {ExportPasswordsResult, ExportProgressStatus, ImportEntryStatus, ImportResultsStatus, PageCallbackRouter, PageHandlerFactory, PageHandlerRemote, PasswordAutomaticChangeState, PasswordManagerActionableError, PasswordStoreSet as MojoPasswordStoreSet} from './password_manager.mojom-webui.js';
+import type {ActorLoginPermission, ImportEntry, ImportResults} from './password_manager.mojom-webui.js';
 
 export {
+  ExportPasswordsResult,
+  ExportProgressStatus,
+  ImportEntryStatus,
+  ImportResultsStatus,
   PageCallbackRouter,
   PageHandlerFactory,
   PageHandlerRemote,
+  PasswordAutomaticChangeState,
   PasswordManagerActionableError,
+};
+export type {
+  ImportEntry,
+  ImportResults,
 };
 
 export type BlockedSite = chrome.passwordsPrivate.ExceptionEntry;
@@ -88,6 +100,8 @@ export enum PasswordViewPageInteractions {
  * Interface for all callbacks to the password API.
  */
 export interface PasswordManagerProxy {
+  callbackRouter: PageCallbackRouter;
+
   /**
    * Add an observer to the list of saved passwords.
    */
@@ -169,7 +183,7 @@ export interface PasswordManagerProxy {
   /**
    * Requests the start of the bulk password check.
    */
-  startBulkPasswordCheck(): Promise<void>;
+  startBulkPasswordCheck(): void;
 
   /**
    * Records a given interaction on the Password Check page.
@@ -291,15 +305,14 @@ export interface PasswordManagerProxy {
    * @return A promise that resolves to the import results.
    */
   importPasswords(toStore: chrome.passwordsPrivate.PasswordStoreSet):
-      Promise<chrome.passwordsPrivate.ImportResults>;
+      Promise<ImportResults>;
 
   /**
    * Resumes the password import process when user has selected which passwords
    * to replace.
    * @return A promise that resolves to the |ImportResults|.
    */
-  continueImport(selectedIds: number[]):
-      Promise<chrome.passwordsPrivate.ImportResults>;
+  continueImport(selectedIds: number[]): Promise<ImportResults>;
 
   /**
    * Resets the PasswordImporter if it is in the CONFLICTS/FINISHED state and
@@ -312,13 +325,12 @@ export interface PasswordManagerProxy {
   /**
    * Queries the status of any ongoing export.
    */
-  requestExportProgressStatus():
-      Promise<chrome.passwordsPrivate.ExportProgressStatus>;
+  requestExportProgressStatus(): Promise<ExportProgressStatus>;
 
   /**
    * Triggers the dialog for exporting passwords.
    */
-  exportPasswords(): Promise<void>;
+  exportPasswords(): Promise<ExportPasswordsResult>;
 
   /**
    * Add an observer to the export progress.
@@ -342,7 +354,7 @@ export interface PasswordManagerProxy {
   /**
    * Shows the file with the exported passwords in the OS shell.
    */
-  showExportedFileInShell(filePath: string): void;
+  showLastExportedFileInShell(): void;
 
   /**
    * Requests whether the given |url| meets the requirements to save a password
@@ -475,9 +487,38 @@ export interface PasswordManagerProxy {
   requestChangePassword(credential_id: number): void;
 
   /**
+   * Stops an ongoing password change flow started from Password Checkup.
+   */
+  stopPasswordChange(): void;
+
+  /**
    * Returns the current actionable error.
    */
   getPasswordManagerActionableError(): Promise<PasswordManagerActionableError>;
+}
+
+/**
+ * Maps chrome.passwordsPrivate.ExportProgressStatus to
+ * password_manager.mojom.ExportProgressStatus.
+ */
+export function toMojoExportProgressStatus(
+    status: chrome.passwordsPrivate.ExportProgressStatus):
+    ExportProgressStatus {
+  const PrivateStatus = chrome.passwordsPrivate.ExportProgressStatus;
+  switch (status) {
+    case PrivateStatus.NOT_STARTED:
+      return ExportProgressStatus.kNotStarted;
+    case PrivateStatus.IN_PROGRESS:
+      return ExportProgressStatus.kInProgress;
+    case PrivateStatus.SUCCEEDED:
+      return ExportProgressStatus.kSucceeded;
+    case PrivateStatus.FAILED_CANCELLED:
+      return ExportProgressStatus.kFailed;
+    case PrivateStatus.FAILED_WRITE_FAILED:
+      return ExportProgressStatus.kFailedWrite;
+    default:
+      return ExportProgressStatus.kNotStarted;
+  }
 }
 
 /**
@@ -505,6 +546,113 @@ export function toMojoActionableError(
       return PasswordManagerActionableError.kNeedsPassphrase;
     default:
       return PasswordManagerActionableError.kNoError;
+  }
+}
+
+/**
+ * Maps chrome.passwordsPrivate.ImportResultsStatus to
+ * password_manager.mojom.ImportResultsStatus.
+ */
+export function toMojoImportResultsStatus(
+    status: chrome.passwordsPrivate.ImportResultsStatus): ImportResultsStatus {
+  const PrivateStatus = chrome.passwordsPrivate.ImportResultsStatus;
+  switch (status) {
+    case PrivateStatus.SUCCESS:
+      return ImportResultsStatus.kSuccess;
+    case PrivateStatus.IO_ERROR:
+      return ImportResultsStatus.kIoError;
+    case PrivateStatus.BAD_FORMAT:
+      return ImportResultsStatus.kBadFormat;
+    case PrivateStatus.DISMISSED:
+      return ImportResultsStatus.kDismissed;
+    case PrivateStatus.MAX_FILE_SIZE:
+      return ImportResultsStatus.kMaxFileSize;
+    case PrivateStatus.IMPORT_ALREADY_ACTIVE:
+      return ImportResultsStatus.kImportAlreadyActive;
+    case PrivateStatus.NUM_PASSWORDS_EXCEEDED:
+      return ImportResultsStatus.kNumPasswordsExceeded;
+    case PrivateStatus.CONFLICTS:
+      return ImportResultsStatus.kConflicts;
+    case PrivateStatus.UNKNOWN_ERROR:
+    default:
+      return ImportResultsStatus.kUnknownError;
+  }
+}
+
+/**
+ * Maps chrome.passwordsPrivate.ImportEntryStatus to
+ * password_manager.mojom.ImportEntryStatus.
+ */
+export function toMojoImportEntryStatus(
+    status: chrome.passwordsPrivate.ImportEntryStatus): ImportEntryStatus {
+  const PrivateStatus = chrome.passwordsPrivate.ImportEntryStatus;
+  switch (status) {
+    case PrivateStatus.MISSING_PASSWORD:
+      return ImportEntryStatus.kMissingPassword;
+    case PrivateStatus.MISSING_URL:
+      return ImportEntryStatus.kMissingUrl;
+    case PrivateStatus.INVALID_URL:
+      return ImportEntryStatus.kInvalidUrl;
+    case PrivateStatus.NON_ASCII_URL:
+      return ImportEntryStatus.kNonAsciiUrl;
+    case PrivateStatus.LONG_URL:
+      return ImportEntryStatus.kLongUrl;
+    case PrivateStatus.LONG_PASSWORD:
+      return ImportEntryStatus.kLongPassword;
+    case PrivateStatus.LONG_USERNAME:
+      return ImportEntryStatus.kLongUsername;
+    case PrivateStatus.CONFLICT_PROFILE:
+      return ImportEntryStatus.kConflictProfile;
+    case PrivateStatus.CONFLICT_ACCOUNT:
+      return ImportEntryStatus.kConflictAccount;
+    case PrivateStatus.LONG_NOTE:
+      return ImportEntryStatus.kLongNote;
+    case PrivateStatus.LONG_CONCATENATED_NOTE:
+      return ImportEntryStatus.kLongConcatenatedNote;
+    case PrivateStatus.VALID:
+      return ImportEntryStatus.kValid;
+    case PrivateStatus.UNKNOWN_ERROR:
+    default:
+      return ImportEntryStatus.kUnknownError;
+  }
+}
+
+/**
+ * Maps chrome.passwordsPrivate.ImportResults to
+ * password_manager.mojom.ImportResults.
+ */
+export function toMojoImportResults(
+    results: chrome.passwordsPrivate.ImportResults): ImportResults {
+  return {
+    status: toMojoImportResultsStatus(results.status),
+    numberImported: results.numberImported,
+    displayedEntries: results.displayedEntries.map(
+        entry => ({
+          status: toMojoImportEntryStatus(entry.status),
+          url: entry.url,
+          username: entry.username,
+          password: entry.password,
+          id: entry.id,
+        })),
+    fileName: results.fileName || '',
+  };
+}
+
+/**
+ * Maps chrome.passwordsPrivate.PasswordStoreSet to
+ * password_manager.mojom.PasswordStoreSet.
+ */
+export function toMojoPasswordStoreSet(
+    store: chrome.passwordsPrivate.PasswordStoreSet): MojoPasswordStoreSet {
+  switch (store) {
+    case chrome.passwordsPrivate.PasswordStoreSet.DEVICE:
+      return MojoPasswordStoreSet.kDevice;
+    case chrome.passwordsPrivate.PasswordStoreSet.ACCOUNT:
+      return MojoPasswordStoreSet.kAccount;
+    case chrome.passwordsPrivate.PasswordStoreSet.DEVICE_AND_ACCOUNT:
+      return MojoPasswordStoreSet.kDeviceAndAccount;
+    default:
+      assertNotReached();
   }
 }
 
@@ -587,7 +735,11 @@ export class PasswordManagerImpl implements PasswordManagerProxy {
   }
 
   startBulkPasswordCheck() {
-    return chrome.passwordsPrivate.startPasswordCheck();
+    if (!loadTimeData.getBoolean('enablePasswordManagerMojoApi')) {
+      chrome.passwordsPrivate.startPasswordCheck().catch(() => {});
+      return;
+    }
+    this.handler.startBulkPasswordCheck();
   }
 
   recordPasswordCheckInteraction(interaction: PasswordCheckInteraction) {
@@ -638,7 +790,11 @@ export class PasswordManagerImpl implements PasswordManagerProxy {
   }
 
   removeBlockedSite(id: number) {
-    chrome.passwordsPrivate.removePasswordException(id);
+    if (!loadTimeData.getBoolean('enablePasswordManagerMojoApi')) {
+      chrome.passwordsPrivate.removePasswordException(id);
+      return;
+    }
+    this.handler.removePasswordException(id);
   }
 
   muteInsecureCredential(insecureCredential:
@@ -652,7 +808,11 @@ export class PasswordManagerImpl implements PasswordManagerProxy {
   }
 
   undoRemoveSavedPasswordOrException() {
-    chrome.passwordsPrivate.undoRemoveSavedPasswordOrException();
+    if (!loadTimeData.getBoolean('enablePasswordManagerMojoApi')) {
+      chrome.passwordsPrivate.undoRemoveSavedPasswordOrException();
+      return;
+    }
+    this.handler.undoRemoveSavedPasswordOrException();
   }
 
   fetchFamilyMembers() {
@@ -664,24 +824,56 @@ export class PasswordManagerImpl implements PasswordManagerProxy {
     chrome.passwordsPrivate.sharePassword(id, recipients);
   }
 
-  importPasswords(toStore: chrome.passwordsPrivate.PasswordStoreSet) {
-    return chrome.passwordsPrivate.importPasswords(toStore);
+  importPasswords(toStore: chrome.passwordsPrivate.PasswordStoreSet):
+      Promise<ImportResults> {
+    if (!loadTimeData.getBoolean('enablePasswordManagerMojoApiPhase2')) {
+      return chrome.passwordsPrivate.importPasswords(toStore).then(
+          toMojoImportResults);
+    }
+    return this.handler.importPasswords(toMojoPasswordStoreSet(toStore))
+        .then(res => res.results);
   }
 
-  continueImport(selectedIds: number[]) {
-    return chrome.passwordsPrivate.continueImport(selectedIds);
+  continueImport(selectedIds: number[]): Promise<ImportResults> {
+    if (!loadTimeData.getBoolean('enablePasswordManagerMojoApiPhase2')) {
+      return chrome.passwordsPrivate.continueImport(selectedIds)
+          .then(toMojoImportResults);
+    }
+    return this.handler.continueImport(selectedIds).then(res => res.results);
   }
 
   resetImporter(deleteFile: boolean) {
-    return chrome.passwordsPrivate.resetImporter(deleteFile);
+    if (!loadTimeData.getBoolean('enablePasswordManagerMojoApi')) {
+      return chrome.passwordsPrivate.resetImporter(deleteFile);
+    }
+    return this.handler.resetImporter(deleteFile).then(() => {});
   }
 
   requestExportProgressStatus() {
-    return chrome.passwordsPrivate.requestExportProgressStatus();
+    if (!loadTimeData.getBoolean('enablePasswordManagerMojoApi')) {
+      return chrome.passwordsPrivate.requestExportProgressStatus().then(
+          status => toMojoExportProgressStatus(status));
+    }
+    return this.handler.getPasswordsExportProgress().then(
+        response => response.status);
   }
 
   exportPasswords() {
-    return chrome.passwordsPrivate.exportPasswords();
+    if (!loadTimeData.getBoolean('enablePasswordManagerMojoApi')) {
+      return chrome.passwordsPrivate.exportPasswords()
+          .then(() => ExportPasswordsResult.kSuccess)
+          .catch((error: unknown) => {
+            const errorMessage = error instanceof Error ? error.message : error;
+            if (errorMessage === 'in-progress') {
+              return ExportPasswordsResult.kInProgress;
+            }
+            if (errorMessage === 'reauth-failed') {
+              return ExportPasswordsResult.kReauthFailed;
+            }
+            throw error;
+          });
+    }
+    return this.handler.requestPasswordsExport().then(({result}) => result);
   }
 
   addPasswordsFileExportProgressListener(
@@ -700,8 +892,8 @@ export class PasswordManagerImpl implements PasswordManagerProxy {
         result => result.success);
   }
 
-  showExportedFileInShell(filePath: string) {
-    chrome.passwordsPrivate.showExportedFileInShell(filePath);
+  showLastExportedFileInShell() {
+    this.handler.showLastExportedFileInShell();
   }
 
   getUrlCollection(url: string) {
@@ -773,7 +965,11 @@ export class PasswordManagerImpl implements PasswordManagerProxy {
   }
 
   movePasswordsToAccount(ids: number[]) {
-    chrome.passwordsPrivate.movePasswordsToAccount(ids);
+    if (!loadTimeData.getBoolean('enablePasswordManagerMojoApi')) {
+      chrome.passwordsPrivate.movePasswordsToAccount(ids);
+      return;
+    }
+    this.handler.movePasswordsToAccount(ids);
   }
 
   dismissSafetyHubPasswordMenuNotification() {
@@ -791,11 +987,19 @@ export class PasswordManagerImpl implements PasswordManagerProxy {
   }
 
   disconnectCloudAuthenticator() {
-    return chrome.passwordsPrivate.disconnectCloudAuthenticator();
+    if (!loadTimeData.getBoolean('enablePasswordManagerMojoApi')) {
+      return chrome.passwordsPrivate.disconnectCloudAuthenticator();
+    }
+    return this.handler.disconnectCloudAuthenticator().then(
+        result => result.success);
   }
 
   isConnectedToCloudAuthenticator() {
-    return chrome.passwordsPrivate.isConnectedToCloudAuthenticator();
+    if (!loadTimeData.getBoolean('enablePasswordManagerMojoApi')) {
+      return chrome.passwordsPrivate.isConnectedToCloudAuthenticator();
+    }
+    return this.handler.isConnectedToCloudAuthenticator().then(
+        result => result.connected);
   }
 
   deleteAllPasswordManagerData() {
@@ -813,6 +1017,10 @@ export class PasswordManagerImpl implements PasswordManagerProxy {
 
   requestChangePassword(credentialId: number): void {
     this.handler.startPasswordChange(credentialId);
+  }
+
+  stopPasswordChange(): void {
+    this.handler.stopPasswordChange();
   }
 
   getPasswordManagerActionableError(): Promise<PasswordManagerActionableError> {

@@ -920,6 +920,46 @@ To set the language of the first audio stream:
 ffmpeg -i INPUT -metadata:s:a:0 language=eng OUTPUT
 @end example
 
+@item -keep_metadata[:@var{metadata_specifier}] @var{key} (@emph{output,per-metadata})
+When re-encoding a stream, certain metadata keys that are likely to become stale
+(such as @code{iTunSMPB} or @code{encoded_by}) are automatically discarded.
+This option prevents a specific key from being discarded, preserving its original
+value from the input.
+
+Without a specifier, the key is preserved in all metadata contexts (format and
+streams). Use @code{g} to restrict to format (global) metadata, or @code{s} with
+an optional stream specifier to restrict to matching streams only.
+
+For example, to keep @code{iTunSMPB} in format metadata only when re-encoding:
+@example
+ffmpeg -i in.mp3 -keep_metadata:g iTunSMPB out.mp3
+@end example
+
+To keep @code{NUMBER_OF_BYTES} only for the video stream:
+@example
+ffmpeg -i in.mkv -keep_metadata:s:v NUMBER_OF_BYTES out.mkv
+@end example
+
+Some keys are stored in the metadata with a suffix (e.g.
+@code{NUMBER_OF_BYTES-eng}). Specifying the unsuffixed family name (e.g.
+@code{NUMBER_OF_BYTES}) keeps all variants. To keep only a specific one,
+specify the full key explicitly:
+@example
+ffmpeg -i in.mkv -keep_metadata:s:v NUMBER_OF_BYTES-eng out.mkv
+@end example
+
+Some (such as @code{major_brand}, @code{minor_version}, and
+@code{compatible_brands}) are always removed regardless of re-encoding, because
+they describe the source container and are meaningless in the output.
+@code{-keep_metadata} applies to those keys even when stream-copying.
+
+Re-encoding-only keys (such as encoder tags and Matroska stream statistics) are
+removed from a stream's metadata only when that stream is being re-encoded, and
+from format metadata only when at least one audio or video stream is re-encoded.
+
+Only format and stream metadata are filtered. Chapter and program metadata
+are never modified by this mechanism.
+
 @item -disposition[:stream_specifier] @var{value} (@emph{output,per-stream})
 Sets the disposition flags for a stream.
 
@@ -2388,25 +2428,19 @@ If either the input or output is blocked leading to actual read speed falling be
 specified readrate, then this rate takes effect till the input catches up with the
 specified readrate. Must not be lower than the primary readrate.
 
-@item -vsync @var{parameter} (@emph{global})
-@itemx -fps_mode[:@var{stream_specifier}] @var{parameter} (@emph{output,per-stream})
-Set video sync method / framerate mode. vsync is applied to all output video streams
-but can be overridden for a stream by setting fps_mode. vsync is deprecated and will be
-removed in the future.
-
-For compatibility reasons some of the values for vsync can be specified as numbers (shown
-in parentheses in the following table).
+@item -fps_mode[:@var{stream_specifier}] @var{parameter} (@emph{output,per-stream})
+Set video sync method / framerate mode.
 
 @table @option
-@item passthrough (0)
+@item passthrough
 Each frame is passed with its timestamp from the demuxer to the muxer.
-@item cfr (1)
+@item cfr
 Frames will be duplicated and dropped to achieve exactly the requested
 constant frame rate.
-@item vfr (2)
+@item vfr
 Frames are passed through with their timestamp or dropped so as to
 prevent 2 frames from having the same timestamp.
-@item auto (-1)
+@item auto
 Chooses between cfr and vfr depending on muxer capabilities. This is the
 default method.
 @end table
@@ -2436,7 +2470,7 @@ Do not process input timestamps, but keep their values without trying
 to sanitize them. In particular, do not remove the initial start time
 offset value.
 
-Note that, depending on the @option{vsync} option or on specific muxer
+Note that, depending on the @option{fps_mode} option or on specific muxer
 processing (e.g. in case the format option @option{avoid_negative_ts}
 is enabled) the output timestamps may mismatch with the input
 timestamps even when this option is selected.

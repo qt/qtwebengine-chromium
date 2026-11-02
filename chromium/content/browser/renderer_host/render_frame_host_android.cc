@@ -125,6 +125,10 @@ ScopedJavaLocalRef<jobject> RenderFrameHostAndroid::GetMainFrame(JNIEnv* env) {
   return render_frame_host_->GetMainFrame()->GetJavaRenderFrameHost();
 }
 
+bool RenderFrameHostAndroid::IsOutermostMainFrame(JNIEnv* env) const {
+  return render_frame_host_->IsOutermostMainFrame();
+}
+
 void RenderFrameHostAndroid::GetCanonicalUrlForSharing(
     base::OnceCallback<void(const std::optional<GURL>&)> callback) const {
   render_frame_host_->GetCanonicalUrl(std::move(callback));
@@ -181,7 +185,7 @@ void RenderFrameHostAndroid::GetInterfaceToRendererFrame(
     JNIEnv* env,
     const base::android::JavaRef<jstring>& interface_name,
     int64_t message_pipe_raw_handle) const {
-  // TODO(https://crbug.com/497761255): CHECK-exclusion: Convert to CHECK once
+  // TODO(https://crbug.com/526542746): CHECK-exclusion: Convert to CHECK once
   // we are sure this isn't hit.
   DCHECK(render_frame_host_->IsRenderFrameLive());
   render_frame_host_->GetRemoteInterfaces()->GetInterfaceByName(

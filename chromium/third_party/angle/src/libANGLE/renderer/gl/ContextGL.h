@@ -13,6 +13,8 @@
 #include "libANGLE/renderer/ContextImpl.h"
 #include "libANGLE/renderer/gl/RendererGL.h"
 
+#include "common/base/anglebase/containers/mru_cache.h"
+
 namespace angle
 {
 struct FeaturesGL;
@@ -74,7 +76,7 @@ class ContextGL : public ContextImpl
     // Query and Fence creation
     QueryImpl *createQuery(gl::QueryType type) override;
     FenceNVImpl *createFenceNV() override;
-    SyncImpl *createSync(const gl::Context *context) override;
+    SyncImpl *createSync() override;
 
     // Transform Feedback creation
     TransformFeedbackImpl *createTransformFeedback(
@@ -91,9 +93,6 @@ class ContextGL : public ContextImpl
 
     // Semaphore creation.
     SemaphoreImpl *createSemaphore() override;
-
-    // Overlay creation.
-    OverlayImpl *createOverlay(const gl::OverlayState &state) override;
 
     // Flush and finish.
     angle::Result flush(const gl::Context *context) override;
@@ -287,8 +286,6 @@ class ContextGL : public ContextImpl
 
     void setMaxShaderCompilerThreads(GLuint count) override;
 
-    void invalidateTexture(gl::TextureType target) override;
-
     void validateState() const;
 
     void setNeedsFlushBeforeDeleteTextures();
@@ -299,6 +296,12 @@ class ContextGL : public ContextImpl
     bool hasNativeParallelCompile();
 
     const gl::Debug &getDebug() const { return mState.getDebug(); }
+
+    angle::Result getDepthInitPBO(const gl::Context *context,
+                                  size_t requestedSize,
+                                  GLenum type,
+                                  GLuint *pboIdOut);
+    void tickGC();
 
   private:
     angle::Result setDrawArraysState(const gl::Context *context,
@@ -316,7 +319,27 @@ class ContextGL : public ContextImpl
     gl::AttributesMask updateAttributesForBaseInstance(GLuint baseInstance);
     void resetUpdatedAttributes(gl::AttributesMask attribMask);
 
-    angle::Result applyRecreateFboWorkaroundIfNeeded(const gl::Context *context);
+    struct PixelBufferGL
+    {
+        const FunctionsGL *functions = nullptr;
+        GLuint bufferID              = 0;
+        size_t size                  = 0;
+        uint32_t lifetimeCounter     = 0;
+
+        PixelBufferGL(const FunctionsGL *functions);
+        ~PixelBufferGL();
+
+        PixelBufferGL(PixelBufferGL &&other);
+        PixelBufferGL &operator=(PixelBufferGL &&other);
+
+        PixelBufferGL(const PixelBufferGL &)            = delete;
+        PixelBufferGL &operator=(const PixelBufferGL &) = delete;
+    };
+
+    using DepthInitPBOCache = angle::base::HashingMRUCache<GLenum, PixelBufferGL>;
+    // Keyed by the GLenum type passed to getDepthInitPBO (e.g. GL_UNSIGNED_INT_24_8,
+    // GL_FLOAT_32_UNSIGNED_INT_24_8_REV).
+    DepthInitPBOCache mDepthInitPBOs;
 
   protected:
     std::shared_ptr<RendererGL> mRenderer;

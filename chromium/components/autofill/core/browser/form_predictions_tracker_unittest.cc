@@ -8,6 +8,7 @@
 #include "base/test/test_future.h"
 #include "components/autofill/core/browser/form_predictions_tracker_test_api.h"
 #include "components/autofill/core/browser/foundations/autofill_manager.h"
+#include "components/autofill/core/browser/foundations/autofill_manager_test_api.h"
 #include "components/autofill/core/browser/foundations/test_autofill_client.h"
 #include "components/autofill/core/browser/foundations/test_autofill_driver.h"
 #include "components/autofill/core/browser/foundations/test_browser_autofill_manager.h"
@@ -25,6 +26,7 @@ class FormPredictionsTrackerTest
  public:
   FormPredictionsTrackerTest() {
     InitAutofillClient();
+    autofill_client().set_is_tab_in_actor_mode(true);
     tracker_ = std::make_unique<FormPredictionsTracker>(&autofill_client());
     CreateAutofillDriver();
   }
@@ -507,6 +509,21 @@ TEST_F(FormPredictionsTrackerTest, Wait_FeatureDisabled) {
   EXPECT_TRUE(future.Wait());
 }
 
+// Verifies that if the tab is not in active actor mode, there is no waiting.
+TEST_F(FormPredictionsTrackerTest, Wait_NoActiveActor) {
+  autofill_client().set_is_tab_in_actor_mode(false);
+
+  FormGlobalId form_id = test::MakeFormGlobalId();
+  autofill_manager().NotifyObservers(
+      &AutofillManager::Observer::OnBeforeFormsSeen,
+      std::vector<FormGlobalId>{form_id}, base::span<FormGlobalId>());
+
+  // Since the tab is not in actor mode, there should be no waiting.
+  base::test::TestFuture<void> future;
+  tracker().Wait(future.GetCallback(), base::Milliseconds(1000));
+  EXPECT_TRUE(future.Wait());
+}
+
 // Tests that if a form is reported in `OnAfterFormsSeen` but has no fields,
 // it is removed from the tracking map.
 TEST_F(FormPredictionsTrackerTest, EmptyFormRemovedAfterSeen) {
@@ -514,7 +531,8 @@ TEST_F(FormPredictionsTrackerTest, EmptyFormRemovedAfterSeen) {
   form_data.set_renderer_id(test::MakeFormRendererId());
   // No fields added to form_data.
 
-  autofill_manager().OnFormsSeen({form_data}, {});
+  autofill_manager().OnFormsSeen({form_data}, {},
+                                 AutofillManagerTestApi::pass_key());
   FormGlobalId form_id = form_data.global_id();
 
   // The manager should now have a FormStructure with 0 fields.

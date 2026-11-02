@@ -212,7 +212,6 @@ XNNPACK_PARAMS_FOR_ARCH = {
         ],
         extra_deps = [
             "//src/configs:config_hdrs",
-            "@FXdiv",
         ],
     ),
 
@@ -354,8 +353,11 @@ XNNPACK_PARAMS_FOR_ARCH = {
         copts = ["-march=armv8.2-a+fp16"],
     ),
     "neonbf16": _create_params(
-        cond = "//build_config:aarch64",
-        copts = ["-march=armv8.2-a+bf16"],
+        cond = "//:arm_bf16_enabled",
+        copts = select({
+            "//build_config:windows_arm64": [],
+            "//conditions:default": ["-march=armv8.2-a+bf16"],
+        }),
     ),
     "neondotfp16arith": _create_params(
         cond = "//:arm_neondotfp16_enabled",
@@ -391,6 +393,13 @@ XNNPACK_PARAMS_FOR_ARCH = {
     "neoni8mm": _create_params(
         cond = "//:arm_i8mm_enabled",
         copts = ["-march=armv8.2-a+i8mm+fp16"],
+        extra_deps = xnnpack_if_kleidiai_enabled([
+            "@KleidiAI//kai/ukernels/matmul:matmul",
+        ]),
+    ),
+    "neoni8mmbf16": _create_params(
+        cond = "//:arm_i8mm_enabled",
+        copts = ["-march=armv8.2-a+i8mm+fp16+bf16"],
         extra_deps = xnnpack_if_kleidiai_enabled([
             "@KleidiAI//kai/ukernels/matmul:matmul",
         ]),
@@ -476,7 +485,7 @@ XNNPACK_PARAMS_FOR_ARCH = {
         msvc_x86_64_copts = ["/arch:SSE2"],
     ),
     "avx": _create_params(
-        cond = "//build_config:x86",
+        cond = "//:avx_enabled",
         copts = _x86_align_stack(32),
         gcc_x86_copts = [
             "-mavx",
@@ -514,7 +523,7 @@ XNNPACK_PARAMS_FOR_ARCH = {
         msvc_x86_64_copts = ["/arch:AVX"],
     ),
     "f16c": _create_params(
-        cond = "//build_config:x86",
+        cond = "//:f16c_enabled",
         copts = _x86_align_stack(32),
         gcc_x86_copts = [
             "-mf16c",
@@ -525,7 +534,7 @@ XNNPACK_PARAMS_FOR_ARCH = {
         msvc_x86_64_copts = ["/arch:AVX"],
     ),
     "fma3": _create_params(
-        cond = "//build_config:x86",
+        cond = "//:fma3_enabled",
         copts = _x86_align_stack(32),
         gcc_x86_copts = [
             "-mf16c",
@@ -536,7 +545,7 @@ XNNPACK_PARAMS_FOR_ARCH = {
         msvc_x86_64_copts = ["/arch:AVX"],
     ),
     "avx2": _create_params(
-        cond = "//build_config:x86",
+        cond = "//:avx2_enabled",
         copts = _x86_align_stack(32),
         gcc_x86_copts = [
             "-mf16c",

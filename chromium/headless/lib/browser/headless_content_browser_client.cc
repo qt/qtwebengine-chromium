@@ -26,6 +26,8 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/client_certificate_delegate.h"
 #include "content/public/browser/content_browser_client.h"
+#include "content/public/browser/digital_identity_provider.h"
+#include "content/public/browser/immersive_playback_options.h"
 #include "content/public/browser/navigation_throttle_registry.h"
 #include "content/public/browser/overlay_window.h"
 #include "content/public/browser/render_process_host.h"
@@ -50,7 +52,6 @@
 #include "printing/buildflags/buildflags.h"
 #include "sandbox/policy/switches.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
-#include "third_party/blink/public/mojom/picture_in_picture/picture_in_picture.mojom.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/switches.h"
 
@@ -118,10 +119,44 @@ class HeadlessVideoOverlayWindow : public content::VideoOverlayWindow {
   void SetSurfaceId(const viz::SurfaceId& surface_id) override {}
   void SetPlaybackControlsVisibility(bool is_visible) override {}
   void SetImmersiveVideoOptions(
-      blink::mojom::ImmersiveOptionsPtr options) override {}
+      const content::ImmersiveOptions& options) override {}
 
  private:
   gfx::Size size_;
+};
+
+// A dummy DigitalIdentityProvider that hangs (never invokes the callback) to
+// simulate the browser waiting for user interaction on the selection UI.
+// This is the default expectation for Digital Credential APIs in WPTs when
+// no user interaction is simulated.
+class HeadlessDigitalIdentityProvider
+    : public content::DigitalIdentityProvider {
+ public:
+  HeadlessDigitalIdentityProvider() = default;
+  ~HeadlessDigitalIdentityProvider() override = default;
+
+  bool IsLastCommittedOriginLowRisk(
+      content::RenderFrameHost& render_frame_host) const override {
+    return false;
+  }
+
+  DigitalIdentityInterstitialAbortCallback ShowDigitalIdentityInterstitial(
+      content::WebContents& web_contents,
+      const url::Origin& origin,
+      content::DigitalIdentityInterstitialType interstitial_type,
+      DigitalIdentityInterstitialCallback callback) override {
+    return base::OnceClosure();
+  }
+
+  void Get(content::WebContents* web_contents,
+           const url::Origin& origin,
+           base::ValueView request,
+           DigitalIdentityCallback callback) override {}
+
+  void Create(content::WebContents* web_contents,
+              const url::Origin& origin,
+              base::ValueView request,
+              DigitalIdentityCallback callback) override {}
 };
 
 }  // namespace
@@ -370,15 +405,6 @@ bool HeadlessContentBrowserClient::
   return false;
 }
 
-bool HeadlessContentBrowserClient::IsInterestGroupAPIAllowed(
-    content::BrowserContext* browser_context,
-    content::RenderFrameHost* render_frame_host,
-    content::InterestGroupApiOperation operation,
-    const url::Origin& top_frame_origin,
-    const url::Origin& api_origin) {
-  return true;
-}
-
 bool HeadlessContentBrowserClient::IsPrivacySandboxReportingDestinationAttested(
     content::BrowserContext* browser_context,
     const url::Origin& destination_origin,
@@ -536,6 +562,11 @@ bool HeadlessContentBrowserClient::IsRendererProcessPriorityEnabled() {
   // Since there is no visible window in headless, the renderer process priority
   // policy, which is mostly based on visibility, is not needed.
   return false;
+}
+
+std::unique_ptr<content::DigitalIdentityProvider>
+HeadlessContentBrowserClient::CreateDigitalIdentityProvider() {
+  return std::make_unique<HeadlessDigitalIdentityProvider>();
 }
 
 }  // namespace headless

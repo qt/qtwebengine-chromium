@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
+import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
@@ -11,6 +13,8 @@ import {Printer} from '../../testing/PropertyParser.js';
 import * as CodeMirror from '../../third_party/codemirror.next/codemirror.next.js';
 
 import * as Elements from './elements.js';
+
+const {urlString} = Platform.DevToolsPath;
 
 describeWithEnvironment('PropertyRenderer', () => {
   function renderValueElement(name: string, value: string) {
@@ -95,6 +99,56 @@ describeWithEnvironment('PropertyRenderer', () => {
       const property = 'red /* foo: bar';
       assert.strictEqual(
           textFragments(Array.from(renderValueElement('--p', property).valueElement.childNodes)).join(''), property);
+    });
+  });
+
+  describe('URLRenderer', () => {
+    it('linkifies package relative URLs completed against the stylesheet URL', () => {
+      const mockRule = {
+        resourceURL() {
+          return urlString`http://example.com/styles/styles-url-linkify.css`;
+        },
+      } as SDK.CSSRule.CSSRule;
+
+      const renderer = new Elements.PropertyRenderer.URLRenderer(mockRule, null);
+      const name = 'background-image';
+      const value = 'url(fromcss.png)';
+      const matchers = [new SDK.CSSPropertyParserMatchers.URLMatcher()];
+      const matchedResult = SDK.CSSPropertyParser.matchDeclaration(name, value, matchers);
+      assert.exists(matchedResult);
+
+      const {valueElement} =
+          Elements.PropertyRenderer.Renderer.renderValueElement({name, value}, matchedResult, [renderer]);
+
+      const link = valueElement.querySelector('.devtools-link');
+      assert.exists(link);
+      assert.strictEqual((link as HTMLElement & {href?: string}).href, 'http://example.com/styles/fromcss.png');
+      assert.strictEqual(link.textContent, 'fromcss.png');
+      assert.isTrue(link.classList.contains('devtools-link'));
+    });
+
+    it('linkifies package relative URLs resolved against the node context', () => {
+      const mockNode = {
+        resolveURL(url: string) {
+          return urlString`http://example.com/styles/resources/${url}`;
+        },
+      } as SDK.DOMModel.DOMNode;
+
+      const renderer = new Elements.PropertyRenderer.URLRenderer(null, mockNode);
+      const name = 'background-image';
+      const value = 'url(iframed.png)';
+      const matchers = [new SDK.CSSPropertyParserMatchers.URLMatcher()];
+      const matchedResult = SDK.CSSPropertyParser.matchDeclaration(name, value, matchers);
+      assert.exists(matchedResult);
+
+      const {valueElement} =
+          Elements.PropertyRenderer.Renderer.renderValueElement({name, value}, matchedResult, [renderer]);
+
+      const link = valueElement.querySelector('.devtools-link');
+      assert.exists(link);
+      assert.strictEqual((link as HTMLElement & {href?: string}).href,
+                         'http://example.com/styles/resources/iframed.png');
+      assert.strictEqual(link.textContent, 'iframed.png');
     });
   });
 });
@@ -250,7 +304,7 @@ describe('TracingContext', () => {
     assert.isTrue(tracingContext.nextSubstitution());
     const childTracingContext = tracingContext.substitution({
       match,
-      context: new Elements.PropertyRenderer.RenderingContext(matchedResult.ast, null, new Map(), matchedResult)
+      context: new Elements.PropertyRenderer.RenderingContext(matchedResult.ast, null, new Map(), matchedResult),
     });
     assert.exists(childTracingContext);
     // The var(--c) appears in the longhand position #2.

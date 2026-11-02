@@ -94,6 +94,17 @@
 #define WEBP_HAVE_AVX2
 #endif
 
+#if defined(WEBP_MSC_AVX2) && _MSC_VER <= 1900
+#include <immintrin.h>
+
+static WEBP_INLINE int _mm256_extract_epi32(__m256i a, const int i) {
+  return a.m256i_i32[i & 7];
+}
+static WEBP_INLINE int _mm256_cvtsi256_si32(__m256i a) {
+  return _mm256_extract_epi32(a, 0);
+}
+#endif
+
 #undef WEBP_MSC_AVX2
 #undef WEBP_MSC_SSE41
 #undef WEBP_MSC_SSE2
@@ -184,7 +195,8 @@
 #endif
 
 #if defined(__has_feature)
-#if __has_feature(memory_sanitizer)
+// Clang 21 should have all the MSAN fixes needed for WebP.
+#if __has_feature(memory_sanitizer) && !LOCAL_CLANG_PREREQ(21, 0)
 #define WEBP_MSAN
 #endif
 #endif

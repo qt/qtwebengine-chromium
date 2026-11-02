@@ -18,13 +18,37 @@ package(
     default_visibility = ["//ink:__subpackages__"],
 )
 
+filegroup(
+    name = "cinterop_headers",
+    srcs = glob(["*_native.h"]),
+)
+
+cc_library(
+    name = "cinterop",
+    deps = [
+        ":brush_family_serialization_native",
+        ":stroke_input_batch_serialization_native",
+    ],
+)
+
 cc_library(
     name = "jni",
     tags = ["keep_dep"],
     visibility = ["//visibility:public"],
     deps = [
-        ":brush_serialization_jni",
+        ":brush_family_serialization_jni",
         ":stroke_input_batch_serialization_jni",
+    ],
+)
+
+cc_library(
+    name = "byte_array_native_helper",
+    srcs = ["byte_array_native_helper.cc"],
+    hdrs = ["byte_array_native_helper.h"],
+    deps = [
+        "@abseil-cpp//absl/base:nullability",
+        "@abseil-cpp//absl/log:absl_check",
+        "@protobuf//:protobuf_lite",
     ],
 )
 
@@ -33,19 +57,11 @@ cc_library(
     srcs = ["stroke_input_batch_serialization_jni.cc"],
     tags = ["keep_dep"],
     deps = [
+        ":stroke_input_batch_serialization_native",
         "//ink/jni/internal:jni_defines",
         "//ink/jni/internal:jni_proto_util",
         "//ink/jni/internal:status_jni_helper",
-        "//ink/storage:stroke_input_batch",
-        "//ink/storage/proto:stroke_input_batch_cc_proto",
-        "//ink/strokes/input:stroke_input_batch",
-        "//ink/strokes/internal/jni:stroke_input_batch_native_helper",
-        "//ink/strokes/internal/jni:stroke_input_jni_helper",
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/types:span",
+        "@abseil-cpp//absl/log:absl_check",
     ] + select({
         "@platforms//os:android": [],
         "//conditions:default": [
@@ -56,32 +72,40 @@ cc_library(
 )
 
 cc_library(
-    name = "brush_serialization_jni",
-    srcs = ["brush_serialization_jni.cc"],
+    name = "stroke_input_batch_serialization_native",
+    srcs = ["stroke_input_batch_serialization_native.cc"],
+    hdrs = ["stroke_input_batch_serialization_native.h"],
+    deps = [
+        ":byte_array_native_helper",
+        "//ink/storage:stroke_input_batch",
+        "//ink/storage/proto:stroke_input_batch_cc_proto",
+        "//ink/strokes/input:stroke_input_batch",
+        "//ink/strokes/internal/jni:stroke_input_batch_native_helper",
+        "@abseil-cpp//absl/log:absl_check",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+    ],
+)
+
+cc_library(
+    name = "brush_family_serialization_jni",
+    srcs = ["brush_family_serialization_jni.cc"],
     tags = ["keep_dep"],
     deps = [
-        "//ink/brush",
-        "//ink/brush:brush_behavior",
-        "//ink/brush:brush_coat",
+        ":brush_family_serialization_jni_helper",
+        ":brush_family_serialization_native",
+        ":brush_family_serialization_native_helper",
         "//ink/brush:brush_family",
-        "//ink/brush:brush_paint",
-        "//ink/brush:brush_tip",
-        "//ink/brush:version",
         "//ink/brush/internal/jni:brush_native_helper",
         "//ink/jni/internal:jni_defines",
-        "//ink/jni/internal:jni_jvm_interface",
         "//ink/jni/internal:jni_proto_util",
-        "//ink/jni/internal:jni_string_util",
         "//ink/jni/internal:status_jni_helper",
         "//ink/storage:brush",
         "//ink/storage/proto:brush_cc_proto",
         "//ink/storage/proto:brush_family_cc_proto",
-        "@com_google_absl//absl/base:nullability",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings:string_view",
+        "@abseil-cpp//absl/base:nullability",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
     ] + select({
         "@platforms//os:android": [],
         "//conditions:default": [
@@ -89,4 +113,64 @@ cc_library(
         ],
     }),
     alwayslink = 1,
+)
+
+cc_library(
+    name = "brush_family_serialization_native",
+    srcs = ["brush_family_serialization_native.cc"],
+    hdrs = ["brush_family_serialization_native.h"],
+    deps = [
+        ":brush_family_serialization_native_helper",
+        ":byte_array_native_helper",
+        "//ink/brush:brush_family",
+        "//ink/brush/internal/jni:brush_native_helper",
+        "//ink/storage:brush",
+        "//ink/storage/proto:brush_cc_proto",
+        "//ink/storage/proto:brush_family_cc_proto",
+        "@abseil-cpp//absl/log:absl_check",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+    ],
+)
+
+cc_library(
+    name = "brush_family_serialization_jni_helper",
+    srcs = ["brush_family_serialization_jni_helper.cc"],
+    hdrs = ["brush_family_serialization_jni_helper.h"],
+    deps = [
+        ":brush_family_serialization_native_helper",
+        "//ink/brush:brush_family",
+        "//ink/brush:version",
+        "//ink/jni/internal:jni_string_util",
+        "//ink/storage:brush",
+        "//ink/storage/proto:brush_cc_proto",
+        "//ink/storage/proto:brush_family_cc_proto",
+        "@abseil-cpp//absl/base:nullability",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/log:absl_check",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings:string_view",
+    ] + select({
+        "@platforms//os:android": [],
+        "//conditions:default": [
+            "@rules_jni//jni",
+        ],
+    }),
+)
+
+cc_library(
+    name = "brush_family_serialization_native_helper",
+    srcs = ["brush_family_serialization_native_helper.cc"],
+    hdrs = ["brush_family_serialization_native_helper.h"],
+    deps = [
+        "//ink/brush:brush_family",
+        "//ink/storage:brush",
+        "@abseil-cpp//absl/base:nullability",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/log:absl_check",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings:string_view",
+    ],
 )

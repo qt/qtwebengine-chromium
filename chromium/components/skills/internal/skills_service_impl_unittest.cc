@@ -65,6 +65,27 @@ class MockSkillsServiceImpl : public SkillsServiceImpl {
               (override));
 };
 
+class FakeSkillsProvider : public SkillsProvider {
+ public:
+  base::CallbackListSubscription RegisterSkillsChangedCallback(
+      SkillsChangedCallback callback) override {
+    return callbacks_.Add(std::move(callback));
+  }
+  const std::vector<std::unique_ptr<Skill>>& GetSkills() const override {
+    return skills_;
+  }
+  void RefreshSkills() override { refresh_count_++; }
+
+  void NotifySkillsChanged() { callbacks_.Notify(); }
+
+  int refresh_count() const { return refresh_count_; }
+
+ private:
+  base::RepeatingCallbackList<void()> callbacks_;
+  std::vector<std::unique_ptr<Skill>> skills_;
+  int refresh_count_ = 0;
+};
+
 MATCHER_P4(HasSkill, name, icon, prompt, description, "") {
   return arg.name == name && arg.icon == icon && arg.prompt == prompt &&
          arg.description == description;
@@ -99,6 +120,8 @@ class MockObserver : public SkillsService::Observer {
                bool is_position_changed));
   MOCK_METHOD(void, OnStatusChanged, ());
   MOCK_METHOD(bool, Require1PSkillRefresh, (), (override));
+  MOCK_METHOD(void, OnDiscoverySkillsUpdated, (const FirstPartySkillData*));
+  MOCK_METHOD(void, OnProvidedSkillsChanged, (SkillsProvider*));
 };
 
 class SkillsServiceImplTest : public testing::Test {
@@ -687,6 +710,52 @@ TEST_F(SkillsServiceImplTest, UpdateSkillFromSyncSortsByLastUpdateTime) {
   EXPECT_THAT(service().GetSkills(),
               ElementsAre(Pointee(HasSkill("Name C", "icon", "prompt", "desc")),
                           Pointee(HasSkill("Name B", "icon", "prompt", ""))));
+}
+
+TEST_F(SkillsServiceImplTest, Handle1pSkills_OnlyAcceptsHttpsImageUrls) {
+  InitService();
+  auto first_party_skill_data = std::make_unique<FirstPartySkillData>();
+  const std::vector<std::pair<std::string, std::string>> kCases = {
+      {"invalid_https_id", "https://example.com/image.png"},
+      {"https_id", "https://gstatic.com/image.png"},
+      {"data_id", "data:image/png;base64,iVBORw0KGgo="},
+      {"empty_id", ""},
+  };
+  for (const auto& [id, image_url] : kCases) {
+    skills::proto::Skill proto_skill;
+    proto_skill.set_id(id);
+    proto_skill.set_name("name");
+    proto_skill.set_image_url(image_url);
+    first_party_skill_data->skills_list.push_back(proto_skill);
+  }
+
+  service().Handle1pSkills(std::move(first_party_skill_data));
+
+  const Skill* https_skill = service().GetSkillById("https_id");
+  EXPECT_EQ(GURL("https://gstatic.com/image.png"), https_skill->image_url);
+
+  for (const char* id : {"invalid_https_id", "data_id", "empty_id"}) {
+    const Skill* skill = service().GetSkillById(id);
+    EXPECT_TRUE(skill->image_url.is_empty());
+  }
+}
+
+TEST_F(SkillsServiceImplTest, ProvidersAreRefreshedAndNotified) {
+  InitService();
+
+  auto provider1 = std::make_unique<FakeSkillsProvider>();
+  auto* provider1_ptr = provider1.get();
+  service().AddProvider(std::move(provider1));
+
+  // The service shouldn't notify yet.
+  EXPECT_CALL(mock_observer_, OnProvidedSkillsChanged).Times(0);
+  testing::Mock::VerifyAndClearExpectations(&mock_observer_);
+
+  // When a provider notifies skills changed, the service notifies its
+  // observers.
+  EXPECT_CALL(mock_observer_, OnProvidedSkillsChanged(provider1_ptr)).Times(1);
+  provider1_ptr->NotifySkillsChanged();
+  testing::Mock::VerifyAndClearExpectations(&mock_observer_);
 }
 
 }  // namespace

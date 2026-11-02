@@ -39,41 +39,33 @@ class RenderbufferVk : public RenderbufferImpl, public angle::ObserverInterface
 
     angle::Result copyRenderbufferSubData(const gl::Context *context,
                                           const gl::Renderbuffer *srcBuffer,
-                                          GLint srcLevel,
                                           GLint srcX,
                                           GLint srcY,
-                                          GLint srcZ,
-                                          GLint dstLevel,
                                           GLint dstX,
                                           GLint dstY,
-                                          GLint dstZ,
                                           GLsizei srcWidth,
-                                          GLsizei srcHeight,
-                                          GLsizei srcDepth) override;
+                                          GLsizei srcHeight) override;
 
     angle::Result copyTextureSubData(const gl::Context *context,
                                      const gl::Texture *srcTexture,
-                                     GLint srcLevel,
+                                     gl::OwnLevel ownSrcLevel,
                                      GLint srcX,
                                      GLint srcY,
-                                     GLint srcZ,
-                                     GLint dstLevel,
+                                     gl::OwnLayer ownSrcZ,
                                      GLint dstX,
                                      GLint dstY,
-                                     GLint dstZ,
                                      GLsizei srcWidth,
-                                     GLsizei srcHeight,
-                                     GLsizei srcDepth) override;
+                                     GLsizei srcHeight) override;
 
     angle::Result getAttachmentRenderTarget(const gl::Context *context,
                                             GLenum binding,
-                                            const gl::ImageIndex &imageIndex,
+                                            const gl::OwnImageIndex &ownImageIndex,
                                             GLsizei samples,
                                             FramebufferAttachmentRenderTarget **rtOut) override;
 
     angle::Result initializeContents(const gl::Context *context,
                                      GLenum binding,
-                                     const gl::ImageIndex &imageIndex) override;
+                                     const gl::OwnImageIndex &ownImageIndex) override;
 
     vk::ImageHelper *getImage() const { return mImage; }
     void releaseOwnershipOfImage(const gl::Context *context);

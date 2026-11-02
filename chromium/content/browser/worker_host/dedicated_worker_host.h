@@ -24,6 +24,7 @@
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_process_host_observer.h"
+#include "content/public/browser/weak_document_ptr.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
@@ -112,7 +113,7 @@ class CONTENT_EXPORT DedicatedWorkerHost final
       const blink::DedicatedWorkerToken& token,
       RenderProcessHost* worker_process_host,
       DedicatedWorkerCreator creator,
-      GlobalRenderFrameHostId ancestor_render_frame_host_id,
+      WeakDocumentPtr ancestor_document,
       const url::Origin& creator_origin,
       const blink::StorageKey& worker_storage_key,
       const url::Origin& renderer_origin,
@@ -120,8 +121,7 @@ class CONTENT_EXPORT DedicatedWorkerHost final
       network::mojom::ClientSecurityStatePtr creator_client_security_state,
       const PolicyContainerPolicies& creator_policies,
       base::WeakPtr<CrossOriginEmbedderPolicyReporter> creator_coep_reporter,
-      const std::optional<base::UnguessableToken>&
-          creator_network_restrictions_id,
+      const base::UnguessableToken& creator_network_restrictions_id,
       mojo::PendingReceiver<blink::mojom::DedicatedWorkerHost> host,
       net::StorageAccessApiStatus storage_access_api_status);
 
@@ -138,9 +138,10 @@ class CONTENT_EXPORT DedicatedWorkerHost final
   const blink::StorageKey& GetWorkerStorageKey() const {
     return worker_storage_key_;
   }
-  const GlobalRenderFrameHostId& GetAncestorRenderFrameHostId() const {
-    return ancestor_render_frame_host_id_;
-  }
+  GlobalRenderFrameHostId GetAncestorRenderFrameHostId() const;
+  // Returns the ancestor RenderFrameHost if it still hosts the document that
+  // created this worker, or nullptr otherwise.
+  RenderFrameHostImpl* GetAncestorRenderFrameHost() const;
   DedicatedWorkerCreator GetCreator() const { return creator_; }
   const std::optional<GURL>& GetFinalResponseURL() const {
     return final_response_url_;
@@ -150,8 +151,7 @@ class CONTENT_EXPORT DedicatedWorkerHost final
     return network_restrictions_id_;
   }
 
-  const std::optional<base::UnguessableToken>& creator_network_restrictions_id()
-      const {
+  const base::UnguessableToken& creator_network_restrictions_id() const {
     return creator_network_restrictions_id_;
   }
 
@@ -245,6 +245,8 @@ class CONTENT_EXPORT DedicatedWorkerHost final
   ServiceWorkerMainResourceHandle* service_worker_handle() {
     return service_worker_handle_.get();
   }
+
+  bool file_url_support() const { return file_url_support_; }
 
 #if BUILDFLAG(ENABLE_COMPUTE_PRESSURE)
   PressureServiceForDedicatedWorker* pressure_service() {
@@ -360,9 +362,9 @@ class CONTENT_EXPORT DedicatedWorkerHost final
   // worker is nested.
   const DedicatedWorkerCreator creator_;
 
-  // The ID of the frame that owns this worker, either directly, or (in the case
-  // of nested workers) indirectly via a tree of dedicated workers.
-  const GlobalRenderFrameHostId ancestor_render_frame_host_id_;
+  // The document that owns this worker, either directly, or (in the case of
+  // nested workers) indirectly via a tree of dedicated workers.
+  const WeakDocumentPtr ancestor_document_;
 
   // The origin of the frame or dedicated worker that starts this worker.
   const url::Origin creator_origin_;
@@ -470,7 +472,7 @@ class CONTENT_EXPORT DedicatedWorkerHost final
 
   // Nonce used to restrict network traffic for the main script fetch of this
   // worker.
-  const std::optional<base::UnguessableToken> creator_network_restrictions_id_;
+  const base::UnguessableToken creator_network_restrictions_id_;
 
   // The policies of the creator context. Used for inheritance.
   const PolicyContainerPolicies creator_policies_;

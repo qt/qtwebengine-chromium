@@ -54,8 +54,10 @@ constexpr size_t kFormFieldTypeCount = 16;
 constexpr size_t kFormFieldTypeCount = 8;
 #endif  // PDF_ENABLE_XFA
 
-class CPDF_FormField {
+class CPDF_FormField final : public Retainable {
  public:
+  CONSTRUCT_VIA_MAKE_RETAIN;
+
   enum Type {
     kUnknown,
     kPushButton,
@@ -68,9 +70,6 @@ class CPDF_FormField {
     kComboBox,
     kSign
   };
-
-  CPDF_FormField(CPDF_InteractiveForm* pForm, RetainPtr<CPDF_Dictionary> dict);
-  ~CPDF_FormField();
 
   static std::optional<FormFieldType> IntToFormFieldType(int value);
   static WideString GetFullNameForDict(const CPDF_Dictionary* pFieldDict);
@@ -144,6 +143,9 @@ class CPDF_FormField {
   WideString GetCheckValue(bool bDefault) const;
 
  private:
+  CPDF_FormField(CPDF_InteractiveForm* pForm, RetainPtr<CPDF_Dictionary> dict);
+  ~CPDF_FormField() override;
+
   WideString GetValue(bool bDefault) const;
   bool SetValue(const WideString& value,
                 bool bDefault,

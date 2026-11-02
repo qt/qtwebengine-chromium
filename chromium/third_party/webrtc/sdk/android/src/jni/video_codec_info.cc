@@ -38,3 +38,5 @@ ScopedJavaLocalRef<jobject> SdpVideoFormatToVideoCodecInfo(
 
 }  // namespace jni
 }  // namespace webrtc
+
+DEFINE_JNI(VideoCodecInfo)

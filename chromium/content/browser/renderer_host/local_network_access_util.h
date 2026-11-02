@@ -36,7 +36,7 @@ enum class LocalNetworkAccessRequestContext {
 // access requests, not private network access requests, and having this be true
 // means that while we still allow the requests, they still need to pass
 // permissions checks.
-// `private_network_request_context` specifies what this
+// `local_network_request_context` specifies what this
 // request is about. For example, requests made from workers can have different
 // policies from normal subresource requests.
 network::mojom::LocalNetworkAccessRequestPolicy CONTENT_EXPORT
@@ -44,17 +44,32 @@ DeriveLocalNetworkAccessRequestPolicy(
     network::mojom::IPAddressSpace ip_address_space,
     bool is_web_secure_context,
     bool allow_on_non_secure_context,
-    LocalNetworkAccessRequestContext private_network_request_context);
+    LocalNetworkAccessRequestContext local_network_request_context);
 
 // Convenience overload to directly compute this from the client's `policies`.
 network::mojom::LocalNetworkAccessRequestPolicy CONTENT_EXPORT
 DeriveLocalNetworkAccessRequestPolicy(
     const PolicyContainerPolicies& policies,
-    LocalNetworkAccessRequestContext private_network_request_context);
+    LocalNetworkAccessRequestContext local_network_request_context);
 
 network::mojom::ClientSecurityStatePtr CONTENT_EXPORT DeriveClientSecurityState(
     const PolicyContainerPolicies& policies,
-    LocalNetworkAccessRequestContext private_network_request_context);
+    LocalNetworkAccessRequestContext local_network_request_context);
+
+// Used to create a ClientSecurityState for renderer-initiated navigations.
+// Browser initiated navigations do not have a ClientSecurityState as we do not
+// need to check web security policies during them (since they originate from
+// the browser).
+// `initiator_policies` are the policies of the initiator of the navigation,
+// which we will use for enforcement during the navigation Fetch. Note that
+// the initiator policies should always be passed, even if they might not be
+// inherited by the navigation. Passing only inheritable policies might create
+// an LNA bypass, which is why initiator policies should be passed for all
+// renderer-initiated navigations.
+network::mojom::ClientSecurityStatePtr CONTENT_EXPORT
+DeriveClientSecurityStateForRendererInitiatedNavigation(
+    const PolicyContainerPolicies& initiator_policies,
+    LocalNetworkAccessRequestContext local_network_request_context);
 
 // Determines the IP address space that should be associated to execution
 // contexts instantiated from a resource loaded from this `url` and the given

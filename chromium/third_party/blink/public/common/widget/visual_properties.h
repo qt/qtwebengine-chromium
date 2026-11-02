@@ -10,6 +10,7 @@
 #include "cc/trees/browser_controls_params.h"
 #include "components/viz/common/surfaces/local_surface_id.h"
 #include "third_party/blink/public/common/common_export.h"
+#include "third_party/blink/public/mojom/manifest/application_context.mojom.h"
 #include "third_party/blink/public/mojom/manifest/display_mode.mojom.h"
 #include "ui/base/mojom/window_show_state.mojom-shared.h"
 #include "ui/display/screen_infos.h"
@@ -112,14 +113,15 @@ struct BLINK_COMMON_EXPORT VisualProperties {
   // The display mode.
   mojom::DisplayMode display_mode = mojom::DisplayMode::kUndefined;
 
+  // How the top-level browsing context is presented to the user: as a
+  // standalone web application window or as ordinary browser UI.
+  mojom::ApplicationContext application_context =
+      mojom::ApplicationContext::kNone;
+
   // The window show state. Defaults to `WindowShowState::kDefault`.
   ui::mojom::WindowShowState window_show_state =
       ui::mojom::WindowShowState::kDefault;
 
-  // This represents the latest capture sequence number requested. When this is
-  // incremented, that means the caller wants to synchronize surfaces which
-  // should cause a new LocalSurfaceId to be generated.
-  uint32_t capture_sequence_number = 0u;
 
   // This represents the browser zoom level for a WebContents.
   // (0 is the default value which results in 1.0 zoom factor).

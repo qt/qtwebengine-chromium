@@ -78,7 +78,7 @@ class KdBVH {
   typedef const int *VolumeIterator;  // the iterators are just pointers into the tree's vectors
   typedef const Object *ObjectIterator;
 
-  KdBVH() {}
+  KdBVH() = default;
 
   /** Given an iterator range over \a Object references, constructs the BVH.  Requires that bounding_box(Object) return
    * a Volume. */

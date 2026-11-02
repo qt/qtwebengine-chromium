@@ -171,8 +171,9 @@ class PlainObjectBase : public internal::dense_xpr_base<Derived>::type {
    *
    * See DenseCoeffsBase<Derived,ReadOnlyAccessors>::coeff(Index) const for details. */
   EIGEN_DEVICE_FUNC constexpr const Scalar& coeff(Index rowId, Index colId) const {
-    EIGEN_IF_CONSTEXPR(Flags & RowMajorBit) { return m_storage.data()[colId + rowId * m_storage.cols()]; }
-    else {  // column-major
+    EIGEN_IF_CONSTEXPR (Flags & RowMajorBit) {
+      return m_storage.data()[colId + rowId * m_storage.cols()];
+    } else {  // column-major
       return m_storage.data()[rowId + colId * m_storage.rows()];
     }
   }
@@ -188,8 +189,9 @@ class PlainObjectBase : public internal::dense_xpr_base<Derived>::type {
    *
    * See DenseCoeffsBase<Derived,WriteAccessors>::coeffRef(Index,Index) const for details. */
   EIGEN_DEVICE_FUNC constexpr Scalar& coeffRef(Index rowId, Index colId) {
-    EIGEN_IF_CONSTEXPR(Flags & RowMajorBit) { return m_storage.data()[colId + rowId * m_storage.cols()]; }
-    else {  // column-major
+    EIGEN_IF_CONSTEXPR (Flags & RowMajorBit) {
+      return m_storage.data()[colId + rowId * m_storage.cols()];
+    } else {  // column-major
       return m_storage.data()[rowId + colId * m_storage.rows()];
     }
   }
@@ -203,8 +205,9 @@ class PlainObjectBase : public internal::dense_xpr_base<Derived>::type {
   /** This is the const version of coeffRef(Index,Index) which is thus synonym of coeff(Index,Index).
    * It is provided for convenience. */
   EIGEN_DEVICE_FUNC constexpr const Scalar& coeffRef(Index rowId, Index colId) const {
-    EIGEN_IF_CONSTEXPR(Flags & RowMajorBit) { return m_storage.data()[colId + rowId * m_storage.cols()]; }
-    else {  // column-major
+    EIGEN_IF_CONSTEXPR (Flags & RowMajorBit) {
+      return m_storage.data()[colId + rowId * m_storage.cols()];
+    } else {  // column-major
       return m_storage.data()[rowId + colId * m_storage.rows()];
     }
   }
@@ -303,8 +306,9 @@ class PlainObjectBase : public internal::dense_xpr_base<Derived>::type {
 #ifdef EIGEN_INITIALIZE_COEFFS
     bool size_changed = size != this->size();
 #endif
-    EIGEN_IF_CONSTEXPR(RowsAtCompileTime == 1) { m_storage.resize(size, 1, size); }
-    else {
+    EIGEN_IF_CONSTEXPR (RowsAtCompileTime == 1) {
+      m_storage.resize(size, 1, size);
+    } else {
       m_storage.resize(size, size, 1);
     }
 #ifdef EIGEN_INITIALIZE_COEFFS
@@ -347,15 +351,13 @@ class PlainObjectBase : public internal::dense_xpr_base<Derived>::type {
         other.rows(), other.cols());
 #endif
     const Index othersize = other.rows() * other.cols();
-    EIGEN_IF_CONSTEXPR(RowsAtCompileTime == 1) {
+    EIGEN_IF_CONSTEXPR (RowsAtCompileTime == 1) {
       eigen_assert(other.rows() == 1 || other.cols() == 1);
       resize(1, othersize);
-    }
-    else EIGEN_IF_CONSTEXPR(ColsAtCompileTime == 1) {
+    } else EIGEN_IF_CONSTEXPR (ColsAtCompileTime == 1) {
       eigen_assert(other.rows() == 1 || other.cols() == 1);
       resize(othersize, 1);
-    }
-    else {
+    } else {
       resize(other.rows(), other.cols());
     }
   }
@@ -416,7 +418,7 @@ class PlainObjectBase : public internal::dense_xpr_base<Derived>::type {
    * conservativeResize(Index, NoChange_t).
    *
    * Matrices are resized relative to the top-left element. In case values need to be
-   * appended to the matrix they will copied from \c other.
+   * appended to the matrix they will be copied from \c other.
    */
   template <typename OtherDerived>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void conservativeResizeLike(const DenseBase<OtherDerived>& other) {
@@ -442,7 +444,7 @@ class PlainObjectBase : public internal::dense_xpr_base<Derived>::type {
   }
 
   // Prevent user from trying to instantiate PlainObjectBase objects
-  // by making all its constructor protected. See bug 1074.
+  // by making all its constructors protected. See bug 1074.
  protected:
   EIGEN_DEVICE_FUNC constexpr PlainObjectBase() = default;
   /** \brief Move constructor */
@@ -458,7 +460,7 @@ class PlainObjectBase : public internal::dense_xpr_base<Derived>::type {
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE PlainObjectBase(Index size, Index rows, Index cols)
       : m_storage(size, rows, cols) {}
 
-  /** \brief Construct a row of column vector with fixed size from an arbitrary number of coefficients.
+  /** \brief Construct a row or column vector with fixed size from an arbitrary number of coefficients.
    *
    * \only_for_vectors
    *
@@ -493,30 +495,33 @@ class PlainObjectBase : public internal::dense_xpr_base<Derived>::type {
     }
 
     // This is to allow syntax like VectorXi {{1, 2, 3, 4}}
-    if (ColsAtCompileTime == 1 && list.size() == 1) {
-      eigen_assert(list_size == static_cast<size_t>(RowsAtCompileTime) || RowsAtCompileTime == Dynamic);
-      resize(list_size, ColsAtCompileTime);
-      if (list.begin()->begin() != nullptr) {
-        Index index = 0;
-        for (const Scalar& e : *list.begin()) {
-          coeffRef(index++) = e;
+    EIGEN_IF_CONSTEXPR (ColsAtCompileTime == 1) {
+      if (list.size() == 1) {
+        eigen_assert(list_size == static_cast<size_t>(RowsAtCompileTime) || RowsAtCompileTime == Dynamic);
+        resize(list_size, ColsAtCompileTime);
+        if (list.begin()->begin() != nullptr) {
+          Index index = 0;
+          for (const Scalar& e : *list.begin()) {
+            coeffRef(index++) = e;
+          }
         }
+        return;
       }
-    } else {
-      eigen_assert(list.size() == static_cast<size_t>(RowsAtCompileTime) || RowsAtCompileTime == Dynamic);
-      eigen_assert(list_size == static_cast<size_t>(ColsAtCompileTime) || ColsAtCompileTime == Dynamic);
-      resize(list.size(), list_size);
+    }
 
-      Index row_index = 0;
-      for (const std::initializer_list<Scalar>& row : list) {
-        eigen_assert(list_size == row.size());
-        Index col_index = 0;
-        for (const Scalar& e : row) {
-          coeffRef(row_index, col_index) = e;
-          ++col_index;
-        }
-        ++row_index;
+    eigen_assert(list.size() == static_cast<size_t>(RowsAtCompileTime) || RowsAtCompileTime == Dynamic);
+    eigen_assert(list_size == static_cast<size_t>(ColsAtCompileTime) || ColsAtCompileTime == Dynamic);
+    resize(list.size(), list_size);
+
+    Index row_index = 0;
+    for (const std::initializer_list<Scalar>& row : list) {
+      eigen_assert(list_size == row.size());
+      Index col_index = 0;
+      for (const Scalar& e : row) {
+        coeffRef(row_index, col_index) = e;
+        ++col_index;
       }
+      ++row_index;
     }
   }
 
@@ -711,7 +716,7 @@ class PlainObjectBase : public internal::dense_xpr_base<Derived>::type {
    * \internal
    */
   // aliasing is dealt once in internal::call_assignment
-  // so at this stage we have to assume aliasing... and resising has to be done later.
+  // so at this stage we have to assume aliasing... and resizing has to be done later.
   template <typename OtherDerived>
   EIGEN_DEVICE_FUNC constexpr Derived& _set(const DenseBase<OtherDerived>& other) {
     internal::call_assignment(this->derived(), other.derived());
@@ -905,23 +910,25 @@ struct conservative_resize_like_impl {
     if (_this.rows() == rows && _this.cols() == cols) return;
     EIGEN_STATIC_ASSERT_DYNAMIC_SIZE(Derived)
 
-    if (IsRelocatable &&
-        ((Derived::IsRowMajor && _this.cols() == cols) ||  // row-major and we change only the number of rows
-         (!Derived::IsRowMajor && _this.rows() == rows)))  // column-major and we change only the number of columns
-    {
+    EIGEN_IF_CONSTEXPR (IsRelocatable) {
+      if ((Derived::IsRowMajor && _this.cols() == cols) ||  // row-major and we change only the number of rows
+          (!Derived::IsRowMajor && _this.rows() == rows))   // column-major and we change only the number of columns
+      {
 #ifndef EIGEN_NO_DEBUG
-      internal::check_rows_cols_for_overflow<Derived::MaxSizeAtCompileTime, Derived::MaxRowsAtCompileTime,
-                                             Derived::MaxColsAtCompileTime>::run(rows, cols);
+        internal::check_rows_cols_for_overflow<Derived::MaxSizeAtCompileTime, Derived::MaxRowsAtCompileTime,
+                                               Derived::MaxColsAtCompileTime>::run(rows, cols);
 #endif
-      _this.derived().m_storage.conservativeResize(rows * cols, rows, cols);
-    } else {
-      // The storage order does not allow us to use reallocation.
-      Derived tmp(rows, cols);
-      const Index common_rows = numext::mini(rows, _this.rows());
-      const Index common_cols = numext::mini(cols, _this.cols());
-      tmp.block(0, 0, common_rows, common_cols) = _this.block(0, 0, common_rows, common_cols);
-      _this.derived().swap(tmp);
+        _this.derived().m_storage.conservativeResize(rows * cols, rows, cols);
+        return;
+      }
     }
+
+    // The storage order does not allow us to use reallocation.
+    Derived tmp(rows, cols);
+    const Index common_rows = numext::mini(rows, _this.rows());
+    const Index common_cols = numext::mini(cols, _this.cols());
+    tmp.block(0, 0, common_rows, common_cols) = _this.block(0, 0, common_rows, common_cols);
+    _this.derived().swap(tmp);
   }
 
   static void run(DenseBase<Derived>& _this, const DenseBase<OtherDerived>& other) {
@@ -935,26 +942,28 @@ struct conservative_resize_like_impl {
     EIGEN_STATIC_ASSERT_DYNAMIC_SIZE(Derived)
     EIGEN_STATIC_ASSERT_DYNAMIC_SIZE(OtherDerived)
 
-    if (IsRelocatable &&
-        ((Derived::IsRowMajor && _this.cols() == other.cols()) ||  // row-major and we change only the number of rows
-         (!Derived::IsRowMajor &&
-          _this.rows() == other.rows())))  // column-major and we change only the number of columns
-    {
-      const Index new_rows = other.rows() - _this.rows();
-      const Index new_cols = other.cols() - _this.cols();
-      _this.derived().m_storage.conservativeResize(other.size(), other.rows(), other.cols());
-      if (new_rows > 0)
-        _this.bottomRightCorner(new_rows, other.cols()) = other.bottomRows(new_rows);
-      else if (new_cols > 0)
-        _this.bottomRightCorner(other.rows(), new_cols) = other.rightCols(new_cols);
-    } else {
-      // The storage order does not allow us to use reallocation.
-      Derived tmp(other);
-      const Index common_rows = numext::mini(tmp.rows(), _this.rows());
-      const Index common_cols = numext::mini(tmp.cols(), _this.cols());
-      tmp.block(0, 0, common_rows, common_cols) = _this.block(0, 0, common_rows, common_cols);
-      _this.derived().swap(tmp);
+    EIGEN_IF_CONSTEXPR (IsRelocatable) {
+      if ((Derived::IsRowMajor && _this.cols() == other.cols()) ||  // row-major and we change only the number of rows
+          (!Derived::IsRowMajor &&
+           _this.rows() == other.rows()))  // column-major and we change only the number of columns
+      {
+        const Index new_rows = other.rows() - _this.rows();
+        const Index new_cols = other.cols() - _this.cols();
+        _this.derived().m_storage.conservativeResize(other.size(), other.rows(), other.cols());
+        if (new_rows > 0)
+          _this.bottomRightCorner(new_rows, other.cols()) = other.bottomRows(new_rows);
+        else if (new_cols > 0)
+          _this.bottomRightCorner(other.rows(), new_cols) = other.rightCols(new_cols);
+        return;
+      }
     }
+
+    // The storage order does not allow us to use reallocation.
+    Derived tmp(other);
+    const Index common_rows = numext::mini(tmp.rows(), _this.rows());
+    const Index common_cols = numext::mini(tmp.cols(), _this.cols());
+    tmp.block(0, 0, common_rows, common_cols) = _this.block(0, 0, common_rows, common_cols);
+    _this.derived().swap(tmp);
   }
 };
 
@@ -970,7 +979,7 @@ struct conservative_resize_like_impl<Derived, OtherDerived, true>
   static void run(DenseBase<Derived>& _this, Index size) {
     const Index new_rows = Derived::RowsAtCompileTime == 1 ? 1 : size;
     const Index new_cols = Derived::RowsAtCompileTime == 1 ? size : 1;
-    if (IsRelocatable)
+    EIGEN_IF_CONSTEXPR (IsRelocatable)
       _this.derived().m_storage.conservativeResize(size, new_rows, new_cols);
     else
       Base::run(_this.derived(), new_rows, new_cols);
@@ -983,7 +992,7 @@ struct conservative_resize_like_impl<Derived, OtherDerived, true>
 
     const Index new_rows = Derived::RowsAtCompileTime == 1 ? 1 : other.rows();
     const Index new_cols = Derived::RowsAtCompileTime == 1 ? other.cols() : 1;
-    if (IsRelocatable)
+    EIGEN_IF_CONSTEXPR (IsRelocatable)
       _this.derived().m_storage.conservativeResize(other.size(), new_rows, new_cols);
     else
       Base::run(_this.derived(), new_rows, new_cols);

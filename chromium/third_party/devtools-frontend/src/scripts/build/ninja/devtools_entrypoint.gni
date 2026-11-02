@@ -35,7 +35,13 @@ template("devtools_entrypoint") {
     _ts_library_target_name = _entrypoint_target_name + "-typescript"
 
     ts_library(_ts_library_target_name) {
-      forward_variables_from(invoker, ["deps", "es_target", "es_libs", "inputs"])
+      forward_variables_from(invoker,
+                             [
+                               "deps",
+                               "es_target",
+                               "es_libs",
+                               "inputs",
+                             ])
 
       sources = [ invoker.entrypoint ]
     }
@@ -104,14 +110,19 @@ template("devtools_entrypoint") {
     }
 
     ts_library(_prebundle_target_name) {
-      forward_variables_from(invoker, ["deps", "es_target", "es_libs", "inputs"])
+      forward_variables_from(invoker,
+                             [
+                               "deps",
+                               "es_target",
+                               "es_libs",
+                               "inputs",
+                             ])
 
       sources = [ _copy_output_file_name ]
 
       rootdir = target_gen_dir
 
       public_deps = [ ":$_copy_target_name" ]
-
     }
 
     bundle(_bundle_target_name) {
@@ -185,6 +196,9 @@ template("devtools_entrypoint") {
 
   node_action(target_name) {
     script = "scripts/build/ninja/generate-tsconfig.js"
+
+    # Expose ts files to dependent targets.
+    public_inputs = [ invoker.entrypoint ]
 
     args = [
              rebase_path(_generated_tsconfig_location, root_build_dir),

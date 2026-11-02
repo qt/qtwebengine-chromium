@@ -14,21 +14,16 @@
 
 #include "src/prediction_mask.h"
 
-#include <algorithm>
 #include <array>
 #include <cassert>
-#include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <cstring>
-#include <memory>
 
-#include "src/utils/array_2d.h"
 #include "src/utils/bit_mask_set.h"
 #include "src/utils/common.h"
 #include "src/utils/constants.h"
 #include "src/utils/logging.h"
-#include "src/utils/memory.h"
+#include "src/utils/types.h"
 
 namespace libgav1 {
 namespace {

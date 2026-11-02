@@ -8,15 +8,13 @@ import type {DebugId, SourceMapV3} from './SourceMap.js';
 
 /** A thin wrapper around the Cache API to store source map JSONs keyed on Debug IDs */
 export class SourceMapCache {
-  static readonly #INSTANCE = new SourceMapCache('devtools-source-map-cache');
-
-  static instance(): SourceMapCache {
+  static create(): SourceMapCache {
     if (typeof window === 'undefined') {
       // TODO(crbug.com/451502260): Move this behind a `HostRuntime` interface.
       return IN_MEMORY_INSTANCE as unknown as
           SourceMapCache;  // TS doesn't like that our in-memory class doesn't have the same private fields.
     }
-    return this.#INSTANCE;
+    return new SourceMapCache('devtools-source-map-cache');
   }
 
   static createForTest(name: string): SourceMapCache {

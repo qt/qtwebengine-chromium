@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("../../scripts/build/ninja/copy.gni")
 import("../../scripts/build/typescript/typescript.gni")
 
 group("conductor") {
@@ -12,28 +13,27 @@ group("conductor") {
 }
 
 node_ts_library("implementation") {
+  deps = [ "../../front_end/testing:test_id_generation" ]
+
   sources = [
     "async-scope.ts",
     "commandline.ts",
     "custom-query-handlers.ts",
     "diff-utils.ts",
     "events.ts",
-    "frontend_tab.ts",
-    "hooks.ts",
+    "inspected_page.ts",
     "karma-resultsdb-reporter.ts",
     "mocha-interface-helpers.ts",
     "mocha-interface.ts",
-    "mocha_hooks.ts",
     "paths.ts",
     "platform.ts",
-    "pool.ts",
     "puppeteer-state.ts",
     "resultsdb.ts",
     "screenshot-error.ts",
-    "server_port.ts",
     "sharding.ts",
-    "target_tab.ts",
     "test_config.ts",
+    "test_expectations.ts",
+    "test_expectations_parser.js",
     "test_server.ts",
   ]
 }

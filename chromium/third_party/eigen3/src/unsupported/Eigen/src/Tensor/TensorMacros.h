@@ -20,8 +20,8 @@
  *
  *   becomes =>
  *
- *   template<typename TopoType,
- *           SFINAE_ENABLE_IF( isBanana<T>::value )
+ *   template<typename T,
+ *           EIGEN_SFINAE_ENABLE_IF( isBanana<T>::value )
  *   >
  *   void foo(){}
  */
@@ -56,31 +56,5 @@
 #elif !defined(EIGEN_SYCL_LOCAL_MEM) && defined(EIGEN_SYCL_NO_LOCAL_MEM)
 #define EIGEN_SYCL_LOCAL_MEM_UNSET_OR_OFF 1
 #endif
-
-#if EIGEN_COMP_CLANG  // workaround clang bug (see http://forum.kde.org/viewtopic.php?f=74&t=102653)
-#define EIGEN_TENSOR_INHERIT_ASSIGNMENT_EQUAL_OPERATOR(Derived)                         \
-  using Base::operator=;                                                                \
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Derived& operator=(const Derived& other) {      \
-    Base::operator=(other);                                                             \
-    return *this;                                                                       \
-  }                                                                                     \
-  template <typename OtherDerived>                                                      \
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Derived& operator=(const OtherDerived& other) { \
-    Base::operator=(other);                                                             \
-    return *this;                                                                       \
-  }
-#else
-#define EIGEN_TENSOR_INHERIT_ASSIGNMENT_EQUAL_OPERATOR(Derived) EIGEN_INHERIT_ASSIGNMENT_EQUAL_OPERATOR(Derived)
-#endif
-
-/** \internal
- * \brief Macro to manually inherit assignment operators.
- * This is necessary, because the implicitly defined assignment operator gets deleted when a custom operator= is
- * defined. This also inherits template<OtherDerived> operator=(const OtherDerived&) assignments, and
- * default-implements the copy-constructor.
- */
-#define EIGEN_TENSOR_INHERIT_ASSIGNMENT_OPERATORS(Derived) \
-  EIGEN_TENSOR_INHERIT_ASSIGNMENT_EQUAL_OPERATOR(Derived)  \
-  EIGEN_DEFAULT_COPY_CONSTRUCTOR(Derived)
 
 #endif

@@ -10,9 +10,10 @@
 #include "cc/paint/paint_image_builder.h"
 #include "cc/paint/paint_op.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
+#include "components/viz/common/surfaces/surface_id.h"
 #include "content/public/renderer/render_frame.h"
+#include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 #include "third_party/blink/public/common/frame/frame_visual_properties.h"
-#include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/web/web_document.h"
 #include "third_party/blink/public/web/web_element.h"
@@ -62,8 +63,7 @@ SurfaceEmbedWebPlugin::SurfaceEmbedWebPlugin(
     content::RenderFrame* render_frame,
     const blink::WebPluginParams& params)
     : contents_id_(contents_id) {
-  render_frame->GetBrowserInterfaceBroker().GetInterface(
-      host_.BindNewPipeAndPassReceiver());
+  render_frame->GetRemoteAssociatedInterfaces()->GetInterface(&host_);
 }
 
 SurfaceEmbedWebPlugin::~SurfaceEmbedWebPlugin() = default;
@@ -73,8 +73,8 @@ bool SurfaceEmbedWebPlugin::Initialize(blink::WebPluginContainer* container) {
   InitializeSurfaceLayer();
 
   CHECK(host_);
-  mojo::PendingRemote<mojom::SurfaceEmbed> pending_remote =
-      receiver_.BindNewPipeAndPassRemote();
+  mojo::PendingAssociatedRemote<mojom::SurfaceEmbed> pending_remote =
+      receiver_.BindNewEndpointAndPassRemote();
   host_.set_disconnect_handler(base::BindOnce(
       &SurfaceEmbedWebPlugin::OnHostDisconnected, base::Unretained(this)));
   receiver_.set_disconnect_handler(base::BindOnce(
@@ -92,6 +92,7 @@ bool SurfaceEmbedWebPlugin::Initialize(blink::WebPluginContainer* container) {
 }
 
 void SurfaceEmbedWebPlugin::Destroy() {
+  paint_holding_helper_.ClearPaintHolding(layer_.get());
   if (container_) {
     container_->SetCcLayer(nullptr);
     container_ = nullptr;
@@ -140,13 +141,19 @@ void SurfaceEmbedWebPlugin::UpdateGeometry(const gfx::Rect& window_rect,
   last_is_visible_ = is_visible;
 
   if (frame_sink_id_.is_valid()) {
-    SynchronizeVisualProperties();
+    SynchronizeVisualProperties(/*allow_paint_holding=*/false);
   }
 }
 
 void SurfaceEmbedWebPlugin::UpdateFocus(bool focused,
                                         blink::mojom::FocusType focus_type) {
-  NOTIMPLEMENTED();
+  if (host_) {
+    host_->OnEmbedElementFocused(focused, focus_type);
+  }
+}
+
+bool SurfaceEmbedWebPlugin::SupportsKeyboardFocus() const {
+  return true;
 }
 
 void SurfaceEmbedWebPlugin::UpdateVisibility(bool visible) {
@@ -154,7 +161,7 @@ void SurfaceEmbedWebPlugin::UpdateVisibility(bool visible) {
   last_is_visible_ = visible;
 
   if (last_is_visible_ != prev_is_visible && frame_sink_id_.is_valid()) {
-    SynchronizeVisualProperties();
+    SynchronizeVisualProperties(/*allow_paint_holding=*/false);
   }
 }
 
@@ -194,7 +201,8 @@ void SurfaceEmbedWebPlugin::InitializeSurfaceLayer() {
   // surface id.
 }
 
-void SurfaceEmbedWebPlugin::SynchronizeVisualProperties() {
+void SurfaceEmbedWebPlugin::SynchronizeVisualProperties(
+    bool allow_paint_holding) {
   // Note: This is largely based on RemoteFrame's SynchronizeVisualProperties().
   // TODO(surface-embed): The following properties or pieces of functionality
   // have not yet been vetted as needed or correct implementation:
@@ -202,9 +210,7 @@ void SurfaceEmbedWebPlugin::SynchronizeVisualProperties() {
   // - viewport segments, do these need any adjustment for plugin location/size?
   // - compositor viewport, does it need to be more accurate (See RemoteFrame)?
   //   Right now it's the part of the plugin that's visible.
-  // - capture_sequence_number
   // - cursor_accessibility_scale_factor
-  // - paint holding
   // - propagate parameter (see RemoteFrame's implementation, do we need to do
   //   anything to propagate these changes through the embedded WebContents?)
 
@@ -245,7 +251,6 @@ void SurfaceEmbedWebPlugin::SynchronizeVisualProperties() {
       gfx::Size(last_window_rect_.width(), last_window_rect_.height());
   pending_visual_properties.compositor_viewport = last_clip_rect_;
   pending_visual_properties.compositing_scale_factor = 1.0f;
-  pending_visual_properties.capture_sequence_number = 0;
   pending_visual_properties.cursor_accessibility_scale_factor = 1.0f;
 
   bool synchronized_props_changed =
@@ -280,8 +285,6 @@ void SurfaceEmbedWebPlugin::SynchronizeVisualProperties() {
           pending_visual_properties.compositor_viewport ||
       sent_visual_properties_->root_widget_viewport_segments !=
           pending_visual_properties.root_widget_viewport_segments ||
-      sent_visual_properties_->capture_sequence_number !=
-          pending_visual_properties.capture_sequence_number ||
       !sent_last_is_visible_ || sent_last_is_visible_ != last_is_visible_;
 
   if (synchronized_props_changed) {
@@ -295,11 +298,8 @@ void SurfaceEmbedWebPlugin::SynchronizeVisualProperties() {
   viz::SurfaceId surface_id(frame_sink_id_,
                             pending_visual_properties.local_surface_id);
   CHECK(surface_id.is_valid());
-  // TODO(crbug.com/493315755): Investigate the flashing blue square observed
-  // on Windows when switching views for navigation (both initial and subsequent
-  // navigation). Note that it may be related to UseDefaultDeadline or to
-  // allow_paint_holding.
-  layer_->SetSurfaceId(surface_id, cc::DeadlinePolicy::UseDefaultDeadline());
+  paint_holding_helper_.SetSurfaceId(layer_.get(), surface_id,
+                                     allow_paint_holding);
   if (container_) {
     container_->SetCcLayer(layer_.get());
     container_->ScheduleAnimation();
@@ -324,7 +324,8 @@ void SurfaceEmbedWebPlugin::OnHostDisconnected() {
 }
 
 void SurfaceEmbedWebPlugin::SetFrameSinkId(
-    const ::viz::FrameSinkId& frame_sink_id) {
+    const ::viz::FrameSinkId& frame_sink_id,
+    bool allow_paint_holding) {
   CHECK(container_);
   CHECK(frame_sink_id.is_valid());
   // Make sure we use a normal layer, not crash one.
@@ -340,7 +341,7 @@ void SurfaceEmbedWebPlugin::SetFrameSinkId(
   frame_sink_id_ = frame_sink_id;
   frame_sink_id_changed_ = true;
 
-  SynchronizeVisualProperties();
+  SynchronizeVisualProperties(allow_paint_holding);
 }
 
 void SurfaceEmbedWebPlugin::UpdateLocalSurfaceIdFromChild(
@@ -351,10 +352,11 @@ void SurfaceEmbedWebPlugin::UpdateLocalSurfaceIdFromChild(
 
   // The viz::LocalSurfaceId has changed so we call SynchronizeVisualProperties
   // here to embed it.
-  SynchronizeVisualProperties();
+  SynchronizeVisualProperties(/*allow_paint_holding=*/false);
 }
 
 void SurfaceEmbedWebPlugin::ChildProcessGone() {
+  paint_holding_helper_.ClearPaintHolding(layer_.get());
   frame_sink_id_ = viz::FrameSinkId();
   crashed_layer_ = cc::PictureLayer::Create(this);
   crashed_layer_->SetMasksToBounds(true);
@@ -363,10 +365,12 @@ void SurfaceEmbedWebPlugin::ChildProcessGone() {
   container_->ScheduleAnimation();
 }
 
-void SurfaceEmbedWebPlugin::RequestFocus() {
+void SurfaceEmbedWebPlugin::RequestFocusOnEmbedElement(
+    RequestFocusOnEmbedElementCallback callback) {
   if (container_) {
     container_->GetElement().Focus();
   }
+  std::move(callback).Run();
 }
 
 scoped_refptr<cc::DisplayItemList>

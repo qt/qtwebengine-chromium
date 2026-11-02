@@ -26,6 +26,7 @@ export type BadgeActionEvents = Record<BadgeAction, void>;
 export interface BadgeContext {
   onTriggerBadge: (badge: Badge) => void;
   badgeActionEventTarget: Common.ObjectWrapper.ObjectWrapper<BadgeActionEvents>;
+  settings: Common.Settings.Settings;
 }
 
 export interface TriggerOptions {

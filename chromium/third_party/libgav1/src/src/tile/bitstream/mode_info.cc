@@ -19,10 +19,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
-#include <vector>
 
 #include "src/buffer_pool.h"
-#include "src/dsp/constants.h"
 #include "src/motion_vector.h"
 #include "src/obu_parser.h"
 #include "src/prediction_mask.h"
@@ -35,7 +33,7 @@
 #include "src/utils/constants.h"
 #include "src/utils/entropy_decoder.h"
 #include "src/utils/logging.h"
-#include "src/utils/segmentation.h"
+#include "src/utils/reference_info.h"
 #include "src/utils/segmentation_map.h"
 #include "src/utils/types.h"
 

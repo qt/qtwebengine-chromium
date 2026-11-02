@@ -22,7 +22,7 @@ export default createRule({
     messages: {
       noNewLitElementComponents: 'New LitElement components are banned.',
     },
-    schema: []  // no options
+    schema: [],  // no options
   },
   defaultOptions: [],
   create: function(context) {
@@ -44,5 +44,5 @@ export default createRule({
         });
       },
     };
-  }
+  },
 });

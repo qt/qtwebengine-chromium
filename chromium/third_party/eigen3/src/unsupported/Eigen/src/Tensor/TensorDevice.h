@@ -77,7 +77,7 @@ class TensorDevice {
  * argument asynchronously on the specified device. Currently only
  * ThreadPoolDevice implements proper asynchronous execution, while the default
  * and GPU devices just run the expression synchronously and call m_done() on
- * completion..
+ * completion.
  *
  * Example:
  *    auto done = []() { ... expression evaluation done ... };

@@ -27,7 +27,7 @@ namespace Eigen {
 /// `template <class> class MakePointer_` is added to convert the host pointer to the device pointer.
 /// It is added due to the fact that for our device compiler `T*` is not allowed.
 /// If we wanted to use the same Evaluator functions we have to convert that type to our pointer `T`.
-/// This is done through our `MakePointer_` class. By default the Type in the `MakePointer_<T>` is `T*` .
+/// This is done through our `MakePointer_` class. By default the Type in the `MakePointer_<T>` is `T*`.
 /// Therefore, by adding the default value, we managed to convert the type and it does not break any
 /// existing code as its default value is `T*`.
 template <typename PlainObjectType, int Options_, template <class> class MakePointer_>
@@ -105,11 +105,10 @@ class TensorMap : public TensorBase<TensorMap<PlainObjectType, Options_, MakePoi
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE StoragePointerType data() const { return m_data; }
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE StorageRefType operator()(const array<Index, NumIndices>& indices) const {
-    EIGEN_IF_CONSTEXPR(PlainObjectType::Options & RowMajor) {
+    EIGEN_IF_CONSTEXPR (PlainObjectType::Options & RowMajor) {
       const Index index = m_dimensions.IndexOfRowMajor(indices);
       return m_data[index];
-    }
-    else {
+    } else {
       const Index index = m_dimensions.IndexOfColMajor(indices);
       return m_data[index];
     }
@@ -130,12 +129,11 @@ class TensorMap : public TensorBase<TensorMap<PlainObjectType, Options_, MakePoi
                                                                   IndexTypes... otherIndices) const {
     EIGEN_STATIC_ASSERT(sizeof...(otherIndices) + 2 == NumIndices, YOU_MADE_A_PROGRAMMING_MISTAKE)
     eigen_assert(internal::all((Eigen::NumTraits<Index>::highest() >= otherIndices)...));
-    EIGEN_IF_CONSTEXPR(PlainObjectType::Options & RowMajor) {
+    EIGEN_IF_CONSTEXPR (PlainObjectType::Options & RowMajor) {
       const Index index =
           m_dimensions.IndexOfRowMajor(array<Index, NumIndices>{{firstIndex, secondIndex, otherIndices...}});
       return m_data[index];
-    }
-    else {
+    } else {
       const Index index =
           m_dimensions.IndexOfColMajor(array<Index, NumIndices>{{firstIndex, secondIndex, otherIndices...}});
       return m_data[index];
@@ -143,11 +141,10 @@ class TensorMap : public TensorBase<TensorMap<PlainObjectType, Options_, MakePoi
   }
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE StorageRefType operator()(const array<Index, NumIndices>& indices) {
-    EIGEN_IF_CONSTEXPR(PlainObjectType::Options & RowMajor) {
+    EIGEN_IF_CONSTEXPR (PlainObjectType::Options & RowMajor) {
       const Index index = m_dimensions.IndexOfRowMajor(indices);
       return m_data[index];
-    }
-    else {
+    } else {
       const Index index = m_dimensions.IndexOfColMajor(indices);
       return m_data[index];
     }
@@ -170,19 +167,18 @@ class TensorMap : public TensorBase<TensorMap<PlainObjectType, Options_, MakePoi
                   "Number of indices used to access a tensor coefficient must be equal to the rank of the tensor.");
     eigen_assert(internal::all((Eigen::NumTraits<Index>::highest() >= otherIndices)...));
     const std::size_t NumDims = sizeof...(otherIndices) + 2;
-    EIGEN_IF_CONSTEXPR(PlainObjectType::Options & RowMajor) {
+    EIGEN_IF_CONSTEXPR (PlainObjectType::Options & RowMajor) {
       const Index index =
           m_dimensions.IndexOfRowMajor(array<Index, NumDims>{{firstIndex, secondIndex, otherIndices...}});
       return m_data[index];
-    }
-    else {
+    } else {
       const Index index =
           m_dimensions.IndexOfColMajor(array<Index, NumDims>{{firstIndex, secondIndex, otherIndices...}});
       return m_data[index];
     }
   }
 
-  EIGEN_TENSOR_INHERIT_ASSIGNMENT_OPERATORS(TensorMap)
+  EIGEN_INHERIT_ASSIGNMENT_OPERATORS(TensorMap)
 
  private:
   StoragePointerType m_data;

@@ -171,6 +171,10 @@ CFXJSE_Engine::~CFXJSE_Engine() {
     const v8::Global<v8::Object>& binding = pair.second;
     FXJSE_ClearObjectBinding(v8::Local<v8::Object>::New(GetIsolate(), binding));
   }
+  for (const auto& pair : map_variable_to_context_) {
+    FXJSE_ClearObjectBinding(pair.second->GetGlobalObject());
+  }
+  FXJSE_ClearObjectBinding(js_context_->GetGlobalObject());
 }
 
 CFXJSE_Engine::EventParamScope::EventParamScope(CFXJSE_Engine* pEngine,

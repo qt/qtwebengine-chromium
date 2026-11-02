@@ -6,6 +6,11 @@
 # tree and to set startup options. For documentation on the values set in this
 # file, run "gn help dotfile" at the command line.
 
+assert(
+    gn_version >= 2459,
+    "Your GN version is too old. To fix this, try the following:\n" +
+        "1. Usually, running `gclient sync` will update GN.\n" + "2. If you are using an integrated checkout inside a Chromium tree, depot_tools might be picking up Chromium's older GN instead of DevTools'. In that case, update your Chromium checkout and run `gclient sync` in Chromium checkout.")
+
 # The location of the build configuration file.
 buildconfig = "//build_overrides/BUILDCONFIG.gn"
 

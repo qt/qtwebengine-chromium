@@ -4,6 +4,7 @@
 
 #include "testing/pdf_test_environment.h"
 
+#include "core/fxcrt/span.h"
 #include "core/fxge/cfx_gemodule.h"
 
 PDFTestEnvironment::PDFTestEnvironment() = default;
@@ -12,7 +13,7 @@ PDFTestEnvironment::~PDFTestEnvironment() = default;
 
 // testing::Environment:
 void PDFTestEnvironment::SetUp() {
-  CFX_GEModule::Create(test_fonts_.font_paths(),
+  CFX_GEModule::Create(test_fonts_.FontPathsSpan(),
                        CFX_GEModule::RendererType::kDefault,
                        CFX_FontMgr::FontBackend::kFreeType);
 }

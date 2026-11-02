@@ -1,0 +1,42 @@
+/** \page page_pulse_modules Pulseaudio Modules
+
+\include{doc} pulse-modules.inc
+
+# List of built-in modules:
+
+- \subpage page_pulse_module_alsa_sink
+- \subpage page_pulse_module_alsa_source
+- \subpage page_pulse_module_always_sink
+- \subpage page_pulse_module_combine_sink
+- \subpage page_pulse_module_device_manager
+- \subpage page_pulse_module_device_restore
+- \subpage page_pulse_module_echo_cancel
+- \subpage page_pulse_module_gsettings
+- \subpage page_pulse_module_jackdbus_detect
+- \subpage page_pulse_module_ladspa_sink
+- \subpage page_pulse_module_ladspa_source
+- \subpage page_pulse_module_loopback
+- \subpage page_pulse_module_native_protocol_tcp
+- \subpage page_pulse_module_null_sink
+- \subpage page_pulse_module_pipe_sink
+- \subpage page_pulse_module_pipe_source
+- \subpage page_pulse_module_raop_discover
+- \subpage page_pulse_module_remap_sink
+- \subpage page_pulse_module_remap_source
+- \subpage page_pulse_module_roc_sink
+- \subpage page_pulse_module_roc_sink_input
+- \subpage page_pulse_module_roc_source
+- \subpage page_pulse_module_rtp_recv
+- \subpage page_pulse_module_rtp_send
+- \subpage page_pulse_module_simple_protocol_tcp
+- \subpage page_pulse_module_stream_restore
+- \subpage page_pulse_module_switch_on_connect
+- \subpage page_pulse_module_tunnel_sink
+- \subpage page_pulse_module_tunnel_source
+- \subpage page_pulse_module_virtual_sink
+- \subpage page_pulse_module_virtual_source
+- \subpage page_pulse_module_x11_bell
+- \subpage page_pulse_module_zeroconf_discover
+- \subpage page_pulse_module_zeroconf_publish
+
+*/

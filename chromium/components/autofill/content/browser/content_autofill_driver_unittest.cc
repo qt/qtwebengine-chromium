@@ -68,6 +68,7 @@
 #include "net/base/net_errors.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/abseil-cpp/absl/container/flat_hash_map.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 
 namespace autofill {
@@ -211,6 +212,16 @@ class FakeAutofillAgent : public mojom::AutofillAgent {
                FieldRendererId token_field_id,
                const std::string& token),
               (override));
+  MOCK_METHOD(void,
+              UpdateEmailVerificationState,
+              (FieldRendererId email_field_id,
+               mojom::EmailVerificationState state),
+              (override));
+  MOCK_METHOD(void,
+              ObserveFieldVisibility,
+              (FieldRendererId,
+               mojo::PendingRemote<mojom::AutofillVisibilityObserver>),
+              (override));
 
  private:
   void CallDone() {
@@ -341,12 +352,14 @@ class MockBrowserAutofillManager : public BrowserAutofillManager {
                const FieldGlobalId&,
                const gfx::Rect&,
                AutofillSuggestionTriggerSource,
-               std::optional<PasswordSuggestionRequest>),
+               std::optional<PasswordSuggestionRequest>,
+               RendererEventPassKey),
               (override));
   MOCK_METHOD(void,
               OnFormsSeen,
               (std::vector<FormData> updated_forms,
-               std::vector<FormGlobalId> removed_forms),
+               std::vector<FormGlobalId> removed_forms,
+               RendererEventPassKey),
               (override));
 };
 
@@ -477,6 +490,14 @@ class ContentAutofillDriverTestWithAddressForm
   }
 
   FormData& address_form() { return address_form_; }
+
+  absl::flat_hash_map<FieldGlobalId, FieldType> field_type_map() {
+    absl::flat_hash_map<FieldGlobalId, FieldType> map;
+    for (const FormFieldData& field : address_form_.fields()) {
+      map.emplace(field.global_id(), UNKNOWN_TYPE);
+    }
+    return map;
+  }
 
  private:
   FormData address_form_;
@@ -627,7 +648,7 @@ TEST_F(ContentAutofillDriverTest, WithNewVersion) {
       manager(),
       OnFormsSeen(ElementsAre(Property("FormData::version", &FormData::version,
                                        Gt(previous_version))),
-                  _));
+                  _, _));
   driver().renderer_events().FormsSeen(/*updated_forms=*/{form},
                                        /*removed_forms=*/{});
 }
@@ -647,7 +668,7 @@ TEST_F(ContentAutofillDriverTest, FormsSeen_UpdatedForm) {
                                form.renderer_id()),
                       Property("FormData::fields", &FormData::fields,
                                SizeIs(form.fields().size())))),
-                  IsEmpty()));
+                  IsEmpty(), _));
   driver().renderer_events().FormsSeen(/*updated_forms=*/{form},
                                        /*removed_forms=*/{});
 }
@@ -656,9 +677,11 @@ TEST_F(ContentAutofillDriverTest, FormsSeen_UpdatedForm) {
 // Does not test multiple frames.
 TEST_F(ContentAutofillDriverTest, FormsSeen_RemovedForm) {
   FormRendererId form_renderer_id = test::MakeFormRendererId();
-  EXPECT_CALL(manager(),
-              OnFormsSeen(IsEmpty(), ElementsAre(FormGlobalId(
-                                         frame_token(), form_renderer_id))));
+  EXPECT_CALL(
+      manager(),
+      OnFormsSeen(IsEmpty(),
+                  ElementsAre(FormGlobalId(frame_token(), form_renderer_id)),
+                  _));
   driver().renderer_events().FormsSeen(/*updated_forms=*/{},
                                        /*removed_forms=*/{form_renderer_id});
 }
@@ -681,7 +704,7 @@ TEST_F(ContentAutofillDriverTest, FormsSeen_UpdatedAndRemovedForm) {
                        form.renderer_id()),
               Property("FormData::fields", &FormData::fields,
                        SizeIs(form.fields().size())))),
-          ElementsAre(FormGlobalId(frame_token(), other_form_renderer_id))));
+          ElementsAre(FormGlobalId(frame_token(), other_form_renderer_id)), _));
   driver().renderer_events().FormsSeen(
       /*updated_forms=*/{form},
       /*removed_forms=*/{other_form_renderer_id});
@@ -699,7 +722,7 @@ TEST_F(ContentAutofillDriverTestWithAddressForm,
   driver().browser_events().ApplyFormAction(
       mojom::FormActionType::kFill, mojom::ActionPersistence::kFill,
       address_form().fields(), FillId::Create(),
-      /*supports_refill=*/false, triggered_origin, {}, Section());
+      /*supports_refill=*/false, triggered_origin, field_type_map(), Section());
 
   run_loop.RunUntilIdle();
 
@@ -726,7 +749,7 @@ TEST_F(ContentAutofillDriverTestWithAddressForm,
   driver().browser_events().ApplyFormAction(
       mojom::FormActionType::kFill, mojom::ActionPersistence::kPreview,
       address_form().fields(), FillId::Create(),
-      /*supports_refill=*/false, triggered_origin, {}, Section());
+      /*supports_refill=*/false, triggered_origin, field_type_map(), Section());
 
   run_loop.RunUntilIdle();
 
@@ -993,15 +1016,19 @@ TEST_F(ContentAutofillDriverTest, ExtractLabeledTextNodeValue_Success) {
   EXPECT_EQ(captured_result_for_test.Get<std::string>(), "$1,234.56");
 }
 
-class ContentAutofillDriverTest_PrerenderBadMessage
-    : public ContentAutofillDriverTest {
+class MockAutofillVisibilityObserver
+    : public mojom::AutofillVisibilityObserver {
+ public:
+  MOCK_METHOD(void, OnFieldBecameVisible, (), (override));
+};
+
+class ContentAutofillDriverTest_Prerender : public ContentAutofillDriverTest {
  private:
   content::test::ScopedPrerenderFeatureList prerender_feature_list_;
 };
 
 // Tests that a renderer event during prerendering causes a bad message.
-TEST_F(ContentAutofillDriverTest_PrerenderBadMessage,
-       BadMessageIfPrerendering) {
+TEST_F(ContentAutofillDriverTest_Prerender, BadMessageIfPrerendering) {
   content::test::ScopedPrerenderWebContentsDelegate web_contents_delegate(
       *web_contents());
   // This must "a.test" (or "http").
@@ -1018,6 +1045,38 @@ TEST_F(ContentAutofillDriverTest_PrerenderBadMessage,
   EXPECT_CALL(manager(rfh), OnFormsSeen).Times(0);
   driver(rfh).renderer_events().FormsSeen(/*updated_forms=*/{},
                                           /*removed_forms=*/{});
+}
+
+TEST_F(ContentAutofillDriverTest_Prerender,
+       ObserveFieldVisibilityDisconnectsIfInactive) {
+  content::test::ScopedPrerenderWebContentsDelegate web_contents_delegate(
+      *web_contents());
+  NavigateAndCommit(GURL("https://a.test/"));
+  content::RenderFrameHost* rfh =
+      content::WebContentsTester::For(web_contents())
+          ->AddPrerenderAndCommitNavigation(GURL("https://a.test/prerender"));
+  ASSERT_EQ(rfh->GetLifecycleState(),
+            content::RenderFrameHost::LifecycleState::kPrerendering);
+  // Prerendering frames are inactive. We use a prerendering frame here to
+  // simulate and test the behavior of an inactive driver.
+  ASSERT_FALSE(driver(rfh).IsActive());
+
+  testing::StrictMock<MockAutofillVisibilityObserver> observer;
+  mojo::Receiver<mojom::AutofillVisibilityObserver> receiver(&observer);
+  auto remote = receiver.BindNewPipeAndPassRemote();
+
+  base::MockCallback<base::OnceClosure> disconnect_handler;
+  receiver.set_disconnect_handler(disconnect_handler.Get());
+
+  base::RunLoop run_loop;
+  EXPECT_CALL(disconnect_handler, Run()).WillOnce([&run_loop]() {
+    run_loop.Quit();
+  });
+
+  driver(rfh).browser_events().ObserveFieldVisibility(test::MakeFieldGlobalId(),
+                                                      std::move(remote));
+
+  run_loop.Run();
 }
 
 // Tests that a renderer event with a FieldRendererId that doesn't belong to the
@@ -1071,6 +1130,33 @@ TEST_F(ContentAutofillDriverTest, FormSignaturesPreservedDuringRouting) {
             base::NumberToString(expected_alternative_signature.value()));
   EXPECT_EQ(predictions->front().structural_form_signature,
             base::NumberToString(expected_structural_signature.value()));
+}
+
+// Tests that the policy-controlled feature "autofill" is force-enabled in the
+// main frame and same-origin descendants.
+TEST_F(ContentAutofillDriverTest, AutofillPolicyControlledFeature) {
+  auto create_rfh = [](content::RenderFrameHost* parent, std::string_view url) {
+    return content::NavigationSimulator::NavigateAndCommitFromDocument(
+        GURL(url), content::RenderFrameHostTester::For(parent)->AppendChild(
+                       std::string(url)));
+  };
+
+  content::RenderFrameHost* main = main_frame();
+  content::RenderFrameHost* same1 = create_rfh(main, "https://a.test/same1");
+  content::RenderFrameHost* cross1 = create_rfh(main, "https://b.test/cross1");
+  content::RenderFrameHost* same2 = create_rfh(cross1, "https://a.test/same2");
+  content::RenderFrameHost* cross2 = create_rfh(same1, "https://b.test/cross2");
+
+  ASSERT_EQ(main->GetLastCommittedOrigin(), same1->GetLastCommittedOrigin());
+  ASSERT_EQ(main->GetLastCommittedOrigin(), same2->GetLastCommittedOrigin());
+  ASSERT_NE(main->GetLastCommittedOrigin(), cross1->GetLastCommittedOrigin());
+  ASSERT_NE(main->GetLastCommittedOrigin(), cross2->GetLastCommittedOrigin());
+
+  EXPECT_TRUE(driver(main).IsPolicyControlledFeatureAutofillEnabled());
+  EXPECT_TRUE(driver(same1).IsPolicyControlledFeatureAutofillEnabled());
+  EXPECT_TRUE(driver(same2).IsPolicyControlledFeatureAutofillEnabled());
+  EXPECT_FALSE(driver(cross1).IsPolicyControlledFeatureAutofillEnabled());
+  EXPECT_FALSE(driver(cross2).IsPolicyControlledFeatureAutofillEnabled());
 }
 
 }  // namespace

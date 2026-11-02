@@ -7,14 +7,12 @@
 <translation id="1026101648481255140">Reia instalarea</translation>
 <translation id="102763973188675173">Personalizează și controlează Google Chrome. Este disponibilă o actualizare.</translation>
 <translation id="1028061813283459617">Pentru a șterge datele de navigare doar de pe acest dispozitiv, dar nu și din Contul Google, <ph name="BEGIN_LINK" />deconectează-te de la Chrome<ph name="END_LINK" />.</translation>
+<translation id="1028770388543831319">Beneficiază de cele mai bune funcții de siguranță de la Google din mers, cu aplicația Chrome pe telefon</translation>
 <translation id="1042270987544905725">Dă clic pentru a închide dialogul de conectare la Chrome</translation>
 <translation id="1051793555070215510">Ajută-ne să îmbunătățim modul incognito, răspunzând la acest sondaj de un minut.</translation>
 <translation id="1055295352198814912">Afișează Gemini în Chrome în bara de meniu Mac și activează comanda rapidă de la tastatură</translation>
 <translation id="1059838145689930908">Pentru a folosi această extensie ca <ph name="USER_EMAIL_ADDRESS" />, conectează-te la Chrome.</translation>
 <translation id="1065672644894730302">Preferințele dvs. nu pot fi citite. Este posibil ca unele funcții să nu fie disponibile, iar modificările aduse preferințelor nu vor fi salvate.</translation>
-<translation id="1070377999570795893">Un alt program de pe computerul tău a adăugat o extensie care poate schimba modul în care funcționează Chrome.
-
-<ph name="EXTENSION_NAME" /></translation>
 <translation id="1086486568852410168">Caută cu Google Lens</translation>
 <translation id="1088300314857992706"><ph name="USER_EMAIL_ADDRESS" /> a folosit Chrome anterior</translation>
 <translation id="110877069173485804">Acesta este browserul dvs. Chrome</translation>
@@ -36,11 +34,11 @@
 <translation id="1341711321000856656">Poți comuta ca să vezi parolele din alt profil Chrome</translation>
 <translation id="1343830902827845050">Conectează-te la Chrome</translation>
 <translation id="1356661055722410047">Nou! Poți traduce atât textul, cât și imaginile de pe ecran</translation>
+<translation id="1361351916482714918">Navighează mai inteligent cu Google Lens</translation>
 <translation id="1363996462118479832">ChromeOS nu a putut sincroniza datele din cauza unei erori la conectare.</translation>
 <translation id="137466361146087520">Google Chrome Beta</translation>
 <translation id="1383876407941801731">Caută</translation>
 <translation id="1399397803214730675">Acest computer are deja o versiune mai recentă de Google Chrome. Dacă software-ul nu funcționează, dezinstalați Google Chrome și încercați din nou.</translation>
-<translation id="1404026649028693342">Afișează întotdeauna Modul AI</translation>
 <translation id="141901961143729572">Spune-ți părerea</translation>
 <translation id="1425903838053942728">{COUNT,plural, =0{Chrome s-a actualizat. Poți folosi cea mai recentă versiune după ce relansezi browserul. Apoi, filele actuale se vor redeschide.}=1{Chrome s-a actualizat. Poți folosi cea mai recentă versiune după ce relansezi browserul. Apoi, filele actuale se vor redeschide. Fereastra incognito nu se va mai deschide.}few{Chrome s-a actualizat. Poți folosi cea mai recentă versiune după ce relansezi browserul. Apoi, filele actuale se vor redeschide. Cele # ferestre incognito nu se vor mai deschide.}other{Chrome s-a actualizat. Poți folosi cea mai recentă versiune după ce relansezi browserul. Apoi, filele actuale se vor redeschide. Cele # de ferestre incognito nu se vor mai deschide.}}</translation>
 <translation id="1434626383986940139">Aplicații Chrome Canary</translation>
@@ -54,35 +52,42 @@
 <translation id="1547295885616600893">ChromeOS este posibil datorită unui <ph name="BEGIN_LINK_CROS_OSS" />software open source<ph name="END_LINK_CROS_OSS" /> suplimentar.</translation>
 <translation id="1547469039832541117">Încheie activitatea evidențiată.</translation>
 <translation id="1553358976309200471">Actualizează Chrome</translation>
-<translation id="1585717515139318619">Un alt program de pe computer a adăugat o temă care poate schimba modul în care funcționează Chrome.
-
-<ph name="EXTENSION_NAME" /></translation>
 <translation id="1587223624401073077">Google Chrome utilizează camera foto.</translation>
 <translation id="1587325591171447154"><ph name="FILE_NAME" /> este periculos, așadar Chrome l-a blocat.</translation>
 <translation id="1597911401261118146">Ca să verifici dacă parolele sunt protejate împotriva încălcării securității datelor și a altor probleme de securitate, <ph name="BEGIN_LINK" />conectează-te la Chrome<ph name="END_LINK" />.</translation>
+<translation id="1619639070275605589">Această acțiune:
+          <ph name="LINE_BREAKS" />
+            • va reinițializa pagina de pornire, pagina Filă nouă, motorul de căutare și filele fixate;
+            <ph name="LINE_BREAK" />
+            • va dezactiva extensiile;
+            <ph name="LINE_BREAK" />
+            • va șterge cookie-urile și alte date temporare privind site-urile;
+            <ph name="LINE_BREAK" />
+            • va reinițializa comenzile rapide Chrome.
+            <ph name="LINE_BREAKS" />
+            Marcajele, istoricul și parolele salvate nu vor fi afectate.</translation>
 <translation id="1619887657840448962">Pentru mai multă siguranță în Chrome, am dezactivat următoarea extensie care nu este inclusă în <ph name="IDS_EXTENSION_WEB_STORE_TITLE" /> și care este posibil să fi fost adăugată fără știrea ta.</translation>
 <translation id="1628000112320670027">Obține ajutor privind Chrome</translation>
 <translation id="1640672724030957280">Se descarcă…</translation>
 <translation id="1651617469580841801">Când folosești Google Lens, titlul paginii, adresa URL și conținutul, inclusiv PDF-urile, sunt trimise la Google. <ph name="LEARN_MORE" /></translation>
 <translation id="1662146548738125461">Despre sistemul de operare Chrome Flex</translation>
-<translation id="1665867022636014702">Folosește setările browserului recomandate de Google</translation>
 <translation id="1674870198290878346">Deschide linkul într-o fereastră Chrome inco&amp;gnito</translation>
 <translation id="1682634494516646069">Google Chrome nu poate citi și scrie în directorul propriu de date: <ph name="USER_DATA_DIRECTORY" /></translation>
 <translation id="1688214853608504530">Când introduci text în bara de adrese sau în caseta de căutare, Chrome trimite ceea ce introduci către instrumentele de căutare, AI și de agent ale organizației tale pentru a primi sugestii.</translation>
 <translation id="1698376642261615901">Google Chrome este un browser web care rulează pagini web și aplicații cu o viteză extraordinară. Este rapid, stabil și ușor de utilizat. Navigați pe web beneficiind de mai multă siguranță datorită protecției împotriva programelor malware și a phishingului, care este încorporată în Google Chrome.</translation>
 <translation id="1713301662689114961">{0,plural, =1{Chrome se va relansa într-o oră}few{Chrome se va relansa în # ore}other{Chrome se va relansa în # de ore}}</translation>
 <translation id="1722488837206509557">Astfel, vei putea să selectezi dintre dispozitivele disponibile și să afișezi conținut pe acestea.</translation>
+<translation id="1724094881572874997">Pentru a-ți proteja activitatea în Chrome, organizația ta va putea să vadă sau să gestioneze anumite informații când te conectezi la Chrome.</translation>
 <translation id="177180974022074201">Încearcă cu Gemini în Chrome</translation>
 <translation id="1786003790898721085">Asigură-te că te-ai conectat la Chrome pe <ph name="TARGET_DEVICE_NAME" /> și încearcă din nou să trimiți.</translation>
 <translation id="1786044937610313874">Comenzile rapide se deschid în Chrome</translation>
-<translation id="178701303897325119">Extensia nu mai este acceptată. Chrome recomandă să o elimini.</translation>
 <translation id="1812689907177901597">Dacă dezactivezi, te poți conecta la site-uri Google ca Gmail fără a te conecta la Chrome</translation>
 <translation id="1821644463306970002">{NUM_TABS,plural, =1{Chrome recomandă să întrerupi fila care încetinește browserul}few{Chrome recomandă să întrerupi filele care încetinesc browserul}other{Chrome recomandă să întrerupi filele care încetinesc browserul}}</translation>
 <translation id="1832046143430087831">Accelerează site-urile cu motorul V8 din Chrome, dar reduce ușor rezistența Chrome la atacuri. Setarea este dezactivată.</translation>
 <translation id="1838374766361614909">Șterge căutarea</translation>
 <translation id="1843347690926158494">Caută această filă cu Google Lens</translation>
 <translation id="1849248141818021764">Numai un utilizator care știe expresia ta de acces îți poate citi datele criptate. Expresia de acces nu este trimisă la sau stocată de Google. Dacă uiți expresia de acces sau dorești să modifici această setare, va trebui să <ph name="BEGIN_LINK" />ștergi datele Chrome din cont<ph name="END_LINK" />.</translation>
-<translation id="1860536484129686729">Chrome are nevoie de permisiune ca să acceseze camera foto pentru acest site</translation>
+<translation id="1856809424654973980">Folosește aplicația Chrome pentru a continua navigarea din mers</translation>
 <translation id="1867503717113754604">Conectează-te la Chrome cu Contul Google pentru a folosi <ph name="START_GLIC_STYLING" />Gemini<ph name="END_GLIC_STYLING" /></translation>
 <translation id="1873233029667955273">Google Chrome nu este browserul prestabilit</translation>
 <translation id="1874309113135274312">Google Chrome Beta (mDNS-In)</translation>
@@ -91,15 +96,17 @@
 <translation id="1896602904211344018">Descarcă aplicația Chrome.</translation>
 <translation id="1919130412786645364">Permite conectarea la Chrome</translation>
 <translation id="1953553007165777902">Se descarcă… Timp rămas: <ph name="MINUTE" /> minute</translation>
+<translation id="1975400514743766362">Profită de siguranța oferită de Google din mers, cu aplicația Chrome pe <ph name="DEVICE_TYPE" /></translation>
 <translation id="1979600810166324878">Protejează-te mai bine în mișcare cu Navigarea sigură îmbunătățită în Chrome pentru iOS</translation>
 <translation id="2001586581944147178">Împiedică persoanele care au acces la traficul tău de internet să vadă ce site-uri accesezi. Chrome folosește o conexiune securizată pentru a căuta adresa IP a unui site în DNS (Sistemul denumirilor de domenii).</translation>
-<translation id="2008942457798486387">{NUM_EXTENSIONS,plural, =1{Extensia nu mai este acceptată. Chrome recomandă să o elimini.}few{Aceste extensii nu mai sunt acceptate. Chrome recomandă să le elimini.}other{Aceste extensii nu mai sunt acceptate. Chrome recomandă să le elimini.}}</translation>
+<translation id="2005658457661191636">Folosește aplicația Chrome pentru a profita din mers de cele mai bune instrumente de cumpărături</translation>
 <translation id="2018528049276128029">Fiecare profil conține propriile informații Chrome, cum ar fi marcaje, istoric, parole și altele</translation>
 <translation id="2018879682492276940">Nu s-a instalat. Încearcă din nou.</translation>
 <translation id="2024959665595762054">Pentru a folosi și a salva datele Chrome în Contul Google, confirmă-ți identitatea</translation>
 <translation id="2034233344106846793">Chrome face automat upgrade conexiunilor nesecurizate la HTTPS, dacă este posibil</translation>
 <translation id="2039417478970545937">Setări.</translation>
-<translation id="2066690553719545730">Afișează întotdeauna Modul AI</translation>
+<translation id="2040220733769034247">Scanează codul QR cu telefonul pentru a descărca Chrome și a te conecta la Contul Google.</translation>
+<translation id="2050189601866423230">Poți să fixezi Modul AI din Căutarea Google pentru a pune întrebări în timp ce navighezi</translation>
 <translation id="2091012649849228750">Pentru a primi actualizările Google Chrome viitoare, vei avea nevoie de Windows 10 sau o versiune ulterioară. Acest computer folosește Windows 8.</translation>
 <translation id="2094648590148273905">Condițiile pentru sistemul de operare Chrome Flex</translation>
 <translation id="2094919256425865063">Ieși din Chrome oricum?</translation>
@@ -109,6 +116,7 @@
 <translation id="2120620239521071941">Astfel, se vor șterge <ph name="ITEMS_COUNT" /> elemente de pe acest dispozitiv. Pentru a recupera datele mai târziu, conectează-te la Chrome ca <ph name="USER_EMAIL" />.</translation>
 <translation id="2121284319307530122">Relansează pentru a actualiza &amp;Chrome</translation>
 <translation id="2123055963409958220">Contribuie la îmbunătățirea browserului Chrome raportând <ph name="BEGIN_LINK" />setările actuale<ph name="END_LINK" /></translation>
+<translation id="2125838419757773031">Selectează regiunea ecranului pentru căutare</translation>
 <translation id="2126108037660393668">Fișierul descărcat nu a putut fi verificat.</translation>
 <translation id="2128411189117340671">Gestionează profilurile Chrome</translation>
 <translation id="2137162749895930932">Închide ecranul de traducere</translation>
@@ -129,7 +137,6 @@
 <translation id="2307973900865360088">Păstrează în bara de andocare</translation>
 <translation id="2309047409763057870">Aceasta este o instalare secundară a browserului Google Chrome și nu poate fi setat ca browser prestabilit.</translation>
 <translation id="2345992953227471816">Chrome a descoperit că următoarele extensii conțin programe malware:</translation>
-<translation id="2348335408836342058">Chrome are nevoie de permisiune ca să acceseze camera foto și microfonul pentru acest site</translation>
 <translation id="2359808026110333948">Continuă</translation>
 <translation id="2403703063067034158">Eroare la pornire: se execută o altă instanță de configurare. Încearcă din nou mai târziu.</translation>
 <translation id="2409816192575564775">{NUM_DEVICES,plural, =0{Un dispozitiv HID a fost accesat de una sau mai multe extensii Chrome}=1{Un dispozitiv HID este accesat de una sau mai multe extensii Chrome}few{# dispozitive HID sunt accesate de una sau mai multe extensii Chrome}other{# de dispozitive HID sunt accesate de una sau mai multe extensii Chrome}}</translation>
@@ -138,6 +145,7 @@
 <translation id="2472092250898121027">Această extensie conține programe malware și este nesigură. Elimin-o din Chromium ca să nu mai poată vedea și modifica datele tale de pe site-urile pe care le accesezi, inclusiv informațiile cu caracter personal.</translation>
 <translation id="2485422356828889247">Dezinstalează</translation>
 <translation id="2513154137948333830">Este necesară repornirea: <ph name="INSTALL_SUCCESS" /></translation>
+<translation id="2523492931736391680">Lucrul tău este în siguranță în Chrome</translation>
 <translation id="2534365042754120737">Pentru a-ți proteja datele, permite browserului Chrome să elimine permisiunile de pe site-urile pe care nu le-ai accesat recent. Nu oprește notificările.</translation>
 <translation id="2556847002339236023">Organizația ta închide Chrome dacă nu este folosit timp de <ph name="TIMEOUT_DURATION" />. Datele de navigare au fost șterse. Aici pot fi incluse istoricul, completările automate și descărcările.</translation>
 <translation id="2563121210305478421">Relansezi Chrome?</translation>
@@ -167,7 +175,6 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="2747021967398957654">{count,plural, =1{Unele date Chrome nu au fost salvate încă în Contul Google. Așteaptă câteva minute înainte să te deconectezi. Dacă te deconectezi acum, aceste date (un articol) vor fi șterse.}few{Unele date Chrome nu au fost salvate încă în Contul Google. Așteaptă câteva minute înainte să te deconectezi. Dacă te deconectezi acum, aceste date ({count} articole) vor fi șterse.}other{Unele date Chrome nu au fost salvate încă în Contul Google. Așteaptă câteva minute înainte să te deconectezi. Dacă te deconectezi acum, aceste date ({count} de articole) vor fi șterse.}}</translation>
 <translation id="2753623023919742414">Dă clic pentru a căuta</translation>
 <translation id="2757826245013442432">{COUNT,plural, =0{Protecția avansată necesită relansarea Chrome pentru a aplica o actualizare}=1{Protecția avansată necesită relansarea Chrome pentru a aplica o actualizare. Fereastra incognito nu se va mai deschide.}few{Protecția avansată necesită relansarea Chrome pentru a aplica o actualizare. Cele # ferestre incognito nu se vor mai deschide.}other{Protecția avansată necesită relansarea Chrome pentru a aplica o actualizare. Cele # de ferestre incognito nu se vor mai deschide.}}</translation>
-<translation id="2765403129283291972">Chrome are nevoie de permisiune ca să acceseze microfonul pentru acest site</translation>
 <translation id="2797864378188255696">Când te conectezi la Servicii Google, cum ar fi Gmail sau YouTube, cu <ph name="USER_EMAIL" />, te poți conecta automat la Chrome cu același cont</translation>
 <translation id="2799162042226656283">Browserul tău Chrome</translation>
 <translation id="2799223571221894425">Repornește</translation>
@@ -189,6 +196,8 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="2945997411976714835">Eroare la instalare: procesul programului de instalare nu a început.</translation>
 <translation id="2969728957078202736"><ph name="PAGE_TITLE" /> – conectare la rețea – Chrome</translation>
 <translation id="2970681950995291301">Pentru a elimina Contul Google din Chrome, deconectează-te de la Chrome din pagina Setări</translation>
+<translation id="2976869732253036751">Primește alerte de urmărire a prețurilor cu Chrome pe telefon</translation>
+<translation id="2985091279808606502">Chrome are nevoie de permisiune pentru rețeaua locală pentru acest site</translation>
 <translation id="2991167882679440829">Parolele și alte date Chrome pe care le-ai salvat în Contul Google se vor elimina de pe acest dispozitiv. Pentru a le folosi din nou în Chrome, conectează-te din nou.</translation>
 <translation id="2994465299455873643">Oferă servicii de criptare și o modalitate sigură de a recupera <ph name="BROWSER_NAME" /> dacă devine învechit. Dacă acest serviciu este dezactivat, <ph name="BROWSER_NAME" /> poate să piardă accesul la datele criptate și este posibil ca <ph name="BROWSER_NAME" /> să nu se poată recupera.</translation>
 <translation id="3003694935412297923">Toate activitățile</translation>
@@ -221,12 +230,13 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="3222857603094643834">Caută orice în această pagină cu Google Lens</translation>
 <translation id="3226612997184048185">Dacă salvezi marcajele și în Contul Google, poți să urmărești prețurile produselor în Chrome și să primești notificări când scad</translation>
 <translation id="3242123554343253302">Adaugă un profil Chrome</translation>
+<translation id="3242486428260808857">Profită din plin de cumpărăturile online când folosești aplicația Chrome pe <ph name="DEVICE_TYPE" /></translation>
 <translation id="3245429137663807393">Dacă trimiți rapoarte privind folosirea Chrome, acestea includ adresele URL pe care le accesezi</translation>
+<translation id="3249558306861350254">Dă clic pe <ph name="BEGIN_BOLD" />Setează ca prestabilit<ph name="END_BOLD" /> în setările Windows.</translation>
 <translation id="3259748324892322072">Descarcă aplicația Chrome</translation>
 <translation id="3282568296779691940">Conectează-te la Chrome</translation>
 <translation id="3286538390144397061">Repornește acum</translation>
 <translation id="3292333338048274092">Apoi va trebui să repornești Chrome.</translation>
-<translation id="3324218984287646518">Întreabă Google Lens despre acest videoclip</translation>
 <translation id="3327226547491422998">Ulterior, Chrome te poate întreba dacă vrei să folosești informațiile salvate pentru a completa automat formulare</translation>
 <translation id="3352986031709923790">colțul din dreapta sus al zonei de căutare: dreapta <ph name="RIGHT" /> %, sus <ph name="TOP" /> %</translation>
 <translation id="3360895254066713204">Chrome Helper</translation>
@@ -240,16 +250,17 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="3451115285585441894">Se adaugă la Chrome...</translation>
 <translation id="345171907106878721">Adăugați-vă la Chrome</translation>
 <translation id="3453763134178591239">Condiții pentru sistemul de operare Chrome</translation>
-<translation id="3503306920980160878">Chrome are nevoie de acces la locația ta ca să permită accesul la locație pentru acest site</translation>
+<translation id="3475778264501649775">Accesează parolele, filele și multe altele din mers cu aplicația Chrome pe telefon</translation>
 <translation id="3539955434060988644">Deschide linkul într-o fereastră Chrome inco&amp;gnito</translation>
+<translation id="354621070532799440">Memento: cele mai bune funcții de siguranță de la Google la îndemână</translation>
+<translation id="3547866758548131919">Dă clic pe butonul Rezumă pentru a trimite acest document la Gemini în Chrome pentru a obține o prezentare generală rapidă și a pune întrebări suplimentare</translation>
 <translation id="3576528680708590453">Administratorul sistemului a configurat Google Chrome astfel încât să deschidă un browser secundar pentru a accesa <ph name="TARGET_URL_HOSTNAME" />.</translation>
 <translation id="3582972582564653026">Sincronizează și personalizează Chrome pe toate dispozitivele</translation>
 <translation id="3583751698304738917">Te-ai conectat deja ca <ph name="USER_EMAIL_ADDRESS" /> în alt profil Chrome</translation>
-<translation id="358381413217813387">Caută această pagină cu Google Lens</translation>
-<translation id="3589519427766620380">Întreabă Google Lens despre această pagină</translation>
 <translation id="3595784445906693824">Te conectezi la Chrome într-un profil nou?</translation>
 <translation id="3596080736082218006">{COUNT,plural, =0{Administratorul solicită să relansezi Chrome pentru a aplica o actualizare}=1{Administratorul solicită să relansezi Chrome pentru a aplica o actualizare. Fereastra incognito nu se va mai deschide.}few{Administratorul solicită să relansezi Chrome pentru a aplica o actualizare. Cele # ferestre incognito nu se vor mai deschide.}other{Administratorul solicită să relansezi Chrome pentru a aplica o actualizare. Cele # de ferestre incognito nu se vor mai deschide.}}</translation>
 <translation id="3597003331831379823">Nu s-a putut rula configurarea cu privilegii de nivel superior. <ph name="METAINSTALLER_ERROR" /></translation>
+<translation id="3598673391539778844">Afișează Gemini în Chrome în bara de sistem</translation>
 <translation id="3622716124581627104">Identifică lucruri sau locuri și copiază sau traduce text. Când folosești Google Lens, se trimite la Google o captură de ecran a paginii. <ph name="LEARN_MORE" /></translation>
 <translation id="3622797965165704966">Acum este mai ușor să folosiți Chrome cu Contul Google și pe computerele utilizate în comun.</translation>
 <translation id="3635073343384702370">Chrome îți poate verifica parolele dacă le salvezi</translation>
@@ -280,6 +291,7 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="3885770153807205175">Selector de limbă</translation>
 <translation id="3889417619312448367">Dezinstalează Google Chrome</translation>
 <translation id="3892148308691398805">Copiază textul</translation>
+<translation id="3893650521827656233">Beneficiază de cele mai bune funcții de siguranță de la Google din mers cu Chrome.</translation>
 <translation id="3941890832296813527">Eroare la instalare: numele de fișier al programului de instalare nu este valid sau acceptat.</translation>
 <translation id="395904275706073188">Paginile protejate nu pot fi citite. Încearcă altă pagină.</translation>
 <translation id="3965532487635448963">Afișează Gemini în Chrome în bara de sistem și activează comanda rapidă de la tastatură</translation>
@@ -290,6 +302,7 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="4012899077942246412">Când te conectezi, poți folosi parolele și multe altele din Contul tău Google în Chrome. Pentru a modifica această setare, accesează Contul tău în Chrome.</translation>
 <translation id="4022972681110646219">Tradu ecranul</translation>
 <translation id="4023601594785368013">Limba originală: <ph name="LANGUAGE" /></translation>
+<translation id="4034249157893816477">Încorporat în Chrome pentru a te ajuta să creezi, să salvezi și să completezi automat parole puternice. Adaugă comanda rapidă pentru acces ușor.</translation>
 <translation id="4035053306113201399">Pentru a se aplica actualizarea, sistemul de operare Chrome trebuie să fie repornit.</translation>
 <translation id="4050175100176540509">În cea mai recentă versiune sunt disponibile îmbunătățiri de securitate și funcții noi importante.</translation>
 <translation id="4053720452172726777">Personalizați și controlați Google Chrome</translation>
@@ -311,6 +324,8 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="4242034826641750751">Chrome are nevoie de acces la cameră și microfon pentru acest site</translation>
 <translation id="424864128008805179">Te deconectezi de la Chrome?</translation>
 <translation id="4251615635259297716">Vă conectați datele Chrome cu acest cont?</translation>
+<translation id="4252262470181310206">Lucrează fără întreruperi cu aplicațiile preferate, cum ar fi Google Drive și YouTube, din mers, cu Chrome.</translation>
+<translation id="4266456958461406346">Deschide meniul Mai multe <ph name="THREE_DOTS_ICON" /></translation>
 <translation id="4280647692742956593">Descarcă Chrome pe telefon pentru a deschide sau a crea grupuri de file noi din mers.</translation>
 <translation id="4281844954008187215">Condiții de furnizare a serviciilor</translation>
 <translation id="430327780270213103">Permite extensiei să afișeze solicitări de acces în bara de instrumente Chrome</translation>
@@ -328,13 +343,14 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="4400772909124543403">Nu este disponibilă nicio actualizare</translation>
 <translation id="4427306783828095590">Protecția îmbunătățită face mai multe pentru blocarea phishingului și a programelor malware</translation>
 <translation id="4434353761996769206">Eroare în programul de instalare: <ph name="INSTALLER_ERROR" /></translation>
+<translation id="4437295824090654417">Trimite acest document la Gemini în Chrome pentru a obține o prezentare generală rapidă și a pune întrebări suplimentare</translation>
 <translation id="4450664632294415862">Chrome – conectare la rețea – <ph name="PAGE_TITLE" /></translation>
 <translation id="4458462641685292929">O altă operație din Google Chrome este în curs de desfășurare. Încearcă din nou mai târziu.</translation>
 <translation id="4459234553906210702">Ad measurement le dă site-urilor pe care le accesezi posibilitatea de a solicita informații de la Chrome care le ajută să măsoare performanța anunțurilor asociate. Ad measurement restricționează urmărirea pe mai multe site-uri prin transferul câtor mai puține informații între site-uri.</translation>
 <translation id="4493028449971051158">Eroare la pornire: rulează programul de instalare ca administrator.</translation>
 <translation id="4501471624619070934">Instalarea nu a reușit deoarece accesul este restricționat în această țară.</translation>
 <translation id="4571503333518166079">Accesează setările pentru notificări Chrome</translation>
-<translation id="4592634244097223647">Întreabă Google despre această imagine</translation>
+<translation id="4580939929828762295">Rămâi în siguranță cu Managerul de parole Google</translation>
 <translation id="459622048091363950">Odată ce Chrome are acces, site-urile web îți vor putea solicita accesul.</translation>
 <translation id="4598116752460667024">Caută orice proces din listă.</translation>
 <translation id="4600710005438004015">Chrome nu s-a putut actualiza la cea mai recentă versiune. Astfel, pierzi noi funcții și remedieri de securitate.</translation>
@@ -385,6 +401,7 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="5127558335897923940">Păstrează Chrome în bara de andocare pentru a-l accesa rapid oricând</translation>
 <translation id="5132929315877954718">Descoperă aplicații, jocuri, extensii și teme extraordinare pentru Google Chrome.</translation>
 <translation id="5139423532931106058">Personalizează-ți profilul Chrome</translation>
+<translation id="5152381187352661267">Abilități în Chrome</translation>
 <translation id="5163087008893166964">Bun venit la Chrome; fereastră de browser nouă deschisă</translation>
 <translation id="5166439563123238795">Chrome are nevoie de permisiune pentru a-ți urmări mâinile</translation>
 <translation id="5169778651486082413">Folosește-ți parolele cu Chrome pe telefon</translation>
@@ -397,7 +414,9 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="521447420733633466">Dacă permiți accesul la un dispozitiv, familia și prietenii pot să navigheze separat și să configureze Chrome cum doresc</translation>
 <translation id="5234764350956374838">Închide</translation>
 <translation id="5239627039202700673">Folosește Chrome oricând dai clic pe linkuri în mesaje, documente și alte aplicații</translation>
+<translation id="524751727772074981">Întreabă orice în locul în care te afli, cu Gemini în Chrome</translation>
 <translation id="5251420635869119124">Invitații pot folosi Chrome fără a lăsa nicio urmă.</translation>
+<translation id="5271833978500241046">Folosește-le împreună cu alte funcții Gemini în Chrome</translation>
 <translation id="5286907366254680517">Detectat</translation>
 <translation id="5320351714793324716">Dacă permiți cookie-uri, Chrome le poate folosi pentru preîncărcare</translation>
 <translation id="5321325624576443340">Aplicația Google Lens nu este disponibilă. Încearcă din nou mai târziu.</translation>
@@ -410,10 +429,12 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="5386244825306882791">Stabilește și ce pagină se afișează când porniți Chrome sau când căutați din caseta polivalentă.</translation>
 <translation id="5394833366792865639">Arată o filă Chrome</translation>
 <translation id="5402307365844630024">Activează / dezactivează Gemini în Chrome Beta</translation>
+<translation id="541844421954567481">Accesează parolele, filele și multe altele din mers cu aplicația Chrome pe <ph name="DEVICE_TYPE" /></translation>
 <translation id="5430073640787465221">Fișierul dvs. de preferințe este fie deteriorat, fie nevalid. Google Chrome nu poate recupera setările dvs.</translation>
 <translation id="5465210843490471889">Alege un profil Chrome pe care să-l folosești cu <ph name="START_GLIC_STYLING" />Gemini<ph name="END_GLIC_STYLING" /></translation>
 <translation id="547202872422499512">Chrome se lansează acum când pornește Windows, astfel că poți începe să navighezi instantaneu. Poți dezactiva această opțiune din setări.</translation>
 <translation id="5486346529181556467">Îmbunătățește siguranța online pentru toată lumea raportând un site pe care îl consideri dăunător. Află mai multe despre <ph name="BEGIN_LINK" />politica Google privind site-urile nesigure<ph name="END_LINK" />.</translation>
+<translation id="5503069778428381665">Când folosești Google Lens pe computer, titlul paginii, adresa URL și conținutul, inclusiv PDF-urile, sunt trimise la Google</translation>
 <translation id="5524890928877629608">colțul din stânga sus al zonei de căutare: stânga <ph name="LEFT" /> %, sus <ph name="TOP" /> %</translation>
 <translation id="5529390769101499214">Gestionează extensiile dând clic pe Extensii în meniul principal Chrome.</translation>
 <translation id="5550137307985173298">Dă clic pe butonul Personalizează Chrome din pagina Filă nouă pentru a-i oferi browserului Chrome un aspect nou</translation>
@@ -424,6 +445,7 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="5602351063754773347">Chrome recomandă să o elimini. <ph name="BEGIN_LINK" />Află mai multe despre extensiile acceptate<ph name="END_LINK" /></translation>
 <translation id="5610759359710387751">Personalizează Chrome</translation>
 <translation id="5649156266046089790">Cu ajutorul profilurilor Chrome, poți separa toate informațiile din Chrome. Creează profiluri pentru prieteni și familie sau pentru muncă și timp liber.</translation>
+<translation id="5655063652337498476">Descoperă produse cu camera foto, urmărește scăderile de prețuri și multe altele din mers cu Chrome pe iOS.</translation>
 <translation id="565744775970812598">Este posibil ca <ph name="FILE_NAME" /> să fie periculos, așadar Chrome l-a blocat.</translation>
 <translation id="566040795510471729">P&amp;ersonalizează Chrome</translation>
 <translation id="566568153320186256">Chrome economisește energia bateriei limitând activitatea de fundal și efectele vizuale, cum ar fi derularea lină și ratele de cadre video. <ph name="BEGIN_LINK" />Află mai multe despre Economisirea energiei<ph name="END_LINK" /></translation>
@@ -434,16 +456,8 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="569897634095159764">Nu se poate realiza conexiunea la internet. Pentru serverul proxy este necesară autentificarea.</translation>
 <translation id="5709557627224531708">Setează Chrome ca browser prestabilit</translation>
 <translation id="5719246646468301581">Termenii și condițiile suplimentare pentru Google Chrome și ChromeOS</translation>
-<translation id="5719324992913248873">Această acțiune:
-        <ph name="LINE_BREAKS" />
-         • va reinițializa unele setări Chrome și comenzi rapide pentru Chrome;
-          <ph name="LINE_BREAK" />
-          • va dezactiva extensiile;
-          <ph name="LINE_BREAK" />
-          • va șterge cookie-urile și alte date temporare privind site-urile.
-           <ph name="LINE_BREAKS" />
-           Marcajele, istoricul și parolele salvate nu vor fi afectate.</translation>
 <translation id="5736850870166430177">Dacă un site încearcă să îți fure parola sau descarci un fișier dăunător, Chrome poate să trimită adresele URL, inclusiv fragmente din conținutul paginilor, către funcția Navigare sigură</translation>
+<translation id="5742003800414899269">Folosește aplicația Chrome pentru a folosi cele mai bune instrumente AI din mers</translation>
 <translation id="5756509061973259733">Există deja un profil Chrome asociat acestui cont pe dispozitiv</translation>
 <translation id="5759947850379142561">Selectează orice text sau imagine pentru a căuta cu Google Lens sau apasă pe Escape pentru a ieși din Google Lens</translation>
 <translation id="5779427581965287859">Setează Chrome ca browser prestabilit și fixează-l în bara de activități</translation>
@@ -456,6 +470,7 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="586971344380992563"><ph name="BEGIN_LINK" />Chrome te avertizează<ph name="END_LINK" /> cu privire la site-urile și descărcările nesigure</translation>
 <translation id="5894164573378901688">Pentru a folosi Gemini în Chrome, conectează-te cu alt Cont Google</translation>
 <translation id="5895138241574237353">Reîncepe</translation>
+<translation id="5899008323405946573">Folosește cele mai bune instrumente AI de la Google cu aplicația Chrome pe telefon</translation>
 <translation id="5903106910045431592"><ph name="PAGE_TITLE" /> – conectare la rețea</translation>
 <translation id="5924017743176219022">Se conectează la internet…</translation>
 <translation id="5925596746603389877">Descarcă programul de instalare Chrome</translation>
@@ -464,7 +479,6 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="5941830788786076944">Setează Google Chrome ca browser prestabilit</translation>
 <translation id="5947104538377036631">Comandă rapidă pentru Chrome</translation>
 <translation id="5960071705175224773">Setările au fost modificate de o aplicație necunoscută</translation>
-<translation id="5968400720580217226">Modul AI</translation>
 <translation id="5980111191913430208">Extensiile, aplicațiile și temele din surse necunoscute pot să dăuneze dispozitivului. Chrome recomandă să le instalezi numai din <ph name="IDS_EXTENSION_WEB_STORE_TITLE" /></translation>
 <translation id="6003112304606738118">Se descarcă… Au rămas <ph name="HOURS" /> ore</translation>
 <translation id="6008161919456049856">Parolele, metodele de plată și adresele pe care le-ai salvat în Contul Google vor fi eliminate de pe acest dispozitiv. Pentru a le folosi din nou în Chrome, conectează-te din nou.</translation>
@@ -480,7 +494,9 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="6070348360322141662">Pentru un plus de securitate, Google Chrome îți va cripta datele</translation>
 <translation id="6075300983329039771">Organizația ta, <ph name="MANAGER" />, îți solicită să te conectezi la Chrome</translation>
 <translation id="6113794647360055231">Chrome a devenit și mai bun</translation>
+<translation id="6116004140911290070">Activează funcția Abilități în Chrome</translation>
 <translation id="6116252277240876590">Această limbă se folosește pentru a afișa meniuri, setări, alerte și alte texte în Chrome</translation>
+<translation id="6117557075995890082">Folosește aplicația Chrome pentru a profita de siguranța oferită de Google din mers</translation>
 <translation id="6127237283587442951">Folosește Chrome în mod prestabilit și fixează-l</translation>
 <translation id="6134085236017727171">Pentru a folosi microfonul, permite accesul browserului Chrome în <ph name="BEGIN_LINK" />setările de sistem<ph name="END_LINK" />.</translation>
 <translation id="6135456723633883042">Aceste file folosesc resurse suplimentare. Pentru a-ți îmbunătăți performanța, permite-i browserului Chrome să le dezactiveze.</translation>
@@ -494,9 +510,6 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="6180522807229584611">Această filă folosește resurse suplimentare. Pentru a-ți îmbunătăți performanța, permite-i browserului Chrome să le dezactiveze.</translation>
 <translation id="6182736845697986886">Nu s-a instalat, din cauza unei erori interne a serverului de actualizare.</translation>
 <translation id="6192058120268468905">Contul tău în Chrome</translation>
-<translation id="6220551899604141979"><ph name="PARTNER_NAME" /> a adăugat o extensie care poate schimba modul în care funcționează Chrome.
-
-<ph name="EXTENSION_NAME" /></translation>
 <translation id="6235018212288296708">Regula de intrare pentru Google Chrome pentru a permite traficul mDNS.</translation>
 <translation id="624230925347970731">Chrome se va închide în curând</translation>
 <translation id="6247557882553405851">Manager de parole Google</translation>
@@ -540,6 +553,7 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="6539493053177300926">Acces ușor pentru a folosi Gemini în Chrome pe dispozitiv, chiar dacă browserul Chrome este minimizat.</translation>
 <translation id="6585124893636629274">Închide Gemini în Chrome</translation>
 <translation id="659498884637196217">În Manager de parole Google pe acest dispozitiv</translation>
+<translation id="6613949864921837107">Păstrează parolele, marcajele și istoricul perfect sincronizate pe toate dispozitivele setând Chrome ca browser prestabilit.</translation>
 <translation id="6631524303639368205">Continuă de unde ai rămas: Chrome a restabilit filele din ultima sesiune. Poți dezactiva această opțiune în</translation>
 <translation id="6632473616050862500">ChromeOS Flex este posibil datorită unui <ph name="BEGIN_LINK_CROS_OSS" />software open source<ph name="END_LINK_CROS_OSS" /> suplimentar.</translation>
 <translation id="6634299872736643004">Modificările acestei setări se vor aplica după ce Chrome repornește.</translation>
@@ -551,6 +565,7 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="6706525880530967390">{count,plural, =1{Chrome trebuie să-ți verifice identitatea pentru ca unele date să poată fi salvate în Contul Google și folosite pe toate dispozitivele. Dacă te deconectezi acum, aceste date (un articol) vor fi șterse.}few{Chrome trebuie să-ți verifice identitatea pentru ca unele date să poată fi salvate în Contul Google și folosite pe toate dispozitivele. Dacă te deconectezi acum, aceste date ({count} articole) vor fi șterse.}other{Chrome trebuie să-ți verifice identitatea pentru ca unele date să poată fi salvate în Contul Google și folosite pe toate dispozitivele. Dacă te deconectezi acum, aceste date ({count} de articole) vor fi șterse.}}</translation>
 <translation id="6712881677154121168">Eroare la descărcare: <ph name="DOWNLOAD_ERROR" />.</translation>
 <translation id="6718739135284199302">Crește eficiența în Chrome</translation>
+<translation id="6723445727540769832">Beneficiază de tot ce este mai bun la Google cu aplicația Chrome pe telefon</translation>
 <translation id="6734827584173583205">Nu ai accesat recent site-ul. Chrome a eliminat <ph name="PERMISSION_1" />, <ph name="PERMISSION_2" /> și încă <ph name="COUNT" />.</translation>
 <translation id="6735387454586646204">ChromeOS Flex</translation>
 <translation id="6750954913813541382">Pentru a corecta erorile de scriere, Chrome trimite la Google textul pe care îl introduci în browser</translation>
@@ -566,6 +581,7 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="6881299373831449287">Se actualizează Chrome</translation>
 <translation id="6885412569789873916">Aplicații Chrome Beta</translation>
 <translation id="6893363893008038481">Elimină contul din Chrome</translation>
+<translation id="689368324615299626">Beneficiază de tot ce este mai bun la Google cu aplicația Chrome pe <ph name="DEVICE_TYPE" /></translation>
 <translation id="6896758677409633944">Copiază</translation>
 <translation id="6908182077349113099">Păstrează parolele, marcajele și istoricul perfect sincronizate pe toate dispozitivele. Accesează cu ușurință funcțiile pe care le cunoști și apreciezi actualizând browserul prestabilit la Chrome.</translation>
 <translation id="6930294499209825">Menține software-ul Google actualizat. Dacă serviciul este dezactivat sau oprit, software-ul Google nu va fi actualizat, ceea ce înseamnă că vulnerabilitățile de securitate care pot apărea nu pot fi remediate și este posibil ca unele funcții să nu fie disponibile. Serviciul se dezinstalează singur când nu este folosit de software-ul Google.</translation>
@@ -589,6 +605,7 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="7071827361006050863">Chrome va șterge în curând datele de navigare</translation>
 <translation id="7085332316435785646">Alege dacă se include istoricul Chrome pentru experiențe mai personalizate în serviciile Google</translation>
 <translation id="7088681679121566888">Chrome este actualizat</translation>
+<translation id="708972073591616506">Folosește instrumentele tale Google AI preferate din mers cu Chrome pe iOS.</translation>
 <translation id="7096221564931416126">Selectează orice text sau imagine pentru a căuta cu Google Lens</translation>
 <translation id="7098166902387133879">Google Chrome utilizează microfonul.</translation>
 <translation id="7099479769133613710">Relansează pentru a actualiza sistemul de operare &amp;Chrome</translation>
@@ -623,6 +640,7 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="7481213027396403996">Beneficiază de cel mai înalt nivel de securitate de la Chrome</translation>
 <translation id="749228101751499733">Când te conectezi, poți folosi parolele și multe altele din Contul tău Google în Chrome. <ph name="SHORTCUT" /> îți poate modifica setările pentru serviciile Google.</translation>
 <translation id="7496017508659652909">Chrome preîncarcă paginile, astfel încât navigarea și căutarea să fie mai rapide. <ph name="BEGIN_LINK" />Află mai multe despre preîncărcarea paginilor<ph name="END_LINK" /></translation>
+<translation id="7510190804000607802">Memento: tot ce e mai bun de la Google la îndemâna ta</translation>
 <translation id="7514258452813684157">Google Updater Service</translation>
 <translation id="7515191208480168435">Poți fixa Google Lens pentru acces ușor</translation>
 <translation id="7535429826459677826">Google Chrome Dev</translation>
@@ -632,13 +650,10 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="7572537927358445944">Dezactivată • Chrome nu poate verifica de unde provine această extensie</translation>
 <translation id="7583399374488819119">Program de instalare <ph name="COMPANY_NAME" /></translation>
 <translation id="7596160425942761210">Poți folosi Chrome oricând dai clic pe linkuri în mesaje, documente și alte aplicații</translation>
-<translation id="7602868996817972616">Întreabă Google despre această pagină</translation>
-<translation id="760353356052806707">Un alt program de pe computerul tău a adăugat o aplicație care poate schimba modul în care funcționează Chrome.
-
-<ph name="EXTENSION_NAME" /></translation>
 <translation id="7606334485649076285">Sistemul de operare Google Chrome Flex</translation>
 <translation id="7627609214560473136">Pentru a-ți proteja datele, permite browserului Chrome să elimine permisiunile de pe site-urile pe care nu le-ai accesat recent.</translation>
 <translation id="7629695634924605473">Chrome te anunță dacă parolele tale sunt compromise</translation>
+<translation id="7629898584100520089">Inovațiile AI, cum ar fi abilitățile, sunt salvate în Contul tău Google și gestionate separat de Sincronizarea Chrome</translation>
 <translation id="7641148173327520642">Administratorul sistemului a configurat Google Chrome să deschidă <ph name="ALTERNATIVE_BROWSER_NAME" /> pentru a accesa <ph name="TARGET_URL_HOSTNAME" />.</translation>
 <translation id="7649070708921625228">Ajutor</translation>
 <translation id="7651907282515937834">Sigla Chrome Enterprise</translation>
@@ -680,6 +695,7 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="7951272445806340501">Pentru a se aplica actualizarea, sistemul de operare Chrome Flex trebuie să fie repornit.</translation>
 <translation id="7959172989483770734">Gestionează profilurile Chrome</translation>
 <translation id="7962410387636238736">Acest computer nu va mai primi actualizări pentru Google Chrome, deoarece Windows XP și Windows Vista nu mai sunt acceptate</translation>
+<translation id="7988335136512059384">Primește alerte privind scăderea prețurilor la articolele care te interesează cu aplicația Chrome pe telefon</translation>
 <translation id="8004582292198964060">Browser</translation>
 <translation id="8005666035647241369">În Manager de parole Google pe acest dispozitiv</translation>
 <translation id="8008534537613507642">Reinstalați Chrome</translation>
@@ -687,6 +703,7 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="8010081455002666927">Detectare automată</translation>
 <translation id="8013993649590906847">Dacă o imagine nu are o descriere utilă, Chrome va încerca să o completeze. Pentru a crea descrieri, imaginile sunt trimise la Google.</translation>
 <translation id="8019103195866286235">Dezvoltatorul a anulat publicarea acestei extensii și ar putea fi nesigură. Elimin-o din Chromium ca să nu mai poată vedea și modifica datele tale de pe site-urile pe care le accesezi, inclusiv informațiile cu caracter personal.</translation>
+<translation id="8038678618803403071">Accesează toate preferatele tale de la Google cu Chrome pe <ph name="DEVICE_TYPE" /></translation>
 <translation id="8040768861829554732">O extensie solicită să te conectezi la Chrome</translation>
 <translation id="8041795619940733262">Întreabă Google<ph name="LINE_BREAK" />despre această filă</translation>
 <translation id="80471789339884597">Mulțumim pentru instalare. Înainte să folosești <ph name="BUNDLE_NAME" /> trebuie să repornești toate browserele.</translation>
@@ -694,12 +711,14 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="8064965390968184078">1. Dă clic pe <ph name="BUTTON_LABEL" /> mai jos.
 2. Dă clic pe <ph name="BUTTON_2" /> în setările Windows.
 3. Dă clic pe <ph name="BUTTON_3" /> în notificarea Windows ca să fixezi Chrome în bara de activități pentru acces rapid.</translation>
+<translation id="8069447462453318634">Selectează Fixează în bara de instrumente</translation>
 <translation id="8074398340364918139">Pentru a căuta o anumită funcție sau extensie Chrome, introdu comanda rapidă respectivă în bara de adrese, urmată de tasta de pe tastatură selectată</translation>
 <translation id="8077579734294125741">Alte profiluri Chrome</translation>
 <translation id="8086881907087796310">Nu s-a instalat deoarece computerul nu îndeplinește cerințele minime de hardware.</translation>
 <translation id="8113883687556086139">Confirmă-ți identitatea pentru a folosi și a salva datele Chrome în contul <ph name="ACCOUNT_EMAIL" /></translation>
 <translation id="8115695070094288807">Se personalizează Chrome...</translation>
 <translation id="8118331347066725040">Trimite feedback pentru căutare cu Lens</translation>
+<translation id="812930250799242837">Te-ai conectat ca <ph name="USER_NAME" />, utilizator cu abonament Google. Deschide meniul contului.</translation>
 <translation id="8129812357326543296">Despre &amp;Google Chrome</translation>
 <translation id="813913629614996137">Se inițializează...</translation>
 <translation id="8162006532256575008">Folosește Chrome fără cont</translation>
@@ -732,8 +751,8 @@ Dacă această pagină nu funcționează conform așteptărilor, încearcă să 
 <translation id="842852285618875960">Ai atins limita de <ph name="BOOKMARK_LIMIT" /> marcaje pentru Google Chrome, așadar unele dintre marcaje nu au fost salvate încă în Contul Google.
 
 Nu poți salva marcaje noi în cont până când nu ștergi câteva. Dacă te deconectezi acum, marcajele nesalvate vor fi șterse.</translation>
-<translation id="8433638294851456451">Pentru a trimite un număr de aici pe telefonul Android, conectează-te la Chrome pe ambele dispozitive.</translation>
 <translation id="8458117863387545390">Instalează Chrome pe telefon</translation>
+<translation id="848851325211467878">Te-ai conectat ca <ph name="USER_NAME" />, <ph name="USER_EMAIL" />, utilizatoare / utilizator cu abonament Google. Deschide meniul contului.</translation>
 <translation id="8496177819998570653">Manager de p&amp;arole Google</translation>
 <translation id="8498858610309223613">Tocmai a fost aplicată o actualizare de securitate specială pentru Google Chrome. Repornește acum și filele vor fi restabilite.</translation>
 <translation id="8521348052903287641">Regula de intrare pentru Google Chrome Dev pentru a permite traficul mDNS.</translation>
@@ -746,7 +765,7 @@ Nu poți salva marcaje noi în cont până când nu ștergi câteva. Dacă te de
 <translation id="8590782867495422699">Redeschide Modul AI în Căutarea Google</translation>
 <translation id="8601359445272098721">Nou! Poți traduce atât textul, cât și imaginile de pe ecran selectând butonul Tradu ecranul</translation>
 <translation id="8614913330719544658">Google Chrome nu mai răspunde. Îl repornești acum?</translation>
-<translation id="861702415419836452">Chrome are nevoie de permisiunea de a accesa camera foto pentru a crea o hartă 3D a lucrurilor din jurul tău</translation>
+<translation id="8623450603356630491">Conectează-te la Chrome pe telefon</translation>
 <translation id="8624541899164515475">Setări, se deschide într-o filă nouă.</translation>
 <translation id="8625237574518804553">{0,plural, =1{Chrome se va relansa într-un minut}few{Chrome se va relansa în # minute}other{Chrome se va relansa în # de minute}}</translation>
 <translation id="8637932705841171563">Pentru a permite accesul la fereastră, permite înregistrarea ecranului pentru Chrome din Setări de sistem</translation>
@@ -757,7 +776,6 @@ Nu poți salva marcaje noi în cont până când nu ștergi câteva. Dacă te de
 <translation id="8712637175834984815">Am înțeles</translation>
 <translation id="8712767363896337380">Actualizarea este aproape gata! Relansează Chrome pentru a finaliza actualizarea.</translation>
 <translation id="8718062187489036808">Deconectează-te de la Chrome</translation>
-<translation id="8725440680697264016">Întreabă Google despre acest videoclip</translation>
 <translation id="873133009373065397">Google Chrome nu poate determina sau seta browserul prestabilit</translation>
 <translation id="8747073452963259673">colțul din stânga jos al zonei de căutare: stânga <ph name="LEFT" /> %, jos <ph name="BOTTOM" /> %</translation>
 <translation id="8748735421235723888">Chrome eliberează memoria din filele inactive. Astfel, filele active și alte aplicații beneficiază de mai multe resurse ale computerului și Chrome funcționează rapid. Filele inactive se reactivează automat când revii la ele. <ph name="BEGIN_LINK" />Află mai multe despre Economisirea memoriei<ph name="END_LINK" /></translation>
@@ -770,31 +788,42 @@ Nu poți salva marcaje noi în cont până când nu ștergi câteva. Dacă te de
 <translation id="8821043148920470810">Pentru a primi actualizările Google Chrome viitoare, vei avea nevoie de Windows 10 sau o versiune ulterioară. Acest computer folosește Windows 7.</translation>
 <translation id="8823341990149967727">Chrome nu este actualizat</translation>
 <translation id="8834965163890861871">Google Chrome încearcă să modifice parolele. Pentru a permite acest lucru, introdu parola pentru Windows.</translation>
+<translation id="8841151363570555833">Afișează Gemini în Chrome în bara de meniu Mac</translation>
 <translation id="8851180723659088381">{NUM_EXTENSIONS,plural, =1{Chrome recomandă să o elimini}few{Chrome recomandă să le elimini}other{Chrome recomandă să le elimini}}</translation>
 <translation id="8862326446509486874">Nu ai drepturile adecvate pentru instalarea la nivel de sistem. Încearcă să rulezi din nou programul de instalare ca Administrator.</translation>
 <translation id="8865415417596392024">Datele Chrome din cont</translation>
-<translation id="8883862939660515976">Întreabă Google Lens despre această imagine</translation>
 <translation id="8914504000324227558">Relansați Chrome</translation>
-<translation id="8922193594870374009">Pentru a trimite un număr de pe <ph name="ORIGIN" /> pe telefonul Android, conectează-te la Chrome pe ambele dispozitive.</translation>
+<translation id="8920304659326707347">Reia activitatea de unde ai rămas cu Chrome pe iOS.</translation>
 <translation id="8922998289262614701">Elimină datele aplicației din Chrome</translation>
 <translation id="8925636929359899517">Folosim informații ca să îmbunătățim acest serviciu. Consultă <ph name="BEGIN_LINK1" />Politica de confidențialitate<ph name="END_LINK1" /> și <ph name="BEGIN_LINK2" />Termenii și condițiile<ph name="END_LINK2" />.</translation>
 <translation id="8936233353620149764">Activează / dezactivează Gemini în Chrome</translation>
+<translation id="8944232836376404813">Această acțiune:
+          <ph name="LINE_BREAKS" />
+            • va reinițializa pagina de pornire, pagina Filă nouă, motorul de căutare și filele fixate;
+            <ph name="LINE_BREAK" />
+            • va dezactiva extensiile;
+            <ph name="LINE_BREAK" />
+            • va șterge cookie-urile și alte date temporare privind site-urile.
+            <ph name="LINE_BREAKS" />
+            Marcajele, istoricul și parolele salvate nu vor fi afectate.</translation>
 <translation id="8948460679427074738">Extensia nu a publicat practici de confidențialitate, cum ar fi modul în care colectează și folosește date. Chrome recomandă să o elimini.</translation>
 <translation id="8958307504142971576">Acum ai mai multe funcții disponibile în Chrome</translation>
+<translation id="8987061207681586800">Personalizează Chrome</translation>
 <translation id="8991530961471831170">Deschide Gemini în Chrome</translation>
 <translation id="8992769679401294069">Datele tale sunt criptate cu expresia de acces. Introdu-o pentru a folosi și a salva datele Chrome în Contul Google.</translation>
 <translation id="8999117580775242387">Când HTTPS nu este disponibil, Chrome va folosi o conexiune nesecurizată fără să te avertizeze</translation>
 <translation id="8999208279178790196">{0,plural, =0{Este disponibilă o actualizare Chrome}=1{Este disponibilă o actualizare Chrome}few{O actualizare Chrome este disponibilă de # zile}other{O actualizare Chrome este disponibilă de # de zile}}</translation>
 <translation id="9014771989710951291">Mai multe organizații gestionează Chrome</translation>
 <translation id="9018218886431812662">Instalare finalizată</translation>
-<translation id="9024318700713112071">Setează Chrome ca prestabilit</translation>
 <translation id="9066987883552592250">Închide Gemini în Chrome Canary</translation>
+<translation id="9074041031320636790">Succes! Acum poți să pui cu ușurință întrebări în timp ce navighezi cu Modul AI în Căutarea Google</translation>
 <translation id="9090566250983691233">Află de ce Chrome blochează unele fișiere</translation>
 <translation id="9106236359747881194">Selectează text pentru a căuta</translation>
 <translation id="911206726377975832">Ștergi și datele de navigare?</translation>
 <translation id="9134482777260927479">Ajutor pentru teme</translation>
 <translation id="9138603949443464873">Pentru a aplica modificările, relansează Chrome</translation>
 <translation id="9148058034647219655">Ieși</translation>
+<translation id="9150331942025550505">Profită de AI când folosești aplicația Chrome pe <ph name="DEVICE_TYPE" /></translation>
 <translation id="919706545465235479">Actualizează Chrome pentru a începe sincronizarea</translation>
 <translation id="922152298093051471">Personalizează Chrome</translation>
 <translation id="93760716455950538">Repornește sistemul de operare Chrome Flex</translation>

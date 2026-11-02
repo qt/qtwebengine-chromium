@@ -52,6 +52,16 @@ enum WGSLLanguageFeatureName {
 };
 
 // ============================================================================
+// Other extensions not in their own block below.
+// ============================================================================
+
+enum GPUFeatureName {
+    "atomic-vec2u-min-max",
+    "subgroup-size-control",
+    "texture-compression-unaligned",
+}
+
+// ============================================================================
 // Subgroup matrices
 // ============================================================================
 enum GPUFeatureName {
@@ -126,8 +136,8 @@ interface GPUResourceTable {
     undefined destroy();
 
     undefined update(GPUIndex32 slot, GPUBindingResource resource);
-    GPUIndex32 insertBinding(GPUBindingResource resource);
-    undefined removeBinding(GPUIndex32 slot);
+    GPUIndex32 insert(GPUBindingResource resource);
+    undefined remove(GPUIndex32 slot);
 
     readonly attribute GPUSize32Out size;
 };
@@ -140,9 +150,6 @@ dictionary GPUPipelineLayoutDescriptor {
 interface GPUComputePassEncoder {
     undefined setResourceTable(GPUResourceTable? table);
 };
-interface GPURenderBundleEncoder {
-    undefined setResourceTable(GPUResourceTable? table);
-};
-interface GPURenderPassEncoder {
-    undefined setResourceTable(GPUResourceTable? table);
-};
+dictionary GPURenderPassDescriptor {
+    GPUResourceTable resourceTable;
+}

@@ -4,6 +4,7 @@
 
 import type * as Common from '../../core/common/common.js';
 import type * as SDK from '../../core/sdk/sdk.js';
+import type * as Protocol from '../../generated/protocol.js';
 import type * as Workspace from '../workspace/workspace.js';
 
 export type StackTrace = BaseStackTrace<Fragment>;
@@ -44,6 +45,17 @@ export interface Frame {
    * of the containing function.
    */
   readonly rawName?: string;
+  /**
+   * Whether the corresponding raw frame is JS or WASM.
+   */
+  readonly isWasm?: boolean;
+  /**
+   * Whether this frame is an inlined frame. Used by SymbolizedErrorWidget
+   * to render the translated name (i.e. `name`) for inlined frames, and
+   * the physical name (i.e. `rawName`) for normal frames to preserve existing
+   * behavior.
+   */
+  readonly isInline?: boolean;
 }
 
 export interface ParsedErrorStackFrame extends Frame {
@@ -51,7 +63,6 @@ export interface ParsedErrorStackFrame extends Frame {
   readonly isConstructor?: boolean;
   readonly isEval?: boolean;
   readonly evalOrigin?: ParsedErrorStackFrame;
-  readonly isWasm?: boolean;
   readonly wasmModuleName?: string;
   readonly wasmFunctionIndex?: number;
   readonly typeName?: string;
@@ -120,4 +131,20 @@ export class DebuggableFrameFlavor {
     }
     return DebuggableFrameFlavor.#last;
   }
+}
+
+/**
+ * Returns whether the given stack trace originated from a direct console
+ * invocation. A console-originated stack trace has exactly one frame with
+ * no url and no function name.
+ *
+ * TODO(crbug.com/40726969): Accept a translated `StackTrace` instead of a raw `Protocol.Runtime.StackTrace`.
+ */
+export function isConsoleOriginated(stackTrace: Protocol.Runtime.StackTrace): boolean {
+  const callFrames = stackTrace.callFrames;
+  if (callFrames.length !== 1) {
+    return false;
+  }
+  const frame = callFrames[0];
+  return frame.url === '' && frame.functionName === '';
 }

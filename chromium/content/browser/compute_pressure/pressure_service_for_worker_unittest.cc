@@ -20,6 +20,7 @@
 #include "content/browser/worker_host/shared_worker_service_impl.h"
 #include "content/browser/worker_host/worker_util.h"
 #include "content/public/browser/shared_worker_instance.h"
+#include "content/public/browser/weak_document_ptr.h"
 #include "content/public/test/navigation_simulator.h"
 #include "content/test/test_render_frame_host.h"
 #include "content/test/test_render_view_host.h"
@@ -28,6 +29,7 @@
 #include "services/device/public/cpp/test/scoped_pressure_manager_overrider.h"
 #include "services/device/public/mojom/pressure_manager.mojom.h"
 #include "services/device/public/mojom/pressure_update.mojom.h"
+#include "services/network/public/cpp/constants.h"
 #include "services/network/public/cpp/permissions_policy/permissions_policy_declaration.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -146,12 +148,13 @@ class PressureServiceForDedicatedWorkerTest
     CHECK_EQ(rfh->GetLastCommittedOrigin(), rfh->GetStorageKey().origin());
     worker_host_ = std::make_unique<DedicatedWorkerHost>(
         &worker_service_, blink::DedicatedWorkerToken(), rfh->GetProcess(),
-        rfh->GetGlobalId(), rfh->GetGlobalId(), rfh->GetStorageKey().origin(),
-        rfh->GetStorageKey(), rfh->GetStorageKey().origin(),
-        rfh->GetIsolationInfoForSubresources(), rfh->BuildClientSecurityState(),
+        rfh->GetGlobalId(), rfh->GetWeakDocumentPtr(),
+        rfh->GetStorageKey().origin(), rfh->GetStorageKey(),
+        rfh->GetStorageKey().origin(), rfh->GetIsolationInfoForSubresources(),
+        rfh->BuildClientSecurityState(),
         rfh->policy_container_host()->policies(),
         /*creator_coep_reporter=*/nullptr,
-        /*network_restrictions_id=*/std::nullopt,
+        network::GetTestNetworkRestrictionsId(),
         mojo::PendingReceiver<blink::mojom::DedicatedWorkerHost>(),
         net::StorageAccessApiStatus::kNone);
     mojo::Receiver<blink::mojom::BrowserInterfaceBroker>& bib =

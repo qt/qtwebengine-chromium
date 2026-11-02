@@ -7,10 +7,10 @@
 
 #include <optional>
 
+#include "src/base/bit-field.h"
 #include "src/objects/objects-body-descriptors.h"
 #include "src/objects/struct.h"
 #include "src/objects/trusted-pointer.h"
-#include "torque-generated/bit-fields.h"
 
 // Has to be the last include (doesn't have include guards):
 #include "src/objects/object-macros.h"
@@ -21,16 +21,40 @@ class MessageLocation;
 class WasmInstanceObject;
 class StructBodyDescriptor;
 
-#include "torque-generated/src/objects/call-site-info-tq.inc"
-
 V8_OBJECT class CallSiteInfo : public Struct {
  public:
-  DEFINE_TORQUE_GENERATED_CALL_SITE_INFO_FLAGS()
+  using IsWasmBit = base::BitField<bool, 0, 1, uint32_t>;
+  using IsStrictBit = IsWasmBit::Next<bool, 1>;
+  using IsConstructorBit = IsStrictBit::Next<bool, 1>;
+  using IsAsyncBit = IsConstructorBit::Next<bool, 1>;
+  using IsBuiltinBit = IsAsyncBit::Next<bool, 1>;
+  using IsSourcePositionComputedBit = IsBuiltinBit::Next<bool, 1>;
+  using IsDeferredBaselineFrameBit = IsSourcePositionComputedBit::Next<bool, 1>;
+#if V8_ENABLE_DRUMBRAKE
+  using IsWasmInterpretedFrameBit = IsDeferredBaselineFrameBit::Next<bool, 1>;
+#endif
+  enum Flag : uint32_t {
+    kNone = 0,
+    kIsWasm = IsWasmBit::kMask,
+    kIsStrict = IsStrictBit::kMask,
+    kIsConstructor = IsConstructorBit::kMask,
+    kIsAsync = IsAsyncBit::kMask,
+    kIsBuiltin = IsBuiltinBit::kMask,
+    kIsSourcePositionComputed = IsSourcePositionComputedBit::kMask,
+    kIsDeferredBaselineFrame = IsDeferredBaselineFrameBit::kMask,
+#if V8_ENABLE_DRUMBRAKE
+    kIsWasmInterpretedFrame = IsWasmInterpretedFrameBit::kMask,
+#endif
+  };
+  using Flags = base::Flags<Flag>;
+#if V8_ENABLE_DRUMBRAKE
+  static constexpr int kFlagCount = 8;
+#else
+  static constexpr int kFlagCount = 7;
+#endif
 
 #if V8_ENABLE_WEBASSEMBLY
   inline bool IsWasm() const;
-  inline bool IsAsmJsWasm() const;
-  inline bool IsAsmJsAtNumberConversion() const;
 #if V8_ENABLE_DRUMBRAKE
   inline bool IsWasmInterpretedFrame() const;
 #endif  // V8_ENABLE_DRUMBRAKE
@@ -122,17 +146,17 @@ V8_OBJECT class CallSiteInfo : public Struct {
   static DirectHandle<Object> GetTypeName(DirectHandle<CallSiteInfo> info);
 
 #if V8_ENABLE_WEBASSEMBLY
-  // These methods are only valid for Wasm and asm.js Wasm frames.
+  // These methods are only valid for Wasm frames.
   uint32_t GetWasmFunctionIndex() const;
   Tagged<WasmInstanceObject> GetWasmInstance() const;
   static DirectHandle<Object> GetWasmModuleName(
       DirectHandle<CallSiteInfo> info);
 #endif  // V8_ENABLE_WEBASSEMBLY
 
-  // Returns the 0-based source position, which is the offset into the
-  // Script in case of JavaScript and Asm.js, and the wire byte offset
-  // in the module in case of actual Wasm. In case of async promise
-  // combinator frames, this returns the index of the promise.
+  // Returns the 0-based source position, which is the offset into the Script in
+  // case of JavaScript, and the wire byte offset in the module in case of Wasm.
+  // In case of async promise combinator frames, this returns the index of the
+  // promise.
   static int GetSourcePosition(DirectHandle<CallSiteInfo> info);
 
   // Attempts to fill the |location| based on the |info|, and avoids

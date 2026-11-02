@@ -93,8 +93,6 @@ KURL MainResourceUrlForFrame(Frame* frame) {
 
 const char* RequestContextName(mojom::blink::RequestContextType context) {
   switch (context) {
-    case mojom::blink::RequestContextType::ATTRIBUTION_SRC:
-      return "attribution src endpoint";
     case mojom::blink::RequestContextType::AUDIO:
       return "audio file";
     case mojom::blink::RequestContextType::BEACON:
@@ -155,6 +153,8 @@ const char* RequestContextName(mojom::blink::RequestContextType context) {
       return "resource";
     case mojom::blink::RequestContextType::SUBRESOURCE_WEBBUNDLE:
       return "webbundle";
+    case mojom::blink::RequestContextType::TEXT:
+      return "text";
     case mojom::blink::RequestContextType::TRACK:
       return "Text Track";
     case mojom::blink::RequestContextType::UNSPECIFIED:

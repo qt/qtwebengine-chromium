@@ -17,15 +17,6 @@
 
 namespace blink {
 
-namespace features {
-
-BASE_DECLARE_FEATURE(kPreventSvgFilterPaint);
-BASE_DECLARE_FEATURE_PARAM(bool, kPreventSvgFilterPaintOnLocalFrameRestricted);
-BASE_DECLARE_FEATURE_PARAM(bool, kPreventSvgFilterPaintOnRemoteFrame);
-BASE_DECLARE_FEATURE_PARAM(bool, kPreventSvgFilterPaintOnWebPlugin);
-
-}  // namespace features
-
 class FragmentData;
 class LayoutObject;
 class LocalFrameView;
@@ -225,6 +216,10 @@ struct PaintPropertyTreeBuilderFragmentContext {
   // Set to true when we visit a view transition element and is propagated to
   // all non-alias effects.
   bool self_or_ancestor_participates_in_view_transition = false;
+
+  // Set to true when we visit a canvas child and is propagated to all
+  // descendant effects.
+  bool is_in_canvas_subtree = false;
 
   // Whether newly created children should flatten their inherited transform
   // (equivalently, draw into the plane of their parent). Should generally

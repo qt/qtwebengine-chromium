@@ -44,6 +44,10 @@ They are summarized in the following tables:
     <td>IdentityPreconditioner, [LeastSquareDiagonalPreconditioner]</td>
     <td>Solve for min |Ax-b|^2 without forming A'A</td></tr>
 
+<tr><td>LSMR \n <tt>\#include<Eigen/\link IterativeLinearSolvers_Module IterativeLinearSolvers\endlink></tt></td><td>Golub-Kahan bidiagonalization (MINRES on the normal equations)</td><td>Rectangular</td>
+    <td>[IdentityPreconditioner], (self-adjoint right preconditioner)</td>
+    <td>Solve for min |Ax-b|^2, monotonic |A'r|, optional damping. Robust on ill-conditioned problems</td></tr>
+
 <tr><td>BiCGSTAB \n <tt>\#include<Eigen/\link IterativeLinearSolvers_Module IterativeLinearSolvers\endlink></tt></td><td>Iterative stabilized bi-conjugate gradient</td><td>Square</td>
     <td>IdentityPreconditioner, [DiagonalPreconditioner], IncompleteLUT</td>
     <td>To speedup the convergence, try it with the \ref IncompleteLUT preconditioner.</td></tr>

@@ -3,15 +3,18 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as ProtocolModule from '../../generated/protocol.js';
 import type * as Protocol from '../../generated/protocol.js';
-import {createTarget} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {createTarget, describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
+import * as Platform from '../platform/platform.js';
 
 import * as SDK from './sdk.js';
 
-describeWithMockConnection('DOMModel', () => {
+const {urlString} = Platform.DevToolsPath;
+
+describeWithEnvironment('DOMModel', () => {
   it('updates the document on an documentUpdate event if there already is a previous document', async () => {
     const parentTarget = createTarget();
     const target = createTarget({parentTarget});
@@ -151,8 +154,8 @@ describeWithMockConnection('DOMModel', () => {
     assert.lengthOf(topLayerShortcuts, 1);
     assert.strictEqual(topLayerShortcuts[0].deferredNode.backendNodeId(), 3 as Protocol.DOM.BackendNodeId);
     assert.lengthOf(topLayerShortcuts[0].childShortcuts, 1);
-    assert.strictEqual(
-        topLayerShortcuts[0].childShortcuts[0].deferredNode.backendNodeId(), 2 as Protocol.DOM.BackendNodeId);
+    assert.strictEqual(topLayerShortcuts[0].childShortcuts[0].deferredNode.backendNodeId(),
+                       2 as Protocol.DOM.BackendNodeId);
   });
 
   it('updates top layer elements correctly with multiple documents', async () => {
@@ -369,6 +372,107 @@ describeWithMockConnection('DOMModel', () => {
           nodeValue: '',
         });
         assert.strictEqual(domNode.simpleSelector(), '::view-transition-new(root)');
+      });
+    });
+
+    describe('isCustomElement', () => {
+      let target: SDK.Target.Target;
+      let model: SDK.DOMModel.DOMModel;
+      beforeEach(() => {
+        target = createTarget();
+        const modelBeforeAssertion = target.model(SDK.DOMModel.DOMModel);
+        assert.exists(modelBeforeAssertion);
+        model = modelBeforeAssertion;
+      });
+
+      afterEach(() => {
+        target.dispose('NO_REASON');
+      });
+
+      it('should return true for a custom element with a hyphen in localName', () => {
+        const domNode = SDK.DOMModel.DOMNode.create(model, null, false, {
+          nodeId: 1 as Protocol.DOM.NodeId,
+          backendNodeId: 2 as Protocol.DOM.BackendNodeId,
+          nodeType: Node.ELEMENT_NODE,
+          nodeName: 'my-widget',
+          localName: 'my-widget',
+          nodeValue: '',
+        });
+        assert.isTrue(domNode.isCustomElement());
+      });
+
+      it('should return true for an element with an is attribute', () => {
+        const domNode = SDK.DOMModel.DOMNode.create(model, null, false, {
+          nodeId: 1 as Protocol.DOM.NodeId,
+          backendNodeId: 2 as Protocol.DOM.BackendNodeId,
+          nodeType: Node.ELEMENT_NODE,
+          nodeName: 'button',
+          localName: 'button',
+          attributes: ['is', 'my-button'],
+          nodeValue: '',
+        });
+        assert.isTrue(domNode.isCustomElement());
+      });
+
+      it('should return false for excluded built-in elements with hyphens like font-face-src', () => {
+        const domNode = SDK.DOMModel.DOMNode.create(model, null, false, {
+          nodeId: 1 as Protocol.DOM.NodeId,
+          backendNodeId: 2 as Protocol.DOM.BackendNodeId,
+          nodeType: Node.ELEMENT_NODE,
+          nodeName: 'font-face-src',
+          localName: 'font-face-src',
+          nodeValue: '',
+        });
+        assert.isFalse(domNode.isCustomElement());
+      });
+
+      it('should return false for excluded built-in elements with hyphens like annotation-xml', () => {
+        const domNode = SDK.DOMModel.DOMNode.create(model, null, false, {
+          nodeId: 3 as Protocol.DOM.NodeId,
+          backendNodeId: 4 as Protocol.DOM.BackendNodeId,
+          nodeType: Node.ELEMENT_NODE,
+          nodeName: 'annotation-xml',
+          localName: 'annotation-xml',
+          nodeValue: '',
+        });
+        assert.isFalse(domNode.isCustomElement());
+      });
+
+      it('should return false for XML elements with hyphens', () => {
+        const domNode = SDK.DOMModel.DOMNode.create(model, null, false, {
+          nodeId: 1 as Protocol.DOM.NodeId,
+          backendNodeId: 2 as Protocol.DOM.BackendNodeId,
+          nodeType: Node.ELEMENT_NODE,
+          nodeName: 'custom-xml-tag',
+          localName: 'custom-xml-tag',
+          xmlVersion: '1.0',
+          nodeValue: '',
+        });
+        assert.isFalse(domNode.isCustomElement());
+      });
+
+      it('should return false for standard HTML tags without hyphens or is attribute', () => {
+        const domNode = SDK.DOMModel.DOMNode.create(model, null, false, {
+          nodeId: 1 as Protocol.DOM.NodeId,
+          backendNodeId: 2 as Protocol.DOM.BackendNodeId,
+          nodeType: Node.ELEMENT_NODE,
+          nodeName: 'div',
+          localName: 'div',
+          nodeValue: '',
+        });
+        assert.isFalse(domNode.isCustomElement());
+      });
+
+      it('should return false for non-element nodes', () => {
+        const domNode = SDK.DOMModel.DOMNode.create(model, null, false, {
+          nodeId: 1 as Protocol.DOM.NodeId,
+          backendNodeId: 2 as Protocol.DOM.BackendNodeId,
+          nodeType: Node.TEXT_NODE,
+          nodeName: '#text',
+          localName: '',
+          nodeValue: 'some text',
+        });
+        assert.isFalse(domNode.isCustomElement());
       });
     });
   });
@@ -1037,6 +1141,364 @@ describeWithMockConnection('DOMModel', () => {
       assert.lengthOf(parentNode.children() || [], 1);
 
       assert.lengthOf(snapshot.children() || [], 0);
+    });
+  });
+
+  describe('setAsInspectedNode', () => {
+    it('does not send setInspectedNode command for non-inspectable pseudo elements', async () => {
+      const target = createTarget();
+      const domModel = target.model(SDK.DOMModel.DOMModel);
+      assert.exists(domModel);
+      assert.exists(domModel.agent);
+
+      const DOCUMENT_NODE_ID = 1 as Protocol.DOM.NodeId;
+      const ELEMENT_NODE_ID = 2 as Protocol.DOM.NodeId;
+      const PSEUDO_NODE_ID = 3 as Protocol.DOM.NodeId;
+
+      domModel.setDocumentForTest({
+        nodeId: DOCUMENT_NODE_ID,
+        backendNodeId: 1 as Protocol.DOM.BackendNodeId,
+        nodeType: Node.DOCUMENT_NODE,
+        nodeName: '#document',
+        childNodeCount: 1,
+        children: [
+          {
+            nodeId: ELEMENT_NODE_ID,
+            backendNodeId: 2 as Protocol.DOM.BackendNodeId,
+            nodeType: Node.ELEMENT_NODE,
+            nodeName: 'div',
+            localName: 'div',
+            nodeValue: '',
+            pseudoElements: [
+              {
+                nodeId: PSEUDO_NODE_ID,
+                backendNodeId: 3 as Protocol.DOM.BackendNodeId,
+                nodeType: Node.ELEMENT_NODE,
+                nodeName: '::first-line',
+                localName: '::first-line',
+                nodeValue: '',
+                pseudoType: ProtocolModule.DOM.PseudoType.FirstLine,
+              },
+            ],
+          },
+        ],
+      } as Protocol.DOM.Node);
+
+      const spy = sinon.spy(domModel.agent, 'invoke_setInspectedNode');
+
+      const pseudoNode = domModel.nodeForId(PSEUDO_NODE_ID);
+      assert.exists(pseudoNode);
+      await pseudoNode.setAsInspectedNode();
+      sinon.assert.notCalled(spy);
+    });
+
+    it('sends setInspectedNode command for inspectable pseudo elements', async () => {
+      const target = createTarget();
+      const domModel = target.model(SDK.DOMModel.DOMModel);
+      assert.exists(domModel);
+      assert.exists(domModel.agent);
+
+      const DOCUMENT_NODE_ID = 1 as Protocol.DOM.NodeId;
+      const ELEMENT_NODE_ID = 2 as Protocol.DOM.NodeId;
+      const PSEUDO_NODE_ID = 3 as Protocol.DOM.NodeId;
+
+      domModel.setDocumentForTest({
+        nodeId: DOCUMENT_NODE_ID,
+        backendNodeId: 1 as Protocol.DOM.BackendNodeId,
+        nodeType: Node.DOCUMENT_NODE,
+        nodeName: '#document',
+        childNodeCount: 1,
+        children: [
+          {
+            nodeId: ELEMENT_NODE_ID,
+            backendNodeId: 2 as Protocol.DOM.BackendNodeId,
+            nodeType: Node.ELEMENT_NODE,
+            nodeName: 'div',
+            localName: 'div',
+            nodeValue: '',
+            pseudoElements: [
+              {
+                nodeId: PSEUDO_NODE_ID,
+                backendNodeId: 3 as Protocol.DOM.BackendNodeId,
+                nodeType: Node.ELEMENT_NODE,
+                nodeName: '::before',
+                localName: '::before',
+                nodeValue: '',
+                pseudoType: ProtocolModule.DOM.PseudoType.Before,
+              },
+            ],
+          },
+        ],
+      } as Protocol.DOM.Node);
+
+      const spy = sinon.spy(domModel.agent, 'invoke_setInspectedNode');
+
+      const pseudoNode = domModel.nodeForId(PSEUDO_NODE_ID);
+      assert.exists(pseudoNode);
+      await pseudoNode.setAsInspectedNode();
+      sinon.assert.calledOnceWithExactly(spy, {nodeId: PSEUDO_NODE_ID});
+    });
+
+    it('does not send setInspectedNode command for UA shadow roots and their children', async () => {
+      const target = createTarget();
+      const domModel = target.model(SDK.DOMModel.DOMModel);
+      assert.exists(domModel);
+      assert.exists(domModel.agent);
+
+      const DOCUMENT_NODE_ID = 1 as Protocol.DOM.NodeId;
+      const HOST_NODE_ID = 2 as Protocol.DOM.NodeId;
+      const UA_SHADOW_ROOT_ID = 3 as Protocol.DOM.NodeId;
+      const UA_SHADOW_CHILD_ID = 4 as Protocol.DOM.NodeId;
+
+      domModel.setDocumentForTest({
+        nodeId: DOCUMENT_NODE_ID,
+        backendNodeId: 1 as Protocol.DOM.BackendNodeId,
+        nodeType: Node.DOCUMENT_NODE,
+        nodeName: '#document',
+        childNodeCount: 1,
+        children: [
+          {
+            nodeId: HOST_NODE_ID,
+            backendNodeId: 2 as Protocol.DOM.BackendNodeId,
+            nodeType: Node.ELEMENT_NODE,
+            nodeName: 'div',
+            localName: 'div',
+            nodeValue: '',
+            shadowRoots: [
+              {
+                nodeId: UA_SHADOW_ROOT_ID,
+                backendNodeId: 3 as Protocol.DOM.BackendNodeId,
+                nodeType: Node.DOCUMENT_FRAGMENT_NODE,
+                nodeName: '#shadow-root',
+                localName: '',
+                nodeValue: '',
+                shadowRootType: ProtocolModule.DOM.ShadowRootType.UserAgent,
+                children: [{
+                  nodeId: UA_SHADOW_CHILD_ID,
+                  backendNodeId: 4 as Protocol.DOM.BackendNodeId,
+                  nodeType: Node.ELEMENT_NODE,
+                  nodeName: 'span',
+                  localName: 'span',
+                  nodeValue: '',
+                }],
+              },
+            ],
+          },
+        ],
+      } as Protocol.DOM.Node);
+
+      const spy = sinon.spy(domModel.agent, 'invoke_setInspectedNode');
+
+      const uaShadowRoot = domModel.nodeForId(UA_SHADOW_ROOT_ID);
+      assert.exists(uaShadowRoot);
+      await uaShadowRoot.setAsInspectedNode();
+      sinon.assert.notCalled(spy);
+
+      const uaShadowChild = domModel.nodeForId(UA_SHADOW_CHILD_ID);
+      assert.exists(uaShadowChild);
+      await uaShadowChild.setAsInspectedNode();
+      sinon.assert.notCalled(spy);
+    });
+  });
+
+  describe('canInspectNode', () => {
+    let domModel: SDK.DOMModel.DOMModel;
+    const DOCUMENT_NODE_ID = 1 as Protocol.DOM.NodeId;
+    const ELEMENT_NODE_ID = 2 as Protocol.DOM.NodeId;
+    const PSEUDO_NODE_ID = 3 as Protocol.DOM.NodeId;
+    const NON_INSPECTABLE_PSEUDO_NODE_ID = 6 as Protocol.DOM.NodeId;
+    const UA_SHADOW_ROOT_ID = 4 as Protocol.DOM.NodeId;
+    const UA_SHADOW_CHILD_ID = 5 as Protocol.DOM.NodeId;
+
+    beforeEach(() => {
+      const target = createTarget();
+      domModel = target.model(SDK.DOMModel.DOMModel)!;
+      domModel.setDocumentForTest({
+        nodeId: DOCUMENT_NODE_ID,
+        backendNodeId: 1 as Protocol.DOM.BackendNodeId,
+        nodeType: Node.DOCUMENT_NODE,
+        nodeName: '#document',
+        childNodeCount: 1,
+        children: [
+          {
+            nodeId: ELEMENT_NODE_ID,
+            backendNodeId: 2 as Protocol.DOM.BackendNodeId,
+            nodeType: Node.ELEMENT_NODE,
+            nodeName: 'div',
+            localName: 'div',
+            nodeValue: '',
+            pseudoElements: [
+              {
+                nodeId: PSEUDO_NODE_ID,
+                backendNodeId: 3 as Protocol.DOM.BackendNodeId,
+                nodeType: Node.ELEMENT_NODE,
+                nodeName: '::before',
+                localName: '::before',
+                nodeValue: '',
+                pseudoType: ProtocolModule.DOM.PseudoType.Before,
+              },
+              {
+                nodeId: NON_INSPECTABLE_PSEUDO_NODE_ID,
+                backendNodeId: 6 as Protocol.DOM.BackendNodeId,
+                nodeType: Node.ELEMENT_NODE,
+                nodeName: '::first-line',
+                localName: '::first-line',
+                nodeValue: '',
+                pseudoType: ProtocolModule.DOM.PseudoType.FirstLine,
+              },
+            ],
+            shadowRoots: [
+              {
+                nodeId: UA_SHADOW_ROOT_ID,
+                backendNodeId: 4 as Protocol.DOM.BackendNodeId,
+                nodeType: Node.DOCUMENT_FRAGMENT_NODE,
+                nodeName: '#shadow-root',
+                localName: '',
+                nodeValue: '',
+                shadowRootType: ProtocolModule.DOM.ShadowRootType.UserAgent,
+                children: [{
+                  nodeId: UA_SHADOW_CHILD_ID,
+                  backendNodeId: 5 as Protocol.DOM.BackendNodeId,
+                  nodeType: Node.ELEMENT_NODE,
+                  nodeName: 'span',
+                  localName: 'span',
+                  nodeValue: '',
+                }],
+              },
+            ],
+          },
+        ],
+      } as Protocol.DOM.Node);
+    });
+
+    it('returns true for normal elements', () => {
+      const elementNode = domModel.nodeForId(ELEMENT_NODE_ID);
+      assert.exists(elementNode);
+      assert.isTrue(elementNode.canInspectNode());
+    });
+
+    it('returns true for inspectable pseudo elements', () => {
+      const pseudoNode = domModel.nodeForId(PSEUDO_NODE_ID);
+      assert.exists(pseudoNode);
+      assert.isTrue(pseudoNode.canInspectNode());
+    });
+
+    it('returns false for non-inspectable pseudo elements', () => {
+      const pseudoNode = domModel.nodeForId(NON_INSPECTABLE_PSEUDO_NODE_ID);
+      assert.exists(pseudoNode);
+      assert.isFalse(pseudoNode.canInspectNode());
+    });
+
+    it('returns false for user agent shadow roots', () => {
+      const uaShadowRoot = domModel.nodeForId(UA_SHADOW_ROOT_ID);
+      assert.exists(uaShadowRoot);
+      assert.isFalse(uaShadowRoot.canInspectNode());
+    });
+
+    it('returns false for nodes inside user agent shadow roots', () => {
+      const uaShadowChild = domModel.nodeForId(UA_SHADOW_CHILD_ID);
+      assert.exists(uaShadowChild);
+      assert.isFalse(uaShadowChild.canInspectNode());
+    });
+
+    it('returns false for snapshots', async () => {
+      const elementNode = domModel.nodeForId(ELEMENT_NODE_ID);
+      assert.exists(elementNode);
+      const snapshot = await elementNode.takeSnapshot();
+      assert.isFalse(snapshot.canInspectNode());
+    });
+  });
+
+  it('correctly parses baseURL and documentURL for main document and iframes', () => {
+    const parentTarget = createTarget();
+    const target = createTarget({parentTarget});
+    const domModel = target.model(SDK.DOMModel.DOMModel);
+    assert.exists(domModel);
+
+    const DOCUMENT_NODE_ID = 1 as Protocol.DOM.NodeId;
+    const IFRAME_NODE_ID = 2 as Protocol.DOM.NodeId;
+    const CONTENT_DOCUMENT_NODE_ID = 3 as Protocol.DOM.NodeId;
+
+    const mainBaseURL = urlString`http://127.0.0.1:8000/devtools/elements/`;
+    const mainDocumentURL = urlString`http://127.0.0.1:8000/devtools/resources/inspected-page.html`;
+    const iframeBaseURL = urlString`http://127.0.0.1:8000/devtools/elements/resources/elements-empty-iframe.html`;
+    const iframeDocumentURL = urlString`http://127.0.0.1:8000/devtools/elements/resources/elements-empty-iframe.html`;
+
+    domModel.setDocumentForTest({
+      nodeId: DOCUMENT_NODE_ID,
+      backendNodeId: 1 as Protocol.DOM.BackendNodeId,
+      nodeType: Node.DOCUMENT_NODE,
+      nodeName: '#document',
+      localName: '',
+      nodeValue: '',
+      baseURL: mainBaseURL,
+      documentURL: mainDocumentURL,
+      childNodeCount: 1,
+      children: [
+        {
+          nodeId: IFRAME_NODE_ID,
+          backendNodeId: 2 as Protocol.DOM.BackendNodeId,
+          nodeType: Node.ELEMENT_NODE,
+          nodeName: 'iframe',
+          localName: 'iframe',
+          nodeValue: '',
+          contentDocument: {
+            nodeId: CONTENT_DOCUMENT_NODE_ID,
+            backendNodeId: 3 as Protocol.DOM.BackendNodeId,
+            nodeType: Node.DOCUMENT_NODE,
+            nodeName: '#document',
+            localName: '',
+            nodeValue: '',
+            baseURL: iframeBaseURL,
+            documentURL: iframeDocumentURL,
+            childNodeCount: 0,
+            children: [],
+          },
+        },
+      ],
+    } as Protocol.DOM.Node);
+
+    const mainDocument = domModel.existingDocument();
+    assert.exists(mainDocument);
+    assert.strictEqual(mainDocument.baseURL, mainBaseURL);
+    assert.strictEqual(mainDocument.documentURL, mainDocumentURL);
+    assert.isNull(mainDocument.parentNode);
+
+    const iframeNode = domModel.nodeForId(IFRAME_NODE_ID);
+    assert.exists(iframeNode);
+    const iframeDocument = iframeNode.contentDocument();
+    assert.exists(iframeDocument);
+    assert.strictEqual(iframeDocument.baseURL, iframeBaseURL);
+    assert.strictEqual(iframeDocument.documentURL, iframeDocumentURL);
+    assert.strictEqual(iframeDocument.parentNode, iframeNode);
+  });
+
+  describe('DOMModelUndoStack', () => {
+    it('allows calling undo multiple times with non-empty history', async () => {
+      const parentTarget = createTarget();
+      const target = createTarget({parentTarget});
+      const domModel = target.model(SDK.DOMModel.DOMModel);
+      assert.exists(domModel);
+
+      const markUndoableSpy = sinon.stub(domModel.agent, 'invoke_markUndoableState').resolves({
+        getError: () => undefined,
+      });
+      const undoSpy = sinon.stub(domModel.agent, 'invoke_undo').resolves({
+        getError: () => undefined,
+      });
+
+      const undoStack = new SDK.DOMModel.DOMModelUndoStack();
+
+      await undoStack.markUndoableState(domModel, false);
+      sinon.assert.calledOnce(markUndoableSpy);
+
+      await undoStack.undo();
+      sinon.assert.calledOnce(undoSpy);
+
+      // Perform second undo when history stack is empty.
+      await undoStack.undo();
+      // Should not call invoke_undo again because stack index is 0.
+      sinon.assert.calledOnce(undoSpy);
     });
   });
 });

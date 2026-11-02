@@ -17,27 +17,35 @@
 //! Utilities for validating Intel provisioning certificates and attestation
 //! quotes.
 
-use anyhow::{anyhow, Context};
-use const_oid::db::rfc5912::ECDSA_WITH_SHA_256;
+use core::convert::Into;
+
+use anyhow::{Context, anyhow};
+use oak_digest::{Sha256, Sha384};
 use oak_tdx_quote::{QeCertificationData, TdxQuoteWrapper};
+use oak_time::Instant;
 use p256::{
-    ecdsa::{signature::Verifier, Signature, VerifyingKey},
     EncodedPoint,
+    ecdsa::{Signature, VerifyingKey, signature::Verifier},
 };
 use x509_cert::{
-    der::{referenced::OwnedToRef, DecodePem, Encode},
     Certificate,
+    der::{DecodePem, referenced::OwnedToRef},
 };
 
-use crate::util::hash_sha2_256;
+use crate::x509::{check_certificate_validity, verify_cert_signature};
 
 const PCK_ROOT: &str = include_str!("../data/Intel_SGX_Provisioning_Certification_RootCA.pem");
+/// The size in bytes of a SHA2-384 digest.
+const SHA2_384_DIGEST_SIZE: usize = 48;
 
 /// Verifies that the TDX Attestation Quote is correctly signed and that the
 /// entire chain of trust is valid all the way to the Provisioning Certification
 /// Key (PCK) root certificate.
 #[allow(unused)]
-pub fn verify_intel_tdx_quote_validity(quote: &TdxQuoteWrapper) -> anyhow::Result<()> {
+pub fn verify_intel_tdx_quote_validity(
+    verification_time: Instant,
+    quote: &TdxQuoteWrapper,
+) -> anyhow::Result<()> {
     let signature_data = quote.parse_signature_data().context("parsing signature data")?;
 
     let report_certification = match signature_data.certification_data {
@@ -48,13 +56,21 @@ pub fn verify_intel_tdx_quote_validity(quote: &TdxQuoteWrapper) -> anyhow::Resul
     }?;
 
     // Verify that the PCK certificate chain is valid.
-    let pck_leaf =
-        verify_quote_cert_chain_and_extract_leaf(&report_certification.certification_data)
-            .context("verifying quote cert chain")?;
+    let pck_leaf = verify_quote_cert_chain_and_extract_leaf(
+        verification_time,
+        &report_certification.certification_data,
+    )
+    .context("verifying quote cert chain")?;
 
     // Verify that the Quoting Enclave report is signed using the PCK leaf
     // certificate.
-    let pck_verifying_key = extract_ecdsa_verifying_key(&pck_leaf)?;
+    let pck_verifying_key: VerifyingKey = pck_leaf
+        .tbs_certificate
+        .subject_public_key_info
+        .owned_to_ref()
+        .try_into()
+        .map_err(|_err| anyhow::anyhow!("could not extract ECDSA P-384 public key"))?;
+
     let qe_signature = Signature::from_bytes(report_certification.signature.into())
         .map_err(|_err| anyhow::anyhow!("couldn't parse QE Report signature"))?;
     pck_verifying_key
@@ -67,7 +83,7 @@ pub fn verify_intel_tdx_quote_validity(quote: &TdxQuoteWrapper) -> anyhow::Resul
     let mut key_binding_data = signature_data.ecdsa_attestation_key.to_vec();
     key_binding_data.extend_from_slice(report_certification.authentication_data);
     anyhow::ensure!(
-        hash_sha2_256(key_binding_data.as_slice()) == qe_report.report_data[..32],
+        Sha256::from_contents(key_binding_data.as_slice()).as_ref() == &qe_report.report_data[..32],
         "attestation key is not bound to quoting enclave report"
     );
     anyhow::ensure!(
@@ -90,6 +106,7 @@ pub fn verify_intel_tdx_quote_validity(quote: &TdxQuoteWrapper) -> anyhow::Resul
 }
 
 pub fn verify_quote_cert_chain_and_extract_leaf(
+    verification_time: Instant,
     certification_data: &QeCertificationData,
 ) -> anyhow::Result<Certificate> {
     let mut certificates = if let &QeCertificationData::PckCertChain(chain) = certification_data {
@@ -110,39 +127,53 @@ pub fn verify_quote_cert_chain_and_extract_leaf(
     let mut chain = certificates.iter();
     let mut signee = chain.next().ok_or_else(|| anyhow!("certificate chain is empty"))?;
     let leaf = signee.clone();
-    // Each certificate must be signed by the next one in the chain.
+    // Make sure the leaf certificate is valid.
+    check_certificate_validity(verification_time, &leaf)?;
+    // Each certificate must be signed by the next one in the chain and the signer
+    // must be valid.
     for signer in chain {
-        verify_ecdsa_cert_signature(signer, signee).context("verifying cert signature")?;
+        check_certificate_validity(verification_time, signer)?;
+        verify_cert_signature(signer, signee).context("verifying cert signature")?;
         signee = signer;
     }
     Ok(leaf)
 }
 
-fn verify_ecdsa_cert_signature(signer: &Certificate, signee: &Certificate) -> anyhow::Result<()> {
-    anyhow::ensure!(
-        signee.signature_algorithm.oid == ECDSA_WITH_SHA_256,
-        "unsupported signature algorithm: {:?}",
-        signee.signature_algorithm
-    );
-
-    let verifying_key = extract_ecdsa_verifying_key(signer)?;
-
-    let message = signee
-        .tbs_certificate
-        .to_der()
-        .map_err(|_err| anyhow::anyhow!("could not extract message to verify signature"))?;
-    let signature = Signature::from_der(signee.signature.raw_bytes())
-        .map_err(|_err| anyhow::anyhow!("could not extract signature"))?;
-
-    verifying_key
-        .verify(&message, &signature)
-        .map_err(|_err| anyhow::anyhow!("signature verification failed"))
+/// Software implementation of the RTMR logic that can be used to replay a
+/// sequence of `extend` operations.
+#[allow(unused)]
+pub struct RtmrEmulator {
+    state: [u8; SHA2_384_DIGEST_SIZE],
 }
 
-fn extract_ecdsa_verifying_key(certificate: &Certificate) -> anyhow::Result<VerifyingKey> {
-    let pubkey_info = certificate.tbs_certificate.subject_public_key_info.owned_to_ref();
-    VerifyingKey::from_sec1_bytes(pubkey_info.subject_public_key.raw_bytes())
-        .map_err(|_err| anyhow::anyhow!("could not parse ECDSA P256 public key"))
+#[allow(unused)]
+impl RtmrEmulator {
+    pub const fn new() -> Self {
+        // The initial state of an RTMR is all 0.
+        Self { state: [0u8; SHA2_384_DIGEST_SIZE] }
+    }
+
+    /// Extends the RTMR with the new SHA2-384 digest.
+    pub fn extend(&mut self, digest: &[u8; SHA2_384_DIGEST_SIZE]) {
+        let mut current = self.state.to_vec();
+        // Extension is done by concatenating the current state and the new digest, and
+        // then calculating the SHA2-384 digest of that value. See section 5.4.6 of the
+        // [Intel® TDX Module v1.5 ABI Specification](https://cdrdv2.intel.com/v1/dl/getContent/817877?fileName=intel-tdx-module-1.5-abi-spec-348551004.pdf)
+        // for more information.
+        current.extend_from_slice(digest.as_slice());
+        self.state = Sha384::from_contents(&current).into();
+    }
+
+    /// Gets the current value of the RTMR.
+    pub fn get_state(&self) -> &[u8] {
+        &self.state
+    }
+}
+
+impl Default for RtmrEmulator {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]

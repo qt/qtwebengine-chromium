@@ -306,6 +306,10 @@ static_assert(kMaxSafeBufferSizeForSandbox <= kSandboxGuardRegionSize,
 #if defined(V8_TARGET_OS_ANDROID)
 // On Android, we often won't have sufficient virtual address space available.
 constexpr size_t kAdditionalTrailingGuardRegionSize = 0;
+#elif defined(V8_TARGET_ARCH_LOONG64)
+// Some hardwares like 2K3000 does not have sufficient virtual address space
+// available.
+constexpr size_t kAdditionalTrailingGuardRegionSize = 0;
 #else
 // Worst-case, we need 8 (max element size) * 32GB (max ArrayBuffer size) +
 // 32GB (additional bounded size offset for TypedArray access).
@@ -416,6 +420,9 @@ constexpr CppHeapPointerHandle kNullCppHeapPointerHandle = 0;
 constexpr uint64_t kCppHeapPointerMarkBit = 1ULL;
 constexpr uint64_t kCppHeapPointerTagShift = 1;
 constexpr uint64_t kCppHeapPointerPayloadShift = 16;
+constexpr uint64_t kCppHeapPointerTagMask =
+    ((1ULL << (kCppHeapPointerPayloadShift - kCppHeapPointerTagShift)) - 1)
+    << kCppHeapPointerTagShift;
 
 #ifdef V8_COMPRESS_POINTERS
 // CppHeapPointers use a dedicated pointer table. These constants control the
@@ -577,7 +584,6 @@ struct TagRange {
   V(WasmFuncDataTag)                 \
   V(WasmManagedDataTag)              \
   V(WasmNativeModuleTag)             \
-  V(WasmInterpreterHandleTag)        \
   V(BackingStoreTag)                 \
   V(IcuBreakIteratorTag)             \
   V(IcuListFormatterTag)             \
@@ -715,8 +721,9 @@ enum ExternalPointerTag : uint16_t {
   kApiIndexedPropertyDeleterCallbackTag,
   kApiIndexedPropertyEnumeratorCallbackTag,
   kApiIndexedPropertyIndexOfCallbackTag,
+  kApiIndexedPropertyIterableToListCallbackTag,
   kLastInterceptorInfoExternalPointerTag =
-      kApiIndexedPropertyIndexOfCallbackTag,
+      kApiIndexedPropertyIterableToListCallbackTag,
 
   kLastMaybeReadOnlyExternalPointerTag = kLastInterceptorInfoExternalPointerTag,
 
@@ -917,59 +924,10 @@ static_assert((1 << (32 - kTrustedPointerHandleShift)) == kMaxTrustedPointers,
               "kTrustedPointerTableReservationSize and "
               "kTrustedPointerHandleShift don't match");
 
-//
-// Code Pointers.
-//
-// A pointer to a Code object.
-// Essentially a specialized version of a trusted pointer that (when the
-// sandbox is enabled) uses the code pointer table (CPT) instead of the TPT.
-// Each entry in the CPT contains both a pointer to a Code object as well as a
-// pointer to the Code's entrypoint. This allows calling/jumping into Code with
-// one fewer memory access (compared to the case where the entrypoint pointer
-// first needs to be loaded from the Code object). As such, a CodePointerHandle
-// can be used both to obtain the referenced Code object and to directly load
-// its entrypoint.
-//
-// When the sandbox is disabled, these are regular tagged pointers.
-//
-// TODO(498510170): Removing these explicit code pointer handles is work in
-// progress.
-using CodePointerHandle = IndirectPointerHandle;
-
-// The size of the virtual memory reservation for the code pointer table.
+// The size of the virtual memory reservation for the Wasm code pointer table.
 // As with the other tables, a maximum table size in combination with shifted
 // indices allows omitting bounds checks.
-constexpr size_t kCodePointerTableReservationSize = 128 * MB;
-
-// Code pointer handles are shifted by a different amount than indirect pointer
-// handles as the tables have a different maximum size.
-constexpr uint32_t kCodePointerHandleShift = 8;
-
-// A null handle always references an entry that contains nullptr.
-constexpr CodePointerHandle kNullCodePointerHandle = kNullIndirectPointerHandle;
-
-// It can sometimes be necessary to distinguish a code pointer handle from a
-// trusted pointer handle. A typical example would be a union trusted pointer
-// field that can refer to both Code objects and other trusted objects. To
-// support these use-cases, we use a simple marking scheme where some of the
-// low bits of a code pointer handle are set, while they will be unset on a
-// trusted pointer handle. This way, the correct table to resolve the handle
-// can be determined even in the absence of a type tag.
-constexpr uint32_t kCodePointerHandleMarker = 0x1;
-static_assert(kCodePointerHandleShift > 0);
-static_assert(kTrustedPointerHandleShift > 0);
-
-// The byte size of an entry in a code pointer table.
-constexpr int kCodePointerTableEntrySize = 8;
-constexpr int kCodePointerTableEntrySizeLog2 = 3;
-// The maximum number of entries in a code pointer table.
-constexpr size_t kMaxCodePointers =
-    kCodePointerTableReservationSize / kCodePointerTableEntrySize;
-static_assert(
-    (1 << (32 - kCodePointerHandleShift)) == kMaxCodePointers,
-    "kCodePointerTableReservationSize and kCodePointerHandleShift don't match");
-
-constexpr int kCodePointerTableEntryCodeObjectOffset = 0;
+constexpr size_t kWasmCodePointerTableReservationSize = 128 * MB;
 
 // Constants that can be used to mark places that should be modified once
 // certain types of objects are moved out of the sandbox and into trusted space.
@@ -1064,11 +1022,14 @@ class Internals {
   static const int kBuiltinTier0EntryTableSize = 7 * kApiSystemPointerSize;
   static const int kBuiltinTier0TableSize = 7 * kApiSystemPointerSize;
   static const int kLinearAllocationAreaSize = 3 * kApiSystemPointerSize;
-  static const int kThreadLocalTopSize = 30 * kApiSystemPointerSize;
+  static const int kThreadLocalTopSize = 28 * kApiSystemPointerSize;
   static const int kHandleScopeDataSize =
       2 * kApiSystemPointerSize + 2 * kApiInt32Size;
+  static const int kHandleScopeImplementerSize =
+      11 * kApiSystemPointerSize + kHandleScopeDataSize;
 
-  // ExternalPointerTable and TrustedPointerTable layout guarantees.
+  // ExternalPointerTable, CppHeapPointerTable and TrustedPointerTable layout
+  // guarantees.
   static const int kExternalEntityTableBasePointerOffset = 0;
   static const int kSegmentedTableSegmentPoolSize = 4;
   static const int kExternalEntityTableSize =
@@ -1111,8 +1072,10 @@ class Internals {
       kIsolateLongTaskStatsCounterOffset + kApiSizetSize;
   static const int kIsolateHandleScopeDataOffset =
       kIsolateThreadLocalTopOffset + kThreadLocalTopSize;
-  static const int kIsolateEmbedderDataOffset =
+  static const int kIsolateHandleScopeImplementerOffset =
       kIsolateHandleScopeDataOffset + kHandleScopeDataSize;
+  static const int kIsolateEmbedderDataOffset =
+      kIsolateHandleScopeImplementerOffset + kHandleScopeImplementerSize;
 #ifdef V8_COMPRESS_POINTERS
   static const int kIsolateExternalPointerTableOffset =
       kIsolateEmbedderDataOffset + kNumIsolateDataSlots * kApiSystemPointerSize;
@@ -1129,10 +1092,8 @@ class Internals {
       kIsolateTrustedPointerTableOffset + kExternalEntityTableSize;
   static const int kIsolateTrustedPointerPublishingScopeOffset =
       kIsolateSharedTrustedPointerTableAddressOffset + kApiSystemPointerSize;
-  static const int kIsolateCodePointerTableBaseAddressOffset =
-      kIsolateTrustedPointerPublishingScopeOffset + kApiSystemPointerSize;
   static const int kIsolateJSDispatchTableOffset =
-      kIsolateCodePointerTableBaseAddressOffset + kApiSystemPointerSize;
+      kIsolateTrustedPointerPublishingScopeOffset + kApiSystemPointerSize;
 #else
   static const int kIsolateJSDispatchTableOffset =
       kIsolateCppHeapPointerTableOffset + kExternalEntityTableSize;

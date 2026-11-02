@@ -9,7 +9,11 @@ assert(!is_android)
 mojom("mojo_bindings") {
   sources = [ "drive_picker_host_untrusted.mojom" ]
   webui_module_path = "/"
-  public_deps = [ "//chrome/browser/ui/views/drive_picker_host:mojo_bindings" ]
+  public_deps = [
+    "//chrome/browser/ui/views/drive_picker_host:mojo_bindings",
+    "//mojo/public/mojom/base:protobuf_support",
+    "//url/mojom:url_mojom_gurl",
+  ]
 }
 
 source_set("untrusted") {
@@ -21,14 +25,17 @@ source_set("untrusted") {
   public_deps = [
     ":mojo_bindings",
     "//content/public/browser",
+    "//mojo/public/cpp/base:protobuf_support",
     "//ui/webui",
   ]
 
   deps = [
+    "//chrome/app:generated_resources",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/resources/drive_picker_host/untrusted:resources",
     "//chrome/common",
     "//components/omnibox/common",
+    "//components/strings:components_strings",
   ]
 }
 

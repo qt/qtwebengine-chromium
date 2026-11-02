@@ -91,11 +91,14 @@ class CORE_EXPORT InspectorNetworkAgent final
  public:
   // TODO(horo): Extract the logic for frames and for workers into different
   // classes.
-  InspectorNetworkAgent(InspectedFrames*,
-                        WorkerOrWorkletGlobalScope*,
-                        v8_inspector::V8InspectorSession*);
+  InspectorNetworkAgent(InspectedFrames*, WorkerOrWorkletGlobalScope*);
   ~InspectorNetworkAgent() override;
   void Trace(Visitor*) const override;
+
+  void Init(CoreProbeSink*,
+            protocol::UberDispatcher*,
+            InspectorSessionState*,
+            V8SessionHolder) override;
 
   void Restore() override;
 
@@ -388,7 +391,6 @@ class CORE_EXPORT InspectorNetworkAgent final
   Member<InspectedFrames> inspected_frames_;
   // This is null while inspecting frames.
   Member<WorkerOrWorkletGlobalScope> worker_or_worklet_global_scope_;
-  v8_inspector::V8InspectorSession* v8_session_;
   Member<NetworkResourcesData> resources_data_;
   // Token used for throttling in the network service. The token should be
   // the same for all requests in a CDP target.
@@ -416,12 +418,13 @@ class CORE_EXPORT InspectorNetworkAgent final
   Vector<URLPatternMatcher> blocked_pattern_matchers_;
 
   HeapHashSet<Member<XMLHttpRequest>> replay_xhrs_;
+  HashMap<String, String> extra_request_headers_;
+
   InspectorAgentState::Boolean enabled_;
   InspectorAgentState::Boolean cache_disabled_;
   InspectorAgentState::Boolean bypass_service_worker_;
   InspectorAgentState::BooleanMap blocked_urls_;
   InspectorAgentState::Bytes blocked_patterns_cbor_;
-  InspectorAgentState::StringMap extra_request_headers_;
   InspectorAgentState::Boolean attach_debug_stack_enabled_;
   InspectorAgentState::Integer total_buffer_size_;
   InspectorAgentState::Integer resource_buffer_size_;

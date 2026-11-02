@@ -94,7 +94,7 @@ export default createRule({
           messageId: 'invalidShowUsage',
           fix(fixer) {
             return fixer.replaceText(node, `renderElementIntoDOM(${node.callee.object.name})`);
-          }
+          },
         });
       },
     };

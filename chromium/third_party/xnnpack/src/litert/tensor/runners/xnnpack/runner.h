@@ -19,6 +19,7 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <type_traits>
 #include <vector>
 
 #include "include/xnnpack.h"
@@ -50,23 +51,79 @@ class XnnpackRunner {
   // Warning: this must be called before the first call to `Run`.
   void SetNumThreads(size_t num_threads) { num_threads_ = num_threads; }
 
+  // Sets the weights cache.
+  //
+  // Warning: this must be called before the first call to `Run`.
+  void SetWeightsCache(xnn_weights_cache_t weights_cache) {
+    weights_cache_ = weights_cache;
+  }
+
   // Sets the input data for a given tensor.
   absl::Status SetInput(const TensorHandle& tensor,
                         absl::Span<const std::byte> data);
+
+  // Sets the input data for a given tensor.
+  template <class ContiguousSequence,
+            class S = std::remove_reference_t<ContiguousSequence>,
+            class T = typename S::value_type,
+            class SFINAE = decltype(std::declval<S>().data())>
+  absl::Status SetInput(const TensorHandle& tensor, ContiguousSequence&& seq) {
+    return SetInput(tensor, absl::Span<const std::byte>(
+                                reinterpret_cast<const std::byte*>(seq.data()),
+                                seq.size() * sizeof(T)));
+  }
+
+  // Sets the output buffer for a given tensor.
+  absl::Status SetOutput(const TensorHandle& tensor,
+                         absl::Span<std::byte> data);
+
   // Updates the shape for an external input tensor.
   absl::Status ReshapeInput(const TensorHandle& tensor,
                             absl::Span<const int32_t> shape);
+
   // Writes a slice of bytes into an external input tensor's host buffer.
   absl::Status WriteInput(const TensorHandle& tensor, size_t offset_bytes,
                           absl::Span<const std::byte> data);
+
+  // Sets the input data for a given tensor.
+  template <class ContiguousSequence,
+            class S = std::remove_reference_t<ContiguousSequence>,
+            class T = typename S::value_type,
+            class SFINAE = decltype(std::declval<S>().data())>
+  absl::Status WriteInput(const TensorHandle& tensor, size_t offset_bytes,
+                          ContiguousSequence&& seq) {
+    return WriteInput(tensor, offset_bytes,
+                      absl::Span<const std::byte>(
+                          reinterpret_cast<const std::byte*>(seq.data()),
+                          seq.size() * sizeof(T)));
+  }
+
   // Runs the XNNPACK graph.
   absl::Status Run();
+
   // Reads the output data for a given tensor.
   absl::StatusOr<LockedBufferSpan<const std::byte>> ReadOutput(
       const TensorHandle& tensor) const;
 
  private:
   explicit XnnpackRunner(std::unique_ptr<XnnpackGraph> graph);
+
+  // External buffer that can be either an external view or an owned buffer.
+  class ExternalBuffer {
+   public:
+    // Gets a span of either the external view or the owned buffer.
+    absl::Span<std::byte> data();
+    absl::Span<const std::byte> data() const;
+
+    void SetExternalView(absl::Span<const std::byte> data);
+    void SetOwnedBuffer(absl::Span<const std::byte> data);
+    absl::Status Resize(size_t new_size);
+    bool IsOwned() const { return external_view_.data() == nullptr; }
+
+   private:
+    absl::Span<std::byte> external_view_;
+    std::vector<std::byte> owned_buffer_;
+  };
 
 #define TENSOR_API_UNIQUE_PTR_WITH_DELETER(NAME, TYPE, DEL_FUNC) \
   struct NAME##Deleter {                                         \
@@ -85,9 +142,10 @@ class XnnpackRunner {
 
   RuntimePtr runtime_ = nullptr;
   std::unique_ptr<XnnpackGraph> graph_;
-  absl::flat_hash_map<uint32_t, std::vector<std::byte>> external_buffers_;
+  absl::flat_hash_map<uint32_t, ExternalBuffer> external_buffers_;
   ThreadpoolPtr threadpool_ = nullptr;
   size_t num_threads_ = 1;
+  xnn_weights_cache_t weights_cache_ = nullptr;
 };
 
 }  // namespace litert::tensor

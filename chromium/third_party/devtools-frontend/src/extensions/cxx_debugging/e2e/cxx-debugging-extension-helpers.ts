@@ -4,9 +4,9 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import {getTestServerPort} from 'test/conductor/server_port.js';
 import {openSourcesPanel} from 'test/e2e/helpers/sources-helpers.js';
-import {getBrowserAndPagesWrappers} from 'test/shared/non_hosted_wrappers';
+import type {DevToolsPage} from 'test/e2e/shared/frontend-helper.js';
+import type {InspectedPage} from 'test/e2e/shared/target-helper.js';
 
 export interface Action {
   action: string;
@@ -44,18 +44,17 @@ export interface TestSpec {
   file?: string;
 }
 
-export async function openTestSuiteResourceInSourcesPanel(testInput: string) {
-  const {inspectedPage, devToolsPage} = getBrowserAndPagesWrappers();
-  await inspectedPage.goTo(`${getTestsuiteResourcesPath()}/extension_test_suite/${testInput}`);
+export async function openTestSuiteResourceInSourcesPanel(testInput: string, inspectedPage: InspectedPage,
+                                                          devToolsPage: DevToolsPage) {
+  await inspectedPage.goTo(`${inspectedPage.domain()}/extension_test_suite/${testInput}`);
 
   await openSourcesPanel(devToolsPage);
-}
-
-export function getTestsuiteResourcesPath() {
-  return `https://localhost:${getTestServerPort()}`;
 }
 
 export function loadTests() {
   const tests = JSON.parse(fs.readFileSync(path.join(__dirname, 'tests.json')).toString());
   return tests as TestSpec[];
 }
+
+export const CXX_DEBUGGING_EXTENSION_PATH =
+    path.join(__dirname, '..', '..', '..', 'DevTools_CXX_Debugging.stage2', 'src');

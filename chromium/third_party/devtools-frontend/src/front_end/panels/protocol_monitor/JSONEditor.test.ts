@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Host from '../../core/host/host.js';
 import {
@@ -10,7 +11,7 @@ import {
   dispatchKeyDownEvent,
   dispatchMouseMoveEvent,
   raf,
-  renderElementIntoDOM
+  renderElementIntoDOM,
 } from '../../testing/DOMHelpers.js';
 import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
 import {expectCall} from '../../testing/ExpectStubCall.js';
@@ -566,7 +567,7 @@ describeWithEnvironment('JSONEditor', () => {
       const param = jsonEditor.contentElement.querySelector('[data-paramId]');
       await renderHoveredElement(param);
 
-      const addParamButton = jsonEditor.contentElement.querySelector('devtools-button[title="Add a parameter"]');
+      const addParamButton = jsonEditor.contentElement.querySelector('devtools-button[title="Add parameter"]');
       if (!addParamButton) {
         throw new Error('No button');
       }
@@ -693,7 +694,7 @@ describeWithEnvironment('JSONEditor', () => {
          await renderHoveredElement(param);
 
          const showDefaultValuesButton =
-             jsonEditor.contentElement.querySelector('devtools-button[title="Add a parameter"]');
+             jsonEditor.contentElement.querySelector('devtools-button[title="Add parameter"]');
          if (!showDefaultValuesButton) {
            throw new Error('No button');
          }
@@ -818,8 +819,7 @@ describeWithEnvironment('JSONEditor', () => {
       const param = jsonEditor.contentElement.querySelector('[data-paramId]');
       await renderHoveredElement(param);
 
-      const showDefaultValuesButton =
-          jsonEditor.contentElement.querySelector('devtools-button[title="Add a parameter"]');
+      const showDefaultValuesButton = jsonEditor.contentElement.querySelector('devtools-button[title="Add parameter"]');
       if (!showDefaultValuesButton) {
         throw new Error('No button');
       }
@@ -901,7 +901,7 @@ describeWithEnvironment('JSONEditor', () => {
       const param = jsonEditor.contentElement.querySelector('[data-paramId]');
       await renderHoveredElement(param);
 
-      const addParamButton = jsonEditor.contentElement.querySelector('devtools-button[title="Add a parameter"]');
+      const addParamButton = jsonEditor.contentElement.querySelector('devtools-button[title="Add parameter"]');
       if (!addParamButton) {
         throw new Error('No button');
       }
@@ -1107,7 +1107,7 @@ describeWithEnvironment('JSONEditor', () => {
     await jsonEditor.updateComplete;
 
     const inputs = jsonEditor.contentElement.querySelectorAll('devtools-suggestion-input');
-    const addButtons = jsonEditor.contentElement.querySelectorAll('devtools-button[title="Add a parameter"]');
+    const addButtons = jsonEditor.contentElement.querySelectorAll('devtools-button[title="Add parameter"]');
 
     assert.lengthOf(inputs, 1);
     assert.lengthOf(addButtons, 0);
@@ -1379,7 +1379,8 @@ describeWithEnvironment('JSONEditor', () => {
       const jsonEditor = renderJSONEditor();
       jsonEditor.metadataByCommand = new Map([
         [
-          'Test.test', {
+          'Test.test',
+          {
             parameters: [{
               name: 'test',
               type: ProtocolMonitor.JSONEditor.ParameterType.UNKNOWN,
@@ -1389,7 +1390,7 @@ describeWithEnvironment('JSONEditor', () => {
             }],
             description: 'Description',
             replyArgs: [],
-          }
+          },
         ],
       ]);
       jsonEditor.commandToDisplay = {command: 'Test.test'};
@@ -1406,7 +1407,8 @@ describeWithEnvironment('JSONEditor', () => {
       const jsonEditor = renderJSONEditor();
       jsonEditor.metadataByCommand = new Map([
         [
-          'Test.test', {
+          'Test.test',
+          {
             parameters: [{
               name: 'test',
               type: ProtocolMonitor.JSONEditor.ParameterType.STRING,
@@ -1416,7 +1418,7 @@ describeWithEnvironment('JSONEditor', () => {
             }],
             description: 'Description',
             replyArgs: [],
-          }
+          },
         ],
       ]);
       jsonEditor.commandToDisplay = {command: 'Test.test'};
@@ -1435,7 +1437,8 @@ describeWithEnvironment('JSONEditor', () => {
          const jsonEditor = renderJSONEditor();
          jsonEditor.metadataByCommand = new Map([
            [
-             'Test.test', {
+             'Test.test',
+             {
                parameters: [{
                  name: 'test',
                  type: ProtocolMonitor.JSONEditor.ParameterType.STRING,
@@ -1445,7 +1448,7 @@ describeWithEnvironment('JSONEditor', () => {
                }],
                description: 'Description',
                replyArgs: [],
-             }
+             },
            ],
          ]);
          jsonEditor.commandToDisplay = {command: 'Test.test'};

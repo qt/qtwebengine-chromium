@@ -31,7 +31,7 @@
 #include <bitset>
 #include <cstring>
 
-#include "src/dawn/common/Assert.h"
+#include "src/utils/assert.h"
 #include "src/utils/compiler.h"
 
 namespace dawn {
@@ -202,7 +202,7 @@ static constexpr std::array<bool, 256> kRoundConstantsBits = []() {
     uint8_t R = 1;
 
     // Step 3
-    for (int i = 1; i < 256; i++) {
+    for (uint32_t i = 1; i < 256; i++) {
         bool R8 = R & (0x80);
         // Step 3a, 3f
         R <<= 1;

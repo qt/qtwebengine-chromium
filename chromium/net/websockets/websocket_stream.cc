@@ -152,6 +152,9 @@ class WebSocketStreamRequestImpl : public WebSocketStreamRequestAPI {
             WebSocketPriorityHintToRequestPriority(priority_hint),
             &delegate_,
             traffic_annotation,
+            // TODO(crbug.com/527777927): Support targeting a specific network
+            // for WebSockets.
+            net::handles::kInvalidNetworkHandle,
             /*is_for_websockets=*/true)),
         api_delegate_(std::move(api_delegate)) {
     DCHECK_EQ(IsolationInfo::RequestType::kOther,
@@ -489,7 +492,7 @@ void Delegate::OnAuthRequired(URLRequest* request,
                               const AuthChallengeInfo& auth_info) {
   std::optional<AuthCredentials> credentials;
   // This base::Unretained(this) relies on an assumption that |callback| can
-  // be called called during the opening handshake.
+  // be called during the opening handshake.
   int rv = owner_->connect_delegate()->OnAuthRequired(
       auth_info, request->response_headers(),
       request->GetResponseRemoteEndpoint(),

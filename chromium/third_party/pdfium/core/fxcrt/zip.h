@@ -123,6 +123,12 @@ class ZipView3 {
 };
 
 template <typename T, typename U>
+ZipView2(T, U) -> ZipView2<T, U>;
+
+template <typename T, typename U, typename V>
+ZipView3(T, U, V) -> ZipView3<T, U, V>;
+
+template <typename T, typename U>
 auto Zip(T&& first, U&& second) {
   return ZipView2(pdfium::span(first), pdfium::span(second));
 }

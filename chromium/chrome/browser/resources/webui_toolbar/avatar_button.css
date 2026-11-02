@@ -4,20 +4,103 @@
 
 /* #css_wrapper_metadata_start
  * #type=style-lit
+ * #import=//resources/cr_elements/cr_hidden_style_lit.css.js
+ * #import=/shared/webui_toolbar_shared_vars.css.js
  * #scheme=relative
+ * #include=cr-hidden-style-lit
  * #css_wrapper_metadata_end */
 
 :host {
   display: flex;
   align-self: center;
-}
-
-:host([hidden]) {
-  display: none !important;
+  /* Enable interpolation between 'max-content' and 0 */
+  interpolate-size: allow-keywords;
+  /* LINT.IfChange(AvatarRingSpecs) */
+  /* kAvatarRingGapDip (2px) + kAvatarRingThicknessDip (3px) = 5px */
+  --avatar-ring-delta: 5px;
+  /* LINT.ThenChange(//chrome/browser/ui/profiles/profile_view_utils.h:AvatarRingSpecs) */
 }
 
 #button {
-  --cr-icon-button-icon-size: 24px;
-  --cr-icon-button-size: var(--toolbar-button-height);
-  margin: 0;
+  /* Set padding variables for the nested button */
+  --toolbar-chip-padding-start: var(--avatar-chip-padding-left);
+  --toolbar-chip-padding-end: var(--avatar-chip-padding-right);
+}
+
+:host(.anchor-highlight) #button {
+  --toolbar-chip-highlight-opacity: 1;
+  --toolbar-chip-fg-color: var(--cr-toolbar-button-highlight-text-color);
+}
+
+#button[has-border] {
+  border: 1px solid var(--cr-toolbar-button-border-color);
+  border-radius: var(--toolbar-chip-border-radius);
+  box-sizing: border-box;
+}
+
+#icon {
+  --icon-size: var(--toolbar-button-icon-size);
+  border-radius: 50%;
+  display: inline-block;
+  height: var(--icon-size);
+  width: var(--icon-size);
+}
+
+#text {
+  display: inline-block;
+  font-family: var(--toolbar-button-font-family);
+  font-size: var(--toolbar-button-font-size);
+  font-weight: var(--toolbar-button-font-weight);
+  line-height: var(--toolbar-button-line-height);
+  margin-inline-start: var(--avatar-chip-icon-label-spacing);
+  max-width: max-content;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: max-width 200ms var(--ease-out-cubic-bezier),
+      margin-inline-start 200ms var(--ease-out-cubic-bezier),
+      opacity 200ms var(--ease-out-cubic-bezier);
+  white-space: nowrap;
+}
+
+#text:not([visible]) {
+  margin-inline-start: 0;
+  max-width: 0;
+  opacity: 0;
+}
+
+#button.highlight-default {
+  --toolbar-chip-bg-color:
+      var(--color-avatar-button-highlight-default);
+  --toolbar-chip-fg-color:
+      var(--color-avatar-button-highlight-default-foreground);
+}
+
+#button.highlight-sync-error {
+  --toolbar-chip-bg-color: var(--color-avatar-button-highlight-sync-error);
+  --toolbar-chip-fg-color:
+      var(--color-avatar-button-highlight-sync-error-foreground);
+}
+
+#button.highlight-guest {
+  --toolbar-chip-bg-color: var(--color-avatar-button-highlight-guest);
+  --toolbar-chip-fg-color:
+      var(--color-avatar-button-highlight-guest-foreground);
+}
+
+#button.highlight-incognito {
+  --toolbar-chip-bg-color: var(--color-avatar-button-highlight-incognito);
+  --toolbar-chip-fg-color:
+      var(--color-avatar-button-highlight-incognito-foreground);
+}
+
+#button[has-linear-gradient-ring] {
+  --toolbar-chip-padding-start:
+      calc(var(--avatar-chip-padding-left) - var(--avatar-ring-delta));
+  --toolbar-chip-padding-end:
+      calc(var(--avatar-chip-padding-right) - var(--avatar-ring-delta));
+}
+
+#button[has-linear-gradient-ring] #icon {
+  --icon-size:
+      calc(var(--toolbar-button-icon-size) + 2 * var(--avatar-ring-delta));
 }

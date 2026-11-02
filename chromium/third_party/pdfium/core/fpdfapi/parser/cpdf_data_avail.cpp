@@ -10,6 +10,7 @@
 #include <memory>
 #include <utility>
 
+#include "constants/catalog.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_cross_ref_avail.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
@@ -269,7 +270,7 @@ bool CPDF_DataAvail::CheckRoot() {
   }
 
   RetainPtr<const CPDF_Reference> pRef =
-      ToReference(root_->GetObjectFor("Pages"));
+      ToReference(root_->GetObjectFor(pdfium::catalog::kPages));
   if (!pRef) {
     internal_status_ = InternalStatus::kError;
     return false;
@@ -288,7 +289,7 @@ bool CPDF_DataAvail::PreparePageItem() {
   }
 
   RetainPtr<const CPDF_Reference> pRef =
-      ToReference(pRoot->GetObjectFor("Pages"));
+      ToReference(pRoot->GetObjectFor(pdfium::catalog::kPages));
   if (!pRef) {
     internal_status_ = InternalStatus::kError;
     return false;
@@ -1052,7 +1053,8 @@ CPDF_DataAvail::DocFormStatus CPDF_DataAvail::CheckAcroForm() {
       return kFormAvailable;
     }
 
-    RetainPtr<const CPDF_Object> pAcroForm = pRoot->GetObjectFor("AcroForm");
+    RetainPtr<const CPDF_Object> pAcroForm =
+        pRoot->GetObjectFor(pdfium::catalog::kAcroForm);
     if (!pAcroForm) {
       return kFormNotExist;
     }

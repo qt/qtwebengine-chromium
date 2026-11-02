@@ -161,7 +161,7 @@ void NavigationThrottleRunner::ProcessInternal() {
   base::WeakPtr<NavigationThrottleRunner> weak_ref = weak_factory_.GetWeakPtr();
 
   auto& throttles = registry_->GetThrottles();
-  if (registry_->GetNavigationHandle().IsInitialWebUISyncNavigation()) {
+  if (registry_->GetNavigationHandle().IsInitialWebUINavigation()) {
     // We've skipped adding throttles for navigations to the initial WebUI.
     CHECK_EQ(throttles.size(), 0u);
   }

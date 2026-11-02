@@ -154,7 +154,8 @@ DomStorageDatabase::Key GetMapPrefix(const blink::StorageKey& storage_key) {
   return map_prefix;
 }
 
-LocalStorageLevelDB::LocalStorageLevelDB(PassKey) {}
+LocalStorageLevelDB::LocalStorageLevelDB(PassKey, bool write_exp_tag)
+    : write_exp_tag_(write_exp_tag) {}
 
 LocalStorageLevelDB::~LocalStorageLevelDB() = default;
 
@@ -167,7 +168,9 @@ DbStatus LocalStorageLevelDB::Open(
                        StorageType::kLocalStorage, directory, memory_dump_id,
                        kLocalStorageLevelDBVersionKey,
                        /*min_supported_version=*/kLocalStorageLevelDBVersion,
-                       /*max_supported_version=*/kLocalStorageLevelDBVersion));
+                       /*max_supported_version=*/kLocalStorageLevelDBVersion,
+                       /*write_tag_file=*/write_exp_tag_));
+  write_exp_tag_ = false;
   return DbStatus::OK();
 }
 
@@ -284,9 +287,6 @@ StatusOr<DomStorageDatabase::Metadata> LocalStorageLevelDB::ReadAllMetadata() {
 }
 
 DbStatus LocalStorageLevelDB::PutMetadata(Metadata metadata) {
-  // Local storage does not record the next map id in LevelDB.
-  CHECK(!metadata.next_map_id);
-
   std::unique_ptr<DomStorageBatchOperationLevelDB> batch =
       leveldb_->CreateBatchOperation();
 

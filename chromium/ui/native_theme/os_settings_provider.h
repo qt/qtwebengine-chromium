@@ -123,6 +123,9 @@ class COMPONENT_EXPORT(NATIVE_THEME) OsSettingsProvider {
   // Returns whether the OS prefers inverted colors.
   virtual bool PrefersInvertedColors() const;
 
+  // Returns whether the OS prefers overlay scrollbars.
+  virtual bool PrefersOverlayScrollbars() const;
+
   // Returns whether forced colors are active at the OS level. This implies that
   // various methods above should check `Color()` to decide how to behave. (They
   // do not do so by default because when forced colors are not active, system
@@ -143,6 +146,10 @@ class COMPONENT_EXPORT(NATIVE_THEME) OsSettingsProvider {
   // Returns the interval between caret blinks. If this is zero, the caret will
   // not blink.
   virtual base::TimeDelta CaretBlinkInterval() const;
+
+#if BUILDFLAG(IS_ANDROID)
+  virtual bool IsAndroidProvider() const;
+#endif
 
  protected:
   // Invokes all registered callbacks.

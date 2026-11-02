@@ -165,7 +165,6 @@ constexpr std::string_view kListItem = "li";
 constexpr std::string_view kMeta = "meta";
 constexpr std::string_view kName = "name";
 constexpr std::string_view kNoScript = "noscript";
-constexpr std::string_view kNonce = "nonce";
 constexpr std::string_view kOption = "option";
 constexpr std::string_view kParagraph = "p";
 constexpr std::string_view kPattern = "pattern";
@@ -1982,7 +1981,6 @@ void WebFormControlElementToFormField(
   }
 
   field->set_placeholder(GetAttribute<kPlaceholder>(element).Utf16());
-
   // With `AutofillBetterLocalHeuristicPlaceholderSupport` enabled, field
   // placeholder (and "poor man's placeholder") gets promoted to become
   // a first class citizen for local heuristics. Since "poor man's placeholder"
@@ -1999,6 +1997,7 @@ void WebFormControlElementToFormField(
       field->set_placeholder(inferred_placeholder->label);
     }
   }
+  field->set_placeholder_attribute(GetAttribute<kPlaceholder>(element).Utf16());
 
   if (HasAttribute<kClass>(element)) {
     field->set_css_classes(GetAttribute<kClass>(element).Utf16());
@@ -2013,8 +2012,13 @@ void WebFormControlElementToFormField(
   field->set_aria_description(
       GetAriaDescription(element.GetDocument(), element));
 
-  if (HasAttribute<kNonce>(element)) {
-    field->set_nonce(GetAttribute<kNonce>(element).Utf16());
+  // We can't use getAttribute for the nonce because the nonce attribute gets
+  // cleared when a content security policy is used.
+  // See
+  // https://html.spec.whatwg.org/dev/urls-and-fetching.html#nonce-attributes
+  WebString nonce = element.Nonce();
+  if (!nonce.IsEmpty()) {
+    field->set_nonce(nonce.Utf16());
   }
 
   // Traverse up through shadow hosts to see if we can gather missing

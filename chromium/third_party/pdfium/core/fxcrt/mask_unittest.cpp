@@ -151,6 +151,12 @@ TEST(Mask, OrEqualsAndAndEquals) {
 
 TEST(Mask, Clear) {
   Mask<Privilege> source = kAllMask;
+  source.Clear();
+  EXPECT_EQ(0u, source.UncheckedValue());
+}
+
+TEST(Mask, ClearSpecificBits) {
+  Mask<Privilege> source = kAllMask;
   source.Clear({Privilege::kPriv1, Privilege::kPriv4});
   EXPECT_EQ(250u, source.UncheckedValue());
 }

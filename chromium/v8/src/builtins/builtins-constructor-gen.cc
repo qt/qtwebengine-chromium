@@ -7,6 +7,7 @@
 #include <optional>
 
 #include "src/ast/ast.h"
+#include "src/base/strong-alias.h"
 #include "src/builtins/builtins-call-gen.h"
 #include "src/builtins/builtins-constructor.h"
 #include "src/builtins/builtins-inl.h"
@@ -345,11 +346,9 @@ TNode<JSObject> ConstructorBuiltinsAssembler::FastNewObject(
   TNode<JSFunctionWithPrototype> new_target_func = CAST(new_target);
   // Fast path.
 
-  // Load the initial map and verify that it's in fact a map.
-  TNode<Union<JSReceiver, Map, TheHole>> initial_map_or_proto =
-      LoadJSFunctionPrototypeOrInitialMap(new_target_func);
-  GotoIfNot(IsMap(initial_map_or_proto), call_runtime);
-  TNode<Map> initial_map = CAST(initial_map_or_proto);
+  // Load the initial map if it was already created.
+  TNode<Map> initial_map =
+      LoadJSFunctionInitialMap(new_target_func, call_runtime);
 
   // Fall back to runtime if the target differs from the new target's
   // initial map constructor.
@@ -439,7 +438,7 @@ TNode<Context> ConstructorBuiltinsAssembler::FastNewFunctionContext(
                                          init_value);
           offset = IntPtrAdd(offset.value(), IntPtrConstant(kTaggedSize));
         },
-        1, LoopUnrollingMode::kYes, IndexAdvanceMode::kPost);
+        1, kLoopUnrolling, IndexAdvanceMode::kPost);
 
     Label done(this);
     GotoIf(IntPtrEqual(offset.value(), size), &done);
@@ -463,7 +462,7 @@ TNode<Context> ConstructorBuiltinsAssembler::FastNewFunctionContext(
         [=, this](TNode<IntPtrT> offset) {
           StoreObjectFieldNoWriteBarrier(function_context, offset, undefined);
         },
-        kTaggedSize, LoopUnrollingMode::kYes, IndexAdvanceMode::kPost);
+        kTaggedSize, kLoopUnrolling, IndexAdvanceMode::kPost);
     return function_context;
   }
 }
@@ -748,7 +747,7 @@ TNode<HeapObject> ConstructorBuiltinsAssembler::CreateShallowObjectLiteral(
             TNode<Object> field = LoadObjectField(boilerplate, offset);
             StoreObjectFieldNoWriteBarrier(copy, offset, field);
           },
-          kTaggedSize, LoopUnrollingMode::kYes, IndexAdvanceMode::kPost);
+          kTaggedSize, kLoopUnrolling, IndexAdvanceMode::kPost);
       CopyMutableHeapNumbersInObject(copy, offset.value(), instance_size);
       Goto(&done_init);
     }
@@ -798,7 +797,7 @@ void ConstructorBuiltinsAssembler::CopyMutableHeapNumbersInObject(
         }
         BIND(&continue_loop);
       },
-      kTaggedSize, LoopUnrollingMode::kNo, IndexAdvanceMode::kPost);
+      kTaggedSize, kNoLoopUnrolling, IndexAdvanceMode::kPost);
 }
 
 #include "src/codegen/undef-code-stub-assembler-macros.inc"

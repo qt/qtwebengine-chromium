@@ -18,6 +18,7 @@
 #include "stateless/stateless_validation.h"
 #include <spirv/unified1/spirv.hpp>
 #include "utils/math_utils.h"
+#include "utils/vk_api_utils.h"
 
 namespace stateless {
 
@@ -34,6 +35,11 @@ bool Device::ValidateCreateShadersFlags(VkShaderCreateFlagsEXT flags, VkShaderSt
         skip |=
             LogError("VUID-VkShaderCreateInfoEXT-flags-08489", device, flag_loc,
                      "is %s, but the fragmentDensityMap feature was not enabled.", string_VkShaderCreateFlagsEXT(flags).c_str());
+    }
+    if ((flags & VK_SHADER_CREATE_OPACITY_MICROMAP_DISALLOW_MIXED_SPECIAL_INDEX_BIT_EXT) != 0 && !enabled_features.micromap) {
+        skip |= LogError("VUID-VkShaderCreateInfoEXT-micromap-11623", device, flag_loc,
+                         "is %s, but the VkPhysicalDeviceOpacityMicromapFeaturesKHR::micromap feature was not enabled.",
+                         string_VkShaderCreateFlagsEXT(flags).c_str());
     }
     if ((flags & VK_SHADER_CREATE_64_BIT_INDEXING_BIT_EXT) != 0 && enabled_features.shader64BitIndexing == VK_FALSE) {
         skip |=
@@ -206,6 +212,10 @@ bool Device::manual_PreCallValidateCreateShadersEXT(VkDevice device, uint32_t cr
         } else if (create_info.stage == VK_SHADER_STAGE_CLUSTER_CULLING_BIT_HUAWEI) {
             skip |= LogError("VUID-VkShaderCreateInfoEXT-stage-08426", device, create_info_loc.dot(Field::stage),
                              "is VK_SHADER_STAGE_CLUSTER_CULLING_BIT_HUAWEI.");
+        } else if (create_info.stage & kShaderStageAllRayTracing) {
+            skip |= LogError("VUID-VkShaderCreateInfoEXT-stage-12445", device, create_info_loc.dot(Field::stage),
+                             "is %s (ray tracing stages are not supported with VK_EXT_shader_object).",
+                             string_VkShaderStageFlagBits(create_info.stage));
         }
 
         if ((create_info.flags & VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT) != 0) {

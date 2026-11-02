@@ -1,0 +1,727 @@
+# Croatian translation for pipewire
+# Copyright (c) 2010 Rosetta Contributors and Canonical Ltd 2010
+# This file is distributed under the same license as the pipewire package.
+# gogo <trebelnik2@gmail.com>, 2017.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: pipewire\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2022-10-01 14:01+0200\n"
+"PO-Revision-Date: 2022-10-01 14:12+0200\n"
+"Last-Translator: gogo <trebelnik2@gmail.com>\n"
+"Language-Team: Croatian <https://translate.fedoraproject.org/projects/"
+"pipewire/pipewire/hr/>\n"
+"Language: hr\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=n%10==1 && n%100!=11 ? 0 : n%10>=2 && "
+"n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2;\n"
+"X-Generator: Poedit 3.0.1\n"
+"X-Launchpad-Export-Date: 2017-04-20 21:04+0000\n"
+
+#: src/daemon/pipewire.c:46
+#, c-format
+msgid ""
+"%s [options]\n"
+"  -h, --help                            Show this help\n"
+"      --version                         Show version\n"
+"  -c, --config                          Load config (Default %s)\n"
+msgstr ""
+"%s [mogućnosti]\n"
+"  -h, --help                            Prikaži ovu pomoć\n"
+"      --version                         Prikaži inačicu\n"
+"  -c, --config                          Učitaj podešavanje (Zadano %s)\n"
+
+#: src/modules/module-protocol-pulse/modules/module-tunnel-sink.c:180
+#: src/modules/module-protocol-pulse/modules/module-tunnel-source.c:180
+#, c-format
+msgid "Tunnel to %s/%s"
+msgstr "Tunel do %s/%s"
+
+#: src/modules/module-fallback-sink.c:51
+msgid "Dummy Output"
+msgstr "Lažni izlaz"
+
+#: src/modules/module-pulse-tunnel.c:662
+#, c-format
+msgid "Tunnel for %s@%s"
+msgstr "Tunel za %s@%s"
+
+#: src/modules/module-zeroconf-discover.c:332
+msgid "Unknown device"
+msgstr "Nepoznat uređaj"
+
+#: src/modules/module-zeroconf-discover.c:344
+#, c-format
+msgid "%s on %s@%s"
+msgstr "%s na %s@%s"
+
+#: src/modules/module-zeroconf-discover.c:348
+#, c-format
+msgid "%s on %s"
+msgstr "%s na %s"
+
+#: src/tools/pw-cat.c:784
+#, c-format
+msgid ""
+"%s [options] [<file>|-]\n"
+"  -h, --help                            Show this help\n"
+"      --version                         Show version\n"
+"  -v, --verbose                         Enable verbose operations\n"
+"\n"
+msgstr ""
+"%s [mogućnosti] [<datoteka>|-]\n"
+"  -h, --help                            Prikaži ovu pomoć\n"
+"      --version                         Prikaži inačicu\n"
+"  -v, --verbose                         Omogući opširnije radnje\n"
+"\n"
+
+#: src/tools/pw-cat.c:791
+#, c-format
+msgid ""
+"  -R, --remote                          Remote daemon name\n"
+"      --media-type                      Set media type (default %s)\n"
+"      --media-category                  Set media category (default %s)\n"
+"      --media-role                      Set media role (default %s)\n"
+"      --target                          Set node target (default %s)\n"
+"                                          0 means don't link\n"
+"      --latency                         Set node latency (default %s)\n"
+"                                          Xunit (unit = s, ms, us, ns)\n"
+"                                          or direct samples (256)\n"
+"                                          the rate is the one of the source "
+"file\n"
+"  -P  --properties                      Set node properties\n"
+"\n"
+msgstr ""
+"  -R, --remote                          Naziv udaljenog pozadinskog "
+"programa\n"
+"      --media-type                      Postavi vrstu medija (zadano je %s)\n"
+"      --media-category                  Postavi kategoriju medija (zadano je "
+"%s)\n"
+"      --media-role                      Postavi namjenu medija (zadano je "
+"%s)\n"
+"      --target                          Postavi odredište čvora (zadano je "
+"%s)\n"
+"                                          0 znači bez povezivanja\n"
+"      --latency                         Postavi latenciju čvora (zadano je "
+"%s)\n"
+"                                          Xunit (jedinica = s, ms, us, ns)\n"
+"                                          ili izravne uzorke (256)\n"
+"                                          frekvencija je jednaka izvornoj "
+"datoteci\n"
+"  -P  --properties                      Postavi svojstva čvora\n"
+"\n"
+
+#: src/tools/pw-cat.c:809
+#, c-format
+msgid ""
+"      --rate                            Sample rate (req. for rec) (default "
+"%u)\n"
+"      --channels                        Number of channels (req. for rec) "
+"(default %u)\n"
+"      --channel-map                     Channel map\n"
+"                                            one of: \"stereo\", "
+"\"surround-51\",... or\n"
+"                                            comma separated list of channel "
+"names: eg. \"FL,FR\"\n"
+"      --format                          Sample format %s (req. for rec) "
+"(default %s)\n"
+"      --volume                          Stream volume 0-1.0 (default %.3f)\n"
+"  -q  --quality                         Resampler quality (0 - 15) (default "
+"%d)\n"
+"\n"
+msgstr ""
+"      --rate                            Frekvencija (potrebno za snimanje) "
+"(zadano je %u)\n"
+"      --channels                        Broj kanala (potrebno za snimanje) "
+"(zadano je %u)\n"
+"      --channel-map                     Broj kanala\n"
+"                                            jedan od: \"stereo\", "
+"\"surround-51\",... ili\n"
+"                                            zarezom odvojen popis naziva "
+"kanala: npr. \"FL,FR\"\n"
+"      --format                          Format %s (potrebno za snimanje) "
+"(zadano je  %s)\n"
+"      --volume                          Glasnoća zvuka strujanja 0-1.0 "
+"(zadano je %.3f)\n"
+"  -q  --quality                         Kvaliteta normalizacije zvuka (0 - "
+"15) (zadano je %d)\n"
+"\n"
+
+#: src/tools/pw-cat.c:826
+msgid ""
+"  -p, --playback                        Playback mode\n"
+"  -r, --record                          Recording mode\n"
+"  -m, --midi                            Midi mode\n"
+"  -d, --dsd                             DSD mode\n"
+"\n"
+msgstr ""
+"  -p, --playback                        Način reprodukcije\n"
+"  -r, --record                          Način snimanja\n"
+"  -m, --midi                            Midi način\n"
+"  -d, --dsd                             DSD način\n"
+"\n"
+
+#: src/tools/pw-cli.c:2250
+#, c-format
+msgid ""
+"%s [options] [command]\n"
+"  -h, --help                            Show this help\n"
+"      --version                         Show version\n"
+"  -d, --daemon                          Start as daemon (Default false)\n"
+"  -r, --remote                          Remote daemon name\n"
+"\n"
+msgstr ""
+"%s [mogućnosti] [naredba]\n"
+"  -h, --help                            Prikaži ovu pomoć\n"
+"      --version                         Prikaži inačicu\n"
+"  -d, --daemon                          Pokreni kao pozadinski program "
+"(Zadano je laž)\n"
+"  -r, --remote                          Naziv udaljenog pozadinskog "
+"programa\n"
+"\n"
+
+#: spa/plugins/alsa/acp/acp.c:321
+msgid "Pro Audio"
+msgstr "Pro Audio"
+
+#: spa/plugins/alsa/acp/acp.c:444 spa/plugins/alsa/acp/alsa-mixer.c:4648
+#: spa/plugins/bluez5/bluez5-device.c:1236
+msgid "Off"
+msgstr "Isključeno"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2652
+msgid "Input"
+msgstr "Ulaz"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2653
+msgid "Docking Station Input"
+msgstr "Ulaz priključne stanice"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2654
+msgid "Docking Station Microphone"
+msgstr "Mikrofon priključne stanice"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2655
+msgid "Docking Station Line In"
+msgstr "Ulaz priključne stanice"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2656
+#: spa/plugins/alsa/acp/alsa-mixer.c:2747
+msgid "Line In"
+msgstr "Ulaz"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2657
+#: spa/plugins/alsa/acp/alsa-mixer.c:2741
+#: spa/plugins/bluez5/bluez5-device.c:1454
+msgid "Microphone"
+msgstr "Mikrofon"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2658
+#: spa/plugins/alsa/acp/alsa-mixer.c:2742
+msgid "Front Microphone"
+msgstr "Prednji mikrofon"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2659
+#: spa/plugins/alsa/acp/alsa-mixer.c:2743
+msgid "Rear Microphone"
+msgstr "Stražnji mikrofon"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2660
+msgid "External Microphone"
+msgstr "Vanjski mikrofon"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2661
+#: spa/plugins/alsa/acp/alsa-mixer.c:2745
+msgid "Internal Microphone"
+msgstr "Unutarnji mikrofon"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2662
+#: spa/plugins/alsa/acp/alsa-mixer.c:2748
+msgid "Radio"
+msgstr "Radio"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2663
+#: spa/plugins/alsa/acp/alsa-mixer.c:2749
+msgid "Video"
+msgstr "Video"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2664
+msgid "Automatic Gain Control"
+msgstr "Automatska kontrola pojačanja"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2665
+msgid "No Automatic Gain Control"
+msgstr "Bez automatske kontrole pojačanja"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2666
+msgid "Boost"
+msgstr "Pojačanje"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2667
+msgid "No Boost"
+msgstr "Bez pojačanja"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2668
+msgid "Amplifier"
+msgstr "Pojačalo"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2669
+msgid "No Amplifier"
+msgstr "Bez pojačala"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2670
+msgid "Bass Boost"
+msgstr "Pojačanje basa"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2671
+msgid "No Bass Boost"
+msgstr "Bez pojačanja basa"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2672
+#: spa/plugins/bluez5/bluez5-device.c:1460
+msgid "Speaker"
+msgstr "Zvučnik"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2673
+#: spa/plugins/alsa/acp/alsa-mixer.c:2751
+msgid "Headphones"
+msgstr "Slušalice"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2740
+msgid "Analog Input"
+msgstr "Analogni ulaz"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2744
+msgid "Dock Microphone"
+msgstr "Ugrađeni mikrofon"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2746
+msgid "Headset Microphone"
+msgstr "Mikrofon sa slušalicama"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2750
+msgid "Analog Output"
+msgstr "Analogni izlaz"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2752
+msgid "Headphones 2"
+msgstr "Slušalice 2"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2753
+msgid "Headphones Mono Output"
+msgstr "Mono izlaz za slušalice"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2754
+msgid "Line Out"
+msgstr "Izlaz"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2755
+msgid "Analog Mono Output"
+msgstr "Analogni mono izlaz"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2756
+msgid "Speakers"
+msgstr "Zvučnici"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2757
+msgid "HDMI / DisplayPort"
+msgstr "HDMI / DisplayPort"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2758
+msgid "Digital Output (S/PDIF)"
+msgstr "Digitalni izlaz (S/PDIF)"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2759
+msgid "Digital Input (S/PDIF)"
+msgstr "Digitalni ulaz (S/PDIF)"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2760
+msgid "Multichannel Input"
+msgstr "Višekanalni ulaz"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2761
+msgid "Multichannel Output"
+msgstr "Višekanalni izlaz"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2762
+msgid "Game Output"
+msgstr "Izlaz za igre"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2763
+#: spa/plugins/alsa/acp/alsa-mixer.c:2764
+msgid "Chat Output"
+msgstr "Izlaz razgovora"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2765
+msgid "Chat Input"
+msgstr "Ulaz razgovora"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:2766
+msgid "Virtual Surround 7.1"
+msgstr "Virtalni surround 7.1"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4471
+msgid "Analog Mono"
+msgstr "Analogni mono"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4472
+msgid "Analog Mono (Left)"
+msgstr "Analogni mono (lijevi)"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4473
+msgid "Analog Mono (Right)"
+msgstr "Analogni mono (desni)"
+
+#. Note: Not translated to "Analog Stereo Input", because the source
+#. * name gets "Input" appended to it automatically, so adding "Input"
+#. * here would lead to the source name to become "Analog Stereo Input
+#. * Input". The same logic applies to analog-stereo-output,
+#. * multichannel-input and multichannel-output.
+#: spa/plugins/alsa/acp/alsa-mixer.c:4474
+#: spa/plugins/alsa/acp/alsa-mixer.c:4482
+#: spa/plugins/alsa/acp/alsa-mixer.c:4483
+msgid "Analog Stereo"
+msgstr "Analogni stereo"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4475
+msgid "Mono"
+msgstr "Mono"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4476
+msgid "Stereo"
+msgstr "Stereo"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4484
+#: spa/plugins/alsa/acp/alsa-mixer.c:4642
+#: spa/plugins/bluez5/bluez5-device.c:1442
+msgid "Headset"
+msgstr "Slušalice s mikrofonom"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4485
+#: spa/plugins/alsa/acp/alsa-mixer.c:4643
+msgid "Speakerphone"
+msgstr "Zvučnik"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4486
+#: spa/plugins/alsa/acp/alsa-mixer.c:4487
+msgid "Multichannel"
+msgstr "Višekanalni"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4488
+msgid "Analog Surround 2.1"
+msgstr "Analogni surround 2.1"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4489
+msgid "Analog Surround 3.0"
+msgstr "Analogni surround 3.0"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4490
+msgid "Analog Surround 3.1"
+msgstr "Analogni surround 3.1"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4491
+msgid "Analog Surround 4.0"
+msgstr "Analogni surround 4.0"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4492
+msgid "Analog Surround 4.1"
+msgstr "Analogni surround 4.1"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4493
+msgid "Analog Surround 5.0"
+msgstr "Analogni surround 5.0"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4494
+msgid "Analog Surround 5.1"
+msgstr "Analogni surround 5.1"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4495
+msgid "Analog Surround 6.0"
+msgstr "Analogni surround 6.0"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4496
+msgid "Analog Surround 6.1"
+msgstr "Analogni surround 6.1"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4497
+msgid "Analog Surround 7.0"
+msgstr "Analogni surround 7.0"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4498
+msgid "Analog Surround 7.1"
+msgstr "Analogni surround 7.1"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4499
+msgid "Digital Stereo (IEC958)"
+msgstr "Digitalni stereo (IEC958)"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4500
+msgid "Digital Surround 4.0 (IEC958/AC3)"
+msgstr "Digitalni surround 4.0 (IEC958/AC3)"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4501
+msgid "Digital Surround 5.1 (IEC958/AC3)"
+msgstr "Digitalni surround 5.1 (IEC958/AC3)"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4502
+msgid "Digital Surround 5.1 (IEC958/DTS)"
+msgstr "Digitalni surround 5.1 (IEC958/DTS)"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4503
+msgid "Digital Stereo (HDMI)"
+msgstr "Digitalni stereo (HDMI)"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4504
+msgid "Digital Surround 5.1 (HDMI)"
+msgstr "Digitalni surround 5.1 (HDMI)"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4505
+msgid "Chat"
+msgstr "Razgovor"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4506
+msgid "Game"
+msgstr "Igra"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4640
+msgid "Analog Mono Duplex"
+msgstr "Analogni mono obostrani"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4641
+msgid "Analog Stereo Duplex"
+msgstr "Analogni stereo obostrani"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4644
+msgid "Digital Stereo Duplex (IEC958)"
+msgstr "Digitalni stereo obostrani (IEC958)"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4645
+msgid "Multichannel Duplex"
+msgstr "Višekanalni obostrani"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4646
+msgid "Stereo Duplex"
+msgstr "Stereo obostrani"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4647
+msgid "Mono Chat + 7.1 Surround"
+msgstr "Mono razgovor + 7.1 Surround"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4754
+#, c-format
+msgid "%s Output"
+msgstr "%s izlaz"
+
+#: spa/plugins/alsa/acp/alsa-mixer.c:4761
+#, c-format
+msgid "%s Input"
+msgstr "%s ulaz"
+
+#: spa/plugins/alsa/acp/alsa-util.c:1187
+#: spa/plugins/alsa/acp/alsa-util.c:1281
+#, c-format
+msgid ""
+"snd_pcm_avail() returned a value that is exceptionally large: %lu byte (%lu "
+"ms).\n"
+"Most likely this is a bug in the ALSA driver '%s'. Please report this issue "
+"to the ALSA developers."
+msgid_plural ""
+"snd_pcm_avail() returned a value that is exceptionally large: %lu bytes (%lu "
+"ms).\n"
+"Most likely this is a bug in the ALSA driver '%s'. Please report this issue "
+"to the ALSA developers."
+msgstr[0] ""
+"snd_pcm_avail() je vratio vrijednost koja je iznimno velika: %lu bajt (%lu "
+"ms).\n"
+"Najvjerojatnije je ovo greška ALSA upravljačkog programa '%s'. Prijavite "
+"problem ALSA razvijateljima."
+msgstr[1] ""
+"snd_pcm_avail() je vratio vrijednost koja je iznimno velika: %lu bajta (%lu "
+"ms).\n"
+"Najvjerojatnije je ovo greška ALSA upravljačkog programa '%s'. Prijavite "
+"problem ALSA razvijateljima."
+msgstr[2] ""
+"snd_pcm_avail() je vratio vrijednost koja je iznimno velika: %lu bajta (%lu "
+"ms).\n"
+"Najvjerojatnije je ovo greška ALSA upravljačkog programa '%s'. Prijavite "
+"problem ALSA razvijateljima."
+
+#: spa/plugins/alsa/acp/alsa-util.c:1253
+#, c-format
+msgid ""
+"snd_pcm_delay() returned a value that is exceptionally large: %li byte "
+"(%s%lu ms).\n"
+"Most likely this is a bug in the ALSA driver '%s'. Please report this issue "
+"to the ALSA developers."
+msgid_plural ""
+"snd_pcm_delay() returned a value that is exceptionally large: %li bytes "
+"(%s%lu ms).\n"
+"Most likely this is a bug in the ALSA driver '%s'. Please report this issue "
+"to the ALSA developers."
+msgstr[0] ""
+"snd_pcm_delay() je vratio vrijednost koja je iznimno velika: %li bajt (%s%lu "
+"ms).\n"
+"Najvjerojatnije je ovo greška ALSA upravljačkog programa '%s'. Prijavite "
+"problem ALSA razvijateljima."
+msgstr[1] ""
+"snd_pcm_delay() je vratio vrijednost koja je iznimno velika: %li bajta "
+"(%s%lu ms).\n"
+"Najvjerojatnije je ovo greška ALSA upravljačkog programa '%s'. Prijavite "
+"problem ALSA razvijateljima."
+msgstr[2] ""
+"snd_pcm_delay() je vratio vrijednost koja je iznimno velika: %li bajta "
+"(%s%lu ms).\n"
+"Najvjerojatnije je ovo greška ALSA upravljačkog programa '%s'. Prijavite "
+"problem ALSA razvijateljima."
+
+#: spa/plugins/alsa/acp/alsa-util.c:1300
+#, c-format
+msgid ""
+"snd_pcm_avail_delay() returned strange values: delay %lu is less than avail "
+"%lu.\n"
+"Most likely this is a bug in the ALSA driver '%s'. Please report this issue "
+"to the ALSA developers."
+msgstr ""
+"snd_pcm_avail_delay() je vratio nepoznate vrijednosti: kašnjenje %lu je "
+"manje od %lu.\n"
+"Najvjerojatnije je ovo greška ALSA upravljačkog programa '%s'. Prijavite "
+"problem ALSA razvijateljima."
+
+#: spa/plugins/alsa/acp/alsa-util.c:1343
+#, c-format
+msgid ""
+"snd_pcm_mmap_begin() returned a value that is exceptionally large: %lu byte "
+"(%lu ms).\n"
+"Most likely this is a bug in the ALSA driver '%s'. Please report this issue "
+"to the ALSA developers."
+msgid_plural ""
+"snd_pcm_mmap_begin() returned a value that is exceptionally large: %lu bytes "
+"(%lu ms).\n"
+"Most likely this is a bug in the ALSA driver '%s'. Please report this issue "
+"to the ALSA developers."
+msgstr[0] ""
+"snd_pcm_mmap_begin() je vratio vrijednost koja je iznimno velika: %lu bajt "
+"(%lu ms).\n"
+"Najvjerojatnije je ovo greška ALSA upravljačkog programa '%s'. Prijavite "
+"problem ALSA razvijateljima."
+msgstr[1] ""
+"snd_pcm_mmap_begin() je vratio vrijednost koja je iznimno velika: %lu bajta "
+"(%lu ms).\n"
+"Najvjerojatnije je ovo greška ALSA upravljačkog programa '%s'. Prijavite "
+"problem ALSA razvijateljima."
+msgstr[2] ""
+"snd_pcm_mmap_begin() je vratio vrijednost koja je iznimno velika: %lu bajta "
+"(%lu ms).\n"
+"Najvjerojatnije je ovo greška ALSA upravljačkog programa '%s'. Prijavite "
+"problem ALSA razvijateljima."
+
+#: spa/plugins/alsa/acp/channelmap.h:457
+msgid "(invalid)"
+msgstr "(neispravno)"
+
+#: spa/plugins/alsa/acp/compat.c:189
+msgid "Built-in Audio"
+msgstr "Ugrađeni zvuk"
+
+#: spa/plugins/alsa/acp/compat.c:194
+msgid "Modem"
+msgstr "Modem"
+
+#: spa/plugins/bluez5/bluez5-device.c:1247
+msgid "Audio Gateway (A2DP Source & HSP/HFP AG)"
+msgstr "Zvučni pristupnik (A2DP izvor i HSP/HFP AG)"
+
+#: spa/plugins/bluez5/bluez5-device.c:1272
+#, c-format
+msgid "High Fidelity Playback (A2DP Sink, codec %s)"
+msgstr "Reprodukcija visoke autentičnosti (A2DP slivnik, kôdek %s)"
+
+#: spa/plugins/bluez5/bluez5-device.c:1275
+#, c-format
+msgid "High Fidelity Duplex (A2DP Source/Sink, codec %s)"
+msgstr "Telefonija visoke autentičnosti (A2DP slivnik, kôdek %s)"
+
+#: spa/plugins/bluez5/bluez5-device.c:1283
+msgid "High Fidelity Playback (A2DP Sink)"
+msgstr "Reprodukcija visoke autentičnosti (A2DP slivnik)"
+
+#: spa/plugins/bluez5/bluez5-device.c:1285
+msgid "High Fidelity Duplex (A2DP Source/Sink)"
+msgstr "Telefonija visoke autentičnosti (A2DP izvor/slivnik)"
+
+#: spa/plugins/bluez5/bluez5-device.c:1322
+#, c-format
+msgid "High Fidelity Playback (BAP Sink, codec %s)"
+msgstr "Reprodukcija visoke autentičnosti (BAP slivnik, kôdek %s)"
+
+#: spa/plugins/bluez5/bluez5-device.c:1326
+#, c-format
+msgid "High Fidelity Input (BAP Source, codec %s)"
+msgstr "Ulaz visoke autentičnosti (BAP izvor, kôdek %s)"
+
+#: spa/plugins/bluez5/bluez5-device.c:1330
+#, c-format
+msgid "High Fidelity Duplex (BAP Source/Sink, codec %s)"
+msgstr "Telefonija visoke autentičnosti (BAP izvor/slivnik, kôdek %s)"
+
+#: spa/plugins/bluez5/bluez5-device.c:1359
+#, c-format
+msgid "Headset Head Unit (HSP/HFP, codec %s)"
+msgstr "Jedinica slušalice s mikrofonom (HSP/HFP, kôdek %s)"
+
+#: spa/plugins/bluez5/bluez5-device.c:1364
+msgid "Headset Head Unit (HSP/HFP)"
+msgstr "Jedinica slušalice s mikrofonom (HSP/HFP)"
+
+#: spa/plugins/bluez5/bluez5-device.c:1443
+#: spa/plugins/bluez5/bluez5-device.c:1448
+#: spa/plugins/bluez5/bluez5-device.c:1455
+#: spa/plugins/bluez5/bluez5-device.c:1461
+#: spa/plugins/bluez5/bluez5-device.c:1467
+#: spa/plugins/bluez5/bluez5-device.c:1473
+#: spa/plugins/bluez5/bluez5-device.c:1479
+#: spa/plugins/bluez5/bluez5-device.c:1485
+#: spa/plugins/bluez5/bluez5-device.c:1491
+msgid "Handsfree"
+msgstr "Bez-ruku"
+
+#: spa/plugins/bluez5/bluez5-device.c:1449
+msgid "Handsfree (HFP)"
+msgstr "Bez-ruku (HFP)"
+
+#: spa/plugins/bluez5/bluez5-device.c:1466
+msgid "Headphone"
+msgstr "Slušalica"
+
+#: spa/plugins/bluez5/bluez5-device.c:1472
+msgid "Portable"
+msgstr "Prijenosnik"
+
+#: spa/plugins/bluez5/bluez5-device.c:1478
+msgid "Car"
+msgstr "Automobil"
+
+#: spa/plugins/bluez5/bluez5-device.c:1484
+msgid "HiFi"
+msgstr "HiFi"
+
+#: spa/plugins/bluez5/bluez5-device.c:1490
+msgid "Phone"
+msgstr "Telefon"
+
+#: spa/plugins/bluez5/bluez5-device.c:1497
+msgid "Bluetooth"
+msgstr "Bluetooth"
+
+#: spa/plugins/bluez5/bluez5-device.c:1498
+msgid "Bluetooth (HFP)"
+msgstr "Bluetooth (HFP)"
+
+#~ msgid "PipeWire Media System"
+#~ msgstr "PipeWire medijski sustav"
+
+#~ msgid "Start the PipeWire Media System"
+#~ msgstr "Pokreni PipeWire medijski sustav"

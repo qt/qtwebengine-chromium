@@ -532,13 +532,11 @@ repack("pak") {
   sources = [
     "$root_gen_dir/base/tracing/protos/tracing_proto_resources.pak",
     "$root_gen_dir/components/ukm_resources.pak",
-    "$root_gen_dir/content/attribution_internals_resources.pak",
     "$root_gen_dir/content/browser/resources/media/media_internals_resources.pak",
     "$root_gen_dir/content/browser/webrtc/resources/webrtc_internals_resources.pak",
     "$root_gen_dir/content/content_resources.pak",
     "$root_gen_dir/content/gpu_resources.pak",
     "$root_gen_dir/content/histograms_resources.pak",
-    "$root_gen_dir/content/private_aggregation_internals_resources.pak",
     "$root_gen_dir/content/process_resources.pak",
     "$root_gen_dir/content/quota_internals_resources.pak",
     "$root_gen_dir/content/service_worker_resources.pak",
@@ -932,6 +930,7 @@ if (is_mac) {
       ":content_shell_framework_resources",
       ":content_shell_swiftshader_binaries",
     ]
+    bundle_deps += [ ":content_shell_vulkan_binaries" ]
 
     if (!is_component_build) {
       # Specify a sensible install_name for static builds. The library is
@@ -1071,6 +1070,13 @@ if (is_mac) {
     outputs = [ "{{bundle_contents_dir}}/Libraries/{{source_file_part}}" ]
     public_deps = [ "//ui/gl:swiftshader_vk_library_copy" ]
   }
+
+  # Add the Vulkan loader .dylib in the Libraries directory of the Framework.
+  bundle_data("content_shell_vulkan_binaries") {
+    sources = [ "$root_out_dir/vulkan_intermediates/libvulkan.dylib" ]
+    outputs = [ "{{bundle_contents_dir}}/Libraries/{{source_file_part}}" ]
+    public_deps = [ "//ui/gl:vulkan_loader_library_copy" ]
+  }
 }
 
 mojom("content_browsertests_mojom") {
@@ -1114,6 +1120,14 @@ group("content_shell_crash_test") {
     "//testing:test_scripts_shared",
     "//third_party/angle:includes",
   ]
+  if (is_fuchsia) {
+    data_deps += [
+      ":content_shell_pkg",
+      ":content_shell_pkg__archive-manifest",
+      ":content_shell_script_meta",
+      "//build/config/fuchsia:deployment_resources",
+    ]
+  }
   data = [
     "//content/shell/tools/breakpad_integration_test.py",
     "//testing/scripts/content_shell_crash_test.py",
@@ -1174,6 +1188,7 @@ rust_static_library("rust_test_service") {
   sources = [ "browser/rust_test_service.rs" ]
   deps = [
     ":rust_test_mojom_rust",
+    "//base:command_line",
     "//base:feature",
     "//mojo/public/rust/bindings",
   ]

@@ -36,7 +36,7 @@ export function parseSkill(content) {
     name: frontmatter.name,
     description: frontmatter.description,
     allowedTools: frontmatter['allowed-tools'] || [],
-    instructions: instructions.trim()
+    instructions: instructions.trim(),
   };
 }
 

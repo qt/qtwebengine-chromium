@@ -118,7 +118,7 @@ struct TensorEvaluator<const TensorIndexPairOp<ArgType>, Device> {
 
 namespace internal {
 
-/** \class TensorPairIndex
+/** \class TensorPairReducerOp
  * \ingroup Tensor_Module
  *
  * \brief Converts to Tensor<Pair<Index, Scalar> > and reduces to Tensor<Index>.
@@ -214,11 +214,10 @@ struct TensorEvaluator<const TensorPairReducerOp<ReduceOp, Dims, ArgType>, Devic
         m_impl(op.expression().index_pairs().reduce(op.reduce_dims(), op.reduce_op()), device),
         m_return_dim(op.return_dim()) {
     gen_strides(m_orig_impl.dimensions(), m_strides);
-    EIGEN_IF_CONSTEXPR(Layout == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (Layout == static_cast<int>(ColMajor)) {
       const Index total_size = internal::array_prod(m_orig_impl.dimensions());
       m_stride_mod = (m_return_dim < NumDims - 1) ? m_strides[m_return_dim + 1] : total_size;
-    }
-    else {
+    } else {
       const Index total_size = internal::array_prod(m_orig_impl.dimensions());
       m_stride_mod = (m_return_dim > 0) ? m_strides[m_return_dim - 1] : total_size;
     }
@@ -257,13 +256,12 @@ struct TensorEvaluator<const TensorPairReducerOp<ReduceOp, Dims, ArgType>, Devic
 
     // Calculate m_stride_div and m_stride_mod, which are used to
     // calculate the value of an index w.r.t. the m_return_dim.
-    EIGEN_IF_CONSTEXPR(Layout == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (Layout == static_cast<int>(ColMajor)) {
       strides[0] = 1;
       for (int i = 1; i < NumDims; ++i) {
         strides[i] = strides[i - 1] * dims[i - 1];
       }
-    }
-    else {
+    } else {
       strides[NumDims - 1] = 1;
       for (int i = NumDims - 2; i >= 0; --i) {
         strides[i] = strides[i + 1] * dims[i + 1];

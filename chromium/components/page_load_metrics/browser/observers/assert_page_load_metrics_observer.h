@@ -42,8 +42,6 @@ class AssertPageLoadMetricsObserver final
       const GURL& currently_committed_url) override;
   ObservePolicy OnPrerenderStart(content::NavigationHandle* navigation_handle,
                                  const GURL& currently_committed_url) override;
-  ObservePolicy OnPreviewStart(content::NavigationHandle* navigation_handle,
-                               const GURL& currently_committed_url) override;
   ObservePolicy OnNavigationHandleTimingUpdated(
       content::NavigationHandle* navigation_handle) override;
   ObservePolicy OnRedirect(
@@ -53,8 +51,6 @@ class AssertPageLoadMetricsObserver final
   ObservePolicy OnCommit(content::NavigationHandle* navigation_handle) override;
   void DidActivatePrerenderedPage(
       content::NavigationHandle* navigation_handle) override;
-  void DidActivatePreviewedPage(base::TimeTicks activation_time) override;
-
   // Termination-like events
   void OnFailedProvisionalLoad(
       const page_load_metrics::FailedProvisionalLoadInfo&
@@ -224,9 +220,6 @@ class AssertPageLoadMetricsObserver final
   void OnCustomUserTimingMarkObserved(
       const std::vector<page_load_metrics::mojom::CustomUserTimingMarkPtr>&
           timings) override {}
-  void OnAdAuctionComplete(bool is_server_auction,
-                           bool is_on_device_auction,
-                           content::AuctionResult result) override {}
   void OnPrimaryPageRenderProcessGone() override {}
   void OnUserTimingMarkFullyLoaded(
       const page_load_metrics::mojom::PageLoadTiming& timing) override {}
@@ -256,7 +249,6 @@ class AssertPageLoadMetricsObserver final
   bool backforwardcache_entering_ = false;
   bool backforwardcache_entered_ = false;
   bool in_prerendering_ = false;
-  bool in_preview_ = false;
 };
 
 #endif  // COMPONENTS_PAGE_LOAD_METRICS_BROWSER_OBSERVERS_ASSERT_PAGE_LOAD_METRICS_OBSERVER_H_

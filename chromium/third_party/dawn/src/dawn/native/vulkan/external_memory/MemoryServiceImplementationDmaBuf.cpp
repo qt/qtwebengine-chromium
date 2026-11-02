@@ -27,9 +27,11 @@
 
 #include "src/dawn/native/vulkan/external_memory/MemoryServiceImplementationDmaBuf.h"
 
+#include <array>
+#include <optional>
+#include <utility>
 #include <vector>
 
-#include "src/dawn/common/Assert.h"
 #include "src/dawn/native/vulkan/BackendVk.h"
 #include "src/dawn/native/vulkan/DeviceVk.h"
 #include "src/dawn/native/vulkan/PhysicalDeviceVk.h"
@@ -37,7 +39,9 @@
 #include "src/dawn/native/vulkan/UtilsVulkan.h"
 #include "src/dawn/native/vulkan/VulkanError.h"
 #include "src/dawn/native/vulkan/external_memory/MemoryServiceImplementation.h"
+#include "src/utils/assert.h"
 #include "src/utils/compiler.h"
+#include "src/utils/numeric.h"
 
 namespace dawn::native::vulkan::external_memory {
 
@@ -265,24 +269,25 @@ class ServiceImplementationDmaBuf : public ServiceImplementation {
         // Choose the best memory type that satisfies both the image's constraint and the
         // import's constraint.
         memoryRequirements.memoryTypeBits &= fdProperties.memoryTypeBits;
-        int memoryTypeIndex = mDevice->GetResourceMemoryAllocator()->FindBestTypeIndex(
+        auto maybeMemoryTypeIndex = mDevice->GetResourceMemoryAllocator()->FindBestTypeIndex(
             memoryRequirements, MemoryKind::DeviceLocal);
+
         // Some devices may fail to find device local memory for these FD imports (likely from
         // camera).  When this occurs we can alternatively use host memory even though there could
         // be performance consequences. This issue was discovered on AMD
         // (https://www.techpowerup.com/gpu-specs/amd-mendocino.g1022).
         // See crbug.com/422128949
-        if (memoryTypeIndex == -1) {
-            memoryTypeIndex = mDevice->GetResourceMemoryAllocator()->FindBestTypeIndex(
+        if (!maybeMemoryTypeIndex.has_value()) {
+            maybeMemoryTypeIndex = mDevice->GetResourceMemoryAllocator()->FindBestTypeIndex(
                 memoryRequirements, MemoryKind::HostCached);
         }
-
-        DAWN_INVALID_IF(memoryTypeIndex == -1,
+        DAWN_INVALID_IF(!maybeMemoryTypeIndex.has_value(),
                         "Unable to find an appropriate memory type for import.");
+        uint32_t memoryTypeIndex = maybeMemoryTypeIndex.value();
 
         MemoryImportParams params;
         params.allocationSize = memoryRequirements.size;
-        params.memoryTypeIndex = static_cast<uint32_t>(memoryTypeIndex);
+        params.memoryTypeIndex = memoryTypeIndex;
         params.dedicatedAllocation = RequiresDedicatedAllocation(dmaBufDescriptor, image);
         return params;
     }
@@ -301,7 +306,7 @@ class ServiceImplementationDmaBuf : public ServiceImplementation {
         PNextChainBuilder memoryAllocateInfoChain(&memoryAllocateInfo);
 
         VkImportMemoryFdInfoKHR importMemoryFdInfo;
-        importMemoryFdInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
+        importMemoryFdInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
         importMemoryFdInfo.fd = handle;
         memoryAllocateInfoChain.Add(&importMemoryFdInfo,
                                     VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR);
@@ -349,16 +354,13 @@ class ServiceImplementationDmaBuf : public ServiceImplementation {
         createInfoChain.Add(&externalMemoryImageCreateInfo,
                             VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO);
 
-        VkSubresourceLayout planeLayouts[ExternalImageDescriptorDmaBuf::kMaxPlanes];
+        std::array<VkSubresourceLayout, ExternalImageDescriptorDmaBuf::kMaxPlanes> planeLayouts;
         for (uint32_t plane = 0u; plane < planeCount; ++plane) {
-            DAWN_UNSAFE_TODO(planeLayouts[plane]).offset =
-                dmaBufDescriptor->planeLayouts[plane].offset;
-            DAWN_UNSAFE_TODO(planeLayouts[plane]).size =
-                0;  // VK_EXT_image_drm_format_modifier mandates size = 0.
-            DAWN_UNSAFE_TODO(planeLayouts[plane]).rowPitch =
-                dmaBufDescriptor->planeLayouts[plane].stride;
-            DAWN_UNSAFE_TODO(planeLayouts[plane]).arrayPitch = 0;  // Not an array texture
-            DAWN_UNSAFE_TODO(planeLayouts[plane]).depthPitch = 0;  // Not a depth texture
+            planeLayouts[plane].offset = dmaBufDescriptor->planeLayouts[plane].offset;
+            planeLayouts[plane].size = 0;  // VK_EXT_image_drm_format_modifier mandates size = 0.
+            planeLayouts[plane].rowPitch = dmaBufDescriptor->planeLayouts[plane].stride;
+            planeLayouts[plane].arrayPitch = 0;  // Not an array texture
+            planeLayouts[plane].depthPitch = 0;  // Not a depth texture
         }
 
         VkImageDrmFormatModifierExplicitCreateInfoEXT explicitCreateInfo = {};

@@ -12,6 +12,7 @@
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
 #include "base/test/gmock_callback_support.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/mock_callback.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
@@ -23,7 +24,8 @@
 #include "components/autofill/core/browser/foundations/test_autofill_client.h"
 #include "components/autofill/core/browser/foundations/test_autofill_driver.h"
 #include "components/autofill/core/browser/foundations/test_browser_autofill_manager.h"
-#include "components/autofill/core/browser/network/autofill_ai/mock_wallet_pass_access_manager.h"
+#include "components/autofill/core/browser/integrators/autofill_ai/metrics/autofill_ai_metrics.h"
+#include "components/autofill/core/browser/network/autofill_ai/mock_autofill_ai_personal_context_access_manager.h"
 #include "components/autofill/core/browser/test_utils/autofill_test_utils.h"
 #include "components/autofill/core/browser/test_utils/entity_data_test_utils.h"
 #include "components/autofill/core/browser/webdata/autofill_ai/entity_table.h"
@@ -68,10 +70,14 @@ class TestAutofillClientForAccessManager : public TestAutofillClient {
 class AutofillAiAccessManagerTest : public testing::Test {
  public:
   AutofillAiAccessManagerTest() : client_(&mock_authenticator_) {
+    personal_context_manager_ = std::make_unique<
+        NiceMock<MockAutofillAiPersonalContextAccessManager>>();
+    client_.set_personal_context_access_manager(
+        personal_context_manager_.get());
     client_.set_entity_data_manager(std::make_unique<EntityDataManager>(
         client_.GetPrefs(), client_.GetIdentityManager(),
         client_.GetSyncService(), helper_.autofill_webdata_service(),
-        /*history_service=*/nullptr,
+        /*history_service=*/nullptr, personal_context_manager_.get(),
         /*strike_database=*/nullptr,
         /*variation_country_code=*/GeoIpCountryCode("US")));
     client_.SetUpPrefsAndIdentityForAutofillAi();
@@ -82,6 +88,7 @@ class AutofillAiAccessManagerTest : public testing::Test {
     manager_ = std::make_unique<TestBrowserAutofillManager>(driver_.get());
   }
   ~AutofillAiAccessManagerTest() override {
+    client_.set_personal_context_access_manager(nullptr);
     if (driver_) {
       test_api(*driver_).SetLifecycleState(
           AutofillDriver::LifecycleState::kPendingDeletion);
@@ -89,8 +96,17 @@ class AutofillAiAccessManagerTest : public testing::Test {
   }
 
   void AddOrUpdateEntityInstance(EntityInstance entity) {
-    edm().AddOrUpdateEntityInstance(std::move(entity));
-    helper_.WaitUntilIdle();
+    switch (entity.record_type()) {
+      case EntityInstance::RecordType::kLocal:
+      case EntityInstance::RecordType::kServerWallet:
+        edm().AddOrUpdateEntityInstance(entity);
+        helper_.WaitUntilIdle();
+        break;
+      case EntityInstance::RecordType::kPersonalContext:
+        edm().OnPrefetchContextComplete(personal_context_manager(),
+                                        std::vector<EntityInstance>{entity});
+        break;
+    }
   }
 
   TestAutofillClientForAccessManager& client() { return client_; }
@@ -98,6 +114,9 @@ class AutofillAiAccessManagerTest : public testing::Test {
   MockWalletPassAccessManager& wallet_manager() {
     return static_cast<MockWalletPassAccessManager&>(
         *client_.GetWalletPassAccessManager());
+  }
+  MockAutofillAiPersonalContextAccessManager& personal_context_manager() {
+    return *personal_context_manager_;
   }
   AutofillAiAccessManager& access_manager() {
     return manager_->GetAutofillAiAccessManager();
@@ -112,6 +131,8 @@ class AutofillAiAccessManagerTest : public testing::Test {
   base::test::TaskEnvironment task_environment_{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
   test::AutofillUnitTestEnvironment autofill_environment_;
+  std::unique_ptr<MockAutofillAiPersonalContextAccessManager>
+      personal_context_manager_;
   TestAutofillClientForAccessManager client_;
   AutofillWebDataServiceTestHelper helper_{std::make_unique<EntityTable>()};
   std::unique_ptr<TestAutofillDriver> driver_;
@@ -146,8 +167,6 @@ TEST_F(AutofillAiAccessManagerTest, NoReauthRequired_LocalEntity) {
 TEST_F(AutofillAiAccessManagerTest, ReauthRequired_ReauthAccepted) {
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitAndEnableFeature(features::kAutofillAiReauthRequired);
-  client().GetPrefs()->SetBoolean(
-      prefs::kAutofillAiReauthBeforeViewingSensitiveData, true);
 
   EntityInstance passport = test::GetPassportEntityInstance();
   AddOrUpdateEntityInstance(passport);
@@ -179,8 +198,6 @@ TEST_F(AutofillAiAccessManagerTest, ReauthRequired_ReauthAccepted) {
 TEST_F(AutofillAiAccessManagerTest, ReauthRequired_ReauthRejected) {
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitAndEnableFeature(features::kAutofillAiReauthRequired);
-  client().GetPrefs()->SetBoolean(
-      prefs::kAutofillAiReauthBeforeViewingSensitiveData, true);
 
   EntityInstance passport = test::GetPassportEntityInstance();
   AddOrUpdateEntityInstance(passport);
@@ -209,13 +226,49 @@ TEST_F(AutofillAiAccessManagerTest, ReauthRequired_ReauthRejected) {
       passport, /*will_fill_sensitive_info=*/true, callback.Get()));
 }
 
+// Tests that when re-authentication is required and rejected for a
+// Personal Context entity, kReauthFailed is logged to the Unmask.Result metric.
+TEST_F(AutofillAiAccessManagerTest,
+       ReauthRequired_ReauthRejected_PersonalContext) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(features::kAutofillAiReauthRequired);
+
+  EntityInstance passport = test::GetPassportEntityInstance(
+      {.record_type = EntityInstance::RecordType::kPersonalContext});
+  AddOrUpdateEntityInstance(passport);
+
+  mock_authenticator_ =
+      std::make_unique<device_reauth::MockDeviceAuthenticator>();
+  EXPECT_CALL(*mock_authenticator_, CanAuthenticateWithBiometricOrScreenLock)
+      .WillOnce(Return(true));
+  EXPECT_CALL(*mock_authenticator_, AuthenticateWithMessage)
+      .WillOnce(RunOnceCallback<1>(false));
+  test_api(access_manager())
+      .SetDeviceAuthenticator(std::move(mock_authenticator_));
+
+  base::MockCallback<AutofillAiAccessManager::OnEntityInstanceFetchedCallback>
+      callback;
+  EXPECT_CALL(
+      callback,
+      Run(base::expected<EntityInstance,
+                         AutofillAiAccessManager::FailureReason>(
+              base::unexpected(
+                  AutofillAiAccessManager::FailureReason::kReauthFailed)),
+          /*reauth_attempted=*/true));
+
+  base::HistogramTester histogram_tester;
+  EXPECT_TRUE(access_manager().FetchEntityInstance(
+      passport, /*will_fill_sensitive_info=*/true, callback.Get()));
+  histogram_tester.ExpectUniqueSample(
+      "Autofill.Ai.Unmask.Result.PersonalContext",
+      AutofillAiUnmaskResult::kReauthFailed, 1);
+}
+
 // Tests that when re-authentication is required but the device does not support
 // screen lock, FetchEntityInstance assumes success to avoid blocking the user.
 TEST_F(AutofillAiAccessManagerTest, ReauthRequired_NoAuthenticator) {
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitAndEnableFeature(features::kAutofillAiReauthRequired);
-  client().GetPrefs()->SetBoolean(
-      prefs::kAutofillAiReauthBeforeViewingSensitiveData, true);
 
   EntityInstance passport = test::GetPassportEntityInstance();
   AddOrUpdateEntityInstance(passport);
@@ -314,8 +367,6 @@ TEST_F(AutofillAiAccessManagerTest, ReauthAndServerFetch_Success) {
       {features::kAutofillAiReauthRequired,
        features::kAutofillAiWalletPrivatePasses},
       {});
-  client().GetPrefs()->SetBoolean(
-      prefs::kAutofillAiReauthBeforeViewingSensitiveData, true);
 
   EntityInstance full_passport = test::GetPassportEntityInstance(
       {.record_type = EntityInstance::RecordType::kServerWallet});
@@ -357,8 +408,6 @@ TEST_F(AutofillAiAccessManagerTest, ReauthAndServerFetch_ServerFetchFailure) {
       {features::kAutofillAiReauthRequired,
        features::kAutofillAiWalletPrivatePasses},
       {});
-  client().GetPrefs()->SetBoolean(
-      prefs::kAutofillAiReauthBeforeViewingSensitiveData, true);
 
   EntityInstance full_passport = test::GetPassportEntityInstance(
       {.record_type = EntityInstance::RecordType::kServerWallet});
@@ -398,8 +447,6 @@ TEST_F(AutofillAiAccessManagerTest, ReauthAndServerFetch_ServerFetchFailure) {
 TEST_F(AutofillAiAccessManagerTest, ResetCancelsPendingOperations) {
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitAndEnableFeature(features::kAutofillAiReauthRequired);
-  client().GetPrefs()->SetBoolean(
-      prefs::kAutofillAiReauthBeforeViewingSensitiveData, true);
 
   EntityInstance passport = test::GetPassportEntityInstance();
   AddOrUpdateEntityInstance(passport);
@@ -424,6 +471,122 @@ TEST_F(AutofillAiAccessManagerTest, ResetCancelsPendingOperations) {
       passport, /*will_fill_sensitive_info=*/true, callback.Get()));
 
   access_manager().Reset();
+}
+#endif
+
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID) || \
+    BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_IOS)
+// Tests that when unmasking a personal context entity successfully, the
+// unmasked entity is passed to the callback.
+TEST_F(AutofillAiAccessManagerTest, PersonalContextFetch_Success) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(features::kAutofillAiReauthRequired);
+
+  mock_authenticator_ =
+      std::make_unique<device_reauth::MockDeviceAuthenticator>();
+  EXPECT_CALL(*mock_authenticator_, CanAuthenticateWithBiometricOrScreenLock)
+      .WillOnce(Return(true));
+  EXPECT_CALL(*mock_authenticator_, AuthenticateWithMessage)
+      .WillOnce(RunOnceCallback<1>(true));
+  test_api(access_manager())
+      .SetDeviceAuthenticator(std::move(mock_authenticator_));
+
+  EntityInstance full_passport = test::GetPassportEntityInstance(
+      {.record_type = EntityInstance::RecordType::kPersonalContext});
+  EntityInstance masked_passport = test::MaskEntityInstance(full_passport);
+  AddOrUpdateEntityInstance(masked_passport);
+
+  EXPECT_CALL(personal_context_manager(),
+              GetUnmaskedSpiiEntity(masked_passport.guid(), _))
+      .WillOnce(RunOnceCallback<1>(full_passport));
+
+  base::MockCallback<AutofillAiAccessManager::OnEntityInstanceFetchedCallback>
+      callback;
+
+  EXPECT_CALL(
+      callback,
+      Run(base::expected<EntityInstance,
+                         AutofillAiAccessManager::FailureReason>(full_passport),
+          /*reauth_attempted=*/true));
+
+  EXPECT_TRUE(access_manager().FetchEntityInstance(
+      masked_passport, /*will_fill_sensitive_info=*/true, callback.Get()));
+}
+
+// Tests that when unmasking a personal context entity fails,
+// FailureReason::kFetchFailed is passed to the callback.
+TEST_F(AutofillAiAccessManagerTest, PersonalContextFetch_Failure) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(features::kAutofillAiReauthRequired);
+
+  mock_authenticator_ =
+      std::make_unique<device_reauth::MockDeviceAuthenticator>();
+  EXPECT_CALL(*mock_authenticator_, CanAuthenticateWithBiometricOrScreenLock)
+      .WillOnce(Return(true));
+  EXPECT_CALL(*mock_authenticator_, AuthenticateWithMessage)
+      .WillOnce(RunOnceCallback<1>(true));
+  test_api(access_manager())
+      .SetDeviceAuthenticator(std::move(mock_authenticator_));
+
+  EntityInstance full_passport = test::GetPassportEntityInstance(
+      {.record_type = EntityInstance::RecordType::kPersonalContext});
+  EntityInstance masked_passport = test::MaskEntityInstance(full_passport);
+  AddOrUpdateEntityInstance(masked_passport);
+
+  EXPECT_CALL(personal_context_manager(),
+              GetUnmaskedSpiiEntity(masked_passport.guid(), _))
+      .WillOnce(RunOnceCallback<1>(std::nullopt));
+
+  base::MockCallback<AutofillAiAccessManager::OnEntityInstanceFetchedCallback>
+      callback;
+
+  EXPECT_CALL(
+      callback,
+      Run(base::expected<EntityInstance,
+                         AutofillAiAccessManager::FailureReason>(
+              base::unexpected(
+                  AutofillAiAccessManager::FailureReason::kFetchFailed)),
+          /*reauth_attempted=*/true));
+
+  EXPECT_TRUE(access_manager().FetchEntityInstance(
+      masked_passport, /*will_fill_sensitive_info=*/true, callback.Get()));
+}
+
+// Tests that when AutofillAiPersonalContextAccessManager is not available,
+// unmasking fails with FailureReason::kFetchFailed.
+TEST_F(AutofillAiAccessManagerTest, PersonalContextFetch_NoManager) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(features::kAutofillAiReauthRequired);
+
+  mock_authenticator_ =
+      std::make_unique<device_reauth::MockDeviceAuthenticator>();
+  EXPECT_CALL(*mock_authenticator_, CanAuthenticateWithBiometricOrScreenLock)
+      .WillOnce(Return(true));
+  EXPECT_CALL(*mock_authenticator_, AuthenticateWithMessage)
+      .WillOnce(RunOnceCallback<1>(true));
+  test_api(access_manager())
+      .SetDeviceAuthenticator(std::move(mock_authenticator_));
+
+  EntityInstance full_passport = test::GetPassportEntityInstance(
+      {.record_type = EntityInstance::RecordType::kPersonalContext});
+  EntityInstance masked_passport = test::MaskEntityInstance(full_passport);
+  AddOrUpdateEntityInstance(masked_passport);
+
+  client().set_personal_context_access_manager(nullptr);
+
+  base::MockCallback<AutofillAiAccessManager::OnEntityInstanceFetchedCallback>
+      callback;
+
+  EXPECT_CALL(
+      callback,
+      Run(base::expected<EntityInstance,
+                         AutofillAiAccessManager::FailureReason>(
+              base::unexpected(
+                  AutofillAiAccessManager::FailureReason::kFetchFailed)),
+          /*reauth_attempted=*/true));
+
+  EXPECT_TRUE(access_manager().FetchEntityInstance(
+      masked_passport, /*will_fill_sensitive_info=*/true, callback.Get()));
 }
 #endif
 

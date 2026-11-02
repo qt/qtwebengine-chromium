@@ -4,8 +4,8 @@
 
 import * as Common from '../../core/common/common.js';
 import type * as SDK from '../../core/sdk/sdk.js';
+import type * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as ComputedStyle from '../../models/computed_style/computed_style.js';
-import type * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as InlineEditor from '../../ui/legacy/components/inline_editor/inline_editor.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -26,18 +26,17 @@ interface ViewInput {
 type View = (input: ViewInput, output_: undefined, target: HTMLElement) => void;
 
 export const DEFAULT_VIEW: View = (input, _output, target) => {
-  render(
-      html`
+  render(html`
     <style>${stylesSidebarPaneStyles}</style>
     <div class="style-panes-wrapper" jslog=${VisualLogging.section('standalone-styles').track({
-        resize: true
-      })}>
+           resize: true,
+         })}>
       <div class="styles-pane">
         ${input.sections.map(section => section.element)}
       </div>
     </div>
   `,
-      target);
+         target);
 };
 
 export const enum Events {
@@ -130,8 +129,9 @@ export class StandaloneStylesContainer extends Common.ObjectWrapper.eventMixin<E
     const parentNodeId = matchedStyles?.getParentLayoutNodeId();
 
     const [parentStyles, computedStyles, extraStyles] = await Promise.all([
-      parentNodeId ? cssModel.getComputedStyle(parentNodeId) : null, cssModel.getComputedStyle(node.id),
-      cssModel.getComputedStyleExtraFields(node.id)
+      parentNodeId ? cssModel.getComputedStyle(parentNodeId) : null,
+      cssModel.getComputedStyle(node.id),
+      cssModel.getComputedStyleExtraFields(node.id),
     ]);
 
     if (signal?.aborted) {
@@ -276,7 +276,7 @@ export class StandaloneStylesContainer extends Common.ObjectWrapper.eventMixin<E
     return null;
   }
 
-  jumpToFunctionDefinition(_functionName: string): void {
+  jumpToFunctionDefinition(_functionName: string, _treeScopeDistance: number): void {
   }
 
   continueEditingElement(_sectionIndex: number, _propertyIndex: number): void {
@@ -326,5 +326,15 @@ export class StandaloneStylesContainer extends Common.ObjectWrapper.eventMixin<E
 
   removeStyleUpdateListener(listener: () => void): void {
     this.removeEventListener(Events.STYLES_UPDATE_COMPLETED, listener);
+  }
+
+  trackForLazyRendering(_element: Element, _callback: () => void): void {
+  }
+
+  shouldRenderLazily(): boolean {
+    return false;
+  }
+
+  untrackForLazyRendering(_element: Element): void {
   }
 }

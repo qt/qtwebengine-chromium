@@ -22,6 +22,7 @@
 #include "src/codegen/reloc-info.h"
 #include "src/common/globals.h"
 #include "src/common/high-allocation-throughput-scope.h"
+#include "src/common/synchronization-point-support.h"
 #include "src/compiler/add-type-assertions-reducer.h"
 #include "src/compiler/backend/bitcast-elider.h"
 #include "src/compiler/backend/code-generator.h"
@@ -849,6 +850,7 @@ bool PipelineImpl::Run(Args&&... args) {
 #endif
   Phase phase;
   static_assert(Phase::kKind == PhaseKind::kTurbofan);
+  SYNCHRONIZATION_POINT(Phase::synchronization_point_name());
   phase.Run(this->data_, scope.zone(), std::forward<Args>(args)...);
   return !info()->was_cancelled();
 }
@@ -3054,8 +3056,7 @@ wasm::WasmCompilationResult Pipeline::GenerateWasmCode(
       options);
   turboshaft_data.set_pipeline_statistics(pipeline_statistics.get());
   const wasm::FunctionSig* sig = compilation_data.func_body.sig;
-  turboshaft_data.SetIsWasmFunction(env->module, sig,
-                                    compilation_data.func_body.is_shared);
+  turboshaft_data.SetIsWasmFunction(env->module, sig);
   DCHECK_NOT_NULL(turboshaft_data.wasm_module());
 
   // TODO(nicohartmann): This only works here because source positions are not
@@ -3084,7 +3085,7 @@ wasm::WasmCompilationResult Pipeline::GenerateWasmCode(
   turboshaft::Pipeline turboshaft_pipeline(&turboshaft_data, &linkage);
 
 #if defined(V8_ENABLE_WASM_SIMD256_REVEC) && defined(V8_TARGET_ARCH_X64)
-  if (v8_flags.experimental_wasm_revectorize) {
+  if (v8_flags.wasm_revectorize) {
     bool cpu_feature_support =
         CpuFeatures::IsSupported(AVX) && CpuFeatures::IsSupported(AVX2);
     if (cpu_feature_support && detected->has_simd()) {
@@ -3100,6 +3101,10 @@ wasm::WasmCompilationResult Pipeline::GenerateWasmCode(
     }
   }
 #endif  // V8_ENABLE_WASM_SIMD256_REVEC
+
+  if (v8_flags.wasm_random_rescheduling) {
+    CHECK(turboshaft_pipeline.Run<turboshaft::RandomReschedulingPhase>());
+  }
 
   const bool uses_wasm_gc_features =
       detected->has_gc() || detected->has_typed_funcref() ||
@@ -3127,8 +3132,7 @@ wasm::WasmCompilationResult Pipeline::GenerateWasmCode(
   CHECK(turboshaft_pipeline.Run<turboshaft::WasmLoweringPhase>());
 
   // TODO(14108): Do we need value numbering if wasm_opt is turned off?
-  const bool is_asm_js = is_asmjs_module(module);
-  if (v8_flags.wasm_opt || is_asm_js) {
+  if (v8_flags.wasm_opt) {
     CHECK(turboshaft_pipeline.Run<turboshaft::WasmOptimizePhase>());
   }
 
@@ -3166,6 +3170,7 @@ wasm::WasmCompilationResult Pipeline::GenerateWasmCode(
                                         &pipeline, data.osr_helper_ptr()));
 
   CodeGenerator* code_generator = turboshaft_data.code_generator();
+  CHECK_EQ(code_generator->result(), CodeGenerator::kSuccess);
 
   wasm::WasmCompilationResult result;
   code_generator->masm()->GetCode(

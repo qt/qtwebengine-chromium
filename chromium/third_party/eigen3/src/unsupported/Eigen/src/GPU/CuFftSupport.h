@@ -8,7 +8,8 @@
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 // SPDX-License-Identifier: MPL-2.0
 
-// cuFFT support utilities: error checking macro, type mapping.
+// cuFFT support utilities: error-checking macro, scalar-to-cufftType traits,
+// a plan RAII wrapper, and type-dispatched execution helpers.
 
 #ifndef EIGEN_GPU_CUFFT_SUPPORT_H
 #define EIGEN_GPU_CUFFT_SUPPORT_H

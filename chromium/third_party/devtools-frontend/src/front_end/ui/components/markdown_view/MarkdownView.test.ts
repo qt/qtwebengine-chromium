@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as i18n from '../../../core/i18n/i18n.js';
 import * as Deprecation from '../../../generated/Deprecation.js';
@@ -97,9 +98,36 @@ describeWithEnvironment('MarkdownView', () => {
       assert.exists(container.querySelector('ul'));
     });
 
-    it('wraps list items in <li> tags', () => {
-      const container = renderTemplateResult(renderer.renderToken(getFakeToken({type: 'list_item', tokens: []})));
-      assert.exists(container.querySelector('li'));
+    it('wraps list items in <li> tags with content in a span', () => {
+      const container = renderTemplateResult(renderer.renderToken(getFakeToken({
+        type: 'list_item',
+        tokens: [getFakeToken({type: 'text', text: 'item text'})],
+      })));
+      assert.exists(container.querySelector('li > span.markdown-list-item-content'));
+    });
+
+    it('wraps list items with nested block tokens correctly', () => {
+      const container = renderTemplateResult(renderer.renderToken(getFakeToken({
+        type: 'list_item',
+        tokens: [
+          getFakeToken({type: 'text', text: 'item text'}),
+          getFakeToken({
+            type: 'list',
+            items: [getFakeToken({type: 'list_item', tokens: [getFakeToken({type: 'text', text: 'nested text'})]})],
+          }),
+        ],
+      })));
+      const li = container.querySelector('li');
+      assert.exists(li);
+      // First child should be a span wrapping the inline text
+      const span = li.firstElementChild;
+      assert.exists(span);
+      assert.isTrue(span.classList.contains('markdown-list-item-content'));
+      assert.strictEqual(span.textContent, 'item text');
+      // Second child should be the nested list (ul) outside of the span
+      const ul = span.nextElementSibling;
+      assert.exists(ul);
+      assert.strictEqual(ul.tagName.toLowerCase(), 'ul');
     });
 
     it('wraps a codespan token in <code> tags', () => {
@@ -303,6 +331,25 @@ describeWithEnvironment('MarkdownView', () => {
       result = renderer.detectCodeLanguage({text: '{\n"test": "test"\n}', lang: ''} as Marked.Marked.Tokens.Code);
       assert.strictEqual(result, '');
     });
+
+    it('gracefully catches errors thrown during token rendering and falls back to raw text', () => {
+      class TestRenderer extends MarkdownView.MarkdownView.MarkdownInsightRenderer {
+        override templateForToken(): Lit.LitTemplate|null {
+          throw new Error('Mock rendering error');
+        }
+      }
+      const errorRenderer = new TestRenderer();
+
+      const consoleErrorStub = sinon.stub(console, 'error');
+      const token =
+          {type: 'link', text: 'learn more', href: 'https://example.test', raw: '[learn more](https://example.test)'} as
+          Marked.Marked.Token;
+
+      const result = errorRenderer.renderToken(token) as Lit.TemplateResult;
+
+      assert.strictEqual(result.values[0], '[learn more](https://example.test)');
+      sinon.assert.calledOnce(consoleErrorStub);
+    });
   });
 
   const paragraphText =
@@ -364,6 +411,33 @@ console.log('test')
             }
           }());
       assert.strictEqual(codeBlock.innerText, 'overriden');
+    });
+
+    it('renders a table', () => {
+      const component = new MarkdownView.MarkdownView.MarkdownView();
+      renderElementIntoDOM(component);
+      const markdownTable = `
+| Header 1 | Header 2 |
+| :--- | :---: |
+| Cell 1 | Cell 2 |
+`;
+      component.data = {tokens: Marked.Marked.lexer(markdownTable)};
+      assert.isNotNull(component.shadowRoot);
+      const table = component.shadowRoot.querySelector('table');
+      assert.isNotNull(table);
+      const headers = Array.from(table!.querySelectorAll('th'));
+      assert.lengthOf(headers, 2);
+      assert.strictEqual(headers[0].textContent?.trim(), 'Header 1');
+      assert.strictEqual(headers[0].style.textAlign, 'left');
+      assert.strictEqual(headers[1].textContent?.trim(), 'Header 2');
+      assert.strictEqual(headers[1].style.textAlign, 'center');
+
+      const cells = Array.from(table!.querySelectorAll('td'));
+      assert.lengthOf(cells, 2);
+      assert.strictEqual(cells[0].textContent?.trim(), 'Cell 1');
+      assert.strictEqual(cells[0].style.textAlign, 'left');
+      assert.strictEqual(cells[1].textContent?.trim(), 'Cell 2');
+      assert.strictEqual(cells[1].style.textAlign, 'center');
     });
   });
 
@@ -427,8 +501,10 @@ describeWithEnvironment('Issue description smoke test', () => {
   Object.keys(Deprecation.DEPRECATIONS_METADATA).forEach(deprecation => {
     // TODO(crbug.com/430801230): Re-enable these tests once the descriptions are fixed on the chromium side.
     if ([
-          'CanRequestURLHTTPContainingNewline', 'CookieWithTruncatingChar', 'H1UserAgentFontSizeInSection',
-          'RequestedSubresourceWithEmbeddedCredentials'
+          'CanRequestURLHTTPContainingNewline',
+          'CookieWithTruncatingChar',
+          'H1UserAgentFontSizeInSection',
+          'RequestedSubresourceWithEmbeddedCredentials',
         ].includes(deprecation)) {
       return;
     }

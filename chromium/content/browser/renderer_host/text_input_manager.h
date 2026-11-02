@@ -12,6 +12,7 @@
 
 #include "base/i18n/rtl.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "content/common/content_export.h"
 #include "third_party/blink/public/mojom/page/widget.mojom-forward.h"
@@ -276,6 +277,11 @@ class CONTENT_EXPORT TextInputManager {
   // should be reset to none.
   void Unregister(RenderWidgetHostViewBase* view);
 
+  // Called when |view|'s document enters the back-forward cache. If |view| is
+  // the currently active view, the active view is cleared while the view
+  // remains registered, so its cached state can be reused on restore.
+  void DidEnterBackForwardCache(RenderWidgetHostViewBase* view);
+
   // Returns true if |view| is already registered.
   bool IsRegistered(RenderWidgetHostViewBase* view) const;
 
@@ -325,6 +331,8 @@ class CONTENT_EXPORT TextInputManager {
   // TextInputManager::Observer reentrantly issues further notifications upon
   // `OnUpdateTextInputStateCalled()` (e.g. `SelectionBoundsChange()`).
   base::ReentrantObserverList<Observer>::Unchecked observer_list_;
+
+  base::WeakPtrFactory<TextInputManager> weak_ptr_factory_{this};
 };
 }
 

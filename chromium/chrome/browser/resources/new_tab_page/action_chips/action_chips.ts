@@ -4,6 +4,7 @@
 import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.js';
 import 'chrome://resources/cr_elements/cr_action_menu/cr_action_menu.js';
 
+import {ToolMode} from '//resources/cr_components/composebox/composebox_query.mojom-webui.js';
 import type {TabUpload} from 'chrome://resources/cr_components/composebox/common.js';
 import {TabUploadOrigin} from 'chrome://resources/cr_components/composebox/common.js';
 import type {CrActionMenuElement} from 'chrome://resources/cr_elements/cr_action_menu/cr_action_menu.js';
@@ -11,14 +12,21 @@ import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import type {PropertyValues} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 
-import {ToolMode} from '../action_chips.mojom-webui.js';
 import type {ActionChip, ActionChipsHandlerInterface, PageCallbackRouter} from '../action_chips.mojom-webui.js';
 import {IconType} from '../action_chips.mojom-webui.js';
+import type {FuseboxAction} from '../fusebox_action.mojom-webui.js';
+import {QueryActionOverride} from '../fusebox_action.mojom-webui.js';
 import {WindowProxy} from '../window_proxy.js';
 
 import {getCss} from './action_chips.css.js';
 import {getHtml} from './action_chips.html.js';
 import {ActionChipsApiProxyImpl} from './action_chips_proxy.js';
+
+export interface ActionChipClickDetail {
+  suggestion: string;
+  files: TabUpload[];
+  fuseboxAction?: FuseboxAction;
+}
 
 // Records a click metric for the given action chip icon type.
 function recordClick(iconType: IconType) {
@@ -84,6 +92,11 @@ export class ActionChipsElement extends CrLitElement {
         type: Boolean,
         reflect: true,
       },
+      smallChipsEnabled_: {
+        type: Boolean,
+        reflect: true,
+        attribute: 'small-chips-enabled',
+      },
     };
   }
 
@@ -94,6 +107,8 @@ export class ActionChipsElement extends CrLitElement {
       loadTimeData.getBoolean('ntpNextShowDismissalUIEnabled');
   protected accessor disablementContextMenuEnabled_: boolean =
       loadTimeData.getBoolean('ntpNextDisablementContextMenuEnabled');
+  protected accessor smallChipsEnabled_: boolean =
+      loadTimeData.getBoolean('ntpSmallActionChipsEnabled');
 
   private callbackRouter: PageCallbackRouter;
   private delayTabUploads_: boolean =
@@ -116,6 +131,14 @@ export class ActionChipsElement extends CrLitElement {
         return 'icon-type-favicon';
       case IconType.kSearchLoopWithSparkle:
         return 'icon-type-search-spark';
+      case IconType.kLightbulb:
+        return 'icon-type-lightbulb';
+      case IconType.kAttachFile:
+        return 'icon-type-attach-file';
+      case IconType.kSchool:
+        return 'icon-type-school';
+      case IconType.kInkPen:
+        return 'icon-type-ink-pen';
       default:
         return '';
     }
@@ -135,6 +158,7 @@ export class ActionChipsElement extends CrLitElement {
         this.callbackRouter.onActionChipsChanged.addListener(
             (actionChips: ActionChip[]) => {
               this.actionChips_ = actionChips;
+              this.toggleAttribute('has-chips', actionChips.length > 0);
               this.fire(
                   kActionChipsRetrievalStateChangedEvent,
                   {state: ActionChipsRetrievalState.UPDATED});
@@ -162,10 +186,10 @@ export class ActionChipsElement extends CrLitElement {
     }
   }
 
-  protected onClick_(e: Event): void {
+  protected onClick_(e: MouseEvent|KeyboardEvent): void {
     const index = Number((e.currentTarget as HTMLElement).dataset['index']);
     const chip = this.actionChips_[index]!;
-    switch (chip.suggestTemplateInfo.preselectedTool) {
+    switch (chip.suggestTemplateInfo.fuseboxAction?.preselectedTool) {
       case ToolMode.kImageGen:
         this.handler.activateMetricsFunnel('CreateImageChip');
         break;
@@ -190,7 +214,15 @@ export class ActionChipsElement extends CrLitElement {
       default:
         // Do nothing yet...
     }
-    this.onActionChipClick_(chip);
+    this.onActionChipClick_(chip, e);
+  }
+
+  // Auxclick fires for all non-primary mouse buttons. Only handle middle clicks
+  // (button 1) to open in a new background tab, and ignore other buttons.
+  protected onAuxclick_(e: MouseEvent): void {
+    if (e.button === 1) {
+      this.onClick_(e);
+    }
   }
 
   protected onRemoveClick_(e: MouseEvent) {
@@ -200,6 +232,7 @@ export class ActionChipsElement extends CrLitElement {
     const chip = this.actionChips_[index]!;
     this.actionChips_ =
         this.actionChips_.filter((c) => c.suggestion !== chip.suggestion);
+    this.toggleAttribute('has-chips', this.actionChips_.length > 0);
   }
 
   protected onContextmenu_(e: MouseEvent) {
@@ -231,9 +264,19 @@ export class ActionChipsElement extends CrLitElement {
     return chip.tab ? this.getFaviconUrl_(chip.tab.url) : '';
   }
 
-  private onActionChipClick_(chip: ActionChip) {
+  private onActionChipClick_(chip: ActionChip, e: MouseEvent|KeyboardEvent) {
     recordClick(chip.suggestTemplateInfo.typeIcon);
-    this.handler.notifyActionChipClicked();
+    if (chip.suggestTemplateInfo.fuseboxAction?.queryActionOverride ===
+        QueryActionOverride.kDefault) {
+      this.handler.navigateToAim(
+          chip.suggestion, (e as MouseEvent).button || 0, {
+            altKey: e.altKey,
+            ctrlKey: e.ctrlKey,
+            metaKey: e.metaKey,
+            shiftKey: e.shiftKey,
+          });
+      return;
+    }
     const contextFiles: TabUpload[] = [];
     const tab = chip.tab;
     if (tab) {
@@ -246,11 +289,10 @@ export class ActionChipsElement extends CrLitElement {
       };
       contextFiles.push(tabInfo);
     }
-    this.fire('action-chip-click', {
-      text: chip.suggestion,
+    this.fire<ActionChipClickDetail>('action-chip-click', {
+      suggestion: chip.suggestion,
       files: contextFiles,
-      mode: chip.suggestTemplateInfo.preselectedTool,
-      suggestInventory: chip.suggestTemplateInfo.preferredInventory,
+      fuseboxAction: chip.suggestTemplateInfo.fuseboxAction ?? undefined,
     });
   }
 

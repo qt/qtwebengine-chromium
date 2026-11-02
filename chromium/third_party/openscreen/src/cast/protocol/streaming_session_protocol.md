@@ -354,7 +354,8 @@ generated, the already-established session *should* remain in effect.
 
 ###### Example `OFFER` Message
 
-For a full example `OFFER` message, see [castv2/streaming_examples/offer.json](./castv2/streaming_examples/offer.json).
+For the canonical `OFFER` message definition, parsing, and serialization, see
+[`cast/streaming/public/offer_messages.h`](../streaming/public/offer_messages.h).
 
 ##### ANSWER
 
@@ -369,7 +370,8 @@ This message is sent from the receiver to the sender in response to an `OFFER`.
 
 ###### Example ANSWER message
 
-For a full example `ANSWER` message, see [castv2/streaming_examples/answer.json](./castv2/streaming_examples/answer.json).
+For the canonical `ANSWER` message definition, parsing, and serialization, see
+[`cast/streaming/public/answer_messages.h`](../streaming/public/answer_messages.h).
 
 ##### GET_CAPABILITIES
 
@@ -628,36 +630,25 @@ of media playback.
 | `media[n].currentTime` | `double` | The current playback time in seconds. |
 | `media[n].media` | `object` | An object with metadata about the content, such as `contentId` and `title`. |
 
-### Reference Schemas and Examples
+### Reference Implementation
 
-*** aside
-TODO(crbug.com/471102790): rename castv2 folder to reflect its evergreen nature.
-***
+The canonical definitions of these messages are the C++ parsers and serializers
+in [`cast/streaming/public`](../streaming/public/), which is the source of truth
+for message structure and validation:
 
-This specification is backed by two JSON Schemas:
+1. Streaming session messages (`OFFER`, `ANSWER`, `GET_CAPABILITIES`,
+   `CAPABILITIES_RESPONSE`, `RPC`): see
+   [`offer_messages.h`](../streaming/public/offer_messages.h),
+   [`answer_messages.h`](../streaming/public/answer_messages.h), and
+   [`receiver_message.h`](../streaming/public/receiver_message.h).
 
-1. [receiver_schema.json](./castv2/receiver_examples/): containing core receiver
-   control and status messages, including `LAUNCH`, `STOP`,
-   `GET_APP_AVAILABILITY`, `LAUNCH_STATUS`, `LAUNCH_ERROR`, `GET_STATUS`,
-   `RECEIVER_STATUS`, `INVALID_REQUEST`, `GET_DEVICE_INFO`, `eureka_info`, and
-   `MEDIA_STATUS`.
+2. Receiver control and status messages (`LAUNCH`, `STOP`,
+   `GET_APP_AVAILABILITY`, `RECEIVER_STATUS`, etc.) are handled in
+   [`cast/receiver`](../receiver/) and [`cast/sender`](../sender/).
 
-2. [streaming_schema.json](./castv2/streaming_schema.json): containing messages
-   specific to the streaming session, such as `OFFER`, `ANSWER`,
-   `GET_CAPABILITIES`, `CAPABILITIES_RESPONSE`, and `RPC`.
-
-Examples are provided in the [castv2/receiver_examples](./castv2/receiver_examples/)
-(for receiver control and media status messages) and
-[castv2/streaming_examples](./castv2/streaming_examples/) (for streaming
-specific messages) folders, with a C++ validation component defined in
-[castv2/validation.h](./castv2/validation.h).
-
-*** note
-When adding or modifying messages in this specification, the corresponding
-schema and examples should be **updated concurrently**. The syntax of these
-files can be validated using `yajsv` -- see the
-[castv2/README.md](./castv2/README.md) for more information.
-***
+Each message type exposes `static ErrorOr<T> TryParse(const Json::Value&)` and
+`Json::Value ToJson()`. When adding or modifying messages in this specification,
+update the corresponding parser and its unit tests concurrently.
 
 ### Discovering Receiver Capabilities
 

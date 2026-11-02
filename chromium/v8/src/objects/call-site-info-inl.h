@@ -19,13 +19,8 @@
 namespace v8 {
 namespace internal {
 
-#include "torque-generated/src/objects/call-site-info-tq-inl.inc"
-
 #if V8_ENABLE_WEBASSEMBLY
 BOOL_GETTER(CallSiteInfo, flags, IsWasm, IsWasmBit::kShift)
-BOOL_GETTER(CallSiteInfo, flags, IsAsmJsWasm, IsAsmJsWasmBit::kShift)
-BOOL_GETTER(CallSiteInfo, flags, IsAsmJsAtNumberConversion,
-            IsAsmJsAtNumberConversionBit::kShift)
 #if V8_ENABLE_DRUMBRAKE
 BOOL_GETTER(CallSiteInfo, flags, IsWasmInterpretedFrame,
             IsWasmInterpretedFrameBit::kShift)

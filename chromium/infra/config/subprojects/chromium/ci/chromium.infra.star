@@ -170,6 +170,7 @@ packager_builder(
     # https://luci-scheduler.appspot.com/jobs/chromium/android-avd-packager
     schedule = "triggered",
     triggered_by = [],
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "packager|android",
         short_name = "avd",
@@ -206,6 +207,7 @@ packager_builder(
     executable = "recipe:android/sdk_packager",
     schedule = "0 7 * * *",
     triggered_by = [],
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         category = "packager|android",
         short_name = "sdk",
@@ -382,11 +384,6 @@ packager_builder(
                 "sdk_package_name": "system-images;android-37.0;google_apis_ps16k;x86_64",
                 "cipd_yaml": "third_party/android_sdk/cipd/system_images/android-37.0/google_apis_ps16k/x86_64.yaml",
             },
-            {
-                "sdk_package_name": "system-images;android-36.0-CANARY;google_apis;x86_64",
-                "cipd_yaml": "third_party/android_sdk/cipd/system_images/android-36.0-CANARY/google_apis/x86_64.yaml",
-                "sdk_channel": "CANARY",
-            },
         ],
     },
 )
@@ -396,6 +393,7 @@ ci.builder(
     executable = "recipe:android/device_flasher",
     schedule = "0 9 * * 1,3",  # at 9am UTC every Monday and Wednesday.
     triggered_by = [],
+    ssd = None,
     console_view_entry = consoles.console_view_entry(
         short_name = "flash",
     ),
@@ -468,4 +466,56 @@ ci.builder(
     ),
     execution_timeout = 10 * time.hour,
     service_account = "chromium-cipd-builder@chops-service-accounts.iam.gserviceaccount.com",
+)
+
+luci.bucket(
+    name = "ssci",
+    acls = [
+        acl.entry(
+            roles = [
+                acl.BUILDBUCKET_READER,
+                acl.SCHEDULER_READER,
+            ],
+            groups = "all",
+        ),
+        acl.entry(
+            roles = [
+                acl.BUILDBUCKET_TRIGGERER,
+                acl.SCHEDULER_TRIGGERER,
+            ],
+            groups = ["mdb/chrome-troopers", "mdb/chops-security-oncallers"],
+        ),
+    ],
+)
+
+ci.builder(
+    name = "chromium-ssci-linux-amd64",
+    # TODO(b/464370790): Move this to CI bucket when recipe development is complete.
+    bucket = "ssci",
+    description_html = "Triggers Crowbar workflows on chromium/src.",
+    executable = "recipe:infra/crowbar",
+    # TODO(b/464370790): Make this a routine job (regular update) and CI
+    # triggered job (after submitting a CL modifying Crowbar spec) in the prod
+    # pool when recipe development is complete.
+    schedule = "triggered",
+    triggered_by = [],
+    pool = "luci.chromium.provenance.ci",
+    builderless = False,
+    cores = None,
+    os = os.LINUX_ANY,
+    console_view_entry = consoles.console_view_entry(
+        category = "packager|crowbar",
+        short_name = "ssci",
+    ),
+    contact_team_email = "chops-security-core@google.com",
+    properties = {
+        "repos": [
+            {
+                "repo": "https://chromium.googlesource.com/chromium/src",
+            },
+        ],
+    },
+    service_account = "chromium-roller@chops-crowbar.iam.gserviceaccount.com",
+    shadow_pool = None,
+    shadow_service_account = None,
 )

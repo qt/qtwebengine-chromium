@@ -38,10 +38,12 @@
 #include "media/base/video_codecs.h"
 #include "media/base/video_decoder_config.h"
 #include "media/base/video_frame.h"
+#include "media/base/video_transformation.h"
 #include "media/gpu/android/android_video_surface_chooser.h"
 #include "media/gpu/android/codec_allocator.h"
 #include "media/gpu/android/video_accelerator_util.h"
 #include "media/media_buildflags.h"
+#include "ui/gfx/geometry/size.h"
 
 #if BUILDFLAG(USE_PROPRIETARY_CODECS)
 #include "media/base/android/extract_sps_and_pps.h"
@@ -1116,8 +1118,12 @@ bool MediaCodecVideoDecoder::DequeueOutput() {
   // If we're getting outputs larger than our configured size, we run the risk
   // of exceeding MediaCodec's allowed input buffer size. Update the coded size
   // as we go to ensure we can correctly reconfigure if needed later.
-  if (output_buffer->size().GetArea() > decoder_config_.coded_size().GetArea())
-    decoder_config_.set_coded_size(output_buffer->size());
+  // Note, that we use visible size here because there is no better alternative,
+  // coded size is not known at this point yet.
+  if (output_buffer->visible_size().GetArea() >
+      decoder_config_.coded_size().GetArea()) {
+    decoder_config_.set_coded_size(output_buffer->visible_size());
+  }
 
   // TODO(https://crbug.com/395659818): Idiosyncratic historical behavior is
   // being preserved behind a kill switch. Remove it as soon as it is safe.
@@ -1134,7 +1140,7 @@ bool MediaCodecVideoDecoder::DequeueOutput() {
       if (!color_space.IsValid()) {
         // If we get back an unsupported color space, then just default to
         // sRGB for < 720p, or 709 otherwise.  It's better than nothing.
-        color_space = output_buffer->size().width() >= 1280
+        color_space = output_buffer->visible_size().width() >= 1280
                           ? gfx::ColorSpace::CreateREC709()
                           : gfx::ColorSpace::CreateSRGB();
       }
@@ -1149,7 +1155,7 @@ bool MediaCodecVideoDecoder::DequeueOutput() {
     }
   }
 
-  gfx::Rect visible_rect(output_buffer->size());
+  gfx::Rect visible_rect(output_buffer->visible_size());
   std::unique_ptr<ScopedAsyncTrace> async_trace =
       ScopedAsyncTrace::CreateIfEnabled(
           "MediaCodecVideoDecoder::CreateVideoFrame");
@@ -1263,6 +1269,19 @@ void MediaCodecVideoDecoder::ForwardVideoFrame(
     frame->metadata().protected_video = true;
     if (requires_secure_codec_) {
       frame->metadata().hw_protected = true;
+    }
+  }
+
+  // Detect if the hardware decoder physically pre-rotated the video frame.
+  // If the frame's visible dimensions are perfectly swapped compared to the
+  // config's visible rect, and the rotation is 90 or 270, the decoder has
+  // already applied the rotation. We clear the transformation metadata to
+  // prevent double-rotation in the compositor (e.g., squashing portrait
+  // videos).
+  if (decoder_config_.video_transformation().IsOrthogonal()) {
+    if (frame->visible_rect().size() ==
+        gfx::TransposeSize(decoder_config_.visible_rect().size())) {
+      frame->metadata().transformation = kNoTransformation;
     }
   }
 

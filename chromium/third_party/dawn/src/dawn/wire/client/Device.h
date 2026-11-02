@@ -50,7 +50,7 @@ class Queue;
 class Device final : public RefCountedWithExternalCount<ObjectWithEventsBase> {
   public:
     Device(const ObjectBaseParams& params,
-           const ObjectHandle& eventManagerHandle,
+           Ref<Instance> instance,
            Adapter* adapter,
            const WGPUDeviceDescriptor* descriptor);
 
@@ -59,7 +59,8 @@ class Device final : public RefCountedWithExternalCount<ObjectWithEventsBase> {
     void SetLimits(const WGPULimits* limits);
     void SetFeatures(const WGPUFeatureName* features, uint32_t featuresCount);
 
-    bool IsAlive() const;
+    bool IsDestroyed() const;
+    bool IsKnownLost() const;
     Queue* GetQueue();
     const LimitsAndFeatures& GetLimitsAndFeatures() const;
 
@@ -70,8 +71,11 @@ class Device final : public RefCountedWithExternalCount<ObjectWithEventsBase> {
 
     // WebGPU API
     void APISetLoggingCallback(const WGPULoggingCallbackInfo& callbackInfo);
-    void APIInjectError(WGPUErrorType type, WGPUStringView message);
-    WGPUFuture APIPopErrorScope(const WGPUPopErrorScopeCallbackInfo& callbackInfo);
+    void APIInjectError(wgpu::ErrorType type, StringView message);
+    Future APIPopErrorScope(const WGPUPopErrorScopeCallbackInfo& callbackInfo);
+
+    template <typename PipelineT, typename CmdT>
+    Ref<PipelineT> CreateErrorPipeline(WGPUStringView label);
 
     WGPUBuffer APICreateBuffer(const WGPUBufferDescriptor* descriptor);
     WGPUBuffer APICreateErrorBuffer(const WGPUBufferDescriptor* descriptor);
@@ -86,12 +90,12 @@ class Device final : public RefCountedWithExternalCount<ObjectWithEventsBase> {
     WGPUTexture APICreateErrorTexture(const WGPUTextureDescriptor* descriptor);
 
     WGPUStatus APIGetLimits(WGPULimits* limits) const;
-    WGPUFuture APIGetLostFuture();
+    Future APIGetLostFuture();
     bool APIHasFeature(WGPUFeatureName feature) const;
     void APIGetFeatures(WGPUSupportedFeatures* features) const;
     WGPUStatus APIGetAdapterInfo(WGPUAdapterInfo* info) const;
-    WGPUAdapter APIGetAdapter() const;
-    WGPUQueue APIGetQueue();
+    Adapter* APIGetAdapter() const;
+    Queue* APIGetQueue();
 
     void APIDestroy();
 
@@ -110,7 +114,16 @@ class Device final : public RefCountedWithExternalCount<ObjectWithEventsBase> {
 
     Ref<Adapter> mAdapter;
     Ref<Queue> mQueue;
-    bool mIsAlive = true;
+
+    // Note that we differentiate between destroyed and lost in that destroyed is a client-side
+    // state that is immediately set once `APIDestroy()` is called, whereas lost is a server-side
+    // state that is updated only once our lost callback has been completed. The destroyed state is,
+    // as of writing, only really needed for buffer mapping because device.Destroy() is supposed to
+    // explicitly unmap all buffers, but don't currently handle that exactly in the wire, so the
+    // destroyed state is used to help simulate that. Pretty much everything else should be relying
+    // on the lost state.
+    bool mIsDestroyed = false;
+    bool mIsLost = false;
 };
 
 }  // namespace dawn::wire::client

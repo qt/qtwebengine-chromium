@@ -61,7 +61,13 @@ static enum xnn_status reshape_softmax_operator(
   assert(input_id < num_values);
 
   const size_t num_input_dims = values[input_id].shape.num_dims;
-  assert(num_input_dims > 0);
+  if (num_input_dims == 0) {
+    xnn_log_error(
+      "failed to reshape %s operator with input ID #%" PRIu32
+      ": number of dimensions (%zu) must be at least 1",
+      xnn_node_type_to_string(xnn_node_type_softmax), input_id, num_input_dims);
+    return xnn_status_invalid_parameter;
+  }
   const size_t channel_dim = values[input_id].shape.dim[num_input_dims - 1];
   const size_t batch_size = xnn_shape_multiply_non_channel_dims(&values[input_id].shape);
 
@@ -189,6 +195,12 @@ enum xnn_status xnn_define_softmax(
         xnn_node_type_to_string(xnn_node_type_softmax), output_id,
         xnn_datatype_to_string(output_value->datatype), output_value->datatype);
       return xnn_status_invalid_parameter;
+  }
+
+  status = xnn_subgraph_check_datatype_matches(
+    xnn_node_type_softmax, input_id, input_value, output_id, output_value);
+  if (status != xnn_status_success) {
+    return status;
   }
 
   struct xnn_node* node = xnn_subgraph_new_node(subgraph);

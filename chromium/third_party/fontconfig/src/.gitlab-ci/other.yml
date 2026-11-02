@@ -19,7 +19,7 @@
     #   -Dbar=disabled
   before_script:
     # Make sure meson is up to date, so we don't need to rebuild the image with each release
-    - pip3 install -U meson>=1.6.1 certifi tomli requests
+    - pip3 install -U meson>=1.11.0 certifi tomli requests
     # Test Rust availability. As of 11/25/2024, according to
     # https://gitlab.freedesktop.org/gstreamer/gstreamer/-/blob/main/ci/docker/windows/Dockerfile
     # Rust 1.82 is already installed.
@@ -59,8 +59,8 @@ meson vs2019 x86:
 .meson macos test:
   stage: "distro"
   # See https://gitlab.freedesktop.org/gstreamer/gstreamer/-/blob/main/.gitlab-ci.yml
-  # As of 2024-11-21, this is a Mac OS 15 Sequia image on Apple silicon.
-  image: "registry.freedesktop.org/gstreamer/gstreamer/macos-arm64/15-sequoia:2024-10-28.0"
+  # As of 2025-12-17, this is a Mac OS version 26 Tahoe image.
+  image: "registry.freedesktop.org/gstreamer/gstreamer/macos-arm64/26-tahoe:2025-09-30.0"
   tags:
     - gst-mac-arm
   artifacts:
@@ -72,7 +72,7 @@ meson vs2019 x86:
   before_script:
     - pip3 install --upgrade pip
     # Make sure meson is up to date
-    - pip3 install -U 'meson>=1.6.1'
+    - pip3 install -U 'meson>=1.11.0'
     # For Python < 3.11 we need tomli for Rust build support
     - pip3 install -U tomli
     # Need to install certificates for python
@@ -87,40 +87,25 @@ meson vs2019 x86:
     - cargo install bindgen-cli
     - rustc --version
     - bindgen --version
+    # PyYAML is required for build.py to read build.yaml
+    - pip3 install PyYAML
   script:
-    - CERT_PATH=$(python3 -m certifi) && export SSL_CERT_FILE=${CERT_PATH} && export REQUESTS_CA_BUNDLE=${CERT_PATH} && meson setup -Diconv=enabled $MESON_FONTATIONS_ARG build
-    - meson compile --verbose -C build
-    - meson test -C build
+    # build.py handles all remaining setup automatically:
+    # - Creates venv with meson, certifi, ninja, etc.
+    # - Installs Rust via rustup
+    # - Configures SSL certificates
+    # - Runs meson setup, compile, and test
+    - echo $BUILD_PY_ARGS | xargs python3 .gitlab-ci/build.py -V -d nls -d iconv
 
 meson macos test:
   extends: ".meson macos test"
   variables:
-    MESON_FONTATIONS_ARG: "-Dfontations=disabled"
+    BUILD_PY_ARGS: -d fontations
 
 meson macos test fontations:
   extends: ".meson macos test"
   variables:
-    MESON_FONTATIONS_ARG: "-Dfontations=enabled"
-
-# msys infrastructure is a bit broken, disable for now
-meson msys2:
-  extends: ".build meson windows"
-  when: "manual"
-  allow_failure: true
-  script:
-    # For some reason, options are separated by newline instead of space, so we
-    # have to replace them first.
-    # - $env:MESON_ARGS = $env:MESON_ARGS.replace("`n"," ")
-
-    - $env:PATH += ";C:\msys64\usr\bin;C:\msys64\mingw64/bin;C:\msys64\mingw32/bin"
-    # XXX: Copied from https://gitlab.freedesktop.org/gstreamer/gst-ci/blob/master/gitlab/ci_template.yml#L487
-    # For some reason docker build hangs if this is included in the image, needs more troubleshooting
-    - C:\msys64\usr\bin\bash -c "pacman-key --init && pacman-key --populate msys2 && pacman-key --refresh-keys || true"
-    - C:\msys64\usr\bin\bash -c "pacman -Syuu --noconfirm"
-    - C:\msys64\usr\bin\bash -c "pacman -Sy --noconfirm --needed mingw-w64-x86_64-toolchain ninja"
-    - C:\msys64\usr\bin\bash -c "meson build $env:MESON_ARGS &&
-      ninja -C build &&
-      ninja -C build test"
+    BUILD_PY_ARGS: -e fontations
 
 MinGW dllexport static:
   stage: test
@@ -134,36 +119,10 @@ MinGW dllexport static:
     - export ARCH=x86_64
     - apt-get update -qq
     - apt-get install -qqy --no-install-recommends git pkgconf ninja-build pipx
-    - pipx install meson
-    - |-
-      cat <<_E_> mingw64-cross.ini
-      [binaries]
-      c = '$ARCH-w64-mingw32-clang'
-      cpp = '$ARCH-w64-mingw32-clang++'
-      ar = '$ARCH-w64-mingw32-ar'
-      ld = '$ARCH-w64-mingw32-ld'
-      strip = '$ARCH-w64-mingw32-strip'
-      pkg-config = 'pkg-config'
-      windres = '$ARCH-w64-mingw32-windres'
-      
-      [host_machine]
-      system = 'windows'
-      cpu_family = '$ARCH'
-      cpu = '$ARCH'
-      endian = 'little'
-      _E_
-    - cat mingw64-cross.ini
-    - meson setup build
-        --cross-file=mingw64-cross.ini
-        --prefix=/packaging
-        --default-library=static
-        -Ddoc=disabled
-        -Dnls=disabled
-        -Dtests=disabled
-        -Dtools=disabled &&
-      meson compile -C build &&
-      meson install -C build
+    - FC_BUILD_PLATFORM=mingw PREFIX=/packaging python3 .gitlab-ci/build.py -a x86_64-w64-mingw32-clang -d doc -d nls -d iconv -d tools -t static -C
     - cd /packaging
+    - |
+      mkdir -p /packaging/bin || :
     - |-
       cat <<_E_> test.c
       #include <fontconfig/fontconfig.h>

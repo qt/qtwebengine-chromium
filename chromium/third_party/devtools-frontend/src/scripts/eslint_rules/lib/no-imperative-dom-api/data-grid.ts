@@ -102,7 +102,7 @@ export const dataGrid: RuleCreator = {
                         n => n.type === 'Identifier');
                     columnFragment.attributes.push({
                       key: property.key.name,
-                      value: value ? (value as Identifier).name.toLowerCase() : property.value
+                      value: value ? (value as Identifier).name.toLowerCase() : property.value,
                     });
                   } else if (isIdentifier(property.key, ['sortable', 'editable'])) {
                     columnFragment.booleanAttributes.push({key: property.key.name, value: property.value});
@@ -114,7 +114,7 @@ export const dataGrid: RuleCreator = {
                         n => n.type === 'Identifier');
                     columnFragment.attributes.push({
                       key: property.key.name,
-                      value: value ? (value as Identifier).name.toLowerCase() : property.value
+                      value: value ? (value as Identifier).name.toLowerCase() : property.value,
                     });
                   } else if (isIdentifier(property.key, ['title', 'titleDOMFragment'])) {
                     columnFragment.textContent = property.value;
@@ -147,5 +147,5 @@ export const dataGrid: RuleCreator = {
         }
       },
     };
-  }
+  },
 };

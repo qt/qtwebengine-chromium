@@ -41,6 +41,7 @@
 #include "ui/events/gestures/gesture_types.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/font_list.h"
+#include "ui/gfx/geometry/clamp_float_geometry.h"
 #import "ui/gfx/mac/coordinate_conversion.h"
 #include "ui/gfx/native_ui_types.h"
 #include "ui/native_theme/native_theme.h"
@@ -185,10 +186,16 @@ void NativeWidgetMac::OnWindowKeyStatusChanged(
 
   if (is_key) {
     widget->OnNativeFocus();
-    widget->GetFocusManager()->RestoreFocusedView();
+    // GetFocusManager() can be null for detached child widgets during
+    // reparenting.
+    if (FocusManager* focus_manager = widget->GetFocusManager()) {
+      focus_manager->RestoreFocusedView();
+    }
   } else {
     widget->OnNativeBlur();
-    widget->GetFocusManager()->StoreFocusedView(false);
+    if (FocusManager* focus_manager = widget->GetFocusManager()) {
+      focus_manager->StoreFocusedView(false);
+    }
     parent_key_lock_.reset();
   }
 }
@@ -922,7 +929,10 @@ void NativeWidgetMac::SetAspectRatio(const gfx::SizeF& aspect_ratio,
   if (!GetNSWindowMojo()) {
     return;
   }
-  GetNSWindowMojo()->SetAspectRatio(aspect_ratio, excluded_margin);
+  gfx::SizeF sanitized_aspect_ratio(
+      std::max(0.0f, gfx::ClampFloatGeometry(aspect_ratio.width())),
+      std::max(0.0f, gfx::ClampFloatGeometry(aspect_ratio.height())));
+  GetNSWindowMojo()->SetAspectRatio(sanitized_aspect_ratio, excluded_margin);
 }
 
 void NativeWidgetMac::FlashFrame(bool flash_frame) {

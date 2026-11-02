@@ -31,10 +31,13 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_HTML_FORMS_EMAIL_INPUT_TYPE_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_HTML_FORMS_EMAIL_INPUT_TYPE_H_
 
+#include "third_party/blink/public/common/webid/email_verification_state.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/html/forms/base_text_input_type.h"
 
 namespace blink {
+
+class HTMLInputElement;
 
 class EmailInputType final : public BaseTextInputType {
  public:
@@ -51,6 +54,12 @@ class EmailInputType final : public BaseTextInputType {
 
   bool TypeMismatchFor(const String&) const;
 
+  void SetEmailVerificationState(EmailVerificationState state);
+  EmailVerificationState GetEmailVerificationState() const {
+    return email_verification_state_;
+  }
+  void UpdateEmailVerificationIndicator();
+
  private:
   void CountUsage() override;
   bool TypeMismatch() const override;
@@ -63,6 +72,21 @@ class EmailInputType final : public BaseTextInputType {
 
   String ConvertEmailAddressToUnicode(const String&) const;
   String FindInvalidAddress(const String&) const;
+
+  void CreateShadowSubtree() override;
+  bool NeedsContainer() const override;
+
+  bool IsEmailVerificationStatusIndicatorEnabled() const;
+  // Returns true if this input field supports email verification, that is,
+  // if there is another input field in the form with a nonce and
+  // autocomplete="email-verification-token". Note that if there are multiple
+  // email fields and/or multiple token fields in the form, they will all be
+  // associated with the first token field (which is a limitation of the
+  // current design).
+  bool IsEmailVerificationSupported() const;
+
+  EmailVerificationState email_verification_state_ =
+      EmailVerificationState::kNone;
 };
 
 template <>

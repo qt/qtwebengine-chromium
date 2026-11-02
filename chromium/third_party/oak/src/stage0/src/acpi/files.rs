@@ -14,7 +14,7 @@
 // limitations under the License.
 //
 
-use alloc::{alloc::Global, boxed::Box, collections::BTreeMap, ffi::CString};
+use alloc::{alloc::Global, boxed::Box, collections::BTreeMap, ffi::CString, vec::Vec};
 use core::{
     alloc::{Allocator, Layout},
     borrow::{Borrow, BorrowMut},
@@ -55,7 +55,7 @@ pub trait Files {
 
     /// Returns the first file with a name that matches the suffix, if it
     /// exists.
-    fn find_file_suffix(&self, suffix: &CStr) -> Option<&[u8]>;
+    fn find_file_suffix_mut(&mut self, suffix: &CStr) -> Option<&mut [u8]>;
 }
 
 /// Wrapper for a file, as they may come from different zones.
@@ -75,19 +75,15 @@ pub enum File<'a, 'b, L: Allocator, H: Allocator> {
     Fake(core::ptr::NonNull<u8>),
 }
 
-impl<L: Allocator, H: Allocator> File<'_, '_, L, H> {
+impl<L: Allocator, H: Allocator> File<'static, 'static, L, H> {
     /// Leaks the memory owned by this file, if any.
-    pub fn leak(self) {
+    pub fn leak<'a>(self) -> &'a mut [u8] {
         match self {
-            Self::Low(file) => {
-                Box::leak(file);
-            }
-            Self::High(file) => {
-                Box::leak(file);
-            }
+            Self::Low(file) => Box::leak(file),
+            Self::High(file) => Box::leak(file),
             #[cfg(test)]
-            Self::Fake(_) => {}
-        };
+            Self::Fake(_) => &mut [],
+        }
     }
 }
 
@@ -111,8 +107,8 @@ impl<L: Allocator, H: Allocator> Deref for File<'_, '_, L, H> {
 impl<L: Allocator, H: Allocator> DerefMut for File<'_, '_, L, H> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
-            Self::Low(ref mut file) => file.borrow_mut(),
-            Self::High(ref mut file) => file.borrow_mut(),
+            Self::Low(file) => file.borrow_mut(),
+            Self::High(file) => file.borrow_mut(),
             #[cfg(test)]
             Self::Fake(data) => {
                 // Safety: any non-null pointer can be turned into a zero-length slice, as you
@@ -143,10 +139,8 @@ impl<L: Allocator + 'static, H: Allocator + 'static> MemFiles<L, H> {
     ///
     /// As MemFiles is just glorified bag of `Box`-es, this just calls
     /// `Box::leak` on all of them.
-    pub fn leak(self) {
-        for file in self.files.into_values() {
-            file.leak();
-        }
+    pub fn leak<'a>(self) -> Vec<&'a mut [u8]> {
+        self.files.into_values().map(|file| file.leak()).collect()
     }
 
     #[cfg(test)]
@@ -237,12 +231,12 @@ impl<L: Allocator + 'static, H: Allocator + 'static> Files for MemFiles<L, H> {
         Ok(file.borrow())
     }
 
-    fn find_file_suffix(&self, suffix: &CStr) -> Option<&[u8]> {
-        for (name, contents) in self.files.iter() {
+    fn find_file_suffix_mut(&mut self, suffix: &CStr) -> Option<&mut [u8]> {
+        for (name, contents) in self.files.iter_mut() {
             if !name.as_bytes().ends_with(suffix.to_bytes()) {
                 continue;
             }
-            return Some(contents.borrow());
+            return Some(contents.borrow_mut());
         }
         None
     }

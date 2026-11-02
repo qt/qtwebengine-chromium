@@ -23,8 +23,8 @@ namespace internal {
 template <typename Scalar, typename StorageIndex>
 void SparseLUImpl<Scalar, StorageIndex>::countnz(const Index n, Index& nnzL, Index& nnzU, GlobalLU_t& glu) {
   nnzL = 0;
-  nnzU = (glu.xusub)(n);
-  Index nsuper = (glu.supno)(n);
+  nnzU = glu.xusub(n);
+  Index nsuper = glu.supno(n);
   Index jlen;
   Index i, j, fsupc;
   if (n <= 0) return;
@@ -53,7 +53,7 @@ void SparseLUImpl<Scalar, StorageIndex>::fixupL(const Index n, const IndexVector
   Index fsupc, i, j, k, jstart;
 
   StorageIndex nextl = 0;
-  Index nsuper = (glu.supno)(n);
+  Index nsuper = glu.supno(n);
 
   // For each supernode
   for (i = 0; i <= nsuper; i++) {

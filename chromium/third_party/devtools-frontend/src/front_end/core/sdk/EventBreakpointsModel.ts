@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import * as Root from '../../core/root/root.js';
 import type * as ProtocolProxyApi from '../../generated/protocol-proxy-api.js';
 
 import {CategorizedBreakpoint, Category} from './CategorizedBreakpoint.js';
@@ -83,12 +84,11 @@ class EventListenerBreakpoint extends CategorizedBreakpoint {
   static readonly instrumentationPrefix = 'instrumentation:';
 }
 
-let eventBreakpointManagerInstance: EventBreakpointsManager;
-
 export class EventBreakpointsManager implements SDKModelObserver<EventBreakpointsModel> {
   readonly #eventListenerBreakpoints: EventListenerBreakpoint[] = [];
   readonly #targetManager: TargetManager;
 
+  // eslint-disable-next-line @devtools/no-instance-of-migrated-singletons
   constructor(targetManager: TargetManager = TargetManager.instance()) {
     this.#targetManager = targetManager;
     this.createInstrumentationBreakpoints(Category.AUCTION_WORKLET, [
@@ -151,11 +151,17 @@ export class EventBreakpointsManager implements SDKModelObserver<EventBreakpoint
     targetManager?: TargetManager,
   } = {forceNew: null}): EventBreakpointsManager {
     const {forceNew, targetManager} = opts;
-    if (!eventBreakpointManagerInstance || forceNew) {
-      eventBreakpointManagerInstance = new EventBreakpointsManager(targetManager);
+    if (!Root.DevToolsContext.globalInstance().has(EventBreakpointsManager) || forceNew) {
+      Root.DevToolsContext.globalInstance().set(EventBreakpointsManager,
+                                                // eslint-disable-next-line @devtools/no-instance-of-migrated-singletons
+                                                new EventBreakpointsManager(targetManager ?? TargetManager.instance()));
     }
 
-    return eventBreakpointManagerInstance;
+    return Root.DevToolsContext.globalInstance().get(EventBreakpointsManager);
+  }
+
+  static removeInstance(): void {
+    Root.DevToolsContext.globalInstance().delete(EventBreakpointsManager);
   }
 
   private createInstrumentationBreakpoints(category: Category, instrumentationNames: InstrumentationNames[]): void {

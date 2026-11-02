@@ -147,7 +147,7 @@ void BookmarkModelObserverImpl::BookmarkNodeMoved(
     return;
   }
 
-  const SyncedBookmarkTrackerEntity* entity =
+  SyncedBookmarkTrackerEntity* entity =
       bookmark_tracker_->GetEntityForBookmarkNode(node);
   CHECK(entity);
 
@@ -159,10 +159,8 @@ void BookmarkModelObserverImpl::BookmarkNodeMoved(
       node, bookmark_model_, unique_position.ToProto(),
       /*force_favicon_load=*/true);
 
-  bookmark_tracker_->Update(entity, entity->metadata().server_version(),
-                            modification_time, specifics);
   // Mark the entity that it needs to be committed.
-  bookmark_tracker_->IncrementSequenceNumber(entity);
+  entity->RecordLocalUpdate(specifics, modification_time);
   nudge_for_commit_closure_.Run();
   bookmark_tracker_->CheckAllNodesTracked(bookmark_model_);
 }
@@ -192,7 +190,7 @@ void BookmarkModelObserverImpl::BookmarkNodeAdded(
   // It is possible that a created bookmark was restored after deletion and
   // the tombstone was not committed yet. In that case the existing entity
   // should be updated.
-  const SyncedBookmarkTrackerEntity* entity =
+  SyncedBookmarkTrackerEntity* entity =
       bookmark_tracker_->GetEntityForUuid(node->uuid());
   const base::Time creation_time = base::Time::Now();
   if (entity) {
@@ -200,17 +198,13 @@ void BookmarkModelObserverImpl::BookmarkNodeAdded(
     // the same bookmark GUID), it must be a tombstone. Otherwise it means
     // the bookmark model contains to bookmarks with the same GUID.
     DCHECK(!entity->bookmark_node()) << "Added bookmark with duplicate GUID";
-    bookmark_tracker_->UndeleteTombstoneForBookmarkNode(entity, node);
-    bookmark_tracker_->Update(entity, entity->metadata().server_version(),
-                              creation_time, specifics);
+    bookmark_tracker_->UndeleteTombstoneForBookmarkNode(entity, node, specifics,
+                                                        creation_time);
   } else {
-    entity = bookmark_tracker_->Add(node, node->uuid().AsLowercaseString(),
-                                    syncer::kUncommittedVersion, creation_time,
-                                    specifics);
+    entity = bookmark_tracker_->AddLocalCreation(
+        node, node->uuid().AsLowercaseString(), creation_time, specifics);
   }
 
-  // Mark the entity that it needs to be committed.
-  bookmark_tracker_->IncrementSequenceNumber(entity);
   nudge_for_commit_closure_.Run();
 
   // Do not check if all nodes are tracked because it's still possible that some
@@ -274,7 +268,7 @@ void BookmarkModelObserverImpl::BookmarkNodeChanged(
   // We shouldn't see changes to the top-level nodes.
   DCHECK(!bookmark_model_->is_permanent_node(node));
 
-  const SyncedBookmarkTrackerEntity* entity =
+  SyncedBookmarkTrackerEntity* entity =
       bookmark_tracker_->GetEntityForBookmarkNode(node);
   if (!entity) {
     // If the node hasn't been added to the tracker yet, we do nothing. It will
@@ -322,7 +316,7 @@ void BookmarkModelObserverImpl::BookmarkNodeFaviconChanged(
     return;
   }
 
-  const SyncedBookmarkTrackerEntity* entity =
+  SyncedBookmarkTrackerEntity* entity =
       bookmark_tracker_->GetEntityForBookmarkNode(node);
   if (!entity) {
     // This should be practically unreachable but in theory it's possible that a
@@ -522,7 +516,7 @@ syncer::UniquePosition BookmarkModelObserverImpl::ComputePosition(
 }
 
 void BookmarkModelObserverImpl::ProcessUpdate(
-    const SyncedBookmarkTrackerEntity* entity,
+    SyncedBookmarkTrackerEntity* entity,
     const sync_pb::EntitySpecifics& specifics) {
   DCHECK(entity);
 
@@ -533,10 +527,8 @@ void BookmarkModelObserverImpl::ProcessUpdate(
     return;
   }
 
-  bookmark_tracker_->Update(entity, entity->metadata().server_version(),
-                            /*modification_time=*/base::Time::Now(), specifics);
   // Mark the entity that it needs to be committed.
-  bookmark_tracker_->IncrementSequenceNumber(entity);
+  entity->RecordLocalUpdate(specifics, base::Time::Now());
   nudge_for_commit_closure_.Run();
 }
 
@@ -548,20 +540,17 @@ void BookmarkModelObserverImpl::ProcessDelete(
     ProcessDelete(child.get(), location);
   }
   // Process the current node.
-  const SyncedBookmarkTrackerEntity* entity =
+  SyncedBookmarkTrackerEntity* entity =
       bookmark_tracker_->GetEntityForBookmarkNode(node);
   // Shouldn't try to delete untracked entities.
   DCHECK(entity);
   // If the entity hasn't been committed and doesn't have an inflight commit
   // request, simply remove it from the tracker.
-  if (entity->metadata().server_version() == syncer::kUncommittedVersion &&
-      !entity->commit_may_have_started()) {
+  if (entity->IsUnsyncedLocalCreation() && !entity->commit_may_have_started()) {
     bookmark_tracker_->Remove(entity);
     return;
   }
   bookmark_tracker_->MarkDeleted(entity, location);
-  // Mark the entity that it needs to be committed.
-  bookmark_tracker_->IncrementSequenceNumber(entity);
 }
 
 void BookmarkModelObserverImpl::
@@ -593,7 +582,7 @@ syncer::UniquePosition BookmarkModelObserverImpl::UpdateUniquePositionForNode(
   CHECK(bookmark_tracker_);
   CHECK(node);
 
-  const SyncedBookmarkTrackerEntity* entity =
+  SyncedBookmarkTrackerEntity* entity =
       bookmark_tracker_->GetEntityForBookmarkNode(node);
   CHECK(entity);
   const syncer::UniquePosition::Suffix suffix =
@@ -612,11 +601,8 @@ syncer::UniquePosition BookmarkModelObserverImpl::UpdateUniquePositionForNode(
   sync_pb::EntitySpecifics specifics = CreateSpecificsFromBookmarkNode(
       node, bookmark_model_, new_unique_position.ToProto(),
       /*force_favicon_load=*/true);
-  bookmark_tracker_->Update(entity, entity->metadata().server_version(),
-                            modification_time, specifics);
-
   // Mark the entity that it needs to be committed.
-  bookmark_tracker_->IncrementSequenceNumber(entity);
+  entity->RecordLocalUpdate(specifics, modification_time);
   return new_unique_position;
 }
 

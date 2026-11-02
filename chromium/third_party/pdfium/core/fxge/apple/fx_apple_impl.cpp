@@ -116,8 +116,8 @@ bool CFX_AggDeviceDriver::DrawDeviceText(
   }
 
   bool bBold = font->IsBold();
-  if (!bBold && font->GetSubstFont() && font->GetSubstFont()->weight_ >= 500 &&
-      font->GetSubstFont()->weight_ <= 600) {
+  if (!bBold && font->GetSubstFont() &&
+      font->GetSubstFont()->IsMediumWeight()) {
     return false;
   }
   for (const auto& cp : pCharPos) {

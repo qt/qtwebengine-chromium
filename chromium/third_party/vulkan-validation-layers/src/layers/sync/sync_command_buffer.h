@@ -16,8 +16,8 @@
  */
 #pragma once
 
+#include "sync/sync_op.h"
 #include "sync/sync_render_pass.h"
-#include "sync/sync_reporting.h"
 #include "state_tracker/cmd_buffer_state.h"
 
 struct RecordObject;
@@ -158,15 +158,16 @@ class CommandExecutionContext {
     CommandExecutionContext(const SyncValidator &sync_validator, VkQueueFlags queue_flags);
     virtual ~CommandExecutionContext() = default;
 
-    virtual AccessContext *GetCurrentAccessContext() = 0;
-    virtual SyncEventsContext *GetCurrentEventsContext() = 0;
-    virtual const AccessContext *GetCurrentAccessContext() const = 0;
-    virtual const SyncEventsContext *GetCurrentEventsContext() const = 0;
+    virtual AccessContext& GetCurrentAccessContext() = 0;
+    virtual const AccessContext& GetCurrentAccessContext() const = 0;
+
+    virtual SyncEventsContext& GetEventsContext() = 0;
+
+    virtual const SyncEventsContext& GetEventsContext() const = 0;
     virtual QueueId GetQueueId() const = 0;
     virtual VulkanTypedHandle Handle() const = 0;
     virtual ResourceUsageInfo GetResourceUsageInfo(ResourceUsageTagEx tag_ex) const = 0;
 
-    bool ValidForSyncOps() const;
     const SyncValidator &GetSyncState() const { return sync_state_; }
     VkQueueFlags GetQueueFlags() const { return queue_flags_; }
 
@@ -178,20 +179,10 @@ class CommandExecutionContext {
 
 class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProvider {
   public:
-    using SyncOpPointer = std::shared_ptr<SyncOpBase>;
-    constexpr static SyncAccessIndex kResolveRead = SYNC_COLOR_ATTACHMENT_OUTPUT_COLOR_ATTACHMENT_READ;
-    constexpr static SyncAccessIndex kResolveWrite = SYNC_COLOR_ATTACHMENT_OUTPUT_COLOR_ATTACHMENT_WRITE;
-    constexpr static SyncOrdering kColorResolveOrder = SyncOrdering::kColorAttachment;
-    // Although depth resolve runs on the color attachment output stage and uses color accesses, depth accesses
-    // still participate in the ordering. That's why using raster and not only color attachment ordering
-    constexpr static SyncOrdering kDepthStencilResolveOrder = SyncOrdering::kRaster;
-
-    constexpr static SyncOrdering kStoreOrder = SyncOrdering::kRaster;
-
     struct SyncOpEntry {
         ResourceUsageTag tag;
-        SyncOpPointer sync_op;
-        SyncOpEntry(ResourceUsageTag tag_, SyncOpPointer &&sync_op_) : tag(tag_), sync_op(std::move(sync_op_)) {}
+        std::shared_ptr<SyncOpBase> sync_op;
+        SyncOpEntry(ResourceUsageTag tag_, std::shared_ptr<SyncOpBase>&& sync_op_) : tag(tag_), sync_op(std::move(sync_op_)) {}
         SyncOpEntry() = default;
         SyncOpEntry(const SyncOpEntry &other) = default;
     };
@@ -216,23 +207,20 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
     void Reset();
 
     ResourceUsageInfo GetResourceUsageInfo(ResourceUsageTagEx tag_ex) const override;
-    AccessContext *GetCurrentAccessContext() override { return current_context_; }
-    SyncEventsContext *GetCurrentEventsContext() override { return &events_context_; }
 
-    const AccessContext *GetCurrentAccessContext() const override {
-        // TODO: return a reference (update a lot of places!)
-        assert(current_context_ != nullptr);
-        return current_context_;
-    }
+    AccessContext& GetCurrentAccessContext() override { return *current_context_; }
+    const AccessContext& GetCurrentAccessContext() const override { return *current_context_; }
 
-    const SyncEventsContext *GetCurrentEventsContext() const override { return &events_context_; }
+    SyncEventsContext& GetEventsContext() override { return events_context_; }
+    const SyncEventsContext& GetEventsContext() const override { return events_context_; }
+
     QueueId GetQueueId() const override;
 
     RenderPassAccessContext *GetCurrentRenderPassContext() { return current_renderpass_context_; }
     const RenderPassAccessContext *GetCurrentRenderPassContext() const { return current_renderpass_context_; }
     uint32_t GetCurrentRenderPassInstanceId() const { return current_render_pass_instance_id_; }
-    ResourceUsageTag RecordBeginRenderPass(vvl::Func command, const vvl::RenderPass &rp_state, const VkRect2D &render_area,
-                                           const std::vector<const vvl::ImageView *> &attachment_views);
+    ResourceUsageTag RecordBeginRenderPass(vvl::Func command, const vvl::RenderPass& rp_state, const VkRect2D& render_area,
+                                           const std::vector<std::shared_ptr<const vvl::ImageView>>& attachment_views);
 
     bool ValidateBeginRendering(const ErrorObject &error_obj, BeginRenderingCmdState &cmd_state) const;
     void RecordBeginRendering(BeginRenderingCmdState &cmd_state, const Location &loc);
@@ -278,6 +266,8 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
     // The following method allows to set subcommand handles independently of the main command.
     void AddSubcommandHandleIndexed(ResourceUsageTag tag, const VulkanTypedHandle &typed_handle, uint32_t index);
 
+    void AddSyncOp(ResourceUsageTag tag, std::shared_ptr<SyncOpBase>&& sync_op);
+
     const std::vector<HandleRecord> &GetHandleRecords() const { return handles_; }
 
     std::shared_ptr<const vvl::CommandBuffer> GetCBStateShared() const { return cb_state_->shared_from_this(); }
@@ -287,12 +277,6 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
         return *cb_state_;
     }
 
-    template <class T, class... Args>
-    void RecordSyncOp(Args &&...args) {
-        // T must be as derived from SyncOpBase or the compiler will flag the next line as an error.
-        SyncOpPointer sync_op(std::make_shared<T>(std::forward<Args>(args)...));
-        RecordSyncOp(std::move(sync_op));  // Call the non-template version
-    }
     std::shared_ptr<AccessLog> GetAccessLogShared() const { return access_log_; }
     std::shared_ptr<CommandBufferSet> GetCBReferencesShared() const { return cbs_referenced_; }
     void ImportRecordedAccessLog(const CommandBufferAccessContext &cb_context);
@@ -309,7 +293,6 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
     CommandBufferAccessContext(const SyncValidator &sync_validator, VkQueueFlags queue_flags);
 
     uint32_t AddHandle(const VulkanTypedHandle &typed_handle, uint32_t index);
-    void RecordSyncOp(SyncOpPointer &&sync_op);
     AttachmentAccess GetAttachmentAccess(SyncOrdering ordering, AttachmentAccessType type = AttachmentAccessType::Access) const;
 
     // Should be called only during render pass instance
@@ -319,8 +302,10 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
         const vvl::ImageView &attachment_view;
         VkImageSubresourceRange subresource_range{};
     };
-    std::optional<ClearAttachmentInfo> GetClearAttachmentInfo(const VkClearAttachment &clear_attachment, uint32_t clear_first_layer,
+    std::optional<ClearAttachmentInfo> GetClearAttachmentInfo(const VkClearAttachment& clear_attachment, uint32_t clear_first_layer,
                                                               uint32_t clear_layer_count) const;
+    VkImageAspectFlags GetAttachmentAspectsToClear(VkImageAspectFlags clear_aspect_mask,
+                                                   const vvl::ImageView& attachment_view) const;
 
     void CheckCommandTagDebugCheckpoint();
 
@@ -424,8 +409,8 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
                                     uint32_t query_count, VkDeviceSize dst_offset, VkDeviceSize stride, VkQueryResultFlags flags,
                                     const Location &loc) override;
 
-    void RecordBeginRenderPass(const VkRenderPassBeginInfo &render_pass_begin, const VkSubpassBeginInfo &subpass_begin_info,
-                               const Location &loc) override;
+    void RecordBeginRenderPass(const VkRenderPassBeginInfo& render_pass_begin, const VkSubpassBeginInfo& subpass_begin_info,
+                               const Location& loc) override;
     void RecordNextSubpass(const VkSubpassBeginInfo &subpass_begin_info, const VkSubpassEndInfo *subpass_end_info,
                            const Location &loc) override;
     void RecordEndRenderPass(const VkSubpassEndInfo *subpass_end_info, const Location &loc) override;
@@ -440,11 +425,11 @@ static inline const CommandBufferSubState &SubState(const vvl::CommandBuffer &cb
     return *static_cast<const CommandBufferSubState *>(cb.SubState(LayerObjectTypeSyncValidation));
 }
 
-static inline CommandBufferAccessContext *GetAccessContext(vvl::CommandBuffer &cb) {
-    return &static_cast<CommandBufferSubState *>(cb.SubState(LayerObjectTypeSyncValidation))->access_context;
+static inline CommandBufferAccessContext& GetAccessContext(vvl::CommandBuffer& cb) {
+    return static_cast<CommandBufferSubState*>(cb.SubState(LayerObjectTypeSyncValidation))->access_context;
 }
-static inline const CommandBufferAccessContext *GetAccessContext(const vvl::CommandBuffer &cb) {
-    return &static_cast<const CommandBufferSubState *>(cb.SubState(LayerObjectTypeSyncValidation))->access_context;
+static inline const CommandBufferAccessContext& GetAccessContext(const vvl::CommandBuffer& cb) {
+    return static_cast<const CommandBufferSubState*>(cb.SubState(LayerObjectTypeSyncValidation))->access_context;
 }
 
 }  // namespace syncval

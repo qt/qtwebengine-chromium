@@ -54,6 +54,7 @@ cc_test(
 cc_test(
     name = "tfl_calibration_utils_test",
     srcs = ["tfl_calibration_utils_test.cc"],
+    tags = ["nohwasan"],
     deps = [
         ":tfl_calibration_utils",
         "//tensorflow/lite:framework",
@@ -67,6 +68,7 @@ pybind_extension(
     name = "_pywrap_tfl_calibration",
     srcs = ["tfl_calibration_wrapper.cc"],
     module_name = "_pywrap_tfl_calibration",
+    wrap_py_init = True,
     deps = [
         ":tfl_calibration_utils",
         "//tensorflow/lite:framework",

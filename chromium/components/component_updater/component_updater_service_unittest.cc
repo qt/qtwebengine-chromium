@@ -54,15 +54,19 @@ using ::testing::Unused;
 class MockInstaller : public update_client::CrxInstaller {
  public:
   MockInstaller() = default;
-  MOCK_METHOD5(Install,
-               void(const base::FilePath& unpack_path,
-                    const std::string& public_key,
-                    std::unique_ptr<InstallParams> install_params,
-                    ProgressCallback progress_callback,
-                    Callback callback));
-  MOCK_METHOD1(GetInstalledFile,
-               std::optional<base::FilePath>(const std::string& file));
-  MOCK_METHOD0(Uninstall, bool());
+  MOCK_METHOD(void,
+              Install,
+              (const base::FilePath& unpack_path,
+               const std::string& public_key,
+               std::unique_ptr<InstallParams> install_params,
+               ProgressCallback progress_callback,
+               Callback callback),
+              (override));
+  MOCK_METHOD(std::optional<base::FilePath>,
+              GetInstalledFile,
+              (const std::string& file),
+              (override));
+  MOCK_METHOD(bool, Uninstall, (), (override));
 
  private:
   ~MockInstaller() override = default;
@@ -72,38 +76,47 @@ class MockUpdateClient : public UpdateClient {
  public:
   MockUpdateClient() = default;
 
-  MOCK_METHOD1(AddObserver, void(Observer* observer));
-  MOCK_METHOD1(RemoveObserver, void(Observer* observer));
-  MOCK_METHOD4(
-      Install,
-      base::RepeatingClosure(const std::string& id,
-                             CrxDataCallback crx_data_callback,
-                             CrxStateChangeCallback crx_state_change_callback,
-                             Callback callback));
-  MOCK_METHOD5(Update,
-               void(const std::vector<std::string>& ids,
-                    CrxDataCallback crx_data_callback,
-                    CrxStateChangeCallback crx_state_change_callback,
-                    bool is_foreground,
-                    Callback callback));
-  MOCK_METHOD5(CheckForUpdate,
-               void(const std::string& ids,
-                    CrxDataCallback crx_data_callback,
-                    CrxStateChangeCallback crx_state_change_callback,
-                    bool is_foreground,
-                    Callback callback));
-  MOCK_CONST_METHOD2(GetCrxUpdateState,
-                     bool(const std::string& id, CrxUpdateItem* update_item));
-  MOCK_CONST_METHOD1(IsUpdating, bool(const std::string& id));
-  MOCK_METHOD0(Stop, void());
-  MOCK_METHOD3(SendPing,
-               void(const CrxComponent& crx_component,
-                    PingParams ping_params,
-                    Callback callback));
-  MOCK_METHOD2(SendRegistrationPing,
-               void(const CrxComponent& crx_component, Callback callback));
-  MOCK_METHOD2(CleanupStaleDownloads,
-               void(base::Time older_than, base::OnceClosure callback));
+  MOCK_METHOD(void, AddObserver, (Observer * observer), (override));
+  MOCK_METHOD(void, RemoveObserver, (Observer * observer), (override));
+  MOCK_METHOD(base::RepeatingClosure,
+              Install,
+              (const std::string& id,
+               CrxDataCallback crx_data_callback,
+               CrxStateChangeCallback crx_state_change_callback,
+               Callback callback),
+              (override));
+  MOCK_METHOD(void,
+              Update,
+              (const std::vector<std::string>& ids,
+               CrxDataCallback crx_data_callback,
+               CrxStateChangeCallback crx_state_change_callback,
+               bool is_foreground,
+               Callback callback),
+              (override));
+  MOCK_METHOD(void,
+              CheckForUpdate,
+              (const std::string& ids,
+               CrxDataCallback crx_data_callback,
+               CrxStateChangeCallback crx_state_change_callback,
+               bool is_foreground,
+               Callback callback),
+              (override));
+  MOCK_METHOD(bool,
+              GetCrxUpdateState,
+              (const std::string& id, CrxUpdateItem* update_item),
+              (const, override));
+  MOCK_METHOD(bool, IsUpdating, (const std::string& id), (const, override));
+  MOCK_METHOD(void, Stop, (), (override));
+  MOCK_METHOD(void,
+              SendPing,
+              (const CrxComponent& crx_component,
+               PingParams ping_params,
+               Callback callback),
+              (override));
+  MOCK_METHOD(void,
+              CleanupStaleDownloads,
+              (base::Time older_than, base::OnceClosure callback),
+              (override));
 
  private:
   ~MockUpdateClient() override = default;
@@ -111,17 +124,19 @@ class MockUpdateClient : public UpdateClient {
 
 class MockServiceObserver : public ServiceObserver {
  public:
-  MOCK_METHOD1(OnEvent, void(const update_client::CrxUpdateItem&));
+  MOCK_METHOD(void, OnEvent, (const update_client::CrxUpdateItem&), (override));
 };
 
 class MockUpdateScheduler : public UpdateScheduler {
  public:
-  MOCK_METHOD4(Schedule,
-               void(base::TimeDelta initial_delay,
-                    base::TimeDelta delay,
-                    const UserTask& user_task,
-                    const OnStopTaskCallback& on_stop));
-  MOCK_METHOD0(Stop, void());
+  MOCK_METHOD(void,
+              Schedule,
+              (base::TimeDelta initial_delay,
+               base::TimeDelta delay,
+               const UserTask& user_task,
+               const OnStopTaskCallback& on_stop),
+              (override));
+  MOCK_METHOD(void, Stop, (), (override));
 };
 
 class LoopHandler {
@@ -178,6 +193,7 @@ class ComponentUpdaterTest : public testing::Test {
 
  protected:
   void RunThreads();
+  void TriggerUpdateComplete(const std::string& id);
 
  private:
   void RunUpdateTask(const UpdateScheduler::UserTask& user_task);
@@ -251,6 +267,24 @@ ComponentUpdaterTest::~ComponentUpdaterTest() {
 
 void ComponentUpdaterTest::RunThreads() {
   runloop_.Run();
+}
+
+void ComponentUpdaterTest::TriggerUpdateComplete(const std::string& id) {
+  update_client::Callback update_callback;
+  EXPECT_CALL(update_client(), Update)
+      .WillOnce([&update_callback](const std::vector<std::string>&,
+                                   UpdateClient::CrxDataCallback,
+                                   UpdateClient::CrxStateChangeCallback, bool,
+                                   update_client::Callback callback) {
+        update_callback = std::move(callback);
+      });
+
+  OnDemandTester tester;
+  tester.OnDemand(&component_updater(), id,
+                  OnDemandUpdater::Priority::FOREGROUND);
+
+  ASSERT_TRUE(update_callback);
+  std::move(update_callback).Run(update_client::Error::NONE);
 }
 
 void ComponentUpdaterTest::RunUpdateTask(
@@ -588,6 +622,87 @@ TEST_F(ComponentUpdaterTest, CriticalComponentAlwaysUpdates) {
   EXPECT_EQ(registered.name, name);
 
   EXPECT_TRUE(registered.updates_enabled);
+}
+
+TEST_F(ComponentUpdaterTest,
+       RegisterCancelsPendingUnregistrationBeforeUpdateCompletes) {
+  const std::string id = "abagagagagagagagagagagagagagagag";
+  scoped_refptr<MockInstaller> installer =
+      base::MakeRefCounted<MockInstaller>();
+  EXPECT_CALL(*installer, Uninstall()).Times(0);
+
+  ComponentRegistration component(
+      id, /*name=*/{}, base::ToVector(update_client::abag_hash),
+      base::Version("1.0"), /*fingerprint=*/{}, /*installer_attributes=*/{},
+      /*action_handler=*/nullptr, installer,
+      /*requires_network_encryption=*/false,
+      /*supports_group_policy_enable_component_updates=*/true,
+      /*allow_cached_copies=*/true,
+      /*allow_updates_on_metered_connection=*/true,
+      /*allow_updates=*/true);
+
+  EXPECT_TRUE(component_updater().RegisterComponent(component));
+
+  // Unregister during an in-progress update adds component ID to the pending
+  // unregistration list.
+  EXPECT_CALL(update_client(), IsUpdating(id)).WillOnce(Return(true));
+  EXPECT_TRUE(component_updater().UnregisterComponent(id));
+
+  // Re-register removes the component ID from the pending unregistration list
+  // so the component is not uninstalled after the update completes.
+  EXPECT_TRUE(component_updater().RegisterComponent(component));
+
+  // The update does not uninstall the component.
+  TriggerUpdateComplete(id);
+
+  CrxUpdateItem item;
+  EXPECT_TRUE(component_updater().GetComponentDetails(id, &item));
+  EXPECT_TRUE(item.component);
+}
+
+TEST_F(ComponentUpdaterTest,
+       RegisterCancelsPendingUnregistrationAfterUpdateCompletes) {
+  const std::string id = "abagagagagagagagagagagagagagagag";
+  scoped_refptr<MockInstaller> installer =
+      base::MakeRefCounted<MockInstaller>();
+  // The component is uninstalled after the first update completes when
+  // processing the pending unregistration list.
+  EXPECT_CALL(*installer, Uninstall()).WillOnce(Return(true));
+
+  ComponentRegistration component(
+      id, /*name=*/{}, base::ToVector(update_client::abag_hash),
+      base::Version("1.0"), /*fingerprint=*/{}, /*installer_attributes=*/{},
+      /*action_handler=*/nullptr, installer,
+      /*requires_network_encryption=*/false,
+      /*supports_group_policy_enable_component_updates=*/true,
+      /*allow_cached_copies=*/true,
+      /*allow_updates_on_metered_connection=*/true,
+      /*allow_updates=*/true);
+
+  EXPECT_TRUE(component_updater().RegisterComponent(component));
+
+  // Unregister during an in progress update adds component ID to the pending
+  // unregistration list.
+  EXPECT_CALL(update_client(), IsUpdating(id)).WillOnce(Return(true));
+  EXPECT_TRUE(component_updater().UnregisterComponent(id));
+
+  EXPECT_CALL(update_client(), IsUpdating(id)).WillOnce(Return(false));
+  // When the first update completes the component is uninstalled.
+  TriggerUpdateComplete(id);
+
+  CrxUpdateItem item;
+  EXPECT_FALSE(component_updater().GetComponentDetails(id, &item));
+  EXPECT_FALSE(item.component);
+
+  // Re-register removes the component ID from the pending unregistration list
+  // so the component is not uninstalled after the update completes.
+  EXPECT_TRUE(component_updater().RegisterComponent(component));
+
+  // The second update does not uninstall the component.
+  TriggerUpdateComplete(id);
+
+  EXPECT_TRUE(component_updater().GetComponentDetails(id, &item));
+  EXPECT_TRUE(item.component);
 }
 
 }  // namespace component_updater

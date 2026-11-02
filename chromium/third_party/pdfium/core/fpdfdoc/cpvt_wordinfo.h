@@ -12,7 +12,6 @@
 #include "core/fxcrt/fx_codepage_forward.h"
 
 struct CPVT_WordInfo {
-  CPVT_WordInfo();
   CPVT_WordInfo(uint16_t word, FX_Charset charset, int32_t fontIndex);
   CPVT_WordInfo(const CPVT_WordInfo& word);
   ~CPVT_WordInfo();
@@ -25,6 +24,7 @@ struct CPVT_WordInfo {
   float fWordY;
   float fWordTail;
   int32_t nFontIndex;
+  bool is_rtl;
 };
 
 #endif  // CORE_FPDFDOC_CPVT_WORDINFO_H_

@@ -64,7 +64,7 @@ Register MaglevAssembler::FromAnyToRegister(ConstInput input,
 void MaglevAssembler::LoadSingleCharacterString(Register result,
                                                 int char_code) {
   DCHECK_GE(char_code, 0);
-  DCHECK_LT(char_code, String::kMaxOneByteCharCode);
+  DCHECK_LE(char_code, String::kMaxOneByteCharCode);
   LoadRoot(result, RootsTable::SingleCharacterStringIndex(char_code));
 }
 
@@ -312,6 +312,21 @@ void MaglevAssembler::MaterialiseValueNode(Register dst, ValueNode* value) {
     case Opcode::kFloat64Constant: {
       double double_value =
           value->Cast<Float64Constant>()->value().get_scalar();
+      int smi_value;
+      if (DoubleToSmiInteger(double_value, &smi_value)) {
+        Move(dst, Smi::FromInt(smi_value));
+      } else {
+        MoveHeapNumber(dst, double_value);
+      }
+      return;
+    }
+    case Opcode::kHoleyFloat64Constant: {
+      Float64 float64_value = value->Cast<HoleyFloat64Constant>()->value();
+      if (float64_value.is_undefined_or_hole_nan()) {
+        LoadRoot(dst, RootIndex::kUndefinedValue);
+        return;
+      }
+      double double_value = float64_value.get_scalar();
       int smi_value;
       if (DoubleToSmiInteger(double_value, &smi_value)) {
         Move(dst, Smi::FromInt(smi_value));

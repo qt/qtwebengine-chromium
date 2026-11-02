@@ -1,0 +1,11 @@
+include_rules = [
+  "+components/history/core/browser",
+  "+components/keyed_service/core",
+  "+sql",
+]
+
+specific_include_rules = {
+  ".*unittest\\.cc": [
+    "+third_party/sqlite",
+  ],
+}

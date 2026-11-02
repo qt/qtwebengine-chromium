@@ -72,7 +72,7 @@ void SparseLUImpl<Scalar, StorageIndex>::pruneL(const Index jcol, const IndexVec
 
     // If a snode overlaps with the next panel, then the U-segment
     // is fragmented into two parts -- irep and irep1. We should let
-    // pruning occur at the rep-column in irep1s snode.
+    // pruning occur at the rep-column in irep1's snode.
     if (glu.supno(irep) == glu.supno(irep1)) continue;  // don't prune
 
     // If it has not been pruned & it has a nonz in row L(pivrow,i)
@@ -107,7 +107,7 @@ void SparseLUImpl<Scalar, StorageIndex>::pruneL(const Index jcol, const IndexVec
 
             // If the supernode has only one column, then we
             // only keep one set of subscripts. For any subscript
-            // intercnahge performed, similar interchange must be
+            // interchange performed, similar interchange must be
             // done on the numerical values.
             if (movnum) {
               minloc = glu.xlusup(irep) + (kmin - glu.xlsub(irep));

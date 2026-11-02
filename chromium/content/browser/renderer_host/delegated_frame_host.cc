@@ -67,10 +67,9 @@ DelegatedFrameHost::DelegatedFrameHost(const viz::FrameSinkId& frame_sink_id,
   CHECK(host_frame_sink_manager_);
   frame_evictor_->SetVisible(client_->DelegatedFrameHostIsVisible());
 
-  stale_content_layer_ =
-      std::make_unique<ui::Layer>(ui::LayerType::LAYER_SOLID_COLOR);
+  stale_content_layer_ = std::make_unique<ui::LayerSolidColor>();
   stale_content_layer_->SetVisible(false);
-  stale_content_layer_->SetColor(SK_ColorTRANSPARENT);
+  stale_content_layer_->SetColor(SkColors::kTransparent);
 }
 
 DelegatedFrameHost::~DelegatedFrameHost() {
@@ -100,9 +99,6 @@ void DelegatedFrameHost::WasShown(
 
   frame_evictor_->SetVisible(true);
   if (record_tab_switch_time_request && compositor_) {
-    // Only requests with saved frames should be sent to the DelegatedFrameHost.
-    CHECK(record_tab_switch_time_request
-              ->AllEventsAreTabSwitchesWithSavedFrame());
     compositor_->RequestSuccessfulPresentationTimeForNextFrame(
         tab_switch_time_recorder_.TabWasShown(
             std::move(*record_tab_switch_time_request)));
@@ -114,7 +110,7 @@ void DelegatedFrameHost::WasShown(
                cc::DeadlinePolicy::UseDefaultDeadline());
 
   // Remove stale content that might be displayed.
-  if (stale_content_layer_->has_external_content()) {
+  if (stale_content_layer_->HasExternalContent()) {
     stale_content_layer_->SetShowSolidColorContent();
     stale_content_layer_->SetVisible(false);
   }
@@ -124,9 +120,6 @@ void DelegatedFrameHost::RequestSuccessfulPresentationTimeForNextFrame(
     blink::RecordContentToVisibleTimeRequest visible_time_request) {
   if (!compositor_)
     return;
-
-  // Only requests with saved frames should be sent to the DelegatedFrameHost.
-  CHECK(visible_time_request.AllEventsAreTabSwitchesWithSavedFrame());
 
   // Tab was shown while widget was already painting, eg. due to being
   // captured.
@@ -375,8 +368,9 @@ void DelegatedFrameHost::EmbedSurface(
     }
     current_frame_size_in_dip_ = surface_dip_size_;
     client_->DelegatedFrameHostGetLayer()->SetShowSurface(
-        new_primary_surface_id, current_frame_size_in_dip_, GetGutterColor(),
-        deadline_policy, false /* stretch_content_to_fill_bounds */);
+        new_primary_surface_id, current_frame_size_in_dip_,
+        SkColor4f::FromColor(GetGutterColor()), deadline_policy,
+        false /* stretch_content_to_fill_bounds */);
     if (compositor_)
       compositor_->OnChildResizing();
   }
@@ -467,7 +461,7 @@ void DelegatedFrameHost::EvictDelegatedFrame(
   // white screens from being displayed during various animations such as the
   // CrOS overview mode.
   if (client_->ShouldShowStaleContentOnEviction() &&
-      !stale_content_layer_->has_external_content()) {
+      !stale_content_layer_->HasExternalContent()) {
     SetFrameEvictionStateAndNotifyObservers(
         FrameEvictionState::kPendingEvictionRequests);
     auto callback =
@@ -530,7 +524,7 @@ void DelegatedFrameHost::DidCopyStaleContent(
 
 // TODO(crbug.com/40812011): This DCHECK occasionally gets hit on Chrome OS.
 #if !BUILDFLAG(IS_CHROMEOS)
-  CHECK(!stale_content_layer_->has_external_content());
+  CHECK(!stale_content_layer_->HasExternalContent());
 #endif
   stale_content_layer_->SetVisible(true);
   stale_content_layer_->SetBounds(gfx::Rect(surface_dip_size_));
@@ -543,7 +537,8 @@ void DelegatedFrameHost::ContinueDelegatedFrameEviction(
   // Reset primary surface.
   if (HasPrimarySurface()) {
     client_->DelegatedFrameHostGetLayer()->SetShowSurface(
-        viz::SurfaceId(), current_frame_size_in_dip_, GetGutterColor(),
+        viz::SurfaceId(), current_frame_size_in_dip_,
+        SkColor4f::FromColor(GetGutterColor()),
         cc::DeadlinePolicy::UseDefaultDeadline(), false);
   }
 
@@ -558,7 +553,8 @@ void DelegatedFrameHost::ContinueDelegatedFrameEviction(
   //
   // TODO(b/337467299): determine why we are evicting without finding valid
   // surfaces.
-  DCHECK(!local_surface_id_.is_valid() || !surface_ids.empty());
+  CHECK(!local_surface_id_.is_valid() || !surface_ids.empty(),
+        base::NotFatalUntil::M152);
   if (!surface_ids.empty()) {
     CHECK(host_frame_sink_manager_);
     host_frame_sink_manager_->EvictSurfaces(surface_ids);
@@ -711,7 +707,9 @@ void DelegatedFrameHost::TakeFallbackContentFrom(DelegatedFrameHost* other) {
   if (!HasPrimarySurface()) {
     client_->DelegatedFrameHostGetLayer()->SetShowSurface(
         desired_fallback, other->client_->DelegatedFrameHostGetLayer()->size(),
-        other->client_->DelegatedFrameHostGetLayer()->background_color(),
+        other->client_->DelegatedFrameHostGetLayer()
+            ->AsSolidColor()
+            ->GetTargetColor(),
         cc::DeadlinePolicy::UseDefaultDeadline(),
         false /* stretch_content_to_fill_bounds */);
   }

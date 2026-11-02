@@ -5,6 +5,7 @@
  */
 import { Browser as BrowserBase, } from '../api/Browser.js';
 import { CDPSessionEvent } from '../api/CDPSession.js';
+import { Deferred } from '../util/Deferred.js';
 import { CdpBrowserContext } from './BrowserContext.js';
 import { CdpExtension } from './Extension.js';
 import { DevToolsTarget, InitializationStatus, OtherTarget, PageTarget, WorkerTarget, } from './Target.js';
@@ -50,6 +51,7 @@ export class CdpBrowser extends BrowserBase {
     #targetManager;
     #handleDevToolsAsPage = false;
     #extensions = new Map();
+    #version;
     constructor(connection, contextIds, defaultViewport, process, closeCallback, targetFilterCallback, isPageTargetCallback, waitForInitiallyDiscoveredTargets = true, networkEnabled = true, issuesEnabled = true, handleDevToolsAsPage = false, blocklist, allowlist) {
         super();
         this.#networkEnabled = networkEnabled;
@@ -262,8 +264,11 @@ export class CdpBrowser extends BrowserBase {
         });
         return response.targetId;
     }
-    async installExtension(path) {
-        const { id } = await this.#connection.send('Extensions.loadUnpacked', { path });
+    async installExtension(path, options) {
+        const { id } = await this.#connection.send('Extensions.loadUnpacked', {
+            path,
+            enableInIncognito: options?.enabledInIncognito ?? false,
+        });
         this.#extensions.delete(id);
         return id;
     }
@@ -357,8 +362,17 @@ export class CdpBrowser extends BrowserBase {
     get connected() {
         return !this.#connection._closed;
     }
-    #getVersion() {
-        return this.#connection.send('Browser.getVersion');
+    async #getVersion() {
+        if (!this.#version) {
+            this.#version = Deferred.create();
+            try {
+                this.#version.resolve(await this.#connection.send('Browser.getVersion'));
+            }
+            catch (error) {
+                this.#version.reject(error);
+            }
+        }
+        return await this.#version.valueOrThrow();
     }
     get debugInfo() {
         return {

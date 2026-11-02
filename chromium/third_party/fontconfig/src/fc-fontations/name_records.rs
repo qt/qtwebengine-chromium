@@ -150,6 +150,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(skip_external_fonts, ignore)]
     fn test_sort_name_records() {
         let font_bytes = get_test_font_bytes().expect("Could not read test font file.");
         let font = read_fonts::FontRef::new(font_bytes.as_slice()).unwrap();

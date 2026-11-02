@@ -24,9 +24,9 @@ class ChunkedFileDataPipeProducer {
 
   ChunkedFileDataPipeProducer(
       base::File file,
-      bool is_obfuscated,
       int64_t file_size,
-      std::optional<enterprise_obfuscation::HeaderData> header_data);
+      std::optional<enterprise_obfuscation::ObfuscatedFileReader>
+          obfuscated_reader);
 
   ChunkedFileDataPipeProducer(const ChunkedFileDataPipeProducer&) = delete;
   ChunkedFileDataPipeProducer& operator=(const ChunkedFileDataPipeProducer&) =

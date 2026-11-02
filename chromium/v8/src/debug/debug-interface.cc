@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 
+#include <span>
 #include <vector>
 
 #include "include/v8-function.h"
@@ -160,17 +161,13 @@ Local<String> GetFunctionDescription(Local<Function> function) {
       int func_index = function_data->function_index();
       i::DirectHandle<i::WasmTrustedInstanceData> instance_data(
           function_data->instance_data(), i_isolate);
-      if (instance_data->module()->origin == i::wasm::kWasmOrigin) {
-        // For asm.js functions, we can still print the source
-        // code (hopefully), so don't bother with them here.
-        auto debug_name =
-            i::GetWasmFunctionDebugName(i_isolate, instance_data, func_index);
-        i::IncrementalStringBuilder builder(i_isolate);
-        builder.AppendCStringLiteral("function ");
-        builder.AppendString(debug_name);
-        builder.AppendCStringLiteral("() { [native code] }");
-        return Utils::ToLocal(builder.Finish().ToHandleChecked());
-      }
+      auto debug_name =
+          i::GetWasmFunctionDebugName(i_isolate, instance_data, func_index);
+      i::IncrementalStringBuilder builder(i_isolate);
+      builder.AppendCStringLiteral("function ");
+      builder.AppendString(debug_name);
+      builder.AppendCStringLiteral("() { [native code] }");
+      return Utils::ToLocal(builder.Finish().ToHandleChecked());
     }
 #endif  // V8_ENABLE_WEBASSEMBLY
     return Utils::ToLocal(i::JSFunction::ToString(i_isolate, js_function));
@@ -866,8 +863,7 @@ std::vector<WasmScript::DebugSymbols> WasmScript::GetDebugSymbols() const {
         GetDebugSymbolType(symbol.type);
     if (type.IsNothing()) continue;
 
-    internal::wasm::ModuleWireBytes wire_bytes(
-        script->wasm_native_module()->wire_bytes());
+    internal::wasm::ModuleWireBytes wire_bytes(native_module->wire_bytes());
     i::wasm::WasmName external_url =
         wire_bytes.GetNameOrNull(symbol.external_url);
     debug_symbols.push_back({type.FromJust(), external_url});
@@ -963,7 +959,7 @@ uint32_t WasmScript::GetFunctionHash(int function_index) {
                                                internal::HashSeed::Default());
 }
 
-Maybe<v8::MemorySpan<const uint8_t>> WasmScript::GetModuleBuildId() const {
+Maybe<std::span<const uint8_t>> WasmScript::GetModuleBuildId() const {
   i::DisallowGarbageCollection no_gc;
   auto script = Utils::OpenDirectHandle(this);
   DCHECK_EQ(i::Script::Type::kWasm, script->type());
@@ -974,7 +970,7 @@ Maybe<v8::MemorySpan<const uint8_t>> WasmScript::GetModuleBuildId() const {
   if (build_id.is_empty()) {
     return {};
   }
-  return Just(MemorySpan<const uint8_t>{
+  return Just(std::span<const uint8_t>{
       native_module->wire_bytes().begin() + build_id.offset(),
       build_id.length()});
 }

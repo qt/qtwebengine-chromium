@@ -35,7 +35,7 @@ export async function sourceColorFromImage(image: HTMLImageElement) {
       reject(new Error('Could not get canvas context'));
       return;
     }
-    const callback = () => {
+    const loadCallback = () => {
       canvas.width = image.width;
       canvas.height = image.height;
       context.drawImage(image, 0, 0);
@@ -50,13 +50,27 @@ export async function sourceColorFromImage(image: HTMLImageElement) {
       const [sx, sy, sw, sh] = rect;
       resolve(context.getImageData(sx, sy, sw, sh).data);
     };
+    const errorCallback = () => {
+      reject(new Error('Image load failed'));
+    };
     if (image.complete) {
-      callback();
+      loadCallback();
     } else {
-      image.onload = callback;
+      image.onload = loadCallback;
+      image.onerror = errorCallback;
     }
   });
 
+  return sourceColorFromImageBytes(imageBytes);
+}
+
+/**
+ * Get the source color from image bytes.
+ *
+ * @param imageBytes The image bytes
+ * @return Source color - the color most suitable for creating a UI theme
+ */
+export function sourceColorFromImageBytes(imageBytes: Uint8ClampedArray) {
   // Convert Image data to Pixel Array
   const pixels: number[] = [];
   for (let i = 0; i < imageBytes.length; i += 4) {

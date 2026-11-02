@@ -32,9 +32,7 @@
 #include <utility>
 
 #include "dawn/native/VulkanBackend.h"
-#include "src/dawn/common/Assert.h"
 #include "src/dawn/common/GPUInfo.h"
-#include "src/dawn/common/Log.h"
 #include "src/dawn/common/SystemUtils.h"
 #include "src/dawn/native/ChainUtils.h"
 #include "src/dawn/native/Instance.h"
@@ -42,7 +40,9 @@
 #include "src/dawn/native/vulkan/PhysicalDeviceVk.h"
 #include "src/dawn/native/vulkan/UtilsVulkan.h"
 #include "src/dawn/native/vulkan/VulkanError.h"
+#include "src/utils/assert.h"
 #include "src/utils/compiler.h"
+#include "src/utils/log.h"
 
 // TODO(crbug.com/dawn/283): Link against the Vulkan Loader and remove this.
 #if defined(DAWN_ENABLE_SWIFTSHADER)
@@ -204,31 +204,33 @@ static constexpr ICD kICDs[] = {
 };
 
 // Suppress validation errors that are known. Returns false in that case.
-bool ShouldReportDebugMessage(const char* messageId, const char* message) {
-    // If a driver gives us a NULL pMessage (which would be a violation of the Vulkan spec)
+bool ShouldReportDebugMessage(const char* cMessageId, const char* cMessage) {
+    // If a driver gives us a nullptr pMessage (which would be a violation of the Vulkan spec)
     // then ignore this message.
-    if (message == nullptr) {
+    if (cMessage == nullptr) {
         return false;
     }
+    std::string_view message = cMessage;
 
     // Some Vulkan drivers send "error" messages of "VK_SUCCESS" when zero devices are
     // available; seen in crbug.com/1464122. This is not a real error that we care about.
     // The messageId is ignored because drivers may report
     // __FILE__: __LINE__ info here.
-    // https://github.com/Mesa3D/mesa/blob/22.2/src/amd/vulkan/radv_device.c#L1201
-    if (DAWN_UNSAFE_TODO(strcmp(message, "VK_SUCCESS")) == 0) {
+    // https://gitlab.freedesktop.org/mesa/mesa/-/blob/22.2/src/amd/vulkan/radv_device.c#L1201
+    if (message == "VK_SUCCESS") {
         return false;
     }
 
-    // The Vulkan spec does allow pMessageIdName to be NULL, but it may still contain a valid
+    // The Vulkan spec does allow pMessageIdName to be nullptr, but it may still contain a valid
     // message. Since we can't compare it with our skipped message list allow it through.
-    if (messageId == nullptr) {
+    if (cMessageId == nullptr) {
         return true;
     }
+    std::string_view messageId = cMessageId;
 
     for (const SkippedMessage& msg : kSkippedMessages) {
-        if (DAWN_UNSAFE_TODO(strstr(messageId, msg.messageId)) != nullptr &&
-            DAWN_UNSAFE_TODO(strstr(message, msg.messageContents)) != nullptr) {
+        if (messageId.find(msg.messageId) != std::string_view::npos &&
+            message.find(msg.messageContents) != std::string_view::npos) {
             return false;
         }
     }
@@ -239,8 +241,8 @@ void LogCallbackData(LogSeverity severity,
                      const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData) {
     LogMessage log = LogMessage(severity);
 
-    // pMessageIdName may be NULL, according to the Vulkan spec. Passing NULL into an ostream is
-    // undefined behavior, so we'll handle that scenario separately.
+    // pMessageIdName may be nullptr, according to the Vulkan spec. Passing nullptr into an ostream
+    // is undefined behavior, so we'll handle that scenario separately.
     if (pCallbackData->pMessageIdName != nullptr) {
         log << pCallbackData->pMessageIdName;
     } else {
@@ -272,8 +274,10 @@ OnDebugUtilsCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     // Look through all the object labels attached to the debug message and try to parse
     // a device debug prefix out of one of them. If a debug prefix is found and matches
     // a registered device, forward the message on to it.
-    for (uint32_t i = 0; i < pCallbackData->objectCount; ++i) {
-        const VkDebugUtilsObjectNameInfoEXT& object = DAWN_UNSAFE_TODO(pCallbackData->pObjects[i]);
+    Span<const VkDebugUtilsObjectNameInfoEXT> objects =
+        // SAFETY: pObjects is defined as a pointer to objectCount VkDebugUtilsObjectNameInfoEXTs.
+        DAWN_UNSAFE_BUFFERS({pCallbackData->pObjects, pCallbackData->objectCount});
+    for (const auto& object : objects) {
         std::string deviceDebugPrefix = GetDeviceDebugPrefixFromDebugName(object.pObjectName);
         if (deviceDebugPrefix.empty()) {
             continue;

@@ -19,7 +19,7 @@ DeviceModeTestRunner.buildFakePhone = function(overrides) {
 
       'device-pixel-ratio': 2,
 
-      vertical: {width: 320, height: 480}
+      vertical: {width: 320, height: 480},
     },
 
     capabilities: ['touch', 'mobile'],
@@ -31,15 +31,15 @@ DeviceModeTestRunner.buildFakePhone = function(overrides) {
         title: 'default',
         orientation: 'vertical',
 
-        insets: {left: 0, top: 0, right: 0, bottom: 0}
+        insets: {left: 0, top: 0, right: 0, bottom: 0},
       },
       {
         title: 'default',
         orientation: 'horizontal',
 
-        insets: {left: 0, top: 0, right: 0, bottom: 0}
-      }
-    ]
+        insets: {left: 0, top: 0, right: 0, bottom: 0},
+      },
+    ],
   };
 
   const json = Object.assign(StandardPhoneJSON, overrides || {});

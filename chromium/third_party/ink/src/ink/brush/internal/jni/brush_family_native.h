@@ -26,7 +26,8 @@ int64_t BrushFamilyNative_create(
     void* jni_env_pass_through, const int64_t* coat_native_pointers,
     int num_coats, int64_t input_model_pointer,
     const char* client_brush_family_id, const char* developer_comment,
-    void (*throw_from_status_callback)(void*, int, const char*));
+    void (*throw_from_status_callback)(void* jni_env, int status_code,
+                                       const char* status_str));
 
 void BrushFamilyNative_free(int64_t native_pointer);
 
@@ -35,6 +36,9 @@ const char* BrushFamilyNative_getClientBrushFamilyId(int64_t native_pointer);
 
 // The caller must free the returned string.
 const char* BrushFamilyNative_getDeveloperComment(int64_t native_pointer);
+
+int64_t BrushFamilyNative_getTextureAnimationLoopDurationMillis(
+    int64_t native_pointer);
 
 int64_t BrushFamilyNative_getBrushCoatCount(int64_t native_pointer);
 

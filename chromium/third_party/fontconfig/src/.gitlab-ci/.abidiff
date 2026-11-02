@@ -1,0 +1,5 @@
+[suppress_type]
+type_kind = struct
+name = _FcConfig
+has_size_change = yes
+has_data_member_inserted_at = end

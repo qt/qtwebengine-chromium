@@ -14,8 +14,24 @@
   }
 }
 
-.clear-storage-button .report-row {
-  display: flex;
+.clear-site-data-checkboxes-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--sys-size-5) var(--sys-size-10);
+  align-items: start;
+}
+
+.clear-site-data-checkbox-column {
+  display: grid;
+  row-gap: var(--sys-size-5);
+
+  > devtools-checkbox {
+    margin-left: 0;
+  }
+}
+
+.clear-selected-button-row {
+  margin-top: var(--sys-size-7);
 }
 
 .link {
@@ -67,17 +83,18 @@
 
 .clear-storage-header {
   min-width: 400px;
+  /* Keep in sync with ui/legacy/checkboxTextLabel.css (12px input, 6px margins). */
+  --nested-checkbox-indent: 24px;
 }
 
 .report-content-box {
   overflow: initial;
 }
 
-.include-third-party-cookies {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin-left: 10px;
+.include-third-party-cookies-row {
+  margin-left: var(--nested-checkbox-indent);
+
+  > devtools-checkbox {
+    margin-left: 0;
+  }
 }

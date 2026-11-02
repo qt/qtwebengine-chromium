@@ -275,10 +275,6 @@ void ValidateBitmapPremultiplyState(CFX_DIBitmap* bitmap);
 CPDFSDK_InteractiveForm* FormHandleToInteractiveForm(FPDF_FORMHANDLE hHandle);
 
 // PRECONDITIONS: `wide_string` must be terminated by a NUL FPDF_WCHAR.
-UNSAFE_BUFFER_USAGE ByteString
-ByteStringFromFPDFWideString(FPDF_WIDESTRING wide_string);
-
-// PRECONDITIONS: `wide_string` must be terminated by a NUL FPDF_WCHAR.
 UNSAFE_BUFFER_USAGE WideString
 WideStringFromFPDFWideString(FPDF_WIDESTRING wide_string);
 

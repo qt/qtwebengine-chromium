@@ -90,4 +90,16 @@ describe('AiAssistance', () => {
       assert.strictEqual(AiAssistance.UnitFormatters.bytes(0), '0\xA0B');
     });
   });
+
+  describe('formatBytesToKb', () => {
+    it('formats values below 100 kB with one decimal place', () => {
+      assert.strictEqual(AiAssistance.UnitFormatters.formatBytesToKb(50), '0.1\xA0kB');
+      assert.strictEqual(AiAssistance.UnitFormatters.formatBytesToKb(5 * 1000), '5.0\xA0kB');
+    });
+
+    it('formats values of 100 kB or above as integers', () => {
+      assert.strictEqual(AiAssistance.UnitFormatters.formatBytesToKb(500 * 1000), '500\xA0kB');
+      assert.strictEqual(AiAssistance.UnitFormatters.formatBytesToKb(1500 * 1000), '1,500\xA0kB');
+    });
+  });
 });

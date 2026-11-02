@@ -20,6 +20,8 @@ const char* to_string(enum ynn_unary_operator op) {
       return "ceil";
     case ynn_unary_convert:
       return "convert";
+    case ynn_unary_requantize_to_uint8:
+      return "requantize_to_uint8";
     case ynn_unary_exp:
       return "exp";
     case ynn_unary_expm1:
@@ -56,6 +58,12 @@ const char* to_string(enum ynn_unary_operator op) {
       return "hardswish";
     case ynn_unary_poly3:
       return "poly3";
+    case ynn_unary_round_to_bf16:
+      return "round_to_bf16";
+    case ynn_unary_approx_erf:
+      return "approx_erf";
+    case ynn_unary_approx_tanh:
+      return "approx_tanh";
     case ynn_unary_invalid:
       return "invalid";
   }

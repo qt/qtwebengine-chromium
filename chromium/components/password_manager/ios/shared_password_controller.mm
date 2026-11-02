@@ -14,6 +14,7 @@
 #import <vector>
 
 #import "base/apple/foundation_util.h"
+#import "base/check_deref.h"
 #import "base/check_op.h"
 #import "base/containers/to_vector.h"
 #import "base/debug/crash_logging.h"
@@ -291,6 +292,15 @@ autofill::LocalFrameToken GetLocalFrameToken(web::WebFrame* frame) {
   }
 }
 
+- (password_manager::FillDataRetrievalResult)
+    passwordFillDataForUsername:(NSString*)username
+             isBackupCredential:(BOOL)isBackupCredential
+                     forFrameId:(const std::string&)frameId {
+  return [self.suggestionHelper passwordFillDataForUsername:username
+                                         isBackupCredential:isBackupCredential
+                                                 forFrameId:frameId];
+}
+
 - (BOOL)IsOffTheRecord {
   DCHECK(_delegate.passwordManagerClient);
   return _delegate.passwordManagerClient->IsOffTheRecord();
@@ -523,7 +533,7 @@ autofill::LocalFrameToken GetLocalFrameToken(web::WebFrame* frame) {
       [self propagatePredictionsToPasswordManagerFrom:manager
                                           forFormData:renderer_form
                                          globalFormId:formId
-                                              inFrame:child_frame
+                                              inFrame:*child_frame
                                            fromSource:source];
     }
   } else {
@@ -536,7 +546,7 @@ autofill::LocalFrameToken GetLocalFrameToken(web::WebFrame* frame) {
     [self propagatePredictionsToPasswordManagerFrom:manager
                                         forFormData:form_data
                                        globalFormId:formId
-                                            inFrame:frame
+                                            inFrame:*frame
                                          fromSource:source];
   }
 }
@@ -829,6 +839,43 @@ autofill::LocalFrameToken GetLocalFrameToken(web::WebFrame* frame) {
   [self detachListenersForBottomSheet:frameId];
 }
 
+- (void)scrollAndCheckViewAreaVisible:(autofill::FieldRendererId)fieldId
+                           forFrameId:(const std::string&)frameId
+                    completionHandler:
+                        (void (^)(BOOL visible))completionHandler {
+  web::WebFrame* webFrame = [self webFramesManager]->GetFrameWithId(frameId);
+  if (!webFrame) {
+    completionHandler(NO);
+    return;
+  }
+
+  auto boolCallback = base::BindOnce(
+      [](void (^handler)(BOOL), BOOL visible) { handler(visible); },
+      completionHandler);
+
+  password_manager::PasswordManagerJavaScriptFeature::GetInstance()
+      ->ScrollAndCheckViewAreaVisible(webFrame, fieldId,
+                                      std::move(boolCallback));
+}
+
+- (void)fillField:(autofill::FieldRendererId)fieldId
+            withValue:(const std::u16string&)value
+           forFrameId:(const std::string&)frameId
+    completionHandler:(void (^)(BOOL success))completionHandler {
+  web::WebFrame* webFrame = [self webFramesManager]->GetFrameWithId(frameId);
+  if (!webFrame) {
+    completionHandler(NO);
+    return;
+  }
+
+  auto boolCallback = base::BindOnce(
+      [](void (^handler)(BOOL), BOOL success) { handler(success); },
+      completionHandler);
+
+  password_manager::PasswordManagerJavaScriptFeature::GetInstance()->FillField(
+      webFrame, fieldId, value, std::move(boolCallback));
+}
+
 - (void)formEligibleForGenerationFound:(const PasswordFormGenerationData&)form {
   _formGenerationData[form.form_renderer_id] = form;
 }
@@ -997,7 +1044,7 @@ autofill::LocalFrameToken GetLocalFrameToken(web::WebFrame* frame) {
 
   std::u16string generatedPassword =
       [_driverHelper PasswordGenerationHelper:frame]->GeneratePassword(
-          [self lastCommittedURL],
+          frame->GetSecurityOrigin().GetURL(),
           isManuallyTriggered ? PasswordGenerationType::kManual
                               : PasswordGenerationType::kAutomatic,
           formSignature, fieldSignature, maxLength);
@@ -1219,19 +1266,19 @@ autofill::LocalFrameToken GetLocalFrameToken(web::WebFrame* frame) {
 - (void)propagatePredictionsToPasswordManagerFrom:(AutofillManager&)manager
                                       forFormData:(FormData)form
                                      globalFormId:(FormGlobalId)globalFormId
-                                          inFrame:(web::WebFrame*)frame
+                                          inFrame:(web::WebFrame&)frame
                                        fromSource:(AutofillManager::Observer::
                                                        FieldTypeSource)source {
   PasswordManagerDriver* driver =
       IOSPasswordManagerDriverFactory::FromWebStateAndWebFrame(_webState,
-                                                               frame);
+                                                               &frame);
   std::vector<autofill::FieldGlobalId> field_ids =
       base::ToVector(form.fields(), &autofill::FormFieldData::global_id);
   switch (source) {
     case AutofillManager::Observer::FieldTypeSource::kAutofillServer:
     case AutofillManager::Observer::FieldTypeSource::kAutofillAiModel:
       _passwordManager->ProcessAutofillPredictions(
-          driver, form,
+          CHECK_DEREF(driver), form,
           manager.GetServerPredictionsForForm(globalFormId, field_ids));
       break;
     case AutofillManager::Observer::FieldTypeSource::kHeuristicsOrAutocomplete:

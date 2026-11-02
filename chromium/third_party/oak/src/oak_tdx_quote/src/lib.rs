@@ -38,7 +38,7 @@ use nom::{
     error::ErrorKind,
     number::complete::{le_u16, le_u32, le_u64},
 };
-use strum_macros::FromRepr;
+use strum::FromRepr;
 use thiserror::Error;
 
 const QUOTE_HEADER_SIZE: usize = 48;
@@ -511,7 +511,7 @@ impl<'a> QeReportCertificationData<'a> {
     }
 
     /// Parses the enclave report body.
-    pub fn parse_enclave_report_body(&self) -> Result<EnclaveReportBody, TdxQuoteError> {
+    pub fn parse_enclave_report_body(&self) -> Result<EnclaveReportBody<'_>, TdxQuoteError> {
         let (_, result) = EnclaveReportBody::parse(self.report_body)?;
         Ok(result)
     }

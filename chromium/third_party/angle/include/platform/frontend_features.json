@@ -227,6 +227,14 @@
             "issue": "https://anglebug.com/398857482"
         },
         {
+            "name": "enable_create_context_backwards_compatible",
+            "category": "Features",
+            "description": [
+                "It allows the creation of a context with a requested version by exposing EGL_ANGLE_create_context_backwards_compatible."
+            ],
+            "issue": "http://issuetracker.google.com/522318550"
+        },
+        {
             "name": "clip_cull_distance_broken_with_passthrough_shaders",
             "category": "Features",
             "description": [
@@ -276,6 +284,14 @@
             "category": "Features",
             "description": [
                 "Set Texture's InitState to MayNeedInit inside invalidateFramebuffer or discardFramebuffer."
+            ]
+        },
+        {
+            "name": "compress_program_binary_blob",
+            "category": "Features",
+            "description": [
+                "If true, compress the blob when glGetProgramiv is used to query the binary length and",
+                "glGetProgramBinary is used to retrieve it. Also decompress the blob when glProgramBinary is called."
             ]
         }
     ]

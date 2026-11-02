@@ -22,7 +22,7 @@
 class CFGAS_GEFont;
 class CFGAS_TxtBreak;
 class CFX_RenderDevice;
-class TextCharPos;
+struct TextCharPos;
 
 namespace pdfium {
 

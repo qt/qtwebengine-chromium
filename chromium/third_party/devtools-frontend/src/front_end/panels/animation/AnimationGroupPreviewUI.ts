@@ -124,7 +124,7 @@ const DEFAULT_VIEW: View = (input, output, target) => {
                     {offset: 0.9, width: '100%', opacity: 1},
                     {offset: 1, width: '100%', opacity: 0},
                   ],
-                  {duration: 200, easing: 'cubic-bezier(0, 0, 0.2, 1)'}
+                  {duration: 200, easing: 'cubic-bezier(0, 0, 0.2, 1)'},
                 );
               };
             }
@@ -195,34 +195,33 @@ export class AnimationGroupPreviewUI extends UI.Widget.Widget {
   }
 
   override performUpdate(): void {
-    this.#view(
-        {
-          isScrollDrivenAnimationGroup: this.#config.animationGroup.isScrollDriven(),
-          isPreviewAnimationDisabled: this.#previewAnimationDisabled,
-          isSelected: this.#selected,
-          isPaused: this.#paused,
-          isFocusable: this.#focusable,
-          label: this.#config.label,
-          animationGroupDuration: this.#config.animationGroup.groupDuration(),
-          animations: this.#config.animationGroup.animations().slice(0, MAX_ANIMATION_LINES_TO_SHOW),
-          onPreviewAnimationEnd: () => {
-            this.#previewAnimationDisabled = true;
-            this.requestUpdate();
-          },
-          onRemoveAnimationGroup: () => {
-            this.#config.onRemoveAnimationGroup();
-          },
-          onSelectAnimationGroup: () => {
-            this.#config.onSelectAnimationGroup();
-          },
-          onFocusNextGroup: () => {
-            this.#config.onFocusNextGroup();
-          },
-          onFocusPreviousGroup: () => {
-            this.#config.onFocusPreviousGroup();
-          }
-        },
-        this.#viewOutput, this.contentElement);
+    this.#view({
+      isScrollDrivenAnimationGroup: this.#config.animationGroup.isScrollDriven(),
+      isPreviewAnimationDisabled: this.#previewAnimationDisabled,
+      isSelected: this.#selected,
+      isPaused: this.#paused,
+      isFocusable: this.#focusable,
+      label: this.#config.label,
+      animationGroupDuration: this.#config.animationGroup.groupDuration(),
+      animations: this.#config.animationGroup.animations().slice(0, MAX_ANIMATION_LINES_TO_SHOW),
+      onPreviewAnimationEnd: () => {
+        this.#previewAnimationDisabled = true;
+        this.requestUpdate();
+      },
+      onRemoveAnimationGroup: () => {
+        this.#config.onRemoveAnimationGroup();
+      },
+      onSelectAnimationGroup: () => {
+        this.#config.onSelectAnimationGroup();
+      },
+      onFocusNextGroup: () => {
+        this.#config.onFocusNextGroup();
+      },
+      onFocusPreviousGroup: () => {
+        this.#config.onFocusPreviousGroup();
+      },
+    },
+               this.#viewOutput, this.contentElement);
   }
 
   override focus(): void {

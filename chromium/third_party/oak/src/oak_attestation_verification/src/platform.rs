@@ -19,25 +19,27 @@
 use alloc::format;
 
 use anyhow::Context;
+use oak_digest::Sha256;
 use oak_proto_rust::oak::{
-    attestation::v1::{
-        tcb_version_expected_value, AmdAttestationReport, AmdSevExpectedValues,
-        InsecureExpectedValues, IntelTdxAttestationReport, IntelTdxExpectedValues,
-        RootLayerEvidence, TcbVersion, TeePlatform,
-    },
     RawDigest,
+    attestation::v1::{
+        AmdAttestationReport, AmdSevExpectedValues, InsecureExpectedValues,
+        IntelTdxAttestationReport, IntelTdxExpectedValues, RootLayerEvidence, TcbVersion,
+        TdxTcbSvn, TeePlatform, tcb_version_expected_value, tdx_tcb_svn_expected_value,
+    },
 };
 use oak_sev_snp_attestation_report::{AmdProduct, AttestationReport};
+use oak_tdx_quote::{ParsedTdxQuote, TdAttributes};
 use oak_time::Instant;
 use x509_cert::{
-    der::{Decode, DecodePem},
     Certificate,
+    der::{Decode, DecodePem},
 };
 use zerocopy::FromBytes;
 
 use crate::{
-    amd::{get_product, verify_attestation_report_signature, verify_cert_signature},
-    util::hash_sha2_256,
+    amd::{get_product, verify_attestation_report_signature},
+    x509::{check_certificate_validity, verify_cert_signature},
 };
 
 const ASK_MILAN_CERT_PEM: &str = include_str!("../data/ask_milan.pem");
@@ -50,12 +52,13 @@ pub fn verify_dice_root_eca_key(
     attestation_report: &AttestationReport,
     eca_public_key: &[u8],
 ) -> anyhow::Result<()> {
-    let expected = &hash_sha2_256(eca_public_key)[..];
+    let expected = Sha256::from_contents(eca_public_key);
     let actual = attestation_report.data.report_data;
     anyhow::ensure!(
         // The report data contains 64 bytes by default, but we only use the
         // first 32 bytes at the moment.
-        expected.len() < actual.len() && expected == &actual[..expected.len()],
+        expected.as_ref().len() < actual.len()
+            && expected.as_ref() == &actual[..expected.as_ref().len()],
         "the root ECA public key is not bound to the AMD SEV-SNP attestation report"
     );
     Ok(())
@@ -64,7 +67,8 @@ pub fn verify_dice_root_eca_key(
 /// Verifies the signature chain for the attestation report included in the
 /// root.
 pub fn verify_root_attestation_signature(
-    _now_utc_millis: i64,
+    current_time: Instant,
+    check_cert_expiry: bool,
     root_layer: &RootLayerEvidence,
     tee_certificate: &[u8],
 ) -> anyhow::Result<()> {
@@ -82,12 +86,12 @@ pub fn verify_root_attestation_signature(
             // Ensure the Attestation report is properly signed by the platform and the
             // corresponding certificate is signed by AMD.
             verify_amd_sev_snp_attestation_report_validity(
-                Instant::from_unix_millis(_now_utc_millis),
+                current_time,
+                check_cert_expiry,
                 attestation_report,
                 &vcek_cert,
             )
             .context("verifying AMD SEV-SNP attestation report validity")?;
-
             verify_dice_root_eca_key(attestation_report, &root_layer.eca_public_key)
         }
         TeePlatform::IntelTdx => anyhow::bail!("not supported"),
@@ -104,9 +108,9 @@ pub fn verify_root_attestation_signature(
     }
 }
 
-// TODO(#4747): use current date as part of VCEK verification.
 pub(crate) fn verify_amd_sev_snp_attestation_report_validity(
-    _current_time: Instant,
+    current_time: Instant,
+    check_cert_expiry: bool,
     attestation_report: &AttestationReport,
     vcek_cert: &Certificate,
 ) -> anyhow::Result<()> {
@@ -120,8 +124,13 @@ pub(crate) fn verify_amd_sev_snp_attestation_report_validity(
     let ask = Certificate::from_pem(ask_cert_pem)
         .map_err(|_err| anyhow::anyhow!("couldn't parse ASK certificate for {:?}", product))?;
 
+    if check_cert_expiry {
+        check_certificate_validity(current_time, vcek_cert)
+            .context("checking VCEK cert validity")?;
+    }
+
     // We demand that the product-specific ASK signs the VCEK.
-    verify_cert_signature(&ask, vcek_cert).context("verifying cert signature")?;
+    verify_cert_signature(&ask, vcek_cert).context("verifying VCEK cert signature")?;
 
     // Validate attestation report signature format.
     attestation_report.validate().map_err(|msg| anyhow::anyhow!(msg))?;
@@ -245,16 +254,80 @@ pub fn convert_amd_sev_snp_attestation_report(
     })
 }
 
-pub fn convert_amd_sev_snp_initial_measurement(initial_measurement: &[u8]) -> RawDigest {
+pub fn initial_measurement_to_raw_digest(initial_measurement: &[u8]) -> RawDigest {
     RawDigest { sha2_384: initial_measurement.to_vec(), ..Default::default() }
 }
 
-/// Verifies the Intel TDX attestation report.
-pub fn verify_intel_tdx_attestation_report(
-    _attestation_report_values: &IntelTdxAttestationReport,
-    _expected_values: &IntelTdxExpectedValues,
+pub fn convert_intel_tdx_attestation_quote(quote: &ParsedTdxQuote) -> IntelTdxAttestationReport {
+    IntelTdxAttestationReport {
+        report_data: quote.body.report_data.to_vec(),
+        tee_tcb_svn: Some(new_tdx_tcb_svn(quote.body.tee_tcb_svn)),
+        debug: quote.body.td_attributes.contains(TdAttributes::DEBUG),
+        mr_td: quote.body.mr_td.to_vec(),
+    }
+}
+
+pub fn new_tdx_tcb_svn(tee_tcb_svn: &[u8; 16]) -> TdxTcbSvn {
+    TdxTcbSvn {
+        svn_0: tee_tcb_svn[0] as u32,
+        svn_1: tee_tcb_svn[1] as u32,
+        svn_2: tee_tcb_svn[2] as u32,
+        svn_3: tee_tcb_svn[3] as u32,
+        svn_4: tee_tcb_svn[4] as u32,
+        svn_5: tee_tcb_svn[5] as u32,
+        svn_6: tee_tcb_svn[6] as u32,
+        svn_7: tee_tcb_svn[7] as u32,
+        svn_8: tee_tcb_svn[8] as u32,
+        svn_9: tee_tcb_svn[9] as u32,
+        svn_10: tee_tcb_svn[10] as u32,
+        svn_11: tee_tcb_svn[11] as u32,
+        svn_12: tee_tcb_svn[12] as u32,
+        svn_13: tee_tcb_svn[13] as u32,
+        svn_14: tee_tcb_svn[14] as u32,
+        svn_15: tee_tcb_svn[15] as u32,
+    }
+}
+
+/// Verifies the Intel TDX attestation quote.
+pub fn verify_intel_tdx_attestation_quote(
+    attestation_quote_values: &IntelTdxAttestationReport,
+    expected_values: &IntelTdxExpectedValues,
 ) -> anyhow::Result<()> {
-    anyhow::bail!("needs implementation")
+    if !expected_values.allow_debug && attestation_quote_values.debug {
+        anyhow::bail!("debug mode not allowed");
+    }
+
+    if let Some(expected_tee_tcb_svn) = expected_values.tee_tcb_svn.as_ref() {
+        match (expected_tee_tcb_svn.r#type.as_ref(), attestation_quote_values.tee_tcb_svn.as_ref())
+        {
+            (Some(tdx_tcb_svn_expected_value::Type::Skipped(_)), _) => Ok(()),
+            (Some(tdx_tcb_svn_expected_value::Type::Minimum(min_tcb_svn)), Some(tcb_svn)) => {
+                anyhow::ensure!(tcb_svn.svn_0 >= min_tcb_svn.svn_0, "invalid TCB SVN 0");
+                anyhow::ensure!(tcb_svn.svn_1 >= min_tcb_svn.svn_1, "invalid TCB SVN 1");
+                anyhow::ensure!(tcb_svn.svn_2 >= min_tcb_svn.svn_2, "invalid TCB SVN 2");
+                anyhow::ensure!(tcb_svn.svn_3 >= min_tcb_svn.svn_3, "invalid TCB SVN 3");
+                anyhow::ensure!(tcb_svn.svn_4 >= min_tcb_svn.svn_4, "invalid TCB SVN 4");
+                anyhow::ensure!(tcb_svn.svn_5 >= min_tcb_svn.svn_5, "invalid TCB SVN 5");
+                anyhow::ensure!(tcb_svn.svn_6 >= min_tcb_svn.svn_6, "invalid TCB SVN 6");
+                anyhow::ensure!(tcb_svn.svn_7 >= min_tcb_svn.svn_7, "invalid TCB SVN 7");
+                anyhow::ensure!(tcb_svn.svn_8 >= min_tcb_svn.svn_8, "invalid TCB SVN 8");
+                anyhow::ensure!(tcb_svn.svn_9 >= min_tcb_svn.svn_9, "invalid TCB SVN 9");
+                anyhow::ensure!(tcb_svn.svn_10 >= min_tcb_svn.svn_10, "invalid TCB SVN 10");
+                anyhow::ensure!(tcb_svn.svn_11 >= min_tcb_svn.svn_11, "invalid TCB SVN 11");
+                anyhow::ensure!(tcb_svn.svn_12 >= min_tcb_svn.svn_12, "invalid TCB SVN 12");
+                anyhow::ensure!(tcb_svn.svn_13 >= min_tcb_svn.svn_13, "invalid TCB SVN 13");
+                anyhow::ensure!(tcb_svn.svn_14 >= min_tcb_svn.svn_14, "invalid TCB SVN 14");
+                anyhow::ensure!(tcb_svn.svn_15 >= min_tcb_svn.svn_15, "invalid TCB SVN 15");
+                Ok(())
+            }
+            (Some(tdx_tcb_svn_expected_value::Type::Minimum(_)), None) => {
+                anyhow::bail!("no TCB SVNs in the attestation quote")
+            }
+            (None, _) => anyhow::bail!("no TCB SVN expected values"),
+        }
+    } else {
+        anyhow::bail!("no TCB SVN expected values")
+    }
 }
 
 /// Verifies insecure attestation.

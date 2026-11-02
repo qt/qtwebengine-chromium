@@ -9,8 +9,10 @@
 #include <type_traits>
 
 #include "base/numerics/safe_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/test/tracing/test_trace_processor.h"
 #include "base/test/tracing/trace_event_analyzer.h"
 #include "base/test/tracing/trace_test_utils.h"
 #include "base/time/time.h"
@@ -1637,13 +1639,13 @@ TEST_P(WindowPerformanceTest, EventTimingTraceEvents) {
   EXPECT_FALSE(click_begin->other_event->HasDictArg("data"));
 }
 
-TEST_P(WindowPerformanceTest, SlowInteractionToNextPaintTraceEvents) {
+TEST_P(WindowPerformanceTest, UserInteractionTraceEvents) {
   using trace_analyzer::Query;
   trace_analyzer::Start("*");
 
   constexpr ui::DomCode kKeyCode = ui::DomCode::US_A;
 
-  // Short, untraced keyboard event.
+  // Short, untraced keyboard event (duration ~100ms).
   {
     // Keydown.
     auto* event1 = CreateKeyboardEvent(
@@ -1717,26 +1719,93 @@ TEST_P(WindowPerformanceTest, SlowInteractionToNextPaintTraceEvents) {
   }
 
   auto analyzer = trace_analyzer::Stop();
+  ASSERT_TRUE(analyzer);
   analyzer->AssociateAsyncBeginEndEvents();
 
   trace_analyzer::TraceEventVector events;
-  Query q = Query::EventNameIs("SlowInteractionToNextPaint") &&
+  Query q = Query::EventNameIs(
+                "Blink.Responsiveness.UserInteraction.MaxEventDuration") &&
             Query::EventPhaseIs(TRACE_EVENT_PHASE_NESTABLE_ASYNC_BEGIN);
   analyzer->FindEvents(q, &events);
 
-  EXPECT_EQ(3u, events.size());
+  ASSERT_EQ(events.size(), 8u);
 
-  ASSERT_TRUE(events[0]->has_other_event());
-  EXPECT_EQ(events[0]->category, "latency");
-  EXPECT_EQ(base::ClampRound(events[0]->GetAbsTimeToOtherEvent()), 101000);
+  for (size_t i = 0; i < events.size(); ++i) {
+    ASSERT_TRUE(events[i]->has_other_event());
+  }
 
-  ASSERT_TRUE(events[1]->has_other_event());
-  EXPECT_EQ(events[1]->category, "latency");
-  EXPECT_EQ(base::ClampRound(events[1]->GetAbsTimeToOtherEvent()), 1000000);
+  // Event 0 (Block 1 keydown): 20ms
+  EXPECT_NEAR(events[0]->GetAbsTimeToOtherEvent(), 20000.0, 1000.0);
 
-  ASSERT_TRUE(events[2]->has_other_event());
-  EXPECT_EQ(events[2]->category, "latency");
-  EXPECT_EQ(base::ClampRound(events[2]->GetAbsTimeToOtherEvent()), 600000);
+  // Event 1 (Block 1 keyup): 100ms
+  EXPECT_NEAR(events[1]->GetAbsTimeToOtherEvent(), 100000.0, 1000.0);
+
+  // Event 2 (Block 2 keydown): 20ms
+  EXPECT_NEAR(events[2]->GetAbsTimeToOtherEvent(), 20000.0, 1000.0);
+
+  // Event 3 (Block 2 keyup): 101ms
+  EXPECT_NEAR(events[3]->GetAbsTimeToOtherEvent(), 101000.0, 1000.0);
+
+  // Event 4 (Block 3 keydown 5): 10ms
+  EXPECT_NEAR(events[4]->GetAbsTimeToOtherEvent(), 10000.0, 1000.0);
+
+  // Event 5 (Block 3 keyup 6): 1000ms
+  EXPECT_NEAR(events[5]->GetAbsTimeToOtherEvent(), 1000000.0, 1000.0);
+
+  // Event 6 (Block 3 keydown 7): 10ms
+  EXPECT_NEAR(events[6]->GetAbsTimeToOtherEvent(), 10000.0, 1000.0);
+
+  // Event 7 (Block 3 keyup 8): 600ms
+  EXPECT_NEAR(events[7]->GetAbsTimeToOtherEvent(), 600000.0, 1000.0);
+}
+
+TEST_P(WindowPerformanceTest, EventTimingCombinedTraceEvents) {
+  base::test::TestTraceProcessor test_trace_processor;
+  test_trace_processor.StartTrace("latency");
+
+  // T1: Same creation time for both events.
+  base::TimeTicks t1 = base::TimeTicks::Now() - base::Milliseconds(20);
+  auto* click1 = CreatePointerEvent(event_type_names::kClick, t1, 4,
+                                    GetWindow()->document());
+  auto* click2 = CreatePointerEvent(event_type_names::kClick, t1, 4,
+                                    GetWindow()->document());
+
+  // Dispatch them.
+  SimulateEventDispatch(*click1, base::Milliseconds(2));
+  SimulateEventDispatch(*click2, base::Milliseconds(2));
+
+  // Flush them in the same frame.
+  FastForwardBy(base::Milliseconds(10));
+  SimulateAllRenderingStages();
+  auto status = test_trace_processor.StopAndParseTrace();
+  ASSERT_TRUE(status.ok()) << status.message();
+
+  auto to_int = [](const std::string& str) {
+    int val = 0;
+    CHECK(base::StringToInt(str, &val));
+    return val;
+  };
+
+  // 1. Verify Event Counts in 'slice' table.
+  auto result_counts = test_trace_processor.RunQuery(R"(
+    SELECT name, COUNT(*)
+    FROM slice
+    WHERE category = 'latency'
+    GROUP BY name
+  )");
+  ASSERT_TRUE(result_counts.has_value()) << result_counts.error();
+
+  std::map<std::string, int> counts;
+  for (size_t i = 1; i < result_counts.value().size(); ++i) {
+    counts[result_counts.value()[i][0]] = to_int(result_counts.value()[i][1]);
+  }
+  EXPECT_EQ(counts["FirstEventCreation"], 1);
+  EXPECT_EQ(counts["EventCreation"], 1);
+  EXPECT_EQ(counts["EventProcessing"], 2);
+  EXPECT_EQ(counts["EventPresentation"], 1);
+  EXPECT_EQ(counts["EventTimingMeasurementComplete"], 1);
+  EXPECT_EQ(counts["EventEndTime"], 1);
+  EXPECT_EQ(counts["EventsInAnimationFrame"], 1);
 }
 
 TEST_P(WindowPerformanceTest, ContainerTimingTraceEvent) {
@@ -2319,7 +2388,7 @@ class WindowPerformanceNavigationIdTest : public testing::Test {
 
 TEST_F(WindowPerformanceNavigationIdTest, NavigationIdHardNavigations) {
   // Initial navigation: randomly generated IDs, assumed to be hard nav.
-  std::vector<uint32_t> ids;
+  std::vector<uint64_t> ids;
   for (int i = 0; i < 100; ++i) {
     // Making a new scope is like a hard nav (the ID gets generated via the
     // constructor of LocalDOMWindow).
@@ -2336,7 +2405,7 @@ TEST_F(WindowPerformanceNavigationIdTest, NavigationIdHardNavigations) {
   EXPECT_LT(num_collisions, 10u);
   ids.erase(last, ids.end());
   // The IDs are not in sorted order.
-  std::vector<uint32_t> sorted_ids(ids.begin(), ids.end());
+  std::vector<uint64_t> sorted_ids(ids.begin(), ids.end());
   std::sort(sorted_ids.begin(), sorted_ids.end());
   EXPECT_NE(sorted_ids, ids);
 }
@@ -2346,11 +2415,11 @@ TEST_F(WindowPerformanceNavigationIdTest, NavigationIdSoftNavigations) {
   V8TestingScope scope;
   WindowPerformance* performance =
       DOMWindowPerformance::performance(*scope.GetFrame().DomWindow());
-  uint32_t navigation_id1 = performance->NavigationId();
+  uint64_t navigation_id1 = performance->NavigationId();
 
   // Soft navigation or back-forward cache restoration: incremented ID.
   performance->IncrementNavigationId();
-  uint32_t navigation_id3 = performance->NavigationId();
+  uint64_t navigation_id3 = performance->NavigationId();
   EXPECT_NE(navigation_id1, navigation_id3);
   EXPECT_LT(navigation_id1, navigation_id3);
 }

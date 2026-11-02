@@ -369,7 +369,7 @@ FXCODEC_STATUS ProgressiveDecoder::BmpStartDecode() {
 }
 
 FXCODEC_STATUS ProgressiveDecoder::BmpContinueDecode() {
-  BmpDecoder::Status read_res = BmpDecoder::LoadImage(bmp_context_.get());
+  BmpDecoder::Status read_res = BmpDecoder::DecodeImage(bmp_context_.get());
   while (read_res == BmpDecoder::Status::kContinue) {
     FXCODEC_STATUS error_status = FXCODEC_STATUS::kDecodeFinished;
     if (!BmpReadMoreData(bmp_context_.get(), &error_status)) {
@@ -378,7 +378,7 @@ FXCODEC_STATUS ProgressiveDecoder::BmpContinueDecode() {
       status_ = error_status;
       return status_;
     }
-    read_res = BmpDecoder::LoadImage(bmp_context_.get());
+    read_res = BmpDecoder::DecodeImage(bmp_context_.get());
   }
 
   device_bitmap_ = nullptr;

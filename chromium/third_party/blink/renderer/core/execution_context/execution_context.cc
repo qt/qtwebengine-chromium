@@ -449,11 +449,16 @@ bool ExecutionContext::IsSecureContext(String& error_message) const {
 
 // https://w3c.github.io/webappsec-referrer-policy/#determine-requests-referrer
 String ExecutionContext::OutgoingReferrer() const {
+  return OutgoingReferrerUrl().GetString();
+}
+
+KURL ExecutionContext::OutgoingReferrerUrl() const {
   // Step 3.1: "If environment's global object is a Window object, then"
-  // This case is implemented in Document::OutgoingReferrer().
+  // This case is overridden and implemented in
+  // LocalDOMWindow::OutgoingReferrerUrl().
 
   // Step 3.2: "Otherwise, let referrerSource be environment's creation URL."
-  return Url().StrippedForUseAsReferrer();
+  return Url().UrlStrippedForUseAsReferrer();
 }
 
 void ExecutionContext::ParseAndSetReferrerPolicy(
@@ -609,6 +614,11 @@ bool ExecutionContext::IsFeatureEnabled(
     mojom::blink::DocumentPolicyFeature feature,
     PolicyValue threshold_value) const {
   return security_context_.IsFeatureEnabled(feature, threshold_value).enabled;
+}
+
+PolicyValue ExecutionContext::GetDocumentPolicyValue(
+    mojom::blink::DocumentPolicyFeature feature) const {
+  return security_context_.GetDocumentPolicyValue(feature);
 }
 
 bool ExecutionContext::IsFeatureEnabled(

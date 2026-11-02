@@ -63,8 +63,6 @@
 
 namespace blink {
 
-WebFontPrewarmer* FontCache::prewarmer_ = nullptr;
-
 // Cached system font metrics.
 AtomicString* FontCache::menu_font_family_name_ = nullptr;
 int32_t FontCache::menu_font_height_ = 0;
@@ -97,8 +95,7 @@ const LayoutLocale* FallbackLocaleForCharacter(
     const UChar32 codepoint) {
   if (IsEmojiPresentationEmoji(fallback_priority)) {
     return LayoutLocale::Get(AtomicString(kColorEmojiLocale));
-  } else if (RuntimeEnabledFeatures::SystemFallbackEmojiVSSupportEnabled() &&
-             IsTextPresentationEmoji(fallback_priority)) {
+  } else if (IsTextPresentationEmoji(fallback_priority)) {
     return LayoutLocale::Get(AtomicString(kMonoEmojiLocale));
   }
 
@@ -121,21 +118,6 @@ const LayoutLocale* FallbackLocaleForCharacter(
 }
 
 }  // namespace
-
-// static
-void FontCache::PrewarmFamily(const AtomicString& family_name) {
-  DCHECK(IsMainThread());
-
-  if (!prewarmer_)
-    return;
-
-  DEFINE_STATIC_LOCAL(HashSet<AtomicString>, prewarmed_families, ());
-  const auto result = prewarmed_families.insert(family_name);
-  if (!result.is_new_entry)
-    return;
-
-  prewarmer_->PrewarmFamily(family_name);
-}
 
 //static
 void FontCache::SetSystemFontFamily(const AtomicString&) {
@@ -294,8 +276,7 @@ const SimpleFontData* FontCache::PlatformFallbackFontForCharacter(
   }
 
   FontFallbackPriority fallback_priority_with_emoji_text = fallback_priority;
-  if (RuntimeEnabledFeatures::SystemFallbackEmojiVSSupportEnabled() &&
-      fallback_priority == FontFallbackPriority::kText &&
+  if (fallback_priority == FontFallbackPriority::kText &&
       Character::IsEmoji(character)) {
     fallback_priority_with_emoji_text = FontFallbackPriority::kEmojiText;
   }

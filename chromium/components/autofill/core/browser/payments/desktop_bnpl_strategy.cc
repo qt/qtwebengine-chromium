@@ -42,6 +42,20 @@ DesktopBnplStrategy::GetBeforeViewSwitchAction() {
   return BeforeSwitchingViewAction::kCloseCurrentUi;
 }
 
+BnplStrategy::BnplAiBasedAmountExtractionReturnedNextAction
+DesktopBnplStrategy::GetNextActionOnAiBasedAmountExtractionReturned() {
+  return BnplAiBasedAmountExtractionReturnedNextAction::
+      kReplaceLoadingThrobberWithIssuerSuggestionsOnDesktop;
+}
+
+BnplStrategy::UiDismissalAction DesktopBnplStrategy::GetUiDismissalAction() {
+  if (base::FeatureList::IsEnabled(
+          features::kAutofillEnablePayNowPayLaterTabs)) {
+    return UiDismissalAction::kHideSuggestions;
+  }
+  return UiDismissalAction::kRemoveBnplUi;
+}
+
 bool DesktopBnplStrategy::ShouldRemoveExistingUiOnServerReturn(
     PaymentsAutofillClient::PaymentsRpcResult result) {
   return true;

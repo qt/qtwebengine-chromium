@@ -13,7 +13,7 @@ export function createNamePathParslet ({ allowSquareBracketsOnAnyType, allowJsdo
   pathGrammar: Grammar | null
 }): ParsletFunction {
   return function namePathParslet (parser, precedence, left) {
-    if ((left == null) || precedence >= Precedence.NAME_PATH) {
+    if ((left === null) || precedence >= Precedence.NAME_PATH) {
       return null
     }
     const type = parser.lexer.current.type

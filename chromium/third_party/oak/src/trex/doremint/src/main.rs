@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![feature(try_blocks)]
-
+mod blob;
 mod flags;
 mod image;
 
@@ -36,14 +35,6 @@ struct Args {
 
     #[arg(long, global = true, help = "An OCI Image reference")]
     pub image: Option<Reference>,
-
-    #[arg(
-        long,
-        global = true,
-        help = "Path to a file containing claims about an image",
-        value_parser = flags::parse_claims,
-    )]
-    pub claims: Option<flags::Claims>,
 }
 
 impl Args {
@@ -55,18 +46,21 @@ impl Args {
 #[derive(Subcommand, Debug)]
 enum Commands {
     Image(image::Image),
+    Blob(blob::Blob),
 }
 
 impl Commands {
     async fn run(&self) -> anyhow::Result<()> {
         match self {
             Self::Image(args) => args.run().await,
+            Self::Blob(args) => args.run().await,
         }
     }
 }
 
 #[tokio::main]
 async fn main() {
+    env_logger::init();
     let mut args = Args::parse();
 
     let result = args.run();

@@ -20,12 +20,15 @@
 #include "content/public/test/test_content_browser_client.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "net/http/http_cache.h"
+#include "net/log/file_net_log_observer.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom.h"
+#include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/originating_process_id.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/simple_url_loader.h"
 #include "services/network/public/cpp/transferable_directory.h"
+#include "services/network/public/mojom/net_log.mojom.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -50,9 +53,17 @@ class EarlyShutdownTestContentBrowserClient : public TestContentBrowserClient {
 }  // namespace
 
 // This test exists as a regression test for https://crbug.com/1369808.
-class NetworkServiceShutdownRaceTest : public testing::Test {
+class NetworkServiceShutdownRaceTest : public testing::TestWithParam<bool> {
  public:
-  NetworkServiceShutdownRaceTest() = default;
+  NetworkServiceShutdownRaceTest() {
+    if (GetParam()) {
+      feature_list_.InitAndEnableFeature(
+          network::features::kCreateNetworkContextNonBlocking);
+    } else {
+      feature_list_.InitAndDisableFeature(
+          network::features::kCreateNetworkContextNonBlocking);
+    }
+  }
 
   NetworkServiceShutdownRaceTest(const NetworkServiceShutdownRaceTest&) =
       delete;
@@ -76,10 +87,11 @@ class NetworkServiceShutdownRaceTest : public testing::Test {
 
  private:
   BrowserTaskEnvironment task_environment_{BrowserTaskEnvironment::IO_MAINLOOP};
+  base::test::ScopedFeatureList feature_list_;
 };
 
 // This should not crash.
-TEST_F(NetworkServiceShutdownRaceTest, CreateNetworkContextDuringShutdown) {
+TEST_P(NetworkServiceShutdownRaceTest, CreateNetworkContextDuringShutdown) {
   // Set browser as shutting down. Note: this never gets reset back to the old
   // client and will intentionally leak, because the pending UI tasks that cause
   // issue 1369808 are run after the test fixture has been completely torn down,
@@ -90,6 +102,8 @@ TEST_F(NetworkServiceShutdownRaceTest, CreateNetworkContextDuringShutdown) {
   // Trigger the network context creation.
   CreateNetworkContext();
 }
+
+INSTANTIATE_TEST_SUITE_P(All, NetworkServiceShutdownRaceTest, testing::Bool());
 
 TEST(NetworkServiceInstanceImplParseCommandLineTest,
      ParseNetLogMaximumFileNoSwitch) {
@@ -153,6 +167,37 @@ TEST(NetworkServiceInstanceImplParseCommandLineTest,
     EXPECT_EQ(GetNetLogMaximumFileSizeFromCommandLineForTesting(command_line),
               std::numeric_limits<uint64_t>::max());
   }
+}
+
+TEST(NetworkServiceInstanceImplParseCommandLineTest,
+     ParseNetLogFileFormatNoSwitch) {
+  base::CommandLine command_line{base::CommandLine::NO_PROGRAM};
+  EXPECT_EQ(GetNetLogFileFormatFromCommandLineForTesting(command_line),
+            net::NetLogFileFormat::kJson);
+}
+
+TEST(NetworkServiceInstanceImplParseCommandLineTest,
+     ParseNetLogFileFormatJson) {
+  base::CommandLine command_line{base::CommandLine::NO_PROGRAM};
+  command_line.AppendSwitchASCII("net-log-file-format", "json");
+  EXPECT_EQ(GetNetLogFileFormatFromCommandLineForTesting(command_line),
+            net::NetLogFileFormat::kJson);
+}
+
+TEST(NetworkServiceInstanceImplParseCommandLineTest,
+     ParseNetLogFileFormatNdjson) {
+  base::CommandLine command_line{base::CommandLine::NO_PROGRAM};
+  command_line.AppendSwitchASCII("net-log-file-format", "ndjson");
+  EXPECT_EQ(GetNetLogFileFormatFromCommandLineForTesting(command_line),
+            net::NetLogFileFormat::kNdjson);
+}
+
+TEST(NetworkServiceInstanceImplParseCommandLineTest,
+     ParseNetLogFileFormatInvalid) {
+  base::CommandLine command_line{base::CommandLine::NO_PROGRAM};
+  command_line.AppendSwitchASCII("net-log-file-format", "invalid");
+  EXPECT_EQ(GetNetLogFileFormatFromCommandLineForTesting(command_line),
+            net::NetLogFileFormat::kJson);
 }
 
 class NetworkServiceHttpCacheEarlyInitTest : public testing::Test {

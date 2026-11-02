@@ -3,17 +3,15 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as SDK from '../../core/sdk/sdk.js';
-import {createTarget, stubNoopSettings} from '../../testing/EnvironmentHelpers.js';
-import {
-  describeWithMockConnection,
-} from '../../testing/MockConnection.js';
+import {createTarget, describeWithEnvironment, stubNoopSettings} from '../../testing/EnvironmentHelpers.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import * as Elements from './elements.js';
 
-describeWithMockConnection('ElementStatePaneWidget', () => {
+describeWithEnvironment('ElementStatePaneWidget', () => {
   let target: SDK.Target.Target;
   let view: Elements.ElementStatePaneWidget.ElementStatePaneWidget;
 

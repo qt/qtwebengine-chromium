@@ -209,6 +209,17 @@ MY_CPU_64BIT means that processor can work with 64-bit registers.
 #endif
 
 
+#if  defined(__s390__)
+#if  defined(__s390x__) || defined(__LP64__) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8)
+  #define MY_CPU_NAME "s390x"
+  #define MY_CPU_SIZEOF_POINTER 8
+#else
+  #define MY_CPU_NAME "s390"
+  #define MY_CPU_SIZEOF_POINTER 4
+#endif
+#endif
+
+
 // #undef MY_CPU_NAME
 // #undef MY_CPU_SIZEOF_POINTER
 // #define __e2k__
@@ -254,11 +265,12 @@ MY_CPU_64BIT means that processor can work with 64-bit registers.
 #endif
 
 
+// _LITTLE_ENDIAN macro can be defined for big-endian platform with some compilers
+ 
 #if defined(MY_CPU_X86_OR_AMD64) \
     || defined(MY_CPU_ARM_LE) \
     || defined(MY_CPU_ARM64_LE) \
     || defined(MY_CPU_IA64_LE) \
-    || defined(_LITTLE_ENDIAN) \
     || defined(__LITTLE_ENDIAN__) \
     || defined(__ARMEL__) \
     || defined(__THUMBEL__) \

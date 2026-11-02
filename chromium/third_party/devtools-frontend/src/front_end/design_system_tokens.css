@@ -639,10 +639,11 @@
   }
 
   &.platform-screenshot-test {
-    --default-font-family: roboto;
-    --monospace-font-family: roboto;
-    --source-code-font-family: roboto;
+    --default-font-family: ahem;
+    --monospace-font-family: ahem;
+    --source-code-font-family: ahem;
   }
+
 
   --ref-typeface-weight-regular: 400;
   --ref-typeface-weight-medium: 500;

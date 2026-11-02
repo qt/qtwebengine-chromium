@@ -1155,6 +1155,36 @@ TEST_P(AnimationAnimationTestNoCompositing, AnimationsReturnTimeToNextEffect) {
                    animation->TimeToEffectChange().value());
 }
 
+// Regression test: when an animation with a positive start delay is reversed
+// while in the before phase, TimeToEffectChange() must return a finite value
+// so the animation resolves its finished promise at the end of its start
+// delay. See crbug.com/386304676 for details.
+TEST_P(AnimationAnimationTestNoCompositing,
+       TimeToNextEffectReversedWithStartDelay) {
+  Timing timing;
+  timing.start_delay = Timing::Delay(ANIMATION_TIME_DELTA_FROM_SECONDS(1));
+  timing.iteration_duration = ANIMATION_TIME_DELTA_FROM_SECONDS(1);
+  auto* keyframe_effect = MakeGarbageCollected<KeyframeEffect>(
+      nullptr, MakeSimpleEffectModel(), timing);
+  animation = timeline->Play(keyframe_effect);
+  animation->setStartTime(MakeGarbageCollected<V8CSSNumberish>(0),
+                          ASSERT_NO_EXCEPTION);
+
+  SimulateFrame(0);
+  animation->setCurrentTime(MakeGarbageCollected<V8CSSNumberish>(100),
+                            ASSERT_NO_EXCEPTION);
+  EXPECT_EQ(V8AnimationPlayState::Enum::kRunning, animation->playState());
+
+  // Reverse the animation and ensure that TimeToEffectChange() returns the
+  // time when the animation will finish.
+  animation->setPlaybackRate(-1);
+  animation->Update(kTimingUpdateOnDemand);
+  EXPECT_EQ(V8AnimationPlayState::Enum::kRunning, animation->playState());
+  EXPECT_TRUE(animation->TimeToEffectChange().has_value());
+  EXPECT_TIMEDELTA(ANIMATION_TIME_DELTA_FROM_MILLISECONDS(100),
+                   animation->TimeToEffectChange().value());
+}
+
 TEST_P(AnimationAnimationTestNoCompositing, TimeToNextEffectWhenPaused) {
   EXPECT_TIMEDELTA(AnimationTimeDelta(),
                    animation->TimeToEffectChange().value());
@@ -1382,7 +1412,8 @@ TEST_P(AnimationAnimationTestCompositing,
   SetBodyInnerHTML(
       "<div id='foo' style='position: relative; will-change: "
       "opacity;'>composited</div>"
-      "<div id='bar' style='position: relative'>not composited</div>");
+      "<div id='bar' style='position: relative; will-change: contents;'>not "
+      "composited</div>");
 
   LayoutObject* object_composited = GetLayoutObjectByElementId("foo");
   LayoutObject* object_not_composited = GetLayoutObjectByElementId("bar");
@@ -1399,8 +1430,10 @@ TEST_P(AnimationAnimationTestCompositing,
   Animation* animation_not_composited =
       timeline->Play(keyframe_effect_not_composited);
 
+  UpdateAllLifecyclePhasesForTest();
   SimulateFrame(0);
-  EXPECT_EQ(animation_composited->CheckCanStartAnimationOnCompositorInternal(),
+  animation_composited->CheckCanStartAnimationOnCompositorInternal();
+  EXPECT_EQ(animation_composited->GetCompositingDecisionState().disposition,
             CompositorAnimations::kNoFailure);
   const PaintArtifactCompositor* paint_artifact_compositor =
       GetDocument().View()->GetPaintArtifactCompositor();
@@ -1473,6 +1506,8 @@ TEST_P(AnimationAnimationTestCompositing, PreCommitWithUnresolvedStartTimes) {
   // Introduce a change that invalidates the pending start time. PreCommit
   // cancels and restarts the animation.
   animation->SetCurrentTimeInternal(ANIMATION_TIME_DELTA_FROM_SECONDS(0.2));
+  GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint(
+      DocumentUpdateReason::kTest);
   animation->SetCompositorPending(
       Animation::CompositorPendingReason::kPendingUpdate);
   EXPECT_TRUE(animation->CompositorPending());
@@ -1556,6 +1591,8 @@ int GenerateHistogramValue(CompositorAnimations::FailureReason reason) {
 }  // namespace
 
 TEST_P(AnimationAnimationTestCompositing, PreCommitRecordsHistograms) {
+  // TODO(crbug.com/521921832): Add tests for this case when V2 has full impl.
+  ScopedNewAnimationCompositingCheckingForTest new_checks(false);
   const std::string histogram_name =
       "Blink.Animation.CompositedAnimationFailureReason";
 
@@ -1676,6 +1713,7 @@ TEST_P(AnimationAnimationTestCompositing, InfiniteDurationAnimation) {
       MakeGarbageCollected<V8UnionCSSNumericValueOrStringOrUnrestrictedDouble>(
           std::numeric_limits<double>::infinity()));
   animation->effect()->updateTiming(effect_timing);
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_EQ(CompositorAnimations::kEffectHasUnsupportedTimingParameters,
             animation->CheckCanStartAnimationOnCompositor(
                 nullptr, StartOnCompositorReason::kGeneric));
@@ -1718,12 +1756,12 @@ TEST_P(AnimationAnimationTestCompositing,
 
   Animation* animation = CreateAnimation(
       CSSPropertyID::kTransform, "translate(100%, 100%)", "translate(0%, 0%)");
-
-  UpdateAllLifecyclePhasesForTest();
   animation->play();
   KeyframeEffect* keyframe_effect =
       DynamicTo<KeyframeEffect>(animation->effect());
   ASSERT_TRUE(keyframe_effect);
+
+  UpdateAllLifecyclePhasesForTest();
 
   EXPECT_EQ(animation->CheckCanStartAnimationOnCompositor(
                 nullptr, StartOnCompositorReason::kGeneric),
@@ -1733,18 +1771,21 @@ TEST_P(AnimationAnimationTestCompositing,
   EXPECT_TRUE(animation->HasActiveAnimationsOnCompositor());
 
   // Kick the animation out of the play-pending state.
-  animation->setStartTime(MakeGarbageCollected<V8CSSNumberish>(0),
-                          ASSERT_NO_EXCEPTION);
+  animation->NotifyReady(ANIMATION_TIME_DELTA_FROM_MILLISECONDS(0));
 
   // No size change and animation does not require a restart.
   keyframe_effect->UpdateBoxSizeAndCheckTransformAxisAlignment(
       gfx::SizeF(100, 200));
+  GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint(
+      DocumentUpdateReason::kTest);
   EXPECT_TRUE(animation->HasActiveAnimationsOnCompositor());
   EXPECT_FALSE(animation->CompositorPendingCancel());
 
   // Restart animation on a width change.
   keyframe_effect->UpdateBoxSizeAndCheckTransformAxisAlignment(
       gfx::SizeF(200, 200));
+  GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint(
+      DocumentUpdateReason::kTest);
   // Cancel is deferred to PreCommit.
   EXPECT_TRUE(animation->CompositorPendingCancel());
   EXPECT_FALSE(animation->HasActiveAnimationsOnCompositor());
@@ -1755,6 +1796,8 @@ TEST_P(AnimationAnimationTestCompositing,
   // Restart animation on a height change.
   keyframe_effect->UpdateBoxSizeAndCheckTransformAxisAlignment(
       gfx::SizeF(200, 300));
+  GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint(
+      DocumentUpdateReason::kTest);
   EXPECT_TRUE(animation->CompositorPendingCancel());
   EXPECT_FALSE(animation->HasActiveAnimationsOnCompositor());
   GetDocument().GetPendingAnimations().Update(nullptr, true);
@@ -1776,30 +1819,32 @@ TEST_P(AnimationAnimationTestCompositing,
 
   animation = CreateAnimation(CSSPropertyID::kTransform, "translateX(100%)",
                               "translateX(0%)");
-
-  UpdateAllLifecyclePhasesForTest();
   animation->play();
   KeyframeEffect* keyframe_effect =
       DynamicTo<KeyframeEffect>(animation->effect());
   ASSERT_TRUE(keyframe_effect);
+  UpdateAllLifecyclePhasesForTest();
 
   GetDocument().GetPendingAnimations().Update(nullptr, true);
   EXPECT_TRUE(animation->HasActiveAnimationsOnCompositor());
   keyframe_effect->UpdateBoxSizeAndCheckTransformAxisAlignment(
       gfx::SizeF(100, 200));
-  animation->setStartTime(MakeGarbageCollected<V8CSSNumberish>(0),
-                          ASSERT_NO_EXCEPTION);
+  animation->NotifyReady(ANIMATION_TIME_DELTA_FROM_MILLISECONDS(0));
 
   // Transform is not height dependent and a change to the height does not force
   // an animation restart.
   keyframe_effect->UpdateBoxSizeAndCheckTransformAxisAlignment(
       gfx::SizeF(100, 300));
+  GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint(
+      DocumentUpdateReason::kTest);
   EXPECT_TRUE(animation->HasActiveAnimationsOnCompositor());
   EXPECT_FALSE(animation->CompositorPendingCancel());
 
   // Width change forces a restart.
   keyframe_effect->UpdateBoxSizeAndCheckTransformAxisAlignment(
       gfx::SizeF(200, 300));
+  GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint(
+      DocumentUpdateReason::kTest);
   EXPECT_TRUE(animation->CompositorPendingCancel());
   EXPECT_FALSE(animation->HasActiveAnimationsOnCompositor());
   GetDocument().GetPendingAnimations().Update(nullptr, true);
@@ -1821,12 +1866,11 @@ TEST_P(AnimationAnimationTestCompositing,
 
   animation = CreateAnimation(CSSPropertyID::kTransform, "translateY(100%)",
                               "translateY(0%)");
-
-  UpdateAllLifecyclePhasesForTest();
   animation->play();
   KeyframeEffect* keyframe_effect =
       DynamicTo<KeyframeEffect>(animation->effect());
   ASSERT_TRUE(keyframe_effect);
+  UpdateAllLifecyclePhasesForTest();
 
   GetDocument().GetPendingAnimations().Update(nullptr, true);
   EXPECT_TRUE(animation->HasActiveAnimationsOnCompositor());
@@ -1834,16 +1878,21 @@ TEST_P(AnimationAnimationTestCompositing,
       gfx::SizeF(100, 200));
   animation->setStartTime(MakeGarbageCollected<V8CSSNumberish>(0),
                           ASSERT_NO_EXCEPTION);
+  UpdateAllLifecyclePhasesForTest();
 
   // Transform is not width dependent and a change to the width does not force
   // an animation restart.
   keyframe_effect->UpdateBoxSizeAndCheckTransformAxisAlignment(
       gfx::SizeF(300, 200));
+  GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint(
+      DocumentUpdateReason::kTest);
   EXPECT_TRUE(animation->HasActiveAnimationsOnCompositor());
 
   // Height change forces a restart.
   keyframe_effect->UpdateBoxSizeAndCheckTransformAxisAlignment(
       gfx::SizeF(300, 400));
+  GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint(
+      DocumentUpdateReason::kTest);
   EXPECT_FALSE(animation->HasActiveAnimationsOnCompositor());
   EXPECT_TRUE(animation->CompositorPending());
   EXPECT_TRUE(animation->CompositorPendingCancel());
@@ -1923,6 +1972,9 @@ TEST_P(AnimationAnimationTestCompositing,
   EXPECT_FALSE(scroll_animation->StartTimeInternal());
 
   scroll_animation->SetDeferredStartTimeForTesting();
+  GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint(
+      DocumentUpdateReason::kTest);
+
   EXPECT_EQ(scroll_animation->CheckCanStartAnimationOnCompositor(
                 nullptr, StartOnCompositorReason::kGeneric),
             CompositorAnimations::kNoFailure);
@@ -1997,6 +2049,8 @@ TEST_P(AnimationAnimationTestCompositing,
       MakeGarbageCollected<V8CSSNumberish>(
           CSSUnitValues::percent(TEST_START_PERCENT)),
       ASSERT_NO_EXCEPTION);
+  GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint(
+      DocumentUpdateReason::kTest);
   EXPECT_EQ(scroll_animation->CheckCanStartAnimationOnCompositor(
                 nullptr, StartOnCompositorReason::kGeneric),
             CompositorAnimations::kNoFailure);
@@ -2493,9 +2547,9 @@ TEST_P(AnimationAnimationTestCompositing,
   model->SnapshotAllCompositorKeyframesIfNecessary(
       *element, GetDocument().GetStyleResolver().InitialStyle(), nullptr);
 
-  UpdateAllLifecyclePhasesForTest();
   scroll_animation->play();
   scroll_animation->SetDeferredStartTimeForTesting();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_EQ(scroll_animation->CheckCanStartAnimationOnCompositor(
                 nullptr, StartOnCompositorReason::kGeneric),
             CompositorAnimations::kNoFailure);

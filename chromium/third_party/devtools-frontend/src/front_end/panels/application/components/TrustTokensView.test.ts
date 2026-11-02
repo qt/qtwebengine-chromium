@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import type * as SDK from '../../../core/sdk/sdk.js';
 import {
   getValuesOfAllBodyRows,
 } from '../../../testing/DataGridHelpers.js';
 import {dispatchClickEvent, raf, renderElementIntoDOM} from '../../../testing/DOMHelpers.js';
-import {createTarget} from '../../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../../testing/MockConnection.js';
+import {createTarget, describeWithEnvironment} from '../../../testing/EnvironmentHelpers.js';
 
 import * as ApplicationComponents from './components.js';
 
@@ -35,7 +35,7 @@ function getInternalDataGridShadowRoot(component: ApplicationComponents.TrustTok
   return dataGrid.shadowRoot;
 }
 
-describeWithMockConnection('TrustTokensView', () => {
+describeWithEnvironment('TrustTokensView', () => {
   let target: SDK.Target.Target;
 
   beforeEach(() => {

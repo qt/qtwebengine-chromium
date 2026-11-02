@@ -16,7 +16,7 @@
 
 namespace Eigen {
 
-// RunQueue is a fixed-size, partially non-blocking deque or Work items.
+// RunQueue is a fixed-size, partially non-blocking deque of Work items.
 // Operations on front of the queue must be done by a single thread (owner),
 // operations on back of the queue can be done by multiple threads concurrently.
 //
@@ -93,7 +93,7 @@ class RunQueue {
     return Work();
   }
 
-  // PopBack removes and returns the last elements in the queue.
+  // PopBack removes and returns the last element in the queue.
   Work PopBack() {
     if (Empty()) return Work();
     EIGEN_MUTEX_LOCK lock(mutex_);
@@ -189,7 +189,7 @@ class RunQueue {
     // effort to not produce false positives (claim non-empty queue as empty).
     unsigned front = front_.load(std::memory_order_acquire);
     for (;;) {
-      // Capture a consistent snapshot of front/tail.
+      // Capture a consistent snapshot of front/back.
       unsigned back = back_.load(std::memory_order_acquire);
       unsigned front1 = front_.load(std::memory_order_relaxed);
       if (front != front1) {
@@ -197,8 +197,9 @@ class RunQueue {
         std::atomic_thread_fence(std::memory_order_acquire);
         continue;
       }
-      EIGEN_IF_CONSTEXPR(NeedSizeEstimate) { return CalculateSize(front, back); }
-      else {
+      EIGEN_IF_CONSTEXPR (NeedSizeEstimate) {
+        return CalculateSize(front, back);
+      } else {
         // This value will be 0 if the queue is empty, and undefined otherwise.
         unsigned maybe_zero = ((front ^ back) & kMask2);
         // Queue size estimate must agree with maybe zero check on the queue

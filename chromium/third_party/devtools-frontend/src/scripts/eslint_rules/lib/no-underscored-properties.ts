@@ -35,7 +35,7 @@ export default createRule({
       underscorePrefix: 'Class {{typeOfNode}} {{propName}} should not begin with an underscore.',
     },
     fixable: 'code',
-    schema: []  // no options
+    schema: [],  // no options
   },
   defaultOptions: [],
   create: function(context) {
@@ -72,7 +72,7 @@ export default createRule({
           return;
         }
         checkNodeForUnderscoredProperties(node, 'method');
-      }
+      },
     };
-  }
+  },
 });

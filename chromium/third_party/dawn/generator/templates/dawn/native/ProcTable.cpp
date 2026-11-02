@@ -38,12 +38,67 @@
 #include "{{native_dir}}/{{prefix}}_platform.h"
 #include "{{include_dir}}/{{Prefix}}Native.h"
 #include "dawn/dawn_version.h"
+#include "src/utils/numeric.h"
+#include "src/utils/span.h"
 
 {% for type in by_category["object"] %}
     {% if type.name.canonical_case() not in ["texture view"] %}
         #include "{{native_dir}}/{{type.name.CamelCase()}}.h"
     {% endif %}
 {% endfor %}
+
+{%- macro convert_arguments_and_call(function, suffix, call_receiver, first_arg = None, spanify=True) -%}
+    {% set spanify = not suffix in function_spanification_blocklist %}
+
+    {% for arg in function.arguments %}
+        {% set varName = as_varName(arg.name) %}
+        {% if spanify and arg.is_length %}
+            //* Skip as it's included in the span just below.
+        {% elif spanify and arg.length and arg.length != "constant" %}
+            // TODO(https://crbug.com/524405497): Support fixed-length spans.
+            {% if arg.type.name.canonical_case() == "void" %}
+                using {{varName}}SpanT = {% if arg.annotation == "const*" %}const {% endif %}std::byte;
+            {% else %}
+                using {{varName}}SpanT = std::remove_pointer_t<{{decorate(as_frontendType(arg.type), arg)}}>;
+            {% endif %}
+            {% set IndexType = function_span_index_type_override.get(suffix + "::" + varName, "size_t") %}
+            auto {{varName}}Size_ = checked_cast<{{IndexType}}>({{as_varName(arg.length.name)}});
+            auto {{varName}}Ptr = reinterpret_cast<{{varName}}SpanT*>({{varName}});
+            // SAFETY: The webgpu.h user is required to pass valid ranges of objects.
+            auto {{varName}}_ = DAWN_UNSAFE_BUFFERS(ityp::span<{{IndexType}}, {{varName}}SpanT>({{varName}}Ptr, {{varName}}Size_));
+        {% elif arg.type.category in ["enum", "bitmask"] and arg.annotation == "value" %}
+            auto {{varName}}_ = static_cast<{{as_frontendType(arg.type)}}>({{varName}});
+        {% elif arg.type.category == "structure" and arg.annotation == "value" %}
+            auto {{varName}}_ = *reinterpret_cast<{{as_frontendType(arg.type)}}*>(&{{varName}});
+        {% elif arg.annotation != "value" or arg.type.category == "object" %}
+            auto {{varName}}_ = reinterpret_cast<{{decorate(as_frontendType(arg.type), arg)}}>({{varName}});
+        {% else %}
+            auto {{varName}}_ = {{as_varName(arg.name)}};
+        {% endif %}
+    {%- endfor-%}
+
+    {% if function.returns %}
+        auto result =
+    {%- endif %}
+    {{call_receiver}}(
+        {%- if first_arg -%}
+            {{first_arg}} {%- if len(function.arguments) != 0 %}, {% endif -%}
+        {%- endif -%}
+        {%- for arg in function.arguments if (not spanify or not arg.is_length) -%}
+            {%- if not loop.first %}, {% endif -%}
+            {{as_varName(arg.name)}}_
+        {%- endfor -%}
+    );
+    {% if function.returns %}
+        {% if function.returns.type.category in ["object", "enum", "bitmask"] %}
+            return ToAPI(result);
+        {% elif function.returns.type.category in ["structure"] %}
+            return *ToAPI(&result);
+        {% else %}
+            return result;
+        {% endif %}
+    {% endif %}
+{%- endmacro -%}
 
 namespace {{native_namespace}} {
     {% for (type, methods) in c_methods_sorted_by_parent %}
@@ -59,96 +114,36 @@ namespace {{native_namespace}} {
                 //* Perform conversion between C types and frontend types
                 {% if type.category == "object" %}
                     auto self = FromAPI(cSelf);
-                {% endif %}
 
-                {% for arg in method.arguments %}
-                    {% set varName = as_varName(arg.name) %}
-                    {% if arg.type.category in ["enum", "bitmask"] and arg.annotation == "value" %}
-                        auto {{varName}}_ = static_cast<{{as_frontendType(arg.type)}}>({{varName}});
-                    {% elif arg.type.category == "structure" and arg.annotation == "value" %}
-                        auto {{varName}}_ = *reinterpret_cast<{{as_frontendType(arg.type)}}*>(&{{varName}});
-                    {% elif arg.annotation != "value" or arg.type.category == "object" %}
-                        auto {{varName}}_ = reinterpret_cast<{{decorate(as_frontendType(arg.type), arg)}}>({{varName}});
+                    {% if method.autolock and not (method.returns and method.returns.type.name.get() == 'future') %}
+                        {% if type.name.get() != "device" %}
+                            auto device = self->GetDevice();
+                        {% else %}
+                            auto device = self;
+                        {% endif %}
+                        auto deviceGuard = device->GetGuard();
                     {% else %}
-                        auto {{varName}}_ = {{as_varName(arg.name)}};
+                        // This method is specified to not use AutoLock in json script or it returns a future.
                     {% endif %}
-                {%- endfor-%}
 
-                {% if method.autolock and not (method.returns and method.returns.type.name.get() == 'future') %}
-                    {% if type.name.get() != "device" %}
-                        auto device = self->GetDevice();
-                    {% else %}
-                        auto device = self;
-                    {% endif %}
-                    auto deviceGuard = device->GetGuard();
+                    {{convert_arguments_and_call(method, suffix, "self->API" + method.name.CamelCase())}}
                 {% else %}
-                    // This method is specified to not use AutoLock in json script or it returns a future.
-                {% endif %}
-
-                {% if method.returns %}
-                    auto result =
-                {%- endif %}
-                {% if type.category == "object" %}
-                    self->API{{method.name.CamelCase()}}(
-                        {%- for arg in method.arguments -%}
-                            {%- if not loop.first %}, {% endif -%}
-                            {{as_varName(arg.name)}}_
-                        {%- endfor -%}
-                    );
-                {% elif type.category == "structure" %}
-                    API{{suffix}}(cSelf
-                        {%- for arg in method.arguments -%}
-                            , {{as_varName(arg.name)}}_
-                        {%- endfor -%}
-                    );
-                {% endif %}
-                {% if method.returns %}
-                    {% if method.returns.type.category in ["object", "enum", "bitmask"] %}
-                        return ToAPI(result);
-                    {% elif method.returns.type.category in ["structure"] %}
-                        return *ToAPI(&result);
-                    {% else %}
-                        return result;
-                    {% endif %}
+                    {{assert(type.category == "structure")}}
+                    {{convert_arguments_and_call(method, suffix, "API" + suffix, first_arg="cSelf")}}
                 {% endif %}
             }
         {% endfor %}
     {% endfor %}
 
     {% for function in by_category["function"] if function.name.canonical_case() != "get proc address" and function.name.canonical_case() != "get proc address 2" %}
-        {{as_annotated_cType(function.returns)}} Native{{function.name.CamelCase()}}(
+        {% set suffix = function.name.CamelCase() %}
+        {{as_annotated_cType(function.returns)}} Native{{suffix}}(
             {%- for arg in function.arguments -%}
                 {%- if not loop.first %}, {% endif -%}
                 {{as_annotated_cType(arg)}}
             {%- endfor -%}
         ) {
-            {% for arg in function.arguments %}
-                {% set varName = as_varName(arg.name) %}
-                {% if arg.type.category in ["enum", "bitmask"] and arg.annotation == "value" %}
-                    auto {{varName}}_ = static_cast<{{as_frontendType(arg.type)}}>({{varName}});
-                {% elif arg.annotation != "value" or arg.type.category == "object" %}
-                    auto {{varName}}_ = reinterpret_cast<{{decorate(as_frontendType(arg.type), arg)}}>({{varName}});
-                {% else %}
-                    auto {{varName}}_ = {{as_varName(arg.name)}};
-                {% endif %}
-            {%- endfor-%}
-
-            {% if function.returns %}
-                auto result =
-            {%- endif %}
-            API{{function.name.CamelCase()}}(
-                {%- for arg in function.arguments -%}
-                    {%- if not loop.first %}, {% endif -%}
-                    {{as_varName(arg.name)}}_
-                {%- endfor -%}
-            );
-            {% if function.returns %}
-                {% if function.returns.type.category in ["object", "enum", "bitmask"] %}
-                    return ToAPI(result);
-                {% else %}
-                    return result;
-                {% endif %}
-            {% endif %}
+            {{convert_arguments_and_call(function, suffix, "API" + suffix)}}
         }
     {% endfor %}
 

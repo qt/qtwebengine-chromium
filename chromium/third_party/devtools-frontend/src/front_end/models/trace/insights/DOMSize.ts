@@ -117,7 +117,7 @@ export function generateInsight(data: Handlers.Types.HandlerData, context: Insig
   const largeLayoutUpdates: Types.Events.Layout[] = [];
   const largeStyleRecalcs: Types.Events.RecalcStyle[] = [];
 
-  const threads = Handlers.Threads.threadsInRenderer(data.Renderer, data.AuctionWorklets);
+  const threads = Handlers.Threads.threadsInRenderer(data.Renderer);
   for (const thread of threads) {
     if (thread.type !== Handlers.Threads.ThreadType.MAIN_THREAD) {
       continue;

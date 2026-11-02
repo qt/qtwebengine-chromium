@@ -17,7 +17,6 @@
 #ifndef LIBGAV1_SRC_DSP_X86_COMMON_SSE4_H_
 #define LIBGAV1_SRC_DSP_X86_COMMON_SSE4_H_
 
-#include "src/utils/compiler_attributes.h"
 #include "src/utils/cpu.h"
 
 #if LIBGAV1_TARGETING_SSE4_1
@@ -29,6 +28,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+
+#include "src/utils/compiler_attributes.h"
 
 #if 0
 #include <cinttypes>

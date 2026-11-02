@@ -18,6 +18,7 @@
 #include "ui/gfx/mojom/dxgi_info.mojom.h"
 #include "ui/gl/gl_export.h"
 #include "ui/gl/gpu_switching_observer.h"
+#include "ui/gl/solid_color_pool_base.h"
 
 namespace gl {
 
@@ -37,13 +38,19 @@ HRESULT DCompositionGetStatistics(COMPOSITION_FRAME_ID frameId,
                                   COMPOSITION_TARGET_ID* targetIds,
                                   UINT* actualTargetIdCount);
 
-// Initialize direct composition with the given d3d11 device and d3d12 command
-// queue. The command queue can be null.
+// Initialize direct composition with the given d3d11 device, d3d12 command
+// queue, and factory used to create a `SolidColorPoolBase` matching the
+// active GPU backend. The command queue can be null.
 GL_EXPORT void InitializeDirectComposition(
     Microsoft::WRL::ComPtr<ID3D11Device> d3d11_device,
-    Microsoft::WRL::ComPtr<ID3D12CommandQueue> d3d12_command_queue);
+    Microsoft::WRL::ComPtr<ID3D12CommandQueue> d3d12_command_queue,
+    SolidColorPoolFactory solid_color_content_provider_factory);
 
 GL_EXPORT void ShutdownDirectComposition();
+
+// Returns a copy of the SolidColorPoolFactory passed to
+// `InitializeDirectComposition`.
+GL_EXPORT SolidColorPoolFactory GetDirectCompositionSolidColorPoolFactory();
 
 // Retrieves the global direct composition device. InitializeDirectComposition
 // must be called on GPU process startup before the device is retrieved, and
@@ -133,6 +140,13 @@ GL_EXPORT gfx::mojom::DXGIInfoPtr GetDirectCompositionHDRMonitorDXGIInfo();
 
 // Returns true if there is support for |IDCompositionTexture|.
 GL_EXPORT bool DirectCompositionTextureSupported();
+
+// Returns true if |color_space| is supported by the IHV overlay hardware for
+// |format| on |output|. Returns false if |output| is null.
+GL_EXPORT bool DirectCompositionColorSpaceOverlaySupported(
+    DXGI_FORMAT format,
+    DXGI_COLOR_SPACE_TYPE color_space,
+    IDXGIOutput* output);
 
 struct DirectCompositionOverlayWorkarounds {
   // Whether software video overlays i.e. swap chains used without hardware

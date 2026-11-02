@@ -49,9 +49,6 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
     void RecordBindIndexbuffer() final;
     void RecordSetPrimitiveRestartIndex(uint32_t primitive_restart_index) final;
 
-    void RecordPushData(const VkPushDataInfoEXT& push_data_info) final;
-    void ClearPushData() final;
-
     void RecordBeginRendering(const VkRenderingInfo &rendering_info, const Location &loc) final;
     void RecordBeginRenderPass(const VkRenderPassBeginInfo &render_pass_begin, const VkSubpassBeginInfo &subpass_begin_info,
                                const Location &loc) final;
@@ -98,9 +95,10 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
                                 const VkClearRect *pRects, const Location &loc) final;
 
     void RecordSetEvent(VkEvent event, VkPipelineStageFlags stageMask) final;
-    void RecordSetEvent2(VkEvent event, const VkDependencyInfo& dependency_info) final;
-    void RecordResetEvent(VkEvent event, VkPipelineStageFlags2 stageMask) final;
-    void RecordWaitEvents(vvl::span<const VkEvent> events, VkPipelineStageFlags src_stage_mask, const Location& loc) final;
+    void RecordSetEvent2(VkEvent event, const VkDependencyInfo& dependency_info, const Location& loc) final;
+    void RecordResetEvent(VkEvent event, VkPipelineStageFlags2 stageMask, const Location& loc) final;
+    void RecordWaitEvents(vvl::span<const VkEvent> events, VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask,
+                          const Location& loc) final;
     void RecordWaitEvent2(VkEvent event, const VkDependencyInfo& dependency_info, const Location& loc) final;
     void RecordBarriers(uint32_t buffer_barrier_count, const VkBufferMemoryBarrier *buffer_barriers, uint32_t image_barrier_count,
                         const VkImageMemoryBarrier *image_barriers, VkPipelineStageFlags src_stage_mask,
@@ -186,10 +184,6 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
     // VK_EXT_primitive_restart_index
     uint32_t custom_primitive_restart_index;
 
-    // VK_EXT_descriptor_heap
-    // Mark which ranges vkCmdPushDataKHR has set (will be 0 or 1)
-    std::vector<uint8_t> push_data_mask{};
-
     uint32_t used_viewport_scissor_count;
 
     QFOTransferBarrierSets<QFOBufferTransferBarrier> qfo_transfer_buffer_barriers;
@@ -205,13 +199,16 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
     // currently need to hold in Command buffer because it can be a suspended renderpass
     std::vector<VkOffset2D> fragment_density_offsets;
 
+    // Event state tracking
+    EventSignalStateMap event_signal_states;
+    EventWaitBarrierMap event_wait_barriers;
+    EventWaitCommandMap first_event_wait_commands;
+    std::vector<WaitEventSubmitInfo> wait_event_submit_infos;
+    std::vector<WaitEvent2SubmitInfo> wait_event2_submit_infos;
+
     // Validation functions run at primary CB queue submit time
     using QueueCallback = std::function<bool(const class vvl::Queue &queue_state, const vvl::CommandBuffer &cb_state)>;
     std::vector<QueueCallback> queue_submit_functions;
-
-    EventSignalingStateMap event_signaling_states;
-    std::vector<WaitEventSubmitInfo> wait_event_submit_infos;
-    std::vector<WaitEvent2SubmitInfo> wait_event2_submit_infos;
 
     // Validation functions run when secondary CB is executed in primary
     std::vector<
@@ -228,6 +225,8 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
     void UpdateActionShaderObjectState(LastBound &last_bound);
     void UpdateActiveSlotsState(LastBound &last_bound, const ActiveSlotMap &active_slots);
     void UpdateCustomResolve(LastBound &last_bound);
+    void UpdateEventWaitBarriers(VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask);
+    void UpdateEventWaitBarriers(const VkDependencyInfo& dep_info);
 
     // Funnel because Image/Buffer copies have 2 variations for the regions
     template <typename RegionType>

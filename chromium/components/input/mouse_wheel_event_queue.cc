@@ -27,8 +27,9 @@ class QueuedWebMouseWheelEvent : public MouseWheelEventWithLatencyInfo {
                            DispatchToRendererCallback callback)
       : MouseWheelEventWithLatencyInfo(original_event),
         dispatch_callback(std::move(callback)) {
-    TRACE_EVENT_BEGIN("input", "MouseWheelEventQueue::QueueEvent",
-                      perfetto::Track::FromPointer(this));
+    TRACE_EVENT_BEGIN(
+        "input", "MouseWheelEventQueue::QueueEvent",
+        perfetto::NamedTrack::FromPointer("MouseWheelEventQueue", this));
   }
 
   QueuedWebMouseWheelEvent(const QueuedWebMouseWheelEvent&) = delete;
@@ -36,9 +37,8 @@ class QueuedWebMouseWheelEvent : public MouseWheelEventWithLatencyInfo {
 
   ~QueuedWebMouseWheelEvent() {
     TRACE_EVENT_END(
-        "input",
-        /* MouseWheelEventQueue::QueueEvent */ perfetto::Track::FromPointer(
-            this));
+        "input", /* MouseWheelEventQueue::QueueEvent */
+        perfetto::NamedTrack::FromPointer("MouseWheelEventQueue", this));
   }
 
   DispatchToRendererCallback dispatch_callback;
@@ -132,8 +132,12 @@ void MouseWheelEventQueue::ProcessMouseWheelAck(
     return;
 
   event_sent_for_gesture_ack_->latency.AddNewLatencyFrom(ack_event.latency);
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
   client_->OnMouseWheelEventAck(*event_sent_for_gesture_ack_, ack_source,
                                 ack_result);
+  if (!weak_this) {
+    return;
+  }
 
   // If event wasn't consumed then generate a gesture scroll for it.
   if (CanGenerateGestureScroll(ack_result)) {
@@ -195,7 +199,16 @@ void MouseWheelEventQueue::ProcessMouseWheelAck(
       if (scroll_update.data.scroll_update.delta_y)
         scroll_update.data.scroll_update.delta_y =
             scroll_update.data.scroll_update.delta_y > 0 ? 1 : -1;
-    } else {
+    }
+
+    scroll_update.data.scroll_update.delta_x_unconstrained =
+        scroll_update.data.scroll_update.delta_x;
+    scroll_update.data.scroll_update.delta_y_unconstrained =
+        scroll_update.data.scroll_update.delta_y;
+
+    // Apply railing (axis locking) only for non-page scrolls.
+    if (event_sent_for_gesture_ack_->event.delta_units !=
+        ui::ScrollGranularity::kScrollByPage) {
       if (event_sent_for_gesture_ack_->event.rails_mode ==
           WebInputEvent::RailsMode::kRailsModeVertical)
         scroll_update.data.scroll_update.delta_x = 0;
@@ -224,8 +237,9 @@ void MouseWheelEventQueue::ProcessMouseWheelAck(
       current_phase_ended = scroll_phase_ended || momentum_phase_ended;
     }
 
-    bool needs_update = scroll_update.data.scroll_update.delta_x != 0 ||
-                        scroll_update.data.scroll_update.delta_y != 0;
+    bool needs_update =
+        scroll_update.data.scroll_update.delta_x_unconstrained != 0 ||
+        scroll_update.data.scroll_update.delta_y_unconstrained != 0;
 
     bool synthetic = event_sent_for_gesture_ack_->event.has_synthetic_phase;
 
@@ -301,7 +315,7 @@ void MouseWheelEventQueue::TryForwardNextEventToRenderer() {
   client_->SendMouseWheelEventImmediately(
       *event_sent_for_gesture_ack_,
       base::BindOnce(&MouseWheelEventQueue::ProcessMouseWheelAck,
-                     base::Unretained(this)),
+                     weak_ptr_factory_.GetWeakPtr()),
       event_sent_for_gesture_ack_->dispatch_callback);
 }
 

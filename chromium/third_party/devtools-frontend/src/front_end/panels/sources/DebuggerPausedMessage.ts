@@ -173,8 +173,8 @@ const DEFAULT_VIEW = (input: ViewInput|null, _output: undefined, target: Documen
     </div>`, target, {
         container: {
           attributes: {jslog: `${VisualLogging.dialog('debugger-paused')}`},
-          classes: ['paused-message', 'flex-none']
-        }
+          classes: ['paused-message', 'flex-none'],
+        },
       });
   // clang-format on
 };

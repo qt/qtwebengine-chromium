@@ -38,7 +38,7 @@ HeapProfilerTestRunner.createHeapSnapshotMockFactories = function() {
       firstEdgeIndexes: new Uint32Array([0, 6, 12, 18, 21, 21, 21]),
       createNode: HeapSnapshotWorker.HeapSnapshot.JSHeapSnapshot.prototype.createNode,
       createEdge: HeapSnapshotWorker.HeapSnapshot.JSHeapSnapshot.prototype.createEdge,
-      createRetainingEdge: HeapSnapshotWorker.HeapSnapshot.JSHeapSnapshot.prototype.createRetainingEdge
+      createRetainingEdge: HeapSnapshotWorker.HeapSnapshot.JSHeapSnapshot.prototype.createRetainingEdge,
     };
     result.nodes.getValue = result.containmentEdges.getValue = function(i) {
       return this[i];
@@ -56,16 +56,16 @@ HeapProfilerTestRunner.createHeapSnapshotMockFactories = function() {
           edge_types: [['element', 'property', 'shortcut'], '', ''],
           location_fields: ['object_index', 'script_id', 'line', 'column'],
           trace_function_info_fields: ['function_id', 'name', 'script_name', 'script_id', 'line', 'column'],
-          trace_node_fields: ['id', 'function_info_index', 'count', 'size', 'children']
+          trace_node_fields: ['id', 'function_info_index', 'count', 'size', 'children'],
         },
         node_count: 6,
         edge_count: 7,
-        trace_function_count: 1
+        trace_function_count: 1,
       },
 
       nodes: [
         0, 0, 1, 0, 20, 0, 2, 1, 1, 2, 2, 2, 0,  2, 1, 2, 3, 3, 8, 0,  2,
-        1, 3, 4, 4, 10, 0, 1, 1, 4, 5, 5, 5, 14, 0, 1, 5, 6, 6, 6, 21, 0
+        1, 3, 4, 4, 10, 0, 1, 1, 4, 5, 5, 5, 14, 0, 1, 5, 6, 6, 6, 21, 0,
       ],
 
       edges: [1, 6, 7, 1, 7, 14, 0, 1, 14, 1, 8, 21, 1, 9, 21, 1, 10, 28, 1, 11, 35],
@@ -76,7 +76,7 @@ HeapProfilerTestRunner.createHeapSnapshotMockFactories = function() {
 
       locations: [0, 1, 2, 3, 18, 2, 3, 4],
 
-      strings: ['', 'A', 'B', 'C', 'D', 'E', 'a', 'b', 'ac', 'bc', 'bd', 'ce']
+      strings: ['', 'A', 'B', 'C', 'D', 'E', 'a', 'b', 'ac', 'bc', 'bd', 'ce'],
     };
   };
 
@@ -104,26 +104,26 @@ HeapProfilerTestRunner.createHeapSnapshotMockFactories = function() {
           node_types: [['hidden', 'object', 'synthetic'], '', '', ''],
           edge_fields: ['type', 'name_or_index', 'to_node'],
           edge_types: [['element', 'hidden', 'internal'], '', ''],
-          location_fields: ['object_index', 'script_id', 'line', 'column']
+          location_fields: ['object_index', 'script_id', 'line', 'column'],
         },
 
         node_count: 13,
-        edge_count: 13
+        edge_count: 13,
       },
 
       nodes: [
         2, 0, 1, 4, 1, 11, 2, 2, 1, 11, 3, 3, 2,  5, 4, 0, 2,  6, 5, 1,  1,  1, 6, 0, 1,  2,
-        7, 1, 1, 4, 8, 2,  1, 8, 9, 0,  1, 7, 10, 0, 1, 3, 11, 0, 1, 10, 12, 0, 1, 9, 13, 0
+        7, 1, 1, 4, 8, 2,  1, 8, 9, 0,  1, 7, 10, 0, 1, 3, 11, 0, 1, 10, 12, 0, 1, 9, 13, 0,
       ],
 
       edges: [
-        0,  1, 4, 0,  2, 8, 0,  3, 12, 0,  4, 16, 0,  1, 20, 0,  2, 24, 0, 1,
-        24, 0, 2, 28, 1, 3, 32, 0, 1,  36, 0, 1,  40, 2, 12, 44, 2, 1,  48
+        0,  1, 4, 0,  2, 8, 0,  3, 12, 0,  4, 16, 0,  1, 20, 0,  2, 24, 0,  1,
+        24, 0, 2, 28, 1, 3, 32, 0, 1,  36, 0, 1,  40, 2, 12, 44, 2, 1,  48,
       ],
 
       locations: [0, 2, 1, 1, 6, 2, 2, 2],
 
-      strings: ['', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'M', 'N', 'Window', 'native']
+      strings: ['', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'M', 'N', 'Window', 'native'],
     });
   };
 
@@ -148,7 +148,7 @@ HeapProfilerTestRunner.createHeapSnapshotMockFactories = function() {
     number: 'number',
     native: 'native',
     synthetic: 'synthetic',
-    bigint: 'bigint'
+    bigint: 'bigint',
   };
 
   HeapProfilerTestRunner.HeapNode.prototype = {
@@ -197,7 +197,7 @@ HeapProfilerTestRunner.createHeapSnapshotMockFactories = function() {
       for (const i in this.edges) {
         this.edges[i].serialize(rawSnapshot);
       }
-    }
+    },
   };
 
   HeapProfilerTestRunner.HeapEdge = function(targetNode, type, nameOrIndex) {
@@ -217,7 +217,7 @@ HeapProfilerTestRunner.createHeapSnapshotMockFactories = function() {
       rawSnapshot.edges.push(
           (typeof this.nameOrIndex === 'string' ? builder.lookupOrAddString(this.nameOrIndex) : this.nameOrIndex));
       rawSnapshot.edges.push(this.targetNode.ordinal * builder.nodeFieldsCount);
-    }
+    },
   };
 
   HeapProfilerTestRunner.HeapEdge.Type = {
@@ -227,7 +227,7 @@ HeapProfilerTestRunner.createHeapSnapshotMockFactories = function() {
     internal: 'internal',
     hidden: 'hidden',
     shortcut: 'shortcut',
-    weak: 'weak'
+    weak: 'weak',
   };
 
   HeapProfilerTestRunner.HeapSnapshotBuilder = function() {
@@ -264,15 +264,15 @@ HeapProfilerTestRunner.createHeapSnapshotMockFactories = function() {
             node_fields: ['type', 'name', 'id', 'self_size', 'retained_size', 'dominator', 'edge_count'],
             node_types: [this.nodeTypesArray, 'string', 'number', 'number', 'number', 'number', 'number'],
             edge_fields: ['type', 'name_or_index', 'to_node'],
-            edge_types: [this.edgeTypesArray, 'string_or_number', 'node']
+            edge_types: [this.edgeTypesArray, 'string_or_number', 'node'],
           },
-          extra_native_bytes: this.extraNativeBytes
+          extra_native_bytes: this.extraNativeBytes,
         },
 
         nodes: [],
         edges: [],
         locations: [],
-        strings: []
+        strings: [],
       };
 
       for (let i = 0; i < this.nodes.length; ++i) {
@@ -324,7 +324,7 @@ HeapProfilerTestRunner.createHeapSnapshotMockFactories = function() {
       this.string2id[string] = this.strings.length;
       this.strings.push(string);
       return this.strings.length - 1;
-    }
+    },
   };
 
   HeapProfilerTestRunner.createHeapSnapshot = function(instanceCount, firstId) {
@@ -367,8 +367,8 @@ HeapProfilerTestRunner.startProfilerTest = function(callback) {
   TestRunner.addSniffer(
       Profiler.HeapProfilerPanel.HeapProfilerPanel.instance(), 'addProfileHeader',
       HeapProfilerTestRunner.profileHeaderAdded, true);
-  TestRunner.addSniffer(
-      Profiler.ProfileView.ProfileView.prototype, 'refresh', HeapProfilerTestRunner.profileViewRefresh, true);
+  TestRunner.addSniffer(Profiler.HeapProfileView.HeapProfileView.prototype, 'refresh',
+                        HeapProfilerTestRunner.profileViewRefresh, true);
   TestRunner.addSniffer(
       Profiler.HeapSnapshotView.HeapSnapshotView.prototype, 'show', HeapProfilerTestRunner.snapshotViewShown, true);
 
@@ -471,7 +471,7 @@ HeapProfilerTestRunner.checkArrayIsSorted = function(contents, sortType, sortOrd
 
     id: function(data) {
       return parseInt(data, 10);
-    }
+    },
   }[sortType];
 
   if (!extractor) {

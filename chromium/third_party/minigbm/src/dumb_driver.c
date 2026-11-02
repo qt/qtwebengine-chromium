@@ -10,18 +10,21 @@
 #include "drv_priv.h"
 #include "util.h"
 
-#define INIT_DUMB_DRIVER(driver)                                                                   \
+#define INIT_DUMB_DRIVER_WITH_NAME(driver, _name)                                                  \
 	const struct backend backend_##driver = {                                                  \
-		.name = #driver,                                                                   \
+		.name = _name,                                                                     \
 		.init = dumb_driver_init,                                                          \
 		.bo_create = drv_dumb_bo_create,                                                   \
 		.bo_create_with_modifiers = dumb_bo_create_with_modifiers,                         \
 		.bo_destroy = drv_dumb_bo_destroy,                                                 \
 		.bo_import = drv_prime_bo_import,                                                  \
+		.bo_export = drv_prime_bo_export,                                                  \
 		.bo_map = drv_dumb_bo_map,                                                         \
 		.bo_unmap = drv_bo_munmap,                                                         \
 		.resolve_format_and_use_flags = drv_resolve_format_and_use_flags_helper,           \
 	};
+
+#define INIT_DUMB_DRIVER(driver) INIT_DUMB_DRIVER_WITH_NAME(driver, #driver)
 
 static const uint32_t scanout_render_formats[] = { DRM_FORMAT_ARGB8888, DRM_FORMAT_XRGB8888,
 						   DRM_FORMAT_ABGR8888, DRM_FORMAT_XBGR8888,
@@ -68,6 +71,14 @@ INIT_DUMB_DRIVER(marvell)
 INIT_DUMB_DRIVER(meson)
 INIT_DUMB_DRIVER(nouveau)
 INIT_DUMB_DRIVER(radeon)
+INIT_DUMB_DRIVER_WITH_NAME(sun4i_drm, "sun4i-drm")
 INIT_DUMB_DRIVER(synaptics)
 INIT_DUMB_DRIVER(udl)
 INIT_DUMB_DRIVER(vkms)
+
+#ifndef DRV_ROCKCHIP
+INIT_DUMB_DRIVER(rockchip)
+#endif
+#ifndef DRV_MEDIATEK
+INIT_DUMB_DRIVER(mediatek)
+#endif

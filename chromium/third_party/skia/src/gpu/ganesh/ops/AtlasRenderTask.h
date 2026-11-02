@@ -9,11 +9,11 @@
 
 #include "include/core/SkPath.h"
 #include "include/core/SkRefCnt.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkNoncopyable.h"
-#include "src/base/SkBlockAllocator.h"
-#include "src/base/SkTBlockList.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkNoncopyable.h"
+#include "src/core/SkBlockAllocator.h"
 #include "src/core/SkColorData.h"
+#include "src/core/SkTBlockList.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDynamicAtlas.h"
 #include "src/gpu/ganesh/GrSurfaceProxyView.h"
@@ -78,7 +78,7 @@ private:
     void addAtlasDrawOp(GrOp::Owner, const GrCaps&);
 
     // Executes the OpsTask and resolves msaa if needed.
-    bool onExecute(GrOpFlushState* flushState) override;
+    ExecutionResult onExecute(GrOpFlushState* flushState) override;
 
     const std::unique_ptr<GrDynamicAtlas> fDynamicAtlas;
 

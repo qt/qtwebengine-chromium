@@ -24,6 +24,7 @@ devtools_ui_module("cookie_table") {
     "../../../../panels/network/forward:bundle",
     "../../../../ui/legacy:bundle",
     "../../../../ui/legacy/components/data_grid:bundle",
+    "../../../components/buttons:bundle",
     "../../../kit:bundle",
     "../../../lit:bundle",
   ]
@@ -47,4 +48,17 @@ devtools_entrypoint("bundle") {
   ]
 
   visibility += devtools_ui_legacy_visibility
+}
+
+devtools_ui_module("unittests") {
+  testonly = true
+
+  sources = [ "CookiesTable.test.ts" ]
+
+  deps = [
+    ":bundle",
+    "../..:bundle",
+    "../../../../core/sdk:bundle",
+    "../../../../testing",
+  ]
 }

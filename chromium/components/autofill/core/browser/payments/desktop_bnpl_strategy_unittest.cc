@@ -60,6 +60,32 @@ TEST_F(DesktopBnplStrategyTest, GetBeforeViewSwitchAction) {
             BnplStrategy::BeforeSwitchingViewAction::kCloseCurrentUi);
 }
 
+// Verify that GetNextActionOnAiBasedAmountExtractionReturned() returns the
+// correct action for the desktop platform.
+TEST_F(DesktopBnplStrategyTest,
+       GetNextActionOnAiBasedAmountExtractionReturned) {
+  EXPECT_EQ(
+      desktop_bnpl_strategy_.GetNextActionOnAiBasedAmountExtractionReturned(),
+      BnplStrategy::BnplAiBasedAmountExtractionReturnedNextAction::
+          kReplaceLoadingThrobberWithIssuerSuggestionsOnDesktop);
+}
+
+// Verify that GetUiDismissalAction() returns the correct action for
+// the desktop platform.
+TEST_F(DesktopBnplStrategyTest, GetUiDismissalAction) {
+  EXPECT_EQ(desktop_bnpl_strategy_.GetUiDismissalAction(),
+            BnplStrategy::UiDismissalAction::kRemoveBnplUi);
+}
+
+// Verify that GetUiDismissalAction() returns the correct action for
+// the desktop platform in the Pay later tabs case.
+TEST_F(DesktopBnplStrategyTest, GetUiDismissalAction_PayLaterTabs) {
+  base::test::ScopedFeatureList feature_list{
+      features::kAutofillEnablePayNowPayLaterTabs};
+  EXPECT_EQ(desktop_bnpl_strategy_.GetUiDismissalAction(),
+            BnplStrategy::UiDismissalAction::kHideSuggestions);
+}
+
 // Verify that ShouldRemoveExistingUiOnServerReturn() returns the correct
 // value for the desktop platform.
 TEST_F(DesktopBnplStrategyTest, ShouldRemoveExistingUiOnServerReturn) {

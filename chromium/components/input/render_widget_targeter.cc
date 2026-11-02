@@ -206,7 +206,13 @@ void RenderWidgetTargeter::ResolveTargetingRequest(TargetingRequest request) {
       if (success) {
         result.target_location = transformed_point;
       } else {
-        result.target_location = request_target_location;
+        // The root to target transform failed (e.g. the embedding renderer's
+        // HitTestRegionList no longer contains the cached target's
+        // FrameSinkId). Drop the event rather than dispatching root-space
+        // coordinates to a (potentially cross-origin) child target — this
+        // matches every sibling call site (e.g.
+        // RenderWidgetHostInputEventRouter::FindMouseEventTarget).
+        result = RenderWidgetTargetResult();
       }
     }
 

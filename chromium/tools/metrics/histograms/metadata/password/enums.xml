@@ -44,12 +44,16 @@ chromium-metrics-reviews@google.com.
   <int value="9" label="'Use passkey on a different device' link"/>
   <int value="10"
       label="'(Obsolete) Create plus address' link in the address sheet"/>
-  <int value="11" label="'Select plus address' link in the address sheet"/>
-  <int value="12" label="'Manage plus addresses' link in the address sheet"/>
+  <int value="11"
+      label="'(Obsolete) Select plus address' link in the address sheet"/>
+  <int value="12"
+      label="'(Obsolete) Manage plus addresses' link in the address sheet"/>
   <int value="13"
       label="'(Obsolete) Create plus address' link in the password sheet"/>
-  <int value="14" label="'Select plus address' link in the password sheet"/>
-  <int value="15" label="'Manage plus addresses' link in the password sheet"/>
+  <int value="14"
+      label="'(Obsolete) Select plus address' link in the password sheet"/>
+  <int value="15"
+      label="'(Obsolete) Manage plus addresses' link in the password sheet"/>
   <int value="16" label="'Manage loyalty cards' link"/>
   <int value="17" label="'Verify it's you' link"/>
   <int value="18" label="'Autofill suggestion from accessory sheet"/>
@@ -84,7 +88,7 @@ chromium-metrics-reviews@google.com.
   <int value="17" label="CREDENTIAL_USERNAME"/>
   <int value="18" label="CREDENTIAL_PASSWORD"/>
   <int value="19" label="PASSKEY"/>
-  <int value="20" label="PLUS_ADDRESS"/>
+  <int value="20" label="(Obsolete) PLUS_ADDRESS"/>
   <int value="21" label="LOYALTY_CARD"/>
 </enum>
 
@@ -201,31 +205,6 @@ chromium-metrics-reviews@google.com.
   <summary>State of authenticating using Windows Hello.</summary>
   <int value="0" label="Authentication was started."/>
   <int value="1" label="Authentication was finished."/>
-</enum>
-
-<enum name="AutofillSuggestionTriggerSource">
-  <int value="0" label="Unknown"/>
-  <int value="1" label="Form control element clicked"/>
-  <int value="2" label="Textarea focused without click"/>
-  <int value="3" label="Content editable clicked"/>
-  <int value="4" label="Text field's value did change"/>
-  <int value="5" label="Text field did receive keydown"/>
-  <int value="6" label="Open text data list chooser"/>
-  <int value="7" label="Show cards from account"/>
-  <int value="8" label="Password manager"/>
-  <int value="9" label="iOS"/>
-  <int value="10" label="Manual fallback address"/>
-  <int value="11" label="(Deprecated in M133) Manual fallback payments"/>
-  <int value="12" label="Manual fallback passwords"/>
-  <int value="13" label="(Deprecated in M133) Manual fallback plus addresses"/>
-  <int value="14" label="Show prompt after dialog closed non manual fallback"/>
-  <int value="15" label="Compose dialog lost focus"/>
-  <int value="16" label="Compose delayed proactive nudge"/>
-  <int value="17" label="Password manager processed focused field"/>
-  <int value="18" label="Autofill AI"/>
-  <int value="19" label="Plus address update in browser process"/>
-  <int value="20" label="Proactive password recovery"/>
-  <int value="21" label="Glic"/>
 </enum>
 
 <enum name="AutoSigninFirstRun">
@@ -562,6 +541,7 @@ chromium-metrics-reviews@google.com.
   <int value="4" label="Rejected, no frame for id"/>
   <int value="5" label="Rejected, no trusted URL"/>
   <int value="6" label="Rejected, can't extract form data"/>
+  <int value="7" label="Rejected, no user interaction"/>
 </enum>
 
 <enum name="HistogramExportResult">
@@ -994,6 +974,7 @@ chromium-metrics-reviews@google.com.
   <int value="7" label="Sign in with another WebAuthn device"/>
   <int value="8" label="Backup password"/>
   <int value="9" label="Trouble signing in"/>
+  <int value="10" label="WebAuthn passkey QR code"/>
 </enum>
 
 <enum name="PasswordDropdownState">

@@ -26,12 +26,9 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/translate/chrome_translate_client.h"
-#include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
-#include "chrome/browser/ui/navigator/browser_navigator.h"
-#include "chrome/browser/ui/navigator/browser_navigator_params.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/webui/ai_overlay_dialog/page_context_monitor.h"
 #include "components/input/native_web_keyboard_event.h"
 #include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_service.h"
@@ -46,6 +43,7 @@
 #include "content/public/browser/web_contents.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
+#include "ui/base/base_window.h"
 #include "ui/events/base_event_utils.h"
 #include "ui/events/event.h"
 #include "ui/events/event_constants.h"
@@ -89,8 +87,11 @@ namespace ttc {
 
 AiOverlayTools::AiOverlayTools(
     mojo::PendingReceiver<ai_overlay_dialog::mojom::AiOverlayTools> receiver,
-    BrowserWindowInterface* browser)
-    : receiver_(this, std::move(receiver)), browser_(browser) {}
+    BrowserWindowInterface* browser,
+    PageContextMonitor* page_context_monitor)
+    : receiver_(this, std::move(receiver)),
+      browser_(browser),
+      page_context_monitor_(page_context_monitor) {}
 
 AiOverlayTools::~AiOverlayTools() = default;
 
@@ -111,6 +112,21 @@ void AiOverlayTools::OpenUrl(const std::string& url_string,
   std::move(callback).Run(std::monostate());
 }
 
+void AiOverlayTools::FollowLink(const std::string& id,
+                                FollowLinkCallback callback) {
+  RecordToolCallInvoked("FollowLink");
+  CHECK(page_context_monitor_);
+
+  std::string url = page_context_monitor_->GetUrlForHash(id);
+  if (url.empty()) {
+    std::move(callback).Run(
+        base::unexpected(base::StrCat({"No link found for id ", id})));
+    return;
+  }
+
+  OpenUrl(url, /*new_tab=*/false, std::move(callback));
+}
+
 void AiOverlayTools::PerformSearch(const std::string& query,
                                    bool new_tab,
                                    PerformSearchCallback callback) {
@@ -125,7 +141,8 @@ void AiOverlayTools::PerformSearch(const std::string& query,
   const TemplateURL* default_provider =
       template_url_service->GetDefaultSearchProvider();
   if (!default_provider) {
-    std::move(callback).Run(base::unexpected("Default search provider not set"));
+    std::move(callback).Run(
+        base::unexpected("Default search provider not set"));
     return;
   }
 
@@ -330,7 +347,7 @@ void AiOverlayTools::PlayVideo(PlayVideoCallback callback) {
   content::MediaSession* media_session =
       content::MediaSession::GetIfExists(contents);
   if (media_session) {
-    media_session->Resume(content::MediaSession::SuspendType::kUI);
+    media_session->Resume(content::MediaSession::SuspendType::kSystem);
     std::move(callback).Run(std::monostate());
   } else {
     std::move(callback).Run(base::unexpected("No active media session"));
@@ -349,7 +366,7 @@ void AiOverlayTools::PauseVideo(PauseVideoCallback callback) {
   content::MediaSession* media_session =
       content::MediaSession::GetIfExists(contents);
   if (media_session) {
-    media_session->Suspend(content::MediaSession::SuspendType::kUI);
+    media_session->Suspend(content::MediaSession::SuspendType::kSystem);
     std::move(callback).Run(std::monostate());
   } else {
     std::move(callback).Run(base::unexpected("No active media session"));
@@ -368,9 +385,13 @@ void AiOverlayTools::InvokeGlic(const std::string& prompt,
     return;
   }
 
-  glic::GlicInvokeOptions options(
-      glic::Target(browser_->GetTabStripModel()->GetActiveTab()),
-      glic::mojom::InvocationSource::kOsButton);
+  auto* active_tab = browser_->GetTabStripModel()->GetActiveTab();
+  if (!active_tab) {
+    std::move(callback).Run(base::unexpected("No active tab"));
+    return;
+  }
+  glic::GlicInvokeOptions options(glic::Target(*active_tab),
+                                  glic::mojom::InvocationSource::kOsButton);
   options.prompts.push_back(prompt);
 
   auto split_callback = base::SplitOnceCallback(std::move(callback));

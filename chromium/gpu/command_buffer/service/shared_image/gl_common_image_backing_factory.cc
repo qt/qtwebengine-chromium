@@ -9,6 +9,7 @@
 #include <optional>
 
 #include "base/feature_list.h"
+#include "base/metrics/histogram_functions.h"
 #include "components/viz/common/resources/shared_image_format.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/command_buffer/common/shared_image_usage.h"
@@ -30,8 +31,7 @@ BASE_FEATURE(kAllowEs3F16CoreTypeForGlSi, base::FEATURE_ENABLED_BY_DEFAULT);
 std::optional<viz::SharedImageFormat> GetFallbackFormatIfNotSupported(
     viz::SharedImageFormat plane_format,
     const GLFormatCaps& caps) {
-  if (plane_format == viz::SinglePlaneFormat::kR_8 &&
-      (!caps.ext_texture_rg() || caps.disable_r8_shared_images())) {
+  if (plane_format == viz::SinglePlaneFormat::kR_8 && !caps.ext_texture_rg()) {
     // Fallback to ALPHA_8 for R_8 format.
     return viz::SinglePlaneFormat::kALPHA_8;
   }
@@ -46,10 +46,15 @@ std::optional<viz::SharedImageFormat> GetFallbackFormatIfNotSupported(
     // No fallback for R_16, RG_1616 format.
     return std::nullopt;
   }
-  if (plane_format == viz::SinglePlaneFormat::kR_F16 &&
-      (!caps.is_atleast_gles3() || !caps.enable_texture_half_float_linear())) {
-    // Fallback to LUMINANCE_F16 for R_F16 format.
-    return viz::SinglePlaneFormat::kLUMINANCE_F16;
+  if (plane_format == viz::SinglePlaneFormat::kR_F16) {
+    bool fallback =
+        !caps.is_atleast_gles3() || !caps.enable_texture_half_float_linear();
+    base::UmaHistogramBoolean("GPU.SharedImage.R16FToLuminanceF16Fallback",
+                              fallback);
+    if (fallback) {
+      // Fallback to LUMINANCE_F16 for R_F16 format.
+      return viz::SinglePlaneFormat::kLUMINANCE_F16;
+    }
   }
   return plane_format;
 }
@@ -216,62 +221,63 @@ bool GLCommonImageBackingFactory::CanCreateTexture(
     return false;
   }
 
-  // If we have initial data to upload, ensure it is sized appropriately.
-  if (!pixel_data.empty()) {
-    DCHECK_EQ(format_infos.size(), 1u);
+  if (format_infos[0].is_compressed) {
+    CHECK_EQ(format_infos.size(), 1u);
     const FormatInfo& format_info = format_infos[0];
+    const char* error_message = "unspecified";
+    if (!gles2::ValidateCompressedTexDimensions(
+            target, /*level=*/0, size.width(), size.height(), /*depth=*/1,
+            format_info.image_internal_format, &error_message)) {
+      DVLOG(2) << "CreateSharedImage: "
+                  "ValidateCompressedTexDimensionsFailed with error: "
+               << error_message;
+      return false;
+    }
 
-    if (format_info.is_compressed) {
-      const char* error_message = "unspecified";
-      if (!gles2::ValidateCompressedTexDimensions(
-              target, /*level=*/0, size.width(), size.height(), /*depth=*/1,
-              format_info.image_internal_format, &error_message)) {
-        DVLOG(2) << "CreateSharedImage: "
-                    "ValidateCompressedTexDimensionsFailed with error: "
-                 << error_message;
-        return false;
-      }
+    GLsizei bytes_required = 0;
+    if (!gles2::GetCompressedTexSizeInBytes(
+            /*function_name=*/nullptr, size.width(), size.height(),
+            /*depth=*/1, format_info.image_internal_format, &bytes_required,
+            /*error_state=*/nullptr)) {
+      DVLOG(2) << "CreateSharedImage: Unable to compute required size for "
+                  "initial texture upload.";
+      return false;
+    }
 
-      GLsizei bytes_required = 0;
-      if (!gles2::GetCompressedTexSizeInBytes(
-              /*function_name=*/nullptr, size.width(), size.height(),
-              /*depth=*/1, format_info.image_internal_format, &bytes_required,
-              /*error_state=*/nullptr)) {
-        DVLOG(2) << "CreateSharedImage: Unable to compute required size for "
+    // Compressed textures cannot be cleared so they must be created with
+    // initial pixel data of the correct size.
+    if (bytes_required < 0 ||
+        pixel_data.size() != static_cast<size_t>(bytes_required)) {
+      DVLOG(2) << "CreateSharedImage: Initial data does not have expected "
+                  "size.";
+      return false;
+    }
+  } else if (!pixel_data.empty()) {
+    // If we have initial data to upload, ensure it is sized appropriately.
+    CHECK_EQ(format_infos.size(), 1u);
+    const FormatInfo& format_info = format_infos[0];
+    uint32_t bytes_required;
+    uint32_t unpadded_row_size = 0u;
+    uint32_t padded_row_size = 0u;
+    if (!gles2::GLES2Util::ComputeImageDataSizes(
+            size.width(), size.height(), /*depth=*/1, format_info.gl_format,
+            format_info.gl_type, /*alignment=*/4, &bytes_required,
+            &unpadded_row_size, &padded_row_size)) {
+      LOG(ERROR) << "CreateSharedImage: Unable to compute required size for "
                     "initial texture upload.";
-        return false;
-      }
+      return false;
+    }
 
-      if (bytes_required < 0 ||
-          pixel_data.size() != static_cast<size_t>(bytes_required)) {
-        DVLOG(2) << "CreateSharedImage: Initial data does not have expected "
+    // The GL spec, used in the computation for required bytes in the function
+    // above, assumes no padding is required for the last row in the image.
+    // But the client data does include this padding, so we add it for the
+    // data validation check here.
+    uint32_t padding = padded_row_size - unpadded_row_size;
+    bytes_required += padding;
+    if (pixel_data.size() != bytes_required) {
+      LOG(ERROR) << "CreateSharedImage: Initial data does not have expected "
                     "size.";
-        return false;
-      }
-    } else {
-      uint32_t bytes_required;
-      uint32_t unpadded_row_size = 0u;
-      uint32_t padded_row_size = 0u;
-      if (!gles2::GLES2Util::ComputeImageDataSizes(
-              size.width(), size.height(), /*depth=*/1, format_info.gl_format,
-              format_info.gl_type, /*alignment=*/4, &bytes_required,
-              &unpadded_row_size, &padded_row_size)) {
-        LOG(ERROR) << "CreateSharedImage: Unable to compute required size for "
-                      "initial texture upload.";
-        return false;
-      }
-
-      // The GL spec, used in the computation for required bytes in the function
-      // above, assumes no padding is required for the last row in the image.
-      // But the client data does include this padding, so we add it for the
-      // data validation check here.
-      uint32_t padding = padded_row_size - unpadded_row_size;
-      bytes_required += padding;
-      if (pixel_data.size() != bytes_required) {
-        LOG(ERROR) << "CreateSharedImage: Initial data does not have expected "
-                      "size.";
-        return false;
-      }
+      return false;
     }
   }
 

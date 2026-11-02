@@ -116,23 +116,26 @@ typedef enum SharpYuvTransferFunctionType {
 // Assumes that the image will be upsampled using a bilinear filter. If nearest
 // neighbor is used instead, the upsampled image might look worse than with
 // standard downsampling.
-// r_ptr, g_ptr, b_ptr: pointers to the source r, g and b channels. Should point
+// r_ptr, g_ptr, b_ptr: pointers to the source r, g and b channels. Must point
 //     to uint8_t buffers if rgb_bit_depth is 8, or uint16_t buffers otherwise.
 // rgb_step: distance in bytes between two horizontally adjacent pixels on the
-//     r, g and b channels. If rgb_bit_depth is > 8, it should be a
-//     multiple of 2.
+//     r, g and b channels. If rgb_bit_depth is > 8, it must be a
+//     multiple of 2. Must not be zero.
 // rgb_stride: distance in bytes between two vertically adjacent pixels on the
-//     r, g, and b channels. If rgb_bit_depth is > 8, it should be a
-//     multiple of 2.
+//     r, g, and b channels. If rgb_bit_depth is > 8, it must be a
+//     multiple of 2. abs(rgb_stride) must be at least width * abs(rgb_step).
 // rgb_bit_depth: number of bits for each r/g/b value. One of: 8, 10, 12, 16.
+//     The input rgb buffer values should be in the range
+//     [0, (1 << rgb_bit_depth) - 1] and will be clamped to this range if not.
 //     Note: 16 bit input is truncated to 14 bits before conversion to yuv.
 // yuv_bit_depth: number of bits for each y/u/v value. One of: 8, 10, 12.
-// y_ptr, u_ptr, v_ptr: pointers to the destination y, u and v channels.  Should
+// y_ptr, u_ptr, v_ptr: pointers to the destination y, u and v channels.  Must
 //     point to uint8_t buffers if yuv_bit_depth is 8, or uint16_t buffers
 //     otherwise.
 // y_stride, u_stride, v_stride: distance in bytes between two vertically
-//     adjacent pixels on the y, u and v channels. If yuv_bit_depth > 8, they
-//     should be multiples of 2.
+//     adjacent pixels on the y, u and v channels. Must be at least large enough
+//     to hold one row of pixels. If yuv_bit_depth is > 8, they must be
+//     multiples of 2.
 // width, height: width and height of the image in pixels
 // yuv_matrix: RGB to YUV conversion matrix. The matrix values typically
 //     depend on the input's rgb_bit_depth.

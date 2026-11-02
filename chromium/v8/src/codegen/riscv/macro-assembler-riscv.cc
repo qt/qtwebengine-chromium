@@ -323,31 +323,7 @@ void MacroAssembler::LoadTrustedUnknownPointerField(
     static_assert(kNullIndirectPointerHandle == 0);
     Branch(is_unavailable, eq, handle, Operand(zero_reg));
 
-    bool handles_code_case = false;
-    constexpr int kCodePointerHandleMarkerBit = 0;
-    static_assert((1 << kCodePointerHandleMarkerBit) ==
-                  kCodePointerHandleMarker);
-    And(scratch2, handle, Operand(kCodePointerHandleMarker));
-    for (auto& [type, label] : cases) {
-      if (type == CODE_TYPE) {
-        handles_code_case = true;
-
-        Label not_code_handle;
-        Branch(&not_code_handle, eq, scratch2, Operand(zero_reg));
-
-        ResolveCodePointerHandle(destination, handle);
-        Branch(label);
-
-        bind(&not_code_handle);
-        break;
-      }
-    }
-    if (!handles_code_case) {
-      Branch(&zero_and_fallthrough, ne, scratch2, Operand(zero_reg));
-    }
-
-    ResolveTrustedPointerHandle(destination, handle,
-                                kAllPerIsolateIndirectPointerTags);
+    ResolveIndirectPointerHandle(destination, handle, kAllIndirectPointerTags);
   }
 #else
   LoadTaggedField(destination, field_operand);
@@ -357,9 +333,6 @@ void MacroAssembler::LoadTrustedUnknownPointerField(
 #if V8_STATIC_ROOTS_BOOL
   LoadCompressedMap(scratch1, destination);
   for (auto& [type, label] : cases) {
-    if (V8_ENABLE_SANDBOX_BOOL && type == CODE_TYPE) {
-      continue;
-    }
     BranchInstanceTypeWithUniqueCompressedMap(label, eq, scratch1, scratch2,
                                               type);
   }
@@ -367,9 +340,6 @@ void MacroAssembler::LoadTrustedUnknownPointerField(
   LoadMap(scratch1, destination);
   Lh(scratch1, FieldMemOperand(scratch1, offsetof(Map, instance_type_)));
   for (auto& [type, label] : cases) {
-    if (V8_ENABLE_SANDBOX_BOOL && type == CODE_TYPE) {
-      continue;
-    }
     Branch(label, eq, scratch1, Operand(type));
   }
 #endif  // V8_STATIC_ROOTS_BOOL
@@ -393,21 +363,6 @@ void MacroAssembler::StoreTrustedPointerField(Register value,
 #ifdef V8_ENABLE_SANDBOX
 void MacroAssembler::ResolveIndirectPointerHandle(
     Register destination, Register handle, IndirectPointerTagRange tag_range) {
-  // This function must not be used to resolve kAllIndirectPointerTags. Use
-  // LoadTrustedUnknownPointerField for that instead.
-  CHECK_NE(tag_range, kAllIndirectPointerTags);
-  // The tag implies which pointer table to use.
-  if (tag_range == kCodeIndirectPointerTag) {
-    ResolveCodePointerHandle(destination, handle);
-  } else {
-    DCHECK(!tag_range.Contains(kCodeIndirectPointerTag));
-    ResolveTrustedPointerHandle(destination, handle, tag_range);
-  }
-}
-
-void MacroAssembler::ResolveTrustedPointerHandle(
-    Register destination, Register handle, IndirectPointerTagRange tag_range) {
-  DCHECK(!tag_range.Contains(kCodeIndirectPointerTag));
   DCHECK(!AreAliased(handle, destination));
   ASM_CODE_COMMENT(this);
   Register table = destination;
@@ -442,42 +397,6 @@ void MacroAssembler::ResolveTrustedPointerHandle(
   And(destination, destination, Operand(kTrustedPointerTablePayloadMask));
 }
 
-void MacroAssembler::ResolveCodePointerHandle(Register destination,
-                                              Register handle) {
-  ASM_CODE_COMMENT(this);
-  DCHECK(!AreAliased(handle, destination));
-
-  Register table = destination;
-  LoadCodePointerTableBase(table);
-  SrlWord(handle, handle, kCodePointerHandleShift);
-  CalcScaledAddress(destination, table, handle, kCodePointerTableEntrySizeLog2);
-  LoadWord(destination,
-           MemOperand(destination, kCodePointerTableEntryCodeObjectOffset));
-  // The LSB is used as marking bit by the code pointer table, so here we have
-  // to set it using a bitwise OR as it may or may not be set.
-  Or(destination, destination, Operand(kHeapObjectTag));
-}
-
-void MacroAssembler::LoadCodePointerTableBase(Register destination) {
-#ifdef V8_COMPRESS_POINTERS_IN_MULTIPLE_CAGES
-  if (!options().isolate_independent_code && isolate()) {
-    // Embed the code pointer table address into the code.
-    li(destination,
-       ExternalReference::code_pointer_table_base_address(isolate()));
-  } else {
-    // Force indirect load via root register as a workaround for
-    // isolate-independent code (for example, for Wasm).
-    LoadWord(
-        destination,
-        ExternalReferenceAsOperand(
-            ExternalReference::address_of_code_pointer_table_base_address(),
-            destination));
-  }
-#else
-  // Embed the code pointer table address into the code.
-  li(destination, ExternalReference::global_code_pointer_table_base_address());
-#endif  // V8_COMPRESS_POINTERS_IN_MULTIPLE_CAGES
-}
 #endif  // V8_ENABLE_SANDBOX
 
 void MacroAssembler::LoadExternalPointerField(Register destination,
@@ -2454,6 +2373,24 @@ void MacroAssembler::Sd(Register rd, const MemOperand& rs, Trapper&& trapper) {
 }
 #endif
 
+void MacroAssembler::LoadHalf(FPURegister fd, const MemOperand& src,
+                              Trapper&& trapper) {
+  auto fn = [&](FPURegister target, const MemOperand& source) {
+    trapper(pc_offset());
+    flh(target, source.rm(), source.offset());
+  };
+  AlignedLoadHelper(fd, src, fn);
+}
+
+void MacroAssembler::StoreHalf(FPURegister fs, const MemOperand& src,
+                               Trapper&& trapper) {
+  auto fn = [&](FPURegister value, const MemOperand& source) {
+    trapper(pc_offset());
+    fsh(value, source.rm(), source.offset());
+  };
+  AlignedStoreHelper(fs, src, fn);
+}
+
 void MacroAssembler::LoadFloat(FPURegister fd, const MemOperand& src,
                                Trapper&& trapper) {
   auto fn = [&](FPURegister target, const MemOperand& source) {
@@ -2841,9 +2778,7 @@ void MacroAssembler::SaveVectorRegisters(const Simd128RegList& reg_list) {
   // vector registers might not exist and accessing them would SIGILL.
   Label not_simd, done;
   ASM_CODE_COMMENT(this);
-  bool generating_builtins =
-      isolate() && isolate()->IsGeneratingEmbeddedBuiltins();
-  if (generating_builtins) {
+  if (options().generating_embedded_builtin) {
     li(kScratchReg, ExternalReference::supports_simd_128_address());
     Lb(kScratchReg, MemOperand(kScratchReg, 0));
     // If != 0, then simd is available.
@@ -2885,9 +2820,7 @@ void MacroAssembler::RestoreVectorRegisters(const Simd128RegList& reg_list) {
   // vector registers might not exist and accessing them would SIGILL.
   Label not_simd, done;
   ASM_CODE_COMMENT(this);
-  bool generating_builtins =
-      isolate() && isolate()->IsGeneratingEmbeddedBuiltins();
-  if (generating_builtins) {
+  if (options().generating_embedded_builtin) {
     li(kScratchReg, ExternalReference::supports_simd_128_address());
     Lb(kScratchReg, MemOperand(kScratchReg, 0));
     // If != 0, then simd is available.
@@ -3658,13 +3591,13 @@ void MacroAssembler::RoundFloat(FPURegister dst, FPURegister src,
 // rounded result; this differs from behavior of RISCV fcvt instructions (which
 // round out-of-range values to the nearest max or min value), therefore special
 // handling is needed by NaN, +/-Infinity, +/-0
-void MacroAssembler::RoundHelper(VRegister dst, VRegister src, Register scratch,
-                                 VRegister v_scratch, FPURoundingMode frm,
-                                 bool keep_nan_same) {
+template <int kMantissaBits, int kExponentBits, int kExponentBias>
+void MacroAssembler::RoundHelperImpl(VRegister dst, VRegister src,
+                                     Register scratch, VRegister v_scratch,
+                                     FPURoundingMode frm, bool keep_nan_same) {
   // if src is NaN/+-Infinity/+-Zero or if the exponent is larger than # of bits
   // in mantissa, the result is the same as src, so move src to dest  (to avoid
   // generating another branch)
-
   // If real exponent (i.e., scratch2 - kFloatExponentBias) is greater than
   // kFloat32MantissaBits, it means the floating-point value has no fractional
   // part, thus the input is already rounded, jump to done. Note that, NaN and
@@ -3672,27 +3605,19 @@ void MacroAssembler::RoundHelper(VRegister dst, VRegister src, Register scratch,
   // they also satisfy (scratch2 - kFloatExponentBias >= kFloatMantissaBits),
   // and JS round semantics specify that rounding of NaN (Infinity) returns NaN
   // (Infinity), so NaN and Infinity are considered rounded value too.
-  int32_t sew = VU.sew_bits();
-  DCHECK((sew == 32) || (sew == 64));
-  const int kFloatMantissaBits =
-      sew == 32 ? kFloat32MantissaBits : kFloat64MantissaBits;
-  const int kFloatExponentBits =
-      sew == 32 ? kFloat32ExponentBits : kFloat64ExponentBits;
-  const int kFloatExponentBias =
-      sew == 32 ? kFloat32ExponentBias : kFloat64ExponentBias;
-
-  // slli(rt, rs, 64 - (pos + size));
-  // if (sign_extend) {
-  //   srai(rt, rt, 64 - size);
-  // } else {
-  //   srli(rt, rt, 64 - size);
-  // }
+  static_assert(kMantissaBits + kExponentBits + 1 == 16 ||
+                kMantissaBits + kExponentBits + 1 == 32 ||
+                kMantissaBits + kExponentBits + 1 == 64);
+  constexpr int sew = kMantissaBits + kExponentBits + 1;
+  DCHECK_NE(dst, v0);
+  DCHECK_NE(src, v0);
+  DCHECK_NE(v_scratch, v0);
   vmv_vx(v_scratch, zero_reg);
-  li(scratch, 64 - kFloatMantissaBits - kFloatExponentBits);
+  li(scratch, 64 - kMantissaBits - kExponentBits);
   vsll_vx(v_scratch, src, scratch);
-  li(scratch, 64 - kFloatExponentBits);
+  li(scratch, 64 - kExponentBits);
   vsrl_vx(v_scratch, v_scratch, scratch);
-  li(scratch, kFloatExponentBias + kFloatMantissaBits);
+  li(scratch, kExponentBias + kMantissaBits);
   vmslt_vx(v0, v_scratch, scratch);
   VU.set(frm);
   vmv_vv(dst, src);
@@ -3701,7 +3626,6 @@ void MacroAssembler::RoundHelper(VRegister dst, VRegister src, Register scratch,
   }
   vfcvt_x_f_v(dst, src, MaskType::Mask);
   vfcvt_f_x_v(dst, dst, MaskType::Mask);
-
   // A special handling is needed if the input is a very small positive/negative
   // number that rounds to zero. JS semantics requires that the rounded result
   // retains the sign of the input, so a very small positive (negative)
@@ -3712,9 +3636,12 @@ void MacroAssembler::RoundHelper(VRegister dst, VRegister src, Register scratch,
     vfsngj_vv(dst, dst, src);
   }
   if (!keep_nan_same) {
-    vmfeq_vv(v0, src, src);
-    vnot_vv(v0, v0);
-    if (sew == 32) {
+    // Use a scratch VRegister for NaN comparison to avoid corrupting v0.
+    vmfeq_vv(kSimd128ScratchReg3, src, src);
+    vnot_vv(v0, kSimd128ScratchReg3);
+    if constexpr (sew == 16) {
+      fmv_h_x(kScratchDoubleReg, zero_reg);
+    } else if constexpr (sew == 32) {
       fmv_w_x(kScratchDoubleReg, zero_reg);
     } else {
 #ifdef V8_TARGET_ARCH_RISCV64
@@ -3727,6 +3654,27 @@ void MacroAssembler::RoundHelper(VRegister dst, VRegister src, Register scratch,
   }
   if (frm != RNE) {
     VU.set(RNE);
+  }
+}
+
+void MacroAssembler::RoundHelper(VRegister dst, VRegister src, Register scratch,
+                                 VRegister v_scratch, FPURoundingMode frm,
+                                 bool keep_nan_same) {
+  int32_t sew = VU.sew_bits();
+  DCHECK((sew == 16) || (sew == 32) || (sew == 64));
+  switch (sew) {
+    case 16:
+      return RoundHelperImpl<kFloat16MantissaBits, kFloat16ExponentBits,
+                             kFloat16ExponentBias>(dst, src, scratch, v_scratch,
+                                                   frm, keep_nan_same);
+    case 32:
+      return RoundHelperImpl<kFloat32MantissaBits, kFloat32ExponentBits,
+                             kFloat32ExponentBias>(dst, src, scratch, v_scratch,
+                                                   frm, keep_nan_same);
+    default:
+      return RoundHelperImpl<kFloat64MantissaBits, kFloat64ExponentBits,
+                             kFloat64ExponentBias>(dst, src, scratch, v_scratch,
+                                                   frm, keep_nan_same);
   }
 }
 
@@ -6997,6 +6945,21 @@ void MacroAssembler::SmiUntag(Register dst, const MemOperand& src) {
       LoadWord(dst, src);
     }
     SmiUntag(dst);
+  }
+}
+
+void MacroAssembler::SmiUntagUnsigned(Register dst, const MemOperand& src) {
+  ASM_CODE_COMMENT(this);
+  if (SmiValuesAre32Bits()) {
+    Lwu(dst, MemOperand(src.rm(), SmiWordOffset(src.offset())));
+  } else {
+    DCHECK(SmiValuesAre31Bits());
+    if (COMPRESS_POINTERS_BOOL) {
+      Lw(dst, src);
+    } else {
+      LoadWord(dst, src);
+    }
+    SmiUntagUnsigned(dst);
   }
 }
 

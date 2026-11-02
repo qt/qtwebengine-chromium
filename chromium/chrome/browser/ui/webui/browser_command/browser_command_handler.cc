@@ -137,9 +137,6 @@ void BrowserCommandHandler::CanExecuteCommand(
     case Command::kStartPasswordManagerTutorial:
       can_execute = TutorialServiceExists();
       break;
-    case Command::kOpenAutofillSettings:
-      can_execute = true;
-      break;
     case Command::kOpenAISettings:
       can_execute = true;
       break;
@@ -153,9 +150,6 @@ void BrowserCommandHandler::CanExecuteCommand(
       can_execute = true;
       break;
     case Command::kOpenGlicSettings:
-      can_execute = true;
-      break;
-    case Command::kPrewarmGlicFre:
       can_execute = true;
       break;
     case Command::kOpenSplitView:
@@ -185,9 +179,10 @@ void BrowserCommandHandler::ExecuteCommand(Command command_id,
   std::move(callback).Run(command_executed);
 }
 
-void BrowserCommandHandler::ExecuteCommandWithDisposition(
+void BrowserCommandHandler::HandleCommandWithDisposition(
     int id,
-    WindowOpenDisposition disposition) {
+    WindowOpenDisposition disposition,
+    base::TimeTicks time_stamp) {
   const auto command = static_cast<Command>(id);
   base::UmaHistogramEnumeration(kPromoBrowserCommandHistogramName, command);
 
@@ -235,10 +230,6 @@ void BrowserCommandHandler::ExecuteCommandWithDisposition(
     case Command::kStartPasswordManagerTutorial:
       StartPasswordManagerTutorial();
       break;
-    case Command::kOpenAutofillSettings:
-      NavigateToURL(GURL(chrome::GetSettingsUrl(chrome::kAutofillSubPage)),
-                    disposition);
-      break;
     case Command::kOpenAISettings:
       OpenAISettings();
       break;
@@ -256,9 +247,6 @@ void BrowserCommandHandler::ExecuteCommandWithDisposition(
     }
     case Command::kOpenGlicSettings:
       OpenGlicSettings();
-      break;
-    case Command::kPrewarmGlicFre:
-      // No-op: Glic FRE pre-warming is removed.
       break;
     case Command::kOpenSplitView:
       OpenSplitView();

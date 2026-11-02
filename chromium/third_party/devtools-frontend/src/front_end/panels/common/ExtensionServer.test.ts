@@ -3,26 +3,28 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import type {Chrome} from '../../../extension-api/ExtensionAPI.js';
 import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as TextUtils from '../../core/text_utils/text_utils.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as Extensions from '../../models/extensions/extensions.js';
 import type * as HAR from '../../models/har/har.js';
 import * as Logs from '../../models/logs/logs.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import {createTarget, expectConsoleLogs} from '../../testing/EnvironmentHelpers.js';
 import {spyCall} from '../../testing/ExpectStubCall.js';
 import {
-  describeWithDevtoolsExtension,
+  type ExtensionContext,
   getExtensionOrigin,
+  setupDevtoolsExtensionHooks,
 } from '../../testing/ExtensionHelpers.js';
-import {MockProtocolBackend} from '../../testing/MockScopeChain.js';
-import {addChildFrame, FRAME_URL, getMainFrame} from '../../testing/ResourceTreeHelpers.js';
+import type {MockDebuggerBackend} from '../../testing/MockScopeChain.js';
+import {addChildFrame, FRAME_URL, getMainFrame, mockResourceTree} from '../../testing/ResourceTreeHelpers.js';
 import {encodeSourceMap} from '../../testing/SourceMapEncoder.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -31,14 +33,29 @@ import * as PanelCommon from './common.js';
 
 const {urlString} = Platform.DevToolsPath;
 
-describeWithDevtoolsExtension('Extensions', {}, context => {
+interface TestHARLog {
+  entries: Array<{
+    request: {
+      url: string,
+    },
+  }&Chrome.DevTools.Request>;
+}
+
+function getBackend(context: ExtensionContext): MockDebuggerBackend {
+  assert.exists(context.backend);
+  return context.backend as MockDebuggerBackend;
+}
+
+describe('Extensions', () => {
+  const context = setupDevtoolsExtensionHooks();
+
   it('are initialized after the target is initialized and navigated to a non-privileged URL', async () => {
     // This check is a proxy for verifying that the extension has been initialized. Outside of the test the extension
     // API is available as soon as the extension page is loaded, which we don't do in the test.
     assert.isUndefined(context.chrome.devtools);
 
     const addExtensionStub = sinon.stub(PanelCommon.ExtensionServer.ExtensionServer.instance(), 'addExtension');
-    createTarget().setInspectedURL(urlString`http://example.com`);
+    getBackend(context).createTarget().setInspectedURL(urlString`http://example.com`);
     sinon.assert.calledOnceWithExactly(addExtensionStub, context.extensionDescriptor);
   });
 
@@ -48,19 +65,18 @@ describeWithDevtoolsExtension('Extensions', {}, context => {
     assert.isUndefined(context.chrome.devtools);
 
     const addExtensionStub = sinon.stub(PanelCommon.ExtensionServer.ExtensionServer.instance(), 'addExtension');
-    createTarget().setInspectedURL(urlString`chrome://version`);
+    getBackend(context).createTarget().setInspectedURL(urlString`chrome://version`);
     sinon.assert.notCalled(addExtensionStub);
   });
 
   it('applies network.addRequestHeaders when no host policy is configured', async () => {
-    const target = createTarget({type: SDK.Target.Type.FRAME});
+    const target = getBackend(context).createTarget({type: SDK.Target.Type.FRAME});
     target.setInspectedURL(urlString`http://example.com`);
     assert.exists(context.chrome.devtools);
 
     const headersCall = spyCall(SDK.NetworkManager.MultitargetNetworkManager.instance(), 'setExtraHTTPHeaders');
 
-    const networkApi =
-        context.chrome.devtools?.network as unknown as {addRequestHeaders(headers: Record<string, string>): void};
+    const networkApi = context.chrome.devtools?.network as Extensions.ExtensionAPI.PrivateAPI.Network;
     networkApi.addRequestHeaders({'X-Test': 'v'});
 
     const {args} = await headersCall;
@@ -69,7 +85,7 @@ describeWithDevtoolsExtension('Extensions', {}, context => {
 
   it('defers loading extensions until after navigation from a privileged to a non-privileged host', async () => {
     const addExtensionSpy = sinon.spy(PanelCommon.ExtensionServer.ExtensionServer.instance(), 'addExtension');
-    const target = createTarget({type: SDK.Target.Type.FRAME});
+    const target = getBackend(context).createTarget({type: SDK.Target.Type.FRAME});
     target.setInspectedURL(urlString`chrome://abcdef`);
     assert.isTrue(addExtensionSpy.notCalled, 'addExtension not called');
 
@@ -81,23 +97,25 @@ describeWithDevtoolsExtension('Extensions', {}, context => {
   it('only returns page resources for allowed targets', async () => {
     const urls = ['http://example.com', 'chrome://version'] as Platform.DevToolsPath.UrlString[];
     const targets = urls.map(async url => {
-      const target = createTarget({url});
+      const target = getBackend(context).createTarget({url});
       const resourceTreeModel = target.model(SDK.ResourceTreeModel.ResourceTreeModel);
       assert.isNotNull(resourceTreeModel);
-      await resourceTreeModel.once(SDK.ResourceTreeModel.Events.CachedResourcesLoaded);
+      if (!resourceTreeModel.cachedResourcesLoaded()) {
+        await resourceTreeModel.once(SDK.ResourceTreeModel.Events.CachedResourcesLoaded);
+      }
       target.setInspectedURL(url);
-      resourceTreeModel.mainFrame?.addResource(new SDK.Resource.Resource(
-          resourceTreeModel, null, url, url, null, null, Common.ResourceType.resourceTypes.Document, 'application/text',
-          null, null));
+      const mainFrame = getMainFrame(target, {url});
+      mainFrame.addResource(new SDK.Resource.Resource(resourceTreeModel, null, url, url, null, null,
+                                                      Common.ResourceType.resourceTypes.Document, 'application/text',
+                                                      null, null));
       return target;
     });
 
     await Promise.all(targets);
 
-    const resources =
-        await new Promise<Chrome.DevTools.Resource[]>(r => context.chrome.devtools!.inspectedWindow.getResources(r));
+    const resources = await context.chrome.devtools!.inspectedWindow.getResources();
 
-    assert.deepEqual(resources.map(r => r.url), ['https://example.com/', 'http://example.com']);
+    assert.deepEqual(resources.map(r => r.url), ['http://example.com']);
   });
 
   describe('Resource', () => {
@@ -105,7 +123,7 @@ describeWithDevtoolsExtension('Extensions', {}, context => {
     let project: Bindings.ContentProviderBasedProject.ContentProviderBasedProject;
 
     beforeEach(() => {
-      target = createTarget();
+      target = getBackend(context).createTarget();
       const inspectedUrl = urlString`https://www.example.com/`;
       target.setInspectedURL(inspectedUrl);
 
@@ -130,7 +148,7 @@ describeWithDevtoolsExtension('Extensions', {}, context => {
       expectConsoleLogs({
         error: [
           'Extension server error: Invalid argument command: expected a source map script resource for url: https://example.com/',
-          'Extension server error: Invalid argument command: expected valid scriptUrl and non-empty NamedFunctionRanges'
+          'Extension server error: Invalid argument command: expected valid scriptUrl and non-empty NamedFunctionRanges',
         ],
       });
 
@@ -140,8 +158,14 @@ describeWithDevtoolsExtension('Extensions', {}, context => {
            // create a mock uiSourceCode for the sourceMap script
            const scriptUrl = urlString`https://example.com/foo.js.map/foo.js`;
            project.addUISourceCode(
-               new Workspace.UISourceCode.UISourceCode(
-                   project, scriptUrl, Common.ResourceType.resourceTypes.SourceMapScript),
+               new Workspace.UISourceCode.UISourceCode(project, scriptUrl,
+                                                       Common.ResourceType.resourceTypes.SourceMapScript),
+           );
+           // create a mock uiSourceCode for the non-sourceMap script
+           const normalScriptUrl = urlString`https://example.com/normal.js`;
+           project.addUISourceCode(
+               new Workspace.UISourceCode.UISourceCode(project, normalScriptUrl,
+                                                       Common.ResourceType.resourceTypes.Script),
            );
            const uiSourceCode = project.uiSourceCodeForURL(scriptUrl);
            assert.exists(uiSourceCode);
@@ -187,11 +211,14 @@ describeWithDevtoolsExtension('Extensions', {}, context => {
       const stubScript = sinon.createStubInstance(SDK.Script.Script);
       // @ts-expect-error
       stubScript.buildId = 'my-build-id';
+      stubScript.target.returns(target);
+      stubScript.contentURL.returns(urlString`http://example.com/index.js`);
+      stubScript.hasSourceURL = false;
       sinon.stub(Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance(), 'scriptsForUISourceCode')
           .returns([stubScript]);
       project.addUISourceCode(
-          new Workspace.UISourceCode.UISourceCode(
-              project, urlString`http://example.com/index.js`, Common.ResourceType.resourceTypes.Script),
+          new Workspace.UISourceCode.UISourceCode(project, urlString`http://example.com/index.js`,
+                                                  Common.ResourceType.resourceTypes.Script),
       );
 
       const resources =
@@ -203,9 +230,11 @@ describeWithDevtoolsExtension('Extensions', {}, context => {
   });
 });
 
-describeWithDevtoolsExtension('Extensions', {}, context => {
+describe('Extensions', () => {
+  const context = setupDevtoolsExtensionHooks();
+
   beforeEach(() => {
-    createTarget().setInspectedURL(urlString`http://example.com`);
+    getBackend(context).createTarget().setInspectedURL(urlString`http://example.com`);
   });
 
   it('can register and unregister a global open resource handler', async () => {
@@ -229,6 +258,40 @@ describeWithDevtoolsExtension('Extensions', {}, context => {
     assert.isUndefined(unregistration.scheme);
     assert.isFunction(unregistration.handler);
     assert.isFunction(unregistration.shouldHandleOpenResource);
+  });
+});
+
+describe('Extensions', () => {
+  const context = setupDevtoolsExtensionHooks();
+
+  expectConsoleLogs({
+    error: [
+      'Extension server error: Invalid argument urlScheme: Scheme is forbidden',
+      'Extension server error: Invalid argument urlScheme: Scheme is forbidden',
+    ],
+  });
+  beforeEach(() => {
+    getBackend(context).createTarget().setInspectedURL(Platform.DevToolsPath.urlString`http://example.com`);
+  });
+
+  it('cannot register an open resource handler for forbidden schemes', async () => {
+    const registerLinkHandlerSpy = sinon.spy(Components.Linkifier.Linkifier, 'registerLinkHandler');
+
+    context.chrome.devtools?.panels.setOpenResourceHandler(() => {}, 'chrome:');
+    context.chrome.devtools?.panels.setOpenResourceHandler(() => {}, 'file:');
+
+    // Wait for the messages to be processed by sending a dummy eval request
+    await new Promise(resolve => context.chrome.devtools?.inspectedWindow.eval('1', undefined, resolve));
+
+    sinon.assert.notCalled(registerLinkHandlerSpy);
+  });
+});
+
+describe('Extensions', () => {
+  const context = setupDevtoolsExtensionHooks();
+
+  beforeEach(() => {
+    getBackend(context).createTarget().setInspectedURL(Platform.DevToolsPath.urlString`http://example.com`);
   });
 
   it('can register and unregister a scheme specific open resource handler', async () => {
@@ -254,16 +317,18 @@ describeWithDevtoolsExtension('Extensions', {}, context => {
   });
 });
 
-describeWithDevtoolsExtension('Extensions', {}, context => {
+describe('Extensions', () => {
+  const context = setupDevtoolsExtensionHooks();
+
   expectConsoleLogs({
     warn: ['evaluate: the main frame is not yet available'],
     error: [
       'Extension server error: Object not found: <top>',
-      'Extension server error: Operation failed: https://example.com/ has no execution context'
+      'Extension server error: Operation failed: https://example.com/ has no execution context',
     ],
   });
   beforeEach(() => {
-    createTarget().setInspectedURL(urlString`http://example.com`);
+    getBackend(context).createTarget().setInspectedURL(urlString`http://example.com`);
   });
 
   it('can register a recorder extension for export', async () => {
@@ -327,8 +392,7 @@ describeWithDevtoolsExtension('Extensions', {}, context => {
   });
 
   it('can create and show a panel for Recorder', async () => {
-    const panel = await new Promise<Chrome.DevTools.ExtensionPanel>(
-        resolve => context.chrome.devtools?.panels.create('Test', 'test.png', 'test.html', resolve));
+    const panel = await context.chrome.devtools?.panels.create('Test', 'test.png', 'test.html');
     class RecorderPlugin {
       replay(_recording: object) {
         panel?.show();
@@ -496,7 +560,7 @@ describeWithDevtoolsExtension('Extensions', {}, context => {
   it('reload only the main toplevel frame', async () => {
     const target = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
     assert.isNotNull(target);
-    const secondTarget = createTarget();
+    const secondTarget = getBackend(context).createTarget();
 
     const secondResourceTreeModel = secondTarget.model(SDK.ResourceTreeModel.ResourceTreeModel);
     assert.isNotNull(secondResourceTreeModel);
@@ -563,13 +627,14 @@ function waitForFunction<T>(fn: () => T): Promise<T> {
   });
 }
 
-describeWithDevtoolsExtension('Runtime hosts policy', {hostsPolicy}, context => {
+describe('Runtime hosts policy', () => {
+  const context = setupDevtoolsExtensionHooks({hostsPolicy});
   expectConsoleLogs({error: ['Extension server error: Operation failed: Permission denied']});
 
   for (const protocol of ['devtools', 'chrome', 'chrome-untrusted', 'chrome-error', 'chrome-search']) {
     it(`blocks API calls on blocked protocols: ${protocol}`, async () => {
       assert.isUndefined(context.chrome.devtools);
-      const target = createTarget({type: SDK.Target.Type.FRAME});
+      const target = getBackend(context).createTarget({type: SDK.Target.Type.FRAME});
       const addExtensionStub = sinon.stub(PanelCommon.ExtensionServer.ExtensionServer.instance(), 'addExtension');
 
       target.setInspectedURL(urlString`${`${protocol}://foo`}`);
@@ -580,7 +645,7 @@ describeWithDevtoolsExtension('Runtime hosts policy', {hostsPolicy}, context => 
 
   it('blocks API calls on blocked hosts', async () => {
     assert.isUndefined(context.chrome.devtools);
-    const target = createTarget({type: SDK.Target.Type.FRAME});
+    const target = getBackend(context).createTarget({type: SDK.Target.Type.FRAME});
     const addExtensionStub = sinon.spy(PanelCommon.ExtensionServer.ExtensionServer.instance(), 'addExtension');
 
     target.setInspectedURL(blockedUrl);
@@ -589,8 +654,12 @@ describeWithDevtoolsExtension('Runtime hosts policy', {hostsPolicy}, context => 
   });
 
   it('allows API calls on allowlisted hosts', async () => {
-    const target = createTarget({type: SDK.Target.Type.FRAME});
+    const target = getBackend(context).createTarget({type: SDK.Target.Type.FRAME});
     target.setInspectedURL(allowedUrl);
+    {
+      const result = await context.chrome.devtools!.network.getHAR();
+      assert.hasAnyKeys(result, ['entries']);
+    }
     {
       const result = await new Promise<object>(cb => context.chrome.devtools?.network.getHAR(cb));
       assert.hasAnyKeys(result, ['entries']);
@@ -598,7 +667,7 @@ describeWithDevtoolsExtension('Runtime hosts policy', {hostsPolicy}, context => 
   });
 
   it('allows API calls on non-blocked hosts', async () => {
-    const target = createTarget({type: SDK.Target.Type.FRAME});
+    const target = getBackend(context).createTarget({type: SDK.Target.Type.FRAME});
     target.setInspectedURL(urlString`http://example.com2`);
     {
       const result = await new Promise<object>(cb => context.chrome.devtools?.network.getHAR(cb));
@@ -608,7 +677,7 @@ describeWithDevtoolsExtension('Runtime hosts policy', {hostsPolicy}, context => 
 
   it('defers loading extensions until after navigation from a blocked to an allowed host', async () => {
     const addExtensionSpy = sinon.spy(PanelCommon.ExtensionServer.ExtensionServer.instance(), 'addExtension');
-    const target = createTarget({type: SDK.Target.Type.FRAME});
+    const target = getBackend(context).createTarget({type: SDK.Target.Type.FRAME});
     target.setInspectedURL(blockedUrl);
     assert.isTrue(addExtensionSpy.calledOnce, 'addExtension called once');
     assert.deepEqual(addExtensionSpy.returnValues, [undefined]);
@@ -619,8 +688,7 @@ describeWithDevtoolsExtension('Runtime hosts policy', {hostsPolicy}, context => 
   });
 
   it('does not include blocked hosts in the HAR entries', async () => {
-    Logs.NetworkLog.NetworkLog.instance();
-    const target = createTarget({type: SDK.Target.Type.FRAME});
+    const target = getBackend(context).createTarget({type: SDK.Target.Type.FRAME});
     target.setInspectedURL(urlString`http://example.com2`);
     const networkManager = target.model(SDK.NetworkManager.NetworkManager);
     assert.exists(networkManager);
@@ -628,18 +696,47 @@ describeWithDevtoolsExtension('Runtime hosts policy', {hostsPolicy}, context => 
     createRequest(networkManager, frameId, 'blocked-url-request-id' as Protocol.Network.RequestId, blockedUrl);
     createRequest(networkManager, frameId, 'allowed-url-request-id' as Protocol.Network.RequestId, allowedUrl);
     {
-      const result = await new Promise<object>(cb => context.chrome.devtools?.network.getHAR(cb)) as HAR.Log.LogDTO;
+      const result = await context.chrome.devtools!.network.getHAR() as TestHARLog;
+      assert.exists(result.entries.find(e => e.request.url === allowedUrl));
+      assert.notExists(result.entries.find(e => e.request.url === blockedUrl));
+    }
+    {
+      const result = await new Promise<object>(cb => context.chrome.devtools?.network.getHAR(cb)) as TestHARLog;
       assert.exists(result.entries.find(e => e.request.url === allowedUrl));
       assert.notExists(result.entries.find(e => e.request.url === blockedUrl));
     }
   });
 
-  async function setUpFrame(
-      name: string, url: Platform.DevToolsPath.UrlString, parentFrame?: SDK.ResourceTreeModel.ResourceTreeFrame,
-      executionContextOrigin?: Platform.DevToolsPath.UrlString) {
+  it('does not include requests from blocked targets in the HAR entries even if request URL is allowed', async () => {
+    const parentFrameUrl = allowedUrl;
+    const childFrameUrl = blockedUrl;
+    const parentFrame = await setUpFrame('parent', parentFrameUrl);
+    const childFrame = await setUpFrame('child', childFrameUrl, parentFrame);
+
+    const childTarget = childFrame.resourceTreeModel()?.target();
+    assert.exists(childTarget);
+    childTarget.setInspectedURL(blockedUrl);  // Explicitly set to blocked URL
+
+    const networkManager = childTarget.model(SDK.NetworkManager.NetworkManager);
+    assert.exists(networkManager);
+
+    const frameId = 'child-frame-id' as Protocol.Page.FrameId;
+    const requestUrl = urlString`${allowedUrl}?fromBlockedTarget`;
+    createRequest(networkManager, frameId, 'request-from-blocked-target' as Protocol.Network.RequestId, requestUrl);
+
+    const result = await context.chrome.devtools!.network.getHAR() as TestHARLog;
+    assert.notExists(result.entries.find(e => e.request.url === requestUrl));
+  });
+
+  async function setUpFrame(name: string, url: Platform.DevToolsPath.UrlString,
+                            parentFrame?: SDK.ResourceTreeModel.ResourceTreeFrame,
+                            executionContextOrigin?: Platform.DevToolsPath.UrlString) {
     const parentTarget = parentFrame?.resourceTreeModel()?.target();
-    const target = createTarget({id: `${name}-target-id` as Protocol.Target.TargetID, parentTarget});
+    const target =
+        getBackend(context).createTarget({id: `${name}-target-id` as Protocol.Target.TargetID, parentTarget});
     const frame = parentFrame ? await addChildFrame(target, {url}) : getMainFrame(target, {url});
+
+    target.setInspectedURL(url);
 
     if (executionContextOrigin) {
       executionContextOrigin = urlString`${new URL(executionContextOrigin).origin}`;
@@ -665,8 +762,8 @@ describeWithDevtoolsExtension('Runtime hosts policy', {hostsPolicy}, context => 
     await setUpFrame('child', childFrameUrl, parentFrame);
 
     const result = await new Promise<{result: unknown, error?: {details: unknown[]}}>(
-        r => context.chrome.devtools?.inspectedWindow.eval(
-            '4', {frameURL: childFrameUrl}, (result, error) => r({result, error})));
+        r => context.chrome.devtools?.inspectedWindow.eval('4', {frameURL: childFrameUrl},
+                                                           (result, error) => r({result, error})));
 
     assert.deepEqual(result.error?.details, ['Permission denied']);
   });
@@ -704,6 +801,34 @@ describeWithDevtoolsExtension('Runtime hosts policy', {hostsPolicy}, context => 
     assert.deepEqual(result.result, 4);
   });
 
+  it('evaluates expression via Promise return', async () => {
+    const parentFrameUrl = allowedUrl;
+    const childFrameUrl = urlString`${`${allowedUrl}/2`}`;
+    const childExeContextOrigin = blockedUrl;
+    const parentFrame = await setUpFrame('parent', parentFrameUrl, undefined, parentFrameUrl);
+    const childFrame = await setUpFrame('child', childFrameUrl, parentFrame, childExeContextOrigin);
+
+    const runtimeModel = childFrame.resourceTreeModel()?.target().model(SDK.RuntimeModel.RuntimeModel);
+    assert.exists(runtimeModel);
+    runtimeModel.executionContextCreated({
+      id: 1 as Protocol.Runtime.ExecutionContextId,
+      origin: window.location.origin,
+      name: window.location.origin,
+      uniqueId: window.location.origin,
+      auxData: {frameId: childFrame.id, isDefault: false},
+    });
+    const contentScriptExecutionContext = runtimeModel.executionContext(1);
+    assert.exists(contentScriptExecutionContext);
+    sinon.stub(contentScriptExecutionContext, 'evaluate').returns(Promise.resolve({
+      object: SDK.RemoteObject.RemoteObject.fromLocalObject(4),
+    }));
+
+    const result = await context.chrome.devtools!.inspectedWindow.eval(
+        '4', {frameURL: childFrameUrl, useContentScriptContext: true});
+
+    assert.strictEqual(result, 4);
+  });
+
   it('blocks evaluation on blocked sub-executioncontexts with explicit scriptExecutionContextOrigin', async () => {
     assert.isUndefined(context.chrome.devtools);
 
@@ -734,6 +859,36 @@ describeWithDevtoolsExtension('Runtime hosts policy', {hostsPolicy}, context => 
     assert.deepEqual(result.error?.details, ['Permission denied']);
   });
 
+  it('blocks evaluation on other extension execution contexts', async () => {
+    assert.isUndefined(context.chrome.devtools);
+
+    const parentFrameUrl = allowedUrl;
+    const parentFrame = await setUpFrame('parent', parentFrameUrl, undefined, parentFrameUrl);
+
+    // Yield to the microtask queue to allow the extension to be initialized.
+    await new Promise(r => setTimeout(r, 0));
+
+    // Create a non-default context with a different extension origin.
+    const otherExtensionOrigin = urlString`chrome-extension://other-extension`;
+    const runtimeModel = parentFrame.resourceTreeModel()?.target().model(SDK.RuntimeModel.RuntimeModel);
+    assert.exists(runtimeModel);
+    runtimeModel.executionContextCreated({
+      id: 1 as Protocol.Runtime.ExecutionContextId,
+      origin: otherExtensionOrigin,
+      name: otherExtensionOrigin,
+      uniqueId: otherExtensionOrigin,
+      auxData: {frameId: parentFrame.id, isDefault: false},
+    });
+    const result = await new Promise<{result: unknown, error?: {details: unknown[]}}>(
+        r => context.chrome.devtools?.inspectedWindow.eval(
+            // The typings don't match the implementation, so we need to cast to any here to make ts happy.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            '4', {frameURL: parentFrameUrl, scriptExecutionContext: otherExtensionOrigin} as any,
+            (result, error) => r({result, error})));
+
+    assert.deepEqual(result.error?.details, ['Permission denied']);
+  });
+
   it('blocks evaluation on blocked sub-executioncontexts', async () => {
     assert.isUndefined(context.chrome.devtools);
 
@@ -744,15 +899,15 @@ describeWithDevtoolsExtension('Runtime hosts policy', {hostsPolicy}, context => 
     await setUpFrame('child', childFrameUrl, parentFrame, childExeContextOrigin);
 
     const result = await new Promise<{result: unknown, error?: {details: unknown[]}}>(
-        r => context.chrome.devtools?.inspectedWindow.eval(
-            '4', {frameURL: childFrameUrl}, (result, error) => r({result, error})));
+        r => context.chrome.devtools?.inspectedWindow.eval('4', {frameURL: childFrameUrl},
+                                                           (result, error) => r({result, error})));
 
     assert.deepEqual(result.error?.details, ['Permission denied']);
   });
 
-  async function createUISourceCode(
-      project: Bindings.ContentProviderBasedProject.ContentProviderBasedProject, url: Platform.DevToolsPath.UrlString,
-      contentType = Common.ResourceType.resourceTypes.Document) {
+  async function createUISourceCode(project: Bindings.ContentProviderBasedProject.ContentProviderBasedProject,
+                                    url: Platform.DevToolsPath.UrlString,
+                                    contentType = Common.ResourceType.resourceTypes.Document) {
     const mimeType = 'text/html';
     const dataProvider = () =>
         Promise.resolve(new TextUtils.ContentData.ContentData('content', /* isBase64 */ false, mimeType));
@@ -763,12 +918,12 @@ describeWithDevtoolsExtension('Runtime hosts policy', {hostsPolicy}, context => 
   }
 
   it('blocks getting resource contents on blocked urls', async () => {
-    const target = createTarget({id: 'target' as Protocol.Target.TargetID});
+    const target = getBackend(context).createTarget({id: 'target' as Protocol.Target.TargetID});
     target.setInspectedURL(allowedUrl);
 
     sinon.stub(Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding, 'instance')
-        .returns(sinon.createStubInstance(
-            Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding, {scriptsForUISourceCode: []}));
+        .returns(sinon.createStubInstance(Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding,
+                                          {scriptsForUISourceCode: []}));
     const project = new Bindings.ContentProviderBasedProject.ContentProviderBasedProject(
         Workspace.Workspace.WorkspaceImpl.instance(), target.id(), Workspace.Workspace.projectTypes.Network, '',
         false /* isServiceProject */);
@@ -776,21 +931,60 @@ describeWithDevtoolsExtension('Runtime hosts policy', {hostsPolicy}, context => 
     await createUISourceCode(project, allowedUrl);
 
     assert.exists(context.chrome.devtools);
-    const resources =
-        await new Promise<Chrome.DevTools.Resource[]>(r => context.chrome.devtools?.inspectedWindow.getResources(r));
+    const resources = await context.chrome.devtools!.inspectedWindow.getResources();
     assert.deepEqual(resources.map(r => r.url), [allowedUrl]);
 
-    const resourceContents = await Promise.all(resources.map(
-        resource => new Promise<{url: string, content?: string, encoding?: string}>(
-            r => resource.getContent((content, encoding) => r({url: resource.url, content, encoding})))));
+    const resourceContentsWithCallback = await Promise.all(
+        resources.map(resource => new Promise<{url: string, content?: string, encoding?: string}>(
+                          r => resource.getContent((content, encoding) => r({url: resource.url, content, encoding})))));
 
-    assert.deepEqual(resourceContents, [
+    assert.deepEqual(resourceContentsWithCallback, [
+      {url: allowedUrl, content: 'content', encoding: ''},
+    ]);
+
+    const resourceContentsWithPromise = await Promise.all(resources.map(async resource => {
+      const {content, encoding} = await resource.getContent();
+      return {url: resource.url, content, encoding};
+    }));
+
+    assert.deepEqual(resourceContentsWithPromise, [
       {url: allowedUrl, content: 'content', encoding: ''},
     ]);
   });
 
+  it('blocks getting resource contents on allowed urls if target is blocked', async () => {
+    const parentTarget = getBackend(context).createTarget({id: 'parent' as Protocol.Target.TargetID});
+    parentTarget.setInspectedURL(allowedUrl);
+
+    const blockedTarget = getBackend(context).createTarget({id: 'blocked-target' as Protocol.Target.TargetID});
+    blockedTarget.setInspectedURL(blockedUrl);
+    sinon.stub(blockedTarget, 'inspectedURL').returns(blockedUrl);
+
+    sinon.stub(Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding, 'instance')
+        .returns(sinon.createStubInstance(Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding,
+                                          {scriptsForUISourceCode: []}));
+
+    const project = new Bindings.ContentProviderBasedProject.ContentProviderBasedProject(
+        Workspace.Workspace.WorkspaceImpl.instance(), blockedTarget.id(), Workspace.Workspace.projectTypes.Network, '',
+        false /* isServiceProject */);
+
+    Bindings.NetworkProject.NetworkProject.setTargetForProject(project, blockedTarget);
+
+    const uniqueAllowedUrl = urlString`${allowedUrl}?uniqueResourceTest`;
+
+    // Stub targetForUISourceCode to ensure it returns blockedTarget for our unique URL
+    const targetForUISourceCodeStub = sinon.stub(Bindings.NetworkProject.NetworkProject, 'targetForUISourceCode');
+    targetForUISourceCodeStub.returns(blockedTarget);
+
+    await createUISourceCode(project, uniqueAllowedUrl);
+
+    assert.exists(context.chrome.devtools);
+    const resources = await context.chrome.devtools!.inspectedWindow.getResources();
+    assert.notExists(resources.find(r => r.url === uniqueAllowedUrl));
+  });
+
   it('allows arbitrary schemes in sourceURL comments, as long as the inspected target is allowed', async () => {
-    const target = createTarget({id: 'target' as Protocol.Target.TargetID});
+    const target = getBackend(context).createTarget({id: 'target' as Protocol.Target.TargetID});
     target.setInspectedURL(allowedUrl);
 
     const script = sinon.createStubInstance(SDK.Script.Script, {target, contentURL: blockedUrl});
@@ -815,10 +1009,24 @@ describeWithDevtoolsExtension('Runtime hosts policy', {hostsPolicy}, context => 
     assert.deepEqual(resources.map(r => r.url), [blockedUrl, allowedUrl]);
   });
 
+  const requestToManager = new Map<SDK.NetworkRequest.NetworkRequest, SDK.NetworkManager.NetworkManager>();
+
   function createRequest(
-      networkManager: SDK.NetworkManager.NetworkManager, frameId: Protocol.Page.FrameId,
-      requestId: Protocol.Network.RequestId, url: Platform.DevToolsPath.UrlString): void {
-    const request = SDK.NetworkRequest.NetworkRequest.create(requestId, url, url, frameId, null, null, undefined);
+      networkManager: SDK.NetworkManager.NetworkManager,
+      frameId: Protocol.Page.FrameId,
+      requestId: Protocol.Network.RequestId,
+      url: Platform.DevToolsPath.UrlString,
+      responseHeaders: SDK.NetworkRequest.NameValue[] = [],
+      initiator: Protocol.Network.Initiator|null = null,
+      ): void {
+    if (!(SDK.NetworkManager.NetworkManager.forRequest as unknown as {isSinonProxy?: boolean}).isSinonProxy) {
+      requestToManager.clear();
+      sinon.stub(SDK.NetworkManager.NetworkManager, 'forRequest')
+          .callsFake(request => requestToManager.get(request) || null);
+    }
+    const request = SDK.NetworkRequest.NetworkRequest.create(requestId, url, url, frameId, null, initiator, undefined);
+    request.responseHeaders = responseHeaders;
+    requestToManager.set(request, networkManager);
     const dataProvider = () =>
         Promise.resolve(new TextUtils.ContentData.ContentData('content', false, request.mimeType));
     request.setContentDataProvider(dataProvider);
@@ -827,9 +1035,33 @@ describeWithDevtoolsExtension('Runtime hosts policy', {hostsPolicy}, context => 
     networkManager.dispatchEventToListeners(SDK.NetworkManager.Events.RequestFinished, request);
   }
 
+  it('can get request content', async () => {
+    const frameId = 'frame-id' as Protocol.Page.FrameId;
+    const target = getBackend(context).createTarget({id: 'target' as Protocol.Target.TargetID});
+    target.setInspectedURL(allowedUrl);
+
+    const networkManager = target.model(SDK.NetworkManager.NetworkManager);
+    assert.exists(networkManager);
+    createRequest(networkManager, frameId, 'request-id' as Protocol.Network.RequestId, allowedUrl);
+
+    const harLog = await context.chrome.devtools!.network.getHAR() as TestHARLog;
+    assert.lengthOf(harLog.entries, 1);
+    const request = harLog.entries[0] as Chrome.DevTools.Request;
+
+    const promise = request.getContent();
+    assert.exists(promise);
+    const contentData = await promise;
+    assert.deepEqual(contentData, {content: 'content', encoding: ''});
+
+    const callbackData = await new Promise<{content: string, encoding: string}>(resolve => {
+      request.getContent((content, encoding) => resolve({content, encoding}));
+    });
+    assert.deepEqual(callbackData, {content: 'content', encoding: ''});
+  });
+
   it('does not include blocked hosts in onRequestFinished event listener', async () => {
     const frameId = 'frame-id' as Protocol.Page.FrameId;
-    const target = createTarget({id: 'target' as Protocol.Target.TargetID});
+    const target = getBackend(context).createTarget({id: 'target' as Protocol.Target.TargetID});
     target.setInspectedURL(allowedUrl);
 
     const requests: HAR.Log.EntryDTO[] = [];
@@ -837,11 +1069,10 @@ describeWithDevtoolsExtension('Runtime hosts policy', {hostsPolicy}, context => 
     // which result type mismatch due to the Request type not containing the respective fields in HAR.Log.EntryDTO.
     // Therefore, cast through unknown to resolve this.
     // TODO: (crbug.com/1482763) Update Request type to match HAR.Log.EntryDTO
-    context.chrome.devtools?.network.onRequestFinished.addListener(
-        r => requests.push(r as unknown as HAR.Log.EntryDTO));
-    await waitForFunction(
-        () => PanelCommon.ExtensionServer.ExtensionServer.instance().hasSubscribers(
-            Extensions.ExtensionAPI.PrivateAPI.Events.NetworkRequestFinished));
+    context.chrome.devtools?.network.onRequestFinished.addListener(r =>
+                                                                       requests.push(r as unknown as HAR.Log.EntryDTO));
+    await waitForFunction(() => PanelCommon.ExtensionServer.ExtensionServer.instance().hasSubscribers(
+                              Extensions.ExtensionAPI.PrivateAPI.Events.NetworkRequestFinished));
 
     const networkManager = target.model(SDK.NetworkManager.NetworkManager);
     assert.exists(networkManager);
@@ -855,13 +1086,175 @@ describeWithDevtoolsExtension('Runtime hosts policy', {hostsPolicy}, context => 
     assert.notExists(requests.find(e => e.request.url === blockedUrl));
   });
 
-  it('blocks setting resource contents on blocked urls', async () => {
+  it('omits getHAR entries whose redirectURL references a blocked host', async () => {
+    Logs.NetworkLog.NetworkLog.instance();
+    const frameId = 'frame-id' as Protocol.Page.FrameId;
     const target = createTarget({id: 'target' as Protocol.Target.TargetID});
     target.setInspectedURL(allowedUrl);
 
+    const networkManager = target.model(SDK.NetworkManager.NetworkManager);
+    assert.exists(networkManager);
+
+    const blockedRedirectUrl = urlString`${`${blockedUrl}/secret?token=abc`}`;
+    // Entry with a redirect to a blocked URL — should be omitted.
+    createRequest(networkManager, frameId, 'redirect-to-blocked' as Protocol.Network.RequestId, allowedUrl,
+                  [{name: 'Location', value: `${blockedRedirectUrl}`}]);
+    // Entry with no blocked references — should be kept.
+    createRequest(networkManager, frameId, 'clean-entry' as Protocol.Network.RequestId, allowedUrl);
+
+    const result = await context.chrome.devtools!.network.getHAR() as HAR.Log.LogDTO;
+    assert.lengthOf(result.entries, 1);
+    assert.notExists(result.entries.find(e => e.response.headers.some(h => h.name === 'Location')));
+  });
+
+  it('omits getHAR entries whose initiator references a blocked host', async () => {
+    Logs.NetworkLog.NetworkLog.instance();
+    const frameId = 'frame-id' as Protocol.Page.FrameId;
+    const target = createTarget({id: 'target' as Protocol.Target.TargetID});
+    target.setInspectedURL(allowedUrl);
+
+    const networkManager = target.model(SDK.NetworkManager.NetworkManager);
+    assert.exists(networkManager);
+
+    const blockedScriptUrl = urlString`${`${blockedUrl}/app.js`}`;
+    // Entry whose initiator URL is blocked — should be omitted.
+    createRequest(networkManager, frameId, 'blocked-initiator' as Protocol.Network.RequestId, allowedUrl, [], {
+      type: Protocol.Network.InitiatorType.Script,
+      url: blockedScriptUrl,
+      stack: {
+        callFrames: [{
+          functionName: 'leakyFn',
+          scriptId: '1' as Protocol.Runtime.ScriptId,
+          url: blockedScriptUrl,
+          lineNumber: 1,
+          columnNumber: 0,
+        }],
+      },
+    });
+    // Entry with no blocked references — should be kept.
+    createRequest(networkManager, frameId, 'clean-entry' as Protocol.Network.RequestId, allowedUrl);
+
+    const result = await context.chrome.devtools!.network.getHAR() as HAR.Log.LogDTO;
+    assert.lengthOf(result.entries, 1);
+    assert.isNull(result.entries[0]._initiator);
+  });
+
+  it('omits getHAR entries with Location, Content-Location, Refresh, or Link headers referencing blocked hosts',
+     async () => {
+       Logs.NetworkLog.NetworkLog.instance();
+       const frameId = 'frame-id' as Protocol.Page.FrameId;
+       const target = createTarget({id: 'target' as Protocol.Target.TargetID});
+       target.setInspectedURL(allowedUrl);
+
+       const networkManager = target.model(SDK.NetworkManager.NetworkManager);
+       assert.exists(networkManager);
+
+       const blockedRedirectUrl = urlString`${`${blockedUrl}/target-page`}`;
+       // Each of these should cause the entry to be omitted.
+       createRequest(networkManager, frameId, 'content-loc' as Protocol.Network.RequestId, allowedUrl,
+                     [{name: 'Content-Location', value: `${blockedRedirectUrl}`}]);
+       createRequest(networkManager, frameId, 'refresh' as Protocol.Network.RequestId, allowedUrl,
+                     [{name: 'Refresh', value: `5; url=${blockedRedirectUrl}`}]);
+       createRequest(networkManager, frameId, 'link' as Protocol.Network.RequestId, allowedUrl,
+                     [{name: 'Link', value: `<${blockedRedirectUrl}>; rel=preload`}]);
+       // This entry references only allowed URLs — should be kept.
+       createRequest(networkManager, frameId, 'clean' as Protocol.Network.RequestId, allowedUrl,
+                     [{name: 'Link', value: `<${allowedUrl}>; rel=stylesheet`}]);
+
+       const result = await context.chrome.devtools!.network.getHAR() as HAR.Log.LogDTO;
+       assert.lengthOf(result.entries, 1);
+       assert.strictEqual(result.entries[0].response.headers.find(h => h.name === 'Link')?.value,
+                          `<${allowedUrl}>; rel=stylesheet`);
+     });
+
+  it('omits onRequestFinished entries that reference blocked hosts in redirectURL or initiator', async () => {
+    const frameId = 'frame-id' as Protocol.Page.FrameId;
+    const target = createTarget({id: 'target' as Protocol.Target.TargetID});
+    target.setInspectedURL(allowedUrl);
+
+    const requests: HAR.Log.EntryDTO[] = [];
+    context.chrome.devtools?.network.onRequestFinished.addListener(r =>
+                                                                       requests.push(r as unknown as HAR.Log.EntryDTO));
+    await waitForFunction(() => PanelCommon.ExtensionServer.ExtensionServer.instance().hasSubscribers(
+                              Extensions.ExtensionAPI.PrivateAPI.Events.NetworkRequestFinished));
+
+    const networkManager = target.model(SDK.NetworkManager.NetworkManager);
+    assert.exists(networkManager);
+
+    const blockedRedirectUrl = urlString`${`${blockedUrl}/redirect-target?code=xyz`}`;
+    const blockedScriptUrl = urlString`${`${blockedUrl}/subframe.js`}`;
+    // Entry redirecting to blocked URL — should be omitted.
+    createRequest(networkManager, frameId, 'redirect-blocked' as Protocol.Network.RequestId, allowedUrl,
+                  [{name: 'Location', value: `${blockedRedirectUrl}`}]);
+    // Entry with blocked initiator — should be omitted.
+    createRequest(networkManager, frameId, 'initiator-blocked' as Protocol.Network.RequestId, allowedUrl, [], {
+      type: Protocol.Network.InitiatorType.Script,
+      url: blockedScriptUrl,
+      stack: {
+        callFrames: [{
+          functionName: 'fn',
+          scriptId: '1' as Protocol.Runtime.ScriptId,
+          url: blockedScriptUrl,
+          lineNumber: 10,
+          columnNumber: 1,
+        }],
+      },
+    });
+    // Clean entry — should be delivered.
+    createRequest(networkManager, frameId, 'clean-entry' as Protocol.Network.RequestId, allowedUrl);
+
+    await waitForFunction(() => requests.length >= 1);
+    // Give a tick for any additional events to arrive.
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    assert.lengthOf(requests, 1);
+    assert.strictEqual(requests[0].request.url, allowedUrl);
+    assert.strictEqual(requests[0].response.redirectURL, '');
+  });
+
+  it('does not include requests from blocked targets in onRequestFinished event listener even if request URL is allowed',
+     async () => {
+       const frameId = 'frame-id' as Protocol.Page.FrameId;
+
+       const allowedTarget = getBackend(context).createTarget({id: 'allowed-target' as Protocol.Target.TargetID});
+       allowedTarget.setInspectedURL(allowedUrl);
+
+       const blockedTarget = getBackend(context).createTarget({id: 'blocked-target' as Protocol.Target.TargetID});
+       blockedTarget.setInspectedURL(blockedUrl);
+
+       const requestUrlFromBlocked = urlString`${allowedUrl}?fromBlockedTarget`;
+       const requestUrlFromAllowed = urlString`${allowedUrl}?fromAllowedTarget`;
+
+       const requests: HAR.Log.EntryDTO[] = [];
+       context.chrome.devtools?.network.onRequestFinished.addListener(
+           r => requests.push(r as unknown as HAR.Log.EntryDTO));
+       await waitForFunction(() => PanelCommon.ExtensionServer.ExtensionServer.instance().hasSubscribers(
+                                 Extensions.ExtensionAPI.PrivateAPI.Events.NetworkRequestFinished));
+
+       const networkManager = blockedTarget.model(SDK.NetworkManager.NetworkManager);
+       assert.exists(networkManager);
+
+       createRequest(networkManager, frameId, 'request-from-blocked-target' as Protocol.Network.RequestId,
+                     requestUrlFromBlocked);
+
+       const allowedNetworkManager = allowedTarget.model(SDK.NetworkManager.NetworkManager);
+       assert.exists(allowedNetworkManager);
+       createRequest(allowedNetworkManager, frameId, 'request-from-allowed-target' as Protocol.Network.RequestId,
+                     requestUrlFromAllowed);
+
+       await waitForFunction(() => requests.length >= 1);
+
+       assert.lengthOf(requests, 1);
+       assert.strictEqual(requests[0].request.url, requestUrlFromAllowed);
+     });
+
+  it('blocks setting resource contents on blocked urls', async () => {
+    const target = getBackend(context).createTarget({id: 'target' as Protocol.Target.TargetID});
+    target.setInspectedURL(allowedUrl);
+
     sinon.stub(Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding, 'instance')
-        .returns(sinon.createStubInstance(
-            Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding, {scriptsForUISourceCode: []}));
+        .returns(sinon.createStubInstance(Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding,
+                                          {scriptsForUISourceCode: []}));
     const project = new Bindings.ContentProviderBasedProject.ContentProviderBasedProject(
         Workspace.Workspace.WorkspaceImpl.instance(), target.id(), Workspace.Workspace.projectTypes.Network, '',
         false /* isServiceProject */);
@@ -869,38 +1262,115 @@ describeWithDevtoolsExtension('Runtime hosts policy', {hostsPolicy}, context => 
     await createUISourceCode(project, allowedUrl);
 
     assert.exists(context.chrome.devtools);
-    const resources =
-        await new Promise<Chrome.DevTools.Resource[]>(r => context.chrome.devtools?.inspectedWindow.getResources(r));
+    const resources = await context.chrome.devtools!.inspectedWindow.getResources();
     assert.deepEqual(resources.map(r => r.url), [allowedUrl]);
 
     assert.deepEqual(project.uiSourceCodeForURL(allowedUrl)?.content(), 'content');
     assert.deepEqual(project.uiSourceCodeForURL(blockedUrl)?.content(), 'content');
-    const responses = await Promise.all(resources.map(
-                          resource => new Promise<Object|undefined>(r => resource.setContent('modified', true, r)))) as
+    const responsesWithCallback =
+        await Promise.all(
+            resources.map(resource => new Promise<object|undefined>(r => resource.setContent('modified', true, r)))) as
         Array<undefined|{code: string, details: string[]}>;
 
-    assert.deepEqual(responses.map(response => response?.code), ['OK']);
-    assert.deepEqual(responses.map(response => response?.details), [[]]);
+    assert.deepEqual(responsesWithCallback.map(response => response?.code), ['OK']);
+    assert.deepEqual(responsesWithCallback.map(response => response?.details), [[]]);
 
     assert.deepEqual(project.uiSourceCodeForURL(allowedUrl)?.content(), 'modified');
+    assert.deepEqual(project.uiSourceCodeForURL(blockedUrl)?.content(), 'content');
+
+    // Test promise version
+    await Promise.all(resources.map(resource => resource.setContent('modified_again', true)));
+
+    assert.deepEqual(project.uiSourceCodeForURL(allowedUrl)?.content(), 'modified_again');
     assert.deepEqual(project.uiSourceCodeForURL(blockedUrl)?.content(), 'content');
   });
 
   it('blocks network.addRequestHeaders when runtime_blocked_hosts is set', async () => {
-    const target = createTarget({type: SDK.Target.Type.FRAME});
+    const target = getBackend(context).createTarget({type: SDK.Target.Type.FRAME});
     target.setInspectedURL(allowedUrl);
     assert.exists(context.chrome.devtools);
 
     const setHeadersSpy = sinon.spy(SDK.NetworkManager.MultitargetNetworkManager.instance(), 'setExtraHTTPHeaders');
 
-    const networkApi =
-        context.chrome.devtools?.network as unknown as {addRequestHeaders(headers: Record<string, string>): void};
+    const networkApi = context.chrome.devtools?.network as Extensions.ExtensionAPI.PrivateAPI.Network;
     networkApi.addRequestHeaders({'X-Test': '1'});
-    // Round-trip a callback command on the same MessagePort to ensure the
+    // Round-trip a command on the same MessagePort to ensure the
     // addRequestHeaders message has been processed before we assert.
-    await new Promise<object>(cb => context.chrome.devtools?.network.getHAR(cb));
+    await context.chrome.devtools!.network.getHAR();
 
     sinon.assert.notCalled(setHeadersSpy);
+  });
+});
+
+describe('addRequestHeaders security', () => {
+  const context = setupDevtoolsExtensionHooks();
+  // Helper: sets headers on a permitted page, navigates to the given URL, then
+  // manually triggers modelAdded on a new target and verifies that the injected
+  // headers are NOT applied via CDP.
+  async function assertHeadersNotAppliedAfterNavigation(
+      navigateToUrl: Platform.DevToolsPath.UrlString,
+      injectedHeaders: Record<string, string>,
+      ): Promise<void> {
+    const target = createTarget({type: SDK.Target.Type.FRAME});
+    target.setInspectedURL(urlString`http://example.com`);
+    assert.exists(context.chrome.devtools);
+
+    const multitargetManager = SDK.NetworkManager.MultitargetNetworkManager.instance();
+
+    // Set headers while on a permitted page.
+    const networkApi = context.chrome.devtools?.network as Extensions.ExtensionAPI.PrivateAPI.Network;
+    networkApi.addRequestHeaders(injectedHeaders);
+    await context.chrome.devtools?.network.getHAR(() => {});
+
+    // Navigate to a URL where the extension should NOT have access.
+    target.setInspectedURL(navigateToUrl);
+
+    // Simulate a new target attaching (e.g., OOPIF or service worker).
+    // Set up the spy before manually calling modelAdded so we capture exactly
+    // what headers get pushed via CDP.
+    const newTarget = createTarget({type: SDK.Target.Type.FRAME, parentTarget: target});
+    const networkAgent = newTarget.networkAgent();
+    const cdpSpy = sinon.spy(networkAgent, 'invoke_setExtraHTTPHeaders');
+    const networkManager = newTarget.model(SDK.NetworkManager.NetworkManager);
+    assert.exists(cdpSpy);
+    assert.exists(networkManager);
+    assert.exists(multitargetManager);
+    multitargetManager.modelAdded(networkManager);
+
+    // Confirm invoke_setExtraHTTPHeaders was called by modelAdded.
+    sinon.assert.called(cdpSpy);
+    const appliedHeaders = cdpSpy.lastCall.args[0].headers;
+    for (const key of Object.keys(injectedHeaders)) {
+      assert.notProperty(appliedHeaders, key,
+                         `Header "${key}" was applied to a target on ${navigateToUrl} — ` +
+                             `extension-set headers persisted across navigation to a disallowed URL`);
+    }
+  }
+
+  it('extension-injected headers must not leak to chrome:// targets after navigation', async () => {
+    await assertHeadersNotAppliedAfterNavigation(
+        urlString`chrome://settings`,
+        {Cookie: 'session=attacker', 'X-CSRF-Token': 'injected'},
+    );
+  });
+
+  it('extension-injected headers must not leak to forbidden-origin targets after navigation', async () => {
+    // Simulate getOriginsForbiddenForExtensions returning a forbidden origin.
+    window.DevToolsAPI = {
+      getOriginsForbiddenForExtensions: () => ['https://addons.example.com'],
+    };
+
+    await assertHeadersNotAppliedAfterNavigation(
+        urlString`https://addons.example.com/extensions`,
+        {Authorization: 'Bearer attacker'},
+    );
+  });
+
+  it('extension-injected headers must not leak to file:// targets without file access', async () => {
+    await assertHeadersNotAppliedAfterNavigation(
+        urlString`file:///etc/passwd`,
+        {'X-Injected': 'value'},
+    );
   });
 });
 
@@ -912,21 +1382,21 @@ describe('ExtensionServer', () => {
     const expectation = urlString`${`${extensionOrigin}/foo`}`;
     assert.isUndefined(
         PanelCommon.ExtensionServer.ExtensionServer.expandResourcePath(extensionOrigin, 'http://example.com/foo'));
-    assert.strictEqual(
-        expectation, PanelCommon.ExtensionServer.ExtensionServer.expandResourcePath(extensionOrigin, expectation));
-    assert.strictEqual(
-        expectation, PanelCommon.ExtensionServer.ExtensionServer.expandResourcePath(extensionOrigin, '/foo'));
-    assert.strictEqual(
-        expectation, PanelCommon.ExtensionServer.ExtensionServer.expandResourcePath(extensionOrigin, 'foo'));
+    assert.strictEqual(expectation,
+                       PanelCommon.ExtensionServer.ExtensionServer.expandResourcePath(extensionOrigin, expectation));
+    assert.strictEqual(expectation,
+                       PanelCommon.ExtensionServer.ExtensionServer.expandResourcePath(extensionOrigin, '/foo'));
+    assert.strictEqual(expectation,
+                       PanelCommon.ExtensionServer.ExtensionServer.expandResourcePath(extensionOrigin, 'foo'));
 
     assert.isUndefined(
         PanelCommon.ExtensionServer.ExtensionServer.expandResourcePath(almostOrigin, 'http://example.com/foo'));
-    assert.strictEqual(
-        expectation, PanelCommon.ExtensionServer.ExtensionServer.expandResourcePath(almostOrigin, expectation));
-    assert.strictEqual(
-        expectation, PanelCommon.ExtensionServer.ExtensionServer.expandResourcePath(almostOrigin, '/foo'));
-    assert.strictEqual(
-        expectation, PanelCommon.ExtensionServer.ExtensionServer.expandResourcePath(almostOrigin, 'foo'));
+    assert.strictEqual(expectation,
+                       PanelCommon.ExtensionServer.ExtensionServer.expandResourcePath(almostOrigin, expectation));
+    assert.strictEqual(expectation,
+                       PanelCommon.ExtensionServer.ExtensionServer.expandResourcePath(almostOrigin, '/foo'));
+    assert.strictEqual(expectation,
+                       PanelCommon.ExtensionServer.ExtensionServer.expandResourcePath(almostOrigin, 'foo'));
   });
 
   it('cannot inspect chrome webstore URLs', () => {
@@ -989,8 +1459,8 @@ describe('ExtensionServer', () => {
   });
 });
 
-function assertIsStatus<T>(value: T|PanelCommon.ExtensionServer.Record):
-    asserts value is PanelCommon.ExtensionServer.Record {
+function assertIsStatus<T>(value: T|
+                           PanelCommon.ExtensionServer.Record): asserts value is PanelCommon.ExtensionServer.Record {
   if (value && typeof value === 'object' && 'code' in value) {
     assert.isTrue(value.code === 'OK' || Boolean(value.isError), `Value ${value} is not a status code`);
   } else {
@@ -998,10 +1468,11 @@ function assertIsStatus<T>(value: T|PanelCommon.ExtensionServer.Record):
   }
 }
 
-describeWithDevtoolsExtension('Wasm extension API', {}, context => {
+describe('Wasm extension API', () => {
+  const context = setupDevtoolsExtensionHooks();
   let stopId: unknown;
   beforeEach(() => {
-    const target = createTarget();
+    const target = getBackend(context).createTarget();
     target.setInspectedURL(urlString`http://example.com`);
     const targetManager = target.targetManager();
     const resourceMapping =
@@ -1103,9 +1574,10 @@ class StubLanguageExtension implements Chrome.DevTools.LanguageExtensionPlugin {
   }
 }
 
-describeWithDevtoolsExtension('Language Extension API', {}, context => {
+describe('Language Extension API', () => {
+  const context = setupDevtoolsExtensionHooks();
   it('reports loaded resources', async () => {
-    const target = createTarget();
+    const target = getBackend(context).createTarget();
     target.setInspectedURL(urlString`http://example.com`);
 
     const pageResourceLoader =
@@ -1132,11 +1604,12 @@ describeWithDevtoolsExtension('Language Extension API', {}, context => {
 });
 
 for (const allowFileAccess of [true, false]) {
-  describeWithDevtoolsExtension(
-      `Language Extension API with {allowFileAccess: ${allowFileAccess}}`, {allowFileAccess}, context => {
+  describe(
+      `Language Extension API with {allowFileAccess: ${allowFileAccess}}`, () => {
+        const context = setupDevtoolsExtensionHooks({allowFileAccess});
         let target: SDK.Target.Target;
         beforeEach(() => {
-          target = createTarget();
+          target = getBackend(context).createTarget();
           const targetManager = target.targetManager();
           const workspace = Workspace.Workspace.WorkspaceImpl.instance();
           const resourceMapping = new Bindings.ResourceMapping.ResourceMapping(targetManager, workspace);
@@ -1162,14 +1635,13 @@ for (const allowFileAccess of [true, false]) {
 
           const debuggerModel = target.model(SDK.DebuggerModel.DebuggerModel);
           assert.isOk(debuggerModel);
-          debuggerModel.parsedScriptSource(
-              '0' as Protocol.Runtime.ScriptId, urlString`file:///source/url`, 0, 0, 100, 100, 0, '', {}, false,
-              'file:///source/url.map', false, false, 200, true, null, null,
-              Protocol.Debugger.ScriptLanguage.JavaScript, [{
-                type: Protocol.Debugger.DebugSymbolsType.SourceMap,
-                externalURL: 'file:///source/url.map',
-              }],
-              null, null);
+          debuggerModel.parsedScriptSource('0' as Protocol.Runtime.ScriptId, urlString`file:///source/url`, 0, 0, 100,
+                                           100, 0, '', {}, false, 'file:///source/url.map', false, false, 200, true,
+                                           null, null, Protocol.Debugger.ScriptLanguage.JavaScript, [{
+                                             type: Protocol.Debugger.DebugSymbolsType.SourceMap,
+                                             externalURL: 'file:///source/url.map',
+                                           }],
+                                           null, null);
 
           sinon.assert.calledOnce(endpointSpy);
           assert.strictEqual(
@@ -1180,7 +1652,22 @@ for (const allowFileAccess of [true, false]) {
       });
 }
 
-describeWithDevtoolsExtension('validate attachSourceMapURL ', {}, context => {
+describe('validate attachSourceMapURL ', () => {
+  const context = setupDevtoolsExtensionHooks();
+  let backend: MockDebuggerBackend;
+  let target: SDK.Target.Target;
+  let debuggerWorkspaceBinding: Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding;
+
+  beforeEach(() => {
+    backend = getBackend(context);
+    mockResourceTree(backend.cdpConnection);
+
+    target = backend.createTarget({type: SDK.Target.Type.FRAME});
+    debuggerWorkspaceBinding = backend.universe.debuggerWorkspaceBinding;
+    sinon.stub(Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding, 'instance')
+        .returns(debuggerWorkspaceBinding);
+  });
+
   it('correctly attaches a source map to a registered script', async () => {
     const sourceRoot = 'http://example.com';
     const scriptName = 'script.ts';
@@ -1205,20 +1692,6 @@ describeWithDevtoolsExtension('validate attachSourceMapURL ', {}, context => {
       file: `${scriptInfo.url}.map`,
     };
 
-    const target = createTarget({type: SDK.Target.Type.FRAME});
-    const targetManager = target.targetManager();
-    const workspace = Workspace.Workspace.WorkspaceImpl.instance();
-    const resourceMapping = new Bindings.ResourceMapping.ResourceMapping(targetManager, workspace);
-    const ignoreListManager = Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
-    const debuggerWorkspaceBinding = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
-      forceNew: true,
-      resourceMapping,
-      targetManager,
-      ignoreListManager,
-      workspace,
-    });
-    const backend = new MockProtocolBackend();
-
     // Before any script is registered, there shouldn't be any uiSourceCodes.
     assert.isNull(Workspace.Workspace.WorkspaceImpl.instance().uiSourceCodeForURL(scriptInfo.url));
 
@@ -1233,9 +1706,7 @@ describeWithDevtoolsExtension('validate attachSourceMapURL ', {}, context => {
 
     assert.exists(context.chrome.devtools);
 
-    const resources = await new Promise<Chrome.DevTools.Resource[]>(r => {
-      context.chrome.devtools?.inspectedWindow.getResources(r);
-    });
+    const resources = await context.chrome.devtools!.inspectedWindow.getResources();
 
     // Validate that resource is registered.
     assert.isTrue(resources && resources.length > 0);
@@ -1254,9 +1725,10 @@ describeWithDevtoolsExtension('validate attachSourceMapURL ', {}, context => {
   });
 });
 
-describeWithDevtoolsExtension('Extension panel with non-ASCII titles', {}, context => {
+describe('Extension panel with non-ASCII titles', () => {
+  const context = setupDevtoolsExtensionHooks();
   beforeEach(() => {
-    createTarget().setInspectedURL(urlString`http://example.com`);
+    getBackend(context).createTarget().setInspectedURL(urlString`http://example.com`);
   });
 
   it('creates a panel with a title containing only non-ASCII characters', async () => {
@@ -1264,10 +1736,366 @@ describeWithDevtoolsExtension('Extension panel with non-ASCII titles', {}, conte
         resolve => context.chrome.devtools?.panels.create('\u4E2D\u6587', 'test.png', 'test.html', resolve));
     assert.exists(panel);
   });
+});
 
-  it('creates a panel with a title containing mixed ASCII and non-ASCII characters', async () => {
-    const panel = await new Promise<Chrome.DevTools.ExtensionPanel>(
-        resolve => context.chrome.devtools?.panels.create('Test\u4E2D\u6587Panel', 'test.png', 'test.html', resolve));
-    assert.exists(panel);
+describe('Extension Panels', () => {
+  const context = setupDevtoolsExtensionHooks();
+  async function setUpFrame(name: string, url: Platform.DevToolsPath.UrlString,
+                            parentFrame?: SDK.ResourceTreeModel.ResourceTreeFrame,
+                            executionContextOrigin?: Platform.DevToolsPath.UrlString) {
+    const parentTarget = parentFrame?.resourceTreeModel()?.target();
+    const target =
+        getBackend(context).createTarget({id: `${name}-target-id` as Protocol.Target.TargetID, parentTarget});
+    const frame = parentFrame ? await addChildFrame(target, {url}) : getMainFrame(target, {url});
+
+    target.setInspectedURL(url);
+
+    if (executionContextOrigin) {
+      executionContextOrigin = urlString`${new URL(executionContextOrigin).origin}`;
+      const parentRuntimeModel = target.model(SDK.RuntimeModel.RuntimeModel);
+      assert.exists(parentRuntimeModel);
+      parentRuntimeModel.executionContextCreated({
+        id: 0 as Protocol.Runtime.ExecutionContextId,
+        origin: executionContextOrigin,
+        name: executionContextOrigin,
+        uniqueId: executionContextOrigin,
+        auxData: {frameId: frame.id, isDefault: true},
+      });
+    }
+
+    return {frame, target};
+  }
+
+  beforeEach(async () => {
+    const {target} = await setUpFrame('main', urlString`http://example.com`, undefined, urlString`http://example.com`);
+    const runtimeModel = target.model(SDK.RuntimeModel.RuntimeModel);
+    assert.exists(runtimeModel);
+    const executionContext = runtimeModel.defaultExecutionContext();
+    assert.exists(executionContext);
+    sinon.stub(executionContext, 'evaluate').callsFake(async (options: SDK.RuntimeModel.EvaluationOptions) => {
+      return {
+        // Return the expression itself as the object's value so we can verify it was passed correctly.
+        object: SDK.RemoteObject.RemoteObject.fromLocalObject(options.expression),
+      };
+    });
+    sinon.stub(UI.UIUtils.Renderer, 'render').callsFake(async (object: Object) => {
+      const element = document.createElement('div');
+      if (object instanceof SDK.RemoteObject.RemoteObject) {
+        element.textContent = String(object.value);
+      } else {
+        element.textContent = 'mock-rendered';
+      }
+      return {element, forceSelect: () => {}};
+    });
+  });
+
+  /**
+   * Verifies that DevTools extension panels can be successfully created
+   * using both Promise-based and Callback-based API styles, supporting
+   * titles with mixed ASCII and non-ASCII characters.
+   */
+  it('can create a panel', async () => {
+    const assertHasPanelWithTitle = (title: string) => {
+      const extensionServer = PanelCommon.ExtensionServer.ExtensionServer.instance();
+      // Access the private `clientObjects` field via `Reflect.get()` because extension
+      // panels created via `chrome.devtools.panels.create()` are registered in
+      // `ExtensionServer.clientObjects`, but are not added to
+      // `UI.InspectorView.InspectorView:instance().tabbedPane` until shown.
+      const clientObjects = Reflect.get(extensionServer, 'clientObjects') as Map<string, UI.View.View>;
+      let found = false;
+      for (const obj of clientObjects.values()) {
+        if (typeof obj.title === 'function' && obj.title() === title) {
+          found = true;
+          break;
+        }
+      }
+      assert.isTrue(found, `Expected to find a panel view with title "${title}"`);
+    };
+
+    // Create a panel using the Promise-based `chrome.devtools.panels.create` API with a mixed ASCII/non-ASCII title.
+    const panelFromPromise =
+        await context.chrome.devtools!.panels.create('Test\u4E2D\u6587PanelPromise', 'test.png', 'test.html');
+    assert.exists(panelFromPromise);
+    assertHasPanelWithTitle('Test\u4E2D\u6587PanelPromise');
+
+    // Create a panel using the Callback-based `chrome.devtools.panels.create` API with a mixed ASCII/non-ASCII title.
+    const panelFromCallback = await new Promise<Chrome.DevTools.ExtensionPanel>(resolve => {
+      context.chrome.devtools!.panels.create('Test\u4E2D\u6587PanelCallback', 'test.png', 'test.html', resolve);
+    });
+    assert.exists(panelFromCallback);
+    assertHasPanelWithTitle('Test\u4E2D\u6587PanelCallback');
+
+    // Create a panel using the Promise-based `chrome.devtools.panels.create` API with a title containing only non-ASCII characters.
+    const panelFromPromiseOnlyNonAscii =
+        await context.chrome.devtools!.panels.create('\u4E2D\u6587', 'test.png', 'test.html');
+    assert.exists(panelFromPromiseOnlyNonAscii);
+    assertHasPanelWithTitle('\u4E2D\u6587');
+
+    // Create a panel using the Callback-based `chrome.devtools.panels.create` API with a title containing only non-ASCII characters.
+    const panelFromCallbackOnlyNonAscii = await new Promise<Chrome.DevTools.ExtensionPanel>(resolve => {
+      context.chrome.devtools!.panels.create('\u4E2D\u6587', 'test.png', 'test.html', resolve);
+    });
+    assert.exists(panelFromCallbackOnlyNonAscii);
+    assertHasPanelWithTitle('\u4E2D\u6587');
+  });
+
+  /**
+   * Verifies that `openResource` successfully opens the specified resource
+   * URL and reveals it in the editor, testing various overload signatures
+   * (Promise-based, Callback-based, with/without column numbers) and error handling.
+   */
+  it('can open a resource', async () => {
+    const workspace = Workspace.Workspace.WorkspaceImpl.instance();
+    const mockUiLocation = {} as Workspace.UISourceCode.UILocation;
+    const mockUISourceCode = sinon.createStubInstance(Workspace.UISourceCode.UISourceCode);
+    mockUISourceCode.uiLocation.returns(mockUiLocation);
+
+    const uiSourceCodeStub = sinon.stub(workspace, 'uiSourceCodeForURL').returns(mockUISourceCode);
+    const revealRegistry = Common.Revealer.RevealerRegistry.instance();
+    const revealStub = sinon.stub(revealRegistry, 'reveal').resolves();
+
+    const url = urlString`http://example.com/script.js`;
+
+    // Local helper to assert that the stubs are called correctly.
+    const assertOpenSuccess =
+        async (lineNumber: number, columnNumber: number, triggerCall: () => Promise<unknown>| void) => {
+      uiSourceCodeStub.resetHistory();
+      revealStub.resetHistory();
+      mockUISourceCode.uiLocation.resetHistory();
+      await triggerCall();
+      sinon.assert.calledWith(uiSourceCodeStub, url);
+      sinon.assert.calledWith(mockUISourceCode.uiLocation, lineNumber, columnNumber);
+      sinon.assert.calledWith(revealStub, mockUiLocation);
+    };
+
+    // Test Promise-based version.
+    await assertOpenSuccess(/* lineNumber */ 10, /* columnNumber */ 0,
+                            () => context.chrome.devtools!.panels.openResource(url, /* lineNumber */ 10));
+
+    // Test Promise-based version with column.
+    await assertOpenSuccess(
+        /* lineNumber */ 10, /* columnNumber */ 5,
+        () => context.chrome.devtools!.panels.openResource(url, /* lineNumber */ 10, /* columnNumber */ 5));
+
+    // Test Callback-based version.
+    await assertOpenSuccess(/* lineNumber */ 10, /* columnNumber */ 0,
+                            () => new Promise<void>(resolve => {
+                              context.chrome.devtools!.panels.openResource(
+                                  url, /* lineNumber */ 10, /* columnNumber */ undefined, /* callback */ resolve);
+                            }));
+
+    // Test callback-based JavaScript caller version (skipping `columnNumber`).
+    await assertOpenSuccess(
+        /* lineNumber */ 10, /* columnNumber */ 0,
+        () => new Promise<void>(resolve => {
+          // Cast to `any` is required to bypass TypeScript compiler errors.
+          // We are verifying the legacy runtime behavior for JavaScript callers
+          // who skip the `columnNumber` argument, which is no longer statically
+          // allowed in TypeScript.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (context.chrome.devtools!.panels as any).openResource(url, /* lineNumber */ 10, /* callback */ resolve);
+        }));
+
+    // Test Callback-based version with column.
+    await assertOpenSuccess(/* lineNumber */ 10, /* columnNumber */ 5,
+                            () => new Promise<void>(resolve => {
+                              context.chrome.devtools!.panels.openResource(
+                                  url, /* lineNumber */ 10, /* columnNumber */ 5, /* callback */ resolve);
+                            }));
+
+    // Test error case (Promise rejection when resource is not found).
+    uiSourceCodeStub.returns(null);
+    try {
+      await context.chrome.devtools!.panels.openResource(url, /* lineNumber */ 10);
+      assert.fail('Expected promise to reject');
+    } catch (error) {
+      assert.instanceOf(error, Error);
+      assert.strictEqual(error.message, 'DevTools API encountered an error');
+    }
+  });
+
+  /**
+   * Verifies that `ExtensionSidebarPane` can be successfully created
+   * under the Elements panel using both Promise-based and Callback-based API styles.
+   */
+  it('can create a sidebar pane', async () => {
+    const assertHasSidebarWithTitle = (title: string) => {
+      const extensionServer = PanelCommon.ExtensionServer.ExtensionServer.instance();
+      const sidebarPanes = extensionServer.sidebarPanes();
+      const found = sidebarPanes.some(pane => pane.title() === title);
+      assert.isTrue(found, `Expected to find a sidebar pane with title "${title}"`);
+    };
+
+    // Create a sidebar pane using the Promise-based `chrome.devtools.panels.elements.createSidebarPane` API.
+    const paneFromPromise = await context.chrome.devtools!.panels.elements.createSidebarPane('SidebarPromise');
+    assert.exists(paneFromPromise);
+    assertHasSidebarWithTitle('SidebarPromise');
+
+    // Create a sidebar pane using the Callback-based `chrome.devtools.panels.elements.createSidebarPane` API.
+    const paneFromCallback = await new Promise<Chrome.DevTools.ExtensionSidebarPane>(resolve => {
+      context.chrome.devtools!.panels.elements.createSidebarPane('SidebarCallback', resolve);
+    });
+    assert.exists(paneFromCallback);
+    assertHasSidebarWithTitle('SidebarCallback');
+  });
+
+  /**
+   * Verifies that the `ExtensionSidebarPane`'s `setObject` method successfully
+   * evaluates and sets objects using various API overloads.
+   */
+  it('can set object in sidebar pane', async () => {
+    const pane = await context.chrome.devtools!.panels.elements.createSidebarPane('Sidebar');
+
+    const getSidebar = (): PanelCommon.ExtensionPanel.ExtensionSidebarPane => {
+      const extensionServer = PanelCommon.ExtensionServer.ExtensionServer.instance();
+      const sidebarPanes = extensionServer.sidebarPanes();
+      if (sidebarPanes.length > 0) {
+        return sidebarPanes[0];
+      }
+      throw new Error('Sidebar pane not found in ExtensionServer');
+    };
+
+    const runs = [
+      // Test Promise-based version with only object.
+      {
+        run: () => pane.setObject('{"a": 1}'),
+        expectedObject: '{"a": 1}',
+      },
+      // Test Promise-based version with object and title.
+      {
+        run: () => pane.setObject('{"b": 2}', 'RootTitle'),
+        expectedObject: '{"b": 2}',
+      },
+      // Test Callback-based version with only object.
+      {
+        run: () => new Promise<void>(resolve => pane.setObject('{"c": 3}', /* rootTitle */ undefined, resolve)),
+        expectedObject: '{"c": 3}',
+      },
+      // Test Callback-based version with object and title.
+      {
+        run: () => new Promise<void>(resolve => pane.setObject('{"e": 5}', 'RootTitle', resolve)),
+        expectedObject: '{"e": 5}',
+      },
+    ];
+    for (const {run, expectedObject} of runs) {
+      await run();
+      const sidebar = getSidebar();
+      // Verify that the JSON string object is rendered correctly.
+      assert.strictEqual(sidebar.element.textContent, expectedObject);
+    }
+  });
+
+  /**
+   * Verifies that the `ExtensionSidebarPane`'s `setExpression` method successfully
+   * evaluates and sets expressions using various API overloads.
+   */
+  it('can set expression in sidebar pane', async () => {
+    const pane = await context.chrome.devtools!.panels.elements.createSidebarPane('Sidebar');
+
+    const getSidebar = (): PanelCommon.ExtensionPanel.ExtensionSidebarPane => {
+      const extensionServer = PanelCommon.ExtensionServer.ExtensionServer.instance();
+      const sidebarPanes = extensionServer.sidebarPanes();
+      if (sidebarPanes.length > 0) {
+        return sidebarPanes[0];
+      }
+      throw new Error('Sidebar pane not found in ExtensionServer');
+    };
+
+    const runs = [
+      // Test Promise-based version with expression and title.
+      {
+        run: () => pane.setExpression('1 + 1', 'RootTitle'),
+        expectedObject: '1 + 1',
+      },
+      // Test Promise-based version with expression, title, and evaluate options.
+      {
+        run: () => pane.setExpression('2 + 2', 'RootTitle', /* evaluateOptions */ {}),
+        expectedObject: '2 + 2',
+      },
+      // Test callback-based JavaScript caller version with expression and title (skipping `evaluateOptions`).
+      {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        run: () => new Promise<void>(resolve => (pane as any).setExpression('3 + 3', 'RootTitle', resolve)),
+        expectedObject: '3 + 3',
+      },
+      // Test Callback-based version with expression, title, evaluate options, and callback.
+      {
+        run: () =>
+            new Promise<void>(resolve => pane.setExpression('4 + 4', 'RootTitle', /* evaluateOptions */ {}, resolve)),
+        expectedObject: '4 + 4',
+      },
+    ];
+    for (const {run, expectedObject} of runs) {
+      await run();
+      const sidebar = getSidebar();
+      // The expression evaluates to the expression itself because of the stub on executionContext.evaluate.
+      assert.strictEqual(sidebar.element.textContent, expectedObject);
+    }
+  });
+
+  /**
+   * Verifies that `ExtensionSidebarPane.setObject` returns a rejected Promise
+   * when the operation fails.
+   */
+  it('ExtensionSidebarPane.setObject returns rejected promise on error', async () => {
+    const pane = await context.chrome.devtools!.panels.elements.createSidebarPane('Sidebar');
+
+    // Stub `setObject` on the server-side pane to simulate a failure by invoking the callback with an error message.
+    sinon.stub(PanelCommon.ExtensionPanel.ExtensionSidebarPane.prototype, 'setObject')
+        .callsFake((object, title, callback) => {
+          callback('mock setObject error');
+        });
+
+    try {
+      // Attempt to set object, which should reject the returned Promise.
+      await pane.setObject('{"a": 1}');
+      assert.fail('Expected promise to reject');
+    } catch (error) {
+      assert.instanceOf(error, Error);
+      assert.strictEqual(error.message, 'DevTools API encountered an error');
+    }
+  });
+
+  /**
+   * Verifies that `ExtensionSidebarPane.setExpression` returns a rejected Promise
+   * when the operation fails.
+   */
+  it('ExtensionSidebarPane.setExpression returns rejected promise on error', async () => {
+    const pane = await context.chrome.devtools!.panels.elements.createSidebarPane('Sidebar');
+
+    // Stub `setExpression` on the server-side pane to simulate a failure by invoking the callback with an error message.
+    sinon.stub(PanelCommon.ExtensionPanel.ExtensionSidebarPane.prototype, 'setExpression')
+        .callsFake((expression, title, evaluateOptions, securityOrigin, callback) => {
+          callback('mock setExpression error');
+        });
+
+    try {
+      // Attempt to set expression, which should reject the returned Promise.
+      await pane.setExpression('1 + 1', 'RootTitle');
+      assert.fail('Expected promise to reject');
+    } catch (error) {
+      assert.instanceOf(error, Error);
+      assert.strictEqual(error.message, 'DevTools API encountered an error');
+    }
+  });
+
+  /**
+   * Verifies that callback-based `openResource` API calls still invoke the
+   * provided callback even when the operation fails (e.g., resource not found).
+   */
+  it('openResource callback is called on error', async () => {
+    const workspace = Workspace.Workspace.WorkspaceImpl.instance();
+    // Stub `uiSourceCodeForURL` to return null to simulate a resource not found failure.
+    sinon.stub(workspace, 'uiSourceCodeForURL').returns(null);
+    const url = Platform.DevToolsPath.urlString`http://example.com/script.js`;
+
+    await new Promise<void>(resolve => {
+      // Call `openResource` with a callback that resolves the outer Promise when called.
+      context.chrome.devtools!.panels.openResource(url, /* lineNumber */ 10, /* columnNumber */ undefined,
+                                                   /* callback */ () => {
+                                                     // Callback should still be invoked even on failure.
+                                                     resolve();
+                                                   });
+    });
   });
 });

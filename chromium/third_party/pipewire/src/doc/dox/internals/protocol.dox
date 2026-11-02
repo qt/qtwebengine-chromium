@@ -1,0 +1,1764 @@
+/** \page page_native_protocol Native Protocol
+
+PipeWire has a pluggable client/server IPC protocol.
+
+The reference implementation uses unix sockets and is implemented in
+\ref page_module_protocol_native.
+
+We document the messages here.
+
+\tableofcontents
+
+# Message header {#native-protocol-message-header}
+
+Each message on the unix socket contains a 16 bytes header and a
+variable length payload size:
+
+```
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                     Id                                        |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |    opcode     |                   size                        |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                         seq                                   |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                         n_fds                                 |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                     payload POD                               |
+   .                                                               .
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                     optional footer POD                       |
+   .                                                               .
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+```
+
+
+These are four uint32 words to be read in native endianness.
+
+- Id: the message id this is the destination resource/proxy id
+- opcode: the opcode on the resource/proxy interface
+- size: the size of the payload and optional footer of the message
+- seq: an increasing sequence number for each message
+- n_fds: number of file descriptors in this message.
+
+The sender should send along with each message the fds that belong to
+the message. If there are more than the maximum number of fds in the
+message than can fit in one message, the message is split into multiple
+parts.
+
+A receiver needs to first read the header to know the size of the
+complete message. After collecting the complete message, it can start
+processing it.
+
+The payload is a single POD see \ref page_spa_pod for details.
+
+After the payload, there is an optional footer POD object.
+
+# Making a connection {#native-protocol-making-connection}
+
+First a connection is made to a unix domain socket. By default, the socket is
+named as "pipewire-0" and searched in the following directories:
+
+ - getenv("PIPEWIRE_RUNTIME_DIR")
+ - getenv("XDG_RUNTIME_DIR")
+ - getenv("USERPROFILE")
+
+
+The client opens the socket and allocates a Core proxy with id 0 and a Client
+proxy with id 1. The proxy is nothing more than a way to identify the remote
+objects with an id. Usually they also contain the type and version of the
+remote object and some helpers (interfaces) to dispatch messages.
+
+The server will allocate a new Core resource with id 0. Resources are the
+counterpart of client proxies and also typically contain extra information
+and helpers (interfaces) to dispatch messages.
+
+The client sends the Core::Hello message on the socket to start the
+communication.
+
+The server binds the client resource with id 1 to the client. This means
+that the client object on the server will now have a resource with a
+client side proxy associated with it.
+
+When the client sends a message for a certain proxy, the server side
+resource with the same id for the client is found and the message is
+dispatched to the object associated with the resource.
+
+Similarly when a server sends a message on a resource, the client will
+find the proxy with the same id and dispatch the message to it's
+associated object.
+
+The client then sends client properties to the server.
+
+```
+   client                                    server
+     |---------------------------------------->|
+     |            open socket                  |
+     |                                         |
+     |---------------------------------------->|
+     |            Core::Hello(version)         |
+     |                                         |
+     |---------------------------------------->|
+     |       Client::UpdateProperties          |
+     .                                         .
+```
+
+This completes the setup of the client. The newly connected client will
+appear in the registry at this point.
+
+# Core proxy/resource {#native-protocol-core}
+
+The core is always the object with Id 0.
+
+## Core Methods (Id 0)
+
+### Core::Hello (Opcode 1)
+
+The first message sent by a client is the Hello message and contains the
+version number of the client.
+
+```
+   Struct(
+      Int: version
+   )
+```
+
+The version is 3.
+
+### Core::Sync (Opcode 2)
+
+The Sync message will result in a Done event from the server. When the Done
+event is received, the client can be sure that all operations before the Sync
+method have been completed.
+
+```
+   Struct(
+      Int: id
+      Int: seq
+   )
+```
+
+- id: the id will be returned in the Done event.
+- seq: is usually generated automatically and will be returned in the Done event.
+
+### Core::Pong (Opcode 3)
+
+Is sent from the client to the server when the server emits the Ping event.
+The id and seq should be copied from the Ping event.
+
+```
+   Struct(
+      Int: id
+      Int: seq
+   )
+```
+
+### Core::Error (Opcode 4)
+
+An error occurred in an object on the client.
+
+```
+   Struct(
+      Int: id
+      Int: seq
+      Int: res
+      String: message
+   )
+```
+
+- id: The id of the proxy that is in error.
+- seq: a seq number from the failing request (if any)
+- res: a negative errno style error code
+- message: an error message
+
+### Core::GetRegistry (Opcode 5)
+
+A client requests to bind to the registry object and list the available objects
+on the server.
+
+Like with all bindings, first the client allocates a new proxy id and puts this
+as the new_id field. Methods and Events can then be sent and received on the
+new_id (in the message Id field).
+
+```
+   Struct(
+      Int: version
+      Int: new_id
+   )
+```
+- version: the version of the registry interface used on the client
+- new_id: the id of the new proxy with the registry interface
+
+After this method, the server will start sending Registry::Global events
+to the proxy with new_id.
+
+```
+   client                                    server
+     |                                         |
+     | new proxy(new_id)                       |
+     |---------------------------------------->|  new resource(new_id)
+     |      Core::GetRegistry(version)         |
+     |                                         |
+     |<----------------------------------------| new_id
+     |      Registry::Global()                 |
+     |<----------------------------------------|
+     |      Registry::Global()                 |
+     .                                         .
+```
+
+There is no explicit last Global event to signal that the last object
+has been received. The usual way of knowing this is to send a Core::Sync
+method right after the Core::GetRegistry method and to wait for the
+Core::Done event.
+
+```
+   client                                    server
+     |                                         |
+     | new proxy(new_id)                       |
+     |---------------------------------------->|  new resource(new_id)
+     |      Core::GetRegistry(version)         |
+     |---------------------------------------->|
+     |  seq = Core::Sync                       |
+     |                                         |
+     |<----------------------------------------| new_id
+     |      Registry::Global()                 |
+     |<----------------------------------------|
+     |      Registry::Global()                 |
+     .                                         .
+     |<----------------------------------------|
+     |         Core::Done(seq)                 |
+     .                                         .
+```
+
+### Core::CreateObject (Opcode 6)
+
+Create a new object from a factory of a certain type.
+
+The client allocates a new_id for the proxy. The server will allocate a new
+resource with the same new_id and from then on, Methods and Events will be
+exchanged between the new object of the given type.
+
+```
+   Struct(
+      String: factory_name
+      String: type
+      Int: version
+      Struct(
+         Int: n_items
+	 (String: key
+	  String: value)*
+      ): props
+      Int: new_id
+   )
+```
+
+- factory_name: the name of a server factory object to use
+- type: the type of the object to create, this is also the type of the
+      interface of the new_id proxy.
+- props: extra properties to create the object
+- new_id: the proxy id of the new object
+
+### Core::Destroy (Opcode 7)
+
+Destroy an object.
+
+```
+   Struct(
+      Int: id
+   )
+```
+
+- id: the proxy id of the object to destroy.
+
+## Core Events
+
+Core events are emitted by the server.
+
+### Core::Info (Opcode 0)
+
+Emitted by the server upon connection with the more information about the
+server.
+
+```
+   Struct(
+      Int: id
+      Int: cookie
+      String: user_name
+      String: host_name
+      String: version
+      String: name
+      Long: change_mask
+      Struct(
+         Int: n_items
+	 (String: key
+	  String: value)*
+      ): props
+   )
+```
+
+- id: the id of the server (0)
+- cookie: a unique cookie for this server
+- user_name: the name of the user running the server
+- host_name: the name of the host running the server
+- version: a version string of the server
+- name: the name of the server
+- change_mask: a set of bits with changes to the info
+- props: optional key/value properties, valid when change_mask has (1<<0)
+
+### Core::Done (Opcode 1)
+
+Emitted as a result of a client Sync method.
+
+```
+   Struct(
+      Int: id
+      Int: seq
+   )
+```
+
+id and seq are passed from the client Sync request.
+
+### Core::Ping (Opcode 2)
+
+Emitted by the server when it wants to check if a client is alive or ensure
+that it has processed the previous events.
+
+```
+   Struct(
+      Int: id
+      Int: seq
+   )
+```
+
+- id: the object id to ping
+- seq: usually automatically generated. The client should pass this in the Pong
+       method reply.
+
+### Core::Error (Opcode 3)
+
+The error event is sent out when a fatal (non-recoverable)
+error has occurred. The id argument is the proxy object where
+the error occurred, most often in response to a request to that
+object. The message is a brief description of the error,
+for (debugging) convenience.
+
+```
+   Struct(
+      Int: id
+      Int: seq
+      Int: res
+      String: message
+   )
+```
+
+- id: The id of the resource that is in error.
+- seq: a seq number from the failing request (if any)
+- res: a negative errno style error code
+- message: an error message
+
+
+### Core::RemoveId (Opcode 4)
+
+This event is used internally by the object ID management
+logic. When a client deletes an object, the server will send
+this event to acknowledge that it has seen the delete request.
+When the client receives this event, it will know that it can
+safely reuse the object ID.
+
+```
+   Struct(
+     Int: id
+   )
+```
+
+- id: a proxy id that was removed
+
+### Core::BoundId (Opcode 5)
+
+This event is emitted when a local object ID is bound to a
+global ID. It is emitted before the global becomes visible in the
+registry. This event is deprecated, the BoundProps event should
+be used because it also contains extra properties.
+
+```
+   Struct(
+     Int: id
+     Int: global_id
+   )
+```
+
+- id: a proxy id
+- global_id: the global_id as it will appear in the registry.
+
+### Core::AddMem (Opcode 6)
+
+Memory is given to a client as fd of a certain memory type.
+Further references to this fd will be made with the per memory
+unique identifier id.
+
+```
+   Struct(
+     Int: id
+     Id: type
+     Fd: fd
+     Int: flags
+   )
+```
+
+- id: a server allocated id for this memory
+- type: the memory type, see enum spa_data_type
+- fd: the index of the fd sent with this message
+- flags: extra flags
+
+### Core::RemoveMem (Opcode 7)
+
+Remove memory for a client with the given id
+
+```
+   Struct(
+     Int: id
+   )
+```
+
+- id: the id of the memory to remove. This is the Id from AddMem.
+
+### Core::BoundProps (Opcode 8)
+
+This event is emitted when a local object ID is bound to a
+global ID. It is emitted before the global becomes visible in the
+registry.
+
+```
+   Struct(
+      Int: id
+      Int: global_id
+      Struct(
+         Int: n_items
+	 (String: key
+	  String: value)*
+      ): props
+   )
+```
+
+- id: a proxy id
+- global_id: the global_id as it will appear in the registry.
+- props: the properties of the global
+
+# Registry proxy/resource {#native-protocol-registry}
+
+The registry is obtained with the GetRegistry method on the Core object.
+The Id depends on the new_id that was provided.
+
+## Registry Methods
+
+### Registry::Bind (Opcode 1)
+
+Bind to the global object with id and use the client proxy
+with new_id as the proxy. After this call, methods can be
+send to the remote global object and events can be received.
+
+```
+   Struct(
+      Int: id
+      String: type
+      Int: version
+      Int: new_id
+   )
+```
+
+- id: the global_id to bind to
+- type: the type of the global id
+- version: the client version of the interface for type
+- new_id: the client proxy id for the global object
+
+### Registry::Destroy (Opcode 2)
+
+Try to destroy the global object with id. This might fail when the
+client does not have permission.
+
+```
+   Struct(
+      Int: id
+   )
+```
+
+- id: the global id to destroy.
+
+## Registry Events
+
+### Registry::Global (Opcode 0)
+
+Notify a client about a new global object.
+
+```
+   Struct(
+      Int: id
+      Int: permissions
+      String: type
+      Int: version
+      Struct(
+         Int: n_items
+	 (String: key
+	  String: value)*
+      ): props
+   )
+```
+
+- id: the global id
+- permissions: permission bits
+- type: the type of object
+- version: the server version of the object
+- props: extra global properties
+
+### Registry::GlobalRemove (Opcode 1)
+
+A global with id was removed
+
+```
+   Struct(
+      Int: id
+   )
+```
+
+- id: the global id that was removed.
+
+# PipeWire:Interface:Client {#native-protocol-client}
+
+The client object represents a client connect to the PipeWire server.
+Permissions of the client can be managed.
+
+The currently connected client always has the Client object with
+proxy id 1.
+
+## Client Methods
+
+### Client::Error (Opcode 1)
+
+Is used to send an error to a client.
+
+```
+   Struct(
+      Int: id
+      Int: res
+      String: error
+   )
+```
+
+- id: a client proxy id to send the error to
+- res: a negative errno style error code
+- error: an error message
+
+### Client::UpdateProperties (Opcode 2)
+
+Is used to update the properties of a client.
+
+```
+   Struct(
+      Struct(
+         Int: n_items
+	 (String: key
+	  String: value)*
+      ): props
+   )
+```
+- props: properties to update on the client.
+
+### Client::GetPermissions (Opcode 3)
+
+Get the currently configured permissions on the client.
+
+```
+   Struct(
+      Int: index
+      Int: num
+   )
+```
+- index: the start index of the permissions to get
+- num: the number of permissions to get
+
+This method will result in at most num Permission Events.
+
+### Client::UpdatePermissions (Opcode 4)
+
+Update the permissions of the global objects using the
+provided array with permissions
+
+
+```
+   Struct(
+      Int: n_permissions
+      ( Int: id
+        Int: permission
+      )*
+   )
+```
+
+- n_permissions: number of permissions
+- id: the global id
+- permissions: the permissions for the global id
+
+## Client Events
+
+### Client::Info (Opcode 0)
+
+Get client information updates. This is emitted when binding to a client or
+when the client info is updated later.
+
+```
+   Struct(
+      Int: id
+      Long: change_mask
+      Struct(
+         Int: n_items
+	 (String: key
+	  String: value)*
+      ): props
+   )
+```
+- id: the global id of the client
+- change_mask: the changes emitted by this event
+- props: properties of this object, valid when change_mask has (1<<0)
+
+### Client::Permissions (Opcode 1)
+
+Emitted as the reply of the GetPermissions method.
+
+```
+   Struct(
+      Int: index
+      Struct(
+         Int: n_permissions
+	 (Int: id
+	  Int: permission)*
+      )
+   )
+```
+- index: index of the first permission
+- n_permissions: the number of permission entries
+- id: the global id of the object
+- permissions: the permission for the given id
+
+# PipeWire:Interface:Device {#native-protocol-device}
+
+A device is an object that manages other devices or nodes.
+
+The usual flow is to bind to the Device object. This will result in an
+Info event. From the Info event one can find the available params to
+enumerate.
+
+## Device methods
+
+### Device::SubscribeParams (Opcode 1)
+
+Automatically emit Param events for the given ids when they are changed.
+
+```
+   Struct(
+      Array[Id]: ids
+   )
+```
+- ids: and array of param Id to subscribe to
+
+### Device::EnumParams (Opcode 2)
+
+Enumerate the values of a param. This will result in Param events.
+
+```
+   Struct(
+      Int: seq
+      Id: id
+      Int: index
+      Int: num
+      Pod: filter
+   )
+```
+- seq: an automatically generated sequence number, will be copied into the reply
+- id: the param id to enumerate.
+- index: the first param index to retrieve
+- num: the number of params to retrieve
+- filter: an optional filter object for the param.
+
+### Device::SetParam (Opcode 3)
+
+Set a parameter on the Device.
+
+```
+   Struct(
+      Id: id
+      Int: flags
+      Pod: param
+   )
+```
+- id: the param id to set.
+- flags: extra flags
+- param: the param object to set
+
+## Device events
+
+### Device::Info (Opcode 0)
+
+The info event is emitted when binding or when the device information changed.
+
+```
+   Struct(
+      Int: id
+      Long: change_mask
+      Struct(
+         Int: n_items
+	 ( String: key
+	   String: value )*
+      ): props
+      Struct(
+         Int: n_params
+	 ( Id: id
+	   Int: flags )*
+      ): param_info
+   )
+```
+
+- id: the id of the global
+- change_mask: a bitmask of changed fields
+- props: extra properties, valid when change_mask is (1<<0)
+- param_info: info about the parameters, valid when change_mask is (1<<1)
+            For each parameter, the id and current flags are given.
+	- param_info.id : see enum spa_param_type
+	- param_info.flags: struct spa_param_info.flags
+
+### Device::Param (Opcode 1)
+
+Emitted as a result of EnumParams or SubscribeParams.
+
+```
+   Struct(
+      Int: seq
+      Id: id
+      Int: index
+      Int: next
+      Pod: param
+   )
+```
+- seq: the sequence number send by the client EnumParams or server generated
+     in the SubscribeParams case.
+- id: the param id that is reported, see enum spa_param_type
+- index: the index of the parameter
+- next: the index of the next parameter
+- param: the parameter. The object type depends on the id
+
+
+# PipeWire:Interface:Factory {#native-protocol-factory}
+
+A factory is an object that allows one to create new objects.
+
+## Factory methods
+
+A factory has no methods
+
+## Factory events
+
+### Factory::Info (Opcode 0)
+
+Info is emitted when binding to the factory global or when the information changed.
+
+```
+   Struct(
+      Int: id
+      String: name
+      String: type
+      Int: version
+      Long: change_mask
+      Struct(
+         Int: n_items
+	 ( String: key
+	   String: value )*
+      ): props
+   )
+```
+- id: the global id of the factory
+- name: the name of the factory. This can be used as the name for Core::CreateObject
+- type: the object type produced by this factory
+- version: the version of the object interface
+- change_mask: bitfield of changed values.
+- props: optional properties of the factory, valid when change_mask is (1<<0)
+
+
+# PipeWire:Interface:Link {#native-protocol-link}
+
+A link is a connection between 2 ports.
+
+## Link methods
+
+A link has no methods
+
+## Link events
+
+### Link::Info (Opcode 0)
+
+Info is emitted when binding to the link global or when the information changed.
+
+```
+   Struct(
+      Int: id
+      Int: output_node_id
+      Int: output_port_id
+      Int: input_node_id
+      Int: input_port_id
+      Long: change_mask
+      Int: state
+      String: error
+      Pod: format
+      Struct(
+         Int: n_items
+	 ( String: key
+	   String: value )*
+      ): props
+   )
+```
+
+- id: the global id of the link
+- output_node_id: the global id of the output node
+- output_port_id: the global id of the output port
+- input_node_id: the global id of the input node
+- input_port_id: the global id of the input port
+- change_mask: bitfield of changed values.
+- state: the state of the link, valid when change_mask has (1<<0)
+       - see enum pw_link_state for values
+- error: an optional error string
+- format: an optional format for the link, valid when change_mask has (1<<1)
+- props: optional properties of the link, valid when change_mask is (1<<2)
+
+
+# PipeWire:Interface:Module {#native-protocol-module}
+
+A Module provides dynamically loaded functionality
+
+## Module methods
+
+A module has no methods
+
+## Module events
+
+### Module::Info (Opcode 0)
+
+Info is emitted when binding to the module global or when the information changed.
+
+```
+   Struct(
+      Int: id
+      String: name
+      String: filename
+      String: args
+      Long: change_mask
+      Struct(
+         Int: n_items
+	 ( String: key
+	   String: value )*
+      ): props
+   )
+```
+
+- id: the global id of the module
+- name: the name of the module
+- filename: the filename of the module
+- args: arguments passed when loading the module
+- change_mask: bitfield of changed values.
+- props: optional properties of the module, valid when change_mask has (1<<0)
+
+
+# PipeWire:Interface:Node {#native-protocol-node}
+
+A Node is a processing element in the graph
+
+## Node methods
+
+### Node::SubscribeParams (Opcode 1)
+
+Automatically emit Param events for the given ids when they are changed.
+
+```
+   Struct(
+      Array[Id]: ids
+   )
+```
+- ids: and array of param Id to subscribe to
+
+### Node::EnumParams (Opcode 2)
+
+Enumerate the values of a param. This will result in Param events.
+
+```
+   Struct(
+      Int: seq
+      Id: id
+      Int: index
+      Int: num
+      Pod: filter
+   )
+```
+- seq: an automatically generated sequence number, will be copied into the reply
+- id: the param id to enumerate.
+- index: the first param index to retrieve
+- num: the number of params to retrieve
+- filter: an optional filter object for the param.
+
+### Node::SetParam (Opcode 3)
+
+Set a parameter on the Node.
+
+```
+   Struct(
+      Id: id
+      Int: flags
+      Pod: param
+   )
+```
+- id: the param id to set.
+- flags: extra flags
+- param: the param object to set
+
+### Node::SendCommand (Opcode 4)
+
+Send a Command to the node.
+
+```
+   Struct(
+      Pod: command
+   )
+```
+- command: the command to send. See enum spa_node_command
+
+## Node events
+
+### Node::Info (Opcode 0)
+
+The info event is emitted when binding or when the node information changed.
+
+```
+   Struct(
+      Int: id
+      Int: max_input_ports
+      Int: max_output_ports
+      Long: change_mask
+      Int: n_input_ports
+      Int: n_output_ports
+      Id: state
+      String: error
+      Struct(
+         Int: n_items
+	 ( String: key
+	   String: value )*
+      ): props
+      Struct(
+         Int: n_params
+	 ( Int: id
+	   Int: flags )*
+      ): param_info
+   )
+```
+
+- id: the id of the node global
+- max_input_port: the maximum input ports for the node
+- max_output_port: the maximum output ports for the node
+- change_mask: a bitmask of changed fields
+- n_input_port: the number of input ports, when change_mask has (1<<0)
+- n_output_port: the number of output ports, when change_mask has (1<<1)
+- state: the current node state, when change_mask has (1<<2)
+       - See enum pw_node_state  for values
+- error: an error message.
+- props: extra properties, valid when change_mask is (1<<3)
+- param_info: info about the parameters, valid when change_mask is (1<<4)
+            For each parameter, the id and current flags are given.
+	- param_info.id : see enum spa_param_type
+	- param_info.flags: struct spa_param_info.flags
+
+### Node::Param (Opcode 1)
+
+Emitted as a result of EnumParams or SubscribeParams.
+
+```
+   Struct(
+      Int: seq
+      Id: id
+      Int: index
+      Int: next
+      Pod: param
+   )
+```
+- seq: the sequence number send by the client EnumParams or server generated
+     in the SubscribeParams case.
+- id: the param id that is reported, see enum spa_param_type
+- index: the index of the parameter
+- next: the index of the next parameter
+- param: the parameter. The object type depends on the id
+
+
+# PipeWire:Interface:Port {#native-protocol-port}
+
+A port is part of a node and allows links with other ports.
+
+## Port methods
+
+### Port::SubscribeParams (Opcode 1)
+
+Automatically emit Param events for the given ids when they are changed.
+
+```
+   Struct(
+      Array[Id]: ids
+   )
+```
+- ids: and array of param Id to subscribe to
+
+### Port::EnumParams (Opcode 2)
+
+Enumerate the values of a param. This will result in Param events.
+
+```
+   Struct(
+      Int: seq
+      Id: id
+      Int: index
+      Int: num
+      Pod: filter
+   )
+```
+- seq: an automatically generated sequence number, will be copied into the reply
+- id: the param id to enumerate.
+- index: the first param index to retrieve
+- num: the number of params to retrieve
+- filter: an optional filter object for the param.
+
+## Port events
+
+### Port::Info (Opcode 0)
+
+The info event is emitted when binding or when the port information changed.
+
+```
+   Struct(
+      Int: id
+      Int: direction
+      Long: change_mask
+      Struct(
+         Int: n_items
+	 ( String: key
+	   String: value )*
+      ): props
+      Struct(
+         Int: n_params
+	 ( Int: id
+	   Int: flags )*
+      ): param_info
+   )
+```
+
+- id: the id of the port global
+- direction: the direction of the port, see enum pw_direction
+- change_mask: a bitmask of changed fields
+- props: extra properties, valid when change_mask is (1<<0)
+- param_info: info about the parameters, valid when change_mask is (1<<1)
+            For each parameter, the id and current flags are given.
+	- param_info.id : see enum spa_param_type
+	- param_info.flags: struct spa_param_info.flags
+
+### Port::Param (Opcode 1)
+
+Emitted as a result of EnumParams or SubscribeParams.
+
+```
+   Struct(
+      Int: seq
+      Id: id
+      Int: index
+      Int: next
+      Pod: param
+   )
+```
+- seq: the sequence number send by the client EnumParams or server generated
+     in the SubscribeParams case.
+- id: the param id that is reported, see enum spa_param_type
+- index: the index of the parameter
+- next: the index of the next parameter
+
+
+# PipeWire:Interface:ClientNode {#native-protocol-clientnode}
+
+The ClientNode object is created from the `client-node` factory that is provided
+by the `libpipewire-module-client-node` module.
+
+It creates a server Node that can be controlled from a client. Processing will happen
+in the client. It is used by pw-stream and pw-filter to implement the PipeWire media
+processing nodes.
+
+To create a client-node, one must first connect to the server and then make a
+ClientNode proxy and do Core::CreateObject with the client-node factory.
+This will create a server side ClientNode resource that can be controlled with the
+proxy.
+
+After the proxy is set up, the conversation between client and server goes as
+follows:
+
+```
+   client                                    server
+     |                                         |
+     |---------------------------------------->|
+     |        ClientNode::Update               | send initial node configuration
+     |                                         |
+     |<----------------------------------------|
+     |       Core::AddMem                      | memory for node activation
+     |<----------------------------------------|
+     |       ClientNode::SetActivation         | the node activation
+     |<----------------------------------------|
+     |       ClientNode::Transport             | the node transport
+     |<----------------------------------------|
+     |       ClientNode::SetIO                 | clock IO
+     |                                         |
+     |---------------------------------------->|
+     |       ClientNode::SetActive(true)       | set the node active
+     |                                         |
+     |<----------------------------------------|
+     |       ClientNode::SetParam              | optional volume restore/settings
+     |<----------------------------------------|
+     |       ClientNode::SetParam              | optional PortConfig if needed
+     |---------------------------------------->|
+     |       ClientNode::Update                | Upload changed params
+     |                                         |
+     |---------------------------------------->|
+     |       ClientNode::PortUpdate            | config for each port
+     .                                         .
+     |<----------------------------------------|
+     |       ClientNode::PortSetMixInfo        | mixer inputs for each linked port
+     |<----------------------------------------|
+     |       ClientNode::PortSetParam          | PeerCapability of the ports
+     |<----------------------------------------|
+     |       ClientNode::PortSetParam          | Latency of the ports
+     |<----------------------------------------|
+     |       ClientNode::SetActivation         | activation of port peers
+     |---------------------------------------->|
+     |       ClientNode::PortUpdate            | Ack port updates
+     .                                         .
+     |<----------------------------------------|
+     |       ClientNode::PortSetParam          | formats of the ports
+     |---------------------------------------->|
+     |       ClientNode::PortUpdate            | Ack port format update
+     .                                         .
+     |<----------------------------------------|
+     |       Core::AddMem                      | memory for the port buffers
+     |<----------------------------------------|
+     |       ClientNode::PortUseBuffers        | buffers for a port
+     .                                         .
+     |<----------------------------------------|
+     |       Core::AddMem                      | memory for driver activation
+     |<----------------------------------------|
+     |       ClientNode::SetActivation         | the driver activation
+     |<----------------------------------------|
+     |       ClientNode::SetIO                 | driver Position IO
+     |<----------------------------------------|
+     |       Core::AddMem                      | memory for port IO
+     |<----------------------------------------|
+     |       ClientNode::PortSetIO             | buffers/async-buffers port IO
+     .                                         .
+     |<----------------------------------------|
+     |       ClientNode::Command               | Start command
+     .                                         .
+```
+
+## ClientNode methods
+
+### ClientNode::GetNode (Opcode 1)
+
+Get the node object associated with the client-node. This binds to the server side
+Node object.
+
+```
+   Struct(
+      Int: version
+      Int: new_id
+   )
+```
+- version: the Node version to bind as
+- new_id: the proxy id
+
+### ClientNode::Update (Opcode 2)
+
+Update the params and info of the node.
+
+```
+   Struct(
+      Int: change_mask
+      Int: n_params
+      ( Pod: param )*
+      Struct(
+         Int: max_input_ports
+         Int: max_output_ports
+	 Long: change_mask
+	 Long: flags
+	 Int: n_items
+	 ( String: key
+	   String: value )*
+	 Int: n_params
+	 ( Id: id
+	   Int: flags )*
+      ): info
+   )
+```
+- change_mask: a bitfield of changed items
+- n_params: number of update params, valid when change_mask has (1<<0)
+- param: an updated param
+- info: an updated `struct spa_node_info`, valid when change_mask has (1<<1)
+  - max_input_ports: maximum input ports
+  - max_output_ports: maximum output ports
+  - change_mask: bitmask of changed items
+  - flags: flags, see `struct spa_node_info`, when change_mask has (1<<0)
+  - n_items: updated properties, valid when info.change_mask has (1<<1)
+  - n_params: updated `struct spa_param_info`, valid when info.change_mask has (1<<2)
+
+
+### ClientNode::PortUpdate (Opcode 3)
+
+Create, Update or destroy a node port.
+
+When the port is not known on the server, the port is created.
+When info is None, the port is destroyed.
+Otherwise, the port information is updated.
+
+```
+   Struct(
+      Int: direction
+      Int: port_id
+      Int: change_mask
+      Int: n_params
+      ( Pod: param )*
+      Struct(
+	 Long: change_mask
+	 Long: flags
+	 Int: rate_num
+	 Int: rate_denom
+	 Int: n_items
+	 ( String: key
+	   String: value )*
+	 Int: n_params
+	 ( Id: id
+	   Int: flags )*
+      ): info
+   )
+```
+- direction: the port direction
+- port_id: the port id
+- change_mask: a bitfield of changed items
+- n_params: number of updated params, valid when change_mask has (1<<0)
+- param: n_params updated params
+- info: an updated `struct spa_port_info`, valid when change_mask has (1<<1)
+  - change_mask: bitmask of changed items
+  - flags: flags, see `struct spa_port_info`, when change_mask has (1<<0)
+  - rate_num: updated rate numerator
+  - rate_denom: updated rate denominator, when info.change_mask has (1<<1)
+  - n_items: updated properties, valid when info.change_mask has (1<<2)
+  - n_params: updated `struct spa_param_info`, valid when info.change_mask has (1<<3)
+
+### ClientNode::SetActive (Opcode 4)
+
+Set the node active or inactive.
+
+```
+   Struct(
+      Bool: active
+   )
+```
+- active: the new state of the node
+
+### ClientNode::Event (Opcode 5)
+
+Emit an event on the node.
+
+```
+   Struct(
+      Pod: event
+   )
+```
+- event: the event to emit. See `enum spa_node_event`.
+
+### ClientNode::PortBuffers (Opcode 6)
+
+This method is used by the client when it has allocated buffers for a port.
+It is usually called right after the UseBuffers event to let the server know
+about the the newly allocated buffer memory.
+
+```
+   Struct(
+      Int: direction
+      Int: port_id
+      Int: mix_id
+      Int: n_buffers
+      (  Int: n_datas
+         (  Id: type
+	    Fd: memfd
+	    Int: flags
+	    Int: mapoffset
+	    Int: maxsize
+	 )*
+      )*
+   )
+```
+- direction: the direction of the port
+- port_id: the port id
+- mix_id: the mix id of the port
+- n_buffer: the number of buffers
+- n_data: for each buffer the number of data planes
+- type: the plane memory type
+- memfd: the plane memfd
+- mapoffset: the start offset of where the buffer memory starts
+- maxsize: the maximum size of the memory.
+
+## ClientNode events
+
+### ClientNode::Transport (Opcode 0)
+
+The server will allocate the activation record and eventfd for the node and
+transfer this to the client with the Transport event.
+
+```
+   Struct(
+      Fd: readfd
+      Fd: writefd
+      Int: memfd
+      Int: offset
+      Int: size
+   )
+```
+- readfd: the eventfd to start processing
+- writefd: the eventfd to signal when the driver completes and profiling is
+           enabled.
+- memfd: the index of the memfd of the activation record
+- offset: the offset in memfd of the start of the activation record
+- size: the size of the activation record
+
+The activation record is currently an internal data structure that is
+not yet ABI stable.
+
+The writefd is meant to wake up the server after the driver completes so
+that the profiler can collect the information. The profiler is active
+when the pw_node_activation::flags fields has PW_NODE_ACTIVATION_FLAG_PROFILER
+set. When the profiler is disabled (or when the node is not driving), this
+eventfd should not be signaled.
+
+### ClientNode::SetParam (Opcode 1)
+
+Set a parameter on the Node.
+
+```
+   Struct(
+      Id: id
+      Int: flags
+      Pod: param
+   )
+```
+- id: the param id to set.
+- flags: extra flags
+- param: the param object to set
+
+
+### ClientNode::SetIO (Opcode 2)
+
+Set an IO area on the node.
+
+```
+   Struct(
+      Id: id
+      Int: memid
+      Int: offset
+      Int: size
+   )
+```
+- id: the io area id to set.
+- the memid to use, this is signaled with Core::AddMem
+- offset: the start offset in the memory area
+- the size of the io area
+
+### ClientNode::Event (Opcode 3)
+
+Emit an event on the node.
+
+```
+   Struct(
+      Pod: event
+   )
+```
+- event: the event to emit. See `enum spa_node_event`.
+
+### ClientNode::Command (Opcode 4)
+
+Send a command on the node.
+
+```
+   Struct(
+      Pod: command
+   )
+```
+- command: the command to send. See `enum spa_node_command`.
+
+### ClientNode::AddPort (Opcode 5)
+
+Add a new port to the node
+
+```
+   Struct(
+      Int: direction
+      Int: port_id
+      Struct(
+         Int: n_items
+	 ( String: key
+	   String: value )*
+      ): props
+   )
+```
+- direction: the direction of the new port
+- port_id: the port id of the new port
+- props: optional extra properties for the port
+
+### ClientNode::RemovePort (Opcode 6)
+
+Remove a port from the node
+
+```
+   Struct(
+      Int: direction
+      Int: port_id
+   )
+```
+- direction: the direction of the port to remove
+- port_id: the port id of the port to remove
+
+
+### ClientNode::PortSetParam (Opcode 7)
+
+Set a parameter on the Port of the node.
+
+```
+   Struct(
+      Int: direction
+      Int: port_id
+      Id: id
+      Int: flags
+      Pod: param
+   )
+```
+- direction: the direction of the port
+- port_id: the port id of the port
+- id: the param id to set.
+- flags: extra flags
+- param: the param object to set
+
+### ClientNode::UseBuffers (Opcode 8)
+
+Use a set of buffers on the mixer port
+
+```
+   Struct(
+      Int: direction
+      Int: port_id
+      Int: mix_id
+      Int: flags
+      Int: n_buffers
+      (  Int: memid
+         Int: offset
+	 Int: size
+	 Int: n_metas
+	 (  Id: type
+	    Int: size
+	 )*: meta
+	 Int: n_datas
+	 (  Id: type
+	    Int: data
+	    Int: flags
+	    Int: mapoffset
+	    Int: maxsize
+	 )*: data
+      )*: buffer
+   )
+```
+- direction: the direction of the port
+- port_id: the port id of the port
+- mix_id: the mixer id of the port
+- flags: extra flags
+- id: the param id to set.
+- flags: extra flags
+   - SPA_NODE_BUFFERS_FLAG_ALLOC (1<<0) to let the client allocate
+     buffers, in which case the PortBuffers method needs to be called
+     with the allocated buffer memory.
+- n_buffers: the number of buffers
+- memid: the memory id of the buffer metadata and or data
+- offset: the offset in memid of the buffer
+- size: the size of the buffer metadata or data
+- n_metas: number of metadata. The buffer memory first contains this
+           number of metadata parts of the given type and size
+  - type: metadata type
+  - size: metadata size, round up with 8 to get to the next metadata
+- n_data: the number of datablocks (planes) per buffer
+  - type: the data type, this can be:
+  		- SPA_DATA_MemId to reference a memfd from Core:AddMem
+		- SPA_DATA_MemPtr to reference this buffer memid
+  - data: contains the memid or offset in the memid
+  - flags: extra flags for the data
+  - mapoffset: the offset in memfd
+  - maxsize: the maxsize of the memory in memfd
+
+### ClientNode::PortSetIO (Opcode 9)
+
+Set an IO area on a mixer port.
+
+```
+   Struct(
+      Int: direction
+      Int: port_id
+      Int: mix_id
+      Id: id
+      Int: memid
+      Int: offset
+      Int: size
+   )
+```
+- direction: the direction of the port
+- port_id: the port id of the port
+- mix_id: the mix id of the port
+- id: the IO area to set. See enum spa_io_type
+- memid: the memid of the io area, added with Core::AddMem
+- offset: the offset in the memid
+- size: the size of the IO area
+
+
+### ClientNode::SetActivation (Opcode 10)
+
+Notify the client of the activation record of a peer node. This activation record
+should be triggered when this node finishes processing.
+
+```
+   Struct(
+      Int: node_id
+      Fd: signalfd
+      Int: memid
+      Int: offset
+      Int: size
+   )
+```
+- node_id: the node_id of the peer node
+- signalfd: the eventfd of the peer node
+- memid: the memid of the activation record of the peer from Core:AddMem
+- offset: the offset in memid
+- size: the size of the activation record
+
+### ClientNode::PortSetMixInfo (Opcode 11)
+
+Notify the node of the peer of a mixer port. This can be used to track the peer
+ports of a node.
+
+```
+   Struct(
+      Int: direction
+      Int: port_id
+      Int: mix_id
+      Int: peer_id
+      Struct(
+         Int: n_items
+	 ( String: key
+	   String: value )*
+      ): props
+   )
+```
+- direction: the direction of the port
+- port_id: the port id of the port
+- mix_id: the mix id of the port
+- peer_id: the id of the peer port
+- props: optional properties
+
+# PipeWire:Interface:Metadata {#native-protocol-metadata}
+
+Metadata is a shared database of settings and properties.
+
+## Metadata methods
+
+### Metadata::SetProperty (Opcode 1)
+
+Set a property in the metadata store.
+
+```
+   Struct(
+      Int: subject
+      String: key
+      String: type
+      String: value
+   )
+```
+- subject: the id of the object, this needs to be a valid global_id
+- key: a key
+- type: an optional type
+- value: a value
+
+
+### Metadata::Clear (Opcode 2)
+
+Clear the metadata store.
+
+```
+   Struct(
+      None
+   )
+```
+
+## Metadata events
+
+### Metadata::Property (Opcode 0)
+
+A metadata key changed. This is also emitted when binding to the metadata.
+
+```
+   Struct(
+      Int: subject
+      String: key
+      String: type
+      String: value
+   )
+```
+- subject: the id of the object, this is a valid global_id
+- key: a key
+- type: an optional type
+- value: a value
+
+# PipeWire:Interface:Profiler {#native-protocol-profiler}
+
+The profiler object allows one to receive profiler information of the pipewire
+graph.
+
+## Profiler methods
+
+The profiler has no methods
+
+## Profiler events
+
+### Profiler::Profile (Opcode 0)
+
+```
+   Struct(
+      Pod: object
+   )
+```
+- object: a SPA_TYPE_OBJECT_Profiler object. See enum spa_profiler
+
+
+# Footer {#native-protocol-footer}
+
+The message footer contains additional messages, not directed to the
+destination object defined by the `Id` field.
+
+The footer consists of a single POD, immediately following the payload
+POD.  The footer POD consists of a sequence of footer opcode Ids and
+footer payload Structs containing their arguments:
+
+```
+   Struct(
+      Id: opcode1,
+      Struct { ... },
+      Id: opcode2,
+      Struct { ... },
+      ...
+   )
+```
+
+The footer opcodes are separate for server-to-client (`core`) and
+client-to-server (`client`) directions.
+
+The message footer is processed before other parts of the message,
+including the object Id lookup.
+
+## Core Generation (Footer Opcode 0)
+
+```
+   Struct(
+      Long: registry_generation,
+   )
+```
+
+Indicates to the client what is the current registry generation
+number of the \ref pw_context on the server side.
+
+The server shall include this footer in the next message it sends that
+follows the increment of the registry generation number.
+
+\see \ref native-protocol-registry-generation
+
+## Client Generation (Footer Opcode 0)
+
+```
+   Struct(
+      Long: client_generation,
+   )
+```
+
+Indicates to the server what is the last registry generation number
+the client has processed.
+
+The client shall include this footer in the next message it sends,
+after it has processed an incoming message whose footer includes a
+registry generation update.
+
+\see \ref native-protocol-registry-generation
+
+# Registry generation  {#native-protocol-registry-generation}
+
+The registry generation is a 64-bit integer in the PipeWire server
+\ref pw_context that increments by one when the server allocates a new
+global \ref PW_KEY_OBJECT_ID for an object.
+
+The server keeps track of each global *id* as a tuple ( *id*, *object
+generation* ) where *object generation* is the registry generation
+value when the *id* was allocated.
+
+When an object is destroyed, its *id* value may be reallocated to a
+different object. Because the protocol is asynchronous, the
+object *id* alone is not sufficient to uniquely identify objects.
+
+The server looks up objects based on a tuple ( *id*, *generation* ) as
+follows:
+
+1. Look up the \ref pw_global based on the *id*.
+
+2. The lookup fails if there is no global for the *id*, or
+   if *generation* < *object generation*.
+
+The protocol message generally contains only the object *id*.  The
+registry generation part is passed around as follows:
+
+1. The server sends the current *registry generation* to clients in the
+   protocol footer, if it has changed.
+
+2. The clients keep track of the latest registry generation of the
+   messages they have processed. This is the *client generation*.
+
+3. Each client sends their *client generation* in the protocol footer
+   of the next message to the server, if its value has changed.
+
+4. The server keeps track for each client the *client generation* they
+   have sent back.
+
+5. In each protocol message received from client, the server considers
+   each object *id* as tuple ( *id*, *client generation* ).
+
+This allows the server to know if the object *id* the client refers to was
+already destroyed, but the client has not yet processed the message
+indicating that the *id* is gone. The server indicates failed lookups
+of this type with error code ESTALE to the client.
+
+If a client has not sent any *client generation* updates to the
+server, then the server will not do any registry generation checks in
+object lookups.  This is for backward compatibility only.
+
+The registry generation is an internal detail of the server
+implementation and the native protocol, and is not visible to clients
+in the PipeWire API.  To identify objects uniquely, clients can use
+\ref PW_KEY_OBJECT_SERIAL, which are unique for objects and not
+reused, unlike \ref PW_KEY_OBJECT_ID
+
+\see \ref PW_KEY_OBJECT_SERIAL
+
+*/

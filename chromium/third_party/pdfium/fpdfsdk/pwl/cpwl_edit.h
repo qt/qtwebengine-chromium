@@ -104,8 +104,7 @@ class CPWL_Edit final : public CPWL_Wnd {
 
   bool IsWndHorV() const;
   void Delete();
-  void GetCaretInfo(CFX_PointF* ptHead, CFX_PointF* ptFoot) const;
-  void SetEditCaret(bool bVisible);
+  void SetVisibleEditCaret();
 
   void CreateEditCaret(const CreateParams& cp);
 

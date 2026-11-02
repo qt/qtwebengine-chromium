@@ -28,7 +28,7 @@ const UIStrings = {
    */
   export: 'Export',
   /**
-   * @description Label for an item to remove something
+   * @description Label for a button that removes a virtual authenticator or a registered credential from the WebAuthn panel.
    */
   remove: 'Remove',
   /**
@@ -47,7 +47,7 @@ const UIStrings = {
   /**
    * @description Label for field that describes whether a credential is a resident credential.
    */
-  isResident: 'Is Resident',
+  isResident: 'Is resident',
   /**
    * @description Label for credential field that represents the Relying Party ID that the credential is scoped to.
    */
@@ -55,18 +55,18 @@ const UIStrings = {
   /**
    * @description Label for a column in a table. A field/unique ID that represents the user a credential is mapped to.
    */
-  userHandle: 'User Handle',
+  userHandle: 'User handle',
   /**
    * @description Label for signature counter field for credentials which represents the number of successful assertions.
    * See https://w3c.github.io/webauthn/#signature-counter.
    */
-  signCount: 'Signature Count',
+  signCount: 'Signature count',
   /**
    * @description Label for column with actions for credentials.
    */
   actions: 'Actions',
   /**
-   * @description Title for the table that holds the credentials that a authenticator has registered.
+   * @description Title for the table that holds the credentials that an authenticator has registered.
    */
   credentials: 'Credentials',
   /**
@@ -74,7 +74,7 @@ const UIStrings = {
    */
   noAuthenticator: 'No authenticator set up',
   /**
-   * @description That that shows before virtual environment is enabled explaining the panel.
+   * @description Text that shows before the virtual environment is enabled explaining the panel.
    */
   useWebauthnForPhishingresistant: 'Use WebAuthn for phishing-resistant authentication.',
   /**
@@ -82,7 +82,7 @@ const UIStrings = {
    */
   newAuthenticator: 'New authenticator',
   /**
-   * @description Text for security or network protocol
+   * @description Text for security or network protocol.
    */
   protocol: 'Protocol',
   /**
@@ -112,7 +112,7 @@ const UIStrings = {
    */
   supportsHmacSecretMc: 'Supports hmac-secret-mc',
   /**
-   * @description Text to add something
+   * @description Label for a button that creates and adds a new virtual authenticator with the selected options in the WebAuthn panel.
    */
   add: 'Add',
   /**
@@ -149,11 +149,11 @@ const UIStrings = {
    */
   supportsUserVerification: 'Supports user verification',
   /**
-   * @description Text in Timeline indicating that input has happened recently
+   * @description Text indicating that a virtual authenticator supports a specific feature.
    */
   yes: 'Yes',
   /**
-   * @description Text in Timeline indicating that input has not happened recently
+   * @description Text indicating that a virtual authenticator does not support a specific feature.
    */
   no: 'No',
   /**
@@ -341,7 +341,7 @@ function renderNewAuthenticatorSection(
               Protocol.WebAuthn.AuthenticatorTransport.Usb,
               Protocol.WebAuthn.AuthenticatorTransport.Ble,
               Protocol.WebAuthn.AuthenticatorTransport.Nfc,
-                ...(isCtap2 ? [Protocol.WebAuthn.AuthenticatorTransport.Internal] : [])
+                ...(isCtap2 ? [Protocol.WebAuthn.AuthenticatorTransport.Internal] : []),
             ].map(option => html`
                 <option value=${option} jslog=${VisualLogging.item(option).track({click: true})}
                         .selected=${options.transport === option}

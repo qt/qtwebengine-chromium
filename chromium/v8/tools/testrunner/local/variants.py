@@ -159,6 +159,12 @@ ALL_VARIANT_FLAGS = {
     "stress_instruction_scheduling": [
         "--turbo-stress-instruction-scheduling", "--no-liftoff"
     ],
+    "turbofan_random_rescheduling": [
+        "--no-liftoff",
+        # TODO(nicohartmann): Enable randomized JS rescheduling.
+        "--wasm-random-rescheduling"
+    ],
+    "validate_generated_code": ["--validate-generated-code"],
     # Google3 variant.
     "google3": [],
 }
@@ -167,8 +173,14 @@ ALL_VARIANT_FLAGS = {
 # disabled (i.e. not part of the binary), or when all codegen is disallowed (in
 # jitless mode).
 kIncompatibleFlagsForNoTurbofan = [
-    "--turbofan", "--liftoff", "--validate-asm", "--maglev", "--turbolev",
-    "--turbolev-future", "--stress-concurrent-inlining", "--turboshaft"
+    "--turbofan", "--liftoff", "--maglev", "--turbolev", "--turbolev-future",
+    "--stress-concurrent-inlining", "--turboshaft"
+]
+
+kIncompatibleFlagsForNoLiftoff = [
+    "--liftoff-only",
+    "--wasm-dynamic-tiering",
+    "--wasm-deopt",
 ]
 
 # Flags that lead to a contradiction with the flags provided by the respective
@@ -195,6 +207,7 @@ INCOMPATIBLE_FLAGS_PER_VARIANT = {
         ],
     "jitless":
         kIncompatibleFlagsForNoTurbofan + [
+            "--no-jitless",
             "--track-field-types",
             "--sparkplug",
             "--concurrent-sparkplug",
@@ -206,16 +219,17 @@ INCOMPATIBLE_FLAGS_PER_VARIANT = {
             "--script-context-cells",
         ],
     "nooptimization": [
+        "--no-disable-optimizing-compilers",
         "--turbofan",
         "--turboshaft",
         "--wasm-in-js-inlining-body",
+        "--wasm-in-js-inlining-wrapper",
         "--turbolev",
         "--turbolev-future",
         "--maglev",
         "--no-liftoff",
         "--wasm-tier-up",
         "--wasm-dynamic-tiering",
-        "--validate-asm",
         "--track-field-types",
         "--stress-concurrent-inlining",
         "--additive-safe-int-feedback",
@@ -235,27 +249,14 @@ INCOMPATIBLE_FLAGS_PER_VARIANT = {
     # SerializeInternalFieldsCallback for it, so they are incompatible with
     # stress_snapshot.
     "stress_snapshot": ["--expose-fast-api"],
-    "stress": [
-        # 'stress' disables Liftoff, which conflicts with flags that require
-        # Liftoff support.
-        "--liftoff-only",
-        "--wasm-dynamic-tiering",
-        "--wasm-deopt",
-    ],
-    "instruction_scheduling": [
-        # instruction_scheduling disables Liftoff, which conflicts with flags
-        # that require Liftoff support.
-        "--liftoff-only",
-        "--wasm-dynamic-tiering",
-        "--wasm-deopt",
-    ],
-    "stress_instruction_scheduling": [
-        # stress_instruction_scheduling disables Liftoff, which conflicts with
-        # flags that require Liftoff support.
-        "--liftoff-only",
-        "--wasm-dynamic-tiering",
-        "--wasm-deopt",
-    ],
+    "stress":
+        kIncompatibleFlagsForNoLiftoff,
+    "instruction_scheduling":
+        kIncompatibleFlagsForNoLiftoff,
+    "stress_instruction_scheduling":
+        kIncompatibleFlagsForNoLiftoff,
+    "turbofan_random_rescheduling":
+        kIncompatibleFlagsForNoLiftoff,
     "sparkplug": ["--jitless", "--no-sparkplug"],
     "concurrent_sparkplug": ["--jitless"],
     "maglev": ["--jitless", "--no-maglev"],
@@ -285,14 +286,8 @@ INCOMPATIBLE_FLAGS_PER_VARIANT = {
         "--stress-concurrent-inlining",
     ],
     "stress_maglev_tests_with_turbofan": ["--jitless"],
-    "turbolev_future": [
-        "--no-turbolev",
-        "--no-wasm-in-js-inlining-wrapper",
-    ],
-    "stress_turbolev_future": [
-        "--no-turbolev",
-        "--no-wasm-in-js-inlining-wrapper",
-    ],
+    "turbolev_future": ["--no-turbolev",],
+    "stress_turbolev_future": ["--no-turbolev",],
     "always_sparkplug": ["--jitless", "--no-sparkplug"],
     "always_sparkplug_and_stress_regexp_jit": ["--jitless", "--no-sparkplug"],
     "code_serializer": [
@@ -370,7 +365,7 @@ INCOMPATIBLE_FLAGS_PER_BUILD_VARIABLE = {
         "--shared-strings",
         "--shared-heap",
         "--harmony-struct",
-        "--experimental-wasm-shared",
+        "--wasm-shared",
     ],
     "!slow_dchecks": ["--enable-slow-asserts"],
     "!gdbjit": ["--gdbjit", "--gdbjit_full", "--gdbjit_dump"],

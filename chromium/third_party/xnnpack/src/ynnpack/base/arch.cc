@@ -19,6 +19,7 @@ namespace ynn {
 
 #if defined(YNN_ARCH_X86_64) && defined(__linux__) && !defined(CHROMIUM)
 #include <sys/syscall.h>
+#include <sys/types.h>
 
 #define XFEATURE_XTILEDATA 18
 #define ARCH_REQ_XCOMP_PERM 0x1023
@@ -51,6 +52,7 @@ uint64_t get_supported_arch_flags() {
 
 #ifdef YNN_ARCH_X86
     result |= arch_flag::sse2;
+    result |= arch_flag::sse2_fma;
     if (cpuinfo_has_x86_ssse3()) result |= arch_flag::ssse3;
     if (cpuinfo_has_x86_sse4_1()) result |= arch_flag::sse41;
     if (cpuinfo_has_x86_avx()) result |= arch_flag::avx;
@@ -78,6 +80,8 @@ uint64_t get_supported_arch_flags() {
     if (cpuinfo_has_arm_neon_fp16_arith()) result |= arch_flag::neonfp16arith;
     if (cpuinfo_has_arm_neon_bf16()) result |= arch_flag::neonbf16;
     if (cpuinfo_has_arm_i8mm()) result |= arch_flag::neoni8mm;
+    if (cpuinfo_has_arm_fp8()) result |= arch_flag::neonfp8;
+    if (cpuinfo_has_arm_f8dot()) result |= arch_flag::neonfp8dot4;
 #if !YNN_COMPILER_HAS_FEATURE(memory_sanitizer)
     // msan (understandably) does not support SVE/SME (b/494230133).
     if (cpuinfo_has_arm_sme()) result |= arch_flag::sme;

@@ -2,3 +2,4 @@
 
 set -ex
 
+pkg clean -a

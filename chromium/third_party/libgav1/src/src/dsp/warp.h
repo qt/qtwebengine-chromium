@@ -17,6 +17,8 @@
 #ifndef LIBGAV1_SRC_DSP_WARP_H_
 #define LIBGAV1_SRC_DSP_WARP_H_
 
+#include <cstdint>
+
 // Pull in LIBGAV1_DspXXX defines representing the implementation status
 // of each function. The resulting value of each can be used by each module to
 // determine whether an implementation is needed at compile time.
@@ -34,6 +36,8 @@
 // clang-format on
 
 // IWYU pragma: end_exports
+
+#include "src/utils/constants.h"
 
 namespace libgav1 {
 namespace dsp {

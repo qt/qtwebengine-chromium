@@ -14,8 +14,6 @@
 // limitations under the License.
 //
 
-#![feature(try_blocks)]
-
 mod print;
 mod report;
 
@@ -29,13 +27,16 @@ use std::{
 use anyhow::anyhow;
 use clap::Parser;
 use oak_proto_rust::{
-    attestation::{CERTIFICATE_BASED_ATTESTATION_ID, CONFIDENTIAL_SPACE_ATTESTATION_ID},
+    attestation::{
+        CERTIFICATE_BASED_ATTESTATION_ID, CONFIDENTIAL_SPACE_ATTESTATION_ID,
+        RESTRICTED_KERNEL_ATTESTATION_ID,
+    },
     oak::{
+        Variant,
         attestation::v1::{
-            reference_values, CollectedAttestation, ReferenceValues, ReferenceValuesCollection,
+            CollectedAttestation, ReferenceValues, ReferenceValuesCollection, reference_values,
         },
         session::v1::EndorsedEvidence,
-        Variant,
     },
 };
 use oak_time::Instant;
@@ -62,7 +63,7 @@ fn proto_decoder<T: Message + std::default::Default>(path: &str) -> anyhow::Resu
     Ok(T::decode(fs::read(path)?.as_slice())?)
 }
 
-fn main() -> std::fmt::Result {
+fn main() -> anyhow::Result<()> {
     let Flags { attestation, reference_values: ReferenceValuesCollection { reference_values } } =
         Flags::parse();
 
@@ -70,7 +71,13 @@ fn main() -> std::fmt::Result {
     let indent = 0;
 
     let attestation_timestamp = get_timestamp(&attestation);
-    print_timestamp_report(&mut buffer, indent, &attestation_timestamp)?;
+    let mut all_ok = attestation_timestamp.as_ref().map(|_| ()).map_err(|e| anyhow!(e.to_string()));
+    print_report_header(
+        &mut buffer,
+        indent,
+        &attestation.request_metadata.unwrap_or_default().uri,
+        &attestation_timestamp,
+    )?;
     let attestation_timestamp = attestation_timestamp.unwrap_or(Instant::UNIX_EPOCH);
 
     let handshake_hash = attestation.handshake_hash.clone();
@@ -83,26 +90,28 @@ fn main() -> std::fmt::Result {
             attestation_timestamp,
             reference_values.get(attestation_type_id),
         ) {
-            Ok(ref report) => {
+            Ok(report) => {
                 report.print(
                     &mut buffer,
                     indent,
                     &handshake_hash,
                     attestation.session_bindings.get(attestation_type_id),
                 )?;
+                all_ok = all_ok.and(report.check());
             }
-            Err(ref err) => {
+            Err(err) => {
                 print_indented!(
                     &mut buffer,
                     indent,
                     "❌ Provided attestation is invalid: {}",
                     err
                 )?;
+                all_ok = all_ok.and(Err(err));
             }
         }
     }
     println!("{}", buffer);
-    Ok(())
+    all_ok
 }
 
 // TODO: b/419209669 - add tests for process_attestation (or perhaps more
@@ -117,9 +126,7 @@ fn process_attestation(
         CONFIDENTIAL_SPACE_ATTESTATION_ID => match reference_values {
             Some(ReferenceValues {
                 r#type:
-                    Some(reference_values::Type::ConfidentialSpace(
-                        ref confidential_space_reference_values,
-                    )),
+                    Some(reference_values::Type::ConfidentialSpace(confidential_space_reference_values)),
             }) => VerificationReport::confidential_space(
                 confidential_space_reference_values,
                 attestation_timestamp,
@@ -131,14 +138,25 @@ fn process_attestation(
         CERTIFICATE_BASED_ATTESTATION_ID => match reference_values {
             Some(ReferenceValues {
                 r#type:
-                    Some(reference_values::Type::CertificateBased(
-                        ref certificate_based_reference_values,
-                    )),
+                    Some(reference_values::Type::CertificateBased(certificate_based_reference_values)),
             }) => VerificationReport::certificate_based(
                 certificate_based_reference_values,
                 attestation_timestamp,
                 &find_single_event(endorsed_evidence)?,
                 &find_single_endorsement(endorsed_evidence)?,
+            ),
+            _ => Err(anyhow!("Found no reference values")),
+        },
+        RESTRICTED_KERNEL_ATTESTATION_ID => match reference_values {
+            Some(ReferenceValues {
+                r#type:
+                    Some(reference_values::Type::OakRestrictedKernel(
+                        oak_restricted_kernel_reference_values,
+                    )),
+            }) => VerificationReport::restricted_kernel(
+                oak_restricted_kernel_reference_values,
+                attestation_timestamp,
+                endorsed_evidence,
             ),
             _ => Err(anyhow!("Found no reference values")),
         },
@@ -154,12 +172,14 @@ fn get_timestamp(attestation: &CollectedAttestation) -> anyhow::Result<Instant> 
     Ok(Instant::from_unix_millis(duration_since_epoch.as_millis().try_into()?))
 }
 
-/// Prints out a report for the provided timestamp
-fn print_timestamp_report(
+/// Prints out the report header.
+fn print_report_header(
     writer: &mut impl Write,
     indent: usize,
+    uri: &String,
     timestamp: &anyhow::Result<Instant>,
 ) -> std::fmt::Result {
+    print_indented!(writer, indent, "🔗 {}", uri)?;
     print_indented!(writer, indent, "🕠 Recorded timestamp:")?;
     match timestamp {
         Err(err) => {

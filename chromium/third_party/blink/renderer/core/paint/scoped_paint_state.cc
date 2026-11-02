@@ -168,7 +168,8 @@ void ScopedBoxContentsPaintState::AdjustForBoxContents(const LayoutBox& box) {
       if (!box.IsLayoutView()) {
         if (auto* scrollable_area = box.GetScrollableArea()) {
           if (scrollable_area->MaximumScrollOffset().x() != 0) {
-            PhysicalRect content_rect = box.OverflowClipRect(paint_offset_);
+            PhysicalRect content_rect = box.OverflowClipRect();
+            content_rect.Move(paint_offset_);
             content_rect.Intersect(
                 PhysicalRect(input_paint_info_.GetCullRect().Rect()));
             mf_checker->NotifyPaintReplaced(
@@ -182,8 +183,9 @@ void ScopedBoxContentsPaintState::AdjustForBoxContents(const LayoutBox& box) {
         // boxes because they don't scroll in the viewport.
         if (const auto* properties = fragment_to_paint_->PaintProperties()) {
           if (const auto* translation = properties->PaintOffsetTranslation()) {
-            if (translation->ScrollTranslationForFixed())
+            if (translation->ScrollParentScrollTranslation()) {
               mf_ignore_scope_.emplace(*mf_checker);
+            }
           }
         }
       }

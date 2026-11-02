@@ -20,8 +20,8 @@ webbrowser.register(
         devtools_paths.downloaded_chrome_binary_path()))
 
 webbrowser.get('cft').open(
-    "file://" +
-    os.path.join(os.path.dirname(__file__), 'test', 'screenshots.html') +
+    "file://" + os.path.abspath(
+        os.path.join(os.path.dirname(__file__), 'test', 'screenshots.html')) +
     f'?path={options.path}&old={os.path.abspath(options.old_file)}&new={os.path.abspath(options.new_file)}'
 )
 input("Press Enter to exit...")

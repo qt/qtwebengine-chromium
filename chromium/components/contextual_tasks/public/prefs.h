@@ -18,9 +18,13 @@ enum class SmartTabSharingSettingsValue {
 };
 
 extern const char kContextualTasksOnboardingTooltipDismissedCount[];
+extern const char kContextualTasksLensSearchTooltipDismissedCount[];
+extern const char kContextualTasksAskGTooltipDismissedCount[];
 extern const char kContextualTasksShareOpenTabsEveryThread[];
 extern const char kContextualTasksSiteExclusions[];
 extern const char kContextualTasksSmartTabSharingSettings[];
+extern const char kContextualTasksOnboardingShownTime[];
+extern const char kContextualTasksSessionCountPostOnboarding[];
 
 // Registers profile prefs.
 void RegisterProfilePrefs(PrefRegistrySimple* registry);

@@ -12,9 +12,9 @@
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/retain_ptr.h"
-#include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/cfx_glyphcache.h"
+#include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/utils/hash.h"
@@ -35,8 +35,8 @@ class CFDETextOutTest : public testing::Test {
     ASSERT_TRUE(bitmap_->Create(bitmap_size.width, bitmap_size.height,
                                 FXDIB_Format::kBgra));
 
-    device_ = std::make_unique<CFX_DefaultRenderDevice>();
-    ASSERT_TRUE(device_->Attach(bitmap_));
+    device_ = CFX_RenderDevice::CreateForBitmap(bitmap_);
+    ASSERT_TRUE(device_);
 
     font_ = LoadFont();
     ASSERT_TRUE(font_);
@@ -70,7 +70,7 @@ class CFDETextOutTest : public testing::Test {
     return kEmptyBitmapChecksum;
   }
 
-  CFX_DefaultRenderDevice* device() { return device_.get(); }
+  CFX_RenderDevice* device() { return device_.get(); }
   CFDE_TextOut& text_out() { return *text_out_; }
 
   ByteString GetBitmapChecksum() {
@@ -85,7 +85,7 @@ class CFDETextOutTest : public testing::Test {
 
  private:
   RetainPtr<CFX_DIBitmap> bitmap_;
-  std::unique_ptr<CFX_DefaultRenderDevice> device_;
+  std::unique_ptr<CFX_RenderDevice> device_;
   RetainPtr<CFGAS_GEFont> font_;
   std::unique_ptr<CFDE_TextOut> text_out_;
 };

@@ -25,7 +25,7 @@ class SolveImpl;
  * \brief Pseudo expression representing a solving operation
  *
  * \tparam Decomposition the type of the matrix or decomposition object
- * \tparam Rhstype the type of the right-hand side
+ * \tparam RhsType the type of the right-hand side
  *
  * This class represents an expression of A.solve(B)
  * and most of the time this is the only way it is used.

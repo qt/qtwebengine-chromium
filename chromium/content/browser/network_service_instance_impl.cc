@@ -22,6 +22,7 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/message_loop/message_pump_type.h"
+#include "base/message_loop/message_pump_wakeup_counter.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/no_destructor.h"
@@ -30,6 +31,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/synchronization/lock_metrics_recorder.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
@@ -50,12 +52,14 @@
 #include "content/browser/first_party_sets/first_party_sets_handler_impl.h"
 #include "content/browser/network/http_cache_backend_file_operations_factory.h"
 #include "content/browser/network_sandbox_grant_result.h"
+#include "content/browser/network_sandbox_grant_result_helper.h"
 #include "content/browser/network_service_client.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/network_service_instance.h"
 #include "content/public/browser/network_service_util.h"
+#include "content/public/browser/observed_service_remote.h"
 #include "content/public/browser/service_process_host.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
@@ -126,8 +130,8 @@ constexpr char kKrb5ConfFilePath[] = "/home/chronos/user/kerberos/krb5.conf";
 
 bool g_force_create_network_service_directly = false;
 bool g_network_service_crashes_on_next_startup = false;
-mojo::Remote<network::mojom::NetworkService>* g_network_service_remote =
-    nullptr;
+ObservedServiceRemote<network::mojom::NetworkService>*
+    g_observed_network_service = nullptr;
 network::NetworkConnectionTracker* g_network_connection_tracker;
 bool g_network_service_is_responding = false;
 
@@ -257,134 +261,14 @@ static NetworkServiceClient* g_client = nullptr;
 
 void CreateInProcessNetworkServiceOnThread(
     mojo::PendingReceiver<network::mojom::NetworkService> receiver) {
+  TRACE_EVENT0("loading", "CreateInProcessNetworkServiceOnThread");
   g_in_process_instance = new network::NetworkService(
       nullptr /* registry */, std::move(receiver),
       true /* delay_initialization_until_set_client */);
 }
 
-// A utility function to make it clear what behavior is expected by the network
-// context instance depending on the various errors that can happen during data
-// migration.
-//
-// If this function returns 'true' then the `data_directory` should be used (if
-// specified in the network context params). If this function returns 'false'
-// then the `unsandboxed_data_path` should be used.
-bool IsSafeToUseDataPath(SandboxGrantResult result) {
-  switch (result) {
-    case SandboxGrantResult::kSuccess:
-      // A migration occurred, and it was successful.
-      return true;
-    case SandboxGrantResult::kFailedToGrantSandboxAccessToCache:
-    case SandboxGrantResult::kFailedToCreateCacheDirectory:
-      // A failure to grant create or grant access to the cache dir does not
-      // affect the providence of the data contained in `data_directory` as the
-      // migration could have still occurred.
-      //
-      // These cases are handled internally and so this case should never be
-      // hit. It is undefined behavior to proceed in this case so CHECK here.
-      base::ImmediateCrash();
-    case SandboxGrantResult::kFailedToCreateDataDirectory:
-      // A failure to create the `data_directory` is fatal, and the
-      // `unsandboxed_data_path` should be used.
-      return false;
-    case SandboxGrantResult::kFailedToCopyData:
-      // A failure to copy the data from `unsandboxed_data_path` to the
-      // `data_directory` is fatal, and the `unsandboxed_data_path` should be
-      // used.
-      return false;
-    case SandboxGrantResult::kFailedToDeleteOldData:
-      // This is not fatal, as the new data has been correctly migrated, and the
-      // deletion will be retried at a later time.
-      return true;
-    case SandboxGrantResult::kFailedToGrantSandboxAccessToData:
-      // If the sandbox could not be granted access to the new data dir, then
-      // don't attempt to migrate. This means that the old
-      // `unsandboxed_data_path` should be used.
-      return false;
-    case SandboxGrantResult::kDidNotAttemptToGrantSandboxAccess:
-      // No migration was attempted either because of platform constraints or
-      // because the network context had no valid data paths (e.g. in-memory or
-      // incognito), or `unsandboxed_data_path` was not specified.
-      // `data_directory` should be used in this case (if present).
-      return true;
-    case SandboxGrantResult::kFailedToCreateCheckpointFile:
-      // This is fatal, as a failure to create the checkpoint file means that
-      // the next time the same network context is used, the data in
-      // `unsandboxed_data_path` will be re-copied to the new `data_directory`
-      // and thus any changes to the data will be discarded. So in this case,
-      // `unsandboxed_data_path` should be used.
-      return false;
-    case SandboxGrantResult::kNoMigrationRequested:
-      // The caller supplied an `unsandboxed_data_path` but did not trigger a
-      // migration so the data should be read from the `unsandboxed_data_path`.
-      return false;
-    case SandboxGrantResult::kMigrationAlreadySucceeded:
-      // Migration has already taken place, so `data_directory` contains the
-      // valid data.
-      return true;
-    case SandboxGrantResult::kMigrationAlreadySucceededWithNoAccess:
-      // If the sandbox could not be granted access to the new data dir, but the
-      // migration has already happened to `data_directory`. This means that the
-      // sandbox might not have access to the data but `data_directory` should
-      // still be used because it's been migrated.
-      return true;
-  }
-}
-
-void CreateNetworkContextInternal(
-    mojo::PendingReceiver<network::mojom::NetworkContext> context,
-    network::mojom::NetworkContextParamsPtr params,
-    SandboxGrantResult grant_access_result) {
-  TRACE_EVENT0("loading", "CreateNetworkContextInternal");
-  // These two histograms are logged from elsewhere, so don't log them twice.
-  DCHECK(grant_access_result !=
-         SandboxGrantResult::kFailedToCreateCacheDirectory);
-  DCHECK(grant_access_result !=
-         SandboxGrantResult::kFailedToGrantSandboxAccessToCache);
-  base::UmaHistogramEnumeration("NetworkService.GrantSandboxResult",
-                                grant_access_result);
-
-  if (grant_access_result != SandboxGrantResult::kSuccess &&
-      grant_access_result !=
-          SandboxGrantResult::kDidNotAttemptToGrantSandboxAccess &&
-      grant_access_result != SandboxGrantResult::kNoMigrationRequested &&
-      grant_access_result != SandboxGrantResult::kMigrationAlreadySucceeded) {
-    PLOG(ERROR) << "Encountered error while migrating network context data or "
-                   "granting sandbox access for "
-                << (params->file_paths
-                        ? params->file_paths->data_directory.path()
-                        : base::FilePath())
-                << ". Result: " << static_cast<int>(grant_access_result);
-  }
-
-  if (!IsSafeToUseDataPath(grant_access_result)) {
-    // Unsafe to use new `data_directory`. This means that a migration was
-    // attempted, and `unsandboxed_data_path` contains the still-valid set of
-    // data. Swap the parameters to instruct the network service to use this
-    // path for the network context. This of course will mean that if the
-    // network service is running sandboxed then this data might not be
-    // accessible, but does provide a pathway to user recovery, as the sandbox
-    // can just be disabled in this case.
-    DCHECK(params->file_paths->unsandboxed_data_path.has_value());
-    params->file_paths->data_directory =
-        *params->file_paths->unsandboxed_data_path;
-  }
-
-  if (network::TransferableDirectory::IsOpenForTransferRequired()) {
-    if (params->file_paths) {
-      if (params->file_paths->http_cache_directory) {
-        params->file_paths->http_cache_directory->OpenForTransfer();
-      }
-      if (params->file_paths->shared_dictionary_directory) {
-        params->file_paths->shared_dictionary_directory->OpenForTransfer();
-      }
-      params->file_paths->data_directory.OpenForTransfer();
-    }
-  }
-
-  // This might recreate g_client if the network service needed to be restarted.
-  auto* network_service = GetNetworkService();
-
+void MaybeInitializeSocketBrokers(
+    network::mojom::NetworkContextParams* params) {
 #if BUILDFLAG(IS_WIN)
   // If the browser has started shutting down, it is possible that either a)
   // `g_client` was never created if shutdown started before the network service
@@ -401,6 +285,18 @@ void CreateNetworkContextInternal(
     params->socket_brokers->server = g_client->BindSocketBroker();
   }
 #endif  // BUILDFLAG(IS_WIN)
+}
+
+void CreateNetworkContextInternal(
+    mojo::PendingReceiver<network::mojom::NetworkContext> context,
+    network::mojom::NetworkContextParamsPtr params,
+    SandboxGrantResult grant_access_result) {
+  TRACE_EVENT("loading", "CreateNetworkContextInternal");
+  ProcessSandboxGrantResult(*params.get(), grant_access_result);
+
+  // This might recreate g_client if the network service needed to be restarted.
+  auto* network_service = GetNetworkService();
+  MaybeInitializeSocketBrokers(params.get());
 
   network_service->CreateNetworkContext(std::move(context), std::move(params));
 }
@@ -409,6 +305,8 @@ scoped_refptr<base::SequencedTaskRunner>& GetNetworkTaskRunnerStorage() {
   static base::NoDestructor<scoped_refptr<base::SequencedTaskRunner>> storage;
   return *storage;
 }
+
+const char kNetworkServiceSuffix[] = "NetworkService";
 
 void CreateInProcessNetworkService(
     mojo::PendingReceiver<network::mojom::NetworkService> receiver) {
@@ -437,10 +335,14 @@ void CreateInProcessNetworkService(
     task_runner->PostTask(
         FROM_HERE, base::BindOnce([]() {
           mojo::InterfaceEndpointClient::SetThreadNameSuffixForMetrics(
-              "NetworkService");
+              kNetworkServiceSuffix);
+          base::MessagePumpWakeupCounter::InitializeForCurrentThread(
+              kNetworkServiceSuffix);
+          base::LockMetricsRecorder::EnableRecordingOnCurrentThread(
+              kNetworkServiceSuffix);
 #if BUILDFLAG(IS_ANDROID)
           base::PlatformThreadPriorityMonitor::Get().RegisterCurrentThread(
-              "NetworkService");
+              kNetworkServiceSuffix);
 #endif  // BUILDFLAG(IS_ANDROID)
         }));
   } else {
@@ -573,9 +475,9 @@ base::RepeatingCallbackList<void(bool)>& GetProcessGoneHandlersList() {
 
 void OnNetworkServiceProcessGone(bool crashed) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(g_network_service_remote);
-  DCHECK(g_network_service_remote->is_bound());
-  DCHECK(!crashed || !g_network_service_remote->is_connected());
+  DCHECK(g_observed_network_service);
+  DCHECK(g_observed_network_service->remote().is_bound());
+  DCHECK(!crashed || !g_observed_network_service->remote().is_connected());
   GetProcessGoneHandlersList().Notify(crashed);
 }
 
@@ -614,6 +516,25 @@ net::NetLogCaptureMode GetNetCaptureModeFromCommandLine(
   }
 
   return net::NetLogCaptureMode::kDefault;
+}
+
+net::NetLogFileFormat GetNetLogFileFormatFromCommandLine(
+    const base::CommandLine& command_line) {
+  std::string_view switch_name = network::switches::kNetLogFileFormat;
+
+  if (!command_line.HasSwitch(switch_name)) {
+    return net::NetLogFileFormat::kJson;
+  }
+
+  std::string value = command_line.GetSwitchValueASCII(switch_name);
+  if (value == "ndjson") {
+    return net::NetLogFileFormat::kNdjson;
+  }
+  if (value != "json") {
+    LOG(ERROR) << "Unrecognized value for --" << switch_name;
+  }
+
+  return net::NetLogFileFormat::kJson;
 }
 
 std::optional<base::TimeDelta> GetNetLogDurationFromCommandLine(
@@ -674,6 +595,11 @@ uint64_t GetNetLogMaximumFileSizeFromCommandLineForTesting(  // IN-TEST
   return GetNetLogMaximumFileSizeFromCommandLine(command_line);
 }
 
+net::NetLogFileFormat GetNetLogFileFormatFromCommandLineForTesting(  // IN-TEST
+    const base::CommandLine& command_line) {
+  return GetNetLogFileFormatFromCommandLine(command_line);
+}
+
 class NetworkServiceInstancePrivate {
  public:
   // Opens the specified file, blocking until the file is open. Used to open
@@ -694,25 +620,28 @@ class NetworkServiceInstancePrivate {
 };
 
 network::mojom::NetworkService* GetNetworkService() {
-  if (!g_network_service_remote)
-    g_network_service_remote = new mojo::Remote<network::mojom::NetworkService>;
-  if (!g_network_service_remote->is_bound() ||
-      !g_network_service_remote->is_connected()) {
-    bool service_was_bound = g_network_service_remote->is_bound();
-    g_network_service_remote->reset();
+  if (!g_observed_network_service) {
+    g_observed_network_service =
+        new ObservedServiceRemote<network::mojom::NetworkService>;
+  }
+  if (!g_observed_network_service->remote().is_bound() ||
+      !g_observed_network_service->remote().is_connected()) {
+    bool service_was_bound = g_observed_network_service->remote().is_bound();
+    g_observed_network_service->remote().reset();
     if (GetContentClient()->browser()->IsShuttingDown()) {
       // This happens at system shutdown, since in other scenarios the network
       // process would only be torn down once the message loop stopped running.
       // We don't want to start the network service again so just create message
       // pipe that's not bound to stop consumers from requesting creation of the
       // service.
-      auto receiver = g_network_service_remote->BindNewPipeAndPassReceiver();
+      auto receiver =
+          g_observed_network_service->remote().BindNewPipeAndPassReceiver();
       auto leaked_pipe = receiver.PassPipe().release();
     } else {
       if (!g_force_create_network_service_directly) {
         mojo::PendingReceiver<network::mojom::NetworkService> receiver =
-            g_network_service_remote->BindNewPipeAndPassReceiver();
-        g_network_service_remote->set_disconnect_handler(
+            g_observed_network_service->remote().BindNewPipeAndPassReceiver();
+        g_observed_network_service->remote().set_disconnect_handler(
             base::BindOnce(&OnNetworkServiceProcessGone, /*crashed=*/true));
         if (IsInProcessNetworkService()) {
           CreateInProcessNetworkService(std::move(receiver));
@@ -727,6 +656,7 @@ network::mojom::NetworkService* GetNetworkService() {
             options.WithExtraCommandLineSwitches(
                 {switches::kUtilityImmediateCrashForTesting});
           }
+          options.WithObserver(g_observed_network_service->AsWeakObserver());
           ServiceProcessHost::Launch(std::move(receiver), std::move(options));
         }
       } else {
@@ -736,16 +666,15 @@ network::mojom::NetworkService* GetNetworkService() {
         // This should only be reached in unit tests.
         if (BrowserThread::CurrentlyOn(BrowserThread::IO)) {
           CreateNetworkServiceOnIOForTesting(
-              g_network_service_remote->BindNewPipeAndPassReceiver(),
+              g_observed_network_service->remote().BindNewPipeAndPassReceiver(),
               /*completion_event=*/nullptr);
         } else {
           base::WaitableEvent event;
           GetIOThreadTaskRunner({})->PostTask(
-              FROM_HERE,
-              base::BindOnce(
-                  CreateNetworkServiceOnIOForTesting,
-                  g_network_service_remote->BindNewPipeAndPassReceiver(),
-                  base::Unretained(&event)));
+              FROM_HERE, base::BindOnce(CreateNetworkServiceOnIOForTesting,
+                                        g_observed_network_service->remote()
+                                            .BindNewPipeAndPassReceiver(),
+                                        base::Unretained(&event)));
           event.Wait();
         }
       }
@@ -753,11 +682,13 @@ network::mojom::NetworkService* GetNetworkService() {
       delete g_client;  // In case we're recreating the network service.
       g_client = new NetworkServiceClient();
 
-      (*g_network_service_remote)->SetParams(CreateNetworkServiceParams());
-      g_client->OnNetworkServiceInitialized(g_network_service_remote->get());
+      g_observed_network_service->remote()->SetParams(
+          CreateNetworkServiceParams());
+      g_client->OnNetworkServiceInitialized(
+          g_observed_network_service->remote().get());
 
       g_network_service_is_responding = false;
-      g_network_service_remote->QueryVersion(base::BindOnce(
+      g_observed_network_service->remote().QueryVersion(base::BindOnce(
           [](uint32_t) { g_network_service_is_responding = true; }));
 
       const base::CommandLine* command_line =
@@ -765,10 +696,16 @@ network::mojom::NetworkService* GetNetworkService() {
       if (command_line->HasSwitch(net::switches::kLogNetLog)) {
         base::FilePath log_path =
             command_line->GetSwitchValuePath(net::switches::kLogNetLog);
+        net::NetLogFileFormat file_format =
+            GetNetLogFileFormatFromCommandLine(*command_line);
         if (log_path.empty()) {
           log_path = GetContentClient()->browser()->GetNetLogDefaultDirectory();
-          if (!log_path.empty())
-            log_path = log_path.Append(FILE_PATH_LITERAL("netlog.json"));
+          if (!log_path.empty()) {
+            log_path =
+                log_path.Append(file_format == net::NetLogFileFormat::kNdjson
+                                    ? FILE_PATH_LITERAL("netlog.jsonl")
+                                    : FILE_PATH_LITERAL("netlog.json"));
+          }
         }
 
         base::File file = NetworkServiceInstancePrivate::BlockingOpenFile(
@@ -776,13 +713,12 @@ network::mojom::NetworkService* GetNetworkService() {
         if (!file.IsValid()) {
           LOG(ERROR) << "Failed opening NetLog: " << log_path.value();
         } else {
-          (*g_network_service_remote)
-              ->StartNetLog(
-                  std::move(file),
-                  GetNetLogMaximumFileSizeFromCommandLine(*command_line),
-                  GetNetCaptureModeFromCommandLine(*command_line),
-                  GetContentClient()->browser()->GetNetLogConstants(),
-                  GetNetLogDurationFromCommandLine(*command_line));
+          g_observed_network_service->remote()->StartNetLog(
+              std::move(file),
+              GetNetLogMaximumFileSizeFromCommandLine(*command_line),
+              GetNetCaptureModeFromCommandLine(*command_line), file_format,
+              GetContentClient()->browser()->GetNetLogConstants(),
+              GetNetLogDurationFromCommandLine(*command_line));
         }
       }
 
@@ -820,7 +756,8 @@ network::mojom::NetworkService* GetNetworkService() {
         } else {
           UMA_HISTOGRAM_ENUMERATION(kSSLKeyLogFileHistogram,
                                     SSLKeyLogFileAction::kLogFileEnabled);
-          (*g_network_service_remote)->SetSSLKeyLogFile(std::move(file));
+          g_observed_network_service->remote()->SetSSLKeyLogFile(
+              std::move(file));
         }
       }
 
@@ -831,16 +768,16 @@ network::mojom::NetworkService* GetNetworkService() {
                       GetNetworkService()->SetFirstPartySets(std::move(sets));
                     }));
             sets.has_value()) {
-          g_network_service_remote->get()->SetFirstPartySets(
+          g_observed_network_service->remote()->SetFirstPartySets(
               std::move(sets.value()));
         }
       }
 
       GetContentClient()->browser()->OnNetworkServiceCreated(
-          g_network_service_remote->get());
+          g_observed_network_service->remote().get());
     }
   }
-  return g_network_service_remote->get();
+  return g_observed_network_service->remote().get();
 }
 
 base::CallbackListSubscription RegisterNetworkServiceProcessGoneHandler(
@@ -849,6 +786,24 @@ base::CallbackListSubscription RegisterNetworkServiceProcessGoneHandler(
   DCHECK(!handler.is_null());
 
   return GetProcessGoneHandlersList().Add(std::move(handler));
+}
+
+void AddNetworkServiceProcessObserver(NetworkServiceProcessObserver* observer) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  if (!g_observed_network_service) {
+    g_observed_network_service =
+        new ObservedServiceRemote<network::mojom::NetworkService>;
+  }
+  g_observed_network_service->AddObserver(observer);
+}
+
+void RemoveNetworkServiceProcessObserver(
+    NetworkServiceProcessObserver* observer) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  if (!g_observed_network_service) {
+    return;
+  }
+  g_observed_network_service->RemoveObserver(observer);
 }
 
 #if BUILDFLAG(IS_CHROMEOS)
@@ -860,8 +815,9 @@ net::NetworkChangeNotifier* GetNetworkChangeNotifier() {
 void FlushNetworkServiceInstanceForTesting() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  if (g_network_service_remote)
-    g_network_service_remote->FlushForTesting();
+  if (g_observed_network_service) {
+    g_observed_network_service->remote().FlushForTesting();  // IN-TEST
+  }
 }
 
 network::NetworkConnectionTracker* GetNetworkConnectionTracker() {
@@ -913,11 +869,17 @@ void SetNetworkServiceCrashOnNextStartupImplForTesting() {
 
 void ResetNetworkServiceForTesting() {
   ShutDownNetworkService();
+  delete g_observed_network_service;
+  g_observed_network_service = nullptr;
 }
 
 void ShutDownNetworkService() {
-  delete g_network_service_remote;
-  g_network_service_remote = nullptr;
+  // Reset the remote but preserve the ObservedServiceRemote (and its observer
+  // hub) so that observers registered via AddNetworkServiceProcessObserver()
+  // survive across RestartNetworkService() calls.
+  if (g_observed_network_service) {
+    g_observed_network_service->remote().reset();
+  }
   delete g_client;
   g_client = nullptr;
   if (g_in_process_instance) {
@@ -1117,6 +1079,19 @@ void CreateNetworkContextInNetworkService(
   CreateNetworkContextInternal(std::move(context), std::move(params),
                                grant_result);
 #else
+  if (base::FeatureList::IsEnabled(
+          network::features::kCreateNetworkContextNonBlocking)) {
+    // This might recreate g_client if the network service needed to be
+    // restarted.
+    GetNetworkService();
+    MaybeInitializeSocketBrokers(params.get());
+    mojo::PendingRemote<network::mojom::NetworkContextCreator> context_creator;
+    GetNetworkService()->BindNetworkContextCreator(
+        context_creator.InitWithNewPipeAndPassReceiver());
+    GrantSandboxAccessAndCreateNetworkContextOnThreadPool(
+        std::move(context_creator), std::move(context), std::move(params));
+    return;
+  }
   // Restrict disk access to a certain path (on another thread) and continue
   // with network context creation.
   GrantSandboxAccessOnThreadPool(

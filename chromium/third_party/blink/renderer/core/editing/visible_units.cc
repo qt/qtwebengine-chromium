@@ -502,21 +502,21 @@ PositionWithAffinity PositionForContentsPointRespectingEditingBoundary(
 
   if (result.InnerNode()) {
     return PositionRespectingEditingBoundary(
-        frame->Selection().ComputeVisibleSelectionInDOMTree().Start(), result);
+        frame->Selection().ComputeVisibleSelectionInDomTree().Start(), result);
   }
   return PositionWithAffinity();
 }
 
 // TODO(yosin): We should use |AssociatedLayoutObjectOf()| in "visible_units.cc"
 // where it takes |LayoutObject| from |Position|.
-int CaretMinOffset(const Node* node) {
+wtf_size_t CaretMinOffset(const Node* node) {
   const LayoutObject* layout_object = AssociatedLayoutObjectOf(*node, 0);
   if (const LayoutText* layout_text = DynamicTo<LayoutText>(layout_object))
     return layout_text->CaretMinOffset();
   return 0;
 }
 
-int CaretMaxOffset(const Node* n) {
+wtf_size_t CaretMaxOffset(const Node* n) {
   return EditingStrategy::CaretMaxOffset(*n);
 }
 
@@ -526,14 +526,14 @@ static bool InRenderedText(const PositionTemplate<Strategy>& position) {
   if (!anchor_node || !anchor_node->IsTextNode())
     return false;
 
-  const int offset_in_node = position.ComputeEditingOffset();
+  const wtf_size_t offset_in_node = position.ComputeEditingOffset();
   const LayoutObject* layout_object =
       AssociatedLayoutObjectOf(*anchor_node, offset_in_node);
   if (!layout_object)
     return false;
 
   const auto* text_layout_object = To<LayoutText>(layout_object);
-  const int text_offset =
+  const wtf_size_t text_offset =
       offset_in_node - text_layout_object->TextStartOffset();
   if (!text_layout_object->ContainsCaretOffset(text_offset))
     return false;
@@ -620,7 +620,7 @@ static Position MostBackwardOrForwardCaretPosition(
   DCHECK(position.IsValidFor(*position.GetDocument())) << position;
 
   // Find the most backward or forward caret position in the flat tree.
-  const Position& candidate = ToPositionInDOMTree(
+  const Position& candidate = ToPositionInDomTree(
       AlgorithmInFlatTree(ToPositionInFlatTree(position), rule, client));
   Node* candidate_anchor = candidate.AnchorNode();
   if (!candidate_anchor)
@@ -633,13 +633,13 @@ static Position MostBackwardOrForwardCaretPosition(
   }
 
   // Adjust the candidate to avoid crossing shadow boundaries.
-  const SelectionInDOMTree& selection =
-      SelectionInDOMTree::Builder()
+  const SelectionInDomTree& selection =
+      SelectionInDomTree::Builder()
           .SetBaseAndExtent(position, candidate)
           .Build();
   if (selection.IsCaret())
     return candidate;
-  const SelectionInDOMTree& shadow_adjusted_selection =
+  const SelectionInDomTree& shadow_adjusted_selection =
       SelectionAdjuster::AdjustSelectionToAvoidCrossingShadowBoundaries(
           selection);
   const Position& adjusted_candidate = shadow_adjusted_selection.Focus();
@@ -653,7 +653,7 @@ static Position MostBackwardOrForwardCaretPosition(
   // crossing editing boundaries if it's not allowed.
   if (rule == kCannotCrossEditingBoundary &&
       selection != shadow_adjusted_selection) {
-    const SelectionInDOMTree& editing_adjusted_selection =
+    const SelectionInDomTree& editing_adjusted_selection =
         SelectionAdjuster::AdjustSelectionToAvoidCrossingEditingBoundaries(
             shadow_adjusted_selection);
     return editing_adjusted_selection.Focus();

@@ -5,14 +5,13 @@
 #ifndef MEDIA_BASE_SINC_RESAMPLER_H_
 #define MEDIA_BASE_SINC_RESAMPLER_H_
 
-#include <memory>
-
 #include "base/containers/span.h"
 #include "base/functional/callback.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/aligned_memory.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_span.h"
+#include "base/numerics/safe_conversions.h"
 #include "build/build_config.h"
 #include "media/base/media_export.h"
 
@@ -45,7 +44,7 @@ class MEDIA_EXPORT SincResampler {
   // Callback type for providing more data into the resampler.  Expects |frames|
   // of data to be rendered into |destination|; zero padded if not enough frames
   // are available to satisfy the request.
-  using ReadCB = base::RepeatingCallback<void(int frames, float* destination)>;
+  using ReadCB = base::RepeatingCallback<void(base::span<float> destination)>;
 
   // Returns the kernel size which will be used for a given `request_frames`.
   static size_t KernelSizeFromRequestFrames(int request_frames);
@@ -72,7 +71,7 @@ class MEDIA_EXPORT SincResampler {
   // a single call to |read_cb_| for more data.  Note: If PrimeWithSilence() is
   // not called, chunk size will grow after the first two Resample() calls by
   // `kernel_size_` / (2 * io_sample_rate_ratio).  See the .cc file for details.
-  int ChunkSize() const { return chunk_size_; }
+  int ChunkSize() const { return base::checked_cast<int>(chunk_size_); }
 
   // Returns the max number of frames that could be requested (via multiple
   // calls to |read_cb_|) during one Resample(|output_frames_requested|) call.

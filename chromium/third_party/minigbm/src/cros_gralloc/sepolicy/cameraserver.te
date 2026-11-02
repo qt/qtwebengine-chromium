@@ -1,0 +1,3 @@
+# Suppress warnings for minigbm trying to read vendor.minigbm.debug
+# property for the devices which do not use this property.
+dontaudit cameraserver vendor_default_prop:file read;

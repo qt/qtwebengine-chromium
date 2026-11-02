@@ -79,8 +79,8 @@ void CFWL_WidgetTP::EnsureTTOInitialized(IFWL_ThemeProvider* pProvider) {
 
   text_out_ = std::make_unique<CFDE_TextOut>();
   text_out_->SetFont(pProvider->GetFWLFont());
-  text_out_->SetFontSize(FWLTHEME_CAPACITY_FontSize);
-  text_out_->SetTextColor(FWLTHEME_CAPACITY_TextColor);
+  text_out_->SetFontSize(kFwlThemeFontSize);
+  text_out_->SetTextColor(kFwlThemeTextColor);
 }
 
 void CFWL_WidgetTP::DrawBorder(CFGAS_GEGraphics* pGraphics,
@@ -103,7 +103,7 @@ void CFWL_WidgetTP::DrawBorder(CFGAS_GEGraphics* pGraphics,
 void CFWL_WidgetTP::FillBackground(CFGAS_GEGraphics* pGraphics,
                                    const CFX_RectF& rect,
                                    const CFX_Matrix& matrix) {
-  FillSolidRect(pGraphics, FWLTHEME_COLOR_Background, rect, matrix);
+  FillSolidRect(pGraphics, kFwlThemeColorBackground, rect, matrix);
 }
 
 void CFWL_WidgetTP::FillSolidRect(CFGAS_GEGraphics* pGraphics,

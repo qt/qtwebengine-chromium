@@ -44,6 +44,12 @@ namespace policy_prefs {
 inline constexpr char kAzureActiveDirectoryManagement[] =
     "management.platform.azure_active_directory";
 
+// TODO(crbug.com/531448879): Revert this change when AzureAD logic migration is
+// complete.
+// Integer pref that stores Azure Active Directory device management authority.
+inline constexpr char kAzureActiveDirectoryDeviceManagement[] =
+    "management.platform.azure_active_directory_device";
+
 // Integer pref that stores the Windows enterprise MDM management authority.
 inline constexpr char kEnterpriseMDMManagementWindows[] =
     "management.platform.enterprise_mdm_win";
@@ -252,6 +258,11 @@ inline constexpr char kBuiltInAIAPIsEnabled[] =
 // If false, explicit permission delegation is required.
 inline constexpr char kLocalNetworkAccessPermissionsPolicyDefaultEnabled[] =
     "policy.local_network_access_permissions_policy_default_enabled";
+
+// A boolean pref indicating whether WebSockets are disconnected when a page
+// enters the Back/Forward Cache.
+inline constexpr char kBackForwardCacheForWebSocketsAllowed[] =
+    "policy.back_forward_cache_for_web_sockets_allowed";
 
 }  // namespace policy_prefs
 }  // namespace policy

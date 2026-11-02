@@ -36,7 +36,6 @@
 #include "src/utils/array_2d.h"
 #include "src/utils/common.h"
 #include "src/utils/constants.h"
-#include "src/utils/memory.h"
 #include "src/utils/types.h"
 #include "src/yuv_buffer.h"
 #include "tests/block_utils.h"

@@ -14,8 +14,8 @@
 #include "include/gpu/ganesh/GrContextOptions.h"
 #include "include/gpu/ganesh/GrContextThreadSafeProxy.h"
 #include "include/gpu/ganesh/GrDirectContext.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkTArray.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkTArray.h"
 #include "src/gpu/ganesh/GrGpu.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 
@@ -90,14 +90,14 @@ public:
      * GrContext will detect when it must perform a resolve before reading pixels back from the
      * surface or using it as a texture.
      */
-    GrSemaphoresSubmitted flushSurfaces(
+    [[nodiscard]] GrDirectContext::FlushResult flushSurfaces(
             SkSpan<GrSurfaceProxy*>,
             SkSurfaces::BackendSurfaceAccess = SkSurfaces::BackendSurfaceAccess::kNoAccess,
             const GrFlushInfo& = {},
             const skgpu::MutableTextureState* newState = nullptr);
 
     /** Version of above that flushes for a single proxy. Null is allowed. */
-    GrSemaphoresSubmitted flushSurface(
+    [[nodiscard]] GrDirectContext::FlushResult flushSurface(
             GrSurfaceProxy* proxy,
             SkSurfaces::BackendSurfaceAccess access = SkSurfaces::BackendSurfaceAccess::kNoAccess,
             const GrFlushInfo& info = {},

@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "base/callback_list.h"
+#include "base/memory_coordinator/utils.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_amount_of_physical_memory_override.h"
 #include "base/test/scoped_feature_list.h"
@@ -185,8 +186,13 @@ IN_PROC_BROWSER_TEST_F(SpareRenderProcessHostManagerTest,
   spare_started_observer.WaitForSpareRenderProcessStarted();
 
   // There might be another spare starting, but only 1 is ready.
-  EXPECT_THAT(spare_manager.GetSpares(),
-              Contains(RenderProcessHostIsReady()).Times(1));
+  int ready_count = 0;
+  for (content::RenderProcessHost* host : spare_manager.GetSpares()) {
+    if (host->IsReady()) {
+      ready_count++;
+    }
+  }
+  EXPECT_EQ(1, ready_count);
 
   histogram_tester.ExpectTotalCount(
       "BrowserRenderProcessHost.SpareProcessStartupTime", 1);
@@ -498,8 +504,14 @@ IN_PROC_BROWSER_TEST_F(SpareRenderProcessHostManagerTest,
   }
 
   // The initial spare is gone from the list of spares.
-  EXPECT_THAT(spare_manager.GetSpares(),
-              Not(Contains(Property(&RenderProcessHost::GetID, spare_rph_id))));
+  bool spare_found = false;
+  for (content::RenderProcessHost* host : spare_manager.GetSpares()) {
+    if (host->GetID() == spare_rph_id) {
+      spare_found = true;
+      break;
+    }
+  }
+  EXPECT_FALSE(spare_found);
 }
 
 // A mock ContentBrowserClient that only considers a spare renderer to be a
@@ -508,7 +520,7 @@ class SpareRendererContentBrowserClient
     : public ContentBrowserTestContentBrowserClient {
  public:
   bool IsSuitableHost(RenderProcessHost* process_host,
-                      const GURL& site_url) override {
+                      const SecurityPrincipal& security_principal) override {
     const auto& spares = SpareRenderProcessHostManagerImpl::Get().GetSpares();
     if (!spares.empty()) {
       return std::ranges::contains(spares, process_host);
@@ -530,7 +542,7 @@ class NonSpareRendererContentBrowserClient
       const NonSpareRendererContentBrowserClient&) = delete;
 
   bool IsSuitableHost(RenderProcessHost* process_host,
-                      const GURL& site_url) override {
+                      const SecurityPrincipal& security_principal) override {
     return !process_host->IsSpare();
   }
 
@@ -1142,16 +1154,26 @@ IN_PROC_BROWSER_TEST_F(ExtraSpareRenderProcessHostManagerTest,
   // Initially zero spares.
   ASSERT_EQ(spare_manager.GetSpares().size(), 0u);
 
-  // Create 2 spares. First one created manually, second one started
-  // automatically.
+  // Create the first spare manually. Keep the browser non-idle so the first
+  // spare becoming ready cannot trigger automatic extra-spare creation before
+  // the one-spare CleanupExtraSpares() check below.
+  spare_manager.SetIsBrowserIdleForTesting(false);
   spare_manager.WarmupSpare(browser_context());
   ASSERT_EQ(spare_manager.GetSpares().size(), 1u);
-  WaitForNextSpareReady();
-  ASSERT_EQ(spare_manager.GetSpares().size(), 2u);
-  WaitForNextSpareReady();
-  ASSERT_EQ(spare_manager.GetSpares().size(), 2u);
-
   RenderProcessHost* first_spare = spare_manager.GetSpares()[0];
+
+  // CleanupExtraSpares() should be a no-op when there are no extra spares.
+  spare_manager.CleanupExtraSpares(std::nullopt);
+  ASSERT_EQ(spare_manager.GetSpares().size(), 1u);
+  ASSERT_EQ(spare_manager.GetSpares()[0], first_spare);
+
+  // A second spare is started automatically after the first one is ready, if
+  // the browser is idle.
+  spare_manager.SetIsBrowserIdleForTesting(true);
+  WaitForNextSpareReady();
+  ASSERT_EQ(spare_manager.GetSpares().size(), 2u);
+  WaitForNextSpareReady();
+  ASSERT_EQ(spare_manager.GetSpares().size(), 2u);
 
   spare_manager.CleanupExtraSpares(std::nullopt);
   ASSERT_EQ(spare_manager.GetSpares().size(), 1u);
@@ -1199,6 +1221,8 @@ IN_PROC_BROWSER_TEST_F(LowMemoryExtraSpareRenderProcessHostManagerTest,
 struct MemoryPressureTestParams {
   bool enable_multiple_spares;
   bool keep_one_alive;
+  bool use_critical_memory_pressure_threshold;
+  int memory_limit;
   size_t expected_spares_after_pressure;
 };
 
@@ -1216,6 +1240,12 @@ class SpareRenderProcessHostManagerMemoryPressureParamTest
       enabled_features.push_back({kSpareRPHKeepOneAliveOnMemoryPressure, {}});
     } else {
       disabled_features.push_back(kSpareRPHKeepOneAliveOnMemoryPressure);
+    }
+
+    if (GetParam().use_critical_memory_pressure_threshold) {
+      enabled_features.push_back({kSpareRPHUseCriticalMemoryPressure, {}});
+    } else {
+      disabled_features.push_back(kSpareRPHUseCriticalMemoryPressure);
     }
 
     if (GetParam().enable_multiple_spares) {
@@ -1264,10 +1294,10 @@ IN_PROC_BROWSER_TEST_P(SpareRenderProcessHostManagerMemoryPressureParamTest,
     WaitForNextSpareReady();
   }
 
-  // Trigger memory pressure (moderate pressure -> 50% limit).
+  // Trigger memory pressure.
   content::test::ScopedMemoryLimitOverride memory_override(
       "SpareRenderProcessHostManagerImpl");
-  memory_override.SetLimit(50);
+  memory_override.SetLimit(GetParam().memory_limit);
   memory_override.NotifyReleaseMemory();
 
   EXPECT_EQ(spare_manager.GetSpares().size(),
@@ -1283,9 +1313,31 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
         MemoryPressureTestParams{/*enable_multiple_spares=*/false,
                                  /*keep_one_alive=*/false,
+                                 /*use_critical_memory_pressure_threshold=*/
+                                 false,
+                                 /*memory_limit=*/
+                                 base::kModerateMemoryPressureThreshold,
                                  /*expected_spares_after_pressure=*/0u},
         MemoryPressureTestParams{/*enable_multiple_spares=*/true,
                                  /*keep_one_alive=*/true,
-                                 /*expected_spares_after_pressure=*/1u}));
+                                 /*use_critical_memory_pressure_threshold=*/
+                                 false,
+                                 /*memory_limit=*/
+                                 base::kModerateMemoryPressureThreshold,
+                                 /*expected_spares_after_pressure=*/1u},
+        MemoryPressureTestParams{/*enable_multiple_spares=*/true,
+                                 /*keep_one_alive=*/true,
+                                 /*use_critical_memory_pressure_threshold=*/
+                                 true,
+                                 /*memory_limit=*/
+                                 base::kModerateMemoryPressureThreshold,
+                                 /*expected_spares_after_pressure=*/2u},
+        MemoryPressureTestParams{/*enable_multiple_spares=*/false,
+                                 /*keep_one_alive=*/false,
+                                 /*use_critical_memory_pressure_threshold=*/
+                                 true,
+                                 /*memory_limit=*/
+                                 base::kCriticalMemoryPressureThreshold,
+                                 /*expected_spares_after_pressure=*/0u}));
 
 }  // namespace content

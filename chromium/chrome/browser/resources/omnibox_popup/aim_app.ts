@@ -43,7 +43,6 @@ export class OmniboxAimAppElement extends CrLitElement {
 
   static override get properties() {
     return {
-      composeboxForkEnabled_: {type: Boolean},
       searchboxLayoutMode_: {type: String},
       hasAllowedInputs_: {type: Boolean},
       caretAnimationsEnabled_: {type: Boolean},
@@ -59,14 +58,13 @@ export class OmniboxAimAppElement extends CrLitElement {
       disableVoiceSearchAnimation_: {type: Boolean},
       usePecApi_: {type: Boolean},
       smartTabSharingVisible_: {type: Boolean},
+      contextManagementInComposeboxEnabled_: {type: Boolean},
       isOblongShape_: {type: Boolean},
       webuiOmniboxSimplificationEnabled_: {type: Boolean},
       smartComposeEnabled_: {type: Boolean},
     };
   }
 
-  protected accessor composeboxForkEnabled_: boolean =
-      loadTimeData.getBoolean('composeboxForkEnabled');
   protected accessor searchboxLayoutMode_: string =
       loadTimeData.getString('searchboxLayoutMode');
   protected accessor hasAllowedInputs_: boolean = false;
@@ -89,6 +87,8 @@ export class OmniboxAimAppElement extends CrLitElement {
       loadTimeData.getBoolean('contextualMenuUsePecApi');
   protected accessor smartTabSharingVisible_: boolean =
       loadTimeData.getBoolean('composeboxSmartTabSharingVisible');
+  protected accessor contextManagementInComposeboxEnabled_: boolean =
+      loadTimeData.getBoolean('contextManagementInComposeboxEnabled');
   protected accessor isOblongShape_: boolean =
       loadTimeData.getBoolean('contextButtonShapeIsOblong');
   protected accessor webuiOmniboxSimplificationEnabled_: boolean =
@@ -109,6 +109,9 @@ export class OmniboxAimAppElement extends CrLitElement {
 
   override connectedCallback() {
     super.connectedCallback();
+    // Force an initial refresh to avoid the race condition where the profile
+    // theme loads after the page, but before the listener is ready.
+    ColorChangeUpdater.forDocument().refreshColorsCss();
 
     this.listenerIds_ = [
       this.browserProxy_.callbackRouter.onPopupShown.addListener(
@@ -183,11 +186,11 @@ export class OmniboxAimAppElement extends CrLitElement {
   // Fired from voice search component in cr-composebox if minimum height
   // and width are non zero when permission prompt is displayed, or any time
   // when permission prompt hides.
-  protected onEmbeddedVoicePermissionPromptChanged(
+  protected onVoicePermissionPromptChanged(
       e: CustomEvent<VoicePermissionPromptState>) {
     if (e.detail.isOpened) {  // Permission prompt opened.
       if (this.$.composebox) {
-        this.$.composebox.classList.add('has-embedded-permission-prompt');
+        this.$.composebox.classList.add('has-permission-prompt');
         this.$.composebox.style.setProperty(
             '--cr_composebox_minimum_height', `${e.detail.height}px`);
         this.$.composebox.style.setProperty(
@@ -195,7 +198,7 @@ export class OmniboxAimAppElement extends CrLitElement {
       }
     } else {  // Permission prompt closed.
       if (this.$.composebox) {
-        this.$.composebox.classList.remove('has-embedded-permission-prompt');
+        this.$.composebox.classList.remove('has-permission-prompt');
         this.$.composebox.style.removeProperty(
             '--cr_composebox_minimum_height');
         this.$.composebox.style.removeProperty('--cr_composebox_minimum_width');
@@ -227,6 +230,10 @@ export class OmniboxAimAppElement extends CrLitElement {
   private addContext_(context: SearchContext) {
     this.$.composebox.addSearchContext(context);
     this.focusInput_();
+    // Reset `preserveContextOnClose_` so subsequent popup closes correctly
+    // clear searchbox state (e.g. after adding context via Drive picker while
+    // popup stayed open).
+    this.setPreserveContextOnClose_(false);
   }
 
   private focusInput_() {
@@ -236,12 +243,7 @@ export class OmniboxAimAppElement extends CrLitElement {
   private async clearPopup_(): Promise<{input: string}> {
     const input = this.$.composebox.input;
     if (!this.preserveContextOnClose_) {
-      this.$.composebox.clearAllInputs(
-          /* querySubmitted= */ false,
-          /* shouldBlockAutoSuggestedTabs= */ false);
-      this.$.composebox.clearAutocompleteMatches();
-      this.$.composebox.resetModes();
-      this.$.composebox.resetToolsAndModels();
+      this.$.composebox.resetSession();
     }
     await this.updateComplete;
     // Transfer input text to the location bar.

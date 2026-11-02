@@ -38,9 +38,9 @@ if (pdf_enable_fontations) {
     cxx_bindings = [ skia_fontations_bridge_root ]
     deps = [
       ":path_bridge",
-      "//third_party/rust/font_types/v0_11:lib",
-      "//third_party/rust/read_fonts/v0_39:lib",
-      "//third_party/rust/skrifa/v0_42:lib",
+      "//third_party/rust/font_types/v0_12:lib",
+      "//third_party/rust/read_fonts/v0_40:lib",
+      "//third_party/rust/skrifa/v0_43:lib",
     ]
     configs -= [ "//build/config/compiler:chromium_code" ]
     configs += [
@@ -351,7 +351,8 @@ component("skia") {
   }
 
   if (is_win || (is_apple && use_blink)) {
-    # Add the FreeType custom font manager as a fallback backend for variable fonts.
+    # Add the FreeType custom font manager as a fallback backend for variable
+    # fonts.
     sources += skia_ports_fontmgr_custom_sources
     sources += skia_ports_fontmgr_empty_sources
   }

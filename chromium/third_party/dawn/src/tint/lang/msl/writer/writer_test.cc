@@ -26,6 +26,7 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "gmock/gmock.h"
+#include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/struct.h"
 #include "src/tint/lang/msl/validate/validate.h"
 #include "src/tint/lang/msl/writer/helper_test.h"
@@ -277,6 +278,64 @@ kernel void entry(device tint_array<uint, 1>* a [[buffer(0)]], const constant ti
     EXPECT_TRUE(output_.needs_storage_buffer_sizes);
 }
 
+TEST_F(MslWriterTest, ImmediateF16) {
+    auto* v = b.Var<immediate, f16, core::Access::kRead>("v");
+    mod.root_block->Append(v);
+
+    auto* func = b.ComputeFunction("entry");
+    b.Append(func->Block(), [&] {
+        b.Let("a", b.Load(v));
+        b.Return(func);
+    });
+
+    Options options;
+    options.immediate_binding_point = tint::BindingPoint{0, 30};
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure() << output_.msl;
+    EXPECT_EQ(output_.msl, R"(#include <metal_stdlib>
+using namespace metal;
+
+struct tint_module_vars_struct {
+  const constant half* v;
+};
+
+[[max_total_threads_per_threadgroup(1)]]
+kernel void entry(const constant half* v [[buffer(30)]]) {
+  tint_module_vars_struct const tint_module_vars = tint_module_vars_struct{.v=v};
+  half const a = (*tint_module_vars.v);
+}
+)");
+}
+
+TEST_F(MslWriterTest, ImmediateVec3F16) {
+    auto* v = b.Var<immediate, vec3<f16>, core::Access::kRead>("v");
+    mod.root_block->Append(v);
+
+    auto* func = b.ComputeFunction("entry");
+    b.Append(func->Block(), [&] {
+        b.Let("a", b.Load(v));
+        b.Return(func);
+    });
+
+    Options options;
+    options.immediate_binding_point = tint::BindingPoint{0, 30};
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure() << output_.msl;
+    EXPECT_EQ(output_.msl, R"(#include <metal_stdlib>
+using namespace metal;
+
+struct tint_module_vars_struct {
+  const constant packed_half3* v;
+};
+
+[[max_total_threads_per_threadgroup(1)]]
+kernel void entry(const constant packed_half3* v [[buffer(30)]]) {
+  tint_module_vars_struct const tint_module_vars = tint_module_vars_struct{.v=v};
+  half3 const a = half3((*tint_module_vars.v));
+}
+)");
+}
+
 TEST_F(MslWriterTest, StripAllNames) {
     auto* str = ty.Struct(mod.symbols.New("MyStruct"), {
                                                            {mod.symbols.Register("a"), ty.i32()},
@@ -471,7 +530,35 @@ TEST_F(MslWriterTest, CanGenerate_TexelBufferUnsupported) {
                 testing::HasSubstr("texel buffers are not supported by the MSL backend"));
 }
 
+TEST_F(MslWriterTest, CanGenerate_DynamicOffsetOnNonBufferType) {
+    auto* tex_ty = ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32());
+    auto* var = b.Var("tex", ty.ptr<handle>(tex_ty));
+    var->SetBindingPoint(2, 0);
+    mod.root_block->Append(var);
+
+    auto* ep = b.ComputeFunction("entry");
+    b.Append(ep->Block(), [&] {
+        b.Let("x", var);
+        b.Return(ep);
+    });
+
+    Options options;
+    options.entry_point_name = "entry";
+
+    ArgumentBufferInfo abi;
+    abi.id = 0;
+    abi.binding_info_to_offset_index.emplace(0, 0);
+    options.group_to_argument_buffer_info.emplace(2, abi);
+
+    auto result = Generate(options);
+    ASSERT_NE(result, Success);
+    EXPECT_THAT(result.Failure().reason,
+                testing::HasSubstr(
+                    "dynamic offset supplied for a non-buffer type inside an argument buffer"));
+}
+
 TEST_F(MslWriterTest, AtomicStoreMax_Supported) {
+    mod.properties.Add(core::ir::Property::kAllow64BitIntegers);
     auto* sb =
         ty.Struct(mod.symbols.New("SB"), {
                                              {mod.symbols.Register("a"), ty.atomic(ty.u64())},
@@ -512,6 +599,7 @@ kernel void v(device SB* sb [[buffer(0)]]) {
 }
 
 TEST_F(MslWriterTest, AtomicStoreMin_Supported) {
+    mod.properties.Add(core::ir::Property::kAllow64BitIntegers);
     auto* sb =
         ty.Struct(mod.symbols.New("SB"), {
                                              {mod.symbols.Register("a"), ty.atomic(ty.u64())},
@@ -573,6 +661,7 @@ TEST_F(MslWriterTest, CanGenerate_StructMemberPadding_TooLarge) {
 }
 
 TEST_F(MslWriterTest, BufferView_Workgroup) {
+    mod.properties.Add(core::ir::Property::kAllowBufferTypes);
     auto* v = b.Var("v", ty.ptr(workgroup, ty.buffer(32)));
     mod.root_block->Append(v);
 
@@ -580,7 +669,7 @@ TEST_F(MslWriterTest, BufferView_Workgroup) {
     b.Append(entry->Block(), [&] {
         auto* call =
             b.CallExplicit(ty.ptr(workgroup, ty.vec4(ty.f32())), core::BuiltinFn::kBufferView,
-                           Vector{ty.vec4(ty.f32())}, v, 0_u);
+                           Vector<core::ir::TemplateParameter, 1>{ty.vec4(ty.f32())}, v, 0_u);
         b.StoreVectorElement(call, 0_u, 0_f);
         b.Return(entry);
     });
@@ -638,6 +727,7 @@ kernel void entry(uint tint_local_index [[thread_index_in_threadgroup]], threadg
 }
 
 TEST_F(MslWriterTest, BufferView_HostStruct_SubFunction) {
+    mod.properties.Add(core::ir::Property::kAllowBufferTypes);
     Vector<const core::type::StructMember*, 8> members{
         ty.Get<core::type::StructMember>(mod.symbols.New("a"), ty.u32(), 0u, 0u, 4u, 4u,
                                          core::IOAttributes{}),
@@ -651,8 +741,8 @@ TEST_F(MslWriterTest, BufferView_HostStruct_SubFunction) {
 
     auto* foo = b.Function("foo", ty.void_());
     b.Append(foo->Block(), [&] {
-        auto* view =
-            b.CallExplicit(ty.ptr(workgroup, S), core::BuiltinFn::kBufferView, Vector{S}, var, 0_u);
+        auto* view = b.CallExplicit(ty.ptr(workgroup, S), core::BuiltinFn::kBufferView,
+                                    Vector<core::ir::TemplateParameter, 1>{S}, var, 0_u);
         b.Let("p", view);
         b.Return(foo);
     });

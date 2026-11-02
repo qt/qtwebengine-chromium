@@ -135,6 +135,28 @@ export class Hct {
     );
   }
 
+  /** Sets a property of the Hct object. */
+  setValue(propertyName: string, value: number) {
+    (this as any)[propertyName] = value;
+  }
+
+  toString(): string {
+    return `HCT(${this.hue.toFixed(0)}, ${this.chroma.toFixed(0)}, ${
+        this.tone.toFixed(0)})`;
+  }
+
+  static isBlue(hue: number): boolean {
+    return hue >= 250 && hue < 270;
+  }
+
+  static isYellow(hue: number): boolean {
+    return hue >= 105 && hue < 125;
+  }
+
+  static isCyan(hue: number): boolean {
+    return hue >= 170 && hue < 207;
+  }
+
   private constructor(private argb: number) {
     const cam = Cam16.fromInt(argb);
     this.internalHue = cam.hue;

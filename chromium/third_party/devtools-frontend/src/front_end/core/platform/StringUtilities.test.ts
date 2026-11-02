@@ -108,7 +108,7 @@ describe('StringUtilities', () => {
     });
 
     it('does nothing to an empty string', () => {
-      assert.strictEqual('', Platform.StringUtilities.reverse(''));
+      assert.strictEqual(Platform.StringUtilities.reverse(''), '');
     });
   });
 
@@ -399,6 +399,42 @@ describe('StringUtilities', () => {
     });
   });
 
+  describe('truncateToCodeUnitLength', () => {
+    const {truncateToCodeUnitLength} = Platform.StringUtilities;
+
+    it('returns the original string if it is shorter than or equal to maxCodeUnits', () => {
+      assert.strictEqual(truncateToCodeUnitLength('abc', 3), 'abc');
+      assert.strictEqual(truncateToCodeUnitLength('abc', 10), 'abc');
+      assert.strictEqual(truncateToCodeUnitLength('', 5), '');
+    });
+
+    it('truncates normal ASCII strings correctly', () => {
+      assert.strictEqual(truncateToCodeUnitLength('abcdef', 3), 'abc');
+    });
+
+    it('handles negative, NaN, or zero bounds by returning empty string', () => {
+      assert.strictEqual(truncateToCodeUnitLength('abc', 0), '');
+      assert.strictEqual(truncateToCodeUnitLength('abc', -1), '');
+      assert.strictEqual(truncateToCodeUnitLength('abc', NaN), '');
+      assert.strictEqual(truncateToCodeUnitLength('abc', 1.5), 'a');
+    });
+
+    it('does not split surrogate pairs', () => {
+      // 𠜎 (U+2070E) is represented as surrogate pair '\uD841\uDF0E' (length 2)
+      assert.strictEqual(truncateToCodeUnitLength('a𠜎b', 4), 'a𠜎b');
+      assert.strictEqual(truncateToCodeUnitLength('a𠜎b', 3), 'a𠜎');
+      assert.strictEqual(truncateToCodeUnitLength('a𠜎b', 2), 'a');
+      assert.strictEqual(truncateToCodeUnitLength('a𠜎b', 1), 'a');
+    });
+
+    it('does not split letters from their combining accents', () => {
+      // caf\u0065\u0301 (é is length 2: e + accent) -> total length 5
+      assert.strictEqual(truncateToCodeUnitLength('caf\u0065\u0301', 5), 'café');
+      assert.strictEqual(truncateToCodeUnitLength('caf\u0065\u0301', 4), 'caf');
+      assert.strictEqual(truncateToCodeUnitLength('caf\u0065\u0301', 3), 'caf');
+    });
+  });
+
   describe('escapeForRegExp', () => {
     it('escapes regex characters', () => {
       const inputString = '^[]{}()\\.^$*+?|-';
@@ -496,43 +532,43 @@ describe('StringUtilities', () => {
 
     it('wraps string containing single quotes in double quotes', () => {
       const inputString = String.raw`'foo' and 'bar'`;
-      assert.strictEqual(String.raw`"'foo' and 'bar'"`, Platform.StringUtilities.formatAsJSLiteral(inputString));
+      assert.strictEqual(Platform.StringUtilities.formatAsJSLiteral(inputString), String.raw`"'foo' and 'bar'"`);
     });
 
     it('wraps string containing both single and double quotes in back ticks', () => {
       const inputString = String.raw`'foo' and "bar"`;
-      assert.strictEqual('`\'foo\' and "bar"`', Platform.StringUtilities.formatAsJSLiteral(inputString));
+      assert.strictEqual(Platform.StringUtilities.formatAsJSLiteral(inputString), '`\'foo\' and "bar"`');
     });
 
     it('wraps string containing all three quotes in single quotes', () => {
       const inputString = '\'foo\' `and` "bar"';
-      assert.strictEqual('\'\\\'foo\\\' `and` "bar"\'', Platform.StringUtilities.formatAsJSLiteral(inputString));
+      assert.strictEqual(Platform.StringUtilities.formatAsJSLiteral(inputString), '\'\\\'foo\\\' `and` "bar"\'');
     });
 
     it('does not use back ticks when content contains ${', () => {
       const inputString = '\'foo\' "and" ${bar}';
-      assert.strictEqual('\'\\\'foo\\\' "and" ${bar}\'', Platform.StringUtilities.formatAsJSLiteral(inputString));
+      assert.strictEqual(Platform.StringUtilities.formatAsJSLiteral(inputString), '\'\\\'foo\\\' "and" ${bar}\'');
     });
 
     it('should escape lone leading surrogates', () => {
       const inputString = '\uD800 \uDA00 \uDBFF';
-      assert.strictEqual('\'\\uD800 \\uDA00 \\uDBFF\'', Platform.StringUtilities.formatAsJSLiteral(inputString));
+      assert.strictEqual(Platform.StringUtilities.formatAsJSLiteral(inputString), '\'\\uD800 \\uDA00 \\uDBFF\'');
     });
 
     it('should escape lone trail surrogates', () => {
       const inputString = '\uDC00 \uDEEE \uDFFF';
-      assert.strictEqual('\'\\uDC00 \\uDEEE \\uDFFF\'', Platform.StringUtilities.formatAsJSLiteral(inputString));
+      assert.strictEqual(Platform.StringUtilities.formatAsJSLiteral(inputString), '\'\\uDC00 \\uDEEE \\uDFFF\'');
     });
 
     it('should not escape valid surrogate pairs', () => {
       const inputString = '\uD800\uDC00 \uDA00\uDEEE \uDBFF\uDFFF';
-      assert.strictEqual(`'${inputString}'`, Platform.StringUtilities.formatAsJSLiteral(inputString));
+      assert.strictEqual(Platform.StringUtilities.formatAsJSLiteral(inputString), `'${inputString}'`);
     });
 
     it('should escape invalid surrogate pairs', () => {
       const inputString = '\uDC00\uD800 \uDA00\uDA00 \uDEEE\uDEEE';
       const expectedString = '\'\\uDC00\\uD800 \\uDA00\\uDA00 \\uDEEE\\uDEEE\'';
-      assert.strictEqual(expectedString, Platform.StringUtilities.formatAsJSLiteral(inputString));
+      assert.strictEqual(Platform.StringUtilities.formatAsJSLiteral(inputString), expectedString);
     });
 
     it('escapes whitespace characters appropriately', () => {
@@ -540,13 +576,13 @@ describe('StringUtilities', () => {
           '\t\n\v\f\r \x85\xA0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u2028\u2029\u202F\u205F\u3000';
       const expectedString =
           '\\t\\n\\v\\f\\r \\x85\xA0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u2028\u2029\u202F\u205F\u3000';
-      assert.strictEqual('\'' + expectedString + '\'', Platform.StringUtilities.formatAsJSLiteral(inputString));
+      assert.strictEqual(Platform.StringUtilities.formatAsJSLiteral(inputString), '\'' + expectedString + '\'');
     });
 
     it('escapes problematic script tags', () => {
       const inputString = '<!-- <script </script';
       const expectedString = String.raw`\x3C!-- \x3Cscript \x3C/script`;
-      assert.strictEqual('\'' + expectedString + '\'', Platform.StringUtilities.formatAsJSLiteral(inputString));
+      assert.strictEqual(Platform.StringUtilities.formatAsJSLiteral(inputString), '\'' + expectedString + '\'');
     });
 
     it('escapes \\x00-\\x1F and \\x7F-\\x9F', () => {
@@ -567,13 +603,42 @@ describe('StringUtilities', () => {
         '\'\\x93\'', '\'\\x94\'', '\'\\x95\'', '\'\\x96\'', '\'\\x97\'', '\'\\x98\'', '\'\\x99\'', '\'\\x9A\'',
         '\'\\x9B\'', '\'\\x9C\'', '\'\\x9D\'', '\'\\x9E\'', '\'\\x9F\'',
       ];
-      assert.strictEqual(expectedStrings.join(), inputStrings.map(Platform.StringUtilities.formatAsJSLiteral).join());
+      assert.strictEqual(inputStrings.map(str => Platform.StringUtilities.formatAsJSLiteral(str)).join(),
+                         expectedStrings.join());
     });
 
     it('escapes backslashes', () => {
       const inputString = '\\';
       const expectedString = String.raw`\\`;
-      assert.strictEqual('\'' + expectedString + '\'', Platform.StringUtilities.formatAsJSLiteral(inputString));
+      assert.strictEqual(Platform.StringUtilities.formatAsJSLiteral(inputString), '\'' + expectedString + '\'');
+    });
+
+    it('escapes Unicode formatting characters', () => {
+      const inputString = '\u202e\u200b\u200d\u00ad\u{E0001}';
+      const expectedString = '\'\\u202E\\u200B\\u200D\\xAD\\uDB40\\uDC01\'';
+      assert.strictEqual(Platform.StringUtilities.formatAsJSLiteral(inputString), expectedString);
+    });
+
+    it('escapes script tags case-insensitively', () => {
+      const inputString = '<script></SCRIPT><Script>';
+      const expectedString = '\'\\x3Cscript>\\x3C/SCRIPT>\\x3CScript>\'';
+      assert.strictEqual(Platform.StringUtilities.formatAsJSLiteral(inputString), expectedString);
+    });
+  });
+
+  describe('escapeUnicodeAsText', () => {
+    it('escapes Unicode formatting characters and surrogates', () => {
+      const inputString = '\u202e\u200b\u200d\u00ad\u{E0001}\b';
+      const expectedString = '\\u202E\\u200B\\u200D\\u00AD\\uDB40\\uDC01\b';
+      assert.strictEqual(Platform.StringUtilities.escapeUnicodeAsText(inputString), expectedString);
+    });
+  });
+
+  describe('safeEscapeUnicode', () => {
+    it('escapes Unicode formatting characters and surrogates, but does not escape ZWSP, ZWNJ, and ZWJ', () => {
+      const inputString = '\u202e\u200b\u200d\u00ad\u{E0001}\b';
+      const expectedString = '\\u202E\u200B\u200D\\u00AD\\uDB40\\uDC01\b';
+      assert.strictEqual(Platform.StringUtilities.safeEscapeUnicode(inputString), expectedString);
     });
   });
 
@@ -675,6 +740,23 @@ describe('StringUtilities', () => {
       assert.throws(() => Platform.StringUtilities.sprintf('%2$s', 'World'));
       assert.throws(() => Platform.StringUtilities.sprintf('%2$s %s!', 'World', 'Hello'));
       assert.throws(() => Platform.StringUtilities.sprintf('%s %d', 'World'));
+    });
+
+    it('processes % properly in case of missing formatters', () => {
+      assert.strictEqual(Platform.StringUtilities.sprintf('%T', 1), '%T');
+      assert.strictEqual(Platform.StringUtilities.sprintf('10% x 20%', 'of the original'), '10% x 20%');
+      assert.strictEqual(Platform.StringUtilities.sprintf('%%', ''), '%');
+      assert.strictEqual(Platform.StringUtilities.sprintf('%%%', ''), '%%');
+      assert.strictEqual(Platform.StringUtilities.sprintf('%%', 1, 2, 3), '%');
+      assert.strictEqual(Platform.StringUtilities.sprintf('%%d', 1), '%d');
+      assert.strictEqual(Platform.StringUtilities.sprintf('%%d%', 1), '%d%');
+      assert.strictEqual(Platform.StringUtilities.sprintf('%%%d%', 1), '%1%');
+      assert.strictEqual(Platform.StringUtilities.sprintf('%%%d%%', 1), '%1%');
+      assert.strictEqual(Platform.StringUtilities.sprintf('%', ''), '%');
+      assert.strictEqual(Platform.StringUtilities.sprintf('% %d', 1), '% 1');
+      assert.strictEqual(Platform.StringUtilities.sprintf('%d % %s', 1, 'foo'), '1 % foo');
+      assert.strictEqual(Platform.StringUtilities.sprintf('%.2f', 0.12345), '0.12');
+      assert.strictEqual(Platform.StringUtilities.sprintf('foo%555 bar', ''), 'foo%555 bar');
     });
   });
 

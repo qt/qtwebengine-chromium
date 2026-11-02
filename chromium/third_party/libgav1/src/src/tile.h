@@ -26,14 +26,14 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>  // NOLINT (unapproved c++11 header)
+#include <new>
+#include <utility>
 
 #include "src/buffer_pool.h"
 #include "src/decoder_state.h"
 #include "src/dsp/common.h"
-#include "src/dsp/constants.h"
 #include "src/dsp/dsp.h"
 #include "src/frame_scratch_buffer.h"
-#include "src/loop_restoration_info.h"
 #include "src/obu_parser.h"
 #include "src/post_filter.h"
 #include "src/quantizer.h"
@@ -43,15 +43,14 @@
 #include "src/utils/array_2d.h"
 #include "src/utils/block_parameters_holder.h"
 #include "src/utils/blocking_counter.h"
-#include "src/utils/common.h"
 #include "src/utils/compiler_attributes.h"
 #include "src/utils/constants.h"
+#include "src/utils/dynamic_buffer.h"
 #include "src/utils/entropy_decoder.h"
 #include "src/utils/memory.h"
 #include "src/utils/segmentation_map.h"
 #include "src/utils/threadpool.h"
 #include "src/utils/types.h"
-#include "src/yuv_buffer.h"
 
 namespace libgav1 {
 

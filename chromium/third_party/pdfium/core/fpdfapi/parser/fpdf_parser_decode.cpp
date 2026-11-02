@@ -32,6 +32,10 @@
 #include "core/fxcrt/stl_util.h"
 #include "core/fxcrt/utf16.h"
 
+#if defined(PDF_ENABLE_BROTLI)
+#include "core/fxcodec/brotli/brotli_decoder.h"
+#endif
+
 namespace {
 
 const uint32_t kMaxStreamSize = 20 * 1024 * 1024;
@@ -491,7 +495,21 @@ std::optional<PDFDataDecodeResult> PDF_DataDecode(
       DataAndBytesConsumed decode_result = RunLengthDecode(last_span);
       new_buf = std::move(decode_result.data);
       bytes_consumed = decode_result.bytes_consumed;
-    } else {
+    }
+#if defined(PDF_ENABLE_BROTLI)
+    else if (decoder == "BrotliDecode" && BrotliDecoder::GetBrotliEnabled()) {
+      if (bImageAcc && i == nSize - 1) {
+        result.image_encoding = "BrotliDecode";
+        result.image_params = std::move(pParam);
+        return result;
+      }
+      DataAndBytesConsumed decode_result =
+          BrotliDecoder::Decode(last_span, estimated_size);
+      new_buf = std::move(decode_result.data);
+      bytes_consumed = decode_result.bytes_consumed;
+    }
+#endif
+    else {
       // If we get here, assume it's an image decoder.
       if (decoder == "DCT") {
         decoder = "DCTDecode";

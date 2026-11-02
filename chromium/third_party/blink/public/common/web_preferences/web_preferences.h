@@ -358,10 +358,6 @@ struct BLINK_COMMON_EXPORT WebPreferences {
   // `FileOrDirectoryPickerWithoutGestureAllowedForOrigins` policy.
   bool require_transient_activation_for_show_file_or_directory_picker = true;
 
-  // `navigator.subApps.{add|remove|list}()`'s user gesture and authorization
-  // can be bypassed via
-  // `SubAppsAPIsAllowedWithoutGestureAndAuthorizationForOrigins` policy.
-  bool subapps_apis_require_user_gesture_and_authorization = true;
 
   // The forced colors state for the web content. The forced colors state
   // is used to evaluate the forced-colors media query, as well as determining
@@ -438,7 +434,7 @@ struct BLINK_COMMON_EXPORT WebPreferences {
 
   // Whether the end of a drag fires a contextmenu event and possibly shows a
   // context-menu (depends on how the event is handled). Follows
-  // `touch_drag_drop_enabled` in Windows.
+  // `touch_drag_drop_enabled` on Linux and Windows.
   bool touch_dragend_context_menu = false;
 
   // By default, WebXR's immersive-ar session creation is allowed, but this can
@@ -469,14 +465,6 @@ struct BLINK_COMMON_EXPORT WebPreferences {
   // Enables the origin trial Built-in AI APIs, for use within DevTools and
   // devtools extension panels.
   bool ai_ot_apis_enabled = false;
-
-  // Whether IgnoreDuplicateNav is enabled. Controlled by WebView settings on
-  // WebView and by `kIgnoreDuplicateNav` feature flag everywhere.
-  bool ignore_duplicate_nav_enabled = false;
-
-  // Threshold for IgnoreDuplicateNavs. Controlled by WebView settings on
-  // WebView and by `kDuplicateNavThreshold` feature param everywhere.
-  base::TimeDelta duplicate_nav_threshold;
 
 #if BUILDFLAG(IS_MAC)
   bool should_disable_external_popups = false;

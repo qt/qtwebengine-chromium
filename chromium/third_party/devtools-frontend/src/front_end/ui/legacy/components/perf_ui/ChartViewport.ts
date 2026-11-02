@@ -30,7 +30,7 @@ export interface Config {
 }
 
 export class ChartViewport extends UI.Widget.VBox {
-  private readonly delegate: ChartViewportDelegate;
+  readonly delegate: ChartViewportDelegate;
   viewportElement: HTMLElement;
   #alwaysShowVerticalScroll: boolean;
   private rangeSelectionEnabled: boolean;
@@ -40,7 +40,7 @@ export class ChartViewport extends UI.Widget.VBox {
   private cursorElement: HTMLElement;
   #isDragging!: boolean;
   private totalHeight!: number;
-  private offsetHeight!: number;
+  offsetHeight!: number;
   private scrollTop!: number;
   private rangeSelectionStart: number|null;
   private rangeSelectionEnd: number|null;
@@ -49,7 +49,7 @@ export class ChartViewport extends UI.Widget.VBox {
   private dragStartScrollTop!: number;
   private visibleLeftTime!: number;
   private visibleRightTime!: number;
-  private offsetWidth!: number;
+  offsetWidth!: number;
   private targetLeftTime!: number;
   private targetRightTime!: number;
   private selectionOffsetShiftX!: number;
@@ -156,7 +156,7 @@ export class ChartViewport extends UI.Widget.VBox {
     this.updateContentElementSize();
   }
 
-  private updateContentElementSize(): void {
+  updateContentElementSize(): void {
     let offsetWidth: number = this.vScrollElement.offsetLeft;
     if (!offsetWidth) {
       offsetWidth = this.contentElement.offsetWidth;

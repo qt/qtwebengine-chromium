@@ -80,7 +80,7 @@ class TensorConcatenationOp : public TensorBase<TensorConcatenationOp<Axis, LhsX
 
   EIGEN_DEVICE_FUNC const Axis& axis() const { return m_axis; }
 
-  EIGEN_TENSOR_INHERIT_ASSIGNMENT_OPERATORS(TensorConcatenationOp)
+  EIGEN_INHERIT_ASSIGNMENT_OPERATORS(TensorConcatenationOp)
  protected:
   typename LhsXprType::Nested m_lhs_xpr;
   typename RhsXprType::Nested m_rhs_xpr;
@@ -164,7 +164,7 @@ struct TensorEvaluator<const TensorConcatenationOp<Axis, LeftArgType, RightArgTy
       }
     }
 
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       m_leftStrides[0] = 1;
       m_rightStrides[0] = 1;
       m_outputStrides[0] = 1;
@@ -174,8 +174,7 @@ struct TensorEvaluator<const TensorConcatenationOp<Axis, LeftArgType, RightArgTy
         m_rightStrides[j] = m_rightStrides[j - 1] * rhs_dims[j - 1];
         m_outputStrides[j] = m_outputStrides[j - 1] * m_dimensions[j - 1];
       }
-    }
-    else {
+    } else {
       m_leftStrides[NumDims - 1] = 1;
       m_rightStrides[NumDims - 1] = 1;
       m_outputStrides[NumDims - 1] = 1;
@@ -251,7 +250,7 @@ struct TensorEvaluator<const TensorConcatenationOp<Axis, LeftArgType, RightArgTy
 
     Index remaining = desc.offset();
     DSizes<Index, NumDims> out_coords;
-    if (IsColMajor) {
+    EIGEN_IF_CONSTEXPR (IsColMajor) {
       for (int i = NumDims - 1; i > 0; --i) {
         out_coords[i] = remaining / m_outputStrides[i];
         remaining -= out_coords[i] * m_outputStrides[i];
@@ -361,14 +360,13 @@ struct TensorEvaluator<const TensorConcatenationOp<Axis, LeftArgType, RightArgTy
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE CoeffReturnType coeff(Index index) const {
     // Collect dimension-wise indices (subs).
     array<Index, NumDims> subs;
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       for (int i = NumDims - 1; i > 0; --i) {
         subs[i] = index / m_outputStrides[i];
         index -= subs[i] * m_outputStrides[i];
       }
       subs[0] = index;
-    }
-    else {
+    } else {
       for (int i = 0; i < NumDims - 1; ++i) {
         subs[i] = index / m_outputStrides[i];
         index -= subs[i] * m_outputStrides[i];
@@ -379,14 +377,13 @@ struct TensorEvaluator<const TensorConcatenationOp<Axis, LeftArgType, RightArgTy
     const Dimensions& left_dims = m_leftImpl.dimensions();
     if (subs[m_axis] < left_dims[m_axis]) {
       Index left_index;
-      EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+      EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
         left_index = subs[0];
         EIGEN_UNROLL_LOOP
         for (int i = 1; i < NumDims; ++i) {
           left_index += (subs[i] % left_dims[i]) * m_leftStrides[i];
         }
-      }
-      else {
+      } else {
         left_index = subs[NumDims - 1];
         EIGEN_UNROLL_LOOP
         for (int i = NumDims - 2; i >= 0; --i) {
@@ -398,14 +395,13 @@ struct TensorEvaluator<const TensorConcatenationOp<Axis, LeftArgType, RightArgTy
       subs[m_axis] -= left_dims[m_axis];
       const Dimensions& right_dims = m_rightImpl.dimensions();
       Index right_index;
-      EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+      EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
         right_index = subs[0];
         EIGEN_UNROLL_LOOP
         for (int i = 1; i < NumDims; ++i) {
           right_index += (subs[i] % right_dims[i]) * m_rightStrides[i];
         }
-      }
-      else {
+      } else {
         right_index = subs[NumDims - 1];
         EIGEN_UNROLL_LOOP
         for (int i = NumDims - 2; i >= 0; --i) {
@@ -436,7 +432,7 @@ struct TensorEvaluator<const TensorConcatenationOp<Axis, LeftArgType, RightArgTy
     array<Index, NumDims> subs_end;
     Index remaining = index;
     Index remaining_end = index + packetSize - 1;
-    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       for (int i = NumDims - 1; i > 0; --i) {
         subs[i] = remaining / m_outputStrides[i];
         remaining -= subs[i] * m_outputStrides[i];
@@ -445,8 +441,7 @@ struct TensorEvaluator<const TensorConcatenationOp<Axis, LeftArgType, RightArgTy
       }
       subs[0] = remaining;
       subs_end[0] = remaining_end;
-    }
-    else {
+    } else {
       for (int i = 0; i < NumDims - 1; ++i) {
         subs[i] = remaining / m_outputStrides[i];
         remaining -= subs[i] * m_outputStrides[i];
@@ -476,14 +471,13 @@ struct TensorEvaluator<const TensorConcatenationOp<Axis, LeftArgType, RightArgTy
 
     if (on_left) {
       Index left_index;
-      EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+      EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
         left_index = subs[0];
         EIGEN_UNROLL_LOOP
         for (int i = 1; i < NumDims; ++i) {
           left_index += subs[i] * m_leftStrides[i];
         }
-      }
-      else {
+      } else {
         left_index = subs[NumDims - 1];
         EIGEN_UNROLL_LOOP
         for (int i = NumDims - 2; i >= 0; --i) {
@@ -495,14 +489,13 @@ struct TensorEvaluator<const TensorConcatenationOp<Axis, LeftArgType, RightArgTy
     if (on_right) {
       subs[m_axis] -= left_axis_size;
       Index right_index;
-      EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+      EIGEN_IF_CONSTEXPR (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
         right_index = subs[0];
         EIGEN_UNROLL_LOOP
         for (int i = 1; i < NumDims; ++i) {
           right_index += subs[i] * m_rightStrides[i];
         }
-      }
-      else {
+      } else {
         right_index = subs[NumDims - 1];
         EIGEN_UNROLL_LOOP
         for (int i = NumDims - 2; i >= 0; --i) {

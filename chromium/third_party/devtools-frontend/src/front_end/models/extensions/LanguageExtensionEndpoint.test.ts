@@ -3,10 +3,12 @@
 // found in the LICENSE file.
 
 import {assert} from 'chai';
+import sinon from 'sinon';
 
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
+import * as Bindings from '../bindings/bindings.js';
 
 import * as Extensions from './extensions.js';
 
@@ -17,9 +19,10 @@ for (const allowFileAccess of [true, false]) {
     let endpoint: Extensions.LanguageExtensionEndpoint.LanguageExtensionEndpoint;
     beforeEach(() => {
       const channel = new MessageChannel();
+      const pluginManager = sinon.createStubInstance(Bindings.DebuggerLanguagePlugins.DebuggerLanguagePluginManager);
       endpoint = new Extensions.LanguageExtensionEndpoint.LanguageExtensionEndpoint(
           allowFileAccess, '', '', {language: 'lang', symbol_types: [Protocol.Debugger.DebugSymbolsType.SourceMap]},
-          channel.port1);
+          channel.port1, pluginManager);
     });
 
     it('canAccessURL respects allowFileAccess correctly', () => {

@@ -47,6 +47,7 @@
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
+#include "third_party/blink/renderer/core/frame/web_feature.h"
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/loader/frame_load_request.h"
@@ -54,6 +55,7 @@
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_request.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/widget/frame_widget.h"
@@ -75,9 +77,6 @@ WebWindowFeatures GetWindowFeaturesFromString(const String& feature_string,
                                               LocalDOMWindow* dom_window) {
   WebWindowFeatures window_features;
 
-  const bool attribution_reporting_enabled =
-      dom_window &&
-      RuntimeEnabledFeatures::AttributionReportingEnabled(dom_window);
   const bool explicit_opener_enabled =
       RuntimeEnabledFeatures::RelOpenerBcgDependencyHintEnabled(dom_window);
 
@@ -165,6 +164,10 @@ WebWindowFeatures GetWindowFeaturesFromString(const String& feature_string,
           StringToInt(value_string, NumberParsingOptions::Loose()).value_or(0);
     }
 
+    const bool attribution_reporting_enabled =
+        dom_window &&
+        RuntimeEnabledFeatures::AttributionReportingEnabled(dom_window);
+
     if (!ui_features_were_disabled && key_string != "noopener" &&
         (!explicit_opener_enabled || key_string != "opener") &&
         key_string != "noreferrer" &&
@@ -213,26 +216,8 @@ WebWindowFeatures GetWindowFeaturesFromString(const String& feature_string,
       window_features.persistent = true;
     } else if (attribution_reporting_enabled &&
                key_string == "attributionsrc") {
-      if (!window_features.attribution_srcs.has_value()) {
-        window_features.attribution_srcs.emplace();
-      }
-
-      if (!value_string.empty()) {
-        // attributionsrc values are URLs, and as such their original case needs
-        // to be retained for correctness. Positions in both `feature_string`
-        // and `buffer` correspond because ASCII-lowercasing doesn't add,
-        // remove, or swap character positions; it only does in-place
-        // transformations of capital ASCII characters. See crbug.com/1338698
-        // for details.
-        DCHECK_EQ(feature_string.length(), buffer.length());
-        const StringView original_case_value_string(feature_string, value_begin,
-                                                    value_end - value_begin);
-
-        // attributionsrc values are encoded in order to support embedded
-        // special characters, such as '='.
-        window_features.attribution_srcs->emplace_back(DecodeUrlEscapeSequences(
-            original_case_value_string, DecodeUrlMode::kUtf8));
-      }
+      UseCounter::Count(dom_window,
+                        mojom::blink::WebFeature::kAttributionReportingAPIAll);
     }
   }
 

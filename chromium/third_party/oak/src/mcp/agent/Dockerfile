@@ -1,5 +1,5 @@
 # Stage 1: Load oak-proxy.
-FROM europe-west1-docker.pkg.dev/oak-examples-477357/oak-proxy/oak-proxy@sha256:b9fab154b5978fbb5149c5c9a98db6ceabdb965758a2078b66f8d6f1884ef922 as oak_proxy
+FROM us-west1-docker.pkg.dev/oak-examples-477357/oak-proxy/oak-proxy@sha256:9543d12e9653e39cd642ab48dbb7cf0488cb5696c678bf8ee2528c523638bb1b as oak_proxy
 
 # Stage 2: Builder.
 # Digest can be accessed with the following command:
@@ -45,9 +45,9 @@ COPY --chown=user:user --from=oak_proxy /bin/server /bin/oak_proxy_server
 COPY --chown=user:user --from=oak_proxy /bin/client /bin/oak_proxy_client
 
 # Copy Oak Proxy config files.
-COPY --chown=user:user proxy_server.toml /etc/proxy_server.toml
-COPY --chown=user:user gemma_proxy_client.toml /etc/gemma_proxy_client.toml
-COPY --chown=user:user mcp_proxy_client.toml /etc/mcp_proxy_client.toml
+COPY --chown=user:user config/proxy_server.toml /etc/proxy_server.toml
+COPY --chown=user:user config/model_proxy_client.toml /etc/model_proxy_client.toml
+COPY --chown=user:user config/mcp_proxy_client.toml /etc/mcp_proxy_client.toml
 
 # Copy the agent bash script.
 # TODO: b/435400315 - Refactor Oak Proxy to run both server and clients.
@@ -60,8 +60,14 @@ ENV RUST_LOG=info
 # Expose the port Oak Proxy is listening on.
 EXPOSE 8080
 
+# Confidential Space launch policy that allows specific environment variables to
+# be provided at runtime:
+# - `CONTAINER_IMAGE`: self-referrence for the TEE workload which it can use to fetch endorsements.
+# - `MODEL_PROXY_URL` and `MCP_PROXY_URL` are known at runtime because they are dynamically assigned
+#    by gCloud to corresponding services.
+#
 # https://cloud.google.com/confidential-computing/confidential-space/docs/create-customize-workloads#launch_policies
-LABEL "tee.launch_policy.allow_env_override"="CONTAINER_IMAGE"
+LABEL "tee.launch_policy.allow_env_override"="CONTAINER_IMAGE,MODEL_PROXY_URL,MCP_PROXY_URL"
 LABEL "tee.launch_policy.log_redirect"="always"
 
 # Run the agent.

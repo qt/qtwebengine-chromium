@@ -17,7 +17,7 @@
 /// Output: \verbinclude MatrixBase_reshaped_int_int.out
 ///
 /// The number of rows \a nRows and columns \a nCols can also be specified at compile-time by passing Eigen::fix<N>,
-/// or Eigen::fix<N>(n) as arguments. In the later case, \c n plays the role of a runtime fallback value in case \c N
+/// or Eigen::fix<N>(n) as arguments. In the latter case, \c n plays the role of a runtime fallback value in case \c N
 /// equals Eigen::Dynamic. Here is an example with a fixed number of rows and columns: \include
 /// MatrixBase_reshaped_fixed.cpp Output: \verbinclude MatrixBase_reshaped_fixed.out
 ///
@@ -41,7 +41,7 @@ EIGEN_DEVICE_FUNC constexpr inline const Reshaped<const Derived, ...> reshaped(N
 /// row-major-order (RowMajor),
 ///               or follows the \em natural order of the nested expression (AutoOrder). The default is ColMajor.
 ///
-/// This overloads is essentially a shortcut for `A.reshaped<Order>(AutoSize,fix<1>)`.
+/// This overload is essentially a shortcut for `A.reshaped<Order>(AutoSize,fix<1>)`.
 ///
 /// - If `Order==ColMajor` (the default), then it returns a column-vector from the stacked columns of \c *this.
 /// - If `Order==RowMajor`, then it returns a column-vector from the stacked rows of \c *this.

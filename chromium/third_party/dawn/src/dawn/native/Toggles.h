@@ -68,6 +68,7 @@ enum class Toggle {
     DisableRobustness,
     MetalEnableVertexPulling,
     AllowUnsafeAPIs,
+    AllowExperimentalSnorm10_10_10_2,
     FlushBeforeClientWaitSync,
     UseTempBufferInSmallFormatTextureToTextureCopyFromGreaterToLessMipLevel,
     EmitHLSLDebugSymbols,
@@ -126,6 +127,7 @@ enum class Toggle {
     UseBlitForFloat32TextureCopy,
     UseBlitForT2B,
     UseBlitForB2T,
+    VulkanSplitBufferTextureCopyForArrayLayers,
     GLUseArrayLengthFromUniform,
     D3D11DisableCPUUploadBuffers,
     UseT2B2TForSRGBTextureCopy,
@@ -152,7 +154,6 @@ enum class Toggle {
     ScalarizeMaxMinClamp,
     SaturateAsMinMaxF16,
     MetalPolyfillClampFloat,
-    SubgroupShuffleClamped,
     VulkanSampleCompareDepthCubeArrayWorkaround,
     VulkanSampleCompare2DWorkaround,
     MetalDisableModuleConstantF16,
@@ -191,6 +192,9 @@ enum class Toggle {
     VulkanForceStaticSamplersForExternalTextures,
     D3D12UseHLSL2021,
     MetalFixU32DivMod,
+    VulkanSleepAfterLostDeviceWait,
+    UseSpirvReconvergenceMode,
+    VulkanDisallowNPOTDepthStencilMipmaps,
 
     // Once all backends have been updated to be thread safe for waiting, we can remove this toggle.
     WaitIsThreadSafe,

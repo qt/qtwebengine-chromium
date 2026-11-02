@@ -23,7 +23,7 @@
 #include "core/fxge/dib/fx_dib.h"
 
 #ifdef PDF_ENABLE_XFA_BMP
-#include "core/fxcodec/bmp/bmp_decoder.h"
+#include "core/fxcodec/bmp/bmp_decoder_delegate.h"
 #endif  // PDF_ENABLE_XFA_BMP
 
 #ifdef PDF_ENABLE_XFA_GIF
@@ -46,7 +46,7 @@ class Dummy {};  // Placeholder to work around C++ syntax issues
 
 class ProgressiveDecoder final :
 #ifdef PDF_ENABLE_XFA_BMP
-    public BmpDecoder::Delegate,
+    public BmpDecoderDelegate,
 #endif  // PDF_ENABLE_XFA_BMP
 #ifdef PDF_ENABLE_XFA_GIF
     public GifDecoder::Delegate,

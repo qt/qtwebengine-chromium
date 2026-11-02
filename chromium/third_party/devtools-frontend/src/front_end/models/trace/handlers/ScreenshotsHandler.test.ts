@@ -55,33 +55,6 @@ describe('ScreenshotsHandler', function() {
         return msDifference;
       });
     }
-    // Skip while we resolve the getPresentationTimestamp mystery.
-    it.skip('[crbug.com/41363012] are corrected if frame sequence number is present', async function() {
-      // This trace was collected after https://crrev.com/c/4957973 landed.
-      const events = await TraceLoader.rawEvents(this, 'about-blank-first.json.gz');
-      for (const event of events) {
-        Trace.Handlers.ModelHandlers.Meta.handleEvent(event);
-        Trace.Handlers.ModelHandlers.Screenshots.handleEvent(event);
-      }
-      await Trace.Handlers.ModelHandlers.Meta.finalize();
-      await Trace.Handlers.ModelHandlers.Screenshots.finalize();
-
-      const syntheticScreenshots = Trace.Handlers.ModelHandlers.Screenshots.data().legacySyntheticScreenshots;
-      assert.isOk(syntheticScreenshots);
-      const originalScreenshotEvents = events.filter(Trace.Types.Events.isLegacyScreenshot);
-      assert.strictEqual(syntheticScreenshots.length, originalScreenshotEvents.length);
-
-      for (const oEvent of originalScreenshotEvents) {
-        assert.notStrictEqual(oEvent.id, '0x1');  // The id (frame sequence) shouldn't be the old default of 1.
-      }
-
-      const msDifferences = getMsDifferences(syntheticScreenshots, originalScreenshotEvents);
-      // These values indicate all the screenshots true timings are a tad more to the left.
-      assert.deepEqual(msDifferences, [
-        -13.079, -16.381, -12.503, -5.405,  -14.108, -14.661, -11.944, -14.322, -3.532, -15.821, 0.254,
-        -32.22,  -15.156, -13.219, -14.464, -16.135, -16.501, -33.165, -15.71,  -32.39, -32.445, -30.512,
-      ]);
-    });
 
     it('remain the same with older traces', async function() {
       // Any trace captured before  121.0.6156.3 doesn't have the extra data to correct the timestamps.

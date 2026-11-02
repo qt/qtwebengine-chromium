@@ -99,7 +99,7 @@ EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Packet pigammac(const Packet& a, const Pac
   return igammac(a, x);
 }
 
-/** \internal \returns the complementary incomplete gamma function betainc(\a a, \a b, \a x) */
+/** \internal \returns the incomplete beta function betainc(\a a, \a b, \a x) */
 template <typename Packet>
 EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Packet pbetainc(const Packet& a, const Packet& b, const Packet& x) {
   using numext::betainc;

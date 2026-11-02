@@ -69,6 +69,7 @@ struct GlobalSettings;
 struct GpuAVSettings;
 struct SyncValSettings;
 struct GpuDumpSettings;
+struct LegacyDetectionSettings;
 
 // Because of GPL, we currently create our Pipeline state objects before the PreCallValidate
 // Each chassis layer will need to track its own state
@@ -94,6 +95,7 @@ class BaseInstance : public Logger {
     GpuAVSettings& gpuav_settings;
     const SyncValSettings& syncval_settings;
     const GpuDumpSettings& gpu_dump_settings;
+    const LegacyDetectionSettings& legacy_detection_settings;
 
     const ValidationDisabled& disabled;
     const ValidationEnabled& enabled;
@@ -110,6 +112,7 @@ class BaseInstance : public Logger {
           gpuav_settings(instance->settings.gpuav_settings),
           syncval_settings(instance->settings.syncval_settings),
           gpu_dump_settings(instance->settings.gpu_dump_settings),
+          legacy_detection_settings(instance->settings.legacy_detection_settings),
           disabled(instance->settings.disabled),
           enabled(instance->settings.enabled),
           instance(instance->instance),
@@ -152,10 +155,13 @@ class BaseDevice : public Logger {
     const VkPhysicalDeviceVulkan13Properties& phys_dev_props_core13;
     const VkPhysicalDeviceVulkan14Properties& phys_dev_props_core14;
     const DeviceExtensionProperties& phys_dev_ext_props;
-    const GlobalSettings& global_settings;
+    // Settings are not always const because we might need to update them during vkCreateDevice
+    // when we know the extensions enabled
+    GlobalSettings& global_settings;
     GpuAVSettings& gpuav_settings;
     const SyncValSettings& syncval_settings;
     const GpuDumpSettings& gpu_dump_settings;
+    const LegacyDetectionSettings& legacy_detection_settings;
 
     const ValidationDisabled& disabled;
     const ValidationEnabled& enabled;
@@ -191,6 +197,7 @@ class BaseDevice : public Logger {
           gpuav_settings(dispatch_dev->settings.gpuav_settings),
           syncval_settings(dispatch_dev->settings.syncval_settings),
           gpu_dump_settings(dispatch_dev->settings.gpu_dump_settings),
+          legacy_detection_settings(dispatch_dev->settings.legacy_detection_settings),
           disabled(dispatch_dev->settings.disabled),
           enabled(dispatch_dev->settings.enabled),
           instance(instance->instance),

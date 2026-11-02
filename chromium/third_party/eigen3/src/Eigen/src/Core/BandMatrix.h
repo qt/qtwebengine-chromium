@@ -200,10 +200,10 @@ class BandMatrix : public BandMatrixBase<BandMatrix<Scalar_, Rows, Cols, Supers,
   explicit inline BandMatrix(Index rows = Rows, Index cols = Cols, Index supers = Supers, Index subs = Subs)
       : m_coeffs(1 + supers + subs, cols), m_rows(rows), m_supers(supers), m_subs(subs) {}
 
-  /** \returns the number of columns */
+  /** \returns the number of rows */
   constexpr Index rows() const { return m_rows.value(); }
 
-  /** \returns the number of rows */
+  /** \returns the number of columns */
   constexpr Index cols() const { return m_coeffs.cols(); }
 
   /** \returns the number of super diagonals */
@@ -260,10 +260,10 @@ class BandMatrixWrapper
     // eigen_assert(coeffs.cols()==cols() && (supers()+subs()+1)==coeffs.rows());
   }
 
-  /** \returns the number of columns */
+  /** \returns the number of rows */
   constexpr Index rows() const { return m_rows.value(); }
 
-  /** \returns the number of rows */
+  /** \returns the number of columns */
   constexpr Index cols() const { return m_coeffs.cols(); }
 
   /** \returns the number of super diagonals */
@@ -309,8 +309,6 @@ class TridiagonalMatrix : public BandMatrix<Scalar, Size, Size, Options & SelfAd
   inline const typename Base::template DiagonalIntReturnType<-1>::Type sub() const {
     return Base::template diagonal<-1>();
   }
-
- protected:
 };
 
 struct BandShape {};

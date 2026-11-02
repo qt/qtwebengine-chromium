@@ -415,12 +415,13 @@ void HeapVerification::VerifyPointerTables() {
                                              heap()->cpp_heap_pointer_space());
   isolate()->trusted_pointer_table().Verify(isolate(),
                                             heap()->trusted_pointer_space());
+  isolate()->trusted_pointer_table().Verify(
+      isolate(), heap()->read_only_trusted_pointer_space());
   if (isolate()->has_shared_trusted_pointer_table()) {
     isolate()->shared_trusted_pointer_table().Verify(
         isolate(), isolate()->shared_trusted_pointer_space());
   }
-  IsolateGroup::current()->code_pointer_table()->Verify(
-      isolate(), heap()->code_pointer_space());
+
   isolate()->js_dispatch_table().Verify(isolate(),
                                         heap()->js_dispatch_table_space());
 }
@@ -866,11 +867,7 @@ void HeapVerifier::VerifyObjectLayoutChangeIsAllowed(
     CHECK(IsString(object));
     // Shared strings only change layout under GC, never concurrently.
     if (IsShared(object)) {
-      Isolate* isolate = heap->isolate();
-      Isolate* shared_space_isolate = isolate->is_shared_space_isolate()
-                                          ? isolate
-                                          : isolate->shared_space_isolate();
-      shared_space_isolate->global_safepoint()->AssertActive();
+      heap->isolate()->global_safepoint()->AssertActive();
     }
     // Non-shared strings in the shared heap are allowed to change layout
     // outside of GC like strings in non-shared heaps.

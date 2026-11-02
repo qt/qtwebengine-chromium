@@ -24,6 +24,7 @@ package(
 rust_library(
     name = "oak_attestation_explain",
     srcs = glob(["src/**"]),
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//oak_proto_rust",
         "@oak_crates_index//:anyhow",
@@ -31,8 +32,8 @@ rust_library(
         "@oak_crates_index//:prost-types",
         "@oak_crates_index//:serde",
         "@oak_crates_index//:serde_json",
-        "@oak_crates_index//:serde_yaml",
         "@oak_crates_index//:sha2",
+        "@oak_crates_index//:yaml_serde",
         "@oak_crates_index//:zerocopy",
     ],
 )
@@ -40,6 +41,7 @@ rust_library(
 rust_test_suite(
     name = "oak_attestation_explain_integration_tests",
     srcs = glob(["tests/**/*.rs"]),
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//oak_attestation_explain",
         "//oak_attestation_verification",

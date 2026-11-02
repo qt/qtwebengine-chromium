@@ -14,26 +14,31 @@
 // limitations under the License.
 //
 
+use alloc::vec::Vec;
 use core::{
     alloc::{GlobalAlloc, Layout},
-    ops::Deref,
+    ops::{Deref, DerefMut},
     ptr::NonNull,
 };
 
 use linked_list_allocator::{Heap, LockedHeap};
 use log::info;
+use oak_hal::{PageAssignment, Platform};
 use spinning_top::Spinlock;
 use x86_64::{
+    PhysAddr, VirtAddr,
     structures::paging::{
-        mapper::FlagUpdateError, page::PageRange, FrameAllocator, Page, PageSize, PhysFrame,
-        Size2MiB,
+        FrameAllocator, Page, PageSize, PageTableFlags, PhysFrame, Size2MiB, Size4KiB,
+        mapper::{FlagUpdateError, Mapper},
+        page::PageRange,
     },
-    VirtAddr,
 };
+use zerocopy::FromBytes;
+use zeroize::Zeroize;
 
 use crate::{
-    mm::{Mapper, PageTableFlags},
     FRAME_ALLOCATOR, PAGE_TABLES,
+    mm::{Translator, encryption_aware_page_table_flags},
 };
 
 #[cfg(not(test))]
@@ -73,8 +78,8 @@ impl GrowableHeap {
             .lock()
             .allocate_frame()
             .ok_or("failed to allocate memory for kernel heap")?;
-        let pt_guard = PAGE_TABLES.lock();
-        let mapper = pt_guard.get().unwrap();
+        let mut pt_guard = PAGE_TABLES.lock();
+        let mapper = pt_guard.get_mut().unwrap();
 
         // Safety: if the page is already mapped, then we'll get an error and thus we
         // won't overwrite any existing mappings, Otherwise, creating a new
@@ -85,16 +90,21 @@ impl GrowableHeap {
                 .map_to_with_table_flags(
                     self.available.next().ok_or("kernel heap exhausted")?,
                     frame,
-                    PageTableFlags::PRESENT
-                        | PageTableFlags::WRITABLE
-                        | PageTableFlags::GLOBAL
-                        | PageTableFlags::NO_EXECUTE
-                        | PageTableFlags::HUGE_PAGE
-                        | PageTableFlags::ENCRYPTED,
-                    PageTableFlags::PRESENT
-                        | PageTableFlags::WRITABLE
-                        | PageTableFlags::NO_EXECUTE
-                        | PageTableFlags::ENCRYPTED,
+                    encryption_aware_page_table_flags(
+                        PageTableFlags::PRESENT
+                            | PageTableFlags::WRITABLE
+                            | PageTableFlags::GLOBAL
+                            | PageTableFlags::NO_EXECUTE
+                            | PageTableFlags::HUGE_PAGE,
+                        PageAssignment::Private,
+                    ),
+                    encryption_aware_page_table_flags(
+                        PageTableFlags::PRESENT
+                            | PageTableFlags::WRITABLE
+                            | PageTableFlags::NO_EXECUTE,
+                        PageAssignment::Private,
+                    ),
+                    FRAME_ALLOCATOR.lock().deref_mut(),
                 )
                 .map_err(|_| "unable to create page mapping for kernel heap")?
                 .flush();
@@ -115,7 +125,9 @@ impl GrowableHeap {
         // Get the first 2 MiB of memory for the heap.
         self.extend().unwrap();
 
-        self.heap.init(self.base.start_address().as_mut_ptr(), Size2MiB::SIZE as usize);
+        unsafe {
+            self.heap.init(self.base.start_address().as_mut_ptr(), Size2MiB::SIZE as usize);
+        }
     }
 
     pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<NonNull<u8>, ()> {
@@ -135,7 +147,9 @@ impl GrowableHeap {
     }
 
     pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: Layout) {
-        self.heap.deallocate(ptr, layout)
+        unsafe {
+            self.heap.deallocate(ptr, layout);
+        }
     }
 }
 
@@ -165,7 +179,9 @@ unsafe impl GlobalAlloc for LockedGrowableHeap {
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {
-        self.0.lock().deallocate(NonNull::new_unchecked(ptr), layout)
+        unsafe {
+            self.0.lock().deallocate(NonNull::new_unchecked(ptr), layout);
+        }
     }
 }
 
@@ -183,26 +199,76 @@ pub fn init_kernel_heap(range: PageRange<Size2MiB>) -> Result<(), &'static str> 
     Ok(())
 }
 
+/// Sets up a heap of shared memory used for communication between the guest and
+/// host.
+pub fn init_guest_host_heap<P: Platform>() {
+    // Allocate a section for guest-host communication (without the `ENCRYPTED` bit
+    // set) We'll allocate 2*2MiB, as virtio needs more than 2 MiB for its data
+    // structures.
+    let guest_host_frames = FRAME_ALLOCATOR.lock().allocate_contiguous(2).unwrap();
+
+    let guest_host_pages = {
+        let pt_guard = PAGE_TABLES.lock();
+        let pt = pt_guard.get().unwrap();
+        Page::range(
+            pt.translate_physical_frame(guest_host_frames.start).unwrap(),
+            pt.translate_physical_frame(guest_host_frames.end).unwrap(),
+        )
+    };
+
+    // Mark the guest-host pages as shared.
+    let guest_host_frames_start =
+        PhysFrame::<Size4KiB>::from_start_address(guest_host_frames.start.start_address())
+            .expect("unaligned frame address");
+    let guest_host_frames_end =
+        PhysFrame::<Size4KiB>::from_start_address(guest_host_frames.end.start_address())
+            .expect("unaligned frame address");
+    for frame in PhysFrame::<Size4KiB>::range(guest_host_frames_start, guest_host_frames_end) {
+        P::change_frame_state(frame, PageAssignment::Shared);
+    }
+
+    // Safety: initializing the new heap is safe as the frame allocator guarantees
+    // we're not overwriting any other memory; writing to the static mut is safe
+    // as we're in the initialization code and thus there can be no concurrent
+    // access.
+    if crate::GUEST_HOST_HEAP
+        .set(
+            unsafe {
+                init_guest_host_allocator(guest_host_pages, PAGE_TABLES.lock().get_mut().unwrap())
+            }
+            .unwrap(),
+        )
+        .is_err()
+    {
+        panic!("couldn't initialize the guest-host heap");
+    }
+}
+
 /// Initializes an allocator for guest-host communication on unencrypted memory.
 ///
 /// # Safety
 ///
 /// The caller has to guarantee that the page range is valid and not in use, as
 /// we will change page table flags for pages in that range.
-pub unsafe fn init_guest_host_heap<S: PageSize, M: Mapper<S>>(
+unsafe fn init_guest_host_allocator<S: PageSize, M: Mapper<S>>(
     pages: PageRange<S>,
-    mapper: &M,
+    mapper: &mut M,
 ) -> Result<LockedHeap, FlagUpdateError> {
     for page in pages {
-        mapper
-            .update_flags(
-                page,
-                PageTableFlags::PRESENT
-                    | PageTableFlags::WRITABLE
-                    | PageTableFlags::GLOBAL
-                    | PageTableFlags::NO_EXECUTE,
-            )?
-            .flush();
+        unsafe {
+            mapper
+                .update_flags(
+                    page,
+                    encryption_aware_page_table_flags(
+                        PageTableFlags::PRESENT
+                            | PageTableFlags::WRITABLE
+                            | PageTableFlags::GLOBAL
+                            | PageTableFlags::NO_EXECUTE,
+                        PageAssignment::Shared,
+                    ),
+                )?
+                .flush();
+        }
     }
 
     info!(
@@ -211,5 +277,163 @@ pub unsafe fn init_guest_host_heap<S: PageSize, M: Mapper<S>>(
         pages.end.start_address().as_u64()
     );
 
-    Ok(LockedHeap::new(pages.start.start_address().as_mut_ptr(), pages.count() * S::SIZE as usize))
+    Ok(unsafe {
+        LockedHeap::new(pages.start.start_address().as_mut_ptr(), pages.count() * S::SIZE as usize)
+    })
+}
+
+pub struct SensitiveDiceDataMemory {
+    start_ptr: *mut u8,
+    eventlog_ptr: *mut u8,
+    sensitive_memory_length: usize,
+    #[allow(dead_code)]
+    dice_attestation_ptr: Option<*mut u8>,
+}
+
+impl SensitiveDiceDataMemory {
+    /// Safety: Caller must ensure that there is only instance of this
+    /// struct.
+    pub unsafe fn new(
+        kernel_args: &crate::args::Args,
+        info: &oak_linux_boot_params::BootParams,
+    ) -> Self {
+        let sensitive_memory_length = kernel_args
+            .get(&alloc::format!("--{}", oak_dice::evidence::DICE_DATA_LENGTH_CMDLINE_PARAM))
+            .map(|arg| {
+                arg.parse::<usize>()
+                    .expect("dice data length kernel arg could not be converted to usize")
+            })
+            .inspect(|&length| {
+                assert!(
+                    length >= core::mem::size_of::<oak_dice::evidence::Stage0DiceData>(),
+                    "the cmdline argument for dice data length must be no less than the size of the Stage0DiceData struct"
+                );
+            })
+            // Older versions of stage0 do not supply this argument. In this case we assume the
+            // length of the dice data is the length of the associated struct.
+            .unwrap_or_else(::core::mem::size_of::<oak_dice::evidence::Stage0DiceData>);
+
+        let dice_data_phys_addr =
+            fetch_address_from_cmdline(kernel_args, oak_dice::evidence::DICE_DATA_CMDLINE_PARAM);
+
+        let eventlog_phys_addr =
+            fetch_address_from_cmdline(kernel_args, oak_dice::evidence::EVENTLOG_CMDLINE_PARAM);
+        let dice_data_attestation_addr = fetch_address_from_cmdline(
+            kernel_args,
+            oak_dice::evidence::DICE_DATA_ATTESTATION_PARAM,
+        );
+
+        let dice_data_phys_addr = dice_data_phys_addr
+            .expect("stage 0 command line lacks required argument: dice data C-struct address");
+        let eventlog_phys_addr = eventlog_phys_addr
+            .expect("stage 0 command line lacks required argument: eventlog address");
+
+        // Ensure that the dice data is stored within reserved memory.
+        let end = dice_data_phys_addr + (sensitive_memory_length as u64 - 1);
+        assert!(info.e820_table().iter().any(|entry| {
+            let dice_data_fully_contained_in_segment = {
+                let range = PhysAddr::new(entry.addr().try_into().unwrap())
+                    ..=PhysAddr::new((entry.addr() + entry.size()).try_into().unwrap());
+                range.contains(&dice_data_phys_addr)
+                    && range.contains(&end)
+                    && range.contains(&eventlog_phys_addr)
+            };
+
+            entry.entry_type().expect("failed to get type")
+                == oak_linux_boot_params::E820EntryType::RESERVED
+                && dice_data_fully_contained_in_segment
+        }));
+
+        let dice_data_virt_addr = fetch_virtual_address(&dice_data_phys_addr);
+        let eventlog_virt_addr = fetch_virtual_address(&eventlog_phys_addr);
+
+        // If the dice attester is passed to this layer, read it and pass it along to
+        // the struct.
+        // TODO: b/463325402 - Have the Oak Restricted Kernel depend on the dice
+        // attester in the future instead of the event log and dice data C-struct.
+        let dice_data_attestation_virt_addr =
+            if let Some(dice_data_attestation_addr) = dice_data_attestation_addr {
+                assert!(info.e820_table().iter().any(|entry| {
+                    let range = PhysAddr::new(entry.addr().try_into().unwrap())
+                        ..=PhysAddr::new((entry.addr() + entry.size()).try_into().unwrap());
+                    range.contains(&dice_data_attestation_addr) && range.contains(&end)
+                }));
+                let dice_data_attestation_virt_address =
+                    fetch_virtual_address(&dice_data_attestation_addr);
+
+                Some(dice_data_attestation_virt_address.as_mut_ptr())
+            } else {
+                None
+            };
+        Self {
+            start_ptr: dice_data_virt_addr.as_mut_ptr(),
+            eventlog_ptr: eventlog_virt_addr.as_mut_ptr(),
+            dice_attestation_ptr: dice_data_attestation_virt_addr,
+            sensitive_memory_length,
+        }
+    }
+
+    pub fn read_stage0_dice_data(&self) -> oak_dice::evidence::Stage0DiceData {
+        let dice_memory_slice = unsafe {
+            core::slice::from_raw_parts(
+                self.start_ptr,
+                core::mem::size_of::<oak_dice::evidence::Stage0DiceData>(),
+            )
+        };
+
+        let dice_data = oak_dice::evidence::Stage0DiceData::read_from_bytes(dice_memory_slice)
+            .expect("failed to read dice data");
+
+        if dice_data.magic != oak_dice::evidence::STAGE0_MAGIC {
+            panic!("dice data loaded from stage0 failed validation");
+        }
+        dice_data
+    }
+
+    pub fn read_encoded_eventlog(&self) -> Vec<u8> {
+        // Read the event log size (first 8 bytes)
+        let event_log_size = unsafe {
+            let size_bytes = core::slice::from_raw_parts(self.eventlog_ptr, 8);
+            u64::from_le_bytes(size_bytes.try_into().unwrap()) as usize
+        };
+
+        // Read the event log bytes
+        let event_log_bytes =
+            unsafe { core::slice::from_raw_parts(self.eventlog_ptr.add(8), event_log_size) };
+
+        event_log_bytes.to_vec()
+    }
+}
+
+impl Drop for SensitiveDiceDataMemory {
+    fn drop(&mut self) {
+        // Zero out the sensitive_dice_data_memory.
+        // Safety: This struct is only used once. We have checked the length,
+        // know it is backed by physical memory and is reserved.
+        (unsafe { core::slice::from_raw_parts_mut(self.start_ptr, self.sensitive_memory_length) })
+            .zeroize();
+    }
+}
+
+// Fetches a physical address from a stage 0 kernel command line argument. If
+// the argument is not present, None is returned. This function will panic in
+// the event the argument is found and cannot be parsed.
+fn fetch_address_from_cmdline(
+    kernel_args: &crate::args::Args,
+    stage0_arg: &str,
+) -> Option<PhysAddr> {
+    let arg = kernel_args.get(&alloc::format!("--{}", stage0_arg))?;
+    let parsed_arg =
+        u64::from_str_radix(arg.strip_prefix("0x").expect("failed stripping the hex prefix"), 16)
+            .expect("couldn't parse address as a hex number");
+    Some(PhysAddr::new(parsed_arg))
+}
+
+// Fetches the virtual address from the Page Tables using the provided physical
+// address. The function panics if the Page Table cannot be fetched or if the
+// virtual address cannot be fetched.
+fn fetch_virtual_address(phys_address: &PhysAddr) -> VirtAddr {
+    let pt_guard = PAGE_TABLES.lock();
+    let pt = pt_guard.get().expect("failed to get page tables");
+    pt.translate_physical(*phys_address).expect("failed to translate physical eventlog address")
 }
